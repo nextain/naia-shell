@@ -296,9 +296,28 @@ Naia applies a **Defense in Depth** security model:
 
 ## Memory System
 
-- **Short-term Memory (STM):** Current session conversation (Zustand + SQLite)
-- **Long-term Memory (LTM):** Session summaries (LLM-generated) + automatic extraction of user facts/preferences
-- **Memo Skill:** Explicit memo save/retrieve via `skill_memo`
+Naia remembers across sessions using the **Alpha Memory System** — a 4-store architecture modeled on human memory:
+
+| Store | Analog | What It Stores |
+|-------|--------|----------------|
+| **Episodic** | Hippocampus | Timestamped conversation turns |
+| **Semantic** | Neocortex | Extracted facts, preferences, entities |
+| **Procedural** | Basal Ganglia | Learned strategies from past failures |
+| **Working** | Prefrontal Cortex | Active context for the current session |
+
+**How it works:**
+1. Every message is scored for importance (novelty, relevance, emotional weight)
+2. High-importance content is stored as an **episode**
+3. Every 30 minutes, episodes are consolidated into **facts** (your AI "thinks about its day")
+4. At the start of each session, relevant facts and episodes are injected as context
+
+**Your memories are yours:**
+- Stored locally at `~/.naia/memory/alpha-memory.json`
+- Never sent to any server — not even Nextain
+- View and delete facts any time in **Settings → Memory**
+- Back up simply by copying the file
+
+See [docs/memory.md](docs/memory.md) for the full user guide.
 
 ## Current Status
 

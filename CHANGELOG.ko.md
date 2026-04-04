@@ -7,6 +7,19 @@ Naia OS의 주요 변경 사항을 기록합니다.
 
 ---
 
+## v0.1.4 (2026-04-04)
+
+Alpha Memory System v1, 지식 그래프, 메모리 벤치마크
+
+- **feat(agent)**: Alpha Memory System v1 — 4-스토어 아키텍처 (에피소드/의미/절차/작업기억) + Ebbinghaus 망각 곡선, Hebbian 연상, 통합(consolidation) 파이프라인 ([#145](https://github.com/nextain/naia-os/issues/145))
+- **feat(agent)**: 지식 그래프(Knowledge Graph) 통합 — TF-IDF 인덱싱, Louvain 커뮤니티 탐지, 중심성 점수 ([#173](https://github.com/nextain/naia-os/issues/173))
+- **feat(agent)**: 메모리 시스템 와이어링 — encode/recall/sessionRecall을 에이전트 대화 루프에 통합 ([#150](https://github.com/nextain/naia-os/issues/150))
+- **feat(shell)**: 메모리 관리 UI — 설정 탭에서 팩트 목록 보기/삭제/전체 초기화 ([#174](https://github.com/nextain/naia-os/issues/174))
+- **feat(agent)**: mem0 어댑터 — 로컬 JSON 대신 선택적으로 사용 가능한 클라우드 백엔드(mem0.ai) ([#148](https://github.com/nextain/naia-os/issues/148))
+- **feat(agent)**: 임베딩 지원 — 메모리 recall을 위한 로컬/API 기반 벡터 유사도 검색 ([#149](https://github.com/nextain/naia-os/issues/149))
+- **fix(agent)**: sessionRecall이 팩트와 함께 항상 에피소드도 반환하도록 수정 ([#151](https://github.com/nextain/naia-os/issues/151))
+- **fix(agent)**: 빠른 팩트 추출을 위해 통합(consolidation) 임계값을 1시간에서 5분으로 단축 ([#151](https://github.com/nextain/naia-os/issues/151))
+
 ## v0.1.3 (2026-03-23)
 
 워크스페이스 패널, 브라우저 패널, PTY 터미널, 프로바이더 레지스트리, 인스톨러 개선

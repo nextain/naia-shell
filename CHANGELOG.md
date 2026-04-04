@@ -7,6 +7,19 @@ Source data: [`releases/v*.yaml`](releases/)
 
 ---
 
+## v0.1.4 (2026-04-04)
+
+Alpha Memory System v1, Knowledge Graph, and memory benchmarks
+
+- **feat(agent)**: Alpha Memory System v1 — 4-store architecture (episodic/semantic/procedural/working) with Ebbinghaus decay, Hebbian association, and consolidation pipeline ([#145](https://github.com/nextain/naia-os/issues/145))
+- **feat(agent)**: Knowledge Graph integration — entity-relationship graph with TF-IDF indexing, Louvain community detection, and centrality scoring ([#173](https://github.com/nextain/naia-os/issues/173))
+- **feat(agent)**: Memory system wiring — encode/recall/sessionRecall integrated into agent conversation loop ([#150](https://github.com/nextain/naia-os/issues/150))
+- **feat(shell)**: Memory management UI — fact list, delete, clear-all in Settings tab ([#174](https://github.com/nextain/naia-os/issues/174))
+- **feat(agent)**: mem0 adapter — optional cloud backend (mem0.ai) as alternative to local JSON ([#148](https://github.com/nextain/naia-os/issues/148))
+- **feat(agent)**: Embedding support — local or API-based vector similarity for memory recall ([#149](https://github.com/nextain/naia-os/issues/149))
+- **fix(agent)**: sessionRecall now always surfaces episodes alongside facts (episode fallback) ([#151](https://github.com/nextain/naia-os/issues/151))
+- **fix(agent)**: Consolidation threshold reduced from 1 hour to 5 minutes for responsive fact extraction ([#151](https://github.com/nextain/naia-os/issues/151))
+
 ## v0.1.3 (2026-03-23)
 
 Workspace panel, browser panel, PTY terminal, provider registries, and installer improvements
