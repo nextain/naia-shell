@@ -9,7 +9,13 @@
  * becomes a bottleneck. For now, simplicity wins (ChatGPT Memory approach).
  */
 
-import { randomUUID } from "node:crypto";
+import {
+	createCipheriv,
+	createDecipheriv,
+	pbkdf2,
+	randomBytes,
+	randomUUID,
+} from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -17,6 +23,7 @@ import {
 	renameSync,
 	writeFileSync,
 } from "node:fs";
+import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { calculateStrength, shouldPrune } from "../decay.js";
@@ -34,6 +41,8 @@ import type {
 	Reflection,
 	Skill,
 } from "../types.js";
+
+const pbkdf2Async = promisify(pbkdf2);
 
 /** On-disk schema for JSON persistence */
 interface MemoryStore {
@@ -101,7 +110,7 @@ export class LocalAdapter implements MemoryAdapter {
 	private store: MemoryStore;
 	private readonly storePath: string;
 	private dirty = false;
-	private readonly kg: KnowledgeGraph;
+	private kg: KnowledgeGraph;
 
 	constructor(storePath?: string) {
 		this.storePath =
@@ -526,6 +535,143 @@ export class LocalAdapter implements MemoryAdapter {
 		this.save();
 
 		return result;
+	}
+
+	// ─── Backup / Restore (E2E Encrypted Blob) ───────────────────────────
+
+	/**
+	 * Export all memory as an AES-256-GCM encrypted blob.
+	 *
+	 * Blob layout:
+	 *   4 bytes  magic    "NAIA"
+	 *   1 byte   version  0x01
+	 *   16 bytes salt     (PBKDF2 input)
+	 *   12 bytes iv       (AES-GCM nonce)
+	 *   16 bytes authTag  (AES-GCM authentication tag)
+	 *   N bytes  ciphertext
+	 *
+	 * Total fixed header: 49 bytes. Integrity is provided by AES-GCM authTag —
+	 * a separate SHA-256 over plaintext is not included because GCM already
+	 * authenticates the ciphertext under the derived key.
+	 *
+	 * Key derivation: PBKDF2-SHA256, 200_000 iterations, 32-byte key.
+	 * Password never leaves the client. Only the encrypted blob is transported.
+	 *
+	 * @param password  User-supplied passphrase (never stored)
+	 * @returns         Encrypted blob as Uint8Array
+	 */
+	async export(password: string): Promise<Uint8Array> {
+		if (!password) throw new Error("Password must not be empty");
+		const plaintext = Buffer.from(JSON.stringify(this.store), "utf-8");
+		const salt = randomBytes(16);
+		const iv = randomBytes(12);
+
+		// Derive key
+		const key = await pbkdf2Async(password, salt, 200_000, 32, "sha256");
+
+		// AES-256-GCM encrypt — authTag provides authenticated integrity
+		const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+		const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+		const authTag = cipher.getAuthTag(); // 16 bytes
+
+		// Assemble: magic(4) + version(1) + salt(16) + iv(12) + authTag(16) + ciphertext
+		const magic = Buffer.from("NAIA", "ascii");
+		const version = Buffer.from([0x01]);
+		return new Uint8Array(
+			Buffer.concat([magic, version, salt, iv, authTag, encrypted]),
+		);
+	}
+
+	/**
+	 * Import memory from an encrypted blob created by `export()`.
+	 * Replaces current memory entirely after successful decryption.
+	 * Rolls back in-memory state if the disk write fails (crash safety).
+	 *
+	 * @param blob      Encrypted blob from export()
+	 * @param password  User-supplied passphrase
+	 * @throws          If decryption fails, JSON is invalid, or disk write fails
+	 */
+	async import(blob: Uint8Array, password: string): Promise<void> {
+		if (!password) throw new Error("Password must not be empty");
+		const buf = Buffer.from(blob);
+
+		// Parse header: magic(4) + version(1) + salt(16) + iv(12) + authTag(16) = 49 bytes
+		const HEADER_SIZE = 4 + 1 + 16 + 12 + 16;
+		if (buf.length <= HEADER_SIZE) {
+			throw new Error("Invalid backup blob: too short");
+		}
+
+		const magic = buf.subarray(0, 4).toString("ascii");
+		if (magic !== "NAIA") {
+			throw new Error("Invalid backup blob: bad magic");
+		}
+
+		const blobVersion = buf[4];
+		if (blobVersion !== 0x01) {
+			throw new Error(`Unsupported backup version: ${blobVersion}`);
+		}
+
+		const salt = buf.subarray(5, 21);
+		const iv = buf.subarray(21, 33);
+		const authTag = buf.subarray(33, 49);
+		const ciphertext = buf.subarray(HEADER_SIZE);
+
+		// Derive key
+		const key = await pbkdf2Async(password, salt, 200_000, 32, "sha256");
+
+		// AES-256-GCM decrypt — decipher.final() throws if authTag is invalid
+		let plaintext: Buffer;
+		try {
+			const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+			decipher.setAuthTag(authTag);
+			plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+		} catch {
+			throw new Error("Decryption failed: wrong password or corrupted blob");
+		}
+
+		// Parse and validate store
+		let parsed: MemoryStore;
+		try {
+			parsed = JSON.parse(plaintext.toString("utf-8")) as MemoryStore;
+		} catch {
+			throw new Error("Invalid backup: JSON parse failed");
+		}
+		if (parsed.version !== 1) {
+			throw new Error(`Unsupported store version: ${parsed.version}`);
+		}
+		// Minimal shape guard — ensures downstream operations don't encounter missing arrays/objects
+		if (
+			!Array.isArray(parsed.episodes) ||
+			!Array.isArray(parsed.facts) ||
+			!Array.isArray(parsed.skills) ||
+			!Array.isArray(parsed.reflections) ||
+			typeof parsed.associations !== "object" ||
+			Array.isArray(parsed.associations) ||
+			parsed.associations === null
+		) {
+			throw new Error("Invalid backup: store shape mismatch");
+		}
+
+		// Replace memory — roll back in-memory state if disk write fails
+		const previousStore = this.store;
+		const previousKg = this.kg;
+		if (!parsed.knowledgeGraph) {
+			parsed.knowledgeGraph = emptyKGState();
+		}
+		this.store = parsed;
+		// Re-point KG to the newly imported state so all subsequent KG operations
+		// operate on the imported KGState, not the old one.
+		// knowledgeGraph is guaranteed non-null: set to emptyKGState() if missing above
+		this.kg = new KnowledgeGraph(this.store.knowledgeGraph!);
+		try {
+			this.markDirty();
+			this.save();
+		} catch (err) {
+			// Disk write failed — restore both store and KG to avoid divergence
+			this.store = previousStore;
+			this.kg = previousKg;
+			throw err;
+		}
 	}
 
 	// ─── Lifecycle ────────────────────────────────────────────────────────
