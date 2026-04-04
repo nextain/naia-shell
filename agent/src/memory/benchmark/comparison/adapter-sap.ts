@@ -78,7 +78,8 @@ config = {
     "embedder": {"provider": "openai", "config": {
         "api_key": api_key,
         "openai_base_url": base_url,
-        "model": embed_model
+        "model": embed_model,
+        "embedding_dims": embed_dims
     }},
     "vector_store": vector_store,
     "llm": {"provider": "openai", "config": {
@@ -88,8 +89,14 @@ config = {
     }}
 }
 m = Memory.from_config(config)
-if hasattr(m.llm.config, 'store'):
-    delattr(m.llm.config, 'store')
+
+# Gemini rejects unknown fields like "store" that mem0ai injects into the request.
+# Patch the LLM client to strip it from extra_body before sending.
+_orig_post = m.llm.client.chat.completions.create
+def _patched_create(**kwargs):
+    kwargs.pop("store", None)
+    return _orig_post(**kwargs)
+m.llm.client.chat.completions.create = _patched_create
 
 print("READY", flush=True)
 
@@ -125,14 +132,16 @@ for line in sys.stdin:
 			["/tmp/sap-bench-worker.py", workerApiKey, workerBaseUrl, workerEmbedDims, chromaPath ?? ""],
 			{
 				stdio: ["pipe", "pipe", "pipe"],
+				// mem0ai reads api_key from OPENAI_API_KEY env (config.api_key is ignored in some versions)
+				env: { ...process.env, OPENAI_API_KEY: workerApiKey },
 			},
 		);
 
-		// Wait for READY
+		// Wait for READY (mem0 init can take ~30s on first run — allow 90s)
 		await new Promise<void>((resolve, reject) => {
 			const timeout = setTimeout(
 				() => reject(new Error("SAP worker timeout")),
-				30000,
+				90000,
 			);
 			const onData = (data: Buffer) => {
 				const text = data.toString();
