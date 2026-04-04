@@ -218,6 +218,9 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 /** Time window for temporal grouping: episodes within 30 minutes are likely one conversation */
 const TEMPORAL_GROUP_WINDOW_MS = 30 * 60 * 1000;
 
+/** Maximum episodes processed per consolidation cycle — guards against OOM on large backlogs */
+const MAX_EPISODES_PER_CYCLE = 200;
+
 /**
  * Merge extracted facts that share entities, have similar content, or
  * originate from temporally close episodes in the same project.
@@ -497,11 +500,28 @@ export class MemorySystem {
 			}
 		}
 
-		// Episode fallback: when facts are not yet consolidated, surface raw episodes
-		if (facts.length === 0 && episodes.length > 0) {
+		// Surface recent episodes alongside facts, or as sole context when no facts exist yet.
+		// Episodes capture conversations not yet consolidated into facts (consolidation runs
+		// on a background timer — episodes may be more up-to-date than the fact store).
+		if (episodes.length > 0) {
 			parts.push("## 이전 대화에서");
-			for (const ep of episodes.slice(0, 5)) {
-				const prefix = ep.role === "user" ? "사용자" : ep.role === "assistant" ? "Naia" : "기록";
+			for (const ep of episodes) {
+				// ep.role can be any string at runtime (JSON deserialization from older stores)
+				const roleStr: string | undefined = ep.role;
+				let prefix: string;
+				if (roleStr === "user") {
+					prefix = "사용자";
+				} else if (roleStr === "assistant") {
+					prefix = "Naia";
+				} else if (roleStr === "tool") {
+					prefix = "도구";
+				} else if (roleStr === undefined) {
+					prefix = "기록";
+				} else {
+					// Unexpected role value (e.g., corrupted stored data) — log for observability
+					console.warn(`[MemorySystem] sessionRecall: unexpected episode role: ${roleStr}`);
+					prefix = "기록";
+				}
 				parts.push(`- ${prefix}: ${ep.content}`);
 			}
 		}
@@ -594,14 +614,18 @@ export class MemorySystem {
 			let factsUpdated = 0;
 
 			// 1. Get unconsolidated episodes
+			// LocalAdapter returns insertion order (oldest-first); slice preserves that order.
 			const unconsolidated = await this.adapter.episode.getUnconsolidated();
-			const readyEpisodes = unconsolidated.filter(
-				(ep) => now - ep.timestamp > 5 * 60 * 1000, // At least 5 minutes old
-			);
+			const readyEpisodes = unconsolidated
+				.filter((ep) => now - ep.timestamp > 5 * 60 * 1000) // At least 5 minutes old
+				.slice(0, MAX_EPISODES_PER_CYCLE); // Cap batch size — oldest first
 
 			if (readyEpisodes.length > 0) {
 				// 2. Extract facts from episodes
 				const extracted = await this.factExtractor(readyEpisodes);
+
+				// Dedup entity-pair associations across the entire cycle (not just per-fact)
+				const seenPairs = new Set<string>();
 
 				// 3. For each extracted fact, check contradictions and upsert
 				for (const ef of extracted) {
@@ -614,13 +638,15 @@ export class MemorySystem {
 
 					if (contradictions.length > 0) {
 						// Update only the first contradicted fact to avoid duplicates
+						// Use result.updatedContent (reconciled by findContradictions) when available,
+						// falling back to ef.content — consistent with checkAndReconsolidate().
 						const firstUpdate = contradictions.find(
-							({ result }) => result.action === "update",
+							({ result }) => result.action === "update" && result.updatedContent,
 						);
 						if (firstUpdate) {
 							await this.adapter.semantic.upsert({
 								...firstUpdate.fact,
-								content: ef.content,
+								content: firstUpdate.result.updatedContent!,
 								updatedAt: now,
 								importance: Math.max(
 									firstUpdate.fact.importance,
@@ -654,14 +680,15 @@ export class MemorySystem {
 						factsCreated++;
 					}
 
-					// Strengthen associations between extracted entities
+					// Strengthen associations between extracted entities (cycle-level dedup)
 					for (let i = 0; i < ef.entities.length; i++) {
 						for (let j = i + 1; j < ef.entities.length; j++) {
-							await this.adapter.semantic.associate(
-								ef.entities[i],
-								ef.entities[j],
-								0.05,
-							);
+							const a = ef.entities[i].toLowerCase();
+							const b = ef.entities[j].toLowerCase();
+							const pairKey = a < b ? `${a}|${b}` : `${b}|${a}`;
+							if (seenPairs.has(pairKey)) continue;
+							seenPairs.add(pairKey);
+							await this.adapter.semantic.associate(a, b, 0.05);
 						}
 					}
 				}

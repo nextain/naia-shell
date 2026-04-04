@@ -165,7 +165,56 @@ describe("MemorySystem", () => {
 			expect(context2).toContain("관련 기억");
 			expect(context2).toContain("dark mode");
 		});
-	});
+
+		it("returns episode context even when facts store is empty (episode fallback)", async () => {
+			// No facts — only raw episodes (pre-consolidation state)
+			await system.encode(
+				{ content: "I prefer dark mode in all editors", role: "user" },
+				{ project: "naia-os" },
+			);
+
+			// Semantic store is still empty (no consolidation ran)
+			const facts = await adapter.semantic.getAll();
+			expect(facts).toHaveLength(0);
+
+			const ctx = await system.sessionRecall("dark mode", { topK: 5 });
+			// sessionRecall must return episode content even without facts
+			expect(ctx).toContain("이전 대화에서");
+			expect(ctx).toContain("dark mode");
+		});
+
+		it("formats episode prefixes correctly for all role values", async () => {
+			const now = Date.now();
+			// Store episodes directly with different roles (bypass encode importance gating)
+			const userEp = {
+				id: randomUUID(), content: "user says hello", summary: "hello",
+				timestamp: now, importance: { importance: 0.8, surprise: 0.1, emotion: 0.5, utility: 0.8 },
+				encodingContext: { project: "test" }, consolidated: false, recallCount: 0,
+				lastAccessed: now, strength: 0.8, role: "user" as const,
+			};
+			const assistantEp = {
+				id: randomUUID(), content: "assistant reply here", summary: "reply",
+				timestamp: now, importance: { importance: 0.8, surprise: 0.1, emotion: 0.5, utility: 0.8 },
+				encodingContext: { project: "test" }, consolidated: false, recallCount: 0,
+				lastAccessed: now, strength: 0.8, role: "assistant" as const,
+			};
+			const toolEp = {
+				id: randomUUID(), content: "tool result here", summary: "tool",
+				timestamp: now, importance: { importance: 0.8, surprise: 0.1, emotion: 0.5, utility: 0.8 },
+				encodingContext: { project: "test" }, consolidated: false, recallCount: 0,
+				lastAccessed: now, strength: 0.8, role: "tool" as const,
+			};
+			await adapter.episode.store(userEp);
+			await adapter.episode.store(assistantEp);
+			await adapter.episode.store(toolEp);
+
+			const ctx = await system.sessionRecall("hello reply tool", { topK: 10 });
+			// All three role prefixes should appear
+			expect(ctx).toContain("사용자");
+			expect(ctx).toContain("Naia");
+			expect(ctx).toContain("도구");
+		});
+	}); // end describe("sessionRecall")
 
 	describe("reflectOnFailure (Reflexion pattern)", () => {
 		it("stores and recalls reflections", async () => {
@@ -241,7 +290,7 @@ describe("MemorySystem", () => {
 			expect(facts.some((f) => f.content.includes("TypeScript"))).toBe(true);
 		});
 
-		it("skips episodes less than 1 hour old", async () => {
+		it("skips episodes less than 5 minutes old", async () => {
 			await system.encode(
 				{ content: "We decided to use Rust for the backend", role: "user" },
 				{ project: "naia-os" },
@@ -249,6 +298,143 @@ describe("MemorySystem", () => {
 
 			const result = await system.consolidateNow();
 			expect(result.episodesProcessed).toBe(0);
+		});
+
+		it("processes episodes older than 5 minutes but skips newer ones", async () => {
+			// Old enough episode (6 min) → should process
+			const oldEp = {
+				id: randomUUID(),
+				content: "We always use TypeScript for type safety",
+				summary: "TypeScript always",
+				timestamp: Date.now() - 6 * 60 * 1000, // 6 minutes old
+				importance: { importance: 0.7, surprise: 0.1, emotion: 0.5, utility: 0.7 },
+				encodingContext: { project: "naia-os" },
+				consolidated: false,
+				recallCount: 0,
+				lastAccessed: Date.now() - 6 * 60 * 1000,
+				strength: 0.7,
+			};
+			// Too recent episode (3 min) → should NOT process
+			const newEp = {
+				id: randomUUID(),
+				content: "We decided to use Rust for the backend",
+				summary: "Use Rust",
+				timestamp: Date.now() - 3 * 60 * 1000, // 3 minutes old
+				importance: { importance: 0.7, surprise: 0.1, emotion: 0.5, utility: 0.7 },
+				encodingContext: { project: "naia-os" },
+				consolidated: false,
+				recallCount: 0,
+				lastAccessed: Date.now() - 3 * 60 * 1000,
+				strength: 0.7,
+			};
+			await adapter.episode.store(oldEp);
+			await adapter.episode.store(newEp);
+
+			const result = await system.consolidateNow();
+			// Only the 6-minute-old episode should be processed
+			expect(result.episodesProcessed).toBe(1);
+			const uncons = await adapter.episode.getUnconsolidated();
+			expect(uncons).toHaveLength(1);
+			expect(uncons[0].id).toBe(newEp.id);
+		});
+
+		it("caps batch at MAX_EPISODES_PER_CYCLE and leaves the rest unconsolidated", async () => {
+			// Build 205 old episodes (past the 200-episode cap)
+			const COUNT = 205;
+			for (let i = 0; i < COUNT; i++) {
+				const ep = {
+					id: randomUUID(),
+					content: `We always prefer option ${i}`,
+					summary: `Option ${i}`,
+					timestamp: Date.now() - 2 * HOUR,
+					importance: { importance: 0.5, surprise: 0.1, emotion: 0.5, utility: 0.5 },
+					encodingContext: { project: "test" },
+					consolidated: false,
+					recallCount: 0,
+					lastAccessed: Date.now() - 2 * HOUR,
+					strength: 0.5,
+				};
+				await adapter.episode.store(ep);
+			}
+
+			const result = await system.consolidateNow();
+			// Exactly 200 processed per cycle (the cap)
+			expect(result.episodesProcessed).toBe(200);
+			// The remaining 5 are still unconsolidated
+			const uncons = await adapter.episode.getUnconsolidated();
+			expect(uncons.length).toBe(COUNT - 200);
+		});
+
+		it("resolves contradictions using result.updatedContent (not original fact content)", async () => {
+			// findContradictions returns updatedContent = newInfo when a contradiction is detected.
+			// consolidateNow must use result.updatedContent, not ef.content (they are the same value
+			// per the current reconsolidation.ts implementation, but the code path must go through
+			// updatedContent to stay consistent with checkAndReconsolidate).
+			// We verify the contradiction path fires by checking that the existing fact's content
+			// is replaced in the semantic store after consolidation.
+			const EXISTING_CONTENT = "I always use Neovim as my editor";
+			const CONTRA_CONTENT = "I switched to Cursor, never use Neovim anymore";
+
+			const contraStorePath = storePath + "-contra";
+			const customAdapter = new LocalAdapter(contraStorePath);
+			const customSystem = new MemorySystem({
+				adapter: customAdapter,
+				factExtractor: async (episodes) =>
+					episodes.map((ep) => ({
+						content: ep.content,
+						entities: ["Neovim"],
+						topics: ["editor"],
+						importance: 0.8,
+						sourceEpisodeIds: [ep.id],
+					})),
+			});
+
+			// Seed an existing fact
+			const existingFact: Fact = {
+				id: randomUUID(),
+				content: EXISTING_CONTENT,
+				entities: ["Neovim"],
+				topics: ["editor"],
+				createdAt: Date.now() - 2 * HOUR,
+				updatedAt: Date.now() - 2 * HOUR,
+				importance: 0.7,
+				recallCount: 0,
+				lastAccessed: Date.now() - 2 * HOUR,
+				strength: 0.7,
+				sourceEpisodes: [],
+			};
+			await customAdapter.semantic.upsert(existingFact);
+
+			// Inject a contradicting episode (old enough to process)
+			const contraEp = {
+				id: randomUUID(),
+				content: CONTRA_CONTENT,
+				summary: "Use Cursor",
+				timestamp: Date.now() - 2 * HOUR,
+				importance: { importance: 0.8, surprise: 0.4, emotion: 0.5, utility: 0.8 },
+				encodingContext: { project: "test" },
+				consolidated: false,
+				recallCount: 0,
+				lastAccessed: Date.now() - 2 * HOUR,
+				strength: 0.8,
+			};
+			await customAdapter.episode.store(contraEp);
+
+			const result = await customSystem.consolidateNow();
+			expect(result.factsUpdated).toBeGreaterThanOrEqual(1);
+
+			// The existing fact should now have updated content (contradicted → replaced)
+			const allFacts = await customAdapter.semantic.getAll();
+			const factContents = allFacts.map((f) => f.content);
+			// After contradiction update, the stored fact must contain the new information
+			const hasUpdated = factContents.some((c) => c.includes("Cursor") || c.includes("switched"));
+			expect(hasUpdated).toBe(true);
+			// The old content should no longer be the active fact
+			const stillHasOld = factContents.some((c) => c === EXISTING_CONTENT);
+			expect(stillHasOld).toBe(false);
+
+			await customSystem.close();
+			try { rmSync(contraStorePath); } catch {}
 		});
 
 		it("does not double-consolidate", async () => {

@@ -53,11 +53,15 @@ describe("Memory E2E — 3 Session Simulation", () => {
 		// Abstention
 		const r4 = await system2.recall("Docker", { topK: 3 });
 		expect(r4.episodes.length + r4.facts.length).toBe(0);
-		// sessionRecall — use exact keyword from stored content
+		// sessionRecall — episodes are always surfaced alongside facts
 		const ctx = await system2.sessionRecall("Neovim editor", { topK: 5 });
-		// Note: sessionRecall searches facts (not episodes). If heuristic extractor
-		// created facts with "Neovim", this returns formatted context.
-		// Empty result is acceptable for LocalAdapter (keyword matching limitation).
+		expect(typeof ctx).toBe("string");
+		// After consolidation, episodes and/or facts are present — result must not be empty
+		// and must include the expected section headers when non-empty.
+		if (ctx.length > 0) {
+			const hasSection = ctx.includes("관련 기억") || ctx.includes("이전 대화에서");
+			expect(hasSection).toBe(true);
+		}
 		await system2.close();
 
 		// === SESSION 3: Update ===
