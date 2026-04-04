@@ -37,6 +37,8 @@ export interface Episode {
 	id: string;
 	/** The content of the episode */
 	content: string;
+	/** Speaker role */
+	role?: "user" | "assistant" | "tool";
 	/** Summary for retrieval (shorter than content) */
 	summary: string;
 	/** When this happened */

@@ -391,6 +391,7 @@ export class MemorySystem {
 		const episode: Episode = {
 			id: randomUUID(),
 			content: input.content,
+			role: input.role,
 			summary: input.content.slice(0, 200),
 			timestamp: now,
 			importance: score,
@@ -480,12 +481,12 @@ export class MemorySystem {
 		firstMessage: string,
 		context: RecallContext,
 	): Promise<string> {
-		const { facts, reflections } = await this.recall(firstMessage, {
+		const { episodes, facts, reflections } = await this.recall(firstMessage, {
 			...context,
-			topK: 3,
+			topK: 5,
 		});
 
-		if (facts.length === 0 && reflections.length === 0) return "";
+		if (facts.length === 0 && reflections.length === 0 && episodes.length === 0) return "";
 
 		const parts: string[] = [];
 
@@ -493,6 +494,15 @@ export class MemorySystem {
 			parts.push("## 관련 기억");
 			for (const fact of facts) {
 				parts.push(`- ${fact.content}`);
+			}
+		}
+
+		// Episode fallback: when facts are not yet consolidated, surface raw episodes
+		if (facts.length === 0 && episodes.length > 0) {
+			parts.push("## 이전 대화에서");
+			for (const ep of episodes.slice(0, 5)) {
+				const prefix = ep.role === "user" ? "사용자" : ep.role === "assistant" ? "Naia" : "기록";
+				parts.push(`- ${prefix}: ${ep.content}`);
 			}
 		}
 
@@ -586,7 +596,7 @@ export class MemorySystem {
 			// 1. Get unconsolidated episodes
 			const unconsolidated = await this.adapter.episode.getUnconsolidated();
 			const readyEpisodes = unconsolidated.filter(
-				(ep) => now - ep.timestamp > 60 * 60 * 1000, // At least 1 hour old
+				(ep) => now - ep.timestamp > 5 * 60 * 1000, // At least 5 minutes old
 			);
 
 			if (readyEpisodes.length > 0) {
