@@ -223,3 +223,15 @@ export interface MemoryAdapter {
 	/** Close the adapter and release resources */
 	close(): Promise<void>;
 }
+
+/**
+ * Optional mixin for adapters that support E2E encrypted backup/restore.
+ * LocalAdapter implements this; cloud adapters may not.
+ * Check with `"export" in adapter` before calling.
+ */
+export interface BackupCapable {
+	/** Serialize and AES-256-GCM encrypt the memory store. */
+	export(password: string): Promise<Uint8Array>;
+	/** Decrypt, validate, and restore the memory store from a backup blob. */
+	import(blob: Uint8Array, password: string): Promise<void>;
+}

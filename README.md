@@ -31,7 +31,7 @@
 <details>
 <summary>More character variations</summary>
 <p align="center">
-  <img src="assets/character/naia-varaiations.png" alt="Naia Variations" width="600" />
+  <img src="assets/character/naia-variations.png" alt="Naia Variations" width="600" />
 </p>
 </details>
 

@@ -33,6 +33,7 @@ import {
 	emptyKGState,
 } from "../knowledge-graph.js";
 import type {
+	BackupCapable,
 	ConsolidationResult,
 	Episode,
 	Fact,
@@ -106,7 +107,7 @@ function keywordScore(query: string, document: string): number {
 	return hits / queryTokens.length;
 }
 
-export class LocalAdapter implements MemoryAdapter {
+export class LocalAdapter implements MemoryAdapter, BackupCapable {
 	private store: MemoryStore;
 	private readonly storePath: string;
 	private dirty = false;

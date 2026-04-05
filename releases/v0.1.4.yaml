@@ -1,0 +1,75 @@
+version: "0.1.4"
+date: "2026-04-04"
+summary:
+  en: "Alpha Memory System v1, Knowledge Graph, encrypted backup, and memory robustness fixes"
+  ko: "Alpha Memory System v1, 지식 그래프, 암호화 백업, 메모리 안정성 수정"
+changes:
+  # ── Alpha Memory System (Issue #145, #150, #151) ──
+  - type: feat
+    scope: agent
+    issue: 145
+    description:
+      en: "Alpha Memory System v1 — 4-store architecture (Episodes/Facts/Reflections/Working Memory) with Ebbinghaus decay, Hebbian association, and consolidation pipeline"
+      ko: "Alpha Memory System v1 — 4스토어 아키텍처 (에피소드/팩트/성찰/작업 메모리), 에빙하우스 망각, 헵 연관, 통합 파이프라인"
+  - type: feat
+    scope: agent
+    issue: 173
+    description:
+      en: "Knowledge Graph integration — entity-relationship graph with TF-IDF indexing, Louvain community detection, and centrality scoring"
+      ko: "지식 그래프 통합 — TF-IDF 인덱싱, Louvain 커뮤니티 감지, 중심성 점수를 포함한 개체-관계 그래프"
+  - type: feat
+    scope: agent
+    issue: 150
+    description:
+      en: "Memory system wiring — encode/recall/sessionRecall integrated into agent conversation loop"
+      ko: "메모리 시스템 연결 — encode/recall/sessionRecall을 에이전트 대화 루프에 통합"
+  - type: feat
+    scope: shell
+    issue: 174
+    description:
+      en: "Memory management UI — fact list, delete, and clear-all in Settings tab"
+      ko: "메모리 관리 UI — 설정 탭에서 팩트 목록, 삭제, 전체 초기화"
+  - type: feat
+    scope: agent
+    issue: 148
+    description:
+      en: "mem0 adapter — optional cloud backend (mem0.ai) as alternative to local JSON storage"
+      ko: "mem0 어댑터 — 로컬 JSON의 대안으로 선택적 클라우드 백엔드 (mem0.ai)"
+  - type: feat
+    scope: agent
+    issue: 149
+    description:
+      en: "Embedding support — local or API-based vector similarity for memory recall"
+      ko: "임베딩 지원 — 메모리 회상을 위한 로컬 또는 API 기반 벡터 유사도"
+  - type: fix
+    scope: agent
+    issue: 151
+    description:
+      en: "sessionRecall now returns episodes as fallback when facts are not yet consolidated"
+      ko: "팩트가 아직 통합되지 않은 경우 sessionRecall이 에피소드를 대체로 반환"
+  - type: fix
+    scope: agent
+    issue: 151
+    description:
+      en: "Consolidation threshold reduced from 1 hour to 5 minutes for responsive fact extraction"
+      ko: "반응형 팩트 추출을 위해 통합 임계값을 1시간에서 5분으로 단축"
+  # ── Encrypted Backup (Issue #210, #211) ──
+  - type: feat
+    scope: agent
+    issue: 210
+    description:
+      en: "alpha-memory npm package — @nextain/alpha-memory v0.1.4 published"
+      ko: "@nextain/alpha-memory v0.1.4 npm 패키지 배포"
+  - type: feat
+    scope: agent
+    issue: 211
+    description:
+      en: "LocalAdapter export()/import() — AES-256-GCM encrypted memory backup and restore (PBKDF2-SHA256, 200k iterations)"
+      ko: "LocalAdapter export()/import() — AES-256-GCM 암호화 메모리 백업 및 복원 (PBKDF2-SHA256, 200k 반복)"
+  # ── Gateway Backup API (Issue #212) ──
+  - type: feat
+    scope: gateway
+    issue: 212
+    description:
+      en: "Memory backup API — 2-slot rolling E2E encrypted blob storage with SHA-256 integrity check"
+      ko: "메모리 백업 API — SHA-256 무결성 검사를 포함한 2슬롯 롤링 E2E 암호화 blob 저장소"
