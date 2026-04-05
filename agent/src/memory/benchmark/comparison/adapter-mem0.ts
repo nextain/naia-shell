@@ -16,6 +16,7 @@ const GATEWAY_BASE = process.env.GATEWAY_URL ?? "";
 const GATEWAY_KEY = process.env.GATEWAY_MASTER_KEY ?? "";
 const GATEWAY_USER = "benchmark";
 const THROTTLE_MS = 2000;
+const ADD_TIMEOUT_MS = 60000; // 60s — mem0 LLM dedup call timeout
 
 export class Mem0Adapter implements BenchmarkAdapter {
 	readonly name = "mem0";
@@ -77,6 +78,9 @@ export class Mem0Adapter implements BenchmarkAdapter {
 							apiKey: this.apiKey,
 							baseURL: GEMINI_BASE,
 							model: "gemini-2.5-flash",
+							// NOTE: mem0ai JS v2.4.2 OpenAILLM constructor ignores `timeout` config —
+							// it only passes apiKey+baseURL to OpenAI client. Real hang protection is
+							// via Promise.race in addFact() below.
 						}) as any,
 			},
 			historyDbPath: `${dbPath}-hist.db`,
@@ -87,12 +91,18 @@ export class Mem0Adapter implements BenchmarkAdapter {
 		if (!this.mem0) throw new Error("Not initialized");
 		await new Promise((r) => setTimeout(r, THROTTLE_MS));
 		try {
-			await this.mem0.add([{ role: "user", content }], { userId: "bench" });
+			const timeout = new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error(`mem0 addFact timeout after ${ADD_TIMEOUT_MS}ms`)), ADD_TIMEOUT_MS),
+			);
+			await Promise.race([
+				this.mem0.add([{ role: "user", content }], { userId: "bench" }),
+				timeout,
+			]);
 			return true;
 		} catch (err: any) {
-			// mem0 internal errors (e.g. "Memory with ID undefined not found") indicate
-			// that the update/dedup phase failed — the fact may not be stored correctly.
-			console.error(`  mem0 addFact error: ${err?.message?.slice(0, 100)}`);
+			// mem0 internal errors (e.g. "Memory with ID undefined not found") or
+			// LLM timeout — log and continue, don't hang.
+			console.error(`  mem0 addFact error: ${err?.message?.slice(0, 120)}`);
 			return false;
 		}
 	}
