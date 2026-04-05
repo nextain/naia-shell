@@ -411,11 +411,12 @@ export class MemorySystem {
 		// Runs for all stored messages — contradiction detection is cheap
 		await this.checkAndReconsolidate(input.content, now);
 
-		// Strengthen associations between entities in the encoding context
+		// Strengthen associations between entities in the encoding context.
+		// Use lowercase keys — consistent with consolidation entity-pair associations.
 		if (context.project && context.activeFile) {
 			await this.adapter.semantic.associate(
-				context.project,
-				context.activeFile,
+				context.project.toLowerCase(),
+				context.activeFile.toLowerCase(),
 			);
 		}
 
@@ -660,6 +661,24 @@ export class MemorySystem {
 								],
 							});
 							factsUpdated++;
+						} else {
+							// Contradictions found but none are actionable updates (e.g., flag_contradiction).
+							// Create the new fact anyway — do not discard extracted knowledge.
+							const newFact: Fact = {
+								id: randomUUID(),
+								content: ef.content,
+								entities: ef.entities,
+								topics: ef.topics,
+								createdAt: now,
+								updatedAt: now,
+								importance: ef.importance,
+								recallCount: 0,
+								lastAccessed: now,
+								strength: ef.importance,
+								sourceEpisodes: ef.sourceEpisodeIds,
+							};
+							await this.adapter.semantic.upsert(newFact);
+							factsCreated++;
 						}
 					} else {
 						// New fact — create

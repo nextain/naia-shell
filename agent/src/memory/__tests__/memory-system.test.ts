@@ -499,7 +499,8 @@ describe("MemorySystem", () => {
 		});
 
 		it("supports custom fact extractor", async () => {
-			const customAdapter = new LocalAdapter(testStorePath());
+			const customStorePath = testStorePath();
+			const customAdapter = new LocalAdapter(customStorePath);
 			const customSystem = new MemorySystem({
 				adapter: customAdapter,
 				factExtractor: async (episodes) => {
@@ -539,6 +540,8 @@ describe("MemorySystem", () => {
 			expect(facts[0].content).toContain("CUSTOM:");
 
 			await customSystem.close();
+			try { rmSync(customStorePath); } catch { /* ignore */ }
+			try { rmSync(`${customStorePath}.tmp`); } catch { /* ignore */ }
 		});
 	});
 

@@ -23,9 +23,9 @@ import {
 	renameSync,
 	writeFileSync,
 } from "node:fs";
-import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { calculateStrength, shouldPrune } from "../decay.js";
 import {
 	type KGState,
@@ -294,7 +294,11 @@ export class LocalAdapter implements MemoryAdapter {
 			this.save();
 		},
 
-		search: async (query: string, topK: number, deepRecall = false): Promise<Fact[]> => {
+		search: async (
+			query: string,
+			topK: number,
+			deepRecall = false,
+		): Promise<Fact[]> => {
 			const now = Date.now();
 			const queryTokens = tokenize(query);
 
@@ -570,7 +574,9 @@ export class LocalAdapter implements MemoryAdapter {
 		const key = await pbkdf2Async(password, salt, 200_000, 32, "sha256");
 
 		// AES-256-GCM encrypt — authTag provides authenticated integrity
-		const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+		const cipher = createCipheriv("aes-256-gcm", key, iv, {
+			authTagLength: 16,
+		});
 		const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
 		const authTag = cipher.getAuthTag(); // 16 bytes
 
@@ -622,9 +628,14 @@ export class LocalAdapter implements MemoryAdapter {
 		// AES-256-GCM decrypt — decipher.final() throws if authTag is invalid
 		let plaintext: Buffer;
 		try {
-			const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+			const decipher = createDecipheriv("aes-256-gcm", key, iv, {
+				authTagLength: 16,
+			});
 			decipher.setAuthTag(authTag);
-			plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+			plaintext = Buffer.concat([
+				decipher.update(ciphertext),
+				decipher.final(),
+			]);
 		} catch {
 			throw new Error("Decryption failed: wrong password or corrupted blob");
 		}
@@ -655,14 +666,13 @@ export class LocalAdapter implements MemoryAdapter {
 		// Replace memory — roll back in-memory state if disk write fails
 		const previousStore = this.store;
 		const previousKg = this.kg;
-		if (!parsed.knowledgeGraph) {
-			parsed.knowledgeGraph = emptyKGState();
-		}
+		// Ensure knowledgeGraph is always present before constructing KnowledgeGraph
+		const importedKgState = parsed.knowledgeGraph ?? emptyKGState();
+		parsed.knowledgeGraph = importedKgState;
 		this.store = parsed;
 		// Re-point KG to the newly imported state so all subsequent KG operations
 		// operate on the imported KGState, not the old one.
-		// knowledgeGraph is guaranteed non-null: set to emptyKGState() if missing above
-		this.kg = new KnowledgeGraph(this.store.knowledgeGraph!);
+		this.kg = new KnowledgeGraph(importedKgState);
 		try {
 			this.markDirty();
 			this.save();

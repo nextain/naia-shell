@@ -113,7 +113,7 @@ Naia is built on top of the [OpenClaw](https://github.com/openclaw-ai/openclaw) 
 
 **What we took from OpenClaw:** Daemon architecture, tool execution engine, channel system, skill ecosystem (5,700+ Clawhub skill compatible)
 
-**What Naia built new:** Tauri Shell, VRM avatar system, multi-LLM agent, emotion engine, TTS/STT integration, onboarding wizard, cost tracking, Nextain account integration, memory system (STM/LTM), security layers
+**What Naia built new:** Tauri Shell, VRM avatar system, multi-LLM agent, emotion engine, TTS/STT integration, onboarding wizard, cost tracking, Nextain account integration, Alpha Memory System, security layers
 
 ## Architecture
 
@@ -300,15 +300,15 @@ Naia remembers across sessions using the **Alpha Memory System** — a 4-store a
 
 | Store | Analog | What It Stores |
 |-------|--------|----------------|
-| **Episodic** | Hippocampus | Timestamped conversation turns |
-| **Semantic** | Neocortex | Extracted facts, preferences, entities |
-| **Procedural** | Basal Ganglia | Learned strategies from past failures |
-| **Working** | Prefrontal Cortex | Active context for the current session |
+| **Episodes** | Hippocampus | Timestamped conversation turns |
+| **Facts** | Neocortex | Extracted facts, preferences, entities |
+| **Reflections** | Basal Ganglia | Learned strategies from past failures |
+| **Working Memory** | Prefrontal Cortex | Active context for the current session |
 
 **How it works:**
 1. Every message is scored for importance (novelty, relevance, emotional weight)
 2. High-importance content is stored as an **episode**
-3. Every 30 minutes, episodes are consolidated into **facts** (your AI "thinks about its day")
+3. Every 30 minutes (or after 5 minutes if inactive), episodes are consolidated into **facts** (your AI "thinks about its day")
 4. At the start of each session, relevant facts and episodes are injected as context
 
 **Your memories are yours:**

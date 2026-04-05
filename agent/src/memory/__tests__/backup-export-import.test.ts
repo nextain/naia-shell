@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalAdapter } from "../adapters/local.js";
+import { KnowledgeGraph } from "../knowledge-graph.js";
 
 function testStorePath(): string {
 	return join(tmpdir(), `naia-backup-test-${randomUUID()}.json`);
@@ -30,7 +31,9 @@ describe("LocalAdapter backup: export() / import()", () => {
 		expect(blob[4]).toBe(0x01);
 
 		await adapter.close();
-		try { rmSync(path); } catch {}
+		try {
+			rmSync(path);
+		} catch {}
 	});
 
 	it("import restores memory from a valid export blob", async () => {
@@ -45,7 +48,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 			summary: "TypeScript preference",
 			timestamp: Date.now(),
 			role: "user",
-			importance: { importance: 0.8, surprise: 0.1, emotion: 0.5, utility: 0.8 },
+			importance: {
+				importance: 0.8,
+				surprise: 0.1,
+				emotion: 0.5,
+				utility: 0.8,
+			},
 			encodingContext: { project: "test" },
 			consolidated: false,
 			recallCount: 0,
@@ -87,27 +95,37 @@ describe("LocalAdapter backup: export() / import()", () => {
 
 		// Verify KG was re-pointed (entity from upsert should be searchable via KG)
 		const kg = dst.getKnowledgeGraph();
-		expect(kg).toBeInstanceOf(Object);
+		expect(kg).toBeInstanceOf(KnowledgeGraph);
 		// A semantic search that goes through spreading activation confirms the KG is live
 		const kgSearchResults = await dst.semantic.search("TypeScript", 5);
 		expect(kgSearchResults.length).toBeGreaterThan(0);
 
 		await dst.close();
-		try { rmSync(srcPath); } catch {}
-		try { rmSync(dstPath); } catch {}
+		try {
+			rmSync(srcPath);
+		} catch {}
+		try {
+			rmSync(dstPath);
+		} catch {}
 	});
 
 	it("export and import throw on empty password", async () => {
 		const adapterPath = testStorePath();
 		const adapter = new LocalAdapter(adapterPath);
-		await expect(adapter.export("")).rejects.toThrow(/Password must not be empty/);
+		await expect(adapter.export("")).rejects.toThrow(
+			/Password must not be empty/,
+		);
 
 		// Need a valid blob to test import path
 		const blob = await adapter.export("real-password");
-		await expect(adapter.import(blob, "")).rejects.toThrow(/Password must not be empty/);
+		await expect(adapter.import(blob, "")).rejects.toThrow(
+			/Password must not be empty/,
+		);
 
 		await adapter.close();
-		try { rmSync(adapterPath); } catch {}
+		try {
+			rmSync(adapterPath);
+		} catch {}
 	});
 
 	it("import throws on wrong password", async () => {
@@ -123,8 +141,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 		);
 
 		await dst.close();
-		try { rmSync(srcPath); } catch {}
-		try { rmSync(dstPath); } catch {}
+		try {
+			rmSync(srcPath);
+		} catch {}
+		try {
+			rmSync(dstPath);
+		} catch {}
 	});
 
 	it("import throws on truncated blob", async () => {
@@ -141,8 +163,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 
 		await adapter.close();
 		await dst.close();
-		try { rmSync(adapterPath); } catch {}
-		try { rmSync(dstPath); } catch {}
+		try {
+			rmSync(adapterPath);
+		} catch {}
+		try {
+			rmSync(dstPath);
+		} catch {}
 	});
 
 	it("import throws on wrong magic bytes", async () => {
@@ -161,8 +187,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 
 		await adapter.close();
 		await dst.close();
-		try { rmSync(adapterPath); } catch {}
-		try { rmSync(dstPath); } catch {}
+		try {
+			rmSync(adapterPath);
+		} catch {}
+		try {
+			rmSync(dstPath);
+		} catch {}
 	});
 
 	it("same password produces different blobs each time (non-deterministic salt+IV)", async () => {
@@ -181,8 +211,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 
 		await adapter1.close();
 		await adapter2.close();
-		try { rmSync(path1); } catch {}
-		try { rmSync(path2); } catch {}
+		try {
+			rmSync(path1);
+		} catch {}
+		try {
+			rmSync(path2);
+		} catch {}
 	});
 
 	it("import with wrong password leaves adapter in original state", async () => {
@@ -197,7 +231,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 			summary: "Original",
 			timestamp: Date.now(),
 			role: "user",
-			importance: { importance: 0.8, surprise: 0.1, emotion: 0.5, utility: 0.8 },
+			importance: {
+				importance: 0.8,
+				surprise: 0.1,
+				emotion: 0.5,
+				utility: 0.8,
+			},
 			encodingContext: {},
 			consolidated: false,
 			recallCount: 0,
@@ -210,15 +249,21 @@ describe("LocalAdapter backup: export() / import()", () => {
 		const blob = await src.export("correct");
 		await src.close();
 
-		await expect(dst.import(blob, "wrong")).rejects.toThrow(/Decryption failed/);
+		await expect(dst.import(blob, "wrong")).rejects.toThrow(
+			/Decryption failed/,
+		);
 
 		// State must be unchanged — original episode still there
 		const eps = await dst.episode.getRecent(10);
 		expect(eps.some((e) => e.content.includes("original content"))).toBe(true);
 
 		await dst.close();
-		try { rmSync(srcPath); } catch {}
-		try { rmSync(dstPath); } catch {}
+		try {
+			rmSync(srcPath);
+		} catch {}
+		try {
+			rmSync(dstPath);
+		} catch {}
 	});
 
 	it("import replaces existing memory completely", async () => {
@@ -233,7 +278,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 			summary: "Source",
 			timestamp: Date.now(),
 			role: "user",
-			importance: { importance: 0.9, surprise: 0.1, emotion: 0.5, utility: 0.9 },
+			importance: {
+				importance: 0.9,
+				surprise: 0.1,
+				emotion: 0.5,
+				utility: 0.9,
+			},
 			encodingContext: {},
 			consolidated: false,
 			recallCount: 0,
@@ -251,7 +301,12 @@ describe("LocalAdapter backup: export() / import()", () => {
 			summary: "Dst",
 			timestamp: Date.now(),
 			role: "user",
-			importance: { importance: 0.9, surprise: 0.1, emotion: 0.5, utility: 0.9 },
+			importance: {
+				importance: 0.9,
+				surprise: 0.1,
+				emotion: 0.5,
+				utility: 0.9,
+			},
 			encodingContext: {},
 			consolidated: false,
 			recallCount: 0,
@@ -269,7 +324,11 @@ describe("LocalAdapter backup: export() / import()", () => {
 		expect(contents.some((c) => c.includes("Destination content"))).toBe(false);
 
 		await dst.close();
-		try { rmSync(srcPath); } catch {}
-		try { rmSync(dstPath); } catch {}
+		try {
+			rmSync(srcPath);
+		} catch {}
+		try {
+			rmSync(dstPath);
+		} catch {}
 	});
 });

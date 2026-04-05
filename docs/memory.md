@@ -113,7 +113,7 @@ Not all messages are stored — only those above an importance threshold. Very s
 
 **Q: Naia remembered something incorrectly — how do I fix it?**
 
-Open Settings → Memory, find the incorrect fact, and delete it. Then tell Naia the correct information and it will be stored in the next consolidation cycle.
+Open Settings → Memory, find the incorrect fact, and delete it. Then tell Naia the correct information and it will be stored in the next consolidation cycle (within 30 minutes, or after 5 minutes if the session goes inactive).
 
 **Q: Can I see the raw memory file?**
 
