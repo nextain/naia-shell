@@ -1166,9 +1166,11 @@ export function ChatPanel() {
 			const naiaKey = config?.naiaKey;
 			const modelMeta = getLlmModel(config.provider, config.model);
 			const isOmni = isOmniModel(config.provider, config.model ?? "");
-			// ASR mode: STT provider is vllm, or LLM model has "asr" capability
+			// ASR mode: STT provider is vllm, or LLM model has "asr" capability,
+			// or vllm non-omni model (minicpm-o /v1/realtime WebSocket handles ASR)
 			const isAsrModel =
 				config.sttProvider === "vllm" ||
+				(config.provider === "vllm" && !isOmni) ||
 				(modelMeta?.capabilities.includes("asr") ?? false);
 
 			// LLM models use pipeline voice (Vosk STT → LLM → sentence TTS)
