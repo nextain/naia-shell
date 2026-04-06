@@ -22,7 +22,7 @@ const MAX_TOKENS = 1024;
 /** RMS amplitude threshold for speech detection (Int16 scale, 0–32767).
  *  Chunks below this are treated as silence and do not reset the flush timer.
  *  ~3% of full scale — filters ambient noise, passes normal speech. */
-const SPEECH_RMS_THRESHOLD = 1000;
+const SPEECH_RMS_THRESHOLD = 200;
 /** Force flush after this many ms even if speech is still ongoing. */
 const MAX_BUFFER_MS = 6000;
 

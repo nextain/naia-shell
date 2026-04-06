@@ -4,7 +4,7 @@ import type { LLMProvider } from "./types.js";
 export type LlmProviderFactory = (
 	apiKey: string,
 	model: string,
-	options?: { ollamaHost?: string; vllmHost?: string },
+	options?: { ollamaHost?: string; vllmHost?: string; labGatewayUrl?: string },
 ) => LLMProvider;
 
 /** Agent-side LLM provider definition for self-registration. */

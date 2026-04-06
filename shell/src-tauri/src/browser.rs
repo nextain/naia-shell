@@ -46,25 +46,44 @@ impl ChromeState {
 /// 2. Guards tabs via CDP REST → opens a new tab if all tabs are closed
 ///    (works together with `--keep-alive-for-test` which prevents Chrome from
 ///    exiting when the last tab is closed).
+/// 3. Detects desktop auth-complete URL → emits `naia_auth_complete` with key/user_id (exactly once).
 fn spawn_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
 	std::thread::spawn(move || {
 		let version_url = format!("http://127.0.0.1:{port}/json/version");
 		let list_url = format!("http://127.0.0.1:{port}/json/list");
 		let new_tab_url = format!("http://127.0.0.1:{port}/json/new");
+		// Guard: emit naia_auth_complete only once per Chrome session.
+		let mut auth_emitted = false;
+		// Consecutive CDP failures before declaring Chrome dead.
+		// Flatpak Chrome: the launcher PID dies quickly (Chrome runs as child),
+		// so we rely on CDP health as the primary liveness signal.
+		let mut cdp_fail_streak = 0u32;
+		const CDP_FAIL_LIMIT: u32 = 6; // 3 s of consecutive failures
 		loop {
 			std::thread::sleep(std::time::Duration::from_millis(500));
 
-			// Primary: platform-specific PID check.
-			// Secondary: CDP health check catches zombies — a zombie Chrome
-			// no longer serves HTTP even though its PID is still present.
-			let pid_exists = crate::platform::is_pid_alive(pid);
-			let cdp_alive = pid_exists
-				&& ureq::get(&version_url)
-					.call()
-					.map(|r| r.status() == 200)
-					.unwrap_or(false);
+			// CDP health is the primary liveness signal.
+			// PID check is secondary: a zombie Chrome keeps its PID but loses CDP.
+			// Flatpak launcher PIDs die immediately after forking Chrome, so
+			// do NOT treat PID death as Chrome death when CDP is still alive.
+			let cdp_alive = ureq::get(&version_url)
+				.call()
+				.map(|r| r.status() == 200)
+				.unwrap_or(false);
 
-			if !pid_exists || !cdp_alive {
+			if cdp_alive {
+				cdp_fail_streak = 0;
+			} else {
+				// PID also gone — Chrome is truly dead
+				let pid_exists = crate::platform::is_pid_alive(pid);
+				if !pid_exists {
+					cdp_fail_streak = CDP_FAIL_LIMIT;
+				} else {
+					cdp_fail_streak += 1;
+				}
+			}
+
+			if cdp_fail_streak >= CDP_FAIL_LIMIT {
 				// Clear state
 				if let Ok(mut state) = CHROME.lock() {
 					if state.pid == pid {
@@ -78,16 +97,68 @@ fn spawn_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
 				break;
 			}
 
-			// Tab guard: if all page tabs are closed, open a new one
+			// Skip tab guard + auth detection when CDP is not responding
+			if !cdp_alive { continue; }
+
+			// Tab guard + auth-complete detection
 			if let Ok(resp) = ureq::get(&list_url).call() {
 				if let Ok(body) = resp.into_string() {
 					if !body.contains("\"page\"") {
 						let _ = ureq::get(&new_tab_url).call();
 					}
+					// Emit naia_auth_complete when Chrome lands on /desktop/auth-complete.
+					// auth_emitted guards against firing every 500 ms while Chrome stays there.
+					// Reset when Chrome navigates away so re-login works correctly.
+					if body.contains("/desktop/auth-complete") {
+						if !auth_emitted {
+							if let Some(auth) = parse_auth_complete_from_tab_list(&body) {
+								let _ = app.emit("naia_auth_complete", auth);
+								auth_emitted = true;
+							}
+						}
+					} else {
+						// Reset so re-login in the same Chrome session works
+						auth_emitted = false;
+					}
 				}
 			}
 		}
 	});
+}
+
+/// Parse `key` and `user_id` from the CDP /json/list response body.
+/// Returns `None` if the auth-complete URL is not found or has no key.
+fn parse_auth_complete_from_tab_list(body: &str) -> Option<serde_json::Value> {
+	use serde_json::Value;
+	let tabs: Vec<Value> = serde_json::from_str(body).ok()?;
+	for tab in &tabs {
+		// Use unwrap_or so tabs without a "url" field are skipped, not early-exit the function.
+		let url = tab.get("url").and_then(|v| v.as_str()).unwrap_or("");
+		if !url.contains("/desktop/auth-complete") {
+			continue;
+		}
+		let parsed = match url::Url::parse(url) {
+			Ok(u) => u,
+			Err(_) => continue,
+		};
+		let key = parsed
+			.query_pairs()
+			.find(|(k, _)| k == "key")
+			.map(|(_, v)| v.into_owned())?;
+		if key.is_empty() {
+			continue;
+		}
+		let user_id = parsed
+			.query_pairs()
+			.find(|(k, _)| k == "user_id")
+			.map(|(_, v)| v.into_owned())
+			.unwrap_or_default();
+		return Some(serde_json::json!({
+			"naiaKey": key,
+			"naiaUserId": user_id,
+		}));
+	}
+	None
 }
 
 static CHROME: Mutex<ChromeState> = Mutex::new(ChromeState::new());
@@ -210,6 +281,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
 					"--host",
 					"flatpak",
 					"run",
+					"--filesystem=home",
 					"--env=DISPLAY=:0",
 					"--env=GDK_BACKEND=x11",
 					&command_flag,
@@ -220,6 +292,7 @@ fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
 				let mut c = Command::new("flatpak");
 				c.args([
 					"run",
+					"--filesystem=home",
 					"--env=DISPLAY=:0",
 					"--env=GDK_BACKEND=x11",
 					&command_flag,
@@ -345,15 +418,30 @@ pub fn browser_embed_init(
 	let home = std::env::var("HOME")
 		.or_else(|_| std::env::var("USERPROFILE"))
 		.unwrap_or_default();
+
+	// Determine if Chrome is installed as a Flatpak (bin starts with "flatpak::")
+	let chrome_bin = platform::window_manager().chrome_bin().unwrap_or_default();
+	let is_flatpak_chrome = chrome_bin.starts_with("flatpak::");
+
 	let tmpdir = if !home.is_empty() {
-		let p = std::path::PathBuf::from(&home).join(".naia").join("chrome-profile");
-		p.to_string_lossy().to_string()
+		if is_flatpak_chrome {
+			// Flatpak Chrome can't access ~/.naia/ directly — use a path under
+			// the Flatpak app's XDG data dir which is always accessible inside the sandbox.
+			let app_id = &chrome_bin["flatpak::".len()..];
+			let p = std::path::PathBuf::from(&home)
+				.join(".var").join("app").join(app_id).join("data").join("naia-profile");
+			p.to_string_lossy().to_string()
+		} else {
+			let p = std::path::PathBuf::from(&home).join(".naia").join("chrome-profile");
+			p.to_string_lossy().to_string()
+		}
 	} else {
 		std::env::temp_dir()
 			.join("naia-chrome-profile")
 			.to_string_lossy()
 			.to_string()
 	};
+	crate::log_verbose(&format!("[browser] Chrome profile dir: {tmpdir}"));
 	std::fs::create_dir_all(&tmpdir)
 		.map_err(|e| format!("Failed to create Chrome profile dir: {e}"))?;
 
@@ -453,14 +541,75 @@ fn run_agent_cmd(port: u16, args: &[&str]) -> Result<String, String> {
 	Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Navigate Chrome to a URL via CDP (using agent-browser).
+/// Navigate Chrome to a URL via CDP.
+/// Tries agent-browser first; falls back to direct CDP WebSocket if not available.
 #[tauri::command]
-pub fn browser_embed_navigate(url: String) -> Result<(), String> {
+pub async fn browser_embed_navigate(url: String) -> Result<(), String> {
 	let port = CHROME.lock().unwrap().port;
 	if port == 0 {
 		return Err("Browser not initialized".to_string());
 	}
-	run_agent_cmd(port, &["open", &url])?;
+	// Primary: agent-browser CLI (AI-integrated control)
+	if let Some(bin) = agent_browser_bin() {
+		let url2 = url.clone();
+		let out = tokio::task::spawn_blocking(move || {
+			std::process::Command::new(&bin)
+				.arg("--cdp").arg(port.to_string())
+				.arg("open").arg(&url2)
+				.output()
+		})
+		.await
+		.map_err(|e| format!("spawn_blocking: {e}"))?;
+		match out {
+			Ok(o) if o.status.success() => return Ok(()),
+			Ok(o) => {
+				let stderr = String::from_utf8_lossy(&o.stderr);
+				crate::log_verbose(&format!("[browser] agent-browser failed ({}) — fallback to CDP: {stderr}", o.status));
+			}
+			Err(e) => crate::log_verbose(&format!("[browser] agent-browser io error: {e}")),
+		}
+	}
+	// Fallback: direct CDP WebSocket Page.navigate
+	navigate_cdp_direct(port, &url).await
+}
+
+async fn navigate_cdp_direct(port: u16, url: &str) -> Result<(), String> {
+	use futures_util::SinkExt;
+	// Get list of open tabs to find a page tab's WebSocket URL
+	let tabs_body = reqwest::Client::new()
+		.get(format!("http://127.0.0.1:{port}/json/list"))
+		.timeout(std::time::Duration::from_secs(3))
+		.send().await
+		.map_err(|e| format!("CDP /json/list: {e}"))?
+		.text().await
+		.map_err(|e| format!("CDP body: {e}"))?;
+	let tabs: serde_json::Value =
+		serde_json::from_str(&tabs_body).map_err(|e| format!("CDP parse: {e}"))?;
+	let ws_url = tabs
+		.as_array()
+		.and_then(|arr| {
+			arr.iter().find(|t| {
+				t.get("type").and_then(|v| v.as_str()) == Some("page")
+			})
+		})
+		.and_then(|t| t.get("webSocketDebuggerUrl"))
+		.and_then(|v| v.as_str())
+		.ok_or("CDP: no page tab found")?
+		.to_string();
+	let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+		.await
+		.map_err(|e| format!("CDP WS: {e}"))?;
+	let msg = serde_json::json!({
+		"id": 1,
+		"method": "Page.navigate",
+		"params": { "url": url }
+	});
+	ws.send(tokio_tungstenite::tungstenite::Message::Text(
+		msg.to_string().into(),
+	))
+	.await
+	.map_err(|e| format!("CDP send: {e}"))?;
+	crate::log_verbose(&format!("[browser] CDP direct navigate: {url}"));
 	Ok(())
 }
 
@@ -736,4 +885,87 @@ pub fn browser_eval(js: String) -> Result<String, String> {
 		return Err("Browser not initialized".to_string());
 	}
 	run_agent_cmd(port, &["eval", &js])
+}
+
+#[cfg(test)]
+mod tests {
+	use super::parse_auth_complete_from_tab_list;
+
+	fn make_tab_list(url: &str) -> String {
+		format!(
+			r#"[{{"id":"1","title":"Login Successful","type":"page","url":"{url}","webSocketDebuggerUrl":"ws://127.0.0.1:19222/devtools/page/1"}}]"#,
+			url = url
+		)
+	}
+
+	#[test]
+	fn parses_key_and_user_id() {
+		let body = make_tab_list(
+			"https://naia.nextain.io/desktop/auth-complete?key=gw-abc123&user_id=user-42",
+		);
+		let result = parse_auth_complete_from_tab_list(&body).unwrap();
+		assert_eq!(result["naiaKey"], "gw-abc123");
+		assert_eq!(result["naiaUserId"], "user-42");
+	}
+
+	#[test]
+	fn parses_key_without_user_id() {
+		let body = make_tab_list(
+			"https://naia.nextain.io/desktop/auth-complete?key=gw-xyz",
+		);
+		let result = parse_auth_complete_from_tab_list(&body).unwrap();
+		assert_eq!(result["naiaKey"], "gw-xyz");
+		assert_eq!(result["naiaUserId"], "");
+	}
+
+	#[test]
+	fn returns_none_when_no_auth_complete_url() {
+		let body = make_tab_list("https://naia.nextain.io/ko/dashboard");
+		assert!(parse_auth_complete_from_tab_list(&body).is_none());
+	}
+
+	#[test]
+	fn returns_none_when_key_missing() {
+		let body = make_tab_list(
+			"https://naia.nextain.io/desktop/auth-complete?user_id=user-42",
+		);
+		assert!(parse_auth_complete_from_tab_list(&body).is_none());
+	}
+
+	#[test]
+	fn returns_none_on_empty_body() {
+		assert!(parse_auth_complete_from_tab_list("").is_none());
+		assert!(parse_auth_complete_from_tab_list("[]").is_none());
+	}
+
+	#[test]
+	fn returns_none_when_key_is_empty_string() {
+		let body = make_tab_list(
+			"https://naia.nextain.io/desktop/auth-complete?key=&user_id=user-42",
+		);
+		assert!(parse_auth_complete_from_tab_list(&body).is_none());
+	}
+
+	#[test]
+	fn multi_tab_finds_auth_complete_tab() {
+		let body = format!(
+			r#"[
+				{{"id":"1","title":"Dashboard","type":"page","url":"https://naia.nextain.io/ko/dashboard"}},
+				{{"id":"2","title":"Login Successful","type":"page","url":"https://naia.nextain.io/desktop/auth-complete?key=gw-multi&user_id=u-99"}}
+			]"#
+		);
+		let result = parse_auth_complete_from_tab_list(&body).unwrap();
+		assert_eq!(result["naiaKey"], "gw-multi");
+		assert_eq!(result["naiaUserId"], "u-99");
+	}
+
+	#[test]
+	fn tab_without_url_field_does_not_abort_search() {
+		let body = r#"[
+			{"id":"1","title":"Service Worker","type":"service_worker"},
+			{"id":"2","title":"Login Successful","type":"page","url":"https://naia.nextain.io/desktop/auth-complete?key=gw-sw&user_id=u-sw"}
+		]"#;
+		let result = parse_auth_complete_from_tab_list(body).unwrap();
+		assert_eq!(result["naiaKey"], "gw-sw");
+	}
 }

@@ -861,6 +861,7 @@ export function SettingsTab() {
 		unknown
 	> | null>(null);
 	const labSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const labBrowserVisibleRef = useRef(false);
 
 	// Hide Chrome X11 embed while STT model modal is open
 	useEffect(() => {
@@ -1285,12 +1286,49 @@ export function SettingsTab() {
 	const [labBalanceLoading, setLabBalanceLoading] = useState(false);
 	const [labBalanceError, setLabBalanceError] = useState(false);
 
-	const startLabLogin = () => {
+	const startLabLogin = async () => {
 		setLabWaiting(true);
-		openUrl(`https://naia.nextain.io/${locale}/login?redirect=desktop`).catch(
-			() => setLabWaiting(false),
-		);
 		setTimeout(() => setLabWaiting(false), 60_000);
+		try {
+			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
+			Logger.info("SettingsTab", "[lab-login] browser_check", { chromeAvailable });
+			if (chromeAvailable) {
+				const loginUrl = `${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop&source=embedded`;
+				usePanelStore.getState().setActivePanel("browser");
+				Logger.info("SettingsTab", "[lab-login] panel switched, polling port...");
+				let port = 0;
+				for (let i = 0; i < 20; i++) {
+					port = await invoke<number>("browser_embed_port").catch(() => 0);
+					Logger.info("SettingsTab", `[lab-login] poll ${i}: port=${port}`);
+					if (port !== 0) break;
+					await new Promise<void>((r) => setTimeout(r, 500));
+				}
+				if (port !== 0) {
+					// Mark that we opened Chrome for login (so auth handler knows to close it)
+					labBrowserVisibleRef.current = true;
+					Logger.info("SettingsTab", "[lab-login] navigating", { url: loginUrl });
+					const navErr = await invoke("browser_embed_navigate", { url: loginUrl }).catch(
+						(e: unknown) => String(e),
+					);
+					if (navErr) {
+						Logger.error("SettingsTab", "[lab-login] navigate failed", { error: navErr });
+					}
+				} else {
+					Logger.error("SettingsTab", "[lab-login] Chrome not ready after 10s");
+				}
+			} else {
+				Logger.info("SettingsTab", "[lab-login] Chrome not installed, opening system browser");
+				await openUrl(`${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop`).catch(
+					(e: unknown) => {
+						Logger.error("SettingsTab", "[lab-login] openUrl failed", { error: String(e) });
+						setLabWaiting(false);
+					},
+				);
+			}
+		} catch (e: unknown) {
+			Logger.error("SettingsTab", "[lab-login] unexpected error", { error: String(e) });
+			setLabWaiting(false);
+		}
 	};
 
 	// Gateway TTS state
@@ -1448,6 +1486,13 @@ export function SettingsTab() {
 			async (event) => {
 				const nextNaiaKey = event.payload.naiaKey;
 				const nextNaiaUserId = event.payload.naiaUserId ?? "";
+
+				// Close Chrome and return to default view if we opened it for login
+				if (labBrowserVisibleRef.current) {
+					labBrowserVisibleRef.current = false;
+					usePanelStore.getState().setActivePanel(null);
+				}
+
 				setNaiaKeyState(nextNaiaKey);
 				setNaiaUserIdState(nextNaiaUserId);
 				setProvider("nextain");

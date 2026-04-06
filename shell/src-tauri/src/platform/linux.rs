@@ -347,6 +347,7 @@ impl PlatformWindowManager for X11WindowManager {
     }
 
     fn chrome_bin(&self) -> Option<String> {
+        // 1. Check native PATH (works for RPM/deb installed Chrome)
         for name in &["google-chrome", "chromium", "chromium-browser"] {
             if let Ok(out) = Command::new("which").arg(name).output() {
                 if out.status.success() {
@@ -355,7 +356,12 @@ impl PlatformWindowManager for X11WindowManager {
                 }
             }
         }
-        if std::env::var("FLATPAK").is_ok() {
+        // 2. Flatpak Chrome — checked regardless of whether Naia itself is a Flatpak.
+        //    On immutable distros (Bazzite, Silverblue) Chrome is typically installed
+        //    via Flatpak even when Naia runs natively.
+        let is_naia_flatpak = std::env::var("FLATPAK").is_ok();
+        if is_naia_flatpak {
+            // Inside Flatpak sandbox: must use flatpak-spawn --host to reach the host
             for name in &["google-chrome", "chromium", "chromium-browser"] {
                 if let Ok(out) = Command::new("flatpak-spawn").args(["--host", "which", name]).output() {
                     if out.status.success() {
@@ -369,6 +375,13 @@ impl PlatformWindowManager for X11WindowManager {
                     .output().map(|o| o.status.success()).unwrap_or(false);
                 if installed { return Some(format!("flatpak::{app_id}")); }
             }
+        } else {
+            // Native mode: query Flatpak directly
+            for app_id in &["com.google.Chrome", "org.chromium.Chromium"] {
+                let installed = Command::new("flatpak").args(["info", app_id])
+                    .output().map(|o| o.status.success()).unwrap_or(false);
+                if installed { return Some(format!("flatpak::{app_id}")); }
+            }
         }
         None
     }
@@ -378,6 +391,7 @@ impl PlatformWindowManager for X11WindowManager {
     }
 
     fn kill_lingering_chrome(&self) {
-        let _ = Command::new("pkill").args(["-f", "naia/chrome-profile"]).output();
+        // Match both native (.naia/chrome-profile) and Flatpak (naia-profile) paths
+        let _ = Command::new("pkill").args(["-f", "naia.*profile"]).output();
     }
 }

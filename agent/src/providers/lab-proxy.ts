@@ -5,8 +5,12 @@
 import { toOpenAIMessages, toOpenAITools } from "./openai-compat.js";
 import type { AgentStream, LLMProvider, StreamChunk } from "./types.js";
 
-export const GATEWAY_URL =
+export const PROD_GATEWAY_URL =
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
+
+/** @deprecated Use the gatewayUrl parameter instead */
+export const GATEWAY_URL =
+	process.env.NAIA_GATEWAY_URL ?? PROD_GATEWAY_URL;
 
 /** Map local model names to gateway format (provider:model) */
 function toGatewayModel(model: string): string {
@@ -23,9 +27,16 @@ function toGatewayModel(model: string): string {
 export function createLabProxyProvider(
 	naiaKey: string,
 	model: string,
+	gatewayUrl?: string,
 ): LLMProvider {
+	const resolvedGatewayUrl = gatewayUrl ?? GATEWAY_URL;
 	return {
 		async *stream(messages, systemPrompt, tools, signal): AgentStream {
+			if (!resolvedGatewayUrl.startsWith("https://")) {
+				throw new Error(
+					`Lab proxy: rejecting non-HTTPS gateway URL "${resolvedGatewayUrl}" - naiaKey credential must only be sent over HTTPS.`,
+				);
+			}
 			const body: Record<string, unknown> = {
 				model: toGatewayModel(model),
 				messages: toOpenAIMessages(messages, systemPrompt),
@@ -36,7 +47,7 @@ export function createLabProxyProvider(
 				body.tools = toOpenAITools(tools);
 			}
 
-			const res = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
+			const res = await fetch(`${resolvedGatewayUrl}/v1/chat/completions`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",

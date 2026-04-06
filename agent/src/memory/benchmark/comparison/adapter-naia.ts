@@ -18,7 +18,7 @@ const GATEWAY_KEY = process.env.GATEWAY_MASTER_KEY ?? "";
 const GATEWAY_USER = "benchmark";
 const UPSTAGE_BASE = "https://api.upstage.ai/v1/";
 const OLLAMA_BASE = "http://localhost:11434/v1/";
-const THROTTLE_MS = 2000;
+const THROTTLE_MS = 3000;
 
 export type EmbeddingBackend = "gemini" | "solar" | "qwen3" | "bge-m3";
 
@@ -46,7 +46,7 @@ function getEmbedderConfig(
 							model: "vertexai:text-embedding-004",
 							user: GATEWAY_USER,
 						},
-						dimension: 192,
+						dimension: 768,
 					}
 				: {
 						provider: "openai",
@@ -154,12 +154,20 @@ export class NaiaAdapter implements BenchmarkAdapter {
 
 	async addFact(content: string): Promise<boolean> {
 		if (!this.system) throw new Error("Not initialized");
-		await new Promise((r) => setTimeout(r, THROTTLE_MS));
-		const episode = await this.system.encode(
-			{ content, role: "user" },
-			{ project: "benchmark" },
-		);
-		return episode !== null;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			await new Promise((r) => setTimeout(r, THROTTLE_MS * (attempt + 1)));
+			try {
+				const episode = await this.system.encode(
+					{ content, role: "user" },
+					{ project: "benchmark" },
+				);
+				return episode !== null;
+			} catch (err: any) {
+				if (attempt < 2) continue;
+				return false;
+			}
+		}
+		return false;
 	}
 
 	async search(query: string, topK: number): Promise<string[]> {

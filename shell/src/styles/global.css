@@ -4209,6 +4209,26 @@ body.resizing-row {
 	font-size: 13px;
 }
 
+.onboarding-browser-hint {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 16px;
+	background: rgba(99, 179, 237, 0.1);
+	border: 1px solid rgba(99, 179, 237, 0.3);
+	border-radius: 8px;
+	color: var(--text-secondary);
+	font-size: 13px;
+	text-align: left;
+	animation: fadeIn 0.2s ease;
+}
+
+.onboarding-browser-hint span:first-child {
+	flex-shrink: 0;
+	font-size: 18px;
+	color: #63b3ed;
+}
+
 .onboarding-nav {
 	display: flex;
 	align-items: center;

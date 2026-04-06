@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { AVATAR_PRESETS, DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
@@ -156,8 +157,11 @@ export function OnboardingWizard({
 	const [naiaKey, setNaiaKey] = useState("");
 	const [naiaUserId, setNaiaUserId] = useState("");
 	const [labWaiting, setLabWaiting] = useState(false);
+	const [labBrowserVisible, setLabBrowserVisible] = useState(false);
 	const labTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [labTimeout, setLabTimeout] = useState(false);
+	// Tracks whether we temporarily revealed Chrome for login (needs pushModal on cleanup)
+	const labBrowserVisibleRef = useRef(false);
 	const [selectedSpeechStyle, setSelectedSpeechStyle] = useState("casual");
 	const [honorificInput, setHonorificInput] = useState("");
 	const [discordConnectLoading, setDiscordConnectLoading] = useState(false);
@@ -192,6 +196,12 @@ export function OnboardingWizard({
 				Logger.info("OnboardingWizard", "Lab auth received", {});
 				const key = event.payload.naiaKey;
 				const userId = event.payload.naiaUserId ?? "";
+				// Restore modal (re-hide Chrome) if we temporarily revealed it for login
+				if (labBrowserVisibleRef.current) {
+					labBrowserVisibleRef.current = false;
+					setLabBrowserVisible(false);
+					pushModal();
+				}
 				setNaiaKey(key);
 				setNaiaUserId(userId);
 				setProvider("nextain");
@@ -411,27 +421,57 @@ export function OnboardingWizard({
 	async function handleLabLogin() {
 		setLabWaiting(true);
 		setLabTimeout(false);
-		const loginUrl = `https://naia.nextain.io/${getLocale()}/login?redirect=desktop`;
-		try {
-			// Try embedded browser first (avoids Flatpak sandbox deep link issues)
-			const { panelRegistry } = await import("../lib/panel-registry");
-			const browserApi = panelRegistry.getApi<{ navigate: (url: string) => void; activatePanel: () => void }>("browser");
-			if (browserApi?.navigate) {
-				browserApi.navigate(loginUrl);
-				browserApi.activatePanel();
-			} else {
-				await openUrl(loginUrl);
-			}
-		} catch {
-			try { await openUrl(loginUrl); } catch { /* ignore */ }
-		}
-		// Timeout after 60s (embedded browser may take longer)
+		// Register timeout first — before any await — so it always fires
+		// even if browser_embed_navigate or browser_check stalls indefinitely.
 		if (labTimerRef.current) clearTimeout(labTimerRef.current);
 		labTimerRef.current = setTimeout(() => {
+			// Restore modal if Chrome was revealed for login
+			if (labBrowserVisibleRef.current) {
+				labBrowserVisibleRef.current = false;
+				setLabBrowserVisible(false);
+				pushModal();
+			}
 			setLabWaiting(false);
 			setLabTimeout(true);
 			labTimerRef.current = null;
 		}, 60_000);
+		try {
+			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
+			if (chromeAvailable) {
+				// source=embedded: CDP monitor detects /desktop/auth-complete URL
+				// (naia:// deep links don't work inside Flatpak-sandboxed Chrome)
+				const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
+				// Switch to browser panel u2014 this mounts BrowserCenterPanel which calls browser_embed_init
+				const { usePanelStore } = await import("../stores/panel");
+				usePanelStore.getState().setActivePanel("browser");
+				// Poll until Chrome is ready (browser_embed_port > 0), up to ~10 s
+				let port = 0;
+				for (let i = 0; i < 20; i++) {
+					port = await invoke<number>("browser_embed_port").catch(() => 0);
+					if (port !== 0) break;
+					await new Promise<void>((r) => setTimeout(r, 500));
+				}
+				if (port !== 0) {
+					if (!labBrowserVisibleRef.current) {
+						labBrowserVisibleRef.current = true;
+						setLabBrowserVisible(true);
+						popModal();
+					}
+					await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
+				}
+			} else {
+				// Chrome not installed: system browser fallback (deep link; works on Windows/macOS)
+				const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop`;
+				await openUrl(loginUrl);
+			}
+		} catch {
+			const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop`;
+			try {
+				await openUrl(loginUrl);
+			} catch {
+				/* ignore */
+			}
+		}
 	}
 
 	async function handleValidate() {
@@ -593,6 +633,14 @@ export function OnboardingWizard({
 				{step === "provider" && (
 					<div className="onboarding-content">
 						<h2>{t("onboard.provider.title")}</h2>
+
+						{/* Browser hint shown while Chrome is open for login */}
+						{labBrowserVisible && (
+							<div className="onboarding-browser-hint">
+								<span>→</span>
+								<span>{t("onboard.lab.browser.hint")}</span>
+							</div>
+						)}
 
 						{/* Lab login — prominent card at top */}
 						<button

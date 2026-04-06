@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { loadConfig } from "./config";
+import { LAB_GATEWAY_URL, loadConfig } from "./config";
 import { getLocale } from "./i18n";
 import { Logger } from "./logger";
 import { buildSystemPrompt } from "./persona";
@@ -58,6 +58,7 @@ export async function syncToGateway(
 				tts_mode: null,
 				naia_key: naiaKey || null,
 				ollama_host: ollamaHost || null,
+				lab_gateway_url: LAB_GATEWAY_URL,
 			},
 		});
 	} catch (err) {

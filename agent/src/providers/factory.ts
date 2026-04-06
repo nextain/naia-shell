@@ -69,7 +69,7 @@ registerLlmProvider({
 registerLlmProvider({
 	id: "lab-proxy",
 	name: "Naia Lab Proxy",
-	create: (naiaKey, model) => createLabProxyProvider(naiaKey, model),
+	create: (naiaKey, model, opts) => createLabProxyProvider(naiaKey, model, opts?.labGatewayUrl),
 });
 
 // ── Factory ──
@@ -79,7 +79,7 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 	if (config.naiaKey) {
 		const labProxy = getLlmProviderDef("lab-proxy");
 		if (!labProxy) throw new Error("Lab proxy provider not registered.");
-		return labProxy.create(config.naiaKey, config.model);
+		return labProxy.create(config.naiaKey, config.model, { labGatewayUrl: config.labGatewayUrl });
 	}
 
 	if (config.provider === "nextain") {

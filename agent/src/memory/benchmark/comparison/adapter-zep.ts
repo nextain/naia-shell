@@ -68,6 +68,7 @@ export class ZepAdapter implements BenchmarkAdapter {
 		);
 		const results = Array.isArray(result) ? result : (result?.results ?? []);
 		return results
+			.filter((r: any) => (r.message?.role ?? r.role) !== "assistant")
 			.map((r: any) => r.message?.content ?? r.content ?? r.text ?? "")
 			.filter((s: string) => s.length > 0);
 	}

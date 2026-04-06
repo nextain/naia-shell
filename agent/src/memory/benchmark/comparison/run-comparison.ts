@@ -45,7 +45,7 @@ function parseArgs() {
 	let judge: "claude-cli" | "keyword" = "claude-cli";
 	let runs = 1;
 	let categories: string[] | null = null;
-	let llm: "gemini" | "qwen3" = "qwen3";
+	let llm: "gemini" = "gemini";
 	let skipEncode = false;
 	let lang = "ko";
 	let embedder = "gemini";
@@ -58,7 +58,7 @@ function parseArgs() {
 			runs = Number.parseInt(arg.split("=")[1], 10);
 		if (arg.startsWith("--categories="))
 			categories = arg.split("=")[1].split(",");
-		if (arg.startsWith("--llm=")) llm = arg.split("=")[1] as any;
+		// --llm option removed (gemini only)
 		if (arg === "--skip-encode") skipEncode = true;
 		if (arg.startsWith("--lang=")) lang = arg.split("=")[1];
 		if (arg.startsWith("--embedder=")) embedder = arg.split("=")[1];
@@ -98,36 +98,6 @@ function createAdapter(name: string, apiKey: string, embedder?: string): Benchma
 
 // ─── LLM Response Generation ────────────────────────────────────────────────
 
-const OLLAMA_BASE = "http://localhost:11434/v1/";
-
-async function callOllama(
-	model: string,
-	messages: Array<{ role: string; content: string }>,
-	maxTokens: number,
-): Promise<string> {
-	for (let attempt = 0; attempt < 3; attempt++) {
-		try {
-			const res = await fetch(`${OLLAMA_BASE}chat/completions`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					model,
-					messages,
-					max_tokens: maxTokens,
-				}),
-			});
-			if (!res.ok) {
-				await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-				continue;
-			}
-			const data = (await res.json()) as any;
-			return data.choices?.[0]?.message?.content ?? "";
-		} catch {
-			await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-		}
-	}
-	return "";
-}
 
 /**
  * Call Gemini via gateway (if GATEWAY_URL + GATEWAY_MASTER_KEY set) or direct API.
@@ -192,7 +162,6 @@ async function askWithMemory(
 	apiKey: string,
 	memories: string[],
 	question: string,
-	llm: "gemini" | "qwen3" = "gemini",
 ): Promise<string> {
 	const memCtx =
 		memories.length > 0
@@ -217,9 +186,6 @@ ${memCtx}`,
 		{ role: "user", content: question },
 	];
 
-	if (llm === "qwen3") {
-		return callOllama("qwen3:8b", messages, 500);
-	}
 	return callGemini(apiKey, messages, 500);
 }
 
@@ -536,7 +502,7 @@ async function main() {
 					let lastReason = "";
 
 					for (let run = 0; run < config.runs; run++) {
-						const response = await askWithMemory(apiKey, memories, query, config.llm);
+						const response = await askWithMemory(apiKey, memories, query);
 						lastResponse = response;
 						const verdict = await judgeResponse(
 							apiKey,

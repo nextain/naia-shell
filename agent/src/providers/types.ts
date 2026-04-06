@@ -8,6 +8,8 @@ export interface ProviderConfig {
 	naiaKey?: string;
 	ollamaHost?: string;
 	vllmHost?: string;
+	/** Override URL for lab-proxy (Naia gateway). Passed directly from chat request. */
+	labGatewayUrl?: string;
 }
 
 /** Tool call info returned by LLM function calling */

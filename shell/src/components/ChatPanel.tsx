@@ -678,6 +678,7 @@ export function ChatPanel() {
 					model: resolvedModel,
 					apiKey: config.apiKey,
 					naiaKey: activeProvider === "nextain" ? config.naiaKey : undefined,
+					labGatewayUrl: (activeProvider === "nextain" && config.naiaKey) ? LAB_GATEWAY_URL : undefined,
 					ollamaHost:
 						activeProvider === "ollama" ? config.ollamaHost : undefined,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,

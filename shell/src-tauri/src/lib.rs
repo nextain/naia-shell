@@ -818,6 +818,34 @@ fn spawn_node_host(
     openclaw_bin: &str,
     config_path: &str,
 ) -> Result<Child, String> {
+    // Load the same gateway-env.json as the gateway process so the agent
+    // inherits env overrides (e.g. NAIA_GATEWAY_URL for dev mode).
+    fn load_gateway_env(config_path: &str) -> Vec<(String, String)> {
+        const ALLOWED_ENV_PREFIXES: &[&str] = &[
+            "OPENAI_", "ANTHROPIC_", "GEMINI_", "XAI_", "GOOGLE_",
+            "OPENCLAW_", "NAIA_", "CAFE_", "HF_", "HUGGING",
+            "OLLAMA_", "LM_STUDIO_", "DEEPSEEK_",
+            "NODE_", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+        ];
+        const BLOCKED_EXACT: &[&str] = &[
+            "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+            "PYTHONPATH", "PERLLIB", "RUBYLIB", "CLASSPATH",
+            "PATH", "HOME", "SHELL",
+        ];
+        let env_path = std::path::Path::new(config_path)
+            .parent()
+            .map(|d| d.join("gateway-env.json"));
+        let Some(ep) = env_path else { return vec![]; };
+        let Ok(raw) = std::fs::read_to_string(&ep) else { return vec![]; };
+        let Ok(env_obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&raw) else { return vec![]; };
+        env_obj.into_iter().filter_map(|(key, val)| {
+            let s = val.as_str()?.to_string();
+            let upper = key.to_uppercase();
+            if BLOCKED_EXACT.contains(&upper.as_str()) { return None; }
+            if !ALLOWED_ENV_PREFIXES.iter().any(|p| upper.starts_with(p)) { return None; }
+            Some((key, s))
+        }).collect()
+    }
     log_verbose("[Naia] Spawning Node Host: node run --host 127.0.0.1 --port 18789");
 
     let gateway_log = open_log_file("node-host");
@@ -830,6 +858,7 @@ fn spawn_node_host(
         None => Stdio::inherit(),
     };
 
+    let extra_env = load_gateway_env(config_path);
     let mut cmd = Command::new(node_bin.as_os_str());
     cmd.arg(openclaw_bin)
         .arg("node")
@@ -843,6 +872,9 @@ fn spawn_node_host(
         .env("OPENCLAW_CONFIG_PATH", config_path)
         .stdout(stdout_cfg)
         .stderr(stderr_cfg);
+    for (k, v) in &extra_env {
+        cmd.env(k, v);
+    }
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
     let child = cmd.spawn()
@@ -2037,6 +2069,7 @@ struct OpenClawSyncParams {
     tts_mode: Option<String>,
     naia_key: Option<String>,
     ollama_host: Option<String>,
+    lab_gateway_url: Option<String>,
 }
 
 /// Sync Shell provider/model/API-key to ~/.openclaw/openclaw.json so the
@@ -2219,14 +2252,28 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
         } else {
             env_obj.remove("OLLAMA_API_KEY");
         }
+        // Propagate Lab gateway URL override (dev mode uses dev gateway, prod uses prod).
+        if let Some(ref url) = params.lab_gateway_url {
+            let prod_url = "https://naia-gateway-181404717065.asia-northeast3.run.app";
+            if url != prod_url {
+                // Only write to env if it differs from the prod default (saves a no-op entry)
+                env_obj.insert("NAIA_GATEWAY_URL".to_string(),
+                    serde_json::Value::String(url.clone()));
+            } else {
+                env_obj.remove("NAIA_GATEWAY_URL");
+            }
+        }
         let env_pretty = serde_json::to_string_pretty(&serde_json::Value::Object(env_obj))
             .map_err(|e| format!("JSON serialize env: {}", e))?;
         std::fs::write(&env_path, env_pretty.as_bytes())
             .map_err(|e| format!("Failed to write gateway-env: {}", e))?;
     }
 
-    // Write API key to auth-profiles.json (where OpenClaw actually reads credentials)
-    if let Some(ak) = &params.api_key {
+    // Write Naia Lab key to auth-profiles.json (where Naia Gateway reads credentials).
+    // Only naia_key (from Lab login flow) belongs here — api_key is the generic provider key
+    // (Google AI Studio key, Anthropic key, etc.) and must NOT touch auth-profiles.
+    if let Some(naia_key_val) = params.naia_key.as_deref().filter(|k| !k.is_empty()) {
+        let ak = naia_key_val.to_string();
         if !ak.is_empty() {
             let openclaw_dir = std::path::Path::new(&config_path)
                 .parent()

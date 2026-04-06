@@ -383,6 +383,48 @@ describe("Lab Proxy Provider", () => {
 	});
 });
 
+describe("gatewayUrl parameter", () => {
+	beforeEach(() => {
+		mockFetch.mockReset();
+	});
+
+	it("uses custom gatewayUrl when provided", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(["data: [DONE]\n\n"]),
+		});
+
+		const provider = createLabProxyProvider(
+			"test-key",
+			"gemini-2.5-flash",
+			"https://naia-gateway-dev-123.run.app",
+		);
+		const gen = provider.stream([{ role: "user", content: "Hi" }], "sys");
+		for await (const _ of gen) {
+			/* consume */
+		}
+
+		const [url] = mockFetch.mock.calls[0];
+		expect(url).toContain("naia-gateway-dev-123");
+		expect(url).toContain("/v1/chat/completions");
+	});
+
+	it("throws when gatewayUrl is not HTTPS", async () => {
+		const provider = createLabProxyProvider(
+			"test-key",
+			"gemini-2.5-flash",
+			"http://evil.example.com",
+		);
+		const gen = provider.stream([{ role: "user", content: "Hi" }], "sys");
+		await expect(async () => {
+			for await (const _ of gen) {
+				/* consume */
+			}
+		}).rejects.toThrow("rejecting non-HTTPS gateway URL");
+		expect(mockFetch).not.toHaveBeenCalled();
+	});
+});
+
 describe("buildProvider with naiaKey", () => {
 	beforeEach(() => {
 		mockFetch.mockReset();
@@ -413,6 +455,30 @@ describe("buildProvider with naiaKey", () => {
 		expect(url).toContain("naia-gateway");
 		expect(url).toContain("/v1/chat/completions");
 		expect(options.headers["X-AnyLLM-Key"]).toBe("Bearer lab-key-123");
+	});
+
+	it("passes labGatewayUrl to lab-proxy when naiaKey is set", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(["data: [DONE]\n\n"]),
+		});
+
+		const { buildProvider } = await import("../providers/factory.js");
+		const provider = buildProvider({
+			provider: "gemini",
+			model: "gemini-2.5-flash",
+			apiKey: "ignored",
+			naiaKey: "lab-key-xyz",
+			labGatewayUrl: "https://naia-gateway-dev-456.run.app",
+		});
+
+		const gen = provider.stream([{ role: "user", content: "test" }], "sys");
+		for await (const _ of gen) {
+			/* consume */
+		}
+
+		const [url] = mockFetch.mock.calls[0];
+		expect(url).toContain("naia-gateway-dev-456");
 	});
 
 	it("returns direct provider when naiaKey is not set", async () => {

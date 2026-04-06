@@ -34,6 +34,8 @@ export interface ProviderConfig {
 	naiaKey?: string;
 	ollamaHost?: string;
 	vllmHost?: string;
+	/** Override URL for lab-proxy (Naia gateway). Used to route to dev vs prod gateway. */
+	labGatewayUrl?: string;
 }
 
 // === Chat Messages ===
