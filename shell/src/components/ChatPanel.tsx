@@ -1693,8 +1693,8 @@ export function ChatPanel() {
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "minicpm-o") {
-				// Derive WebSocket base URL from vllmHost: http://host:port → ws://host:port
-				// minicpm-o.ts appends /ws to form the final endpoint
+				// minicpm-o connects to /v1/realtime WebSocket on the same vllm-omni server.
+				// minicpm-o.ts accepts http:// or ws:// and appends /v1/realtime.
 				const vllmBase = (config.vllmHost ?? DEFAULT_VLLM_HOST).replace(
 					/\/+$/,
 					"",
@@ -1703,6 +1703,7 @@ export function ChatPanel() {
 				await session.connect({
 					provider: "minicpm-o",
 					serverUrl: wsBase,
+					model: config.model,
 					systemInstruction: voiceSystemPrompt,
 					voice: selectedVoice,
 					tools: voiceTools.length ? voiceTools : undefined,

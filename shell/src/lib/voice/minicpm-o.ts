@@ -1,25 +1,34 @@
 /**
- * MiniCPM-o local voice conversation provider.
+ * MiniCPM-o vllm-omni /v1/realtime WebSocket session.
  *
- * Connects to a Python bridge server that wraps MiniCPM-o 4.5's
- * streaming API as a WebSocket endpoint.
+ * Connects to vllm-omni's /v1/realtime endpoint (OpenAI Realtime-style ASR).
+ * Audio input → text transcription output.
  *
- * Protocol:
- *   Client → Server: session.config, audio.append, text.send
- *   Server → Client: session.ready, audio.delta, transcript.output, turn.end, interrupted, error
+ * Protocol (vllm /v1/realtime):
+ *   Client → Server: session.update, input_audio_buffer.append, input_audio_buffer.commit
+ *   Server → Client: session.created, transcription.delta, transcription.done, error
  *
- * Audio: 16kHz PCM16 mono input → 24kHz PCM16 mono output (base64 encoded)
- * No API key required (local server).
- * No input transcription (model limitation — user speech not shown in chat).
+ * Audio input: 16kHz PCM16 mono (base64)
+ * Output: text transcription (no audio output — see vllm-omni.ts for audio output)
+ *
+ * Server: vllm-omni with MiniCPM-o 4.5 on port 8000
+ *   distrobox enter vllm-dev -- bash scripts/serve_async_chunk.sh
  */
 import { Logger } from "../logger";
 import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
 
-const DEFAULT_SERVER_URL = "ws://localhost:8765";
+const DEFAULT_SERVER_URL = "http://localhost:8000";
+
+const SILENCE_TIMEOUT_MS = 1500;
+const MIN_AUDIO_SAMPLES = 8000; // 0.5s @ 16kHz
+const SPEECH_RMS_THRESHOLD = 1000; // ~3% of Int16 full scale
 
 export function createMiniCpmOSession(): VoiceSession {
 	let ws: WebSocket | null = null;
 	let connected = false;
+	let cfg: MiniCpmOConfig | null = null;
+	let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+	let pcmBuffer: Int16Array[] = [];
 
 	const session: VoiceSession = {
 		onAudio: null,
@@ -36,11 +45,15 @@ export function createMiniCpmOSession(): VoiceSession {
 		},
 
 		async connect(config: LiveProviderConfig) {
-			const cfg = config as MiniCpmOConfig;
-			const baseUrl = (cfg.serverUrl ?? DEFAULT_SERVER_URL).replace(/\/+$/, "");
-			const wsUrl = `${baseUrl}/ws`;
+			cfg = config as MiniCpmOConfig;
 
-			Logger.info("MiniCPM-o", "connecting", { url: wsUrl });
+			// Accept http:// or ws:// serverUrl — derive WebSocket URL
+			const base = (cfg.serverUrl ?? DEFAULT_SERVER_URL)
+				.replace(/\/+$/, "")
+				.replace(/^http/, "ws");
+			const wsUrl = `${base}/v1/realtime`;
+
+			Logger.info("minicpm-o", "connecting", { url: wsUrl });
 
 			ws = new WebSocket(wsUrl);
 
@@ -53,17 +66,11 @@ export function createMiniCpmOSession(): VoiceSession {
 				}, 15000);
 
 				ws.onopen = () => {
-					Logger.info(
-						"MiniCPM-o",
-						"WebSocket connected, sending session.config",
-					);
+					// Send session.update to configure model (triggers model validation)
 					ws?.send(
 						JSON.stringify({
-							type: "session.config",
-							config: {
-								system_instruction: cfg.systemInstruction ?? "",
-								voice: cfg.voice,
-							},
+							type: "session.update",
+							model: cfg?.model ?? "openbmb/MiniCPM-o-4_5",
 						}),
 					);
 				};
@@ -71,16 +78,16 @@ export function createMiniCpmOSession(): VoiceSession {
 				ws.onmessage = (event) => {
 					try {
 						const msg = JSON.parse(event.data);
-						if (msg.type === "session.ready") {
+						if (msg.type === "session.created") {
 							clearTimeout(timeout);
 							connected = true;
-							Logger.info("MiniCPM-o", "session ready");
+							Logger.info("minicpm-o", "session created", { id: msg.id });
 							resolve();
 							return;
 						}
 						if (msg.type === "error") {
 							clearTimeout(timeout);
-							const err = new Error(msg.message || "Session error");
+							const err = new Error(msg.error || "Session error");
 							reject(err);
 							session.onError?.(err);
 							return;
@@ -102,9 +109,9 @@ export function createMiniCpmOSession(): VoiceSession {
 					clearTimeout(timeout);
 					const wasConnected = connected;
 					connected = false;
-					Logger.info("MiniCPM-o", "disconnected");
+					Logger.info("minicpm-o", "disconnected");
 					if (!wasConnected) {
-						reject(new Error("Connection closed before session ready"));
+						reject(new Error("Connection closed before session created"));
 					}
 					session.onDisconnect?.();
 				};
@@ -113,29 +120,54 @@ export function createMiniCpmOSession(): VoiceSession {
 
 		sendAudio(pcmBase64: string) {
 			if (!ws || !connected) return;
+
+			// Buffer and send to server
 			ws.send(
 				JSON.stringify({
-					type: "audio.append",
-					data: pcmBase64,
+					type: "input_audio_buffer.append",
+					audio: pcmBase64,
 				}),
 			);
-		},
 
-		sendText(text: string) {
-			if (!ws || !connected) return;
-			ws.send(
-				JSON.stringify({
-					type: "text.send",
-					text,
-				}),
+			// Silence detection: commit when speech pauses
+			const bytes = base64ToUint8Array(pcmBase64);
+			const samples = new Int16Array(
+				bytes.buffer,
+				bytes.byteOffset,
+				bytes.byteLength / 2,
 			);
+			pcmBuffer.push(samples.slice());
+
+			const isSpeech = rms(samples) >= SPEECH_RMS_THRESHOLD;
+			if (isSpeech) {
+				if (silenceTimer) clearTimeout(silenceTimer);
+				silenceTimer = setTimeout(() => {
+					silenceTimer = null;
+					commitAudio();
+				}, SILENCE_TIMEOUT_MS);
+			} else if (!silenceTimer) {
+				silenceTimer = setTimeout(() => {
+					silenceTimer = null;
+					commitAudio();
+				}, SILENCE_TIMEOUT_MS);
+			}
 		},
 
-		// MiniCPM-o 4.5 does not support function calling — no-op
-		sendToolResponse(_callId: string, _result: unknown) {},
+		sendText(_text: string) {
+			// vllm /v1/realtime is ASR-only; text input not supported
+		},
+
+		sendToolResponse(_callId: string, _result: unknown) {
+			// Tool calls not supported
+		},
 
 		disconnect() {
 			connected = false;
+			if (silenceTimer) {
+				clearTimeout(silenceTimer);
+				silenceTimer = null;
+			}
+			pcmBuffer = [];
 			if (ws) {
 				ws.close();
 				ws = null;
@@ -143,45 +175,71 @@ export function createMiniCpmOSession(): VoiceSession {
 		},
 	};
 
+	function commitAudio() {
+		if (!ws || !connected) return;
+
+		const totalSamples = pcmBuffer.reduce((n, c) => n + c.length, 0);
+		pcmBuffer = [];
+
+		if (totalSamples < MIN_AUDIO_SAMPLES) {
+			Logger.debug("minicpm-o", "audio too short, skipping commit", {
+				samples: totalSamples,
+			});
+			return;
+		}
+
+		// Commit buffered audio to trigger inference
+		ws.send(JSON.stringify({ type: "input_audio_buffer.commit", final: false }));
+		Logger.debug("minicpm-o", "committed audio", { samples: totalSamples });
+	}
+
 	function handleMessage(msg: Record<string, unknown>) {
 		const type = msg.type as string;
 
 		switch (type) {
-			case "audio.delta": {
-				const data = msg.data as string | undefined;
-				if (data) {
-					session.onAudio?.(data);
+			case "transcription.delta": {
+				// Incremental transcription text
+				const delta = msg.delta as string | undefined;
+				if (delta) {
+					session.onOutputTranscript?.(delta);
 				}
 				break;
 			}
 
-			case "transcript.input": {
+			case "transcription.done": {
+				// Final transcription
 				const text = msg.text as string | undefined;
 				if (text) {
-					session.onInputTranscript?.(text);
+					Logger.info("minicpm-o", "transcription done", { text });
 				}
-				break;
-			}
-
-			case "transcript.output": {
-				const text = msg.text as string | undefined;
-				if (text) {
-					session.onOutputTranscript?.(text);
-				}
-				break;
-			}
-
-			case "turn.end": {
 				session.onTurnEnd?.();
 				break;
 			}
 
-			case "interrupted": {
-				session.onInterrupted?.();
+			case "error": {
+				const err = new Error(
+					(msg.error as string) || "Server error",
+				);
+				Logger.warn("minicpm-o", "server error", { error: msg });
+				session.onError?.(err);
 				break;
 			}
 		}
 	}
 
 	return session;
+}
+
+function rms(samples: Int16Array): number {
+	if (samples.length === 0) return 0;
+	let sum = 0;
+	for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+	return Math.sqrt(sum / samples.length);
+}
+
+function base64ToUint8Array(b64: string): Uint8Array {
+	const bin = atob(b64);
+	const arr = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+	return arr;
 }

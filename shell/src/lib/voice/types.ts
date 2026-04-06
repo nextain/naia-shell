@@ -22,7 +22,7 @@ export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	naia: "Naia OS",
 	"gemini-live": "Gemini",
 	"openai-realtime": "OpenAI",
-	"minicpm-o": "MiniCPM-o (Bridge)",
+	"minicpm-o": "MiniCPM-o (Realtime ASR)",
 	"vllm-omni": "MiniCPM-o (vllm-omni)",
 	"edge-tts": "Edge (TTS 전용)",
 };
@@ -80,7 +80,8 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 
 export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	provider: "minicpm-o";
-	/** Bridge server WebSocket URL (e.g. ws://localhost:8765). Provider appends /ws. */
+	/** vllm-omni server URL (e.g. http://localhost:8000 or ws://localhost:8000).
+	 *  Provider connects to /v1/realtime WebSocket endpoint for ASR. */
 	serverUrl: string;
 }
 
