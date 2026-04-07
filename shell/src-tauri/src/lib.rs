@@ -145,7 +145,7 @@ struct AgentProcess {
     stdin: std::process::ChildStdin,
 }
 
-// OpenClaw Gateway + Node Host process handle
+// Naia Gateway + Node Host process handle
 struct GatewayProcess {
     child: Child,
     node_host: Option<Child>,
@@ -610,7 +610,7 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
     Err("Node.js 22+ not found (checked system PATH and nvm/fnm)".to_string())
 }
 
-/// Check if OpenClaw Gateway is already running (blocking, for setup use)
+/// Check if Naia Gateway is already running (blocking, for setup use)
 fn check_gateway_health_sync() -> bool {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
@@ -624,8 +624,8 @@ fn check_gateway_health_sync() -> bool {
     }
 }
 
-/// Find openclaw binary and node binary paths
-fn find_openclaw_paths() -> Result<(std::path::PathBuf, String, String), String> {
+/// Find Naia Gateway binary and node binary paths
+fn find_gateway_paths() -> Result<(std::path::PathBuf, String, String), String> {
     let node_bin = find_node_binary()?;
     let home = home_dir();
     // Search order: Flatpak bundle → system install → user install
@@ -635,12 +635,12 @@ fn find_openclaw_paths() -> Result<(std::path::PathBuf, String, String), String>
         "/usr/share/naia/openclaw/node_modules/openclaw/openclaw.mjs".to_string(),
         format!("{}/.naia/openclaw/node_modules/openclaw/openclaw.mjs", home),
     ];
-    let openclaw_bin = candidates
+    let gateway_bin = candidates
         .iter()
         .find(|p| std::path::Path::new(p).exists())
         .cloned()
         .ok_or_else(|| {
-            "OpenClaw not installed. Expected at /app/lib/naia-os/openclaw/, /usr/share/naia/openclaw/, or ~/.naia/openclaw/"
+            "Naia Gateway not installed. Expected at /app/lib/naia-os/openclaw/, /usr/share/naia/openclaw/, or ~/.naia/openclaw/"
                 .to_string()
         })?;
     // Prefer ~/.openclaw/openclaw.json (standard path), fallback to legacy ~/.naia/openclaw/
@@ -654,15 +654,15 @@ fn find_openclaw_paths() -> Result<(std::path::PathBuf, String, String), String>
     } else {
         primary // New installs use standard path
     };
-    Ok((node_bin, openclaw_bin, config_path))
+    Ok((node_bin, gateway_bin, config_path))
 }
 
 /// Load bootstrap config from bundled template file, with hardcoded fallback.
-/// Single source of truth: config/defaults/openclaw-bootstrap.json
+/// Single source of truth: config/defaults/gateway-bootstrap.json
 fn load_bootstrap_config() -> serde_json::Value {
     // Search: Flatpak bundle → dev-mode relative → hardcoded fallback
     let candidates = [
-        "/app/lib/naia-os/openclaw-bootstrap.json".to_string(),
+        "/app/lib/naia-os/gateway-bootstrap.json".to_string(),
         // Dev mode: relative to src-tauri/
         {
             let mut p = std::env::current_exe()
@@ -674,7 +674,7 @@ fn load_bootstrap_config() -> serde_json::Value {
             for _ in 0..4 {
                 p = p.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
             }
-            p.join("config/defaults/openclaw-bootstrap.json")
+            p.join("config/defaults/gateway-bootstrap.json")
                 .to_string_lossy()
                 .to_string()
         },
@@ -717,9 +717,9 @@ fn load_bootstrap_config() -> serde_json::Value {
 }
 
 /// Ensure ~/.openclaw/openclaw.json exists with minimal required fields.
-/// Reads bootstrap template from config/defaults/openclaw-bootstrap.json (SoT).
+/// Reads bootstrap template from config/defaults/gateway-bootstrap.json (SoT).
 /// If the file exists but gateway.mode is missing, patches it in.
-fn ensure_openclaw_config(config_path: &str) {
+fn ensure_gateway_config(config_path: &str) {
     let path = std::path::Path::new(config_path);
 
     if !path.exists() {
@@ -815,7 +815,7 @@ fn ensure_openclaw_config(config_path: &str) {
 /// Spawn Node Host process (connects to Gateway for command execution)
 fn spawn_node_host(
     node_bin: &std::path::Path,
-    openclaw_bin: &str,
+    gateway_bin: &str,
     config_path: &str,
 ) -> Result<Child, String> {
     // Load the same gateway-env.json as the gateway process so the agent
@@ -860,7 +860,7 @@ fn spawn_node_host(
 
     let extra_env = load_gateway_env(config_path);
     let mut cmd = Command::new(node_bin.as_os_str());
-    cmd.arg(openclaw_bin)
+    cmd.arg(gateway_bin)
         .arg("node")
         .arg("run")
         .arg("--host")
@@ -887,7 +887,7 @@ fn spawn_node_host(
     Ok(child)
 }
 
-/// Spawn or attach to OpenClaw Gateway + Node Host
+/// Spawn or attach to Naia Gateway + Node Host
 fn spawn_gateway() -> Result<GatewayProcess, String> {
     // 1. Check if already running (e.g. systemd or manual start)
     if check_gateway_health_sync() {
@@ -896,7 +896,7 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
         // Previous app exit may have left gateway in a half-alive state
         // (HTTP responds but WebSocket/Node Host connections are broken).
         #[cfg(unix)]
-        { let _ = Command::new("pkill").arg("-f").arg("openclaw.*gateway").output(); }
+        { let _ = Command::new("pkill").arg("-f").arg("naia.*gateway").output(); }
         #[cfg(windows)]
         {
             // Kill gateway by PID file instead of /IM node.exe (which kills ALL node processes)
@@ -914,10 +914,10 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
             let child = dummy.spawn()
                 .map_err(|e| format!("Failed to create dummy process: {}", e))?;
 
-            let node_host = match find_openclaw_paths() {
-                Ok((node_bin, openclaw_bin, config_path)) => {
-                    ensure_openclaw_config(&config_path);
-                    match spawn_node_host(&node_bin, &openclaw_bin, &config_path) {
+            let node_host = match find_gateway_paths() {
+                Ok((node_bin, gateway_bin, config_path)) => {
+                    ensure_gateway_config(&config_path);
+                    match spawn_node_host(&node_bin, &gateway_bin, &config_path) {
                         Ok(nh) => Some(nh),
                         Err(e) => {
                             log_both(&format!("[Naia] Node Host spawn failed: {}", e));
@@ -938,16 +938,16 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
     }
 
     // 2. Find paths
-    let (node_bin, openclaw_bin, config_path) = find_openclaw_paths()?;
+    let (node_bin, gateway_bin, config_path) = find_gateway_paths()?;
 
-    // 2.5. Ensure minimal config exists so OpenClaw doesn't reject startup.
+    // 2.5. Ensure minimal config exists so Naia Gateway doesn't reject startup.
     // This covers first-launch on Flatpak where install-gateway.sh wasn't run.
-    ensure_openclaw_config(&config_path);
+    ensure_gateway_config(&config_path);
 
     log_verbose(&format!(
         "[Naia] Spawning Gateway: {} {} gateway run --bind loopback --port 18789",
         node_bin.display(),
-        openclaw_bin
+        gateway_bin
     ));
 
     // 3. Spawn Gateway with log files
@@ -962,7 +962,7 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
 
     // Load extra env vars from gateway-env.json (e.g. OPENAI_TTS_BASE_URL for Naia TTS)
     let mut cmd = Command::new(node_bin.as_os_str());
-    cmd.arg(&openclaw_bin)
+    cmd.arg(&gateway_bin)
         .arg("gateway")
         .arg("run")
         .arg("--bind")
@@ -1051,7 +1051,7 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
     //    Node Host exits immediately on ECONNREFUSED, so spawning it before Gateway is ready is pointless
     let node_host = if gateway_healthy {
         log_verbose("[Naia] Spawning Node Host...");
-        match spawn_node_host(&node_bin, &openclaw_bin, &config_path) {
+        match spawn_node_host(&node_bin, &gateway_bin, &config_path) {
             Ok(nh) => {
                 // Give Node Host a moment to connect
                 std::thread::sleep(std::time::Duration::from_millis(1000));
@@ -1703,7 +1703,7 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     Ok(devices)
 }
 
-/// Check if OpenClaw Gateway is reachable on localhost
+/// Check if Naia Gateway is reachable on localhost
 #[tauri::command]
 async fn gateway_health() -> Result<bool, String> {
     let client = reqwest::Client::builder()
@@ -1721,9 +1721,9 @@ async fn gateway_health() -> Result<bool, String> {
     }
 }
 
-/// Restart the OpenClaw Gateway.
+/// Restart the Naia Gateway.
 /// Kills existing gateway + node host, then respawns both.
-/// Call this after writing openclaw.json to ensure the gateway reads fresh config.
+/// Call this after writing gateway config to ensure the gateway reads fresh config.
 #[tauri::command]
 async fn restart_gateway(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     log_verbose("[Naia] restart_gateway requested");
@@ -1788,12 +1788,12 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Reset OpenClaw session data (agents/main/sessions + memory).
+/// Reset Naia Gateway session data (agents/main/sessions + memory).
 #[tauri::command]
-fn reset_openclaw_data() -> Result<String, String> {
+fn reset_gateway_data() -> Result<String, String> {
     let home = home_dir();
     let base_dirs = [
-        format!("{}/.openclaw", home),
+        format!("{}/.openclaw", home), // primary (existing installs)
         format!("{}/.naia/openclaw", home),
     ];
 
@@ -1815,18 +1815,18 @@ fn reset_openclaw_data() -> Result<String, String> {
         }
     }
 
-    log_verbose(&format!("[Naia] OpenClaw data reset: {:?}", removed));
+    log_verbose(&format!("[Naia] Gateway data reset: {:?}", removed));
     Ok(serde_json::json!({ "removed": removed }).to_string())
 }
 
 /// Read Discord bot token.
-/// Priority: Shell local config (naia-discord.json) → OpenClaw config (openclaw.json).
-/// This separates the primary path from OpenClaw dependency (#154).
+/// Priority: Shell local config (naia-discord.json) → Gateway config (openclaw.json).
+/// This separates the primary path from Gateway dependency (#154).
 #[tauri::command]
 fn read_discord_bot_token() -> Result<String, String> {
     let home = home_dir();
 
-    // 1. Shell local config (primary — no OpenClaw dependency)
+    // 1. Shell local config (primary — no Gateway dependency)
     let mut shell_candidates = vec![
         format!("{}/.local/share/com.naia.shell/naia-discord.json", home),
         format!("{}/.var/app/io.nextain.naia/config/com.naia.shell/naia-discord.json", home),
@@ -1848,12 +1848,12 @@ fn read_discord_bot_token() -> Result<String, String> {
         }
     }
 
-    // 2. OpenClaw config (fallback — backward compatibility)
-    let openclaw_candidates = [
+    // 2. Gateway config (fallback — backward compatibility)
+    let gateway_candidates = [
         format!("{}/.openclaw/openclaw.json", home),
         format!("{}/.naia/openclaw/openclaw.json", home),
     ];
-    for path in &openclaw_candidates {
+    for path in &gateway_candidates {
         if let Ok(bytes) = std::fs::read(path) {
             if let Ok(config) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                 if let Some(token) = config
@@ -1874,7 +1874,7 @@ fn read_discord_bot_token() -> Result<String, String> {
 }
 
 /// Write Discord bot token to Shell local config.
-/// Called after login sync to persist token independently of OpenClaw.
+/// Called after login sync to persist token independently of Gateway.
 #[tauri::command]
 fn write_discord_bot_token(token: String) -> Result<(), String> {
     let home = home_dir();
@@ -2050,10 +2050,10 @@ async fn fetch_linked_channels(naia_key: String, user_id: String) -> Result<Stri
         .map_err(|e| format!("Failed to read response: {}", e))
 }
 
-/// Parameters for syncing Shell provider settings to OpenClaw gateway config
+/// Parameters for syncing Shell provider settings to Naia Gateway config
 #[derive(Deserialize)]
 #[allow(dead_code)]
-struct OpenClawSyncParams {
+struct GatewaySyncParams {
     provider: String,
     model: String,
     api_key: Option<String>,
@@ -2072,11 +2072,11 @@ struct OpenClawSyncParams {
     lab_gateway_url: Option<String>,
 }
 
-/// Sync Shell provider/model/API-key to ~/.openclaw/openclaw.json so the
-/// OpenClaw gateway agent uses the same settings (e.g. for Discord DM replies).
+/// Sync Shell provider/model/API-key to gateway config file so the
+/// Naia Gateway agent uses the same settings (e.g. for Discord DM replies).
 #[tauri::command]
-async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> {
-    // Map Shell ProviderId → OpenClaw provider name
+async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
+    // Map Shell ProviderId → Naia Gateway provider name
     let oc_provider = match params.provider.as_str() {
         "gemini" | "nextain" => "google",
         "anthropic" => "anthropic",
@@ -2084,7 +2084,7 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
         "xai" => "xai",
         "zai" => "zai",
         "ollama" => "ollama",
-        // claude-code-cli doesn't use openclaw config
+        // claude-code-cli doesn't use gateway config
         _ => return Ok(()),
     };
 
@@ -2102,8 +2102,8 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
     };
 
     // Ensure config file exists with required gateway fields before reading.
-    // Single bootstrap path: ensure_openclaw_config handles both creation and patching.
-    ensure_openclaw_config(&config_path);
+    // Single bootstrap path: ensure_gateway_config handles both creation and patching.
+    ensure_gateway_config(&config_path);
 
     let mut root: serde_json::Value = {
         let raw = std::fs::read_to_string(&config_path)
@@ -2135,8 +2135,8 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
         serde_json::Value::String(model_value.clone()),
     );
 
-    // Write custom Ollama baseUrl into openclaw.json for OpenClaw to use.
-    // OpenClaw reads models.providers.ollama.baseUrl (not OLLAMA_HOST env).
+    // Write custom Ollama baseUrl into gateway config for Naia Gateway to use.
+    // Gateway reads models.providers.ollama.baseUrl (not OLLAMA_HOST env).
     if oc_provider == "ollama" {
         let models_section = obj
             .entry("models")
@@ -2164,7 +2164,7 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
         }
     }
 
-    // Always ensure gateway.mode=local (defense-in-depth: ensure_openclaw_config may
+    // Always ensure gateway.mode=local (defense-in-depth: ensure_gateway_config may
     // have failed silently, or config was overwritten by another code path).
     let gw = obj
         .entry("gateway")
@@ -2181,7 +2181,7 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
         .ok_or("reload is not an object")?;
     reload.insert("mode".to_string(), serde_json::Value::String("off".to_string()));
 
-    // Isolate DM sessions from Shell chat (defense-in-depth, mirrors ensure_openclaw_config)
+    // Isolate DM sessions from Shell chat (defense-in-depth, mirrors ensure_gateway_config)
     let session_obj = obj
         .entry("session")
         .or_insert_with(|| serde_json::json!({}))
@@ -2213,10 +2213,10 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
     }
 
     // Sync TTS settings into messages.tts so the gateway uses the right provider/voice
-    // TTS is handled entirely by Shell (not OpenClaw Gateway).
+    // TTS is handled entirely by Shell (not Naia Gateway).
     // No TTS config sync needed — removed to prevent gateway config schema crashes.
 
-    // Atomic write: openclaw.json
+    // Atomic write: gateway config file
     let dir = std::path::Path::new(&config_path)
         .parent()
         .ok_or("No parent dir")?;
@@ -2232,10 +2232,10 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
 
     // Write env file for gateway.
     {
-        let openclaw_dir = std::path::Path::new(&config_path)
+        let gateway_dir = std::path::Path::new(&config_path)
             .parent()
             .ok_or("No parent dir")?;
-        let env_path = openclaw_dir.join("gateway-env.json");
+        let env_path = gateway_dir.join("gateway-env.json");
         let mut env_obj: serde_json::Map<String, serde_json::Value> = if env_path.exists() {
             let raw = std::fs::read_to_string(&env_path).unwrap_or_else(|_| "{}".to_string());
             serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::Map::new())
@@ -2244,8 +2244,8 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
         };
         // TTS handled by Shell, not Gateway — no OPENAI_TTS_BASE_URL needed
         env_obj.remove("OPENAI_TTS_BASE_URL");
-        // Write OLLAMA_API_KEY for OpenClaw to register Ollama as a provider.
-        // OpenClaw requires this env var (any non-empty value) to enable Ollama.
+        // Write OLLAMA_API_KEY for Naia Gateway to register Ollama as a provider.
+        // Gateway requires this env var (any non-empty value) to enable Ollama.
         if params.provider == "ollama" {
             env_obj.insert("OLLAMA_API_KEY".to_string(),
                 serde_json::Value::String("ollama-local".to_string()));
@@ -2275,10 +2275,10 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
     if let Some(naia_key_val) = params.naia_key.as_deref().filter(|k| !k.is_empty()) {
         let ak = naia_key_val.to_string();
         if !ak.is_empty() {
-            let openclaw_dir = std::path::Path::new(&config_path)
+            let gateway_dir = std::path::Path::new(&config_path)
                 .parent()
                 .ok_or("No parent dir")?;
-            let auth_path = openclaw_dir.join("agents/main/agent/auth-profiles.json");
+            let auth_path = gateway_dir.join("agents/main/agent/auth-profiles.json");
             if let Some(auth_parent) = auth_path.parent() {
                 std::fs::create_dir_all(auth_parent)
                     .map_err(|e| format!("Failed to create dir {}: {}", auth_parent.display(), e))?;
@@ -2320,14 +2320,14 @@ async fn sync_openclaw_config(params: OpenClawSyncParams) -> Result<(), String> 
                 .map_err(|e| format!("Failed to rename auth-profiles: {}", e))?;
 
             log_both(&format!(
-                "[Naia] Synced OpenClaw auth-profile: {}",
+                "[Naia] Synced Gateway auth-profile: {}",
                 profile_id
             ));
         }
     }
 
     log_both(&format!(
-        "[Naia] Synced OpenClaw config: model={}",
+        "[Naia] Synced Gateway config: model={}",
         model_value
     ));
 
@@ -2591,7 +2591,7 @@ pub fn run() {
             send_to_agent_command,
             cancel_stream,
             reset_window_state,
-            reset_openclaw_data,
+            reset_gateway_data,
             gateway_health,
             restart_gateway,
             get_audit_log,
@@ -2605,7 +2605,7 @@ pub fn run() {
             read_discord_bot_token,
             write_discord_bot_token,
             discord_api,
-            sync_openclaw_config,
+            sync_gateway_config,
             fetch_linked_channels,
             gemini_live_connect,
             gemini_live_send_audio,
