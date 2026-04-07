@@ -22,6 +22,11 @@ export function createAudioPlayer(opts: AudioPlayerOptions = {}): AudioPlayer {
 	// AudioContext({ sampleRate }) causes GStreamer CRITICAL in WebKitGTK.
 	// Use default sampleRate and upsample in SW instead.
 	const ctx = new AudioContext();
+	Logger.debug("AudioPlayer", "created", {
+		inputSampleRate,
+		ctxSampleRate: ctx.sampleRate,
+		state: ctx.state,
+	});
 	let nextStartTime = 0;
 	let activeSourceCount = 0;
 	let destroyed = false;

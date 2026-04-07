@@ -22,7 +22,7 @@ export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	naia: "Naia OS",
 	"gemini-live": "Gemini",
 	"openai-realtime": "OpenAI",
-	"minicpm-o": "MiniCPM-o (Realtime ASR)",
+	"minicpm-o": "MiniCPM-o (Omni Voice)",
 	"vllm-omni": "MiniCPM-o (vllm-omni)",
 	"edge-tts": "Edge (TTS 전용)",
 };
@@ -81,7 +81,7 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	provider: "minicpm-o";
 	/** vllm-omni server URL (e.g. http://localhost:8000 or ws://localhost:8000).
-	 *  Provider connects to /v1/realtime WebSocket endpoint for ASR. */
+	 *  Provider connects to /v1/omni full-duplex WebSocket endpoint. */
 	serverUrl: string;
 }
 

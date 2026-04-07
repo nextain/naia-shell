@@ -38,6 +38,12 @@ const AUDIO_CHUNK_FRAMES = 4096;
 /** RMS threshold for speech detection (Int16 scale 0–32767, ~3% of full scale) */
 const SPEECH_RMS_THRESHOLD = 200;
 const OUTPUT_SAMPLE_RATE = 24000;
+/** RMS below this = silence in AI output (Int16 scale) */
+const OUTPUT_SILENCE_THRESHOLD = 300;
+/** Consecutive silent output chunks before cutting playback (~2s at 170ms/chunk) */
+const OUTPUT_SILENCE_CHUNKS = 12;
+/** Hard cap on AI audio output — never play more than this many seconds */
+const MAX_OUTPUT_SECONDS = 20;
 
 export function createMiniCpmOSession(): VoiceSession {
 	let ws: WebSocket | null = null;
@@ -47,6 +53,11 @@ export function createMiniCpmOSession(): VoiceSession {
 	let maxBufferTimer: ReturnType<typeof setTimeout> | null = null;
 	let pcmBuffer: Int16Array[] = [];
 	let rmsLogThrottle = 0;
+	let audioChunkCount = 0;
+	let isAiSpeaking = false; // suppress mic input while AI audio plays (prevents echo loop)
+	let silentOutputChunks = 0; // consecutive silent output chunks for early cutoff
+	let outputSamplesTotal = 0; // total PCM samples emitted this turn (for hard cap)
+	let audioOutputCapped = false; // true after hard cap or silence cut — discard remaining server frames
 
 	const session: VoiceSession = {
 		onAudio: null,
@@ -114,11 +125,18 @@ export function createMiniCpmOSession(): VoiceSession {
 					}
 				};
 
+				let connectErrored = false;
 				ws.onerror = () => {
 					clearTimeout(timeout);
+					connectErrored = true;
 					const err = new Error("WebSocket error");
-					reject(err);
-					session.onError?.(err);
+					if (connected) {
+						// Post-connect error: notify caller via callback
+						session.onError?.(err);
+					} else {
+						// Pre-connect error: surface via rejected promise only
+						reject(err);
+					}
 				};
 
 				ws.onclose = () => {
@@ -126,7 +144,8 @@ export function createMiniCpmOSession(): VoiceSession {
 					const wasConnected = connected;
 					connected = false;
 					Logger.info("minicpm-o", "disconnected from /v1/omni");
-					if (!wasConnected) {
+					if (!wasConnected && !connectErrored) {
+						// onerror already rejected — avoid double-reject
 						reject(new Error("Connection closed before session ready"));
 					}
 					session.onDisconnect?.();
@@ -136,6 +155,8 @@ export function createMiniCpmOSession(): VoiceSession {
 
 		sendAudio(pcmBase64: string) {
 			if (!ws || !connected) return;
+			// Discard mic input while AI is speaking to prevent echo loop
+			if (isAiSpeaking) return;
 
 			// Decode base64 PCM16 and buffer locally
 			const bytes = base64ToUint8Array(pcmBase64);
@@ -203,6 +224,11 @@ export function createMiniCpmOSession(): VoiceSession {
 			}
 			pcmBuffer = [];
 			rmsLogThrottle = 0;
+			audioChunkCount = 0;
+			isAiSpeaking = false;
+			silentOutputChunks = 0;
+			outputSamplesTotal = 0;
+			audioOutputCapped = false;
 			if (ws) {
 				ws.close();
 				ws = null;
@@ -233,19 +259,78 @@ export function createMiniCpmOSession(): VoiceSession {
 		}
 		pcmBuffer = [];
 
+		// Notify UI that user speech was captured (no ASR u2014 placeholder only)
+		session.onInputTranscript?.("🎤 음성 입력");
+
 		// Send raw PCM16 bytes as binary frame (server converts to WAV)
-		ws.send(pcm.buffer);
-		// Signal end of this turn's audio input
-		ws.send(JSON.stringify({ type: "input.done" }));
+		try {
+			ws.send(pcm.buffer);
+			// Signal end of this turn's audio input
+			ws.send(JSON.stringify({ type: "input.done" }));
+		} catch (err) {
+			Logger.warn("minicpm-o", "send failed", { error: String(err) });
+			session.onError?.(err instanceof Error ? err : new Error(String(err)));
+			return;
+		}
 
 		Logger.debug("minicpm-o", "flushed audio", { samples: totalSamples });
 	}
 
 	/** Decode a server binary frame (WAV chunk) and emit PCM via onAudio. */
 	function handleAudioChunk(arrayBuffer: ArrayBuffer) {
+		// Discard remaining server frames after cap/silence cut (prevents repeated onInterrupted spam)
+		if (audioOutputCapped) return;
+
 		try {
 			const bytes = new Uint8Array(arrayBuffer);
+			if (audioChunkCount === 0) {
+				// Log first chunk WAV header info to verify format
+				const dv = new DataView(bytes.buffer, bytes.byteOffset, Math.min(bytes.byteLength, 44));
+				Logger.debug("minicpm-o", "first WAV chunk header", {
+					totalBytes: arrayBuffer.byteLength,
+					audioFormat: dv.getUint16(20, true), // 1=PCM, 3=IEEE_FLOAT
+					channels: dv.getUint16(22, true),
+					sampleRate: dv.getUint32(24, true),
+					bitsPerSample: dv.getUint16(34, true),
+				});
+			}
+			audioChunkCount++;
 			const pcm = decodeWavToPcm(bytes);
+
+			// Hard cap: never play more than MAX_OUTPUT_SECONDS regardless of content
+			const maxSamples = MAX_OUTPUT_SECONDS * OUTPUT_SAMPLE_RATE;
+			if (outputSamplesTotal >= maxSamples) {
+				Logger.info("minicpm-o", "output hard cap reached u2014 cutting playback", {
+					seconds: MAX_OUTPUT_SECONDS,
+				});
+				audioOutputCapped = true;
+				isAiSpeaking = false;
+				session.onInterrupted?.();
+				return;
+			}
+
+			// Silence detection: stop early when speech ends
+			const chunkRmsOutput = rms(pcm);
+			if (chunkRmsOutput < OUTPUT_SILENCE_THRESHOLD) {
+				silentOutputChunks++;
+				if (silentOutputChunks >= OUTPUT_SILENCE_CHUNKS) {
+					Logger.info("minicpm-o", "output silence u2014 cutting playback early", {
+						playedSeconds: outputSamplesTotal / OUTPUT_SAMPLE_RATE,
+						chunk: audioChunkCount,
+					});
+					silentOutputChunks = 0;
+					outputSamplesTotal = 0;
+					audioOutputCapped = true;
+					isAiSpeaking = false;
+					session.onInterrupted?.();
+					return;
+				}
+			} else {
+				silentOutputChunks = 0;
+			}
+
+			outputSamplesTotal += pcm.length;
+
 			for (let i = 0; i < pcm.length; i += AUDIO_CHUNK_FRAMES) {
 				const chunk = pcm.slice(i, i + AUDIO_CHUNK_FRAMES);
 				const b64 = uint8ArrayToBase64(
@@ -275,7 +360,15 @@ export function createMiniCpmOSession(): VoiceSession {
 			}
 
 			case "audio.start":
-				Logger.debug("minicpm-o", "audio stream starting", {
+				isAiSpeaking = true;
+				silentOutputChunks = 0;
+				outputSamplesTotal = 0;
+				audioOutputCapped = false;
+				// Discard any buffered mic input captured before AI started speaking
+				pcmBuffer = [];
+				if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+				if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+				Logger.debug("minicpm-o", "audio stream starting (mic muted)", {
 					format: msg.format,
 					sample_rate: msg.sample_rate,
 				});
@@ -288,14 +381,16 @@ export function createMiniCpmOSession(): VoiceSession {
 				break;
 
 			case "turn.done":
-				Logger.debug("minicpm-o", "turn done");
+				isAiSpeaking = false;
+				Logger.debug("minicpm-o", "turn done (mic unmuted)");
 				session.onTurnEnd?.();
 				break;
 
 			case "error": {
+				// Non-fatal per protocol — session continues. Do NOT call onError.
+				// (onError → ChatPanel.disconnect() would kill the session on recoverable errors)
 				const errMsg = (msg.message as string) || "Server error";
-				Logger.warn("minicpm-o", "server error", { message: errMsg });
-				session.onError?.(new Error(errMsg));
+				Logger.warn("minicpm-o", "non-fatal server error (session continues)", { message: errMsg });
 				break;
 			}
 		}
@@ -307,12 +402,18 @@ export function createMiniCpmOSession(): VoiceSession {
 /**
  * Parse WAV bytes -> Int16Array PCM, resampling to OUTPUT_SAMPLE_RATE if needed.
  * Each binary frame from /v1/omni is a self-contained WAV (RIFF header + PCM16 data).
+ *
+ * Handles both PCM_16 (audioFormat=1) and IEEE_FLOAT (audioFormat=3) subtypes.
+ * soundfile writes FLOAT format when given float32 arrays unless subtype="PCM_16" is forced.
  */
 function decodeWavToPcm(bytes: Uint8Array): Int16Array {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
-	// Find 'data' chunk (standard RIFF layout)
+	// Standard WAV fmt chunk fields (all at fixed offsets for non-extensible PCM/FLOAT)
+	const audioFormat = view.getUint16(20, true); // 1=PCM, 3=IEEE_FLOAT
 	const srcSampleRate = view.getUint32(24, true);
+	const bitsPerSample = view.getUint16(34, true);
+
 	let offset = 12;
 	while (offset + 8 <= bytes.byteLength) {
 		const id =
@@ -322,11 +423,29 @@ function decodeWavToPcm(bytes: Uint8Array): Int16Array {
 			String.fromCharCode(bytes[offset + 3]);
 		const size = view.getUint32(offset + 4, true);
 		if (id === "data") {
-			const pcm = new Int16Array(
-				bytes.buffer,
-				bytes.byteOffset + offset + 8,
-				size / 2,
-			).slice();
+			let pcm: Int16Array;
+			if (audioFormat === 3 || bitsPerSample === 32) {
+				// IEEE_FLOAT WAV: float32 samples in [-1.0, 1.0] → convert to Int16
+				const float32 = new Float32Array(
+					bytes.buffer,
+					bytes.byteOffset + offset + 8,
+					size / 4,
+				).slice();
+				pcm = new Int16Array(float32.length);
+				for (let i = 0; i < float32.length; i++) {
+					const s = float32[i];
+					pcm[i] = Math.round(
+						Math.max(-32768, Math.min(32767, s < 0 ? s * 32768 : s * 32767)),
+					);
+				}
+			} else {
+				// PCM_16: direct Int16 interpretation
+				pcm = new Int16Array(
+					bytes.buffer,
+					bytes.byteOffset + offset + 8,
+					size / 2,
+				).slice();
+			}
 			return srcSampleRate === OUTPUT_SAMPLE_RATE
 				? pcm
 				: resampleLinear(pcm, srcSampleRate, OUTPUT_SAMPLE_RATE);
