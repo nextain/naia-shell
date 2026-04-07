@@ -90,20 +90,31 @@ export class Mem0Adapter implements BenchmarkAdapter {
 	async addFact(content: string): Promise<boolean> {
 		if (!this.mem0) throw new Error("Not initialized");
 		await new Promise((r) => setTimeout(r, THROTTLE_MS));
-		try {
-			const timeout = new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error(`mem0 addFact timeout after ${ADD_TIMEOUT_MS}ms`)), ADD_TIMEOUT_MS),
-			);
-			await Promise.race([
-				this.mem0.add([{ role: "user", content }], { userId: "bench" }),
-				timeout,
-			]);
-			return true;
-		} catch (err: any) {
-			// mem0 internal errors (e.g. "Memory with ID undefined not found") or
-			// LLM timeout — log and continue, don't hang.
-			console.error(`  mem0 addFact error: ${err?.message?.slice(0, 120)}`);
-			return false;
+		let attempt = 0;
+		while (true) {
+			try {
+				const timeout = new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error(`mem0 addFact timeout after ${ADD_TIMEOUT_MS}ms`)), ADD_TIMEOUT_MS),
+				);
+				await Promise.race([
+					this.mem0.add([{ role: "user", content }], { userId: "bench" }),
+					timeout,
+				]);
+				return true;
+			} catch (err: any) {
+				const msg = err?.message ?? "";
+				const isNetwork = /connection error|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed|network/i.test(msg);
+				if (isNetwork) {
+					attempt++;
+					const delay = Math.min(5000 * attempt, 60000);
+					console.error(`  mem0 addFact network error (attempt ${attempt}), retry in ${delay}ms: ${msg.slice(0, 80)}`);
+					await new Promise((r) => setTimeout(r, delay));
+				} else {
+					// Non-network error (e.g. "Memory with ID undefined not found") — skip
+					console.error(`  mem0 addFact error: ${msg.slice(0, 120)}`);
+					return false;
+				}
+			}
 		}
 	}
 

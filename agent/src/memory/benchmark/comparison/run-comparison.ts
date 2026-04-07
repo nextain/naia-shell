@@ -17,10 +17,11 @@ import { execSync } from "node:child_process";
  *
  * Requires: GEMINI_API_KEY env var
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { JikimeMemAdapter } from "./adapter-jikime-mem.js";
 import { LettaAdapter } from "./adapter-letta.js";
+import { OpenClawAdapter } from "./adapter-openclaw.js";
+import { StarnionAdapter } from "./adapter-starnion.js";
 import { Mem0Adapter } from "./adapter-mem0.js";
 import { type EmbeddingBackend, NaiaAdapter } from "./adapter-naia.js";
 import { NoMemoryAdapter } from "./adapter-no-memory.js";
@@ -78,8 +79,10 @@ function createAdapter(name: string, apiKey: string, embedder?: string): Benchma
 			return new LettaAdapter();
 		case "zep":
 			return new ZepAdapter();
-		case "jikime-mem":
-			return new JikimeMemAdapter();
+		case "openclaw":
+			return new OpenClawAdapter();
+		case "starnion":
+			return new StarnionAdapter();
 		case "sap":
 			return new SapAdapter(apiKey);
 		case "sillytavern":
@@ -332,6 +335,17 @@ async function judgeResponse(
 	return parseVerdict(raw);
 }
 
+// ─── Cache path helpers ──────────────────────────────────────────────────────
+
+/** Returns the vec DB path used to detect whether a cached encode exists. */
+function getCacheVecPath(adapterName: string, cacheId: string): string {
+	if (adapterName === "mem0") return `/tmp/mem0-bench-mem0-${cacheId}-vec.db`;
+	if (adapterName === "sap") return `/tmp/sap-bench-chroma-${cacheId}`;
+	if (adapterName === "sillytavern") return `/tmp/sillytavern-bench-${cacheId}`;
+	// naia, naia-solar, naia-qwen3, naia-bge-m3
+	return `/tmp/mem0-bench-${adapterName}-${cacheId}-vec.db`;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -382,11 +396,15 @@ async function main() {
 
 		try {
 			// Phase 1: Init + Encode
-			const cacheId = config.skipEncode ? `cache-${config.lang}` : undefined;
+			// Always use fixed cacheId so DB persists across runs.
+			const cacheId = `cache-${config.lang}`;
+			const cacheVecPath = getCacheVecPath(adapter.name, cacheId);
+			const cacheExists = existsSync(cacheVecPath);
+			const skipEncode = config.skipEncode || cacheExists;
 			await adapter.init(cacheId);
 
-			if (config.skipEncode) {
-				console.log("  Phase 1: ⚡ SKIPPED (using cached DB)\n");
+			if (skipEncode) {
+				console.log(`  Phase 1: ⚡ SKIPPED (cached DB: ${cacheVecPath})\n`);
 			} else {
 				console.log("  Phase 1: Init + Encode\n");
 				let stored = 0;
@@ -561,12 +579,15 @@ async function main() {
 			);
 
 			let grade: string;
-			if (abstentionFail) grade = "F (abstention fail)";
-			else if (coreRate >= 0.9 && (bonus.length === 0 || bonusRate >= 0.5))
-				grade = "A";
+			const abstentionSuffix = abstentionFail ? " (-abstention)" : "";
+			if (coreRate >= 0.95) grade = "S";
+			else if (coreRate >= 0.85) grade = "A";
 			else if (coreRate >= 0.75) grade = "B";
-			else if (coreRate >= 0.6) grade = "C";
+			else if (coreRate >= 0.5) grade = "C";
+			else if (coreRate >= 0.4) grade = "D";
+			else if (coreRate >= 0.3) grade = "E";
 			else grade = "F";
+			grade += abstentionSuffix;
 
 			const byCapability: ComparisonResult["byCapability"] = {};
 			for (const d of details) {

@@ -67,8 +67,7 @@ if chroma_path:
     # Persistent vector store — reusable across runs (--skip-encode)
     vector_store = {"provider": "chroma", "config": {
         "collection_name": "bench",
-        "path": chroma_path,
-        "embedding_model_dims": embed_dims
+        "path": chroma_path
     }}
 else:
     # In-memory FAISS — fresh every run
