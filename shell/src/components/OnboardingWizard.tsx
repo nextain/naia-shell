@@ -28,7 +28,6 @@ import { FORMALITY_LOCALES, buildSystemPrompt } from "../lib/persona";
 import { saveSecretKey } from "../lib/secure-store";
 import type { ProviderId } from "../lib/types";
 import { useAvatarStore } from "../stores/avatar";
-import { usePanelStore } from "../stores/panel";
 import { VrmPreview } from "./VrmPreview";
 
 type Step =
@@ -141,9 +140,7 @@ export function OnboardingWizard({
 	onComplete: () => void;
 }) {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
-	const pushModal = usePanelStore((s) => s.pushModal);
-	const popModal = usePanelStore((s) => s.popModal);
-	const [step, setStep] = useState<Step>("provider");
+const [step, setStep] = useState<Step>("provider");
 	const [agentName, setAgentName] = useState("");
 	const [userName, setUserName] = useState("");
 	const [selectedVrm, setSelectedVrm] = useState(AVATAR_PRESETS[0].path);
@@ -157,11 +154,9 @@ export function OnboardingWizard({
 	const [naiaKey, setNaiaKey] = useState("");
 	const [naiaUserId, setNaiaUserId] = useState("");
 	const [labWaiting, setLabWaiting] = useState(false);
-	const [labBrowserVisible, setLabBrowserVisible] = useState(false);
 	const labTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [labTimeout, setLabTimeout] = useState(false);
-	// Tracks whether we temporarily revealed Chrome for login (needs pushModal on cleanup)
-	const labBrowserVisibleRef = useRef(false);
+	const [labNoChromeError, setLabNoChromeError] = useState(false);
 	const [selectedSpeechStyle, setSelectedSpeechStyle] = useState("casual");
 	const [honorificInput, setHonorificInput] = useState("");
 	const [discordConnectLoading, setDiscordConnectLoading] = useState(false);
@@ -179,14 +174,11 @@ export function OnboardingWizard({
 	const [vllmConnected, setVllmConnected] = useState(false);
 	const [selectedVllmModel, setSelectedVllmModel] = useState("");
 
-	// Hide Chrome X11 embed while onboarding modal is visible
 	useEffect(() => {
-		pushModal();
 		return () => {
-			popModal();
 			if (labTimerRef.current) clearTimeout(labTimerRef.current);
 		};
-	}, [pushModal, popModal]);
+	}, []);
 
 	// Listen for deep-link Lab auth callback
 	useEffect(() => {
@@ -196,12 +188,6 @@ export function OnboardingWizard({
 				Logger.info("OnboardingWizard", "Lab auth received", {});
 				const key = event.payload.naiaKey;
 				const userId = event.payload.naiaUserId ?? "";
-				// Restore modal (re-hide Chrome) if we temporarily revealed it for login
-				if (labBrowserVisibleRef.current) {
-					labBrowserVisibleRef.current = false;
-					setLabBrowserVisible(false);
-					pushModal();
-				}
 				setNaiaKey(key);
 				setNaiaUserId(userId);
 				setProvider("nextain");
@@ -421,56 +407,38 @@ export function OnboardingWizard({
 	async function handleLabLogin() {
 		setLabWaiting(true);
 		setLabTimeout(false);
-		// Register timeout first — before any await — so it always fires
-		// even if browser_embed_navigate or browser_check stalls indefinitely.
+		setLabNoChromeError(false);
 		if (labTimerRef.current) clearTimeout(labTimerRef.current);
 		labTimerRef.current = setTimeout(() => {
-			// Restore modal if Chrome was revealed for login
-			if (labBrowserVisibleRef.current) {
-				labBrowserVisibleRef.current = false;
-				setLabBrowserVisible(false);
-				pushModal();
-			}
 			setLabWaiting(false);
 			setLabTimeout(true);
 			labTimerRef.current = null;
 		}, 60_000);
 		try {
 			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
-			if (chromeAvailable) {
-				// source=embedded: CDP monitor detects /desktop/auth-complete URL
-				// (naia:// deep links don't work inside Flatpak-sandboxed Chrome)
-				const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
-				// Switch to browser panel u2014 this mounts BrowserCenterPanel which calls browser_embed_init
-				const { usePanelStore } = await import("../stores/panel");
-				usePanelStore.getState().setActivePanel("browser");
-				// Poll until Chrome is ready (browser_embed_port > 0), up to ~10 s
-				let port = 0;
-				for (let i = 0; i < 20; i++) {
-					port = await invoke<number>("browser_embed_port").catch(() => 0);
-					if (port !== 0) break;
-					await new Promise<void>((r) => setTimeout(r, 500));
+			if (!chromeAvailable) {
+				setLabWaiting(false);
+				if (labTimerRef.current) {
+					clearTimeout(labTimerRef.current);
+					labTimerRef.current = null;
 				}
-				if (port !== 0) {
-					if (!labBrowserVisibleRef.current) {
-						labBrowserVisibleRef.current = true;
-						setLabBrowserVisible(true);
-						popModal();
-					}
-					await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
-				}
-			} else {
-				// Chrome not installed: system browser fallback (deep link; works on Windows/macOS)
-				const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop`;
-				await openUrl(loginUrl);
+				setLabNoChromeError(true);
+				return;
+			}
+			// source=embedded: CDP monitor detects /desktop/auth-complete URL
+			const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
+			// Poll until Chrome is ready (browser_embed_port > 0), up to ~10 s
+			let port = 0;
+			for (let i = 0; i < 20; i++) {
+				port = await invoke<number>("browser_embed_port").catch(() => 0);
+				if (port !== 0) break;
+				await new Promise<void>((r) => setTimeout(r, 500));
+			}
+			if (port !== 0) {
+				await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
 			}
 		} catch {
-			const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop`;
-			try {
-				await openUrl(loginUrl);
-			} catch {
-				/* ignore */
-			}
+			setLabWaiting(false);
 		}
 	}
 
@@ -634,11 +602,9 @@ export function OnboardingWizard({
 					<div className="onboarding-content">
 						<h2>{t("onboard.provider.title")}</h2>
 
-						{/* Browser hint shown while Chrome is open for login */}
-						{labBrowserVisible && (
-							<div className="onboarding-browser-hint">
-								<span>→</span>
-								<span>{t("onboard.lab.browser.hint")}</span>
+						{labNoChromeError && (
+							<div className="onboarding-validation-error">
+								{t("onboard.lab.noChromeError")}
 							</div>
 						)}
 

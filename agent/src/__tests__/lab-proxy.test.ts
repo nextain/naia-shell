@@ -53,7 +53,7 @@ describe("Lab Proxy Provider", () => {
 		expect(options.headers["X-AnyLLM-Key"]).toBe("Bearer test-lab-key");
 
 		const body = JSON.parse(options.body);
-		expect(body.model).toBe("vertexai:gemini-2.5-flash");
+		expect(body.model).toBe("gemini:gemini-2.5-flash");
 		expect(body.stream).toBe(true);
 		expect(body.messages[0]).toEqual({
 			role: "system",
@@ -160,6 +160,76 @@ describe("Lab Proxy Provider", () => {
 			name: "read_file",
 			args: { path: "/tmp/x" },
 		});
+	});
+
+	it("handles tool call where id and name arrive in separate chunks", async () => {
+		const sseData = [
+			// id only (no name yet)
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-split"}]}}]}',
+			// name only (no id)
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"get_weather"}}]}}]}',
+			// arguments
+			'{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\":\\"Seoul\\"}"}}]}}]}',
+		].map((d) => `data: ${d}\n\n`);
+		sseData.push("data: [DONE]\n\n");
+
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(sseData),
+		});
+
+		const gen = provider.stream(
+			[{ role: "user", content: "Weather?" }],
+			"sys",
+			[{ name: "get_weather", description: "Get weather", parameters: {} }],
+		);
+		const chunks = [];
+		for await (const chunk of gen) {
+			chunks.push(chunk);
+		}
+
+		const toolUse = chunks.find((c) => c.type === "tool_use");
+		expect(toolUse).toEqual({
+			type: "tool_use",
+			id: "tc-split",
+			name: "get_weather",
+			args: { city: "Seoul" },
+		});
+	});
+
+	it("tracks two concurrent tool calls at different indexes independently", async () => {
+		const sseData = [
+			// index 0 first chunk
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-a","function":{"name":"tool_a","arguments":""}}]}}]}\n\n',
+			// index 1 first chunk
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"tc-b","function":{"name":"tool_b","arguments":""}}]}}]}\n\n',
+			// index 0 args continuation
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"x\\":1}"}}]}}]}\n\n',
+			// index 1 args continuation
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\\"y\\":2}"}}]}}]}\n\n',
+			"data: [DONE]\n\n",
+		];
+
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(sseData),
+		});
+
+		const gen = provider.stream([{ role: "user", content: "Go" }], "sys", [
+			{ name: "tool_a", description: "", parameters: {} },
+			{ name: "tool_b", description: "", parameters: {} },
+		]);
+		const chunks = [];
+		for await (const chunk of gen) {
+			chunks.push(chunk);
+		}
+
+		const toolUses = chunks.filter((c) => c.type === "tool_use");
+		expect(toolUses).toHaveLength(2);
+		const a = toolUses.find((c) => c.type === "tool_use" && c.id === "tc-a");
+		const b = toolUses.find((c) => c.type === "tool_use" && c.id === "tc-b");
+		expect(a).toMatchObject({ type: "tool_use", id: "tc-a", name: "tool_a", args: { x: 1 } });
+		expect(b).toMatchObject({ type: "tool_use", id: "tc-b", name: "tool_b", args: { y: 2 } });
 	});
 
 	it("accumulates tool call arguments across multiple SSE chunks", async () => {
@@ -313,6 +383,56 @@ describe("Lab Proxy Provider", () => {
 			text: "Hi",
 		});
 		expect(chunks[chunks.length - 1]).toEqual({ type: "finish" });
+	});
+
+	it("silently drops tool call if name never arrives before [DONE]", async () => {
+		const sseData = [
+			// id arrives but name never does
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-orphan"}]}}]}\n\n',
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"x\\":1}"}}]}}]}\n\n',
+			"data: [DONE]\n\n",
+		];
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(sseData),
+		});
+		const gen = provider.stream([{ role: "user", content: "Go" }], "sys");
+		const chunks = [];
+		for await (const chunk of gen) chunks.push(chunk);
+		expect(chunks.filter((c) => c.type === "tool_use")).toHaveLength(0);
+	});
+
+	it("silently drops tool call if id never arrives before [DONE]", async () => {
+		const sseData = [
+			// name arrives but id never does
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"orphan_tool"}}]}}]}\n\n',
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"x\\":1}"}}]}}]}\n\n',
+			"data: [DONE]\n\n",
+		];
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(sseData),
+		});
+		const gen = provider.stream([{ role: "user", content: "Go" }], "sys");
+		const chunks = [];
+		for await (const chunk of gen) chunks.push(chunk);
+		expect(chunks.filter((c) => c.type === "tool_use")).toHaveLength(0);
+	});
+
+	it("emits empty args object when tool call arguments are malformed JSON", async () => {
+		const sseData = [
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-bad","function":{"name":"bad_tool","arguments":"{bad json"}}]}}]}\n\n',
+			"data: [DONE]\n\n",
+		];
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(sseData),
+		});
+		const gen = provider.stream([{ role: "user", content: "Go" }], "sys");
+		const chunks = [];
+		for await (const chunk of gen) chunks.push(chunk);
+		const toolUse = chunks.find((c) => c.type === "tool_use");
+		expect(toolUse).toMatchObject({ type: "tool_use", id: "tc-bad", name: "bad_tool", args: {} });
 	});
 
 	it("silently drops empty and non-content SSE events", async () => {

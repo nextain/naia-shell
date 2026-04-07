@@ -311,7 +311,31 @@ export function App() {
 			<div className="app-root">
 				{winResizeHandles}
 				<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
-				<OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+				<div
+					className="app-layout"
+					style={{ "--naia-width": "400px" } as React.CSSProperties}
+				>
+					<div className="naia-panel">
+						<OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+					</div>
+					<div className="right-area">
+						<div className="right-content">
+							<div className="content-panel">
+								{keepAlivePanels.map((panel) => {
+									const PanelCenter = panel.center;
+									return (
+										<div
+											key={panel.id}
+											className={`content-panel__slot${activePanel === panel.id ? " content-panel__slot--active" : ""}`}
+										>
+											<PanelCenter naia={getBridgeForPanel(panel.id)} />
+										</div>
+									);
+								})}
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 		);
 	}

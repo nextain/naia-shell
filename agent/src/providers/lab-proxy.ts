@@ -15,10 +15,10 @@ export const GATEWAY_URL =
 /** Map local model names to gateway format (provider:model) */
 function toGatewayModel(model: string): string {
 	// Live API models are WebSocket-only — fall back to the equivalent text model for SSE chat.
-	if (model === "gemini-2.5-flash-live") return "vertexai:gemini-2.5-flash";
+	if (model === "gemini-2.5-flash-live") return "gemini:gemini-2.5-flash";
 	if (model === "gemini-3.1-flash-live-preview")
-		return "vertexai:gemini-3-flash-preview";
-	if (model.startsWith("gemini")) return `vertexai:${model}`;
+		return "gemini:gemini-3-flash-preview";
+	if (model.startsWith("gemini")) return `gemini:${model}`;
 	if (model.startsWith("grok")) return `xai:${model}`;
 	if (model.startsWith("claude")) return `anthropic:${model}`;
 	return model;
@@ -128,16 +128,20 @@ export function createLabProxyProvider(
 						if (toolCalls) {
 							for (const tc of toolCalls) {
 								const existing = pendingToolCalls.get(tc.index);
-								if (tc.id && tc.function?.name) {
-									// First chunk for this tool call
+								if (!existing) {
+									// First chunk for this index: register immediately with whatever fields arrived.
+									// id/name may be absent and arrive in later chunks (see #218).
 									pendingToolCalls.set(tc.index, {
-										id: tc.id,
-										name: tc.function.name,
-										args: tc.function.arguments ?? "",
+										id: tc.id ?? "",
+										name: tc.function?.name ?? "",
+										args: tc.function?.arguments ?? "",
 									});
-								} else if (existing && tc.function?.arguments) {
-									// Continuation chunk — append arguments
-									existing.args += tc.function.arguments;
+								} else {
+									// Continuation chunk — patch fields only if not yet populated
+									// (id/name: first-write-wins to guard against malformed duplicate indexes)
+									if (tc.id && !existing.id) existing.id = tc.id;
+									if (tc.function?.name && !existing.name) existing.name = tc.function.name;
+									if (tc.function?.arguments) existing.args += tc.function.arguments;
 								}
 							}
 						}
@@ -167,8 +171,9 @@ export function createLabProxyProvider(
 				);
 			}
 
-			// Emit accumulated tool calls
+			// Emit accumulated tool calls (skip incomplete entries missing id or name)
 			for (const tc of pendingToolCalls.values()) {
+				if (!tc.id || !tc.name) continue;
 				let args: Record<string, unknown> = {};
 				try {
 					args = JSON.parse(tc.args || "{}");
