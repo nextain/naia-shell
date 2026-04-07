@@ -15,10 +15,11 @@ export const GATEWAY_URL =
 /** Map local model names to gateway format (provider:model) */
 function toGatewayModel(model: string): string {
 	// Live API models are WebSocket-only — fall back to the equivalent text model for SSE chat.
-	if (model === "gemini-2.5-flash-live") return "gemini:gemini-2.5-flash";
+	if (model === "gemini-2.5-flash-live") return "vertexai:gemini-2.5-flash";
 	if (model === "gemini-3.1-flash-live-preview")
-		return "gemini:gemini-3-flash-preview";
-	if (model.startsWith("gemini")) return `gemini:${model}`;
+		return "vertexai:gemini-3-flash-preview";
+	// Gateway uses Vertex AI service account (not GEMINI_API_KEY) — must use vertexai: prefix.
+	if (model.startsWith("gemini")) return `vertexai:${model}`;
 	if (model.startsWith("grok")) return `xai:${model}`;
 	if (model.startsWith("claude")) return `anthropic:${model}`;
 	return model;

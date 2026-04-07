@@ -53,7 +53,7 @@ describe("Lab Proxy Provider", () => {
 		expect(options.headers["X-AnyLLM-Key"]).toBe("Bearer test-lab-key");
 
 		const body = JSON.parse(options.body);
-		expect(body.model).toBe("gemini:gemini-2.5-flash");
+		expect(body.model).toBe("vertexai:gemini-2.5-flash");
 		expect(body.stream).toBe(true);
 		expect(body.messages[0]).toEqual({
 			role: "system",
