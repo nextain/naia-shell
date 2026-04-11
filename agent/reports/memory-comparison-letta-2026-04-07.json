@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-04-07T10:13:30.373Z",
+  "version": "comparison-v2",
+  "judge": "claude-cli",
+  "llm": "gemini",
+  "runs": 1,
+  "results": [
+    {
+      "adapter": "letta",
+      "description": "ERROR: Letta not running at http://127.0.0.1:8283",
+      "core": {
+        "total": 0,
+        "passed": 0,
+        "rate": 0
+      },
+      "bonus": {
+        "total": 0,
+        "passed": 0
+      },
+      "grade": "ERROR",
+      "byCapability": {},
+      "details": []
+    }
+  ]
+}

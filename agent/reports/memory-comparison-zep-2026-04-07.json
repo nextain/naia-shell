@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-04-07T10:13:30.387Z",
+  "version": "comparison-v2",
+  "judge": "claude-cli",
+  "llm": "gemini",
+  "runs": 1,
+  "results": [
+    {
+      "adapter": "zep",
+      "description": "ERROR: Zep not running at http://localhost:8000",
+      "core": {
+        "total": 0,
+        "passed": 0,
+        "rate": 0
+      },
+      "bonus": {
+        "total": 0,
+        "passed": 0
+      },
+      "grade": "ERROR",
+      "byCapability": {},
+      "details": []
+    }
+  ]
+}
