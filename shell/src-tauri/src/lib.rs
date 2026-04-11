@@ -2252,16 +2252,10 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
         } else {
             env_obj.remove("OLLAMA_API_KEY");
         }
-        // Propagate Lab gateway URL override (dev mode uses dev gateway, prod uses prod).
+        // Propagate Lab gateway URL override
         if let Some(ref url) = params.lab_gateway_url {
-            let prod_url = "https://naia-gateway-181404717065.asia-northeast3.run.app";
-            if url != prod_url {
-                // Only write to env if it differs from the prod default (saves a no-op entry)
-                env_obj.insert("NAIA_GATEWAY_URL".to_string(),
-                    serde_json::Value::String(url.clone()));
-            } else {
-                env_obj.remove("NAIA_GATEWAY_URL");
-            }
+            env_obj.insert("NAIA_GATEWAY_URL".to_string(),
+                serde_json::Value::String(url.clone()));
         }
         let env_pretty = serde_json::to_string_pretty(&serde_json::Value::Object(env_obj))
             .map_err(|e| format!("JSON serialize env: {}", e))?;

@@ -465,7 +465,7 @@ export function getUserName(): string | undefined {
 
 /** any-llm Gateway URL (shared with agent/src/providers/lab-proxy.ts) */
 export const LAB_GATEWAY_URL =
-	import.meta.env.VITE_NAIA_GATEWAY_URL ??
+	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) ||
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";

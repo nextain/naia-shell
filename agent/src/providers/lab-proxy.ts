@@ -8,9 +8,9 @@ import type { AgentStream, LLMProvider, StreamChunk } from "./types.js";
 export const PROD_GATEWAY_URL =
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
 
-/** @deprecated Use the gatewayUrl parameter instead */
+/** Resolved gateway URL from environment or default prod URL */
 export const GATEWAY_URL =
-	process.env.NAIA_GATEWAY_URL ?? PROD_GATEWAY_URL;
+	process.env.NAIA_GATEWAY_URL || PROD_GATEWAY_URL;
 
 /** Map local model names to gateway format (provider:model) */
 function toGatewayModel(model: string): string {

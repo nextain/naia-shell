@@ -574,12 +574,11 @@ lessons:
     root_cause: "Strike accumulator counted all auto-dismissed solos equally without domain check."
     fix: "Domain-relevance check in 8A: domain-consistent solo findings do NOT increment strikes."
 
-  - id: L056
-    date: "2026-03-29"
-    issue: "#165"
-    category: harness
-    scope: ".claude/hooks/session-inject.js"
-    title: "session-inject picks wrong issue in multi-session workspace"
-    problem: "Multiple concurrent sessions all see the most recently modified progress file."
-    root_cause: "mtime-based selection with no session awareness; submodule progress dirs not scanned."
-    fix: "session_id → issue mapping via .session-map.json + submodule progress dir scanning."
+  - id: L057
+    date: "2026-04-07"
+    category: provider
+    scope: "any-llm gateway, naia-os/shell/src/lib/config.ts"
+    title: "Vertex AI: regional availability for Gemini Live and Gemini 3"
+    problem: "Newer models (Gemini Live, Gemini 3 Flash Preview) result in 1008 None or empty SSE streams when called from a Seoul-based gateway."
+    root_cause: "These models are often unavailable in asia-northeast3 (Seoul). Seoul-based Cloud Run defaults all Vertex AI calls to its own region."
+    fix: "Implement model-based regional routing in any-llm gateway to force us-central1 for newer models. Also moved hardcoded gateway URLs in naia-os to configurable VITE_NAIA_GATEWAY_URL env var."

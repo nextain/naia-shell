@@ -29,6 +29,7 @@ import { OpenLLMVTuberAdapter } from "./adapter-open-llm-vtuber.js";
 import { SapAdapter } from "./adapter-sap.js";
 import { SillyTavernAdapter } from "./adapter-sillytavern.js";
 import { ZepAdapter } from "./adapter-zep.js";
+import { GraphitiAdapter } from "./adapter-graphiti.js";
 import type {
 	BenchmarkAdapter,
 	ComparisonResult,
@@ -43,28 +44,40 @@ const THROTTLE_MS = 2000;
 function parseArgs() {
 	const args = process.argv.slice(2);
 	let adapterNames = ["naia", "mem0"];
-	let judge: "claude-cli" | "keyword" = "claude-cli";
+	let judge: "claude-cli" | "gemini-cli" | "glm" | "gemini-api" | "keyword" = "claude-cli";
 	let runs = 1;
 	let categories: string[] | null = null;
-	let llm: "gemini" = "gemini";
+	let llm: "gemini-flash" | "gemini-pro" | "gemini-3.1-pro" | "glm" = "gemini-flash";
 	let skipEncode = false;
 	let lang = "ko";
 	let embedder = "gemini";
 
-	for (const arg of args) {
-		if (arg.startsWith("--adapters="))
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg.startsWith("--adapters=")) {
 			adapterNames = arg.split("=")[1].split(",");
+		} else if (arg === "--adapters" && args[i + 1]) {
+			// Support both --adapters=naia and --adapters naia
+			adapterNames = args[++i].split(",");
+		}
 		if (arg.startsWith("--judge=")) judge = arg.split("=")[1] as any;
 		if (arg.startsWith("--runs="))
 			runs = Number.parseInt(arg.split("=")[1], 10);
 		if (arg.startsWith("--categories="))
 			categories = arg.split("=")[1].split(",");
-		// --llm option removed (gemini only)
+		if (arg.startsWith("--llm=")) llm = arg.split("=")[1] as typeof llm;
 		if (arg === "--skip-encode") skipEncode = true;
 		if (arg.startsWith("--lang=")) lang = arg.split("=")[1];
 		if (arg.startsWith("--embedder=")) embedder = arg.split("=")[1];
 	}
-	return { adapterNames, judge, runs, categories, llm, skipEncode, lang, embedder };
+	// Validate adapters
+	const validAdapters = ["naia","mem0","letta","zep","openclaw","starnion","sap","sillytavern","airi","open-llm-vtuber","graphiti"];
+	const unknown = adapterNames.filter(n => !validAdapters.includes(n));
+	if (unknown.length > 0) {
+		console.error(`❌ Unknown adapter(s): ${unknown.join(", ")}. Valid: ${validAdapters.join(", ")}`);
+		process.exit(1);
+	}
+	return { adapterNames, judge, runs, categories, llm: llm as LlmChoice, skipEncode, lang, embedder };
 }
 
 // ─── Adapter Factory ────────────────────────────────────────────────────────
@@ -94,6 +107,8 @@ function createAdapter(name: string, apiKey: string, embedder?: string): Benchma
 			);
 		case "open-llm-vtuber":
 			return new OpenLLMVTuberAdapter();
+		case "graphiti":
+			return new GraphitiAdapter();
 		default:
 			throw new Error(`Unknown adapter: ${name}`);
 	}
@@ -106,10 +121,20 @@ function createAdapter(name: string, apiKey: string, embedder?: string): Benchma
  * Call Gemini via gateway (if GATEWAY_URL + GATEWAY_MASTER_KEY set) or direct API.
  * Gateway uses Vertex AI (higher quota), direct uses AI Studio.
  */
+type LlmChoice = "gemini-flash" | "gemini-pro" | "gemini-3.1-pro" | "glm";
+
+const LLM_MODEL_MAP: Record<LlmChoice, { direct: string; gateway: string }> = {
+	"gemini-flash": { direct: "gemini-2.5-flash", gateway: "vertexai:gemini-2.5-flash" },
+	"gemini-pro": { direct: "gemini-2.5-pro", gateway: "vertexai:gemini-2.5-pro" },
+	"gemini-3.1-pro": { direct: "gemini-3.1-pro-preview", gateway: "vertexai:gemini-3.1-pro-preview" },
+	glm: { direct: "glm-5.1", gateway: "glm-5.1" },
+};
+
 async function callGemini(
 	apiKey: string,
 	messages: Array<{ role: string; content: string }>,
 	maxTokens: number,
+	llmChoice: LlmChoice = "gemini-flash",
 ): Promise<string> {
 	const gwUrl = process.env.GATEWAY_URL;
 	const gwKey = process.env.GATEWAY_MASTER_KEY;
@@ -119,7 +144,8 @@ async function callGemini(
 		? `${gwUrl}/v1/chat/completions`
 		: `${GEMINI_BASE}chat/completions`;
 	const authKey = useGateway ? gwKey : apiKey;
-	const model = useGateway ? "vertexai:gemini-2.5-flash" : "gemini-2.5-flash";
+	const modelMap = LLM_MODEL_MAP[llmChoice] ?? LLM_MODEL_MAP["gemini-flash"];
+	const model = useGateway ? modelMap.gateway : modelMap.direct;
 
 	for (let attempt = 0; attempt < 3; attempt++) {
 		await new Promise((r) => setTimeout(r, THROTTLE_MS));
@@ -161,10 +187,23 @@ function callClaudeCli(prompt: string): string {
 	}
 }
 
+function callGeminiCli(prompt: string): string {
+	try {
+		return execSync("gemini -p '' -m gemini-2.5-pro 2>/dev/null", {
+			input: prompt,
+			timeout: 60000,
+			encoding: "utf-8",
+		}).trim();
+	} catch {
+		return "";
+	}
+}
+
 async function askWithMemory(
 	apiKey: string,
 	memories: string[],
 	question: string,
+	llmChoice: LlmChoice = "gemini-flash",
 ): Promise<string> {
 	const memCtx =
 		memories.length > 0
@@ -189,7 +228,7 @@ ${memCtx}`,
 		{ role: "user", content: question },
 	];
 
-	return callGemini(apiKey, messages, 500);
+	return callGemini(apiKey, messages, 500, llmChoice);
 }
 
 // ─── Judge ───────────────────────────────────────────────────────────────────
@@ -319,6 +358,184 @@ function keywordJudge(response: string, q: any, capName: string): JudgeResult {
 	return { pass: false, reason: "NO_JUDGE" };
 }
 
+const GLM_BASE = "https://api.z.ai/api/coding/paas/v4";
+const GLM_BATCH_SIZE = 20;
+const GEMINI_BATCH_SIZE = 10;
+const GEMINI_API_BASE =
+	"https://generativelanguage.googleapis.com/v1beta/models";
+
+/** Batch judge up to GLM_BATCH_SIZE items in one GLM API call. */
+async function callGlmBatch(
+	items: Array<{ q: any; capName: string; response: string }>,
+): Promise<JudgeResult[]> {
+	const glmKey = process.env.GLM_API_KEY ?? "";
+	if (!glmKey) return items.map((it) => keywordJudge(it.response, it.q, it.capName));
+
+	const lines = items.map((it, i) => {
+		const kw = it.q.expected_keywords ?? it.q.expected_contains ?? [];
+		const forbidden = it.q.forbidden_keywords ?? [];
+		return `${i + 1}. [${it.capName}] 질문: "${(it.q.query || it.q.verify || "").slice(0, 80)}" | AI응답: "${it.response.slice(0, 150)}" | 기대키워드: ${JSON.stringify(kw)} | 금지키워드: ${JSON.stringify(forbidden)}`;
+	});
+
+	const batchPrompt = `아래 ${items.length}개 항목을 채점하세요. 각 항목은 반드시 "번호: PASS - 이유" 또는 "번호: FAIL - 이유" 한 줄로만 답하세요.\n\n${lines.join("\n")}`;
+
+	try {
+		const res = await fetch(`${GLM_BASE}/chat/completions`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${glmKey}`,
+			},
+			body: JSON.stringify({
+				model: "glm-5.1",
+				messages: [{ role: "user", content: batchPrompt }],
+				max_tokens: 1000,
+				temperature: 0,
+			}),
+			signal: AbortSignal.timeout(30000),
+		});
+		if (!res.ok) throw new Error(`GLM ${res.status}`);
+		const data = await res.json();
+		const msg = data.choices?.[0]?.message;
+		// GLM-5.1 returns responses in reasoning_content when in thinking mode
+		const text: string = msg?.content || msg?.reasoning_content || "";
+		return parseGlmBatchResponse(text, items);
+	} catch (err: any) {
+		console.error(`  GLM batch error: ${err.message}`);
+		return items.map((it) => keywordJudge(it.response, it.q, it.capName));
+	}
+}
+
+function parseGlmBatchResponse(
+	text: string,
+	items: Array<{ q: any; capName: string; response: string }>,
+): JudgeResult[] {
+	const results: JudgeResult[] = items.map((it) =>
+		keywordJudge(it.response, it.q, it.capName),
+	);
+	for (const line of text.split("\n")) {
+		const m = line.match(/^(\d+)[.:)]\s*(PASS|FAIL)\s*[-–]?\s*(.*)/i);
+		if (!m) continue;
+		const idx = Number.parseInt(m[1], 10) - 1;
+		if (idx < 0 || idx >= items.length) continue;
+		results[idx] = { pass: m[2].toUpperCase() === "PASS", reason: m[3].trim() };
+	}
+	return results;
+}
+
+
+/** Batch judge up to GEMINI_BATCH_SIZE items in one Gemini API call. */
+async function callGeminiApiBatch(
+	apiKey: string,
+	items: Array<{ q: any; capName: string; response: string }>,
+): Promise<JudgeResult[]> {
+	if (!apiKey)
+		return items.map((it) => keywordJudge(it.response, it.q, it.capName));
+
+	const lines = items.map((it, i) => {
+		const kw = it.q.expected_keywords ?? it.q.expected_contains ?? [];
+		const forbidden = it.q.forbidden_keywords ?? [];
+		return `${i + 1}. [${it.capName}] 질문: "${(it.q.query || it.q.verify || "").slice(0, 80)}" | AI응답: "${it.response.slice(0, 150)}" | 기대키워드: ${JSON.stringify(kw)} | 금지키워드: ${JSON.stringify(forbidden)}`;
+	});
+
+	const batchPrompt = `아래 ${items.length}개 항목을 채점하세요. 각 항목은 반드시 "번호: PASS - 이유" 또는 "번호: FAIL - 이유" 한 줄로만 답하세요.\n\n${lines.join("\n")}`;
+
+	try {
+		const res = await fetch(
+			`${GEMINI_API_BASE}/gemini-2.5-pro:generateContent?key=${apiKey}`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					contents: [{ parts: [{ text: batchPrompt }] }],
+					generationConfig: {
+						temperature: 0,
+						maxOutputTokens: 2000,
+					},
+				}),
+				signal: AbortSignal.timeout(120000),
+			},
+		);
+		if (!res.ok) throw new Error(`Gemini API ${res.status}`);
+		const data = await res.json();
+		const parts = data.candidates?.[0]?.content?.parts ?? [];
+		const text = parts.map((p: any) => p.text ?? "").join("");
+		return parseGlmBatchResponse(text, items);
+	} catch (err: any) {
+		console.error(`  Gemini API batch error: ${err.message}`);
+		return items.map((it) => keywordJudge(it.response, it.q, it.capName));
+	}
+}
+
+// Pending batch queue for glm judge mode
+const _glmQueue: Array<{
+	q: any;
+	capName: string;
+	response: string;
+	resolve: (r: JudgeResult) => void;
+}> = [];
+let _glmFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function enqueueGlmJudge(
+	q: any,
+	capName: string,
+	response: string,
+): Promise<JudgeResult> {
+	return new Promise((resolve) => {
+		_glmQueue.push({ q, capName, response, resolve });
+		if (_glmQueue.length >= GLM_BATCH_SIZE) {
+			if (_glmFlushTimer) clearTimeout(_glmFlushTimer);
+			_flushGlmQueue();
+		} else if (!_glmFlushTimer) {
+			_glmFlushTimer = setTimeout(_flushGlmQueue, 2000);
+		}
+	});
+}
+
+async function _flushGlmQueue() {
+	if (_glmFlushTimer) { clearTimeout(_glmFlushTimer); _glmFlushTimer = null; }
+	if (_glmQueue.length === 0) return;
+	const batch = _glmQueue.splice(0, GLM_BATCH_SIZE);
+	const results = await callGlmBatch(batch);
+	for (let i = 0; i < batch.length; i++) batch[i].resolve(results[i]);
+	if (_glmQueue.length > 0) await _flushGlmQueue();
+}
+
+// Pending batch queue for gemini-api judge mode
+const _geminiApiQueue: Array<{
+	q: any;
+	capName: string;
+	response: string;
+	resolve: (r: JudgeResult) => void;
+}> = [];
+let _geminiApiFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function enqueueGeminiApiJudge(
+	q: any,
+	capName: string,
+	response: string,
+): Promise<JudgeResult> {
+	return new Promise((resolve) => {
+		_geminiApiQueue.push({ q, capName, response, resolve });
+		if (_geminiApiQueue.length >= GEMINI_BATCH_SIZE) {
+			if (_geminiApiFlushTimer) clearTimeout(_geminiApiFlushTimer);
+			_flushGeminiApiQueue();
+		} else if (!_geminiApiFlushTimer) {
+			_geminiApiFlushTimer = setTimeout(_flushGeminiApiQueue, 2000);
+		}
+	});
+}
+
+async function _flushGeminiApiQueue() {
+	if (_geminiApiFlushTimer) { clearTimeout(_geminiApiFlushTimer); _geminiApiFlushTimer = null; }
+	if (_geminiApiQueue.length === 0) return;
+	const batch = _geminiApiQueue.splice(0, GEMINI_BATCH_SIZE);
+	const apiKey = process.env.GEMINI_API_KEY ?? "";
+	const results = await callGeminiApiBatch(apiKey, batch);
+	for (let i = 0; i < batch.length; i++) batch[i].resolve(results[i]);
+	if (_geminiApiQueue.length > 0) await _flushGeminiApiQueue();
+}
+
 async function judgeResponse(
 	apiKey: string,
 	mode: string,
@@ -327,10 +544,14 @@ async function judgeResponse(
 	response: string,
 ): Promise<JudgeResult> {
 	if (mode === "keyword") return keywordJudge(response, q, capName);
+	if (mode === "glm") return enqueueGlmJudge(q, capName, response);
+	if (mode === "gemini-api") return enqueueGeminiApiJudge(q, capName, response);
 
-	// claude-cli batch judge
 	const prompt = buildJudgePrompt(q, capName, response);
-	const raw = callClaudeCli(prompt);
+	const raw =
+		mode === "gemini-cli"
+			? callGeminiCli(prompt)
+			: callClaudeCli(prompt);
 	if (!raw) return keywordJudge(response, q, capName); // fallback
 	return parseVerdict(raw);
 }
@@ -354,7 +575,7 @@ async function main() {
 	const apiKey = process.env.GEMINI_API_KEY ?? "";
 	const hasGateway = !!(process.env.GATEWAY_URL && process.env.GATEWAY_MASTER_KEY);
 	const needsGemini =
-		config.embedder === "gemini" || config.llm === "gemini";
+		config.embedder === "gemini" || config.llm !== "glm";
 	// Gateway (Vertex AI) can replace direct Gemini API key
 	if (needsGemini && !apiKey && !hasGateway) {
 		console.error(
@@ -428,6 +649,10 @@ async function main() {
 				console.log(
 					`\n    Stored: ${stored}/${factBank.facts.length} (gated: ${gated})\n`,
 				);
+				// Allow adapters to finalize async processing before querying
+				if (typeof (adapter as any).waitForReady === "function") {
+					await (adapter as any).waitForReady();
+				}
 			}
 
 			// Phase 2: Query + Respond + Judge
@@ -520,7 +745,7 @@ async function main() {
 					let lastReason = "";
 
 					for (let run = 0; run < config.runs; run++) {
-						const response = await askWithMemory(apiKey, memories, query);
+						const response = await askWithMemory(apiKey, memories, query, config.llm);
 						lastResponse = response;
 						const verdict = await judgeResponse(
 							apiKey,

@@ -4,6 +4,7 @@
  *
  * Uses AudioContext (not MediaRecorder) for WebKitGTK compatibility.
  */
+import { LAB_GATEWAY_URL } from "../config";
 import { Logger } from "../logger";
 import type { SttResult, SttSession } from "./types";
 
@@ -323,8 +324,7 @@ async function transcribeNextain(
 	formData.append("file", wavBlob, "audio.wav");
 	formData.append("language", language);
 
-	const gatewayUrl =
-		"https://naia-gateway-181404717065.asia-northeast3.run.app";
+	const gatewayUrl = LAB_GATEWAY_URL;
 	const response = await fetch(`${gatewayUrl}/v1/audio/transcriptions`, {
 		method: "POST",
 		headers: { "X-AnyLLM-Key": `Bearer ${naiaKey}` },
