@@ -131,16 +131,17 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gemini-3-flash-preview",
+	defaultModel: "gemini-3.1-pro-preview",
 	models: [
+		// ── Gemini 3.1 ────────────────────────────────────────────────────
 		{
-			id: "gemini-3-pro-preview",
-			label: "Gemini 3 Pro",
+			id: "gemini-3.1-pro-preview",
+			label: "Gemini 3.1 Pro",
 			capabilities: ["llm"],
 		},
 		{
-			id: "gemini-3-flash-preview",
-			label: "Gemini 3.0 Flash",
+			id: "gemini-3.1-flash-lite-preview",
+			label: "Gemini 3.1 Flash Lite",
 			capabilities: ["llm"],
 		},
 		{
@@ -151,10 +152,22 @@ registerLlmProvider({
 			voices: [...GEMINI_LIVE_VOICES],
 			transcriptProvided: true,
 		},
+		// ── Gemini 3 ──────────────────────────────────────────────────────
+		{
+			id: "gemini-3-flash-preview",
+			label: "Gemini 3.0 Flash",
+			capabilities: ["llm"],
+		},
+		// ── Gemini 2.5 ────────────────────────────────────────────────────
 		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"] },
 		{
 			id: "gemini-2.5-flash",
 			label: "Gemini 2.5 Flash",
+			capabilities: ["llm"],
+		},
+		{
+			id: "gemini-2.5-flash-lite",
+			label: "Gemini 2.5 Flash Lite",
 			capabilities: ["llm"],
 		},
 		{
@@ -314,17 +327,31 @@ registerLlmProvider({
 
 registerLlmProvider({
 	id: "zai",
-	name: "Zhipu AI",
-	description: "GLM models — requires Zhipu API key.",
+	name: "Z.AI",
+	description: "GLM models via Z.AI Coding Plan — requires Z.AI API key.",
 	descKey: "provider.apiKeyRequired",
 	requiresApiKey: true,
-	defaultModel: "glm-4.7",
+	defaultModel: "glm-5.1",
 	models: [
+		{
+			id: "glm-5.1",
+			label: "GLM 5.1",
+			capabilities: ["llm"],
+		},
+		{
+			id: "glm-5-turbo",
+			label: "GLM 5 Turbo",
+			capabilities: ["llm"],
+		},
 		{
 			id: "glm-4.7",
 			label: "GLM 4.7",
 			capabilities: ["llm"],
-			pricing: [0.6, 2.2],
+		},
+		{
+			id: "glm-4.5-air",
+			label: "GLM 4.5 Air",
+			capabilities: ["llm"],
 		},
 	],
 });

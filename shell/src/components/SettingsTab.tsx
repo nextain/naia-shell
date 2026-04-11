@@ -2586,6 +2586,11 @@ export function SettingsTab() {
 							}}
 							placeholder="sk-..."
 						/>
+						{provider === "zai" && (
+							<div className="settings-hint">
+								Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를 입력하세요.
+							</div>
+						)}
 						{error && <div className="settings-error">{error}</div>}
 					</div>
 				)}

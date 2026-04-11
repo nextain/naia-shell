@@ -124,9 +124,10 @@ export function createConfigSkill(): SkillDefinition {
 						},
 						{ id: "grok-code-fast-1", name: "Grok Code Fast", provider: "xai" },
 						{ id: "grok-3-mini", name: "Grok 3 Mini", provider: "xai" },
+						{ id: "glm-5.1", name: "GLM 5.1", provider: "zai" },
+						{ id: "glm-5-turbo", name: "GLM 5 Turbo", provider: "zai" },
 						{ id: "glm-4.7", name: "GLM 4.7", provider: "zai" },
-						{ id: "glm-4.6", name: "GLM 4.6", provider: "zai" },
-						{ id: "glm-4.5", name: "GLM 4.5", provider: "zai" },
+						{ id: "glm-4.5-air", name: "GLM 4.5 Air", provider: "zai" },
 					].map((m) => {
 						const price = MODEL_PRICING[m.id];
 						return price ? { ...m, price } : m;

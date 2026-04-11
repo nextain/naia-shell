@@ -4,7 +4,7 @@ import type { AgentStream, LLMProvider } from "./types.js";
 
 export function createZAIProvider(apiKey: string, model: string): LLMProvider {
 	const client = new OpenAI({
-		baseURL: "https://open.bigmodel.cn/api/paas/v4",
+		baseURL: "https://api.z.ai/api/coding/paas/v4",
 		apiKey,
 	});
 

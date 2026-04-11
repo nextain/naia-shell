@@ -140,9 +140,9 @@ describe("skill_config", () => {
 		);
 		expect(result.success).toBe(true);
 		const parsed = JSON.parse(result.output);
-		// Gateway returns 2 models + 20 local models (minus 1 overlap: grok-3-mini) = 21
+		// Gateway returns 2 models + 21 local models (minus 1 overlap: grok-3-mini) = 22
 		// Ollama models are fetched dynamically (mocked to fail in tests)
-		expect(parsed.models).toHaveLength(21);
+		expect(parsed.models).toHaveLength(22);
 	});
 
 	it("patches config", async () => {
