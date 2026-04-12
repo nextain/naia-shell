@@ -6288,13 +6288,25 @@ body.resizing-row {
 .workspace-editor__mermaid text,
 .workspace-editor__mermaid .nodeLabel,
 .workspace-editor__mermaid .edgeLabel,
-.workspace-editor__mermaid .label {
+.workspace-editor__mermaid .label,
+.workspace-editor__mermaid .cluster-label,
+.workspace-editor__mermaid tspan {
 	fill: #e0e0e0 !important;
 	color: #e0e0e0 !important;
 }
 
 .workspace-editor__mermaid .edgeLabel rect {
 	fill: var(--surface-1, #1e1e1e) !important;
+}
+
+/* Colored nodes in dark theme: ensure text contrast */
+.workspace-editor__mermaid [style*="fill:#c8f7c5"] .nodeLabel,
+.workspace-editor__mermaid [style*="fill:#fde8e8"] .nodeLabel,
+.workspace-editor__mermaid [style*="fill:#d4edda"] .nodeLabel,
+.workspace-editor__mermaid [style*="fill:#f8d7da"] .nodeLabel,
+.workspace-editor__mermaid [style*="fill:#ffffcc"] .nodeLabel {
+	fill: #111 !important;
+	color: #111 !important;
 }
 
 .workspace-editor__mermaid-error {
@@ -6472,38 +6484,261 @@ body.resizing-row {
 
 /* ── Print styles ──────────────────────────────────────── */
 
+/* ── Print ────────────────────────────────────────────────────────────────────
+ * @page margin:0 kills browser header/footer (date, title, URL).
+ * box-decoration-break:clone repeats padding on every page fragment. */
+@page {
+	margin: 0;
+}
+
 @media print {
-	/* Hide everything except the editor content */
-	body > *:not(#root) {
-		display: none !important;
+	/* ── Reset viewport lock ─────────────────────────────────────────── */
+	html, body {
+		height: auto !important;
+		overflow: visible !important;
+		margin: 0 !important;
+		padding: 0 !important;
+		background: white !important;
 	}
+
+	/* ── Hide all UI chrome ──────────────────────────────────────────── */
+	body > *:not(#root),
+	.titlebar,
+	.mode-bar,
 	.chat-panel,
 	.sidebar,
 	.naia-panel,
-	.workspace-panel__sidebar,
-	.workspace-panel__tabs,
+	.naia-resize-handle,
+	.avatar-resize-handle,
+	.workspace-panel__tree,
+	.workspace-panel__sessions,
+	.workspace-panel__resize-handle,
+	.workspace-panel__tab-bar,
 	.workspace-editor__header,
 	.quick-open-overlay {
 		display: none !important;
 	}
 
-	.workspace-editor {
-		position: absolute !important;
-		inset: 0 !important;
-		background: white !important;
-		color: black !important;
+	/* Hide non-active panel slots (browser tab, etc.) */
+	.content-panel__slot {
+		display: none !important;
+	}
+	.content-panel__slot--active {
+		display: block !important;
 	}
 
+	/* ── Break the entire flex/absolute/overflow chain ──────────────── */
+	#root,
+	.app-root,
+	.app-layout,
+	.right-area,
+	.right-content,
+	.content-panel,
+	.content-panel__slot--active,
+	.workspace-panel,
+	.workspace-panel__center,
+	.workspace-panel__center-content,
+	.workspace-panel__editor-slot,
+	.workspace-editor,
+	.workspace-editor__body--split {
+		position: static !important;
+		display: block !important;
+		width: 100% !important;
+		height: auto !important;
+		min-height: 0 !important;
+		max-height: none !important;
+		overflow: visible !important;
+		flex: none !important;
+		opacity: 1 !important;
+		pointer-events: auto !important;
+	}
+
+	.workspace-editor {
+		background: white !important;
+		color: black !important;
+		font-size: 100% !important;
+	}
+
+	/* ── Content areas: per-page margins via box-decoration-break ───── */
 	.workspace-editor__preview,
 	.workspace-editor__image-viewer,
 	.workspace-editor__pdf-viewer,
 	.workspace-editor__csv-viewer,
 	.workspace-editor__log-viewer {
+		position: static !important;
+		display: block !important;
+		width: 100% !important;
+		height: auto !important;
+		max-height: none !important;
+		overflow: visible !important;
+		flex: none !important;
 		background: white !important;
 		color: black !important;
-		overflow: visible !important;
+		padding: 12mm 15mm !important;
+		box-sizing: border-box !important;
+		-webkit-box-decoration-break: clone !important;
+		box-decoration-break: clone !important;
 	}
 
+	/* CodeMirror */
+	.workspace-editor__codemirror,
+	.workspace-editor__codemirror .cm-editor,
+	.workspace-editor__codemirror .cm-scroller {
+		position: static !important;
+		height: auto !important;
+		overflow: visible !important;
+		padding: 12mm 15mm !important;
+		box-sizing: border-box !important;
+		-webkit-box-decoration-break: clone !important;
+		box-decoration-break: clone !important;
+	}
+
+	/* ── Page break control ──────────────────────────────────────────── */
+
+	/* Headings: never orphan at page bottom */
+	.workspace-editor__preview h1,
+	.workspace-editor__preview h2,
+	.workspace-editor__preview h3,
+	.workspace-editor__preview h4 {
+		break-after: avoid !important;
+		page-break-after: avoid !important;
+	}
+
+	/* Images: fit page, avoid break */
+	.workspace-editor__preview img {
+		break-inside: avoid !important;
+		page-break-inside: avoid !important;
+		max-width: 100% !important;
+		max-height: 200mm !important;
+		object-fit: contain !important;
+	}
+
+	/* Code blocks & figures: avoid split */
+	.workspace-editor__preview figure,
+	.workspace-editor__preview pre {
+		break-inside: avoid !important;
+		page-break-inside: avoid !important;
+	}
+
+	/* ── Mermaid: force light theme for print ────────────────────────── */
+	.workspace-editor__mermaid {
+		overflow: visible !important;
+		padding: 8px 0 !important;
+	}
+	.workspace-editor__mermaid svg {
+		max-width: 100% !important;
+		width: 100% !important;
+		height: auto !important;
+		max-height: 230mm !important;
+	}
+
+	/* Background: all fills → white/light */
+	.workspace-editor__mermaid .node rect,
+	.workspace-editor__mermaid .node circle,
+	.workspace-editor__mermaid .node ellipse,
+	.workspace-editor__mermaid .node polygon,
+	.workspace-editor__mermaid .node path,
+	.workspace-editor__mermaid .cluster rect,
+	.workspace-editor__mermaid .label-container,
+	.workspace-editor__mermaid .nodeLabel rect {
+		fill: #f8f8f8 !important;
+		stroke: #333 !important;
+		stroke-width: 1.5px !important;
+	}
+
+	/* Subgraph/cluster backgrounds */
+	.workspace-editor__mermaid .cluster rect {
+		fill: #f0f0f0 !important;
+		stroke: #999 !important;
+		stroke-dasharray: none !important;
+	}
+
+	/* All text → black */
+	.workspace-editor__mermaid text,
+	.workspace-editor__mermaid .nodeLabel,
+	.workspace-editor__mermaid .edgeLabel,
+	.workspace-editor__mermaid .label,
+	.workspace-editor__mermaid .cluster-label,
+	.workspace-editor__mermaid .messageText,
+	.workspace-editor__mermaid .loopText,
+	.workspace-editor__mermaid .noteText,
+	.workspace-editor__mermaid tspan {
+		fill: #000 !important;
+		color: #000 !important;
+	}
+
+	/* Edge label background → white */
+	.workspace-editor__mermaid .edgeLabel rect,
+	.workspace-editor__mermaid .edgeLabel span {
+		fill: #fff !important;
+		background: #fff !important;
+		color: #000 !important;
+	}
+
+	/* Lines & arrows → dark gray */
+	.workspace-editor__mermaid .edgePath path,
+	.workspace-editor__mermaid .flowchart-link,
+	.workspace-editor__mermaid line,
+	.workspace-editor__mermaid .messageLine0,
+	.workspace-editor__mermaid .messageLine1 {
+		stroke: #333 !important;
+	}
+	.workspace-editor__mermaid marker path {
+		fill: #333 !important;
+		stroke: #333 !important;
+	}
+
+	/* Sequence diagram: actor boxes & lifelines */
+	.workspace-editor__mermaid .actor {
+		fill: #e8e8e8 !important;
+		stroke: #333 !important;
+	}
+	.workspace-editor__mermaid .activation0,
+	.workspace-editor__mermaid .activation1,
+	.workspace-editor__mermaid .activation2 {
+		fill: #ddd !important;
+		stroke: #333 !important;
+	}
+	.workspace-editor__mermaid .note {
+		fill: #ffffcc !important;
+		stroke: #999 !important;
+	}
+	.workspace-editor__mermaid .loopLine {
+		stroke: #666 !important;
+	}
+
+	/* Flowchart: special colored nodes (green=safe, red=skip) → light tints */
+	.workspace-editor__mermaid [style*="fill:#c8f7c5"],
+	.workspace-editor__mermaid [style*="fill: #c8f7c5"],
+	.workspace-editor__mermaid [style*="fill:rgb(200, 247, 197)"] {
+		fill: #d4edda !important;
+		stroke: #28a745 !important;
+	}
+	.workspace-editor__mermaid [style*="fill:#fde8e8"],
+	.workspace-editor__mermaid [style*="fill: #fde8e8"],
+	.workspace-editor__mermaid [style*="fill:rgb(253, 232, 232)"] {
+		fill: #f8d7da !important;
+		stroke: #dc3545 !important;
+	}
+
+	/* SVG background → white */
+	.workspace-editor__mermaid svg {
+		background: white !important;
+	}
+
+	/* Table rows: avoid split */
+	.workspace-editor__preview tr {
+		break-inside: avoid !important;
+		page-break-inside: avoid !important;
+	}
+
+	/* Paragraphs: at least 3 lines before/after break */
+	.workspace-editor__preview p {
+		orphans: 3;
+		widows: 3;
+	}
+
+	/* ── Table print styling ─────────────────────────────────────────── */
 	.workspace-editor__preview th,
 	.workspace-editor__csv-th {
 		background: #eee !important;

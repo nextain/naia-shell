@@ -15,7 +15,15 @@ import { invoke } from "@tauri-apps/api/core";
 import AnsiToHtml from "ansi-to-html";
 import DOMPurify from "dompurify";
 import Papa from "papaparse";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	forwardRef,
+	useCallback,
+	useEffect,
+	useImperativeHandle,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Document, Page as PdfPage, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -44,6 +52,11 @@ interface EditorProps {
 	badge?: string;
 	/** If true, editing is disabled (reference repos) */
 	readOnly?: boolean;
+}
+
+/** Methods exposed to parent via ref */
+export interface EditorHandle {
+	reloadFile: () => void;
 }
 
 function getLanguageExtension(filePath: string) {
@@ -162,12 +175,25 @@ function CodeBlock({
 	return <code className={className}>{children}</code>;
 }
 
-export function Editor({ filePath, badge, readOnly = false }: EditorProps) {
+export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
+	{ filePath, badge, readOnly = false },
+	ref,
+) {
 	const editorRef = useRef<HTMLDivElement>(null);
 	const viewRef = useRef<EditorView | null>(null);
 	/** Content state — used for MD preview and initial doc load */
 	const [content, setContent] = useState("");
 	const [viewMode, setViewMode] = useState<ViewMode>("editor");
+	// ── Zoom (Ctrl+Scroll) — persisted, not applied during print ─────
+	const [zoom, setZoom] = useState(() => {
+		try {
+			return Number(localStorage.getItem("workspace-editor-zoom")) || 100;
+		} catch {
+			return 100;
+		}
+	});
+	const zoomRef = useRef(zoom);
+	zoomRef.current = zoom;
 	const [saving, setSaving] = useState(false);
 	const [saveError, setSaveError] = useState("");
 	const [reloading, setReloading] = useState(false);
@@ -402,6 +428,30 @@ export function Editor({ filePath, badge, readOnly = false }: EditorProps) {
 		}
 	}, [filePath]);
 
+	// Expose reloadFile to parent via ref
+	useImperativeHandle(ref, () => ({ reloadFile }), [reloadFile]);
+
+	// ── Ctrl+Scroll zoom ─────────────────────────────────────────────────
+	const wrapperRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const el = wrapperRef.current;
+		if (!el) return;
+		const handler = (e: WheelEvent) => {
+			if (!(e.ctrlKey || e.metaKey)) return;
+			e.preventDefault();
+			const delta = e.deltaY > 0 ? -10 : 10;
+			const next = Math.max(50, Math.min(200, zoomRef.current + delta));
+			if (next !== zoomRef.current) {
+				setZoom(next);
+				try {
+					localStorage.setItem("workspace-editor-zoom", String(next));
+				} catch {}
+			}
+		};
+		el.addEventListener("wheel", handler, { passive: false });
+		return () => el.removeEventListener("wheel", handler);
+	}, []);
+
 	// ── Setup CodeMirror ──────────────────────────────────────────────────
 	// biome-ignore lint/correctness/useExhaustiveDependencies: content intentionally excluded (synced via dispatch)
 	useEffect(() => {
@@ -583,7 +633,7 @@ export function Editor({ filePath, badge, readOnly = false }: EditorProps) {
 	}
 
 	return (
-		<div className="workspace-editor">
+		<div ref={wrapperRef} className="workspace-editor" style={{ fontSize: `${zoom}%` }}>
 			{/* Header bar */}
 			<div className="workspace-editor__header">
 				<span className="workspace-editor__filename">{shortName}</span>
@@ -906,4 +956,4 @@ export function Editor({ filePath, badge, readOnly = false }: EditorProps) {
 			)}
 		</div>
 	);
-}
+});

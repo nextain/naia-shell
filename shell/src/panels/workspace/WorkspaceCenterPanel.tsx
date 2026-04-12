@@ -7,7 +7,7 @@ import { panelRegistry } from "../../lib/panel-registry";
 import type { PanelCenterProps } from "../../lib/panel-registry";
 import { useChatStore } from "../../stores/chat";
 import { usePanelStore } from "../../stores/panel";
-import { Editor } from "./Editor";
+import { Editor, type EditorHandle } from "./Editor";
 import { FileTree } from "./FileTree";
 import { QuickOpen } from "./QuickOpen";
 import type { SessionInfo } from "./SessionCard";
@@ -132,6 +132,47 @@ function saveClassifiedDirs(dirs: ClassifiedDir[]): void {
 	} catch {}
 }
 
+// ─── Recent file persistence (per-workspace + per-repo) ─────────────────────
+
+const LAST_FILE_KEY = "workspace-last-file";
+const REPO_RECENT_KEY = "workspace-repo-recent";
+
+function loadLastFile(): string {
+	try {
+		return localStorage.getItem(LAST_FILE_KEY) ?? "";
+	} catch {
+		return "";
+	}
+}
+
+function saveLastFile(path: string): void {
+	try {
+		localStorage.setItem(LAST_FILE_KEY, path);
+	} catch {}
+}
+
+/** Map of repo root path → last opened file path */
+function loadRepoRecent(): Record<string, string> {
+	try {
+		const raw = localStorage.getItem(REPO_RECENT_KEY);
+		return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+	} catch {
+		return {};
+	}
+}
+
+function saveRepoRecent(repoRoot: string, filePath: string): void {
+	try {
+		const map = loadRepoRecent();
+		map[repoRoot] = filePath;
+		localStorage.setItem(REPO_RECENT_KEY, JSON.stringify(map));
+	} catch {}
+}
+
+function getRepoRecentFile(repoRoot: string): string | undefined {
+	return loadRepoRecent()[repoRoot];
+}
+
 export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 	// Resolved workspace root — read from config, or empty (triggers folder picker).
 	const [activeWorkspaceRoot, setActiveWorkspaceRoot] = useState(() => {
@@ -152,6 +193,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		}
 	}, []);
 	const { openFilePath, openFile, goBack, goForward } = useFileNavHistory();
+	const editorRef = useRef<EditorHandle>(null);
 	const [editorBadge, setEditorBadge] = useState("");
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
 	// Terminal tab management
@@ -262,6 +304,32 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			})
 			.finally(() => setWorkspaceReady(true));
 	}, [activeWorkspaceRoot]);
+
+	// ── Restore last opened file after workspace is ready ────────────────
+	const restoredRef = useRef(false);
+	useEffect(() => {
+		if (!workspaceReady || restoredRef.current) return;
+		restoredRef.current = true;
+		const last = loadLastFile();
+		if (last) openFile(last);
+	}, [workspaceReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// ── Persist open file path + per-repo tracking ───────────────────────
+	useEffect(() => {
+		if (!openFilePath) return;
+		saveLastFile(openFilePath);
+		// Track per-repo: find which repo root this file belongs to
+		// Simple heuristic — walk up from the file and match against workspace root children
+		const norm = openFilePath.replace(/\\/g, "/");
+		const rootNorm = resolvedRoot.replace(/\\/g, "/");
+		if (norm.startsWith(rootNorm + "/")) {
+			const rel = norm.slice(rootNorm.length + 1);
+			const topDir = rel.split("/")[0];
+			if (topDir) {
+				saveRepoRecent(`${rootNorm}/${topDir}`, openFilePath);
+			}
+		}
+	}, [openFilePath, resolvedRoot]);
 
 	// ── Load persisted classification ─────────────────────────────────────
 	useEffect(() => {
@@ -473,6 +541,15 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		setEditorBadge("");
 	}, [openFile]);
 
+	// ── Dir expand → open per-repo recent file ──────────────────────────
+	const handleDirExpand = useCallback(
+		(dirPath: string) => {
+			const recent = getRepoRecentFile(dirPath.replace(/\\/g, "/"));
+			if (recent) openFile(recent);
+		},
+		[openFile],
+	);
+
 	/** Send a file path to the chat input via the naia:ask-ai custom event. */
 	const handleSendToChat = useCallback((path: string) => {
 		window.dispatchEvent(new CustomEvent("naia:ask-ai", { detail: path }));
@@ -485,6 +562,18 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 				if (usePanelStore.getState().activePanel !== "workspace") return;
 				e.preventDefault();
 				setQuickOpenVisible((prev) => !prev);
+			}
+		};
+		window.addEventListener("keydown", handler);
+		return () => window.removeEventListener("keydown", handler);
+	}, []);
+
+	// ── Ctrl+R — Reload current document (prevent app refresh) ──────────
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === "r") {
+				e.preventDefault();
+				editorRef.current?.reloadFile();
 			}
 		};
 		window.addEventListener("keydown", handler);
@@ -878,6 +967,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 				<div className="workspace-panel__tree-body">
 					<FileTree
 						onFileSelect={handleFileSelect}
+						onDirExpand={handleDirExpand}
 						openFilePath={openFilePath}
 						activeDirs={activeDirs}
 						classifiedDirs={classifiedDirs ?? undefined}
@@ -948,6 +1038,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 						}
 					>
 						<Editor
+							ref={editorRef}
 							filePath={openFilePath}
 							badge={editorBadge}
 							readOnly={editorReadOnly}

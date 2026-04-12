@@ -14,8 +14,8 @@
 		"windows": [
 			{
 				"title": "Naia",
-				"width": 380,
-				"height": 900,
+				"width": 1366,
+				"height": 768,
 				"resizable": true,
 				"fullscreen": false,
 				"decorations": false,

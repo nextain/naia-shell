@@ -31,6 +31,8 @@ export type { DirEntry } from "../../lib/file-search";
 interface FileTreeProps {
 	/** Called when a file is selected */
 	onFileSelect: (path: string) => void;
+	/** Called when a directory is expanded (e.g. to restore per-repo recent file) */
+	onDirExpand?: (dirPath: string) => void;
 	/** Currently open file path */
 	openFilePath?: string;
 	/** Session dirs that have active status (for highlighting) */
@@ -47,6 +49,7 @@ interface TreeNodeProps {
 	entry: DirEntry;
 	depth: number;
 	onFileSelect: (path: string) => void;
+	onDirExpand?: (dirPath: string) => void;
 	openFilePath?: string;
 	activeDirs?: string[];
 	onContextMenu?: (e: React.MouseEvent, entryPath: string) => void;
@@ -61,6 +64,7 @@ function TreeNode({
 	entry,
 	depth,
 	onFileSelect,
+	onDirExpand,
 	openFilePath,
 	activeDirs,
 	onContextMenu: handleContextMenu,
@@ -120,6 +124,7 @@ function TreeNode({
 			return;
 		}
 		setExpanded(true);
+		onDirExpand?.(entry.path);
 		if (children === null && !loading) {
 			setLoading(true);
 			try {
@@ -137,7 +142,7 @@ function TreeNode({
 				setLoading(false);
 			}
 		}
-	}, [entry, expanded, children, loading, onFileSelect]);
+	}, [entry, expanded, children, loading, onFileSelect, onDirExpand]);
 
 	const indent = depth * 16;
 	const icon = entry.is_dir ? (expanded ? "▼" : "▶") : getFileIcon(entry.name);
@@ -188,6 +193,7 @@ function TreeNode({
 							entry={child}
 							depth={depth + 1}
 							onFileSelect={onFileSelect}
+							onDirExpand={onDirExpand}
 							openFilePath={openFilePath}
 							activeDirs={activeDirs}
 							onContextMenu={handleContextMenu}
@@ -201,6 +207,7 @@ function TreeNode({
 
 export function FileTree({
 	onFileSelect,
+	onDirExpand,
 	openFilePath,
 	activeDirs,
 	classifiedDirs,
@@ -425,6 +432,7 @@ export function FileTree({
 									entry={entry}
 									depth={0}
 									onFileSelect={onFileSelect}
+									onDirExpand={onDirExpand}
 									openFilePath={openFilePath}
 									activeDirs={activeDirs}
 									onContextMenu={openContextMenu}
@@ -446,6 +454,7 @@ export function FileTree({
 					entry={entry}
 					depth={0}
 					onFileSelect={onFileSelect}
+					onDirExpand={onDirExpand}
 					openFilePath={openFilePath}
 					activeDirs={activeDirs}
 					onContextMenu={openContextMenu}
