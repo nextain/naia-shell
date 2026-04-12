@@ -1,5 +1,65 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use tokio::sync::oneshot;
+
+// ─── Backup IPC Relay ─────────────────────────────────────────────────────────
+
+type BackupSender = oneshot::Sender<Result<serde_json::Value, String>>;
+static PENDING_OPS: std::sync::OnceLock<Mutex<HashMap<String, BackupSender>>> =
+    std::sync::OnceLock::new();
+
+fn pending_ops() -> &'static Mutex<HashMap<String, BackupSender>> {
+    PENDING_OPS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Lock the pending ops map, recovering from a poisoned mutex (mirroring lib.rs `lock_or_recover`).
+fn lock_pending() -> std::sync::MutexGuard<'static, HashMap<String, BackupSender>> {
+    match pending_ops().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Register a pending one-shot channel for a memory backup IPC request.
+pub fn register_pending(request_id: String, tx: BackupSender) {
+    lock_pending().insert(request_id, tx);
+}
+
+/// Remove a pending one-shot channel (e.g. on timeout cleanup).
+pub fn unregister_pending(request_id: &str) {
+    lock_pending().remove(request_id);
+}
+
+/// Called from the agent stdout reader when a backup result message arrives.
+/// Returns `true` if the message was consumed (should NOT be forwarded as `agent_response`).
+pub fn dispatch_backup_response(parsed: &serde_json::Value) -> bool {
+    let type_str = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    if !matches!(type_str, "memory_export_result" | "memory_import_result") {
+        return false;
+    }
+    let request_id = match parsed.get("requestId").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return false,
+    };
+    let sender = lock_pending().remove(&request_id);
+    if let Some(tx) = sender {
+        let result = match parsed.get("error").and_then(|v| v.as_str()) {
+            Some(err) => Err(err.to_string()),
+            None => Ok(parsed.clone()),
+        };
+        let _ = tx.send(result);
+        true
+    } else {
+        // Sender already dropped (likely timed out) — late-arriving response silently discarded
+        crate::log_verbose(&format!(
+            "[Naia] late backup response for requestId={} (timed out or duplicate) — discarded",
+            request_id
+        ));
+        false
+    }
+}
 
 /// Agent's semantic Fact — matches agent/src/memory/types.ts Fact interface
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -99,8 +159,101 @@ pub fn delete_agent_fact(fact_id: &str) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
+    use tokio::sync::oneshot;
+
+    // ─── IPC Relay tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn register_and_dispatch_success_response() {
+        let request_id = "test-req-001".to_string();
+        let (tx, mut rx) = oneshot::channel();
+        register_pending(request_id.clone(), tx);
+
+        let msg = serde_json::json!({
+            "type": "memory_export_result",
+            "requestId": request_id,
+            "data": [1, 2, 3, 4]
+        });
+        let consumed = dispatch_backup_response(&msg);
+        assert!(consumed, "dispatch should return true for memory_export_result");
+
+        let result = rx.try_recv().expect("sender should have fired");
+        let val = result.expect("should be Ok, not Err");
+        assert_eq!(val["type"], "memory_export_result");
+        assert_eq!(val["data"], serde_json::json!([1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn register_and_dispatch_error_response() {
+        let request_id = "test-req-002".to_string();
+        let (tx, mut rx) = oneshot::channel();
+        register_pending(request_id.clone(), tx);
+
+        let msg = serde_json::json!({
+            "type": "memory_import_result",
+            "requestId": request_id,
+            "error": "Decryption failed"
+        });
+        let consumed = dispatch_backup_response(&msg);
+        assert!(consumed);
+
+        let result = rx.try_recv().expect("sender should have fired");
+        let err = result.expect_err("should be Err, not Ok");
+        assert_eq!(err, "Decryption failed");
+    }
+
+    #[test]
+    fn dispatch_returns_false_for_unrelated_message_type() {
+        let msg = serde_json::json!({
+            "type": "agent_response",
+            "content": "hello"
+        });
+        let consumed = dispatch_backup_response(&msg);
+        assert!(!consumed, "should not consume agent_response messages");
+    }
+
+    #[test]
+    fn dispatch_returns_false_when_no_pending_sender() {
+        // Dispatch a backup message that was never registered (simulates late arrival)
+        let msg = serde_json::json!({
+            "type": "memory_export_result",
+            "requestId": "nonexistent-id-xyz",
+            "data": []
+        });
+        let consumed = dispatch_backup_response(&msg);
+        // No sender registered: should return false (late/stale response)
+        assert!(!consumed);
+    }
+
+    #[test]
+    fn unregister_pending_removes_sender() {
+        let request_id = "test-req-003".to_string();
+        let (tx, _rx) = oneshot::channel::<Result<serde_json::Value, String>>();
+        register_pending(request_id.clone(), tx);
+        unregister_pending(&request_id);
+
+        // After unregister, dispatching should return false (no sender)
+        let msg = serde_json::json!({
+            "type": "memory_export_result",
+            "requestId": request_id,
+            "data": []
+        });
+        let consumed = dispatch_backup_response(&msg);
+        assert!(!consumed, "sender was removed, should not be consumed");
+    }
+
+    #[test]
+    fn dispatch_returns_false_for_backup_type_without_request_id() {
+        // Malformed: correct type but no requestId field
+        let msg = serde_json::json!({
+            "type": "memory_export_result",
+            "data": [1, 2, 3]
+        });
+        let consumed = dispatch_backup_response(&msg);
+        assert!(!consumed, "missing requestId should return false without panic");
+    }
+
+    // ─── MemoryStore deserialization tests ─────────────────────────────────
 
     #[test]
     fn parse_agent_memory_json() {

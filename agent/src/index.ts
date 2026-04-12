@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as readline from "node:readline";
+import { checkTokenBudget } from "./conversation/token-budget.js";
 import { GatewayClient } from "./gateway/client.js";
 import { loadDeviceIdentity } from "./gateway/device-identity.js";
 import { createGatewayEventHandler } from "./gateway/event-handler.js";
@@ -13,7 +14,6 @@ import {
 	getAllTools,
 	skillRegistry,
 } from "./gateway/tool-bridge.js";
-import { closeAllMcpConnections } from "./skills/loader.js";
 import {
 	getToolDescription,
 	getToolTier,
@@ -21,18 +21,25 @@ import {
 	setToolTier,
 } from "./gateway/tool-tiers.js";
 import type { GatewayAdapter } from "./gateway/types.js";
+import { closeAllMcpConnections } from "./skills/loader.js";
 import { JobTracker } from "./tasks/index.js";
 import type { JobKind } from "./tasks/index.js";
-import { checkTokenBudget } from "./conversation/token-budget.js";
 
 /** Global job tracker — tracks all skill/tool executions. */
 export const jobTracker = new JobTracker();
-import { LocalAdapter } from "./memory/adapters/local.js";
-import { MemorySystem } from "./memory/index.js";
-import type { MemoryAdapter } from "./memory/types.js";
+import {
+	LocalAdapter,
+	MemorySystem,
+	NaiaGatewayEmbeddingProvider,
+	OfflineEmbeddingProvider,
+	OpenAICompatEmbeddingProvider,
+} from "@nextain/alpha-memory";
+import type { EmbeddingProvider } from "@nextain/alpha-memory";
 import {
 	type ApprovalResponse,
 	type ChatRequest,
+	type MemoryExportRequest,
+	type MemoryImportRequest,
 	type PanelInstallRequest,
 	type PanelSkillsClearRequest,
 	type PanelSkillsRequest,
@@ -59,46 +66,98 @@ const MEMORY_STORE_PATH = join(
 );
 mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
 
-/** Resolve memory adapter from config. Defaults to LocalAdapter. */
-function resolveMemoryAdapter(): MemoryAdapter {
-	// Check config for memory adapter setting
+/** Resolve memory system from config. Defaults to LocalAdapter with no embedding. */
+function resolveMemorySystem(): MemorySystem {
 	const configCandidates = defaultPathResolver.configCandidates();
 	for (const path of configCandidates) {
 		try {
 			const raw = JSON.parse(readFileSync(path, "utf-8")) as {
 				memory?: {
 					adapter?: string;
-					mem0Config?: {
-						embedder: { provider: string; config: Record<string, unknown> };
-						vectorStore: { provider: string; config: Record<string, unknown> };
-						llm: { provider: string; config: Record<string, unknown> };
-						historyDbPath?: string;
-					};
+					embeddingProvider?: string;
+					offlineModel?: string;
+					embeddingBaseUrl?: string;
+					embeddingApiKey?: string;
+					embeddingModel?: string;
+					qdrantUrl?: string;
+					qdrantApiKey?: string;
 				};
+				naiaKey?: string;
+				gatewayUrl?: string;
 			};
-			if (raw.memory?.adapter === "mem0" && raw.memory.mem0Config) {
-				// Dynamic require — mem0ai is an optional dependency (devDependencies).
-				// Falls back to LocalAdapter if mem0ai is not installed.
-				try {
-					const { Mem0Adapter } = require("./memory/adapters/mem0.js") as {
-						Mem0Adapter: new (options: {
-							mem0Config: NonNullable<typeof raw.memory>["mem0Config"];
-						}) => MemoryAdapter;
-					};
-					return new Mem0Adapter({ mem0Config: raw.memory.mem0Config });
-				} catch {
-					// mem0ai not installed — fall through to LocalAdapter
+
+			const mem = raw.memory;
+			if (!mem) continue;
+
+			// Resolve embedding provider
+			let embeddingProvider: EmbeddingProvider | undefined;
+			const ep = mem.embeddingProvider;
+			if (ep === "offline") {
+				const model = (
+					mem.offlineModel === "all-mpnet-base-v2"
+						? "all-mpnet-base-v2"
+						: "all-MiniLM-L6-v2"
+				) as "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
+				embeddingProvider = new OfflineEmbeddingProvider(model);
+			} else if (ep === "openai-compat") {
+				if (!mem.embeddingBaseUrl) {
+					console.error(
+						"[agent:memory] embeddingProvider=openai-compat configured but embeddingBaseUrl is missing — falling back to keyword search",
+					);
+				} else {
+					embeddingProvider = new OpenAICompatEmbeddingProvider(
+						mem.embeddingBaseUrl,
+						mem.embeddingApiKey ?? "",
+						mem.embeddingModel ?? "text-embedding-ada-002",
+					);
+				}
+			} else if (ep === "naia") {
+				const naiaKey = raw.naiaKey;
+				const gatewayUrl = raw.gatewayUrl ?? "http://localhost:18789";
+				if (naiaKey) {
+					embeddingProvider = new NaiaGatewayEmbeddingProvider(
+						gatewayUrl,
+						naiaKey,
+					);
+				} else {
+					console.error(
+						"[agent:memory] embeddingProvider=naia configured but naiaKey is missing — falling back to keyword search",
+					);
 				}
 			}
+			// 'none' or unset: embeddingProvider = undefined → keyword search
+
+			// Resolve adapter
+			if (mem.adapter === "qdrant" && mem.qdrantUrl) {
+				if (!embeddingProvider) {
+					console.error(
+						"[agent:memory] adapter=qdrant configured but no valid embeddingProvider found — falling back to LocalAdapter",
+					);
+					continue;
+				}
+				return new MemorySystem({
+					embeddingProvider,
+					qdrantOptions: {
+						url: mem.qdrantUrl,
+						apiKey: mem.qdrantApiKey,
+					},
+				});
+			}
+
+			// Local adapter (default)
+			return new MemorySystem({
+				adapter: new LocalAdapter(MEMORY_STORE_PATH),
+				embeddingProvider,
+			});
 		} catch {
-			// ignore and try next
+			// ignore and try next candidate
 		}
 	}
-	return new LocalAdapter(MEMORY_STORE_PATH);
+	// No valid config found — default LocalAdapter, no embedding
+	return new MemorySystem({ adapter: new LocalAdapter(MEMORY_STORE_PATH) });
 }
 
-const memoryAdapter = resolveMemoryAdapter();
-const memorySystem = new MemorySystem({ adapter: memoryAdapter });
+const memorySystem = resolveMemorySystem();
 memorySystem.startConsolidation();
 
 /** Native command executor — works without Gateway connection */
@@ -605,7 +664,11 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 			);
 
 			// Pre-flight token budget check (Phase 1: warn only. Phase 2: add compaction.)
-			const budgetCheck = checkTokenBudget(chatMessages, providerConfig.model, effectiveSystemPrompt);
+			const budgetCheck = checkTokenBudget(
+				chatMessages,
+				providerConfig.model,
+				effectiveSystemPrompt,
+			);
 			if (budgetCheck.status !== "ok") {
 				console.error(`[agent:chat] ${budgetCheck.message}`);
 				writeLine({
@@ -716,8 +779,14 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 					}
 				}
 
-				const jobKind: JobKind = skillRegistry.has(call.name) ? "skill" : "gateway_tool";
-				const jobId = jobTracker.create(jobKind, call.name, `Execute ${call.name}`);
+				const jobKind: JobKind = skillRegistry.has(call.name)
+					? "skill"
+					: "gateway_tool";
+				const jobId = jobTracker.create(
+					jobKind,
+					call.name,
+					`Execute ${call.name}`,
+				);
 				jobTracker.start(jobId);
 
 				let result;
@@ -729,7 +798,10 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 						jobTracker.fail(jobId, result.error ?? "Unknown error");
 					}
 				} catch (err) {
-					jobTracker.fail(jobId, err instanceof Error ? err.message : String(err));
+					jobTracker.fail(
+						jobId,
+						err instanceof Error ? err.message : String(err),
+					);
 					result = { success: false, output: "", error: String(err) };
 				}
 
@@ -786,8 +858,14 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 
 				// Execution phase (parallel) — track each job
 				const jobIds = approvedConcurrent.map((call) => {
-					const kind: JobKind = skillRegistry.has(call.name) ? "skill" : "gateway_tool";
-					const jid = jobTracker.create(kind, call.name, `Execute ${call.name}`);
+					const kind: JobKind = skillRegistry.has(call.name)
+						? "skill"
+						: "gateway_tool";
+					const jid = jobTracker.create(
+						kind,
+						call.name,
+						`Execute ${call.name}`,
+					);
 					jobTracker.start(jid);
 					return jid;
 				});
@@ -804,8 +882,14 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 								return { call, result };
 							})
 							.catch((err) => {
-								jobTracker.fail(jobIds[idx], err instanceof Error ? err.message : String(err));
-								return { call, result: { success: false, output: "", error: String(err) } };
+								jobTracker.fail(
+									jobIds[idx],
+									err instanceof Error ? err.message : String(err),
+								);
+								return {
+									call,
+									result: { success: false, output: "", error: String(err) },
+								};
 							}),
 					),
 				);
@@ -1023,6 +1107,39 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 	}
 }
 
+async function handleMemoryExport(req: MemoryExportRequest): Promise<void> {
+	if (!memorySystem.supportsBackup()) {
+		writeLine({
+			type: "memory_export_result",
+			requestId: req.requestId,
+			error: "Current memory adapter does not support backup export",
+		});
+		return;
+	}
+	const blob = await memorySystem.exportBackup(req.password);
+	writeLine({
+		type: "memory_export_result",
+		requestId: req.requestId,
+		data: Array.from(blob),
+	});
+}
+
+async function handleMemoryImport(req: MemoryImportRequest): Promise<void> {
+	if (!memorySystem.supportsBackup()) {
+		writeLine({
+			type: "memory_import_result",
+			requestId: req.requestId,
+			error: "Current memory adapter does not support backup import",
+		});
+		return;
+	}
+	await memorySystem.importBackup(new Uint8Array(req.data), req.password);
+	writeLine({
+		type: "memory_import_result",
+		requestId: req.requestId,
+	});
+}
+
 /**
  * Handle standalone TTS request (pipeline voice mode).
  * Synthesizes text → MP3 base64 and emits as audio chunk.
@@ -1142,6 +1259,28 @@ function main(): void {
 				type: "skill_list_response",
 				requestId: request.requestId,
 				tools,
+			});
+			return;
+		}
+
+		if (request.type === "memory_export") {
+			handleMemoryExport(request).catch((err) => {
+				writeLine({
+					type: "memory_export_result",
+					requestId: request.requestId,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
+			return;
+		}
+
+		if (request.type === "memory_import") {
+			handleMemoryImport(request).catch((err) => {
+				writeLine({
+					type: "memory_import_result",
+					requestId: request.requestId,
+					error: err instanceof Error ? err.message : String(err),
+				});
 			});
 			return;
 		}

@@ -129,6 +129,30 @@ export interface SkillListRequest {
 	requestId: string;
 }
 
+// ─── Memory Backup Protocol ─────────────────────────────────────────────────
+
+/**
+ * Shell → Agent: export encrypted memory backup.
+ * Agent calls LocalAdapter.export(password) and responds with memory_export_result.
+ */
+export interface MemoryExportRequest {
+	type: "memory_export";
+	requestId: string;
+	password: string;
+}
+
+/**
+ * Shell → Agent: import encrypted memory backup.
+ * Agent calls LocalAdapter.import(blob, password) and responds with memory_import_result.
+ */
+export interface MemoryImportRequest {
+	type: "memory_import";
+	requestId: string;
+	/** Encrypted backup bytes as a number array (JSON-serializable) */
+	data: number[];
+	password: string;
+}
+
 export type AgentRequest =
 	| ChatRequest
 	| CancelRequest
@@ -139,7 +163,9 @@ export type AgentRequest =
 	| PanelSkillsClearRequest
 	| PanelInstallRequest
 	| PanelToolResult
-	| SkillListRequest;
+	| SkillListRequest
+	| MemoryExportRequest
+	| MemoryImportRequest;
 
 export function parseRequest(line: string): AgentRequest | null {
 	try {
@@ -155,7 +181,9 @@ export function parseRequest(line: string): AgentRequest | null {
 			obj.type === "panel_skills_clear" ||
 			obj.type === "panel_tool_result" ||
 			obj.type === "panel_install" ||
-			obj.type === "skill_list"
+			obj.type === "skill_list" ||
+			obj.type === "memory_export" ||
+			obj.type === "memory_import"
 		) {
 			return obj as AgentRequest;
 		}

@@ -26,7 +26,13 @@ import {
 	resolveGatewayUrl,
 	saveConfig,
 } from "../lib/config";
-import { type AgentFact, deleteAgentFact, getAllAgentFacts } from "../lib/db";
+import {
+	type AgentFact,
+	deleteAgentFact,
+	exportMemoryBackup,
+	getAllAgentFacts,
+	importMemoryBackup,
+} from "../lib/db";
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
@@ -849,6 +855,36 @@ export function SettingsTab() {
 		{ id: string; label: string; gender?: string }[]
 	>([]);
 	const [facts, setFacts] = useState<AgentFact[]>([]);
+
+	// Memory adapter settings
+	const [memoryAdapter, setMemoryAdapter] = useState<"local" | "qdrant">(
+		existing?.memoryAdapter ?? "local",
+	);
+	const [qdrantUrl, setQdrantUrl] = useState(existing?.qdrantUrl ?? "");
+	const [qdrantApiKey, setQdrantApiKey] = useState(
+		existing?.qdrantApiKey ?? "",
+	);
+	const [memoryEmbeddingProvider, setMemoryEmbeddingProvider] = useState<
+		"none" | "offline" | "openai-compat" | "naia"
+	>(existing?.memoryEmbeddingProvider ?? "none");
+	const [memoryOfflineModel, setMemoryOfflineModel] = useState<
+		"all-MiniLM-L6-v2" | "all-mpnet-base-v2"
+	>(existing?.memoryOfflineModel ?? "all-MiniLM-L6-v2");
+	const [memoryEmbeddingBaseUrl, setMemoryEmbeddingBaseUrl] = useState(
+		existing?.memoryEmbeddingBaseUrl ?? "",
+	);
+	const [memoryEmbeddingApiKey, setMemoryEmbeddingApiKey] = useState(
+		existing?.memoryEmbeddingApiKey ?? "",
+	);
+	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
+		existing?.memoryEmbeddingModel ?? "",
+	);
+	const [backupPassword, setBackupPassword] = useState("");
+	const [backupStatus, setBackupStatus] = useState<
+		"idle" | "exporting" | "importing" | "done" | "error"
+	>("idle");
+	const [backupError, setBackupError] = useState("");
+
 	const [allowedToolsCount, setAllowedToolsCount] = useState(
 		existing?.allowedTools?.length ?? 0,
 	);
@@ -2076,6 +2112,27 @@ export function SettingsTab() {
 			openaiRealtimeApiKey: openaiRealtimeApiKey.trim() || undefined,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
+			// Memory settings
+			memoryAdapter,
+			memoryEmbeddingProvider,
+			memoryOfflineModel:
+				memoryEmbeddingProvider === "offline" ? memoryOfflineModel : undefined,
+			memoryEmbeddingBaseUrl:
+				memoryEmbeddingProvider === "openai-compat"
+					? memoryEmbeddingBaseUrl || undefined
+					: undefined,
+			memoryEmbeddingApiKey:
+				memoryEmbeddingProvider === "openai-compat"
+					? memoryEmbeddingApiKey || undefined
+					: undefined,
+			memoryEmbeddingModel:
+				memoryEmbeddingProvider === "openai-compat"
+					? memoryEmbeddingModel || undefined
+					: undefined,
+			qdrantUrl:
+				memoryAdapter === "qdrant" ? qdrantUrl || undefined : undefined,
+			qdrantApiKey:
+				memoryAdapter === "qdrant" ? qdrantApiKey || undefined : undefined,
 		};
 		saveConfig(newConfig);
 		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
@@ -3694,6 +3751,256 @@ export function SettingsTab() {
 			<div className="settings-section-divider">
 				<span>{t("settings.memorySection")}</span>
 			</div>
+
+			{/* Memory adapter */}
+			<div className="settings-field">
+				<label>{t("settings.memoryAdapter")}</label>
+				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+					{(
+						[
+							["local", t("settings.memoryAdapterLocal")],
+							["qdrant", t("settings.memoryAdapterQdrant")],
+						] as const
+					).map(([val, label]) => (
+						<label
+							key={val}
+							style={{ display: "flex", alignItems: "center", gap: "6px" }}
+						>
+							<input
+								type="radio"
+								name="memory-adapter"
+								value={val}
+								checked={memoryAdapter === val}
+								onChange={() => setMemoryAdapter(val)}
+							/>
+							{label}
+						</label>
+					))}
+				</div>
+			</div>
+
+			{/* Qdrant fields */}
+			{memoryAdapter === "qdrant" && (
+				<>
+					<div className="settings-field">
+						<label>{t("settings.qdrantUrl")}</label>
+						<input
+							type="text"
+							value={qdrantUrl}
+							onChange={(e) => setQdrantUrl(e.target.value)}
+							placeholder="http://localhost:6333"
+						/>
+					</div>
+					<div className="settings-field">
+						<label>{t("settings.qdrantApiKey")}</label>
+						<input
+							type="password"
+							value={qdrantApiKey}
+							onChange={(e) => setQdrantApiKey(e.target.value)}
+							placeholder="..."
+						/>
+					</div>
+				</>
+			)}
+
+			{/* Embedding provider */}
+			<div className="settings-field">
+				<label>{t("settings.memoryEmbedding")}</label>
+				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+					{(
+						[
+							["none", t("settings.memoryEmbeddingNone")],
+							["offline", t("settings.memoryEmbeddingOffline")],
+							["openai-compat", t("settings.memoryEmbeddingOpenaiCompat")],
+							["naia", t("settings.memoryEmbeddingNaia")],
+						] as const
+					).map(([val, label]) => (
+						<label
+							key={val}
+							style={{ display: "flex", alignItems: "center", gap: "6px" }}
+						>
+							<input
+								type="radio"
+								name="memory-embedding"
+								value={val}
+								checked={memoryEmbeddingProvider === val}
+								onChange={() => setMemoryEmbeddingProvider(val)}
+							/>
+							{label}
+						</label>
+					))}
+				</div>
+			</div>
+
+			{/* Offline model selection */}
+			{memoryEmbeddingProvider === "offline" && (
+				<div className="settings-field">
+					<label>{t("settings.memoryOfflineModelSelect")}</label>
+					<div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+						{(
+							[
+								["all-MiniLM-L6-v2", t("settings.memoryOfflineModelLight")],
+								["all-mpnet-base-v2", t("settings.memoryOfflineModelAccurate")],
+							] as const
+						).map(([val, label]) => (
+							<label
+								key={val}
+								style={{ display: "flex", alignItems: "center", gap: "6px" }}
+							>
+								<input
+									type="radio"
+									name="memory-offline-model"
+									value={val}
+									checked={memoryOfflineModel === val}
+									onChange={() => setMemoryOfflineModel(val)}
+								/>
+								{label}
+							</label>
+						))}
+					</div>
+				</div>
+			)}
+
+			{/* OpenAI-compat fields */}
+			{memoryEmbeddingProvider === "openai-compat" && (
+				<>
+					<div className="settings-field">
+						<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
+						<input
+							type="text"
+							value={memoryEmbeddingBaseUrl}
+							onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
+							placeholder="http://localhost:11434"
+						/>
+					</div>
+					<div className="settings-field">
+						<label>{t("settings.memoryEmbeddingApiKey")}</label>
+						<input
+							type="password"
+							value={memoryEmbeddingApiKey}
+							onChange={(e) => setMemoryEmbeddingApiKey(e.target.value)}
+							placeholder="sk-..."
+						/>
+					</div>
+					<div className="settings-field">
+						<label>{t("settings.memoryEmbeddingModel")}</label>
+						<input
+							type="text"
+							value={memoryEmbeddingModel}
+							onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
+							placeholder="text-embedding-ada-002"
+						/>
+					</div>
+				</>
+			)}
+
+			{/* Naia embedding: show connection status */}
+			{memoryEmbeddingProvider === "naia" && (
+				<div className="settings-field">
+					<span className="settings-hint">
+						{naiaKey
+							? `✓ ${t("settings.memoryNaiaConnected")}`
+							: `⚠ ${t("settings.memoryNaiaRequired")}`}
+					</span>
+				</div>
+			)}
+
+			{/* Backup section */}
+			<div className="settings-field">
+				<label>{t("settings.memoryBackup")}</label>
+				<input
+					type="password"
+					value={backupPassword}
+					onChange={(e) => setBackupPassword(e.target.value)}
+					placeholder={t("settings.memoryBackupPassword")}
+				/>
+				<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+					<button
+						type="button"
+						disabled={!backupPassword || backupStatus !== "idle"}
+						onClick={async () => {
+							setBackupStatus("exporting");
+							setBackupError("");
+							try {
+								const blob = await exportMemoryBackup(backupPassword);
+								const url = URL.createObjectURL(
+									new Blob([blob as BlobPart], { type: "application/octet-stream" }),
+								);
+								const a = document.createElement("a");
+								a.href = url;
+								a.download = "naia-memory-backup.bin";
+								a.click();
+								URL.revokeObjectURL(url);
+								setBackupStatus("done");
+								setTimeout(() => setBackupStatus("idle"), 2000);
+							} catch (err) {
+								setBackupStatus("error");
+								setBackupError(String(err));
+							}
+						}}
+					>
+						{backupStatus === "exporting"
+							? "..."
+							: t("settings.memoryBackupExport")}
+					</button>
+					<button
+						type="button"
+						disabled={!backupPassword || backupStatus !== "idle"}
+						onClick={async () => {
+							const pw = backupPassword;
+							const fileInput = document.createElement("input");
+							fileInput.type = "file";
+							fileInput.accept = ".bin,.bak";
+							fileInput.onchange = async () => {
+								const file = fileInput.files?.[0];
+								if (!file) return;
+								setBackupStatus("importing");
+								setBackupError("");
+								try {
+									const arrayBuffer = await file.arrayBuffer();
+									await importMemoryBackup(
+										new Uint8Array(arrayBuffer),
+										pw,
+									);
+									setBackupStatus("done");
+									setTimeout(() => setBackupStatus("idle"), 2000);
+								} catch (err) {
+									setBackupStatus("error");
+									setBackupError(String(err));
+								}
+							};
+							fileInput.click();
+						}}
+					>
+						{backupStatus === "importing"
+							? "..."
+							: t("settings.memoryBackupImport")}
+					</button>
+				</div>
+				{backupStatus === "done" && (
+					<span className="settings-hint" style={{ color: "var(--success-color, #4caf50)" }}>
+						✓
+					</span>
+				)}
+				{backupStatus === "error" && (
+					<span className="settings-hint" style={{ color: "var(--error-color, #f44336)" }}>
+						{backupError}
+					</span>
+				)}
+			</div>
+
+			{/* Memory stats */}
+			{facts.length > 0 && (
+				<div className="settings-field">
+					<span className="settings-hint">
+						{t("settings.memoryStats")}:{" "}
+						{t("settings.memoryFactCount").replace(
+							"{{count}}",
+							String(facts.length),
+						)}
+					</span>
+				</div>
+			)}
 
 			{facts.length === 0 ? (
 				<div className="settings-field">

@@ -1229,6 +1229,14 @@ fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result
                             }
                         }
                     }
+                    // Intercept memory backup responses — dispatch to waiting Tauri command
+                    // (parsed only available inside the if let Ok block above, so we re-parse here)
+                    let handled_as_backup = serde_json::from_str::<serde_json::Value>(trimmed)
+                        .map(|v| memory::dispatch_backup_response(&v))
+                        .unwrap_or(false);
+                    if handled_as_backup {
+                        continue;
+                    }
                     // Forward raw JSON to frontend
                     if let Err(e) = handle.emit("agent_response", trimmed) {
                         log_verbose(&format!("[Naia] Failed to emit agent_response: {}", e));
@@ -1608,6 +1616,100 @@ async fn memory_get_all_facts() -> Result<Vec<memory::AgentFact>, String> {
 #[tauri::command]
 async fn memory_delete_fact(fact_id: String) -> Result<bool, String> {
     memory::delete_agent_fact(&fact_id)
+}
+
+/// Export an encrypted memory backup via agent IPC (AES-256-GCM + PBKDF2-SHA256).
+/// Sends memory_export request to agent and awaits memory_export_result response.
+/// The response data field is a JSON number array (agent uses Array.from(Uint8Array)).
+#[tauri::command]
+async fn memory_export_backup(
+    password: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<u8>, String> {
+    use tokio::sync::oneshot;
+
+    let request_id = {
+        let mut bytes = [0u8; 8];
+        getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
+        bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+    };
+
+    let (tx, rx) = oneshot::channel();
+    memory::register_pending(request_id.clone(), tx);
+
+    let message = serde_json::json!({
+        "type": "memory_export",
+        "requestId": request_id,
+        "password": password,
+    });
+    if let Err(e) = send_to_agent(&state, &message.to_string(), None, None) {
+        memory::unregister_pending(&request_id);
+        return Err(e);
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(Ok(response))) => {
+            let data = response
+                .get("data")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| "No data array in memory_export_result".to_string())?;
+            data.iter()
+                .map(|v| {
+                    v.as_u64()
+                        .and_then(|n| u8::try_from(n).ok())
+                        .ok_or_else(|| "Invalid byte value in data array".to_string())
+                })
+                .collect()
+        }
+        Ok(Ok(Err(err))) => Err(err),
+        Ok(Err(_)) => Err("Agent disconnected before sending memory_export_result".to_string()),
+        Err(_) => {
+            memory::unregister_pending(&request_id);
+            Err("Memory export timed out (30s)".to_string())
+        }
+    }
+}
+
+/// Import an encrypted memory backup via agent IPC.
+/// Sends memory_import request to agent and awaits memory_import_result response.
+/// The data field is sent as a JSON number array matching the protocol's `data: number[]`.
+#[tauri::command]
+async fn memory_import_backup(
+    blob: Vec<u8>,
+    password: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    use tokio::sync::oneshot;
+
+    let request_id = {
+        let mut bytes = [0u8; 8];
+        getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
+        bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+    };
+
+    let (tx, rx) = oneshot::channel();
+    memory::register_pending(request_id.clone(), tx);
+
+    let message = serde_json::json!({
+        "type": "memory_import",
+        "requestId": request_id,
+        "data": blob,
+        "password": password,
+    });
+    if let Err(e) = send_to_agent(&state, &message.to_string(), None, None) {
+        memory::unregister_pending(&request_id);
+        return Err(e);
+    }
+
+    match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+        Ok(Ok(Ok(_))) => Ok(()),
+        Ok(Ok(Err(err))) => Err(err),
+        Ok(Err(_)) => Err("Agent disconnected before sending memory_import_result".to_string()),
+        Err(_) => {
+            memory::unregister_pending(&request_id);
+            Err("Memory import timed out (30s)".to_string())
+        }
+    }
 }
 
 /// Validate an API key by making a test request to the provider
@@ -2592,6 +2694,8 @@ pub fn run() {
             get_audit_stats,
             memory_get_all_facts,
             memory_delete_fact,
+            memory_export_backup,
+            memory_import_backup,
             validate_api_key,
             list_audio_output_devices,
             generate_oauth_state,

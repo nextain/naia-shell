@@ -141,6 +141,24 @@ export interface AppConfig {
 	deletedPanels?: string[];
 	/** Workspace root directory override. Defaults to the compile-time WORKSPACE_ROOT constant if not set. */
 	workspaceRoot?: string;
+
+	// ── Memory settings ──
+	/** Memory adapter backend. Defaults to 'local' (JSON file). */
+	memoryAdapter?: "local" | "qdrant";
+	/** Embedding provider for semantic search. Defaults to 'none' (keyword search). */
+	memoryEmbeddingProvider?: "none" | "offline" | "openai-compat" | "naia";
+	/** Offline embedding model (used when memoryEmbeddingProvider = 'offline'). */
+	memoryOfflineModel?: "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
+	/** OpenAI-compatible embedding API base URL (provider = 'openai-compat'). */
+	memoryEmbeddingBaseUrl?: string;
+	/** API key for OpenAI-compatible embedding endpoint. */
+	memoryEmbeddingApiKey?: string;
+	/** Embedding model name for OpenAI-compatible endpoint. */
+	memoryEmbeddingModel?: string;
+	/** Qdrant vector DB URL (adapter = 'qdrant'). */
+	qdrantUrl?: string;
+	/** Qdrant API key. */
+	qdrantApiKey?: string;
 }
 
 // ── Sync API (localStorage only, backwards compatible) ──
