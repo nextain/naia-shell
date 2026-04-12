@@ -55,7 +55,7 @@ import {
 	listLlmProviders,
 } from "../lib/llm";
 import { Logger } from "../lib/logger";
-import { restartGateway, syncToGateway } from "../lib/gateway-sync";
+import { MemorySyncParams, restartGateway, syncToGateway } from "../lib/gateway-sync";
 import {
 	DEFAULT_PERSONA,
 	FORMALITY_LOCALES,
@@ -2154,6 +2154,16 @@ export function SettingsTab() {
 			discordDefaultUserId: newConfig.discordDefaultUserId,
 			discordDmChannelId: newConfig.discordDmChannelId,
 		});
+		const memorySyncParams: MemorySyncParams = {
+			memoryAdapter: newConfig.memoryAdapter,
+			memoryEmbeddingProvider: newConfig.memoryEmbeddingProvider,
+			memoryOfflineModel: newConfig.memoryOfflineModel,
+			memoryEmbeddingBaseUrl: newConfig.memoryEmbeddingBaseUrl,
+			memoryEmbeddingApiKey: newConfig.memoryEmbeddingApiKey,
+			memoryEmbeddingModel: newConfig.memoryEmbeddingModel,
+			qdrantUrl: newConfig.qdrantUrl,
+			qdrantApiKey: newConfig.qdrantApiKey,
+		};
 		syncToGateway(
 			newConfig.provider,
 			newConfig.model,
@@ -2171,6 +2181,7 @@ export function SettingsTab() {
 			undefined,
 			naiaKey || undefined,
 			newConfig.ollamaHost || undefined,
+			memorySyncParams,
 		).then(() => restartGateway());
 
 		// Auto-sync to Lab if connected

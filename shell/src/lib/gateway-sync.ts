@@ -11,6 +11,17 @@ import { buildSystemPrompt } from "./persona";
  * Builds the full system prompt with persona/locale context.
  * User facts are handled by Agent MemorySystem (sessionRecall) — not included here.
  */
+export interface MemorySyncParams {
+	memoryAdapter?: string;
+	memoryEmbeddingProvider?: string;
+	memoryOfflineModel?: string;
+	memoryEmbeddingBaseUrl?: string;
+	memoryEmbeddingApiKey?: string;
+	memoryEmbeddingModel?: string;
+	qdrantUrl?: string;
+	qdrantApiKey?: string;
+}
+
 export async function syncToGateway(
 	provider: string,
 	model: string,
@@ -28,6 +39,7 @@ export async function syncToGateway(
 	_ttsMode?: string,
 	naiaKey?: string,
 	ollamaHost?: string,
+	memory?: MemorySyncParams,
 ): Promise<void> {
 	try {
 		const cfg = loadConfig();
@@ -59,6 +71,15 @@ export async function syncToGateway(
 				naia_key: naiaKey || null,
 				ollama_host: ollamaHost || null,
 				lab_gateway_url: LAB_GATEWAY_URL,
+				// Memory settings
+				memory_adapter: memory?.memoryAdapter || null,
+				memory_embedding_provider: memory?.memoryEmbeddingProvider || null,
+				memory_offline_model: memory?.memoryOfflineModel || null,
+				memory_embedding_base_url: memory?.memoryEmbeddingBaseUrl || null,
+				memory_embedding_api_key: memory?.memoryEmbeddingApiKey || null,
+				memory_embedding_model: memory?.memoryEmbeddingModel || null,
+				qdrant_url: memory?.qdrantUrl || null,
+				qdrant_api_key: memory?.qdrantApiKey || null,
 			},
 		});
 	} catch (err) {

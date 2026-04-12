@@ -2172,6 +2172,15 @@ struct GatewaySyncParams {
     naia_key: Option<String>,
     ollama_host: Option<String>,
     lab_gateway_url: Option<String>,
+    // Memory settings — written to config.memory for agent resolveMemorySystem()
+    memory_adapter: Option<String>,
+    memory_embedding_provider: Option<String>,
+    memory_offline_model: Option<String>,
+    memory_embedding_base_url: Option<String>,
+    memory_embedding_api_key: Option<String>,
+    memory_embedding_model: Option<String>,
+    qdrant_url: Option<String>,
+    qdrant_api_key: Option<String>,
 }
 
 /// Sync Shell provider/model/API-key to gateway config file so the
@@ -2317,6 +2326,42 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
     // Sync TTS settings into messages.tts so the gateway uses the right provider/voice
     // TTS is handled entirely by Shell (not Naia Gateway).
     // No TTS config sync needed — removed to prevent gateway config schema crashes.
+
+    // Sync memory settings so agent resolveMemorySystem() can read adapter/embedding config.
+    // Only write the `memory` key when at least one memory field is provided.
+    {
+        let has_memory = params.memory_adapter.is_some()
+            || params.memory_embedding_provider.is_some()
+            || params.memory_offline_model.is_some()
+            || params.memory_embedding_base_url.is_some()
+            || params.memory_embedding_api_key.is_some()
+            || params.memory_embedding_model.is_some()
+            || params.qdrant_url.is_some()
+            || params.qdrant_api_key.is_some();
+        if has_memory {
+            let mem_obj = obj
+                .entry("memory")
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+                .ok_or("memory is not an object")?;
+            macro_rules! sync_opt {
+                ($key:expr, $val:expr) => {
+                    match &$val {
+                        Some(v) => { mem_obj.insert($key.to_string(), serde_json::Value::String(v.clone())); }
+                        None => { mem_obj.remove($key); }
+                    }
+                };
+            }
+            sync_opt!("adapter", params.memory_adapter);
+            sync_opt!("embeddingProvider", params.memory_embedding_provider);
+            sync_opt!("offlineModel", params.memory_offline_model);
+            sync_opt!("embeddingBaseUrl", params.memory_embedding_base_url);
+            sync_opt!("embeddingApiKey", params.memory_embedding_api_key);
+            sync_opt!("embeddingModel", params.memory_embedding_model);
+            sync_opt!("qdrantUrl", params.qdrant_url);
+            sync_opt!("qdrantApiKey", params.qdrant_api_key);
+        }
+    }
 
     // Atomic write: gateway config file
     let dir = std::path::Path::new(&config_path)

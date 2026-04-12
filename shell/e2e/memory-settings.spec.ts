@@ -50,6 +50,7 @@ function buildMockScript(overrides = "") {
 		deletedFacts: 0,
 		lastExportPassword: null,
 		lastDeletedFactId: null,
+		syncGatewayParams: null,
 	};
 
 	var MOCK_FACTS = [
@@ -106,6 +107,11 @@ function buildMockScript(overrides = "") {
 		}
 		if (cmd === "memory_import_backup") {
 			window.__MEMORY_SETTINGS_E2E__.importCalls++;
+			return;
+		}
+
+		if (cmd === "sync_gateway_config") {
+			window.__MEMORY_SETTINGS_E2E__.syncGatewayParams = args && args.params ? args.params : args;
 			return;
 		}
 
@@ -376,6 +382,78 @@ test.describe("Memory Settings UI", () => {
 		}));
 		expect(result.exportCalls).toBe(1);
 		expect(result.lastExportPassword).toBe("test-password");
+	});
+
+	test("save calls sync_gateway_config with memory fields", async ({ page }) => {
+		await gotoSettings(page);
+
+		// Select Qdrant adapter
+		await page.locator('input[name="memory-adapter"][value="qdrant"]').click();
+		await page.locator('input[placeholder*="6333"]').fill("http://localhost:6333");
+
+		// Select openai-compat embedding
+		await page
+			.locator('input[name="memory-embedding"][value="openai-compat"]')
+			.click();
+		await page
+			.locator('input[placeholder*="localhost:11434"]')
+			.fill("http://localhost:11434");
+		await page
+			.locator('input[placeholder*="text-embedding-ada-002"]')
+			.fill("nomic-embed-text");
+
+		// Save
+		await page
+			.getByRole("button", { name: /저장|save/i })
+			.first()
+			.click();
+
+		// Wait for sync_gateway_config IPC to be called
+		await page.waitForFunction(
+			() =>
+				(window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
+			{},
+			{ timeout: 5_000 },
+		);
+
+		const syncParams = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams,
+		);
+
+		expect(syncParams?.memory_adapter).toBe("qdrant");
+		expect(syncParams?.qdrant_url).toBe("http://localhost:6333");
+		expect(syncParams?.memory_embedding_provider).toBe("openai-compat");
+		expect(syncParams?.memory_embedding_base_url).toBe(
+			"http://localhost:11434",
+		);
+		expect(syncParams?.memory_embedding_model).toBe("nomic-embed-text");
+	});
+
+	test("save calls sync_gateway_config with local adapter and no embedding (defaults)", async ({ page }) => {
+		await gotoSettings(page);
+
+		// local is default, none is default — just save without changing memory settings
+		await page
+			.getByRole("button", { name: /저장|save/i })
+			.first()
+			.click();
+
+		await page.waitForFunction(
+			() =>
+				(window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
+			{},
+			{ timeout: 5_000 },
+		);
+
+		const syncParams = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams,
+		);
+
+		// local adapter with no embedding should be synced
+		expect(syncParams?.memory_adapter).toBe("local");
+		expect(syncParams?.memory_embedding_provider).toBe("none");
+		// qdrant fields should be null/absent
+		expect(syncParams?.qdrant_url == null).toBe(true);
 	});
 
 	test("save persists memory fields to localStorage", async ({ page }) => {
