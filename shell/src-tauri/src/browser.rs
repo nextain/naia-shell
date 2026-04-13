@@ -177,9 +177,13 @@ fn find_free_port() -> u16 {
 
 /// Resolve `agent-browser` binary (PATH → nvm fallback).
 fn agent_browser_bin() -> Option<String> {
-	// Try PATH first
-	let cmd = if cfg!(windows) { "where.exe" } else { "which" };
-	if let Ok(out) = Command::new(cmd).arg("agent-browser").output() {
+	// Try PATH first. `hide_console` suppresses the console window flash
+	// on Windows (where.exe is a console app; without it GUI-hosted calls
+	// briefly show a black window and can trigger ERROR_NO_DATA on the pipe).
+	let mut lookup = Command::new(if cfg!(windows) { "where.exe" } else { "which" });
+	lookup.arg("agent-browser");
+	platform::hide_console(&mut lookup);
+	if let Ok(out) = lookup.output() {
 		if out.status.success() {
 			let p = String::from_utf8_lossy(&out.stdout)
 				.lines()
@@ -352,8 +356,18 @@ fn wait_for_cdp(port: u16) -> Result<(), String> {
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
 
 /// Returns true if a supported Chrome binary is available.
+///
+/// Temporarily disabled on Windows: cross-process Chrome embedding via
+/// SetParent breaks WebView2's keyboard input routing. The Chrome renderer
+/// monopolises Win32 focus and Tauri's chat/settings inputs stop receiving
+/// keystrokes. Tracked as a separate issue — re-enable once an overlay-based
+/// (non-SetParent) embedding strategy is implemented for Windows.
 #[tauri::command]
 pub fn browser_check() -> bool {
+	#[cfg(windows)]
+	if std::env::var("NAIA_ENABLE_BROWSER_EMBED").is_err() {
+		return false;
+	}
 	platform::window_manager().chrome_bin().is_some()
 }
 
@@ -379,6 +393,18 @@ pub fn browser_embed_init(
 	width: f64,
 	height: f64,
 ) -> Result<u16, String> {
+	// Diagnostic escape hatch: when NAIA_DISABLE_BROWSER_EMBED is set we
+	// short-circuit before any Chrome spawn / SetParent / focus handling.
+	// Use this to confirm whether the browser embed is the cause of an
+	// observed input/focus regression — if input still misbehaves with
+	// the embed disabled, the regression is somewhere else entirely.
+	if std::env::var("NAIA_DISABLE_BROWSER_EMBED").is_ok() {
+		crate::log_both(
+			"[browser] init skipped — NAIA_DISABLE_BROWSER_EMBED is set",
+		);
+		return Err("browser embed disabled by NAIA_DISABLE_BROWSER_EMBED".into());
+	}
+
 	let wm = platform::window_manager();
 	let rect = WindowRect::from_f64(x, y, width, height);
 	let state = CHROME.lock().unwrap();
@@ -412,6 +438,17 @@ pub fn browser_embed_init(
 	// Kill lingering Chrome processes from previous sessions
 	wm.kill_lingering_chrome();
 	std::thread::sleep(std::time::Duration::from_millis(300));
+
+	// Snapshot Chrome HWNDs *before* spawning our own instance.
+	// Used after spawn to pick the newly-created window via diff — avoids
+	// grabbing the user's pre-existing normal Chrome window on Windows
+	// (find_window_by_pid's class-name fallback is unreliable when multiple
+	// Chrome instances coexist).
+	let chrome_baseline = platform::snapshot_chrome_hwnds();
+	crate::log_verbose(&format!(
+		"[browser] chrome_baseline: {} existing windows",
+		chrome_baseline.len()
+	));
 
 	let port = find_free_port();
 	// Use a persistent profile directory so Chrome login sessions survive app restarts.
@@ -472,8 +509,17 @@ pub fn browser_embed_init(
 	}
 	crate::log_verbose("[browser] CDP ready");
 
-	// Find Chrome's native window
-	let chrome_handle = wm.find_window_by_pid(pid, 6000)?;
+	// Find the Chrome window we just spawned via the pre/post diff.
+	// This is strictly more reliable than PID-based lookup — Chrome's launcher
+	// PID dies immediately and the actual browser process is a child we don't
+	// own, so we identify "our" window by "wasn't there before, is there now".
+	let chrome_handle = match platform::find_new_chrome_window(&chrome_baseline, 6000) {
+		Ok(h) => h,
+		Err(e) => {
+			crate::log_both(&format!("[browser] diff lookup failed: {e} — fallback to PID lookup"));
+			wm.find_window_by_pid(pid, 6000)?
+		}
+	};
 	crate::log_verbose(&format!("[browser] chrome_handle={chrome_handle:?}"));
 
 	// Find Tauri's native window
@@ -524,10 +570,10 @@ pub fn browser_embed_focus() -> Result<(), String> {
 /// Run an agent-browser command against the active Chrome CDP session.
 fn run_agent_cmd(port: u16, args: &[&str]) -> Result<String, String> {
 	let bin = agent_browser_bin().ok_or("agent-browser not found")?;
-	let out = Command::new(&bin)
-		.arg("--cdp")
-		.arg(port.to_string())
-		.args(args)
+	let mut cmd = Command::new(&bin);
+	cmd.arg("--cdp").arg(port.to_string()).args(args);
+	platform::hide_console(&mut cmd);
+	let out = cmd
 		.output()
 		.map_err(|e| format!("agent-browser: {e}"))?;
 	if !out.status.success() {
@@ -553,10 +599,11 @@ pub async fn browser_embed_navigate(url: String) -> Result<(), String> {
 	if let Some(bin) = agent_browser_bin() {
 		let url2 = url.clone();
 		let out = tokio::task::spawn_blocking(move || {
-			std::process::Command::new(&bin)
-				.arg("--cdp").arg(port.to_string())
-				.arg("open").arg(&url2)
-				.output()
+			let mut cmd = std::process::Command::new(&bin);
+			cmd.arg("--cdp").arg(port.to_string())
+				.arg("open").arg(&url2);
+			platform::hide_console(&mut cmd);
+			cmd.output()
 		})
 		.await
 		.map_err(|e| format!("spawn_blocking: {e}"))?;

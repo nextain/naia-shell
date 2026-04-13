@@ -197,9 +197,11 @@ pub fn panel_run_shell(cmd: String, args: Vec<String>) -> Result<PanelShellResul
 	#[cfg(windows)]
 	let final_args = windows_cmd_args(&cmd, &args);
 
-	let output = std::process::Command::new(program)
-		.args(&final_args)
-		.current_dir(&home_path) // Always run from HOME, never inheriting Tauri's cwd
+	let mut cmd = std::process::Command::new(program);
+	cmd.args(&final_args)
+		.current_dir(&home_path); // Always run from HOME, never inheriting Tauri's cwd
+	crate::platform::hide_console(&mut cmd);
+	let output = cmd
 		.output()
 		.map_err(|e| format!("Failed to run command: {}", e))?;
 

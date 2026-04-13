@@ -33,7 +33,20 @@ function killStale() {
 
 	try {
 		if (isWin) {
-			// Windows: no reliable port-kill needed — single-instance mutex handles it
+			// Kill orphaned vite (node.exe) holding port 1420 after a crashed
+			// tauri:dev — single-instance mutex only covers naia-shell.exe, not
+			// vite child started by the beforeDevCommand.
+			// Note: no `-p TCP` — that filter is IPv4-only on Windows, and vite
+			// binds to [::1]:1420 (IPv6) which would be silently missed.
+			const out = execSync("netstat -ano", { encoding: "utf8" });
+			const pids = new Set();
+			for (const line of out.split(/\r?\n/)) {
+				const m = line.match(/(?:\[::1\]|127\.0\.0\.1):1420\s.*LISTENING\s+(\d+)/);
+				if (m) pids.add(m[1]);
+			}
+			for (const pid of pids) {
+				execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+			}
 		} else {
 			const pid = execSync("lsof -ti:1420", { encoding: "utf8" }).trim();
 			if (pid) execSync(`kill -9 ${pid}`, { stdio: "ignore" });

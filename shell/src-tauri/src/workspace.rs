@@ -171,10 +171,18 @@ fn is_git_repo(path: &Path) -> bool {
     path.join(".git").exists()
 }
 
+/// Build a `git <args>` command rooted at `path` with the Windows console
+/// window suppressed. Workspace scans fan out across many repos, so a visible
+/// flash per invocation would strobe the screen on every refresh.
+fn git_cmd(path: &Path, args: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(args).current_dir(path);
+    crate::platform::hide_console(&mut cmd);
+    cmd
+}
+
 fn get_branch(path: &Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(path)
+    let output = git_cmd(path, &["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()?;
     if output.status.success() {
@@ -183,9 +191,7 @@ fn get_branch(path: &Path) -> Option<String> {
             return Some(branch);
         }
         // detached HEAD — get short commit hash
-        let output2 = std::process::Command::new("git")
-            .args(["rev-parse", "--short", "HEAD"])
-            .current_dir(path)
+        let output2 = git_cmd(path, &["rev-parse", "--short", "HEAD"])
             .output()
             .ok()?;
         if output2.status.success() {
@@ -687,9 +693,7 @@ fn find_session_dir(file_path: &Path) -> Option<PathBuf> {
 /// the main worktree (or not a worktree at all). Uses `git worktree list --porcelain` run from
 /// `path`; the first `worktree` block is always the main worktree.
 fn get_main_worktree(path: &Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["worktree", "list", "--porcelain"])
-        .current_dir(path)
+    let output = git_cmd(path, &["worktree", "list", "--porcelain"])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -718,11 +722,7 @@ fn get_all_worktree_paths(root: &Path) -> Vec<String> {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_dir() && p.join(".git").is_dir() {
-                if let Ok(output) = std::process::Command::new("git")
-                    .args(["worktree", "list", "--porcelain"])
-                    .current_dir(&p)
-                    .output()
-                {
+                if let Ok(output) = git_cmd(&p, &["worktree", "list", "--porcelain"]).output() {
                     if output.status.success() {
                         let text = String::from_utf8_lossy(&output.stdout);
                         for line in text.lines() {

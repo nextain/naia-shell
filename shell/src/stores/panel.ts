@@ -25,7 +25,7 @@ interface PanelState {
 }
 
 export const usePanelStore = create<PanelState>((set, get) => ({
-	activePanel: "browser",
+	activePanel: null,
 	setActivePanel: (id) => {
 		const current = get().activePanel;
 		if (current === "browser" && id !== "browser") {

@@ -36,6 +36,22 @@ pub(crate) fn hide_console(cmd: &mut Command) {
     cmd.creation_flags(CREATE_NO_WINDOW);
 }
 
+/// Force-terminate a process by PID using the Win32 API directly.
+/// Avoids spawning `taskkill.exe` so there is no console window flash in a
+/// GUI-hosted app.
+pub(crate) fn kill_pid(pid: u32) {
+    let handle = unsafe {
+        windows_sys::Win32::System::Threading::OpenProcess(0x0001, 0, pid)
+        // PROCESS_TERMINATE
+    };
+    if !handle.is_null() {
+        unsafe {
+            windows_sys::Win32::System::Threading::TerminateProcess(handle, 1);
+            windows_sys::Win32::Foundation::CloseHandle(handle);
+        }
+    }
+}
+
 /// Clean up orphan processes from a previous session (Windows: TerminateProcess).
 pub(crate) fn cleanup_orphan_processes() {
     for component in &["gateway", "node-host"] {
@@ -648,6 +664,7 @@ pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {
 // ─── Browser window embedding (Win32) ────────────────────────────────────────
 
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE, FALSE};
+use windows_sys::Win32::System::Threading::AttachThreadInput;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -695,6 +712,139 @@ unsafe extern "system" fn enum_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
     TRUE
 }
 
+struct EnumChildrenCtx {
+    children: Vec<(HWND, String, i32, i32)>,
+}
+
+unsafe extern "system" fn enum_children_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let ctx = &mut *(lparam as *mut EnumChildrenCtx);
+    let mut class_buf = [0u16; 256];
+    let len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 256);
+    let class_name = if len > 0 {
+        String::from_utf16_lossy(&class_buf[..len as usize])
+    } else {
+        String::new()
+    };
+    let mut rect = std::mem::zeroed::<RECT>();
+    let (w, h) = if GetWindowRect(hwnd, &mut rect) != 0 {
+        (rect.right - rect.left, rect.bottom - rect.top)
+    } else {
+        (0, 0)
+    };
+    ctx.children.push((hwnd, class_name, w, h));
+    TRUE
+}
+
+/// Find the WebView2 child window inside the Tauri main HWND.
+///
+/// Tauri/wry hosts the Edge WebView2 control as a direct child of the main
+/// window. The control's window class is `Chrome_WidgetWin_1` (Microsoft
+/// reuses the upstream Chromium class name). We enumerate children of the
+/// Tauri main HWND and pick the largest visible Chrome_WidgetWin candidate
+/// — this is reliably the WebView2 host, since our embedded Chrome is also a
+/// Chrome_WidgetWin sibling but is given the WS_EX_NOACTIVATE style during
+/// embed() so we want the OTHER one.
+pub(crate) fn find_webview2_child(parent_hwnd: isize) -> Option<isize> {
+    let parent = isize_to_hwnd(parent_hwnd);
+    let mut ctx = EnumChildrenCtx { children: Vec::new() };
+    unsafe { EnumChildWindows(parent, Some(enum_children_cb), &mut ctx as *mut _ as LPARAM); }
+    let mut webview2_candidates: Vec<(HWND, i32, i32)> = ctx
+        .children
+        .into_iter()
+        .filter_map(|(h, class, w, ht)| {
+            if class.starts_with("Chrome_WidgetWin") && w > 100 && ht > 100 {
+                // Skip the embedded Chrome (it has WS_EX_NOACTIVATE set by embed()).
+                let exstyle = unsafe { GetWindowLongW(h, GWL_EXSTYLE) as u32 };
+                if exstyle & WS_EX_NOACTIVATE != 0 {
+                    return None;
+                }
+                Some((h, w, ht))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if webview2_candidates.is_empty() {
+        return None;
+    }
+    webview2_candidates.sort_by_key(|(_, w, h)| -(*w as i64 * *h as i64));
+    Some(hwnd_to_isize(webview2_candidates[0].0))
+}
+
+struct CollectChromeCtx { hwnds: Vec<(HWND, i32, i32)> } // (hwnd, width, height)
+
+unsafe extern "system" fn collect_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let ctx = &mut *(lparam as *mut CollectChromeCtx);
+    if IsWindowVisible(hwnd) == 0 { return TRUE; }
+    let mut class_buf = [0u16; 256];
+    let len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 256);
+    if len > 0 {
+        let class_name = String::from_utf16_lossy(&class_buf[..len as usize]);
+        if class_name.starts_with("Chrome_WidgetWin") {
+            let mut rect = std::mem::zeroed::<RECT>();
+            if GetWindowRect(hwnd, &mut rect) != 0 {
+                ctx.hwnds.push((
+                    hwnd,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                ));
+            }
+        }
+    }
+    TRUE
+}
+
+/// Capture every currently-visible `Chrome_WidgetWin_*` HWND.
+/// Call this *before* spawning our own Chrome so we can diff the set afterwards.
+pub(crate) fn snapshot_chrome_hwnds() -> Vec<isize> {
+    let mut ctx = CollectChromeCtx { hwnds: Vec::new() };
+    unsafe { EnumWindows(Some(collect_chrome_cb), &mut ctx as *mut _ as LPARAM); }
+    ctx.hwnds.into_iter().map(|(h, _, _)| hwnd_to_isize(h)).collect()
+}
+
+/// Find the newly-spawned Chrome window by diffing against a pre-spawn baseline.
+///
+/// Why this exists:
+///   `find_window_by_pid` can't reliably identify a freshly-launched Chrome —
+///   the launcher PID dies immediately, the browser PID is a child we don't
+///   track, and the class-name fallback happily returns any user-owned Chrome
+///   that was already running. Embedding that window reparents the user's
+///   normal browser into our shell and leaves our own Chrome floating.
+///
+/// Strategy: snapshot HWNDs pre-spawn → snapshot again → any Chrome_WidgetWin
+/// class HWND that appeared is ours. If more than one appeared, prefer the
+/// largest (content area), which matches the actual browser UI rather than
+/// transient startup/splash windows.
+pub(crate) fn find_new_chrome_window(
+    baseline: &[isize],
+    timeout_ms: u64,
+) -> Result<super::PlatformHandle, String> {
+    let baseline: std::collections::HashSet<isize> = baseline.iter().copied().collect();
+    let attempts = (timeout_ms / 500).max(1);
+    for _ in 0..attempts {
+        let mut ctx = CollectChromeCtx { hwnds: Vec::new() };
+        unsafe { EnumWindows(Some(collect_chrome_cb), &mut ctx as *mut _ as LPARAM); }
+        // Keep only windows that did not exist before spawn and that look
+        // like a real browser frame (> 200x200 — same threshold used elsewhere).
+        let mut candidates: Vec<(HWND, i32, i32)> = ctx
+            .hwnds
+            .into_iter()
+            .filter(|(h, w, ht)| !baseline.contains(&hwnd_to_isize(*h)) && *w > 200 && *ht > 200)
+            .collect();
+        if !candidates.is_empty() {
+            // Largest area wins — real browser UI > any transient popups.
+            candidates.sort_by_key(|(_, w, h)| -(*w as i64 * *h as i64));
+            let (hwnd, _, _) = candidates[0];
+            return Ok(super::PlatformHandle::Win32(hwnd_to_isize(hwnd)));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    Err(format!(
+        "No new Chrome window appeared within {timeout_ms} ms (baseline had {} windows)",
+        baseline.len()
+    ))
+}
+
 impl PlatformWindowManager for Win32WindowManager {
     fn find_window_by_pid(&self, pid: u32, timeout_ms: u64) -> Result<PlatformHandle, String> {
         let attempts = (timeout_ms / 500).max(1);
@@ -726,12 +876,84 @@ impl PlatformWindowManager for Win32WindowManager {
         let PlatformHandle::Win32(cv) = child else { return Err("not Win32".into()); };
         let (ph, ch) = (isize_to_hwnd(pv), isize_to_hwnd(cv));
         unsafe {
+            // Convert Chrome's top-level window into a child window (style
+            // transition WS_POPUP/WS_CAPTION/WS_THICKFRAME → WS_CHILD) before
+            // reparenting. SetParent on a window that still carries WS_POPUP
+            // is undefined behaviour.
             let style = GetWindowLongW(ch, GWL_STYLE) as u32;
             SetWindowLongW(ch, GWL_STYLE, ((style & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD) as i32);
-            if SetParent(ch, ph).is_null() { return Err("SetParent failed".into()); }
-            MoveWindow(ch, rect.x, rect.y, rect.width as i32, rect.height as i32, TRUE);
-            ShowWindow(ch, SW_SHOW);
-            SetFocus(ch);
+
+            // Add WS_EX_NOACTIVATE so clicking inside Chrome's area does NOT
+            // steal Win32 activation/focus from Tauri's main window. Without
+            // this, Chrome's HWND ends up with the keyboard focus and every
+            // WM_KEYDOWN routes to Chrome — Tauri WebView2's chat input,
+            // settings textareas, and dropdowns never see keystrokes even
+            // though their DOM `focus` is correct.
+            let exstyle = GetWindowLongW(ch, GWL_EXSTYLE) as u32;
+            SetWindowLongW(ch, GWL_EXSTYLE, (exstyle | WS_EX_NOACTIVATE) as i32);
+
+            // SetParent returns the previous parent (or NULL for top-level
+            // windows, regardless of success). Use GetLastError to distinguish.
+            let prev = SetParent(ch, ph);
+            if prev.is_null() {
+                let err = windows_sys::Win32::Foundation::GetLastError();
+                if err != 0 {
+                    return Err(format!("SetParent failed: Win32 error {err}"));
+                }
+            }
+
+            // SWP_NOACTIVATE on the positioning call keeps Tauri's current
+            // activation state intact — MoveWindow alone can trigger an
+            // implicit activation transfer to the newly-reparented child.
+            SetWindowPos(
+                ch,
+                std::ptr::null_mut(),
+                rect.x,
+                rect.y,
+                rect.width as i32,
+                rect.height as i32,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+
+            // Share input state between Chrome's UI thread and Tauri's UI
+            // thread. Without this, Tauri's WM_SETFOCUS propagation to its
+            // WebView2 child is broken after the reparent (the thread input
+            // queues are unrelated, so focus events don't cross over).
+            //
+            // AttachThreadInput is idempotent for TRUE — safe to re-call.
+            let mut chrome_pid: u32 = 0;
+            let chrome_tid = GetWindowThreadProcessId(ch, &mut chrome_pid);
+            let mut tauri_pid: u32 = 0;
+            let tauri_tid = GetWindowThreadProcessId(ph, &mut tauri_pid);
+            if chrome_tid != 0 && tauri_tid != 0 && chrome_tid != tauri_tid {
+                let attached = AttachThreadInput(chrome_tid, tauri_tid, TRUE);
+                crate::log_verbose(&format!(
+                    "[browser] AttachThreadInput(chrome_tid={chrome_tid}, tauri_tid={tauri_tid}) = {}",
+                    if attached != 0 { "ok" } else { "failed" }
+                ));
+            }
+
+            // Restore keyboard focus to Tauri's WebView2 child (NOT to the
+            // top-level main window — top-level frames don't process keys
+            // themselves; the actual input handler lives in the WebView2
+            // child HWND). After SetParent, Windows leaves Win32 focus in
+            // an indeterminate state. With thread input queues now shared
+            // via AttachThreadInput, SetFocus across threads actually works.
+            //
+            // We pick the largest Chrome_WidgetWin child of Tauri main that
+            // does NOT have WS_EX_NOACTIVATE set — that excludes our just-
+            // embedded Chrome (which we marked NOACTIVATE above) and yields
+            // the Edge WebView2 host instead.
+            if let Some(webview2_isize) = find_webview2_child(pv) {
+                let webview2 = isize_to_hwnd(webview2_isize);
+                SetFocus(webview2);
+                crate::log_verbose(&format!(
+                    "[browser] focus restored to webview2 child Win32({webview2_isize})"
+                ));
+            } else {
+                crate::log_verbose("[browser] could not locate webview2 child to refocus");
+                SetFocus(ph);
+            }
         }
         Ok(())
     }
@@ -769,14 +991,8 @@ impl PlatformWindowManager for Win32WindowManager {
     }
 
     fn chrome_bin(&self) -> Option<String> {
-        for name in &["chrome", "google-chrome", "chromium"] {
-            if let Ok(out) = Command::new("where.exe").arg(name).output() {
-                if out.status.success() {
-                    let p = String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or("").trim().to_string();
-                    if !p.is_empty() { return Some(p); }
-                }
-            }
-        }
+        // Check the well-known install paths first — no subprocess, no console
+        // flash. `where.exe` is a last-resort fallback for exotic installs.
         let pf = std::env::var("ProgramFiles").unwrap_or_default();
         let pf86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
         let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
@@ -785,7 +1001,27 @@ impl PlatformWindowManager for Win32WindowManager {
             format!("{pf86}\\Google\\Chrome\\Application\\chrome.exe"),
             format!("{la}\\Google\\Chrome\\Application\\chrome.exe"),
         ] {
-            if std::path::Path::new(path).exists() { return Some(path.clone()); }
+            if std::path::Path::new(path).exists() {
+                return Some(path.clone());
+            }
+        }
+        for name in &["chrome", "google-chrome", "chromium"] {
+            let mut cmd = Command::new("where.exe");
+            cmd.arg(name);
+            hide_console(&mut cmd);
+            if let Ok(out) = cmd.output() {
+                if out.status.success() {
+                    let p = String::from_utf8_lossy(&out.stdout)
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if !p.is_empty() {
+                        return Some(p);
+                    }
+                }
+            }
         }
         None
     }
@@ -793,6 +1029,16 @@ impl PlatformWindowManager for Win32WindowManager {
     fn chrome_spawn_args(&self) -> (Vec<String>, Vec<(String, String)>) { (vec![], vec![]) }
 
     fn kill_lingering_chrome(&self) {
-        let _ = Command::new("wmic").args(["process", "where", "commandline like '%naia%chrome-profile%'", "call", "terminate"]).output();
+        // wmic is a GUI-hosted tool invocation — suppress its console window.
+        let mut cmd = Command::new("wmic");
+        cmd.args([
+            "process",
+            "where",
+            "commandline like '%naia%chrome-profile%'",
+            "call",
+            "terminate",
+        ]);
+        hide_console(&mut cmd);
+        let _ = cmd.output();
     }
 }

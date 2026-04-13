@@ -20,6 +20,17 @@ pub(crate) fn dummy_child() -> Result<Child, String> {
 pub(crate) fn hide_console(_cmd: &mut Command) {}
 
 /// Clean up orphan processes from a previous session (Unix: SIGTERM → SIGKILL).
+/// Force-terminate a process by PID using SIGKILL (libc::kill).
+pub(crate) fn kill_pid(pid: u32) {
+    let signed_pid = match i32::try_from(pid) {
+        Ok(p) if p > 0 => p,
+        _ => return,
+    };
+    unsafe {
+        libc::kill(signed_pid, libc::SIGKILL);
+    }
+}
+
 pub(crate) fn cleanup_orphan_processes() {
     for component in &["gateway", "node-host"] {
         if let Some(pid) = crate::read_pid_file(component) {
@@ -126,6 +137,58 @@ pub(crate) fn should_skip_gateway_sync() -> bool {
 /// Resolve `npx` command name (Linux: just "npx").
 pub(crate) fn resolve_npx() -> String {
     "npx".to_string()
+}
+
+/// Snapshot currently-visible Chrome window IDs (Linux: no-op, X11 handles reparent reliably).
+pub(crate) fn snapshot_chrome_hwnds() -> Vec<isize> {
+    Vec::new()
+}
+
+/// Find the newly-spawned Chrome window — on Linux we delegate to the existing
+/// PID-based lookup since X11 process→window mapping is reliable via xdotool.
+/// The `baseline` parameter is ignored (only Windows needs the diff).
+pub(crate) fn find_new_chrome_window(
+    _baseline: &[isize],
+    timeout_ms: u64,
+) -> Result<super::PlatformHandle, String> {
+    let wm = X11WindowManager;
+    super::PlatformWindowManager::find_window_by_pid(&wm, 0, timeout_ms)
+        .or_else(|_| {
+            for frag in &["google-chrome", "chromium"] {
+                if let Some(xid) = find_by_class(frag) {
+                    return Ok(super::PlatformHandle::X11(xid));
+                }
+            }
+            Err("No Chrome window found".to_string())
+        })
+}
+
+/// Resolve tsx as a direct node invocation from agent's node_modules.
+/// Returns `(node_exe, tsx_cli_mjs_path)` if found, `None` otherwise.
+///
+/// Mirrors the Windows implementation so `spawn_agent_core` has one cross-platform
+/// code path. Using node directly avoids `npx`'s shell lookup entirely.
+pub(crate) fn resolve_tsx_from_agent(agent_dir: &std::path::Path) -> Option<(String, String)> {
+    let pnpm_dir = agent_dir.join("node_modules").join(".pnpm");
+    if pnpm_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&pnpm_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("tsx@") {
+                    let cli_mjs = entry
+                        .path()
+                        .join("node_modules")
+                        .join("tsx")
+                        .join("dist")
+                        .join("cli.mjs");
+                    if cli_mjs.exists() {
+                        return Some(("node".to_string(), cli_mjs.to_string_lossy().to_string()));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Start deep link file watcher (Linux: no-op — single-instance IPC works).
