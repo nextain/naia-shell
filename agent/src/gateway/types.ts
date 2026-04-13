@@ -71,6 +71,8 @@ export interface PathResolver {
 	deviceIdentityPath(): string;
 	/** Ordered candidate paths for Gateway config (first match wins). */
 	configCandidates(): string[];
+	/** Path to memory-specific config (separate from gateway config). */
+	memoryConfigPath(): string;
 }
 
 /** Device identity for Gateway authentication */

@@ -30,11 +30,7 @@ export const jobTracker = new JobTracker();
 import {
 	LocalAdapter,
 	MemorySystem,
-	NaiaGatewayEmbeddingProvider,
-	OfflineEmbeddingProvider,
-	OpenAICompatEmbeddingProvider,
 } from "@nextain/alpha-memory";
-import type { EmbeddingProvider } from "@nextain/alpha-memory";
 import {
 	type ApprovalResponse,
 	type ChatRequest,
@@ -66,94 +62,25 @@ const MEMORY_STORE_PATH = join(
 );
 mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
 
-/** Resolve memory system from config. Defaults to LocalAdapter with no embedding. */
+/**
+ * Resolve memory system from config.
+ * Reads ~/.naia/memory-config.json (written by Shell Rust backend).
+ * Currently only LocalAdapter is supported — embedding providers are planned. (#226)
+ */
 function resolveMemorySystem(): MemorySystem {
-	const configCandidates = defaultPathResolver.configCandidates();
-	for (const path of configCandidates) {
-		try {
-			const raw = JSON.parse(readFileSync(path, "utf-8")) as {
-				memory?: {
-					adapter?: string;
-					embeddingProvider?: string;
-					offlineModel?: string;
-					embeddingBaseUrl?: string;
-					embeddingApiKey?: string;
-					embeddingModel?: string;
-					qdrantUrl?: string;
-					qdrantApiKey?: string;
-				};
-				naiaKey?: string;
-				gatewayUrl?: string;
-			};
-
-			const mem = raw.memory;
-			if (!mem) continue;
-
-			// Resolve embedding provider
-			let embeddingProvider: EmbeddingProvider | undefined;
-			const ep = mem.embeddingProvider;
-			if (ep === "offline") {
-				const model = (
-					mem.offlineModel === "all-mpnet-base-v2"
-						? "all-mpnet-base-v2"
-						: "all-MiniLM-L6-v2"
-				) as "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
-				embeddingProvider = new OfflineEmbeddingProvider(model);
-			} else if (ep === "openai-compat") {
-				if (!mem.embeddingBaseUrl) {
-					console.error(
-						"[agent:memory] embeddingProvider=openai-compat configured but embeddingBaseUrl is missing — falling back to keyword search",
-					);
-				} else {
-					embeddingProvider = new OpenAICompatEmbeddingProvider(
-						mem.embeddingBaseUrl,
-						mem.embeddingApiKey ?? "",
-						mem.embeddingModel ?? "text-embedding-ada-002",
-					);
-				}
-			} else if (ep === "naia") {
-				const naiaKey = raw.naiaKey;
-				const gatewayUrl = raw.gatewayUrl ?? "http://localhost:18789";
-				if (naiaKey) {
-					embeddingProvider = new NaiaGatewayEmbeddingProvider(
-						gatewayUrl,
-						naiaKey,
-					);
-				} else {
-					console.error(
-						"[agent:memory] embeddingProvider=naia configured but naiaKey is missing — falling back to keyword search",
-					);
-				}
-			}
-			// 'none' or unset: embeddingProvider = undefined → keyword search
-
-			// Resolve adapter
-			if (mem.adapter === "qdrant" && mem.qdrantUrl) {
-				if (!embeddingProvider) {
-					console.error(
-						"[agent:memory] adapter=qdrant configured but no valid embeddingProvider found — falling back to LocalAdapter",
-					);
-					continue;
-				}
-				return new MemorySystem({
-					embeddingProvider,
-					qdrantOptions: {
-						url: mem.qdrantUrl,
-						apiKey: mem.qdrantApiKey,
-					},
-				});
-			}
-
-			// Local adapter (default)
-			return new MemorySystem({
-				adapter: new LocalAdapter(MEMORY_STORE_PATH),
-				embeddingProvider,
-			});
-		} catch {
-			// ignore and try next candidate
+	try {
+		const configPath = defaultPathResolver.memoryConfigPath();
+		const raw = JSON.parse(readFileSync(configPath, "utf-8")) as {
+			adapter?: string;
+		};
+		if (raw.adapter && raw.adapter !== "local") {
+			console.warn(
+				`[agent:memory] adapter="${raw.adapter}" is not yet supported — using local adapter`,
+			);
 		}
+	} catch {
+		// No config file or parse error — use defaults silently
 	}
-	// No valid config found — default LocalAdapter, no embedding
 	return new MemorySystem({ adapter: new LocalAdapter(MEMORY_STORE_PATH) });
 }
 
@@ -1108,35 +1035,20 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 }
 
 async function handleMemoryExport(req: MemoryExportRequest): Promise<void> {
-	if (!memorySystem.supportsBackup()) {
-		writeLine({
-			type: "memory_export_result",
-			requestId: req.requestId,
-			error: "Current memory adapter does not support backup export",
-		});
-		return;
-	}
-	const blob = await memorySystem.exportBackup(req.password);
+	// TODO(#226): Implement backup via LocalAdapter.exportBackup() once MemorySystem exposes it
 	writeLine({
 		type: "memory_export_result",
 		requestId: req.requestId,
-		data: Array.from(blob),
+		error: "Memory backup export is not yet supported in this version",
 	});
 }
 
 async function handleMemoryImport(req: MemoryImportRequest): Promise<void> {
-	if (!memorySystem.supportsBackup()) {
-		writeLine({
-			type: "memory_import_result",
-			requestId: req.requestId,
-			error: "Current memory adapter does not support backup import",
-		});
-		return;
-	}
-	await memorySystem.importBackup(new Uint8Array(req.data), req.password);
+	// TODO(#226): Implement backup via LocalAdapter.importBackup() once MemorySystem exposes it
 	writeLine({
 		type: "memory_import_result",
 		requestId: req.requestId,
+		error: "Memory backup import is not yet supported in this version",
 	});
 }
 

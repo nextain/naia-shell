@@ -101,6 +101,7 @@ describe("loadDeviceIdentity", () => {
 		const customResolver = {
 			deviceIdentityPath: () => join(customDir, "device.json"),
 			configCandidates: () => [],
+			memoryConfigPath: () => "",
 		};
 
 		const identity = loadDeviceIdentity(customResolver);
@@ -112,6 +113,7 @@ describe("loadDeviceIdentity", () => {
 		const customResolver = {
 			deviceIdentityPath: () => join(tempHome, "nonexistent", "device.json"),
 			configCandidates: () => [],
+			memoryConfigPath: () => "",
 		};
 
 		const identity = loadDeviceIdentity(customResolver);

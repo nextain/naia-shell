@@ -22,6 +22,13 @@ describe("DefaultPathResolver", () => {
 		);
 	});
 
+	it("returns memory config path under ~/.naia/", () => {
+		const resolver = new DefaultPathResolver();
+		expect(resolver.memoryConfigPath()).toBe(
+			join(homedir(), ".naia", "memory-config.json"),
+		);
+	});
+
 	it("exports a singleton defaultPathResolver", () => {
 		expect(defaultPathResolver).toBeInstanceOf(DefaultPathResolver);
 	});
@@ -32,8 +39,10 @@ describe("PathResolver interface", () => {
 		const custom: PathResolver = {
 			deviceIdentityPath: () => "/custom/identity.json",
 			configCandidates: () => ["/custom/config.json"],
+			memoryConfigPath: () => "/custom/memory-config.json",
 		};
 		expect(custom.deviceIdentityPath()).toBe("/custom/identity.json");
 		expect(custom.configCandidates()).toEqual(["/custom/config.json"]);
+		expect(custom.memoryConfigPath()).toBe("/custom/memory-config.json");
 	});
 });

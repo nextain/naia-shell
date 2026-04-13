@@ -160,6 +160,8 @@ struct AppState {
     oauth_state: Arc<Mutex<Option<String>>>,
     /// Active Gemini Live WebSocket proxy session.
     gemini_live: gemini_live::SharedHandle,
+    /// Last agent-core restart timestamp — debounce to prevent restart storms (#226).
+    last_agent_restart: Mutex<Option<std::time::Instant>>,
 }
 
 struct AuditState {
@@ -317,85 +319,10 @@ fn remove_pid_file(component: &str) {
     let _ = std::fs::remove_file(&path);
 }
 
-/// Check if a process with the given PID is still running
-pub(crate) fn is_pid_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        std::path::Path::new(&format!("/proc/{}", pid)).exists()
-    }
-    #[cfg(windows)]
-    {
-        // Use tasklist with CSV output — locale-independent PID matching
-        use std::process::Command;
-        let pid_str = pid.to_string();
-        Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-            .output()
-            .map(|o| {
-                let out = String::from_utf8_lossy(&o.stdout);
-                // CSV format: "name.exe","PID","Session","#","Mem"
-                // When no match: "INFO: ..." (localized) — but CSV rows always start with "
-                out.lines().any(|line| {
-                    let fields: Vec<&str> = line.split(',').collect();
-                    fields.len() >= 2 && fields[1].trim_matches('"') == pid_str
-                })
-            })
-            .unwrap_or(false)
-    }
-}
-
-/// Kill a process by PID (cross-platform)
-fn kill_process(pid: u32, force: bool) {
-    #[cfg(unix)]
-    {
-        let signed_pid = match i32::try_from(pid) {
-            Ok(p) if p > 0 => p,
-            _ => return,
-        };
-        unsafe {
-            if force {
-                libc::kill(signed_pid, libc::SIGKILL);
-            } else {
-                libc::kill(signed_pid, libc::SIGTERM);
-            }
-        }
-    }
-    #[cfg(windows)]
-    {
-        // On Windows, always use /F — taskkill without /F sends WM_CLOSE
-        // which is a no-op for console processes (node.exe, etc.)
-        let _ = force; // unused on Windows, always force
-        let pid_str = pid.to_string();
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/PID", &pid_str])
-            .output();
-    }
-}
-
-/// Clean up orphan processes from a previous session
-fn cleanup_orphan_processes() {
-    for component in &["gateway", "node-host"] {
-        if let Some(pid) = read_pid_file(component) {
-            if is_pid_alive(pid) {
-                log_verbose(&format!(
-                    "[Naia] Orphan {} found (PID {}) — terminating",
-                    component, pid
-                ));
-                kill_process(pid, false);
-                // Give it a moment to terminate gracefully
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                if is_pid_alive(pid) {
-                    log_verbose(&format!(
-                        "[Naia] Orphan {} still alive (PID {}) — force killing",
-                        component, pid
-                    ));
-                    kill_process(pid, true);
-                }
-            }
-            remove_pid_file(component);
-        }
-    }
-}
+// Note: is_pid_alive, kill_pid, and cleanup_orphan_processes live in the
+// platform module so they can use native APIs (windows-sys / libc) instead of
+// spawning `tasklist`/`taskkill` — which would flash a console window in a GUI
+// Tauri app and intermittently emit `ERROR_NO_DATA (0x800700e8)` on Windows.
 
 /// Start periodic Gateway health monitoring in a background thread.
 /// Emits `gateway_status` events to the frontend and attempts restart on failure.
@@ -496,6 +423,28 @@ fn start_gateway_health_monitor(app_handle: AppHandle) -> Arc<std::sync::atomic:
     shutdown
 }
 
+/// Run `<node> -v` with a hidden console and return the parsed major version.
+///
+/// On Windows GUI apps (no console), `Command::output()` without CREATE_NO_WINDOW
+/// triggers `ERROR_NO_DATA (0x800700e8)` — "The pipe is being closed" — because
+/// Rust cannot attach the child's stdio to a non-existent console. `hide_console`
+/// sets `CREATE_NO_WINDOW` (no-op on Unix), which fixes the pipe setup.
+fn node_major_version<P: AsRef<std::ffi::OsStr>>(node_path: P) -> Option<u32> {
+    let mut cmd = Command::new(node_path);
+    cmd.arg("-v");
+    platform::hide_console(&mut cmd);
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+}
+
 /// Find Node.js binary (system path first, then nvm fallback)
 fn find_node_binary() -> Result<std::path::PathBuf, String> {
     // Flatpak bundled node (Linux only)
@@ -509,19 +458,9 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
 
     // Check system node first
     let node_cmd = if cfg!(windows) { "node.exe" } else { "node" };
-    if let Ok(output) = Command::new(node_cmd).arg("-v").output() {
-        if output.status.success() {
-            let version_str = String::from_utf8_lossy(&output.stdout);
-            let major: u32 = version_str
-                .trim()
-                .trim_start_matches('v')
-                .split('.')
-                .next()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0);
-            if major >= 22 {
-                return Ok(std::path::PathBuf::from(node_cmd));
-            }
+    if let Some(major) = node_major_version(node_cmd) {
+        if major >= 22 {
+            return Ok(std::path::PathBuf::from(node_cmd));
         }
     }
 
@@ -541,14 +480,9 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
                 for entry in entries.flatten() {
                     let node_exe = entry.path().join("node.exe");
                     if node_exe.exists() {
-                        if let Ok(output) = Command::new(&node_exe).arg("-v").output() {
-                            if output.status.success() {
-                                let ver = String::from_utf8_lossy(&output.stdout);
-                                let major: u32 = ver.trim().trim_start_matches('v')
-                                    .split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
-                                if major >= 22 {
-                                    return Ok(node_exe);
-                                }
+                        if let Some(major) = node_major_version(&node_exe) {
+                            if major >= 22 {
+                                return Ok(node_exe);
                             }
                         }
                     }
@@ -559,15 +493,9 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
         if let Ok(pf) = std::env::var("ProgramFiles") {
             let pf_node = std::path::PathBuf::from(&pf).join("nodejs\\node.exe");
             if pf_node.exists() {
-                // Version check — must be 22+
-                if let Ok(output) = Command::new(&pf_node).arg("-v").output() {
-                    if output.status.success() {
-                        let ver = String::from_utf8_lossy(&output.stdout);
-                        let major: u32 = ver.trim().trim_start_matches('v')
-                            .split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
-                        if major >= 22 {
-                            return Ok(pf_node);
-                        }
+                if let Some(major) = node_major_version(&pf_node) {
+                    if major >= 22 {
+                        return Ok(pf_node);
                     }
                 }
             }
@@ -895,23 +823,22 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
         // Kill existing gateway to ensure clean state on app restart.
         // Previous app exit may have left gateway in a half-alive state
         // (HTTP responds but WebSocket/Node Host connections are broken).
+        // Kill the stale gateway. On Windows we already know its PID from the
+        // PID file and can terminate it via the Win32 API (no taskkill flash).
+        // On Linux we fall back to `pkill` — inline shell spawn is fine there
+        // because there is no console window to flash.
+        if let Some(pid) = read_pid_file("gateway") {
+            platform::kill_pid(pid);
+        }
         #[cfg(unix)]
         { let _ = Command::new("pkill").arg("-f").arg("naia.*gateway").output(); }
-        #[cfg(windows)]
-        {
-            // Kill gateway by PID file instead of /IM node.exe (which kills ALL node processes)
-            if let Some(pid) = read_pid_file("gateway") {
-                kill_process(pid, true);
-            }
-        }
         std::thread::sleep(std::time::Duration::from_millis(500));
         // If it's still alive (e.g. systemd auto-restart), reuse it
         if check_gateway_health_sync() {
             log_both("[Naia] Gateway still running after pkill (managed externally) — reusing");
-            let dummy_cmd = if cfg!(windows) { "cmd.exe" } else { "true" };
-            let mut dummy = Command::new(dummy_cmd);
-            if cfg!(windows) { dummy.args(["/C", "exit", "0"]); }
-            let child = dummy.spawn()
+            // Cheap placeholder Child handle — platform::dummy_child() uses a
+            // detached helper on Windows (hidden, no console) and `true` on Unix.
+            let child = platform::dummy_child()
                 .map_err(|e| format!("Failed to create dummy process: {}", e))?;
 
             let node_host = match find_gateway_paths() {
@@ -1149,24 +1076,42 @@ fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result
         });
 
     let use_tsx = agent_script.ends_with(".ts");
-    let runner = if use_tsx {
-        std::env::var("NAIA_AGENT_RUNNER")
-            .unwrap_or_else(|_| "npx".to_string())
+
+    // Preferred: invoke tsx via node directly (agent_dir/node_modules/.pnpm/tsx@*/.../cli.mjs).
+    // This avoids spawning `npx` or `npx.cmd` — Windows' CreateProcess does not
+    // resolve .cmd shims, and batch files fail under CREATE_NO_WINDOW anyway.
+    //
+    // Fallback: `npx.cmd` (Windows) / `npx` (Unix) via platform::resolve_npx() —
+    // only hit when tsx resolution fails (no node_modules, production build, etc.).
+    let agent_dir = std::path::Path::new(&agent_script)
+        .parent()
+        .and_then(|p| p.parent())
+        .map(std::path::Path::to_path_buf);
+
+    let tsx_direct = if use_tsx {
+        agent_dir
+            .as_deref()
+            .and_then(platform::resolve_tsx_from_agent)
     } else {
-        agent_path.clone()
+        None
+    };
+
+    let (runner, mut cmd) = if let Some((node_bin, tsx_cli)) = tsx_direct {
+        let mut c = Command::new(&node_bin);
+        c.arg(&tsx_cli).arg(&agent_script).arg("--stdio");
+        (format!("{} {}", node_bin, tsx_cli), c)
+    } else if use_tsx {
+        let npx = std::env::var("NAIA_AGENT_RUNNER").unwrap_or_else(|_| platform::resolve_npx());
+        let mut c = Command::new(&npx);
+        c.arg("tsx").arg(&agent_script).arg("--stdio");
+        (npx, c)
+    } else {
+        let mut c = Command::new(&agent_path);
+        c.arg(&agent_script).arg("--stdio");
+        (agent_path.clone(), c)
     };
 
     log_verbose(&format!("[Naia] Starting agent-core: {} {}", runner, agent_script));
-
-    let mut cmd = if use_tsx {
-        let mut c = Command::new(&runner);
-        c.arg("tsx").arg(&agent_script).arg("--stdio");
-        c
-    } else {
-        let mut c = Command::new(&runner);
-        c.arg(&agent_script).arg("--stdio");
-        c
-    };
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
@@ -1377,6 +1322,24 @@ fn restart_agent(
     message: &str,
     audit_db: Option<&audit::AuditDb>,
 ) -> Result<(), String> {
+    // Debounce: prevent restart storms when agent-core keeps crashing (#226).
+    // If we restarted less than 5 seconds ago, refuse to restart again.
+    {
+        let mut last_restart = lock_or_recover(&state.last_agent_restart, "last_agent_restart");
+        if let Some(last) = *last_restart {
+            let elapsed = last.elapsed();
+            if elapsed < std::time::Duration::from_secs(5) {
+                let wait_ms = 5000 - elapsed.as_millis() as u64;
+                log_both(&format!(
+                    "[Naia] agent-core restart debounced ({}ms cooldown remaining)",
+                    wait_ms
+                ));
+                return Err("agent-core restart debounced — too many restarts".to_string());
+            }
+        }
+        *last_restart = Some(std::time::Instant::now());
+    }
+
     log_both("[Naia] Restarting agent-core...");
     // Use a temporary empty db if none provided (shouldn't happen in practice)
     let empty_db;
@@ -1758,8 +1721,16 @@ async fn validate_api_key(provider: String, api_key: String) -> Result<bool, Str
 /// Filters to idle/running state only — suspended = disconnected HDMI port.
 /// Excludes virtual/loopback sinks.
 /// Fallback for WebKitGTK which does not enumerate audiooutput via enumerateDevices().
+///
+/// Linux only — on Windows the WebView2 webview enumerates devices natively via
+/// `navigator.mediaDevices.enumerateDevices()` so this command returns an empty list.
 #[tauri::command]
 async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
+    #[cfg(not(target_os = "linux"))]
+    return Ok(Vec::new());
+
+    #[cfg(target_os = "linux")]
+    {
     let output = tokio::task::spawn_blocking(|| {
         std::process::Command::new("/usr/bin/pw-dump").output()
     })
@@ -1803,6 +1774,7 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
         a["label"].as_str().unwrap_or("").cmp(b["label"].as_str().unwrap_or(""))
     });
     Ok(devices)
+    }
 }
 
 /// Check if Naia Gateway is reachable on localhost
@@ -2327,8 +2299,9 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
     // TTS is handled entirely by Shell (not Naia Gateway).
     // No TTS config sync needed — removed to prevent gateway config schema crashes.
 
-    // Sync memory settings so agent resolveMemorySystem() can read adapter/embedding config.
-    // Only write the `memory` key when at least one memory field is provided.
+    // Memory settings: written to a separate Naia-managed file so they don't
+    // pollute the OpenClaw config schema (which rejects unknown keys). (#226)
+    // Agent reads memory config from ~/.naia/memory-config.json instead.
     {
         let has_memory = params.memory_adapter.is_some()
             || params.memory_embedding_provider.is_some()
@@ -2339,16 +2312,11 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
             || params.qdrant_url.is_some()
             || params.qdrant_api_key.is_some();
         if has_memory {
-            let mem_obj = obj
-                .entry("memory")
-                .or_insert_with(|| serde_json::json!({}))
-                .as_object_mut()
-                .ok_or("memory is not an object")?;
+            let mut mem_obj = serde_json::Map::new();
             macro_rules! sync_opt {
                 ($key:expr, $val:expr) => {
-                    match &$val {
-                        Some(v) => { mem_obj.insert($key.to_string(), serde_json::Value::String(v.clone())); }
-                        None => { mem_obj.remove($key); }
+                    if let Some(v) = &$val {
+                        mem_obj.insert($key.to_string(), serde_json::Value::String(v.clone()));
                     }
                 };
             }
@@ -2360,6 +2328,26 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
             sync_opt!("embeddingModel", params.memory_embedding_model);
             sync_opt!("qdrantUrl", params.qdrant_url);
             sync_opt!("qdrantApiKey", params.qdrant_api_key);
+            let home = std::env::var("USERPROFILE")
+                .or_else(|_| std::env::var("HOME"))
+                .unwrap_or_default();
+            let mem_config_path = format!("{}/.naia/memory-config.json", home);
+            let mem_json = serde_json::to_string_pretty(&serde_json::Value::Object(mem_obj))
+                .unwrap_or_default();
+            let _ = std::fs::write(&mem_config_path, mem_json.as_bytes());
+        }
+        // Clean up legacy memory keys from openclaw.json to prevent Gateway rejection
+        if let Some(mem) = obj.get_mut("memory") {
+            if let Some(mem_obj) = mem.as_object_mut() {
+                mem_obj.remove("adapter");
+                mem_obj.remove("embeddingProvider");
+                mem_obj.remove("offlineModel");
+                mem_obj.remove("embeddingBaseUrl");
+                mem_obj.remove("embeddingApiKey");
+                mem_obj.remove("embeddingModel");
+                mem_obj.remove("qdrantUrl");
+                mem_obj.remove("qdrantApiKey");
+            }
         }
     }
 
@@ -2720,6 +2708,7 @@ pub fn run() {
             health_monitor_shutdown: Mutex::new(None),
             oauth_state: Arc::new(Mutex::new(None)),
             gemini_live: gemini_live::new_shared_handle(),
+            last_agent_restart: Mutex::new(None),
         })
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
@@ -2990,23 +2979,48 @@ pub fn run() {
                 }
             }
 
-            // Restore or dock window
+            // Restore saved window state, otherwise leave the tauri.conf.json
+            // default size (1366x768) and center on the current monitor.
+            //
+            // Migration: the legacy side-panel layout saved widths around 380px.
+            // Treat any saved width below LEGACY_PANEL_WIDTH_CAP as stale and
+            // discard it so the new desktop-window default takes effect.
+            const LEGACY_PANEL_WIDTH_CAP: u32 = 600;
             if let Some(window) = app.get_webview_window("main") {
-                if let Some(saved) = load_window_state(&app_handle) {
+                let restored = load_window_state(&app_handle)
+                    .filter(|s| s.width >= LEGACY_PANEL_WIDTH_CAP);
+
+                if let Some(saved) = restored {
                     let _ = window.set_size(PhysicalSize::new(saved.width, saved.height));
                     let _ = window.set_position(PhysicalPosition::new(saved.x, saved.y));
-                    log_verbose(&format!("[Naia] Window restored: {}x{} at ({},{})", saved.width, saved.height, saved.x, saved.y));
-                } else if let Some(monitor) = window.current_monitor().ok().flatten() {
-                    let monitor_size = monitor.size();
-                    let monitor_pos = monitor.position();
-                    let scale = monitor.scale_factor();
-                    let width = (380.0 * scale) as u32;
-                    let height = monitor_size.height;
-                    let x = monitor_pos.x + (monitor_size.width as i32 - width as i32);
-                    let y = monitor_pos.y;
-                    let _ = window.set_size(PhysicalSize::new(width, height));
-                    let _ = window.set_position(PhysicalPosition::new(x, y));
-                    log_verbose(&format!("[Naia] Window docked: {}x{} at ({},{})", width, height, x, y));
+                    log_verbose(&format!(
+                        "[Naia] Window restored: {}x{} at ({},{})",
+                        saved.width, saved.height, saved.x, saved.y
+                    ));
+                } else {
+                    // Discard any legacy side-panel state so the desktop default
+                    // is not overwritten on next start.
+                    if let Some(path) = window_state_path(&app_handle) {
+                        if path.exists() {
+                            let _ = std::fs::remove_file(&path);
+                            log_verbose("[Naia] Discarded legacy side-panel window state");
+                        }
+                    }
+                    if let Ok(Some(monitor)) = window.current_monitor() {
+                        let monitor_size = monitor.size();
+                        let monitor_pos = monitor.position();
+                        if let Ok(inner) = window.inner_size() {
+                            let x = monitor_pos.x
+                                + ((monitor_size.width as i32 - inner.width as i32) / 2).max(0);
+                            let y = monitor_pos.y
+                                + ((monitor_size.height as i32 - inner.height as i32) / 2).max(0);
+                            let _ = window.set_position(PhysicalPosition::new(x, y));
+                            log_verbose(&format!(
+                                "[Naia] Window centered: {}x{} at ({},{})",
+                                inner.width, inner.height, x, y
+                            ));
+                        }
+                    }
                 }
                 let _ = window.show();
             }
@@ -3037,8 +3051,20 @@ pub fn run() {
             log_both("[Naia] === Session started ===");
             log_verbose(&format!("[Naia] Log files at: {}", log_dir().display()));
 
+            // Minimal startup mode: skip all background process spawning so we
+            // can isolate whether keyboard input works with just the bare
+            // Tauri + WebView2 shell. Set NAIA_MINIMAL=1 to activate.
+            if std::env::var("NAIA_MINIMAL").is_ok() {
+                log_both("[Naia] *** MINIMAL MODE — skipping gateway/agent/orphan cleanup ***");
+                let _ = app_handle.emit(
+                    "gateway_status",
+                    serde_json::json!({ "running": false, "managed": false }),
+                );
+                return Ok(());
+            }
+
             // Clean up orphan processes from previous sessions
-            cleanup_orphan_processes();
+            platform::cleanup_orphan_processes();
 
             // Spawn Gateway first (Agent connects to it via WebSocket)
             let (gateway_running, gateway_managed) = match spawn_gateway() {
