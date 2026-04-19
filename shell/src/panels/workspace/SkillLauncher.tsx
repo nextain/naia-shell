@@ -64,6 +64,48 @@ export function SkillLauncher({
 		}
 	}
 
+	function SkillSection({
+		label,
+		skills: sectionSkills,
+	}: {
+		label: string;
+		skills: SkillEntry[];
+	}) {
+		return (
+			<div className="skill-launcher__section">
+				<div className="skill-launcher__section-label">{label}</div>
+				{sectionSkills.map((skill) => (
+				<div
+					key={skill.name}
+					className={`skill-launcher__item ${!skill.has_frontmatter ? "skill-launcher__item--no-fm" : ""}`}
+					title={skill.trigger || skill.description}
+				>
+					<div className="skill-launcher__item-name">
+						{skill.name}
+						{!skill.has_frontmatter && (
+							<span className="skill-launcher__item-warn" title="frontmatter 없음">
+								⚠
+							</span>
+						)}
+					</div>
+					<div className="skill-launcher__item-desc">
+						{skill.description || "(설명 없음)"}
+					</div>
+					{onLaunchSkill && (
+						<button
+							type="button"
+							className="skill-launcher__launch"
+							onClick={() => handleLaunch(skill)}
+						>
+							실행
+						</button>
+					)}
+				</div>
+			))}
+		</div>
+	);
+	}
+
 	if (loading) {
 		return (
 			<div className="skill-launcher skill-launcher--loading">
@@ -100,50 +142,5 @@ export function SkillLauncher({
 			)}
 		</div>
 	);
-}
-
-	function SkillSection({
-		label,
-		skills: sectionSkills,
-	}: {
-		label: string;
-		skills: SkillEntry[];
-	}) {
-		return (
-			<div className="skill-launcher__section">
-				<div className="skill-launcher__section-label">{label}</div>
-				{sectionSkills.map((skill) => (
-				<button
-					key={skill.name}
-					type="button"
-					className={`skill-launcher__item ${!skill.has_frontmatter ? "skill-launcher__item--no-fm" : ""}`}
-					title={skill.trigger || skill.description}
-				>
-					<div className="skill-launcher__item-name">
-						{skill.name}
-						{!skill.has_frontmatter && (
-							<span className="skill-launcher__item-warn" title="frontmatter 없음">
-								⚠
-							</span>
-						)}
-					</div>
-					<div className="skill-launcher__item-desc">
-						{skill.description || "(설명 없음)"}
-					</div>
-					{onLaunchSkill && (
-						<button
-							type="button"
-							className="skill-launcher__launch"
-							onClick={(e) => {
-								e.stopPropagation();
-								handleLaunch(skill);
-							}}
-						>
-							실행
-						</button>
-					)}
-				</button>
-			))}
-		</div>
-	);
+	}
 }

@@ -5837,7 +5837,7 @@ body.resizing-row {
 	padding: 6px 8px;
 	background: none;
 	border: none;
-	cursor: pointer;
+	cursor: default;
 	text-align: left;
 	border-radius: 3px;
 	margin: 1px 0;
