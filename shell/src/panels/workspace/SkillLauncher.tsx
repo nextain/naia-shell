@@ -11,12 +11,83 @@ export interface SkillEntry {
 	has_frontmatter: boolean;
 }
 
+export interface SkillTemplate {
+	tools: string[];
+	model?: string;
+	timeoutMin?: number;
+	maxTurns?: number;
+}
+
 type Option<T> = T | null;
+
+const SKILL_TEMPLATES: Record<string, SkillTemplate> = {
+	"review-pass": {
+		tools: ["Read", "Glob", "Grep", "Bash"],
+		maxTurns: 30,
+	},
+	"verify-implementation": {
+		tools: ["Read", "Glob", "Grep", "Bash"],
+		maxTurns: 20,
+	},
+	"manage-skills": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write"],
+		maxTurns: 15,
+	},
+	"webapp-testing": {
+		tools: ["Read", "Glob", "Grep", "Bash"],
+		timeoutMin: 10,
+	},
+	"doc-coauthoring": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write"],
+		maxTurns: 25,
+	},
+	"patent-draft": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write"],
+		maxTurns: 30,
+	},
+	"patent-pipeline": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+		maxTurns: 40,
+	},
+	"copyright-reg": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write"],
+		maxTurns: 20,
+	},
+	"payroll": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+		maxTurns: 15,
+	},
+	"press-release": {
+		tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+		maxTurns: 25,
+	},
+	"weekly-report": {
+		tools: ["Read", "Glob", "Grep", "Bash"],
+		maxTurns: 15,
+	},
+	"merge-worktree": {
+		tools: ["Read", "Glob", "Grep", "Bash"],
+		maxTurns: 10,
+	},
+	"read-doc": {
+		tools: ["Read", "Bash"],
+		maxTurns: 5,
+	},
+};
+
+const DEFAULT_TEMPLATE: SkillTemplate = {
+	tools: ["Read", "Glob", "Grep"],
+	maxTurns: 20,
+};
+
+export function getSkillTemplate(skillName: string): SkillTemplate {
+	return SKILL_TEMPLATES[skillName] ?? DEFAULT_TEMPLATE;
+}
 
 export function SkillLauncher({
 	onLaunchSkill,
 }: {
-	onLaunchSkill?: (skill: SkillEntry, content: string) => void;
+	onLaunchSkill?: (skill: SkillEntry, content: string, template: SkillTemplate) => void;
 }) {
 	const [skills, setSkills] = useState<SkillEntry[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -55,7 +126,8 @@ export function SkillLauncher({
 			const content = await invoke<string>("workspace_read_skill_content", {
 				path: skill.path,
 			});
-			onLaunchSkill?.(skill, content);
+			const template = getSkillTemplate(skill.name);
+			onLaunchSkill?.(skill, content, template);
 		} catch (e) {
 			Logger.warn("SkillLauncher", "Failed to read skill", {
 				skill: skill.name,
@@ -74,7 +146,9 @@ export function SkillLauncher({
 		return (
 			<div className="skill-launcher__section">
 				<div className="skill-launcher__section-label">{label}</div>
-				{sectionSkills.map((skill) => (
+				{sectionSkills.map((skill) => {
+				const tmpl = getSkillTemplate(skill.name);
+				return (
 				<div
 					key={skill.name}
 					className={`skill-launcher__item ${!skill.has_frontmatter ? "skill-launcher__item--no-fm" : ""}`}
@@ -91,6 +165,11 @@ export function SkillLauncher({
 					<div className="skill-launcher__item-desc">
 						{skill.description || "(설명 없음)"}
 					</div>
+					<div className="skill-launcher__item-meta">
+						{tmpl.tools.length <= 4
+							? tmpl.tools.join(", ")
+							: `${tmpl.tools.slice(0, 3).join(", ")} +${tmpl.tools.length - 3}`}
+					</div>
 					{onLaunchSkill && (
 						<button
 							type="button"
@@ -101,7 +180,8 @@ export function SkillLauncher({
 						</button>
 					)}
 				</div>
-			))}
+				);
+			})}
 		</div>
 	);
 	}

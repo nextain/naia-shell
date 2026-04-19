@@ -5873,6 +5873,14 @@ body.resizing-row {
 	white-space: nowrap;
 }
 
+.skill-launcher__item-meta {
+	font-size: 9px;
+	font-family: monospace;
+	color: var(--text-secondary, #888);
+	opacity: 0.6;
+	margin-top: 2px;
+}
+
 .skill-launcher__launch {
 	font-size: 10px;
 	padding: 2px 8px;
