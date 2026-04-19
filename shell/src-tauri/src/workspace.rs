@@ -46,6 +46,16 @@ pub struct ClassifiedDir {
     pub category: String, // "project" | "worktree" | "reference" | "docs" | "other"
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillMeta {
+    pub name: String,
+    pub path: String,
+    pub description: String,
+    pub trigger: Option<String>,
+    pub management: Option<String>,
+    pub has_frontmatter: bool,
+}
+
 // ─── Watcher State ────────────────────────────────────────────────────────────
 
 pub struct WatcherState {
@@ -673,6 +683,171 @@ pub fn workspace_classify_dirs() -> Result<Vec<ClassifiedDir>, String> {
     Ok(result)
 }
 
+/// Detects a naia-adk workspace root by searching upward from the current executable's
+/// directory (or common dev paths) for marker files:
+///   - `AGENTS.md` (or `CLAUDE.md`) at root level
+///   - `.agents/context/agents-rules.json` inside root
+///
+/// Returns the canonical path if found, or an error string if no workspace detected.
+#[tauri::command]
+pub fn workspace_detect_adk_root() -> Result<String, String> {
+    let candidates = collect_search_candidates();
+    for dir in candidates {
+        if is_naia_adk_root(&dir) {
+            let canonical = dunce::canonicalize(&dir)
+                .map_err(|e| format!("Canonicalize failed: {e}"))?;
+            return Ok(canonical.to_string_lossy().to_string());
+        }
+    }
+    Err("No naia-adk workspace detected".to_string())
+}
+
+fn collect_search_candidates() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    // 1. Current executable directory + parent
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent().and_then(|p| p.parent()) {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+
+    // 2. Common dev directories (platform-specific)
+    if let Some(home) = dirs::home_dir() {
+        let dev = home.join("dev");
+        if dev.is_dir() {
+            dirs.push(dev);
+        }
+        dirs.push(home.clone());
+    }
+
+    // 3. Walk subdirs of the first valid candidate (max depth 1)
+    let mut sub_candidates = Vec::new();
+    for dir in &dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if p.is_dir() && !name.starts_with('.') {
+                    sub_candidates.push(p);
+                }
+            }
+        }
+    }
+    dirs.extend(sub_candidates);
+
+    dirs
+}
+
+fn is_naia_adk_root(path: &Path) -> bool {
+    let has_entry_point = path.join("AGENTS.md").is_file()
+        || path.join("CLAUDE.md").is_file();
+    let has_rules = path
+        .join(".agents")
+        .join("context")
+        .join("agents-rules.json")
+        .is_file();
+    has_entry_point && has_rules
+}
+
+/// Reads and parses the project-index.yaml from the current workspace root.
+/// Returns the parsed YAML as a JSON value for the frontend to consume.
+#[tauri::command]
+pub fn workspace_load_project_index() -> Result<serde_json::Value, String> {
+    let root = canonical_workspace_root()?;
+    let index_path = root
+        .join(".agents")
+        .join("context")
+        .join("project-index.yaml");
+    if !index_path.is_file() {
+        return Err("project-index.yaml not found".to_string());
+    }
+    let content = std::fs::read_to_string(&index_path).map_err(|e| e.to_string())?;
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).map_err(|e| format!("YAML parse error: {e}"))?;
+    let json_str = serde_json::to_string(&yaml_value).map_err(|e| format!("JSON conversion: {e}"))?;
+    serde_json::from_str(&json_str).map_err(|e| format!("JSON parse: {e}"))
+}
+
+/// Discovers SKILL.md files under the workspace root's skills/ directory.
+/// Parses YAML frontmatter (--- delimited) and returns SkillMeta for each.
+#[tauri::command]
+pub fn workspace_discover_skills() -> Result<Vec<SkillMeta>, String> {
+    let root = canonical_workspace_root()?;
+    let skills_dir = root.join("skills");
+    if !skills_dir.is_dir() {
+        return Ok(vec![]);
+    }
+
+    let mut skills = Vec::new();
+    visit_skill_dirs(&skills_dir, &root, &mut skills);
+    Ok(skills)
+}
+
+fn visit_skill_dirs(dir: &Path, root: &Path, skills: &mut Vec<SkillMeta>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let skill_file = path.join("SKILL.md");
+            if skill_file.is_file() {
+                if let Some(meta) = parse_skill_md(&skill_file, root) {
+                    skills.push(meta);
+                }
+            }
+        }
+    }
+}
+
+fn parse_skill_md(path: &Path, root: &Path) -> Option<SkillMeta> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let rel_path = path.parent()?.strip_prefix(root).ok()?;
+    let rel_str = rel_path.to_str()?.to_string();
+    let parts: Vec<&str> = rel_str.split(std::path::MAIN_SEPARATOR).collect();
+    let name = if parts.len() >= 2 {
+        parts[parts.len() - 1].to_string()
+    } else {
+        path.file_stem()?.to_str()?.to_string()
+    };
+
+    let (frontmatter, has_frontmatter) = parse_frontmatter(&content);
+
+    Some(SkillMeta {
+        name,
+        path: rel_str,
+        description: frontmatter
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        trigger: frontmatter
+            .get("trigger")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        management: frontmatter
+            .get("management")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        has_frontmatter,
+    })
+}
+
+fn parse_frontmatter(content: &str) -> (serde_yaml::Value, bool) {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return (serde_yaml::Value::Null, false);
+    }
+    let rest = &trimmed[3..];
+    let Some(end) = rest.find("\n---") else {
+        return (serde_yaml::Value::Null, false);
+    };
+    let yaml_str = &rest[..end];
+    match serde_yaml::from_str(yaml_str) {
+        Ok(v) => (v, true),
+        Err(_) => (serde_yaml::Value::Null, false),
+    }
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Given a file path, find the immediate child of WORKSPACE_ROOT that contains it.
@@ -889,9 +1064,56 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn test_validate_write_path_rejects_dotdot_in_new_path() {
-        // Attempt to write to /var/home/luke/dev/../../etc/cron.d/evil
         let traversal = "/var/home/luke/dev/../../etc/cron.d/evil";
         let result = validate_write_path(traversal);
         assert!(result.is_err(), "Traversal write path must be rejected");
+    }
+
+    // ── is_naia_adk_root ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_naia_adk_root_detects_valid_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        fs::write(path.join("AGENTS.md"), "# Test").unwrap();
+        let rules_dir = path.join(".agents").join("context");
+        fs::create_dir_all(&rules_dir).unwrap();
+        fs::write(rules_dir.join("agents-rules.json"), "{}").unwrap();
+        assert!(is_naia_adk_root(path));
+    }
+
+    #[test]
+    fn test_is_naia_adk_root_detects_claude_md_variant() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        fs::write(path.join("CLAUDE.md"), "# Test").unwrap();
+        let rules_dir = path.join(".agents").join("context");
+        fs::create_dir_all(&rules_dir).unwrap();
+        fs::write(rules_dir.join("agents-rules.json"), "{}").unwrap();
+        assert!(is_naia_adk_root(path));
+    }
+
+    #[test]
+    fn test_is_naia_adk_root_rejects_missing_entry_point() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let rules_dir = path.join(".agents").join("context");
+        fs::create_dir_all(&rules_dir).unwrap();
+        fs::write(rules_dir.join("agents-rules.json"), "{}").unwrap();
+        assert!(!is_naia_adk_root(path));
+    }
+
+    #[test]
+    fn test_is_naia_adk_root_rejects_missing_rules() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        fs::write(path.join("AGENTS.md"), "# Test").unwrap();
+        assert!(!is_naia_adk_root(path));
+    }
+
+    #[test]
+    fn test_is_naia_adk_root_rejects_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_naia_adk_root(dir.path()));
     }
 }
