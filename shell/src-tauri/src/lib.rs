@@ -2787,6 +2787,7 @@ pub fn run() {
             workspace::workspace_detect_adk_root,
             workspace::workspace_load_project_index,
             workspace::workspace_discover_skills,
+            workspace::workspace_read_skill_content,
             pty::pty_create,
             pty::pty_write,
             pty::pty_resize,

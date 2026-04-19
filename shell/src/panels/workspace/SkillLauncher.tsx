@@ -13,7 +13,11 @@ export interface SkillEntry {
 
 type Option<T> = T | null;
 
-export function SkillLauncher() {
+export function SkillLauncher({
+	onLaunchSkill,
+}: {
+	onLaunchSkill?: (skill: SkillEntry, content: string) => void;
+}) {
 	const [skills, setSkills] = useState<SkillEntry[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [filter, setFilter] = useState("");
@@ -45,6 +49,20 @@ export function SkillLauncher() {
 
 	const autoSkills = filtered.filter((s) => s.management === "Auto");
 	const manualSkills = filtered.filter((s) => s.management !== "Auto");
+
+	async function handleLaunch(skill: SkillEntry) {
+		try {
+			const content = await invoke<string>("workspace_read_skill_content", {
+				path: skill.path,
+			});
+			onLaunchSkill?.(skill, content);
+		} catch (e) {
+			Logger.warn("SkillLauncher", "Failed to read skill", {
+				skill: skill.name,
+				error: String(e),
+			});
+		}
+	}
 
 	if (loading) {
 		return (
@@ -84,17 +102,17 @@ export function SkillLauncher() {
 	);
 }
 
-function SkillSection({
-	label,
-	skills,
-}: {
-	label: string;
-	skills: SkillEntry[];
-}) {
-	return (
-		<div className="skill-launcher__section">
-			<div className="skill-launcher__section-label">{label}</div>
-			{skills.map((skill) => (
+	function SkillSection({
+		label,
+		skills: sectionSkills,
+	}: {
+		label: string;
+		skills: SkillEntry[];
+	}) {
+		return (
+			<div className="skill-launcher__section">
+				<div className="skill-launcher__section-label">{label}</div>
+				{sectionSkills.map((skill) => (
 				<button
 					key={skill.name}
 					type="button"
@@ -112,6 +130,18 @@ function SkillSection({
 					<div className="skill-launcher__item-desc">
 						{skill.description || "(설명 없음)"}
 					</div>
+					{onLaunchSkill && (
+						<button
+							type="button"
+							className="skill-launcher__launch"
+							onClick={(e) => {
+								e.stopPropagation();
+								handleLaunch(skill);
+							}}
+						>
+							실행
+						</button>
+					)}
 				</button>
 			))}
 		</div>

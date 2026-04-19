@@ -5873,6 +5873,21 @@ body.resizing-row {
 	white-space: nowrap;
 }
 
+.skill-launcher__launch {
+	font-size: 10px;
+	padding: 2px 8px;
+	margin-top: 4px;
+	background: rgba(124, 160, 255, 0.12);
+	border: 1px solid rgba(124, 160, 255, 0.2);
+	border-radius: 3px;
+	color: var(--accent, #7ca0ff);
+	cursor: pointer;
+}
+
+.skill-launcher__launch:hover {
+	background: rgba(124, 160, 255, 0.2);
+}
+
 .skill-launcher__empty {
 	padding: 12px 8px;
 	font-size: 11px;

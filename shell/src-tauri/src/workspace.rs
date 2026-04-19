@@ -784,6 +784,21 @@ pub fn workspace_discover_skills() -> Result<Vec<SkillMeta>, String> {
     Ok(skills)
 }
 
+/// Reads the full content of a SKILL.md file given the skill's relative path.
+#[tauri::command]
+pub fn workspace_read_skill_content(path: String) -> Result<String, String> {
+    let root = canonical_workspace_root()?;
+    let skill_path = root.join(&path).join("SKILL.md");
+    if !skill_path.is_file() {
+        return Err(format!("SKILL.md not found at: {path}"));
+    }
+    let abs = dunce::canonicalize(&skill_path).map_err(|e| format!("Path error: {e}"))?;
+    if !abs.starts_with(&root) {
+        return Err("Access denied: path outside workspace".to_string());
+    }
+    std::fs::read_to_string(&abs).map_err(|e| format!("Read failed: {e}"))
+}
+
 fn visit_skill_dirs(dir: &Path, root: &Path, skills: &mut Vec<SkillMeta>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
