@@ -49,6 +49,7 @@ ureq = { version = "2", features = ["json"] }
 notify = "6"
 portable-pty = "0.9.0"
 sysinfo = { version = "0.34", default-features = false, features = ["system"] }
+serde_yaml = "0.9"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

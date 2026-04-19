@@ -218,6 +218,8 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "workspace_start_watch") return;
 		if (cmd === "workspace_stop_watch") return;
 		if (cmd === "workspace_classify_dirs") return fakeClassified;
+		if (cmd === "workspace_detect_adk_root") return "${FAKE_ROOT}";
+		if (cmd === "workspace_load_project_index") return {};
 		if (cmd === "workspace_read_file") {
 			var path = (args && args.path) || "";
 			if (path.endsWith("AGENTS.md") || path.endsWith("README.md")) return fakeAgentsMd;
