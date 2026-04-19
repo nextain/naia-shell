@@ -43,7 +43,8 @@ type ViewMode =
 	| "image"
 	| "csv"
 	| "log"
-	| "pdf";
+	| "pdf"
+	| "hwp";
 
 interface EditorProps {
 	/** Absolute path of the file being edited. Empty = no file open. */
@@ -104,11 +105,17 @@ function isPdfFile(filePath: string): boolean {
 	return ext === "pdf";
 }
 
+function isHwpFile(filePath: string): boolean {
+	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	return ext === "hwp" || ext === "hwpx";
+}
+
 function detectViewMode(filePath: string): ViewMode {
 	if (isImageFile(filePath)) return "image";
 	if (isPdfFile(filePath)) return "pdf";
 	if (isCsvFile(filePath)) return "csv";
 	if (isLogFile(filePath)) return "log";
+	if (isHwpFile(filePath)) return "hwp";
 	if (isMarkdownFile(filePath)) return "preview";
 	return "editor";
 }
@@ -184,6 +191,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 	/** Content state — used for MD preview and initial doc load */
 	const [content, setContent] = useState("");
 	const [viewMode, setViewMode] = useState<ViewMode>("editor");
+	const [hwpSidecar, setHwpSidecar] = useState<string | null>(null);
 	// ── Zoom (Ctrl+Scroll) — persisted, not applied during print ─────
 	const [zoom, setZoom] = useState(() => {
 		try {
@@ -331,6 +339,24 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		};
 	}, [filePath]);
 
+	// ── Load HWP/HWPX sidecar .txt ────────────────────────────────────
+	useEffect(() => {
+		if (!filePath || !isHwpFile(filePath)) {
+			setHwpSidecar(null);
+			return;
+		}
+		const sidecarPath = `${filePath}.txt`;
+		let cancelled = false;
+		invoke<string>("workspace_read_file", { path: sidecarPath })
+			.then((text) => {
+				if (!cancelled) setHwpSidecar(text);
+			})
+			.catch(() => {
+				if (!cancelled) setHwpSidecar(null);
+			});
+		return () => { cancelled = true; };
+	}, [filePath]);
+
 	// ── Load file ─────────────────────────────────────────────────────────
 	useEffect(() => {
 		if (!filePath) {
@@ -461,7 +487,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 			viewMode === "image" ||
 			viewMode === "pdf" ||
 			viewMode === "csv" ||
-			viewMode === "log"
+			viewMode === "log" ||
+			viewMode === "hwp"
 		)
 			return;
 
@@ -858,6 +885,22 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 							/>
 						))}
 					</Document>
+				</div>
+			) : viewMode === "hwp" ? (
+				<div className="workspace-editor__hwp-viewer">
+					{hwpSidecar !== null ? (
+						<pre className="workspace-editor__hwp-content">{hwpSidecar}</pre>
+					) : (
+						<div className="workspace-editor__hwp-placeholder">
+							<div className="workspace-editor__hwp-placeholder-icon">📄</div>
+							<div className="workspace-editor__hwp-placeholder-text">
+								HWP/HWPX 파일 미리보기를 사용할 수 없습니다
+							</div>
+							<div className="workspace-editor__hwp-placeholder-hint">
+								사이드카 .txt 파일이 없습니다. /read-doc 스킬로 추출하세요.
+							</div>
+						</div>
+					)}
 				</div>
 			) : viewMode === "csv" ? (
 				<div className="workspace-editor__csv-viewer">
