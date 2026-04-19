@@ -2788,6 +2788,8 @@ pub fn run() {
             workspace::workspace_load_project_index,
             workspace::workspace_discover_skills,
             workspace::workspace_read_skill_content,
+            workspace::workspace_check_adk_server,
+            workspace::workspace_discover_adk_server,
             pty::pty_create,
             pty::pty_write,
             pty::pty_resize,

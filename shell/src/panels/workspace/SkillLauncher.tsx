@@ -222,5 +222,4 @@ export function SkillLauncher({
 			)}
 		</div>
 	);
-	}
 }

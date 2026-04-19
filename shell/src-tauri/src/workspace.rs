@@ -702,6 +702,37 @@ pub fn workspace_detect_adk_root() -> Result<String, String> {
     Err("No naia-adk workspace detected".to_string())
 }
 
+/// Checks if the naia-adk server is running at the given or default URL.
+/// Returns server health info if reachable.
+#[tauri::command]
+pub fn workspace_check_adk_server(url: Option<String>) -> Result<serde_json::Value, String> {
+    let server_url = url.unwrap_or_else(|| "http://localhost:3141".to_string());
+    let health_url = format!("{}/api/health", server_url);
+    let response = ureq::get(&health_url)
+        .timeout(std::time::Duration::from_secs(3))
+        .call()
+        .map_err(|e| format!("Server not reachable: {e}"))?;
+    let body: serde_json::Value = response.into_json().map_err(|e| format!("Parse error: {e}"))?;
+    Ok(body)
+}
+
+/// Discovers the naia-adk server URL by checking common ports.
+#[tauri::command]
+pub fn workspace_discover_adk_server() -> Option<String> {
+    for port in [3141, 3142, 8080] {
+        let url = format!("http://localhost:{}", port);
+        let health = format!("{}/api/health", url);
+        if ureq::get(&health)
+            .timeout(std::time::Duration::from_secs(1))
+            .call()
+            .is_ok()
+        {
+            return Some(url);
+        }
+    }
+    None
+}
+
 fn collect_search_candidates() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
