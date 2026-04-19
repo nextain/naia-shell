@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { type ClassifiedDir } from "./WorkspaceCenterPanel";
 import { type DirEntry, getFileIcon } from "../../lib/file-search";
 import { Logger } from "../../lib/logger";
 import { WORKSPACE_ROOT } from "./constants";
@@ -38,7 +39,7 @@ interface FileTreeProps {
 	/** Session dirs that have active status (for highlighting) */
 	activeDirs?: string[];
 	/** Classified dirs for section display (Phase 4) */
-	classifiedDirs?: Array<{ name: string; path: string; category: string }>;
+	classifiedDirs?: ClassifiedDir[];
 	/** Actual workspace root (runtime override or compile-time fallback). */
 	workspaceRoot?: string;
 	/** Called when user selects "Naia에게 보내기" from context menu */
@@ -52,6 +53,7 @@ interface TreeNodeProps {
 	onDirExpand?: (dirPath: string) => void;
 	openFilePath?: string;
 	activeDirs?: string[];
+	classifiedDirs?: ClassifiedDir[];
 	onContextMenu?: (e: React.MouseEvent, entryPath: string) => void;
 }
 
@@ -67,6 +69,7 @@ function TreeNode({
 	onDirExpand,
 	openFilePath,
 	activeDirs,
+	classifiedDirs: classifiedDirsProp,
 	onContextMenu: handleContextMenu,
 }: TreeNodeProps) {
 	const [expanded, setExpanded] = useState(false);
@@ -173,6 +176,22 @@ function TreeNode({
 			>
 				<span className="workspace-tree__icon">{icon}</span>
 				<span className="workspace-tree__name">{entry.name}</span>
+				{(() => {
+					const cd = classifiedDirsProp?.find((d) => normPath(d.path) === normPath(entry.path));
+					if (!cd) return null;
+					return <>
+						{cd.visibility && (
+							<span className={`workspace-tree__badge ${cd.visibility === "public" ? "workspace-tree__badge--public" : "workspace-tree__badge--private"}`}>
+								{cd.visibility === "public" ? "pub" : "priv"}
+							</span>
+						)}
+						{cd.entryPoint && (
+							<span className="workspace-tree__entrypoint" title={cd.entryPoint}>
+								⎆
+							</span>
+						)}
+					</>;
+				})()}
 				{isActive && (
 					<span className="workspace-tree__active-dot" title="Active session" />
 				)}
@@ -196,6 +215,7 @@ function TreeNode({
 							onDirExpand={onDirExpand}
 							openFilePath={openFilePath}
 							activeDirs={activeDirs}
+							classifiedDirs={classifiedDirsProp}
 							onContextMenu={handleContextMenu}
 						/>
 					))}
@@ -435,6 +455,7 @@ export function FileTree({
 									onDirExpand={onDirExpand}
 									openFilePath={openFilePath}
 									activeDirs={activeDirs}
+									classifiedDirs={classifiedDirs}
 									onContextMenu={openContextMenu}
 								/>
 							))}
@@ -457,6 +478,7 @@ export function FileTree({
 					onDirExpand={onDirExpand}
 					openFilePath={openFilePath}
 					activeDirs={activeDirs}
+					classifiedDirs={classifiedDirs}
 					onContextMenu={openContextMenu}
 				/>
 			))}

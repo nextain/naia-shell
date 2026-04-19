@@ -5696,6 +5696,34 @@ body.resizing-row {
 	flex-shrink: 0;
 }
 
+.workspace-tree__badge {
+	font-size: 9px;
+	padding: 0 4px;
+	border-radius: 3px;
+	flex-shrink: 0;
+	line-height: 16px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.workspace-tree__badge--public {
+	background: rgba(63, 185, 80, 0.15);
+	color: #3fb950;
+}
+
+.workspace-tree__badge--private {
+	background: rgba(139, 148, 158, 0.15);
+	color: #8b949e;
+}
+
+.workspace-tree__entrypoint {
+	font-size: 11px;
+	flex-shrink: 0;
+	color: var(--accent, #7ca0ff);
+	opacity: 0.7;
+}
+
 .workspace-tree__loading {
 	font-size: 11px;
 	color: var(--text-secondary, #888);

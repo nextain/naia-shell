@@ -114,6 +114,8 @@ export interface ClassifiedDir {
 	name: string;
 	path: string;
 	category: string;
+	visibility?: string;
+	entryPoint?: string;
 }
 
 const CLASSIFIED_DIRS_KEY = "workspace-classified-dirs";
@@ -179,6 +181,15 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		const cfg = loadConfig();
 		return cfg?.workspaceRoot || WORKSPACE_ROOT;
 	});
+
+	const detectAdkRoot = useCallback(async (): Promise<string | null> => {
+		try {
+			const detected = await invoke<string>("workspace_detect_adk_root");
+			return detected;
+		} catch {
+			return null;
+		}
+	}, []);
 
 	// Folder picker when no workspace root is configured
 	const pickWorkspaceFolder = useCallback(async () => {
@@ -288,6 +299,20 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 	// message shown to the user matches what the backend actually scans.
 	const [resolvedRoot, setResolvedRoot] = useState(activeWorkspaceRoot);
 
+	// ── Auto-detect naia-adk root on mount ─────────────────────────────────
+	useEffect(() => {
+		if (activeWorkspaceRoot) return;
+		let cancelled = false;
+		(async () => {
+			const detected = await detectAdkRoot();
+			if (cancelled || !detected) return;
+			const cfg = loadConfig();
+			if (cfg) saveConfig({ ...cfg, workspaceRoot: detected });
+			setActiveWorkspaceRoot(detected);
+		})();
+		return () => { cancelled = true; };
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 	// ── Set workspace root from config on mount ────────────────────────────
 	useEffect(() => {
 		if (!activeWorkspaceRoot) {
@@ -330,6 +355,57 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			}
 		}
 	}, [openFilePath, resolvedRoot]);
+
+	// ── Load project-index.yaml for classified dirs (P1-2) ──────────────────
+	useEffect(() => {
+		if (!resolvedRoot) return;
+		let cancelled = false;
+		(async () => {
+			try {
+				const index = await invoke<any>("workspace_load_project_index");
+				if (cancelled) return;
+				const dirs: ClassifiedDir[] = [];
+				const sections = [
+					{ key: "submodules", defaultCat: "project" },
+					{ key: "local_projects", defaultCat: "project" },
+				];
+				for (const section of sections) {
+					const items = index?.[section.key];
+					if (!items || typeof items !== "object") continue;
+					for (const [, entry] of Object.entries(items as Record<string, any>)) {
+						if (!entry?.path) continue;
+						const typeToCat: Record<string, string> = {
+							project: "project",
+							docs: "docs",
+							lib: "lib",
+							reference: "reference",
+						};
+						const cat = typeToCat[entry.type] || section.defaultCat;
+						let absPath = entry.path as string;
+						if (absPath.startsWith("./") || absPath.startsWith(".\\")) {
+							absPath = `${resolvedRoot.replace(/\\/g, "/")}/${absPath.slice(2)}`;
+						}
+						dirs.push({
+							name: entry.description
+								? entry.description.split("—")[0].split("(")[0].trim().split(" ").slice(0, 3).join(" ")
+								: absPath?.split("/").pop() || "",
+							path: absPath,
+							category: cat,
+							visibility: entry.visibility,
+							entryPoint: entry.rulesEntrypoint,
+						});
+					}
+				}
+				if (dirs.length > 0 && !cancelled) {
+					setClassifiedDirs(dirs);
+					saveClassifiedDirs(dirs);
+				}
+			} catch {
+				// project-index.yaml not found — fall through to heuristic classification
+			}
+		})();
+		return () => { cancelled = true; };
+	}, [resolvedRoot]);
 
 	// ── Load persisted classification ─────────────────────────────────────
 	useEffect(() => {
