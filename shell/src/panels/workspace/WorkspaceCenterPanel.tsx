@@ -10,6 +10,7 @@ import { usePanelStore } from "../../stores/panel";
 import { Editor, type EditorHandle } from "./Editor";
 import { FileTree } from "./FileTree";
 import { QuickOpen } from "./QuickOpen";
+import { SkillLauncher } from "./SkillLauncher";
 import type { SessionInfo } from "./SessionCard";
 import { SessionDashboard } from "./SessionDashboard";
 import { Terminal } from "./Terminal";
@@ -1046,6 +1047,8 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 						onSendToChat={handleSendToChat}
 					/>
 				</div>
+				<div className="workspace-panel__tree-divider" />
+				<SkillLauncher />
 			</div>
 			<div
 				className="workspace-panel__resize-handle"

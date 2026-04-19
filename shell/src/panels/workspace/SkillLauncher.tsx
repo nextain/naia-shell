@@ -1,0 +1,119 @@
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
+import { Logger } from "../../lib/logger";
+
+export interface SkillEntry {
+	name: string;
+	path: string;
+	description: string;
+	trigger: Option<string>;
+	management: Option<string>;
+	has_frontmatter: boolean;
+}
+
+type Option<T> = T | null;
+
+export function SkillLauncher() {
+	const [skills, setSkills] = useState<SkillEntry[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [filter, setFilter] = useState("");
+
+	useEffect(() => {
+		loadSkills();
+	}, []);
+
+	async function loadSkills() {
+		try {
+			const result = await invoke<SkillEntry[]>("workspace_discover_skills");
+			setSkills(result);
+		} catch (e) {
+			Logger.warn("SkillLauncher", "Failed to discover skills", {
+				error: String(e),
+			});
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	const filtered = filter
+		? skills.filter(
+				(s) =>
+					s.name.toLowerCase().includes(filter.toLowerCase()) ||
+					s.description.toLowerCase().includes(filter.toLowerCase()),
+			)
+		: skills;
+
+	const autoSkills = filtered.filter((s) => s.management === "Auto");
+	const manualSkills = filtered.filter((s) => s.management !== "Auto");
+
+	if (loading) {
+		return (
+			<div className="skill-launcher skill-launcher--loading">
+				스킬 로딩 중…
+			</div>
+		);
+	}
+
+	return (
+		<div className="skill-launcher">
+			<div className="skill-launcher__header">
+				<span className="skill-launcher__title">Skills</span>
+				<span className="skill-launcher__count">{skills.length}</span>
+			</div>
+			<input
+				className="skill-launcher__filter"
+				type="text"
+				placeholder="필터…"
+				value={filter}
+				onChange={(e) => setFilter(e.target.value)}
+			/>
+			{autoSkills.length > 0 && (
+				<SkillSection label="자동" skills={autoSkills} />
+			)}
+			{manualSkills.length > 0 && (
+				<SkillSection label="수동" skills={manualSkills} />
+			)}
+			{filtered.length === 0 && (
+				<div className="skill-launcher__empty">
+					{skills.length === 0
+						? "skills/ 디렉토리에 SKILL.md 파일이 없습니다"
+						: "필터 결과 없음"}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function SkillSection({
+	label,
+	skills,
+}: {
+	label: string;
+	skills: SkillEntry[];
+}) {
+	return (
+		<div className="skill-launcher__section">
+			<div className="skill-launcher__section-label">{label}</div>
+			{skills.map((skill) => (
+				<button
+					key={skill.name}
+					type="button"
+					className={`skill-launcher__item ${!skill.has_frontmatter ? "skill-launcher__item--no-fm" : ""}`}
+					title={skill.trigger || skill.description}
+				>
+					<div className="skill-launcher__item-name">
+						{skill.name}
+						{!skill.has_frontmatter && (
+							<span className="skill-launcher__item-warn" title="frontmatter 없음">
+								⚠
+							</span>
+						)}
+					</div>
+					<div className="skill-launcher__item-desc">
+						{skill.description || "(설명 없음)"}
+					</div>
+				</button>
+			))}
+		</div>
+	);
+}

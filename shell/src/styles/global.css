@@ -5766,6 +5766,125 @@ body.resizing-row {
 	opacity: 0.7;
 }
 
+/* SkillLauncher */
+.skill-launcher {
+	padding: 8px 0;
+}
+
+.skill-launcher--loading {
+	padding: 12px;
+	font-size: 12px;
+	color: var(--text-secondary, #888);
+}
+
+.skill-launcher__header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 8px 6px;
+}
+
+.skill-launcher__title {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--text-secondary, #888);
+}
+
+.skill-launcher__count {
+	font-size: 10px;
+	background: var(--hover-bg, rgba(255, 255, 255, 0.06));
+	padding: 0 5px;
+	border-radius: 8px;
+	color: var(--text-secondary, #888);
+}
+
+.skill-launcher__filter {
+	display: block;
+	width: calc(100% - 16px);
+	margin: 0 8px 6px;
+	padding: 4px 8px;
+	background: var(--hover-bg, rgba(255, 255, 255, 0.04));
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 4px;
+	color: var(--text-primary, #e0e0e0);
+	font-size: 11px;
+	outline: none;
+}
+
+.skill-launcher__filter:focus {
+	border-color: var(--accent, #7ca0ff);
+}
+
+.skill-launcher__section {
+	margin-bottom: 4px;
+}
+
+.skill-launcher__section-label {
+	padding: 4px 8px 2px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--text-secondary, #888);
+	user-select: none;
+}
+
+.skill-launcher__item {
+	display: block;
+	width: 100%;
+	padding: 6px 8px;
+	background: none;
+	border: none;
+	cursor: pointer;
+	text-align: left;
+	border-radius: 3px;
+	margin: 1px 0;
+}
+
+.skill-launcher__item:hover {
+	background: var(--hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+.skill-launcher__item--no-fm {
+	opacity: 0.6;
+}
+
+.skill-launcher__item-name {
+	font-size: 12px;
+	color: var(--text-primary, #e0e0e0);
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.skill-launcher__item-warn {
+	font-size: 10px;
+	opacity: 0.5;
+}
+
+.skill-launcher__item-desc {
+	font-size: 10px;
+	color: var(--text-secondary, #888);
+	margin-top: 1px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.skill-launcher__empty {
+	padding: 12px 8px;
+	font-size: 11px;
+	color: var(--text-secondary, #888);
+	text-align: center;
+}
+
+.workspace-panel__tree-divider {
+	border-top: 1px solid rgba(255, 255, 255, 0.06);
+	margin: 4px 0;
+}
+
 .workspace-tree__loading {
 	font-size: 11px;
 	color: var(--text-secondary, #888);
