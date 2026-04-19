@@ -192,6 +192,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 	const [content, setContent] = useState("");
 	const [viewMode, setViewMode] = useState<ViewMode>("editor");
 	const [hwpSidecar, setHwpSidecar] = useState<string | null>(null);
+	const [hwpLoading, setHwpLoading] = useState(false);
 	// ── Zoom (Ctrl+Scroll) — persisted, not applied during print ─────
 	const [zoom, setZoom] = useState(() => {
 		try {
@@ -343,16 +344,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 	useEffect(() => {
 		if (!filePath || !isHwpFile(filePath)) {
 			setHwpSidecar(null);
+			setHwpLoading(false);
 			return;
 		}
 		const sidecarPath = `${filePath}.txt`;
 		let cancelled = false;
+		setHwpLoading(true);
 		invoke<string>("workspace_read_file", { path: sidecarPath })
 			.then((text) => {
-				if (!cancelled) setHwpSidecar(text);
+				if (!cancelled) { setHwpSidecar(text); setHwpLoading(false); }
 			})
 			.catch(() => {
-				if (!cancelled) setHwpSidecar(null);
+				if (!cancelled) { setHwpSidecar(null); setHwpLoading(false); }
 			});
 		return () => { cancelled = true; };
 	}, [filePath]);
@@ -366,7 +369,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 			return;
 		}
 		// Images and PDFs are rendered via blob URL — no text read needed
-		if (isImageFile(filePath) || isPdfFile(filePath)) {
+		if (isImageFile(filePath) || isPdfFile(filePath) || isHwpFile(filePath)) {
 			setContent("");
 			setLoadError(null);
 			loadErrorRef.current = false;
@@ -888,7 +891,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 				</div>
 			) : viewMode === "hwp" ? (
 				<div className="workspace-editor__hwp-viewer">
-					{hwpSidecar !== null ? (
+					{hwpLoading ? (
+						<div className="workspace-editor__hwp-placeholder">
+							<div className="workspace-editor__hwp-placeholder-text">텍스트 추출 중…</div>
+						</div>
+					) : hwpSidecar !== null ? (
 						<pre className="workspace-editor__hwp-content">{hwpSidecar}</pre>
 					) : (
 						<div className="workspace-editor__hwp-placeholder">

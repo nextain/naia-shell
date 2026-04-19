@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ClassifiedDir } from "./WorkspaceCenterPanel";
+import { type ClassifiedDir } from "./types";
 import { type DirEntry, getFileIcon } from "../../lib/file-search";
 import { Logger } from "../../lib/logger";
 import { WORKSPACE_ROOT } from "./constants";

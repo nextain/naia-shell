@@ -109,14 +109,9 @@ interface TerminalTab {
 
 // ─── Re-export for FileTree ───────────────────────────────────────────────────
 
-// Re-export for FileTree to use
-export interface ClassifiedDir {
-	name: string;
-	path: string;
-	category: string;
-	visibility?: string;
-	entryPoint?: string;
-}
+import { type ClassifiedDir } from "./types";
+
+export type { ClassifiedDir };
 
 const CLASSIFIED_DIRS_KEY = "workspace-classified-dirs";
 
