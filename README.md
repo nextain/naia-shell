@@ -142,6 +142,18 @@ Naia is a four-repo open-source AI platform. Each repo has one clear role:
 └─────────────┘       └───────────────┘
 ```
 
+### Interfaces, not dependencies
+
+The four repos are coupled through **published interfaces**, not runtime dependencies:
+
+- **Transparent** — every contract is specified in `@naia-agent/types`, documented, and versioned. Open for anyone to read or implement.
+- **Non-binding** — repos do not import each other's runtime. They implement contracts; concrete implementations are injected at startup.
+- **Abstracted** — swap any LLM provider, memory backend, skill source, or host and nothing else changes.
+
+naia-os is *one host* among many possible hosts (CLI, server, 3rd-party apps). It consumes `@naia-agent/*` contracts and injects concrete implementations (LLM clients, memory providers, device identity). The Naia runtime knows nothing about which host it's running inside.
+
+Ports & Adapters at the ecosystem scale. Each repo is independently replaceable as long as it honors the contract.
+
 ## Project Structure
 
 ```
