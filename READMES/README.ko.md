@@ -117,51 +117,54 @@ Naia는 [OpenClaw](https://github.com/openclaw-ai/openclaw) 생태계 위에 구
 
 ## 아키텍처
 
-```
-┌──────────────────────────────────────────────────┐
-│  Naia Shell (Tauri 2 + React + Three.js)         │
-│  Chat · Avatar · Skills · Channels · Settings    │
-│  State: Zustand │ DB: SQLite │ Auth: OAuth        │
-└──────────────┬───────────────────────────────────┘
-               │ stdio JSON lines
-┌──────────────▼───────────────────────────────────┐
-│  Naia Agent (Node.js + TypeScript)               │
-│  LLM: Gemini, Claude, GPT, Grok, zAI, Ollama    │
-│  TTS: Nextain, Edge, Google, OpenAI, ElevenLabs  │
-│  Skills: 7 built-in + 63 custom                  │
-└──────────────┬───────────────────────────────────┘
-               │ WebSocket (ws://127.0.0.1:18789)
-┌──────────────▼───────────────────────────────────┐
-│  OpenClaw Gateway (systemd user daemon)          │
-│  88 RPC methods │ Tool exec │ Channels │ Memory  │
-└──────────────────────────────────────────────────┘
-```
+Naia는 4개 오픈소스 레포로 구성된 AI 플랫폼입니다. 각 레포는 하나의 명확한 역할을 담당합니다.
 
-**3개 프로젝트의 융합:**
-- **OpenClaw** → 데몬 + 도구 실행 + 채널 + 스킬 생태계
-- **Careti** → 멀티 LLM + 도구 프로토콜 + stdio 통신
-- **OpenCode** → 클라이언트/서버 분리 패턴
+| 레포 | 역할 |
+|------|------|
+| **naia-os** (이 레포) | 프론트엔드 — Tauri 데스크톱 셸, 3D 아바타, OS 이미지 (Bazzite) |
+| [naia-agent](https://github.com/nextain/naia-agent) | 런타임 엔진 — 에이전트 루프, 툴, compaction, LLM 라우팅 |
+| [naia-adk](https://github.com/nextain/naia-adk) | 워크스페이스 포맷 + 스킬 라이브러리 |
+| [alpha-memory](https://github.com/nextain/alpha-memory) | 저장소 — 장기 메모리, 세션 로그 |
+
+```
+┌──────────────────────────────┐
+│  naia-os (이 레포)           │  Tauri 셸 · 3D 아바타 · OS 이미지
+└────────────┬─────────────────┘
+             │ 임베드 / 스폰
+┌────────────▼─────────────────┐
+│  naia-agent                  │  루프 · 툴 · compaction · LLM
+└──┬───────────────────────┬───┘
+   │ 읽기                  │ 읽기/쓰기
+┌──▼──────────┐       ┌────▼──────────┐
+│  naia-adk   │       │ alpha-memory  │
+│  워크스페이스 │       │  저장소        │
+│  + 스킬     │       │  + 세션        │
+└─────────────┘       └───────────────┘
+```
 
 ## 프로젝트 구조
 
 ```
 naia-os/
-├── shell/              # Tauri 2 데스크톱 앱 (React + Rust)
-│   ├── src/            #   React 컴포넌트 + 상태 관리
-│   ├── src-tauri/      #   Rust 백엔드 (프로세스 관리, SQLite, 인증)
-│   └── e2e-tauri/      #   WebDriver E2E 테스트
-├── agent/              # Node.js AI 에이전트 코어
-│   ├── src/providers/  #   LLM 제공업체 (Gemini, Claude, GPT 등)
-│   ├── src/tts/        #   TTS 제공업체 (Edge, Google, OpenAI 등)
-│   ├── src/skills/     #   내장 스킬 (13개 Naia 전용 TypeScript)
-│   └── assets/         #   번들 스킬 (64개 skill.json)
-├── gateway/            # OpenClaw Gateway 브릿지
-├── flatpak/            # Flatpak 패키징 (io.nextain.naia)
-├── recipes/            # BlueBuild OS 이미지 레시피
-├── config/             # OS 설정 (systemd, 래퍼 스크립트)
-├── .agents/            # AI 컨텍스트 (영어, JSON/YAML)
-└── .users/             # 사람 문서 (한국어, Markdown)
+├── shell/       # Tauri 2 데스크톱 앱 (React + Three.js + Rust) ← 제품
+├── agent/       # [naia-agent 레포로 이동 예정]
+├── gateway/     # [naia-agent 레포로 이동 예정]
+├── recipes/     # BlueBuild OS 이미지 레시피
+├── config/      # OS systemd 유닛, 래퍼 스크립트
+├── os/          # OS 통합 테스트
+├── flatpak/     # Flatpak 매니페스트
+├── .agents/     # AI 컨텍스트 (영어)
+└── .users/      # 사람 문서 (한국어)
 ```
+
+### 모듈 역할
+
+| 모듈 | 역할 | 향후 |
+|------|------|------|
+| `shell/` | Tauri 2 데스크톱 앱: UI, 아바타, 설정, 채널 | **유지** — 제품 본체 |
+| `recipes/`, `config/`, `os/`, `flatpak/` | Bazzite OS 이미지 + Linux 배포 | **유지** — Linux 배포판으로서의 naia-os |
+| `agent/` | 현재의 LLM·툴 런타임 | **분리 → [naia-agent](https://github.com/nextain/naia-agent)** |
+| `gateway/` | 툴·채널·메모리 브릿지 | **병합 → [naia-agent](https://github.com/nextain/naia-agent)** (OpenClaw 의존성 제거) |
 
 ## 컨텍스트 문서 (Dual-directory Architecture)
 

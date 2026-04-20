@@ -117,51 +117,54 @@ Naia is built on top of the [OpenClaw](https://github.com/openclaw-ai/openclaw) 
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────┐
-│  Naia Shell (Tauri 2 + React + Three.js)         │
-│  Chat · Avatar · Skills · Channels · Settings    │
-│  State: Zustand │ DB: SQLite │ Auth: OAuth        │
-└──────────────┬───────────────────────────────────┘
-               │ stdio JSON lines
-┌──────────────▼───────────────────────────────────┐
-│  Naia Agent (Node.js + TypeScript)               │
-│  LLM: Gemini, Claude, GPT, Grok, zAI, Ollama    │
-│  TTS: Nextain, Edge, Google, OpenAI, ElevenLabs  │
-│  Skills: 7 built-in + 63 custom                  │
-└──────────────┬───────────────────────────────────┘
-               │ WebSocket (ws://127.0.0.1:18789)
-┌──────────────▼───────────────────────────────────┐
-│  Naia Gateway (systemd user daemon)          │
-│  88 RPC methods │ Tool exec │ Channels │ Memory  │
-└──────────────────────────────────────────────────┘
-```
+Naia is a four-repo open-source AI platform. Each repo has one clear role:
 
-**A fusion of 3 projects:**
-- **OpenClaw** — Daemon + tool execution + channels + skill ecosystem
-- **Careti** — Multi-LLM + tool protocol + stdio communication
-- **OpenCode** — Client/server separation pattern
+| Repo | Role |
+|------|------|
+| **naia-os** (this) | Frontend — Tauri desktop shell, 3D avatar, OS image (Bazzite) |
+| [naia-agent](https://github.com/nextain/naia-agent) | Runtime engine — agent loop, tools, compaction, LLM routing |
+| [naia-adk](https://github.com/nextain/naia-adk) | Workspace format + skills library |
+| [alpha-memory](https://github.com/nextain/alpha-memory) | Storage — long-term memory, session logs |
+
+```
+┌──────────────────────────────┐
+│  naia-os (this repo)         │  Tauri shell · 3D avatar · OS image
+└────────────┬─────────────────┘
+             │ embeds / spawns
+┌────────────▼─────────────────┐
+│  naia-agent                  │  loop · tools · compaction · LLM
+└──┬───────────────────────┬───┘
+   │ reads                 │ reads/writes
+┌──▼──────────┐       ┌────▼──────────┐
+│  naia-adk   │       │ alpha-memory  │
+│  workspace  │       │  storage      │
+│  + skills   │       │  + sessions   │
+└─────────────┘       └───────────────┘
+```
 
 ## Project Structure
 
 ```
 naia-os/
-├── shell/              # Tauri 2 desktop app (React + Rust)
-│   ├── src/            #   React components + state management
-│   ├── src-tauri/      #   Rust backend (process management, SQLite, auth)
-│   └── e2e-tauri/      #   WebDriver E2E tests
-├── agent/              # Node.js AI agent core
-│   ├── src/providers/  #   LLM providers (Gemini, Claude, GPT, etc.)
-│   ├── src/tts/        #   TTS providers (Edge, Google, OpenAI, etc.)
-│   ├── src/skills/     #   Built-in skills (13 Naia-specific TypeScript)
-│   └── assets/         #   Bundled skills (64 skill.json)
-├── gateway/            # Naia Gateway bridge
-├── flatpak/            # Flatpak packaging (io.nextain.naia)
-├── recipes/            # BlueBuild OS image recipes
-├── config/             # OS configuration (systemd, wrapper scripts)
-├── .agents/            # AI context (English, JSON/YAML)
-└── .users/             # Human docs (Korean, Markdown)
+├── shell/       # Tauri 2 desktop app (React + Three.js + Rust) ← product
+├── agent/       # [moving → naia-agent repo]
+├── gateway/     # [moving → naia-agent repo]
+├── recipes/     # BlueBuild OS image recipes
+├── config/      # OS systemd units, wrapper scripts
+├── os/          # OS integration tests
+├── flatpak/     # Flatpak manifest
+├── .agents/     # AI context (English)
+└── .users/      # Human docs (Korean)
 ```
+
+### Module Roles
+
+| Module | Role | Future |
+|--------|------|--------|
+| `shell/` | Tauri 2 desktop app: UI, avatar, settings, channels | **Stays** — this is the product |
+| `recipes/`, `config/`, `os/`, `flatpak/` | Bazzite OS image + Linux distribution | **Stays** — naia-os as Linux distro |
+| `agent/` | Current LLM/tools runtime | **Extract → [naia-agent](https://github.com/nextain/naia-agent)** |
+| `gateway/` | Tool/channel/memory bridge | **Merge → [naia-agent](https://github.com/nextain/naia-agent)** (OpenClaw dependency dropped) |
 
 ## AI Context as Open Source Infrastructure
 
