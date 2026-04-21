@@ -1,7 +1,7 @@
 # Migration X1 — `@nextain/agent-providers` adoption
 
 **Phase**: 2 X1 (Strangler Fig — first provider extraction)
-**Status**: scaffolded, awaiting `@nextain/agent-providers@0.1.0` publish
+**Status**: integrated behind `NEXTAIN_AGENT_PROVIDERS=1` opt-in flag (default: native)
 **Branch**: `migration/x1-anthropic-providers`
 
 ## Goal
@@ -10,16 +10,33 @@ naia-os agent consumes `@nextain/agent-providers/anthropic`'s
 `AnthropicClient` instead of its own `src/providers/anthropic.ts`
 implementation. This is the first Strangler Fig extraction.
 
-## Blocker
+## Current state
 
-`@nextain/agent-providers@0.1.0` is shape-ready and CI-green (in
-`nextain/naia-agent`) but not yet published to npm. See migration plan
-A.10 MVM #2 / Phase 1 T1–T8 completion (commit `69507d8`).
+Adapter + factory hook are wired up. Native path remains the default.
+The `@nextain` packages are consumed via vendored tgz tarballs in
+`agent/vendor/` so that naia-os does not depend on an npm publish step
+during the observation window:
 
-Until publish:
-- Local dev via `npm install file:../../naia-agent/packages/providers`
-  is possible but breaks naia-os CI (workspace path assumption).
-- Not used on this branch.
+- `agent/vendor/nextain-agent-types-0.1.0.tgz` — `pnpm pack` output from
+  `naia-agent/packages/types`.
+- `agent/vendor/nextain-agent-providers-0.1.0.tgz` — `pnpm pack` output
+  from `naia-agent/packages/providers`. Its internal `"workspace:*"`
+  reference to `@nextain/agent-types` is resolved via a pnpm override
+  in `agent/package.json`:
+
+  ```json
+  "pnpm": {
+    "overrides": {
+      "@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz"
+    }
+  }
+  ```
+
+  Without the override, pnpm would try to fetch `@nextain/agent-types`
+  from the npm registry (404 — not published).
+
+When `@nextain/agent-providers@0.1.0` is published to npm, switch the
+`file:./vendor/*.tgz` deps back to semver ranges and drop the override.
 
 ## Approach
 
@@ -43,25 +60,35 @@ then, both coexist behind the same `LLMProvider` interface.
 
 ## Steps
 
-1. **Publish `@nextain/agent-providers@0.1.0`** — blocker.
-2. **Add dependency** in `agent/package.json`:
+1. ~~**Publish `@nextain/agent-providers@0.1.0`**~~ — deferred; consumed
+   via vendored tgz instead (see *Current state*).
+2. ✅ **Add dependency** in `agent/package.json`:
    ```json
-   "@nextain/agent-providers": "^0.1.0",
-   "@nextain/agent-types": "^0.1.0"
+   "@nextain/agent-providers": "file:./vendor/nextain-agent-providers-0.1.0.tgz",
+   "@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz"
    ```
-3. **Implement adapter** in `agent/src/providers/adapters/nextain-provider-adapter.ts`:
+   plus the `pnpm.overrides` block above.
+3. ✅ **Implement adapter** in `agent/src/providers/adapters/nextain-provider-adapter.ts`:
    - Takes `AnthropicClient` instance
    - Exposes naia-os `LLMProvider` interface
    - Type-maps `LLMRequest` ↔ `ChatMessage[]`, `LLMStreamChunk` ↔ `AgentStream`
-4. **Register in factory** (`src/providers/factory.ts`) behind an opt-in
-   flag (env var or config key) initially.
+4. ✅ **Register in factory** (`src/providers/factory.ts`) behind opt-in
+   env flag `NEXTAIN_AGENT_PROVIDERS=1`. Default stays on native.
 5. **Run E2E** via `scripts/flatpak-reinstall-and-run.sh` + a live prompt
-   through the adapter path.
-6. **Observe 24h** per plan A.7 (solo dev self-discipline). Watch for
-   regressions.
+   through the adapter path with `NEXTAIN_AGENT_PROVIDERS=1`.
+6. **Observe** per plan A.7. Watch for regressions.
 7. **Flip default** once stable. Old `anthropic.ts` → `@deprecated` JSDoc.
-8. **Remove native impl** in a follow-up migration PR after 2 week
-   observation.
+8. **Remove native impl** in a follow-up migration PR after observation.
+
+## How to toggle
+
+```bash
+# Opt in (adapter path)
+NEXTAIN_AGENT_PROVIDERS=1 pnpm --filter naia-os-agent test
+
+# Default (native path) — flag unset or ≠ "1"
+pnpm --filter naia-os-agent test
+```
 
 ## Rollback
 

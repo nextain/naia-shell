@@ -15,11 +15,18 @@
 		"@anthropic-ai/sdk": "^0.39.0",
 		"@google/genai": "^1.42.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@nextain/agent-providers": "file:./vendor/nextain-agent-providers-0.1.0.tgz",
+		"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
 		"@nextain/alpha-memory": "file:../../alpha-memory",
 		"msedge-tts": "^2.0.4",
 		"openai": "^4.80.0",
 		"ws": "^8.19.0",
 		"zod": "^4.3.6"
+	},
+	"pnpm": {
+		"overrides": {
+			"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz"
+		}
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.0",

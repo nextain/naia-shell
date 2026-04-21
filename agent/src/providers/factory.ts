@@ -1,3 +1,4 @@
+import { createNextainAnthropicProvider } from "./adapters/nextain-provider-adapter.js";
 import { createAnthropicProvider } from "./anthropic.js";
 import { createClaudeCodeCliProvider } from "./claude-code-cli.js";
 import { createGeminiProvider } from "./gemini.js";
@@ -29,7 +30,16 @@ registerLlmProvider({
 	id: "anthropic",
 	name: "Anthropic",
 	envVar: "ANTHROPIC_API_KEY",
-	create: (apiKey, model) => createAnthropicProvider(apiKey, model),
+	create: (apiKey, model) => {
+		// Phase 2 X1 Strangler Fig. When NEXTAIN_AGENT_PROVIDERS=1 is set,
+		// route anthropic calls through the @nextain/agent-providers adapter
+		// instead of the native implementation. Default stays on native
+		// during the observation window (plan A.9).
+		if (process.env["NEXTAIN_AGENT_PROVIDERS"] === "1") {
+			return createNextainAnthropicProvider(apiKey, model);
+		}
+		return createAnthropicProvider(apiKey, model);
+	},
 });
 
 registerLlmProvider({

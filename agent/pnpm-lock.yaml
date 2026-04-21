@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@nextain/agent-types': file:./vendor/nextain-agent-types-0.1.0.tgz
+
 importers:
 
   .:
@@ -17,6 +20,12 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+      '@nextain/agent-providers':
+        specifier: file:./vendor/nextain-agent-providers-0.1.0.tgz
+        version: file:vendor/nextain-agent-providers-0.1.0.tgz(@anthropic-ai/sdk@0.39.0)
+      '@nextain/agent-types':
+        specifier: file:vendor/nextain-agent-types-0.1.0.tgz
+        version: file:vendor/nextain-agent-types-0.1.0.tgz
       '@nextain/alpha-memory':
         specifier: file:../../alpha-memory
         version: file:../../alpha-memory(typescript@5.9.3)
@@ -304,6 +313,21 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@nextain/agent-providers@file:vendor/nextain-agent-providers-0.1.0.tgz':
+    resolution: {integrity: sha512-ygQ7S++YyRxIGc6Maj6xCNuys2EGFDFxo0NuAIIG6QVDZ7+fk26cCiaYSh0gDQfo/Qdg2z4OjX04vXKz8ptjyA==, tarball: file:vendor/nextain-agent-providers-0.1.0.tgz}
+    version: 0.1.0
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@anthropic-ai/sdk': ^0.39.0
+    peerDependenciesMeta:
+      '@anthropic-ai/sdk':
+        optional: true
+
+  '@nextain/agent-types@file:vendor/nextain-agent-types-0.1.0.tgz':
+    resolution: {integrity: sha512-6IErDNqQHlZjYrH/Rpxog/hfKN/mmO4/UN5fXf1Qt+IfnPp6UJcv5+5h5jQfG58UqfsbXUWqZ7c+T5U+hGVa3w==, tarball: file:vendor/nextain-agent-types-0.1.0.tgz}
+    version: 0.1.0
+    engines: {node: '>=22'}
 
   '@nextain/alpha-memory@file:../../alpha-memory':
     resolution: {directory: ../../alpha-memory, type: directory}
@@ -1624,6 +1648,14 @@ snapshots:
       '@cfworker/json-schema': 4.1.1
     transitivePeerDependencies:
       - supports-color
+
+  '@nextain/agent-providers@file:vendor/nextain-agent-providers-0.1.0.tgz(@anthropic-ai/sdk@0.39.0)':
+    dependencies:
+      '@nextain/agent-types': file:vendor/nextain-agent-types-0.1.0.tgz
+    optionalDependencies:
+      '@anthropic-ai/sdk': 0.39.0
+
+  '@nextain/agent-types@file:vendor/nextain-agent-types-0.1.0.tgz': {}
 
   '@nextain/alpha-memory@file:../../alpha-memory(typescript@5.9.3)':
     dependencies:
