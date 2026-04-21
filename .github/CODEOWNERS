@@ -1,0 +1,27 @@
+# Code ownership for naia-os
+#
+# Migration period (Phase 0 ~ Phase 3 O1 of the 4-repo migration):
+# agent/** and gateway/** are slated for extraction to nextain/naia-agent.
+# Changes under these paths require migration-PR review (branch prefix
+# migration/*). See migration plan A.7 and .github/PULL_REQUEST_TEMPLATE.md.
+#
+# Soft regime: @luke-n-alpha is the solo maintainer. Self-review is expected,
+# but the ownership declaration exists so tooling (GitHub UI + PR template)
+# surfaces migration-sensitive paths.
+
+# Migration-sensitive (targets for Phase 2 extraction)
+/agent/              @luke-n-alpha
+/gateway/            @luke-n-alpha
+
+# Shell (stays in naia-os)
+/shell/              @luke-n-alpha
+/recipes/            @luke-n-alpha
+/config/             @luke-n-alpha
+/flatpak/            @luke-n-alpha
+/os/                 @luke-n-alpha
+
+# Context / docs
+/.agents/            @luke-n-alpha
+/.users/             @luke-n-alpha
+/.github/            @luke-n-alpha
+/docs/               @luke-n-alpha
