@@ -17,6 +17,9 @@ export interface AudioPlayerOptions {
 	onPlaybackEnd?: () => void;
 }
 
+/** Safety margin for physical speaker + DAC buffer drain after last scheduled sample. */
+const SPEAKER_DRAIN_MARGIN_MS = 200;
+
 export function createAudioPlayer(opts: AudioPlayerOptions = {}): AudioPlayer {
 	const inputSampleRate = opts.sampleRate ?? 24000;
 	// AudioContext({ sampleRate }) causes GStreamer CRITICAL in WebKitGTK.
@@ -107,8 +110,16 @@ export function createAudioPlayer(opts: AudioPlayerOptions = {}): AudioPlayer {
 		enqueue,
 		clear,
 		destroy,
+		// Mic gate uses this; avatar visual uses onPlaybackEnd callback.
+		// Staying true through the scheduled tail + drain margin keeps the mic
+		// muted while the physical speaker is still emitting audio, preventing
+		// the last ~200ms of playback from being captured as user input (echo loop).
 		get isPlaying() {
-			return activeSourceCount > 0;
+			return (
+				activeSourceCount > 0 ||
+				(nextStartTime > 0 &&
+					ctx.currentTime < nextStartTime + SPEAKER_DRAIN_MARGIN_MS / 1000)
+			);
 		},
 	};
 }

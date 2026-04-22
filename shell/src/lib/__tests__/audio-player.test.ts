@@ -119,4 +119,37 @@ describe("AudioPlayer", () => {
 		player.clear();
 		expect(player.isPlaying).toBe(false);
 	});
+
+	it("keeps isPlaying true within speaker-drain margin after natural playback end", async () => {
+		// Per Issue #230: isPlaying must stay true for SPEAKER_DRAIN_MARGIN_MS (200ms)
+		// after the last source.onended fires, to keep the mic gated while the
+		// physical speaker finishes emitting audio. Without this, the last ~200ms
+		// of playback gets captured back as user input (echo feedback loop).
+		let capturedCtx: MockAudioContext | null = null;
+		class TrackedCtx extends MockAudioContext {
+			constructor() {
+				super();
+				capturedCtx = this;
+			}
+		}
+		vi.stubGlobal("AudioContext", TrackedCtx);
+
+		const player = createAudioPlayer();
+		player.enqueue(makeChunk());
+		// Flush the setTimeout(() => onended(), 0) from the mock source.start
+		await new Promise((resolve) => setTimeout(resolve, 1));
+		// activeSourceCount is now 0 but nextStartTime > 0 and currentTime = 0
+		// → should stay true via drain margin
+		expect(player.isPlaying).toBe(true);
+
+		// Advance currentTime past nextStartTime + 200ms → gate opens
+		if (capturedCtx) capturedCtx.currentTime = 10;
+		expect(player.isPlaying).toBe(false);
+	});
+
+	it("isPlaying is false when idle with no scheduled audio", () => {
+		const player = createAudioPlayer();
+		// Never enqueued — activeSourceCount=0, nextStartTime=0
+		expect(player.isPlaying).toBe(false);
+	});
 });
