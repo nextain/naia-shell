@@ -78,7 +78,8 @@ export function createNextainAnthropicProvider(
 	};
 }
 
-function toNextainMessage(msg: ChatMessage): LLMMessage {
+/** @internal — exported for unit tests. */
+export function toNextainMessage(msg: ChatMessage): LLMMessage {
 	// naia-os ChatMessage has tool calls attached to an assistant turn via
 	// `toolCalls`, and tool results via a role="tool" + toolCallId. Map
 	// both into @nextain's LLMContentBlock representation.
@@ -119,7 +120,8 @@ function toNextainTool(tool: ToolDefinition): NextainToolDefinition {
  * Returns `null` when the chunk is informational-only (e.g.
  * content_block_start that is accumulated but not directly yielded).
  */
-function convertStreamChunk(
+/** @internal — exported for unit tests. */
+export function convertStreamChunk(
 	chunk: LLMStreamChunk,
 	toolUseById: Map<string, { id: string; name: string; argsJson: string }>,
 	blockKindByIndex: Map<number, LLMContentBlock["type"]>,
