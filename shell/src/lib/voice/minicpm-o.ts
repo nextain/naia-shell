@@ -35,18 +35,8 @@ const SILENCE_TIMEOUT_MS = 1500;
 const MAX_BUFFER_MS = 6000;
 /** minimum samples to bother sending (0.5s @ 16kHz) */
 const MIN_AUDIO_SAMPLES = 8000;
-/** output chunk size for onAudio callbacks */
-const AUDIO_CHUNK_FRAMES = 4096;
 /** RMS threshold for speech detection (Int16 scale 0–32767, ~3% of full scale) */
 const SPEECH_RMS_THRESHOLD = 200;
-/** server returns PCM16 @ 24kHz */
-const OUTPUT_SAMPLE_RATE = 24000;
-/** RMS below this = silence in AI output (Int16 scale) */
-const OUTPUT_SILENCE_THRESHOLD = 300;
-/** Consecutive silent output chunks before cutting playback (~2s at 170ms/chunk) */
-const OUTPUT_SILENCE_CHUNKS = 12;
-/** Hard cap on AI audio output — never play more than this many seconds */
-const MAX_OUTPUT_SECONDS = 20;
 
 export function createMiniCpmOSession(): VoiceSession {
 	let ws: WebSocket | null = null;
@@ -56,11 +46,7 @@ export function createMiniCpmOSession(): VoiceSession {
 	let maxBufferTimer: ReturnType<typeof setTimeout> | null = null;
 	let pcmBuffer: Int16Array[] = [];
 	let rmsLogThrottle = 0;
-	let audioChunkCount = 0;
 	let isAiSpeaking = false;
-	let silentOutputChunks = 0;
-	let outputSamplesTotal = 0;
-	let audioOutputCapped = false;
 
 	const session: VoiceSession = {
 		onAudio: null,
@@ -237,11 +223,7 @@ export function createMiniCpmOSession(): VoiceSession {
 			}
 			pcmBuffer = [];
 			rmsLogThrottle = 0;
-			audioChunkCount = 0;
 			isAiSpeaking = false;
-			silentOutputChunks = 0;
-			outputSamplesTotal = 0;
-			audioOutputCapped = false;
 			if (ws) {
 				ws.close();
 				ws = null;
@@ -293,74 +275,12 @@ export function createMiniCpmOSession(): VoiceSession {
 		Logger.debug("minicpm-o", "committed audio", { samples: totalSamples });
 	}
 
-	/** Decode base64 PCM16 delta from server and emit via onAudio. */
-	function handleAudioDelta(deltaB64: string) {
-		if (audioOutputCapped) return;
-
-		try {
-			const bytes = base64ToUint8Array(deltaB64);
-			const pcm = new Int16Array(
-				bytes.buffer,
-				bytes.byteOffset,
-				bytes.byteLength / 2,
-			).slice();
-			audioChunkCount++;
-
-			// Hard cap
-			const maxSamples = MAX_OUTPUT_SECONDS * OUTPUT_SAMPLE_RATE;
-			if (outputSamplesTotal >= maxSamples) {
-				Logger.info("minicpm-o", "output hard cap reached — cutting playback", {
-					seconds: MAX_OUTPUT_SECONDS,
-				});
-				audioOutputCapped = true;
-				isAiSpeaking = false;
-				session.onInterrupted?.();
-				return;
-			}
-
-			// Silence detection
-			const chunkRmsOutput = rms(pcm);
-			if (chunkRmsOutput < OUTPUT_SILENCE_THRESHOLD) {
-				silentOutputChunks++;
-				if (silentOutputChunks >= OUTPUT_SILENCE_CHUNKS) {
-					Logger.info("minicpm-o", "output silence — cutting playback early", {
-						playedSeconds: outputSamplesTotal / OUTPUT_SAMPLE_RATE,
-						chunk: audioChunkCount,
-					});
-					silentOutputChunks = 0;
-					outputSamplesTotal = 0;
-					audioOutputCapped = true;
-					isAiSpeaking = false;
-					session.onInterrupted?.();
-					return;
-				}
-			} else {
-				silentOutputChunks = 0;
-			}
-
-			outputSamplesTotal += pcm.length;
-
-			for (let i = 0; i < pcm.length; i += AUDIO_CHUNK_FRAMES) {
-				const chunk = pcm.slice(i, i + AUDIO_CHUNK_FRAMES);
-				const b64 = uint8ArrayToBase64(
-					new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength),
-				);
-				session.onAudio?.(b64);
-			}
-		} catch (err) {
-			Logger.warn("minicpm-o", "audio decode failed", { error: String(err) });
-		}
-	}
-
 	function handleMessage(msg: Record<string, unknown>) {
 		const type = msg.type as string;
 
 		switch (type) {
 			case "response.created":
 				isAiSpeaking = true;
-				silentOutputChunks = 0;
-				outputSamplesTotal = 0;
-				audioOutputCapped = false;
 				pcmBuffer = [];
 				if (silenceTimer) {
 					clearTimeout(silenceTimer);
@@ -380,8 +300,10 @@ export function createMiniCpmOSession(): VoiceSession {
 			}
 
 			case "response.audio.delta": {
+				// Pass base64 PCM16 24kHz delta straight through to audio player.
+				// Mirrors openai-realtime.ts — player.enqueue expects exactly this format.
 				const delta = msg.delta as string | undefined;
-				if (delta) handleAudioDelta(delta);
+				if (delta) session.onAudio?.(delta);
 				break;
 			}
 
