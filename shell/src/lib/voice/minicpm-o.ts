@@ -28,11 +28,24 @@ import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
 const DEFAULT_SERVER_URL = "http://localhost:8000";
 const DEFAULT_MODEL = "openbmb/MiniCPM-o-4_5";
 
+/** ms of silence after last speech chunk before committing turn to server */
+const SILENCE_TIMEOUT_MS = 1500;
+/** force commit after this many ms even if speech is continuous */
+const MAX_BUFFER_MS = 6000;
+/** minimum samples to bother sending (0.5s @ 16kHz) */
+const MIN_AUDIO_SAMPLES = 8000;
+/** RMS threshold for client-side speech detection (Int16 scale 0–32767) */
+const SPEECH_RMS_THRESHOLD = 200;
+
 export function createMiniCpmOSession(): VoiceSession {
 	let ws: WebSocket | null = null;
 	let connected = false;
 	let cfg: MiniCpmOConfig | null = null;
-	let isAiSpeaking = false; // Used for local cancellation logic
+	let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+	let maxBufferTimer: ReturnType<typeof setTimeout> | null = null;
+	let pcmBuffer: Int16Array[] = [];
+	let rmsLogThrottle = 0;
+	let isAiSpeaking = false;
 
 	const session: VoiceSession = {
 		onAudio: null,
@@ -134,14 +147,42 @@ export function createMiniCpmOSession(): VoiceSession {
 
 		sendAudio(pcmBase64: string) {
 			if (!ws || !connected) return;
-			// Gating is handled by the caller (ChatPanel) based on player state.
-			// This function just streams the audio chunks.
-			ws.send(
-				JSON.stringify({
-					type: "input_audio_buffer.append",
-					audio: pcmBase64,
-				}),
-			);
+			if (isAiSpeaking) return;
+
+			const bytes = base64ToUint8Array(pcmBase64);
+			const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+			pcmBuffer.push(samples.slice());
+
+			const chunkRms = rms(samples);
+			if (++rmsLogThrottle % 20 === 0) {
+				Logger.debug("minicpm-o", "RMS sample", {
+					rms: Math.round(chunkRms),
+					threshold: SPEECH_RMS_THRESHOLD,
+					isSpeech: chunkRms >= SPEECH_RMS_THRESHOLD,
+				});
+			}
+
+			const isSpeech = chunkRms >= SPEECH_RMS_THRESHOLD;
+			if (isSpeech) {
+				if (silenceTimer) clearTimeout(silenceTimer);
+				silenceTimer = setTimeout(() => {
+					silenceTimer = null;
+					flushAudio();
+				}, SILENCE_TIMEOUT_MS);
+
+				if (!maxBufferTimer) {
+					maxBufferTimer = setTimeout(() => {
+						maxBufferTimer = null;
+						if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+						flushAudio();
+					}, MAX_BUFFER_MS);
+				}
+			} else if (!silenceTimer) {
+				silenceTimer = setTimeout(() => {
+					silenceTimer = null;
+					flushAudio();
+				}, SILENCE_TIMEOUT_MS);
+			}
 		},
 
 		sendText(text: string) {
@@ -172,6 +213,10 @@ export function createMiniCpmOSession(): VoiceSession {
 				}
 			}
 			connected = false;
+			if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+			if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+			pcmBuffer = [];
+			rmsLogThrottle = 0;
 			isAiSpeaking = false;
 			if (ws) {
 				ws.close();
@@ -241,5 +286,62 @@ export function createMiniCpmOSession(): VoiceSession {
 		}
 	}
 
+	/** Send buffered PCM to server as base64 append + commit. */
+	function flushAudio() {
+		if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+		if (!ws || !connected) return;
+
+		const totalSamples = pcmBuffer.reduce((n, c) => n + c.length, 0);
+		if (totalSamples < MIN_AUDIO_SAMPLES) {
+			pcmBuffer = [];
+			return;
+		}
+
+		const pcm = new Int16Array(totalSamples);
+		let offset = 0;
+		for (const chunk of pcmBuffer) {
+			pcm.set(chunk, offset);
+			offset += chunk.length;
+		}
+		pcmBuffer = [];
+
+		session.onInputTranscript?.("🎤 음성 입력");
+
+		try {
+			ws.send(
+				JSON.stringify({
+					type: "input_audio_buffer.append",
+					audio: uint8ArrayToBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength)),
+				}),
+			);
+			ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+		} catch (err) {
+			Logger.warn("minicpm-o", "send failed", { error: String(err) });
+			session.onError?.(err instanceof Error ? err : new Error(String(err)));
+		}
+
+		Logger.debug("minicpm-o", "committed audio", { samples: totalSamples });
+	}
+
 	return session;
+}
+
+function rms(samples: Int16Array): number {
+	if (samples.length === 0) return 0;
+	let sum = 0;
+	for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+	return Math.sqrt(sum / samples.length);
+}
+
+function base64ToUint8Array(b64: string): Uint8Array {
+	const bin = atob(b64);
+	const arr = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+	return arr;
+}
+
+function uint8ArrayToBase64(arr: Uint8Array): string {
+	let bin = "";
+	for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+	return btoa(bin);
 }

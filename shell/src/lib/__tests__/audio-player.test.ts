@@ -125,7 +125,7 @@ describe("AudioPlayer", () => {
 		// after the last source.onended fires, to keep the mic gated while the
 		// physical speaker finishes emitting audio. Without this, the last ~200ms
 		// of playback gets captured back as user input (echo feedback loop).
-		let capturedCtx: MockAudioContext | null = null;
+		let capturedCtx: { currentTime: number } | null = null;
 		class TrackedCtx extends MockAudioContext {
 			constructor() {
 				super();
@@ -143,7 +143,8 @@ describe("AudioPlayer", () => {
 		expect(player.isPlaying).toBe(true);
 
 		// Advance currentTime past nextStartTime + 200ms → gate opens
-		if (capturedCtx) capturedCtx.currentTime = 10;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		if (capturedCtx) (capturedCtx as any).currentTime = 10;
 		expect(player.isPlaying).toBe(false);
 	});
 
