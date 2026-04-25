@@ -693,3 +693,17 @@ if (cmd === "plugin:store|get") return [null, false];
 **원인**: mtime 기반 선택, 세션 인식 없음, 서브모듈 progress 미스캔.
 
 **해결**: `.session-map.json`으로 session_id → issue 매핑 + 서브모듈 progress 스캔 + 우선순위: 세션 클레임 > mtime 폴백.
+
+---
+
+## L058 — upstream 엔드포인트 위에 자체 프로토콜을 발명하지 말 것 — fork가 내리면 즉시 따라갈 것 (#219)
+
+**날짜**: 2026-04-25 | **분류**: upstream-integration | **범위**: `shell/src/lib/voice/minicpm-o.ts`
+
+**문제**: naia-os 음성 클라이언트가 fork-only `/v1/omni` WebSocket 프로토콜(바이너리 PCM + 자체 `session.config` / `input.done` / `turn.start` 이벤트)을 사용하고 있었음. vllm-omni fork가 해당 엔드포인트를 2026-04-08에 제거하고 `ref/omni_duplex_v1/`로 아카이빙하면서 모든 라이브 음성 연결이 403 Forbidden으로 실패.
+
+**원인**: 클라이언트가 upstream-호환 `/v1/realtime`(OpenAI Realtime API)이 아닌 fork-only 실험 위에 올려져 있었음. upstream은 이미 `OmniRealtimeConnection`으로 `modalities=[audio,text]` 전송하는 `/v1/realtime`에 정착했고 fork 팀도 `/v1/omni` 제거로 합류했으나, naia-os 쪽이 따라가지 못함. 파일 헤더의 "ASR-only" 가정도 이미 stale 상태였음.
+
+**해결**: `minicpm-o.ts`를 `/v1/realtime` 네이티브로 재작성 — base64 PCM16을 `input_audio_buffer.append`로 전송, 명시적 `input_audio_buffer.commit` + `response.create`, `response.audio.delta` 바로 통과(WAV 디코드 제거), `response.audio_transcript.delta` / `response.done` 처리, 발화 가로채기는 `response.cancel`로. vllm-omni의 레퍼런스 클라이언트 `realtime_e2e_test.py`로 로컬 pc-bazzite:8000에서 E2E 확인(TTFA 1.31s).
+
+**참조**: #216 (서버 선결조건) · #219 (클라이언트 마이그레이션) · cross-review `cr-20260425-021205`

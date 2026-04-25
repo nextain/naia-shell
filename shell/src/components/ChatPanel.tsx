@@ -1488,7 +1488,7 @@ export function ChatPanel() {
 			// Determine the live provider from the current model/provider
 			const liveProvider =
 				isOmni && config.provider === "vllm"
-					? ("minicpm-o" as const) // omni model (MiniCPM-o): /v1/omni WebSocket
+					? ("minicpm-o" as const) // omni model (MiniCPM-o): /v1/realtime WebSocket
 					: config.provider === "vllm"
 						? ("vllm-omni" as const) // non-omni vllm: REST
 						: config.provider === "openai"
@@ -1696,8 +1696,10 @@ export function ChatPanel() {
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "minicpm-o") {
-				// minicpm-o connects to /v1/omni full-duplex WebSocket on the vllm-omni server.
-				// minicpm-o.ts normalizes to ws:// and appends /v1/omni.
+				// minicpm-o connects to /v1/realtime (OpenAI Realtime API) on the
+				// vllm-omni server. minicpm-o.ts validates/normalizes the server
+				// URL and appends /v1/realtime; we only need to hand it the
+				// origin-level host here.
 				const vllmBase = (config.vllmHost ?? DEFAULT_VLLM_HOST).replace(
 					/\/+$/,
 					"",

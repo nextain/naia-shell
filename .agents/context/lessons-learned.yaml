@@ -582,3 +582,14 @@ lessons:
     problem: "Newer models (Gemini Live, Gemini 3 Flash Preview) result in 1008 None or empty SSE streams when called from a Seoul-based gateway."
     root_cause: "These models are often unavailable in asia-northeast3 (Seoul). Seoul-based Cloud Run defaults all Vertex AI calls to its own region."
     fix: "Implement model-based regional routing in any-llm gateway to force us-central1 for newer models. Also moved hardcoded gateway URLs in naia-os to configurable VITE_NAIA_GATEWAY_URL env var."
+
+  - id: L058
+    date: "2026-04-25"
+    issue: "#219"
+    category: upstream-integration
+    scope: "shell/src/lib/voice/minicpm-o.ts"
+    title: "Don't invent client-side protocols for upstream endpoints — migrate when fork deprecates"
+    problem: "naia-os voice client spoke a bespoke /v1/omni WebSocket protocol (binary PCM + custom session.config / input.done / turn.start events) that only worked against a fork-local vllm-omni endpoint. The fork removed that endpoint on 2026-04-08 (archived to vllm-omni/ref/omni_duplex_v1/), breaking every live voice connection with 403 Forbidden."
+    root_cause: "Client was written against a fork-only experiment instead of the upstream-compatible /v1/realtime (OpenAI Realtime API) surface. Upstream had already converged on /v1/realtime with OmniRealtimeConnection emitting modalities=[audio,text]; the fork team aligned by removing /v1/omni, but the naia-os client didn't follow. ASR-only assumption in file header was already stale."
+    fix: "Rewrote minicpm-o.ts to speak /v1/realtime directly: base64 PCM16 via input_audio_buffer.append, explicit input_audio_buffer.commit + response.create, response.audio.delta passthrough (no WAV decode), response.audio_transcript.delta / response.done handling, response.cancel for barge-in. Verified E2E with vllm-omni's realtime_e2e_test.py reference client on local pc-bazzite:8000 (TTFA 1.31s)."
+    reference: "issues #216 (server prerequisite) and #219 (client migration); cross-review cr-20260425-021205"

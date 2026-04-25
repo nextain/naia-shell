@@ -694,3 +694,17 @@ if (cmd === "plugin:store|get") return [null, false];
 **Root cause**: Hook used mtime-based selection with no session awareness. Also only scanned `cwd/.agents/progress/`, missing submodule progress files.
 
 **Fix**: (1) Added `.session-map.json` for session_id → issue mapping. (2) Scan submodule `*/.agents/progress/` directories. (3) Priority: session-specific claim > mtime fallback.
+
+---
+
+## L058 — Don't invent client-side protocols over upstream endpoints — follow the fork when it deprecates (#219)
+
+**Date**: 2026-04-25 | **Category**: upstream-integration | **Scope**: `shell/src/lib/voice/minicpm-o.ts`
+
+**Problem**: The naia-os voice client spoke a fork-only `/v1/omni` WebSocket protocol (binary PCM frames plus custom `session.config` / `input.done` / `turn.start` events) that only worked against a vllm-omni fork experiment. The fork team removed that endpoint on 2026-04-08 (archived to `vllm-omni/ref/omni_duplex_v1/`), breaking every live voice connection with 403 Forbidden.
+
+**Root cause**: The client was layered on a fork-only experiment instead of the upstream-compatible `/v1/realtime` (OpenAI Realtime API) surface. Upstream had converged on `/v1/realtime` with `OmniRealtimeConnection` emitting `modalities=[audio, text]`; the fork team followed by removing `/v1/omni`, but the naia-os client did not. The file-header claim "`/v1/realtime` is ASR-only" was already stale and load-bearing.
+
+**Fix**: Rewrote `minicpm-o.ts` natively on `/v1/realtime` — base64 PCM16 via `input_audio_buffer.append`, explicit `input_audio_buffer.commit` + `response.create`, passthrough of `response.audio.delta` (no WAV decode), handling of `response.audio_transcript.delta` / `response.done`, and `response.cancel` for barge-in. Verified end-to-end with vllm-omni's reference client `realtime_e2e_test.py` against local `pc-bazzite:8000` (TTFA 1.31s).
+
+**Reference**: issues #216 (server prerequisite) and #219 (client migration); cross-review `cr-20260425-021205`.

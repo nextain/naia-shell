@@ -81,7 +81,7 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	provider: "minicpm-o";
 	/** vllm-omni server URL (e.g. http://localhost:8000 or ws://localhost:8000).
-	 *  Provider connects to /v1/omni full-duplex WebSocket endpoint. */
+	 *  Provider connects to /v1/realtime (OpenAI Realtime API extended for omni models). */
 	serverUrl: string;
 }
 

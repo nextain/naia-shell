@@ -36,6 +36,8 @@ const MAX_BUFFER_MS = 6000;
 const MIN_AUDIO_SAMPLES = 8000;
 /** RMS threshold for client-side speech detection (Int16 scale 0–32767) */
 const SPEECH_RMS_THRESHOLD = 200;
+/** Schemes accepted for `serverUrl` before conversion to `ws(s)://`. */
+const ALLOWED_SERVER_SCHEMES = new Set(["http:", "https:", "ws:", "wss:"]);
 
 export function createMiniCpmOSession(): VoiceSession {
 	let ws: WebSocket | null = null;
@@ -64,12 +66,17 @@ export function createMiniCpmOSession(): VoiceSession {
 		async connect(config: LiveProviderConfig) {
 			cfg = config as MiniCpmOConfig;
 
-			const base = (cfg.serverUrl ?? DEFAULT_SERVER_URL)
-				.replace(/\/+$/, "")
-				.replace(/^http/, "ws");
-			const wsUrl = `${base}/v1/realtime`;
+			const normalizedBase = normalizeServerUrl(
+				cfg.serverUrl ?? DEFAULT_SERVER_URL,
+			);
+			if (!normalizedBase) {
+				throw new Error(
+					`Invalid serverUrl: expected http(s):// or ws(s)://, got ${cfg.serverUrl}`,
+				);
+			}
+			const wsUrl = `${normalizedBase}/v1/realtime`;
 
-			Logger.info("minicpm-o", "connecting", { url: wsUrl });
+			Logger.info("minicpm-o", "connecting", { url: sanitizeUrl(wsUrl) });
 
 			ws = new WebSocket(wsUrl);
 
@@ -114,6 +121,17 @@ export function createMiniCpmOSession(): VoiceSession {
 						return;
 					}
 
+					// Pre-handshake server error: surface the actual server message
+					// instead of the generic "Connection closed" that ws.onclose
+					// would otherwise emit after the server hangs up.
+					if (!connected && msg.type === "error") {
+						clearTimeout(timeout);
+						connectErrored = true;
+						const errMsg = extractServerErrorMessage(msg);
+						reject(new Error(errMsg));
+						return;
+					}
+
 					handleMessage(msg);
 				};
 
@@ -132,6 +150,7 @@ export function createMiniCpmOSession(): VoiceSession {
 					clearTimeout(timeout);
 					const wasConnected = connected;
 					connected = false;
+					clearTurnTimers();
 					Logger.info("minicpm-o", "disconnected from /v1/realtime", {
 						code: event.code,
 						reason: event.reason,
@@ -213,8 +232,7 @@ export function createMiniCpmOSession(): VoiceSession {
 				}
 			}
 			connected = false;
-			if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
-			if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+			clearTurnTimers();
 			pcmBuffer = [];
 			rmsLogThrottle = 0;
 			isAiSpeaking = false;
@@ -224,6 +242,17 @@ export function createMiniCpmOSession(): VoiceSession {
 			}
 		},
 	};
+
+	function clearTurnTimers() {
+		if (silenceTimer) {
+			clearTimeout(silenceTimer);
+			silenceTimer = null;
+		}
+		if (maxBufferTimer) {
+			clearTimeout(maxBufferTimer);
+			maxBufferTimer = null;
+		}
+	}
 
 	function handleMessage(msg: Record<string, unknown>) {
 		const type = msg.type as string;
@@ -274,10 +303,7 @@ export function createMiniCpmOSession(): VoiceSession {
 				break;
 
 			case "error": {
-				const errMsg =
-					typeof msg.error === "string"
-						? msg.error
-						: (msg.error as Record<string, unknown>)?.message ?? "Server error";
+				const errMsg = extractServerErrorMessage(msg);
 				Logger.warn("minicpm-o", "non-fatal server error (session continues)", {
 					message: errMsg,
 				});
@@ -334,7 +360,14 @@ function rms(samples: Int16Array): number {
 }
 
 function base64ToUint8Array(b64: string): Uint8Array {
-	const bin = atob(b64);
+	let bin: string;
+	try {
+		bin = atob(b64);
+	} catch {
+		// Malformed base64 from the mic encoder is treated as a silent chunk
+		// rather than a thrown exception that would kill `sendAudio`.
+		return new Uint8Array(0);
+	}
 	const arr = new Uint8Array(bin.length);
 	for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
 	return arr;
@@ -344,4 +377,66 @@ function uint8ArrayToBase64(arr: Uint8Array): string {
 	let bin = "";
 	for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
 	return btoa(bin);
+}
+
+/**
+ * Validate and normalize a user-supplied server URL to a trailing-slash-stripped
+ * ws(s):// origin. Returns null for invalid input.
+ *
+ * Accepts http(s):// and ws(s):// with a simple scheme allowlist so that
+ * mistyped settings (e.g. `HTTP://`, `ftp://…`) fail fast with a readable
+ * `connect()` rejection instead of an opaque `new WebSocket()` throw inside
+ * the Promise constructor. Embedded credentials are stripped — the field is
+ * free-text, so a `http://user:pass@host:8000` paste must not survive into
+ * either the WebSocket URL or the structured log line.
+ */
+function normalizeServerUrl(raw: string): string | null {
+	let parsed: URL;
+	try {
+		parsed = new URL(raw);
+	} catch {
+		return null;
+	}
+	const scheme = parsed.protocol.toLowerCase();
+	if (!ALLOWED_SERVER_SCHEMES.has(scheme)) return null;
+	parsed.protocol = scheme.startsWith("http")
+		? scheme.replace("http", "ws")
+		: scheme;
+	parsed.username = "";
+	parsed.password = "";
+	const origin = `${parsed.protocol}//${parsed.host}`;
+	return parsed.pathname && parsed.pathname !== "/"
+		? `${origin}${parsed.pathname.replace(/\/+$/, "")}`
+		: origin;
+}
+
+/** Strip userinfo from a URL string before logging so credentials don't leak. */
+function sanitizeUrl(url: string): string {
+	try {
+		const u = new URL(url);
+		if (u.username || u.password) {
+			u.username = "";
+			u.password = "";
+			return u.toString();
+		}
+		return url;
+	} catch {
+		return url;
+	}
+}
+
+/**
+ * Extract a human-readable error string from a Realtime `error` event.
+ * Server may send `{error: "string"}` or `{error: {message, ...}}`.
+ */
+function extractServerErrorMessage(msg: Record<string, unknown>): string {
+	const err = msg.error;
+	if (typeof err === "string") return err;
+	if (err && typeof err === "object") {
+		const m = (err as Record<string, unknown>).message;
+		if (typeof m === "string") return m;
+	}
+	const top = msg.message;
+	if (typeof top === "string") return top;
+	return "Server error";
 }
