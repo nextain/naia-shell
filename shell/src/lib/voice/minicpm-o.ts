@@ -23,6 +23,7 @@
  *     {"type": "error", "error": "..."}
  */
 import { Logger } from "../logger";
+import { encodeRefAudio, RefAudioEncodeError } from "./ref-audio";
 import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
@@ -76,7 +77,29 @@ export function createMiniCpmOSession(): VoiceSession {
 			}
 			const wsUrl = `${normalizedBase}/v1/realtime`;
 
-			Logger.info("minicpm-o", "connecting", { url: sanitizeUrl(wsUrl) });
+			// Encode the optional voice-clone reference up-front so a bad
+			// payload (oversize, decode failure) fails the connect promise
+			// instead of producing a half-open session that the server
+			// later rejects mid-stream.
+			let encodedRefAudio: string | null = null;
+			if (cfg.refAudio !== undefined && cfg.refAudio !== null) {
+				try {
+					encodedRefAudio = await encodeRefAudio(cfg.refAudio);
+				} catch (err) {
+					if (err instanceof RefAudioEncodeError) {
+						Logger.warn("minicpm-o", "ref audio rejected", {
+							error: err.message,
+						});
+						throw err;
+					}
+					throw err;
+				}
+			}
+
+			Logger.info("minicpm-o", "connecting", {
+				url: sanitizeUrl(wsUrl),
+				hasRefAudio: encodedRefAudio !== null,
+			});
 
 			ws = new WebSocket(wsUrl);
 
@@ -102,21 +125,30 @@ export function createMiniCpmOSession(): VoiceSession {
 					// Handshake: wait for session.created, then send session.update
 					if (!connected && msg.type === "session.created") {
 						clearTimeout(timeout);
+						const sessionPayload: Record<string, unknown> = {
+							modalities: ["text", "audio"],
+							input_audio_format: "pcm16",
+							output_audio_format: "pcm16",
+							instructions: cfg?.systemInstruction ?? "",
+							turn_detection: { type: "server_vad" },
+						};
+						if (encodedRefAudio !== null) {
+							sessionPayload.ref_audio = encodedRefAudio;
+							if (cfg?.refAudioLanguage) {
+								sessionPayload.ref_audio_language = cfg.refAudioLanguage;
+							}
+						}
 						ws?.send(
 							JSON.stringify({
 								type: "session.update",
 								model: cfg?.model ?? DEFAULT_MODEL,
-								session: {
-									modalities: ["text", "audio"],
-									input_audio_format: "pcm16",
-									output_audio_format: "pcm16",
-									instructions: cfg?.systemInstruction ?? "",
-									turn_detection: { type: "server_vad" },
-								},
+								session: sessionPayload,
 							}),
 						);
 						connected = true;
-						Logger.info("minicpm-o", "connected to /v1/realtime");
+						Logger.info("minicpm-o", "connected to /v1/realtime", {
+							refAudio: encodedRefAudio !== null,
+						});
 						resolve();
 						return;
 					}
@@ -304,6 +336,17 @@ export function createMiniCpmOSession(): VoiceSession {
 
 			case "error": {
 				const errMsg = extractServerErrorMessage(msg);
+				if (errMsg.startsWith("Invalid ref_audio")) {
+					// Server rejected the voice-clone reference. Surface to
+					// the caller so the UI can prompt for a different file
+					// or fall back to the default voice; the session
+					// itself is still usable, just without the clone.
+					Logger.warn("minicpm-o", "ref audio rejected by server", {
+						message: errMsg,
+					});
+					session.onError?.(new RefAudioEncodeError(errMsg));
+					break;
+				}
 				Logger.warn("minicpm-o", "non-fatal server error (session continues)", {
 					message: errMsg,
 				});

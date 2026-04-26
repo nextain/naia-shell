@@ -83,6 +83,24 @@ export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	/** vllm-omni server URL (e.g. http://localhost:8000 or ws://localhost:8000).
 	 *  Provider connects to /v1/realtime (OpenAI Realtime API extended for omni models). */
 	serverUrl: string;
+	/**
+	 * Optional voice-clone reference. The session sends this on the initial
+	 * `session.update` so the server clones its timbre for every response in
+	 * the session.
+	 *
+	 * Accepts:
+	 *  - `Blob` / `File` from a file picker
+	 *  - `ArrayBuffer` (e.g. `await fetch(url).then((r) => r.arrayBuffer())`)
+	 *  - `string` already in base64 wire form (passed through)
+	 *
+	 * The provider downmixes to mono and resamples to 16 kHz before sending.
+	 * If the server rejects the payload (malformed, oversize, decode error)
+	 * the session surfaces a Realtime `error` event via `onError` and falls
+	 * back to the server's default voice for the rest of the session.
+	 */
+	refAudio?: ArrayBuffer | Blob | string;
+	/** BCP-47-ish hint to the speech tokenizer. Server defaults to "en". */
+	refAudioLanguage?: "en" | "zh";
 }
 
 export interface VllmOmniConfig extends LiveProviderConfigBase {
