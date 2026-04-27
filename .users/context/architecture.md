@@ -442,7 +442,7 @@ When an omni model is active, STT/TTS provider settings are disabled. **STT prov
 
 LLM models with built-in bidirectional voice I/O — voice is an LLM capability, not a separate STT/TTS concern.
 
-**Type:** `LiveProviderId = "naia" | "gemini-live" | "openai-realtime"`
+**Type:** `LiveProviderId = "naia" | "gemini-live" | "openai-realtime" | "minicpm-o" | "vllm-omni" | "edge-tts"`
 
 **Factory:** `createVoiceSession(provider, options?) → VoiceSession` (`shell/src/lib/voice/index.ts`)
 
@@ -453,6 +453,7 @@ LLM models with built-in bidirectional voice I/O — voice is an LLM capability,
 | **naia** | Browser WS → any-llm gateway `/v1/live` → Gemini Live API | naiaKey | `voice/gemini-live.ts` |
 | **gemini-live** | Tauri cmd → Rust WS proxy → Gemini Live API | Google API key | `voice/gemini-live-proxy.ts` |
 | **openai-realtime** | Browser WS → `wss://api.openai.com/v1/realtime` | OpenAI API key | `voice/openai-realtime.ts` |
+| **minicpm-o** | Browser WS → self-hosted vllm-omni `/v1/realtime` | None (LAN/Tailscale) | `voice/minicpm-o.ts` (+ `voice/ref-audio.ts` for voice-clone) |
 
 #### VoiceSession Interface
 

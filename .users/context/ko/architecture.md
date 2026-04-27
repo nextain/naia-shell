@@ -442,7 +442,7 @@ Omni 모델이 활성화되면 STT/TTS 프로바이더 설정은 비활성화된
 
 양방향 음성 I/O가 내장된 LLM 모델 — 음성은 LLM의 기능이지, 별도의 STT/TTS 관심사가 아니다.
 
-**타입:** `LiveProviderId = "naia" | "gemini-live" | "openai-realtime"`
+**타입:** `LiveProviderId = "naia" | "gemini-live" | "openai-realtime" | "minicpm-o" | "vllm-omni" | "edge-tts"`
 
 **팩토리:** `createVoiceSession(provider, options?) → VoiceSession` (`shell/src/lib/voice/index.ts`)
 
@@ -453,6 +453,7 @@ Omni 모델이 활성화되면 STT/TTS 프로바이더 설정은 비활성화된
 | **naia** | 브라우저 WS → any-llm gateway `/v1/live` → Gemini Live API | naiaKey | `voice/gemini-live.ts` |
 | **gemini-live** | Tauri 커맨드 → Rust WS 프록시 → Gemini Live API | Google API key | `voice/gemini-live-proxy.ts` |
 | **openai-realtime** | 브라우저 WS → `wss://api.openai.com/v1/realtime` | OpenAI API key | `voice/openai-realtime.ts` |
+| **minicpm-o** | 브라우저 WS → self-hosted vllm-omni `/v1/realtime` | 없음 (LAN/Tailscale) | `voice/minicpm-o.ts` (+ voice clone용 `voice/ref-audio.ts`) |
 
 #### VoiceSession 인터페이스
 

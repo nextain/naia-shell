@@ -577,7 +577,7 @@ voice_architecture:
   omni_models:
     description: "LLM models with built-in bidirectional voice I/O — voice is an LLM capability, not a separate STT/TTS concern"
     provider_pattern:
-      type_definition: "LiveProviderId = 'naia' | 'gemini-live' | 'openai-realtime'"
+      type_definition: "LiveProviderId = 'naia' | 'gemini-live' | 'openai-realtime' | 'minicpm-o' | 'vllm-omni' | 'edge-tts'"
       factory: "createVoiceSession(provider: LiveProviderId, options?) → VoiceSession"
       factory_file: "shell/src/lib/voice/index.ts"
       types_file: "shell/src/lib/voice/types.ts"

@@ -174,6 +174,57 @@ export function createVoiceSession(provider: LiveProviderId): VoiceSession {
 - `.users/context/architecture.md` → Voice Architecture 섹션
 - `.users/context/ko/architecture.md` → 한국어 미러
 
+## MiniCPM-o via vllm-omni — Voice Cloning 참조
+
+`minicpm-o` 프로바이더는 OpenAI Realtime API (`/v1/realtime`)를
+지원하는 자체 호스트 [vllm-omni](https://github.com/vllm-project/vllm-omni)
+서버에 연결한다. 두 단계 통합이 main에 머지됨 (2026-04-27):
+
+| 이슈 | 머지된 브랜치 | 추가된 내용 |
+|---|---|---|
+| `#219` | `issue-219-minicpm-realtime` | 프로바이더를 `/v1/omni`(deprecated)에서 `/v1/realtime`으로 마이그레이션; PCM16 16 kHz in / 24 kHz out; 서버 VAD; 멀티턴 안정성 |
+| `#232` | `issue-232-voice-clone` | `MiniCpmOConfig`의 first-class `refAudio` 필드; WAV → 16 kHz mono → base64 인코더; `Invalid ref_audio` 서버 에러 surfacing |
+
+### naia-os에서 연결
+
+```ts
+const session = createMiniCpmOSession();
+await session.connect({
+  provider: "minicpm-o",
+  serverUrl: "ws://100.91.187.24:8000",  // vllm-omni 직결; 데모 gateway 불필요
+  systemInstruction: "...",
+  refAudio: <File | Blob | ArrayBuffer | base64 string>,  // 선택, voice clone
+  refAudioLanguage: "en",                                  // 선택, 기본 en
+});
+```
+
+`serverUrl`은 `http(s)://` 또는 `ws(s)://` 양쪽 받아 내부에서
+`ws(s)://`로 normalize, `/v1/realtime` 자동 append. naia-os가 Realtime
+프로토콜을 직접 사용하므로 Python 데모 gateway는 경로에 없음.
+
+### Voice-clone wire 계약
+
+`refAudio`는 `connect()` 동안 — WebSocket 열기 전에 — 한 번
+인코드된다. malformed reference는 connect promise를 reject 시켜서
+half-open 세션을 만들지 않음. `shell/src/lib/voice/ref-audio.ts:encodeRefAudio`:
+
+1. `Blob` / `ArrayBuffer` → `AudioContext.decodeAudioData`
+2. 멀티채널 → 모노 downmix
+3. `OfflineAudioContext`로 16 kHz resample
+4. minimal RIFF/WAVE 헤더 + base64
+
+base64 payload가 첫 `session.update`의 `session.ref_audio`로 전송됨.
+서버 검증 실패 (malformed base64, > 4 MiB, non-WAVE 바이트)는 Realtime
+`error` 이벤트로 돌아옴 (메시지가 `"Invalid ref_audio"`로 시작).
+`session.onError`로 surface, 세션 자체는 기본 voice로 유지.
+
+### TLS 주의
+
+vllm-omni는 평문 HTTP/WS (TLS 없음). 외부 접속은 **Tailscale** 권장 —
+터널이 이미 암호화돼있어 `ws://<tailscale-ip>:8000` 도 end-to-end
+안전. 공개망이면 vllm-omni 앞에 reverse proxy로 TLS 종단 후
+naia-os는 `wss://...` 사용.
+
 ## 오디오 형식 참조
 
 | 방향 | 형식 | 샘플레이트 | 인코딩 |

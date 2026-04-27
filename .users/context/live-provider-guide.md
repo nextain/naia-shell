@@ -174,6 +174,62 @@ After implementation, update these context files (triple mirror):
 - `.users/context/architecture.md` → Voice Architecture section
 - `.users/context/ko/architecture.md` → Korean mirror
 
+## MiniCPM-o via vllm-omni — Voice Cloning Reference
+
+The `minicpm-o` provider connects to a self-hosted
+[vllm-omni](https://github.com/vllm-project/vllm-omni) server speaking
+the OpenAI Realtime API (`/v1/realtime`). Two integration milestones
+landed on `main` (2026-04-27):
+
+| Issue | Branch (merged) | What it added |
+|---|---|---|
+| `#219` | `issue-219-minicpm-realtime` | Migrate provider from `/v1/omni` (deprecated) to `/v1/realtime`; PCM16 16 kHz in / 24 kHz out; server VAD; multi-turn stability |
+| `#232` | `issue-232-voice-clone` | First-class `refAudio` field on `MiniCpmOConfig`; WAV → 16 kHz mono → base64 encoder; `Invalid ref_audio` server-error surfacing |
+
+### Connecting from naia-os
+
+```ts
+const session = createMiniCpmOSession();
+await session.connect({
+  provider: "minicpm-o",
+  serverUrl: "ws://100.91.187.24:8000",  // direct to vllm-omni; no demo gateway needed
+  systemInstruction: "...",
+  refAudio: <File | Blob | ArrayBuffer | base64 string>,  // optional voice clone
+  refAudioLanguage: "en",                                  // optional, defaults to en
+});
+```
+
+`serverUrl` accepts `http(s)://` or `ws(s)://` — it's normalised to
+`ws(s)://` and `/v1/realtime` is appended internally. naia-os speaks
+the Realtime protocol directly; the Python demo gateway is not in the
+path.
+
+### Voice-clone wire contract
+
+`refAudio` is encoded once during `connect()` — before the WebSocket
+opens — so a malformed reference fails the connect promise rather than
+producing a half-open session. `shell/src/lib/voice/ref-audio.ts:encodeRefAudio`:
+
+1. `Blob` / `ArrayBuffer` → `AudioContext.decodeAudioData`
+2. Multi-channel → mono downmix
+3. `OfflineAudioContext` resample to 16 kHz
+4. Minimal RIFF/WAVE header + base64
+
+The base64 payload travels on the first `session.update` as
+`session.ref_audio`. Server validation failures (malformed base64,
+oversize > 4 MiB, non-WAVE bytes) come back as a Realtime `error`
+event whose message starts with `"Invalid ref_audio"` and surface
+through `session.onError`. The session itself keeps running on the
+default voice.
+
+### TLS note
+
+vllm-omni serves plain HTTP/WS (no TLS). For external access prefer
+**Tailscale** — the tunnel is already encrypted, so
+`ws://<tailscale-ip>:8000` is safe end-to-end. On a public network,
+terminate TLS in front of vllm-omni with a reverse proxy and point
+naia-os at `wss://...`.
+
 ## Audio Format Reference
 
 | Direction | Format | Sample Rate | Encoding |
