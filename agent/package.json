@@ -18,6 +18,7 @@
 		"@nextain/agent-providers": "file:./vendor/nextain-agent-providers-0.1.0.tgz",
 		"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
 		"@nextain/alpha-memory": "file:../../alpha-memory",
+		"agent-browser": "0.26.0",
 		"msedge-tts": "^2.0.4",
 		"openai": "^4.80.0",
 		"ws": "^8.19.0",
@@ -26,7 +27,8 @@
 	"pnpm": {
 		"overrides": {
 			"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz"
-		}
+		},
+		"onlyBuiltDependencies": ["@biomejs/biome", "agent-browser", "esbuild", "msedge-tts", "protobufjs"]
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.0",

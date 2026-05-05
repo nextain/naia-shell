@@ -407,16 +407,26 @@ const [step, setStep] = useState<Step>("provider");
 		setLabWaiting(true);
 		setLabTimeout(false);
 		if (labTimerRef.current) clearTimeout(labTimerRef.current);
+		// Extend timeout to 3 min to cover first-run Chrome for Testing download (~180 MB)
 		labTimerRef.current = setTimeout(() => {
 			setLabWaiting(false);
 			setLabTimeout(true);
 			labTimerRef.current = null;
-		}, 60_000);
+		}, 180_000);
 		try {
+			const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
+
+			// 1. agent-browser path: opens Chrome for Testing (cross-platform, no embed needed)
+			//    CDP monitor in browser_open_login detects /desktop/auth-complete and emits naia_auth_complete.
+			const agentBrowserOk = await invoke("browser_open_login", { url: loginUrl }).then(
+				() => true,
+				() => false,
+			);
+			if (agentBrowserOk) return; // monitor will emit naia_auth_complete
+
+			// 2. Embedded Chrome fallback (Linux X11 with embedded panel already open)
 			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
 			if (chromeAvailable) {
-				// Embedded Chrome path: CDP monitor detects /desktop/auth-complete URL
-				const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
 				let port = 0;
 				for (let i = 0; i < 20; i++) {
 					port = await invoke<number>("browser_embed_port").catch(() => 0);
@@ -425,16 +435,17 @@ const [step, setStep] = useState<Step>("provider");
 				}
 				if (port !== 0) {
 					await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
+					return;
 				}
-			} else {
-				// System browser path: OS opens browser → naia:// deep link returns key
-				const state = await invoke<string>("generate_oauth_state").catch(() => "");
-				const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
-				if (state) params.set("state", state);
-				await openUrl(`${getNaiaWebBaseUrl()}/${getLocale()}/login?${params.toString()}`).catch(() => {
-					setLabWaiting(false);
-				});
 			}
+
+			// 3. System browser fallback: OS default browser → naia:// deep link
+			const state = await invoke<string>("generate_oauth_state").catch(() => "");
+			const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
+			if (state) params.set("state", state);
+			await openUrl(`${getNaiaWebBaseUrl()}/${getLocale()}/login?${params.toString()}`).catch(() => {
+				setLabWaiting(false);
+			});
 		} catch {
 			setLabWaiting(false);
 		}

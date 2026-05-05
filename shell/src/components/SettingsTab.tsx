@@ -1324,47 +1324,60 @@ export function SettingsTab() {
 
 	const startLabLogin = async () => {
 		setLabWaiting(true);
-		setTimeout(() => setLabWaiting(false), 60_000);
+		// Extend to 3 min: first-run Chrome for Testing download can take ~60-120s
+		setTimeout(() => setLabWaiting(false), 180_000);
 		try {
+			const loginUrl = `${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop&source=embedded`;
+
+			// 1. agent-browser path: opens Chrome for Testing (cross-platform, headed, not embedded)
+			//    CDP monitor detects /desktop/auth-complete → emits naia_auth_complete automatically.
+			Logger.info("SettingsTab", "[lab-login] trying browser_open_login");
+			const agentBrowserOk = await invoke("browser_open_login", { url: loginUrl }).then(
+				() => true,
+				(e: unknown) => {
+					Logger.warn("SettingsTab", "[lab-login] browser_open_login failed", { error: String(e) });
+					return false;
+				},
+			);
+			if (agentBrowserOk) {
+				Logger.info("SettingsTab", "[lab-login] Chrome for Testing opened, waiting for auth");
+				return;
+			}
+
+			// 2. Embedded Chrome fallback (Linux X11, browser panel already initialized)
 			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
-			Logger.info("SettingsTab", "[lab-login] browser_check", { chromeAvailable });
+			Logger.info("SettingsTab", "[lab-login] browser_check fallback", { chromeAvailable });
 			if (chromeAvailable) {
-				const loginUrl = `${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop&source=embedded`;
 				usePanelStore.getState().setActivePanel("browser");
-				Logger.info("SettingsTab", "[lab-login] panel switched, polling port...");
 				let port = 0;
 				for (let i = 0; i < 20; i++) {
 					port = await invoke<number>("browser_embed_port").catch(() => 0);
-					Logger.info("SettingsTab", `[lab-login] poll ${i}: port=${port}`);
 					if (port !== 0) break;
 					await new Promise<void>((r) => setTimeout(r, 500));
 				}
 				if (port !== 0) {
-					// Mark that we opened Chrome for login (so auth handler knows to close it)
 					labBrowserVisibleRef.current = true;
-					Logger.info("SettingsTab", "[lab-login] navigating", { url: loginUrl });
 					const navErr = await invoke("browser_embed_navigate", { url: loginUrl }).catch(
 						(e: unknown) => String(e),
 					);
 					if (navErr) {
 						Logger.error("SettingsTab", "[lab-login] navigate failed", { error: navErr });
 					}
-				} else {
-					Logger.error("SettingsTab", "[lab-login] Chrome not ready after 10s");
+					return;
 				}
-			} else {
-				// System browser path: OS opens browser → naia:// deep link returns key
-				Logger.info("SettingsTab", "[lab-login] Chrome embed unavailable, using system browser + deep link");
-				const state = await invoke<string>("generate_oauth_state").catch(() => "");
-				const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
-				if (state) params.set("state", state);
-				await openUrl(`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`).catch(
-					(e: unknown) => {
-						Logger.error("SettingsTab", "[lab-login] openUrl failed", { error: String(e) });
-						setLabWaiting(false);
-					},
-				);
 			}
+
+			// 3. System browser fallback → naia:// deep link
+			Logger.info("SettingsTab", "[lab-login] falling back to system browser + deep link");
+			const state = await invoke<string>("generate_oauth_state").catch(() => "");
+			const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
+			if (state) params.set("state", state);
+			await openUrl(`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`).catch(
+				(e: unknown) => {
+					Logger.error("SettingsTab", "[lab-login] openUrl failed", { error: String(e) });
+					setLabWaiting(false);
+				},
+			);
 		} catch (e: unknown) {
 			Logger.error("SettingsTab", "[lab-login] unexpected error", { error: String(e) });
 			setLabWaiting(false);

@@ -175,11 +175,75 @@ fn find_free_port() -> u16 {
 		.unwrap_or(19222)
 }
 
-/// Resolve `agent-browser` binary (PATH → nvm fallback).
+/// Detect platform-specific native agent-browser binary name.
+fn agent_browser_native_name() -> &'static str {
+	if cfg!(target_os = "windows") {
+		"agent-browser-win32-x64.exe"
+	} else if cfg!(target_os = "macos") {
+		if cfg!(target_arch = "aarch64") { "agent-browser-darwin-arm64" }
+		else { "agent-browser-darwin-x64" }
+	} else if cfg!(target_arch = "aarch64") {
+		"agent-browser-linux-arm64"
+	} else {
+		"agent-browser-linux-x64"
+	}
+}
+
+/// Ensure the native binary is executable (no-op on Windows; sets +x on Unix).
+#[allow(unused_variables)]
+fn ensure_executable(path: &std::path::Path) {
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::PermissionsExt;
+		if let Ok(meta) = std::fs::metadata(path) {
+			let mut perms = meta.permissions();
+			let mode = perms.mode();
+			if mode & 0o111 == 0 {
+				perms.set_mode(mode | 0o755);
+				let _ = std::fs::set_permissions(path, perms);
+			}
+		}
+	}
+}
+
+/// Resolve `agent-browser` native binary.
+///
+/// Search order:
+///   1. Bundled: `<exe_dir>/agent/node_modules/agent-browser/bin/<native>`
+///      (production Tauri bundle — node_modules is a Tauri resource)
+///   2. Dev: workspace-relative path from CWD
+///      (pnpm run tauri:dev from shell/)
+///   3. PATH / nvm fallback (existing installs)
 fn agent_browser_bin() -> Option<String> {
-	// Try PATH first. `hide_console` suppresses the console window flash
-	// on Windows (where.exe is a console app; without it GUI-hosted calls
-	// briefly show a black window and can trigger ERROR_NO_DATA on the pipe).
+	let native = agent_browser_native_name();
+
+	// 1. Bundled binary (production app)
+	if let Ok(exe) = std::env::current_exe() {
+		if let Some(dir) = exe.parent() {
+			let bundled = dir.join("agent/node_modules/agent-browser/bin").join(native);
+			if bundled.exists() {
+				ensure_executable(&bundled);
+				return Some(bundled.to_string_lossy().to_string());
+			}
+		}
+	}
+
+	// 2. Dev mode: CWD is typically shell/ when running `pnpm run tauri:dev`
+	for rel in &[
+		"../../agent/node_modules/agent-browser/bin",
+		"../agent/node_modules/agent-browser/bin",
+		"agent/node_modules/agent-browser/bin",
+	] {
+		let p = std::path::Path::new(rel).join(native);
+		if p.exists() {
+			ensure_executable(&p);
+			if let Ok(abs) = p.canonicalize() {
+				return Some(abs.to_string_lossy().to_string());
+			}
+		}
+	}
+
+	// 3. PATH lookup
 	let mut lookup = Command::new(if cfg!(windows) { "where.exe" } else { "which" });
 	lookup.arg("agent-browser");
 	platform::hide_console(&mut lookup);
@@ -196,7 +260,8 @@ fn agent_browser_bin() -> Option<String> {
 			}
 		}
 	}
-	// nvm-managed node puts binaries under ~/.config/nvm or ~/.nvm
+
+	// 4. nvm fallback
 	let home = std::env::var("HOME")
 		.or_else(|_| std::env::var("USERPROFILE"))
 		.unwrap_or_default();
@@ -219,7 +284,6 @@ fn agent_browser_bin() -> Option<String> {
 	}
 	#[cfg(windows)]
 	{
-		// nvm-windows
 		let nvm_home = std::env::var("NVM_HOME")
 			.unwrap_or_else(|_| format!("{home}\\AppData\\Roaming\\nvm"));
 		if let Ok(dirs) = std::fs::read_dir(&nvm_home) {
@@ -229,6 +293,45 @@ fn agent_browser_bin() -> Option<String> {
 					return Some(bin.to_string_lossy().to_string());
 				}
 			}
+		}
+	}
+	None
+}
+
+/// Find Chrome for Testing installed by `agent-browser install`.
+///
+/// Default location: `~/.agent-browser/browsers/chrome-{version}/`
+/// Returns the Chrome executable path if found.
+fn chrome_for_testing_bin() -> Option<String> {
+	let home = std::env::var("HOME")
+		.or_else(|_| std::env::var("USERPROFILE"))
+		.unwrap_or_default();
+	if home.is_empty() {
+		return None;
+	}
+	let base = std::path::PathBuf::from(&home)
+		.join(".agent-browser")
+		.join("browsers");
+	let mut chrome_dirs: Vec<_> = std::fs::read_dir(&base)
+		.ok()?
+		.flatten()
+		.filter(|e| e.file_name().to_string_lossy().starts_with("chrome-"))
+		.collect();
+	// Latest version first (lexicographic desc works for semver)
+	chrome_dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+	for entry in chrome_dirs {
+		#[cfg(target_os = "windows")]
+		let bin = entry.path().join("chrome.exe");
+		#[cfg(target_os = "macos")]
+		let bin = entry.path().join(
+			"Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+		);
+		#[cfg(target_os = "linux")]
+		let bin = entry.path().join("chrome");
+
+		if bin.exists() {
+			return Some(bin.to_string_lossy().to_string());
 		}
 	}
 	None
@@ -821,17 +924,203 @@ pub fn browser_shell_focus() -> Result<(), String> {
 	platform::window_manager().focus(handle)
 }
 
-/// Hard-kill Chrome and clean up. Call only on app exit.
-/// The profile directory is intentionally preserved so login sessions persist.
-pub fn browser_embed_kill() {
-	let mut state = CHROME.lock().unwrap();
-	if let Some(mut child) = state.process.take() {
-		let _ = child.kill();
+// ─── Login Chrome (headed, not embedded) ─────────────────────────────────────
+
+struct LoginChromeState {
+	process: Option<Child>,
+	pid: u32,
+	port: u16,
+}
+
+impl LoginChromeState {
+	const fn new() -> Self {
+		Self { process: None, pid: 0, port: 0 }
 	}
-	state.tmpdir = String::new();
-	state.port = 0;
-	state.chrome_handle = PlatformHandle::None;
-	state.pid = 0;
+}
+
+static LOGIN_CHROME: Mutex<LoginChromeState> = Mutex::new(LoginChromeState::new());
+
+/// Monitor login Chrome for auth-complete; auto-close Chrome once token arrives.
+fn spawn_login_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
+	std::thread::spawn(move || {
+		let version_url = format!("http://127.0.0.1:{port}/json/version");
+		let list_url = format!("http://127.0.0.1:{port}/json/list");
+		let mut auth_emitted = false;
+		let mut cdp_fail_streak = 0u32;
+		const CDP_FAIL_LIMIT: u32 = 6;
+		loop {
+			std::thread::sleep(std::time::Duration::from_millis(500));
+
+			let cdp_alive = ureq::get(&version_url)
+				.call()
+				.map(|r| r.status() == 200)
+				.unwrap_or(false);
+
+			if cdp_alive {
+				cdp_fail_streak = 0;
+			} else {
+				let pid_alive = crate::platform::is_pid_alive(pid);
+				cdp_fail_streak = if !pid_alive { CDP_FAIL_LIMIT } else { cdp_fail_streak + 1 };
+			}
+
+			if cdp_fail_streak >= CDP_FAIL_LIMIT {
+				let mut s = LOGIN_CHROME.lock().unwrap();
+				if s.pid == pid {
+					s.process = None;
+					s.port = 0;
+					s.pid = 0;
+				}
+				break;
+			}
+
+			if !cdp_alive {
+				continue;
+			}
+
+			if let Ok(resp) = ureq::get(&list_url).call() {
+				if let Ok(body) = resp.into_string() {
+					if body.contains("/desktop/auth-complete") && !auth_emitted {
+						if let Some(auth) = parse_auth_complete_from_tab_list(&body) {
+							let _ = app.emit("naia_auth_complete", auth);
+							auth_emitted = true;
+							// Give the page a moment to render before closing
+							std::thread::sleep(std::time::Duration::from_millis(800));
+							let mut s = LOGIN_CHROME.lock().unwrap();
+							if s.pid == pid {
+								if let Some(mut child) = s.process.take() {
+									let _ = child.kill();
+								}
+								s.port = 0;
+								s.pid = 0;
+							}
+							break;
+						}
+					} else if !body.contains("/desktop/auth-complete") {
+						auth_emitted = false;
+					}
+				}
+			}
+		}
+	});
+}
+
+/// Launch a headed Chrome for Testing window for OAuth login.
+///
+/// Cross-platform: uses Chrome for Testing installed by `agent-browser install`.
+/// Auto-installs Chrome for Testing on first call (blocks while downloading).
+/// CDP-monitors for `/desktop/auth-complete`, emits `naia_auth_complete`, then
+/// closes Chrome automatically. No embedding — the user interacts with the window
+/// directly.
+#[tauri::command]
+pub fn browser_open_login(app: AppHandle, url: String) -> Result<(), String> {
+	// Kill any lingering login Chrome from a previous attempt
+	{
+		let mut s = LOGIN_CHROME.lock().unwrap();
+		if let Some(mut child) = s.process.take() {
+			let _ = child.kill();
+		}
+		s.port = 0;
+		s.pid = 0;
+	}
+
+	// Find (or install) Chrome for Testing
+	let chrome_path = if let Some(p) = chrome_for_testing_bin() {
+		p
+	} else {
+		let bin = agent_browser_bin()
+			.ok_or("agent-browser not found — reinstall Naia")?;
+		crate::log_both("[browser_login] Chrome for Testing not found — running agent-browser install");
+		let mut cmd = Command::new(&bin);
+		cmd.arg("install");
+		platform::hide_console(&mut cmd);
+		let out = cmd
+			.output()
+			.map_err(|e| format!("agent-browser install: {e}"))?;
+		if !out.status.success() {
+			let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+			return Err(format!(
+				"Chrome for Testing install failed: {}",
+				if stderr.is_empty() { format!("exit {}", out.status) } else { stderr }
+			));
+		}
+		chrome_for_testing_bin().ok_or("Chrome for Testing not found after install")?
+	};
+
+	let port = find_free_port();
+	let home = std::env::var("HOME")
+		.or_else(|_| std::env::var("USERPROFILE"))
+		.unwrap_or_default();
+	let profile_dir = if home.is_empty() {
+		std::env::temp_dir().join("naia-login-profile")
+	} else {
+		std::path::PathBuf::from(&home).join(".naia").join("login-profile")
+	};
+	std::fs::create_dir_all(&profile_dir)
+		.map_err(|e| format!("Profile dir: {e}"))?;
+
+	let profile_str = profile_dir.to_string_lossy().to_string();
+	let mut cmd = Command::new(&chrome_path);
+	cmd.args([
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-sync",
+		"--disable-extensions",
+		"--disable-infobars",
+		"--disable-session-crashed-bubble",
+		"--disable-dev-shm-usage",
+		"--window-size=900,700",
+		&format!("--remote-debugging-port={port}"),
+		&format!("--user-data-dir={profile_str}"),
+		&url,
+	]);
+	cmd.stdout(std::process::Stdio::null())
+		.stderr(std::process::Stdio::null());
+
+	let child = cmd.spawn().map_err(|e| format!("Spawn Chrome: {e}"))?;
+	let pid = child.id();
+	crate::log_both(&format!(
+		"[browser_login] Chrome for Testing spawned: pid={pid} port={port}"
+	));
+
+	{
+		let mut s = LOGIN_CHROME.lock().unwrap();
+		s.process = Some(child);
+		s.port = port;
+		s.pid = pid;
+	}
+
+	wait_for_cdp(port)?;
+	spawn_login_chrome_monitor(app, pid, port);
+	Ok(())
+}
+
+/// Returns true if Chrome for Testing is already installed (no download needed).
+#[tauri::command]
+pub fn browser_chrome_testing_ready() -> bool {
+	chrome_for_testing_bin().is_some()
+}
+
+/// Hard-kill all Chrome instances (embedded + login) on app exit.
+/// Profile directories are preserved so login sessions survive restarts.
+pub fn browser_embed_kill() {
+	{
+		let mut state = CHROME.lock().unwrap();
+		if let Some(mut child) = state.process.take() {
+			let _ = child.kill();
+		}
+		state.tmpdir = String::new();
+		state.port = 0;
+		state.chrome_handle = PlatformHandle::None;
+		state.pid = 0;
+	}
+	{
+		let mut s = LOGIN_CHROME.lock().unwrap();
+		if let Some(mut child) = s.process.take() {
+			let _ = child.kill();
+		}
+		s.port = 0;
+		s.pid = 0;
+	}
 }
 
 /// Return the active Chrome CDP port (0 if not running).

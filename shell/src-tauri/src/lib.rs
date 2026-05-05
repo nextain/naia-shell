@@ -2746,6 +2746,8 @@ pub fn run() {
             gemini_live_disconnect,
             browser::browser_check,
             browser::browser_agent_check,
+            browser::browser_open_login,
+            browser::browser_chrome_testing_ready,
             browser::browser_embed_init,
             browser::browser_embed_resize,
             browser::browser_embed_navigate,

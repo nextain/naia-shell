@@ -29,6 +29,9 @@ importers:
       '@nextain/alpha-memory':
         specifier: file:../../alpha-memory
         version: file:../../alpha-memory(typescript@5.9.3)
+      agent-browser:
+        specifier: 0.26.0
+        version: 0.26.0
       msedge-tts:
         specifier: ^2.0.4
         version: 2.0.4
@@ -587,6 +590,10 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
+
+  agent-browser@0.26.0:
+    resolution: {integrity: sha512-pdqSfjwbFSp+qnwlb2g23e9wXveIOfMi19xpPA9xZUbzEAUp6W4YBZj6Ybj8z4M7WkcbGDDYc+oDIHDt9R3EDQ==}
+    hasBin: true
 
   agentkeepalive@4.6.0:
     resolution: {integrity: sha512-kja8j7PjmncONqaTsB8fQ+wE2mSU2DJ9D4XKoJ5PFWIdRMa6SLSN1ff4mOr4jCbfRSsxR4keIiySJU0N9T5hIQ==}
@@ -1660,7 +1667,9 @@ snapshots:
   '@nextain/alpha-memory@file:../../alpha-memory(typescript@5.9.3)':
     dependencies:
       '@qdrant/js-client-rest': 1.17.0(typescript@5.9.3)
+      express: 5.2.1
     transitivePeerDependencies:
+      - supports-color
       - typescript
 
   '@pkgjs/parseargs@0.11.0':
@@ -1851,6 +1860,8 @@ snapshots:
       negotiator: 1.0.0
 
   agent-base@7.1.4: {}
+
+  agent-browser@0.26.0: {}
 
   agentkeepalive@4.6.0:
     dependencies:

@@ -991,8 +991,29 @@ impl PlatformWindowManager for Win32WindowManager {
     }
 
     fn chrome_bin(&self) -> Option<String> {
-        // Check the well-known install paths first — no subprocess, no console
-        // flash. `where.exe` is a last-resort fallback for exotic installs.
+        // 1. Chrome for Testing (installed by agent-browser install) — preferred
+        //    because it's version-stable and always available when bundled.
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        if !home.is_empty() {
+            let base = std::path::PathBuf::from(&home)
+                .join(".agent-browser")
+                .join("browsers");
+            if let Ok(entries) = std::fs::read_dir(&base) {
+                let mut dirs: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("chrome-"))
+                    .collect();
+                dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                for entry in dirs {
+                    let bin = entry.path().join("chrome.exe");
+                    if bin.exists() {
+                        return Some(bin.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        // 2. System Chrome (well-known install paths)
         let pf = std::env::var("ProgramFiles").unwrap_or_default();
         let pf86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
         let la = std::env::var("LOCALAPPDATA").unwrap_or_default();

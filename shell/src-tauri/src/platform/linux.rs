@@ -410,7 +410,33 @@ impl PlatformWindowManager for X11WindowManager {
     }
 
     fn chrome_bin(&self) -> Option<String> {
-        // 1. Check native PATH (works for RPM/deb installed Chrome)
+        // 1. Chrome for Testing (installed by agent-browser install) — preferred
+        let home = std::env::var("HOME").unwrap_or_default();
+        if !home.is_empty() {
+            let base = std::path::PathBuf::from(&home)
+                .join(".agent-browser")
+                .join("browsers");
+            if let Ok(entries) = std::fs::read_dir(&base) {
+                let mut dirs: Vec<_> = entries
+                    .flatten()
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("chrome-"))
+                    .collect();
+                dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                for entry in dirs {
+                    #[cfg(target_os = "macos")]
+                    let bin = entry.path().join(
+                        "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+                    );
+                    #[cfg(not(target_os = "macos"))]
+                    let bin = entry.path().join("chrome");
+                    if bin.exists() {
+                        return Some(bin.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        // 2. Check native PATH (works for RPM/deb installed Chrome)
         for name in &["google-chrome", "chromium", "chromium-browser"] {
             if let Ok(out) = Command::new("which").arg(name).output() {
                 if out.status.success() {
