@@ -128,6 +128,10 @@ fn spawn_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
 
 /// Parse `key` and `user_id` from the CDP /json/list response body.
 /// Returns `None` if the auth-complete URL is not found or has no key.
+/// Allowed hosts for auth-complete tab detection.
+/// Only tabs served by the Naia web app may trigger token extraction.
+const AUTH_COMPLETE_HOSTS: &[&str] = &["naia.nextain.io", "localhost", "127.0.0.1"];
+
 fn parse_auth_complete_from_tab_list(body: &str) -> Option<serde_json::Value> {
 	use serde_json::Value;
 	let tabs: Vec<Value> = serde_json::from_str(body).ok()?;
@@ -141,6 +145,12 @@ fn parse_auth_complete_from_tab_list(body: &str) -> Option<serde_json::Value> {
 			Ok(u) => u,
 			Err(_) => continue,
 		};
+		// Guard: only accept auth-complete from trusted Naia hosts.
+		// Prevents a rogue tab (e.g. attacker redirect) from injecting a token.
+		let host = parsed.host_str().unwrap_or("");
+		if !AUTH_COMPLETE_HOSTS.iter().any(|&h| host == h) {
+			continue;
+		}
 		let key = parsed
 			.query_pairs()
 			.find(|(k, _)| k == "key")

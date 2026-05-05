@@ -422,7 +422,14 @@ const [step, setStep] = useState<Step>("provider");
 				() => true,
 				() => false,
 			);
-			if (agentBrowserOk) return; // monitor will emit naia_auth_complete
+			if (agentBrowserOk) {
+				// Clear timer so it doesn't fire a spurious timeout after fast login
+				if (labTimerRef.current) {
+					clearTimeout(labTimerRef.current);
+					labTimerRef.current = null;
+				}
+				return; // monitor will emit naia_auth_complete
+			}
 
 			// 2. Embedded Chrome fallback (Linux X11 with embedded panel already open)
 			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
