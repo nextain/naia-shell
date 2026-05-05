@@ -156,7 +156,6 @@ const [step, setStep] = useState<Step>("provider");
 	const [labWaiting, setLabWaiting] = useState(false);
 	const labTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [labTimeout, setLabTimeout] = useState(false);
-	const [labNoChromeError, setLabNoChromeError] = useState(false);
 	const [selectedSpeechStyle, setSelectedSpeechStyle] = useState("casual");
 	const [honorificInput, setHonorificInput] = useState("");
 	const [discordConnectLoading, setDiscordConnectLoading] = useState(false);
@@ -407,7 +406,6 @@ const [step, setStep] = useState<Step>("provider");
 	async function handleLabLogin() {
 		setLabWaiting(true);
 		setLabTimeout(false);
-		setLabNoChromeError(false);
 		if (labTimerRef.current) clearTimeout(labTimerRef.current);
 		labTimerRef.current = setTimeout(() => {
 			setLabWaiting(false);
@@ -416,26 +414,26 @@ const [step, setStep] = useState<Step>("provider");
 		}, 60_000);
 		try {
 			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
-			if (!chromeAvailable) {
-				setLabWaiting(false);
-				if (labTimerRef.current) {
-					clearTimeout(labTimerRef.current);
-					labTimerRef.current = null;
+			if (chromeAvailable) {
+				// Embedded Chrome path: CDP monitor detects /desktop/auth-complete URL
+				const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
+				let port = 0;
+				for (let i = 0; i < 20; i++) {
+					port = await invoke<number>("browser_embed_port").catch(() => 0);
+					if (port !== 0) break;
+					await new Promise<void>((r) => setTimeout(r, 500));
 				}
-				setLabNoChromeError(true);
-				return;
-			}
-			// source=embedded: CDP monitor detects /desktop/auth-complete URL
-			const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
-			// Poll until Chrome is ready (browser_embed_port > 0), up to ~10 s
-			let port = 0;
-			for (let i = 0; i < 20; i++) {
-				port = await invoke<number>("browser_embed_port").catch(() => 0);
-				if (port !== 0) break;
-				await new Promise<void>((r) => setTimeout(r, 500));
-			}
-			if (port !== 0) {
-				await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
+				if (port !== 0) {
+					await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
+				}
+			} else {
+				// System browser path: OS opens browser → naia:// deep link returns key
+				const state = await invoke<string>("generate_oauth_state").catch(() => "");
+				const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
+				if (state) params.set("state", state);
+				await openUrl(`${getNaiaWebBaseUrl()}/${getLocale()}/login?${params.toString()}`).catch(() => {
+					setLabWaiting(false);
+				});
 			}
 		} catch {
 			setLabWaiting(false);
@@ -601,12 +599,6 @@ const [step, setStep] = useState<Step>("provider");
 				{step === "provider" && (
 					<div className="onboarding-content">
 						<h2>{t("onboard.provider.title")}</h2>
-
-						{labNoChromeError && (
-							<div className="onboarding-validation-error">
-								{t("onboard.lab.noChromeError")}
-							</div>
-						)}
 
 						{/* Lab login — prominent card at top */}
 						<button

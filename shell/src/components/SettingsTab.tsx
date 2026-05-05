@@ -1353,8 +1353,12 @@ export function SettingsTab() {
 					Logger.error("SettingsTab", "[lab-login] Chrome not ready after 10s");
 				}
 			} else {
-				Logger.info("SettingsTab", "[lab-login] Chrome not installed, opening system browser");
-				await openUrl(`${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop`).catch(
+				// System browser path: OS opens browser → naia:// deep link returns key
+				Logger.info("SettingsTab", "[lab-login] Chrome embed unavailable, using system browser + deep link");
+				const state = await invoke<string>("generate_oauth_state").catch(() => "");
+				const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
+				if (state) params.set("state", state);
+				await openUrl(`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`).catch(
 					(e: unknown) => {
 						Logger.error("SettingsTab", "[lab-login] openUrl failed", { error: String(e) });
 						setLabWaiting(false);
