@@ -2,14 +2,15 @@
 //!
 //! Architecture:
 //!   Chrome (--remote-debugging-port=<port>)
-//!     ├── Native window embedded into Tauri via platform abstraction
-//!     │     Linux:   XReparentWindow (x11rb)
-//!     │     Windows: SetParent (Win32)
+//!     ├── Native window embedded/overlaid into Tauri via platform abstraction
+//!     │     Linux:   XReparentWindow (x11rb) — supports_native_embed: true
+//!     │     Windows: SetParent (WS_CHILD reparenting) — supports_native_embed: true
+//!     │     Other:   overlay via SetWindowPos — supports_native_embed: false
 //!     └── CDP endpoint → agent-browser connect <port> (AI interface)
 //!
 //! Platform support:
 //!   Linux (X11 / XWayland): full embedding via x11rb
-//!   Windows:                full embedding via Win32 SetParent
+//!   Windows:                overlay mode — Chrome positioned as top-level window with SWP_NOACTIVATE
 //!   macOS:                  NOT YET SUPPORTED (add PlatformWindowManager impl)
 
 use crate::platform::{self, PlatformHandle, WindowRect};
@@ -23,9 +24,12 @@ struct ChromeState {
 	process: Option<Child>,
 	port: u16,
 	chrome_handle: PlatformHandle,
-	tauri_handle: PlatformHandle, // cached so browser_shell_focus doesn't re-search
+	tauri_handle: PlatformHandle, // cached so browser_shell_focus / overlay resize don't re-search
 	tmpdir: String,
 	pid: u32,
+	overlay_mode: bool,    // true on platforms where supports_native_embed() == false
+	last_client_rect: WindowRect, // panel rect in Tauri client coords — for overlay watchdog
+	chrome_visible: bool,  // false while browser_embed_hide is active — watchdog skips repositioning
 }
 
 impl ChromeState {
@@ -37,6 +41,9 @@ impl ChromeState {
 			tauri_handle: PlatformHandle::None,
 			tmpdir: String::new(),
 			pid: 0,
+			overlay_mode: false,
+			last_client_rect: WindowRect { x: 0, y: 0, width: 0, height: 0 },
+			chrome_visible: false,
 		}
 	}
 }
@@ -52,15 +59,31 @@ fn spawn_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
 		let version_url = format!("http://127.0.0.1:{port}/json/version");
 		let list_url = format!("http://127.0.0.1:{port}/json/list");
 		let new_tab_url = format!("http://127.0.0.1:{port}/json/new");
-		// Guard: emit naia_auth_complete only once per Chrome session.
 		let mut auth_emitted = false;
-		// Consecutive CDP failures before declaring Chrome dead.
-		// Flatpak Chrome: the launcher PID dies quickly (Chrome runs as child),
-		// so we rely on CDP health as the primary liveness signal.
 		let mut cdp_fail_streak = 0u32;
 		const CDP_FAIL_LIMIT: u32 = 6; // 3 s of consecutive failures
 		loop {
 			std::thread::sleep(std::time::Duration::from_millis(500));
+
+			// Position watchdog: re-enforce Chrome's position/style every 500 ms.
+			// Chrome periodically restores its own WINDOWPLACEMENT from the profile
+			// (on WM_ACTIVATE, tab drag, min/max button clicks) which undoes our
+			// embed/overlay positioning. try_lock avoids blocking CDP checks.
+			if let Ok(state) = CHROME.try_lock() {
+				if state.pid == pid && state.chrome_handle.is_valid() && state.last_client_rect.width > 0 {
+					if state.overlay_mode && state.chrome_visible && state.tauri_handle.is_valid() {
+						let (th, ch, rect) =
+							(state.tauri_handle, state.chrome_handle, state.last_client_rect);
+						drop(state);
+						let _ = platform::window_manager().overlay_enforce_pos(th, ch, rect);
+					} else if !state.overlay_mode {
+						let (ch, rect, visible) =
+							(state.chrome_handle, state.last_client_rect, state.chrome_visible);
+						drop(state);
+						let _ = platform::window_manager().embed_enforce_pos(ch, rect, visible);
+					}
+				}
+			}
 
 			// CDP health is the primary liveness signal.
 			// PID check is secondary: a zombie Chrome keeps its PID but loses CDP.
@@ -469,18 +492,8 @@ fn wait_for_cdp(port: u16) -> Result<(), String> {
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
 
 /// Returns true if a supported Chrome binary is available.
-///
-/// Temporarily disabled on Windows: cross-process Chrome embedding via
-/// SetParent breaks WebView2's keyboard input routing. The Chrome renderer
-/// monopolises Win32 focus and Tauri's chat/settings inputs stop receiving
-/// keystrokes. Tracked as a separate issue — re-enable once an overlay-based
-/// (non-SetParent) embedding strategy is implemented for Windows.
 #[tauri::command]
 pub fn browser_check() -> bool {
-	#[cfg(windows)]
-	if std::env::var("NAIA_ENABLE_BROWSER_EMBED").is_err() {
-		return false;
-	}
 	platform::window_manager().chrome_bin().is_some()
 }
 
@@ -524,12 +537,14 @@ pub fn browser_embed_init(
 
 	// If Chrome process already exists, re-embed (don't spawn again).
 	// This handles two cases:
-	//   a) chrome_handle is valid — fully embedded, just reposition
+	//   a) chrome_handle is valid — fully embedded/overlaid, just reposition
 	//   b) chrome_handle is None — React StrictMode detached; re-attach
 	if state.process.is_some() {
 		let port = state.port;
 		let pid = state.pid;
 		let existing_handle = state.chrome_handle;
+		let cached_tauri = state.tauri_handle;
+		let is_overlay = state.overlay_mode;
 		drop(state);
 
 		crate::log_verbose(&format!(
@@ -541,8 +556,21 @@ pub fn browser_embed_init(
 			wm.find_window_by_pid(pid, 6000)?
 		};
 		crate::log_verbose(&format!("[browser] re-embed: chrome_handle={chrome_handle:?}"));
-		wm.remap(chrome_handle, rect)?;
-		CHROME.lock().unwrap().chrome_handle = chrome_handle;
+		if is_overlay {
+			// In overlay mode we need the Tauri handle for ClientToScreen conversion.
+			let tauri_h = if cached_tauri.is_valid() {
+				cached_tauri
+			} else {
+				wm.find_window_by_name("Naia", 10000)?
+			};
+			wm.overlay_show(tauri_h, chrome_handle, rect)?;
+			let mut s = CHROME.lock().unwrap();
+			s.chrome_handle = chrome_handle;
+			s.tauri_handle = tauri_h;
+		} else {
+			wm.remap(chrome_handle, rect)?;
+			CHROME.lock().unwrap().chrome_handle = chrome_handle;
+		}
 		crate::log_verbose("[browser] re-embed OK");
 		return Ok(port);
 	}
@@ -640,16 +668,27 @@ pub fn browser_embed_init(
 	let tauri_handle = wm.find_window_by_name("Naia", 10000)?;
 	crate::log_verbose(&format!("[browser] tauri_handle={tauri_handle:?}"));
 
-	// Embed Chrome into Tauri
-	wm.embed(tauri_handle, chrome_handle, rect)?;
-	crate::log_verbose(&format!(
-		"[browser] embed OK: chrome={chrome_handle:?} → tauri={tauri_handle:?}"
-	));
+	// Embed or overlay Chrome into Tauri
+	let overlay_mode = !wm.supports_native_embed();
+	if overlay_mode {
+		wm.overlay_position(tauri_handle, chrome_handle, rect)?;
+		crate::log_verbose(&format!(
+			"[browser] overlay OK: chrome={chrome_handle:?} over tauri={tauri_handle:?}"
+		));
+	} else {
+		wm.embed(tauri_handle, chrome_handle, rect)?;
+		crate::log_verbose(&format!(
+			"[browser] embed OK: chrome={chrome_handle:?} → tauri={tauri_handle:?}"
+		));
+	}
 
-	// Record handles now that embedding succeeded
+	// Record handles now that embedding/overlay succeeded
 	let mut state = CHROME.lock().unwrap();
 	state.chrome_handle = chrome_handle;
 	state.tauri_handle = tauri_handle;
+	state.overlay_mode = overlay_mode;
+	state.last_client_rect = rect;  // used by both overlay watchdog and embed watchdog
+	state.chrome_visible = true;
 	drop(state);
 
 	// Monitor Chrome process + tab guard
@@ -661,19 +700,38 @@ pub fn browser_embed_init(
 /// Update Chrome window position/size when the panel resizes.
 #[tauri::command]
 pub fn browser_embed_resize(x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
-	let state = CHROME.lock().unwrap();
+	let rect = WindowRect::from_f64(x, y, width, height);
+	let mut state = CHROME.lock().unwrap();
 	if state.chrome_handle.is_none() {
 		return Ok(());
 	}
 	let handle = state.chrome_handle;
+	let tauri_handle = state.tauri_handle;
+	let overlay_mode = state.overlay_mode;
+	state.last_client_rect = rect;  // always track for watchdog
 	drop(state);
-	platform::window_manager().resize(handle, WindowRect::from_f64(x, y, width, height))
+	let wm = platform::window_manager();
+	if overlay_mode && tauri_handle.is_valid() {
+		wm.overlay_position(tauri_handle, handle, rect)
+	} else {
+		wm.resize(handle, rect)
+	}
 }
 
 /// Give keyboard focus to Chrome's native window.
+///
+/// In native SetParent embed mode, Win32 routes click→focus automatically —
+/// explicit SetFocus is not needed and would fight the periodic timer in
+/// BrowserCenterPanel (designed for X11/overlay). No-op in that case.
+/// Only active in overlay mode or on Linux (X11 reparent needs focus help).
 #[tauri::command]
 pub fn browser_embed_focus() -> Result<(), String> {
-	let handle = CHROME.lock().unwrap().chrome_handle;
+	let state = CHROME.lock().unwrap();
+	if !state.overlay_mode {
+		return Ok(()); // SetParent embed: Win32 handles focus natively
+	}
+	let handle = state.chrome_handle;
+	drop(state);
 	if handle.is_none() {
 		return Ok(());
 	}
@@ -837,7 +895,10 @@ fn run_cdp_nav_cmd(cmd: &str) -> Result<(), String> {
 /// monitor thread. Chrome is killed by `browser_embed_kill` on actual app exit.
 #[tauri::command]
 pub fn browser_embed_close() -> Result<(), String> {
-	let handle = CHROME.lock().unwrap().chrome_handle;
+	let mut state = CHROME.lock().unwrap();
+	let handle = state.chrome_handle;
+	state.chrome_visible = false;
+	drop(state);
 	if handle.is_none() {
 		return Ok(());
 	}
@@ -847,7 +908,10 @@ pub fn browser_embed_close() -> Result<(), String> {
 /// Hide Chrome window when switching away from the browser panel.
 #[tauri::command]
 pub fn browser_embed_hide() -> Result<(), String> {
-	let handle = CHROME.lock().unwrap().chrome_handle;
+	let mut state = CHROME.lock().unwrap();
+	let handle = state.chrome_handle;
+	state.chrome_visible = false;
+	drop(state);
 	if handle.is_none() {
 		return Ok(());
 	}
@@ -857,11 +921,20 @@ pub fn browser_embed_hide() -> Result<(), String> {
 /// Show Chrome window after it was hidden.
 #[tauri::command]
 pub fn browser_embed_show() -> Result<(), String> {
-	let handle = CHROME.lock().unwrap().chrome_handle;
+	let mut state = CHROME.lock().unwrap();
+	let handle = state.chrome_handle;
+	let overlay_mode = state.overlay_mode;
+	state.chrome_visible = true;
+	drop(state);
 	if handle.is_none() {
 		return Ok(());
 	}
-	platform::window_manager().show(handle)
+	let wm = platform::window_manager();
+	if overlay_mode {
+		wm.show_no_activate(handle)
+	} else {
+		wm.show(handle)
+	}
 }
 
 /// Grant or reset a Chrome browser-level permission via CDP WebSocket.
@@ -921,15 +994,28 @@ pub async fn browser_set_permission(permission: String, granted: bool) -> Result
 	Ok(())
 }
 
-/// Return keyboard focus to the Tauri shell window.
+/// Return keyboard focus to the Tauri WebView2 child window.
 ///
 /// Call this when an HTML input element receives DOM focus so that keyboard
-/// events are routed to the WebView (not Chrome).
+/// events are routed to the WebView (not Chrome). Focusing the top-level
+/// Tauri HWND is insufficient — the actual key handler lives in the WebView2
+/// child HWND (Chrome_WidgetWin_1 that spans the full content area).
 #[tauri::command]
 pub fn browser_shell_focus() -> Result<(), String> {
 	let handle = CHROME.lock().unwrap().tauri_handle;
 	if handle.is_none() {
 		return Ok(());
+	}
+	// On Windows: redirect focus to the WebView2 child (largest Chrome_WidgetWin
+	// under Tauri's HWND). On other platforms, fall back to top-level focus.
+	#[cfg(target_os = "windows")]
+	{
+		let PlatformHandle::Win32(tauri_isize) = handle else {
+			return platform::window_manager().focus(handle);
+		};
+		if let Some(webview2) = platform::find_webview2_child(tauri_isize) {
+			return platform::window_manager().focus(PlatformHandle::Win32(webview2));
+		}
 	}
 	platform::window_manager().focus(handle)
 }
@@ -1014,15 +1100,25 @@ fn spawn_login_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
 	});
 }
 
-/// Launch a headed Chrome for Testing window for OAuth login.
+/// Navigate to login URL — inside the embedded browser panel if it is running,
+/// otherwise launch a standalone Chrome for Testing window.
 ///
-/// Cross-platform: uses Chrome for Testing installed by `agent-browser install`.
-/// Auto-installs Chrome for Testing on first call (blocks while downloading).
-/// CDP-monitors for `/desktop/auth-complete`, emits `naia_auth_complete`, then
-/// closes Chrome automatically. No embedding — the user interacts with the window
-/// directly.
+/// When the embedded Chrome handles login, `spawn_chrome_monitor` already
+/// watches for `/desktop/auth-complete` and emits `naia_auth_complete` — no
+/// separate monitor is needed.
+///
+/// Fallback (no embedded Chrome): opens a headed Chrome for Testing window,
+/// monitors via `spawn_login_chrome_monitor`, auto-closes on auth-complete.
 #[tauri::command]
-pub fn browser_open_login(app: AppHandle, url: String) -> Result<(), String> {
+pub async fn browser_open_login(app: AppHandle, url: String) -> Result<(), String> {
+	// Fast path: embedded Chrome already running → navigate in-panel.
+	let port = CHROME.lock().unwrap().port;
+	if port != 0 {
+		crate::log_verbose(&format!("[browser_login] embedded Chrome active (port={port}) — navigating in-panel"));
+		return navigate_cdp_direct(port, &url).await;
+	}
+
+	// Slow path: no embedded Chrome yet → standalone login window.
 	// Kill any lingering login Chrome from a previous attempt
 	{
 		let mut s = LOGIN_CHROME.lock().unwrap();
@@ -1069,6 +1165,24 @@ pub fn browser_open_login(app: AppHandle, url: String) -> Result<(), String> {
 		.map_err(|e| format!("Profile dir: {e}"))?;
 
 	let profile_str = profile_dir.to_string_lossy().to_string();
+
+	// Center the login window over the Naia window when possible.
+	let _ = &app; // AppHandle not needed here — use platform abstraction for window rect
+	let cached_tauri = CHROME.lock().unwrap().tauri_handle;
+	let tauri_h = if cached_tauri.is_valid() {
+		Some(cached_tauri)
+	} else {
+		platform::window_manager().find_window_by_name("Naia", 1000).ok()
+	};
+	let window_pos_arg = tauri_h
+		.and_then(|h| platform::window_manager().get_window_screen_rect(h))
+		.map(|(x, y, w, h)| {
+			let cx = x + (w as i32 - 900) / 2;
+			let cy = y + (h as i32 - 700) / 2;
+			format!("--window-position={cx},{cy}")
+		})
+		.unwrap_or_else(|| "--window-position=100,100".into());
+
 	let mut cmd = Command::new(&chrome_path);
 	cmd.args([
 		"--no-first-run",
@@ -1079,6 +1193,7 @@ pub fn browser_open_login(app: AppHandle, url: String) -> Result<(), String> {
 		"--disable-session-crashed-bubble",
 		"--disable-dev-shm-usage",
 		"--window-size=900,700",
+		&window_pos_arg,
 		&format!("--remote-debugging-port={port}"),
 		&format!("--user-data-dir={profile_str}"),
 		&url,
@@ -1122,6 +1237,8 @@ pub fn browser_embed_kill() {
 		state.port = 0;
 		state.chrome_handle = PlatformHandle::None;
 		state.pid = 0;
+		state.chrome_visible = false;
+		state.last_client_rect = WindowRect { x: 0, y: 0, width: 0, height: 0 };
 	}
 	{
 		let mut s = LOGIN_CHROME.lock().unwrap();

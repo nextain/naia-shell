@@ -1150,6 +1150,18 @@ impl PlatformWindowManager for Win32WindowManager {
         Ok(())
     }
 
+    fn get_window_screen_rect(&self, handle: super::PlatformHandle) -> Option<(i32, i32, u32, u32)> {
+        let super::PlatformHandle::Win32(v) = handle else { return None; };
+        unsafe {
+            let mut r: RECT = std::mem::zeroed();
+            if GetWindowRect(isize_to_hwnd(v), &mut r) != 0 {
+                Some((r.left, r.top, (r.right - r.left) as u32, (r.bottom - r.top) as u32))
+            } else {
+                None
+            }
+        }
+    }
+
     fn embed_enforce_pos(&self, child: super::PlatformHandle, rect: super::WindowRect, visible: bool) -> Result<(), String> {
         let super::PlatformHandle::Win32(cv) = child else { return Ok(()); };
         let ch = isize_to_hwnd(cv);

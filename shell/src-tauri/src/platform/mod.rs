@@ -79,6 +79,59 @@ pub trait PlatformWindowManager: Send + Sync {
     fn chrome_bin(&self) -> Option<String>;
     fn chrome_spawn_args(&self) -> (Vec<String>, Vec<(String, String)>);
     fn kill_lingering_chrome(&self);
+
+    /// Whether this platform supports native window reparenting (SetParent / XReparentWindow).
+    /// When false, `overlay_position` is used instead.
+    fn supports_native_embed(&self) -> bool { false }
+
+    /// Position `chrome` as a floating overlay over the Tauri panel area — no reparenting.
+    ///
+    /// `tauri` is the Tauri main window handle.
+    /// `rect` is the panel rect in Tauri client-area coordinates (from getBoundingClientRect).
+    /// Translates to screen coordinates internally, then positions Chrome via native z-order.
+    fn overlay_position(&self, tauri: PlatformHandle, chrome: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+        let _ = (tauri, chrome, rect);
+        Err("overlay_position not implemented for this platform".into())
+    }
+
+    /// Show the overlay Chrome and sync its position. Used by browser_embed_show / resize in overlay mode.
+    fn overlay_show(&self, tauri: PlatformHandle, chrome: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+        self.overlay_position(tauri, chrome, rect)
+    }
+
+    /// Show the overlay Chrome at its current position without stealing input focus.
+    /// Default: falls back to normal show (platforms without overlay don't need this).
+    fn show_no_activate(&self, handle: PlatformHandle) -> Result<(), String> {
+        self.show(handle)
+    }
+
+    /// Watchdog reposition — move Chrome to overlay position without SWP_SHOWWINDOW or
+    /// SWP_FRAMECHANGED. Called every ~500 ms to counter Chrome's own SetWindowPos calls
+    /// (e.g., when Chrome restores its saved WINDOWPLACEMENT on activation).
+    /// Default: no-op for platforms with native embed.
+    fn overlay_enforce_pos(&self, tauri: PlatformHandle, chrome: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+        let _ = (tauri, chrome, rect);
+        Ok(())
+    }
+
+    /// Watchdog for SetParent embed mode — re-asserts WS_CHILD style and panel rect.
+    /// Chrome can revert its own window style (WS_POPUP, WS_CAPTION) from saved
+    /// WINDOWPLACEMENT or via its own SC_MINIMIZE/SC_MAXIMIZE handling.
+    /// Called every ~500 ms. `visible` = whether Chrome should be visible right now
+    /// (false while browser_embed_hide is active — skip SW_RESTORE to avoid un-hiding).
+    /// Default: no-op (Linux X11 reparent is stable; overlay mode uses overlay_enforce_pos).
+    fn embed_enforce_pos(&self, child: PlatformHandle, rect: WindowRect, visible: bool) -> Result<(), String> {
+        let _ = (child, rect, visible);
+        Ok(())
+    }
+
+    /// Return the screen rect (x, y, width, height) of a window handle.
+    /// Used to compute relative positions for ancillary windows (e.g. login Chrome).
+    /// Default: None (not implemented for this platform).
+    fn get_window_screen_rect(&self, handle: PlatformHandle) -> Option<(i32, i32, u32, u32)> {
+        let _ = handle;
+        None
+    }
 }
 
 /// Get the platform-specific window manager singleton.
