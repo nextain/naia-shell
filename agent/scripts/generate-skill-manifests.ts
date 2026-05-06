@@ -1,4 +1,3 @@
-#!/usr/bin/env npx tsx
 /**
  * Generate skill.json manifests from ClawHub SKILL.md files.
  * Reads frontmatter from each skill's SKILL.md, creates ~/.naia/skills/{name}/skill.json.
@@ -10,20 +9,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Default: bundled default-skills shipped with naia-agent */
 const CLAWHUB_SKILLS_DIR = path.join(
-	os.homedir(),
-	".naia",
-	"openclaw",
-	"node_modules",
-	"openclaw",
-	"skills",
-);
-
-/** Alternative source: ref-openclaw local checkout (used with --source flag) */
-const REF_OPENCLAW_SKILLS_DIR = path.join(
 	path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url)))),
-	"ref-openclaw",
-	"skills",
+	"assets",
+	"default-skills",
 );
 
 const OUTPUT_DIR = path.join(os.homedir(), ".naia", "skills");
@@ -56,42 +46,21 @@ interface SkillFrontmatter {
 	name: string;
 	description: string;
 	homepage?: string;
-	metadata?: {
-		openclaw?: {
-			emoji?: string;
-			requires?: {
-				bins?: string[];
-				env?: string[];
-				config?: string[];
-			};
-			os?: string[];
-			install?: unknown[];
-			primaryEnv?: string;
-		};
-	};
 }
 
-/** Tier inference from skill metadata */
-function inferTier(fm: SkillFrontmatter): number {
-	const req = fm.metadata?.openclaw?.requires;
-	if (!req) return 1;
-
-	// Config/env required = higher tier (needs setup)
-	if (req.config && req.config.length > 0) return 2;
-	if (req.env && req.env.length > 0) return 2;
-
-	// Simple binary requirement = lower tier
-	if (req.bins && req.bins.length > 0) return 1;
-
+/** Tier inference: default tier 1 (no metadata-driven overrides after openclaw removal) */
+function inferTier(_fm: SkillFrontmatter): number {
 	return 1;
 }
 
 /** Parse YAML frontmatter from SKILL.md content */
 function parseFrontmatter(content: string): SkillFrontmatter | null {
-	const match = content.match(/^---\n([\s\S]*?)\n---/);
+	// Strip BOM and normalize line endings for cross-platform compatibility
+	const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+	const match = normalized.match(/^---\n([\s\S]*?)\n---/);
 	if (!match) {
 		// Try single-line frontmatter: ---\n{yaml}\n---
-		const singleLine = content.match(/^---\n([\s\S]*?)---/);
+		const singleLine = normalized.match(/^---\n([\s\S]*?)---/);
 		if (!singleLine) return null;
 		return parseYamlLike(singleLine[1]);
 	}
@@ -173,7 +142,6 @@ export {
 	inferTier,
 	SKIP_BUILT_IN,
 	CLAWHUB_SKILLS_DIR,
-	REF_OPENCLAW_SKILLS_DIR,
 };
 export type { SkillFrontmatter };
 
@@ -185,15 +153,11 @@ function main() {
 	const skillsDir =
 		sourceArgIdx !== -1 && process.argv[sourceArgIdx + 1]
 			? process.argv[sourceArgIdx + 1]
-			: process.argv.includes("--ref-openclaw")
-				? REF_OPENCLAW_SKILLS_DIR
-				: CLAWHUB_SKILLS_DIR;
+			: CLAWHUB_SKILLS_DIR;
 
 	if (!fs.existsSync(skillsDir)) {
 		console.error(`Skills source not found at: ${skillsDir}`);
-		console.error(
-			"Use --source <path> or --ref-openclaw to specify skills directory",
-		);
+		console.error("Use --source <path> to specify a skills directory");
 		process.exit(1);
 	}
 

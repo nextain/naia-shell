@@ -71,48 +71,20 @@ homepage: https://example.com
 		expect(result?.homepage).toBe("https://example.com");
 	});
 
-	it("parses inline JSON metadata", () => {
+	it("ignores unrecognized metadata fields gracefully", () => {
 		const content = `---
 name: meta-skill
 description: Has metadata
-metadata: {"openclaw":{"emoji":"🔧","requires":{"env":["API_KEY"]}}}
 ---`;
 		const result = parseFrontmatter(content);
-		expect(result?.metadata?.openclaw?.emoji).toBe("🔧");
-		expect(result?.metadata?.openclaw?.requires?.env).toContain("API_KEY");
+		expect(result?.name).toBe("meta-skill");
+		expect(result?.description).toBe("Has metadata");
 	});
 });
 
 describe("inferTier", () => {
-	it("returns 1 when no metadata", () => {
+	it("returns 1 for any skill (tier fixed post-openclaw-removal)", () => {
 		const fm: SkillFrontmatter = { name: "t", description: "d" };
-		expect(inferTier(fm)).toBe(1);
-	});
-
-	it("returns 2 when env requirements exist", () => {
-		const fm: SkillFrontmatter = {
-			name: "t",
-			description: "d",
-			metadata: { openclaw: { requires: { env: ["KEY"] } } },
-		};
-		expect(inferTier(fm)).toBe(2);
-	});
-
-	it("returns 2 when config requirements exist", () => {
-		const fm: SkillFrontmatter = {
-			name: "t",
-			description: "d",
-			metadata: { openclaw: { requires: { config: ["setting"] } } },
-		};
-		expect(inferTier(fm)).toBe(2);
-	});
-
-	it("returns 1 when only binary requirements", () => {
-		const fm: SkillFrontmatter = {
-			name: "t",
-			description: "d",
-			metadata: { openclaw: { requires: { bins: ["curl"] } } },
-		};
 		expect(inferTier(fm)).toBe(1);
 	});
 });
@@ -122,14 +94,13 @@ describe("generateManifest", () => {
 		const fm: SkillFrontmatter = {
 			name: "notion",
 			description: "Notion API integration",
-			metadata: { openclaw: { requires: { env: ["NOTION_API_KEY"] } } },
 		};
 		const manifest = generateManifest(fm);
 		expect(manifest.name).toBe("notion");
 		expect(manifest.description).toBe("Notion API integration");
 		expect(manifest.type).toBe("gateway");
 		expect(manifest.gatewaySkill).toBe("notion");
-		expect(manifest.tier).toBe(2);
+		expect(manifest.tier).toBe(1);
 		expect(manifest.parameters).toBeDefined();
 	});
 });

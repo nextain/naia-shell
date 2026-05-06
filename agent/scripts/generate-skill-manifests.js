@@ -1,4 +1,3 @@
-#!/usr/bin/env npx tsx
 /**
  * Generate skill.json manifests from ClawHub SKILL.md files.
  * Reads frontmatter from each skill's SKILL.md, creates ~/.naia/skills/{name}/skill.json.
@@ -53,10 +52,12 @@ function inferTier(fm) {
 }
 /** Parse YAML frontmatter from SKILL.md content */
 function parseFrontmatter(content) {
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    // Strip BOM and normalize line endings for cross-platform compatibility
+    const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+    const match = normalized.match(/^---\n([\s\S]*?)\n---/);
     if (!match) {
         // Try single-line frontmatter: ---\n{yaml}\n---
-        const singleLine = content.match(/^---\n([\s\S]*?)---/);
+        const singleLine = normalized.match(/^---\n([\s\S]*?)---/);
         if (!singleLine)
             return null;
         return parseYamlLike(singleLine[1]);

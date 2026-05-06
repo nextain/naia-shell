@@ -15,11 +15,8 @@ describe("DefaultPathResolver", () => {
 	it("returns config candidates in correct order", () => {
 		const resolver = new DefaultPathResolver();
 		const candidates = resolver.configCandidates();
-		expect(candidates).toHaveLength(2);
+		expect(candidates).toHaveLength(1);
 		expect(candidates[0]).toBe(join(homedir(), ".naia", "gateway.json"));
-		expect(candidates[1]).toBe(
-			join(homedir(), ".naia", "openclaw", "openclaw.json"),
-		);
 	});
 
 	it("returns memory config path under ~/.naia/", () => {

@@ -13,11 +13,10 @@ export class DefaultPathResolver implements PathResolver {
 	configCandidates(): string[] {
 		return [
 			join(homedir(), ".naia", "gateway.json"),
-			join(homedir(), ".naia", "openclaw", "openclaw.json"),
 		];
 	}
 
-	/** Memory-specific config path (separate from gateway config to avoid OpenClaw schema rejection). */
+	/** Memory-specific config path. */
 	memoryConfigPath(): string {
 		return join(homedir(), ".naia", "memory-config.json");
 	}

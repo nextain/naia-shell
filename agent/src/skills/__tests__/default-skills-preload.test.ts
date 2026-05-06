@@ -23,7 +23,7 @@ const ASSETS_DIR = path.resolve(
 );
 
 // ---------------------------------------------------------------------------
-// Classification (sourced from openclaw metadata os field in SKILL.md)
+// Classification (by platform availability)
 // ---------------------------------------------------------------------------
 
 /**

@@ -40,7 +40,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function loadGatewayToken(): string | null {
 	const candidates = [
 		join(homedir(), ".naia", "gateway.json"),
-		join(homedir(), ".naia", "openclaw", "openclaw.json"),
 	];
 	for (const configPath of candidates) {
 		try {

@@ -128,8 +128,8 @@ cargo test --manifest-path shell/src-tauri/Cargo.toml
 # Tauri Webview E2E (real app automation, Gateway + API key required)
 cd shell && pnpm run test:e2e:tauri
 
-# Gateway (manual start)
-node ~/.naia/openclaw/node_modules/openclaw/openclaw.mjs gateway run --bind loopback --port 18789
+# naia-agent (manual start — normally auto-spawned by shell)
+cd agent && pnpm dev   # dev mode (tsx watch)
 
 # Gateway E2E
 cd agent && CAFE_LIVE_GATEWAY_E2E=1 pnpm exec vitest run src/__tests__/gateway-e2e.test.ts
