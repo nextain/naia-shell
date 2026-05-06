@@ -4,6 +4,8 @@ import { parseRequest } from "../protocol.js";
 // Mock provider factory
 vi.mock("../providers/factory.js", () => ({
 	buildProvider: vi.fn(),
+	setAgentNaiaKey: vi.fn(),
+	getAgentNaiaKey: vi.fn().mockReturnValue(undefined),
 }));
 
 // Mock TTS registry synthesize

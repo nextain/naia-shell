@@ -52,9 +52,9 @@ describe("factory — setAgentNaiaKey / getAgentNaiaKey", () => {
 
 	it("setAgentNaiaKey overwrites previous key", async () => {
 		const { setAgentNaiaKey, getAgentNaiaKey } = await import("../providers/factory.js");
-		setAgentNaiaKey("first-key");
-		setAgentNaiaKey("second-key");
-		expect(getAgentNaiaKey()).toBe("second-key");
+		setAgentNaiaKey("gw-first-key");
+		setAgentNaiaKey("gw-second-key");
+		expect(getAgentNaiaKey()).toBe("gw-second-key");
 	});
 });
 

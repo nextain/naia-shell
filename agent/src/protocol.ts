@@ -6,7 +6,6 @@ export interface ChatRequest {
 	provider: ProviderConfig;
 	messages: { role: "user" | "assistant"; content: string }[];
 	systemPrompt?: string;
-	naiaKey?: string;
 	ttsVoice?: string;
 	ttsApiKey?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
@@ -62,7 +61,6 @@ export interface TtsRequest {
 	voice?: string;
 	ttsProvider?: "edge" | "google" | "openai" | "elevenlabs" | "nextain";
 	ttsApiKey?: string;
-	naiaKey?: string;
 }
 
 // ─── Panel Skill Protocol ────────────────────────────────────────────────────

@@ -88,6 +88,14 @@ registerLlmProvider({
 let _agentNaiaKey: string | undefined;
 
 export function setAgentNaiaKey(key: string): void {
+	if (!key) {
+		_agentNaiaKey = undefined;
+		return;
+	}
+	if (!key.startsWith("gw-") || key.length > 256 || !/^[A-Za-z0-9_-]+$/.test(key)) {
+		console.error(`[agent] setAgentNaiaKey: invalid key format, ignored`);
+		return;
+	}
 	_agentNaiaKey = key;
 }
 

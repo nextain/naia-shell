@@ -333,7 +333,6 @@ export function ChatPanel() {
 		voice?: string;
 		ttsProvider?: string;
 		ttsApiKey?: string;
-		naiaKey?: string;
 	} | null>(null);
 	const sttCleanupRef = useRef<(() => void)[]>([]);
 	const sttDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -636,7 +635,6 @@ export function ChatPanel() {
 							: config.ttsProvider === "elevenlabs"
 								? config.elevenlabsApiKey
 								: undefined,
-				naiaKey: config.naiaKey,
 			};
 		}
 
@@ -1229,7 +1227,6 @@ export function ChatPanel() {
 								: config.ttsProvider === "elevenlabs"
 									? config.elevenlabsApiKey
 									: undefined,
-					naiaKey: config.naiaKey,
 				};
 
 				// Start STT engine — route to Tauri plugin (offline) or API-based

@@ -380,7 +380,6 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 	const {
 		requestId,
 		provider: providerConfig,
-		naiaKey: reqNaiaKey,
 		messages: rawMessages,
 		systemPrompt,
 		ttsVoice,
@@ -848,7 +847,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 				.trim();
 
 			if (cleanText) {
-				const effectiveNaiaKey = getAgentNaiaKey() || reqNaiaKey || providerConfig.naiaKey;
+				const effectiveNaiaKey = getAgentNaiaKey();
 				const selectedProvider =
 					ttsProvider ||
 					(ttsEngine === "gateway" ? "edge" : undefined) ||
@@ -1057,7 +1056,7 @@ async function handleMemoryImport(req: MemoryImportRequest): Promise<void> {
  * Synthesizes text → MP3 base64 and emits as audio chunk.
  */
 async function handleTtsRequest(req: TtsRequest): Promise<void> {
-	const { requestId, text, voice, ttsProvider, ttsApiKey, naiaKey: reqTtsNaiaKey } = req;
+	const { requestId, text, voice, ttsProvider, ttsApiKey } = req;
 	const controller = new AbortController();
 	activeStreams.set(requestId, controller);
 
@@ -1073,7 +1072,7 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 			text,
 			voice,
 			apiKey: ttsApiKey,
-			naiaKey: getAgentNaiaKey() || reqTtsNaiaKey,
+			naiaKey: getAgentNaiaKey(),
 		});
 
 		if (controller.signal.aborted) return;

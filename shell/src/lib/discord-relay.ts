@@ -136,8 +136,7 @@ async function processMessage(
 					provider: config.provider,
 					model: config.model,
 					apiKey: config.apiKey,
-					naiaKey: config.naiaKey,
-					labGatewayUrl: config.naiaKey ? LAB_GATEWAY_URL : undefined,
+					labGatewayUrl: config.provider === "nextain" ? LAB_GATEWAY_URL : undefined,
 				},
 				history: history.slice(0, -1),
 				onChunk: (chunk: AgentResponseChunk) => {
