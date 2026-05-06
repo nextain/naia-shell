@@ -1106,6 +1106,10 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 	}
 }
 
+export function handleAuthUpdate(req: import("./protocol.js").AuthUpdateRequest): void {
+	setAgentNaiaKey(req.naiaKey);
+}
+
 function main(): void {
 	const rl = readline.createInterface({
 		input: process.stdin,
@@ -1127,7 +1131,7 @@ function main(): void {
 		}
 
 		if (request.type === "auth_update") {
-			setAgentNaiaKey(request.naiaKey);
+			handleAuthUpdate(request);
 			return;
 		}
 

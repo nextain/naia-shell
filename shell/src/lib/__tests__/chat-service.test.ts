@@ -194,6 +194,68 @@ describe("chat-service", () => {
 		expect(parsed.ttsEngine).toBe("gateway");
 	});
 
+	it("does NOT include naiaKey in chat_request payload", async () => {
+		const { sendChatMessage } = await import("../chat-service");
+
+		mockListen.mockImplementation(
+			async (_event: string, handler: (event: { payload: string }) => void) => {
+				setTimeout(() => {
+					handler({
+						payload: JSON.stringify({ type: "finish", requestId: "req-no-naiakey" }),
+					});
+				}, 10);
+				return mockUnlisten;
+			},
+		);
+
+		await sendChatMessage({
+			message: "test",
+			provider: { provider: "nextain", model: "gemini-3-flash", apiKey: "" },
+			history: [],
+			onChunk: vi.fn(),
+			requestId: "req-no-naiakey",
+		});
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.naiaKey).toBeUndefined();
+		expect(parsed.provider?.naiaKey).toBeUndefined();
+	});
+
+	it("sendAuthUpdate sends auth_update message to agent", async () => {
+		const { sendAuthUpdate } = await import("../chat-service");
+		await sendAuthUpdate("gw-test-key");
+		expect(mockInvoke).toHaveBeenCalledWith("send_to_agent_command", {
+			message: JSON.stringify({ type: "auth_update", naiaKey: "gw-test-key" }),
+		});
+	});
+
+	it("requestTts does NOT include naiaKey in tts_request payload", async () => {
+		const { requestTts } = await import("../chat-service");
+
+		mockListen.mockImplementation(
+			async (_event: string, handler: (event: { payload: string }) => void) => {
+				setTimeout(() => {
+					handler({
+						payload: JSON.stringify({ type: "finish", requestId: "req-tts-no-key" }),
+					});
+				}, 10);
+				return mockUnlisten;
+			},
+		);
+
+		await requestTts({
+			text: "Hello",
+			voice: "ko-KR-Neural2-A",
+			ttsProvider: "edge",
+			requestId: "req-tts-no-key",
+			onAudio: vi.fn(),
+		});
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.type).toBe("tts_request");
+		expect(parsed.naiaKey).toBeUndefined();
+	});
+
 	it("forwards webhook URLs to agent request", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 
