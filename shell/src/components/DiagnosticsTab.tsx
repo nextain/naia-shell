@@ -114,7 +114,7 @@ export function DiagnosticsTab() {
 
 	// Logs
 	const [activeLogTab, setActiveLogTab] = useState<LogTab>("agent");
-	const [isTailing, setIsTailing] = useState(false);
+	const [isTailing, setIsTailing] = useState(true);
 	const [agentEntries, setAgentEntries] = useState<LogEntry[]>([]);
 	const [shellEntries, setShellEntries] = useState<LogEntry[]>([]);
 	const agentOffsetRef = useRef(0);
@@ -322,7 +322,7 @@ export function DiagnosticsTab() {
 
 	const handleTabChange = useCallback((tab: LogTab) => {
 		setActiveLogTab(tab);
-		setIsTailing(false); // stop tailing when switching tabs
+		// Keep isTailing — useEffect restarts poll for new tab automatically
 	}, []);
 
 	const handleToggleTailing = useCallback(() => {
