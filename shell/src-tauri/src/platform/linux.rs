@@ -475,6 +475,8 @@ impl PlatformWindowManager for X11WindowManager {
         None
     }
 
+    fn supports_native_embed(&self) -> bool { true }
+
     fn chrome_spawn_args(&self) -> (Vec<String>, Vec<(String, String)>) {
         (vec!["--ozone-platform=x11".into()], vec![("DISPLAY".into(), ":0".into()), ("GDK_BACKEND".into(), "x11".into())])
     }
