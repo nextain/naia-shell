@@ -131,7 +131,7 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gemini-3.1-pro-preview",
+	defaultModel: "gemini-2.5-pro",
 	models: [
 		// ── Gemini 3.1 ────────────────────────────────────────────────────
 		{
