@@ -663,7 +663,8 @@ pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {
 
 // ─── Browser window embedding (Win32) ────────────────────────────────────────
 
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE, FALSE};
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, TRUE, FALSE};
+use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
 use windows_sys::Win32::System::Threading::AttachThreadInput;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -738,12 +739,10 @@ unsafe extern "system" fn enum_children_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
 /// Find the WebView2 child window inside the Tauri main HWND.
 ///
 /// Tauri/wry hosts the Edge WebView2 control as a direct child of the main
-/// window. The control's window class is `Chrome_WidgetWin_1` (Microsoft
-/// reuses the upstream Chromium class name). We enumerate children of the
-/// Tauri main HWND and pick the largest visible Chrome_WidgetWin candidate
-/// — this is reliably the WebView2 host, since our embedded Chrome is also a
-/// Chrome_WidgetWin sibling but is given the WS_EX_NOACTIVATE style during
-/// embed() so we want the OTHER one.
+/// window with class `Chrome_WidgetWin_1` (Microsoft reuses the upstream
+/// Chromium class name). We enumerate children and pick the LARGEST visible
+/// Chrome_WidgetWin candidate — the WebView2 host spans the entire content
+/// area while our embedded Chrome panel only covers a portion of it.
 pub(crate) fn find_webview2_child(parent_hwnd: isize) -> Option<isize> {
     let parent = isize_to_hwnd(parent_hwnd);
     let mut ctx = EnumChildrenCtx { children: Vec::new() };
@@ -753,11 +752,6 @@ pub(crate) fn find_webview2_child(parent_hwnd: isize) -> Option<isize> {
         .into_iter()
         .filter_map(|(h, class, w, ht)| {
             if class.starts_with("Chrome_WidgetWin") && w > 100 && ht > 100 {
-                // Skip the embedded Chrome (it has WS_EX_NOACTIVATE set by embed()).
-                let exstyle = unsafe { GetWindowLongW(h, GWL_EXSTYLE) as u32 };
-                if exstyle & WS_EX_NOACTIVATE != 0 {
-                    return None;
-                }
                 Some((h, w, ht))
             } else {
                 None
@@ -767,6 +761,7 @@ pub(crate) fn find_webview2_child(parent_hwnd: isize) -> Option<isize> {
     if webview2_candidates.is_empty() {
         return None;
     }
+    // Largest area = WebView2 (full content area > embedded Chrome panel area).
     webview2_candidates.sort_by_key(|(_, w, h)| -(*w as i64 * *h as i64));
     Some(hwnd_to_isize(webview2_candidates[0].0))
 }
@@ -883,14 +878,12 @@ impl PlatformWindowManager for Win32WindowManager {
             let style = GetWindowLongW(ch, GWL_STYLE) as u32;
             SetWindowLongW(ch, GWL_STYLE, ((style & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD) as i32);
 
-            // Add WS_EX_NOACTIVATE so clicking inside Chrome's area does NOT
-            // steal Win32 activation/focus from Tauri's main window. Without
-            // this, Chrome's HWND ends up with the keyboard focus and every
-            // WM_KEYDOWN routes to Chrome — Tauri WebView2's chat input,
-            // settings textareas, and dropdowns never see keystrokes even
-            // though their DOM `focus` is correct.
-            let exstyle = GetWindowLongW(ch, GWL_EXSTYLE) as u32;
-            SetWindowLongW(ch, GWL_EXSTYLE, (exstyle | WS_EX_NOACTIVATE) as i32);
+            // WS_EX_NOACTIVATE intentionally NOT set here.
+            // Allowing Chrome to receive Win32 keyboard focus on click is
+            // required so the user can type in Chrome's URL bar, input fields,
+            // etc. Focus restoration to Tauri's WebView2 is handled by
+            // browser_shell_focus() — called from the frontend whenever a
+            // Tauri HTML input receives DOM focus.
 
             // SetParent returns the previous parent (or NULL for top-level
             // windows, regardless of success). Use GetLastError to distinguish.
@@ -933,17 +926,12 @@ impl PlatformWindowManager for Win32WindowManager {
                 ));
             }
 
-            // Restore keyboard focus to Tauri's WebView2 child (NOT to the
-            // top-level main window — top-level frames don't process keys
-            // themselves; the actual input handler lives in the WebView2
-            // child HWND). After SetParent, Windows leaves Win32 focus in
-            // an indeterminate state. With thread input queues now shared
-            // via AttachThreadInput, SetFocus across threads actually works.
-            //
-            // We pick the largest Chrome_WidgetWin child of Tauri main that
-            // does NOT have WS_EX_NOACTIVATE set — that excludes our just-
-            // embedded Chrome (which we marked NOACTIVATE above) and yields
-            // the Edge WebView2 host instead.
+            // Restore keyboard focus to Tauri's WebView2 child after SetParent.
+            // Top-level Tauri HWND doesn't process keys itself — the actual
+            // input handler lives in the WebView2 child (Chrome_WidgetWin_1
+            // covering the full content area). We pick the LARGEST such child
+            // — WebView2 spans the whole window; our embedded Chrome only
+            // covers the panel rect, so it's always smaller.
             if let Some(webview2_isize) = find_webview2_child(pv) {
                 let webview2 = isize_to_hwnd(webview2_isize);
                 SetFocus(webview2);
@@ -1061,5 +1049,156 @@ impl PlatformWindowManager for Win32WindowManager {
         ]);
         hide_console(&mut cmd);
         let _ = cmd.output();
+    }
+
+    fn supports_native_embed(&self) -> bool { true }
+
+    fn overlay_position(&self, tauri: super::PlatformHandle, chrome: super::PlatformHandle, rect: super::WindowRect) -> Result<(), String> {
+        let super::PlatformHandle::Win32(tv) = tauri else { return Err("tauri not Win32".into()); };
+        let super::PlatformHandle::Win32(cv) = chrome else { return Err("chrome not Win32".into()); };
+        let (th, ch) = (isize_to_hwnd(tv), isize_to_hwnd(cv));
+        let mut pt = POINT { x: rect.x, y: rect.y };
+        unsafe {
+            ClientToScreen(th, &mut pt);
+            let screen_rect = RECT {
+                left: pt.x,
+                top: pt.y,
+                right: pt.x + rect.width as i32,
+                bottom: pt.y + rect.height as i32,
+            };
+
+            // Remove OS window decorations (title bar, resize border, system menu).
+            // Chrome's internal browser UI (address bar, tabs) is part of its own rendering
+            // and is unaffected. Without WS_CAPTION, title-bar dragging cannot move the
+            // overlay out of position. Apply once — style bits persist across calls.
+            let style = GetWindowLongW(ch, GWL_STYLE) as u32;
+            if style & (WS_CAPTION | WS_THICKFRAME) != 0 {
+                SetWindowLongW(
+                    ch, GWL_STYLE,
+                    (style & !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) as i32,
+                );
+                // WS_EX_TOOLWINDOW: hide from taskbar and Alt+Tab.
+                let exstyle = GetWindowLongW(ch, GWL_EXSTYLE) as u32;
+                SetWindowLongW(ch, GWL_EXSTYLE, (exstyle | WS_EX_TOOLWINDOW) as i32);
+            }
+
+            // Overwrite Chrome's saved WINDOWPLACEMENT (rcNormalPosition).
+            // Without this, Chrome restores its previous standalone-window position
+            // (stored in the profile from a prior session) when it receives WM_ACTIVATE.
+            // By making rcNormalPosition == our overlay rect, restore is a no-op.
+            let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
+            placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+            if GetWindowPlacement(ch, &mut placement) != 0 {
+                placement.flags = 0;
+                placement.showCmd = SW_SHOWNORMAL as u32;
+                placement.rcNormalPosition = screen_rect;
+                SetWindowPlacement(ch, &placement);
+            }
+
+            // HWND_TOPMOST: Chrome floats above Tauri (non-topmost) at all times.
+            // SWP_NOACTIVATE: Win32 focus stays with Tauri's WebView2 thread.
+            // SWP_FRAMECHANGED: forces non-client area redraw after style change.
+            SetWindowPos(
+                ch, HWND_TOPMOST,
+                pt.x, pt.y, rect.width as i32, rect.height as i32,
+                SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+        }
+        Ok(())
+    }
+
+    fn overlay_enforce_pos(&self, tauri: super::PlatformHandle, chrome: super::PlatformHandle, rect: super::WindowRect) -> Result<(), String> {
+        let super::PlatformHandle::Win32(tv) = tauri else { return Ok(()); };
+        let super::PlatformHandle::Win32(cv) = chrome else { return Ok(()); };
+        let (th, ch) = (isize_to_hwnd(tv), isize_to_hwnd(cv));
+        let mut pt = POINT { x: rect.x, y: rect.y };
+        unsafe {
+            ClientToScreen(th, &mut pt);
+            let (tx, ty, tw, th_) = (pt.x, pt.y, rect.width as i32, rect.height as i32);
+
+            // Skip SetWindowPos when Chrome is already in place.
+            // Unconditional SetWindowPos triggers Chrome's WM_WINDOWPOSCHANGED
+            // handler which causes focus contention and flickering while the user
+            // types in the message input. Only reposition on actual drift.
+            let mut cur: RECT = std::mem::zeroed();
+            let drifted = if GetWindowRect(ch, &mut cur) != 0 {
+                let cw = cur.right - cur.left;
+                let cur_h = cur.bottom - cur.top;
+                (cur.left - tx).abs() > 2 || (cur.top - ty).abs() > 2
+                    || (cw - tw).abs() > 2 || (cur_h - th_).abs() > 2
+            } else {
+                true
+            };
+
+            if drifted {
+                // No SWP_FRAMECHANGED — style already set by overlay_position at init.
+                SetWindowPos(ch, HWND_TOPMOST, tx, ty, tw, th_, SWP_NOACTIVATE);
+            }
+        }
+        Ok(())
+    }
+
+    fn show_no_activate(&self, handle: super::PlatformHandle) -> Result<(), String> {
+        let super::PlatformHandle::Win32(v) = handle else { return Ok(()); };
+        unsafe {
+            SetWindowPos(
+                isize_to_hwnd(v), HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+            );
+        }
+        Ok(())
+    }
+
+    fn embed_enforce_pos(&self, child: super::PlatformHandle, rect: super::WindowRect, visible: bool) -> Result<(), String> {
+        let super::PlatformHandle::Win32(cv) = child else { return Ok(()); };
+        let ch = isize_to_hwnd(cv);
+        unsafe {
+            // ── Style check ───────────────────────────────────────────────────
+            let style = GetWindowLongW(ch, GWL_STYLE) as u32;
+            let style_bad = style & WS_CHILD == 0 || style & (WS_CAPTION | WS_THICKFRAME) != 0;
+            if style_bad {
+                SetWindowLongW(
+                    ch, GWL_STYLE,
+                    ((style & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_CHILD) as i32,
+                );
+            }
+
+            // ── Position check (skip MoveWindow when already in place) ────────
+            // Unconditional MoveWindow triggers Chrome's WM_WINDOWPOSCHANGED
+            // handler which re-claims keyboard focus on every 500 ms tick.
+            // Only move when Chrome has actually drifted from the expected rect.
+            let parent = GetParent(ch);
+            let pos_bad = if !parent.is_null() {
+                let mut screen: RECT = std::mem::zeroed();
+                if GetWindowRect(ch, &mut screen) != 0 {
+                    let mut pt = POINT { x: screen.left, y: screen.top };
+                    ScreenToClient(parent, &mut pt);
+                    let w = screen.right - screen.left;
+                    let h = screen.bottom - screen.top;
+                    (pt.x - rect.x).abs() > 2 || (pt.y - rect.y).abs() > 2
+                        || (w - rect.width as i32).abs() > 2
+                        || (h - rect.height as i32).abs() > 2
+                } else { style_bad }
+            } else { style_bad };
+
+            if !style_bad && !pos_bad { return Ok(()); }
+
+            // ── Restore if Chrome min/maximized (only when supposed to be visible) ──
+            if visible {
+                let mut placement: WINDOWPLACEMENT = std::mem::zeroed();
+                placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                if GetWindowPlacement(ch, &mut placement) != 0
+                    && placement.showCmd != SW_SHOWNORMAL as u32
+                    && placement.showCmd != SW_SHOW as u32
+                {
+                    ShowWindow(ch, SW_RESTORE);
+                }
+            }
+            if pos_bad {
+                MoveWindow(ch, rect.x, rect.y, rect.width as i32, rect.height as i32, FALSE);
+            }
+        }
+        Ok(())
     }
 }
