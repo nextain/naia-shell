@@ -9,7 +9,6 @@ interface SendChatOptions {
 	history: { role: "user" | "assistant"; content: string }[];
 	onChunk: (chunk: AgentResponseChunk) => void;
 	requestId: string;
-	naiaKey?: string;
 	ttsVoice?: string;
 	ttsApiKey?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
@@ -37,7 +36,6 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		history,
 		onChunk,
 		requestId,
-		naiaKey,
 		ttsVoice,
 		ttsApiKey,
 		ttsEngine,
@@ -61,7 +59,6 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		requestId,
 		provider,
 		messages: [...history, { role: "user", content: message }],
-		...(naiaKey && { naiaKey }),
 		...(ttsVoice && { ttsVoice }),
 		...(ttsApiKey && { ttsApiKey }),
 		...(ttsEngine && { ttsEngine }),
@@ -127,12 +124,10 @@ export async function requestTts(opts: {
 	voice?: string;
 	ttsProvider?: "edge" | "google" | "openai" | "elevenlabs" | "nextain";
 	ttsApiKey?: string;
-	naiaKey?: string;
 	requestId: string;
 	onAudio: (mp3Base64: string, costUsd?: number) => void;
 }): Promise<void> {
-	const { text, voice, ttsProvider, ttsApiKey, naiaKey, requestId, onAudio } =
-		opts;
+	const { text, voice, ttsProvider, ttsApiKey, requestId, onAudio } = opts;
 
 	const request = {
 		type: "tts_request",
@@ -141,7 +136,6 @@ export async function requestTts(opts: {
 		...(voice && { voice }),
 		...(ttsProvider && { ttsProvider }),
 		...(ttsApiKey && { ttsApiKey }),
-		...(naiaKey && { naiaKey }),
 	};
 
 	const unlisten = await listen<string>("agent_response", (event) => {
@@ -396,5 +390,12 @@ export async function sendPanelToolResult(
 			result,
 			success,
 		}),
+	});
+}
+
+/** Send naiaKey to the agent (backend). Call on login and on app init if key exists. */
+export async function sendAuthUpdate(naiaKey: string): Promise<void> {
+	await invoke("send_to_agent_command", {
+		message: JSON.stringify({ type: "auth_update", naiaKey }),
 	});
 }

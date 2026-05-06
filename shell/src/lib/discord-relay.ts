@@ -154,7 +154,6 @@ async function processMessage(
 					}
 				},
 				requestId,
-				naiaKey: config.naiaKey,
 				systemPrompt,
 				enableTools: config.enableTools,
 				gatewayUrl: resolveGatewayUrl(config) ?? undefined,

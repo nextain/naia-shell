@@ -11,7 +11,7 @@ import {
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
 import { syncLinkedChannels } from "../lib/channel-sync";
-import { directToolCall } from "../lib/chat-service";
+import { directToolCall, sendAuthUpdate } from "../lib/chat-service";
 import {
 	DEFAULT_GATEWAY_URL,
 	DEFAULT_OLLAMA_HOST,
@@ -1539,6 +1539,7 @@ export function SettingsTab() {
 			async (event) => {
 				const nextNaiaKey = event.payload.naiaKey;
 				const nextNaiaUserId = event.payload.naiaUserId ?? "";
+				sendAuthUpdate(nextNaiaKey).catch(() => {});
 
 				// Close Chrome and return to default view if we opened it for login
 				if (labBrowserVisibleRef.current) {

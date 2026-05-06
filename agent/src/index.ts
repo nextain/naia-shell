@@ -45,7 +45,7 @@ import {
 	parseRequest,
 } from "./protocol.js";
 import { calculateCost } from "./providers/cost.js";
-import { buildProvider } from "./providers/factory.js";
+import { buildProvider, getAgentNaiaKey, setAgentNaiaKey } from "./providers/factory.js";
 import type { ChatMessage, StreamChunk } from "./providers/types.js";
 import { actionInstall as panelActionInstall } from "./skills/built-in/panel.js";
 import { ALPHA_SYSTEM_PROMPT, buildToolStatusPrompt } from "./system-prompt.js";
@@ -848,7 +848,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 				.trim();
 
 			if (cleanText) {
-				const effectiveNaiaKey = reqNaiaKey || providerConfig.naiaKey;
+				const effectiveNaiaKey = getAgentNaiaKey() || reqNaiaKey || providerConfig.naiaKey;
 				const selectedProvider =
 					ttsProvider ||
 					(ttsEngine === "gateway" ? "edge" : undefined) ||
@@ -1057,7 +1057,7 @@ async function handleMemoryImport(req: MemoryImportRequest): Promise<void> {
  * Synthesizes text → MP3 base64 and emits as audio chunk.
  */
 async function handleTtsRequest(req: TtsRequest): Promise<void> {
-	const { requestId, text, voice, ttsProvider, ttsApiKey, naiaKey } = req;
+	const { requestId, text, voice, ttsProvider, ttsApiKey, naiaKey: reqTtsNaiaKey } = req;
 	const controller = new AbortController();
 	activeStreams.set(requestId, controller);
 
@@ -1073,7 +1073,7 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 			text,
 			voice,
 			apiKey: ttsApiKey,
-			naiaKey,
+			naiaKey: getAgentNaiaKey() || reqTtsNaiaKey,
 		});
 
 		if (controller.signal.aborted) return;
@@ -1123,6 +1123,11 @@ function main(): void {
 				requestId: "unknown",
 				message: "Invalid request",
 			});
+			return;
+		}
+
+		if (request.type === "auth_update") {
+			setAgentNaiaKey(request.naiaKey);
 			return;
 		}
 

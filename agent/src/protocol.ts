@@ -153,6 +153,11 @@ export interface MemoryImportRequest {
 	password: string;
 }
 
+export interface AuthUpdateRequest {
+	type: "auth_update";
+	naiaKey: string;
+}
+
 export type AgentRequest =
 	| ChatRequest
 	| CancelRequest
@@ -165,7 +170,8 @@ export type AgentRequest =
 	| PanelToolResult
 	| SkillListRequest
 	| MemoryExportRequest
-	| MemoryImportRequest;
+	| MemoryImportRequest
+	| AuthUpdateRequest;
 
 export function parseRequest(line: string): AgentRequest | null {
 	try {
@@ -183,7 +189,8 @@ export function parseRequest(line: string): AgentRequest | null {
 			obj.type === "panel_install" ||
 			obj.type === "skill_list" ||
 			obj.type === "memory_export" ||
-			obj.type === "memory_import"
+			obj.type === "memory_import" ||
+			obj.type === "auth_update"
 		) {
 			return obj as AgentRequest;
 		}

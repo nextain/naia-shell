@@ -677,13 +677,11 @@ export function ChatPanel() {
 					provider: activeProvider,
 					model: resolvedModel,
 					apiKey: config.apiKey,
-					naiaKey: activeProvider === "nextain" ? config.naiaKey : undefined,
-					labGatewayUrl: (activeProvider === "nextain" && config.naiaKey) ? LAB_GATEWAY_URL : undefined,
+					labGatewayUrl: activeProvider === "nextain" ? LAB_GATEWAY_URL : undefined,
 					ollamaHost:
 						activeProvider === "ollama" ? config.ollamaHost : undefined,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
 				},
-				naiaKey: config.naiaKey || undefined,
 				history: history.slice(0, -1),
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),
 				requestId,
@@ -1067,7 +1065,6 @@ export function ChatPanel() {
 				| "nextain"
 				| undefined,
 			ttsApiKey: voiceCfg?.ttsApiKey,
-			naiaKey: voiceCfg?.naiaKey,
 			requestId: reqId,
 			onAudio: (mp3Base64, costUsd) => {
 				Logger.info("ChatPanel", "TTS audio received", {

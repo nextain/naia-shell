@@ -82,14 +82,28 @@ registerLlmProvider({
 	create: (naiaKey, model, opts) => createLabProxyProvider(naiaKey, model, opts?.labGatewayUrl),
 });
 
+// ── Agent credential store ──
+// naiaKey is owned by the agent (backend). Shell sends auth_update once; never per-request.
+
+let _agentNaiaKey: string | undefined;
+
+export function setAgentNaiaKey(key: string): void {
+	_agentNaiaKey = key;
+}
+
+export function getAgentNaiaKey(): string | undefined {
+	return _agentNaiaKey;
+}
+
 // ── Factory ──
 
 export function buildProvider(config: ProviderConfig): LLMProvider {
-	// Lab proxy mode: route through any-llm Gateway
-	if (config.naiaKey) {
+	// Lab proxy mode: agent holds naiaKey — never read from per-request config.
+	const naiaKey = _agentNaiaKey;
+	if (naiaKey) {
 		const labProxy = getLlmProviderDef("lab-proxy");
 		if (!labProxy) throw new Error("Lab proxy provider not registered.");
-		return labProxy.create(config.naiaKey, config.model, { labGatewayUrl: config.labGatewayUrl });
+		return labProxy.create(naiaKey, config.model, { labGatewayUrl: config.labGatewayUrl });
 	}
 
 	if (config.provider === "nextain") {

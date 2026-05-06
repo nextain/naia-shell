@@ -12,7 +12,7 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { WslSetupScreen } from "./components/WslSetupScreen";
 import { getBridgeForPanel } from "./lib/active-bridge";
 import { syncLinkedChannels } from "./lib/channel-sync";
-import { sendPanelSkills, sendPanelSkillsClear } from "./lib/chat-service";
+import { sendAuthUpdate, sendPanelSkills, sendPanelSkillsClear } from "./lib/chat-service";
 import {
 	type ThemeId,
 	isOnboardingComplete,
@@ -250,6 +250,15 @@ export function App() {
 		return () => {
 			unlisten.then((fn) => fn());
 		};
+	}, []);
+
+	// On init: if naiaKey exists in config, push it to the agent (backend).
+	// Handles the case where the app restarts after a previous login.
+	useEffect(() => {
+		const naiaKey = loadConfig()?.naiaKey;
+		if (naiaKey) {
+			sendAuthUpdate(naiaKey).catch(() => {});
+		}
 	}, []);
 
 	// WSL setup screen (Windows Tier 1 — before main UI)

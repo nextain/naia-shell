@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { AVATAR_PRESETS, DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
-import { directToolCall } from "../lib/chat-service";
+import { directToolCall, sendAuthUpdate } from "../lib/chat-service";
 import {
 	DEFAULT_GATEWAY_URL,
 	DEFAULT_OLLAMA_HOST,
@@ -188,6 +188,7 @@ const [step, setStep] = useState<Step>("provider");
 				const key = event.payload.naiaKey;
 				const userId = event.payload.naiaUserId ?? "";
 				setNaiaKey(key);
+				sendAuthUpdate(key).catch(() => {});
 				setNaiaUserId(userId);
 				setProvider("nextain");
 				setLabWaiting(false);
