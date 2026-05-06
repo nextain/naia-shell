@@ -5876,6 +5876,22 @@ const translations = {
 		id: "Hapus Log",
 		vi: "Xóa nhật ký",
 	},
+	"diagnostics.restart": {
+		ko: "재시작",
+		en: "Restart",
+		ja: "再起動",
+		zh: "重启",
+		fr: "Redémarrer",
+		de: "Neustart",
+		ru: "Перезапуск",
+		es: "Reiniciar",
+		ar: "إعادة التشغيل",
+		hi: "पुनः प्रारंभ करें",
+		bn: "পুনরায় চালু করুন",
+		pt: "Reiniciar",
+		id: "Mulai ulang",
+		vi: "Khởi động lại",
+	},
 
 	// Device pairing (in Settings)
 	"settings.deviceSection": {

@@ -1,3 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
+import { homeDir } from "@tauri-apps/api/path";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { directToolCall } from "../lib/chat-service";
 import {
@@ -7,15 +10,27 @@ import {
 } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import type { GatewayStatus } from "../lib/types";
+import type { GatewayStatus, LogEntry } from "../lib/types";
 import { useLogsStore } from "../stores/logs";
 
-const LOG_POLL_INTERVAL_MS = 2000;
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-/** Parse a Gateway log line (JSON with _meta) into display-friendly entry */
-function parseLogLine(
+const MAX_STARTUP_RETRIES = 3; // 15s startup window (3 × 5s)
+const RETRY_INTERVAL_MS = 5_000;
+const HEALTH_POLL_INTERVAL_MS = 30_000;
+const LOG_POLL_INTERVAL_MS = 2_000;
+const MAX_LOG_ENTRIES = 500;
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type HealthState = "checking" | "connected" | "disconnected";
+type LogTab = "agent" | "gateway" | "shell";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function parseGatewayLogLine(
 	line: string,
-): { level: string; message: string; timestamp: string } | null {
+): LogEntry | null {
 	try {
 		const parsed = JSON.parse(line);
 		const meta = parsed._meta || {};
@@ -24,41 +39,121 @@ function parseLogLine(
 		const timestamp = parsed.time || meta.date || new Date().toISOString();
 		return { level, message: msg, timestamp };
 	} catch {
-		return {
-			level: "DEBUG",
-			message: line,
-			timestamp: new Date().toISOString(),
-		};
+		return { level: "DEBUG", message: line, timestamp: new Date().toISOString() };
 	}
 }
 
-const RETRY_INTERVAL_MS = 5000;
-const MAX_AUTO_RETRIES = 12; // 60s max auto-retry
+function parseAgentLogLine(line: string): LogEntry | null {
+	if (!line.trim()) return null;
+	try {
+		const obj = JSON.parse(line);
+		const ts = obj.timestamp || obj.ts || new Date().toISOString();
+		const level = (obj.level || "INFO").toUpperCase();
+		// Format key fields for readability
+		let msg = obj.type || obj.message || line;
+		if (obj.provider) msg += ` [${obj.provider}/${obj.model ?? ""}]`;
+		if (obj.requestId) msg += ` (${obj.requestId})`;
+		if (obj.inputTokens != null) msg += ` in=${obj.inputTokens} out=${obj.outputTokens}`;
+		return { level, message: msg, timestamp: ts };
+	} catch {
+		return { level: "DEBUG", message: line, timestamp: new Date().toISOString() };
+	}
+}
+
+function levelColor(level: string): string {
+	switch (level.toLowerCase()) {
+		case "error": return "var(--error)";
+		case "warn":
+		case "warning": return "var(--amber)";
+		case "info": return "var(--tech-blue)";
+		default: return "var(--cream-dim)";
+	}
+}
+
+function formatUptime(seconds?: number): string {
+	if (!seconds) return "-";
+	const h = Math.floor(seconds / 3600);
+	const m = Math.floor((seconds % 3600) / 60);
+	const s = seconds % 60;
+	return `${h}h ${m}m ${s}s`;
+}
+
+/** Read new bytes from a file (byte-offset cursor). Returns {entries, newOffset}. */
+async function readNewLogLines(
+	path: string,
+	byteOffset: number,
+	parser: (line: string) => LogEntry | null,
+): Promise<{ entries: LogEntry[]; newOffset: number }> {
+	try {
+		const bytes = await invoke<number[]>("read_local_binary", { path });
+		if (bytes.length <= byteOffset) return { entries: [], newOffset: byteOffset };
+
+		const newBytes = new Uint8Array(bytes.slice(byteOffset));
+		const text = new TextDecoder().decode(newBytes);
+		const lines = text.split("\n");
+		const entries: LogEntry[] = [];
+		for (const line of lines) {
+			const entry = parser(line.trim());
+			if (entry) entries.push(entry);
+		}
+		return { entries, newOffset: bytes.length };
+	} catch {
+		return { entries: [], newOffset: byteOffset };
+	}
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function DiagnosticsTab() {
-	const [status, setStatus] = useState<GatewayStatus | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+	// Health
+	const [healthState, setHealthState] = useState<HealthState>("checking");
+	const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus | null>(null);
 	const retryCountRef = useRef(0);
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
+	const healthPollRef = useRef<ReturnType<typeof setInterval>>();
 
-	const entries = useLogsStore((s) => s.entries);
-	const isTailing = useLogsStore((s) => s.isTailing);
+	// Logs
+	const [activeLogTab, setActiveLogTab] = useState<LogTab>("agent");
+	const [isTailing, setIsTailing] = useState(false);
+	const [agentEntries, setAgentEntries] = useState<LogEntry[]>([]);
+	const [shellEntries, setShellEntries] = useState<LogEntry[]>([]);
+	const agentOffsetRef = useRef(0);
+	const shellOffsetRef = useRef(0);
+	const gatewayLogCursorRef = useRef<number | undefined>(undefined);
+	const logPollRef = useRef<ReturnType<typeof setInterval>>();
 	const logsEndRef = useRef<HTMLDivElement>(null);
-	const cursorRef = useRef<number | undefined>(undefined);
 
-	const fetchStatus = useCallback(async (isRetry = false) => {
-		if (!isRetry) {
-			retryCountRef.current = 0;
-		}
-		setLoading(true);
-		setError(null);
+	// Paths
+	const homeDirRef = useRef<string>("");
+	const [logPaths, setLogPaths] = useState<Record<LogTab, string>>({
+		agent: "",
+		gateway: "",
+		shell: "",
+	});
 
+	// Gateway store (for gateway tab)
+	const gatewayEntries = useLogsStore((s) => s.entries);
+
+	// ── Initialize log paths ─────────────────────────────────────────────────
+
+	useEffect(() => {
+		homeDir().then((home) => {
+			homeDirRef.current = home;
+			const sep = home.includes("\\") ? "\\" : "/";
+			const base = `${home}${sep}.naia${sep}logs${sep}`;
+			setLogPaths({
+				agent: `${base}llm-debug.log`,
+				gateway: `${base}gateway.log`,
+				shell: `${base}naia.log`,
+			});
+		}).catch(() => {});
+	}, []);
+
+	// ── Health check ─────────────────────────────────────────────────────────
+
+	const fetchGatewayStatus = useCallback(async () => {
 		const config = loadConfig();
-		// Diagnostics always attempts to reach the Gateway so users can debug
-		// connectivity even before onboarding sets enableTools=true.
 		const gatewayUrl = resolveGatewayUrl(config) || DEFAULT_GATEWAY_URL;
-
 		try {
 			const res = await directToolCall({
 				toolName: "skill_diagnostics",
@@ -67,251 +162,325 @@ export function DiagnosticsTab() {
 				gatewayUrl,
 				gatewayToken: config?.gatewayToken,
 			});
-
 			if (res.success && res.output) {
-				const parsed = JSON.parse(res.output);
-				setStatus(parsed);
-				retryCountRef.current = 0;
-			} else {
-				// Connection failed — auto-retry if Gateway may still be starting
-				if (retryCountRef.current < MAX_AUTO_RETRIES) {
-					retryCountRef.current++;
-					setError(t("diagnostics.gatewayStarting"));
-					retryTimerRef.current = setTimeout(
-						() => fetchStatus(true),
-						RETRY_INTERVAL_MS,
-					);
-				} else {
-					setError(t("diagnostics.errorConnection"));
-				}
+				setGatewayStatus(JSON.parse(res.output));
 			}
-		} catch (err) {
-			Logger.warn("DiagnosticsTab", "Failed to fetch status", {
-				error: String(err),
-			});
-			if (retryCountRef.current < MAX_AUTO_RETRIES) {
-				retryCountRef.current++;
-				setError(t("diagnostics.gatewayStarting"));
-				retryTimerRef.current = setTimeout(
-					() => fetchStatus(true),
-					RETRY_INTERVAL_MS,
-				);
-			} else {
-				setError(t("diagnostics.errorConnection"));
-			}
-		} finally {
-			setLoading(false);
+		} catch {
+			// best-effort; health state already updated
 		}
 	}, []);
 
-	useEffect(() => {
-		fetchStatus();
-		return () => clearTimeout(retryTimerRef.current);
-	}, [fetchStatus]);
+	const checkHealth = useCallback(async (isRetry = false) => {
+		if (!isRetry) retryCountRef.current = 0;
 
-	// Poll logs while tailing
-	useEffect(() => {
-		if (!isTailing) return;
-
-		let cancelled = false;
-
-		const poll = async () => {
-			const config = loadConfig();
-			const gatewayUrl = resolveGatewayUrl(config) || DEFAULT_GATEWAY_URL;
-
-			try {
-				const res = await directToolCall({
-					toolName: "skill_diagnostics",
-					args: {
-						action: "logs_poll",
-						...(cursorRef.current != null && { cursor: cursorRef.current }),
-					},
-					requestId: `diag-logs-poll-${Date.now()}`,
-					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
-				});
-
-				if (res.success && res.output) {
-					const result = JSON.parse(res.output);
-					if (typeof result.cursor === "number") {
-						cursorRef.current = result.cursor;
-					}
-					const lines: string[] = result.lines || [];
-					const store = useLogsStore.getState();
-					for (const line of lines) {
-						const entry = parseLogLine(line);
-						if (entry) {
-							store.addEntry(entry);
-						}
-					}
-				}
-			} catch (err) {
-				Logger.warn("DiagnosticsTab", "Log poll failed", {
-					error: String(err),
-				});
+		try {
+			const alive = await invoke<boolean>("gateway_health");
+			if (alive) {
+				setHealthState("connected");
+				retryCountRef.current = 0;
+				void fetchGatewayStatus();
+				return;
 			}
-		};
+		} catch {
+			// treat invoke error as not alive
+		}
 
-		// Initial poll
-		poll();
+		// Gateway not reachable
+		if (retryCountRef.current < MAX_STARTUP_RETRIES) {
+			retryCountRef.current++;
+			setHealthState("checking");
+			retryTimerRef.current = setTimeout(() => checkHealth(true), RETRY_INTERVAL_MS);
+		} else {
+			setHealthState("disconnected");
+			setGatewayStatus(null);
+		}
+	}, [fetchGatewayStatus]);
 
-		// Set up interval
-		const intervalId = setInterval(() => {
-			if (!cancelled) poll();
-		}, LOG_POLL_INTERVAL_MS);
+	// Initial check + background health poll
+	useEffect(() => {
+		checkHealth();
+		healthPollRef.current = setInterval(async () => {
+			try {
+				const alive = await invoke<boolean>("gateway_health");
+				if (alive) {
+					setHealthState("connected");
+					void fetchGatewayStatus();
+				} else {
+					setHealthState("disconnected");
+					setGatewayStatus(null);
+				}
+			} catch {
+				setHealthState("disconnected");
+				setGatewayStatus(null);
+			}
+		}, HEALTH_POLL_INTERVAL_MS);
 
 		return () => {
-			cancelled = true;
-			clearInterval(intervalId);
+			clearTimeout(retryTimerRef.current);
+			clearInterval(healthPollRef.current);
 		};
-	}, [isTailing]);
+	}, [checkHealth, fetchGatewayStatus]);
 
-	// Auto-scroll logs
-	useEffect(() => {
-		logsEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
-	}, [entries]);
+	// ── Log polling ──────────────────────────────────────────────────────────
 
-	const handleToggleTailing = useCallback(() => {
-		const store = useLogsStore.getState();
-		if (store.isTailing) {
-			// Stop tailing — just flip the flag, polling stops via useEffect cleanup
-			store.setTailing(false);
-		} else {
-			// Start tailing — reset cursor to get recent lines first
-			cursorRef.current = undefined;
-			store.setTailing(true);
+	const pollAgentLogs = useCallback(async () => {
+		if (!logPaths.agent) return;
+		const { entries, newOffset } = await readNewLogLines(
+			logPaths.agent,
+			agentOffsetRef.current,
+			parseAgentLogLine,
+		);
+		if (entries.length > 0) {
+			agentOffsetRef.current = newOffset;
+			setAgentEntries((prev) => [...prev, ...entries].slice(-MAX_LOG_ENTRIES));
+		}
+	}, [logPaths.agent]);
+
+	const pollShellLogs = useCallback(async () => {
+		if (!logPaths.shell) return;
+		const { entries, newOffset } = await readNewLogLines(
+			logPaths.shell,
+			shellOffsetRef.current,
+			(line) => line.trim() ? { level: "DEBUG", message: line, timestamp: new Date().toISOString() } : null,
+		);
+		if (entries.length > 0) {
+			shellOffsetRef.current = newOffset;
+			setShellEntries((prev) => [...prev, ...entries].slice(-MAX_LOG_ENTRIES));
+		}
+	}, [logPaths.shell]);
+
+	const pollGatewayLogs = useCallback(async () => {
+		const config = loadConfig();
+		const gatewayUrl = resolveGatewayUrl(config) || DEFAULT_GATEWAY_URL;
+		try {
+			const res = await directToolCall({
+				toolName: "skill_diagnostics",
+				args: {
+					action: "logs_poll",
+					...(gatewayLogCursorRef.current != null && { cursor: gatewayLogCursorRef.current }),
+				},
+				requestId: `diag-logs-poll-${Date.now()}`,
+				gatewayUrl,
+				gatewayToken: config?.gatewayToken,
+			});
+			if (res.success && res.output) {
+				const result = JSON.parse(res.output);
+				if (typeof result.cursor === "number") {
+					gatewayLogCursorRef.current = result.cursor;
+				}
+				const lines: string[] = result.lines || [];
+				const store = useLogsStore.getState();
+				for (const line of lines) {
+					const entry = parseGatewayLogLine(line);
+					if (entry) store.addEntry(entry);
+				}
+			}
+		} catch {
+			Logger.warn("DiagnosticsTab", "Gateway log poll failed", {});
 		}
 	}, []);
 
-	function formatUptime(seconds?: number): string {
-		if (!seconds) return "-";
-		const h = Math.floor(seconds / 3600);
-		const m = Math.floor((seconds % 3600) / 60);
-		const s = seconds % 60;
-		return `${h}h ${m}m ${s}s`;
-	}
-
-	function levelColor(level: string): string {
-		switch (level.toLowerCase()) {
-			case "error":
-				return "var(--error)";
-			case "warn":
-			case "warning":
-				return "var(--amber)";
-			case "info":
-				return "var(--tech-blue)";
-			default:
-				return "var(--cream-dim)";
+	// Tailing loop
+	useEffect(() => {
+		if (!isTailing) {
+			clearInterval(logPollRef.current);
+			return;
 		}
-	}
-	const isConnected = status?.ok ?? (status != null && !error);
+
+		const poll = async () => {
+			if (activeLogTab === "agent") await pollAgentLogs();
+			else if (activeLogTab === "shell") await pollShellLogs();
+			else await pollGatewayLogs();
+		};
+
+		// Immediate first poll
+		void poll();
+		logPollRef.current = setInterval(poll, LOG_POLL_INTERVAL_MS);
+		return () => clearInterval(logPollRef.current);
+	}, [isTailing, activeLogTab, pollAgentLogs, pollShellLogs, pollGatewayLogs]);
+
+	// Auto-scroll
+	useEffect(() => {
+		logsEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
+	}, [agentEntries, gatewayEntries, shellEntries]);
+
+	// ── Actions ──────────────────────────────────────────────────────────────
+
+	const handleRestart = useCallback(async () => {
+		setHealthState("checking");
+		setGatewayStatus(null);
+		retryCountRef.current = 0;
+		try {
+			await invoke("restart_gateway");
+			// Give gateway 2s to start then re-check
+			setTimeout(() => checkHealth(), 2000);
+		} catch (err) {
+			Logger.warn("DiagnosticsTab", "restart_gateway failed", { error: String(err) });
+			checkHealth();
+		}
+	}, [checkHealth]);
+
+	const handleTabChange = useCallback((tab: LogTab) => {
+		setActiveLogTab(tab);
+		setIsTailing(false); // stop tailing when switching tabs
+	}, []);
+
+	const handleToggleTailing = useCallback(() => {
+		setIsTailing((v) => !v);
+	}, []);
+
+	const handleClear = useCallback(() => {
+		if (activeLogTab === "agent") {
+			setAgentEntries([]);
+			agentOffsetRef.current = 0; // re-read from start on next poll
+		} else if (activeLogTab === "shell") {
+			setShellEntries([]);
+			shellOffsetRef.current = 0;
+		} else {
+			useLogsStore.getState().clear();
+			gatewayLogCursorRef.current = undefined;
+		}
+	}, [activeLogTab]);
+
+	const handleOpenInWindow = useCallback(async () => {
+		const path = logPaths[activeLogTab];
+		if (!path) return;
+		// Convert Windows backslash path to file:// URL
+		const fileUrl = "file:///" + path.replace(/\\/g, "/");
+		try {
+			await openUrl(fileUrl);
+		} catch (err) {
+			Logger.warn("DiagnosticsTab", "openUrl failed", { error: String(err) });
+		}
+	}, [activeLogTab, logPaths]);
+
+	// ── Render ────────────────────────────────────────────────────────────────
+
+	const activeEntries =
+		activeLogTab === "agent" ? agentEntries :
+		activeLogTab === "shell" ? shellEntries :
+		gatewayEntries;
+
+	const isConnected = healthState === "connected";
 
 	return (
 		<div className="diagnostics-tab" data-testid="diagnostics-tab">
-			{/* Gateway Status */}
+			{/* ── Health Status ── */}
 			<div className="diagnostics-section">
 				<div className="diagnostics-section-header">
 					<h3>{t("diagnostics.gatewayStatus")}</h3>
-					<button
-						type="button"
-						className="diagnostics-refresh-btn"
-						onClick={() => fetchStatus()}
-					>
-						{t("diagnostics.refresh")}
-					</button>
+					<div style={{ display: "flex", gap: "8px" }}>
+						<button
+							type="button"
+							className="diagnostics-refresh-btn"
+							onClick={() => checkHealth()}
+						>
+							{t("diagnostics.refresh")}
+						</button>
+						<button
+							type="button"
+							className="diagnostics-refresh-btn"
+							onClick={handleRestart}
+						>
+							{t("diagnostics.restart") || "재시작"}
+						</button>
+					</div>
 				</div>
 
-				{loading ? (
-					<div className="diagnostics-loading">{t("diagnostics.loading")}</div>
-				) : error ? (
-					<div className="diagnostics-error">{error}</div>
-				) : status ? (
-					<div className="diagnostics-status-grid">
-						<div className="diagnostics-status-item">
-							<span className="diagnostics-label">
-								{t("diagnostics.gatewayStatus")}
-							</span>
-							<span
-								className={`diagnostics-value ${isConnected ? "status-ok" : "status-err"}`}
-							>
-								{isConnected
-									? t("diagnostics.connected")
-									: t("diagnostics.disconnected")}
-							</span>
-						</div>
-						{status.version && (
-							<div className="diagnostics-status-item">
-								<span className="diagnostics-label">
-									{t("diagnostics.version")}
-								</span>
-								<span className="diagnostics-value">{status.version}</span>
-							</div>
-						)}
-						{status.uptime != null && (
-							<div className="diagnostics-status-item">
-								<span className="diagnostics-label">
-									{t("diagnostics.uptime")}
-								</span>
-								<span className="diagnostics-value">
-									{formatUptime(status.uptime)}
-								</span>
-							</div>
-						)}
-						{status.methods && status.methods.length > 0 && (
-							<div className="diagnostics-status-item diagnostics-methods">
-								<span className="diagnostics-label">
-									{t("diagnostics.methods")} ({status.methods.length})
-								</span>
-								<div className="diagnostics-methods-list">
-									{status.methods.map((m) => (
-										<span key={m} className="diagnostics-method-tag">
-											{m}
-										</span>
-									))}
-								</div>
-							</div>
-						)}
+				<div className="diagnostics-status-grid">
+					<div className="diagnostics-status-item">
+						<span className="diagnostics-label">{t("diagnostics.gatewayStatus")}</span>
+						<span className={`diagnostics-value ${isConnected ? "status-ok" : healthState === "checking" ? "status-warn" : "status-err"}`}>
+							{healthState === "checking"
+								? t("diagnostics.gatewayStarting")
+								: isConnected
+								? t("diagnostics.connected")
+								: t("diagnostics.disconnected")}
+						</span>
 					</div>
-				) : null}
+					{gatewayStatus?.version && (
+						<div className="diagnostics-status-item">
+							<span className="diagnostics-label">{t("diagnostics.version")}</span>
+							<span className="diagnostics-value">{gatewayStatus.version}</span>
+						</div>
+					)}
+					{gatewayStatus?.uptime != null && (
+						<div className="diagnostics-status-item">
+							<span className="diagnostics-label">{t("diagnostics.uptime")}</span>
+							<span className="diagnostics-value">{formatUptime(gatewayStatus.uptime)}</span>
+						</div>
+					)}
+					{gatewayStatus?.methods && gatewayStatus.methods.length > 0 && (
+						<div className="diagnostics-status-item diagnostics-methods">
+							<span className="diagnostics-label">
+								{t("diagnostics.methods")} ({gatewayStatus.methods.length})
+							</span>
+							<div className="diagnostics-methods-list">
+								{gatewayStatus.methods.map((m) => (
+									<span key={m} className="diagnostics-method-tag">{m}</span>
+								))}
+							</div>
+						</div>
+					)}
+				</div>
 			</div>
 
-			{/* Live Logs */}
+			{/* ── Log Tabs ── */}
 			<div className="diagnostics-section">
 				<div className="diagnostics-section-header">
-					<h3>{t("diagnostics.logsTitle")}</h3>
+					<div className="diagnostics-log-tabs">
+						{(["agent", "gateway", "shell"] as LogTab[]).map((tab) => (
+							<button
+								key={tab}
+								type="button"
+								className={`diagnostics-log-tab ${activeLogTab === tab ? "active" : ""}`}
+								onClick={() => handleTabChange(tab)}
+							>
+								{tab === "agent" ? "Agent" : tab === "gateway" ? "Gateway" : "Shell"}
+							</button>
+						))}
+					</div>
 					<div className="diagnostics-logs-controls">
 						<button
 							type="button"
 							className={`diagnostics-log-btn ${isTailing ? "tailing" : ""}`}
 							onClick={handleToggleTailing}
+							title={isTailing ? t("diagnostics.logsStop") : t("diagnostics.logsStart")}
 						>
-							{isTailing
-								? t("diagnostics.logsStop")
-								: t("diagnostics.logsStart")}
+							{isTailing ? t("diagnostics.logsStop") : t("diagnostics.logsStart")}
 						</button>
 						<button
 							type="button"
 							className="diagnostics-log-btn"
-							onClick={() => useLogsStore.getState().clear()}
+							onClick={handleClear}
+							title={t("diagnostics.logsClear")}
 						>
 							{t("diagnostics.logsClear")}
+						</button>
+						<button
+							type="button"
+							className="diagnostics-log-btn"
+							onClick={handleOpenInWindow}
+							title="새창으로 열기"
+						>
+							↗
 						</button>
 					</div>
 				</div>
 
 				{isTailing && (
 					<div className="diagnostics-tailing-indicator">
-						{t("diagnostics.logsTailing")}
+						{t("diagnostics.logsTailing")} — {activeLogTab === "agent" ? "~/.naia/logs/llm-debug.log" : activeLogTab === "shell" ? "~/.naia/logs/naia.log" : "gateway"}
 					</div>
 				)}
 
 				<div className="diagnostics-logs-container">
-					{entries.length === 0 ? (
+					{activeEntries.length === 0 ? (
 						<div className="diagnostics-logs-empty">
-							{t("diagnostics.logsEmpty")}
+							{isTailing ? t("diagnostics.loading") : t("diagnostics.logsEmpty")}
 						</div>
 					) : (
-						entries.map((entry, i) => (
+						activeEntries.map((entry, i) => (
 							<div
 								key={`${entry.timestamp}-${i}`}
 								className="diagnostics-log-line"
