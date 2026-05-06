@@ -19,7 +19,7 @@ formats:
       - "tauri.conf.flatpak.json overrides beforeBuildCommand to empty (frontend built separately)"
       - "deep-link scheme: x-scheme-handler/naia (NOT nanos)"
       - "@node-llama-cpp excluded from bundle (rm -rf after npm install) — saves ~650MB"
-      - "OpenClaw bundled at /app/lib/naia-os/openclaw/"
+      - "naia-agent bundled at /app/lib/naia-os/agent/"
       - "Node bundled at /app/bin/node"
       - "pnpm not in PATH — use npx pnpm, npx tauri"
       - "Claude Code terminal cannot flatpak install — use desktop terminal"
@@ -82,8 +82,8 @@ formats:
         3: "Download Ubuntu 24.04 rootfs from cdimage.ubuntu.com (~374MB .wsl file)"
         4: "wsl --import NaiaEnv (after verifying vmcompute service exists)"
         5: "Install Node.js 22 (NodeSource)"
-        6: "Install OpenClaw (npm install openclaw@latest)"
-        7: "Set gateway.mode=local in /root/.openclaw/openclaw.json"
+        6: "Install naia-agent (npm install + build from source or prebuilt tarball)"
+        7: "Set gateway.mode=local in /root/.naia/gateway.json"
         8: "Write /etc/wsl.conf (systemd=true)"
       broken_approaches:
         - "wsl --install -d Ubuntu-24.04 --no-launch — reports 'already installed' without registering"
@@ -106,7 +106,7 @@ formats:
         initial_startup: "spawn_gateway() → try_platform_gateway_spawn() — Skip if NaiaEnv absent"
         after_wsl_setup: "App.tsx onComplete → restartGateway() → spawn gateway in WSL"
         after_onboarding: "handleComplete() → restartGateway() → restart gateway"
-        health_check: "GET http://127.0.0.1:18789/__openclaw__/canvas/ from Windows host (WSL2 localhost forwarding)"
+        health_check: "GET http://127.0.0.1:18789/health from Windows host (WSL2 localhost forwarding)"
         health_monitor: "Started in restart_gateway if not started during initial setup"
       auto_approve_timeout:
         description: "auto_approve_pending_devices has 15s timeout to prevent restart_gateway hang"
@@ -117,15 +117,15 @@ formats:
       reason: "Deep link auth can trigger multiple restartGateway calls; without guard, Gateway killed mid-spawn"
       frontend_debounce: "2s debounce + inflight promise in gateway-sync.ts"
     identity_sync:
-      description: "Device identity + openclaw.json copied from WSL NaiaEnv to Windows ~/.openclaw/"
+      description: "Device identity + gateway.json copied from WSL NaiaEnv to Windows ~/.naia/"
       trigger: "sync_wsl_identity_to_windows() called after auto_approve_pending_devices in both spawn + reuse paths"
-      reason: "agent-core on Windows needs ~/.openclaw/identity/device.json for Gateway WebSocket handshake"
+      reason: "agent-core on Windows needs ~/.naia/identity/device.json for Gateway WebSocket handshake"
       files_synced:
-        - "/root/.openclaw/identity/device.json → ~/.openclaw/identity/device.json"
-        - "/root/.openclaw/openclaw.json → ~/.openclaw/openclaw.json"
+        - "/root/.naia/identity/device.json → ~/.naia/identity/device.json"
+        - "/root/.naia/gateway.json → ~/.naia/gateway.json"
     config_sync:
-      description: "should_skip_openclaw_sync() returns true on Windows"
-      reason: "Config path is Windows-side ~/.openclaw/ but Gateway reads WSL /root/.openclaw/"
+      description: "should_skip_gateway_sync() returns true on Windows"
+      reason: "Config path is Windows-side ~/.naia/ but Gateway reads WSL /root/.naia/"
       impact: "Provider/model/API key changes from Shell UI not synced to WSL gateway"
       status: "partially mitigated — identity_sync copies initial config but runtime changes not synced"
     e2e_test:
@@ -135,7 +135,7 @@ formats:
         infra: "node scripts/test-windows-e2e.mjs [--skip-cleanup]"
         app: "node scripts/test-windows-app-e2e.mjs [--skip-cleanup]"
       infra_phases:
-        1: "Verify clean state (no NaiaEnv, no .naia, no .openclaw)"
+        1: "Verify clean state (no NaiaEnv, no .naia)"
         2: "WSL setup (rootfs download → NaiaEnv → provision)"
         3: "Gateway startup + HTTP/canvas health check (WSL + Windows host)"
         4: "Device auto-approval + config copy"
@@ -175,7 +175,7 @@ formats:
     dev_note: "cargo tauri dev (without --config windows) for dev mode — windows config requires bundled node.exe"
     whisper_rs: "upstream codeberg (tazz4843/whisper-rs) — NOT nextain fork. Fork decision reversed."
     pending_issues:
-      - "Config sync: should_skip_openclaw_sync prevents runtime provider/model sync to WSL"
+      - "Config sync: should_skip_gateway_sync prevents runtime provider/model sync to WSL"
       - "Gateway /health endpoint: version/methods not exposed — only available via WebSocket skill_diagnostics"
       - "tauri:dev npm script has Linux-only GDK_BACKEND=x11 — Windows must use cargo tauri dev directly"
       - "Onboarding button border invisible in light theme (rgba(255,255,255,0.08) on white)"

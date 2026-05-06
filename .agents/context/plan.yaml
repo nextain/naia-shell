@@ -162,7 +162,7 @@ phases:
         name: "Skills ecosystem (7 built-in + 63 custom)"
         status: "complete"
         description: "7 hardcoded built-in skills (Rust list_skills()) + 63 custom skills (~/.naia/skills/ skill.json)"
-        current: "7 built-in + 63 custom (13 Naia-specific + 50 OpenClaw community)"
+        current: "7 built-in + 63 custom (13 Naia-specific + 50 community)"
         target: "All skills registered + runtime loading"
         strategy: |
           Built-in: 7 hardcoded in Rust list_skills() — time, memo, weather, system_status, naia_discord, soul, exit.

@@ -50,7 +50,7 @@ OAuth login (naia.nextain.io)
 ## Allowlist
 
 Before every DM send, the target user is added to `discord-allowFrom.json` so they can reply.
-- File: `~/.openclaw/credentials/discord-allowFrom.json`
+- File: `~/.naia/credentials/discord-allowFrom.json`
 - Function: `ensureDiscordAllowlisted()`
 
 ## Key Files
@@ -61,6 +61,5 @@ Before every DM send, the target user is added to `discord-allowFrom.json` so th
 
 ## Constraints
 
-- **OpenClaw source NOT modifiable**
 - All target resolution happens in our agent code
 - Gateway must be connected for any action

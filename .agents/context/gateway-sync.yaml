@@ -16,7 +16,7 @@ trigger_points:
   - After reverse sync from Gateway memory files
 
 sync_items:
-  - target: openclaw.json
+  - target: gateway.json
     fields: [provider, model]
     mapping:
       gemini: google
@@ -52,7 +52,7 @@ sync_items:
 
 key_files:
   - shell/src/lib/gateway-sync.ts           # syncToGateway() — self-contained
-  - shell/src/lib/memory-sync.ts            # reverse sync (OpenClaw → Shell facts)
+  - shell/src/lib/memory-sync.ts            # reverse sync (Gateway → Shell facts)
   - shell/src/lib/memory-processor.ts       # extractFacts(), summarizeSession()
   - shell/src/lib/persona.ts                # buildSystemPrompt()
   - shell/src/lib/db.ts                     # getAllFacts(), upsertFact()
@@ -126,7 +126,7 @@ memory_sync:
 flow: read_gateway_memory_files(since_ms) → extractFacts() → upsertFact() → syncToGateway()
     schedule: 5s after app start, then every 30 minutes
     file: shell/src/lib/memory-sync.ts
-rust_command: read_gateway_memory_files (reads ~/.openclaw/workspace/memory/*.md)
+rust_command: read_gateway_memory_files (reads ~/.naia/workspace/memory/*.md)
 
   session_memory_hook:
     description: >
@@ -153,13 +153,13 @@ does not run. ensure_gateway_config() in lib.rs is the single bootstrap path.
     - gateway.bind: "loopback"
     - gateway.auth.mode: "token"
     - gateway.reload.mode: "off"  # Prevent file-watcher race conditions
-    - agents.defaults.workspace: "~/.openclaw/workspace"  # backward-compat path
+    - agents.defaults.workspace: "~/.naia/workspace"
     - session.dmScope: "per-channel-peer"
     - hooks.internal.enabled: true
     - hooks.internal.entries.session-memory.enabled: true
 
 constraints:
-  - Gateway source code is NOT modifiable (backward-compat paths retained)
+  - Gateway source code is modifiable (naia-agent is first-party)
   - Sync is best-effort; errors are logged but never block UI
   - SOUL.md receives the FULL system prompt (emotion tags + name + context)
   - gateway.mode=local is REQUIRED — without it Gateway exits immediately

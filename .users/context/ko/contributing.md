@@ -170,9 +170,9 @@ AI 컨텍스트 파일은 **CC-BY-SA 4.0**으로 라이선스됩니다.
 
 ## 스킬 기여
 
-- **형식**: OpenClaw `skill.json` 스펙
+- **형식**: Naia `skill.json` 스펙 (SKILL.md 프론트매터 → skill.json 매니페스트)
 - **위치**: `agent/assets/default-skills/`
-- **네이밍**: Naia 전용 스킬은 `naia-{이름}/` 사용. 업스트림 OpenClaw 스킬은 원래 이름 유지.
+- **네이밍**: Naia 전용 스킬은 `naia-{이름}/` 사용. 커뮤니티 스킬은 원래 이름 유지.
 - **테스트**: 통합 테스트 우선. 격리된 로직의 mock 기반 단위 테스트 허용. 실제 게이트웨이 E2E: `CAFE_LIVE_GATEWAY_E2E=1` 환경변수로 opt-in.
 
 ---

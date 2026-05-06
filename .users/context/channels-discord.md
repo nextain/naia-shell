@@ -65,16 +65,16 @@ When PC comes online → Shell checks Discord history → processes unread messa
 ### Naia Gateway
 - **Role**: Local daemon for tool execution only — NOT for Discord
 - **Discord plugin**: DISABLED
-- Bot token in `openclaw.json` is for Shell REST API access only
+- Bot token in `gateway.json` is for Shell REST API access only
 
 ## Token Management
 
 | Item | Location |
 |------|----------|
 | Bot token (runtime) | Cloud Run env var `DISCORD_BOT_TOKEN` |
-| Bot token (Shell REST API) | `openclaw.json → channels.discord.token` |
+| Bot token (Shell REST API) | `gateway.json → channels.discord.token` |
 | Bot token (backup) | `my-envs/naia.nextain.io.env` |
-| OpenClaw Discord plugin | DISABLED — do not use |
+| Gateway Discord plugin | DISABLED — do not use |
 | One-connection rule | Discord allows ONE WebSocket per token. Cloud Run holds it. |
 
 ## Login / Channel Separation
@@ -92,7 +92,7 @@ When PC comes online → Shell checks Discord history → processes unread messa
 - `ChatPanel.tsx:985` — `discord_message` ignored (`break`). Should route to LLM pipeline. See #155
 - `discord-bot.ts` has `callLLM()` — violates relay-only principle. Must be removed. See #155
 - Shell → Cloud Run reply API not yet implemented. See #155
-- OpenClaw dependency in Shell (`read_discord_bot_token` from `openclaw.json`). See #154
+- Gateway config dependency in Shell (`read_discord_bot_token` from `gateway.json`). See #154
 
 ## Related Issues
 

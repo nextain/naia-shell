@@ -17,14 +17,14 @@
 5. Shell이 `discordDefaultUserId`를 config에 저장
 6. Shell이 `openDmChannel(discordUserId)` 호출 (Rust Discord Bot API 경유) → DM 채널 ID 획득
 7. Shell이 `discordDmChannelId`를 config에 저장
-8. Shell이 `syncOpenClawWithChannels()` await → `openclaw.json` 기록 + Gateway 재시작
+8. Shell이 `syncGatewayWithChannels()` await → `gateway.json` 기록 + Gateway 재시작
 
 ### DM 채널 ID 갱신
 - DM 채널 ID는 `syncLinkedChannels()` 호출 시 **항상 갱신** (이미 설정되어 있어도)
 - 갱신이 중요한 이유:
   - DM 채널 ID가 있어야 `fetchDiscordMessages()` (대화 목록 조회) 가능
   - DM 채널 ID가 있어야 Discord DM 수신 가능
-  - DM 채널 ID가 `openclaw.json`에 있어야 Gateway가 메시지를 라우팅
+  - DM 채널 ID가 `gateway.json`에 있어야 Gateway가 메시지를 라우팅
 - 흐름: `openDmChannel(userId)` → Discord API `POST /users/@me/channels` → 채널 ID 반환
 
 ### 핵심 파일
@@ -63,9 +63,9 @@ Gateway는 연결된 프로바이더 계정을 `CaretUser.metadata_.linked_accou
 
 DM 채널 ID 해결 후, `channel-sync.ts`가 단일 **await** 동기화 수행:
 
-- **영구 설정** (`syncOpenClawWithChannels`): `syncToGateway()` + `restartGateway()`로 `openclaw.json` 기록 — Gateway 재시작 시에도 유지
+- **영구 설정** (`syncGatewayWithChannels`): `syncToGateway()` + `restartGateway()`로 `gateway.json` 기록 — Gateway 재시작 시에도 유지
 
-> **참고:** 기존 런타임 패치(`syncDiscordToGateway` → `skill_config` 도구 호출)는 `openclaw.json` 동시 쓰기 race condition 방지를 위해 제거됨.
+> **참고:** 기존 런타임 패치(`syncDiscordToGateway` → `skill_config` 도구 호출)는 `gateway.json` 동시 쓰기 race condition 방지를 위해 제거됨.
 
 ## 확장성
 

@@ -307,7 +307,7 @@ git push → GitHub Actions → ghcr.io/luke-n-alpha/naia-os:latest
 
 > 7개 기본 스킬 (Rust `list_skills()` 하드코딩) + 63개 커스텀 스킬 (`~/.naia/skills/` skill.json)
 > 기본 스킬: time, memo, weather, system_status, naia_discord, soul, exit
-> 커스텀: 13개 Naia 전용 + 50개 OpenClaw 커뮤니티
+> 커스텀: 13개 Naia 전용 + 50개 커뮤니티
 
 **전략:** 기본 스킬은 Rust에서 하드코딩 (비활성화 불가). 커스텀 스킬은 `agent/assets/default-skills/`에서 `~/.naia/skills/`로 bootstrap 복사 후 런타임 로드.
 

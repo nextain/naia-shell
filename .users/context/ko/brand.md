@@ -32,7 +32,7 @@
 
 ## 포지셔닝
 
-OpenClaw AI 에이전트와 VRM 아바타가 결합된 차세대 AI 운영체제
+Naia Agent와 VRM 아바타가 결합된 차세대 AI 운영체제
 
 ## 캐릭터 디자인
 

@@ -79,7 +79,7 @@ character_design:
     deep_node: { hex: "#0F172A", role: "dark mode background" }
   gradient: "diagonal linear, bottom-left (#2563EB) to top-right (#10B981)"
 
-positioning: "OpenClaw AI agent + VRM avatar combined next-generation AI OS"
+positioning: "Naia Agent + VRM avatar combined next-generation AI OS"
 
 ui_layout:
   top: "Naia"

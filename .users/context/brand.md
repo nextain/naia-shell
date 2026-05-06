@@ -32,7 +32,7 @@ Both **Naia** and **Nextain** are born from the same words: **N**ext **AI** Netw
 
 ## Positioning
 
-OpenClaw AI agent + VRM avatar combined next-generation AI OS
+Naia Agent + VRM avatar combined next-generation AI OS
 
 ## Character Design
 

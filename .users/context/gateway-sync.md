@@ -19,9 +19,9 @@ This ensures Gateway features (Discord DM, TTS, etc.) use the same persona and c
 
 ## Sync Items
 
-### 1. `openclaw.json` — Provider/Model
+### 1. `gateway.json` — Provider/Model
 
-| Shell Provider | OpenClaw Provider |
+| Shell Provider | Gateway Provider |
 |---------------|-------------------|
 | gemini | google |
 | anthropic | anthropic |
@@ -52,14 +52,14 @@ Full output from `buildSystemPrompt()`:
 
 ### Dual-Origin Architecture
 
-| Aspect | Shell | OpenClaw |
+| Aspect | Shell | Naia Gateway |
 |--------|-------|----------|
 | Role | "Who the user is" (facts) | "What happened" (session records) |
 | Storage | `memory.db` (SQLite, facts table) | `workspace/memory/*.md` + `memory/main.sqlite` |
 
-### Shell to OpenClaw (facts in SOUL.md)
+### Shell to Gateway (facts in SOUL.md)
 
-Facts DB content is injected into SOUL.md so OpenClaw-only paths (Discord DM, etc.) can access user info.
+Facts DB content is injected into SOUL.md so Gateway-only paths (Discord DM, etc.) can access user info.
 
 ### Auto-extraction During Conversation
 
@@ -68,17 +68,17 @@ Facts are extracted automatically during conversation without requiring "New Con
 - **App goes to background**: `visibilitychange` event, threshold 3+ unextracted messages
 - Uses `extractFacts()` only (lightweight, no summarization)
 
-### OpenClaw to Shell (reverse sync)
+### Gateway to Shell (reverse sync)
 
-Reads `workspace/memory/*.md` files saved by OpenClaw's `session-memory` hook:
-- `read_gateway_memory_files(since_ms)` Rust command reads files
+Reads `workspace/memory/*.md` files saved by Gateway's `session-memory` hook:
+- `read_gateway_memory_files(since_ms)` Rust command reads `~/.naia/workspace/memory/*.md`
 - LLM extracts facts -> `upsertFact()` -> `syncToGateway()`
 - Runs 5s after app start + every 30 minutes
 
 ### session-memory Hook
 
-OpenClaw internal hook that auto-saves conversations to `workspace/memory/*.md`.
-Enabled via `config/defaults/openclaw-bootstrap.json`.
+Gateway internal hook that auto-saves conversations to `workspace/memory/*.md`.
+Enabled via `config/defaults/gateway-bootstrap.json`.
 
 ## Chat Routing
 
@@ -93,7 +93,7 @@ Agent field: `ChatRequest.routeViaGateway` (boolean)
 ## Key Files
 
 - `shell/src/lib/gateway-sync.ts` — `syncToGateway()` (self-contained)
-- `shell/src/lib/memory-sync.ts` — reverse sync (OpenClaw -> Shell)
+- `shell/src/lib/memory-sync.ts` — reverse sync (Gateway -> Shell)
 - `shell/src/lib/memory-processor.ts` — `extractFacts()`, `summarizeSession()`
 - `shell/src/lib/persona.ts` — `buildSystemPrompt()`
 - `shell/src/lib/db.ts` — `getAllFacts()`, `upsertFact()`
@@ -104,7 +104,7 @@ Agent field: `ChatRequest.routeViaGateway` (boolean)
 
 ## Constraints
 
-- **OpenClaw source is NOT modifiable**
+- **Naia Gateway source is modifiable (naia-agent)**
 - Sync is best-effort; errors are logged but never block UI
 - SOUL.md receives the FULL system prompt (emotion tags + name + facts + context)
-- `gateway.mode=local` is REQUIRED — without it OpenClaw exits immediately
+- `gateway.mode=local` is REQUIRED — without it Gateway exits immediately

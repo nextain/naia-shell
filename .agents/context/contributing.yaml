@@ -94,11 +94,11 @@ contribution_types:
   skill:
     difficulty: medium
     location: "agent/assets/default-skills/"
-    format: "OpenClaw skill.json spec"
+    format: "Naia skill.json spec (SKILL.md frontmatter → skill.json manifest)"
     process:
       - "Open issue with skill_proposal template"
-      - "Each skill needs skill.json with proper metadata"
-      - "New Naia-specific skills use naia-{name}/ naming. Upstream OpenClaw skills keep their original names."
+      - "Each skill needs SKILL.md with frontmatter + skill.json manifest"
+      - "New Naia-specific skills use naia-{name}/ naming. Community skills keep their original names."
       - "Integration tests preferred. Mock-based unit tests acceptable for isolated logic. E2E with real gateway: opt-in via CAFE_LIVE_GATEWAY_E2E=1."
       - "Update .agents/ context if new skill changes architecture"
       - "Submit PR"

@@ -52,7 +52,7 @@ OpenClaw's daemon + execution + channels + skills ecosystem (runtime backend)
 ┌──────────────────────▼──────────────────────────────────┐
 │  Naia Gateway (systemd user service)                │
 │  Role: Execution, security, channels, skills, memory    │
-│  Source: OpenClaw ecosystem (npm: openclaw)              │
+│  Source: naia-agent (Node.js, pnpm dev / dist/index.js)  │
 │  Auth: device identity + token scopes (protocol v3)     │
 │  Methods: dynamic by profile (agent, node.invoke,        │
 │  sessions.*, browser.request, skills.*, channels.* ...)  │
@@ -203,7 +203,7 @@ OAuth deep-link payloads must be persisted regardless of whether specific tabs (
 Memory lives in **two systems** that serve different purposes and connect at session boundaries.
 
 - **Shell** owns "who is the user" (facts)
-- **OpenClaw** owns "what happened" (session transcripts + semantic search index)
+- **Naia Gateway** owns "what happened" (session transcripts + semantic search index)
 
 ### Shell Memory (Tauri)
 
@@ -225,13 +225,13 @@ Memory lives in **two systems** that serve different purposes and connect at ses
 | **Extraction** | `memory-processor.ts` `extractFacts()` — LLM parses conversation → `{key, value}[]` |
 | **Injection** | `persona.ts` `buildSystemPrompt()` → `"Known facts about the user: ..."` in system prompt |
 
-### OpenClaw Memory (Daemon)
+### Naia Gateway Memory (Daemon)
 
 #### Session Transcripts
 
 | Item | Details |
 |------|---------|
-| **Storage** | `~/.openclaw/agents/main/sessions/` (`sessions.json` + `*.jsonl` per session) |
+| **Storage** | `~/.naia/sessions/` (`sessions.json` + `*.jsonl` per session) |
 | **Scope** | Full conversation history per session key (`agent:main:main`, `discord:dm:*`, etc.) |
 | **RPC** | `sessions.list`, `chat.history`, `sessions.transcript`, `sessions.compact` |
 | **Hook** | `session-memory` — on `/new` or `/reset`, saves conversation to `workspace/memory/*.md` |
@@ -240,7 +240,7 @@ Memory lives in **two systems** that serve different purposes and connect at ses
 
 | Item | Details |
 |------|---------|
-| **Storage** | `~/.openclaw/memory/main.sqlite` (SQLite with embeddings) |
+| **Storage** | `~/.naia/memory/main.sqlite` (SQLite with embeddings) |
 | **Tools** | `memory_search` (semantic search), `memory_get` (retrieve entry) |
 | **Scope** | Cross-session searchable index (sessions + `workspace/memory/*.md` files) |
 
@@ -248,7 +248,7 @@ Memory lives in **two systems** that serve different purposes and connect at ses
 
 | Item | Details |
 |------|---------|
-| **Storage** | `~/.openclaw/workspace/` (`SOUL.md`, `IDENTITY.md`, `USER.md`) |
+| **Storage** | `~/.naia/workspace/` (`SOUL.md`, `IDENTITY.md`, `USER.md`) |
 | **Sync** | Shell writes these via `sync_gateway_config` (`lib.rs`) on settings change |
 | **Note** | Regenerable from Shell settings — not primary data |
 
@@ -261,30 +261,30 @@ SESSION START
   → System prompt with user facts sent to Agent
 
 DURING SESSION
-  Agent ↔ OpenClaw: messages stored in session transcript (*.jsonl)
-  OpenClaw: memory_search tool available for LLM to query past sessions
+  Agent ↔ Naia Gateway: messages stored in session transcript (*.jsonl)
+  Naia Gateway: memory_search tool available for LLM to query past sessions
   Shell: Zustand store holds current messages for UI
 
 SESSION END (user clicks "New Conversation")
   Shell [fire-and-forget]:
     1. summarizeSession(messages) → LLM generates 2-3 sentence summary
-    2. patchGatewaySession("agent:main:main", {summary}) → OpenClaw session metadata
+    2. patchGatewaySession("agent:main:main", {summary}) → Naia Gateway session metadata
     3. extractFacts(messages, summary) → LLM extracts {key, value}[] user facts
     4. upsertFact() × N → Shell facts DB (memory.db)
-  OpenClaw:
+  Naia Gateway:
     session-memory hook saves conversation to workspace/memory/YYYY-MM-DD-slug.md
     semantic index updated with new session content
 
 NEXT SESSION
   Shell: loads facts → injects into system prompt ("Known facts about the user")
-  OpenClaw: memory_search finds content from previous sessions
+  Naia Gateway: memory_search finds content from previous sessions
   → User is "remembered" through both system prompt facts AND searchable history
 ```
 
 ### Discord Channel Memory
 
-Discord messages flow through OpenClaw sessions (key: `agent:main:discord:direct:<userId>`).
-These are stored in OpenClaw session transcripts and indexed by `memory_search`.
+Discord messages flow through Naia Gateway sessions (key: `agent:main:discord:direct:<userId>`).
+These are stored in Naia Gateway session transcripts and indexed by `memory_search`.
 However, Shell fact extraction (`summarizePreviousSession`) only runs on Shell chat sessions —
 **Discord conversations do NOT trigger fact extraction yet**.
 
@@ -293,11 +293,11 @@ However, Shell fact extraction (`summarizePreviousSession`) only runs on Shell c
 | Path | Content | Required? |
 |------|---------|-----------|
 | `~/.config/naia-os/memory.db` | Shell facts (user knowledge) | **Must backup** |
-| `~/.openclaw/memory/main.sqlite` | Semantic search index | **Must backup** (rebuildable but slow) |
-| `~/.openclaw/agents/main/sessions/` | Conversation transcripts | Recommended |
-| `~/.openclaw/openclaw.json` | Gateway config (API keys, model) | Recommended |
-| `~/.openclaw/workspace/` | SOUL/IDENTITY/USER.md | Regenerable from Shell |
-| `~/.openclaw/credentials/` | OAuth tokens | Re-authenticatable |
+| `~/.naia/memory/main.sqlite` | Semantic search index | **Must backup** (rebuildable but slow) |
+| `~/.naia/sessions/` | Conversation transcripts | Recommended |
+| `~/.naia/gateway.json` | Gateway config (API keys, model) | Recommended |
+| `~/.naia/workspace/` | SOUL/IDENTITY/USER.md | Regenerable from Shell |
+| `~/.naia/credentials/` | OAuth tokens | Re-authenticatable |
 
 ### Search Engine Evolution (swappable via MemoryProcessor interface)
 
@@ -315,9 +315,9 @@ However, Shell fact extraction (`summarizePreviousSession`) only runs on Shell c
 CREATE TABLE facts (id TEXT PK, key TEXT UNIQUE, value TEXT,
                     source_session TEXT, created_at INT, updated_at INT);
 
--- OpenClaw sessions: ~/.openclaw/agents/main/sessions/sessions.json (metadata)
---                  + *.jsonl per session (transcripts)
--- OpenClaw semantic: ~/.openclaw/memory/main.sqlite (embeddings index)
+-- Naia Gateway sessions: ~/.naia/sessions/sessions.json (metadata)
+--                      + *.jsonl per session (transcripts)
+-- Naia Gateway semantic: ~/.naia/memory/main.sqlite (embeddings index)
 ```
 
 ---
@@ -372,7 +372,7 @@ Skill management: built-in skills, Gateway skills, and install flow. *(Updated: 
 | Layer | Role | Config |
 |-------|------|--------|
 | **OS** | Bazzite immutable rootfs + SELinux | System file protection |
-| **Gateway** | OpenClaw device auth + token scopes + exec approval | protocol v3, Ed25519 |
+| **Gateway** | Naia Gateway device auth + token scopes + exec approval | protocol v3, Ed25519 |
 | **Agent** | Permission tiers 0-3 + per-tool blocking | Tier 3: blocks rm -rf, sudo, etc. |
 | **Shell** | User approval modal + tool on/off toggle | User-controlled |
 
@@ -382,7 +382,7 @@ Skill management: built-in skills, Gateway skills, and install flow. *(Updated: 
 
 ## GatewayAdapter Abstraction
 
-> **#64 (2026-03-17)** — Interface layer to decouple agent from OpenClaw-specific code
+> **#64 (2026-03-17)** — Interface layer to decouple agent from gateway-specific code
 
 | Item | Detail |
 |------|--------|
@@ -394,7 +394,7 @@ Skill management: built-in skills, Gateway skills, and install flow. *(Updated: 
 
 **Interface methods:** `request`, `onEvent`, `offEvent`, `close`, `isConnected`, `availableMethods`
 
-**Rationale:** OpenAI acquired OpenClaw → protocol change/paywall risk. Without abstraction, any breaking change requires full rewrite.
+**Rationale:** Abstraction layer isolates agent code from gateway protocol changes. Without it, any breaking change requires full rewrite.
 
 ---
 

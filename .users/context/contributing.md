@@ -186,9 +186,9 @@ Context contributions are valued equally to code contributions.
 
 ## Skill Contribution
 
-- **Format**: OpenClaw `skill.json` spec
+- **Format**: Naia `skill.json` spec (SKILL.md frontmatter → skill.json manifest)
 - **Location**: `agent/assets/default-skills/`
-- **Naming**: New Naia-specific skills use `naia-{name}/`. Upstream OpenClaw skills keep their original names.
+- **Naming**: New Naia-specific skills use `naia-{name}/`. Community skills keep their original names.
 - **Testing**: Integration tests preferred. Mock-based unit tests acceptable for isolated logic. E2E with real gateway: opt-in via `CAFE_LIVE_GATEWAY_E2E=1`.
 
 ---

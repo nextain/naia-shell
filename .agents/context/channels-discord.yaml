@@ -34,7 +34,7 @@ message_pipeline:
     bot_token_location: "Cloud Run env var (DISCORD_BOT_TOKEN) — never in client code"
     bot_token_backup: "my-envs/naia.nextain.io.env"
     shell_access: "Shell reads token from local config for REST API (history/DM channel)"
-    openclaw_plugin: "DISABLED — do not use OpenClaw Discord plugin"
+    gateway_discord_plugin: "DISABLED — do not use Gateway Discord plugin"
     one_connection_rule: "Discord allows ONE WebSocket per token. Cloud Run bot holds it."
 
 cloud_run_bot:
@@ -79,14 +79,14 @@ components:
       - agent/src/skills/built-in/naia-discord.ts
       - agent/src/gateway/event-handler.ts
 
-  openclaw_gateway:
+  naia_gateway:
     role: Local daemon for tool execution only — NOT for Discord message routing
     discord_plugin: DISABLED
     note: >
-      OpenClaw manages local tools (bash, files, etc.) and session state.
-      Discord messages do NOT flow through OpenClaw.
-      Bot token in openclaw.json is for Shell REST API access only,
-      not for OpenClaw Discord plugin.
+      Naia Gateway manages local tools (bash, files, etc.) and session state.
+      Discord messages do NOT flow through Naia Gateway.
+      Bot token in gateway.json is for Shell REST API access only,
+      not for the Gateway Discord plugin.
 
 login_channel_separation:
   description: Login and channel logic are fully separated.
@@ -111,7 +111,7 @@ known_issues:
   - "ChatPanel.tsx:985 — discord_message is ignored (break). Should route to LLM pipeline. See #155"
   - "discord-bot.ts has callLLM() — violates relay-only principle. Must be removed. See #155"
   - "Shell → Cloud Run reply API not yet implemented. See #155"
-  - "OpenClaw dependency in Shell (read_discord_bot_token from openclaw.json). See #154"
+  - "Gateway config dependency in Shell (read_discord_bot_token from gateway.json). See #154"
 
 related_issues:
   - "#144 — Bot token expired (resolved: new token + Cloud Run deployment)"

@@ -38,7 +38,7 @@ discord_user_id_flow:
 
 allowlist:
   purpose: Ensure DM target is in discord-allowFrom.json so they can reply
-  file: "~/.openclaw/credentials/discord-allowFrom.json"
+  file: "~/.naia/credentials/discord-allowFrom.json"
   function: ensureDiscordAllowlisted()
   trigger: Before every send to user:<id>
 
@@ -48,6 +48,6 @@ key_files:
   - shell/src-tauri/src/lib.rs (lines 1378-1505, deep link parsing)
 
 constraints:
-  - OpenClaw source NOT modifiable
+  - All target resolution happens in our agent code
   - All target resolution happens in our agent code
   - Gateway must be connected for any action

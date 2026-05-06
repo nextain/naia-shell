@@ -97,7 +97,7 @@ runtime_architecture:
     ┌──────────────────────▼──────────────────────────────────┐
     │  Naia Gateway (systemd user service)                │
     │  Role: Execution, security, channels, skills, memory    │
-    │  Source: OpenClaw ecosystem (npm: openclaw)              │
+    │  Source: naia-agent (Node.js, pnpm dev / dist/index.js)  │
     │  Auth: device identity + token scopes (protocol v3)     │
     │  Methods: dynamic by profile (agent, node.invoke,        │
     │  sessions.*, browser.request, skills.*, channels.* ...)  │
@@ -191,11 +191,11 @@ deep_link_persistence_contract:
     - "Duplicating persistence rules across multiple components with divergent fallback behavior."
 
 memory_architecture:
-  description: "Dual-origin memory: Shell (user facts) + OpenClaw (session context + semantic search)"
+  description: "Dual-origin memory: Shell (user facts) + Naia Gateway (session context + semantic search)"
 
   overview: |
     Memory lives in TWO systems that serve different purposes and connect at session boundaries.
-    Shell owns "who is the user" (facts). OpenClaw owns "what happened" (sessions + semantic index).
+    Shell owns "who is the user" (facts). Naia Gateway owns "what happened" (sessions + semantic index).
     Neither is a subset of the other — both are required for full memory.
 
   shell_memory:
@@ -217,11 +217,11 @@ memory_architecture:
         storage: "db.ts upsertFact() → Rust memory.rs (ON CONFLICT(key) UPDATE)"
         injection: "persona.ts buildSystemPrompt() → 'Known facts about the user: ...' in system prompt"
 
-  openclaw_memory:
-    description: "Session transcripts + semantic search, owned by OpenClaw daemon"
+  gateway_memory:
+    description: "Session transcripts + semantic search, owned by Naia Gateway daemon"
     session_store:
       name: "Session Transcripts"
-      storage: "~/.openclaw/agents/main/sessions/ (sessions.json + *.jsonl per session)"
+      storage: "~/.naia/sessions/ (sessions.json + *.jsonl per session)"
       scope: "Full conversation history per session key (e.g. agent:main:main, discord:dm:*)"
       features:
         - "sessions.list / chat.history / sessions.transcript RPC"
@@ -229,14 +229,14 @@ memory_architecture:
         - "session-memory hook — on /new or /reset, saves conversation to workspace/memory/*.md"
     semantic_search:
       name: "Semantic Memory Index"
-      storage: "~/.openclaw/memory/main.sqlite (SQLite with embeddings)"
+      storage: "~/.naia/memory/main.sqlite (SQLite with embeddings)"
       tools:
         - "memory_search — semantic search across sessions and workspace memory files"
         - "memory_get — retrieve specific memory entry"
       scope: "Cross-session searchable index (sessions + workspace/memory/*.md files)"
     workspace:
       name: "Workspace Bootstrap Files"
-      storage: "~/.openclaw/workspace/ (SOUL.md, IDENTITY.md, USER.md)"
+      storage: "~/.naia/workspace/ (SOUL.md, IDENTITY.md, USER.md)"
       sync: "Shell writes these via sync_gateway_config (lib.rs) on settings change"
       note: "Regenerable from Shell settings — not primary data"
 
@@ -250,38 +250,38 @@ memory_architecture:
 
     2. DURING SESSION
        Agent ↔ Naia Gateway: messages stored in session transcript (*.jsonl)
-       OpenClaw: memory_search tool available for LLM to query past sessions
+       Naia Gateway: memory_search tool available for LLM to query past sessions
        Shell: Zustand store holds current messages for UI
 
     3. SESSION END (user clicks "New Conversation")
        Shell: summarizePreviousSession() [fire-and-forget]
          a. summarizeSession(messages) → LLM generates 2-3 sentence summary
-         b. patchGatewaySession("agent:main:main", {summary}) → saved to OpenClaw session metadata
+         b. patchGatewaySession("agent:main:main", {summary}) → saved to Naia Gateway session metadata
          c. extractFacts(messages, summary) → LLM extracts {key, value}[] user facts
          d. upsertFact() × N → saved to Shell facts DB (memory.db)
-       OpenClaw: session-memory hook saves conversation to workspace/memory/YYYY-MM-DD-slug.md
-       OpenClaw: semantic index updated with new session content
+       Naia Gateway: session-memory hook saves conversation to workspace/memory/YYYY-MM-DD-slug.md
+       Naia Gateway: semantic index updated with new session content
 
     4. NEXT SESSION
        Shell: loads facts from Shell DB → injects into system prompt
-       OpenClaw: memory_search can find content from previous sessions
+       Naia Gateway: memory_search can find content from previous sessions
        → User is "remembered" through both system prompt facts AND searchable history
 
   discord_channel_memory: |
-    Discord messages flow through OpenClaw sessions (key: agent:main:discord:direct:<userId>
-    or agent:main:discord:channel:<channelId>). These are stored in OpenClaw session transcripts
+    Discord messages flow through Naia Gateway sessions (key: agent:main:discord:direct:<userId>
+    or agent:main:discord:channel:<channelId>). These are stored in Naia Gateway session transcripts
     and indexed by memory_search. However, Shell fact extraction (summarizePreviousSession) only
     runs on Shell chat sessions — Discord conversations do NOT trigger fact extraction yet.
 
   backup_required:
     must_backup:
       - "~/.config/naia-os/memory.db — Shell facts (user knowledge, not regenerable)"
-      - "~/.openclaw/memory/main.sqlite — semantic search index (rebuildable but slow)"
-      - "~/.openclaw/agents/main/sessions/ — conversation transcripts"
-      - "~/.openclaw/openclaw.json — gateway config (API keys, model settings)"
+      - "~/.naia/memory/main.sqlite — semantic search index (rebuildable but slow)"
+      - "~/.naia/sessions/ — conversation transcripts"
+      - "~/.naia/gateway.json — gateway config (API keys, model settings)"
     regenerable:
-      - "~/.openclaw/workspace/ (SOUL.md, IDENTITY.md, USER.md) — re-synced from Shell settings"
-      - "~/.openclaw/credentials/ — re-authenticatable"
+      - "~/.naia/workspace/ (SOUL.md, IDENTITY.md, USER.md) — re-synced from Shell settings"
+      - "~/.naia/credentials/ — re-authenticatable"
 
   search_evolution:
     phase_4_4a: "SQLite LIKE (keyword matching)"
@@ -296,8 +296,8 @@ memory_architecture:
     }
   db_schema:
     shell_facts: "id TEXT PK, key TEXT UNIQUE, value TEXT, source_session TEXT, created_at INT, updated_at INT"
-    openclaw_sessions: "~/.openclaw/agents/main/sessions/sessions.json (metadata) + *.jsonl (transcripts)"
-    openclaw_memory: "~/.openclaw/memory/main.sqlite (semantic index with embeddings)"
+    naia_sessions: "~/.naia/sessions/sessions.json (metadata) + *.jsonl (transcripts)"
+    naia_memory: "~/.naia/memory/main.sqlite (semantic index with embeddings)"
 
 skill_system:
   description: "Skill management: built-in skills, Gateway skills, and install flow"
@@ -515,13 +515,13 @@ panel_system:
 
 security_layers:
   layer_1_os: "Bazzite immutable rootfs + SELinux"
-  layer_2_gateway: "OpenClaw device auth + token scopes + exec approvals"
+  layer_2_gateway: "Naia Gateway device auth + token scopes + exec approvals"
   layer_3_agent: "Permission tiers 0-3 + tool-level blocking"
   layer_4_shell: "User approval modal + tools on/off toggle"
   principle: "Defense in depth. Every layer is independent."
 
 gateway_adapter_abstraction:
-  description: "GatewayAdapter interface decouples agent code from OpenClaw-specific implementation"
+  description: "GatewayAdapter interface decouples agent code from gateway-specific implementation"
   added: "2026-03-17 (#64)"
   interface_file: "agent/src/gateway/types.ts — GatewayAdapter"
   interface_methods:
@@ -534,7 +534,7 @@ gateway_adapter_abstraction:
   current_implementation: "GatewayClient implements GatewayAdapter (agent/src/gateway/client.ts)"
   usage: "All proxy files, tool-bridge, skills/types, skills/loader, index.ts use GatewayAdapter — never GatewayClient directly (except new GatewayClient() in connectGatewayWithRetry)"
   future: "#78 — first-run gateway selection + on-demand version-pinned install"
-  rationale: "OpenAI acquired OpenClaw — protocol change risk. Abstraction layer isolates impact."
+  rationale: "Abstraction layer isolates agent code from gateway protocol changes."
 
 gateway_client_protocol:
   description: "How Naia Agent connects to Naia Gateway"
@@ -555,8 +555,8 @@ gateway_client_protocol:
   windows_notes:
     description: "On Windows, Gateway runs inside WSL2 NaiaEnv distro"
     connection: "ws://127.0.0.1:18789 (mirrored networking allows localhost access from host)"
-    spawn: "wsl.exe -d NaiaEnv -- node /opt/naia/openclaw/node_modules/openclaw/openclaw.mjs gateway run"
-    config_requirement: "gateway.mode=local must be set in /root/.openclaw/openclaw.json"
+    spawn: "wsl.exe -d NaiaEnv -- node /opt/naia/agent/dist/index.js"
+    config_requirement: "gateway.mode=local must be set in /root/.naia/gateway.json"
     race_condition_guard: "restart_gateway uses AtomicBool compare_exchange to prevent concurrent restarts"
 
 voice_architecture:
@@ -756,7 +756,7 @@ voice_architecture:
     engine_selection: |
       ttsEngine is derived from ttsProvider:
       - google, nextain → "google" engine (direct Google Cloud TTS)
-      - edge, openai, elevenlabs → "openclaw" engine (via Naia Gateway)
+      - edge, openai, elevenlabs → "gateway" engine (via Naia Gateway)
     settings_ui: "TTS provider dropdown + API key input + voice picker (auto-discovery from registry)"
     pricing:
       edge: "Free"
@@ -834,7 +834,7 @@ voice_architecture:
       - Tools DISABLED in pipeline mode (prevents tool loops blocking TTS)
       - Agent auto-TTS DISABLED (frontend handles per-sentence TTS via SentenceChunker)
       - Emotion tags ([HAPPY] etc.) and emoji stripped before TTS
-    openclaw_separation: "STT/TTS fully decoupled from Naia Gateway. Shell handles all STT/TTS directly via agent IPC. Gateway used only for LLM routing + skills/tools."
+    gateway_separation: "STT/TTS fully decoupled from Naia Gateway. Shell handles all STT/TTS directly via agent IPC. Gateway used only for LLM routing + skills/tools."
     naia_cloud:
       tts_endpoint: "https://naia-gateway-181404717065.asia-northeast3.run.app/v1/audio/speech"
       stt_endpoint: "https://naia-gateway-181404717065.asia-northeast3.run.app/v1/audio/transcriptions"
