@@ -3214,31 +3214,6 @@ pub fn run() {
                     }
                     log_both("[Naia] === Session ended ===");
                 }
-                // Windows: re-enable IME each time the window gains OS focus.
-                // Korean/CJK IME fix: when the app regains OS focus, tao's
-                // WM_SETFOCUS handler returns 0 without calling DefWindowProc,
-                // so Win32 keyboard focus stays on the tao parent HWND rather
-                // than the WebView2 child. IME toggle (한/영) never reaches
-                // WebView2. Fix: forward focus to the WebView2 child and
-                // re-associate the IME context.
-                #[cfg(windows)]
-                tauri::WindowEvent::Focused(true) => {
-                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                    if let Ok(wh) = window.window_handle() {
-                        if let RawWindowHandle::Win32(h) = wh.as_raw() {
-                            let tauri_hwnd = h.hwnd.get() as isize;
-                            // Re-associate IME with the whole window subtree
-                            crate::platform::enable_ime_for_window(tauri_hwnd);
-                            // Forward Win32 keyboard focus to the WebView2 child
-                            // so IME events (including 한/영 toggle) reach the renderer
-                            if let Some(wv2_hwnd) = crate::platform::find_webview2_child(tauri_hwnd) {
-                                crate::platform::window_manager()
-                                    .focus(crate::platform::PlatformHandle::Win32(wv2_hwnd))
-                                    .ok();
-                            }
-                        }
-                    }
-                }
                 _ => {}
             }
         })

@@ -4343,17 +4343,25 @@ body.resizing-row {
 /* Diagnostics Tab */
 .diagnostics-tab {
 	flex: 1;
-	overflow-y: auto;
+	min-height: 0;
 	padding: 8px 12px;
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
+	overflow: hidden;
 }
 
 .diagnostics-section {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+	flex-shrink: 0;
+}
+
+.diagnostics-section-logs {
+	flex: 1;
+	min-height: 0;
+	flex-shrink: 1;
 }
 
 .diagnostics-section-header {
@@ -4476,7 +4484,8 @@ body.resizing-row {
 	border: 1px solid var(--espresso-light);
 	border-radius: 6px;
 	padding: 6px 8px;
-	max-height: 300px;
+	flex: 1;
+	min-height: 120px;
 	overflow-y: auto;
 	font-family: var(--mono);
 	font-size: 10px;

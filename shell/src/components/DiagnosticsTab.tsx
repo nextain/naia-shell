@@ -426,7 +426,7 @@ export function DiagnosticsTab() {
 			</div>
 
 			{/* ── Log Tabs ── */}
-			<div className="diagnostics-section">
+			<div className="diagnostics-section diagnostics-section-logs">
 				<div className="diagnostics-section-header">
 					<div className="diagnostics-log-tabs">
 						{(["agent", "gateway", "shell"] as LogTab[]).map((tab) => (
