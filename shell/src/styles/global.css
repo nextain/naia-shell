@@ -820,6 +820,11 @@ body.resizing-col .naia-resize-handle {
 	min-height: 80px;
 	overflow: hidden;
 	position: relative;
+	/* Force GPU compositor layer so the WebGL canvas doesn't cause repaints
+	   in the chat area when the textarea is focused (WebView2 flickering) */
+	will-change: transform;
+	transform: translateZ(0);
+	isolation: isolate;
 }
 
 /* Drag handle between avatar and chat */
