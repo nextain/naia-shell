@@ -3033,6 +3033,24 @@ pub fn run() {
                 let _ = window.show();
             }
 
+            // Windows: enable Korean/CJK IME for the WebView2 child windows.
+            // Must run after the window is visible and WebView2 is initialized.
+            #[cfg(windows)]
+            {
+                let app_handle_ime = app_handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    let wm = crate::platform::window_manager();
+                    if let Ok(handle) = wm.find_window_by_name("Naia", 5000) {
+                        if let crate::platform::PlatformHandle::Win32(hwnd_isize) = handle {
+                            crate::platform::enable_ime_for_window(hwnd_isize);
+                            log_verbose("[Naia] IME enabled for WebView2 (startup)");
+                        }
+                    }
+                    drop(app_handle_ime);
+                });
+            }
+
             // WebKit GPU/permission settings for Linux
             #[cfg(target_os = "linux")]
             if let Some(webview_window) = app.get_webview_window("main") {
@@ -3195,6 +3213,18 @@ pub fn run() {
                         }
                     }
                     log_both("[Naia] === Session ended ===");
+                }
+                // Windows: re-enable IME each time the window gains OS focus.
+                // The 한/영 toggle can get lost when the user Alt-Tabs away and
+                // back — re-associating the default IME context restores it.
+                #[cfg(windows)]
+                tauri::WindowEvent::Focused(true) => {
+                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    if let Ok(wh) = window.window_handle() {
+                        if let RawWindowHandle::Win32(h) = wh.as_raw() {
+                            crate::platform::enable_ime_for_window(h.hwnd.get() as isize);
+                        }
+                    }
                 }
                 _ => {}
             }

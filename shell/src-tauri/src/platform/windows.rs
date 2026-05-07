@@ -593,6 +593,25 @@ pub(crate) fn configure_webview(_app: &tauri::App) {
     // WebView2 on Windows doesn't need special configuration
 }
 
+/// Associate the default IME context with a window and all its children.
+///
+/// Tauri frameless windows (`decorations: false`) can break Korean/CJK IME
+/// because the custom WndProc doesn't always forward `WM_IME_SETCONTEXT`
+/// properly to the WebView2 child windows.  Calling this after the window is
+/// shown (and again on each `WindowEvent::Focused`) forces Windows to
+/// re-establish the IME association so the 한/영 toggle and IME composition
+/// both work in the WebView2 textarea.
+pub(crate) fn enable_ime_for_window(hwnd_isize: isize) {
+    use windows_sys::Win32::UI::Input::Ime::{ImmAssociateContextEx, IACE_CHILDREN, IACE_DEFAULT};
+    let hwnd = isize_to_hwnd(hwnd_isize);
+    unsafe {
+        // IACE_DEFAULT  — use the thread's default IME context (not NULL/disabled)
+        // IACE_CHILDREN — apply recursively to all child windows (covers
+        //                 WebView2's Chrome_RenderWidgetHostHWND)
+        ImmAssociateContextEx(hwnd, std::ptr::null_mut(), IACE_DEFAULT | IACE_CHILDREN);
+    }
+}
+
 /// Resolve `npx` to `npx.cmd` on Windows (Rust's Command doesn't search .cmd extensions).
 pub(crate) fn resolve_npx() -> String {
     "npx.cmd".to_string()
