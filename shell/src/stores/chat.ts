@@ -171,9 +171,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			pendingApproval,
 		} = get();
 		if (!isStreaming) return;
-		// If approval was pending and browser is active, re-show Chrome (mirrors clearPendingApproval)
+		// If approval was pending and browser is active, re-show WebView2 (mirrors clearPendingApproval)
 		if (pendingApproval && usePanelStore.getState().activePanel === "browser") {
-			invoke("browser_embed_show").catch(() => {});
+			invoke("browser_wv_show").catch(() => {});
 		}
 		const toolCalls =
 			streamingToolCalls.length > 0 ? streamingToolCalls : undefined;
@@ -252,9 +252,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	setProvider: (provider) => set({ provider }),
 
 	setPendingApproval: (approval) => {
-		// browser panel 활성 중이면 Chrome을 React render 이전에 hide — 모달이 Chrome에 가려지는 것 방지
+		// browser panel 활성 중이면 WebView2를 React render 이전에 hide — 모달이 WebView2에 가려지는 것 방지
 		if (usePanelStore.getState().activePanel === "browser") {
-			invoke("browser_embed_hide").catch(() => {});
+			invoke("browser_wv_hide").catch(() => {});
 		}
 		set({ pendingApproval: approval });
 	},
@@ -265,18 +265,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			get().pendingApproval &&
 			usePanelStore.getState().activePanel === "browser"
 		) {
-			invoke("browser_embed_show").catch(() => {});
+			invoke("browser_wv_show").catch(() => {});
 		}
 		set({ pendingApproval: null });
 	},
 
 	newConversation: () => {
-		// If approval was pending and browser is active, re-show Chrome before clearing
+		// If approval was pending and browser is active, re-show WebView2 before clearing
 		if (
 			get().pendingApproval &&
 			usePanelStore.getState().activePanel === "browser"
 		) {
-			invoke("browser_embed_show").catch(() => {});
+			invoke("browser_wv_show").catch(() => {});
 		}
 		set({
 			sessionId: null,
