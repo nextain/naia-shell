@@ -1,5 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { AVATAR_PRESETS, DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
@@ -36,6 +37,7 @@ type Step =
 	| "ollamaConfig"
 	| "agentName"
 	| "userName"
+	| "workspace"
 	| "character"
 	| "personality"
 	| "speechStyle"
@@ -47,6 +49,7 @@ const STEPS: Step[] = [
 	"ollamaConfig",
 	"agentName",
 	"userName",
+	"workspace",
 	"character",
 	"personality",
 	"speechStyle",
@@ -172,6 +175,8 @@ const [step, setStep] = useState<Step>("provider");
 	);
 	const [vllmConnected, setVllmConnected] = useState(false);
 	const [selectedVllmModel, setSelectedVllmModel] = useState("");
+	const [workspaceRoot, setWorkspaceRoot] = useState("");
+	const [workspaceDetecting, setWorkspaceDetecting] = useState(false);
 
 	useEffect(() => {
 		return () => {
@@ -354,6 +359,24 @@ const [step, setStep] = useState<Step>("provider");
 		};
 	}, [step]);
 
+	// Auto-detect naia-adk workspace root when workspace step is entered
+	useEffect(() => {
+		if (step !== "workspace" || workspaceRoot || workspaceDetecting) return;
+		let cancelled = false;
+		setWorkspaceDetecting(true);
+		invoke<string>("workspace_detect_adk_root")
+			.then((detected) => {
+				if (!cancelled) setWorkspaceRoot(detected);
+			})
+			.catch(() => {
+				// Detection failed — user can pick manually or skip
+			})
+			.finally(() => {
+				if (!cancelled) setWorkspaceDetecting(false);
+			});
+		return () => { cancelled = true; };
+	}, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+
 	const stepIndex = STEPS.indexOf(step);
 	const safeAgentName = sanitizeName(agentName);
 	const displayName = safeAgentName || "Naia";
@@ -495,6 +518,7 @@ const [step, setStep] = useState<Step>("provider");
 		const config = {
 			...existing,
 			provider: effectiveProvider,
+			workspaceRoot: workspaceRoot.trim() || undefined,
 			model:
 				effectiveProvider === "ollama"
 					? selectedOllamaModel
@@ -843,6 +867,44 @@ const [step, setStep] = useState<Step>("provider");
 							onChange={(e) => setUserName(e.target.value)}
 							placeholder={t("onboard.name.placeholder")}
 						/>
+					</div>
+				)}
+
+				{/* Step: Workspace (naia-adk root) */}
+				{step === "workspace" && (
+					<div className="onboarding-content">
+						<h2>워크스페이스 설정</h2>
+						<p className="onboarding-description">
+							naia-adk 워크스페이스 폴더를 지정하세요. 스킬과 에이전트 설정이 여기서 로드됩니다.
+						</p>
+						{workspaceDetecting ? (
+							<p className="onboarding-description">감지 중…</p>
+						) : workspaceRoot ? (
+							<div className="settings-field">
+								<label>감지된 경로</label>
+								<input
+									type="text"
+									className="onboarding-input"
+									value={workspaceRoot}
+									onChange={(e) => setWorkspaceRoot(e.target.value)}
+									placeholder="/path/to/naia-adk"
+								/>
+							</div>
+						) : (
+							<p className="onboarding-description">
+								naia-adk를 찾지 못했습니다 — 직접 선택하거나 건너뛰세요.
+							</p>
+						)}
+						<button
+							type="button"
+							className="onboarding-validate-btn"
+							onClick={async () => {
+								const selected = await open({ directory: true, title: "naia-adk 폴더 선택" });
+								if (selected && typeof selected === "string") setWorkspaceRoot(selected);
+							}}
+						>
+							폴더 선택
+						</button>
 					</div>
 				)}
 

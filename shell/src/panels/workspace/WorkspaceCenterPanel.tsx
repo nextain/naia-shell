@@ -322,6 +322,10 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 					error: String(e),
 				});
 				setResolvedRoot(WORKSPACE_ROOT);
+				// Clear stale path so next launch doesn't hit the same failure
+				const cfg = loadConfig();
+				if (cfg) saveConfig({ ...cfg, workspaceRoot: undefined });
+				setActiveWorkspaceRoot("");
 			})
 			.finally(() => setWorkspaceReady(true));
 	}, [activeWorkspaceRoot]);

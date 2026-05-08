@@ -795,6 +795,7 @@ export function SettingsTab() {
 		existing?.speechStyle ?? "casual",
 	);
 	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
+	const [workspaceRoot, setWorkspaceRoot] = useState(existing?.workspaceRoot ?? "");
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
 	);
@@ -2283,6 +2284,47 @@ export function SettingsTab() {
 							title={th.label}
 						/>
 					))}
+				</div>
+			</div>
+
+			<div className="settings-field">
+				<label>워크스페이스 (naia-adk)</label>
+				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<input
+						type="text"
+						className="settings-input"
+						value={workspaceRoot}
+						onChange={(e) => setWorkspaceRoot(e.target.value)}
+						placeholder="naia-adk 폴더 경로"
+						style={{ flex: 1 }}
+					/>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={async () => {
+							const selected = await open({ directory: true, title: "naia-adk 폴더 선택" });
+							if (selected && typeof selected === "string") setWorkspaceRoot(selected);
+						}}
+					>
+						찾아보기
+					</button>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={() => {
+							const cfg = loadConfig();
+							if (!cfg) return;
+							saveConfig({ ...cfg, workspaceRoot: workspaceRoot.trim() || undefined });
+							if (workspaceRoot.trim()) {
+								invoke("workspace_set_root", { root: workspaceRoot.trim() }).catch(() => {});
+							}
+						}}
+					>
+						적용
+					</button>
+				</div>
+				<div className="settings-hint">
+					스킬 및 세션이 표시되는 기본 디렉토리
 				</div>
 			</div>
 

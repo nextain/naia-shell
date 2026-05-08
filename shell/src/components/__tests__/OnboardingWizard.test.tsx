@@ -16,6 +16,10 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 	openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+	open: vi.fn().mockResolvedValue(null),
+}));
+
 // Mock getLocale to return "ko" (formality locale) so speechStyle step is shown
 vi.mock("../../lib/i18n", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../lib/i18n")>();
@@ -52,7 +56,7 @@ describe("OnboardingWizard", () => {
 		expect(screen.getByText(/OpenAI/)).toBeDefined();
 		expect(screen.getByText(/Anthropic/)).toBeDefined();
 		expect(screen.getByText(/xAI/)).toBeDefined();
-		expect(screen.getByText(/Zhipu AI/)).toBeDefined();
+		expect(screen.getByText(/Z\.AI/)).toBeDefined();
 	});
 
 	it("progresses through steps: provider → apiKey → agentName → ...", () => {
@@ -77,6 +81,10 @@ describe("OnboardingWizard", () => {
 		expect(screen.getByText(/Mochi/)).toBeDefined();
 		const nameInput = screen.getByPlaceholderText(/이름|name/i);
 		fireEvent.change(nameInput, { target: { value: "Luke" } });
+		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+
+		// Workspace step (skippable)
+		expect(screen.getByRole("heading", { name: /워크스페이스/ })).toBeDefined();
 		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
 
 		// Character step (VRM)
@@ -138,6 +146,9 @@ describe("OnboardingWizard", () => {
 		// User name
 		const nameInput = screen.getByPlaceholderText(/이름|name/i);
 		fireEvent.change(nameInput, { target: { value: "Luke" } });
+		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+
+		// Workspace step → Next (skip)
 		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
 
 		// Character → Next

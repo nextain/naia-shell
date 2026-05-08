@@ -1,0 +1,4 @@
+{"type":"REVIEW_STARTED","review_id":"cr-20260508-160000","profile":"analysis-review","target":"Issue #244 — workspace onboarding gap analysis + implementation plan (naia-adk path missing from onboarding, not wired to agent/gateway)","timestamp":"2026-05-08T16:00:00Z"}
+{"type":"REVIEWER_SPAWNED","review_id":"cr-20260508-160000","reviewer_id":"platform-specialist","expertise":"Platform and architecture knowledge","model":"sonnet","timestamp":"2026-05-08T16:00:01Z"}
+{"type":"REVIEWER_SPAWNED","review_id":"cr-20260508-160000","reviewer_id":"reasoning-auditor","expertise":"Logical reasoning and argumentation","model":"sonnet","timestamp":"2026-05-08T16:00:01Z"}
+{"type":"REVIEWER_SPAWNED","review_id":"cr-20260508-160000","reviewer_id":"slop-detector","expertise":"SLOP and quality detection","model":"sonnet","timestamp":"2026-05-08T16:00:01Z"}
