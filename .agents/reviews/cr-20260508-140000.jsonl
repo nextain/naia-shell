@@ -1,0 +1,4 @@
+{"type":"REVIEW_STARTED","review_id":"cr-20260508-140000","profile":"analysis-review","target":"Option 1 설계 리뷰: naia-shell(UI+I/O) / naia-agent(LLM+skill routing) / naia-adk(skill definition+business logic) — 3-레이어 역할 구분이 현재 코드베이스와 일치하는지, 경계가 구현 가능한지, 샘플 1개씩으로 검증 가능한지 검토","timestamp":"2026-05-08T14:00:00Z"}
+{"type":"REVIEWER_SPAWNED","review_id":"cr-20260508-140000","reviewer_id":"platform-specialist","expertise":"Platform and architecture knowledge","model":"sonnet","timestamp":"2026-05-08T14:00:01Z"}
+{"type":"REVIEWER_SPAWNED","review_id":"cr-20260508-140000","reviewer_id":"reasoning-auditor","expertise":"Logical reasoning and argumentation","model":"sonnet","timestamp":"2026-05-08T14:00:01Z"}
+{"type":"REVIEWER_SPAWNED","review_id":"cr-20260508-140000","reviewer_id":"slop-detector","expertise":"SLOP and quality detection","model":"sonnet","timestamp":"2026-05-08T14:00:01Z"}

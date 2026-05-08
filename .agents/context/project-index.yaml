@@ -46,6 +46,11 @@ mirror_pairs:
     users_ko: .users/context/ko/gateway-sync.md
     description: Shell → Naia Gateway config sync architecture (provider, model, persona, SOUL.md, chat routing)
 
+  - agents: .agents/context/tab-skills.yaml
+    users: .users/context/tab-skills.md
+    users_ko: .users/context/ko/tab-skills.md
+    description: Tab skill abstraction — common panel AI tools (skill_tab_screenshot), cross-platform capture (GDI/screencapture/scrot), useTabSkills hook
+
   - agents: .agents/context/skill-naia-discord.yaml
     users: .users/context/skill-naia-discord.md
     users_ko: .users/context/ko/skill-naia-discord.md
