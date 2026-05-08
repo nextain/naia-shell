@@ -11,10 +11,12 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import { resolve } from "node:path";
+
+const cleanMode = process.argv.includes("--clean");
 
 const isWin = platform() === "win32";
 const isMac = platform() === "darwin";
@@ -111,8 +113,26 @@ function setDevDeepLinkHandler() {
 	} catch { /* non-critical */ }
 }
 
+// ─── 0. Clean Rust incremental cache ─────────────────────────────────────────
+
+function cleanRustCache() {
+	const tauriDir = resolve("src-tauri");
+	const dirs = [
+		join(tauriDir, "target", "debug", "incremental"),
+		join(tauriDir, "target", "debug", ".fingerprint"),
+	];
+	for (const dir of dirs) {
+		if (existsSync(dir)) {
+			console.log(`[dev-setup] Removing ${dir}`);
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+	console.log("[dev-setup] Rust incremental cache cleared.");
+}
+
 // ─── Run ─────────────────────────────────────────────────────────────────────
 
+if (cleanMode) cleanRustCache();
 killStale();
 ensureGateway();
 buildAgent();

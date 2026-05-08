@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { directToolCall } from "../lib/chat-service";
 import {
@@ -115,6 +115,7 @@ export function DiagnosticsTab() {
 	// Logs
 	const [activeLogTab, setActiveLogTab] = useState<LogTab>("agent");
 	const [isTailing, setIsTailing] = useState(true);
+	const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
 	const [agentEntries, setAgentEntries] = useState<LogEntry[]>([]);
 	const [shellEntries, setShellEntries] = useState<LogEntry[]>([]);
 	const agentOffsetRef = useRef(0);
@@ -343,16 +344,25 @@ export function DiagnosticsTab() {
 	}, [activeLogTab]);
 
 	const handleOpenInWindow = useCallback(async () => {
-		const path = logPaths[activeLogTab];
-		if (!path) return;
-		// Convert Windows backslash path to file:// URL
-		const fileUrl = "file:///" + path.replace(/\\/g, "/");
 		try {
-			await openUrl(fileUrl);
+			if (activeLogTab === "gateway") {
+				// Gateway logs have no file — export current entries to a temp file
+				const text = gatewayEntries
+					.map((e) => `${e.timestamp} [${e.level}] ${e.message}`)
+					.join("\n");
+				const exportPath = await invoke<string>("write_temp_text", {
+					filename: "naia-gateway.log",
+					content: text,
+				});
+				await openPath(exportPath);
+			} else {
+				const path = logPaths[activeLogTab];
+				if (path) await openPath(path);
+			}
 		} catch (err) {
-			Logger.warn("DiagnosticsTab", "openUrl failed", { error: String(err) });
+			Logger.warn("DiagnosticsTab", "openPath failed", { error: String(err) });
 		}
-	}, [activeLogTab, logPaths]);
+	}, [activeLogTab, logPaths, gatewayEntries]);
 
 	// ── Render ────────────────────────────────────────────────────────────────
 
@@ -480,28 +490,69 @@ export function DiagnosticsTab() {
 							{isTailing ? t("diagnostics.loading") : t("diagnostics.logsEmpty")}
 						</div>
 					) : (
-						activeEntries.map((entry, i) => (
-							<div
-								key={`${entry.timestamp}-${i}`}
-								className="diagnostics-log-line"
-							>
-								<span className="log-timestamp">
-									{entry.timestamp
-										? new Date(entry.timestamp).toLocaleTimeString()
-										: ""}
-								</span>
-								<span
-									className="log-level"
-									style={{ color: levelColor(entry.level) }}
+						activeEntries.map((entry, i) => {
+							const isImportant = entry.level === "ERROR" || entry.level === "WARN" || entry.level === "WARNING";
+							const ts = entry.timestamp
+								? (() => {
+									const d = new Date(entry.timestamp);
+									const hh = String(d.getHours()).padStart(2, "0");
+									const mm = String(d.getMinutes()).padStart(2, "0");
+									const ss = String(d.getSeconds()).padStart(2, "0");
+									return `${hh}:${mm}:${ss}`;
+								})()
+								: "";
+							const lvl = entry.level.slice(0, 3).toUpperCase();
+							return (
+								<div
+									key={`${entry.timestamp}-${i}`}
+									className={`diagnostics-log-line${isImportant ? " diagnostics-log-line--important" : ""}`}
+									onClick={isImportant ? () => setSelectedLog(entry) : undefined}
+									title={isImportant ? "클릭하여 상세 보기" : undefined}
 								>
-									[{entry.level}]
-								</span>
-								<span className="log-message">{entry.message}</span>
-							</div>
-						))
+									<span
+										className="log-prefix"
+										style={{ color: levelColor(entry.level) }}
+									>
+										{ts} [{lvl}]
+									</span>
+									<span className="log-message">{entry.message}</span>
+								</div>
+							);
+						})
 					)}
 					<div ref={logsEndRef} />
 				</div>
+
+				{/* ERROR/WARN detail modal */}
+				{selectedLog && (
+					<div
+						className="diagnostics-log-modal-backdrop"
+						onClick={() => setSelectedLog(null)}
+					>
+						<div
+							className="diagnostics-log-modal"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<div
+								className="diagnostics-log-modal-level"
+								style={{ color: levelColor(selectedLog.level) }}
+							>
+								{selectedLog.level}
+							</div>
+							<div className="diagnostics-log-modal-ts">
+								{selectedLog.timestamp ? new Date(selectedLog.timestamp).toLocaleString() : ""}
+							</div>
+							<pre className="diagnostics-log-modal-msg">{selectedLog.message}</pre>
+							<button
+								type="button"
+								className="diagnostics-log-modal-close"
+								onClick={() => setSelectedLog(null)}
+							>
+								닫기
+							</button>
+						</div>
+					</div>
+				)}
 			</div>
 		</div>
 	);

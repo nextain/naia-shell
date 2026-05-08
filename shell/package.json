@@ -9,6 +9,7 @@
 		"preview": "vite preview",
 		"tauri": "tauri",
 		"tauri:dev": "node ../scripts/dev-setup.mjs && pnpm run tauri dev",
+		"tauri:dev:clean": "node ../scripts/dev-setup.mjs --clean && pnpm run tauri dev",
 		"check": "biome check --write .",
 		"format": "biome format --write .",
 		"test": "vitest run",
