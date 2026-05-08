@@ -1,0 +1,105 @@
+# Tab Skills — Common Panel AI Tools
+#
+# Spec for the tab skill abstraction.
+# Allows any panel to gain common AI tools without re-implementing each one.
+
+metadata:
+  version: "1.0"
+  status: implemented
+  introduced: "2026-05-07"
+
+# ── Overview ──────────────────────────────────────────────────────────────────
+
+summary: >
+  Tab skills are AI tools available to any panel with a viewport.
+  They are defined once, work cross-platform, and panels opt-in with a single
+  hook call. Currently implemented: skill_tab_screenshot.
+
+# ── Architecture ──────────────────────────────────────────────────────────────
+
+layers:
+  rust_command:
+    file: shell/src-tauri/src/capture.rs
+    command: capture_screen_region(x, y, width, height: f64) -> Result<String>
+    description: >
+      Receives CSS logical pixels from the shell WebView, converts to physical
+      screen coordinates (window outer position + DPI scale), then delegates to
+      a platform-specific capture backend.
+    coordinate_conversion: |
+      screen_x = window.outer_position().x + x * scale_factor
+      screen_y = window.outer_position().y + y * scale_factor
+      screen_w = width  * scale_factor
+      screen_h = height * scale_factor
+
+  ts_hook:
+    file: shell/src/lib/tab-skills.ts
+    exports:
+      - useTabSkills(viewportRef, naia): void   # registers tool handlers
+      - TAB_SKILL_DESCRIPTORS: NaiaTool[]       # static descriptors for panel index.tsx
+      - SKILL_TAB_SCREENSHOT: NaiaTool          # individual descriptor
+    usage: |
+      // In panel's center component:
+      useTabSkills(viewportRef, naia);
+
+      // In panel's index.tsx tools array:
+      tools: [...TAB_SKILL_DESCRIPTORS, ...panelSpecificTools]
+
+# ── Skills ────────────────────────────────────────────────────────────────────
+
+skills:
+  skill_tab_screenshot:
+    name: skill_tab_screenshot
+    tier: 0  # auto-allowed, no confirmation needed
+    description: >
+      Captures the panel's viewport area by reading from the OS screen buffer
+      (not the WebView DOM). Works for both HTML panels and native-overlay
+      panels (e.g. browser WebView2).
+    parameters: {}
+    returns: "Absolute path to the saved PNG file in the OS temp directory"
+    platform_backends:
+      windows:
+        method: GDI BitBlt
+        details: >
+          GetDC(desktop) → CreateCompatibleDC → BitBlt → GetDIBits (BGRA) →
+          swap B↔R → encode as PNG with `png` crate.
+        deps: windows-sys (Win32_Graphics_Gdi), png crate
+      macos:
+        method: screencapture CLI
+        details: >
+          `screencapture -R x,y,w,h -x <path.png>`
+          (-x = no shutter sound)
+        deps: none (bundled with macOS)
+      linux:
+        method: scrot → ImageMagick import (fallback)
+        details: >
+          1. `scrot -a x,y,w,h path.png`
+          2. `import -window root -crop WxH+X+Y path.png` (ImageMagick)
+        deps: scrot or imagemagick (user-installed)
+
+# ── How to add a new tab skill ────────────────────────────────────────────────
+
+adding_skills:
+  steps:
+    1: Define the NaiaTool descriptor as SKILL_TAB_<NAME> in tab-skills.ts
+    2: Add it to TAB_SKILL_DESCRIPTORS array
+    3: Add a handler in useTabSkills useEffect
+    4: Add the Rust command in capture.rs (or a new module) if needed
+    5: Register the Rust command in lib.rs invoke_handler
+    6: No per-panel changes needed — the spread in index.tsx picks it up automatically
+
+# ── Current consumers ─────────────────────────────────────────────────────────
+
+consumers:
+  - panel: browser
+    viewport_ref: viewportRef (browser-panel__viewport--embedded div)
+    note: >
+      The viewport div is where the native WebView2 is overlaid.
+      Capturing it screenshots the actual browser content (not HTML DOM).
+
+# ── Non-goals ─────────────────────────────────────────────────────────────────
+
+non_goals:
+  - WebView DOM-based screenshot (use skill_browser_eval with html2canvas instead)
+  - Video/GIF capture
+  - Annotated screenshots
+  - Clipboard integration (future work)
