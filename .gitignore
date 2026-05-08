@@ -9,6 +9,8 @@ test-results/
 playwright-report/
 shell/e2e/demo-output/
 shell/e2e-tauri/.artifacts/ui-message-trace.ndjson
+shell/e2e-tauri/.artifacts/browser-console.ndjson
+shell/e2e-tauri/.drivers/
 
 # Flatpak build artifacts
 flatpak-repo/
