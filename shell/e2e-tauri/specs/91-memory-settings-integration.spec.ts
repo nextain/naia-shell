@@ -15,12 +15,25 @@ import {
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const API_KEY = process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-if (!API_KEY) {
+/** Gemini API key — required for semantic judge (Suites 3 & 4). */
+const GEMINI_KEY =
+	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
+
+/**
+ * Naia Gateway key — allows using nextain provider without a direct Gemini key.
+ * When set, Suites 1 & 2 run against the nextain provider.
+ * Suites 3 & 4 (LLM chat + semantic judge) still require GEMINI_KEY.
+ */
+const NAIA_KEY = process.env.CAFE_NAIA_KEY || "";
+
+if (!GEMINI_KEY && !NAIA_KEY) {
 	throw new Error(
-		"API key required: set CAFE_E2E_API_KEY or GEMINI_API_KEY in shell/.env",
+		"Auth key required: set CAFE_E2E_API_KEY/GEMINI_API_KEY (Gemini) or CAFE_NAIA_KEY (nextain) in shell/.env",
 	);
 }
+
+/** Whether Suites 3/4 (chat + semantic judge) can run. */
+const CAN_RUN_CHAT_SUITES = !!GEMINI_KEY;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -138,33 +151,47 @@ async function gotoSettingsMemory(): Promise<void> {
 }
 
 /**
- * Force config to gemini provider so LLM tests always work.
- * Necessary when the existing user config uses nextain/naia provider.
+ * Force config to a specific provider so LLM tests always work.
+ * Uses gemini provider when GEMINI_KEY is available, otherwise nextain.
  * Ensures handleSave() does not early-return due to missing naiaKey.
  */
-async function forceGeminiConfig(): Promise<void> {
-	await browser.execute((key: string) => {
-		const existing = (() => {
-			try {
-				return JSON.parse(localStorage.getItem("naia-config") ?? "null") ?? {};
-			} catch {
-				return {};
-			}
-		})();
-		const config = {
-			...existing,
-			provider: "gemini",
-			model: "gemini-2.5-flash",
-			apiKey: key,
-			// Remove nextain-specific fields to prevent validation from blocking save
-			naiaKey: undefined,
-			naiaUserId: undefined,
-			onboardingComplete: true,
-			panelVisible: true,
-			discordSessionMigrated: true,
-		};
-		localStorage.setItem("naia-config", JSON.stringify(config));
-	}, API_KEY);
+async function forceProviderConfig(): Promise<void> {
+	await browser.execute(
+		(geminiKey: string, naiaKey: string) => {
+			const existing = (() => {
+				try {
+					return JSON.parse(localStorage.getItem("naia-config") ?? "null") ?? {};
+				} catch {
+					return {};
+				}
+			})();
+			const config = geminiKey
+				? {
+						...existing,
+						provider: "gemini",
+						model: "gemini-2.5-flash",
+						apiKey: geminiKey,
+						naiaKey: undefined,
+						naiaUserId: undefined,
+						onboardingComplete: true,
+						panelVisible: true,
+						discordSessionMigrated: true,
+					}
+				: {
+						...existing,
+						provider: "nextain",
+						model: "gemini-2.5-flash",
+						apiKey: "",
+						naiaKey: naiaKey,
+						onboardingComplete: true,
+						panelVisible: true,
+						discordSessionMigrated: true,
+					};
+			localStorage.setItem("naia-config", JSON.stringify(config));
+		},
+		GEMINI_KEY,
+		NAIA_KEY,
+	);
 	await safeRefresh();
 	const appRoot = await $(S.appRoot);
 	await appRoot.waitForDisplayed({ timeout: 20_000 });
@@ -175,7 +202,7 @@ async function forceGeminiConfig(): Promise<void> {
 				(sel: string) => !!document.querySelector(sel),
 				S.settingsTabBtn,
 			),
-		{ timeout: 15_000, timeoutMsg: "Settings tab not found after forceGeminiConfig" },
+		{ timeout: 15_000, timeoutMsg: "Settings tab not found after forceProviderConfig" },
 	);
 	await browser.waitUntil(
 		() =>
@@ -250,7 +277,8 @@ describe("91 — Memory Settings Integration", () => {
 			for (const sel of [
 				S.memoryEmbeddingNone,
 				S.memoryEmbeddingOffline,
-				S.memoryEmbeddingOpenaiCompat,
+				S.memoryEmbeddingVllm,
+				S.memoryEmbeddingOllama,
 				S.memoryEmbeddingNaia,
 			]) {
 				const el = await $(sel);
@@ -288,22 +316,21 @@ describe("91 — Memory Settings Integration", () => {
 			await clickRadio("memory-embedding", "none");
 		});
 
-		it("should show openai-compat URL + model fields when openai-compat selected", async () => {
-			await clickRadio("memory-embedding", "openai-compat");
-			await (await $(S.memoryEmbeddingBaseUrl)).waitForDisplayed({ timeout: 5_000 });
-			expect(await (await $(S.memoryEmbeddingBaseUrl)).isDisplayed()).toBe(true);
-			expect(await (await $(S.memoryEmbeddingModel)).isDisplayed()).toBe(true);
+		it("should show vLLM URL + model fields when vllm selected", async () => {
+			await clickRadio("memory-embedding", "vllm");
+			await ($(S.memoryEmbeddingBaseUrl)).waitForDisplayed({ timeout: 5_000 });
+			expect(await ($(S.memoryEmbeddingBaseUrl)).isDisplayed()).toBe(true);
+			expect(await ($(S.memoryEmbeddingModel)).isDisplayed()).toBe(true);
 			await clickRadio("memory-embedding", "none");
 		});
 
-		it("should show Naia account required hint when naia embedding selected (no naiaKey)", async () => {
+		it("should show Naia embedding status hint when naia embedding selected", async () => {
 			await clickRadio("memory-embedding", "naia");
 			await browser.pause(400);
+			// Shows either "Naia account required" (no naiaKey) or "Naia account connected" (naiaKey set)
 			const hintVisible = await browser.execute(() =>
 				Array.from(document.querySelectorAll(".settings-hint")).some((h) =>
-					/(Naia account required|Naia \uacc4\uc815 \ud544\uc694)/i.test(
-						h.textContent ?? "",
-					),
+					/(Naia account|Naia \uacc4\uc815)/i.test(h.textContent ?? ""),
 				),
 			);
 			expect(hintVisible).toBe(true);
@@ -311,12 +338,13 @@ describe("91 — Memory Settings Integration", () => {
 		});
 
 		it("should render backup section with password input and export/import buttons", async () => {
-			// Scroll to backup section
+			// Scroll to backup section (search by placeholder — Korean: "백업 비밀번호", English: "Backup password")
 			await browser.execute(() => {
 				const inputs = Array.from(document.querySelectorAll("input[type='password']")) as HTMLInputElement[];
 				const pw = inputs.find((el) => {
-					const ph = el.placeholder.toLowerCase();
-					return ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638");
+					const ph = el.placeholder;
+					// \ube44\ubc00\ubc88\ud638 = 비밀번호 (비=BE44, 밀=BC00, 번=BC88, 호=D638)
+					return ph.toLowerCase().includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638");
 				});
 				if (pw) pw.scrollIntoView({ block: "center" });
 			});
@@ -335,8 +363,8 @@ describe("91 — Memory Settings Integration", () => {
 					hasPasswordInput: Array.from(
 						document.querySelectorAll("input[type='password']"),
 					).some((el) => {
-						const ph = (el as HTMLInputElement).placeholder.toLowerCase();
-						return ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638");
+						const ph = (el as HTMLInputElement).placeholder;
+						return ph.toLowerCase().includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638");
 					}),
 				};
 			});
@@ -351,7 +379,7 @@ describe("91 — Memory Settings Integration", () => {
 		before(async () => {
 			// Force gemini provider to avoid handleSave() early-return due to
 			// nextain provider + missing naiaKey (stored in secure store, loaded async).
-			await forceGeminiConfig();
+			await forceProviderConfig();
 			await gotoSettingsMemory();
 		});
 
@@ -368,18 +396,18 @@ describe("91 — Memory Settings Integration", () => {
 			expect(mem.embeddingProvider).toBe("none");
 		});
 
-		it("should write memory.embeddingProvider=openai-compat + fields to openclaw.json", async () => {
-			await clickRadio("memory-embedding", "openai-compat");
+		it("should write memory.embeddingProvider=vllm + fields to memory-config.json", async () => {
+			await clickRadio("memory-embedding", "vllm");
 			await browser.pause(300);
 			await setNativeValue(S.memoryEmbeddingBaseUrl, "http://localhost:11434");
 			await setNativeValue(S.memoryEmbeddingModel, "nomic-embed-text");
 			await clickSave();
 
 			const config = await waitForConfigCondition(
-				(cfg) => (cfg.memory as any)?.embeddingProvider === "openai-compat",
+				(cfg) => (cfg.memory as any)?.embeddingProvider === "vllm",
 			);
 			const mem = config.memory as Record<string, unknown>;
-			expect(mem.embeddingProvider).toBe("openai-compat");
+			expect(mem.embeddingProvider).toBe("vllm");
 			expect(mem.embeddingBaseUrl).toBe("http://localhost:11434");
 			expect(mem.embeddingModel).toBe("nomic-embed-text");
 
@@ -391,6 +419,26 @@ describe("91 — Memory Settings Integration", () => {
 					(cfg.memory as any)?.embeddingProvider === "none" ||
 					!(cfg.memory as any)?.embeddingProvider,
 			);
+		});
+
+		it("should write memoryLlmProvider=vllm to memory-config.json", async () => {
+			await clickRadio("memory-llm", "vllm");
+			await browser.pause(300);
+			await setNativeValue('input[placeholder="http://localhost:8000"]', "http://localhost:8001");
+			await setNativeValue('input[placeholder="minicpm-4.5-omni"]', "test-model");
+			await clickSave();
+
+			const config = await waitForConfigCondition(
+				(cfg) => (cfg.memory as any)?.llmProvider === "vllm",
+			);
+			const mem = config.memory as Record<string, unknown>;
+			expect(mem.llmProvider).toBe("vllm");
+			expect(mem.llmModel).toBe("test-model");
+
+			// Revert
+			await clickRadio("memory-llm", "none");
+			await clickSave();
+			await browser.pause(500);
 		});
 
 		it("should persist memory settings in localStorage after save", async () => {
@@ -495,10 +543,13 @@ describe("91 — Memory Settings Integration", () => {
 	});
 
 	// ── Suite 3: Memory storage & recall (same session) ─────────────────────────
-	describe("3) Memory storage and recall (same session)", () => {
+	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
+	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
+		"3) Memory storage and recall (same session)",
+		() => {
 		before(async () => {
 			// Force gemini so LLM calls work regardless of real user config
-			await forceGeminiConfig();
+			await forceProviderConfig();
 			await clickBySelector(S.chatTab);
 			const chatInput = await $(S.chatInput);
 			await chatInput.waitForEnabled({ timeout: 15_000 });
@@ -549,9 +600,12 @@ describe("91 — Memory Settings Integration", () => {
 	});
 
 	// ── Suite 4: Cross-session memory recall ────────────────────────────────────
-	describe("4) Cross-session memory recall (new conversation)", () => {
+	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
+	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
+		"4) Cross-session memory recall (new conversation)",
+		() => {
 		before(async () => {
-			await forceGeminiConfig();
+			await forceProviderConfig();
 			await clickBySelector(S.chatTab);
 			const chatInput = await $(S.chatInput);
 			await chatInput.waitForEnabled({ timeout: 15_000 });
@@ -622,7 +676,7 @@ describe("91 — Memory Settings Integration", () => {
 		let initialFactCount = 0;
 
 		before(async () => {
-			await forceGeminiConfig();
+			await forceProviderConfig();
 			await clickBySelector(S.chatTab);
 			const chatInput = await $(S.chatInput);
 			await chatInput.waitForEnabled({ timeout: 15_000 });

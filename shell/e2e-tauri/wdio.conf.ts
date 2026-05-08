@@ -163,7 +163,7 @@ export const config = {
 	connectionRetryTimeout: 120_000,
 	connectionRetryCount: 3,
 
-	port: 4444,
+	port: 4448,
 	hostname: "127.0.0.1",
 
 	framework: "mocha",
@@ -177,8 +177,8 @@ export const config = {
 	async onPrepare() {
 		// Kill orphaned processes from previous runs
 		killByPort(1420);
-		killByPort(4444);
-		killByPort(4445);
+		killByPort(4448);
+		killByPort(4449);
 		killByName("tauri-driver");
 		if (IS_WINDOWS) {
 			killByName("msedgedriver");
@@ -225,23 +225,23 @@ export const config = {
 		} else {
 			killByName("WebKitWebDriver", true);
 		}
-		killByPort(4444);
-		killByPort(4445);
+		killByPort(4448);
+		killByPort(4449);
 		await new Promise((r) => setTimeout(r, 1_500));
 
 		tauriDriver = spawn(
 			TAURI_DRIVER,
 			[
 				"--port",
-				"4444",
+				"4448",
 				"--native-driver",
 				NATIVE_DRIVER,
 				"--native-port",
-				"4445",
+				"4449",
 			],
 			{ stdio: [null, process.stdout, process.stderr] },
 		);
-		await waitForPort(4444, 30_000);
+		await waitForPort(4448, 30_000);
 	},
 
 	async before() {
@@ -301,8 +301,8 @@ export const config = {
 			killByName("WebKitWebDriver");
 		}
 		killByName("tauri-driver");
-		killByPort(4444);
-		killByPort(4445);
+		killByPort(4448);
+		killByPort(4449);
 	},
 
 	async onComplete() {

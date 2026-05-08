@@ -243,19 +243,20 @@ export async function clickBySelector(selector: string): Promise<void> {
 
 const API_KEY =
 	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
+const NAIA_KEY = process.env.CAFE_NAIA_KEY || "";
 
 /**
  * Ensure the app is ready: bypass onboarding, set base config, wait for tabs.
  * Safe to call multiple times — skips if already configured.
  */
 export async function ensureAppReady(): Promise<void> {
-	// Providers like claude-code-cli and ollama don't require an apiKey.
+	// Providers like claude-code-cli, ollama, and nextain don't require an apiKey.
 	// Consider configured if onboardingComplete is set — apiKey is optional depending on provider.
 	const alreadyConfigured = await browser.execute(() => {
 		const raw = localStorage.getItem("naia-config");
 		if (!raw) return false;
 		const config = JSON.parse(raw);
-		const noKeyProviders = ["claude-code-cli", "ollama"];
+		const noKeyProviders = ["claude-code-cli", "ollama", "nextain"];
 		const apiKeyOptional = noKeyProviders.includes(config.provider ?? "");
 		return (
 			!!config.onboardingComplete &&
@@ -264,24 +265,46 @@ export async function ensureAppReady(): Promise<void> {
 	});
 
 	if (!alreadyConfigured) {
-		await browser.execute((key: string) => {
-			const existing = localStorage.getItem("naia-config");
-			const config = existing ? JSON.parse(existing) : {};
-			Object.assign(config, {
-				provider: config.provider || "gemini",
-				model: config.model || "gemini-2.5-flash",
-				apiKey: config.apiKey || key,
-				agentName: config.agentName || "Naia",
-				userName: config.userName || "Tester",
-				vrmModel: config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
-				persona: config.persona || "Friendly AI companion",
-				enableTools: true,
-				locale: config.locale || "ko",
-				onboardingComplete: true,
-				panelVisible: true,
-			});
-			localStorage.setItem("naia-config", JSON.stringify(config));
-		}, API_KEY);
+		await browser.execute(
+			(geminiKey: string, naiaKey: string) => {
+				const existing = localStorage.getItem("naia-config");
+				const config = existing ? JSON.parse(existing) : {};
+				if (naiaKey && !geminiKey) {
+					// Use nextain provider when only naia key is available
+					Object.assign(config, {
+						provider: "nextain",
+						model: config.model || "gemini-2.5-pro",
+						apiKey: "",
+						naiaKey: naiaKey,
+						agentName: config.agentName || "Naia",
+						userName: config.userName || "Tester",
+						vrmModel: config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
+						persona: config.persona || "Friendly AI companion",
+						enableTools: true,
+						locale: config.locale || "ko",
+						onboardingComplete: true,
+						panelVisible: true,
+					});
+				} else {
+					Object.assign(config, {
+						provider: config.provider || "gemini",
+						model: config.model || "gemini-2.5-flash",
+						apiKey: config.apiKey || geminiKey,
+						agentName: config.agentName || "Naia",
+						userName: config.userName || "Tester",
+						vrmModel: config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
+						persona: config.persona || "Friendly AI companion",
+						enableTools: true,
+						locale: config.locale || "ko",
+						onboardingComplete: true,
+						panelVisible: true,
+					});
+				}
+				localStorage.setItem("naia-config", JSON.stringify(config));
+			},
+			API_KEY,
+			NAIA_KEY,
+		);
 		// Retry refresh — WebKitGTK may throw UND_ERR_HEADERS_TIMEOUT intermittently
 		for (let attempt = 0; attempt < 3; attempt++) {
 			try {
