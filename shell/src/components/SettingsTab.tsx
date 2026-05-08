@@ -866,7 +866,7 @@ export function SettingsTab() {
 		existing?.qdrantApiKey ?? "",
 	);
 	const [memoryEmbeddingProvider, setMemoryEmbeddingProvider] = useState<
-		"none" | "offline" | "openai-compat" | "naia"
+		"none" | "offline" | "vllm" | "ollama" | "naia"
 	>(existing?.memoryEmbeddingProvider ?? "none");
 	const [memoryOfflineModel, setMemoryOfflineModel] = useState<
 		"all-MiniLM-L6-v2" | "all-mpnet-base-v2"
@@ -879,6 +879,18 @@ export function SettingsTab() {
 	);
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
+	);
+	const [memoryLlmProvider, setMemoryLlmProvider] = useState<
+		"none" | "naia" | "vllm" | "ollama"
+	>(existing?.memoryLlmProvider ?? "none");
+	const [memoryLlmBaseUrl, setMemoryLlmBaseUrl] = useState(
+		existing?.memoryLlmBaseUrl ?? "",
+	);
+	const [memoryLlmApiKey, setMemoryLlmApiKey] = useState(
+		existing?.memoryLlmApiKey ?? "",
+	);
+	const [memoryLlmModel, setMemoryLlmModel] = useState(
+		existing?.memoryLlmModel ?? "",
 	);
 	const [backupPassword, setBackupPassword] = useState("");
 	const [backupStatus, setBackupStatus] = useState<
@@ -2137,21 +2149,32 @@ export function SettingsTab() {
 			memoryOfflineModel:
 				memoryEmbeddingProvider === "offline" ? memoryOfflineModel : undefined,
 			memoryEmbeddingBaseUrl:
-				memoryEmbeddingProvider === "openai-compat"
+				memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama"
 					? memoryEmbeddingBaseUrl || undefined
 					: undefined,
 			memoryEmbeddingApiKey:
-				memoryEmbeddingProvider === "openai-compat"
+				memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama"
 					? memoryEmbeddingApiKey || undefined
 					: undefined,
 			memoryEmbeddingModel:
-				memoryEmbeddingProvider === "openai-compat"
+				memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama"
 					? memoryEmbeddingModel || undefined
 					: undefined,
 			qdrantUrl:
 				memoryAdapter === "qdrant" ? qdrantUrl || undefined : undefined,
 			qdrantApiKey:
 				memoryAdapter === "qdrant" ? qdrantApiKey || undefined : undefined,
+			memoryLlmProvider: memoryLlmProvider !== "none" ? memoryLlmProvider : undefined,
+			memoryLlmBaseUrl:
+				memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama"
+					? memoryLlmBaseUrl || undefined
+					: undefined,
+			memoryLlmApiKey:
+				memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama"
+					? memoryLlmApiKey || undefined
+					: undefined,
+			memoryLlmModel:
+				memoryLlmProvider !== "none" ? memoryLlmModel || undefined : undefined,
 		};
 		saveConfig(newConfig);
 		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
@@ -2182,6 +2205,10 @@ export function SettingsTab() {
 			memoryEmbeddingModel: newConfig.memoryEmbeddingModel,
 			qdrantUrl: newConfig.qdrantUrl,
 			qdrantApiKey: newConfig.qdrantApiKey,
+			memoryLlmProvider: newConfig.memoryLlmProvider,
+			memoryLlmBaseUrl: newConfig.memoryLlmBaseUrl,
+			memoryLlmApiKey: newConfig.memoryLlmApiKey,
+			memoryLlmModel: newConfig.memoryLlmModel,
 		};
 		syncToGateway(
 			newConfig.provider,
@@ -3882,7 +3909,8 @@ export function SettingsTab() {
 						[
 							["none", t("settings.memoryEmbeddingNone")],
 							["offline", t("settings.memoryEmbeddingOffline")],
-							["openai-compat", t("settings.memoryEmbeddingOpenaiCompat")],
+							["vllm", t("settings.memoryEmbeddingVllm")],
+							["ollama", t("settings.memoryEmbeddingOllama")],
 							["naia", t("settings.memoryEmbeddingNaia")],
 						] as const
 					).map(([val, label]) => (
@@ -3932,8 +3960,8 @@ export function SettingsTab() {
 				</div>
 			)}
 
-			{/* OpenAI-compat fields */}
-			{memoryEmbeddingProvider === "openai-compat" && (
+			{/* vLLM/Ollama embedding fields */}
+			{(memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama") && (
 				<>
 					<div className="settings-field">
 						<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
@@ -3967,6 +3995,79 @@ export function SettingsTab() {
 
 			{/* Naia embedding: show connection status */}
 			{memoryEmbeddingProvider === "naia" && (
+				<div className="settings-field">
+					<span className="settings-hint">
+						{naiaKey
+							? `✓ ${t("settings.memoryNaiaConnected")}`
+							: `⚠ ${t("settings.memoryNaiaRequired")}`}
+					</span>
+				</div>
+			)}
+
+			{/* LLM for memory fact extraction */}
+			<div className="settings-field">
+				<label>{t("settings.memoryLlm")}</label>
+				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+					{(
+						[
+							["none", t("settings.memoryLlmNone")],
+							["vllm", t("settings.memoryLlmVllm")],
+							["ollama", t("settings.memoryLlmOllama")],
+							["naia", t("settings.memoryLlmNaia")],
+						] as const
+					).map(([val, label]) => (
+						<label
+							key={val}
+							style={{ display: "flex", alignItems: "center", gap: "6px" }}
+						>
+							<input
+								type="radio"
+								name="memory-llm"
+								value={val}
+								checked={memoryLlmProvider === val}
+								onChange={() => setMemoryLlmProvider(val)}
+							/>
+							{label}
+						</label>
+					))}
+				</div>
+			</div>
+
+			{/* vLLM/Ollama LLM fields */}
+			{(memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama") && (
+				<>
+					<div className="settings-field">
+						<label>{t("settings.memoryLlmBaseUrl")}</label>
+						<input
+							type="text"
+							value={memoryLlmBaseUrl}
+							onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
+							placeholder="http://localhost:8000"
+						/>
+					</div>
+					<div className="settings-field">
+						<label>{t("settings.memoryLlmApiKey")}</label>
+						<input
+							type="password"
+							value={memoryLlmApiKey}
+							onChange={(e) => setMemoryLlmApiKey(e.target.value)}
+							placeholder="sk-..."
+						/>
+					</div>
+					<div className="settings-field">
+						<label>{t("settings.memoryLlmModel")}</label>
+						<input
+							type="text"
+							value={memoryLlmModel}
+							onChange={(e) => setMemoryLlmModel(e.target.value)}
+							placeholder="minicpm-4.5-omni"
+						/>
+					</div>
+				</>
+			)}
+
+			{/* Naia LLM: show connection status */}
+			{memoryLlmProvider === "naia" && (
 				<div className="settings-field">
 					<span className="settings-hint">
 						{naiaKey

@@ -20,6 +20,10 @@ export interface MemorySyncParams {
 	memoryEmbeddingModel?: string;
 	qdrantUrl?: string;
 	qdrantApiKey?: string;
+	memoryLlmProvider?: string;
+	memoryLlmBaseUrl?: string;
+	memoryLlmApiKey?: string;
+	memoryLlmModel?: string;
 }
 
 export async function syncToGateway(
@@ -80,6 +84,10 @@ export async function syncToGateway(
 				memory_embedding_model: memory?.memoryEmbeddingModel || null,
 				qdrant_url: memory?.qdrantUrl || null,
 				qdrant_api_key: memory?.qdrantApiKey || null,
+				memory_llm_provider: memory?.memoryLlmProvider || null,
+				memory_llm_base_url: memory?.memoryLlmBaseUrl || null,
+				memory_llm_api_key: memory?.memoryLlmApiKey || null,
+				memory_llm_model: memory?.memoryLlmModel || null,
 			},
 		});
 	} catch (err) {

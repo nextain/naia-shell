@@ -146,15 +146,23 @@ export interface AppConfig {
 	/** Memory adapter backend. Defaults to 'local' (JSON file). */
 	memoryAdapter?: "local" | "qdrant";
 	/** Embedding provider for semantic search. Defaults to 'none' (keyword search). */
-	memoryEmbeddingProvider?: "none" | "offline" | "openai-compat" | "naia";
+	memoryEmbeddingProvider?: "none" | "offline" | "vllm" | "ollama" | "naia";
 	/** Offline embedding model (used when memoryEmbeddingProvider = 'offline'). */
 	memoryOfflineModel?: "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
-	/** OpenAI-compatible embedding API base URL (provider = 'openai-compat'). */
+	/** Base URL for vLLM/Ollama embedding endpoint. */
 	memoryEmbeddingBaseUrl?: string;
-	/** API key for OpenAI-compatible embedding endpoint. */
+	/** API key for embedding endpoint (vLLM/Ollama). */
 	memoryEmbeddingApiKey?: string;
-	/** Embedding model name for OpenAI-compatible endpoint. */
+	/** Embedding model name (vLLM/Ollama). */
 	memoryEmbeddingModel?: string;
+	/** LLM provider used for memory fact extraction. Defaults to 'none' (heuristic). */
+	memoryLlmProvider?: "none" | "naia" | "vllm" | "ollama";
+	/** Base URL for vLLM/Ollama LLM endpoint (memory fact extraction). */
+	memoryLlmBaseUrl?: string;
+	/** API key for LLM endpoint (memory fact extraction). */
+	memoryLlmApiKey?: string;
+	/** Model name for LLM fact extraction. */
+	memoryLlmModel?: string;
 	/** Qdrant vector DB URL (adapter = 'qdrant'). */
 	qdrantUrl?: string;
 	/** Qdrant API key. */

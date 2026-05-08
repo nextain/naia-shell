@@ -165,7 +165,8 @@ describe("SettingsTab", () => {
 	it("renders memory section with empty state", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		expect(screen.getByText(/기억|Memory/i)).toBeDefined();
+		// Multiple elements match /Memory/i (Memory Adapter, Memory LLM, etc.) — use getAllByText
+		expect(screen.getAllByText(/기억|Memory/i).length).toBeGreaterThan(0);
 		expect(screen.getByText(/저장된 기억이|No stored memories/i)).toBeDefined();
 	});
 

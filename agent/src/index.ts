@@ -30,7 +30,10 @@ export const jobTracker = new JobTracker();
 import {
 	LocalAdapter,
 	MemorySystem,
-} from "@nextain/alpha-memory";
+	OpenAICompatEmbeddingProvider,
+	NaiaGatewayEmbeddingProvider,
+	buildLLMFactExtractor,
+} from "@nextain/naia-memory";
 import {
 	type ApprovalResponse,
 	type ChatRequest,
@@ -65,26 +68,80 @@ mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
 /**
  * Resolve memory system from config.
  * Reads ~/.naia/memory-config.json (written by Shell Rust backend).
- * Currently only LocalAdapter is supported — embedding providers are planned. (#226)
  */
-function resolveMemorySystem(): MemorySystem {
+type MemConfig = {
+	adapter?: string;
+	embeddingProvider?: string;
+	embeddingBaseUrl?: string;
+	embeddingApiKey?: string;
+	embeddingModel?: string;
+	llmProvider?: string;
+	llmBaseUrl?: string;
+	llmApiKey?: string;
+	llmModel?: string;
+};
+
+/**
+ * Build a new MemorySystem from ~/.naia/memory-config.json.
+ * Called at startup and again after auth_update for naia providers.
+ * Fix: passes embeddingProvider to LocalAdapter via object options so
+ * MemorySystem threads it into the adapter (string-path arg sets embedder=null).
+ */
+function buildMemorySystem(): MemorySystem {
+	let cfg: MemConfig = {};
 	try {
 		const configPath = defaultPathResolver.memoryConfigPath();
-		const raw = JSON.parse(readFileSync(configPath, "utf-8")) as {
-			adapter?: string;
-		};
-		if (raw.adapter && raw.adapter !== "local") {
-			console.warn(
-				`[agent:memory] adapter="${raw.adapter}" is not yet supported — using local adapter`,
-			);
-		}
+		cfg = JSON.parse(readFileSync(configPath, "utf-8")) as MemConfig;
 	} catch {
 		// No config file or parse error — use defaults silently
 	}
-	return new MemorySystem({ adapter: new LocalAdapter(MEMORY_STORE_PATH) });
+
+	// Resolve embedding provider
+	let embeddingProvider: OpenAICompatEmbeddingProvider | undefined;
+	if (cfg.embeddingProvider === "vllm" || cfg.embeddingProvider === "ollama") {
+		if (cfg.embeddingBaseUrl && cfg.embeddingModel) {
+			embeddingProvider = new OpenAICompatEmbeddingProvider(
+				cfg.embeddingBaseUrl,
+				cfg.embeddingApiKey ?? "",
+				cfg.embeddingModel,
+			);
+		}
+	} else if (cfg.embeddingProvider === "naia") {
+		const naiaKey = getAgentNaiaKey();
+		const naiaGatewayUrl = process.env.NAIA_GATEWAY_URL ?? "https://naia-gateway.nextain.io";
+		if (naiaKey) {
+			embeddingProvider = new NaiaGatewayEmbeddingProvider(naiaGatewayUrl, naiaKey);
+		}
+	}
+
+	// Resolve LLM fact extractor
+	let factExtractor: ReturnType<typeof buildLLMFactExtractor> | undefined;
+	if (cfg.llmProvider === "vllm" || cfg.llmProvider === "ollama") {
+		if (cfg.llmBaseUrl && cfg.llmApiKey) {
+			factExtractor = buildLLMFactExtractor({
+				apiKey: cfg.llmApiKey,
+				baseURL: cfg.llmBaseUrl,
+				model: cfg.llmModel,
+			});
+		}
+	} else if (cfg.llmProvider === "naia") {
+		const naiaKey = getAgentNaiaKey();
+		if (naiaKey) {
+			factExtractor = buildLLMFactExtractor({ apiKey: naiaKey });
+		}
+	}
+
+	// Fix (Finding B): pass { storePath, embeddingProvider } as object so LocalAdapter
+	// constructor uses options.embeddingProvider — string arg sets this.embedder = null.
+	return new MemorySystem({
+		adapter: new LocalAdapter({ storePath: MEMORY_STORE_PATH, embeddingProvider }),
+		...(factExtractor ? { factExtractor } : {}),
+	});
 }
 
-const memorySystem = resolveMemorySystem();
+// Fix (Finding A): let memorySystem — reassignable so auth_update can rebuild it
+// when the naia key becomes available (singleton was frozen before setAgentNaiaKey fired).
+let memorySystem = buildMemorySystem();
 memorySystem.startConsolidation();
 
 /** Native command executor — works without Gateway connection */
@@ -1107,6 +1164,9 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 
 export function handleAuthUpdate(req: import("./protocol.js").AuthUpdateRequest): void {
 	setAgentNaiaKey(req.naiaKey);
+	// Rebuild memory system so naia embedding/LLM providers pick up the fresh key.
+	// (Finding A fix: singleton was constructed before key was available.)
+	memorySystem = buildMemorySystem();
 }
 
 function main(): void {
