@@ -1,5 +1,7 @@
 mod audit;
 mod browser;
+mod browser_webview;
+mod capture;
 mod gemini_live;
 mod memory;
 mod panel;
@@ -1778,6 +1780,25 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 }
 
 /// Check if Naia Gateway is reachable on localhost
+/// Re-enable Korean/CJK IME for the WebView2 child HWND.
+/// Called from the frontend when a text input gains focus so the 한/영 toggle
+/// works even if the initial startup call was too early.
+#[tauri::command]
+fn enable_webview2_ime(window: tauri::Window) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use raw_window_handle::HasWindowHandle;
+        if let Ok(handle) = window.window_handle() {
+            if let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw() {
+                let hwnd_isize = h.hwnd.get() as isize;
+                crate::platform::enable_ime_for_window(hwnd_isize);
+                log_verbose("[Naia] IME re-enabled for WebView2 (on-demand)");
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn gateway_health() -> Result<bool, String> {
     let client = reqwest::Client::builder()
@@ -2034,6 +2055,13 @@ async fn discord_api(endpoint: String, method: String, body: Option<String>) -> 
 }
 
 #[tauri::command]
+async fn write_temp_text(filename: String, content: String) -> Result<String, String> {
+    let path = std::env::temp_dir().join(&filename);
+    std::fs::write(&path, content).map_err(|e| format!("write failed: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn read_local_binary(path: String) -> Result<Vec<u8>, String> {
     let file_path = std::path::PathBuf::from(&path);
     if !file_path.is_absolute() {
@@ -2153,6 +2181,10 @@ struct GatewaySyncParams {
     memory_embedding_model: Option<String>,
     qdrant_url: Option<String>,
     qdrant_api_key: Option<String>,
+    memory_llm_provider: Option<String>,
+    memory_llm_base_url: Option<String>,
+    memory_llm_api_key: Option<String>,
+    memory_llm_model: Option<String>,
 }
 
 /// Sync Shell provider/model/API-key to gateway config file so the
@@ -2310,7 +2342,11 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
             || params.memory_embedding_api_key.is_some()
             || params.memory_embedding_model.is_some()
             || params.qdrant_url.is_some()
-            || params.qdrant_api_key.is_some();
+            || params.qdrant_api_key.is_some()
+            || params.memory_llm_provider.is_some()
+            || params.memory_llm_base_url.is_some()
+            || params.memory_llm_api_key.is_some()
+            || params.memory_llm_model.is_some();
         if has_memory {
             let mut mem_obj = serde_json::Map::new();
             macro_rules! sync_opt {
@@ -2328,13 +2364,22 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
             sync_opt!("embeddingModel", params.memory_embedding_model);
             sync_opt!("qdrantUrl", params.qdrant_url);
             sync_opt!("qdrantApiKey", params.qdrant_api_key);
+            sync_opt!("llmProvider", params.memory_llm_provider);
+            sync_opt!("llmBaseUrl", params.memory_llm_base_url);
+            sync_opt!("llmApiKey", params.memory_llm_api_key);
+            sync_opt!("llmModel", params.memory_llm_model);
             let home = std::env::var("USERPROFILE")
                 .or_else(|_| std::env::var("HOME"))
                 .unwrap_or_default();
             let mem_config_path = format!("{}/.naia/memory-config.json", home);
             let mem_json = serde_json::to_string_pretty(&serde_json::Value::Object(mem_obj))
                 .unwrap_or_default();
-            let _ = std::fs::write(&mem_config_path, mem_json.as_bytes());
+            // Atomic write: tmp file + rename (mirrors openclaw.json pattern).
+            // Prevents torn reads if the agent process restarts during a settings save.
+            let tmp_path = format!("{}.tmp", mem_config_path);
+            if std::fs::write(&tmp_path, mem_json.as_bytes()).is_ok() {
+                let _ = std::fs::rename(&tmp_path, &mem_config_path);
+            }
         }
         // Clean up legacy memory keys from openclaw.json to prevent Gateway rejection
         if let Some(mem) = obj.get_mut("memory") {
@@ -2734,6 +2779,7 @@ pub fn run() {
             list_audio_output_devices,
             generate_oauth_state,
             read_local_binary,
+            write_temp_text,
             read_discord_bot_token,
             write_discord_bot_token,
             discord_api,
@@ -2744,32 +2790,30 @@ pub fn run() {
             gemini_live_send_text,
             gemini_live_send_tool_response,
             gemini_live_disconnect,
-            browser::browser_check,
-            browser::browser_agent_check,
+            // Login Chrome (standalone auth window, not embedded)
             browser::browser_open_login,
             browser::browser_chrome_testing_ready,
-            browser::browser_embed_init,
-            browser::browser_embed_resize,
-            browser::browser_embed_navigate,
-            browser::browser_embed_page_info,
-            browser::browser_embed_back,
-            browser::browser_embed_forward,
-            browser::browser_embed_reload,
-            browser::browser_embed_close,
-            browser::browser_embed_focus,
-            browser::browser_embed_hide,
-            browser::browser_embed_show,
-            browser::browser_shell_focus,
-            browser::browser_embed_port,
-            browser::browser_snapshot,
-            browser::browser_click,
-            browser::browser_fill,
-            browser::browser_get_text,
-            browser::browser_scroll,
-            browser::browser_press,
-            browser::browser_screenshot_path,
-            browser::browser_eval,
-            browser::browser_set_permission,
+            // Multi-webview browser panel (replaces Chrome embedding)
+            browser_webview::browser_wv_check,
+            browser_webview::browser_wv_create,
+            browser_webview::browser_wv_resize,
+            browser_webview::browser_wv_navigate,
+            browser_webview::browser_wv_page_info,
+            browser_webview::browser_wv_back,
+            browser_webview::browser_wv_forward,
+            browser_webview::browser_wv_reload,
+            browser_webview::browser_wv_show,
+            browser_webview::browser_wv_hide,
+            browser_webview::browser_wv_snapshot,
+            browser_webview::browser_wv_click,
+            browser_webview::browser_wv_fill,
+            browser_webview::browser_wv_get_text,
+            browser_webview::browser_wv_scroll,
+            browser_webview::browser_wv_press,
+            browser_webview::browser_wv_screenshot,
+            browser_webview::browser_wv_eval,
+            // Common tab skills
+            capture::capture_screen_region,
             panel::panel_list_installed,
             panel::panel_remove_installed,
             panel::panel_read_file,

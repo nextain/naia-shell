@@ -17,7 +17,7 @@ interface PanelState {
 	bumpPanelListVersion: () => void;
 	/**
 	 * Number of currently open HTML modals.
-	 * When > 0, the Chrome X11 embed is hidden to prevent it from rendering on top.
+	 * When > 0, the browser webview is hidden to prevent it from overlapping.
 	 */
 	modalCount: number;
 	pushModal: () => void;
@@ -29,9 +29,9 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 	setActivePanel: (id) => {
 		const current = get().activePanel;
 		if (current === "browser" && id !== "browser") {
-			invoke("browser_embed_hide").catch(() => {});
+			invoke("browser_wv_hide").catch(() => {});
 		} else if (id === "browser" && current !== "browser") {
-			invoke("browser_embed_show").catch(() => {});
+			invoke("browser_wv_show").catch(() => {});
 		}
 		set({ activePanel: id, activePanelContext: null });
 	},
@@ -44,7 +44,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 	pushModal: () => {
 		const { modalCount } = get();
 		if (modalCount === 0) {
-			invoke("browser_embed_hide").catch(() => {});
+			invoke("browser_wv_hide").catch(() => {});
 		}
 		set((s) => ({ modalCount: s.modalCount + 1 }));
 	},
@@ -52,7 +52,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 		const next = Math.max(0, get().modalCount - 1);
 		set({ modalCount: next });
 		if (next === 0 && get().activePanel === "browser") {
-			invoke("browser_embed_show").catch(() => {});
+			invoke("browser_wv_show").catch(() => {});
 		}
 	},
 }));

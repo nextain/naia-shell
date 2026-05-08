@@ -1,13 +1,14 @@
+import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 import { panelRegistry } from "../../lib/panel-registry";
 import { BrowserCenterPanel } from "./BrowserCenterPanel";
 
 panelRegistry.register({
 	id: "browser",
-	name: "Chrome",
-	names: { ko: "크롬", en: "Chrome" },
+	name: "인터넷",
+	names: { ko: "인터넷", en: "Internet" },
 	icon: "🌐",
 	builtIn: true,
-	keepAlive: true, // X11 visibility controlled by browser_embed_hide/show in panel.ts setActivePanel
+	keepAlive: true, // visibility controlled by browser_wv_hide/show on panel switch
 	center: BrowserCenterPanel,
 	tools: [
 		// ── Navigation ──────────────────────────────────────────────────────
@@ -145,14 +146,8 @@ panelRegistry.register({
 			},
 			tier: 0,
 		},
-		// ── Capture ─────────────────────────────────────────────────────────
-		{
-			name: "skill_browser_screenshot",
-			description:
-				"Take a screenshot of the current browser page and return the file path.",
-			parameters: { type: "object", properties: {} },
-			tier: 0,
-		},
+		// ── Tab skills (common to all panels) ───────────────────────────────
+		...TAB_SKILL_DESCRIPTORS,
 		// ── Advanced ────────────────────────────────────────────────────────
 		{
 			name: "skill_browser_eval",

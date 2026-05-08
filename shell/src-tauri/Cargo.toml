@@ -47,6 +47,7 @@ zip = "2"
 # HTTP client for CDP health-check (tiny, no async needed here)
 ureq = { version = "2", features = ["json"] }
 notify = "6"
+png = "0.17"
 portable-pty = "0.9.0"
 sysinfo = { version = "0.34", default-features = false, features = ["system"] }
 serde_yaml = "0.9"

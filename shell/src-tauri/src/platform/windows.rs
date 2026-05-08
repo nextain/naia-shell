@@ -605,10 +605,21 @@ pub(crate) fn enable_ime_for_window(hwnd_isize: isize) {
     use windows_sys::Win32::UI::Input::Ime::{ImmAssociateContextEx, IACE_CHILDREN, IACE_DEFAULT};
     let hwnd = isize_to_hwnd(hwnd_isize);
     unsafe {
-        // IACE_DEFAULT  — use the thread's default IME context (not NULL/disabled)
-        // IACE_CHILDREN — apply recursively to all child windows (covers
-        //                 WebView2's Chrome_RenderWidgetHostHWND)
+        // Apply to the Tauri top-level HWND + all Win32 children
         ImmAssociateContextEx(hwnd, std::ptr::null_mut(), IACE_DEFAULT | IACE_CHILDREN);
+    }
+    // Also apply directly to the WebView2 host HWND (Chrome_WidgetWin_1).
+    // ImmAssociateContextEx on the parent alone doesn't reliably reach the
+    // WebView2 renderer — calling it on the actual WebView2 child HWND is
+    // required for the 한/영 toggle to work inside the WebView2 textarea.
+    if let Some(wv2_isize) = find_webview2_child(hwnd_isize) {
+        let wv2_hwnd = isize_to_hwnd(wv2_isize);
+        unsafe {
+            ImmAssociateContextEx(wv2_hwnd, std::ptr::null_mut(), IACE_DEFAULT | IACE_CHILDREN);
+        }
+        crate::log_verbose(&format!(
+            "[Naia] IME enabled for WebView2 child Win32({wv2_isize})"
+        ));
     }
 }
 
@@ -684,7 +695,6 @@ pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {
 
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, TRUE, FALSE};
 use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
-use windows_sys::Win32::System::Threading::AttachThreadInput;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -926,24 +936,6 @@ impl PlatformWindowManager for Win32WindowManager {
                 rect.height as i32,
                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
-
-            // Share input state between Chrome's UI thread and Tauri's UI
-            // thread. Without this, Tauri's WM_SETFOCUS propagation to its
-            // WebView2 child is broken after the reparent (the thread input
-            // queues are unrelated, so focus events don't cross over).
-            //
-            // AttachThreadInput is idempotent for TRUE — safe to re-call.
-            let mut chrome_pid: u32 = 0;
-            let chrome_tid = GetWindowThreadProcessId(ch, &mut chrome_pid);
-            let mut tauri_pid: u32 = 0;
-            let tauri_tid = GetWindowThreadProcessId(ph, &mut tauri_pid);
-            if chrome_tid != 0 && tauri_tid != 0 && chrome_tid != tauri_tid {
-                let attached = AttachThreadInput(chrome_tid, tauri_tid, TRUE);
-                crate::log_verbose(&format!(
-                    "[browser] AttachThreadInput(chrome_tid={chrome_tid}, tauri_tid={tauri_tid}) = {}",
-                    if attached != 0 { "ok" } else { "failed" }
-                ));
-            }
 
             // Restore keyboard focus to Tauri's WebView2 child after SetParent.
             // Top-level Tauri HWND doesn't process keys itself — the actual

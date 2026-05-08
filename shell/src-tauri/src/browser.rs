@@ -1,3 +1,13 @@
+//! Chrome subprocess embedding (legacy) + standalone login Chrome.
+//!
+//! The embedded browser panel was replaced by Tauri 2 multi-webview
+//! (see browser_webview.rs). This file is kept for:
+//!   - browser_open_login / browser_chrome_testing_ready (auth flow)
+//!   - browser_embed_kill (kills login Chrome on app exit)
+//!
+//! The old embed commands (browser_embed_*) are no longer registered in
+//! invoke_handler and will be removed in a future cleanup pass.
+#![allow(dead_code)]
 //! Chrome subprocess embedding for the Naia browser panel.
 //!
 //! Architecture:
@@ -16,7 +26,7 @@
 use crate::platform::{self, PlatformHandle, WindowRect};
 use std::process::{Child, Command};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 // ─── Global state ─────────────────────────────────────────────────────────────
 
@@ -374,6 +384,21 @@ fn chrome_for_testing_bin() -> Option<String> {
 ///
 /// Uses platform::window_manager() for Chrome binary discovery and
 /// platform-specific launch arguments (e.g., --ozone-platform=x11 on Linux).
+/// Remove Chrome session/tab files from the Default profile so Chrome does not
+/// show the "Restore pages?" dialog on the next launch.  The files are only
+/// written by a clean Chrome shutdown; since we always kill Chrome with
+/// TerminateProcess / SIGKILL, they are always stale.
+fn clear_chrome_crash_state(tmpdir: &str) {
+	let default_dir = std::path::Path::new(tmpdir).join("Default");
+	if !default_dir.exists() {
+		return; // Profile not created yet — nothing to clear
+	}
+	for name in &["Last Session", "Last Tabs", "Current Session", "Current Tabs"] {
+		let _ = std::fs::remove_file(default_dir.join(name));
+	}
+	crate::log_verbose("[browser] Chrome crash state cleared");
+}
+
 fn spawn_chrome(port: u16, tmpdir: &str) -> Result<Child, String> {
 	let wm = platform::window_manager();
 	let bin = wm.chrome_bin().ok_or("Chrome not found (searched PATH and well-known locations)")?;
@@ -623,6 +648,12 @@ pub fn browser_embed_init(
 	std::fs::create_dir_all(&tmpdir)
 		.map_err(|e| format!("Failed to create Chrome profile dir: {e}"))?;
 
+	// Clear Chrome's crash state before spawning so the "Restore pages?" dialog
+	// doesn't appear. The profile is persistent (login sessions survive restarts)
+	// but we always kill Chrome with SIGKILL/TerminateProcess, so Chrome always
+	// thinks it crashed. Clearing the session files tells Chrome to start fresh.
+	clear_chrome_crash_state(&tmpdir);
+
 	let child = spawn_chrome(port, &tmpdir)?;
 	let pid = child.id();
 	crate::log_verbose(&format!("[browser] Chrome spawned: pid={pid} port={port}"));
@@ -720,15 +751,16 @@ pub fn browser_embed_resize(x: f64, y: f64, width: f64, height: f64) -> Result<(
 
 /// Give keyboard focus to Chrome's native window.
 ///
-/// In native SetParent embed mode, Win32 routes click→focus automatically —
-/// explicit SetFocus is not needed and would fight the periodic timer in
-/// BrowserCenterPanel (designed for X11/overlay). No-op in that case.
-/// Only active in overlay mode or on Linux (X11 reparent needs focus help).
+/// Called from the viewport onClick and a 1500 ms timer in BrowserCenterPanel.
+/// On Windows (embed/SetParent mode), Win32 routes click→focus automatically
+/// and the 1500ms timer must NOT call SetFocus — doing so every 1.5s causes
+/// continuous WM_KILLFOCUS/WM_SETFOCUS on WebView2, producing visible flicker.
+/// Only active in overlay mode (Linux X11) where explicit SetFocus is needed.
 #[tauri::command]
 pub fn browser_embed_focus() -> Result<(), String> {
 	let state = CHROME.lock().unwrap();
 	if !state.overlay_mode {
-		return Ok(()); // SetParent embed: Win32 handles focus natively
+		return Ok(()); // embed mode: Win32 click routing handles focus natively
 	}
 	let handle = state.chrome_handle;
 	drop(state);
@@ -1111,7 +1143,51 @@ fn spawn_login_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
 /// monitors via `spawn_login_chrome_monitor`, auto-closes on auth-complete.
 #[tauri::command]
 pub async fn browser_open_login(app: AppHandle, url: String) -> Result<(), String> {
-	// Fast path: embedded Chrome already running → navigate in-panel.
+	// Fast path 1: multi-webview panel (new default).
+	if let Some(wv) = app.get_webview(crate::browser_webview::BROWSER_LABEL) {
+		crate::log_verbose("[browser_login] multi-webview active — navigating in-panel");
+		tauri::Webview::eval(&wv, &format!("window.location.href = {:?};", url))
+			.map_err(|e| format!("navigate: {e}"))?;
+		// Tell frontend to switch to the browser panel so user can see the login page.
+		let _ = app.emit("browser_panel_activate", ());
+		// Watch CURRENT_URL for /desktop/auth-complete and emit naia_auth_complete.
+		let app2 = app.clone();
+		std::thread::spawn(move || {
+			let mut auth_emitted = false;
+			// Timeout after 10 min.
+			let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+			loop {
+				if std::time::Instant::now() > deadline { break; }
+				std::thread::sleep(std::time::Duration::from_millis(500));
+				let current = crate::browser_webview::get_current_url();
+				if current.contains("/desktop/auth-complete") {
+					if !auth_emitted {
+						if let Ok(parsed) = current.parse::<url::Url>() {
+							let key: String = parsed.query_pairs()
+								.find(|(k, _)| k == "key")
+								.map(|(_, v)| v.to_string())
+								.unwrap_or_default();
+							let user_id: String = parsed.query_pairs()
+								.find(|(k, _)| k == "user_id")
+								.map(|(_, v)| v.to_string())
+								.unwrap_or_default();
+							if !key.is_empty() {
+								let auth = serde_json::json!({ "naiaKey": key, "naiaUserId": user_id });
+								let _ = app2.emit("naia_auth_complete", auth);
+								auth_emitted = true;
+							}
+						}
+					}
+				} else {
+					auth_emitted = false;
+				}
+				if auth_emitted { break; }
+			}
+		});
+		return Ok(());
+	}
+
+	// Fast path 2: embedded Chrome already running → navigate in-panel.
 	let port = CHROME.lock().unwrap().port;
 	if port != 0 {
 		crate::log_verbose(&format!("[browser_login] embedded Chrome active (port={port}) — navigating in-panel"));
