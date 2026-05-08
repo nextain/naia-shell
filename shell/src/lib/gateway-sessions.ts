@@ -14,22 +14,23 @@ export interface GatewaySession {
 }
 
 function getGatewayOpts(): {
-	gatewayUrl: string;
+	gatewayUrl?: string;
 	gatewayToken?: string;
-} | null {
+} {
 	const config = loadConfig();
 	const gatewayUrl = resolveGatewayUrl(config);
-	if (!gatewayUrl || !config?.enableTools) return null;
-	return { gatewayUrl, gatewayToken: config.gatewayToken };
+	return { gatewayUrl, gatewayToken: config?.gatewayToken };
 }
 
 /** List all Gateway sessions */
 export async function listGatewaySessions(
 	limit = 50,
 ): Promise<GatewaySession[]> {
-	const opts = getGatewayOpts();
-	if (!opts) return [];
+	// skill_sessions is a local agent tool — works even without cloud gateway/enableTools.
+	// Just bail early if there's no config at all (first-run before onboarding).
+	if (!loadConfig()) return [];
 
+	const opts = getGatewayOpts();
 	try {
 		const res = await directToolCall({
 			toolName: "skill_sessions",
@@ -76,9 +77,8 @@ function isHeartbeatMessage(role: string, text: string): boolean {
 
 /** Get chat history for a Gateway session key */
 export async function getGatewayHistory(key: string): Promise<ChatMessage[]> {
+	if (!loadConfig()) return [];
 	const opts = getGatewayOpts();
-	if (!opts) return [];
-
 	try {
 		const res = await directToolCall({
 			toolName: "skill_sessions",
@@ -117,9 +117,8 @@ export async function getGatewayHistory(key: string): Promise<ChatMessage[]> {
 
 /** Delete a Gateway session */
 export async function deleteGatewaySession(key: string): Promise<boolean> {
+	if (!loadConfig()) return false;
 	const opts = getGatewayOpts();
-	if (!opts) return false;
-
 	try {
 		const res = await directToolCall({
 			toolName: "skill_sessions",
@@ -141,9 +140,8 @@ export async function patchGatewaySession(
 	key: string,
 	patch: { summary?: string; label?: string },
 ): Promise<boolean> {
+	if (!loadConfig()) return false;
 	const opts = getGatewayOpts();
-	if (!opts) return false;
-
 	try {
 		const res = await directToolCall({
 			toolName: "skill_sessions",

@@ -90,14 +90,20 @@ describe("gateway-sessions", () => {
 			);
 		});
 
-		it("returns empty array when Gateway unavailable", async () => {
+		it("still calls agent when Gateway URL unavailable (skill_sessions is local)", async () => {
+			// skill_sessions is a local agent tool — works without cloud gateway.
+			// The agent receives the request with gatewayUrl: undefined and handles it locally.
 			(resolveGatewayUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			mockDirectToolCall.mockResolvedValueOnce({ success: true, output: JSON.stringify({ sessions: [] }) });
 
 			const { listGatewaySessions } = await import("../gateway-sessions");
 			const sessions = await listGatewaySessions();
 
 			expect(sessions).toEqual([]);
-			expect(mockDirectToolCall).not.toHaveBeenCalled();
+			// directToolCall IS called — agent processes skill_sessions locally
+			expect(mockDirectToolCall).toHaveBeenCalledWith(
+				expect.objectContaining({ toolName: "skill_sessions" }),
+			);
 		});
 
 		it("returns empty array on Gateway error", async () => {
