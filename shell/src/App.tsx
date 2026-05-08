@@ -26,6 +26,7 @@ import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { restartGateway } from "./lib/gateway-sync";
 import { loadInstalledPanels } from "./lib/panel-loader";
+import { Logger } from "./lib/logger";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import "./panels/browser/index"; // register browser panel
@@ -70,8 +71,13 @@ export function App() {
 		prevPanelRef.current = activePanel;
 
 		if (prev && prev !== activePanel) {
-			sendPanelSkillsClear(prev).catch(() => {});
-			panelRegistry.get(prev)?.onDeactivate?.();
+			// keepAlive panels stay mounted — don't clear their skills so the
+			// LLM can still call them (e.g. skill_browser_navigate from Chat).
+			const prevDescriptor = panelRegistry.get(prev);
+			if (!prevDescriptor?.keepAlive) {
+				sendPanelSkillsClear(prev).catch(() => {});
+			}
+			prevDescriptor?.onDeactivate?.();
 		}
 		if (activePanel) {
 			const descriptor = panelRegistry.get(activePanel);
@@ -85,6 +91,30 @@ export function App() {
 	useEffect(() => {
 		const stopIframeBridge = startIframeBridge();
 		return stopIframeBridge;
+	}, []);
+
+	// Register keepAlive panel tools with the agent at startup so the LLM can
+	// call them regardless of which panel is currently active (e.g. asking Naia
+	// to open a website while on the Chat panel).
+	useEffect(() => {
+		const all = panelRegistry.list();
+		for (const descriptor of all) {
+			if (descriptor.keepAlive && descriptor.tools && descriptor.tools.length > 0) {
+				sendPanelSkills(descriptor.id, descriptor.tools)
+					.then(() => {
+						Logger.info("App", "startup panel skills registered", {
+							panel: descriptor.id,
+							tools: descriptor.tools?.map((t) => t.name),
+						});
+					})
+					.catch((err) => {
+						Logger.warn("App", "startup panel skills failed", {
+							panel: descriptor.id,
+							error: String(err),
+						});
+					});
+			}
+		}
 	}, []);
 
 	useEffect(() => {

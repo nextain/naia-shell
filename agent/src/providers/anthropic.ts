@@ -22,13 +22,30 @@ function toAnthropicMessages(
 				})),
 			});
 		} else if (m.role === "tool") {
+			// Detect base64 image result (from skill_tab_screenshot vision)
+			const isImage = m.content.startsWith("data:image/");
+			const toolContent: Anthropic.Messages.ToolResultBlockParam["content"] =
+				isImage
+					? [
+							{
+								type: "image" as const,
+								source: {
+									type: "base64" as const,
+									media_type: m.content.startsWith("data:image/png")
+										? ("image/png" as const)
+										: ("image/jpeg" as const),
+									data: m.content.replace(/^data:[^;]+;base64,/, ""),
+								},
+							},
+						]
+					: m.content;
 			result.push({
 				role: "user",
 				content: [
 					{
 						type: "tool_result" as const,
 						tool_use_id: m.toolCallId!,
-						content: m.content,
+						content: toolContent,
 					},
 				],
 			});

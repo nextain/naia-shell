@@ -130,13 +130,17 @@ export function toClaudeMessages(
 		}
 
 		if (m.role === "tool") {
+			// claude-code-cli doesn't support image blocks in tool results — strip base64
+			const content = m.content.startsWith("data:image/")
+				? "[screenshot captured — vision not available in CLI mode]"
+				: m.content;
 			result.push({
 				role: "user",
 				content: [
 					{
 						type: "tool_result",
 						tool_use_id: m.toolCallId,
-						content: m.content,
+						content,
 					},
 				],
 			});

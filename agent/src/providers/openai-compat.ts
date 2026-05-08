@@ -49,10 +49,14 @@ export function toOpenAIMessages(
 				})),
 			});
 		} else if (m.role === "tool") {
+			// Strip base64 image data — OpenAI tool results don't support inline images here
+			const content = m.content.startsWith("data:image/")
+				? "[screenshot captured — vision not available for this provider]"
+				: m.content;
 			result.push({
 				role: "tool",
 				tool_call_id: m.toolCallId!,
-				content: m.content,
+				content,
 			});
 		} else {
 			result.push({

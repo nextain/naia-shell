@@ -29,6 +29,7 @@ You are embedded in the Naia desktop app. Know these features to help users:
 - **채팅 탭**: 사용자와 대화. 텍스트/음성 입력 지원 (STT). 음성 응답 (TTS).
 - **기록 탭**: 이전 대화 목록. 클릭하면 해당 대화를 다시 불러올 수 있음.
 - **작업 탭**: AI가 수행한 도구 실행/오류 등 작업 진행 현황 확인.
+- **인터넷 탭**: 내장 브라우저 패널. 사용자가 웹사이트/URL/영상을 열어달라고 하면 반드시 skill_browser_navigate 도구로 인터넷 탭에서 열어줘야 함. "유튜브 틀어줘", "네이버 열어줘", "이 링크 봐줘" 등 모든 웹 탐색 요청에 사용.
 - **스킬 탭**: 사용 가능한 스킬(도구) 목록. 스킬 활성/비활성 전환 가능. 클릭하면 상세 보기. ? 버튼으로 AI에게 질문.
 - **스킬 관리**: skill_skill_manager 도구를 사용하여 스킬 검색, 상세 정보 확인, 활성화/비활성화 가능. 사용자가 "스킬 켜줘/꺼줘/목록/검색" 등을 요청하면 반드시 이 도구를 사용할 것.
 - **날씨**: skill_weather 도구로 현재 날씨 조회 가능. "서울 날씨" 같은 요청에 사용.
@@ -59,9 +60,22 @@ export function buildToolStatusPrompt(
 
 	if (wantGateway && !gatewayConnected) {
 		status +=
-			"\n⚠️ Gateway 연결 실패: Gateway 필요 도구(execute_command, read_file, write_file, search_files, web_search, apply_diff, browser, sessions_spawn 및 커스텀 스킬)를 사용할 수 없습니다. 로컬 스킬(skill_time, skill_weather, skill_memo 등)은 정상 사용 가능합니다. Gateway가 필요한 도구를 요청받으면, 앱을 재시작하면 Gateway도 자동으로 재시작된다고 안내하세요.";
+			"\n⚠️ Gateway 연결 실패: Gateway 필요 도구(execute_command, read_file, write_file, search_files, web_search, apply_diff, sessions_spawn 및 커스텀 스킬)를 사용할 수 없습니다. 브라우저(skill_browser_*)는 Shell 패널 스킬로 Gateway 없이도 사용 가능합니다. 로컬 스킬(skill_time, skill_weather, skill_memo 등)은 정상 사용 가능합니다. Gateway가 필요한 도구를 요청받으면, 앱을 재시작하면 Gateway도 자동으로 재시작된다고 안내하세요.";
 	} else if (gatewayConnected) {
 		status += "\nGateway 연결됨 ✓";
+	}
+
+	if (toolNames.includes("skill_browser_navigate")) {
+		status +=
+			"\n\n[Tool Guide: skill_browser_*]" +
+			"\n- CRITICAL: 사용자가 웹사이트, URL, 유튜브, 뉴스, 지도 등 웹 콘텐츠를 요청하면 반드시 skill_browser_navigate를 호출해 인터넷 탭에서 열어줘야 한다. 링크만 알려주는 것은 FORBIDDEN." +
+			"\n- 탐색: skill_browser_navigate(url) — 인터넷 탭에서 해당 URL로 이동" +
+			"\n- 클릭: skill_browser_snapshot으로 @ref 확인 → skill_browser_click(ref)" +
+			"\n- 텍스트 입력: skill_browser_fill(ref, text)" +
+			"\n- 페이지 내용 읽기: skill_browser_get_text 또는 skill_browser_snapshot" +
+			"\n- 스크롤: skill_browser_scroll(direction)" +
+			"\n- 뒤로/앞으로: skill_browser_back / skill_browser_forward" +
+			"\n- 예시: '유튜브에서 최신 뉴스 틀어줘' → skill_browser_navigate('https://www.youtube.com/results?search_query=최신+뉴스')";
 	}
 
 	if (toolNames.includes("skill_naia_discord")) {
@@ -83,6 +97,7 @@ export function buildToolStatusPrompt(
 		"\n- If you don't know the answer, use a tool to find out (web_search, skill_github, execute_command, etc.). Do NOT guess or make up information." +
 		"\n- When the user mentions an app or service name (옵시디안, スポティファイ, GitHub, Slack, Notion, etc.), search for it using skill_skill_manager action='search' query='{english name}'. Skill names are English: skill_obsidian, skill_github, skill_slack, etc." +
 		"\n- When asked about GitHub repos/PRs/issues, ALWAYS use skill_github. Never guess URLs." +
+		"\n- When user asks to open/visit/show a website or web content (YouTube, news, Naver, etc.), ALWAYS use skill_browser_navigate. NEVER just reply with a link." +
 		"\n- '확인해볼게' / '検索するね' / 'Let me check' without actually calling a tool is FORBIDDEN.";
 
 	return base + status;

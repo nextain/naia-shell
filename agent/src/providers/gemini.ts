@@ -21,6 +21,10 @@ function toGeminiContents(messages: ChatMessage[]) {
 			};
 		}
 		if (m.role === "tool") {
+			// Strip base64 image data — Gemini function responses don't support inline images
+			const content = m.content.startsWith("data:image/")
+				? "[screenshot captured — vision not available for this provider]"
+				: m.content;
 			return {
 				role: "user",
 				parts: [
@@ -28,7 +32,7 @@ function toGeminiContents(messages: ChatMessage[]) {
 						functionResponse: {
 							id: m.toolCallId,
 							name: m.name,
-							response: { output: m.content },
+							response: { output: content },
 						},
 					},
 				],
