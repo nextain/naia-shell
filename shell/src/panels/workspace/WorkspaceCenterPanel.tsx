@@ -1041,15 +1041,23 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 					<span className="workspace-panel__tree-title">탐색기</span>
 				</div>
 				<div className="workspace-panel__tree-body">
-					<FileTree
-						onFileSelect={handleFileSelect}
-						onDirExpand={handleDirExpand}
-						openFilePath={openFilePath}
-						activeDirs={activeDirs}
-						classifiedDirs={classifiedDirs ?? undefined}
-						workspaceRoot={resolvedRoot}
-						onSendToChat={handleSendToChat}
-					/>
+					{workspaceReady ? (
+						<FileTree
+							onFileSelect={handleFileSelect}
+							onDirExpand={handleDirExpand}
+							openFilePath={openFilePath}
+							activeDirs={activeDirs}
+							classifiedDirs={classifiedDirs ?? undefined}
+							workspaceRoot={resolvedRoot}
+							onSendToChat={handleSendToChat}
+						/>
+					) : (
+						<div className="workspace-panel__tree-loading">
+							<span className="workspace-panel__tree-loading-text">
+								워크스페이스 준비 중…
+							</span>
+						</div>
+					)}
 				</div>
 				<div className="workspace-panel__tree-divider" />
 				<SkillLauncher />

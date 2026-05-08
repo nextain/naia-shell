@@ -4362,6 +4362,7 @@ body.resizing-row {
 	flex: 1;
 	min-height: 0;
 	flex-shrink: 1;
+	position: relative;
 }
 
 .diagnostics-section-header {
@@ -4468,6 +4469,33 @@ body.resizing-row {
 	font-family: var(--mono);
 }
 
+.diagnostics-log-tabs {
+	display: flex;
+	gap: 2px;
+}
+
+.diagnostics-log-tab {
+	padding: 3px 10px;
+	border-radius: 4px 4px 0 0;
+	border: none;
+	background: transparent;
+	color: var(--cream-dim);
+	font-size: 11px;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s;
+}
+
+.diagnostics-log-tab:hover {
+	background: var(--espresso-light);
+	color: var(--cream);
+}
+
+.diagnostics-log-tab.active {
+	background: var(--espresso-light);
+	color: var(--cream);
+	font-weight: 600;
+}
+
 .diagnostics-logs-controls {
 	display: flex;
 	gap: 4px;
@@ -4507,24 +4535,96 @@ body.resizing-row {
 }
 
 .diagnostics-log-line {
-	display: flex;
-	gap: 6px;
-	line-height: 1.6;
+	display: block;
+	line-height: 1.5;
+	padding: 1px 0;
 }
 
-.log-timestamp {
-	color: var(--cream-dim);
-	flex-shrink: 0;
+.diagnostics-log-line--important {
+	cursor: pointer;
 }
 
-.log-level {
-	flex-shrink: 0;
-	font-weight: 600;
+.diagnostics-log-line--important:hover {
+	background: rgba(255, 255, 255, 0.04);
+	border-radius: 2px;
+}
+
+.log-prefix {
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	margin-right: 4px;
 }
 
 .log-message {
 	color: var(--cream);
+	font-size: 11px;
+}
+
+/* Legacy aliases — kept for any remaining uses */
+.log-timestamp { color: var(--cream-dim); flex-shrink: 0; }
+.log-level { flex-shrink: 0; font-weight: 600; }
+
+/* ERROR/WARN detail modal */
+.diagnostics-log-modal-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 100;
+}
+
+.diagnostics-log-modal {
+	background: var(--espresso-base);
+	border: 1px solid var(--espresso-light);
+	border-radius: 8px;
+	padding: 16px;
+	width: min(520px, 90%);
+	max-height: 70vh;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.diagnostics-log-modal-level {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+}
+
+.diagnostics-log-modal-ts {
+	font-size: 11px;
+	color: var(--cream-dim);
+}
+
+.diagnostics-log-modal-msg {
+	flex: 1;
+	overflow: auto;
+	font-size: 11px;
+	color: var(--cream);
+	white-space: pre-wrap;
 	word-break: break-all;
+	background: var(--espresso-deep);
+	border-radius: 4px;
+	padding: 10px;
+	margin: 0;
+	max-height: 50vh;
+}
+
+.diagnostics-log-modal-close {
+	align-self: flex-end;
+	background: var(--espresso-light);
+	border: none;
+	border-radius: 4px;
+	color: var(--cream);
+	cursor: pointer;
+	font-size: 12px;
+	padding: 4px 12px;
+}
+
+.diagnostics-log-modal-close:hover {
+	background: var(--espresso-medium);
 }
 
 /* Agent files */
@@ -5543,6 +5643,18 @@ body.resizing-row {
 	overflow-y: auto;
 	overflow-x: hidden;
 	flex: 1;
+}
+
+.workspace-panel__tree-loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 60px;
+}
+
+.workspace-panel__tree-loading-text {
+	font-size: 12px;
+	color: var(--color-text-muted, #888);
 }
 
 /* Center: Editor / Terminal tabs */
