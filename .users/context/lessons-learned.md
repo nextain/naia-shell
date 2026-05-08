@@ -697,6 +697,35 @@ if (cmd === "plugin:store|get") return [null, false];
 
 ---
 
+## L059 — Windows browser panel: WebView2 child window replaces Win32 SetParent; invoke-before-set pattern unchanged (#249)
+
+**Date**: 2026-05-07 | **Category**: platform | **Scope**: `shell/src-tauri/src/browser_webview.rs`, `shell/src/stores/chat.ts`
+
+**Problem**: Win32 SetParent embedding caused Z-order artifacts. Migrated to Tauri WebView2 child window. IPC command names changed: `browser_embed_hide/show` → `browser_wv_hide/show`.
+
+**Root cause**: WebView2 provides a first-class child window API with DPI-aware `LogicalPosition`/`LogicalSize`.
+
+**Fix**: New Rust module `browser_webview.rs`. Core commands: `browser_wv_create`, `browser_wv_navigate`, `browser_wv_hide`, `browser_wv_show`, `browser_wv_resize` (plus full browser control suite). The invoke-before-set pattern from L041/L043 still applies: `invoke("browser_wv_hide")` BEFORE `set({ pendingApproval })`. The three-path guard still applies: `clearPendingApproval`, `finishStreaming`, `newConversation` each call `browser_wv_show` only when `pendingApproval` was truthy.
+
+**Note**: Linux path (X11 XReparentWindow) is unchanged — L041/L043 still apply for Linux.
+
+---
+
+## L060 — @nextain/naia-memory R3: HeuristicContradictionFilter not in top-level index; API is encode/recall not storeEpisode/recallEpisodes (#242)
+
+**Date**: 2026-05-07 | **Category**: testing | **Scope**: `agent/src/__tests__/naia-memory-r3-integration.test.ts`
+
+**Problem**: Two integration test traps: (1) `HeuristicContradictionFilter` not re-exported from top-level `@nextain/naia-memory` index. (2) Public API uses `encode()`/`recall()` — old names `storeEpisode()`/`recallEpisodes()` removed.
+
+**Root cause**: R3 refactored API surface. `HeuristicContradictionFilter` is an internal implementation detail; `MemorySystemOptions.contradictionFilter` is the consumer-facing entry point.
+
+**Fix**:
+- Import from subpath: `import { HeuristicContradictionFilter } from ".../memory/contradiction-filter.js"`
+- Correct API: `ms.encode(input: MemoryInput, context: EncodingContext)` to store; `ms.recall(query, RecallContext)` returns `{episodes, facts, reflections}`
+- `recall()` is query-based, not session-scoped — test session isolation via content queries
+
+---
+
 ## L058 — Don't invent client-side protocols over upstream endpoints — follow the fork when it deprecates (#219)
 
 **Date**: 2026-04-25 | **Category**: upstream-integration | **Scope**: `shell/src/lib/voice/minicpm-o.ts`

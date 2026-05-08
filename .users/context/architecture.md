@@ -198,12 +198,13 @@ OAuth deep-link payloads must be persisted regardless of whether specific tabs (
   - Saving auth payloads only inside tab components.
   - Duplicating different fallback rules across components.
 
-## Memory Architecture (Dual-Origin)
+## Memory Architecture (Three-Layer)
 
-Memory lives in **two systems** that serve different purposes and connect at session boundaries.
+Memory lives in **three systems** that serve different purposes and connect at session boundaries.
 
 - **Shell** owns "who is the user" (facts)
-- **Naia Gateway** owns "what happened" (session transcripts + semantic search index)
+- **Naia Gateway** owns "what happened" (session transcripts)
+- **Agent** owns "semantic recall + contradiction filtering" via `@nextain/naia-memory` (R3)
 
 ### Shell Memory (Tauri)
 
@@ -299,13 +300,48 @@ However, Shell fact extraction (`summarizePreviousSession`) only runs on Shell c
 | `~/.naia/workspace/` | SOUL/IDENTITY/USER.md | Regenerable from Shell |
 | `~/.naia/credentials/` | OAuth tokens | Re-authenticatable |
 
-### Search Engine Evolution (swappable via MemoryProcessor interface)
+### Agent Memory — @nextain/naia-memory R3 (added 2026-05-07, #226)
+
+The **agent process** hosts a dedicated semantic memory system using `@nextain/naia-memory`.
+
+| Item | Details |
+|------|---------|
+| **Package** | `@nextain/naia-memory` (local submodule `file:../../naia-memory`) |
+| **Config** | `~/.naia/memory-config.json` (optional) |
+| **Adapter** | `LocalAdapter` — `~/.naia/memory/agent-store.json` |
+| **Embedding** | vLLM/Ollama → `OpenAICompatEmbeddingProvider`; Naia → `NaiaGatewayEmbeddingProvider`; None → keyword-only |
+| **R3 features** | `HeuristicContradictionFilter`, Reconsolidation, HyDE, MMR |
+
+**Config fields** (`~/.naia/memory-config.json`):
+```json
+{
+  "embeddingProvider": "vllm",
+  "embeddingBaseUrl": "http://localhost:8000",
+  "embeddingApiKey": "...",
+  "embeddingModel": "nomic-embed-text"
+}
+```
+
+**API** (correct R3 methods — NOT storeEpisode/recallEpisodes):
+```typescript
+ms.encode(input: MemoryInput, context: EncodingContext): Promise<Episode>
+ms.recall(query: string, context: RecallContext): Promise<{episodes, facts, reflections}>
+ms.sessionRecall(firstMessage, context, tokenBudget?): Promise<string>
+ms.close(): Promise<void>
+```
+
+> ⚠️ `HeuristicContradictionFilter` is **not** exported from the top-level `@nextain/naia-memory` index.
+> Import from subpath: `import { HeuristicContradictionFilter } from ".../contradiction-filter.js"`
+
+Shell Settings UI: **Memory** section in SettingsTab — embedding provider, base URL, model, LLM provider.
+
+### Search Engine Evolution
 
 ```
 4.4a: SQLite LIKE (keyword matching)
 4.4b: SQLite FTS5 BM25 (full-text search)
 4.5:  Gemini Embedding API (semantic search)
-5+:   sLLM (Ollama, llama.cpp) local summarization/embedding
+5+:   Agent @nextain/naia-memory R3 — vLLM/Ollama local embedding + HeuristicContradictionFilter
 ```
 
 ### DB Schema
@@ -646,16 +682,35 @@ Built-in panel for Claude Code session monitoring and PTY terminal tabs. Always 
 
 ---
 
-## Browser Panel — Chrome Embedding (#95, #164)
+## Browser Panel — WebView2 Embed (#95, #249)
 
-Chrome is embedded natively into Tauri using `PlatformWindowManager` trait abstraction:
-- **Linux:** X11 `XReparentWindow` via x11rb (`platform/linux.rs` → `X11WindowManager`)
-- **Windows:** Win32 `SetParent` via windows-sys (`platform/windows.rs` → `Win32WindowManager`)
-- **macOS:** Not yet implemented (add `PlatformWindowManager` impl)
+*Updated 2026-05-07: migrated from Win32 SetParent to Tauri WebView2 child window.*
 
-Chrome discovery: Linux = `which` + Flatpak, Windows = `where.exe` + Program Files. UI shows "Chrome Download" button with auto-detect polling (5s) when Chrome is not installed.
+The browser panel is a **keepAlive** panel (always mounted, hidden via `opacity:0 + pointerEvents:none`).
 
-12 AI tools: navigate, back, forward, reload, click, fill, scroll, press, snapshot, get_text, screenshot, eval.
+**Embedding per platform:**
+
+| Platform | Method |
+|----------|--------|
+| **Linux** | X11 `XReparentWindow` via x11rb (`platform/linux.rs` → `X11WindowManager`) |
+| **Windows** | Tauri WebView2 child window (`browser_webview.rs`) — `browser_wv_create/navigate/hide/show/resize` + full browser control suite IPC |
+| **macOS** | Not yet implemented |
+
+**Windows WebView2 IPC commands** (`browser_webview.rs`):
+
+| Command | Purpose |
+|---------|---------|
+| `browser_wv_create` | Create WebView2 child at LogicalPosition + LogicalSize |
+| `browser_wv_navigate` | Navigate to URL |
+| `browser_wv_hide` | Hide overlay (called before modal `set()` to prevent 1-frame overlap) |
+| `browser_wv_show` | Show overlay |
+| `browser_wv_resize` | Resize to match viewport div |
+
+> ⚠️ **`setPendingApproval` order**: `invoke("browser_wv_hide")` MUST come before `set({ pendingApproval })` — otherwise Chrome overlay stays on top of the approval modal for one React render frame.
+
+Chrome discovery: Linux = `which` + Flatpak, Windows = `where.exe` + Program Files.
+
+AI tools: navigate, back, forward, reload, click, fill, scroll, press, snapshot, get_text, screenshot, eval + **`skill_tab_screenshot`** (via tab-skills — captures native WebView2 content via GDI BitBlt).
 
 ---
 

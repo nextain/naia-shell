@@ -696,6 +696,35 @@ if (cmd === "plugin:store|get") return [null, false];
 
 ---
 
+## L059 — Windows 브라우저 패널: Win32 SetParent → WebView2 자식 창 마이그레이션; invoke-before-set 패턴 유지 (#249)
+
+**날짜**: 2026-05-07 | **분류**: platform | **범위**: `shell/src-tauri/src/browser_webview.rs`, `shell/src/stores/chat.ts`
+
+**문제**: Win32 SetParent 임베딩이 Z-order 아티팩트를 유발. Tauri WebView2 자식 창으로 마이그레이션. IPC 명령명 변경: `browser_embed_hide/show` → `browser_wv_hide/show`.
+
+**원인**: WebView2가 DPI-aware `LogicalPosition`/`LogicalSize`를 지원하는 일급 자식 창 API 제공.
+
+**수정**: 새 Rust 모듈 `browser_webview.rs`. 핵심 명령: `browser_wv_create`, `browser_wv_navigate`, `browser_wv_hide`, `browser_wv_show`, `browser_wv_resize` (+ 전체 브라우저 제어 명령군). invoke-before-set 패턴(L041/L043)은 동일하게 적용: `invoke("browser_wv_hide")`를 `set({ pendingApproval })` **이전**에 호출. 세 경로 가드도 동일: `clearPendingApproval`, `finishStreaming`, `newConversation`은 각각 `pendingApproval`이 truthy일 때만 `browser_wv_show` 호출.
+
+**참고**: Linux 경로(X11 XReparentWindow)는 변경 없음 — L041/L043이 Linux에도 계속 적용.
+
+---
+
+## L060 — @nextain/naia-memory R3: HeuristicContradictionFilter는 최상위 index에 없음; API는 storeEpisode/recallEpisodes가 아닌 encode/recall (#242)
+
+**날짜**: 2026-05-07 | **분류**: testing | **범위**: `agent/src/__tests__/naia-memory-r3-integration.test.ts`
+
+**문제**: 통합 테스트 두 가지 함정: (1) `HeuristicContradictionFilter`가 `@nextain/naia-memory` 최상위 index에서 re-export 안 됨. (2) 공개 API가 `encode()`/`recall()` 사용 — 구 이름 `storeEpisode()`/`recallEpisodes()` 제거됨.
+
+**원인**: R3에서 API 표면 리팩토링. `HeuristicContradictionFilter`는 내부 구현 세부사항; `MemorySystemOptions.contradictionFilter`가 소비자 진입점.
+
+**수정**:
+- 서브패스에서 import: `import { HeuristicContradictionFilter } from ".../memory/contradiction-filter.js"`
+- 올바른 API: `ms.encode(input: MemoryInput, context: EncodingContext)`로 저장; `ms.recall(query, RecallContext)`는 `{episodes, facts, reflections}` 반환
+- `recall()`은 쿼리 기반이며 세션 범위 아님 — 컨텐츠 쿼리로 세션 격리 테스트
+
+---
+
 ## L058 — upstream 엔드포인트 위에 자체 프로토콜을 발명하지 말 것 — fork가 내리면 즉시 따라갈 것 (#219)
 
 **날짜**: 2026-04-25 | **분류**: upstream-integration | **범위**: `shell/src/lib/voice/minicpm-o.ts`

@@ -191,12 +191,13 @@ deep_link_persistence_contract:
     - "Duplicating persistence rules across multiple components with divergent fallback behavior."
 
 memory_architecture:
-  description: "Dual-origin memory: Shell (user facts) + Naia Gateway (session context + semantic search)"
+  description: "Three-layer memory: Shell (user facts) + Naia Gateway (session transcripts) + Agent naia-memory (semantic search + contradiction filter)"
 
   overview: |
-    Memory lives in TWO systems that serve different purposes and connect at session boundaries.
-    Shell owns "who is the user" (facts). Naia Gateway owns "what happened" (sessions + semantic index).
-    Neither is a subset of the other — both are required for full memory.
+    Memory lives in THREE systems that serve different purposes and connect at session boundaries.
+    Shell owns "who is the user" (facts). Naia Gateway owns "what happened" (session transcripts).
+    Agent owns "semantic recall + contradiction filtering" via @nextain/naia-memory (R3).
+    All three are required for full memory.
 
   shell_memory:
     description: "User-facing facts and session summaries, owned by Tauri Shell"
@@ -283,11 +284,40 @@ memory_architecture:
       - "~/.naia/workspace/ (SOUL.md, IDENTITY.md, USER.md) — re-synced from Shell settings"
       - "~/.naia/credentials/ — re-authenticatable"
 
+  agent_memory:
+    description: "Semantic memory system in the agent process — @nextain/naia-memory R3"
+    added: "2026-05-07 (#226)"
+    package: "@nextain/naia-memory (file:../../naia-memory — local submodule)"
+    config_file: "~/.naia/memory-config.json"
+    config_fields:
+      embeddingProvider: "vllm | ollama | naia (optional)"
+      embeddingBaseUrl: "base URL for vllm/ollama embedding endpoint"
+      embeddingApiKey: "API key (vllm/ollama; optional)"
+      embeddingModel: "model name (e.g. nomic-embed-text)"
+      llmProvider: "naia (for LLM fact extractor)"
+    builds_via: "buildMemorySystem() in agent/src/index.ts — reads memory-config.json"
+    adapter: "LocalAdapter — storePath: ~/.naia/memory/agent-store.json"
+    embedding_providers:
+      vllm_ollama: "OpenAICompatEmbeddingProvider(baseUrl, key, model)"
+      naia: "NaiaGatewayEmbeddingProvider(naiaKey)"
+      none: "LocalAdapter keyword-only (default when no config)"
+    r3_features:
+      contradiction_filter: "HeuristicContradictionFilter (subpath: contradiction-filter.js, not top-level index)"
+      reconsolidation: "auto-runs on encode() — O(topK) vector search, no full scan"
+      hyde: "Hypothetical Document Embeddings for recall quality"
+      mmr: "Maximal Marginal Relevance for diverse results"
+    api:
+      encode: "ms.encode(input: MemoryInput, context: EncodingContext): Promise<Episode>"
+      recall: "ms.recall(query: string, context: RecallContext): Promise<{episodes, facts, reflections}>"
+      sessionRecall: "ms.sessionRecall(firstMessage, context, tokenBudget?): Promise<string>"
+      close: "ms.close(): Promise<void>"
+    shell_settings_ui: "SettingsTab.tsx — Memory section: embedding provider, base URL, model, LLM provider"
+
   search_evolution:
     phase_4_4a: "SQLite LIKE (keyword matching)"
     phase_4_4b: "SQLite FTS5 BM25 (full-text search)"
     phase_4_5: "Gemini Embedding API (semantic search)"
-    phase_5_plus: "sLLM local embedding (Ollama, llama.cpp)"
+    phase_5_plus: "Agent @nextain/naia-memory R3 — vLLM/Ollama local embedding + HeuristicContradictionFilter"
   interface: |
     MemoryProcessor {
       summarize(messages): Promise<string>
@@ -477,13 +507,19 @@ panel_system:
     browser:
       id: "browser"
       added: "2026-03-20 (#95)"
+      updated: "2026-05-07 (#249) — migrated from Win32 SetParent to WebView2 child window"
       file: "shell/src/panels/browser/index.tsx + BrowserCenterPanel.tsx"
-      description: "Chrome native embed via PlatformWindowManager trait; 12 AI tools (skill_browser_*); Chrome browser-level permissions (mic/camera/notifications via CDP)"
+      description: "WebView2 child window embed (Windows); 12 AI browser tools + skill_tab_screenshot; keepAlive panel (opacity:0 when inactive)"
       embedding:
         linux: "X11 XReparentWindow via x11rb (platform/linux.rs X11WindowManager)"
-        windows: "Win32 SetParent via windows-sys (platform/windows.rs Win32WindowManager)"
+        windows: |
+          Tauri WebView2 child window via browser_webview.rs.
+          IPC commands: browser_wv_create, browser_wv_navigate, browser_wv_hide, browser_wv_show, browser_wv_resize (+ full browser control suite: back, forward, reload, click, fill, scroll, press, snapshot, eval, screenshot, get_text, page_info).
+          Position/size: LogicalPosition + LogicalSize (DPI-aware, matches viewport div).
+          Show/hide: opacity toggle on host div + browser_wv_hide/show IPC (preserves DOM state).
+          setPendingApproval: invoke browser_wv_hide BEFORE set({ pendingApproval }) — prevents 1-frame overlap.
         macos: "NOT YET — add PlatformWindowManager impl"
-      tools: "skill_browser_navigate, back, forward, reload, click, fill, scroll, press, snapshot, get_text, screenshot, eval"
+      tools: "skill_browser_navigate, back, forward, reload, click, fill, scroll, press, snapshot, get_text, screenshot, eval (+ skill_tab_screenshot via tab-skills)"
       chrome_profile: "~/.naia/chrome-profile/ — persistent (login sessions survive restarts)"
       chrome_discovery:
         linux: "which google-chrome → flatpak-spawn → flatpak installed"
@@ -491,6 +527,7 @@ panel_system:
       requires:
         linux: "GDK_BACKEND=x11 (XWayland mode), google-chrome in PATH or Flatpak"
         windows: "Google Chrome installed (auto-detect + download button in UI)"
+      keepalive: "panel keepAlive: true — always mounted, hidden via opacity:0+pointerEvents:none (WebView2 overlay follows)"
 
     workspace:
       id: "workspace"

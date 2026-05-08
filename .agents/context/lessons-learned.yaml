@@ -583,6 +583,37 @@ lessons:
     root_cause: "These models are often unavailable in asia-northeast3 (Seoul). Seoul-based Cloud Run defaults all Vertex AI calls to its own region."
     fix: "Implement model-based regional routing in any-llm gateway to force us-central1 for newer models. Also moved hardcoded gateway URLs in naia-os to configurable VITE_NAIA_GATEWAY_URL env var."
 
+  - id: L059
+    date: "2026-05-07"
+    issue: "#249"
+    category: platform
+    scope: "shell/src-tauri/src/browser_webview.rs, shell/src/stores/chat.ts"
+    title: "Windows browser panel: WebView2 child window replaces Win32 SetParent; invoke-before-set pattern unchanged"
+    problem: "Win32 SetParent embedding caused Z-order artifacts. Migrated to Tauri WebView2 child window. IPC command names changed: browser_embed_hide/show → browser_wv_hide/show."
+    root_cause: "WebView2 provides a first-class child window API (SetParentWindow) with DPI-aware LogicalPosition/LogicalSize."
+    fix: |
+      New Rust module browser_webview.rs. Core commands: browser_wv_create, browser_wv_navigate,
+      browser_wv_hide, browser_wv_show, browser_wv_resize (plus full browser control suite).
+      The invoke-before-set pattern still applies: invoke("browser_wv_hide") BEFORE set({ pendingApproval }).
+      The three-path guard: clearPendingApproval, finishStreaming, newConversation each call
+      browser_wv_show only when pendingApproval is truthy before clearing it.
+    note: "Linux path (X11 XReparentWindow) is unchanged — L041/L043 still apply for Linux."
+
+  - id: L060
+    date: "2026-05-07"
+    issue: "#242"
+    category: testing
+    scope: "agent/src/__tests__/naia-memory-r3-integration.test.ts"
+    title: "@nextain/naia-memory R3: HeuristicContradictionFilter not in top-level index; API is encode/recall not storeEpisode/recallEpisodes"
+    problem: "Two integration test traps: (1) HeuristicContradictionFilter not re-exported from top-level index. (2) Public API uses encode()/recall() — old names storeEpisode()/recallEpisodes() removed."
+    root_cause: "R3 refactored API surface. HeuristicContradictionFilter is an internal detail, accessible only as a contradictionFilter option or via subpath import."
+    fix: |
+      Import from subpath: import { HeuristicContradictionFilter } from ".../memory/contradiction-filter.js"
+      Correct API:
+        ms.encode(input: MemoryInput, context: EncodingContext) → store episode
+        ms.recall(query: string, context: RecallContext) → {episodes, facts, reflections}
+      recall() is query-based (not session-scoped); test isolation via content queries.
+
   - id: L058
     date: "2026-04-25"
     issue: "#219"
