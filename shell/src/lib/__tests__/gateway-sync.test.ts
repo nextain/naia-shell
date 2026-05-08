@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 const mockLoadConfig = vi.fn();
 vi.mock("../config", () => ({
 	loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
+	LAB_GATEWAY_URL: "https://naia-gateway.test",
 }));
 
 vi.mock("../i18n", () => ({ getLocale: () => "ko" }));

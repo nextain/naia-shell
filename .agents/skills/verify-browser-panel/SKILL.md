@@ -19,7 +19,7 @@ description: Browser 패널(#102) 핵심 불변식 검증. setPendingApproval in
 
 - `shell/src/stores/chat.ts` 수정 후
 - `shell/src/panels/browser/` 수정 후
-- `shell/e2e/browser-panel.spec.ts` 수정 후
+- `shell/e2e-tauri/specs/browser-panel.spec.ts` 수정 후
 - pendingApproval 관련 로직 변경 후
 
 ## Related Files
@@ -29,7 +29,7 @@ description: Browser 패널(#102) 핵심 불변식 검증. setPendingApproval in
 | `shell/src/stores/chat.ts` | setPendingApproval, clearPendingApproval, finishStreaming, newConversation |
 | `shell/src/stores/panel.ts` | activePanel 초기값 ("browser") |
 | `shell/src/panels/browser/index.tsx` | keepAlive: true 설정 |
-| `shell/e2e/browser-panel.spec.ts` | E2E mock browser_check 명령 |
+| `shell/e2e-tauri/specs/browser-panel.spec.ts` | E2E mock browser_check 명령 |
 
 ## Workflow
 
@@ -91,12 +91,15 @@ grep -n "browser_wv_show\|newConversation\|sessionId: null" shell/src/stores/cha
 
 ### Step 5: E2E mock browser_check 명령 검증
 
-**파일:** `shell/e2e/browser-panel.spec.ts`
+**파일:** `shell/e2e-tauri/specs/browser-panel.spec.ts`
+
+> **Note:** 이 파일은 아직 존재하지 않습니다. 브라우저 패널 E2E 테스트가 생성되면 검증하세요.
+> 파일이 없으면 이 단계는 SKIP합니다.
 
 **검사:** mock에 `browser_check` 명령이 `true` 를 반환하도록 등록되어 있는지 확인. `browser_check_available` 는 실제 Rust 명령이 아님.
 
 ```bash
-grep -n "browser_check" shell/e2e/browser-panel.spec.ts
+grep -n "browser_check" shell/e2e-tauri/specs/browser-panel.spec.ts
 ```
 
 **PASS:** `if (cmd === "browser_check") return true;` 존재, `browser_check_available` 없음.

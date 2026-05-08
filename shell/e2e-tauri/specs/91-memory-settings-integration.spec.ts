@@ -39,9 +39,7 @@ const CAN_RUN_CHAT_SUITES = !!GEMINI_KEY;
 
 /** Read the actual gateway config from the filesystem (Node.js context). */
 function readGatewayConfig(): Record<string, unknown> {
-	const primary = resolve(homedir(), ".openclaw/openclaw.json");
-	const legacy = resolve(homedir(), ".naia/openclaw/openclaw.json");
-	const path = existsSync(primary) ? primary : legacy;
+	const path = resolve(homedir(), ".naia", "gateway.json");
 	if (!existsSync(path)) throw new Error(`Config file not found: ${path}`);
 	return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
 }
@@ -374,8 +372,8 @@ describe("91 — Memory Settings Integration", () => {
 		});
 	});
 
-	// ── Suite 2: Settings → openclaw.json sync ──────────────────────────────────
-	describe("2) Settings → openclaw.json sync", () => {
+	// ── Suite 2: Settings → gateway.json sync ──────────────────────────────────
+	describe("2) Settings → gateway.json sync", () => {
 		before(async () => {
 			// Force gemini provider to avoid handleSave() early-return due to
 			// nextain provider + missing naiaKey (stored in secure store, loaded async).
@@ -383,7 +381,7 @@ describe("91 — Memory Settings Integration", () => {
 			await gotoSettingsMemory();
 		});
 
-		it("should write memory.adapter=local to openclaw.json on save", async () => {
+		it("should write memory.adapter=local to gateway.json on save", async () => {
 			await clickRadio("memory-adapter", "local");
 			await clickRadio("memory-embedding", "none");
 			await clickSave();
@@ -411,7 +409,7 @@ describe("91 — Memory Settings Integration", () => {
 			expect(mem.embeddingBaseUrl).toBe("http://localhost:11434");
 			expect(mem.embeddingModel).toBe("nomic-embed-text");
 
-			// Revert — wait for openclaw.json to reflect the reset (consistent with tests 1/2)
+			// Revert — wait for gateway.json to reflect the reset (consistent with tests 1/2)
 			await clickRadio("memory-embedding", "none");
 			await clickSave();
 			await waitForConfigCondition(

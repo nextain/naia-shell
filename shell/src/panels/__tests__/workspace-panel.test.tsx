@@ -72,6 +72,9 @@ vi.mock("@codemirror/state", () => ({
 		create: () => ({}),
 		readOnly: { of: () => ({}) },
 	},
+	Transaction: {
+		addToHistory: { of: () => ({}) },
+	},
 }));
 
 vi.mock("@codemirror/commands", () => ({
