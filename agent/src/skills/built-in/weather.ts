@@ -1,20 +1,11 @@
+import { weatherDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 
 export function createWeatherSkill(): SkillDefinition {
 	return {
-		name: "skill_weather",
-		description:
-			"Get current weather for a location. Returns temperature, condition, humidity, wind info.",
-		parameters: {
-			type: "object",
-			properties: {
-				location: {
-					type: "string",
-					description: "City or location name (e.g. Seoul, Tokyo, New York)",
-				},
-			},
-			required: ["location"],
-		},
+		name: `skill_${weatherDescriptor.name}`,
+		description: weatherDescriptor.description,
+		parameters: weatherDescriptor.inputSchema,
 		tier: 0,
 		requiresGateway: false,
 		source: "built-in",

@@ -17,7 +17,8 @@
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@nextain/agent-providers": "file:./vendor/nextain-agent-providers-0.1.0.tgz",
 		"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
-		"@nextain/alpha-memory": "file:../../alpha-memory",
+		"@naia-adk/skills-builtin": "file:../../naia-adk/packages/skills-builtin",
+		"@nextain/naia-memory": "file:../../naia-memory",
 		"agent-browser": "0.26.0",
 		"msedge-tts": "^2.0.4",
 		"openai": "^4.80.0",
@@ -26,7 +27,8 @@
 	},
 	"pnpm": {
 		"overrides": {
-			"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz"
+			"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
+			"@naia-adk/skill-spec": "file:../../naia-adk/packages/skill-spec"
 		},
 		"onlyBuiltDependencies": ["@biomejs/biome", "agent-browser", "esbuild", "msedge-tts", "protobufjs"]
 	},
