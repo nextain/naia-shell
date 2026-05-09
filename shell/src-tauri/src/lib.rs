@@ -542,50 +542,11 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
 
 /// Check if Naia Gateway is already running (blocking, for setup use)
 fn check_gateway_health_sync() -> bool {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
-        .build();
-    match client {
-        Ok(c) => c
-            .get("http://127.0.0.1:18789/__openclaw__/canvas/")
-            .send()
-            .is_ok(),
-        Err(_) => false,
-    }
+    // Gateway (openclaw) removed — naia-agent handles all tools directly.
+    false
 }
 
-/// Find Naia Gateway binary and node binary paths
-fn find_gateway_paths() -> Result<(std::path::PathBuf, String, String), String> {
-    let node_bin = find_node_binary()?;
-    let home = home_dir();
-    // Search order: Flatpak bundle → system install → user install
-    // Use openclaw.mjs directly (not .bin/openclaw) to avoid broken ESM imports from cp -rL
-    let candidates = [
-        "/app/lib/naia-os/openclaw/node_modules/openclaw/openclaw.mjs".to_string(),
-        "/usr/share/naia/openclaw/node_modules/openclaw/openclaw.mjs".to_string(),
-        format!("{}/.naia/openclaw/node_modules/openclaw/openclaw.mjs", home),
-    ];
-    let gateway_bin = candidates
-        .iter()
-        .find(|p| std::path::Path::new(p).exists())
-        .cloned()
-        .ok_or_else(|| {
-            "Naia Gateway not installed. Expected at /app/lib/naia-os/openclaw/, /usr/share/naia/openclaw/, or ~/.naia/openclaw/"
-                .to_string()
-        })?;
-    // Prefer ~/.openclaw/openclaw.json (standard path), fallback to legacy ~/.naia/openclaw/
-    // When neither exists, default to primary (standard) so bootstrap creates it there.
-    let primary = format!("{}/.openclaw/openclaw.json", home);
-    let legacy = format!("{}/.naia/openclaw/openclaw.json", home);
-    let config_path = if std::path::Path::new(&primary).exists() {
-        primary
-    } else if std::path::Path::new(&legacy).exists() {
-        legacy
-    } else {
-        primary // New installs use standard path
-    };
-    Ok((node_bin, gateway_bin, config_path))
-}
+// find_gateway_paths removed — openclaw gateway no longer used (#201)
 
 /// Load bootstrap config from bundled template file, with hardcoded fallback.
 /// Single source of truth: config/defaults/gateway-bootstrap.json
@@ -629,7 +590,7 @@ fn load_bootstrap_config() -> serde_json::Value {
         },
         "agents": {
             "defaults": {
-                "workspace": "~/.openclaw/workspace"
+                "workspace": "~/.naia/workspace"
             }
         },
         "session": {
@@ -646,7 +607,7 @@ fn load_bootstrap_config() -> serde_json::Value {
     })
 }
 
-/// Ensure ~/.openclaw/openclaw.json exists with minimal required fields.
+/// Ensure ~/.naia/gateway.json exists with minimal required fields.
 /// Reads bootstrap template from config/defaults/gateway-bootstrap.json (SoT).
 /// If the file exists but gateway.mode is missing, patches it in.
 fn ensure_gateway_config(config_path: &str) {
@@ -667,7 +628,7 @@ fn ensure_gateway_config(config_path: &str) {
             }
         }
         let home = home_dir();
-        let _ = std::fs::create_dir_all(format!("{}/.openclaw/workspace", home));
+        let _ = std::fs::create_dir_all(format!("{}/.naia/workspace", home));
         return;
     }
 
@@ -742,266 +703,12 @@ fn ensure_gateway_config(config_path: &str) {
     }
 }
 
-/// Spawn Node Host process (connects to Gateway for command execution)
-fn spawn_node_host(
-    node_bin: &std::path::Path,
-    gateway_bin: &str,
-    config_path: &str,
-) -> Result<Child, String> {
-    // Load the same gateway-env.json as the gateway process so the agent
-    // inherits env overrides (e.g. NAIA_GATEWAY_URL for dev mode).
-    fn load_gateway_env(config_path: &str) -> Vec<(String, String)> {
-        const ALLOWED_ENV_PREFIXES: &[&str] = &[
-            "OPENAI_", "ANTHROPIC_", "GEMINI_", "XAI_", "GOOGLE_",
-            "OPENCLAW_", "NAIA_", "CAFE_", "HF_", "HUGGING",
-            "OLLAMA_", "LM_STUDIO_", "DEEPSEEK_",
-            "NODE_", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-        ];
-        const BLOCKED_EXACT: &[&str] = &[
-            "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-            "PYTHONPATH", "PERLLIB", "RUBYLIB", "CLASSPATH",
-            "PATH", "HOME", "SHELL",
-        ];
-        let env_path = std::path::Path::new(config_path)
-            .parent()
-            .map(|d| d.join("gateway-env.json"));
-        let Some(ep) = env_path else { return vec![]; };
-        let Ok(raw) = std::fs::read_to_string(&ep) else { return vec![]; };
-        let Ok(env_obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&raw) else { return vec![]; };
-        env_obj.into_iter().filter_map(|(key, val)| {
-            let s = val.as_str()?.to_string();
-            let upper = key.to_uppercase();
-            if BLOCKED_EXACT.contains(&upper.as_str()) { return None; }
-            if !ALLOWED_ENV_PREFIXES.iter().any(|p| upper.starts_with(p)) { return None; }
-            Some((key, s))
-        }).collect()
-    }
-    log_verbose("[Naia] Spawning Node Host: node run --host 127.0.0.1 --port 18789");
-
-    let gateway_log = open_log_file("node-host");
-    let stdout_cfg = match &gateway_log {
-        Some(_) => Stdio::from(open_log_file("node-host").unwrap()),
-        None => Stdio::inherit(),
-    };
-    let stderr_cfg = match open_log_file("node-host") {
-        Some(f) => Stdio::from(f),
-        None => Stdio::inherit(),
-    };
-
-    let extra_env = load_gateway_env(config_path);
-    let mut cmd = Command::new(node_bin.as_os_str());
-    cmd.arg(gateway_bin)
-        .arg("node")
-        .arg("run")
-        .arg("--host")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg("18789")
-        .arg("--display-name")
-        .arg("NaiaLocal")
-        .env("OPENCLAW_CONFIG_PATH", config_path)
-        .stdout(stdout_cfg)
-        .stderr(stderr_cfg);
-    for (k, v) in &extra_env {
-        cmd.env(k, v);
-    }
-    #[cfg(windows)]
-    platform::hide_console(&mut cmd);
-    let child = cmd.spawn()
-        .map_err(|e| format!("Failed to spawn Node Host: {}", e))?;
-
-    log_verbose(&format!(
-        "[Naia] Node Host spawned (PID: {})",
-        child.id()
-    ));
-    Ok(child)
-}
-
-/// Spawn or attach to Naia Gateway + Node Host
+/// Gateway (openclaw) removed in #201 — naia-agent handles all tools directly via stdio.
 fn spawn_gateway() -> Result<GatewayProcess, String> {
-    // 1. Check if already running (e.g. systemd or manual start)
-    if check_gateway_health_sync() {
-        log_both("[Naia] Gateway detected on port 18789 — killing stale process and starting fresh");
-        // Kill existing gateway to ensure clean state on app restart.
-        // Previous app exit may have left gateway in a half-alive state
-        // (HTTP responds but WebSocket/Node Host connections are broken).
-        // Kill the stale gateway. On Windows we already know its PID from the
-        // PID file and can terminate it via the Win32 API (no taskkill flash).
-        // On Linux we fall back to `pkill` — inline shell spawn is fine there
-        // because there is no console window to flash.
-        if let Some(pid) = read_pid_file("gateway") {
-            platform::kill_pid(pid);
-        }
-        #[cfg(unix)]
-        { let _ = Command::new("pkill").arg("-f").arg("naia.*gateway").output(); }
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        // If it's still alive (e.g. systemd auto-restart), reuse it
-        if check_gateway_health_sync() {
-            log_both("[Naia] Gateway still running after pkill (managed externally) — reusing");
-            // Cheap placeholder Child handle — platform::dummy_child() uses a
-            // detached helper on Windows (hidden, no console) and `true` on Unix.
-            let child = platform::dummy_child()
-                .map_err(|e| format!("Failed to create dummy process: {}", e))?;
-
-            let node_host = match find_gateway_paths() {
-                Ok((node_bin, gateway_bin, config_path)) => {
-                    ensure_gateway_config(&config_path);
-                    match spawn_node_host(&node_bin, &gateway_bin, &config_path) {
-                        Ok(nh) => Some(nh),
-                        Err(e) => {
-                            log_both(&format!("[Naia] Node Host spawn failed: {}", e));
-                            None
-                        }
-                    }
-                }
-                Err(_) => None,
-            };
-
-            return Ok(GatewayProcess {
-                child,
-                node_host,
-                we_spawned: false,
-            });
-        }
-        log_both("[Naia] Stale gateway cleared — spawning fresh instance");
-    }
-
-    // 2. Find paths
-    let (node_bin, gateway_bin, config_path) = find_gateway_paths()?;
-
-    // 2.5. Ensure minimal config exists so Naia Gateway doesn't reject startup.
-    // This covers first-launch on Flatpak where install-gateway.sh wasn't run.
-    ensure_gateway_config(&config_path);
-
-    log_verbose(&format!(
-        "[Naia] Spawning Gateway: {} {} gateway run --bind loopback --port 18789",
-        node_bin.display(),
-        gateway_bin
-    ));
-
-    // 3. Spawn Gateway with log files
-    let gw_stdout = match open_log_file("gateway") {
-        Some(f) => Stdio::from(f),
-        None => Stdio::inherit(),
-    };
-    let gw_stderr = match open_log_file("gateway") {
-        Some(f) => Stdio::from(f),
-        None => Stdio::inherit(),
-    };
-
-    // Load extra env vars from gateway-env.json (e.g. OPENAI_TTS_BASE_URL for Naia TTS)
-    let mut cmd = Command::new(node_bin.as_os_str());
-    cmd.arg(&gateway_bin)
-        .arg("gateway")
-        .arg("run")
-        .arg("--bind")
-        .arg("loopback")
-        .arg("--port")
-        .arg("18789")
-        .arg("--allow-unconfigured")
-        .env("OPENCLAW_CONFIG_PATH", &config_path)
-        .stdout(gw_stdout)
-        .stderr(gw_stderr);
-    let env_path = std::path::Path::new(&config_path)
-        .parent()
-        .map(|d| d.join("gateway-env.json"));
-    if let Some(ref ep) = env_path {
-        if ep.exists() {
-            if let Ok(raw) = std::fs::read_to_string(ep) {
-                if let Ok(env_obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&raw) {
-                    // Allowlist: only safe environment variable prefixes are
-                    // forwarded to the gateway process to prevent LD_PRELOAD /
-                    // LD_LIBRARY_PATH injection (CWE-15).
-                    const ALLOWED_ENV_PREFIXES: &[&str] = &[
-                        "OPENAI_", "ANTHROPIC_", "GEMINI_", "XAI_", "GOOGLE_",
-                        "OPENCLAW_", "NAIA_", "CAFE_", "HF_", "HUGGING",
-                        "OLLAMA_", "LM_STUDIO_", "DEEPSEEK_",
-                        "NODE_", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-                    ];
-                    const BLOCKED_EXACT: &[&str] = &[
-                        "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-                        "PYTHONPATH", "PERLLIB", "RUBYLIB", "CLASSPATH",
-                        "PATH", "HOME", "SHELL",
-                    ];
-                    for (key, val) in &env_obj {
-                        if let Some(s) = val.as_str() {
-                            let upper = key.to_uppercase();
-                            if BLOCKED_EXACT.contains(&upper.as_str()) {
-                                log_verbose(&format!("[Naia] Gateway env BLOCKED: {}", key));
-                                continue;
-                            }
-                            let allowed = ALLOWED_ENV_PREFIXES.iter().any(|p| upper.starts_with(p));
-                            if !allowed {
-                                log_verbose(&format!("[Naia] Gateway env SKIPPED (not allowlisted): {}", key));
-                                continue;
-                            }
-                            cmd.env(key, s);
-                            log_verbose(&format!("[Naia] Gateway env: {}=***", key));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    #[cfg(windows)]
-    platform::hide_console(&mut cmd);
-    let child = cmd.spawn()
-        .map_err(|e| format!("Failed to spawn Gateway: {}", e))?;
-
-    log_verbose(&format!(
-        "[Naia] Gateway process spawned (PID: {})",
-        child.id()
-    ));
-
-    // 4. Wait for health check (max 60s, 1s intervals)
-    //    Gateway startup includes doctor checks, Discord connect, etc. — can take 30s+
-    let mut gateway_healthy = false;
-    log_verbose("[Naia] Waiting for Gateway health check (max 60s)...");
-    for i in 0..60 {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        if check_gateway_health_sync() {
-            log_both(&format!(
-                "[Naia] Gateway healthy after {}s",
-                i + 1
-            ));
-            gateway_healthy = true;
-            break;
-        }
-        // Log progress every 10s — verbose only (file always, stderr in debug)
-        if (i + 1) % 10 == 0 {
-            log_verbose(&format!(
-                "[Naia] Still waiting for Gateway... ({}s elapsed)",
-                i + 1
-            ));
-        }
-    }
-
-    // 5. Spawn Node Host only if Gateway is healthy
-    //    Node Host exits immediately on ECONNREFUSED, so spawning it before Gateway is ready is pointless
-    let node_host = if gateway_healthy {
-        log_verbose("[Naia] Spawning Node Host...");
-        match spawn_node_host(&node_bin, &gateway_bin, &config_path) {
-            Ok(nh) => {
-                // Give Node Host a moment to connect
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                Some(nh)
-            }
-            Err(e) => {
-                log_both(&format!("[Naia] Node Host spawn failed: {}", e));
-                None
-            }
-        }
-    } else {
-        log_both("[Naia] Gateway not healthy after 60s — skipping Node Host spawn");
-        None
-    };
-
-    Ok(GatewayProcess {
-        child,
-        node_host,
-        we_spawned: true,
-    })
+    Err("Gateway removed: naia-agent handles all tools directly".to_string())
 }
+
+// openclaw spawn_node_host and legacy spawn body removed — see #201
 
 /// Spawn the Node.js agent-core process with stdio pipes
 fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result<AgentProcess, String> {
@@ -1806,14 +1513,9 @@ async fn gateway_health() -> Result<bool, String> {
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    match client
-        .get("http://127.0.0.1:18789/__openclaw__/canvas/")
-        .send()
-        .await
-    {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
-    }
+    // Gateway (openclaw) removed — always report not running
+    let _ = client;
+    Ok(false)
 }
 
 /// Restart the Naia Gateway.
@@ -1888,8 +1590,8 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 fn reset_gateway_data() -> Result<String, String> {
     let home = home_dir();
     let base_dirs = [
-        format!("{}/.openclaw", home), // primary (existing installs)
-        format!("{}/.naia/openclaw", home),
+        format!("{}/.naia", home),
+        format!("{}/.openclaw", home), // legacy fallback
     ];
 
     let mut removed: Vec<String> = Vec::new();
@@ -1945,8 +1647,8 @@ fn read_discord_bot_token() -> Result<String, String> {
 
     // 2. Gateway config (fallback — backward compatibility)
     let gateway_candidates = [
-        format!("{}/.openclaw/openclaw.json", home),
-        format!("{}/.naia/openclaw/openclaw.json", home),
+        format!("{}/.naia/gateway.json", home),
+        format!("{}/.openclaw/openclaw.json", home), // legacy fallback
     ];
     for path in &gateway_candidates {
         if let Ok(bytes) = std::fs::read(path) {
@@ -2204,9 +1906,9 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
     };
 
     let home = home_dir();
-    // Prefer ~/.openclaw/ (standard), fallback to ~/.naia/openclaw/
-    let primary = format!("{}/.openclaw/openclaw.json", home);
-    let legacy = format!("{}/.naia/openclaw/openclaw.json", home);
+    // Use ~/.naia/gateway.json (standard path); fall back to legacy openclaw.json
+    let primary = format!("{}/.naia/gateway.json", home);
+    let legacy = format!("{}/.openclaw/openclaw.json", home);
     let config_path = if std::path::Path::new(&primary).exists() {
         primary
     } else if std::path::Path::new(&legacy).exists() {
@@ -2506,14 +2208,14 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
     ));
 
     // --- Workspace bootstrap files (SOUL.md, IDENTITY.md, USER.md) ---
-    // Read workspace path from openclaw.json → agents.defaults.workspace
+    // Read workspace path from gateway.json → agents.defaults.workspace
     let workspace_path = root
         .get("agents")
         .and_then(|a| a.get("defaults"))
         .and_then(|d| d.get("workspace"))
         .and_then(|w| w.as_str())
         .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("{}/.openclaw/workspace", home));
+        .unwrap_or_else(|| format!("{}/.naia/workspace", home));
 
     let ws_dir = std::path::Path::new(&workspace_path);
 

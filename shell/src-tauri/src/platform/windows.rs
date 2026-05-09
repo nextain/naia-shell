@@ -553,11 +553,11 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
 /// (Gateway requires device identity even with --allow-unconfigured).
 pub(crate) fn sync_wsl_identity_to_windows(distro_name: &str) {
     let home = crate::home_dir();
-    let identity_dir = format!("{}/.openclaw/identity", home);
+    let identity_dir = format!("{}/.naia/identity", home);
     let _ = std::fs::create_dir_all(&identity_dir);
 
     // Copy device.json from WSL
-    match super::wsl::run_in_distro(distro_name, "cat /root/.openclaw/identity/device.json 2>/dev/null") {
+    match super::wsl::run_in_distro(distro_name, "cat /root/.naia/identity/device.json 2>/dev/null") {
         Ok(content) if !content.trim().is_empty() => {
             let dest = format!("{}/device.json", identity_dir);
             match std::fs::write(&dest, content.trim()) {
@@ -569,14 +569,14 @@ pub(crate) fn sync_wsl_identity_to_windows(distro_name: &str) {
     }
 
     // Copy gateway config (auth token, gateway config)
-    let config_dir = format!("{}/.openclaw", home);
+    let config_dir = format!("{}/.naia", home);
     let _ = std::fs::create_dir_all(&config_dir);
-    match super::wsl::run_in_distro(distro_name, "cat /root/.openclaw/openclaw.json 2>/dev/null") {
+    match super::wsl::run_in_distro(distro_name, "cat /root/.naia/gateway.json 2>/dev/null") {
         Ok(content) if !content.trim().is_empty() => {
-            let dest = format!("{}/openclaw.json", config_dir);
+            let dest = format!("{}/gateway.json", config_dir);
             match std::fs::write(&dest, content.trim()) {
                 Ok(_) => crate::log_both("[Naia] Gateway config synced from WSL to Windows"),
-                Err(e) => crate::log_verbose(&format!("[Naia] Failed to write openclaw.json: {}", e)),
+                Err(e) => crate::log_verbose(&format!("[Naia] Failed to write gateway.json: {}", e)),
             }
         }
         _ => crate::log_verbose("[Naia] No gateway config found in WSL"),
