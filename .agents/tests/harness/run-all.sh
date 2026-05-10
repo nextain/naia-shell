@@ -13,6 +13,15 @@ PASS=0
 FAIL=0
 TOTAL=0
 
+# Windows compatibility: Git Bash uses /tmp but Node.js (Windows native) resolves
+# /tmp paths differently. Use cygpath -m to produce C:/... style paths that both
+# bash and Windows Node.js can access via the same absolute path.
+if command -v cygpath >/dev/null 2>&1; then
+    _mktemp_d() { cygpath -m "$(mktemp -d)"; }
+else
+    _mktemp_d() { mktemp -d; }
+fi
+
 # Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -57,7 +66,7 @@ echo ""
 echo -e "${YELLOW}═══ Test: sync-entry-points.js ═══${NC}"
 
 # Setup: create temp dir with entry point files
-TMPDIR_SYNC="$(mktemp -d)"
+TMPDIR_SYNC="$(_mktemp_d)"
 echo "# Test content AGENTS" > "$TMPDIR_SYNC/AGENTS.md"
 echo "# Test content AGENTS" > "$TMPDIR_SYNC/CLAUDE.md"
 echo "# Test content AGENTS" > "$TMPDIR_SYNC/GEMINI.md"
@@ -116,7 +125,7 @@ else
 fi
 
 # Test 1.7: CLAUDE.md as source → syncs to AGENTS.md and GEMINI.md
-TMPDIR_SYNC2="$(mktemp -d)"
+TMPDIR_SYNC2="$(_mktemp_d)"
 echo "# original" > "$TMPDIR_SYNC2/AGENTS.md"
 echo "# original" > "$TMPDIR_SYNC2/CLAUDE.md"
 echo "# original" > "$TMPDIR_SYNC2/GEMINI.md"
@@ -174,7 +183,7 @@ rm -rf "$TMPDIR_SYNC" "$TMPDIR_SYNC2"
 echo ""
 echo -e "${YELLOW}═══ Test: commit-guard.js ═══${NC}"
 
-TMPDIR_CG="$(mktemp -d)"
+TMPDIR_CG="$(_mktemp_d)"
 mkdir -p "$TMPDIR_CG/.agents/progress"
 
 # Test 2.1: No progress file → no warning (silent pass, exit 0)
@@ -323,7 +332,7 @@ fi
 # ── T2 Decision Shadow advisory tests ──
 
 # Test 2.16: rejected_alternatives non-empty → advisory shown
-TMPDIR_CG2="$(mktemp -d)"
+TMPDIR_CG2="$(_mktemp_d)"
 mkdir -p "$TMPDIR_CG2/.agents/progress"
 echo '{"issue":"#99","current_phase":"report","rejected_alternatives":[{"approach":"approach-A","reason":"too slow","date":"2026-03-18"}]}' > "$TMPDIR_CG2/.agents/progress/99.json"
 OUTPUT=$(run_hook "commit-guard.js" "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m test\"},\"cwd\":\"$TMPDIR_CG2\"}")
@@ -377,7 +386,7 @@ rm -rf "$TMPDIR_CG2"
 
 # ── Gate approval checks ──
 
-TMPDIR_CG3="$(mktemp -d)"
+TMPDIR_CG3="$(_mktemp_d)"
 mkdir -p "$TMPDIR_CG3/.agents/progress"
 
 # Test 2.21: phase=sync_verify + gate_approvals missing understand → warning
@@ -441,7 +450,7 @@ fi
 rm -rf "$TMPDIR_CG3"
 
 # Test 2.27: upstream_issue_ref present → advisory shown
-TMPDIR_CG4="$(mktemp -d)"
+TMPDIR_CG4="$(_mktemp_d)"
 mkdir -p "$TMPDIR_CG4/.agents/progress"
 echo '{"issue":"#73","current_phase":"report","gate_approvals":{"understand":"2026-03-18T10:00Z","scope":"2026-03-18T10:15Z","plan":"2026-03-18T11:00Z","sync":"2026-03-18T12:00Z"},"upstream_issue_ref":"vllm-project/vllm#16052"}' > "$TMPDIR_CG4/.agents/progress/73.json"
 OUTPUT=$(run_hook "commit-guard.js" "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"cwd\":\"$TMPDIR_CG4\"}")
@@ -604,7 +613,7 @@ fi
 echo ""
 echo -e "${YELLOW}═══ Test: Progress File Schema ═══${NC}"
 
-TMPDIR_PF="$(mktemp -d)"
+TMPDIR_PF="$(_mktemp_d)"
 
 # Test 4.1: Valid progress file
 VALID_PROGRESS='{"issue":"#42","title":"Test feature","project":"naia-os","current_phase":"build","gate_approvals":{"understand":"2026-03-14T10:00Z","scope":"2026-03-14T10:15Z","plan":"2026-03-14T11:00Z"},"decisions":[{"decision":"Use pattern A","rationale":"Simpler","date":"2026-03-14"}],"surprises":[],"blockers":[],"updated_at":"2026-03-14T14:30Z"}'
@@ -650,7 +659,7 @@ else
 fi
 
 # Test 4.5: Missing required field (no current_phase) → commit-guard handles gracefully
-TMPDIR_NEG="$(mktemp -d)"
+TMPDIR_NEG="$(_mktemp_d)"
 mkdir -p "$TMPDIR_NEG/.agents/progress"
 echo '{"issue":"#99"}' > "$TMPDIR_NEG/.agents/progress/99.json"
 OUTPUT=$(run_hook "commit-guard.js" "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m test\"},\"cwd\":\"$TMPDIR_NEG\"}")
@@ -685,7 +694,7 @@ rm -rf "$TMPDIR_PF" "$TMPDIR_NEG"
 echo ""
 echo -e "${YELLOW}═══ Test: Integration (commit-guard + progress lifecycle) ═══${NC}"
 
-TMPDIR_INT="$(mktemp -d)"
+TMPDIR_INT="$(_mktemp_d)"
 mkdir -p "$TMPDIR_INT/.agents/progress"
 
 # Test 5.1: Simulate full lifecycle — phase progression should affect guard
@@ -762,7 +771,7 @@ run_process_guard() {
     echo "$stdin_json" | node "$PROJECT_ROOT/.claude/hooks/process-guard.js" 2>/dev/null || true
 }
 
-TMPDIR_PG="$(mktemp -d)"
+TMPDIR_PG="$(_mktemp_d)"
 
 # Test 6.1: '수정 없음' + no file reads → decision: block
 make_transcript "$TMPDIR_PG/t.jsonl" "2차 리뷰: 수정 없음" ""
@@ -884,7 +893,7 @@ fi
 # Test 6.14: block reason contains actionable Korean message
 make_transcript "$TMPDIR_PG/t.jsonl" "수정 없음" ""
 OUTPUT=$(run_process_guard "$TMPDIR_PG/t.jsonl")
-if echo "$OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if '파일' in d.get('reason','') else 1)" 2>/dev/null; then
+if echo "$OUTPUT" | python3 -c "import sys,json; d=json.loads(sys.stdin.buffer.read().decode('utf-8')); exit(0 if '\ud30c\uc77c' in d.get('reason','') else 1)" 2>/dev/null; then
     pass "6.14 Block reason contains actionable message ('파일')"
 else
     fail "6.14 Block reason message" "Korean reason with '파일'" "$OUTPUT"

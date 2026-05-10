@@ -75,181 +75,181 @@ function getCachedFiles(root: string): Promise<string[]> {
 		return cachePromise;
 	}
 	cachedRoot = root;
-	cachePromise = collectFiles(root, 0).then((files) => {
-		cachedFiles = files;
-		return files;
-	}).catch((err) => {
-		cachedFiles = [];
-		throw err;
-	}).finally(() => {
-		cachePromise = null;
-	});
+	cachePromise = collectFiles(root, 0)
+		.then((files) => {
+			cachedFiles = files;
+			return files;
+		})
+		.catch((err) => {
+			cachedFiles = [];
+			throw err;
+		})
+		.finally(() => {
+			cachePromise = null;
+		});
 	return cachePromise;
 }
 
-export const AtMentionPopover = forwardRef<AtMentionHandle, AtMentionPopoverProps>(
-	function AtMentionPopover({ query, onSelect, onClose }, ref) {
-		const [allFiles, setAllFiles] = useState<string[]>([]);
-		const [loading, setLoading] = useState(true);
-		const [activeIndex, setActiveIndex] = useState(0);
-		const listRef = useRef<HTMLDivElement>(null);
-		const popoverRef = useRef<HTMLDivElement>(null);
+export const AtMentionPopover = forwardRef<
+	AtMentionHandle,
+	AtMentionPopoverProps
+>(function AtMentionPopover({ query, onSelect, onClose }, ref) {
+	const [allFiles, setAllFiles] = useState<string[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [activeIndex, setActiveIndex] = useState(0);
+	const listRef = useRef<HTMLDivElement>(null);
+	const popoverRef = useRef<HTMLDivElement>(null);
 
-		const workspaceRoot = getWorkspaceRoot();
+	const workspaceRoot = getWorkspaceRoot();
 
-		// Load file list on mount (uses cache)
-		useEffect(() => {
-			if (!workspaceRoot) {
+	// Load file list on mount (uses cache)
+	useEffect(() => {
+		if (!workspaceRoot) {
+			setLoading(false);
+			return;
+		}
+		let cancelled = false;
+		setLoading(true);
+		getCachedFiles(workspaceRoot).then((files) => {
+			if (!cancelled) {
+				setAllFiles(files);
 				setLoading(false);
-				return;
 			}
-			let cancelled = false;
-			setLoading(true);
-			getCachedFiles(workspaceRoot).then((files) => {
-				if (!cancelled) {
-					setAllFiles(files);
-					setLoading(false);
-				}
-			});
-			return () => {
-				cancelled = true;
-			};
-		}, [workspaceRoot]);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [workspaceRoot]);
 
-		// Filter and sort results
-		const results: AtMentionResult[] = (() => {
-			if (!workspaceRoot) return [];
-			const q = query.trim();
-			if (!q) {
-				return allFiles.slice(0, MAX_VISIBLE).map((f) => ({
+	// Filter and sort results
+	const results: AtMentionResult[] = (() => {
+		if (!workspaceRoot) return [];
+		const q = query.trim();
+		if (!q) {
+			return allFiles.slice(0, MAX_VISIBLE).map((f) => ({
+				path: f,
+				rel: f.startsWith(workspaceRoot)
+					? f.slice(workspaceRoot.length + 1)
+					: f,
+				isDir: f.endsWith("/"),
+			}));
+		}
+		return allFiles
+			.map((f) => {
+				const rel = f.startsWith(workspaceRoot)
+					? f.slice(workspaceRoot.length + 1)
+					: f;
+				return {
 					path: f,
-					rel: f.startsWith(workspaceRoot)
-						? f.slice(workspaceRoot.length + 1)
-						: f,
+					rel,
 					isDir: f.endsWith("/"),
-				}));
+					score: fuzzyMatch(q, rel),
+				};
+			})
+			.filter((r) => r.score > 0)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, MAX_VISIBLE)
+			.map(({ path, rel, isDir }) => ({ path, rel, isDir }));
+	})();
+
+	// Reset active index when query changes
+	useEffect(() => {
+		setActiveIndex(0);
+	}, [query]);
+
+	// Scroll active item into view
+	useEffect(() => {
+		const list = listRef.current;
+		if (!list) return;
+		const item = list.children[activeIndex] as HTMLElement | undefined;
+		item?.scrollIntoView?.({ block: "nearest" });
+	}, [activeIndex]);
+
+	// Close on click outside
+	useEffect(() => {
+		function handleMouseDown(e: MouseEvent) {
+			if (
+				popoverRef.current &&
+				!popoverRef.current.contains(e.target as Node)
+			) {
+				onClose();
 			}
-			return allFiles
-				.map((f) => {
-					const rel = f.startsWith(workspaceRoot)
-						? f.slice(workspaceRoot.length + 1)
-						: f;
-					return {
-						path: f,
-						rel,
-						isDir: f.endsWith("/"),
-						score: fuzzyMatch(q, rel),
-					};
-				})
-				.filter((r) => r.score > 0)
-				.sort((a, b) => b.score - a.score)
-				.slice(0, MAX_VISIBLE)
-				.map(({ path, rel, isDir }) => ({ path, rel, isDir }));
-		})();
+		}
+		document.addEventListener("mousedown", handleMouseDown);
+		return () => document.removeEventListener("mousedown", handleMouseDown);
+	}, [onClose]);
 
-		// Reset active index when query changes
-		useEffect(() => {
-			setActiveIndex(0);
-		}, [query]);
+	const handleSelect = useCallback(
+		(item: AtMentionResult) => {
+			onSelect(item);
+		},
+		[onSelect],
+	);
 
-		// Scroll active item into view
-		useEffect(() => {
-			const list = listRef.current;
-			if (!list) return;
-			const item = list.children[activeIndex] as HTMLElement | undefined;
-			item?.scrollIntoView?.({ block: "nearest" });
-		}, [activeIndex]);
-
-		// Close on click outside
-		useEffect(() => {
-			function handleMouseDown(e: MouseEvent) {
-				if (
-					popoverRef.current &&
-					!popoverRef.current.contains(e.target as Node)
-				) {
+	// Expose keyboard handler to parent
+	useImperativeHandle(
+		ref,
+		() => ({
+			handleKeyDown(e: React.KeyboardEvent): boolean {
+				if (e.key === "Escape") {
 					onClose();
+					return true;
 				}
-			}
-			document.addEventListener("mousedown", handleMouseDown);
-			return () => document.removeEventListener("mousedown", handleMouseDown);
-		}, [onClose]);
-
-		const handleSelect = useCallback(
-			(item: AtMentionResult) => {
-				onSelect(item);
+				if (e.key === "ArrowDown") {
+					setActiveIndex((prev) =>
+						results.length > 0 ? Math.min(prev + 1, results.length - 1) : 0,
+					);
+					return true;
+				}
+				if (e.key === "ArrowUp") {
+					setActiveIndex((prev) => Math.max(prev - 1, 0));
+					return true;
+				}
+				if (e.key === "Enter" || e.key === "Tab") {
+					if (results.length > 0 && results[activeIndex]) {
+						handleSelect(results[activeIndex]);
+					}
+					// Always consume Enter/Tab while popover is open — prevent accidental send
+					return true;
+				}
+				return false;
 			},
-			[onSelect],
-		);
+		}),
+		[results, activeIndex, onClose, handleSelect],
+	);
 
-		// Expose keyboard handler to parent
-		useImperativeHandle(
-			ref,
-			() => ({
-				handleKeyDown(e: React.KeyboardEvent): boolean {
-					if (e.key === "Escape") {
-						onClose();
-						return true;
-					}
-					if (e.key === "ArrowDown") {
-						setActiveIndex((prev) =>
-							results.length > 0
-								? Math.min(prev + 1, results.length - 1)
-								: 0,
-						);
-						return true;
-					}
-					if (e.key === "ArrowUp") {
-						setActiveIndex((prev) => Math.max(prev - 1, 0));
-						return true;
-					}
-					if (e.key === "Enter" || e.key === "Tab") {
-						if (results.length > 0 && results[activeIndex]) {
-							handleSelect(results[activeIndex]);
-						}
-						// Always consume Enter/Tab while popover is open — prevent accidental send
-						return true;
-					}
-					return false;
-				},
-			}),
-			[results, activeIndex, onClose, handleSelect],
-		);
-
-		return (
-			<div
-				ref={popoverRef}
-				className="chat-at-popover"
-				onMouseDown={(e) => e.preventDefault()}
-			>
-				{loading && (
-					<div className="chat-at-popover__empty">
-						파일 목록 불러오는 중...
-					</div>
-				)}
-				{!loading && results.length === 0 && (
-					<div className="chat-at-popover__empty">
-						{!workspaceRoot
-							? "워크스페이스가 설정되지 않았습니다"
-							: "일치하는 파일이 없습니다"}
-					</div>
-				)}
-				<div ref={listRef} className="chat-at-popover__list">
-					{results.map((item, i) => (
-						<div
-							key={item.path}
-							className={`chat-at-popover__item${i === activeIndex ? " chat-at-popover__item--active" : ""}`}
-							onClick={() => handleSelect(item)}
-							onMouseEnter={() => setActiveIndex(i)}
-							onKeyDown={() => {}}
-						>
-							<span className="chat-at-popover__icon">
-								{getIcon(item.rel, item.isDir)}
-							</span>
-							<span className="chat-at-popover__path">{item.rel}</span>
-						</div>
-					))}
+	return (
+		<div
+			ref={popoverRef}
+			className="chat-at-popover"
+			onMouseDown={(e) => e.preventDefault()}
+		>
+			{loading && (
+				<div className="chat-at-popover__empty">파일 목록 불러오는 중...</div>
+			)}
+			{!loading && results.length === 0 && (
+				<div className="chat-at-popover__empty">
+					{!workspaceRoot
+						? "워크스페이스가 설정되지 않았습니다"
+						: "일치하는 파일이 없습니다"}
 				</div>
+			)}
+			<div ref={listRef} className="chat-at-popover__list">
+				{results.map((item, i) => (
+					<div
+						key={item.path}
+						className={`chat-at-popover__item${i === activeIndex ? " chat-at-popover__item--active" : ""}`}
+						onClick={() => handleSelect(item)}
+						onMouseEnter={() => setActiveIndex(i)}
+						onKeyDown={() => {}}
+					>
+						<span className="chat-at-popover__icon">
+							{getIcon(item.rel, item.isDir)}
+						</span>
+						<span className="chat-at-popover__path">{item.rel}</span>
+					</div>
+				))}
 			</div>
-		);
-	},
-);
+		</div>
+	);
+});

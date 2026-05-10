@@ -204,18 +204,21 @@ export const S = {
 	memoryLlmVllm: 'input[name="memory-llm"][value="vllm"]',
 	memoryLlmOllama: 'input[name="memory-llm"][value="ollama"]',
 	memoryLlmNaia: 'input[name="memory-llm"][value="naia"]',
-	memoryOfflineModelMiniLM: 'input[name="memory-offline-model"][value="all-MiniLM-L6-v2"]',
-	memoryOfflineModelMpnet: 'input[name="memory-offline-model"][value="all-mpnet-base-v2"]',
+	memoryOfflineModelMiniLM:
+		'input[name="memory-offline-model"][value="all-MiniLM-L6-v2"]',
+	memoryOfflineModelMpnet:
+		'input[name="memory-offline-model"][value="all-mpnet-base-v2"]',
 	qdrantUrlInput: 'input[placeholder*="6333"]',
 	// TODO(#223): SettingsTab에 data-testid="qdrant-api-key" 추가 후 개선 필요
 	qdrantApiKeyInput: 'input[type="password"][placeholder="..."]',
 	memoryEmbeddingBaseUrl: 'input[placeholder*="localhost:11434"]',
 	memoryEmbeddingModel: 'input[placeholder*="text-embedding-ada-002"]',
-	memoryBackupPasswordInput: 'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="\ubc44\ubc00\ubc88\ud638"]',
-	memoryExportBtn: '.memory-export-btn',
-	memoryImportBtn: '.memory-import-btn',
-	memorySection: '.memory-settings-section',
-	memoryStatsFacts: '.memory-stats-facts',
+	memoryBackupPasswordInput:
+		'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="\ubc44\ubc00\ubc88\ud638"]',
+	memoryExportBtn: ".memory-export-btn",
+	memoryImportBtn: ".memory-import-btn",
+	memorySection: ".memory-settings-section",
+	memoryStatsFacts: ".memory-stats-facts",
 
 	// Voice Wake
 	voiceWakeTag: ".voice-wake-tag",

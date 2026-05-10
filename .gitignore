@@ -43,3 +43,4 @@ work-logs/
 # Per .agents/skills/cross-review/SKILL.md, only .jsonl event logs are
 # committed artifacts — *-target.md files are working drafts.
 .agents/reviews/*-target.md
+.tmp-harness/

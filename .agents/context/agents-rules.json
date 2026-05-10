@@ -551,11 +551,28 @@
   "ai_workflow": {
     "response_language": "Contributor's preferred language (Korean default for maintainer)",
     "mandatory_pre_checks": [
+      "SESSION START: Run 'gh issue list --state open' to identify active issues",
+      "SESSION START: Run 'gh issue view <N>' for each active issue — read FULL body + ALL comments",
+      "SESSION START: Read .agents/progress/<N>-*.json if exists — never rely on AI memory alone",
       "Read agents-rules.json before any work",
+      "Read issue-driven-development.yaml session_resume_protocol",
       "Identify work nature (shell/agent/gateway/os)",
       "TDD mandatory (integration first)",
       "Check security tier for new tools/commands"
     ],
+    "issue_as_truth": {
+      "rule": "GitHub Issues are the ONLY persistent source of truth across context compactions and session restarts",
+      "what_belongs_in_issue": [
+        "Design references: file paths or image descriptions for ALL UI changes",
+        "Implementation plan with phases",
+        "Decisions made and why",
+        "Rejected alternatives",
+        "Current progress phase",
+        "Blockers"
+      ],
+      "anti_pattern": "Relying on AI memory for design intent, decisions, or progress after context compaction",
+      "correct_pattern": "Read 'gh issue view <N>' at session start — if it's not in the issue, it doesn't exist"
+    },
     "work_logs": {
       "format": "YYYYMMDD-{number}-{topic}.md",
       "convention": "{username}/ subdirectory per contributor",

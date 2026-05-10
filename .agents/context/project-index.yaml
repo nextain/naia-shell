@@ -176,6 +176,11 @@ mirror_pairs:
     users: .users/workflows/issue-driven-development.md
     description: Issue-driven development cycle — 10 phases, gates, artifact storage, work-logs convention
 
+  - agents: .agents/context/review-guide.yaml
+    users: .users/context/review-guide.md
+    users_ko: .users/context/ko/review-guide.md
+    description: Unified review guide — 6 dimensions (architecture, conventions, process, security, testing, requirements), cross-review triggers
+
   - agents: .agents/workflows/development-cycle.yaml
     users: .users/workflows/development-cycle.md
     description: Coding-level development cycle — TDD, code quality gates, security review, AI pair-programming rules
@@ -266,6 +271,7 @@ on_demand_loading:
     - .agents/tests/ai-native-onboarding-test.md (when testing AI agent onboarding behavior)
     - .agents/tests/context-update-test-methodology.md (when planning or running context quality tests)
     - .agents/workflows/issue-driven-development.yaml (when starting feature-level work — ALWAYS read at session start)
+    - .agents/context/review-guide.yaml (when reviewing code, running cross-review, or evaluating any PR — ALWAYS read at review time)
     - .agents/workflows/development-cycle.yaml (when coding — ALWAYS read before building)
     - .agents/context/multi-project-workspace.yaml (when working in a multi-project workspace)
     - .agents/context/harness.yaml (when working on hooks, progress files, or harness engineering)

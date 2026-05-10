@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getAdkPath } from "../../lib/adk-store";
 import { loadConfig, saveConfig } from "../../lib/config";
 import { Logger } from "../../lib/logger";
 import { panelRegistry } from "../../lib/panel-registry";
@@ -10,9 +10,9 @@ import { usePanelStore } from "../../stores/panel";
 import { Editor, type EditorHandle } from "./Editor";
 import { FileTree } from "./FileTree";
 import { QuickOpen } from "./QuickOpen";
-import { SkillLauncher } from "./SkillLauncher";
 import type { SessionInfo } from "./SessionCard";
 import { SessionDashboard } from "./SessionDashboard";
+import { SkillLauncher } from "./SkillLauncher";
 import { Terminal } from "./Terminal";
 import { ACTIVE_THRESHOLD_SECONDS, WORKSPACE_ROOT } from "./constants";
 
@@ -110,7 +110,7 @@ interface TerminalTab {
 
 // ─── Re-export for FileTree ───────────────────────────────────────────────────
 
-import { type ClassifiedDir } from "./types";
+import type { ClassifiedDir } from "./types";
 
 export type { ClassifiedDir };
 
@@ -172,10 +172,10 @@ function getRepoRecentFile(repoRoot: string): string | undefined {
 }
 
 export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
-	// Resolved workspace root — read from config, or empty (triggers folder picker).
+	// Resolved workspace root — read from config, fall back to naia-adk path.
 	const [activeWorkspaceRoot, setActiveWorkspaceRoot] = useState(() => {
 		const cfg = loadConfig();
-		return cfg?.workspaceRoot || WORKSPACE_ROOT;
+		return cfg?.workspaceRoot || getAdkPath() || WORKSPACE_ROOT;
 	});
 
 	const detectAdkRoot = useCallback(async (): Promise<string | null> => {
@@ -187,19 +187,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		}
 	}, []);
 
-	// Folder picker when no workspace root is configured
-	const pickWorkspaceFolder = useCallback(async () => {
-		const selected = await open({
-			directory: true,
-			title: "Select Workspace Folder",
-		});
-		if (selected && typeof selected === "string") {
-			const cfg = loadConfig();
-			if (cfg) saveConfig({ ...cfg, workspaceRoot: selected });
-			setActiveWorkspaceRoot(selected);
-		}
-	}, []);
-	const { openFilePath, openFile, goBack, goForward } = useFileNavHistory();
+const { openFilePath, openFile, goBack, goForward } = useFileNavHistory();
 	const editorRef = useRef<EditorHandle>(null);
 	const [editorBadge, setEditorBadge] = useState("");
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -306,7 +294,9 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			if (cfg) saveConfig({ ...cfg, workspaceRoot: detected });
 			setActiveWorkspaceRoot(detected);
 		})();
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// ── Set workspace root from config on mount ────────────────────────────
@@ -372,7 +362,9 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 				for (const section of sections) {
 					const items = index?.[section.key];
 					if (!items || typeof items !== "object") continue;
-					for (const [, entry] of Object.entries(items as Record<string, any>)) {
+					for (const [, entry] of Object.entries(
+						items as Record<string, any>,
+					)) {
 						if (!entry?.path) continue;
 						const typeToCat: Record<string, string> = {
 							project: "project",
@@ -387,7 +379,13 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 						}
 						dirs.push({
 							name: entry.description
-								? entry.description.split("—")[0].split("(")[0].trim().split(" ").slice(0, 3).join(" ")
+								? entry.description
+										.split("—")[0]
+										.split("(")[0]
+										.trim()
+										.split(" ")
+										.slice(0, 3)
+										.join(" ")
 								: absPath?.split("/").pop() || "",
 							path: absPath,
 							category: cat,
@@ -404,7 +402,9 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 				// project-index.yaml not found — fall through to heuristic classification
 			}
 		})();
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, [resolvedRoot]);
 
 	// ── Load persisted classification ─────────────────────────────────────
@@ -575,47 +575,53 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 	}, [sessionId]);
 
 	// ── Session card click → open recent file ─────────────────────────────
-	const handleSessionClick = useCallback(async (session: SessionInfo) => {
-		Logger.info("WorkspaceCenterPanel", "Session card clicked", {
-			dir: session.dir,
-		});
+	const handleSessionClick = useCallback(
+		async (session: SessionInfo) => {
+			Logger.info("WorkspaceCenterPanel", "Session card clicked", {
+				dir: session.dir,
+			});
 
-		// Badge from progress
-		const badge =
-			session.progress?.issue && session.progress?.phase
-				? `${session.progress.issue} · ${session.progress.phase}`
-				: "";
-		setEditorBadge(badge);
+			// Badge from progress
+			const badge =
+				session.progress?.issue && session.progress?.phase
+					? `${session.progress.issue} · ${session.progress.phase}`
+					: "";
+			setEditorBadge(badge);
 
-		// Determine which file to open
-		let fileToOpen = "";
-		if (session.recent_file) {
-			fileToOpen = `${session.path}/${session.recent_file}`;
-		} else {
-			// Fallback: AGENTS.md or README.md
-			for (const fallback of ["AGENTS.md", "README.md"]) {
-				const candidate = `${session.path}/${fallback}`;
-				try {
-					await invoke("workspace_read_file", { path: candidate });
-					fileToOpen = candidate;
-					break;
-				} catch {
-					// not found, try next
+			// Determine which file to open
+			let fileToOpen = "";
+			if (session.recent_file) {
+				fileToOpen = `${session.path}/${session.recent_file}`;
+			} else {
+				// Fallback: AGENTS.md or README.md
+				for (const fallback of ["AGENTS.md", "README.md"]) {
+					const candidate = `${session.path}/${fallback}`;
+					try {
+						await invoke("workspace_read_file", { path: candidate });
+						fileToOpen = candidate;
+						break;
+					} catch {
+						// not found, try next
+					}
 				}
 			}
-		}
 
-		if (fileToOpen) {
-			openFile(fileToOpen);
-		}
-	}, [openFile]);
+			if (fileToOpen) {
+				openFile(fileToOpen);
+			}
+		},
+		[openFile],
+	);
 
 	// ── File select from tree ─────────────────────────────────────────────
-	const handleFileSelect = useCallback((path: string) => {
-		openFile(path);
-		// Clear badge when directly selecting a file
-		setEditorBadge("");
-	}, [openFile]);
+	const handleFileSelect = useCallback(
+		(path: string) => {
+			openFile(path);
+			// Clear badge when directly selecting a file
+			setEditorBadge("");
+		},
+		[openFile],
+	);
 
 	// ── Dir expand → open per-repo recent file ──────────────────────────
 	const handleDirExpand = useCallback(
@@ -980,7 +986,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		? openFilePath.split("/").some((part) => part.startsWith("ref-"))
 		: false;
 
-	// No workspace root configured — show folder picker
+	// No workspace root configured — direct user to settings
 	if (!activeWorkspaceRoot) {
 		return (
 			<div
@@ -990,24 +996,15 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 					alignItems: "center",
 					justifyContent: "center",
 					flexDirection: "column",
-					gap: "1rem",
+					gap: "0.75rem",
+					padding: "2rem",
 				}}
 			>
-				<h2 style={{ margin: 0 }}>Workspace</h2>
-				<p style={{ opacity: 0.7, textAlign: "center" }}>
-					Select a folder to use as your workspace root.
+				<p style={{ opacity: 0.7, textAlign: "center", margin: 0 }}>
+					워크스페이스 경로가 설정되지 않았습니다.
+					<br />
+					설정 → 워크스페이스(naia-adk)에서 경로를 지정해 주세요.
 				</p>
-				<button
-					type="button"
-					onClick={pickWorkspaceFolder}
-					style={{
-						padding: "0.5rem 1.5rem",
-						fontSize: "1rem",
-						cursor: "pointer",
-					}}
-				>
-					Select Folder
-				</button>
 			</div>
 		);
 	}

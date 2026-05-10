@@ -154,8 +154,14 @@ export function createVllmOmniSession(): VoiceSession {
 
 		disconnect() {
 			connected = false;
-			if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
-			if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+			if (silenceTimer) {
+				clearTimeout(silenceTimer);
+				silenceTimer = null;
+			}
+			if (maxBufferTimer) {
+				clearTimeout(maxBufferTimer);
+				maxBufferTimer = null;
+			}
 			pcmBuffer = [];
 			messages = [];
 			rmsLogThrottle = 0;
@@ -164,7 +170,10 @@ export function createVllmOmniSession(): VoiceSession {
 	};
 
 	async function flushAudio() {
-		if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+		if (maxBufferTimer) {
+			clearTimeout(maxBufferTimer);
+			maxBufferTimer = null;
+		}
 		if (!cfg || pcmBuffer.length === 0) return;
 
 		const totalSamples = pcmBuffer.reduce((n, c) => n + c.length, 0);
@@ -258,9 +267,15 @@ async function callRest(
 	const choices = data.choices ?? [];
 	const audioChoice = choices.find(
 		(c: Record<string, unknown>) =>
-			(c as { message?: { audio?: { data?: string } } }).message?.audio
-				?.data,
-	) as { message: { audio: { data: string; transcript?: string }; content?: string } } | undefined;
+			(c as { message?: { audio?: { data?: string } } }).message?.audio?.data,
+	) as
+		| {
+				message: {
+					audio: { data: string; transcript?: string };
+					content?: string;
+				};
+		  }
+		| undefined;
 	const textChoice = choices.find(
 		(c: Record<string, unknown>) =>
 			(c as { message?: { content?: string } }).message?.content,
@@ -343,7 +358,8 @@ function pcmToWav(samples: Int16Array, sampleRate: number): Uint8Array {
 	const buf = new ArrayBuffer(44 + dataLen);
 	const view = new DataView(buf);
 	const writeStr = (offset: number, s: string) => {
-		for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+		for (let i = 0; i < s.length; i++)
+			view.setUint8(offset + i, s.charCodeAt(i));
 	};
 	writeStr(0, "RIFF");
 	view.setUint32(4, 36 + dataLen, true);

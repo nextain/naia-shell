@@ -53,7 +53,7 @@ const SKILL_TEMPLATES: Record<string, SkillTemplate> = {
 		tools: ["Read", "Glob", "Grep", "Edit", "Write"],
 		maxTurns: 20,
 	},
-	"payroll": {
+	payroll: {
 		tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
 		maxTurns: 15,
 	},
@@ -87,7 +87,11 @@ export function getSkillTemplate(skillName: string): SkillTemplate {
 export function SkillLauncher({
 	onLaunchSkill,
 }: {
-	onLaunchSkill?: (skill: SkillEntry, content: string, template: SkillTemplate) => void;
+	onLaunchSkill?: (
+		skill: SkillEntry,
+		content: string,
+		template: SkillTemplate,
+	) => void;
 }) {
 	const [skills, setSkills] = useState<SkillEntry[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -147,43 +151,46 @@ export function SkillLauncher({
 			<div className="skill-launcher__section">
 				<div className="skill-launcher__section-label">{label}</div>
 				{sectionSkills.map((skill) => {
-				const tmpl = getSkillTemplate(skill.name);
-				return (
-				<div
-					key={skill.name}
-					className={`skill-launcher__item ${!skill.has_frontmatter ? "skill-launcher__item--no-fm" : ""}`}
-					title={skill.trigger || skill.description}
-				>
-					<div className="skill-launcher__item-name">
-						{skill.name}
-						{!skill.has_frontmatter && (
-							<span className="skill-launcher__item-warn" title="frontmatter 없음">
-								⚠
-							</span>
-						)}
-					</div>
-					<div className="skill-launcher__item-desc">
-						{skill.description || "(설명 없음)"}
-					</div>
-					<div className="skill-launcher__item-meta">
-						{tmpl.tools.length <= 4
-							? tmpl.tools.join(", ")
-							: `${tmpl.tools.slice(0, 3).join(", ")} +${tmpl.tools.length - 3}`}
-					</div>
-					{onLaunchSkill && (
-						<button
-							type="button"
-							className="skill-launcher__launch"
-							onClick={() => handleLaunch(skill)}
+					const tmpl = getSkillTemplate(skill.name);
+					return (
+						<div
+							key={skill.name}
+							className={`skill-launcher__item ${!skill.has_frontmatter ? "skill-launcher__item--no-fm" : ""}`}
+							title={skill.trigger || skill.description}
 						>
-							실행
-						</button>
-					)}
-				</div>
-				);
-			})}
-		</div>
-	);
+							<div className="skill-launcher__item-name">
+								{skill.name}
+								{!skill.has_frontmatter && (
+									<span
+										className="skill-launcher__item-warn"
+										title="frontmatter 없음"
+									>
+										⚠
+									</span>
+								)}
+							</div>
+							<div className="skill-launcher__item-desc">
+								{skill.description || "(설명 없음)"}
+							</div>
+							<div className="skill-launcher__item-meta">
+								{tmpl.tools.length <= 4
+									? tmpl.tools.join(", ")
+									: `${tmpl.tools.slice(0, 3).join(", ")} +${tmpl.tools.length - 3}`}
+							</div>
+							{onLaunchSkill && (
+								<button
+									type="button"
+									className="skill-launcher__launch"
+									onClick={() => handleLaunch(skill)}
+								>
+									실행
+								</button>
+							)}
+						</div>
+					);
+				})}
+			</div>
+		);
 	}
 
 	if (loading) {

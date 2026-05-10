@@ -94,7 +94,10 @@ describe("gateway-sessions", () => {
 			// skill_sessions is a local agent tool — works without cloud gateway.
 			// The agent receives the request with gatewayUrl: undefined and handles it locally.
 			(resolveGatewayUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			mockDirectToolCall.mockResolvedValueOnce({ success: true, output: JSON.stringify({ sessions: [] }) });
+			mockDirectToolCall.mockResolvedValueOnce({
+				success: true,
+				output: JSON.stringify({ sessions: [] }),
+			});
 
 			const { listGatewaySessions } = await import("../gateway-sessions");
 			const sessions = await listGatewaySessions();

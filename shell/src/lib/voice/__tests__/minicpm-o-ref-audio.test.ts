@@ -18,7 +18,9 @@ interface MockWSInstance {
 	onopen: (() => void) | null;
 	onmessage: ((event: { data: string }) => void) | null;
 	onerror: (() => void) | null;
-	onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null;
+	onclose:
+		| ((event: { code: number; reason: string; wasClean: boolean }) => void)
+		| null;
 	send: ReturnType<typeof vi.fn>;
 	close: ReturnType<typeof vi.fn>;
 }
@@ -30,7 +32,9 @@ class MockWebSocket implements MockWSInstance {
 	onopen: (() => void) | null = null;
 	onmessage: ((event: { data: string }) => void) | null = null;
 	onerror: (() => void) | null = null;
-	onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null = null;
+	onclose:
+		| ((event: { code: number; reason: string; wasClean: boolean }) => void)
+		| null = null;
 	send = vi.fn();
 	close = vi.fn();
 	constructor(url: string) {
@@ -112,7 +116,9 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 		lastWs.onmessage?.({
 			data: JSON.stringify({
 				type: "error",
-				error: { message: "Invalid ref_audio: ref_audio must be a RIFF/WAVE file" },
+				error: {
+					message: "Invalid ref_audio: ref_audio must be a RIFF/WAVE file",
+				},
 			}),
 		});
 

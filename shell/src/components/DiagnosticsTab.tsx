@@ -28,9 +28,7 @@ type LogTab = "agent" | "gateway" | "shell";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function parseGatewayLogLine(
-	line: string,
-): LogEntry | null {
+function parseGatewayLogLine(line: string): LogEntry | null {
 	try {
 		const parsed = JSON.parse(line);
 		const meta = parsed._meta || {};
@@ -39,7 +37,11 @@ function parseGatewayLogLine(
 		const timestamp = parsed.time || meta.date || new Date().toISOString();
 		return { level, message: msg, timestamp };
 	} catch {
-		return { level: "DEBUG", message: line, timestamp: new Date().toISOString() };
+		return {
+			level: "DEBUG",
+			message: line,
+			timestamp: new Date().toISOString(),
+		};
 	}
 }
 
@@ -53,20 +55,29 @@ function parseAgentLogLine(line: string): LogEntry | null {
 		let msg = obj.type || obj.message || line;
 		if (obj.provider) msg += ` [${obj.provider}/${obj.model ?? ""}]`;
 		if (obj.requestId) msg += ` (${obj.requestId})`;
-		if (obj.inputTokens != null) msg += ` in=${obj.inputTokens} out=${obj.outputTokens}`;
+		if (obj.inputTokens != null)
+			msg += ` in=${obj.inputTokens} out=${obj.outputTokens}`;
 		return { level, message: msg, timestamp: ts };
 	} catch {
-		return { level: "DEBUG", message: line, timestamp: new Date().toISOString() };
+		return {
+			level: "DEBUG",
+			message: line,
+			timestamp: new Date().toISOString(),
+		};
 	}
 }
 
 function levelColor(level: string): string {
 	switch (level.toLowerCase()) {
-		case "error": return "var(--error)";
+		case "error":
+			return "var(--error)";
 		case "warn":
-		case "warning": return "var(--amber)";
-		case "info": return "var(--tech-blue)";
-		default: return "var(--cream-dim)";
+		case "warning":
+			return "var(--amber)";
+		case "info":
+			return "var(--tech-blue)";
+		default:
+			return "var(--cream-dim)";
 	}
 }
 
@@ -86,7 +97,8 @@ async function readNewLogLines(
 ): Promise<{ entries: LogEntry[]; newOffset: number }> {
 	try {
 		const bytes = await invoke<number[]>("read_local_binary", { path });
-		if (bytes.length <= byteOffset) return { entries: [], newOffset: byteOffset };
+		if (bytes.length <= byteOffset)
+			return { entries: [], newOffset: byteOffset };
 
 		const newBytes = new Uint8Array(bytes.slice(byteOffset));
 		const text = new TextDecoder().decode(newBytes);
@@ -107,7 +119,9 @@ async function readNewLogLines(
 export function DiagnosticsTab() {
 	// Health
 	const [healthState, setHealthState] = useState<HealthState>("checking");
-	const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus | null>(null);
+	const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus | null>(
+		null,
+	);
 	const retryCountRef = useRef(0);
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout>>();
 	const healthPollRef = useRef<ReturnType<typeof setInterval>>();
@@ -138,16 +152,18 @@ export function DiagnosticsTab() {
 	// ── Initialize log paths ─────────────────────────────────────────────────
 
 	useEffect(() => {
-		homeDir().then((home) => {
-			homeDirRef.current = home;
-			const sep = home.includes("\\") ? "\\" : "/";
-			const base = `${home}${sep}.naia${sep}logs${sep}`;
-			setLogPaths({
-				agent: `${base}llm-debug.log`,
-				gateway: `${base}gateway.log`,
-				shell: `${base}naia.log`,
-			});
-		}).catch(() => {});
+		homeDir()
+			.then((home) => {
+				homeDirRef.current = home;
+				const sep = home.includes("\\") ? "\\" : "/";
+				const base = `${home}${sep}.naia${sep}logs${sep}`;
+				setLogPaths({
+					agent: `${base}llm-debug.log`,
+					gateway: `${base}gateway.log`,
+					shell: `${base}naia.log`,
+				});
+			})
+			.catch(() => {});
 	}, []);
 
 	// ── Health check ─────────────────────────────────────────────────────────
@@ -171,31 +187,37 @@ export function DiagnosticsTab() {
 		}
 	}, []);
 
-	const checkHealth = useCallback(async (isRetry = false) => {
-		if (!isRetry) retryCountRef.current = 0;
+	const checkHealth = useCallback(
+		async (isRetry = false) => {
+			if (!isRetry) retryCountRef.current = 0;
 
-		try {
-			const alive = await invoke<boolean>("gateway_health");
-			if (alive) {
-				setHealthState("connected");
-				retryCountRef.current = 0;
-				void fetchGatewayStatus();
-				return;
+			try {
+				const alive = await invoke<boolean>("gateway_health");
+				if (alive) {
+					setHealthState("connected");
+					retryCountRef.current = 0;
+					void fetchGatewayStatus();
+					return;
+				}
+			} catch {
+				// treat invoke error as not alive
 			}
-		} catch {
-			// treat invoke error as not alive
-		}
 
-		// Gateway not reachable
-		if (retryCountRef.current < MAX_STARTUP_RETRIES) {
-			retryCountRef.current++;
-			setHealthState("checking");
-			retryTimerRef.current = setTimeout(() => checkHealth(true), RETRY_INTERVAL_MS);
-		} else {
-			setHealthState("disconnected");
-			setGatewayStatus(null);
-		}
-	}, [fetchGatewayStatus]);
+			// Gateway not reachable
+			if (retryCountRef.current < MAX_STARTUP_RETRIES) {
+				retryCountRef.current++;
+				setHealthState("checking");
+				retryTimerRef.current = setTimeout(
+					() => checkHealth(true),
+					RETRY_INTERVAL_MS,
+				);
+			} else {
+				setHealthState("disconnected");
+				setGatewayStatus(null);
+			}
+		},
+		[fetchGatewayStatus],
+	);
 
 	// Initial check + background health poll
 	useEffect(() => {
@@ -242,7 +264,14 @@ export function DiagnosticsTab() {
 		const { entries, newOffset } = await readNewLogLines(
 			logPaths.shell,
 			shellOffsetRef.current,
-			(line) => line.trim() ? { level: "DEBUG", message: line, timestamp: new Date().toISOString() } : null,
+			(line) =>
+				line.trim()
+					? {
+							level: "DEBUG",
+							message: line,
+							timestamp: new Date().toISOString(),
+						}
+					: null,
 		);
 		if (entries.length > 0) {
 			shellOffsetRef.current = newOffset;
@@ -258,7 +287,9 @@ export function DiagnosticsTab() {
 				toolName: "skill_diagnostics",
 				args: {
 					action: "logs_poll",
-					...(gatewayLogCursorRef.current != null && { cursor: gatewayLogCursorRef.current }),
+					...(gatewayLogCursorRef.current != null && {
+						cursor: gatewayLogCursorRef.current,
+					}),
 				},
 				requestId: `diag-logs-poll-${Date.now()}`,
 				gatewayUrl,
@@ -316,7 +347,9 @@ export function DiagnosticsTab() {
 			// Give gateway 2s to start then re-check
 			setTimeout(() => checkHealth(), 2000);
 		} catch (err) {
-			Logger.warn("DiagnosticsTab", "restart_gateway failed", { error: String(err) });
+			Logger.warn("DiagnosticsTab", "restart_gateway failed", {
+				error: String(err),
+			});
 			checkHealth();
 		}
 	}, [checkHealth]);
@@ -367,9 +400,11 @@ export function DiagnosticsTab() {
 	// ── Render ────────────────────────────────────────────────────────────────
 
 	const activeEntries =
-		activeLogTab === "agent" ? agentEntries :
-		activeLogTab === "shell" ? shellEntries :
-		gatewayEntries;
+		activeLogTab === "agent"
+			? agentEntries
+			: activeLogTab === "shell"
+				? shellEntries
+				: gatewayEntries;
 
 	const isConnected = healthState === "connected";
 
@@ -399,25 +434,35 @@ export function DiagnosticsTab() {
 
 				<div className="diagnostics-status-grid">
 					<div className="diagnostics-status-item">
-						<span className="diagnostics-label">{t("diagnostics.gatewayStatus")}</span>
-						<span className={`diagnostics-value ${isConnected ? "status-ok" : healthState === "checking" ? "status-warn" : "status-err"}`}>
+						<span className="diagnostics-label">
+							{t("diagnostics.gatewayStatus")}
+						</span>
+						<span
+							className={`diagnostics-value ${isConnected ? "status-ok" : healthState === "checking" ? "status-warn" : "status-err"}`}
+						>
 							{healthState === "checking"
 								? t("diagnostics.gatewayStarting")
 								: isConnected
-								? t("diagnostics.connected")
-								: t("diagnostics.disconnected")}
+									? t("diagnostics.connected")
+									: t("diagnostics.disconnected")}
 						</span>
 					</div>
 					{gatewayStatus?.version && (
 						<div className="diagnostics-status-item">
-							<span className="diagnostics-label">{t("diagnostics.version")}</span>
+							<span className="diagnostics-label">
+								{t("diagnostics.version")}
+							</span>
 							<span className="diagnostics-value">{gatewayStatus.version}</span>
 						</div>
 					)}
 					{gatewayStatus?.uptime != null && (
 						<div className="diagnostics-status-item">
-							<span className="diagnostics-label">{t("diagnostics.uptime")}</span>
-							<span className="diagnostics-value">{formatUptime(gatewayStatus.uptime)}</span>
+							<span className="diagnostics-label">
+								{t("diagnostics.uptime")}
+							</span>
+							<span className="diagnostics-value">
+								{formatUptime(gatewayStatus.uptime)}
+							</span>
 						</div>
 					)}
 					{gatewayStatus?.methods && gatewayStatus.methods.length > 0 && (
@@ -427,7 +472,9 @@ export function DiagnosticsTab() {
 							</span>
 							<div className="diagnostics-methods-list">
 								{gatewayStatus.methods.map((m) => (
-									<span key={m} className="diagnostics-method-tag">{m}</span>
+									<span key={m} className="diagnostics-method-tag">
+										{m}
+									</span>
 								))}
 							</div>
 						</div>
@@ -446,7 +493,11 @@ export function DiagnosticsTab() {
 								className={`diagnostics-log-tab ${activeLogTab === tab ? "active" : ""}`}
 								onClick={() => handleTabChange(tab)}
 							>
-								{tab === "agent" ? "Agent" : tab === "gateway" ? "Gateway" : "Shell"}
+								{tab === "agent"
+									? "Agent"
+									: tab === "gateway"
+										? "Gateway"
+										: "Shell"}
 							</button>
 						))}
 					</div>
@@ -455,9 +506,15 @@ export function DiagnosticsTab() {
 							type="button"
 							className={`diagnostics-log-btn ${isTailing ? "tailing" : ""}`}
 							onClick={handleToggleTailing}
-							title={isTailing ? t("diagnostics.logsStop") : t("diagnostics.logsStart")}
+							title={
+								isTailing
+									? t("diagnostics.logsStop")
+									: t("diagnostics.logsStart")
+							}
 						>
-							{isTailing ? t("diagnostics.logsStop") : t("diagnostics.logsStart")}
+							{isTailing
+								? t("diagnostics.logsStop")
+								: t("diagnostics.logsStart")}
 						</button>
 						<button
 							type="button"
@@ -480,33 +537,45 @@ export function DiagnosticsTab() {
 
 				{isTailing && (
 					<div className="diagnostics-tailing-indicator">
-						{t("diagnostics.logsTailing")} — {activeLogTab === "agent" ? "~/.naia/logs/llm-debug.log" : activeLogTab === "shell" ? "~/.naia/logs/naia.log" : "gateway"}
+						{t("diagnostics.logsTailing")} —{" "}
+						{activeLogTab === "agent"
+							? "~/.naia/logs/llm-debug.log"
+							: activeLogTab === "shell"
+								? "~/.naia/logs/naia.log"
+								: "gateway"}
 					</div>
 				)}
 
 				<div className="diagnostics-logs-container">
 					{activeEntries.length === 0 ? (
 						<div className="diagnostics-logs-empty">
-							{isTailing ? t("diagnostics.loading") : t("diagnostics.logsEmpty")}
+							{isTailing
+								? t("diagnostics.loading")
+								: t("diagnostics.logsEmpty")}
 						</div>
 					) : (
 						activeEntries.map((entry, i) => {
-							const isImportant = entry.level === "ERROR" || entry.level === "WARN" || entry.level === "WARNING";
+							const isImportant =
+								entry.level === "ERROR" ||
+								entry.level === "WARN" ||
+								entry.level === "WARNING";
 							const ts = entry.timestamp
 								? (() => {
-									const d = new Date(entry.timestamp);
-									const hh = String(d.getHours()).padStart(2, "0");
-									const mm = String(d.getMinutes()).padStart(2, "0");
-									const ss = String(d.getSeconds()).padStart(2, "0");
-									return `${hh}:${mm}:${ss}`;
-								})()
+										const d = new Date(entry.timestamp);
+										const hh = String(d.getHours()).padStart(2, "0");
+										const mm = String(d.getMinutes()).padStart(2, "0");
+										const ss = String(d.getSeconds()).padStart(2, "0");
+										return `${hh}:${mm}:${ss}`;
+									})()
 								: "";
 							const lvl = entry.level.slice(0, 3).toUpperCase();
 							return (
 								<div
 									key={`${entry.timestamp}-${i}`}
 									className={`diagnostics-log-line${isImportant ? " diagnostics-log-line--important" : ""}`}
-									onClick={isImportant ? () => setSelectedLog(entry) : undefined}
+									onClick={
+										isImportant ? () => setSelectedLog(entry) : undefined
+									}
 									title={isImportant ? "클릭하여 상세 보기" : undefined}
 								>
 									<span
@@ -540,9 +609,13 @@ export function DiagnosticsTab() {
 								{selectedLog.level}
 							</div>
 							<div className="diagnostics-log-modal-ts">
-								{selectedLog.timestamp ? new Date(selectedLog.timestamp).toLocaleString() : ""}
+								{selectedLog.timestamp
+									? new Date(selectedLog.timestamp).toLocaleString()
+									: ""}
 							</div>
-							<pre className="diagnostics-log-modal-msg">{selectedLog.message}</pre>
+							<pre className="diagnostics-log-modal-msg">
+								{selectedLog.message}
+							</pre>
 							<button
 								type="button"
 								className="diagnostics-log-modal-close"

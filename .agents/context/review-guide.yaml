@@ -1,0 +1,571 @@
+# SPDX-License-Identifier: CC-BY-SA-4.0
+#
+# Naia OS — Unified Code Review Guide
+#
+# This file SUPPLEMENTS agents-rules.json (which remains the SoT).
+# It consolidates review checklists and adds dimensions not covered inline there.
+# On any conflict, agents-rules.json wins. Both files must stay in sync.
+#
+# Relationship to other files:
+#   agents-rules.json           → SoT for all project rules (always wins on conflict)
+#   review-guide.yaml           → Unified review checklist reference (this file)
+#   development-cycle.yaml      → 4 review gates (gate_1 to gate_4) that trigger this guide
+#   issue-driven-development.yaml → 14 phases; review phase uses this guide
+#
+# Six dimensions:
+#   1. Architecture Consistency
+#   2. Coding Conventions
+#   3. Development Process Compliance
+#   4. Security Threats
+#   5. Practical Tests
+#   6. Requirements Conformance
+
+version: 2
+name: review-guide
+mirror: ".users/context/review-guide.md"
+mirror_ko: ".users/context/ko/review-guide.md"
+
+description: |
+  Comprehensive review guide for Naia OS contributions.
+  Apply at every review gate: per-phase self-review, PR human review, and
+  adversarial cross-review. All six dimensions must pass before merge.
+  Gaps in this guide are tracked as GitHub Issues.
+
+# ─── How to Use ───────────────────────────────────────────────
+
+usage:
+  apply_at:
+    per_phase_review:
+      trigger: "After each build phase (issue-driven-development.yaml → review)"
+      minimum_dimensions: [conventions, architecture, requirements]
+    pre_commit_self_review:
+      trigger: "Before every commit (development-cycle.yaml → gate_1)"
+      minimum_dimensions: [conventions, process, security]
+    ci_automated:
+      trigger: "On PR creation (development-cycle.yaml → gate_2)"
+      note: "Automated — biome, typecheck, tests, knip, gitleaks, cargo audit"
+    pr_human_review:
+      trigger: "Before PR merge (development-cycle.yaml → gate_3)"
+      all_dimensions: true
+    post_merge:
+      trigger: "After dev → main (development-cycle.yaml → gate_4)"
+      note: "BlueBuild image + OS smoke test — CI-only, not manual"
+    adversarial_cross_review:
+      trigger: "See cross_review.mandatory_triggers below"
+      skill: "/cross-review"
+
+  not_applicable_policy:
+    rule: "A dimension may be marked N/A only when the change has no surface area for it"
+    process:
+      - "Reviewer explicitly states which items are N/A and why in progress file review_evidence[]"
+      - "N/A is a declaration, not a skip — it must be written"
+      - "Remaining applicable items must still achieve TWO consecutive clean passes"
+    examples:
+      pure_css_change: "security dimension items 2-8 may be N/A; item 1 (payload validation) still applies if CSS affects event handling"
+      doc_only_change: "testing dimension may be N/A; process dimension still applies"
+
+  pass_criteria:
+    rule: "All applicable checklist items pass with TWO consecutive clean passes"
+    evidence: "Record each pass in progress file review_evidence[] with files_read list and date"
+    enforcement: "process-guard hook blocks 'clean pass' declaration without Read/Grep/Glob in same response"
+    two_pass_scope: "Per review object: implementation code, test code, and context updates are each independent objects"
+
+# ─── Dimension 1: Architecture Consistency ────────────────────
+
+architecture:
+  description: "Code is in the right layer and respects communication contracts"
+
+  layer_definitions:
+    shell:
+      purpose: "User-facing UI, Tauri IPC handlers, avatar rendering, panel system"
+      must_not: "Business logic, direct DB access, LLM calls"
+    agent:
+      purpose: "LLM connection, tool execution, sub-agent orchestration"
+      must_not: "UI state management, direct user interaction, WebSocket server"
+    gateway:
+      purpose: "Always-on daemon, channel routing, memory/skills, event bus"
+      must_not: "Direct UI interaction, importing shell types"
+    os:
+      purpose: "BlueBuild recipe, systemd services, OS-level config"
+      must_not: "App-level code, runtime logic"
+
+  communication_contracts:
+    shell_to_agent:
+      protocol: "stdio JSON lines — Tauri spawns agent as child process"
+      trust: "semi-trusted (shell is trusted; IPC payload validated in agent)"
+    shell_to_gateway:
+      protocol: "WebSocket ws://localhost:18789 — no direct imports"
+      trust: "semi-trusted"
+    gateway_to_agent:
+      protocol: "stdio JSON lines — same pipe as shell_to_agent"
+      trust: "semi-trusted — a compromised gateway can inject tool calls via stdin"
+      threat: "See security.threats.gateway_agent_injection"
+    event_payloads:
+      rule: "Validate all Tauri event.payload at boundary with a RUNTIME type guard (not TypeScript generics)"
+      anti_pattern: "Using listen<T>() generic as the only validation — it is compile-time only"
+    ipc_commands:
+      rule: "New Tauri commands must be registered in capability JSON files"
+      location: "shell/src-tauri/capabilities/"
+
+  panel_system:
+    rule: "Panels register via panelRegistry.register() — no hardcoded panel lists"
+    keepAlive: "builtIn + keepAlive panels stay mounted; their skills remain active across panel switches"
+    tools: "Panel tools declared in descriptor.tools[], sent via sendPanelSkills()"
+    verify_skills: "Run /verify-implementation — verify-* skills enforce panel-specific invariants"
+
+  checklist:
+    - "Code is in the correct layer (shell / agent / gateway / os)?"
+    - "No cross-layer direct imports (e.g., shell importing agent internals)?"
+    - "stdio or WebSocket protocol changes are backwards-compatible?"
+    - "New Tauri commands registered in capabilities/*.json?"
+    - "Panel tools declared in descriptor, not hardcoded in App.tsx?"
+    - "Run /verify-implementation — all registered verify-* skills pass?"
+    - "No unnecessary new files (could this extend an existing file)?"
+    - "Will this still be understandable 6 months from now?"
+
+# ─── Dimension 2: Coding Conventions ─────────────────────────
+
+conventions:
+  description: "Formatting, naming, logging, and structural rules"
+
+  formatter:
+    tool: Biome
+    config:
+      indent: tab
+      quote_style: double
+      semicolons: always
+      trailing_comma: all
+      line_width: 100
+    check_command: "pnpm biome check --diagnostic-level=error"
+    note: "Run before every commit — CI will fail on violations"
+
+  naming:
+    files_dirs: "kebab-case — avatar-canvas.tsx, panel-loader.ts, use-panel-store.ts"
+    components_classes: "PascalCase — AvatarCanvas, PanelLoader"
+    functions_hooks: "camelCase — getBridgeForPanel, usePanelStore"
+    constants: "UPPER_SNAKE_CASE — NAIA_WIDTH_DEFAULT"
+    types_interfaces: "PascalCase — no I- prefix (PanelDescriptor not IPanelDescriptor)"
+    rust_files: "snake_case — lib.rs, main.rs"
+
+  logging:
+    forbidden_typescript: ["console.log", "console.warn", "console.error", "console.debug"]
+    forbidden_rust: ["eprintln!", "println!"]
+    required_typescript:
+      import: "relative to the file's location (e.g., from shell/src/components/ use '../lib/logger')"
+      canonical: "import { Logger } from '@/lib/logger' or relative '../lib/logger' — not './lib/logger'"
+      note: "'./lib/logger' is only correct from shell/src/ level; all other paths differ"
+      levels: "debug (dev only) | info (state changes) | warn (degraded) | error (failures)"
+      format: "Logger.info('ComponentName', 'message', { context })"
+    required_rust:
+      important: "log_both() — stderr + file (session events, errors, auth)"
+      verbose: "log_verbose() — file always, stderr only in debug builds"
+      file_only: "log_to_file() — high-frequency internal events"
+    build_time_rule:
+      rule: "Logging added DURING implementation, not after bugs appear"
+      must_log:
+        - "Every new async operation: start, success, failure with context"
+        - "Every state transition: before and after values"
+        - "Every external call (IPC, API, file I/O): request + response summary"
+        - "Every error handling path: error + full context"
+
+  error_handling:
+    rule: "Validate only at system boundaries (user input, external APIs, IPC payloads)"
+    rust: "Result<T, Error> pattern — propagate with ?"
+    typescript: "try-catch at boundaries only — not around every internal call"
+    anti_pattern: "Wrapping every function in try-catch defensively"
+
+  imports:
+    order: ["node builtins", "external packages (@tauri-apps, react, etc.)", "internal modules", "relative"]
+    style: "Named imports — no new default exports"
+
+  typescript_strictness:
+    no_any: "Avoid `any` — use `unknown` + type guard if type is truly unknown"
+    no_non_null_assertion: "Avoid `!` — use optional chaining or explicit check"
+
+  checklist:
+    - "Biome lint + format pass (pnpm biome check)?"
+    - "All new files in kebab-case?"
+    - "No console.log / console.debug / eprintln! (Logger only)?"
+    - "New async ops, state transitions, external calls have Logger.debug?"
+    - "Named imports used — no new default exports?"
+    - "No unguarded `any` or `!` assertions?"
+    - "Error handling only at system boundaries?"
+    - "Logger import path correct relative to the file's location?"
+
+# ─── Dimension 3: Development Process Compliance ──────────────
+
+process:
+  description: "Issue-driven development rules were followed end to end"
+
+  issue_traceability:
+    rule: "Every commit references a GitHub Issue (#N) — no untracked changes"
+    format: "<type>(<scope>): <description> (#N)"
+    exceptions: ["merge commits", "initial repository setup"]
+
+  tdd_compliance:
+    rule: "Test written before implementation (RED → GREEN → REFACTOR)"
+    evidence: "Test file committed before or in same commit as implementation"
+    anti_pattern: "Writing tests after the fact to hit coverage"
+
+  review_rigor:
+    rule: "TWO consecutive clean passes before marking review done"
+    evidence: "progress file review_evidence[] has ≥2 entries for the current phase"
+    note: "Gate approval recording does not exempt from the two-pass requirement"
+
+  gate_compliance:
+    required_gates: ["understand", "scope", "plan", "sync", "close"]
+    note: "close gate requires user confirmation before issue is closed — do not auto-close"
+    evidence: "progress file gate_approvals{} has all five entries before final commit"
+    skip_phases: "research_artifact and annotation_cycle may be skipped with documented justification"
+
+  context_sync:
+    rule: "Any change to .agents/ files must propagate to .users/ mirror (and .users/ko/ if applicable)"
+    trigger: "cascade-check hook reminds on .agents/ Edit/Write"
+
+  branch_discipline:
+    naming: "issue-{N}-{short-desc}"
+    target: "PR targets `dev` branch — NOT `main` directly"
+    flow: "feature → dev (PR) → main (periodic release merge)"
+    max_divergence: "2 weeks without rebasing from main"
+    isolation: "worktree for concurrent work, branch for solo work"
+
+  checklist:
+    - "All commits reference a GitHub Issue (#N)?"
+    - "Tests written before (or alongside) implementation?"
+    - "All five gate approvals (understand/scope/plan/sync/close) recorded in progress file?"
+    - "PR targets `dev` branch, not `main`?"
+    - "Context sync done (.agents/ changes reflected in .users/)?"
+    - "No zombie code from previous implementation (knip clean)?"
+    - "No unused imports / functions / files?"
+    - "TODO comments have issue number attached?"
+
+# ─── Dimension 4: Security Threats ───────────────────────────
+
+security:
+  description: "Actual threat evaluation — not just checklist pass"
+  note: "For any finding severity >= medium, trigger adversarial cross-review"
+
+  threat_model:
+    system: "Tauri 2 desktop app — local execution + external channel input (Discord, Telegram)"
+    trust_boundaries:
+      shell_frontend: "trusted (local user code)"
+      tauri_events_from_gateway: "semi-trusted"
+      gateway_to_agent_stdio: "semi-trusted — gateway process could be compromised"
+      external_channel_input: "untrusted (Discord messages, webhooks)"
+      panel_code: "untrusted until reviewed — panels are user-installed"
+
+  threats:
+    ipc_injection:
+      description: "Malicious payload via Tauri listen() exploiting missing runtime validation"
+      vector: "External channel message → gateway → Tauri emit → shell uses event.payload without runtime type guard"
+      severity: high
+      mitigation: "Runtime type guard (zod, manual check, typeof) on ALL event.payload — TypeScript generic alone is not sufficient"
+      check: "Grep for listen( — verify each handler has runtime validation, not just TypeScript generic"
+
+    tool_request_tier_bypass:
+      description: "Direct tool_request stdio message bypasses permission tier gate entirely"
+      vector: "Any code path that writes a tool_request JSON line to agent stdin executes the tool without needsApproval() check"
+      severity: high
+      mitigation: "Apply the same tier gate to tool_request messages as to LLM tool calls"
+      check: "handleToolRequest in agent/src/index.ts — does it call needsApproval() before executeTool()?"
+
+    panel_install_rce:
+      description: "panel_install executes git clone from unvalidated source URL, enabling RCE"
+      vector: "panel_install with source: 'file:///attacker/malicious-panel' or git@ URL clones and executes arbitrary code in WebView"
+      severity: high
+      mitigation: "Restrict source to HTTPS only; block file:// scheme; validate URL against allowlist"
+      check: "panel.ts panel_install handler — source URL validated to https:// only?"
+
+    asset_protocol_filesystem_read:
+      description: "assetProtocol scope '**' grants full filesystem read to WebView"
+      vector: "XSS via unsanitized LLM output → fetch('asset:///home/user/.naia/credentials/...') → exfiltrate to discord.com webhook"
+      severity: high
+      mitigation: "Restrict scope to minimum required paths (e.g., ~/.naia/panels/**, ~/.naia/avatars/**)"
+      check: "tauri.conf.json assetProtocol.scope — '**' is categorically unacceptable"
+
+    csp_exfiltration_sink:
+      description: "connect-src includes discord.com — complete XSS-to-exfiltration chain"
+      vector: "XSS reads any file via asset protocol, POSTs to discord.com/api/webhooks/ATTACKER_ID/TOKEN — all permitted by CSP"
+      severity: high
+      mitigation: "Remove discord.com from connect-src; route Discord calls through gateway (localhost:18789)"
+      check: "Is discord.com in connect-src? If so, can it be moved to gateway-side?"
+
+    webhook_credentials_in_stdio:
+      description: "slackWebhookUrl, discordWebhookUrl sent as plaintext over stdio on every request"
+      vector: "Any process reading the agent's stdio pipe (or /proc/$PID/environ) receives full webhook credentials"
+      severity: high
+      mitigation: "Store webhook URLs in credential store; retrieve at agent startup; never transmit per-request"
+      check: "ChatRequest / ToolRequest in protocol.ts — no credential fields transmitted per-request?"
+
+    csp_bypass:
+      description: "Injected content loading external scripts or exfiltrating data via misconfigured CSP"
+      vector: "XSS via unsanitized LLM output rendered as innerHTML / dangerouslySetInnerHTML"
+      severity: high
+      mitigation: "CSP script-src 'self'; never render LLM output as raw HTML"
+      check: "Grep for innerHTML and dangerouslySetInnerHTML — verify sanitization"
+
+    credential_exposure_in_logs:
+      description: "API keys appearing in logs, errors, or audit records"
+      vector: "Logger.info accidentally includes naiaKey / apiKey in structured payload"
+      severity: high
+      mitigation: "Never pass credential fields to Logger; mask with *** in display"
+      check: "Grep for naiaKey|apiKey|token in Logger calls"
+
+    panel_tool_tier_injection:
+      description: "PanelToolDescriptor.tier field is attacker-controlled — malicious panel claims tier:0"
+      vector: "Malicious panel sends panel_skills with destructive tool at tier:0 → auto-executes without approval"
+      severity: medium
+      mitigation: "Panel tool tiers validated at install time (panel.json); enforce minimum floor at runtime"
+      check: "panel_skills handler — tier validated against pre-approved list, not trusted from message?"
+
+    gateway_agent_injection:
+      description: "Compromised gateway injects malicious tool calls via agent stdin"
+      vector: "Gateway process (semi-trusted) sends crafted tool_request to agent stdin; executes arbitrary tools"
+      severity: medium
+      mitigation: "All messages from gateway validated as schema-conformant; tier gate applied regardless of source"
+      check: "stdio parser — validates message schema, not just type field?"
+
+    permission_tier_bypass:
+      description: "New tool added without explicit tier assignment — defaults to unrestricted"
+      vector: "New tool definition missing permission_tier → defaults to lowest tier, executes without prompt"
+      severity: high
+      mitigation: "All tool definitions must declare permission_tier explicitly"
+      check: "Grep for new tool registrations — verify tier field present"
+
+    prompt_injection:
+      description: "External content hijacks LLM behavior"
+      vector: "User pastes adversarial content OR sub-agent summarizes a document containing injected instructions"
+      severity: medium
+      mitigation: "Clearly demarcate external content in system prompt; sub-agents must not auto-approve Tier 2+ actions"
+      check: "LLM system message changes reviewed for injection surface; sub-agent approval path reviewed"
+
+    path_traversal:
+      description: "File operation escaping user sandbox via relative path"
+      vector: "skill_file_read with ../../etc/passwd; execute_command bypass via 'bash -c rm -rf /'"
+      severity: high
+      note: "Regex denylist on execute_command is defense-in-depth only — Podman sandbox is the mandatory control"
+      mitigation: "Resolve + validate all paths within ~/; execute_command must run in Podman container"
+      check: "File skill implementations reviewed for path validation; execute_command uses Podman when container mode enabled?"
+
+    auto_update_supply_chain:
+      description: "Malicious update binary served via compromised CDN or DNS MITM"
+      vector: "Update fetched from GitHub CDN over HTTPS without pinning — minisign is only backstop"
+      severity: medium
+      mitigation: "Minisign private key stored offline; update server URL not changed without deliberate decision"
+      check: "pubkey in tauri.conf.json — matches known key? updater endpoint not changed?"
+
+    tauri_asset_protocol_scope:
+      description: "Overly broad assetProtocol.scope exposes unintended files (see asset_protocol_filesystem_read)"
+      severity: high
+      note: "Elevated from medium to high — ~/.naia/credentials/ is within scope of '**'"
+
+    config_file_tampering:
+      description: "Malicious panel overwrites ~/.naia/memory-config.json to redirect API calls"
+      vector: "Tier 1 panel install writes memory-config.json with attacker embeddingBaseUrl → all memory content exfiltrated"
+      severity: medium
+      mitigation: "Strictly validate config schemas on read; security-sensitive URLs not modifiable by installed panels"
+      check: "buildMemorySystem() or equivalent — validates config against strict schema?"
+
+  checklist:
+    - "All Tauri event.payload validated at boundary with RUNTIME type guard (not just TypeScript generic)?"
+    - "handleToolRequest applies needsApproval() before executeTool()?"
+    - "panel_install source URL restricted to HTTPS only (file:// blocked)?"
+    - "assetProtocol.scope does NOT contain '**' (restricted to minimum required paths)?"
+    - "discord.com not in connect-src (or explicitly justified with no gateway alternative)?"
+    - "No credential fields (webhook URLs, API keys) transmitted per-request over stdio?"
+    - "No innerHTML / dangerouslySetInnerHTML with unsanitized content?"
+    - "No credential fields in Logger calls?"
+    - "All new tools declare explicit permission_tier?"
+    - "LLM system prompt changes reviewed for injection surface?"
+    - "All file operations validate path within sandbox?"
+    - "execute_command uses Podman sandbox when container mode enabled?"
+    - "Panel tool tiers validated at install time, not accepted dynamically?"
+    - "Dev gateway URLs not present in production tauri.conf.json?"
+    - "External channel input (Discord/Telegram) limited to Tier 0-1?"
+    - "Deep-link handler validates all URL parameters as untrusted input?"
+
+# ─── Dimension 5: Practical Tests ────────────────────────────
+
+testing:
+  description: "Tests actually cover intended behavior — quality over coverage metrics"
+
+  test_quality_rule:
+    steps:
+      - "Write test → review assertions (correct targets? edge cases? strict enough?)"
+      - "Fix issues found → re-review → TWO consecutive clean passes on test code"
+      - "Only then run the test"
+      - "After pass: confirm test validates intended behavior, not just implementation detail"
+    anti_patterns:
+      - "Loosening assertions (=== to includes, removing checks) to make test pass"
+      - "Mocking the module being tested"
+      - "Testing implementation details instead of observable behavior"
+      - "Marking 'tests pass' without reading what they actually verified"
+
+  when_untestable:
+    rule: "If E2E cannot run (missing API key / hardware / gateway), the item is DEFERRED, not PASS"
+    process:
+      - "Document the blocker in progress file blockers[] with specific reason"
+      - "Link the skipped E2E path explicitly"
+      - "Mark item as DEFERRED in review_evidence[] — never mark as PASS without running"
+      - "DEFERRED items must be re-run and pass before PR merge approval"
+    reminder: "AI agent or contributor inability to run E2E does not exempt the feature from E2E coverage"
+
+  required_coverage_per_type:
+    ui_component:
+      - "Renders without crash (happy path)"
+      - "User interaction produces expected state change"
+      - "Edge cases: empty state, loading state, error state"
+    agent_tool:
+      - "Happy path: correct output for valid input"
+      - "Permission tier rejection for unauthorized caller"
+      - "Error / timeout handling"
+    gateway_skill:
+      - "Route dispatch: correct handler invoked for skill name"
+      - "Channel isolation: one channel does not affect another"
+    bgm_player:
+      - "Audio context created/resumed on user gesture (not on mount) — autoplay policy"
+      - "play() promise resolved before setPlaying(true) — no premature state update"
+      - "State: playing → paused → playing produces no audible glitch"
+      - "Panel hide (Ctrl+B) does not kill BGM if global audio node is used"
+      - "Track switch via playNext/playPrev does not double-assign audio.src"
+    shell_startup:
+      - "App launches → splash visible immediately"
+      - "Splash dismissal is gated on real readiness signal + minDuration floor (not timer alone)"
+      - "ADK setup path: splash stays until AdkSetupScreen completes (no isReady deadlock)"
+      - "Onboarding path: splash stays until onboarding completes (no isReady deadlock)"
+      - "VRM load failure: splash has timeout fallback — never hangs indefinitely"
+      - "Background video swap (null → URL) not visible during splash coverage"
+
+  e2e_critical_paths:
+    - "Fresh install (ADK not initialized): App launch → splash → ADK setup screen"
+    - "First run after ADK setup: App launch → splash → onboarding wizard"
+    - "Returning user: App launch → splash → main UI (no white flash)"
+    - "Chat message sent → LLM response received (streaming)"
+    - "Tool execution → permission prompt displayed → result returned"
+    - "Panel switch → skills updated → previous non-keepAlive panel skills cleared"
+    - "Settings change → config persisted → app reload reflects change"
+    - "Layout resize (drag naia-panel) → width persisted to config → reload restores width"
+    - "BGM play → panel switch → return to naia panel → still playing"
+
+  performance_criteria:
+    definition_of_jank: "Frame drop below 60 fps during user interaction — measurable with DevTools Performance tab"
+    specific_checks:
+      layout_resize: "onResizeStart pointermove does not batch-setState without RAF — max one setState per animation frame"
+      background_video: "<video> element load does not block main thread (no synchronous decode)"
+      bgm_state_change: "Audio state change does not trigger full component tree re-render"
+      avatar_render: "Three.js animation loop does not compete with backdrop-filter GPU compositing"
+    tool: "Chrome DevTools Performance tab via Tauri WebView inspector, or FPS overlay"
+
+  commands:
+    unit: "pnpm test:unit"
+    integration: "pnpm test:integration"
+    e2e: "cd shell && pnpm run test:e2e:tauri"
+    all: "pnpm test"
+
+  checklist:
+    - "Tests added for every new behavior?"
+    - "Assertions are strict — not includes/contains when exact match is possible?"
+    - "Edge cases covered: empty, null, error, timeout?"
+    - "E2E tests run on real running app (or DEFERRED with documented blocker)?"
+    - "Test code itself reviewed for correctness (two clean passes)?"
+    - "No tests skipped without documented justification?"
+    - "Coverage targets met (agent_core 80%, shell 70%, gateway 80%)?"
+    - "BGM player autoplay policy test: audio context created on user gesture?"
+    - "Splash readiness gate test: VRM failure → splash times out (not hangs)?"
+
+# ─── Dimension 6: Requirements Conformance ───────────────────
+
+requirements:
+  description: "Implementation solves what the user actually needed — not just what was coded"
+
+  levels:
+    functional: "Does the feature do what the Issue specified?"
+    behavioral: "Does it behave correctly from a user's perspective?"
+    experiential: "Does it feel right? (UX, performance, visual polish)"
+    non_regression: "Does it break or degrade anything that was working before?"
+
+  ux_criteria:
+    description: "For all shell UI changes — visual and interaction quality"
+    applies_to:
+      - "Splash screen transitions"
+      - "Layout changes (panel resize, panel switch)"
+      - "Animations and fades"
+      - "Avatar canvas rendering"
+      - "BGM player state changes"
+      - "Background video (null → loaded swap)"
+    checks:
+      - "No visible flash or flicker during state transitions"
+      - "Splash dismissal gated on real readiness signal — fixed timer alone is not acceptable as gate"
+      - "Splash fade CSS transition duration matches the JS timer gap (e.g., 500ms CSS = 500ms timer)"
+      - "Animations complete before next state appears (no overlap)"
+      - "Loading states covered — spinner or skeleton when content is pending"
+      - "Error states handled visually — not just console.error"
+      - "Background video swap (null → URL) invisible during splash coverage"
+      - "Background video load failure handled gracefully (fallback div shown, no broken video element)"
+      - "Window resize does not break layout"
+      - "Dark background maintained throughout entire startup sequence"
+
+  definition_of_done:
+    - "Re-read original Issue — all acceptance criteria met"
+    - "User-visible outcome achievable without manual workaround"
+    - "No regression: existing features still work"
+    - "UX criteria met for all UI changes"
+    - "Performance: no new jank (< 60 fps drop), no new main-thread blocking calls"
+    - "Side effects documented in progress file if any exist"
+
+  checklist:
+    - "Original Issue re-read — all acceptance criteria met?"
+    - "User-visible outcome achievable end-to-end without manual workaround?"
+    - "No regression: existing features still work?"
+    - "Splash dismissal gated on real readiness signal (not fixed timer only)?"
+    - "UX: no flash, animations complete, loading + error states handled?"
+    - "Background video + BGM player edge cases handled (null state, load failure, panel hide)?"
+    - "No new blocking calls on main thread (React rendering, Tauri IPC)?"
+    - "Performance: no jank during resize or animation — verified with DevTools?"
+    - "Side effects documented if any?"
+
+# ─── Cross-Review (Adversarial) Invocation ───────────────────
+
+cross_review:
+  skill: "/cross-review"
+  description: "Multi-agent adversarial review — independent reviewers, cross-check, vote"
+
+  mandatory_triggers:
+    - "Any security dimension finding with severity >= medium"
+    - "New Tauri IPC command or listen() handler added"
+    - "Architecture boundary change — new cross-layer communication path"
+    - "New URL added to CSP connect-src"
+    - "LLM system prompt or persona message changed"
+    - "Permission model change — new tier assignment or new tool"
+    - "panel_install source validation changed"
+    - "assetProtocol scope changed"
+
+  recommended_triggers:
+    - "Feature touching all three layers (shell + agent + gateway)"
+    - "New panel registration (especially keepAlive)"
+    - "Major UI flow change (splash, onboarding, layout redesign)"
+    - "Any change to credential storage or transmission"
+
+  profiles:
+    architecture:
+      focus: "Layer boundary violations, communication contract compliance, backward compatibility, panel invariants"
+    security:
+      focus: "IPC injection, credentials, CSP, permission tier, path traversal, stdio protocol, supply chain"
+    code:
+      focus: "Convention compliance, logging coverage, test quality, type safety"
+    requirements:
+      focus: "User story satisfaction, UX correctness, non-regression, performance"
+    process:
+      focus: "Gate compliance, branch discipline, context sync, commit traceability"
+    testing:
+      focus: "Test coverage completeness, E2E critical path coverage, test code correctness"
+
+  outcome:
+    rule: "Any single profile returning FAIL = overall FAIL"
+    pass: "All profiles: no medium/high findings"
+    conditional: "Low findings only across all profiles — fix before merge, no re-review needed"
+    fail: "Any medium/high finding from any profile — fix + re-run cross-review"
+    fallback_when_unavailable:
+      rule: "If /cross-review skill fails to spawn, human review is required for mandatory triggers"
+      minimum: "At least two humans review the security and architecture dimensions"
+      do_not: "Do not self-certify and merge without review when cross-review is unavailable"

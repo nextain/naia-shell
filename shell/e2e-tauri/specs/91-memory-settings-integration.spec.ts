@@ -91,13 +91,18 @@ async function clickRadio(name: string, value: string): Promise<void> {
 		() =>
 			browser.execute(
 				(n: string, v: string) =>
-					!!(document.querySelector(
-						`input[name="${n}"][value="${v}"]`,
-					) as HTMLInputElement | null)?.checked,
+					!!(
+						document.querySelector(
+							`input[name="${n}"][value="${v}"]`,
+						) as HTMLInputElement | null
+					)?.checked,
 				name,
 				value,
 			),
-		{ timeout: 3_000, timeoutMsg: `Radio ${name}=${value} not checked after click` },
+		{
+			timeout: 3_000,
+			timeoutMsg: `Radio ${name}=${value} not checked after click`,
+		},
 	);
 }
 
@@ -105,9 +110,11 @@ async function clickRadio(name: string, value: string): Promise<void> {
 async function isRadioChecked(name: string, value: string): Promise<boolean> {
 	return browser.execute(
 		(n: string, v: string) =>
-			!!(document.querySelector(
-				`input[name="${n}"][value="${v}"]`,
-			) as HTMLInputElement | null)?.checked,
+			!!(
+				document.querySelector(
+					`input[name="${n}"][value="${v}"]`,
+				) as HTMLInputElement | null
+			)?.checked,
 		name,
 		value,
 	);
@@ -158,7 +165,9 @@ async function forceProviderConfig(): Promise<void> {
 		(geminiKey: string, naiaKey: string) => {
 			const existing = (() => {
 				try {
-					return JSON.parse(localStorage.getItem("naia-config") ?? "null") ?? {};
+					return (
+						JSON.parse(localStorage.getItem("naia-config") ?? "null") ?? {}
+					);
 				} catch {
 					return {};
 				}
@@ -200,7 +209,10 @@ async function forceProviderConfig(): Promise<void> {
 				(sel: string) => !!document.querySelector(sel),
 				S.settingsTabBtn,
 			),
-		{ timeout: 15_000, timeoutMsg: "Settings tab not found after forceProviderConfig" },
+		{
+			timeout: 15_000,
+			timeoutMsg: "Settings tab not found after forceProviderConfig",
+		},
 	);
 	await browser.waitUntil(
 		() =>
@@ -243,7 +255,9 @@ describe("91 — Memory Settings Integration", () => {
 
 	before(async () => {
 		// Save original config so we can restore it after the spec (spec 89 pattern)
-		originalNaiaConfig = await browser.execute(() => localStorage.getItem("naia-config"));
+		originalNaiaConfig = await browser.execute(() =>
+			localStorage.getItem("naia-config"),
+		);
 	});
 
 	after(async () => {
@@ -310,15 +324,17 @@ describe("91 — Memory Settings Integration", () => {
 			const miniLM = await $(S.memoryOfflineModelMiniLM);
 			await miniLM.waitForDisplayed({ timeout: 5_000 });
 			expect(await miniLM.isDisplayed()).toBe(true);
-			expect(await (await $(S.memoryOfflineModelMpnet)).isDisplayed()).toBe(true);
+			expect(await (await $(S.memoryOfflineModelMpnet)).isDisplayed()).toBe(
+				true,
+			);
 			await clickRadio("memory-embedding", "none");
 		});
 
 		it("should show vLLM URL + model fields when vllm selected", async () => {
 			await clickRadio("memory-embedding", "vllm");
-			await ($(S.memoryEmbeddingBaseUrl)).waitForDisplayed({ timeout: 5_000 });
-			expect(await ($(S.memoryEmbeddingBaseUrl)).isDisplayed()).toBe(true);
-			expect(await ($(S.memoryEmbeddingModel)).isDisplayed()).toBe(true);
+			await $(S.memoryEmbeddingBaseUrl).waitForDisplayed({ timeout: 5_000 });
+			expect(await $(S.memoryEmbeddingBaseUrl).isDisplayed()).toBe(true);
+			expect(await $(S.memoryEmbeddingModel).isDisplayed()).toBe(true);
 			await clickRadio("memory-embedding", "none");
 		});
 
@@ -338,11 +354,16 @@ describe("91 — Memory Settings Integration", () => {
 		it("should render backup section with password input and export/import buttons", async () => {
 			// Scroll to backup section (search by placeholder — Korean: "백업 비밀번호", English: "Backup password")
 			await browser.execute(() => {
-				const inputs = Array.from(document.querySelectorAll("input[type='password']")) as HTMLInputElement[];
+				const inputs = Array.from(
+					document.querySelectorAll("input[type='password']"),
+				) as HTMLInputElement[];
 				const pw = inputs.find((el) => {
 					const ph = el.placeholder;
 					// \ube44\ubc00\ubc88\ud638 = 비밀번호 (비=BE44, 밀=BC00, 번=BC88, 호=D638)
-					return ph.toLowerCase().includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638");
+					return (
+						ph.toLowerCase().includes("password") ||
+						ph.includes("\ube44\ubc00\ubc88\ud638")
+					);
 				});
 				if (pw) pw.scrollIntoView({ block: "center" });
 			});
@@ -350,7 +371,9 @@ describe("91 — Memory Settings Integration", () => {
 
 			// Find export/import buttons by text content
 			const buttons = await browser.execute(() => {
-				const btns = Array.from(document.querySelectorAll("button")) as HTMLButtonElement[];
+				const btns = Array.from(
+					document.querySelectorAll("button"),
+				) as HTMLButtonElement[];
 				return {
 					hasExport: btns.some((b) =>
 						/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
@@ -362,7 +385,10 @@ describe("91 — Memory Settings Integration", () => {
 						document.querySelectorAll("input[type='password']"),
 					).some((el) => {
 						const ph = (el as HTMLInputElement).placeholder;
-						return ph.toLowerCase().includes("password") || ph.includes("\ube44\ubc00\ubc88\ud638");
+						return (
+							ph.toLowerCase().includes("password") ||
+							ph.includes("\ube44\ubc00\ubc88\ud638")
+						);
 					}),
 				};
 			});
@@ -422,8 +448,14 @@ describe("91 — Memory Settings Integration", () => {
 		it("should write memoryLlmProvider=vllm to memory-config.json", async () => {
 			await clickRadio("memory-llm", "vllm");
 			await browser.pause(300);
-			await setNativeValue('input[placeholder="http://localhost:8000"]', "http://localhost:8001");
-			await setNativeValue('input[placeholder="minicpm-4.5-omni"]', "test-model");
+			await setNativeValue(
+				'input[placeholder="http://localhost:8000"]',
+				"http://localhost:8001",
+			);
+			await setNativeValue(
+				'input[placeholder="minicpm-4.5-omni"]',
+				"test-model",
+			);
 			await clickSave();
 
 			const config = await waitForConfigCondition(
@@ -454,7 +486,11 @@ describe("91 — Memory Settings Integration", () => {
 							return false;
 						}
 					}),
-				{ timeout: 3_000, timeoutMsg: "memoryEmbeddingProvider=offline not saved to localStorage" },
+				{
+					timeout: 3_000,
+					timeoutMsg:
+						"memoryEmbeddingProvider=offline not saved to localStorage",
+				},
 			);
 
 			const saved = await browser.execute(() => {
@@ -485,14 +521,17 @@ describe("91 — Memory Settings Integration", () => {
 					browser.execute(() => {
 						try {
 							return (
-								JSON.parse(localStorage.getItem("naia-config") ?? "")?.memoryEmbeddingProvider ===
-								"offline"
+								JSON.parse(localStorage.getItem("naia-config") ?? "")
+									?.memoryEmbeddingProvider === "offline"
 							);
 						} catch {
 							return false;
 						}
 					}),
-				{ timeout: 3_000, timeoutMsg: "memoryEmbeddingProvider=offline not in localStorage" },
+				{
+					timeout: 3_000,
+					timeoutMsg: "memoryEmbeddingProvider=offline not in localStorage",
+				},
 			);
 
 			// Confirm saved to localStorage first
@@ -526,7 +565,10 @@ describe("91 — Memory Settings Integration", () => {
 
 			await browser.waitUntil(
 				() => isRadioChecked("memory-offline-model", "all-mpnet-base-v2"),
-				{ timeout: 5_000, timeoutMsg: "memory-offline-model=all-mpnet-base-v2 not restored" },
+				{
+					timeout: 5_000,
+					timeoutMsg: "memory-offline-model=all-mpnet-base-v2 not restored",
+				},
 			);
 
 			// Revert
@@ -545,129 +587,137 @@ describe("91 — Memory Settings Integration", () => {
 	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
 		"3) Memory storage and recall (same session)",
 		() => {
-		before(async () => {
-			// Force gemini so LLM calls work regardless of real user config
-			await forceProviderConfig();
-			await clickBySelector(S.chatTab);
-			const chatInput = await $(S.chatInput);
-			await chatInput.waitForEnabled({ timeout: 15_000 });
-		});
+			before(async () => {
+				// Force gemini so LLM calls work regardless of real user config
+				await forceProviderConfig();
+				await clickBySelector(S.chatTab);
+				const chatInput = await $(S.chatInput);
+				await chatInput.waitForEnabled({ timeout: 15_000 });
+			});
 
-		it("should acknowledge storing user preference (TypeScript)", async () => {
-			await sendMessage(
-				"\ub0b4 \uac00\uc7a5 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\ub294 TypeScript\uc57c. \uae30\uc5b5\ud574\uc918.",
-			);
-			const resp = await getLastAssistantMessage();
-			await assertSemanticWithRetry(
-				resp,
-				"\ub0b4 \uac00\uc7a5 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\ub294 TypeScript\uc57c. \uae30\uc5b5\ud574\uc918.",
-				"AI\uac00 TypeScript \uc120\ud638 \uc815\ubcf4\ub97c \ubc1b\uc544\ub4e4\uc774\uace0 \uae30\uc5b5\ud558\uaca0\ub2e4\uace0 \uc751\ub2f5\ud588\ub294\uac00? \uc5d0\ub7ec \ub514\uc2a4\ucf54\ub4dc \uba54\uc2dc\uc9c0\ub098 \ube48 \uc751\ub2f5\uc740 FAIL",
-			);
-		});
+			it("should acknowledge storing user preference (TypeScript)", async () => {
+				await sendMessage(
+					"\ub0b4 \uac00\uc7a5 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\ub294 TypeScript\uc57c. \uae30\uc5b5\ud574\uc918.",
+				);
+				const resp = await getLastAssistantMessage();
+				await assertSemanticWithRetry(
+					resp,
+					"\ub0b4 \uac00\uc7a5 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\ub294 TypeScript\uc57c. \uae30\uc5b5\ud574\uc918.",
+					"AI\uac00 TypeScript \uc120\ud638 \uc815\ubcf4\ub97c \ubc1b\uc544\ub4e4\uc774\uace0 \uae30\uc5b5\ud558\uaca0\ub2e4\uace0 \uc751\ub2f5\ud588\ub294\uac00? \uc5d0\ub7ec \ub514\uc2a4\ucf54\ub4dc \uba54\uc2dc\uc9c0\ub098 \ube48 \uc751\ub2f5\uc740 FAIL",
+				);
+			});
 
-		it("should recall the preference in follow-up (same session)", async () => {
-			await sendMessage("\ub0b4\uac00 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\uac00 \ubb50\ub77c\uace0 \ud588\uc9c0?");
-			const resp = await getLastAssistantMessage();
-			await assertSemanticWithRetry(
-				resp,
-				"\ub0b4\uac00 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\uac00 \ubb50\ub77c\uace0 \ud588\uc9c0?",
-				"AI\uac00 \uc774\uc804 \ub300\ud654\uc5d0\uc11c \uc5b8\uae09\ud55c 'TypeScript'\ub97c \uba85\uc2dc\ud588\ub294\uac00? TypeScript\uac00 \ub2f5\ubcc0\uc5d0 \uc788\uc73c\uba74 PASS",
-			);
-		});
+			it("should recall the preference in follow-up (same session)", async () => {
+				await sendMessage(
+					"\ub0b4\uac00 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\uac00 \ubb50\ub77c\uace0 \ud588\uc9c0?",
+				);
+				const resp = await getLastAssistantMessage();
+				await assertSemanticWithRetry(
+					resp,
+					"\ub0b4\uac00 \uc88b\uc544\ud558\ub294 \ud504\ub85c\uadf8\ub798\ubc0d \uc5b8\uc5b4\uac00 \ubb50\ub77c\uace0 \ud588\uc9c0?",
+					"AI\uac00 \uc774\uc804 \ub300\ud654\uc5d0\uc11c \uc5b8\uae09\ud55c 'TypeScript'\ub97c \uba85\uc2dc\ud588\ub294\uac00? TypeScript\uac00 \ub2f5\ubcc0\uc5d0 \uc788\uc73c\uba74 PASS",
+				);
+			});
 
-		it("should store user identity and integrate multi-turn context", async () => {
-			await sendMessage("\ub0b4 \uc774\ub984\uc740 Luke\uc774\uace0, \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790\uc57c.");
-			const resp1 = await getLastAssistantMessage();
-			await assertSemanticWithRetry(
-				resp1,
-				"\ub0b4 \uc774\ub984\uc740 Luke\uc774\uace0, \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790\uc57c.",
-				"AI\uac00 Luke\uc640 \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790 \uc815\ubcf4\ub97c \ubc1b\uc544\ub4e4\uc774\uace0 \uc5d0\ub7ec \uc5c6\uc774 \uc751\ub2f5\ud588\ub294\uac00?",
-			);
+			it("should store user identity and integrate multi-turn context", async () => {
+				await sendMessage(
+					"\ub0b4 \uc774\ub984\uc740 Luke\uc774\uace0, \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790\uc57c.",
+				);
+				const resp1 = await getLastAssistantMessage();
+				await assertSemanticWithRetry(
+					resp1,
+					"\ub0b4 \uc774\ub984\uc740 Luke\uc774\uace0, \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790\uc57c.",
+					"AI\uac00 Luke\uc640 \ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790 \uc815\ubcf4\ub97c \ubc1b\uc544\ub4e4\uc774\uace0 \uc5d0\ub7ec \uc5c6\uc774 \uc751\ub2f5\ud588\ub294\uac00?",
+				);
 
-			// Multi-turn: both pieces of info should be available
-			await sendMessage(
-				"\ub0b4 \uc774\ub984\uc774 \ubb50\uace0, \ubb50\ud558\ub294 \uc0ac\ub78c\uc774\ub77c\uace0 \ud588\uc9c0?",
-			);
-			const resp2 = await getLastAssistantMessage();
-			await assertSemanticWithRetry(
-				resp2,
-				"\ub0b4 \uc774\ub984\uc774 \ubb50\uace0, \ubb50\ud558\ub294 \uc0ac\ub78c\uc774\ub77c\uace0 \ud588\uc9c0?",
-				"AI\uac00 \uc774\ub984 'Luke'\uc640 \uc9c1\uc5c5 '\ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790' \ub97c \ub2f5\ubcc0\uc5d0 \ud3ec\ud568\ud588\ub294\uac00? \ub458 \ub2e4 \uc788\uc73c\uba74 PASS",
-			);
-		});
-	});
+				// Multi-turn: both pieces of info should be available
+				await sendMessage(
+					"\ub0b4 \uc774\ub984\uc774 \ubb50\uace0, \ubb50\ud558\ub294 \uc0ac\ub78c\uc774\ub77c\uace0 \ud588\uc9c0?",
+				);
+				const resp2 = await getLastAssistantMessage();
+				await assertSemanticWithRetry(
+					resp2,
+					"\ub0b4 \uc774\ub984\uc774 \ubb50\uace0, \ubb50\ud558\ub294 \uc0ac\ub78c\uc774\ub77c\uace0 \ud588\uc9c0?",
+					"AI\uac00 \uc774\ub984 'Luke'\uc640 \uc9c1\uc5c5 '\ubc31\uc5d4\ub4dc \uac1c\ubc1c\uc790' \ub97c \ub2f5\ubcc0\uc5d0 \ud3ec\ud568\ud588\ub294\uac00? \ub458 \ub2e4 \uc788\uc73c\uba74 PASS",
+				);
+			});
+		},
+	);
 
 	// ── Suite 4: Cross-session memory recall ────────────────────────────────────
 	// Requires GEMINI_KEY (for semantic judge). Skip when only NAIA_KEY is set.
 	(CAN_RUN_CHAT_SUITES ? describe : describe.skip)(
 		"4) Cross-session memory recall (new conversation)",
 		() => {
-		before(async () => {
-			await forceProviderConfig();
-			await clickBySelector(S.chatTab);
-			const chatInput = await $(S.chatInput);
-			await chatInput.waitForEnabled({ timeout: 15_000 });
-		});
+			before(async () => {
+				await forceProviderConfig();
+				await clickBySelector(S.chatTab);
+				const chatInput = await $(S.chatInput);
+				await chatInput.waitForEnabled({ timeout: 15_000 });
+			});
 
-		it("should store a memorable fact in conversation 1", async () => {
-			await sendMessage(
-				"\ub0b4 \uc0dd\uc77c\uc740 3\uc6d4 15\uc77c\uc774\uc57c. \uae30\uc5b5\ud574\uc918.",
-			);
-			const resp = await getLastAssistantMessage();
-			await assertSemanticWithRetry(
-				resp,
-				"\ub0b4 \uc0dd\uc77c\uc740 3\uc6d4 15\uc77c\uc774\uc57c. \uae30\uc5b5\ud574\uc918.",
-				"AI\uac00 3\uc6d4 15\uc77c \uc0dd\uc77c\uc744 \uc778\uc9c0\ud558\uace0 \uae30\uc5b5\ud558\uaca0\ub2e4\uace0 \uc751\ub2f5\ud588\ub294\uac00?",
-			);
-		});
+			it("should store a memorable fact in conversation 1", async () => {
+				await sendMessage(
+					"\ub0b4 \uc0dd\uc77c\uc740 3\uc6d4 15\uc77c\uc774\uc57c. \uae30\uc5b5\ud574\uc918.",
+				);
+				const resp = await getLastAssistantMessage();
+				await assertSemanticWithRetry(
+					resp,
+					"\ub0b4 \uc0dd\uc77c\uc740 3\uc6d4 15\uc77c\uc774\uc57c. \uae30\uc5b5\ud574\uc918.",
+					"AI\uac00 3\uc6d4 15\uc77c \uc0dd\uc77c\uc744 \uc778\uc9c0\ud558\uace0 \uae30\uc5b5\ud558\uaca0\ub2e4\uace0 \uc751\ub2f5\ud588\ub294\uac00?",
+				);
+			});
 
-		it("should start a new conversation and clear messages", async () => {
-			// Allow time for memory consolidation (off-DOM background IPC).
-			// No observable DOM event signals consolidation completion in this version;
-			// this is an intentional best-effort guard, not a timing race.
-			await browser.pause(3_000);
+			it("should start a new conversation and clear messages", async () => {
+				// Allow time for memory consolidation (off-DOM background IPC).
+				// No observable DOM event signals consolidation completion in this version;
+				// this is an intentional best-effort guard, not a timing race.
+				await browser.pause(3_000);
 
-			// Use browser.execute click — WebKitGTK returns "unsupported operation" on element.click()
-			await browser.execute((sel: string) => {
-				const btn = document.querySelector(sel) as HTMLButtonElement | null;
-				if (!btn) throw new Error(`${sel} not found`);
-				btn.click();
-			}, S.newChatBtn);
+				// Use browser.execute click — WebKitGTK returns "unsupported operation" on element.click()
+				await browser.execute((sel: string) => {
+					const btn = document.querySelector(sel) as HTMLButtonElement | null;
+					if (!btn) throw new Error(`${sel} not found`);
+					btn.click();
+				}, S.newChatBtn);
 
-			await browser.waitUntil(
-				async () => {
-					const count = await browser.execute(
-						(sel: string) => document.querySelectorAll(sel).length,
-						S.userMessage,
-					);
-					return count === 0;
-				},
-				{ timeout: 10_000, timeoutMsg: "New conversation did not clear" },
-			);
+				await browser.waitUntil(
+					async () => {
+						const count = await browser.execute(
+							(sel: string) => document.querySelectorAll(sel).length,
+							S.userMessage,
+						);
+						return count === 0;
+					},
+					{ timeout: 10_000, timeoutMsg: "New conversation did not clear" },
+				);
 
-			const chatInput = await $(S.chatInput);
-			await chatInput.waitForEnabled({ timeout: 10_000 });
+				const chatInput = await $(S.chatInput);
+				await chatInput.waitForEnabled({ timeout: 10_000 });
 
-			// Verify message list is actually empty (not just "wait timed out silently")
-			const msgCount = await browser.execute(
-				(sel: string) => document.querySelectorAll(sel).length,
-				S.userMessage,
-			);
-			expect(msgCount).toBe(0);
-		});
+				// Verify message list is actually empty (not just "wait timed out silently")
+				const msgCount = await browser.execute(
+					(sel: string) => document.querySelectorAll(sel).length,
+					S.userMessage,
+				);
+				expect(msgCount).toBe(0);
+			});
 
-		it("should recall birthday in new conversation (cross-session)", async () => {
-			await sendMessage("\ub0b4 \uc0dd\uc77c\uc774 \uc5b8\uc81c\ub77c\uace0 \ud588\uc9c0?");
-			const resp = await getLastAssistantMessage();
-			// Memory recall may or may not happen depending on consolidation timing.
-			// Minimum: no system error or empty response.
-			await assertSemanticWithRetry(
-				resp,
-				"\ub0b4 \uc0dd\uc77c\uc774 \uc5b8\uc81c\ub77c\uace0 \ud588\uc9c0?",
-				"AI\uac00 \uc5d0\ub7ec \uc5c6\uc774 \uc751\ub2f5\ud588\ub294\uac00? 3\uc6d4 15\uc77c\uc744 \ud68c\uc0c1\ud558\uba74 PASS(\ucd5c\uace0), \ubaa8\ub978\ub2e4\uace0 \ub2f5\ud574\ub3c4 PASS(\uba54\ubaa8\ub9ac \ubbf8\uc0dd\uc131 \uac00\ub2a5), \uc5d0\ub7ec\ub098 \ube48 \uc751\ub2f5\ub9cc FAIL",
-			);
-		});
-	});
+			it("should recall birthday in new conversation (cross-session)", async () => {
+				await sendMessage(
+					"\ub0b4 \uc0dd\uc77c\uc774 \uc5b8\uc81c\ub77c\uace0 \ud588\uc9c0?",
+				);
+				const resp = await getLastAssistantMessage();
+				// Memory recall may or may not happen depending on consolidation timing.
+				// Minimum: no system error or empty response.
+				await assertSemanticWithRetry(
+					resp,
+					"\ub0b4 \uc0dd\uc77c\uc774 \uc5b8\uc81c\ub77c\uace0 \ud588\uc9c0?",
+					"AI\uac00 \uc5d0\ub7ec \uc5c6\uc774 \uc751\ub2f5\ud588\ub294\uac00? 3\uc6d4 15\uc77c\uc744 \ud68c\uc0c1\ud558\uba74 PASS(\ucd5c\uace0), \ubaa8\ub978\ub2e4\uace0 \ub2f5\ud574\ub3c4 PASS(\uba54\ubaa8\ub9ac \ubbf8\uc0dd\uc131 \uac00\ub2a5), \uc5d0\ub7ec\ub098 \ube48 \uc751\ub2f5\ub9cc FAIL",
+				);
+			});
+		},
+	);
 
 	// ── Suite 5: Facts list in settings ─────────────────────────────────────────
 	describe("5) Facts list in settings", () => {
@@ -704,22 +754,23 @@ describe("91 — Memory Settings Integration", () => {
 			initialFactCount = await countFactItems();
 
 			// Check for empty-state hint (any locale: ko/en/ja/etc)
-			const hasEmpty = await browser.execute(
-				() =>
-					Array.from(document.querySelectorAll(".settings-hint")).some((el) => {
-						const text = el.textContent ?? "";
-						// Matches ko: "저장된 기억이 없습니다."
-						// Matches en: "No stored memories."
-						// Matches ja: "保存された記憶はありません。"
-						return /(facts|memories|\uae30\uc5b5|\u30e1\u30e2\u308a)/i.test(text);
-					}),
+			const hasEmpty = await browser.execute(() =>
+				Array.from(document.querySelectorAll(".settings-hint")).some((el) => {
+					const text = el.textContent ?? "";
+					// Matches ko: "저장된 기억이 없습니다."
+					// Matches en: "No stored memories."
+					// Matches ja: "保存された記憶はありません。"
+					return /(facts|memories|\uae30\uc5b5|\u30e1\u30e2\u308a)/i.test(text);
+				}),
 			);
 			// Also accept if the memory section is rendered at all (facts-list or fact-item visible)
 			const hasMemorySection = await browser.execute(
 				() =>
-					!!(document.querySelector(".facts-list") ||
+					!!(
+						document.querySelector(".facts-list") ||
 						document.querySelector(".memory-settings-section") ||
-						document.querySelector('[name="memory-adapter"]')),
+						document.querySelector('[name="memory-adapter"]')
+					),
 			);
 			expect(initialFactCount > 0 || hasEmpty || hasMemorySection).toBe(true);
 		});
@@ -765,7 +816,9 @@ describe("91 — Memory Settings Integration", () => {
 				) as HTMLInputElement[];
 				const pw = inputs.find((el) => {
 					const ph = el.placeholder.toLowerCase();
-					return ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638");
+					return (
+						ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638")
+					);
 				});
 				if (pw) pw.scrollIntoView({ block: "center" });
 			});
@@ -774,8 +827,14 @@ describe("91 — Memory Settings Integration", () => {
 
 		it("should render backup password input", async () => {
 			const hasPw = await browser.execute(() =>
-				(Array.from(document.querySelectorAll("input[type='password']")) as HTMLInputElement[]).some(
-					(el) => el.placeholder.toLowerCase().includes("password") || el.placeholder.includes("\ubc44\ubc00\ubc88\ud638"),
+				(
+					Array.from(
+						document.querySelectorAll("input[type='password']"),
+					) as HTMLInputElement[]
+				).some(
+					(el) =>
+						el.placeholder.toLowerCase().includes("password") ||
+						el.placeholder.includes("\ubc44\ubc00\ubc88\ud638"),
 				),
 			);
 			expect(hasPw).toBe(true);
@@ -783,20 +842,33 @@ describe("91 — Memory Settings Integration", () => {
 
 		it("should enable export button only after password is entered", async () => {
 			const disabledBefore = await browser.execute(() => {
-				const btns = Array.from(document.querySelectorAll("button")) as HTMLButtonElement[];
-				return btns.find((b) => /(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""))?.disabled ?? true;
+				const btns = Array.from(
+					document.querySelectorAll("button"),
+				) as HTMLButtonElement[];
+				return (
+					btns.find((b) =>
+						/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
+					)?.disabled ?? true
+				);
 			});
 			expect(disabledBefore).toBe(true);
 
 			// Fill password
 			await browser.execute(() => {
-				const inputs = Array.from(document.querySelectorAll("input[type='password']")) as HTMLInputElement[];
+				const inputs = Array.from(
+					document.querySelectorAll("input[type='password']"),
+				) as HTMLInputElement[];
 				const pw = inputs.find((el) => {
 					const ph = el.placeholder.toLowerCase();
-					return ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638");
+					return (
+						ph.includes("password") || ph.includes("\ubc44\ubc00\ubc88\ud638")
+					);
 				});
 				if (!pw) throw new Error("backup password input not found");
-				const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+				const setter = Object.getOwnPropertyDescriptor(
+					HTMLInputElement.prototype,
+					"value",
+				)?.set;
 				if (setter) setter.call(pw, "e2e-test-pw-123");
 				else pw.value = "e2e-test-pw-123";
 				pw.dispatchEvent(new Event("input", { bubbles: true }));
@@ -804,8 +876,12 @@ describe("91 — Memory Settings Integration", () => {
 			await browser.pause(300);
 
 			const enabledAfter = await browser.execute(() => {
-				const btns = Array.from(document.querySelectorAll("button")) as HTMLButtonElement[];
-				return !btns.find((b) => /(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""))?.disabled;
+				const btns = Array.from(
+					document.querySelectorAll("button"),
+				) as HTMLButtonElement[];
+				return !btns.find((b) =>
+					/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
+				)?.disabled;
 			});
 			expect(enabledAfter).toBe(true);
 		});
@@ -813,8 +889,12 @@ describe("91 — Memory Settings Integration", () => {
 		it("should trigger export and show done or error status (IPC called)", async () => {
 			// Click export
 			await browser.execute(() => {
-				const btns = Array.from(document.querySelectorAll("button")) as HTMLButtonElement[];
-				const btn = btns.find((b) => /(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""));
+				const btns = Array.from(
+					document.querySelectorAll("button"),
+				) as HTMLButtonElement[];
+				const btn = btns.find((b) =>
+					/(export|\ub0b4\ubcf4\ub0b4\uae30)/i.test(b.textContent ?? ""),
+				);
 				if (btn && !btn.disabled) btn.click();
 			});
 
@@ -825,20 +905,30 @@ describe("91 — Memory Settings Integration", () => {
 			await browser.waitUntil(
 				async () => {
 					const result = await browser.execute(() => {
-						const btns = Array.from(document.querySelectorAll("button")) as HTMLButtonElement[];
+						const btns = Array.from(
+							document.querySelectorAll("button"),
+						) as HTMLButtonElement[];
 						const exportBtn = btns.find((b) =>
-							/(export|\ub0b4\ubcf4\ub0b4\uae30|\.\.\.)/i.test(b.textContent ?? ""),
+							/(export|\ub0b4\ubcf4\ub0b4\uae30|\.\.\.)/i.test(
+								b.textContent ?? "",
+							),
 						);
 						const isInProgress = exportBtn?.textContent?.trim() === "...";
 						// Match backup-specific outcome hints only:
 						// exclude "✓ Saved" / "저장" which are settings-save hints
-						const isDone = Array.from(document.querySelectorAll(".settings-hint")).some(
+						const isDone = Array.from(
+							document.querySelectorAll(".settings-hint"),
+						).some(
 							(el) =>
 								/\u2713|done/i.test(el.textContent ?? "") &&
 								!/\bsaved\b|\uc800\uc7a5/i.test(el.textContent ?? ""),
 						);
-						const hasError = Array.from(document.querySelectorAll(".settings-hint")).some(
-							(el) => /(\bfail(ed)?\b|\berror\b|\uc624\ub958|\uc2e4\ud328)/i.test(el.textContent ?? ""),
+						const hasError = Array.from(
+							document.querySelectorAll(".settings-hint"),
+						).some((el) =>
+							/(\bfail(ed)?\b|\berror\b|\uc624\ub958|\uc2e4\ud328)/i.test(
+								el.textContent ?? "",
+							),
 						);
 						return { isInProgress, isDone, hasError };
 					});

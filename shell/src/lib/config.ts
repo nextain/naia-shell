@@ -141,6 +141,10 @@ export interface AppConfig {
 	deletedPanels?: string[];
 	/** Workspace root directory override. Defaults to the compile-time WORKSPACE_ROOT constant if not set. */
 	workspaceRoot?: string;
+	/** Filename of the selected background video inside naia-settings/background/ */
+	backgroundVideo?: string;
+	/** Filename of the selected BGM track inside naia-settings/bgm-musics/ */
+	bgmTrack?: string;
 
 	// ── Memory settings ──
 	/** Memory adapter backend. Defaults to 'local' (JSON file). */

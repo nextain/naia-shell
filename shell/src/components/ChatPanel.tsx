@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import Markdown, { type Components } from "react-markdown";
 import {
 	type RecognitionResult,
@@ -38,6 +44,7 @@ import {
 	getGatewayHistory,
 	resetGatewaySession,
 } from "../lib/gateway-sessions";
+import { restartGateway, syncToGateway } from "../lib/gateway-sync";
 import { getLocale, t } from "../lib/i18n";
 import {
 	getDefaultLlmModel,
@@ -48,7 +55,6 @@ import {
 } from "../lib/llm";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
-import { restartGateway, syncToGateway } from "../lib/gateway-sync";
 import { panelRegistry } from "../lib/panel-registry";
 import { type MemoryContext, buildSystemPrompt } from "../lib/persona";
 import {
@@ -79,21 +85,20 @@ import { usePanelStore } from "../stores/panel";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import { AgentsTab } from "./AgentsTab";
+import {
+	type AtMentionHandle,
+	AtMentionPopover,
+	type AtMentionResult,
+	isWorkspaceAvailable,
+} from "./AtMentionPopover";
 import { ChannelsTab } from "./ChannelsTab";
 import { CostDashboard } from "./CostDashboard";
 import { DiagnosticsTab } from "./DiagnosticsTab";
 import { HistoryTab } from "./HistoryTab";
 import { PermissionModal } from "./PermissionModal";
-import { SettingsTab } from "./SettingsTab";
 import { SkillsTab } from "./SkillsTab";
 import { ToolActivity } from "./ToolActivity";
 import { WorkProgressPanel } from "./WorkProgressPanel";
-import {
-	type AtMentionHandle,
-	type AtMentionResult,
-	AtMentionPopover,
-	isWorkspaceAvailable,
-} from "./AtMentionPopover";
 
 type TabId =
 	| "chat"
@@ -310,9 +315,7 @@ function sendApprovalResponse(
 
 export function ChatPanel() {
 	const [input, setInput] = useState("");
-	const [activeTab, setActiveTab] = useState<TabId>(
-		isReadyToChat() ? "chat" : "settings",
-	);
+	const [activeTab, setActiveTab] = useState<TabId>("chat");
 	// Discord configured = at least one Discord webhook / bot token is set
 	const isDiscordConfigured = !!loadConfig()?.discordWebhookUrl;
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
@@ -359,7 +362,9 @@ export function ChatPanel() {
 	/** Timer for focus-after-tab-switch; cleared on unmount to prevent stale focus */
 	const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	/** Timer for pipeline STT cooldown transition; cleared in cleanupPipeline */
-	const sttCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const sttCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+		null,
+	);
 	const [ttsPlaying, setTtsPlaying] = useState(false);
 	const [sttPartial, setSttPartial] = useState("");
 	const [sttState, setSttState] = useState<
@@ -692,7 +697,8 @@ export function ChatPanel() {
 					provider: activeProvider,
 					model: resolvedModel,
 					apiKey: config.apiKey,
-					labGatewayUrl: activeProvider === "nextain" ? LAB_GATEWAY_URL : undefined,
+					labGatewayUrl:
+						activeProvider === "nextain" ? LAB_GATEWAY_URL : undefined,
 					ollamaHost:
 						activeProvider === "ollama" ? config.ollamaHost : undefined,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
@@ -1235,7 +1241,8 @@ export function ChatPanel() {
 						ttsCooldownUntilRef.current = Date.now() + 800;
 						// Brief "waiting" state during cooldown, then back to listening
 						setSttState("initializing");
-						if (sttCooldownTimerRef.current) clearTimeout(sttCooldownTimerRef.current);
+						if (sttCooldownTimerRef.current)
+							clearTimeout(sttCooldownTimerRef.current);
 						sttCooldownTimerRef.current = setTimeout(() => {
 							setSttState("listening");
 							sttCooldownTimerRef.current = null;
@@ -1862,8 +1869,7 @@ export function ChatPanel() {
 					isWorkspaceAvailable()
 				) {
 					// Only trigger if @ is at start or preceded by whitespace
-					const charBefore =
-						cursorPos >= 2 ? value[cursorPos - 2] : undefined;
+					const charBefore = cursorPos >= 2 ? value[cursorPos - 2] : undefined;
 					if (!charBefore || /\s/.test(charBefore)) {
 						setAtMentionOpen(true);
 						setAtMentionQuery("");
@@ -1995,62 +2001,12 @@ export function ChatPanel() {
 					</button>
 					<button
 						type="button"
-						className={`chat-tab${activeTab === "progress" ? " active" : ""}`}
-						onClick={() => handleTabChange("progress")}
-						title={t("progress.tabProgress")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.progress}
-						</span>
-					</button>
-					<button
-						type="button"
 						className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
 						onClick={() => handleTabChange("channels")}
 						title={t("channels.tabChannels")}
 					>
 						<span className="chat-tab-icon" aria-hidden="true">
 							{isDiscordConfigured ? <DiscordIcon /> : TAB_ICONS.channels}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "skills" ? " active" : ""}`}
-						onClick={() => handleTabChange("skills")}
-						title={t("skills.tabSkills")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.skills}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "agents" ? " active" : ""}`}
-						onClick={() => handleTabChange("agents")}
-						title={t("agents.tabAgents")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.agents}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "diagnostics" ? " active" : ""}`}
-						onClick={() => handleTabChange("diagnostics")}
-						title={t("diagnostics.tabDiagnostics")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.diagnostics}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "settings" ? " active" : ""}`}
-						onClick={() => handleTabChange("settings")}
-						title={t("settings.title")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.settings}
 						</span>
 					</button>
 				</div>
@@ -2116,8 +2072,7 @@ export function ChatPanel() {
 			{activeTab === "diagnostics" && <DiagnosticsTab />}
 
 			{/* Settings tab */}
-			{activeTab === "settings" && <SettingsTab />}
-
+	
 			{/* History tab */}
 			{activeTab === "history" && (
 				<HistoryTab

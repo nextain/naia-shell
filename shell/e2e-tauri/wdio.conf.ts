@@ -272,7 +272,8 @@ export const config = {
 			},
 			{
 				timeout: 30_000,
-				timeoutMsg: "webview never reached an http origin with writable localStorage",
+				timeoutMsg:
+					"webview never reached an http origin with writable localStorage",
 			},
 		);
 

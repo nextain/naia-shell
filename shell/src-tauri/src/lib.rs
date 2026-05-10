@@ -2418,6 +2418,56 @@ async fn gemini_live_disconnect(state: tauri::State<'_, AppState>) -> Result<(),
     Ok(())
 }
 
+// ── naia-settings asset commands ─────────────────────────────────────────────
+
+/// List filenames inside `{adk_path}/naia-settings/{subdir}/`.
+/// Only whitelisted subdirs are allowed.
+#[tauri::command]
+async fn list_naia_assets(adk_path: String, subdir: String) -> Result<Vec<String>, String> {
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "splash-img"];
+    if !ALLOWED.contains(&subdir.as_str()) {
+        return Err(format!("Invalid subdir: {subdir}"));
+    }
+    let dir = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join(&subdir);
+    if !dir.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut files = vec![];
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_file() {
+                if let Some(name) = entry.file_name().to_str() {
+                    files.push(name.to_string());
+                }
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Read `{adk_path}/naia-settings/config.json`. Returns empty string if not found.
+#[tauri::command]
+async fn read_naia_config(adk_path: String) -> Result<String, String> {
+    let path = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join("config.json");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+/// Write `{adk_path}/naia-settings/config.json`.
+#[tauri::command]
+async fn write_naia_config(adk_path: String, json: String) -> Result<(), String> {
+    let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize env_logger so `log` crate macros (info!, debug!, warn!) produce output.
@@ -2492,6 +2542,10 @@ pub fn run() {
             gemini_live_send_text,
             gemini_live_send_tool_response,
             gemini_live_disconnect,
+            // naia-settings asset commands
+            list_naia_assets,
+            read_naia_config,
+            write_naia_config,
             // Login Chrome (standalone auth window, not embedded)
             browser::browser_open_login,
             browser::browser_chrome_testing_ready,

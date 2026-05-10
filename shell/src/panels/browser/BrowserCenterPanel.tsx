@@ -2,10 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addAllowedTool } from "../../lib/config";
-import { useTabSkills } from "../../lib/tab-skills";
 import { Logger } from "../../lib/logger";
 import { panelRegistry } from "../../lib/panel-registry";
 import type { PanelCenterProps } from "../../lib/panel-registry";
+import { useTabSkills } from "../../lib/tab-skills";
 import { usePanelStore } from "../../stores/panel";
 
 // ─── Panel API ───────────────────────────────────────────────────────────────
@@ -273,6 +273,7 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		const el = viewportRef.current;
 		if (!el) return;
 		const sync = () => {
+			if (usePanelStore.getState().activePanel !== "browser") return;
 			const rect = el.getBoundingClientRect();
 			if (rect.width <= 0 || rect.height <= 0) return;
 			// Use create (which re-positions if already exists) so that panels
@@ -297,7 +298,11 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 	const activePanel = usePanelStore((s) => s.activePanel);
 	useEffect(() => {
-		if (activePanel !== "browser" || status !== "ready") return;
+		if (status !== "ready") return;
+		if (activePanel !== "browser") {
+			invoke("browser_wv_hide").catch(() => {});
+			return;
+		}
 		const el = viewportRef.current;
 		if (!el) return;
 		// Two rAF to let the CSS opacity transition settle before measuring.
@@ -352,14 +357,20 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			if (!p.current.navigate) return denied("탐색");
 			const url = String(args.url ?? "");
 			if (!url) return "Error: url required";
-			Logger.info("BrowserPanel", "skill_browser_navigate invoked", { url, status });
+			Logger.info("BrowserPanel", "skill_browser_navigate invoked", {
+				url,
+				status,
+			});
 			try {
 				await invoke("browser_wv_navigate", { url });
 				await refreshPageInfo();
 				Logger.info("BrowserPanel", "browser_wv_navigate ok", { url });
 				return `Navigated to ${url}`;
 			} catch (e) {
-				Logger.warn("BrowserPanel", "browser_wv_navigate failed", { url, error: String(e) });
+				Logger.warn("BrowserPanel", "browser_wv_navigate failed", {
+					url,
+					error: String(e),
+				});
 				return `Navigation failed: ${String(e)}`;
 			}
 		});
@@ -542,7 +553,9 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 					onSubmit={(e) => {
 						e.preventDefault();
 						handleNavigate(inputUrl);
-						(e.currentTarget.querySelector("input") as HTMLInputElement)?.blur();
+						(
+							e.currentTarget.querySelector("input") as HTMLInputElement
+						)?.blur();
 					}}
 				>
 					<input

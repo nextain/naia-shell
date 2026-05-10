@@ -1,18 +1,24 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AdkSetupScreen } from "./components/AdkSetupScreen";
 import { AvatarCanvas } from "./components/AvatarCanvas";
+import { BgmPlayer } from "./components/BgmPlayer";
 import { ChatPanel } from "./components/ChatPanel";
 import { ModeBar } from "./components/ModeBar";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { PanelInstallDialog } from "./components/PanelInstallDialog";
+import { SplashScreen } from "./components/SplashScreen";
 import { TitleBar } from "./components/TitleBar";
 import { UpdateBanner } from "./components/UpdateBanner";
-import { WslSetupScreen } from "./components/WslSetupScreen";
 import { getBridgeForPanel } from "./lib/active-bridge";
+import { isAdkInitialized, listNaiaAssets, toAssetUrl } from "./lib/adk-store";
 import { syncLinkedChannels } from "./lib/channel-sync";
-import { sendAuthUpdate, sendPanelSkills, sendPanelSkillsClear } from "./lib/chat-service";
+import {
+	sendAuthUpdate,
+	sendPanelSkills,
+	sendPanelSkillsClear,
+} from "./lib/chat-service";
 import {
 	type ThemeId,
 	isOnboardingComplete,
@@ -24,19 +30,43 @@ import {
 } from "./lib/config";
 import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
-import { restartGateway } from "./lib/gateway-sync";
-import { loadInstalledPanels } from "./lib/panel-loader";
 import { Logger } from "./lib/logger";
+import { loadInstalledPanels } from "./lib/panel-loader";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
+import { useAvatarStore } from "./stores/avatar";
 import "./panels/browser/index"; // register browser panel
 import "./panels/workspace/index"; // register workspace panel
+import "./panels/settings/index"; // register settings panel
 // sample-note panel removed — will be replaced by a proper memo app later
 import { usePanelStore } from "./stores/panel";
 
 const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 240;
 const NAIA_WIDTH_MAX = 560;
+
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
+
+function getFileExt(url: string): string {
+	return url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+}
+function isVideoFile(url: string): boolean {
+	return VIDEO_EXTS.has(getFileExt(url));
+}
+function isImageFile(url: string): boolean {
+	return IMAGE_EXTS.has(getFileExt(url));
+}
+
+type WinResizeDir =
+	| "North"
+	| "South"
+	| "East"
+	| "West"
+	| "NorthEast"
+	| "NorthWest"
+	| "SouthEast"
+	| "SouthWest";
 
 function resolveSystemTheme(): string {
 	return window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -49,18 +79,64 @@ function applyTheme(theme: ThemeId) {
 	document.documentElement.setAttribute("data-theme", resolved);
 }
 
+/**
+ * Readiness gate for the splash screen.
+ *
+ * ADK/onboarding paths signal ready immediately (synchronous render).
+ * Normal path waits for VRM avatar load, with a 5 s timeout for VRM failure.
+ */
+function useAppReady(showAdkSetup: boolean): boolean {
+	const avatarLoaded = useAvatarStore((s) => s.isLoaded);
+	const [timedOut, setTimedOut] = useState(false);
+
+	useEffect(() => {
+		if (showAdkSetup) return;
+		const t = setTimeout(() => {
+			Logger.warn("App", "useAppReady: 5 s timeout — forcing splash dismiss");
+			setTimedOut(true);
+		}, 5000);
+		return () => clearTimeout(t);
+	}, [showAdkSetup]);
+
+	if (showAdkSetup) return true;
+	return avatarLoaded || timedOut;
+}
+
 export function App() {
-	const [showWslSetup, setShowWslSetup] = useState(false);
+	const [showSplash, setShowSplash] = useState(true);
+	const [showAdkSetup, setShowAdkSetup] = useState(!isAdkInitialized());
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [showPanelInstall, setShowPanelInstall] = useState(false);
 	const [naiaVisible, setNaiaVisible] = useState(true);
 	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
-	const [avatarHeight, setAvatarHeight] = useState(240);
+	const [chatVisible, setChatVisible] = useState(true);
+	const [chatHeight, setChatHeight] = useState(() => Math.round(window.innerHeight * 0.4));
+	const chatDragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
-	const naiaWidthRef = useRef(naiaWidth);
-	naiaWidthRef.current = naiaWidth;
-	const avatarHeightRef = useRef(avatarHeight);
-	avatarHeightRef.current = avatarHeight;
+	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
+	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+
+	// Window starts hidden (visible:false in tauri.conf.json) to prevent white flash.
+	// Show it on first render — splash screen's dark background is already painted.
+	useEffect(() => {
+		// getCurrentWindow() can throw synchronously in test environments
+		try {
+			void getCurrentWindow()
+				.show()
+				.catch((err) => {
+					Logger.warn("App", "failed to show window", { error: String(err) });
+				});
+		} catch (err) {
+			Logger.warn("App", "failed to show window (sync)", {
+				error: String(err),
+			});
+		}
+		Logger.debug("App", "window shown on first render");
+	}, []);
+
+	// Readiness gate: splash stays until the active branch has something to show
+	const appReady = useAppReady(showAdkSetup);
+	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
 	const { activePanel } = usePanelStore();
 
@@ -99,7 +175,11 @@ export function App() {
 	useEffect(() => {
 		const all = panelRegistry.list();
 		for (const descriptor of all) {
-			if (descriptor.keepAlive && descriptor.tools && descriptor.tools.length > 0) {
+			if (
+				descriptor.keepAlive &&
+				descriptor.tools &&
+				descriptor.tools.length > 0
+			) {
 				sendPanelSkills(descriptor.id, descriptor.tools)
 					.then(() => {
 						Logger.info("App", "startup panel skills registered", {
@@ -116,6 +196,21 @@ export function App() {
 			}
 		}
 	}, []);
+
+	// Load background video from naia-settings/background/
+	useEffect(() => {
+		if (showAdkSetup) return;
+		listNaiaAssets("background").then((paths) => {
+			if (paths.length === 0) return;
+			// Use the config-saved background or the first available video
+			const config = loadConfig();
+			const saved = config?.backgroundVideo as string | undefined;
+			const match = saved
+				? (paths.find((p) => p.endsWith(saved)) ?? paths[0])
+				: paths[0];
+			setBackgroundVideoUrl(toAssetUrl(match));
+		});
+	}, [showAdkSetup]);
 
 	useEffect(() => {
 		void migrateLabKeyToNaiaKey();
@@ -139,25 +234,9 @@ export function App() {
 		}
 
 		const needsOnboarding = !isOnboardingComplete();
+		if (showAdkSetup) return; // wait for ADK setup first
 
-		// Check platform tier on startup — Windows Tier 1 shows WSL setup
-		invoke("get_platform_tier")
-			.then((tier) => {
-				const info = tier as { platform: string; tier: number };
-				if (info.platform === "windows" && info.tier === 1) {
-					setShowWslSetup(true);
-				} else if (needsOnboarding) {
-					setShowOnboarding(true);
-				}
-			})
-			.catch(() => {
-				if (needsOnboarding) setShowOnboarding(true);
-			})
-			.finally(() => {
-				requestAnimationFrame(() => {
-					invoke("show_window").catch(() => {});
-				});
-			});
+		if (needsOnboarding) setShowOnboarding(true);
 
 		navigator.mediaDevices
 			?.getUserMedia({ audio: true })
@@ -210,55 +289,6 @@ export function App() {
 		});
 	}, []);
 
-	// Drag-resize avatar area height (inside naia-panel)
-	const onAvatarResizeStart = useCallback((e: React.PointerEvent) => {
-		e.preventDefault();
-		const startY = e.clientY;
-		const startH = avatarHeightRef.current;
-		document.body.classList.add("resizing-row");
-
-		const onMove = (ev: PointerEvent) => {
-			setAvatarHeight(
-				Math.max(80, Math.min(600, startH + ev.clientY - startY)),
-			);
-		};
-		const onUp = () => {
-			document.body.classList.remove("resizing-row");
-			window.removeEventListener("pointermove", onMove);
-			window.removeEventListener("pointerup", onUp);
-		};
-		window.addEventListener("pointermove", onMove);
-		window.addEventListener("pointerup", onUp);
-	}, []);
-
-	// Drag-resize between naia-panel and content-panel
-	const onResizeStart = useCallback((e: React.PointerEvent) => {
-		e.preventDefault();
-		const startX = e.clientX;
-		const startWidth = naiaWidthRef.current;
-		document.body.classList.add("resizing-col");
-
-		const onMove = (ev: PointerEvent) => {
-			const next = Math.max(
-				NAIA_WIDTH_MIN,
-				Math.min(NAIA_WIDTH_MAX, startWidth + ev.clientX - startX),
-			);
-			setNaiaWidth(next);
-		};
-		const onUp = () => {
-			document.body.classList.remove("resizing-col");
-			window.removeEventListener("pointermove", onMove);
-			window.removeEventListener("pointerup", onUp);
-			setNaiaWidth((w) => {
-				const cfg = loadConfig();
-				if (cfg)
-					saveConfig({ ...cfg, panelSize: Math.round((w / 1200) * 100) });
-				return w;
-			});
-		};
-		window.addEventListener("pointermove", onMove);
-		window.addEventListener("pointerup", onUp);
-	}, []);
 
 	useEffect(() => {
 		const unlisten = listen<{
@@ -291,42 +321,6 @@ export function App() {
 		}
 	}, []);
 
-	// WSL setup screen (Windows Tier 1 — before main UI)
-	if (showWslSetup) {
-		return (
-			<div className="app-root">
-				<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
-				<WslSetupScreen
-					onComplete={() => {
-						setShowWslSetup(false);
-						restartGateway().catch(() => {});
-						if (!isOnboardingComplete()) {
-							setShowOnboarding(true);
-						}
-					}}
-				/>
-			</div>
-		);
-	}
-
-	const activePanelDescriptor = activePanel
-		? panelRegistry.get(activePanel)
-		: null;
-	const CenterComponent = activePanelDescriptor?.center ?? null;
-
-	const [keepAlivePanels] = useState(() =>
-		panelRegistry.list().filter((p) => p.builtIn && p.keepAlive !== false),
-	);
-
-	type WinResizeDir =
-		| "North"
-		| "South"
-		| "East"
-		| "West"
-		| "NorthEast"
-		| "NorthWest"
-		| "SouthEast"
-		| "SouthWest";
 	const handleWinResize = (dir: WinResizeDir) => (e: React.PointerEvent) => {
 		e.preventDefault();
 		getCurrentWindow().startResizeDragging(dir);
@@ -345,109 +339,179 @@ export function App() {
 		</>
 	);
 
-	if (showOnboarding) {
-		return (
-			<div className="app-root">
-				{winResizeHandles}
-				<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
-				<div
-					className="app-layout"
-					style={{ "--naia-width": "400px" } as React.CSSProperties}
-				>
-					<div className="naia-panel">
-						<OnboardingWizard onComplete={() => setShowOnboarding(false)} />
-					</div>
-					<div className="right-area">
-						<div className="right-content">
-							<div className="content-panel">
-								{keepAlivePanels.map((panel) => {
-									const PanelCenter = panel.center;
-									return (
-										<div
-											key={panel.id}
-											className={`content-panel__slot${activePanel === panel.id ? " content-panel__slot--active" : ""}`}
-										>
-											<PanelCenter naia={getBridgeForPanel(panel.id)} />
-										</div>
-									);
-								})}
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		);
-	}
+	const activePanelDescriptor = activePanel
+		? panelRegistry.get(activePanel)
+		: null;
+	const CenterComponent = activePanelDescriptor?.center ?? null;
 
+	const keepAlivePanels = useMemo(
+		() =>
+			panelRegistry.list().filter((p) => p.builtIn && p.keepAlive !== false),
+		[],
+	);
+
+	// Single return — SplashScreen always mounts first as a fixed overlay,
+	// app content loads underneath, splash removed when ready.
 	return (
-		<div className="app-root">
-			{winResizeHandles}
-			<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
-			{updateInfo && (
-				<UpdateBanner info={updateInfo} onDismiss={() => setUpdateInfo(null)} />
+		<div
+			className="app-root"
+			style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
+		>
+			{/* ① Background — always the base layer, z-index:0 */}
+			{backgroundVideoUrl && isVideoFile(backgroundVideoUrl) ? (
+				<video
+					key={backgroundVideoUrl}
+					className="app-bg-video"
+					src={backgroundVideoUrl}
+					autoPlay
+					loop
+					muted
+					playsInline
+				/>
+			) : backgroundVideoUrl && isImageFile(backgroundVideoUrl) ? (
+				<img
+					key={backgroundVideoUrl}
+					className="app-bg-image"
+					src={backgroundVideoUrl}
+					alt=""
+				/>
+			) : (
+				<img
+					className="app-bg-image"
+					src="/assets/background-space.webp"
+					alt=""
+				/>
 			)}
-			<div
-				className="app-layout"
-				style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
-			>
-				{naiaVisible && (
-					<>
-						<div className="naia-panel">
-							<div
-								className="naia-avatar-area"
-								style={{ height: `${avatarHeight}px` }}
-							>
-								<AvatarCanvas />
-							</div>
-							<div
-								className="avatar-resize-handle"
-								onPointerDown={onAvatarResizeStart}
-							/>
-							<ChatPanel />
-						</div>
-						<div className="naia-resize-handle" onPointerDown={onResizeStart} />
-					</>
-				)}
-				<div className="right-area">
-					<ModeBar onAddMode={() => setShowPanelInstall(true)} />
-					{showPanelInstall && (
-						<PanelInstallDialog onClose={() => setShowPanelInstall(false)} />
+
+			{/* ② Splash — position:fixed covers everything */}
+			{showSplash && <SplashScreen onDone={onSplashDone} ready={appReady} />}
+
+			{/* ③ Window resize handles */}
+			{winResizeHandles}
+
+			{/* ④ ADK setup */}
+			{showAdkSetup && (
+				<>
+					<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
+					<AdkSetupScreen
+						onComplete={() => {
+							setShowSplash(true);
+							setShowAdkSetup(false);
+							if (!isOnboardingComplete()) setShowOnboarding(true);
+						}}
+					/>
+				</>
+			)}
+
+			{/* ⑤ Main app — always visible after ADK setup */}
+			{!showAdkSetup && (
+				<>
+					<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
+					{updateInfo && !showOnboarding && (
+						<UpdateBanner
+							info={updateInfo}
+							onDismiss={() => setUpdateInfo(null)}
+						/>
 					)}
-					<div className="right-content">
-						<div className="content-panel">
-							{/* Keep-alive panels: always mounted, CSS opacity fade on switch */}
-							{keepAlivePanels.map((panel) => {
-								const PanelCenter = panel.center;
-								return (
-									<div
-										key={panel.id}
-										className={`content-panel__slot${activePanel === panel.id ? " content-panel__slot--active" : ""}`}
+					{naiaVisible && (
+						<>
+							<div className="naia-overlay">
+								<BgmPlayer />
+								<div className="naia-avatar-area">
+									<AvatarCanvas />
+								</div>
+								{/* Chat floats over avatar — absolute at bottom */}
+								<div className="naia-chat-area">
+									<button
+										type="button"
+										className="naia-chat-toggle"
+										aria-label={chatVisible ? "대화창 닫기" : "대화창 열기"}
+										onPointerDown={(e) => {
+											chatDragRef.current = {
+												startY: e.clientY,
+												startH: chatHeight,
+												moved: false,
+											};
+											(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+										}}
+										onPointerMove={(e) => {
+											const ref = chatDragRef.current;
+											if (!ref) return;
+											const delta = ref.startY - e.clientY;
+											if (!ref.moved && Math.abs(delta) > 4) ref.moved = true;
+											if (ref.moved) {
+												setChatHeight(Math.max(120, Math.min(600, ref.startH + delta)));
+											}
+										}}
+										onPointerUp={() => {
+											const ref = chatDragRef.current;
+											chatDragRef.current = null;
+											if (!ref?.moved) setChatVisible((v) => !v);
+										}}
 									>
-										<PanelCenter naia={getBridgeForPanel(panel.id)} />
+										{chatVisible ? "▼" : "▲"}
+									</button>
+									<div
+										className={`naia-chat-wrapper${chatVisible ? "" : " naia-chat-wrapper--hidden"}`}
+										style={chatVisible ? { height: chatHeight } : undefined}
+									>
+										<ChatPanel />
 									</div>
-								);
-							})}
-							{/* Non-keepAlive builtIn + installed panels: mount/unmount when active */}
-							{activePanel &&
-								!keepAlivePanels.some((p) => p.id === activePanel) && (
-									<div className="content-panel__slot content-panel__slot--active">
-										{CenterComponent ? (
-											<CenterComponent naia={getBridgeForPanel(activePanel)} />
-										) : (
-											<div className="content-panel__home" />
-										)}
+								</div>
+							</div>
+						</>
+					)}
+
+					<div
+						className="app-layout"
+						style={{ left: naiaVisible ? naiaWidth : 0 } as React.CSSProperties}
+					>
+						<div className="right-area">
+							{!showOnboarding && (
+								<>
+									<ModeBar onAddMode={() => setShowPanelInstall(true)} />
+									{showPanelInstall && (
+										<PanelInstallDialog
+											onClose={() => setShowPanelInstall(false)}
+										/>
+									)}
+								</>
+							)}
+							<div className={`right-content${showOnboarding ? " right-content--onboarding" : ""}`}>
+								{showOnboarding ? (
+									<OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+								) : (
+									<div className={`content-panel${!activePanel ? " content-panel--hidden" : ""}`}>
+										{keepAlivePanels.map((panel) => {
+											const PanelCenter = panel.center;
+											return (
+												<div
+													key={panel.id}
+													className={`content-panel__slot${activePanel === panel.id ? " content-panel__slot--active" : ""}`}
+												>
+													<PanelCenter naia={getBridgeForPanel(panel.id)} />
+												</div>
+											);
+										})}
+										{activePanel &&
+											!keepAlivePanels.some((p) => p.id === activePanel) && (
+												<div className="content-panel__slot content-panel__slot--active">
+													{CenterComponent ? (
+														<CenterComponent
+															naia={getBridgeForPanel(activePanel)}
+														/>
+													) : (
+														<div className="content-panel__home" />
+													)}
+												</div>
+											)}
 									</div>
 								)}
-							{/* No panel selected */}
-							{!activePanel && (
-								<div className="content-panel__slot content-panel__slot--active">
-									<div className="content-panel__home" />
-								</div>
-							)}
+							</div>
 						</div>
 					</div>
-				</div>
-			</div>
+				</>
+			)}
 		</div>
 	);
 }

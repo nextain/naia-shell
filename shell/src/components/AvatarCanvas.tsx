@@ -4,14 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import {
 	AmbientLight,
 	AnimationMixer,
-	CanvasTexture,
 	Clock,
 	DirectionalLight,
 	LoopRepeat,
 	Object3D,
 	PerspectiveCamera,
 	Scene,
-	TextureLoader,
 	Vector3,
 	WebGLRenderer,
 } from "three";
@@ -34,7 +32,7 @@ import { useAvatarStore } from "../stores/avatar";
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera";
+const CAMERA_STORAGE_KEY = "naia-camera-v11";
 
 interface SavedCamera {
 	px: number;
@@ -87,31 +85,11 @@ function normalizeLocalPath(path: string): string {
 	}
 }
 
-function guessMimeType(path: string): string {
-	const ext = path.toLowerCase().split(".").pop() ?? "";
-	switch (ext) {
-		case "png":
-			return "image/png";
-		case "jpg":
-		case "jpeg":
-			return "image/jpeg";
-		case "webp":
-			return "image/webp";
-		case "gif":
-			return "image/gif";
-		case "bmp":
-			return "image/bmp";
-		case "svg":
-			return "image/svg+xml";
-		case "vrm":
-			return "model/gltf-binary";
-		default:
-			return "application/octet-stream";
-	}
-}
-
 function isAbsoluteLocalFilePath(path: string): boolean {
-	return path.startsWith("/");
+	// Unix absolute path
+	if (path.startsWith("/")) return true;
+	// Windows absolute path: C:\ or D:/ etc.
+	return /^[A-Za-z]:[/\\]/.test(path);
 }
 
 function resolveAssetUrl(path: string): string {
@@ -213,21 +191,7 @@ function updateSaccade(vrm: VRM, delta: number, state: AnimationState) {
 	state.timeSinceLastSaccade += delta;
 }
 
-function setDefaultBackground(scene: Scene) {
-	const bgCanvas = document.createElement("canvas");
-	bgCanvas.width = 2;
-	bgCanvas.height = 512;
-	const ctx = bgCanvas.getContext("2d");
-	if (ctx) {
-		const grad = ctx.createLinearGradient(0, 0, 0, 512);
-		grad.addColorStop(0, "#1a1412");
-		grad.addColorStop(0.5, "#2b2220");
-		grad.addColorStop(1, "#0F172A");
-		ctx.fillStyle = grad;
-		ctx.fillRect(0, 0, 2, 512);
-	}
-	scene.background = new CanvasTexture(bgCanvas);
-}
+// Background is now handled by the app-level video/image layer — canvas is transparent.
 
 export function AvatarCanvas() {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -261,71 +225,8 @@ export function AvatarCanvas() {
 		renderer.setSize(container.clientWidth, container.clientHeight);
 		container.appendChild(renderer.domElement);
 
-		// Scene with gradient background
+		// Scene — transparent background (background video/image is handled by the app layer)
 		const scene = new Scene();
-
-		// Helper to load and apply background image
-		const applyBackground = (bgPath: string | undefined | null) => {
-			let bgSrc = "/assets/background-space.webp";
-			const loadBackground = async () => {
-				if (bgPath) {
-					const normalized = normalizeLocalPath(bgPath);
-					if (
-						isAbsoluteLocalFilePath(normalized) &&
-						!normalized.startsWith("/assets/") &&
-						!normalized.startsWith("/avatars/")
-					) {
-						try {
-							const bytes = await invoke<number[]>("read_local_binary", {
-								path: normalized,
-							});
-							const blob = new Blob([new Uint8Array(bytes)], {
-								type: guessMimeType(normalized),
-							});
-							const objectUrl = URL.createObjectURL(blob);
-							createdObjectUrls.push(objectUrl);
-							bgSrc = objectUrl;
-						} catch (err) {
-							Logger.warn("AvatarCanvas", "Failed to read local background", {
-								error: String(err),
-								path: normalized,
-							});
-							bgSrc = resolveAssetUrl(normalized);
-						}
-					} else {
-						bgSrc = resolveAssetUrl(normalized);
-					}
-				}
-				const loader = new TextureLoader();
-				loader.setCrossOrigin("anonymous");
-				loader.load(
-					bgSrc,
-					(texture) => {
-						if (!disposed) scene.background = texture;
-					},
-					undefined,
-					(err) => {
-						Logger.warn("AvatarCanvas", "Failed to load background image", {
-							err,
-						});
-						setDefaultBackground(scene);
-					},
-				);
-			};
-			void loadBackground();
-		};
-
-		// Initial background load
-		applyBackground(useAvatarStore.getState().backgroundImage);
-
-		// Subscribe to background changes for live preview
-		let prevBg = useAvatarStore.getState().backgroundImage;
-		const unsubBg = useAvatarStore.subscribe((state) => {
-			if (state.backgroundImage !== prevBg) {
-				prevBg = state.backgroundImage;
-				applyBackground(state.backgroundImage);
-			}
-		});
 
 		// Lighting — required for VRM MToon/PBR materials
 		const ambientLight = new AmbientLight(0xffffff, 0.7);
@@ -361,8 +262,9 @@ export function AvatarCanvas() {
 			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
-			camera.position.set(0.0, 1.52, -0.71);
-			controls.target.set(-0.02, 1.42, -0.19);
+			// naia-overlay is full-screen; offset camera to place character in left strip area.
+			camera.position.set(-1.3, 0.9, -2.2);
+			controls.target.set(-1.3, 0.9, 0.0);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
 		controls.update();
@@ -439,7 +341,10 @@ export function AvatarCanvas() {
 							path: normalizedModelPath,
 						});
 						localVrmBytes = new Uint8Array(bytes);
-						const slash = normalizedModelPath.lastIndexOf("/");
+						const slash = Math.max(
+							normalizedModelPath.lastIndexOf("/"),
+							normalizedModelPath.lastIndexOf("\\"),
+						);
 						if (slash > 0) {
 							resourcePath = resolveAssetUrl(
 								normalizedModelPath.slice(0, slash + 1),
@@ -602,7 +507,6 @@ export function AvatarCanvas() {
 			disposed = true;
 			ro.disconnect();
 			cancelAnimationFrame(frameId);
-			unsubBg();
 			unsubSpeaking();
 			unsubEmotion();
 			mouthCtrl?.stop();

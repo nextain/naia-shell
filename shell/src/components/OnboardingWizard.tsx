@@ -1,135 +1,73 @@
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
-import { AVATAR_PRESETS, DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
-import { directToolCall, sendAuthUpdate } from "../lib/chat-service";
-import {
-	DEFAULT_GATEWAY_URL,
-	DEFAULT_OLLAMA_HOST,
-	DEFAULT_VLLM_HOST,
-	loadConfig,
-	resolveGatewayUrl,
-	saveConfig,
-} from "../lib/config";
-import { validateApiKey } from "../lib/db";
-import { persistDiscordDefaults } from "../lib/discord-auth";
+import { listNaiaAssets, toAssetUrl } from "../lib/adk-store";
+import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
-import { fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
-import {
-	fetchOllamaModels,
-	fetchVllmModels,
-	getDefaultLlmModel,
-	listLlmProviders,
-} from "../lib/llm";
-import { Logger } from "../lib/logger";
-import { syncToGateway } from "../lib/gateway-sync";
-import { FORMALITY_LOCALES, buildSystemPrompt } from "../lib/persona";
-import { saveSecretKey } from "../lib/secure-store";
-import type { ProviderId } from "../lib/types";
 import { useAvatarStore } from "../stores/avatar";
-import { VrmPreview } from "./VrmPreview";
+import { useChatStore } from "../stores/chat";
 
 type Step =
-	| "provider"
-	| "apiKey"
-	| "ollamaConfig"
 	| "agentName"
 	| "userName"
-	| "workspace"
-	| "character"
-	| "personality"
 	| "speechStyle"
+	| "character"
+	| "background"
+	| "provider"
 	| "complete";
 
-const STEPS: Step[] = [
-	"provider",
-	"apiKey",
-	"ollamaConfig",
+// Steps shown when Naia key is already set (skip provider)
+const STEPS_WITH_NAIA: Step[] = [
 	"agentName",
 	"userName",
-	"workspace",
-	"character",
-	"personality",
 	"speechStyle",
+	"character",
+	"background",
+	"complete",
+];
+const STEPS_WITHOUT_NAIA: Step[] = [
+	"agentName",
+	"userName",
+	"speechStyle",
+	"character",
+	"background",
+	"provider",
 	"complete",
 ];
 
-function looksLikeApiKey(value: string): boolean {
-	const v = value.trim();
-	if (!v) return false;
-	return (
-		/^AIza[0-9A-Za-z_\-]{20,}$/.test(v) ||
-		/^sk-[0-9A-Za-z_\-]{16,}$/.test(v) ||
-		/^gw-[0-9A-Za-z_\-]{10,}$/.test(v) ||
-		/^xai-[0-9A-Za-z_\-]{16,}$/.test(v) ||
-		/^claude_[0-9A-Za-z_\-]{10,}$/i.test(v)
+const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
+function isVideo(url: string) {
+	return VIDEO_EXTS.has(
+		url.split("?")[0].split(".").pop()?.toLowerCase() ?? "",
 	);
 }
 
-function sanitizeName(value: string): string {
-	const trimmed = value.trim();
-	if (!trimmed) return "";
-	return looksLikeApiKey(trimmed) ? "" : trimmed;
+function stepChat(step: Step, name: string, user: string): string {
+	const n = name || "나이아";
+	const u = user ? `${user}님` : "";
+	switch (step) {
+		case "agentName":
+			return "안녕하세요! 저는 나이아예요. 제 이름을 지어주세요! ✨";
+		case "userName":
+			return `${n}! 정말 좋은 이름이에요. 그럼 저는 당신을 어떻게 부를까요?`;
+		case "speechStyle":
+			return `${u || ""}! 어떤 말투로 대화할까요? 편한 걸 골라주세요 😊`;
+		case "character":
+			return "제 외모를 골라주세요! 마음에 드는 캐릭터가 있나요? 🌸";
+		case "background":
+			return "배경화면도 함께 골라볼까요? 클릭하면 바로 바뀌어요! 🌟";
+		case "provider":
+			return "거의 다 왔어요! 저의 두뇌를 연결해 주세요 🧠";
+		case "complete":
+			return `${u ? u + ", " : ""}준비 완료! ${n}와 함께 시작해요! 🎉`;
+	}
 }
 
-const PERSONALITY_PRESETS: {
-	id: string;
-	labelKey: string;
-	descKey: string;
-	persona: string;
-}[] = [
-	{
-		id: "friendly",
-		labelKey: "personality.friendly.label",
-		descKey: "personality.friendly.desc",
-		persona: `You are {name}, a warm and friendly AI companion.
-Personality:
-- Speaks casually and warmly
-- Warm, caring, and supportive
-- Uses friendly expressions naturally
-- Gives concise, helpful answers`,
-	},
-	{
-		id: "polite",
-		labelKey: "personality.polite.label",
-		descKey: "personality.polite.desc",
-		persona: `You are {name}, a reliable and professional AI assistant.
-Personality:
-- Speaks politely and professionally
-- Professional, reliable, and thorough
-- Clear and organized communication
-- Gives structured, detailed answers when needed`,
-	},
-	{
-		id: "playful",
-		labelKey: "personality.playful.label",
-		descKey: "personality.playful.desc",
-		persona: `You are {name}, a playful and humorous AI companion.
-Personality:
-- Speaks casually with humor
-- Playful, witty, and cheerful
-- Makes conversations fun and lighthearted
-- Sneaks in jokes and clever remarks`,
-	},
-	{
-		id: "calm",
-		labelKey: "personality.calm.label",
-		descKey: "personality.calm.desc",
-		persona: `You are {name}, a calm and intellectual AI companion.
-Personality:
-- Speaks thoughtfully and analytically
-- Calm, analytical, and knowledgeable
-- Explains things clearly and logically
-- Takes time to consider before answering`,
-	},
-];
-
-// Providers for onboarding (exclude nextain — handled as Lab login)
-const ONBOARDING_PROVIDERS = listLlmProviders().filter(
-	(p) => p.id !== "nextain",
-);
+interface BgOption {
+	url: string;
+	label: string;
+}
 
 function getNaiaWebBaseUrl() {
 	return (
@@ -137,1001 +75,477 @@ function getNaiaWebBaseUrl() {
 	);
 }
 
-export function OnboardingWizard({
-	onComplete,
-}: {
-	onComplete: () => void;
-}) {
+export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
-const [step, setStep] = useState<Step>("provider");
+	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+	const addMessage = useChatStore((s) => s.addMessage);
+
+	const hasNaiaKey = !!localStorage.getItem("naia-remote-key");
+	const STEPS = hasNaiaKey ? STEPS_WITH_NAIA : STEPS_WITHOUT_NAIA;
+
+	const [step, setStep] = useState<Step>("agentName");
 	const [agentName, setAgentName] = useState("");
 	const [userName, setUserName] = useState("");
-	const [selectedVrm, setSelectedVrm] = useState(AVATAR_PRESETS[0].path);
-	const [selectedPersonality, setSelectedPersonality] = useState("friendly");
-	const [provider, setProvider] = useState<ProviderId>("gemini");
+	const [speechStyle, setSpeechStyle] = useState<
+		"casual" | "formal" | "honorific"
+	>("casual");
+	const [honorific, setHonorific] = useState("");
+	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
+	const [selectedVrm, setSelectedVrm] = useState("");
+	const [backgrounds, setBackgrounds] = useState<BgOption[]>([]);
+	const [selectedBg, setSelectedBg] = useState("/assets/background-space.webp");
+	// Provider step state
 	const [apiKey, setApiKey] = useState("");
-	const [validating, setValidating] = useState(false);
-	const [validationResult, setValidationResult] = useState<
-		"idle" | "success" | "error"
-	>("idle");
-	const [naiaKey, setNaiaKey] = useState("");
-	const [naiaUserId, setNaiaUserId] = useState("");
-	const [labWaiting, setLabWaiting] = useState(false);
-	const labTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [labTimeout, setLabTimeout] = useState(false);
-	const [selectedSpeechStyle, setSelectedSpeechStyle] = useState("casual");
-	const [honorificInput, setHonorificInput] = useState("");
-	const [discordConnectLoading, setDiscordConnectLoading] = useState(false);
-	const [discordConnected, setDiscordConnected] = useState(false);
-	const [ollamaHost, setOllamaHost] = useState(DEFAULT_OLLAMA_HOST);
-	const [ollamaModels, setOllamaModels] = useState<
-		{ id: string; label: string }[]
-	>([]);
-	const [ollamaConnected, setOllamaConnected] = useState(false);
-	const [selectedOllamaModel, setSelectedOllamaModel] = useState("");
-	const [vllmHost, setVllmHost] = useState(DEFAULT_VLLM_HOST);
-	const [vllmModels, setVllmModels] = useState<{ id: string; label: string }[]>(
-		[],
-	);
-	const [vllmConnected, setVllmConnected] = useState(false);
-	const [selectedVllmModel, setSelectedVllmModel] = useState("");
-	const [workspaceRoot, setWorkspaceRoot] = useState("");
-	const [workspaceDetecting, setWorkspaceDetecting] = useState(false);
+	const [apiKeyMode, setApiKeyMode] = useState(false);
+	const [naiaLoginWaiting, setNaiaLoginWaiting] = useState(false);
+	const [naiaLoginDone, setNaiaLoginDone] = useState(hasNaiaKey);
+	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+	const stepIndex = STEPS.indexOf(step);
+	const didMount = useRef(false);
+	const transitioning = useRef(false);
+
+	// Load VRM list from naia-settings only — no hardcoded fallback
 	useEffect(() => {
-		return () => {
-			if (labTimerRef.current) clearTimeout(labTimerRef.current);
-		};
+		listNaiaAssets("vrm-files").then((paths) => {
+			const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
+			setNaiaVrms(vrms);
+			if (vrms.length > 0) setSelectedVrm((prev) => prev || vrms[0]);
+		});
 	}, []);
 
-	// Listen for deep-link Lab auth callback
+	// Initial chat message + default background
+	useEffect(() => {
+		if (!didMount.current) {
+			didMount.current = true;
+			setBackgroundVideoUrl("/assets/background-space.webp");
+			setTimeout(() => {
+				addMessage({
+					role: "assistant",
+					content: stepChat("agentName", "", ""),
+				});
+			}, 800);
+		}
+	}, [addMessage]);
+
+	// Load backgrounds from ADK folder
+	useEffect(() => {
+		const builtin: BgOption = {
+			url: "/assets/background-space.webp",
+			label: t("onboard.background.default"),
+		};
+		listNaiaAssets("background")
+			.then((paths) => {
+				const adkBgs: BgOption[] = paths.map((p) => ({
+					url: toAssetUrl(p),
+					label:
+						p
+							.split(/[/\\]/)
+							.pop()
+							?.replace(/\.[^.]+$/, "") ?? p,
+				}));
+				setBackgrounds([builtin, ...adkBgs]);
+			})
+			.catch(() => setBackgrounds([builtin]));
+	}, []);
+
+	// Listen for Naia OAuth callback in provider step
 	useEffect(() => {
 		const unlisten = listen<{ naiaKey: string; naiaUserId?: string }>(
 			"naia_auth_complete",
-			async (event) => {
-				Logger.info("OnboardingWizard", "Lab auth received", {});
-				const key = event.payload.naiaKey;
-				const userId = event.payload.naiaUserId ?? "";
-				setNaiaKey(key);
-				sendAuthUpdate(key).catch(() => {});
-				setNaiaUserId(userId);
-				setProvider("nextain");
-				setLabWaiting(false);
-				setLabTimeout(false);
-
-				// Try to pull settings from Lab
-				const onlineConfig = userId ? await fetchLabConfig(key, userId) : null;
-
-				// Restore from online or local
-				const existing = loadConfig();
-				const source = onlineConfig ?? existing;
-				if (source?.agentName) {
-					setAgentName(sanitizeName(source.agentName as string));
+			(event) => {
+				if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
+				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
+				if (event.payload.naiaUserId) {
+					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
 				}
-				if (source?.userName) setUserName(source.userName as string);
-				if (onlineConfig?.honorific) setHonorificInput(onlineConfig.honorific);
-				if (onlineConfig?.speechStyle)
-					setSelectedSpeechStyle(onlineConfig.speechStyle);
-
-				const vrmSource = existing?.vrmModel;
-				if (vrmSource) {
-					const match = AVATAR_PRESETS.find((v) => v.path === vrmSource);
-					if (match) setSelectedVrm(match.path);
-				}
-
-				const personaSource = onlineConfig?.persona ?? existing?.persona;
-				if (personaSource) {
-					const match = PERSONALITY_PRESETS.find((p) =>
-						(personaSource as string).includes(p.id),
-					);
-					if (match) setSelectedPersonality(match.id);
-				}
-
-				// Returning user with existing settings → restore & complete
-				// First-time user → go through name/character/personality
-				if (source?.agentName && source?.userName) {
-					// Immediately persist config to local storage
-					// Prefer online values, fall back to local existing values
-					const existing = loadConfig();
-					const restored = {
-						...existing,
-						provider: "nextain" as ProviderId,
-						model: getDefaultLlmModel("nextain"),
-						apiKey: "",
-						userName: (onlineConfig?.userName ??
-							existing?.userName ??
-							source.userName) as string,
-						agentName: (onlineConfig?.agentName ??
-							existing?.agentName ??
-							source.agentName) as string,
-						persona: (onlineConfig?.persona ?? existing?.persona) as
-							| string
-							| undefined,
-						honorific: (onlineConfig?.honorific ?? existing?.honorific) as
-							| string
-							| undefined,
-						speechStyle: (onlineConfig?.speechStyle ?? existing?.speechStyle) as
-							| string
-							| undefined,
-						enableTools: true,
-						onboardingComplete: true,
-						naiaKey: key,
-						naiaUserId: userId,
-					};
-					saveConfig(restored);
-					await saveSecretKey("naiaKey", key);
-
-					// Sync to Naia Gateway
-					const fullPrompt = buildSystemPrompt(restored.persona, {
-						agentName: restored.agentName,
-						userName: restored.userName,
-						honorific: restored.honorific,
-						speechStyle: restored.speechStyle,
-						locale: restored.locale || getLocale(),
-						discordDefaultUserId: restored.discordDefaultUserId,
-						discordDmChannelId: restored.discordDmChannelId,
-					});
-					syncToGateway(
-						restored.provider,
-						restored.model,
-						restored.apiKey,
-						restored.persona,
-						restored.agentName,
-						restored.userName,
-						fullPrompt,
-						restored.locale || getLocale(),
-						restored.discordDmChannelId,
-						restored.discordDefaultUserId,
-						undefined,
-						undefined,
-						undefined,
-						undefined,
-						key,
-						restored.ollamaHost,
-					);
-
-					// Push to Lab if not yet saved online
-					if (!onlineConfig) {
-						pushConfigToLab(key, userId, restored);
-					}
-
-					// Restore avatar and skip directly to chat
-					if (restored.vrmModel) {
-						setAvatarModelPath(restored.vrmModel);
-					}
-					onComplete();
-				} else {
-					setStep("agentName");
-				}
+				setNaiaLoginWaiting(false);
+				setNaiaLoginDone(true);
 			},
 		);
 		return () => {
 			unlisten.then((fn) => fn());
+			if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
 		};
 	}, []);
-
-	// Listen for Discord auth deep-link callback
-	useEffect(() => {
-		const unlisten = listen<{
-			discordUserId?: string | null;
-			discordChannelId?: string | null;
-			discordTarget?: string | null;
-		}>("discord_auth_complete", (event) => {
-			const next = persistDiscordDefaults(event.payload);
-			if (!next) return;
-			setDiscordConnected(true);
-		});
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
-
-	useEffect(() => {
-		if (step !== "complete") return;
-		let cancelled = false;
-		const refreshDiscordStatus = async () => {
-			try {
-				const cfg = loadConfig();
-				const gatewayUrl = resolveGatewayUrl(cfg) || DEFAULT_GATEWAY_URL;
-				const result = await directToolCall({
-					toolName: "skill_channels",
-					args: { action: "status" },
-					requestId: `onboard-discord-status-${Date.now()}`,
-					gatewayUrl,
-					gatewayToken: cfg?.gatewayToken,
-				});
-				if (!result.success || !result.output || cancelled) return;
-				const channels = JSON.parse(result.output) as Array<{
-					id?: string;
-					accounts?: Array<{ connected?: boolean }>;
-				}>;
-				const discord = channels.find((ch) => ch.id === "discord");
-				const connected =
-					discord?.accounts?.some((acc) => acc.connected === true) ?? false;
-				setDiscordConnected(connected);
-			} catch {
-				// Keep optional flow non-blocking
-			}
-		};
-		void refreshDiscordStatus();
-		return () => {
-			cancelled = true;
-		};
-	}, [step]);
-
-	// Auto-detect naia-adk workspace root when workspace step is entered
-	useEffect(() => {
-		if (step !== "workspace" || workspaceRoot || workspaceDetecting) return;
-		let cancelled = false;
-		setWorkspaceDetecting(true);
-		invoke<string>("workspace_detect_adk_root")
-			.then((detected) => {
-				if (!cancelled) setWorkspaceRoot(detected);
-			})
-			.catch(() => {
-				// Detection failed — user can pick manually or skip
-			})
-			.finally(() => {
-				if (!cancelled) setWorkspaceDetecting(false);
-			});
-		return () => { cancelled = true; };
-	}, [step]); // eslint-disable-line react-hooks/exhaustive-deps
-
-	const stepIndex = STEPS.indexOf(step);
-	const safeAgentName = sanitizeName(agentName);
-	const displayName = safeAgentName || "Naia";
-
-	// Enter key advances to next step
-	function handleKeyDown(e: React.KeyboardEvent) {
-		if (e.key === "Enter" && canProceed()) {
-			e.preventDefault();
-			if (step === "complete") {
-				handleComplete();
-			} else {
-				goNext();
-			}
-		}
-	}
 
 	function goNext() {
-		const skipApiKey =
-			naiaKey ||
-			provider === "claude-code-cli" ||
-			provider === "ollama" ||
-			provider === "vllm";
-		const skipOllamaConfig = provider !== "ollama" && provider !== "vllm";
-		const skipSpeechStyle = !FORMALITY_LOCALES.has(getLocale());
-		if (stepIndex < STEPS.length - 1) {
-			let next = stepIndex + 1;
-			if (STEPS[next] === "apiKey" && skipApiKey) next++;
-			if (STEPS[next] === "ollamaConfig" && skipOllamaConfig) next++;
-			if (STEPS[next] === "speechStyle" && skipSpeechStyle) next++;
-			setStep(STEPS[next]);
-		}
+		if (transitioning.current) return;
+		const next = STEPS[stepIndex + 1];
+		if (!next) return;
+		transitioning.current = true;
+		setStep(next);
+		setTimeout(() => {
+			addMessage({
+				role: "assistant",
+				content: stepChat(next, agentName.trim() || "나이아", userName.trim()),
+			});
+			transitioning.current = false;
+		}, 300);
 	}
 
 	function goBack() {
-		const skipApiKey =
-			naiaKey ||
-			provider === "claude-code-cli" ||
-			provider === "ollama" ||
-			provider === "vllm";
-		const skipOllamaConfig = provider !== "ollama" && provider !== "vllm";
-		const skipSpeechStyle = !FORMALITY_LOCALES.has(getLocale());
-		if (stepIndex > 0) {
-			let prev = stepIndex - 1;
-			if (STEPS[prev] === "speechStyle" && skipSpeechStyle) prev--;
-			if (STEPS[prev] === "ollamaConfig" && skipOllamaConfig) prev--;
-			if (STEPS[prev] === "apiKey" && skipApiKey) prev--;
-			setStep(STEPS[prev]);
-		}
+		const prev = STEPS[stepIndex - 1];
+		if (!prev) return;
+		setStep(prev);
 	}
 
-	async function handleLabLogin() {
-		setLabWaiting(true);
-		setLabTimeout(false);
-		if (labTimerRef.current) clearTimeout(labTimerRef.current);
-		// Extend timeout to 3 min to cover first-run Chrome for Testing download (~180 MB)
-		labTimerRef.current = setTimeout(() => {
-			setLabWaiting(false);
-			setLabTimeout(true);
-			labTimerRef.current = null;
-		}, 180_000);
-		try {
-			const loginUrl = `${getNaiaWebBaseUrl()}/${getLocale()}/login?redirect=desktop&source=embedded`;
+	function handleVrmSelect(path: string) {
+		setSelectedVrm(path);
+		setAvatarModelPath(path);
+	}
 
-			// 1. agent-browser path: opens Chrome for Testing (cross-platform, no embed needed)
-			//    CDP monitor in browser_open_login detects /desktop/auth-complete and emits naia_auth_complete.
-			const agentBrowserOk = await invoke("browser_open_login", { url: loginUrl }).then(
+	function handleBgSelect(url: string) {
+		setSelectedBg(url);
+		setBackgroundVideoUrl(url);
+	}
+
+	async function handleNaiaLogin() {
+		setNaiaLoginWaiting(true);
+		naiaTimerRef.current = setTimeout(
+			() => setNaiaLoginWaiting(false),
+			180_000,
+		);
+		try {
+			const lang = getLocale();
+			const url = `${getNaiaWebBaseUrl()}/${lang}/login?redirect=desktop&source=embedded`;
+			const ok = await invoke("browser_open_login", { url }).then(
 				() => true,
 				() => false,
 			);
-			if (agentBrowserOk) {
-				// Clear timer so it doesn't fire a spurious timeout after fast login
-				if (labTimerRef.current) {
-					clearTimeout(labTimerRef.current);
-					labTimerRef.current = null;
-				}
-				return; // monitor will emit naia_auth_complete
+			if (!ok) {
+				const state = await invoke<string>("generate_oauth_state").catch(
+					() => "",
+				);
+				const params = new URLSearchParams({
+					redirect: "desktop",
+					source: "desktop",
+				});
+				if (state) params.set("state", state);
+				await openUrl(
+					`${getNaiaWebBaseUrl()}/${lang}/login?${params.toString()}`,
+				);
 			}
-
-			// 2. Embedded Chrome fallback (Linux X11 with embedded panel already open)
-			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
-			if (chromeAvailable) {
-				let port = 0;
-				for (let i = 0; i < 20; i++) {
-					port = await invoke<number>("browser_embed_port").catch(() => 0);
-					if (port !== 0) break;
-					await new Promise<void>((r) => setTimeout(r, 500));
-				}
-				if (port !== 0) {
-					await invoke("browser_embed_navigate", { url: loginUrl }).catch(() => {});
-					return;
-				}
-			}
-
-			// 3. System browser fallback: OS default browser → naia:// deep link
-			const state = await invoke<string>("generate_oauth_state").catch(() => "");
-			const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
-			if (state) params.set("state", state);
-			await openUrl(`${getNaiaWebBaseUrl()}/${getLocale()}/login?${params.toString()}`).catch(() => {
-				setLabWaiting(false);
-			});
 		} catch {
-			setLabWaiting(false);
-		}
-	}
-
-	async function handleValidate() {
-		if (provider === "claude-code-cli" || provider === "ollama") {
-			setValidationResult("success");
-			return;
-		}
-		if (!apiKey.trim()) return;
-		setValidating(true);
-		setValidationResult("idle");
-		try {
-			const ok = await validateApiKey(provider, apiKey.trim());
-			setValidationResult(ok ? "success" : "error");
-		} catch (err) {
-			Logger.warn("OnboardingWizard", "Validation failed", {
-				error: String(err),
-			});
-			setValidationResult("error");
-		} finally {
-			setValidating(false);
+			setNaiaLoginWaiting(false);
 		}
 	}
 
 	function handleComplete() {
-		const preset = PERSONALITY_PRESETS.find(
-			(p) => p.id === selectedPersonality,
-		);
-		const persona = preset
-			? preset.persona.replace(/\{name\}/g, displayName)
+		const base = loadConfig() ?? { provider: "nextain", model: "gemini-2.5-flash", apiKey: "" };
+		const vrmPath = selectedVrm.replace(/^\//, "");
+		const bgFilename = !selectedBg.startsWith("/assets/")
+			? (selectedBg.split(/[/\\?]/).pop() ?? undefined)
 			: undefined;
 
-		const defaultVrm = DEFAULT_AVATAR_MODEL;
-		const effectiveProvider: ProviderId = naiaKey ? "nextain" : provider;
-		// Merge with existing config to preserve fields set by discord_auth_complete etc.
-		const existing = loadConfig();
-		const config = {
-			...existing,
-			provider: effectiveProvider,
-			workspaceRoot: workspaceRoot.trim() || undefined,
-			model:
-				effectiveProvider === "ollama"
-					? selectedOllamaModel
-					: effectiveProvider === "vllm"
-						? selectedVllmModel
-						: getDefaultLlmModel(effectiveProvider),
-			apiKey:
-				naiaKey ||
-				provider === "claude-code-cli" ||
-				provider === "ollama" ||
-				provider === "vllm"
-					? ""
-					: apiKey.trim(),
+		const speechDesc =
+			speechStyle === "casual"
+				? "casually and warmly"
+				: speechStyle === "formal"
+					? "formally and professionally"
+					: "respectfully using honorifics";
+		const persona = `You are ${agentName.trim() || "Naia"}, an AI companion. Speak ${speechDesc}.`;
+
+		saveConfig({
+			...base,
+			agentName: agentName.trim() || "Naia",
 			userName: userName.trim() || undefined,
-			agentName: safeAgentName || undefined,
-			vrmModel: selectedVrm !== defaultVrm ? selectedVrm : undefined,
+			speechStyle,
+			honorific:
+				speechStyle === "honorific" && honorific.trim()
+					? honorific.trim()
+					: undefined,
+			vrmModel: vrmPath,
+			backgroundVideo: bgFilename,
 			persona,
-			honorific: honorificInput.trim() || undefined,
-			speechStyle: selectedSpeechStyle,
-			enableTools: true,
+			...(apiKey.trim() && !naiaLoginDone ? { apiKey: apiKey.trim() } : {}),
 			onboardingComplete: true,
-			naiaKey: naiaKey || undefined,
-			naiaUserId: naiaUserId || undefined,
-			ollamaHost: effectiveProvider === "ollama" ? ollamaHost : undefined,
-			vllmHost: effectiveProvider === "vllm" ? vllmHost : undefined,
-		};
-		saveConfig(config);
-		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
-
-		// Sync provider/model + full system prompt to Naia Gateway config
-		const fullPrompt = buildSystemPrompt(config.persona, {
-			agentName: config.agentName,
-			userName: config.userName,
-			honorific: config.honorific,
-			speechStyle: config.speechStyle,
-			locale: config.locale || getLocale(),
-			discordDefaultUserId: config.discordDefaultUserId,
-			discordDmChannelId: config.discordDmChannelId,
 		});
-		syncToGateway(
-			config.provider,
-			config.model,
-			config.apiKey,
-			config.persona,
-			config.agentName,
-			config.userName,
-			fullPrompt,
-			config.locale || getLocale(),
-			config.discordDmChannelId,
-			config.discordDefaultUserId,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			naiaKey || undefined,
-			config.ollamaHost || undefined,
-		);
 
-		// Sync to Lab if connected
-		if (naiaKey && naiaUserId) {
-			pushConfigToLab(naiaKey, naiaUserId, config);
-		}
-
-		setAvatarModelPath(selectedVrm);
-		onComplete();
+		setAvatarModelPath(`/${vrmPath}`);
+		addMessage({
+			role: "assistant",
+			content: stepChat(
+				"complete",
+				agentName.trim() || "나이아",
+				userName.trim(),
+			),
+		});
+		setTimeout(onComplete, 1200);
 	}
 
-	function canProceed(): boolean {
-		switch (step) {
-			case "provider":
-				return true;
-			case "apiKey":
-				return (
-					!!apiKey.trim() ||
-					!!naiaKey ||
-					provider === "claude-code-cli" ||
-					provider === "ollama" ||
-					provider === "vllm"
-				);
-			case "ollamaConfig":
-				if (provider === "vllm") return vllmConnected && !!selectedVllmModel;
-				return ollamaConnected && !!selectedOllamaModel;
-			case "agentName":
-				return !!sanitizeName(agentName);
-			case "userName":
-				return !!userName.trim();
-			default:
-				return true;
-		}
-	}
-
-	async function handleOptionalDiscordConnect() {
-		setDiscordConnectLoading(true);
-		try {
-			const lang = getLocale();
-			const connectUrl = `${getNaiaWebBaseUrl()}/${lang}/settings/integrations?channel=discord&source=naia-shell`;
-			await openUrl(connectUrl);
-		} catch (err) {
-			Logger.warn("OnboardingWizard", "Optional discord connect failed", {
-				error: String(err),
-			});
-		} finally {
-			setDiscordConnectLoading(false);
-		}
-	}
+	const isFirst = stepIndex === 0;
+	const isCompleteStep = step === "complete";
+	const progressSteps = STEPS.slice(0, -1); // exclude "complete" from dot indicators
 
 	return (
-		<div className="onboarding-overlay" onKeyDown={handleKeyDown}>
-			<div className="onboarding-card">
-				{/* Step indicators */}
-				<div className="onboarding-steps">
-					{STEPS.map((s, i) => (
-						<div
-							key={s}
-							className={`onboarding-step-dot${i <= stepIndex ? " active" : ""}`}
-						/>
-					))}
-				</div>
+		<div className="onboarding-panel">
+			{/* Progress dots */}
+			<div className="onboarding-progress">
+				{progressSteps.map((s, i) => (
+					<div
+						key={s}
+						className={`onboarding-progress__dot${
+							s === step ? " onboarding-progress__dot--active" : ""
+						}${i < stepIndex ? " onboarding-progress__dot--done" : ""}`}
+					/>
+				))}
+			</div>
 
-				{/* Step: Provider (FIRST) */}
-				{step === "provider" && (
-					<div className="onboarding-content">
-						<h2>{t("onboard.provider.title")}</h2>
-
-						{/* Lab login — prominent card at top */}
-						<button
-							type="button"
-							className={`onboarding-provider-card lab-card${naiaKey ? " selected" : ""}`}
-							disabled={labWaiting}
-							onClick={handleLabLogin}
-						>
-							<span className="provider-card-label">
-								{naiaKey
-									? t("onboard.apiKey.success")
-									: labWaiting
-										? t("onboard.lab.waiting")
-										: "Naia"}
-							</span>
-							<span className="provider-card-desc">
-								{t("onboard.lab.description")}
-							</span>
-						</button>
-
-						{labTimeout && (
-							<div className="onboarding-validation-error">
-								{t("onboard.lab.timeout")}
-							</div>
-						)}
-
-						<div className="onboarding-divider">
-							<span>{t("onboard.lab.or")}</span>
-						</div>
-
-						<div className="onboarding-provider-cards">
-							{ONBOARDING_PROVIDERS.map((p) => (
-								<button
-									key={p.id}
-									type="button"
-									className={`onboarding-provider-card${!naiaKey && provider === p.id ? " selected" : ""}${p.disabled ? " disabled" : ""}`}
-									disabled={p.disabled}
-									onClick={() => {
-										if (p.disabled) return;
-										setProvider(p.id as ProviderId);
-										setNaiaKey("");
-										setNaiaUserId("");
-										setLabTimeout(false);
-									}}
-								>
-									<span className="provider-card-label">{p.name}</span>
-									<span className="provider-card-desc">
-										{t((p.descKey ?? "provider.apiKeyRequired") as any)}
-									</span>
-								</button>
-							))}
-						</div>
-					</div>
-				)}
-
-				{/* Step: API Key */}
-				{step === "apiKey" && (
-					<div className="onboarding-content">
-						<h2>{t("onboard.apiKey.title")}</h2>
-						<input
-							type="password"
-							className="onboarding-input"
-							value={apiKey}
-							onChange={(e) => {
-								setApiKey(e.target.value);
-								setValidationResult("idle");
-							}}
-							placeholder="API key..."
-						/>
-						<button
-							type="button"
-							className="onboarding-validate-btn"
-							onClick={handleValidate}
-							disabled={!apiKey.trim() || validating}
-						>
-							{validating
-								? t("onboard.apiKey.validating")
-								: t("onboard.apiKey.validate")}
-						</button>
-						{validationResult === "success" && (
-							<div className="onboarding-validation-success">
-								{t("onboard.apiKey.success")}
-							</div>
-						)}
-						{validationResult === "error" && (
-							<div className="onboarding-validation-error">
-								{t("onboard.apiKey.error")}
-							</div>
-						)}
-					</div>
-				)}
-
-				{/* Step: Local Server Config (Ollama / vLLM) */}
-				{step === "ollamaConfig" && provider === "ollama" && (
-					<div className="onboarding-content">
-						<h2>Ollama 설정</h2>
-						<div className="settings-field">
-							<label>Host URL</label>
-							<input
-								type="text"
-								className="onboarding-input"
-								value={ollamaHost}
-								onChange={(e) => setOllamaHost(e.target.value)}
-								placeholder={DEFAULT_OLLAMA_HOST}
-							/>
-						</div>
-						<button
-							type="button"
-							className="onboarding-validate-btn"
-							onClick={async () => {
-								const result = await fetchOllamaModels(ollamaHost);
-								setOllamaConnected(result.connected);
-								setOllamaModels(result.models);
-								if (result.models.length > 0 && !selectedOllamaModel) {
-									setSelectedOllamaModel(result.models[0].id);
-								}
-							}}
-						>
-							연결 확인
-						</button>
-						{ollamaConnected && ollamaModels.length > 0 && (
-							<select
-								className="onboarding-input"
-								value={selectedOllamaModel}
-								onChange={(e) => setSelectedOllamaModel(e.target.value)}
-							>
-								{ollamaModels.map((m) => (
-									<option key={m.id} value={m.id}>
-										{m.label}
-									</option>
-								))}
-							</select>
-						)}
-						{ollamaConnected && ollamaModels.length === 0 && (
-							<div className="onboarding-validation-error">
-								모델 없음 — `ollama pull` 명령으로 모델을 설치하세요
-							</div>
-						)}
-						{!ollamaConnected && ollamaModels.length === 0 && (
-							<div className="settings-hint">
-								Ollama 서버에 연결하려면 위 버튼을 클릭하세요
-							</div>
-						)}
-					</div>
-				)}
-				{step === "ollamaConfig" && provider === "vllm" && (
-					<div className="onboarding-content">
-						<h2>vLLM 설정</h2>
-						<div className="settings-field">
-							<label>Server URL</label>
-							<input
-								type="text"
-								className="onboarding-input"
-								value={vllmHost}
-								onChange={(e) => setVllmHost(e.target.value)}
-								placeholder={DEFAULT_VLLM_HOST}
-							/>
-						</div>
-						<button
-							type="button"
-							className="onboarding-validate-btn"
-							onClick={async () => {
-								const result = await fetchVllmModels(vllmHost);
-								setVllmConnected(result.connected);
-								setVllmModels(result.models);
-								if (result.models.length > 0 && !selectedVllmModel) {
-									setSelectedVllmModel(result.models[0].id);
-								}
-							}}
-						>
-							연결 확인
-						</button>
-						{vllmConnected && vllmModels.length > 0 && (
-							<select
-								className="onboarding-input"
-								value={selectedVllmModel}
-								onChange={(e) => setSelectedVllmModel(e.target.value)}
-							>
-								{vllmModels.map((m) => (
-									<option key={m.id} value={m.id}>
-										{m.label}
-									</option>
-								))}
-							</select>
-						)}
-						{vllmConnected && vllmModels.length === 0 && (
-							<div className="onboarding-validation-error">
-								모델 없음 — vLLM 서버에 모델이 로드되어 있는지 확인하세요
-							</div>
-						)}
-						{!vllmConnected && vllmModels.length === 0 && (
-							<div className="settings-hint">
-								vLLM 서버에 연결하려면 위 버튼을 클릭하세요
-							</div>
-						)}
-					</div>
-				)}
-
-				{/* Step: Agent Name */}
+			{/* Step content */}
+			<div className="onboarding-step">
 				{step === "agentName" && (
-					<div className="onboarding-content">
-						<h2>{t("onboard.agentName.title")}</h2>
+					<>
+						<h2 className="onboarding-step__title">
+							{t("onboard.agentName.title")}
+						</h2>
 						<input
-							type="text"
-							className="onboarding-input"
+							className="onboarding-step__input"
 							value={agentName}
 							onChange={(e) => setAgentName(e.target.value)}
-							placeholder={t("onboard.name.placeholder")}
+							placeholder="Naia"
+							maxLength={20}
+							autoFocus
+							onKeyDown={(e) => e.key === "Enter" && goNext()}
 						/>
-					</div>
+						<p className="onboarding-step__hint">
+							{t("onboard.agentName.description")}
+						</p>
+					</>
 				)}
 
-				{/* Step: User Name */}
 				{step === "userName" && (
-					<div className="onboarding-content">
-						<h2>
-							{t("onboard.userName.title").replace("{agent}", displayName)}
+					<>
+						<h2 className="onboarding-step__title">
+							{t("onboard.userName.title").replace("{agent}", agentName.trim() || "나이아")}
 						</h2>
 						<input
-							type="text"
-							className="onboarding-input"
+							className="onboarding-step__input"
 							value={userName}
 							onChange={(e) => setUserName(e.target.value)}
-							placeholder={t("onboard.name.placeholder")}
+							placeholder="Luke"
+							maxLength={20}
+							autoFocus
+							onKeyDown={(e) => e.key === "Enter" && goNext()}
 						/>
-					</div>
-				)}
-
-				{/* Step: Workspace (naia-adk root) */}
-				{step === "workspace" && (
-					<div className="onboarding-content">
-						<h2>워크스페이스 설정</h2>
-						<p className="onboarding-description">
-							naia-adk 워크스페이스 폴더를 지정하세요. 스킬과 에이전트 설정이 여기서 로드됩니다.
+						<p className="onboarding-step__hint">
+							{t("onboard.userName.description")}
 						</p>
-						{workspaceDetecting ? (
-							<p className="onboarding-description">감지 중…</p>
-						) : workspaceRoot ? (
-							<div className="settings-field">
-								<label>감지된 경로</label>
-								<input
-									type="text"
-									className="onboarding-input"
-									value={workspaceRoot}
-									onChange={(e) => setWorkspaceRoot(e.target.value)}
-									placeholder="/path/to/naia-adk"
-								/>
-							</div>
-						) : (
-							<p className="onboarding-description">
-								naia-adk를 찾지 못했습니다 — 직접 선택하거나 건너뛰세요.
-							</p>
-						)}
-						<button
-							type="button"
-							className="onboarding-validate-btn"
-							onClick={async () => {
-								const selected = await open({ directory: true, title: "naia-adk 폴더 선택" });
-								if (selected && typeof selected === "string") setWorkspaceRoot(selected);
-							}}
-						>
-							폴더 선택
-						</button>
-					</div>
+					</>
 				)}
 
-				{/* Step: Character (VRM) with preview */}
+				{step === "speechStyle" && (
+					<>
+						<h2 className="onboarding-step__title">
+							{t("onboard.speechStyle.title").replace("{agent}", agentName.trim() || "나이아")}
+						</h2>
+						<div className="onboarding-step__options">
+							{(["casual", "formal", "honorific"] as const).map((style) => (
+								<button
+									key={style}
+									type="button"
+									className={`onboarding-step__option${speechStyle === style ? " onboarding-step__option--selected" : ""}`}
+									onClick={() => setSpeechStyle(style)}
+								>
+									<span className="onboarding-step__option-label">
+										{style === "casual"
+											? t("onboard.speechStyle.casual")
+											: style === "formal"
+												? t("onboard.speechStyle.formal")
+												: t("onboard.speechStyle.honorificLabel")}
+									</span>
+									<span className="onboarding-step__option-desc">
+										{style === "casual"
+											? t("onboard.speechStyle.casualDesc")
+											: style === "formal"
+												? t("onboard.speechStyle.formalDesc")
+												: ""}
+									</span>
+								</button>
+							))}
+						</div>
+						{speechStyle === "honorific" && (
+							<input
+								className="onboarding-step__input onboarding-step__input--sm"
+								value={honorific}
+								onChange={(e) => setHonorific(e.target.value)}
+								placeholder={t("onboard.speechStyle.honorificPlaceholder")}
+								maxLength={10}
+							/>
+						)}
+					</>
+				)}
+
 				{step === "character" && (
-					<div className="onboarding-content">
-						<h2>
+					<>
+						<h2 className="onboarding-step__title">
 							{t("onboard.character.title")
 								.replace("{user}", userName.trim() || "")
-								.replace("{agent}", displayName)}
+								.replace("{agent}", agentName.trim() || "나이아")}
 						</h2>
-						<VrmPreview modelPath={selectedVrm} />
-						<div className="onboarding-vrm-cards">
-							{AVATAR_PRESETS.map((v) => (
-								<button
-									key={v.path}
-									type="button"
-									className={`onboarding-vrm-card${selectedVrm === v.path ? " selected" : ""}`}
-									onClick={() => setSelectedVrm(v.path)}
-									style={
-										v.previewImage
-											? {
-													padding: 0,
-													overflow: "hidden",
-													display: "flex",
-													flexDirection: "column",
-												}
-											: {}
-									}
-								>
-									{v.previewImage && (
-										<img
-											src={v.previewImage}
-											alt={v.label}
-											style={{
-												width: "100%",
-												height: "60px",
-												objectFit: "cover",
-												flexShrink: 0,
-											}}
-										/>
-									)}
-									<span
-										className="onboarding-vrm-label"
-										style={
-											v.previewImage
-												? {
-														flexGrow: 1,
-														display: "flex",
-														alignItems: "center",
-														justifyContent: "center",
-														padding: "4px",
-													}
-												: {}
-										}
+						<div className="onboarding-step__avatar-list">
+							{naiaVrms.length === 0 ? (
+								<p className="onboarding-step__hint onboarding-step__hint--warn">
+									naia-settings/vrm-files/ 폴더에 VRM 파일이 없습니다.
+									<br />
+									파일을 추가하고 앱을 재시작해 주세요.
+								</p>
+							) : naiaVrms.map((path) => {
+								const label = (path.split(/[/\\]/).pop() ?? path).replace(/\.vrm$/i, "");
+								return (
+									<button
+										key={path}
+										type="button"
+										className={`onboarding-step__avatar-item${selectedVrm === path ? " onboarding-step__avatar-item--selected" : ""}`}
+										onClick={() => handleVrmSelect(path)}
 									>
-										{v.label}
-									</span>
-								</button>
-							))}
+										{label}
+									</button>
+								);
+							})}
 						</div>
-						<p className="onboarding-description">
+						<p className="onboarding-step__hint">
 							{t("onboard.character.hint")}
 						</p>
-					</div>
+					</>
 				)}
 
-				{/* Step: Personality */}
-				{step === "personality" && (
-					<div className="onboarding-content">
-						<h2>
-							{t("onboard.personality.title").replace("{agent}", displayName)}
+				{step === "background" && (
+					<>
+						<h2 className="onboarding-step__title">
+							{t("onboard.background.title")}
 						</h2>
-						<div className="onboarding-personality-cards">
-							{PERSONALITY_PRESETS.map((p) => (
+						<div className="onboarding-step__bg-grid">
+							{backgrounds.map((bg) => (
 								<button
-									key={p.id}
+									key={bg.url}
 									type="button"
-									className={`onboarding-personality-card${selectedPersonality === p.id ? " selected" : ""}`}
-									onClick={() => {
-										setSelectedPersonality(p.id);
-										setSelectedSpeechStyle(
-											p.id === "polite" || p.id === "calm"
-												? "formal"
-												: "casual",
-										);
-									}}
+									className={`onboarding-step__bg-card${selectedBg === bg.url ? " onboarding-step__bg-card--selected" : ""}`}
+									onClick={() => handleBgSelect(bg.url)}
 								>
-									<span className="personality-card-label">
-										{t(p.labelKey as any)}
-									</span>
-									<span className="personality-card-desc">
-										{t(p.descKey as any)}
-									</span>
+									{isVideo(bg.url) ? (
+										<div className="onboarding-step__bg-video-thumb">▶</div>
+									) : (
+										<img
+											src={bg.url}
+											alt={bg.label}
+											className="onboarding-step__bg-img"
+										/>
+									)}
+									<span className="onboarding-step__bg-label">{bg.label}</span>
 								</button>
 							))}
 						</div>
-						<p className="onboarding-description">
-							{t("onboard.personality.hint")}
+						<p className="onboarding-step__hint">
+							{t("onboard.background.hint")}
 						</p>
-					</div>
+					</>
 				)}
 
-				{/* Step: Speech Style */}
-				{step === "speechStyle" && (
-					<div className="onboarding-content">
-						<h2>
-							{t("onboard.speechStyle.title").replace("{agent}", displayName)}
-						</h2>
-						<div className="onboarding-personality-cards">
-							<button
-								type="button"
-								className={`onboarding-personality-card${selectedSpeechStyle === "casual" ? " selected" : ""}`}
-								onClick={() => setSelectedSpeechStyle("casual")}
-							>
-								<span className="personality-card-label">
-									{t("onboard.speechStyle.casual")}
-								</span>
-								<span className="personality-card-desc">
-									{t("onboard.speechStyle.casualDesc")}
-								</span>
-							</button>
-							<button
-								type="button"
-								className={`onboarding-personality-card${selectedSpeechStyle === "formal" ? " selected" : ""}`}
-								onClick={() => setSelectedSpeechStyle("formal")}
-							>
-								<span className="personality-card-label">
-									{t("onboard.speechStyle.formal")}
-								</span>
-								<span className="personality-card-desc">
-									{t("onboard.speechStyle.formalDesc")}
-								</span>
-							</button>
-						</div>
-						<div className="settings-field" style={{ marginTop: 16 }}>
-							<label>{t("onboard.speechStyle.honorificLabel")}</label>
-							<input
-								type="text"
-								className="onboarding-input"
-								value={honorificInput}
-								onChange={(e) => setHonorificInput(e.target.value)}
-								placeholder={t("onboard.speechStyle.honorificPlaceholder")}
-							/>
-						</div>
-						<p className="onboarding-description">
-							{t("onboard.speechStyle.hint")}
-						</p>
-					</div>
-				)}
-
-				{/* Step: Complete */}
-				{step === "complete" && (
-					<div className="onboarding-content">
-						<h2>
-							{t("onboard.complete.greeting").replace(
-								"{name}",
-								userName.trim() || "User",
-							)}
-						</h2>
-						<p className="onboarding-description">
-							{t("onboard.complete.ready").replace("{agent}", displayName)}
-						</p>
-						<div
-							style={{
-								marginTop: 12,
-								display: "flex",
-								flexDirection: "column",
-								gap: 8,
-							}}
-						>
-							<span className="onboarding-description">
-								선택: Discord 봇도 지금 연결할 수 있어요.
-							</span>
-							<div style={{ display: "flex", gap: 8 }}>
+				{step === "provider" && (
+					<>
+						<h2 className="onboarding-step__title">{t("onboard.lab.title")}</h2>
+						{naiaLoginDone ? (
+							<div className="onboarding-step__provider-done">
+								<span className="onboarding-step__provider-check">✓</span>
+								<p>{t("onboard.lab.connected")}</p>
+							</div>
+						) : apiKeyMode ? (
+							<>
+								<p className="onboarding-step__hint">
+									API 키를 입력하세요. 나중에 설정에서 변경할 수 있어요.
+								</p>
+								<input
+									className="onboarding-step__input"
+									value={apiKey}
+									onChange={(e) => setApiKey(e.target.value)}
+									placeholder="sk-... / gw-..."
+									autoFocus
+								/>
 								<button
 									type="button"
-									className="onboarding-back-btn"
-									onClick={() => void handleOptionalDiscordConnect()}
-									disabled={discordConnectLoading}
-									data-testid="onboarding-discord-connect-btn"
+									className="onboarding-step__link"
+									onClick={() => setApiKeyMode(false)}
 								>
-									{discordConnectLoading
-										? t("onboard.discordConnecting")
-										: t("onboard.discordConnect")}
+									← Naia 로그인으로 돌아가기
 								</button>
-								<span className="onboarding-description">
-									{discordConnected
-										? t("onboard.discordConnected")
-										: t("onboard.discordStatus")}
-								</span>
-							</div>
-						</div>
-					</div>
+							</>
+						) : (
+							<>
+								<button
+									type="button"
+									className="onboarding-step__naia-btn"
+									onClick={handleNaiaLogin}
+									disabled={naiaLoginWaiting}
+								>
+									{naiaLoginWaiting
+										? t("onboard.lab.waiting")
+										: t("onboard.lab.login")}
+								</button>
+								<div className="onboarding-step__provider-or">
+									{t("onboard.lab.or")}
+								</div>
+								<button
+									type="button"
+									className="onboarding-step__link"
+									onClick={() => setApiKeyMode(true)}
+								>
+									{t("provider.apiKeyRequired")} 직접 입력
+								</button>
+								<button
+									type="button"
+									className="onboarding-step__link onboarding-step__link--muted"
+									onClick={goNext}
+								>
+									나중에 설정 →
+								</button>
+							</>
+						)}
+					</>
 				)}
 
-				{/* Navigation */}
-				<div className="onboarding-nav">
-					{stepIndex > 0 && step !== "complete" && (
-						<button
-							type="button"
-							className="onboarding-back-btn"
-							onClick={goBack}
-						>
-							{t("onboard.back")}
-						</button>
-					)}
-					<div className="onboarding-nav-spacer" />
-					{step === "complete" ? (
-						<button
-							type="button"
-							className="onboarding-next-btn"
-							onClick={handleComplete}
-						>
-							{t("onboard.complete.start")}
-						</button>
-					) : (
-						<button
-							type="button"
-							className="onboarding-next-btn"
-							onClick={goNext}
-							disabled={!canProceed()}
-						>
-							{t("onboard.next")}
-						</button>
-					)}
-				</div>
+				{step === "complete" && (
+					<>
+						<h2 className="onboarding-step__title">
+							{t("onboard.complete.greeting")}
+						</h2>
+						<p className="onboarding-step__hint">
+							{t("onboard.complete.ready")}
+						</p>
+					</>
+				)}
+			</div>
+
+			{/* Navigation */}
+			<div className="onboarding-step__actions">
+				{!isFirst && !isCompleteStep && (
+					<button
+						type="button"
+						className="onboarding-step__back-btn"
+						onClick={goBack}
+					>
+						{t("onboard.back")}
+					</button>
+				)}
+				{/* Provider step: skip handled internally; other steps show Next/Start */}
+				{step !== "provider" && (
+					<button
+						type="button"
+						className="onboarding-step__next-btn"
+						onClick={isCompleteStep ? handleComplete : goNext}
+					>
+						{isCompleteStep ? t("onboard.complete.start") : t("onboard.next")}
+					</button>
+				)}
+				{step === "provider" && (naiaLoginDone || apiKeyMode) && (
+					<button
+						type="button"
+						className="onboarding-step__next-btn"
+						onClick={goNext}
+					>
+						{t("onboard.next")}
+					</button>
+				)}
 			</div>
 		</div>
 	);

@@ -379,12 +379,8 @@ function ClawHubBanner() {
 		<div className="clawhub-banner">
 			<div className="clawhub-banner-icon">🐙</div>
 			<div className="clawhub-banner-content">
-				<div className="clawhub-banner-title">
-					{t("skills.clawHubTitle")}
-				</div>
-				<div className="clawhub-banner-desc">
-					{t("skills.clawHubDesc")}
-				</div>
+				<div className="clawhub-banner-title">{t("skills.clawHubTitle")}</div>
+				<div className="clawhub-banner-desc">{t("skills.clawHubDesc")}</div>
 			</div>
 			<a
 				className="clawhub-banner-link"

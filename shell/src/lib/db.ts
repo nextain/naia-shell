@@ -29,7 +29,9 @@ export async function deleteAgentFact(factId: string): Promise<boolean> {
  * Export an encrypted memory backup via Tauri IPC → Agent → LocalAdapter.export().
  * Returns raw encrypted bytes.
  */
-export async function exportMemoryBackup(password: string): Promise<Uint8Array> {
+export async function exportMemoryBackup(
+	password: string,
+): Promise<Uint8Array> {
 	const bytes = await invoke<number[]>("memory_export_backup", { password });
 	return new Uint8Array(bytes);
 }

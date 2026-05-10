@@ -15,8 +15,8 @@ import { createGeminiLiveSession } from "./gemini-live";
 import { createGeminiLiveProxySession } from "./gemini-live-proxy";
 import { createMiniCpmOSession } from "./minicpm-o";
 import { createOpenAIRealtimeSession } from "./openai-realtime";
-import { createVllmOmniSession } from "./vllm-omni";
 import type { LiveProviderId, VoiceSession } from "./types";
+import { createVllmOmniSession } from "./vllm-omni";
 
 export {
 	type LiveProviderId,

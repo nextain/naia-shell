@@ -6,6 +6,10 @@ import type { EmotionName } from "../lib/vrm/expression";
 interface AvatarState {
 	modelPath: string;
 	backgroundImage: string;
+	/** Asset URL (convertFileSrc) for background video. Empty = no video. */
+	backgroundVideoUrl: string;
+	/** Asset URL (convertFileSrc) for BGM track. Empty = no BGM. */
+	bgmTrackUrl: string;
 	animationPath: string;
 	isLoaded: boolean;
 	loadProgress: number;
@@ -19,6 +23,8 @@ interface AvatarState {
 	setPendingAudio: (data: string | null) => void;
 	setModelPath: (path: string) => void;
 	setBackgroundImage: (path: string) => void;
+	setBackgroundVideoUrl: (url: string) => void;
+	setBgmTrackUrl: (url: string) => void;
 }
 
 function getInitialModelPath(): string {
@@ -34,6 +40,8 @@ function getInitialBgImage(): string {
 export const useAvatarStore = create<AvatarState>((set) => ({
 	modelPath: getInitialModelPath(),
 	backgroundImage: getInitialBgImage(),
+	backgroundVideoUrl: "",
+	bgmTrackUrl: "",
 	animationPath: "/animations/idle_loop.vrma",
 	isLoaded: false,
 	loadProgress: 0,
@@ -48,4 +56,6 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	setModelPath: (path) =>
 		set({ modelPath: path, isLoaded: false, loadProgress: 0 }),
 	setBackgroundImage: (path) => set({ backgroundImage: path }),
+	setBackgroundVideoUrl: (url) => set({ backgroundVideoUrl: url }),
+	setBgmTrackUrl: (url) => set({ bgmTrackUrl: url }),
 }));

@@ -23,7 +23,7 @@
  *     {"type": "error", "error": "..."}
  */
 import { Logger } from "../logger";
-import { encodeRefAudio, RefAudioEncodeError } from "./ref-audio";
+import { RefAudioEncodeError, encodeRefAudio } from "./ref-audio";
 import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
@@ -201,7 +201,11 @@ export function createMiniCpmOSession(): VoiceSession {
 			if (isAiSpeaking) return;
 
 			const bytes = base64ToUint8Array(pcmBase64);
-			const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+			const samples = new Int16Array(
+				bytes.buffer,
+				bytes.byteOffset,
+				bytes.byteLength / 2,
+			);
 			pcmBuffer.push(samples.slice());
 
 			const chunkRms = rms(samples);
@@ -224,7 +228,10 @@ export function createMiniCpmOSession(): VoiceSession {
 				if (!maxBufferTimer) {
 					maxBufferTimer = setTimeout(() => {
 						maxBufferTimer = null;
-						if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+						if (silenceTimer) {
+							clearTimeout(silenceTimer);
+							silenceTimer = null;
+						}
 						flushAudio();
 					}, MAX_BUFFER_MS);
 				}
@@ -357,7 +364,10 @@ export function createMiniCpmOSession(): VoiceSession {
 
 	/** Send buffered PCM to server as base64 append + commit. */
 	function flushAudio() {
-		if (maxBufferTimer) { clearTimeout(maxBufferTimer); maxBufferTimer = null; }
+		if (maxBufferTimer) {
+			clearTimeout(maxBufferTimer);
+			maxBufferTimer = null;
+		}
 		if (!ws || !connected) return;
 
 		const totalSamples = pcmBuffer.reduce((n, c) => n + c.length, 0);
@@ -380,7 +390,9 @@ export function createMiniCpmOSession(): VoiceSession {
 			ws.send(
 				JSON.stringify({
 					type: "input_audio_buffer.append",
-					audio: uint8ArrayToBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength)),
+					audio: uint8ArrayToBase64(
+						new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength),
+					),
 				}),
 			);
 			ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
