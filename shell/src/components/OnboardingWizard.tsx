@@ -2,7 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
-import { listNaiaAssets, toAssetUrl } from "../lib/adk-store";
+import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
@@ -91,9 +92,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	>("casual");
 	const [honorific, setHonorific] = useState("");
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
-	const [selectedVrm, setSelectedVrm] = useState("");
+	const [selectedVrm, setSelectedVrm] = useState(DEFAULT_AVATAR_MODEL);
 	const [backgrounds, setBackgrounds] = useState<BgOption[]>([]);
-	const [selectedBg, setSelectedBg] = useState("/assets/background-space.webp");
+	const [selectedBg, setSelectedBg] = useState("");
 	// Provider step state
 	const [apiKey, setApiKey] = useState("");
 	const [apiKeyMode, setApiKeyMode] = useState(false);
@@ -105,7 +106,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const didMount = useRef(false);
 	const transitioning = useRef(false);
 
-	// Load VRM list from naia-settings only — no hardcoded fallback
+	// Load VRM list from naia-settings
 	useEffect(() => {
 		listNaiaAssets("vrm-files").then((paths) => {
 			const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
@@ -118,7 +119,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	useEffect(() => {
 		if (!didMount.current) {
 			didMount.current = true;
-			setBackgroundVideoUrl("/assets/background-space.webp");
+			setBackgroundVideoUrl("");
 			setTimeout(() => {
 				addMessage({
 					role: "assistant",
@@ -128,25 +129,20 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 	}, [addMessage]);
 
-	// Load backgrounds from ADK folder
+	// Load backgrounds from naia-settings
 	useEffect(() => {
-		const builtin: BgOption = {
-			url: "/assets/background-space.webp",
-			label: t("onboard.background.default"),
-		};
 		listNaiaAssets("background")
-			.then((paths) => {
-				const adkBgs: BgOption[] = paths.map((p) => ({
-					url: toAssetUrl(p),
-					label:
-						p
-							.split(/[/\\]/)
-							.pop()
-							?.replace(/\.[^.]+$/, "") ?? p,
-				}));
-				setBackgrounds([builtin, ...adkBgs]);
+			.then(async (paths) => {
+				const bgs: BgOption[] = await Promise.all(
+					paths.map(async (p) => ({
+						url: await toLocalBlobUrl(p),
+						label: p.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") ?? p,
+					})),
+				);
+				setBackgrounds(bgs);
+				if (bgs.length > 0) setSelectedBg(bgs[0].url);
 			})
-			.catch(() => setBackgrounds([builtin]));
+			.catch(() => {});
 	}, []);
 
 	// Listen for Naia OAuth callback in provider step
@@ -237,7 +233,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			model: "gemini-2.5-flash",
 			apiKey: "",
 		};
-		const vrmPath = selectedVrm.replace(/^\//, "");
+		const vrmPath = selectedVrm || DEFAULT_AVATAR_MODEL;
 		const bgFilename = !selectedBg.startsWith("/assets/")
 			? (selectedBg.split(/[/\\?]/).pop() ?? undefined)
 			: undefined;
@@ -266,7 +262,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			onboardingComplete: true,
 		});
 
-		setAvatarModelPath(`/${vrmPath}`);
+		setAvatarModelPath(vrmPath);
 		addMessage({
 			role: "assistant",
 			content: stepChat(
@@ -397,15 +393,12 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							{naiaVrms.length === 0 ? (
 								<p className="onboarding-step__hint onboarding-step__hint--warn">
 									naia-settings/vrm-files/ 폴더에 VRM 파일이 없습니다.
-									<br />
-									파일을 추가하고 앱을 재시작해 주세요.
 								</p>
 							) : (
 								naiaVrms.map((path) => {
-									const label = (path.split(/[/\\]/).pop() ?? path).replace(
-										/\.vrm$/i,
-										"",
-									);
+									const filename = path.split(/[/\\]/).pop() ?? path;
+									const label = filename.replace(/\.vrm$/i, "");
+									const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
 									return (
 										<button
 											key={path}
@@ -413,7 +406,16 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 											className={`onboarding-step__avatar-item${selectedVrm === path ? " onboarding-step__avatar-item--selected" : ""}`}
 											onClick={() => handleVrmSelect(path)}
 										>
-											{label}
+											<img
+												src={thumb}
+												className="onboarding-step__avatar-thumb"
+												alt={label}
+												onError={(e) => {
+													(e.currentTarget as HTMLImageElement).style.display =
+														"none";
+												}}
+											/>
+											<span>{label}</span>
 										</button>
 									);
 								})

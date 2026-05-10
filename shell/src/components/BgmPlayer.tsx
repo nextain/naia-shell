@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { listNaiaAssets, toAssetUrl } from "../lib/adk-store";
+import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { Logger } from "../lib/logger";
 import { useAvatarStore } from "../stores/avatar";
 
@@ -15,8 +15,8 @@ export function BgmPlayer() {
 
 	// Load available tracks from naia-settings/bgm-musics/
 	useEffect(() => {
-		listNaiaAssets("bgm-musics").then((paths) => {
-			const urls = paths.map(toAssetUrl);
+		listNaiaAssets("bgm-musics").then(async (paths) => {
+			const urls = await Promise.all(paths.map(toLocalBlobUrl));
 			const names = paths.map(
 				(p) =>
 					p
@@ -42,7 +42,10 @@ export function BgmPlayer() {
 			audio.src = bgmTrackUrl;
 			if (playing) {
 				audio.play().catch((err) => {
-					Logger.error("BgmPlayer", "sync play failed", { error: String(err), src: bgmTrackUrl });
+					Logger.error("BgmPlayer", "sync play failed", {
+						error: String(err),
+						src: bgmTrackUrl,
+					});
 				});
 			}
 		}
@@ -61,14 +64,20 @@ export function BgmPlayer() {
 			audio.pause();
 			setPlaying(false);
 		} else {
-			if (tracks.length > 0 && (!audio.src || audio.src === window.location.href)) {
+			if (
+				tracks.length > 0 &&
+				(!audio.src || audio.src === window.location.href)
+			) {
 				audio.src = tracks[currentIndex];
 			}
 			audio
 				.play()
 				.then(() => setPlaying(true))
 				.catch((err) => {
-					Logger.error("BgmPlayer", "play failed", { error: String(err), src: audio.src });
+					Logger.error("BgmPlayer", "play failed", {
+						error: String(err),
+						src: audio.src,
+					});
 				});
 		}
 	}
@@ -81,7 +90,14 @@ export function BgmPlayer() {
 		const audio = audioRef.current;
 		if (audio) {
 			audio.src = tracks[next];
-			if (playing) audio.play().catch((err) => Logger.error("BgmPlayer", "next play failed", { error: String(err) }));
+			if (playing)
+				audio
+					.play()
+					.catch((err) =>
+						Logger.error("BgmPlayer", "next play failed", {
+							error: String(err),
+						}),
+					);
 		}
 	}
 
@@ -93,7 +109,14 @@ export function BgmPlayer() {
 		const audio = audioRef.current;
 		if (audio) {
 			audio.src = tracks[prev];
-			if (playing) audio.play().catch((err) => Logger.error("BgmPlayer", "prev play failed", { error: String(err) }));
+			if (playing)
+				audio
+					.play()
+					.catch((err) =>
+						Logger.error("BgmPlayer", "prev play failed", {
+							error: String(err),
+						}),
+					);
 		}
 	}
 

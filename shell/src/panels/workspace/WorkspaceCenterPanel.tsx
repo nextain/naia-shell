@@ -187,7 +187,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		}
 	}, []);
 
-const { openFilePath, openFile, goBack, goForward } = useFileNavHistory();
+	const { openFilePath, openFile, goBack, goForward } = useFileNavHistory();
 	const editorRef = useRef<EditorHandle>(null);
 	const [editorBadge, setEditorBadge] = useState("");
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);

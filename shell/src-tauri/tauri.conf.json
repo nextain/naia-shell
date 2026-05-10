@@ -25,9 +25,9 @@
 		],
 		"security": {
 			"assetProtocol": {
-				"scope": ["**", "$HOME/**", "/tmp/**"]
+				"scope": ["**", "$HOME/**", "/tmp/**", "C:\\**", "D:\\**", "E:\\**", "F:\\**"]
 			},
-			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:18789 ws://localhost:18789 https://naia-gateway-181404717065.asia-northeast3.run.app wss://naia-gateway-181404717065.asia-northeast3.run.app https://naia-gateway-dev-181404717065.asia-northeast3.run.app wss://naia-gateway-dev-181404717065.asia-northeast3.run.app https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://speech.googleapis.com https://api.x.ai https://api.anthropic.com https://api.openai.com wss://api.openai.com https://discord.com http://asset.localhost tauri://localhost blob: data:; img-src 'self' asset: http://asset.localhost tauri://localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-src http://asset.localhost"
+			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:18789 ws://localhost:18789 https://naia-gateway-181404717065.asia-northeast3.run.app wss://naia-gateway-181404717065.asia-northeast3.run.app https://naia-gateway-dev-181404717065.asia-northeast3.run.app wss://naia-gateway-dev-181404717065.asia-northeast3.run.app https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://speech.googleapis.com https://api.x.ai https://api.anthropic.com https://api.openai.com wss://api.openai.com https://discord.com http://asset.localhost https://asset.localhost tauri://localhost blob: data:; img-src 'self' asset: http://asset.localhost https://asset.localhost tauri://localhost blob: data:; media-src 'self' asset: http://asset.localhost https://asset.localhost blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-src http://asset.localhost https://asset.localhost"
 		}
 	},
 	"bundle": {
@@ -37,7 +37,10 @@
 		"resources": {
 			"../../agent/dist": "agent/dist",
 			"../../agent/package.json": "agent/package.json",
-			"../../agent/node_modules": "agent/node_modules"
+			"../../agent/node_modules": "agent/node_modules",
+			"../public/assets/vrm-files": "assets/vrm-files",
+			"../public/assets/background": "assets/background",
+			"../public/assets/bgm-musics": "assets/bgm-musics"
 		},
 		"icon": [
 			"icons/32x32.png",

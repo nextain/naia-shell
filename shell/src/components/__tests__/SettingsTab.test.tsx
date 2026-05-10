@@ -132,20 +132,35 @@ describe("SettingsTab", () => {
 		).toBeDefined();
 	});
 
-	it("renders VRM model picker with sample cards", () => {
+	it("renders VRM model picker — shows empty state when no VRMs in naia-settings", () => {
+		// No adkPath set → listNaiaAssets returns [] without calling invoke
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		expect(screen.getByAltText("Shino")).toBeDefined();
-		expect(screen.getByAltText("Sakurada Fumiriya")).toBeDefined();
-		expect(screen.getByAltText("Girl")).toBeDefined();
-		expect(screen.getByAltText("Boy")).toBeDefined();
+		// Empty state message is shown in the vrm-list
+		expect(screen.getByText(/vrm-files|VRM 파일을 추가/i)).toBeDefined();
 	});
 
-	it("renders background image picker with none option", () => {
+	it("renders VRM items from naia-settings when invoke returns filenames", async () => {
+		// Set adkPath so listNaiaAssets actually calls invoke
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_naia_assets") return Promise.resolve(["03-OL_Woman.vrm", "04-Hood_Boy.vrm"]);
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+
+		await vi.waitFor(() => {
+			// VRM items rendered with alt text matching filenames (minus .vrm)
+			expect(screen.getByAltText("03-OL_Woman")).toBeDefined();
+			expect(screen.getByAltText("04-Hood_Boy")).toBeDefined();
+		});
+	});
+
+	it("renders background image picker with 없음(기본) option", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		expect(screen.getByText(/기본 그라데이션|Default Gradient/i)).toBeDefined();
-		expect(screen.getByText("Space")).toBeDefined();
+		// The "clear" button is always present (hardcoded Korean, exact text)
+		expect(screen.getByRole("button", { name: "없음 (기본)" })).toBeDefined();
 	});
 
 	it("renders VRM custom file button", () => {
@@ -154,12 +169,18 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/커스텀|Custom/i)).toBeDefined();
 	});
 
-	it("selects VRM card and marks as active", () => {
-		mockInvoke.mockResolvedValue([]);
+	it("selects VRM item from naia-settings and marks as active", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_naia_assets") return Promise.resolve(["03-OL_Woman.vrm"]);
+			return Promise.resolve([]);
+		});
 		render(<SettingsTab />);
-		const avatarCard = screen.getByTitle("Girl");
-		fireEvent.click(avatarCard);
-		expect(avatarCard.className).toContain("active");
+
+		const vrmBtn = await screen.findByAltText("03-OL_Woman");
+		// Click the parent button
+		fireEvent.click(vrmBtn.closest("button")!);
+		expect(vrmBtn.closest("button")!.className).toContain("active");
 	});
 
 	it("renders memory section with empty state", () => {
@@ -194,24 +215,30 @@ describe("SettingsTab", () => {
 		});
 	});
 
-	it("saves config with VRM model", () => {
-		mockInvoke.mockResolvedValue([]);
+	it("saves config with VRM model from naia-settings", async () => {
+		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_naia_assets") return Promise.resolve(["03-OL_Woman.vrm"]);
+			return Promise.resolve([]);
+		});
 		render(<SettingsTab />);
 
 		// Set API key
 		const apiInput = screen.getByLabelText(/^API/i);
 		fireEvent.change(apiInput, { target: { value: "test-key" } });
 
-		// Select non-default VRM
-		const avatarCard = screen.getByTitle("Girl");
-		fireEvent.click(avatarCard);
+		// Wait for VRM item to appear and select it
+		const vrmImg = await screen.findByAltText("03-OL_Woman");
+		fireEvent.click(vrmImg.closest("button")!);
 
-		// Save
-		fireEvent.click(screen.getByText(/save|저장/i));
+		// Save via the settings-save-btn (button with "Apply" or "적용" text)
+		const saveBtn = document.querySelector(".settings-save-btn") as HTMLElement;
+		fireEvent.click(saveBtn);
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.apiKey).toBe("test-key");
-		expect(saved.vrmModel).toBe("/avatars/03-OL_Woman.vrm");
+		// vrmModel is the full naia-settings path
+		expect(saved.vrmModel).toContain("03-OL_Woman.vrm");
 	});
 
 	it("renders theme picker", () => {
@@ -224,7 +251,10 @@ describe("SettingsTab", () => {
 	it("shows error for empty API key", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		fireEvent.click(screen.getByText(/save|저장/i));
+		// Use the settings-save-btn class to find the correct save button
+		// (avoid matching "저장된 기억이..." text nodes that also contain "저장")
+		const saveBtn = document.querySelector(".settings-save-btn") as HTMLElement;
+		fireEvent.click(saveBtn);
 		expect(screen.getByText(/입력해주세요|enter.*api/i)).toBeDefined();
 	});
 });

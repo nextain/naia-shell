@@ -2477,6 +2477,134 @@ async fn write_naia_config(adk_path: String, json: String) -> Result<(), String>
     std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
 }
 
+/// Check whether `{adk_path}/naia-settings/` already exists.
+#[tauri::command]
+async fn check_naia_settings(adk_path: String) -> bool {
+    std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .is_dir()
+}
+
+/// Create `{adk_path}/naia-settings/` and standard subdirectories.
+#[tauri::command]
+async fn init_naia_settings(adk_path: String) -> Result<(), String> {
+    if adk_path.is_empty() {
+        return Err("adk_path is empty".to_string());
+    }
+    let base = std::path::PathBuf::from(&adk_path).join("naia-settings");
+    for subdir in &["vrm-files", "background", "bgm-musics", "splash-img"] {
+        std::fs::create_dir_all(base.join(subdir))
+            .map_err(|e| format!("Failed to create {subdir}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Copy bundled default assets (vrm-files, background, bgm-musics) from the app's
+/// resource directory into `{adk_path}/naia-settings/`. Skips files that already exist.
+#[tauri::command]
+async fn copy_bundled_assets(
+    app_handle: tauri::AppHandle,
+    adk_path: String,
+) -> Result<(), String> {
+    // Find the bundled assets base directory.
+    // Production: resource_dir()/assets/
+    // Dev mode fallback: walk up from binary to find public/assets/
+    let assets_base = find_bundled_assets_dir(&app_handle);
+    let Some(assets_base) = assets_base else {
+        return Err("Bundled assets directory not found".to_string());
+    };
+
+    for subdir in &["vrm-files", "background", "bgm-musics"] {
+        let src_dir = assets_base.join(subdir);
+        let dst_dir = std::path::PathBuf::from(&adk_path)
+            .join("naia-settings")
+            .join(subdir);
+
+        if !src_dir.is_dir() {
+            continue;
+        }
+        std::fs::create_dir_all(&dst_dir).map_err(|e| e.to_string())?;
+
+        for entry in std::fs::read_dir(&src_dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
+            let dst = dst_dir.join(entry.file_name());
+            if !dst.exists() {
+                std::fs::copy(entry.path(), &dst).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn find_bundled_assets_dir(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    // 1) Production: resource_dir()/assets/
+    if let Ok(rdir) = app_handle.path().resource_dir() {
+        let candidate = rdir.join("assets");
+        if candidate.is_dir() {
+            return Some(candidate);
+        }
+    }
+    // 2) Dev mode: binary is at shell/src-tauri/target/debug/
+    //    public/assets is at shell/public/assets/ (3 levels up, then public/assets)
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent()?.to_path_buf();
+        for _ in 0..4 {
+            let candidate = dir.join("public").join("assets");
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+            dir = dir.parent()?.to_path_buf();
+        }
+    }
+    None
+}
+
+/// Write binary data to `{adk_path}/naia-settings/{subdir}/{filename}`.
+/// Only whitelisted subdirs are allowed.
+#[tauri::command]
+async fn write_naia_asset(
+    adk_path: String,
+    subdir: String,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Result<(), String> {
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "splash-img"];
+    if !ALLOWED.contains(&subdir.as_str()) {
+        return Err(format!("Invalid subdir: {subdir}"));
+    }
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err("Invalid filename".to_string());
+    }
+    let path = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join(&subdir)
+        .join(&filename);
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())
+}
+
+/// Delete `{adk_path}/naia-settings/` entirely (user data reset).
+/// Safety: only removes the `naia-settings` subdirectory, never the adk_path root.
+#[tauri::command]
+async fn delete_naia_settings(adk_path: String) -> Result<(), String> {
+    if adk_path.is_empty() {
+        return Err("adk_path is empty".to_string());
+    }
+    let adk = std::path::PathBuf::from(&adk_path);
+    // Guard: must be an existing directory
+    if !adk.is_dir() {
+        return Err(format!("adk_path is not a directory: {adk_path}"));
+    }
+    let naia_settings = adk.join("naia-settings");
+    if !naia_settings.exists() {
+        return Ok(()); // nothing to delete
+    }
+    std::fs::remove_dir_all(&naia_settings)
+        .map_err(|e| format!("Failed to delete naia-settings: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize env_logger so `log` crate macros (info!, debug!, warn!) produce output.
@@ -2555,6 +2683,11 @@ pub fn run() {
             list_naia_assets,
             read_naia_config,
             write_naia_config,
+            check_naia_settings,
+            init_naia_settings,
+            delete_naia_settings,
+            write_naia_asset,
+            copy_bundled_assets,
             // Login Chrome (standalone auth window, not embedded)
             browser::browser_open_login,
             browser::browser_chrome_testing_ready,

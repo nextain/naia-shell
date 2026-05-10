@@ -12,7 +12,7 @@ import { SplashScreen } from "./components/SplashScreen";
 import { TitleBar } from "./components/TitleBar";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { getBridgeForPanel } from "./lib/active-bridge";
-import { isAdkInitialized, listNaiaAssets, toAssetUrl } from "./lib/adk-store";
+import { isAdkInitialized, listNaiaAssets, toLocalBlobUrl } from "./lib/adk-store";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
@@ -110,8 +110,14 @@ export function App() {
 	const [naiaVisible, setNaiaVisible] = useState(true);
 	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
 	const [chatVisible, setChatVisible] = useState(true);
-	const [chatHeight, setChatHeight] = useState(() => Math.round(window.innerHeight * 0.4));
-	const chatDragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(null);
+	const [chatHeight, setChatHeight] = useState(() =>
+		Math.round(window.innerHeight * 0.4),
+	);
+	const chatDragRef = useRef<{
+		startY: number;
+		startH: number;
+		moved: boolean;
+	} | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
@@ -200,15 +206,13 @@ export function App() {
 	// Load background video from naia-settings/background/
 	useEffect(() => {
 		if (showAdkSetup) return;
-		listNaiaAssets("background").then((paths) => {
+		listNaiaAssets("background").then(async (paths) => {
 			if (paths.length === 0) return;
-			// Use the config-saved background or the first available video
 			const config = loadConfig();
 			const saved = config?.backgroundVideo as string | undefined;
-			const match = saved
-				? (paths.find((p) => p.endsWith(saved)) ?? paths[0])
-				: paths[0];
-			setBackgroundVideoUrl(toAssetUrl(match));
+			if (!saved) return; // no saved preference → keep default space background
+			const match = paths.find((p) => p.endsWith(saved));
+			if (match) setBackgroundVideoUrl(await toLocalBlobUrl(match));
 		});
 	}, [showAdkSetup]);
 
@@ -219,7 +223,7 @@ export function App() {
 		loadInstalledPanels().catch(() => {});
 
 		const config = loadConfig();
-		applyTheme(config?.theme ?? "espresso");
+		applyTheme(config?.theme ?? "midnight");
 		// Suppress build-time panels the user has explicitly deleted
 		if (config?.deletedPanels?.length) {
 			for (const id of config.deletedPanels) {
@@ -260,7 +264,7 @@ export function App() {
 		const mq = window.matchMedia("(prefers-color-scheme: dark)");
 		const onChange = () => {
 			const config = loadConfig();
-			if ((config?.theme ?? "espresso") === "system") {
+			if ((config?.theme ?? "midnight") === "system") {
 				applyTheme("system");
 			}
 		};
@@ -288,7 +292,6 @@ export function App() {
 			return next;
 		});
 	}, []);
-
 
 	useEffect(() => {
 		const unlisten = listen<{
@@ -378,7 +381,7 @@ export function App() {
 			) : (
 				<img
 					className="app-bg-image"
-					src="/assets/background-space.webp"
+					src="/assets/background/background-space.png"
 					alt=""
 				/>
 			)}
@@ -415,11 +418,12 @@ export function App() {
 					)}
 					{naiaVisible && (
 						<>
+							{/* Full-screen avatar canvas — renders behind all UI panels */}
+							<div className="avatar-canvas-layer">
+								<AvatarCanvas />
+							</div>
 							<div className="naia-overlay">
 								<BgmPlayer />
-								<div className="naia-avatar-area">
-									<AvatarCanvas />
-								</div>
 								{/* Chat floats over avatar — absolute at bottom */}
 								<div className="naia-chat-area">
 									<button
@@ -432,7 +436,9 @@ export function App() {
 												startH: chatHeight,
 												moved: false,
 											};
-											(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+											(e.currentTarget as HTMLElement).setPointerCapture(
+												e.pointerId,
+											);
 										}}
 										onPointerMove={(e) => {
 											const ref = chatDragRef.current;
@@ -440,7 +446,9 @@ export function App() {
 											const delta = ref.startY - e.clientY;
 											if (!ref.moved && Math.abs(delta) > 4) ref.moved = true;
 											if (ref.moved) {
-												setChatHeight(Math.max(120, Math.min(600, ref.startH + delta)));
+												setChatHeight(
+													Math.max(120, Math.min(600, ref.startH + delta)),
+												);
 											}
 										}}
 										onPointerUp={() => {
@@ -477,11 +485,17 @@ export function App() {
 									)}
 								</>
 							)}
-							<div className={`right-content${showOnboarding ? " right-content--onboarding" : ""}`}>
+							<div
+								className={`right-content${showOnboarding ? " right-content--onboarding" : ""}`}
+							>
 								{showOnboarding ? (
-									<OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+									<OnboardingWizard
+										onComplete={() => setShowOnboarding(false)}
+									/>
 								) : (
-									<div className={`content-panel${!activePanel ? " content-panel--hidden" : ""}`}>
+									<div
+										className={`content-panel${!activePanel ? " content-panel--hidden" : ""}`}
+									>
 										{keepAlivePanels.map((panel) => {
 											const PanelCenter = panel.center;
 											return (

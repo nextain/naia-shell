@@ -1,5 +1,5 @@
-import { panelRegistry } from "../../lib/panel-registry";
 import { SettingsTab } from "../../components/SettingsTab";
+import { panelRegistry } from "../../lib/panel-registry";
 
 function SettingsCenterPanel() {
 	return (

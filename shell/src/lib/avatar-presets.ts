@@ -9,8 +9,16 @@ export const DEFAULT_AVATAR_MODEL = "/avatars/01-Sendagaya-Shino-uniform.vrm";
 export type AvatarGender = "female" | "male";
 
 export const AVATAR_PRESETS: AvatarPreset[] = [
-	{ filename: "01-Sendagaya-Shino-uniform.vrm", label: "Shino", gender: "female" },
-	{ filename: "02-Sakurada-Fumiriya.vrm", label: "Sakurada Fumiriya", gender: "male" },
+	{
+		filename: "01-Sendagaya-Shino-uniform.vrm",
+		label: "Shino",
+		gender: "female",
+	},
+	{
+		filename: "02-Sakurada-Fumiriya.vrm",
+		label: "Sakurada Fumiriya",
+		gender: "male",
+	},
 	{ filename: "03-OL_Woman.vrm", label: "Girl", gender: "female" },
 	{ filename: "04-Hood_Boy.vrm", label: "Boy", gender: "male" },
 ];

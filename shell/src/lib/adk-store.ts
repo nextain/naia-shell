@@ -56,6 +56,43 @@ export function toAssetUrl(filePath: string): string {
 	return convertFileSrc(filePath);
 }
 
+const LOCAL_MIME_TYPES: Record<string, string> = {
+	mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", aac: "audio/aac", flac: "audio/flac",
+	png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif",
+	mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
+};
+const BLOB_URL_EXTS = new Set(Object.keys(LOCAL_MIME_TYPES));
+
+/**
+ * Read a local file via Rust and return a blob: URL.
+ * Works for images, audio, and video (IPC is local so transfer is fast).
+ * Caller is responsible for revoking the returned blob URL when done.
+ */
+export async function toLocalBlobUrl(filePath: string): Promise<string> {
+	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	if (!BLOB_URL_EXTS.has(ext)) {
+		// Video or unknown — asset URL (may fail on Windows, no workaround without streaming)
+		return convertFileSrc(filePath);
+	}
+	const mimeType = LOCAL_MIME_TYPES[ext];
+	try {
+		const bytes = await invoke<number[]>("read_local_binary", {
+			path: filePath,
+			allowedBase: getAdkPath() ?? "",
+		});
+		const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
+		return URL.createObjectURL(blob);
+	} catch {
+		return convertFileSrc(filePath);
+	}
+}
+
+/** Copy bundled default assets (VRM/background/BGM) into naia-settings on first init.
+ *  Rust reads from the app resource directory directly — no IPC binary transfer. */
+export async function copyBundledAssets(adkPath: string): Promise<void> {
+	await invoke("copy_bundled_assets", { adkPath }).catch(() => {});
+}
+
 // ── File-based config ─────────────────────────────────────────────────────────
 
 export async function readNaiaConfig(): Promise<Record<

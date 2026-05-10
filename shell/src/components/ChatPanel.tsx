@@ -30,7 +30,6 @@ import {
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
 	addAllowedTool,
-	isReadyToChat,
 	isToolAllowed,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -2072,7 +2071,7 @@ export function ChatPanel() {
 			{activeTab === "diagnostics" && <DiagnosticsTab />}
 
 			{/* Settings tab */}
-	
+
 			{/* History tab */}
 			{activeTab === "history" && (
 				<HistoryTab

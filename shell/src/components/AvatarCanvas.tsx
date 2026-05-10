@@ -33,7 +33,7 @@ import { useAvatarStore } from "../stores/avatar";
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera-v12";
+const CAMERA_STORAGE_KEY = "naia-camera-v17";
 
 interface SavedCamera {
 	px: number;
@@ -52,6 +52,10 @@ function loadCameraState(): SavedCamera | null {
 	} catch {
 		return null;
 	}
+}
+
+export function clearSavedCamera(): void {
+	localStorage.removeItem(CAMERA_STORAGE_KEY);
 }
 
 function saveCameraState(camera: PerspectiveCamera, target: Vector3): void {
@@ -100,6 +104,10 @@ function resolveAssetUrl(path: string): string {
 			/^http:\/\/localhost\/?/,
 			"http://asset.localhost/",
 		);
+	}
+	// Relative web-asset paths — normalize to absolute web path
+	if (normalized.startsWith("avatars/") || normalized.startsWith("assets/")) {
+		return `/${normalized}`;
 	}
 	if (
 		normalized.startsWith("/assets/") ||
@@ -237,9 +245,9 @@ export function AvatarCanvas() {
 		directionalLight.position.set(0.5, 1.0, 0.5).normalize();
 		scene.add(directionalLight);
 
-		// Camera
+		// Camera — FOV 50 gives enough horizontal room to prevent edge-clipping during orbit.
 		const camera = new PerspectiveCamera(
-			40,
+			50,
 			container.clientWidth / container.clientHeight,
 			0.1,
 			100,
@@ -253,8 +261,8 @@ export function AvatarCanvas() {
 		controls.enableZoom = true;
 		controls.minDistance = 0.1;
 		controls.maxDistance = 10;
-		controls.maxPolarAngle = Math.PI; // no vertical limit
-		controls.minPolarAngle = 0;
+		controls.maxPolarAngle = Math.PI * 0.85; // prevent upside-down flip
+		controls.minPolarAngle = 0.1;
 
 		// Set initial camera position immediately
 		const savedCam = loadCameraState();
@@ -263,9 +271,9 @@ export function AvatarCanvas() {
 			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
-			// naia-overlay is full-screen; offset camera to place character in left strip area.
-			camera.position.set(1.3, 1.5, -2.2);
-			controls.target.set(1.3, 1.5, 0.0);
+			// User-approved default: shows full body, slight downward angle.
+			camera.position.set(0.01, 1.29, -1.99);
+			controls.target.set(0.01, 1.09, 0.0);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
 		controls.update();
@@ -398,12 +406,15 @@ export function AvatarCanvas() {
 
 				vrm = result._vrm;
 
-				if (vrm.humanoid) {
+				// Only auto-adjust camera to character on first load (no saved state).
+				// When the user has a saved camera position, keep it as-is.
+				if (!savedCam && vrm.humanoid) {
 					const head = vrm.humanoid.getNormalizedBoneNode("head");
 					if (head) {
 						const headPos = new Vector3();
 						head.getWorldPosition(headPos);
-						const targetY = headPos.y - 0.05;
+						// Aim at chest level so the full body (not just head) is visible.
+						const targetY = headPos.y - 0.5;
 						const diffY = targetY - controls.target.y;
 						camera.position.y += diffY;
 						controls.target.y = targetY;

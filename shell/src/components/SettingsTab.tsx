@@ -3,12 +3,19 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clearSavedCamera } from "./AvatarCanvas";
+import {
+	clearAdkPath,
+	getAdkPath,
+	listNaiaAssets,
+	setAdkPath,
+	toLocalBlobUrl,
+} from "../lib/adk-store";
 import {
 	DEFAULT_AVATAR_MODEL,
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
-import { clearAdkPath, setAdkPath, listNaiaAssets, toAssetUrl as adkToAssetUrl } from "../lib/adk-store";
 import { syncLinkedChannels } from "../lib/channel-sync";
 import { directToolCall, sendAuthUpdate } from "../lib/chat-service";
 import {
@@ -219,8 +226,6 @@ function normalizeLocalPath(path: string): string {
 		return path.replace(/^file:\/\//, "");
 	}
 }
-
-
 
 function DevicePairingSection() {
 	const [nodes, setNodes] = useState<DeviceNode[]>([]);
@@ -544,7 +549,7 @@ export function SettingsTab() {
 	const [locale, setLocaleState] = useState<Locale>(
 		existing?.locale ?? getLocale(),
 	);
-	const [theme, setTheme] = useState<ThemeId>(existing?.theme ?? "espresso");
+	const [theme, setTheme] = useState<ThemeId>(existing?.theme ?? "midnight");
 	const [vrmModel, setVrmModel] = useState(savedVrmModel);
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
 	const [naiaBgs, setNaiaBgs] = useState<string[]>([]);
@@ -594,7 +599,7 @@ export function SettingsTab() {
 	);
 	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
 	const [workspaceRoot, setWorkspaceRoot] = useState(
-		existing?.workspaceRoot ?? "",
+		existing?.workspaceRoot ?? getAdkPath() ?? "",
 	);
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
@@ -1503,12 +1508,12 @@ export function SettingsTab() {
 		if (cfg) saveConfig({ ...cfg, vrmModel: normalized || undefined });
 	}
 
-
 	function handleNaiaBgSelect(path: string) {
 		setActiveBgPath(path);
-		setBackgroundVideoUrl(adkToAssetUrl(path));
+		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
 		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, backgroundVideo: path.split(/[/\\]/).pop() ?? "" });
+		if (cfg)
+			saveConfig({ ...cfg, backgroundVideo: path.split(/[/\\]/).pop() ?? "" });
 	}
 
 	function handleClearNaiaBg() {
@@ -1574,10 +1579,6 @@ export function SettingsTab() {
 		listNaiaAssets("vrm-files").then((paths) => {
 			const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
 			setNaiaVrms(vrms);
-			// If current model is the static default and a naia VRM exists, switch to it
-			if (vrms.length > 0 && (!vrmModel || vrmModel === DEFAULT_AVATAR_MODEL)) {
-				handleVrmSelect(vrms[0]);
-			}
 		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
@@ -1594,7 +1595,6 @@ export function SettingsTab() {
 		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
-
 
 	function debouncedLabSync() {
 		if (labSyncTimerRef.current) clearTimeout(labSyncTimerRef.current);
@@ -1832,7 +1832,8 @@ export function SettingsTab() {
 
 	async function executeReset() {
 		localStorage.removeItem("naia-config");
-		localStorage.removeItem("naia-camera");
+		clearSavedCamera();
+		clearAdkPath(); // re-triggers ADK setup screen on next launch
 		invoke("reset_window_state").catch(() => {});
 		if (resetClearHistory) {
 			useChatStore.getState().newConversation();
@@ -1840,7 +1841,7 @@ export function SettingsTab() {
 			invoke("reset_gateway_data").catch(() => {});
 		}
 		setLocale("ko");
-		document.documentElement.setAttribute("data-theme", "espresso");
+		document.documentElement.setAttribute("data-theme", "midnight");
 		window.location.reload();
 	}
 
@@ -2239,6 +2240,25 @@ export function SettingsTab() {
 				</div>
 			</div>
 
+			<div className="settings-field">
+				<label>카메라 위치 초기화</label>
+				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={() => {
+							clearSavedCamera();
+							window.location.reload();
+						}}
+					>
+						기본값으로 (앱 재시작)
+					</button>
+				</div>
+				<div className="settings-hint">
+					저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
+				</div>
+			</div>
+
 			<div className="settings-section-divider">
 				<span>{t("settings.avatarSection")}</span>
 			</div>
@@ -2247,10 +2267,14 @@ export function SettingsTab() {
 				<label>{t("settings.vrmModel")}</label>
 				<div className="vrm-list">
 					{naiaVrms.length === 0 && (
-						<span className="vrm-list-empty">naia-settings/vrm-files/ 에 VRM 파일을 추가하세요</span>
+						<span className="vrm-list-empty">
+							naia-settings/vrm-files/ 에 VRM 파일을 추가하세요
+						</span>
 					)}
 					{naiaVrms.map((path) => {
-						const label = (path.split(/[/\\]/).pop() ?? path).replace(/\.vrm$/i, "");
+						const filename = path.split(/[/\\]/).pop() ?? path;
+						const label = filename.replace(/\.vrm$/i, "");
+						const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
 						return (
 							<button
 								key={path}
@@ -2258,12 +2282,23 @@ export function SettingsTab() {
 								className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
 								onClick={() => handleVrmSelect(path)}
 							>
+								<img
+									src={thumb}
+									className="vrm-list-item__thumb"
+									alt={label}
+									onError={(e) => {
+										(e.currentTarget as HTMLImageElement).style.display = "none";
+									}}
+								/>
 								{label}
 							</button>
 						);
 					})}
 					{customVrms.map((path) => {
-						const label = (path.split(/[/\\]/).pop() ?? path).replace(/\.vrm$/i, "");
+						const label = (path.split(/[/\\]/).pop() ?? path).replace(
+							/\.vrm$/i,
+							"",
+						);
 						return (
 							<button
 								key={path}
@@ -2289,10 +2324,15 @@ export function SettingsTab() {
 						없음 (기본)
 					</button>
 					{naiaBgs.length === 0 && (
-						<span className="vrm-list-empty">naia-settings/background/ 에 파일을 추가하세요</span>
+						<span className="vrm-list-empty">
+							naia-settings/background/ 에 파일을 추가하세요
+						</span>
 					)}
 					{naiaBgs.map((path) => {
-						const label = (path.split(/[/\\]/).pop() ?? path).replace(/\.[^.]+$/, "");
+						const label = (path.split(/[/\\]/).pop() ?? path).replace(
+							/\.[^.]+$/,
+							"",
+						);
 						return (
 							<button
 								key={path}
@@ -2351,7 +2391,10 @@ export function SettingsTab() {
 							className="settings-select"
 							data-testid="settings-speech-style"
 							value={speechStyle}
-							onChange={(e) => { setSpeechStyle(e.target.value); savePersonaFields({ speechStyle: e.target.value }); }}
+							onChange={(e) => {
+								setSpeechStyle(e.target.value);
+								savePersonaFields({ speechStyle: e.target.value });
+							}}
 						>
 							<option value="casual">
 								{t("onboard.speechStyle.casual")} (Casual)

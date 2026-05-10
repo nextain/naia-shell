@@ -4,14 +4,14 @@ import { homeDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
-import { readNaiaConfig, setAdkPath } from "../lib/adk-store";
+import { copyBundledAssets, readNaiaConfig, setAdkPath } from "../lib/adk-store";
 import { getLocale, t } from "../lib/i18n";
 
 interface AdkSetupScreenProps {
 	onComplete: () => void;
 }
 
-type Mode = "select" | "new" | "load" | "login";
+type Mode = "select" | "new" | "new_exists" | "load" | "login";
 
 function getNaiaWebBaseUrl() {
 	return (
@@ -86,8 +86,42 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	}
 
 	async function handleNewStart() {
+		const adkPath = path.trim() || defaultPath;
+		// Check if naia-settings already exists
+		const exists = await invoke<boolean>("check_naia_settings", { adkPath });
+		if (exists) {
+			setPath(adkPath);
+			setMode("new_exists");
+			return;
+		}
+		// Create folder structure then copy bundled defaults
+		await invoke("init_naia_settings", { adkPath }).catch(() => {});
+		await copyBundledAssets(adkPath);
 		clearAllLocalData();
-		const adkPath = defaultPath;
+		setAdkPath(adkPath);
+		onComplete();
+	}
+
+	async function handleNewUseExisting() {
+		const adkPath = path.trim() || defaultPath;
+		clearAllLocalData();
+		setAdkPath(adkPath);
+		const fileConfig = await readNaiaConfig();
+		if (fileConfig) {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({ ...fileConfig, onboardingComplete: true }),
+			);
+		}
+		onComplete();
+	}
+
+	async function handleNewRecreate() {
+		const adkPath = path.trim() || defaultPath;
+		await invoke("delete_naia_settings", { adkPath }).catch(() => {});
+		await invoke("init_naia_settings", { adkPath }).catch(() => {});
+		await copyBundledAssets(adkPath);
+		clearAllLocalData();
 		setAdkPath(adkPath);
 		onComplete();
 	}
@@ -99,8 +133,9 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			return;
 		}
 		setAdkPath(trimmed);
-		// Restore config from the selected ADK folder, then mark onboarding done so
-		// the wizard doesn't replay for an already-configured folder.
+		// Ensure naia-settings subfolders exist in the selected folder
+		await invoke("init_naia_settings", { adkPath: trimmed }).catch(() => {});
+		// Restore config from the selected ADK folder, then mark onboarding done
 		const fileConfig = await readNaiaConfig();
 		const base = fileConfig ?? {};
 		localStorage.setItem(
@@ -212,6 +247,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					onClick={() => {
 						setMode("select");
 						setError(null);
+						setPath("");
 					}}
 				>
 					{t("adk.setup.back")}
@@ -225,7 +261,28 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				</div>
 
 				<div className="adk-setup-form">
-					<div className="adk-setup-path-preview">{defaultPath}</div>
+					<div className="adk-setup-field-row">
+						<input
+							type="text"
+							className="adk-setup-input"
+							value={path || defaultPath}
+							onChange={(e) => setPath(e.target.value)}
+							placeholder={defaultPath}
+						/>
+						<button
+							type="button"
+							className="adk-setup-browse-btn"
+							onClick={async () => {
+								const selected = await open({
+									directory: true,
+									title: "naia-adk 폴더 선택",
+								});
+								if (selected && typeof selected === "string") setPath(selected);
+							}}
+						>
+							{t("adk.setup.browse")}
+						</button>
+					</div>
 					<p className="adk-setup-hint">{t("adk.setup.new.hint")}</p>
 					<button
 						type="button"
@@ -234,6 +291,61 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					>
 						{t("adk.setup.new.confirm")}
 					</button>
+				</div>
+			</div>
+		);
+	}
+
+	// ── New start — existing data found ───────────────────────────────────────
+	if (mode === "new_exists") {
+		return (
+			<div className="adk-setup-screen">
+				<button
+					type="button"
+					className="adk-setup-back"
+					onClick={() => {
+						setMode("new");
+						setError(null);
+					}}
+				>
+					{t("adk.setup.back")}
+				</button>
+				<div className="adk-setup-header">
+					<span className="adk-setup-option-icon adk-setup-option-icon--lg">
+						📦
+					</span>
+					<h1 className="adk-setup-headline">이미 데이터가 있어요</h1>
+					<p className="adk-setup-sub">
+						이 폴더에 이미 naia-settings 데이터가 있습니다.
+					</p>
+				</div>
+
+				<div className="adk-setup-form">
+					<div className="adk-setup-path-preview">{path}</div>
+					<div className="adk-setup-cards" style={{ marginTop: 16 }}>
+						<button
+							type="button"
+							className="adk-setup-option-card"
+							onClick={handleNewUseExisting}
+						>
+							<span className="adk-setup-option-icon">✅</span>
+							<span className="adk-setup-option-title">그대로 사용</span>
+							<span className="adk-setup-option-desc">
+								기존 VRM·배경·BGM 데이터를 유지합니다
+							</span>
+						</button>
+						<button
+							type="button"
+							className="adk-setup-option-card"
+							onClick={handleNewRecreate}
+						>
+							<span className="adk-setup-option-icon">🗑</span>
+							<span className="adk-setup-option-title">삭제하고 새로 시작</span>
+							<span className="adk-setup-option-desc">
+								naia-settings를 완전히 초기화합니다
+							</span>
+						</button>
+					</div>
 				</div>
 			</div>
 		);

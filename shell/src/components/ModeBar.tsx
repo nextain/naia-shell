@@ -22,7 +22,10 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 	// Rebuild panel list whenever panelListVersion changes (runtime install/remove)
 	// Exclude avatar panel (shown as fixed "바탕화면" tab separately)
 	const modes = useMemo(
-		() => panelRegistry.list().filter((p) => p.id !== "avatar" && p.id !== "settings"),
+		() =>
+			panelRegistry
+				.list()
+				.filter((p) => p.id !== "avatar" && p.id !== "settings"),
 		// panelListVersion is the reactive dependency — registry is not observable directly
 		[panelListVersion],
 	);
@@ -121,11 +124,23 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			<button
 				type="button"
 				className={`mode-bar-settings${activePanel === "settings" ? " mode-bar-settings--active" : ""}`}
-				onClick={() => setActivePanel(activePanel === "settings" ? null : "settings")}
+				onClick={() =>
+					setActivePanel(activePanel === "settings" ? null : "settings")
+				}
 				title="설정"
 			>
-				<svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
-					<path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+				<svg
+					viewBox="0 0 20 20"
+					fill="currentColor"
+					width="16"
+					height="16"
+					aria-hidden="true"
+				>
+					<path
+						fillRule="evenodd"
+						d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+						clipRule="evenodd"
+					/>
 				</svg>
 			</button>
 		</div>
