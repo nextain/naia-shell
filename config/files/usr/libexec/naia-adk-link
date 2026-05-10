@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# naia-adk-link — ensure ~/naia-adk symlinks to /var/naia/naia-adk
+#
+# Triggered by xdg autostart on user login. Idempotent.
+# No-op if /var/naia/naia-adk doesn't exist (e.g., installed system without
+# the persistent USB attached).
+
+set -euo pipefail
+
+TARGET="/var/naia/naia-adk"
+LINK="$HOME/naia-adk"
+
+[[ -d "$TARGET" ]] || exit 0
+
+if [[ -L "$LINK" ]]; then
+	if [[ "$(readlink "$LINK")" != "$TARGET" ]]; then
+		rm "$LINK"
+		ln -s "$TARGET" "$LINK"
+	fi
+elif [[ -e "$LINK" ]]; then
+	logger -t naia-adk-link "exists as non-symlink, skipping: $LINK"
+else
+	ln -s "$TARGET" "$LINK"
+fi

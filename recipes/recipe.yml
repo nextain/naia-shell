@@ -23,6 +23,7 @@ modules:
   - type: script
     scripts:
       - install-naia-shell.sh
+      - install-naia-data-mount.sh
       - branding.sh
 
   - type: files

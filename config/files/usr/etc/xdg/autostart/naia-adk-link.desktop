@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Naia ADK link
+Comment=Ensure ~/naia-adk symlinks to the persistent partition
+Exec=/usr/libexec/naia-adk-link
+Hidden=false
+NoDisplay=true
+X-GNOME-Autostart-Phase=Initialization
+OnlyShowIn=GNOME;KDE;XFCE;MATE;Cinnamon;

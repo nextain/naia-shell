@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# naia-usb — Persistent Naia USB writer (PoC, see issue #262)
+#
+# Modes:
+#   create <device> [--rootfs <file>] [--seed <tarball>]
+#       Fresh USB. GPT + 3 partitions. Optionally write rootfs to part 2,
+#       optionally seed naia-adk into part 3.
+#
+#   update <device> --rootfs <file>
+#       Existing naia USB only. Re-writes parts 1+2, leaves part 3 intact.
+#       Refuses if part 3 isn't labeled naia-data.
+#
+#   status <device>
+#       Inspect device for naia layout.
+#
+# Partition layout (GPT):
+#   1: ESP        (FAT32, label NAIA-ESP)
+#   2: rootfs     (ext4,  label naia-rootfs)
+#   3: naia-data  (btrfs, label naia-data)  <- preserved across updates
+#
+# Sizing: ESP_SIZE_MIB and ROOTFS_SIZE_MIB env vars override defaults.
+#
+# Safety:
+#   - Refuses non-block-device targets, mounted partitions, and the root disk.
+#   - Loop devices skip the root-disk check (PoC-friendly).
+
+set -euo pipefail
+
+ESP_SIZE_MIB="${ESP_SIZE_MIB:-512}"
+ROOTFS_SIZE_MIB="${ROOTFS_SIZE_MIB:-2048}"
+LABEL_ESP="NAIA-ESP"
+LABEL_ROOTFS="naia-rootfs"
+LABEL_DATA="naia-data"
+
+log() { printf '[naia-usb] %s\n' "$*" >&2; }
+die() { printf '[naia-usb] ERROR: %s\n' "$*" >&2; exit 1; }
+
+require_root() {
+	[[ $EUID -eq 0 ]] || die "must run as root (parted/mkfs/losetup require it)"
+}
+
+part_path() {
+	local dev="$1" n="$2"
+	case "$dev" in
+		/dev/loop*|/dev/nvme*|/dev/mmcblk*) echo "${dev}p${n}" ;;
+		*) echo "${dev}${n}" ;;
+	esac
+}
+
+check_safety() {
+	local dev="$1"
+	[[ -b "$dev" ]] || die "$dev is not a block device"
+
+	local mounts
+	mounts="$(lsblk -nrpo NAME,MOUNTPOINT "$dev" | awk '$2 != "" { print $1" -> "$2 }')"
+	if [[ -n "$mounts" ]]; then
+		die "device has mounted partitions; unmount first:"$'\n'"$mounts"
+	fi
+
+	if [[ "$dev" == /dev/loop* ]]; then
+		log "loop device — bypassing root-disk check"
+		return 0
+	fi
+
+	local root_src root_disk
+	root_src="$(findmnt -no SOURCE / 2>/dev/null || true)"
+	if [[ -n "$root_src" ]]; then
+		root_disk="$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1)"
+		if [[ -n "$root_disk" && "/dev/$root_disk" == "$dev" ]]; then
+			die "$dev is the root disk — refusing"
+		fi
+	fi
+}
+
+verify_naia_layout() {
+	# Strict check: parts 1/2/3 exist and carry the expected labels, AND
+	# there is no part 4+ (so we never operate on a foreign multi-partition disk
+	# that happens to have one matching label). Echoes part-3 device path on success.
+	local dev="$1"
+	local p1 p2 p3 p4
+	p1="$(part_path "$dev" 1)"
+	p2="$(part_path "$dev" 2)"
+	p3="$(part_path "$dev" 3)"
+	p4="$(part_path "$dev" 4)"
+
+	[[ -b "$p1" && -b "$p2" && -b "$p3" ]] || return 1
+	[[ ! -b "$p4" ]] || return 1
+	[[ "$(blkid -s LABEL -o value "$p1" 2>/dev/null || true)" == "$LABEL_ESP" ]] || return 1
+	[[ "$(blkid -s LABEL -o value "$p2" 2>/dev/null || true)" == "$LABEL_ROOTFS" ]] || return 1
+	[[ "$(blkid -s LABEL -o value "$p3" 2>/dev/null || true)" == "$LABEL_DATA" ]] || return 1
+
+	echo "$p3"
+	return 0
+}
+
+write_rootfs() {
+	local part="$1" src="$2"
+	log "writing rootfs '$src' → $part (LiveOS/squashfs.img)"
+	local mp
+	mp="$(mktemp -d)"
+	mount "$part" "$mp"
+	mkdir -p "$mp/LiveOS"
+	cp "$src" "$mp/LiveOS/squashfs.img"
+	sync
+	umount "$mp"
+	rmdir "$mp"
+}
+
+seed_naia_data() {
+	local part="$1" seed="$2"
+	log "seeding naia-data from '$seed' → $part"
+	local mp
+	mp="$(mktemp -d)"
+	mount "$part" "$mp"
+	tar -xf "$seed" -C "$mp"
+	sync
+	umount "$mp"
+	rmdir "$mp"
+}
+
+cmd_create() {
+	local dev="" rootfs="" seed=""
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			--rootfs) rootfs="$2"; shift 2 ;;
+			--seed) seed="$2"; shift 2 ;;
+			-*) die "unknown create flag: $1" ;;
+			*) [[ -z "$dev" ]] && dev="$1" || die "unexpected arg: $1"; shift ;;
+		esac
+	done
+	[[ -n "$dev" ]] || die "create requires <device>"
+
+	check_safety "$dev"
+
+	log "fresh layout on $dev"
+	log "  ESP: ${ESP_SIZE_MIB} MiB FAT32 ($LABEL_ESP)"
+	log "  rootfs: ${ROOTFS_SIZE_MIB} MiB ext4 ($LABEL_ROOTFS)"
+	log "  naia-data: rest btrfs ($LABEL_DATA)"
+
+	wipefs -a "$dev" >/dev/null
+	parted -s "$dev" mklabel gpt
+	parted -s "$dev" mkpart ESP fat32 1MiB "$((1 + ESP_SIZE_MIB))MiB"
+	parted -s "$dev" set 1 esp on
+	parted -s "$dev" mkpart rootfs ext4 \
+		"$((1 + ESP_SIZE_MIB))MiB" \
+		"$((1 + ESP_SIZE_MIB + ROOTFS_SIZE_MIB))MiB"
+	parted -s "$dev" mkpart "$LABEL_DATA" btrfs \
+		"$((1 + ESP_SIZE_MIB + ROOTFS_SIZE_MIB))MiB" 100%
+
+	partprobe "$dev" 2>/dev/null || true
+	udevadm settle 2>/dev/null || sleep 1
+
+	local p1 p2 p3
+	p1="$(part_path "$dev" 1)"
+	p2="$(part_path "$dev" 2)"
+	p3="$(part_path "$dev" 3)"
+
+	mkfs.fat -F 32 -n "$LABEL_ESP" "$p1" >/dev/null
+	mkfs.ext4 -q -F -L "$LABEL_ROOTFS" "$p2"
+	mkfs.btrfs -q -f -L "$LABEL_DATA" "$p3"
+
+	[[ -n "$rootfs" ]] && write_rootfs "$p2" "$rootfs"
+	[[ -n "$seed"   ]] && seed_naia_data "$p3" "$seed"
+
+	log "create complete"
+}
+
+cmd_update() {
+	local dev="" rootfs=""
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			--rootfs) rootfs="$2"; shift 2 ;;
+			-*) die "unknown update flag: $1" ;;
+			*) [[ -z "$dev" ]] && dev="$1" || die "unexpected arg: $1"; shift ;;
+		esac
+	done
+	[[ -n "$dev" ]] || die "update requires <device>"
+	[[ -n "$rootfs" ]] || die "update requires --rootfs"
+
+	check_safety "$dev"
+
+	local data_part
+	data_part="$(verify_naia_layout "$dev")" || \
+		die "$dev does not match the naia 3-partition layout (parts 1/2/3 with labels NAIA-ESP/naia-rootfs/naia-data, no part 4+) — use 'create' for fresh USBs"
+
+	log "naia layout detected (data: $data_part)"
+	log "re-writing parts 1+2; partition 3 preserved"
+
+	local p1 p2
+	p1="$(part_path "$dev" 1)"
+	p2="$(part_path "$dev" 2)"
+
+	mkfs.fat -F 32 -n "$LABEL_ESP" "$p1" >/dev/null
+	mkfs.ext4 -q -F -L "$LABEL_ROOTFS" "$p2"
+	write_rootfs "$p2" "$rootfs"
+
+	log "update complete — partition 3 preserved"
+}
+
+cmd_status() {
+	local dev="${1:-}"
+	[[ -n "$dev" ]] || die "status requires <device>"
+	[[ -b "$dev" ]] || die "$dev is not a block device"
+
+	echo "device: $dev"
+	echo "--- partition table ---"
+	parted -s "$dev" print 2>/dev/null || true
+	echo "--- partition labels ---"
+	for n in 1 2 3; do
+		local part label fstype
+		part="$(part_path "$dev" "$n")"
+		if [[ -b "$part" ]]; then
+			label="$(blkid -s LABEL -o value "$part" 2>/dev/null || echo '<none>')"
+			fstype="$(blkid -s TYPE -o value "$part" 2>/dev/null || echo '<none>')"
+			printf "  part %d (%s): label=%s fstype=%s\n" "$n" "$part" "$label" "$fstype"
+		fi
+	done
+
+	if verify_naia_layout "$dev" >/dev/null 2>&1; then
+		echo "naia layout: YES"
+	else
+		echo "naia layout: NO (does not match the strict 3-partition naia spec)"
+	fi
+}
+
+main() {
+	if [[ $# -lt 1 ]]; then
+		cat >&2 <<'EOF'
+Usage: naia-usb <command> [args]
+
+Commands:
+  create <device> [--rootfs <file>] [--seed <tarball>]
+      Fresh USB. 3-partition GPT layout, optional rootfs + naia-adk seed.
+
+  update <device> --rootfs <file>
+      Existing naia USB. Re-writes parts 1+2, preserves part 3.
+
+  status <device>
+      Show partition layout and whether device is a naia USB.
+
+Env:
+  ESP_SIZE_MIB     ESP size in MiB (default 512)
+  ROOTFS_SIZE_MIB  rootfs partition size in MiB (default 2048)
+
+EOF
+		exit 1
+	fi
+
+	local cmd="$1"; shift
+	case "$cmd" in
+		create) require_root; cmd_create "$@" ;;
+		update) require_root; cmd_update "$@" ;;
+		status) cmd_status "$@" ;;
+		*) die "unknown command: $cmd" ;;
+	esac
+}
+
+main "$@"
