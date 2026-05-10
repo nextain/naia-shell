@@ -2,6 +2,10 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const eventListeners = vi.hoisted(
+	() => new Map<string, (event: { payload: any }) => void>(),
+);
+
 // Mock Tauri invoke
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(true),
@@ -9,7 +13,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-	listen: vi.fn().mockResolvedValue(() => {}),
+	listen: vi.fn((event: string, handler: (event: { payload: any }) => void) => {
+		eventListeners.set(event, handler);
+		return Promise.resolve(() => eventListeners.delete(event));
+	}),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -18,6 +25,10 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
 	open: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../../lib/chat-service", () => ({
+	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock getLocale to return "ko" so Korean strings are used
@@ -51,7 +62,9 @@ describe("OnboardingWizard", () => {
 		vi.useRealTimers();
 		cleanup();
 		onComplete.mockReset();
+		eventListeners.clear();
 		localStorage.removeItem("naia-config");
+		localStorage.removeItem("naia-adk-path");
 		localStorage.removeItem("naia-remote-key");
 	});
 
@@ -165,4 +178,56 @@ describe("OnboardingWizard", () => {
 		expect(config.onboardingComplete).toBe(true);
 		expect(config.persona).toContain("Mochi");
 	});
+
+	it("completes onboarding immediately after Naia login succeeds", () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk\\projects\\naia-adk");
+		render(<OnboardingWizard onComplete={onComplete} />);
+
+		const clickNext = () => {
+			const buttons = screen.getAllByRole("button");
+			const next = buttons.find((button) =>
+				button.className.includes("onboarding-step__next-btn"),
+			);
+			expect(next).toBeDefined();
+			fireEvent.click(next!);
+			flush();
+		};
+
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "Mochi" },
+		});
+		clickNext();
+
+		fireEvent.change(screen.getByPlaceholderText("Luke"), {
+			target: { value: "Luke" },
+		});
+		clickNext();
+		clickNext();
+		clickNext();
+		clickNext();
+
+		const loginButton = screen
+			.getAllByRole("button")
+			.find((button) => button.textContent?.includes("Naia"));
+		expect(loginButton).toBeDefined();
+		fireEvent.click(loginButton!);
+
+		act(() => {
+			eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key", naiaUserId: "user-1" },
+			});
+		});
+
+		expect(onComplete).toHaveBeenCalled();
+		expect(screen.queryByPlaceholderText("Naia")).toBeNull();
+
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.onboardingComplete).toBe(true);
+		expect(config.naiaKey).toBe("gw-test-key");
+		expect(config.naiaUserId).toBe("user-1");
+		expect(config.userName).toBe("Luke");
+		expect(config.agentName).toBe("Mochi");
+		expect(config.workspaceRoot).toBe("D:\\alpha-adk\\projects\\naia-adk");
+	});
 });
+

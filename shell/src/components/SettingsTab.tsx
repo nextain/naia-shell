@@ -81,6 +81,15 @@ import { useChatStore } from "../stores/chat";
 import { usePanelStore } from "../stores/panel";
 
 const LLM_PROVIDERS = listLlmProviders();
+const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
+const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
+
+function getBackgroundMediaType(path: string): "image" | "video" | "" {
+	const ext = path.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+	if (BG_VIDEO_EXTS.has(ext)) return "video";
+	if (BG_IMAGE_EXTS.has(ext)) return "image";
+	return "";
+}
 
 // Fallback voice lists for Edge TTS
 const ALL_EDGE_VOICES: string[] = [
@@ -525,6 +534,9 @@ export function SettingsTab() {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+	const setBackgroundMediaType = useAvatarStore(
+		(s) => s.setBackgroundMediaType,
+	);
 	const pushModal = usePanelStore((s) => s.pushModal);
 	const popModal = usePanelStore((s) => s.popModal);
 	const [savedVrmModel, setSavedVrmModel] = useState(
@@ -554,6 +566,9 @@ export function SettingsTab() {
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
 	const [naiaBgs, setNaiaBgs] = useState<string[]>([]);
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
+	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
+		string | undefined
+	>(existing?.backgroundVideo);
 	const [customVrms] = useState<string[]>(
 		(existing?.customVrms ?? []).map(normalizeLocalPath),
 	);
@@ -598,9 +613,9 @@ export function SettingsTab() {
 		existing?.speechStyle ?? "casual",
 	);
 	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
-	const [workspaceRoot, setWorkspaceRoot] = useState(
-		existing?.workspaceRoot ?? getAdkPath() ?? "",
-	);
+	const [workspaceRoot, setWorkspaceRoot] = useState(() => {
+		return existing?.workspaceRoot || getAdkPath() || "";
+	});
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
 	);
@@ -1509,15 +1524,19 @@ export function SettingsTab() {
 	}
 
 	function handleNaiaBgSelect(path: string) {
+		const filename = path.split(/[/\\]/).pop() ?? "";
 		setActiveBgPath(path);
+		setBackgroundVideoFilename(filename || undefined);
+		setBackgroundMediaType(getBackgroundMediaType(path));
 		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
 		const cfg = loadConfig();
-		if (cfg)
-			saveConfig({ ...cfg, backgroundVideo: path.split(/[/\\]/).pop() ?? "" });
+		if (cfg) saveConfig({ ...cfg, backgroundVideo: filename || undefined });
 	}
 
 	function handleClearNaiaBg() {
 		setActiveBgPath("");
+		setBackgroundVideoFilename(undefined);
+		setBackgroundMediaType("");
 		setBackgroundVideoUrl("");
 		const cfg = loadConfig();
 		if (cfg) saveConfig({ ...cfg, backgroundVideo: undefined });
@@ -1951,6 +1970,7 @@ export function SettingsTab() {
 			customVrms: customVrms.length > 0 ? customVrms : undefined,
 			customBgs: customBgs.length > 0 ? customBgs : undefined,
 			backgroundImage: backgroundImage || undefined,
+			backgroundVideo: backgroundVideoFilename || undefined,
 			sttProvider: sttProvider || undefined,
 			sttModel: sttModel || undefined,
 			ttsEnabled,
@@ -2169,7 +2189,7 @@ export function SettingsTab() {
 			</div>
 
 			<div className="settings-field">
-				<label>워크스페이스 (naia-adk)</label>
+				<label>워크스페이스</label>
 				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
 					<button
 						type="button"
@@ -2177,7 +2197,7 @@ export function SettingsTab() {
 						onClick={async () => {
 							const selected = await open({
 								directory: true,
-								title: "naia-adk 폴더 선택",
+								title: "워크스페이스 폴더 선택",
 							});
 							if (selected && typeof selected === "string")
 								setWorkspaceRoot(selected);
@@ -2201,8 +2221,10 @@ export function SettingsTab() {
 								invoke("workspace_set_root", {
 									root: trimmed,
 								}).catch(() => {});
-								window.location.reload();
+							} else {
+								clearAdkPath();
 							}
+							window.location.reload();
 						}}
 					>
 						적용
@@ -2212,12 +2234,13 @@ export function SettingsTab() {
 						className="settings-input"
 						value={workspaceRoot}
 						onChange={(e) => setWorkspaceRoot(e.target.value)}
-						placeholder="naia-adk 폴더 경로"
+						placeholder="작업할 코드 워크스페이스 경로"
 						style={{ flex: 1 }}
 					/>
 				</div>
 				<div className="settings-hint">
-					naia-adk 폴더 경로 (VRM·배경·BGM 리소스 위치)
+					Git 레포와 skills/ 디렉토리를 탐색할 코드 워크스페이스 경로입니다.
+					VRM·배경·BGM은 아래 naia-settings 경로를 사용합니다.
 				</div>
 			</div>
 
@@ -2703,7 +2726,16 @@ export function SettingsTab() {
 							</option>
 						))}
 				</select>
-				<div className="settings-hint">{selectedModelMeta?.label ?? model}</div>
+				<div className="settings-hint">
+					{provider === "nextain" && selectedModelMeta?.pricing ? (
+						<span style={{ color: "var(--accent-color, #64a0ff)" }}>
+							Naia 365 {t("settings.pricing")}: ${selectedModelMeta.pricing[0].toFixed(3)} / $
+							{selectedModelMeta.pricing[1].toFixed(3)}
+						</span>
+					) : (
+						selectedModelMeta?.label ?? model
+					)}
+				</div>
 			</div>
 
 			{/* Omni model voice selection */}
@@ -3057,7 +3089,7 @@ export function SettingsTab() {
 											disabled={p.requiresNaiaKey && !naiaKey}
 										>
 											{p.name}
-											{p.pricing ? ` — ${p.pricing}` : ""}
+											{p.pricing ? ` - ${p.pricing}` : ""}
 											{p.requiresNaiaKey && !naiaKey
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
@@ -3278,7 +3310,7 @@ export function SettingsTab() {
 									disabled={p.requiresNaiaKey && !naiaKey}
 								>
 									{p.name}
-									{p.pricing ? ` — ${p.pricing}` : ""}
+									{p.pricing ? ` - ${p.pricing}` : ""}
 									{p.requiresNaiaKey && !naiaKey
 										? ` (${t("settings.ttsNaiaRequired")})`
 										: ""}

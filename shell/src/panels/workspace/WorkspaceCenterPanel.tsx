@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAdkPath } from "../../lib/adk-store";
+import { getAdkPath, setAdkPath } from "../../lib/adk-store";
 import { loadConfig, saveConfig } from "../../lib/config";
 import { Logger } from "../../lib/logger";
 import { panelRegistry } from "../../lib/panel-registry";
@@ -172,10 +172,10 @@ function getRepoRecentFile(repoRoot: string): string | undefined {
 }
 
 export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
-	// Resolved workspace root — read from config, fall back to naia-adk path.
+	// Resolved workspace root — separate from the naia-settings resource directory.
 	const [activeWorkspaceRoot, setActiveWorkspaceRoot] = useState(() => {
 		const cfg = loadConfig();
-		return cfg?.workspaceRoot || getAdkPath() || WORKSPACE_ROOT;
+		return cfg?.workspaceRoot || getAdkPath() || "";
 	});
 
 	const detectAdkRoot = useCallback(async (): Promise<string | null> => {
@@ -292,6 +292,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			if (cancelled || !detected) return;
 			const cfg = loadConfig();
 			if (cfg) saveConfig({ ...cfg, workspaceRoot: detected });
+			setAdkPath(detected);
 			setActiveWorkspaceRoot(detected);
 		})();
 		return () => {
@@ -1003,7 +1004,7 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 				<p style={{ opacity: 0.7, textAlign: "center", margin: 0 }}>
 					워크스페이스 경로가 설정되지 않았습니다.
 					<br />
-					설정 → 워크스페이스(naia-adk)에서 경로를 지정해 주세요.
+					설정 → 워크스페이스에서 코드 작업 경로를 지정해 주세요.
 				</p>
 			</div>
 		);

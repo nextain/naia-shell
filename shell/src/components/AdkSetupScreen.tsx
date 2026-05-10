@@ -4,7 +4,12 @@ import { homeDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useState } from "react";
-import { copyBundledAssets, readNaiaConfig, setAdkPath } from "../lib/adk-store";
+import {
+	copyBundledAssets,
+	getAdkPath,
+	readNaiaConfig,
+	setAdkPath,
+} from "../lib/adk-store";
 import { getLocale, t } from "../lib/i18n";
 
 interface AdkSetupScreenProps {
@@ -25,7 +30,21 @@ function clearAllLocalData() {
 	localStorage.removeItem("naia-remote-user-id");
 }
 
+function preserveWorkspaceRoot(
+	config: Record<string, unknown>,
+	adkPath: string,
+): Record<string, unknown> {
+	return {
+		...config,
+		workspaceRoot: adkPath || getAdkPath() || undefined,
+	};
+}
+
 async function getDefaultAdkPath(): Promise<string> {
+	const detected = await invoke<string>("workspace_detect_adk_root").catch(
+		() => "",
+	);
+	if (detected) return detected;
 	try {
 		const home = await homeDir();
 		return await join(home, "naia-adk");
@@ -64,7 +83,15 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				);
 				localStorage.setItem(
 					"naia-config",
-					JSON.stringify({ ...existing, onboardingComplete: true }),
+					JSON.stringify(preserveWorkspaceRoot({
+						provider: "nextain",
+						model: "gemini-2.5-flash",
+						apiKey: "",
+						...existing,
+						naiaKey: event.payload.naiaKey,
+						naiaUserId: event.payload.naiaUserId,
+						onboardingComplete: true,
+					}, adkPath)),
 				);
 				onComplete();
 			},
@@ -86,44 +113,63 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	}
 
 	async function handleNewStart() {
-		const adkPath = path.trim() || defaultPath;
-		// Check if naia-settings already exists
-		const exists = await invoke<boolean>("check_naia_settings", { adkPath });
-		if (exists) {
-			setPath(adkPath);
-			setMode("new_exists");
-			return;
+		try {
+			const adkPath = path.trim() || defaultPath;
+			// Check if naia-settings already exists
+			const exists = await invoke<boolean>("check_naia_settings", { adkPath });
+			if (exists) {
+				setPath(adkPath);
+				setMode("new_exists");
+				return;
+			}
+			// Create folder structure then copy bundled defaults
+			await invoke("init_naia_settings", { adkPath });
+			await copyBundledAssets(adkPath);
+			clearAllLocalData();
+			setAdkPath(adkPath);
+			onComplete();
+		} catch (err) {
+			setError(String(err));
 		}
-		// Create folder structure then copy bundled defaults
-		await invoke("init_naia_settings", { adkPath }).catch(() => {});
-		await copyBundledAssets(adkPath);
-		clearAllLocalData();
-		setAdkPath(adkPath);
-		onComplete();
 	}
 
 	async function handleNewUseExisting() {
-		const adkPath = path.trim() || defaultPath;
-		clearAllLocalData();
-		setAdkPath(adkPath);
-		const fileConfig = await readNaiaConfig();
-		if (fileConfig) {
-			localStorage.setItem(
-				"naia-config",
-				JSON.stringify({ ...fileConfig, onboardingComplete: true }),
-			);
+		try {
+			const adkPath = path.trim() || defaultPath;
+			await invoke("init_naia_settings", { adkPath });
+			await copyBundledAssets(adkPath);
+			clearAllLocalData();
+			setAdkPath(adkPath);
+			const fileConfig = await readNaiaConfig();
+			if (fileConfig) {
+				localStorage.setItem(
+					"naia-config",
+					JSON.stringify(
+						preserveWorkspaceRoot(
+							{ ...fileConfig, onboardingComplete: true },
+							adkPath,
+						),
+					),
+				);
+			}
+			onComplete();
+		} catch (err) {
+			setError(String(err));
 		}
-		onComplete();
 	}
 
 	async function handleNewRecreate() {
-		const adkPath = path.trim() || defaultPath;
-		await invoke("delete_naia_settings", { adkPath }).catch(() => {});
-		await invoke("init_naia_settings", { adkPath }).catch(() => {});
-		await copyBundledAssets(adkPath);
-		clearAllLocalData();
-		setAdkPath(adkPath);
-		onComplete();
+		try {
+			const adkPath = path.trim() || defaultPath;
+			await invoke("delete_naia_settings", { adkPath });
+			await invoke("init_naia_settings", { adkPath });
+			await copyBundledAssets(adkPath);
+			clearAllLocalData();
+			setAdkPath(adkPath);
+			onComplete();
+		} catch (err) {
+			setError(String(err));
+		}
 	}
 
 	async function handleLoadConfirm() {
@@ -132,17 +178,27 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			setError(t("adk.setup.load.error"));
 			return;
 		}
-		setAdkPath(trimmed);
-		// Ensure naia-settings subfolders exist in the selected folder
-		await invoke("init_naia_settings", { adkPath: trimmed }).catch(() => {});
-		// Restore config from the selected ADK folder, then mark onboarding done
-		const fileConfig = await readNaiaConfig();
-		const base = fileConfig ?? {};
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({ ...base, onboardingComplete: true }),
-		);
-		onComplete();
+		try {
+			setAdkPath(trimmed);
+			// Ensure naia-settings subfolders and bundled defaults exist.
+			await invoke("init_naia_settings", { adkPath: trimmed });
+			await copyBundledAssets(trimmed);
+			// Restore config from the selected ADK folder, then mark onboarding done
+			const fileConfig = await readNaiaConfig();
+			const base = fileConfig ?? {};
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify(
+					preserveWorkspaceRoot(
+						{ ...base, onboardingComplete: true },
+						trimmed,
+					),
+				),
+			);
+			onComplete();
+		} catch (err) {
+			setError(String(err));
+		}
 	}
 
 	async function handleNaiaLogin() {
@@ -283,6 +339,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							{t("adk.setup.browse")}
 						</button>
 					</div>
+					{error && <p className="adk-setup-error">{error}</p>}
 					<p className="adk-setup-hint">{t("adk.setup.new.hint")}</p>
 					<button
 						type="button"
@@ -322,6 +379,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 
 				<div className="adk-setup-form">
 					<div className="adk-setup-path-preview">{path}</div>
+					{error && <p className="adk-setup-error">{error}</p>}
 					<div className="adk-setup-cards" style={{ marginTop: 16 }}>
 						<button
 							type="button"

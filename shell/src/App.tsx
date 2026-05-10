@@ -12,13 +12,20 @@ import { SplashScreen } from "./components/SplashScreen";
 import { TitleBar } from "./components/TitleBar";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { getBridgeForPanel } from "./lib/active-bridge";
-import { isAdkInitialized, listNaiaAssets, toLocalBlobUrl } from "./lib/adk-store";
+import {
+	getAdkPath,
+	isAdkInitialized,
+	listNaiaAssets,
+	setAdkPath,
+	toLocalBlobUrl,
+} from "./lib/adk-store";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
 	sendPanelSkills,
 	sendPanelSkillsClear,
 } from "./lib/chat-service";
+import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import {
 	type ThemeId,
 	isOnboardingComplete,
@@ -56,6 +63,11 @@ function isVideoFile(url: string): boolean {
 }
 function isImageFile(url: string): boolean {
 	return IMAGE_EXTS.has(getFileExt(url));
+}
+function getBackgroundMediaType(path: string): "image" | "video" | "" {
+	if (isVideoFile(path)) return "video";
+	if (isImageFile(path)) return "image";
+	return "";
 }
 
 type WinResizeDir =
@@ -109,6 +121,9 @@ export function App() {
 	const [showPanelInstall, setShowPanelInstall] = useState(false);
 	const [naiaVisible, setNaiaVisible] = useState(true);
 	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
+	const [appTitle, setAppTitle] = useState(
+		() => loadConfig()?.agentName?.trim() || "Naia",
+	);
 	const [chatVisible, setChatVisible] = useState(true);
 	const [chatHeight, setChatHeight] = useState(() =>
 		Math.round(window.innerHeight * 0.4),
@@ -120,7 +135,11 @@ export function App() {
 	} | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
+	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+	const setBackgroundMediaType = useAvatarStore(
+		(s) => s.setBackgroundMediaType,
+	);
 
 	// Window starts hidden (visible:false in tauri.conf.json) to prevent white flash.
 	// Show it on first render — splash screen's dark background is already painted.
@@ -144,7 +163,7 @@ export function App() {
 	const appReady = useAppReady(showAdkSetup);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
-	const { activePanel } = usePanelStore();
+	const { activePanel, toggleAiInterferenceEnabled } = usePanelStore();
 
 	// Sync panel tools with agent on panel switch, and call lifecycle hooks
 	const prevPanelRef = useRef<string | null>(null);
@@ -168,6 +187,16 @@ export function App() {
 				sendPanelSkills(activePanel, descriptor.tools).catch(() => {});
 			}
 		}
+	}, [activePanel]);
+
+	useEffect(() => {
+		if (!activePanel) return;
+		emitAiInterferenceEvent({
+			source: "panel",
+			action: "activated",
+			panelId: activePanel,
+			summary: `${activePanel} panel activated`,
+		});
 	}, [activePanel]);
 
 	useEffect(() => {
@@ -212,7 +241,10 @@ export function App() {
 			const saved = config?.backgroundVideo as string | undefined;
 			if (!saved) return; // no saved preference → keep default space background
 			const match = paths.find((p) => p.endsWith(saved));
-			if (match) setBackgroundVideoUrl(await toLocalBlobUrl(match));
+			if (match) {
+				setBackgroundMediaType(getBackgroundMediaType(match));
+				setBackgroundVideoUrl(await toLocalBlobUrl(match));
+			}
 		});
 	}, [showAdkSetup]);
 
@@ -223,6 +255,12 @@ export function App() {
 		loadInstalledPanels().catch(() => {});
 
 		const config = loadConfig();
+		const adkPath = getAdkPath();
+		if (config?.workspaceRoot && config.workspaceRoot !== adkPath) {
+			setAdkPath(config.workspaceRoot);
+		} else if (config && adkPath && !config.workspaceRoot) {
+			saveConfig({ ...config, workspaceRoot: adkPath });
+		}
 		applyTheme(config?.theme ?? "midnight");
 		// Suppress build-time panels the user has explicitly deleted
 		if (config?.deletedPanels?.length) {
@@ -251,6 +289,18 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
+		const updateTitle = () => {
+			setAppTitle(loadConfig()?.agentName?.trim() || "Naia");
+		};
+		window.addEventListener("naia-config-changed", updateTitle);
+		window.addEventListener("storage", updateTitle);
+		return () => {
+			window.removeEventListener("naia-config-changed", updateTitle);
+			window.removeEventListener("storage", updateTitle);
+		};
+	}, []);
+
+	useEffect(() => {
 		if (showOnboarding) return;
 		checkForUpdate()
 			.then((info) => {
@@ -273,17 +323,6 @@ export function App() {
 	}, []);
 
 	// Ctrl+B — toggle Naia panel
-	useEffect(() => {
-		const handler = (e: KeyboardEvent) => {
-			if ((e.ctrlKey || e.metaKey) && e.key === "b") {
-				e.preventDefault();
-				toggleNaia();
-			}
-		};
-		window.addEventListener("keydown", handler);
-		return () => window.removeEventListener("keydown", handler);
-	}, []);
-
 	const toggleNaia = useCallback(() => {
 		setNaiaVisible((prev) => {
 			const next = !prev;
@@ -292,6 +331,21 @@ export function App() {
 			return next;
 		});
 	}, []);
+
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+				e.preventDefault();
+				toggleNaia();
+			}
+			if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "a") {
+				e.preventDefault();
+				toggleAiInterferenceEnabled();
+			}
+		};
+		window.addEventListener("keydown", handler);
+		return () => window.removeEventListener("keydown", handler);
+	}, [toggleAiInterferenceEnabled, toggleNaia]);
 
 	useEffect(() => {
 		const unlisten = listen<{
@@ -307,9 +361,15 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
-		const unlisten = listen("naia_auth_complete", () => {
-			void syncLinkedChannels();
-		});
+		const unlisten = listen<{ naiaKey?: string }>(
+			"naia_auth_complete",
+			(event) => {
+				if (event.payload.naiaKey) {
+					sendAuthUpdate(event.payload.naiaKey).catch(() => {});
+				}
+				void syncLinkedChannels();
+			},
+		);
 		return () => {
 			unlisten.then((fn) => fn());
 		};
@@ -361,7 +421,9 @@ export function App() {
 			style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
 		>
 			{/* ① Background — always the base layer, z-index:0 */}
-			{backgroundVideoUrl && isVideoFile(backgroundVideoUrl) ? (
+			{backgroundVideoUrl &&
+			(backgroundMediaType === "video" ||
+				(!backgroundMediaType && isVideoFile(backgroundVideoUrl))) ? (
 				<video
 					key={backgroundVideoUrl}
 					className="app-bg-video"
@@ -371,7 +433,9 @@ export function App() {
 					muted
 					playsInline
 				/>
-			) : backgroundVideoUrl && isImageFile(backgroundVideoUrl) ? (
+			) : backgroundVideoUrl &&
+				(backgroundMediaType === "image" ||
+					(!backgroundMediaType && isImageFile(backgroundVideoUrl))) ? (
 				<img
 					key={backgroundVideoUrl}
 					className="app-bg-image"
@@ -395,7 +459,11 @@ export function App() {
 			{/* ④ ADK setup */}
 			{showAdkSetup && (
 				<>
-					<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
+					<TitleBar
+						panelVisible={naiaVisible}
+						onTogglePanel={toggleNaia}
+						title={appTitle}
+					/>
 					<AdkSetupScreen
 						onComplete={() => {
 							setShowSplash(true);
@@ -409,7 +477,12 @@ export function App() {
 			{/* ⑤ Main app — always visible after ADK setup */}
 			{!showAdkSetup && (
 				<>
-					<TitleBar panelVisible={naiaVisible} onTogglePanel={toggleNaia} />
+					<TitleBar
+						panelVisible={naiaVisible}
+						onTogglePanel={toggleNaia}
+						title={appTitle}
+					/>
+					<BgmPlayer />
 					{updateInfo && !showOnboarding && (
 						<UpdateBanner
 							info={updateInfo}
@@ -423,7 +496,6 @@ export function App() {
 								<AvatarCanvas />
 							</div>
 							<div className="naia-overlay">
-								<BgmPlayer />
 								{/* Chat floats over avatar — absolute at bottom */}
 								<div className="naia-chat-area">
 									<button
@@ -472,7 +544,11 @@ export function App() {
 
 					<div
 						className="app-layout"
-						style={{ left: naiaVisible ? naiaWidth : 0 } as React.CSSProperties}
+						style={
+							{
+								left: showOnboarding ? 0 : naiaVisible ? naiaWidth : 0,
+							} as React.CSSProperties
+						}
 					>
 						<div className="right-area">
 							{!showOnboarding && (

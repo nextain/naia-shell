@@ -90,7 +90,7 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 /** Copy bundled default assets (VRM/background/BGM) into naia-settings on first init.
  *  Rust reads from the app resource directory directly — no IPC binary transfer. */
 export async function copyBundledAssets(adkPath: string): Promise<void> {
-	await invoke("copy_bundled_assets", { adkPath }).catch(() => {});
+	await invoke("copy_bundled_assets", { adkPath });
 }
 
 // ── File-based config ─────────────────────────────────────────────────────────

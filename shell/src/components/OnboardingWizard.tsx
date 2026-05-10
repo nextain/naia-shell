@@ -2,8 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
-import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import { getAdkPath, listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
+import { sendAuthUpdate } from "../lib/chat-service";
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
@@ -68,6 +69,34 @@ function stepChat(step: Step, name: string, user: string): string {
 interface BgOption {
 	url: string;
 	label: string;
+	path: string;
+	type: "image" | "video" | "";
+}
+
+interface NaiaAuthPayload {
+	naiaKey: string;
+	naiaUserId?: string;
+}
+
+interface OnboardingSnapshot {
+	agentName: string;
+	userName: string;
+	speechStyle: "casual" | "formal" | "honorific";
+	honorific: string;
+	selectedVrm: string;
+	backgrounds: BgOption[];
+	selectedBg: string;
+	apiKey: string;
+	naiaLoginDone: boolean;
+}
+
+function getBackgroundMediaType(path: string): "image" | "video" | "" {
+	if (isVideo(path)) return "video";
+	const ext = path.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+	if (["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(ext)) {
+		return "image";
+	}
+	return "";
 }
 
 function getNaiaWebBaseUrl() {
@@ -79,6 +108,9 @@ function getNaiaWebBaseUrl() {
 export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+	const setBackgroundMediaType = useAvatarStore(
+		(s) => s.setBackgroundMediaType,
+	);
 	const addMessage = useChatStore((s) => s.addMessage);
 
 	const hasNaiaKey = !!localStorage.getItem("naia-remote-key");
@@ -101,10 +133,25 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [naiaLoginWaiting, setNaiaLoginWaiting] = useState(false);
 	const [naiaLoginDone, setNaiaLoginDone] = useState(hasNaiaKey);
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const latestRef = useRef<OnboardingSnapshot | null>(null);
 
 	const stepIndex = STEPS.indexOf(step);
 	const didMount = useRef(false);
 	const transitioning = useRef(false);
+
+	useEffect(() => {
+		latestRef.current = {
+			agentName,
+			userName,
+			speechStyle,
+			honorific,
+			selectedVrm,
+			backgrounds,
+			selectedBg,
+			apiKey,
+			naiaLoginDone,
+		};
+	});
 
 	// Load VRM list from naia-settings
 	useEffect(() => {
@@ -120,6 +167,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		if (!didMount.current) {
 			didMount.current = true;
 			setBackgroundVideoUrl("");
+			setBackgroundMediaType("");
 			setTimeout(() => {
 				addMessage({
 					role: "assistant",
@@ -127,7 +175,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				});
 			}, 800);
 		}
-	}, [addMessage]);
+	}, [addMessage, setBackgroundMediaType, setBackgroundVideoUrl]);
 
 	// Load backgrounds from naia-settings
 	useEffect(() => {
@@ -137,6 +185,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					paths.map(async (p) => ({
 						url: await toLocalBlobUrl(p),
 						label: p.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") ?? p,
+						path: p,
+						type: getBackgroundMediaType(p),
 					})),
 				);
 				setBackgrounds(bgs);
@@ -147,7 +197,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	// Listen for Naia OAuth callback in provider step
 	useEffect(() => {
-		const unlisten = listen<{ naiaKey: string; naiaUserId?: string }>(
+		const unlisten = listen<NaiaAuthPayload>(
 			"naia_auth_complete",
 			(event) => {
 				if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
@@ -157,13 +207,16 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				}
 				setNaiaLoginWaiting(false);
 				setNaiaLoginDone(true);
+				saveCompletedConfig(event.payload, latestRef.current ?? undefined);
+				sendAuthUpdate(event.payload.naiaKey).catch(() => {});
+				onComplete();
 			},
 		);
 		return () => {
 			unlisten.then((fn) => fn());
 			if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
 		};
-	}, []);
+	}, [onComplete]);
 
 	function goNext() {
 		if (transitioning.current) return;
@@ -193,6 +246,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	function handleBgSelect(url: string) {
 		setSelectedBg(url);
+		const bg = backgrounds.find((item) => item.url === url);
+		setBackgroundMediaType(bg?.type ?? "");
 		setBackgroundVideoUrl(url);
 	}
 
@@ -227,42 +282,69 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 	}
 
-	function handleComplete() {
+	function saveCompletedConfig(
+		auth?: NaiaAuthPayload,
+		snapshot: OnboardingSnapshot = {
+			agentName,
+			userName,
+			speechStyle,
+			honorific,
+			selectedVrm,
+			backgrounds,
+			selectedBg,
+			apiKey,
+			naiaLoginDone,
+		},
+	) {
 		const base = loadConfig() ?? {
 			provider: "nextain",
 			model: "gemini-2.5-flash",
 			apiKey: "",
 		};
-		const vrmPath = selectedVrm || DEFAULT_AVATAR_MODEL;
-		const bgFilename = !selectedBg.startsWith("/assets/")
-			? (selectedBg.split(/[/\\?]/).pop() ?? undefined)
-			: undefined;
+		const vrmPath = snapshot.selectedVrm || DEFAULT_AVATAR_MODEL;
+		const selectedBgOption = snapshot.backgrounds.find(
+			(bg) => bg.url === snapshot.selectedBg,
+		);
+		const bgFilename =
+			selectedBgOption?.path.split(/[/\\]/).pop() ?? undefined;
 
 		const speechDesc =
-			speechStyle === "casual"
+			snapshot.speechStyle === "casual"
 				? "casually and warmly"
-				: speechStyle === "formal"
+				: snapshot.speechStyle === "formal"
 					? "formally and professionally"
 					: "respectfully using honorifics";
-		const persona = `You are ${agentName.trim() || "Naia"}, an AI companion. Speak ${speechDesc}.`;
+		const persona = `You are ${snapshot.agentName.trim() || "Naia"}, an AI companion. Speak ${speechDesc}.`;
 
 		saveConfig({
 			...base,
-			agentName: agentName.trim() || "Naia",
-			userName: userName.trim() || undefined,
-			speechStyle,
+			provider: auth ? "nextain" : base.provider,
+			model: auth ? base.model || "gemini-2.5-flash" : base.model,
+			agentName: snapshot.agentName.trim() || "Naia",
+			userName: snapshot.userName.trim() || undefined,
+			speechStyle: snapshot.speechStyle,
 			honorific:
-				speechStyle === "honorific" && honorific.trim()
-					? honorific.trim()
+				snapshot.speechStyle === "honorific" && snapshot.honorific.trim()
+					? snapshot.honorific.trim()
 					: undefined,
 			vrmModel: vrmPath,
 			backgroundVideo: bgFilename,
 			persona,
-			...(apiKey.trim() && !naiaLoginDone ? { apiKey: apiKey.trim() } : {}),
+			...(snapshot.apiKey.trim() && !snapshot.naiaLoginDone && !auth
+				? { apiKey: snapshot.apiKey.trim() }
+				: {}),
+			...(auth
+				? { naiaKey: auth.naiaKey, naiaUserId: auth.naiaUserId }
+				: {}),
+			workspaceRoot: getAdkPath() || base.workspaceRoot || undefined,
 			onboardingComplete: true,
 		});
 
 		setAvatarModelPath(vrmPath);
+	}
+
+	function handleComplete() {
+		saveCompletedConfig();
 		addMessage({
 			role: "assistant",
 			content: stepChat(
@@ -440,7 +522,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									className={`onboarding-step__bg-card${selectedBg === bg.url ? " onboarding-step__bg-card--selected" : ""}`}
 									onClick={() => handleBgSelect(bg.url)}
 								>
-									{isVideo(bg.url) ? (
+									{bg.type === "video" ? (
 										<div className="onboarding-step__bg-video-thumb">▶</div>
 									) : (
 										<img

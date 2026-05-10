@@ -3,11 +3,14 @@ import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { loadConfig } from "../lib/config";
 import type { EmotionName } from "../lib/vrm/expression";
 
+export type BackgroundMediaType = "" | "image" | "video";
+
 interface AvatarState {
 	modelPath: string;
 	backgroundImage: string;
 	/** Asset URL (convertFileSrc) for background video. Empty = no video. */
 	backgroundVideoUrl: string;
+	backgroundMediaType: BackgroundMediaType;
 	/** Asset URL (convertFileSrc) for BGM track. Empty = no BGM. */
 	bgmTrackUrl: string;
 	animationPath: string;
@@ -24,6 +27,7 @@ interface AvatarState {
 	setModelPath: (path: string) => void;
 	setBackgroundImage: (path: string) => void;
 	setBackgroundVideoUrl: (url: string) => void;
+	setBackgroundMediaType: (type: BackgroundMediaType) => void;
 	setBgmTrackUrl: (url: string) => void;
 }
 
@@ -41,6 +45,7 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 	modelPath: getInitialModelPath(),
 	backgroundImage: getInitialBgImage(),
 	backgroundVideoUrl: "",
+	backgroundMediaType: "",
 	bgmTrackUrl: "",
 	animationPath: "/animations/idle_loop.vrma",
 	isLoaded: false,
@@ -57,5 +62,6 @@ export const useAvatarStore = create<AvatarState>((set) => ({
 		set({ modelPath: path, isLoaded: false, loadProgress: 0 }),
 	setBackgroundImage: (path) => set({ backgroundImage: path }),
 	setBackgroundVideoUrl: (url) => set({ backgroundVideoUrl: url }),
+	setBackgroundMediaType: (type) => set({ backgroundMediaType: type }),
 	setBgmTrackUrl: (url) => set({ bgmTrackUrl: url }),
 }));

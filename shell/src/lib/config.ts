@@ -194,6 +194,9 @@ export function loadConfig(): AppConfig | null {
 
 export function saveConfig(config: AppConfig): void {
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+	if (typeof window !== "undefined") {
+		window.dispatchEvent(new CustomEvent("naia-config-changed"));
+	}
 }
 
 export function hasApiKey(): boolean {

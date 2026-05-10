@@ -217,8 +217,10 @@ describe("copyBundledAssets", () => {
 		expect(mockInvoke).toHaveBeenCalledWith("copy_bundled_assets", { adkPath: WIN_ADK });
 	});
 
-	it("silently swallows errors", async () => {
+	it("throws copy errors so setup can surface them", async () => {
 		mockInvoke.mockRejectedValue(new Error("Bundled assets directory not found"));
-		await expect(copyBundledAssets(WIN_ADK)).resolves.toBeUndefined();
+		await expect(copyBundledAssets(WIN_ADK)).rejects.toThrow(
+			"Bundled assets directory not found",
+		);
 	});
 });

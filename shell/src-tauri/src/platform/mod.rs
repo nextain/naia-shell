@@ -25,7 +25,10 @@ pub(crate) enum GatewaySpawnResult {
     /// Platform says skip gateway entirely (e.g. Windows Tier 1).
     Skip { reason: String },
     /// Platform spawned the gateway itself (e.g. Windows Tier 2 via WSL).
-    Spawned { child: Child, node_host: Option<Child> },
+    Spawned {
+        child: Child,
+        node_host: Option<Child>,
+    },
     /// Platform has no special handling — use default flow.
     UseDefault,
 }
@@ -43,12 +46,18 @@ pub enum PlatformHandle {
 }
 
 impl PlatformHandle {
-    pub fn is_valid(&self) -> bool { !matches!(self, PlatformHandle::None) }
-    pub fn is_none(&self) -> bool { matches!(self, PlatformHandle::None) }
+    pub fn is_valid(&self) -> bool {
+        !matches!(self, PlatformHandle::None)
+    }
+    pub fn is_none(&self) -> bool {
+        matches!(self, PlatformHandle::None)
+    }
 }
 
 impl Default for PlatformHandle {
-    fn default() -> Self { PlatformHandle::None }
+    fn default() -> Self {
+        PlatformHandle::None
+    }
 }
 
 /// Geometry rectangle for window positioning (all coordinates in pixels, i32).
@@ -62,7 +71,12 @@ pub struct WindowRect {
 
 impl WindowRect {
     pub fn from_f64(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self { x: x as i32, y: y as i32, width: width as u32, height: height as u32 }
+        Self {
+            x: x as i32,
+            y: y as i32,
+            width: width as u32,
+            height: height as u32,
+        }
     }
 }
 
@@ -70,7 +84,12 @@ impl WindowRect {
 pub trait PlatformWindowManager: Send + Sync {
     fn find_window_by_pid(&self, pid: u32, timeout_ms: u64) -> Result<PlatformHandle, String>;
     fn find_window_by_name(&self, name: &str, timeout_ms: u64) -> Result<PlatformHandle, String>;
-    fn embed(&self, parent: PlatformHandle, child: PlatformHandle, rect: WindowRect) -> Result<(), String>;
+    fn embed(
+        &self,
+        parent: PlatformHandle,
+        child: PlatformHandle,
+        rect: WindowRect,
+    ) -> Result<(), String>;
     fn remap(&self, handle: PlatformHandle, rect: WindowRect) -> Result<(), String>;
     fn resize(&self, handle: PlatformHandle, rect: WindowRect) -> Result<(), String>;
     fn focus(&self, handle: PlatformHandle) -> Result<(), String>;
@@ -82,20 +101,32 @@ pub trait PlatformWindowManager: Send + Sync {
 
     /// Whether this platform supports native window reparenting (SetParent / XReparentWindow).
     /// When false, `overlay_position` is used instead.
-    fn supports_native_embed(&self) -> bool { false }
+    fn supports_native_embed(&self) -> bool {
+        false
+    }
 
     /// Position `chrome` as a floating overlay over the Tauri panel area — no reparenting.
     ///
     /// `tauri` is the Tauri main window handle.
     /// `rect` is the panel rect in Tauri client-area coordinates (from getBoundingClientRect).
     /// Translates to screen coordinates internally, then positions Chrome via native z-order.
-    fn overlay_position(&self, tauri: PlatformHandle, chrome: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+    fn overlay_position(
+        &self,
+        tauri: PlatformHandle,
+        chrome: PlatformHandle,
+        rect: WindowRect,
+    ) -> Result<(), String> {
         let _ = (tauri, chrome, rect);
         Err("overlay_position not implemented for this platform".into())
     }
 
     /// Show the overlay Chrome and sync its position. Used by browser_embed_show / resize in overlay mode.
-    fn overlay_show(&self, tauri: PlatformHandle, chrome: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+    fn overlay_show(
+        &self,
+        tauri: PlatformHandle,
+        chrome: PlatformHandle,
+        rect: WindowRect,
+    ) -> Result<(), String> {
         self.overlay_position(tauri, chrome, rect)
     }
 
@@ -109,7 +140,12 @@ pub trait PlatformWindowManager: Send + Sync {
     /// SWP_FRAMECHANGED. Called every ~500 ms to counter Chrome's own SetWindowPos calls
     /// (e.g., when Chrome restores its saved WINDOWPLACEMENT on activation).
     /// Default: no-op for platforms with native embed.
-    fn overlay_enforce_pos(&self, tauri: PlatformHandle, chrome: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+    fn overlay_enforce_pos(
+        &self,
+        tauri: PlatformHandle,
+        chrome: PlatformHandle,
+        rect: WindowRect,
+    ) -> Result<(), String> {
         let _ = (tauri, chrome, rect);
         Ok(())
     }
@@ -120,7 +156,12 @@ pub trait PlatformWindowManager: Send + Sync {
     /// Called every ~500 ms. `visible` = whether Chrome should be visible right now
     /// (false while browser_embed_hide is active — skip SW_RESTORE to avoid un-hiding).
     /// Default: no-op (Linux X11 reparent is stable; overlay mode uses overlay_enforce_pos).
-    fn embed_enforce_pos(&self, child: PlatformHandle, rect: WindowRect, visible: bool) -> Result<(), String> {
+    fn embed_enforce_pos(
+        &self,
+        child: PlatformHandle,
+        rect: WindowRect,
+        visible: bool,
+    ) -> Result<(), String> {
         let _ = (child, rect, visible);
         Ok(())
     }
@@ -137,9 +178,17 @@ pub trait PlatformWindowManager: Send + Sync {
 /// Get the platform-specific window manager singleton.
 pub fn window_manager() -> &'static dyn PlatformWindowManager {
     #[cfg(target_os = "linux")]
-    { static INSTANCE: linux::X11WindowManager = linux::X11WindowManager; &INSTANCE }
+    {
+        static INSTANCE: linux::X11WindowManager = linux::X11WindowManager;
+        &INSTANCE
+    }
     #[cfg(target_os = "windows")]
-    { static INSTANCE: windows::Win32WindowManager = windows::Win32WindowManager; &INSTANCE }
+    {
+        static INSTANCE: windows::Win32WindowManager = windows::Win32WindowManager;
+        &INSTANCE
+    }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    { compile_error!("Unsupported platform — implement PlatformWindowManager for this OS"); }
+    {
+        compile_error!("Unsupported platform — implement PlatformWindowManager for this OS");
+    }
 }

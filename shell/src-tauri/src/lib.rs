@@ -26,7 +26,10 @@ pub(crate) fn home_dir() -> String {
 }
 
 /// Search a node version manager directory for the highest Node 22+ version.
-pub(crate) fn find_highest_node_version(versions_dir: &str, bin_subpath: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn find_highest_node_version(
+    versions_dir: &str,
+    bin_subpath: &str,
+) -> Option<std::path::PathBuf> {
     let entries = std::fs::read_dir(versions_dir).ok()?;
     let mut versions: Vec<_> = entries
         .filter_map(|e| e.ok())
@@ -34,13 +37,21 @@ pub(crate) fn find_highest_node_version(versions_dir: &str, bin_subpath: &str) -
             let name = e.file_name().to_string_lossy().to_string();
             let name = name.trim_start_matches('v').to_string();
             let major: u32 = name.split('.').next()?.parse().ok()?;
-            if major >= 22 { Some((major, e.path())) } else { None }
+            if major >= 22 {
+                Some((major, e.path()))
+            } else {
+                None
+            }
         })
         .collect();
     versions.sort_by(|a, b| b.0.cmp(&a.0));
     versions.first().and_then(|(_, path)| {
         let node_bin = path.join(bin_subpath);
-        if node_bin.exists() { Some(node_bin) } else { None }
+        if node_bin.exists() {
+            Some(node_bin)
+        } else {
+            None
+        }
     })
 }
 
@@ -54,7 +65,10 @@ pub(crate) fn process_deep_link_url(
     source: &str,
 ) {
     let redacted = url_str.split('?').next().unwrap_or(url_str);
-    log_both(&format!("[Naia] Deep link received ({}): {}?[REDACTED]", source, redacted));
+    log_both(&format!(
+        "[Naia] Deep link received ({}): {}?[REDACTED]",
+        source, redacted
+    ));
     let parsed = match url::Url::parse(url_str) {
         Ok(u) => u,
         Err(_) => return,
@@ -90,27 +104,44 @@ pub(crate) fn process_deep_link_url(
                 Some(s) if s == expected_val => {
                     *lock_or_recover(state_mutex, "oauth_state(clear)") = None;
                 }
-                Some(_) => { log_both("[Naia] Deep link rejected: state mismatch"); return; }
-                None => { log_both("[Naia] Deep link rejected: missing state parameter"); return; }
+                Some(_) => {
+                    log_both("[Naia] Deep link rejected: state mismatch");
+                    return;
+                }
+                None => {
+                    log_both("[Naia] Deep link rejected: missing state parameter");
+                    return;
+                }
             }
         }
     }
     let validated_user_id = user_id.filter(|uid| {
-        uid.len() <= 256 && uid.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '@')
+        uid.len() <= 256
+            && uid
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '@')
     });
     let resolved_key = if key.is_some() {
         key
     } else if let Some(code_val) = code {
-        if code_val.starts_with("gw-") { Some(code_val) } else {
+        if code_val.starts_with("gw-") {
+            Some(code_val)
+        } else {
             log_both("[Naia] Deep link rejected: code is not a gateway API key");
             None
         }
-    } else { None };
+    } else {
+        None
+    };
     if let Some(naia_key) = resolved_key {
-        let is_valid = naia_key.starts_with("gw-") && naia_key.len() <= 256
-            && naia_key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+        let is_valid = naia_key.starts_with("gw-")
+            && naia_key.len() <= 256
+            && naia_key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
         if is_valid {
-            let payload = serde_json::json!({ "naiaKey": naia_key, "naiaUserId": validated_user_id });
+            let payload =
+                serde_json::json!({ "naiaKey": naia_key, "naiaUserId": validated_user_id });
             let _ = app_handle.emit("naia_auth_complete", payload);
             log_both("[Naia] Naia auth complete — key received via deep link");
         } else {
@@ -118,14 +149,33 @@ pub(crate) fn process_deep_link_url(
         }
     }
     let is_discord_flow = matches!(channel.as_deref(), Some("discord"))
-        || discord_user_id.is_some() || discord_channel_id.is_some() || discord_target.is_some();
+        || discord_user_id.is_some()
+        || discord_channel_id.is_some()
+        || discord_target.is_some();
     if is_discord_flow {
-        let validated_discord_user_id = discord_user_id.filter(|uid| is_valid_discord_snowflake(uid));
-        let validated_discord_channel_id = discord_channel_id.filter(|cid| is_valid_discord_snowflake(cid));
+        let validated_discord_user_id =
+            discord_user_id.filter(|uid| is_valid_discord_snowflake(uid));
+        let validated_discord_channel_id =
+            discord_channel_id.filter(|cid| is_valid_discord_snowflake(cid));
         let normalized_target = discord_target
-            .and_then(|t| { let t = t.trim().to_string(); if t.starts_with("user:") || t.starts_with("channel:") { Some(t) } else { None } })
-            .or_else(|| validated_discord_user_id.as_ref().map(|uid| format!("user:{}", uid)))
-            .or_else(|| validated_discord_channel_id.as_ref().map(|cid| format!("channel:{}", cid)));
+            .and_then(|t| {
+                let t = t.trim().to_string();
+                if t.starts_with("user:") || t.starts_with("channel:") {
+                    Some(t)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                validated_discord_user_id
+                    .as_ref()
+                    .map(|uid| format!("user:{}", uid))
+            })
+            .or_else(|| {
+                validated_discord_channel_id
+                    .as_ref()
+                    .map(|cid| format!("channel:{}", cid))
+            });
         let payload = serde_json::json!({
             "discordUserId": validated_discord_user_id,
             "discordChannelId": validated_discord_channel_id,
@@ -137,9 +187,9 @@ pub(crate) fn process_deep_link_url(
 }
 
 #[cfg(target_os = "linux")]
-use webkit2gtk::PermissionRequestExt;
-#[cfg(target_os = "linux")]
 use webkit2gtk::glib::object::ObjectExt;
+#[cfg(target_os = "linux")]
+use webkit2gtk::PermissionRequestExt;
 
 // agent-core process handle
 struct AgentProcess {
@@ -290,7 +340,10 @@ pub(crate) fn log_verbose(msg: &str) {
 }
 
 fn debug_e2e_enabled() -> bool {
-    matches!(std::env::var("CAFE_DEBUG_E2E").ok().as_deref(), Some("1" | "true" | "TRUE"))
+    matches!(
+        std::env::var("CAFE_DEBUG_E2E").ok().as_deref(),
+        Some("1" | "true" | "TRUE")
+    )
 }
 
 /// Get the run directory (~/.naia/run/) for PID files
@@ -304,7 +357,11 @@ fn run_dir() -> std::path::PathBuf {
 fn write_pid_file(component: &str, pid: u32) {
     let path = run_dir().join(format!("{}.pid", component));
     let _ = std::fs::write(&path, pid.to_string());
-    log_verbose(&format!("[Naia] PID file written: {} (PID {})", path.display(), pid));
+    log_verbose(&format!(
+        "[Naia] PID file written: {} (PID {})",
+        path.display(),
+        pid
+    ));
 }
 
 /// Read PID from a PID file (returns None if file doesn't exist or is invalid)
@@ -392,10 +449,7 @@ fn start_gateway_health_monitor(app_handle: AppHandle) -> Arc<std::sync::atomic:
                                     Some(managed)
                                 }
                                 Err(e) => {
-                                    log_both(&format!(
-                                        "[Naia] Gateway restart failed: {}",
-                                        e
-                                    ));
+                                    log_both(&format!("[Naia] Gateway restart failed: {}", e));
                                     None
                                 }
                             }
@@ -405,10 +459,7 @@ fn start_gateway_health_monitor(app_handle: AppHandle) -> Arc<std::sync::atomic:
                     };
                     if let Some(managed) = restart_result {
                         consecutive_failures = 0;
-                        log_both(&format!(
-                            "[Naia] Gateway restarted (managed={})",
-                            managed
-                        ));
+                        log_both(&format!("[Naia] Gateway restarted (managed={})", managed));
                         let _ = app_handle.emit(
                             "gateway_status",
                             serde_json::json!({
@@ -563,7 +614,10 @@ fn load_bootstrap_config() -> serde_json::Value {
                 .to_path_buf();
             // Walk up from target/debug to repo root
             for _ in 0..4 {
-                p = p.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+                p = p
+                    .parent()
+                    .unwrap_or(std::path::Path::new("."))
+                    .to_path_buf();
             }
             p.join("config/defaults/gateway-bootstrap.json")
                 .to_string_lossy()
@@ -573,7 +627,10 @@ fn load_bootstrap_config() -> serde_json::Value {
     for candidate in &candidates {
         if let Ok(raw) = std::fs::read_to_string(candidate) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
-                log_verbose(&format!("[Naia] Loaded bootstrap config from {}", candidate));
+                log_verbose(&format!(
+                    "[Naia] Loaded bootstrap config from {}",
+                    candidate
+                ));
                 return val;
             }
         }
@@ -616,7 +673,10 @@ fn ensure_gateway_config(config_path: &str) {
     if !path.exists() {
         if let Some(parent) = path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                log_both(&format!("[Naia] ERROR: Failed to create config dir {:?}: {}", parent, e));
+                log_both(&format!(
+                    "[Naia] ERROR: Failed to create config dir {:?}: {}",
+                    parent, e
+                ));
                 return;
             }
         }
@@ -624,7 +684,10 @@ fn ensure_gateway_config(config_path: &str) {
         if let Ok(pretty) = serde_json::to_string_pretty(&bootstrap) {
             match std::fs::write(path, pretty.as_bytes()) {
                 Ok(_) => log_both(&format!("[Naia] Bootstrap config created: {}", config_path)),
-                Err(e) => log_both(&format!("[Naia] ERROR: Failed to write bootstrap config to {}: {}", config_path, e)),
+                Err(e) => log_both(&format!(
+                    "[Naia] ERROR: Failed to write bootstrap config to {}: {}",
+                    config_path, e
+                )),
             }
         }
         let home = home_dir();
@@ -635,14 +698,8 @@ fn ensure_gateway_config(config_path: &str) {
     // Existing file: ensure gateway.mode, session.dmScope, and hooks are set
     if let Ok(raw) = std::fs::read_to_string(path) {
         if let Ok(mut root) = serde_json::from_str::<serde_json::Value>(&raw) {
-            let needs_gw_patch = root
-                .get("gateway")
-                .and_then(|gw| gw.get("mode"))
-                .is_none();
-            let needs_session_patch = root
-                .get("session")
-                .and_then(|s| s.get("dmScope"))
-                .is_none();
+            let needs_gw_patch = root.get("gateway").and_then(|gw| gw.get("mode")).is_none();
+            let needs_session_patch = root.get("session").and_then(|s| s.get("dmScope")).is_none();
             let needs_hooks_patch = root
                 .get("hooks")
                 .and_then(|h| h.get("internal"))
@@ -663,19 +720,19 @@ fn ensure_gateway_config(config_path: &str) {
                         .entry("session")
                         .or_insert_with(|| serde_json::json!({}));
                     if let Some(session_obj) = session.as_object_mut() {
-                        session_obj.entry("dmScope")
-                            .or_insert_with(|| serde_json::Value::String("per-channel-peer".to_string()));
+                        session_obj.entry("dmScope").or_insert_with(|| {
+                            serde_json::Value::String("per-channel-peer".to_string())
+                        });
                     }
                     // Enable session-memory hook so conversations are saved to workspace/memory/
-                    let hooks = obj
-                        .entry("hooks")
-                        .or_insert_with(|| serde_json::json!({}));
+                    let hooks = obj.entry("hooks").or_insert_with(|| serde_json::json!({}));
                     if let Some(hooks_obj) = hooks.as_object_mut() {
                         let internal = hooks_obj
                             .entry("internal")
                             .or_insert_with(|| serde_json::json!({}));
                         if let Some(internal_obj) = internal.as_object_mut() {
-                            internal_obj.entry("enabled")
+                            internal_obj
+                                .entry("enabled")
                                 .or_insert_with(|| serde_json::Value::Bool(true));
                             let entries = internal_obj
                                 .entry("entries")
@@ -685,7 +742,8 @@ fn ensure_gateway_config(config_path: &str) {
                                     .entry("session-memory")
                                     .or_insert_with(|| serde_json::json!({}));
                                 if let Some(sm_obj) = sm.as_object_mut() {
-                                    sm_obj.entry("enabled")
+                                    sm_obj
+                                        .entry("enabled")
                                         .or_insert_with(|| serde_json::Value::Bool(true));
                                 }
                             }
@@ -693,8 +751,13 @@ fn ensure_gateway_config(config_path: &str) {
                     }
                     if let Ok(pretty) = serde_json::to_string_pretty(&root) {
                         match std::fs::write(path, pretty.as_bytes()) {
-                            Ok(_) => log_both("[Naia] Patched config (gateway.mode + session.dmScope + hooks)"),
-                            Err(e) => log_both(&format!("[Naia] ERROR: Failed to patch config {}: {}", config_path, e)),
+                            Ok(_) => log_both(
+                                "[Naia] Patched config (gateway.mode + session.dmScope + hooks)",
+                            ),
+                            Err(e) => log_both(&format!(
+                                "[Naia] ERROR: Failed to patch config {}: {}",
+                                config_path, e
+                            )),
                         }
                     }
                 }
@@ -711,78 +774,91 @@ fn spawn_gateway() -> Result<GatewayProcess, String> {
 // openclaw spawn_node_host and legacy spawn body removed — see #201
 
 /// Spawn the Node.js agent-core process with stdio pipes
-fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result<AgentProcess, String> {
-    let agent_path = std::env::var("NAIA_AGENT_PATH")
-        .unwrap_or_else(|_| {
-            // On Windows, check bundled node.exe in resource_dir first
-            #[cfg(windows)]
-            {
-                if let Ok(res_dir) = app_handle.path().resource_dir() {
-                    let bundled = res_dir.join("node.exe");
-                    if bundled.exists() {
-                        return bundled.to_string_lossy().to_string();
-                    }
-                }
-            }
-            find_node_binary()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "node".to_string())
-        });
-
-    // In dev: tsx for TypeScript direct execution; in prod: compiled JS from bundle
-    let agent_script = std::env::var("NAIA_AGENT_SCRIPT")
-        .unwrap_or_else(|_| {
-            let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
-
-            // Flatpak: bundled agent FIRST (--filesystem=home can expose dev paths)
-            if is_flatpak {
-                let flatpak_path = std::path::PathBuf::from("/app/lib/naia-os/agent/dist/index.js");
-                if flatpak_path.exists() {
-                    log_verbose(&format!("[Naia] Found Flatpak agent at: {}", flatpak_path.display()));
-                    return flatpak_path.to_string_lossy().to_string();
-                }
-            }
-
-            // Dev: tsx for TypeScript direct execution (NOT in Flatpak)
-            // Check dev source BEFORE bundled dist — bundled dist in target/debug/
-            // often has incomplete node_modules (pnpm hoisting issues)
-            if !is_flatpak {
-                let candidates = [
-                    "../../agent/src/index.ts",  // from src-tauri/
-                    "../agent/src/index.ts",     // from shell/
-                ];
-                for rel in &candidates {
-                    let dev_path = std::env::current_dir()
-                        .map(|d| d.join(rel))
-                        .unwrap_or_default();
-                    if dev_path.exists() {
-                        log_verbose(&format!("[Naia] Found dev agent at: {}", dev_path.display()));
-                        return dunce::canonicalize(&dev_path)
-                            .unwrap_or(dev_path)
-                            .to_string_lossy()
-                            .to_string();
-                    }
-                }
-            }
-
-            // Production: bundled agent via Tauri resources
-            if let Ok(resource_dir) = app_handle.path().resource_dir() {
-                let bundled = resource_dir.join("agent/dist/index.js");
+fn spawn_agent_core(
+    app_handle: &AppHandle,
+    audit_db: &audit::AuditDb,
+) -> Result<AgentProcess, String> {
+    let agent_path = std::env::var("NAIA_AGENT_PATH").unwrap_or_else(|_| {
+        // On Windows, check bundled node.exe in resource_dir first
+        #[cfg(windows)]
+        {
+            if let Ok(res_dir) = app_handle.path().resource_dir() {
+                let bundled = res_dir.join("node.exe");
                 if bundled.exists() {
-                    log_verbose(&format!("[Naia] Found bundled agent at: {}", bundled.display()));
                     return bundled.to_string_lossy().to_string();
                 }
             }
+        }
+        find_node_binary()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "node".to_string())
+    });
 
-            // Flatpak fallback (resource_dir didn't work)
+    // In dev: tsx for TypeScript direct execution; in prod: compiled JS from bundle
+    let agent_script = std::env::var("NAIA_AGENT_SCRIPT").unwrap_or_else(|_| {
+        let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
+
+        // Flatpak: bundled agent FIRST (--filesystem=home can expose dev paths)
+        if is_flatpak {
             let flatpak_path = std::path::PathBuf::from("/app/lib/naia-os/agent/dist/index.js");
             if flatpak_path.exists() {
-                log_verbose(&format!("[Naia] Found Flatpak agent at: {}", flatpak_path.display()));
+                log_verbose(&format!(
+                    "[Naia] Found Flatpak agent at: {}",
+                    flatpak_path.display()
+                ));
                 return flatpak_path.to_string_lossy().to_string();
             }
-            // Fallback: relative path (legacy)
-            "../agent/dist/index.js".to_string()
-        });
+        }
+
+        // Dev: tsx for TypeScript direct execution (NOT in Flatpak)
+        // Check dev source BEFORE bundled dist — bundled dist in target/debug/
+        // often has incomplete node_modules (pnpm hoisting issues)
+        if !is_flatpak {
+            let candidates = [
+                "../../agent/src/index.ts", // from src-tauri/
+                "../agent/src/index.ts",    // from shell/
+            ];
+            for rel in &candidates {
+                let dev_path = std::env::current_dir()
+                    .map(|d| d.join(rel))
+                    .unwrap_or_default();
+                if dev_path.exists() {
+                    log_verbose(&format!(
+                        "[Naia] Found dev agent at: {}",
+                        dev_path.display()
+                    ));
+                    return dunce::canonicalize(&dev_path)
+                        .unwrap_or(dev_path)
+                        .to_string_lossy()
+                        .to_string();
+                }
+            }
+        }
+
+        // Production: bundled agent via Tauri resources
+        if let Ok(resource_dir) = app_handle.path().resource_dir() {
+            let bundled = resource_dir.join("agent/dist/index.js");
+            if bundled.exists() {
+                log_verbose(&format!(
+                    "[Naia] Found bundled agent at: {}",
+                    bundled.display()
+                ));
+                return bundled.to_string_lossy().to_string();
+            }
+        }
+
+        // Flatpak fallback (resource_dir didn't work)
+        let flatpak_path = std::path::PathBuf::from("/app/lib/naia-os/agent/dist/index.js");
+        if flatpak_path.exists() {
+            log_verbose(&format!(
+                "[Naia] Found Flatpak agent at: {}",
+                flatpak_path.display()
+            ));
+            return flatpak_path.to_string_lossy().to_string();
+        }
+        // Fallback: relative path (legacy)
+        "../agent/dist/index.js".to_string()
+    });
 
     let use_tsx = agent_script.ends_with(".ts");
 
@@ -820,13 +896,17 @@ fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result
         (agent_path.clone(), c)
     };
 
-    log_verbose(&format!("[Naia] Starting agent-core: {} {}", runner, agent_script));
+    log_verbose(&format!(
+        "[Naia] Starting agent-core: {} {}",
+        runner, agent_script
+    ));
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn agent-core: {}", e))?;
 
     let stdin = child
@@ -857,12 +937,24 @@ fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result
                             let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
                             match t {
                                 "tool_use" => {
-                                    let n = parsed.get("toolName").and_then(|v| v.as_str()).unwrap_or("");
-                                    log_both(&format!("[E2E-DEBUG] agent_response tool_use tool={}", n));
+                                    let n = parsed
+                                        .get("toolName")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    log_both(&format!(
+                                        "[E2E-DEBUG] agent_response tool_use tool={}",
+                                        n
+                                    ));
                                 }
                                 "tool_result" => {
-                                    let n = parsed.get("toolName").and_then(|v| v.as_str()).unwrap_or("");
-                                    let s = parsed.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                                    let n = parsed
+                                        .get("toolName")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    let s = parsed
+                                        .get("success")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(false);
                                     let out = parsed
                                         .get("output")
                                         .and_then(|v| v.as_str())
@@ -876,8 +968,14 @@ fn spawn_agent_core(app_handle: &AppHandle, audit_db: &audit::AuditDb) -> Result
                                     ));
                                 }
                                 "error" => {
-                                    let m = parsed.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                                    log_both(&format!("[E2E-DEBUG] agent_response error msg={}", m));
+                                    let m = parsed
+                                        .get("message")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    log_both(&format!(
+                                        "[E2E-DEBUG] agent_response error msg={}",
+                                        m
+                                    ));
                                 }
                                 _ => {}
                             }
@@ -924,7 +1022,10 @@ fn send_to_agent(
                     .and_then(|v| v.get("provider"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let enable_tools = parsed.get("enableTools").and_then(|v| v.as_bool()).unwrap_or(false);
+                let enable_tools = parsed
+                    .get("enableTools")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let has_gateway_url = parsed
                     .get("gatewayUrl")
                     .and_then(|v| v.as_str())
@@ -1086,13 +1187,28 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
         ("skill_system_status", "Get system status information"),
         ("skill_memo", "Save and retrieve memos"),
         ("skill_weather", "Get weather information for a location"),
-        ("skill_notify_slack", "Send a notification message to Slack via webhook"),
-        ("skill_notify_discord", "Send a notification message to Discord via webhook"),
-        ("skill_notify_google_chat", "Send a notification message to Google Chat via webhook"),
-        ("skill_skill_manager", "Manage skills: list, search, enable, disable"),
+        (
+            "skill_notify_slack",
+            "Send a notification message to Slack via webhook",
+        ),
+        (
+            "skill_notify_discord",
+            "Send a notification message to Discord via webhook",
+        ),
+        (
+            "skill_notify_google_chat",
+            "Send a notification message to Google Chat via webhook",
+        ),
+        (
+            "skill_skill_manager",
+            "Manage skills: list, search, enable, disable",
+        ),
         ("skill_agents", "Manage Gateway agents"),
         ("skill_approvals", "Manage Gateway approval rules"),
-        ("skill_botmadang", "Connect with the Botmadang AI Agent community"),
+        (
+            "skill_botmadang",
+            "Connect with the Botmadang AI Agent community",
+        ),
         ("skill_channels", "Manage messaging channels"),
         ("skill_config", "Manage Gateway configuration"),
         ("skill_cron", "Manage scheduled tasks"),
@@ -1129,20 +1245,29 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
                 let data = match std::fs::read_to_string(&manifest_path) {
                     Ok(d) => d,
                     Err(e) => {
-                        log_verbose(&format!("[list_skills] Failed to read {}: {}", manifest_path.display(), e));
+                        log_verbose(&format!(
+                            "[list_skills] Failed to read {}: {}",
+                            manifest_path.display(),
+                            e
+                        ));
                         continue;
                     }
                 };
                 let parsed: serde_json::Value = match serde_json::from_str(&data) {
                     Ok(v) => v,
                     Err(e) => {
-                        log_verbose(&format!("[list_skills] Failed to parse {}: {}", manifest_path.display(), e));
+                        log_verbose(&format!(
+                            "[list_skills] Failed to parse {}: {}",
+                            manifest_path.display(),
+                            e
+                        ));
                         continue;
                     }
                 };
 
                 let dir_name = entry.file_name().to_string_lossy().to_string();
-                let raw_name = parsed.get("name")
+                let raw_name = parsed
+                    .get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or(&dir_name)
                     .to_string();
@@ -1157,21 +1282,22 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
                     continue;
                 }
 
-                let description = parsed.get("description")
+                let description = parsed
+                    .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
 
-                let skill_type = parsed.get("type")
+                let skill_type = parsed
+                    .get("type")
                     .and_then(|v| v.as_str())
                     .unwrap_or("command")
                     .to_string();
 
-                let tier = parsed.get("tier")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(2) as u32;
+                let tier = parsed.get("tier").and_then(|v| v.as_u64()).unwrap_or(2) as u32;
 
-                let gateway_skill = parsed.get("gatewaySkill")
+                let gateway_skill = parsed
+                    .get("gatewaySkill")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
@@ -1237,8 +1363,8 @@ async fn send_to_agent_command(
     if message.len() > MAX_MESSAGE_BYTES {
         return Err(format!("Message too large: {} bytes", message.len()));
     }
-    let parsed: serde_json::Value = serde_json::from_str(&message)
-        .map_err(|e| format!("Invalid JSON from frontend: {}", e))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&message).map_err(|e| format!("Invalid JSON from frontend: {}", e))?;
     if !parsed.is_object() {
         return Err("Message must be a JSON object".to_string());
     }
@@ -1260,7 +1386,12 @@ async fn cancel_stream(
         "type": "cancel_stream",
         "requestId": request_id
     });
-    send_to_agent(&state, &cancel.to_string(), Some(&app), Some(&audit_state.db))
+    send_to_agent(
+        &state,
+        &cancel.to_string(),
+        Some(&app),
+        Some(&audit_state.db),
+    )
 }
 
 #[tauri::command]
@@ -1303,7 +1434,10 @@ async fn memory_export_backup(
     let request_id = {
         let mut bytes = [0u8; 8];
         getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
-        bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+        bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
     };
 
     let (tx, rx) = oneshot::channel();
@@ -1356,7 +1490,10 @@ async fn memory_import_backup(
     let request_id = {
         let mut bytes = [0u8; 8];
         getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
-        bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
+        bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
     };
 
     let (tx, rx) = oneshot::channel();
@@ -1440,49 +1577,51 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 
     #[cfg(target_os = "linux")]
     {
-    let output = tokio::task::spawn_blocking(|| {
-        std::process::Command::new("/usr/bin/pw-dump").output()
-    })
-    .await
-    .map_err(|e| format!("task error: {e}"))?
-    .map_err(|e| format!("pw-dump error: {e}"))?;
+        let output =
+            tokio::task::spawn_blocking(|| std::process::Command::new("/usr/bin/pw-dump").output())
+                .await
+                .map_err(|e| format!("task error: {e}"))?
+                .map_err(|e| format!("pw-dump error: {e}"))?;
 
-    let text = String::from_utf8_lossy(&output.stdout);
-    let nodes: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("pw-dump parse error: {e}"))?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let nodes: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("pw-dump parse error: {e}"))?;
 
-    let mut devices: Vec<serde_json::Value> = nodes
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .filter_map(|obj| {
-            let info = obj.get("info")?;
-            let props = info.get("props")?;
-            let media_class = props.get("media.class")?.as_str()?;
-            if media_class != "Audio/Sink" {
-                return None;
-            }
-            let state = info.get("state")?.as_str().unwrap_or("");
-            if state != "idle" && state != "running" {
-                return None;
-            }
-            let name = props.get("node.name")?.as_str().unwrap_or("");
-            if name.contains("loopback") || name.contains("naia-virtual") {
-                return None;
-            }
-            let label = props
-                .get("node.description")
-                .and_then(|v| v.as_str())
-                .unwrap_or(name)
-                .to_string();
-            Some(serde_json::json!({ "id": name, "label": label }))
-        })
-        .collect();
+        let mut devices: Vec<serde_json::Value> = nodes
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|obj| {
+                let info = obj.get("info")?;
+                let props = info.get("props")?;
+                let media_class = props.get("media.class")?.as_str()?;
+                if media_class != "Audio/Sink" {
+                    return None;
+                }
+                let state = info.get("state")?.as_str().unwrap_or("");
+                if state != "idle" && state != "running" {
+                    return None;
+                }
+                let name = props.get("node.name")?.as_str().unwrap_or("");
+                if name.contains("loopback") || name.contains("naia-virtual") {
+                    return None;
+                }
+                let label = props
+                    .get("node.description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(name)
+                    .to_string();
+                Some(serde_json::json!({ "id": name, "label": label }))
+            })
+            .collect();
 
-    devices.sort_by(|a, b| {
-        a["label"].as_str().unwrap_or("").cmp(b["label"].as_str().unwrap_or(""))
-    });
-    Ok(devices)
+        devices.sort_by(|a, b| {
+            a["label"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["label"].as_str().unwrap_or(""))
+        });
+        Ok(devices)
     }
 }
 
@@ -1572,7 +1711,10 @@ async fn generate_oauth_state(state: tauri::State<'_, AppState>) -> Result<Strin
     for b in &bytes {
         write!(hex, "{:02x}", b).unwrap();
     }
-    *lock_or_recover(&state.oauth_state, "state.oauth_state(generate_oauth_state)") = Some(hex.clone());
+    *lock_or_recover(
+        &state.oauth_state,
+        "state.oauth_state(generate_oauth_state)",
+    ) = Some(hex.clone());
     Ok(hex)
 }
 
@@ -1626,17 +1768,20 @@ fn read_discord_bot_token() -> Result<String, String> {
     // 1. Shell local config (primary — no Gateway dependency)
     let mut shell_candidates = vec![
         format!("{}/.local/share/com.naia.shell/naia-discord.json", home),
-        format!("{}/.var/app/io.nextain.naia/config/com.naia.shell/naia-discord.json", home),
+        format!(
+            "{}/.var/app/io.nextain.naia/config/com.naia.shell/naia-discord.json",
+            home
+        ),
     ];
     #[cfg(windows)]
-    shell_candidates.push(format!("{}\\AppData\\Roaming\\com.naia.shell\\naia-discord.json", home));
+    shell_candidates.push(format!(
+        "{}\\AppData\\Roaming\\com.naia.shell\\naia-discord.json",
+        home
+    ));
     for path in &shell_candidates {
         if let Ok(bytes) = std::fs::read(path) {
             if let Ok(config) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                if let Some(token) = config
-                    .get("botToken")
-                    .and_then(|t| t.as_str())
-                {
+                if let Some(token) = config.get("botToken").and_then(|t| t.as_str()) {
                     if !token.is_empty() {
                         return Ok(token.to_string());
                     }
@@ -1696,11 +1841,12 @@ fn write_discord_bot_token(token: String) -> Result<(), String> {
     if !content.is_object() {
         content = serde_json::json!({});
     }
-    content.as_object_mut()
+    content
+        .as_object_mut()
         .expect("content is always a JSON object")
         .insert("botToken".to_string(), serde_json::Value::String(token));
-    let pretty = serde_json::to_string_pretty(&content)
-        .map_err(|e| format!("JSON serialize: {}", e))?;
+    let pretty =
+        serde_json::to_string_pretty(&content).map_err(|e| format!("JSON serialize: {}", e))?;
     std::fs::write(&config_path, pretty.as_bytes())
         .map_err(|e| format!("Failed to write {}: {}", config_path, e))?;
 
@@ -1710,12 +1856,19 @@ fn write_discord_bot_token(token: String) -> Result<(), String> {
 /// Proxy Discord REST API calls through Rust to bypass CORS.
 /// Returns the JSON response body as a string.
 #[tauri::command]
-async fn discord_api(endpoint: String, method: String, body: Option<String>) -> Result<String, String> {
+async fn discord_api(
+    endpoint: String,
+    method: String,
+    body: Option<String>,
+) -> Result<String, String> {
     let token = read_discord_bot_token()?;
 
     // Validate endpoint to prevent path traversal / URL injection (CWE-94).
-    if endpoint.contains("..") || endpoint.contains("//") || endpoint.contains('@')
-        || endpoint.contains('\n') || endpoint.contains('\r')
+    if endpoint.contains("..")
+        || endpoint.contains("//")
+        || endpoint.contains('@')
+        || endpoint.contains('\n')
+        || endpoint.contains('\r')
     {
         return Err("Invalid endpoint: suspicious characters".to_string());
     }
@@ -1743,9 +1896,15 @@ async fn discord_api(endpoint: String, method: String, body: Option<String>) -> 
         req = req.body(b);
     }
 
-    let res = req.send().await.map_err(|e| format!("Discord API request failed: {}", e))?;
+    let res = req
+        .send()
+        .await
+        .map_err(|e| format!("Discord API request failed: {}", e))?;
     let status = res.status().as_u16();
-    let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
 
     if status >= 400 {
         // Use char boundary-safe truncation to avoid panic on multi-byte UTF-8
@@ -1776,9 +1935,7 @@ async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result
 
     // Restrict to user home directory and common safe locations.
     let home = home_dir();
-    let mut allowed_roots: Vec<std::path::PathBuf> = vec![
-        std::path::PathBuf::from(&home),
-    ];
+    let mut allowed_roots: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from(&home)];
     #[cfg(unix)]
     {
         allowed_roots.push(std::path::PathBuf::from("/tmp"));
@@ -1813,7 +1970,10 @@ async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result
         std::path::PathBuf::from(&home).join(".config/naia-os/secrets"),
     ];
     if sensitive_dirs.iter().any(|dir| canonical.starts_with(dir)) {
-        return Err(format!("Access denied: {} is in a sensitive directory", path));
+        return Err(format!(
+            "Access denied: {} is in a sensitive directory",
+            path
+        ));
     }
 
     let metadata = std::fs::metadata(&file_path)
@@ -1934,8 +2094,7 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
     let mut root: serde_json::Value = {
         let raw = std::fs::read_to_string(&config_path)
             .map_err(|e| format!("Failed to read {}: {}", config_path, e))?;
-        serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse {}: {}", config_path, e))?
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse {}: {}", config_path, e))?
     };
 
     // Set agents.defaults.model.primary = "{oc_provider}/{model}"
@@ -2005,7 +2164,10 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
         .ok_or("reload is not an object")?;
-    reload.insert("mode".to_string(), serde_json::Value::String("off".to_string()));
+    reload.insert(
+        "mode".to_string(),
+        serde_json::Value::String("off".to_string()),
+    );
 
     // Isolate DM sessions from Shell chat (defense-in-depth, mirrors ensure_gateway_config)
     let session_obj = obj
@@ -2013,7 +2175,8 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
         .ok_or("session is not an object")?;
-    session_obj.entry("dmScope")
+    session_obj
+        .entry("dmScope")
         .or_insert_with(|| serde_json::Value::String("per-channel-peer".to_string()));
 
     // Sync Discord DM defaults into channels.discord so the gateway knows the DM target
@@ -2028,7 +2191,10 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
             .or_insert_with(|| serde_json::json!({}))
             .as_object_mut()
             .ok_or("discord is not an object")?;
-        discord.insert("dmPolicy".to_string(), serde_json::Value::String("allowlist".to_string()));
+        discord.insert(
+            "dmPolicy".to_string(),
+            serde_json::Value::String("allowlist".to_string()),
+        );
         discord.insert("allowFrom".to_string(), serde_json::json!([user_id]));
         let dm = discord
             .entry("dm")
@@ -2138,15 +2304,19 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
         // Write OLLAMA_API_KEY for Naia Gateway to register Ollama as a provider.
         // Gateway requires this env var (any non-empty value) to enable Ollama.
         if params.provider == "ollama" {
-            env_obj.insert("OLLAMA_API_KEY".to_string(),
-                serde_json::Value::String("ollama-local".to_string()));
+            env_obj.insert(
+                "OLLAMA_API_KEY".to_string(),
+                serde_json::Value::String("ollama-local".to_string()),
+            );
         } else {
             env_obj.remove("OLLAMA_API_KEY");
         }
         // Propagate Lab gateway URL override
         if let Some(ref url) = params.lab_gateway_url {
-            env_obj.insert("NAIA_GATEWAY_URL".to_string(),
-                serde_json::Value::String(url.clone()));
+            env_obj.insert(
+                "NAIA_GATEWAY_URL".to_string(),
+                serde_json::Value::String(url.clone()),
+            );
         }
         let env_pretty = serde_json::to_string_pretty(&serde_json::Value::Object(env_obj))
             .map_err(|e| format!("JSON serialize env: {}", e))?;
@@ -2165,8 +2335,9 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
                 .ok_or("No parent dir")?;
             let auth_path = gateway_dir.join("agents/main/agent/auth-profiles.json");
             if let Some(auth_parent) = auth_path.parent() {
-                std::fs::create_dir_all(auth_parent)
-                    .map_err(|e| format!("Failed to create dir {}: {}", auth_parent.display(), e))?;
+                std::fs::create_dir_all(auth_parent).map_err(|e| {
+                    format!("Failed to create dir {}: {}", auth_parent.display(), e)
+                })?;
             }
 
             let mut auth_root: serde_json::Value = if auth_path.exists() {
@@ -2250,15 +2421,9 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
                             "[Naia] Synced workspace bootstrap: SOUL.md → {}",
                             soul_path.display()
                         )),
-                        Err(e) => log_both(&format!(
-                            "[Naia] Failed to rename SOUL.md: {}",
-                            e
-                        )),
+                        Err(e) => log_both(&format!("[Naia] Failed to rename SOUL.md: {}", e)),
                     },
-                    Err(e) => log_both(&format!(
-                        "[Naia] Failed to write SOUL.md.tmp: {}",
-                        e
-                    )),
+                    Err(e) => log_both(&format!("[Naia] Failed to write SOUL.md.tmp: {}", e)),
                 }
             }
         }
@@ -2292,15 +2457,9 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
                             "[Naia] Synced workspace bootstrap: IDENTITY.md → {}",
                             id_path.display()
                         )),
-                        Err(e) => log_both(&format!(
-                            "[Naia] Failed to rename IDENTITY.md: {}",
-                            e
-                        )),
+                        Err(e) => log_both(&format!("[Naia] Failed to rename IDENTITY.md: {}", e)),
                     },
-                    Err(e) => log_both(&format!(
-                        "[Naia] Failed to write IDENTITY.md.tmp: {}",
-                        e
-                    )),
+                    Err(e) => log_both(&format!("[Naia] Failed to write IDENTITY.md.tmp: {}", e)),
                 }
             }
         }
@@ -2344,7 +2503,8 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
                      - **Notes:** Uses Naia App.\n\n\
                      ---\n\
                      *Synced from Naia Shell settings.*\n",
-                    name = trimmed, lang = lang
+                    name = trimmed,
+                    lang = lang
                 );
                 match std::fs::write(&user_tmp, content.as_bytes()) {
                     Ok(_) => match std::fs::rename(&user_tmp, &user_path) {
@@ -2352,15 +2512,9 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
                             "[Naia] Synced workspace bootstrap: USER.md → {}",
                             user_path.display()
                         )),
-                        Err(e) => log_both(&format!(
-                            "[Naia] Failed to rename USER.md: {}",
-                            e
-                        )),
+                        Err(e) => log_both(&format!("[Naia] Failed to rename USER.md: {}", e)),
                     },
-                    Err(e) => log_both(&format!(
-                        "[Naia] Failed to write USER.md.tmp: {}",
-                        e
-                    )),
+                    Err(e) => log_both(&format!("[Naia] Failed to write USER.md.tmp: {}", e)),
                 }
             }
         }
@@ -2373,10 +2527,7 @@ async fn sync_gateway_config(params: GatewaySyncParams) -> Result<(), String> {
             Ok(_) => log_both(&format!(
                 "[Naia] Removed BOOTSTRAP.md (superseded by SOUL/IDENTITY/USER)"
             )),
-            Err(e) => log_both(&format!(
-                "[Naia] Failed to remove BOOTSTRAP.md: {}",
-                e
-            )),
+            Err(e) => log_both(&format!("[Naia] Failed to remove BOOTSTRAP.md: {}", e)),
         }
     }
 
@@ -2502,10 +2653,7 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
 /// Copy bundled default assets (vrm-files, background, bgm-musics) from the app's
 /// resource directory into `{adk_path}/naia-settings/`. Skips files that already exist.
 #[tauri::command]
-async fn copy_bundled_assets(
-    app_handle: tauri::AppHandle,
-    adk_path: String,
-) -> Result<(), String> {
+async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> Result<(), String> {
     // Find the bundled assets base directory.
     // Production: resource_dir()/assets/
     // Dev mode fallback: walk up from binary to find public/assets/

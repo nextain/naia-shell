@@ -1,95 +1,91 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+	type BrowserLink,
+	loadBrowserBookmarks,
+	onBrowserPrefsChanged,
+	removeBrowserBookmark,
+} from "../../lib/browser-prefs";
+import { Logger } from "../../lib/logger";
 
-type MetaTab = "bookmarks" | "settings";
-
-interface Bookmark {
-	title: string;
-	url: string;
+interface BrowserMetaPanelProps {
+	onNavigate: (url: string) => void;
 }
 
-const BOOKMARKS_KEY = "naia_browser_bookmarks";
+export function BrowserMetaPanel({ onNavigate }: BrowserMetaPanelProps) {
+	const [bookmarks, setBookmarks] = useState<BrowserLink[]>([]);
 
-function loadBookmarks(): Bookmark[] {
-	try {
-		return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) ?? "[]");
-	} catch {
-		return [];
-	}
-}
+	useEffect(() => {
+		let alive = true;
+		const load = () => {
+			loadBrowserBookmarks()
+				.then((items) => {
+					if (alive) setBookmarks(items);
+				})
+				.catch((err) => {
+					Logger.warn("BrowserMetaPanel", "failed to load bookmarks", {
+						error: String(err),
+					});
+				});
+		};
+		load();
+		const off = onBrowserPrefsChanged(load);
+		return () => {
+			alive = false;
+			off();
+		};
+	}, []);
 
-function saveBookmarks(bm: Bookmark[]): void {
-	localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bm));
-}
-
-export function BrowserMetaPanel() {
-	const [tab, setTab] = useState<MetaTab>("bookmarks");
-	const [bookmarks, setBookmarks] = useState<Bookmark[]>(loadBookmarks);
-
-	function removeBookmark(url: string) {
-		const next = bookmarks.filter((b) => b.url !== url);
-		setBookmarks(next);
-		saveBookmarks(next);
+	function handleRemove(url: string) {
+		removeBrowserBookmark(url)
+			.then(setBookmarks)
+			.catch((err) => {
+				Logger.warn("BrowserMetaPanel", "failed to remove bookmark", {
+					error: String(err),
+				});
+			});
 	}
 
 	return (
 		<div className="browser-meta">
 			<div className="browser-meta__tabs">
-				<button
-					type="button"
-					className={`browser-meta__tab${tab === "bookmarks" ? " browser-meta__tab--active" : ""}`}
-					onClick={() => setTab("bookmarks")}
-				>
+				<div className="browser-meta__tab browser-meta__tab--active">
 					Bookmarks
-				</button>
-				<button
-					type="button"
-					className={`browser-meta__tab${tab === "settings" ? " browser-meta__tab--active" : ""}`}
-					onClick={() => setTab("settings")}
-				>
-					Settings
-				</button>
+				</div>
 			</div>
 
 			<div className="browser-meta__body">
-				{tab === "bookmarks" && (
-					<div className="browser-meta__bookmarks">
-						{bookmarks.length === 0 ? (
-							<p className="browser-meta__empty">No bookmarks yet.</p>
-						) : (
-							bookmarks.map((b) => (
-								<div key={b.url} className="browser-meta__bookmark">
-									<span className="browser-meta__bookmark-title" title={b.url}>
-										{b.title || b.url}
+				<div className="browser-meta__bookmarks">
+					{bookmarks.length === 0 ? (
+						<p className="browser-meta__empty">No bookmarks yet.</p>
+					) : (
+						bookmarks.map((bookmark) => (
+							<div key={bookmark.url} className="browser-meta__bookmark">
+								<button
+									type="button"
+									className="browser-meta__bookmark-link"
+									title={bookmark.url}
+									onClick={() => onNavigate(bookmark.url)}
+								>
+									<span className="browser-meta__bookmark-title">
+										{bookmark.title || bookmark.url}
 									</span>
-									<button
-										type="button"
-										className="browser-meta__bookmark-remove"
-										onClick={() => removeBookmark(b.url)}
-										title="Remove"
-									>
-										×
-									</button>
-								</div>
-							))
-						)}
-					</div>
-				)}
-				{tab === "settings" && (
-					<div className="browser-meta__settings">
-						<p className="browser-meta__settings-hint">
-							Browser settings coming soon.
-						</p>
-					</div>
-				)}
+									<span className="browser-meta__bookmark-url">
+										{bookmark.url}
+									</span>
+								</button>
+								<button
+									type="button"
+									className="browser-meta__bookmark-remove"
+									onClick={() => handleRemove(bookmark.url)}
+									title="Remove"
+								>
+									x
+								</button>
+							</div>
+						))
+					)}
+				</div>
 			</div>
 		</div>
 	);
-}
-
-/** Called from BrowserCenterPanel to add a bookmark. */
-export function addBookmark(title: string, url: string): void {
-	const bm = loadBookmarks();
-	if (bm.some((b) => b.url === url)) return;
-	const next = [{ title, url }, ...bm];
-	saveBookmarks(next);
 }

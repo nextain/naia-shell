@@ -427,11 +427,29 @@ body,
 	-webkit-user-select: none;
 }
 
+.titlebar-brand {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	height: 100%;
+}
+
+.titlebar-logo {
+	width: 18px;
+	height: 18px;
+	object-fit: contain;
+	flex: none;
+}
+
 .titlebar-label {
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--cream-dim);
-	letter-spacing: 0.5px;
+	letter-spacing: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .titlebar-buttons {
@@ -533,6 +551,10 @@ body,
 	font-weight: 500;
 }
 
+.mode-bar-tab--shortcut {
+	color: var(--accent);
+}
+
 .mode-bar-tab-icon {
 	font-size: 14px;
 	flex-shrink: 0;
@@ -549,6 +571,14 @@ body,
 .mode-bar-tab-icon--svg svg {
 	width: 16px;
 	height: 16px;
+}
+
+.mode-bar-tab-favicon {
+	width: 18px;
+	height: 18px;
+	border-radius: 4px;
+	object-fit: cover;
+	flex: none;
 }
 
 .mode-bar-tab-name {
@@ -1839,9 +1869,36 @@ body.resizing-row {
 
 .settings-tab {
 	flex: 1;
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	column-gap: 18px;
+	align-content: start;
 	overflow-y: auto;
 	min-height: 0; /* required for flex overflow-y: auto to work */
 	padding: 12px;
+}
+
+.settings-tab > .settings-section-divider,
+.settings-tab > .settings-danger-zone,
+.settings-tab > .settings-actions {
+	grid-column: 1 / -1;
+}
+
+.settings-tab > .settings-field {
+	min-width: 0;
+}
+
+.settings-tab > .settings-field:has(.settings-persona-textarea),
+.settings-tab > .settings-field:has(.settings-hint + .settings-reset-btn),
+.settings-tab > .settings-field:has(.memory-facts-list),
+.settings-tab > .settings-toggle-row {
+	grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+	.settings-tab {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .settings-modal h2 {
@@ -4588,14 +4645,19 @@ body.resizing-row {
 
 /* ── BGM Player Widget ───────────────────────────────────────────────────── */
 .bgm-player {
-	flex-shrink: 0;
+	position: fixed;
+	top: 38px;
+	left: 8px;
+	z-index: 4;
+	width: min(304px, calc(100vw - 16px), calc(var(--naia-width, 320px) - 16px));
 	padding: 5px 10px;
-	margin: 6px 8px 0;
+	margin: 0;
 	background: rgba(8, 14, 28, 0.55);
 	border-radius: 10px;
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
 	border: 1px solid rgba(255, 255, 255, 0.08);
+	pointer-events: auto;
 }
 
 .bgm-player-controls {
@@ -4624,6 +4686,27 @@ body.resizing-row {
 	font-size: 11px;
 }
 
+.bgm-player-sep {
+	width: 1px;
+	height: 12px;
+	background: rgba(255, 255, 255, 0.1);
+	margin: 0 2px;
+}
+
+.bgm-ai-toggle {
+	font-size: 14px;
+	padding: 0 4px;
+	transition: all 0.2s ease;
+	filter: grayscale(1);
+	opacity: 0.6;
+}
+
+.bgm-ai-toggle--active {
+	filter: grayscale(0);
+	opacity: 1;
+	transform: scale(1.1);
+}
+
 .bgm-track-name {
 	flex: 1;
 	min-width: 0;
@@ -4632,6 +4715,7 @@ body.resizing-row {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	max-width: 80px;
 }
 
 .bgm-volume {
@@ -5787,6 +5871,11 @@ body.resizing-row {
 	color: var(--cream);
 }
 
+.browser-panel__nav-btn--active {
+	background: var(--accent-bg);
+	color: var(--accent);
+}
+
 .browser-panel__nav-btn:disabled {
 	opacity: 0.4;
 	cursor: default;
@@ -5809,6 +5898,27 @@ body.resizing-row {
 
 .browser-panel__url-input:focus {
 	border-color: var(--accent);
+}
+
+.browser-panel__bookmark-drawer {
+	position: absolute;
+	top: 39px;
+	right: 0;
+	bottom: 0;
+	width: min(280px, 45%);
+	z-index: 20;
+	border-left: 1px solid var(--espresso-light);
+	box-shadow: -10px 0 24px rgba(0, 0, 0, 0.25);
+	animation: browser-bookmark-drawer-in 0.16s ease-out;
+}
+
+@keyframes browser-bookmark-drawer-in {
+	from {
+		transform: translateX(100%);
+	}
+	to {
+		transform: translateX(0);
+	}
 }
 
 .browser-panel__viewport {
@@ -6106,6 +6216,23 @@ body.resizing-row {
 	border-bottom: 1px solid var(--espresso-medium);
 }
 
+.browser-meta__bookmark-link {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	border: 0;
+	background: transparent;
+	padding: 0;
+	text-align: left;
+	cursor: pointer;
+}
+
+.browser-meta__bookmark-link:hover .browser-meta__bookmark-title {
+	color: var(--accent);
+}
+
 .browser-meta__bookmark-title {
 	flex: 1;
 	font-size: 12px;
@@ -6113,6 +6240,16 @@ body.resizing-row {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.browser-meta__bookmark-url {
+	max-width: 100%;
+	font-size: 10px;
+	color: var(--cream-dim);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.7;
 }
 
 .browser-meta__bookmark-remove {

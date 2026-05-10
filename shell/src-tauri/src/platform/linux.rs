@@ -152,15 +152,14 @@ pub(crate) fn find_new_chrome_window(
     timeout_ms: u64,
 ) -> Result<super::PlatformHandle, String> {
     let wm = X11WindowManager;
-    super::PlatformWindowManager::find_window_by_pid(&wm, 0, timeout_ms)
-        .or_else(|_| {
-            for frag in &["google-chrome", "chromium"] {
-                if let Some(xid) = find_by_class(frag) {
-                    return Ok(super::PlatformHandle::X11(xid));
-                }
+    super::PlatformWindowManager::find_window_by_pid(&wm, 0, timeout_ms).or_else(|_| {
+        for frag in &["google-chrome", "chromium"] {
+            if let Some(xid) = find_by_class(frag) {
+                return Ok(super::PlatformHandle::X11(xid));
             }
-            Err("No Chrome window found".to_string())
-        })
+        }
+        Err("No Chrome window found".to_string())
+    })
 }
 
 /// Resolve tsx as a direct node invocation from agent's node_modules.
@@ -208,16 +207,14 @@ pub(crate) fn configure_webview(app: &tauri::App) {
     if let Some(webview_window) = app.get_webview_window("main") {
         let _ = webview_window.with_webview(|webview| {
             use webkit2gtk::WebViewExt;
-            webview
-                .inner()
-                .connect_permission_request(|_, request| {
-                    if request.is::<webkit2gtk::UserMediaPermissionRequest>() {
-                        request.allow();
-                    } else {
-                        request.deny();
-                    }
-                    true
-                });
+            webview.inner().connect_permission_request(|_, request| {
+                if request.is::<webkit2gtk::UserMediaPermissionRequest>() {
+                    request.allow();
+                } else {
+                    request.deny();
+                }
+                true
+            });
         });
     }
 }
@@ -242,19 +239,41 @@ fn find_by_class(fragment: &str) -> Option<u32> {
     use x11rb::protocol::xproto::*;
     let (conn, sn) = x11rb::rust_connection::RustConnection::connect(Some(":0")).ok()?;
     let root = conn.setup().roots[sn].root;
-    let net_list = conn.intern_atom(false, b"_NET_CLIENT_LIST").ok()?.reply().ok()?.atom;
-    let wm_class = conn.intern_atom(false, b"WM_CLASS").ok()?.reply().ok()?.atom;
-    let windows: Vec<u32> = conn.get_property(false, root, net_list, AtomEnum::ANY, 0, 4096)
-        .ok()?.reply().ok()?.value32()?.collect();
+    let net_list = conn
+        .intern_atom(false, b"_NET_CLIENT_LIST")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let wm_class = conn
+        .intern_atom(false, b"WM_CLASS")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let windows: Vec<u32> = conn
+        .get_property(false, root, net_list, AtomEnum::ANY, 0, 4096)
+        .ok()?
+        .reply()
+        .ok()?
+        .value32()?
+        .collect();
     let frag = fragment.to_lowercase();
     let mut best: Option<(u32, u32)> = None;
     for w in windows {
-        if let Some(p) = conn.get_property(false, w, wm_class, AtomEnum::STRING, 0, 256)
-            .ok().and_then(|c| c.reply().ok())
+        if let Some(p) = conn
+            .get_property(false, w, wm_class, AtomEnum::STRING, 0, 256)
+            .ok()
+            .and_then(|c| c.reply().ok())
         {
-            if String::from_utf8_lossy(&p.value).to_lowercase().contains(&frag) {
+            if String::from_utf8_lossy(&p.value)
+                .to_lowercase()
+                .contains(&frag)
+            {
                 let area = x11_window_area(&conn, w).unwrap_or(0);
-                if best.map_or(true, |(_, a)| area > a) { best = Some((w, area)); }
+                if best.map_or(true, |(_, a)| area > a) {
+                    best = Some((w, area));
+                }
             }
         }
     }
@@ -266,22 +285,50 @@ fn find_by_name(name: &str) -> Option<u32> {
     use x11rb::protocol::xproto::*;
     let (conn, sn) = x11rb::rust_connection::RustConnection::connect(Some(":0")).ok()?;
     let root = conn.setup().roots[sn].root;
-    let net_list = conn.intern_atom(false, b"_NET_CLIENT_LIST").ok()?.reply().ok()?.atom;
+    let net_list = conn
+        .intern_atom(false, b"_NET_CLIENT_LIST")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
     let wm_name = conn.intern_atom(false, b"WM_NAME").ok()?.reply().ok()?.atom;
-    let net_wm_name = conn.intern_atom(false, b"_NET_WM_NAME").ok()?.reply().ok()?.atom;
-    let utf8 = conn.intern_atom(false, b"UTF8_STRING").ok()?.reply().ok()?.atom;
-    let windows: Vec<u32> = conn.get_property(false, root, net_list, AtomEnum::ANY, 0, 4096)
-        .ok()?.reply().ok()?.value32()?.collect();
+    let net_wm_name = conn
+        .intern_atom(false, b"_NET_WM_NAME")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let utf8 = conn
+        .intern_atom(false, b"UTF8_STRING")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let windows: Vec<u32> = conn
+        .get_property(false, root, net_list, AtomEnum::ANY, 0, 4096)
+        .ok()?
+        .reply()
+        .ok()?
+        .value32()?
+        .collect();
     let mut best: Option<(u32, u32)> = None;
     for w in windows {
-        let title = conn.get_property(false, w, net_wm_name, utf8, 0, 256)
-            .ok().and_then(|c| c.reply().ok()).filter(|p| !p.value.is_empty())
-            .or_else(|| conn.get_property(false, w, wm_name, AtomEnum::STRING, 0, 256)
-                .ok().and_then(|c| c.reply().ok()))
+        let title = conn
+            .get_property(false, w, net_wm_name, utf8, 0, 256)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .filter(|p| !p.value.is_empty())
+            .or_else(|| {
+                conn.get_property(false, w, wm_name, AtomEnum::STRING, 0, 256)
+                    .ok()
+                    .and_then(|c| c.reply().ok())
+            })
             .map(|p| String::from_utf8_lossy(&p.value).trim().to_string());
         if title.as_deref() == Some(name) {
             let area = x11_window_area(&conn, w).unwrap_or(0);
-            if best.map_or(true, |(_, a)| area > a) { best = Some((w, area)); }
+            if best.map_or(true, |(_, a)| area > a) {
+                best = Some((w, area));
+            }
         }
     }
     best.map(|(xid, _)| xid)
@@ -291,30 +338,50 @@ impl PlatformWindowManager for X11WindowManager {
     fn find_window_by_pid(&self, pid: u32, timeout_ms: u64) -> Result<PlatformHandle, String> {
         let attempts = (timeout_ms / 500).max(1);
         for _ in 0..attempts {
-            if let Ok(out) = Command::new("xdotool").args(["search", "--pid", &pid.to_string()])
-                .env("DISPLAY", ":0").output() {
+            if let Ok(out) = Command::new("xdotool")
+                .args(["search", "--pid", &pid.to_string()])
+                .env("DISPLAY", ":0")
+                .output()
+            {
                 let ids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
-                    .split_whitespace().filter_map(|t| t.parse().ok()).collect();
-                if let Some(&xid) = ids.first() { return Ok(PlatformHandle::X11(xid)); }
+                    .split_whitespace()
+                    .filter_map(|t| t.parse().ok())
+                    .collect();
+                if let Some(&xid) = ids.first() {
+                    return Ok(PlatformHandle::X11(xid));
+                }
             }
             for frag in &["google-chrome", "chromium"] {
-                if let Some(xid) = find_by_class(frag) { return Ok(PlatformHandle::X11(xid)); }
+                if let Some(xid) = find_by_class(frag) {
+                    return Ok(PlatformHandle::X11(xid));
+                }
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        Err(format!("Chrome X11 window not found for PID {pid} within {timeout_ms} ms"))
+        Err(format!(
+            "Chrome X11 window not found for PID {pid} within {timeout_ms} ms"
+        ))
     }
 
     fn find_window_by_name(&self, name: &str, timeout_ms: u64) -> Result<PlatformHandle, String> {
         let attempts = (timeout_ms / 500).max(1);
         for attempt in 0..attempts {
-            if let Ok(out) = Command::new("xdotool").args(["search", "--name", &format!("^{name}$")])
-                .env("DISPLAY", ":0").output() {
+            if let Ok(out) = Command::new("xdotool")
+                .args(["search", "--name", &format!("^{name}$")])
+                .env("DISPLAY", ":0")
+                .output()
+            {
                 let ids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
-                    .split_whitespace().filter_map(|t| t.parse().ok()).collect();
+                    .split_whitespace()
+                    .filter_map(|t| t.parse().ok())
+                    .collect();
                 if !ids.is_empty() {
                     if let Ok((conn, _)) = x11_connect() {
-                        if let Some(xid) = ids.iter().copied().max_by_key(|&x| x11_window_area(&conn, x).unwrap_or(0)) {
+                        if let Some(xid) = ids
+                            .iter()
+                            .copied()
+                            .max_by_key(|&x| x11_window_area(&conn, x).unwrap_or(0))
+                        {
                             return Ok(PlatformHandle::X11(xid));
                         }
                     } else if let Some(&xid) = ids.first() {
@@ -322,30 +389,54 @@ impl PlatformWindowManager for X11WindowManager {
                     }
                 }
             }
-            if let Some(xid) = find_by_name(name) { return Ok(PlatformHandle::X11(xid)); }
-            std::thread::sleep(std::time::Duration::from_millis(if attempt == 0 { 1000 } else { 500 }));
+            if let Some(xid) = find_by_name(name) {
+                return Ok(PlatformHandle::X11(xid));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(if attempt == 0 {
+                1000
+            } else {
+                500
+            }));
         }
         Err(format!("Window '{name}' not found within {timeout_ms} ms"))
     }
 
-    fn embed(&self, parent: PlatformHandle, child: PlatformHandle, rect: WindowRect) -> Result<(), String> {
+    fn embed(
+        &self,
+        parent: PlatformHandle,
+        child: PlatformHandle,
+        rect: WindowRect,
+    ) -> Result<(), String> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::*;
-        let PlatformHandle::X11(parent_xid) = parent else { return Err("not X11".into()); };
-        let PlatformHandle::X11(child_xid) = child else { return Err("not X11".into()); };
+        let PlatformHandle::X11(parent_xid) = parent else {
+            return Err("not X11".into());
+        };
+        let PlatformHandle::X11(child_xid) = child else {
+            return Err("not X11".into());
+        };
         let (conn, _) = x11_connect()?;
         let bg = ChangeWindowAttributesAux::new().background_pixel(0x00202124);
         conn.change_window_attributes(parent_xid, &bg).ok();
         conn.change_window_attributes(child_xid, &bg).ok();
-        conn.unmap_window(child_xid).map_err(|e| format!("unmap: {e}"))?;
+        conn.unmap_window(child_xid)
+            .map_err(|e| format!("unmap: {e}"))?;
         conn.flush().ok();
         std::thread::sleep(std::time::Duration::from_millis(50));
         conn.reparent_window(child_xid, parent_xid, rect.x as i16, rect.y as i16)
             .map_err(|e| format!("reparent: {e}"))?;
-        conn.configure_window(child_xid, &ConfigureWindowAux::new()
-            .x(rect.x).y(rect.y).width(rect.width).height(rect.height).border_width(0u32))
-            .map_err(|e| format!("configure: {e}"))?;
-        conn.map_window(child_xid).map_err(|e| format!("map: {e}"))?;
+        conn.configure_window(
+            child_xid,
+            &ConfigureWindowAux::new()
+                .x(rect.x)
+                .y(rect.y)
+                .width(rect.width)
+                .height(rect.height)
+                .border_width(0u32),
+        )
+        .map_err(|e| format!("configure: {e}"))?;
+        conn.map_window(child_xid)
+            .map_err(|e| format!("map: {e}"))?;
         conn.set_input_focus(InputFocus::PARENT, child_xid, x11rb::CURRENT_TIME)
             .map_err(|e| format!("focus: {e}"))?;
         conn.flush().map_err(|e| format!("flush: {e}"))?;
@@ -355,11 +446,20 @@ impl PlatformWindowManager for X11WindowManager {
     fn remap(&self, handle: PlatformHandle, rect: WindowRect) -> Result<(), String> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::*;
-        let PlatformHandle::X11(xid) = handle else { return Err("not X11".into()); };
+        let PlatformHandle::X11(xid) = handle else {
+            return Err("not X11".into());
+        };
         let (conn, _) = x11_connect()?;
-        conn.configure_window(xid, &ConfigureWindowAux::new()
-            .x(rect.x).y(rect.y).width(rect.width).height(rect.height).border_width(0u32))
-            .map_err(|e| format!("configure: {e}"))?;
+        conn.configure_window(
+            xid,
+            &ConfigureWindowAux::new()
+                .x(rect.x)
+                .y(rect.y)
+                .width(rect.width)
+                .height(rect.height)
+                .border_width(0u32),
+        )
+        .map_err(|e| format!("configure: {e}"))?;
         conn.map_window(xid).map_err(|e| format!("map: {e}"))?;
         conn.set_input_focus(InputFocus::PARENT, xid, x11rb::CURRENT_TIME)
             .map_err(|e| format!("focus: {e}"))?;
@@ -370,11 +470,19 @@ impl PlatformWindowManager for X11WindowManager {
     fn resize(&self, handle: PlatformHandle, rect: WindowRect) -> Result<(), String> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::*;
-        let PlatformHandle::X11(xid) = handle else { return Err("not X11".into()); };
+        let PlatformHandle::X11(xid) = handle else {
+            return Err("not X11".into());
+        };
         let (conn, _) = x11_connect()?;
-        conn.configure_window(xid, &ConfigureWindowAux::new()
-            .x(rect.x).y(rect.y).width(rect.width).height(rect.height))
-            .map_err(|e| format!("configure: {e}"))?;
+        conn.configure_window(
+            xid,
+            &ConfigureWindowAux::new()
+                .x(rect.x)
+                .y(rect.y)
+                .width(rect.width)
+                .height(rect.height),
+        )
+        .map_err(|e| format!("configure: {e}"))?;
         conn.flush().map_err(|e| format!("flush: {e}"))?;
         Ok(())
     }
@@ -382,9 +490,12 @@ impl PlatformWindowManager for X11WindowManager {
     fn focus(&self, handle: PlatformHandle) -> Result<(), String> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::*;
-        let PlatformHandle::X11(xid) = handle else { return Ok(()); };
+        let PlatformHandle::X11(xid) = handle else {
+            return Ok(());
+        };
         let (conn, _) = x11_connect()?;
-        conn.set_input_focus(InputFocus::PARENT, xid, x11rb::CURRENT_TIME).map_err(|e| format!("{e}"))?;
+        conn.set_input_focus(InputFocus::PARENT, xid, x11rb::CURRENT_TIME)
+            .map_err(|e| format!("{e}"))?;
         conn.flush().map_err(|e| format!("{e}"))?;
         Ok(())
     }
@@ -392,7 +503,9 @@ impl PlatformWindowManager for X11WindowManager {
     fn show(&self, handle: PlatformHandle) -> Result<(), String> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::*;
-        let PlatformHandle::X11(xid) = handle else { return Ok(()); };
+        let PlatformHandle::X11(xid) = handle else {
+            return Ok(());
+        };
         if let Ok((conn, _)) = x11_connect() {
             let _ = conn.map_window(xid);
             let _ = conn.set_input_focus(InputFocus::PARENT, xid, x11rb::CURRENT_TIME);
@@ -404,8 +517,13 @@ impl PlatformWindowManager for X11WindowManager {
     fn hide(&self, handle: PlatformHandle) -> Result<(), String> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::ConnectionExt as _;
-        let PlatformHandle::X11(xid) = handle else { return Ok(()); };
-        if let Ok((conn, _)) = x11_connect() { let _ = conn.unmap_window(xid); let _ = conn.flush(); }
+        let PlatformHandle::X11(xid) = handle else {
+            return Ok(());
+        };
+        if let Ok((conn, _)) = x11_connect() {
+            let _ = conn.unmap_window(xid);
+            let _ = conn.flush();
+        }
         Ok(())
     }
 
@@ -441,7 +559,9 @@ impl PlatformWindowManager for X11WindowManager {
             if let Ok(out) = Command::new("which").arg(name).output() {
                 if out.status.success() {
                     let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if !p.is_empty() { return Some(p); }
+                    if !p.is_empty() {
+                        return Some(p);
+                    }
                 }
             }
         }
@@ -452,33 +572,56 @@ impl PlatformWindowManager for X11WindowManager {
         if is_naia_flatpak {
             // Inside Flatpak sandbox: must use flatpak-spawn --host to reach the host
             for name in &["google-chrome", "chromium", "chromium-browser"] {
-                if let Ok(out) = Command::new("flatpak-spawn").args(["--host", "which", name]).output() {
+                if let Ok(out) = Command::new("flatpak-spawn")
+                    .args(["--host", "which", name])
+                    .output()
+                {
                     if out.status.success() {
                         let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        if !p.is_empty() { return Some(p); }
+                        if !p.is_empty() {
+                            return Some(p);
+                        }
                     }
                 }
             }
             for app_id in &["com.google.Chrome", "org.chromium.Chromium"] {
-                let installed = Command::new("flatpak-spawn").args(["--host", "flatpak", "info", app_id])
-                    .output().map(|o| o.status.success()).unwrap_or(false);
-                if installed { return Some(format!("flatpak::{app_id}")); }
+                let installed = Command::new("flatpak-spawn")
+                    .args(["--host", "flatpak", "info", app_id])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if installed {
+                    return Some(format!("flatpak::{app_id}"));
+                }
             }
         } else {
             // Native mode: query Flatpak directly
             for app_id in &["com.google.Chrome", "org.chromium.Chromium"] {
-                let installed = Command::new("flatpak").args(["info", app_id])
-                    .output().map(|o| o.status.success()).unwrap_or(false);
-                if installed { return Some(format!("flatpak::{app_id}")); }
+                let installed = Command::new("flatpak")
+                    .args(["info", app_id])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if installed {
+                    return Some(format!("flatpak::{app_id}"));
+                }
             }
         }
         None
     }
 
-    fn supports_native_embed(&self) -> bool { true }
+    fn supports_native_embed(&self) -> bool {
+        true
+    }
 
     fn chrome_spawn_args(&self) -> (Vec<String>, Vec<(String, String)>) {
-        (vec!["--ozone-platform=x11".into()], vec![("DISPLAY".into(), ":0".into()), ("GDK_BACKEND".into(), "x11".into())])
+        (
+            vec!["--ozone-platform=x11".into()],
+            vec![
+                ("DISPLAY".into(), ":0".into()),
+                ("GDK_BACKEND".into(), "x11".into()),
+            ],
+        )
     }
 
     fn kill_lingering_chrome(&self) {

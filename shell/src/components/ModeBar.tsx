@@ -1,4 +1,10 @@
-import { type MouseEvent, useMemo } from "react";
+import { type MouseEvent, useEffect, useMemo, useState } from "react";
+import {
+	type BrowserLink,
+	loadBrowserShortcuts,
+	onBrowserPrefsChanged,
+	removeBrowserShortcut,
+} from "../lib/browser-prefs";
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale } from "../lib/i18n";
 import { Logger } from "../lib/logger";
@@ -18,6 +24,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		panelListVersion,
 		bumpPanelListVersion,
 	} = usePanelStore();
+	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
 
 	// Rebuild panel list whenever panelListVersion changes (runtime install/remove)
 	// Exclude avatar panel (shown as fixed "바탕화면" tab separately)
@@ -29,6 +36,27 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		// panelListVersion is the reactive dependency — registry is not observable directly
 		[panelListVersion],
 	);
+
+	useEffect(() => {
+		let alive = true;
+		const load = () => {
+			loadBrowserShortcuts()
+				.then((items) => {
+					if (alive) setBrowserShortcuts(items);
+				})
+				.catch((err) => {
+					Logger.warn("ModeBar", "Failed to load browser shortcuts", {
+						error: String(err),
+					});
+				});
+		};
+		load();
+		const off = onBrowserPrefsChanged(load);
+		return () => {
+			alive = false;
+			off();
+		};
+	}, []);
 
 	async function handleRemovePanel(
 		e: MouseEvent<HTMLButtonElement>,
@@ -61,6 +89,32 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		}
 
 		Logger.debug("ModeBar", `Panel removed: ${panelId}`);
+	}
+
+	function openBrowserShortcut(url: string) {
+		setActivePanel("browser");
+		const navigate = () => {
+			panelRegistry
+				.getApi<{ navigate: (url: string) => void }>("browser")
+				?.navigate(url);
+		};
+		navigate();
+		window.setTimeout(navigate, 50);
+	}
+
+	function handleRemoveBrowserShortcut(
+		e: MouseEvent<HTMLButtonElement>,
+		url: string,
+	) {
+		e.stopPropagation();
+		removeBrowserShortcut(url)
+			.then(setBrowserShortcuts)
+			.catch((err) => {
+				Logger.warn("ModeBar", "Failed to remove browser shortcut", {
+					url,
+					error: String(err),
+				});
+			});
 	}
 
 	return (
@@ -110,6 +164,38 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 								🗑
 							</button>
 						)}
+					</div>
+				))}
+				{browserShortcuts.map((shortcut) => (
+					<div
+						key={shortcut.url}
+						className="mode-bar-tab-wrapper"
+						data-browser-shortcut={shortcut.url}
+					>
+						<button
+							type="button"
+							className="mode-bar-tab mode-bar-tab--shortcut"
+							title={shortcut.title || shortcut.url}
+							onClick={() => openBrowserShortcut(shortcut.url)}
+						>
+							{shortcut.iconUrl ? (
+								<img
+									className="mode-bar-tab-favicon"
+									src={shortcut.iconUrl}
+									alt=""
+								/>
+							) : (
+								<span className="mode-bar-tab-icon">Go</span>
+							)}
+						</button>
+						<button
+							type="button"
+							className="mode-bar-tab-remove"
+							title={`Remove ${shortcut.title || shortcut.url}`}
+							onClick={(e) => handleRemoveBrowserShortcut(e, shortcut.url)}
+						>
+							x
+						</button>
 					</div>
 				))}
 			</div>

@@ -127,11 +127,11 @@ pub fn get_all_agent_facts() -> Vec<AgentFact> {
 /// Future: route deletes through Agent IPC to eliminate this race entirely.
 pub fn delete_agent_fact(fact_id: &str) -> Result<bool, String> {
     let path = agent_memory_path();
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read memory file: {}", e))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read memory file: {}", e))?;
 
-    let mut raw: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse memory JSON: {}", e))?;
+    let mut raw: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse memory JSON: {}", e))?;
 
     let facts = raw
         .get_mut("facts")
@@ -175,7 +175,10 @@ mod tests {
             "data": [1, 2, 3, 4]
         });
         let consumed = dispatch_backup_response(&msg);
-        assert!(consumed, "dispatch should return true for memory_export_result");
+        assert!(
+            consumed,
+            "dispatch should return true for memory_export_result"
+        );
 
         let result = rx.try_recv().expect("sender should have fired");
         let val = result.expect("should be Ok, not Err");
@@ -250,7 +253,10 @@ mod tests {
             "data": [1, 2, 3]
         });
         let consumed = dispatch_backup_response(&msg);
-        assert!(!consumed, "missing requestId should return false without panic");
+        assert!(
+            !consumed,
+            "missing requestId should return false without panic"
+        );
     }
 
     // ─── MemoryStore deserialization tests ─────────────────────────────────

@@ -1,12 +1,18 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { emitAiInterferenceEvent } from "../../lib/ai-interference";
+import {
+	addBrowserBookmark,
+	addBrowserShortcut,
+} from "../../lib/browser-prefs";
 import { addAllowedTool } from "../../lib/config";
 import { Logger } from "../../lib/logger";
 import { panelRegistry } from "../../lib/panel-registry";
 import type { PanelCenterProps } from "../../lib/panel-registry";
 import { useTabSkills } from "../../lib/tab-skills";
 import { usePanelStore } from "../../stores/panel";
+import { BrowserMetaPanel } from "./BrowserMetaPanel";
 
 // ─── Panel API ───────────────────────────────────────────────────────────────
 
@@ -144,8 +150,11 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 	// ── Address bar state ─────────────────────────────────────────────────────
 	const [currentUrl, setCurrentUrl] = useState("");
+	const [currentTitle, setCurrentTitle] = useState("");
 	const [inputUrl, setInputUrl] = useState("");
 	const [inputFocused, setInputFocused] = useState(false);
+	const [bookmarksOpen, setBookmarksOpen] = useState(false);
+	const lastAiEventUrlRef = useRef("");
 
 	// AI tool permissions — loaded from localStorage
 	const [toolPerms, setToolPerms] = useState<BrowserToolPerms>(loadPerms);
@@ -183,7 +192,11 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	const refreshPageInfo = useCallback(async () => {
 		try {
 			const [u, t] = await invoke<[string, string]>("browser_wv_page_info");
-			if (u) naia.pushContext({ type: "browser", data: { url: u, title: t } });
+			if (u) {
+				setCurrentUrl(u);
+				setCurrentTitle(t);
+				naia.pushContext({ type: "browser", data: { url: u, title: t } });
+			}
 		} catch {
 			// ignore — best-effort
 		}
@@ -234,12 +247,22 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	useEffect(() => {
 		if (status !== "ready") return;
 		const id = setInterval(async () => {
-			const [u] = await invoke<[string, string]>("browser_wv_page_info").catch(
-				() => ["", ""] as [string, string],
-			);
+			const [u, t] = await invoke<[string, string]>(
+				"browser_wv_page_info",
+			).catch(() => ["", ""] as [string, string]);
 			if (u) {
 				setCurrentUrl(u);
+				setCurrentTitle(t);
 				setInputUrl((prev) => (inputFocused ? prev : u));
+				if (lastAiEventUrlRef.current !== u) {
+					lastAiEventUrlRef.current = u;
+					emitAiInterferenceEvent({
+						source: "browser",
+						action: "navigated",
+						title: t,
+						url: u,
+					});
+				}
 			}
 		}, 600);
 		return () => clearInterval(id);
@@ -520,6 +543,89 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		setInputUrl(url);
 	}
 
+	function pageTitle(): string {
+		return currentTitle.trim() || currentUrl.trim() || inputUrl.trim();
+	}
+
+	function currentPageUrl(): string {
+		return (currentUrl || inputUrl).trim();
+	}
+
+	async function readPageMetadata(): Promise<{
+		title: string;
+		url: string;
+		iconUrl?: string;
+	}> {
+		const fallbackUrl = currentPageUrl();
+		const fallbackTitle = pageTitle();
+		try {
+			const raw = await invoke<string>("browser_wv_eval", {
+				js: `
+const pick = (...selectors) => {
+	for (const selector of selectors) {
+		const el = document.querySelector(selector);
+		const value = el?.content || el?.href;
+		if (value) return new URL(value, location.href).href;
+	}
+	return "";
+};
+return {
+	title: document.querySelector("meta[property='og:title']")?.content || document.title || location.href,
+	url: document.querySelector("meta[property='og:url']")?.content || location.href,
+	iconUrl: pick(
+		"meta[property='og:image']",
+		"meta[name='twitter:image']",
+		"link[rel~='icon']",
+		"link[rel='apple-touch-icon']",
+		"link[rel='shortcut icon']"
+	)
+};`,
+			});
+			const meta = JSON.parse(raw) as {
+				title?: string;
+				url?: string;
+				iconUrl?: string;
+			};
+			return {
+				title: meta.title?.trim() || fallbackTitle,
+				url: meta.url?.trim() || fallbackUrl,
+				iconUrl: meta.iconUrl?.trim() || undefined,
+			};
+		} catch (err) {
+			Logger.warn("BrowserCenterPanel", "page metadata read failed", {
+				error: String(err),
+			});
+			return { title: fallbackTitle, url: fallbackUrl };
+		}
+	}
+
+	function handleAddBookmark() {
+		const url = currentPageUrl();
+		if (!url) return;
+		addBrowserBookmark(pageTitle(), url).catch((err) => {
+			Logger.warn("BrowserCenterPanel", "bookmark save failed", {
+				url,
+				error: String(err),
+			});
+		});
+	}
+
+	async function handleAddShortcut() {
+		const url = currentPageUrl();
+		if (!url) return;
+		const meta = await readPageMetadata();
+		addBrowserShortcut(meta.title, meta.url, meta.iconUrl).catch((err) => {
+			Logger.warn("BrowserCenterPanel", "shortcut save failed", {
+				url,
+				error: String(err),
+			});
+		});
+	}
+
+	function toggleBookmarkList() {
+		setBookmarksOpen((open) => !open);
+	}
+
 	return (
 		<div className="browser-panel">
 			{/* Address bar — always in HTML layer, native webview sits below */}
@@ -571,7 +677,42 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 						onChange={(e) => setInputUrl(e.target.value)}
 					/>
 				</form>
+				<button
+					type="button"
+					className="browser-panel__nav-btn"
+					title="Add shortcut to top bar"
+					onClick={handleAddShortcut}
+				>
+					↗
+				</button>
+				<button
+					type="button"
+					className="browser-panel__nav-btn"
+					title="Add bookmark"
+					onClick={handleAddBookmark}
+				>
+					★
+				</button>
+				<button
+					type="button"
+					className={`browser-panel__nav-btn${bookmarksOpen ? " browser-panel__nav-btn--active" : ""}`}
+					title="Bookmark list"
+					onClick={toggleBookmarkList}
+				>
+					≡
+				</button>
 			</div>
+
+			{bookmarksOpen && (
+				<div className="browser-panel__bookmark-drawer">
+					<BrowserMetaPanel
+						onNavigate={(url) => {
+							handleNavigate(url);
+							setBookmarksOpen(false);
+						}}
+					/>
+				</div>
+			)}
 
 			{/* Overlays for non-ready states */}
 			{status === "launching" && (

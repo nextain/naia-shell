@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { Logger } from "../lib/logger";
 import { useAvatarStore } from "../stores/avatar";
+import { usePanelStore } from "../stores/panel";
 
 export function BgmPlayer() {
 	const audioRef = useRef<HTMLAudioElement>(null);
@@ -12,6 +13,9 @@ export function BgmPlayer() {
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [playing, setPlaying] = useState(false);
 	const [volume, setVolume] = useState(0.3);
+
+	const { aiInterferenceEnabled, toggleAiInterferenceEnabled } =
+		usePanelStore();
 
 	// Load available tracks from naia-settings/bgm-musics/
 	useEffect(() => {
@@ -91,13 +95,11 @@ export function BgmPlayer() {
 		if (audio) {
 			audio.src = tracks[next];
 			if (playing)
-				audio
-					.play()
-					.catch((err) =>
-						Logger.error("BgmPlayer", "next play failed", {
-							error: String(err),
-						}),
-					);
+				audio.play().catch((err) =>
+					Logger.error("BgmPlayer", "next play failed", {
+						error: String(err),
+					}),
+				);
 		}
 	}
 
@@ -110,13 +112,11 @@ export function BgmPlayer() {
 		if (audio) {
 			audio.src = tracks[prev];
 			if (playing)
-				audio
-					.play()
-					.catch((err) =>
-						Logger.error("BgmPlayer", "prev play failed", {
-							error: String(err),
-						}),
-					);
+				audio.play().catch((err) =>
+					Logger.error("BgmPlayer", "prev play failed", {
+						error: String(err),
+					}),
+				);
 		}
 	}
 
@@ -163,6 +163,20 @@ export function BgmPlayer() {
 				>
 					›
 				</button>
+				<div className="bgm-player-sep" />
+				<button
+					type="button"
+					className={`bgm-btn bgm-ai-toggle ${aiInterferenceEnabled ? "bgm-ai-toggle--active" : ""}`}
+					onClick={toggleAiInterferenceEnabled}
+					title={
+						aiInterferenceEnabled
+							? "AI 참견 끄기 (Ctrl+Alt+A)"
+							: "AI 참견 켜기 (Ctrl+Alt+A)"
+					}
+				>
+					{aiInterferenceEnabled ? "🤖" : "👤"}
+				</button>
+				<div className="bgm-player-sep" />
 				<span className="bgm-track-name" title={trackNames[currentIndex]}>
 					{trackNames[currentIndex]}
 				</span>

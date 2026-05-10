@@ -16,6 +16,10 @@ import {
 	stopListening as sttStop,
 } from "tauri-plugin-stt-api";
 import { activeBridge, getBridgeForPanel } from "../lib/active-bridge";
+import {
+	formatAiInterferencePrompt,
+	onAiInterferenceEvent,
+} from "../lib/ai-interference";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import {
@@ -514,6 +518,14 @@ export function ChatPanel() {
 				focusTimerRef.current = null;
 			}
 		};
+	}, []);
+
+	useEffect(() => {
+		return onAiInterferenceEvent((event) => {
+			const message = formatAiInterferencePrompt(event);
+			setActiveTab("chat");
+			handleSend(message);
+		});
 	}, []);
 
 	// Discord messages are now shown in the dedicated Channels tab (ChannelsTab)

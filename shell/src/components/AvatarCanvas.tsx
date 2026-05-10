@@ -33,7 +33,11 @@ import { useAvatarStore } from "../stores/avatar";
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera-v17";
+const CAMERA_STORAGE_KEY = "naia-camera-v19";
+const DEFAULT_CAMERA = {
+	position: { x: -0.12, y: 1.21, z: -2.09 },
+	target: { x: -1.45, y: 1.0, z: 0.12 },
+};
 
 interface SavedCamera {
 	px: number;
@@ -271,9 +275,16 @@ export function AvatarCanvas() {
 			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
-			// User-approved default: shows full body, slight downward angle.
-			camera.position.set(0.01, 1.29, -1.99);
-			controls.target.set(0.01, 1.09, 0.0);
+			camera.position.set(
+				DEFAULT_CAMERA.position.x,
+				DEFAULT_CAMERA.position.y,
+				DEFAULT_CAMERA.position.z,
+			);
+			controls.target.set(
+				DEFAULT_CAMERA.target.x,
+				DEFAULT_CAMERA.target.y,
+				DEFAULT_CAMERA.target.z,
+			);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
 		controls.update();

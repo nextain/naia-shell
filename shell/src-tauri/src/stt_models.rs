@@ -19,19 +19,19 @@ const STT_MODELS_DIR: &str = "stt-models";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SttModelInfo {
-    pub engine: String,       // "vosk" | "whisper"
-    pub model_id: String,     // unique key, e.g. "vosk-small-ko" or "whisper-medium"
-    pub model_name: String,   // display name
-    pub language: String,     // "ko-KR", "multilingual", etc.
-    pub size_mb: u32,         // download size in MB
-    pub wer: String,          // e.g. "28.1%", "~12%"
-    pub download_url: String, // direct download URL
-    pub description: String,  // short note
-    pub downloaded: bool,     // filled at runtime
-    pub ready: bool,          // engine backend available
-    pub gpu_required: bool,   // true if GPU recommended for real-time
-    pub min_vram_mb: u32,     // minimum VRAM (MB) for GPU inference, 0 = CPU ok
-    pub ram_mb: u32,          // peak RAM for CPU inference
+    pub engine: String,         // "vosk" | "whisper"
+    pub model_id: String,       // unique key, e.g. "vosk-small-ko" or "whisper-medium"
+    pub model_name: String,     // display name
+    pub language: String,       // "ko-KR", "multilingual", etc.
+    pub size_mb: u32,           // download size in MB
+    pub wer: String,            // e.g. "28.1%", "~12%"
+    pub download_url: String,   // direct download URL
+    pub description: String,    // short note
+    pub downloaded: bool,       // filled at runtime
+    pub ready: bool,            // engine backend available
+    pub gpu_required: bool,     // true if GPU recommended for real-time
+    pub min_vram_mb: u32,       // minimum VRAM (MB) for GPU inference, 0 = CPU ok
+    pub ram_mb: u32,            // peak RAM for CPU inference
     pub recommendation: String, // "recommended" | "slow" | "not-recommended" | ""
 }
 
@@ -48,7 +48,10 @@ fn detect_hardware() -> (u32, u32, bool) {
         };
         let gpu_vram_mb = detect_nvidia_vram().unwrap_or(0);
         let has_avx = detect_avx_support();
-        info!("[STT] Hardware detected: RAM={}MB, GPU VRAM={}MB, AVX={}", total_ram_mb, gpu_vram_mb, has_avx);
+        info!(
+            "[STT] Hardware detected: RAM={}MB, GPU VRAM={}MB, AVX={}",
+            total_ram_mb, gpu_vram_mb, has_avx
+        );
         (total_ram_mb, gpu_vram_mb, has_avx)
     })
 }
@@ -83,7 +86,12 @@ fn detect_nvidia_vram() -> Option<u32> {
 }
 
 /// Compute recommendation for each model based on hardware.
-fn compute_recommendation(model: &SttModelInfo, total_ram_mb: u32, gpu_vram_mb: u32, has_avx: bool) -> String {
+fn compute_recommendation(
+    model: &SttModelInfo,
+    total_ram_mb: u32,
+    gpu_vram_mb: u32,
+    has_avx: bool,
+) -> String {
     let has_gpu = gpu_vram_mb > 0;
 
     if model.engine == "vosk" {
@@ -141,7 +149,7 @@ fn vosk(id: &str, name: &str, lang: &str, size_mb: u32, wer: &str) -> SttModelIn
         ready: true,
         gpu_required: false,
         min_vram_mb: 0,
-        ram_mb: size_mb * 2, // vosk RAM ≈ 2x model size
+        ram_mb: size_mb * 2,           // vosk RAM ≈ 2x model size
         recommendation: String::new(), // filled at runtime
     }
 }
@@ -149,17 +157,47 @@ fn vosk(id: &str, name: &str, lang: &str, size_mb: u32, wer: &str) -> SttModelIn
 fn build_catalog() -> Vec<SttModelInfo> {
     vec![
         // ── Vosk models (12 languages) ──
-        vosk("vosk-model-small-ko-0.22", "Vosk Korean", "ko-KR", 82, "28.1%"),
-        vosk("vosk-model-small-en-us-0.15", "Vosk English", "en-US", 40, "9.85%"),
+        vosk(
+            "vosk-model-small-ko-0.22",
+            "Vosk Korean",
+            "ko-KR",
+            82,
+            "28.1%",
+        ),
+        vosk(
+            "vosk-model-small-en-us-0.15",
+            "Vosk English",
+            "en-US",
+            40,
+            "9.85%",
+        ),
         vosk("vosk-model-small-cn-0.22", "Vosk Chinese", "zh-CN", 42, "—"),
-        vosk("vosk-model-small-ja-0.22", "Vosk Japanese", "ja-JP", 48, "—"),
+        vosk(
+            "vosk-model-small-ja-0.22",
+            "Vosk Japanese",
+            "ja-JP",
+            48,
+            "—",
+        ),
         vosk("vosk-model-small-es-0.42", "Vosk Spanish", "es-ES", 39, "—"),
         vosk("vosk-model-small-fr-0.22", "Vosk French", "fr-FR", 41, "—"),
         vosk("vosk-model-small-de-0.15", "Vosk German", "de-DE", 45, "—"),
         vosk("vosk-model-small-ru-0.22", "Vosk Russian", "ru-RU", 45, "—"),
-        vosk("vosk-model-small-pt-0.3", "Vosk Portuguese", "pt-BR", 31, "—"),
+        vosk(
+            "vosk-model-small-pt-0.3",
+            "Vosk Portuguese",
+            "pt-BR",
+            31,
+            "—",
+        ),
         vosk("vosk-model-small-it-0.22", "Vosk Italian", "it-IT", 48, "—"),
-        vosk("vosk-model-small-vn-0.4", "Vosk Vietnamese", "vi-VN", 32, "—"),
+        vosk(
+            "vosk-model-small-vn-0.4",
+            "Vosk Vietnamese",
+            "vi-VN",
+            32,
+            "—",
+        ),
         vosk("vosk-model-small-hi-0.22", "Vosk Hindi", "hi-IN", 42, "—"),
         // ── Whisper models ──
         SttModelInfo {
@@ -169,7 +207,8 @@ fn build_catalog() -> Vec<SttModelInfo> {
             language: "multilingual".into(),
             size_mb: 75,
             wer: "~40%".into(),
-            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin".into(),
+            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+                .into(),
             description: "Fast, low quality. Not recommended for Korean.".into(),
             downloaded: false,
             ready: true,
@@ -185,7 +224,8 @@ fn build_catalog() -> Vec<SttModelInfo> {
             language: "multilingual".into(),
             size_mb: 142,
             wer: "~30%".into(),
-            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin".into(),
+            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+                .into(),
             description: "Similar quality to Vosk small.".into(),
             downloaded: false,
             ready: true,
@@ -201,7 +241,8 @@ fn build_catalog() -> Vec<SttModelInfo> {
             language: "multilingual".into(),
             size_mb: 466,
             wer: "~20%".into(),
-            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin".into(),
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin".into(),
             description: "Noticeable improvement over Vosk.".into(),
             downloaded: false,
             ready: true,
@@ -217,7 +258,8 @@ fn build_catalog() -> Vec<SttModelInfo> {
             language: "multilingual".into(),
             size_mb: 1500,
             wer: "~12%".into(),
-            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin".into(),
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin".into(),
             description: "Recommended. Good accuracy for Korean.".into(),
             downloaded: false,
             ready: true,
@@ -233,7 +275,8 @@ fn build_catalog() -> Vec<SttModelInfo> {
             language: "multilingual".into(),
             size_mb: 3000,
             wer: "~8%".into(),
-            download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin".into(),
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin".into(),
             description: "Best quality. Large download.".into(),
             downloaded: false,
             ready: true,
@@ -323,7 +366,9 @@ pub async fn download_model(app: AppHandle, model_id: String) -> Result<(), Stri
         .await
         .map_err(|e| format!("Download failed: {e}"))?;
 
-    let total_size = response.content_length().unwrap_or((model.size_mb as u64) * 1024 * 1024);
+    let total_size = response
+        .content_length()
+        .unwrap_or((model.size_mb as u64) * 1024 * 1024);
     let mut downloaded: u64 = 0;
     let mut bytes = Vec::with_capacity(total_size as usize);
     let mut stream = response.bytes_stream();

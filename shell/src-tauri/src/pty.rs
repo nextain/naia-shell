@@ -51,12 +51,21 @@ pub fn pty_create(
 
     // Validate command against an allowlist of known safe shells (CWE-77).
     const ALLOWED_SHELLS: &[&str] = &[
-        "bash", "/bin/bash", "/usr/bin/bash",
-        "sh", "/bin/sh", "/usr/bin/sh",
-        "zsh", "/bin/zsh", "/usr/bin/zsh",
-        "fish", "/usr/bin/fish",
-        "pwsh", "powershell",
-        "cmd", "cmd.exe",
+        "bash",
+        "/bin/bash",
+        "/usr/bin/bash",
+        "sh",
+        "/bin/sh",
+        "/usr/bin/sh",
+        "zsh",
+        "/bin/zsh",
+        "/usr/bin/zsh",
+        "fish",
+        "/usr/bin/fish",
+        "pwsh",
+        "powershell",
+        "cmd",
+        "cmd.exe",
         // Flatpak host shell passthrough
         "flatpak-spawn",
     ];
@@ -197,10 +206,7 @@ pub fn pty_resize(
 
 /// Kill the PTY process and remove from registry.
 #[tauri::command]
-pub fn pty_kill(
-    registry: tauri::State<'_, PtyRegistry>,
-    pty_id: String,
-) -> Result<(), String> {
+pub fn pty_kill(registry: tauri::State<'_, PtyRegistry>, pty_id: String) -> Result<(), String> {
     let mut reg = registry.lock().unwrap();
     if reg.remove(&pty_id).is_none() {
         return Err(format!("pty not found: {pty_id}"));

@@ -3,9 +3,14 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 interface TitleBarProps {
 	panelVisible: boolean;
 	onTogglePanel: () => void;
+	title?: string;
 }
 
-export function TitleBar({ panelVisible, onTogglePanel }: TitleBarProps) {
+export function TitleBar({
+	panelVisible,
+	onTogglePanel,
+	title = "Naia",
+}: TitleBarProps) {
 	const appWindow = getCurrentWindow();
 
 	function handleDragStart(e: React.MouseEvent) {
@@ -23,7 +28,13 @@ export function TitleBar({ panelVisible, onTogglePanel }: TitleBarProps) {
 
 	return (
 		<div className="titlebar" onMouseDown={handleDragStart}>
-			<span className="titlebar-label">Naia</span>
+			<div
+				className="titlebar-brand"
+				aria-label={`Naia - ${title.trim() || "Naia"}`}
+			>
+				<img className="titlebar-logo" src="/brand/naia-logo.png" alt="" />
+				<span className="titlebar-label">{title.trim() || "Naia"}</span>
+			</div>
 			<div className="titlebar-buttons">
 				<button
 					type="button"
