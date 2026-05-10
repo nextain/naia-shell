@@ -58,6 +58,14 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				if (event.payload.naiaUserId) {
 					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
 				}
+				// Mark onboarding complete — Naia login implies an existing account/setup.
+				const existing = JSON.parse(
+					localStorage.getItem("naia-config") ?? "{}",
+				);
+				localStorage.setItem(
+					"naia-config",
+					JSON.stringify({ ...existing, onboardingComplete: true }),
+				);
 				onComplete();
 			},
 		);
@@ -91,11 +99,14 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			return;
 		}
 		setAdkPath(trimmed);
-		// Restore config from the selected ADK folder so onboarding/settings carry over
+		// Restore config from the selected ADK folder, then mark onboarding done so
+		// the wizard doesn't replay for an already-configured folder.
 		const fileConfig = await readNaiaConfig();
-		if (fileConfig) {
-			localStorage.setItem("naia-config", JSON.stringify(fileConfig));
-		}
+		const base = fileConfig ?? {};
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ ...base, onboardingComplete: true }),
+		);
 		onComplete();
 	}
 

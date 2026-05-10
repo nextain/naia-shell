@@ -1764,7 +1764,7 @@ async fn write_temp_text(filename: String, content: String) -> Result<String, St
 }
 
 #[tauri::command]
-async fn read_local_binary(path: String) -> Result<Vec<u8>, String> {
+async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result<Vec<u8>, String> {
     let file_path = std::path::PathBuf::from(&path);
     if !file_path.is_absolute() {
         return Err("Path must be absolute".to_string());
@@ -1788,6 +1788,15 @@ async fn read_local_binary(path: String) -> Result<Vec<u8>, String> {
     {
         if let Ok(temp) = std::env::var("TEMP") {
             allowed_roots.push(std::path::PathBuf::from(temp));
+        }
+    }
+    // If the caller provides an explicit allowed base (e.g. the naia-adk path chosen by
+    // the user via the OS dialog), canonicalize it and add it as a trusted root.
+    if let Some(base) = allowed_base {
+        if !base.is_empty() {
+            if let Ok(canonical_base) = dunce::canonicalize(&base) {
+                allowed_roots.push(canonical_base);
+            }
         }
     }
     if !allowed_roots.iter().any(|root| canonical.starts_with(root)) {

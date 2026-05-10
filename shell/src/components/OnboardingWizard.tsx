@@ -232,7 +232,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}
 
 	function handleComplete() {
-		const base = loadConfig() ?? { provider: "nextain", model: "gemini-2.5-flash", apiKey: "" };
+		const base = loadConfig() ?? {
+			provider: "nextain",
+			model: "gemini-2.5-flash",
+			apiKey: "",
+		};
 		const vrmPath = selectedVrm.replace(/^\//, "");
 		const bgFilename = !selectedBg.startsWith("/assets/")
 			? (selectedBg.split(/[/\\?]/).pop() ?? undefined)
@@ -317,7 +321,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				{step === "userName" && (
 					<>
 						<h2 className="onboarding-step__title">
-							{t("onboard.userName.title").replace("{agent}", agentName.trim() || "나이아")}
+							{t("onboard.userName.title").replace(
+								"{agent}",
+								agentName.trim() || "나이아",
+							)}
 						</h2>
 						<input
 							className="onboarding-step__input"
@@ -337,7 +344,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				{step === "speechStyle" && (
 					<>
 						<h2 className="onboarding-step__title">
-							{t("onboard.speechStyle.title").replace("{agent}", agentName.trim() || "나이아")}
+							{t("onboard.speechStyle.title").replace(
+								"{agent}",
+								agentName.trim() || "나이아",
+							)}
 						</h2>
 						<div className="onboarding-step__options">
 							{(["casual", "formal", "honorific"] as const).map((style) => (
@@ -390,19 +400,24 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									<br />
 									파일을 추가하고 앱을 재시작해 주세요.
 								</p>
-							) : naiaVrms.map((path) => {
-								const label = (path.split(/[/\\]/).pop() ?? path).replace(/\.vrm$/i, "");
-								return (
-									<button
-										key={path}
-										type="button"
-										className={`onboarding-step__avatar-item${selectedVrm === path ? " onboarding-step__avatar-item--selected" : ""}`}
-										onClick={() => handleVrmSelect(path)}
-									>
-										{label}
-									</button>
-								);
-							})}
+							) : (
+								naiaVrms.map((path) => {
+									const label = (path.split(/[/\\]/).pop() ?? path).replace(
+										/\.vrm$/i,
+										"",
+									);
+									return (
+										<button
+											key={path}
+											type="button"
+											className={`onboarding-step__avatar-item${selectedVrm === path ? " onboarding-step__avatar-item--selected" : ""}`}
+											onClick={() => handleVrmSelect(path)}
+										>
+											{label}
+										</button>
+									);
+								})
+							)}
 						</div>
 						<p className="onboarding-step__hint">
 							{t("onboard.character.hint")}
@@ -507,10 +522,16 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				{step === "complete" && (
 					<>
 						<h2 className="onboarding-step__title">
-							{t("onboard.complete.greeting")}
+							{t("onboard.complete.greeting").replace(
+								"{name}",
+								userName.trim() || "게스트",
+							)}
 						</h2>
 						<p className="onboarding-step__hint">
-							{t("onboard.complete.ready")}
+							{t("onboard.complete.ready").replace(
+								"{agent}",
+								agentName.trim() || "나이아",
+							)}
 						</p>
 					</>
 				)}

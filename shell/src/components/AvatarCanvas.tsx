@@ -15,6 +15,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { randFloat } from "three/src/math/MathUtils.js";
+import { getAdkPath } from "../lib/adk-store";
 import { Logger } from "../lib/logger";
 import {
 	clipFromVRMAnimation,
@@ -339,6 +340,7 @@ export function AvatarCanvas() {
 						setLoadStage(stage);
 						const bytes = await invoke<number[]>("read_local_binary", {
 							path: normalizedModelPath,
+							allowedBase: getAdkPath() ?? "",
 						});
 						localVrmBytes = new Uint8Array(bytes);
 						const slash = Math.max(
