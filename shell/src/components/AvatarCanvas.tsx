@@ -33,7 +33,7 @@ import { useAvatarStore } from "../stores/avatar";
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera-v11";
+const CAMERA_STORAGE_KEY = "naia-camera-v12";
 
 interface SavedCamera {
 	px: number;
@@ -264,8 +264,8 @@ export function AvatarCanvas() {
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
 			// naia-overlay is full-screen; offset camera to place character in left strip area.
-			camera.position.set(-1.3, 0.9, -2.2);
-			controls.target.set(-1.3, 0.9, 0.0);
+			camera.position.set(1.3, 1.5, -2.2);
+			controls.target.set(1.3, 1.5, 0.0);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
 		controls.update();
