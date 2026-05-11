@@ -201,7 +201,10 @@ describe("chat-service", () => {
 			async (_event: string, handler: (event: { payload: string }) => void) => {
 				setTimeout(() => {
 					handler({
-						payload: JSON.stringify({ type: "finish", requestId: "req-no-naiakey" }),
+						payload: JSON.stringify({
+							type: "finish",
+							requestId: "req-no-naiakey",
+						}),
 					});
 				}, 10);
 				return mockUnlisten;
@@ -236,7 +239,10 @@ describe("chat-service", () => {
 			async (_event: string, handler: (event: { payload: string }) => void) => {
 				setTimeout(() => {
 					handler({
-						payload: JSON.stringify({ type: "finish", requestId: "req-tts-no-key" }),
+						payload: JSON.stringify({
+							type: "finish",
+							requestId: "req-tts-no-key",
+						}),
 					});
 				}, 10);
 				return mockUnlisten;

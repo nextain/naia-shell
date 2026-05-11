@@ -141,6 +141,10 @@ export interface AppConfig {
 	deletedPanels?: string[];
 	/** Workspace root directory override. Defaults to the compile-time WORKSPACE_ROOT constant if not set. */
 	workspaceRoot?: string;
+	/** Filename of the selected background video inside naia-settings/background/ */
+	backgroundVideo?: string;
+	/** Filename of the selected BGM track inside naia-settings/bgm-musics/ */
+	bgmTrack?: string;
 
 	// ── Memory settings ──
 	/** Memory adapter backend. Defaults to 'local' (JSON file). */
@@ -190,6 +194,9 @@ export function loadConfig(): AppConfig | null {
 
 export function saveConfig(config: AppConfig): void {
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+	if (typeof window !== "undefined") {
+		window.dispatchEvent(new CustomEvent("naia-config-changed"));
+	}
 }
 
 export function hasApiKey(): boolean {

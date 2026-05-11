@@ -1,4 +1,3 @@
-import type { ModelCapability } from "../types.js";
 import type { LlmModelMeta, LlmProviderMeta, LlmVoiceMeta } from "./types";
 
 const providers = new Map<string, LlmProviderMeta>();
@@ -87,20 +86,22 @@ export async function fetchVllmModels(
 	return { models: models ?? [], connected: models !== null };
 }
 
-/** Format model label with pricing (e.g. "Gemini 3 Pro ($2.00 / $12.00)") and capability icons. */
+/** Format model label with pricing (e.g. "Gemini 3 Pro (Pricing: $2.00 / $12.00)") and capability icons. */
 export function formatModelLabel(model: LlmModelMeta): string {
 	const isAsr = model.capabilities.includes("asr");
-	const base = isAsr ? `${model.label} 🎤` : model.label;
+	const base = isAsr ? `${model.label} (전용)` : model.label;
 	if (!model.pricing) return base;
 	const [input, output] = model.pricing;
-	return `${base} ($${input.toFixed(2)} / $${output.toFixed(2)})`;
+	// Use localized "Pricing" label if possible, or fallback to English
+	const pricingLabel = typeof (globalThis as any).t === "function" ? (globalThis as any).t("settings.pricing") : "Pricing";
+	return `${base} (${pricingLabel}: $${input.toFixed(3)} / $${output.toFixed(3)})`;
 }
 
-// ── Shared voice lists ──
+// -- Shared voice lists --
 
 export const GEMINI_LIVE_VOICES: LlmVoiceMeta[] = [
-	{ id: "Kore", label: "Kore (여성, 차분)" },
-	{ id: "Puck", label: "Puck (남성, 활발)" },
+	{ id: "Kore", label: "Kore (여성, 부드러움)" },
+	{ id: "Puck", label: "Puck (남성, 익살)" },
 	{ id: "Charon", label: "Charon (남성)" },
 	{ id: "Aoede", label: "Aoede (여성)" },
 	{ id: "Fenrir", label: "Fenrir (남성)" },
@@ -118,11 +119,11 @@ export const OPENAI_REALTIME_VOICES: LlmVoiceMeta[] = [
 	{ id: "sage", label: "Sage (여성)" },
 	{ id: "shimmer", label: "Shimmer (여성)" },
 	{ id: "verse", label: "Verse (남성)" },
-	{ id: "marin", label: "Marin (추천)" },
-	{ id: "cedar", label: "Cedar (추천)" },
+	{ id: "marin", label: "Marin (여성)" },
+	{ id: "cedar", label: "Cedar (남성)" },
 ];
 
-// ── Provider registrations ──
+// -- Provider registrations --
 
 registerLlmProvider({
 	id: "nextain",
@@ -133,46 +134,43 @@ registerLlmProvider({
 	requiresNaiaKey: true,
 	defaultModel: "gemini-2.5-pro",
 	models: [
-		// ── Gemini 3.1 ────────────────────────────────────────────────────
+		// -- Gemini 3.1 --------------------------------------------------------------------
 		{
 			id: "gemini-3.1-pro-preview",
 			label: "Gemini 3.1 Pro",
 			capabilities: ["llm"],
+			pricing: [1.25, 5.0],
 		},
 		{
 			id: "gemini-3.1-flash-lite-preview",
 			label: "Gemini 3.1 Flash Lite",
 			capabilities: ["llm"],
+			pricing: [0.075, 0.3],
 		},
-		{
-			id: "gemini-3.1-flash-live-preview",
-			label: "Gemini 3.1 Flash Live 🗣️",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [...GEMINI_LIVE_VOICES],
-			transcriptProvided: true,
-		},
-		// ── Gemini 3 ──────────────────────────────────────────────────────
+		// -- Gemini 3 ----------------------------------------------------------------------
 		{
 			id: "gemini-3-flash-preview",
 			label: "Gemini 3.0 Flash",
 			capabilities: ["llm"],
+			pricing: [0.1, 0.4],
 		},
-		// ── Gemini 2.5 ────────────────────────────────────────────────────
-		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"] },
+		// -- Gemini 2.5 --------------------------------------------------------------------
+		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.25, 10.0] },
 		{
 			id: "gemini-2.5-flash",
 			label: "Gemini 2.5 Flash",
 			capabilities: ["llm"],
+			pricing: [0.3, 2.5],
 		},
 		{
 			id: "gemini-2.5-flash-lite",
 			label: "Gemini 2.5 Flash Lite",
 			capabilities: ["llm"],
+			pricing: [0.075, 0.3],
 		},
 		{
 			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live 🗣️",
+			label: "Gemini 2.5 Flash Live (실시간)",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
@@ -224,14 +222,6 @@ registerLlmProvider({
 			pricing: [0.5, 3.0],
 		},
 		{
-			id: "gemini-3.1-flash-live-preview",
-			label: "Gemini 3.1 Flash Live 🗣️",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [...GEMINI_LIVE_VOICES],
-			transcriptProvided: true,
-		},
-		{
 			id: "gemini-2.5-pro",
 			label: "Gemini 2.5 Pro",
 			capabilities: ["llm"],
@@ -245,7 +235,7 @@ registerLlmProvider({
 		},
 		{
 			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live 🗣️ (~$0.03/min)",
+			label: "Gemini 2.5 Flash Live (실시간)",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
@@ -270,7 +260,7 @@ registerLlmProvider({
 		},
 		{
 			id: "gpt-4o-realtime",
-			label: "GPT-4o Realtime 🗣️ (~$0.10/min)",
+			label: "GPT-4o Realtime (실시간)",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
 			voices: [...OPENAI_REALTIME_VOICES],
@@ -396,8 +386,7 @@ registerLlmProvider({
 registerLlmProvider({
 	id: "vllm",
 	name: "vLLM",
-	description:
-		"Local vLLM server — OpenAI-compatible API, no API key required.",
+	description: "Local vLLM server — OpenAI-compatible API, no API key required.",
 	descKey: "provider.localRequired",
 	requiresApiKey: false,
 	isLocal: true,
@@ -414,12 +403,12 @@ registerLlmProvider({
 				const isOmni = mid.includes("minicpm-o") || mid.includes("minicpmo");
 				return {
 					id: m.id,
-					label: isOmni ? `${m.id} 🗣️` : m.id,
+					label: isOmni ? `${m.id} (실시간)` : m.id,
 					capabilities: (isAsr
 						? ["asr"]
 						: isOmni
 							? ["llm", "omni"]
-							: ["llm"]) as ModelCapability[],
+							: ["llm"]) as any[],
 				};
 			});
 		} catch {

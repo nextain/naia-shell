@@ -1,6 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const eventListeners = vi.hoisted(
+	() => new Map<string, (event: { payload: any }) => void>(),
+);
 
 // Mock Tauri invoke
 vi.mock("@tauri-apps/api/core", () => ({
@@ -9,7 +13,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-	listen: vi.fn().mockResolvedValue(() => {}),
+	listen: vi.fn((event: string, handler: (event: { payload: any }) => void) => {
+		eventListeners.set(event, handler);
+		return Promise.resolve(() => eventListeners.delete(event));
+	}),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -20,7 +27,11 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 	open: vi.fn().mockResolvedValue(null),
 }));
 
-// Mock getLocale to return "ko" (formality locale) so speechStyle step is shown
+vi.mock("../../lib/chat-service", () => ({
+	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock getLocale to return "ko" so Korean strings are used
 vi.mock("../../lib/i18n", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../lib/i18n")>();
 	return { ...actual, getLocale: () => "ko" as any };
@@ -35,140 +46,188 @@ vi.mock("../VrmPreview", () => ({
 
 import { OnboardingWizard } from "../OnboardingWizard";
 
+// Step order (without Naia key): agentName → userName → speechStyle → character → background → provider → complete
+// goNext() sets transitioning.current = true; a 300ms timeout resets it.
+// Use fake timers + act to advance through transitions.
+
 describe("OnboardingWizard", () => {
 	const onComplete = vi.fn();
 
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
 	afterEach(() => {
+		vi.runAllTimers();
+		vi.useRealTimers();
 		cleanup();
 		onComplete.mockReset();
+		eventListeners.clear();
 		localStorage.removeItem("naia-config");
+		localStorage.removeItem("naia-adk-path");
+		localStorage.removeItem("naia-remote-key");
 	});
 
-	it("renders provider step first", () => {
+	/** Advance past the goNext() 300ms transition lock. */
+	function flush() {
+		act(() => { vi.advanceTimersByTime(400); });
+	}
+
+	it("renders agentName step first", () => {
 		render(<OnboardingWizard onComplete={onComplete} />);
-		expect(screen.getByText(/두뇌|brain/i)).toBeDefined();
-		expect(screen.getByText("Naia")).toBeDefined();
+		// First step is agentName — shows "Naia" placeholder input
+		expect(screen.getByPlaceholderText("Naia")).toBeDefined();
+		expect(screen.getByRole("button", { name: /다음|Next/ })).toBeDefined();
 	});
 
-	it("shows all onboarding providers", () => {
+	it("shows agentName input and advances to userName on Next", () => {
 		render(<OnboardingWizard onComplete={onComplete} />);
-		expect(screen.getByText("Google Gemini")).toBeDefined();
-		expect(screen.getByText(/OpenAI/)).toBeDefined();
-		expect(screen.getByText(/Anthropic/)).toBeDefined();
-		expect(screen.getByText(/xAI/)).toBeDefined();
-		expect(screen.getByText(/Z\.AI/)).toBeDefined();
+
+		// First step: agentName
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
+
+		// Second step: userName — input with "Luke" placeholder
+		expect(screen.getByPlaceholderText("Luke")).toBeDefined();
 	});
 
-	it("progresses through steps: provider → apiKey → agentName → ...", () => {
+	it("progresses through steps: agentName → userName → speechStyle → character → background → provider", () => {
 		render(<OnboardingWizard onComplete={onComplete} />);
 
-		// Provider step → Next
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// agentName → Next
+		fireEvent.change(screen.getByPlaceholderText("Naia"), { target: { value: "Mochi" } });
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// API key step
-		expect(screen.getByText(/API/)).toBeDefined();
-		const apiInput = screen.getByPlaceholderText("API key...");
-		fireEvent.change(apiInput, { target: { value: "test-key" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// userName → Next
+		fireEvent.change(screen.getByPlaceholderText("Luke"), { target: { value: "Luke" } });
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// Agent name step
-		expect(screen.getByText(/이름|name/i)).toBeDefined();
-		const agentInput = screen.getByPlaceholderText(/이름|name/i);
-		fireEvent.change(agentInput, { target: { value: "Mochi" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// speechStyle → Next
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// User name step
-		expect(screen.getByText(/Mochi/)).toBeDefined();
-		const nameInput = screen.getByPlaceholderText(/이름|name/i);
-		fireEvent.change(nameInput, { target: { value: "Luke" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// character step (no VRMs → shows empty state warning)
+		expect(screen.getAllByText(/VRM/i).length).toBeGreaterThan(0);
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// Workspace step (skippable)
-		expect(screen.getByRole("heading", { name: /워크스페이스/ })).toBeDefined();
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// background → Next
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// Character step (VRM)
-		expect(screen.getByText(/모습|look/i)).toBeDefined();
-		expect(screen.getByTestId("vrm-preview")).toBeDefined();
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
-
-		// Personality step
-		expect(screen.getByText(/골라|Choose.*personality/i)).toBeDefined();
-		// Check hint about editing later
-		expect(screen.getByText(/설정에서|Settings/i)).toBeDefined();
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
-
-		// Speech style step
-		expect(screen.getByText(/어떻게 말|How should.*talk/i)).toBeDefined();
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
-
-		// Complete step
-		expect(screen.getByText(/Luke/)).toBeDefined();
+		// provider step — shows the skip link "나중에 설정"
+		expect(screen.getByText(/나중에 설정/)).toBeDefined();
 	});
 
-	it("requires agentName (Next disabled when empty)", () => {
+	it("Next button is always enabled (agentName is optional)", () => {
 		render(<OnboardingWizard onComplete={onComplete} />);
 
-		// Provider → Next
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// First step: Next button should not be disabled
+		const nextBtn = screen.getByRole("button", { name: /다음|Next/ }) as HTMLButtonElement;
+		expect(nextBtn.disabled).toBe(false);
 
-		// API key → fill and Next
-		const apiInput = screen.getByPlaceholderText("API key...");
-		fireEvent.change(apiInput, { target: { value: "key" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
-
-		// Agent name step — Next should be disabled
-		const nextBtn = screen.getByRole("button", { name: /^다음$|^Next$/ });
-		expect((nextBtn as HTMLButtonElement).disabled).toBe(true);
-
-		// Type a name → Next enabled
-		const agentInput = screen.getByPlaceholderText(/이름|name/i);
-		fireEvent.change(agentInput, { target: { value: "Naia" } });
-		expect((nextBtn as HTMLButtonElement).disabled).toBe(false);
+		// Click Next without filling agentName → advances to userName step
+		fireEvent.click(nextBtn);
+		flush();
+		expect(screen.getByPlaceholderText("Luke")).toBeDefined();
 	});
 
-	it("complete step saves all config", () => {
+	it("complete step calls onComplete and saves config", () => {
 		render(<OnboardingWizard onComplete={onComplete} />);
 
-		// Provider → Next
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// agentName
+		fireEvent.change(screen.getByPlaceholderText("Naia"), { target: { value: "Mochi" } });
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// API key
-		const apiInput = screen.getByPlaceholderText("API key...");
-		fireEvent.change(apiInput, { target: { value: "test-key" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// userName
+		fireEvent.change(screen.getByPlaceholderText("Luke"), { target: { value: "Luke" } });
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// Agent name
-		const agentInput = screen.getByPlaceholderText(/이름|name/i);
-		fireEvent.change(agentInput, { target: { value: "Mochi" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// speechStyle
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// User name
-		const nameInput = screen.getByPlaceholderText(/이름|name/i);
-		fireEvent.change(nameInput, { target: { value: "Luke" } });
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// character
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// Workspace step → Next (skip)
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// background
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 
-		// Character → Next
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// provider → skip via "나중에 설정"
+		fireEvent.click(screen.getByText(/나중에 설정/));
+		flush();
 
-		// Personality → Next
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// complete → click "시작하기"
+		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
+		flush();
 
-		// Speech style → Next
-		fireEvent.click(screen.getByRole("button", { name: /^다음$|^Next$/ }));
+		// Wait for the 1200ms onComplete setTimeout
+		act(() => { vi.advanceTimersByTime(1300); });
 
-		// Complete → Start
-		fireEvent.click(screen.getByText(/시작|Get Started/));
 		expect(onComplete).toHaveBeenCalled();
 
 		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(config.userName).toBe("Luke");
 		expect(config.agentName).toBe("Mochi");
 		expect(config.onboardingComplete).toBe(true);
-		expect(config.apiKey).toBe("test-key");
 		expect(config.persona).toContain("Mochi");
 	});
+
+	it("completes onboarding immediately after Naia login succeeds", () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk\\projects\\naia-adk");
+		render(<OnboardingWizard onComplete={onComplete} />);
+
+		const clickNext = () => {
+			const buttons = screen.getAllByRole("button");
+			const next = buttons.find((button) =>
+				button.className.includes("onboarding-step__next-btn"),
+			);
+			expect(next).toBeDefined();
+			fireEvent.click(next!);
+			flush();
+		};
+
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "Mochi" },
+		});
+		clickNext();
+
+		fireEvent.change(screen.getByPlaceholderText("Luke"), {
+			target: { value: "Luke" },
+		});
+		clickNext();
+		clickNext();
+		clickNext();
+		clickNext();
+
+		const loginButton = screen
+			.getAllByRole("button")
+			.find((button) => button.textContent?.includes("Naia"));
+		expect(loginButton).toBeDefined();
+		fireEvent.click(loginButton!);
+
+		act(() => {
+			eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key", naiaUserId: "user-1" },
+			});
+		});
+
+		expect(onComplete).toHaveBeenCalled();
+		expect(screen.queryByPlaceholderText("Naia")).toBeNull();
+
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.onboardingComplete).toBe(true);
+		expect(config.naiaKey).toBe("gw-test-key");
+		expect(config.naiaUserId).toBe("user-1");
+		expect(config.userName).toBe("Luke");
+		expect(config.agentName).toBe("Mochi");
+		expect(config.workspaceRoot).toBe("D:\\alpha-adk\\projects\\naia-adk");
+	});
 });
+

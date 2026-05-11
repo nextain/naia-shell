@@ -63,8 +63,8 @@ export async function encodeRefAudio(
 
 	if (wavBytes.byteLength > RAW_BYTE_CAP) {
 		throw new RefAudioEncodeError(
-			`encoded ref audio (${Math.round(wavBytes.byteLength / 1024)} KiB) `
-				+ `exceeds the ${RAW_BYTE_CAP / 1024 / 1024} MiB cap; trim the clip`,
+			`encoded ref audio (${Math.round(wavBytes.byteLength / 1024)} KiB) ` +
+				`exceeds the ${RAW_BYTE_CAP / 1024 / 1024} MiB cap; trim the clip`,
 		);
 	}
 
@@ -78,8 +78,8 @@ function validateBase64Wav(input: string): string {
 	}
 	if (!ALREADY_BASE64_RE.test(trimmed)) {
 		throw new RefAudioEncodeError(
-			"ref audio string is not pure base64 — pass a Blob/ArrayBuffer "
-				+ "for raw audio, or a base64 WAV string already on the wire",
+			"ref audio string is not pure base64 — pass a Blob/ArrayBuffer " +
+				"for raw audio, or a base64 WAV string already on the wire",
 		);
 	}
 	// Approximate the decoded size from the base64 length to cap before
@@ -87,24 +87,30 @@ function validateBase64Wav(input: string): string {
 	const approxBytes = Math.floor((trimmed.length * 3) / 4);
 	if (approxBytes > RAW_BYTE_CAP) {
 		throw new RefAudioEncodeError(
-			`ref audio (${Math.round(approxBytes / 1024)} KiB) exceeds the `
-				+ `${RAW_BYTE_CAP / 1024 / 1024} MiB cap`,
+			`ref audio (${Math.round(approxBytes / 1024)} KiB) exceeds the ` +
+				`${RAW_BYTE_CAP / 1024 / 1024} MiB cap`,
 		);
 	}
 	return trimmed;
 }
 
 async function decodeAudioData(ab: ArrayBuffer): Promise<AudioBuffer> {
-	const Ctx = (globalThis as unknown as {
-		AudioContext?: typeof AudioContext;
-		webkitAudioContext?: typeof AudioContext;
-	}).AudioContext ?? (globalThis as unknown as {
-		webkitAudioContext?: typeof AudioContext;
-	}).webkitAudioContext;
+	const Ctx =
+		(
+			globalThis as unknown as {
+				AudioContext?: typeof AudioContext;
+				webkitAudioContext?: typeof AudioContext;
+			}
+		).AudioContext ??
+		(
+			globalThis as unknown as {
+				webkitAudioContext?: typeof AudioContext;
+			}
+		).webkitAudioContext;
 	if (!Ctx) {
 		throw new RefAudioEncodeError(
-			"AudioContext is unavailable in this environment; ref audio "
-				+ "encoding requires a Web Audio API host",
+			"AudioContext is unavailable in this environment; ref audio " +
+				"encoding requires a Web Audio API host",
 		);
 	}
 	const ctx = new Ctx();
@@ -146,12 +152,18 @@ async function resampleTo(
 ): Promise<Float32Array> {
 	if (srcRate === dstRate) return samples;
 
-	const Offline = (globalThis as unknown as {
-		OfflineAudioContext?: typeof OfflineAudioContext;
-		webkitOfflineAudioContext?: typeof OfflineAudioContext;
-	}).OfflineAudioContext ?? (globalThis as unknown as {
-		webkitOfflineAudioContext?: typeof OfflineAudioContext;
-	}).webkitOfflineAudioContext;
+	const Offline =
+		(
+			globalThis as unknown as {
+				OfflineAudioContext?: typeof OfflineAudioContext;
+				webkitOfflineAudioContext?: typeof OfflineAudioContext;
+			}
+		).OfflineAudioContext ??
+		(
+			globalThis as unknown as {
+				webkitOfflineAudioContext?: typeof OfflineAudioContext;
+			}
+		).webkitOfflineAudioContext;
 	if (!Offline) {
 		throw new RefAudioEncodeError(
 			"OfflineAudioContext is unavailable; cannot resample ref audio",

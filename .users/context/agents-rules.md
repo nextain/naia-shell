@@ -466,8 +466,32 @@ Detail: `.agents/context/harness.yaml`
 
 ## AI Workflow
 
+### Session Start Protocol (MANDATORY)
+
+> **Context compaction destroys all in-memory state. GitHub Issues are the ONLY persistent source of truth.**
+
+On every new session or after context compaction — before any work:
+
+1. `gh issue list --state open` — identify active issues
+2. `gh issue view <N>` — read **full body + ALL comments** for each active issue
+3. `cat .agents/progress/<N>-*.json` — read progress file if it exists
+4. **Only then** resume or start work
+
+**Never** start or resume work based on AI memory alone. If it's not in the Issue, it doesn't exist.
+
+### What Belongs in Every Issue
+
+- Design references: file paths or image descriptions for ALL UI changes
+- Implementation plan with phases
+- Decisions made and why
+- Rejected alternatives
+- Current phase in the 14-phase cycle
+- Blockers
+
+### Standard Pre-Work Checks
+
 - **Response language**: Contributor's preferred language (Korean default for maintainer)
-- **Pre-work mandatory**: Read `agents-rules.json`
+- **Pre-work mandatory**: Read `agents-rules.json` + `issue-driven-development.yaml`
 - **Identify work scope**: shell / agent / gateway / os
 - **TDD mandatory**: Integration-first
 - **Security check**: Verify tier for new tools/commands

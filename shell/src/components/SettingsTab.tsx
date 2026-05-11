@@ -1,11 +1,17 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLongPress } from "../hooks/useLongPress";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { clearSavedCamera } from "./AvatarCanvas";
 import {
-	AVATAR_PRESETS,
+	clearAdkPath,
+	getAdkPath,
+	listNaiaAssets,
+	setAdkPath,
+	toLocalBlobUrl,
+} from "../lib/adk-store";
+import {
 	DEFAULT_AVATAR_MODEL,
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
@@ -34,6 +40,11 @@ import {
 	importMemoryBackup,
 } from "../lib/db";
 import { resetGatewaySession } from "../lib/gateway-sessions";
+import {
+	type MemorySyncParams,
+	restartGateway,
+	syncToGateway,
+} from "../lib/gateway-sync";
 import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import {
@@ -55,7 +66,6 @@ import {
 	listLlmProviders,
 } from "../lib/llm";
 import { Logger } from "../lib/logger";
-import { MemorySyncParams, restartGateway, syncToGateway } from "../lib/gateway-sync";
 import {
 	DEFAULT_PERSONA,
 	FORMALITY_LOCALES,
@@ -71,6 +81,15 @@ import { useChatStore } from "../stores/chat";
 import { usePanelStore } from "../stores/panel";
 
 const LLM_PROVIDERS = listLlmProviders();
+const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
+const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
+
+function getBackgroundMediaType(path: string): "image" | "video" | "" {
+	const ext = path.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+	if (BG_VIDEO_EXTS.has(ext)) return "video";
+	if (BG_IMAGE_EXTS.has(ext)) return "image";
+	return "";
+}
 
 // Fallback voice lists for Edge TTS
 const ALL_EDGE_VOICES: string[] = [
@@ -215,213 +234,6 @@ function normalizeLocalPath(path: string): string {
 	} catch {
 		return path.replace(/^file:\/\//, "");
 	}
-}
-
-function toAssetUrl(path: string): string {
-	const normalized = normalizeLocalPath(path);
-	if (normalized.startsWith("http://localhost")) {
-		return normalized.replace(
-			/^http:\/\/localhost\/?/,
-			"http://asset.localhost/",
-		);
-	}
-	if (
-		normalized.startsWith("/assets/") ||
-		normalized.startsWith("/avatars/") ||
-		normalized.startsWith("asset:") ||
-		normalized.startsWith("http://asset.localhost") ||
-		normalized.startsWith("tauri://") ||
-		normalized.startsWith("blob:") ||
-		normalized.startsWith("data:")
-	) {
-		return normalized;
-	}
-	const assetUrl = convertFileSrc(normalized);
-	return assetUrl
-		.replace(/^asset:\/\/localhost\/?/, "http://asset.localhost/")
-		.replace(/^http:\/\/localhost\/?/, "http://asset.localhost/");
-}
-
-function buildVrmPreviewCandidates(path: string): string[] {
-	const rootPath = normalizeLocalPath(path).replace(/\.vrm$/i, "");
-	const candidates = [".webp", ".png", ".jpg", ".jpeg"];
-	return candidates.map((ext) => toAssetUrl(`${rootPath}${ext}`));
-}
-
-function buildLocalVrmPreviewCandidates(path: string): string[] {
-	const rootPath = normalizeLocalPath(path).replace(/\.vrm$/i, "");
-	return [".webp", ".png", ".jpg", ".jpeg"].map((ext) => `${rootPath}${ext}`);
-}
-
-function isAbsoluteLocalFilePath(path: string): boolean {
-	return path.startsWith("/");
-}
-
-function guessMimeType(path: string): string {
-	const ext = path.toLowerCase().split(".").pop() ?? "";
-	switch (ext) {
-		case "png":
-			return "image/png";
-		case "jpg":
-		case "jpeg":
-			return "image/jpeg";
-		case "webp":
-			return "image/webp";
-		case "gif":
-			return "image/gif";
-		case "bmp":
-			return "image/bmp";
-		default:
-			return "application/octet-stream";
-	}
-}
-
-function CustomAssetCard({
-	path,
-	isSelected,
-	onSelect,
-	onDelete,
-	type,
-}: {
-	path: string;
-	isSelected: boolean;
-	onSelect: () => void;
-	onDelete: () => void;
-	type: "vrm" | "bg";
-}) {
-	const [deleteMode, setDeleteMode] = useState(false);
-	const previewCandidates = useMemo(
-		() => (type === "vrm" ? buildVrmPreviewCandidates(path) : []),
-		[path, type],
-	);
-	const [previewIndex, setPreviewIndex] = useState(0);
-	const [localPreviewSrc, setLocalPreviewSrc] = useState<string | null>(null);
-	useEffect(() => {
-		setPreviewIndex(0);
-	}, [path, type]);
-	useEffect(() => {
-		let revokedUrl = "";
-		let cancelled = false;
-		setLocalPreviewSrc(null);
-
-		const normalized = normalizeLocalPath(path);
-		const isLocal =
-			isAbsoluteLocalFilePath(normalized) &&
-			!normalized.startsWith("/assets/") &&
-			!normalized.startsWith("/avatars/");
-		if (!isLocal) return;
-
-		const loadLocalPreview = async () => {
-			try {
-				const targetPaths =
-					type === "bg"
-						? [normalized]
-						: buildLocalVrmPreviewCandidates(normalized);
-				for (const targetPath of targetPaths) {
-					try {
-						const bytes = await invoke<number[]>("read_local_binary", {
-							path: targetPath,
-						});
-						if (cancelled) return;
-						const blob = new Blob([new Uint8Array(bytes)], {
-							type: guessMimeType(targetPath),
-						});
-						revokedUrl = URL.createObjectURL(blob);
-						setLocalPreviewSrc(revokedUrl);
-						return;
-					} catch {
-						// try next candidate
-					}
-				}
-			} catch {
-				// keep default preview fallback
-			}
-		};
-
-		void loadLocalPreview();
-		return () => {
-			cancelled = true;
-			if (revokedUrl) URL.revokeObjectURL(revokedUrl);
-		};
-	}, [path, type]);
-	const lp = useLongPress(
-		() => setDeleteMode(true),
-		() => {
-			if (deleteMode) onDelete();
-			else onSelect();
-		},
-	);
-
-	if (type === "vrm") {
-		const previewSrc = localPreviewSrc ?? previewCandidates[previewIndex];
-		return (
-			<button
-				type="button"
-				className={`vrm-card ${isSelected ? "active" : ""} ${deleteMode ? "shake" : ""}`}
-				title={path}
-				{...lp}
-				onClick={(e) => {
-					e.preventDefault();
-					if (!deleteMode) onSelect();
-				}}
-				style={{ position: "relative" }}
-				onMouseLeave={() => {
-					lp.onMouseLeave();
-					setDeleteMode(false);
-				}}
-			>
-				{previewSrc ? (
-					<img
-						src={previewSrc}
-						alt={path.split("/").pop()?.replace(".vrm", "") ?? "VRM"}
-						style={{ width: "100%", height: "100%", objectFit: "cover" }}
-						onError={() => {
-							if (previewIndex < previewCandidates.length - 1) {
-								setPreviewIndex((prev) => prev + 1);
-							} else {
-								setPreviewIndex(-1);
-							}
-						}}
-					/>
-				) : (
-					<>
-						<span className="vrm-card-icon">&#x1F464;</span>
-						<span className="vrm-card-label">
-							{path.split("/").pop()?.replace(".vrm", "")}
-						</span>
-					</>
-				)}
-				{deleteMode && <div className="delete-overlay">🗑️</div>}
-			</button>
-		);
-	}
-
-	return (
-		<button
-			type="button"
-			className={`bg-card ${isSelected ? "active" : ""} ${deleteMode ? "shake" : ""}`}
-			title={path}
-			{...lp}
-			onClick={(e) => {
-				e.preventDefault();
-				if (!deleteMode) onSelect();
-			}}
-			style={{ position: "relative" }}
-			onMouseLeave={() => {
-				lp.onMouseLeave();
-				setDeleteMode(false);
-			}}
-		>
-			<span
-				className="bg-card-preview"
-				style={{
-					backgroundImage: `url(${localPreviewSrc ?? toAssetUrl(path)})`,
-				}}
-			/>
-			<span className="bg-card-label">{path.split("/").pop()}</span>
-			{deleteMode && <div className="delete-overlay">🗑️</div>}
-		</button>
-	);
 }
 
 function DevicePairingSection() {
@@ -588,10 +400,6 @@ function DevicePairingSection() {
 	);
 }
 
-const BG_SAMPLES: { path: string; label: string }[] = [
-	{ path: "/assets/background-space.webp", label: "Space" },
-];
-
 const THEMES: { id: ThemeId; label: string; preview: string }[] = [
 	{
 		id: "system",
@@ -725,6 +533,10 @@ export function SettingsTab() {
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
+	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
+	const setBackgroundMediaType = useAvatarStore(
+		(s) => s.setBackgroundMediaType,
+	);
 	const pushModal = usePanelStore((s) => s.pushModal);
 	const popModal = usePanelStore((s) => s.popModal);
 	const [savedVrmModel, setSavedVrmModel] = useState(
@@ -749,15 +561,21 @@ export function SettingsTab() {
 	const [locale, setLocaleState] = useState<Locale>(
 		existing?.locale ?? getLocale(),
 	);
-	const [theme, setTheme] = useState<ThemeId>(existing?.theme ?? "espresso");
+	const [theme, setTheme] = useState<ThemeId>(existing?.theme ?? "midnight");
 	const [vrmModel, setVrmModel] = useState(savedVrmModel);
-	const [customVrms, setCustomVrms] = useState<string[]>(
+	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
+	const [naiaBgs, setNaiaBgs] = useState<string[]>([]);
+	const [activeBgPath, setActiveBgPath] = useState<string>("");
+	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
+		string | undefined
+	>(existing?.backgroundVideo);
+	const [customVrms] = useState<string[]>(
 		(existing?.customVrms ?? []).map(normalizeLocalPath),
 	);
-	const [customBgs, setCustomBgs] = useState<string[]>(
+	const [customBgs] = useState<string[]>(
 		(existing?.customBgs ?? []).map(normalizeLocalPath),
 	);
-	const [backgroundImage, setBackgroundImage] = useState(
+	const [backgroundImage] = useState(
 		normalizeLocalPath(existing?.backgroundImage ?? ""),
 	);
 	const defaultVoiceForProvider = getDefaultTtsVoiceForAvatar(
@@ -795,7 +613,9 @@ export function SettingsTab() {
 		existing?.speechStyle ?? "casual",
 	);
 	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
-	const [workspaceRoot, setWorkspaceRoot] = useState(existing?.workspaceRoot ?? "");
+	const [workspaceRoot, setWorkspaceRoot] = useState(() => {
+		return existing?.workspaceRoot || getAdkPath() || "";
+	});
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
 	);
@@ -1345,21 +1165,32 @@ export function SettingsTab() {
 			// 1. agent-browser path: opens Chrome for Testing (cross-platform, headed, not embedded)
 			//    CDP monitor detects /desktop/auth-complete → emits naia_auth_complete automatically.
 			Logger.info("SettingsTab", "[lab-login] trying browser_open_login");
-			const agentBrowserOk = await invoke("browser_open_login", { url: loginUrl }).then(
+			const agentBrowserOk = await invoke("browser_open_login", {
+				url: loginUrl,
+			}).then(
 				() => true,
 				(e: unknown) => {
-					Logger.warn("SettingsTab", "[lab-login] browser_open_login failed", { error: String(e) });
+					Logger.warn("SettingsTab", "[lab-login] browser_open_login failed", {
+						error: String(e),
+					});
 					return false;
 				},
 			);
 			if (agentBrowserOk) {
-				Logger.info("SettingsTab", "[lab-login] Chrome for Testing opened, waiting for auth");
+				Logger.info(
+					"SettingsTab",
+					"[lab-login] Chrome for Testing opened, waiting for auth",
+				);
 				return;
 			}
 
 			// 2. Embedded Chrome fallback (Linux X11, browser panel already initialized)
-			const chromeAvailable = await invoke<boolean>("browser_check").catch(() => false);
-			Logger.info("SettingsTab", "[lab-login] browser_check fallback", { chromeAvailable });
+			const chromeAvailable = await invoke<boolean>("browser_check").catch(
+				() => false,
+			);
+			Logger.info("SettingsTab", "[lab-login] browser_check fallback", {
+				chromeAvailable,
+			});
 			if (chromeAvailable) {
 				usePanelStore.getState().setActivePanel("browser");
 				let port = 0;
@@ -1370,29 +1201,43 @@ export function SettingsTab() {
 				}
 				if (port !== 0) {
 					labBrowserVisibleRef.current = true;
-					const navErr = await invoke("browser_embed_navigate", { url: loginUrl }).catch(
-						(e: unknown) => String(e),
-					);
+					const navErr = await invoke("browser_embed_navigate", {
+						url: loginUrl,
+					}).catch((e: unknown) => String(e));
 					if (navErr) {
-						Logger.error("SettingsTab", "[lab-login] navigate failed", { error: navErr });
+						Logger.error("SettingsTab", "[lab-login] navigate failed", {
+							error: navErr,
+						});
 					}
 					return;
 				}
 			}
 
 			// 3. System browser fallback → naia:// deep link
-			Logger.info("SettingsTab", "[lab-login] falling back to system browser + deep link");
-			const state = await invoke<string>("generate_oauth_state").catch(() => "");
-			const params = new URLSearchParams({ redirect: "desktop", source: "desktop" });
-			if (state) params.set("state", state);
-			await openUrl(`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`).catch(
-				(e: unknown) => {
-					Logger.error("SettingsTab", "[lab-login] openUrl failed", { error: String(e) });
-					setLabWaiting(false);
-				},
+			Logger.info(
+				"SettingsTab",
+				"[lab-login] falling back to system browser + deep link",
 			);
+			const state = await invoke<string>("generate_oauth_state").catch(
+				() => "",
+			);
+			const params = new URLSearchParams({
+				redirect: "desktop",
+				source: "desktop",
+			});
+			if (state) params.set("state", state);
+			await openUrl(
+				`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`,
+			).catch((e: unknown) => {
+				Logger.error("SettingsTab", "[lab-login] openUrl failed", {
+					error: String(e),
+				});
+				setLabWaiting(false);
+			});
 		} catch (e: unknown) {
-			Logger.error("SettingsTab", "[lab-login] unexpected error", { error: String(e) });
+			Logger.error("SettingsTab", "[lab-login] unexpected error", {
+				error: String(e),
+			});
 			setLabWaiting(false);
 		}
 	};
@@ -1673,12 +1518,28 @@ export function SettingsTab() {
 		const normalized = normalizeLocalPath(path);
 		setVrmModel(normalized);
 		setAvatarModelPath(normalized);
+		setSavedVrmModel(normalized);
+		const cfg = loadConfig();
+		if (cfg) saveConfig({ ...cfg, vrmModel: normalized || undefined });
 	}
 
-	function handleBgSelect(path: string) {
-		const normalized = normalizeLocalPath(path);
-		setBackgroundImage(normalized);
-		setAvatarBackgroundImage(normalized);
+	function handleNaiaBgSelect(path: string) {
+		const filename = path.split(/[/\\]/).pop() ?? "";
+		setActiveBgPath(path);
+		setBackgroundVideoFilename(filename || undefined);
+		setBackgroundMediaType(getBackgroundMediaType(path));
+		void toLocalBlobUrl(path).then(setBackgroundVideoUrl);
+		const cfg = loadConfig();
+		if (cfg) saveConfig({ ...cfg, backgroundVideo: filename || undefined });
+	}
+
+	function handleClearNaiaBg() {
+		setActiveBgPath("");
+		setBackgroundVideoFilename(undefined);
+		setBackgroundMediaType("");
+		setBackgroundVideoUrl("");
+		const cfg = loadConfig();
+		if (cfg) saveConfig({ ...cfg, backgroundVideo: undefined });
 	}
 
 	// Revert on unmount if not saved
@@ -1732,39 +1593,27 @@ export function SettingsTab() {
 		if (current) saveConfig({ ...current, theme: id });
 	}
 
-	async function handlePickVrmFile() {
-		const selected = await open({
-			title: "VRM 파일 선택",
-			filters: [{ name: "VRM", extensions: ["vrm"] }],
-			multiple: false,
+	// Load VRM list from naia-settings
+	useEffect(() => {
+		listNaiaAssets("vrm-files").then((paths) => {
+			const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
+			setNaiaVrms(vrms);
 		});
-		if (selected) {
-			const normalized = normalizeLocalPath(selected as string);
-			setCustomVrms((prev) => {
-				if (prev.includes(normalized)) return prev;
-				return [...prev, normalized];
-			});
-			handleVrmSelect(normalized);
-		}
-	}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
-	async function handlePickBgFile() {
-		const selected = await open({
-			title: t("settings.bgPickerTitle"),
-			filters: [
-				{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp"] },
-			],
-			multiple: false,
+	// Load background list from naia-settings
+	useEffect(() => {
+		const savedFilename = existing?.backgroundVideo as string | undefined;
+		listNaiaAssets("background").then((paths) => {
+			setNaiaBgs(paths);
+			if (savedFilename) {
+				const match = paths.find((p) => p.endsWith(savedFilename));
+				if (match) setActiveBgPath(match);
+			}
 		});
-		if (selected) {
-			const normalized = normalizeLocalPath(selected as string);
-			setCustomBgs((prev) => {
-				if (prev.includes(normalized)) return prev;
-				return [...prev, normalized];
-			});
-			handleBgSelect(normalized);
-		}
-	}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	function debouncedLabSync() {
 		if (labSyncTimerRef.current) clearTimeout(labSyncTimerRef.current);
@@ -2002,7 +1851,8 @@ export function SettingsTab() {
 
 	async function executeReset() {
 		localStorage.removeItem("naia-config");
-		localStorage.removeItem("naia-camera");
+		clearSavedCamera();
+		clearAdkPath(); // re-triggers ADK setup screen on next launch
 		invoke("reset_window_state").catch(() => {});
 		if (resetClearHistory) {
 			useChatStore.getState().newConversation();
@@ -2010,7 +1860,7 @@ export function SettingsTab() {
 			invoke("reset_gateway_data").catch(() => {});
 		}
 		setLocale("ko");
-		document.documentElement.setAttribute("data-theme", "espresso");
+		document.documentElement.setAttribute("data-theme", "midnight");
 		window.location.reload();
 	}
 
@@ -2066,6 +1916,25 @@ export function SettingsTab() {
 		setSyncDialogOnlineConfig(null);
 	}
 
+	function savePersonaFields(overrides?: {
+		agentName?: string;
+		userName?: string;
+		honorific?: string;
+		speechStyle?: string;
+		persona?: string;
+	}) {
+		const cfg = loadConfig();
+		if (!cfg) return;
+		saveConfig({
+			...cfg,
+			agentName: (overrides?.agentName ?? agentName).trim() || undefined,
+			userName: (overrides?.userName ?? userName).trim() || undefined,
+			honorific: (overrides?.honorific ?? honorific).trim() || undefined,
+			speechStyle: overrides?.speechStyle ?? speechStyle,
+			persona: (overrides?.persona ?? persona).trim() || undefined,
+		});
+	}
+
 	function handleSave() {
 		// Keep previous key when input is empty (password field UX).
 		const resolvedApiKey = apiKey.trim() || existing?.apiKey || "";
@@ -2101,6 +1970,7 @@ export function SettingsTab() {
 			customVrms: customVrms.length > 0 ? customVrms : undefined,
 			customBgs: customBgs.length > 0 ? customBgs : undefined,
 			backgroundImage: backgroundImage || undefined,
+			backgroundVideo: backgroundVideoFilename || undefined,
 			sttProvider: sttProvider || undefined,
 			sttModel: sttModel || undefined,
 			ttsEnabled,
@@ -2149,22 +2019,26 @@ export function SettingsTab() {
 			memoryOfflineModel:
 				memoryEmbeddingProvider === "offline" ? memoryOfflineModel : undefined,
 			memoryEmbeddingBaseUrl:
-				memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama"
+				memoryEmbeddingProvider === "vllm" ||
+				memoryEmbeddingProvider === "ollama"
 					? memoryEmbeddingBaseUrl || undefined
 					: undefined,
 			memoryEmbeddingApiKey:
-				memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama"
+				memoryEmbeddingProvider === "vllm" ||
+				memoryEmbeddingProvider === "ollama"
 					? memoryEmbeddingApiKey || undefined
 					: undefined,
 			memoryEmbeddingModel:
-				memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama"
+				memoryEmbeddingProvider === "vllm" ||
+				memoryEmbeddingProvider === "ollama"
 					? memoryEmbeddingModel || undefined
 					: undefined,
 			qdrantUrl:
 				memoryAdapter === "qdrant" ? qdrantUrl || undefined : undefined,
 			qdrantApiKey:
 				memoryAdapter === "qdrant" ? qdrantApiKey || undefined : undefined,
-			memoryLlmProvider: memoryLlmProvider !== "none" ? memoryLlmProvider : undefined,
+			memoryLlmProvider:
+				memoryLlmProvider !== "none" ? memoryLlmProvider : undefined,
 			memoryLlmBaseUrl:
 				memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama"
 					? memoryLlmBaseUrl || undefined
@@ -2315,22 +2189,18 @@ export function SettingsTab() {
 			</div>
 
 			<div className="settings-field">
-				<label>워크스페이스 (naia-adk)</label>
+				<label>워크스페이스</label>
 				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-					<input
-						type="text"
-						className="settings-input"
-						value={workspaceRoot}
-						onChange={(e) => setWorkspaceRoot(e.target.value)}
-						placeholder="naia-adk 폴더 경로"
-						style={{ flex: 1 }}
-					/>
 					<button
 						type="button"
 						className="voice-preview-btn"
 						onClick={async () => {
-							const selected = await open({ directory: true, title: "naia-adk 폴더 선택" });
-							if (selected && typeof selected === "string") setWorkspaceRoot(selected);
+							const selected = await open({
+								directory: true,
+								title: "워크스페이스 폴더 선택",
+							});
+							if (selected && typeof selected === "string")
+								setWorkspaceRoot(selected);
 						}}
 					>
 						찾아보기
@@ -2339,19 +2209,76 @@ export function SettingsTab() {
 						type="button"
 						className="voice-preview-btn"
 						onClick={() => {
+							const trimmed = workspaceRoot.trim();
 							const cfg = loadConfig();
 							if (!cfg) return;
-							saveConfig({ ...cfg, workspaceRoot: workspaceRoot.trim() || undefined });
-							if (workspaceRoot.trim()) {
-								invoke("workspace_set_root", { root: workspaceRoot.trim() }).catch(() => {});
+							saveConfig({
+								...cfg,
+								workspaceRoot: trimmed || undefined,
+							});
+							if (trimmed) {
+								setAdkPath(trimmed);
+								invoke("workspace_set_root", {
+									root: trimmed,
+								}).catch(() => {});
+							} else {
+								clearAdkPath();
 							}
+							window.location.reload();
 						}}
 					>
 						적용
 					</button>
+					<input
+						type="text"
+						className="settings-input"
+						value={workspaceRoot}
+						onChange={(e) => setWorkspaceRoot(e.target.value)}
+						placeholder="작업할 코드 워크스페이스 경로"
+						style={{ flex: 1 }}
+					/>
 				</div>
 				<div className="settings-hint">
-					스킬 및 세션이 표시되는 기본 디렉토리
+					Git 레포와 skills/ 디렉토리를 탐색할 코드 워크스페이스 경로입니다.
+					VRM·배경·BGM은 아래 naia-settings 경로를 사용합니다.
+				</div>
+			</div>
+
+			<div className="settings-field">
+				<label>naia-adk 경로 재설정</label>
+				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={() => {
+							clearAdkPath();
+							window.location.reload();
+						}}
+					>
+						재설정 (앱 재시작)
+					</button>
+				</div>
+				<div className="settings-hint">
+					naia-adk 폴더를 변경하거나 초기 설정을 다시 진행할 때 사용하세요
+				</div>
+			</div>
+
+			<div className="settings-field">
+				<label>카메라 위치 초기화</label>
+				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={() => {
+							clearSavedCamera();
+							window.location.reload();
+						}}
+					>
+						기본값으로 (앱 재시작)
+					</button>
+				</div>
+				<div className="settings-hint">
+					저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
 				</div>
 			</div>
 
@@ -2361,113 +2288,85 @@ export function SettingsTab() {
 
 			<div className="settings-field">
 				<label>{t("settings.vrmModel")}</label>
-				<div className="vrm-picker">
-					{AVATAR_PRESETS.map((v) => (
-						<button
-							key={v.path}
-							type="button"
-							className={`vrm-card ${vrmModel === v.path ? "active" : ""}`}
-							onClick={() => handleVrmSelect(v.path)}
-							title={v.label}
-							style={v.previewImage ? { padding: 0, overflow: "hidden" } : {}}
-						>
-							{v.previewImage ? (
+				<div className="vrm-list">
+					{naiaVrms.length === 0 && (
+						<span className="vrm-list-empty">
+							naia-settings/vrm-files/ 에 VRM 파일을 추가하세요
+						</span>
+					)}
+					{naiaVrms.map((path) => {
+						const filename = path.split(/[/\\]/).pop() ?? path;
+						const label = filename.replace(/\.vrm$/i, "");
+						const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
+						return (
+							<button
+								key={path}
+								type="button"
+								className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+								onClick={() => handleVrmSelect(path)}
+							>
 								<img
-									src={v.previewImage}
-									alt={v.label}
-									style={{ width: "100%", height: "100%", objectFit: "cover" }}
+									src={thumb}
+									className="vrm-list-item__thumb"
+									alt={label}
+									onError={(e) => {
+										(e.currentTarget as HTMLImageElement).style.display = "none";
+									}}
 								/>
-							) : (
-								<>
-									<span className="vrm-card-icon">&#x1F464;</span>
-									<span className="vrm-card-label">{v.label}</span>
-								</>
-							)}
-						</button>
-					))}
-					{customVrms.map((path) => (
-						<CustomAssetCard
-							key={path}
-							type="vrm"
-							path={path}
-							isSelected={vrmModel === path}
-							onSelect={() => handleVrmSelect(path)}
-							onDelete={() => {
-								setCustomVrms((prev) => prev.filter((p) => p !== path));
-								if (vrmModel === path) {
-									handleVrmSelect(AVATAR_PRESETS[0].path);
-								}
-							}}
-						/>
-					))}
-					<button
-						type="button"
-						className="vrm-card vrm-card-add"
-						onClick={handlePickVrmFile}
-						title={t("settings.vrmCustom")}
-					>
-						<span className="vrm-card-icon">+</span>
-						<span className="vrm-card-label">{t("settings.vrmCustom")}</span>
-					</button>
+								{label}
+							</button>
+						);
+					})}
+					{customVrms.map((path) => {
+						const label = (path.split(/[/\\]/).pop() ?? path).replace(
+							/\.vrm$/i,
+							"",
+						);
+						return (
+							<button
+								key={path}
+								type="button"
+								className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+								onClick={() => handleVrmSelect(path)}
+							>
+								{label}
+							</button>
+						);
+					})}
 				</div>
 			</div>
 
 			<div className="settings-field">
 				<label>{t("settings.background")}</label>
-				<div className="bg-picker">
+				<div className="vrm-list">
 					<button
 						type="button"
-						className={`bg-card ${!backgroundImage ? "active" : ""}`}
-						onClick={() => handleBgSelect("")}
-						title={t("settings.bgNone")}
+						className={`vrm-list-item${!activeBgPath ? " vrm-list-item--active" : ""}`}
+						onClick={handleClearNaiaBg}
 					>
-						<span
-							className="bg-card-preview"
-							style={{
-								background: "linear-gradient(180deg, #1a1412 0%, #0F172A 100%)",
-							}}
-						/>
-						<span className="bg-card-label">{t("settings.bgNone")}</span>
+						없음 (기본)
 					</button>
-					{BG_SAMPLES.map((bg) => (
-						<button
-							key={bg.path}
-							type="button"
-							className={`bg-card ${backgroundImage === bg.path ? "active" : ""}`}
-							onClick={() => handleBgSelect(bg.path)}
-							title={bg.label}
-						>
-							<span
-								className="bg-card-preview"
-								style={{ backgroundImage: `url(${bg.path})` }}
-							/>
-							<span className="bg-card-label">{bg.label}</span>
-						</button>
-					))}
-					{customBgs.map((path) => (
-						<CustomAssetCard
-							key={path}
-							type="bg"
-							path={path}
-							isSelected={backgroundImage === path}
-							onSelect={() => handleBgSelect(path)}
-							onDelete={() => {
-								setCustomBgs((prev) => prev.filter((p) => p !== path));
-								if (backgroundImage === path) {
-									handleBgSelect("");
-								}
-							}}
-						/>
-					))}
-					<button
-						type="button"
-						className="bg-card bg-card-add"
-						onClick={handlePickBgFile}
-						title={t("settings.bgCustom")}
-					>
-						<span className="bg-card-preview bg-card-add-icon">+</span>
-						<span className="bg-card-label">{t("settings.bgCustom")}</span>
-					</button>
+					{naiaBgs.length === 0 && (
+						<span className="vrm-list-empty">
+							naia-settings/background/ 에 파일을 추가하세요
+						</span>
+					)}
+					{naiaBgs.map((path) => {
+						const label = (path.split(/[/\\]/).pop() ?? path).replace(
+							/\.[^.]+$/,
+							"",
+						);
+						return (
+							<button
+								key={path}
+								type="button"
+								className={`vrm-list-item${activeBgPath === path ? " vrm-list-item--active" : ""}`}
+								onClick={() => handleNaiaBgSelect(path)}
+							>
+								{label}
+							</button>
+						);
+					})}
 				</div>
 			</div>
 
@@ -2482,6 +2381,7 @@ export function SettingsTab() {
 					className="settings-input"
 					value={agentName}
 					onChange={(e) => setAgentName(e.target.value)}
+					onBlur={(e) => savePersonaFields({ agentName: e.target.value })}
 					placeholder="Naia"
 				/>
 			</div>
@@ -2492,6 +2392,7 @@ export function SettingsTab() {
 					className="settings-input"
 					value={userName}
 					onChange={(e) => setUserName(e.target.value)}
+					onBlur={(e) => savePersonaFields({ userName: e.target.value })}
 				/>
 			</div>
 			{FORMALITY_LOCALES.has(locale) && (
@@ -2503,6 +2404,7 @@ export function SettingsTab() {
 							className="settings-input"
 							value={honorific}
 							onChange={(e) => setHonorific(e.target.value)}
+							onBlur={(e) => savePersonaFields({ honorific: e.target.value })}
 							placeholder={t("onboard.speechStyle.honorificPlaceholder")}
 						/>
 					</div>
@@ -2512,7 +2414,10 @@ export function SettingsTab() {
 							className="settings-select"
 							data-testid="settings-speech-style"
 							value={speechStyle}
-							onChange={(e) => setSpeechStyle(e.target.value)}
+							onChange={(e) => {
+								setSpeechStyle(e.target.value);
+								savePersonaFields({ speechStyle: e.target.value });
+							}}
 						>
 							<option value="casual">
 								{t("onboard.speechStyle.casual")} (Casual)
@@ -2532,6 +2437,7 @@ export function SettingsTab() {
 					className="settings-persona-textarea"
 					value={persona}
 					onChange={(e) => setPersona(e.target.value)}
+					onBlur={(e) => savePersonaFields({ persona: e.target.value })}
 					rows={6}
 				/>
 				<div className="settings-hint">{t("settings.personaHint")}</div>
@@ -2743,7 +2649,8 @@ export function SettingsTab() {
 						/>
 						{provider === "zai" && (
 							<div className="settings-hint">
-								Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를 입력하세요.
+								Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를
+								입력하세요.
 							</div>
 						)}
 						{error && <div className="settings-error">{error}</div>}
@@ -2819,7 +2726,16 @@ export function SettingsTab() {
 							</option>
 						))}
 				</select>
-				<div className="settings-hint">{selectedModelMeta?.label ?? model}</div>
+				<div className="settings-hint">
+					{provider === "nextain" && selectedModelMeta?.pricing ? (
+						<span style={{ color: "var(--accent-color, #64a0ff)" }}>
+							Naia 365 {t("settings.pricing")}: ${selectedModelMeta.pricing[0].toFixed(3)} / $
+							{selectedModelMeta.pricing[1].toFixed(3)}
+						</span>
+					) : (
+						selectedModelMeta?.label ?? model
+					)}
+				</div>
 			</div>
 
 			{/* Omni model voice selection */}
@@ -3173,7 +3089,7 @@ export function SettingsTab() {
 											disabled={p.requiresNaiaKey && !naiaKey}
 										>
 											{p.name}
-											{p.pricing ? ` — ${p.pricing}` : ""}
+											{p.pricing ? ` - ${p.pricing}` : ""}
 											{p.requiresNaiaKey && !naiaKey
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
@@ -3394,7 +3310,7 @@ export function SettingsTab() {
 									disabled={p.requiresNaiaKey && !naiaKey}
 								>
 									{p.name}
-									{p.pricing ? ` — ${p.pricing}` : ""}
+									{p.pricing ? ` - ${p.pricing}` : ""}
 									{p.requiresNaiaKey && !naiaKey
 										? ` (${t("settings.ttsNaiaRequired")})`
 										: ""}
@@ -3961,7 +3877,8 @@ export function SettingsTab() {
 			)}
 
 			{/* vLLM/Ollama embedding fields */}
-			{(memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama") && (
+			{(memoryEmbeddingProvider === "vllm" ||
+				memoryEmbeddingProvider === "ollama") && (
 				<>
 					<div className="settings-field">
 						<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
@@ -4096,7 +4013,9 @@ export function SettingsTab() {
 							try {
 								const blob = await exportMemoryBackup(backupPassword);
 								const url = URL.createObjectURL(
-									new Blob([blob as BlobPart], { type: "application/octet-stream" }),
+									new Blob([blob as BlobPart], {
+										type: "application/octet-stream",
+									}),
 								);
 								const a = document.createElement("a");
 								a.href = url;
@@ -4130,10 +4049,7 @@ export function SettingsTab() {
 								setBackupError("");
 								try {
 									const arrayBuffer = await file.arrayBuffer();
-									await importMemoryBackup(
-										new Uint8Array(arrayBuffer),
-										pw,
-									);
+									await importMemoryBackup(new Uint8Array(arrayBuffer), pw);
 									setBackupStatus("done");
 									setTimeout(() => setBackupStatus("idle"), 2000);
 								} catch (err) {
@@ -4150,12 +4066,18 @@ export function SettingsTab() {
 					</button>
 				</div>
 				{backupStatus === "done" && (
-					<span className="settings-hint" style={{ color: "var(--success-color, #4caf50)" }}>
+					<span
+						className="settings-hint"
+						style={{ color: "var(--success-color, #4caf50)" }}
+					>
 						✓
 					</span>
 				)}
 				{backupStatus === "error" && (
-					<span className="settings-hint" style={{ color: "var(--error-color, #f44336)" }}>
+					<span
+						className="settings-hint"
+						style={{ color: "var(--error-color, #f44336)" }}
+					>
 						{backupError}
 					</span>
 				)}

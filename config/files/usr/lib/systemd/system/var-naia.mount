@@ -1,0 +1,13 @@
+[Unit]
+Description=Naia persistent data partition
+Documentation=https://github.com/nextain/naia-os/issues/262
+ConditionPathExists=/dev/disk/by-label/naia-data
+
+[Mount]
+What=/dev/disk/by-label/naia-data
+Where=/var/naia
+Type=btrfs
+Options=defaults,nofail,x-systemd.device-timeout=5,compress=zstd:1
+
+[Install]
+WantedBy=local-fs.target

@@ -4,19 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import {
 	AmbientLight,
 	AnimationMixer,
-	CanvasTexture,
 	Clock,
 	DirectionalLight,
 	LoopRepeat,
 	Object3D,
 	PerspectiveCamera,
 	Scene,
-	TextureLoader,
 	Vector3,
 	WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { randFloat } from "three/src/math/MathUtils.js";
+import { getAdkPath } from "../lib/adk-store";
 import { Logger } from "../lib/logger";
 import {
 	clipFromVRMAnimation,
@@ -34,7 +33,11 @@ import { useAvatarStore } from "../stores/avatar";
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera";
+const CAMERA_STORAGE_KEY = "naia-camera-v19";
+const DEFAULT_CAMERA = {
+	position: { x: -0.12, y: 1.21, z: -2.09 },
+	target: { x: -1.45, y: 1.0, z: 0.12 },
+};
 
 interface SavedCamera {
 	px: number;
@@ -53,6 +56,10 @@ function loadCameraState(): SavedCamera | null {
 	} catch {
 		return null;
 	}
+}
+
+export function clearSavedCamera(): void {
+	localStorage.removeItem(CAMERA_STORAGE_KEY);
 }
 
 function saveCameraState(camera: PerspectiveCamera, target: Vector3): void {
@@ -87,31 +94,11 @@ function normalizeLocalPath(path: string): string {
 	}
 }
 
-function guessMimeType(path: string): string {
-	const ext = path.toLowerCase().split(".").pop() ?? "";
-	switch (ext) {
-		case "png":
-			return "image/png";
-		case "jpg":
-		case "jpeg":
-			return "image/jpeg";
-		case "webp":
-			return "image/webp";
-		case "gif":
-			return "image/gif";
-		case "bmp":
-			return "image/bmp";
-		case "svg":
-			return "image/svg+xml";
-		case "vrm":
-			return "model/gltf-binary";
-		default:
-			return "application/octet-stream";
-	}
-}
-
 function isAbsoluteLocalFilePath(path: string): boolean {
-	return path.startsWith("/");
+	// Unix absolute path
+	if (path.startsWith("/")) return true;
+	// Windows absolute path: C:\ or D:/ etc.
+	return /^[A-Za-z]:[/\\]/.test(path);
 }
 
 function resolveAssetUrl(path: string): string {
@@ -121,6 +108,10 @@ function resolveAssetUrl(path: string): string {
 			/^http:\/\/localhost\/?/,
 			"http://asset.localhost/",
 		);
+	}
+	// Relative web-asset paths — normalize to absolute web path
+	if (normalized.startsWith("avatars/") || normalized.startsWith("assets/")) {
+		return `/${normalized}`;
 	}
 	if (
 		normalized.startsWith("/assets/") ||
@@ -213,21 +204,7 @@ function updateSaccade(vrm: VRM, delta: number, state: AnimationState) {
 	state.timeSinceLastSaccade += delta;
 }
 
-function setDefaultBackground(scene: Scene) {
-	const bgCanvas = document.createElement("canvas");
-	bgCanvas.width = 2;
-	bgCanvas.height = 512;
-	const ctx = bgCanvas.getContext("2d");
-	if (ctx) {
-		const grad = ctx.createLinearGradient(0, 0, 0, 512);
-		grad.addColorStop(0, "#1a1412");
-		grad.addColorStop(0.5, "#2b2220");
-		grad.addColorStop(1, "#0F172A");
-		ctx.fillStyle = grad;
-		ctx.fillRect(0, 0, 2, 512);
-	}
-	scene.background = new CanvasTexture(bgCanvas);
-}
+// Background is now handled by the app-level video/image layer — canvas is transparent.
 
 export function AvatarCanvas() {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -261,71 +238,8 @@ export function AvatarCanvas() {
 		renderer.setSize(container.clientWidth, container.clientHeight);
 		container.appendChild(renderer.domElement);
 
-		// Scene with gradient background
+		// Scene — transparent background (background video/image is handled by the app layer)
 		const scene = new Scene();
-
-		// Helper to load and apply background image
-		const applyBackground = (bgPath: string | undefined | null) => {
-			let bgSrc = "/assets/background-space.webp";
-			const loadBackground = async () => {
-				if (bgPath) {
-					const normalized = normalizeLocalPath(bgPath);
-					if (
-						isAbsoluteLocalFilePath(normalized) &&
-						!normalized.startsWith("/assets/") &&
-						!normalized.startsWith("/avatars/")
-					) {
-						try {
-							const bytes = await invoke<number[]>("read_local_binary", {
-								path: normalized,
-							});
-							const blob = new Blob([new Uint8Array(bytes)], {
-								type: guessMimeType(normalized),
-							});
-							const objectUrl = URL.createObjectURL(blob);
-							createdObjectUrls.push(objectUrl);
-							bgSrc = objectUrl;
-						} catch (err) {
-							Logger.warn("AvatarCanvas", "Failed to read local background", {
-								error: String(err),
-								path: normalized,
-							});
-							bgSrc = resolveAssetUrl(normalized);
-						}
-					} else {
-						bgSrc = resolveAssetUrl(normalized);
-					}
-				}
-				const loader = new TextureLoader();
-				loader.setCrossOrigin("anonymous");
-				loader.load(
-					bgSrc,
-					(texture) => {
-						if (!disposed) scene.background = texture;
-					},
-					undefined,
-					(err) => {
-						Logger.warn("AvatarCanvas", "Failed to load background image", {
-							err,
-						});
-						setDefaultBackground(scene);
-					},
-				);
-			};
-			void loadBackground();
-		};
-
-		// Initial background load
-		applyBackground(useAvatarStore.getState().backgroundImage);
-
-		// Subscribe to background changes for live preview
-		let prevBg = useAvatarStore.getState().backgroundImage;
-		const unsubBg = useAvatarStore.subscribe((state) => {
-			if (state.backgroundImage !== prevBg) {
-				prevBg = state.backgroundImage;
-				applyBackground(state.backgroundImage);
-			}
-		});
 
 		// Lighting — required for VRM MToon/PBR materials
 		const ambientLight = new AmbientLight(0xffffff, 0.7);
@@ -335,9 +249,9 @@ export function AvatarCanvas() {
 		directionalLight.position.set(0.5, 1.0, 0.5).normalize();
 		scene.add(directionalLight);
 
-		// Camera
+		// Camera — FOV 50 gives enough horizontal room to prevent edge-clipping during orbit.
 		const camera = new PerspectiveCamera(
-			40,
+			50,
 			container.clientWidth / container.clientHeight,
 			0.1,
 			100,
@@ -351,8 +265,8 @@ export function AvatarCanvas() {
 		controls.enableZoom = true;
 		controls.minDistance = 0.1;
 		controls.maxDistance = 10;
-		controls.maxPolarAngle = Math.PI; // no vertical limit
-		controls.minPolarAngle = 0;
+		controls.maxPolarAngle = Math.PI * 0.85; // prevent upside-down flip
+		controls.minPolarAngle = 0.1;
 
 		// Set initial camera position immediately
 		const savedCam = loadCameraState();
@@ -361,8 +275,16 @@ export function AvatarCanvas() {
 			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
-			camera.position.set(0.0, 1.52, -0.71);
-			controls.target.set(-0.02, 1.42, -0.19);
+			camera.position.set(
+				DEFAULT_CAMERA.position.x,
+				DEFAULT_CAMERA.position.y,
+				DEFAULT_CAMERA.position.z,
+			);
+			controls.target.set(
+				DEFAULT_CAMERA.target.x,
+				DEFAULT_CAMERA.target.y,
+				DEFAULT_CAMERA.target.z,
+			);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
 		controls.update();
@@ -437,9 +359,13 @@ export function AvatarCanvas() {
 						setLoadStage(stage);
 						const bytes = await invoke<number[]>("read_local_binary", {
 							path: normalizedModelPath,
+							allowedBase: getAdkPath() ?? "",
 						});
 						localVrmBytes = new Uint8Array(bytes);
-						const slash = normalizedModelPath.lastIndexOf("/");
+						const slash = Math.max(
+							normalizedModelPath.lastIndexOf("/"),
+							normalizedModelPath.lastIndexOf("\\"),
+						);
 						if (slash > 0) {
 							resourcePath = resolveAssetUrl(
 								normalizedModelPath.slice(0, slash + 1),
@@ -491,12 +417,15 @@ export function AvatarCanvas() {
 
 				vrm = result._vrm;
 
-				if (vrm.humanoid) {
+				// Only auto-adjust camera to character on first load (no saved state).
+				// When the user has a saved camera position, keep it as-is.
+				if (!savedCam && vrm.humanoid) {
 					const head = vrm.humanoid.getNormalizedBoneNode("head");
 					if (head) {
 						const headPos = new Vector3();
 						head.getWorldPosition(headPos);
-						const targetY = headPos.y - 0.05;
+						// Aim at chest level so the full body (not just head) is visible.
+						const targetY = headPos.y - 0.5;
 						const diffY = targetY - controls.target.y;
 						camera.position.y += diffY;
 						controls.target.y = targetY;
@@ -602,7 +531,6 @@ export function AvatarCanvas() {
 			disposed = true;
 			ro.disconnect();
 			cancelAnimationFrame(frameId);
-			unsubBg();
 			unsubSpeaking();
 			unsubEmotion();
 			mouthCtrl?.stop();

@@ -352,12 +352,20 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 		setHwpLoading(true);
 		invoke<string>("workspace_read_file", { path: sidecarPath })
 			.then((text) => {
-				if (!cancelled) { setHwpSidecar(text); setHwpLoading(false); }
+				if (!cancelled) {
+					setHwpSidecar(text);
+					setHwpLoading(false);
+				}
 			})
 			.catch(() => {
-				if (!cancelled) { setHwpSidecar(null); setHwpLoading(false); }
+				if (!cancelled) {
+					setHwpSidecar(null);
+					setHwpLoading(false);
+				}
 			});
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, [filePath]);
 
 	// ── Load file ─────────────────────────────────────────────────────────
@@ -663,7 +671,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 	}
 
 	return (
-		<div ref={wrapperRef} className="workspace-editor" style={{ fontSize: `${zoom}%` }}>
+		<div
+			ref={wrapperRef}
+			className="workspace-editor"
+			style={{ fontSize: `${zoom}%` }}
+		>
 			{/* Header bar */}
 			<div className="workspace-editor__header">
 				<span className="workspace-editor__filename">{shortName}</span>
@@ -893,7 +905,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 				<div className="workspace-editor__hwp-viewer">
 					{hwpLoading ? (
 						<div className="workspace-editor__hwp-placeholder">
-							<div className="workspace-editor__hwp-placeholder-text">텍스트 추출 중…</div>
+							<div className="workspace-editor__hwp-placeholder-text">
+								텍스트 추출 중…
+							</div>
 						</div>
 					) : hwpSidecar !== null ? (
 						<pre className="workspace-editor__hwp-content">{hwpSidecar}</pre>

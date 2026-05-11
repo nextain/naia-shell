@@ -5,6 +5,12 @@
 	"bundle": {
 		"targets": ["nsis", "msi"],
 		"resources": {
+			"../../agent/dist": "agent/dist",
+			"../../agent/package.json": "agent/package.json",
+			"../../agent/node_modules": "agent/node_modules",
+			"../public/assets/vrm-files": "assets/vrm-files",
+			"../public/assets/background": "assets/background",
+			"../public/assets/bgm-musics": "assets/bgm-musics",
 			"resources/node.exe": "node.exe",
 			"resources/libvosk.dll": "libvosk.dll"
 		},

@@ -11,9 +11,42 @@
 # Scope: Default for all feature-level work (new features, broad bug fixes).
 # For non-feature changes (typos, config values, simple directives), use development-cycle.yaml.
 
-version: 1
+version: 2
 name: issue-driven-development
 mirror: ".users/workflows/issue-driven-development.md"
+
+# ─── Session Resume Protocol (MANDATORY) ─────────────────────
+#
+# Context compaction and session restarts destroy all in-memory context.
+# GitHub Issues are the ONLY persistent source of truth for ongoing work.
+#
+# Rule: On EVERY new session or context compaction, before ANY work:
+#   1. Run: gh issue list --assignee @me --state open
+#      OR: identify the issue number from the user's request
+#   2. Run: gh issue view <N> (read the FULL issue body + ALL comments)
+#   3. Read the progress file: .agents/progress/<N>-*.json (if exists)
+#   4. ONLY THEN begin or resume work
+#
+# Never rely on AI memory alone. If it's not in the Issue, it doesn't exist.
+#
+# Issue content requirements (enforced at plan phase):
+#   - Design references: file paths or image uploads for ALL UI changes
+#   - Decisions: why this approach was chosen
+#   - Rejected alternatives: what was tried and discarded
+#   - Current phase: where we are in the 14-phase cycle
+#   - Blockers: what is blocking progress
+#
+# Anti-pattern: "I remember the design from the previous session" → WRONG
+# Correct: "Let me read gh issue view <N> to see the design reference" → RIGHT
+
+session_resume_protocol:
+  mandatory: true
+  step_1: "gh issue list --state open (identify active issues)"
+  step_2: "gh issue view <N> (read full body + ALL comments — not just the latest)"
+  step_3: "cat .agents/progress/<N>-*.json (read progress file if exists)"
+  step_4: "Only after reading issue AND progress file: resume work"
+  never: "Start or resume work based on AI memory alone"
+  why: "Context compaction deletes all in-memory state. Issues + progress files are the only persistent truth."
 
 scope:
   applies_to: "Default for all feature-level work"

@@ -39,10 +39,16 @@ const MOCK = `
 test("debug: settings lab login IPC trace", async ({ page }) => {
 	await page.addInitScript(MOCK);
 	await page.addInitScript(() => {
-		localStorage.setItem("naia-config", JSON.stringify({
-			provider: "gemini", model: "gemini-2.5-flash",
-			apiKey: "e2e-mock", locale: "ko", onboardingComplete: true,
-		}));
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "e2e-mock",
+				locale: "ko",
+				onboardingComplete: true,
+			}),
+		);
 	});
 
 	await page.goto("/");
@@ -55,20 +61,28 @@ test("debug: settings lab login IPC trace", async ({ page }) => {
 	await page.screenshot({ path: "_results_/s1-settings-open.png" });
 
 	// Scroll down to find Naia Lab section
-	const settingsPanel = page.locator(".settings-panel, [class*='settings'], [class*='Settings']").first();
-	if (await settingsPanel.count() > 0) {
-		await settingsPanel.evaluate(el => el.scrollTop = 0);
+	const settingsPanel = page
+		.locator(".settings-panel, [class*='settings'], [class*='Settings']")
+		.first();
+	if ((await settingsPanel.count()) > 0) {
+		await settingsPanel.evaluate((el) => (el.scrollTop = 0));
 	}
 
 	// Find all buttons visible now
 	const allBtns = await page.locator("button:visible").all();
-	const btnTexts = await Promise.all(allBtns.map(b => b.textContent()));
-	console.log("Visible buttons:", btnTexts.filter(t => t?.trim()).join(" | "));
+	const btnTexts = await Promise.all(allBtns.map((b) => b.textContent()));
+	console.log(
+		"Visible buttons:",
+		btnTexts.filter((t) => t?.trim()).join(" | "),
+	);
 
 	// Clear log and click the Naia/Lab login button
-	await page.evaluate(() => { (window as any).__ipcLog = []; });
+	await page.evaluate(() => {
+		(window as any).__ipcLog = [];
+	});
 
-	const loginBtn = page.locator("button:visible")
+	const loginBtn = page
+		.locator("button:visible")
 		.filter({ hasText: /Naia|Lab|로그인|Login|연결|Connect/i })
 		.first();
 	const cnt = await loginBtn.count();
@@ -82,8 +96,9 @@ test("debug: settings lab login IPC trace", async ({ page }) => {
 		await page.waitForTimeout(1500);
 
 		const ipcLog = await page.evaluate(() =>
-			((window as any).__ipcLog as {cmd:string,args:any}[])
-				.map(e => `${e.cmd}${e.args?.url ? '('+e.args.url+')' : ''}`)
+			((window as any).__ipcLog as { cmd: string; args: any }[]).map(
+				(e) => `${e.cmd}${e.args?.url ? "(" + e.args.url + ")" : ""}`,
+			),
 		);
 		console.log("IPC after click:", ipcLog.join(" -> "));
 		await page.screenshot({ path: "_results_/s2-after-login-click.png" });

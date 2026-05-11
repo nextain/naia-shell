@@ -161,10 +161,7 @@ pub(crate) fn try_platform_gateway_spawn() -> super::GatewaySpawnResult {
                 for i in 0..60 {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     if crate::check_gateway_health_sync() {
-                        crate::log_both(&format!(
-                            "[Naia] WSL Gateway healthy after {}s",
-                            i + 1
-                        ));
+                        crate::log_both(&format!("[Naia] WSL Gateway healthy after {}s", i + 1));
                         gateway_healthy = true;
                         break;
                     }
@@ -196,7 +193,9 @@ pub(crate) fn try_platform_gateway_spawn() -> super::GatewaySpawnResult {
                         }
                     }
                 } else {
-                    crate::log_both("[Naia] WSL Gateway not healthy after 60s — skipping Node Host");
+                    crate::log_both(
+                        "[Naia] WSL Gateway not healthy after 60s — skipping Node Host",
+                    );
                     None
                 };
                 super::GatewaySpawnResult::Spawned { child, node_host }
@@ -220,7 +219,10 @@ pub(crate) fn try_platform_gateway_spawn() -> super::GatewaySpawnResult {
                 Some(nh)
             }
             Err(e) => {
-                crate::log_both(&format!("[Naia] Node Host spawn failed (reuse path): {}", e));
+                crate::log_both(&format!(
+                    "[Naia] Node Host spawn failed (reuse path): {}",
+                    e
+                ));
                 None
             }
         };
@@ -263,7 +265,8 @@ fn emit_setup_progress(app: &tauri::AppHandle, step: &str, detail: &str) {
 fn update_wsl_kernel_elevated() -> Result<(), String> {
     let mut cmd = Command::new("powershell");
     cmd.args([
-        "-NoProfile", "-Command",
+        "-NoProfile",
+        "-Command",
         "Start-Process wsl.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '--update'",
     ]);
     hide_console(&mut cmd);
@@ -272,7 +275,10 @@ fn update_wsl_kernel_elevated() -> Result<(), String> {
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 // UAC denied or elevation failed
-                return Err(format!("wsl --update failed (user may have denied elevation): {}", stderr.trim()));
+                return Err(format!(
+                    "wsl --update failed (user may have denied elevation): {}",
+                    stderr.trim()
+                ));
             }
             let stdout = String::from_utf8_lossy(&output.stdout);
             crate::log_both(&format!("[Naia] wsl --update completed: {}", stdout.trim()));
@@ -286,7 +292,9 @@ fn update_wsl_kernel_elevated() -> Result<(), String> {
 /// Used when WebView may be dead (e.g. after UAC elevation).
 /// OK = register auto-start + reboot. Cancel = exit app.
 fn show_native_reboot_dialog() {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OKCANCEL, IDOK};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDOK, MB_ICONINFORMATION, MB_OKCANCEL,
+    };
     let title: Vec<u16> = "Naia\0".encode_utf16().collect();
     let msg: Vec<u16> = "WSL has been installed. Click OK to restart now.\n\nWSL이 설치되었습니다. 확인을 누르면 재시작합니다.\0".encode_utf16().collect();
     let result = unsafe {
@@ -317,9 +325,12 @@ fn register_run_once() {
     cmd.args([
         "add",
         r"HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce",
-        "/v", "NaiaSetup",
-        "/t", "REG_SZ",
-        "/d", &exe_path,
+        "/v",
+        "NaiaSetup",
+        "/t",
+        "REG_SZ",
+        "/d",
+        &exe_path,
         "/f",
     ]);
     hide_console(&mut cmd);
@@ -351,7 +362,10 @@ fn enable_wsl_features_elevated() -> Result<(), String> {
     match cmd.output() {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            crate::log_both(&format!("[Naia] WSL feature enable completed: {}", stdout.trim()));
+            crate::log_both(&format!(
+                "[Naia] WSL feature enable completed: {}",
+                stdout.trim()
+            ));
             let _ = std::fs::remove_file(&script_path);
             Ok(())
         }
@@ -379,7 +393,10 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
 
         // Case 1: WSL2 kernel not installed (features enabled, vmcompute exists, but no kernel)
         // This happens on fresh Windows installs or after WSL feature enable without wsl --update.
-        if wsl_err.contains("kernel") || wsl_err.contains("커널") || wsl_err.contains("wsl --update") {
+        if wsl_err.contains("kernel")
+            || wsl_err.contains("커널")
+            || wsl_err.contains("wsl --update")
+        {
             emit_setup_progress(app_handle, "wsl_kernel", "Installing WSL2 kernel...");
             crate::log_both("[Naia] WSL2 kernel missing — running wsl --update with elevation");
             update_wsl_kernel_elevated()?;
@@ -394,7 +411,8 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
         } else {
             // Case 2: Features disabled or pending
             let vmp_state = super::wsl::get_windows_feature_state("VirtualMachinePlatform");
-            let wsl_state = super::wsl::get_windows_feature_state("Microsoft-Windows-Subsystem-Linux");
+            let wsl_state =
+                super::wsl::get_windows_feature_state("Microsoft-Windows-Subsystem-Linux");
             crate::log_both(&format!(
                 "[Naia] Feature states — VMP: {:?}, WSL: {:?}",
                 vmp_state, wsl_state
@@ -433,13 +451,13 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
                         emit_setup_progress(app_handle, "wsl", "Installing WSL...");
                         enable_wsl_features_elevated()?;
                         show_native_reboot_dialog();
-                return Err("WSL installed successfully! Please restart your computer and reopen Naia to complete setup.".to_string());
+                        return Err("WSL installed successfully! Please restart your computer and reopen Naia to complete setup.".to_string());
                     }
                 } else {
                     emit_setup_progress(app_handle, "wsl", "Installing WSL...");
                     enable_wsl_features_elevated()?;
                     show_native_reboot_dialog();
-                return Err("WSL installed successfully! Please restart your computer and reopen Naia to complete setup.".to_string());
+                    return Err("WSL installed successfully! Please restart your computer and reopen Naia to complete setup.".to_string());
                 }
             }
         }
@@ -453,7 +471,10 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
             if let Err(e) = std::fs::write(&wslconfig_dest, template_content) {
                 crate::log_both(&format!("[Naia] Failed to write .wslconfig: {}", e));
             } else {
-                crate::log_both(&format!("[Naia] .wslconfig written to {}", wslconfig_dest.display()));
+                crate::log_both(&format!(
+                    "[Naia] .wslconfig written to {}",
+                    wslconfig_dest.display()
+                ));
             }
         }
     }
@@ -474,25 +495,40 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
         let _ = std::fs::create_dir_all(&install_dir);
 
         // 3a: Download Ubuntu 24.04 rootfs if not already cached
-        if !rootfs_path.exists() || std::fs::metadata(&rootfs_path).map(|m| m.len()).unwrap_or(0) < 100_000_000 {
+        if !rootfs_path.exists()
+            || std::fs::metadata(&rootfs_path)
+                .map(|m| m.len())
+                .unwrap_or(0)
+                < 100_000_000
+        {
             emit_setup_progress(app_handle, "ubuntu", "Downloading Ubuntu 24.04...");
             crate::log_both("[Naia] Downloading Ubuntu 24.04 rootfs...");
             let rootfs_url = "https://cdimage.ubuntu.com/ubuntu-wsl/noble/daily-live/current/noble-wsl-amd64.wsl";
             let mut curl_cmd = Command::new("curl.exe");
             curl_cmd.args(["-L", "-o", &rootfs_path.to_string_lossy(), rootfs_url]);
             hide_console(&mut curl_cmd);
-            let dl_output = curl_cmd.output().map_err(|e| format!("Download failed: {}", e))?;
+            let dl_output = curl_cmd
+                .output()
+                .map_err(|e| format!("Download failed: {}", e))?;
             if !dl_output.status.success() {
                 let stderr = String::from_utf8_lossy(&dl_output.stderr);
                 return Err(format!("Ubuntu rootfs download failed: {}", stderr));
             }
             // Verify download size (should be ~370MB+)
-            let dl_size = std::fs::metadata(&rootfs_path).map(|m| m.len()).unwrap_or(0);
+            let dl_size = std::fs::metadata(&rootfs_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             if dl_size < 100_000_000 {
                 let _ = std::fs::remove_file(&rootfs_path);
-                return Err(format!("Ubuntu rootfs download too small ({}B) — likely failed", dl_size));
+                return Err(format!(
+                    "Ubuntu rootfs download too small ({}B) — likely failed",
+                    dl_size
+                ));
             }
-            crate::log_both(&format!("[Naia] Ubuntu rootfs downloaded ({}MB)", dl_size / 1_000_000));
+            crate::log_both(&format!(
+                "[Naia] Ubuntu rootfs downloaded ({}MB)",
+                dl_size / 1_000_000
+            ));
         } else {
             crate::log_both("[Naia] Ubuntu rootfs already cached, skipping download");
         }
@@ -534,7 +570,11 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
     // Step 4: Provision NaiaEnv (install Node.js + Naia Gateway if missing)
     if super::wsl::is_distro_registered("NaiaEnv") {
         if !super::wsl::is_provisioned("NaiaEnv") {
-            emit_setup_progress(app_handle, "provision", "Installing Node.js + Naia Gateway (2~5 min)...");
+            emit_setup_progress(
+                app_handle,
+                "provision",
+                "Installing Node.js + Naia Gateway (2~5 min)...",
+            );
             crate::log_both("[Naia] Provisioning NaiaEnv (Node.js + Naia Gateway)...");
             super::wsl::provision_distro("NaiaEnv", Some(app_handle))?;
             crate::log_both("[Naia] NaiaEnv provisioned successfully");
@@ -553,11 +593,14 @@ pub(crate) fn setup_wsl_environment(app_handle: &tauri::AppHandle) -> Result<Str
 /// (Gateway requires device identity even with --allow-unconfigured).
 pub(crate) fn sync_wsl_identity_to_windows(distro_name: &str) {
     let home = crate::home_dir();
-    let identity_dir = format!("{}/.openclaw/identity", home);
+    let identity_dir = format!("{}/.naia/identity", home);
     let _ = std::fs::create_dir_all(&identity_dir);
 
     // Copy device.json from WSL
-    match super::wsl::run_in_distro(distro_name, "cat /root/.openclaw/identity/device.json 2>/dev/null") {
+    match super::wsl::run_in_distro(
+        distro_name,
+        "cat /root/.naia/identity/device.json 2>/dev/null",
+    ) {
         Ok(content) if !content.trim().is_empty() => {
             let dest = format!("{}/device.json", identity_dir);
             match std::fs::write(&dest, content.trim()) {
@@ -569,14 +612,16 @@ pub(crate) fn sync_wsl_identity_to_windows(distro_name: &str) {
     }
 
     // Copy gateway config (auth token, gateway config)
-    let config_dir = format!("{}/.openclaw", home);
+    let config_dir = format!("{}/.naia", home);
     let _ = std::fs::create_dir_all(&config_dir);
-    match super::wsl::run_in_distro(distro_name, "cat /root/.openclaw/openclaw.json 2>/dev/null") {
+    match super::wsl::run_in_distro(distro_name, "cat /root/.naia/gateway.json 2>/dev/null") {
         Ok(content) if !content.trim().is_empty() => {
-            let dest = format!("{}/openclaw.json", config_dir);
+            let dest = format!("{}/gateway.json", config_dir);
             match std::fs::write(&dest, content.trim()) {
                 Ok(_) => crate::log_both("[Naia] Gateway config synced from WSL to Windows"),
-                Err(e) => crate::log_verbose(&format!("[Naia] Failed to write openclaw.json: {}", e)),
+                Err(e) => {
+                    crate::log_verbose(&format!("[Naia] Failed to write gateway.json: {}", e))
+                }
             }
         }
         _ => crate::log_verbose("[Naia] No gateway config found in WSL"),
@@ -639,7 +684,8 @@ pub(crate) fn resolve_tsx_from_agent(agent_dir: &std::path::Path) -> Option<(Str
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.starts_with("tsx@") {
-                    let cli_mjs = entry.path()
+                    let cli_mjs = entry
+                        .path()
                         .join("node_modules")
                         .join("tsx")
                         .join("dist")
@@ -693,17 +739,24 @@ pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {
 
 // ─── Browser window embedding (Win32) ────────────────────────────────────────
 
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, TRUE, FALSE};
+use windows_sys::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, POINT, RECT, TRUE};
 use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 pub struct Win32WindowManager;
 
-fn hwnd_to_isize(h: HWND) -> isize { h as isize }
-fn isize_to_hwnd(i: isize) -> HWND { i as HWND }
+fn hwnd_to_isize(h: HWND) -> isize {
+    h as isize
+}
+fn isize_to_hwnd(i: isize) -> HWND {
+    i as HWND
+}
 
-struct FindByPidCtx { target_pid: u32, found_hwnd: HWND }
+struct FindByPidCtx {
+    target_pid: u32,
+    found_hwnd: HWND,
+}
 
 unsafe extern "system" fn enum_by_pid_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let ctx = &mut *(lparam as *mut FindByPidCtx);
@@ -714,13 +767,18 @@ unsafe extern "system" fn enum_by_pid_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
         if GetWindowRect(hwnd, &mut rect) != 0 {
             let w = rect.right - rect.left;
             let h = rect.bottom - rect.top;
-            if w > 100 && h > 100 { ctx.found_hwnd = hwnd; return FALSE; }
+            if w > 100 && h > 100 {
+                ctx.found_hwnd = hwnd;
+                return FALSE;
+            }
         }
     }
     TRUE
 }
 
-struct FindChromeCtx { found_hwnd: HWND }
+struct FindChromeCtx {
+    found_hwnd: HWND,
+}
 
 unsafe extern "system" fn enum_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let ctx = &mut *(lparam as *mut FindChromeCtx);
@@ -734,7 +792,10 @@ unsafe extern "system" fn enum_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
                 if GetWindowRect(hwnd, &mut rect) != 0 {
                     let w = rect.right - rect.left;
                     let h = rect.bottom - rect.top;
-                    if w > 200 && h > 200 { ctx.found_hwnd = hwnd; return FALSE; }
+                    if w > 200 && h > 200 {
+                        ctx.found_hwnd = hwnd;
+                        return FALSE;
+                    }
                 }
             }
         }
@@ -774,8 +835,12 @@ unsafe extern "system" fn enum_children_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
 /// area while our embedded Chrome panel only covers a portion of it.
 pub(crate) fn find_webview2_child(parent_hwnd: isize) -> Option<isize> {
     let parent = isize_to_hwnd(parent_hwnd);
-    let mut ctx = EnumChildrenCtx { children: Vec::new() };
-    unsafe { EnumChildWindows(parent, Some(enum_children_cb), &mut ctx as *mut _ as LPARAM); }
+    let mut ctx = EnumChildrenCtx {
+        children: Vec::new(),
+    };
+    unsafe {
+        EnumChildWindows(parent, Some(enum_children_cb), &mut ctx as *mut _ as LPARAM);
+    }
     let mut webview2_candidates: Vec<(HWND, i32, i32)> = ctx
         .children
         .into_iter()
@@ -795,11 +860,15 @@ pub(crate) fn find_webview2_child(parent_hwnd: isize) -> Option<isize> {
     Some(hwnd_to_isize(webview2_candidates[0].0))
 }
 
-struct CollectChromeCtx { hwnds: Vec<(HWND, i32, i32)> } // (hwnd, width, height)
+struct CollectChromeCtx {
+    hwnds: Vec<(HWND, i32, i32)>,
+} // (hwnd, width, height)
 
 unsafe extern "system" fn collect_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let ctx = &mut *(lparam as *mut CollectChromeCtx);
-    if IsWindowVisible(hwnd) == 0 { return TRUE; }
+    if IsWindowVisible(hwnd) == 0 {
+        return TRUE;
+    }
     let mut class_buf = [0u16; 256];
     let len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 256);
     if len > 0 {
@@ -807,11 +876,8 @@ unsafe extern "system" fn collect_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL 
         if class_name.starts_with("Chrome_WidgetWin") {
             let mut rect = std::mem::zeroed::<RECT>();
             if GetWindowRect(hwnd, &mut rect) != 0 {
-                ctx.hwnds.push((
-                    hwnd,
-                    rect.right - rect.left,
-                    rect.bottom - rect.top,
-                ));
+                ctx.hwnds
+                    .push((hwnd, rect.right - rect.left, rect.bottom - rect.top));
             }
         }
     }
@@ -822,8 +888,13 @@ unsafe extern "system" fn collect_chrome_cb(hwnd: HWND, lparam: LPARAM) -> BOOL 
 /// Call this *before* spawning our own Chrome so we can diff the set afterwards.
 pub(crate) fn snapshot_chrome_hwnds() -> Vec<isize> {
     let mut ctx = CollectChromeCtx { hwnds: Vec::new() };
-    unsafe { EnumWindows(Some(collect_chrome_cb), &mut ctx as *mut _ as LPARAM); }
-    ctx.hwnds.into_iter().map(|(h, _, _)| hwnd_to_isize(h)).collect()
+    unsafe {
+        EnumWindows(Some(collect_chrome_cb), &mut ctx as *mut _ as LPARAM);
+    }
+    ctx.hwnds
+        .into_iter()
+        .map(|(h, _, _)| hwnd_to_isize(h))
+        .collect()
 }
 
 /// Find the newly-spawned Chrome window by diffing against a pre-spawn baseline.
@@ -847,7 +918,9 @@ pub(crate) fn find_new_chrome_window(
     let attempts = (timeout_ms / 500).max(1);
     for _ in 0..attempts {
         let mut ctx = CollectChromeCtx { hwnds: Vec::new() };
-        unsafe { EnumWindows(Some(collect_chrome_cb), &mut ctx as *mut _ as LPARAM); }
+        unsafe {
+            EnumWindows(Some(collect_chrome_cb), &mut ctx as *mut _ as LPARAM);
+        }
         // Keep only windows that did not exist before spawn and that look
         // like a real browser frame (> 200x200 — same threshold used elsewhere).
         let mut candidates: Vec<(HWND, i32, i32)> = ctx
@@ -873,15 +946,30 @@ impl PlatformWindowManager for Win32WindowManager {
     fn find_window_by_pid(&self, pid: u32, timeout_ms: u64) -> Result<PlatformHandle, String> {
         let attempts = (timeout_ms / 500).max(1);
         for _ in 0..attempts {
-            let mut ctx = FindByPidCtx { target_pid: pid, found_hwnd: std::ptr::null_mut() };
-            unsafe { EnumWindows(Some(enum_by_pid_cb), &mut ctx as *mut _ as LPARAM); }
-            if !ctx.found_hwnd.is_null() { return Ok(PlatformHandle::Win32(hwnd_to_isize(ctx.found_hwnd))); }
-            let mut chrome_ctx = FindChromeCtx { found_hwnd: std::ptr::null_mut() };
-            unsafe { EnumWindows(Some(enum_chrome_cb), &mut chrome_ctx as *mut _ as LPARAM); }
-            if !chrome_ctx.found_hwnd.is_null() { return Ok(PlatformHandle::Win32(hwnd_to_isize(chrome_ctx.found_hwnd))); }
+            let mut ctx = FindByPidCtx {
+                target_pid: pid,
+                found_hwnd: std::ptr::null_mut(),
+            };
+            unsafe {
+                EnumWindows(Some(enum_by_pid_cb), &mut ctx as *mut _ as LPARAM);
+            }
+            if !ctx.found_hwnd.is_null() {
+                return Ok(PlatformHandle::Win32(hwnd_to_isize(ctx.found_hwnd)));
+            }
+            let mut chrome_ctx = FindChromeCtx {
+                found_hwnd: std::ptr::null_mut(),
+            };
+            unsafe {
+                EnumWindows(Some(enum_chrome_cb), &mut chrome_ctx as *mut _ as LPARAM);
+            }
+            if !chrome_ctx.found_hwnd.is_null() {
+                return Ok(PlatformHandle::Win32(hwnd_to_isize(chrome_ctx.found_hwnd)));
+            }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        Err(format!("Chrome window not found for PID {pid} within {timeout_ms} ms"))
+        Err(format!(
+            "Chrome window not found for PID {pid} within {timeout_ms} ms"
+        ))
     }
 
     fn find_window_by_name(&self, name: &str, timeout_ms: u64) -> Result<PlatformHandle, String> {
@@ -889,15 +977,30 @@ impl PlatformWindowManager for Win32WindowManager {
         let attempts = (timeout_ms / 500).max(1);
         for attempt in 0..attempts {
             let hwnd = unsafe { FindWindowW(std::ptr::null(), wide.as_ptr()) };
-            if !hwnd.is_null() { return Ok(PlatformHandle::Win32(hwnd_to_isize(hwnd))); }
-            std::thread::sleep(std::time::Duration::from_millis(if attempt == 0 { 1000 } else { 500 }));
+            if !hwnd.is_null() {
+                return Ok(PlatformHandle::Win32(hwnd_to_isize(hwnd)));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(if attempt == 0 {
+                1000
+            } else {
+                500
+            }));
         }
         Err(format!("Window '{name}' not found within {timeout_ms} ms"))
     }
 
-    fn embed(&self, parent: PlatformHandle, child: PlatformHandle, rect: WindowRect) -> Result<(), String> {
-        let PlatformHandle::Win32(pv) = parent else { return Err("not Win32".into()); };
-        let PlatformHandle::Win32(cv) = child else { return Err("not Win32".into()); };
+    fn embed(
+        &self,
+        parent: PlatformHandle,
+        child: PlatformHandle,
+        rect: WindowRect,
+    ) -> Result<(), String> {
+        let PlatformHandle::Win32(pv) = parent else {
+            return Err("not Win32".into());
+        };
+        let PlatformHandle::Win32(cv) = child else {
+            return Err("not Win32".into());
+        };
         let (ph, ch) = (isize_to_hwnd(pv), isize_to_hwnd(cv));
         unsafe {
             // Convert Chrome's top-level window into a child window (style
@@ -905,7 +1008,11 @@ impl PlatformWindowManager for Win32WindowManager {
             // reparenting. SetParent on a window that still carries WS_POPUP
             // is undefined behaviour.
             let style = GetWindowLongW(ch, GWL_STYLE) as u32;
-            SetWindowLongW(ch, GWL_STYLE, ((style & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD) as i32);
+            SetWindowLongW(
+                ch,
+                GWL_STYLE,
+                ((style & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD) as i32,
+            );
 
             // WS_EX_NOACTIVATE intentionally NOT set here.
             // Allowing Chrome to receive Win32 keyboard focus on click is
@@ -958,34 +1065,71 @@ impl PlatformWindowManager for Win32WindowManager {
     }
 
     fn remap(&self, handle: PlatformHandle, rect: WindowRect) -> Result<(), String> {
-        let PlatformHandle::Win32(v) = handle else { return Err("not Win32".into()); };
+        let PlatformHandle::Win32(v) = handle else {
+            return Err("not Win32".into());
+        };
         let h = isize_to_hwnd(v);
-        unsafe { MoveWindow(h, rect.x, rect.y, rect.width as i32, rect.height as i32, TRUE); ShowWindow(h, SW_SHOW); SetFocus(h); }
+        unsafe {
+            MoveWindow(
+                h,
+                rect.x,
+                rect.y,
+                rect.width as i32,
+                rect.height as i32,
+                TRUE,
+            );
+            ShowWindow(h, SW_SHOW);
+            SetFocus(h);
+        }
         Ok(())
     }
 
     fn resize(&self, handle: PlatformHandle, rect: WindowRect) -> Result<(), String> {
-        let PlatformHandle::Win32(v) = handle else { return Err("not Win32".into()); };
-        unsafe { MoveWindow(isize_to_hwnd(v), rect.x, rect.y, rect.width as i32, rect.height as i32, TRUE); }
+        let PlatformHandle::Win32(v) = handle else {
+            return Err("not Win32".into());
+        };
+        unsafe {
+            MoveWindow(
+                isize_to_hwnd(v),
+                rect.x,
+                rect.y,
+                rect.width as i32,
+                rect.height as i32,
+                TRUE,
+            );
+        }
         Ok(())
     }
 
     fn focus(&self, handle: PlatformHandle) -> Result<(), String> {
-        let PlatformHandle::Win32(v) = handle else { return Ok(()); };
-        unsafe { SetFocus(isize_to_hwnd(v)); }
+        let PlatformHandle::Win32(v) = handle else {
+            return Ok(());
+        };
+        unsafe {
+            SetFocus(isize_to_hwnd(v));
+        }
         Ok(())
     }
 
     fn show(&self, handle: PlatformHandle) -> Result<(), String> {
-        let PlatformHandle::Win32(v) = handle else { return Ok(()); };
+        let PlatformHandle::Win32(v) = handle else {
+            return Ok(());
+        };
         let h = isize_to_hwnd(v);
-        unsafe { ShowWindow(h, SW_SHOW); SetFocus(h); }
+        unsafe {
+            ShowWindow(h, SW_SHOW);
+            SetFocus(h);
+        }
         Ok(())
     }
 
     fn hide(&self, handle: PlatformHandle) -> Result<(), String> {
-        let PlatformHandle::Win32(v) = handle else { return Ok(()); };
-        unsafe { ShowWindow(isize_to_hwnd(v), SW_HIDE); }
+        let PlatformHandle::Win32(v) = handle else {
+            return Ok(());
+        };
+        unsafe {
+            ShowWindow(isize_to_hwnd(v), SW_HIDE);
+        }
         Ok(())
     }
 
@@ -1046,7 +1190,9 @@ impl PlatformWindowManager for Win32WindowManager {
         None
     }
 
-    fn chrome_spawn_args(&self) -> (Vec<String>, Vec<(String, String)>) { (vec![], vec![]) }
+    fn chrome_spawn_args(&self) -> (Vec<String>, Vec<(String, String)>) {
+        (vec![], vec![])
+    }
 
     fn kill_lingering_chrome(&self) {
         // wmic is a GUI-hosted tool invocation — suppress its console window.
@@ -1062,13 +1208,27 @@ impl PlatformWindowManager for Win32WindowManager {
         let _ = cmd.output();
     }
 
-    fn supports_native_embed(&self) -> bool { true }
+    fn supports_native_embed(&self) -> bool {
+        true
+    }
 
-    fn overlay_position(&self, tauri: super::PlatformHandle, chrome: super::PlatformHandle, rect: super::WindowRect) -> Result<(), String> {
-        let super::PlatformHandle::Win32(tv) = tauri else { return Err("tauri not Win32".into()); };
-        let super::PlatformHandle::Win32(cv) = chrome else { return Err("chrome not Win32".into()); };
+    fn overlay_position(
+        &self,
+        tauri: super::PlatformHandle,
+        chrome: super::PlatformHandle,
+        rect: super::WindowRect,
+    ) -> Result<(), String> {
+        let super::PlatformHandle::Win32(tv) = tauri else {
+            return Err("tauri not Win32".into());
+        };
+        let super::PlatformHandle::Win32(cv) = chrome else {
+            return Err("chrome not Win32".into());
+        };
         let (th, ch) = (isize_to_hwnd(tv), isize_to_hwnd(cv));
-        let mut pt = POINT { x: rect.x, y: rect.y };
+        let mut pt = POINT {
+            x: rect.x,
+            y: rect.y,
+        };
         unsafe {
             ClientToScreen(th, &mut pt);
             let screen_rect = RECT {
@@ -1085,8 +1245,14 @@ impl PlatformWindowManager for Win32WindowManager {
             let style = GetWindowLongW(ch, GWL_STYLE) as u32;
             if style & (WS_CAPTION | WS_THICKFRAME) != 0 {
                 SetWindowLongW(
-                    ch, GWL_STYLE,
-                    (style & !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) as i32,
+                    ch,
+                    GWL_STYLE,
+                    (style
+                        & !(WS_CAPTION
+                            | WS_THICKFRAME
+                            | WS_SYSMENU
+                            | WS_MINIMIZEBOX
+                            | WS_MAXIMIZEBOX)) as i32,
                 );
                 // WS_EX_TOOLWINDOW: hide from taskbar and Alt+Tab.
                 let exstyle = GetWindowLongW(ch, GWL_EXSTYLE) as u32;
@@ -1110,19 +1276,35 @@ impl PlatformWindowManager for Win32WindowManager {
             // SWP_NOACTIVATE: Win32 focus stays with Tauri's WebView2 thread.
             // SWP_FRAMECHANGED: forces non-client area redraw after style change.
             SetWindowPos(
-                ch, HWND_TOPMOST,
-                pt.x, pt.y, rect.width as i32, rect.height as i32,
+                ch,
+                HWND_TOPMOST,
+                pt.x,
+                pt.y,
+                rect.width as i32,
+                rect.height as i32,
                 SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
             );
         }
         Ok(())
     }
 
-    fn overlay_enforce_pos(&self, tauri: super::PlatformHandle, chrome: super::PlatformHandle, rect: super::WindowRect) -> Result<(), String> {
-        let super::PlatformHandle::Win32(tv) = tauri else { return Ok(()); };
-        let super::PlatformHandle::Win32(cv) = chrome else { return Ok(()); };
+    fn overlay_enforce_pos(
+        &self,
+        tauri: super::PlatformHandle,
+        chrome: super::PlatformHandle,
+        rect: super::WindowRect,
+    ) -> Result<(), String> {
+        let super::PlatformHandle::Win32(tv) = tauri else {
+            return Ok(());
+        };
+        let super::PlatformHandle::Win32(cv) = chrome else {
+            return Ok(());
+        };
         let (th, ch) = (isize_to_hwnd(tv), isize_to_hwnd(cv));
-        let mut pt = POINT { x: rect.x, y: rect.y };
+        let mut pt = POINT {
+            x: rect.x,
+            y: rect.y,
+        };
         unsafe {
             ClientToScreen(th, &mut pt);
             let (tx, ty, tw, th_) = (pt.x, pt.y, rect.width as i32, rect.height as i32);
@@ -1135,8 +1317,10 @@ impl PlatformWindowManager for Win32WindowManager {
             let drifted = if GetWindowRect(ch, &mut cur) != 0 {
                 let cw = cur.right - cur.left;
                 let cur_h = cur.bottom - cur.top;
-                (cur.left - tx).abs() > 2 || (cur.top - ty).abs() > 2
-                    || (cw - tw).abs() > 2 || (cur_h - th_).abs() > 2
+                (cur.left - tx).abs() > 2
+                    || (cur.top - ty).abs() > 2
+                    || (cw - tw).abs() > 2
+                    || (cur_h - th_).abs() > 2
             } else {
                 true
             };
@@ -1150,31 +1334,54 @@ impl PlatformWindowManager for Win32WindowManager {
     }
 
     fn show_no_activate(&self, handle: super::PlatformHandle) -> Result<(), String> {
-        let super::PlatformHandle::Win32(v) = handle else { return Ok(()); };
+        let super::PlatformHandle::Win32(v) = handle else {
+            return Ok(());
+        };
         unsafe {
             SetWindowPos(
-                isize_to_hwnd(v), HWND_TOPMOST,
-                0, 0, 0, 0,
+                isize_to_hwnd(v),
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
             );
         }
         Ok(())
     }
 
-    fn get_window_screen_rect(&self, handle: super::PlatformHandle) -> Option<(i32, i32, u32, u32)> {
-        let super::PlatformHandle::Win32(v) = handle else { return None; };
+    fn get_window_screen_rect(
+        &self,
+        handle: super::PlatformHandle,
+    ) -> Option<(i32, i32, u32, u32)> {
+        let super::PlatformHandle::Win32(v) = handle else {
+            return None;
+        };
         unsafe {
             let mut r: RECT = std::mem::zeroed();
             if GetWindowRect(isize_to_hwnd(v), &mut r) != 0 {
-                Some((r.left, r.top, (r.right - r.left) as u32, (r.bottom - r.top) as u32))
+                Some((
+                    r.left,
+                    r.top,
+                    (r.right - r.left) as u32,
+                    (r.bottom - r.top) as u32,
+                ))
             } else {
                 None
             }
         }
     }
 
-    fn embed_enforce_pos(&self, child: super::PlatformHandle, rect: super::WindowRect, visible: bool) -> Result<(), String> {
-        let super::PlatformHandle::Win32(cv) = child else { return Ok(()); };
+    fn embed_enforce_pos(
+        &self,
+        child: super::PlatformHandle,
+        rect: super::WindowRect,
+        visible: bool,
+    ) -> Result<(), String> {
+        let super::PlatformHandle::Win32(cv) = child else {
+            return Ok(());
+        };
         let ch = isize_to_hwnd(cv);
         unsafe {
             // ── Style check ───────────────────────────────────────────────────
@@ -1182,8 +1389,16 @@ impl PlatformWindowManager for Win32WindowManager {
             let style_bad = style & WS_CHILD == 0 || style & (WS_CAPTION | WS_THICKFRAME) != 0;
             if style_bad {
                 SetWindowLongW(
-                    ch, GWL_STYLE,
-                    ((style & !(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_CHILD) as i32,
+                    ch,
+                    GWL_STYLE,
+                    ((style
+                        & !(WS_POPUP
+                            | WS_CAPTION
+                            | WS_THICKFRAME
+                            | WS_SYSMENU
+                            | WS_MINIMIZEBOX
+                            | WS_MAXIMIZEBOX))
+                        | WS_CHILD) as i32,
                 );
             }
 
@@ -1195,17 +1410,27 @@ impl PlatformWindowManager for Win32WindowManager {
             let pos_bad = if !parent.is_null() {
                 let mut screen: RECT = std::mem::zeroed();
                 if GetWindowRect(ch, &mut screen) != 0 {
-                    let mut pt = POINT { x: screen.left, y: screen.top };
+                    let mut pt = POINT {
+                        x: screen.left,
+                        y: screen.top,
+                    };
                     ScreenToClient(parent, &mut pt);
                     let w = screen.right - screen.left;
                     let h = screen.bottom - screen.top;
-                    (pt.x - rect.x).abs() > 2 || (pt.y - rect.y).abs() > 2
+                    (pt.x - rect.x).abs() > 2
+                        || (pt.y - rect.y).abs() > 2
                         || (w - rect.width as i32).abs() > 2
                         || (h - rect.height as i32).abs() > 2
-                } else { style_bad }
-            } else { style_bad };
+                } else {
+                    style_bad
+                }
+            } else {
+                style_bad
+            };
 
-            if !style_bad && !pos_bad { return Ok(()); }
+            if !style_bad && !pos_bad {
+                return Ok(());
+            }
 
             // ── Restore if Chrome min/maximized (only when supposed to be visible) ──
             if visible {
@@ -1219,7 +1444,14 @@ impl PlatformWindowManager for Win32WindowManager {
                 }
             }
             if pos_bad {
-                MoveWindow(ch, rect.x, rect.y, rect.width as i32, rect.height as i32, FALSE);
+                MoveWindow(
+                    ch,
+                    rect.x,
+                    rect.y,
+                    rect.width as i32,
+                    rect.height as i32,
+                    FALSE,
+                );
             }
         }
         Ok(())

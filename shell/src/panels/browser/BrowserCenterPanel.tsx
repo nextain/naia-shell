@@ -1,12 +1,18 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { emitAiInterferenceEvent } from "../../lib/ai-interference";
+import {
+	addBrowserBookmark,
+	addBrowserShortcut,
+} from "../../lib/browser-prefs";
 import { addAllowedTool } from "../../lib/config";
-import { useTabSkills } from "../../lib/tab-skills";
 import { Logger } from "../../lib/logger";
 import { panelRegistry } from "../../lib/panel-registry";
 import type { PanelCenterProps } from "../../lib/panel-registry";
+import { useTabSkills } from "../../lib/tab-skills";
 import { usePanelStore } from "../../stores/panel";
+import { BrowserMetaPanel } from "./BrowserMetaPanel";
 
 // ─── Panel API ───────────────────────────────────────────────────────────────
 
@@ -144,8 +150,11 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 	// ── Address bar state ─────────────────────────────────────────────────────
 	const [currentUrl, setCurrentUrl] = useState("");
+	const [currentTitle, setCurrentTitle] = useState("");
 	const [inputUrl, setInputUrl] = useState("");
 	const [inputFocused, setInputFocused] = useState(false);
+	const [bookmarksOpen, setBookmarksOpen] = useState(false);
+	const lastAiEventUrlRef = useRef("");
 
 	// AI tool permissions — loaded from localStorage
 	const [toolPerms, setToolPerms] = useState<BrowserToolPerms>(loadPerms);
@@ -183,11 +192,33 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	const refreshPageInfo = useCallback(async () => {
 		try {
 			const [u, t] = await invoke<[string, string]>("browser_wv_page_info");
-			if (u) naia.pushContext({ type: "browser", data: { url: u, title: t } });
+			if (u) {
+				setCurrentUrl(u);
+				setCurrentTitle(t);
+				naia.pushContext({ type: "browser", data: { url: u, title: t } });
+			}
 		} catch {
 			// ignore — best-effort
 		}
 	}, [naia]);
+
+	const syncBrowserBounds = useCallback(() => {
+		if (usePanelStore.getState().activePanel !== "browser") return;
+		const el = viewportRef.current;
+		if (!el) return;
+		requestAnimationFrame(() =>
+			requestAnimationFrame(() => {
+				const rect = el.getBoundingClientRect();
+				if (rect.width <= 0 || rect.height <= 0) return;
+				invoke("browser_wv_create", {
+					x: rect.left,
+					y: rect.top,
+					width: rect.width,
+					height: rect.height,
+				}).catch(() => {});
+			}),
+		);
+	}, []);
 
 	// ── Webview init ──────────────────────────────────────────────────────────
 
@@ -195,7 +226,8 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		setStatus("launching");
 		setError("");
 		try {
-			const el = viewportRef.current!;
+			const el = viewportRef.current;
+			if (!el) return;
 
 			// Wait for layout to complete — keepAlive panels mount while hidden
 			// (opacity:0), so getBoundingClientRect() may return zeros on the first
@@ -220,6 +252,7 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			Logger.info("BrowserCenterPanel", "Browser webview created");
 			setStatus("ready");
 			await refreshPageInfo();
+			syncBrowserBounds();
 		} catch (e) {
 			Logger.error("BrowserCenterPanel", "webview create failed", {
 				error: String(e),
@@ -227,19 +260,29 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			setError(String(e));
 			setStatus("error");
 		}
-	}, [refreshPageInfo]);
+	}, [refreshPageInfo, syncBrowserBounds]);
 
 	// ── URL polling (address bar sync) ───────────────────────────────────────
 
 	useEffect(() => {
 		if (status !== "ready") return;
 		const id = setInterval(async () => {
-			const [u] = await invoke<[string, string]>("browser_wv_page_info").catch(
-				() => ["", ""] as [string, string],
-			);
+			const [u, t] = await invoke<[string, string]>(
+				"browser_wv_page_info",
+			).catch(() => ["", ""] as [string, string]);
 			if (u) {
 				setCurrentUrl(u);
+				setCurrentTitle(t);
 				setInputUrl((prev) => (inputFocused ? prev : u));
+				if (lastAiEventUrlRef.current !== u) {
+					lastAiEventUrlRef.current = u;
+					emitAiInterferenceEvent({
+						source: "browser",
+						action: "navigated",
+						title: t,
+						url: u,
+					});
+				}
 			}
 		}, 600);
 		return () => clearInterval(id);
@@ -263,8 +306,7 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		return () => {
 			invoke("browser_wv_hide").catch(() => {});
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	}, [initWebview]);
 
 	// ── Sync browser bounds when viewport div resizes ─────────────────────────
 
@@ -272,23 +314,33 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		if (status !== "ready") return;
 		const el = viewportRef.current;
 		if (!el) return;
-		const sync = () => {
-			const rect = el.getBoundingClientRect();
-			if (rect.width <= 0 || rect.height <= 0) return;
-			// Use create (which re-positions if already exists) so that panels
-			// that were initially hidden (keepAlive + opacity:0) get created here.
-			invoke("browser_wv_create", {
-				x: rect.left,
-				y: rect.top,
-				width: rect.width,
-				height: rect.height,
-			}).catch(() => {});
-		};
-		const obs = new ResizeObserver(sync);
+		const obs = new ResizeObserver(syncBrowserBounds);
 		obs.observe(el);
-		sync();
+		syncBrowserBounds();
 		return () => obs.disconnect();
-	}, [status]);
+	}, [status, syncBrowserBounds]);
+
+	useEffect(() => {
+		if (status !== "ready") return;
+		let lastDpr = window.devicePixelRatio;
+		const sync = () => syncBrowserBounds();
+		const dprPoll = window.setInterval(() => {
+			if (window.devicePixelRatio === lastDpr) return;
+			lastDpr = window.devicePixelRatio;
+			syncBrowserBounds();
+		}, 1000);
+		window.addEventListener("resize", sync);
+		window.visualViewport?.addEventListener("resize", sync);
+		window.visualViewport?.addEventListener("scroll", sync);
+		window.addEventListener("naia-width-changed", sync);
+		return () => {
+			window.clearInterval(dprPoll);
+			window.removeEventListener("resize", sync);
+			window.visualViewport?.removeEventListener("resize", sync);
+			window.visualViewport?.removeEventListener("scroll", sync);
+			window.removeEventListener("naia-width-changed", sync);
+		};
+	}, [status, syncBrowserBounds]);
 
 	// ── Re-sync bounds on panel activation ───────────────────────────────────
 	// When the browser panel becomes active (opacity:0→1 via CSS), no resize
@@ -297,23 +349,13 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 	const activePanel = usePanelStore((s) => s.activePanel);
 	useEffect(() => {
-		if (activePanel !== "browser" || status !== "ready") return;
-		const el = viewportRef.current;
-		if (!el) return;
-		// Two rAF to let the CSS opacity transition settle before measuring.
-		requestAnimationFrame(() =>
-			requestAnimationFrame(() => {
-				const rect = el.getBoundingClientRect();
-				if (rect.width <= 0 || rect.height <= 0) return;
-				invoke("browser_wv_create", {
-					x: rect.left,
-					y: rect.top,
-					width: rect.width,
-					height: rect.height,
-				}).catch(() => {});
-			}),
-		);
-	}, [activePanel, status]);
+		if (status !== "ready") return;
+		if (activePanel !== "browser") {
+			invoke("browser_wv_hide").catch(() => {});
+			return;
+		}
+		syncBrowserBounds();
+	}, [activePanel, status, syncBrowserBounds]);
 
 	// ── Panel API (BrowserPanelApi) ───────────────────────────────────────────
 
@@ -352,14 +394,20 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			if (!p.current.navigate) return denied("탐색");
 			const url = String(args.url ?? "");
 			if (!url) return "Error: url required";
-			Logger.info("BrowserPanel", "skill_browser_navigate invoked", { url, status });
+			Logger.info("BrowserPanel", "skill_browser_navigate invoked", {
+				url,
+				status,
+			});
 			try {
 				await invoke("browser_wv_navigate", { url });
 				await refreshPageInfo();
 				Logger.info("BrowserPanel", "browser_wv_navigate ok", { url });
 				return `Navigated to ${url}`;
 			} catch (e) {
-				Logger.warn("BrowserPanel", "browser_wv_navigate failed", { url, error: String(e) });
+				Logger.warn("BrowserPanel", "browser_wv_navigate failed", {
+					url,
+					error: String(e),
+				});
 				return `Navigation failed: ${String(e)}`;
 			}
 		});
@@ -496,7 +544,7 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			u10();
 			u12();
 		};
-	}, [naia, refreshPageInfo]);
+	}, [naia, refreshPageInfo, status]);
 
 	// ── Render ────────────────────────────────────────────────────────────────
 
@@ -508,6 +556,124 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		setCurrentUrl(url);
 		setInputUrl(url);
 	}
+
+	function pageTitle(): string {
+		return currentTitle.trim() || currentUrl.trim() || inputUrl.trim();
+	}
+
+	function currentPageUrl(): string {
+		return (currentUrl || inputUrl).trim();
+	}
+
+	async function readPageMetadata(): Promise<{
+		title: string;
+		url: string;
+		iconUrl?: string;
+	}> {
+		const fallbackUrl = currentPageUrl();
+		const fallbackTitle = pageTitle();
+		let fallbackIconUrl: string | undefined;
+		try {
+			const u = new URL(fallbackUrl || "about:blank");
+			if (u.protocol === "https:" || u.protocol === "http:") {
+				fallbackIconUrl = `${u.origin}/favicon.ico`;
+			}
+		} catch {}
+		try {
+			const raw = await invoke<string>("browser_wv_eval", {
+				js: `
+const pick = (...selectors) => {
+	for (const selector of selectors) {
+		const el = document.querySelector(selector);
+		const value = el?.content || el?.href;
+		if (value) return new URL(value, location.href).href;
+	}
+	return "";
+};
+return {
+	title: document.querySelector("meta[property='og:title']")?.content || document.title || location.href,
+	url: document.querySelector("meta[property='og:url']")?.content || location.href,
+	iconUrl: pick(
+		"link[rel~='icon'][sizes~='192x192']",
+		"link[rel~='icon'][sizes~='180x180']",
+		"link[rel='apple-touch-icon']",
+		"link[rel~='icon'][type='image/svg+xml']",
+		"link[rel~='icon']",
+		"link[rel='shortcut icon']",
+		"meta[property='og:image']",
+		"meta[name='twitter:image']"
+	)
+};`,
+			});
+			const meta = JSON.parse(raw) as {
+				title?: string;
+				url?: string;
+				iconUrl?: string;
+			};
+			return {
+				title: meta.title?.trim() || fallbackTitle,
+				url: meta.url?.trim() || fallbackUrl,
+				iconUrl: meta.iconUrl?.trim() || fallbackIconUrl,
+			};
+		} catch (err) {
+			Logger.warn("BrowserCenterPanel", "page metadata read failed", {
+				error: String(err),
+			});
+			return {
+				title: fallbackTitle,
+				url: fallbackUrl,
+				iconUrl: fallbackIconUrl,
+			};
+		}
+	}
+
+	async function handleAddBookmark() {
+		const url = currentPageUrl();
+		if (!url) return;
+		try {
+			await addBrowserBookmark(pageTitle(), url);
+			setBookmarksOpen(true);
+			Logger.info("BrowserCenterPanel", "bookmark added", {
+				url,
+				title: pageTitle(),
+			});
+		} catch (err) {
+			Logger.warn("BrowserCenterPanel", "bookmark save failed", {
+				url,
+				error: String(err),
+			});
+		}
+	}
+
+	async function handleAddShortcut() {
+		const url = currentPageUrl();
+		if (!url) return;
+		const meta = await readPageMetadata();
+		try {
+			await addBrowserShortcut(meta.title, meta.url, meta.iconUrl);
+			Logger.info("BrowserCenterPanel", "shortcut added", {
+				url: meta.url,
+				title: meta.title,
+			});
+		} catch (err) {
+			Logger.warn("BrowserCenterPanel", "shortcut save failed", {
+				url,
+				error: String(err),
+			});
+		}
+	}
+
+	function toggleBookmarkList() {
+		setBookmarksOpen((open) => !open);
+	}
+
+	useEffect(() => {
+		if (status !== "ready") return;
+		if (bookmarksOpen) {
+			Logger.debug("BrowserCenterPanel", "bookmark drawer opened");
+		}
+		syncBrowserBounds();
+	}, [bookmarksOpen, status, syncBrowserBounds]);
 
 	return (
 		<div className="browser-panel">
@@ -542,7 +708,9 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 					onSubmit={(e) => {
 						e.preventDefault();
 						handleNavigate(inputUrl);
-						(e.currentTarget.querySelector("input") as HTMLInputElement)?.blur();
+						(
+							e.currentTarget.querySelector("input") as HTMLInputElement
+						)?.blur();
 					}}
 				>
 					<input
@@ -558,6 +726,30 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 						onChange={(e) => setInputUrl(e.target.value)}
 					/>
 				</form>
+				<button
+					type="button"
+					className="browser-panel__nav-btn"
+					title="바로가기 추가"
+					onClick={handleAddShortcut}
+				>
+					↗
+				</button>
+				<button
+					type="button"
+					className="browser-panel__nav-btn"
+					title="북마크 추가"
+					onClick={handleAddBookmark}
+				>
+					★
+				</button>
+				<button
+					type="button"
+					className={`browser-panel__nav-btn${bookmarksOpen ? " browser-panel__nav-btn--active" : ""}`}
+					title="북마크 리스트"
+					onClick={toggleBookmarkList}
+				>
+					≡
+				</button>
 			</div>
 
 			{/* Overlays for non-ready states */}
@@ -581,15 +773,28 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 				</div>
 			)}
 
-			{/*
-			 * Transparent placeholder div — the native child webview is
-			 * positioned over this area by Rust. Always rendered so that
-			 * getBoundingClientRect() is available for create / resize calls.
-			 */}
-			<div
-				ref={viewportRef}
-				className="browser-panel__viewport browser-panel__viewport--embedded"
-			/>
+			<div className="browser-panel__body">
+				{/*
+				 * Transparent placeholder div — the native child webview is
+				 * positioned over this area by Rust. Always rendered so that
+				 * getBoundingClientRect() is available for create / resize calls.
+				 */}
+				<div
+					ref={viewportRef}
+					className="browser-panel__viewport browser-panel__viewport--embedded"
+				/>
+
+				{bookmarksOpen && (
+					<div className="browser-panel__bookmark-drawer">
+						<BrowserMetaPanel
+							onNavigate={(url) => {
+								handleNavigate(url);
+								setBookmarksOpen(false);
+							}}
+						/>
+					</div>
+				)}
+			</div>
 
 			{/* AI tool permission toolbar — stays in HTML layer below the webview */}
 			{status === "ready" && (

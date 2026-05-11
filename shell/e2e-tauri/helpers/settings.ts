@@ -278,7 +278,8 @@ export async function ensureAppReady(): Promise<void> {
 						naiaKey: naiaKey,
 						agentName: config.agentName || "Naia",
 						userName: config.userName || "Tester",
-						vrmModel: config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
+						vrmModel:
+							config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
 						persona: config.persona || "Friendly AI companion",
 						enableTools: true,
 						locale: config.locale || "ko",
@@ -292,7 +293,8 @@ export async function ensureAppReady(): Promise<void> {
 						apiKey: config.apiKey || geminiKey,
 						agentName: config.agentName || "Naia",
 						userName: config.userName || "Tester",
-						vrmModel: config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
+						vrmModel:
+							config.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
 						persona: config.persona || "Friendly AI companion",
 						enableTools: true,
 						locale: config.locale || "ko",

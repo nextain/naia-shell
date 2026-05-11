@@ -35,7 +35,9 @@ pub(crate) fn check_wsl_status() -> Result<bool, String> {
         super::hide_console(&mut sc_cmd);
         let sc_ok = sc_cmd.output().map(|o| o.status.success()).unwrap_or(false);
         if !sc_ok {
-            return Err("VirtualMachinePlatform is not active (vmcompute service missing)".to_string());
+            return Err(
+                "VirtualMachinePlatform is not active (vmcompute service missing)".to_string(),
+            );
         }
     }
 
@@ -103,7 +105,11 @@ pub(crate) fn get_windows_feature_state(feature: &str) -> Option<String> {
     match cmd.output() {
         Ok(o) if o.status.success() => {
             let state = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if state.is_empty() { None } else { Some(state) }
+            if state.is_empty() {
+                None
+            } else {
+                Some(state)
+            }
         }
         _ => None,
     }
@@ -122,9 +128,7 @@ pub(crate) fn is_distro_registered(name: &str) -> bool {
     cmd.output()
         .map(|o| {
             let stdout = decode_utf16_lossy(&o.stdout);
-            stdout
-                .lines()
-                .any(|l| l.trim() == name)
+            stdout.lines().any(|l| l.trim() == name)
         })
         .unwrap_or(false)
 }
@@ -179,10 +183,7 @@ pub(crate) fn run_in_distro(name: &str, command: &str) -> Result<String, String>
 }
 
 /// Spawn Naia Gateway inside a WSL distro (returns a Child handle).
-pub(crate) fn spawn_gateway_in_wsl(
-    name: &str,
-    port: u16,
-) -> Result<std::process::Child, String> {
+pub(crate) fn spawn_gateway_in_wsl(name: &str, port: u16) -> Result<std::process::Child, String> {
     let mut cmd = Command::new("wsl");
     cmd.args([
         "-d",
@@ -206,10 +207,7 @@ pub(crate) fn spawn_gateway_in_wsl(
 }
 
 /// Spawn Naia Node Host inside a WSL distro (returns a Child handle).
-pub(crate) fn spawn_node_host_in_wsl(
-    name: &str,
-    port: u16,
-) -> Result<std::process::Child, String> {
+pub(crate) fn spawn_node_host_in_wsl(name: &str, port: u16) -> Result<std::process::Child, String> {
     let mut cmd = Command::new("wsl");
     cmd.args([
         "-d",
@@ -241,10 +239,13 @@ pub(crate) fn auto_approve_pending_devices(name: &str) {
     // WSL commands can hang if the gateway is still initializing.
     let mut cmd = Command::new("wsl");
     cmd.args([
-        "-d", name, "--",
+        "-d",
+        name,
+        "--",
         "node",
         "/opt/naia/openclaw/node_modules/openclaw/openclaw.mjs",
-        "devices", "list",
+        "devices",
+        "list",
     ])
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped());
@@ -261,7 +262,9 @@ pub(crate) fn auto_approve_pending_devices(name: &str) {
             Ok(Some(_)) => break,
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
-                    crate::log_both("[Naia] auto_approve_pending_devices timed out (15s) — skipping");
+                    crate::log_both(
+                        "[Naia] auto_approve_pending_devices timed out (15s) — skipping",
+                    );
                     let _ = child.kill();
                     return;
                 }
@@ -306,10 +309,14 @@ pub(crate) fn auto_approve_pending_devices(name: &str) {
         ));
         let mut approve_cmd = Command::new("wsl");
         approve_cmd.args([
-            "-d", name, "--",
+            "-d",
+            name,
+            "--",
             "node",
             "/opt/naia/openclaw/node_modules/openclaw/openclaw.mjs",
-            "devices", "approve", request_id,
+            "devices",
+            "approve",
+            request_id,
         ]);
         super::hide_console(&mut approve_cmd);
         let _ = approve_cmd.output();
@@ -386,8 +393,12 @@ pub(crate) fn terminate_distro(name: &str) {
 pub(crate) fn is_provisioned(name: &str) -> bool {
     let mut cmd = Command::new("wsl");
     cmd.args([
-        "-d", name, "--",
-        "test", "-f", "/opt/naia/openclaw/node_modules/openclaw/openclaw.mjs",
+        "-d",
+        name,
+        "--",
+        "test",
+        "-f",
+        "/opt/naia/openclaw/node_modules/openclaw/openclaw.mjs",
     ]);
     super::hide_console(&mut cmd);
     cmd.output().map(|o| o.status.success()).unwrap_or(false)
@@ -408,23 +419,31 @@ pub(crate) fn provision_distro(name: &str, app: Option<&tauri::AppHandle>) -> Re
     // Step 1: Install Node.js 22
     emit_provision_progress(app, "provision_node", "Installing Node.js 22...");
     crate::log_both("[Naia] Installing Node.js 22 in WSL...");
-    run_provision_step(name, concat!(
-        "apt-get update -qq && ",
-        "apt-get install -y -qq curl ca-certificates && ",
-        "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && ",
-        "apt-get install -y -qq nodejs && ",
-        "node -v"
-    ), "Node.js install")?;
+    run_provision_step(
+        name,
+        concat!(
+            "apt-get update -qq && ",
+            "apt-get install -y -qq curl ca-certificates && ",
+            "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && ",
+            "apt-get install -y -qq nodejs && ",
+            "node -v"
+        ),
+        "Node.js install",
+    )?;
 
     // Step 2: Install Naia Gateway
     emit_provision_progress(app, "provision_gateway", "Installing Naia Gateway...");
     crate::log_both("[Naia] Installing Naia Gateway in WSL...");
-    run_provision_step(name, concat!(
-        "mkdir -p /opt/naia/openclaw && ",
-        "cd /opt/naia/openclaw && ",
-        "npm init -y --quiet 2>/dev/null && ",
-        "npm install @naia/gateway@latest --quiet"
-    ), "Naia Gateway install")?;
+    run_provision_step(
+        name,
+        concat!(
+            "mkdir -p /opt/naia/openclaw && ",
+            "cd /opt/naia/openclaw && ",
+            "npm init -y --quiet 2>/dev/null && ",
+            "npm install @naia/gateway@latest --quiet"
+        ),
+        "Naia Gateway install",
+    )?;
 
     // Step 3: Configure PATH
     emit_provision_progress(app, "provision_config", "Configuring environment...");
@@ -435,26 +454,31 @@ pub(crate) fn provision_distro(name: &str, app: Option<&tauri::AppHandle>) -> Re
 
     // Step 4: Copy wsl.conf for systemd support
     let wsl_conf = "[boot]\nsystemd=true\n\n[interop]\nenabled=true\nappendWindowsPath=true\n\n[network]\ngenerateResolvConf=true\n";
-    run_provision_step(name,
+    run_provision_step(
+        name,
         &format!("cat > /etc/wsl.conf << 'WSLEOF'\n{}\nWSLEOF", wsl_conf),
-        "wsl.conf"
+        "wsl.conf",
     )?;
 
     // Step 5: Configure Naia Gateway mode=local
     crate::log_both("[Naia] Setting gateway.mode=local in Naia Gateway config...");
-    run_provision_step(name, concat!(
-        "node -e \"",
-        "const fs=require('fs');",
-        "const p='/root/.openclaw/openclaw.json';",
-        "let c={};",
-        "try{c=JSON.parse(fs.readFileSync(p,'utf8'))}catch{}",
-        "c.gateway=c.gateway||{};",
-        "c.gateway.mode='local';",
-        "fs.mkdirSync('/root/.openclaw',{recursive:true});",
-        "fs.writeFileSync(p,JSON.stringify(c,null,2));",
-        "console.log('gateway.mode=local set');",
-        "\""
-    ), "gateway.mode config")?;
+    run_provision_step(
+        name,
+        concat!(
+            "node -e \"",
+            "const fs=require('fs');",
+            "const p='/root/.openclaw/openclaw.json';",
+            "let c={};",
+            "try{c=JSON.parse(fs.readFileSync(p,'utf8'))}catch{}",
+            "c.gateway=c.gateway||{};",
+            "c.gateway.mode='local';",
+            "fs.mkdirSync('/root/.openclaw',{recursive:true});",
+            "fs.writeFileSync(p,JSON.stringify(c,null,2));",
+            "console.log('gateway.mode=local set');",
+            "\""
+        ),
+        "gateway.mode config",
+    )?;
 
     // Verify
     emit_provision_progress(app, "provision_verify", "Verifying installation...");
@@ -471,7 +495,9 @@ fn run_provision_step(name: &str, script: &str, step_name: &str) -> Result<(), S
     let mut cmd = Command::new("wsl");
     cmd.args(["-d", name, "--", "bash", "-lc", script]);
     super::hide_console(&mut cmd);
-    let output = cmd.output().map_err(|e| format!("{} failed: {}", step_name, e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("{} failed: {}", step_name, e))?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if !stdout.trim().is_empty() {

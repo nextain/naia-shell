@@ -8,7 +8,12 @@
  */
 
 import { sendChatMessage } from "./chat-service";
-import { LAB_GATEWAY_URL, loadConfig, resolveGatewayUrl, saveConfig } from "./config";
+import {
+	LAB_GATEWAY_URL,
+	loadConfig,
+	resolveGatewayUrl,
+	saveConfig,
+} from "./config";
 import {
 	type DiscordMessage,
 	fetchDiscordMessages,
@@ -136,7 +141,8 @@ async function processMessage(
 					provider: config.provider,
 					model: config.model,
 					apiKey: config.apiKey,
-					labGatewayUrl: config.provider === "nextain" ? LAB_GATEWAY_URL : undefined,
+					labGatewayUrl:
+						config.provider === "nextain" ? LAB_GATEWAY_URL : undefined,
 				},
 				history: history.slice(0, -1),
 				onChunk: (chunk: AgentResponseChunk) => {

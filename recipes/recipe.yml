@@ -30,6 +30,12 @@ modules:
       - source: usr
         destination: /usr
 
+  # Must run AFTER files module — needs /usr/lib/systemd/system/var-naia.mount
+  # to be in place before systemctl enable can resolve it.
+  - type: script
+    scripts:
+      - install-naia-data-mount.sh
+
   - type: default-flatpaks
     configurations:
       - scope: system

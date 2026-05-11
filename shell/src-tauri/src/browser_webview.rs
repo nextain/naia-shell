@@ -17,10 +17,10 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicU64, Ordering};
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::webview::Color;
+use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl};
 use tokio::sync::oneshot;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -48,9 +48,9 @@ type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<String, Strin
 static PENDING_EVALS: OnceLock<PendingMap> = OnceLock::new();
 
 fn pending_evals() -> PendingMap {
-	PENDING_EVALS
-		.get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
-		.clone()
+    PENDING_EVALS
+        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+        .clone()
 }
 
 // ─── Initialization script ────────────────────────────────────────────────────
@@ -89,6 +89,27 @@ window.__naia_eval = function(id, jsBody) {
 function _nav() {
     _post("/__naia_nav", { url: location.href, title: document.title || "" });
 }
+function _toUrl(u) {
+    try { return new URL(String(u || ""), location.href).href; } catch (_) { return ""; }
+}
+var _open = window.open;
+window.open = function(url) {
+    var next = _toUrl(url);
+    if (next && next !== "about:blank" && next !== "about:blank/") {
+        location.href = next;
+        return window;
+    }
+    return _open.apply(window, arguments);
+};
+document.addEventListener("click", function(e) {
+    var target = e.target && e.target.nodeType === 1 ? e.target : e.target && e.target.parentElement;
+    var a = target && target.closest ? target.closest("a[target='_blank'], a[target='blank']") : null;
+    if (!a) return;
+    var next = _toUrl(a.getAttribute("href"));
+    if (!next || next === "about:blank" || next === "about:blank/") return;
+    e.preventDefault();
+    location.href = next;
+}, true);
 window.addEventListener("load", _nav);
 window.addEventListener("hashchange", _nav);
 window.addEventListener("popstate", _nav);
@@ -104,129 +125,129 @@ if (document.readyState === "complete" || document.readyState === "interactive")
 // ─── HTTP bridge server ───────────────────────────────────────────────────────
 
 fn start_bridge_server() -> u16 {
-	let listener = TcpListener::bind("127.0.0.1:0").expect("[browser_wv] bridge bind failed");
-	let port = listener.local_addr().unwrap().port();
-	crate::log_verbose(&format!("[browser_wv] bridge server on port {port}"));
-	let pending = pending_evals();
-	std::thread::spawn(move || {
-		for stream in listener.incoming().flatten() {
-			let pending = pending.clone();
-			std::thread::spawn(move || handle_bridge_request(stream, pending));
-		}
-	});
-	port
+    let listener = TcpListener::bind("127.0.0.1:0").expect("[browser_wv] bridge bind failed");
+    let port = listener.local_addr().unwrap().port();
+    crate::log_verbose(&format!("[browser_wv] bridge server on port {port}"));
+    let pending = pending_evals();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let pending = pending.clone();
+            std::thread::spawn(move || handle_bridge_request(stream, pending));
+        }
+    });
+    port
 }
 
 fn handle_bridge_request(mut stream: std::net::TcpStream, pending: PendingMap) {
-	let mut buf = vec![0u8; 131_072]; // 128 KiB max
-	let n = match stream.read(&mut buf) {
-		Ok(n) if n > 0 => n,
-		_ => return,
-	};
+    let mut buf = vec![0u8; 131_072]; // 128 KiB max
+    let n = match stream.read(&mut buf) {
+        Ok(n) if n > 0 => n,
+        _ => return,
+    };
 
-	let raw = String::from_utf8_lossy(&buf[..n]);
-	let first_line = raw.lines().next().unwrap_or("");
-	let mut parts = first_line.splitn(3, ' ');
-	let method = parts.next().unwrap_or("");
-	let path = parts.next().unwrap_or("");
+    let raw = String::from_utf8_lossy(&buf[..n]);
+    let first_line = raw.lines().next().unwrap_or("");
+    let mut parts = first_line.splitn(3, ' ');
+    let method = parts.next().unwrap_or("");
+    let path = parts.next().unwrap_or("");
 
-	// CORS response headers (used for all replies)
-	let cors_resp = "HTTP/1.1 200 OK\r\n\
+    // CORS response headers (used for all replies)
+    let cors_resp = "HTTP/1.1 200 OK\r\n\
 		Access-Control-Allow-Origin: *\r\n\
 		Access-Control-Allow-Methods: POST, OPTIONS\r\n\
 		Access-Control-Allow-Headers: Content-Type\r\n\
 		Content-Length: 2\r\n\r\nOK";
 
-	let _ = stream.write_all(cors_resp.as_bytes());
+    let _ = stream.write_all(cors_resp.as_bytes());
 
-	if method == "OPTIONS" || method != "POST" {
-		return;
-	}
+    if method == "OPTIONS" || method != "POST" {
+        return;
+    }
 
-	// Extract body after the blank line
-	let body = raw.find("\r\n\r\n").map(|i| &raw[i + 4..]).unwrap_or("");
+    // Extract body after the blank line
+    let body = raw.find("\r\n\r\n").map(|i| &raw[i + 4..]).unwrap_or("");
 
-	if let Some(id) = path.strip_prefix("/__naia_result/") {
-		let id = id.trim_end_matches('/').to_string();
-		if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-			let result = if let Some(e) = val["error"].as_str() {
-				Err(e.to_string())
-			} else {
-				Ok(val["result"].as_str().unwrap_or("null").to_string())
-			};
-			if let Some(tx) = pending.lock().unwrap().remove(&id) {
-				let _ = tx.send(result);
-			}
-		}
-	} else if path == "/__naia_nav" || path == "/__naia_nav/" {
-		if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-			if let Some(url) = val["url"].as_str() {
-				*CURRENT_URL.lock().unwrap() = url.to_string();
-			}
-			if let Some(title) = val["title"].as_str() {
-				*CURRENT_TITLE.lock().unwrap() = title.to_string();
-			}
-		}
-	}
+    if let Some(id) = path.strip_prefix("/__naia_result/") {
+        let id = id.trim_end_matches('/').to_string();
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
+            let result = if let Some(e) = val["error"].as_str() {
+                Err(e.to_string())
+            } else {
+                Ok(val["result"].as_str().unwrap_or("null").to_string())
+            };
+            if let Some(tx) = pending.lock().unwrap().remove(&id) {
+                let _ = tx.send(result);
+            }
+        }
+    } else if path == "/__naia_nav" || path == "/__naia_nav/" {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
+            if let Some(url) = val["url"].as_str() {
+                *CURRENT_URL.lock().unwrap() = url.to_string();
+            }
+            if let Some(title) = val["title"].as_str() {
+                *CURRENT_TITLE.lock().unwrap() = title.to_string();
+            }
+        }
+    }
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 fn bridge_port() -> u16 {
-	*HTTP_PORT.get_or_init(start_bridge_server)
+    *HTTP_PORT.get_or_init(start_bridge_server)
 }
 
 fn build_init_script() -> String {
-	INIT_SCRIPT_TEMPLATE.replace("__NAIA_PORT__", &bridge_port().to_string())
+    INIT_SCRIPT_TEMPLATE.replace("__NAIA_PORT__", &bridge_port().to_string())
 }
 
 fn gen_eval_id() -> String {
-	let n = EVAL_COUNTER.fetch_add(1, Ordering::Relaxed);
-	format!("e{n:016x}")
+    let n = EVAL_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("e{n:016x}")
 }
 
 /// Returns the current URL tracked by the init script.
 /// Used by `browser_open_login` to detect auth-complete without CDP polling.
 pub fn get_current_url() -> String {
-	CURRENT_URL.lock().unwrap().clone()
+    CURRENT_URL.lock().unwrap().clone()
 }
 
 fn get_wv(app: &AppHandle) -> Result<tauri::Webview, String> {
-	app.get_webview(BROWSER_LABEL)
-		.ok_or_else(|| "Browser webview not initialized".to_string())
+    app.get_webview(BROWSER_LABEL)
+        .ok_or_else(|| "Browser webview not initialized".to_string())
 }
 
 /// Eval a JS function body in the browser webview and wait for the result.
 /// Uses the HTTP bridge for the callback — works from any page origin.
 async fn eval_and_await(app: &AppHandle, js_body: &str) -> Result<String, String> {
-	let wv = get_wv(app)?;
-	let id = gen_eval_id();
+    let wv = get_wv(app)?;
+    let id = gen_eval_id();
 
-	let (tx, rx) = oneshot::channel();
-	pending_evals().lock().unwrap().insert(id.clone(), tx);
+    let (tx, rx) = oneshot::channel();
+    pending_evals().lock().unwrap().insert(id.clone(), tx);
 
-	// The init script's window.__naia_eval expects (id, functionBody).
-	// If the init script hasn't run yet (very first load), the call is a no-op
-	// and the eval will time out — acceptable; callers should retry on error.
-	let trigger = format!(
-		"if(window.__naia_eval){{window.__naia_eval({id:?},{js_body:?})}}",
-		id = id,
-		js_body = js_body
-	);
+    // The init script's window.__naia_eval expects (id, functionBody).
+    // If the init script hasn't run yet (very first load), the call is a no-op
+    // and the eval will time out — acceptable; callers should retry on error.
+    let trigger = format!(
+        "if(window.__naia_eval){{window.__naia_eval({id:?},{js_body:?})}}",
+        id = id,
+        js_body = js_body
+    );
 
-	if let Err(e) = wv.eval(&trigger) {
-		pending_evals().lock().unwrap().remove(&id);
-		return Err(format!("eval dispatch: {e}"));
-	}
+    if let Err(e) = wv.eval(&trigger) {
+        pending_evals().lock().unwrap().remove(&id);
+        return Err(format!("eval dispatch: {e}"));
+    }
 
-	match tokio::time::timeout(std::time::Duration::from_secs(20), rx).await {
-		Ok(Ok(r)) => r,
-		Ok(Err(_)) => Err("eval channel closed".to_string()),
-		Err(_) => {
-			pending_evals().lock().unwrap().remove(&id);
-			Err("eval timeout (20 s)".to_string())
-		}
-	}
+    match tokio::time::timeout(std::time::Duration::from_secs(20), rx).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(_)) => Err("eval channel closed".to_string()),
+        Err(_) => {
+            pending_evals().lock().unwrap().remove(&id);
+            Err("eval timeout (20 s)".to_string())
+        }
+    }
 }
 
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
@@ -234,7 +255,7 @@ async fn eval_and_await(app: &AppHandle, js_body: &str) -> Result<String, String
 /// Always returns true — multi-webview needs no external Chrome binary.
 #[tauri::command]
 pub fn browser_wv_check() -> bool {
-	true
+    true
 }
 
 /// Create (or re-show and reposition) the browser panel child webview.
@@ -248,158 +269,157 @@ pub fn browser_wv_check() -> bool {
 /// main thread deadlocks because the main thread is already blocked.
 #[tauri::command]
 pub async fn browser_wv_create(
-	app: AppHandle,
-	x: f64,
-	y: f64,
-	width: f64,
-	height: f64,
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 ) -> Result<(), String> {
-	// Skip in E2E test mode — a second WebView2 in the same window disrupts the
-	// WebDriver CDP session (tauri-driver attaches to exactly one WebView per
-	// session; a child WebView causes "session deleted as the browser has closed
-	// the connection" within seconds of startup).
-	if crate::debug_e2e_enabled() {
-		crate::log_verbose("[browser_wv] E2E mode — skipping child webview creation");
-		return Ok(());
-	}
+    // Skip in E2E test mode — a second WebView2 in the same window disrupts the
+    // WebDriver CDP session (tauri-driver attaches to exactly one WebView per
+    // session; a child WebView causes "session deleted as the browser has closed
+    // the connection" within seconds of startup).
+    if crate::debug_e2e_enabled() {
+        crate::log_verbose("[browser_wv] E2E mode — skipping child webview creation");
+        return Ok(());
+    }
 
-	// Ensure bridge server is running before the init script references its port.
-	let _ = bridge_port();
+    // Ensure bridge server is running before the init script references its port.
+    let _ = bridge_port();
 
-	if let Some(wv) = app.get_webview(BROWSER_LABEL) {
-		// Already exists — reposition and unhide.
-		// These calls also use run_on_main_thread internally; fine from a
-		// tokio worker thread (just blocks the worker briefly, not the main loop).
-		wv.set_position(LogicalPosition::new(x, y))
-			.map_err(|e| format!("set_position: {e}"))?;
-		wv.set_size(LogicalSize::new(width, height))
-			.map_err(|e| format!("set_size: {e}"))?;
-		wv.show().map_err(|e| format!("show: {e}"))?;
-		return Ok(());
-	}
+    if let Some(wv) = app.get_webview(BROWSER_LABEL) {
+        // Already exists — reposition and unhide.
+        // These calls also use run_on_main_thread internally; fine from a
+        // tokio worker thread (just blocks the worker briefly, not the main loop).
+        wv.set_position(LogicalPosition::new(x, y))
+            .map_err(|e| format!("set_position: {e}"))?;
+        wv.set_size(LogicalSize::new(width, height))
+            .map_err(|e| format!("set_size: {e}"))?;
+        wv.show().map_err(|e| format!("show: {e}"))?;
+        return Ok(());
+    }
 
-	let window = app
-		.get_window("main")
-		.ok_or("Main window not found")?;
-	let init_script = build_init_script();
-	let start_url = WebviewUrl::External(
-		DEFAULT_URL
-			.parse::<url::Url>()
-			.map_err(|e| format!("URL parse: {e}"))?,
-	);
+    let window = app.get_window("main").ok_or("Main window not found")?;
+    let init_script = build_init_script();
+    let start_url = WebviewUrl::External(
+        DEFAULT_URL
+            .parse::<url::Url>()
+            .map_err(|e| format!("URL parse: {e}"))?,
+    );
 
-	// `add_child` blocks (std::sync::mpsc recv) until the main thread processes
-	// the webview creation. Use spawn_blocking so we don't starve the tokio
-	// worker-thread pool while waiting.
-	tokio::task::spawn_blocking(move || {
-		window
-			.add_child(
-				WebviewBuilder::new(BROWSER_LABEL, start_url)
-					.initialization_script(&init_script)
-					// Match the app's dark espresso background so the webview
-					// doesn't flash white before the page loads.
-					.background_color(Color(26, 16, 8, 255)),
-				LogicalPosition::new(x, y),
-				LogicalSize::new(width, height),
-			)
-			.map(|_| ())
-			.map_err(|e| format!("add_child: {e}"))
-	})
-	.await
-	.map_err(|e| format!("spawn_blocking: {e}"))??;
+    // `add_child` blocks (std::sync::mpsc recv) until the main thread processes
+    // the webview creation. Use spawn_blocking so we don't starve the tokio
+    // worker-thread pool while waiting.
+    tokio::task::spawn_blocking(move || {
+        window
+            .add_child(
+                WebviewBuilder::new(BROWSER_LABEL, start_url)
+                    .initialization_script(&init_script)
+                    // Many websites assume the root background is white. If a
+                    // page leaves areas transparent, a dark webview background
+                    // makes normal black text unreadable.
+                    .background_color(Color(255, 255, 255, 255)),
+                LogicalPosition::new(x, y),
+                LogicalSize::new(width, height),
+            )
+            .map(|_| ())
+            .map_err(|e| format!("add_child: {e}"))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking: {e}"))??;
 
-	crate::log_verbose("[browser_wv] child webview created");
-	Ok(())
+    crate::log_verbose("[browser_wv] child webview created");
+    Ok(())
 }
 
 /// Resize / reposition the browser webview (called on panel resize).
 #[tauri::command]
 pub async fn browser_wv_resize(
-	app: AppHandle,
-	x: f64,
-	y: f64,
-	width: f64,
-	height: f64,
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 ) -> Result<(), String> {
-	let wv = get_wv(&app)?;
-	wv.set_position(LogicalPosition::new(x, y))
-		.map_err(|e| format!("set_position: {e}"))?;
-	wv.set_size(LogicalSize::new(width, height))
-		.map_err(|e| format!("set_size: {e}"))?;
-	Ok(())
+    let wv = get_wv(&app)?;
+    wv.set_position(LogicalPosition::new(x, y))
+        .map_err(|e| format!("set_position: {e}"))?;
+    wv.set_size(LogicalSize::new(width, height))
+        .map_err(|e| format!("set_size: {e}"))?;
+    Ok(())
 }
 
 /// Show the browser webview (panel activated).
 #[tauri::command]
 pub async fn browser_wv_show(app: AppHandle) -> Result<(), String> {
-	get_wv(&app)?.show().map_err(|e| format!("show: {e}"))
+    get_wv(&app)?.show().map_err(|e| format!("show: {e}"))
 }
 
 /// Hide the browser webview (panel deactivated or unmounted).
 #[tauri::command]
 pub async fn browser_wv_hide(app: AppHandle) -> Result<(), String> {
-	if let Some(wv) = app.get_webview(BROWSER_LABEL) {
-		wv.hide().map_err(|e| format!("hide: {e}"))?;
-	}
-	Ok(())
+    if let Some(wv) = app.get_webview(BROWSER_LABEL) {
+        wv.hide().map_err(|e| format!("hide: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Navigate the browser webview to a URL.
 #[tauri::command]
 pub async fn browser_wv_navigate(app: AppHandle, url: String) -> Result<(), String> {
-	// Validate URL before passing to eval.
-	let _ = url
-		.parse::<url::Url>()
-		.map_err(|e| format!("Invalid URL: {e}"))?;
-	let wv = get_wv(&app)?;
-	wv.eval(&format!("window.location.href = {:?};", url))
-		.map_err(|e| format!("navigate: {e}"))
+    // Validate URL before passing to eval.
+    let _ = url
+        .parse::<url::Url>()
+        .map_err(|e| format!("Invalid URL: {e}"))?;
+    let wv = get_wv(&app)?;
+    wv.eval(&format!("window.location.href = {:?};", url))
+        .map_err(|e| format!("navigate: {e}"))
 }
 
 /// Navigate back.
 #[tauri::command]
 pub async fn browser_wv_back(app: AppHandle) -> Result<(), String> {
-	get_wv(&app)?
-		.eval("history.back();")
-		.map_err(|e| format!("back: {e}"))
+    get_wv(&app)?
+        .eval("history.back();")
+        .map_err(|e| format!("back: {e}"))
 }
 
 /// Navigate forward.
 #[tauri::command]
 pub async fn browser_wv_forward(app: AppHandle) -> Result<(), String> {
-	get_wv(&app)?
-		.eval("history.forward();")
-		.map_err(|e| format!("forward: {e}"))
+    get_wv(&app)?
+        .eval("history.forward();")
+        .map_err(|e| format!("forward: {e}"))
 }
 
 /// Reload the current page.
 #[tauri::command]
 pub async fn browser_wv_reload(app: AppHandle) -> Result<(), String> {
-	get_wv(&app)?
-		.eval("location.reload();")
-		.map_err(|e| format!("reload: {e}"))
+    get_wv(&app)?
+        .eval("location.reload();")
+        .map_err(|e| format!("reload: {e}"))
 }
 
 /// Get current URL and title (tracked by the init script on every navigation).
 #[tauri::command]
 pub fn browser_wv_page_info() -> (String, String) {
-	(
-		CURRENT_URL.lock().unwrap().clone(),
-		CURRENT_TITLE.lock().unwrap().clone(),
-	)
+    (
+        CURRENT_URL.lock().unwrap().clone(),
+        CURRENT_TITLE.lock().unwrap().clone(),
+    )
 }
 
 /// Evaluate JavaScript and return the serialized result (for Naia AI).
 #[tauri::command]
 pub async fn browser_wv_eval(app: AppHandle, js: String) -> Result<String, String> {
-	eval_and_await(&app, &format!("return (async()=>{{ {js} }})()")).await
+    eval_and_await(&app, &format!("return (async()=>{{ {js} }})()")).await
 }
 
 /// Get an accessibility tree snapshot of the current page (for Naia AI).
 /// Also populates `window.__naia_refs` so @eN refs can be used in click/fill.
 #[tauri::command]
 pub async fn browser_wv_snapshot(app: AppHandle) -> Result<String, String> {
-	eval_and_await(
+    eval_and_await(
 		&app,
 		r#"return (function() {
 var out = [], n = {c: 0};
@@ -438,8 +458,8 @@ return out.join("\n");
 /// Click an element by @eN ref (from snapshot), CSS selector, or text (for Naia AI).
 #[tauri::command]
 pub async fn browser_wv_click(app: AppHandle, selector: String) -> Result<(), String> {
-	let js = format!(
-		r#"return (function() {{
+    let js = format!(
+        r#"return (function() {{
 var s = {sel:?};
 // 1. @eN ref from most recent snapshot
 var el = (window.__naia_refs && window.__naia_refs[s]) || null;
@@ -460,21 +480,17 @@ el.focus();
 el.click();
 return null;
 }})()"#,
-		sel = selector
-	);
-	eval_and_await(&app, &js).await?;
-	Ok(())
+        sel = selector
+    );
+    eval_and_await(&app, &js).await?;
+    Ok(())
 }
 
 /// Fill a text input by @eN ref (from snapshot) or CSS selector (for Naia AI).
 #[tauri::command]
-pub async fn browser_wv_fill(
-	app: AppHandle,
-	selector: String,
-	text: String,
-) -> Result<(), String> {
-	let js = format!(
-		r#"return (function() {{
+pub async fn browser_wv_fill(app: AppHandle, selector: String, text: String) -> Result<(), String> {
+    let js = format!(
+        r#"return (function() {{
 var s = {sel:?};
 var el = (window.__naia_refs && window.__naia_refs[s]) || null;
 if (!el) {{ try {{ el = document.querySelector(s); }} catch(e) {{}} }}
@@ -485,51 +501,51 @@ el.dispatchEvent(new Event("input", {{ bubbles: true }}));
 el.dispatchEvent(new Event("change", {{ bubbles: true }}));
 return null;
 }})()"#,
-		sel = selector,
-		text = text
-	);
-	eval_and_await(&app, &js).await?;
-	Ok(())
+        sel = selector,
+        text = text
+    );
+    eval_and_await(&app, &js).await?;
+    Ok(())
 }
 
 /// Get text content of an element or the full page (for Naia AI).
 #[tauri::command]
 pub async fn browser_wv_get_text(app: AppHandle, selector: String) -> Result<String, String> {
-	let js = if selector.is_empty() {
-		"return document.body.innerText".to_string()
-	} else {
-		format!(
-			"return (document.querySelector({sel:?}) || document.body).innerText",
-			sel = selector
-		)
-	};
-	eval_and_await(&app, &js).await
+    let js = if selector.is_empty() {
+        "return document.body.innerText".to_string()
+    } else {
+        format!(
+            "return (document.querySelector({sel:?}) || document.body).innerText",
+            sel = selector
+        )
+    };
+    eval_and_await(&app, &js).await
 }
 
 /// Scroll the page (for Naia AI).
 #[tauri::command]
 pub async fn browser_wv_scroll(
-	app: AppHandle,
-	direction: String,
-	pixels: i32,
+    app: AppHandle,
+    direction: String,
+    pixels: i32,
 ) -> Result<(), String> {
-	let (dx, dy) = match direction.as_str() {
-		"up" => (0, -pixels),
-		"down" => (0, pixels),
-		"left" => (-pixels, 0),
-		"right" => (pixels, 0),
-		_ => (0, pixels),
-	};
-	let js = format!("window.scrollBy({dx}, {dy}); return null;");
-	eval_and_await(&app, &js).await?;
-	Ok(())
+    let (dx, dy) = match direction.as_str() {
+        "up" => (0, -pixels),
+        "down" => (0, pixels),
+        "left" => (-pixels, 0),
+        "right" => (pixels, 0),
+        _ => (0, pixels),
+    };
+    let js = format!("window.scrollBy({dx}, {dy}); return null;");
+    eval_and_await(&app, &js).await?;
+    Ok(())
 }
 
 /// Press a keyboard key (for Naia AI).
 #[tauri::command]
 pub async fn browser_wv_press(app: AppHandle, key: String) -> Result<(), String> {
-	let js = format!(
-		r#"return (function() {{
+    let js = format!(
+        r#"return (function() {{
 var key = {key:?};
 var el = document.activeElement || document.body;
 var opts = {{ key: key, bubbles: true, cancelable: true }};
@@ -538,14 +554,14 @@ el.dispatchEvent(new KeyboardEvent("keypress", opts));
 el.dispatchEvent(new KeyboardEvent("keyup", opts));
 return null;
 }})()"#,
-		key = key
-	);
-	eval_and_await(&app, &js).await?;
-	Ok(())
+        key = key
+    );
+    eval_and_await(&app, &js).await?;
+    Ok(())
 }
 
 /// Screenshot — not yet implemented in multi-webview mode.
 #[tauri::command]
 pub fn browser_wv_screenshot() -> Result<String, String> {
-	Err("Screenshot not yet available in multi-webview mode".to_string())
+    Err("Screenshot not yet available in multi-webview mode".to_string())
 }

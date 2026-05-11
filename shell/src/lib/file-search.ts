@@ -171,7 +171,8 @@ export function getFileIcon(name: string): string {
 function parseExtFilter(query: string): string | null {
 	const trimmed = query.trim().toLowerCase();
 	if (trimmed.startsWith("*.")) return trimmed.slice(2);
-	if (trimmed.startsWith(".") && !trimmed.includes("/")) return trimmed.slice(1);
+	if (trimmed.startsWith(".") && !trimmed.includes("/"))
+		return trimmed.slice(1);
 	return null;
 }
 

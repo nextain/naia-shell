@@ -1,5 +1,5 @@
-import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 import { panelRegistry } from "../../lib/panel-registry";
+import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
 import { BrowserCenterPanel } from "./BrowserCenterPanel";
 
 panelRegistry.register({

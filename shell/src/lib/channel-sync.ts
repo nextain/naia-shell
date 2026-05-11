@@ -2,9 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { loadConfig, saveConfig } from "./config";
 import { openDmChannel } from "./discord-api";
+import { restartGateway, syncToGateway } from "./gateway-sync";
 import { getLocale } from "./i18n";
 import { Logger } from "./logger";
-import { restartGateway, syncToGateway } from "./gateway-sync";
 import { buildSystemPrompt } from "./persona";
 
 const LINKED_CHANNELS_API =

@@ -150,7 +150,9 @@ async function gotoSettings(page: import("@playwright/test").Page) {
 		.click();
 
 	// Wait for memory section heading
-	await expect(page.getByText(/기억|Memory/i).first()).toBeVisible({ timeout: 8_000 });
+	await expect(page.getByText(/기억|Memory/i).first()).toBeVisible({
+		timeout: 8_000,
+	});
 }
 
 test.describe("Memory Settings UI", () => {
@@ -209,9 +211,7 @@ test.describe("Memory Settings UI", () => {
 		await gotoSettings(page);
 
 		// Qdrant fields should be hidden initially (default = local)
-		await expect(
-			page.locator('input[placeholder*="6333"]'),
-		).not.toBeVisible();
+		await expect(page.locator('input[placeholder*="6333"]')).not.toBeVisible();
 
 		// Select Qdrant adapter
 		await page.locator('input[name="memory-adapter"][value="qdrant"]').click();
@@ -235,7 +235,9 @@ test.describe("Memory Settings UI", () => {
 
 		// Model selection radio buttons should appear
 		await expect(
-			page.locator('input[name="memory-offline-model"][value="all-MiniLM-L6-v2"]'),
+			page.locator(
+				'input[name="memory-offline-model"][value="all-MiniLM-L6-v2"]',
+			),
 		).toBeVisible();
 		await expect(
 			page.locator(
@@ -269,9 +271,7 @@ test.describe("Memory Settings UI", () => {
 	}) => {
 		await gotoSettings(page);
 
-		await page
-			.locator('input[name="memory-embedding"][value="naia"]')
-			.click();
+		await page.locator('input[name="memory-embedding"][value="naia"]').click();
 
 		// No naiaKey in config, so should show "required" hint
 		await expect(
@@ -286,9 +286,11 @@ test.describe("Memory Settings UI", () => {
 
 		// Backup password input
 		await expect(
-			page.locator(
-				'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="비밀번호"]',
-			).first(),
+			page
+				.locator(
+					'input[type="password"][placeholder*="password"], input[type="password"][placeholder*="비밀번호"]',
+				)
+				.first(),
 		).toBeVisible();
 
 		// Export button
@@ -313,14 +315,12 @@ test.describe("Memory Settings UI", () => {
 		);
 
 		// Memory stats should show fact count
-		await expect(
-			page.getByText(/2.*fact|사실 2/i),
-		).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByText(/2.*fact|사실 2/i)).toBeVisible({
+			timeout: 5_000,
+		});
 
 		// Fact contents should be visible in the list
-		await expect(
-			page.getByText("User prefers TypeScript"),
-		).toBeVisible();
+		await expect(page.getByText("User prefers TypeScript")).toBeVisible();
 	});
 
 	test("delete fact invokes memory_delete_fact IPC and removes from list", async ({
@@ -346,7 +346,8 @@ test.describe("Memory Settings UI", () => {
 		);
 		const deleteResult = await page.evaluate(() => ({
 			deletedFacts: (window as any).__MEMORY_SETTINGS_E2E__?.deletedFacts,
-			lastDeletedFactId: (window as any).__MEMORY_SETTINGS_E2E__?.lastDeletedFactId,
+			lastDeletedFactId: (window as any).__MEMORY_SETTINGS_E2E__
+				?.lastDeletedFactId,
 		}));
 		expect(deleteResult.deletedFacts).toBe(1);
 		// First fact is "f1" (User prefers TypeScript)
@@ -378,18 +379,23 @@ test.describe("Memory Settings UI", () => {
 		);
 		const result = await page.evaluate(() => ({
 			exportCalls: (window as any).__MEMORY_SETTINGS_E2E__?.exportCalls,
-			lastExportPassword: (window as any).__MEMORY_SETTINGS_E2E__?.lastExportPassword,
+			lastExportPassword: (window as any).__MEMORY_SETTINGS_E2E__
+				?.lastExportPassword,
 		}));
 		expect(result.exportCalls).toBe(1);
 		expect(result.lastExportPassword).toBe("test-password");
 	});
 
-	test("save calls sync_gateway_config with memory fields", async ({ page }) => {
+	test("save calls sync_gateway_config with memory fields", async ({
+		page,
+	}) => {
 		await gotoSettings(page);
 
 		// Select Qdrant adapter
 		await page.locator('input[name="memory-adapter"][value="qdrant"]').click();
-		await page.locator('input[placeholder*="6333"]').fill("http://localhost:6333");
+		await page
+			.locator('input[placeholder*="6333"]')
+			.fill("http://localhost:6333");
 
 		// Select openai-compat embedding
 		await page
@@ -410,8 +416,7 @@ test.describe("Memory Settings UI", () => {
 
 		// Wait for sync_gateway_config IPC to be called
 		await page.waitForFunction(
-			() =>
-				(window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
 			{},
 			{ timeout: 5_000 },
 		);
@@ -429,7 +434,9 @@ test.describe("Memory Settings UI", () => {
 		expect(syncParams?.memory_embedding_model).toBe("nomic-embed-text");
 	});
 
-	test("save calls sync_gateway_config with local adapter and no embedding (defaults)", async ({ page }) => {
+	test("save calls sync_gateway_config with local adapter and no embedding (defaults)", async ({
+		page,
+	}) => {
 		await gotoSettings(page);
 
 		// local is default, none is default — just save without changing memory settings
@@ -439,8 +446,7 @@ test.describe("Memory Settings UI", () => {
 			.click();
 
 		await page.waitForFunction(
-			() =>
-				(window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
 			{},
 			{ timeout: 5_000 },
 		);

@@ -22,6 +22,10 @@ interface PanelState {
 	modalCount: number;
 	pushModal: () => void;
 	popModal: () => void;
+	/** AI interference toggle: if true, AI can react to OS events. */
+	aiInterferenceEnabled: boolean;
+	setAiInterferenceEnabled: (enabled: boolean) => void;
+	toggleAiInterferenceEnabled: () => void;
 }
 
 export const usePanelStore = create<PanelState>((set, get) => ({
@@ -55,4 +59,9 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 			invoke("browser_wv_show").catch(() => {});
 		}
 	},
+	aiInterferenceEnabled: false,
+	setAiInterferenceEnabled: (enabled) =>
+		set({ aiInterferenceEnabled: enabled }),
+	toggleAiInterferenceEnabled: () =>
+		set((s) => ({ aiInterferenceEnabled: !s.aiInterferenceEnabled })),
 }));

@@ -164,10 +164,7 @@ pub fn query_events(db: &AuditDb, filter: &AuditFilter) -> Result<Vec<AuditEvent
 
     sql.push_str(" ORDER BY id DESC");
 
-    let limit = filter
-        .limit
-        .unwrap_or(DEFAULT_LIMIT)
-        .min(MAX_LIMIT);
+    let limit = filter.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
     let offset = filter.offset.unwrap_or(0);
     sql.push_str(&format!(" LIMIT {} OFFSET {}", limit, offset));
 
@@ -213,7 +210,9 @@ pub fn query_stats(db: &AuditDb) -> Result<AuditStats, String> {
             .prepare("SELECT event_type, COUNT(*) FROM audit_events GROUP BY event_type")
             .map_err(|e| format!("Stats error: {}", e))?;
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })
             .map_err(|e| format!("Stats error: {}", e))?;
         for row in rows {
             by_event_type.push(row.map_err(|e| format!("Row error: {}", e))?);
@@ -228,7 +227,9 @@ pub fn query_stats(db: &AuditDb) -> Result<AuditStats, String> {
             )
             .map_err(|e| format!("Stats error: {}", e))?;
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })
             .map_err(|e| format!("Stats error: {}", e))?;
         for row in rows {
             by_tool_name.push(row.map_err(|e| format!("Row error: {}", e))?);
@@ -268,16 +269,19 @@ fn truncate_payload(payload: &str) -> String {
 fn build_payload(event_type: &str, chunk: &serde_json::Value) -> Option<String> {
     let payload = match event_type {
         "tool_use" => {
-            let args = chunk.get("args").cloned().unwrap_or(serde_json::Value::Null);
+            let args = chunk
+                .get("args")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             serde_json::json!({ "args": args })
         }
         "tool_result" => {
-            let output = chunk
-                .get("output")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let output = chunk.get("output").and_then(|v| v.as_str()).unwrap_or("");
             let output = truncate_payload(output);
-            let error = chunk.get("error").and_then(|v| v.as_str()).map(String::from);
+            let error = chunk
+                .get("error")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let mut obj = serde_json::json!({ "output": output });
             if let Some(err) = error {
                 obj["error"] = serde_json::Value::String(err);
@@ -285,7 +289,10 @@ fn build_payload(event_type: &str, chunk: &serde_json::Value) -> Option<String> 
             obj
         }
         "approval_request" => {
-            let args = chunk.get("args").cloned().unwrap_or(serde_json::Value::Null);
+            let args = chunk
+                .get("args")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             let desc = chunk
                 .get("description")
                 .and_then(|v| v.as_str())
@@ -293,8 +300,14 @@ fn build_payload(event_type: &str, chunk: &serde_json::Value) -> Option<String> 
             serde_json::json!({ "args": args, "description": desc })
         }
         "usage" => {
-            let input_tokens = chunk.get("inputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
-            let output_tokens = chunk.get("outputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let input_tokens = chunk
+                .get("inputTokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let output_tokens = chunk
+                .get("outputTokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             let cost = chunk.get("cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let model = chunk.get("model").and_then(|v| v.as_str()).unwrap_or("");
             serde_json::json!({
@@ -305,10 +318,7 @@ fn build_payload(event_type: &str, chunk: &serde_json::Value) -> Option<String> 
             })
         }
         "error" => {
-            let message = chunk
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let message = chunk.get("message").and_then(|v| v.as_str()).unwrap_or("");
             serde_json::json!({ "message": message })
         }
         _ => return None,
@@ -478,8 +488,28 @@ mod tests {
     #[test]
     fn filter_by_tool_name() {
         let (db, _dir) = test_db();
-        insert_event(&db, "req-1", "tool_use", Some("read_file"), None, None, None, None).unwrap();
-        insert_event(&db, "req-1", "tool_use", Some("write_file"), None, None, None, None).unwrap();
+        insert_event(
+            &db,
+            "req-1",
+            "tool_use",
+            Some("read_file"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        insert_event(
+            &db,
+            "req-1",
+            "tool_use",
+            Some("write_file"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let filter = AuditFilter {
             tool_name: Some("write_file".into()),
@@ -594,9 +624,28 @@ mod tests {
     #[test]
     fn query_stats_aggregates_correctly() {
         let (db, _dir) = test_db();
-        insert_event(&db, "req-1", "tool_use", Some("read_file"), None, None, None, None).unwrap();
-        insert_event(&db, "req-1", "tool_result", Some("read_file"), None, None, Some(true), None)
-            .unwrap();
+        insert_event(
+            &db,
+            "req-1",
+            "tool_use",
+            Some("read_file"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        insert_event(
+            &db,
+            "req-1",
+            "tool_result",
+            Some("read_file"),
+            None,
+            None,
+            Some(true),
+            None,
+        )
+        .unwrap();
         insert_event(
             &db,
             "req-1",
@@ -619,8 +668,17 @@ mod tests {
             Some(r#"{"inputTokens":200,"outputTokens":100,"cost":0.010,"model":"gemini"}"#),
         )
         .unwrap();
-        insert_event(&db, "req-2", "error", None, None, None, None, Some(r#"{"message":"err"}"#))
-            .unwrap();
+        insert_event(
+            &db,
+            "req-2",
+            "error",
+            None,
+            None,
+            None,
+            None,
+            Some(r#"{"message":"err"}"#),
+        )
+        .unwrap();
 
         let stats = query_stats(&db).unwrap();
         assert_eq!(stats.total_events, 5);
@@ -725,10 +783,8 @@ mod tests {
     #[test]
     fn maybe_log_event_ignores_text() {
         let (db, _dir) = test_db();
-        let chunk: serde_json::Value = serde_json::from_str(
-            r#"{"type":"text","requestId":"req-1","text":"hello"}"#,
-        )
-        .unwrap();
+        let chunk: serde_json::Value =
+            serde_json::from_str(r#"{"type":"text","requestId":"req-1","text":"hello"}"#).unwrap();
         maybe_log_event(&db, &chunk);
 
         let events = query_events(&db, &AuditFilter::default()).unwrap();

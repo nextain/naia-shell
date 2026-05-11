@@ -42,7 +42,7 @@ describe("99 — vllm-omni voice", () => {
 		// Select vllm provider
 		await browser.execute(() => {
 			const select = document.querySelector(
-				'#provider-select',
+				"#provider-select",
 			) as HTMLSelectElement | null;
 			if (select) {
 				select.value = "vllm";

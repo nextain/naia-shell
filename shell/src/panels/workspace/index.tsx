@@ -29,6 +29,37 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 		tier: 1, // notify
 	},
 	{
+		name: "skill_workspace_get_open_file",
+		description:
+			"현재 에디터에 열려 있는 파일의 경로와 내용을 반환한다. 파일이 없으면 { open: false }를 반환한다.",
+		parameters: { type: "object", properties: {}, required: [] },
+		tier: 0, // auto (read-only)
+	},
+	{
+		name: "skill_workspace_edit_open_file",
+		description:
+			"현재 에디터에 열려 있는 파일의 내용을 replaceAll로 치환한다. search와 replace를 제공하면 파일 내용에서 해당 텍스트를 모두 바꾼다. 전체 교체는 content 인자를 사용한다.",
+		parameters: {
+			type: "object",
+			properties: {
+				search: {
+					type: "string",
+					description: "찾을 텍스트",
+				},
+				replace: {
+					type: "string",
+					description: "바꿀 텍스트",
+				},
+				content: {
+					type: "string",
+					description: "파일 전체 내용으로 교체 (search/replace보다 우선)",
+				},
+			},
+			required: [],
+		},
+		tier: 2, // confirm (file write)
+	},
+	{
 		name: "skill_workspace_focus_session",
 		description:
 			"워크스페이스 패널을 활성화하고 지정한 세션 카드로 스크롤·하이라이트한다. 3초 후 하이라이트 자동 해제. open_recent_file: true이면 세션의 마지막 작업 파일도 에디터에 연다.",
@@ -87,6 +118,31 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 			required: ["dir", "text"],
 		},
 		tier: 2, // confirm (PTY 입력)
+	},
+	{
+		name: "skill_workspace_execute",
+		description:
+			"지정한 디렉토리에서 셸 명령을 실행하고 출력을 캡처하여 반환한다. 새 임시 PTY에서 실행되며, 명령 완료 후 자동 정리된다. 기존 터미널 세션에 영향 없음. 반환값: { success, output, exit_code }",
+		parameters: {
+			type: "object",
+			properties: {
+				command: {
+					type: "string",
+					description: "실행할 셸 명령",
+				},
+				dir: {
+					type: "string",
+					description:
+						"명령을 실행할 디렉토리 절대 경로 (기본값: 워크스페이스 루트)",
+				},
+				timeout_secs: {
+					type: "number",
+					description: "명령 실행 타임아웃 (초, 기본값: 60)",
+				},
+			},
+			required: ["command"],
+		},
+		tier: 2, // confirm (command execution)
 	},
 	{
 		name: "skill_workspace_classify_dirs",

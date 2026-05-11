@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ClassifiedDir } from "./types";
 import { type DirEntry, getFileIcon } from "../../lib/file-search";
 import { Logger } from "../../lib/logger";
 import { WORKSPACE_ROOT } from "./constants";
+import type { ClassifiedDir } from "./types";
 
 // ─── Context menu types ──────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ interface ContextMenuState {
  */
 function relativePath(base: string, target: string): string {
 	const normalizedBase = base.replace(/\/$/, "");
-	if (!normalizedBase || !target.startsWith(normalizedBase + "/")) {
+	if (!normalizedBase || !target.startsWith(`${normalizedBase}/`)) {
 		return target;
 	}
 	return target.slice(normalizedBase.length + 1);
@@ -177,20 +177,29 @@ function TreeNode({
 				<span className="workspace-tree__icon">{icon}</span>
 				<span className="workspace-tree__name">{entry.name}</span>
 				{(() => {
-					const cd = classifiedDirsProp?.find((d) => normPath(d.path) === normPath(entry.path));
+					const cd = classifiedDirsProp?.find(
+						(d) => normPath(d.path) === normPath(entry.path),
+					);
 					if (!cd) return null;
-					return <>
-						{cd.visibility && (
-							<span className={`workspace-tree__badge ${cd.visibility === "public" ? "workspace-tree__badge--public" : "workspace-tree__badge--private"}`}>
-								{cd.visibility === "public" ? "pub" : "priv"}
-							</span>
-						)}
-						{cd.entryPoint && (
-							<span className="workspace-tree__entrypoint" title={cd.entryPoint}>
-								⎆
-							</span>
-						)}
-					</>;
+					return (
+						<>
+							{cd.visibility && (
+								<span
+									className={`workspace-tree__badge ${cd.visibility === "public" ? "workspace-tree__badge--public" : "workspace-tree__badge--private"}`}
+								>
+									{cd.visibility === "public" ? "pub" : "priv"}
+								</span>
+							)}
+							{cd.entryPoint && (
+								<span
+									className="workspace-tree__entrypoint"
+									title={cd.entryPoint}
+								>
+									⎆
+								</span>
+							)}
+						</>
+					);
 				})()}
 				{isActive && (
 					<span className="workspace-tree__active-dot" title="Active session" />
@@ -394,7 +403,13 @@ export function FileTree({
 	}
 
 	// Phase 4: if classified dirs provided, show in sections
-	if (classifiedDirs && classifiedDirs.length > 0) {
+	if (
+		classifiedDirs &&
+		classifiedDirs.length > 0 &&
+		entries.some((e) =>
+			classifiedDirs.some((d) => normPath(d.path) === normPath(e.path)),
+		)
+	) {
 		const sections: Record<string, typeof classifiedDirs> = {
 			project: [],
 			worktree: [],
@@ -462,6 +477,17 @@ export function FileTree({
 						</div>
 					);
 				})}
+				{contextMenuEl}
+			</div>
+		);
+	}
+
+	if (entries.length === 0) {
+		return (
+			<div className="workspace-tree workspace-tree--empty">
+				<div className="workspace-tree__empty-hint">
+					표시할 파일이나 폴더가 없습니다
+				</div>
 				{contextMenuEl}
 			</div>
 		);
