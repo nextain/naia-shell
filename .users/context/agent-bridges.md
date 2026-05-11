@@ -125,6 +125,55 @@ Test discipline: seed with `setAgentNaiaKey("gw-...")` in `beforeEach` and
 clear in `afterEach`. The removed `config.naiaKey` field is a footgun — tests
 that still pass it silently take the fall-through path.
 
+## Notify config flow (#260)
+
+Webhook URLs + Discord defaults travel via `notify_config`, not per-request.
+
+```ts
+// shell side — once at startup + once per settings save
+sendNotifyConfig({
+  slackWebhookUrl,
+  discordWebhookUrl,
+  googleChatWebhookUrl,
+  discordDefaultUserId,
+  discordDefaultTarget,
+  discordDmChannelId,
+});
+
+// agent side (index.ts)
+handleNotifyConfig(req) → applyNotifyWebhookEnv(...) // writes process.env
+```
+
+`applyNotifyWebhookEnv` semantics:
+- `undefined` field → preserve existing env (partial update / first startup)
+- empty string → delete env (user erased the textbox = explicit unset)
+- non-empty → write
+
+Per-request `chat_request` / `tool_request` frames MUST NOT carry these
+fields. For backwards-compat they stay declared optional on the request
+types, but the shell never populates them.
+
+Closes the credential leak in #260: webhook URLs no longer appear in every
+LLM turn's stdio frame (logs, crash dumps, malicious npm wrappers).
+
+## Security hardening (post-#256-#260 + follow-ups)
+
+Five P0-critical fixes landed 2026-05-12 from the adversarial review:
+
+| Issue | Where | What |
+|---|---|---|
+| #256 | `agent/src/index.ts` `handleToolRequest` | `needsApproval(toolName)` gate before `executeTool` (unmapped tools default to Tier 2). Mirrors LLM-loop gate at L759/L834. |
+| #257 | `agent/src/skills/built-in/panel.ts` `actionInstall` | `source` must start with `https://` — `file://` / `http://` / `git@` / `data:` / `javascript:` / bare paths rejected. Local-zip unzip fallback removed. |
+| #258 | `shell/src-tauri/tauri.conf.json` `assetProtocol.scope` | Full FsScope object with explicit allow list + `requireLiteralLeadingDot: true`. Bare `**` / drive-roots / bare `/tmp/**` removed. Follow-up: #277 (runtime scope extension). |
+| #259 | `shell/src-tauri/tauri.conf.json` `csp.connect-src` | `discord.com` removed. All Discord API via Rust `invoke('discord_api', ...)`. |
+| #260 | New `notify_config` msg type | Webhook URLs off per-request stdio (see "Notify config flow" above). |
+| #248 | `shell/src/lib/llm/registry.ts` + `agent/src/providers/lab-proxy.ts` | Gateway GCP project lacks Vertex access to gemini-3.x — drop from Naia provider picker, fix `gemini-3.1-flash-live-preview` fallback, accurate 0-byte SSE error. Saved-config migration via `shouldMigrateNextainModel`. |
+| #254 | `shell/src-tauri/tauri.conf.json` + `App.tsx` `useAppReady` | `windows[0].backgroundColor: [6, 13, 20, 255]` for cold-start flash; `useAppReady` treats `showOnboarding` symmetrically to `showAdkSetup` to avoid 5 s splash deadlock. |
+
+Pending: `provider.apiKey` is STILL per-`chat_request`. Same pattern as
+`notify_config` can move it to a one-shot `creds_update` message + drop
+from `ChatRequest` schema.
+
 ## Vendored packages
 
 | File | Purpose |

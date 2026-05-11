@@ -35,6 +35,22 @@ Naia OS today is an **embedded-agent** architecture, NOT a hybrid daemon stack. 
 
 OpenClaw was the gateway daemon before #201; it is **gone from runtime**. The historical hybrid framing below is preserved for context — do not treat it as current design.
 
+## Recent hardening (2026-05-12 adversarial-review batch)
+
+Seven issues closed in one autonomous session — details in [`agent-bridges.md > Security hardening`](./agent-bridges.md#security-hardening-post-256-260--follow-ups).
+
+| Issue | Class | What |
+|---|---|---|
+| #256 | P0-security | `handleToolRequest` tier-gate (was unprotected vs. LLM-loop path) |
+| #257 | P0-security | `panel_install` HTTPS-only (file:// / http:// / git@ / bare path rejected) |
+| #258 | P0-security | `assetProtocol.scope` hardened (no bare `**`, `requireLiteralLeadingDot: true`) |
+| #259 | P0-security | `discord.com` off CSP `connect-src` (all Discord via Rust invoke) |
+| #260 | P0-security | Webhook URLs off per-request stdio (new `notify_config` msg type) |
+| #248 | P1-bug | Naia gateway lacks Vertex AI access to gemini-3.x — drop from picker + saved-config migration |
+| #254 | P0-UX | Startup white flash + onboarding splash deadlock |
+
+Follow-ups still open: **#277** (runtime asset-scope extension for non-standard ADK paths), and a no-issue note that `provider.apiKey` is still per-`chat_request` — same pattern as #260 can move it.
+
 ---
 
 ## Historical: Hybrid Design (pre-#201)

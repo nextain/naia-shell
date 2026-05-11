@@ -35,6 +35,22 @@ Naia OS 는 현재 **임베드 에이전트** 구조 — hybrid daemon 스택이
 
 OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨**. 아래 historical hybrid framing 은 맥락 보존용 — 현재 design 으로 보면 안됨.
 
+## 최근 hardening (2026-05-12 적대적 리뷰 배치)
+
+한 번의 자율 세션에서 7건 closed — 상세는 [`agent-bridges.md > 보안 hardening`](./agent-bridges.md#보안-hardening-256-260--follow-up).
+
+| 이슈 | 분류 | 내용 |
+|---|---|---|
+| #256 | P0-보안 | `handleToolRequest` tier 게이트 (LLM-loop 경로 외 진입점 우회 차단) |
+| #257 | P0-보안 | `panel_install` HTTPS-only (file:// / http:// / git@ / bare path 거부) |
+| #258 | P0-보안 | `assetProtocol.scope` 강화 (bare `**` 제거, `requireLiteralLeadingDot: true`) |
+| #259 | P0-보안 | `discord.com` CSP `connect-src` 제거 (모든 Discord 는 Rust invoke 경유) |
+| #260 | P0-보안 | Webhook URL 을 per-request stdio 에서 제거 (새 `notify_config` 메시지) |
+| #248 | P1-버그 | Naia gateway 가 gemini-3.x Vertex 접근 없음 — picker 에서 제거 + 저장된 config 마이그레이션 |
+| #254 | P0-UX | Startup white flash + onboarding splash deadlock |
+
+남은 follow-up: **#277** (비표준 ADK path 용 runtime asset-scope 확장), 그리고 `provider.apiKey` 는 여전히 per-`chat_request` — #260 패턴으로 이동 가능 (issue 미등록).
+
 ---
 
 # Naia 하이브리드 아키텍처 (historical, pre-#201)

@@ -21,6 +21,24 @@ description: Naia architecture (mirror of .users/context/ko/architecture.md)
 # context (see `history.legacy_three_pillars` block below) so the rationale
 # for what we have today is traceable. Do not treat it as current design.
 
+recent_hardening:
+  date: "2026-05-12"
+  summary: |
+    Adversarial-review batch closed 5 P0-critical security issues + 1 P0
+    UX + 1 P1 gateway routing bug. All changes documented in
+    `agent-bridges.yaml > security_hardening` section.
+  closed_issues:
+    - "#256 — handleToolRequest tier bypass gated (4 tests)"
+    - "#257 — panel_install rejects file:// / http:// / git@ / bare path (8 tests)"
+    - "#258 — assetProtocol.scope removes bare ** + drive roots + adds requireLiteralLeadingDot (7 tests)"
+    - "#259 — discord.com removed from CSP connect-src (3 tests)"
+    - "#260 — webhook URLs off per-request stdio via new notify_config msg (8 tests)"
+    - "#248 — Naia gateway lacks gemini-3.x access; drop from picker + migrate saved configs + accurate 0-byte SSE error (8 tests)"
+    - "#254 — startup white flash backgroundColor + useAppReady onboarding short-circuit (4 tests)"
+  follow_ups_open:
+    - "#277 — runtime asset_protocol_scope.allow_directory() at copy_bundled_assets for non-standard ADK paths"
+    - "(no issue) provider.apiKey still per-chat_request; apply notify_flow pattern via creds_update msg"
+
 current_runtime:
   source_of_truth: .agents/context/agent-bridges.yaml
   diagram: |

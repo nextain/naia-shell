@@ -112,6 +112,79 @@ auth_flow:
     memorySystem AND memoryProvider when the key arrives, so naia embedding
     + LLM fact extractor pick up the credential immediately.
 
+notify_flow:
+  credential_owner: agent (env-cached)
+  contract: |
+    Shell sends `notify_config` once at startup (App.tsx mount) and again on
+    every settings save (SettingsTab handleSave). Six fields carried:
+    slackWebhookUrl, discordWebhookUrl, googleChatWebhookUrl,
+    discordDefaultUserId, discordDefaultTarget, discordDmChannelId.
+    handleNotifyConfig delegates to applyNotifyWebhookEnv which writes to
+    process.env (or deletes when empty string sent). Per-request ChatRequest /
+    ToolRequest frames MUST NOT carry these fields.
+  why: |
+    Closes #260 — credential leak through per-chat_request stdio frames.
+    Webhook URLs previously appeared in every LLM turn's stdio line; a
+    malicious process / log capture / crash dump could harvest them.
+  applyNotifyWebhookEnv_semantics:
+    empty_string: "clear env (explicit unset by user erasing the textbox)"
+    undefined: "preserve existing env (partial update / first startup)"
+    non_empty: "write to env"
+  schema_status: |
+    For backwards-compat the webhook fields stay declared as optional in
+    ChatRequest / ToolRequest types — they're just never populated by the
+    shell. A future cleanup commit can drop them entirely once we're sure
+    no out-of-tree shell builds depend on them.
+
+security_hardening:
+  bundle: "naia-os#256-#260 (P0-critical adversarial review batch, 2026-05-12)"
+  tool_request_tier_gate:
+    issue: 256
+    location: agent/src/index.ts handleToolRequest (≈L1086)
+    invariant: |
+      Every handleToolRequest call must call needsApproval(toolName) before
+      executeTool. needsApproval defaults Tier 2 for unmapped tools, so even
+      an unknown tool name cannot bypass approval. Mirrors the LLM-loop gate
+      at index.ts L759/L834.
+    test: agent/src/__tests__/tool-request-approval-gate.test.ts
+  panel_install_https_only:
+    issue: 257
+    location: agent/src/skills/built-in/panel.ts actionInstall
+    invariant: |
+      source must start with "https://". file:// / http:// / git@ / data: /
+      javascript: / bare local paths are rejected with an explicit error
+      before any spawn. The local-zip unzip fallback that previously matched
+      bare paths is REMOVED — single https-only git-clone code path.
+    test: agent/src/skills/built-in/__tests__/panel-install-https-only.test.ts
+  asset_protocol_scope:
+    issue: 258
+    location: shell/src-tauri/tauri.conf.json windows[0].security.assetProtocol
+    invariant: |
+      scope is the full FsScope object with explicit allow list and
+      requireLiteralLeadingDot: true. Bare "**" / "/**" / drive-roots /
+      bare /tmp/** are forbidden. allow list includes $RESOURCE/**, app
+      data dirs, $HOME/**, /tmp/naia-**, /var/home/*/naia-adk/**,
+      /var/home/*/naia/**.
+    test: shell/src/lib/__tests__/asset-protocol-scope.test.ts
+    follow_up: "#277 — runtime scope extension via app.asset_protocol_scope().allow_directory() on workspace_set_root for non-standard ADK paths"
+  csp_no_direct_discord:
+    issue: 259
+    location: shell/src-tauri/tauri.conf.json windows[0].security.csp
+    invariant: |
+      connect-src MUST NOT list discord.com. All Discord API traffic flows
+      through Rust `invoke('discord_api', ...)` (shell/src/lib/discord-api.ts).
+    test: shell/src/lib/__tests__/csp-no-discord.test.ts
+  notify_config_off_request:
+    issue: 260
+    location: agent/src/protocol.ts NotifyConfigRequest + shell/src/lib/chat-service.ts sendNotifyConfig
+    invariant: |
+      Webhook URLs + Discord defaults MUST NOT appear in any per-request
+      chat_request / tool_request frame. They flow ONLY via notify_config.
+      See notify_flow section above for the contract details.
+    test: agent/src/__tests__/notify-config.test.ts + shell/src/lib/__tests__/chat-service.test.ts (#260 cases)
+  follow_up_pending:
+    - "provider.apiKey is STILL per-chat_request — extend notify_flow pattern to a `creds_update` message and drop apiKey from ChatRequest schema."
+
 vendored_packages:
   paths:
     - agent/vendor/nextain-agent-protocol-0.1.0.tgz

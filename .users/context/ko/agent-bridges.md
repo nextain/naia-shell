@@ -126,6 +126,55 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 `afterEach` 에서 clear. 제거된 `config.naiaKey` 필드는 함정 — 아직 그걸
 넘기는 테스트는 silent 하게 fall-through path 를 탑니다.
 
+## Notify config 흐름 (#260)
+
+Webhook URL + Discord 기본값은 `notify_config` 로 흐름 — per-request 아님.
+
+```ts
+// shell 측 — startup 1회 + 설정 저장 시 1회
+sendNotifyConfig({
+  slackWebhookUrl,
+  discordWebhookUrl,
+  googleChatWebhookUrl,
+  discordDefaultUserId,
+  discordDefaultTarget,
+  discordDmChannelId,
+});
+
+// agent 측 (index.ts)
+handleNotifyConfig(req) → applyNotifyWebhookEnv(...) // process.env 기록
+```
+
+`applyNotifyWebhookEnv` 의미:
+- `undefined` 필드 → 기존 env 보존 (부분 업데이트 / 첫 startup)
+- 빈 문자열 → env 삭제 (사용자가 textbox 지운 = 명시적 unset)
+- non-empty → 기록
+
+매 request `chat_request` / `tool_request` frame 은 이 필드들을 절대 carry
+하지 않음. 하위 호환 위해 request type 에는 optional 로 선언만 남김 — shell
+은 populate 안 함.
+
+#260 의 자격증명 누출 차단: 모든 LLM 턴의 stdio frame 에 webhook URL 들이
+더이상 안 보임 (logs, crash dumps, malicious npm wrappers 회피).
+
+## 보안 hardening (#256-#260 + follow-up)
+
+2026-05-12 적대적 리뷰에서 5건 P0-critical fix:
+
+| 이슈 | 위치 | 내용 |
+|---|---|---|
+| #256 | `agent/src/index.ts` `handleToolRequest` | `executeTool` 전에 `needsApproval(toolName)` 게이트 (미매핑 도구는 default Tier 2). L759/L834 의 LLM-loop 게이트와 동일. |
+| #257 | `agent/src/skills/built-in/panel.ts` `actionInstall` | `source` 가 `https://` 로 시작해야 함 — `file://` / `http://` / `git@` / `data:` / `javascript:` / bare path 거부. local-zip unzip fallback 제거. |
+| #258 | `shell/src-tauri/tauri.conf.json` `assetProtocol.scope` | 명시적 allow + `requireLiteralLeadingDot: true` 의 full FsScope 객체. Bare `**` / drive-roots / bare `/tmp/**` 제거. Follow-up: #277 (runtime scope 확장). |
+| #259 | `shell/src-tauri/tauri.conf.json` `csp.connect-src` | `discord.com` 제거. 모든 Discord API 는 Rust `invoke('discord_api', ...)` 경유. |
+| #260 | 새 `notify_config` msg type | Webhook URL 을 per-request stdio 에서 제거 (위 "Notify config 흐름" 참고). |
+| #248 | `shell/src/lib/llm/registry.ts` + `agent/src/providers/lab-proxy.ts` | Gateway GCP project 가 gemini-3.x Vertex access 없음 — Naia provider picker 에서 제거, `gemini-3.1-flash-live-preview` fallback fix, 0-byte SSE 정확한 에러. 저장된 config 마이그레이션 `shouldMigrateNextainModel`. |
+| #254 | `shell/src-tauri/tauri.conf.json` + `App.tsx` `useAppReady` | Cold-start flash 위해 `windows[0].backgroundColor: [6, 13, 20, 255]`; `useAppReady` 가 `showOnboarding` 을 `showAdkSetup` 과 동일 처리 — 5초 splash deadlock 회피. |
+
+남은 작업: `provider.apiKey` 는 여전히 per-`chat_request`. `notify_config` 와
+동일 패턴으로 one-shot `creds_update` 메시지로 옮기고 `ChatRequest` 스키마에서
+제거 가능.
+
 ## Vendored 패키지
 
 | 파일 | 용도 |
