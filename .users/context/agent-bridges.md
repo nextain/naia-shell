@@ -141,7 +141,8 @@ replace the tgz + bump the version pin in `agent/package.json`.
 | Repo | Required exports | Pin |
 |------|------------------|-----|
 | `naia-memory` | `MemorySystem`, `LocalAdapter`, embedding providers, `buildLLMFactExtractor`, **`HeuristicContradictionFilter`** (added #272) | alpha-adk submodule |
-| `naia-adk/packages/skills-builtin` | Full 21-skill catalog (Phase 4.0 Day 3-7 complete via #273) + `ALL_DESCRIPTORS` enumeration | file:path |
+| `naia-adk/packages/skills-builtin` | Full 23-skill catalog (Phase 4.0 Day 3-7 via #273 + OpenClaw port via #274) + `ALL_DESCRIPTORS` enumeration. Tier distribution: 8 T0 / 13 T1 / 2 T2. | file:path |
+| `naia-adk/packages/openclaw-compat` | OpenClaw → naia migration tool (CLI `naia-openclaw-migrate`). Parses OpenClaw `SKILL.md` frontmatter into `SkillDescriptor`. Landed via #275. | file:path (standalone, not imported by naia-os agent) |
 | `@nextain/agent-types` (vendored) | Bridge contract types | tgz in `agent/vendor/` |
 
 ## What's deferred

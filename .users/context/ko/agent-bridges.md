@@ -142,7 +142,8 @@ tgz 교체 + `agent/package.json` 의 version pin 올림.
 | Repo | 필수 exports | Pin |
 |------|------------|-----|
 | `naia-memory` | `MemorySystem`, `LocalAdapter`, embedding providers, `buildLLMFactExtractor`, **`HeuristicContradictionFilter`** (#272 추가) | alpha-adk submodule |
-| `naia-adk/packages/skills-builtin` | 전체 21-skill 카탈로그 (#273 으로 Phase 4.0 Day 3-7 완료) + `ALL_DESCRIPTORS` enum | file:path |
+| `naia-adk/packages/skills-builtin` | 전체 23-skill 카탈로그 (#273 Phase 4.0 Day 3-7 + #274 OpenClaw 포팅) + `ALL_DESCRIPTORS` enum. Tier 분포: 8 T0 / 13 T1 / 2 T2. | file:path |
+| `naia-adk/packages/openclaw-compat` | OpenClaw → naia 마이그레이션 도구 (CLI `naia-openclaw-migrate`). OpenClaw `SKILL.md` frontmatter 를 `SkillDescriptor` 로 변환. #275 로 추가. | file:path (standalone, naia-os agent 가 직접 import X) |
 | `@nextain/agent-types` (vendored) | Bridge contract 타입 | `agent/vendor/` 내 tgz |
 
 ## 보류된 작업

@@ -146,11 +146,23 @@ cross_repo_dependencies:
     package: "@naia-adk/skills-builtin"
     path: file:../../naia-adk/packages/skills-builtin
     required_exports:
-      - Full 21-skill catalog (Phase 4.0 Day 3-7 complete via #273): agents,
-        approvals, botmadang, channels, config, cron, device, diagnostics,
-        memo, naia-discord, notify-{discord,google-chat,slack}, panel,
-        sessions, skill-manager, system-status, time, tts, voicewake, weather
+      - Full 23-skill catalog (Phase 4.0 Day 3-7 complete via #273; OpenClaw
+        skill port via #274): agents, agent_browser, approvals, botmadang,
+        channels, config, cron, device, diagnostics, memo, naia-discord,
+        notify-{discord,google-chat,slack}, panel, sessions, skill-manager,
+        system-status, time, tts, voicewake, weather, welcome
       - ALL_DESCRIPTORS array for enumeration
+      - Tier distribution: 8 T0 / 13 T1 / 2 T2
+
+  naia_adk_openclaw_compat:
+    package: "@naia-adk/openclaw-compat"
+    path: file:../../naia-adk/packages/openclaw-compat (not directly imported by naia-os agent)
+    role: |
+      Standalone CLI + library that parses OpenClaw `SKILL.md` frontmatter and
+      emits @naia-adk/skill-spec SkillDescriptor TypeScript modules. For users
+      with existing OpenClaw skill libraries who want to migrate to naia.
+    CLI: "naia-openclaw-migrate <openclaw-skills-dir> <output.ts>"
+    landed_via: "naia-os#275"
 
   agent_types:
     package: "@nextain/agent-types"
