@@ -93,25 +93,31 @@ function applyTheme(theme: ThemeId) {
 }
 
 /**
- * Readiness gate for the splash screen.
+ * Readiness gate for the splash screen (#254).
  *
- * ADK/onboarding paths signal ready immediately (synchronous render).
- * Normal path waits for VRM avatar load, with a 5 s timeout for VRM failure.
+ * Branch handling:
+ *  - ADK setup screen → ready immediately (AvatarCanvas never mounts)
+ *  - Onboarding screen → ready immediately (AvatarCanvas never mounts)
+ *  - Normal path → wait for VRM avatar `isLoaded`, with 5 s timeout fallback
+ *
+ * The timeout is the safety net for VRM load failure / slow GPU init —
+ * without it, a single asset failure would freeze the splash indefinitely.
  */
-function useAppReady(showAdkSetup: boolean): boolean {
+function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 	const avatarLoaded = useAvatarStore((s) => s.isLoaded);
 	const [timedOut, setTimedOut] = useState(false);
+	const skipAvatarWait = showAdkSetup || showOnboarding;
 
 	useEffect(() => {
-		if (showAdkSetup) return;
+		if (skipAvatarWait) return;
 		const t = setTimeout(() => {
 			Logger.warn("App", "useAppReady: 5 s timeout — forcing splash dismiss");
 			setTimedOut(true);
 		}, 5000);
 		return () => clearTimeout(t);
-	}, [showAdkSetup]);
+	}, [skipAvatarWait]);
 
-	if (showAdkSetup) return true;
+	if (skipAvatarWait) return true;
 	return avatarLoaded || timedOut;
 }
 
@@ -167,7 +173,7 @@ export function App() {
 	}, []);
 
 	// Readiness gate: splash stays until the active branch has something to show
-	const appReady = useAppReady(showAdkSetup);
+	const appReady = useAppReady(showAdkSetup, showOnboarding);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
 	const { activePanel, toggleAiInterferenceEnabled } = usePanelStore();
