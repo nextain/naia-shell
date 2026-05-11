@@ -546,8 +546,12 @@ describe("gatewayUrl parameter", () => {
 });
 
 describe("buildProvider with naiaKey", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		mockFetch.mockReset();
+		// Reset agent-internal credential between tests (#272: naiaKey is set via
+		// setAgentNaiaKey from handleAuthUpdate, not per-request via config).
+		const { setAgentNaiaKey } = await import("../providers/factory.js");
+		setAgentNaiaKey("");
 	});
 
 	it("returns lab proxy that calls gateway URL when naiaKey is set", async () => {
@@ -556,12 +560,12 @@ describe("buildProvider with naiaKey", () => {
 			body: createSSEStream(["data: [DONE]\n\n"]),
 		});
 
-		const { buildProvider } = await import("../providers/factory.js");
+		const { buildProvider, setAgentNaiaKey } = await import("../providers/factory.js");
+		setAgentNaiaKey("gw-lab-key-123"); // gw- prefix required (factory validation)
 		const provider = buildProvider({
 			provider: "gemini",
 			model: "gemini-2.5-flash",
 			apiKey: "ignored",
-			naiaKey: "lab-key-123",
 		});
 
 		const gen = provider.stream([{ role: "user", content: "test" }], "sys");
@@ -574,7 +578,7 @@ describe("buildProvider with naiaKey", () => {
 		const [url, options] = mockFetch.mock.calls[0];
 		expect(url).toContain("naia-gateway");
 		expect(url).toContain("/v1/chat/completions");
-		expect(options.headers["X-AnyLLM-Key"]).toBe("Bearer lab-key-123");
+		expect(options.headers["X-AnyLLM-Key"]).toBe("Bearer gw-lab-key-123");
 	});
 
 	it("passes labGatewayUrl to lab-proxy when naiaKey is set", async () => {
@@ -583,12 +587,12 @@ describe("buildProvider with naiaKey", () => {
 			body: createSSEStream(["data: [DONE]\n\n"]),
 		});
 
-		const { buildProvider } = await import("../providers/factory.js");
+		const { buildProvider, setAgentNaiaKey } = await import("../providers/factory.js");
+		setAgentNaiaKey("gw-lab-key-xyz");
 		const provider = buildProvider({
 			provider: "gemini",
 			model: "gemini-2.5-flash",
 			apiKey: "ignored",
-			naiaKey: "lab-key-xyz",
 			labGatewayUrl: "https://naia-gateway-dev-456.run.app",
 		});
 
@@ -603,6 +607,7 @@ describe("buildProvider with naiaKey", () => {
 
 	it("returns direct provider when naiaKey is not set", async () => {
 		const { buildProvider } = await import("../providers/factory.js");
+		// setAgentNaiaKey("") was called in beforeEach — naiaKey is unset.
 		const provider = buildProvider({
 			provider: "gemini",
 			model: "gemini-2.5-flash",
