@@ -1,3 +1,4 @@
+import { panelDescriptor } from "@naia-adk/skills-builtin";
 import { spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -235,29 +236,10 @@ async function actionRemove(
 
 export function createPanelSkill(): SkillDefinition {
 	return {
-		name: "skill_panel",
-		description:
-			"Manage Naia panels. Actions: 'list' shows available panels, 'switch' activates a panel by id, 'install' installs a panel from a git URL or zip file path, 'remove' uninstalls a panel by id.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action to perform: list, switch, install, remove",
-					enum: ["list", "switch", "install", "remove"],
-				},
-				panelId: {
-					type: "string",
-					description: "Panel ID — required for switch and remove",
-				},
-				source: {
-					type: "string",
-					description: "Git URL or zip file path — required for install",
-				},
-			},
-			required: ["action"],
-		},
-		tier: 1,
+		name: `skill_${panelDescriptor.name}`,
+		description: panelDescriptor.description,
+		parameters: panelDescriptor.inputSchema,
+		tier: 1, // descriptor.tier = "T1"
 		requiresGateway: false,
 		source: "built-in",
 		execute: async (args, ctx): Promise<SkillResult> => {

@@ -1,25 +1,12 @@
+import { timeDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 
 export function createTimeSkill(): SkillDefinition {
 	return {
-		name: "skill_time",
-		description:
-			"Get the current date and time. Supports locale, iso, and unix formats.",
-		parameters: {
-			type: "object",
-			properties: {
-				format: {
-					type: "string",
-					description: "Output format: locale (default), iso, or unix",
-					enum: ["locale", "iso", "unix"],
-				},
-				timezone: {
-					type: "string",
-					description: "IANA timezone (e.g. Asia/Seoul)",
-				},
-			},
-		},
-		tier: 0,
+		name: `skill_${timeDescriptor.name}`,
+		description: timeDescriptor.description,
+		parameters: timeDescriptor.inputSchema,
+		tier: 0, // descriptor.tier = "T0"
 		requiresGateway: false,
 		source: "built-in",
 		execute: async (args) => {

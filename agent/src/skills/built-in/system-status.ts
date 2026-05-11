@@ -1,21 +1,12 @@
 import * as os from "node:os";
+import { systemStatusDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 
 export function createSystemStatusSkill(): SkillDefinition {
 	return {
-		name: "skill_system_status",
-		description:
-			"Get system status: uptime, memory, CPU, OS info. Optionally specify a section.",
-		parameters: {
-			type: "object",
-			properties: {
-				section: {
-					type: "string",
-					description: "Section to return: all (default), memory, cpu, os",
-					enum: ["all", "memory", "cpu", "os"],
-				},
-			},
-		},
+		name: `skill_${systemStatusDescriptor.name}`,
+		description: systemStatusDescriptor.description,
+		parameters: systemStatusDescriptor.inputSchema,
 		tier: 0,
 		requiresGateway: false,
 		source: "built-in",

@@ -1,25 +1,12 @@
+import { notifyDiscordDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 import { getNotifyWebhookUrl } from "./notify-config.js";
 
 export function createNotifyDiscordSkill(): SkillDefinition {
 	return {
-		name: "skill_notify_discord",
-		description:
-			"Send a notification message to Discord via webhook. Requires DISCORD_WEBHOOK_URL env var or ~/.naia/config.json setup.",
-		parameters: {
-			type: "object",
-			properties: {
-				message: {
-					type: "string",
-					description: "The message text to send",
-				},
-				username: {
-					type: "string",
-					description: "Bot username override",
-				},
-			},
-			required: ["message"],
-		},
+		name: `skill_${notifyDiscordDescriptor.name}`,
+		description: notifyDiscordDescriptor.description,
+		parameters: notifyDiscordDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: false,
 		source: "built-in",

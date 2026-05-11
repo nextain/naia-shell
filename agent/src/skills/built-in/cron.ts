@@ -8,6 +8,7 @@ import {
 	removeCronJob,
 	runCronJob,
 } from "../../gateway/cron-proxy.js";
+import { cronDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 function parseSchedule(
@@ -28,60 +29,9 @@ function parseSchedule(
 
 export function createCronSkill(store: CronStore): SkillDefinition {
 	return {
-		name: "skill_cron",
-		description:
-			"Manage scheduled tasks (cron jobs). Local actions: add, list, remove, update. Gateway actions: gateway_list, gateway_status, gateway_add, gateway_run, gateway_runs, gateway_remove.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action to perform: add, list, remove, update, gateway_list, gateway_status, gateway_add, gateway_run, gateway_runs, gateway_remove",
-					enum: [
-						"add",
-						"list",
-						"remove",
-						"update",
-						"gateway_list",
-						"gateway_status",
-						"gateway_add",
-						"gateway_run",
-						"gateway_runs",
-						"gateway_remove",
-					],
-				},
-				label: {
-					type: "string",
-					description: "Human-readable label for the job",
-				},
-				task: {
-					type: "string",
-					description: "Task description (what to do when the job fires)",
-				},
-				schedule_type: {
-					type: "string",
-					description:
-						"Schedule type: 'at' (one-shot ISO date), 'every' (interval in ms), 'cron' (cron expression)",
-					enum: ["at", "every", "cron"],
-				},
-				schedule_value: {
-					type: "string",
-					description:
-						"Schedule value: ISO date for 'at', milliseconds for 'every', cron expression for 'cron'",
-				},
-				job_id: {
-					type: "string",
-					description:
-						"Job ID (for remove/update/gateway_run/gateway_runs/gateway_remove)",
-				},
-				enabled: {
-					type: "boolean",
-					description: "Enable/disable a job (for update action)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${cronDescriptor.name}`,
+		description: cronDescriptor.description,
+		parameters: cronDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: false,
 		source: "built-in",

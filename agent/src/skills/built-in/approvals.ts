@@ -3,43 +3,14 @@ import {
 	resolveApproval,
 	setApprovalRules,
 } from "../../gateway/approvals-proxy.js";
+import { approvalsDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createApprovalsSkill(): SkillDefinition {
 	return {
-		name: "skill_approvals",
-		description:
-			"Manage Gateway approval rules. Actions: get_rules, set_rules, resolve.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action: get_rules, set_rules, resolve",
-					enum: ["get_rules", "set_rules", "resolve"],
-				},
-				allowedTools: {
-					type: "array",
-					description: "List of allowed tool names (for set_rules)",
-					items: { type: "string" },
-				},
-				blockedPatterns: {
-					type: "array",
-					description: "List of blocked patterns (for set_rules)",
-					items: { type: "string" },
-				},
-				requestId: {
-					type: "string",
-					description: "Approval request ID (for resolve)",
-				},
-				decision: {
-					type: "string",
-					description: "Decision: approve or reject (for resolve)",
-					enum: ["approve", "reject"],
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${approvalsDescriptor.name}`,
+		description: approvalsDescriptor.description,
+		parameters: approvalsDescriptor.inputSchema,
 		tier: 2,
 		requiresGateway: true,
 		source: "built-in",

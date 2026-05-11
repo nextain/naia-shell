@@ -1,21 +1,12 @@
+import { notifyGoogleChatDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 import { getNotifyWebhookUrl } from "./notify-config.js";
 
 export function createNotifyGoogleChatSkill(): SkillDefinition {
 	return {
-		name: "skill_notify_google_chat",
-		description:
-			"Send a notification message to Google Chat via webhook. Requires GOOGLE_CHAT_WEBHOOK_URL env var or ~/.naia/config.json setup.",
-		parameters: {
-			type: "object",
-			properties: {
-				message: {
-					type: "string",
-					description: "The message text to send",
-				},
-			},
-			required: ["message"],
-		},
+		name: `skill_${notifyGoogleChatDescriptor.name}`,
+		description: notifyGoogleChatDescriptor.description,
+		parameters: notifyGoogleChatDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: false,
 		source: "built-in",
