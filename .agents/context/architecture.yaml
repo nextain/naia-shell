@@ -1,32 +1,78 @@
-description: Naia hybrid architecture (mirror of .users/context/ko/architecture.md)
+description: Naia architecture (mirror of .users/context/ko/architecture.md)
 
-design_philosophy: |
-  Naia is NOT built from scratch. It's a hybrid assembly of 3 proven ecosystems:
-  OpenClaw (Gateway/exec), project-careti (LLM/tools), OpenCode (architecture pattern).
-  Each contributes its strongest capability. The result is greater than any single source.
+# ═══════════════════════════════════════════════════════════════════════════
+# CURRENT STATUS (post-#201, validated by #272 / #273 / #274 / #275)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Naia OS today is an EMBEDDED-AGENT architecture, NOT a hybrid daemon stack.
+# Source-of-truth for the present wire is `.agents/context/agent-bridges.yaml`.
+#
+# Pillars today:
+#   - naia-os shell (Tauri 2 + React + Three.js avatar) — UI host, device IO
+#   - naia-agent (embedded, stdio JSON; was a separate daemon pre-#201)
+#       - 3 bridges: protocol / memory / approval (#272)
+#       - 23-skill catalog imported from @naia-adk/skills-builtin (#273 + #274)
+#       - 5 strangler-fig LLM provider adapters (env-flag gated)
+#   - naia-memory R4 — vector + LLM fact extractor + contradiction filter
+#   - naia-adk — workspace + skill SoT (skill-spec + skills-builtin + openclaw-compat)
+#
+# OpenClaw was the gateway daemon before #201; it is GONE from runtime. The
+# remaining OpenClaw-shaped content in this file is preserved as HISTORICAL
+# context (see `history.legacy_three_pillars` block below) so the rationale
+# for what we have today is traceable. Do not treat it as current design.
 
-why_hybrid:
-  pure_openclaw_problems:
-    - "CLI-only UX — no avatar, no visual feedback, no emotion"
-    - "No Tauri/desktop-native shell — terminal-first design"
-    - "Tight coupling to Claude Code as the only agent model"
-    - "No multi-provider LLM support (Gemini, xAI, etc.)"
-  pure_careti_problems:
-    - "VS Code extension — not an OS, not always-on"
-    - "No daemon architecture — dies when IDE closes"
-    - "No external channels (Discord, Telegram, etc.)"
-    - "No skills system, no memory persistence"
-  pure_opencode_problems:
-    - "TUI-only — no VRM avatar, no desktop app"
-    - "No Gateway/daemon concept"
-    - "No channel integration"
-  hybrid_solution: |
-    Take OpenClaw's daemon+exec+channels+skills ecosystem as the runtime backend.
-    Take Careti's multi-provider LLM+tool definitions+stdio protocol as the agent core.
-    Take OpenCode's client/server architecture pattern for clean separation.
-    Wrap it in a Tauri desktop shell with VRM avatar for accessible UX.
+current_runtime:
+  source_of_truth: .agents/context/agent-bridges.yaml
+  diagram: |
+    ┌─────────────────────────────────────────────────────────┐
+    │  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
+    │  Role: UI, avatar, panels, device IO, channel adapters  │
+    └────────────────────┬────────────────────────────────────┘
+                         │ stdio JSON lines
+                         │  + StdioFrame v1 envelope (transitioning, #272)
+    ┌────────────────────▼────────────────────────────────────┐
+    │  naia-agent (embedded child process)                    │
+    │  - protocol-bridge: envelope codec                      │
+    │  - memory-bridge:   MemorySystem→MemoryProvider adapter │
+    │  - approval-bridge: IPC approval broker (Phase 5 wire)  │
+    │  - factory.ts:      _agentNaiaKey + 5 strangler-fig     │
+    │  - 23 built-in skills (descriptors from naia-adk)       │
+    └────────────────────┬────────────────────────────────────┘
+                         │ MemoryProvider contract
+    ┌────────────────────▼────────────────────────────────────┐
+    │  naia-memory R4                                         │
+    │  LocalAdapter + embedding providers + fact extractor +  │
+    │  HeuristicContradictionFilter                           │
+    └─────────────────────────────────────────────────────────┘
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HISTORICAL (legacy framing, pre-#201) — kept for context, not current design
+# ═══════════════════════════════════════════════════════════════════════════
+
+history:
+  legacy_three_pillars_framing: |
+    Naia was originally framed as a hybrid assembly of 3 ecosystems:
+    OpenClaw (Gateway daemon + exec + channels + skills), project-careti
+    (LLM/tools/persona), OpenCode (client/server pattern). The hybrid was
+    a clear win at the time because each ecosystem had gaps the others
+    filled — Careti lacked daemon, OpenClaw lacked desktop UX, OpenCode
+    lacked channels — and assembling them was cheaper than building from
+    scratch.
+
+  why_we_moved_off_openclaw:
+    - "OpenClaw gateway added a 2nd process + a separate config + a separate skill registry; naia-agent already had all of that, just in TS"
+    - "WebSocket handshake + token auth + reload mechanics were dead weight for a same-machine embed"
+    - "Skill 정합 was DUAL (TS skills in naia-agent + Lua/JSON in openclaw)"
+    - "Removed in #201 (chore(shell): remove openclaw gateway spawn)"
+    - "Reconciled in #272 (bridges + adapters) + #273 (skill catalog) + #274 (OpenClaw skill ports as native naia skills) + #271 Phase 1 (Flatpak bundling removed)"
 
 three_pillars:
+  status: HISTORICAL
+  note: |
+    The three-pillar framing below is the pre-#201 design rationale.
+    Today's runtime collapses pillar_1_openclaw into pillar_2_careti
+    (the embedded naia-agent). Read `current_runtime` above + the
+    SoT `agent-bridges.yaml` for present state.
   pillar_1_openclaw:
     role: "Runtime backend (daemon + execution environment)"
     provides:

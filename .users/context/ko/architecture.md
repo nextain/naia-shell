@@ -1,4 +1,43 @@
-# Naia 하이브리드 아키텍처
+# Naia Architecture
+
+## 현 상태 (post-#201, #272/#273/#274/#275 로 검증됨)
+
+Naia OS 는 현재 **임베드 에이전트** 구조 — hybrid daemon 스택이 아닙니다. 현재 wire 의 SoT 는 [`.agents/context/agent-bridges.yaml`](../../../.agents/context/agent-bridges.yaml).
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
+│  역할: UI, avatar, panels, device IO, channel adapters   │
+└────────────────────┬────────────────────────────────────┘
+                     │ stdio JSON lines
+                     │  + StdioFrame v1 envelope (#272 전환 중)
+┌────────────────────▼────────────────────────────────────┐
+│  naia-agent (임베드 child process)                       │
+│  - protocol-bridge: envelope 코덱                        │
+│  - memory-bridge:   MemorySystem → MemoryProvider       │
+│  - approval-bridge: IPC approval broker (Phase 5 wire)  │
+│  - factory.ts:      _agentNaiaKey + 5 strangler-fig     │
+│  - 23 built-in skills (naia-adk 의 descriptor)          │
+└────────────────────┬────────────────────────────────────┘
+                     │ MemoryProvider contract
+┌────────────────────▼────────────────────────────────────┐
+│  naia-memory R4                                         │
+│  LocalAdapter + embedding providers + fact extractor +  │
+│  HeuristicContradictionFilter                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+**현재 pillars**:
+- **naia-os shell** — Tauri 2 desktop host, UI, avatar, device IO
+- **naia-agent** — 임베드 child process (#201 이전엔 별도 daemon). stdio JSON. 3 bridges + 5 strangler-fig LLM 어댑터 + 23 skills.
+- **naia-memory R4** — 벡터 + LLM fact extractor + contradiction filter
+- **naia-adk** — 워크스페이스 + skill SoT (`skill-spec`, `skills-builtin`, `openclaw-compat`)
+
+OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨**. 아래 historical hybrid framing 은 맥락 보존용 — 현재 design 으로 보면 안됨.
+
+---
+
+# Naia 하이브리드 아키텍처 (historical, pre-#201)
 
 ## 핵심 설계 철학
 

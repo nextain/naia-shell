@@ -110,13 +110,18 @@ phases:
       step_4_0:
         name: "Naia Gateway local setup"
         description: "Get Gateway running locally to unlock Phase 3 runtime verification"
-        status: "complete"
+        status: "obsolete-superseded-by-#201"
         items:
-          - "OpenClaw install + config (setup-openclaw.sh already exists) ✅"
-          - "Gateway local start (naia-gateway-wrapper) ✅"
-          - "Shell → Agent → Gateway WebSocket connection verified ✅"
-          - "Gateway auto-lifecycle in Tauri (spawn/health/shutdown) ✅"
-        done_when: "gateway_health() returns true, Agent connects via WebSocket"
+          - "OpenClaw install + config — REMOVED (#201, setup-openclaw.sh deleted #271 Phase 1)"
+          - "Gateway local start — REMOVED (naia-agent embedded in shell, no daemon)"
+          - "Shell → Agent stdio JSON wire (was WebSocket via Gateway, now direct)"
+          - "Embedded agent lifecycle (Tauri spawns agent as child process)"
+        post_201_status: |
+          The gateway daemon is gone. Tools execute directly inside naia-agent
+          (a child process spawned by the Tauri shell). The 'Gateway' concept
+          remains only as the Lab Proxy (cloud) for the naiaKey flow — that's
+          a separate concern. See `.agents/context/agent-bridges.yaml`.
+        done_when: "obsolete — embedded agent handles all tool execution"
       step_4_0_lifecycle:
         name: "Gateway auto-lifecycle"
         description: "Tauri app manages Gateway process automatically"

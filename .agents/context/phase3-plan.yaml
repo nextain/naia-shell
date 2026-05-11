@@ -1,6 +1,17 @@
 description: "Phase 3 detailed plan — hybrid of project-careti + ref-opencode + ref-moltbot patterns"
 mirror: ".users/context/ko/phase3-openclaw-hybrid-plan.md"
 
+archived: true
+archived_reason: |
+  Pre-#201 hybrid plan. OpenClaw gateway daemon removed in #201; the hybrid
+  integration was reconciled in #272 / #273 / #274 / #271 Phase 1.
+  Current architecture SoT: agent-bridges.yaml + architecture.yaml current_runtime block.
+  Keep this file for historical design rationale only — do not treat steps as actionable.
+archived_pointers:
+  - ".agents/context/agent-bridges.yaml"
+  - ".agents/context/architecture.yaml#current_runtime"
+  - ".users/context/architecture.md"
+
 approach: hybrid
   # Phase 3: tools run inside Agent process (no gateway daemon)
   # Phase 4: add Naia Gateway for channels/skills

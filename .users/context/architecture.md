@@ -1,20 +1,62 @@
-# Naia Hybrid Architecture
+# Naia Architecture
 
-## Core Design Philosophy
+## Current status (post-#201, validated by #272 / #273 / #274 / #275)
+
+Naia OS today is an **embedded-agent** architecture, NOT a hybrid daemon stack. Source-of-truth for the present wire is [`.agents/context/agent-bridges.yaml`](../../.agents/context/agent-bridges.yaml).
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
+│  Role: UI, avatar, panels, device IO, channel adapters  │
+└────────────────────┬────────────────────────────────────┘
+                     │ stdio JSON lines
+                     │  + StdioFrame v1 envelope (transitioning, #272)
+┌────────────────────▼────────────────────────────────────┐
+│  naia-agent (embedded child process)                    │
+│  - protocol-bridge: envelope codec                      │
+│  - memory-bridge:   MemorySystem → MemoryProvider       │
+│  - approval-bridge: IPC approval broker (Phase 5 wire)  │
+│  - factory.ts:      _agentNaiaKey + 5 strangler-fig     │
+│  - 23 built-in skills (descriptors from naia-adk)       │
+└────────────────────┬────────────────────────────────────┘
+                     │ MemoryProvider contract
+┌────────────────────▼────────────────────────────────────┐
+│  naia-memory R4                                         │
+│  LocalAdapter + embedding providers + fact extractor +  │
+│  HeuristicContradictionFilter                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Pillars today**:
+- **naia-os shell** — Tauri 2 desktop host, UI, avatar, device IO
+- **naia-agent** — embedded child process (was a separate daemon pre-#201). Stdio JSON. 3 bridges + 5 strangler-fig LLM adapters + 23 skills.
+- **naia-memory R4** — vector + LLM fact extractor + contradiction filter
+- **naia-adk** — workspace + skill SoT (`skill-spec`, `skills-builtin`, `openclaw-compat`)
+
+OpenClaw was the gateway daemon before #201; it is **gone from runtime**. The historical hybrid framing below is preserved for context — do not treat it as current design.
+
+---
+
+## Historical: Hybrid Design (pre-#201)
 
 > **Don't build from scratch. Combine 3 proven ecosystems.**
 
-Naia takes the strengths from 3 parent projects and combines them in a **hybrid** approach:
+Naia was originally framed as a hybrid assembly of 3 parent projects:
 
-| Parent | Role | What we take |
+| Parent | Role | What we took |
 |--------|------|-------------|
 | **OpenClaw** | Runtime backend | Gateway daemon, command execution, channels, skills, memory |
 | **project-careti** | Agent intelligence | Multi-LLM, tool definitions, Alpha persona, cost tracking |
 | **OpenCode** | Architecture patterns | Client/server separation, provider abstraction |
 
+**Why we moved off OpenClaw** (#201, then reconciled in #272/#273/#274/#271 Phase 1):
+- OpenClaw added a 2nd process + a separate config + a separate skill registry — naia-agent already had all of that in TypeScript
+- WebSocket handshake + token auth + reload mechanics were dead weight for a same-machine embed
+- Skill registry was DUAL (TS in naia-agent + Lua/JSON in openclaw)
+
 ---
 
-## Why Hybrid?
+## Why Hybrid? (historical rationale)
 
 ### Why not just one?
 

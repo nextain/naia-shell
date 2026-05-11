@@ -256,13 +256,17 @@ git push → GitHub Actions → ghcr.io/luke-n-alpha/naia-os:latest
 > **결과물**: 데몬으로 항상 실행. 외부 채널에서도 접근 가능.
 > **전략**: Gateway 먼저 → Phase 3 실행 검증 → 이후 신규 기능
 
-### 4-0. Naia Gateway 로컬 설정 (선행) ✅
+### 4-0. Naia Gateway 로컬 설정 (선행) — obsolete (#201 로 superseded)
 
-**작업:**
-- OpenClaw 설치 + 설정 (`setup-openclaw.sh` 이미 존재) ✅
-- Gateway 로컬 기동 (`naia-gateway-wrapper`) ✅
-- Shell → Agent → Gateway WebSocket 연결 확인 ✅
-- **Gateway 자동 라이프사이클** (Tauri 앱이 Gateway 프로세스 자동 관리) ✅
+**상태**: 본 단계는 #201 에서 OpenClaw gateway daemon 자체가 제거되며 폐기됨.
+naia-agent 가 shell 의 child process 로 임베드되어 직접 도구 실행. 자세한
+현재 wire 는 `.agents/context/agent-bridges.yaml` 참조.
+
+**(historical) 원래 작업:**
+- OpenClaw 설치 + 설정 (`setup-openclaw.sh` — `#271 Phase 1` 에서 삭제됨)
+- Gateway 로컬 기동 (`naia-gateway-wrapper` — 사용 안 함)
+- Shell → Agent → Gateway WebSocket 연결 (이젠 stdio JSON 직접)
+- Gateway 자동 라이프사이클 (Tauri 앱이 agent child process 직접 spawn)
   - Hybrid 전략: 이미 실행 중이면 재사용, 아니면 자동 spawn
   - Node.js 22+ 탐지 (system PATH + nvm fallback)
   - Health check 폴링 (5초 타임아웃, 500ms 간격)
