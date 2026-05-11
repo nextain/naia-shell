@@ -18,6 +18,8 @@ Security hardening (2026-05-12):
 - **fix(shell)**: `assetProtocol.scope` rewritten as `FsScope` object — bare `**`, drive-root patterns, bare `/tmp/**` removed; `requireLiteralLeadingDot: true` blocks `~/.ssh` / `~/.gnupg` / `~/.aws` ([#258](https://github.com/nextain/naia-os/issues/258))
 - **fix(shell)**: `https://discord.com` removed from CSP `connect-src` — all Discord API via Rust `invoke('discord_api', ...)` ([#259](https://github.com/nextain/naia-os/issues/259))
 - **fix(agent/shell)**: webhook URLs moved off per-request stdio via new `notify_config` one-shot message ([#260](https://github.com/nextain/naia-os/issues/260))
+- **fix(shell)**: runtime `asset_protocol_scope.allow_directory` extension at `copy_bundled_assets` — ADK workspaces outside `$HOME` / `/var/home/*/naia-adk/**` (e.g. `/mnt/external`, `/opt/custom`, `D:\custom\naia`) now serve VRM / BGM / background via `asset://` URLs. Required `protocol-asset` Cargo feature + `assetProtocol.enable: true` ([#277](https://github.com/nextain/naia-os/issues/277))
+- **fix(agent/shell)**: `provider.apiKey` moved to one-shot `creds_update` message — same pattern as `auth_update` + `notify_config`. Agent caches per-provider; `buildProvider` resolution: cache → per-request fallback → envVar. `ChatRequest.provider.apiKey` stays declared for backwards compat during the migration window. (#260 follow-up)
 
 Bugs:
 

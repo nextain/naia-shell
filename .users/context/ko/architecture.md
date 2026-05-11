@@ -49,7 +49,12 @@ OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨
 | #248 | P1-버그 | Naia gateway 가 gemini-3.x Vertex 접근 없음 — picker 에서 제거 + 저장된 config 마이그레이션 |
 | #254 | P0-UX | Startup white flash + onboarding splash deadlock |
 
-남은 follow-up: **#277** (비표준 ADK path 용 runtime asset-scope 확장), 그리고 `provider.apiKey` 는 여전히 per-`chat_request` — #260 패턴으로 이동 가능 (issue 미등록).
+처음 작성 후 추가 완료:
+
+- **#277** — runtime asset-scope 확장 완료. `protocol-asset` Cargo feature + `assetProtocol.enable: true` + `copy_bundled_assets` 가 `app_handle.asset_protocol_scope().allow_directory(adk_path, true)` 호출. 비표준 ADK path (`/mnt/external`, `D:\custom`, …) 자산 서빙 OK.
+- **`creds_update`** — `provider.apiKey` one-shot 푸시로 이동. per-request `config.apiKey` 는 마이그레이션 윈도우 동안 하위호환으로 유지.
+
+여전히 open: schema 정리 (`ChatRequest.provider` 의 `config.apiKey` 제거 — 모든 shell caller 가 `creds_update` 푸시 확인 후), 그리고 `ttsApiKey` + `gatewayToken` 도 동일 one-shot 패턴 (현재 per-request 상태).
 
 ---
 

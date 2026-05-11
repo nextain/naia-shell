@@ -49,7 +49,12 @@ Seven issues closed in one autonomous session — details in [`agent-bridges.md 
 | #248 | P1-bug | Naia gateway lacks Vertex AI access to gemini-3.x — drop from picker + saved-config migration |
 | #254 | P0-UX | Startup white flash + onboarding splash deadlock |
 
-Follow-ups still open: **#277** (runtime asset-scope extension for non-standard ADK paths), and a no-issue note that `provider.apiKey` is still per-`chat_request` — same pattern as #260 can move it.
+Done since this section was first written:
+
+- **#277** — runtime asset-scope extension landed. `protocol-asset` Cargo feature + `assetProtocol.enable: true` + `copy_bundled_assets` calls `app_handle.asset_protocol_scope().allow_directory(adk_path, true)`. Non-standard ADK paths (`/mnt/external`, `D:\custom`, …) now serve assets.
+- **`creds_update`** — `provider.apiKey` moved to a one-shot push. Per-request `config.apiKey` retained for backwards compat during the migration window.
+
+Still open: schema cleanup (drop `config.apiKey` from `ChatRequest.provider` once no shell caller depends on it), and the same one-shot pattern for `ttsApiKey` + `gatewayToken` (still per-request).
 
 ---
 

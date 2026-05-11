@@ -126,6 +126,32 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 `afterEach` 에서 clear. 제거된 `config.naiaKey` 필드는 함정 — 아직 그걸
 넘기는 테스트는 silent 하게 fall-through path 를 탑니다.
 
+## Creds update 흐름 (#260 follow-up, 2026-05-12)
+
+LLM provider API key 도 `creds_update` 로 흐름 — `auth_update` (naiaKey) +
+`notify_config` (webhooks) 와 동일한 one-shot 패턴.
+
+```ts
+// shell 측 — startup 1회 + 설정 저장 시 1회
+sendCredsUpdate({
+  anthropic: "sk-ant-...",
+  openai:    "sk-...",
+  gemini:    "AIza...",
+  // 빈 문자열은 cached 항목 clear
+});
+
+// agent 측
+handleCredsUpdate(req) → setProviderApiKey(provider, key) // provider 별 Map
+```
+
+`buildProvider` 자격증명 resolution 우선순위:
+1. **Cached `creds_update` key** — 우선 경로
+2. **`config.apiKey` (per-request `ChatRequest`)** — 구 shell 하위호환 fallback
+3. **`envVar`** — CI / dev override
+
+`config.apiKey` 는 마이그레이션 윈도우 동안 `ChatRequest.provider` 의 optional
+필드로 유지. 모든 callsite 가 `creds_update` 로 이동 확인되면 schema 에서 제거.
+
 ## Notify config 흐름 (#260)
 
 Webhook URL + Discord 기본값은 `notify_config` 로 흐름 — per-request 아님.
@@ -171,9 +197,15 @@ handleNotifyConfig(req) → applyNotifyWebhookEnv(...) // process.env 기록
 | #248 | `shell/src/lib/llm/registry.ts` + `agent/src/providers/lab-proxy.ts` | Gateway GCP project 가 gemini-3.x Vertex access 없음 — Naia provider picker 에서 제거, `gemini-3.1-flash-live-preview` fallback fix, 0-byte SSE 정확한 에러. 저장된 config 마이그레이션 `shouldMigrateNextainModel`. |
 | #254 | `shell/src-tauri/tauri.conf.json` + `App.tsx` `useAppReady` | Cold-start flash 위해 `windows[0].backgroundColor: [6, 13, 20, 255]`; `useAppReady` 가 `showOnboarding` 을 `showAdkSetup` 과 동일 처리 — 5초 splash deadlock 회피. |
 
-남은 작업: `provider.apiKey` 는 여전히 per-`chat_request`. `notify_config` 와
-동일 패턴으로 one-shot `creds_update` 메시지로 옮기고 `ChatRequest` 스키마에서
-제거 가능.
+2026-05-12 추가 완료:
+
+- **#277** — runtime asset scope 확장. `protocol-asset` Cargo feature 활성화, `assetProtocol.enable: true`, `copy_bundled_assets` 가 `app_handle.asset_protocol_scope().allow_directory(adk_path, true)` 호출. 비표준 ADK path (`/mnt/external`, `/opt/custom`, `D:\custom\naia`) 도 자산 정상 서빙.
+- **`creds_update` 메시지** — `provider.apiKey` 가 `creds_update` 로 1회 전송 (위 _Creds update 흐름_ 참고). `config.apiKey` 는 per-request 하위호환으로 유지.
+
+남은 작업:
+
+- Schema 정리: 모든 caller 가 `creds_update` 푸시 확인 시 `ChatRequest.provider` type 에서 `config.apiKey` 제거.
+- `ttsApiKey` + `gatewayToken` 도 동일 one-shot 패턴 적용 (현재 per-request 상태).
 
 ## Vendored 패키지
 

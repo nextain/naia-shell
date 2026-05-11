@@ -18,6 +18,8 @@ Naia OS의 주요 변경 사항을 기록합니다.
 - **fix(shell)**: `assetProtocol.scope` 를 `FsScope` 객체로 재작성 — bare `**`, drive-root, bare `/tmp/**` 제거; `requireLiteralLeadingDot: true` 가 `~/.ssh` / `~/.gnupg` / `~/.aws` 차단 ([#258](https://github.com/nextain/naia-os/issues/258))
 - **fix(shell)**: CSP `connect-src` 에서 `https://discord.com` 제거 — 모든 Discord API 는 Rust `invoke('discord_api', ...)` 경유 ([#259](https://github.com/nextain/naia-os/issues/259))
 - **fix(agent/shell)**: webhook URL 을 per-request stdio 에서 분리 — 새 `notify_config` one-shot 메시지 ([#260](https://github.com/nextain/naia-os/issues/260))
+- **fix(shell)**: `copy_bundled_assets` 에서 `asset_protocol_scope.allow_directory` 런타임 확장 — `$HOME` / `/var/home/*/naia-adk/**` 밖의 ADK workspace (예: `/mnt/external`, `/opt/custom`, `D:\custom\naia`) 도 `asset://` URL 로 VRM / BGM / 배경 서빙. `protocol-asset` Cargo feature + `assetProtocol.enable: true` 필요 ([#277](https://github.com/nextain/naia-os/issues/277))
+- **fix(agent/shell)**: `provider.apiKey` 를 one-shot `creds_update` 메시지로 이동 — `auth_update` + `notify_config` 와 동일 패턴. Agent 가 provider별 캐싱; `buildProvider` resolution: cache → per-request fallback → envVar. `ChatRequest.provider.apiKey` 는 마이그레이션 윈도우 동안 하위호환 유지. (#260 follow-up)
 
 버그:
 

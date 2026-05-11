@@ -112,6 +112,35 @@ auth_flow:
     memorySystem AND memoryProvider when the key arrives, so naia embedding
     + LLM fact extractor pick up the credential immediately.
 
+creds_flow:
+  credential_owner: agent (module-scope Map)
+  contract: |
+    Shell sends `creds_update` once at startup (App.tsx mount) and again on
+    every settings save (SettingsTab handleSave). Payload `keys: Record<providerId, apiKey>`
+    is sparse — only providers the user has actually configured need to appear.
+    handleCredsUpdate caches each entry via setProviderApiKey in
+    agent/src/providers/factory.ts. buildProvider resolves API keys in this
+    order:
+      1. cached entry from creds_update
+      2. per-request `config.apiKey` (backwards-compat — older shells still send)
+      3. provider envVar (CI / dev)
+    Empty string for a given provider clears its cached entry (user removed
+    the key in settings = explicit unset).
+  why: |
+    Same one-shot pattern as naiaKey (auth_update) and webhooks (notify_config).
+    Closes the last per-request credential leak — `provider.apiKey` previously
+    appeared in every chat_request stdio frame. Now the agent owns the key
+    cache; the shell pushes it via creds_update and chat_request no longer
+    needs to carry it.
+  schema_status: |
+    `config.apiKey` stays on the per-request `ChatRequest.provider` type for
+    backwards compat during the migration window. A follow-up commit can drop
+    it once all callers (including any out-of-tree shell forks) push via
+    creds_update.
+  tests:
+    - "agent/src/__tests__/creds-update.test.ts (6 cases: multi-provider cache, empty clears, overwrite, malformed entries skipped, missing keys field tolerated, cache wins over env)"
+    - "shell/src/lib/__tests__/chat-service.test.ts — sendCredsUpdate emits creds_update with empty-string clear semantics"
+
 notify_flow:
   credential_owner: agent (env-cached)
   contract: |
@@ -182,8 +211,12 @@ security_hardening:
       chat_request / tool_request frame. They flow ONLY via notify_config.
       See notify_flow section above for the contract details.
     test: agent/src/__tests__/notify-config.test.ts + shell/src/lib/__tests__/chat-service.test.ts (#260 cases)
+  follow_ups_done:
+    - "#277 (2026-05-12) — protocol-asset Cargo feature + assetProtocol.enable:true + copy_bundled_assets calls asset_protocol_scope().allow_directory(adk_path, true). Closes the gap for non-standard ADK paths (e.g. /mnt/external, /opt/custom, D:\\...)."
+    - "creds_update message (2026-05-12, see creds_flow above) — provider.apiKey now flows once via creds_update; per-request ChatRequest.apiKey still accepted for backwards compat but no longer the primary path."
   follow_up_pending:
-    - "provider.apiKey is STILL per-chat_request — extend notify_flow pattern to a `creds_update` message and drop apiKey from ChatRequest schema."
+    - "Schema cleanup: once all known shell callers push via creds_update, drop config.apiKey from ChatRequest.provider type."
+    - "Same one-shot pattern for ttsApiKey and gatewayToken (still per-request)."
 
 vendored_packages:
   paths:

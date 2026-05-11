@@ -125,6 +125,33 @@ Test discipline: seed with `setAgentNaiaKey("gw-...")` in `beforeEach` and
 clear in `afterEach`. The removed `config.naiaKey` field is a footgun — tests
 that still pass it silently take the fall-through path.
 
+## Creds update flow (#260 follow-up, 2026-05-12)
+
+LLM provider API keys travel via `creds_update`, same one-shot pattern as
+`auth_update` (naiaKey) and `notify_config` (webhooks).
+
+```ts
+// shell side — once at startup + once per settings save
+sendCredsUpdate({
+  anthropic: "sk-ant-...",
+  openai:    "sk-...",
+  gemini:    "AIza...",
+  // empty string clears the provider's cached entry
+});
+
+// agent side
+handleCredsUpdate(req) → setProviderApiKey(provider, key) // per-provider Map
+```
+
+`buildProvider` credential resolution priority:
+1. **Cached `creds_update` key** — primary path
+2. **`config.apiKey` from per-request `ChatRequest`** — backwards compat fallback for older shells still sending it
+3. **`envVar`** — CI / dev override
+
+`config.apiKey` stays declared optional on `ChatRequest.provider` for the
+migration window. A future cleanup can drop it once we're sure no
+out-of-tree shells depend on it.
+
 ## Notify config flow (#260)
 
 Webhook URLs + Discord defaults travel via `notify_config`, not per-request.
@@ -170,9 +197,15 @@ Five P0-critical fixes landed 2026-05-12 from the adversarial review:
 | #248 | `shell/src/lib/llm/registry.ts` + `agent/src/providers/lab-proxy.ts` | Gateway GCP project lacks Vertex access to gemini-3.x — drop from Naia provider picker, fix `gemini-3.1-flash-live-preview` fallback, accurate 0-byte SSE error. Saved-config migration via `shouldMigrateNextainModel`. |
 | #254 | `shell/src-tauri/tauri.conf.json` + `App.tsx` `useAppReady` | `windows[0].backgroundColor: [6, 13, 20, 255]` for cold-start flash; `useAppReady` treats `showOnboarding` symmetrically to `showAdkSetup` to avoid 5 s splash deadlock. |
 
-Pending: `provider.apiKey` is STILL per-`chat_request`. Same pattern as
-`notify_config` can move it to a one-shot `creds_update` message + drop
-from `ChatRequest` schema.
+Done since this table was first written (2026-05-12):
+
+- **#277** — runtime asset scope extension. `protocol-asset` Cargo feature enabled, `assetProtocol.enable: true` in config, `copy_bundled_assets` calls `app_handle.asset_protocol_scope().allow_directory(adk_path, true)`. Non-standard ADK paths (`/mnt/external`, `/opt/custom`, `D:\custom\naia`) now serve assets correctly.
+- **`creds_update` message** — `provider.apiKey` now flows once via `creds_update` (see _Creds update flow_ above). `config.apiKey` still accepted per-request for backwards compat.
+
+Still pending:
+
+- Schema cleanup: drop `config.apiKey` from `ChatRequest.provider` type once all callers push via `creds_update`.
+- Same one-shot pattern for `ttsApiKey` and `gatewayToken` (still per-request).
 
 ## Vendored packages
 

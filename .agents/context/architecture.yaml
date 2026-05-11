@@ -35,9 +35,12 @@ recent_hardening:
     - "#260 — webhook URLs off per-request stdio via new notify_config msg (8 tests)"
     - "#248 — Naia gateway lacks gemini-3.x access; drop from picker + migrate saved configs + accurate 0-byte SSE error (8 tests)"
     - "#254 — startup white flash backgroundColor + useAppReady onboarding short-circuit (4 tests)"
+  follow_ups_done:
+    - "#277 — runtime asset_protocol_scope.allow_directory() at copy_bundled_assets, plus protocol-asset Cargo feature + assetProtocol.enable:true"
+    - "creds_update message — provider.apiKey moved to one-shot push; per-request fallback retained for migration window"
   follow_ups_open:
-    - "#277 — runtime asset_protocol_scope.allow_directory() at copy_bundled_assets for non-standard ADK paths"
-    - "(no issue) provider.apiKey still per-chat_request; apply notify_flow pattern via creds_update msg"
+    - "Schema cleanup: drop config.apiKey from ChatRequest.provider once no shell caller depends on it"
+    - "ttsApiKey + gatewayToken one-shot (same pattern as creds_update / notify_config)"
 
 current_runtime:
   source_of_truth: .agents/context/agent-bridges.yaml
