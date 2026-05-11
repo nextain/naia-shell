@@ -1339,6 +1339,7 @@ pub async fn browser_open_login(app: AppHandle, url: String) -> Result<(), Strin
     ]);
     cmd.stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    platform::hide_console(&mut cmd);
 
     let child = cmd.spawn().map_err(|e| format!("Spawn Chrome: {e}"))?;
     let pid = child.id();

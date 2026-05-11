@@ -13,11 +13,11 @@ export function BgmPlayer() {
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [playing, setPlaying] = useState(false);
 	const [volume, setVolume] = useState(0.3);
+	const aiInterferenceEnabled = usePanelStore((s) => s.aiInterferenceEnabled);
+	const toggleAiInterferenceEnabled = usePanelStore(
+		(s) => s.toggleAiInterferenceEnabled,
+	);
 
-	const { aiInterferenceEnabled, toggleAiInterferenceEnabled } =
-		usePanelStore();
-
-	// Load available tracks from naia-settings/bgm-musics/
 	useEffect(() => {
 		listNaiaAssets("bgm-musics").then(async (paths) => {
 			const urls = await Promise.all(paths.map(toLocalBlobUrl));
@@ -34,9 +34,8 @@ export function BgmPlayer() {
 				setBgmTrackUrl(urls[0]);
 			}
 		});
-	}, []);
+	}, [bgmTrackUrl, setBgmTrackUrl]);
 
-	// Sync audio src with store
 	useEffect(() => {
 		const audio = audioRef.current;
 		if (!audio || !bgmTrackUrl) return;
@@ -53,7 +52,7 @@ export function BgmPlayer() {
 				});
 			}
 		}
-	}, [bgmTrackUrl, tracks]);
+	}, [bgmTrackUrl, tracks, playing]);
 
 	useEffect(() => {
 		const audio = audioRef.current;
@@ -67,23 +66,23 @@ export function BgmPlayer() {
 		if (playing) {
 			audio.pause();
 			setPlaying(false);
-		} else {
-			if (
-				tracks.length > 0 &&
-				(!audio.src || audio.src === window.location.href)
-			) {
-				audio.src = tracks[currentIndex];
-			}
-			audio
-				.play()
-				.then(() => setPlaying(true))
-				.catch((err) => {
-					Logger.error("BgmPlayer", "play failed", {
-						error: String(err),
-						src: audio.src,
-					});
-				});
+			return;
 		}
+		if (
+			tracks.length > 0 &&
+			(!audio.src || audio.src === window.location.href)
+		) {
+			audio.src = tracks[currentIndex];
+		}
+		audio
+			.play()
+			.then(() => setPlaying(true))
+			.catch((err) => {
+				Logger.error("BgmPlayer", "play failed", {
+					error: String(err),
+					src: audio.src,
+				});
+			});
 	}
 
 	function playNext() {
@@ -92,14 +91,14 @@ export function BgmPlayer() {
 		setCurrentIndex(next);
 		setBgmTrackUrl(tracks[next]);
 		const audio = audioRef.current;
-		if (audio) {
-			audio.src = tracks[next];
-			if (playing)
-				audio.play().catch((err) =>
-					Logger.error("BgmPlayer", "next play failed", {
-						error: String(err),
-					}),
-				);
+		if (!audio) return;
+		audio.src = tracks[next];
+		if (playing) {
+			audio.play().catch((err) =>
+				Logger.error("BgmPlayer", "next play failed", {
+					error: String(err),
+				}),
+			);
 		}
 	}
 
@@ -109,14 +108,14 @@ export function BgmPlayer() {
 		setCurrentIndex(prev);
 		setBgmTrackUrl(tracks[prev]);
 		const audio = audioRef.current;
-		if (audio) {
-			audio.src = tracks[prev];
-			if (playing)
-				audio.play().catch((err) =>
-					Logger.error("BgmPlayer", "prev play failed", {
-						error: String(err),
-					}),
-				);
+		if (!audio) return;
+		audio.src = tracks[prev];
+		if (playing) {
+			audio.play().catch((err) =>
+				Logger.error("BgmPlayer", "prev play failed", {
+					error: String(err),
+				}),
+			);
 		}
 	}
 
@@ -137,7 +136,9 @@ export function BgmPlayer() {
 					});
 					setPlaying(false);
 				}}
-			/>
+			>
+				<track kind="captions" />
+			</audio>
 			<div className="bgm-player-controls">
 				<button
 					type="button"
@@ -153,7 +154,7 @@ export function BgmPlayer() {
 					onClick={togglePlay}
 					title={playing ? "일시정지" : "재생"}
 				>
-					{playing ? "⏸" : "▶"}
+					{playing ? "Ⅱ" : "▶"}
 				</button>
 				<button
 					type="button"
@@ -162,19 +163,6 @@ export function BgmPlayer() {
 					title="다음"
 				>
 					›
-				</button>
-				<div className="bgm-player-sep" />
-				<button
-					type="button"
-					className={`bgm-btn bgm-ai-toggle ${aiInterferenceEnabled ? "bgm-ai-toggle--active" : ""}`}
-					onClick={toggleAiInterferenceEnabled}
-					title={
-						aiInterferenceEnabled
-							? "AI 참견 끄기 (Ctrl+Alt+A)"
-							: "AI 참견 켜기 (Ctrl+Alt+A)"
-					}
-				>
-					{aiInterferenceEnabled ? "🤖" : "👤"}
 				</button>
 				<div className="bgm-player-sep" />
 				<span className="bgm-track-name" title={trackNames[currentIndex]}>
@@ -190,6 +178,21 @@ export function BgmPlayer() {
 					onChange={(e) => setVolume(Number(e.target.value))}
 					title="볼륨"
 				/>
+				<div className="bgm-player-sep" />
+				<button
+					type="button"
+					className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+					onClick={toggleAiInterferenceEnabled}
+					aria-pressed={aiInterferenceEnabled}
+					title={
+						aiInterferenceEnabled
+							? "AI 참견 끄기 (Ctrl+Alt+A)"
+							: "AI 참견 켜기 (Ctrl+Alt+A)"
+					}
+				>
+					<span className="bgm-ai-toggle__dot" />
+					AI
+				</button>
 			</div>
 		</div>
 	);

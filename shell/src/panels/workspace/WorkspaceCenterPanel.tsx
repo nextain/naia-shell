@@ -792,6 +792,72 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		return unsub;
 	}, [naia]);
 
+	// ── Naia tool: skill_workspace_get_open_file ─────────────────────────
+	useEffect(() => {
+		const unsub = naia.onToolCall(
+			"skill_workspace_get_open_file",
+			async () => {
+				if (!openFilePath) return JSON.stringify({ open: false });
+				try {
+					const content = await invoke<string>("workspace_read_file", {
+						path: openFilePath,
+					});
+					return JSON.stringify({
+						open: true,
+						path: openFilePath,
+						content,
+					});
+				} catch (e) {
+					return JSON.stringify({
+						open: true,
+						path: openFilePath,
+						error: String(e),
+					});
+				}
+			},
+		);
+		return unsub;
+	}, [naia, openFilePath]);
+
+	// ── Naia tool: skill_workspace_edit_open_file ────────────────────────
+	useEffect(() => {
+		const unsub = naia.onToolCall(
+			"skill_workspace_edit_open_file",
+			async (args) => {
+				if (!openFilePath)
+					return "Error: no file is open in the editor";
+				try {
+					const current = await invoke<string>("workspace_read_file", {
+						path: openFilePath,
+					});
+					let newContent: string;
+					if (typeof args.content === "string") {
+						newContent = args.content;
+					} else if (
+						typeof args.search === "string" &&
+						typeof args.replace === "string"
+					) {
+						if (!current.includes(args.search)) {
+							return "Error: search text not found in file";
+						}
+						newContent = current.replaceAll(args.search, args.replace);
+					} else {
+						return "Error: provide 'content' for full replace, or 'search'+'replace' for partial edit";
+					}
+					await invoke("workspace_write_file", {
+						path: openFilePath,
+						content: newContent,
+					});
+					editorRef.current?.reloadFile();
+					return `Edited: ${openFilePath}`;
+				} catch (e) {
+					return `Error: ${String(e)}`;
+				}
+			},
+		);
+		return unsub;
+	}, [naia, openFilePath]);
+
 	// ── Naia tool: skill_workspace_classify_dirs ─────────────────────────
 	useEffect(() => {
 		const unsub = naia.onToolCall(
@@ -971,6 +1037,32 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		return unsub;
 	}, [naia]);
 
+	// ── Naia tool: skill_workspace_execute ────────────────────────────────
+	useEffect(() => {
+		const unsub = naia.onToolCall(
+			"skill_workspace_execute",
+			async (args) => {
+				const command = String(args.command ?? "");
+				if (!command.trim()) return "Error: command is required";
+				const dir = String(args.dir ?? resolvedRoot ?? "");
+				if (!dir) return "Error: no working directory available";
+				const timeout_secs =
+					typeof args.timeout_secs === "number" ? args.timeout_secs : undefined;
+				try {
+					const result = await invoke<{
+						success: boolean;
+						output: string;
+						exit_code: number;
+					}>("pty_execute_sync", { dir, command, timeout_secs });
+					return JSON.stringify(result);
+				} catch (e) {
+					return `Error: ${String(e)}`;
+				}
+			},
+		);
+		return unsub;
+	}, [naia, resolvedRoot]);
+
 	// ── Active session dirs (for FileTree highlighting) ───────────────────
 	const activeDirs = sessions
 		.filter((s) => {
@@ -1133,7 +1225,9 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 							key={t.pty_id}
 							pty_id={t.pty_id}
 							active={activeTab === t.pty_id}
+							workingDir={t.dir}
 							onExit={handleTerminalExit}
+							onFileSelect={handleFileSelect}
 						/>
 					))}
 				</div>

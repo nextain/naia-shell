@@ -19,13 +19,13 @@ import {
 	setAdkPath,
 	toLocalBlobUrl,
 } from "./lib/adk-store";
+import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
 	sendPanelSkills,
 	sendPanelSkillsClear,
 } from "./lib/chat-service";
-import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import {
 	type ThemeId,
 	isOnboardingComplete,
@@ -49,8 +49,8 @@ import "./panels/settings/index"; // register settings panel
 import { usePanelStore } from "./stores/panel";
 
 const NAIA_WIDTH_DEFAULT = 320;
-const NAIA_WIDTH_MIN = 240;
-const NAIA_WIDTH_MAX = 560;
+const NAIA_WIDTH_MIN = 120;
+const NAIA_WIDTH_MAX = 1200;
 
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
@@ -131,6 +131,12 @@ export function App() {
 	const chatDragRef = useRef<{
 		startY: number;
 		startH: number;
+		moved: boolean;
+	} | null>(null);
+	const naiaWidthDragRef = useRef<{
+		startX: number;
+		startW: number;
+		currentW: number;
 		moved: boolean;
 	} | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -246,7 +252,7 @@ export function App() {
 				setBackgroundVideoUrl(await toLocalBlobUrl(match));
 			}
 		});
-	}, [showAdkSetup]);
+	}, [showAdkSetup, setBackgroundMediaType, setBackgroundVideoUrl]);
 
 	useEffect(() => {
 		void migrateLabKeyToNaiaKey();
@@ -286,7 +292,7 @@ export function App() {
 				for (const track of stream.getTracks()) track.stop();
 			})
 			.catch(() => {});
-	}, []);
+	}, [showAdkSetup]);
 
 	useEffect(() => {
 		const updateTitle = () => {
@@ -348,6 +354,11 @@ export function App() {
 	}, [toggleAiInterferenceEnabled, toggleNaia]);
 
 	useEffect(() => {
+		void naiaWidth;
+		window.dispatchEvent(new CustomEvent("naia-width-changed"));
+	}, [naiaWidth]);
+
+	useEffect(() => {
 		const unlisten = listen<{
 			discordUserId?: string | null;
 			discordChannelId?: string | null;
@@ -387,6 +398,46 @@ export function App() {
 	const handleWinResize = (dir: WinResizeDir) => (e: React.PointerEvent) => {
 		e.preventDefault();
 		getCurrentWindow().startResizeDragging(dir);
+	};
+
+	const handleNaiaWidthPointerDown = (e: React.PointerEvent) => {
+		e.preventDefault();
+		naiaWidthDragRef.current = {
+			startX: e.clientX,
+			startW: naiaWidth,
+			currentW: naiaWidth,
+			moved: false,
+		};
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		document.body.classList.add("resizing-col");
+	};
+
+	const handleNaiaWidthPointerMove = (e: React.PointerEvent) => {
+		const ref = naiaWidthDragRef.current;
+		if (!ref) return;
+		const delta = e.clientX - ref.startX;
+		if (!ref.moved && Math.abs(delta) > 4) ref.moved = true;
+		if (!ref.moved) return;
+		const nextWidth = Math.max(
+			NAIA_WIDTH_MIN,
+			Math.min(NAIA_WIDTH_MAX, ref.startW + delta),
+		);
+		ref.currentW = nextWidth;
+		setNaiaWidth(nextWidth);
+	};
+
+	const handleNaiaWidthPointerUp = () => {
+		const ref = naiaWidthDragRef.current;
+		naiaWidthDragRef.current = null;
+		document.body.classList.remove("resizing-col");
+		if (!ref?.moved) return;
+		const config = loadConfig();
+		if (config) {
+			saveConfig({
+				...config,
+				panelSize: Math.round((ref.currentW / 1200) * 100),
+			});
+		}
 	};
 
 	const winResizeHandles = (
@@ -487,6 +538,16 @@ export function App() {
 						<UpdateBanner
 							info={updateInfo}
 							onDismiss={() => setUpdateInfo(null)}
+						/>
+					)}
+					{naiaVisible && !showOnboarding && (
+						<div
+							className="naia-work-rail"
+							onPointerDown={handleNaiaWidthPointerDown}
+							onPointerMove={handleNaiaWidthPointerMove}
+							onPointerUp={handleNaiaWidthPointerUp}
+							onPointerCancel={handleNaiaWidthPointerUp}
+							title="작업영역 경계 드래그"
 						/>
 					)}
 					{naiaVisible && (

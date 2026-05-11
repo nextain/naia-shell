@@ -95,7 +95,7 @@ function _toUrl(u) {
 var _open = window.open;
 window.open = function(url) {
     var next = _toUrl(url);
-    if (next) {
+    if (next && next !== "about:blank" && next !== "about:blank/") {
         location.href = next;
         return window;
     }
@@ -106,7 +106,7 @@ document.addEventListener("click", function(e) {
     var a = target && target.closest ? target.closest("a[target='_blank'], a[target='blank']") : null;
     if (!a) return;
     var next = _toUrl(a.getAttribute("href"));
-    if (!next) return;
+    if (!next || next === "about:blank" || next === "about:blank/") return;
     e.preventDefault();
     location.href = next;
 }, true);

@@ -20,7 +20,7 @@ interface ContextMenuState {
  */
 function relativePath(base: string, target: string): string {
 	const normalizedBase = base.replace(/\/$/, "");
-	if (!normalizedBase || !target.startsWith(normalizedBase + "/")) {
+	if (!normalizedBase || !target.startsWith(`${normalizedBase}/`)) {
 		return target;
 	}
 	return target.slice(normalizedBase.length + 1);
@@ -403,7 +403,13 @@ export function FileTree({
 	}
 
 	// Phase 4: if classified dirs provided, show in sections
-	if (classifiedDirs && classifiedDirs.length > 0) {
+	if (
+		classifiedDirs &&
+		classifiedDirs.length > 0 &&
+		entries.some((e) =>
+			classifiedDirs.some((d) => normPath(d.path) === normPath(e.path)),
+		)
+	) {
 		const sections: Record<string, typeof classifiedDirs> = {
 			project: [],
 			worktree: [],
@@ -471,6 +477,17 @@ export function FileTree({
 						</div>
 					);
 				})}
+				{contextMenuEl}
+			</div>
+		);
+	}
+
+	if (entries.length === 0) {
+		return (
+			<div className="workspace-tree workspace-tree--empty">
+				<div className="workspace-tree__empty-hint">
+					표시할 파일이나 폴더가 없습니다
+				</div>
 				{contextMenuEl}
 			</div>
 		);

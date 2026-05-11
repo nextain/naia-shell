@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal as XTerminal } from "@xterm/xterm";
+import { type IBufferRange, Terminal as XTerminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import { Logger } from "../../lib/logger";
 import "@xterm/xterm/css/xterm.css";
@@ -9,10 +9,90 @@ import "@xterm/xterm/css/xterm.css";
 interface TerminalProps {
 	pty_id: string;
 	active: boolean;
+	workingDir?: string;
 	onExit: (pty_id: string) => void;
+	onFileSelect?: (path: string) => void;
 }
 
-export function Terminal({ pty_id, active, onExit }: TerminalProps) {
+const FILE_PATH_RE =
+	/(?:(?:[A-Za-z]:[\\/]|~\/|\.?\.?\/)[\w./\\-]*[\w-]+\.[\w]{1,10}|(?:src|lib|test|tests|dist|build|projects|packages|modules|node_modules|components|panels|scripts|agent|gateway|shell)[\\/][\w./\\-]*[\w-]+\.[\w]{1,10})(?::\d+){0,2}/g;
+
+const FILE_EXTENSIONS = new Set([
+	"ts",
+	"tsx",
+	"js",
+	"jsx",
+	"mjs",
+	"cjs",
+	"json",
+	"yaml",
+	"yml",
+	"toml",
+	"xml",
+	"csv",
+	"md",
+	"txt",
+	"log",
+	"env",
+	"rs",
+	"go",
+	"py",
+	"rb",
+	"java",
+	"kt",
+	"swift",
+	"c",
+	"cpp",
+	"h",
+	"hpp",
+	"css",
+	"scss",
+	"less",
+	"html",
+	"svg",
+	"sh",
+	"bash",
+	"zsh",
+	"fish",
+	"ps1",
+	"bat",
+	"cmd",
+	"sql",
+	"graphql",
+	"proto",
+	"wasm",
+	"lock",
+	"cargo",
+	"toml",
+	"rs",
+]);
+
+function resolveFilePath(raw: string, cwd?: string): string | null {
+	const parts = raw.split(":");
+	let filePath = parts[0];
+	const ext = filePath.split(".").pop()?.toLowerCase();
+	if (!ext || !FILE_EXTENSIONS.has(ext)) return null;
+	if (filePath.startsWith("~/")) {
+		filePath = `${process.env.HOME || process.env.USERPROFILE || "~"}${filePath.slice(1)}`;
+	}
+	if (
+		!filePath.includes("/") &&
+		!filePath.includes("\\") &&
+		!filePath.match(/^[A-Za-z]:/)
+	) {
+		if (cwd) filePath = `${cwd}/${filePath}`;
+		else return null;
+	}
+	return filePath.replace(/\\/g, "/");
+}
+
+export function Terminal({
+	pty_id,
+	active,
+	workingDir,
+	onExit,
+	onFileSelect,
+}: TerminalProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<XTerminal | null>(null);
 	const fitRef = useRef<FitAddon | null>(null);
@@ -20,8 +100,11 @@ export function Terminal({ pty_id, active, onExit }: TerminalProps) {
 	activeRef.current = active;
 	const onExitRef = useRef(onExit);
 	onExitRef.current = onExit;
+	const onFileSelectRef = useRef(onFileSelect);
+	onFileSelectRef.current = onFileSelect;
+	const workingDirRef = useRef(workingDir);
+	workingDirRef.current = workingDir;
 
-	// Initialize xterm once per pty_id
 	useEffect(() => {
 		const container = containerRef.current;
 		if (!container) return;
@@ -41,8 +124,55 @@ export function Terminal({ pty_id, active, onExit }: TerminalProps) {
 		termRef.current = term;
 		fitRef.current = fit;
 
-		// Cancellation flag: if component unmounts before listen() resolves,
-		// immediately call the returned unlisten fn to avoid listener leaks.
+		if (onFileSelect) {
+			term.registerLinkProvider({
+				provideLinks(lineNum, callback) {
+					const line = term.buffer.active.getLine(lineNum - 1);
+					if (!line) {
+						callback(undefined);
+						return;
+					}
+					const text = line.translateToString(true);
+					FILE_PATH_RE.lastIndex = 0;
+					let match: RegExpExecArray | null;
+					const links: {
+						range: IBufferRange;
+						text: string;
+						activate: (_e: MouseEvent, text: string) => void;
+						leave: () => void;
+						hover: () => void;
+						dispose: () => void;
+					}[] = [];
+					// biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+					for (
+						let m: RegExpExecArray | null = null;
+						(m = FILE_PATH_RE.exec(text)) !== null;
+					) {
+						match = m;
+						const resolved = resolveFilePath(match[0], workingDirRef.current);
+						if (!resolved) continue;
+						const startCol = match.index + 1;
+						const endCol = startCol + match[0].length;
+						links.push({
+							range: {
+								start: { x: startCol, y: lineNum },
+								end: { x: endCol, y: lineNum },
+							},
+							text: match[0],
+							activate(_e, linkText) {
+								const path = resolveFilePath(linkText, workingDirRef.current);
+								if (path) onFileSelectRef.current?.(path);
+							},
+							leave() {},
+							hover() {},
+							dispose() {},
+						});
+					}
+					callback(links.length > 0 ? links : undefined);
+				},
+			});
+		}
+
 		let cancelled = false;
 		const pendingUnlistens: Array<() => void> = [];
 
@@ -57,12 +187,6 @@ export function Terminal({ pty_id, active, onExit }: TerminalProps) {
 		});
 
 		listen<void>(`pty:exit:${pty_id}`, () => {
-			// If cancelled, skip everything. Edge case: if the process exits in the narrow
-			// window between listen() call and Promise resolution AND the component unmounts
-			// concurrently, the event fires once without being handled. This leaves the tab
-			// in the parent's state (zombie). In practice this race is negligible because
-			// the process (bash) stays alive until explicitly killed — the listen() IPC
-			// round-trip resolves in milliseconds, long before any user-initiated kill.
 			if (cancelled) return;
 			if (termRef.current) {
 				termRef.current.write("\r\n[프로세스 종료]\r\n");
@@ -86,7 +210,6 @@ export function Terminal({ pty_id, active, onExit }: TerminalProps) {
 			if (!activeRef.current || !fitRef.current || !termRef.current) return;
 			fitRef.current.fit();
 			const { rows, cols } = termRef.current;
-			// Guard: FitAddon returns 0 when container size is 0; don't send 0×0 to PTY
 			if (!rows || !cols) return;
 			invoke("pty_resize", { pty_id, rows, cols }).catch(() => {});
 		});
@@ -94,20 +217,15 @@ export function Terminal({ pty_id, active, onExit }: TerminalProps) {
 
 		return () => {
 			cancelled = true;
-			observer.disconnect(); // no new callbacks after this
+			observer.disconnect();
 			for (const fn of pendingUnlistens) fn();
 			onDataDisposer.dispose();
-			// Null refs synchronously before dispose. JS is single-threaded so no
-			// ResizeObserver callback can fire between these lines; the null guard
-			// in the observer callback is a second-layer defence against any
-			// already-queued entry that was in the task queue before disconnect().
 			termRef.current = null;
 			fitRef.current = null;
 			term.dispose();
 		};
-	}, [pty_id]);
+	}, [pty_id, onFileSelect]);
 
-	// Fit when becoming active (opacity:0 → visible transition)
 	useEffect(() => {
 		if (!active) return;
 		const id = setTimeout(() => {
@@ -120,9 +238,6 @@ export function Terminal({ pty_id, active, onExit }: TerminalProps) {
 		return () => clearTimeout(id);
 	}, [active, pty_id]);
 
-	// CSS class provides: position:absolute; inset:0; overflow:hidden
-	// (global.css .workspace-panel__terminal) — required for keepAlive stacking.
-	// Inactive terminals are hidden via inline opacity:0 + pointerEvents:none only.
 	return (
 		<div
 			ref={containerRef}

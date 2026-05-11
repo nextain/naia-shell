@@ -1,20 +1,26 @@
-import { type MouseEvent, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	type BrowserLink,
+	addBrowserShortcut,
 	loadBrowserShortcuts,
 	onBrowserPrefsChanged,
 	removeBrowserShortcut,
 } from "../lib/browser-prefs";
 import { loadConfig, saveConfig } from "../lib/config";
-import { getLocale } from "../lib/i18n";
+import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { removeInstalledPanel } from "../lib/panel-loader";
 import { panelRegistry } from "../lib/panel-registry";
 import { usePanelStore } from "../stores/panel";
 
 interface ModeBarProps {
-	/** Called when user clicks the + button. Hook up panel marketplace or file picker. */
 	onAddMode?: () => void;
+}
+
+function extractInitial(shortcut: BrowserLink): string {
+	const source = shortcut.title || shortcut.url;
+	const m = source.match(/([a-zA-Z0-9\uAC00-\uD7AF])/);
+	return m ? m[1].toUpperCase() : "?";
 }
 
 export function ModeBar({ onAddMode }: ModeBarProps) {
@@ -25,6 +31,16 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		bumpPanelListVersion,
 	} = usePanelStore();
 	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
+	const [ctxMenu, setCtxMenu] = useState<{
+		x: number;
+		y: number;
+		shortcutUrl?: string;
+		panelId?: string;
+	} | null>(null);
+	const ctxMenuRef = useRef<HTMLDivElement>(null);
+	const [addUrlDialog, setAddUrlDialog] = useState(false);
+	const [urlInputDialog, setUrlInputDialog] = useState(false);
+	const [addUrlInput, setAddUrlInput] = useState("");
 
 	// Rebuild panel list whenever panelListVersion changes (runtime install/remove)
 	// Exclude avatar panel (shown as fixed "바탕화면" tab separately)
@@ -102,24 +118,107 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		window.setTimeout(navigate, 50);
 	}
 
-	function handleRemoveBrowserShortcut(
-		e: MouseEvent<HTMLButtonElement>,
-		url: string,
-	) {
-		e.stopPropagation();
-		removeBrowserShortcut(url)
+	function handleCtxRemoveShortcut() {
+		if (!ctxMenu?.shortcutUrl) return;
+		removeBrowserShortcut(ctxMenu.shortcutUrl)
 			.then(setBrowserShortcuts)
 			.catch((err) => {
 				Logger.warn("ModeBar", "Failed to remove browser shortcut", {
-					url,
+					url: ctxMenu.shortcutUrl,
 					error: String(err),
 				});
 			});
+		setCtxMenu(null);
+	}
+
+	function handleCtxRemovePanel() {
+		if (!ctxMenu?.panelId) return;
+		const panelId = ctxMenu.panelId;
+		const descriptor = panelRegistry.get(panelId);
+		if (descriptor?.source === "installed") {
+			removeInstalledPanel(panelId);
+		} else {
+			panelRegistry.unregister(panelId);
+			const cfg = loadConfig();
+			if (cfg) {
+				const prev = cfg.deletedPanels ?? [];
+				if (!prev.includes(panelId)) {
+					saveConfig({ ...cfg, deletedPanels: [...prev, panelId] });
+				}
+			}
+			bumpPanelListVersion();
+		}
+		if (activePanel === panelId) setActivePanel(null);
+		setCtxMenu(null);
+	}
+
+	const handleTabBarContextMenu = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			const target = e.target as HTMLElement;
+			const shortcutEl = target.closest("[data-browser-shortcut]");
+			if (shortcutEl) {
+				const url = shortcutEl.getAttribute("data-browser-shortcut") ?? "";
+				setCtxMenu({ x: e.clientX, y: e.clientY, shortcutUrl: url });
+				return;
+			}
+			const panelEl = target.closest("[data-panel-id]");
+			if (panelEl) {
+				const id = panelEl.getAttribute("data-panel-id") ?? "";
+				const descriptor = panelRegistry.get(id);
+				if (descriptor && !descriptor.builtIn) {
+					setCtxMenu({ x: e.clientX, y: e.clientY, panelId: id });
+					return;
+				}
+			}
+			setCtxMenu({ x: e.clientX, y: e.clientY });
+		},
+		[activePanel],
+	);
+
+	useEffect(() => {
+		if (!ctxMenu) return;
+		const close = () => setCtxMenu(null);
+		window.addEventListener("click", close);
+		window.addEventListener("contextmenu", close);
+		const timer = setTimeout(close, 5000);
+		return () => {
+			window.removeEventListener("click", close);
+			window.removeEventListener("contextmenu", close);
+			clearTimeout(timer);
+		};
+	}, [ctxMenu]);
+
+	async function handleAddUrlSubmit() {
+		let url = addUrlInput.trim();
+		if (!url) return;
+		if (!url.includes("://")) url = `https://${url}`;
+		try {
+			const u = new URL(url);
+			const iconUrl = `${u.origin}/favicon.ico`;
+			const title = u.hostname;
+			const result = await addBrowserShortcut(title, url, iconUrl);
+			setBrowserShortcuts(result);
+		} catch {
+			try {
+				const result = await addBrowserShortcut(url, url);
+				setBrowserShortcuts(result);
+			} catch (err) {
+				Logger.warn("ModeBar", "Failed to add shortcut", {
+					error: String(err),
+				});
+			}
+		}
+		setAddUrlInput("");
+		setUrlInputDialog(false);
 	}
 
 	return (
 		<div className="mode-bar">
-			<div className="mode-bar-tabs">
+			<div
+				className="mode-bar-tabs"
+				onContextMenu={handleTabBarContextMenu}
+			>
 				{/* 바탕화면 — no panel active */}
 				<button
 					type="button"
@@ -183,27 +282,137 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 									className="mode-bar-tab-favicon"
 									src={shortcut.iconUrl}
 									alt=""
+									onError={(e) => {
+										const img = e.currentTarget;
+										const fallback = extractInitial(shortcut);
+										img.replaceWith(
+											Object.assign(document.createElement("span"), {
+												className:
+													"mode-bar-tab-icon mode-bar-tab-icon--initial",
+												textContent: fallback,
+											}),
+										);
+									}}
 								/>
 							) : (
-								<span className="mode-bar-tab-icon">Go</span>
+								<span className="mode-bar-tab-icon mode-bar-tab-icon--initial">
+									{extractInitial(shortcut)}
+								</span>
 							)}
-						</button>
-						<button
-							type="button"
-							className="mode-bar-tab-remove"
-							title={`Remove ${shortcut.title || shortcut.url}`}
-							onClick={(e) => handleRemoveBrowserShortcut(e, shortcut.url)}
-						>
-							x
 						</button>
 					</div>
 				))}
 			</div>
+			{ctxMenu && (
+				<div
+					ref={ctxMenuRef}
+					className="mode-bar-ctx-menu"
+					style={{ left: ctxMenu.x, top: ctxMenu.y }}
+				>
+					{ctxMenu.shortcutUrl && (
+						<button
+							type="button"
+							className="mode-bar-ctx-menu__item mode-bar-ctx-menu__item--danger"
+							onClick={handleCtxRemoveShortcut}
+						>
+							{t("modebar.removeShortcut")}
+						</button>
+					)}
+					{ctxMenu.panelId && (
+						<button
+							type="button"
+							className="mode-bar-ctx-menu__item mode-bar-ctx-menu__item--danger"
+							onClick={handleCtxRemovePanel}
+						>
+							{t("modebar.removePanel")}
+						</button>
+					)}
+				</div>
+			)}
+			{addUrlDialog && (
+				<div
+					className="mode-bar-url-dialog-overlay"
+					onClick={() => setAddUrlDialog(false)}
+				>
+					<div
+						className="mode-bar-url-dialog"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							type="button"
+							className="mode-bar-url-dialog__section"
+							onClick={() => {
+								setAddUrlDialog(false);
+								setUrlInputDialog(true);
+							}}
+						>
+							<span className="mode-bar-url-dialog__section-icon">🌐</span>
+							<div className="mode-bar-url-dialog__section-text">
+								<strong>{t("modebar.addShortcut")}</strong>
+								<span>{t("modebar.addShortcutDesc")}</span>
+							</div>
+						</button>
+						<button
+							type="button"
+							className="mode-bar-url-dialog__section"
+							onClick={() => {
+								setAddUrlDialog(false);
+								onAddMode?.();
+							}}
+						>
+							<span className="mode-bar-url-dialog__section-icon">📱</span>
+							<div className="mode-bar-url-dialog__section-text">
+								<strong>{t("modebar.addPanel")}</strong>
+								<span>{t("modebar.addPanelDesc")}</span>
+							</div>
+						</button>
+					</div>
+				</div>
+			)}
+			{urlInputDialog && (
+				<div
+					className="mode-bar-url-dialog-overlay"
+					onClick={() => setUrlInputDialog(false)}
+				>
+					<form
+						className="mode-bar-url-dialog"
+						onClick={(e) => e.stopPropagation()}
+						onSubmit={(e) => {
+							e.preventDefault();
+							handleAddUrlSubmit();
+						}}
+					>
+						<input
+							type="text"
+							className="mode-bar-url-dialog__input"
+							value={addUrlInput}
+							onChange={(e) => setAddUrlInput(e.target.value)}
+							placeholder={t("modebar.enterUrl")}
+							autoFocus
+						/>
+						<div className="mode-bar-url-dialog__btns">
+							<button
+								type="button"
+								className="mode-bar-url-dialog__btn"
+								onClick={() => setUrlInputDialog(false)}
+							>
+								{t("settings.cancel")}
+							</button>
+							<button
+								type="submit"
+								className="mode-bar-url-dialog__btn mode-bar-url-dialog__btn--primary"
+							>
+								{t("settings.save")}
+							</button>
+						</div>
+					</form>
+				</div>
+			)}
 			<button
 				type="button"
 				className="mode-bar-add"
-				onClick={onAddMode}
-				title="패널 추가"
+				onClick={() => setAddUrlDialog(true)}
+				title={t("modebar.addItem")}
 			>
 				+
 			</button>

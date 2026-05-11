@@ -206,6 +206,7 @@ pub fn collect_workspace_git_dirs(root: &Path) -> Vec<PathBuf> {
 fn git_cmd(path: &Path, args: &[&str]) -> std::process::Command {
     let mut cmd = std::process::Command::new("git");
     cmd.current_dir(path).args(args);
+    crate::platform::hide_console(&mut cmd);
     cmd
 }
 
@@ -770,8 +771,8 @@ fn get_all_worktree_paths(root: &Path) -> Vec<String> {
 // RESTORED MISSING COMMANDS
 
 #[tauri::command]
-pub fn workspace_list_dirs(path: String) -> Result<Vec<DirEntry>, String> {
-    let safe_path = validate_in_workspace(&path)?;
+pub fn workspace_list_dirs(parent: String) -> Result<Vec<DirEntry>, String> {
+    let safe_path = validate_in_workspace(&parent)?;
     let mut entries = Vec::new();
     if let Ok(read) = std::fs::read_dir(safe_path) {
         for entry in read.flatten() {
@@ -810,9 +811,9 @@ pub fn workspace_file_size(path: String) -> Result<u64, String> {
 }
 
 #[tauri::command]
-pub fn workspace_write_file(path: String, contents: String) -> Result<(), String> {
+pub fn workspace_write_file(path: String, content: String) -> Result<(), String> {
     let safe_path = validate_write_path(&path)?;
-    std::fs::write(safe_path, contents).map_err(|e| e.to_string())
+    std::fs::write(safe_path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
