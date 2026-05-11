@@ -4,6 +4,9 @@
 # Triggered by xdg autostart on user login. Idempotent.
 # No-op if /var/naia/naia-adk doesn't exist (e.g., installed system without
 # the persistent USB attached).
+#
+# If ~/naia-adk exists as a directory, migrates its contents into the
+# persistent partition and replaces it with a symlink.
 
 set -euo pipefail
 
@@ -17,8 +20,16 @@ if [[ -L "$LINK" ]]; then
 		rm "$LINK"
 		ln -s "$TARGET" "$LINK"
 	fi
+elif [[ -d "$LINK" ]]; then
+	logger -t naia-adk-link "migrating existing directory to persistent partition: $LINK"
+	mkdir -p "$TARGET"
+	cp -a "$LINK/." "$TARGET/" 2>/dev/null || true
+	bak="${LINK}.pre-naia-$(date +%Y%m%d%H%M%S)"
+	mv "$LINK" "$bak"
+	ln -s "$TARGET" "$LINK"
+	logger -t naia-adk-link "migration complete, old dir backed up to $bak"
 elif [[ -e "$LINK" ]]; then
-	logger -t naia-adk-link "exists as non-symlink, skipping: $LINK"
+	logger -t naia-adk-link "exists as non-symlink non-directory, skipping: $LINK"
 else
 	ln -s "$TARGET" "$LINK"
 fi
