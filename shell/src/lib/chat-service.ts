@@ -19,12 +19,49 @@ interface SendChatOptions {
 	gatewayToken?: string;
 	disabledSkills?: string[];
 	routeViaGateway?: boolean;
+	// Webhook URLs / Discord defaults moved to sendNotifyConfig (#260).
+	// Do not re-add per-request — credentials must not appear in every
+	// chat_request stdio frame.
+}
+
+export interface NotifyConfig {
 	slackWebhookUrl?: string;
 	discordWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
 	discordDefaultUserId?: string;
 	discordDefaultTarget?: string;
 	discordDmChannelId?: string;
+}
+
+/**
+ * Send notify config to the agent. Should be called once at app startup
+ * and again whenever the user saves settings. Replaces per-request webhook
+ * URL transmission (#260) — credentials stay out of chat_request / tool_request
+ * stdio frames.
+ */
+export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
+	const request = {
+		type: "notify_config",
+		...(cfg.slackWebhookUrl !== undefined && {
+			slackWebhookUrl: cfg.slackWebhookUrl,
+		}),
+		...(cfg.discordWebhookUrl !== undefined && {
+			discordWebhookUrl: cfg.discordWebhookUrl,
+		}),
+		...(cfg.googleChatWebhookUrl !== undefined && {
+			googleChatWebhookUrl: cfg.googleChatWebhookUrl,
+		}),
+		...(cfg.discordDefaultUserId !== undefined && {
+			discordDefaultUserId: cfg.discordDefaultUserId,
+		}),
+		...(cfg.discordDefaultTarget !== undefined && {
+			discordDefaultTarget: cfg.discordDefaultTarget,
+		}),
+		...(cfg.discordDmChannelId !== undefined && {
+			discordDmChannelId: cfg.discordDmChannelId,
+		}),
+	};
+	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
 }
 
 const RESPONSE_TIMEOUT_MS = 120_000; // Safety: clean up listener if no finish/error
@@ -46,12 +83,6 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		gatewayToken,
 		disabledSkills,
 		routeViaGateway,
-		slackWebhookUrl,
-		discordWebhookUrl,
-		googleChatWebhookUrl,
-		discordDefaultUserId,
-		discordDefaultTarget,
-		discordDmChannelId,
 	} = opts;
 
 	const request = {
@@ -69,12 +100,9 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		...(gatewayToken && { gatewayToken }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
 		...(routeViaGateway != null && { routeViaGateway }),
-		...(slackWebhookUrl !== undefined && { slackWebhookUrl }),
-		...(discordWebhookUrl !== undefined && { discordWebhookUrl }),
-		...(googleChatWebhookUrl !== undefined && { googleChatWebhookUrl }),
-		...(discordDefaultUserId !== undefined && { discordDefaultUserId }),
-		...(discordDefaultTarget !== undefined && { discordDefaultTarget }),
-		...(discordDmChannelId !== undefined && { discordDmChannelId }),
+		// Webhook URLs and Discord defaults are intentionally NOT included here.
+		// They live in the agent's process.env, set once via sendNotifyConfig()
+		// at startup and re-sent on settings save (#260).
 	};
 
 	// Listen for agent responses before sending to avoid race conditions
@@ -185,26 +213,9 @@ export async function directToolCall(opts: {
 	requestId: string;
 	gatewayUrl?: string;
 	gatewayToken?: string;
-	slackWebhookUrl?: string;
-	discordWebhookUrl?: string;
-	googleChatWebhookUrl?: string;
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
+	// Webhook URLs / Discord defaults moved to sendNotifyConfig (#260).
 }): Promise<{ success: boolean; output: string }> {
-	const {
-		toolName,
-		args,
-		requestId,
-		gatewayUrl,
-		gatewayToken,
-		slackWebhookUrl,
-		discordWebhookUrl,
-		googleChatWebhookUrl,
-		discordDefaultUserId,
-		discordDefaultTarget,
-		discordDmChannelId,
-	} = opts;
+	const { toolName, args, requestId, gatewayUrl, gatewayToken } = opts;
 
 	const request = {
 		type: "tool_request",
@@ -213,12 +224,8 @@ export async function directToolCall(opts: {
 		args,
 		...(gatewayUrl && { gatewayUrl }),
 		...(gatewayToken && { gatewayToken }),
-		...(slackWebhookUrl !== undefined && { slackWebhookUrl }),
-		...(discordWebhookUrl !== undefined && { discordWebhookUrl }),
-		...(googleChatWebhookUrl !== undefined && { googleChatWebhookUrl }),
-		...(discordDefaultUserId !== undefined && { discordDefaultUserId }),
-		...(discordDefaultTarget !== undefined && { discordDefaultTarget }),
-		...(discordDmChannelId !== undefined && { discordDmChannelId }),
+		// Webhook URLs and Discord defaults are intentionally NOT included.
+		// Source of truth lives in agent process.env via sendNotifyConfig() (#260).
 	};
 
 	let result = { success: false, output: "" };

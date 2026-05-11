@@ -23,6 +23,7 @@ import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
+	sendNotifyConfig,
 	sendPanelSkills,
 	sendPanelSkillsClear,
 } from "./lib/chat-service";
@@ -389,9 +390,23 @@ export function App() {
 	// On init: if naiaKey exists in config, push it to the agent (backend).
 	// Handles the case where the app restarts after a previous login.
 	useEffect(() => {
-		const naiaKey = loadConfig()?.naiaKey;
+		const cfg = loadConfig();
+		const naiaKey = cfg?.naiaKey;
 		if (naiaKey) {
 			sendAuthUpdate(naiaKey).catch(() => {});
+		}
+		// Push webhook URLs + Discord defaults to the agent ONCE at startup (#260).
+		// Replaces per-chat_request transmission so credentials stop appearing
+		// in every stdio frame / log capture.
+		if (cfg) {
+			sendNotifyConfig({
+				slackWebhookUrl: cfg.slackWebhookUrl,
+				discordWebhookUrl: cfg.discordWebhookUrl,
+				googleChatWebhookUrl: cfg.googleChatWebhookUrl,
+				discordDefaultUserId: cfg.discordDefaultUserId,
+				discordDefaultTarget: cfg.discordDefaultTarget,
+				discordDmChannelId: cfg.discordDmChannelId,
+			}).catch(() => {});
 		}
 	}, []);
 

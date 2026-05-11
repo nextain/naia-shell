@@ -17,7 +17,11 @@ import {
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
 import { syncLinkedChannels } from "../lib/channel-sync";
-import { directToolCall, sendAuthUpdate } from "../lib/chat-service";
+import {
+	directToolCall,
+	sendAuthUpdate,
+	sendNotifyConfig,
+} from "../lib/chat-service";
 import {
 	DEFAULT_GATEWAY_URL,
 	DEFAULT_OLLAMA_HOST,
@@ -2052,6 +2056,17 @@ export function SettingsTab() {
 		};
 		saveConfig(newConfig);
 		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
+		// Push webhook URLs + Discord defaults to the agent (#260). Replaces
+		// per-chat_request webhook field transmission with a one-shot config
+		// update so credentials don't appear in every stdio frame.
+		void sendNotifyConfig({
+			slackWebhookUrl: newConfig.slackWebhookUrl,
+			discordWebhookUrl: newConfig.discordWebhookUrl,
+			googleChatWebhookUrl: newConfig.googleChatWebhookUrl,
+			discordDefaultUserId: newConfig.discordDefaultUserId,
+			discordDefaultTarget: newConfig.discordDefaultTarget,
+			discordDmChannelId: newConfig.discordDmChannelId,
+		});
 		setLocale(locale);
 		setAvatarModelPath(vrmModel);
 		setAvatarBackgroundImage(backgroundImage);

@@ -156,6 +156,24 @@ export interface AuthUpdateRequest {
 	naiaKey: string;
 }
 
+/**
+ * Shell → Agent: webhook URLs + Discord defaults set ONCE at startup
+ * and on settings save (#260). Replaces per-chat_request / per-tool_request
+ * credential transmission, which leaked webhook URLs into every stdio frame
+ * + any log capture. Agent caches into process.env via applyNotifyWebhookEnv.
+ *
+ * All fields optional — sending the empty object clears env.
+ */
+export interface NotifyConfigRequest {
+	type: "notify_config";
+	slackWebhookUrl?: string;
+	discordWebhookUrl?: string;
+	googleChatWebhookUrl?: string;
+	discordDefaultUserId?: string;
+	discordDefaultTarget?: string;
+	discordDmChannelId?: string;
+}
+
 export type AgentRequest =
 	| ChatRequest
 	| CancelRequest
@@ -169,7 +187,8 @@ export type AgentRequest =
 	| SkillListRequest
 	| MemoryExportRequest
 	| MemoryImportRequest
-	| AuthUpdateRequest;
+	| AuthUpdateRequest
+	| NotifyConfigRequest;
 
 export function parseRequest(line: string): AgentRequest | null {
 	try {
@@ -188,7 +207,8 @@ export function parseRequest(line: string): AgentRequest | null {
 			obj.type === "skill_list" ||
 			obj.type === "memory_export" ||
 			obj.type === "memory_import" ||
-			obj.type === "auth_update"
+			obj.type === "auth_update" ||
+			obj.type === "notify_config"
 		) {
 			return obj as AgentRequest;
 		}

@@ -733,12 +733,8 @@ export function ChatPanel() {
 					config.enableTools && (config.chatRouting ?? "auto") !== "direct"
 						? true
 						: undefined,
-				slackWebhookUrl: config.slackWebhookUrl,
-				discordWebhookUrl: config.discordWebhookUrl,
-				googleChatWebhookUrl: config.googleChatWebhookUrl,
-				discordDefaultUserId: config.discordDefaultUserId,
-				discordDefaultTarget: config.discordDefaultTarget,
-				discordDmChannelId: config.discordDmChannelId,
+				// Webhook URLs + Discord defaults are pushed via sendNotifyConfig at
+				// app startup / settings save (#260). Not transmitted per-chat.
 			});
 		} catch (err) {
 			useChatStore

@@ -41,6 +41,7 @@ import {
 	type ChatRequest,
 	type MemoryExportRequest,
 	type MemoryImportRequest,
+	type NotifyConfigRequest,
 	type PanelInstallRequest,
 	type PanelSkillsClearRequest,
 	type PanelSkillsRequest,
@@ -1207,6 +1208,25 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 	}
 }
 
+/**
+ * Cache webhook URLs + Discord defaults into process.env once at startup
+ * (#260). Prior path: webhook URLs were attached to every chat_request /
+ * tool_request stdio frame and re-applied per-call via applyNotifyWebhookEnv.
+ * Now: shell sends notify_config once at startup + on settings save; the
+ * per-request fields stay in the schema as optional for backwards compat
+ * but the shell does not populate them.
+ */
+export function handleNotifyConfig(req: NotifyConfigRequest): void {
+	applyNotifyWebhookEnv({
+		slackWebhookUrl: req.slackWebhookUrl,
+		discordWebhookUrl: req.discordWebhookUrl,
+		googleChatWebhookUrl: req.googleChatWebhookUrl,
+		discordDefaultUserId: req.discordDefaultUserId,
+		discordDefaultTarget: req.discordDefaultTarget,
+		discordDmChannelId: req.discordDmChannelId,
+	});
+}
+
 export function handleAuthUpdate(req: import("./protocol.js").AuthUpdateRequest): void {
 	setAgentNaiaKey(req.naiaKey);
 	// Rebuild memory system so naia embedding/LLM providers pick up the fresh key.
@@ -1253,6 +1273,11 @@ function main(): void {
 
 		if (request.type === "auth_update") {
 			handleAuthUpdate(request);
+			return;
+		}
+
+		if (request.type === "notify_config") {
+			handleNotifyConfig(request);
 			return;
 		}
 
