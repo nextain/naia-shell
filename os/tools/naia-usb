@@ -137,12 +137,12 @@ set timeout=10
 search --no-floppy --set=root -l '${LABEL_ESP}'
 
 menuentry 'Naia OS Live' --class fedora --class gnu-linux --class os {
-  linux (\$root)/vmlinuz root=live:LABEL=${LABEL_ROOTFS} rd.live.image quiet rhgb enforcing=0
+  linux (\$root)/vmlinuz root=live:LABEL=${LABEL_ROOTFS} rd.live.image quiet rhgb enforcing=0 console=tty0 console=ttyS0,115200n8
   initrd (\$root)/initramfs.img
 }
 
 menuentry 'Naia OS Live (Basic Graphics)' --class fedora --class gnu-linux --class os {
-  linux (\$root)/vmlinuz root=live:LABEL=${LABEL_ROOTFS} rd.live.image quiet rhgb enforcing=0 nomodeset
+  linux (\$root)/vmlinuz root=live:LABEL=${LABEL_ROOTFS} rd.live.image quiet rhgb enforcing=0 nomodeset console=tty0 console=ttyS0,115200n8
   initrd (\$root)/initramfs.img
 }
 GRUBCFG
@@ -185,6 +185,7 @@ install_iso_to_esp() {
 	log "  copied EFI/BOOT/ contents"
 
 	if [[ -f "$iso_mp/boot/grub/fonts/unicode.pf2" ]]; then
+		rm -f "$esp_mp/EFI/BOOT/fonts"
 		mkdir -p "$esp_mp/EFI/BOOT/fonts"
 		cp "$iso_mp/boot/grub/fonts/unicode.pf2" "$esp_mp/EFI/BOOT/fonts/"
 	fi
