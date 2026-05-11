@@ -4,39 +4,14 @@ import {
 	startWebLogin,
 	waitWebLogin,
 } from "../../gateway/channels-proxy.js";
+import { channelsDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createChannelsSkill(): SkillDefinition {
 	return {
-		name: "skill_channels",
-		description:
-			"Manage messaging channels (Discord, Slack, Telegram, etc.). Actions: status, logout, login_start, login_wait.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action: status (list channels), logout (disconnect), login_start (begin QR login), login_wait (wait for QR scan)",
-					enum: ["status", "logout", "login_start", "login_wait"],
-				},
-				channel: {
-					type: "string",
-					description:
-						"Channel ID (e.g., discord, slack, telegram). Required for logout.",
-				},
-				account_id: {
-					type: "string",
-					description: "Account ID within the channel (optional)",
-				},
-				probe: {
-					type: "boolean",
-					description:
-						"Run health checks on channels (for status action, optional)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${channelsDescriptor.name}`,
+		description: channelsDescriptor.description,
+		parameters: channelsDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: true,
 		source: "built-in",

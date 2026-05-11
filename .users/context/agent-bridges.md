@@ -141,7 +141,7 @@ replace the tgz + bump the version pin in `agent/package.json`.
 | Repo | Required exports | Pin |
 |------|------------------|-----|
 | `naia-memory` | `MemorySystem`, `LocalAdapter`, embedding providers, `buildLLMFactExtractor`, **`HeuristicContradictionFilter`** (added #272) | alpha-adk submodule |
-| `naia-adk/packages/skills-builtin` | `weatherDescriptor` (added #272 — was stub) + 9 more on Day 3-7 | file:path |
+| `naia-adk/packages/skills-builtin` | Full 21-skill catalog (Phase 4.0 Day 3-7 complete via #273) + `ALL_DESCRIPTORS` enumeration | file:path |
 | `@nextain/agent-types` (vendored) | Bridge contract types | tgz in `agent/vendor/` |
 
 ## What's deferred

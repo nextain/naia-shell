@@ -142,7 +142,7 @@ tgz 교체 + `agent/package.json` 의 version pin 올림.
 | Repo | 필수 exports | Pin |
 |------|------------|-----|
 | `naia-memory` | `MemorySystem`, `LocalAdapter`, embedding providers, `buildLLMFactExtractor`, **`HeuristicContradictionFilter`** (#272 추가) | alpha-adk submodule |
-| `naia-adk/packages/skills-builtin` | `weatherDescriptor` (#272 추가 — stub 이었음) + Day 3-7 에 9 개 더 | file:path |
+| `naia-adk/packages/skills-builtin` | 전체 21-skill 카탈로그 (#273 으로 Phase 4.0 Day 3-7 완료) + `ALL_DESCRIPTORS` enum | file:path |
 | `@nextain/agent-types` (vendored) | Bridge contract 타입 | `agent/vendor/` 내 tgz |
 
 ## 보류된 작업

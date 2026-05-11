@@ -146,8 +146,11 @@ cross_repo_dependencies:
     package: "@naia-adk/skills-builtin"
     path: file:../../naia-adk/packages/skills-builtin
     required_exports:
-      - weatherDescriptor (#272 added — was stub)
-      - "(other 9 descriptors land in Phase 4.0 Day 3-7)"
+      - Full 21-skill catalog (Phase 4.0 Day 3-7 complete via #273): agents,
+        approvals, botmadang, channels, config, cron, device, diagnostics,
+        memo, naia-discord, notify-{discord,google-chat,slack}, panel,
+        sessions, skill-manager, system-status, time, tts, voicewake, weather
+      - ALL_DESCRIPTORS array for enumeration
 
   agent_types:
     package: "@nextain/agent-types"

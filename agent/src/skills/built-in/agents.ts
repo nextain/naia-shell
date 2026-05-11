@@ -7,62 +7,14 @@ import {
 	setAgentFile,
 	updateAgent,
 } from "../../gateway/agents-proxy.js";
+import { agentsDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createAgentsSkill(): SkillDefinition {
 	return {
-		name: "skill_agents",
-		description:
-			"Manage Gateway agents. Actions: list, create, update, delete, files_list, files_get, files_set.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action: list, create, update, delete, files_list, files_get, files_set",
-					enum: [
-						"list",
-						"create",
-						"update",
-						"delete",
-						"files_list",
-						"files_get",
-						"files_set",
-					],
-				},
-				id: {
-					type: "string",
-					description: "Agent ID. Required for update and delete.",
-				},
-				agentId: {
-					type: "string",
-					description:
-						"Agent ID for file operations (files_list, files_get, files_set).",
-				},
-				name: {
-					type: "string",
-					description: "Agent name. Required for create.",
-				},
-				description: {
-					type: "string",
-					description: "Agent description (optional).",
-				},
-				model: {
-					type: "string",
-					description: "Model name (optional).",
-				},
-				path: {
-					type: "string",
-					description: "File path (for files_get, files_set).",
-				},
-				content: {
-					type: "string",
-					description: "File content (for files_set).",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${agentsDescriptor.name}`,
+		description: agentsDescriptor.description,
+		parameters: agentsDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: true,
 		source: "built-in",

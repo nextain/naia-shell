@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { memoDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 
 function sanitizeKey(key: string): string {
@@ -11,28 +12,9 @@ export function createMemoSkill(memoDir?: string): SkillDefinition {
 	const dir = memoDir ?? path.join(os.homedir(), ".naia", "memos");
 
 	return {
-		name: "skill_memo",
-		description:
-			"Save, read, list, or delete short text memos. Stored locally in ~/.naia/memos/.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action: save, read, list, delete",
-					enum: ["save", "read", "list", "delete"],
-				},
-				key: {
-					type: "string",
-					description: "Memo key (filename-safe)",
-				},
-				content: {
-					type: "string",
-					description: "Content to save (for save action)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${memoDescriptor.name}`,
+		description: memoDescriptor.description,
+		parameters: memoDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: false,
 		source: "built-in",

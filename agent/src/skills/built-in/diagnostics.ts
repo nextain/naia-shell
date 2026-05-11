@@ -5,38 +5,14 @@ import {
 	getUsageStatus,
 	pollLogsTail,
 } from "../../gateway/diagnostics-proxy.js";
+import { diagnosticsDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createDiagnosticsSkill(): SkillDefinition {
 	return {
-		name: "skill_diagnostics",
-		description:
-			"Gateway diagnostics. Actions: health, status, usage_status, usage_cost, logs_poll.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action: health, status, usage_status, usage_cost, logs_poll",
-					enum: [
-						"health",
-						"status",
-						"usage_status",
-						"usage_cost",
-						"logs_poll",
-						// Keep legacy names for backward compatibility
-						"logs_start",
-						"logs_stop",
-					],
-				},
-				cursor: {
-					type: "number",
-					description: "Cursor for logs_poll (omit for initial fetch)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${diagnosticsDescriptor.name}`,
+		description: diagnosticsDescriptor.description,
+		parameters: diagnosticsDescriptor.inputSchema,
 		tier: 0,
 		requiresGateway: true,
 		source: "built-in",
