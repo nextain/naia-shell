@@ -69,19 +69,9 @@ modules:
       - cp -rL agent/dist /app/lib/naia-os/agent/dist
       - cp -rL agent/node_modules /app/lib/naia-os/agent/node_modules
       - cp agent/package.json /app/lib/naia-os/agent/
-      # OpenClaw Gateway (npm install during build, bundle to /app/lib/naia-os/openclaw/)
-      - mkdir -p /run/build/Naia-OS/openclaw-build
-      - |
-        cat > /run/build/Naia-OS/openclaw-build/package.json << 'CONF'
-        {"name":"naia-openclaw","version":"1.0.0","private":true,"dependencies":{"openclaw":"2026.3.28"}}
-        CONF
-      - cd /run/build/Naia-OS/openclaw-build && npm install --production
-      - rm -rf /run/build/Naia-OS/openclaw-build/node_modules/@node-llama-cpp
-      - mkdir -p /app/lib/naia-os/openclaw
-      - cp -rL /run/build/Naia-OS/openclaw-build/node_modules /app/lib/naia-os/openclaw/node_modules
-      - cp /run/build/Naia-OS/openclaw-build/package.json /app/lib/naia-os/openclaw/
-      # Bootstrap config template (single source of truth for openclaw.json defaults)
-      - install -Dm644 config/defaults/openclaw-bootstrap.json /app/lib/naia-os/openclaw-bootstrap.json
+      # OpenClaw Gateway removed in #201 — naia-agent handles tools directly.
+      # No daemon to bundle. config/defaults/openclaw-bootstrap.json was used
+      # by the legacy gateway-spawn path; gone via #271 Phase 1.
       # Desktop integration
       - install -Dm644 flatpak/io.nextain.naia.desktop /app/share/applications/io.nextain.naia.desktop
       - install -Dm644 flatpak/io.nextain.naia.metainfo.xml /app/share/metainfo/io.nextain.naia.metainfo.xml
