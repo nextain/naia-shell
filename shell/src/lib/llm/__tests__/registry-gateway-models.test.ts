@@ -52,3 +52,44 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		expect(naia!.defaultModel).toBe("gemini-2.5-pro");
 	});
 });
+
+describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
+	it("migrates removed gemini-3.x models on nextain provider", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		for (const stale of [
+			"gemini-3.1-pro-preview",
+			"gemini-3.1-flash-lite-preview",
+			"gemini-3-flash-preview",
+		]) {
+			const d = shouldMigrateNextainModel("nextain", stale);
+			expect(d.migrate).toBe(true);
+			if (d.migrate) expect(d.to).toBe("gemini-2.5-pro");
+		}
+	});
+
+	it("does NOT migrate valid models on nextain provider", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		for (const valid of [
+			"gemini-2.5-pro",
+			"gemini-2.5-flash",
+			"gemini-2.5-flash-lite",
+			"gemini-2.5-flash-live",
+		]) {
+			expect(shouldMigrateNextainModel("nextain", valid).migrate).toBe(false);
+		}
+	});
+
+	it("does NOT migrate other providers (gemini-3.x still valid on direct gemini)", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		expect(
+			shouldMigrateNextainModel("gemini", "gemini-3-flash-preview").migrate,
+		).toBe(false);
+		expect(shouldMigrateNextainModel("gemini", "any-model").migrate).toBe(false);
+		expect(shouldMigrateNextainModel("ollama", "qwen3:14b").migrate).toBe(false);
+	});
+
+	it("does NOT migrate unknown providers", async () => {
+		const { shouldMigrateNextainModel } = await import("../registry.js");
+		expect(shouldMigrateNextainModel("nonexistent", "any").migrate).toBe(false);
+	});
+});

@@ -50,6 +50,31 @@ export function getDefaultLlmModel(providerId: string): string {
 	return providers.get(providerId)?.defaultModel ?? "";
 }
 
+/**
+ * Migrate a saved config model that's no longer registered (#248 follow-up).
+ *
+ * Returns { migrated: false } if the saved model is still valid, or the
+ * provider has no static model list (ollama / vllm — dynamic discovery).
+ * Returns { migrated: true, from, to } if the saved model was replaced with
+ * the provider's defaultModel. Caller is responsible for persisting the
+ * updated config via saveConfig.
+ *
+ * Scoped intentionally to the "nextain" (Naia gateway) provider, which is
+ * the only one we removed entries from. Other static providers may add
+ * scoping here as new model deprecations arrive.
+ */
+export function shouldMigrateNextainModel(
+	providerId: string,
+	modelId: string,
+): { migrate: false } | { migrate: true; to: string } {
+	if (providerId !== "nextain") return { migrate: false };
+	const provider = providers.get(providerId);
+	if (!provider) return { migrate: false };
+	const valid = provider.models.some((m) => m.id === modelId);
+	if (valid) return { migrate: false };
+	return { migrate: true, to: provider.defaultModel };
+}
+
 /** Check if a provider does not require any API key (neither provider key nor Naia key). */
 export function isApiKeyOptional(providerId: string): boolean {
 	const p = providers.get(providerId);

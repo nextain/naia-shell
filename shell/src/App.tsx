@@ -40,6 +40,7 @@ import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { Logger } from "./lib/logger";
 import { loadInstalledPanels } from "./lib/panel-loader";
+import { shouldMigrateNextainModel } from "./lib/llm/registry";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
@@ -396,6 +397,24 @@ export function App() {
 	// On init: if naiaKey exists in config, push it to the agent (backend).
 	// Handles the case where the app restarts after a previous login.
 	useEffect(() => {
+		// Migrate saved config that points at a removed gateway model (#248).
+		// Previously-saved gemini-3.x selections on the Naia provider now
+		// fail with "gateway returned 0 bytes" — auto-swap to the provider's
+		// defaultModel (gemini-2.5-pro) and persist before any chat call.
+		const preMigrate = loadConfig();
+		if (preMigrate) {
+			const decision = shouldMigrateNextainModel(
+				preMigrate.provider,
+				preMigrate.model,
+			);
+			if (decision.migrate) {
+				Logger.warn("App", "#248 model migration", {
+					from: preMigrate.model,
+					to: decision.to,
+				});
+				saveConfig({ ...preMigrate, model: decision.to });
+			}
+		}
 		const cfg = loadConfig();
 		const naiaKey = cfg?.naiaKey;
 		if (naiaKey) {
