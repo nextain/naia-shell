@@ -1086,6 +1086,29 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 			}
 		}
 
+		const toolCallId = `direct-${requestId}`;
+
+		// Tier gate (#256). Panels/shell can invoke handleToolRequest directly,
+		// bypassing the LLM tool-call loop where the same gate exists at
+		// index.ts:759/834. Without it, a Tier 2/3 tool name in the inbound
+		// ToolRequest would execute with no user confirmation.
+		if (needsApproval(toolName)) {
+			const decision = await waitForApproval(requestId, toolCallId, toolName, args);
+			if (decision === "reject") {
+				const rejectOutput = "User rejected tool execution";
+				writeLine({
+					type: "tool_result",
+					requestId,
+					toolCallId,
+					toolName,
+					output: rejectOutput,
+					success: false,
+				});
+				writeLine({ type: "finish", requestId });
+				return;
+			}
+		}
+
 		const result = await executeTool(gateway, toolName, args, {
 			writeLine,
 			requestId,
@@ -1096,7 +1119,7 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 		writeLine({
 			type: "tool_result",
 			requestId,
-			toolCallId: `direct-${requestId}`,
+			toolCallId,
 			toolName,
 			output: result.output || result.error || "",
 			success: result.success,
