@@ -56,7 +56,7 @@ describe("@nextain/naia-memory R3 exports", () => {
 	// (it's internal). Verify we can import it from the subpath.
 	it("R3: HeuristicContradictionFilter available from subpath", async () => {
 		const contMod = await import(
-			"D:/alpha-adk/projects/naia-memory/src/memory/contradiction-filter.js"
+			"@nextain/naia-memory"
 		);
 		expect(contMod.HeuristicContradictionFilter).toBeDefined();
 		expect(typeof contMod.HeuristicContradictionFilter).toBe("function");
@@ -134,7 +134,7 @@ describe("R3: HeuristicContradictionFilter", () => {
 		// HeuristicContradictionFilter is exported from the subpath module,
 		// not from the top-level @nextain/naia-memory index.
 		return import(
-			"D:/alpha-adk/projects/naia-memory/src/memory/contradiction-filter.js"
+			"@nextain/naia-memory"
 		);
 	}
 
@@ -222,7 +222,7 @@ describe("R3: MemorySystem contradictionFilter option", () => {
 	it("accepts contradictionFilter in MemorySystemOptions without error", async () => {
 		const { MemorySystem, LocalAdapter } = await import("@nextain/naia-memory");
 		const { HeuristicContradictionFilter } = await import(
-			"D:/alpha-adk/projects/naia-memory/src/memory/contradiction-filter.js"
+			"@nextain/naia-memory"
 		);
 
 		const filter = new HeuristicContradictionFilter();

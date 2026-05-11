@@ -15,6 +15,7 @@
 		"@anthropic-ai/sdk": "^0.39.0",
 		"@google/genai": "^1.42.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@nextain/agent-protocol": "file:./vendor/nextain-agent-protocol-0.1.0.tgz",
 		"@nextain/agent-providers": "file:./vendor/nextain-agent-providers-0.1.0.tgz",
 		"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
 		"@naia-adk/skills-builtin": "file:../../naia-adk/packages/skills-builtin",

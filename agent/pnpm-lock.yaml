@@ -24,9 +24,12 @@ importers:
       '@naia-adk/skills-builtin':
         specifier: file:../../naia-adk/packages/skills-builtin
         version: file:../../naia-adk/packages/skills-builtin
+      '@nextain/agent-protocol':
+        specifier: file:./vendor/nextain-agent-protocol-0.1.0.tgz
+        version: file:vendor/nextain-agent-protocol-0.1.0.tgz
       '@nextain/agent-providers':
         specifier: file:./vendor/nextain-agent-providers-0.1.0.tgz
-        version: file:vendor/nextain-agent-providers-0.1.0.tgz(@anthropic-ai/sdk@0.39.0)
+        version: file:vendor/nextain-agent-providers-0.1.0.tgz(@anthropic-ai/sdk@0.39.0)(@google/genai@1.42.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)))(ws@8.19.0)
       '@nextain/agent-types':
         specifier: file:vendor/nextain-agent-types-0.1.0.tgz
         version: file:vendor/nextain-agent-types-0.1.0.tgz
@@ -759,18 +762,32 @@ packages:
     resolution: {directory: ../../naia-adk/packages/skills-builtin, type: directory}
     engines: {node: '>=22'}
 
+  '@nextain/agent-protocol@file:vendor/nextain-agent-protocol-0.1.0.tgz':
+    resolution: {integrity: sha512-3acsAiPTNdC1Kc3TO5BI+qQFOeGC3NxjXY+DvlIU3AfRl8BXzghrhI79qr8wTpxKwxPziy138Vw7qpd22ccH6A==, tarball: file:vendor/nextain-agent-protocol-0.1.0.tgz}
+    version: 0.1.0
+    engines: {node: '>=22'}
+
   '@nextain/agent-providers@file:vendor/nextain-agent-providers-0.1.0.tgz':
-    resolution: {integrity: sha512-ygQ7S++YyRxIGc6Maj6xCNuys2EGFDFxo0NuAIIG6QVDZ7+fk26cCiaYSh0gDQfo/Qdg2z4OjX04vXKz8ptjyA==, tarball: file:vendor/nextain-agent-providers-0.1.0.tgz}
+    resolution: {integrity: sha512-CTxfpM856RKPw0Nv/TfZGmEGHl5byQ5MXAJ+hniIecYr1sn+EJHdAnDHFPeJZTuo3yQAIFiUaG1VCrGdHGCGRw==, tarball: file:vendor/nextain-agent-providers-0.1.0.tgz}
     version: 0.1.0
     engines: {node: '>=22'}
     peerDependencies:
       '@anthropic-ai/sdk': ^0.39.0
+      '@anthropic-ai/vertex-sdk': ^0.16.0
+      '@google/genai': ^1.42.0
+      ws: ^8.19.0
     peerDependenciesMeta:
       '@anthropic-ai/sdk':
         optional: true
+      '@anthropic-ai/vertex-sdk':
+        optional: true
+      '@google/genai':
+        optional: true
+      ws:
+        optional: true
 
   '@nextain/agent-types@file:vendor/nextain-agent-types-0.1.0.tgz':
-    resolution: {integrity: sha512-6IErDNqQHlZjYrH/Rpxog/hfKN/mmO4/UN5fXf1Qt+IfnPp6UJcv5+5h5jQfG58UqfsbXUWqZ7c+T5U+hGVa3w==, tarball: file:vendor/nextain-agent-types-0.1.0.tgz}
+    resolution: {integrity: sha512-9JjWUOBtT9fUBBgcKbHrzp2fh86lwV51xTLPNtbn6y1WmN1jwebpzfd0OpIukANBb7xRCaA1Hh74mUVyBr8X1w==, tarball: file:vendor/nextain-agent-types-0.1.0.tgz}
     version: 0.1.0
     engines: {node: '>=22'}
 
@@ -2586,11 +2603,15 @@ snapshots:
     dependencies:
       '@naia-adk/skill-spec': file:../../naia-adk/packages/skill-spec
 
-  '@nextain/agent-providers@file:vendor/nextain-agent-providers-0.1.0.tgz(@anthropic-ai/sdk@0.39.0)':
+  '@nextain/agent-protocol@file:vendor/nextain-agent-protocol-0.1.0.tgz': {}
+
+  '@nextain/agent-providers@file:vendor/nextain-agent-providers-0.1.0.tgz(@anthropic-ai/sdk@0.39.0)(@google/genai@1.42.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)))(ws@8.19.0)':
     dependencies:
       '@nextain/agent-types': file:vendor/nextain-agent-types-0.1.0.tgz
     optionalDependencies:
       '@anthropic-ai/sdk': 0.39.0
+      '@google/genai': 1.42.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))
+      ws: 8.19.0
 
   '@nextain/agent-types@file:vendor/nextain-agent-types-0.1.0.tgz': {}
 

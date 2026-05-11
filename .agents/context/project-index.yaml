@@ -31,6 +31,14 @@ mirror_pairs:
       - .users/context/live-provider-guide.md
       - .users/context/ko/live-provider-guide.md
 
+  - agents: .agents/context/agent-bridges.yaml
+    users: .users/context/agent-bridges.md
+    users_ko: .users/context/ko/agent-bridges.md
+    description: |
+      Shell ↔ naia-agent ↔ naia-memory wire contract (#272 reconcile).
+      3 bridges (protocol/memory/approval) + 5 strangler-fig provider adapters +
+      auth_update memory lifecycle + cross-repo dependency surface.
+
   - agents: .agents/context/careti-reuse.yaml
     users: .users/context/careti-reuse.md
     users_ko: .users/context/ko/careti-reuse.md
@@ -252,6 +260,7 @@ on_demand_loading:
     - .agents/context/vision.yaml (when discussing direction/purpose)
     - .agents/context/plan.yaml (when planning or implementing phases)
     - .agents/context/architecture.yaml (when working on agent/gateway integration, Rust backend, or panel system — ALWAYS read before gateway/Rust/panel work)
+    - .agents/context/agent-bridges.yaml (when modifying agent/src/{protocol,memory,approval}-bridge.ts, factory.ts, index.ts auth_update / memorySystem lifecycle, or any cross-repo wire — ALWAYS read before such edits)
     - .agents/context/careti-reuse.yaml (when porting code from careti)
     - .agents/context/testing.yaml (when writing or running tests)
     - .agents/context/gateway-sync.yaml (when working on Gateway sync or persona/settings)

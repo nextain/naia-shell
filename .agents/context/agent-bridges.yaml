@@ -1,0 +1,165 @@
+# Agent Bridges Contract
+#
+# Source-of-truth for the shell ↔ naia-agent ↔ naia-memory wire after
+# issue #272 reconcile. Read this before touching:
+#   - agent/src/{protocol,memory,approval}-bridge.ts
+#   - agent/src/providers/factory.ts
+#   - agent/src/index.ts handleAuthUpdate / memorySystem lifecycle
+#
+# Mirrors: .users/context/agent-bridges.md (en) + .users/context/ko/agent-bridges.md
+
+description: |
+  Three bridges and five strangler-fig provider adapters connect the Tauri shell,
+  the embedded naia-agent process, and the naia-memory R4 MemorySystem.
+  After #201 removed the OpenClaw gateway daemon, all coordination flows
+  through these bridges over stdio JSON.
+
+bridges:
+  protocol_bridge:
+    file: agent/src/protocol-bridge.ts
+    role: "StdioFrame v1 envelope codec — wraps legacy flat JSON into a typed envelope so a single stdio reader can multiplex many request types."
+    exports:
+      - looksLikeFrame(line) → boolean
+      - unwrapFrame(line) → { type, payload } | null
+    activation:
+      default: "off — transition window. Legacy flat JSON still accepted."
+      lock_mode: "NAIA_PROTOCOL_ENVELOPE_ONLY=1 rejects all non-envelope frames. Opt-in only; shell side must be sending envelope first."
+    phase_5_followup: |
+      Day 6.1 envelope-only mode shipped. Day 6.2~6.4 (handleChatRequest
+      decomposition + IpcApprovalBroker direct wire) is the next wave —
+      tracked separately, NOT in #272.
+
+  memory_bridge:
+    file: agent/src/memory-bridge.ts
+    role: "Adapter — wraps a naia-memory MemorySystem to expose @nextain/agent-types MemoryProvider interface."
+    exports:
+      - "createNaiaMemoryProvider(memorySystem, opts) → MemoryProvider & SessionRecallCapable & CompactableCapable"
+    contract:
+      encode: |
+        input: { content, role, timestamp?, context?: Record<string,string> }
+        bridge translates context.scoring → naia-memory MemoryInput.context (single string),
+        and EncodingContext keys (project / sessionId / activeFile) from other context keys.
+      recall: |
+        returns MemoryHit[] (facts + episodes merged, sorted by normalized score, capped at topK).
+      sessionRecall: |
+        thin pass-through to naia-memory MemorySystem.sessionRecall — same signature.
+    paired_lifecycle:
+      pattern: |
+        `let memorySystem = buildMemorySystem(); let memoryProvider = createNaiaMemoryProvider(memorySystem, {...})`
+        Both are module-scope `let` so handleAuthUpdate can rebuild both atomically.
+        Read-on-access JS semantics: each call site reads the current binding,
+        not a captured value.
+      auth_update_flow:
+        - capture old memorySystem reference
+        - build new memorySystem (with rebuilt embedding/extractor from current key)
+        - startConsolidation on new
+        - rebuild memoryProvider with new memorySystem
+        - schedule old.close() async (errors logged, not silent)
+      race_caveat: |
+        in-flight memoryProvider.encode (fire-and-forget) or .sessionRecall during
+        auth_update may land on the OLD MemorySystem. Currently logs encode errors;
+        full drain barrier deferred to a follow-up issue.
+
+  approval_bridge:
+    file: agent/src/approval-bridge.ts
+    status: "declared inert at agent/src/index.ts via `void approvalBridge;` — Phase 5 Day 6.3 wires it in."
+    role: "IPC approval broker — replaces (eventually) the pendingApprovals Map + waitForApproval pattern. Emits an approval request frame via writeLine and resolves on the matching response."
+    why_inert_now: |
+      Replacing pendingApprovals atomically requires (a) shell side accepting
+      the envelope format, (b) gateway/event-handler.ts updated to delegate.
+      Both are Phase 5 work; the bridge constructor is included now so the
+      compile + import surface stays stable.
+
+provider_adapters:
+  family: strangler_fig
+  pattern: |
+    Each native LLM provider (createGeminiProvider / createAnthropicProvider /
+    etc.) is preserved. A parallel @nextain/agent-providers adapter is added
+    per family. Routing decision is per-call:
+      - NEXTAIN_AGENT_PROVIDERS=1 → all families external
+      - NEXTAIN_<FAMILY>=1 → only that family external
+      - unset → native (zero-risk default)
+    Truthy values: 1 / true / yes / on (case-insensitive)
+  list:
+    - nextain-openai-adapter: "OpenAI / Ollama / vLLM / xAI / zai (OpenAI-compat family)"
+    - nextain-gemini-adapter: "Google Gemini full SDK (thoughtSignature parity)"
+    - nextain-claude-cli-adapter: "Claude Code CLI subprocess"
+    - nextain-lab-proxy-adapter: "Naia Lab Proxy SSE (chat completions)"
+    - nextain-lab-proxy-live-adapter: "Naia Lab Proxy WebSocket (Live API, -live model suffix)"
+  detection_helpers:
+    file: agent/src/providers/factory.ts
+    exports:
+      - "isOmni(model) — vllm-omni model detector. Tests import this directly so they cannot drift."
+      - "isLive(model) — Lab-proxy -live suffix detector. Same import discipline."
+    omni_intent: |
+      Audio-inline models (gpt-4o, minicpm-o, qwen-vl-omni etc.) MUST stay
+      on the native path even when NEXTAIN_VLLM=1. The exact regex is the
+      contract — see isOmni() in factory.ts. #272 dropped an over-broad
+      `/[-_]o\b/i` fallback that misclassified claude-opus-4-o, gemma-4-o.
+
+auth_flow:
+  credential_owner: agent
+  contract: |
+    Shell sends `auth_update` once at session start (or whenever the user's
+    Naia key changes). The agent stores it module-scope (`_agentNaiaKey` in
+    factory.ts). Per-request configs never carry naiaKey.
+  why: |
+    Single source of truth for credentials. Provider build does not depend
+    on what the shell sends per chat — it depends on what was last
+    authenticated. Tests must use `setAgentNaiaKey()` to seed, never pass
+    `naiaKey` in the ProviderConfig (that field was removed during #272).
+  related_flow: handleAuthUpdate at agent/src/index.ts rebuilds both
+    memorySystem AND memoryProvider when the key arrives, so naia embedding
+    + LLM fact extractor pick up the credential immediately.
+
+vendored_packages:
+  paths:
+    - agent/vendor/nextain-agent-protocol-0.1.0.tgz
+    - agent/vendor/nextain-agent-providers-0.1.0.tgz
+    - agent/vendor/nextain-agent-types-0.1.0.tgz
+  why_vendored: |
+    Internal Nextain packages that have not been published to npm registry.
+    Vendoring keeps the wire stable without depending on a private registry.
+    Updates: replace the tgz + bump version in package.json.
+
+testing_discipline:
+  factory_regex: "Import isOmni / isLive from factory.ts directly — never duplicate the regex in test files (#272 F1)."
+  agent_credential: "Use setAgentNaiaKey('gw-...') in beforeEach; never pass naiaKey via ProviderConfig (#272 F3)."
+  memory_bridge: "memory-bridge.integration.test.ts spins up a real naia-memory MemorySystem in a tmpdir and round-trips encode → recall. No mocks."
+
+cross_repo_dependencies:
+  naia_memory:
+    package: "@nextain/naia-memory"
+    path: file:../../naia-memory
+    required_exports:
+      - MemorySystem
+      - LocalAdapter
+      - OpenAICompatEmbeddingProvider
+      - NaiaGatewayEmbeddingProvider
+      - buildLLMFactExtractor
+      - HeuristicContradictionFilter (#272 added to main entry)
+      - selectFilter
+      - ContradictionFilterProvider
+    pinned_via: alpha-adk submodule pointer
+
+  naia_adk_skills_builtin:
+    package: "@naia-adk/skills-builtin"
+    path: file:../../naia-adk/packages/skills-builtin
+    required_exports:
+      - weatherDescriptor (#272 added — was stub)
+      - "(other 9 descriptors land in Phase 4.0 Day 3-7)"
+
+  agent_types:
+    package: "@nextain/agent-types"
+    source: vendored tgz
+    contract: |
+      Defines MemoryProvider / MemoryHit / MemoryProviderInput / RecallOpts /
+      SessionRecallCapable / CompactableCapable / ApprovalRequest / etc.
+      Bridge adapters translate naia-memory's native shape ↔ this contract.
+
+deferred_followups:
+  - "Phase 4.3 Day 6.2-6.4: 18-skill envelope wire, IpcApprovalBroker direct wire, handleChatRequest decomposition (1276 → ~300 LOC)"
+  - "Phase 4.4 Day 7.3: Claude-CLI Flatpak/Windows subprocess + partial-JSON"
+  - "auth_update drain barrier (currently encode/close errors are logged; full barrier needs ref-counted ops)"
+  - "approvalBridge wire-in (currently inert)"
+  - "Remaining 9 skill descriptors in naia-adk/skills-builtin (weather is the first)"

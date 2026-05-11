@@ -34,6 +34,8 @@ import {
 	NaiaGatewayEmbeddingProvider,
 	buildLLMFactExtractor,
 } from "@nextain/naia-memory";
+import { createNaiaMemoryProvider } from "./memory-bridge.js";
+import { NaiaApprovalBridge } from "./approval-bridge.js";
 import {
 	type ApprovalResponse,
 	type ChatRequest,
@@ -141,8 +143,22 @@ function buildMemorySystem(): MemorySystem {
 
 // Fix (Finding A): let memorySystem — reassignable so auth_update can rebuild it
 // when the naia key becomes available (singleton was frozen before setAgentNaiaKey fired).
+// Reconcile #272: paired with `let memoryProvider` (phase4 strangler-fig wrap) so
+// MemoryProvider contract is the surface used by chat_request flow while
+// MemorySystem retains lifecycle ownership (startConsolidation / close).
 let memorySystem = buildMemorySystem();
 memorySystem.startConsolidation();
+let memoryProvider = createNaiaMemoryProvider(memorySystem, { defaultProject: "naia-os" });
+
+// IPC approval bridge (phase4 Phase 4.1 scaffolding — wired to stdout via writeLine).
+// Currently declared inert; Phase 5 Day 6.3 will replace pendingApprovals Map +
+// waitForApproval with approvalBridge.decide() directly. Importing now so the
+// bridge contract participates in build/test surface immediately.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const approvalBridge = new NaiaApprovalBridge({
+	emit: (frame: unknown) => writeLine(frame),
+});
+void approvalBridge;
 
 /** Native command executor — works without Gateway connection */
 const nativeExecutor = new NativeCommandExecutor();
@@ -535,7 +551,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 			.find((m) => m.role === "user");
 		if (lastUserMsg) {
 			try {
-				const memoryContext = await memorySystem.sessionRecall(
+				const memoryContext = await memoryProvider.sessionRecall(
 					typeof lastUserMsg.content === "string" ? lastUserMsg.content : "",
 					{ topK: 5 },
 				);
@@ -555,9 +571,15 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 			const content =
 				typeof lastUserMsg.content === "string" ? lastUserMsg.content : "";
 			if (content.length > 0 && content.length <= 2000) {
-				memorySystem
-					.encode({ content, role: "user" }, { project: "naia-os" })
-					.catch(() => {}); // Fire-and-forget, non-critical
+				memoryProvider
+					.encode({ content, role: "user", context: { project: "naia-os" } })
+					.catch((err) => {
+						// Fire-and-forget but log so silent loss is visible
+						// (#272 adversarial F4: silent memory loss on auth_update race).
+						console.error(
+							`[agent:memory] encode failed: ${err instanceof Error ? err.message : String(err)}`,
+						);
+					});
 			}
 		}
 
@@ -1166,7 +1188,24 @@ export function handleAuthUpdate(req: import("./protocol.js").AuthUpdateRequest)
 	setAgentNaiaKey(req.naiaKey);
 	// Rebuild memory system so naia embedding/LLM providers pick up the fresh key.
 	// (Finding A fix: singleton was constructed before key was available.)
+	//
+	// Reconcile #272: also rebuild memoryProvider with the new MemorySystem +
+	// start consolidation + close the old system (fire-and-forget). The old
+	// provider's in-flight operations continue against the old MemorySystem
+	// during the brief drain window; subsequent reads of `memoryProvider` see
+	// the new binding (let module-scope binding is read-on-access, not captured).
+	const old = memorySystem;
 	memorySystem = buildMemorySystem();
+	memorySystem.startConsolidation();
+	memoryProvider = createNaiaMemoryProvider(memorySystem, { defaultProject: "naia-os" });
+	// Close old asynchronously; .close() releases adapter handles and stops the
+	// consolidation timer if any. Failure is non-critical (it's being discarded)
+	// but we log it so in-flight write loss is visible (#272 adversarial F5).
+	void old.close().catch((err) => {
+		console.error(
+			`[agent:memory] auth_update old memorySystem close failed: ${err instanceof Error ? err.message : String(err)}`,
+		);
+	});
 }
 
 function main(): void {
