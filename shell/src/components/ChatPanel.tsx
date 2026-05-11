@@ -1719,10 +1719,8 @@ export function ChatPanel() {
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "minicpm-o") {
-				// minicpm-o connects to /v1/realtime (OpenAI Realtime API) on the
-				// vllm-omni server. minicpm-o.ts validates/normalizes the server
-				// URL and appends /v1/realtime; we only need to hand it the
-				// origin-level host here.
+				// minicpm-o: gateway mode when naiaKey available, direct mode otherwise
+				const useGw = !!naiaKey;
 				const vllmBase = (config.vllmHost ?? DEFAULT_VLLM_HOST).replace(
 					/\/+$/,
 					"",
@@ -1730,10 +1728,13 @@ export function ChatPanel() {
 				const wsBase = vllmBase.replace(/^http/, "ws");
 				await session.connect({
 					provider: "minicpm-o",
-					serverUrl: wsBase,
+					serverUrl: useGw ? undefined : wsBase,
+					gatewayUrl: useGw ? LAB_GATEWAY_URL : undefined,
+					naiaKey: useGw ? naiaKey : undefined,
 					model: config.model,
 					systemInstruction: voiceSystemPrompt,
 					voice: selectedVoice,
+					locale: getLocale(),
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "openai-realtime") {

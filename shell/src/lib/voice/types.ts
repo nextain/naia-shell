@@ -36,7 +36,7 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	naia: { cost: "~$0.03/min", note: "Naia credits" },
 	"gemini-live": { cost: "~$0.03/min", note: "Google API Key" },
 	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
-	"minicpm-o": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
+	"minicpm-o": { cost: "$0.50/min", note: "Naia credits (gateway) / Free (local)" },
 	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
@@ -80,9 +80,16 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 
 export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	provider: "minicpm-o";
-	/** vllm-omni server URL (e.g. http://localhost:8000 or ws://localhost:8000).
-	 *  Provider connects to /v1/realtime (OpenAI Realtime API extended for omni models). */
-	serverUrl: string;
+	/** vllm-omni server URL for direct mode (e.g. http://localhost:8000 or ws://localhost:8000).
+	 *  Provider connects to /v1/realtime (OpenAI Realtime API extended for omni models).
+	 *  Ignored when gatewayUrl is set. */
+	serverUrl?: string;
+	/** Gateway mode: relay via any-llm gateway /v1/realtime.
+	 *  When set, the provider connects to the gateway instead of the vllm-omni server directly.
+	 *  The gateway handles auth, credit billing, and backend routing. */
+	gatewayUrl?: string;
+	/** API key for gateway auth (gw-... format). Required when gatewayUrl is set. */
+	naiaKey?: string;
 	/**
 	 * Optional voice-clone reference. The session sends this on the initial
 	 * `session.update` so the server clones its timbre for every response in
@@ -100,7 +107,7 @@ export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	 */
 	refAudio?: ArrayBuffer | Blob | string;
 	/** BCP-47-ish hint to the speech tokenizer. Server defaults to "en". */
-	refAudioLanguage?: "en" | "zh";
+	refAudioLanguage?: "en" | "zh" | "ko";
 }
 
 export interface VllmOmniConfig extends LiveProviderConfigBase {

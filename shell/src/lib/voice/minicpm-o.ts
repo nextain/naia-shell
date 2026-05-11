@@ -28,6 +28,7 @@ import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
 const DEFAULT_MODEL = "openbmb/MiniCPM-o-4_5";
+const GATEWAY_REALTIME_PATH = "/v1/realtime";
 
 /** ms of silence after last speech chunk before committing turn to server */
 const SILENCE_TIMEOUT_MS = 1500;
@@ -67,20 +68,29 @@ export function createMiniCpmOSession(): VoiceSession {
 		async connect(config: LiveProviderConfig) {
 			cfg = config as MiniCpmOConfig;
 
-			const normalizedBase = normalizeServerUrl(
-				cfg.serverUrl ?? DEFAULT_SERVER_URL,
-			);
-			if (!normalizedBase) {
-				throw new Error(
-					`Invalid serverUrl: expected http(s):// or ws(s)://, got ${cfg.serverUrl}`,
-				);
-			}
-			const wsUrl = `${normalizedBase}/v1/realtime`;
+			const useGateway = !!(cfg.gatewayUrl && cfg.naiaKey);
 
-			// Encode the optional voice-clone reference up-front so a bad
-			// payload (oversize, decode failure) fails the connect promise
-			// instead of producing a half-open session that the server
-			// later rejects mid-stream.
+			let wsUrl: string;
+			if (useGateway) {
+				const normalizedGw = normalizeServerUrl(cfg.gatewayUrl!);
+				if (!normalizedGw) {
+					throw new Error(
+						`Invalid gatewayUrl: expected http(s):// or ws(s)://, got ${cfg.gatewayUrl}`,
+					);
+				}
+				wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}`;
+			} else {
+				const normalizedBase = normalizeServerUrl(
+					cfg.serverUrl ?? DEFAULT_SERVER_URL,
+				);
+				if (!normalizedBase) {
+					throw new Error(
+						`Invalid serverUrl: expected http(s):// or ws(s)://, got ${cfg.serverUrl}`,
+					);
+				}
+				wsUrl = `${normalizedBase}/v1/realtime`;
+			}
+
 			let encodedRefAudio: string | null = null;
 			if (cfg.refAudio !== undefined && cfg.refAudio !== null) {
 				try {
@@ -98,6 +108,7 @@ export function createMiniCpmOSession(): VoiceSession {
 
 			Logger.info("minicpm-o", "connecting", {
 				url: sanitizeUrl(wsUrl),
+				mode: useGateway ? "gateway" : "direct",
 				hasRefAudio: encodedRefAudio !== null,
 			});
 
@@ -122,7 +133,14 @@ export function createMiniCpmOSession(): VoiceSession {
 						return;
 					}
 
-					// Handshake: wait for session.created, then send session.update
+					if (!connected && useGateway && msg.error) {
+						clearTimeout(timeout);
+						connectErrored = true;
+						const errMsg = extractServerErrorMessage(msg);
+						reject(new Error(errMsg));
+						return;
+					}
+
 					if (!connected && msg.type === "session.created") {
 						clearTimeout(timeout);
 						const sessionPayload: Record<string, unknown> = {
@@ -147,15 +165,13 @@ export function createMiniCpmOSession(): VoiceSession {
 						);
 						connected = true;
 						Logger.info("minicpm-o", "connected to /v1/realtime", {
+							mode: useGateway ? "gateway" : "direct",
 							refAudio: encodedRefAudio !== null,
 						});
 						resolve();
 						return;
 					}
 
-					// Pre-handshake server error: surface the actual server message
-					// instead of the generic "Connection closed" that ws.onclose
-					// would otherwise emit after the server hangs up.
 					if (!connected && msg.type === "error") {
 						clearTimeout(timeout);
 						connectErrored = true;
@@ -175,6 +191,20 @@ export function createMiniCpmOSession(): VoiceSession {
 						session.onError?.(err);
 					} else {
 						reject(err);
+					}
+				};
+
+				ws.onopen = () => {
+					if (useGateway) {
+						ws?.send(
+							JSON.stringify({
+								setup: {
+									apiKey: cfg?.naiaKey,
+									backend: "runpod",
+									locale: cfg?.locale ?? "en",
+								},
+							}),
+						);
 					}
 				};
 
