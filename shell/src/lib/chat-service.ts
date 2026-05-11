@@ -64,6 +64,23 @@ export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
 	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
 }
 
+/**
+ * Push per-provider LLM API keys to the agent (#260 follow-up).
+ * Same one-shot pattern as sendAuthUpdate / sendNotifyConfig. Called at
+ * startup and on settings save. Agent caches per-provider; buildProvider
+ * reads from the cache first, falls back to legacy ChatRequest.apiKey for
+ * backwards compat while we transition.
+ *
+ * `keys` shape: `{ [providerId]: apiKey }`. Empty string clears that
+ * provider's cached entry (explicit unset when user removes the key in UI).
+ */
+export async function sendCredsUpdate(
+	keys: Record<string, string>,
+): Promise<void> {
+	const request = { type: "creds_update", keys };
+	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
+}
+
 const RESPONSE_TIMEOUT_MS = 120_000; // Safety: clean up listener if no finish/error
 
 export async function sendChatMessage(opts: SendChatOptions): Promise<void> {

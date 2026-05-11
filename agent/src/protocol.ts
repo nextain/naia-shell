@@ -174,6 +174,27 @@ export interface NotifyConfigRequest {
 	discordDmChannelId?: string;
 }
 
+/**
+ * Shell → Agent: LLM provider API keys cached per provider (#260 follow-up).
+ *
+ * Same one-shot pattern as `auth_update` (naiaKey) and `notify_config`
+ * (webhooks). Sent at startup and on settings save. Agent caches into
+ * factory.ts's `_providerApiKeys` Map. buildProvider reads from the cache
+ * first, falls back to legacy per-request `config.apiKey` (backwards
+ * compat), then to envVar.
+ *
+ * Sending an empty string for a provider's key clears the cached entry
+ * (explicit unset — e.g. user removed the key from settings).
+ *
+ * keys[providerId] = apiKey. Sparse: only providers the user has actually
+ * configured need to be present. providerId values match LlmProviderMeta.id
+ * in shell/src/lib/llm/registry.ts (e.g. "anthropic", "openai", "gemini").
+ */
+export interface CredsUpdateRequest {
+	type: "creds_update";
+	keys: Record<string, string>;
+}
+
 export type AgentRequest =
 	| ChatRequest
 	| CancelRequest
@@ -188,7 +209,8 @@ export type AgentRequest =
 	| MemoryExportRequest
 	| MemoryImportRequest
 	| AuthUpdateRequest
-	| NotifyConfigRequest;
+	| NotifyConfigRequest
+	| CredsUpdateRequest;
 
 export function parseRequest(line: string): AgentRequest | null {
 	try {
@@ -208,7 +230,8 @@ export function parseRequest(line: string): AgentRequest | null {
 			obj.type === "memory_export" ||
 			obj.type === "memory_import" ||
 			obj.type === "auth_update" ||
-			obj.type === "notify_config"
+			obj.type === "notify_config" ||
+			obj.type === "creds_update"
 		) {
 			return obj as AgentRequest;
 		}

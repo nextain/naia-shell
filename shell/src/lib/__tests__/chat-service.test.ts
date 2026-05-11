@@ -325,4 +325,22 @@ describe("chat-service", () => {
 		expect(parsed.discordDefaultTarget).toBe("dm");
 		expect(parsed.discordDmChannelId).toBe("channel-1");
 	});
+
+	it("sendCredsUpdate emits a creds_update request with per-provider API keys (#260 follow-up)", async () => {
+		const { sendCredsUpdate } = await import("../chat-service");
+
+		await sendCredsUpdate({
+			anthropic: "sk-ant-xyz",
+			openai: "sk-openai-abc",
+			gemini: "",
+		});
+
+		const sentMessage = mockInvoke.mock.calls[0][1].message;
+		const parsed = JSON.parse(sentMessage);
+		expect(parsed.type).toBe("creds_update");
+		expect(parsed.keys.anthropic).toBe("sk-ant-xyz");
+		expect(parsed.keys.openai).toBe("sk-openai-abc");
+		// Empty-string entry preserved (signals "clear" semantics to the agent)
+		expect(parsed.keys.gemini).toBe("");
+	});
 });

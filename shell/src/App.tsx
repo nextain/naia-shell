@@ -23,6 +23,7 @@ import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
+	sendCredsUpdate,
 	sendNotifyConfig,
 	sendPanelSkills,
 	sendPanelSkillsClear,
@@ -432,6 +433,12 @@ export function App() {
 				discordDefaultTarget: cfg.discordDefaultTarget,
 				discordDmChannelId: cfg.discordDmChannelId,
 			}).catch(() => {});
+			// Push per-provider LLM API key once at startup (#260 follow-up).
+			// Mirrors the notify_config pattern — agent caches per-provider,
+			// chat_request no longer needs to carry config.apiKey.
+			if (cfg.apiKey && cfg.provider) {
+				sendCredsUpdate({ [cfg.provider]: cfg.apiKey }).catch(() => {});
+			}
 		}
 	}, []);
 

@@ -226,6 +226,39 @@ export function getAgentNaiaKey(): string | undefined {
 	return _agentNaiaKey;
 }
 
+// ── Per-provider API key cache (post-#260 follow-up) ──
+// Same pattern as _agentNaiaKey: shell sends `creds_update` once at startup
+// and on every settings save; the agent caches keys per-provider. buildProvider
+// reads from the cache first, falls back to per-request `config.apiKey` for
+// backwards compatibility with older shells that haven't migrated, then to
+// the provider's envVar. This keeps API keys out of every chat_request stdio
+// frame — the credential leak vector closed for naiaKey (auth_update) and
+// webhook URLs (notify_config) extended to LLM API keys.
+
+const _providerApiKeys = new Map<string, string>();
+
+/**
+ * Set the cached API key for one provider. Empty string clears the entry
+ * (explicit unset — user erased the textbox).
+ */
+export function setProviderApiKey(providerId: string, apiKey: string): void {
+	if (!providerId) return;
+	if (!apiKey) {
+		_providerApiKeys.delete(providerId);
+		return;
+	}
+	_providerApiKeys.set(providerId, apiKey);
+}
+
+export function getProviderApiKey(providerId: string): string | undefined {
+	return _providerApiKeys.get(providerId);
+}
+
+/** Test helper: clear all cached provider API keys. Not used in prod. */
+export function _clearProviderApiKeys(): void {
+	_providerApiKeys.clear();
+}
+
 // ── Factory ──
 
 export function buildProvider(config: ProviderConfig): LLMProvider {
@@ -244,8 +277,14 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 	const def = getLlmProviderDef(config.provider);
 	if (!def) throw new Error(`Unknown provider: ${config.provider}`);
 
+	// Resolution priority (post-creds_update):
+	//   1. cached key from `creds_update` (#260 follow-up)
+	//   2. per-request `config.apiKey` (backwards compat — older shells)
+	//   3. envVar (CI / dev override)
 	const apiKey =
-		config.apiKey || (def.envVar ? process.env[def.envVar] || "" : "");
+		_providerApiKeys.get(config.provider) ||
+		config.apiKey ||
+		(def.envVar ? process.env[def.envVar] || "" : "");
 	return def.create(apiKey, config.model, {
 		ollamaHost: config.ollamaHost,
 		vllmHost: config.vllmHost,

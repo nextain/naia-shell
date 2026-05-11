@@ -39,6 +39,7 @@ import { NaiaApprovalBridge } from "./approval-bridge.js";
 import {
 	type ApprovalResponse,
 	type ChatRequest,
+	type CredsUpdateRequest,
 	type MemoryExportRequest,
 	type MemoryImportRequest,
 	type NotifyConfigRequest,
@@ -51,7 +52,12 @@ import {
 	parseRequest,
 } from "./protocol.js";
 import { calculateCost } from "./providers/cost.js";
-import { buildProvider, getAgentNaiaKey, setAgentNaiaKey } from "./providers/factory.js";
+import {
+	buildProvider,
+	getAgentNaiaKey,
+	setAgentNaiaKey,
+	setProviderApiKey,
+} from "./providers/factory.js";
 import type { ChatMessage, StreamChunk } from "./providers/types.js";
 import { actionInstall as panelActionInstall } from "./skills/built-in/panel.js";
 import { ALPHA_SYSTEM_PROMPT, buildToolStatusPrompt } from "./system-prompt.js";
@@ -1227,6 +1233,22 @@ export function handleNotifyConfig(req: NotifyConfigRequest): void {
 	});
 }
 
+/**
+ * Cache LLM provider API keys into the agent's module-scope store
+ * (#260 follow-up). Same one-shot pattern as auth_update / notify_config:
+ * shell sends creds_update at startup + on every settings save. Empty
+ * string for a given provider explicitly clears its entry (user removed
+ * the key from settings). buildProvider then reads cache first, falls
+ * back to per-request ChatRequest.provider.apiKey for backwards compat.
+ */
+export function handleCredsUpdate(req: CredsUpdateRequest): void {
+	if (!req.keys || typeof req.keys !== "object") return;
+	for (const [providerId, apiKey] of Object.entries(req.keys)) {
+		if (typeof providerId !== "string" || typeof apiKey !== "string") continue;
+		setProviderApiKey(providerId, apiKey);
+	}
+}
+
 export function handleAuthUpdate(req: import("./protocol.js").AuthUpdateRequest): void {
 	setAgentNaiaKey(req.naiaKey);
 	// Rebuild memory system so naia embedding/LLM providers pick up the fresh key.
@@ -1278,6 +1300,11 @@ function main(): void {
 
 		if (request.type === "notify_config") {
 			handleNotifyConfig(request);
+			return;
+		}
+
+		if (request.type === "creds_update") {
+			handleCredsUpdate(request);
 			return;
 		}
 

@@ -20,6 +20,7 @@ import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	directToolCall,
 	sendAuthUpdate,
+	sendCredsUpdate,
 	sendNotifyConfig,
 } from "../lib/chat-service";
 import {
@@ -2067,6 +2068,15 @@ export function SettingsTab() {
 			discordDefaultTarget: newConfig.discordDefaultTarget,
 			discordDmChannelId: newConfig.discordDmChannelId,
 		});
+		// Push per-provider LLM API key (#260 follow-up). Empty string clears
+		// the cached entry on the agent side — the cache stays in sync with
+		// what the user entered. The shell still saves apiKey in config (legacy
+		// fallback during the migration window).
+		if (newConfig.provider) {
+			void sendCredsUpdate({
+				[newConfig.provider]: newConfig.apiKey ?? "",
+			});
+		}
 		setLocale(locale);
 		setAvatarModelPath(vrmModel);
 		setAvatarBackgroundImage(backgroundImage);

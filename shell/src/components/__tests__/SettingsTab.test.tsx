@@ -34,6 +34,7 @@ vi.mock("../../lib/chat-service", () => ({
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
 	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
 	sendNotifyConfig: vi.fn().mockResolvedValue(undefined),
+	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { SettingsTab } from "../SettingsTab";
