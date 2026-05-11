@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# naia-usb — Persistent Naia USB writer (PoC, see issue #262)
+# naia-usb — Persistent Naia USB writer (issue #262)
 #
 # Modes:
-#   create <device> [--rootfs <file>] [--seed <tarball>]
-#       Fresh USB. GPT + 3 partitions. Optionally write rootfs to part 2,
-#       optionally seed naia-adk into part 3.
+#   create <device> [--iso <file>] [--rootfs <file>] [--seed <tarball>]
+#       Fresh USB. GPT + 3 partitions. Optionally populate from a Naia ISO
+#       (bootable), a raw rootfs file, and/or a naia-adk seed tarball.
 #
-#   update <device> --rootfs <file>
+#   update <device> --iso <file> | --rootfs <file>
 #       Existing naia USB only. Re-writes parts 1+2, leaves part 3 intact.
 #       Refuses if part 3 isn't labeled naia-data.
 #
@@ -14,9 +14,17 @@
 #       Inspect device for naia layout.
 #
 # Partition layout (GPT):
-#   1: ESP        (FAT32, label NAIA-ESP)
-#   2: rootfs     (ext4,  label naia-rootfs)
-#   3: naia-data  (btrfs, label naia-data)  <- preserved across updates
+#   1: ESP        (FAT32, label NAIA-ESP)     — GRUB + kernel + initramfs
+#   2: rootfs     (ext4,  label naia-rootfs)  — LiveOS/squashfs.img (OS image)
+#   3: naia-data  (btrfs, label naia-data)    — user data (preserved across updates)
+#
+# Boot chain (UEFI):
+#   UEFI firmware → ESP/EFI/BOOT/BOOTX64.efi (GRUB)
+#                  → GRUB loads vmlinuz + initramfs.img from ESP
+#                  → kernel boots with root=live:LABEL=naia-rootfs rd.live.image
+#                  → dracut dmsquash-live finds LiveOS/squashfs.img on partition 2
+#                  → systemd boots, var-naia.mount attaches partition 3 → /var/naia
+#                  → naia-adk-link autostart creates ~/naia-adk → /var/naia/naia-adk
 #
 # Sizing: ESP_SIZE_MIB and ROOTFS_SIZE_MIB env vars override defaults.
 #
@@ -27,7 +35,7 @@
 set -euo pipefail
 
 ESP_SIZE_MIB="${ESP_SIZE_MIB:-512}"
-ROOTFS_SIZE_MIB="${ROOTFS_SIZE_MIB:-2048}"
+ROOTFS_SIZE_MIB="${ROOTFS_SIZE_MIB:-8192}"
 LABEL_ESP="NAIA-ESP"
 LABEL_ROOTFS="naia-rootfs"
 LABEL_DATA="naia-data"
@@ -37,6 +45,10 @@ die() { printf '[naia-usb] ERROR: %s\n' "$*" >&2; exit 1; }
 
 require_root() {
 	[[ $EUID -eq 0 ]] || die "must run as root (parted/mkfs/losetup require it)"
+}
+
+require_cmd() {
+	command -v "$1" >/dev/null 2>&1 || die "required command not found: $1 (install $2)"
 }
 
 part_path() {
@@ -73,9 +85,6 @@ check_safety() {
 }
 
 verify_naia_layout() {
-	# Strict check: parts 1/2/3 exist and carry the expected labels, AND
-	# there is no part 4+ (so we never operate on a foreign multi-partition disk
-	# that happens to have one matching label). Echoes part-3 device path on success.
 	local dev="$1"
 	local p1 p2 p3 p4
 	p1="$(part_path "$dev" 1)"
@@ -95,7 +104,7 @@ verify_naia_layout() {
 
 write_rootfs() {
 	local part="$1" src="$2"
-	log "writing rootfs '$src' → $part (LiveOS/squashfs.img)"
+	log "writing rootfs → $part:/LiveOS/squashfs.img"
 	local mp
 	mp="$(mktemp -d)"
 	mount "$part" "$mp"
@@ -111,27 +120,107 @@ seed_naia_data() {
 	log "seeding naia-data from '$seed' → $part"
 	local mp
 	mp="$(mktemp -d)"
-	mount "$part" "$mp"
+	mount -o compress=zstd:1,noatime "$part" "$mp"
 	tar -xf "$seed" -C "$mp"
 	sync
 	umount "$mp"
 	rmdir "$mp"
 }
 
-cmd_create() {
-	local dev="" rootfs="" seed=""
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-			--rootfs) rootfs="$2"; shift 2 ;;
-			--seed) seed="$2"; shift 2 ;;
-			-*) die "unknown create flag: $1" ;;
-			*) [[ -z "$dev" ]] && dev="$1" || die "unexpected arg: $1"; shift ;;
-		esac
+install_grub_cfg() {
+	local esp_mount="$1"
+	mkdir -p "$esp_mount/EFI/BOOT"
+	cat > "$esp_mount/EFI/BOOT/grub.cfg" <<GRUBCFG
+set default="0"
+set timeout=10
+
+search --no-floppy --set=root -l '${LABEL_ESP}'
+
+menuentry 'Naia OS Live' --class fedora --class gnu-linux --class os {
+  linux (\$root)/vmlinuz root=live:LABEL=${LABEL_ROOTFS} rd.live.image quiet rhgb enforcing=0 console=tty0 console=ttyS0,115200n8
+  initrd (\$root)/initramfs.img
+}
+
+menuentry 'Naia OS Live (Basic Graphics)' --class fedora --class gnu-linux --class os {
+  linux (\$root)/vmlinuz root=live:LABEL=${LABEL_ROOTFS} rd.live.image quiet rhgb enforcing=0 nomodeset console=tty0 console=ttyS0,115200n8
+  initrd (\$root)/initramfs.img
+}
+GRUBCFG
+}
+
+install_iso_to_esp() {
+	local iso="$1" esp_part="$2"
+	local iso_mp esp_mp
+
+	log "extracting boot files from ISO → ESP"
+	iso_mp="$(mktemp -d)"
+	mount -o loop,ro "$iso" "$iso_mp"
+
+	esp_mp="$(mktemp -d)"
+	mount "$esp_part" "$esp_mp"
+
+	mkdir -p "$esp_mp/EFI/BOOT"
+
+	if [[ -f "$iso_mp/boot/vmlinuz" ]]; then
+		cp "$iso_mp/boot/vmlinuz" "$esp_mp/vmlinuz"
+		log "  copied boot/vmlinuz"
+	else
+		umount "$esp_mp"; rmdir "$esp_mp"
+		umount "$iso_mp"; rmdir "$iso_mp"
+		die "ISO missing boot/vmlinuz — not a valid Naia ISO"
+	fi
+
+	if [[ -f "$iso_mp/boot/initramfs.img" ]]; then
+		cp "$iso_mp/boot/initramfs.img" "$esp_mp/initramfs.img"
+		log "  copied boot/initramfs.img"
+	else
+		umount "$esp_mp"; rmdir "$esp_mp"
+		umount "$iso_mp"; rmdir "$iso_mp"
+		die "ISO missing boot/initramfs.img — not a valid Naia ISO"
+	fi
+
+	for f in "$iso_mp/EFI/BOOT/"*; do
+		[[ -f "$f" ]] && cp "$f" "$esp_mp/EFI/BOOT/"
 	done
-	[[ -n "$dev" ]] || die "create requires <device>"
+	log "  copied EFI/BOOT/ contents"
 
-	check_safety "$dev"
+	if [[ -f "$iso_mp/boot/grub/fonts/unicode.pf2" ]]; then
+		rm -f "$esp_mp/EFI/BOOT/fonts"
+		mkdir -p "$esp_mp/EFI/BOOT/fonts"
+		cp "$iso_mp/boot/grub/fonts/unicode.pf2" "$esp_mp/EFI/BOOT/fonts/"
+	fi
 
+	install_grub_cfg "$esp_mp"
+	log "  wrote custom grub.cfg (root=live:LABEL=${LABEL_ROOTFS})"
+
+	sync
+	umount "$esp_mp"
+	rmdir "$esp_mp"
+	umount "$iso_mp"
+	rmdir "$iso_mp"
+}
+
+install_iso_rootfs() {
+	local iso="$1" rootfs_part="$2"
+	local iso_mp
+
+	log "extracting LiveOS/squashfs.img from ISO → rootfs partition"
+	iso_mp="$(mktemp -d)"
+	mount -o loop,ro "$iso" "$iso_mp"
+
+	if [[ -f "$iso_mp/LiveOS/squashfs.img" ]]; then
+		write_rootfs "$rootfs_part" "$iso_mp/LiveOS/squashfs.img"
+	else
+		umount "$iso_mp"; rmdir "$iso_mp"
+		die "ISO missing LiveOS/squashfs.img — not a valid Naia ISO"
+	fi
+
+	umount "$iso_mp"
+	rmdir "$iso_mp"
+}
+
+create_partitions() {
+	local dev="$1"
 	log "fresh layout on $dev"
 	log "  ESP: ${ESP_SIZE_MIB} MiB FAT32 ($LABEL_ESP)"
 	log "  rootfs: ${ROOTFS_SIZE_MIB} MiB ext4 ($LABEL_ROOTFS)"
@@ -158,6 +247,40 @@ cmd_create() {
 	mkfs.fat -F 32 -n "$LABEL_ESP" "$p1" >/dev/null
 	mkfs.ext4 -q -F -L "$LABEL_ROOTFS" "$p2"
 	mkfs.btrfs -q -f -L "$LABEL_DATA" "$p3"
+}
+
+cmd_create() {
+	local dev="" iso="" rootfs="" seed=""
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			--iso) iso="$2"; shift 2 ;;
+			--rootfs) rootfs="$2"; shift 2 ;;
+			--seed) seed="$2"; shift 2 ;;
+			-*) die "unknown create flag: $1" ;;
+			*) [[ -z "$dev" ]] && dev="$1" || die "unexpected arg: $1"; shift ;;
+		esac
+	done
+	[[ -n "$dev" ]] || die "create requires <device>"
+
+	if [[ -n "$iso" ]]; then
+		[[ -f "$iso" ]] || die "ISO file not found: $iso"
+		require_cmd 7z "p7zip"
+	fi
+	[[ -z "$rootfs" || -f "$rootfs" ]] || die "rootfs file not found: $rootfs"
+	[[ -z "$seed" || -f "$seed" ]] || die "seed file not found: $seed"
+
+	check_safety "$dev"
+	create_partitions "$dev"
+
+	local p1 p2 p3
+	p1="$(part_path "$dev" 1)"
+	p2="$(part_path "$dev" 2)"
+	p3="$(part_path "$dev" 3)"
+
+	if [[ -n "$iso" ]]; then
+		install_iso_to_esp "$iso" "$p1"
+		install_iso_rootfs "$iso" "$p2"
+	fi
 
 	[[ -n "$rootfs" ]] && write_rootfs "$p2" "$rootfs"
 	[[ -n "$seed"   ]] && seed_naia_data "$p3" "$seed"
@@ -166,22 +289,28 @@ cmd_create() {
 }
 
 cmd_update() {
-	local dev="" rootfs=""
+	local dev="" iso="" rootfs=""
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
+			--iso) iso="$2"; shift 2 ;;
 			--rootfs) rootfs="$2"; shift 2 ;;
 			-*) die "unknown update flag: $1" ;;
 			*) [[ -z "$dev" ]] && dev="$1" || die "unexpected arg: $1"; shift ;;
 		esac
 	done
 	[[ -n "$dev" ]] || die "update requires <device>"
-	[[ -n "$rootfs" ]] || die "update requires --rootfs"
+	[[ -n "$iso" || -n "$rootfs" ]] || die "update requires --iso or --rootfs"
+
+	if [[ -n "$iso" ]]; then
+		[[ -f "$iso" ]] || die "ISO file not found: $iso"
+		require_cmd 7z "p7zip"
+	fi
 
 	check_safety "$dev"
 
 	local data_part
 	data_part="$(verify_naia_layout "$dev")" || \
-		die "$dev does not match the naia 3-partition layout (parts 1/2/3 with labels NAIA-ESP/naia-rootfs/naia-data, no part 4+) — use 'create' for fresh USBs"
+		die "$dev does not match the naia 3-partition layout — use 'create' for fresh USBs"
 
 	log "naia layout detected (data: $data_part)"
 	log "re-writing parts 1+2; partition 3 preserved"
@@ -190,9 +319,25 @@ cmd_update() {
 	p1="$(part_path "$dev" 1)"
 	p2="$(part_path "$dev" 2)"
 
-	mkfs.fat -F 32 -n "$LABEL_ESP" "$p1" >/dev/null
 	mkfs.ext4 -q -F -L "$LABEL_ROOTFS" "$p2"
-	write_rootfs "$p2" "$rootfs"
+	if [[ -n "$iso" ]]; then
+		install_iso_rootfs "$iso" "$p2"
+	else
+		write_rootfs "$p2" "$rootfs"
+	fi
+
+	mkfs.fat -F 32 -n "$LABEL_ESP" "$p1" >/dev/null
+	if [[ -n "$iso" ]]; then
+		install_iso_to_esp "$iso" "$p1"
+	else
+		local esp_mp
+		esp_mp="$(mktemp -d)"
+		mount "$p1" "$esp_mp"
+		install_grub_cfg "$esp_mp"
+		sync
+		umount "$esp_mp"
+		rmdir "$esp_mp"
+	fi
 
 	log "update complete — partition 3 preserved"
 }
@@ -229,18 +374,27 @@ main() {
 Usage: naia-usb <command> [args]
 
 Commands:
-  create <device> [--rootfs <file>] [--seed <tarball>]
-      Fresh USB. 3-partition GPT layout, optional rootfs + naia-adk seed.
+  create <device> [--iso <file>] [--rootfs <file>] [--seed <tarball>]
+      Fresh USB. 3-partition GPT layout.
+      --iso:     Extract boot files + rootfs from a Naia ISO (bootable USB)
+      --rootfs:  Write raw file as LiveOS/squashfs.img to partition 2
+      --seed:    Seed naia-adk data into partition 3
 
-  update <device> --rootfs <file>
+  update <device> --iso <file> | --rootfs <file>
       Existing naia USB. Re-writes parts 1+2, preserves part 3.
+      ESP is written LAST to minimize bricked-USB window.
 
   status <device>
       Show partition layout and whether device is a naia USB.
 
 Env:
   ESP_SIZE_MIB     ESP size in MiB (default 512)
-  ROOTFS_SIZE_MIB  rootfs partition size in MiB (default 2048)
+  ROOTFS_SIZE_MIB  rootfs partition size in MiB (default 8192)
+
+Boot chain:
+  UEFI → ESP/EFI/BOOT/BOOTX64.efi → GRUB → vmlinuz + initramfs.img
+       → dmsquash-live mounts naia-rootfs:/LiveOS/squashfs.img
+       → var-naia.mount attaches naia-data → /var/naia
 
 EOF
 		exit 1
