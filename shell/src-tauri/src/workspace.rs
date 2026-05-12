@@ -635,7 +635,23 @@ fn collect_search_candidates() -> Vec<PathBuf> {
 fn is_naia_adk_root(path: &Path) -> bool {
     let has_entry_point = path.join("AGENTS.md").is_file() || path.join("CLAUDE.md").is_file();
     let has_rules = path.join(".agents").join("context").join("agents-rules.json").is_file();
-    has_entry_point && has_rules
+    if !(has_entry_point && has_rules) {
+        return false;
+    }
+    // AGENTS.md + agents-rules.json alone is NOT enough — every Naia project
+    // (naia-os, alpha-adk root, etc.) uses the same context-as-code layout.
+    // The actual naia-adk repo is identified by its package.json `name`.
+    // Without this check, `workspace_detect_adk_root` would happily return
+    // the cwd's nearest AGENTS.md-bearing ancestor as "the ADK" — e.g. the
+    // naia-os shell directory the user is dev-running from.
+    let pkg_path = path.join("package.json");
+    let Ok(pkg_str) = std::fs::read_to_string(&pkg_path) else {
+        return false;
+    };
+    let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_str) else {
+        return false;
+    };
+    pkg.get("name").and_then(|n| n.as_str()) == Some("naia-adk")
 }
 
 #[tauri::command]
