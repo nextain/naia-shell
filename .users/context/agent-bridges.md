@@ -127,30 +127,50 @@ that still pass it silently take the fall-through path.
 
 ## Creds update flow (#260 follow-up, 2026-05-12)
 
-LLM provider API keys travel via `creds_update`, same one-shot pattern as
-`auth_update` (naiaKey) and `notify_config` (webhooks).
+ALL per-session credentials travel via the single `creds_update` message —
+LLM API keys, TTS API keys, gateway WS token. Same one-shot pattern as
+`auth_update` (naiaKey) and `notify_config` (webhooks). Per-request frames
+no longer carry credentials at all.
 
 ```ts
 // shell side — once at startup + once per settings save
 sendCredsUpdate({
-  anthropic: "sk-ant-...",
-  openai:    "sk-...",
-  gemini:    "AIza...",
-  // empty string clears the provider's cached entry
+  keys: {
+    anthropic: "sk-ant-...",
+    openai:    "sk-...",
+    gemini:    "AIza...",
+  },
+  ttsKeys: {           // optional
+    google:     "AIza...",
+    openai:     "sk-...",
+    elevenlabs: "el-...",
+  },
+  gatewayToken: "gw-token-...",  // optional
+  // empty string for any entry clears the agent-side cached value
 });
 
 // agent side
-handleCredsUpdate(req) → setProviderApiKey(provider, key) // per-provider Map
+handleCredsUpdate(req) {
+  // keys[provider]     → setProviderApiKey → _providerApiKeys Map
+  // ttsKeys[provider]  → setTtsApiKey      → _ttsApiKeys Map
+  // gatewayToken       → setGatewayToken   → _gatewayToken
+}
 ```
 
-`buildProvider` credential resolution priority:
-1. **Cached `creds_update` key** — primary path
-2. **`config.apiKey` from per-request `ChatRequest`** — backwards compat fallback for older shells still sending it
-3. **`envVar`** — CI / dev override
+Schema-level enforcement:
 
-`config.apiKey` stays declared optional on `ChatRequest.provider` for the
-migration window. A future cleanup can drop it once we're sure no
-out-of-tree shells depend on it.
+- `SendChatOptions` no longer accepts `ttsApiKey` or `gatewayToken` (compile-time block).
+- `directToolCall` opts no longer accept `gatewayToken` (compile-time block).
+- shell builders strip `provider.apiKey` + `provider.naiaKey` from the chat_request payload before invoking `send_to_agent_command`.
+- `ProviderConfig.apiKey` on the agent is `@deprecated` optional — buildProvider still has it as a backwards-compat fallback, but the official shell no longer populates it.
+
+Agent resolution priority (per credential):
+
+| Type | Lookup |
+|---|---|
+| LLM api key | `_providerApiKeys.get(provider)` → `config.apiKey` (deprecated) → envVar |
+| TTS api key | `_ttsApiKeys.get(provider)` (req.ttsApiKey is deprecated, kept for legacy) |
+| Gateway token | `_gatewayToken` (req.gatewayToken kept as `??` fallback for backwards compat) |
 
 ## Notify config flow (#260)
 
@@ -200,12 +220,12 @@ Five P0-critical fixes landed 2026-05-12 from the adversarial review:
 Done since this table was first written (2026-05-12):
 
 - **#277** — runtime asset scope extension. `protocol-asset` Cargo feature enabled, `assetProtocol.enable: true` in config, `copy_bundled_assets` calls `app_handle.asset_protocol_scope().allow_directory(adk_path, true)`. Non-standard ADK paths (`/mnt/external`, `/opt/custom`, `D:\custom\naia`) now serve assets correctly.
-- **`creds_update` message** — `provider.apiKey` now flows once via `creds_update` (see _Creds update flow_ above). `config.apiKey` still accepted per-request for backwards compat.
+- **`creds_update` LLM keys** — `provider.apiKey` flows once via `creds_update.keys`.
+- **`creds_update` ttsKeys + gatewayToken** — same message extended to carry TTS provider keys and Naia Gateway WS token. `SendChatOptions` / `directToolCall` opts no longer accept these fields (compile-time block). All shell callsites cleaned (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay).
 
 Still pending:
 
-- Schema cleanup: drop `config.apiKey` from `ChatRequest.provider` type once all callers push via `creds_update`.
-- Same one-shot pattern for `ttsApiKey` and `gatewayToken` (still per-request).
+- Drop `ProviderConfig.apiKey` from agent types entirely (currently `@deprecated` optional). Coordinate with any out-of-tree forks first.
 
 ## Vendored packages
 

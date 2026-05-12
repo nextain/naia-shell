@@ -37,10 +37,10 @@ recent_hardening:
     - "#254 — startup white flash backgroundColor + useAppReady onboarding short-circuit (4 tests)"
   follow_ups_done:
     - "#277 — runtime asset_protocol_scope.allow_directory() at copy_bundled_assets, plus protocol-asset Cargo feature + assetProtocol.enable:true"
-    - "creds_update message — provider.apiKey moved to one-shot push; per-request fallback retained for migration window"
+    - "creds_update LLM keys — provider.apiKey moved to one-shot push"
+    - "creds_update ttsKeys + gatewayToken — same message extended; SendChatOptions + directToolCall opts no longer accept the legacy fields (compile-time block); all shell callsites cleaned"
   follow_ups_open:
-    - "Schema cleanup: drop config.apiKey from ChatRequest.provider once no shell caller depends on it"
-    - "ttsApiKey + gatewayToken one-shot (same pattern as creds_update / notify_config)"
+    - "Drop ProviderConfig.apiKey from agent types entirely (currently @deprecated optional)"
 
 current_runtime:
   source_of_truth: .agents/context/agent-bridges.yaml

@@ -52,9 +52,10 @@ OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨
 처음 작성 후 추가 완료:
 
 - **#277** — runtime asset-scope 확장 완료. `protocol-asset` Cargo feature + `assetProtocol.enable: true` + `copy_bundled_assets` 가 `app_handle.asset_protocol_scope().allow_directory(adk_path, true)` 호출. 비표준 ADK path (`/mnt/external`, `D:\custom`, …) 자산 서빙 OK.
-- **`creds_update`** — `provider.apiKey` one-shot 푸시로 이동. per-request `config.apiKey` 는 마이그레이션 윈도우 동안 하위호환으로 유지.
+- **`creds_update` LLM keys** — `provider.apiKey` one-shot 푸시로 이동.
+- **`creds_update` ttsKeys + gatewayToken** — 동일 메시지에 TTS provider keys + Naia Gateway WS token 까지 통합. `SendChatOptions` + `directToolCall` opts 컴파일 단계에서 차단. 모든 shell callsite 정리 (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay).
 
-여전히 open: schema 정리 (`ChatRequest.provider` 의 `config.apiKey` 제거 — 모든 shell caller 가 `creds_update` 푸시 확인 후), 그리고 `ttsApiKey` + `gatewayToken` 도 동일 one-shot 패턴 (현재 per-request 상태).
+여전히 open: agent 의 `ProviderConfig.apiKey` 완전 제거 (현재 `@deprecated` optional). out-of-tree shell fork 와 조율 필요.
 
 ---
 

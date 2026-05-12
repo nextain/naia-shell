@@ -113,33 +113,48 @@ auth_flow:
     + LLM fact extractor pick up the credential immediately.
 
 creds_flow:
-  credential_owner: agent (module-scope Map)
+  credential_owner: agent (module-scope caches)
   contract: |
     Shell sends `creds_update` once at startup (App.tsx mount) and again on
-    every settings save (SettingsTab handleSave). Payload `keys: Record<providerId, apiKey>`
-    is sparse — only providers the user has actually configured need to appear.
-    handleCredsUpdate caches each entry via setProviderApiKey in
-    agent/src/providers/factory.ts. buildProvider resolves API keys in this
-    order:
-      1. cached entry from creds_update
-      2. per-request `config.apiKey` (backwards-compat — older shells still send)
-      3. provider envVar (CI / dev)
-    Empty string for a given provider clears its cached entry (user removed
-    the key in settings = explicit unset).
+    every settings save (SettingsTab handleSave). The single message carries
+    ALL per-session credentials:
+
+      - keys: Record<llmProviderId, apiKey>       // anthropic, openai, gemini, …
+      - ttsKeys?: Record<ttsProviderId, apiKey>   // google, openai, elevenlabs
+      - gatewayToken?: string                     // Naia Gateway WS auth
+
+    Agent caches each:
+      - setProviderApiKey  → _providerApiKeys Map  (factory.ts)
+      - setTtsApiKey       → _ttsApiKeys Map        (factory.ts)
+      - setGatewayToken    → _gatewayToken         (factory.ts)
+
+    Per-request `chat_request` / `tool_request` / `tts_request` frames now
+    carry NO credentials. The shell strips them via destructure-and-rebuild
+    (`const { apiKey, naiaKey, ...providerSafe } = provider`) before invoking
+    `send_to_agent_command`. `SendChatOptions` no longer accepts `ttsApiKey`
+    or `gatewayToken` at all (compile-time enforcement).
+
+    Empty string for any entry clears the cached value (explicit unset — e.g.
+    user removed the key from settings). Missing field = preserve existing
+    cache (partial update / first startup).
   why: |
     Same one-shot pattern as naiaKey (auth_update) and webhooks (notify_config).
-    Closes the last per-request credential leak — `provider.apiKey` previously
-    appeared in every chat_request stdio frame. Now the agent owns the key
-    cache; the shell pushes it via creds_update and chat_request no longer
-    needs to carry it.
+    Closes the per-request credential leak that #260 began — provider.apiKey,
+    ttsApiKey, and gatewayToken previously appeared in every chat / tool / tts
+    request stdio frame. Now they never do. Schema-level guarantee, not just
+    convention.
   schema_status: |
-    `config.apiKey` stays on the per-request `ChatRequest.provider` type for
-    backwards compat during the migration window. A follow-up commit can drop
-    it once all callers (including any out-of-tree shell forks) push via
-    creds_update.
+    Agent: `ProviderConfig.apiKey` and `.naiaKey` are marked `@deprecated`
+    optional fields for backwards-compat with out-of-tree forks. The agent's
+    `buildProvider` resolution still has them as fallbacks (cache → req →
+    envVar) but the official shell no longer populates them.
+    Shell: `SendChatOptions` already removed ttsApiKey + gatewayToken
+    (compile-time blocked). `directToolCall` opts only accept gatewayUrl
+    (no gatewayToken). Future cleanup: drop ProviderConfig.apiKey from agent
+    types entirely.
   tests:
-    - "agent/src/__tests__/creds-update.test.ts (6 cases: multi-provider cache, empty clears, overwrite, malformed entries skipped, missing keys field tolerated, cache wins over env)"
-    - "shell/src/lib/__tests__/chat-service.test.ts — sendCredsUpdate emits creds_update with empty-string clear semantics"
+    - "agent/src/__tests__/creds-update.test.ts (11 cases: LLM keys cache, empty clears, overwrite, malformed skipped, missing tolerated, cache vs env priority, TTS keys cache + clear, gatewayToken cache + clear, partial update preserves)"
+    - "shell/src/lib/__tests__/chat-service.test.ts — sendCredsUpdate emits all three fields + empty-string clear + omits optional fields when undefined"
 
 notify_flow:
   credential_owner: agent (env-cached)
@@ -213,10 +228,10 @@ security_hardening:
     test: agent/src/__tests__/notify-config.test.ts + shell/src/lib/__tests__/chat-service.test.ts (#260 cases)
   follow_ups_done:
     - "#277 (2026-05-12) — protocol-asset Cargo feature + assetProtocol.enable:true + copy_bundled_assets calls asset_protocol_scope().allow_directory(adk_path, true). Closes the gap for non-standard ADK paths (e.g. /mnt/external, /opt/custom, D:\\...)."
-    - "creds_update message (2026-05-12, see creds_flow above) — provider.apiKey now flows once via creds_update; per-request ChatRequest.apiKey still accepted for backwards compat but no longer the primary path."
+    - "creds_update LLM keys (2026-05-12) — provider.apiKey now flows once via creds_update.keys."
+    - "creds_update ttsKeys + gatewayToken (2026-05-12) — extended same message to carry per-tts-provider keys and the gateway WS auth token. SendChatOptions no longer accepts ttsApiKey / gatewayToken (compile-time). directToolCall opts no longer accept gatewayToken. All shell callsites (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay) cleaned up."
   follow_up_pending:
-    - "Schema cleanup: once all known shell callers push via creds_update, drop config.apiKey from ChatRequest.provider type."
-    - "Same one-shot pattern for ttsApiKey and gatewayToken (still per-request)."
+    - "Drop ProviderConfig.apiKey from agent types entirely (currently @deprecated optional). Coordinate with any out-of-tree forks first."
 
 vendored_packages:
   paths:

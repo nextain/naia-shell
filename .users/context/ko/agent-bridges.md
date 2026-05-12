@@ -128,29 +128,49 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 
 ## Creds update 흐름 (#260 follow-up, 2026-05-12)
 
-LLM provider API key 도 `creds_update` 로 흐름 — `auth_update` (naiaKey) +
-`notify_config` (webhooks) 와 동일한 one-shot 패턴.
+**모든** per-session 자격증명이 단일 `creds_update` 메시지로 흐름 — LLM API
+key, TTS API key, gateway WS token. `auth_update` (naiaKey) + `notify_config`
+(webhooks) 와 동일한 one-shot 패턴. per-request frame 은 자격증명 0개.
 
 ```ts
 // shell 측 — startup 1회 + 설정 저장 시 1회
 sendCredsUpdate({
-  anthropic: "sk-ant-...",
-  openai:    "sk-...",
-  gemini:    "AIza...",
-  // 빈 문자열은 cached 항목 clear
+  keys: {
+    anthropic: "sk-ant-...",
+    openai:    "sk-...",
+    gemini:    "AIza...",
+  },
+  ttsKeys: {           // optional
+    google:     "AIza...",
+    openai:     "sk-...",
+    elevenlabs: "el-...",
+  },
+  gatewayToken: "gw-token-...",  // optional
+  // 빈 문자열은 agent 측 cached 값 clear
 });
 
 // agent 측
-handleCredsUpdate(req) → setProviderApiKey(provider, key) // provider 별 Map
+handleCredsUpdate(req) {
+  // keys[provider]     → setProviderApiKey → _providerApiKeys Map
+  // ttsKeys[provider]  → setTtsApiKey      → _ttsApiKeys Map
+  // gatewayToken       → setGatewayToken   → _gatewayToken
+}
 ```
 
-`buildProvider` 자격증명 resolution 우선순위:
-1. **Cached `creds_update` key** — 우선 경로
-2. **`config.apiKey` (per-request `ChatRequest`)** — 구 shell 하위호환 fallback
-3. **`envVar`** — CI / dev override
+스키마 레벨 강제:
 
-`config.apiKey` 는 마이그레이션 윈도우 동안 `ChatRequest.provider` 의 optional
-필드로 유지. 모든 callsite 가 `creds_update` 로 이동 확인되면 schema 에서 제거.
+- `SendChatOptions` 가 `ttsApiKey` / `gatewayToken` 받지 않음 (컴파일 차단).
+- `directToolCall` opts 가 `gatewayToken` 받지 않음 (컴파일 차단).
+- shell 빌더가 `send_to_agent_command` invoke 전에 `provider.apiKey` + `provider.naiaKey` 를 chat_request 페이로드에서 스트립.
+- Agent 의 `ProviderConfig.apiKey` 는 `@deprecated` optional — buildProvider 는 하위호환 fallback 로 유지하지만 공식 shell 은 보내지 않음.
+
+Agent resolution 우선순위 (자격증명별):
+
+| 종류 | Lookup |
+|---|---|
+| LLM api key | `_providerApiKeys.get(provider)` → `config.apiKey` (deprecated) → envVar |
+| TTS api key | `_ttsApiKeys.get(provider)` (req.ttsApiKey 는 deprecated, legacy 유지) |
+| Gateway token | `_gatewayToken` (req.gatewayToken `??` fallback 유지) |
 
 ## Notify config 흐름 (#260)
 
@@ -200,12 +220,12 @@ handleNotifyConfig(req) → applyNotifyWebhookEnv(...) // process.env 기록
 2026-05-12 추가 완료:
 
 - **#277** — runtime asset scope 확장. `protocol-asset` Cargo feature 활성화, `assetProtocol.enable: true`, `copy_bundled_assets` 가 `app_handle.asset_protocol_scope().allow_directory(adk_path, true)` 호출. 비표준 ADK path (`/mnt/external`, `/opt/custom`, `D:\custom\naia`) 도 자산 정상 서빙.
-- **`creds_update` 메시지** — `provider.apiKey` 가 `creds_update` 로 1회 전송 (위 _Creds update 흐름_ 참고). `config.apiKey` 는 per-request 하위호환으로 유지.
+- **`creds_update` LLM keys** — `provider.apiKey` 가 `creds_update.keys` 로 1회 전송.
+- **`creds_update` ttsKeys + gatewayToken** — 동일 메시지에 TTS provider keys + Naia Gateway WS token 까지 통합. `SendChatOptions` / `directToolCall` opts 가 컴파일 단계에서 해당 필드 차단. 모든 shell callsite 정리 (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay).
 
 남은 작업:
 
-- Schema 정리: 모든 caller 가 `creds_update` 푸시 확인 시 `ChatRequest.provider` type 에서 `config.apiKey` 제거.
-- `ttsApiKey` + `gatewayToken` 도 동일 one-shot 패턴 적용 (현재 per-request 상태).
+- Agent 의 `ProviderConfig.apiKey` 완전 제거 (현재 `@deprecated` optional). out-of-tree fork 와 조율 필요.
 
 ## Vendored 패키지
 

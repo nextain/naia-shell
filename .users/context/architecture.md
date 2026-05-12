@@ -52,9 +52,10 @@ Seven issues closed in one autonomous session — details in [`agent-bridges.md 
 Done since this section was first written:
 
 - **#277** — runtime asset-scope extension landed. `protocol-asset` Cargo feature + `assetProtocol.enable: true` + `copy_bundled_assets` calls `app_handle.asset_protocol_scope().allow_directory(adk_path, true)`. Non-standard ADK paths (`/mnt/external`, `D:\custom`, …) now serve assets.
-- **`creds_update`** — `provider.apiKey` moved to a one-shot push. Per-request `config.apiKey` retained for backwards compat during the migration window.
+- **`creds_update` LLM keys** — `provider.apiKey` moved to a one-shot push.
+- **`creds_update` ttsKeys + gatewayToken** — same message extended; `SendChatOptions` + `directToolCall` opts no longer accept these fields (compile-time block); all shell callsites cleaned (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay).
 
-Still open: schema cleanup (drop `config.apiKey` from `ChatRequest.provider` once no shell caller depends on it), and the same one-shot pattern for `ttsApiKey` + `gatewayToken` (still per-request).
+Still open: drop `ProviderConfig.apiKey` from agent types entirely (currently `@deprecated` optional). Coordinate with any out-of-tree shell forks first.
 
 ---
 

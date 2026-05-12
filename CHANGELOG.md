@@ -20,6 +20,7 @@ Security hardening (2026-05-12):
 - **fix(agent/shell)**: webhook URLs moved off per-request stdio via new `notify_config` one-shot message ([#260](https://github.com/nextain/naia-os/issues/260))
 - **fix(shell)**: runtime `asset_protocol_scope.allow_directory` extension at `copy_bundled_assets` — ADK workspaces outside `$HOME` / `/var/home/*/naia-adk/**` (e.g. `/mnt/external`, `/opt/custom`, `D:\custom\naia`) now serve VRM / BGM / background via `asset://` URLs. Required `protocol-asset` Cargo feature + `assetProtocol.enable: true` ([#277](https://github.com/nextain/naia-os/issues/277))
 - **fix(agent/shell)**: `provider.apiKey` moved to one-shot `creds_update` message — same pattern as `auth_update` + `notify_config`. Agent caches per-provider; `buildProvider` resolution: cache → per-request fallback → envVar. `ChatRequest.provider.apiKey` stays declared for backwards compat during the migration window. (#260 follow-up)
+- **fix(agent/shell)**: `creds_update` extended to carry `ttsKeys` (per-TTS-provider) + `gatewayToken`. `SendChatOptions` no longer accepts `ttsApiKey` / `gatewayToken`; `directToolCall` opts no longer accept `gatewayToken` — compile-time enforcement that credentials never appear on per-request frames. All shell callsites cleaned (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay). (#260 follow-up)
 
 Bugs:
 

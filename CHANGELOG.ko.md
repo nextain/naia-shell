@@ -20,6 +20,7 @@ Naia OS의 주요 변경 사항을 기록합니다.
 - **fix(agent/shell)**: webhook URL 을 per-request stdio 에서 분리 — 새 `notify_config` one-shot 메시지 ([#260](https://github.com/nextain/naia-os/issues/260))
 - **fix(shell)**: `copy_bundled_assets` 에서 `asset_protocol_scope.allow_directory` 런타임 확장 — `$HOME` / `/var/home/*/naia-adk/**` 밖의 ADK workspace (예: `/mnt/external`, `/opt/custom`, `D:\custom\naia`) 도 `asset://` URL 로 VRM / BGM / 배경 서빙. `protocol-asset` Cargo feature + `assetProtocol.enable: true` 필요 ([#277](https://github.com/nextain/naia-os/issues/277))
 - **fix(agent/shell)**: `provider.apiKey` 를 one-shot `creds_update` 메시지로 이동 — `auth_update` + `notify_config` 와 동일 패턴. Agent 가 provider별 캐싱; `buildProvider` resolution: cache → per-request fallback → envVar. `ChatRequest.provider.apiKey` 는 마이그레이션 윈도우 동안 하위호환 유지. (#260 follow-up)
+- **fix(agent/shell)**: `creds_update` 에 `ttsKeys` (TTS provider별) + `gatewayToken` 추가. `SendChatOptions` 가 `ttsApiKey` / `gatewayToken` 받지 않음; `directToolCall` opts 가 `gatewayToken` 받지 않음 — 컴파일 단계에서 자격증명이 per-request frame 에 절대 안 들어가도록 강제. 모든 shell callsite 정리 (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay). (#260 follow-up)
 
 버그:
 
