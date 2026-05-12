@@ -88,6 +88,41 @@ describe("assetProtocol.scope hardening (#258)", () => {
 		expect(allow).not.toContain("/tmp/**");
 	});
 
+	it("every pattern's ** is a single path component (Tauri glob runtime rule)", () => {
+		// Tauri parses scope patterns at runtime through the `glob` crate which
+		// rejects patterns like `naia-**` or `foo**` — `**` (recursive wildcard)
+		// must be its own path component. Catches the regression where this rule
+		// was violated and the app paniced at startup with:
+		//   GlobPattern(PatternError { msg: "recursive wildcards must form
+		//   a single path component" })
+		const cfg = loadConfig();
+		const allow =
+			(
+				cfg.app?.security?.assetProtocol?.scope as { allow?: string[] }
+			).allow ?? [];
+		for (const pattern of allow) {
+			// Find every occurrence of `**` and confirm the immediate neighbours
+			// are either `/`, `$VAR` boundary, or string ends — never a non-slash
+			// character glued to the wildcard.
+			const re = /(.|^)\*\*(.|$)/g;
+			for (const m of pattern.matchAll(re)) {
+				const before = m[1];
+				const after = m[2];
+				// Allowed neighbours: '/' or empty (start/end of string).
+				if (before !== "" && before !== "/") {
+					throw new Error(
+						`pattern "${pattern}" has '**' glued to '${before}' (not a single path component)`,
+					);
+				}
+				if (after !== "" && after !== "/") {
+					throw new Error(
+						`pattern "${pattern}" has '**' glued to '${after}' (not a single path component)`,
+					);
+				}
+			}
+		}
+	});
+
 	it("allow list includes $RESOURCE/** (so bundled VRMs/backgrounds/BGM still load)", () => {
 		const cfg = loadConfig();
 		const allow =

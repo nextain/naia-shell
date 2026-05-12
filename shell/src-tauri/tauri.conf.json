@@ -34,7 +34,7 @@
 						"$APPCONFIG/**",
 						"$APPLOCALDATA/**",
 						"$HOME/**",
-						"/tmp/naia-**",
+						"/tmp/naia-*/**",
 						"/var/home/*/naia-adk/**",
 						"/var/home/*/naia/**"
 					],
