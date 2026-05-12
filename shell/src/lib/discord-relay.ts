@@ -162,7 +162,6 @@ async function processMessage(
 				systemPrompt,
 				enableTools: config.enableTools,
 				gatewayUrl: resolveGatewayUrl(config) ?? undefined,
-				gatewayToken: config.gatewayToken,
 				disabledSkills: config.disabledSkills,
 			}).catch(reject);
 		});

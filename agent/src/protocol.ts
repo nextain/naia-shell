@@ -175,24 +175,32 @@ export interface NotifyConfigRequest {
 }
 
 /**
- * Shell → Agent: LLM provider API keys cached per provider (#260 follow-up).
+ * Shell → Agent: per-provider credentials cached at the agent (#260 follow-up).
  *
  * Same one-shot pattern as `auth_update` (naiaKey) and `notify_config`
- * (webhooks). Sent at startup and on settings save. Agent caches into
- * factory.ts's `_providerApiKeys` Map. buildProvider reads from the cache
- * first, falls back to legacy per-request `config.apiKey` (backwards
- * compat), then to envVar.
+ * (webhooks). Sent at startup and on every settings save. The agent
+ * caches each entry; the chat / tool / tts request paths no longer carry
+ * credentials at all.
  *
- * Sending an empty string for a provider's key clears the cached entry
- * (explicit unset — e.g. user removed the key from settings).
+ * Empty string for any entry clears the cached value (explicit unset —
+ * e.g. user removed the key from settings).
  *
- * keys[providerId] = apiKey. Sparse: only providers the user has actually
- * configured need to be present. providerId values match LlmProviderMeta.id
- * in shell/src/lib/llm/registry.ts (e.g. "anthropic", "openai", "gemini").
+ * Fields:
+ *   - keys[providerId] = apiKey
+ *       LLM provider API keys. providerId matches LlmProviderMeta.id
+ *       (e.g. "anthropic", "openai", "gemini").
+ *   - ttsKeys[ttsProviderId] = apiKey
+ *       Text-to-speech provider keys. ttsProviderId is the TTS provider
+ *       enum ("google", "openai", "elevenlabs", "edge", "nextain").
+ *       Optional — present only when the user has configured TTS keys.
+ *   - gatewayToken = bearer token for the Naia Gateway WebSocket auth.
+ *       Optional — present only when the user has configured a gateway.
  */
 export interface CredsUpdateRequest {
 	type: "creds_update";
 	keys: Record<string, string>;
+	ttsKeys?: Record<string, string>;
+	gatewayToken?: string;
 }
 
 export type AgentRequest =

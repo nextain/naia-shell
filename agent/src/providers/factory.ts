@@ -259,6 +259,46 @@ export function _clearProviderApiKeys(): void {
 	_providerApiKeys.clear();
 }
 
+// ── Per-TTS-provider API key cache (creds_update.ttsKeys) ──
+// Same shape as _providerApiKeys but keyed by TTS provider id
+// ("google" / "openai" / "elevenlabs" / "edge" / "nextain").
+
+const _ttsApiKeys = new Map<string, string>();
+
+export function setTtsApiKey(providerId: string, apiKey: string): void {
+	if (!providerId) return;
+	if (!apiKey) {
+		_ttsApiKeys.delete(providerId);
+		return;
+	}
+	_ttsApiKeys.set(providerId, apiKey);
+}
+
+export function getTtsApiKey(providerId: string): string | undefined {
+	return _ttsApiKeys.get(providerId);
+}
+
+export function _clearTtsApiKeys(): void {
+	_ttsApiKeys.clear();
+}
+
+// ── Gateway WebSocket auth token (creds_update.gatewayToken) ──
+// Single value (not per-provider). One Naia Gateway per session.
+
+let _gatewayToken: string | undefined;
+
+export function setGatewayToken(token: string): void {
+	_gatewayToken = token ? token : undefined;
+}
+
+export function getGatewayToken(): string | undefined {
+	return _gatewayToken;
+}
+
+export function _clearGatewayToken(): void {
+	_gatewayToken = undefined;
+}
+
 // ── Factory ──
 
 export function buildProvider(config: ProviderConfig): LLMProvider {

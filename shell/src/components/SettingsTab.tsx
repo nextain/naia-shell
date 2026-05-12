@@ -258,14 +258,12 @@ function DevicePairingSection() {
 					args: { action: "node_list" },
 					requestId: `dev-nodes-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				}),
 				directToolCall({
 					toolName: "skill_device",
 					args: { action: "pair_list" },
 					requestId: `dev-pairs-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				}),
 			]);
 
@@ -300,7 +298,6 @@ function DevicePairingSection() {
 					args: { action: `pair_${action}`, requestId },
 					requestId: `dev-${action}-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				});
 				fetchDevices();
 			} catch (err) {
@@ -876,7 +873,6 @@ export function SettingsTab() {
 					args: { action: "models" },
 					requestId: `fetch-models-${Date.now()}`,
 					gatewayUrl: gatewayUrl.trim() || DEFAULT_GATEWAY_URL,
-					gatewayToken,
 				});
 
 				if (res.success && res.output) {
@@ -1280,7 +1276,6 @@ export function SettingsTab() {
 				args: { action: "get" },
 				requestId: `vw-get-${Date.now()}`,
 				gatewayUrl: effectiveGatewayUrl,
-				gatewayToken,
 			});
 			if (result.success && result.output) {
 				const data = JSON.parse(result.output);
@@ -1304,7 +1299,6 @@ export function SettingsTab() {
 				args: { action: "status" },
 				requestId: `discord-status-${Date.now()}`,
 				gatewayUrl: effectiveGatewayUrl,
-				gatewayToken,
 			});
 			if (result.success && result.output) {
 				const channels = JSON.parse(result.output) as Array<{
@@ -1753,7 +1747,6 @@ export function SettingsTab() {
 					args: previewArgs,
 					requestId: `tts-preview-${Date.now()}`,
 					gatewayUrl: effectiveGatewayUrl,
-					gatewayToken,
 				});
 				if (!result.success || !result.output) {
 					throw new Error(
@@ -1792,7 +1785,6 @@ export function SettingsTab() {
 					args: previewArgs,
 					requestId: `tts-preview-${Date.now()}`,
 					gatewayUrl: effectiveGatewayUrl,
-					gatewayToken,
 				});
 				if (!result.success || !result.output) {
 					const providerName =
@@ -1839,7 +1831,6 @@ export function SettingsTab() {
 				args: { action: "set", triggers: voiceWakeTriggers },
 				requestId: `vw-set-${Date.now()}`,
 				gatewayUrl: effectiveGatewayUrl,
-				gatewayToken,
 			});
 			setVoiceWakeSaved(true);
 			setTimeout(() => setVoiceWakeSaved(false), 2000);
@@ -2068,15 +2059,20 @@ export function SettingsTab() {
 			discordDefaultTarget: newConfig.discordDefaultTarget,
 			discordDmChannelId: newConfig.discordDmChannelId,
 		});
-		// Push per-provider LLM API key (#260 follow-up). Empty string clears
-		// the cached entry on the agent side — the cache stays in sync with
-		// what the user entered. The shell still saves apiKey in config (legacy
-		// fallback during the migration window).
-		if (newConfig.provider) {
-			void sendCredsUpdate({
-				[newConfig.provider]: newConfig.apiKey ?? "",
-			});
-		}
+		// Push all per-session credentials (#260 follow-up). Empty strings
+		// clear the corresponding cached entry on the agent — keeps the cache
+		// in sync with what the user just saved.
+		const ttsKeys: Record<string, string> = {};
+		ttsKeys.google = newConfig.googleApiKey ?? "";
+		ttsKeys.openai = newConfig.openaiTtsApiKey ?? "";
+		ttsKeys.elevenlabs = newConfig.elevenlabsApiKey ?? "";
+		void sendCredsUpdate({
+			keys: newConfig.provider
+				? { [newConfig.provider]: newConfig.apiKey ?? "" }
+				: {},
+			ttsKeys,
+			gatewayToken: newConfig.gatewayToken ?? "",
+		});
 		setLocale(locale);
 		setAvatarModelPath(vrmModel);
 		setAvatarBackgroundImage(backgroundImage);

@@ -98,6 +98,104 @@ describe("handleCredsUpdate provider key cache (#260 follow-up)", () => {
 	});
 });
 
+describe("creds_update ttsKeys + gatewayToken (#260 follow-up)", () => {
+	beforeEach(async () => {
+		const {
+			_clearProviderApiKeys,
+			_clearTtsApiKeys,
+			_clearGatewayToken,
+		} = await import("../providers/factory.js");
+		_clearProviderApiKeys();
+		_clearTtsApiKeys();
+		_clearGatewayToken();
+	});
+
+	afterEach(async () => {
+		const {
+			_clearProviderApiKeys,
+			_clearTtsApiKeys,
+			_clearGatewayToken,
+		} = await import("../providers/factory.js");
+		_clearProviderApiKeys();
+		_clearTtsApiKeys();
+		_clearGatewayToken();
+	});
+
+	it("caches TTS provider keys from creds_update.ttsKeys", async () => {
+		const { handleCredsUpdate } = await import("../index.js");
+		const { getTtsApiKey } = await import("../providers/factory.js");
+		handleCredsUpdate({
+			type: "creds_update",
+			keys: {},
+			ttsKeys: {
+				google: "AIzaGoogleTTS",
+				openai: "sk-oai-tts",
+				elevenlabs: "el-key",
+			},
+		});
+		expect(getTtsApiKey("google")).toBe("AIzaGoogleTTS");
+		expect(getTtsApiKey("openai")).toBe("sk-oai-tts");
+		expect(getTtsApiKey("elevenlabs")).toBe("el-key");
+	});
+
+	it("empty-string TTS key clears the entry", async () => {
+		const { handleCredsUpdate } = await import("../index.js");
+		const { getTtsApiKey, setTtsApiKey } = await import(
+			"../providers/factory.js"
+		);
+		setTtsApiKey("google", "previous");
+		handleCredsUpdate({
+			type: "creds_update",
+			keys: {},
+			ttsKeys: { google: "" },
+		});
+		expect(getTtsApiKey("google")).toBeUndefined();
+	});
+
+	it("caches gatewayToken from creds_update.gatewayToken", async () => {
+		const { handleCredsUpdate } = await import("../index.js");
+		const { getGatewayToken } = await import("../providers/factory.js");
+		handleCredsUpdate({
+			type: "creds_update",
+			keys: {},
+			gatewayToken: "gw-token-abc",
+		});
+		expect(getGatewayToken()).toBe("gw-token-abc");
+	});
+
+	it("empty-string gatewayToken clears the cached value", async () => {
+		const { handleCredsUpdate } = await import("../index.js");
+		const { getGatewayToken, setGatewayToken } = await import(
+			"../providers/factory.js"
+		);
+		setGatewayToken("previous");
+		handleCredsUpdate({
+			type: "creds_update",
+			keys: {},
+			gatewayToken: "",
+		});
+		expect(getGatewayToken()).toBeUndefined();
+	});
+
+	it("treats missing ttsKeys / gatewayToken as 'no change' (partial update)", async () => {
+		const { handleCredsUpdate } = await import("../index.js");
+		const {
+			getTtsApiKey,
+			getGatewayToken,
+			setTtsApiKey,
+			setGatewayToken,
+		} = await import("../providers/factory.js");
+		setTtsApiKey("google", "kept-tts");
+		setGatewayToken("kept-gw");
+		handleCredsUpdate({
+			type: "creds_update",
+			keys: { anthropic: "sk-ant" },
+		});
+		expect(getTtsApiKey("google")).toBe("kept-tts");
+		expect(getGatewayToken()).toBe("kept-gw");
+	});
+});
+
 describe("buildProvider credential resolution priority (#260 follow-up)", () => {
 	beforeEach(async () => {
 		const { _clearProviderApiKeys, setAgentNaiaKey } = await import(

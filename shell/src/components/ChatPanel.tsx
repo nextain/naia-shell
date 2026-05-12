@@ -725,7 +725,6 @@ export function ChatPanel() {
 				gatewayUrl: config.enableTools
 					? config.gatewayUrl || "ws://localhost:18789"
 					: undefined,
-				gatewayToken: config.enableTools ? config.gatewayToken : undefined,
 				disabledSkills: config.enableTools
 					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
 					: undefined,
@@ -1691,7 +1690,6 @@ export function ChatPanel() {
 						args,
 						requestId: generateRequestId(),
 						gatewayUrl: resolveGatewayUrl(config),
-						gatewayToken: config.gatewayToken,
 					});
 					session.sendToolResponse(callId, result.output);
 				} catch (err) {

@@ -326,13 +326,20 @@ describe("chat-service", () => {
 		expect(parsed.discordDmChannelId).toBe("channel-1");
 	});
 
-	it("sendCredsUpdate emits a creds_update request with per-provider API keys (#260 follow-up)", async () => {
+	it("sendCredsUpdate emits creds_update with LLM + TTS keys + gatewayToken (#260 follow-up)", async () => {
 		const { sendCredsUpdate } = await import("../chat-service");
 
 		await sendCredsUpdate({
-			anthropic: "sk-ant-xyz",
-			openai: "sk-openai-abc",
-			gemini: "",
+			keys: {
+				anthropic: "sk-ant-xyz",
+				openai: "sk-openai-abc",
+				gemini: "",
+			},
+			ttsKeys: {
+				google: "AIzaTTS",
+				openai: "",
+			},
+			gatewayToken: "gw-token-xyz",
 		});
 
 		const sentMessage = mockInvoke.mock.calls[0][1].message;
@@ -340,7 +347,21 @@ describe("chat-service", () => {
 		expect(parsed.type).toBe("creds_update");
 		expect(parsed.keys.anthropic).toBe("sk-ant-xyz");
 		expect(parsed.keys.openai).toBe("sk-openai-abc");
-		// Empty-string entry preserved (signals "clear" semantics to the agent)
 		expect(parsed.keys.gemini).toBe("");
+		expect(parsed.ttsKeys.google).toBe("AIzaTTS");
+		expect(parsed.ttsKeys.openai).toBe("");
+		expect(parsed.gatewayToken).toBe("gw-token-xyz");
+	});
+
+	it("sendCredsUpdate omits ttsKeys/gatewayToken when undefined", async () => {
+		const { sendCredsUpdate } = await import("../chat-service");
+
+		await sendCredsUpdate({ keys: { anthropic: "sk-ant-xyz" } });
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.type).toBe("creds_update");
+		expect(parsed.keys.anthropic).toBe("sk-ant-xyz");
+		expect("ttsKeys" in parsed).toBe(false);
+		expect("gatewayToken" in parsed).toBe(false);
 	});
 });

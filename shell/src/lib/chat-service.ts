@@ -10,18 +10,18 @@ interface SendChatOptions {
 	onChunk: (chunk: AgentResponseChunk) => void;
 	requestId: string;
 	ttsVoice?: string;
-	ttsApiKey?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
 	systemPrompt?: string;
 	enableTools?: boolean;
 	gatewayUrl?: string;
-	gatewayToken?: string;
 	disabledSkills?: string[];
 	routeViaGateway?: boolean;
-	// Webhook URLs / Discord defaults moved to sendNotifyConfig (#260).
-	// Do not re-add per-request — credentials must not appear in every
-	// chat_request stdio frame.
+	// Credentials (provider.apiKey, ttsApiKey, gatewayToken) and webhook
+	// URLs are intentionally NOT carried on per-request. They flow ONCE
+	// via sendCredsUpdate / sendNotifyConfig at startup + on settings save,
+	// and the agent caches them. Adding any credential field back here
+	// re-opens the stdio leak #260 closed.
 }
 
 export interface NotifyConfig {
@@ -64,20 +64,33 @@ export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
 	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
 }
 
+export interface CredsPayload {
+	/** LLM provider id → apiKey. Required. Sparse — only configured providers. */
+	keys: Record<string, string>;
+	/** TTS provider id → apiKey. Optional. Only when TTS keys configured. */
+	ttsKeys?: Record<string, string>;
+	/** Gateway WebSocket auth token. Optional. Only when gateway configured. */
+	gatewayToken?: string;
+}
+
 /**
- * Push per-provider LLM API keys to the agent (#260 follow-up).
- * Same one-shot pattern as sendAuthUpdate / sendNotifyConfig. Called at
- * startup and on settings save. Agent caches per-provider; buildProvider
- * reads from the cache first, falls back to legacy ChatRequest.apiKey for
- * backwards compat while we transition.
+ * Push all per-session credentials to the agent (#260 follow-up).
  *
- * `keys` shape: `{ [providerId]: apiKey }`. Empty string clears that
- * provider's cached entry (explicit unset when user removes the key in UI).
+ * Same one-shot pattern as sendAuthUpdate / sendNotifyConfig. Called at
+ * startup and on every settings save. Agent caches per-provider; chat /
+ * tool / tts request paths no longer carry credentials at all.
+ *
+ * Empty string for any entry clears the agent-side cached value (explicit
+ * unset when the user removes a key from settings).
  */
-export async function sendCredsUpdate(
-	keys: Record<string, string>,
-): Promise<void> {
-	const request = { type: "creds_update", keys };
+export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
+	const request: Record<string, unknown> = {
+		type: "creds_update",
+		keys: payload.keys,
+	};
+	if (payload.ttsKeys !== undefined) request.ttsKeys = payload.ttsKeys;
+	if (payload.gatewayToken !== undefined)
+		request.gatewayToken = payload.gatewayToken;
 	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
 }
 
@@ -91,35 +104,34 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		onChunk,
 		requestId,
 		ttsVoice,
-		ttsApiKey,
 		ttsEngine,
 		ttsProvider,
 		systemPrompt,
 		enableTools,
 		gatewayUrl,
-		gatewayToken,
 		disabledSkills,
 		routeViaGateway,
 	} = opts;
 
+	// Sanitize provider — strip credential fields. They flow via creds_update.
+	const { apiKey: _apiKey, naiaKey: _naiaKey, ...providerSafe } = provider;
+
 	const request = {
 		type: "chat_request",
 		requestId,
-		provider,
+		provider: providerSafe,
 		messages: [...history, { role: "user", content: message }],
 		...(ttsVoice && { ttsVoice }),
-		...(ttsApiKey && { ttsApiKey }),
 		...(ttsEngine && { ttsEngine }),
 		...(ttsProvider && { ttsProvider }),
 		...(systemPrompt && { systemPrompt }),
 		...(enableTools != null && { enableTools }),
 		...(gatewayUrl && { gatewayUrl }),
-		...(gatewayToken && { gatewayToken }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
 		...(routeViaGateway != null && { routeViaGateway }),
-		// Webhook URLs and Discord defaults are intentionally NOT included here.
-		// They live in the agent's process.env, set once via sendNotifyConfig()
-		// at startup and re-sent on settings save (#260).
+		// Credentials + webhook URLs intentionally NOT included. They flow via
+		// sendCredsUpdate (#260 follow-up) and sendNotifyConfig (#260) and live
+		// in agent module-scope caches / process.env.
 	};
 
 	// Listen for agent responses before sending to avoid race conditions
@@ -229,10 +241,10 @@ export async function directToolCall(opts: {
 	args: Record<string, unknown>;
 	requestId: string;
 	gatewayUrl?: string;
-	gatewayToken?: string;
-	// Webhook URLs / Discord defaults moved to sendNotifyConfig (#260).
+	// Credentials (gatewayToken) + webhook URLs flow via sendCredsUpdate /
+	// sendNotifyConfig at startup + on save. Never per-request.
 }): Promise<{ success: boolean; output: string }> {
-	const { toolName, args, requestId, gatewayUrl, gatewayToken } = opts;
+	const { toolName, args, requestId, gatewayUrl } = opts;
 
 	const request = {
 		type: "tool_request",
@@ -240,9 +252,6 @@ export async function directToolCall(opts: {
 		toolName,
 		args,
 		...(gatewayUrl && { gatewayUrl }),
-		...(gatewayToken && { gatewayToken }),
-		// Webhook URLs and Discord defaults are intentionally NOT included.
-		// Source of truth lives in agent process.env via sendNotifyConfig() (#260).
 	};
 
 	let result = { success: false, output: "" };

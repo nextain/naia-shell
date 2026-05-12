@@ -55,8 +55,12 @@ import { calculateCost } from "./providers/cost.js";
 import {
 	buildProvider,
 	getAgentNaiaKey,
+	getGatewayToken,
+	getTtsApiKey,
 	setAgentNaiaKey,
+	setGatewayToken,
 	setProviderApiKey,
+	setTtsApiKey,
 } from "./providers/factory.js";
 import type { ChatMessage, StreamChunk } from "./providers/types.js";
 import { actionInstall as panelActionInstall } from "./skills/built-in/panel.js";
@@ -519,7 +523,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 		// Connect to Gateway if tools enabled and URL provided
 		if (wantGateway) {
 			try {
-				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken);
+				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken ?? getGatewayToken());
 				gatewayConnected = true;
 
 				// Register event handler for Gateway-pushed events
@@ -631,7 +635,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 					gateway.close();
 					gateway = null;
 				}
-				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken);
+				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken ?? getGatewayToken());
 				gatewayConnected = true;
 				const eventHandler = createGatewayEventHandler(
 					writeLine,
@@ -944,7 +948,8 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 					const ttsResult = await ttsSynthesize(selectedProvider, {
 						text: cleanText,
 						voice: ttsVoice,
-						apiKey: ttsApiKey,
+						// Resolution: req field → creds_update cache (#260 follow-up).
+						apiKey: ttsApiKey ?? getTtsApiKey(selectedProvider),
 						naiaKey: effectiveNaiaKey,
 					});
 					if (ttsResult) {
@@ -968,6 +973,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 				) {
 					const googleKey =
 						ttsApiKey ||
+						getTtsApiKey("google") ||
 						(providerConfig.provider === "gemini"
 							? providerConfig.apiKey
 							: null);
@@ -1086,7 +1092,7 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 	try {
 		if (gatewayUrl) {
 			try {
-				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken);
+				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken ?? getGatewayToken());
 			} catch {
 				// Gateway unavailable — continue without it (e.g. Edge TTS preview works offline)
 				gateway = null;
@@ -1180,7 +1186,8 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 		const result = await ttsSynthesize(providerId, {
 			text,
 			voice,
-			apiKey: ttsApiKey,
+			// Resolution: req field → creds_update cache (#260 follow-up).
+			apiKey: ttsApiKey ?? getTtsApiKey(providerId),
 			naiaKey: getAgentNaiaKey(),
 		});
 
@@ -1234,18 +1241,33 @@ export function handleNotifyConfig(req: NotifyConfigRequest): void {
 }
 
 /**
- * Cache LLM provider API keys into the agent's module-scope store
- * (#260 follow-up). Same one-shot pattern as auth_update / notify_config:
- * shell sends creds_update at startup + on every settings save. Empty
- * string for a given provider explicitly clears its entry (user removed
- * the key from settings). buildProvider then reads cache first, falls
- * back to per-request ChatRequest.provider.apiKey for backwards compat.
+ * Cache all per-session credentials into the agent's module-scope stores
+ * (#260 follow-up). One-shot pattern symmetric to auth_update (naiaKey)
+ * and notify_config (webhooks):
+ *
+ *   - req.keys[providerId]     → setProviderApiKey
+ *   - req.ttsKeys[ttsProvider] → setTtsApiKey
+ *   - req.gatewayToken         → setGatewayToken
+ *
+ * Empty string anywhere clears the corresponding entry. Malformed entries
+ * (non-string key / value) are skipped silently — the caller (shell) is
+ * trusted, but defensive parsing protects against accidental shape drift.
  */
 export function handleCredsUpdate(req: CredsUpdateRequest): void {
-	if (!req.keys || typeof req.keys !== "object") return;
-	for (const [providerId, apiKey] of Object.entries(req.keys)) {
-		if (typeof providerId !== "string" || typeof apiKey !== "string") continue;
-		setProviderApiKey(providerId, apiKey);
+	if (req.keys && typeof req.keys === "object") {
+		for (const [providerId, apiKey] of Object.entries(req.keys)) {
+			if (typeof providerId !== "string" || typeof apiKey !== "string") continue;
+			setProviderApiKey(providerId, apiKey);
+		}
+	}
+	if (req.ttsKeys && typeof req.ttsKeys === "object") {
+		for (const [ttsProvider, apiKey] of Object.entries(req.ttsKeys)) {
+			if (typeof ttsProvider !== "string" || typeof apiKey !== "string") continue;
+			setTtsApiKey(ttsProvider, apiKey);
+		}
+	}
+	if (typeof req.gatewayToken === "string") {
+		setGatewayToken(req.gatewayToken);
 	}
 }
 
