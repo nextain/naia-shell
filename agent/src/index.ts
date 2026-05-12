@@ -35,6 +35,7 @@ import {
 	buildLLMFactExtractor,
 } from "@nextain/naia-memory";
 import { createNaiaMemoryProvider } from "./memory-bridge.js";
+import { MemoryTagScrubber } from "./memory-scrubber.js";
 import { NaiaApprovalBridge } from "./approval-bridge.js";
 import {
 	type ApprovalResponse,
@@ -596,6 +597,8 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 		let totalInputTokens = 0;
 		let totalOutputTokens = 0;
 		let omniAudioReceived = false;
+		// G-NA-01 wire-in: strip <recalled_memories> blocks that may leak into output.
+		const memoryScrubber = new MemoryTagScrubber();
 
 		const executeToolWithRecovery = async (
 			toolName: string,
@@ -651,8 +654,9 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 			return result;
 		};
 
-		// Tool call loop
+		// Tool call loop — reset scrubber each turn (new LLM response)
 		for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+			memoryScrubber.reset();
 			if (controller.signal.aborted) break;
 
 			// Recompute tools & system prompt each iteration so gateway
@@ -706,8 +710,9 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 				if (controller.signal.aborted) break;
 
 				if (chunk.type === "text") {
-					fullText += chunk.text;
-					writeLine({ type: "text", requestId, text: chunk.text });
+					const visibleText = memoryScrubber.feed(chunk.text);
+					fullText += visibleText;
+					if (visibleText) writeLine({ type: "text", requestId, text: visibleText });
 				} else if (chunk.type === "thinking") {
 					writeLine({ type: "thinking", requestId, text: chunk.text });
 				} else if (chunk.type === "tool_use") {
@@ -732,6 +737,13 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 					omniAudioReceived = true;
 					writeLine({ type: "audio", requestId, data: chunk.data });
 				}
+			}
+
+			// Flush any held-back buffer from scrubber at stream end
+			const scrubTail = memoryScrubber.flush();
+			if (scrubTail) {
+				fullText += scrubTail;
+				writeLine({ type: "text", requestId, text: scrubTail });
 			}
 
 			// No tool calls — done
