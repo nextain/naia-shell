@@ -251,6 +251,8 @@ export function AvatarCanvas() {
 		renderer.setPixelRatio(window.devicePixelRatio);
 		renderer.setSize(container.clientWidth, container.clientHeight);
 		container.appendChild(renderer.domElement);
+		// Prevent WebView2 context menu so right-click drag (pan) reaches OrbitControls
+		renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
 
 		// Scene — transparent background (background video/image is handled by the app layer)
 		const scene = new Scene();
@@ -471,18 +473,19 @@ export function AvatarCanvas() {
 				// Always anchor orbit target to character chest — ensures rotation
 				// pivots around the avatar even after resize or saved-camera restore.
 				if (vrm.humanoid) {
-					const head = vrm.humanoid.getNormalizedBoneNode("head");
-					if (head) {
-						const headPos = new Vector3();
-						head.getWorldPosition(headPos);
-						// Aim at chest level so the full body is visible.
-						const targetY = headPos.y - 0.5;
+					const hips = vrm.humanoid.getNormalizedBoneNode("hips") ??
+						vrm.humanoid.getNormalizedBoneNode("head");
+					if (hips) {
+						const hipsPos = new Vector3();
+						hips.getWorldPosition(hipsPos);
+						// Chest level: hips + ~0.3 m upward
+						const charTarget = new Vector3(hipsPos.x, hipsPos.y + 0.3, hipsPos.z);
 						if (!savedCam) {
 							// First load: slide camera so framing stays consistent
-							const diffY = targetY - controls.target.y;
-							camera.position.y += diffY;
+							const diff = charTarget.clone().sub(controls.target);
+							camera.position.add(diff);
 						}
-						controls.target.y = targetY;
+						controls.target.copy(charTarget);
 						controls.update();
 					}
 				}
