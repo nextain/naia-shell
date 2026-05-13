@@ -104,7 +104,7 @@ export interface WorkspacePanelApi {
 
 // ─── Terminal tab ─────────────────────────────────────────────────────────────
 
-export type AgentType = "claude" | "opencode" | "codex" | "gemini";
+export type AgentType = "claude" | "opencode" | "codex" | "gemini" | "zai";
 
 export interface TerminalTab {
 	pty_id: string;

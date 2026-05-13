@@ -984,6 +984,7 @@ const AGENT_PROCESS_NAMES: &[(&str, &str)] = &[
     ("opencode", "opencode"),
     ("codex", "codex"),
     ("gemini", "gemini"),
+    ("glm", "zai"),
 ];
 
 /// BFS-walk the process tree rooted at `root_pid` using a pre-loaded `System`
