@@ -5,6 +5,7 @@ import { AdkSetupScreen } from "./components/AdkSetupScreen";
 import { AvatarCanvas, getCameraActions } from "./components/AvatarCanvas";
 import { BgmPlayer } from "./components/BgmPlayer";
 import { ChatPanel } from "./components/ChatPanel";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ModeBar } from "./components/ModeBar";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { PanelInstallDialog } from "./components/PanelInstallDialog";
@@ -679,7 +680,9 @@ export function App() {
 										className={`naia-chat-wrapper${chatVisible ? "" : " naia-chat-wrapper--hidden"}`}
 										style={chatVisible ? { height: chatHeight } : undefined}
 									>
-										<ChatPanel />
+										<ErrorBoundary scope="ChatPanel">
+											<ChatPanel />
+										</ErrorBoundary>
 									</div>
 								</div>
 							</div>
@@ -726,20 +729,24 @@ export function App() {
 													key={panel.id}
 													className={`content-panel__slot${activePanel === panel.id ? " content-panel__slot--active" : ""}`}
 												>
-													<PanelCenter naia={getBridgeForPanel(panel.id)} />
+													<ErrorBoundary scope={`Panel(${panel.id})`}>
+														<PanelCenter naia={getBridgeForPanel(panel.id)} />
+													</ErrorBoundary>
 												</div>
 											);
 										})}
 										{activePanel &&
 											!keepAlivePanels.some((p) => p.id === activePanel) && (
 												<div className="content-panel__slot content-panel__slot--active">
-													{CenterComponent ? (
-														<CenterComponent
-															naia={getBridgeForPanel(activePanel)}
-														/>
-													) : (
-														<div className="content-panel__home" />
-													)}
+													<ErrorBoundary scope={`Panel(${activePanel})`}>
+														{CenterComponent ? (
+															<CenterComponent
+																naia={getBridgeForPanel(activePanel)}
+															/>
+														) : (
+															<div className="content-panel__home" />
+														)}
+													</ErrorBoundary>
 												</div>
 											)}
 									</div>
