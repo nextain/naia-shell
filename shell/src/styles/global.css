@@ -689,9 +689,8 @@ body,
 	inset: 0;
 	z-index: 10000;
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: center;
-	padding-top: 52px;
 	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(4px);
 	-webkit-backdrop-filter: blur(4px);

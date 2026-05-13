@@ -29,6 +29,8 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		setActivePanel,
 		panelListVersion,
 		bumpPanelListVersion,
+		pushModal,
+		popModal,
 	} = usePanelStore();
 	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
 	const [ctxMenu, setCtxMenu] = useState<{
@@ -41,6 +43,13 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 	const [addUrlDialog, setAddUrlDialog] = useState(false);
 	const [urlInputDialog, setUrlInputDialog] = useState(false);
 	const [addUrlInput, setAddUrlInput] = useState("");
+
+	// Hide browser native webview while any dialog is open (webview renders above HTML z-index)
+	useEffect(() => {
+		if (!addUrlDialog && !urlInputDialog) return;
+		pushModal();
+		return () => popModal();
+	}, [addUrlDialog, urlInputDialog, pushModal, popModal]);
 
 	// Rebuild panel list whenever panelListVersion changes (runtime install/remove)
 	// Exclude avatar panel (shown as fixed "바탕화면" tab separately)
