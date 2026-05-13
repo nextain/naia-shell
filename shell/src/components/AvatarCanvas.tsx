@@ -7,6 +7,7 @@ import {
 	Clock,
 	DirectionalLight,
 	LoopRepeat,
+	MOUSE,
 	Object3D,
 	PerspectiveCamera,
 	Scene,
@@ -280,7 +281,8 @@ export function AvatarCanvas() {
 		controls.maxDistance = 10;
 		controls.maxPolarAngle = Math.PI * 0.85; // prevent upside-down flip
 		controls.minPolarAngle = 0.1;
-		controls.enableRotate = false; // rotation via joystick only
+		// Left-click = rotate, Right-click = pan
+		controls.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
 
 		_cameraActions.rotate = (dx, dy) => {
 			const offset = camera.position.clone().sub(controls.target);
@@ -466,17 +468,20 @@ export function AvatarCanvas() {
 
 				vrm = result._vrm;
 
-				// Only auto-adjust camera to character on first load (no saved state).
-				// When the user has a saved camera position, keep it as-is.
-				if (!savedCam && vrm.humanoid) {
+				// Always anchor orbit target to character chest — ensures rotation
+				// pivots around the avatar even after resize or saved-camera restore.
+				if (vrm.humanoid) {
 					const head = vrm.humanoid.getNormalizedBoneNode("head");
 					if (head) {
 						const headPos = new Vector3();
 						head.getWorldPosition(headPos);
-						// Aim at chest level so the full body (not just head) is visible.
+						// Aim at chest level so the full body is visible.
 						const targetY = headPos.y - 0.5;
-						const diffY = targetY - controls.target.y;
-						camera.position.y += diffY;
+						if (!savedCam) {
+							// First load: slide camera so framing stays consistent
+							const diffY = targetY - controls.target.y;
+							camera.position.y += diffY;
+						}
 						controls.target.y = targetY;
 						controls.update();
 					}
