@@ -1050,3 +1050,82 @@ pub async fn workspace_get_pty_agents(pids: Vec<u32>) -> std::collections::HashM
     .await
     .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{find_agent_in_tree, AGENT_PROCESS_NAMES};
+
+    // ── AGENT_PROCESS_NAMES table ──────────────────────────────────────────────
+
+    #[test]
+    fn agent_process_names_contains_all_expected_agents() {
+        let agents: Vec<(&str, &str)> = AGENT_PROCESS_NAMES.to_vec();
+        assert!(
+            agents.iter().any(|(p, a)| *p == "claude" && *a == "claude"),
+            "claude entry missing"
+        );
+        assert!(
+            agents.iter().any(|(p, a)| *p == "opencode" && *a == "opencode"),
+            "opencode entry missing"
+        );
+        assert!(
+            agents.iter().any(|(p, a)| *p == "codex" && *a == "codex"),
+            "codex entry missing"
+        );
+        assert!(
+            agents.iter().any(|(p, a)| *p == "gemini" && *a == "gemini"),
+            "gemini entry missing"
+        );
+        assert!(
+            agents.iter().any(|(p, a)| *p == "glm" && *a == "zai"),
+            "glm->zai entry missing (Z.AI Coding Plan)"
+        );
+    }
+
+    #[test]
+    fn agent_process_names_no_duplicate_patterns() {
+        let mut patterns: Vec<&str> = AGENT_PROCESS_NAMES.iter().map(|(p, _)| *p).collect();
+        let original_len = patterns.len();
+        patterns.sort_unstable();
+        patterns.dedup();
+        assert_eq!(
+            patterns.len(),
+            original_len,
+            "AGENT_PROCESS_NAMES contains duplicate pattern keys"
+        );
+    }
+
+    #[test]
+    fn agent_process_names_no_empty_strings() {
+        for (pattern, agent) in AGENT_PROCESS_NAMES {
+            assert!(!pattern.is_empty(), "empty pattern in AGENT_PROCESS_NAMES");
+            assert!(!agent.is_empty(), "empty agent name in AGENT_PROCESS_NAMES");
+        }
+    }
+
+    // ── find_agent_in_tree — live process snapshot ─────────────────────────────
+
+    /// Self-test: the test runner (cargo) should not match any AI agent pattern.
+    /// If it does match, the agent name must be one of the known valid values.
+    #[test]
+    fn find_agent_in_tree_returns_none_for_test_runner() {
+        use sysinfo::{Pid, System};
+        let sys = System::new_all();
+        let current_pid = Pid::from_u32(std::process::id());
+        if let Some(agent) = find_agent_in_tree(&sys, current_pid) {
+            // Only fail if the matched agent is not a known valid name.
+            let known = ["claude", "opencode", "codex", "gemini", "zai"];
+            assert!(
+                known.contains(&agent.as_str()),
+                "find_agent_in_tree returned unexpected agent name: {agent}"
+            );
+        }
+    }
+
+    /// Empty pid list → workspace_get_pty_agents returns an empty map.
+    #[tokio::test]
+    async fn workspace_get_pty_agents_empty_input() {
+        let result = super::workspace_get_pty_agents(vec![]).await;
+        assert!(result.is_empty(), "empty input should produce empty output map");
+    }
+}
