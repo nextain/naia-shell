@@ -104,7 +104,9 @@ export function SkillLauncher({
 	async function loadSkills() {
 		try {
 			const result = await invoke<SkillEntry[]>("workspace_discover_skills");
-			setSkills(result);
+			// Rust handler always returns Vec<SkillEntry>; defensive coercion only
+			// matters under partial e2e mocks where unhandled cmds return undefined.
+			setSkills(Array.isArray(result) ? result : []);
 		} catch (e) {
 			Logger.warn("SkillLauncher", "Failed to discover skills", {
 				error: String(e),

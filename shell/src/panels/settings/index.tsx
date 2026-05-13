@@ -15,5 +15,6 @@ panelRegistry.register({
 	names: { ko: "설정", en: "Settings" },
 	icon: "⚙️",
 	builtIn: true,
+	keepAlive: false,
 	center: SettingsCenterPanel,
 });
