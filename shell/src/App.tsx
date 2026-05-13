@@ -627,7 +627,10 @@ export function App() {
 							>
 								{showOnboarding ? (
 									<OnboardingWizard
-										onComplete={() => setShowOnboarding(false)}
+										onComplete={() => {
+											Logger.info("App", "Onboarding complete — mounting main app panels");
+											setShowOnboarding(false);
+										}}
 									/>
 								) : (
 									<div

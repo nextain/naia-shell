@@ -6806,9 +6806,28 @@ body.resizing-row {
 }
 
 .workspace-panel__tab-label {
-	max-width: 120px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	max-width: 150px;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.workspace-panel__tab-issue {
+	font-size: 10px;
+	font-weight: 600;
+	color: var(--accent, #7ca0ff);
+	background: rgba(124, 160, 255, 0.12);
+	border-radius: 3px;
+	padding: 1px 4px;
+	flex-shrink: 0;
+}
+
+.workspace-panel__tab-agent {
+	font-size: 10px;
+	color: var(--text-secondary, #888);
+	flex-shrink: 0;
 }
 
 .workspace-panel__tab-close {
@@ -6827,6 +6846,88 @@ body.resizing-row {
 .workspace-panel__tab-close:hover {
 	background: rgba(255, 255, 255, 0.15);
 	color: var(--text-primary, #e0e0e0);
+}
+
+/* Exited terminal tab */
+.workspace-panel__tab--exited {
+	opacity: 0.55;
+}
+.workspace-panel__tab-exited {
+	font-size: 0.65rem;
+	color: var(--text-muted, #888);
+	margin-left: 4px;
+}
+.workspace-panel__tab-restart {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border: none;
+	border-radius: 3px;
+	background: transparent;
+	color: var(--accent, #7c9cff);
+	cursor: pointer;
+	font-size: 0.8rem;
+	padding: 0;
+	margin-left: 2px;
+	flex-shrink: 0;
+}
+.workspace-panel__tab-restart:hover {
+	background: rgba(124, 156, 255, 0.2);
+}
+
+/* Dead terminal overlay */
+.workspace-panel__terminal-dead {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	background: var(--bg-primary, #1e1e1e);
+}
+.workspace-panel__terminal-dead-msg {
+	font-size: 0.8rem;
+	color: var(--text-muted, #888);
+}
+.workspace-panel__terminal-dead-restart {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 16px;
+	border: 1px solid var(--accent, #7c9cff);
+	border-radius: 4px;
+	background: transparent;
+	color: var(--accent, #7c9cff);
+	cursor: pointer;
+	font-size: 0.85rem;
+}
+.workspace-panel__terminal-dead-restart:hover {
+	background: rgba(124, 156, 255, 0.15);
+}
+
+/* Phase 6: Grid resize handle (between 2 cells) */
+.workspace-panel__grid-resize-handle {
+	width: 6px;
+	cursor: col-resize;
+	background: var(--border-color, #333);
+	flex-shrink: 0;
+	transition: background 0.15s;
+	z-index: 1;
+}
+.workspace-panel__grid-resize-handle:hover,
+.workspace-panel__grid-resize-handle:active {
+	background: var(--accent, #7ca0ff);
+}
+body.resizing-col * {
+	cursor: col-resize !important;
+	user-select: none !important;
+}
+/* Resizable 3-col layout overrides grid-template-columns via inline style */
+.workspace-panel__terminal-area--grid.workspace-panel__terminal-area--resizable {
+	display: grid;
 }
 
 /* Content area: editor + terminals stacked (keepAlive) */
@@ -6861,6 +6962,95 @@ body.resizing-row {
 	text-underline-offset: 2px;
 }
 
+/* Terminal grid - activated when 2+ terminals are open */
+.workspace-panel__terminal-area {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.workspace-panel__terminal-area--grid {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-auto-rows: minmax(0, 1fr);
+	gap: 2px;
+	background: var(--border-color, #333);
+	overflow: auto;
+}
+
+/* Tab mode cell: stacked absolute, covers full area */
+.workspace-panel__terminal-cell {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--bg-base, #1a1a1a);
+}
+
+/* Grid mode cell: flow as grid item */
+.workspace-panel__terminal-area--grid .workspace-panel__terminal-cell {
+	position: relative;
+	inset: auto;
+	min-height: 0;
+}
+
+/* Focused cell border in grid mode */
+.workspace-panel__terminal-area--grid .workspace-panel__terminal-cell--focused {
+	outline: 2px solid var(--accent, #7ca0ff);
+	outline-offset: -2px;
+}
+
+/* Odd total: last cell spans both columns (only when NOT in resizable 3-col layout) */
+.workspace-panel__terminal-area--grid:not(.workspace-panel__terminal-area--resizable) .workspace-panel__terminal-cell:last-child:nth-child(odd) {
+	grid-column: 1 / -1;
+}
+
+/* Cell header: hidden in tab mode, flex in grid mode */
+.workspace-panel__terminal-cell-header {
+	display: none;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 8px;
+	font-size: 11px;
+	background: var(--surface, #242424);
+	border-bottom: 1px solid var(--border-color, #333);
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.workspace-panel__terminal-area--grid .workspace-panel__terminal-cell-header {
+	display: flex;
+}
+
+.workspace-panel__terminal-cell-header:hover {
+	background: var(--surface-hover, #2e2e2e);
+}
+
+.workspace-panel__terminal-cell-dir {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--text-secondary, #888);
+}
+
+.workspace-panel__terminal-area--grid .workspace-panel__terminal-cell--focused .workspace-panel__terminal-cell-dir {
+	color: var(--text-primary, #e0e0e0);
+}
+
+/* Cell body: relative container so Terminal inset:0 fills it */
+.workspace-panel__terminal-cell-body {
+	position: relative;
+	flex: 1;
+	overflow: hidden;
+	min-height: 0;
+}
+
 /* Right: Session sidebar (vertical card list) */
 .workspace-panel__sessions {
 	min-width: 120px;
@@ -6869,6 +7059,198 @@ body.resizing-row {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+}
+
+/* ─── IssuesPanel ──────────────────────────────────────────────────────────── */
+
+.issues-panel {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	font-size: 12px;
+}
+
+.issues-panel__section-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--border-color, #333);
+	flex-shrink: 0;
+	background: transparent;
+	width: 100%;
+	text-align: left;
+	cursor: default;
+}
+
+.issues-panel__section-header--toggle {
+	cursor: pointer;
+	border-top: 1px solid var(--border-color, #333);
+	margin-top: 4px;
+}
+
+.issues-panel__section-header--toggle:hover {
+	background: rgba(255, 255, 255, 0.04);
+}
+
+.issues-panel__section-title {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-secondary, #888);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	user-select: none;
+}
+
+.issues-panel__refresh {
+	font-size: 14px;
+	color: var(--text-secondary, #888);
+	line-height: 1;
+	padding: 2px 4px;
+	border-radius: 3px;
+}
+
+.issues-panel__refresh:hover {
+	color: var(--text-primary, #e0e0e0);
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.issues-panel__list {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	min-height: 0;
+}
+
+.issues-panel__empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 20px 12px;
+	color: var(--text-secondary, #888);
+	font-size: 12px;
+	text-align: center;
+}
+
+.issues-panel__empty--warn {
+	color: var(--color-warning, #f0a500);
+}
+
+.issues-panel__empty-title {
+	font-weight: 600;
+	font-size: 12px;
+}
+
+.issues-panel__empty-desc {
+	font-size: 11px;
+	opacity: 0.8;
+	line-height: 1.5;
+}
+
+.issues-panel__empty-desc code {
+	font-family: monospace;
+	background: rgba(255, 255, 255, 0.1);
+	padding: 1px 4px;
+	border-radius: 3px;
+}
+
+.issues-panel__retry {
+	font-size: 11px;
+	padding: 4px 10px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--text-primary, #e0e0e0);
+}
+
+.issues-panel__retry:hover {
+	background: rgba(255, 255, 255, 0.14);
+}
+
+.issues-panel__spinner {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--border-color, #333);
+	border-top-color: var(--accent, #7ca0ff);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+
+.issues-panel__card {
+	display: block;
+	width: 100%;
+	text-align: left;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--border-color, #333);
+	cursor: pointer;
+	transition: background 0.1s;
+}
+
+.issues-panel__card:hover {
+	background: rgba(255, 255, 255, 0.05);
+}
+
+.issues-panel__card-top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 3px;
+}
+
+.issues-panel__card-number {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--accent, #7ca0ff);
+}
+
+.issues-panel__card-age {
+	font-size: 10px;
+	color: var(--text-secondary, #888);
+}
+
+.issues-panel__card-title {
+	font-size: 12px;
+	color: var(--text-primary, #e0e0e0);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	line-height: 1.3;
+	margin-bottom: 4px;
+}
+
+.issues-panel__card-labels {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+}
+
+.issues-panel__card-label {
+	font-size: 10px;
+	padding: 1px 5px;
+	border-radius: 10px;
+	border: 1px solid;
+	opacity: 0.8;
+}
+
+.issues-panel__sessions {
+	overflow-y: auto;
+	flex-shrink: 0;
+	max-height: 200px;
+}
+
+.issues-panel__sessions-loading,
+.issues-panel__sessions-empty {
+	padding: 10px 12px;
+	font-size: 11px;
+	color: var(--text-secondary, #888);
+	text-align: center;
 }
 
 /* ─── FileTree ─────────────────────────────────────────────────────────────── */

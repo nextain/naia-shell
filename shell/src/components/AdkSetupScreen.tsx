@@ -57,12 +57,18 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	const [mode, setMode] = useState<Mode>("select");
 	const [path, setPath] = useState("");
 	const [defaultPath, setDefaultPath] = useState("~/naia-adk");
+	// New-start always uses ~/naia-adk — never auto-detected existing paths.
+	const [newDefaultPath, setNewDefaultPath] = useState("~/naia-adk");
 	const [error, setError] = useState<string | null>(null);
 	const [loginWaiting, setLoginWaiting] = useState(false);
 	const [loginTimeout, setLoginTimeout] = useState(false);
 
 	useEffect(() => {
 		getDefaultAdkPath().then(setDefaultPath);
+		homeDir()
+			.then((home) => join(home, "naia-adk"))
+			.then(setNewDefaultPath)
+			.catch(() => {});
 	}, []);
 
 	// Listen for Naia auth callback (login mode)
@@ -114,7 +120,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 
 	async function handleNewStart() {
 		try {
-			const adkPath = path.trim() || defaultPath;
+			const adkPath = path.trim() || newDefaultPath;
 			// Check if naia-settings already exists
 			const exists = await invoke<boolean>("check_naia_settings", { adkPath });
 			if (exists) {
@@ -135,7 +141,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 
 	async function handleNewUseExisting() {
 		try {
-			const adkPath = path.trim() || defaultPath;
+			const adkPath = path.trim() || newDefaultPath;
 			await invoke("init_naia_settings", { adkPath });
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
@@ -160,7 +166,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 
 	async function handleNewRecreate() {
 		try {
-			const adkPath = path.trim() || defaultPath;
+			const adkPath = path.trim() || newDefaultPath;
 			await invoke("delete_naia_settings", { adkPath });
 			await invoke("init_naia_settings", { adkPath });
 			await copyBundledAssets(adkPath);
@@ -321,9 +327,9 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						<input
 							type="text"
 							className="adk-setup-input"
-							value={path || defaultPath}
+							value={path || newDefaultPath}
 							onChange={(e) => setPath(e.target.value)}
-							placeholder={defaultPath}
+							placeholder={newDefaultPath}
 						/>
 						<button
 							type="button"

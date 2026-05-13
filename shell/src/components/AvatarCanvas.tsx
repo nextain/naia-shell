@@ -357,11 +357,15 @@ export function AvatarCanvas() {
 					try {
 						stage = "read-local-binary";
 						setLoadStage(stage);
-						const bytes = await invoke<number[]>("read_local_binary", {
+						// Rust returns base64 to avoid JSON number-array OOM (14-26 MB VRM → ~200 MB JS heap).
+						const b64 = await invoke<string>("read_local_binary", {
 							path: normalizedModelPath,
 							allowedBase: getAdkPath() ?? "",
 						});
-						localVrmBytes = new Uint8Array(bytes);
+						const raw = atob(b64);
+						const buf = new Uint8Array(raw.length);
+						for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+						localVrmBytes = buf;
 						const slash = Math.max(
 							normalizedModelPath.lastIndexOf("/"),
 							normalizedModelPath.lastIndexOf("\\"),

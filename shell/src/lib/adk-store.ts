@@ -76,11 +76,15 @@ export async function toLocalBlobUrl(filePath: string): Promise<string> {
 	}
 	const mimeType = LOCAL_MIME_TYPES[ext];
 	try {
-		const bytes = await invoke<number[]>("read_local_binary", {
+		// Rust returns base64 to avoid JSON number-array OOM (14 MB file → ~200 MB JS heap).
+		const b64 = await invoke<string>("read_local_binary", {
 			path: filePath,
 			allowedBase: getAdkPath() ?? "",
 		});
-		const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
+		const raw = atob(b64);
+		const bytes = new Uint8Array(raw.length);
+		for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+		const blob = new Blob([bytes], { type: mimeType });
 		return URL.createObjectURL(blob);
 	} catch {
 		return convertFileSrc(filePath);

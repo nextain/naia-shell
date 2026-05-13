@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAdkPath, setAdkPath } from "../../lib/adk-store";
 import { loadConfig, saveConfig } from "../../lib/config";
 import { Logger } from "../../lib/logger";
@@ -10,8 +10,10 @@ import { usePanelStore } from "../../stores/panel";
 import { Editor, type EditorHandle } from "./Editor";
 import { FileTree } from "./FileTree";
 import { QuickOpen } from "./QuickOpen";
+import type { GithubIssue } from "./IssuesPanel";
+import { parseIssueIdFromBranch } from "../../lib/issue-branch";
+import { IssuesPanel } from "./IssuesPanel";
 import type { SessionInfo } from "./SessionCard";
-import { SessionDashboard } from "./SessionDashboard";
 import { SkillLauncher } from "./SkillLauncher";
 import { Terminal } from "./Terminal";
 import { ACTIVE_THRESHOLD_SECONDS, WORKSPACE_ROOT } from "./constants";
@@ -102,10 +104,18 @@ export interface WorkspacePanelApi {
 
 // ─── Terminal tab ─────────────────────────────────────────────────────────────
 
-interface TerminalTab {
+export type AgentType = "claude" | "opencode" | "codex" | "gemini";
+
+export interface TerminalTab {
 	pty_id: string;
 	dir: string;
 	pid: number;
+	/** GitHub issue number linked to this terminal (auto-detected from git branch) */
+	issueId?: number;
+	/** AI agent currently running in this terminal (auto-detected from process) */
+	agent?: AgentType;
+	/** True when the shell process has exited; tab stays visible for restart */
+	exited?: boolean;
 }
 
 // ─── Re-export for FileTree ───────────────────────────────────────────────────
@@ -134,6 +144,28 @@ function saveClassifiedDirs(dirs: ClassifiedDir[]): void {
 
 const LAST_FILE_KEY = "workspace-last-file";
 const REPO_RECENT_KEY = "workspace-repo-recent";
+const TERMINAL_SESSION_KEY = "workspace-terminal-session-v1";
+
+interface TerminalSession {
+	dirs: string[];
+	activeDir?: string;
+}
+
+function loadTerminalSession(): TerminalSession | null {
+	try {
+		const raw = localStorage.getItem(TERMINAL_SESSION_KEY);
+		return raw ? (JSON.parse(raw) as TerminalSession) : null;
+	} catch {
+		return null;
+	}
+}
+
+function saveTerminalSession(dirs: string[], activeDir?: string): void {
+	try {
+		localStorage.setItem(TERMINAL_SESSION_KEY, JSON.stringify({ dirs, activeDir }));
+	} catch {}
+}
+
 
 function loadLastFile(): string {
 	try {
@@ -235,6 +267,11 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 	const [sessionsWidth, setSessionsWidth] = useState(200);
 	const sessionsWidthRef = useRef(200);
 	sessionsWidthRef.current = sessionsWidth;
+	/** Grid column split ratio (left fraction). Only used for 2-terminal grid. */
+	const [gridSplit, setGridSplit] = useState(0.5);
+	const gridSplitRef = useRef(0.5);
+	gridSplitRef.current = gridSplit;
+	const terminalAreaRef = useRef<HTMLDivElement | null>(null);
 
 	const onTreeResizeStart = useCallback((e: React.PointerEvent) => {
 		e.preventDefault();
@@ -248,9 +285,11 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			document.body.classList.remove("resizing-col");
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
 		};
 		window.addEventListener("pointermove", onMove);
 		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
 	}, []);
 
 	const onSessionsResizeStart = useCallback((e: React.PointerEvent) => {
@@ -268,9 +307,36 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			document.body.classList.remove("resizing-col");
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
 		};
 		window.addEventListener("pointermove", onMove);
 		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
+	}, []);
+
+	const onGridResizeStart = useCallback((e: React.PointerEvent) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const startX = e.clientX;
+		const startSplit = gridSplitRef.current;
+		const container = terminalAreaRef.current;
+		if (!container) return;
+		const containerWidth = container.offsetWidth;
+		document.body.classList.add("resizing-col");
+		const onMove = (ev: PointerEvent) => {
+			if (containerWidth === 0) return;
+			const delta = ev.clientX - startX;
+			setGridSplit(Math.max(0.2, Math.min(0.8, startSplit + delta / containerWidth)));
+		};
+		const onUp = () => {
+			document.body.classList.remove("resizing-col");
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
 	}, []);
 
 	// Gates SessionDashboard mount until workspace_set_root has completed (or failed).
@@ -285,10 +351,15 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 
 	// ── Auto-detect naia-adk root on mount ─────────────────────────────────
 	useEffect(() => {
-		if (activeWorkspaceRoot) return;
+		if (activeWorkspaceRoot) {
+			Logger.info("WorkspaceCenterPanel", "Mount: workspace root already set", { root: activeWorkspaceRoot });
+			return;
+		}
+		Logger.info("WorkspaceCenterPanel", "Mount: no workspace root — starting auto-detect");
 		let cancelled = false;
 		(async () => {
 			const detected = await detectAdkRoot();
+			Logger.info("WorkspaceCenterPanel", "Auto-detect result", { detected: detected ?? "null" });
 			if (cancelled || !detected) return;
 			const cfg = loadConfig();
 			if (cfg) saveConfig({ ...cfg, workspaceRoot: detected });
@@ -306,8 +377,18 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			setWorkspaceReady(true);
 			return;
 		}
+		Logger.info("WorkspaceCenterPanel", "workspace_set_root start", { root: activeWorkspaceRoot });
+		const _t0 = Date.now();
 		invoke<string>("workspace_set_root", { root: activeWorkspaceRoot })
-			.then((canonical) => setResolvedRoot(canonical))
+			.then((canonical) => {
+				Logger.info("WorkspaceCenterPanel", "workspace_set_root ok", { canonical, ms: Date.now() - _t0 });
+				setResolvedRoot(canonical);
+				// Restart file watcher on new root (watcher may have started before root was set)
+				Logger.info("WorkspaceCenterPanel", "workspace_start_watch start");
+				invoke("workspace_start_watch")
+					.then(() => Logger.info("WorkspaceCenterPanel", "workspace_start_watch ok", { ms: Date.now() - _t0 }))
+					.catch((e: unknown) => Logger.warn("WorkspaceCenterPanel", "workspace_start_watch failed", { error: String(e) }));
+			})
 			.catch((e) => {
 				Logger.warn("WorkspaceCenterPanel", "workspace_set_root failed", {
 					error: String(e),
@@ -329,6 +410,69 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		const last = loadLastFile();
 		if (last) openFile(last);
 	}, [workspaceReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Restore terminal session after workspace is ready
+	const sessionRestoredRef = useRef(false);
+	useEffect(() => {
+		if (!workspaceReady || sessionRestoredRef.current) return;
+		sessionRestoredRef.current = true;
+		const session = loadTerminalSession();
+		if (!session || !Array.isArray(session.dirs) || session.dirs.length === 0) return;
+		let firstPtyId: string | undefined;
+		let activePtyId: string | undefined;
+		let cancelled = false;
+		(async () => {
+			for (const dir of session.dirs) {
+				if (cancelled) break;
+				if (openDirsRef.current.has(dir)) continue;
+				openDirsRef.current.add(dir);
+				try {
+					const result = await invoke<{ pty_id: string; pid: number }>(
+						"pty_create",
+						{
+							dir,
+							command: navigator.userAgent.includes("Windows") ? "powershell" : "bash",
+							rows: 24,
+							cols: 80,
+						},
+					);
+					if (cancelled) break;
+					let issueId: number | undefined;
+					try {
+						const gitInfo = await invoke<{ branch: string | null }>(
+							"workspace_get_git_info",
+							{ path: dir },
+						);
+						issueId = parseIssueIdFromBranch(gitInfo.branch ?? "");
+					} catch { /* non-critical */ }
+					if (!firstPtyId) firstPtyId = result.pty_id;
+					if (dir === session.activeDir) activePtyId = result.pty_id;
+					setTerminals((prev) => [
+						...prev,
+						{ pty_id: result.pty_id, dir, pid: result.pid, issueId },
+					]);
+				} catch {
+					openDirsRef.current.delete(dir);
+				}
+			}
+			if (!cancelled) {
+				if (activePtyId) setActiveTab(activePtyId);
+				else if (firstPtyId) setActiveTab(firstPtyId);
+			}
+		})();
+		return () => { cancelled = true; };
+	}, [workspaceReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// Persist terminal session whenever terminals change
+	useEffect(() => {
+		// Guard: don't overwrite saved session before restore runs
+		if (!sessionRestoredRef.current) return;
+		const activeTerminal = terminals.find((t) => t.pty_id === activeTab);
+		saveTerminalSession(
+			terminals.map((t) => t.dir),
+			activeTerminal?.dir,
+		);
+	}, [terminals, activeTab]);
 
 	// ── Persist open file path + per-repo tracking ───────────────────────
 	useEffect(() => {
@@ -423,8 +567,11 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 	useEffect(() => {
 		if (!classifyPending) return;
 		// Run classification and push recommendation via Naia context
+		Logger.info("WorkspaceCenterPanel", "workspace_classify_dirs start (first-launch)");
+		const _tc0 = Date.now();
 		invoke<ClassifiedDir[]>("workspace_classify_dirs")
 			.then((dirs) => {
+				Logger.info("WorkspaceCenterPanel", "workspace_classify_dirs ok", { count: dirs.length, ms: Date.now() - _tc0 });
 				naia.pushContext({
 					type: "workspace",
 					data: {
@@ -502,6 +649,38 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 							: null,
 					})),
 				},
+			});
+		},
+		[naia],
+	);
+
+	// ── Issue click → push context to Naia ───────────────────────────────
+	const handleIssueClick = useCallback(
+		(issue: GithubIssue) => {
+			// If a terminal is already open for this issue, focus it
+			const match = terminalsRef.current.find((t) => t.issueId === issue.number);
+			if (match) {
+				setActiveTab(match.pty_id);
+				usePanelStore.getState().setActivePanel("workspace");
+				Logger.info("WorkspaceCenterPanel", "Issue click -> terminal focused", {
+					number: issue.number,
+					pty_id: match.pty_id,
+				});
+			}
+			// Always push context to Naia chat regardless
+			naia.pushContext({
+				type: "workspace",
+				data: {
+					selectedIssue: {
+						number: issue.number,
+						title: issue.title,
+						labels: issue.labels.map((l) => l.name),
+						message: `이슈 #${issue.number} "${issue.title}"이 선택되었습니다. 이 이슈에 대해 도움이 필요하면 말씀해 주세요.`,
+					},
+				},
+			});
+			Logger.info("WorkspaceCenterPanel", "Issue selected", {
+				number: issue.number,
 			});
 		},
 		[naia],
@@ -908,18 +1087,56 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		// render pass, so there is no intermediate frame where terminals is empty
 		// but activeTab still holds the old pty_id.
 		setTerminals((prev) => prev.filter((t) => t.pty_id !== pty_id));
-		setActiveTab((prev) => (prev === pty_id ? "editor" : prev));
+		setActiveTab((prev) => {
+			if (prev !== pty_id) return prev;
+			const remaining = terminalsRef.current.filter((t) => t.pty_id !== pty_id);
+			return remaining.length > 0 ? remaining[0].pty_id : "editor";
+		});
 	}, []);
 
 	// ── Terminal: exit (process-initiated) ───────────────────────────────
 	const handleTerminalExit = useCallback((pty_id: string) => {
-		// Same terminalsRef timing guarantee as handleCloseTerminal above.
-		const tab = terminalsRef.current.find((t) => t.pty_id === pty_id);
-		if (tab) openDirsRef.current.delete(tab.dir);
-		setTerminals((prev) => prev.filter((t) => t.pty_id !== pty_id));
-		setActiveTab((prev) => (prev === pty_id ? "editor" : prev));
+		// Mark as exited rather than removing: keeps the tab visible for restart.
+		// openDirsRef is intentionally NOT cleared here; it blocks duplicate opens
+		// while the dead tab is showing. Cleared by handleCloseTerminal or handleRestartTerminal.
+		setTerminals((prev) => prev.map((t) =>
+			t.pty_id === pty_id ? { ...t, exited: true } : t,
+		));
 	}, []);
 
+	const handleRestartTerminal = useCallback(async (pty_id: string) => {
+		const tab = terminalsRef.current.find((t) => t.pty_id === pty_id);
+		if (!tab) return;
+		const { dir } = tab;
+		try {
+			const result = await invoke<{ pty_id: string; pid: number }>(
+				"pty_create",
+				{
+					dir,
+					command: navigator.userAgent.includes("Windows") ? "powershell" : "bash",
+					rows: 24,
+					cols: 80,
+				},
+			);
+			let issueId: number | undefined;
+			try {
+				const gitInfo = await invoke<{ branch: string | null }>(
+					"workspace_get_git_info",
+					{ path: dir },
+				);
+				issueId = parseIssueIdFromBranch(gitInfo.branch ?? "");
+			} catch { /* non-critical */ }
+			// Replace in-place: new pty_id triggers Terminal remount (fresh xterm)
+			setTerminals((prev) => prev.map((t) =>
+				t.pty_id === pty_id
+					? { ...t, pty_id: result.pty_id, pid: result.pid, issueId, exited: undefined, agent: undefined }
+					: t,
+			));
+			setActiveTab((prev) => prev === pty_id ? result.pty_id : prev);
+		} catch (e) {
+			Logger.warn("WorkspaceCenterPanel", "restart terminal failed", { error: String(e) });
+		}
+	}, []);
 	// ── Naia tool: skill_workspace_new_session ────────────────────────────
 	useEffect(() => {
 		const unsub = naia.onToolCall(
@@ -960,12 +1177,23 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 							cols: 80,
 						},
 					);
+					// Resolve issueId from git branch (best-effort, non-blocking)
+					let issueId: number | undefined;
+					try {
+						const gitInfo = await invoke<{ branch: string | null }>(
+							"workspace_get_git_info",
+							{ path: dir },
+						);
+						issueId = parseIssueIdFromBranch(gitInfo.branch ?? "");
+					} catch {
+						// Non-critical — continue without issueId
+					}
 					// React 18 batching: setTerminals + setActiveTab committed in one render
 					// — no intermediate frame where activeTab === pty_id but terminals is
 					// still empty (same guarantee as in handleCloseTerminal).
 					setTerminals((prev) => [
 						...prev,
-						{ pty_id: result.pty_id, dir, pid: result.pid },
+						{ pty_id: result.pty_id, dir, pid: result.pid, issueId },
 					]);
 					setActiveTab(result.pty_id);
 					usePanelStore.getState().setActivePanel("workspace");
@@ -978,6 +1206,68 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		);
 		return unsub;
 	}, [naia]);
+
+	// ── Poll git branch for open terminals → update issueId ──────────────
+	// Runs every 30s so switching branches updates the badge automatically.
+	useEffect(() => {
+		const poll = async () => {
+			const tabs = terminalsRef.current;
+			if (tabs.length === 0) return;
+			for (const tab of tabs) {
+				try {
+					const gitInfo = await invoke<{ branch: string | null }>(
+						"workspace_get_git_info",
+						{ path: tab.dir },
+					);
+					const newIssueId = parseIssueIdFromBranch(gitInfo.branch ?? "");
+					if (newIssueId !== tab.issueId) {
+						setTerminals((prev) =>
+							prev.map((t) =>
+								t.pty_id === tab.pty_id ? { ...t, issueId: newIssueId } : t,
+							),
+						);
+					}
+				} catch {
+					// Non-critical — skip this terminal
+				}
+			}
+		};
+		const id = setInterval(() => void poll(), 30000);
+		return () => clearInterval(id);
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// ── Poll process tree for open terminals → update agent badge ───────
+	// Single batch call per tick so System::new() runs once regardless of
+	// how many terminals are open. Runs every 5s.
+	useEffect(() => {
+		const VALID_AGENTS = new Set<string>([
+			"claude", "opencode", "codex", "gemini",
+		]);
+		const poll = async () => {
+			const tabs = terminalsRef.current;
+			if (tabs.length === 0) return;
+			try {
+				const results = await invoke<Record<number, string>>(
+					"workspace_get_pty_agents",
+					{ pids: tabs.map((t) => t.pid) },
+				);
+				setTerminals((prev) =>
+					prev.map((t) => {
+						const raw = results[t.pid];
+						const next: AgentType | undefined =
+							raw && VALID_AGENTS.has(raw)
+								? (raw as AgentType)
+								: undefined;
+						return next !== t.agent ? { ...t, agent: next } : t;
+					}),
+				);
+			} catch {
+				// Non-critical — sysinfo unavailable on this platform
+			}
+		};
+		const id = setInterval(() => void poll(), 5000);
+		return () => clearInterval(id);
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// ── Naia tool: skill_workspace_focus_session ──────────────────────────
 	useEffect(() => {
@@ -1102,6 +1392,15 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		);
 	}
 
+	// Grid mode: show all terminals side-by-side when 2+ are open
+	const isGridMode = terminals.length >= 2 && activeTab !== "editor";
+	// Resize handle only for exactly 2 terminals (single row, single handle)
+	const canGridResize = isGridMode && terminals.length === 2;
+	const activePtySet = useMemo(
+		() => new Set(isGridMode ? terminals.map((t) => t.pty_id) : [activeTab]),
+		[isGridMode, activeTab, terminals],
+	);
+
 	return (
 		<div className="workspace-panel">
 			{/* Initial loading overlay — hides blank flash before first session fetch */}
@@ -1173,13 +1472,13 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 						>
 							에디터
 						</div>
-						{terminals.map((t) => (
+						{!isGridMode && terminals.map((t) => (
 							<div
 								key={t.pty_id}
 								role="tab"
 								tabIndex={0}
 								aria-selected={activeTab === t.pty_id}
-								className={`workspace-panel__tab${activeTab === t.pty_id ? " workspace-panel__tab--active" : ""}`}
+								className={`workspace-panel__tab${activeTab === t.pty_id ? " workspace-panel__tab--active" : ""}${t.exited ? " workspace-panel__tab--exited" : ""}`}
 								onClick={() => setActiveTab(t.pty_id)}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" || e.key === " ")
@@ -1187,8 +1486,22 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 								}}
 							>
 								<span className="workspace-panel__tab-label">
+									{t.issueId !== undefined && (
+										<span className="workspace-panel__tab-issue">#{t.issueId}</span>
+									)}
 									{t.dir.split(/[/\\]/).pop() ?? t.dir}
+									{t.agent !== undefined && (
+										<span className="workspace-panel__tab-agent">{t.agent}</span>
+									)}
+									{t.exited && <span className="workspace-panel__tab-exited">멈춤</span>}
 								</span>
+								{t.exited && (
+									<button type="button" className="workspace-panel__tab-restart"
+										aria-label={`터미널 재시작: ${t.dir}`}
+										onClick={(e) => { e.stopPropagation(); void handleRestartTerminal(t.pty_id); }}>
+										⟳
+									</button>
+								)}
 								<button
 									type="button"
 									aria-label={`터미널 닫기: ${t.dir}`}
@@ -1220,16 +1533,88 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 							readOnly={editorReadOnly}
 						/>
 					</div>
-					{terminals.map((t) => (
-						<Terminal
-							key={t.pty_id}
-							pty_id={t.pty_id}
-							active={activeTab === t.pty_id}
-							workingDir={t.dir}
-							onExit={handleTerminalExit}
-							onFileSelect={handleFileSelect}
-						/>
-					))}
+					{/* Terminal area: cell wrappers keep PTY mounted across grid↔tab transitions */}
+					<div
+						ref={terminalAreaRef}
+						className={`workspace-panel__terminal-area${
+							isGridMode ? " workspace-panel__terminal-area--grid" : ""
+						}${canGridResize ? " workspace-panel__terminal-area--resizable" : ""}`}
+						style={{
+							...(activeTab === "editor" ? { opacity: 0, pointerEvents: "none" } : {}),
+							...(canGridResize ? { gridTemplateColumns: `${gridSplit}fr 6px ${1 - gridSplit}fr` } : {}),
+						}}
+					>
+						{terminals.map((t, i) => (
+							<Fragment key={t.pty_id}>
+								{canGridResize && i === 1 && (
+									<div
+										className="workspace-panel__grid-resize-handle"
+										onPointerDown={onGridResizeStart}
+									/>
+								)}
+								<div
+									// key is on Fragment above
+									className={`workspace-panel__terminal-cell${
+									activeTab === t.pty_id
+										? " workspace-panel__terminal-cell--focused"
+										: ""
+								}`}
+							>
+								{/* Cell header — hidden in tab mode, visible in grid mode via CSS */}
+								<div className="workspace-panel__terminal-cell-header" onClick={() => setActiveTab(t.pty_id)}>
+									{t.issueId !== undefined && (
+										<span className="workspace-panel__tab-issue">#{t.issueId}</span>
+									)}
+									<span className="workspace-panel__terminal-cell-dir">
+										{t.dir.split(/[/\\]/).pop() ?? t.dir}
+									</span>
+									{t.agent !== undefined && (
+										<span className="workspace-panel__tab-agent">{t.agent}</span>
+									)}
+									{t.exited && <span className="workspace-panel__tab-exited">멈춤</span>}
+									{t.exited && (
+										<button type="button" className="workspace-panel__tab-restart"
+											aria-label={`터미널 재시작: ${t.dir}`}
+											onClick={(e) => { e.stopPropagation(); void handleRestartTerminal(t.pty_id); }}>
+											⟳
+										</button>
+									)}
+									<button
+										type="button"
+										className="workspace-panel__tab-close"
+										aria-label={`터미널 닫기: ${t.dir}`}
+										onClick={(e) => {
+											e.stopPropagation();
+											handleCloseTerminal(t.pty_id);
+										}}
+									>
+										×
+									</button>
+								</div>
+								{/* Terminal body — relative so Terminal's absolute inset fills the cell */}
+								<div className="workspace-panel__terminal-cell-body">
+									{t.exited ? (
+										<div className="workspace-panel__terminal-dead">
+											<span className="workspace-panel__terminal-dead-msg">프로세스 종료</span>
+											<button type="button" className="workspace-panel__terminal-dead-restart"
+												onClick={() => void handleRestartTerminal(t.pty_id)}>
+												⟳ 재시작
+											</button>
+										</div>
+									) : (
+										<Terminal
+											pty_id={t.pty_id}
+											active={activePtySet.has(t.pty_id)}
+											workingDir={t.dir}
+											onExit={handleTerminalExit}
+											onFileSelect={handleFileSelect}
+										/>
+									)}
+								</div>
+							</div>
+							</Fragment>
+						))}
+					</div>
 				</div>
 			</div>
 			<div
@@ -1243,11 +1628,12 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 				style={{ width: `${sessionsWidth}px` }}
 			>
 				{workspaceReady && (
-					<SessionDashboard
+					<IssuesPanel
 						onSessionClick={handleSessionClick}
 						onSessionsUpdate={handleSessionsUpdate}
 						highlightedDir={highlightedSessionDir ?? undefined}
 						workspaceRoot={resolvedRoot}
+						onIssueClick={handleIssueClick}
 					/>
 				)}
 			</div>

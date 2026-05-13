@@ -81,8 +81,9 @@ interface NaiaAuthPayload {
 interface OnboardingSnapshot {
 	agentName: string;
 	userName: string;
-	speechStyle: "casual" | "formal" | "honorific";
+	speechStyle: "casual" | "formal";
 	honorific: string;
+	extraPersona: string;
 	selectedVrm: string;
 	backgrounds: BgOption[];
 	selectedBg: string;
@@ -119,10 +120,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [step, setStep] = useState<Step>("agentName");
 	const [agentName, setAgentName] = useState("");
 	const [userName, setUserName] = useState("");
-	const [speechStyle, setSpeechStyle] = useState<
-		"casual" | "formal" | "honorific"
-	>("casual");
+	const [speechStyle, setSpeechStyle] = useState<"casual" | "formal">("casual");
 	const [honorific, setHonorific] = useState("");
+	const [extraPersona, setExtraPersona] = useState("");
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
 	const [selectedVrm, setSelectedVrm] = useState(DEFAULT_AVATAR_MODEL);
 	const [backgrounds, setBackgrounds] = useState<BgOption[]>([]);
@@ -145,6 +145,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			userName,
 			speechStyle,
 			honorific,
+			extraPersona,
 			selectedVrm,
 			backgrounds,
 			selectedBg,
@@ -182,20 +183,38 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		listNaiaAssets("background")
 			.then(async (paths) => {
 				const bgs: BgOption[] = await Promise.all(
-					paths.map(async (p) => ({
-						url: await toLocalBlobUrl(p),
-						label: p.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") ?? p,
-						path: p,
-						type: getBackgroundMediaType(p),
-					})),
+					paths.map(async (p) => {
+						const type = getBackgroundMediaType(p);
+						// Skip loading video files (30-50 MB each, crashes WebView2).
+						const url = type === "video" ? p : await toLocalBlobUrl(p);
+						return {
+							url,
+							label: p.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") ?? p,
+							path: p,
+							type,
+						};
+					}),
 				);
 				setBackgrounds(bgs);
-				if (bgs.length > 0) setSelectedBg(bgs[0].url);
+				if (bgs.length > 0) {
+					// Default to the "space" background (naia 우주선) — it's the default shown in the app.
+					// Fall back to the first available background if not found.
+					const spaceBg =
+						bgs.find((b) => b.path.toLowerCase().includes("space")) ??
+						bgs[0];
+					setSelectedBg(spaceBg.url);
+				}
 			})
 			.catch(() => {});
 	}, []);
 
-	// Listen for Naia OAuth callback in provider step
+	// Keep a ref to onComplete so the listener never needs to re-register when the
+	// parent re-renders (which would create a new function reference each time).
+	const onCompleteRef = useRef(onComplete);
+	onCompleteRef.current = onComplete;
+
+	// Listen for Naia OAuth callback in provider step.
+	// [] dep — register once. onCompleteRef.current always points to latest prop.
 	useEffect(() => {
 		const unlisten = listen<NaiaAuthPayload>(
 			"naia_auth_complete",
@@ -209,14 +228,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				setNaiaLoginDone(true);
 				saveCompletedConfig(event.payload, latestRef.current ?? undefined);
 				sendAuthUpdate(event.payload.naiaKey).catch(() => {});
-				onComplete();
+				onCompleteRef.current();
 			},
 		);
 		return () => {
 			unlisten.then((fn) => fn());
 			if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
 		};
-	}, [onComplete]);
+	}, []);
 
 	function goNext() {
 		if (transitioning.current) return;
@@ -289,6 +308,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			userName,
 			speechStyle,
 			honorific,
+			extraPersona,
 			selectedVrm,
 			backgrounds,
 			selectedBg,
@@ -314,7 +334,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				: snapshot.speechStyle === "formal"
 					? "formally and professionally"
 					: "respectfully using honorifics";
-		const persona = `You are ${snapshot.agentName.trim() || "Naia"}, an AI companion. Speak ${speechDesc}.`;
+		const personaBase = `You are ${snapshot.agentName.trim() || "Naia"}, an AI companion. Speak ${speechDesc}.`;
+		const persona = snapshot.extraPersona?.trim()
+			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
+			: personaBase;
 
 		saveConfig({
 			...base,
@@ -323,10 +346,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,
-			honorific:
-				snapshot.speechStyle === "honorific" && snapshot.honorific.trim()
-					? snapshot.honorific.trim()
-					: undefined,
+			honorific: snapshot.honorific.trim() || undefined,
 			vrmModel: vrmPath,
 			backgroundVideo: bgFilename,
 			persona,
@@ -428,7 +448,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 							)}
 						</h2>
 						<div className="onboarding-step__options">
-							{(["casual", "formal", "honorific"] as const).map((style) => (
+							{(["casual", "formal"] as const).map((style) => (
 								<button
 									key={style}
 									type="button"
@@ -438,29 +458,30 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									<span className="onboarding-step__option-label">
 										{style === "casual"
 											? t("onboard.speechStyle.casual")
-											: style === "formal"
-												? t("onboard.speechStyle.formal")
-												: t("onboard.speechStyle.honorificLabel")}
+											: t("onboard.speechStyle.formal")}
 									</span>
 									<span className="onboarding-step__option-desc">
 										{style === "casual"
 											? t("onboard.speechStyle.casualDesc")
-											: style === "formal"
-												? t("onboard.speechStyle.formalDesc")
-												: ""}
+											: t("onboard.speechStyle.formalDesc")}
 									</span>
 								</button>
 							))}
 						</div>
-						{speechStyle === "honorific" && (
-							<input
-								className="onboarding-step__input onboarding-step__input--sm"
-								value={honorific}
-								onChange={(e) => setHonorific(e.target.value)}
-								placeholder={t("onboard.speechStyle.honorificPlaceholder")}
-								maxLength={10}
-							/>
-						)}
+						<input
+							className="onboarding-step__input onboarding-step__input--sm"
+							value={honorific}
+							onChange={(e) => setHonorific(e.target.value)}
+							placeholder={t("onboard.speechStyle.honorificPlaceholder")}
+							maxLength={10}
+						/>
+						<textarea
+							className="onboarding-step__input onboarding-step__input--persona"
+							value={extraPersona}
+							onChange={(e) => setExtraPersona(e.target.value)}
+							placeholder="추가 페르소나 설정 (선택) — 성격, 말투 스타일, 행동 규칙 등을 자유롭게 입력하세요."
+							rows={5}
+						/>
 					</>
 				)}
 

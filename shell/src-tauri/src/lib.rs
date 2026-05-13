@@ -13,7 +13,7 @@ mod workspace;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -1323,7 +1323,9 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
     Ok(skills)
 }
 
-/// Frontend log bridge — prints frontend diagnostic messages to Rust stderr (terminal visible)
+static DEBUG_LOG_FILE: OnceLock<Mutex<std::fs::File>> = OnceLock::new();
+
+/// Frontend log bridge — prints to Rust stderr AND debug log file (survives crashes).
 #[tauri::command]
 fn frontend_log(level: String, message: String) {
     match level.as_str() {
@@ -1332,13 +1334,21 @@ fn frontend_log(level: String, message: String) {
         "debug" => log::debug!("[frontend] {}", message),
         _ => log::info!("[frontend] {}", message),
     }
+    if let Some(mtx) = DEBUG_LOG_FILE.get() {
+        if let Ok(mut f) = mtx.lock() {
+            let _ = writeln!(f, "{}", message);
+            let _ = f.flush();
+        }
+    }
 }
 
 // ── STT model management commands ──────────────────────────────────
 
 #[tauri::command]
-fn list_stt_models(app: AppHandle) -> Vec<stt_models::SttModelInfo> {
-    stt_models::get_model_catalog(&app)
+async fn list_stt_models(app: AppHandle) -> Vec<stt_models::SttModelInfo> {
+    tokio::task::spawn_blocking(move || stt_models::get_model_catalog(&app))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -1347,8 +1357,10 @@ async fn download_stt_model(app: AppHandle, model_id: String) -> Result<(), Stri
 }
 
 #[tauri::command]
-fn delete_stt_model(app: AppHandle, model_id: String) -> Result<(), String> {
-    stt_models::delete_model(&app, &model_id)
+async fn delete_stt_model(app: AppHandle, model_id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || stt_models::delete_model(&app, &model_id))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 #[tauri::command]
@@ -1630,7 +1642,7 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 /// Called from the frontend when a text input gains focus so the 한/영 toggle
 /// works even if the initial startup call was too early.
 #[tauri::command]
-fn enable_webview2_ime(window: tauri::Window) -> Result<(), String> {
+async fn enable_webview2_ime(window: tauri::Window) -> Result<(), String> {
     #[cfg(windows)]
     {
         use raw_window_handle::HasWindowHandle;
@@ -1729,7 +1741,7 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 
 /// Reset Naia Gateway session data (agents/main/sessions + memory).
 #[tauri::command]
-fn reset_gateway_data() -> Result<String, String> {
+async fn reset_gateway_data() -> Result<String, String> {
     let home = home_dir();
     let base_dirs = [
         format!("{}/.naia", home),
@@ -1762,7 +1774,7 @@ fn reset_gateway_data() -> Result<String, String> {
 /// Priority: Shell local config (naia-discord.json) → Gateway config (openclaw.json).
 /// This separates the primary path from Gateway dependency (#154).
 #[tauri::command]
-fn read_discord_bot_token() -> Result<String, String> {
+async fn read_discord_bot_token() -> Result<String, String> {
     let home = home_dir();
 
     // 1. Shell local config (primary — no Gateway dependency)
@@ -1818,7 +1830,7 @@ fn read_discord_bot_token() -> Result<String, String> {
 /// Write Discord bot token to Shell local config.
 /// Called after login sync to persist token independently of Gateway.
 #[tauri::command]
-fn write_discord_bot_token(token: String) -> Result<(), String> {
+async fn write_discord_bot_token(token: String) -> Result<(), String> {
     let home = home_dir();
     let config_dir = if cfg!(windows) {
         format!("{}\\AppData\\Roaming\\com.naia.shell", home)
@@ -1861,7 +1873,7 @@ async fn discord_api(
     method: String,
     body: Option<String>,
 ) -> Result<String, String> {
-    let token = read_discord_bot_token()?;
+    let token = read_discord_bot_token().await?;
 
     // Validate endpoint to prevent path traversal / URL injection (CWE-94).
     if endpoint.contains("..")
@@ -1923,7 +1935,7 @@ async fn write_temp_text(filename: String, content: String) -> Result<String, St
 }
 
 #[tauri::command]
-async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result<Vec<u8>, String> {
+async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result<String, String> {
     let file_path = std::path::PathBuf::from(&path);
     if !file_path.is_absolute() {
         return Err("Path must be absolute".to_string());
@@ -1992,7 +2004,10 @@ async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result
         ));
     }
 
-    std::fs::read(&file_path).map_err(|e| format!("Failed to read {}: {}", path, e))
+    let bytes = std::fs::read(&file_path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
+    // Return base64 to avoid JSON number-array serialization (14 MB VRM → ~200 MB JS heap).
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
 /// Fetch linked messaging channels for the current user from naia.nextain.io BFF.
@@ -2761,6 +2776,16 @@ pub fn run() {
         .format_timestamp_millis()
         .init();
 
+    // Open debug log file — frontend logs are written here with flush so crashes are captured.
+    let log_path = std::env::temp_dir().join("naia-debug.log");
+    match std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&log_path) {
+        Ok(f) => {
+            DEBUG_LOG_FILE.get_or_init(|| Mutex::new(f));
+            log::info!("[naia] debug log file: {}", log_path.display());
+        }
+        Err(e) => log::warn!("[naia] could not open debug log file: {}", e),
+    }
+
     let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
 
     let mut builder = tauri::Builder::default()
@@ -2882,6 +2907,7 @@ pub fn run() {
             workspace::workspace_read_skill_content,
             workspace::workspace_check_adk_server,
             workspace::workspace_discover_adk_server,
+            workspace::workspace_get_pty_agents,
             pty::pty_create,
             pty::pty_write,
             pty::pty_resize,

@@ -54,7 +54,7 @@ import { calculateCost } from "./providers/cost.js";
 import { buildProvider, getAgentNaiaKey, setAgentNaiaKey } from "./providers/factory.js";
 import type { ChatMessage, StreamChunk } from "./providers/types.js";
 import { actionInstall as panelActionInstall } from "./skills/built-in/panel.js";
-import { ALPHA_SYSTEM_PROMPT, buildToolStatusPrompt } from "./system-prompt.js";
+import { ALPHA_SYSTEM_PROMPT, BEHAVIORAL_RULES, buildToolStatusPrompt } from "./system-prompt.js";
 import { synthesize as ttsSynthesize } from "./tts/index.js";
 
 const activeStreams = new Map<string, AbortController>();
@@ -543,6 +543,9 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 
 		// Build system prompt with tool/gateway status context
 		let basePrompt = systemPrompt ?? ALPHA_SYSTEM_PROMPT;
+		// Behavioral contract — always appended after persona, before memory context.
+		// Enforces Trust/Work/Safety rules regardless of which persona is active.
+		basePrompt += `\n\n${BEHAVIORAL_RULES}`;
 
 		// ─── Memory: Session Recall ──────────────────────────────────
 		// Inject relevant memories into system prompt before LLM call.

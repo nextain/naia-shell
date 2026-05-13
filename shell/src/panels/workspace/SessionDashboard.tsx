@@ -38,16 +38,20 @@ export function SessionDashboard({
 
 	const loadSessions = useCallback(async () => {
 		const id = ++fetchIdRef.current;
+		const _ts0 = Date.now();
+		Logger.info("SessionDashboard", "workspace_get_sessions start", { id });
 		try {
 			const result = await invoke<SessionInfo[]>("workspace_get_sessions");
 			if (id !== fetchIdRef.current) return; // stale response — discard
+			Logger.info("SessionDashboard", "workspace_get_sessions ok", { id, count: result.length, ms: Date.now() - _ts0 });
 			setSessions(result);
 			hasLoadedOnceRef.current = true;
 			onSessionsUpdateRef.current?.(result);
 		} catch (e) {
 			if (id !== fetchIdRef.current) return;
-			Logger.warn("SessionDashboard", "Failed to load sessions", {
+			Logger.warn("SessionDashboard", "workspace_get_sessions failed", {
 				error: String(e),
+				ms: Date.now() - _ts0,
 			});
 			// On first-ever failure: notify parent with [] so the parent's
 			// initialized state unblocks (avoids permanent loading overlay).

@@ -37,6 +37,7 @@ export function HistoryTab({
 }) {
 	const [sessions, setSessions] = useState<GatewaySession[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
+	const [loadError, setLoadError] = useState<string | null>(null);
 	const currentSessionId = useChatStore((s) => s.sessionId);
 
 	useEffect(() => {
@@ -45,6 +46,7 @@ export function HistoryTab({
 
 	async function loadSessions() {
 		setIsLoading(true);
+		setLoadError(null);
 		try {
 			const result = await listGatewaySessions(50);
 			setSessions(result);
@@ -52,6 +54,7 @@ export function HistoryTab({
 			Logger.warn("HistoryTab", "Failed to load sessions", {
 				error: String(err),
 			});
+			setLoadError(String(err));
 		} finally {
 			setIsLoading(false);
 		}
@@ -95,6 +98,17 @@ export function HistoryTab({
 
 	if (isLoading) {
 		return <div className="history-tab-loading">{t("progress.loading")}</div>;
+	}
+
+	if (loadError) {
+		return (
+			<div className="history-tab-error">
+				<span>{t("history.agentUnreachable")}</span>
+				<button type="button" className="history-retry-btn" onClick={() => void loadSessions()}>
+					{t("common.retry")}
+				</button>
+			</div>
+		);
 	}
 
 	if (sessions.length === 0) {

@@ -31,38 +31,33 @@ export async function listGatewaySessions(
 	if (!loadConfig()) return [];
 
 	const opts = getGatewayOpts();
-	try {
-		const res = await directToolCall({
-			toolName: "skill_sessions",
-			args: { action: "list", limit },
-			requestId: `gw-sessions-list-${Date.now()}`,
-			...opts,
-		});
-		if (!res.success || !res.output) return [];
-		const parsed = JSON.parse(res.output) as {
-			sessions?: Array<{
-				key: string;
-				label?: string;
-				messageCount?: number;
-				createdAt?: number;
-				updatedAt?: number;
-				metadata?: { summary?: string };
-			}>;
-		};
-		return (parsed.sessions ?? []).map((s) => ({
-			key: s.key,
-			label: s.label ?? s.key,
-			messageCount: s.messageCount ?? 0,
-			createdAt: s.createdAt ?? 0,
-			updatedAt: s.updatedAt ?? 0,
-			summary: s.metadata?.summary,
-		}));
-	} catch (err) {
-		Logger.warn("gateway-sessions", "Failed to list sessions", {
-			error: String(err),
-		});
-		return [];
+	const res = await directToolCall({
+		toolName: "skill_sessions",
+		args: { action: "list", limit },
+		requestId: `gw-sessions-list-${Date.now()}`,
+		...opts,
+	});
+	if (!res.success || !res.output) {
+		throw new Error("agent-unreachable");
 	}
+	const parsed = JSON.parse(res.output) as {
+		sessions?: Array<{
+			key: string;
+			label?: string;
+			messageCount?: number;
+			createdAt?: number;
+			updatedAt?: number;
+			metadata?: { summary?: string };
+		}>;
+	};
+	return (parsed.sessions ?? []).map((s) => ({
+		key: s.key,
+		label: s.label ?? s.key,
+		messageCount: s.messageCount ?? 0,
+		createdAt: s.createdAt ?? 0,
+		updatedAt: s.updatedAt ?? 0,
+		summary: s.metadata?.summary,
+	}));
 }
 
 /** Gateway heartbeat prompt prefix — messages starting with this are system polls, not user chat */
@@ -169,7 +164,12 @@ export async function discoverAndPersistDiscordDmChannel(): Promise<
 	const config = loadConfig();
 	if (config?.discordDmChannelId) return config.discordDmChannelId;
 
-	const sessions = await listGatewaySessions(100);
+	let sessions: GatewaySession[];
+	try {
+		sessions = await listGatewaySessions(100);
+	} catch {
+		return null;
+	}
 	for (const s of sessions) {
 		// Legacy format: discord:dm:<channelId> — extract channel ID directly
 		const match = s.key.match(/^discord:(?:dm|channel):(\d{10,})$/);

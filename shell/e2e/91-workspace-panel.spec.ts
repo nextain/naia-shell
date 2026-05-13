@@ -196,6 +196,9 @@ const TAURI_MOCK_SCRIPT = `
 
 		// Window management
 		if (cmd === "plugin:window|get_cursor_position" || cmd === "plugin:window|start_resize_dragging") return null;
+		if (cmd === "plugin:window|is_maximized") return false;
+		if (cmd === "plugin:window|show") return;
+		if (cmd === "plugin:updater|check") return null;
 
 		// Agent
 		if (cmd === "send_to_agent_command" || cmd === "cancel_stream") return;
@@ -205,6 +208,17 @@ const TAURI_MOCK_SCRIPT = `
 
 		// Panel
 		if (cmd === "panel_list_installed") return [];
+		if (cmd === "pty_execute_sync") return { success: false, output: "gh: command not found", exit_code: 127 };
+
+		// naia-settings
+		if (cmd === "copy_bundled_assets") return;
+		if (cmd === "list_naia_assets") return [];
+		if (cmd === "read_local_binary") return [];
+		if (cmd === "read_naia_config") return null;
+		if (cmd === "check_naia_settings") return true;
+		if (cmd === "get_linked_channels") return [];
+		if (cmd === "get_lab_user_info") return null;
+		if (cmd === "get_memory_facts") return [];
 
 		// Workspace commands
 		if (cmd === "workspace_set_root") {
@@ -220,6 +234,8 @@ const TAURI_MOCK_SCRIPT = `
 		if (cmd === "workspace_classify_dirs") return fakeClassified;
 		if (cmd === "workspace_detect_adk_root") return "${FAKE_ROOT}";
 		if (cmd === "workspace_load_project_index") return {};
+		if (cmd === "workspace_discover_skills") return [];
+		if (cmd === "workspace_read_skill_content") return "";
 		if (cmd === "workspace_read_file") {
 			var path = (args && args.path) || "";
 			if (path.endsWith("AGENTS.md") || path.endsWith("README.md")) return fakeAgentsMd;
@@ -227,6 +243,8 @@ const TAURI_MOCK_SCRIPT = `
 			return "// file: " + path;
 		}
 		if (cmd === "workspace_write_file") return;
+		if (cmd === "workspace_discover_adk_server") return null;
+		if (cmd === "workspace_check_adk_server") return null;
 
 		return undefined;
 	};
@@ -261,6 +279,8 @@ test.describe("Workspace Panel E2E", () => {
 					onboardingComplete: true,
 				}),
 			);
+			// Set ADK path so isAdkInitialized() returns true (avoids AdkSetupScreen)
+			localStorage.setItem("naia-adk-path", "/var/home/luke/dev");
 			// Clear any saved classification so Phase 4 triggers first-run
 			localStorage.removeItem("workspace-classified-dirs");
 		});
@@ -287,8 +307,8 @@ test.describe("Workspace Panel E2E", () => {
 			await page.locator(".workspace-panel__tree-header").textContent(),
 		).toContain("탐색기");
 
-		// SessionDashboard visible
-		await expect(page.locator(".workspace-dashboard")).toBeVisible({
+		// Sessions section visible
+		await expect(page.locator(".issues-panel__sessions")).toBeVisible({
 			timeout: 5_000,
 		});
 	});
@@ -544,8 +564,8 @@ test.describe("Workspace Panel E2E", () => {
 		// If the gate works correctly, sessions should load after set_root resolves.
 		await openWorkspacePanel(page);
 
-		// Verify both dashboard (gated) and sessions load successfully
-		await expect(page.locator(".workspace-dashboard")).toBeVisible({
+		// Verify both sessions section (gated) and session cards load successfully
+		await expect(page.locator(".issues-panel__sessions")).toBeVisible({
 			timeout: 5_000,
 		});
 		await expect(page.locator(".workspace-session-card")).toHaveCount(3, {
@@ -578,7 +598,7 @@ test.describe("Workspace Panel E2E", () => {
 		await openWorkspacePanel(page);
 
 		// workspaceReady gate should resolve with custom root → sessions load
-		await expect(page.locator(".workspace-dashboard")).toBeVisible({
+		await expect(page.locator(".issues-panel__sessions")).toBeVisible({
 			timeout: 5_000,
 		});
 		await expect(page.locator(".workspace-session-card")).toHaveCount(3, {
@@ -642,6 +662,8 @@ test.describe("WG: Worktree grouping", () => {
 					onboardingComplete: true,
 				}),
 			);
+			// Set ADK path so isAdkInitialized() returns true (avoids AdkSetupScreen)
+			localStorage.setItem("naia-adk-path", "/var/home/luke/dev");
 			// Ensure clean classification state (same as main describe beforeEach)
 			localStorage.removeItem("workspace-classified-dirs");
 		});

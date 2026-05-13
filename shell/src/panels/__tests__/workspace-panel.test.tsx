@@ -101,16 +101,17 @@ vi.mock("react-markdown", () => ({
 	),
 }));
 
-// ─── Mock SessionDashboard — removes dependency on SessionDashboard internals ─
+// ─── Mock IssuesPanel — removes dependency on IssuesPanel/SessionDashboard internals ─
 
-vi.mock("../workspace/SessionDashboard", () => ({
-	SessionDashboard: vi.fn(
+vi.mock("../workspace/IssuesPanel", () => ({
+	IssuesPanel: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
 			onSessionsUpdate?: (sessions: SessionInfo[]) => void;
 			onSessionClick: (session: SessionInfo) => void;
 			highlightedDir?: string;
+			onIssueClick?: (issue: unknown) => void;
 		}) => {
 			useEffect(() => {
 				onSessionsUpdate?.([]);
@@ -262,13 +263,13 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_get_sessions counts sessions by status correctly", async () => {
-		// Override SessionDashboard mock to inject known session data directly,
-		// eliminating any dependency on SessionDashboard internals or invoke timing.
-		// Safety: WorkspaceCenterPanel renders SessionDashboard unconditionally (no
+		// Override IssuesPanel mock to inject known session data directly,
+		// eliminating any dependency on IssuesPanel/SessionDashboard internals or invoke timing.
+		// Safety: WorkspaceCenterPanel renders IssuesPanel unconditionally (no
 		// conditional rendering), so it is never unmounted/remounted during this test.
 		// handleSessionsUpdate = useCallback([naia]) provides a stable onSessionsUpdate
 		// reference — the default mock's effect cannot re-fire and overwrite sessionsRef.
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		const testSessions: SessionInfo[] = [
 			{
 				dir: "naia-os",
@@ -281,7 +282,7 @@ describe("WorkspaceCenterPanel", () => {
 			{ dir: "test", path: "/dev/test", status: "stopped" },
 			{ dir: "broken", path: "/dev/broken", status: "error" },
 		];
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -397,12 +398,12 @@ describe("WorkspaceCenterPanel", () => {
 		expect(result).toContain("nonexistent");
 	});
 
-	it("skill_workspace_focus_session returns Focused and passes highlightedDir to SessionDashboard", async () => {
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+	it("skill_workspace_focus_session returns Focused and passes highlightedDir to IssuesPanel", async () => {
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		const testSessions: SessionInfo[] = [
 			{ dir: "naia-os", path: "/dev/naia-os", status: "active" },
 		];
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -428,16 +429,16 @@ describe("WorkspaceCenterPanel", () => {
 			expect(result).toBe("Focused: naia-os");
 		});
 
-		// Verify highlightedDir was propagated to SessionDashboard
+		// Verify highlightedDir was propagated to IssuesPanel
 		await waitFor(() => {
-			const calls = vi.mocked(SessionDashboard).mock.calls;
+			const calls = vi.mocked(IssuesPanel).mock.calls;
 			const lastProps = calls[calls.length - 1]?.[0];
 			expect(lastProps?.highlightedDir).toBe("naia-os");
 		});
 	});
 
 	it("skill_workspace_focus_session with open_recent_file opens the correct path", async () => {
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		const testSessions: SessionInfo[] = [
 			{
 				dir: "naia-os",
@@ -447,7 +448,7 @@ describe("WorkspaceCenterPanel", () => {
 				progress: { issue: "#117", phase: "build" },
 			},
 		];
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -479,7 +480,7 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_focus_session ignores non-boolean open_recent_file (trust boundary)", async () => {
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		const testSessions: SessionInfo[] = [
 			{
 				dir: "naia-os",
@@ -488,7 +489,7 @@ describe("WorkspaceCenterPanel", () => {
 				recent_file: "shell/src/App.tsx",
 			},
 		];
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -520,7 +521,7 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_focus_session clears badge when open_recent_file=true but no recent_file", async () => {
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		// Session with NO recent_file
 		const testSessions: SessionInfo[] = [
 			{
@@ -529,7 +530,7 @@ describe("WorkspaceCenterPanel", () => {
 				status: "active",
 			},
 		];
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -579,13 +580,13 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("pushes errorAlert context when a session has status=error (once per session)", async () => {
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		const errorSession: SessionInfo = {
 			dir: "broken",
 			path: "/dev/broken",
 			status: "error",
 		};
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					// Fire twice with same data — should push errorAlert only once
@@ -618,9 +619,9 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("re-arms errorAlert after session recovers to idle/active", async () => {
-		const { SessionDashboard } = await import("../workspace/SessionDashboard");
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		let emit: ((sessions: SessionInfo[]) => void) | undefined;
-		vi.mocked(SessionDashboard).mockImplementationOnce(
+		vi.mocked(IssuesPanel).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					emit = onSessionsUpdate ?? undefined;

@@ -46,6 +46,40 @@ describe("HistoryTab", () => {
 		});
 	});
 
+	it("shows error state when agent is unreachable", async () => {
+		mockListGatewaySessions.mockRejectedValue(new Error("agent-unreachable"));
+		render(<HistoryTab onLoadSession={onLoadSession} />);
+		await waitFor(() => {
+			expect(screen.getByText(/에이전트에 연결할 수 없|Cannot connect/)).toBeDefined();
+			// Retry button visible
+			expect(screen.getByRole("button", { name: /다시 시도|Retry/i })).toBeDefined();
+		});
+	});
+
+	it("retries loading when retry button is clicked", async () => {
+		mockListGatewaySessions
+			.mockRejectedValueOnce(new Error("agent-unreachable"))
+			.mockResolvedValueOnce([
+				{
+					key: "agent:main:main",
+					label: "Recovered Session",
+					messageCount: 2,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+				},
+			]);
+		render(<HistoryTab onLoadSession={onLoadSession} />);
+		await waitFor(() => {
+			expect(screen.getByRole("button", { name: /다시 시도|Retry/i })).toBeDefined();
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /다시 시도|Retry/i }));
+
+		await waitFor(() => {
+			expect(screen.getByText("Recovered Session")).toBeDefined();
+		});
+	});
+
 	it("renders session list", async () => {
 		mockListGatewaySessions.mockResolvedValue([
 			{
