@@ -1,4 +1,8 @@
 import { type Page, expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * #116 Resource Viewer E2E — image / CSV / log viewer + chat file deeplinks.
@@ -165,6 +169,22 @@ const TAURI_MOCK_SCRIPT = `
 			return "// file: " + path;
 		}
 		if (cmd === "workspace_write_file") return;
+		// Image/PDF bytes — single-pixel transparent PNG (sufficient for src-set check)
+		if (cmd === "workspace_read_file_bytes") return [137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,2,0,0,0,144,119,83,222,0,0,0,12,73,68,65,84,8,215,99,248,207,192,0,0,0,2,0,1,226,33,188,51,0,0,0,0,73,69,78,68,174,66,96,130];
+		if (cmd === "workspace_discover_skills") return [];
+		if (cmd === "workspace_read_skill_content") return "";
+		if (cmd === "workspace_set_root") return (args && args.root) || "";
+		if (cmd === "workspace_load_project_index") return null;
+		if (cmd === "list_naia_assets") return [];
+		if (cmd === "list_audio_output_devices") return [];
+		if (cmd === "list_audio_input_devices") return [];
+		if (cmd === "sync_gateway_config") return null;
+		if (cmd === "read_naia_config") return null;
+		if (cmd === "browser_wv_hide") return null;
+		if (cmd === "browser_wv_show") return null;
+		if (cmd === "plugin:app|version") return "0.1.3";
+		if (cmd === "plugin:updater|check") return null;
+		if (cmd === "plugin:window|show") return null;
 		return undefined;
 	};
 })();
@@ -193,6 +213,8 @@ async function clickFileInTree(page: Page, name: string): Promise<void> {
 test.describe("Resource Viewer — Editor (#116)", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 		await page.addInitScript(() => {
 			localStorage.setItem(
 				"naia-config",
@@ -204,6 +226,7 @@ test.describe("Resource Viewer — Editor (#116)", () => {
 					onboardingComplete: true,
 				}),
 			);
+			localStorage.setItem("naia-adk-path", "/tmp/mock-naia-adk-workspace");
 			localStorage.removeItem("workspace-classified-dirs");
 		});
 		await page.goto("/");
@@ -339,12 +362,11 @@ test.describe("Resource Viewer — Editor (#116)", () => {
 			timeout: 5_000,
 		});
 
-		// img src uses asset:// protocol (convertFileSrc)
+		// img src is a blob: URL (image bytes loaded via workspace_read_file_bytes)
 		const imgSrc = await page
 			.locator(".workspace-editor__image")
 			.getAttribute("src");
-		expect(imgSrc).toContain("asset://");
-		expect(imgSrc).toContain("screenshot.png");
+		expect(imgSrc).toMatch(/^blob:/);
 
 		// workspace_read_file must NOT have been called for an image file
 		expect(invokeCalls).not.toContain("workspace_read_file");
@@ -415,6 +437,8 @@ test.describe("Resource Viewer — Editor (#116)", () => {
 test.describe("Chat File Deeplinks (#116)", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 		await page.addInitScript(() => {
 			localStorage.setItem(
 				"naia-config",
@@ -426,6 +450,7 @@ test.describe("Chat File Deeplinks (#116)", () => {
 					onboardingComplete: true,
 				}),
 			);
+			localStorage.setItem("naia-adk-path", "/tmp/mock-naia-adk-workspace");
 			localStorage.removeItem("workspace-classified-dirs");
 		});
 		await page.goto("/");

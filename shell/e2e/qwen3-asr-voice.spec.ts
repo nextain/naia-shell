@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { type Page, expect, test } from "@playwright/test";
 
 /**
@@ -20,7 +20,11 @@ import { type Page, expect, test } from "@playwright/test";
 
 const VLLM_HOST = "http://localhost:8100";
 
-const TEST_WAV_BASE64 = readFileSync("/tmp/test-ko.wav").toString("base64");
+const TEST_WAV_PATH = "/tmp/test-ko.wav";
+const TEST_WAV_AVAILABLE = existsSync(TEST_WAV_PATH);
+const TEST_WAV_BASE64 = TEST_WAV_AVAILABLE
+	? readFileSync(TEST_WAV_PATH).toString("base64")
+	: "";
 
 const AUDIO_INJECT_SCRIPT = (wavB64: string) => `
 (function() {
@@ -152,6 +156,11 @@ async function setupPage(page: Page) {
 }
 
 test.describe("vLLM STT E2E (Qwen3-ASR-1.7B)", () => {
+	test.skip(
+		!TEST_WAV_AVAILABLE,
+		`requires ${TEST_WAV_PATH} (Korean WAV: "안녕하세요 테스트입니다.")`,
+	);
+
 	test("vLLM 서버 직접 접근 확인", async ({ page }) => {
 		const result = await page.evaluate(async (host) => {
 			try {

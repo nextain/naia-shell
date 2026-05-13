@@ -1,4 +1,8 @@
 import { type Page, expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * skill_workspace_send_to_session E2E — #120
@@ -196,6 +200,8 @@ async function sendMessage(page: Page, text: string): Promise<void> {
 test.describe("skill_workspace_send_to_session E2E — #120", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 		await page.addInitScript(() => {
 			localStorage.setItem(
 				"naia-config",

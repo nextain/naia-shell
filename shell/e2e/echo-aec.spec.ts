@@ -40,7 +40,11 @@ test.use({
 	},
 });
 
+// Requires PipeWire/PulseAudio (pactl) + the physical ALSA mic referenced in
+// ORIGINAL_SOURCE. Gated on NAIA_E2E_AUDIO=1 — without it the test fails on
+// missing audio gear and reports misleading -Infinity dB ratios.
 test.describe("Echo Cancellation (Issue #22)", () => {
+	test.skip(!process.env.NAIA_E2E_AUDIO, "skipped without NAIA_E2E_AUDIO=1 (needs PipeWire + ALSA mic)");
 	test.beforeAll(() => {
 		// Create a PulseAudio source from the speaker's monitor output
 		// This is Chromium-compatible (unlike pw-loopback virtual sources)

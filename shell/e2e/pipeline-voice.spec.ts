@@ -1,4 +1,8 @@
 import { type Page, expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * Pipeline Voice E2E — Vosk STT → LLM → Sentence TTS → AudioQueue
@@ -329,6 +333,8 @@ async function isSttListening(page: Page): Promise<boolean> {
 test.describe("Pipeline Voice E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(PIPELINE_VOICE_MOCK);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		// Config: LLM model (non-omni) so pipeline voice activates
 		await page.addInitScript(
@@ -551,6 +557,8 @@ test.describe("Pipeline Voice E2E", () => {
 test.describe("Whisper Engine E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(PIPELINE_VOICE_MOCK);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		// Config: Whisper STT engine with whisper-medium model
 		await page.addInitScript(

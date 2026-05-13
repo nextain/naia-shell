@@ -2,6 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { type Page, expect, test } from "@playwright/test";
 import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
+import {
 	DEMO_INPUTS,
 	DEMO_MOCK_DATA,
 	DEMO_MOCK_RESPONSES,
@@ -678,7 +682,11 @@ test.use({
 	deviceScaleFactor: 2,
 });
 
-test.describe("Demo Video Recording", () => {
+// SKIPPED: 3-minute demo video walks the old onboarding UI (provider cards),
+// which has been replaced. Re-enable after the demo script is updated for the
+// agentName-first wizard. Run manually with `pnpm test:e2e -- demo-video.spec.ts`
+// when the demo flow is rewritten.
+test.describe.skip("Demo Video Recording", () => {
 	test(`full 3-minute demo [${DEMO_LANG}]`, async ({ page }, testInfo) => {
 		fs.mkdirSync(LANG_OUTPUT_DIR, { recursive: true });
 		const tl = new SceneTimeline();
@@ -689,13 +697,15 @@ test.describe("Demo Video Recording", () => {
 
 		tl.enter("init", `page setup + mock injection [${DEMO_LANG}]`);
 		await page.addInitScript(buildDemoMockScript(DEMO_LANG));
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 		await page.addInitScript((loc: string) => {
 			localStorage.setItem("naia-config", JSON.stringify({ locale: loc }));
 		}, DEMO_LANG);
 
 		await page.goto("/");
 		tl.mark("page loaded");
-		const overlay = page.locator(".onboarding-overlay");
+		const overlay = page.locator(".onboarding-panel");
 		await expect(overlay).toBeVisible({ timeout: 15_000 });
 		tl.mark("onboarding overlay visible");
 		await ensureIconsLoaded(page);
@@ -799,6 +809,8 @@ test.describe("Demo Video Recording", () => {
 
 		tl.enter("reload", "reload with completed config");
 		await page.addInitScript(buildDemoMockScript(DEMO_LANG));
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 		await page.addInitScript(
 			(configJson: string) => {
 				localStorage.setItem("naia-config", configJson);

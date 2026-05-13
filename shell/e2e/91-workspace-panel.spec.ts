@@ -1,4 +1,8 @@
 import { type Page, expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * Workspace Panel E2E — Session dashboard + FileTree + Editor
@@ -249,6 +253,8 @@ async function openWorkspacePanel(page: Page): Promise<void> {
 test.describe("Workspace Panel E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		await page.addInitScript(() => {
 			localStorage.setItem(
@@ -631,6 +637,8 @@ test.describe("WG: Worktree grouping", () => {
 				return _orig(cmd, args);
 			};
 		})();`);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 		await page.addInitScript(() => {
 			localStorage.setItem(
 				"naia-config",

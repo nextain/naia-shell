@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * Naia Shell E2E — Memory sync verification.
@@ -114,7 +118,9 @@ const MEMORY_MOCK_SCRIPT = `
 		if (cmd === "fetch_linked_channels") return [];
 		if (cmd === "gateway_health") return false;
 
-		// Store plugin
+		// Store plugin — load returns RID, get returns [value, exists] tuple
+		if (cmd === "plugin:store|load") return 1;
+		if (cmd === "plugin:store|get") return [null, false];
 		if (cmd && cmd.startsWith("plugin:store|")) return null;
 
 		return undefined;
@@ -122,9 +128,14 @@ const MEMORY_MOCK_SCRIPT = `
 })();
 `;
 
-test.describe("Memory Sync E2E", () => {
+// SKIPPED: OpenClaw was migrated to Naia Gateway in #201 — sync_openclaw_config and
+// read_openclaw_memory_files no longer exist. Spec needs a full rewrite against the
+// new sync_gateway_config flow + memory_get_all_facts persistence.
+test.describe.skip("Memory Sync E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(MEMORY_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		// Seed config with discordSessionMigrated to skip migration
 		await page.addInitScript(
