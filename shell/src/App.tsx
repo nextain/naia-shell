@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdkSetupScreen } from "./components/AdkSetupScreen";
-import { AvatarCanvas } from "./components/AvatarCanvas";
+import { AvatarCanvas, getCameraActions } from "./components/AvatarCanvas";
 import { BgmPlayer } from "./components/BgmPlayer";
 import { ChatPanel } from "./components/ChatPanel";
 import { ModeBar } from "./components/ModeBar";
@@ -177,6 +177,9 @@ export function App() {
 		setTtsEnabled,
 		toggleTtsEnabled,
 	} = usePanelStore();
+
+	const [joystickActive, setJoystickActive] = useState(false);
+	const joystickActiveRef = useRef(false);
 
 	// Initialise ttsEnabled from persisted config on mount
 	useEffect(() => {
@@ -572,6 +575,46 @@ export function App() {
 						>
 							<span className="bgm-ai-toggle__dot" />
 							TTS
+						</button>
+						{/* Avatar camera joystick */}
+						<button
+							type="button"
+							className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
+							title="드래그해서 아바타 회전"
+							style={{ cursor: joystickActive ? "grabbing" : "grab", touchAction: "none" }}
+							onPointerDown={(e) => {
+								e.currentTarget.setPointerCapture(e.pointerId);
+								joystickActiveRef.current = true;
+								setJoystickActive(true);
+							}}
+							onPointerMove={(e) => {
+								if (!joystickActiveRef.current) return;
+								getCameraActions().rotate(e.movementX, e.movementY);
+							}}
+							onPointerUp={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								joystickActiveRef.current = false;
+								setJoystickActive(false);
+								getCameraActions().save();
+							}}
+							onPointerCancel={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								joystickActiveRef.current = false;
+								setJoystickActive(false);
+							}}
+						>
+							<span className="bgm-ai-toggle__dot" />
+							⊕
+						</button>
+						{/* Avatar view reset */}
+						<button
+							type="button"
+							className="bgm-ai-toggle"
+							title="아바타 뷰 초기화"
+							onClick={() => getCameraActions().reset()}
+						>
+							<span className="bgm-ai-toggle__dot" />
+							⌂
 						</button>
 					</div>
 					{updateInfo && !showOnboarding && (
