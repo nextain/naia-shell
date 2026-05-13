@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { Logger } from "../lib/logger";
 import { useAvatarStore } from "../stores/avatar";
-import { usePanelStore } from "../stores/panel";
 
 export function BgmPlayer() {
 	const audioRef = useRef<HTMLAudioElement>(null);
@@ -13,10 +12,6 @@ export function BgmPlayer() {
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [playing, setPlaying] = useState(false);
 	const [volume, setVolume] = useState(0.3);
-	const aiInterferenceEnabled = usePanelStore((s) => s.aiInterferenceEnabled);
-	const toggleAiInterferenceEnabled = usePanelStore(
-		(s) => s.toggleAiInterferenceEnabled,
-	);
 
 	useEffect(() => {
 		listNaiaAssets("bgm-musics").then(async (paths) => {
@@ -178,21 +173,6 @@ export function BgmPlayer() {
 					onChange={(e) => setVolume(Number(e.target.value))}
 					title="볼륨"
 				/>
-				<div className="bgm-player-sep" />
-				<button
-					type="button"
-					className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
-					onClick={toggleAiInterferenceEnabled}
-					aria-pressed={aiInterferenceEnabled}
-					title={
-						aiInterferenceEnabled
-							? "AI 참견 끄기 (Ctrl+Alt+A)"
-							: "AI 참견 켜기 (Ctrl+Alt+A)"
-					}
-				>
-					<span className="bgm-ai-toggle__dot" />
-					AI
-				</button>
 			</div>
 		</div>
 	);

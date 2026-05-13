@@ -2645,7 +2645,7 @@ body.resizing-row {
 .settings-toggle-row {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	gap: 10px;
 }
 
 .settings-toggle-row input[type="checkbox"] {
@@ -4955,6 +4955,24 @@ body.resizing-row {
 	width: 56px;
 	accent-color: rgba(255, 255, 255, 0.6);
 	flex-shrink: 0;
+}
+
+/* Quick toggles: AI 참견 + TTS — below BGM player */
+.quick-toggles {
+	position: fixed;
+	top: 78px;
+	left: 8px;
+	z-index: 4;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	background: rgba(8, 14, 28, 0.55);
+	border-radius: 10px;
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	pointer-events: auto;
 }
 
 .onboarding-overlay {

@@ -26,6 +26,10 @@ interface PanelState {
 	aiInterferenceEnabled: boolean;
 	setAiInterferenceEnabled: (enabled: boolean) => void;
 	toggleAiInterferenceEnabled: () => void;
+	/** TTS (text-to-speech) enabled toggle — persisted to config on change. */
+	ttsEnabled: boolean;
+	setTtsEnabled: (enabled: boolean) => void;
+	toggleTtsEnabled: () => void;
 }
 
 export const usePanelStore = create<PanelState>((set, get) => ({
@@ -64,4 +68,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 		set({ aiInterferenceEnabled: enabled }),
 	toggleAiInterferenceEnabled: () =>
 		set((s) => ({ aiInterferenceEnabled: !s.aiInterferenceEnabled })),
+	ttsEnabled: false,
+	setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
+	toggleTtsEnabled: () => set((s) => ({ ttsEnabled: !s.ttsEnabled })),
 }));

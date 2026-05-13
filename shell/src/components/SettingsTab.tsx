@@ -540,6 +540,7 @@ export function SettingsTab() {
 	);
 	const pushModal = usePanelStore((s) => s.pushModal);
 	const popModal = usePanelStore((s) => s.popModal);
+	const setStoreTtsEnabled = usePanelStore((s) => s.setTtsEnabled);
 	const [savedVrmModel, setSavedVrmModel] = useState(
 		normalizeLocalPath(existing?.vrmModel ?? DEFAULT_AVATAR_MODEL),
 	);
@@ -606,6 +607,8 @@ export function SettingsTab() {
 	const [sttDownloadProgress, setSttDownloadProgress] = useState(0);
 
 	const [ttsEnabled, setTtsEnabled] = useState(existing?.ttsEnabled ?? false);
+	// Keep panel store in sync so QuickToggles button reflects settings changes
+	useEffect(() => { setStoreTtsEnabled(ttsEnabled); }, [ttsEnabled, setStoreTtsEnabled]);
 	const [persona, setPersona] = useState(existing?.persona ?? DEFAULT_PERSONA);
 	const [userName, setUserName] = useState(existing?.userName ?? "");
 	const [agentName, setAgentName] = useState(existing?.agentName ?? "");
@@ -3059,6 +3062,17 @@ export function SettingsTab() {
 						<span>{t("settings.voiceSection")}</span>
 					</div>
 
+					{/* TTS enable — top of voice section for visibility */}
+					<div className="settings-field settings-toggle-row">
+						<label htmlFor="tts-toggle">{t("settings.ttsEnabled")}</label>
+						<input
+							id="tts-toggle"
+							type="checkbox"
+							checked={ttsEnabled}
+							onChange={(e) => setTtsEnabled(e.target.checked)}
+						/>
+					</div>
+
 					{!isSelectedAsr && (
 						<>
 							{/* Voice status summary */}
@@ -3256,16 +3270,6 @@ export function SettingsTab() {
 						</>
 					)}
 
-					{/* TTS */}
-					<div className="settings-field settings-toggle-row">
-						<label htmlFor="tts-toggle">{t("settings.ttsEnabled")}</label>
-						<input
-							id="tts-toggle"
-							type="checkbox"
-							checked={ttsEnabled}
-							onChange={(e) => setTtsEnabled(e.target.checked)}
-						/>
-					</div>
 					{/* TTS Provider selector */}
 					<div className="settings-field">
 						<label htmlFor="tts-provider-select">

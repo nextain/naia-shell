@@ -169,7 +169,20 @@ export function App() {
 	const appReady = useAppReady(showAdkSetup);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
-	const { activePanel, toggleAiInterferenceEnabled } = usePanelStore();
+	const {
+		activePanel,
+		toggleAiInterferenceEnabled,
+		aiInterferenceEnabled,
+		ttsEnabled,
+		setTtsEnabled,
+		toggleTtsEnabled,
+	} = usePanelStore();
+
+	// Initialise ttsEnabled from persisted config on mount
+	useEffect(() => {
+		const cfg = loadConfig();
+		if (cfg?.ttsEnabled !== undefined) setTtsEnabled(cfg.ttsEnabled);
+	}, [setTtsEnabled]);
 
 	// Sync panel tools with agent on panel switch, and call lifecycle hooks
 	const prevPanelRef = useRef<string | null>(null);
@@ -534,6 +547,33 @@ export function App() {
 						title={appTitle}
 					/>
 					<BgmPlayer />
+					{/* Quick toggles: AI 참견 + 말하기 활성화 — outside BGM player */}
+					<div className="quick-toggles">
+						<button
+							type="button"
+							className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
+							onClick={toggleAiInterferenceEnabled}
+							aria-pressed={aiInterferenceEnabled}
+							title={aiInterferenceEnabled ? "AI 참견 끄기 (Ctrl+Alt+A)" : "AI 참견 켜기 (Ctrl+Alt+A)"}
+						>
+							<span className="bgm-ai-toggle__dot" />
+							AI
+						</button>
+						<button
+							type="button"
+							className={`bgm-ai-toggle${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
+							onClick={() => {
+								toggleTtsEnabled();
+								const cfg = loadConfig();
+								if (cfg) saveConfig({ ...cfg, ttsEnabled: !ttsEnabled });
+							}}
+							aria-pressed={ttsEnabled}
+							title={ttsEnabled ? "말하기 끄기" : "말하기 켜기"}
+						>
+							<span className="bgm-ai-toggle__dot" />
+							TTS
+						</button>
+					</div>
 					{updateInfo && !showOnboarding && (
 						<UpdateBanner
 							info={updateInfo}
