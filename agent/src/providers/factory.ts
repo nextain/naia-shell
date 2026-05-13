@@ -229,6 +229,14 @@ export function getAgentNaiaKey(): string | undefined {
 // ── Factory ──
 
 export function buildProvider(config: ProviderConfig): LLMProvider {
+	// claude-code-cli always routes through the local CLI — never lab-proxy.
+	// (Naia key does not grant access to Anthropic models on the gateway.)
+	if (config.provider === "claude-code-cli") {
+		const def = getLlmProviderDef("claude-code-cli");
+		if (!def) throw new Error("claude-code-cli provider not registered.");
+		return def.create("", config.model);
+	}
+
 	// Lab proxy mode: agent holds naiaKey — never read from per-request config.
 	const naiaKey = _agentNaiaKey;
 	if (naiaKey) {
