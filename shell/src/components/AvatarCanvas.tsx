@@ -10,6 +10,7 @@ import {
 	Object3D,
 	PerspectiveCamera,
 	Scene,
+	Spherical,
 	Vector3,
 	WebGLRenderer,
 } from "three";
@@ -216,6 +217,10 @@ export function AvatarCanvas() {
 	const setLoadProgress = useAvatarStore((s) => s.setLoadProgress);
 	const [loadError, setLoadError] = useState("");
 	const [loadStage, setLoadStage] = useState("idle");
+	const [joystickActive, setJoystickActive] = useState(false);
+	const controlsRef = useRef<OrbitControls | null>(null);
+	const cameraRef = useRef<PerspectiveCamera | null>(null);
+	const joystickActiveRef = useRef(false);
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -267,6 +272,10 @@ export function AvatarCanvas() {
 		controls.maxDistance = 10;
 		controls.maxPolarAngle = Math.PI * 0.85; // prevent upside-down flip
 		controls.minPolarAngle = 0.1;
+		controls.enableRotate = false; // rotation via joystick only
+
+		controlsRef.current = controls;
+		cameraRef.current = camera;
 
 		// Set initial camera position immediately
 		const savedCam = loadCameraState();
@@ -541,6 +550,8 @@ export function AvatarCanvas() {
 			if (saveTimeout) clearTimeout(saveTimeout);
 			// Save camera position on unmount
 			saveCameraState(camera, controls.target);
+			controlsRef.current = null;
+			cameraRef.current = null;
 			controls.dispose();
 			renderer.dispose();
 			for (const url of createdObjectUrls) {
@@ -552,6 +563,58 @@ export function AvatarCanvas() {
 			Logger.debug("AvatarCanvas", "Disposed");
 		};
 	}, [modelPath, animationPath, setLoaded, setLoadProgress]);
+
+	function handleJoystickPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+		e.currentTarget.setPointerCapture(e.pointerId);
+		joystickActiveRef.current = true;
+		setJoystickActive(true);
+	}
+
+	function handleJoystickPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+		if (!joystickActiveRef.current) return;
+		const camera = cameraRef.current;
+		const controls = controlsRef.current;
+		if (!camera || !controls) return;
+		const offset = camera.position.clone().sub(controls.target);
+		const spherical = new Spherical();
+		spherical.setFromVector3(offset);
+		spherical.theta -= e.movementX * 0.005;
+		spherical.phi = Math.max(
+			0.1,
+			Math.min(Math.PI * 0.85, spherical.phi - e.movementY * 0.005),
+		);
+		camera.position.setFromSpherical(spherical).add(controls.target);
+		camera.lookAt(controls.target);
+		controls.update();
+	}
+
+	function handleJoystickPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+		e.currentTarget.releasePointerCapture(e.pointerId);
+		joystickActiveRef.current = false;
+		setJoystickActive(false);
+		// Persist camera after joystick use
+		const camera = cameraRef.current;
+		const controls = controlsRef.current;
+		if (camera && controls) saveCameraState(camera, controls.target);
+	}
+
+	function handleResetView() {
+		const camera = cameraRef.current;
+		const controls = controlsRef.current;
+		if (!camera || !controls) return;
+		camera.position.set(
+			DEFAULT_CAMERA.position.x,
+			DEFAULT_CAMERA.position.y,
+			DEFAULT_CAMERA.position.z,
+		);
+		controls.target.set(
+			DEFAULT_CAMERA.target.x,
+			DEFAULT_CAMERA.target.y,
+			DEFAULT_CAMERA.target.z,
+		);
+		controls.update();
+		clearSavedCamera();
+	}
 
 	return (
 		<div
@@ -576,6 +639,66 @@ export function AvatarCanvas() {
 					zIndex: 1,
 				}}
 			/>
+			{/* Avatar joystick controls */}
+			<div
+				style={{
+					position: "absolute",
+					bottom: 12,
+					right: 12,
+					display: "flex",
+					flexDirection: "column",
+					alignItems: "center",
+					gap: 6,
+					zIndex: 2,
+				}}
+			>
+				<button
+					title="뷰 초기화"
+					onClick={handleResetView}
+					style={{
+						width: 28,
+						height: 28,
+						borderRadius: "50%",
+						border: "1px solid rgba(255,255,255,0.35)",
+						background: "rgba(0,0,0,0.45)",
+						color: "rgba(255,255,255,0.75)",
+						fontSize: 13,
+						cursor: "pointer",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						userSelect: "none",
+					}}
+				>
+					⌂
+				</button>
+				<button
+					title="드래그해서 아바타 회전"
+					onPointerDown={handleJoystickPointerDown}
+					onPointerMove={handleJoystickPointerMove}
+					onPointerUp={handleJoystickPointerUp}
+					onPointerCancel={handleJoystickPointerUp}
+					style={{
+						width: 44,
+						height: 44,
+						borderRadius: "50%",
+						border: `2px solid ${joystickActive ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)"}`,
+						background: joystickActive
+							? "rgba(255,255,255,0.2)"
+							: "rgba(0,0,0,0.45)",
+						color: "rgba(255,255,255,0.85)",
+						fontSize: 20,
+						cursor: joystickActive ? "grabbing" : "grab",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						userSelect: "none",
+						touchAction: "none",
+					}}
+				>
+					⊕
+				</button>
+			</div>
 		</div>
 	);
 }
