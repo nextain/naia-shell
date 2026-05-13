@@ -2648,6 +2648,25 @@ body.resizing-row {
 	gap: 10px;
 }
 
+/* Audio device 2-column: mic (left) + speaker (right) */
+.audio-device-col {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+
+.audio-device-col label {
+	font-size: 12px;
+	color: rgba(226, 232, 240, 0.7);
+	font-weight: 500;
+}
+
+.audio-device-col select,
+.audio-device-col .custom-select {
+	width: 100%;
+}
+
 .settings-toggle-row input[type="checkbox"] {
 	width: 18px;
 	height: 18px;
@@ -3587,6 +3606,11 @@ body.resizing-row {
 	border: 1px solid var(--espresso-light);
 	border-radius: 6px;
 	padding: 8px 10px;
+}
+
+/* Force channel card to span full width in the 2-column settings grid */
+.settings-tab > .channel-card--full {
+	grid-column: 1 / -1;
 }
 
 .channel-card-header {

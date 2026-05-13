@@ -3515,7 +3515,8 @@ export function SettingsTab() {
 				<span>오디오 장치</span>
 			</div>
 
-			<div className="settings-field">
+			{/* 마이크 + 스피커 2-column layout */}
+			<div className="audio-device-col">
 				<label>마이크 (입력 장치)</label>
 				<DeviceSelect
 					value={sttInputDeviceId}
@@ -3531,28 +3532,27 @@ export function SettingsTab() {
 							saveConfig({ ...existing, sttInputDeviceId: v || undefined });
 					}}
 				/>
+				<div className="audio-device-test-row">
+					<button
+						type="button"
+						className="onboarding-next-btn"
+						style={{ fontSize: "0.8em", padding: "4px 12px" }}
+						onClick={micTestActive ? stopMicTest : startMicTest}
+					>
+						{micTestActive ? "중지" : "마이크 테스트"}
+					</button>
+					{micTestActive && (
+						<div className="mic-level-bar-outer">
+							<div
+								className="mic-level-bar-inner"
+								style={{ width: `${Math.min(100, micTestLevel)}%` }}
+							/>
+						</div>
+					)}
+				</div>
 			</div>
 
-			<div className="settings-field audio-device-test-row">
-				<button
-					type="button"
-					className="onboarding-next-btn"
-					style={{ fontSize: "0.8em", padding: "4px 12px" }}
-					onClick={micTestActive ? stopMicTest : startMicTest}
-				>
-					{micTestActive ? "중지" : "마이크 테스트"}
-				</button>
-				{micTestActive && (
-					<div className="mic-level-bar-outer">
-						<div
-							className="mic-level-bar-inner"
-							style={{ width: `${Math.min(100, micTestLevel)}%` }}
-						/>
-					</div>
-				)}
-			</div>
-
-			<div className="settings-field">
+			<div className="audio-device-col">
 				<label>스피커 (출력 장치)</label>
 				<DeviceSelect
 					value={ttsOutputDeviceId}
@@ -3569,13 +3569,10 @@ export function SettingsTab() {
 					}}
 					placeholder="기본 장치"
 				/>
-			</div>
-
-			<div className="settings-field">
 				<button
 					type="button"
 					className="onboarding-next-btn"
-					style={{ fontSize: "0.8em", padding: "4px 12px" }}
+					style={{ fontSize: "0.8em", padding: "4px 12px", marginTop: "6px" }}
 					onClick={playTestBeep}
 				>
 					스피커 테스트
@@ -3644,12 +3641,10 @@ export function SettingsTab() {
 					<div className="settings-section-divider">
 						<span>{t("settings.channelsSection")}</span>
 					</div>
-					<div className="settings-field">
-						<span className="settings-hint">{t("settings.channelsHint")}</span>
-					</div>
 
-					{/* Discord channel card */}
-					<div className="channel-card" data-testid="discord-settings-card">
+					{/* Discord channel card — full width so it doesn't drift to right column */}
+					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
+						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
 						<div className="channel-card-header">
 							<span className="channel-name">Discord</span>
 							<span
