@@ -7,6 +7,7 @@ export {
 	getDefaultLlmModel,
 	isApiKeyOptional,
 	getStaticModelsRecord,
+	fetchNaiaPricing,
 	fetchOllamaModels,
 	fetchVllmModels,
 	formatModelLabel,

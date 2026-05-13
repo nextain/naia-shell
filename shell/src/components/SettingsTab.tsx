@@ -55,6 +55,7 @@ import {
 } from "../lib/lab-sync";
 import {
 	type LlmModelMeta,
+	fetchNaiaPricing,
 	fetchOllamaModels,
 	fetchVllmModels,
 	formatModelLabel,
@@ -969,6 +970,18 @@ export function SettingsTab() {
 			}
 		});
 	}, [provider, vllmHost]);
+
+	// Fetch live Naia pricing from gateway (DB = SoT).
+	// Runs when provider switches to "nextain" so the displayed price always
+	// matches what the gateway actually charges.
+	useEffect(() => {
+		if (provider !== "nextain") return;
+		fetchNaiaPricing(LAB_GATEWAY_URL).then((liveModels) => {
+			if (liveModels) {
+				setDynamicModels((prev) => ({ ...prev, nextain: liveModels }));
+			}
+		});
+	}, [provider]);
 
 	// Fetch ASR models from vLLM STT host (separate from LLM vllmHost)
 	useEffect(() => {

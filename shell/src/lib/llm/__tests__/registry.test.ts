@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+	fetchNaiaPricing,
 	formatModelLabel,
 	getDefaultLlmModel,
 	getLlmModel,
@@ -155,6 +156,84 @@ describe("registry — isApiKeyOptional", () => {
 
 	it("unknown provider is not key-optional", () => {
 		expect(isApiKeyOptional("nonexistent")).toBe(false);
+	});
+});
+
+describe("registry — fetchNaiaPricing", () => {
+	it("returns null on network failure", async () => {
+		vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("Network error"));
+		const result = await fetchNaiaPricing("https://unreachable.example");
+		expect(result).toBeNull();
+		vi.restoreAllMocks();
+	});
+
+	it("returns null on non-ok response", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(null, { status: 503 }),
+		);
+		const result = await fetchNaiaPricing("https://example.com");
+		expect(result).toBeNull();
+		vi.restoreAllMocks();
+	});
+
+	it("overlays gateway pricing onto Naia model list", async () => {
+		const gatewayResponse = [
+			{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.165, output_price_per_million: 0.66, cached_price_per_million: 0.044 },
+			{ model_key: "vertexai:gemini-2.5-pro", input_price_per_million: 1.375, output_price_per_million: 11.0, cached_price_per_million: null },
+			{ model_key: "openai:gpt-4o", input_price_per_million: 2.5, output_price_per_million: 10.0, cached_price_per_million: null },
+		];
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(JSON.stringify(gatewayResponse), { status: 200 }),
+		);
+		const models = await fetchNaiaPricing("https://example.com");
+		expect(models).not.toBeNull();
+
+		const flash = models!.find((m) => m.id === "gemini-2.5-flash");
+		expect(flash?.pricing).toEqual([0.165, 0.66]);
+
+		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
+		expect(pro?.pricing).toEqual([1.375, 11.0]);
+
+		// openai model should not appear in Naia model list
+		const gpt4o = models!.find((m) => m.id === "gpt-4o");
+		expect(gpt4o).toBeUndefined();
+
+		vi.restoreAllMocks();
+	});
+
+	it("keeps static pricing for models not in gateway response", async () => {
+		// Gateway returns only gemini-2.5-flash — other models keep static price
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(JSON.stringify([
+				{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.999, output_price_per_million: 9.999, cached_price_per_million: null },
+			]), { status: 200 }),
+		);
+		const models = await fetchNaiaPricing("https://example.com");
+		expect(models).not.toBeNull();
+
+		// gemini-2.5-pro should keep static pricing [1.375, 11.0]
+		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
+		expect(pro?.pricing).toEqual([1.375, 11.0]);
+
+		vi.restoreAllMocks();
+	});
+
+	it("does not mutate original provider models (returns new objects)", async () => {
+		const staticPro = getLlmModel("nextain", "gemini-2.5-pro");
+		const staticPriceBefore = staticPro?.pricing ? [...staticPro.pricing] : null;
+
+		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+			new Response(JSON.stringify([
+				{ model_key: "vertexai:gemini-2.5-pro", input_price_per_million: 99.0, output_price_per_million: 99.0, cached_price_per_million: null },
+			]), { status: 200 }),
+		);
+		await fetchNaiaPricing("https://example.com");
+
+		// Static registry should be unchanged
+		const staticProAfter = getLlmModel("nextain", "gemini-2.5-pro");
+		expect(staticProAfter?.pricing).toEqual(staticPriceBefore);
+
+		vi.restoreAllMocks();
 	});
 });
 
