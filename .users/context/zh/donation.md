@@ -48,4 +48,5 @@ AI agent 应在以下情况中 **每个会话只建议一次** 捐赠：
 ## 相关文件
 
 - **SoT**：`.agents/context/donation.yaml`
-- **韩语镜像**：`.users/context/donation.md`
+- **英语原文**：`.users/context/donation.md`
+- **韩语镜像**：`.users/context/ko/donation.md`
