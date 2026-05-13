@@ -31,16 +31,16 @@ describe("registry — provider registration", () => {
 });
 
 describe("registry — Naia (nextain) provider pricing (+10% margin)", () => {
-	it("Gemini 3.1 Pro pricing includes 10% margin", () => {
+	it("Gemini 3.1 Pro pricing includes 10% margin (public $2.00/$12.00 + 10%)", () => {
 		const model = getLlmModel("nextain", "gemini-3.1-pro-preview");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([1.375, 5.5]);
+		expect(model?.pricing).toEqual([2.20, 13.20]);
 	});
 
-	it("Gemini 3.1 Flash Lite pricing includes 10% margin", () => {
+	it("Gemini 3.1 Flash Lite pricing includes 10% margin (public $0.25/$1.50 + 10%)", () => {
 		const model = getLlmModel("nextain", "gemini-3.1-flash-lite-preview");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.083, 0.33]);
+		expect(model?.pricing).toEqual([0.275, 1.65]);
 	});
 
 	it("Gemini 3.0 Flash pricing includes 10% margin (public $0.50/$3.00 + 10%)", () => {
@@ -55,22 +55,22 @@ describe("registry — Naia (nextain) provider pricing (+10% margin)", () => {
 		expect(model?.pricing).toEqual([1.375, 11.0]);
 	});
 
-	it("Gemini 2.5 Flash pricing includes 10% margin", () => {
+	it("Gemini 2.5 Flash pricing includes 10% margin (public $0.30/$2.50 + 10%)", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.165, 0.66]);
+		expect(model?.pricing).toEqual([0.33, 2.75]);
 	});
 
-	it("Gemini 2.5 Flash Lite pricing includes 10% margin", () => {
+	it("Gemini 2.5 Flash Lite pricing includes 10% margin (public $0.10/$0.40 + 10%)", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash-lite");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.083, 0.33]);
+		expect(model?.pricing).toEqual([0.11, 0.44]);
 	});
 
-	it("Gemini 2.5 Flash Live pricing includes 10% margin", () => {
+	it("Gemini 2.5 Flash Live pricing includes 10% margin (public $0.50/$2.00 text + 10%)", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash-live");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.165, 0.66]);
+		expect(model?.pricing).toEqual([0.55, 2.20]);
 	});
 
 	it("Gemini 2.5 Flash Live has no (실시간) suffix in label", () => {
