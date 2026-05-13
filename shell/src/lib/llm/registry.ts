@@ -152,7 +152,7 @@ registerLlmProvider({
 			id: "gemini-3-flash-preview",
 			label: "Gemini 3.0 Flash",
 			capabilities: ["llm"],
-			pricing: [0.11, 0.44],
+			pricing: [0.55, 3.30],
 		},
 		// -- Gemini 2.5 --------------------------------------------------------------------
 		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.375, 11.0] },
@@ -172,6 +172,7 @@ registerLlmProvider({
 			id: "gemini-2.5-flash-live",
 			label: "Gemini 2.5 Flash Live",
 			capabilities: ["llm", "omni"],
+			pricing: [0.165, 0.66],
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
 			transcriptProvided: true,

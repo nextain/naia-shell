@@ -42,10 +42,10 @@ describe("registry — Naia (nextain) provider pricing (+10% margin)", () => {
 		expect(model?.pricing).toEqual([0.083, 0.33]);
 	});
 
-	it("Gemini 3.0 Flash pricing includes 10% margin", () => {
+	it("Gemini 3.0 Flash pricing includes 10% margin (public $0.50/$3.00 + 10%)", () => {
 		const model = getLlmModel("nextain", "gemini-3-flash-preview");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.11, 0.44]);
+		expect(model?.pricing).toEqual([0.55, 3.30]);
 	});
 
 	it("Gemini 2.5 Pro pricing includes 10% margin", () => {
@@ -64,6 +64,12 @@ describe("registry — Naia (nextain) provider pricing (+10% margin)", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash-lite");
 		expect(model).toBeDefined();
 		expect(model?.pricing).toEqual([0.083, 0.33]);
+	});
+
+	it("Gemini 2.5 Flash Live pricing includes 10% margin", () => {
+		const model = getLlmModel("nextain", "gemini-2.5-flash-live");
+		expect(model).toBeDefined();
+		expect(model?.pricing).toEqual([0.165, 0.66]);
 	});
 
 	it("Gemini 2.5 Flash Live has no (실시간) suffix in label", () => {
