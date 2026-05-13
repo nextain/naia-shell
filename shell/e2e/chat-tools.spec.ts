@@ -1,4 +1,8 @@
 import { type Page, expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * Naia Shell E2E — Chat + Tool execution verification.
@@ -173,6 +177,9 @@ const TAURI_MOCK_SCRIPT = `
 		// progress data
 		if (cmd === "get_progress_data") return { events: [], stats: { totalCost: 0, messageCount: 0, toolCount: 0, errorCount: 0 } };
 
+		// Base IPC defaults (plugin store/window, list_*, workspace_*, etc.)
+		// live in helpers/tauri-base-mock.ts — TAURI_BASE_MOCK_FALLBACK wraps this
+		// invoke so anything returning undefined here falls through to that helper.
 		return undefined;
 	};
 })();
@@ -227,6 +234,8 @@ test.describe("Chat + Tool E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		// Inject Tauri IPC mock before React mounts
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		// Seed localStorage with valid config
 		await page.addInitScript(
@@ -309,6 +318,8 @@ test.describe("Chat + Tool E2E", () => {
 test.describe("Claude Code CLI provider E2E", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(TAURI_MOCK_SCRIPT);
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		// Seed localStorage with claude-code-cli config (no apiKey needed)
 		await page.addInitScript(

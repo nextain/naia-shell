@@ -4,6 +4,7 @@
  * Verifies: localStorage config saved correctly, each step renders, blob URL flow.
  */
 import { expect, test } from "@playwright/test";
+import { TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
 
 const MOCK_ADK_PATH = "/home/user/naia-adk";
 const MOCK_BG_FILES = ["anime-rainbow-landscape.jpg", "background-space.png"];
@@ -86,6 +87,7 @@ function buildMockScript() {
 
 async function setupFreshOnboarding(page: import("@playwright/test").Page) {
 	await page.addInitScript(buildMockScript());
+	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 	await page.addInitScript(() => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		localStorage.removeItem("naia-config");

@@ -10,6 +10,8 @@ test.use({
 	},
 });
 
+// Requires pw-loopback + pactl + a working virtual source. Gated on NAIA_E2E_AUDIO=1.
+test.skip(!process.env.NAIA_E2E_AUDIO, "skipped without NAIA_E2E_AUDIO=1");
 test("capture external audio via loopback", async ({ page }) => {
 	// Setup loopback
 	const lb = spawn("pw-loopback", [

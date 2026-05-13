@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * Naia Shell E2E — Memory settings UI verification.
@@ -158,6 +162,8 @@ async function gotoSettings(page: import("@playwright/test").Page) {
 test.describe("Memory Settings UI", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.addInitScript(buildMockScript());
+		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+		await page.addInitScript({ content: SEED_ADK_PATH });
 
 		await page.addInitScript(
 			(configJson: string) => {
@@ -190,7 +196,8 @@ test.describe("Memory Settings UI", () => {
 			page.locator('input[name="memory-adapter"][value="qdrant"]'),
 		).toBeVisible();
 
-		// Embedding radio buttons
+		// Embedding radio buttons — current options are: none, offline, vllm, ollama, naia
+		// (openai-compat was removed in favor of dedicated vllm/ollama radios)
 		await expect(
 			page.locator('input[name="memory-embedding"][value="none"]'),
 		).toBeVisible();
@@ -198,7 +205,10 @@ test.describe("Memory Settings UI", () => {
 			page.locator('input[name="memory-embedding"][value="offline"]'),
 		).toBeVisible();
 		await expect(
-			page.locator('input[name="memory-embedding"][value="openai-compat"]'),
+			page.locator('input[name="memory-embedding"][value="vllm"]'),
+		).toBeVisible();
+		await expect(
+			page.locator('input[name="memory-embedding"][value="ollama"]'),
 		).toBeVisible();
 		await expect(
 			page.locator('input[name="memory-embedding"][value="naia"]'),
@@ -246,13 +256,15 @@ test.describe("Memory Settings UI", () => {
 		).toBeVisible();
 	});
 
-	test("openai-compat embedding shows base URL, key, and model fields", async ({
+	test("vllm/ollama embedding shows base URL, key, and model fields", async ({
 		page,
 	}) => {
+		// openai-compat radio was replaced with separate vllm + ollama radios that
+		// share the same field layout (base URL / API key / model).
 		await gotoSettings(page);
 
 		await page
-			.locator('input[name="memory-embedding"][value="openai-compat"]')
+			.locator('input[name="memory-embedding"][value="vllm"]')
 			.click();
 
 		await expect(
@@ -397,9 +409,9 @@ test.describe("Memory Settings UI", () => {
 			.locator('input[placeholder*="6333"]')
 			.fill("http://localhost:6333");
 
-		// Select openai-compat embedding
+		// Select vllm embedding (openai-compat-style endpoint)
 		await page
-			.locator('input[name="memory-embedding"][value="openai-compat"]')
+			.locator('input[name="memory-embedding"][value="vllm"]')
 			.click();
 		await page
 			.locator('input[placeholder*="localhost:11434"]')
@@ -409,10 +421,7 @@ test.describe("Memory Settings UI", () => {
 			.fill("nomic-embed-text");
 
 		// Save
-		await page
-			.getByRole("button", { name: /저장|save/i })
-			.first()
-			.click();
+		await page.locator(".settings-save-btn").first().click();
 
 		// Wait for sync_gateway_config IPC to be called
 		await page.waitForFunction(
@@ -427,7 +436,7 @@ test.describe("Memory Settings UI", () => {
 
 		expect(syncParams?.memory_adapter).toBe("qdrant");
 		expect(syncParams?.qdrant_url).toBe("http://localhost:6333");
-		expect(syncParams?.memory_embedding_provider).toBe("openai-compat");
+		expect(syncParams?.memory_embedding_provider).toBe("vllm");
 		expect(syncParams?.memory_embedding_base_url).toBe(
 			"http://localhost:11434",
 		);
@@ -440,10 +449,8 @@ test.describe("Memory Settings UI", () => {
 		await gotoSettings(page);
 
 		// local is default, none is default — just save without changing memory settings
-		await page
-			.getByRole("button", { name: /저장|save/i })
-			.first()
-			.click();
+		// (use class selector to avoid strict-mode collisions with other "save" buttons)
+		await page.locator(".settings-save-btn").first().click();
 
 		await page.waitForFunction(
 			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
@@ -473,19 +480,16 @@ test.describe("Memory Settings UI", () => {
 			.locator('input[placeholder*="6333"]')
 			.fill("http://localhost:6333");
 
-		// Select openai-compat embedding
+		// Select vllm embedding (openai-compat-style endpoint)
 		await page
-			.locator('input[name="memory-embedding"][value="openai-compat"]')
+			.locator('input[name="memory-embedding"][value="vllm"]')
 			.click();
 		await page
 			.locator('input[placeholder*="localhost:11434"]')
 			.fill("http://localhost:11434");
 
 		// Save
-		await page
-			.getByRole("button", { name: /저장|save/i })
-			.first()
-			.click();
+		await page.locator(".settings-save-btn").first().click();
 
 		// Read back from localStorage
 		const saved = await page.evaluate(() => {
@@ -495,7 +499,7 @@ test.describe("Memory Settings UI", () => {
 
 		expect(saved?.memoryAdapter).toBe("qdrant");
 		expect(saved?.qdrantUrl).toBe("http://localhost:6333");
-		expect(saved?.memoryEmbeddingProvider).toBe("openai-compat");
+		expect(saved?.memoryEmbeddingProvider).toBe("vllm");
 		expect(saved?.memoryEmbeddingBaseUrl).toBe("http://localhost:11434");
 	});
 });

@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 const MOCK = `
 (function() {
@@ -38,6 +42,8 @@ const MOCK = `
 
 test("debug: settings lab login IPC trace", async ({ page }) => {
 	await page.addInitScript(MOCK);
+	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
+	await page.addInitScript({ content: SEED_ADK_PATH });
 	await page.addInitScript(() => {
 		localStorage.setItem(
 			"naia-config",
@@ -54,8 +60,8 @@ test("debug: settings lab login IPC trace", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 15000 });
 
-	// Open settings via ⚙️ button
-	const gearBtn = page.locator("button").filter({ hasText: "⚙" });
+	// Open settings via the ModeBar settings button (.mode-bar-settings)
+	const gearBtn = page.locator(".mode-bar-settings");
 	await gearBtn.click();
 	await page.waitForTimeout(800);
 	await page.screenshot({ path: "_results_/s1-settings-open.png" });
