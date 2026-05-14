@@ -48,7 +48,7 @@ export function getCameraActions(): CameraActions {
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera-v19";
+const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
 	position: { x: -0.12, y: 1.21, z: -2.09 },
 	target: { x: -1.45, y: 1.0, z: 0.12 },
@@ -331,8 +331,8 @@ export function AvatarCanvas() {
 			);
 			if (vrm?.humanoid) {
 				const hips =
-					vrm.humanoid.getNormalizedBoneNode("hips") ??
-					vrm.humanoid.getNormalizedBoneNode("head");
+					vrm.humanoid.getRawBoneNode("hips") ??
+					vrm.humanoid.getRawBoneNode("head");
 				if (hips) {
 					const hipsPos = new Vector3();
 					hips.getWorldPosition(hipsPos);
@@ -504,8 +504,8 @@ export function AvatarCanvas() {
 				// When savedCam exists, keep user's saved target — don't override.
 				if (!savedCam && vrm.humanoid) {
 					const hips =
-						vrm.humanoid.getNormalizedBoneNode("hips") ??
-						vrm.humanoid.getNormalizedBoneNode("head");
+						vrm.humanoid.getRawBoneNode("hips") ??
+						vrm.humanoid.getRawBoneNode("head");
 					if (hips) {
 						const hipsPos = new Vector3();
 						hips.getWorldPosition(hipsPos);
