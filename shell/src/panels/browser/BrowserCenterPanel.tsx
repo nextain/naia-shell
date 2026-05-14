@@ -249,6 +249,10 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 				width: rect.width,
 				height: rect.height,
 			});
+			// Immediately hide if browser is not the active panel on startup.
+			if (usePanelStore.getState().activePanel !== "browser") {
+				invoke("browser_wv_hide").catch(() => {});
+			}
 			Logger.info("BrowserCenterPanel", "Browser webview created");
 			setStatus("ready");
 			await refreshPageInfo();

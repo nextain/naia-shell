@@ -278,7 +278,7 @@ export function AvatarCanvas() {
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
 		controls.dampingFactor = 0.1;
-		controls.enablePan = true;
+		controls.enablePan = false; // pan via ✥ button only
 		controls.enableZoom = true;
 		controls.minDistance = 0.1;
 		controls.maxDistance = 10;
@@ -300,6 +300,8 @@ export function AvatarCanvas() {
 			camera.lookAt(controls.target);
 			controls.update();
 		};
+		let lastModelCenter: Vector3 | null = null;
+
 		_cameraActions.pan = (dx, dy) => {
 			// Pan in camera-local XY plane (speed scales with distance to target)
 			const dist = camera.position.distanceTo(controls.target);
@@ -329,15 +331,8 @@ export function AvatarCanvas() {
 				DEFAULT_CAMERA.target.y,
 				DEFAULT_CAMERA.target.z,
 			);
-			if (vrm?.humanoid) {
-				const hips =
-					vrm.humanoid.getRawBoneNode("hips") ??
-					vrm.humanoid.getRawBoneNode("head");
-				if (hips) {
-					const hipsPos = new Vector3();
-					hips.getWorldPosition(hipsPos);
-					resetTarget = new Vector3(hipsPos.x, hipsPos.y + 0.3, hipsPos.z);
-				}
+			if (lastModelCenter) {
+				resetTarget = lastModelCenter.clone();
 			}
 			controls.target.copy(resetTarget);
 			controls.update();
@@ -500,21 +495,14 @@ export function AvatarCanvas() {
 
 				vrm = result._vrm;
 
-				// Anchor orbit target to character chest on first load only.
-				// When savedCam exists, keep user's saved target — don't override.
-				if (!savedCam && vrm.humanoid) {
-					const hips =
-						vrm.humanoid.getRawBoneNode("hips") ??
-						vrm.humanoid.getRawBoneNode("head");
-					if (hips) {
-						const hipsPos = new Vector3();
-						hips.getWorldPosition(hipsPos);
-						const charTarget = new Vector3(hipsPos.x, hipsPos.y + 0.3, hipsPos.z);
-						const diff = charTarget.clone().sub(controls.target);
-						camera.position.add(diff);
-						controls.target.copy(charTarget);
-						controls.update();
-					}
+				// Use modelCenter (bounding-box chest level, computed by VRM loader).
+				// Always save so reset() can restore it; only adjust camera on first load.
+				lastModelCenter = result.modelCenter.clone();
+				if (!savedCam) {
+					const diff = result.modelCenter.clone().sub(controls.target);
+					camera.position.add(diff);
+					controls.target.copy(result.modelCenter);
+					controls.update();
 				}
 
 				emotionCtrl = createEmotionController(vrm);
