@@ -37,10 +37,11 @@ import { useAvatarStore } from "../stores/avatar";
 // camera without prop-drilling or store changes.
 type CameraActions = {
 	rotate: (dx: number, dy: number) => void;
+	pan: (dx: number, dy: number) => void;
 	reset: () => void;
 	save: () => void;
 };
-const _cameraActions: CameraActions = { rotate: () => {}, reset: () => {}, save: () => {} };
+const _cameraActions: CameraActions = { rotate: () => {}, pan: () => {}, reset: () => {}, save: () => {} };
 export function getCameraActions(): CameraActions {
 	return _cameraActions;
 }
@@ -299,17 +300,46 @@ export function AvatarCanvas() {
 			camera.lookAt(controls.target);
 			controls.update();
 		};
+		_cameraActions.pan = (dx, dy) => {
+			// Pan in camera-local XY plane (speed scales with distance to target)
+			const dist = camera.position.distanceTo(controls.target);
+			const panSpeed = dist * 0.001;
+			const right = new Vector3()
+				.crossVectors(
+					camera.position.clone().sub(controls.target).normalize(),
+					camera.up,
+				)
+				.normalize();
+			const panOffset = new Vector3();
+			panOffset.addScaledVector(right, -dx * panSpeed);
+			panOffset.addScaledVector(camera.up, dy * panSpeed);
+			controls.target.add(panOffset);
+			camera.position.add(panOffset);
+			controls.update();
+		};
 		_cameraActions.reset = () => {
 			camera.position.set(
 				DEFAULT_CAMERA.position.x,
 				DEFAULT_CAMERA.position.y,
 				DEFAULT_CAMERA.position.z,
 			);
-			controls.target.set(
+			// Use actual hips world position so pivot is correct after reset
+			let resetTarget = new Vector3(
 				DEFAULT_CAMERA.target.x,
 				DEFAULT_CAMERA.target.y,
 				DEFAULT_CAMERA.target.z,
 			);
+			if (vrm?.humanoid) {
+				const hips =
+					vrm.humanoid.getNormalizedBoneNode("hips") ??
+					vrm.humanoid.getNormalizedBoneNode("head");
+				if (hips) {
+					const hipsPos = new Vector3();
+					hips.getWorldPosition(hipsPos);
+					resetTarget = new Vector3(hipsPos.x, hipsPos.y + 0.3, hipsPos.z);
+				}
+			}
+			controls.target.copy(resetTarget);
 			controls.update();
 			clearSavedCamera();
 		};
@@ -470,21 +500,18 @@ export function AvatarCanvas() {
 
 				vrm = result._vrm;
 
-				// Always anchor orbit target to character chest — ensures rotation
-				// pivots around the avatar even after resize or saved-camera restore.
-				if (vrm.humanoid) {
-					const hips = vrm.humanoid.getNormalizedBoneNode("hips") ??
+				// Anchor orbit target to character chest on first load only.
+				// When savedCam exists, keep user's saved target — don't override.
+				if (!savedCam && vrm.humanoid) {
+					const hips =
+						vrm.humanoid.getNormalizedBoneNode("hips") ??
 						vrm.humanoid.getNormalizedBoneNode("head");
 					if (hips) {
 						const hipsPos = new Vector3();
 						hips.getWorldPosition(hipsPos);
-						// Chest level: hips + ~0.3 m upward
 						const charTarget = new Vector3(hipsPos.x, hipsPos.y + 0.3, hipsPos.z);
-						if (!savedCam) {
-							// First load: slide camera so framing stays consistent
-							const diff = charTarget.clone().sub(controls.target);
-							camera.position.add(diff);
-						}
+						const diff = charTarget.clone().sub(controls.target);
+						camera.position.add(diff);
 						controls.target.copy(charTarget);
 						controls.update();
 					}
@@ -595,6 +622,7 @@ export function AvatarCanvas() {
 			// Save camera position on unmount
 			saveCameraState(camera, controls.target);
 			_cameraActions.rotate = () => {};
+			_cameraActions.pan = () => {};
 			_cameraActions.reset = () => {};
 			_cameraActions.save = () => {};
 			controls.dispose();

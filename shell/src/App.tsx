@@ -181,6 +181,8 @@ export function App() {
 
 	const [joystickActive, setJoystickActive] = useState(false);
 	const joystickActiveRef = useRef(false);
+	const [panActive, setPanActive] = useState(false);
+	const panActiveRef = useRef(false);
 
 	// Initialise ttsEnabled from persisted config on mount
 	useEffect(() => {
@@ -606,6 +608,36 @@ export function App() {
 						>
 							<span className="bgm-ai-toggle__dot" />
 							⊕
+						</button>
+						{/* Avatar camera pan */}
+						<button
+							type="button"
+							className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
+							title="드래그해서 아바타 이동"
+							style={{ cursor: panActive ? "grabbing" : "grab", touchAction: "none" }}
+							onPointerDown={(e) => {
+								e.currentTarget.setPointerCapture(e.pointerId);
+								panActiveRef.current = true;
+								setPanActive(true);
+							}}
+							onPointerMove={(e) => {
+								if (!panActiveRef.current) return;
+								getCameraActions().pan(e.movementX, e.movementY);
+							}}
+							onPointerUp={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								panActiveRef.current = false;
+								setPanActive(false);
+								getCameraActions().save();
+							}}
+							onPointerCancel={(e) => {
+								e.currentTarget.releasePointerCapture(e.pointerId);
+								panActiveRef.current = false;
+								setPanActive(false);
+							}}
+						>
+							<span className="bgm-ai-toggle__dot" />
+							✥
 						</button>
 						{/* Avatar view reset */}
 						<button
