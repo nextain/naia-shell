@@ -1,4 +1,5 @@
 import { type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -338,7 +339,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 					)}
 				</div>
 			)}
-			{addUrlDialog && (
+			{addUrlDialog && createPortal(
 				<div
 					className="mode-bar-url-dialog-overlay"
 					onClick={() => setAddUrlDialog(false)}
@@ -377,8 +378,9 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 						</button>
 					</div>
 				</div>
+			, document.body,
 			)}
-			{urlInputDialog && (
+			{urlInputDialog && createPortal(
 				<div
 					className="mode-bar-url-dialog-overlay"
 					onClick={() => setUrlInputDialog(false)}
@@ -416,6 +418,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 						</div>
 					</form>
 				</div>
+			, document.body,
 			)}
 			<button
 				type="button"
