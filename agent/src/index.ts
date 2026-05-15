@@ -28,27 +28,27 @@ import type { JobKind } from "./tasks/index.js";
 /** Global job tracker — tracks all skill/tool executions. */
 export const jobTracker = new JobTracker();
 import {
-	LocalAdapter,
-	MemorySystem,
-	OpenAICompatEmbeddingProvider,
-	NaiaGatewayEmbeddingProvider,
-	buildLLMFactExtractor,
+        SqliteAdapter,
+        MemorySystem,
+        OpenAICompatEmbeddingProvider,
+        NaiaGatewayEmbeddingProvider,
+        buildLLMFactExtractor,
 } from "@nextain/naia-memory";
 import { createNaiaMemoryProvider } from "./memory-bridge.js";
 import { MemoryTagScrubber } from "./memory-scrubber.js";
 import { NaiaApprovalBridge } from "./approval-bridge.js";
 import {
-	type ApprovalResponse,
-	type ChatRequest,
-	type MemoryExportRequest,
-	type MemoryImportRequest,
-	type PanelInstallRequest,
-	type PanelSkillsClearRequest,
-	type PanelSkillsRequest,
-	type PanelToolResult,
-	type ToolRequest,
-	type TtsRequest,
-	parseRequest,
+        type ApprovalResponse,
+        type ChatRequest,
+        type MemoryExportRequest,
+        type MemoryImportRequest,
+        type PanelInstallRequest,
+        type PanelSkillsClearRequest,
+        type PanelSkillsRequest,
+        type PanelToolResult,
+        type ToolRequest,
+        type TtsRequest,
+        parseRequest,
 } from "./protocol.js";
 import { calculateCost } from "./providers/cost.js";
 import { buildProvider, getAgentNaiaKey, setAgentNaiaKey } from "./providers/factory.js";
@@ -60,11 +60,11 @@ import { synthesize as ttsSynthesize } from "./tts/index.js";
 const activeStreams = new Map<string, AbortController>();
 
 // ─── Memory System (singleton) ───────────────────────────────────────────────
-const MEMORY_STORE_PATH = join(
-	homedir(),
-	".naia",
-	"memory",
-	"alpha-memory.json",
+const MEMORY_DB_PATH = join(
+        homedir(),
+        ".naia",
+        "memory",
+        "alpha-memory-v5.db",
 );
 mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
 
@@ -73,75 +73,72 @@ mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
  * Reads ~/.naia/memory-config.json (written by Shell Rust backend).
  */
 type MemConfig = {
-	adapter?: string;
-	embeddingProvider?: string;
-	embeddingBaseUrl?: string;
-	embeddingApiKey?: string;
-	embeddingModel?: string;
-	llmProvider?: string;
-	llmBaseUrl?: string;
-	llmApiKey?: string;
-	llmModel?: string;
+        adapter?: string;
+        embeddingProvider?: string;
+        embeddingBaseUrl?: string;
+        embeddingApiKey?: string;
+        embeddingModel?: string;
+        llmProvider?: string;
+        llmBaseUrl?: string;
+        llmApiKey?: string;
+        llmModel?: string;
 };
 
 /**
  * Build a new MemorySystem from ~/.naia/memory-config.json.
  * Called at startup and again after auth_update for naia providers.
- * Fix: passes embeddingProvider to LocalAdapter via object options so
- * MemorySystem threads it into the adapter (string-path arg sets embedder=null).
+ * v5.1 Fix: Uses high-performance SqliteAdapter instead of JSON LocalAdapter.
  */
 function buildMemorySystem(): MemorySystem {
-	let cfg: MemConfig = {};
-	try {
-		const configPath = defaultPathResolver.memoryConfigPath();
-		cfg = JSON.parse(readFileSync(configPath, "utf-8")) as MemConfig;
-	} catch {
-		// No config file or parse error — use defaults silently
-	}
+        let cfg: MemConfig = {};
+        try {
+                const configPath = defaultPathResolver.memoryConfigPath();
+                cfg = JSON.parse(readFileSync(configPath, "utf-8")) as MemConfig;
+        } catch {
+                // No config file or parse error — use defaults silently
+        }
 
-	// Resolve embedding provider
-	let embeddingProvider: OpenAICompatEmbeddingProvider | undefined;
-	if (cfg.embeddingProvider === "vllm" || cfg.embeddingProvider === "ollama") {
-		if (cfg.embeddingBaseUrl && cfg.embeddingModel) {
-			embeddingProvider = new OpenAICompatEmbeddingProvider(
-				cfg.embeddingBaseUrl,
-				cfg.embeddingApiKey ?? "",
-				cfg.embeddingModel,
-			);
-		}
-	} else if (cfg.embeddingProvider === "naia") {
-		const naiaKey = getAgentNaiaKey();
-		const naiaGatewayUrl = process.env.NAIA_GATEWAY_URL ?? "https://naia-gateway.nextain.io";
-		if (naiaKey) {
-			embeddingProvider = new NaiaGatewayEmbeddingProvider(naiaGatewayUrl, naiaKey);
-		}
-	}
+        // Resolve embedding provider
+        let embeddingProvider: OpenAICompatEmbeddingProvider | undefined;
+        if (cfg.embeddingProvider === "vllm" || cfg.embeddingProvider === "ollama") {
+                if (cfg.embeddingBaseUrl && cfg.embeddingModel) {
+                        embeddingProvider = new OpenAICompatEmbeddingProvider(
+                                cfg.embeddingBaseUrl,
+                                cfg.embeddingApiKey ?? "",
+                                cfg.embeddingModel,
+                        );
+                }
+        } else if (cfg.embeddingProvider === "naia") {
+                const naiaKey = getAgentNaiaKey();
+                const naiaGatewayUrl = process.env.NAIA_GATEWAY_URL ?? "https://naia-gateway.nextain.io";
+                if (naiaKey) {
+                        embeddingProvider = new NaiaGatewayEmbeddingProvider(naiaGatewayUrl, naiaKey);
+                }
+        }
 
-	// Resolve LLM fact extractor
-	let factExtractor: ReturnType<typeof buildLLMFactExtractor> | undefined;
-	if (cfg.llmProvider === "vllm" || cfg.llmProvider === "ollama") {
-		if (cfg.llmBaseUrl && cfg.llmApiKey) {
-			factExtractor = buildLLMFactExtractor({
-				apiKey: cfg.llmApiKey,
-				baseURL: cfg.llmBaseUrl,
-				model: cfg.llmModel,
-			});
-		}
-	} else if (cfg.llmProvider === "naia") {
-		const naiaKey = getAgentNaiaKey();
-		if (naiaKey) {
-			factExtractor = buildLLMFactExtractor({ apiKey: naiaKey });
-		}
-	}
+        // Resolve LLM fact extractor
+        let factExtractor: ReturnType<typeof buildLLMFactExtractor> | undefined;
+        if (cfg.llmProvider === "vllm" || cfg.llmProvider === "ollama") {
+                if (cfg.llmBaseUrl && cfg.llmApiKey) {
+                        factExtractor = buildLLMFactExtractor({
+                                apiKey: cfg.llmApiKey,
+                                baseURL: cfg.llmBaseUrl,
+                                model: cfg.llmModel,
+                        });
+                }
+        } else if (cfg.llmProvider === "naia") {
+                const naiaKey = getAgentNaiaKey();
+                if (naiaKey) {
+                        factExtractor = buildLLMFactExtractor({ apiKey: naiaKey });
+                }
+        }
 
-	// Fix (Finding B): pass { storePath, embeddingProvider } as object so LocalAdapter
-	// constructor uses options.embeddingProvider — string arg sets this.embedder = null.
-	return new MemorySystem({
-		adapter: new LocalAdapter({ storePath: MEMORY_STORE_PATH, embeddingProvider }),
-		...(factExtractor ? { factExtractor } : {}),
-	});
+        // Breakthrough: Switch to Hardened SqliteAdapter for 1M+ scalability
+        return new MemorySystem({
+                adapter: new SqliteAdapter({ dbPath: MEMORY_DB_PATH, embeddingProvider }),
+                ...(factExtractor ? { factExtractor } : {}),
+        });
 }
-
 // Fix (Finding A): let memorySystem — reassignable so auth_update can rebuild it
 // when the naia key becomes available (singleton was frozen before setAgentNaiaKey fired).
 // Reconcile #272: paired with `let memoryProvider` (phase4 strangler-fig wrap) so
