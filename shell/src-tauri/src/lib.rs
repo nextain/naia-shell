@@ -2789,6 +2789,9 @@ pub fn run() {
     let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
 
     let mut builder = tauri::Builder::default()
+        .register_uri_scheme_protocol("naia-bridge", |_ctx, request| {
+            browser_webview::handle_bridge_request(request)
+        })
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // When a second instance is launched (e.g. via deep link),
             // focus the existing window instead.

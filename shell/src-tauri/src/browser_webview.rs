@@ -10,13 +10,11 @@
 //!     └── Webview "browser-panel" — Browser (native WebView2 / WebKitGTK)
 //!
 //! AI interaction: JavaScript injected via an initialization script.
-//! Results are returned via a minimal localhost HTTP bridge (POST to 127.0.0.1)
-//! so the callback works from any origin without requiring Tauri IPC from
-//! external URLs.
+//! Results are returned via a custom URI scheme protocol (naia-bridge://)
+//! registered on the Tauri builder, bypassing mixed-content restrictions
+//! that would block HTTP fetch from HTTPS pages on WebKitGTK.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::webview::Color;
@@ -30,19 +28,10 @@ const DEFAULT_URL: &str = "https://www.google.com";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-/// HTTP bridge port (localhost) for eval results + navigation tracking.
-static HTTP_PORT: OnceLock<u16> = OnceLock::new();
-
-/// Current page URL — updated by the init script on every navigation.
 static CURRENT_URL: Mutex<String> = Mutex::new(String::new());
-
-/// Current page title — updated by the init script on every navigation.
 static CURRENT_TITLE: Mutex<String> = Mutex::new(String::new());
-
-/// Monotonic counter for unique eval IDs.
 static EVAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Pending eval results: eval_id → oneshot sender.
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<String, String>>>>>;
 
 static PENDING_EVALS: OnceLock<PendingMap> = OnceLock::new();
@@ -62,12 +51,12 @@ fn pending_evals() -> PendingMap {
 ///   window.__naia_eval(id, js_body) — async eval bridge called by Rust
 ///   Automatic URL/title reporting on navigation
 ///
-/// __NAIA_PORT__ is replaced with the actual HTTP bridge port at startup.
+/// Uses the naia-bridge:// custom protocol registered via
+/// register_uri_scheme_protocol — avoids mixed-content blocking on WebKitGTK.
 const INIT_SCRIPT_TEMPLATE: &str = r#"(function() {
 "use strict";
-var _p = __NAIA_PORT__;
 function _post(path, body) {
-    fetch("http://127.0.0.1:" + _p + path, {
+    fetch("naia-bridge://localhost" + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -122,83 +111,70 @@ if (document.readyState === "complete" || document.readyState === "interactive")
 })();
 "#;
 
-// ─── HTTP bridge server ───────────────────────────────────────────────────────
+// ─── Custom protocol handler ────────────────────────────────────────────────
 
-fn start_bridge_server() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("[browser_wv] bridge bind failed");
-    let port = listener.local_addr().unwrap().port();
-    crate::log_verbose(&format!("[browser_wv] bridge server on port {port}"));
-    let pending = pending_evals();
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let pending = pending.clone();
-            std::thread::spawn(move || handle_bridge_request(stream, pending));
-        }
-    });
-    port
-}
+/// Handle `naia-bridge://` custom protocol requests.
+/// Called by the Tauri URI scheme protocol registered in lib.rs.
+///
+/// Processes eval results and URL/title tracking posted by the init script
+/// via `fetch("naia-bridge://localhost/...")`.
+pub fn handle_bridge_request(
+    request: tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    let body = request.into_body();
 
-fn handle_bridge_request(mut stream: std::net::TcpStream, pending: PendingMap) {
-    let mut buf = vec![0u8; 131_072]; // 128 KiB max
-    let n = match stream.read(&mut buf) {
-        Ok(n) if n > 0 => n,
-        _ => return,
+    let cors_headers = |builder: tauri::http::response::Builder| -> tauri::http::response::Builder {
+        builder
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            .header("Access-Control-Allow-Headers", "Content-Type")
     };
 
-    let raw = String::from_utf8_lossy(&buf[..n]);
-    let first_line = raw.lines().next().unwrap_or("");
-    let mut parts = first_line.splitn(3, ' ');
-    let method = parts.next().unwrap_or("");
-    let path = parts.next().unwrap_or("");
-
-    // CORS response headers (used for all replies)
-    let cors_resp = "HTTP/1.1 200 OK\r\n\
-		Access-Control-Allow-Origin: *\r\n\
-		Access-Control-Allow-Methods: POST, OPTIONS\r\n\
-		Access-Control-Allow-Headers: Content-Type\r\n\
-		Content-Length: 2\r\n\r\nOK";
-
-    let _ = stream.write_all(cors_resp.as_bytes());
-
-    if method == "OPTIONS" || method != "POST" {
-        return;
+    if method == tauri::http::Method::OPTIONS {
+        return cors_headers(tauri::http::Response::builder())
+            .status(200)
+            .header("Access-Control-Max-Age", "86400")
+            .body(Vec::new())
+            .unwrap();
     }
 
-    // Extract body after the blank line
-    let body = raw.find("\r\n\r\n").map(|i| &raw[i + 4..]).unwrap_or("");
-
-    if let Some(id) = path.strip_prefix("/__naia_result/") {
-        let id = id.trim_end_matches('/').to_string();
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-            let result = if let Some(e) = val["error"].as_str() {
-                Err(e.to_string())
-            } else {
-                Ok(val["result"].as_str().unwrap_or("null").to_string())
-            };
-            if let Some(tx) = pending.lock().unwrap().remove(&id) {
-                let _ = tx.send(result);
+    if method == tauri::http::Method::POST {
+        if let Some(id) = path.strip_prefix("/__naia_result/") {
+            let id = id.trim_end_matches('/').to_string();
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&body) {
+                let result = if let Some(e) = val["error"].as_str() {
+                    Err(e.to_string())
+                } else {
+                    Ok(val["result"].as_str().unwrap_or("null").to_string())
+                };
+                if let Some(tx) = pending_evals().lock().unwrap().remove(&id) {
+                    let _ = tx.send(result);
+                }
             }
-        }
-    } else if path == "/__naia_nav" || path == "/__naia_nav/" {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-            if let Some(url) = val["url"].as_str() {
-                *CURRENT_URL.lock().unwrap() = url.to_string();
-            }
-            if let Some(title) = val["title"].as_str() {
-                *CURRENT_TITLE.lock().unwrap() = title.to_string();
+        } else if path == "/__naia_nav" || path == "/__naia_nav/" {
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&body) {
+                if let Some(url) = val["url"].as_str() {
+                    *CURRENT_URL.lock().unwrap() = url.to_string();
+                }
+                if let Some(title) = val["title"].as_str() {
+                    *CURRENT_TITLE.lock().unwrap() = title.to_string();
+                }
             }
         }
     }
+
+    cors_headers(tauri::http::Response::builder())
+        .status(200)
+        .body(b"OK".to_vec())
+        .unwrap()
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-fn bridge_port() -> u16 {
-    *HTTP_PORT.get_or_init(start_bridge_server)
-}
-
 fn build_init_script() -> String {
-    INIT_SCRIPT_TEMPLATE.replace("__NAIA_PORT__", &bridge_port().to_string())
+    INIT_SCRIPT_TEMPLATE.to_string()
 }
 
 fn gen_eval_id() -> String {
@@ -283,9 +259,6 @@ pub async fn browser_wv_create(
         crate::log_verbose("[browser_wv] E2E mode — skipping child webview creation");
         return Ok(());
     }
-
-    // Ensure bridge server is running before the init script references its port.
-    let _ = bridge_port();
 
     if let Some(wv) = app.get_webview(BROWSER_LABEL) {
         // Already exists — reposition and unhide.

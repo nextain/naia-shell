@@ -7,7 +7,6 @@ import {
 	Clock,
 	DirectionalLight,
 	LoopRepeat,
-	MOUSE,
 	Object3D,
 	PerspectiveCamera,
 	Scene,
@@ -50,8 +49,8 @@ const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
 const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
-	position: { x: -0.12, y: 1.21, z: -2.09 },
-	target: { x: -1.45, y: 1.0, z: 0.12 },
+	position: { x: 0, y: 1.2, z: -2.0 },
+	target: { x: 0, y: 1.0, z: 0 },
 };
 
 interface SavedCamera {
@@ -278,14 +277,13 @@ export function AvatarCanvas() {
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
 		controls.dampingFactor = 0.1;
-		controls.enablePan = false; // pan via ✥ button only
+		controls.enablePan = false;
+		controls.enableRotate = false;
 		controls.enableZoom = true;
 		controls.minDistance = 0.1;
 		controls.maxDistance = 10;
-		controls.maxPolarAngle = Math.PI * 0.85; // prevent upside-down flip
+		controls.maxPolarAngle = Math.PI * 0.85;
 		controls.minPolarAngle = 0.1;
-		// Left-click = rotate, Right-click = pan
-		controls.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
 
 		_cameraActions.rotate = (dx, dy) => {
 			const offset = camera.position.clone().sub(controls.target);
@@ -320,21 +318,21 @@ export function AvatarCanvas() {
 			controls.update();
 		};
 		_cameraActions.reset = () => {
-			camera.position.set(
-				DEFAULT_CAMERA.position.x,
-				DEFAULT_CAMERA.position.y,
-				DEFAULT_CAMERA.position.z,
+			const target = lastModelCenter
+				? lastModelCenter.clone()
+				: new Vector3(
+						DEFAULT_CAMERA.target.x,
+						DEFAULT_CAMERA.target.y,
+						DEFAULT_CAMERA.target.z,
+					);
+			const defaultOffset = new Vector3(
+				DEFAULT_CAMERA.position.x - DEFAULT_CAMERA.target.x,
+				DEFAULT_CAMERA.position.y - DEFAULT_CAMERA.target.y,
+				DEFAULT_CAMERA.position.z - DEFAULT_CAMERA.target.z,
 			);
-			// Use actual hips world position so pivot is correct after reset
-			let resetTarget = new Vector3(
-				DEFAULT_CAMERA.target.x,
-				DEFAULT_CAMERA.target.y,
-				DEFAULT_CAMERA.target.z,
-			);
-			if (lastModelCenter) {
-				resetTarget = lastModelCenter.clone();
-			}
-			controls.target.copy(resetTarget);
+			camera.position.copy(target).add(defaultOffset);
+			controls.target.copy(target);
+			camera.lookAt(target);
 			controls.update();
 			clearSavedCamera();
 		};
