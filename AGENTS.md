@@ -59,6 +59,12 @@ Naia-OS/
 └── work-logs/      # Dev work logs (gitignored, {username}/ subdirs)
 ```
 
+## 🧠 Memory System (Hardened SQLite v6.0)
+- **Engine**: Switched from legacy JSON (`alpha-memory.json`) to high-performance SQLite (`alpha-memory-v5.db`).
+- **Architecture**: Async Worker-Thread isolation to prevent main-thread UI freezing.
+- **Provider**: Leverages `@nextain/naia-memory` with tiered recall (Surface: 9.7ms).
+- **Features**: AES-256-GCM encrypted backup, bi-temporal recall, and Ebbinghaus decay.
+
 ## Conventions (summary)
 
 - **Language**: Git/shared (commits, Issue comments, PR, context) → English | Personal (work-logs/) → any | AI responses → contributor's language
