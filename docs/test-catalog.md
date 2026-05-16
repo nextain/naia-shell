@@ -80,37 +80,50 @@ cd shell && pnpm exec playwright test e2e/
 | 14 | skill_workspace_focus_session clears badge when no recent_file | recent_file 없을 때 graceful |
 | 15 | skill_workspace_open_file updates editor filepath | 에디터 파일 경로 업데이트 |
 | 16 | pushes errorAlert context when session has status=error | error 세션 → 컨텍스트 푸시 (중복 방지) |
-| 17 | re-arms errorAlert after session recovers to idle/active | 회복 후 재발 시 다시 알림 |
+| 17 | registers skill_workspace_send_to_session handler on mount | 마운트 시 핸들러 등록 |
+| 18 | skill_workspace_send_to_session returns error when dir or text is missing | 파라미터 유효성 검사 |
+| 19 | skill_workspace_send_to_session returns error when no PTY session found | 세션 없을 때 에러 반환 |
+| 20 | skill_workspace_send_to_session calls pty_write and returns 'Sent to: {dir}' | pty_write invoke + 반환값 |
+| 21 | skill_workspace_send_to_session is registered in index.tsx tool descriptor list | dir/text required 필드 확인 |
+| 22 | re-arms errorAlert after session recovers to idle/active | 회복 후 재발 시 다시 알림 |
 
 **SessionCard** — 세션 카드 컴포넌트
 
 | # | 테스트 | 검증 내용 |
 |---|-------|---------|
-| 18 | renders active session with green emoji | 🟢 이모지 + dir 이름 |
-| 19 | renders idle session with yellow emoji | 🟡 이모지 |
-| 20 | renders stopped session with black emoji | ⚫ 이모지 |
-| 21 | shows progress issue and phase in badge | "#79 · build" 배지 |
-| 22 | calls onClick when card is clicked | 클릭 콜백 |
+| 23 | renders active session with green emoji | 🟢 이모지 + dir 이름 |
+| 24 | renders idle session with yellow emoji | 🟡 이모지 |
+| 25 | renders stopped session with black emoji | ⚫ 이모지 |
+| 26 | shows progress issue and phase in badge | "#79 · build" 배지 |
+| 27 | calls onClick when card is clicked | 클릭 콜백 |
 
 **Editor** — 파일 에디터 컴포넌트
 
 | # | 테스트 | 검증 내용 |
 |---|-------|---------|
-| 23 | renders empty hint when no file selected | 파일 미선택 안내 메시지 |
-| 24 | shows filename in header when file is opened | 헤더에 파일명 표시 |
-| 25 | shows badge when provided | 배지 렌더링 |
-| 26 | shows edit toggle button for markdown files | 마크다운 미리보기 모드 토글 |
-| 27 | shows read-only label for ref- directories | 읽기 전용 표시 |
+| 28 | renders empty hint when no file selected | 파일 미선택 안내 메시지 |
+| 29 | shows filename in header when file is opened | 헤더에 파일명 표시 |
+| 30 | shows badge when provided | 배지 렌더링 |
+| 31 | shows edit toggle button for markdown files | 마크다운 미리보기 모드 토글 |
+| 32 | shows read-only label for ref- directories | 읽기 전용 표시 |
 
 **Workspace Panel Registry** — 패널 레지스트리
 
 | # | 테스트 | 검증 내용 |
 |---|-------|---------|
-| 28 | registers workspace panel as builtIn | builtIn: true 등록 |
-| 29 | workspace panel has skill_workspace_get_sessions tool | tier:0 툴 등록 |
-| 30 | workspace panel has skill_workspace_open_file tool | tier:1 툴 등록 |
-| 31 | workspace panel has skill_workspace_focus_session tool | tier:1 툴 등록 |
-| 32 | workspace panel has onActivate and onDeactivate hooks | 라이프사이클 훅 |
+| 33 | registers workspace panel as builtIn | builtIn: true 등록 |
+| 34 | workspace panel has skill_workspace_get_sessions tool | tier:0 툴 등록 |
+| 35 | workspace panel has skill_workspace_open_file tool | tier:1 툴 등록 |
+| 36 | workspace panel has skill_workspace_focus_session tool | tier:1 툴 등록 |
+| 37 | workspace panel has onActivate and onDeactivate hooks | 라이프사이클 훅 |
+
+**#294 — WorkspaceCenterPanel 좌측 사이드바 수직 분할선**
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 38 | renders workspace-panel__row-resize-handle in the left sidebar | 리사이즈 핸들 렌더링 |
+| 39 | pointerdown on divider adds resizing-row class to body, pointerup removes it | 드래그 cursor 클래스 on/off |
+| 40 | pointermove after pointerdown changes skillsHeight | 드래그 후 높이 업데이트 |
 
 ---
 
@@ -291,6 +304,21 @@ cd shell && pnpm exec playwright test e2e/
 | 11 | sessions section collapses on toggle click | 세션 섹션 접기/펼치기 |
 | 12 | shows relative time on cards | 상대 시간 표시 |
 
+**#293 — workspaceRootRef 경로 정규화 + JS 타임아웃 (#293)**
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 13 | changing workspaceRoot backslash→slash causes exactly one additional fetch, not infinite | workspaceRootRef 변경 → 단 1회 재fetch (무한루프 방지) |
+| 14 | shows error state after 20s when pty_execute_sync never resolves | 20초 JS 타임아웃 → 에러 상태 |
+
+**#294 — IssuesPanel 수직 분할선 (이슈 ↕ 세션)**
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 15 | renders workspace-panel__row-resize-handle element | 리사이즈 핸들 렌더링 |
+| 16 | pointerdown on divider adds resizing-row class to body | 드래그 cursor 클래스 추가 |
+| 17 | pointermove after pointerdown changes issues list height | 드래그 후 높이 업데이트 |
+
 ---
 
 #### `shell/src/panels/__tests__/panel-system.test.tsx`
@@ -335,6 +363,56 @@ cd shell && pnpm exec playwright test e2e/
 
 **SettingsTab** — 설정 탭
 
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 1 | renders dynamic models with pricing info | 동적 모델 + 가격 표시 |
+| 2 | accepts gateway model payload as plain array | 게이트웨이 배열 페이로드 처리 |
+| 3 | renders provider select and API key input | 프로바이더 + API 키 입력 |
+| 4 | replaces API key input with Naia account UI | Naia 계정 UI 분기 |
+| 5 | shows STT provider selector with vosk option | STT 프로바이더 셀렉터 |
+| 6 | hides API key input for Claude Code CLI provider | CLI 프로바이더 → API 키 숨김 |
+| 7 | renders VRM model picker — shows empty state when no VRMs | VRM 없음 빈 상태 |
+| 8 | renders VRM items from naia-settings when invoke returns filenames | VRM 목록 렌더링 |
+| 9 | renders background image picker with 없음(기본) option | 배경 이미지 피커 |
+| 10 | renders VRM custom file button | VRM 커스텀 파일 버튼 |
+| 11 | selects VRM item from naia-settings and marks as active | VRM 선택 + active 표시 |
+| 12 | renders memory section with empty state | 메모리 빈 상태 |
+| 13 | renders facts when available | 메모리 사실 목록 |
+| 14 | saves config with VRM model from naia-settings | VRM 포함 설정 저장 |
+| 15 | renders theme picker | 테마 피커 |
+| 16 | shows error for empty API key | 빈 API 키 에러 |
+
+**#298 — Settings / Memory 탭 분리**
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 17 | renders settings tab bar with two tab buttons | 탭 바 + 2개 버튼 |
+| 18 | first tab button is active by default | 기본 Settings 탭 활성 |
+| 19 | memory section is NOT visible on settings tab by default | Settings 탭에서 메모리 숨김 |
+| 20 | clicking memory tab button shows memory section | Memory 탭 클릭 → 메모리 표시 |
+| 21 | switching to memory tab hides settings-danger-zone | Memory 탭 → danger-zone 숨김 |
+| 22 | switching back to settings tab restores danger-zone and hides memory section | Settings 탭 복귀 → 원복 |
+
+**#296 — 에이전트 헬스 체크 패널**
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 23 | renders agent health section with check button | 헬스 체크 섹션 렌더링 |
+| 24 | shows idle status initially | 초기 idle 상태 |
+| 25 | clicking check button calls gateway_health invoke | 버튼 클릭 → invoke 호출 |
+| 26 | shows healthy status when gateway_health returns true | healthy 상태 표시 |
+| 27 | shows unhealthy status when gateway_health returns false | unhealthy 상태 표시 |
+| 28 | agent-health-section is on the settings tab (not memory tab) | Settings 탭에만 위치 |
+| 29 | shows unhealthy status when gateway_health throws | 예외 → unhealthy 처리 |
+
+**#297 — 로그 뷰어 버튼**
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 30 | renders log viewer button on settings tab | 로그 뷰어 버튼 렌더링 |
+| 31 | log viewer button is on settings tab only (not memory tab) | Settings 탭에만 위치 |
+| 32 | clicking log viewer button calls get_gateway_log_path then openPath | invoke → openPath 순서 |
+
 #### `shell/src/components/__tests__/SkillsTab.test.tsx`
 
 **SkillsTab** — 스킬 관리 탭
@@ -346,6 +424,22 @@ cd shell && pnpm exec playwright test e2e/
 #### `shell/src/components/__tests__/ModeBar.test.tsx`
 
 **ModeBar** — 패널 전환 모드바
+
+| # | 테스트 | 검증 내용 |
+|---|-------|---------|
+| 1 | renders + button | 기본 렌더링 |
+| 2 | opens add-url dialog when + clicked | 다이얼로그 오픈 |
+| 3 | calls pushModal when add dialog opens | 모달 스택 관리 |
+| 4 | calls popModal when overlay is clicked | 오버레이 클릭 → 닫기 |
+| 5 | opens URL input dialog when 링크 추가 section clicked | URL 입력 단계 전환 |
+| 6 | pushModal stays at 1 during addUrlDialog→urlInputDialog transition | 전환 시 이중 modal 방지 |
+| 7 | edit button hidden when no shortcuts | 단축키 없을 때 편집 버튼 숨김 (#295) |
+| 8 | edit button appears when shortcuts exist | 단축키 있을 때 편집 버튼 노출 (#295) |
+| 9 | clicking edit button toggles mode-bar-edit--active class | 편집 모드 CSS 토글 (#295) |
+| 10 | in edit mode, ✕ delete button appears on each shortcut | 편집 모드 → 삭제 버튼 (#295) |
+| 11 | clicking ✕ calls removeBrowserShortcut with correct url | 삭제 콜백 (#295) |
+| 12 | clicking shortcut in edit mode opens icon editor dialog | 아이콘 편집 다이얼로그 (#295) |
+| 13 | icon editor save calls updateBrowserShortcutIcon | 아이콘 저장 (#295) |
 
 #### `shell/src/components/__tests__/ChannelsTab.test.tsx`
 
@@ -802,7 +896,7 @@ E2E로 커버되지만 단위 레벨 회귀 탐지가 없어 취약.
 
 ### ~~GAP-3: skill_workspace_send_to_session 단위 테스트 없음~~ ✅ 해결됨
 
-**파일**: `shell/src/panels/__tests__/workspace-panel.test.tsx` (5개 테스트 추가)
+**파일**: `shell/src/panels/__tests__/workspace-panel.test.tsx` (6개 테스트, #17-22 중 5개)
 
 검증 항목:
 - 마운트 시 핸들러 등록 (`bridge.hasHandler("skill_workspace_send_to_session")`)
@@ -834,4 +928,45 @@ E2E로 커버되지만 단위 레벨 회귀 탐지가 없어 취약.
 
 ---
 
-*마지막 업데이트: 2026-05-16 | 테스트 수: Shell 단위 163개 (panels), Agent 단위 약 1,200개*
+### ~~GAP-6: #293 IssuesPanel workspaceRootRef + JS 타임아웃 테스트 없음~~ ✅ 해결됨
+
+**파일**: `shell/src/panels/__tests__/issues-panel.test.tsx` (#13-14)
+
+검증 항목:
+- workspaceRoot 경로 변경(백슬래시→슬래시) 시 정확히 1회만 재fetch (무한 루프 방지)
+- pty_execute_sync가 20초 이상 응답 없을 때 에러 상태 표시 (JS 타임아웃)
+
+### ~~GAP-7: #294 IssuesPanel + WorkspaceCenterPanel 수직 분할선 테스트 없음~~ ✅ 해결됨
+
+**파일**: `shell/src/panels/__tests__/issues-panel.test.tsx` (#15-17) + `workspace-panel.test.tsx` (#38-40)
+
+검증 항목:
+- `workspace-panel__row-resize-handle` 렌더링
+- `pointerdown` → body에 `resizing-row` 클래스 추가, `pointerup`에서 제거
+- `pointermove` 후 높이(skillsHeight / issuesPanelHeight) 변경
+
+### ~~GAP-8: #295 ModeBar 바로가기 편집 모드 테스트 없음~~ ✅ 해결됨
+
+**파일**: `shell/src/components/__tests__/ModeBar.test.tsx` (#7-13)
+
+검증 항목:
+- 단축키 없을 때 편집 버튼 숨김
+- 단축키 있을 때 편집 버튼 노출
+- 편집 버튼 클릭 → `mode-bar-edit--active` 클래스 토글
+- 편집 모드 → 각 단축키에 ✕ 삭제 버튼
+- ✕ 클릭 → `removeBrowserShortcut` 호출
+- 단축키 클릭 → 아이콘 편집 다이얼로그 오픈
+- 아이콘 저장 → `updateBrowserShortcutIcon` 호출
+
+### ~~GAP-9: #296 에이전트 헬스 체크 / #297 로그 뷰어 / #298 메모리 탭 분리 테스트 없음~~ ✅ 해결됨
+
+**파일**: `shell/src/components/__tests__/SettingsTab.test.tsx` (#17-32)
+
+검증 항목:
+- #298: 탭 바 2개 버튼 / Settings 기본 활성 / 탭 전환 시 섹션 show/hide
+- #296: `gateway_health` invoke 호출 / healthy/unhealthy/idle 상태 표시 / Settings 탭에만 위치
+- #297: `get_gateway_log_path` invoke → `openPath` 호출 순서 / Settings 탭에만 위치
+
+---
+
+*마지막 업데이트: 2026-05-16 | 테스트 수: Shell 단위 panels ~186개 + components/lib, Agent 단위 약 1,200개*
