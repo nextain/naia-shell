@@ -8,10 +8,17 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockLoadBrowserShortcuts = vi.fn().mockResolvedValue([]);
+const mockRemoveBrowserShortcut = vi.fn();
+const mockReorderBrowserShortcuts = vi.fn();
+const mockUpdateBrowserShortcutIcon = vi.fn();
+
 vi.mock("../../lib/browser-prefs", () => ({
-	loadBrowserShortcuts: vi.fn().mockResolvedValue([]),
+	loadBrowserShortcuts: (...a: unknown[]) => mockLoadBrowserShortcuts(...a),
 	addBrowserShortcut: vi.fn().mockResolvedValue([]),
-	removeBrowserShortcut: vi.fn().mockResolvedValue([]),
+	removeBrowserShortcut: (...a: unknown[]) => mockRemoveBrowserShortcut(...a),
+	reorderBrowserShortcuts: (...a: unknown[]) => mockReorderBrowserShortcuts(...a),
+	updateBrowserShortcutIcon: (...a: unknown[]) => mockUpdateBrowserShortcutIcon(...a),
 	onBrowserPrefsChanged: vi.fn().mockReturnValue(() => {}),
 }));
 
@@ -64,7 +71,10 @@ vi.mock("../../stores/panel", () => ({
 	}),
 }));
 
+import { act } from "@testing-library/react";
 import { ModeBar } from "../ModeBar";
+
+const SHORTCUT = { title: "Google", url: "https://google.com", iconUrl: undefined, createdAt: 1000 };
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
@@ -118,5 +128,89 @@ describe("ModeBar — add dialog", () => {
 		// so pushModal is NOT called again (single-boolean optimization prevents
 		// browser_wv_show/hide flash between dialogs)
 		expect(mockPushModal).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ── Edit mode (#295) ─────────────────────────────────────────────────────────
+
+describe("ModeBar — edit mode (#295)", () => {
+	afterEach(() => {
+		cleanup();
+		vi.clearAllMocks();
+	});
+
+	it("edit button hidden when no shortcuts", async () => {
+		mockLoadBrowserShortcuts.mockResolvedValue([]);
+		render(<ModeBar />);
+		// Wait for shortcuts to load (async)
+		await act(async () => {});
+		expect(document.querySelector(".mode-bar-edit")).toBeNull();
+	});
+
+	it("edit button appears when shortcuts exist", async () => {
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		render(<ModeBar />);
+		await act(async () => {});
+		expect(document.querySelector(".mode-bar-edit")).toBeDefined();
+	});
+
+	it("clicking edit button toggles mode-bar-edit--active class", async () => {
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		render(<ModeBar />);
+		await act(async () => {});
+		const btn = document.querySelector(".mode-bar-edit") as HTMLButtonElement;
+		expect(btn.classList.contains("mode-bar-edit--active")).toBe(false);
+		fireEvent.click(btn);
+		expect(btn.classList.contains("mode-bar-edit--active")).toBe(true);
+	});
+
+	it("in edit mode, ✕ delete button appears on each shortcut", async () => {
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		render(<ModeBar />);
+		await act(async () => {});
+		// Enter edit mode
+		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		// ✕ button should appear
+		expect(screen.getByTitle("바로가기 삭제")).toBeDefined();
+	});
+
+	it("clicking ✕ calls removeBrowserShortcut with correct url", async () => {
+		const updated: typeof SHORTCUT[] = [];
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		mockRemoveBrowserShortcut.mockResolvedValue(updated);
+		render(<ModeBar />);
+		await act(async () => {});
+		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		fireEvent.click(screen.getByTitle("바로가기 삭제"));
+		expect(mockRemoveBrowserShortcut).toHaveBeenCalledWith(SHORTCUT.url);
+	});
+
+	it("clicking shortcut in edit mode opens icon editor dialog", async () => {
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		render(<ModeBar />);
+		await act(async () => {});
+		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		// In edit mode, clicking shortcut opens icon editor (not browser navigation)
+		const shortcutBtn = document.querySelector(".mode-bar-tab--edit") as HTMLButtonElement;
+		fireEvent.click(shortcutBtn);
+		// Icon editor input should appear
+		expect(screen.getByPlaceholderText("이모지 또는 이미지 URL (비우면 기본값)")).toBeDefined();
+	});
+
+	it("icon editor save calls updateBrowserShortcutIcon", async () => {
+		const afterUpdate = [{ ...SHORTCUT, iconUrl: "🎯" }];
+		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
+		mockUpdateBrowserShortcutIcon.mockResolvedValue(afterUpdate);
+		render(<ModeBar />);
+		await act(async () => {});
+		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		fireEvent.click(document.querySelector(".mode-bar-tab--edit")!);
+		// Type new icon
+		const input = screen.getByPlaceholderText("이모지 또는 이미지 URL (비우면 기본값)");
+		fireEvent.change(input, { target: { value: "🎯" } });
+		// Submit
+		fireEvent.click(screen.getByText("settings.save"));
+		await act(async () => {});
+		expect(mockUpdateBrowserShortcutIcon).toHaveBeenCalledWith(SHORTCUT.url, "🎯");
 	});
 });

@@ -186,6 +186,11 @@ describe("SettingsTab", () => {
 	it("renders memory section with empty state", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		// Switch to memory tab first (tab bar separates memory from settings)
+		const memoryTabBtn = document.querySelector(
+			".settings-tab-btn:not(.settings-tab-btn--active)",
+		) as HTMLButtonElement;
+		fireEvent.click(memoryTabBtn);
 		// Multiple elements match /Memory/i (Memory Adapter, Memory LLM, etc.) — use getAllByText
 		expect(screen.getAllByText(/기억|Memory/i).length).toBeGreaterThan(0);
 		expect(screen.getByText(/저장된 기억이|No stored memories/i)).toBeDefined();
@@ -208,6 +213,11 @@ describe("SettingsTab", () => {
 			},
 		]);
 		render(<SettingsTab />);
+		// Switch to memory tab first
+		const memoryTabBtn = document.querySelector(
+			".settings-tab-btn:not(.settings-tab-btn--active)",
+		) as HTMLButtonElement;
+		fireEvent.click(memoryTabBtn);
 
 		await vi.waitFor(() => {
 			expect(screen.getByText("favorite_lang is Rust")).toBeDefined();
@@ -256,5 +266,261 @@ describe("SettingsTab", () => {
 		const saveBtn = document.querySelector(".settings-save-btn") as HTMLElement;
 		fireEvent.click(saveBtn);
 		expect(screen.getByText(/입력해주세요|enter.*api/i)).toBeDefined();
+	});
+});
+
+// ── #298: SettingsTab Memory tab ─────────────────────────────────────────────
+
+describe("SettingsTab — memory tab (#298)", () => {
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("renders settings tab bar with two tab buttons", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		const tabBar = document.querySelector(".settings-tab-bar");
+		expect(tabBar).toBeTruthy();
+		const tabBtns = document.querySelectorAll(".settings-tab-btn");
+		expect(tabBtns.length).toBe(2);
+	});
+
+	it("first tab button is active by default", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		const activeBtn = document.querySelector(".settings-tab-btn--active");
+		expect(activeBtn).toBeTruthy();
+		// The active tab is the first one (settings)
+		const allBtns = document.querySelectorAll(".settings-tab-btn");
+		expect(allBtns[0]?.classList.contains("settings-tab-btn--active")).toBe(
+			true,
+		);
+		expect(allBtns[1]?.classList.contains("settings-tab-btn--active")).toBe(
+			false,
+		);
+	});
+
+	it("memory section is NOT visible on settings tab by default", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		// memorySection divider only renders when memory tab is active
+		// In English test env, t("settings.memorySection") returns "Memory"
+		const dividerTexts = Array.from(
+			document.querySelectorAll(".settings-section-divider span"),
+		).map((el) => el.textContent);
+		// No divider with "Memory"/"기억" when on settings tab
+		const hasMemoryDivider = dividerTexts.some(
+			(t) => t === "Memory" || t === "기억",
+		);
+		expect(hasMemoryDivider).toBe(false);
+	});
+
+	it("clicking memory tab button shows memory section", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		// Click the second tab button (memory)
+		const tabBtns = document.querySelectorAll(".settings-tab-btn");
+		fireEvent.click(tabBtns[1]!);
+		// Now the second button is active
+		expect(tabBtns[1]?.classList.contains("settings-tab-btn--active")).toBe(
+			true,
+		);
+		// Memory section divider should now appear
+		const dividerTexts = Array.from(
+			document.querySelectorAll(".settings-section-divider span"),
+		).map((el) => el.textContent);
+		const hasMemoryDivider = dividerTexts.some(
+			(t) => t === "Memory" || t === "기억",
+		);
+		expect(hasMemoryDivider).toBe(true);
+	});
+
+	it("switching to memory tab hides settings-danger-zone", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		// Initially danger zone is visible (settings tab)
+		expect(document.querySelector(".settings-danger-zone")).toBeTruthy();
+		// Switch to memory tab (second button)
+		const tabBtns = document.querySelectorAll(".settings-tab-btn");
+		fireEvent.click(tabBtns[1]!);
+		expect(document.querySelector(".settings-danger-zone")).toBeNull();
+	});
+
+	it("switching back to settings tab restores danger-zone and hides memory section", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		const tabBtns = document.querySelectorAll(".settings-tab-btn");
+		// Go to memory tab
+		fireEvent.click(tabBtns[1]!);
+		// Go back to settings tab (first button)
+		fireEvent.click(tabBtns[0]!);
+		// Danger zone back
+		expect(document.querySelector(".settings-danger-zone")).toBeTruthy();
+		// Memory section divider gone
+		const dividerTexts = Array.from(
+			document.querySelectorAll(".settings-section-divider span"),
+		).map((el) => el.textContent);
+		const hasMemoryDivider = dividerTexts.some(
+			(t) => t === "Memory" || t === "기억",
+		);
+		expect(hasMemoryDivider).toBe(false);
+	});
+});
+
+// ── #296: Agent health check panel ───────────────────────────────────────────
+
+describe("SettingsTab — agent health check (#296)", () => {
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("renders agent health section with check button", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		expect(document.querySelector("[data-testid='agent-health-section']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='agent-health-check-btn']")).toBeTruthy();
+	});
+
+	it("shows idle status initially", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
+		expect(statusEl).toBeTruthy();
+		// In English test env, "Not checked" is shown
+		expect(statusEl.classList.contains("agent-health-status--idle")).toBe(true);
+	});
+
+	it("clicking check button calls gateway_health invoke", async () => {
+		mockInvoke.mockResolvedValue(true);
+		render(<SettingsTab />);
+		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		fireEvent.click(btn);
+
+		await vi.waitFor(() => {
+			const healthCalls = (mockInvoke as any).mock.calls.filter(
+				([cmd]: [string]) => cmd === "gateway_health",
+			);
+			expect(healthCalls.length).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	it("shows healthy status when gateway_health returns true", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "gateway_health") return true;
+			return [];
+		});
+		render(<SettingsTab />);
+		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		fireEvent.click(btn);
+
+		await vi.waitFor(() => {
+			const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
+			expect(statusEl.classList.contains("agent-health-status--healthy")).toBe(true);
+		});
+	});
+
+	it("shows unhealthy status when gateway_health returns false", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "gateway_health") return false;
+			return [];
+		});
+		render(<SettingsTab />);
+		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		fireEvent.click(btn);
+
+		await vi.waitFor(() => {
+			const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
+			expect(statusEl.classList.contains("agent-health-status--unhealthy")).toBe(true);
+		});
+	});
+
+	it("agent-health-section is on the settings tab (not memory tab)", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		// By default on settings tab — health section should be visible
+		expect(document.querySelector("[data-testid='agent-health-section']")).toBeTruthy();
+		// Switch to memory tab — health section should disappear
+		const tabBtns = document.querySelectorAll(".settings-tab-btn");
+		fireEvent.click(tabBtns[1]!);
+		expect(document.querySelector("[data-testid='agent-health-section']")).toBeNull();
+	});
+
+	it("shows unhealthy status when gateway_health throws", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "gateway_health") throw new Error("Agent not running");
+			return [];
+		});
+		render(<SettingsTab />);
+		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		fireEvent.click(btn);
+
+		await vi.waitFor(() => {
+			const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
+			expect(statusEl.classList.contains("agent-health-status--unhealthy")).toBe(true);
+		});
+	});
+});
+
+// ── #297: Log viewer button ───────────────────────────────────────────────────
+
+const mockOpenPath = vi.fn();
+vi.mock("@tauri-apps/plugin-opener", async (importOriginal) => {
+	const original = (await importOriginal()) as Record<string, unknown>;
+	return {
+		...original,
+		openPath: (...args: unknown[]) => mockOpenPath(...args),
+	};
+});
+
+describe("SettingsTab — log viewer (#297)", () => {
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("renders log viewer button on settings tab", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeTruthy();
+	});
+
+	it("log viewer button is on settings tab only (not memory tab)", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		// Settings tab: visible
+		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeTruthy();
+		// Switch to memory tab: hidden
+		const tabBtns = document.querySelectorAll(".settings-tab-btn");
+		fireEvent.click(tabBtns[1]!);
+		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeNull();
+	});
+
+	it("clicking log viewer button calls get_gateway_log_path then openPath", async () => {
+		const logPath = "/home/user/.naia/logs/gateway.log";
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "get_gateway_log_path") return logPath;
+			return [];
+		});
+		mockOpenPath.mockResolvedValue(undefined);
+
+		render(<SettingsTab />);
+		const btn = document.querySelector("[data-testid='log-viewer-btn']") as HTMLButtonElement;
+		fireEvent.click(btn);
+
+		await vi.waitFor(() => {
+			const logPathCalls = (mockInvoke as any).mock.calls.filter(
+				([cmd]: [string]) => cmd === "get_gateway_log_path",
+			);
+			expect(logPathCalls.length).toBeGreaterThanOrEqual(1);
+		});
+
+		await vi.waitFor(() => {
+			expect(mockOpenPath).toHaveBeenCalledWith(logPath);
+		});
 	});
 });

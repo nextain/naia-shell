@@ -1675,6 +1675,12 @@ async fn gateway_health(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     }
 }
 
+/// Returns the path to the gateway log file (~/.naia/logs/gateway.log). (#297)
+#[tauri::command]
+fn get_gateway_log_path() -> String {
+    log_dir().join("gateway.log").to_string_lossy().into_owned()
+}
+
 /// Restart the Naia Gateway.
 /// Kills existing gateway + node host, then respawns both.
 /// Call this after writing gateway config to ensure the gateway reads fresh config.
@@ -2839,6 +2845,7 @@ pub fn run() {
             reset_window_state,
             reset_gateway_data,
             gateway_health,
+            get_gateway_log_path,
             restart_gateway,
             get_audit_log,
             get_audit_stats,

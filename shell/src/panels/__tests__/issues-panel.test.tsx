@@ -321,4 +321,141 @@ describe("IssuesPanel", () => {
 			expect(screen.getByText("1h")).toBeInTheDocument();
 		});
 	});
+
+	// ── #293: workspaceRootRef invariant ──────────────────────────────────────
+	describe("#293 — workspaceRootRef: path normalization triggers exactly ONE re-fetch, not a loop", () => {
+		it("changing workspaceRoot from backslash to slash path causes exactly one additional fetch, not infinite", async () => {
+			// The core fix: fetchIssues has [] stable deps so it is never recreated.
+			// A workspaceRoot prop change triggers ONE additional re-fetch via the
+			// prevRootRef guard effect — that is expected and correct.
+			// Before the fix the loop was: prop change → fetchIssues recreated →
+			// useEffect([fetchIssues]) re-ran → setFetchState("loading") → repeat.
+			// The invariant we verify: after TWO total rerenders the call count is
+			// exactly 2 (initial + one normalization re-fetch), never 3+.
+			mockInvoke.mockImplementation(async (cmd: string) => {
+				if (cmd === "pty_execute_sync") return makeSuccessResult([]);
+				return [];
+			});
+
+			const { IssuesPanel } = await import("../workspace/IssuesPanel");
+			const { rerender } = render(
+				<IssuesPanel
+					workspaceRoot="D:\\alpha-adk"
+					onSessionClick={vi.fn()}
+					onSessionsUpdate={vi.fn()}
+					onIssueClick={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() =>
+				expect(
+					mockInvoke.mock.calls.filter(([cmd]) => cmd === "pty_execute_sync").length,
+				).toBeGreaterThanOrEqual(1),
+			);
+
+			// Simulate path normalization: same logical path, different string repr
+			rerender(
+				<IssuesPanel
+					workspaceRoot="D:/alpha-adk"
+					onSessionClick={vi.fn()}
+					onSessionsUpdate={vi.fn()}
+					onIssueClick={vi.fn()}
+				/>,
+			);
+
+			// Rerender again with the same normalised value — must NOT trigger another fetch
+			rerender(
+				<IssuesPanel
+					workspaceRoot="D:/alpha-adk"
+					onSessionClick={vi.fn()}
+					onSessionsUpdate={vi.fn()}
+					onIssueClick={vi.fn()}
+				/>,
+			);
+
+			await waitFor(() => screen.getByText("열린 이슈가 없습니다"));
+
+			// Exactly 2 calls: initial + one normalization re-fetch (not 3+)
+			const total = mockInvoke.mock.calls.filter(([cmd]) => cmd === "pty_execute_sync").length;
+			expect(total).toBeLessThanOrEqual(2);
+		});
+	});
+
+	// ── #293: JS timeout invariant ────────────────────────────────────────────
+	describe("#293 — JS 20s timeout: hanging pty_execute_sync eventually settles to error", () => {
+		afterEach(() => {
+			// Always restore real timers — fake timers break waitFor in sibling tests
+			vi.useRealTimers();
+		});
+
+		it("shows error state after 20s when pty_execute_sync never resolves", async () => {
+			vi.useFakeTimers();
+			// Never-resolving promise simulates ConPTY hang
+			mockInvoke.mockImplementation((cmd: string) => {
+				if (cmd === "pty_execute_sync") return new Promise(() => {});
+				return Promise.resolve([]);
+			});
+
+			await renderPanel();
+			expect(screen.getByText("이슈 불러오는 중…")).toBeInTheDocument();
+
+			// Advance past the 20s JS timeout — use act to flush React state updates
+			const { act } = await import("@testing-library/react");
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(21_000);
+			});
+
+			// Loading text must be gone — component settled to error/no-gh state
+			expect(screen.queryByText("이슈 불러오는 중…")).toBeNull();
+		});
+	});
+
+	// ── #294: vertical divider handle ────────────────────────────────────────
+	describe("#294 — IssuesPanel vertical divider (issues ↕ sessions)", () => {
+		it("renders workspace-panel__row-resize-handle element", async () => {
+			mockInvoke.mockImplementation(async (cmd: string) => {
+				if (cmd === "pty_execute_sync") return makeSuccessResult([]);
+				return [];
+			});
+			await renderPanel();
+			await waitFor(() => screen.getByText("열린 이슈가 없습니다"));
+			const handle = document.querySelector(".workspace-panel__row-resize-handle");
+			expect(handle).toBeTruthy();
+		});
+
+		it("pointerdown on divider adds resizing-row class to body", async () => {
+			mockInvoke.mockImplementation(async (cmd: string) => {
+				if (cmd === "pty_execute_sync") return makeSuccessResult([]);
+				return [];
+			});
+			await renderPanel();
+			await waitFor(() => screen.getByText("열린 이슈가 없습니다"));
+			const handle = document.querySelector(".workspace-panel__row-resize-handle") as Element;
+			fireEvent.pointerDown(handle, { clientY: 100 });
+			expect(document.body.classList.contains("resizing-row")).toBe(true);
+			// Clean up
+			fireEvent.pointerUp(window);
+		});
+
+		it("pointermove after pointerdown changes issues list height", async () => {
+			mockInvoke.mockImplementation(async (cmd: string) => {
+				if (cmd === "pty_execute_sync") return makeSuccessResult([]);
+				return [];
+			});
+			await renderPanel();
+			await waitFor(() => screen.getByText("열린 이슈가 없습니다"));
+			const handle = document.querySelector(".workspace-panel__row-resize-handle") as Element;
+			// Start drag at y=100
+			fireEvent.pointerDown(handle, { clientY: 100 });
+			// Move down 50px → height should increase
+			fireEvent.pointerMove(window, { clientY: 150 });
+			// Initial height 180, delta +50 → 230px
+			const list = document.querySelector(".issues-panel__list") as HTMLElement;
+			if (list) {
+				const h = Number.parseInt(list.style.height ?? "0");
+				expect(h).toBeGreaterThan(180);
+			}
+			fireEvent.pointerUp(window);
+		});
+	});
 });

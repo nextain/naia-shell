@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clearSavedCamera } from "./AvatarCanvas";
 import {
@@ -531,6 +531,15 @@ function DeviceSelect({
 }
 
 export function SettingsTab() {
+	const [activeSettingsTab, setActiveSettingsTab] = useState<
+		"settings" | "memory"
+	>("settings");
+	const [agentHealthStatus, setAgentHealthStatus] = useState<
+		"idle" | "checking" | "healthy" | "unhealthy"
+	>("idle");
+	const [agentHealthCheckedAt, setAgentHealthCheckedAt] = useState<
+		Date | null
+	>(null);
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
@@ -2164,6 +2173,23 @@ export function SettingsTab() {
 
 	return (
 		<div className="settings-tab">
+			<div className="settings-tab-bar">
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "settings" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("settings")}
+				>
+					{t("settings.tabSettings")}
+				</button>
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("memory")}
+				>
+					{t("settings.tabMemory")}
+				</button>
+			</div>
+			{activeSettingsTab === "settings" && <>
 			<div className="settings-field">
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 					<label htmlFor="locale-select" style={{ margin: 0 }}>
@@ -3619,6 +3645,45 @@ export function SettingsTab() {
 				/>
 			</div>
 
+			{/* Agent health check (#296) */}
+			<div className="settings-field" data-testid="agent-health-section">
+				<label>{t("settings.agentHealth")}</label>
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<span
+						className={`agent-health-status agent-health-status--${agentHealthStatus}`}
+						data-testid="agent-health-status"
+					>
+						{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
+						{agentHealthStatus === "checking" && t("settings.agentHealthChecking")}
+						{agentHealthStatus === "healthy" && t("settings.agentHealthHealthy")}
+						{agentHealthStatus === "unhealthy" && t("settings.agentHealthUnhealthy")}
+					</span>
+					{agentHealthCheckedAt && (
+						<span className="agent-health-time" style={{ fontSize: "0.75em", color: "var(--text-muted, #888)" }}>
+							{agentHealthCheckedAt.toLocaleTimeString()}
+						</span>
+					)}
+					<button
+						type="button"
+						className="voice-preview-btn"
+						title="agent-health-check-btn"
+						data-testid="agent-health-check-btn"
+						onClick={async () => {
+							setAgentHealthStatus("checking");
+							try {
+								const healthy = await invoke<boolean>("gateway_health");
+								setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
+							} catch {
+								setAgentHealthStatus("unhealthy");
+							}
+							setAgentHealthCheckedAt(new Date());
+						}}
+					>
+						{t("settings.agentHealthCheck")}
+					</button>
+				</div>
+			</div>
+
 			{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
 
 			{allowedToolsCount > 0 && (
@@ -3776,7 +3841,8 @@ export function SettingsTab() {
 			)}
 
 			{enableTools && <DevicePairingSection />}
-
+			</>}
+			{activeSettingsTab === "memory" && <>
 			<div className="settings-section-divider">
 				<span>{t("settings.memorySection")}</span>
 			</div>
@@ -4145,6 +4211,27 @@ export function SettingsTab() {
 					))}
 				</div>
 			)}
+			</>}
+			{activeSettingsTab === "settings" && <>
+			{/* Log viewer button (#297) */}
+			<div className="settings-field" data-testid="log-viewer-section">
+				<label>{t("settings.logViewer")}</label>
+				<button
+					type="button"
+					className="voice-preview-btn"
+					data-testid="log-viewer-btn"
+					onClick={async () => {
+						try {
+							const logPath = await invoke<string>("get_gateway_log_path");
+							await openPath(logPath);
+						} catch (e) {
+							Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
+						}
+					}}
+				>
+					{t("settings.logViewerOpen")}
+				</button>
+			</div>
 
 			<div className="settings-danger-zone">
 				{showResetConfirm ? (
@@ -4375,6 +4462,7 @@ export function SettingsTab() {
 					</div>
 				</div>
 			)}
+			</>}
 		</div>
 	);
 }

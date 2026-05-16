@@ -1050,3 +1050,78 @@ describe("Workspace panel registry", () => {
 		expect(typeof panel?.onDeactivate).toBe("function");
 	});
 });
+
+// ── #294: WorkspaceCenterPanel left sidebar divider (FileTree ↕ SkillLauncher) ──
+
+describe("#294 — WorkspaceCenterPanel left sidebar divider (FileTree ↕ SkillLauncher)", () => {
+	afterEach(() => {
+		cleanup();
+		vi.clearAllMocks();
+	});
+
+	it("renders workspace-panel__row-resize-handle in the left sidebar", async () => {
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+		render(<WorkspaceCenterPanel naia={bridge} />);
+
+		await waitFor(() => screen.getByText("탐색기"));
+
+		const handle = document.querySelector(".workspace-panel__row-resize-handle");
+		expect(handle).toBeTruthy();
+	});
+
+	it("pointerdown on left sidebar divider adds resizing-row class to body", async () => {
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+		render(<WorkspaceCenterPanel naia={bridge} />);
+
+		await waitFor(() => screen.getByText("탐색기"));
+
+		const handle = document.querySelector(
+			".workspace-panel__row-resize-handle",
+		) as Element;
+		expect(handle).toBeTruthy();
+
+		fireEvent.pointerDown(handle, { clientY: 300 });
+		expect(document.body.classList.contains("resizing-row")).toBe(true);
+
+		// Cleanup
+		fireEvent.pointerUp(window);
+		expect(document.body.classList.contains("resizing-row")).toBe(false);
+	});
+
+	it("pointermove after pointerdown on left sidebar divider changes skillsHeight", async () => {
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+		render(<WorkspaceCenterPanel naia={bridge} />);
+
+		await waitFor(() => screen.getByText("탐색기"));
+
+		const handle = document.querySelector(
+			".workspace-panel__row-resize-handle",
+		) as Element;
+
+		// Start drag at y=300
+		fireEvent.pointerDown(handle, { clientY: 300 });
+		// Move up 50px → height increases (handle is on top edge; dragging up increases height)
+		fireEvent.pointerMove(window, { clientY: 250 });
+
+		// The skills container should now reflect updated height (> 160 initial default)
+		// Look for the inline style height set on the skills container div
+		const allDivs = document.querySelectorAll("div[style]");
+		const heightDivs = Array.from(allDivs).filter((el) => {
+			const h = (el as HTMLElement).style.height;
+			return h.endsWith("px") && Number.parseInt(h) > 160;
+		});
+		expect(heightDivs.length).toBeGreaterThan(0);
+
+		// Cleanup
+		fireEvent.pointerUp(window);
+	});
+});
