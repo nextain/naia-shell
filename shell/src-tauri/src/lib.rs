@@ -1658,15 +1658,21 @@ async fn enable_webview2_ime(window: tauri::Window) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn gateway_health() -> Result<bool, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    // Gateway (openclaw) removed — always report not running
-    let _ = client;
-    Ok(false)
+async fn gateway_health(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    // After #201: OpenClaw gateway removed. Report naia-agent process liveness instead.
+    let mut guard = state
+        .agent
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    if let Some(ref mut process) = *guard {
+        match process.child.try_wait() {
+            Ok(None) => Ok(true),     // still running
+            Ok(Some(_)) => Ok(false), // exited
+            Err(_) => Ok(false),
+        }
+    } else {
+        Ok(false)
+    }
 }
 
 /// Restart the Naia Gateway.
@@ -3234,7 +3240,7 @@ pub fn run() {
                 }
                 Err(e) => {
                     log_both(&format!("[Naia] Gateway not available: {}", e));
-                    log_both("[Naia] Running without Gateway (tools will be unavailable)");
+                    log_both("[Naia] Running without WebSocket gateway (naia-agent handles tools directly)");
                     (false, false)
                 }
             };
@@ -3253,12 +3259,18 @@ pub fn run() {
                 }
             }
 
-            // Then spawn Agent
+            // Then spawn Agent (naia-agent replaces OpenClaw gateway — handles all tools directly)
             match spawn_agent_core(&app_handle, &audit_db) {
                 Ok(process) => {
                     let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
                     *guard = Some(process);
+                    drop(guard);
                     log_both("[Naia] agent-core started");
+                    // Emit running:true — naia-agent is the tool backend after #201
+                    let _ = app_handle.emit(
+                        "gateway_status",
+                        serde_json::json!({ "running": true, "managed": true }),
+                    );
                 }
                 Err(e) => {
                     log_both(&format!("[Naia] agent-core not available: {}", e));

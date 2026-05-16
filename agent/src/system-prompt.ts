@@ -93,7 +93,7 @@ export function buildToolStatusPrompt(
 
 	if (wantGateway && !gatewayConnected) {
 		status +=
-			"\n⚠️ Gateway 연결 실패: Gateway 필요 도구(execute_command, read_file, write_file, search_files, web_search, apply_diff, sessions_spawn 및 커스텀 스킬)를 사용할 수 없습니다. 브라우저(skill_browser_*)는 Shell 패널 스킬로 Gateway 없이도 사용 가능합니다. 로컬 스킬(skill_time, skill_weather, skill_memo 등)은 정상 사용 가능합니다. Gateway가 필요한 도구를 요청받으면, 앱을 재시작하면 Gateway도 자동으로 재시작된다고 안내하세요.";
+			"\nℹ️ Gateway WebSocket 미연결: 네이티브 도구(execute_command, read_file, write_file, search_files, apply_diff)는 NativeCommandExecutor로 직접 실행됩니다 — 정상 사용 가능합니다. 브라우저(skill_browser_*)는 Shell 패널 스킬로 정상 사용 가능합니다. 로컬 스킬(skill_time, skill_weather, skill_memo 등)은 정상 사용 가능합니다. 단, Gateway 전용 도구(web_search, sessions_spawn, 외부 커스텀 스킬)만 현재 사용 불가합니다.";
 	} else if (gatewayConnected) {
 		status += "\nGateway 연결됨 ✓";
 	}

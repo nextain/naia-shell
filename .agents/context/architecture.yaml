@@ -2,8 +2,10 @@ description: Naia hybrid architecture (mirror of .users/context/ko/architecture.
 
 design_philosophy: |
   Naia is NOT built from scratch. It's a hybrid assembly of 3 proven ecosystems:
-  OpenClaw (Gateway/exec), project-careti (LLM/tools), OpenCode (architecture pattern).
+  naia-agent (native tool execution via stdio), project-careti (LLM/tools), OpenCode (architecture pattern).
   Each contributes its strongest capability. The result is greater than any single source.
+  Note: OpenClaw (Gateway/exec) was the original Pillar 1 but was removed in #201 (2026-04-03).
+  naia-agent now handles all tool execution directly — no WebSocket gateway daemon required.
 
 why_hybrid:
   pure_openclaw_problems:
@@ -21,37 +23,36 @@ why_hybrid:
     - "No Gateway/daemon concept"
     - "No channel integration"
   hybrid_solution: |
-    Take OpenClaw's daemon+exec+channels+skills ecosystem as the runtime backend.
+    Take naia-agent as the stdio tool execution backend (NativeCommandExecutor: exec, read, write, search).
     Take Careti's multi-provider LLM+tool definitions+stdio protocol as the agent core.
     Take OpenCode's client/server architecture pattern for clean separation.
     Wrap it in a Tauri desktop shell with VRM avatar for accessible UX.
+    (Historical: originally used OpenClaw daemon at ws://18789, removed in #201)
 
 three_pillars:
-  pillar_1_openclaw:
-    role: "Runtime backend (daemon + execution environment)"
+  pillar_1_naia_agent:
+    role: "Runtime backend — stdio tool execution (NativeCommandExecutor, after #201)"
+    note: "REPLACED OpenClaw (#201, 2026-04-03). No longer a daemon. naia-agent runs as child process of Shell."
     provides:
-      - "Gateway WebSocket server (systemd, always-on)"
-      - "Command/file RPCs (exec.bash, node.invoke/system.run)"
-      - "Security: device auth, token scopes, exec approvals"
-      - "Channels: Discord, Telegram, WhatsApp, Slack, IRC, etc."
-      - "Skills: 50+ built-in (weather, time, memo, etc.)"
-      - "Memory: conversation persistence, context recall"
-      - "Sessions: multi-session management, sub-agent spawn"
-      - "ACP (Agent Control Protocol): client↔agent bridge"
-      - "TTS: unified provider selector (Edge TTS free, Google Cloud, OpenAI, ElevenLabs) with direct API calls"
+      - "NativeCommandExecutor: execute_command, read_file, write_file, search_files, apply_diff"
+      - "Three stdio bridges: protocol-bridge (envelope codec), memory-bridge (naia-memory), approval-bridge (future)"
+      - "Built-in skills: 20 built-in (weather, time, memo, browser, workspace, etc.)"
+      - "Memory: @nextain/naia-memory R3 (semantic search, contradiction filter, HyDE)"
+      - "Sessions: skill_sessions for session management (stdio, no WebSocket)"
+      - "TTS: multi-provider (Edge TTS free, Google Cloud, OpenAI, ElevenLabs)"
     connection_protocol:
-      handshake: "connect.challenge → connect (protocol v3)"
-      auth: "device identity + token scopes (Ed25519 signed nonce)"
-      client_id: "cli (paired device identifier)"
-      methods: "88 methods (agent, sessions.*, exec.*, skills.*, channels.*, etc.)"
+      type: "stdio JSON lines (not WebSocket)"
+      spawn: "Tauri Shell spawns agent/dist/index.js as child process"
+      protocol: "ChatRequest/text/tool_use/tool_result/tts_request envelope frames"
     what_naia_uses:
-      - "Gateway daemon as systemd user service"
-      - "Command execution via exec.bash (preferred) or node.invoke fallback"
-      - "exec.approvals for permission system"
-      - "sessions.* for session management (when exposed by gateway config)"
-      - "skills.invoke and/or browser.request for web/browser actions"
-      - "channels.* for Discord/Telegram"
-      - "agent method for agent interaction"
+      - "Command execution via NativeCommandExecutor (child_process.spawn)"
+      - "skill_sessions for session management (direct stdio, no gateway WebSocket)"
+      - "skill_skill_manager for skill discovery + install"
+      - "Browser: shell/src-tauri/src/browser_webview.rs (WebView2, Windows)"
+    openclaw_historical:
+      removed: "#201 (2026-04-03)"
+      was: "OpenClaw WebSocket daemon at ws://127.0.0.1:18789 (88 methods, protocol v3)"
+      reason: "Replaced by direct naia-agent stdio — eliminates external daemon dependency"
 
   pillar_2_careti:
     role: "Agent intelligence (LLM + tools + persona)"
@@ -82,26 +83,22 @@ three_pillars:
 runtime_architecture:
   diagram: |
     ┌─────────────────────────────────────────────────────────┐
-    │  Naia Shell (Tauri 2 + React + Three.js VRM Avatar) │
-    │  Role: Desktop UI, avatar rendering, chat panel        │
-    │  Source: Naia + AIRI (VRM) + shadcn/ui              │
+    │  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
+    │  Role: Desktop UI, avatar rendering, chat panel          │
+    │  Source: Naia + AIRI (VRM) + shadcn/ui                  │
     └──────────────────────┬──────────────────────────────────┘
                            │ stdio JSON lines
     ┌──────────────────────▼──────────────────────────────────┐
-    │  Naia Agent (Node.js)                                │
-    │  Role: LLM connection, tool orchestration, Alpha persona│
-    │  Source: Careti providers + OpenCode pattern             │
-    │  Features: multi-LLM, TTS, emotion, cost tracking       │
-    └──────────────────────┬──────────────────────────────────┘
-                           │ WebSocket (ws://127.0.0.1:18789)
-    ┌──────────────────────▼──────────────────────────────────┐
-    │  Naia Gateway (systemd user service)                │
-    │  Role: Execution, security, channels, skills, memory    │
-    │  Source: naia-agent (Node.js, pnpm dev / dist/index.js)  │
-    │  Auth: device identity + token scopes (protocol v3)     │
-    │  Methods: dynamic by profile (agent, node.invoke,        │
-    │  sessions.*, browser.request, skills.*, channels.* ...)  │
+    │  Naia Agent (Node.js — agent/dist/index.js)              │
+    │  Role: LLM connection, tool orchestration, Alpha persona  │
+    │  Source: Careti providers + OpenCode pattern              │
+    │  Features: multi-LLM, TTS, emotion, cost tracking        │
+    │  Tools: NativeCommandExecutor (exec/read/write/search)    │
+    │  Memory: @nextain/naia-memory R3 (local, no daemon)       │
+    │  Bridges: protocol-bridge | memory-bridge | approval-bridge│
     └─────────────────────────────────────────────────────────┘
+    Note: OpenClaw gateway (ws://127.0.0.1:18789) removed in #201.
+    All tools now execute directly in naia-agent via NativeCommandExecutor.
 
   shell_ui_layout:
     description: "Shell component hierarchy and layout"
@@ -119,9 +116,10 @@ runtime_architecture:
 
   data_flow:
     chat: "User → Shell → Agent → LLM → Agent → Shell → User"
-    tool_exec: "LLM → Agent (tool_use) → Gateway (exec.bash or node.invoke) → OS → result → LLM"
-    approval: "Gateway → Agent (approval_request) → Shell (modal) → user decision → Agent → Gateway"
-    external: "Discord msg → Gateway → Agent → LLM → Agent → Gateway → Discord reply"
+    tool_exec: "LLM → Agent (tool_use) → NativeCommandExecutor (child_process.spawn) → OS → result → LLM"
+    approval: "LLM → Agent (approval_request) → Shell (modal) → user decision → Agent → NativeCommandExecutor"
+    external: "Discord msg → (future: channel adapter) → Agent → LLM → Agent → (future: channel reply)"
+    note: "After #201: no external gateway daemon. All execution in-process via NativeCommandExecutor."
 
 credential_storage:
   description: "naiaKey dual-storage architecture (localStorage + Tauri secure store)"
@@ -574,27 +572,24 @@ gateway_adapter_abstraction:
   rationale: "Abstraction layer isolates agent code from gateway protocol changes."
 
 gateway_client_protocol:
-  description: "How Naia Agent connects to Naia Gateway"
+  status: "HISTORICAL — OpenClaw gateway removed in #201 (2026-04-03). Section kept for reference."
+  description: "How Naia Agent used to connect to Naia Gateway (pre-#201)"
   steps:
-    1_ws_connect: "WebSocket connect to ws://127.0.0.1:18789"
-    2_challenge: "Receive connect.challenge event with nonce"
-    3_handshake: "Send connect request with auth token, protocol v3, client info"
-    4_hello_ok: "Receive hello-ok with available methods and features"
-    5_rpc: "Send/receive req/res frames for tool execution"
-  auth_params:
-    token: "gateway.auth.token from config (shared secret)"
-    client_id: "cli (matches paired device clientId)"
-    platform: "linux (Windows: Gateway runs inside WSL, so platform is still linux)"
-    mode: "cli"
-    min_protocol: 3
-    max_protocol: 3
+    1_ws_connect: "WebSocket connect to ws://127.0.0.1:18789 [REMOVED]"
+    2_challenge: "Receive connect.challenge event with nonce [REMOVED]"
+    3_handshake: "Send connect request with auth token, protocol v3, client info [REMOVED]"
+    4_hello_ok: "Receive hello-ok with available methods and features [REMOVED]"
+    5_rpc: "Send/receive req/res frames for tool execution [REMOVED]"
+  current_state: |
+    After #201: no external gateway. Agent uses NativeCommandExecutor (child_process.spawn) for tools.
+    GatewayAdapter interface still exists (agent/src/gateway/types.ts) for future extensibility.
+    connectGatewayWithRetry() still called but always fails → gatewayConnected=false (expected).
+    Native tools (execute_command, read_file, write_file, search_files, apply_diff) work regardless.
 
   windows_notes:
-    description: "On Windows, Gateway runs inside WSL2 NaiaEnv distro"
-    connection: "ws://127.0.0.1:18789 (mirrored networking allows localhost access from host)"
-    spawn: "wsl.exe -d NaiaEnv -- node /opt/naia/agent/dist/index.js"
-    config_requirement: "gateway.mode=local must be set in /root/.naia/gateway.json"
-    race_condition_guard: "restart_gateway uses AtomicBool compare_exchange to prevent concurrent restarts"
+    description: "On Windows, naia-agent runs as direct child process of Tauri Shell"
+    spawn: "shell/src-tauri/src/lib.rs spawn_agent_core() → agent/dist/index.js via node.exe"
+    no_wsl_required: "naia-agent runs natively on Windows — no WSL required for tool execution"
 
 voice_architecture:
   description: "Voice I/O via two modes: omni LLM (built-in voice) or STT→LLM→TTS pipeline"
