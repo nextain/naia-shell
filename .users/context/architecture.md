@@ -459,6 +459,35 @@ How Naia Agent connects to Naia Gateway:
 
 ---
 
+## Shell Tauri Diagnostics Commands
+
+> Added in #296 / #297. File: `shell/src-tauri/src/lib.rs`
+
+### `gateway_health() -> bool`
+
+Checks whether the naia-agent child process is currently alive.
+
+- Returns `true` if alive, `false` otherwise
+- Used by SettingsTab agent health check button: `invoke<boolean>("gateway_health")`
+- Named "gateway" for historical reasons — actually checks naia-agent process liveness
+
+### `get_gateway_log_path() -> String`
+
+Returns the path to the main agent log file.
+
+- Returns `log_dir().join("gateway.log").to_string_lossy()`
+- `log_dir()` resolves to `~/.naia/logs/`
+- Used by SettingsTab log viewer button: `invoke<string>("get_gateway_log_path")` → `openPath(path)`
+
+### SettingsTab Two-Tab Layout (added #298)
+
+SettingsTab now has a **Settings / Memory** tab bar:
+
+- **Settings tab** (default): provider, API key, VRM, theme, agent health check, log viewer, danger zone
+- **Memory tab**: embedding provider, facts list, memory management
+
+---
+
 ## Voice Architecture
 
 > Last updated: 2026-03-14

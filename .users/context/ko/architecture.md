@@ -449,6 +449,28 @@ Naia Agent가 Naia Gateway에 연결하는 과정:
 
 ---
 
+## Shell Tauri 진단 명령 (#296, #297)
+
+> 파일: `shell/src-tauri/src/lib.rs`
+
+### `gateway_health() -> bool`
+
+- naia-agent 자식 프로세스 생존 여부 반환 (`true` = 살아있음)
+- SettingsTab 에이전트 헬스 체크 버튼에서 사용: `invoke<boolean>("gateway_health")`
+- 이름이 "gateway"인 건 역사적 이유 — 실제로는 naia-agent 프로세스 체크
+
+### `get_gateway_log_path() -> String`
+
+- `log_dir().join("gateway.log")` 경로 반환 (`~/.naia/logs/gateway.log`)
+- SettingsTab 로그 뷰어 버튼에서 사용: `invoke<string>("get_gateway_log_path")` → `openPath(path)`
+
+### SettingsTab 2-탭 레이아웃 (#298)
+
+- **Settings 탭** (기본): 프로바이더, API 키, VRM, 테마, 에이전트 헬스 체크, 로그 뷰어, 위험 구역
+- **Memory 탭**: 임베딩 프로바이더, 사실 목록, 메모리 관리
+
+---
+
 ## 음성 아키텍처
 
 > 최종 업데이트: 2026-03-14
