@@ -409,12 +409,45 @@ troubleshooting:
     fix: "Removed localhostForwarding=true from config/defaults/wslconfig-template"
     incident: "2026-03-11"
 
+npm_packages:
+  description: |
+    Two public npm packages aggregate the naia-agent ecosystem.
+    naia-os ships both as vendor tarballs (offline-first).
+    npm registry is used for future online updates only.
+  packages:
+    "@nextain/naia-memory":
+      version: 0.1.4
+      vendor_tarball: agent/vendor/nextain-naia-memory-0.1.4.tgz
+      publish_status: pending_otp  # npm 2FA OTP required
+      publish_cmd: "cd projects/naia-memory && npm publish --otp=<6digit>"
+    "@nextain/naia-agent":
+      version: 0.1.0
+      vendor_tarball: not_in_naia-os  # naia-agent repo only
+      publish_status: pending_otp  # npm 2FA OTP required
+      publish_cmd: "cd projects/naia-agent/packages/naia-agent && npm publish --access public --otp=<6digit>"
+  vendor_pattern:
+    location: agent/vendor/
+    tarballs:
+      - nextain-agent-protocol-0.1.0.tgz
+      - nextain-agent-providers-0.1.0.tgz
+      - nextain-agent-types-0.1.0.tgz
+      - naia-adk-skill-spec-0.1.0.tgz
+      - naia-adk-skills-builtin-0.0.1.tgz
+      - nextain-naia-memory-0.1.4.tgz  # added 2026-05-16 (issue #292)
+  why_vendor_not_npm:
+    - offline-first for on-premises deployments
+    - Flatpak sandbox pnpm install still needs --share=network for public npm deps
+    - npm update support will be added as Phase B
+  pnpm_overrides:
+    agent_package_json: |
+      "pnpm": { "overrides": { "@naia-adk/skill-spec": "file:./vendor/naia-adk-skill-spec-0.1.0.tgz" } }
+
 flathub_submission:
   guide: docs/flathub-submission-guide.md
   status: not_started
   blockers:
     - cargo-sources.json not generated
-    - node-sources-agent.json not generated
+    - node-sources-agent.json not generated (requires Linux + flatpak-node-generator Python tool)
     - node-sources-shell.json not generated
   steps:
     1: Generate offline dependency JSONs (flatpak-builder-tools)
