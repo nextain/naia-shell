@@ -31,14 +31,21 @@ export async function listGatewaySessions(
 	if (!loadConfig()) return [];
 
 	const opts = getGatewayOpts();
-	const res = await directToolCall({
-		toolName: "skill_sessions",
-		args: { action: "list", limit },
-		requestId: `gw-sessions-list-${Date.now()}`,
-		...opts,
-	});
+	let res: Awaited<ReturnType<typeof directToolCall>>;
+	try {
+		res = await directToolCall({
+			toolName: "skill_sessions",
+			args: { action: "list", limit },
+			requestId: `gw-sessions-list-${Date.now()}`,
+			...opts,
+		});
+	} catch (e) {
+		Logger.warn("gateway-sessions", "directToolCall failed", { error: String(e) });
+		return [];
+	}
 	if (!res.success || !res.output) {
-		throw new Error("agent-unreachable");
+		Logger.warn("gateway-sessions", "agent unreachable", { success: res.success });
+		return [];
 	}
 	const parsed = JSON.parse(res.output) as {
 		sessions?: Array<{

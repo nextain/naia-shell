@@ -108,13 +108,15 @@ describe("ModeBar — add dialog", () => {
 		expect(screen.getByPlaceholderText("modebar.enterUrl")).toBeDefined();
 	});
 
-	it("calls pushModal for URL input dialog too", () => {
+	it("pushModal stays at 1 during addUrlDialog→urlInputDialog transition", () => {
 		render(<ModeBar />);
 		fireEvent.click(screen.getByTitle("modebar.addItem"));
-		// pushModal called once for addUrlDialog
+		// pushModal called once when isAnyDialogOpen first becomes true
 		expect(mockPushModal).toHaveBeenCalledTimes(1);
 		fireEvent.click(screen.getByText("modebar.addShortcut").closest("button")!);
-		// addUrlDialog closes (popModal) then urlInputDialog opens (pushModal) → net 2 calls
-		expect(mockPushModal).toHaveBeenCalledTimes(2);
+		// isAnyDialogOpen stays true during transition — effect does NOT re-run,
+		// so pushModal is NOT called again (single-boolean optimization prevents
+		// browser_wv_show/hide flash between dialogs)
+		expect(mockPushModal).toHaveBeenCalledTimes(1);
 	});
 });
