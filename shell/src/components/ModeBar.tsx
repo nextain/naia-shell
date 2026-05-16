@@ -5,7 +5,9 @@ import {
 	addBrowserShortcut,
 	loadBrowserShortcuts,
 	onBrowserPrefsChanged,
+	reorderBrowserShortcuts,
 	removeBrowserShortcut,
+	updateBrowserShortcutIcon,
 } from "../lib/browser-prefs";
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
@@ -44,13 +46,24 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 	const [addUrlDialog, setAddUrlDialog] = useState(false);
 	const [urlInputDialog, setUrlInputDialog] = useState(false);
 	const [addUrlInput, setAddUrlInput] = useState("");
+	// Edit mode — shows delete overlays and enables drag-to-reorder + icon editor
+	const [editMode, setEditMode] = useState(false);
+	const [dragOverUrl, setDragOverUrl] = useState<string | null>(null);
+	const dragSrcUrlRef = useRef<string | null>(null);
+	// Icon editor dialog
+	const [iconEditing, setIconEditing] = useState<BrowserLink | null>(null);
+	const [iconInput, setIconInput] = useState("");
 
-	// Hide browser native webview while any dialog is open (webview renders above HTML z-index)
+	// Hide browser native webview while any dialog is open (webview renders above HTML z-index).
+	// Use a single boolean so transitioning between dialogs (addUrlDialog→urlInputDialog)
+	// does NOT trigger cleanup+re-run, which would fire browser_wv_show then browser_wv_hide
+	// in rapid succession causing a white-screen flash.
+	const isAnyDialogOpen = addUrlDialog || urlInputDialog || !!iconEditing;
 	useEffect(() => {
-		if (!addUrlDialog && !urlInputDialog) return;
+		if (!isAnyDialogOpen) return;
 		pushModal();
 		return () => popModal();
-	}, [addUrlDialog, urlInputDialog, pushModal, popModal]);
+	}, [isAnyDialogOpen, pushModal, popModal]);
 
 	// Rebuild panel list whenever panelListVersion changes (runtime install/remove)
 	// Exclude avatar panel (shown as fixed "바탕화면" tab separately)
@@ -199,6 +212,48 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		};
 	}, [ctxMenu]);
 
+	// Drag-to-reorder handlers
+	function handleDragStart(url: string) {
+		dragSrcUrlRef.current = url;
+	}
+	function handleDragOver(e: React.DragEvent, url: string) {
+		e.preventDefault();
+		setDragOverUrl(url);
+	}
+	function handleDrop(targetUrl: string) {
+		const srcUrl = dragSrcUrlRef.current;
+		if (!srcUrl || srcUrl === targetUrl) {
+			setDragOverUrl(null);
+			return;
+		}
+		const list = [...browserShortcuts];
+		const srcIdx = list.findIndex((s) => s.url === srcUrl);
+		const tgtIdx = list.findIndex((s) => s.url === targetUrl);
+		if (srcIdx === -1 || tgtIdx === -1) { setDragOverUrl(null); return; }
+		const [moved] = list.splice(srcIdx, 1);
+		list.splice(tgtIdx, 0, moved);
+		setBrowserShortcuts(list);
+		reorderBrowserShortcuts(list).catch(() => {});
+		setDragOverUrl(null);
+		dragSrcUrlRef.current = null;
+	}
+	function handleDragEnd() {
+		setDragOverUrl(null);
+		dragSrcUrlRef.current = null;
+	}
+
+	// Icon editor
+	function openIconEditor(shortcut: BrowserLink) {
+		setIconEditing(shortcut);
+		setIconInput(shortcut.iconUrl ?? "");
+	}
+	async function handleIconSave() {
+		if (!iconEditing) return;
+		const updated = await updateBrowserShortcutIcon(iconEditing.url, iconInput.trim() || undefined);
+		setBrowserShortcuts(updated);
+		setIconEditing(null);
+	}
+
 	async function handleAddUrlSubmit() {
 		let url = addUrlInput.trim();
 		if (!url) return;
@@ -278,14 +333,21 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 				{browserShortcuts.map((shortcut) => (
 					<div
 						key={shortcut.url}
-						className="mode-bar-tab-wrapper"
+						className={`mode-bar-tab-wrapper${dragOverUrl === shortcut.url ? " mode-bar-tab-wrapper--drag-over" : ""}`}
 						data-browser-shortcut={shortcut.url}
+						draggable={editMode}
+						onDragStart={editMode ? () => handleDragStart(shortcut.url) : undefined}
+						onDragOver={editMode ? (e) => handleDragOver(e, shortcut.url) : undefined}
+						onDrop={editMode ? () => handleDrop(shortcut.url) : undefined}
+						onDragEnd={editMode ? handleDragEnd : undefined}
 					>
 						<button
 							type="button"
-							className="mode-bar-tab mode-bar-tab--shortcut"
-							title={shortcut.title || shortcut.url}
-							onClick={() => openBrowserShortcut(shortcut.url)}
+							className={`mode-bar-tab mode-bar-tab--shortcut${editMode ? " mode-bar-tab--edit" : ""}`}
+							title={editMode ? `아이콘 변경: ${shortcut.title || shortcut.url}` : (shortcut.title || shortcut.url)}
+							onClick={() => {
+								if (editMode) { openIconEditor(shortcut); } else { openBrowserShortcut(shortcut.url); }
+							}}
 						>
 							{shortcut.iconUrl ? (
 								<img
@@ -310,6 +372,21 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 								</span>
 							)}
 						</button>
+						{editMode && (
+							<button
+								type="button"
+								className="mode-bar-tab-remove mode-bar-tab-remove--shortcut"
+								title="바로가기 삭제"
+								onClick={(e) => {
+									e.stopPropagation();
+									removeBrowserShortcut(shortcut.url)
+										.then(setBrowserShortcuts)
+										.catch(() => {});
+								}}
+							>
+								✕
+							</button>
+						)}
 					</div>
 				))}
 			</div>
@@ -428,6 +505,55 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			>
 				+
 			</button>
+			{browserShortcuts.length > 0 && (
+				<button
+					type="button"
+					className={`mode-bar-edit${editMode ? " mode-bar-edit--active" : ""}`}
+					onClick={() => { setEditMode((v) => !v); setIconEditing(null); }}
+					title={editMode ? "편집 완료" : "바로가기 편집"}
+				>
+					✏
+				</button>
+			)}
+			{iconEditing && createPortal(
+				<div
+					className="mode-bar-url-dialog-overlay"
+					onClick={() => setIconEditing(null)}
+				>
+					<form
+						className="mode-bar-url-dialog"
+						onClick={(e) => e.stopPropagation()}
+						onSubmit={(e) => { e.preventDefault(); void handleIconSave(); }}
+					>
+						<div className="mode-bar-url-dialog__section-text" style={{ padding: "0 0 8px" }}>
+							<strong>{iconEditing.title || iconEditing.url}</strong>
+						</div>
+						<input
+							type="text"
+							className="mode-bar-url-dialog__input"
+							value={iconInput}
+							onChange={(e) => setIconInput(e.target.value)}
+							placeholder="이모지 또는 이미지 URL (비우면 기본값)"
+							autoFocus
+						/>
+						<div className="mode-bar-url-dialog__btns">
+							<button
+								type="button"
+								className="mode-bar-url-dialog__btn"
+								onClick={() => setIconEditing(null)}
+							>
+								{t("settings.cancel")}
+							</button>
+							<button
+								type="submit"
+								className="mode-bar-url-dialog__btn mode-bar-url-dialog__btn--primary"
+							>
+								{t("settings.save")}
+							</button>
+						</div>
+					</form>
+				</div>
+			, document.body)}
 			<button
 				type="button"
 				className={`mode-bar-settings${activePanel === "settings" ? " mode-bar-settings--active" : ""}`}

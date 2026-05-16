@@ -151,3 +151,27 @@ export async function removeBrowserShortcut(
 	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
 	return next;
 }
+
+/** Persist a new order for shortcuts (result of drag-to-reorder). */
+export async function reorderBrowserShortcuts(
+	ordered: BrowserLink[],
+): Promise<BrowserLink[]> {
+	const config = await readConfig();
+	const next = normalizeLinks(ordered);
+	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
+	return next;
+}
+
+/** Update the icon (emoji or URL) for an existing shortcut. */
+export async function updateBrowserShortcutIcon(
+	url: string,
+	iconUrl: string | undefined,
+): Promise<BrowserLink[]> {
+	const config = await readConfig();
+	const current = normalizeLinks(config[SHORTCUTS_KEY]);
+	const next = current.map((item) =>
+		item.url === url ? { ...item, iconUrl: iconUrl || undefined } : item,
+	);
+	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
+	return next;
+}

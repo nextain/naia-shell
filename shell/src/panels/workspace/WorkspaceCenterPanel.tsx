@@ -267,6 +267,10 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 	const [sessionsWidth, setSessionsWidth] = useState(200);
 	const sessionsWidthRef = useRef(200);
 	sessionsWidthRef.current = sessionsWidth;
+	// Height of the SkillLauncher section inside the left sidebar
+	const [skillsHeight, setSkillsHeight] = useState(160);
+	const skillsHeightRef = useRef(160);
+	skillsHeightRef.current = skillsHeight;
 	/** Grid column split ratio (left fraction). Only used for 2-terminal grid. */
 	const [gridSplit, setGridSplit] = useState(0.5);
 	const gridSplitRef = useRef(0.5);
@@ -283,6 +287,26 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 		};
 		const onUp = () => {
 			document.body.classList.remove("resizing-col");
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
+	}, []);
+
+	const onSkillsResizeStart = useCallback((e: React.PointerEvent) => {
+		e.preventDefault();
+		const startY = e.clientY;
+		const startH = skillsHeightRef.current;
+		document.body.classList.add("resizing-row");
+		const onMove = (ev: PointerEvent) => {
+			// Handle is on top edge of skills panel — dragging up increases height
+			setSkillsHeight(Math.max(60, Math.min(400, startH - (ev.clientY - startY))));
+		};
+		const onUp = () => {
+			document.body.classList.remove("resizing-row");
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", onUp);
 			window.removeEventListener("pointercancel", onUp);
@@ -1448,8 +1472,13 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 						</div>
 					)}
 				</div>
-				<div className="workspace-panel__tree-divider" />
-				<SkillLauncher />
+				<div
+					className="workspace-panel__row-resize-handle"
+					onPointerDown={onSkillsResizeStart}
+				/>
+				<div style={{ height: `${skillsHeight}px`, flexShrink: 0, overflow: "hidden" }}>
+					<SkillLauncher />
+				</div>
 			</div>
 			<div
 				className="workspace-panel__resize-handle"

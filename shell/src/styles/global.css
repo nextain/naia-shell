@@ -648,6 +648,33 @@ body,
 	background: var(--accent-bg);
 }
 
+/* Edit mode button */
+.mode-bar-edit {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	background: transparent;
+	color: var(--cream-dim);
+	font-size: 14px;
+	cursor: pointer;
+	border-radius: 8px;
+	line-height: 1;
+}
+
+.mode-bar-edit:hover {
+	background: var(--hover-bg);
+	color: var(--cream);
+}
+
+.mode-bar-edit--active {
+	color: var(--accent, #7ca0ff);
+	background: var(--accent-bg);
+}
+
 .mode-bar-ctx-menu {
 	position: fixed;
 	z-index: 10000;
@@ -818,6 +845,25 @@ body,
 .mode-bar-tab-remove:hover {
 	background: var(--espresso-medium);
 	color: var(--cream);
+}
+
+/* Shortcut remove button — always visible in edit mode */
+.mode-bar-tab-remove--shortcut {
+	display: flex;
+	color: var(--cream-dim);
+	background: rgba(0,0,0,0.5);
+	font-size: 10px;
+}
+
+/* Drag-over state */
+.mode-bar-tab-wrapper--drag-over {
+	outline: 2px solid var(--accent, #7ca0ff);
+	border-radius: 8px;
+}
+
+/* Edit mode tab — pulsing border to signal clickable for icon edit */
+.mode-bar-tab--edit {
+	outline: 1px dashed rgba(124, 160, 255, 0.5);
 }
 
 /* ─── Panel Install Dialog ───────────────────────────────────────────────── */
@@ -6758,6 +6804,26 @@ body.resizing-row {
 	background: var(--accent, #7ca0ff);
 }
 
+/* Horizontal drag handle (row resize) — inside left/right sidebars */
+.workspace-panel__row-resize-handle {
+	height: 4px;
+	flex-shrink: 0;
+	cursor: row-resize;
+	background: var(--border-color, #333);
+	transition: background 0.15s;
+}
+
+.workspace-panel__row-resize-handle:hover,
+.workspace-panel__row-resize-handle:active {
+	background: var(--accent, #7ca0ff);
+}
+
+body.resizing-row,
+body.resizing-row * {
+	cursor: row-resize !important;
+	user-select: none !important;
+}
+
 /* Left: FileTree */
 .workspace-panel__tree {
 	min-width: 120px;
@@ -7282,8 +7348,8 @@ body.resizing-col * {
 
 .issues-panel__sessions {
 	overflow-y: auto;
-	flex-shrink: 0;
-	max-height: 200px;
+	flex: 1;
+	min-height: 60px;
 }
 
 .issues-panel__sessions-loading,

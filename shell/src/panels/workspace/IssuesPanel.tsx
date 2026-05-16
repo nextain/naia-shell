@@ -92,6 +92,34 @@ export function IssuesPanel({
 	const [fetchState, setFetchState] = useState<FetchState>("loading");
 	const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
 	const fetchIdRef = useRef(0);
+	// Vertical drag-resize: issues list ↕ sessions section
+	const [issuesListHeight, setIssuesListHeight] = useState(180);
+	const issuesListHeightRef = useRef(180);
+	issuesListHeightRef.current = issuesListHeight;
+	const issuesPanelRef = useRef<HTMLDivElement>(null);
+	const onIssuesSectionResizeStart = useCallback((e: React.PointerEvent) => {
+		e.preventDefault();
+		const startY = e.clientY;
+		const startH = issuesListHeightRef.current;
+		document.body.classList.add("resizing-row");
+		const onMove = (ev: PointerEvent) => {
+			setIssuesListHeight(Math.max(60, Math.min(500, startH + (ev.clientY - startY))));
+		};
+		const onUp = () => {
+			document.body.classList.remove("resizing-row");
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
+	}, []);
+	// Ref so fetchIssues closure always reads the latest workspaceRoot without
+	// being recreated on every path-normalization change (which would re-trigger
+	// the useEffect and restart "loading" in a loop).
+	const workspaceRootRef = useRef(workspaceRoot);
+	workspaceRootRef.current = workspaceRoot;
 
 	const fetchIssues = useCallback(
 		async (bust = false) => {
@@ -108,17 +136,26 @@ export function IssuesPanel({
 			const id = ++fetchIdRef.current;
 			setFetchState("loading");
 
+			// JS-side 20 s timeout — guards against pty_execute_sync hanging on
+			// Windows (ConPTY does not honour SIGKILL so Rust timeout may not fire).
+			const timeoutPromise = new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error("timeout")), 20_000),
+			);
+
 			try {
-				const result = await invoke<{
-					success: boolean;
-					output: string;
-					exit_code: number;
-				}>("pty_execute_sync", {
-					dir: workspaceRoot || ".",
-					command:
-						"gh issue list --state open --limit 50 --json number,title,state,labels,updatedAt",
-					timeout_secs: 15,
-				});
+				const result = await Promise.race([
+					invoke<{
+						success: boolean;
+						output: string;
+						exit_code: number;
+					}>("pty_execute_sync", {
+						dir: workspaceRootRef.current || ".",
+						command:
+							"gh issue list --state open --limit 50 --json number,title,state,labels,updatedAt",
+						timeout_secs: 15,
+					}),
+					timeoutPromise,
+				]);
 
 				if (id !== fetchIdRef.current) return;
 
@@ -151,6 +188,7 @@ export function IssuesPanel({
 				if (id !== fetchIdRef.current) return;
 				const msg = String(e).toLowerCase();
 				if (
+					msg.includes("timeout") ||
 					msg.includes("not found") ||
 					msg.includes("no such file") ||
 					msg.includes("pty_execute_sync")
@@ -162,13 +200,25 @@ export function IssuesPanel({
 				Logger.warn("IssuesPanel", "fetchIssues error", { error: String(e) });
 			}
 		},
-		[workspaceRoot],
+		[], // stable — reads workspaceRoot via ref, never recreated on prop change
 	);
 
-	// Initial load
+	// Initial load on mount
 	useEffect(() => {
 		void fetchIssues();
 	}, [fetchIssues]);
+
+	// Re-fetch when workspaceRoot meaningfully changes (non-empty, different value).
+	// Using a separate effect so fetchIssues stays stable and does not cause
+	// the above effect to re-run on every path-normalization render cycle.
+	const prevRootRef = useRef(workspaceRoot);
+	useEffect(() => {
+		if (!workspaceRoot) return;
+		if (workspaceRoot === prevRootRef.current) return;
+		prevRootRef.current = workspaceRoot;
+		// bust=false: use cache if fresh (avoids redundant gh call)
+		void fetchIssues();
+	}, [workspaceRoot, fetchIssues]);
 
 	// ── Render states ──────────────────────────────────────────────────────────
 
@@ -250,7 +300,7 @@ export function IssuesPanel({
 	};
 
 	return (
-		<div className="issues-panel">
+		<div className="issues-panel" ref={issuesPanelRef}>
 			{/* ── Issues section ───────────────────────────────────────────── */}
 			<div className="issues-panel__section-header">
 				<span className="issues-panel__section-title">열린 이슈</span>
@@ -263,7 +313,18 @@ export function IssuesPanel({
 					↺
 				</button>
 			</div>
-			<div className="issues-panel__list">{renderIssuesBody()}</div>
+			<div
+				className="issues-panel__list"
+				style={{ height: `${issuesListHeight}px`, flex: "none" }}
+			>
+				{renderIssuesBody()}
+			</div>
+
+			{/* ── Drag handle between issues and sessions ───────────────────── */}
+			<div
+				className="workspace-panel__row-resize-handle"
+				onPointerDown={onIssuesSectionResizeStart}
+			/>
 
 			{/* ── Sessions section (collapsible) ───────────────────────────── */}
 			<button
