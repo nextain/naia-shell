@@ -540,6 +540,7 @@ export function SettingsTab() {
 	);
 	const pushModal = usePanelStore((s) => s.pushModal);
 	const popModal = usePanelStore((s) => s.popModal);
+	const storeTtsEnabled = usePanelStore((s) => s.ttsEnabled);
 	const setStoreTtsEnabled = usePanelStore((s) => s.setTtsEnabled);
 	const [savedVrmModel, setSavedVrmModel] = useState(
 		normalizeLocalPath(existing?.vrmModel ?? DEFAULT_AVATAR_MODEL),
@@ -609,6 +610,8 @@ export function SettingsTab() {
 	const [ttsEnabled, setTtsEnabled] = useState(existing?.ttsEnabled ?? false);
 	// Keep panel store in sync so QuickToggles button reflects settings changes
 	useEffect(() => { setStoreTtsEnabled(ttsEnabled); }, [ttsEnabled, setStoreTtsEnabled]);
+	// Sync back from store so QuickToggles TTS button changes are reflected here
+	useEffect(() => { setTtsEnabled(storeTtsEnabled); }, [storeTtsEnabled]);
 	const [persona, setPersona] = useState(existing?.persona ?? DEFAULT_PERSONA);
 	const [userName, setUserName] = useState(existing?.userName ?? "");
 	const [agentName, setAgentName] = useState(existing?.agentName ?? "");

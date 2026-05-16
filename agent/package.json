@@ -9,17 +9,18 @@
 		"dev": "tsx src/index.ts --stdio",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:ui": "vitest --ui",
 		"check": "biome check --write ."
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.39.0",
 		"@google/genai": "^1.42.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@naia-adk/skills-builtin": "file:./vendor/naia-adk-skills-builtin-0.0.1.tgz",
 		"@nextain/agent-protocol": "file:./vendor/nextain-agent-protocol-0.1.0.tgz",
 		"@nextain/agent-providers": "file:./vendor/nextain-agent-providers-0.1.0.tgz",
 		"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
-		"@naia-adk/skills-builtin": "file:../../naia-adk/packages/skills-builtin",
-		"@nextain/naia-memory": "file:../../naia-memory",
+		"@nextain/naia-memory": "file:./vendor/nextain-naia-memory-0.1.4.tgz",
 		"agent-browser": "0.26.0",
 		"msedge-tts": "^2.0.4",
 		"openai": "^4.80.0",
@@ -29,14 +30,22 @@
 	"pnpm": {
 		"overrides": {
 			"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
-			"@naia-adk/skill-spec": "file:../../naia-adk/packages/skill-spec"
+			"@naia-adk/skill-spec": "file:./vendor/naia-adk-skill-spec-0.1.0.tgz"
 		},
-		"onlyBuiltDependencies": ["@biomejs/biome", "agent-browser", "esbuild", "msedge-tts", "protobufjs"]
+		"onlyBuiltDependencies": [
+			"@biomejs/biome",
+			"agent-browser",
+			"better-sqlite3",
+			"esbuild",
+			"msedge-tts",
+			"protobufjs"
+		]
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.0",
 		"@types/node": "^22.0.0",
 		"@types/ws": "^8.18.1",
+		"@vitest/ui": "^4.0.18",
 		"tsx": "^4.19.0",
 		"typescript": "^5.6.0",
 		"vitest": "^4.0.18"

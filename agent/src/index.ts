@@ -87,7 +87,6 @@ type MemConfig = {
 /**
  * Build a new MemorySystem from ~/.naia/memory-config.json.
  * Called at startup and again after auth_update for naia providers.
- * v5.1 Fix: Uses high-performance SqliteAdapter instead of JSON LocalAdapter.
  */
 function buildMemorySystem(): MemorySystem {
         let cfg: MemConfig = {};
@@ -133,7 +132,7 @@ function buildMemorySystem(): MemorySystem {
                 }
         }
 
-        // Breakthrough: Switch to Hardened SqliteAdapter for 1M+ scalability
+        // v5.1: SqliteAdapter — 24ms retrieval @ 100k scale
         return new MemorySystem({
                 adapter: new SqliteAdapter({ dbPath: MEMORY_DB_PATH, embeddingProvider }),
                 ...(factExtractor ? { factExtractor } : {}),

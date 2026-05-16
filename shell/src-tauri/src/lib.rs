@@ -2599,7 +2599,7 @@ async fn gemini_live_disconnect(state: tauri::State<'_, AppState>) -> Result<(),
 /// Only whitelisted subdirs are allowed.
 #[tauri::command]
 async fn list_naia_assets(adk_path: String, subdir: String) -> Result<Vec<String>, String> {
-    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "splash-img"];
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics"];
     if !ALLOWED.contains(&subdir.as_str()) {
         return Err(format!("Invalid subdir: {subdir}"));
     }
@@ -2658,7 +2658,7 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
         return Err("adk_path is empty".to_string());
     }
     let base = std::path::PathBuf::from(&adk_path).join("naia-settings");
-    for subdir in &["vrm-files", "background", "bgm-musics", "splash-img"] {
+    for subdir in &["vrm-files", "background", "bgm-musics"] {
         std::fs::create_dir_all(base.join(subdir))
             .map_err(|e| format!("Failed to create {subdir}: {e}"))?;
     }
@@ -2734,7 +2734,7 @@ async fn write_naia_asset(
     filename: String,
     bytes: Vec<u8>,
 ) -> Result<(), String> {
-    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "splash-img"];
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics"];
     if !ALLOWED.contains(&subdir.as_str()) {
         return Err(format!("Invalid subdir: {subdir}"));
     }

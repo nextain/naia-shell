@@ -159,6 +159,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.0
         version: 4.7.0(vite@6.4.1(@types/node@25.2.3)(jiti@2.6.1)(tsx@4.21.0))
+      '@vitest/ui':
+        specifier: ^4.0.18
+        version: 4.0.18(vitest@4.0.18)
       '@wdio/cli':
         specifier: ^9.0.0
         version: 9.24.0(@types/node@25.2.3)(expect-webdriverio@5.6.4)
@@ -188,7 +191,7 @@ importers:
         version: 6.4.1(@types/node@25.2.3)(jiti@2.6.1)(tsx@4.21.0)
       vitest:
         specifier: ^4.0.18
-        version: 4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0)(tsx@4.21.0)
+        version: 4.0.18(@types/node@25.2.3)(@vitest/ui@4.0.18)(jiti@2.6.1)(jsdom@28.1.0)(tsx@4.21.0)
       wdio-video-reporter:
         specifier: ^6.2.0
         version: 6.2.0(expect-webdriverio@5.6.4)(webdriverio@9.24.0)
@@ -1203,6 +1206,9 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  '@polka/url@1.0.0-next.29':
+    resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
+
   '@promptbook/utils@0.69.5':
     resolution: {integrity: sha512-xm5Ti/Hp3o4xHrsK9Yy3MS6KbDxYbq485hDsFvxqaNA7equHLPdo8H8faTitTeb14QCDfLW4iwCxdVYu5sn6YQ==}
 
@@ -1747,6 +1753,11 @@ packages:
 
   '@vitest/spy@4.0.18':
     resolution: {integrity: sha512-cbQt3PTSD7P2OARdVW3qWER5EGq7PHlvE+QfzSC0lbwO+xnt7+XH06ZzFjFRgzUX//JmpxrCu92VdwvEPlWSNw==}
+
+  '@vitest/ui@4.0.18':
+    resolution: {integrity: sha512-CGJ25bc8fRi8Lod/3GHSvXRKi7nBo3kxh0ApW4yCjmrWmRmlT53B5E08XRSZRliygG0aVNxLrBEqPYdz/KcCtQ==}
+    peerDependencies:
+      vitest: 4.0.18
 
   '@vitest/utils@4.0.18':
     resolution: {integrity: sha512-msMRKLMVLWygpK3u2Hybgi4MNjcYJvwTb0Ru09+fOyCXIgT5raYP041DRRdiJiI3k/2U6SEbAETB3YtBrUkCFA==}
@@ -2664,6 +2675,9 @@ packages:
     resolution: {integrity: sha512-b6suED+5/3rTpUBdG1gupIl8MPFCAMA0QXwmljLhvCUKcUvdE4gWky9zpuGCcXHOsz4J9wPGNWq6OKpmIzz3hQ==}
     hasBin: true
 
+  flatted@3.4.2:
+    resolution: {integrity: sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==}
+
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
@@ -3295,6 +3309,10 @@ packages:
     resolution: {integrity: sha512-4W79zekKGyYU4JXVmB78DOscMFaJth2gGhgfTl2alWE4rNe3nf4N2pqenQ0rEtIewrnD79M687Ouba3YGTLOvg==}
     engines: {node: '>=18.0.0'}
 
+  mrmime@2.0.1:
+    resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
+    engines: {node: '>=10'}
+
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
@@ -3702,6 +3720,10 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
+  sirv@3.0.2:
+    resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
+    engines: {node: '>=18'}
+
   slash@3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
     engines: {node: '>=8'}
@@ -3868,6 +3890,10 @@ packages:
     resolution: {integrity: sha512-PSkbLUoxOFRzJYjjxHJt9xro7D+iilgMX/C9lawzVuYiIdcihh9DXmVibBe8lmcFrRi/VzlPjBxbN7rH24q8/Q==}
     engines: {node: '>=14.0.0'}
 
+  tinyrainbow@3.1.0:
+    resolution: {integrity: sha512-Bf+ILmBgretUrdJxzXM0SgXLZ3XfiaUuOj/IKQHuTXip+05Xn+uyEYdVg0kYDipTBcLrCVyUzAPz7QmArb0mmw==}
+    engines: {node: '>=14.0.0'}
+
   tldts-core@7.0.23:
     resolution: {integrity: sha512-0g9vrtDQLrNIiCj22HSe9d4mLVG3g5ph5DZ8zCKBr4OtrspmNB6ss7hVyzArAeE88ceZocIEGkyW1Ime7fxPtQ==}
 
@@ -3878,6 +3904,10 @@ packages:
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
+
+  totalist@3.0.1:
+    resolution: {integrity: sha512-sf4i37nQ2LBx4m3wB74y+ubopq6W/dIzXg0FDGjsYnZHVa1Da8FH853wlL2gtUhg+xJXjfk3kUZS3BRoQeoQBQ==}
+    engines: {node: '>=6'}
 
   tough-cookie@6.0.0:
     resolution: {integrity: sha512-kXuRi1mtaKMrsLUxz3sQYvVl37B0Ns6MzfrtV5DvJceE9bPyspOqk9xxv7XbZWcfLWbFmm997vl83qUWVJA64w==}
@@ -5177,6 +5207,8 @@ snapshots:
     dependencies:
       playwright: 1.58.2
 
+  '@polka/url@1.0.0-next.29': {}
+
   '@promptbook/utils@0.69.5':
     dependencies:
       spacetrim: 0.11.59
@@ -5702,10 +5734,21 @@ snapshots:
 
   '@vitest/spy@4.0.18': {}
 
+  '@vitest/ui@4.0.18(vitest@4.0.18)':
+    dependencies:
+      '@vitest/utils': 4.0.18
+      fflate: 0.8.2
+      flatted: 3.4.2
+      pathe: 2.0.3
+      sirv: 3.0.2
+      tinyglobby: 0.2.15
+      tinyrainbow: 3.1.0
+      vitest: 4.0.18(@types/node@25.2.3)(@vitest/ui@4.0.18)(jiti@2.6.1)(jsdom@28.1.0)(tsx@4.21.0)
+
   '@vitest/utils@4.0.18':
     dependencies:
       '@vitest/pretty-format': 4.0.18
-      tinyrainbow: 3.0.3
+      tinyrainbow: 3.1.0
 
   '@wdio/allure-reporter@9.24.0':
     dependencies:
@@ -6798,6 +6841,8 @@ snapshots:
 
   flat@5.0.2: {}
 
+  flatted@3.4.2: {}
+
   foreground-child@3.3.1:
     dependencies:
       cross-spawn: 7.0.6
@@ -7691,6 +7736,8 @@ snapshots:
 
   modern-tar@0.7.3: {}
 
+  mrmime@2.0.1: {}
+
   ms@2.1.3: {}
 
   mute-stream@2.0.0: {}
@@ -8165,6 +8212,12 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
+  sirv@3.0.2:
+    dependencies:
+      '@polka/url': 1.0.0-next.29
+      mrmime: 2.0.1
+      totalist: 3.0.1
+
   slash@3.0.0: {}
 
   smart-buffer@4.2.0: {}
@@ -8347,6 +8400,8 @@ snapshots:
 
   tinyrainbow@3.0.3: {}
 
+  tinyrainbow@3.1.0: {}
+
   tldts-core@7.0.23: {}
 
   tldts@7.0.23:
@@ -8356,6 +8411,8 @@ snapshots:
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
+
+  totalist@3.0.1: {}
 
   tough-cookie@6.0.0:
     dependencies:
@@ -8476,7 +8533,7 @@ snapshots:
       jiti: 2.6.1
       tsx: 4.21.0
 
-  vitest@4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0)(tsx@4.21.0):
+  vitest@4.0.18(@types/node@25.2.3)(@vitest/ui@4.0.18)(jiti@2.6.1)(jsdom@28.1.0)(tsx@4.21.0):
     dependencies:
       '@vitest/expect': 4.0.18
       '@vitest/mocker': 4.0.18(vite@6.4.1(@types/node@25.2.3)(jiti@2.6.1)(tsx@4.21.0))
@@ -8500,6 +8557,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 25.2.3
+      '@vitest/ui': 4.0.18(vitest@4.0.18)
       jsdom: 28.1.0
     transitivePeerDependencies:
       - jiti

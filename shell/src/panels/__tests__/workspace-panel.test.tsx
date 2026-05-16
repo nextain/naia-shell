@@ -101,6 +101,13 @@ vi.mock("react-markdown", () => ({
 	),
 }));
 
+// Terminal mock: avoids ResizeObserver / xterm dependency in jsdom
+vi.mock("../workspace/Terminal", () => ({
+	Terminal: vi.fn(({ pty_id }: { pty_id: string }) => (
+		<div data-testid={`terminal-${pty_id}`} />
+	)),
+}));
+
 // ─── Mock IssuesPanel — removes dependency on IssuesPanel/SessionDashboard internals ─
 
 vi.mock("../workspace/IssuesPanel", () => ({
@@ -616,6 +623,137 @@ describe("WorkspaceCenterPanel", () => {
 			expect(alert.dir).toBe("broken");
 			expect(typeof alert.message).toBe("string");
 		});
+	});
+
+	// ── skill_workspace_send_to_session ──────────────────────────────────────
+
+	it("registers skill_workspace_send_to_session handler on mount", async () => {
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+
+		render(<WorkspaceCenterPanel naia={bridge} />);
+
+		await waitFor(() => {
+			expect(bridge.hasHandler("skill_workspace_send_to_session")).toBe(true);
+		});
+	});
+
+	it("skill_workspace_send_to_session returns error when dir or text is missing", async () => {
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+
+		render(<WorkspaceCenterPanel naia={bridge} />);
+		await waitFor(() =>
+			expect(bridge.hasHandler("skill_workspace_send_to_session")).toBe(true),
+		);
+
+		// Missing both
+		const r1 = await bridge.callTool("skill_workspace_send_to_session", {});
+		expect(r1).toContain("Error");
+
+		// Missing text
+		const r2 = await bridge.callTool("skill_workspace_send_to_session", {
+			dir: "/dev/naia-os",
+		});
+		expect(r2).toContain("Error");
+
+		// Missing dir
+		const r3 = await bridge.callTool("skill_workspace_send_to_session", {
+			text: "hello\n",
+		});
+		expect(r3).toContain("Error");
+	});
+
+	it("skill_workspace_send_to_session returns error when no PTY session found", async () => {
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+
+		render(<WorkspaceCenterPanel naia={bridge} />);
+		await waitFor(() =>
+			expect(bridge.hasHandler("skill_workspace_send_to_session")).toBe(true),
+		);
+
+		// terminalsRef is empty — no PTY session exists for this dir
+		const result = await bridge.callTool("skill_workspace_send_to_session", {
+			dir: "/dev/nonexistent",
+			text: "hello",
+		});
+		expect(result).toContain("Error");
+		expect(result).toContain("nonexistent");
+	});
+
+	it("skill_workspace_send_to_session calls pty_write and returns 'Sent to: {dir}'", async () => {
+		const { invoke } = await import("@tauri-apps/api/core");
+
+		// Arrange: pty_create succeeds, git info returns null branch, pty_write succeeds
+		vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+			if (cmd === "pty_create") return { pty_id: "pty-test-1", pid: 42 };
+			if (cmd === "workspace_get_git_info") return { branch: null };
+			if (cmd === "pty_write") return undefined;
+			if (cmd === "workspace_set_root")
+				return (args as Record<string, unknown>)?.root ?? "/tmp/test-workspace";
+			if (cmd === "workspace_get_sessions") return [];
+			return [];
+		});
+
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+
+		render(<WorkspaceCenterPanel naia={bridge} />);
+		await waitFor(() =>
+			expect(bridge.hasHandler("skill_workspace_new_session")).toBe(true),
+		);
+
+		// Open a terminal so terminalsRef gets the tab
+		const newResult = await bridge.callTool("skill_workspace_new_session", {
+			dir: "/dev/naia-os",
+		});
+		expect(newResult).toContain("Started");
+
+		// Now send_to_session should find the tab and invoke pty_write
+		await waitFor(async () => {
+			const result = await bridge.callTool("skill_workspace_send_to_session", {
+				dir: "/dev/naia-os",
+				text: "echo hello\n",
+			});
+			expect(result).toBe("Sent to: /dev/naia-os");
+		});
+
+		// Verify pty_write was called with correct args
+		const ptyWriteCalls = vi
+			.mocked(invoke)
+			.mock.calls.filter(([cmd]) => cmd === "pty_write");
+		expect(ptyWriteCalls.length).toBeGreaterThanOrEqual(1);
+		const lastPtyWrite = ptyWriteCalls[ptyWriteCalls.length - 1]!;
+		expect((lastPtyWrite[1] as Record<string, unknown>).pty_id).toBe(
+			"pty-test-1",
+		);
+		expect((lastPtyWrite[1] as Record<string, unknown>).data).toBe(
+			"echo hello\n",
+		);
+	});
+
+	it("skill_workspace_send_to_session is registered in index.tsx tool descriptor list", async () => {
+		// index.tsx exports WORKSPACE_TOOLS — verify the descriptor exists with correct fields
+		const { WORKSPACE_TOOLS } = await import("../workspace/index");
+		const descriptor = WORKSPACE_TOOLS.find(
+			(t) => t.name === "skill_workspace_send_to_session",
+		);
+		expect(descriptor).toBeDefined();
+		// biome-ignore lint/style/noNonNullAssertion: asserted above
+		const params = descriptor!.parameters!;
+		expect(params.properties).toHaveProperty("dir");
+		expect(params.properties).toHaveProperty("text");
+		expect(params.required).toContain("dir");
+		expect(params.required).toContain("text");
 	});
 
 	it("re-arms errorAlert after session recovers to idle/active", async () => {

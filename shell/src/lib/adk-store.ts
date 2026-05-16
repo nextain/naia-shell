@@ -28,8 +28,7 @@ export function clearAdkPath(): void {
 export type NaiaAssetSubdir =
 	| "vrm-files"
 	| "background"
-	| "bgm-musics"
-	| "splash-img";
+	| "bgm-musics";
 
 /** Returns absolute file paths inside {adkPath}/naia-settings/{subdir}/ */
 export async function listNaiaAssets(
