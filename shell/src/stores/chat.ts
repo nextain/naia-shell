@@ -9,6 +9,10 @@ import type {
 } from "../lib/types";
 import { usePanelStore } from "./panel";
 
+function requestBrowserVisibilitySync() {
+	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
+}
+
 export interface PendingApproval {
 	requestId: string;
 	toolCallId: string;
@@ -173,7 +177,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		if (!isStreaming) return;
 		// If approval was pending and browser is active, re-show WebView2 (mirrors clearPendingApproval)
 		if (pendingApproval && usePanelStore.getState().activePanel === "browser") {
-			invoke("browser_wv_show").catch(() => {});
+			requestBrowserVisibilitySync();
 		}
 		const toolCalls =
 			streamingToolCalls.length > 0 ? streamingToolCalls : undefined;
@@ -265,7 +269,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			get().pendingApproval &&
 			usePanelStore.getState().activePanel === "browser"
 		) {
-			invoke("browser_wv_show").catch(() => {});
+			requestBrowserVisibilitySync();
 		}
 		set({ pendingApproval: null });
 	},
@@ -276,7 +280,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			get().pendingApproval &&
 			usePanelStore.getState().activePanel === "browser"
 		) {
-			invoke("browser_wv_show").catch(() => {});
+			requestBrowserVisibilitySync();
 		}
 		set({
 			sessionId: null,

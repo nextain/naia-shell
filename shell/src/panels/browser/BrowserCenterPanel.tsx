@@ -400,6 +400,23 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		return () => { unlisten?.(); };
 	}, [status, syncBrowserBounds]);
 
+	// ── Visibility sync event (from panel/chat store) ─────────────────────────
+
+	useEffect(() => {
+		if (status !== "ready") return;
+		const sync = () => {
+			const { activePanel, modalCount } = usePanelStore.getState();
+			if (activePanel !== "browser" || modalCount > 0) {
+				invoke("browser_wv_hide").catch(() => {});
+				return;
+			}
+			if (!_browserWvCreated) { initWebview(); return; }
+			showBrowserWebview().catch(() => {});
+		};
+		window.addEventListener("naia-browser-visibility-sync", sync);
+		return () => window.removeEventListener("naia-browser-visibility-sync", sync);
+	}, [initWebview, showBrowserWebview, status]);
+
 	// ── Panel API (BrowserPanelApi) ───────────────────────────────────────────
 
 	useEffect(() => {

@@ -2,6 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { PanelContext } from "../lib/panel-registry";
 
+function requestBrowserVisibilitySync() {
+	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
+}
+
 interface PanelState {
 	/** Currently active panel id. null = default avatar view. */
 	activePanel: string | null;
@@ -38,10 +42,11 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 		const current = get().activePanel;
 		if (current === "browser" && id !== "browser") {
 			invoke("browser_wv_hide").catch(() => {});
-		} else if (id === "browser" && current !== "browser") {
-			invoke("browser_wv_show").catch(() => {});
 		}
 		set({ activePanel: id, activePanelContext: null });
+		if (id === "browser" && current !== "browser") {
+			requestBrowserVisibilitySync();
+		}
 	},
 	activePanelContext: null,
 	setActivePanelContext: (ctx) => set({ activePanelContext: ctx }),
@@ -60,7 +65,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 		const next = Math.max(0, get().modalCount - 1);
 		set({ modalCount: next });
 		if (next === 0 && get().activePanel === "browser") {
-			invoke("browser_wv_show").catch(() => {});
+			requestBrowserVisibilitySync();
 		}
 	},
 	aiInterferenceEnabled: false,
