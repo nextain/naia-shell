@@ -49,8 +49,10 @@ const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
 const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
-	position: { x: 1.3, y: 1.2, z: -2.0 },
-	target: { x: 0, y: 1.0, z: 0 },
+	// Camera offset FROM orbit target (directly in front, slightly above)
+	position: { x: 0, y: 0.2, z: -2.0 },
+	// Orbit target: x shifts right so avatar appears in left naia column
+	target: { x: 1.3, y: 0.9, z: 0 },
 };
 
 interface SavedCamera {
@@ -318,19 +320,17 @@ export function AvatarCanvas() {
 			controls.update();
 		};
 		_cameraActions.reset = () => {
+			// Orbit target = model center + x-offset (keeps avatar in left naia column)
 			const target = lastModelCenter
-				? lastModelCenter.clone()
-				: new Vector3(
-						DEFAULT_CAMERA.target.x,
-						DEFAULT_CAMERA.target.y,
-						DEFAULT_CAMERA.target.z,
-					);
-			const defaultOffset = new Vector3(
-				DEFAULT_CAMERA.position.x - DEFAULT_CAMERA.target.x,
-				DEFAULT_CAMERA.position.y - DEFAULT_CAMERA.target.y,
-				DEFAULT_CAMERA.position.z - DEFAULT_CAMERA.target.z,
+				? lastModelCenter.clone().setX(lastModelCenter.x + DEFAULT_CAMERA.target.x)
+				: new Vector3(DEFAULT_CAMERA.target.x, DEFAULT_CAMERA.target.y, DEFAULT_CAMERA.target.z);
+			// Camera is directly in front of orbit target (position = target + position-offset)
+			const camOffset = new Vector3(
+				DEFAULT_CAMERA.position.x,
+				DEFAULT_CAMERA.position.y,
+				DEFAULT_CAMERA.position.z,
 			);
-			camera.position.copy(target).add(defaultOffset);
+			camera.position.copy(target).add(camOffset);
 			controls.target.copy(target);
 			camera.lookAt(target);
 			controls.update();
@@ -347,15 +347,17 @@ export function AvatarCanvas() {
 			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
-			camera.position.set(
-				DEFAULT_CAMERA.position.x,
-				DEFAULT_CAMERA.position.y,
-				DEFAULT_CAMERA.position.z,
-			);
+			// Initial orbit target = DEFAULT_CAMERA.target (x-offset + estimated model height)
 			controls.target.set(
 				DEFAULT_CAMERA.target.x,
 				DEFAULT_CAMERA.target.y,
 				DEFAULT_CAMERA.target.z,
+			);
+			// Camera = orbit target + position-offset (directly in front)
+			camera.position.set(
+				DEFAULT_CAMERA.target.x + DEFAULT_CAMERA.position.x,
+				DEFAULT_CAMERA.target.y + DEFAULT_CAMERA.position.y,
+				DEFAULT_CAMERA.target.z + DEFAULT_CAMERA.position.z,
 			);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
@@ -496,12 +498,16 @@ export function AvatarCanvas() {
 				// Use modelCenter (bounding-box chest level, computed by VRM loader).
 				// Always save so reset() can restore it; only adjust camera on first load.
 				lastModelCenter = result.modelCenter.clone();
-				// Always align orbit pivot to model center, preserving camera angle/distance.
-				// Fixes rotation axis on first load and after model switches (even with savedCam).
+				// Align orbit pivot to model center + layout x-offset.
+				// The x-offset keeps the avatar in the left naia column while allowing
+				// correct orbit around the avatar body.
 				{
-					const diff = result.modelCenter.clone().sub(controls.target);
+					const newTarget = result.modelCenter.clone().setX(
+						result.modelCenter.x + DEFAULT_CAMERA.target.x,
+					);
+					const diff = newTarget.clone().sub(controls.target);
 					camera.position.add(diff);
-					controls.target.copy(result.modelCenter);
+					controls.target.copy(newTarget);
 					controls.update();
 				}
 

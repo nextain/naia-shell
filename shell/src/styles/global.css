@@ -4987,6 +4987,180 @@ body.resizing-row {
 	margin: 0 2px;
 }
 
+.bgm-source-btn--yt {
+	color: #ff4444;
+	font-weight: 600;
+}
+
+/* ── YouTube BGM expanded panel ─────────────────────────────────────────── */
+.bgm-yt-panel {
+	width: 320px;
+	max-height: 480px;
+	display: flex;
+	flex-direction: column;
+	background: rgba(8, 14, 28, 0.92);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 10px;
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	overflow: hidden;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.bgm-yt-search-row {
+	display: flex;
+	gap: 4px;
+	padding: 8px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bgm-yt-search-input {
+	flex: 1;
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 6px;
+	color: rgba(255, 255, 255, 0.9);
+	font-size: 0.8rem;
+	padding: 4px 8px;
+	outline: none;
+}
+
+.bgm-yt-search-input:focus {
+	border-color: rgba(255, 255, 255, 0.3);
+}
+
+.bgm-yt-search-input::placeholder {
+	color: rgba(255, 255, 255, 0.3);
+}
+
+.bgm-yt-tabs {
+	display: flex;
+	gap: 2px;
+	padding: 6px 8px 0;
+}
+
+.bgm-yt-tab {
+	background: transparent;
+	border: none;
+	color: rgba(255, 255, 255, 0.5);
+	font-size: 0.75rem;
+	padding: 4px 10px;
+	border-radius: 6px 6px 0 0;
+	cursor: pointer;
+	border-bottom: 2px solid transparent;
+	transition: color 0.15s;
+}
+
+.bgm-yt-tab:hover {
+	color: rgba(255, 255, 255, 0.85);
+}
+
+.bgm-yt-tab--active {
+	color: rgba(255, 255, 255, 0.95);
+	border-bottom-color: rgba(130, 180, 255, 0.8);
+}
+
+.bgm-yt-categories {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 4px;
+	padding: 8px;
+	overflow-y: auto;
+	max-height: 360px;
+}
+
+.bgm-yt-cat-btn {
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 6px;
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 0.78rem;
+	padding: 6px 8px;
+	cursor: pointer;
+	text-align: left;
+	transition: background 0.15s;
+}
+
+.bgm-yt-cat-btn:hover {
+	background: rgba(255, 255, 255, 0.14);
+	color: white;
+}
+
+.bgm-yt-list {
+	overflow-y: auto;
+	flex: 1;
+	padding: 4px;
+}
+
+.bgm-yt-status {
+	text-align: center;
+	color: rgba(255, 255, 255, 0.4);
+	font-size: 0.8rem;
+	padding: 16px;
+}
+
+.bgm-yt-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+
+.bgm-yt-row:hover {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.bgm-yt-row--playing {
+	background: rgba(130, 180, 255, 0.12);
+}
+
+.bgm-yt-row-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.bgm-yt-row-title {
+	font-size: 0.8rem;
+	color: rgba(255, 255, 255, 0.85);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.bgm-yt-row--playing .bgm-yt-row-title {
+	color: rgba(130, 180, 255, 0.95);
+}
+
+.bgm-yt-row-meta {
+	display: flex;
+	gap: 6px;
+	font-size: 0.7rem;
+	color: rgba(255, 255, 255, 0.35);
+	margin-top: 2px;
+}
+
+.bgm-yt-fav-btn {
+	background: transparent;
+	border: none;
+	color: rgba(255, 255, 255, 0.35);
+	font-size: 14px;
+	cursor: pointer;
+	padding: 2px 4px;
+	flex-shrink: 0;
+	transition: color 0.15s;
+}
+
+.bgm-yt-fav-btn:hover {
+	color: rgba(255, 200, 60, 0.8);
+}
+
+.bgm-yt-fav-btn--on {
+	color: rgba(255, 200, 60, 0.9);
+}
+
 .bgm-ai-toggle {
 	font-size: 14px;
 	padding: 0 4px;
@@ -5024,10 +5198,10 @@ body.resizing-row {
 	flex-shrink: 0;
 }
 
-/* Quick toggles: AI 참견 + TTS — below BGM player */
+/* Quick toggles: AI 참견 + TTS — top-left (BGM moved to ModeBar) */
 .quick-toggles {
 	position: fixed;
-	top: 78px;
+	top: 38px;
 	left: 8px;
 	z-index: 4;
 	display: flex;
