@@ -8,7 +8,7 @@
 
 **차세대 AI OS** — 당신만의 AI가 사는 개인 AI 운영체제
 
-**AI-Native 오픈소스** — 어떤 언어로든 기여하세요. AI가 모든 소통을 중개합니다. [→ 작동 방식](#ai-native-오픈소스)
+**AI-Native 오픈소스** — 어떤 언어로든 기여하세요. AI가 모든 소통을 중개합니다. [→ 작동 방식](#ai-native-open-source)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](../LICENSE)
 
@@ -415,6 +415,8 @@ ISSUE → UNDERSTAND → SCOPE → INVESTIGATE → PLAN → BUILD → REVIEW →
 
 이 프로젝트들이 있기에 Naia가 존재합니다. 우리가 딛고 선 토대를 만든 모든 오픈소스 메인테이너와 커뮤니티에 깊이 감사드립니다.
 
+
+<a id="ai-native-open-source"></a>
 ## AI-Native 오픈소스
 
 2025–2026년 대부분의 오픈소스 프로젝트는 AI 기여를 *방어*하고 있습니다. **Naia는 정반대로 접근합니다**: AI 보조 기여가 기본적으로 고품질이 되도록 프로젝트를 설계합니다.

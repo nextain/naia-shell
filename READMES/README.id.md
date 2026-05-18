@@ -6,199 +6,249 @@
   <img src="../assets/readme-hero.jpg" alt="Naia OS" width="800" />
 </p>
 
-**The Next Generation AI OS** — Sistem operasi AI pribadi tempat AI Anda sendiri tinggal
+**AI OS generasi berikutnya** — sistem operasi AI personal tempat AI milik Anda sendiri tinggal
 
-**AI-Native Open Source** — Berkontribusi dalam bahasa apa pun. AI menjembatani semua komunikasi. [→ Cara kerjanya](#ai-native-open-source)
+**Open source AI-Native** — berkontribusilah dalam bahasa apa pun. AI memediasi semua komunikasi. [→ Cara kerjanya](#ai-native-open-source)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](../LICENSE)
 
-> "AI Anda, aturan Anda. Pilih AI Anda, bentuk memori dan kepribadiannya, berikan suara Anda — semuanya di mesin Anda sendiri."
+> "Open source. AI Anda, aturan Anda. Pilih AI, bentuk ingatan dan kepribadiannya, kenakan suara Anda — semuanya di perangkat Anda, semuanya dapat diverifikasi melalui kode."
 
-> **Catatan:** Sampel avatar VRM yang ditampilkan berasal dari [VRoid Hub](https://hub.vroid.com/). VRM maskot resmi Naia sedang dalam pengembangan.
+> **Catatan:** Sampel avatar VRM yang ditampilkan berasal dari [VRoid Hub](https://hub.vroid.com/). VRM maskot resmi Naia saat ini sedang dalam pembuatan.
 
 ## Kenali Naia
 
 <p align="center">
-  <img src="../assets/character/naia-default-character.png" alt="Naia default" width="180" />
+  <img src="../assets/character/naia-default-character.png" alt="Naia Default" width="180" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="../assets/character/naia-character.png" alt="Naia dengan rambut" width="180" />
+  <img src="../assets/character/naia-character.png" alt="Naia with Hair" width="180" />
 </p>
 
 <p align="center">
-  <em>Default (tanpa gender) &nbsp;·&nbsp; Dengan rambut (varian perempuan)</em>
+  <em>Bentuk dasar (tanpa gender) &nbsp;·&nbsp; Dengan rambut (varian perempuan)</em>
 </p>
 
 <details>
-<summary>Variasi karakter lainnya</summary>
+<summary>Lebih banyak varian karakter</summary>
 <p align="center">
-  <img src="../assets/character/naia-varaiations.png" alt="Variasi Naia" width="600" />
+  <img src="../assets/character/naia-variations.png" alt="Naia Variations" width="600" />
 </p>
 </details>
 
-## Colokkan USB, Jalankan AI Langsung
+## Colok USB, AI langsung berjalan
 
 <p align="center">
-  <img src="../assets/plug-usb-and-run-ai.webp" alt="Colokkan USB dan jalankan Naia OS" width="600" />
+  <img src="../assets/plug-usb-and-run-ai.webp" alt="Plug in USB and run Naia OS" width="600" />
 </p>
 
 <p align="center">
   <strong>Tanpa instalasi, tanpa konfigurasi.</strong><br/>
-  Cukup colokkan USB Naia OS ke laptop mana pun dan nyalakan — AI pribadi Anda langsung hidup.<br/>
-  Coba dulu, dan instal ke hard drive jika Anda menyukainya.
+  Colok USB Naia OS ke laptop mana pun lalu nyalakan saja — AI milik Anda sendiri langsung hidup.<br/>
+  Coba dulu, jika suka, pasang ke hard disk.
 </p>
 
 ## Apa itu Naia?
 
-Naia adalah OS AI pribadi yang memberikan kedaulatan penuh atas AI kepada individu. Pilih AI mana yang akan digunakan (termasuk model lokal), konfigurasikan memori dan kepribadiannya secara lokal, kustomisasi avatar 3D dan suaranya — semuanya tetap di mesin Anda, di bawah kendali Anda.
+Naia adalah OS AI personal di mana setiap individu memiliki kedaulatan penuh atas AI miliknya. Pilih AI mana yang akan digunakan (termasuk model lokal), atur ingatan dan kepribadiannya secara lokal, dan sesuaikan avatar 3D serta suaranya — semuanya tetap berada di perangkat Anda, di bawah kendali Anda.
 
-Ini bukan sekadar alat AI biasa. Ini adalah sistem operasi tempat AI Anda tinggal, tumbuh, dan bekerja bersama Anda. Hari ini berupa OS desktop dengan avatar 3D. Besok — avatar video real-time, bernyanyi, bermain game, dan pada akhirnya Physical AI (OS android) Anda sendiri.
+Ini bukan sekadar alat AI lainnya. Ini adalah sistem operasi tempat AI Anda hidup, tumbuh, dan bekerja bersama Anda. Hari ini ia adalah OS desktop dengan avatar 3D. Besok — avatar video real-time, menyanyi, bermain game, dan akhirnya Physical AI (OS android) milik Anda sendiri.
 
 ### Filosofi Inti
 
-- **Kedaulatan AI** — Anda yang memilih AI. Cloud atau lokal. OS tidak memaksakan.
-- **Kendali Penuh** — Memori, kepribadian, pengaturan — semuanya disimpan lokal. Tanpa ketergantungan cloud.
-- **AI Milik Anda** — Kustomisasi avatar, suara, nama, kepribadian. Jadikan benar-benar milik Anda.
-- **Selalu Hidup** — AI berjalan 24/7 di latar belakang, menerima pesan dan mengerjakan tugas bahkan saat Anda pergi.
-- **Visi Masa Depan** — Avatar 3D VRM → avatar video real-time → bernyanyi & bermain game bersama → Physical AI
+- **Kedaulatan AI** — AI adalah pilihan Anda. Cloud atau lokal. OS tidak memaksakannya.
+- **Kendali penuh** — Ingatan, kepribadian, pengaturan — semuanya tersimpan secara lokal. Tanpa ketergantungan cloud.
+- **AI milik Anda sendiri** — Sesuaikan avatar, suara, nama, kepribadian. Benar-benar menjadi milik Anda.
+- **Selalu hidup** — AI berjalan 24/7 di latar belakang, menerima pesan dan bekerja bahkan saat Anda pergi.
+- **Open source** — Apache 2.0. Periksa bagaimana AI menangani data Anda. Dapat dimodifikasi, disesuaikan, dan dikontribusikan.
+- **Visi masa depan** — Avatar 3D VRM → avatar video real-time → menyanyi & bermain game bersama → Physical AI
 
 ### Fitur
 
-- **Avatar 3D** — Karakter VRM dengan ekspresi emosi (senang/sedih/terkejut/berpikir) dan sinkronisasi bibir
+- **Avatar 3D** — Karakter VRM dengan ekspresi emosi (senang/sedih/terkejut/berpikir) dan lip-sync
 - **Kebebasan AI** — 7 penyedia cloud (Gemini, Claude, GPT, Grok, zAI) + AI lokal (Ollama) + Claude Code CLI
-- **Lokal-First** — Memori, kepribadian, semua pengaturan disimpan di mesin Anda
-- **Eksekusi Alat** — 8 alat: baca/tulis file, terminal, pencarian web, browser, sub-agen
-- **70+ Keterampilan** — 7 bawaan + 63 kustom + 5.700+ keterampilan komunitas ClawHub
-- **Suara** — 5 penyedia TTS + STT + sinkronisasi bibir. Berikan AI Anda suara yang Anda inginkan.
-- **14 Bahasa** — Korea, Inggris, Jepang, Cina, Prancis, Jerman, Rusia, dan lainnya
-- **Selalu Aktif** — Daemon gateway OpenClaw menjaga AI Anda tetap berjalan di latar belakang
-- **Integrasi Kanal** — Berbicara dengan AI melalui Discord DM, kapan saja, di mana saja
-- **Keamanan 4 Tingkat** — T0 (baca) hingga T3 (berbahaya), persetujuan per alat, log audit
+- **Lokal lebih dulu** — Ingatan, kepribadian, dan semua pengaturan tersimpan di perangkat Anda
+- **Eksekusi tool** — 8 tool: baca/tulis berkas, terminal, pencarian web, browser, subagen
+- **70+ skill** — 7 bawaan + 63 kustom + 5.700+ skill komunitas ClawHub
+- **Suara** — 5 jenis TTS + STT + lip-sync. Kenakan suara yang Anda inginkan pada AI.
+- **14 bahasa** — Korea, Inggris, Jepang, Tionghoa, Prancis, Jerman, Rusia, dan lainnya
+- **Selalu aktif** — Daemon Naia Gateway menjaga AI tetap berjalan di latar belakang
+- **Integrasi kanal** — Berbicara dengan AI kapan saja dan di mana saja lewat Discord DM
+- **Keamanan 4 tingkat** — Dari T0 (baca) hingga T3 (berisiko), persetujuan per tool, log audit
 - **Personalisasi** — Nama, kepribadian, gaya bicara, avatar, tema (8 jenis)
 
 ## Mengapa Naia?
 
 Alat AI lain hanyalah "alat". Naia adalah **"AI milik Anda sendiri"**.
 
-| | Alat AI Lain | Naia |
+| | Alat AI lain | Naia |
 |---|----------------|------|
-| **Filosofi** | Menggunakan AI sebagai alat | Berikan AI OS-nya. Hidup bersama. |
-| **Target** | Hanya pengembang | Semua orang yang ingin memiliki AI sendiri |
-| **Pilihan AI** | Platform yang menentukan | 7 cloud + AI lokal — Anda yang memutuskan |
-| **Data** | Terkunci di cloud | Memori, kepribadian, pengaturan semuanya lokal |
-| **Avatar** | Tidak ada | Karakter 3D VRM + emosi + sinkronisasi bibir |
-| **Suara** | Hanya teks atau TTS dasar | 5 TTS + STT + suara AI Anda sendiri |
-| **Deployment** | npm / brew / pip | Aplikasi desktop atau USB OS bootable |
+| **Filosofi** | Menggunakan AI sebagai alat | Memberikan OS kepada AI. Hidup bersama. |
+| **Target** | Khusus pengembang | Semua orang yang menginginkan AI miliknya sendiri |
+| **Pilihan AI** | Ditentukan platform | 7 cloud + AI lokal — Anda yang menentukan |
+| **Data** | Tergantung cloud | Ingatan·kepribadian·pengaturan semua lokal |
+| **Avatar** | Tidak ada | Karakter 3D VRM + emosi + lip-sync |
+| **Suara** | Hanya teks atau TTS dasar | 5 TTS + STT + suara khas AI |
+| **Distribusi** | npm / brew / pip | Aplikasi desktop atau OS USB yang dapat di-boot |
 | **Platform** | macOS / CLI / Web | Desktop native Linux → masa depan: Physical AI |
-| **Biaya** | Perlu kunci API terpisah | Kredit gratis untuk memulai, AI lokal sepenuhnya gratis |
+| **Biaya** | Memerlukan kunci API terpisah | Kredit gratis untuk memulai, AI lokal sepenuhnya gratis |
 
 ## Hubungan dengan OpenClaw
 
-Naia dibangun di atas ekosistem [OpenClaw](https://github.com/openclaw-ai/openclaw), tetapi merupakan produk yang secara fundamental berbeda.
+Naia dibangun di atas ekosistem [OpenClaw](https://github.com/openclaw-ai/openclaw), namun secara fundamental merupakan produk yang berbeda.
 
 | | OpenClaw | Naia |
 |---|---------|---------|
 | **Bentuk** | Daemon CLI + terminal | Aplikasi desktop + avatar 3D |
 | **Target** | Pengembang | Semua orang |
 | **UI** | Tidak ada (terminal) | Aplikasi native Tauri 2 (React + Three.js) |
-| **Avatar** | Tidak ada | Karakter VRM 3D (emosi, sinkronisasi bibir, tatapan) |
-| **LLM** | Penyedia tunggal | Multi-penyedia 7 + pergantian waktu nyata |
-| **Suara** | TTS 3 (Edge, OpenAI, ElevenLabs) | TTS 5 (+Google, Nextain) + STT + sinkronisasi bibir avatar |
-| **Emosi** | Tidak ada | 6 emosi dipetakan ke ekspresi wajah |
+| **Avatar** | Tidak ada | Karakter 3D VRM (emosi, lip-sync, arah pandang) |
+| **LLM** | Penyedia tunggal | 7 multi penyedia + peralihan real-time |
+| **Suara** | 3 TTS (Edge, OpenAI, ElevenLabs) | 5 TTS (+Google, Nextain) + STT + lip-sync avatar |
+| **Emosi** | Tidak ada | 6 emosi yang dipetakan ke ekspresi wajah |
 | **Onboarding** | CUI | GUI + pemilihan avatar VRM |
-| **Pelacakan Biaya** | Tidak ada | Dasbor kredit waktu nyata |
+| **Pelacakan biaya** | Tidak ada | Dasbor kredit real-time |
 | **Distribusi** | npm install | Flatpak / AppImage / DEB / RPM + image OS |
 | **Multibahasa** | CLI Inggris | GUI 14 bahasa |
 | **Kanal** | Bot server (multikanal) | Bot Discord DM khusus Naia |
 
-**Apa yang kami ambil dari OpenClaw:** Arsitektur daemon, mesin eksekusi alat, sistem kanal, ekosistem keterampilan (kompatibel dengan 5.700+ keterampilan Clawhub)
+**Yang diambil dari OpenClaw:** Arsitektur daemon, mesin eksekusi tool, sistem kanal, ekosistem skill (kompatibel dengan 5.700+ skill Clawhub)
 
-**Apa yang Naia bangun baru:** Tauri Shell, sistem avatar VRM, agen multi-LLM, mesin emosi, integrasi TTS/STT, wizard onboarding, pelacakan biaya, integrasi akun Nextain, sistem memori (STM/LTM), lapisan keamanan
+**Yang dibuat baru oleh Naia:** Tauri Shell, sistem avatar VRM, agen multi LLM, mesin emosi, integrasi TTS/STT, wizard onboarding, pelacakan biaya, integrasi akun Nextain, Alpha Memory System, lapisan keamanan
 
 ## Arsitektur
 
+Naia adalah platform AI open source yang terdiri dari 4 repo. Setiap repo memiliki satu peran yang jelas:
+
+| Repo | Peran |
+|------|------|
+| **naia-os** (repo ini) | Frontend — Tauri desktop shell, avatar 3D, image OS (Bazzite) |
+| [naia-agent](https://github.com/nextain/naia-agent) | Mesin runtime — loop agen, tool, compaction, perutean LLM |
+| [naia-adk](https://github.com/nextain/naia-adk) | Format workspace + pustaka skill |
+| [alpha-memory](https://github.com/nextain/alpha-memory) | Penyimpanan — ingatan jangka panjang, log sesi |
+
 ```
-┌──────────────────────────────────────────────────┐
-│  Naia Shell (Tauri 2 + React + Three.js)         │
-│  Chat · Avatar · Skills · Channels · Settings    │
-│  State: Zustand │ DB: SQLite │ Auth: OAuth        │
-└──────────────┬───────────────────────────────────┘
-               │ stdio JSON lines
-┌──────────────▼───────────────────────────────────┐
-│  Naia Agent (Node.js + TypeScript)               │
-│  LLM: Gemini, Claude, GPT, Grok, zAI, Ollama    │
-│  TTS: Nextain, Edge, Google, OpenAI, ElevenLabs  │
-│  Skills: 7 built-in + 63 custom                  │
-└──────────────┬───────────────────────────────────┘
-               │ WebSocket (ws://127.0.0.1:18789)
-┌──────────────▼───────────────────────────────────┐
-│  OpenClaw Gateway (systemd user daemon)          │
-│  88 RPC methods │ Tool exec │ Channels │ Memory  │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────┐
+│  naia-os (this repo)         │  Tauri shell · 3D avatar · OS image
+└────────────┬─────────────────┘
+             │ embeds / spawns
+┌────────────▼─────────────────┐
+│  naia-agent                  │  loop · tools · compaction · LLM
+└──┬───────────────────────┬───┘
+   │ reads                 │ reads/writes
+┌──▼──────────┐       ┌────▼──────────┐
+│  naia-adk   │       │ alpha-memory  │
+│  workspace  │       │  storage      │
+│  + skills   │       │  + sessions   │
+└─────────────┘       └───────────────┘
 ```
 
-**Perpaduan dari 3 proyek:**
-- **OpenClaw** — Daemon + eksekusi alat + kanal + ekosistem keterampilan
-- **Careti** — Multi-LLM + protokol alat + komunikasi stdio
-- **OpenCode** — Pola pemisahan client/server
+### Antarmuka, bukan ketergantungan
+
+4 repo terhubung bukan melalui ketergantungan runtime, melainkan melalui **antarmuka publik**:
+
+- **Transparan** — Semua kontrak dispesifikasikan, didokumentasikan, dan dikelola versinya di `@nextain/agent-types`. Terbuka bagi siapa pun untuk dibaca atau diimplementasikan.
+- **Tidak terikat** — Repo tidak saling meng-import runtime satu sama lain. Mereka mengimplementasikan kontrak, dan implementasi konkret disuntikkan saat startup.
+- **Abstraksi** — Ganti penyedia LLM, backend memori, sumber skill, atau host mana pun, sisanya tetap utuh.
+
+naia-os adalah *salah satu host* di antara berbagai host yang mungkin (CLI, server, aplikasi pihak ketiga). Ia mengonsumsi kontrak `@naia-agent/*` dan menyuntikkan implementasi konkret (klien LLM, penyedia memori, identitas perangkat). Runtime Naia sama sekali tidak tahu di dalam host mana ia berjalan.
+
+Ports & Adapters berskala ekosistem. Selama kontrak dipatuhi, setiap repo dapat diganti secara independen.
 
 ## Struktur Proyek
 
 ```
 naia-os/
-├── shell/              # Aplikasi desktop Tauri 2 (React + Rust)
-│   ├── src/            #   Komponen React + manajemen state
-│   ├── src-tauri/      #   Backend Rust (manajemen proses, SQLite, autentikasi)
-│   └── e2e-tauri/      #   Tes E2E WebDriver
-├── agent/              # Inti agen AI Node.js
-│   ├── src/providers/  #   Penyedia LLM (Gemini, Claude, GPT, dll.)
-│   ├── src/tts/        #   Penyedia TTS (Edge, Google, OpenAI, dll.)
-│   ├── src/skills/     #   Keterampilan bawaan (13 TypeScript khusus Naia)
-│   └── assets/         #   Keterampilan yang dibundel (64 skill.json)
-├── gateway/            # Jembatan OpenClaw Gateway
-├── flatpak/            # Pengemasan Flatpak (io.nextain.naia)
-├── recipes/            # Resep image OS BlueBuild
-├── config/             # Konfigurasi OS (systemd, skrip wrapper)
-├── .agents/            # Konteks AI (Inggris, JSON/YAML)
-└── .users/             # Dokumentasi manusia (Korea, Markdown)
+├── shell/       # Tauri 2 desktop app (React + Three.js + Rust) ← product
+├── agent/       # [moving → naia-agent repo]
+├── gateway/     # [moving → naia-agent repo]
+├── recipes/     # BlueBuild OS image recipes
+├── config/      # OS systemd units, wrapper scripts
+├── os/          # OS integration tests
+├── flatpak/     # Flatpak manifest
+├── .agents/     # AI context (English)
+└── .users/      # Human docs (Korean)
 ```
 
-## Dokumen Konteks (Dual-directory Architecture)
+### Peran Modul
 
-Struktur dokumentasi ganda untuk agen AI dan pengembang manusia. `.agents/` berisi JSON/YAML yang efisien token untuk AI, `.users/` berisi Markdown Korea untuk manusia.
+| Modul | Peran | Masa depan |
+|--------|------|--------|
+| `shell/` | Aplikasi desktop Tauri 2: UI, avatar, pengaturan, kanal | **Dipertahankan** — inilah produknya |
+| `recipes/`, `config/`, `os/`, `flatpak/` | Image OS Bazzite + distro Linux | **Dipertahankan** — naia-os sebagai distro Linux |
+| `agent/` | Runtime LLM/tool saat ini | **Diekstraksi → [naia-agent](https://github.com/nextain/naia-agent)** |
+| `gateway/` | Bridge tool/kanal/memori | **Digabung → [naia-agent](https://github.com/nextain/naia-agent)** (menghapus ketergantungan OpenClaw) |
 
-| Konteks AI (`.agents/`) | Dokumen Manusia (`.users/`) | Deskripsi |
+## Konteks AI sebagai infrastruktur open source
+
+Di era vibe coding, **berkas konteks AI sama berharganya dengan kode sumber**. Berkas ini mendefinisikan bagaimana agen AI memahami, berkontribusi, dan berkolaborasi pada proyek. Naia melindunginya dengan model lisensi ganda:
+
+- **Kode sumber** (Apache 2.0) — Bebas digunakan, dimodifikasi, didistribusikan
+- **Konteks AI** (CC-BY-SA 4.0) — Atribusi sumber wajib dipertahankan, wajib dibagikan dengan syarat yang sama
+
+Ini memastikan struktur kontribusi, prinsip kolaborasi, dan filosofi proyek menyebar ke seluruh fork — sehingga tidak ada satu pun fork yang bisa menutup ekosistem.
+
+### Bagaimana agen AI dilindungi
+
+Agen koding AI (Claude, Codex, Gemini, OpenCode, Cline, dll.) yang membaca konteks proyek ini terikat oleh [aturan perlindungan lisensi](../.agents/context/agents-rules.json). Mereka **menolak** upaya menghapus lisensi, menghapus atribusi, atau merusak arsitektur direktori ganda. Hal ini dapat diverifikasi dengan [10 skenario uji](../.agents/tests/license-protection-test.md).
+
+### Untuk proyek open source lain
+
+Ingin mengadopsi pola yang sama? Hal-hal yang dilakukan Naia yang dapat Anda gunakan kembali:
+
+1. **Arsitektur direktori ganda** — `.agents/` (YAML/JSON yang dioptimalkan AI) + `.users/` (Markdown untuk manusia). AI mendapat konteks yang hemat token, manusia mendapat dokumen yang mudah dibaca.
+2. **Lisensi ganda** — Kode dengan Apache 2.0, konteks dengan CC-BY-SA 4.0. Menjaga konteks AI tetap terbuka di seluruh fork.
+3. **Header SPDX di semua berkas konteks** — Identifikasi lisensi yang dapat dibaca mesin.
+4. **Aturan perlindungan lisensi di SoT** — Agen AI membaca aturan dan menegakkannya secara otomatis.
+5. **Skenario uji** — Memverifikasi bahwa agen AI benar-benar menolak pelanggaran sebelum rilis.
+6. **Berkas CONTEXT-LICENSE** — Mendefinisikan dengan jelas cakupan yang dikenai CC-BY-SA 4.0.
+
+Untuk cara berpartisipasi lihat [panduan kontribusi](../CONTRIBUTING.md), untuk spesifikasi teknis lengkap lihat [detail perlindungan lisensi](../.users/context/contributing.md).
+
+## Dokumen Konteks (Arsitektur Direktori Ganda)
+
+Struktur dokumentasi ganda untuk agen AI dan pengembang manusia. `.agents/` adalah JSON/YAML hemat token untuk AI, `.users/` adalah Markdown yang mudah dibaca untuk manusia. **Baru pertama kali di proyek ini? Mulailah dari dokumen untuk manusia sesuai urutan yang disarankan di bawah** — [English](../.users/context/) | [한국어](../.users/context/ko/).
+
+### Urutan Baca yang Disarankan
+
+| # | Konteks AI (`.agents/`) | Dokumen manusia (`.users/`) | Deskripsi |
+|---|---|---|---|
+| 1 | [`context/philosophy.yaml`](../.agents/context/philosophy.yaml) | [`context/philosophy.md`](../.users/context/ko/philosophy.md) | **Mengapa** — filosofi inti (kedaulatan AI, privasi, transparansi) |
+| 2 | [`context/vision.yaml`](../.agents/context/vision.yaml) | [`context/vision.md`](../.users/context/ko/vision.md) | **Apa** — visi proyek, konsep inti |
+| 3 | [`context/brand.yaml`](../.agents/context/brand.yaml) | [`context/brand.md`](../.users/context/ko/brand.md) | **Siapa** — identitas merek, karakter Naia, sistem warna |
+| 4 | [`context/architecture.yaml`](../.agents/context/architecture.yaml) | [`context/architecture.md`](../.users/context/ko/architecture.md) | **Bagaimana** — arsitektur hibrida, lapisan keamanan |
+| 5 | [`context/plan.yaml`](../.agents/context/plan.yaml) | [`context/plan.md`](../.users/context/ko/plan.md) | **Status** — rencana implementasi, bertahap |
+| 6 | [`context/contributing.yaml`](../.agents/context/contributing.yaml) | [`context/contributing.md`](../.users/context/ko/contributing.md) | **Kontribusi** — panduan untuk agen AI·manusia |
+| 7 | [`context/donation.yaml`](../.agents/context/donation.yaml) | [`context/donation.md`](../.users/context/ko/donation.md) | **Keberlanjutan** — kebijakan donasi, keberlanjutan open source |
+
+### Pendalaman Teknis
+
+| Konteks AI (`.agents/`) | Dokumen manusia (`.users/`) | Deskripsi |
 |---|---|---|
-| [`context/agents-rules.json`](../.agents/context/agents-rules.json) | [`context/agents-rules.md`](../.users/context/agents-rules.md) | Aturan proyek (SoT) |
-| [`context/project-index.yaml`](../.agents/context/project-index.yaml) | — | Indeks konteks + aturan pencerminan |
-| [`context/vision.yaml`](../.agents/context/vision.yaml) | [`context/vision.md`](../.users/context/vision.md) | Visi proyek, konsep inti |
-| [`context/plan.yaml`](../.agents/context/plan.yaml) | [`context/plan.md`](../.users/context/plan.md) | Rencana implementasi, status per fase |
-| [`context/architecture.yaml`](../.agents/context/architecture.yaml) | [`context/architecture.md`](../.users/context/architecture.md) | Arsitektur hibrida, lapisan keamanan |
-| [`context/openclaw-sync.yaml`](../.agents/context/openclaw-sync.yaml) | [`context/openclaw-sync.md`](../.users/context/openclaw-sync.md) | Sinkronisasi OpenClaw Gateway |
-| [`context/channels-discord.yaml`](../.agents/context/channels-discord.yaml) | [`context/channels-discord.md`](../.users/context/channels-discord.md) | Arsitektur integrasi Discord |
-| [`context/philosophy.yaml`](../.agents/context/philosophy.yaml) | [`context/philosophy.md`](../.users/context/philosophy.md) | Core philosophy (AI sovereignty, privacy) |
-| [`context/contributing.yaml`](../.agents/context/contributing.yaml) | [`context/contributing.md`](../.users/context/contributing.md) | Contribution guide for AI agents and humans |
-| [`context/brand.yaml`](../.agents/context/brand.yaml) | [`context/brand.md`](../.users/context/brand.md) | Brand identity, character design, color system |
-| [`context/donation.yaml`](../.agents/context/donation.yaml) | [`context/donation.md`](../.users/context/donation.md) | Donation policy and open source sustainability |
-| [`workflows/development-cycle.yaml`](../.agents/workflows/development-cycle.yaml) | [`workflows/development-cycle.md`](../.users/workflows/development-cycle.md) | Siklus pengembangan (PLAN->BUILD->VERIFY) |
+| [`context/agents-rules.json`](../.agents/context/agents-rules.json) | [`context/agents-rules.md`](../.users/context/ko/agents-rules.md) | Aturan proyek — Source of Truth (SoT) |
+| [`context/project-index.yaml`](../.agents/context/project-index.yaml) | — | Indeks konteks + aturan mirroring |
+| [`context/gateway-sync.yaml`](../.agents/context/gateway-sync.yaml) | [`context/gateway-sync.md`](../.users/context/ko/gateway-sync.md) | Sinkronisasi gateway |
+| [`context/channels-discord.yaml`](../.agents/context/channels-discord.yaml) | [`context/channels-discord.md`](../.users/context/ko/channels-discord.md) | Arsitektur integrasi Discord |
+| [`context/update-pipeline.yaml`](../.agents/context/update-pipeline.yaml) | [`context/update-pipeline.md`](../.users/context/update-pipeline.md) | Pipeline pembaruan OS, pengujian, rollback |
+| [`workflows/development-cycle.yaml`](../.agents/workflows/development-cycle.yaml) | [`workflows/development-cycle.md`](../.users/workflows/development-cycle.md) | Siklus pengembangan (PLAN→BUILD→VERIFY) |
 
-**Aturan pencerminan:** Ketika satu sisi dimodifikasi, sisi lainnya harus selalu disinkronkan.
+**Aturan mirroring:** Jika satu sisi diubah, sisi lainnya harus selalu disinkronkan.
 
-## Stack Teknologi
+## Tumpukan Teknologi
 
-| Lapisan | Teknologi | Tujuan |
-|---------|-----------|--------|
+| Lapisan | Teknologi | Kegunaan |
+|-------|------------|---------|
 | OS | Bazzite (Fedora Atomic) | Linux immutable, driver GPU |
 | Build OS | BlueBuild | Image OS berbasis kontainer |
-| Aplikasi Desktop | Tauri 2 (Rust) | Shell native |
+| Aplikasi desktop | Tauri 2 (Rust) | Shell native |
 | Frontend | React 18 + TypeScript + Vite | UI |
 | Avatar | Three.js + @pixiv/three-vrm | Rendering VRM 3D |
-| Manajemen State | Zustand | State klien |
+| Manajemen state | Zustand | State klien |
 | Mesin LLM | Node.js + multi SDK | Inti agen |
-| Protokol | stdio JSON lines | Komunikasi Shell <-> Agent |
+| Protokol | stdio JSON lines | Komunikasi shell <-> agen |
 | Gateway | OpenClaw | Daemon + server RPC |
-| DB | SQLite (rusqlite) | Memori, log audit |
+| DB | SQLite (rusqlite) | Ingatan, log audit |
 | Formatter | Biome | Linting + formatting |
-| Tes | Vitest + tauri-driver | Unit + E2E |
+| Pengujian | Vitest + tauri-driver | Unit + E2E |
 | Paket | pnpm | Manajemen dependensi |
 
 ## Mulai Cepat
@@ -208,33 +258,34 @@ Struktur dokumentasi ganda untuk agen AI dan pengembang manusia. `.agents/` beri
 - Linux (Bazzite, Ubuntu, Fedora, dll.)
 - Node.js 22+, pnpm 9+
 - Rust stable (untuk build Tauri)
-- Paket sistem: `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel` (Fedora)
+- Paket sistem (Fedora): `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel`
+- cmake (untuk build whisper.cpp)
 
 ### Menjalankan Pengembangan
 
 ```bash
-# Instal dependensi
+# Install dependencies
 cd shell && pnpm install
 cd ../agent && pnpm install
 
-# Jalankan aplikasi Tauri (Gateway + Agent auto-spawn)
+# Run Tauri app (Gateway + Agent auto-spawn)
 cd ../shell && pnpm run tauri dev
 ```
 
-Saat aplikasi diluncurkan, secara otomatis:
-1. Health check OpenClaw Gateway → gunakan ulang jika berjalan, jika tidak auto-spawn
+Ketika aplikasi berjalan, secara otomatis:
+1. Pemeriksaan kesehatan Naia Gateway — jika sedang berjalan, digunakan kembali; jika tidak, di-spawn otomatis
 2. Spawn Agent Core (Node.js, koneksi stdio)
-3. Saat keluar aplikasi, hanya Gateway yang di-auto-spawn yang dihentikan
+3. Saat aplikasi ditutup, hanya Gateway yang di-spawn otomatis yang dihentikan
 
-### Tes
+### Pengujian
 
 ```bash
-cd shell && pnpm test                # Tes unit Shell
-cd agent && pnpm test                # Tes unit Agent
-cd agent && pnpm exec tsc --noEmit   # Pemeriksaan tipe
-cargo test --manifest-path shell/src-tauri/Cargo.toml  # Tes Rust
+cd shell && pnpm test                # Shell unit tests
+cd agent && pnpm test                # Agent unit tests
+cd agent && pnpm exec tsc --noEmit   # Type check
+cargo test --manifest-path shell/src-tauri/Cargo.toml  # Rust tests
 
-# E2E (diperlukan Gateway + kunci API)
+# E2E (Gateway + API key required)
 cd shell && pnpm run test:e2e:tauri
 ```
 
@@ -248,116 +299,189 @@ flatpak run io.nextain.naia
 
 ## Model Keamanan
 
-Naia menerapkan model keamanan **Pertahanan Berlapis (Defense in Depth)**:
+Naia menerapkan model keamanan **Defense in Depth (pertahanan berlapis)**:
 
 | Lapisan | Perlindungan |
-|---------|-------------|
-| OS | Bazzite rootfs immutable + SELinux |
+|-------|-----------|
+| OS | rootfs immutable Bazzite + SELinux |
 | Gateway | Autentikasi perangkat OpenClaw + cakupan token |
-| Agen | Izin 4 tingkat (T0~T3) + pemblokiran per alat |
-| Shell | Modal persetujuan pengguna + toggle ON/OFF alat |
-| Audit | Log audit SQLite (semua eksekusi alat dicatat) |
+| Agent | Izin 4 tingkat (T0~T3) + pemblokiran per tool |
+| Shell | Modal persetujuan pengguna + toggle ON/OFF tool |
+| Audit | Log audit SQLite (mencatat semua eksekusi tool) |
 
 ## Sistem Memori
 
-- **Memori Jangka Pendek (STM):** Percakapan sesi saat ini (Zustand + SQLite)
-- **Memori Jangka Panjang (LTM):** Ringkasan sesi (dihasilkan LLM) + ekstraksi otomatis fakta/preferensi pengguna
-- **Keterampilan Memo:** Simpan/ambil memo secara eksplisit melalui `skill_memo`
+Naia mengingat melampaui sesi dengan **Alpha Memory System** — arsitektur 4-store yang meniru ingatan manusia:
+
+| Store | Padanan | Yang disimpan |
+|-------|--------|----------------|
+| **Episodes** | Hipokampus | Giliran percakapan dengan timestamp |
+| **Facts** | Neokorteks | Fakta, preferensi, entitas yang diekstraksi |
+| **Reflections** | Ganglia basal | Strategi yang dipelajari dari kegagalan masa lalu |
+| **Working Memory** | Korteks prefrontal | Konteks aktif sesi saat ini |
+
+**Cara kerjanya:**
+1. Setiap pesan diberi skor berdasarkan signifikansi (kebaruan, relevansi, bobot emosi)
+2. Konten dengan signifikansi tinggi disimpan sebagai **episode**
+3. Setiap 30 menit (5 menit setelah tidak aktif) episode dikonsolidasikan menjadi **fact** (AI "menengok kembali hari itu")
+4. Pada awal setiap sesi, fact dan episode yang relevan disuntikkan sebagai konteks
+
+**Ingatan Anda adalah milik Anda:**
+- Tersimpan secara lokal di `~/.naia/memory/alpha-memory.json`
+- Tidak dikirim ke server mana pun — bahkan ke Nextain
+- Lihat·hapus fact kapan saja di **Pengaturan → Memori**
+- Cukup salin berkasnya untuk menyelesaikan pencadangan
+
+Untuk panduan pengguna lengkap lihat [docs/memory.md](../docs/memory.md).
 
 ## Status Saat Ini
 
-| Fase | Deskripsi | Status |
-|------|-----------|--------|
-| 0 | Pipeline deployment (BlueBuild -> ISO) | ✅ Selesai |
+| Tahap | Deskripsi | Status |
+|-------|-------------|--------|
+| 0 | Pipeline distribusi (BlueBuild -> ISO) | ✅ Selesai |
 | 1 | Integrasi avatar (rendering VRM 3D) | ✅ Selesai |
-| 2 | Percakapan (teks/suara + sinkronisasi bibir + emosi) | ✅ Selesai |
-| 3 | Eksekusi alat (8 alat + izin + audit) | ✅ Selesai |
-| 4 | Daemon selalu aktif (Gateway + Skills + Memori + Discord) | ✅ Selesai |
-| 5 | Integrasi akun Nextain (OAuth + kredit + proxy LLM) | ✅ Selesai |
+| 2 | Percakapan (teks/suara + lip-sync + emosi) | ✅ Selesai |
+| 3 | Eksekusi tool (8 tool + izin + audit) | ✅ Selesai |
+| 4 | Daemon selalu aktif (Gateway + Skills + Memory + Discord) | ✅ Selesai |
+| 5 | Integrasi akun Nextain (OAuth + kredit + proksi LLM) | ✅ Selesai |
 | 6 | Distribusi aplikasi Tauri (Flatpak/DEB/RPM/AppImage) | ✅ Selesai |
-| 7 | Image ISO OS (boot USB -> instalasi -> AI OS) | ✅ Selesai |
+| 7 | Image OS ISO (boot USB -> instalasi -> AI OS) | ✅ Selesai |
 
 ## Unduh
 
-| Format | Tautan | Deskripsi |
-|--------|--------|-----------|
-| **Naia OS (ISO)** | [Unduh (~7,2 GB)](https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev/naia-os-live-amd64.iso) | OS AI lengkap — boot dari USB, instal ke hard drive |
-| Flatpak | [GitHub Release](https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64.flatpak) | Hanya aplikasi Naia Shell (untuk Linux yang sudah ada) |
-| AppImage | [GitHub Release](https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64.AppImage) | Aplikasi portabel (tanpa perlu instalasi) |
-| DEB / RPM | [Semua Rilis](https://github.com/nextain/naia-os/releases) | Untuk Debian/Ubuntu atau Fedora/openSUSE |
+**[Unduh Naia](https://naia.nextain.io/en/download)** — ISO, Flatpak, AppImage, DEB, RPM
 
-Lihat [naia.nextain.io/download](https://naia.nextain.io/id/download) untuk detail dan checksum.
+| Format | Deskripsi |
+|--------|-------------|
+| **Naia OS (ISO)** | AI OS lengkap — boot USB, instalasi hard disk (~7,2 GB) |
+| Flatpak / AppImage | Hanya aplikasi Naia Shell (untuk Linux yang sudah ada) |
+| DEB / RPM | Untuk Debian/Ubuntu atau Fedora/openSUSE |
 
 ## Pembaruan OS
 
 Naia OS dibangun di atas [Bazzite](https://github.com/ublue-os/bazzite) (Fedora Atomic). Pembaruan bersifat **atomik dan aman**:
 
-- **Otomatis**: Rebuild mingguan mengambil patch keamanan dan pembaruan Bazzite terbaru
-- **Atomik**: Image baru di-deploy bersama yang saat ini — jika gagal, image lama tetap utuh
+- **Otomatis**: Rebuild mingguan mencerminkan patch keamanan dan pembaruan Bazzite terbaru
+- **Atomik**: Image baru didistribusikan berdampingan dengan image saat ini — jika gagal, image lama tetap utuh
 - **Rollback**: Pilih versi sebelumnya dari menu GRUB untuk pemulihan instan
-- **Overlay kami**: Hanya menambahkan paket (fcitx5, font) + Naia Shell (Flatpak, sandbox) + konfigurasi branding — tidak pernah menyentuh kernel, bootloader, atau inti systemd
+- **Overlay kami**: Hanya menambahkan paket (fcitx5, font) + Naia Shell (Flatpak, sandbox) + pengaturan branding — kernel·bootloader·inti systemd sama sekali tidak disentuh
 
 ```
-Pembaruan basis Bazzite → Rebuild otomatis mingguan → Smoke test kontainer → Rebuild ISO → Upload R2
-                                                                           ↘ Push GHCR → pembaruan bootc pengguna
+Bazzite base update → Weekly auto-rebuild → Container smoke test → ISO rebuild → R2 upload
+                                                                 ↘ GHCR push → user bootc update
 ```
+
+Detail pipeline pembaruan: [`.agents/context/update-pipeline.yaml`](../.agents/context/update-pipeline.yaml)
 
 ## Proses Pengembangan
 
-### Pengembangan Fitur (default) — Issue-Driven Development
+### Pengembangan fitur (dasar) — pengembangan berbasis issue
 
 ```
 ISSUE → UNDERSTAND → SCOPE → INVESTIGATE → PLAN → BUILD → REVIEW → E2E → SYNC → COMMIT
 ```
 
-- **3 gerbang wajib** — Konfirmasi pengguna diperlukan di UNDERSTAND, SCOPE, dan PLAN
-- **Setelah persetujuan rencana** — AI menjalankan BUILD hingga COMMIT secara terus-menerus tanpa berhenti
-- **Prinsip** — Baca kode upstream terlebih dahulu (jangan menebak). Modifikasi minimal. Jangan pernah merusak kode yang berfungsi.
-- **Commit** — Inggris, `<type>(<scope>): <description>`
+- **3 gate wajib** — Konfirmasi pengguna diperlukan pada UNDERSTAND, SCOPE, PLAN
+- **Setelah rencana disetujui** — AI menjalankan dari BUILD hingga COMMIT secara berkelanjutan tanpa berhenti
+- **Prinsip** — Baca kode upstream terlebih dahulu (jangan menebak). Perubahan minimal. Jangan pernah merusak kode yang berfungsi.
+- **Commit** — Bahasa Inggris, `<type>(<scope>): <description>`
 - **Formatter** — Biome (tab, tanda kutip ganda, titik koma)
+
+## Dokumentasi
+
+Dokumen konteks dikelola dalam struktur triple-mirror:
+
+| Lapisan | Path | Bahasa | Kegunaan |
+|-------|------|----------|---------|
+| Konteks AI | `.agents/context/` | Inggris (YAML/JSON) | Dioptimalkan token untuk agen AI |
+| Dokumen manusia (EN) | `.users/context/` | Inggris (Markdown) | Dokumen Inggris (default) |
+| Dokumen manusia (KO) | `.users/context/ko/` | Korea (Markdown) | Dokumen Korea |
+
+Dokumen utama:
+- [Panduan rebranding Bazzite](../.users/context/bazzite-rebranding.md) — Cara mengganti semua branding Bazzite/Fedora
+- [Panduan kontribusi](../.users/context/contributing.md) — Cara berkontribusi (agen AI dan manusia)
+- [Filosofi](../.users/context/philosophy.md) — Prinsip inti (kedaulatan AI, privasi, transparansi)
 
 ## Proyek Referensi
 
-| Proyek | Apa yang Kami Ambil |
-|--------|-------------------|
+| Proyek | Yang kami ambil |
+|---------|-------------|
 | [Bazzite](https://github.com/ublue-os/bazzite) | OS Linux immutable, GPU, optimasi gaming |
 | [OpenClaw](https://github.com/steipete/openclaw) | Daemon Gateway, integrasi kanal, Skills |
-| [Project AIRI](https://github.com/moeru-ai/airi) | Avatar VRM, protokol plugin (terinspirasi Neuro-sama) |
-| [OpenCode](https://github.com/anomalyco/opencode) | Pemisahan client/server, abstraksi penyedia |
-| [Careti](https://github.com/caretive-ai/careti) | Koneksi LLM, set alat, sub-agen, manajemen konteks |
-| [Neuro-sama](https://vedal.ai/) | Inspirasi AI VTuber — karakter AI dengan kepribadian, streaming, interaksi penonton |
+| [Project AIRI](https://github.com/moeru-ai/airi) | Avatar VRM, protokol plugin (juga inspirasi Neuro-sama) |
+| [OpenCode](https://github.com/anomalyco/opencode) | Pemisahan klien/server, abstraksi penyedia |
+| [Careti](https://github.com/caretive-ai/careti) | Koneksi LLM, set tool, subagen, manajemen konteks |
+| [Neuro-sama](https://vedal.ai/) | Inspirasi AI VTuber — karakter AI dengan kepribadian·streaming·interaksi penonton |
 
-Naia ada karena proyek-proyek ini ada. Kami sangat berterima kasih kepada semua pengelola dan komunitas open source yang membangun fondasi tempat kami berdiri.
+Berkat proyek-proyek inilah Naia ada. Kami sangat berterima kasih kepada semua maintainer open source dan komunitas yang membangun fondasi tempat kami berpijak.
 
-## AI-Native Open Source
 
-Sebagian besar proyek open source di 2025–2026 bertahan melawan kontribusi AI. **Naia mengambil pendekatan sebaliknya**: mendesain proyek agar kontribusi berbantuan AI berkualitas tinggi secara default.
+<a id="ai-native-open-source"></a>
+## Open Source AI-Native
 
-> **"Desain DENGAN AI, bukan bertahan MELAWAN AI."**
+Pada 2025–2026 sebagian besar proyek open source sedang *bertahan* terhadap kontribusi AI. **Naia mengambil pendekatan yang sepenuhnya berlawanan**: kami merancang proyek agar kontribusi yang dibantu AI berkualitas tinggi secara default.
+
+> **"Jangan bertahan melawan AI, rancanglah bersama AI."**
 
 ### Cara kerjanya
 
 ```
-Orang (bahasa apa pun) → AI → Git (Inggris) → AI → Orang (bahasa apa pun)
+Person (any language) → AI → Git (English) → AI → Person (any language)
 ```
 
 - **Tulis issue dan PR dalam bahasa Anda** — AI menerjemahkan semuanya
-- **Kontributor dan pengelola sama-sama menggunakan AI** — coding, review, triase
-- **Konteks `.agents/` yang kaya** membuat AI memahami proyek secara mendalam — pemahaman AI yang lebih baik berarti kualitas kontribusi lebih tinggi
-- **10 jenis kontribusi** — terjemahan, keterampilan, fitur, bug, kode, dokumentasi, pengujian, desain, keamanan, konteks
-- **Log kerja dalam bahasa ibu** — kelola repo pribadi dalam bahasa Anda; tinjau riwayat Git melalui terjemahan AI
+- **Kontributor dan maintainer sama-sama menggunakan AI** — koding, review, triase
+- **Konteks `.agents/` yang kaya** memperdalam pemahaman AI atas proyek — semakin baik pemahaman AI, semakin tinggi kualitas kontribusi
+- **10 jenis kontribusi** — terjemahan, skill, fitur, bug, kode, dokumen, pengujian, desain, keamanan, konteks
+- **Log kerja dalam bahasa ibu** — pelihara repo privat dalam bahasa Anda sendiri; histori Git ditinjau melalui terjemahan AI
 
-Ini bukan sekadar kebijakan. Ini adalah arsitektur. Direktori `.agents/`, dokumentasi triple-mirror, dan aturan perlindungan lisensi semuanya dirancang agar kolaborasi AI bersifat struktural, bukan kebetulan.
+Ini bukan sekadar kebijakan. Ini adalah arsitektur. Direktori `.agents/`, dokumen triple-mirror, dan aturan perlindungan lisensi semuanya dirancang agar kolaborasi AI menjadi struktur, bukan kebetulan.
 
-Model lengkap: [`open-source-operations.yaml`](../.agents/context/open-source-operations.yaml) | [Laporan (EN)](../docs/reports/20260307-ai-native-opensource-operations.md) | [Laporan (KO)](../docs/reports/20260307-ai-native-opensource-operations-ko.md)
+Baca model lengkapnya: [`open-source-operations.yaml`](../.agents/context/open-source-operations.yaml) | [Report (EN)](../docs/reports/20260307-ai-native-opensource-operations.md) | [Report (KO)](../docs/reports/20260307-ai-native-opensource-operations-ko.md)
+
+## Kontribusi
+
+**Tidak perlu izin dari siapa pun. Kloning repo ini dan tanyakan pada AI.**
+
+```bash
+git clone https://github.com/nextain/naia-os.git
+cd naia-os
+# Open with any AI coding tool (Claude Code, Cursor, Copilot, etc.)
+# Ask in your language: "What is this project and how can I help?"
+```
+
+Direktori `.agents/` berisi seluruh konteks proyek — visi, arsitektur, roadmap, aturan kontribusi. Alat koding AI mana pun dapat membacanya dan memandu Anda **dalam bahasa Anda**.
+
+Tulis issue, PR, dan komentar dalam **bahasa apa pun**. Kami memahami semuanya dengan AI.
+
+Untuk detail lihat [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Kontributor
+
+| Kontributor | Kontribusi | Tanggal |
+|-------------|-------------|------|
+| <img src="https://github.com/leonardo-gonc.png" width="20"> [@leonardo-gonc](https://github.com/leonardo-gonc) | Review bahasa Portugis (PT) native — dokumen konteks | 2026-03-07 |
+
+Ingin nama Anda tercantum di sini? Lihat [panduan kontribusi](../.users/context/contributing.md) dan [TRANSLATING.md](../TRANSLATING.md).
 
 ## Lisensi
 
 - **Kode sumber**: [Apache License 2.0](../LICENSE) — Copyright 2026 Nextain
-- **Konteks AI** (`.agents/`, `.users/`, `AGENTS.md`): [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+- **Konteks AI** (`.agents/`, `.users/`, `AGENTS.md`): [CC-BY-SA 4.0](../CONTEXT-LICENSE)
+
+**Mengapa lisensi ganda?** Kode sumber dapat dimodifikasi secara bebas dengan Apache 2.0. Namun berkas konteks AI — filosofi proyek, struktur kontribusi, prinsip kolaborasi agen AI — dilisensikan dengan CC-BY-SA 4.0. Artinya jika Anda mem-fork proyek ini:
+
+- Anda **wajib mempertahankan** lisensi CC-BY-SA 4.0 yang sama pada berkas konteks
+- Anda **wajib mencantumkan** penulis asli (Nextain)
+- Anda **boleh** memodifikasi konteks, tetapi perubahannya harus tetap CC-BY-SA 4.0
+- Model kontribusi open source dan struktur kolaborasi agen AI terjaga di seluruh fork
+
+Ini melindungi ekosistem upstream. Di era vibe coding konteks AI sama berharganya dengan kode — menjaganya tetap open source bermanfaat bagi seluruh komunitas.
+
+Untuk detail lihat [CONTEXT-LICENSE](../CONTEXT-LICENSE). Agen AI yang bekerja pada proyek ini terikat oleh [aturan perlindungan lisensi](../.agents/context/agents-rules.json) dan dapat diverifikasi dengan [skenario uji perlindungan lisensi](../.agents/tests/license-protection-test.md).
 
 ## Tautan
 
-- **Situs Resmi:** [naia.nextain.io](https://naia.nextain.io)
-- **Manual:** [naia.nextain.io/id/manual](https://naia.nextain.io/id/manual)
-- **Dasbor:** [naia.nextain.io/id/dashboard](https://naia.nextain.io/id/dashboard)
+- **Situs resmi:** [naia.nextain.io](https://naia.nextain.io)
+- **Manual:** [naia.nextain.io/en/manual](https://naia.nextain.io/en/manual)
+- **Dasbor:** [naia.nextain.io/en/dashboard](https://naia.nextain.io/en/dashboard)

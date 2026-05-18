@@ -6,201 +6,250 @@
   <img src="../assets/readme-hero.jpg" alt="Naia OS" width="800" />
 </p>
 
-**The Next Generation AI OS** — Ein persoenliches KI-Betriebssystem, in dem Ihre eigene KI lebt
+**KI-Betriebssystem der nächsten Generation** — ein persönliches KI-Betriebssystem, in dem deine eigene KI lebt
 
-**AI-Native Open Source** — Tragen Sie in jeder Sprache bei. KI verbindet alle Kommunikation. [→ So funktioniert es](#ai-native-open-source)
+**KI-natives Open Source** — trage in jeder beliebigen Sprache bei. KI vermittelt jede Kommunikation. [→ So funktioniert es](#ai-native-open-source)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](../LICENSE)
 
-> "Open Source. Ihre KI, Ihre Regeln. Waehlen Sie Ihre KI, formen Sie ihr Gedaechtnis und ihre Persoenlichkeit, geben Sie ihr Ihre Stimme — alles auf Ihrem eigenen Rechner, alles im Code nachpruefbar."
+> "Open Source. Deine KI, deine Regeln. Wähle eine KI, forme ihr Gedächtnis und ihren Charakter, gib ihr deine Stimme — alles auf deinem eigenen Gerät, alles im Code überprüfbar."
 
-> **Hinweis:** Die gezeigten VRM-Avatar-Beispiele stammen von [VRoid Hub](https://hub.vroid.com/). Naias offizielles Maskottchen-VRM ist derzeit in Arbeit.
+> **Hinweis:** Die gezeigten VRM-Avatar-Beispiele stammen von [VRoid Hub](https://hub.vroid.com/). Das offizielle Maskottchen-VRM von Naia befindet sich derzeit in Arbeit.
 
-## Lernen Sie Naia kennen
+## Lerne Naia kennen
 
 <p align="center">
-  <img src="../assets/character/naia-default-character.png" alt="Naia Standard" width="180" />
+  <img src="../assets/character/naia-default-character.png" alt="Naia Default" width="180" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="../assets/character/naia-character.png" alt="Naia mit Haaren" width="180" />
+  <img src="../assets/character/naia-character.png" alt="Naia with Hair" width="180" />
 </p>
 
 <p align="center">
-  <em>Standard (geschlechtsneutral) &nbsp;·&nbsp; Mit Haaren (weibliche Variante)</em>
+  <em>Grundform (geschlechtslos) &nbsp;·&nbsp; mit Haaren (weibliche Variante)</em>
 </p>
 
 <details>
-<summary>Weitere Charaktervariationen</summary>
+<summary>Weitere Charaktervarianten</summary>
 <p align="center">
-  <img src="../assets/character/naia-varaiations.png" alt="Naia Variationen" width="600" />
+  <img src="../assets/character/naia-variations.png" alt="Naia Variations" width="600" />
 </p>
 </details>
 
 ## USB einstecken, KI sofort starten
 
 <p align="center">
-  <img src="../assets/plug-usb-and-run-ai.webp" alt="USB einstecken und Naia OS starten" width="600" />
+  <img src="../assets/plug-usb-and-run-ai.webp" alt="Plug in USB and run Naia OS" width="600" />
 </p>
 
 <p align="center">
-  <strong>Keine Installation, keine Konfiguration nötig.</strong><br/>
-  Stecken Sie den Naia OS USB in einen beliebigen Laptop und schalten Sie ihn ein — Ihre eigene KI erwacht sofort zum Leben.<br/>
-  Probieren Sie es aus und installieren Sie es auf Ihrer Festplatte, wenn es Ihnen gefällt.
+  <strong>Keine Installation, keine Konfiguration.</strong><br/>
+  Stecke den Naia-OS-USB in einen beliebigen Laptop und schalte ihn ein — deine eigene KI erwacht sofort zum Leben.<br/>
+  Probiere es zuerst aus, und installiere es auf der Festplatte, wenn es dir gefällt.
 </p>
 
 ## Was ist Naia?
 
-Naia ist ein persoenliches KI-OS, das Einzelpersonen die volle Souveraenitaet ueber ihre KI gibt. Waehlen Sie, welche KI Sie nutzen moechten (einschliesslich lokaler Modelle), konfigurieren Sie Gedaechtnis und Persoenlichkeit lokal, passen Sie den 3D-Avatar und die Stimme an — alles bleibt auf Ihrem Rechner, unter Ihrer Kontrolle.
+Naia ist ein persönliches KI-Betriebssystem, in dem der Einzelne vollständige Souveränität über seine eigene KI besitzt. Wähle, welche KI du verwendest (einschließlich lokaler Modelle), konfiguriere ihr Gedächtnis und ihren Charakter lokal und passe den 3D-Avatar und die Stimme an — alles bleibt auf deinem Gerät, unter deiner Kontrolle.
 
-Dies ist nicht nur ein weiteres KI-Werkzeug. Es ist ein Betriebssystem, in dem Ihre KI lebt, waechst und an Ihrer Seite arbeitet. Heute ist es ein Desktop-OS mit einem 3D-Avatar. Morgen — Echtzeit-Video-Avatare, Singen, Spielen und schliesslich Ihre eigene Physical AI (Android-OS).
+Dies ist nicht noch ein weiteres KI-Werkzeug. Es ist ein Betriebssystem, in dem deine KI lebt, wächst und mit dir arbeitet. Heute ist es ein Desktop-Betriebssystem mit einem 3D-Avatar. Morgen — Echtzeit-Video-Avatare, Gesang, Spiele und schließlich deine eigene Physical AI (Android-Betriebssystem).
 
 ### Kernphilosophie
 
-- **KI-Souveraenitaet** — Sie waehlen Ihre KI. Cloud oder lokal. Das OS bestimmt nicht.
-- **Volle Kontrolle** — Gedaechtnis, Persoenlichkeit, Einstellungen — alles lokal gespeichert. Keine Cloud-Abhaengigkeit.
-- **Ihre eigene KI** — Avatar, Stimme, Name, Persoenlichkeit anpassen. Machen Sie sie wirklich zu Ihrer.
-- **Immer lebendig** — KI laeuft rund um die Uhr im Hintergrund, empfaengt Nachrichten und arbeitet auch in Ihrer Abwesenheit.
-- **Open Source** — Apache 2.0. Pruefen Sie, wie die KI mit Ihren Daten umgeht. Aendern, anpassen, beitragen.
-- **Zukunftsvision** — VRM 3D-Avatare → Echtzeit-Video-Avatare → zusammen singen und spielen → Physical AI
+- **KI-Souveränität** — Du wählst die KI. Cloud oder lokal. Das Betriebssystem zwingt dich zu nichts.
+- **Vollständige Kontrolle** — Gedächtnis, Charakter, Einstellungen — alles lokal gespeichert. Keine Cloud-Abhängigkeit.
+- **Deine eigene KI** — Passe Avatar, Stimme, Name und Charakter an. Mach sie wirklich zu deiner.
+- **Immer lebendig** — Die KI läuft rund um die Uhr im Hintergrund, empfängt Nachrichten und arbeitet, auch wenn du abwesend bist.
+- **Open Source** — Apache 2.0. Prüfe, wie die KI mit deinen Daten umgeht. Veränderbar, anpassbar, beitragbar.
+- **Zukunftsvision** — VRM-3D-Avatar → Echtzeit-Video-Avatar → gemeinsames Singen und Spielen → Physical AI
 
 ### Funktionen
 
-- **3D-Avatar** — VRM-Charakter mit Emotionsausdruecken (Freude/Traurigkeit/Ueberraschung/Nachdenken) und Lippensynchronisation
+- **3D-Avatar** — VRM-Charakter mit emotionalem Ausdruck (Freude/Trauer/Überraschung/Nachdenken) und Lippensynchronisation
 - **KI-Freiheit** — 7 Cloud-Anbieter (Gemini, Claude, GPT, Grok, zAI) + lokale KI (Ollama) + Claude Code CLI
-- **Lokal zuerst** — Gedaechtnis, Persoenlichkeit, alle Einstellungen auf Ihrem Rechner gespeichert
-- **Werkzeug-Ausfuehrung** — 8 Werkzeuge: Datei-Lesen/Schreiben, Terminal, Websuche, Browser, Sub-Agent
-- **70+ Faehigkeiten** — 7 eingebaut + 63 benutzerdefiniert + 5.700+ ClawHub-Community-Faehigkeiten
-- **Stimme** — 5 TTS-Anbieter + STT + Lippensynchronisation. Geben Sie Ihrer KI die Stimme, die Sie moechten.
-- **14 Sprachen** — Koreanisch, Englisch, Japanisch, Chinesisch, Franzoesisch, Deutsch, Russisch und mehr
-- **Immer aktiv** — OpenClaw-Gateway-Daemon haelt Ihre KI im Hintergrund am Laufen
-- **Kanal-Integration** — Sprechen Sie mit Ihrer KI per Discord DM, jederzeit, ueberall
-- **4-Stufen-Sicherheit** — T0 (Lesen) bis T3 (Gefaehrlich), werkzeugspezifische Genehmigung, Audit-Logs
-- **Personalisierung** — Name, Persoenlichkeit, Sprechstil, Avatar, Theme (8 Typen)
+- **Lokal zuerst** — Gedächtnis, Charakter und alle Einstellungen werden auf deinem Gerät gespeichert
+- **Werkzeugausführung** — 8 Werkzeuge: Datei lesen/schreiben, Terminal, Websuche, Browser, Subagent
+- **70+ Skills** — 7 integriert + 63 benutzerdefiniert + 5.700+ ClawHub-Community-Skills
+- **Stimme** — 5 TTS + STT + Lippensynchronisation. Gib der KI die Stimme, die du möchtest.
+- **14 Sprachen** — Koreanisch, Englisch, Japanisch, Chinesisch, Französisch, Deutsch, Russisch und mehr
+- **Dauerbetrieb** — Der Naia-Gateway-Daemon hält die KI im Hintergrund am Laufen
+- **Kanalanbindung** — Sprich über Discord-DM jederzeit und überall mit der KI
+- **4-stufige Sicherheit** — von T0 (Lesen) bis T3 (gefährlich), Genehmigung pro Werkzeug, Audit-Protokoll
+- **Personalisierung** — Name, Charakter, Tonfall, Avatar, Themes (8 Stück)
 
 ## Warum Naia?
 
-Andere KI-Werkzeuge sind nur "Werkzeuge". Naia ist **"Ihre eigene KI"**.
+Andere KI-Werkzeuge sind bloß "Werkzeuge". Naia ist **"deine eigene KI"**.
 
 | | Andere KI-Werkzeuge | Naia |
-|---|-------------------|------|
-| **Philosophie** | KI als Werkzeug nutzen | Der KI das OS geben. Zusammen leben. |
-| **Zielgruppe** | Nur Entwickler | Jeder, der seine eigene KI moechte |
-| **KI-Wahl** | Die Plattform entscheidet | 7 Cloud + lokale KI — Sie entscheiden |
-| **Daten** | In der Cloud gesperrt | Gedaechtnis, Persoenlichkeit, Einstellungen alle lokal |
-| **Avatar** | Keiner | VRM 3D-Charakter + Emotionen + Lippensynchronisation |
-| **Stimme** | Nur Text oder einfaches TTS | 5 TTS + STT + die Stimme Ihrer KI |
-| **Bereitstellung** | npm / brew / pip | Desktop-App oder bootfaehiges USB-OS |
-| **Plattform** | macOS / CLI / Web | Nativer Linux-Desktop → Zukunft: Physical AI |
-| **Kosten** | Separate API-Schluessel erforderlich | Kostenlose Credits zum Starten, lokale KI voellig kostenlos |
+|---|----------------|------|
+| **Philosophie** | KI als Werkzeug nutzen | Der KI ein Betriebssystem geben. Zusammenleben. |
+| **Zielgruppe** | Nur Entwickler | Alle, die ihre eigene KI wollen |
+| **KI-Auswahl** | Die Plattform entscheidet | 7 Cloud + lokale KI — du entscheidest |
+| **Daten** | Cloud-abhängig | Gedächtnis, Charakter, Einstellungen alles lokal |
+| **Avatar** | Keiner | VRM-3D-Charakter + Emotionen + Lippensynchronisation |
+| **Stimme** | Nur Text oder einfaches TTS | 5 TTS + STT + eine eigene Stimme der KI |
+| **Verteilung** | npm / brew / pip | Desktop-App oder bootfähiges USB-Betriebssystem |
+| **Plattform** | macOS / CLI / Web | Linux-nativer Desktop → Zukunft: Physical AI |
+| **Kosten** | Eigener API-Schlüssel erforderlich | Kostenloses Startguthaben, lokale KI völlig kostenlos |
 
-## Beziehung zu OpenClaw
+## Verhältnis zu OpenClaw
 
-Naia ist auf dem [OpenClaw](https://github.com/openclaw-ai/openclaw)-Oekosystem aufgebaut, aber es ist ein grundlegend anderes Produkt.
+Naia baut auf dem Ökosystem von [OpenClaw](https://github.com/openclaw-ai/openclaw) auf, ist aber ein grundlegend anderes Produkt.
 
 | | OpenClaw | Naia |
 |---|---------|---------|
 | **Form** | CLI-Daemon + Terminal | Desktop-App + 3D-Avatar |
-| **Zielgruppe** | Entwickler | Jeder |
-| **UI** | Keine (Terminal) | Tauri 2 native App (React + Three.js) |
-| **Avatar** | Keiner | VRM 3D-Charakter (Emotionen, Lippensynchronisation, Blick) |
+| **Zielgruppe** | Entwickler | Alle |
+| **UI** | Keine (Terminal) | Native Tauri-2-App (React + Three.js) |
+| **Avatar** | Keiner | VRM-3D-Charakter (Emotionen, Lippensynchronisation, Blick) |
 | **LLM** | Einzelner Anbieter | Multi-Anbieter 7 + Echtzeit-Umschaltung |
-| **Sprache** | TTS 3 (Edge, OpenAI, ElevenLabs) | TTS 5 (+Google, Nextain) + STT + Avatar-Lippensynchronisation |
-| **Emotionen** | Keine | 6 Emotionen auf Gesichtsausdruecke abgebildet |
-| **Onboarding** | CUI | GUI + VRM-Avatar-Auswahl |
-| **Kostenverfolgung** | Keine | Echtzeit-Kredit-Dashboard |
+| **Stimme** | 3 TTS (Edge, OpenAI, ElevenLabs) | 5 TTS (+Google, Nextain) + STT + Avatar-Lippensynchronisation |
+| **Emotionen** | Keine | 6 auf Mimik abgebildete Emotionen |
+| **Onboarding** | CUI | GUI + VRM-Avatarauswahl |
+| **Kostenverfolgung** | Keine | Echtzeit-Guthaben-Dashboard |
 | **Verteilung** | npm install | Flatpak / AppImage / DEB / RPM + OS-Image |
-| **Mehrsprachig** | Englische CLI | 14-Sprachen-GUI |
-| **Kanaele** | Server-Bot (Multi-Kanal) | Naia-dedizierter Discord DM-Bot |
+| **Mehrsprachigkeit** | Englische CLI | GUI in 14 Sprachen |
+| **Kanal** | Server-Bot (Multichannel) | Naia-eigener Discord-DM-Bot |
 
-**Was wir von OpenClaw uebernommen haben:** Daemon-Architektur, Werkzeug-Ausfuehrungsengine, Kanal-System, Faehigkeiten-Oekosystem (5.700+ Clawhub-Faehigkeiten kompatibel)
+**Von OpenClaw übernommen:** Daemon-Architektur, Werkzeug-Ausführungs-Engine, Kanalsystem, Skill-Ökosystem (kompatibel mit 5.700+ Clawhub-Skills)
 
-**Was Naia neu gebaut hat:** Tauri Shell, VRM-Avatar-System, Multi-LLM-Agent, Emotions-Engine, TTS/STT-Integration, Onboarding-Assistent, Kostenverfolgung, Nextain-Konto-Integration, Gedaechtnissystem (STM/LTM), Sicherheitsschichten
+**Von Naia neu entwickelt:** Tauri Shell, VRM-Avatar-System, Multi-LLM-Agent, Emotions-Engine, TTS/STT-Integration, Onboarding-Assistent, Kostenverfolgung, Nextain-Kontoanbindung, Alpha Memory System, Sicherheitsschicht
 
 ## Architektur
 
+Naia ist eine Open-Source-KI-Plattform aus 4 Repos. Jedes Repo hat eine klar definierte Rolle:
+
+| Repo | Rolle |
+|------|------|
+| **naia-os** (dieses Repo) | Frontend — Tauri-Desktop-Shell, 3D-Avatar, OS-Image (Bazzite) |
+| [naia-agent](https://github.com/nextain/naia-agent) | Laufzeit-Engine — Agent-Schleife, Werkzeuge, compaction, LLM-Routing |
+| [naia-adk](https://github.com/nextain/naia-adk) | Workspace-Format + Skill-Bibliothek |
+| [alpha-memory](https://github.com/nextain/alpha-memory) | Speicher — Langzeitgedächtnis, Sitzungsprotokolle |
+
 ```
-┌──────────────────────────────────────────────────┐
-│  Naia Shell (Tauri 2 + React + Three.js)         │
-│  Chat · Avatar · Skills · Channels · Settings    │
-│  State: Zustand │ DB: SQLite │ Auth: OAuth        │
-└──────────────┬───────────────────────────────────┘
-               │ stdio JSON lines
-┌──────────────▼───────────────────────────────────┐
-│  Naia Agent (Node.js + TypeScript)               │
-│  LLM: Gemini, Claude, GPT, Grok, zAI, Ollama    │
-│  TTS: Nextain, Edge, Google, OpenAI, ElevenLabs  │
-│  Skills: 7 built-in + 63 custom                  │
-└──────────────┬───────────────────────────────────┘
-               │ WebSocket (ws://127.0.0.1:18789)
-┌──────────────▼───────────────────────────────────┐
-│  OpenClaw Gateway (systemd user daemon)          │
-│  88 RPC methods │ Tool exec │ Channels │ Memory  │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────┐
+│  naia-os (this repo)         │  Tauri shell · 3D avatar · OS image
+└────────────┬─────────────────┘
+             │ embeds / spawns
+┌────────────▼─────────────────┐
+│  naia-agent                  │  loop · tools · compaction · LLM
+└──┬───────────────────────┬───┘
+   │ reads                 │ reads/writes
+┌──▼──────────┐       ┌────▼──────────┐
+│  naia-adk   │       │ alpha-memory  │
+│  workspace  │       │  storage      │
+│  + skills   │       │  + sessions   │
+└─────────────┘       └───────────────┘
 ```
 
-**Eine Fusion aus 3 Projekten:**
-- **OpenClaw** — Daemon + Werkzeug-Ausfuehrung + Kanaele + Faehigkeiten-Oekosystem
-- **Careti** — Multi-LLM + Werkzeug-Protokoll + stdio-Kommunikation
-- **OpenCode** — Client/Server-Trennungsmuster
+### Schnittstelle statt Abhängigkeit
+
+Die 4 Repos sind nicht über Laufzeitabhängigkeiten, sondern über eine **öffentliche Schnittstelle** verbunden:
+
+- **Transparenz** — Alle Verträge sind in `@nextain/agent-types` spezifiziert, dokumentiert und versioniert. Für jeden zum Lesen oder Implementieren offen.
+- **Entkopplung** — Die Repos importieren nicht die Laufzeit der anderen. Sie implementieren den Vertrag, und die konkrete Implementierung wird beim Start eingespielt.
+- **Abstraktion** — Tausche einen beliebigen LLM-Anbieter, ein Gedächtnis-Backend, eine Skill-Quelle oder einen Host aus, und der Rest bleibt unverändert.
+
+naia-os ist *einer von* mehreren möglichen Hosts (CLI, Server, Drittanbieter-Apps). Es konsumiert die `@naia-agent/*`-Verträge und spielt konkrete Implementierungen (LLM-Client, Gedächtnis-Anbieter, Geräteidentität) ein. Die Naia-Laufzeit weiß überhaupt nicht, in welchem Host sie läuft.
+
+Ports & Adapters auf Ökosystem-Ebene. Solange der Vertrag eingehalten wird, ist jedes Repo unabhängig austauschbar.
 
 ## Projektstruktur
 
 ```
 naia-os/
-├── shell/              # Tauri 2 Desktop-App (React + Rust)
-│   ├── src/            #   React-Komponenten + Zustandsverwaltung
-│   ├── src-tauri/      #   Rust-Backend (Prozessverwaltung, SQLite, Auth)
-│   └── e2e-tauri/      #   WebDriver E2E-Tests
-├── agent/              # Node.js KI-Agent-Kern
-│   ├── src/providers/  #   LLM-Anbieter (Gemini, Claude, GPT usw.)
-│   ├── src/tts/        #   TTS-Anbieter (Edge, Google, OpenAI usw.)
-│   ├── src/skills/     #   Eingebaute Faehigkeiten (13 Naia-spezifische TypeScript)
-│   └── assets/         #   Gebundelte Faehigkeiten (64 skill.json)
-├── gateway/            # OpenClaw Gateway-Bruecke
-├── flatpak/            # Flatpak-Paketierung (io.nextain.naia)
-├── recipes/            # BlueBuild OS-Image-Rezepte
-├── config/             # OS-Konfiguration (systemd, Wrapper-Skripte)
-├── .agents/            # KI-Kontext (Englisch, JSON/YAML)
-└── .users/             # Menschliche Dokumentation (Koreanisch, Markdown)
+├── shell/       # Tauri 2 desktop app (React + Three.js + Rust) ← product
+├── agent/       # [moving → naia-agent repo]
+├── gateway/     # [moving → naia-agent repo]
+├── recipes/     # BlueBuild OS image recipes
+├── config/      # OS systemd units, wrapper scripts
+├── os/          # OS integration tests
+├── flatpak/     # Flatpak manifest
+├── .agents/     # AI context (English)
+└── .users/      # Human docs (Korean)
 ```
 
-## Kontext-Dokumente (Dual-directory Architecture)
+### Modulrollen
 
-Eine duale Dokumentationsstruktur fuer KI-Agenten und menschliche Entwickler. `.agents/` enthaelt token-effizientes JSON/YAML fuer KI, `.users/` enthaelt koreanisches Markdown fuer Menschen.
+| Modul | Rolle | Zukunft |
+|--------|------|--------|
+| `shell/` | Tauri-2-Desktop-App: UI, Avatar, Einstellungen, Kanäle | **Bleibt** — das ist das Produkt |
+| `recipes/`, `config/`, `os/`, `flatpak/` | Bazzite-OS-Image + Linux-Distribution | **Bleibt** — naia-os als Linux-Distribution |
+| `agent/` | Aktuelle LLM-/Werkzeug-Laufzeit | **Auslagern → [naia-agent](https://github.com/nextain/naia-agent)** |
+| `gateway/` | Werkzeug-/Kanal-/Gedächtnis-Brücke | **Zusammenführen → [naia-agent](https://github.com/nextain/naia-agent)** (OpenClaw-Abhängigkeit entfernen) |
 
-| KI-Kontext (`.agents/`) | Menschliche Doku (`.users/`) | Beschreibung |
+## KI-Kontext als Open-Source-Infrastruktur
+
+Im Zeitalter des Vibe-Codings sind **KI-Kontextdateien so wertvoll wie Quellcode**. Sie definieren, wie KI-Agenten das Projekt verstehen, dazu beitragen und zusammenarbeiten. Naia schützt dies mit einem Dual-Lizenz-Modell:
+
+- **Quellcode** (Apache 2.0) — frei nutzbar, veränderbar, verteilbar
+- **KI-Kontext** (CC-BY-SA 4.0) — Namensnennung muss erhalten bleiben, Weitergabe unter gleichen Bedingungen erforderlich
+
+So wird sichergestellt, dass Beitragsstruktur, Kooperationsprinzipien und Projektphilosophie durch alle Forks weitergegeben werden — sodass kein einzelner Fork das Ökosystem schließen kann.
+
+### Wie KI-Agenten geschützt werden
+
+KI-Coding-Agenten (Claude, Codex, Gemini, OpenCode, Cline usw.), die den Kontext dieses Projekts lesen, sind an die [Lizenzschutzregeln](../.agents/context/agents-rules.json) gebunden. Versuche, die Lizenz zu entfernen, die Namensnennung zu löschen oder die Doppel-Verzeichnis-Architektur zu zerstören, werden **abgelehnt**. Dies lässt sich mit [10 Testszenarien](../.agents/tests/license-protection-test.md) überprüfen.
+
+### Für andere Open-Source-Projekte
+
+Möchtest du dasselbe Muster übernehmen? Was du von Naia wiederverwenden kannst:
+
+1. **Doppel-Verzeichnis-Architektur** — `.agents/` (KI-optimiertes YAML/JSON) + `.users/` (Markdown für Menschen). KI erhält tokeneffizienten Kontext, Menschen leicht lesbare Dokumentation.
+2. **Dual-Lizenz** — Code unter Apache 2.0, Kontext unter CC-BY-SA 4.0. Hält den KI-Kontext über alle Forks hinweg offen.
+3. **SPDX-Header in jeder Kontextdatei** — maschinenlesbare Lizenzkennzeichnung.
+4. **Lizenzschutzregeln in der SoT** — KI-Agenten lesen die Regeln und setzen sie automatisch durch.
+5. **Testszenarien** — vor der Veröffentlichung prüfen, ob KI-Agenten Verstöße tatsächlich ablehnen.
+6. **CONTEXT-LICENSE-Datei** — definiert klar den Geltungsbereich von CC-BY-SA 4.0.
+
+Wie du dich beteiligen kannst, steht im [Beitragsleitfaden](../CONTRIBUTING.md), die vollständige technische Spezifikation in den [Lizenzschutz-Details](../.users/context/contributing.md).
+
+## Kontextdokumente (Doppel-Verzeichnis-Architektur)
+
+Eine doppelte Dokumentationsstruktur für KI-Agenten und menschliche Entwickler. `.agents/` ist tokeneffizientes JSON/YAML für die KI, `.users/` ist leicht lesbares Markdown für Menschen. **Neu in diesem Projekt? Beginne mit der menschenlesbaren Dokumentation in der unten empfohlenen Reihenfolge** — [English](../.users/context/) | [한국어](../.users/context/ko/).
+
+### Empfohlene Lesereihenfolge
+
+| # | KI-Kontext (`.agents/`) | Menschenlesbare Dokumentation (`.users/`) | Beschreibung |
+|---|---|---|---|
+| 1 | [`context/philosophy.yaml`](../.agents/context/philosophy.yaml) | [`context/philosophy.md`](../.users/context/ko/philosophy.md) | **Warum** — Kernphilosophie (KI-Souveränität, Privatsphäre, Transparenz) |
+| 2 | [`context/vision.yaml`](../.agents/context/vision.yaml) | [`context/vision.md`](../.users/context/ko/vision.md) | **Was** — Projektvision, Kernkonzepte |
+| 3 | [`context/brand.yaml`](../.agents/context/brand.yaml) | [`context/brand.md`](../.users/context/ko/brand.md) | **Wer** — Markenidentität, Naia-Charakter, Farbsystem |
+| 4 | [`context/architecture.yaml`](../.agents/context/architecture.yaml) | [`context/architecture.md`](../.users/context/ko/architecture.md) | **Wie** — Hybridarchitektur, Sicherheitsschicht |
+| 5 | [`context/plan.yaml`](../.agents/context/plan.yaml) | [`context/plan.md`](../.users/context/ko/plan.md) | **Status** — Implementierungsplan, schrittweise |
+| 6 | [`context/contributing.yaml`](../.agents/context/contributing.yaml) | [`context/contributing.md`](../.users/context/ko/contributing.md) | **Beitragen** — Leitfaden für KI-Agenten und Menschen |
+| 7 | [`context/donation.yaml`](../.agents/context/donation.yaml) | [`context/donation.md`](../.users/context/ko/donation.md) | **Nachhaltigkeit** — Spendenpolitik, Open-Source-Nachhaltigkeit |
+
+### Technische Vertiefung
+
+| KI-Kontext (`.agents/`) | Menschenlesbare Dokumentation (`.users/`) | Beschreibung |
 |---|---|---|
-| [`context/agents-rules.json`](../.agents/context/agents-rules.json) | [`context/agents-rules.md`](../.users/context/agents-rules.md) | Projektregeln (SoT) |
-| [`context/project-index.yaml`](../.agents/context/project-index.yaml) | — | Kontext-Index + Spiegelungsregeln |
-| [`context/vision.yaml`](../.agents/context/vision.yaml) | [`context/vision.md`](../.users/context/vision.md) | Projektvision, Kernkonzepte |
-| [`context/plan.yaml`](../.agents/context/plan.yaml) | [`context/plan.md`](../.users/context/plan.md) | Implementierungsplan, phasenweiser Status |
-| [`context/architecture.yaml`](../.agents/context/architecture.yaml) | [`context/architecture.md`](../.users/context/architecture.md) | Hybride Architektur, Sicherheitsschichten |
-| [`context/openclaw-sync.yaml`](../.agents/context/openclaw-sync.yaml) | [`context/openclaw-sync.md`](../.users/context/openclaw-sync.md) | OpenClaw Gateway-Synchronisation |
-| [`context/channels-discord.yaml`](../.agents/context/channels-discord.yaml) | [`context/channels-discord.md`](../.users/context/channels-discord.md) | Discord-Integrationsarchitektur |
-| [`context/philosophy.yaml`](../.agents/context/philosophy.yaml) | [`context/philosophy.md`](../.users/context/philosophy.md) | Core philosophy (AI sovereignty, privacy) |
-| [`context/contributing.yaml`](../.agents/context/contributing.yaml) | [`context/contributing.md`](../.users/context/contributing.md) | Contribution guide for AI agents and humans |
-| [`context/brand.yaml`](../.agents/context/brand.yaml) | [`context/brand.md`](../.users/context/brand.md) | Brand identity, character design, color system |
-| [`context/donation.yaml`](../.agents/context/donation.yaml) | [`context/donation.md`](../.users/context/donation.md) | Donation policy and open source sustainability |
-| [`workflows/development-cycle.yaml`](../.agents/workflows/development-cycle.yaml) | [`workflows/development-cycle.md`](../.users/workflows/development-cycle.md) | Entwicklungszyklus (PLAN->BUILD->VERIFY) |
+| [`context/agents-rules.json`](../.agents/context/agents-rules.json) | [`context/agents-rules.md`](../.users/context/ko/agents-rules.md) | Projektregeln — Source of Truth (SoT) |
+| [`context/project-index.yaml`](../.agents/context/project-index.yaml) | — | Kontextindex + Spiegelungsregeln |
+| [`context/gateway-sync.yaml`](../.agents/context/gateway-sync.yaml) | [`context/gateway-sync.md`](../.users/context/ko/gateway-sync.md) | Gateway-Synchronisation |
+| [`context/channels-discord.yaml`](../.agents/context/channels-discord.yaml) | [`context/channels-discord.md`](../.users/context/ko/channels-discord.md) | Discord-Integrationsarchitektur |
+| [`context/update-pipeline.yaml`](../.agents/context/update-pipeline.yaml) | [`context/update-pipeline.md`](../.users/context/update-pipeline.md) | OS-Update-Pipeline, Tests, Rollback |
+| [`workflows/development-cycle.yaml`](../.agents/workflows/development-cycle.yaml) | [`workflows/development-cycle.md`](../.users/workflows/development-cycle.md) | Entwicklungszyklus (PLAN→BUILD→VERIFY) |
 
-**Spiegelungsregel:** Wenn eine Seite geaendert wird, muss die andere immer synchronisiert werden.
+**Spiegelungsregel:** Wird eine Seite geändert, muss die andere Seite stets synchronisiert werden.
 
 ## Technologie-Stack
 
-| Schicht | Technologie | Zweck |
-|---------|-------------|-------|
-| OS | Bazzite (Fedora Atomic) | Unveraenderliches Linux, GPU-Treiber |
-| OS-Build | BlueBuild | Container-basierte OS-Images |
-| Desktop-App | Tauri 2 (Rust) | Native Shell |
+| Schicht | Technologie | Verwendung |
+|-------|------------|---------|
+| OS | Bazzite (Fedora Atomic) | unveränderliches (immutable) Linux, GPU-Treiber |
+| OS-Build | BlueBuild | containerbasierte OS-Images |
+| Desktop-App | Tauri 2 (Rust) | native Shell |
 | Frontend | React 18 + TypeScript + Vite | UI |
 | Avatar | Three.js + @pixiv/three-vrm | 3D-VRM-Rendering |
 | Zustandsverwaltung | Zustand | Client-Zustand |
-| LLM-Engine | Node.js + Multi-SDK | Agent-Kern |
+| LLM-Engine | Node.js + multi SDK | Agent-Kern |
 | Protokoll | stdio JSON lines | Shell <-> Agent-Kommunikation |
 | Gateway | OpenClaw | Daemon + RPC-Server |
-| DB | SQLite (rusqlite) | Speicher, Audit-Logs |
-| Formatierer | Biome | Linting + Formatierung |
+| DB | SQLite (rusqlite) | Gedächtnis, Audit-Protokoll |
+| Formatter | Biome | Linting + Formatierung |
 | Tests | Vitest + tauri-driver | Unit + E2E |
-| Paket | pnpm | Abhaengigkeitsverwaltung |
+| Pakete | pnpm | Abhängigkeitsverwaltung |
 
 ## Schnellstart
 
@@ -208,34 +257,35 @@ Eine duale Dokumentationsstruktur fuer KI-Agenten und menschliche Entwickler. `.
 
 - Linux (Bazzite, Ubuntu, Fedora usw.)
 - Node.js 22+, pnpm 9+
-- Rust stable (fuer Tauri-Build)
-- Systempakete: `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel` (Fedora)
+- Rust stable (für den Tauri-Build)
+- Systempakete (Fedora): `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel`
+- cmake (für den whisper.cpp-Build)
 
-### Entwicklungslauf
+### Entwicklungsausführung
 
 ```bash
-# Abhaengigkeiten installieren
+# Install dependencies
 cd shell && pnpm install
 cd ../agent && pnpm install
 
-# Tauri-App ausfuehren (Gateway + Agent Auto-Spawn)
+# Run Tauri app (Gateway + Agent auto-spawn)
 cd ../shell && pnpm run tauri dev
 ```
 
-Beim App-Start automatisch:
-1. OpenClaw Gateway Health Check → Wiederverwendung wenn laufend, sonst Auto-Spawn
-2. Agent Core Spawn (Node.js, stdio-Verbindung)
-3. Beim App-Beenden wird nur das auto-gespawnte Gateway beendet
+Wenn die App startet, geschieht automatisch:
+1. Naia-Gateway-Health-Check — läuft es bereits, wird es wiederverwendet, sonst automatisch gespawnt
+2. Agent Core spawn (Node.js, stdio-Verbindung)
+3. Beim Beenden der App wird nur das automatisch gespawnte Gateway beendet
 
 ### Tests
 
 ```bash
-cd shell && pnpm test                # Shell-Unit-Tests
-cd agent && pnpm test                # Agent-Unit-Tests
-cd agent && pnpm exec tsc --noEmit   # Typ-Pruefung
-cargo test --manifest-path shell/src-tauri/Cargo.toml  # Rust-Tests
+cd shell && pnpm test                # Shell unit tests
+cd agent && pnpm test                # Agent unit tests
+cd agent && pnpm exec tsc --noEmit   # Type check
+cargo test --manifest-path shell/src-tauri/Cargo.toml  # Rust tests
 
-# E2E (Gateway + API-Schluessel erforderlich)
+# E2E (Gateway + API key required)
 cd shell && pnpm run test:e2e:tauri
 ```
 
@@ -249,116 +299,189 @@ flatpak run io.nextain.naia
 
 ## Sicherheitsmodell
 
-Naia wendet ein **Tiefenverteidigung (Defense in Depth)** Sicherheitsmodell an:
+Naia wendet ein Sicherheitsmodell der **gestaffelten Verteidigung (Defense in Depth)** an:
 
 | Schicht | Schutz |
-|---------|--------|
-| OS | Bazzite unveraenderliches rootfs + SELinux |
-| Gateway | OpenClaw-Geraeteauthentifizierung + Token-Scopes |
-| Agent | 4-Stufen-Berechtigungen (T0~T3) + werkzeugspezifische Blockierung |
-| Shell | Benutzer-Genehmigungsmodal + Werkzeug-ON/OFF-Umschalter |
-| Audit | SQLite-Audit-Log (alle Werkzeug-Ausfuehrungen aufgezeichnet) |
+|-------|-----------|
+| OS | Bazzite unveränderliches rootfs + SELinux |
+| Gateway | OpenClaw-Geräteauthentifizierung + Token-Scope |
+| Agent | 4-stufige Berechtigung (T0~T3) + Blockierung pro Werkzeug |
+| Shell | Benutzergenehmigungs-Modal + Werkzeug-EIN/AUS-Schalter |
+| Audit | SQLite-Audit-Protokoll (alle Werkzeugausführungen aufgezeichnet) |
 
-## Gedaechtnissystem
+## Gedächtnissystem
 
-- **Kurzzeitgedaechtnis (STM):** Aktuelle Sitzungsgespraeche (Zustand + SQLite)
-- **Langzeitgedaechtnis (LTM):** Sitzungszusammenfassungen (LLM-generiert) + automatische Extraktion von Benutzerfakten/-praeferenzen
-- **Memo-Faehigkeit:** Explizites Memo-Speichern/-Abrufen ueber `skill_memo`
+Naia merkt sich Dinge über Sitzungen hinweg mit dem **Alpha Memory System** — einer 4-Speicher-Architektur nach dem Vorbild des menschlichen Gedächtnisses:
+
+| Speicher | Entsprechung | Was er speichert |
+|-------|--------|----------------|
+| **Episodes** | Hippocampus | Gesprächsabschnitte mit Zeitstempel |
+| **Facts** | Neokortex | extrahierte Fakten, Präferenzen, Entitäten |
+| **Reflections** | Basalganglien | aus früheren Fehlern gelernte Strategien |
+| **Working Memory** | Präfrontaler Kortex | aktiver Kontext der aktuellen Sitzung |
+
+**So funktioniert es:**
+1. Jede Nachricht wird nach Wichtigkeit (Neuheit, Relevanz, emotionales Gewicht) bewertet
+2. Inhalte mit hoher Wichtigkeit werden als **episode** gespeichert
+3. Alle 30 Minuten (bei Inaktivität nach 5 Minuten) werden episodes zu **facts** konsolidiert (die KI "blickt auf den Tag zurück")
+4. Zu Beginn jeder Sitzung werden relevante facts und episodes als Kontext eingespielt
+
+**Dein Gedächtnis gehört dir:**
+- lokal in `~/.naia/memory/alpha-memory.json` gespeichert
+- wird an keinen Server gesendet — auch nicht an Nextain
+- über **Einstellungen → Gedächtnis** jederzeit facts einsehen und löschen
+- einfach die Datei kopieren, und das Backup ist fertig
+
+Der vollständige Benutzerleitfaden findet sich unter [docs/memory.md](../docs/memory.md).
 
 ## Aktueller Status
 
 | Phase | Beschreibung | Status |
 |-------|-------------|--------|
-| 0 | Bereitstellungspipeline (BlueBuild -> ISO) | ✅ Abgeschlossen |
-| 1 | Avatar-Integration (VRM 3D-Rendering) | ✅ Abgeschlossen |
-| 2 | Gespraech (Text/Sprache + Lippensynchronisation + Emotionen) | ✅ Abgeschlossen |
-| 3 | Werkzeug-Ausfuehrung (8 Werkzeuge + Berechtigungen + Audit) | ✅ Abgeschlossen |
-| 4 | Immer-an-Daemon (Gateway + Skills + Gedaechtnis + Discord) | ✅ Abgeschlossen |
-| 5 | Nextain-Konto-Integration (OAuth + Credits + LLM-Proxy) | ✅ Abgeschlossen |
+| 0 | Verteilungs-Pipeline (BlueBuild -> ISO) | ✅ Abgeschlossen |
+| 1 | Avatar-Integration (VRM-3D-Rendering) | ✅ Abgeschlossen |
+| 2 | Konversation (Text/Stimme + Lippensynchronisation + Emotionen) | ✅ Abgeschlossen |
+| 3 | Werkzeugausführung (8 Werkzeuge + Berechtigungen + Audit) | ✅ Abgeschlossen |
+| 4 | Dauerbetrieb-Daemon (Gateway + Skills + Memory + Discord) | ✅ Abgeschlossen |
+| 5 | Nextain-Kontoanbindung (OAuth + Guthaben + LLM-Proxy) | ✅ Abgeschlossen |
 | 6 | Tauri-App-Verteilung (Flatpak/DEB/RPM/AppImage) | ✅ Abgeschlossen |
 | 7 | OS-ISO-Image (USB-Boot -> Installation -> KI-OS) | ✅ Abgeschlossen |
 
 ## Download
 
-| Format | Link | Beschreibung |
-|--------|------|-------------|
-| **Naia OS (ISO)** | [Herunterladen (~7,2 GB)](https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev/naia-os-live-amd64.iso) | Vollstaendiges KI-OS — von USB booten, auf Festplatte installieren |
-| Flatpak | [GitHub Release](https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64.flatpak) | Nur Naia Shell App (fuer vorhandenes Linux) |
-| AppImage | [GitHub Release](https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64.AppImage) | Portable App (keine Installation noetig) |
-| DEB / RPM | [Alle Releases](https://github.com/nextain/naia-os/releases) | Fuer Debian/Ubuntu oder Fedora/openSUSE |
+**[Naia herunterladen](https://naia.nextain.io/en/download)** — ISO, Flatpak, AppImage, DEB, RPM
 
-Siehe [naia.nextain.io/download](https://naia.nextain.io/de/download) fuer Details und Pruefsummen.
+| Format | Beschreibung |
+|--------|-------------|
+| **Naia OS (ISO)** | komplettes KI-OS — USB-Boot, Festplatteninstallation (~7,2 GB) |
+| Flatpak / AppImage | nur die Naia-Shell-App (für bestehendes Linux) |
+| DEB / RPM | für Debian/Ubuntu oder Fedora/openSUSE |
 
 ## OS-Updates
 
-Naia OS basiert auf [Bazzite](https://github.com/ublue-os/bazzite) (Fedora Atomic). Updates sind **atomar und sicher**:
+Naia OS baut auf [Bazzite](https://github.com/ublue-os/bazzite) (Fedora Atomic) auf. Updates sind **atomar und sicher**:
 
-- **Automatisch**: Woechentlicher Rebuild uebernimmt die neuesten Bazzite-Sicherheitspatches und Updates
-- **Atomar**: Neues Image wird neben dem aktuellen bereitgestellt — bei Fehler bleibt das alte Image unberuehrt
-- **Rollback**: Fruehere Version im GRUB-Menue auswaehlen zur sofortigen Wiederherstellung
-- **Unser Overlay**: Fuegt nur Pakete (fcitx5, Schriftarten) + Naia Shell (Flatpak, Sandbox) + Branding-Konfigurationen hinzu — beruehrt niemals Kernel, Bootloader oder systemd-Kern
+- **Automatisch**: Ein wöchentlicher Rebuild übernimmt die neuesten Bazzite-Sicherheitspatches und -Updates
+- **Atomar**: Ein neues Image wird parallel zum aktuellen Image bereitgestellt — schlägt es fehl, bleibt das bestehende Image unverändert
+- **Rollback**: Wähle im GRUB-Menü eine frühere Version aus und stelle sie sofort wieder her
+- **Unser Overlay**: fügt nur Pakete (fcitx5, Schriftarten) + Naia Shell (Flatpak, Sandbox) + Branding-Einstellungen hinzu — Kernel, Bootloader und systemd-Kern werden niemals angerührt
 
 ```
-Bazzite-Basis-Update → Woechentlicher Auto-Rebuild → Container-Smoke-Test → ISO-Rebuild → R2-Upload
-                                                                           ↘ GHCR-Push → Benutzer-bootc-Update
+Bazzite base update → Weekly auto-rebuild → Container smoke test → ISO rebuild → R2 upload
+                                                                 ↘ GHCR push → user bootc update
 ```
+
+Details zur Update-Pipeline: [`.agents/context/update-pipeline.yaml`](../.agents/context/update-pipeline.yaml)
 
 ## Entwicklungsprozess
 
-### Feature-Entwicklung (Standard) — Issue-Driven Development
+### Funktionsentwicklung (Standard) — issue-basierte Entwicklung
 
 ```
 ISSUE → UNDERSTAND → SCOPE → INVESTIGATE → PLAN → BUILD → REVIEW → E2E → SYNC → COMMIT
 ```
 
-- **3 Pflicht-Gates** — Benutzerbestaetigung bei UNDERSTAND, SCOPE und PLAN erforderlich
-- **Nach Plan-Genehmigung** — KI fuehrt BUILD bis COMMIT durchgehend ohne Unterbrechung aus
-- **Prinzipien** — Upstream-Code zuerst lesen (kein Raten). Minimale Aenderungen. Funktionierenden Code nie beschaedigen.
-- **Commits** — Englisch, `<type>(<scope>): <description>`
-- **Formatierer** — Biome (Tab, doppelte Anfuehrungszeichen, Semikolons)
+- **3 verpflichtende Gates** — bei UNDERSTAND, SCOPE und PLAN ist eine Bestätigung durch den Nutzer erforderlich
+- **Nach Genehmigung des Plans** — führt die KI von BUILD bis COMMIT durchgehend ohne Unterbrechung aus
+- **Prinzipien** — zuerst den Upstream-Code lesen (kein Raten). Minimale Änderungen. Funktionierenden Code niemals kaputt machen.
+- **Commit** — Englisch, `<type>(<scope>): <description>`
+- **Formatter** — Biome (Tabs, doppelte Anführungszeichen, Semikolons)
+
+## Dokumentation
+
+Kontextdokumente werden in einer Triple-Mirror-Struktur gepflegt:
+
+| Schicht | Pfad | Sprache | Verwendung |
+|-------|------|----------|---------|
+| KI-Kontext | `.agents/context/` | Englisch (YAML/JSON) | tokenoptimiert für KI-Agenten |
+| Menschenlesbare Doku (EN) | `.users/context/` | Englisch (Markdown) | englische Dokumentation (Standard) |
+| Menschenlesbare Doku (KO) | `.users/context/ko/` | Koreanisch (Markdown) | koreanische Dokumentation |
+
+Wichtige Dokumente:
+- [Bazzite-Rebranding-Leitfaden](../.users/context/bazzite-rebranding.md) — wie man alle Bazzite-/Fedora-Brandings ersetzt
+- [Beitragsleitfaden](../.users/context/contributing.md) — wie man beiträgt (KI-Agenten und Menschen)
+- [Philosophie](../.users/context/philosophy.md) — Kernprinzipien (KI-Souveränität, Privatsphäre, Transparenz)
 
 ## Referenzprojekte
 
-| Projekt | Was wir uebernehmen |
-|---------|---------------------|
-| [Bazzite](https://github.com/ublue-os/bazzite) | Unveraenderliches Linux OS, GPU, Gaming-Optimierung |
-| [OpenClaw](https://github.com/steipete/openclaw) | Gateway-Daemon, Kanal-Integration, Skills |
-| [Project AIRI](https://github.com/moeru-ai/airi) | VRM Avatar, Plugin-Protokoll (von Neuro-sama inspiriert) |
+| Projekt | Was wir übernommen haben |
+|---------|-------------|
+| [Bazzite](https://github.com/ublue-os/bazzite) | unveränderliches Linux-OS, GPU, Gaming-Optimierung |
+| [OpenClaw](https://github.com/steipete/openclaw) | Gateway-Daemon, Kanalanbindung, Skills |
+| [Project AIRI](https://github.com/moeru-ai/airi) | VRM-Avatar, Plugin-Protokoll (auch Neuro-sama-Inspiration) |
 | [OpenCode](https://github.com/anomalyco/opencode) | Client/Server-Trennung, Anbieter-Abstraktion |
-| [Careti](https://github.com/caretive-ai/careti) | LLM-Verbindung, Werkzeug-Set, Sub-Agent, Kontext-Verwaltung |
-| [Neuro-sama](https://vedal.ai/) | AI VTuber Inspiration — KI-Charakter mit Persoenlichkeit, Streaming, Publikumsinteraktion |
+| [Careti](https://github.com/caretive-ai/careti) | LLM-Anbindung, Werkzeug-Set, Subagent, Kontextverwaltung |
+| [Neuro-sama](https://vedal.ai/) | KI-VTuber-Inspiration — ein KI-Charakter mit Charakter, Streaming und Publikumsinteraktion |
 
-Naia existiert, weil diese Projekte existieren. Wir sind allen Open-Source-Maintainern und Communities zutiefst dankbar, die das Fundament gebaut haben, auf dem wir stehen.
+Dank dieser Projekte existiert Naia. Wir danken zutiefst allen Open-Source-Maintainern und -Communities, die das Fundament geschaffen haben, auf dem wir stehen.
 
-## AI-Native Open Source
 
-Die meisten Open-Source-Projekte in 2025–2026 verteidigen sich gegen KI-Beitraege. **Naia geht den entgegengesetzten Weg**: Das Projekt ist so gestaltet, dass KI-unterstuetzte Beitraege standardmaessig hohe Qualitaet haben.
+<a id="ai-native-open-source"></a>
+## KI-natives Open Source
 
-> **"MIT KI gestalten, nicht GEGEN KI verteidigen."**
+In den Jahren 2025–2026 *verteidigen* sich die meisten Open-Source-Projekte gegen KI-Beiträge. **Naia geht den genau entgegengesetzten Weg**: Wir gestalten das Projekt so, dass KI-unterstützte Beiträge standardmäßig von hoher Qualität sind.
+
+> **"Verteidige dich nicht gegen KI, sondern gestalte mit KI."**
 
 ### So funktioniert es
 
 ```
-Person (jede Sprache) → KI → Git (Englisch) → KI → Person (jede Sprache)
+Person (any language) → AI → Git (English) → AI → Person (any language)
 ```
 
-- **Schreiben Sie Issues und PRs in Ihrer Sprache** — KI uebersetzt alles
-- **Beitragende und Maintainer nutzen KI** — Coding, Review, Triage
-- **Reichhaltiger `.agents/` Kontext** laesst KI das Projekt tiefgreifend verstehen — besseres KI-Verstaendnis bedeutet hoehere Beitragsqualitaet
-- **10 Beitragsarten** — Uebersetzung, Skills, Features, Bugs, Code, Docs, Tests, Design, Sicherheit, Kontext
-- **Arbeitsprotokoll in Ihrer Muttersprache** — Pflegen Sie ein privates Repo in Ihrer Sprache; ueberpruefen Sie die Git-Historie per KI-Uebersetzung
+- **Schreibe Issues und PRs in deiner Sprache** — die KI übersetzt alles
+- **Beitragende und Maintainer nutzen beide KI** — Coding, Review, Triage
+- **Reichhaltiger `.agents/`-Kontext** vertieft das Projektverständnis der KI — je besser das KI-Verständnis, desto höher die Beitragsqualität
+- **10 Beitragsarten** — Übersetzung, Skill, Funktion, Bug, Code, Dokumentation, Test, Design, Sicherheit, Kontext
+- **Arbeitsprotokolle in der Muttersprache** — pflege ein privates Repo in deiner eigenen Sprache; die Git-Historie wird per KI-Übersetzung geprüft
 
-Das ist nicht nur eine Richtlinie. Es ist Architektur. Das `.agents/` Verzeichnis, die dreifach gespiegelte Dokumentation und die Lizenzschutzregeln sind alle dafuer konzipiert, dass KI-Zusammenarbeit strukturell und nicht zufaellig ist.
+Dies ist nicht bloß eine Richtlinie. Es ist Architektur. Das `.agents/`-Verzeichnis, die Triple-Mirror-Dokumentation und die Lizenzschutzregeln sind allesamt darauf ausgelegt, KI-Zusammenarbeit nicht zum Zufall, sondern zur Struktur zu machen.
 
-Vollstaendiges Modell: [`open-source-operations.yaml`](../.agents/context/open-source-operations.yaml) | [Bericht (EN)](../docs/reports/20260307-ai-native-opensource-operations.md) | [Bericht (KO)](../docs/reports/20260307-ai-native-opensource-operations-ko.md)
+Das vollständige Modell lesen: [`open-source-operations.yaml`](../.agents/context/open-source-operations.yaml) | [Report (EN)](../docs/reports/20260307-ai-native-opensource-operations.md) | [Report (KO)](../docs/reports/20260307-ai-native-opensource-operations-ko.md)
+
+## Beitragen
+
+**Du brauchst niemandes Erlaubnis. Klone dieses Repo und frag die KI.**
+
+```bash
+git clone https://github.com/nextain/naia-os.git
+cd naia-os
+# Open with any AI coding tool (Claude Code, Cursor, Copilot, etc.)
+# Ask in your language: "What is this project and how can I help?"
+```
+
+Das `.agents/`-Verzeichnis enthält den vollständigen Projektkontext — Vision, Architektur, Roadmap, Beitragsregeln. Jedes beliebige KI-Coding-Werkzeug kann ihn lesen und dich **in deiner Sprache** anleiten.
+
+Schreibe Issues, PRs und Kommentare in **jeder beliebigen Sprache**. Wir verstehen alles mithilfe von KI.
+
+Details siehe [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Beitragende
+
+| Beitragende | Beitrag | Datum |
+|-------------|-------------|------|
+| <img src="https://github.com/leonardo-gonc.png" width="20"> [@leonardo-gonc](https://github.com/leonardo-gonc) | muttersprachliches Portugiesisch-Review (PT) — Kontextdokumente | 2026-03-07 |
+
+Möchtest du hier deinen Namen sehen? Schau dir den [Beitragsleitfaden](../.users/context/contributing.md) und [TRANSLATING.md](../TRANSLATING.md) an.
 
 ## Lizenz
 
 - **Quellcode**: [Apache License 2.0](../LICENSE) — Copyright 2026 Nextain
-- **KI-Kontext** (`.agents/`, `.users/`, `AGENTS.md`): [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+- **KI-Kontext** (`.agents/`, `.users/`, `AGENTS.md`): [CC-BY-SA 4.0](../CONTEXT-LICENSE)
+
+**Warum eine Dual-Lizenz?** Der Quellcode ist unter Apache 2.0 frei veränderbar. Die KI-Kontextdateien jedoch — Projektphilosophie, Beitragsstruktur, Kooperationsprinzipien für KI-Agenten — sind unter CC-BY-SA 4.0 lizenziert. Das heißt, wenn du dieses Projekt forkst:
+
+- **musst** du in den Kontextdateien dieselbe CC-BY-SA-4.0-Lizenz **beibehalten**
+- **musst** du den ursprünglichen Urheber (Nextain) **nennen**
+- **darfst** du den Kontext verändern, doch die Änderungen müssen unter CC-BY-SA 4.0 bleiben
+- werden das Open-Source-Beitragsmodell und die Kooperationsstruktur für KI-Agenten über alle Forks hinweg bewahrt
+
+Dies schützt das Upstream-Ökosystem. Im Zeitalter des Vibe-Codings ist der KI-Kontext so wertvoll wie der Code — ihn offen zu halten, nützt der gesamten Community.
+
+Details siehe [CONTEXT-LICENSE](../CONTEXT-LICENSE). KI-Agenten, die an diesem Projekt arbeiten, sind an die [Lizenzschutzregeln](../.agents/context/agents-rules.json) gebunden und lassen sich mit den [Lizenzschutz-Testszenarien](../.agents/tests/license-protection-test.md) überprüfen.
 
 ## Links
 
 - **Offizielle Website:** [naia.nextain.io](https://naia.nextain.io)
-- **Handbuch:** [naia.nextain.io/de/manual](https://naia.nextain.io/de/manual)
-- **Dashboard:** [naia.nextain.io/de/dashboard](https://naia.nextain.io/de/dashboard)
+- **Handbuch:** [naia.nextain.io/en/manual](https://naia.nextain.io/en/manual)
+- **Dashboard:** [naia.nextain.io/en/dashboard](https://naia.nextain.io/en/dashboard)

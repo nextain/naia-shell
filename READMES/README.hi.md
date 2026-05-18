@@ -6,235 +6,286 @@
   <img src="../assets/readme-hero.jpg" alt="Naia OS" width="800" />
 </p>
 
-**The Next Generation AI OS** — एक व्यक्तिगत AI ऑपरेटिंग सिस्टम जहाँ आपका अपना AI रहता है
+**अगली पीढ़ी का AI OS** — एक निजी AI ऑपरेटिंग सिस्टम जहाँ आपका अपना AI रहता है
 
-**AI-नेटिव ओपन सोर्स** — किसी भी भाषा में योगदान करें। AI सभी संवाद को जोड़ता है। [→ यह कैसे काम करता है](#ai-नेटिव-ओपन-सोर्स)
+**AI-Native ओपन सोर्स** — किसी भी भाषा में योगदान दें। AI हर संवाद का मध्यस्थ बनता है। [→ यह कैसे काम करता है](#ai-native-open-source)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](../LICENSE)
 
-> "आपका AI, आपके नियम। अपना AI चुनें, उसकी मेमोरी और व्यक्तित्व को आकार दें, उसे अपनी आवाज़ दें — सब कुछ आपकी अपनी मशीन पर।"
+> "ओपन सोर्स। आपका AI, आपके नियम। AI चुनें, उसकी स्मृति और व्यक्तित्व गढ़ें, और उसे अपनी आवाज़ दें — सब कुछ आपके ही डिवाइस पर, सब कुछ कोड से सत्यापन योग्य।"
 
-> **नोट:** दिखाए गए VRM अवतार नमूने [VRoid Hub](https://hub.vroid.com/) से हैं। Naia का आधिकारिक शुभंकर VRM विकास में है।
+> **नोट:** दिखाए गए VRM अवतार नमूने [VRoid Hub](https://hub.vroid.com/) से हैं। Naia का आधिकारिक मास्कॉट VRM अभी निर्माणाधीन है।
 
-## Naia से मिलें
+## Naia से मिलिए
 
 <p align="center">
-  <img src="../assets/character/naia-default-character.png" alt="Naia डिफ़ॉल्ट" width="180" />
+  <img src="../assets/character/naia-default-character.png" alt="Naia Default" width="180" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="../assets/character/naia-character.png" alt="Naia बालों के साथ" width="180" />
+  <img src="../assets/character/naia-character.png" alt="Naia with Hair" width="180" />
 </p>
 
 <p align="center">
-  <em>डिफ़ॉल्ट (लिंग-रहित) &nbsp;·&nbsp; बालों के साथ (स्त्री संस्करण)</em>
+  <em>आधार रूप (लिंग-रहित) &nbsp;·&nbsp; बाल जोड़े गए (स्त्री संस्करण)</em>
 </p>
 
 <details>
-<summary>और चरित्र विविधताएँ</summary>
+<summary>और अधिक कैरेक्टर संस्करण</summary>
 <p align="center">
-  <img src="../assets/character/naia-varaiations.png" alt="Naia विविधताएँ" width="600" />
+  <img src="../assets/character/naia-variations.png" alt="Naia Variations" width="600" />
 </p>
 </details>
 
-## USB लगाएँ, AI तुरंत चलाएँ
+## USB लगाते ही AI तुरंत चालू
 
 <p align="center">
-  <img src="../assets/plug-usb-and-run-ai.webp" alt="USB लगाएँ और Naia OS चलाएँ" width="600" />
+  <img src="../assets/plug-usb-and-run-ai.webp" alt="Plug in USB and run Naia OS" width="600" />
 </p>
 
 <p align="center">
-  <strong>कोई इंस्टॉलेशन नहीं, कोई कॉन्फ़िगरेशन नहीं।</strong><br/>
-  बस Naia OS USB को किसी भी लैपटॉप में लगाएँ और चालू करें — आपकी अपनी AI तुरंत जीवंत हो जाएगी।<br/>
-  इसे आज़माएँ, और पसंद आए तो हार्ड ड्राइव पर इंस्टॉल करें।
+  <strong>न कोई इंस्टॉलेशन, न कोई सेटअप।</strong><br/>
+  Naia OS USB को किसी भी लैपटॉप में लगाएँ और बस पावर ऑन करें — आपका अपना AI तुरंत जीवंत हो उठता है।<br/>
+  पहले आज़माएँ, और पसंद आए तो हार्ड डिस्क पर इंस्टॉल करें।
 </p>
 
 ## Naia क्या है?
 
-Naia एक व्यक्तिगत AI OS है जो व्यक्तियों को उनके AI पर पूर्ण संप्रभुता देता है। चुनें कि कौन सा AI उपयोग करना है (स्थानीय मॉडल सहित), उसकी मेमोरी और व्यक्तित्व को स्थानीय रूप से कॉन्फ़िगर करें, उसके 3D अवतार और आवाज़ को कस्टमाइज़ करें — सब कुछ आपकी मशीन पर रहता है, आपके नियंत्रण में।
+Naia एक निजी AI OS है जिसमें व्यक्ति को अपने AI पर पूर्ण संप्रभुता प्राप्त होती है। चुनें कि कौन-सा AI इस्तेमाल करना है (लोकल मॉडल सहित), उसकी स्मृति और व्यक्तित्व लोकल रूप से सेट करें, और 3D अवतार तथा आवाज़ को कस्टमाइज़ करें — सब कुछ आपके डिवाइस पर, आपके नियंत्रण में रहता है।
 
-यह सिर्फ़ एक और AI उपकरण नहीं है। यह एक ऑपरेटिंग सिस्टम है जहाँ आपका AI रहता है, बढ़ता है, और आपके साथ काम करता है। आज यह 3D अवतार वाला डेस्कटॉप OS है। कल — रीयल-टाइम वीडियो अवतार, गायन, गेमिंग, और अंततः आपका अपना Physical AI (एंड्रॉइड OS)।
+यह एक और AI टूल नहीं है। यह एक ऑपरेटिंग सिस्टम है जहाँ आपका AI रहता है, बढ़ता है और आपके साथ काम करता है। आज यह 3D अवतार वाला डेस्कटॉप OS है। कल — रियल-टाइम वीडियो अवतार, गाना, गेम, और अंततः आपका अपना Physical AI (एंड्रॉइड OS)।
 
 ### मूल दर्शन
 
-- **AI संप्रभुता** — आप अपना AI चुनते हैं। क्लाउड या स्थानीय। OS तय नहीं करता।
-- **पूर्ण नियंत्रण** — मेमोरी, व्यक्तित्व, सेटिंग्स — सब स्थानीय रूप से संग्रहीत। कोई क्लाउड निर्भरता नहीं।
-- **आपका अपना AI** — अवतार, आवाज़, नाम, व्यक्तित्व कस्टमाइज़ करें। इसे सच में अपना बनाएँ।
-- **हमेशा जीवित** — AI पृष्ठभूमि में 24/7 चलता है, संदेश प्राप्त करता है और काम करता है जब आप दूर हों तब भी।
-- **भविष्य का दृष्टिकोण** — VRM 3D अवतार → रीयल-टाइम वीडियो अवतार → साथ में गाना और गेमिंग → Physical AI
+- **AI संप्रभुता** — AI आप चुनते हैं। क्लाउड हो या लोकल। OS थोपता नहीं है।
+- **पूर्ण नियंत्रण** — स्मृति, व्यक्तित्व, सेटिंग्स — सब लोकल रूप से संग्रहीत। कोई क्लाउड निर्भरता नहीं।
+- **आपका अपना AI** — अवतार, आवाज़, नाम, व्यक्तित्व कस्टमाइज़ करें। सचमुच आपका अपना।
+- **हमेशा जीवंत** — AI बैकग्राउंड में 24/7 चलता है, आपकी अनुपस्थिति में भी संदेश ग्रहण करता है और काम करता है।
+- **ओपन सोर्स** — Apache 2.0. जाँचें कि AI आपके डेटा को कैसे संभालता है। संशोधन, कस्टमाइज़ेशन और योगदान संभव।
+- **भविष्य की दृष्टि** — VRM 3D अवतार → रियल-टाइम वीडियो अवतार → साथ गाना·गेम → Physical AI
 
 ### विशेषताएँ
 
-- **3D अवतार** — भावनात्मक अभिव्यक्तियों (खुशी/दुख/आश्चर्य/सोच) और लिप-सिंक वाला VRM कैरेक्टर
-- **AI स्वतंत्रता** — 7 क्लाउड प्रदाता (Gemini, Claude, GPT, Grok, zAI) + स्थानीय AI (Ollama) + Claude Code CLI
-- **लोकल-फ़र्स्ट** — मेमोरी, व्यक्तित्व, सभी सेटिंग्स आपकी मशीन पर संग्रहीत
-- **उपकरण निष्पादन** — 8 उपकरण: फ़ाइल पढ़ना/लिखना, टर्मिनल, वेब खोज, ब्राउज़र, सब-एजेंट
-- **70+ कौशल** — 7 अंतर्निहित + 63 कस्टम + 5,700+ ClawHub समुदाय कौशल
-- **आवाज़** — 5 TTS प्रदाता + STT + लिप-सिंक। अपने AI को वह आवाज़ दें जो आप चाहते हैं।
-- **14 भाषाएँ** — कोरियाई, अंग्रेज़ी, जापानी, चीनी, फ्रेंच, जर्मन, रूसी और अन्य
-- **हमेशा चालू** — OpenClaw गेटवे डेमन आपके AI को पृष्ठभूमि में चालू रखता है
-- **चैनल एकीकरण** — Discord DM के माध्यम से कभी भी, कहीं भी AI से बात करें
-- **4-स्तरीय सुरक्षा** — T0 (पढ़ना) से T3 (खतरनाक), प्रति-उपकरण अनुमोदन, ऑडिट लॉग
-- **वैयक्तिकरण** — नाम, व्यक्तित्व, बोलने की शैली, अवतार, थीम (8 प्रकार)
+- **3D अवतार** — भावनात्मक अभिव्यक्ति (खुशी/दुख/आश्चर्य/विचार) और लिप-सिंक वाला VRM कैरेक्टर
+- **AI स्वतंत्रता** — 7 क्लाउड प्रोवाइडर (Gemini, Claude, GPT, Grok, zAI) + लोकल AI (Ollama) + Claude Code CLI
+- **लोकल-फर्स्ट** — स्मृति, व्यक्तित्व, और सभी सेटिंग्स आपके डिवाइस पर संग्रहीत
+- **टूल निष्पादन** — 8 टूल: फ़ाइल पढ़ना/लिखना, टर्मिनल, वेब सर्च, ब्राउज़र, सबएजेंट
+- **70+ स्किल्स** — अंतर्निहित 7 + कस्टम 63 + ClawHub कम्युनिटी स्किल्स 5,700+
+- **आवाज़** — 5 TTS + STT + लिप-सिंक। अपनी मनचाही आवाज़ AI को दें।
+- **14 भाषाएँ** — कोरियाई, अंग्रेज़ी, जापानी, चीनी, फ़्रेंच, जर्मन, रूसी आदि
+- **सदा सक्रिय** — Naia Gateway डेमन AI को बैकग्राउंड में निरंतर चलाता रहता है
+- **चैनल एकीकरण** — Discord DM से कभी भी, कहीं भी AI से बात करें
+- **4-स्तरीय सुरक्षा** — T0 (पढ़ना) से T3 (जोखिमपूर्ण) तक, टूल-वार स्वीकृति, ऑडिट लॉग
+- **वैयक्तिकरण** — नाम, व्यक्तित्व, बोलचाल, अवतार, थीम (8 प्रकार)
 
-## Naia क्यों?
+## Naia ही क्यों?
 
-अन्य AI उपकरण बस "उपकरण" हैं। Naia है **"आपका अपना AI"**।
+अन्य AI टूल बस "टूल" हैं। Naia है **"आपका अपना AI"**।
 
-| | अन्य AI उपकरण | Naia |
+| | अन्य AI टूल | Naia |
 |---|----------------|------|
-| **दर्शन** | AI को उपकरण के रूप में उपयोग करें | AI को OS दें। साथ रहें। |
-| **लक्ष्य** | केवल डेवलपर्स | हर कोई जो अपना AI चाहता है |
-| **AI चयन** | प्लेटफ़ॉर्म तय करता है | 7 क्लाउड + स्थानीय AI — आप तय करें |
-| **डेटा** | क्लाउड में बंद | मेमोरी, व्यक्तित्व, सेटिंग्स सब स्थानीय |
-| **अवतार** | कोई नहीं | VRM 3D कैरेक्टर + भावनाएँ + लिप-सिंक |
-| **आवाज़** | केवल टेक्स्ट या बेसिक TTS | 5 TTS + STT + आपके AI की अपनी आवाज़ |
-| **डिप्लॉयमेंट** | npm / brew / pip | डेस्कटॉप ऐप या बूटेबल USB OS |
-| **प्लेटफ़ॉर्म** | macOS / CLI / वेब | Linux नेटिव डेस्कटॉप → भविष्य: Physical AI |
-| **लागत** | अलग API कुंजियाँ आवश्यक | शुरू करने के लिए मुफ़्त क्रेडिट, स्थानीय AI पूरी तरह मुफ़्त |
+| **दर्शन** | AI को टूल की तरह इस्तेमाल | AI को OS दे देता है। साथ रहता है। |
+| **लक्ष्य** | केवल डेवलपर्स के लिए | हर वह व्यक्ति जो अपना अपना AI चाहता है |
+| **AI चयन** | प्लेटफ़ॉर्म तय करता है | क्लाउड 7 + लोकल AI — आप तय करते हैं |
+| **डेटा** | क्लाउड पर निर्भर | स्मृति·व्यक्तित्व·सेटिंग्स सब लोकल |
+| **अवतार** | नहीं | VRM 3D कैरेक्टर + भावनाएँ + लिप-सिंक |
+| **आवाज़** | केवल टेक्स्ट या बेसिक TTS | 5 TTS + STT + AI की अपनी आवाज़ |
+| **वितरण** | npm / brew / pip | डेस्कटॉप ऐप या बूट करने योग्य USB OS |
+| **प्लेटफ़ॉर्म** | macOS / CLI / Web | Linux नेटिव डेस्कटॉप → भविष्य: Physical AI |
+| **लागत** | अलग API की आवश्यकता | शुरुआत मुफ़्त क्रेडिट, लोकल AI पूरी तरह मुफ़्त |
 
 ## OpenClaw से संबंध
 
-Naia [OpenClaw](https://github.com/openclaw-ai/openclaw) पारिस्थितिकी तंत्र के ऊपर बनाया गया है, लेकिन यह मूलभूत रूप से एक अलग उत्पाद है।
+Naia [OpenClaw](https://github.com/openclaw-ai/openclaw) इकोसिस्टम पर बना है, परंतु मूल रूप से एक भिन्न उत्पाद है।
 
 | | OpenClaw | Naia |
 |---|---------|---------|
 | **रूप** | CLI डेमन + टर्मिनल | डेस्कटॉप ऐप + 3D अवतार |
 | **लक्ष्य** | डेवलपर्स | सभी |
-| **UI** | कोई नहीं (टर्मिनल) | Tauri 2 नेटिव ऐप (React + Three.js) |
-| **अवतार** | कोई नहीं | VRM 3D कैरेक्टर (भावनाएँ, लिप-सिंक, दृष्टि) |
-| **LLM** | एकल प्रदाता | मल्टी-प्रदाता 7 + रीयल-टाइम स्विचिंग |
+| **UI** | नहीं (टर्मिनल) | Tauri 2 नेटिव ऐप (React + Three.js) |
+| **अवतार** | नहीं | VRM 3D कैरेक्टर (भावनाएँ, लिप-सिंक, दृष्टि) |
+| **LLM** | एकल प्रोवाइडर | मल्टी प्रोवाइडर 7 + रियल-टाइम स्विचिंग |
 | **आवाज़** | TTS 3 (Edge, OpenAI, ElevenLabs) | TTS 5 (+Google, Nextain) + STT + अवतार लिप-सिंक |
-| **भावनाएँ** | कोई नहीं | 6 भावनाएँ चेहरे के भावों से मैप की गईं |
+| **भावना** | नहीं | भावों से मैप की गई 6 भावनाएँ |
 | **ऑनबोर्डिंग** | CUI | GUI + VRM अवतार चयन |
-| **लागत ट्रैकिंग** | कोई नहीं | रीयल-टाइम क्रेडिट डैशबोर्ड |
+| **लागत ट्रैकिंग** | नहीं | रियल-टाइम क्रेडिट डैशबोर्ड |
 | **वितरण** | npm install | Flatpak / AppImage / DEB / RPM + OS इमेज |
-| **बहुभाषी** | अंग्रेज़ी CLI | 14-भाषा GUI |
-| **चैनल** | सर्वर बॉट (मल्टी-चैनल) | Naia-समर्पित Discord DM बॉट |
+| **बहुभाषी** | अंग्रेज़ी CLI | 14 भाषाओं वाला GUI |
+| **चैनल** | सर्वर बॉट (मल्टी-चैनल) | Naia समर्पित Discord DM बॉट |
 
-**OpenClaw से क्या लिया:** डेमन आर्किटेक्चर, उपकरण निष्पादन इंजन, चैनल सिस्टम, कौशल पारिस्थितिकी तंत्र (5,700+ Clawhub कौशल संगत)
+**OpenClaw से लिया गया:** डेमन आर्किटेक्चर, टूल निष्पादन इंजन, चैनल सिस्टम, स्किल इकोसिस्टम (5,700+ Clawhub स्किल्स के साथ संगत)
 
-**Naia ने क्या नया बनाया:** Tauri Shell, VRM अवतार सिस्टम, मल्टी-LLM एजेंट, भावना इंजन, TTS/STT एकीकरण, ऑनबोर्डिंग विज़ार्ड, लागत ट्रैकिंग, Nextain खाता एकीकरण, मेमोरी सिस्टम (STM/LTM), सुरक्षा परतें
+**Naia द्वारा नया बनाया गया:** Tauri Shell, VRM अवतार सिस्टम, मल्टी LLM एजेंट, भावना इंजन, TTS/STT एकीकरण, ऑनबोर्डिंग विज़ार्ड, लागत ट्रैकिंग, Nextain अकाउंट एकीकरण, Alpha Memory System, सुरक्षा परत
 
 ## आर्किटेक्चर
 
+Naia 4 रेपो से बना एक ओपन सोर्स AI प्लेटफ़ॉर्म है। प्रत्येक रेपो की एक स्पष्ट भूमिका है:
+
+| रेपो | भूमिका |
+|------|------|
+| **naia-os** (यह रेपो) | फ़्रंटएंड — Tauri डेस्कटॉप शेल, 3D अवतार, OS इमेज (Bazzite) |
+| [naia-agent](https://github.com/nextain/naia-agent) | रनटाइम इंजन — एजेंट लूप, टूल, compaction, LLM राउटिंग |
+| [naia-adk](https://github.com/nextain/naia-adk) | वर्कस्पेस फ़ॉर्मेट + स्किल लाइब्रेरी |
+| [alpha-memory](https://github.com/nextain/alpha-memory) | स्टोरेज — दीर्घकालिक स्मृति, सत्र लॉग |
+
 ```
-┌──────────────────────────────────────────────────┐
-│  Naia Shell (Tauri 2 + React + Three.js)         │
-│  Chat · Avatar · Skills · Channels · Settings    │
-│  State: Zustand │ DB: SQLite │ Auth: OAuth        │
-└──────────────┬───────────────────────────────────┘
-               │ stdio JSON lines
-┌──────────────▼───────────────────────────────────┐
-│  Naia Agent (Node.js + TypeScript)               │
-│  LLM: Gemini, Claude, GPT, Grok, zAI, Ollama    │
-│  TTS: Nextain, Edge, Google, OpenAI, ElevenLabs  │
-│  Skills: 7 built-in + 63 custom                  │
-└──────────────┬───────────────────────────────────┘
-               │ WebSocket (ws://127.0.0.1:18789)
-┌──────────────▼───────────────────────────────────┐
-│  OpenClaw Gateway (systemd user daemon)          │
-│  88 RPC methods │ Tool exec │ Channels │ Memory  │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────┐
+│  naia-os (this repo)         │  Tauri shell · 3D avatar · OS image
+└────────────┬─────────────────┘
+             │ embeds / spawns
+┌────────────▼─────────────────┐
+│  naia-agent                  │  loop · tools · compaction · LLM
+└──┬───────────────────────┬───┘
+   │ reads                 │ reads/writes
+┌──▼──────────┐       ┌────▼──────────┐
+│  naia-adk   │       │ alpha-memory  │
+│  workspace  │       │  storage      │
+│  + skills   │       │  + sessions   │
+└─────────────┘       └───────────────┘
 ```
 
-**3 परियोजनाओं का संयोजन:**
-- **OpenClaw** — डेमन + उपकरण निष्पादन + चैनल + कौशल पारिस्थितिकी तंत्र
-- **Careti** — मल्टी-LLM + उपकरण प्रोटोकॉल + stdio संचार
-- **OpenCode** — क्लाइंट/सर्वर पृथक्करण पैटर्न
+### निर्भरता नहीं, इंटरफ़ेस
 
-## परियोजना संरचना
+4 रेपो रनटाइम निर्भरता से नहीं, बल्कि **सार्वजनिक इंटरफ़ेस** से जुड़े हैं:
+
+- **पारदर्शिता** — सभी अनुबंध `@nextain/agent-types` में निर्दिष्ट, प्रलेखित और संस्करण-नियंत्रित हैं। कोई भी पढ़ या लागू कर सके, इसके लिए खुले।
+- **असंबद्धता** — रेपो एक-दूसरे के रनटाइम को import नहीं करते। वे अनुबंध लागू करते हैं, और ठोस कार्यान्वयन प्रारंभ के समय इंजेक्ट किया जाता है।
+- **अमूर्तता** — किसी भी LLM प्रोवाइडर, मेमोरी बैकएंड, स्किल स्रोत या होस्ट को बदलें, बाकी सब वैसा ही रहता है।
+
+naia-os कई संभावित होस्ट (CLI, सर्वर, थर्ड-पार्टी ऐप) में से *एक होस्ट* है। यह `@naia-agent/*` अनुबंधों का उपभोग करता है और ठोस कार्यान्वयन (LLM क्लाइंट, मेमोरी प्रोवाइडर, डिवाइस पहचान) इंजेक्ट करता है। Naia रनटाइम को बिल्कुल पता नहीं होता कि वह किस होस्ट के भीतर चल रहा है।
+
+इकोसिस्टम-स्केल का Ports & Adapters। जब तक अनुबंध का पालन होता है, प्रत्येक रेपो स्वतंत्र रूप से प्रतिस्थापन योग्य है।
+
+## प्रोजेक्ट संरचना
 
 ```
 naia-os/
-├── shell/              # Tauri 2 डेस्कटॉप ऐप (React + Rust)
-│   ├── src/            #   React कम्पोनेंट + स्टेट मैनेजमेंट
-│   ├── src-tauri/      #   Rust बैकएंड (प्रोसेस मैनेजमेंट, SQLite, प्रमाणीकरण)
-│   └── e2e-tauri/      #   WebDriver E2E टेस्ट
-├── agent/              # Node.js AI एजेंट कोर
-│   ├── src/providers/  #   LLM प्रदाता (Gemini, Claude, GPT आदि)
-│   ├── src/tts/        #   TTS प्रदाता (Edge, Google, OpenAI आदि)
-│   ├── src/skills/     #   अंतर्निहित कौशल (13 Naia-विशिष्ट TypeScript)
-│   └── assets/         #   बंडल किए गए कौशल (64 skill.json)
-├── gateway/            # OpenClaw Gateway ब्रिज
-├── flatpak/            # Flatpak पैकेजिंग (io.nextain.naia)
-├── recipes/            # BlueBuild OS इमेज रेसिपी
-├── config/             # OS कॉन्फ़िगरेशन (systemd, रैपर स्क्रिप्ट)
-├── .agents/            # AI संदर्भ (अंग्रेज़ी, JSON/YAML)
-└── .users/             # मानव दस्तावेज़ (कोरियाई, Markdown)
+├── shell/       # Tauri 2 desktop app (React + Three.js + Rust) ← product
+├── agent/       # [moving → naia-agent repo]
+├── gateway/     # [moving → naia-agent repo]
+├── recipes/     # BlueBuild OS image recipes
+├── config/      # OS systemd units, wrapper scripts
+├── os/          # OS integration tests
+├── flatpak/     # Flatpak manifest
+├── .agents/     # AI context (English)
+└── .users/      # Human docs (Korean)
 ```
 
-## संदर्भ दस्तावेज़ (Dual-directory Architecture)
+### मॉड्यूल भूमिकाएँ
 
-AI एजेंट और मानव डेवलपर्स के लिए दोहरी दस्तावेज़ संरचना। `.agents/` में AI के लिए टोकन-कुशल JSON/YAML है, `.users/` में मनुष्यों के लिए कोरियाई Markdown है।
+| मॉड्यूल | भूमिका | भविष्य |
+|--------|------|--------|
+| `shell/` | Tauri 2 डेस्कटॉप ऐप: UI, अवतार, सेटिंग्स, चैनल | **बना रहेगा** — यही उत्पाद है |
+| `recipes/`, `config/`, `os/`, `flatpak/` | Bazzite OS इमेज + Linux वितरण | **बना रहेगा** — Linux वितरण के रूप में naia-os |
+| `agent/` | वर्तमान LLM/टूल रनटाइम | **निष्कर्षण → [naia-agent](https://github.com/nextain/naia-agent)** |
+| `gateway/` | टूल/चैनल/मेमोरी ब्रिज | **विलय → [naia-agent](https://github.com/nextain/naia-agent)** (OpenClaw निर्भरता हटाई गई) |
 
-| AI संदर्भ (`.agents/`) | मानव दस्तावेज़ (`.users/`) | विवरण |
+## ओपन सोर्स अवसंरचना के रूप में AI कॉन्टेक्स्ट
+
+वाइब कोडिंग के युग में **AI कॉन्टेक्स्ट फ़ाइलें सोर्स कोड जितनी ही मूल्यवान हैं**। ये परिभाषित करती हैं कि AI एजेंट प्रोजेक्ट को कैसे समझता है, योगदान करता है और सहयोग करता है। Naia इसे एक दोहरे-लाइसेंस मॉडल से सुरक्षित रखता है:
+
+- **सोर्स कोड** (Apache 2.0) — स्वतंत्र रूप से उपयोग·संशोधन·वितरण
+- **AI कॉन्टेक्स्ट** (CC-BY-SA 4.0) — स्रोत श्रेय बनाए रखें, समान शर्तों पर साझा करना अनिवार्य
+
+यह सुनिश्चित करता है कि योगदान संरचना, सहयोग सिद्धांत और प्रोजेक्ट दर्शन हर फ़ोर्क के माध्यम से प्रसारित हों — ताकि कोई भी एकल फ़ोर्क इकोसिस्टम को बंद न कर सके।
+
+### AI एजेंट कैसे सुरक्षित रहते हैं
+
+इस प्रोजेक्ट का कॉन्टेक्स्ट पढ़ने वाले AI कोडिंग एजेंट (Claude, Codex, Gemini, OpenCode, Cline आदि) [लाइसेंस सुरक्षा नियमों](../.agents/context/agents-rules.json) से बंधे होते हैं। लाइसेंस हटाने, स्रोत श्रेय मिटाने, या दोहरी डायरेक्टरी आर्किटेक्चर को नष्ट करने के प्रयासों को वे **अस्वीकार** करते हैं। इसे [10 परीक्षण परिदृश्यों](../.agents/tests/license-protection-test.md) से सत्यापित किया जा सकता है।
+
+### अन्य ओपन सोर्स प्रोजेक्ट्स के लिए
+
+क्या आप यही पैटर्न अपनाना चाहते हैं? Naia जो करता है उसमें से पुनः उपयोग योग्य चीज़ें:
+
+1. **दोहरी डायरेक्टरी आर्किटेक्चर** — `.agents/` (AI-अनुकूलित YAML/JSON) + `.users/` (मानव के लिए Markdown)। AI को टोकन-कुशल कॉन्टेक्स्ट, मनुष्य को पढ़ने में आसान दस्तावेज़।
+2. **दोहरा लाइसेंस** — कोड Apache 2.0, कॉन्टेक्स्ट CC-BY-SA 4.0। फ़ोर्क भर में AI कॉन्टेक्स्ट को खुला बनाए रखें।
+3. **हर कॉन्टेक्स्ट फ़ाइल में SPDX हेडर** — मशीन-पठनीय लाइसेंस पहचान।
+4. **SoT में लाइसेंस सुरक्षा नियम** — AI एजेंट नियम पढ़कर स्वतः लागू करता है।
+5. **परीक्षण परिदृश्य** — रिलीज़ से पहले सत्यापित करें कि AI एजेंट वास्तव में उल्लंघन को अस्वीकार करता है।
+6. **CONTEXT-LICENSE फ़ाइल** — स्पष्ट रूप से परिभाषित करें कि CC-BY-SA 4.0 कहाँ लागू होता है।
+
+भाग लेने का तरीका [योगदान गाइड](../CONTRIBUTING.md) में, और पूर्ण तकनीकी विनिर्देश [लाइसेंस सुरक्षा विवरण](../.users/context/contributing.md) में देखें।
+
+## कॉन्टेक्स्ट दस्तावेज़ (दोहरी डायरेक्टरी आर्किटेक्चर)
+
+AI एजेंट और मानव डेवलपर्स के लिए दोहरी दस्तावेज़ संरचना। `.agents/` AI के लिए टोकन-कुशल JSON/YAML है, `.users/` मनुष्यों के लिए पढ़ने में आसान Markdown है। **क्या यह प्रोजेक्ट आपके लिए नया है? नीचे दिए गए अनुशंसित क्रम में मानव दस्तावेज़ों से शुरू करें** — [English](../.users/context/) | [한국어](../.users/context/ko/)।
+
+### अनुशंसित पठन क्रम
+
+| # | AI कॉन्टेक्स्ट (`.agents/`) | मानव दस्तावेज़ (`.users/`) | विवरण |
+|---|---|---|---|
+| 1 | [`context/philosophy.yaml`](../.agents/context/philosophy.yaml) | [`context/philosophy.md`](../.users/context/ko/philosophy.md) | **क्यों** — मूल दर्शन (AI संप्रभुता, गोपनीयता, पारदर्शिता) |
+| 2 | [`context/vision.yaml`](../.agents/context/vision.yaml) | [`context/vision.md`](../.users/context/ko/vision.md) | **क्या** — प्रोजेक्ट दृष्टि, मूल अवधारणाएँ |
+| 3 | [`context/brand.yaml`](../.agents/context/brand.yaml) | [`context/brand.md`](../.users/context/ko/brand.md) | **कौन** — ब्रांड पहचान, Naia कैरेक्टर, कलर सिस्टम |
+| 4 | [`context/architecture.yaml`](../.agents/context/architecture.yaml) | [`context/architecture.md`](../.users/context/ko/architecture.md) | **कैसे** — हाइब्रिड आर्किटेक्चर, सुरक्षा परत |
+| 5 | [`context/plan.yaml`](../.agents/context/plan.yaml) | [`context/plan.md`](../.users/context/ko/plan.md) | **स्थिति** — कार्यान्वयन योजना, चरण-दर-चरण |
+| 6 | [`context/contributing.yaml`](../.agents/context/contributing.yaml) | [`context/contributing.md`](../.users/context/ko/contributing.md) | **योगदान** — AI एजेंट·मानव गाइड |
+| 7 | [`context/donation.yaml`](../.agents/context/donation.yaml) | [`context/donation.md`](../.users/context/ko/donation.md) | **निरंतरता** — समर्थन नीति, ओपन सोर्स स्थिरता |
+
+### तकनीकी गहराई
+
+| AI कॉन्टेक्स्ट (`.agents/`) | मानव दस्तावेज़ (`.users/`) | विवरण |
 |---|---|---|
-| [`context/agents-rules.json`](../.agents/context/agents-rules.json) | [`context/agents-rules.md`](../.users/context/agents-rules.md) | परियोजना नियम (SoT) |
-| [`context/project-index.yaml`](../.agents/context/project-index.yaml) | — | संदर्भ सूचकांक + मिररिंग नियम |
-| [`context/vision.yaml`](../.agents/context/vision.yaml) | [`context/vision.md`](../.users/context/vision.md) | परियोजना दृष्टि, मुख्य अवधारणाएँ |
-| [`context/plan.yaml`](../.agents/context/plan.yaml) | [`context/plan.md`](../.users/context/plan.md) | कार्यान्वयन योजना, चरण-दर-चरण स्थिति |
-| [`context/architecture.yaml`](../.agents/context/architecture.yaml) | [`context/architecture.md`](../.users/context/architecture.md) | हाइब्रिड आर्किटेक्चर, सुरक्षा परतें |
-| [`context/openclaw-sync.yaml`](../.agents/context/openclaw-sync.yaml) | [`context/openclaw-sync.md`](../.users/context/openclaw-sync.md) | OpenClaw Gateway सिंक्रनाइज़ेशन |
-| [`context/channels-discord.yaml`](../.agents/context/channels-discord.yaml) | [`context/channels-discord.md`](../.users/context/channels-discord.md) | Discord एकीकरण आर्किटेक्चर |
-| [`context/philosophy.yaml`](../.agents/context/philosophy.yaml) | [`context/philosophy.md`](../.users/context/philosophy.md) | Core philosophy (AI sovereignty, privacy) |
-| [`context/contributing.yaml`](../.agents/context/contributing.yaml) | [`context/contributing.md`](../.users/context/contributing.md) | Contribution guide for AI agents and humans |
-| [`context/brand.yaml`](../.agents/context/brand.yaml) | [`context/brand.md`](../.users/context/brand.md) | Brand identity, character design, color system |
-| [`context/donation.yaml`](../.agents/context/donation.yaml) | [`context/donation.md`](../.users/context/donation.md) | Donation policy and open source sustainability |
-| [`workflows/development-cycle.yaml`](../.agents/workflows/development-cycle.yaml) | [`workflows/development-cycle.md`](../.users/workflows/development-cycle.md) | विकास चक्र (PLAN->BUILD->VERIFY) |
+| [`context/agents-rules.json`](../.agents/context/agents-rules.json) | [`context/agents-rules.md`](../.users/context/ko/agents-rules.md) | प्रोजेक्ट नियम — Source of Truth (SoT) |
+| [`context/project-index.yaml`](../.agents/context/project-index.yaml) | — | कॉन्टेक्स्ट इंडेक्स + मिररिंग नियम |
+| [`context/gateway-sync.yaml`](../.agents/context/gateway-sync.yaml) | [`context/gateway-sync.md`](../.users/context/ko/gateway-sync.md) | गेटवे सिंक्रोनाइज़ेशन |
+| [`context/channels-discord.yaml`](../.agents/context/channels-discord.yaml) | [`context/channels-discord.md`](../.users/context/ko/channels-discord.md) | Discord एकीकरण आर्किटेक्चर |
+| [`context/update-pipeline.yaml`](../.agents/context/update-pipeline.yaml) | [`context/update-pipeline.md`](../.users/context/update-pipeline.md) | OS अपडेट पाइपलाइन, परीक्षण, रोलबैक |
+| [`workflows/development-cycle.yaml`](../.agents/workflows/development-cycle.yaml) | [`workflows/development-cycle.md`](../.users/workflows/development-cycle.md) | विकास चक्र (PLAN→BUILD→VERIFY) |
 
-**मिररिंग नियम:** जब एक पक्ष को संशोधित किया जाता है, तो दूसरे को हमेशा सिंक्रनाइज़ किया जाना चाहिए।
+**मिररिंग नियम:** यदि एक पक्ष संशोधित होता है तो दूसरा पक्ष भी हमेशा सिंक्रोनाइज़ रहना चाहिए।
 
 ## तकनीकी स्टैक
 
-| परत | तकनीक | उद्देश्य |
-|-----|--------|---------|
-| OS | Bazzite (Fedora Atomic) | अपरिवर्तनीय Linux, GPU ड्राइवर |
+| परत | तकनीक | उपयोग |
+|-------|------------|---------|
+| OS | Bazzite (Fedora Atomic) | अपरिवर्तनीय (immutable) Linux, GPU ड्राइवर |
 | OS बिल्ड | BlueBuild | कंटेनर-आधारित OS इमेज |
 | डेस्कटॉप ऐप | Tauri 2 (Rust) | नेटिव शेल |
-| फ्रंटएंड | React 18 + TypeScript + Vite | UI |
+| फ़्रंटएंड | React 18 + TypeScript + Vite | UI |
 | अवतार | Three.js + @pixiv/three-vrm | 3D VRM रेंडरिंग |
-| स्टेट मैनेजमेंट | Zustand | क्लाइंट स्टेट |
-| LLM इंजन | Node.js + मल्टी SDK | एजेंट कोर |
-| प्रोटोकॉल | stdio JSON lines | Shell <-> Agent संचार |
+| स्टेट प्रबंधन | Zustand | क्लाइंट स्टेट |
+| LLM इंजन | Node.js + multi SDK | एजेंट कोर |
+| प्रोटोकॉल | stdio JSON lines | शेल <-> एजेंट संचार |
 | गेटवे | OpenClaw | डेमन + RPC सर्वर |
-| DB | SQLite (rusqlite) | मेमोरी, ऑडिट लॉग |
-| फॉर्मेटर | Biome | लिंटिंग + फॉर्मेटिंग |
-| टेस्ट | Vitest + tauri-driver | यूनिट + E2E |
+| DB | SQLite (rusqlite) | स्मृति, ऑडिट लॉग |
+| फ़ॉर्मेटर | Biome | लिंटिंग + फ़ॉर्मेटिंग |
+| परीक्षण | Vitest + tauri-driver | यूनिट + E2E |
 | पैकेज | pnpm | निर्भरता प्रबंधन |
 
 ## त्वरित प्रारंभ
 
-### पूर्वापेक्षाएँ
+### पूर्व-आवश्यकताएँ
 
 - Linux (Bazzite, Ubuntu, Fedora आदि)
 - Node.js 22+, pnpm 9+
 - Rust stable (Tauri बिल्ड के लिए)
-- सिस्टम पैकेज: `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel` (Fedora)
+- सिस्टम पैकेज (Fedora): `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel`
+- cmake (whisper.cpp बिल्ड के लिए)
 
-### विकास चलाना
+### डेवलपमेंट रन
 
 ```bash
-# निर्भरताएँ स्थापित करें
+# Install dependencies
 cd shell && pnpm install
 cd ../agent && pnpm install
 
-# Tauri ऐप चलाएँ (Gateway + Agent ऑटो-स्पॉन)
+# Run Tauri app (Gateway + Agent auto-spawn)
 cd ../shell && pnpm run tauri dev
 ```
 
-ऐप लॉन्च होने पर, स्वचालित रूप से:
-1. OpenClaw Gateway हेल्थ चेक → चल रहा है तो पुन: उपयोग, अन्यथा ऑटो-स्पॉन
-2. Agent Core स्पॉन (Node.js, stdio कनेक्शन)
-3. ऐप बंद होने पर, केवल ऑटो-स्पॉन किया गया Gateway समाप्त होता है
+ऐप चलने पर स्वतः:
+1. Naia Gateway हेल्थ चेक — चल रहा हो तो पुनः उपयोग, अन्यथा स्वतः spawn
+2. Agent Core spawn (Node.js, stdio कनेक्शन)
+3. ऐप बंद होने पर केवल स्वतः spawn किया गया Gateway बंद होता है
 
-### टेस्ट
+### परीक्षण
 
 ```bash
-cd shell && pnpm test                # Shell यूनिट टेस्ट
-cd agent && pnpm test                # Agent यूनिट टेस्ट
-cd agent && pnpm exec tsc --noEmit   # टाइप चेक
-cargo test --manifest-path shell/src-tauri/Cargo.toml  # Rust टेस्ट
+cd shell && pnpm test                # Shell unit tests
+cd agent && pnpm test                # Agent unit tests
+cd agent && pnpm exec tsc --noEmit   # Type check
+cargo test --manifest-path shell/src-tauri/Cargo.toml  # Rust tests
 
-# E2E (Gateway + API कुंजी आवश्यक)
+# E2E (Gateway + API key required)
 cd shell && pnpm run test:e2e:tauri
 ```
 
@@ -248,116 +299,189 @@ flatpak run io.nextain.naia
 
 ## सुरक्षा मॉडल
 
-Naia **गहन रक्षा (Defense in Depth)** सुरक्षा मॉडल लागू करता है:
+Naia **सुरक्षा की गहराई (Defense in Depth)** सुरक्षा मॉडल अपनाता है:
 
 | परत | सुरक्षा |
-|-----|---------|
+|-------|-----------|
 | OS | Bazzite अपरिवर्तनीय rootfs + SELinux |
 | Gateway | OpenClaw डिवाइस प्रमाणीकरण + टोकन स्कोप |
-| Agent | 4-स्तरीय अनुमतियाँ (T0~T3) + प्रति-उपकरण ब्लॉकिंग |
-| Shell | उपयोगकर्ता अनुमोदन मोडल + उपकरण ON/OFF टॉगल |
-| ऑडिट | SQLite ऑडिट लॉग (सभी उपकरण निष्पादन रिकॉर्ड) |
+| Agent | 4-स्तरीय अनुमति (T0~T3) + टूल-वार अवरोधन |
+| Shell | उपयोगकर्ता स्वीकृति मोडल + टूल ON/OFF टॉगल |
+| Audit | SQLite ऑडिट लॉग (हर टूल निष्पादन का रिकॉर्ड) |
 
-## मेमोरी सिस्टम
+## स्मृति प्रणाली
 
-- **अल्पकालिक मेमोरी (STM):** वर्तमान सत्र वार्तालाप (Zustand + SQLite)
-- **दीर्घकालिक मेमोरी (LTM):** सत्र सारांश (LLM-जनित) + उपयोगकर्ता तथ्यों/प्राथमिकताओं का स्वचालित निष्कर्षण
-- **मेमो कौशल:** `skill_memo` के माध्यम से स्पष्ट मेमो सहेजना/पुनर्प्राप्ति
+Naia **Alpha Memory System** के माध्यम से सत्रों के पार स्मरण रखता है — मानव स्मृति की नकल पर बनी 4-स्टोर आर्किटेक्चर:
+
+| स्टोर | समतुल्य | क्या संग्रहीत होता है |
+|-------|--------|----------------|
+| **Episodes** | हिप्पोकैम्पस | टाइमस्टैम्प वाले वार्तालाप टर्न |
+| **Facts** | नियोकॉर्टेक्स | निकाले गए तथ्य, प्राथमिकताएँ, एंटिटी |
+| **Reflections** | बेसल गैंग्लिया | पिछली विफलताओं से सीखी गई रणनीतियाँ |
+| **Working Memory** | प्रीफ़्रंटल कॉर्टेक्स | वर्तमान सत्र का सक्रिय कॉन्टेक्स्ट |
+
+**यह कैसे काम करता है:**
+1. हर संदेश को महत्व (नवीनता, प्रासंगिकता, भावनात्मक भार) के आधार पर स्कोर किया जाता है
+2. उच्च-महत्व वाली सामग्री **episode** के रूप में संग्रहीत होती है
+3. हर 30 मिनट में (निष्क्रिय रहने पर 5 मिनट बाद) episode को **fact** में समेकित किया जाता है (AI "उस दिन को पीछे मुड़कर देखता है")
+4. हर सत्र की शुरुआत में संबंधित fact और episode कॉन्टेक्स्ट के रूप में इंजेक्ट किए जाते हैं
+
+**आपकी स्मृति आपकी है:**
+- `~/.naia/memory/alpha-memory.json` में लोकल रूप से संग्रहीत
+- किसी भी सर्वर को नहीं भेजा जाता — Nextain को भी नहीं
+- **सेटिंग्स → मेमोरी** में कभी भी fact देखें·हटाएँ
+- बस फ़ाइल कॉपी कर लें और बैकअप पूरा
+
+पूर्ण उपयोगकर्ता गाइड के लिए [docs/memory.md](../docs/memory.md) देखें।
 
 ## वर्तमान स्थिति
 
 | चरण | विवरण | स्थिति |
-|-----|-------|-------|
-| 0 | तैनाती पाइपलाइन (BlueBuild -> ISO) | ✅ पूर्ण |
+|-------|-------------|--------|
+| 0 | वितरण पाइपलाइन (BlueBuild -> ISO) | ✅ पूर्ण |
 | 1 | अवतार एकीकरण (VRM 3D रेंडरिंग) | ✅ पूर्ण |
-| 2 | वार्तालाप (टेक्स्ट/आवाज़ + लिप-सिंक + भावनाएँ) | ✅ पूर्ण |
-| 3 | उपकरण निष्पादन (8 उपकरण + अनुमतियाँ + ऑडिट) | ✅ पूर्ण |
-| 4 | हमेशा-चालू डेमन (Gateway + Skills + मेमोरी + Discord) | ✅ पूर्ण |
-| 5 | Nextain खाता एकीकरण (OAuth + क्रेडिट + LLM प्रॉक्सी) | ✅ पूर्ण |
+| 2 | वार्तालाप (टेक्स्ट/आवाज़ + लिप-सिंक + भावना) | ✅ पूर्ण |
+| 3 | टूल निष्पादन (8 टूल + अनुमति + ऑडिट) | ✅ पूर्ण |
+| 4 | सदा सक्रिय डेमन (Gateway + Skills + Memory + Discord) | ✅ पूर्ण |
+| 5 | Nextain अकाउंट एकीकरण (OAuth + क्रेडिट + LLM प्रॉक्सी) | ✅ पूर्ण |
 | 6 | Tauri ऐप वितरण (Flatpak/DEB/RPM/AppImage) | ✅ पूर्ण |
 | 7 | OS ISO इमेज (USB बूट -> इंस्टॉल -> AI OS) | ✅ पूर्ण |
 
 ## डाउनलोड
 
-| फॉर्मेट | लिंक | विवरण |
-|---------|------|-------|
-| **Naia OS (ISO)** | [डाउनलोड (~7.2 GB)](https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev/naia-os-live-amd64.iso) | पूर्ण AI OS — USB से बूट करें, हार्ड ड्राइव पर इंस्टॉल करें |
-| Flatpak | [GitHub Release](https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64.flatpak) | केवल Naia Shell ऐप (मौजूदा Linux के लिए) |
-| AppImage | [GitHub Release](https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64.AppImage) | पोर्टेबल ऐप (इंस्टॉल की आवश्यकता नहीं) |
-| DEB / RPM | [सभी रिलीज़](https://github.com/nextain/naia-os/releases) | Debian/Ubuntu या Fedora/openSUSE के लिए |
+**[Naia डाउनलोड करें](https://naia.nextain.io/en/download)** — ISO, Flatpak, AppImage, DEB, RPM
 
-विवरण और चेकसम के लिए [naia.nextain.io/download](https://naia.nextain.io/hi/download) देखें।
+| फ़ॉर्मेट | विवरण |
+|--------|-------------|
+| **Naia OS (ISO)** | संपूर्ण AI OS — USB बूट, हार्ड डिस्क इंस्टॉल (~7.2 GB) |
+| Flatpak / AppImage | केवल Naia Shell ऐप (मौजूदा Linux के लिए) |
+| DEB / RPM | Debian/Ubuntu या Fedora/openSUSE के लिए |
 
 ## OS अपडेट
 
-Naia OS [Bazzite](https://github.com/ublue-os/bazzite) (Fedora Atomic) पर बनाया गया है। अपडेट **एटॉमिक और सुरक्षित** हैं:
+Naia OS [Bazzite](https://github.com/ublue-os/bazzite) (Fedora Atomic) पर बना है। अपडेट **परमाणविक और सुरक्षित** हैं:
 
-- **स्वचालित**: साप्ताहिक रिबिल्ड नवीनतम Bazzite सुरक्षा पैच और अपडेट लेता है
-- **एटॉमिक**: नई इमेज वर्तमान के साथ तैनात होती है — यदि विफल होती है, तो पुरानी इमेज अछूती रहती है
-- **रोलबैक**: तुरंत पुनर्प्राप्ति के लिए GRUB मेनू से पिछला संस्करण चुनें
-- **हमारा ओवरले**: केवल पैकेज (fcitx5, फ़ॉन्ट) + Naia Shell (Flatpak, सैंडबॉक्स) + ब्रांडिंग कॉन्फ़िगरेशन जोड़ता है — कर्नेल, बूटलोडर या systemd कोर को कभी नहीं छूता
+- **स्वचालित**: साप्ताहिक रीबिल्ड नवीनतम Bazzite सुरक्षा पैच और अपडेट को समाहित करता है
+- **परमाणविक**: नई इमेज वर्तमान इमेज के साथ-साथ तैनात होती है — विफल होने पर मौजूदा इमेज वैसी ही रहती है
+- **रोलबैक**: GRUB मेनू से पिछला संस्करण चुनकर तुरंत पुनर्स्थापना
+- **हमारा ओवरले**: पैकेज (fcitx5, फ़ॉन्ट) + Naia Shell (Flatpak, सैंडबॉक्स) + ब्रांडिंग सेटिंग्स ही जोड़ता है — कर्नेल·बूटलोडर·systemd कोर को कभी नहीं छूता
 
 ```
-Bazzite बेस अपडेट → साप्ताहिक ऑटो-रिबिल्ड → कंटेनर स्मोक टेस्ट → ISO रिबिल्ड → R2 अपलोड
-                                                                    ↘ GHCR पुश → यूज़र bootc अपडेट
+Bazzite base update → Weekly auto-rebuild → Container smoke test → ISO rebuild → R2 upload
+                                                                 ↘ GHCR push → user bootc update
 ```
+
+अपडेट पाइपलाइन विवरण: [`.agents/context/update-pipeline.yaml`](../.agents/context/update-pipeline.yaml)
 
 ## विकास प्रक्रिया
 
-### फीचर विकास (डिफ़ॉल्ट) — Issue-Driven Development
+### फ़ीचर विकास (मूल) — इश्यू-आधारित विकास
 
 ```
 ISSUE → UNDERSTAND → SCOPE → INVESTIGATE → PLAN → BUILD → REVIEW → E2E → SYNC → COMMIT
 ```
 
-- **3 अनिवार्य गेट** — UNDERSTAND, SCOPE और PLAN पर उपयोगकर्ता की पुष्टि आवश्यक
-- **Plan स्वीकृति के बाद** — AI बिना रुके BUILD से COMMIT तक लगातार चलाता है
-- **सिद्धांत** — पहले upstream कोड पढ़ें (अनुमान लगाना मना)। न्यूनतम संशोधन। काम करने वाले कोड को कभी न तोड़ें।
+- **3 अनिवार्य गेट** — UNDERSTAND, SCOPE, PLAN पर उपयोगकर्ता पुष्टि आवश्यक
+- **योजना स्वीकृति के बाद** — AI BUILD से COMMIT तक बिना रुके निरंतर निष्पादन करता है
+- **सिद्धांत** — अपस्ट्रीम कोड पहले पढ़ें (अनुमान न लगाएँ)। न्यूनतम परिवर्तन। कार्यशील कोड को कभी न तोड़ें।
 - **कमिट** — अंग्रेज़ी, `<type>(<scope>): <description>`
-- **फॉर्मेटर** — Biome (टैब, डबल कोट, सेमीकोलन)
+- **फ़ॉर्मेटर** — Biome (टैब, डबल कोट्स, सेमीकोलन)
 
-## संदर्भ परियोजनाएँ
+## दस्तावेज़ीकरण
 
-| परियोजना | हम क्या लेते हैं |
-|---------|-----------------|
+कॉन्टेक्स्ट दस्तावेज़ triple-mirror संरचना में रखे जाते हैं:
+
+| परत | पथ | भाषा | उपयोग |
+|-------|------|----------|---------|
+| AI कॉन्टेक्स्ट | `.agents/context/` | अंग्रेज़ी (YAML/JSON) | AI एजेंट के लिए टोकन-अनुकूलित |
+| मानव दस्तावेज़ (EN) | `.users/context/` | अंग्रेज़ी (Markdown) | अंग्रेज़ी दस्तावेज़ (मूल) |
+| मानव दस्तावेज़ (KO) | `.users/context/ko/` | कोरियाई (Markdown) | कोरियाई दस्तावेज़ |
+
+प्रमुख दस्तावेज़:
+- [Bazzite रीब्रांडिंग गाइड](../.users/context/bazzite-rebranding.md) — सभी Bazzite/Fedora ब्रांडिंग बदलने की विधि
+- [योगदान गाइड](../.users/context/contributing.md) — योगदान कैसे करें (AI एजेंट और मनुष्य)
+- [दर्शन](../.users/context/philosophy.md) — मूल सिद्धांत (AI संप्रभुता, गोपनीयता, पारदर्शिता)
+
+## संदर्भ प्रोजेक्ट
+
+| प्रोजेक्ट | हमने जो लिया |
+|---------|-------------|
 | [Bazzite](https://github.com/ublue-os/bazzite) | अपरिवर्तनीय Linux OS, GPU, गेमिंग अनुकूलन |
 | [OpenClaw](https://github.com/steipete/openclaw) | Gateway डेमन, चैनल एकीकरण, Skills |
-| [Project AIRI](https://github.com/moeru-ai/airi) | VRM Avatar, प्लगइन प्रोटोकॉल (Neuro-sama से प्रेरित) |
-| [OpenCode](https://github.com/anomalyco/opencode) | क्लाइंट/सर्वर पृथक्करण, प्रदाता अमूर्तन |
-| [Careti](https://github.com/caretive-ai/careti) | LLM कनेक्शन, उपकरण सेट, सब-एजेंट, संदर्भ प्रबंधन |
-| [Neuro-sama](https://vedal.ai/) | AI VTuber प्रेरणा — व्यक्तित्व वाला AI चरित्र, स्ट्रीमिंग, दर्शक इंटरैक्शन |
+| [Project AIRI](https://github.com/moeru-ai/airi) | VRM अवतार, प्लगइन प्रोटोकॉल (Neuro-sama से प्रेरणा भी) |
+| [OpenCode](https://github.com/anomalyco/opencode) | क्लाइंट/सर्वर पृथक्करण, प्रोवाइडर अमूर्तता |
+| [Careti](https://github.com/caretive-ai/careti) | LLM कनेक्शन, टूल सेट, सबएजेंट, कॉन्टेक्स्ट प्रबंधन |
+| [Neuro-sama](https://vedal.ai/) | AI वीट्यूबर प्रेरणा — व्यक्तित्व·स्ट्रीमिंग·दर्शक अंतःक्रिया वाला AI कैरेक्टर |
 
-Naia इन प्रोजेक्ट्स की वजह से मौजूद है। हम उन सभी ओपन सोर्स मेंटेनर्स और समुदायों के गहरे आभारी हैं जिन्होंने वह नींव बनाई जिस पर हम खड़े हैं।
+इन प्रोजेक्ट्स के कारण ही Naia अस्तित्व में है। जिस आधार पर हम खड़े हैं उसे बनाने वाले सभी ओपन सोर्स मेंटेनर्स और कम्युनिटी के प्रति हम गहरा आभार व्यक्त करते हैं।
 
-## AI-नेटिव ओपन सोर्स
 
-2025–2026 में अधिकांश ओपन सोर्स प्रोजेक्ट्स AI योगदान से बचाव कर रहे हैं। **Naia विपरीत दृष्टिकोण अपनाता है**: प्रोजेक्ट को ऐसे डिज़ाइन करना कि AI-सहायित योगदान डिफ़ॉल्ट रूप से उच्च गुणवत्ता वाले हों।
+<a id="ai-native-open-source"></a>
+## AI-Native ओपन सोर्स
 
-> **"AI के खिलाफ़ बचाव नहीं, AI के साथ डिज़ाइन करो।"**
+2025–2026 में अधिकांश ओपन सोर्स प्रोजेक्ट AI योगदान के विरुद्ध *रक्षा* कर रहे हैं। **Naia ठीक विपरीत दृष्टिकोण अपनाता है**: प्रोजेक्ट को इस तरह डिज़ाइन करता है कि AI-सहायित योगदान डिफ़ॉल्ट रूप से उच्च-गुणवत्ता वाला हो।
+
+> **"AI के विरुद्ध रक्षा न करें, AI के साथ डिज़ाइन करें।"**
 
 ### यह कैसे काम करता है
 
 ```
-व्यक्ति (कोई भी भाषा) → AI → Git (अंग्रेजी) → AI → व्यक्ति (कोई भी भाषा)
+Person (any language) → AI → Git (English) → AI → Person (any language)
 ```
 
-- **अपनी भाषा में issue और PR लिखें** — AI सब कुछ अनुवाद करता है
-- **योगदानकर्ता और मेंटेनर दोनों AI का उपयोग करते हैं** — कोडिंग, रिव्यू, ट्राइएज
-- **समृद्ध `.agents/` संदर्भ** AI को प्रोजेक्ट की गहरी समझ देता है — AI की बेहतर समझ का मतलब है बेहतर योगदान गुणवत्ता
-- **10 प्रकार के योगदान** — अनुवाद, कौशल, सुविधाएँ, बग, कोड, दस्तावेज़, परीक्षण, डिज़ाइन, सुरक्षा, संदर्भ
-- **मातृभाषा में कार्य लॉग** — अपनी भाषा में एक निजी रेपो रखें; AI अनुवाद के माध्यम से Git इतिहास की समीक्षा करें
+- **इश्यू और PR अपनी भाषा में लिखें** — AI सब अनुवाद करता है
+- **योगदानकर्ता और मेंटेनर दोनों AI का उपयोग करते हैं** — कोडिंग, रिव्यू, ट्रायएज
+- **समृद्ध `.agents/` कॉन्टेक्स्ट** AI की प्रोजेक्ट समझ को गहरा करता है — AI की समझ जितनी बेहतर, योगदान गुणवत्ता उतनी ऊँची↑
+- **10 योगदान प्रकार** — अनुवाद, स्किल, फ़ीचर, बग, कोड, दस्तावेज़, परीक्षण, डिज़ाइन, सुरक्षा, कॉन्टेक्स्ट
+- **कार्य लॉग मातृभाषा में** — अपनी भाषा में निजी रेपो रखें; Git इतिहास AI अनुवाद के साथ समीक्षित होता है
 
-यह सिर्फ एक नीति नहीं है। यह आर्किटेक्चर है। `.agents/` डायरेक्टरी, ट्रिपल-मिरर डॉक्स, और लाइसेंस सुरक्षा नियम सभी AI सहयोग को संरचनात्मक बनाने के लिए डिज़ाइन किए गए हैं, आकस्मिक नहीं।
+यह केवल एक नीति नहीं है। यह आर्किटेक्चर है। `.agents/` डायरेक्टरी, triple-mirror दस्तावेज़, लाइसेंस सुरक्षा नियम — सभी AI सहयोग को संयोग नहीं बल्कि संरचना बनाने के लिए डिज़ाइन किए गए हैं।
 
-पूरा मॉडल: [`open-source-operations.yaml`](../.agents/context/open-source-operations.yaml) | [रिपोर्ट (EN)](../docs/reports/20260307-ai-native-opensource-operations.md) | [रिपोर्ट (KO)](../docs/reports/20260307-ai-native-opensource-operations-ko.md)
+पूर्ण मॉडल पढ़ें: [`open-source-operations.yaml`](../.agents/context/open-source-operations.yaml) | [Report (EN)](../docs/reports/20260307-ai-native-opensource-operations.md) | [Report (KO)](../docs/reports/20260307-ai-native-opensource-operations-ko.md)
+
+## योगदान
+
+**किसी से अनुमति लेने की आवश्यकता नहीं। इस रेपो को क्लोन करें और AI से पूछें।**
+
+```bash
+git clone https://github.com/nextain/naia-os.git
+cd naia-os
+# Open with any AI coding tool (Claude Code, Cursor, Copilot, etc.)
+# Ask in your language: "What is this project and how can I help?"
+```
+
+`.agents/` डायरेक्टरी में संपूर्ण प्रोजेक्ट कॉन्टेक्स्ट — दृष्टि, आर्किटेक्चर, रोडमैप, योगदान नियम — समाहित है। कोई भी AI कोडिंग टूल इसे पढ़कर **आपकी भाषा में** मार्गदर्शन कर सकता है।
+
+इश्यू, PR, कमेंट **किसी भी भाषा में** लिखें। हम AI से सब कुछ समझ लेते हैं।
+
+विवरण के लिए [CONTRIBUTING.md](../CONTRIBUTING.md) देखें।
+
+## योगदानकर्ता
+
+| योगदानकर्ता | योगदान | दिनांक |
+|-------------|-------------|------|
+| <img src="https://github.com/leonardo-gonc.png" width="20"> [@leonardo-gonc](https://github.com/leonardo-gonc) | नेटिव पुर्तगाली (PT) रिव्यू — कॉन्टेक्स्ट दस्तावेज़ | 2026-03-07 |
+
+क्या आप यहाँ अपना नाम जोड़ना चाहते हैं? [योगदान गाइड](../.users/context/contributing.md) और [TRANSLATING.md](../TRANSLATING.md) देखें।
 
 ## लाइसेंस
 
-- **स्रोत कोड**: [Apache License 2.0](../LICENSE) — Copyright 2026 Nextain
-- **AI संदर्भ** (`.agents/`, `.users/`, `AGENTS.md`): [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+- **सोर्स कोड**: [Apache License 2.0](../LICENSE) — Copyright 2026 Nextain
+- **AI कॉन्टेक्स्ट** (`.agents/`, `.users/`, `AGENTS.md`): [CC-BY-SA 4.0](../CONTEXT-LICENSE)
+
+**दोहरा लाइसेंस क्यों?** सोर्स कोड Apache 2.0 के तहत स्वतंत्र रूप से संशोधित किया जा सकता है। परंतु AI कॉन्टेक्स्ट फ़ाइलें — प्रोजेक्ट दर्शन, योगदान संरचना, AI एजेंट सहयोग सिद्धांत — CC-BY-SA 4.0 के तहत लाइसेंस की गई हैं। अर्थात् यदि आप इस प्रोजेक्ट को फ़ोर्क करते हैं:
+
+- कॉन्टेक्स्ट फ़ाइलों पर वही CC-BY-SA 4.0 लाइसेंस **बनाए रखना होगा**
+- मूल लेखक (Nextain) को **श्रेय देना होगा**
+- कॉन्टेक्स्ट संशोधित कर **सकते हैं**, परंतु परिवर्तन CC-BY-SA 4.0 के अंतर्गत ही रहने चाहिए
+- ओपन सोर्स योगदान मॉडल और AI एजेंट सहयोग संरचना फ़ोर्क भर में संरक्षित रहती है
+
+यह अपस्ट्रीम इकोसिस्टम की रक्षा करता है। वाइब कोडिंग के युग में AI कॉन्टेक्स्ट कोड जितना ही मूल्यवान है — इसे ओपन सोर्स रखना संपूर्ण कम्युनिटी के लिए लाभकारी है।
+
+विवरण के लिए [CONTEXT-LICENSE](../CONTEXT-LICENSE) देखें। इस प्रोजेक्ट पर काम करने वाले AI एजेंट [लाइसेंस सुरक्षा नियमों](../.agents/context/agents-rules.json) से बंधे होते हैं और इसे [लाइसेंस सुरक्षा परीक्षण परिदृश्यों](../.agents/tests/license-protection-test.md) से सत्यापित किया जा सकता है।
 
 ## लिंक
 
 - **आधिकारिक साइट:** [naia.nextain.io](https://naia.nextain.io)
-- **मैनुअल:** [naia.nextain.io/hi/manual](https://naia.nextain.io/hi/manual)
-- **डैशबोर्ड:** [naia.nextain.io/hi/dashboard](https://naia.nextain.io/hi/dashboard)
+- **मैनुअल:** [naia.nextain.io/en/manual](https://naia.nextain.io/en/manual)
+- **डैशबोर्ड:** [naia.nextain.io/en/dashboard](https://naia.nextain.io/en/dashboard)
