@@ -56,6 +56,7 @@ import type { ChatMessage, StreamChunk } from "./providers/types.js";
 import { actionInstall as panelActionInstall } from "./skills/built-in/panel.js";
 import { ALPHA_SYSTEM_PROMPT, BEHAVIORAL_RULES, buildToolStatusPrompt } from "./system-prompt.js";
 import { synthesize as ttsSynthesize } from "./tts/index.js";
+import { startYoutubeServer } from "./youtube-server.js";
 
 const activeStreams = new Map<string, AbortController>();
 
@@ -1385,6 +1386,9 @@ function main(): void {
 	rl.on("close", shutdown);
 	process.on("SIGTERM", shutdown);
 	process.on("SIGINT", shutdown);
+
+	// YouTube BGM server (port 18791) — non-blocking, errors are logged only
+	startYoutubeServer();
 
 	// Signal readiness
 	writeLine({ type: "ready" });

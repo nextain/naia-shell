@@ -29,7 +29,9 @@ description: Browser 패널(#102) 핵심 불변식 검증. setPendingApproval in
 | `shell/src/stores/chat.ts` | setPendingApproval, clearPendingApproval, finishStreaming, newConversation |
 | `shell/src/stores/panel.ts` | activePanel 초기값 ("browser") |
 | `shell/src/panels/browser/index.tsx` | keepAlive: true 설정 |
-| `shell/e2e-tauri/specs/browser-panel.spec.ts` | E2E mock browser_check 명령 |
+| `shell/e2e-tauri/specs/browser-panel.spec.ts` | E2E mock browser_check 명령 (optional) |
+| `shell/e2e-tauri/specs/92-browser-panel-clicks.spec.ts` | 클릭 차단 회귀 E2E 테스트 |
+| `shell/src/styles/global.css` | pointer-events 불변식 (L6417~6426) |
 
 ## Workflow
 
@@ -91,21 +93,53 @@ grep -n "browser_wv_show\|newConversation\|sessionId: null" shell/src/stores/cha
 
 ### Step 5: E2E mock browser_check 명령 검증
 
-**파일:** `shell/e2e-tauri/specs/browser-panel.spec.ts`
-
-> **Note:** 이 파일은 아직 존재하지 않습니다. 브라우저 패널 E2E 테스트가 생성되면 검증하세요.
-> 파일이 없으면 이 단계는 SKIP합니다.
+**파일:** `shell/e2e-tauri/specs/browser-panel.spec.ts` (파일 없으면 SKIP)
 
 **검사:** mock에 `browser_check` 명령이 `true` 를 반환하도록 등록되어 있는지 확인. `browser_check_available` 는 실제 Rust 명령이 아님.
 
 ```bash
-grep -n "browser_check" shell/e2e-tauri/specs/browser-panel.spec.ts
+grep -n "browser_check" shell/e2e-tauri/specs/browser-panel.spec.ts 2>/dev/null || echo "SKIP (file not found)"
 ```
 
 **PASS:** `if (cmd === "browser_check") return true;` 존재, `browser_check_available` 없음.
-**FAIL:** `browser_check_available` 사용 → mock이 `undefined` 반환 → 패널이 "no-chrome" 상태에 고착, B4/B6/B7 테스트 silent false negative.
+**FAIL:** `browser_check_available` 사용 → mock이 `undefined` 반환 → 패널이 "no-chrome" 상태에 고착.
 
 수정: `browser_check_available` → `browser_check` 로 수정.
+
+### Step 6: CSS pointer-events 불변식 검증 (클릭 차단 회귀 방지)
+
+**파일:** `shell/src/styles/global.css`
+
+**배경:** HRESULT(0x8007139F) race → status="error" → `.browser-panel__overlay--error` 렌더 →
+`pointer-events:auto` 였을 때 비활성 browser 슬롯이 모든 패널 클릭 차단.
+모든 슬롯이 `position:absolute;inset:0` 으로 스택 → 비활성 슬롯도 클릭 인터셉트 가능.
+
+**검사 1:** `.browser-panel__overlay--error` 에 unconditional `pointer-events:auto` 없음.
+
+```bash
+grep -n "browser-panel__overlay--error" shell/src/styles/global.css
+```
+
+**PASS:** `.browser-panel__overlay--error` 블록에 `pointer-events: auto` 없거나, 있으면 반드시 `.content-panel__slot--active` 하위에만 있음.
+**FAIL:** `.browser-panel__overlay--error { pointer-events: auto }` 가 단독 규칙으로 존재.
+
+**검사 2:** `.content-panel__slot--active .browser-panel__overlay--error` 규칙 존재.
+
+```bash
+grep -n "content-panel__slot--active .browser-panel__overlay--error" shell/src/styles/global.css
+```
+
+**PASS:** 해당 선택자가 존재하며 `pointer-events: auto` 포함.
+**FAIL:** 규칙 없음 → active 슬롯에서도 에러 오버레이 클릭 불가 (버튼 무반응).
+
+**검사 3:** E2E 회귀 테스트 `92-browser-panel-clicks.spec.ts` 존재.
+
+```bash
+ls shell/e2e-tauri/specs/92-browser-panel-clicks.spec.ts
+```
+
+**PASS:** 파일 존재.
+**FAIL:** 파일 없음 → 회귀 자동 감지 불가.
 
 ## Output Format
 
@@ -119,6 +153,9 @@ grep -n "browser_check" shell/e2e-tauri/specs/browser-panel.spec.ts
 | finishStreaming show | PASS/FAIL | ... |
 | newConversation show | PASS/FAIL | ... |
 | E2E browser_check 명령 | PASS/FAIL | ... |
+| CSS: error overlay no unconditional auto | PASS/FAIL | ... |
+| CSS: active-slot scoped auto rule exists | PASS/FAIL | ... |
+| E2E 92-browser-panel-clicks.spec.ts 존재 | PASS/FAIL | ... |
 ```
 
 ## 예외사항

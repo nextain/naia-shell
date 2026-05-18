@@ -32,6 +32,11 @@ static CURRENT_URL: Mutex<String> = Mutex::new(String::new());
 static CURRENT_TITLE: Mutex<String> = Mutex::new(String::new());
 static EVAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+static BROWSER_CREATE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+fn browser_create_lock() -> &'static tokio::sync::Mutex<()> {
+    BROWSER_CREATE_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Result<String, String>>>>>;
 
 static PENDING_EVALS: OnceLock<PendingMap> = OnceLock::new();
@@ -259,6 +264,8 @@ pub async fn browser_wv_create(
         crate::log_verbose("[browser_wv] E2E mode — skipping child webview creation");
         return Ok(());
     }
+
+    let _lock = browser_create_lock().lock().await;
 
     if let Some(wv) = app.get_webview(BROWSER_LABEL) {
         // Already exists — reposition and unhide.

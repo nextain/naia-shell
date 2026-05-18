@@ -24,6 +24,7 @@ import { createTimeSkill } from "../skills/built-in/time.js";
 import { createTtsSkill } from "../skills/built-in/tts.js";
 import { createVoiceWakeSkill } from "../skills/built-in/voicewake.js";
 import { createWeatherSkill } from "../skills/built-in/weather.js";
+import { createYoutubeBgmSkill } from "../skills/built-in/youtube-bgm.js";
 import { bootstrapDefaultSkills, loadCustomSkills } from "../skills/loader.js";
 import { SkillRegistry } from "../skills/registry.js";
 import { GatewayRequestError } from "./client.js";
@@ -54,6 +55,7 @@ skillRegistry.register(createTimeSkill());
 skillRegistry.register(createTtsSkill());
 skillRegistry.register(createVoiceWakeSkill());
 skillRegistry.register(createWeatherSkill());
+skillRegistry.register(createYoutubeBgmSkill());
 
 // Cron skill — persistent store in ~/.naia/cron-jobs.json
 import { homedir } from "node:os";

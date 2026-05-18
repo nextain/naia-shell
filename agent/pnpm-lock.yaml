@@ -35,7 +35,7 @@ importers:
         version: file:vendor/nextain-agent-types-0.1.0.tgz
       '@nextain/naia-memory':
         specifier: file:./vendor/nextain-naia-memory-0.1.4.tgz
-        version: file:vendor/nextain-naia-memory-0.1.4.tgz(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(typescript@5.9.3)(ws@8.19.0)
+        version: file:vendor/nextain-naia-memory-0.1.4.tgz(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(typescript@5.9.3)(ws@8.19.0)(youtubei.js@17.0.1)
       agent-browser:
         specifier: 0.26.0
         version: 0.26.0
@@ -48,6 +48,9 @@ importers:
       ws:
         specifier: ^8.19.0
         version: 8.19.0
+      youtubei.js:
+        specifier: ^17.0.1
+        version: 17.0.1
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -153,6 +156,9 @@ packages:
       dotenv: ^16.4.5
       openai: ^4.62.1
       zod: ^3.23.8
+
+  '@bufbuild/protobuf@2.12.0':
+    resolution: {integrity: sha512-B/XlCaFIP8LOwzo+bz5uFzATYokcwCKQcghqnlfwSmM5eX/qTkvDBnDPs+gXtX/RyjxJ4DRikECcPJbyALA8FA==}
 
   '@cfworker/json-schema@4.1.1':
     resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
@@ -1743,6 +1749,10 @@ packages:
     resolution: {integrity: sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g==}
     engines: {node: '>=18'}
 
+  meriyah@6.1.4:
+    resolution: {integrity: sha512-Sz8FzjzI0kN13GK/6MVEsVzMZEPvOhnmmI1lU5+/1cGOiK3QUahntrNNtdVeihrO7t9JpoH75iMNXg6R6uWflQ==}
+    engines: {node: '>=18.0.0'}
+
   mime-db@1.52.0:
     resolution: {integrity: sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==}
     engines: {node: '>= 0.6'}
@@ -2418,6 +2428,9 @@ packages:
     resolution: {integrity: sha512-Ux4ygGWsu2c7isFWe8Yu1YluJmqVhxqK2cLXNQA5AcC3QfbGNpM7fu0Y8b/z16pXLnFxZYvWhd3fhBY9DLmC6Q==}
     engines: {node: '>=6'}
 
+  youtubei.js@17.0.1:
+    resolution: {integrity: sha512-1lO4b8UqMDzE0oh2qEGzbBOd4UYRdxn/4PdpRM7BGTHxM6ddsEsKZTu90jp8V9FHVgC2h1UirQyqoqLiKwl+Zg==}
+
   zod-to-json-schema@3.25.1:
     resolution: {integrity: sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA==}
     peerDependencies:
@@ -2516,6 +2529,8 @@ snapshots:
       - bufferutil
       - encoding
       - utf-8-validate
+
+  '@bufbuild/protobuf@2.12.0': {}
 
   '@cfworker/json-schema@4.1.1': {}
 
@@ -2669,7 +2684,7 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/community@1.1.28(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(@langchain/core@1.1.45(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(@qdrant/js-client-rest@1.17.0(typescript@5.9.3))(better-sqlite3@12.10.0)(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(ws@8.19.0)':
+  '@langchain/community@1.1.28(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(@langchain/core@1.1.45(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(@qdrant/js-client-rest@1.17.0(typescript@5.9.3))(better-sqlite3@12.10.0)(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(ws@8.19.0)(youtubei.js@17.0.1)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6)
       '@ibm-cloud/watsonx-ai': 1.7.11(typescript@5.9.3)
@@ -2693,6 +2708,7 @@ snapshots:
       jsonwebtoken: 9.0.3
       playwright: 1.59.1
       ws: 8.19.0
+      youtubei.js: 17.0.1
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@opentelemetry/exporter-trace-otlp-proto'
@@ -2774,9 +2790,9 @@ snapshots:
 
   '@nextain/agent-types@file:vendor/nextain-agent-types-0.1.0.tgz': {}
 
-  '@nextain/naia-memory@file:vendor/nextain-naia-memory-0.1.4.tgz(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(typescript@5.9.3)(ws@8.19.0)':
+  '@nextain/naia-memory@file:vendor/nextain-naia-memory-0.1.4.tgz(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(typescript@5.9.3)(ws@8.19.0)(youtubei.js@17.0.1)':
     dependencies:
-      '@langchain/community': 1.1.28(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(@langchain/core@1.1.45(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(@qdrant/js-client-rest@1.17.0(typescript@5.9.3))(better-sqlite3@12.10.0)(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(ws@8.19.0)
+      '@langchain/community': 1.1.28(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.59.1)(deepmerge@4.3.1)(dotenv@16.4.5)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@ibm-cloud/watsonx-ai@1.7.11(typescript@5.9.3))(@langchain/core@1.1.45(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(@qdrant/js-client-rest@1.17.0(typescript@5.9.3))(better-sqlite3@12.10.0)(google-auth-library@10.5.0)(ibm-cloud-sdk-core@5.4.14)(jsonwebtoken@9.0.3)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.59.1)(ws@8.19.0)(youtubei.js@17.0.1)
       '@langchain/core': 1.1.45(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0)
       '@qdrant/js-client-rest': 1.17.0(typescript@5.9.3)
       better-sqlite3: 12.10.0
@@ -3809,6 +3825,8 @@ snapshots:
 
   merge-descriptors@2.0.0: {}
 
+  meriyah@6.1.4: {}
+
   mime-db@1.52.0: {}
 
   mime-db@1.54.0: {}
@@ -4457,6 +4475,11 @@ snapshots:
   yaml@2.8.4: {}
 
   yn@3.1.1: {}
+
+  youtubei.js@17.0.1:
+    dependencies:
+      '@bufbuild/protobuf': 2.12.0
+      meriyah: 6.1.4
 
   zod-to-json-schema@3.25.1(zod@4.3.6):
     dependencies:
