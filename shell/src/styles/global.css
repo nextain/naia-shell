@@ -6417,7 +6417,7 @@ body.resizing-row {
 }
 
 .browser-panel__overlay--error {
-	pointer-events: auto;
+	pointer-events: none;
 }
 
 /* Text inside overlay (inline — no absolute positioning) */

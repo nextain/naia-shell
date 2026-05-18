@@ -142,6 +142,10 @@ const BROWSER_TOOL_NAMES = [
 	"skill_browser_eval",
 ] as const;
 
+// Module-level guard — persists across React StrictMode mount/unmount cycles.
+let _browserWvCreating = false;
+let _browserWvCreated = false;
+
 export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	const [status, setStatus] = useState<PanelStatus>("launching");
 	const [error, setError] = useState("");
@@ -204,13 +208,14 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 	const syncBrowserBounds = useCallback(() => {
 		if (usePanelStore.getState().activePanel !== "browser") return;
+		if (!_browserWvCreated) return;
 		const el = viewportRef.current;
 		if (!el) return;
 		requestAnimationFrame(() =>
 			requestAnimationFrame(() => {
 				const rect = el.getBoundingClientRect();
 				if (rect.width <= 0 || rect.height <= 0) return;
-				invoke("browser_wv_create", {
+				invoke("browser_wv_resize", {
 					x: rect.left,
 					y: rect.top,
 					width: rect.width,
@@ -222,12 +227,26 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 	// ── Webview init ──────────────────────────────────────────────────────────
 
+	const showBrowserWebview = useCallback(async () => {
+		syncBrowserBounds();
+		await invoke("browser_wv_show");
+	}, [syncBrowserBounds]);
+
 	const initWebview = useCallback(async () => {
+		if (_browserWvCreating) return;
+		if (_browserWvCreated) {
+			setStatus("ready");
+			if (usePanelStore.getState().activePanel === "browser") {
+				showBrowserWebview().catch(() => {});
+			}
+			return;
+		}
+		_browserWvCreating = true;
 		setStatus("launching");
 		setError("");
 		try {
 			const el = viewportRef.current;
-			if (!el) return;
+			if (!el) { _browserWvCreating = false; return; }
 
 			// Wait for layout to complete — keepAlive panels mount while hidden
 			// (opacity:0), so getBoundingClientRect() may return zeros on the first
@@ -238,8 +257,7 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 
 			const rect = el.getBoundingClientRect();
 			if (rect.width <= 0 || rect.height <= 0) {
-				// Panel not visible yet — wait for resize observer to trigger
-				// browser_wv_resize once the panel becomes active.
+				_browserWvCreating = false;
 				setStatus("ready");
 				return;
 			}
@@ -249,6 +267,8 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 				width: rect.width,
 				height: rect.height,
 			});
+			_browserWvCreated = true;
+			_browserWvCreating = false;
 			// Immediately hide if browser is not the active panel on startup.
 			if (usePanelStore.getState().activePanel !== "browser") {
 				invoke("browser_wv_hide").catch(() => {});
@@ -258,13 +278,15 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			await refreshPageInfo();
 			syncBrowserBounds();
 		} catch (e) {
+			_browserWvCreating = false;
+			_browserWvCreated = false;
 			Logger.error("BrowserCenterPanel", "webview create failed", {
 				error: String(e),
 			});
 			setError(String(e));
 			setStatus("error");
 		}
-	}, [refreshPageInfo, syncBrowserBounds]);
+	}, [refreshPageInfo, showBrowserWebview, syncBrowserBounds]);
 
 	// ── URL polling (address bar sync) ───────────────────────────────────────
 
@@ -306,8 +328,9 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	// ── Mount: create webview; unmount: hide it ───────────────────────────────
 
 	useEffect(() => {
-		initWebview();
+		const t = setTimeout(() => initWebview(), 80);
 		return () => {
+			clearTimeout(t);
 			invoke("browser_wv_hide").catch(() => {});
 		};
 	}, [initWebview]);
@@ -352,14 +375,30 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	// bounds and YouTube/other sites render at the right viewport width.
 
 	const activePanel = usePanelStore((s) => s.activePanel);
+	const modalCount = usePanelStore((s) => s.modalCount);
 	useEffect(() => {
 		if (status !== "ready") return;
-		if (activePanel !== "browser") {
+		if (activePanel !== "browser" || modalCount > 0) {
 			invoke("browser_wv_hide").catch(() => {});
 			return;
 		}
-		syncBrowserBounds();
-	}, [activePanel, status, syncBrowserBounds]);
+		if (!_browserWvCreated) {
+			initWebview();
+			return;
+		}
+		showBrowserWebview().catch(() => {});
+	}, [activePanel, initWebview, modalCount, showBrowserWebview, status]);
+
+	// ── Sync bounds on OS-level window resize (Win snap / maximize) ──────────
+
+	useEffect(() => {
+		if (status !== "ready") return;
+		let unlisten: (() => void) | undefined;
+		listen("tauri://window-resized", () => syncBrowserBounds()).then(
+			(fn) => { unlisten = fn; },
+		);
+		return () => { unlisten?.(); };
+	}, [status, syncBrowserBounds]);
 
 	// ── Panel API (BrowserPanelApi) ───────────────────────────────────────────
 
