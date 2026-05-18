@@ -3,7 +3,7 @@ import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { loadConfig } from "../lib/config";
 import type { EmotionName } from "../lib/vrm/expression";
 
-export type BackgroundMediaType = "" | "image" | "video";
+export type BackgroundMediaType = "" | "image" | "video" | "iframe";
 
 interface AvatarState {
 	modelPath: string;

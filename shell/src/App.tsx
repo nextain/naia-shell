@@ -3,7 +3,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdkSetupScreen } from "./components/AdkSetupScreen";
 import { AvatarCanvas, getCameraActions } from "./components/AvatarCanvas";
-import { BgmPlayer } from "./components/BgmPlayer";
 import { ChatPanel } from "./components/ChatPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ModeBar } from "./components/ModeBar";
@@ -43,6 +42,7 @@ import { loadInstalledPanels } from "./lib/panel-loader";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
+import { useChatStore } from "./stores/chat";
 import "./panels/browser/index"; // register browser panel
 import "./panels/workspace/index"; // register workspace panel
 import "./panels/settings/index"; // register settings panel
@@ -168,7 +168,26 @@ export function App() {
 
 	// Readiness gate: splash stays until the active branch has something to show
 	const appReady = useAppReady(showAdkSetup);
-	const onSplashDone = useCallback(() => setShowSplash(false), []);
+	const onSplashDone = useCallback(() => {
+		setShowSplash(false);
+		const h = new Date().getHours();
+		const timeLabel =
+			h >= 6 && h < 12 ? "좋은 아침이에요" :
+			h >= 12 && h < 18 ? "좋은 오후예요" :
+			h >= 18 && h < 22 ? "좋은 저녁이에요" : "안녕하세요";
+		const now = new Date();
+		const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+		const dateStr = now.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+		const greetingText = `${timeLabel}! 지금은 ${dateStr}, ${timeStr}이에요.`;
+		useChatStore.getState().addMessage({
+			role: "assistant",
+			content: `${greetingText} 😊`,
+		});
+		// TTS: ChatPanel의 naia:speak 리스너가 받아 audioQueue 초기화 후 발화
+		setTimeout(() => {
+			window.dispatchEvent(new CustomEvent("naia:speak", { detail: { text: greetingText } }));
+		}, 600);
+	}, []);
 
 	const {
 		activePanel,
@@ -491,7 +510,15 @@ export function App() {
 			style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
 		>
 			{/* ① Background — always the base layer, z-index:0 */}
-			{backgroundVideoUrl &&
+			{backgroundMediaType === "iframe" && backgroundVideoUrl ? (
+				<iframe
+					key={backgroundVideoUrl}
+					className="app-bg-iframe"
+					src={backgroundVideoUrl}
+					title="YouTube BGM"
+					allow="autoplay; encrypted-media"
+				/>
+			) : backgroundVideoUrl &&
 			(backgroundMediaType === "video" ||
 				(!backgroundMediaType && isVideoFile(backgroundVideoUrl))) ? (
 				<video
@@ -552,7 +579,6 @@ export function App() {
 						onTogglePanel={toggleNaia}
 						title={appTitle}
 					/>
-					<BgmPlayer />
 					{/* Quick toggles: AI 참견 + 말하기 활성화 — outside BGM player */}
 					<div className="quick-toggles">
 						<button
@@ -732,7 +758,7 @@ export function App() {
 						<div className="right-area">
 							{!showOnboarding && (
 								<>
-									<ModeBar onAddMode={() => setShowPanelInstall(true)} />
+									<ModeBar onAddMode={() => setShowPanelInstall(true)} bgmNaia={getBridgeForPanel("bgm")} />
 									{showPanelInstall && (
 										<PanelInstallDialog
 											onClose={() => setShowPanelInstall(false)}

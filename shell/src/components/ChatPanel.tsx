@@ -520,6 +520,53 @@ export function ChatPanel() {
 		};
 	}, []);
 
+	// naia:speak — TTS without LLM (e.g., startup greeting)
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const { text } = (e as CustomEvent<{ text: string }>).detail;
+			if (!text) return;
+			const config = loadConfig();
+			if (!config?.ttsEnabled) return;
+			if (!audioQueueRef.current) {
+				audioQueueRef.current = new AudioQueue({
+					outputDeviceId: config.ttsOutputDeviceId || undefined,
+					onPlaybackStart: () => {
+						useAvatarStore.getState().setSpeaking(true);
+						ttsPlayingRef.current = true;
+						setTtsPlaying(true);
+					},
+					onPlaybackEnd: () => {
+						useAvatarStore.getState().setSpeaking(false);
+						ttsPlayingRef.current = false;
+						setTtsPlaying(false);
+					},
+				});
+			}
+			if (!pipelineVoiceConfigRef.current) {
+				pipelineVoiceConfigRef.current = {
+					voice:
+						config.ttsProvider === "nextain"
+							? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
+							: config.ttsVoice,
+					ttsProvider: config.ttsProvider || "edge",
+					ttsApiKey:
+						config.ttsProvider === "google"
+							? config.googleApiKey || config.apiKey
+							: config.ttsProvider === "openai"
+								? config.openaiTtsApiKey
+								: config.ttsProvider === "elevenlabs"
+									? config.elevenlabsApiKey
+									: undefined,
+				};
+			}
+			sendSentenceToTts(text);
+		};
+		window.addEventListener("naia:speak", handler);
+		return () => window.removeEventListener("naia:speak", handler);
+	// sendSentenceToTts is a hoisted function — stable via refs, safe with [] deps
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
 	useEffect(() => {
 		return onAiInterferenceEvent((event) => {
 			const message = formatAiInterferencePrompt(event);

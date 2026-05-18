@@ -5010,6 +5010,12 @@ body.resizing-row {
 	transform: scale(1.1);
 }
 
+.bgm-yt-thumb {
+	border-radius: 2px;
+	object-fit: cover;
+	flex-shrink: 0;
+}
+
 .bgm-track-name {
 	flex: 1;
 	min-width: 0;

@@ -496,7 +496,9 @@ export function AvatarCanvas() {
 				// Use modelCenter (bounding-box chest level, computed by VRM loader).
 				// Always save so reset() can restore it; only adjust camera on first load.
 				lastModelCenter = result.modelCenter.clone();
-				if (!savedCam) {
+				// Always align orbit pivot to model center, preserving camera angle/distance.
+				// Fixes rotation axis on first load and after model switches (even with savedCam).
+				{
 					const diff = result.modelCenter.clone().sub(controls.target);
 					camera.position.add(diff);
 					controls.target.copy(result.modelCenter);
