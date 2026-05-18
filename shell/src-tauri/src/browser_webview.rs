@@ -268,14 +268,12 @@ pub async fn browser_wv_create(
     let _lock = browser_create_lock().lock().await;
 
     if let Some(wv) = app.get_webview(BROWSER_LABEL) {
-        // Already exists — reposition and unhide.
-        // These calls also use run_on_main_thread internally; fine from a
-        // tokio worker thread (just blocks the worker briefly, not the main loop).
+        // Already exists — reposition only.
+        // Visibility is managed by browser_wv_show / browser_wv_hide from JS.
         wv.set_position(LogicalPosition::new(x, y))
             .map_err(|e| format!("set_position: {e}"))?;
         wv.set_size(LogicalSize::new(width, height))
             .map_err(|e| format!("set_size: {e}"))?;
-        wv.show().map_err(|e| format!("show: {e}"))?;
         return Ok(());
     }
 
