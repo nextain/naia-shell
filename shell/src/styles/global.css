@@ -4948,18 +4948,9 @@ body.resizing-row {
 
 /* ── BGM Player Widget ───────────────────────────────────────────────────── */
 .bgm-player {
-	position: fixed;
-	top: 38px;
-	left: 8px;
-	z-index: 4;
-	width: min(304px, calc(100vw - 16px), calc(var(--naia-width, 320px) - 16px));
-	padding: 5px 10px;
-	margin: 0;
-	background: rgba(8, 14, 28, 0.55);
-	border-radius: 10px;
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
 	pointer-events: auto;
 }
 

@@ -49,7 +49,7 @@ const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 const MAX_DELTA = 0.05;
 const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
-	position: { x: 0, y: 1.2, z: -2.0 },
+	position: { x: 1.3, y: 1.2, z: -2.0 },
 	target: { x: 0, y: 1.0, z: 0 },
 };
 
