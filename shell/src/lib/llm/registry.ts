@@ -208,16 +208,13 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gemini-2.5-pro",
+	defaultModel: "gemini-3-flash-preview",
 	models: [
-		// Gemini 3.x models are NOT available via the Naia Gateway route (#248).
-		// The gateway's GCP project does not have Vertex AI Publisher Model
-		// access for gemini-3.x — every streaming call returns 0-byte SSE
-		// (Vertex returns 404 NOT_FOUND, which the gateway swallows on
-		// stream). When/if the gateway project gets gemini-3.x access, restore
-		// these entries. Users who need gemini-3.x today should use the
-		// "Google Gemini" provider (direct GEMINI_API_KEY) instead, which
-		// reaches Google AI Studio without the Vertex routing.
+		// Gemini 3.x restored: any-llm gateway now routes gemini-3.x to us-central1
+		// where Vertex AI Publisher Model access is available. (Previously blocked #248)
+		// -- Gemini 3 --------------------------------------------------------------------
+		{ id: "gemini-3-pro-preview", label: "Gemini 3 Pro", capabilities: ["llm"], pricing: [2.0, 12.0] },
+		{ id: "gemini-3-flash-preview", label: "Gemini 3 Flash", capabilities: ["llm"], pricing: [0.5, 3.0] },
 		// -- Gemini 2.5 --------------------------------------------------------------------
 		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.25, 10.0] },
 		{

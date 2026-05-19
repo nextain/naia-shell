@@ -407,12 +407,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						<div className="onboarding-welcome">
 							<div className="onboarding-welcome__badge">⚠ Alpha Test</div>
 							<p className="onboarding-welcome__text">
-								현재 버전은 <strong>알파 테스트</strong> 단계로, 많은 기능이 아직 안정화되어 있지 않습니다.
-								예기치 않은 오류가 발생할 수 있으며, 지속적으로 개선되고 있습니다.
+								{t("onboard.welcome.alphaDesc")}
 							</p>
 							<p className="onboarding-welcome__text">
-								Naia는 <strong>오픈소스</strong> 프로젝트입니다 (Apache 2.0).
-								버그 리포트, 번역, 기능 제안, 코드 기여를 통해 함께 만들어 갈 수 있습니다.
+								{t("onboard.welcome.opensourceDesc")}
 							</p>
 							<button
 								type="button"
@@ -423,7 +421,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									)
 								}
 							>
-								GitHub에서 참여하기 →
+								{t("onboard.welcome.githubBtn")}
 							</button>
 						</div>
 					</>
