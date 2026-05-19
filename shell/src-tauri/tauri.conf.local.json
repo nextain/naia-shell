@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["nsis"],
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["Korean", "English"],
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "build": {
+    "beforeBuildCommand": "cd ../agent && pnpm install --frozen-lockfile && pnpm run build && cd ../shell && pnpm build && python3 ../scripts/prune-nsis.py"
+  }
+}
