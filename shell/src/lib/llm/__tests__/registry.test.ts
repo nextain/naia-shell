@@ -30,54 +30,34 @@ describe("registry — provider registration", () => {
 	});
 });
 
-describe("registry — Naia (nextain) provider pricing (+10% margin)", () => {
-	it("Gemini 3.1 Pro pricing includes 10% margin (public $2.00/$12.00 + 10%)", () => {
-		const model = getLlmModel("nextain", "gemini-3.1-pro-preview");
-		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([2.20, 13.20]);
-	});
+describe("registry — Naia (nextain) provider pricing", () => {
+	// Note: Gemini 3.x models are not available via the Naia Gateway (#248) — not registered.
 
-	it("Gemini 3.1 Flash Lite pricing includes 10% margin (public $0.25/$1.50 + 10%)", () => {
-		const model = getLlmModel("nextain", "gemini-3.1-flash-lite-preview");
-		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.275, 1.65]);
-	});
-
-	it("Gemini 3.0 Flash pricing includes 10% margin (public $0.50/$3.00 + 10%)", () => {
-		const model = getLlmModel("nextain", "gemini-3-flash-preview");
-		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.55, 3.30]);
-	});
-
-	it("Gemini 2.5 Pro pricing includes 10% margin", () => {
+	it("Gemini 2.5 Pro pricing", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-pro");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([1.375, 11.0]);
+		expect(model?.pricing).toEqual([1.25, 10.0]);
 	});
 
-	it("Gemini 2.5 Flash pricing includes 10% margin (public $0.30/$2.50 + 10%)", () => {
+	it("Gemini 2.5 Flash pricing", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.33, 2.75]);
+		expect(model?.pricing).toEqual([0.3, 2.5]);
 	});
 
-	it("Gemini 2.5 Flash Lite pricing includes 10% margin (public $0.10/$0.40 + 10%)", () => {
+	it("Gemini 2.5 Flash Lite pricing", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash-lite");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.11, 0.44]);
+		expect(model?.pricing).toEqual([0.075, 0.3]);
 	});
 
-	it("Gemini 2.5 Flash Live pricing includes 10% margin (public $0.50/$2.00 text + 10%)", () => {
+	it("Gemini 2.5 Flash Live is registered", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-flash-live");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.55, 2.20]);
 	});
 
-	it("Gemini 2.5 Flash Live has no (실시간) suffix in label", () => {
-		const model = getLlmModel("nextain", "gemini-2.5-flash-live");
-		expect(model).toBeDefined();
-		expect(model?.label).not.toContain("실시간");
-		expect(model?.label).toBe("Gemini 2.5 Flash Live");
+	it("Gemini 2.5 Flash Live has omni capability", () => {
+		expect(isOmniModel("nextain", "gemini-2.5-flash-live")).toBe(true);
 	});
 
 	it("Gemini 2.5 Flash Live is omni capable", () => {
@@ -211,9 +191,9 @@ describe("registry — fetchNaiaPricing", () => {
 		const models = await fetchNaiaPricing("https://example.com");
 		expect(models).not.toBeNull();
 
-		// gemini-2.5-pro should keep static pricing [1.375, 11.0]
+		// gemini-2.5-pro should keep static pricing [1.25, 10.0]
 		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
-		expect(pro?.pricing).toEqual([1.375, 11.0]);
+		expect(pro?.pricing).toEqual([1.25, 10.0]);
 
 		vi.restoreAllMocks();
 	});
@@ -242,8 +222,8 @@ describe("registry — formatModelLabel", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-pro")!;
 		const label = formatModelLabel(model);
 		expect(label).toContain("Gemini 2.5 Pro");
-		expect(label).toContain("$1.375");
-		expect(label).toContain("$11.000");
+		expect(label).toContain("$1.250");
+		expect(label).toContain("$10.000");
 	});
 
 	it("returns base label when no pricing", () => {

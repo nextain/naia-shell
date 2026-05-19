@@ -111,6 +111,57 @@ export async function fetchVllmModels(
 	return { models: models ?? [], connected: models !== null };
 }
 
+/** Pricing entry shape returned by GET /v1/pricing on the Naia gateway. */
+interface GatewayPricingEntry {
+	model_key: string;
+	input_price_per_million: number;
+	output_price_per_million: number;
+	cached_price_per_million: number | null;
+}
+
+/**
+ * Fetch live pricing from the Naia gateway and return updated Naia model list.
+ *
+ * The Naia gateway DB is the single source of truth for pricing.
+ * This function pulls `GET /v1/pricing`, filters `vertexai:*` entries, and
+ * overlays the live prices onto the static Naia provider model list.
+ *
+ * Returns null if the gateway is unreachable (caller should keep static pricing).
+ */
+export async function fetchNaiaPricing(
+	gatewayHttpUrl: string,
+): Promise<LlmModelMeta[] | null> {
+	try {
+		const resp = await fetch(`${gatewayHttpUrl}/v1/pricing`, {
+			signal: AbortSignal.timeout(5000),
+		});
+		if (!resp.ok) return null;
+		const entries: GatewayPricingEntry[] = await resp.json();
+
+		const provider = providers.get("nextain");
+		if (!provider) return null;
+
+		// Build modelId → [input, output] from gateway DB
+		const pricingMap = new Map<string, [number, number]>();
+		for (const entry of entries) {
+			if (!entry.model_key.startsWith("vertexai:")) continue;
+			const modelId = entry.model_key.replace("vertexai:", "");
+			pricingMap.set(modelId, [
+				entry.input_price_per_million,
+				entry.output_price_per_million,
+			]);
+		}
+
+		// Return a new model list with live pricing applied
+		return provider.models.map((m) => {
+			const live = pricingMap.get(m.id);
+			return live ? { ...m, pricing: live as [number, number] } : { ...m };
+		});
+	} catch {
+		return null;
+	}
+}
+
 /** Format model label with pricing (e.g. "Gemini 3 Pro (Pricing: $2.00 / $12.00)") and capability icons. */
 export function formatModelLabel(model: LlmModelMeta): string {
 	const isAsr = model.capabilities.includes("asr");
