@@ -535,8 +535,8 @@ function DeviceSelect({
 
 export function SettingsTab() {
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
-		"settings" | "memory"
-	>("settings");
+		"general" | "ai" | "memory"
+	>("general");
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
 		"idle" | "checking" | "healthy" | "unhealthy"
 	>("idle");
@@ -2159,10 +2159,17 @@ export function SettingsTab() {
 			<div className="settings-tab-bar">
 				<button
 					type="button"
-					className={`settings-tab-btn${activeSettingsTab === "settings" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("settings")}
+					className={`settings-tab-btn${activeSettingsTab === "general" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("general")}
 				>
-					{t("settings.tabSettings")}
+					{t("settings.tabGeneral")}
+				</button>
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "ai" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("ai")}
+				>
+					{t("settings.tabAI")}
 				</button>
 				<button
 					type="button"
@@ -2172,7 +2179,7 @@ export function SettingsTab() {
 					{t("settings.tabMemory")}
 				</button>
 			</div>
-			{activeSettingsTab === "settings" && <>
+			{activeSettingsTab === "general" && <>
 			<div className="settings-field">
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 					<label htmlFor="locale-select" style={{ margin: 0 }}>
@@ -2470,6 +2477,9 @@ export function SettingsTab() {
 				/>
 				<div className="settings-hint">{t("settings.personaHint")}</div>
 			</div>
+			</>
+			}
+			{activeSettingsTab === "ai" && <>
 
 			{provider !== "nextain" && (
 				<>
@@ -4196,7 +4206,7 @@ export function SettingsTab() {
 				</div>
 			)}
 			</>}
-			{activeSettingsTab === "settings" && <>
+			{activeSettingsTab === "general" && <>
 			{/* Log viewer button (#297) */}
 			<div className="settings-field" data-testid="log-viewer-section">
 				<label>{t("settings.logViewer")}</label>
@@ -4484,11 +4494,20 @@ function AboutSection() {
 					>
 						GitHub — 소스코드 &amp; 이슈
 					</a>
-					{/* Discord community link — hidden until Discord integration is verified
-					<a href="https://discord.gg/nextain" className="settings-about__link">
+					<a
+						href="https://discord.gg/nextain"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="settings-about__link"
+						onClick={(e) => {
+							e.preventDefault();
+							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+								openUrl("https://discord.gg/nextain"),
+							);
+						}}
+					>
 						Discord 커뮤니티
 					</a>
-					*/}
 				</div>
 			</div>
 		</div>

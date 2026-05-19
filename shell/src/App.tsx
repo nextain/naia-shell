@@ -749,7 +749,7 @@ export function App() {
 						}
 					>
 						<div className="right-area">
-							{!showOnboarding && (
+							{!showSplash && !showOnboarding && (
 								<>
 									<ModeBar onAddMode={() => setShowPanelInstall(true)} />
 									{showPanelInstall && (
