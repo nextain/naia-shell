@@ -2156,6 +2156,40 @@ body.resizing-row {
 	overflow-y: auto;
 }
 
+/* ── Settings tab bar ──────────────────────────────────────────────────────── */
+.settings-tab-bar {
+	display: flex;
+	flex-direction: row;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	padding: 0 12px;
+	gap: 0;
+	flex-shrink: 0;
+}
+
+.settings-tab-btn {
+	background: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	padding: 10px 16px;
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.5);
+	cursor: pointer;
+	transition: color 0.15s, border-color 0.15s, background 0.15s;
+	border-radius: 4px 4px 0 0;
+	margin-bottom: -1px;
+	white-space: nowrap;
+}
+
+.settings-tab-btn:hover {
+	color: rgba(255, 255, 255, 0.85);
+	background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-tab-btn--active {
+	color: rgba(255, 255, 255, 0.95);
+	border-bottom-color: rgba(120, 170, 255, 0.85);
+}
+
 .settings-tab {
 	flex: 1;
 	display: grid;
@@ -5403,12 +5437,13 @@ body.resizing-row {
 	align-items: center;
 	gap: 2px;
 	z-index: 10000;
-	transition: color 0.15s, background 0.15s;
+	transition: top 0.25s cubic-bezier(0.34, 1.2, 0.64, 1), color 0.15s, background 0.15s;
 	user-select: none;
 	touch-action: none;
 }
 .bgm-yt-drawer-handle:hover {
-	color: rgba(255, 255, 255, 0.75);
+	color: rgba(255, 255, 255, 0.85);
+	background: rgba(30, 45, 80, 0.88);
 }
 .bgm-yt-drawer-handle__bar {
 	width: 20px;

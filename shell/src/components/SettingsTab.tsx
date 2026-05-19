@@ -535,7 +535,7 @@ function DeviceSelect({
 
 export function SettingsTab() {
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
-		"general" | "ai" | "memory"
+		"general" | "ai" | "memory" | "info"
 	>("general");
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
 		"idle" | "checking" | "healthy" | "unhealthy"
@@ -2178,6 +2178,13 @@ export function SettingsTab() {
 				>
 					{t("settings.tabMemory")}
 				</button>
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "info" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("info")}
+				>
+					{t("settings.tabInfo")}
+				</button>
 			</div>
 			{activeSettingsTab === "general" && <>
 			<div className="settings-field">
@@ -3600,241 +3607,6 @@ export function SettingsTab() {
 					스피커 테스트
 				</button>
 			</div>
-
-			<div className="settings-section-divider">
-				<span>{t("settings.toolsSection")}</span>
-			</div>
-
-			<div className="settings-field settings-toggle-row">
-				<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
-				<input
-					id="tools-toggle"
-					type="checkbox"
-					checked={enableTools}
-					onChange={(e) => setEnableTools(e.target.checked)}
-				/>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="gateway-url-input">{t("settings.gatewayUrl")}</label>
-				<input
-					id="gateway-url-input"
-					type="text"
-					value={gatewayUrl}
-					onChange={(e) => setGatewayUrl(e.target.value)}
-					placeholder="ws://localhost:18789"
-				/>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="gateway-token-input">
-					{t("settings.gatewayToken")}
-				</label>
-				<input
-					id="gateway-token-input"
-					type="password"
-					value={gatewayToken}
-					onChange={(e) => setGatewayToken(e.target.value)}
-				/>
-			</div>
-
-			{/* Agent health check (#296) */}
-			<div className="settings-field" data-testid="agent-health-section">
-				<label>{t("settings.agentHealth")}</label>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span
-						className={`agent-health-status agent-health-status--${agentHealthStatus}`}
-						data-testid="agent-health-status"
-					>
-						{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
-						{agentHealthStatus === "checking" && t("settings.agentHealthChecking")}
-						{agentHealthStatus === "healthy" && t("settings.agentHealthHealthy")}
-						{agentHealthStatus === "unhealthy" && t("settings.agentHealthUnhealthy")}
-					</span>
-					{agentHealthCheckedAt && (
-						<span className="agent-health-time" style={{ fontSize: "0.75em", color: "var(--text-muted, #888)" }}>
-							{agentHealthCheckedAt.toLocaleTimeString()}
-						</span>
-					)}
-					<button
-						type="button"
-						className="voice-preview-btn"
-						title="agent-health-check-btn"
-						data-testid="agent-health-check-btn"
-						onClick={async () => {
-							setAgentHealthStatus("checking");
-							try {
-								const healthy = await invoke<boolean>("gateway_health");
-								setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
-							} catch {
-								setAgentHealthStatus("unhealthy");
-							}
-							setAgentHealthCheckedAt(new Date());
-						}}
-					>
-						{t("settings.agentHealthCheck")}
-					</button>
-				</div>
-			</div>
-
-			{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
-
-			{allowedToolsCount > 0 && (
-				<div className="settings-field">
-					<label>
-						{t("settings.allowedTools")} ({allowedToolsCount})
-					</label>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={() => {
-							clearAllowedTools();
-							setAllowedToolsCount(0);
-						}}
-					>
-						{t("settings.clearAllowedTools")}
-					</button>
-				</div>
-			)}
-
-			{enableTools && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.channelsSection")}</span>
-					</div>
-
-					{/* Discord channel card — unverified, hidden until stabilized
-					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
-						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
-						<div className="channel-card-header">
-							<span className="channel-name">Discord</span>
-							<span
-								className={`channel-status-badge ${discordBotConnected ? "connected" : "disconnected"}`}
-								data-testid="channel-status"
-							>
-								{discordBotConnected
-									? t("channels.connected")
-									: discordBotLoading
-										? "..."
-										: t("channels.disconnected")}
-							</span>
-						</div>
-						<div className="settings-field" style={{ marginBottom: 6 }}>
-							<div style={{ display: "flex", gap: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={handleDiscordBotConnect}
-									disabled={discordBotLoading}
-								>
-									{discordBotLoading
-										? t("settings.discordBotConnecting")
-										: discordBotConnected
-											? t("settings.discordBotReconnect")
-											: t("settings.discordBotConnect")}
-								</button>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => fetchDiscordBotStatus()}
-									disabled={discordBotLoading}
-								>
-									{t("settings.discordCheckStatus")}
-								</button>
-							</div>
-						</div>
-						<div className="settings-field">
-							<label htmlFor="discord-user-id">Discord User ID</label>
-							<input
-								id="discord-user-id"
-								type="text"
-								value={discordDefaultUserId}
-								onChange={(e) => setDiscordDefaultUserId(e.target.value)}
-								placeholder={t("settings.discordUserIdPlaceholder")}
-							/>
-						</div>
-						<div className="settings-field">
-							<label htmlFor="discord-dm-channel-id">
-								Discord DM Channel ID
-							</label>
-							<input
-								id="discord-dm-channel-id"
-								type="text"
-								value={discordDmChannelId}
-								onChange={(e) => setDiscordDmChannelId(e.target.value)}
-								placeholder={t("settings.discordDmChannelIdPlaceholder")}
-							/>
-						</div>
-					</div>
-				*/}
-
-					<div className="settings-section-divider">
-						<span>{t("settings.voiceConversation")}</span>
-					</div>
-					<div className="settings-field">
-						<span className="settings-hint">{t("settings.voiceWakeHint")}</span>
-					</div>
-					{voiceWakeLoading ? (
-						<div className="settings-field">
-							<span className="settings-hint">
-								{t("settings.voiceWakeLoading")}
-							</span>
-						</div>
-					) : (
-						<>
-							<div className="settings-field">
-								<label>{t("settings.voiceWakeTriggers")}</label>
-								<div
-									className="voice-wake-triggers"
-									data-testid="voice-wake-triggers"
-								>
-									{voiceWakeTriggers.map((trigger) => (
-										<span key={trigger} className="voice-wake-tag">
-											{trigger}
-											<button
-												type="button"
-												className="voice-wake-tag-remove"
-												onClick={() => handleVoiceWakeRemove(trigger)}
-											>
-												×
-											</button>
-										</span>
-									))}
-								</div>
-							</div>
-							<div className="settings-field voice-wake-add-row">
-								<input
-									type="text"
-									data-testid="voice-wake-input"
-									value={voiceWakeInput}
-									onChange={(e) => setVoiceWakeInput(e.target.value)}
-									placeholder={t("settings.voiceWakePlaceholder")}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") handleVoiceWakeAdd();
-									}}
-								/>
-								<button type="button" onClick={handleVoiceWakeAdd}>
-									{t("settings.voiceWakeAdd")}
-								</button>
-							</div>
-							<div className="settings-field">
-								<button
-									type="button"
-									className="voice-preview-btn"
-									data-testid="voice-wake-save"
-									onClick={handleVoiceWakeSave}
-								>
-									{voiceWakeSaved
-										? t("settings.voiceWakeSaved")
-										: t("settings.voiceWakeSave")}
-								</button>
-							</div>
-						</>
-					)}
-				</>
-			)}
-
-			{enableTools && <DevicePairingSection />}
 			</>}
 			{activeSettingsTab === "memory" && <>
 			<div className="settings-section-divider">
@@ -4207,6 +3979,242 @@ export function SettingsTab() {
 			)}
 			</>}
 			{activeSettingsTab === "general" && <>
+						<div className="settings-section-divider">
+				<span>{t("settings.toolsSection")}</span>
+			</div>
+
+			<div className="settings-field settings-toggle-row">
+				<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
+				<input
+					id="tools-toggle"
+					type="checkbox"
+					checked={enableTools}
+					onChange={(e) => setEnableTools(e.target.checked)}
+				/>
+			</div>
+
+			<div className="settings-field">
+				<label htmlFor="gateway-url-input">{t("settings.gatewayUrl")}</label>
+				<input
+					id="gateway-url-input"
+					type="text"
+					value={gatewayUrl}
+					onChange={(e) => setGatewayUrl(e.target.value)}
+					placeholder="ws://localhost:18789"
+				/>
+			</div>
+
+			<div className="settings-field">
+				<label htmlFor="gateway-token-input">
+					{t("settings.gatewayToken")}
+				</label>
+				<input
+					id="gateway-token-input"
+					type="password"
+					value={gatewayToken}
+					onChange={(e) => setGatewayToken(e.target.value)}
+				/>
+			</div>
+
+			{/* Agent health check (#296) */}
+			<div className="settings-field" data-testid="agent-health-section">
+				<label>{t("settings.agentHealth")}</label>
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<span
+						className={`agent-health-status agent-health-status--${agentHealthStatus}`}
+						data-testid="agent-health-status"
+					>
+						{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
+						{agentHealthStatus === "checking" && t("settings.agentHealthChecking")}
+						{agentHealthStatus === "healthy" && t("settings.agentHealthHealthy")}
+						{agentHealthStatus === "unhealthy" && t("settings.agentHealthUnhealthy")}
+					</span>
+					{agentHealthCheckedAt && (
+						<span className="agent-health-time" style={{ fontSize: "0.75em", color: "var(--text-muted, #888)" }}>
+							{agentHealthCheckedAt.toLocaleTimeString()}
+						</span>
+					)}
+					<button
+						type="button"
+						className="voice-preview-btn"
+						title="agent-health-check-btn"
+						data-testid="agent-health-check-btn"
+						onClick={async () => {
+							setAgentHealthStatus("checking");
+							try {
+								const healthy = await invoke<boolean>("gateway_health");
+								setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
+							} catch {
+								setAgentHealthStatus("unhealthy");
+							}
+							setAgentHealthCheckedAt(new Date());
+						}}
+					>
+						{t("settings.agentHealthCheck")}
+					</button>
+				</div>
+			</div>
+
+			{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
+
+			{allowedToolsCount > 0 && (
+				<div className="settings-field">
+					<label>
+						{t("settings.allowedTools")} ({allowedToolsCount})
+					</label>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={() => {
+							clearAllowedTools();
+							setAllowedToolsCount(0);
+						}}
+					>
+						{t("settings.clearAllowedTools")}
+					</button>
+				</div>
+			)}
+
+			{enableTools && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.channelsSection")}</span>
+					</div>
+
+					{/* Discord channel card — unverified, hidden until stabilized
+					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
+						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
+						<div className="channel-card-header">
+							<span className="channel-name">Discord</span>
+							<span
+								className={`channel-status-badge ${discordBotConnected ? "connected" : "disconnected"}`}
+								data-testid="channel-status"
+							>
+								{discordBotConnected
+									? t("channels.connected")
+									: discordBotLoading
+										? "..."
+										: t("channels.disconnected")}
+							</span>
+						</div>
+						<div className="settings-field" style={{ marginBottom: 6 }}>
+							<div style={{ display: "flex", gap: 8 }}>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={handleDiscordBotConnect}
+									disabled={discordBotLoading}
+								>
+									{discordBotLoading
+										? t("settings.discordBotConnecting")
+										: discordBotConnected
+											? t("settings.discordBotReconnect")
+											: t("settings.discordBotConnect")}
+								</button>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={() => fetchDiscordBotStatus()}
+									disabled={discordBotLoading}
+								>
+									{t("settings.discordCheckStatus")}
+								</button>
+							</div>
+						</div>
+						<div className="settings-field">
+							<label htmlFor="discord-user-id">Discord User ID</label>
+							<input
+								id="discord-user-id"
+								type="text"
+								value={discordDefaultUserId}
+								onChange={(e) => setDiscordDefaultUserId(e.target.value)}
+								placeholder={t("settings.discordUserIdPlaceholder")}
+							/>
+						</div>
+						<div className="settings-field">
+							<label htmlFor="discord-dm-channel-id">
+								Discord DM Channel ID
+							</label>
+							<input
+								id="discord-dm-channel-id"
+								type="text"
+								value={discordDmChannelId}
+								onChange={(e) => setDiscordDmChannelId(e.target.value)}
+								placeholder={t("settings.discordDmChannelIdPlaceholder")}
+							/>
+						</div>
+					</div>
+				*/}
+
+					<div className="settings-section-divider">
+						<span>{t("settings.voiceConversation")}</span>
+					</div>
+					<div className="settings-field">
+						<span className="settings-hint">{t("settings.voiceWakeHint")}</span>
+					</div>
+					{voiceWakeLoading ? (
+						<div className="settings-field">
+							<span className="settings-hint">
+								{t("settings.voiceWakeLoading")}
+							</span>
+						</div>
+					) : (
+						<>
+							<div className="settings-field">
+								<label>{t("settings.voiceWakeTriggers")}</label>
+								<div
+									className="voice-wake-triggers"
+									data-testid="voice-wake-triggers"
+								>
+									{voiceWakeTriggers.map((trigger) => (
+										<span key={trigger} className="voice-wake-tag">
+											{trigger}
+											<button
+												type="button"
+												className="voice-wake-tag-remove"
+												onClick={() => handleVoiceWakeRemove(trigger)}
+											>
+												×
+											</button>
+										</span>
+									))}
+								</div>
+							</div>
+							<div className="settings-field voice-wake-add-row">
+								<input
+									type="text"
+									data-testid="voice-wake-input"
+									value={voiceWakeInput}
+									onChange={(e) => setVoiceWakeInput(e.target.value)}
+									placeholder={t("settings.voiceWakePlaceholder")}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") handleVoiceWakeAdd();
+									}}
+								/>
+								<button type="button" onClick={handleVoiceWakeAdd}>
+									{t("settings.voiceWakeAdd")}
+								</button>
+							</div>
+							<div className="settings-field">
+								<button
+									type="button"
+									className="voice-preview-btn"
+									data-testid="voice-wake-save"
+									onClick={handleVoiceWakeSave}
+								>
+									{voiceWakeSaved
+										? t("settings.voiceWakeSaved")
+										: t("settings.voiceWakeSave")}
+								</button>
+							</div>
+						</>
+					)}
+				</>
+			)}
+
+			{enableTools && <DevicePairingSection />}
+			</>}
+			{activeSettingsTab === "info" && <>
 			{/* Log viewer button (#297) */}
 			<div className="settings-field" data-testid="log-viewer-section">
 				<label>{t("settings.logViewer")}</label>
@@ -4495,14 +4503,14 @@ function AboutSection() {
 						GitHub — 소스코드 &amp; 이슈
 					</a>
 					<a
-						href="https://discord.gg/nextain"
+						href="https://discord.com/invite/FGYJN7auty"
 						target="_blank"
 						rel="noopener noreferrer"
 						className="settings-about__link"
 						onClick={(e) => {
 							e.preventDefault();
 							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-								openUrl("https://discord.gg/nextain"),
+								openUrl("https://discord.com/invite/FGYJN7auty"),
 							);
 						}}
 					>

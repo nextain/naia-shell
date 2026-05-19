@@ -3930,6 +3930,22 @@ const translations = {
 		id: "Memori",
 		vi: "Bộ nhớ",
 	},
+	"settings.tabInfo": {
+		ko: "정보",
+		en: "Info",
+		ja: "情報",
+		zh: "信息",
+		fr: "Infos",
+		de: "Info",
+		ru: "Инфо",
+		es: "Info",
+		ar: "معلومات",
+		hi: "जानकारी",
+		bn: "তথ্য",
+		pt: "Info",
+		id: "Info",
+		vi: "Thông tin",
+	},
 
 	// Facts (4.4c)
 	"settings.memorySection": {
