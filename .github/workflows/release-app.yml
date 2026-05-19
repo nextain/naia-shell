@@ -92,10 +92,14 @@ jobs:
 
       - name: Normalize artifact filenames (remove version for stable download URLs)
         run: |
-          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage Naia-Shell-x86_64.AppImage 2>/dev/null || true
-          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage.sig Naia-Shell-x86_64.AppImage.sig 2>/dev/null || true
-          cp shell/src-tauri/target/release/bundle/deb/*.deb Naia-Shell-x86_64.deb
-          cp shell/src-tauri/target/release/bundle/rpm/*.rpm Naia-Shell-x86_64.rpm
+          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage Naia-Shell-x86_64.AppImage \
+            || { echo "::error::AppImage not found — build may have failed"; exit 1; }
+          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage.sig Naia-Shell-x86_64.AppImage.sig \
+            || { echo "::error::AppImage .sig not found — TAURI_SIGNING_PRIVATE_KEY may not be set"; exit 1; }
+          cp shell/src-tauri/target/release/bundle/deb/*.deb Naia-Shell-x86_64.deb \
+            || { echo "::error::deb not found"; exit 1; }
+          cp shell/src-tauri/target/release/bundle/rpm/*.rpm Naia-Shell-x86_64.rpm \
+            || { echo "::error::rpm not found"; exit 1; }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -106,7 +110,7 @@ jobs:
             Naia-Shell-x86_64.AppImage.sig
             Naia-Shell-x86_64.deb
             Naia-Shell-x86_64.rpm
-          if-no-files-found: warn
+          if-no-files-found: error
 
   build-flatpak:
     name: Build Flatpak (x86_64)

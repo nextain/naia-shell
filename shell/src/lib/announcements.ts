@@ -63,6 +63,8 @@ function isValidAnnouncement(a: unknown): a is Announcement {
 	return (
 		typeof obj.id === "string" &&
 		obj.id.length > 0 &&
+		typeof obj.date === "string" &&
+		obj.date.length > 0 &&
 		typeof obj.title === "object" &&
 		obj.title !== null &&
 		!Array.isArray(obj.title) &&
