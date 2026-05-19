@@ -47,6 +47,11 @@ import { loadInstalledPanels } from "./lib/panel-loader";
 import { shouldMigrateNextainModel } from "./lib/llm/registry";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
+import {
+	type Announcement,
+	fetchUnreadAnnouncements,
+} from "./lib/announcements";
+import { AnnouncementBanner } from "./components/AnnouncementBanner";
 import { useAvatarStore } from "./stores/avatar";
 import "./panels/browser/index"; // register browser panel
 import "./panels/workspace/index"; // register workspace panel
@@ -152,6 +157,7 @@ export function App() {
 		moved: boolean;
 	} | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+	const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
 	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
@@ -359,11 +365,20 @@ export function App() {
 
 	useEffect(() => {
 		if (showOnboarding) return;
+		let active = true;
 		checkForUpdate()
 			.then((info) => {
-				if (info) setUpdateInfo(info);
+				if (active && info) setUpdateInfo(info);
 			})
 			.catch(() => {});
+		fetchUnreadAnnouncements()
+			.then((list) => {
+				if (active && list.length > 0) setAnnouncements(list);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
 	}, [showOnboarding]);
 
 	// Follow OS color scheme changes — apply only when saved theme is "system"
@@ -647,6 +662,15 @@ export function App() {
 						<UpdateBanner
 							info={updateInfo}
 							onDismiss={() => setUpdateInfo(null)}
+						/>
+					)}
+					{announcements.length > 0 && !showOnboarding && (
+						<AnnouncementBanner
+							announcements={announcements}
+							onDismissOne={(id) =>
+								setAnnouncements((prev) => prev.filter((a) => a.id !== id))
+							}
+							onDismissAll={() => setAnnouncements([])}
 						/>
 					)}
 					{naiaVisible && !showOnboarding && (

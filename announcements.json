@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "announcements": [
+    {
+      "id": "2026-05-19-v014-alpha",
+      "date": "2026-05-19",
+      "type": "release",
+      "priority": "high",
+      "title": {
+        "ko": "Naia v0.1.4 — 알파 테스트 시작",
+        "en": "Naia v0.1.4 — Alpha Test Launch",
+        "ja": "Naia v0.1.4 — アルファテスト開始",
+        "zh": "Naia v0.1.4 — Alpha 测试启动",
+        "fr": "Naia v0.1.4 — Lancement du test Alpha",
+        "de": "Naia v0.1.4 — Alpha-Test gestartet",
+        "ru": "Naia v0.1.4 — Начало альфа-тестирования",
+        "es": "Naia v0.1.4 — Inicio de prueba Alpha",
+        "ar": "Naia v0.1.4 — إطلاق اختبار ألفا",
+        "hi": "Naia v0.1.4 — अल्फा परीक्षण शुरू",
+        "bn": "Naia v0.1.4 — আলফা পরীক্ষা শুরু",
+        "pt": "Naia v0.1.4 — Início do teste Alpha",
+        "id": "Naia v0.1.4 — Peluncuran uji coba Alpha",
+        "vi": "Naia v0.1.4 — Ra mắt thử nghiệm Alpha"
+      },
+      "body": {
+        "ko": "Naia 알파 테스트 버전이 출시되었습니다. Windows(NSIS/MSI)와 Linux(Flatpak/AppImage)를 지원합니다. 많은 기능이 아직 개발 중이며, 버그 리포트와 피드백을 환영합니다.",
+        "en": "Naia alpha test version is now available for Windows (NSIS/MSI) and Linux (Flatpak/AppImage). Many features are still in development — bug reports and feedback are welcome.",
+        "ja": "NaiaのアルファテストがWindows（NSIS/MSI）とLinux（Flatpak/AppImage）向けに開始されました。多くの機能はまだ開発中です。バグ報告やフィードバックをお待ちしています。",
+        "zh": "Naia Alpha 测试版现已支持 Windows（NSIS/MSI）和 Linux（Flatpak/AppImage）。许多功能仍在开发中，欢迎提交 Bug 报告和反馈。",
+        "fr": "La version alpha de Naia est disponible pour Windows (NSIS/MSI) et Linux (Flatpak/AppImage). De nombreuses fonctionnalités sont en cours de développement — les rapports de bugs et retours sont les bienvenus.",
+        "de": "Die Naia Alpha-Version ist jetzt für Windows (NSIS/MSI) und Linux (Flatpak/AppImage) verfügbar. Viele Funktionen sind noch in der Entwicklung — Fehlerberichte und Feedback sind willkommen.",
+        "ru": "Альфа-версия Naia теперь доступна для Windows (NSIS/MSI) и Linux (Flatpak/AppImage). Многие функции ещё разрабатываются — сообщения об ошибках и отзывы приветствуются.",
+        "es": "La versión alfa de Naia ya está disponible para Windows (NSIS/MSI) y Linux (Flatpak/AppImage). Muchas funciones aún están en desarrollo — se aceptan informes de errores y comentarios.",
+        "ar": "إصدار ألفا من Naia متاح الآن لـ Windows (NSIS/MSI) وLinux (Flatpak/AppImage). العديد من الميزات لا تزال قيد التطوير — نرحب بتقارير الأخطاء والملاحظات.",
+        "hi": "Naia का Alpha संस्करण अब Windows (NSIS/MSI) और Linux (Flatpak/AppImage) के लिए उपलब्ध है। कई सुविधाएँ अभी भी विकास में हैं — बग रिपोर्ट और फीडबैक का स्वागत है।",
+        "bn": "Naia-র Alpha সংস্করণ এখন Windows (NSIS/MSI) এবং Linux (Flatpak/AppImage)-এর জন্য উপলব্ধ। অনেক ফিচার এখনো উন্নয়নের পর্যায়ে — বাগ রিপোর্ট ও মতামত স্বাগত।",
+        "pt": "A versão alpha do Naia já está disponível para Windows (NSIS/MSI) e Linux (Flatpak/AppImage). Muitas funcionalidades ainda estão em desenvolvimento — relatórios de bugs e feedback são bem-vindos.",
+        "id": "Versi alpha Naia kini tersedia untuk Windows (NSIS/MSI) dan Linux (Flatpak/AppImage). Banyak fitur masih dalam pengembangan — laporan bug dan masukan sangat diterima.",
+        "vi": "Phiên bản alpha của Naia hiện có sẵn cho Windows (NSIS/MSI) và Linux (Flatpak/AppImage). Nhiều tính năng vẫn đang phát triển — hoan nghênh báo cáo lỗi và phản hồi."
+      },
+      "url": "https://github.com/nextain/naia-os/releases"
+    }
+  ]
+}

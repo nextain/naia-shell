@@ -79,7 +79,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPIMAGE_EXTRACT_AND_RUN: 1
           NO_STRIP: true
-        run: pnpm run tauri build --bundles deb,rpm
+        run: pnpm run tauri build --bundles deb,rpm,appimage
 
       - name: List build artifacts
         run: |
@@ -455,6 +455,24 @@ jobs:
           "
           echo "=== latest.json ==="
           cat artifacts/latest.json
+
+      - name: Verify updater signatures are non-empty
+        run: |
+          NSIS_SIG=$(python3 -c "import json; d=json.load(open('artifacts/latest.json')); print(d['platforms']['windows-x86_64']['signature'])" 2>/dev/null || echo "")
+          APPIMAGE_SIG=$(python3 -c "import json; d=json.load(open('artifacts/latest.json')); print(d['platforms']['linux-x86_64']['signature'])" 2>/dev/null || echo "")
+          FAIL=0
+          if [[ -z "$NSIS_SIG" ]]; then
+            echo "::error::Windows updater signature is empty — TAURI_SIGNING_PRIVATE_KEY may not be set. Auto-update will not work on Windows."
+            FAIL=1
+          fi
+          if [[ -z "$APPIMAGE_SIG" ]]; then
+            echo "::error::Linux updater signature is empty — TAURI_SIGNING_PRIVATE_KEY may not be set. Auto-update will not work on Linux."
+            FAIL=1
+          fi
+          if [[ $FAIL -eq 1 ]]; then
+            exit 1
+          fi
+          echo "✅ Both updater signatures are present."
 
       - name: Generate SHA256 checksums
         run: |
