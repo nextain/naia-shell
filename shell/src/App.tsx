@@ -17,6 +17,7 @@ import {
 	getAdkPath,
 	isAdkInitialized,
 	listNaiaAssets,
+	readNaiaConfig,
 	setAdkPath,
 	toLocalBlobUrl,
 	writeNaiaConfig,
@@ -265,6 +266,19 @@ export function App() {
 			}
 		});
 	}, [showAdkSetup, setBackgroundMediaType, setBackgroundVideoUrl]);
+
+	// Load naia-settings/config.json on startup and merge into localStorage.
+	// File is authoritative (persists across browser profile wipes / new installs).
+	useEffect(() => {
+		if (showAdkSetup) return;
+		readNaiaConfig().then((fileConfig) => {
+			if (!fileConfig) return;
+			const local = loadConfig();
+			// File wins — merge file over local so user settings survive reinstalls.
+			const merged = local ? { ...local, ...fileConfig } : fileConfig;
+			saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
+		});
+	}, [showAdkSetup]);
 
 	useEffect(() => {
 		void migrateLabKeyToNaiaKey();

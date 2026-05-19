@@ -8,6 +8,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+	listen: vi.fn().mockResolvedValue(() => {}),
+	emit: vi.fn().mockResolvedValue(undefined),
+}));
+
 const mockLoadBrowserShortcuts = vi.fn().mockResolvedValue([]);
 const mockRemoveBrowserShortcut = vi.fn();
 const mockReorderBrowserShortcuts = vi.fn();
