@@ -11,6 +11,7 @@ import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 
 type Step =
+	| "welcome"
 	| "agentName"
 	| "userName"
 	| "speechStyle"
@@ -21,6 +22,7 @@ type Step =
 
 // Steps shown when Naia key is already set (skip provider)
 const STEPS_WITH_NAIA: Step[] = [
+	"welcome",
 	"agentName",
 	"userName",
 	"speechStyle",
@@ -29,6 +31,7 @@ const STEPS_WITH_NAIA: Step[] = [
 	"complete",
 ];
 const STEPS_WITHOUT_NAIA: Step[] = [
+	"welcome",
 	"agentName",
 	"userName",
 	"speechStyle",
@@ -49,6 +52,8 @@ function stepChat(step: Step, name: string, user: string): string {
 	const n = name || "나이아";
 	const u = user ? `${user}님` : "";
 	switch (step) {
+		case "welcome":
+			return "안녕하세요! 시작하기 전에 잠깐 확인해 주세요 😊";
 		case "agentName":
 			return "안녕하세요! 저는 나이아예요. 제 이름을 지어주세요! ✨";
 		case "userName":
@@ -117,7 +122,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const hasNaiaKey = !!localStorage.getItem("naia-remote-key");
 	const STEPS = hasNaiaKey ? STEPS_WITH_NAIA : STEPS_WITHOUT_NAIA;
 
-	const [step, setStep] = useState<Step>("agentName");
+	const [step, setStep] = useState<Step>("welcome");
 	const [agentName, setAgentName] = useState("");
 	const [userName, setUserName] = useState("");
 	const [speechStyle, setSpeechStyle] = useState<"casual" | "formal">("casual");
@@ -396,6 +401,34 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 			{/* Step content */}
 			<div className="onboarding-step">
+				{step === "welcome" && (
+					<>
+						<h2 className="onboarding-step__title">Naia Alpha</h2>
+						<div className="onboarding-welcome">
+							<div className="onboarding-welcome__badge">⚠ Alpha Test</div>
+							<p className="onboarding-welcome__text">
+								현재 버전은 <strong>알파 테스트</strong> 단계로, 많은 기능이 아직 안정화되어 있지 않습니다.
+								예기치 않은 오류가 발생할 수 있으며, 지속적으로 개선되고 있습니다.
+							</p>
+							<p className="onboarding-welcome__text">
+								Naia는 <strong>오픈소스</strong> 프로젝트입니다 (Apache 2.0).
+								버그 리포트, 번역, 기능 제안, 코드 기여를 통해 함께 만들어 갈 수 있습니다.
+							</p>
+							<button
+								type="button"
+								className="onboarding-welcome__github-btn"
+								onClick={() =>
+									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+										openUrl("https://github.com/nextain/naia-os"),
+									)
+								}
+							>
+								GitHub에서 참여하기 →
+							</button>
+						</div>
+					</>
+				)}
+
 				{step === "agentName" && (
 					<>
 						<h2 className="onboarding-step__title">

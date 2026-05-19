@@ -1287,8 +1287,9 @@ export function SettingsTab() {
 	const [voiceWakeInput, setVoiceWakeInput] = useState("");
 	const [voiceWakeLoading, setVoiceWakeLoading] = useState(false);
 	const [voiceWakeSaved, setVoiceWakeSaved] = useState(false);
-	const [discordBotConnected, setDiscordBotConnected] = useState(false);
-	const [discordBotLoading, setDiscordBotLoading] = useState(false);
+	// Discord integration — unverified, hidden until stabilized
+	// const [discordBotConnected, setDiscordBotConnected] = useState(false);
+	// const [discordBotLoading, setDiscordBotLoading] = useState(false);
 
 	// In-app confirmation state (replaces window.confirm to avoid WebKitGTK double-dialog)
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -1319,39 +1320,12 @@ export function SettingsTab() {
 		}
 	}, [gatewayUrl, gatewayToken]);
 
-	const fetchDiscordBotStatus = useCallback(async () => {
-		const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
-		setDiscordBotLoading(true);
-		try {
-			const result = await directToolCall({
-				toolName: "skill_channels",
-				args: { action: "status" },
-				requestId: `discord-status-${Date.now()}`,
-				gatewayUrl: effectiveGatewayUrl,
-			});
-			if (result.success && result.output) {
-				const channels = JSON.parse(result.output) as Array<{
-					id?: string;
-					accounts?: Array<{ connected?: boolean }>;
-				}>;
-				const discord = channels.find((ch) => ch.id === "discord");
-				const connected =
-					discord?.accounts?.some((acc) => acc.connected === true) ?? false;
-				setDiscordBotConnected(connected);
-			} else {
-				setDiscordBotConnected(false);
-			}
-		} catch {
-			setDiscordBotConnected(false);
-		} finally {
-			setDiscordBotLoading(false);
-		}
-	}, [gatewayUrl, gatewayToken]);
+	// Discord integration — unverified, hidden until stabilized
+	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
 
 	useEffect(() => {
 		fetchVoiceWake();
-		fetchDiscordBotStatus();
-	}, [fetchVoiceWake, fetchDiscordBotStatus]);
+	}, [fetchVoiceWake]);
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -1496,7 +1470,7 @@ export function SettingsTab() {
 				// Sync linked channels (e.g. Discord) after login
 				// Re-check Discord bot status after sync + gateway restart
 				syncLinkedChannels().then(() => {
-					setTimeout(() => fetchDiscordBotStatus(), 3000);
+					// setTimeout(() => fetchDiscordBotStatus(), 3000); // Discord unverified
 				});
 
 				// Try Lab pull — show diff dialog if settings differ
@@ -1534,7 +1508,7 @@ export function SettingsTab() {
 			if (discordTarget) setDiscordDefaultTarget(discordTarget);
 			else if (discordUserId) setDiscordDefaultTarget(`user:${discordUserId}`);
 			if (discordChannelId) setDiscordDmChannelId(discordChannelId);
-			setDiscordBotConnected(true);
+			// setDiscordBotConnected(true); // Discord unverified
 		});
 		return () => {
 			unlisten.then((fn) => fn());
@@ -2177,25 +2151,8 @@ export function SettingsTab() {
 	const omniVoices = selectedModelMeta?.voices;
 	const manualUrl = `https://naia.nextain.io/${locale}/manual`;
 
-	async function handleDiscordBotConnect() {
-		if (!enableTools) {
-			setError(t("settings.enableToolsFirst"));
-			return;
-		}
-		setError("");
-		setDiscordBotLoading(true);
-		try {
-			const connectUrl = `${getNaiaWebBaseUrl()}/${locale}/settings/integrations?channel=discord&source=naia-shell`;
-			await openUrl(connectUrl);
-			await fetchDiscordBotStatus();
-		} catch (err) {
-			setError(
-				`${t("settings.discordConnectError")}: ${err instanceof Error ? err.message : String(err)}`,
-			);
-		} finally {
-			setDiscordBotLoading(false);
-		}
-	}
+	// Discord integration — unverified, hidden until stabilized
+	// async function handleDiscordBotConnect() { ... }
 
 	return (
 		<div className="settings-tab">
@@ -3736,7 +3693,7 @@ export function SettingsTab() {
 						<span>{t("settings.channelsSection")}</span>
 					</div>
 
-					{/* Discord channel card — full width so it doesn't drift to right column */}
+					{/* Discord channel card — unverified, hidden until stabilized
 					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
 						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
 						<div className="channel-card-header">
@@ -3799,6 +3756,7 @@ export function SettingsTab() {
 							/>
 						</div>
 					</div>
+				*/}
 
 					<div className="settings-section-divider">
 						<span>{t("settings.voiceConversation")}</span>
@@ -4313,6 +4271,8 @@ export function SettingsTab() {
 
 			<VersionFooter />
 
+			<AboutSection />
+
 			{/* STT Model Manager Modal */}
 			{sttModelModalOpen && (
 				<div
@@ -4489,6 +4449,48 @@ export function SettingsTab() {
 				</div>
 			)}
 			</>}
+		</div>
+	);
+}
+
+function AboutSection() {
+	return (
+		<div className="settings-about">
+			<div className="settings-section-divider">
+				<span>About</span>
+			</div>
+			<div className="settings-about__body">
+				<div className="settings-about__alpha-badge">⚠ Alpha</div>
+				<p className="settings-about__desc">
+					현재 버전은 <strong>알파 테스트</strong> 단계입니다. 많은 기능이 아직
+					안정화되어 있지 않으며, 예기치 않은 오류가 발생할 수 있습니다.
+				</p>
+				<p className="settings-about__desc">
+					Naia는 <strong>오픈소스</strong> 프로젝트입니다 (Apache 2.0). 버그
+					리포트, 번역, 기능 제안, 코드 기여 모두 환영합니다.
+				</p>
+				<div className="settings-about__links">
+					<a
+						href="https://github.com/nextain/naia-os"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="settings-about__link"
+						onClick={(e) => {
+							e.preventDefault();
+							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+								openUrl("https://github.com/nextain/naia-os"),
+							);
+						}}
+					>
+						GitHub — 소스코드 &amp; 이슈
+					</a>
+					{/* Discord community link — hidden until Discord integration is verified
+					<a href="https://discord.gg/nextain" className="settings-about__link">
+						Discord 커뮤니티
+					</a>
+					*/}
+				</div>
+			</div>
 		</div>
 	);
 }
