@@ -444,3 +444,67 @@ jobs:
             ./butler push artifacts/Naia-Shell-x86_64.deb nextain/naia:linux-deb
           fi
           ./butler push artifacts/Naia-Shell-x86_64.flatpak nextain/naia:linux-flatpak
+          ./butler push artifacts/Naia-Shell-x86_64-setup.exe nextain/naia:windows
+
+      - name: Upload to Steam (SteamPipe)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+          STEAM_APP_ID: ${{ secrets.STEAM_APP_ID }}
+          STEAM_DEPOT_ID: ${{ secrets.STEAM_DEPOT_ID }}
+          STEAM_CONFIG_VDF: ${{ secrets.STEAM_CONFIG_VDF }}
+        run: |
+          if [[ -z "${STEAM_USERNAME}" || -z "${STEAM_APP_ID}" ]]; then
+            echo "Steam secrets not set, skipping Steam upload"
+            exit 0
+          fi
+
+          # Install Steamworks SDK (steamcmd)
+          curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxf -
+          chmod +x ./steamcmd.sh
+
+          # Restore Steam config for 2FA-less CI login
+          mkdir -p "$HOME/.steam/steam/config"
+          echo "${STEAM_CONFIG_VDF}" | base64 -d > "$HOME/.steam/steam/config/config.vdf"
+
+          export TAG="${{ steps.version.outputs.tag }}"
+          export VERSION="${TAG#v}"
+
+          # Generate VDF depot manifest
+          mkdir -p steam-build/output steam-build/content/windows
+          cp artifacts/Naia-Shell-x86_64-setup.exe steam-build/content/windows/
+
+          cat > steam-build/depot_windows.vdf <<DEPOT_EOF
+          "DepotBuildConfig"
+          {
+            "DepotID" "${STEAM_DEPOT_ID}"
+            "ContentRoot" "content/windows"
+            "FileMapping"
+            {
+              "LocalPath" "*"
+              "DepotPath" "."
+              "recursive" "1"
+            }
+          }
+          DEPOT_EOF
+
+          cat > steam-build/app_build.vdf <<APP_EOF
+          "appbuild"
+          {
+            "appid" "${STEAM_APP_ID}"
+            "desc" "Naia Shell ${VERSION}"
+            "buildoutput" "output/"
+            "setlive" "beta"
+            "depots"
+            {
+              "${STEAM_DEPOT_ID}" "depot_windows.vdf"
+            }
+          }
+          APP_EOF
+
+          cd steam-build
+          ../steamcmd.sh \
+            +login "${STEAM_USERNAME}" "${STEAM_PASSWORD}" \
+            +run_app_build app_build.vdf \
+            +quit

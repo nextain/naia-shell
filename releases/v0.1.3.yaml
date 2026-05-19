@@ -80,6 +80,33 @@ changes:
     description:
       en: "Audio input/output device selection with custom dropdown and mic test"
       ko: "커스텀 드롭다운 및 마이크 테스트를 포함한 오디오 입출력 장치 선택"
+  # ── BGM Player (Issue #309, #310) ──
+  - type: feat
+    scope: shell
+    issue: 309
+    description:
+      en: "BGM icon beat animation — bounce+rotate+glow when playing, hover lift"
+      ko: "BGM 아이콘 비트 애니메이션 — 재생 중 바운스+회전+글로우, 호버 리프트"
+  - type: feat
+    scope: shell
+    issue: 310
+    description:
+      en: "BGM panel scaleY unfold animation and AI control bar glass backdrop"
+      ko: "BGM 패널 scaleY 펼침 애니메이션 및 AI 컨트롤바 글래스 배경 패널"
+  # ── i18n (Issue #312) ──
+  - type: feat
+    scope: i18n
+    issue: 312
+    description:
+      en: "BgmPlayer and AiControlBar i18n — 29 keys added across 14 locales"
+      ko: "BgmPlayer·AiControlBar i18n — 14개 언어 29개 키 추가"
+  # ── Config (Issue #303) ──
+  - type: fix
+    scope: config
+    issue: 303
+    description:
+      en: "Load naia-settings/config.json into localStorage on startup (file-first merge)"
+      ko: "앱 시작 시 naia-settings/config.json을 localStorage로 병합 (파일 우선)"
   # ── OS / Installer ──
   - type: fix
     scope: installer
