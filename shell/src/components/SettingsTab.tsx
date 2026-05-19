@@ -4478,15 +4478,9 @@ function AboutSection() {
 				<span>About</span>
 			</div>
 			<div className="settings-about__body">
+				<p className="settings-about__desc">{t("about.desc1")}</p>
 				<div className="settings-about__alpha-badge">⚠ Alpha</div>
-				<p className="settings-about__desc">
-					현재 버전은 <strong>알파 테스트</strong> 단계입니다. 많은 기능이 아직
-					안정화되어 있지 않으며, 예기치 않은 오류가 발생할 수 있습니다.
-				</p>
-				<p className="settings-about__desc">
-					Naia는 <strong>오픈소스</strong> 프로젝트입니다 (Apache 2.0). 버그
-					리포트, 번역, 기능 제안, 코드 기여 모두 환영합니다.
-				</p>
+				<p className="settings-about__desc">{t("about.desc2")}</p>
 				<div className="settings-about__links">
 					<a
 						href="https://github.com/nextain/naia-os"
@@ -4500,7 +4494,7 @@ function AboutSection() {
 							);
 						}}
 					>
-						GitHub — 소스코드 &amp; 이슈
+						{t("about.linkGithub")}
 					</a>
 					<a
 						href="https://discord.com/invite/FGYJN7auty"
@@ -4514,7 +4508,21 @@ function AboutSection() {
 							);
 						}}
 					>
-						Discord 커뮤니티
+						{t("about.linkDiscord")}
+					</a>
+					<a
+						href="https://github.com/sponsors/nextain"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="settings-about__link settings-about__link--sponsor"
+						onClick={(e) => {
+							e.preventDefault();
+							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+								openUrl("https://github.com/sponsors/nextain"),
+							);
+						}}
+					>
+						{t("about.linkSponsor")}
 					</a>
 				</div>
 			</div>

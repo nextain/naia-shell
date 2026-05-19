@@ -6764,6 +6764,14 @@ body.resizing-row {
 	text-decoration: underline;
 }
 
+.settings-about__link--sponsor {
+	color: #f78da7;
+}
+
+.settings-about__link--sponsor:hover {
+	color: #ff6b8a;
+}
+
 /* Onboarding welcome step */
 .onboarding-welcome {
 	padding: 4px 0;
