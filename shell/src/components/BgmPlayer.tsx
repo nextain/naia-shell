@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import { Logger } from "../lib/logger";
 import type { NaiaContextBridge } from "../lib/panel-registry";
@@ -416,7 +417,7 @@ export function BgmPlayer({ naia }: Props) {
 
 	const trackLabel =
 		source === "youtube"
-			? (currentYt?.title ?? "YouTube BGM")
+			? (currentYt?.title ?? t("bgm.defaultYouTubeTrack"))
 			: (localNames[localIndex] ?? "로컬 BGM");
 
 	// Always scroll when playing (so AI-triggered tracks with short titles also marquee)
@@ -440,28 +441,28 @@ export function BgmPlayer({ naia }: Props) {
 				{/* Fixed BGM icon — pulses when playing */}
 				<span
 					className={`bgm-icon${playing ? " bgm-icon--playing" : ""}`}
-					title="BGM 패널 열기/닫기"
+					title={t("bgm.panelToggleTitle")}
 					onClick={() => setPanelExpanded((v) => !v)}
 				>♫</span>
 
 				<div className="bgm-player-sep" />
 
-				<button type="button" className="bgm-btn" onClick={playPrev} title="이전">‹</button>
+				<button type="button" className="bgm-btn" onClick={playPrev} title={t("bgm.prev")}>‹</button>
 				<button
 					type="button"
 					className="bgm-btn bgm-btn--play"
 					onClick={togglePlay}
-					title={playing ? "일시정지" : "재생"}
+					title={playing ? t("bgm.pause") : t("bgm.play")}
 				>
 					{playing ? "Ⅱ" : "▶"}
 				</button>
-				<button type="button" className="bgm-btn" onClick={playNext} title="다음">›</button>
+				<button type="button" className="bgm-btn" onClick={playNext} title={t("bgm.next")}>›</button>
 
 				{/* Track name — fixed width, marquee when long, click to toggle panel */}
 				<button
 					type="button"
 					className={`bgm-track-name bgm-track-toggle${panelExpanded ? " bgm-track-name--open" : ""}`}
-					title={panelExpanded ? "패널 닫기" : "BGM 패널 열기"}
+					title={panelExpanded ? t("bgm.close") : t("bgm.panelToggleTitle")}
 					onClick={() => setPanelExpanded((v) => !v)}
 				>
 					{isScrolling ? (
@@ -482,7 +483,7 @@ export function BgmPlayer({ naia }: Props) {
 					step={0.05}
 					value={volume}
 					onChange={(e) => setVolume(Number(e.target.value))}
-					title="볼륨"
+					title={t("bgm.volume")}
 				/>
 			</div>
 
@@ -492,7 +493,7 @@ export function BgmPlayer({ naia }: Props) {
 					type="button"
 					className={`bgm-yt-drawer-handle${panelExpanded ? " bgm-yt-drawer-handle--open" : ""}`}
 					style={{ position: "fixed", top: handlePos.top, left: handlePos.left }}
-					title="드래그: 높이 조절 / 클릭: 열기·닫기"
+					title={t("bgm.drawerTitle")}
 					onPointerDown={(e) => {
 						e.currentTarget.setPointerCapture(e.pointerId);
 						handleDragRef.current = { startY: e.clientY, startH: ytPanelHeight, moved: false };
@@ -552,7 +553,7 @@ export function BgmPlayer({ naia }: Props) {
 							type="button"
 							className="bgm-panel-close"
 							onClick={() => setPanelExpanded(false)}
-							title="닫기"
+							title={t("bgm.close")}
 						>
 							✕
 						</button>
@@ -568,7 +569,7 @@ export function BgmPlayer({ naia }: Props) {
 								<input
 									type="text"
 									className="bgm-yt-search-input"
-									placeholder="YouTube 검색…"
+									placeholder={t("bgm.searchPlaceholder")}
 									value={searchQuery}
 									onChange={(e) => setSearchQuery(e.target.value)}
 								/>
@@ -582,22 +583,20 @@ export function BgmPlayer({ naia }: Props) {
 									type="button"
 									className={`bgm-yt-tab${ytView === "categories" ? " bgm-yt-tab--active" : ""}`}
 									onClick={() => setYtView("categories")}
-								>
-									장르
+								>{t("bgm.tabGenres")}
 								</button>
 								<button
 									type="button"
 									className={`bgm-yt-tab${ytView === "search" ? " bgm-yt-tab--active" : ""}`}
 									onClick={() => setYtView("search")}
-								>
-									검색결과
+								>{t("bgm.tabSearch")}
 								</button>
 								<button
 									type="button"
 									className={`bgm-yt-tab${ytView === "favorites" ? " bgm-yt-tab--active" : ""}`}
 									onClick={() => setYtView("favorites")}
 								>
-									즐겨찾기 {favs.length > 0 && `(${favs.length})`}
+									{t("bgm.tabFavorites")} {favs.length > 0 && `(${favs.length})`}
 								</button>
 							</div>
 
@@ -618,9 +617,9 @@ export function BgmPlayer({ naia }: Props) {
 
 							{ytView === "search" && (
 								<div className="bgm-yt-list">
-									{searching && <div className="bgm-yt-status">검색 중…</div>}
+									{searching && <div className="bgm-yt-status">{t("bgm.searching")}</div>}
 									{!searching && searchResults.length === 0 && (
-										<div className="bgm-yt-status">결과 없음</div>
+										<div className="bgm-yt-status">{t("bgm.noResults")}</div>
 									)}
 									{searchResults.map((v) => (
 										<YtTrackRow
@@ -639,7 +638,7 @@ export function BgmPlayer({ naia }: Props) {
 							{ytView === "favorites" && (
 								<div className="bgm-yt-list">
 									{favs.length === 0 && (
-										<div className="bgm-yt-status">즐겨찾기가 비어 있습니다</div>
+										<div className="bgm-yt-status">{t("bgm.favEmpty")}</div>
 									)}
 									{favs.map((v) => (
 										<YtTrackRow
@@ -661,7 +660,7 @@ export function BgmPlayer({ naia }: Props) {
 					{panelTab === "local" && (
 						<div className="bgm-yt-list">
 							{localTracks.length === 0 && (
-								<div className="bgm-yt-status">트랙 없음 (naia-settings/bgm-musics/)</div>
+								<div className="bgm-yt-status">{t("bgm.noTracks")}</div>
 							)}
 							{localTracks.map((url, idx) => {
 								const isActive = source === "local" && localIndex === idx;
@@ -724,7 +723,7 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav }: RowProps) {
 			)}
 			<div className="bgm-yt-row-info">
 				<div className="bgm-yt-row-title">
-					{loading ? "로딩 중…" : playing ? "▶ " + video.title : video.title}
+					{loading ? t("bgm.loading") : playing ? "▶ " + video.title : video.title}
 				</div>
 				<div className="bgm-yt-row-meta">
 					{video.channel && <span>{video.channel}</span>}
@@ -734,7 +733,7 @@ function YtTrackRow({ video, loading, playing, fav, onPlay, onFav }: RowProps) {
 			<button
 				type="button"
 				className={`bgm-yt-fav-btn${fav ? " bgm-yt-fav-btn--on" : ""}`}
-				title={fav ? "즐겨찾기 제거" : "즐겨찾기 추가"}
+				title={fav ? t("bgm.favRemove") : t("bgm.favAdd")}
 				onClick={(e) => { e.stopPropagation(); onFav(); }}
 			>
 				{fav ? "★" : "☆"}

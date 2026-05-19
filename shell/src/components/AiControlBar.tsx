@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
+import { t } from "../lib/i18n";
 import { usePanelStore } from "../stores/panel";
 import { getCameraActions } from "./AvatarCanvas";
 
@@ -28,7 +29,7 @@ export function AiControlBar() {
 				className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
 				onClick={toggleAiInterferenceEnabled}
 				aria-pressed={aiInterferenceEnabled}
-				title={aiInterferenceEnabled ? "AI 참견 끄기 (Ctrl+Alt+A)" : "AI 참견 켜기 (Ctrl+Alt+A)"}
+				title={aiInterferenceEnabled ? t("ai.interferenceOn") : t("ai.interferenceOff")}
 			>
 				<span className="bgm-ai-toggle__dot" />
 				AI
@@ -43,7 +44,7 @@ export function AiControlBar() {
 					if (cfg) saveConfig({ ...cfg, ttsEnabled: !ttsEnabled });
 				}}
 				aria-pressed={ttsEnabled}
-				title={ttsEnabled ? "말하기 끄기" : "말하기 켜기"}
+				title={ttsEnabled ? t("ai.ttsOn") : t("ai.ttsOff")}
 			>
 				<span className="bgm-ai-toggle__dot" />
 				TTS
@@ -54,7 +55,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
-				title="드래그해서 아바타 회전"
+				title={t("ai.avatarRotate")}
 				style={{ cursor: joystickActive ? "grabbing" : "grab", touchAction: "none" }}
 				onPointerDown={(e) => {
 					e.currentTarget.setPointerCapture(e.pointerId);
@@ -84,7 +85,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
-				title="드래그해서 아바타 이동"
+				title={t("ai.avatarPan")}
 				style={{ cursor: panActive ? "grabbing" : "grab", touchAction: "none" }}
 				onPointerDown={(e) => {
 					e.currentTarget.setPointerCapture(e.pointerId);
@@ -114,7 +115,7 @@ export function AiControlBar() {
 			<button
 				type="button"
 				className="bgm-ai-toggle"
-				title="아바타 뷰 초기화"
+				title={t("ai.avatarReset")}
 				onClick={() => getCameraActions().reset()}
 			>
 				<span className="bgm-ai-toggle__dot" />
