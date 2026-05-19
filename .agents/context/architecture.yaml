@@ -922,3 +922,60 @@ voice_architecture:
     tts:
       pricing: "Varies by provider (Chirp 3 HD, Neural2, Edge free, OpenAI, ElevenLabs)"
       tracking: "Per-request via any-llm gateway /v1/audio/speech"
+
+bgm_context_architecture:
+  description: |
+    BGM event → agent → naia-memory design (verified 2026-05-19 via cross-review cr-20260519-bgm-memory).
+    Three distinct paths exist; only the memory bridge is new/pending implementation.
+  issue: "#304"
+
+  existing_paths:
+    push_context:
+      mechanism: "naia.pushContext({type:'bgm', data:{videoId, title, channel, playing}}) in BgmPlayer.tsx:198"
+      flow: "ActivePanelBridge.pushContext() → usePanelStore.setActivePanelContext() → next ChatRequest → buildSystemPrompt() [persona.ts:195] → LLM system prompt"
+      scope: "Real-time LLM awareness only. Session-only (Zustand). Cleared on panel switch [panel.ts:46]."
+      memory: false
+      verified: "panel-registry.ts:147, persona.ts:195"
+
+    ai_interference:
+      mechanism: "emitAiInterferenceEvent({source:'bgm', action:'music_changed', summary:'...'}) in BgmPlayer.tsx"
+      flow: "ai-interference.ts → aiInterferenceEnabled gate [panel.ts:71 default=false] → 15s cooldown → DOM CustomEvent → ChatPanel.onAiInterferenceEvent → handleSend → agent"
+      scope: "AI auto-speech trigger. Dropped when gate off or within cooldown."
+      memory: false
+
+  gap: |
+    Neither path encodes to naia-memory. BGM preference is never long-term stored.
+    naia-memory = @nextain/naia-memory in-process library (NOT external daemon).
+    Agent calls memoryProvider.encode() [index.ts:575] — NOT memorySystem.encode() directly
+    (memorySystem.encode() bypasses MemoryProvider contract in memory-bridge.ts).
+
+  designed_path_option_c:
+    name: "Stdin Direct Channel"
+    status: "pending implementation (#304)"
+    reason_chosen: |
+      Option A (File Log): shutdown race with memorySystem.close() [index.ts:1380-1386].
+      Option B (localStorage): Node.js process cannot access browser localStorage.
+      Option C: fits existing readline stdio protocol [index.ts:1224], consistent with
+      fire-and-forget encode pattern [index.ts:575].
+    flow: "BgmPlayer → Tauri IPC → agent stdin {type:'bgm_event'} → memoryProvider.encode() [fire-and-forget]"
+    key_decisions:
+      gate_bypass: "Memory logging bypasses aiInterferenceEnabled — memory ≠ AI speech trigger (separate concerns)"
+      api: "memoryProvider.encode() via memory-bridge — NOT memorySystem.encode() directly"
+      timing: "Real-time fire-and-forget matching existing pattern"
+    files_to_touch:
+      - "agent/src/protocol.ts — add BgmEvent type"
+      - "agent/src/index.ts — add bgm_event dispatch case"
+      - "shell/src/components/BgmPlayer.tsx — add Tauri IPC call alongside emitAiInterferenceEvent"
+      - "shell/src-tauri/src/lib.rs — verify write_agent_stdin command exists"
+
+browser_interference_gaps:
+  description: "Known gaps in AI interference coverage for browser panel (2026-05-19)"
+  issues:
+    url_not_captured:
+      problem: "Browser internal navigation (link clicks, JS pushState) not forwarded to Shell. Address bar shows initial URL only."
+      root_cause: "WebView2 NavigationCompleted/SourceChanged events not emitted as Tauri events from browser_webview.rs"
+      issue: "#307"
+    interference_no_url:
+      problem: "AI interference events from browser panel do not include navigated URL — only panel activation is reported."
+      dependency: "Requires #307 fix first"
+      issue: "#308"

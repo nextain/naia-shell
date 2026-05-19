@@ -2,7 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdkSetupScreen } from "./components/AdkSetupScreen";
-import { AvatarCanvas, getCameraActions } from "./components/AvatarCanvas";
+import { AiControlBar } from "./components/AiControlBar";
+import { AvatarCanvas } from "./components/AvatarCanvas";
 import { ChatPanel } from "./components/ChatPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ModeBar } from "./components/ModeBar";
@@ -18,6 +19,7 @@ import {
 	listNaiaAssets,
 	setAdkPath,
 	toLocalBlobUrl,
+	writeNaiaConfig,
 } from "./lib/adk-store";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
@@ -42,7 +44,6 @@ import { loadInstalledPanels } from "./lib/panel-loader";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
-import { useChatStore } from "./stores/chat";
 import "./panels/browser/index"; // register browser panel
 import "./panels/workspace/index"; // register workspace panel
 import "./panels/settings/index"; // register settings panel
@@ -168,40 +169,13 @@ export function App() {
 
 	// Readiness gate: splash stays until the active branch has something to show
 	const appReady = useAppReady(showAdkSetup);
-	const onSplashDone = useCallback(() => {
-		setShowSplash(false);
-		const h = new Date().getHours();
-		const timeLabel =
-			h >= 6 && h < 12 ? "좋은 아침이에요" :
-			h >= 12 && h < 18 ? "좋은 오후예요" :
-			h >= 18 && h < 22 ? "좋은 저녁이에요" : "안녕하세요";
-		const now = new Date();
-		const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-		const dateStr = now.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
-		const greetingText = `${timeLabel}! 지금은 ${dateStr}, ${timeStr}이에요.`;
-		useChatStore.getState().addMessage({
-			role: "assistant",
-			content: `${greetingText} 😊`,
-		});
-		// TTS: ChatPanel의 naia:speak 리스너가 받아 audioQueue 초기화 후 발화
-		setTimeout(() => {
-			window.dispatchEvent(new CustomEvent("naia:speak", { detail: { text: greetingText } }));
-		}, 600);
-	}, []);
+	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
 	const {
 		activePanel,
 		toggleAiInterferenceEnabled,
-		aiInterferenceEnabled,
-		ttsEnabled,
 		setTtsEnabled,
-		toggleTtsEnabled,
 	} = usePanelStore();
-
-	const [joystickActive, setJoystickActive] = useState(false);
-	const joystickActiveRef = useRef(false);
-	const [panActive, setPanActive] = useState(false);
-	const panActiveRef = useRef(false);
 
 	// Initialise ttsEnabled from persisted config on mount
 	useEffect(() => {
@@ -333,13 +307,29 @@ export function App() {
 	}, [showAdkSetup]);
 
 	useEffect(() => {
+		// Debounced file sync: write naia-settings/config.json on every saveConfig call.
+		// Covers all saveConfig callers without patching each one individually.
+		let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+		const syncConfigToFile = () => {
+			if (debounceTimer) clearTimeout(debounceTimer);
+			debounceTimer = setTimeout(() => {
+				const cfg = loadConfig();
+				if (cfg) void writeNaiaConfig(cfg as unknown as Record<string, unknown>);
+			}, 800);
+		};
+
 		const updateTitle = () => {
 			setAppTitle(loadConfig()?.agentName?.trim() || "Naia");
 		};
-		window.addEventListener("naia-config-changed", updateTitle);
+		const handleConfigChanged = () => {
+			updateTitle();
+			syncConfigToFile();
+		};
+		window.addEventListener("naia-config-changed", handleConfigChanged);
 		window.addEventListener("storage", updateTitle);
 		return () => {
-			window.removeEventListener("naia-config-changed", updateTitle);
+			if (debounceTimer) clearTimeout(debounceTimer);
+			window.removeEventListener("naia-config-changed", handleConfigChanged);
 			window.removeEventListener("storage", updateTitle);
 		};
 	}, []);
@@ -515,8 +505,9 @@ export function App() {
 					key={backgroundVideoUrl}
 					className="app-bg-iframe"
 					src={backgroundVideoUrl}
-					title="YouTube BGM"
-					allow="autoplay; encrypted-media"
+					allow="autoplay"
+					sandbox="allow-scripts allow-same-origin allow-presentation"
+					title="BGM"
 				/>
 			) : backgroundVideoUrl &&
 			(backgroundMediaType === "video" ||
@@ -579,103 +570,7 @@ export function App() {
 						onTogglePanel={toggleNaia}
 						title={appTitle}
 					/>
-					{/* Quick toggles: AI 참견 + 말하기 활성화 — outside BGM player */}
-					<div className="quick-toggles">
-						<button
-							type="button"
-							className={`bgm-ai-toggle${aiInterferenceEnabled ? " bgm-ai-toggle--active" : ""}`}
-							onClick={toggleAiInterferenceEnabled}
-							aria-pressed={aiInterferenceEnabled}
-							title={aiInterferenceEnabled ? "AI 참견 끄기 (Ctrl+Alt+A)" : "AI 참견 켜기 (Ctrl+Alt+A)"}
-						>
-							<span className="bgm-ai-toggle__dot" />
-							AI
-						</button>
-						<button
-							type="button"
-							className={`bgm-ai-toggle${ttsEnabled ? " bgm-ai-toggle--active" : ""}`}
-							onClick={() => {
-								toggleTtsEnabled();
-								const cfg = loadConfig();
-								if (cfg) saveConfig({ ...cfg, ttsEnabled: !ttsEnabled });
-							}}
-							aria-pressed={ttsEnabled}
-							title={ttsEnabled ? "말하기 끄기" : "말하기 켜기"}
-						>
-							<span className="bgm-ai-toggle__dot" />
-							TTS
-						</button>
-						{/* Avatar camera joystick */}
-						<button
-							type="button"
-							className={`bgm-ai-toggle${joystickActive ? " bgm-ai-toggle--active" : ""}`}
-							title="드래그해서 아바타 회전"
-							style={{ cursor: joystickActive ? "grabbing" : "grab", touchAction: "none" }}
-							onPointerDown={(e) => {
-								e.currentTarget.setPointerCapture(e.pointerId);
-								joystickActiveRef.current = true;
-								setJoystickActive(true);
-							}}
-							onPointerMove={(e) => {
-								if (!joystickActiveRef.current) return;
-								getCameraActions().rotate(e.movementX, e.movementY);
-							}}
-							onPointerUp={(e) => {
-								e.currentTarget.releasePointerCapture(e.pointerId);
-								joystickActiveRef.current = false;
-								setJoystickActive(false);
-								getCameraActions().save();
-							}}
-							onPointerCancel={(e) => {
-								e.currentTarget.releasePointerCapture(e.pointerId);
-								joystickActiveRef.current = false;
-								setJoystickActive(false);
-							}}
-						>
-							<span className="bgm-ai-toggle__dot" />
-							⊕
-						</button>
-						{/* Avatar camera pan */}
-						<button
-							type="button"
-							className={`bgm-ai-toggle${panActive ? " bgm-ai-toggle--active" : ""}`}
-							title="드래그해서 아바타 이동"
-							style={{ cursor: panActive ? "grabbing" : "grab", touchAction: "none" }}
-							onPointerDown={(e) => {
-								e.currentTarget.setPointerCapture(e.pointerId);
-								panActiveRef.current = true;
-								setPanActive(true);
-							}}
-							onPointerMove={(e) => {
-								if (!panActiveRef.current) return;
-								getCameraActions().pan(e.movementX, e.movementY);
-							}}
-							onPointerUp={(e) => {
-								e.currentTarget.releasePointerCapture(e.pointerId);
-								panActiveRef.current = false;
-								setPanActive(false);
-								getCameraActions().save();
-							}}
-							onPointerCancel={(e) => {
-								e.currentTarget.releasePointerCapture(e.pointerId);
-								panActiveRef.current = false;
-								setPanActive(false);
-							}}
-						>
-							<span className="bgm-ai-toggle__dot" />
-							✥
-						</button>
-						{/* Avatar view reset */}
-						<button
-							type="button"
-							className="bgm-ai-toggle"
-							title="아바타 뷰 초기화"
-							onClick={() => getCameraActions().reset()}
-						>
-							<span className="bgm-ai-toggle__dot" />
-							⌂
-						</button>
-					</div>
+
 					{updateInfo && !showOnboarding && (
 						<UpdateBanner
 							info={updateInfo}
@@ -699,6 +594,8 @@ export function App() {
 								<AvatarCanvas />
 							</div>
 							<div className="naia-overlay">
+								{/* AI + avatar controls — top of avatar column, independent */}
+								<AiControlBar />
 								{/* Chat floats over avatar — absolute at bottom */}
 								<div className="naia-chat-area">
 									<button
@@ -758,7 +655,7 @@ export function App() {
 						<div className="right-area">
 							{!showOnboarding && (
 								<>
-									<ModeBar onAddMode={() => setShowPanelInstall(true)} bgmNaia={getBridgeForPanel("bgm")} />
+									<ModeBar onAddMode={() => setShowPanelInstall(true)} />
 									{showPanelInstall && (
 										<PanelInstallDialog
 											onClose={() => setShowPanelInstall(false)}

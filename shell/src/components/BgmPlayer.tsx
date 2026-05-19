@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import { Logger } from "../lib/logger";
 import type { NaiaContextBridge } from "../lib/panel-registry";
 import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
@@ -28,7 +29,6 @@ async function ytSearch(query: string): Promise<YtVideo[]> {
 
 // ── Curated categories ────────────────────────────────────────────────────────
 
-// Ordered by YouTube BGM popularity
 const CATEGORIES = [
 	{ id: "lofi", label: "📚 로파이", query: "lofi hip hop beats to study relax" },
 	{ id: "rain", label: "🌧 빗소리", query: "rain sounds sleep study white noise 1 hour" },
@@ -66,26 +66,41 @@ function saveFavs(favs: YtVideo[]) {
 	} catch {}
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Panel height ──────────────────────────────────────────────────────────────
 
 interface Props {
 	naia?: NaiaContextBridge;
 }
 
 type Source = "local" | "youtube";
+type PanelTab = "youtube" | "local";
 type YtView = "categories" | "search" | "favorites";
+
+const YT_PANEL_H_KEY = "yt-panel-height";
+const YT_PANEL_H_DEFAULT = 360;
+const YT_PANEL_H_MIN = 200;
+const YT_PANEL_H_MAX = 700;
+// Marquee kicks in when track label exceeds this character count
+const MARQUEE_THRESHOLD = 22;
+
+function loadPanelHeight(): number {
+	const v = parseInt(localStorage.getItem(YT_PANEL_H_KEY) ?? "", 10);
+	return Number.isFinite(v) ? Math.max(YT_PANEL_H_MIN, Math.min(YT_PANEL_H_MAX, v)) : YT_PANEL_H_DEFAULT;
+}
 
 export function BgmPlayer({ naia }: Props) {
 	const audioRef = useRef<HTMLAudioElement>(null);
 	const playerRef = useRef<HTMLDivElement>(null);
-	const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
+	const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
+	const [handlePos, setHandlePos] = useState<{ top: number; left: number } | null>(null);
+	const [ytPanelHeight, setYtPanelHeight] = useState(loadPanelHeight);
+	const handleDragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(null);
 
 	// ── Local BGM ─────────────────────────────────────────────────────────────
 	const bgmTrackUrl = useAvatarStore((s) => s.bgmTrackUrl);
 	const setBgmTrackUrl = useAvatarStore((s) => s.setBgmTrackUrl);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
 	const setBackgroundMediaType = useAvatarStore((s) => s.setBackgroundMediaType);
-	// Saved background before YouTube takes over — restored when BGM stops
 	const prevBgVideoRef = useRef<string>("");
 	const prevBgMediaRef = useRef<BackgroundMediaType>("");
 	const [localTracks, setLocalTracks] = useState<string[]>([]);
@@ -105,24 +120,30 @@ export function BgmPlayer({ naia }: Props) {
 	}, [bgmTrackUrl, setBgmTrackUrl]);
 
 	// ── Playback state ────────────────────────────────────────────────────────
-	const [source, setSource] = useState<Source>("local");
+	const [source, setSource] = useState<Source>("youtube");
 	const [playing, setPlaying] = useState(false);
 	const [volume, setVolume] = useState(0.3);
 
+	// ── Unified panel state ───────────────────────────────────────────────────
+	// panelExpanded: the single panel is open or closed
+	// panelTab: which tab is currently shown in the panel (independent of what's playing)
+	const [panelExpanded, setPanelExpanded] = useState(false);
+	const [panelTab, setPanelTab] = useState<PanelTab>("youtube");
+
 	// ── YouTube state ─────────────────────────────────────────────────────────
-	const [ytExpanded, setYtExpanded] = useState(false);
 	const [ytView, setYtView] = useState<YtView>("categories");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<YtVideo[]>([]);
 	const [searching, setSearching] = useState(false);
 	const [favs, setFavs] = useState<YtVideo[]>(loadFavs);
 	const [currentYt, setCurrentYt] = useState<YtVideo | null>(null);
+	// Keep last YT track so returning to YT mode can show it
+	const lastYtRef = useRef<YtVideo | null>(null);
 
 	// ── Volume sync ───────────────────────────────────────────────────────────
 	useEffect(() => {
 		const audio = audioRef.current;
 		if (audio) audio.volume = volume;
-		// Also propagate volume to YouTube iframe if active
 		if (source === "youtube") {
 			const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
 			iframe?.contentWindow?.postMessage(
@@ -144,7 +165,13 @@ export function BgmPlayer({ naia }: Props) {
 		}
 	}, [bgmTrackUrl, localTracks, playing, source]);
 
-	// ── AI command listener (bgm_youtube_play / bgm_youtube_stop) ────────────
+	// ── AI command listener ───────────────────────────────────────────────────
+	// Expose currentYt + favs via ref so the listener (created once) can see latest values
+	const currentYtRef = useRef<YtVideo | null>(null);
+	const favsRef = useRef<YtVideo[]>([]);
+	useEffect(() => { currentYtRef.current = currentYt; }, [currentYt]);
+	useEffect(() => { favsRef.current = favs; }, [favs]);
+
 	useEffect(() => {
 		const unlistenP = listen<string>("agent_response", (e) => {
 			try {
@@ -161,16 +188,30 @@ export function BgmPlayer({ naia }: Props) {
 				} else if (msg.type === "bgm_youtube_stop") {
 					audioRef.current?.pause();
 					setPlaying(false);
-					// Restore previous background — only if YouTube actually took over
-					// (a video was selected → backgroundMediaType became "iframe").
-					// Without this guard, opening the YouTube panel and closing it
-					// without selecting a video would erase the existing background.
 					if (useAvatarStore.getState().backgroundMediaType === "iframe") {
 						setBackgroundVideoUrl(prevBgVideoRef.current);
 						setBackgroundMediaType(prevBgMediaRef.current);
 					}
 					prevBgVideoRef.current = "";
 					prevBgMediaRef.current = "";
+				} else if (msg.type === "bgm_youtube_fav_add") {
+					// Add currently playing YT track to favorites (or explicit videoId)
+					const cur = currentYtRef.current;
+					if (!cur) return;
+					setFavs((prev) => {
+						if (prev.some((f) => f.id === cur.id)) return prev; // already added
+						const next = [cur, ...prev].slice(0, 50);
+						saveFavs(next);
+						return next;
+					});
+				} else if (msg.type === "bgm_youtube_fav_remove") {
+					const cur = currentYtRef.current;
+					if (!cur) return;
+					setFavs((prev) => {
+						const next = prev.filter((f) => f.id !== cur.id);
+						saveFavs(next);
+						return next;
+					});
 				}
 			} catch (err) {
 				Logger.error("BgmPlayer", "agent_response parse error", { error: String(err) });
@@ -180,42 +221,70 @@ export function BgmPlayer({ naia }: Props) {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// ── Hide quick-toggles when YouTube panel is open ─────────────────────────
-	// ── Panel anchor position (portal positioning) ────────────────────────────
+	// ── Panel anchor + drawer handle position ────────────────────────────────
+	// panelPos is always calculated so the portal stays in DOM for CSS animation.
 	useEffect(() => {
-		if (source === "youtube" && ytExpanded && playerRef.current) {
-			const rect = playerRef.current.getBoundingClientRect();
-			setPanelPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+		if (!playerRef.current) { setHandlePos(null); setPanelPos(null); return; }
+		const rect = playerRef.current.getBoundingClientRect();
+		const PANEL_W = Math.min(320, window.innerWidth - 16);
+		const safeLeft = Math.min(rect.left, window.innerWidth - PANEL_W - 8);
+		const panelTop = rect.bottom + 4;
+		// Panel position always set (portal stays mounted; hidden via CSS class)
+		setPanelPos({ top: panelTop, left: safeLeft });
+		if (panelExpanded) {
+			setHandlePos({ top: panelTop + ytPanelHeight, left: rect.left + rect.width / 2 });
 		} else {
-			setPanelPos(null);
+			setHandlePos({ top: rect.bottom, left: rect.left + rect.width / 2 });
 		}
-	}, [source, ytExpanded]);
+	}, [panelExpanded, ytPanelHeight]);
 
 	// ── AI context push ───────────────────────────────────────────────────────
+	// Provide full BGM state so Naia can control all player features via agent_response events.
+	// Supported commands: bgm_youtube_play, bgm_youtube_stop, bgm_youtube_fav_add, bgm_youtube_fav_remove
 	useEffect(() => {
-		if (!naia || !currentYt) return;
+		if (!naia) return;
 		naia.pushContext({
 			type: "bgm",
 			data: {
-				source: "youtube",
-				videoId: currentYt.id,
-				title: currentYt.title,
-				channel: currentYt.channel,
+				source,
 				playing,
+				volume,
+				// YouTube info
+				currentVideoId: currentYt?.id ?? null,
+				currentTitle:
+					source === "youtube"
+						? (currentYt?.title ?? null)
+						: (localNames[localIndex] ?? null),
+				currentChannel: currentYt?.channel ?? null,
+				isCurrentFavorited: currentYt ? favs.some((f) => f.id === currentYt.id) : false,
+				favoritesCount: favs.length,
+				favoritesList: favs.slice(0, 10).map((f) => ({ id: f.id, title: f.title })),
+				// Local info
+				localTrackCount: localTracks.length,
+				localTrackIndex: localIndex,
+				// Available commands for AI:
+				// bgm_youtube_play  { videoId, title } — play a specific video
+				// bgm_youtube_stop  — stop playback
+				// bgm_youtube_fav_add    — add current track to favorites
+				// bgm_youtube_fav_remove — remove current track from favorites
 			},
 		});
-	}, [naia, currentYt, playing]);
+	}, [naia, source, playing, volume, currentYt, favs, localNames, localIndex, localTracks.length]);
 
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
 	function handleYtSelect(video: YtVideo) {
-		// Stop local audio and switch to YouTube iframe playback
 		audioRef.current?.pause();
 		setCurrentYt(video);
+		lastYtRef.current = video;
 		setSource("youtube");
 		setPlaying(true);
+		emitAiInterferenceEvent({
+			source: "bgm",
+			action: "music_changed",
+			summary: `BGM: YouTube "${video.title}" (${video.channel}) 재생 시작`,
+		});
 
-		// Save current background — read store directly to avoid stale closure
 		if (!prevBgVideoRef.current && prevBgMediaRef.current === "") {
 			const { backgroundVideoUrl: curUrl, backgroundMediaType: curType } = useAvatarStore.getState();
 			if (curType !== "iframe") {
@@ -225,7 +294,7 @@ export function BgmPlayer({ naia }: Props) {
 		}
 		const embedUrl =
 			`https://www.youtube-nocookie.com/embed/${video.id}` +
-			"?autoplay=1&enablejsapi=1&controls=0" +
+			"?autoplay=1&enablejsapi=1" +
 			"&origin=tauri%3A%2F%2Flocalhost";
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
@@ -266,25 +335,45 @@ export function BgmPlayer({ naia }: Props) {
 	function playLocalAt(idx: number) {
 		if (localTracks.length === 0) return;
 		setSource("local");
-		setCurrentYt(null);
 		setBgmTrackUrl(localTracks[idx]);
 		setLocalIndex(idx);
+		// Restore YT background when switching to local
+		if (useAvatarStore.getState().backgroundMediaType === "iframe") {
+			setBackgroundVideoUrl(prevBgVideoRef.current);
+			setBackgroundMediaType(prevBgMediaRef.current);
+			prevBgVideoRef.current = "";
+			prevBgMediaRef.current = "";
+		}
+		emitAiInterferenceEvent({
+			source: "bgm",
+			action: "music_changed",
+			summary: `BGM: 로컬 "${localNames[idx]}" 재생`,
+		});
 		const audio = audioRef.current;
 		if (!audio) return;
 		audio.src = localTracks[idx];
-		if (playing) audio.play().catch(() => {});
+		audio.play().then(() => setPlaying(true)).catch(() => {});
 	}
 
 	function playNext() {
 		if (source === "local") {
 			playLocalAt((localIndex + 1) % Math.max(localTracks.length, 1));
+		} else if (source === "youtube" && favs.length > 0) {
+			// YouTube: cycle through favorites
+			const curIdx = currentYt ? favs.findIndex((f) => f.id === currentYt.id) : -1;
+			const nextIdx = (curIdx + 1) % favs.length;
+			handleYtSelect(favs[nextIdx]);
 		}
-		// YouTube: no auto-next for now
 	}
 
 	function playPrev() {
 		if (source === "local") {
 			playLocalAt((localIndex - 1 + Math.max(localTracks.length, 1)) % Math.max(localTracks.length, 1));
+		} else if (source === "youtube" && favs.length > 0) {
+			// YouTube: cycle through favorites in reverse
+			const curIdx = currentYt ? favs.findIndex((f) => f.id === currentYt.id) : 0;
+			const prevIdx = (curIdx - 1 + favs.length) % favs.length;
+			handleYtSelect(favs[prevIdx]);
 		}
 	}
 
@@ -328,8 +417,10 @@ export function BgmPlayer({ naia }: Props) {
 	const trackLabel =
 		source === "youtube"
 			? (currentYt?.title ?? "YouTube BGM")
-			: (localNames[localIndex] ?? "");
+			: (localNames[localIndex] ?? "로컬 BGM");
 
+	// Always scroll when playing (so AI-triggered tracks with short titles also marquee)
+	const isScrolling = playing || trackLabel.length > MARQUEE_THRESHOLD;
 
 	// ── Render ────────────────────────────────────────────────────────────────
 
@@ -346,6 +437,15 @@ export function BgmPlayer({ naia }: Props) {
 
 			{/* ── Compact bar ── */}
 			<div className="bgm-player-controls">
+				{/* Fixed BGM icon — pulses when playing */}
+				<span
+					className={`bgm-icon${playing ? " bgm-icon--playing" : ""}`}
+					title="BGM 패널 열기/닫기"
+					onClick={() => setPanelExpanded((v) => !v)}
+				>♫</span>
+
+				<div className="bgm-player-sep" />
+
 				<button type="button" className="bgm-btn" onClick={playPrev} title="이전">‹</button>
 				<button
 					type="button"
@@ -357,50 +457,22 @@ export function BgmPlayer({ naia }: Props) {
 				</button>
 				<button type="button" className="bgm-btn" onClick={playNext} title="다음">›</button>
 
-				<div className="bgm-player-sep" />
-
-				{/* Source toggle */}
+				{/* Track name — fixed width, marquee when long, click to toggle panel */}
 				<button
 					type="button"
-					className={`bgm-btn bgm-source-btn${source === "youtube" ? " bgm-source-btn--yt" : ""}`}
-					title="로컬 / YouTube 전환"
-					onClick={() => {
-						if (source === "local") {
-							setSource("youtube");
-							setYtExpanded(true);
-						} else {
-							audioRef.current?.pause();
-							setPlaying(false);
-							setSource("local");
-							setYtExpanded(false);
-							setCurrentYt(null);
-							// Restore previous background only if YouTube actually took over
-							if (useAvatarStore.getState().backgroundMediaType === "iframe") {
-								setBackgroundVideoUrl(prevBgVideoRef.current);
-								setBackgroundMediaType(prevBgMediaRef.current);
-							}
-							prevBgVideoRef.current = "";
-							prevBgMediaRef.current = "";
-						}
-					}}
+					className={`bgm-track-name bgm-track-toggle${panelExpanded ? " bgm-track-name--open" : ""}`}
+					title={panelExpanded ? "패널 닫기" : "BGM 패널 열기"}
+					onClick={() => setPanelExpanded((v) => !v)}
 				>
-					{source === "youtube" ? "▶ YT" : "🎵"}
+					{isScrolling ? (
+						<span className="bgm-track-name__scroll">
+							<span>{trackLabel}&nbsp;&nbsp;&nbsp;&nbsp;</span>
+							<span>{trackLabel}&nbsp;&nbsp;&nbsp;&nbsp;</span>
+						</span>
+					) : (
+						trackLabel
+					)}
 				</button>
-
-				<span className="bgm-track-name" title={trackLabel}>
-					{trackLabel || "BGM"}
-				</span>
-
-				{source === "youtube" && (
-					<button
-						type="button"
-						className={`bgm-btn${ytExpanded ? " bgm-btn--active" : ""}`}
-						title={ytExpanded ? "접기" : "YouTube 검색"}
-						onClick={() => setYtExpanded((v) => !v)}
-					>
-						{ytExpanded ? "▲" : "▼"}
-					</button>
-				)}
 
 				<input
 					type="range"
@@ -414,108 +486,204 @@ export function BgmPlayer({ naia }: Props) {
 				/>
 			</div>
 
-			{/* ── YouTube panel (expanded) ── */}
-			{source === "youtube" && ytExpanded && panelPos && createPortal(
-				<div
-					className="bgm-yt-panel"
-					style={{ position: "fixed", top: panelPos.top, right: panelPos.right, zIndex: 10001 }}
+			{/* ── Drawer handle — drag to resize, click to toggle ── */}
+			{handlePos && createPortal(
+				<button
+					type="button"
+					className={`bgm-yt-drawer-handle${panelExpanded ? " bgm-yt-drawer-handle--open" : ""}`}
+					style={{ position: "fixed", top: handlePos.top, left: handlePos.left }}
+					title="드래그: 높이 조절 / 클릭: 열기·닫기"
+					onPointerDown={(e) => {
+						e.currentTarget.setPointerCapture(e.pointerId);
+						handleDragRef.current = { startY: e.clientY, startH: ytPanelHeight, moved: false };
+					}}
+					onPointerMove={(e) => {
+						const ref = handleDragRef.current;
+						if (!ref) return;
+						const delta = e.clientY - ref.startY;
+						if (!ref.moved && Math.abs(delta) > 4) ref.moved = true;
+						if (ref.moved) {
+							const next = Math.max(YT_PANEL_H_MIN, Math.min(YT_PANEL_H_MAX, ref.startH + delta));
+							setYtPanelHeight(next);
+							localStorage.setItem(YT_PANEL_H_KEY, String(next));
+							if (!panelExpanded) setPanelExpanded(true);
+						}
+					}}
+					onPointerUp={() => {
+						const ref = handleDragRef.current;
+						handleDragRef.current = null;
+						if (!ref?.moved) setPanelExpanded((v) => !v);
+					}}
+					onPointerCancel={() => { handleDragRef.current = null; }}
 				>
-					{/* Search bar */}
-					<form
-						className="bgm-yt-search-row"
-						onSubmit={(e) => { e.preventDefault(); doSearch(searchQuery); }}
-					>
-						<input
-							type="text"
-							className="bgm-yt-search-input"
-							placeholder="YouTube 검색…"
-							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
-						/>
-						<button type="submit" className="bgm-btn" disabled={searching}>
-							{searching ? "…" : "🔍"}
-						</button>
-					</form>
+					<span className="bgm-yt-drawer-handle__bar" />
+					<span className="bgm-yt-drawer-handle__arrow">
+						{panelExpanded ? "▲" : "▼"}
+					</span>
+				</button>,
+				document.body,
+			)}
 
-					{/* View tabs */}
-					<div className="bgm-yt-tabs">
+			{/* ── Unified BGM panel — always in DOM when anchor ready, hidden via CSS ── */}
+			{panelPos && createPortal(
+				<div
+					className={`bgm-yt-panel${panelExpanded ? "" : " bgm-yt-panel--hidden"}`}
+					style={{ position: "fixed", top: panelPos.top, left: panelPos.left, zIndex: 10001, height: ytPanelHeight }}
+				>
+					{/* Mode tab header */}
+					<div className="bgm-panel-header">
+						<div className="bgm-panel-tabs">
+							<button
+								type="button"
+								className={`bgm-panel-tab${panelTab === "youtube" ? " bgm-panel-tab--active" : ""}`}
+								onClick={() => setPanelTab("youtube")}
+							>
+								▶ YouTube
+							</button>
+							<button
+								type="button"
+								className={`bgm-panel-tab${panelTab === "local" ? " bgm-panel-tab--active" : ""}`}
+								onClick={() => setPanelTab("local")}
+							>
+								♪ 로컬
+							</button>
+						</div>
 						<button
 							type="button"
-							className={`bgm-yt-tab${ytView === "categories" ? " bgm-yt-tab--active" : ""}`}
-							onClick={() => setYtView("categories")}
+							className="bgm-panel-close"
+							onClick={() => setPanelExpanded(false)}
+							title="닫기"
 						>
-							장르
-						</button>
-						<button
-							type="button"
-							className={`bgm-yt-tab${ytView === "search" ? " bgm-yt-tab--active" : ""}`}
-							onClick={() => setYtView("search")}
-						>
-							검색결과
-						</button>
-						<button
-							type="button"
-							className={`bgm-yt-tab${ytView === "favorites" ? " bgm-yt-tab--active" : ""}`}
-							onClick={() => setYtView("favorites")}
-						>
-							즐겨찾기 {favs.length > 0 && `(${favs.length})`}
+							✕
 						</button>
 					</div>
 
-					{/* Categories */}
-					{ytView === "categories" && (
-						<div className="bgm-yt-categories">
-							{CATEGORIES.map((cat) => (
-								<button
-									key={cat.id}
-									type="button"
-									className="bgm-yt-cat-btn"
-									onClick={() => loadCategory(cat.query)}
-								>
-									{cat.label}
+					{/* ── YouTube tab ── */}
+					{panelTab === "youtube" && (
+						<>
+							<form
+								className="bgm-yt-search-row"
+								onSubmit={(e) => { e.preventDefault(); doSearch(searchQuery); }}
+							>
+								<input
+									type="text"
+									className="bgm-yt-search-input"
+									placeholder="YouTube 검색…"
+									value={searchQuery}
+									onChange={(e) => setSearchQuery(e.target.value)}
+								/>
+								<button type="submit" className="bgm-btn" disabled={searching}>
+									{searching ? "…" : "🔍"}
 								</button>
-							))}
-						</div>
+							</form>
+
+							<div className="bgm-yt-tabs">
+								<button
+									type="button"
+									className={`bgm-yt-tab${ytView === "categories" ? " bgm-yt-tab--active" : ""}`}
+									onClick={() => setYtView("categories")}
+								>
+									장르
+								</button>
+								<button
+									type="button"
+									className={`bgm-yt-tab${ytView === "search" ? " bgm-yt-tab--active" : ""}`}
+									onClick={() => setYtView("search")}
+								>
+									검색결과
+								</button>
+								<button
+									type="button"
+									className={`bgm-yt-tab${ytView === "favorites" ? " bgm-yt-tab--active" : ""}`}
+									onClick={() => setYtView("favorites")}
+								>
+									즐겨찾기 {favs.length > 0 && `(${favs.length})`}
+								</button>
+							</div>
+
+							{ytView === "categories" && (
+								<div className="bgm-yt-categories">
+									{CATEGORIES.map((cat) => (
+										<button
+											key={cat.id}
+											type="button"
+											className="bgm-yt-cat-btn"
+											onClick={() => loadCategory(cat.query)}
+										>
+											{cat.label}
+										</button>
+									))}
+								</div>
+							)}
+
+							{ytView === "search" && (
+								<div className="bgm-yt-list">
+									{searching && <div className="bgm-yt-status">검색 중…</div>}
+									{!searching && searchResults.length === 0 && (
+										<div className="bgm-yt-status">결과 없음</div>
+									)}
+									{searchResults.map((v) => (
+										<YtTrackRow
+											key={v.id}
+											video={v}
+											loading={false}
+											playing={currentYt?.id === v.id && playing}
+											fav={isFav(v.id)}
+											onPlay={() => handleYtSelect(v)}
+											onFav={() => toggleFav(v)}
+										/>
+									))}
+								</div>
+							)}
+
+							{ytView === "favorites" && (
+								<div className="bgm-yt-list">
+									{favs.length === 0 && (
+										<div className="bgm-yt-status">즐겨찾기가 비어 있습니다</div>
+									)}
+									{favs.map((v) => (
+										<YtTrackRow
+											key={v.id}
+											video={v}
+											loading={false}
+											playing={currentYt?.id === v.id && playing}
+											fav={true}
+											onPlay={() => handleYtSelect(v)}
+											onFav={() => toggleFav(v)}
+										/>
+									))}
+								</div>
+							)}
+						</>
 					)}
 
-					{/* Search results */}
-					{ytView === "search" && (
+					{/* ── Local tab ── */}
+					{panelTab === "local" && (
 						<div className="bgm-yt-list">
-							{searching && <div className="bgm-yt-status">검색 중…</div>}
-							{!searching && searchResults.length === 0 && (
-								<div className="bgm-yt-status">결과 없음</div>
+							{localTracks.length === 0 && (
+								<div className="bgm-yt-status">트랙 없음 (naia-settings/bgm-musics/)</div>
 							)}
-							{searchResults.map((v) => (
-								<YtTrackRow
-									key={v.id}
-									video={v}
-									loading={false}
-									playing={currentYt?.id === v.id && playing}
-									fav={isFav(v.id)}
-									onPlay={() => handleYtSelect(v)}
-									onFav={() => toggleFav(v)}
-								/>
-							))}
-						</div>
-					)}
-
-					{/* Favorites */}
-					{ytView === "favorites" && (
-						<div className="bgm-yt-list">
-							{favs.length === 0 && (
-								<div className="bgm-yt-status">즐겨찾기가 비어 있습니다</div>
-							)}
-							{favs.map((v) => (
-								<YtTrackRow
-									key={v.id}
-									video={v}
-									loading={false}
-									playing={currentYt?.id === v.id && playing}
-									fav={true}
-									onPlay={() => handleYtSelect(v)}
-									onFav={() => toggleFav(v)}
-								/>
-							))}
+							{localTracks.map((url, idx) => {
+								const isActive = source === "local" && localIndex === idx;
+								return (
+									<div
+										key={url}
+										className={`bgm-yt-row bgm-local-row${isActive && playing ? " bgm-yt-row--playing" : ""}`}
+										onClick={() => playLocalAt(idx)}
+										onKeyDown={(e) => e.key === "Enter" && playLocalAt(idx)}
+										role="button"
+										tabIndex={0}
+										title={localNames[idx]}
+									>
+										<div className="bgm-local-icon">
+											{isActive && playing ? "▶" : "♪"}
+										</div>
+										<div className="bgm-yt-row-info">
+											<div className="bgm-yt-row-title">{localNames[idx]}</div>
+										</div>
+									</div>
+								);
+							})}
 						</div>
 					)}
 				</div>,
@@ -525,7 +693,7 @@ export function BgmPlayer({ naia }: Props) {
 	);
 }
 
-// ── YtTrackRow ────────────────────────────────────────────────────────────────
+// ── YtTrackRow ───────────────────────────────────────────────────────────────── ────────────────────────────────────────────────────────────────
 
 interface RowProps {
 	video: YtVideo;

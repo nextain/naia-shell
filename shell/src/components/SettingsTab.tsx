@@ -10,6 +10,7 @@ import {
 	listNaiaAssets,
 	setAdkPath,
 	toLocalBlobUrl,
+	writeNaiaConfig,
 } from "../lib/adk-store";
 import {
 	DEFAULT_AVATAR_MODEL,
@@ -1953,14 +1954,16 @@ export function SettingsTab() {
 	}) {
 		const cfg = loadConfig();
 		if (!cfg) return;
-		saveConfig({
+		const updated = {
 			...cfg,
 			agentName: (overrides?.agentName ?? agentName).trim() || undefined,
 			userName: (overrides?.userName ?? userName).trim() || undefined,
 			honorific: (overrides?.honorific ?? honorific).trim() || undefined,
 			speechStyle: overrides?.speechStyle ?? speechStyle,
 			persona: (overrides?.persona ?? persona).trim() || undefined,
-		});
+		};
+		saveConfig(updated);
+		void writeNaiaConfig(updated as unknown as Record<string, unknown>);
 	}
 
 	function handleSave() {
@@ -2079,6 +2082,8 @@ export function SettingsTab() {
 				memoryLlmProvider !== "none" ? memoryLlmModel || undefined : undefined,
 		};
 		saveConfig(newConfig);
+		// Also persist to naia-settings/config.json so ADK reload restores the same settings
+		void writeNaiaConfig(newConfig as unknown as Record<string, unknown>);
 		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
 		setLocale(locale);
 		setAvatarModelPath(vrmModel);

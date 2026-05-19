@@ -2,10 +2,13 @@
  * skill_youtube_bgm — AI skill for YouTube BGM control.
  *
  * Actions:
- *   search  : search YouTube for BGM videos
- *   play    : send bgm_youtube_play command to shell (shell fetches stream URL via /yt/stream)
- *   stop    : send bgm_stop command to shell
- *   trending: get trending music/ambient videos
+ *   search    : search YouTube for BGM videos
+ *   play      : send bgm_youtube_play command to shell (shell fetches stream URL via /yt/stream)
+ *   stop      : stop playback
+ *   trending  : get trending music/ambient videos
+ *   fav_add   : add currently playing track to favorites
+ *   fav_remove: remove currently playing track from favorites
+ *   fav_list  : list BGM favorites (returned from shell context)
  */
 import { getInnertube } from "../../youtube-server.js";
 import type { SkillDefinition, SkillResult } from "../types.js";
@@ -27,9 +30,9 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 			properties: {
 				action: {
 					type: "string",
-					enum: ["search", "play", "stop", "trending"],
+					enum: ["search", "play", "stop", "trending", "fav_add", "fav_remove", "fav_list"],
 					description:
-						"search: find videos | play: play a video by ID | stop: stop playback | trending: get trending ambient/music",
+						"search: find videos | play: play a video by ID | stop: stop playback | trending: get trending ambient/music | fav_add: add current track to favorites | fav_remove: remove current track from favorites | fav_list: list saved favorites",
 				},
 				query: {
 					type: "string",
@@ -107,6 +110,23 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 			if (action === "stop") {
 				sendShellCommand({ type: "bgm_youtube_stop" });
 				return { success: true, output: "BGM stopped" };
+			}
+
+			if (action === "fav_add") {
+				sendShellCommand({ type: "bgm_youtube_fav_add" });
+				return { success: true, output: "Added current track to favorites" };
+			}
+
+			if (action === "fav_remove") {
+				sendShellCommand({ type: "bgm_youtube_fav_remove" });
+				return { success: true, output: "Removed current track from favorites" };
+			}
+
+			if (action === "fav_list") {
+				return {
+					success: true,
+					output: "Favorites list is available in BGM context (favoritesList field). Use it to see what the user has saved.",
+				};
 			}
 
 			return { success: false, output: `Unknown action: ${action}` };

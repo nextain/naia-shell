@@ -7,6 +7,7 @@ import {
 	Clock,
 	DirectionalLight,
 	LoopRepeat,
+	MOUSE,
 	Object3D,
 	PerspectiveCamera,
 	Scene,
@@ -46,13 +47,34 @@ export function getCameraActions(): CameraActions {
 }
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
+
+// Compute camera filmOffset so the avatar appears centered in the naia column (left panel).
+// filmOffset > 0 shifts the frustum right → scene objects appear to the left on screen.
+//
+// Correct derivation:
+//   targetNDC = naiaWidth / canvasWidth * 2 - 1   (always negative — left half of screen)
+//   We want scene origin (x=0) to project at targetNDC.
+//   NDC_x(0) = -frustumCenter / frustumHalfWidth = -targetNDC
+//   frustumCenter = near * filmOffset / filmGauge * min(aspect,1)
+//   frustumHalfWidth = near * tan(fov/2) * aspect
+//   → filmOffset = targetNDC * tan(fov/2) * aspect * filmGauge / min(aspect,1)
+//   For landscape (aspect>1): min(aspect,1)=1, simplifies to:
+//   filmOffset = -targetNDC * tan(fov/2) * aspect * filmGauge
+function computeFilmOffset(camera: PerspectiveCamera, canvasWidth: number): number {
+	const naiaWidth = parseFloat(
+		getComputedStyle(document.documentElement).getPropertyValue("--naia-width"),
+	) || 320;
+	// NDC of the naia column center (negative = left side of screen)
+	const targetNDC = (naiaWidth / canvasWidth) * 2 - 1;
+	const halfFovTan = Math.tan((camera.fov * Math.PI) / 360);
+	const aspect = camera.aspect > 0 ? camera.aspect : canvasWidth / 1;
+	return -targetNDC * halfFovTan * aspect * camera.filmGauge;
+}
 const MAX_DELTA = 0.05;
 const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
-	// Camera offset FROM orbit target (directly in front, slightly above)
-	position: { x: 0, y: 0.2, z: -2.0 },
-	// Orbit target: x shifts right so avatar appears in left naia column
-	target: { x: 1.3, y: 0.9, z: 0 },
+	position: { x: -0.22, y: 1.32, z: -1.78 },
+	target: { x: -0.22, y: 1.14, z: 0.03 },
 };
 
 interface SavedCamera {
@@ -286,6 +308,9 @@ export function AvatarCanvas() {
 		controls.maxDistance = 10;
 		controls.maxPolarAngle = Math.PI * 0.85;
 		controls.minPolarAngle = 0.1;
+		// Prevent OrbitControls from capturing left/right pointer events —
+		// rotate and pan are handled by AiControlBar buttons instead.
+		controls.mouseButtons = { LEFT: null as unknown as MOUSE, MIDDLE: MOUSE.DOLLY, RIGHT: null as unknown as MOUSE };
 
 		_cameraActions.rotate = (dx, dy) => {
 			const offset = camera.position.clone().sub(controls.target);
@@ -320,19 +345,25 @@ export function AvatarCanvas() {
 			controls.update();
 		};
 		_cameraActions.reset = () => {
-			// Orbit target = model center + x-offset (keeps avatar in left naia column)
-			const target = lastModelCenter
-				? lastModelCenter.clone().setX(lastModelCenter.x + DEFAULT_CAMERA.target.x)
-				: new Vector3(DEFAULT_CAMERA.target.x, DEFAULT_CAMERA.target.y, DEFAULT_CAMERA.target.z);
-			// Camera is directly in front of orbit target (position = target + position-offset)
-			const camOffset = new Vector3(
+			// x, z: always use DEFAULT_CAMERA absolute values (user-tuned).
+			// y: offset by model center height so the camera frames the avatar
+			//    correctly regardless of model scale/position.
+			const yBias = lastModelCenter
+				? lastModelCenter.y - DEFAULT_CAMERA.target.y
+				: 0;
+			camera.position.set(
 				DEFAULT_CAMERA.position.x,
-				DEFAULT_CAMERA.position.y,
+				DEFAULT_CAMERA.position.y + yBias,
 				DEFAULT_CAMERA.position.z,
 			);
-			camera.position.copy(target).add(camOffset);
-			controls.target.copy(target);
-			camera.lookAt(target);
+			controls.target.set(
+				DEFAULT_CAMERA.target.x,
+				DEFAULT_CAMERA.target.y + yBias,
+				DEFAULT_CAMERA.target.z,
+			);
+			camera.lookAt(controls.target);
+			camera.filmOffset = computeFilmOffset(camera, container.clientWidth);
+			camera.updateProjectionMatrix();
 			controls.update();
 			clearSavedCamera();
 		};
@@ -347,20 +378,21 @@ export function AvatarCanvas() {
 			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
 			Logger.info("AvatarCanvas", "Camera restored from saved state");
 		} else {
-			// Initial orbit target = DEFAULT_CAMERA.target (x-offset + estimated model height)
+			camera.position.set(
+				DEFAULT_CAMERA.position.x,
+				DEFAULT_CAMERA.position.y,
+				DEFAULT_CAMERA.position.z,
+			);
 			controls.target.set(
 				DEFAULT_CAMERA.target.x,
 				DEFAULT_CAMERA.target.y,
 				DEFAULT_CAMERA.target.z,
 			);
-			// Camera = orbit target + position-offset (directly in front)
-			camera.position.set(
-				DEFAULT_CAMERA.target.x + DEFAULT_CAMERA.position.x,
-				DEFAULT_CAMERA.target.y + DEFAULT_CAMERA.position.y,
-				DEFAULT_CAMERA.target.z + DEFAULT_CAMERA.position.z,
-			);
 			Logger.info("AvatarCanvas", "Camera set to default position");
 		}
+		// Apply filmOffset so avatar appears in left naia column
+		camera.filmOffset = computeFilmOffset(camera, container.clientWidth);
+		camera.updateProjectionMatrix();
 		controls.update();
 
 		// Save camera on control change
@@ -498,16 +530,10 @@ export function AvatarCanvas() {
 				// Use modelCenter (bounding-box chest level, computed by VRM loader).
 				// Always save so reset() can restore it; only adjust camera on first load.
 				lastModelCenter = result.modelCenter.clone();
-				// Align orbit pivot to model center + layout x-offset.
-				// The x-offset keeps the avatar in the left naia column while allowing
-				// correct orbit around the avatar body.
-				{
-					const newTarget = result.modelCenter.clone().setX(
-						result.modelCenter.x + DEFAULT_CAMERA.target.x,
-					);
-					const diff = newTarget.clone().sub(controls.target);
+				if (!savedCam) {
+					const diff = result.modelCenter.clone().sub(controls.target);
 					camera.position.add(diff);
-					controls.target.copy(newTarget);
+					controls.target.copy(result.modelCenter);
 					controls.update();
 				}
 
@@ -600,14 +626,18 @@ export function AvatarCanvas() {
 			if (w === 0 || h === 0) return;
 			renderer.setSize(w, h);
 			camera.aspect = w / h;
+			camera.filmOffset = computeFilmOffset(camera, w);
 			camera.updateProjectionMatrix();
 		}
+		// Also update filmOffset when naia column width changes
+		window.addEventListener("naia-width-changed", onResize);
 		const ro = new ResizeObserver(onResize);
 		ro.observe(container);
 
 		return () => {
 			disposed = true;
 			ro.disconnect();
+			window.removeEventListener("naia-width-changed", onResize);
 			cancelAnimationFrame(frameId);
 			unsubSpeaking();
 			unsubEmotion();

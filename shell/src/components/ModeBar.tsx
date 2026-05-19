@@ -13,13 +13,12 @@ import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { removeInstalledPanel } from "../lib/panel-loader";
-import { panelRegistry, type NaiaContextBridge } from "../lib/panel-registry";
+import { panelRegistry } from "../lib/panel-registry";
 import { usePanelStore } from "../stores/panel";
 import { BgmPlayer } from "./BgmPlayer";
 
 interface ModeBarProps {
 	onAddMode?: () => void;
-	bgmNaia?: NaiaContextBridge;
 }
 
 function extractInitial(shortcut: BrowserLink): string {
@@ -28,7 +27,7 @@ function extractInitial(shortcut: BrowserLink): string {
 	return m ? m[1].toUpperCase() : "?";
 }
 
-export function ModeBar({ onAddMode, bgmNaia }: ModeBarProps) {
+export function ModeBar({ onAddMode }: ModeBarProps) {
 	const {
 		activePanel,
 		setActivePanel,
@@ -37,6 +36,7 @@ export function ModeBar({ onAddMode, bgmNaia }: ModeBarProps) {
 		pushModal,
 		popModal,
 	} = usePanelStore();
+
 	const [browserShortcuts, setBrowserShortcuts] = useState<BrowserLink[]>([]);
 	const [ctxMenu, setCtxMenu] = useState<{
 		x: number;
@@ -556,7 +556,8 @@ export function ModeBar({ onAddMode, bgmNaia }: ModeBarProps) {
 					</form>
 				</div>
 			, document.body)}
-			<BgmPlayer naia={bgmNaia} />
+			{/* ── BGM (right side of mode-bar) ─── */}
+			<BgmPlayer />
 			<button
 				type="button"
 				className={`mode-bar-settings${activePanel === "settings" ? " mode-bar-settings--active" : ""}`}

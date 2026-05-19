@@ -387,6 +387,16 @@ body,
 	pointer-events: none;
 }
 
+.app-bg-iframe {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	z-index: 0;
+	pointer-events: none;
+	border: none;
+}
+
 .app-bg-video {
 	/* GPU compositor layer for hardware-accelerated video decoding */
 	will-change: transform;
@@ -4950,8 +4960,46 @@ body.resizing-row {
 .bgm-player {
 	display: flex;
 	align-items: center;
+	/* Fixed width so the bar never jumps when track name changes */
+	width: 260px;
 	flex-shrink: 0;
+	padding: 3px 8px;
+	background: rgba(8, 14, 28, 0.45);
+	border-radius: 8px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
 	pointer-events: auto;
+}
+
+/* Fixed BGM icon */
+.bgm-icon {
+	font-size: 15px;
+	color: rgba(160, 200, 255, 0.95);
+	flex-shrink: 0;
+	line-height: 1;
+	padding: 0 3px;
+	text-shadow: 0 0 8px rgba(130, 180, 255, 0.6), 0 0 16px rgba(100, 160, 255, 0.3);
+	cursor: pointer;
+	transition: text-shadow 0.2s ease, transform 0.2s ease;
+	user-select: none;
+	display: inline-block;
+}
+
+.bgm-icon:hover {
+	text-shadow: 0 0 14px rgba(160, 210, 255, 1), 0 0 28px rgba(120, 180, 255, 0.7);
+	transform: translateY(-2px);
+}
+
+/* Beat animation when playing — bounces without changing size */
+@keyframes bgm-icon-beat {
+	0%   { transform: translateY(0) rotate(0deg);   text-shadow: 0 0 8px rgba(130, 180, 255, 0.6), 0 0 16px rgba(100, 160, 255, 0.3); }
+	25%  { transform: translateY(-3px) rotate(-6deg); text-shadow: 0 0 16px rgba(170, 220, 255, 1), 0 0 32px rgba(130, 190, 255, 0.8); }
+	50%  { transform: translateY(0) rotate(3deg);   text-shadow: 0 0 10px rgba(140, 190, 255, 0.7), 0 0 20px rgba(110, 170, 255, 0.4); }
+	75%  { transform: translateY(-2px) rotate(-3deg); text-shadow: 0 0 14px rgba(160, 210, 255, 0.9), 0 0 28px rgba(130, 185, 255, 0.6); }
+	100% { transform: translateY(0) rotate(0deg);   text-shadow: 0 0 8px rgba(130, 180, 255, 0.6), 0 0 16px rgba(100, 160, 255, 0.3); }
+}
+
+.bgm-icon--playing {
+	animation: bgm-icon-beat 1.4s ease-in-out infinite;
 }
 
 .bgm-player-controls {
@@ -4984,18 +5032,115 @@ body.resizing-row {
 	width: 1px;
 	height: 12px;
 	background: rgba(255, 255, 255, 0.1);
-	margin: 0 2px;
+	margin: 0 5px;
 }
 
-.bgm-source-btn--yt {
-	color: #ff4444;
+/* BGM track name — fixed width, overflow hidden, marquee when long */
+.bgm-track-toggle {
+	background: transparent;
+	border: none;
+	text-align: left;
+	cursor: pointer;
+	padding: 0;
+}
+
+/* ── Unified BGM panel header ─────────────────────────────────────────────── */
+.bgm-panel-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 8px 0;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	flex-shrink: 0;
+}
+
+.bgm-panel-tabs {
+	display: flex;
+	gap: 2px;
+	flex: 1;
+}
+
+.bgm-panel-tab {
+	background: transparent;
+	border: none;
+	border-bottom: 2px solid transparent;
+	color: rgba(255, 255, 255, 0.45);
+	font-size: 0.75rem;
 	font-weight: 600;
+	padding: 4px 10px 5px;
+	cursor: pointer;
+	border-radius: 6px 6px 0 0;
+	transition: color 0.15s;
+	letter-spacing: 0.02em;
 }
 
-/* ── YouTube BGM expanded panel ─────────────────────────────────────────── */
+.bgm-panel-tab:hover {
+	color: rgba(255, 255, 255, 0.8);
+}
+
+.bgm-panel-tab--active {
+	color: rgba(255, 255, 255, 0.95);
+	border-bottom-color: rgba(130, 180, 255, 0.8);
+}
+
+.bgm-panel-close {
+	background: transparent;
+	border: none;
+	color: rgba(255, 255, 255, 0.3);
+	font-size: 11px;
+	cursor: pointer;
+	padding: 2px 4px;
+	border-radius: 4px;
+	flex-shrink: 0;
+	transition: color 0.15s;
+	margin-bottom: 2px;
+}
+
+.bgm-panel-close:hover {
+	color: rgba(255, 255, 255, 0.7);
+}
+
+/* Local track row icon */
+.bgm-local-row {
+	align-items: center;
+}
+
+.bgm-local-icon {
+	width: 28px;
+	height: 28px;
+	border-radius: 6px;
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.5);
+	flex-shrink: 0;
+}
+
+.bgm-yt-row--playing .bgm-local-icon {
+	color: rgba(130, 180, 255, 0.9);
+	border-color: rgba(130, 180, 255, 0.3);
+	background: rgba(130, 180, 255, 0.1);
+}
+
+/* ── BGM unified panel ───────────────────────────────────────────────────── */
+@keyframes bgm-panel-enter {
+	from {
+		opacity: 0.2;
+		transform: scaleY(0);
+	}
+	to {
+		opacity: 1;
+		transform: scaleY(1);
+	}
+}
+
 .bgm-yt-panel {
-	width: 320px;
-	max-height: 480px;
+	width: min(320px, calc(100vw - 16px));
+	/* height is controlled by inline style (drag-to-resize); max-height is a fallback */
+	max-height: min(700px, calc(100vh - 120px));
 	display: flex;
 	flex-direction: column;
 	background: rgba(8, 14, 28, 0.92);
@@ -5005,6 +5150,24 @@ body.resizing-row {
 	-webkit-backdrop-filter: blur(12px);
 	overflow: hidden;
 	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+	transform-origin: top center;
+	/* Base (visible) state — explicit values so transition has defined endpoints */
+	opacity: 1;
+	transform: scaleY(1);
+	transition: opacity 0.22s ease, transform 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+/* Enter animation — unfolds downward from top */
+.bgm-yt-panel:not(.bgm-yt-panel--hidden) {
+	animation: bgm-panel-enter 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+/* Hidden state — collapses upward to top edge */
+.bgm-yt-panel--hidden {
+	opacity: 0;
+	transform: scaleY(0);
+	pointer-events: none;
+	animation: none;
 }
 
 .bgm-yt-search-row {
@@ -5066,7 +5229,8 @@ body.resizing-row {
 	gap: 4px;
 	padding: 8px;
 	overflow-y: auto;
-	max-height: 360px;
+	flex: 1;
+	min-height: 0;
 }
 
 .bgm-yt-cat-btn {
@@ -5089,7 +5253,7 @@ body.resizing-row {
 .bgm-yt-list {
 	overflow-y: auto;
 	flex: 1;
-	padding: 4px;
+	padding: 4px 4px 12px;
 }
 
 .bgm-yt-status {
@@ -5176,20 +5340,44 @@ body.resizing-row {
 }
 
 .bgm-yt-thumb {
+	width: 60px;
+	height: 40px;
 	border-radius: 2px;
 	object-fit: cover;
 	flex-shrink: 0;
 }
 
+/* Marquee animation for long track names */
+@keyframes bgm-marquee {
+	0% { transform: translateX(0); }
+	100% { transform: translateX(-50%); }
+}
+
 .bgm-track-name {
-	flex: 1;
-	min-width: 0;
+	/* Fixed width matched to YT title max — bar never resizes */
+	width: 100px;
+	flex-shrink: 0;
 	font-size: 0.72rem;
 	color: rgba(255, 255, 255, 0.6);
 	overflow: hidden;
-	text-overflow: ellipsis;
 	white-space: nowrap;
-	max-width: 80px;
+}
+
+/* Slightly brighter when panel is open */
+.bgm-track-name--open {
+	color: rgba(255, 255, 255, 0.85);
+}
+
+/* Scrolling container: two copies of the text, animate -50% for seamless loop */
+.bgm-track-name__scroll {
+	display: inline-flex;
+	white-space: nowrap;
+	animation: bgm-marquee 12s linear infinite;
+}
+
+.bgm-track-name__scroll span {
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .bgm-volume {
@@ -5198,24 +5386,80 @@ body.resizing-row {
 	flex-shrink: 0;
 }
 
-/* Quick toggles: AI 참견 + TTS — top-left (BGM moved to ModeBar) */
-.quick-toggles {
+/* YouTube drawer pull handle (portal-rendered, fixed position)
+   Drag up/down to resize panel height; click to toggle open/closed */
+.bgm-yt-drawer-handle {
 	position: fixed;
-	top: 38px;
-	left: 8px;
-	z-index: 4;
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	padding: 4px 8px;
-	background: rgba(8, 14, 28, 0.55);
-	border-radius: 10px;
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
+	transform: translateX(-50%);
+	padding: 3px 16px 5px;
+	background: rgba(8, 14, 28, 0.78);
 	border: 1px solid rgba(255, 255, 255, 0.08);
-	pointer-events: auto;
+	border-top: none;
+	border-radius: 0 0 8px 8px;
+	cursor: ns-resize;
+	color: rgba(255, 255, 255, 0.45);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	z-index: 10000;
+	transition: color 0.15s, background 0.15s;
+	user-select: none;
+	touch-action: none;
+}
+.bgm-yt-drawer-handle:hover {
+	color: rgba(255, 255, 255, 0.75);
+}
+.bgm-yt-drawer-handle__bar {
+	width: 20px;
+	height: 2px;
+	background: currentColor;
+	border-radius: 2px;
+}
+.bgm-yt-drawer-handle__arrow {
+	font-size: 8px;
+	line-height: 1;
 }
 
+/* AI + avatar controls — independent horizontal bar on the avatar area */
+.ai-control-bar {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 3px;
+	padding: 5px 8px;
+	align-self: flex-start;
+	pointer-events: auto;
+	background: rgba(8, 14, 28, 0.52);
+	border-radius: 8px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.ai-control-bar__sep {
+	width: 1px;
+	height: 14px;
+	background: rgba(255, 255, 255, 0.12);
+	margin: 0 2px;
+}
+
+/* BGM + controls right-side group in ModeBar */
+.mode-bar-right-controls {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	flex-shrink: 0;
+}
+
+.mode-bar-ctrl-sep {
+	width: 1px;
+	height: 18px;
+	background: rgba(255, 255, 255, 0.1);
+	margin: 0 2px;
+	flex-shrink: 0;
+}
 .onboarding-overlay {
 	position: fixed;
 	inset: 0;
@@ -8626,6 +8870,7 @@ body.resizing-col * {
 	.naia-resize-handle,
 	.naia-chat-wrapper,
 	.naia-chat-toggle,
+	.avatar-canvas-layer,
 	.workspace-panel__tree,
 	.workspace-panel__sessions,
 	.workspace-panel__resize-handle,
@@ -8711,13 +8956,17 @@ body.resizing-col * {
 
 	/* ── Page break control ──────────────────────────────────────────── */
 
-	/* Headings: never orphan at page bottom */
+	/* Headings: never orphan at page bottom + force black for print */
 	.workspace-editor__preview h1,
 	.workspace-editor__preview h2,
 	.workspace-editor__preview h3,
-	.workspace-editor__preview h4 {
+	.workspace-editor__preview h4,
+	.workspace-editor__preview h5,
+	.workspace-editor__preview h6 {
 		break-after: avoid !important;
 		page-break-after: avoid !important;
+		color: black !important;
+		border-bottom-color: #ccc !important;
 	}
 
 	/* Images: fit page, avoid break */
@@ -8738,14 +8987,20 @@ body.resizing-col * {
 
 	/* ── Mermaid: force light theme for print ────────────────────────── */
 	.workspace-editor__mermaid {
+		display: flex !important;
 		overflow: visible !important;
 		padding: 8px 0 !important;
+		-webkit-print-color-adjust: exact !important;
+		print-color-adjust: exact !important;
 	}
 	.workspace-editor__mermaid svg {
+		display: block !important;
 		max-width: 100% !important;
 		width: 100% !important;
 		height: auto !important;
 		max-height: 230mm !important;
+		-webkit-print-color-adjust: exact !important;
+		print-color-adjust: exact !important;
 	}
 
 	/* Background: all fills → white/light */

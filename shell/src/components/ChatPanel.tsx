@@ -520,53 +520,6 @@ export function ChatPanel() {
 		};
 	}, []);
 
-	// naia:speak — TTS without LLM (e.g., startup greeting)
-	useEffect(() => {
-		const handler = (e: Event) => {
-			const { text } = (e as CustomEvent<{ text: string }>).detail;
-			if (!text) return;
-			const config = loadConfig();
-			if (!config?.ttsEnabled) return;
-			if (!audioQueueRef.current) {
-				audioQueueRef.current = new AudioQueue({
-					outputDeviceId: config.ttsOutputDeviceId || undefined,
-					onPlaybackStart: () => {
-						useAvatarStore.getState().setSpeaking(true);
-						ttsPlayingRef.current = true;
-						setTtsPlaying(true);
-					},
-					onPlaybackEnd: () => {
-						useAvatarStore.getState().setSpeaking(false);
-						ttsPlayingRef.current = false;
-						setTtsPlaying(false);
-					},
-				});
-			}
-			if (!pipelineVoiceConfigRef.current) {
-				pipelineVoiceConfigRef.current = {
-					voice:
-						config.ttsProvider === "nextain"
-							? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
-							: config.ttsVoice,
-					ttsProvider: config.ttsProvider || "edge",
-					ttsApiKey:
-						config.ttsProvider === "google"
-							? config.googleApiKey || config.apiKey
-							: config.ttsProvider === "openai"
-								? config.openaiTtsApiKey
-								: config.ttsProvider === "elevenlabs"
-									? config.elevenlabsApiKey
-									: undefined,
-				};
-			}
-			sendSentenceToTts(text);
-		};
-		window.addEventListener("naia:speak", handler);
-		return () => window.removeEventListener("naia:speak", handler);
-	// sendSentenceToTts is a hoisted function — stable via refs, safe with [] deps
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
-
 	useEffect(() => {
 		return onAiInterferenceEvent((event) => {
 			const message = formatAiInterferencePrompt(event);
@@ -1166,8 +1119,11 @@ export function ChatPanel() {
 				});
 				audioQueueRef.current?.enqueueOrdered(seq, mp3Base64);
 				activeTtsRequestsRef.current.delete(reqId);
-				// Track TTS cost: use server cost for Naia Cloud, estimate for others
-				const ttsCost =
+				// Track TTS cost: use server cost for Naia Cloud, estimate for others.
+				// Naia account (nextain): apply 10% service markup on top of base cost.
+				const NAIA_TTS_MARKUP = 1.1;
+				const isNaiaTts = ttsProviderForCost === "nextain";
+				const baseTtsCost =
 					costUsd != null
 						? costUsd
 						: estimateTtsCost(
@@ -1175,13 +1131,15 @@ export function ChatPanel() {
 								clean.length,
 								ttsVoiceForCost,
 							);
+				const ttsCost = isNaiaTts ? baseTtsCost * NAIA_TTS_MARKUP : baseTtsCost;
 				if (ttsCost > 0) {
-					useChatStore.getState().addCostEntry({
+					// addSessionCostEntry keeps TTS in a separate row in CostDashboard
+					useChatStore.getState().addSessionCostEntry({
 						inputTokens: 0,
 						outputTokens: 0,
 						cost: ttsCost,
 						provider: ttsProviderForCost as ProviderId,
-						model: `tts:${ttsProviderForCost}`,
+						model: isNaiaTts ? "tts:nextain (+10%)" : `tts:${ttsProviderForCost}`,
 					});
 				}
 			},

@@ -789,3 +789,60 @@ Installed panels can be iframe-based (have `index.html`). The iframe bridge give
 - `ActivePanelBridge` — full implementation; `NoopContextBridge` — stub for panels without bridge support
 - `getBridgeForPanel(panelId)` factory in `active-bridge.ts` returns cached `ActivePanelBridge`
 - All panels (keepAlive + non-keepAlive) receive per-panel bridge instance via `App.tsx`
+
+---
+
+## BGM Context Architecture
+
+> Verified 2026-05-19 via cross-review (3 reviewers). Issues: [#304](../../issues/304), [#307](../../issues/307), [#308](../../issues/308)
+
+Three distinct paths exist for BGM awareness — only the memory bridge is pending implementation.
+
+### Existing Paths
+
+#### 1. `pushContext` — Real-time LLM Awareness
+```
+BgmPlayer.tsx:198  naia.pushContext({type:"bgm", data:{videoId, title, channel, playing}})
+  → ActivePanelBridge.pushContext() [panel-registry.ts:147]
+  → usePanelStore.setActivePanelContext() [panel.ts:52]  ← Zustand, session-only
+  → next ChatRequest → buildSystemPrompt() [persona.ts:195]
+  → LLM system prompt: "Active panel: bgm\nPanel context: {...}"
+```
+**Scope**: LLM knows what's playing *right now*. Session-only. Cleared on panel switch. NOT memory.
+
+#### 2. AI Interference — Auto-speech Trigger
+```
+BgmPlayer.tsx  emitAiInterferenceEvent({source:"bgm", action:"music_changed"})
+  → aiInterferenceEnabled gate [panel.ts:71, default=false]
+  → 15s cooldown [ai-interference.ts:14]
+  → DOM CustomEvent → ChatPanel.onAiInterferenceEvent → handleSend → agent
+```
+**Scope**: AI auto-speaks on music change. Dropped when gate off or within cooldown. NOT memory.
+
+### Gap → Design Decision (#304)
+
+Neither path reaches `naia-memory`. BGM preference is never long-term stored.
+
+**Chosen: Option C — Stdin Direct Channel**
+
+| Option | Rejected Reason |
+|--------|----------------|
+| A (File Log) | Shutdown race with `memorySystem.close()` [index.ts:1380] |
+| B (localStorage) | Node.js agent process cannot access browser localStorage |
+| **C (Stdin)** | ✅ Fits existing stdio protocol, consistent with fire-and-forget pattern |
+
+```
+BgmPlayer  →  Tauri IPC  →  agent stdin {type:"bgm_event"}
+  →  memoryProvider.encode() [fire-and-forget]   ← NOT memorySystem.encode() directly
+                                                   (bypasses MemoryProvider contract)
+```
+
+**Key decisions**:
+- Memory logging **bypasses** `aiInterferenceEnabled` — memory ≠ AI speech (separate concerns)
+- API: `memoryProvider.encode()` via `memory-bridge.ts`, not `memorySystem.encode()` directly
+- Timing: real-time fire-and-forget matching existing pattern at `agent/src/index.ts:575`
+
+### Browser AI Interference Gaps (#307, #308)
+
+- **#307**: Browser internal navigation URL not forwarded to Shell — WebView2 `NavigationCompleted` events not emitted as Tauri events from `browser_webview.rs`
+- **#308**: AI interference events from browser only report panel activation, not navigated URL. Depends on #307.

@@ -2,7 +2,7 @@ import { usePanelStore } from "../stores/panel";
 import { Logger } from "./logger";
 
 export interface AiInterferenceEvent {
-	source: "browser" | "panel" | "workspace" | "system";
+	source: "browser" | "panel" | "workspace" | "system" | "bgm";
 	action: string;
 	title?: string;
 	url?: string;

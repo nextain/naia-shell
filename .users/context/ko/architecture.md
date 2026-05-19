@@ -772,3 +772,60 @@ AI 도구: navigate, back, forward, reload, click, fill, scroll, press, snapshot
 - `ActivePanelBridge` — 전체 구현; `NoopContextBridge` — 브리지 미지원 패널용 스텁
 - `getBridgeForPanel(panelId)` 팩토리 (`active-bridge.ts`) — 캐시된 `ActivePanelBridge` 반환
 - `App.tsx`: 모든 패널(keepAlive/non-keepAlive)에 per-panel 브리지 인스턴스 전달
+
+---
+
+## BGM 컨텍스트 아키텍처
+
+> 2026-05-19 크로스 리뷰 검증 (리뷰어 3명). 이슈: [#304](../../issues/304), [#307](../../issues/307), [#308](../../issues/308)
+
+BGM 인식을 위한 세 가지 경로가 존재하며, 메모리 브리지만 구현 대기 중입니다.
+
+### 기존 경로
+
+#### 1. `pushContext` — 실시간 LLM 인식
+```
+BgmPlayer.tsx:198  naia.pushContext({type:"bgm", data:{videoId, title, channel, playing}})
+  → ActivePanelBridge.pushContext() [panel-registry.ts:147]
+  → usePanelStore.setActivePanelContext() [panel.ts:52]  ← Zustand, 세션 한정
+  → 다음 ChatRequest → buildSystemPrompt() [persona.ts:195]
+  → LLM 시스템 프롬프트: "Active panel: bgm\nPanel context: {...}"
+```
+**범위**: LLM이 현재 재생 중인 음악을 실시간으로 인식. 세션 한정, 패널 전환 시 초기화. 기억 아님.
+
+#### 2. AI 참견 — 자동 발화 트리거
+```
+BgmPlayer.tsx  emitAiInterferenceEvent({source:"bgm", action:"music_changed"})
+  → aiInterferenceEnabled 게이트 [panel.ts:71, 기본값=false]
+  → 15초 쿨다운 [ai-interference.ts:14]
+  → DOM CustomEvent → ChatPanel.onAiInterferenceEvent → handleSend → agent
+```
+**범위**: 음악 변경 시 AI 자동 발화. 게이트 꺼져 있거나 쿨다운 중이면 드롭. 기억 아님.
+
+### 갭 → 설계 결정 (#304)
+
+두 경로 모두 `naia-memory`에 도달하지 않음. BGM 취향은 장기 기억에 저장되지 않음.
+
+**채택: 옵션 C — Stdin 직접 채널**
+
+| 옵션 | 기각 이유 |
+|------|----------|
+| A (파일 로그) | `memorySystem.close()` [index.ts:1380]와 shutdown race 발생 |
+| B (localStorage) | Node.js agent 프로세스에서 브라우저 localStorage 접근 불가 |
+| **C (Stdin)** | ✅ 기존 stdio 프로토콜에 자연스럽게 맞음, fire-and-forget 패턴과 일관성 유지 |
+
+```
+BgmPlayer  →  Tauri IPC  →  agent stdin {type:"bgm_event"}
+  →  memoryProvider.encode() [fire-and-forget]   ← memorySystem.encode() 직접 호출 금지
+                                                   (MemoryProvider contract 우회됨)
+```
+
+**핵심 결정 사항**:
+- 메모리 로깅은 `aiInterferenceEnabled` **우회** — 기억 ≠ AI 발화 (관심사 분리)
+- API: `memory-bridge.ts`를 통한 `memoryProvider.encode()`, `memorySystem.encode()` 직접 호출 금지
+- 타이밍: `agent/src/index.ts:575`의 기존 패턴과 동일한 실시간 fire-and-forget
+
+### 브라우저 AI 참견 갭 (#307, #308)
+
+- **#307**: 브라우저 내부 내비게이션 URL이 Shell에 전달되지 않음 — `browser_webview.rs`에서 WebView2 `NavigationCompleted` 이벤트가 Tauri 이벤트로 발행되지 않음
+- **#308**: 브라우저 AI 참견 이벤트가 패널 활성화만 보고하고 내비게이션 URL을 포함하지 않음. #307 해결 필요.
