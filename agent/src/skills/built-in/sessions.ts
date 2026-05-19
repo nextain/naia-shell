@@ -6,42 +6,14 @@ import {
 	previewSession,
 	resetSession,
 } from "../../gateway/sessions-proxy.js";
+import { sessionsDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createSessionsSkill(): SkillDefinition {
 	return {
-		name: "skill_sessions",
-		description:
-			"Manage Gateway sub-agent sessions. Actions: list, history, delete, compact, preview, patch, reset.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action: list, history, delete, compact, preview, patch, reset",
-					enum: [
-						"list",
-						"history",
-						"delete",
-						"compact",
-						"preview",
-						"patch",
-						"reset",
-					],
-				},
-				key: {
-					type: "string",
-					description:
-						"Session key. Required for delete, compact, preview, patch, reset.",
-				},
-				patch: {
-					type: "object",
-					description: "Partial session update (for patch action).",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${sessionsDescriptor.name}`,
+		description: sessionsDescriptor.description,
+		parameters: sessionsDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: true,
 		source: "built-in",

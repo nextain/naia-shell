@@ -6,29 +6,14 @@ import {
 	setConfig,
 } from "../../gateway/config-proxy.js";
 import { MODEL_PRICING } from "../../providers/cost.js";
+import { configDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createConfigSkill(): SkillDefinition {
 	return {
-		name: "skill_config",
-		description:
-			"Manage Gateway configuration. Actions: get, set, schema, models, patch.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action: get, set, schema, models, patch",
-					enum: ["get", "set", "schema", "models", "patch"],
-				},
-				patch: {
-					type: "object",
-					description:
-						"Configuration key-value pairs (for set and patch actions)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${configDescriptor.name}`,
+		description: configDescriptor.description,
+		parameters: configDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: false,
 		source: "built-in",

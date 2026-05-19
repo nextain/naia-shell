@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import { CronScheduler } from "../cron/scheduler.js";
 import { CronStore } from "../cron/store.js";
 import type { ToolDefinition } from "../providers/types.js";
+import { createAgentBrowserSkill } from "../skills/built-in/agent-browser.js";
 import { createAgentsSkill } from "../skills/built-in/agents.js";
 import { createApprovalsSkill } from "../skills/built-in/approvals.js";
 import { createBotmadangSkill } from "../skills/built-in/botmadang.js";
@@ -25,6 +26,7 @@ import { createTtsSkill } from "../skills/built-in/tts.js";
 import { createVoiceWakeSkill } from "../skills/built-in/voicewake.js";
 import { createWeatherSkill } from "../skills/built-in/weather.js";
 import { createYoutubeBgmSkill } from "../skills/built-in/youtube-bgm.js";
+import { createWelcomeSkill } from "../skills/built-in/welcome.js";
 import { bootstrapDefaultSkills, loadCustomSkills } from "../skills/loader.js";
 import { SkillRegistry } from "../skills/registry.js";
 import { GatewayRequestError } from "./client.js";
@@ -35,6 +37,7 @@ export type { ToolDefinition };
 
 /** Global skill registry with built-in skills */
 export const skillRegistry = new SkillRegistry();
+skillRegistry.register(createAgentBrowserSkill());
 skillRegistry.register(createAgentsSkill());
 skillRegistry.register(createApprovalsSkill());
 skillRegistry.register(createBotmadangSkill());
@@ -56,6 +59,7 @@ skillRegistry.register(createTtsSkill());
 skillRegistry.register(createVoiceWakeSkill());
 skillRegistry.register(createWeatherSkill());
 skillRegistry.register(createYoutubeBgmSkill());
+skillRegistry.register(createWelcomeSkill());
 
 // Cron skill — persistent store in ~/.naia/cron-jobs.json
 import { homedir } from "node:os";

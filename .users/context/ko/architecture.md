@@ -1,4 +1,65 @@
-# Naia 하이브리드 아키텍처
+# Naia Architecture
+
+## 현 상태 (post-#201, #272/#273/#274/#275 로 검증됨)
+
+Naia OS 는 현재 **임베드 에이전트** 구조 — hybrid daemon 스택이 아닙니다. 현재 wire 의 SoT 는 [`.agents/context/agent-bridges.yaml`](../../../.agents/context/agent-bridges.yaml).
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
+│  역할: UI, avatar, panels, device IO, channel adapters   │
+└────────────────────┬────────────────────────────────────┘
+                     │ stdio JSON lines
+                     │  + StdioFrame v1 envelope (#272 전환 중)
+┌────────────────────▼────────────────────────────────────┐
+│  naia-agent (임베드 child process)                       │
+│  - protocol-bridge: envelope 코덱                        │
+│  - memory-bridge:   MemorySystem → MemoryProvider       │
+│  - approval-bridge: IPC approval broker (Phase 5 wire)  │
+│  - factory.ts:      _agentNaiaKey + 5 strangler-fig     │
+│  - 23 built-in skills (naia-adk 의 descriptor)          │
+└────────────────────┬────────────────────────────────────┘
+                     │ MemoryProvider contract
+┌────────────────────▼────────────────────────────────────┐
+│  naia-memory R4                                         │
+│  LocalAdapter + embedding providers + fact extractor +  │
+│  HeuristicContradictionFilter                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+**현재 pillars**:
+- **naia-os shell** — Tauri 2 desktop host, UI, avatar, device IO
+- **naia-agent** — 임베드 child process (#201 이전엔 별도 daemon). stdio JSON. 3 bridges + 5 strangler-fig LLM 어댑터 + 23 skills.
+- **naia-memory R4** — 벡터 + LLM fact extractor + contradiction filter
+- **naia-adk** — 워크스페이스 + skill SoT (`skill-spec`, `skills-builtin`, `openclaw-compat`)
+
+OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨**. 아래 historical hybrid framing 은 맥락 보존용 — 현재 design 으로 보면 안됨.
+
+## 최근 hardening (2026-05-12 적대적 리뷰 배치)
+
+한 번의 자율 세션에서 7건 closed — 상세는 [`agent-bridges.md > 보안 hardening`](./agent-bridges.md#보안-hardening-256-260--follow-up).
+
+| 이슈 | 분류 | 내용 |
+|---|---|---|
+| #256 | P0-보안 | `handleToolRequest` tier 게이트 (LLM-loop 경로 외 진입점 우회 차단) |
+| #257 | P0-보안 | `panel_install` HTTPS-only (file:// / http:// / git@ / bare path 거부) |
+| #258 | P0-보안 | `assetProtocol.scope` 강화 (bare `**` 제거, `requireLiteralLeadingDot: true`) |
+| #259 | P0-보안 | `discord.com` CSP `connect-src` 제거 (모든 Discord 는 Rust invoke 경유) |
+| #260 | P0-보안 | Webhook URL 을 per-request stdio 에서 제거 (새 `notify_config` 메시지) |
+| #248 | P1-버그 | Naia gateway 가 gemini-3.x Vertex 접근 없음 — picker 에서 제거 + 저장된 config 마이그레이션 |
+| #254 | P0-UX | Startup white flash + onboarding splash deadlock |
+
+처음 작성 후 추가 완료:
+
+- **#277** — runtime asset-scope 확장 완료. `protocol-asset` Cargo feature + `assetProtocol.enable: true` + `copy_bundled_assets` 가 `app_handle.asset_protocol_scope().allow_directory(adk_path, true)` 호출. 비표준 ADK path (`/mnt/external`, `D:\custom`, …) 자산 서빙 OK.
+- **`creds_update` LLM keys** — `provider.apiKey` one-shot 푸시로 이동.
+- **`creds_update` ttsKeys + gatewayToken** — 동일 메시지에 TTS provider keys + Naia Gateway WS token 까지 통합. `SendChatOptions` + `directToolCall` opts 컴파일 단계에서 차단. 모든 shell callsite 정리 (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay).
+
+여전히 open: agent 의 `ProviderConfig.apiKey` 완전 제거 (현재 `@deprecated` optional). out-of-tree shell fork 와 조율 필요.
+
+---
+
+# Naia 하이브리드 아키텍처 (historical, pre-#201)
 
 ## 핵심 설계 철학
 

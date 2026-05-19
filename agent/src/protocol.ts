@@ -156,6 +156,53 @@ export interface AuthUpdateRequest {
 	naiaKey: string;
 }
 
+/**
+ * Shell → Agent: webhook URLs + Discord defaults set ONCE at startup
+ * and on settings save (#260). Replaces per-chat_request / per-tool_request
+ * credential transmission, which leaked webhook URLs into every stdio frame
+ * + any log capture. Agent caches into process.env via applyNotifyWebhookEnv.
+ *
+ * All fields optional — sending the empty object clears env.
+ */
+export interface NotifyConfigRequest {
+	type: "notify_config";
+	slackWebhookUrl?: string;
+	discordWebhookUrl?: string;
+	googleChatWebhookUrl?: string;
+	discordDefaultUserId?: string;
+	discordDefaultTarget?: string;
+	discordDmChannelId?: string;
+}
+
+/**
+ * Shell → Agent: per-provider credentials cached at the agent (#260 follow-up).
+ *
+ * Same one-shot pattern as `auth_update` (naiaKey) and `notify_config`
+ * (webhooks). Sent at startup and on every settings save. The agent
+ * caches each entry; the chat / tool / tts request paths no longer carry
+ * credentials at all.
+ *
+ * Empty string for any entry clears the cached value (explicit unset —
+ * e.g. user removed the key from settings).
+ *
+ * Fields:
+ *   - keys[providerId] = apiKey
+ *       LLM provider API keys. providerId matches LlmProviderMeta.id
+ *       (e.g. "anthropic", "openai", "gemini").
+ *   - ttsKeys[ttsProviderId] = apiKey
+ *       Text-to-speech provider keys. ttsProviderId is the TTS provider
+ *       enum ("google", "openai", "elevenlabs", "edge", "nextain").
+ *       Optional — present only when the user has configured TTS keys.
+ *   - gatewayToken = bearer token for the Naia Gateway WebSocket auth.
+ *       Optional — present only when the user has configured a gateway.
+ */
+export interface CredsUpdateRequest {
+	type: "creds_update";
+	keys: Record<string, string>;
+	ttsKeys?: Record<string, string>;
+	gatewayToken?: string;
+}
+
 export type AgentRequest =
 	| ChatRequest
 	| CancelRequest
@@ -169,7 +216,9 @@ export type AgentRequest =
 	| SkillListRequest
 	| MemoryExportRequest
 	| MemoryImportRequest
-	| AuthUpdateRequest;
+	| AuthUpdateRequest
+	| NotifyConfigRequest
+	| CredsUpdateRequest;
 
 export function parseRequest(line: string): AgentRequest | null {
 	try {
@@ -188,7 +237,9 @@ export function parseRequest(line: string): AgentRequest | null {
 			obj.type === "skill_list" ||
 			obj.type === "memory_export" ||
 			obj.type === "memory_import" ||
-			obj.type === "auth_update"
+			obj.type === "auth_update" ||
+			obj.type === "notify_config" ||
+			obj.type === "creds_update"
 		) {
 			return obj as AgentRequest;
 		}

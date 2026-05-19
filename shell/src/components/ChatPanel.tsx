@@ -725,7 +725,6 @@ export function ChatPanel() {
 				gatewayUrl: config.enableTools
 					? config.gatewayUrl || "ws://localhost:18789"
 					: undefined,
-				gatewayToken: config.enableTools ? config.gatewayToken : undefined,
 				disabledSkills: config.enableTools
 					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
 					: undefined,
@@ -733,12 +732,8 @@ export function ChatPanel() {
 					config.enableTools && (config.chatRouting ?? "auto") !== "direct"
 						? true
 						: undefined,
-				slackWebhookUrl: config.slackWebhookUrl,
-				discordWebhookUrl: config.discordWebhookUrl,
-				googleChatWebhookUrl: config.googleChatWebhookUrl,
-				discordDefaultUserId: config.discordDefaultUserId,
-				discordDefaultTarget: config.discordDefaultTarget,
-				discordDmChannelId: config.discordDmChannelId,
+				// Webhook URLs + Discord defaults are pushed via sendNotifyConfig at
+				// app startup / settings save (#260). Not transmitted per-chat.
 			});
 		} catch (err) {
 			useChatStore
@@ -1700,7 +1695,6 @@ export function ChatPanel() {
 						args,
 						requestId: generateRequestId(),
 						gatewayUrl: resolveGatewayUrl(config),
-						gatewayToken: config.gatewayToken,
 					});
 					session.sendToolResponse(callId, result.output);
 				} catch (err) {

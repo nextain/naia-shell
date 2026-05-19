@@ -1,3 +1,4 @@
+import { panelDescriptor } from "@naia-adk/skills-builtin";
 import { spawnSync } from "node:child_process";
 import {
 	existsSync,
@@ -99,7 +100,20 @@ export async function actionInstall(
 		return {
 			success: false,
 			output: "",
-			error: "source is required for install (git URL or file path)",
+			error: "source is required for install (https:// git URL)",
+		};
+	}
+
+	// Reject non-HTTPS sources (#257). Previously this accepted file://,
+	// http://, git@, and bare local paths via an unzip fallback — each one
+	// is an RCE vector if an attacker can trick the user into one
+	// panel_install call. HTTPS-only matches the issue's required fix and
+	// the threat-table guidance in review-guide.yaml.
+	if (!source.startsWith("https://")) {
+		return {
+			success: false,
+			output: "",
+			error: `panel_install: source URL must use https:// (received "${source.split("://")[0] || source}://"). file://, http://, git@, and bare paths are blocked for RCE prevention.`,
 		};
 	}
 
@@ -116,40 +130,13 @@ export async function actionInstall(
 	}
 
 	try {
-		const isGit = /^https?:\/\/|^git@|^file:\/\//.test(source);
-		if (isGit) {
-			const result = spawnSync(
-				"git",
-				["clone", "--depth", "1", source, destDir],
-				{ encoding: "utf-8" },
-			);
-			if (result.status !== 0) {
-				throw new Error(result.stderr || "git clone failed");
-			}
-		} else {
-			// File-based: unzip to destDir (path must not escape PANELS_DIR)
-			const absSource = source.startsWith("/")
-				? source
-				: join(PANELS_DIR, source);
-			mkdirSync(destDir, { recursive: true });
-			const result = spawnSync("unzip", ["-o", absSource, "-d", destDir], {
-				encoding: "utf-8",
-			});
-			if (result.status !== 0) {
-				throw new Error(result.stderr || "unzip failed");
-			}
-			// If zip contained a single root directory (e.g. my-panel/panel.json),
-			// move its contents up so panel.json sits directly in destDir.
-			const entries = readdirSync(destDir, { withFileTypes: true });
-			if (entries.length === 1 && entries[0].isDirectory()) {
-				const innerDir = join(destDir, entries[0].name);
-				const innerEntries = readdirSync(innerDir);
-				for (const name of innerEntries) {
-					const { renameSync } = await import("node:fs");
-					renameSync(join(innerDir, name), join(destDir, name));
-				}
-				rmSync(innerDir, { recursive: true, force: true });
-			}
+		const result = spawnSync(
+			"git",
+			["clone", "--depth", "1", source, destDir],
+			{ encoding: "utf-8" },
+		);
+		if (result.status !== 0) {
+			throw new Error(result.stderr || "git clone failed");
 		}
 	} catch (err) {
 		return {
@@ -235,29 +222,10 @@ async function actionRemove(
 
 export function createPanelSkill(): SkillDefinition {
 	return {
-		name: "skill_panel",
-		description:
-			"Manage Naia panels. Actions: 'list' shows available panels, 'switch' activates a panel by id, 'install' installs a panel from a git URL or zip file path, 'remove' uninstalls a panel by id.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action to perform: list, switch, install, remove",
-					enum: ["list", "switch", "install", "remove"],
-				},
-				panelId: {
-					type: "string",
-					description: "Panel ID — required for switch and remove",
-				},
-				source: {
-					type: "string",
-					description: "Git URL or zip file path — required for install",
-				},
-			},
-			required: ["action"],
-		},
-		tier: 1,
+		name: `skill_${panelDescriptor.name}`,
+		description: panelDescriptor.description,
+		parameters: panelDescriptor.inputSchema,
+		tier: 1, // descriptor.tier = "T1"
 		requiresGateway: false,
 		source: "built-in",
 		execute: async (args, ctx): Promise<SkillResult> => {

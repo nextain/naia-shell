@@ -2681,6 +2681,27 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
 /// resource directory into `{adk_path}/naia-settings/`. Skips files that already exist.
 #[tauri::command]
 async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> Result<(), String> {
+    // Extend asset:// protocol scope to include this ADK path (#277).
+    // Static tauri.conf.json scope (`$HOME/**`, `/var/home/*/naia-adk/**`, …)
+    // covers default placements only. Users who put their ADK on
+    // `/mnt/external/...`, `/opt/...`, `D:\...`, `/Volumes/...` would
+    // otherwise fail to load VRM / BGM / background via asset:// URLs.
+    // This is the single chokepoint — every ADK setup path (new /
+    // use-existing / recreate / load) calls copy_bundled_assets after the
+    // user picks the path. Idempotent: re-adding an already-allowed path
+    // is a no-op inside Tauri's scope set.
+    // Non-fatal on failure: scope extension may fail under unusual
+    // permission conditions, but the asset:// request itself will error
+    // visibly to the user instead of silently denying.
+    if let Err(e) = app_handle
+        .asset_protocol_scope()
+        .allow_directory(&adk_path, true)
+    {
+        log_verbose(&format!(
+            "[copy_bundled_assets] asset scope extend failed for {adk_path}: {e}"
+        ));
+    }
+
     // Find the bundled assets base directory.
     // Production: resource_dir()/assets/
     // Dev mode fallback: walk up from binary to find public/assets/

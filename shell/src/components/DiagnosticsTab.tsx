@@ -177,7 +177,6 @@ export function DiagnosticsTab() {
 				args: { action: "status" },
 				requestId: `diag-status-${Date.now()}`,
 				gatewayUrl,
-				gatewayToken: config?.gatewayToken,
 			});
 			if (res.success && res.output) {
 				setGatewayStatus(JSON.parse(res.output));
@@ -293,7 +292,6 @@ export function DiagnosticsTab() {
 				},
 				requestId: `diag-logs-poll-${Date.now()}`,
 				gatewayUrl,
-				gatewayToken: config?.gatewayToken,
 			});
 			if (res.success && res.output) {
 				const result = JSON.parse(res.output);

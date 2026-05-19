@@ -1,4 +1,14 @@
-# Phase 3: OpenClaw 하이브리드 통합 상세 계획
+# Phase 3: OpenClaw 하이브리드 통합 상세 계획 (ARCHIVED — pre-#201)
+
+> ⚠️ **본 계획은 historical**. OpenClaw gateway daemon 은 #201 에서 제거되었고,
+> hybrid 통합은 #272 / #273 / #274 / #271 Phase 1 에서 reconcile 됨. 현재
+> 아키텍처:
+>
+> - [`.agents/context/agent-bridges.yaml`](../../../.agents/context/agent-bridges.yaml) — 현 shell↔agent↔memory wire 의 SoT
+> - [`.users/context/ko/architecture.md`](./architecture.md) — 현재 아키텍처 (post-#201 상태 헤더 포함)
+>
+> 본 문서의 나머지는 원래 Phase 3 설계 근거. 시도된 것 + 왜 떠났는지의
+> 맥락 보존용. 아래 단계를 현재 작업으로 받지 말 것.
 
 > "Alpha가 일을 한다" — 파일 편집, 명령 실행, 웹 검색을 안전하게
 

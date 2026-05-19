@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { naiaDiscordDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 /** Map emotion tags to emoji for Discord messages */
@@ -210,56 +211,9 @@ export async function ensureDiscordAllowlisted(
 
 export function createNaiaDiscordSkill(): SkillDefinition {
 	return {
-		name: "skill_naia_discord",
-		description:
-			"Discord 메시지 전송/수신 도구. 사용자가 '메시지 보내줘/전송해/DM 보내' 등을 요청하면 " +
-			"반드시 action='send'와 message 파라미터를 사용하세요. " +
-			"수신자(to)는 자동 설정되므로 생략 가능합니다. " +
-			"action='status'는 연결 상태 확인 전용입니다. " +
-			"action='history'는 최근 메시지 조회입니다.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"'send' = 메시지 전송 (message 필수), " +
-						"'status' = 연결 상태 확인만, " +
-						"'history' = 최근 메시지 조회 (limit 옵션)",
-					enum: ["send", "status", "history"],
-				},
-				message: {
-					type: "string",
-					description: "Message text to send (required when action='send')",
-				},
-				to: {
-					type: "string",
-					description:
-						"Optional override target (e.g. channel:123456789 or user:123456789). " +
-						"If omitted, auto-resolved from user config.",
-				},
-				channelId: {
-					type: "string",
-					description:
-						"Shortcut: target channel ID (converted to to=channel:<id>)",
-				},
-				userId: {
-					type: "string",
-					description: "Shortcut: target user ID (converted to to=user:<id>)",
-				},
-				accountId: {
-					type: "string",
-					description:
-						"Optional Discord account ID (default: gateway default account)",
-				},
-				limit: {
-					type: "number",
-					description:
-						"Number of messages to retrieve for history action (default: 20, max: 100)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${naiaDiscordDescriptor.name}`,
+		description: naiaDiscordDescriptor.description,
+		parameters: naiaDiscordDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: true,
 		source: "built-in",

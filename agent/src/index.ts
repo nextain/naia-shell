@@ -38,20 +38,31 @@ import { createNaiaMemoryProvider } from "./memory-bridge.js";
 import { MemoryTagScrubber } from "./memory-scrubber.js";
 import { NaiaApprovalBridge } from "./approval-bridge.js";
 import {
-        type ApprovalResponse,
-        type ChatRequest,
-        type MemoryExportRequest,
-        type MemoryImportRequest,
-        type PanelInstallRequest,
-        type PanelSkillsClearRequest,
-        type PanelSkillsRequest,
-        type PanelToolResult,
-        type ToolRequest,
-        type TtsRequest,
-        parseRequest,
+	type ApprovalResponse,
+	type ChatRequest,
+	type CredsUpdateRequest,
+	type MemoryExportRequest,
+	type MemoryImportRequest,
+	type NotifyConfigRequest,
+	type PanelInstallRequest,
+	type PanelSkillsClearRequest,
+	type PanelSkillsRequest,
+	type PanelToolResult,
+	type ToolRequest,
+	type TtsRequest,
+	parseRequest,
 } from "./protocol.js";
 import { calculateCost } from "./providers/cost.js";
-import { buildProvider, getAgentNaiaKey, setAgentNaiaKey } from "./providers/factory.js";
+import {
+	buildProvider,
+	getAgentNaiaKey,
+	getGatewayToken,
+	getTtsApiKey,
+	setAgentNaiaKey,
+	setGatewayToken,
+	setProviderApiKey,
+	setTtsApiKey,
+} from "./providers/factory.js";
 import type { ChatMessage, StreamChunk } from "./providers/types.js";
 import { actionInstall as panelActionInstall } from "./skills/built-in/panel.js";
 import { ALPHA_SYSTEM_PROMPT, BEHAVIORAL_RULES, buildToolStatusPrompt } from "./system-prompt.js";
@@ -510,7 +521,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 		// Connect to Gateway if tools enabled and URL provided
 		if (wantGateway) {
 			try {
-				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken);
+				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken ?? getGatewayToken());
 				gatewayConnected = true;
 
 				// Register event handler for Gateway-pushed events
@@ -627,7 +638,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 					gateway.close();
 					gateway = null;
 				}
-				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken);
+				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken ?? getGatewayToken());
 				gatewayConnected = true;
 				const eventHandler = createGatewayEventHandler(
 					writeLine,
@@ -949,7 +960,8 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 					const ttsResult = await ttsSynthesize(selectedProvider, {
 						text: cleanText,
 						voice: ttsVoice,
-						apiKey: ttsApiKey,
+						// Resolution: req field → creds_update cache (#260 follow-up).
+						apiKey: ttsApiKey ?? getTtsApiKey(selectedProvider),
 						naiaKey: effectiveNaiaKey,
 					});
 					if (ttsResult) {
@@ -973,6 +985,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 				) {
 					const googleKey =
 						ttsApiKey ||
+						getTtsApiKey("google") ||
 						(providerConfig.provider === "gemini"
 							? providerConfig.apiKey
 							: null);
@@ -1091,10 +1104,33 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 	try {
 		if (gatewayUrl) {
 			try {
-				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken);
+				gateway = await connectGatewayWithRetry(gatewayUrl, gatewayToken ?? getGatewayToken());
 			} catch {
 				// Gateway unavailable — continue without it (e.g. Edge TTS preview works offline)
 				gateway = null;
+			}
+		}
+
+		const toolCallId = `direct-${requestId}`;
+
+		// Tier gate (#256). Panels/shell can invoke handleToolRequest directly,
+		// bypassing the LLM tool-call loop where the same gate exists at
+		// index.ts:759/834. Without it, a Tier 2/3 tool name in the inbound
+		// ToolRequest would execute with no user confirmation.
+		if (needsApproval(toolName)) {
+			const decision = await waitForApproval(requestId, toolCallId, toolName, args);
+			if (decision === "reject") {
+				const rejectOutput = "User rejected tool execution";
+				writeLine({
+					type: "tool_result",
+					requestId,
+					toolCallId,
+					toolName,
+					output: rejectOutput,
+					success: false,
+				});
+				writeLine({ type: "finish", requestId });
+				return;
 			}
 		}
 
@@ -1108,7 +1144,7 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 		writeLine({
 			type: "tool_result",
 			requestId,
-			toolCallId: `direct-${requestId}`,
+			toolCallId,
 			toolName,
 			output: result.output || result.error || "",
 			success: result.success,
@@ -1162,7 +1198,8 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 		const result = await ttsSynthesize(providerId, {
 			text,
 			voice,
-			apiKey: ttsApiKey,
+			// Resolution: req field → creds_update cache (#260 follow-up).
+			apiKey: ttsApiKey ?? getTtsApiKey(providerId),
 			naiaKey: getAgentNaiaKey(),
 		});
 
@@ -1193,6 +1230,56 @@ async function handleTtsRequest(req: TtsRequest): Promise<void> {
 		}
 	} finally {
 		activeStreams.delete(requestId);
+	}
+}
+
+/**
+ * Cache webhook URLs + Discord defaults into process.env once at startup
+ * (#260). Prior path: webhook URLs were attached to every chat_request /
+ * tool_request stdio frame and re-applied per-call via applyNotifyWebhookEnv.
+ * Now: shell sends notify_config once at startup + on settings save; the
+ * per-request fields stay in the schema as optional for backwards compat
+ * but the shell does not populate them.
+ */
+export function handleNotifyConfig(req: NotifyConfigRequest): void {
+	applyNotifyWebhookEnv({
+		slackWebhookUrl: req.slackWebhookUrl,
+		discordWebhookUrl: req.discordWebhookUrl,
+		googleChatWebhookUrl: req.googleChatWebhookUrl,
+		discordDefaultUserId: req.discordDefaultUserId,
+		discordDefaultTarget: req.discordDefaultTarget,
+		discordDmChannelId: req.discordDmChannelId,
+	});
+}
+
+/**
+ * Cache all per-session credentials into the agent's module-scope stores
+ * (#260 follow-up). One-shot pattern symmetric to auth_update (naiaKey)
+ * and notify_config (webhooks):
+ *
+ *   - req.keys[providerId]     → setProviderApiKey
+ *   - req.ttsKeys[ttsProvider] → setTtsApiKey
+ *   - req.gatewayToken         → setGatewayToken
+ *
+ * Empty string anywhere clears the corresponding entry. Malformed entries
+ * (non-string key / value) are skipped silently — the caller (shell) is
+ * trusted, but defensive parsing protects against accidental shape drift.
+ */
+export function handleCredsUpdate(req: CredsUpdateRequest): void {
+	if (req.keys && typeof req.keys === "object") {
+		for (const [providerId, apiKey] of Object.entries(req.keys)) {
+			if (typeof providerId !== "string" || typeof apiKey !== "string") continue;
+			setProviderApiKey(providerId, apiKey);
+		}
+	}
+	if (req.ttsKeys && typeof req.ttsKeys === "object") {
+		for (const [ttsProvider, apiKey] of Object.entries(req.ttsKeys)) {
+			if (typeof ttsProvider !== "string" || typeof apiKey !== "string") continue;
+			setTtsApiKey(ttsProvider, apiKey);
+		}
+	}
+	if (typeof req.gatewayToken === "string") {
+		setGatewayToken(req.gatewayToken);
 	}
 }
 
@@ -1242,6 +1329,16 @@ function main(): void {
 
 		if (request.type === "auth_update") {
 			handleAuthUpdate(request);
+			return;
+		}
+
+		if (request.type === "notify_config") {
+			handleNotifyConfig(request);
+			return;
+		}
+
+		if (request.type === "creds_update") {
+			handleCredsUpdate(request);
 			return;
 		}
 

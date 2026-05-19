@@ -13,60 +13,14 @@ import {
 	rotateDeviceToken,
 	verifyNodePair,
 } from "../../gateway/device-proxy.js";
+import { deviceDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createDeviceSkill(): SkillDefinition {
 	return {
-		name: "skill_device",
-		description:
-			"Manage Gateway nodes and device pairings. Actions: node_list, node_describe, node_rename, pair_request, pair_list, pair_approve, pair_reject, pair_verify, device_list, device_approve, device_reject, token_rotate, token_revoke.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action to perform",
-					enum: [
-						"node_list",
-						"node_describe",
-						"node_rename",
-						"pair_request",
-						"pair_list",
-						"pair_approve",
-						"pair_reject",
-						"pair_verify",
-						"device_list",
-						"device_approve",
-						"device_reject",
-						"token_rotate",
-						"token_revoke",
-					],
-				},
-				nodeId: {
-					type: "string",
-					description: "Node ID (for node_describe, node_rename, pair_request)",
-				},
-				name: {
-					type: "string",
-					description: "New name (for node_rename)",
-				},
-				requestId: {
-					type: "string",
-					description:
-						"Pair request ID (for pair_approve, pair_reject, pair_verify)",
-				},
-				code: {
-					type: "string",
-					description: "Verification code (for pair_verify)",
-				},
-				deviceId: {
-					type: "string",
-					description:
-						"Device ID (for device_approve, device_reject, token_rotate, token_revoke)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${deviceDescriptor.name}`,
+		description: deviceDescriptor.description,
+		parameters: deviceDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: true,
 		source: "built-in",

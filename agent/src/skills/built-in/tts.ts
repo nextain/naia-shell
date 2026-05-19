@@ -16,62 +16,14 @@ import { synthesizeElevenLabsSpeech } from "../../tts/elevenlabs-tts.js";
 import { synthesizeSpeech as synthesizeGoogleSpeech } from "../../tts/google-tts.js";
 import { synthesizeNextainSpeech } from "../../tts/nextain-tts.js";
 import { synthesizeOpenAISpeech } from "../../tts/openai-tts.js";
+import { ttsDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createTtsSkill(): SkillDefinition {
 	return {
-		name: "skill_tts",
-		description:
-			"Manage Gateway TTS (Text-to-Speech). Actions: status, providers, set_provider, set_auto, set_mode, enable, disable, convert, preview.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action: status, providers, set_provider, set_auto, set_mode, enable, disable, convert, preview",
-					enum: [
-						"status",
-						"providers",
-						"set_provider",
-						"set_auto",
-						"set_mode",
-						"enable",
-						"disable",
-						"convert",
-						"preview",
-					],
-				},
-				provider: {
-					type: "string",
-					description:
-						"TTS provider (openai, elevenlabs, edge). Required for set_provider and preview.",
-				},
-				text: {
-					type: "string",
-					description: "Text to convert. Required for convert and preview.",
-				},
-				voice: {
-					type: "string",
-					description: "Voice name (optional, for convert and preview).",
-				},
-				apiKey: {
-					type: "string",
-					description: "API key for preview (OpenAI or ElevenLabs).",
-				},
-				auto: {
-					type: "string",
-					description: "Auto mode for set_auto: off, always, inbound, tagged.",
-					enum: ["off", "always", "inbound", "tagged"],
-				},
-				mode: {
-					type: "string",
-					description: "Output mode for set_mode: final, all.",
-					enum: ["final", "all"],
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${ttsDescriptor.name}`,
+		description: ttsDescriptor.description,
+		parameters: ttsDescriptor.inputSchema,
 		tier: 0,
 		requiresGateway: false,
 		source: "built-in",

@@ -125,6 +125,108 @@ Test discipline: seed with `setAgentNaiaKey("gw-...")` in `beforeEach` and
 clear in `afterEach`. The removed `config.naiaKey` field is a footgun — tests
 that still pass it silently take the fall-through path.
 
+## Creds update flow (#260 follow-up, 2026-05-12)
+
+ALL per-session credentials travel via the single `creds_update` message —
+LLM API keys, TTS API keys, gateway WS token. Same one-shot pattern as
+`auth_update` (naiaKey) and `notify_config` (webhooks). Per-request frames
+no longer carry credentials at all.
+
+```ts
+// shell side — once at startup + once per settings save
+sendCredsUpdate({
+  keys: {
+    anthropic: "sk-ant-...",
+    openai:    "sk-...",
+    gemini:    "AIza...",
+  },
+  ttsKeys: {           // optional
+    google:     "AIza...",
+    openai:     "sk-...",
+    elevenlabs: "el-...",
+  },
+  gatewayToken: "gw-token-...",  // optional
+  // empty string for any entry clears the agent-side cached value
+});
+
+// agent side
+handleCredsUpdate(req) {
+  // keys[provider]     → setProviderApiKey → _providerApiKeys Map
+  // ttsKeys[provider]  → setTtsApiKey      → _ttsApiKeys Map
+  // gatewayToken       → setGatewayToken   → _gatewayToken
+}
+```
+
+Schema-level enforcement:
+
+- `SendChatOptions` no longer accepts `ttsApiKey` or `gatewayToken` (compile-time block).
+- `directToolCall` opts no longer accept `gatewayToken` (compile-time block).
+- shell builders strip `provider.apiKey` + `provider.naiaKey` from the chat_request payload before invoking `send_to_agent_command`.
+- `ProviderConfig.apiKey` on the agent is `@deprecated` optional — buildProvider still has it as a backwards-compat fallback, but the official shell no longer populates it.
+
+Agent resolution priority (per credential):
+
+| Type | Lookup |
+|---|---|
+| LLM api key | `_providerApiKeys.get(provider)` → `config.apiKey` (deprecated) → envVar |
+| TTS api key | `_ttsApiKeys.get(provider)` (req.ttsApiKey is deprecated, kept for legacy) |
+| Gateway token | `_gatewayToken` (req.gatewayToken kept as `??` fallback for backwards compat) |
+
+## Notify config flow (#260)
+
+Webhook URLs + Discord defaults travel via `notify_config`, not per-request.
+
+```ts
+// shell side — once at startup + once per settings save
+sendNotifyConfig({
+  slackWebhookUrl,
+  discordWebhookUrl,
+  googleChatWebhookUrl,
+  discordDefaultUserId,
+  discordDefaultTarget,
+  discordDmChannelId,
+});
+
+// agent side (index.ts)
+handleNotifyConfig(req) → applyNotifyWebhookEnv(...) // writes process.env
+```
+
+`applyNotifyWebhookEnv` semantics:
+- `undefined` field → preserve existing env (partial update / first startup)
+- empty string → delete env (user erased the textbox = explicit unset)
+- non-empty → write
+
+Per-request `chat_request` / `tool_request` frames MUST NOT carry these
+fields. For backwards-compat they stay declared optional on the request
+types, but the shell never populates them.
+
+Closes the credential leak in #260: webhook URLs no longer appear in every
+LLM turn's stdio frame (logs, crash dumps, malicious npm wrappers).
+
+## Security hardening (post-#256-#260 + follow-ups)
+
+Five P0-critical fixes landed 2026-05-12 from the adversarial review:
+
+| Issue | Where | What |
+|---|---|---|
+| #256 | `agent/src/index.ts` `handleToolRequest` | `needsApproval(toolName)` gate before `executeTool` (unmapped tools default to Tier 2). Mirrors LLM-loop gate at L759/L834. |
+| #257 | `agent/src/skills/built-in/panel.ts` `actionInstall` | `source` must start with `https://` — `file://` / `http://` / `git@` / `data:` / `javascript:` / bare paths rejected. Local-zip unzip fallback removed. |
+| #258 | `shell/src-tauri/tauri.conf.json` `assetProtocol.scope` | Full FsScope object with explicit allow list + `requireLiteralLeadingDot: true`. Bare `**` / drive-roots / bare `/tmp/**` removed. Follow-up: #277 (runtime scope extension). |
+| #259 | `shell/src-tauri/tauri.conf.json` `csp.connect-src` | `discord.com` removed. All Discord API via Rust `invoke('discord_api', ...)`. |
+| #260 | New `notify_config` msg type | Webhook URLs off per-request stdio (see "Notify config flow" above). |
+| #248 | `shell/src/lib/llm/registry.ts` + `agent/src/providers/lab-proxy.ts` | Gateway GCP project lacks Vertex access to gemini-3.x — drop from Naia provider picker, fix `gemini-3.1-flash-live-preview` fallback, accurate 0-byte SSE error. Saved-config migration via `shouldMigrateNextainModel`. |
+| #254 | `shell/src-tauri/tauri.conf.json` + `App.tsx` `useAppReady` | `windows[0].backgroundColor: [6, 13, 20, 255]` for cold-start flash; `useAppReady` treats `showOnboarding` symmetrically to `showAdkSetup` to avoid 5 s splash deadlock. |
+
+Done since this table was first written (2026-05-12):
+
+- **#277** — runtime asset scope extension. `protocol-asset` Cargo feature enabled, `assetProtocol.enable: true` in config, `copy_bundled_assets` calls `app_handle.asset_protocol_scope().allow_directory(adk_path, true)`. Non-standard ADK paths (`/mnt/external`, `/opt/custom`, `D:\custom\naia`) now serve assets correctly.
+- **`creds_update` LLM keys** — `provider.apiKey` flows once via `creds_update.keys`.
+- **`creds_update` ttsKeys + gatewayToken** — same message extended to carry TTS provider keys and Naia Gateway WS token. `SendChatOptions` / `directToolCall` opts no longer accept these fields (compile-time block). All shell callsites cleaned (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay).
+
+Still pending:
+
+- Drop `ProviderConfig.apiKey` from agent types entirely (currently `@deprecated` optional). Coordinate with any out-of-tree forks first.
+
 ## Vendored packages
 
 | File | Purpose |
@@ -141,7 +243,8 @@ replace the tgz + bump the version pin in `agent/package.json`.
 | Repo | Required exports | Pin |
 |------|------------------|-----|
 | `naia-memory` | `MemorySystem`, `LocalAdapter`, embedding providers, `buildLLMFactExtractor`, **`HeuristicContradictionFilter`** (added #272) | alpha-adk submodule |
-| `naia-adk/packages/skills-builtin` | `weatherDescriptor` (added #272 — was stub) + 9 more on Day 3-7 | file:path |
+| `naia-adk/packages/skills-builtin` | Full 23-skill catalog (Phase 4.0 Day 3-7 via #273 + OpenClaw port via #274) + `ALL_DESCRIPTORS` enumeration. Tier distribution: 8 T0 / 13 T1 / 2 T2. | file:path |
+| `naia-adk/packages/openclaw-compat` | OpenClaw → naia migration tool (CLI `naia-openclaw-migrate`). Parses OpenClaw `SKILL.md` frontmatter into `SkillDescriptor`. Landed via #275. | file:path (standalone, not imported by naia-os agent) |
 | `@nextain/agent-types` (vendored) | Bridge contract types | tgz in `agent/vendor/` |
 
 ## What's deferred

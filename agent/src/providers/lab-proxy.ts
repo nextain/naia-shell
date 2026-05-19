@@ -16,8 +16,11 @@ export const GATEWAY_URL =
 function toGatewayModel(model: string): string {
 	// Live API models are WebSocket-only — fall back to the equivalent text model for SSE chat.
 	if (model === "gemini-2.5-flash-live") return "vertexai:gemini-2.5-flash";
+	// gemini-3.1-flash-live-preview previously fell back to vertexai:gemini-3-flash-preview,
+	// but the gateway's GCP project does not have access to any gemini-3.x model (#248).
+	// Route this live model to the same SSE fallback as gemini-2.5-flash-live.
 	if (model === "gemini-3.1-flash-live-preview")
-		return "vertexai:gemini-3-flash-preview";
+		return "vertexai:gemini-2.5-flash";
 	// Gateway uses Vertex AI service account (not GEMINI_API_KEY) — must use vertexai: prefix.
 	if (model.startsWith("gemini")) return `vertexai:${model}`;
 	if (model.startsWith("grok")) return `xai:${model}`;
@@ -165,10 +168,15 @@ export function createLabProxyProvider(
 			}
 
 			// Gateway streaming bug: 200 OK with 0-byte body means a silent backend error.
-			// Non-streaming returns 500 with the real error; streaming swallows it.
+			// Non-streaming returns the real error (typically 404 NOT_FOUND for
+			// "Publisher Model … was not found or your project does not have
+			// access to it"); streaming swallows it (#248). The actual cause is
+			// almost always that the gateway's GCP project lacks Vertex AI
+			// access to the requested model — most often a gemini-3.x model
+			// (gateway project currently only has gemini-2.5-* access).
 			if (bytesReceived === 0) {
 				throw new Error(
-					`Lab proxy: empty SSE stream for model "${model}" — gateway may lack credentials for this provider. Try non-Naia route instead.`,
+					`Lab proxy: gateway returned 0 bytes for model "${model}". This typically means the gateway's GCP project lacks Vertex AI access to that model. Try a gemini-2.5-* model on the Naia provider, or switch to the "Google Gemini" provider (direct API key) for gemini-3.x access.`,
 				);
 			}
 

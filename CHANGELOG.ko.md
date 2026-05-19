@@ -7,6 +7,32 @@ Naia OS의 주요 변경 사항을 기록합니다.
 
 ---
 
+## Unreleased
+
+적대적 리뷰 배치 — 5건 P0-critical 보안 + 1건 P0-UX + 1건 P1 gateway 라우팅, 후속 아키텍처 문서 정비.
+
+보안 hardening (2026-05-12):
+
+- **fix(agent)**: `handleToolRequest` 가 `executeTool` 전에 `needsApproval` 게이트 — 패널/shell 직접 도구 호출 경로의 tier 검사 우회 차단 ([#256](https://github.com/nextain/naia-os/issues/256))
+- **fix(agent)**: `panel_install` 이 non-HTTPS 소스 거부 — `file://` / `http://` / `git@` / `data:` / `javascript:` / bare local path 모두 spawn 전 거부 ([#257](https://github.com/nextain/naia-os/issues/257))
+- **fix(shell)**: `assetProtocol.scope` 를 `FsScope` 객체로 재작성 — bare `**`, drive-root, bare `/tmp/**` 제거; `requireLiteralLeadingDot: true` 가 `~/.ssh` / `~/.gnupg` / `~/.aws` 차단 ([#258](https://github.com/nextain/naia-os/issues/258))
+- **fix(shell)**: CSP `connect-src` 에서 `https://discord.com` 제거 — 모든 Discord API 는 Rust `invoke('discord_api', ...)` 경유 ([#259](https://github.com/nextain/naia-os/issues/259))
+- **fix(agent/shell)**: webhook URL 을 per-request stdio 에서 분리 — 새 `notify_config` one-shot 메시지 ([#260](https://github.com/nextain/naia-os/issues/260))
+- **fix(shell)**: `copy_bundled_assets` 에서 `asset_protocol_scope.allow_directory` 런타임 확장 — `$HOME` / `/var/home/*/naia-adk/**` 밖의 ADK workspace (예: `/mnt/external`, `/opt/custom`, `D:\custom\naia`) 도 `asset://` URL 로 VRM / BGM / 배경 서빙. `protocol-asset` Cargo feature + `assetProtocol.enable: true` 필요 ([#277](https://github.com/nextain/naia-os/issues/277))
+- **fix(agent/shell)**: `provider.apiKey` 를 one-shot `creds_update` 메시지로 이동 — `auth_update` + `notify_config` 와 동일 패턴. Agent 가 provider별 캐싱; `buildProvider` resolution: cache → per-request fallback → envVar. `ChatRequest.provider.apiKey` 는 마이그레이션 윈도우 동안 하위호환 유지. (#260 follow-up)
+- **fix(agent/shell)**: `creds_update` 에 `ttsKeys` (TTS provider별) + `gatewayToken` 추가. `SendChatOptions` 가 `ttsApiKey` / `gatewayToken` 받지 않음; `directToolCall` opts 가 `gatewayToken` 받지 않음 — 컴파일 단계에서 자격증명이 per-request frame 에 절대 안 들어가도록 강제. 모든 shell callsite 정리 (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay). (#260 follow-up)
+
+버그:
+
+- **fix(agent/shell)**: Naia gateway 가 Vertex AI gemini-3.x 접근 권한 없음 — picker 에서 제거, fallback fix, 0-byte SSE 에러 정확화, 저장된 config 자동 마이그레이션 ([#248](https://github.com/nextain/naia-os/issues/248))
+- **fix(shell)**: startup white flash + onboarding splash deadlock 해소 ([#254](https://github.com/nextain/naia-os/issues/254))
+
+문서:
+
+- **docs(context)**: `#271` Phase 2 — post-OpenClaw 아키텍처 문서 재작성, `current_runtime` 섹션 추가 ([#271](https://github.com/nextain/naia-os/issues/271))
+- **docs(bridges)**: `agent-bridges.yaml/md` 에 `notify_flow` + `security_hardening` 섹션 추가
+- **test(e2e)**: 통합 검증 스펙 — Playwright + Tauri IPC mock 으로 shell↔agent↔skill 등록 wire 검증 (5/5 pass)
+
 ## v0.1.4 (2026-04-04)
 
 Alpha Memory System v1, 지식 그래프, 메모리 벤치마크

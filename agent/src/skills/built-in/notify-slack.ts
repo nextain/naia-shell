@@ -1,29 +1,12 @@
+import { notifySlackDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition } from "../types.js";
 import { getNotifyWebhookUrl } from "./notify-config.js";
 
 export function createNotifySlackSkill(): SkillDefinition {
 	return {
-		name: "skill_notify_slack",
-		description:
-			"Send a notification message to Slack via webhook. Requires SLACK_WEBHOOK_URL env var or ~/.naia/config.json setup.",
-		parameters: {
-			type: "object",
-			properties: {
-				message: {
-					type: "string",
-					description: "The message text to send",
-				},
-				channel: {
-					type: "string",
-					description: "Slack channel override (e.g. #ops)",
-				},
-				username: {
-					type: "string",
-					description: "Bot username override",
-				},
-			},
-			required: ["message"],
-		},
+		name: `skill_${notifySlackDescriptor.name}`,
+		description: notifySlackDescriptor.description,
+		parameters: notifySlackDescriptor.inputSchema,
 		tier: 1,
 		requiresGateway: false,
 		source: "built-in",

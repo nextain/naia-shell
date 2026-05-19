@@ -63,7 +63,6 @@ export function SkillsTab({
 				args: { action: "gateway_status" },
 				requestId: `gw-skills-${Date.now()}`,
 				gatewayUrl,
-				gatewayToken: config?.gatewayToken,
 			});
 			if (res.success && res.output) {
 				const parsed = JSON.parse(res.output);
@@ -114,7 +113,6 @@ export function SkillsTab({
 					args: { action: "install", skillName: name, installId },
 					requestId: `gw-install-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				});
 				if (res.success) {
 					setInstallResults((prev) =>

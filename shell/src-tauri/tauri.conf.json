@@ -20,14 +20,28 @@
 				"fullscreen": false,
 				"decorations": false,
 				"transparent": false,
-				"visible": false
+				"visible": false,
+				"backgroundColor": [6, 13, 20, 255]
 			}
 		],
 		"security": {
 			"assetProtocol": {
-				"scope": ["**", "$HOME/**", "/tmp/**", "C:\\**", "D:\\**", "E:\\**", "F:\\**"]
+				"enable": true,
+				"scope": {
+					"allow": [
+						"$RESOURCE/**",
+						"$APPDATA/**",
+						"$APPCONFIG/**",
+						"$APPLOCALDATA/**",
+						"$HOME/**",
+						"/tmp/naia-*/**",
+						"/var/home/*/naia-adk/**",
+						"/var/home/*/naia/**"
+					],
+					"requireLiteralLeadingDot": true
+				}
 			},
-			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:18789 ws://localhost:18789 https://naia-gateway-181404717065.asia-northeast3.run.app wss://naia-gateway-181404717065.asia-northeast3.run.app https://naia-gateway-dev-181404717065.asia-northeast3.run.app wss://naia-gateway-dev-181404717065.asia-northeast3.run.app https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://speech.googleapis.com https://api.x.ai https://api.anthropic.com https://api.openai.com wss://api.openai.com https://discord.com http://asset.localhost https://asset.localhost tauri://localhost blob: data:; img-src 'self' asset: http://asset.localhost https://asset.localhost tauri://localhost blob: data:; media-src 'self' asset: http://asset.localhost https://asset.localhost blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-src http://asset.localhost https://asset.localhost"
+			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:18789 ws://localhost:18789 https://naia-gateway-181404717065.asia-northeast3.run.app wss://naia-gateway-181404717065.asia-northeast3.run.app https://naia-gateway-dev-181404717065.asia-northeast3.run.app wss://naia-gateway-dev-181404717065.asia-northeast3.run.app https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://speech.googleapis.com https://api.x.ai https://api.anthropic.com https://api.openai.com wss://api.openai.com http://asset.localhost https://asset.localhost tauri://localhost blob: data:; img-src 'self' asset: http://asset.localhost https://asset.localhost tauri://localhost blob: data:; media-src 'self' asset: http://asset.localhost https://asset.localhost blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-src http://asset.localhost https://asset.localhost"
 		}
 	},
 	"bundle": {

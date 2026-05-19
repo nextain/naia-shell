@@ -1,8 +1,19 @@
 <!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 
-# Phase 3: OpenClaw Hybrid Integration Plan
+# Phase 3: OpenClaw Hybrid Integration Plan (ARCHIVED — pre-#201)
 
-> SoT: `.agents/context/phase3-plan.yaml`
+> ⚠️ **This plan is historical**. The OpenClaw gateway daemon was removed in
+> #201, and the hybrid integration was reconciled in #272 / #273 / #274 /
+> #271 Phase 1. Current architecture is documented in:
+>
+> - [`.agents/context/agent-bridges.yaml`](../../.agents/context/agent-bridges.yaml) — SoT for the current shell↔agent↔memory wire
+> - [`.users/context/architecture.md`](./architecture.md) — current architecture doc (post-#201 status header at top)
+>
+> The rest of this document captures the original Phase 3 design rationale.
+> Useful for understanding what was tried + why we moved away from it. Do
+> not treat any of the steps below as actionable today.
+
+> SoT: `.agents/context/phase3-plan.yaml` (also marked obsolete in plan.yaml step_4_0)
 > Korean: `.users/context/ko/phase3-openclaw-hybrid-plan.md`
 
 > "Alpha does the work" — file editing, command execution, web search — safely.

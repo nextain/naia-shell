@@ -60,8 +60,6 @@ pub struct SkillMeta {
 
 pub struct WatcherState {
     pub watcher: Option<RecommendedWatcher>,
-    /// Root directory the current watcher is watching. None if watcher not started.
-    pub watched_root: Option<PathBuf>,
     /// Maps directory path -> last change timestamp (seconds since epoch)
     pub last_change: Arc<Mutex<HashMap<String, u64>>>,
     /// Maps directory path -> most recently changed file (relative path)
@@ -76,7 +74,6 @@ impl WatcherState {
     pub fn new() -> Self {
         Self {
             watcher: None,
-            watched_root: None,
             last_change: Arc::new(Mutex::new(HashMap::new())),
             recent_files: Arc::new(Mutex::new(HashMap::new())),
             branch_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -94,13 +91,12 @@ pub fn new_shared_watcher() -> SharedWatcherState {
 
 // --- Constants ---------------------------------------------------------------
 
-static WORKSPACE_ROOT_OVERRIDE: OnceLock<Mutex<String>> = OnceLock::new();
+#[cfg(unix)]
+const WORKSPACE_ROOT: &str = "/var/home/luke/dev";
+#[cfg(windows)]
+const WORKSPACE_ROOT: &str = "";
 
-fn default_workspace_root() -> String {
-    dirs::home_dir()
-        .map(|h| h.join("naia-adk").to_string_lossy().to_string())
-        .unwrap_or_default()
-}
+static WORKSPACE_ROOT_OVERRIDE: OnceLock<Mutex<String>> = OnceLock::new();
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -108,7 +104,7 @@ fn get_workspace_root() -> String {
     if let Some(m) = WORKSPACE_ROOT_OVERRIDE.get() {
         m.lock().unwrap().clone()
     } else {
-        default_workspace_root()
+        WORKSPACE_ROOT.to_string()
     }
 }
 
@@ -309,112 +305,78 @@ fn collect_workspace_dirs(root: &Path) -> Vec<PathBuf> {
 // --- Commands ----------------------------------------------------------------
 
 #[tauri::command]
-pub async fn workspace_get_sessions(
+pub fn workspace_get_sessions(
     watcher_state: tauri::State<'_, SharedWatcherState>,
 ) -> Result<Vec<SessionInfo>, String> {
     let root = canonical_workspace_root()?;
-    log::info!("[workspace] get_sessions start root={}", root.display());
-    let _t0 = std::time::Instant::now();
-    let candidates = collect_workspace_git_dirs(&root);
-    log::info!("[workspace] get_sessions candidates={}", candidates.len());
+    let mut sessions = Vec::new();
 
-    // Step 1: snapshot cache + time-series — brief sync lock, no git calls inside.
-    let (lc_snap, rf_snap, bc_snap, opc_snap, branch_cache_arc, origin_path_cache_arc) = {
+    let candidates = collect_workspace_git_dirs(&root);
+    let (last_change_map, recent_files_map, branch_cache_map, origin_path_cache_map) = {
         let state = watcher_state.lock().unwrap();
-        let lc = state.last_change.lock().unwrap().clone();
-        let rf = state.recent_files.lock().unwrap().clone();
-        let bc = state.branch_cache.lock().unwrap().clone();
-        let opc = state.origin_path_cache.lock().unwrap().clone();
-        (lc, rf, bc, opc, state.branch_cache.clone(), state.origin_path_cache.clone())
+        (
+            state.last_change.clone(),
+            state.recent_files.clone(),
+            state.branch_cache.clone(),
+            state.origin_path_cache.clone(),
+        )
     };
+    let lc = last_change_map.lock().unwrap();
+    let rf = recent_files_map.lock().unwrap();
+    let mut bc = branch_cache_map.lock().unwrap();
+    let mut opc = origin_path_cache_map.lock().unwrap();
 
     let now = now_secs();
 
-    // Step 2: canonicalise paths.
-    struct CandidateInfo {
-        path: PathBuf,
-        dir_name: String,
-        path_str: String,
-        last_change: Option<u64>,
-        recent_file: Option<String>,
-    }
-    let infos: Vec<CandidateInfo> = candidates
-        .into_iter()
-        .map(|path| {
-            let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-            let path_str = dunce::canonicalize(&path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| path.to_string_lossy().to_string());
-            let last_change = lc_snap.get(&path_str).copied();
-            let recent_file = rf_snap.get(&path_str).cloned();
-            CandidateInfo { path, dir_name, path_str, last_change, recent_file }
-        })
-        .collect();
+    for path in candidates {
+        let dir_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let path_str = dunce::canonicalize(&path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
 
-    // Step 3: spawn all uncached git calls concurrently on the blocking thread pool.
-    let mut tasks: tokio::task::JoinSet<(String, Option<String>, Option<String>)> =
-        tokio::task::JoinSet::new();
-    for info in &infos {
-        let needs_branch = !bc_snap.contains_key(&info.path_str);
-        let needs_origin = !opc_snap.contains_key(&info.path_str);
-        if needs_branch || needs_origin {
-            let path = info.path.clone();
-            let path_str = info.path_str.clone();
-            tasks.spawn_blocking(move || {
-                let branch = if needs_branch { get_branch(&path) } else { None };
-                let origin = if needs_origin { get_main_worktree(&path) } else { None };
-                (path_str, branch, origin)
-            });
-        }
-    }
+        let last_change = lc.get(&path_str).copied();
+        let recent_file = rf.get(&path_str).cloned();
+        let branch = match bc.get(&path_str) {
+            Some(cached) => cached.clone(),
+            None => {
+                let b = get_branch(&path);
+                if b.is_some() {
+                    bc.insert(path_str.clone(), b.clone());
+                }
+                b
+            }
+        };
+        let (progress, has_blockers) = read_progress(&path);
 
-    // Step 4: collect parallel git results.
-    let mut new_branches: HashMap<String, Option<String>> = HashMap::new();
-    let mut new_origins: HashMap<String, Option<String>> = HashMap::new();
-    while let Some(res) = tasks.join_next().await {
-        if let Ok((path_str, branch, origin)) = res {
-            new_branches.insert(path_str.clone(), branch);
-            new_origins.insert(path_str.clone(), origin);
-        }
-    }
-
-    // Step 5: write results back to cache — brief lock.
-    {
-        let mut bc = branch_cache_arc.lock().unwrap();
-        for (k, v) in &new_branches {
-            if v.is_some() { bc.insert(k.clone(), v.clone()); }
-        }
-        let mut opc = origin_path_cache_arc.lock().unwrap();
-        for (k, v) in &new_origins {
-            opc.insert(k.clone(), v.clone());
-        }
-    }
-
-    // Step 6: build session list.
-    let mut sessions = Vec::new();
-    for info in &infos {
-        let branch = bc_snap.get(&info.path_str)
-            .cloned()
-            .unwrap_or_else(|| new_branches.get(&info.path_str).cloned().flatten());
-        let origin_path = opc_snap.get(&info.path_str)
-            .cloned()
-            .unwrap_or_else(|| new_origins.get(&info.path_str).cloned().flatten());
-        let (progress, has_blockers) = read_progress(&info.path);
-        let status = match (has_blockers, info.last_change) {
+        let status = match (has_blockers, last_change) {
             (true, _) => "error",
             (_, Some(t)) if now.saturating_sub(t) < 30 => "active",
             (_, Some(t)) if now.saturating_sub(t) < 1800 => "idle",
             _ => "stopped",
         };
+
+        let origin_path = match opc.get(&path_str) {
+            Some(cached) => cached.clone(),
+            None => {
+                let op = get_main_worktree(&path);
+                opc.insert(path_str.clone(), op.clone());
+                op
+            }
+        };
+
         sessions.push(SessionInfo {
-            dir: info.dir_name.clone(),
-            path: info.path_str.clone(),
+            dir: dir_name,
+            path: path_str,
             branch,
             origin_path,
             status: status.to_string(),
             progress,
-            recent_file: info.recent_file.clone(),
-            last_change: info.last_change,
+            recent_file,
+            last_change,
         });
     }
 
@@ -425,58 +387,25 @@ pub async fn workspace_get_sessions(
             .then_with(|| a.path.cmp(&b.path))
     });
 
-    log::info!("[workspace] get_sessions done count={} ms={}", sessions.len(), _t0.elapsed().as_millis());
     Ok(sessions)
 }
 
 #[tauri::command]
-pub async fn workspace_get_progress(path: String) -> Option<ProgressInfo> {
-    tokio::task::spawn_blocking(move || {
-        let safe = validate_in_workspace(&path).ok()?;
-        read_progress(&safe).0
-    })
-    .await
-    .unwrap_or(None)
+pub fn workspace_get_progress(path: String) -> Option<ProgressInfo> {
+    let safe = validate_in_workspace(&path).ok()?;
+    read_progress(&safe).0
 }
 
 #[tauri::command]
-pub async fn workspace_start_watch(
+pub fn workspace_start_watch(
     app: AppHandle,
     watcher_state: tauri::State<'_, SharedWatcherState>,
 ) -> Result<(), String> {
-    // Run on Tokio thread pool (not the WebView2 dispatch thread) to prevent
-    // a deadlock where RecommendedWatcher::new() internally needs the Windows
-    // message pump to be free — which it isn't when a sync command owns it.
-    log::info!("[workspace] start_watch begin");
-
-    let root = tokio::task::spawn_blocking(canonical_workspace_root)
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    log::info!("[workspace] start_watch root={}", root.display());
-
-    let git_dirs = {
-        let root_clone = root.clone();
-        tokio::task::spawn_blocking(move || collect_workspace_git_dirs(&root_clone))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))?
-    };
-    log::info!("[workspace] start_watch git_dirs={}", git_dirs.len());
-
+    let root = canonical_workspace_root()?;
     let mut state = watcher_state.lock().unwrap();
 
     if state.watcher.is_some() {
-        // Already watching the same root → nothing to do
-        if state.watched_root.as_deref() == Some(root.as_path()) {
-            log::info!("[workspace] start_watch already watching same root — skip");
-            return Ok(());
-        }
-        // Workspace root changed — drop the old watcher and clear stale caches
-        state.watcher = None;
-        state.watched_root = None;
-        state.last_change.lock().unwrap().clear();
-        state.recent_files.lock().unwrap().clear();
-        state.branch_cache.lock().unwrap().clear();
-        state.origin_path_cache.lock().unwrap().clear();
+        return Ok(());
     }
 
     let last_change_clone = state.last_change.clone();
@@ -484,7 +413,6 @@ pub async fn workspace_start_watch(
     let branch_cache_clone = state.branch_cache.clone();
     let app_clone = app.clone();
 
-    log::info!("[workspace] start_watch creating RecommendedWatcher");
     let watcher = RecommendedWatcher::new(
         move |result: notify::Result<Event>| {
             if let Ok(event) = result {
@@ -543,21 +471,18 @@ pub async fn workspace_start_watch(
         Config::default(),
     )
     .map_err(|e| e.to_string())?;
-    log::info!("[workspace] start_watch watcher created");
 
     let mut w = watcher;
-    for path in &git_dirs {
-        let _ = w.watch(path, RecursiveMode::Recursive);
+    for path in collect_workspace_git_dirs(&root) {
+        let _ = w.watch(&path, RecursiveMode::Recursive);
     }
 
     state.watcher = Some(w);
-    state.watched_root = Some(root);
-    log::info!("[workspace] start_watch done watching {} dirs", git_dirs.len());
     Ok(())
 }
 
 #[tauri::command]
-pub async fn workspace_stop_watch(
+pub fn workspace_stop_watch(
     watcher_state: tauri::State<'_, SharedWatcherState>,
 ) -> Result<(), String> {
     let (last_change_arc, recent_files_arc, branch_cache_arc, origin_path_cache_arc) = {
@@ -578,134 +503,96 @@ pub async fn workspace_stop_watch(
 }
 
 #[tauri::command]
-pub async fn workspace_set_root(root: String) -> Result<String, String> {
-    log::info!("[workspace] set_root start root={}", root);
-    // Run canonicalize off the dispatch thread — on Windows it can be slow (~300ms)
-    // due to Defender/AV scanning, and blocking the dispatch thread causes hangs.
-    let canonical_str = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let p = PathBuf::from(&root);
-        if !p.is_dir() {
-            return Err(format!("Workspace root is not a directory: {root}"));
-        }
-        let canonical = dunce::canonicalize(&p)
-            .map_err(|e| format!("Workspace root inaccessible: {e}"))?;
-        let canonical_str = canonical.to_string_lossy().to_string();
-        let m = WORKSPACE_ROOT_OVERRIDE.get_or_init(|| Mutex::new(default_workspace_root()));
-        *m.lock().unwrap() = canonical_str.clone();
-        Ok(canonical_str)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    log::info!("[workspace] set_root ok canonical={}", canonical_str);
+pub fn workspace_set_root(root: String) -> Result<String, String> {
+    let p = PathBuf::from(&root);
+    if !p.is_dir() {
+        return Err(format!("Workspace root is not a directory: {root}"));
+    }
+    let canonical = dunce::canonicalize(&p).map_err(|e| format!("Workspace root inaccessible: {e}"))?;
+    let canonical_str = canonical.to_string_lossy().to_string();
+    let m = WORKSPACE_ROOT_OVERRIDE.get_or_init(|| Mutex::new(WORKSPACE_ROOT.to_string()));
+    *m.lock().unwrap() = canonical_str.clone();
     Ok(canonical_str)
 }
 
 #[tauri::command]
-pub async fn workspace_classify_dirs() -> Result<Vec<ClassifiedDir>, String> {
-    // Run filesystem + git ops on blocking thread pool, not the dispatch thread.
-    tokio::task::spawn_blocking(|| -> Result<Vec<ClassifiedDir>, String> {
-        let root = canonical_workspace_root()?;
-        log::info!("[workspace] classify_dirs start root={}", root.display());
-        let _tc = std::time::Instant::now();
-        let mut result = Vec::new();
-        let worktree_paths = get_all_worktree_paths(&root);
-        log::info!("[workspace] classify_dirs worktree_paths={}", worktree_paths.len());
+pub fn workspace_classify_dirs() -> Result<Vec<ClassifiedDir>, String> {
+    let root = canonical_workspace_root()?;
+    let mut result = Vec::new();
+    let worktree_paths = get_all_worktree_paths(&root);
 
-        let mut raw = collect_workspace_dirs(&root);
-        raw.sort_by_key(|p| p.to_string_lossy().to_string());
+    let mut raw = collect_workspace_dirs(&root);
+    raw.sort_by_key(|p| p.to_string_lossy().to_string());
 
-        for path in raw {
-            if !path.is_dir() {
-                continue;
-            }
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-            if name.starts_with('.') {
-                continue;
-            }
-            let path_str = dunce::canonicalize(&path)
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| path.to_string_lossy().to_string());
-
-            let is_worktree_listed = worktree_paths.contains(&path_str);
-            let category = if is_worktree_listed && path.join(".git").is_file() {
-                "worktree"
-            } else {
-                classify_dir_heuristic(path.as_path())
-            };
-
-            result.push(ClassifiedDir {
-                name,
-                path: path_str,
-                category: category.to_string(),
-            });
+    for path in raw {
+        if !path.is_dir() {
+            continue;
         }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path_str = dunce::canonicalize(&path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string_lossy().to_string());
 
-        log::info!("[workspace] classify_dirs done count={} ms={}", result.len(), _tc.elapsed().as_millis());
-        Ok(result)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+        let is_worktree_listed = worktree_paths.contains(&path_str);
+        let category = if is_worktree_listed && path.join(".git").is_file() {
+            "worktree"
+        } else {
+            classify_dir_heuristic(path.as_path())
+        };
+
+        result.push(ClassifiedDir {
+            name,
+            path: path_str,
+            category: category.to_string(),
+        });
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
-pub async fn workspace_detect_adk_root() -> Result<String, String> {
-    // Scans many directories — must run off the dispatch thread to avoid hangs.
-    tokio::task::spawn_blocking(|| -> Result<String, String> {
-        let candidates = collect_search_candidates();
-        for dir in candidates {
-            if is_naia_adk_root(&dir) {
-                let canonical = dunce::canonicalize(&dir).ok();
-                if let Some(c) = canonical {
-                    return Ok(c.to_string_lossy().to_string());
-                }
+pub fn workspace_detect_adk_root() -> Result<String, String> {
+    let candidates = collect_search_candidates();
+    for dir in candidates {
+        if is_naia_adk_root(&dir) {
+            let canonical = dunce::canonicalize(&dir).ok();
+            if let Some(c) = canonical {
+                return Ok(c.to_string_lossy().to_string());
             }
         }
-        Err("No naia-adk workspace detected".to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+    }
+    Err("No naia-adk workspace detected".to_string())
 }
 
 #[tauri::command]
-pub async fn workspace_check_adk_server(url: Option<String>) -> Result<serde_json::Value, String> {
-    // ureq blocks up to 3 s — must run off the dispatch thread to avoid hangs.
-    tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
-        let server_url = url.unwrap_or_else(|| "http://localhost:3141".to_string());
-        let health_url = format!("{}/api/health", server_url);
-        let response = ureq::get(&health_url)
-            .timeout(std::time::Duration::from_secs(3))
-            .call()
-            .map_err(|e| format!("Server not reachable: {e}"))?;
-        let body: serde_json::Value = response.into_json().map_err(|e| format!("Parse error: {e}"))?;
-        Ok(body)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+pub fn workspace_check_adk_server(url: Option<String>) -> Result<serde_json::Value, String> {
+    let server_url = url.unwrap_or_else(|| "http://localhost:3141".to_string());
+    let health_url = format!("{}/api/health", server_url);
+    let response = ureq::get(&health_url)
+        .timeout(std::time::Duration::from_secs(3))
+        .call()
+        .map_err(|e| format!("Server not reachable: {e}"))?;
+    let body: serde_json::Value = response.into_json().map_err(|e| format!("Parse error: {e}"))?;
+    Ok(body)
 }
 
 #[tauri::command]
-pub async fn workspace_discover_adk_server() -> Option<String> {
-    // 3 × 1 s HTTP probes — must run off the dispatch thread to avoid hangs.
-    tokio::task::spawn_blocking(|| -> Option<String> {
-        for port in [3141, 3142, 8080] {
-            let url = format!("http://localhost:{}", port);
-            let health = format!("{}/api/health", url);
-            if ureq::get(&health).timeout(std::time::Duration::from_secs(1)).call().is_ok() {
-                return Some(url);
-            }
+pub fn workspace_discover_adk_server() -> Option<String> {
+    for port in [3141, 3142, 8080] {
+        let url = format!("http://localhost:{}", port);
+        let health = format!("{}/api/health", url);
+        if ureq::get(&health).timeout(std::time::Duration::from_secs(1)).call().is_ok() {
+            return Some(url);
         }
-        None
-    })
-    .await
-    .unwrap_or(None)
+    }
+    None
 }
 
 fn collect_search_candidates() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    // Prefer ~/naia-adk first — this is the canonical user workspace location.
-    if let Some(home) = dirs::home_dir() {
-        dirs.push(home.join("naia-adk"));
-    }
     if let Ok(cwd) = std::env::current_dir() {
         for ancestor in cwd.ancestors() {
             dirs.push(ancestor.join("projects").join("naia-adk"));
@@ -748,63 +635,62 @@ fn collect_search_candidates() -> Vec<PathBuf> {
 fn is_naia_adk_root(path: &Path) -> bool {
     let has_entry_point = path.join("AGENTS.md").is_file() || path.join("CLAUDE.md").is_file();
     let has_rules = path.join(".agents").join("context").join("agents-rules.json").is_file();
-    let has_work_index = path
-        .join(".agents")
-        .join("context")
-        .join("ai-work-index.yaml")
-        .is_file();
-    has_entry_point && has_rules && has_work_index
+    if !(has_entry_point && has_rules) {
+        return false;
+    }
+    // AGENTS.md + agents-rules.json alone is NOT enough — every Naia project
+    // (naia-os, alpha-adk root, etc.) uses the same context-as-code layout.
+    // The actual naia-adk repo is identified by its package.json `name`.
+    // Without this check, `workspace_detect_adk_root` would happily return
+    // the cwd's nearest AGENTS.md-bearing ancestor as "the ADK" — e.g. the
+    // naia-os shell directory the user is dev-running from.
+    let pkg_path = path.join("package.json");
+    let Ok(pkg_str) = std::fs::read_to_string(&pkg_path) else {
+        return false;
+    };
+    let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_str) else {
+        return false;
+    };
+    pkg.get("name").and_then(|n| n.as_str()) == Some("naia-adk")
 }
 
 #[tauri::command]
-pub async fn workspace_load_project_index() -> Result<serde_json::Value, String> {
-    tokio::task::spawn_blocking(|| -> Result<serde_json::Value, String> {
-        let root = canonical_workspace_root()?;
-        let index_path = root.join(".agents").join("context").join("project-index.yaml");
-        if !index_path.is_file() {
-            return Err("project-index.yaml not found".to_string());
-        }
-        let content = std::fs::read_to_string(&index_path).map_err(|e| e.to_string())?;
-        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| format!("YAML parse error: {e}"))?;
-        let json_str = serde_json::to_string(&yaml_value).map_err(|e| format!("JSON conversion: {e}"))?;
-        serde_json::from_str(&json_str).map_err(|e| format!("JSON parse: {e}"))
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+pub fn workspace_load_project_index() -> Result<serde_json::Value, String> {
+    let root = canonical_workspace_root()?;
+    let index_path = root.join(".agents").join("context").join("project-index.yaml");
+    if !index_path.is_file() {
+        return Err("project-index.yaml not found".to_string());
+    }
+    let content = std::fs::read_to_string(&index_path).map_err(|e| e.to_string())?;
+    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| format!("YAML parse error: {e}"))?;
+    let json_str = serde_json::to_string(&yaml_value).map_err(|e| format!("JSON conversion: {e}"))?;
+    serde_json::from_str(&json_str).map_err(|e| format!("JSON parse: {e}"))
 }
 
 #[tauri::command]
-pub async fn workspace_discover_skills() -> Result<Vec<SkillMeta>, String> {
-    tokio::task::spawn_blocking(|| -> Result<Vec<SkillMeta>, String> {
-        let root = canonical_workspace_root()?;
-        let skills_dir = root.join("skills");
-        if !skills_dir.is_dir() {
-            return Ok(vec![]);
-        }
-        let mut skills = Vec::new();
-        visit_skill_dirs(&skills_dir, &root, &mut skills);
-        Ok(skills)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+pub fn workspace_discover_skills() -> Result<Vec<SkillMeta>, String> {
+    let root = canonical_workspace_root()?;
+    let skills_dir = root.join("skills");
+    if !skills_dir.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut skills = Vec::new();
+    visit_skill_dirs(&skills_dir, &root, &mut skills);
+    Ok(skills)
 }
 
 #[tauri::command]
-pub async fn workspace_read_skill_content(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let root = canonical_workspace_root()?;
-        let skill_path = root.join(&path).join("SKILL.md");
-        if !skill_path.is_file() {
-            return Err(format!("SKILL.md not found at: {path}"));
-        }
-        let abs = dunce::canonicalize(&skill_path).map_err(|e| format!("Path error: {e}"))?;
-        if !abs.starts_with(&root) {
-            return Err("Access denied: path outside workspace".to_string());
-        }
-        std::fs::read_to_string(&abs).map_err(|e| format!("Read failed: {e}"))
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+pub fn workspace_read_skill_content(path: String) -> Result<String, String> {
+    let root = canonical_workspace_root()?;
+    let skill_path = root.join(&path).join("SKILL.md");
+    if !skill_path.is_file() {
+        return Err(format!("SKILL.md not found at: {path}"));
+    }
+    let abs = dunce::canonicalize(&skill_path).map_err(|e| format!("Path error: {e}"))?;
+    if !abs.starts_with(&root) {
+        return Err("Access denied: path outside workspace".to_string());
+    }
+    std::fs::read_to_string(&abs).map_err(|e| format!("Read failed: {e}"))
 }
 
 fn visit_skill_dirs(dir: &Path, root: &Path, skills: &mut Vec<SkillMeta>) {
@@ -901,231 +787,55 @@ fn get_all_worktree_paths(root: &Path) -> Vec<String> {
 // RESTORED MISSING COMMANDS
 
 #[tauri::command]
-pub async fn workspace_list_dirs(parent: String) -> Result<Vec<DirEntry>, String> {
-    tokio::task::spawn_blocking(move || -> Result<Vec<DirEntry>, String> {
-        let safe_path = validate_in_workspace(&parent)?;
-        let mut entries = Vec::new();
-        if let Ok(read) = std::fs::read_dir(safe_path) {
-            for entry in read.flatten() {
-                let p = entry.path();
-                let is_dir = p.is_dir();
-                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-                if name.starts_with('.') { continue; }
-                entries.push(DirEntry {
-                    name,
-                    path: p.to_string_lossy().to_string(),
-                    is_dir,
-                    children: None,
-                });
-            }
-        }
-        entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
-        Ok(entries)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
-}
-
-#[tauri::command]
-pub async fn workspace_read_file(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        let safe_path = validate_in_workspace(&path)?;
-        std::fs::read_to_string(safe_path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
-}
-
-#[tauri::command]
-pub async fn workspace_read_file_bytes(path: String) -> Result<Vec<u8>, String> {
-    tokio::task::spawn_blocking(move || {
-        let safe_path = validate_in_workspace(&path)?;
-        std::fs::read(safe_path).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
-}
-
-#[tauri::command]
-pub async fn workspace_file_size(path: String) -> Result<u64, String> {
-    tokio::task::spawn_blocking(move || {
-        let safe_path = validate_in_workspace(&path)?;
-        std::fs::metadata(safe_path).map(|m| m.len()).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
-}
-
-#[tauri::command]
-pub async fn workspace_write_file(path: String, content: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let safe_path = validate_write_path(&path)?;
-        std::fs::write(safe_path, content).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
-}
-
-#[tauri::command]
-pub async fn workspace_get_git_info(path: String) -> Result<GitInfo, String> {
-    tokio::task::spawn_blocking(move || {
-        let safe_path = validate_in_workspace(&path)?;
-        Ok(GitInfo {
-            branch: get_branch(&safe_path),
-        })
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
-}
-
-/// Known AI agent process names (lowercase substring matches).
-const AGENT_PROCESS_NAMES: &[(&str, &str)] = &[
-    ("claude", "claude"),
-    ("opencode", "opencode"),
-    ("codex", "codex"),
-    ("gemini", "gemini"),
-    ("glm", "zai"),
-];
-
-/// BFS-walk the process tree rooted at `root_pid` using a pre-loaded `System`
-/// snapshot and return the first recognized AI agent name found among
-/// descendants (breadth-first so the closest child wins).
-fn find_agent_in_tree(
-    sys: &sysinfo::System,
-    root_pid: sysinfo::Pid,
-) -> Option<String> {
-    use std::collections::{HashSet, VecDeque};
-
-    let mut queue: VecDeque<sysinfo::Pid> = VecDeque::new();
-    let mut visited: HashSet<sysinfo::Pid> = HashSet::new();
-    queue.push_back(root_pid);
-    visited.insert(root_pid);
-
-    while let Some(pid) = queue.pop_front() {
-        // Check this process name
-        if let Some(proc) = sys.process(pid) {
-            let name = proc.name().to_string_lossy().to_lowercase();
-            for (pattern, agent) in AGENT_PROCESS_NAMES {
-                if name.contains(pattern) {
-                    return Some(agent.to_string());
-                }
-            }
-        }
-
-        // Enqueue direct children (BFS: siblings before nieces/nephews)
-        for (child_pid, child_proc) in sys.processes() {
-            if visited.contains(child_pid) {
-                continue;
-            }
-            if child_proc.parent() == Some(pid) {
-                visited.insert(*child_pid);
-                queue.push_back(*child_pid);
-            }
+pub fn workspace_list_dirs(parent: String) -> Result<Vec<DirEntry>, String> {
+    let safe_path = validate_in_workspace(&parent)?;
+    let mut entries = Vec::new();
+    if let Ok(read) = std::fs::read_dir(safe_path) {
+        for entry in read.flatten() {
+            let p = entry.path();
+            let is_dir = p.is_dir();
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            if name.starts_with('.') { continue; }
+            entries.push(DirEntry {
+                name,
+                path: p.to_string_lossy().to_string(),
+                is_dir,
+                children: None,
+            });
         }
     }
-
-    None
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+    Ok(entries)
 }
 
-/// Check multiple PTY pids in a single call, taking one process-list snapshot.
-///
-/// Returns a map of `pid -> agent_name`. Missing keys mean no agent was found.
-/// Called every 5 s by the frontend; batching avoids N×System::new() per tick.
 #[tauri::command]
-pub async fn workspace_get_pty_agents(pids: Vec<u32>) -> std::collections::HashMap<u32, String> {
-    if pids.is_empty() {
-        return std::collections::HashMap::new();
-    }
-    // System::new_all() can take 500ms–2s — must run off the dispatch thread.
-    tokio::task::spawn_blocking(move || {
-        use sysinfo::System;
-        let sys = System::new_all();
-        pids.into_iter()
-            .filter_map(|pid| {
-                find_agent_in_tree(&sys, sysinfo::Pid::from_u32(pid))
-                    .map(|agent| (pid, agent))
-            })
-            .collect()
-    })
-    .await
-    .unwrap_or_default()
+pub fn workspace_read_file(path: String) -> Result<String, String> {
+    let safe_path = validate_in_workspace(&path)?;
+    std::fs::read_to_string(safe_path).map_err(|e| e.to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{find_agent_in_tree, AGENT_PROCESS_NAMES};
+#[tauri::command]
+pub fn workspace_read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+    let safe_path = validate_in_workspace(&path)?;
+    std::fs::read(safe_path).map_err(|e| e.to_string())
+}
 
-    // ── AGENT_PROCESS_NAMES table ──────────────────────────────────────────────
+#[tauri::command]
+pub fn workspace_file_size(path: String) -> Result<u64, String> {
+    let safe_path = validate_in_workspace(&path)?;
+    std::fs::metadata(safe_path).map(|m| m.len()).map_err(|e| e.to_string())
+}
 
-    #[test]
-    fn agent_process_names_contains_all_expected_agents() {
-        let agents: Vec<(&str, &str)> = AGENT_PROCESS_NAMES.to_vec();
-        assert!(
-            agents.iter().any(|(p, a)| *p == "claude" && *a == "claude"),
-            "claude entry missing"
-        );
-        assert!(
-            agents.iter().any(|(p, a)| *p == "opencode" && *a == "opencode"),
-            "opencode entry missing"
-        );
-        assert!(
-            agents.iter().any(|(p, a)| *p == "codex" && *a == "codex"),
-            "codex entry missing"
-        );
-        assert!(
-            agents.iter().any(|(p, a)| *p == "gemini" && *a == "gemini"),
-            "gemini entry missing"
-        );
-        assert!(
-            agents.iter().any(|(p, a)| *p == "glm" && *a == "zai"),
-            "glm->zai entry missing (Z.AI Coding Plan)"
-        );
-    }
+#[tauri::command]
+pub fn workspace_write_file(path: String, content: String) -> Result<(), String> {
+    let safe_path = validate_write_path(&path)?;
+    std::fs::write(safe_path, content).map_err(|e| e.to_string())
+}
 
-    #[test]
-    fn agent_process_names_no_duplicate_patterns() {
-        let mut patterns: Vec<&str> = AGENT_PROCESS_NAMES.iter().map(|(p, _)| *p).collect();
-        let original_len = patterns.len();
-        patterns.sort_unstable();
-        patterns.dedup();
-        assert_eq!(
-            patterns.len(),
-            original_len,
-            "AGENT_PROCESS_NAMES contains duplicate pattern keys"
-        );
-    }
-
-    #[test]
-    fn agent_process_names_no_empty_strings() {
-        for (pattern, agent) in AGENT_PROCESS_NAMES {
-            assert!(!pattern.is_empty(), "empty pattern in AGENT_PROCESS_NAMES");
-            assert!(!agent.is_empty(), "empty agent name in AGENT_PROCESS_NAMES");
-        }
-    }
-
-    // ── find_agent_in_tree — live process snapshot ─────────────────────────────
-
-    /// Self-test: the test runner (cargo) should not match any AI agent pattern.
-    /// If it does match, the agent name must be one of the known valid values.
-    #[test]
-    fn find_agent_in_tree_returns_none_for_test_runner() {
-        use sysinfo::{Pid, System};
-        let sys = System::new_all();
-        let current_pid = Pid::from_u32(std::process::id());
-        if let Some(agent) = find_agent_in_tree(&sys, current_pid) {
-            // Only fail if the matched agent is not a known valid name.
-            let known = ["claude", "opencode", "codex", "gemini", "zai"];
-            assert!(
-                known.contains(&agent.as_str()),
-                "find_agent_in_tree returned unexpected agent name: {agent}"
-            );
-        }
-    }
-
-    /// Empty pid list → workspace_get_pty_agents returns an empty map.
-    #[tokio::test]
-    async fn workspace_get_pty_agents_empty_input() {
-        let result = super::workspace_get_pty_agents(vec![]).await;
-        assert!(result.is_empty(), "empty input should produce empty output map");
-    }
+#[tauri::command]
+pub fn workspace_get_git_info(path: String) -> Result<GitInfo, String> {
+    let safe_path = validate_in_workspace(&path)?;
+    Ok(GitInfo {
+        branch: get_branch(&safe_path),
+    })
 }

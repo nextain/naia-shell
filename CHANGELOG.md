@@ -7,6 +7,32 @@ Source data: [`releases/v*.yaml`](releases/)
 
 ---
 
+## Unreleased
+
+Adversarial-review batch — 5 P0-critical security fixes + 1 P0-UX + 1 P1 gateway routing, plus follow-up architectural docs.
+
+Security hardening (2026-05-12):
+
+- **fix(agent)**: gate `handleToolRequest` through `needsApproval` before `executeTool` — panels/shell direct tool-call path no longer bypasses the tier check the LLM-loop path enforces ([#256](https://github.com/nextain/naia-os/issues/256))
+- **fix(agent)**: `panel_install` rejects non-HTTPS sources — `file://` / `http://` / `git@` / `data:` / `javascript:` / bare local paths return a clear error before any spawn ([#257](https://github.com/nextain/naia-os/issues/257))
+- **fix(shell)**: `assetProtocol.scope` rewritten as `FsScope` object — bare `**`, drive-root patterns, bare `/tmp/**` removed; `requireLiteralLeadingDot: true` blocks `~/.ssh` / `~/.gnupg` / `~/.aws` ([#258](https://github.com/nextain/naia-os/issues/258))
+- **fix(shell)**: `https://discord.com` removed from CSP `connect-src` — all Discord API via Rust `invoke('discord_api', ...)` ([#259](https://github.com/nextain/naia-os/issues/259))
+- **fix(agent/shell)**: webhook URLs moved off per-request stdio via new `notify_config` one-shot message ([#260](https://github.com/nextain/naia-os/issues/260))
+- **fix(shell)**: runtime `asset_protocol_scope.allow_directory` extension at `copy_bundled_assets` — ADK workspaces outside `$HOME` / `/var/home/*/naia-adk/**` (e.g. `/mnt/external`, `/opt/custom`, `D:\custom\naia`) now serve VRM / BGM / background via `asset://` URLs. Required `protocol-asset` Cargo feature + `assetProtocol.enable: true` ([#277](https://github.com/nextain/naia-os/issues/277))
+- **fix(agent/shell)**: `provider.apiKey` moved to one-shot `creds_update` message — same pattern as `auth_update` + `notify_config`. Agent caches per-provider; `buildProvider` resolution: cache → per-request fallback → envVar. `ChatRequest.provider.apiKey` stays declared for backwards compat during the migration window. (#260 follow-up)
+- **fix(agent/shell)**: `creds_update` extended to carry `ttsKeys` (per-TTS-provider) + `gatewayToken`. `SendChatOptions` no longer accepts `ttsApiKey` / `gatewayToken`; `directToolCall` opts no longer accept `gatewayToken` — compile-time enforcement that credentials never appear on per-request frames. All shell callsites cleaned (ChatPanel / SettingsTab / AgentsTab / SkillsTab / DiagnosticsTab / discord-relay). (#260 follow-up)
+
+Bugs:
+
+- **fix(agent/shell)**: Naia gateway lacks Vertex AI access to gemini-3.x — drop from picker, fix `gemini-3.1-flash-live-preview` fallback, accurate 0-byte SSE error, auto-migrate saved configs ([#248](https://github.com/nextain/naia-os/issues/248))
+- **fix(shell)**: startup white flash + onboarding splash deadlock ([#254](https://github.com/nextain/naia-os/issues/254))
+
+Docs:
+
+- **docs(context)**: `#271` Phase 2 — architecture docs rewrite post-OpenClaw; live docs gain `current_runtime` section, pre-#201 hybrid plans archived ([#271](https://github.com/nextain/naia-os/issues/271))
+- **docs(bridges)**: `agent-bridges.yaml/md` add `notify_flow` + `security_hardening` sections documenting the new message contract + seven hardening fixes
+- **test(e2e)**: integration validation spec — Playwright with Tauri IPC mock validates shell↔agent↔skill registration wire (5/5 pass)
+
 ## v0.1.4 (2026-04-04)
 
 Alpha Memory System v1, Knowledge Graph, and memory benchmarks

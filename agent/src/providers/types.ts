@@ -4,7 +4,13 @@ export type ProviderId = string;
 export interface ProviderConfig {
 	provider: ProviderId;
 	model: string;
-	apiKey: string;
+	/**
+	 * @deprecated Send via `creds_update` instead (#260 follow-up).
+	 * Still accepted for older shells that haven't migrated; new builds
+	 * MUST NOT populate this. Will be removed once all callers migrate.
+	 */
+	apiKey?: string;
+	/** @deprecated Use auth_update instead — see factory.ts setAgentNaiaKey. */
 	naiaKey?: string;
 	ollamaHost?: string;
 	vllmHost?: string;

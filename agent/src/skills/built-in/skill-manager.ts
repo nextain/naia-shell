@@ -1,3 +1,4 @@
+import { skillManagerDescriptor } from "@naia-adk/skills-builtin";
 import {
 	getSkillsStatus,
 	installSkill,
@@ -41,45 +42,10 @@ export function createSkillManagerSkill(
 	registry: SkillRegistry,
 ): SkillDefinition {
 	return {
-		name: "skill_skill_manager",
-		description:
-			"MUST use this tool when the user asks about skills, tools, or capabilities. Actions: 'list' shows all available skills with enabled/disabled status, 'search' finds skills by keyword, 'info' gets details about a specific skill, 'enable' activates a disabled skill, 'disable' deactivates a skill, 'gateway_status' shows Gateway skill eligibility, 'install' installs skill dependencies via Gateway, 'update_config' patches skill config on Gateway. Always call this tool instead of guessing skill information.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description:
-						"Action to perform: list, search, info, enable, disable, gateway_status, install, update_config",
-					enum: [
-						"list",
-						"search",
-						"info",
-						"enable",
-						"disable",
-						"gateway_status",
-						"install",
-						"update_config",
-					],
-				},
-				query: {
-					type: "string",
-					description:
-						"Search keyword (for action: search). Matches skill name and description.",
-				},
-				skillName: {
-					type: "string",
-					description:
-						"Skill name (for action: info/enable/disable/install/update_config).",
-				},
-				enabled: {
-					type: "boolean",
-					description: "Enable/disable flag (for action: update_config).",
-				},
-			},
-			required: ["action"],
-		},
-		tier: 0,
+		name: `skill_${skillManagerDescriptor.name}`,
+		description: skillManagerDescriptor.description,
+		parameters: skillManagerDescriptor.inputSchema,
+		tier: 0, // descriptor.tier = "T0"
 		requiresGateway: false,
 		source: "built-in",
 		execute: async (

@@ -7,6 +7,14 @@ const { mockGatewayRequest, mockGatewayClose } = vi.hoisted(() => ({
 
 vi.mock("../providers/factory.js", () => ({
 	buildProvider: vi.fn(),
+	setAgentNaiaKey: vi.fn(),
+	getAgentNaiaKey: vi.fn().mockReturnValue(undefined),
+	setProviderApiKey: vi.fn(),
+	getProviderApiKey: vi.fn().mockReturnValue(undefined),
+	setTtsApiKey: vi.fn(),
+	getTtsApiKey: vi.fn().mockReturnValue(undefined),
+	setGatewayToken: vi.fn(),
+	getGatewayToken: vi.fn().mockReturnValue(undefined),
 }));
 
 vi.mock("../tts/index.js", () => ({

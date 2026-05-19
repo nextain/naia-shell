@@ -50,6 +50,31 @@ export function getDefaultLlmModel(providerId: string): string {
 	return providers.get(providerId)?.defaultModel ?? "";
 }
 
+/**
+ * Migrate a saved config model that's no longer registered (#248 follow-up).
+ *
+ * Returns { migrated: false } if the saved model is still valid, or the
+ * provider has no static model list (ollama / vllm — dynamic discovery).
+ * Returns { migrated: true, from, to } if the saved model was replaced with
+ * the provider's defaultModel. Caller is responsible for persisting the
+ * updated config via saveConfig.
+ *
+ * Scoped intentionally to the "nextain" (Naia gateway) provider, which is
+ * the only one we removed entries from. Other static providers may add
+ * scoping here as new model deprecations arrive.
+ */
+export function shouldMigrateNextainModel(
+	providerId: string,
+	modelId: string,
+): { migrate: false } | { migrate: true; to: string } {
+	if (providerId !== "nextain") return { migrate: false };
+	const provider = providers.get(providerId);
+	if (!provider) return { migrate: false };
+	const valid = provider.models.some((m) => m.id === modelId);
+	if (valid) return { migrate: false };
+	return { migrate: true, to: provider.defaultModel };
+}
+
 /** Check if a provider does not require any API key (neither provider key nor Naia key). */
 export function isApiKeyOptional(providerId: string): boolean {
 	const p = providers.get(providerId);
@@ -84,57 +109,6 @@ export async function fetchVllmModels(
 	if (!provider?.fetchModels) return { models: [], connected: false };
 	const models = await provider.fetchModels(host);
 	return { models: models ?? [], connected: models !== null };
-}
-
-/** Pricing entry shape returned by GET /v1/pricing on the Naia gateway. */
-interface GatewayPricingEntry {
-	model_key: string;
-	input_price_per_million: number;
-	output_price_per_million: number;
-	cached_price_per_million: number | null;
-}
-
-/**
- * Fetch live pricing from the Naia gateway and return updated Naia model list.
- *
- * The Naia gateway DB is the single source of truth for pricing.
- * This function pulls `GET /v1/pricing`, filters `vertexai:*` entries, and
- * overlays the live prices onto the static Naia provider model list.
- *
- * Returns null if the gateway is unreachable (caller should keep static pricing).
- */
-export async function fetchNaiaPricing(
-	gatewayHttpUrl: string,
-): Promise<LlmModelMeta[] | null> {
-	try {
-		const resp = await fetch(`${gatewayHttpUrl}/v1/pricing`, {
-			signal: AbortSignal.timeout(5000),
-		});
-		if (!resp.ok) return null;
-		const entries: GatewayPricingEntry[] = await resp.json();
-
-		const provider = providers.get("nextain");
-		if (!provider) return null;
-
-		// Build modelId → [input, output] from gateway DB
-		const pricingMap = new Map<string, [number, number]>();
-		for (const entry of entries) {
-			if (!entry.model_key.startsWith("vertexai:")) continue;
-			const modelId = entry.model_key.replace("vertexai:", "");
-			pricingMap.set(modelId, [
-				entry.input_price_per_million,
-				entry.output_price_per_million,
-			]);
-		}
-
-		// Return a new model list with live pricing applied
-		return provider.models.map((m) => {
-			const live = pricingMap.get(m.id);
-			return live ? { ...m, pricing: live as [number, number] } : { ...m };
-		});
-	} catch {
-		return null;
-	}
 }
 
 /** Format model label with pricing (e.g. "Gemini 3 Pro (Pricing: $2.00 / $12.00)") and capability icons. */
@@ -185,45 +159,32 @@ registerLlmProvider({
 	requiresNaiaKey: true,
 	defaultModel: "gemini-2.5-pro",
 	models: [
-		// -- Gemini 3.1 --------------------------------------------------------------------
-		{
-			id: "gemini-3.1-pro-preview",
-			label: "Gemini 3.1 Pro",
-			capabilities: ["llm"],
-			pricing: [2.20, 13.20],
-		},
-		{
-			id: "gemini-3.1-flash-lite-preview",
-			label: "Gemini 3.1 Flash Lite",
-			capabilities: ["llm"],
-			pricing: [0.275, 1.65],
-		},
-		// -- Gemini 3 ----------------------------------------------------------------------
-		{
-			id: "gemini-3-flash-preview",
-			label: "Gemini 3.0 Flash",
-			capabilities: ["llm"],
-			pricing: [0.55, 3.30],
-		},
+		// Gemini 3.x models are NOT available via the Naia Gateway route (#248).
+		// The gateway's GCP project does not have Vertex AI Publisher Model
+		// access for gemini-3.x — every streaming call returns 0-byte SSE
+		// (Vertex returns 404 NOT_FOUND, which the gateway swallows on
+		// stream). When/if the gateway project gets gemini-3.x access, restore
+		// these entries. Users who need gemini-3.x today should use the
+		// "Google Gemini" provider (direct GEMINI_API_KEY) instead, which
+		// reaches Google AI Studio without the Vertex routing.
 		// -- Gemini 2.5 --------------------------------------------------------------------
-		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.375, 11.0] },
+		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.25, 10.0] },
 		{
 			id: "gemini-2.5-flash",
 			label: "Gemini 2.5 Flash",
 			capabilities: ["llm"],
-			pricing: [0.33, 2.75],
+			pricing: [0.3, 2.5],
 		},
 		{
 			id: "gemini-2.5-flash-lite",
 			label: "Gemini 2.5 Flash Lite",
 			capabilities: ["llm"],
-			pricing: [0.11, 0.44],
+			pricing: [0.075, 0.3],
 		},
 		{
 			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live",
+			label: "Gemini 2.5 Flash Live (실시간)",
 			capabilities: ["llm", "omni"],
-			pricing: [0.55, 2.20],
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
 			transcriptProvided: true,

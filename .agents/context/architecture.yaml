@@ -1,58 +1,124 @@
-description: Naia hybrid architecture (mirror of .users/context/ko/architecture.md)
+description: Naia architecture (mirror of .users/context/ko/architecture.md)
 
-design_philosophy: |
-  Naia is NOT built from scratch. It's a hybrid assembly of 3 proven ecosystems:
-  naia-agent (native tool execution via stdio), project-careti (LLM/tools), OpenCode (architecture pattern).
-  Each contributes its strongest capability. The result is greater than any single source.
-  Note: OpenClaw (Gateway/exec) was the original Pillar 1 but was removed in #201 (2026-04-03).
-  naia-agent now handles all tool execution directly — no WebSocket gateway daemon required.
+# ═══════════════════════════════════════════════════════════════════════════
+# CURRENT STATUS (post-#201, validated by #272 / #273 / #274 / #275)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Naia OS today is an EMBEDDED-AGENT architecture, NOT a hybrid daemon stack.
+# Source-of-truth for the present wire is `.agents/context/agent-bridges.yaml`.
+#
+# Pillars today:
+#   - naia-os shell (Tauri 2 + React + Three.js avatar) — UI host, device IO
+#   - naia-agent (embedded, stdio JSON; was a separate daemon pre-#201)
+#       - 3 bridges: protocol / memory / approval (#272)
+#       - 23-skill catalog imported from @naia-adk/skills-builtin (#273 + #274)
+#       - 5 strangler-fig LLM provider adapters (env-flag gated)
+#   - naia-memory R4 — vector + LLM fact extractor + contradiction filter
+#   - naia-adk — workspace + skill SoT (skill-spec + skills-builtin + openclaw-compat)
+#
+# OpenClaw was the gateway daemon before #201; it is GONE from runtime. The
+# remaining OpenClaw-shaped content in this file is preserved as HISTORICAL
+# context (see `history.legacy_three_pillars` block below) so the rationale
+# for what we have today is traceable. Do not treat it as current design.
 
-why_hybrid:
-  pure_openclaw_problems:
-    - "CLI-only UX — no avatar, no visual feedback, no emotion"
-    - "No Tauri/desktop-native shell — terminal-first design"
-    - "Tight coupling to Claude Code as the only agent model"
-    - "No multi-provider LLM support (Gemini, xAI, etc.)"
-  pure_careti_problems:
-    - "VS Code extension — not an OS, not always-on"
-    - "No daemon architecture — dies when IDE closes"
-    - "No external channels (Discord, Telegram, etc.)"
-    - "No skills system, no memory persistence"
-  pure_opencode_problems:
-    - "TUI-only — no VRM avatar, no desktop app"
-    - "No Gateway/daemon concept"
-    - "No channel integration"
-  hybrid_solution: |
-    Take naia-agent as the stdio tool execution backend (NativeCommandExecutor: exec, read, write, search).
-    Take Careti's multi-provider LLM+tool definitions+stdio protocol as the agent core.
-    Take OpenCode's client/server architecture pattern for clean separation.
-    Wrap it in a Tauri desktop shell with VRM avatar for accessible UX.
-    (Historical: originally used OpenClaw daemon at ws://18789, removed in #201)
+recent_hardening:
+  date: "2026-05-12"
+  summary: |
+    Adversarial-review batch closed 5 P0-critical security issues + 1 P0
+    UX + 1 P1 gateway routing bug. All changes documented in
+    `agent-bridges.yaml > security_hardening` section.
+  closed_issues:
+    - "#256 — handleToolRequest tier bypass gated (4 tests)"
+    - "#257 — panel_install rejects file:// / http:// / git@ / bare path (8 tests)"
+    - "#258 — assetProtocol.scope removes bare ** + drive roots + adds requireLiteralLeadingDot (7 tests)"
+    - "#259 — discord.com removed from CSP connect-src (3 tests)"
+    - "#260 — webhook URLs off per-request stdio via new notify_config msg (8 tests)"
+    - "#248 — Naia gateway lacks gemini-3.x access; drop from picker + migrate saved configs + accurate 0-byte SSE error (8 tests)"
+    - "#254 — startup white flash backgroundColor + useAppReady onboarding short-circuit (4 tests)"
+  follow_ups_done:
+    - "#277 — runtime asset_protocol_scope.allow_directory() at copy_bundled_assets, plus protocol-asset Cargo feature + assetProtocol.enable:true"
+    - "creds_update LLM keys — provider.apiKey moved to one-shot push"
+    - "creds_update ttsKeys + gatewayToken — same message extended; SendChatOptions + directToolCall opts no longer accept the legacy fields (compile-time block); all shell callsites cleaned"
+  follow_ups_open:
+    - "Drop ProviderConfig.apiKey from agent types entirely (currently @deprecated optional)"
+
+current_runtime:
+  source_of_truth: .agents/context/agent-bridges.yaml
+  diagram: |
+    ┌─────────────────────────────────────────────────────────┐
+    │  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
+    │  Role: UI, avatar, panels, device IO, channel adapters  │
+    └────────────────────┬────────────────────────────────────┘
+                         │ stdio JSON lines
+                         │  + StdioFrame v1 envelope (transitioning, #272)
+    ┌────────────────────▼────────────────────────────────────┐
+    │  naia-agent (embedded child process)                    │
+    │  - protocol-bridge: envelope codec                      │
+    │  - memory-bridge:   MemorySystem→MemoryProvider adapter │
+    │  - approval-bridge: IPC approval broker (Phase 5 wire)  │
+    │  - factory.ts:      _agentNaiaKey + 5 strangler-fig     │
+    │  - 23 built-in skills (descriptors from naia-adk)       │
+    └────────────────────┬────────────────────────────────────┘
+                         │ MemoryProvider contract
+    ┌────────────────────▼────────────────────────────────────┐
+    │  naia-memory R4                                         │
+    │  LocalAdapter + embedding providers + fact extractor +  │
+    │  HeuristicContradictionFilter                           │
+    └─────────────────────────────────────────────────────────┘
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HISTORICAL (legacy framing, pre-#201) — kept for context, not current design
+# ═══════════════════════════════════════════════════════════════════════════
+
+history:
+  legacy_three_pillars_framing: |
+    Naia was originally framed as a hybrid assembly of 3 ecosystems:
+    OpenClaw (Gateway daemon + exec + channels + skills), project-careti
+    (LLM/tools/persona), OpenCode (client/server pattern). The hybrid was
+    a clear win at the time because each ecosystem had gaps the others
+    filled — Careti lacked daemon, OpenClaw lacked desktop UX, OpenCode
+    lacked channels — and assembling them was cheaper than building from
+    scratch.
+
+  why_we_moved_off_openclaw:
+    - "OpenClaw gateway added a 2nd process + a separate config + a separate skill registry; naia-agent already had all of that, just in TS"
+    - "WebSocket handshake + token auth + reload mechanics were dead weight for a same-machine embed"
+    - "Skill 정합 was DUAL (TS skills in naia-agent + Lua/JSON in openclaw)"
+    - "Removed in #201 (chore(shell): remove openclaw gateway spawn)"
+    - "Reconciled in #272 (bridges + adapters) + #273 (skill catalog) + #274 (OpenClaw skill ports as native naia skills) + #271 Phase 1 (Flatpak bundling removed)"
 
 three_pillars:
-  pillar_1_naia_agent:
-    role: "Runtime backend — stdio tool execution (NativeCommandExecutor, after #201)"
-    note: "REPLACED OpenClaw (#201, 2026-04-03). No longer a daemon. naia-agent runs as child process of Shell."
+  status: HISTORICAL
+  note: |
+    The three-pillar framing below is the pre-#201 design rationale.
+    Today's runtime collapses pillar_1_openclaw into pillar_2_careti
+    (the embedded naia-agent). Read `current_runtime` above + the
+    SoT `agent-bridges.yaml` for present state.
+  pillar_1_openclaw:
+    role: "Runtime backend (daemon + execution environment)"
     provides:
-      - "NativeCommandExecutor: execute_command, read_file, write_file, search_files, apply_diff"
-      - "Three stdio bridges: protocol-bridge (envelope codec), memory-bridge (naia-memory), approval-bridge (future)"
-      - "Built-in skills: 20 built-in (weather, time, memo, browser, workspace, etc.)"
-      - "Memory: @nextain/naia-memory R3 (semantic search, contradiction filter, HyDE)"
-      - "Sessions: skill_sessions for session management (stdio, no WebSocket)"
-      - "TTS: multi-provider (Edge TTS free, Google Cloud, OpenAI, ElevenLabs)"
+      - "Gateway WebSocket server (systemd, always-on)"
+      - "Command/file RPCs (exec.bash, node.invoke/system.run)"
+      - "Security: device auth, token scopes, exec approvals"
+      - "Channels: Discord, Telegram, WhatsApp, Slack, IRC, etc."
+      - "Skills: 50+ built-in (weather, time, memo, etc.)"
+      - "Memory: conversation persistence, context recall"
+      - "Sessions: multi-session management, sub-agent spawn"
+      - "ACP (Agent Control Protocol): client↔agent bridge"
+      - "TTS: unified provider selector (Edge TTS free, Google Cloud, OpenAI, ElevenLabs) with direct API calls"
     connection_protocol:
-      type: "stdio JSON lines (not WebSocket)"
-      spawn: "Tauri Shell spawns agent/dist/index.js as child process"
-      protocol: "ChatRequest/text/tool_use/tool_result/tts_request envelope frames"
+      handshake: "connect.challenge → connect (protocol v3)"
+      auth: "device identity + token scopes (Ed25519 signed nonce)"
+      client_id: "cli (paired device identifier)"
+      methods: "88 methods (agent, sessions.*, exec.*, skills.*, channels.*, etc.)"
     what_naia_uses:
-      - "Command execution via NativeCommandExecutor (child_process.spawn)"
-      - "skill_sessions for session management (direct stdio, no gateway WebSocket)"
-      - "skill_skill_manager for skill discovery + install"
-      - "Browser: shell/src-tauri/src/browser_webview.rs (WebView2, Windows)"
-    openclaw_historical:
-      removed: "#201 (2026-04-03)"
-      was: "OpenClaw WebSocket daemon at ws://127.0.0.1:18789 (88 methods, protocol v3)"
-      reason: "Replaced by direct naia-agent stdio — eliminates external daemon dependency"
+      - "Gateway daemon as systemd user service"
+      - "Command execution via exec.bash (preferred) or node.invoke fallback"
+      - "exec.approvals for permission system"
+      - "sessions.* for session management (when exposed by gateway config)"
+      - "skills.invoke and/or browser.request for web/browser actions"
+      - "channels.* for Discord/Telegram"
+      - "agent method for agent interaction"
 
   pillar_2_careti:
     role: "Agent intelligence (LLM + tools + persona)"
@@ -83,22 +149,26 @@ three_pillars:
 runtime_architecture:
   diagram: |
     ┌─────────────────────────────────────────────────────────┐
-    │  Naia Shell (Tauri 2 + React + Three.js VRM Avatar)     │
-    │  Role: Desktop UI, avatar rendering, chat panel          │
-    │  Source: Naia + AIRI (VRM) + shadcn/ui                  │
+    │  Naia Shell (Tauri 2 + React + Three.js VRM Avatar) │
+    │  Role: Desktop UI, avatar rendering, chat panel        │
+    │  Source: Naia + AIRI (VRM) + shadcn/ui              │
     └──────────────────────┬──────────────────────────────────┘
                            │ stdio JSON lines
     ┌──────────────────────▼──────────────────────────────────┐
-    │  Naia Agent (Node.js — agent/dist/index.js)              │
-    │  Role: LLM connection, tool orchestration, Alpha persona  │
-    │  Source: Careti providers + OpenCode pattern              │
-    │  Features: multi-LLM, TTS, emotion, cost tracking        │
-    │  Tools: NativeCommandExecutor (exec/read/write/search)    │
-    │  Memory: @nextain/naia-memory R3 (local, no daemon)       │
-    │  Bridges: protocol-bridge | memory-bridge | approval-bridge│
+    │  Naia Agent (Node.js)                                │
+    │  Role: LLM connection, tool orchestration, Alpha persona│
+    │  Source: Careti providers + OpenCode pattern             │
+    │  Features: multi-LLM, TTS, emotion, cost tracking       │
+    └──────────────────────┬──────────────────────────────────┘
+                           │ WebSocket (ws://127.0.0.1:18789)
+    ┌──────────────────────▼──────────────────────────────────┐
+    │  Naia Gateway (systemd user service)                │
+    │  Role: Execution, security, channels, skills, memory    │
+    │  Source: naia-agent (Node.js, pnpm dev / dist/index.js)  │
+    │  Auth: device identity + token scopes (protocol v3)     │
+    │  Methods: dynamic by profile (agent, node.invoke,        │
+    │  sessions.*, browser.request, skills.*, channels.* ...)  │
     └─────────────────────────────────────────────────────────┘
-    Note: OpenClaw gateway (ws://127.0.0.1:18789) removed in #201.
-    All tools now execute directly in naia-agent via NativeCommandExecutor.
 
   shell_ui_layout:
     description: "Shell component hierarchy and layout"
@@ -116,10 +186,9 @@ runtime_architecture:
 
   data_flow:
     chat: "User → Shell → Agent → LLM → Agent → Shell → User"
-    tool_exec: "LLM → Agent (tool_use) → NativeCommandExecutor (child_process.spawn) → OS → result → LLM"
-    approval: "LLM → Agent (approval_request) → Shell (modal) → user decision → Agent → NativeCommandExecutor"
-    external: "Discord msg → (future: channel adapter) → Agent → LLM → Agent → (future: channel reply)"
-    note: "After #201: no external gateway daemon. All execution in-process via NativeCommandExecutor."
+    tool_exec: "LLM → Agent (tool_use) → Gateway (exec.bash or node.invoke) → OS → result → LLM"
+    approval: "Gateway → Agent (approval_request) → Shell (modal) → user decision → Agent → Gateway"
+    external: "Discord msg → Gateway → Agent → LLM → Agent → Gateway → Discord reply"
 
 credential_storage:
   description: "naiaKey dual-storage architecture (localStorage + Tauri secure store)"
@@ -572,38 +641,27 @@ gateway_adapter_abstraction:
   rationale: "Abstraction layer isolates agent code from gateway protocol changes."
 
 gateway_client_protocol:
-  status: "HISTORICAL — OpenClaw gateway removed in #201 (2026-04-03). Section kept for reference."
-  description: "How Naia Agent used to connect to Naia Gateway (pre-#201)"
+  description: "How Naia Agent connects to Naia Gateway"
   steps:
-    1_ws_connect: "WebSocket connect to ws://127.0.0.1:18789 [REMOVED]"
-    2_challenge: "Receive connect.challenge event with nonce [REMOVED]"
-    3_handshake: "Send connect request with auth token, protocol v3, client info [REMOVED]"
-    4_hello_ok: "Receive hello-ok with available methods and features [REMOVED]"
-    5_rpc: "Send/receive req/res frames for tool execution [REMOVED]"
-  current_state: |
-    After #201: no external gateway. Agent uses NativeCommandExecutor (child_process.spawn) for tools.
-    GatewayAdapter interface still exists (agent/src/gateway/types.ts) for future extensibility.
-    connectGatewayWithRetry() still called but always fails → gatewayConnected=false (expected).
-    Native tools (execute_command, read_file, write_file, search_files, apply_diff) work regardless.
+    1_ws_connect: "WebSocket connect to ws://127.0.0.1:18789"
+    2_challenge: "Receive connect.challenge event with nonce"
+    3_handshake: "Send connect request with auth token, protocol v3, client info"
+    4_hello_ok: "Receive hello-ok with available methods and features"
+    5_rpc: "Send/receive req/res frames for tool execution"
+  auth_params:
+    token: "gateway.auth.token from config (shared secret)"
+    client_id: "cli (matches paired device clientId)"
+    platform: "linux (Windows: Gateway runs inside WSL, so platform is still linux)"
+    mode: "cli"
+    min_protocol: 3
+    max_protocol: 3
 
   windows_notes:
-    description: "On Windows, naia-agent runs as direct child process of Tauri Shell"
-    spawn: "shell/src-tauri/src/lib.rs spawn_agent_core() → agent/dist/index.js via node.exe"
-    no_wsl_required: "naia-agent runs natively on Windows — no WSL required for tool execution"
-
-  tauri_diagnostics_commands:
-    description: "Tauri commands for agent health and log diagnostics (added #296, #297)"
-    file: "shell/src-tauri/src/lib.rs"
-    gateway_health:
-      signature: "#[tauri::command] fn gateway_health() -> bool"
-      returns: "true if naia-agent child process is alive, false otherwise"
-      usage: "SettingsTab agent health check button — invoke<boolean>('gateway_health')"
-      note: "Named 'gateway' for historical reasons; actually checks naia-agent process liveness"
-    get_gateway_log_path:
-      signature: "#[tauri::command] fn get_gateway_log_path() -> String"
-      returns: "log_dir().join('gateway.log').to_string_lossy()"
-      log_dir: "~/.naia/logs/ (platform log directory)"
-      usage: "SettingsTab log viewer button — invoke<string>('get_gateway_log_path') → openPath(path)"
+    description: "On Windows, Gateway runs inside WSL2 NaiaEnv distro"
+    connection: "ws://127.0.0.1:18789 (mirrored networking allows localhost access from host)"
+    spawn: "wsl.exe -d NaiaEnv -- node /opt/naia/agent/dist/index.js"
+    config_requirement: "gateway.mode=local must be set in /root/.naia/gateway.json"
+    race_condition_guard: "restart_gateway uses AtomicBool compare_exchange to prevent concurrent restarts"
 
 voice_architecture:
   description: "Voice I/O via two modes: omni LLM (built-in voice) or STT→LLM→TTS pipeline"
@@ -922,60 +980,3 @@ voice_architecture:
     tts:
       pricing: "Varies by provider (Chirp 3 HD, Neural2, Edge free, OpenAI, ElevenLabs)"
       tracking: "Per-request via any-llm gateway /v1/audio/speech"
-
-bgm_context_architecture:
-  description: |
-    BGM event → agent → naia-memory design (verified 2026-05-19 via cross-review cr-20260519-bgm-memory).
-    Three distinct paths exist; only the memory bridge is new/pending implementation.
-  issue: "#304"
-
-  existing_paths:
-    push_context:
-      mechanism: "naia.pushContext({type:'bgm', data:{videoId, title, channel, playing}}) in BgmPlayer.tsx:198"
-      flow: "ActivePanelBridge.pushContext() → usePanelStore.setActivePanelContext() → next ChatRequest → buildSystemPrompt() [persona.ts:195] → LLM system prompt"
-      scope: "Real-time LLM awareness only. Session-only (Zustand). Cleared on panel switch [panel.ts:46]."
-      memory: false
-      verified: "panel-registry.ts:147, persona.ts:195"
-
-    ai_interference:
-      mechanism: "emitAiInterferenceEvent({source:'bgm', action:'music_changed', summary:'...'}) in BgmPlayer.tsx"
-      flow: "ai-interference.ts → aiInterferenceEnabled gate [panel.ts:71 default=false] → 15s cooldown → DOM CustomEvent → ChatPanel.onAiInterferenceEvent → handleSend → agent"
-      scope: "AI auto-speech trigger. Dropped when gate off or within cooldown."
-      memory: false
-
-  gap: |
-    Neither path encodes to naia-memory. BGM preference is never long-term stored.
-    naia-memory = @nextain/naia-memory in-process library (NOT external daemon).
-    Agent calls memoryProvider.encode() [index.ts:575] — NOT memorySystem.encode() directly
-    (memorySystem.encode() bypasses MemoryProvider contract in memory-bridge.ts).
-
-  designed_path_option_c:
-    name: "Stdin Direct Channel"
-    status: "pending implementation (#304)"
-    reason_chosen: |
-      Option A (File Log): shutdown race with memorySystem.close() [index.ts:1380-1386].
-      Option B (localStorage): Node.js process cannot access browser localStorage.
-      Option C: fits existing readline stdio protocol [index.ts:1224], consistent with
-      fire-and-forget encode pattern [index.ts:575].
-    flow: "BgmPlayer → Tauri IPC → agent stdin {type:'bgm_event'} → memoryProvider.encode() [fire-and-forget]"
-    key_decisions:
-      gate_bypass: "Memory logging bypasses aiInterferenceEnabled — memory ≠ AI speech trigger (separate concerns)"
-      api: "memoryProvider.encode() via memory-bridge — NOT memorySystem.encode() directly"
-      timing: "Real-time fire-and-forget matching existing pattern"
-    files_to_touch:
-      - "agent/src/protocol.ts — add BgmEvent type"
-      - "agent/src/index.ts — add bgm_event dispatch case"
-      - "shell/src/components/BgmPlayer.tsx — add Tauri IPC call alongside emitAiInterferenceEvent"
-      - "shell/src-tauri/src/lib.rs — verify write_agent_stdin command exists"
-
-browser_interference_gaps:
-  description: "Known gaps in AI interference coverage for browser panel (2026-05-19)"
-  issues:
-    url_not_captured:
-      problem: "Browser internal navigation (link clicks, JS pushState) not forwarded to Shell. Address bar shows initial URL only."
-      root_cause: "WebView2 NavigationCompleted/SourceChanged events not emitted as Tauri events from browser_webview.rs"
-      issue: "#307"
-    interference_no_url:
-      problem: "AI interference events from browser panel do not include navigated URL — only panel activation is reported."
-      dependency: "Requires #307 fix first"
-      issue: "#308"

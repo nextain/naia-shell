@@ -10,21 +10,88 @@ interface SendChatOptions {
 	onChunk: (chunk: AgentResponseChunk) => void;
 	requestId: string;
 	ttsVoice?: string;
-	ttsApiKey?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
 	systemPrompt?: string;
 	enableTools?: boolean;
 	gatewayUrl?: string;
-	gatewayToken?: string;
 	disabledSkills?: string[];
 	routeViaGateway?: boolean;
+	// Credentials (provider.apiKey, ttsApiKey, gatewayToken) and webhook
+	// URLs are intentionally NOT carried on per-request. They flow ONCE
+	// via sendCredsUpdate / sendNotifyConfig at startup + on settings save,
+	// and the agent caches them. Adding any credential field back here
+	// re-opens the stdio leak #260 closed.
+}
+
+export interface NotifyConfig {
 	slackWebhookUrl?: string;
 	discordWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
 	discordDefaultUserId?: string;
 	discordDefaultTarget?: string;
 	discordDmChannelId?: string;
+}
+
+/**
+ * Send notify config to the agent. Should be called once at app startup
+ * and again whenever the user saves settings. Replaces per-request webhook
+ * URL transmission (#260) — credentials stay out of chat_request / tool_request
+ * stdio frames.
+ */
+export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
+	const request = {
+		type: "notify_config",
+		...(cfg.slackWebhookUrl !== undefined && {
+			slackWebhookUrl: cfg.slackWebhookUrl,
+		}),
+		...(cfg.discordWebhookUrl !== undefined && {
+			discordWebhookUrl: cfg.discordWebhookUrl,
+		}),
+		...(cfg.googleChatWebhookUrl !== undefined && {
+			googleChatWebhookUrl: cfg.googleChatWebhookUrl,
+		}),
+		...(cfg.discordDefaultUserId !== undefined && {
+			discordDefaultUserId: cfg.discordDefaultUserId,
+		}),
+		...(cfg.discordDefaultTarget !== undefined && {
+			discordDefaultTarget: cfg.discordDefaultTarget,
+		}),
+		...(cfg.discordDmChannelId !== undefined && {
+			discordDmChannelId: cfg.discordDmChannelId,
+		}),
+	};
+	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
+}
+
+export interface CredsPayload {
+	/** LLM provider id → apiKey. Required. Sparse — only configured providers. */
+	keys: Record<string, string>;
+	/** TTS provider id → apiKey. Optional. Only when TTS keys configured. */
+	ttsKeys?: Record<string, string>;
+	/** Gateway WebSocket auth token. Optional. Only when gateway configured. */
+	gatewayToken?: string;
+}
+
+/**
+ * Push all per-session credentials to the agent (#260 follow-up).
+ *
+ * Same one-shot pattern as sendAuthUpdate / sendNotifyConfig. Called at
+ * startup and on every settings save. Agent caches per-provider; chat /
+ * tool / tts request paths no longer carry credentials at all.
+ *
+ * Empty string for any entry clears the agent-side cached value (explicit
+ * unset when the user removes a key from settings).
+ */
+export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
+	const request: Record<string, unknown> = {
+		type: "creds_update",
+		keys: payload.keys,
+	};
+	if (payload.ttsKeys !== undefined) request.ttsKeys = payload.ttsKeys;
+	if (payload.gatewayToken !== undefined)
+		request.gatewayToken = payload.gatewayToken;
+	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
 }
 
 const RESPONSE_TIMEOUT_MS = 120_000; // Safety: clean up listener if no finish/error
@@ -37,44 +104,34 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		onChunk,
 		requestId,
 		ttsVoice,
-		ttsApiKey,
 		ttsEngine,
 		ttsProvider,
 		systemPrompt,
 		enableTools,
 		gatewayUrl,
-		gatewayToken,
 		disabledSkills,
 		routeViaGateway,
-		slackWebhookUrl,
-		discordWebhookUrl,
-		googleChatWebhookUrl,
-		discordDefaultUserId,
-		discordDefaultTarget,
-		discordDmChannelId,
 	} = opts;
+
+	// Sanitize provider — strip credential fields. They flow via creds_update.
+	const { apiKey: _apiKey, naiaKey: _naiaKey, ...providerSafe } = provider;
 
 	const request = {
 		type: "chat_request",
 		requestId,
-		provider,
+		provider: providerSafe,
 		messages: [...history, { role: "user", content: message }],
 		...(ttsVoice && { ttsVoice }),
-		...(ttsApiKey && { ttsApiKey }),
 		...(ttsEngine && { ttsEngine }),
 		...(ttsProvider && { ttsProvider }),
 		...(systemPrompt && { systemPrompt }),
 		...(enableTools != null && { enableTools }),
 		...(gatewayUrl && { gatewayUrl }),
-		...(gatewayToken && { gatewayToken }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
 		...(routeViaGateway != null && { routeViaGateway }),
-		...(slackWebhookUrl !== undefined && { slackWebhookUrl }),
-		...(discordWebhookUrl !== undefined && { discordWebhookUrl }),
-		...(googleChatWebhookUrl !== undefined && { googleChatWebhookUrl }),
-		...(discordDefaultUserId !== undefined && { discordDefaultUserId }),
-		...(discordDefaultTarget !== undefined && { discordDefaultTarget }),
-		...(discordDmChannelId !== undefined && { discordDmChannelId }),
+		// Credentials + webhook URLs intentionally NOT included. They flow via
+		// sendCredsUpdate (#260 follow-up) and sendNotifyConfig (#260) and live
+		// in agent module-scope caches / process.env.
 	};
 
 	// Listen for agent responses before sending to avoid race conditions
@@ -184,27 +241,10 @@ export async function directToolCall(opts: {
 	args: Record<string, unknown>;
 	requestId: string;
 	gatewayUrl?: string;
-	gatewayToken?: string;
-	slackWebhookUrl?: string;
-	discordWebhookUrl?: string;
-	googleChatWebhookUrl?: string;
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
+	// Credentials (gatewayToken) + webhook URLs flow via sendCredsUpdate /
+	// sendNotifyConfig at startup + on save. Never per-request.
 }): Promise<{ success: boolean; output: string }> {
-	const {
-		toolName,
-		args,
-		requestId,
-		gatewayUrl,
-		gatewayToken,
-		slackWebhookUrl,
-		discordWebhookUrl,
-		googleChatWebhookUrl,
-		discordDefaultUserId,
-		discordDefaultTarget,
-		discordDmChannelId,
-	} = opts;
+	const { toolName, args, requestId, gatewayUrl } = opts;
 
 	const request = {
 		type: "tool_request",
@@ -212,13 +252,6 @@ export async function directToolCall(opts: {
 		toolName,
 		args,
 		...(gatewayUrl && { gatewayUrl }),
-		...(gatewayToken && { gatewayToken }),
-		...(slackWebhookUrl !== undefined && { slackWebhookUrl }),
-		...(discordWebhookUrl !== undefined && { discordWebhookUrl }),
-		...(googleChatWebhookUrl !== undefined && { googleChatWebhookUrl }),
-		...(discordDefaultUserId !== undefined && { discordDefaultUserId }),
-		...(discordDefaultTarget !== undefined && { discordDefaultTarget }),
-		...(discordDmChannelId !== undefined && { discordDmChannelId }),
 	};
 
 	let result = { success: false, output: "" };

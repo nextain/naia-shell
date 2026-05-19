@@ -54,14 +54,12 @@ export function AgentsTab() {
 					args: { action: "list" },
 					requestId: `ag-list-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				}),
 				directToolCall({
 					toolName: "skill_sessions",
 					args: { action: "list" },
 					requestId: `ss-list-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				}),
 			]);
 
@@ -98,7 +96,6 @@ export function AgentsTab() {
 					args: { action: "delete", key },
 					requestId: `ss-del-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				});
 				fetchData();
 			} catch (err) {
@@ -123,7 +120,6 @@ export function AgentsTab() {
 				args: { action: "files_list", agentId },
 				requestId: `ag-files-${Date.now()}`,
 				gatewayUrl,
-				gatewayToken: config?.gatewayToken,
 			});
 			if (res.success && res.output) {
 				const parsed = JSON.parse(res.output);
@@ -148,7 +144,6 @@ export function AgentsTab() {
 				args: { action: "files_get", agentId, path },
 				requestId: `ag-fget-${Date.now()}`,
 				gatewayUrl,
-				gatewayToken: config?.gatewayToken,
 			});
 			if (res.success && res.output) {
 				const parsed = JSON.parse(res.output);
@@ -177,7 +172,6 @@ export function AgentsTab() {
 				},
 				requestId: `ag-fset-${Date.now()}`,
 				gatewayUrl,
-				gatewayToken: config?.gatewayToken,
 			});
 			setFileSaveStatus(
 				res.success ? t("agents.filesSaved") : t("agents.filesFailed"),
@@ -200,7 +194,6 @@ export function AgentsTab() {
 					args: { action: "compact", key },
 					requestId: `ss-compact-${Date.now()}`,
 					gatewayUrl,
-					gatewayToken: config?.gatewayToken,
 				});
 				fetchData();
 			} catch (err) {

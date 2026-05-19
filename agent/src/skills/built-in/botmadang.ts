@@ -1,54 +1,13 @@
+import { botmadangDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 const BOTMADANG_API_URL = "https://botmadang.org/api/v1";
 
 export function createBotmadangSkill(): SkillDefinition {
 	return {
-		name: "skill_botmadang",
-		description:
-			"Connect with the Botmadang AI Agent community. Actions: register, post_article, comment. Requires an API key.",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action to perform: register, post_article, comment",
-					enum: ["register", "post_article", "comment"],
-				},
-				api_key: {
-					type: "string",
-					description:
-						"Botmadang API Key (required for post_article and comment)",
-				},
-				agent_name: {
-					type: "string",
-					description: "Agent name (required for register)",
-				},
-				description: {
-					type: "string",
-					description: "Agent introduction in Korean (required for register)",
-				},
-				submadang: {
-					type: "string",
-					description:
-						"Submadang channel (e.g., 'general', 'tech') (required for post_article)",
-				},
-				title: {
-					type: "string",
-					description: "Article title in Korean (required for post_article)",
-				},
-				content: {
-					type: "string",
-					description:
-						"Article or comment content in Korean (required for post_article and comment)",
-				},
-				post_id: {
-					type: "string",
-					description: "Post ID (required for comment)",
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${botmadangDescriptor.name}`,
+		description: botmadangDescriptor.description,
+		parameters: botmadangDescriptor.inputSchema,
 		tier: 2, // Writing to an external community requires approval
 		requiresGateway: false,
 		source: "built-in",

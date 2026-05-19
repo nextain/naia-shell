@@ -262,7 +262,7 @@ describe("chat-service", () => {
 		expect(parsed.naiaKey).toBeUndefined();
 	});
 
-	it("forwards webhook URLs to agent request", async () => {
+	it("does NOT forward webhook URLs in chat_request (#260)", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 
 		mockListen.mockImplementation(
@@ -289,15 +289,79 @@ describe("chat-service", () => {
 			history: [],
 			onChunk: vi.fn(),
 			requestId: "req-webhooks",
-			slackWebhookUrl: "https://hooks.slack.com/services/test",
-			discordWebhookUrl: "https://discord.com/api/webhooks/123/abc",
-			googleChatWebhookUrl: "",
 		});
 
 		const sentMessage = mockInvoke.mock.calls[0][1].message;
 		const parsed = JSON.parse(sentMessage);
+		// All webhook + Discord credential fields MUST be absent from per-request
+		// frames. They are pushed once via sendNotifyConfig at startup / on save.
+		expect(parsed.slackWebhookUrl).toBeUndefined();
+		expect(parsed.discordWebhookUrl).toBeUndefined();
+		expect(parsed.googleChatWebhookUrl).toBeUndefined();
+		expect(parsed.discordDefaultUserId).toBeUndefined();
+		expect(parsed.discordDefaultTarget).toBeUndefined();
+		expect(parsed.discordDmChannelId).toBeUndefined();
+	});
+
+	it("sendNotifyConfig emits a notify_config request with all webhook fields", async () => {
+		const { sendNotifyConfig } = await import("../chat-service");
+
+		await sendNotifyConfig({
+			slackWebhookUrl: "https://hooks.slack.com/services/test",
+			discordWebhookUrl: "https://discord.com/api/webhooks/123/abc",
+			googleChatWebhookUrl: "",
+			discordDefaultUserId: "user-1",
+			discordDefaultTarget: "dm",
+			discordDmChannelId: "channel-1",
+		});
+
+		const sentMessage = mockInvoke.mock.calls[0][1].message;
+		const parsed = JSON.parse(sentMessage);
+		expect(parsed.type).toBe("notify_config");
 		expect(parsed.slackWebhookUrl).toContain("hooks.slack.com");
 		expect(parsed.discordWebhookUrl).toContain("discord.com/api/webhooks");
 		expect(parsed.googleChatWebhookUrl).toBe("");
+		expect(parsed.discordDefaultUserId).toBe("user-1");
+		expect(parsed.discordDefaultTarget).toBe("dm");
+		expect(parsed.discordDmChannelId).toBe("channel-1");
+	});
+
+	it("sendCredsUpdate emits creds_update with LLM + TTS keys + gatewayToken (#260 follow-up)", async () => {
+		const { sendCredsUpdate } = await import("../chat-service");
+
+		await sendCredsUpdate({
+			keys: {
+				anthropic: "sk-ant-xyz",
+				openai: "sk-openai-abc",
+				gemini: "",
+			},
+			ttsKeys: {
+				google: "AIzaTTS",
+				openai: "",
+			},
+			gatewayToken: "gw-token-xyz",
+		});
+
+		const sentMessage = mockInvoke.mock.calls[0][1].message;
+		const parsed = JSON.parse(sentMessage);
+		expect(parsed.type).toBe("creds_update");
+		expect(parsed.keys.anthropic).toBe("sk-ant-xyz");
+		expect(parsed.keys.openai).toBe("sk-openai-abc");
+		expect(parsed.keys.gemini).toBe("");
+		expect(parsed.ttsKeys.google).toBe("AIzaTTS");
+		expect(parsed.ttsKeys.openai).toBe("");
+		expect(parsed.gatewayToken).toBe("gw-token-xyz");
+	});
+
+	it("sendCredsUpdate omits ttsKeys/gatewayToken when undefined", async () => {
+		const { sendCredsUpdate } = await import("../chat-service");
+
+		await sendCredsUpdate({ keys: { anthropic: "sk-ant-xyz" } });
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.type).toBe("creds_update");
+		expect(parsed.keys.anthropic).toBe("sk-ant-xyz");
+		expect("ttsKeys" in parsed).toBe(false);
+		expect("gatewayToken" in parsed).toBe(false);
 	});
 });

@@ -2,30 +2,14 @@ import {
 	getVoiceWakeTriggers,
 	setVoiceWakeTriggers,
 } from "../../gateway/voicewake-proxy.js";
+import { voicewakeDescriptor } from "@naia-adk/skills-builtin";
 import type { SkillDefinition, SkillResult } from "../types.js";
 
 export function createVoiceWakeSkill(): SkillDefinition {
 	return {
-		name: "skill_voicewake",
-		description:
-			"Manage voice wake triggers. Actions: get (list triggers), set (update triggers).",
-		parameters: {
-			type: "object",
-			properties: {
-				action: {
-					type: "string",
-					description: "Action: get (list triggers), set (update triggers)",
-					enum: ["get", "set"],
-				},
-				triggers: {
-					type: "array",
-					items: { type: "string" },
-					description:
-						'Wake word triggers (e.g., ["낸", "hey alpha"]). Required for set.',
-				},
-			},
-			required: ["action"],
-		},
+		name: `skill_${voicewakeDescriptor.name}`,
+		description: voicewakeDescriptor.description,
+		parameters: voicewakeDescriptor.inputSchema,
 		tier: 0,
 		requiresGateway: true,
 		source: "built-in",

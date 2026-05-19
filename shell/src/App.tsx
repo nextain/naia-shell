@@ -26,6 +26,8 @@ import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
+	sendCredsUpdate,
+	sendNotifyConfig,
 	sendPanelSkills,
 	sendPanelSkillsClear,
 } from "./lib/chat-service";
@@ -42,6 +44,7 @@ import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { Logger } from "./lib/logger";
 import { loadInstalledPanels } from "./lib/panel-loader";
+import { shouldMigrateNextainModel } from "./lib/llm/registry";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import { useAvatarStore } from "./stores/avatar";
@@ -95,25 +98,31 @@ function applyTheme(theme: ThemeId) {
 }
 
 /**
- * Readiness gate for the splash screen.
+ * Readiness gate for the splash screen (#254).
  *
- * ADK/onboarding paths signal ready immediately (synchronous render).
- * Normal path waits for VRM avatar load, with a 5 s timeout for VRM failure.
+ * Branch handling:
+ *  - ADK setup screen → ready immediately (AvatarCanvas never mounts)
+ *  - Onboarding screen → ready immediately (AvatarCanvas never mounts)
+ *  - Normal path → wait for VRM avatar `isLoaded`, with 5 s timeout fallback
+ *
+ * The timeout is the safety net for VRM load failure / slow GPU init —
+ * without it, a single asset failure would freeze the splash indefinitely.
  */
-function useAppReady(showAdkSetup: boolean): boolean {
+function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 	const avatarLoaded = useAvatarStore((s) => s.isLoaded);
 	const [timedOut, setTimedOut] = useState(false);
+	const skipAvatarWait = showAdkSetup || showOnboarding;
 
 	useEffect(() => {
-		if (showAdkSetup) return;
+		if (skipAvatarWait) return;
 		const t = setTimeout(() => {
 			Logger.warn("App", "useAppReady: 5 s timeout — forcing splash dismiss");
 			setTimedOut(true);
 		}, 5000);
 		return () => clearTimeout(t);
-	}, [showAdkSetup]);
+	}, [skipAvatarWait]);
 
-	if (showAdkSetup) return true;
+	if (skipAvatarWait) return true;
 	return avatarLoaded || timedOut;
 }
 
@@ -169,7 +178,7 @@ export function App() {
 	}, []);
 
 	// Readiness gate: splash stays until the active branch has something to show
-	const appReady = useAppReady(showAdkSetup);
+	const appReady = useAppReady(showAdkSetup, showOnboarding);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
 	const {
@@ -431,9 +440,58 @@ export function App() {
 	// On init: if naiaKey exists in config, push it to the agent (backend).
 	// Handles the case where the app restarts after a previous login.
 	useEffect(() => {
-		const naiaKey = loadConfig()?.naiaKey;
+		// Migrate saved config that points at a removed gateway model (#248).
+		// Previously-saved gemini-3.x selections on the Naia provider now
+		// fail with "gateway returned 0 bytes" — auto-swap to the provider's
+		// defaultModel (gemini-2.5-pro) and persist before any chat call.
+		const preMigrate = loadConfig();
+		if (preMigrate) {
+			const decision = shouldMigrateNextainModel(
+				preMigrate.provider,
+				preMigrate.model,
+			);
+			if (decision.migrate) {
+				Logger.warn("App", "#248 model migration", {
+					from: preMigrate.model,
+					to: decision.to,
+				});
+				saveConfig({ ...preMigrate, model: decision.to });
+			}
+		}
+		const cfg = loadConfig();
+		const naiaKey = cfg?.naiaKey;
 		if (naiaKey) {
 			sendAuthUpdate(naiaKey).catch(() => {});
+		}
+		// Push webhook URLs + Discord defaults to the agent ONCE at startup (#260).
+		// Replaces per-chat_request transmission so credentials stop appearing
+		// in every stdio frame / log capture.
+		if (cfg) {
+			sendNotifyConfig({
+				slackWebhookUrl: cfg.slackWebhookUrl,
+				discordWebhookUrl: cfg.discordWebhookUrl,
+				googleChatWebhookUrl: cfg.googleChatWebhookUrl,
+				discordDefaultUserId: cfg.discordDefaultUserId,
+				discordDefaultTarget: cfg.discordDefaultTarget,
+				discordDmChannelId: cfg.discordDmChannelId,
+			}).catch(() => {});
+			// Push all per-session credentials once at startup (#260 follow-up).
+			// Mirrors the notify_config pattern — agent caches the values; chat /
+			// tool / tts request paths no longer carry credentials at all.
+			const ttsKeys: Record<string, string> = {};
+			if (cfg.googleApiKey) ttsKeys.google = cfg.googleApiKey;
+			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
+			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
+			sendCredsUpdate({
+				keys:
+					cfg.apiKey && cfg.provider
+						? { [cfg.provider]: cfg.apiKey }
+						: {},
+				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
+				...(cfg.gatewayToken !== undefined && {
+					gatewayToken: cfg.gatewayToken,
+				}),
+			}).catch(() => {});
 		}
 	}, []);
 
