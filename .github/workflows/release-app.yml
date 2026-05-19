@@ -218,18 +218,24 @@ jobs:
         shell: bash
         run: |
           cd agent/node_modules
+          # Remove all TypeScript declaration files (all flavors)
           find . -name "*.d.ts" -delete
           find . -name "*.d.mts" -delete
+          find . -name "*.d.cts" -delete
           find . -name "*.d.ts.map" -delete
+          find . -name "*.d.mts.map" -delete
+          find . -name "*.d.cts.map" -delete
           find . -name "*.js.map" -path "*/.pnpm/*" -delete
           find . -name "*.ts" -not -name "*.d.ts" -path "*/.pnpm/*/src/*" -delete
           find . -name "CHANGELOG*" -delete
-          # Remove files whose full bundled path exceeds 254 chars
+          # Remove nested node_modules inside dist/ (e.g. @langchain/community/dist/node_modules)
+          find . -path "*/dist/node_modules" -type d -exec rm -rf {} + 2>/dev/null || true
+          # Remove files whose full bundled path exceeds 240 chars (conservative — NSIS uses absolute path)
           prefix="shell/src-tauri/../../agent/node_modules/"
           prefix_len=${#prefix}
           find . -type f | while read f; do
             total=$((prefix_len + ${#f}))
-            if [ $total -gt 254 ]; then rm -f "$f"; fi
+            if [ $total -gt 240 ]; then rm -f "$f"; fi
           done
 
       - name: Build Tauri app (Windows)
