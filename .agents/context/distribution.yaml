@@ -289,6 +289,9 @@ app_update:
   mechanism: "Tauri updater plugin (Ed25519 signed — AppImage on Linux, NSIS .exe on Windows)"
   endpoint: "https://github.com/nextain/naia-os/releases/latest/download/latest.json"
   signing: "TAURI_SIGNING_PRIVATE_KEY + TAURI_SIGNING_PRIVATE_KEY_PASSWORD (CI secrets)"
+  signing_key_location: "data-private/key/naia-tauri.key (private, gitignored) + naia-tauri.key.pub"
+  pubkey_location: "shell/src-tauri/tauri.conf.json → plugins.updater.pubkey"
+  key_setup_2026_05: "new key pair generated 2026-05-21, old key lost — update GitHub Secret TAURI_SIGNING_PRIVATE_KEY with new private key content"
   flatpak_exclusion: "FLATPAK=1 env → updater plugin not registered (Flatpak manages own updates)"
   itch_io:
     channel_linux: "nextain/naia:linux (AppImage)"

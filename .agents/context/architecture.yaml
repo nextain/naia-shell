@@ -47,6 +47,7 @@ recent_hardening:
     - "#257 — panel_install rejects file:// / http:// / git@ / bare path (8 tests)"
     - "#258 — assetProtocol.scope removes bare ** + drive roots + adds requireLiteralLeadingDot (7 tests)"
     - "#259 — discord.com removed from CSP connect-src (3 tests)"
+    - "2026-05-21 — CSP img-src += i.ytimg.com/*.ytimg.com (BGM thumbnails); frame-src += youtube.com/youtube-nocookie.com (BGM player)"
     - "#260 — webhook URLs off per-request stdio via new notify_config msg (8 tests)"
     - "#248 — Naia gateway lacks gemini-3.x access; drop from picker + migrate saved configs + accurate 0-byte SSE error (8 tests)"
     - "#254 — startup white flash backgroundColor + useAppReady onboarding short-circuit (4 tests)"
