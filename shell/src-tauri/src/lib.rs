@@ -3015,61 +3015,7 @@ async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> 
             "[copy_bundled_assets] asset scope extend failed for {adk_path}: {e}"
         ));
     }
-
-    // Find the bundled assets base directory.
-    // Production: resource_dir()/assets/
-    // Dev mode fallback: walk up from binary to find public/assets/
-    let assets_base = find_bundled_assets_dir(&app_handle);
-    let Some(assets_base) = assets_base else {
-        return Err("Bundled assets directory not found".to_string());
-    };
-
-    for subdir in &["vrm-files", "background", "bgm-musics"] {
-        let src_dir = assets_base.join(subdir);
-        let dst_dir = std::path::PathBuf::from(&adk_path)
-            .join("naia-settings")
-            .join(subdir);
-
-        if !src_dir.is_dir() {
-            continue;
-        }
-        std::fs::create_dir_all(&dst_dir).map_err(|e| e.to_string())?;
-
-        for entry in std::fs::read_dir(&src_dir).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let dst = dst_dir.join(entry.file_name());
-            if !dst.exists() {
-                std::fs::copy(entry.path(), &dst).map_err(|e| e.to_string())?;
-            }
-        }
-    }
     Ok(())
-}
-
-fn find_bundled_assets_dir(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    // 1) Production: resource_dir()/assets/
-    if let Ok(rdir) = app_handle.path().resource_dir() {
-        let candidate = rdir.join("assets");
-        if candidate.is_dir() {
-            return Some(candidate);
-        }
-    }
-    // 2) Dev mode: binary is at shell/src-tauri/target/debug/
-    //    public/assets is at shell/public/assets/ (3 levels up, then public/assets)
-    if let Ok(exe) = std::env::current_exe() {
-        let mut dir = exe.parent()?.to_path_buf();
-        for _ in 0..4 {
-            let candidate = dir.join("public").join("assets");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-            dir = dir.parent()?.to_path_buf();
-        }
-    }
-    None
 }
 
 /// Write binary data to `{adk_path}/naia-settings/{subdir}/{filename}`.
@@ -3133,6 +3079,7 @@ async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
 }
 
 /// Clone nextain/naia-adk (shallow) into adk_path.
+/// Falls back to zip download if git is not installed.
 /// Fails if the directory already exists and is non-empty.
 #[tauri::command]
 async fn clone_naia_adk(adk_path: String) -> Result<(), String> {
@@ -3148,13 +3095,66 @@ async fn clone_naia_adk(adk_path: String) -> Result<(), String> {
             return Err(format!("Directory is not empty: {adk_path}"));
         }
     }
+
+    // Try git clone first.
     let mut cmd = std::process::Command::new("git");
     cmd.args(["clone", "--depth", "1", "https://github.com/nextain/naia-adk", &adk_path]);
     platform::hide_console(&mut cmd);
-    let output = cmd.output().map_err(|e| format!("git not found: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone failed: {stderr}"));
+    match cmd.output() {
+        Ok(output) if output.status.success() => return Ok(()),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("[clone_naia_adk] git clone failed ({stderr}), falling back to zip");
+        }
+        Err(e) => {
+            log::warn!("[clone_naia_adk] git not found ({e}), falling back to zip");
+        }
+    }
+
+    // Fallback: download zip from GitHub and extract.
+    naia_adk_download_zip(&adk_path).await
+}
+
+async fn naia_adk_download_zip(adk_path: &str) -> Result<(), String> {
+    const ZIP_URL: &str = "https://github.com/nextain/naia-adk/archive/refs/heads/main.zip";
+
+    // Download zip into memory.
+    let bytes = reqwest::get(ZIP_URL)
+        .await
+        .map_err(|e| format!("zip download failed: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("zip read failed: {e}"))?;
+
+    // Extract — GitHub zips contain a single top-level "naia-adk-main/" folder.
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| format!("zip open failed: {e}"))?;
+
+    let dst = std::path::PathBuf::from(adk_path);
+    std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+        let raw = match file.enclosed_name() {
+            Some(p) => p,
+            None => continue,
+        };
+        // Strip the top-level "naia-adk-main/" prefix.
+        let stripped = raw.components().skip(1).collect::<std::path::PathBuf>();
+        if stripped.as_os_str().is_empty() {
+            continue;
+        }
+        let out = dst.join(&stripped);
+        if file.is_dir() {
+            std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = out.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut outfile = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
