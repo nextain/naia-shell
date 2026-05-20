@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { AgentsTab } from "./AgentsTab";
-import { ChannelsTab } from "./ChannelsTab";
 import { DiagnosticsTab } from "./DiagnosticsTab";
 import { SettingsTab } from "./SettingsTab";
 import { SkillsTab } from "./SkillsTab";
@@ -49,8 +48,12 @@ export function NaiaMetaPanel() {
 			<div className="naia-meta-panel__body">
 				{activeTab === "progress" && <WorkProgressPanel />}
 				{activeTab === "skills" && <SkillsTab onAskAI={askAI} />}
-				{activeTab === "channels" && <ChannelsTab onAskAI={askAI} />}
-				{activeTab === "agents" && <AgentsTab />}
+		{activeTab === "channels" && (
+			<div style={{ padding: "16px", color: "var(--cream-dim)", fontSize: 13 }}>
+				채널 기능은 현재 안정화 작업 중입니다.
+			</div>
+		)}
+					{activeTab === "agents" && <AgentsTab />}
 				{activeTab === "diagnostics" && <DiagnosticsTab />}
 				{activeTab === "settings" && <SettingsTab />}
 			</div>

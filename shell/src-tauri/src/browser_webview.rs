@@ -193,6 +193,11 @@ pub fn get_current_url() -> String {
     CURRENT_URL.lock().unwrap().clone()
 }
 
+/// Update the tracked URL from a native navigation event (CSP-independent).
+pub(crate) fn set_current_url(url: String) {
+    *CURRENT_URL.lock().unwrap() = url;
+}
+
 fn get_wv(app: &AppHandle) -> Result<tauri::Webview, String> {
     app.get_webview(BROWSER_LABEL)
         .ok_or_else(|| "Browser webview not initialized".to_string())
@@ -285,6 +290,9 @@ pub async fn browser_wv_create(
             .map_err(|e| format!("URL parse: {e}"))?,
     );
 
+    // Clone for on_navigation closure (emits auth events from the browser panel).
+    let app_nav = app.clone();
+
     // `add_child` blocks (std::sync::mpsc recv) until the main thread processes
     // the webview creation. Use spawn_blocking so we don't starve the tokio
     // worker-thread pool while waiting.
@@ -296,7 +304,28 @@ pub async fn browser_wv_create(
                     // Many websites assume the root background is white. If a
                     // page leaves areas transparent, a dark webview background
                     // makes normal black text unreadable.
-                    .background_color(Color(255, 255, 255, 255)),
+                    .background_color(Color(255, 255, 255, 255))
+                    // Track URL changes at the native level (CSP-independent backup for
+                    // init script _nav() reports). Also intercepts naia://auth redirects
+                    // that the WebView cannot navigate to.
+                    .on_navigation(move |url| {
+                        let url_str = url.to_string();
+                        // Update CURRENT_URL so browser_open_login monitor always
+                        // sees the correct URL regardless of page CSP.
+                        set_current_url(url_str.clone());
+                        // naia://auth — deep-link redirect from login page.
+                        // Process it like a deep link then block navigation (no handler).
+                        if url_str.starts_with("naia://") {
+                            crate::process_deep_link_url(
+                                &url_str,
+                                &app_nav,
+                                None, // no CSRF state for in-panel login
+                                "browser-panel",
+                            );
+                            return false; // block: WebView can't navigate to naia://
+                        }
+                        true // allow all other navigations
+                    }),
                 LogicalPosition::new(x, y),
                 LogicalSize::new(width, height),
             )

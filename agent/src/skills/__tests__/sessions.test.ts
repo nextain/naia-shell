@@ -82,7 +82,8 @@ describe("skill_sessions", () => {
 	it("has correct metadata", () => {
 		expect(skill.name).toBe("skill_sessions");
 		expect(skill.tier).toBe(1);
-		expect(skill.requiresGateway).toBe(true);
+		// requiresGateway: false — local fallback available for list/history/delete/preview/reset
+		expect(skill.requiresGateway).toBe(false);
 	});
 
 	it("lists sessions", async () => {
@@ -181,10 +182,13 @@ describe("skill_sessions", () => {
 		expect(result.error).toContain("key is required");
 	});
 
-	it("returns error without gateway", async () => {
+	it("returns local sessions without gateway", async () => {
+		// Local fallback: list reads from ~/.naia/sessions/ (or naia-settings/.sessions/)
+		// No gateway needed — returns success with empty sessions list when no data exists.
 		const result = await skill.execute({ action: "list" }, {});
-		expect(result.success).toBe(false);
-		expect(result.error).toContain("Gateway not connected");
+		expect(result.success).toBe(true);
+		const parsed = JSON.parse(result.output);
+		expect(Array.isArray(parsed.sessions)).toBe(true);
 	});
 
 	it("returns error for unknown action", async () => {

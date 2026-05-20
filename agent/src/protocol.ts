@@ -3,6 +3,8 @@ import type { ProviderConfig } from "./providers/types.js";
 export interface ChatRequest {
 	type: "chat_request";
 	requestId: string;
+	/** Local session ID for conversation history persistence (shell-generated). */
+	sessionId?: string;
 	provider: ProviderConfig;
 	messages: { role: "user" | "assistant"; content: string }[];
 	systemPrompt?: string;
@@ -203,6 +205,16 @@ export interface CredsUpdateRequest {
 	gatewayToken?: string;
 }
 
+/**
+ * Shell → Agent: pre-download offline embedding model.
+ * Agent imports @huggingface/transformers and initializes the pipeline,
+ * emitting embedding_progress JSON lines to stdout while downloading.
+ */
+export interface EmbeddingPrefetchRequest {
+	type: "embedding_prefetch";
+	model: "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
+}
+
 export type AgentRequest =
 	| ChatRequest
 	| CancelRequest
@@ -218,7 +230,8 @@ export type AgentRequest =
 	| MemoryImportRequest
 	| AuthUpdateRequest
 	| NotifyConfigRequest
-	| CredsUpdateRequest;
+	| CredsUpdateRequest
+	| EmbeddingPrefetchRequest;
 
 export function parseRequest(line: string): AgentRequest | null {
 	try {
@@ -239,7 +252,8 @@ export function parseRequest(line: string): AgentRequest | null {
 			obj.type === "memory_import" ||
 			obj.type === "auth_update" ||
 			obj.type === "notify_config" ||
-			obj.type === "creds_update"
+			obj.type === "creds_update" ||
+			obj.type === "embedding_prefetch"
 		) {
 			return obj as AgentRequest;
 		}

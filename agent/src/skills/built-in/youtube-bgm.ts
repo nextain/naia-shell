@@ -1,14 +1,19 @@
 /**
- * skill_youtube_bgm — AI skill for YouTube BGM control.
+ * skill_youtube_bgm - AI skill for YouTube BGM control.
  *
  * Actions:
- *   search    : search YouTube for BGM videos
- *   play      : send bgm_youtube_play command to shell (shell fetches stream URL via /yt/stream)
+ *   search    : search YouTube for BGM videos and auto-play the first result
+ *   play      : send bgm_youtube_play command to shell
  *   stop      : stop playback
- *   trending  : get trending music/ambient videos
+ *   pause     : pause playback
+ *   resume    : resume playback
+ *   next      : next favorite
+ *   prev      : previous favorite
+ *   volume    : set player volume
+ *   trending  : search ambient/trending music
  *   fav_add   : add currently playing track to favorites
  *   fav_remove: remove currently playing track from favorites
- *   fav_list  : list BGM favorites (returned from shell context)
+ *   fav_list  : list BGM favorites from shell context
  */
 import { getInnertube } from "../../youtube-server.js";
 import type { SkillDefinition, SkillResult } from "../types.js";
@@ -30,9 +35,22 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 			properties: {
 				action: {
 					type: "string",
-					enum: ["search", "play", "stop", "trending", "fav_add", "fav_remove", "fav_list"],
+					enum: [
+						"search",
+						"play",
+						"stop",
+						"pause",
+						"resume",
+						"next",
+						"prev",
+						"volume",
+						"trending",
+						"fav_add",
+						"fav_remove",
+						"fav_list",
+					],
 					description:
-						"search: find videos | play: play a video by ID | stop: stop playback | trending: get trending ambient/music | fav_add: add current track to favorites | fav_remove: remove current track from favorites | fav_list: list saved favorites",
+						"search: find and play first result | play: play by videoId | stop: stop and clear | pause: pause | resume: resume | next: next in favorites | prev: previous in favorites | volume: set volume (0.0-1.0) | trending: trending ambient | fav_add: add to favorites | fav_remove: remove from favorites | fav_list: read BGM context",
 				},
 				query: {
 					type: "string",
@@ -44,7 +62,11 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 				},
 				title: {
 					type: "string",
-					description: "Video title (for play action, optional — displayed in player)",
+					description: "Video title (for play action, optional)",
+				},
+				volume: {
+					type: "number",
+					description: "Volume level 0.0-1.0 (required for volume action)",
 				},
 			},
 			required: ["action"],
@@ -76,13 +98,22 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 						channel: v.author?.name ?? v.channel?.name ?? "",
 					}));
 
-					const lines = results.map(
-						(r) => `${r.index}. [${r.id}] ${r.title} (${r.duration}) — ${r.channel}`,
-					);
-					return {
-						success: true,
-						output: `YouTube search results for "${query}":\n${lines.join("\n")}\n\nTo play, use action=play with the video ID.`,
-					};
+					const top = results[0];
+					if (top?.id) {
+						const thumbnail = `https://i.ytimg.com/vi/${top.id}/mqdefault.jpg`;
+						sendShellCommand({
+							type: "bgm_youtube_play",
+							videoId: top.id,
+							title: top.title,
+							thumbnail,
+						});
+						return {
+							success: true,
+							output: `Now playing: "${top.title}" (${top.duration}) by ${top.channel}`,
+						};
+					}
+
+					return { success: false, output: `No results found for: "${query}"` };
 				} catch (err) {
 					return { success: false, output: `Search failed: ${String(err)}` };
 				}
@@ -95,11 +126,7 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 				}
 
 				const title = String(args.title ?? "").trim();
-				// Thumbnail via ytimg CDN — available for any public video without an API call
 				const thumbnail = `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
-
-				// Delegate stream URL resolution to the shell's /yt/stream endpoint.
-				// This keeps resolution logic in one place (youtube-server.ts).
 				sendShellCommand({ type: "bgm_youtube_play", videoId, title, thumbnail });
 
 				return {
@@ -107,9 +134,39 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 					output: `Playing: "${title || videoId}"`,
 				};
 			}
+
 			if (action === "stop") {
 				sendShellCommand({ type: "bgm_youtube_stop" });
 				return { success: true, output: "BGM stopped" };
+			}
+
+			if (action === "pause") {
+				sendShellCommand({ type: "bgm_youtube_pause" });
+				return { success: true, output: "BGM paused" };
+			}
+
+			if (action === "resume") {
+				sendShellCommand({ type: "bgm_youtube_resume" });
+				return { success: true, output: "BGM resumed" };
+			}
+
+			if (action === "next") {
+				sendShellCommand({ type: "bgm_youtube_next" });
+				return { success: true, output: "Skipped to next track in favorites" };
+			}
+
+			if (action === "prev") {
+				sendShellCommand({ type: "bgm_youtube_prev" });
+				return { success: true, output: "Went to previous track in favorites" };
+			}
+
+			if (action === "volume") {
+				const volume = Number(args.volume ?? -1);
+				if (volume < 0 || volume > 1) {
+					return { success: false, output: "volume must be 0.0-1.0" };
+				}
+				sendShellCommand({ type: "bgm_youtube_volume", volume });
+				return { success: true, output: `Volume set to ${Math.round(volume * 100)}%` };
 			}
 
 			if (action === "fav_add") {
@@ -125,7 +182,8 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 			if (action === "fav_list") {
 				return {
 					success: true,
-					output: "Favorites list is available in BGM context (favoritesList field). Use it to see what the user has saved.",
+					output:
+						"Favorites list is available in BGM context (favoritesList field). Use it to see what the user has saved.",
 				};
 			}
 

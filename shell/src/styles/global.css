@@ -2198,12 +2198,13 @@ body.resizing-row {
 	align-content: start;
 	overflow-y: auto;
 	min-height: 0; /* required for flex overflow-y: auto to work */
-	padding: 12px;
+	padding: 12px 12px 120px; /* bottom: space for fixed save button */
 }
 
+.settings-tab > .settings-tab-bar,
 .settings-tab > .settings-section-divider,
 .settings-tab > .settings-danger-zone,
-.settings-tab > .settings-actions {
+.settings-tab > .skills-tab {
 	grid-column: 1 / -1;
 }
 
@@ -2211,14 +2212,24 @@ body.resizing-row {
 	min-width: 0;
 }
 
-.settings-tab > .settings-field:has(.settings-persona-textarea),
-.settings-tab > .settings-field:has(.settings-hint + .settings-reset-btn),
-.settings-tab > .settings-field:has(.memory-facts-list),
-.settings-tab > .settings-toggle-row {
+/* Settings fields containing only a select should span full width */
+.settings-tab > .settings-field:has(> select) {
 	grid-column: 1 / -1;
 }
 
-@media (max-width: 900px) {
+/* General tab: no leading section-divider, so add spacing below tab bar */
+.settings-tab > .settings-tab-bar + .settings-field {
+	margin-top: 12px;
+}
+
+.settings-tab > .settings-field:has(.settings-persona-textarea),
+.settings-tab > .settings-field:has(.settings-hint + .settings-reset-btn),
+.settings-tab > .settings-toggle-row,
+.settings-tab > .facts-list {
+	grid-column: 1 / -1;
+}
+
+@media (max-width: 700px) {
 	.settings-tab {
 		grid-template-columns: minmax(0, 1fr);
 	}
@@ -2248,6 +2259,29 @@ body.resizing-row {
 	opacity: 0.7;
 }
 
+.settings-embedding-progress {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--cream-dim);
+}
+
+.settings-embedding-progress-bar {
+	height: 4px;
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 2px;
+	overflow: hidden;
+	width: 100%;
+}
+
+.settings-embedding-progress-fill {
+	height: 100%;
+	background: var(--latte);
+	border-radius: 2px;
+	transition: width 0.3s ease;
+}
+
 .settings-persona-textarea {
 	width: 100%;
 	min-height: 100px;
@@ -2270,6 +2304,17 @@ body.resizing-row {
 
 .settings-field {
 	margin-bottom: 12px;
+}
+
+/* Sub-fields shown conditionally below a dropdown — always full width, stacked */
+.settings-subfields {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	padding: 8px 12px 4px;
+	border-left: 2px solid rgba(255, 255, 255, 0.08);
+	margin-bottom: 4px;
 }
 
 .audio-device-test-row {
@@ -2358,8 +2403,13 @@ body.resizing-row {
 	margin-bottom: 4px;
 }
 
+.settings-field input[readonly] {
+	opacity: 0.6;
+	cursor: default;
+}
+
 .settings-field select,
-.settings-field input:not([type="checkbox"]) {
+.settings-field input:not([type="checkbox"]):not([type="radio"]) {
 	width: 100%;
 	padding: 8px 10px;
 	background: var(--espresso-dark);
@@ -2372,7 +2422,7 @@ body.resizing-row {
 	appearance: none;
 }
 
-.settings-field input:not([type="checkbox"]) {
+.settings-field input:not([type="checkbox"]):not([type="radio"]) {
 	font-family: var(--mono);
 }
 
@@ -2402,17 +2452,17 @@ body.resizing-row {
 }
 
 .settings-actions {
-	position: sticky;
-	bottom: 0;
-	z-index: 10;
+	position: fixed;
+	bottom: 24px;
+	right: 24px;
+	z-index: 100;
 	display: flex;
-	justify-content: flex-end;
 	gap: 8px;
-	padding: 10px 0 4px;
-	background: var(--panel-bg, #1e1a18);
+	pointer-events: none;
 }
 
 .settings-save-btn {
+	pointer-events: auto;
 	padding: 10px 28px;
 	border: none;
 	border-radius: 24px;
@@ -2422,7 +2472,7 @@ body.resizing-row {
 	font-weight: 600;
 	cursor: pointer;
 	transition: background 0.15s, box-shadow 0.15s;
-	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .settings-save-btn:hover {
@@ -3076,6 +3126,28 @@ body.resizing-row {
 .chat-tab:hover::after,
 .chat-tab:focus-visible::after {
 	opacity: 1;
+}
+
+/* Generic placeholder for tab content (channels, etc.) */
+.chat-tab-placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	flex: 1;
+	gap: 12px;
+	padding: 32px 16px;
+	color: var(--cream-dim);
+	font-size: 13px;
+	text-align: center;
+}
+.chat-tab-placeholder span {
+	font-size: 32px;
+	opacity: 0.5;
+}
+.chat-tab-placeholder p {
+	margin: 0;
+	opacity: 0.7;
 }
 
 /* Work Progress Panel */
@@ -4255,11 +4327,18 @@ body.resizing-row {
 }
 
 .skills-list {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 4px;
 	flex: 1;
 	overflow-y: auto;
+	align-content: start;
+}
+
+@media (max-width: 500px) {
+	.skills-list {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .skills-list::-webkit-scrollbar {
@@ -4272,6 +4351,7 @@ body.resizing-row {
 }
 
 .skills-section-title {
+	grid-column: 1 / -1;
 	font-size: 11px;
 	color: var(--cream-dim);
 	text-transform: uppercase;
@@ -4279,6 +4359,25 @@ body.resizing-row {
 	padding: 8px 0 4px;
 	border-bottom: 1px solid var(--espresso-light);
 	margin-bottom: 2px;
+}
+
+/* SkillsTab embedded inside SettingsTab — full width, own scroll */
+.settings-tab > .skills-tab {
+	min-height: 400px;
+}
+
+.settings-coming-soon-banner {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	margin: 12px 0;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 8px;
+	color: var(--cream-dim, #c8b89a);
+	font-size: 13px;
+	text-align: center;
 }
 
 .skill-card {
@@ -4997,7 +5096,7 @@ body.resizing-row {
 	display: flex;
 	align-items: center;
 	/* Fixed width so the bar never jumps when track name changes */
-	width: 260px;
+	width: 300px;
 	flex-shrink: 0;
 	padding: 3px 8px;
 	background: rgba(8, 14, 28, 0.45);
@@ -5042,6 +5141,9 @@ body.resizing-row {
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
 }
 
 .bgm-btn {
@@ -5395,9 +5497,8 @@ body.resizing-row {
 }
 
 .bgm-track-name {
-	/* Fixed width matched to YT title max — bar never resizes */
-	width: 100px;
-	flex-shrink: 0;
+	flex: 1;
+	min-width: 0;
 	font-size: 0.72rem;
 	color: rgba(255, 255, 255, 0.6);
 	overflow: hidden;
@@ -6802,7 +6903,7 @@ body.resizing-row {
 }
 
 .onboarding-welcome__github-btn {
-	margin-top: 6px;
+	margin-top: 12px;
 	padding: 7px 16px;
 	background: transparent;
 	border: 1px solid var(--accent-cyan, #4fc3f7);

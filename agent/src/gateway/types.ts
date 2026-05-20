@@ -65,6 +65,9 @@ export interface CommandExecutor {
 
 /**
  * Resolves platform-specific paths for Gateway configuration and identity.
+ * All user-data paths resolve under naia-settings/ when NAIA_SETTINGS_DIR
+ * is set (written by the shell via write_naia_path_cache), falling back to
+ * ~/.naia/ for standalone / first-run scenarios.
  */
 export interface PathResolver {
 	/** Path to device identity JSON file. */
@@ -73,6 +76,14 @@ export interface PathResolver {
 	configCandidates(): string[];
 	/** Path to memory-specific config (separate from gateway config). */
 	memoryConfigPath(): string;
+	/** Path to the SQLite memory database. */
+	memoryDbPath(): string;
+	/** Directory where local session JSON files are stored. */
+	sessionsPath(): string;
+	/** Directory containing device identity files. */
+	identityDirPath(): string;
+	/** Directory where offline embedding model files are cached. */
+	embeddingModelsPath(): string;
 }
 
 /** Device identity for Gateway authentication */

@@ -107,33 +107,6 @@ pub(crate) fn find_bundled_node(_app_handle: &tauri::AppHandle) -> Option<PathBu
 }
 
 /// Platform-specific gateway spawn (Linux: use default flow).
-pub(crate) fn try_platform_gateway_spawn() -> super::GatewaySpawnResult {
-    super::GatewaySpawnResult::UseDefault
-}
-
-/// Get platform tier info (Linux: always Tier 2 equivalent — full feature set).
-pub(crate) fn get_platform_tier_info() -> serde_json::Value {
-    serde_json::json!({
-        "platform": std::env::consts::OS,
-        "tier": 2,
-        "wsl": false,
-        "distro": false
-    })
-}
-
-/// Auto-setup WSL (Linux: not applicable — return error).
-pub(crate) fn setup_wsl_environment(_app_handle: &tauri::AppHandle) -> Result<String, String> {
-    Err("WSL setup is only available on Windows".to_string())
-}
-
-/// Kill Naia Gateway processes inside WSL (Linux: no-op — no WSL on Linux).
-pub(crate) fn kill_wsl_gateway_processes() {}
-
-/// Whether to skip Gateway config sync (Linux: never skip).
-pub(crate) fn should_skip_gateway_sync() -> bool {
-    false
-}
-
 /// Resolve `npx` command name (Linux: just "npx").
 pub(crate) fn resolve_npx() -> String {
     "npx".to_string()
@@ -198,26 +171,6 @@ pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {
     path.to_path_buf()
 }
 
-/// Configure WebView settings (Linux: WebKit GPU/permissions).
-pub(crate) fn configure_webview(app: &tauri::App) {
-    use tauri::Manager;
-    use webkit2gtk::glib::object::ObjectExt;
-    use webkit2gtk::PermissionRequestExt;
-
-    if let Some(webview_window) = app.get_webview_window("main") {
-        let _ = webview_window.with_webview(|webview| {
-            use webkit2gtk::WebViewExt;
-            webview.inner().connect_permission_request(|_, request| {
-                if request.is::<webkit2gtk::UserMediaPermissionRequest>() {
-                    request.allow();
-                } else {
-                    request.deny();
-                }
-                true
-            });
-        });
-    }
-}
 
 // ─── Browser window embedding (X11) ──────────────────────────────────────────
 

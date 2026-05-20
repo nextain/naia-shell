@@ -21,6 +21,20 @@ description: Naia architecture (mirror of .users/context/ko/architecture.md)
 # context (see `history.legacy_three_pillars` block below) so the rationale
 # for what we have today is traceable. Do not treat it as current design.
 
+recent_changes:
+  date: "2026-05-21"
+  summary: |
+    naia-adk scaffold distribution (git clone on new setup), user data migration
+    ~/.naia/ → naia-settings/, local session persistence, memory AI provider config
+    in OnboardingWizard, root naia-settings/ duplicate removed.
+  changes:
+    - "clone_naia_adk / delete_naia_adk Tauri commands — shallow git clone nextain/naia-adk on new start; CREATE_NO_WINDOW on Windows"
+    - "AdkSetupScreen: cloning flow + cloning state + i18n for new-start and delete-reinstall modes"
+    - "remove root naia-settings/ (duplicate of shell/public/assets/, now authoritative)"
+    - "migrate-user-data.ts: one-shot additive migration ~/.naia/{sessions,memory,identity} → naia-settings/.{sessions,memory,identity}"
+    - "local-sessions.ts: local session persistence in naia-settings/.sessions/"
+    - "OnboardingWizard: memoryEmbeddingProvider + memoryLlmProvider config (none/offline/vllm/ollama/naia)"
+
 recent_hardening:
   date: "2026-05-12"
   summary: |

@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clearSavedCamera } from "./AvatarCanvas";
+import { SkillsTab } from "./SkillsTab";
 import {
 	clearAdkPath,
 	getAdkPath,
@@ -54,7 +55,6 @@ import {
 import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import {
-	clearLabConfig,
 	diffConfigs,
 	fetchLabConfig,
 	pushConfigToLab,
@@ -535,7 +535,7 @@ function DeviceSelect({
 
 export function SettingsTab() {
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
-		"general" | "ai" | "memory" | "info"
+		"general" | "ai" | "skills" | "memory" | "info"
 	>("general");
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
 		"idle" | "checking" | "healthy" | "unhealthy"
@@ -1187,75 +1187,15 @@ export function SettingsTab() {
 
 	const startLabLogin = async () => {
 		setLabWaiting(true);
-		// Extend to 3 min: first-run Chrome for Testing download can take ~60-120s
-		setTimeout(() => setLabWaiting(false), 180_000);
+		setTimeout(() => setLabWaiting(false), 60_000);
 		try {
-			const loginUrl = `${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop&source=embedded`;
-
-			// 1. agent-browser path: opens Chrome for Testing (cross-platform, headed, not embedded)
-			//    CDP monitor detects /desktop/auth-complete → emits naia_auth_complete automatically.
-			Logger.info("SettingsTab", "[lab-login] trying browser_open_login");
-			const agentBrowserOk = await invoke("browser_open_login", {
-				url: loginUrl,
-			}).then(
-				() => true,
-				(e: unknown) => {
-					Logger.warn("SettingsTab", "[lab-login] browser_open_login failed", {
-						error: String(e),
-					});
-					return false;
-				},
-			);
-			if (agentBrowserOk) {
-				Logger.info(
-					"SettingsTab",
-					"[lab-login] Chrome for Testing opened, waiting for auth",
-				);
-				return;
-			}
-
-			// 2. Embedded Chrome fallback (Linux X11, browser panel already initialized)
-			const chromeAvailable = await invoke<boolean>("browser_check").catch(
-				() => false,
-			);
-			Logger.info("SettingsTab", "[lab-login] browser_check fallback", {
-				chromeAvailable,
-			});
-			if (chromeAvailable) {
-				usePanelStore.getState().setActivePanel("browser");
-				let port = 0;
-				for (let i = 0; i < 20; i++) {
-					port = await invoke<number>("browser_embed_port").catch(() => 0);
-					if (port !== 0) break;
-					await new Promise<void>((r) => setTimeout(r, 500));
-				}
-				if (port !== 0) {
-					labBrowserVisibleRef.current = true;
-					const navErr = await invoke("browser_embed_navigate", {
-						url: loginUrl,
-					}).catch((e: unknown) => String(e));
-					if (navErr) {
-						Logger.error("SettingsTab", "[lab-login] navigate failed", {
-							error: navErr,
-						});
-					}
-					return;
-				}
-			}
-
-			// 3. System browser fallback → naia:// deep link
-			Logger.info(
-				"SettingsTab",
-				"[lab-login] falling back to system browser + deep link",
-			);
-			const state = await invoke<string>("generate_oauth_state").catch(
-				() => "",
-			);
+			const state = await invoke<string>("generate_oauth_state").catch(() => "");
 			const params = new URLSearchParams({
 				redirect: "desktop",
 				source: "desktop",
 			});
 			if (state) params.set("state", state);
+			Logger.info("SettingsTab", "[lab-login] opening system browser");
 			await openUrl(
 				`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`,
 			).catch((e: unknown) => {
@@ -1295,7 +1235,7 @@ export function SettingsTab() {
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
 	const [resetClearHistory, setResetClearHistory] = useState(false);
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
-	const [showReOnboarding, setShowReOnboarding] = useState(false);
+	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	const fetchVoiceWake = useCallback(async () => {
 		const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
@@ -2173,6 +2113,13 @@ export function SettingsTab() {
 				</button>
 				<button
 					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("skills")}
+				>
+					{t("settings.tabSkills")}
+				</button>
+				<button
+					type="button"
 					className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("memory")}
 				>
@@ -2239,17 +2186,25 @@ export function SettingsTab() {
 						onClick={async () => {
 							const selected = await open({
 								directory: true,
-								title: "워크스페이스 폴더 선택",
+								title: t("settings.workspaceDialogTitle"),
 							});
-							if (selected && typeof selected === "string")
+							if (selected && typeof selected === "string") {
 								setWorkspaceRoot(selected);
+								const cfg = loadConfig();
+								if (!cfg) return;
+								saveConfig({ ...cfg, workspaceRoot: selected });
+								setAdkPath(selected);
+								invoke("workspace_set_root", { root: selected }).catch(() => {});
+								window.location.reload();
+							}
 						}}
 					>
-						찾아보기
+						{t("settings.workspaceBrowse")}
 					</button>
 					<button
 						type="button"
 						className="voice-preview-btn"
+						style={{ background: "var(--accent-color, #5b8cf5)", color: "#fff" }}
 						onClick={() => {
 							const trimmed = workspaceRoot.trim();
 							const cfg = loadConfig();
@@ -2269,21 +2224,18 @@ export function SettingsTab() {
 							window.location.reload();
 						}}
 					>
-						적용
+						{t("settings.workspaceApply")}
 					</button>
 					<input
 						type="text"
 						className="settings-input"
 						value={workspaceRoot}
 						onChange={(e) => setWorkspaceRoot(e.target.value)}
-						placeholder="작업할 코드 워크스페이스 경로"
+						placeholder={t("settings.workspacePlaceholder")}
 						style={{ flex: 1 }}
 					/>
 				</div>
-				<div className="settings-hint">
-					Git 레포와 skills/ 디렉토리를 탐색할 코드 워크스페이스 경로입니다.
-					VRM·배경·BGM은 아래 naia-settings 경로를 사용합니다.
-				</div>
+				<div className="settings-hint">{t("settings.workspaceHint")}</div>
 			</div>
 
 			<div className="settings-field">
@@ -2488,173 +2440,6 @@ export function SettingsTab() {
 			}
 			{activeSettingsTab === "ai" && <>
 
-			{provider !== "nextain" && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.labSection")}</span>
-					</div>
-
-					<div className="settings-field">
-						<label>
-							{naiaKey
-								? t("settings.labConnected")
-								: t("settings.labDisconnected")}
-						</label>
-						{naiaKey ? (
-							<div className="lab-info-block">
-								{naiaUserId && (
-									<span className="lab-user-id">{naiaUserId}</span>
-								)}
-								<div className="lab-balance-row">
-									<span className="lab-balance-label">
-										{t("settings.labBalance")}
-									</span>
-									<span className="lab-balance-value">
-										{labBalanceLoading
-											? t("settings.labBalanceLoading")
-											: labBalanceError
-												? t("cost.labError")
-												: labBalance !== null
-													? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
-													: "-"}
-									</span>
-								</div>
-								<div className="lab-actions-row">
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(
-												`https://naia.nextain.io/${locale}/dashboard`,
-											).catch(() => {})
-										}
-									>
-										{t("settings.labDashboard")}
-									</button>
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(
-												`https://naia.nextain.io/${locale}/billing`,
-											).catch(() => {})
-										}
-									>
-										{t("cost.labCharge")}
-									</button>
-									{showLabDisconnect ? (
-										<div
-											className="reset-confirm-panel"
-											style={{ marginTop: 8 }}
-										>
-											<p className="reset-confirm-msg">
-												{t("settings.labDisconnectConfirm")}
-											</p>
-											<div className="reset-confirm-actions">
-												<button
-													type="button"
-													className="settings-reset-btn"
-													onClick={async () => {
-														setNaiaKeyState("");
-														setNaiaUserIdState("");
-														setLabBalance(null);
-														setProvider("gemini");
-														setModel(getDefaultLlmModel("gemini"));
-														setDiscordDefaultUserId("");
-														setDiscordDmChannelId("");
-														setDiscordDefaultTarget("");
-														setShowLabDisconnect(false);
-														await deleteSecretKey("naiaKey");
-														const current = loadConfig();
-														if (current) {
-															saveConfig({
-																...current,
-																provider:
-																	current.provider === "nextain"
-																		? "gemini"
-																		: current.provider,
-																model:
-																	current.provider === "nextain"
-																		? getDefaultLlmModel("gemini")
-																		: current.model,
-																// Reset Naia-dependent STT/TTS to defaults
-																ttsProvider:
-																	current.ttsProvider === "nextain"
-																		? "edge"
-																		: current.ttsProvider,
-																sttProvider:
-																	current.sttProvider === "nextain"
-																		? ""
-																		: current.sttProvider,
-																naiaKey: undefined,
-																naiaUserId: undefined,
-																discordDefaultUserId: undefined,
-																discordDmChannelId: undefined,
-																discordDefaultTarget: undefined,
-															});
-														}
-														// Sync cleared Discord config to Gateway
-														const updated = loadConfig();
-														if (updated) {
-															await syncToGateway(
-																updated.provider || "gemini",
-																updated.model || getDefaultLlmModel("gemini"),
-																updated.apiKey,
-																updated.persona,
-																updated.agentName,
-																updated.userName,
-																undefined,
-																updated.locale,
-																undefined, // discordDmChannelId cleared
-																undefined, // discordDefaultUserId cleared
-																updated.ttsProvider,
-																updated.ttsVoice,
-																undefined,
-																undefined,
-																undefined, // naiaKey cleared
-																updated.ollamaHost,
-															);
-															await restartGateway();
-														}
-													}}
-												>
-													{t("settings.labDisconnect")}
-												</button>
-												<button
-													type="button"
-													className="settings-cancel-btn"
-													onClick={() => setShowLabDisconnect(false)}
-												>
-													{t("settings.cancel")}
-												</button>
-											</div>
-										</div>
-									) : (
-										<button
-											type="button"
-											className="voice-preview-btn lab-disconnect-btn"
-											onClick={() => setShowLabDisconnect(true)}
-										>
-											{t("settings.labDisconnect")}
-										</button>
-									)}
-								</div>
-							</div>
-						) : (
-							<button
-								type="button"
-								className="voice-preview-btn"
-								disabled={labWaiting}
-								onClick={startLabLogin}
-							>
-								{labWaiting
-									? t("onboard.lab.waiting")
-									: t("settings.labConnect")}
-							</button>
-						)}
-					</div>
-				</>
-			)}
 
 			<div className="settings-section-divider">
 				<span>{t("settings.aiSection")}</span>
@@ -2865,224 +2650,6 @@ export function SettingsTab() {
 				</div>
 			)}
 
-			{provider === "nextain" ? (
-				<div className="settings-field">
-					<label>{t("settings.labSection")}</label>
-					<div className="settings-hint">
-						Naia 계정 로그인으로 API 키 없이 사용할 수 있습니다.
-					</div>
-					{naiaKey ? (
-						<div className="lab-info-block">
-							<span className="settings-hint">
-								로그인됨{naiaUserId ? ` (${naiaUserId})` : ""}
-							</span>
-							<div className="lab-balance-row">
-								<span className="lab-balance-label">
-									{t("settings.labBalance")}
-								</span>
-								<span className="lab-balance-value">
-									{labBalanceLoading
-										? t("settings.labBalanceLoading")
-										: labBalanceError
-											? t("cost.labError")
-											: labBalance !== null
-												? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
-												: "-"}
-								</span>
-							</div>
-							<div className="lab-actions-row">
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() =>
-										openUrl(
-											`https://naia.nextain.io/${locale}/dashboard`,
-										).catch(() => {})
-									}
-								>
-									{t("settings.labDashboard")}
-								</button>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() =>
-										openUrl(`https://naia.nextain.io/${locale}/billing`).catch(
-											() => {},
-										)
-									}
-								>
-									{t("cost.labCharge")}
-								</button>
-								{showLabDisconnect ? (
-									<div className="reset-confirm-panel" style={{ marginTop: 8 }}>
-										<p className="reset-confirm-msg">
-											{t("settings.labDisconnectConfirm")}
-										</p>
-										<div className="reset-confirm-actions">
-											<button
-												type="button"
-												className="settings-reset-btn"
-												onClick={async () => {
-													setNaiaKeyState("");
-													setNaiaUserIdState("");
-													setLabBalance(null);
-													setProvider("gemini");
-													setModel(getDefaultLlmModel("gemini"));
-													setDiscordDefaultUserId("");
-													setDiscordDmChannelId("");
-													setDiscordDefaultTarget("");
-													setShowLabDisconnect(false);
-													await deleteSecretKey("naiaKey");
-													const current = loadConfig();
-													if (current) {
-														saveConfig({
-															...current,
-															provider:
-																current.provider === "nextain"
-																	? "gemini"
-																	: current.provider,
-															model:
-																current.provider === "nextain"
-																	? getDefaultLlmModel("gemini")
-																	: current.model,
-															ttsProvider:
-																current.ttsProvider === "nextain"
-																	? "edge"
-																	: current.ttsProvider,
-															sttProvider:
-																current.sttProvider === "nextain"
-																	? ""
-																	: current.sttProvider,
-															naiaKey: undefined,
-															naiaUserId: undefined,
-															discordDefaultUserId: undefined,
-															discordDmChannelId: undefined,
-															discordDefaultTarget: undefined,
-														});
-													}
-													// Sync cleared Discord config to Gateway
-													const updated = loadConfig();
-													if (updated) {
-														await syncToGateway(
-															updated.provider || "gemini",
-															updated.model || getDefaultLlmModel("gemini"),
-															updated.apiKey,
-															updated.persona,
-															updated.agentName,
-															updated.userName,
-															undefined,
-															updated.locale,
-															undefined, // discordDmChannelId cleared
-															undefined, // discordDefaultUserId cleared
-															updated.ttsProvider,
-															updated.ttsVoice,
-															undefined,
-															undefined,
-															undefined, // naiaKey cleared
-															updated.ollamaHost,
-														);
-														await restartGateway();
-													}
-												}}
-											>
-												{t("settings.labDisconnect")}
-											</button>
-											<button
-												type="button"
-												className="settings-cancel-btn"
-												onClick={() => setShowLabDisconnect(false)}
-											>
-												{t("settings.cancel")}
-											</button>
-										</div>
-									</div>
-								) : (
-									<button
-										type="button"
-										className="voice-preview-btn lab-disconnect-btn"
-										onClick={() => setShowLabDisconnect(true)}
-									>
-										{t("settings.labDisconnect")}
-									</button>
-								)}
-								{showReOnboarding ? (
-									<div className="reset-confirm-panel" style={{ marginTop: 8 }}>
-										<p className="reset-confirm-msg">
-											{t("settings.reOnboardingConfirm")}
-										</p>
-										<div className="reset-confirm-actions">
-											<button
-												type="button"
-												className="settings-reset-btn"
-												onClick={async () => {
-													// Delete online config first, then reload
-													if (naiaKey && naiaUserId) {
-														await clearLabConfig(naiaKey, naiaUserId);
-													}
-													// Reset local onboarding state
-													const current = loadConfig();
-													if (current) {
-														saveConfig({
-															...current,
-															onboardingComplete: undefined,
-															userName: undefined,
-															agentName: undefined,
-															persona: undefined,
-															honorific: undefined,
-															speechStyle: undefined,
-														});
-													}
-													// Reload to trigger onboarding
-													window.location.reload();
-												}}
-											>
-												{t("settings.reOnboardingContinue")}
-											</button>
-											<button
-												type="button"
-												className="settings-cancel-btn"
-												onClick={() => setShowReOnboarding(false)}
-											>
-												{t("settings.cancel")}
-											</button>
-										</div>
-									</div>
-								) : (
-									<button
-										type="button"
-										className="voice-preview-btn re-onboarding-btn"
-										onClick={() => setShowReOnboarding(true)}
-									>
-										{t("settings.reOnboarding")}
-									</button>
-								)}
-							</div>
-						</div>
-					) : (
-						<button
-							type="button"
-							className="voice-preview-btn"
-							disabled={labWaiting}
-							onClick={startLabLogin}
-						>
-							{labWaiting ? t("onboard.lab.waiting") : t("settings.labConnect")}
-						</button>
-					)}
-					{error && <div className="settings-error">{error}</div>}
-				</div>
-			) : provider === "ollama" || provider === "vllm" ? (
-				<>{/* host shown above model selector */}</>
-			) : provider === "claude-code-cli" ? (
-				<div className="settings-field">
-					<label>{t("settings.apiKey")}</label>
-					<div className="settings-hint">
-						Claude Code CLI provider는 로컬 CLI 로그인 세션을 사용합니다.
-					</div>
-					{error && <div className="settings-error">{error}</div>}
-				</div>
-			) : (
-				<>{/* API key shown above, before model selector */}</>
-			)}
 
 			{/* Voice settings — only for LLM models (omni models have built-in STT/TTS) */}
 			{!isSelectedOmni && (
@@ -3607,8 +3174,25 @@ export function SettingsTab() {
 					스피커 테스트
 				</button>
 			</div>
+			<div className="settings-actions">
+				<button
+					type="button"
+					className="settings-save-btn"
+					onClick={handleSave}
+				>
+					{saved ? t("settings.saved") : t("settings.save")}
+				</button>
+			</div>
 			</>}
+						{activeSettingsTab === "skills" && (
+				<SkillsTab />
+			)}
 			{activeSettingsTab === "memory" && <>
+				{/* Coming soon banner */}
+				<div className="settings-coming-soon-banner">
+					<span>⏳ {t("settings.comingSoon")}</span>
+				</div>
+				<div style={{ opacity: 0.5, pointerEvents: "none" }}>
 			<div className="settings-section-divider">
 				<span>{t("settings.memorySection")}</span>
 			</div>
@@ -3977,6 +3561,7 @@ export function SettingsTab() {
 					))}
 				</div>
 			)}
+							</div>
 			</>}
 			{activeSettingsTab === "general" && <>
 						<div className="settings-section-divider">
@@ -4213,26 +3798,217 @@ export function SettingsTab() {
 			)}
 
 			{enableTools && <DevicePairingSection />}
-			</>}
-			{activeSettingsTab === "info" && <>
-			{/* Log viewer button (#297) */}
-			<div className="settings-field" data-testid="log-viewer-section">
-				<label>{t("settings.logViewer")}</label>
+			<div className="settings-actions">
 				<button
 					type="button"
-					className="voice-preview-btn"
-					data-testid="log-viewer-btn"
-					onClick={async () => {
-						try {
-							const logPath = await invoke<string>("get_gateway_log_path");
-							await openPath(logPath);
-						} catch (e) {
-							Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
-						}
-					}}
+					className="settings-save-btn"
+					onClick={handleSave}
 				>
-					{t("settings.logViewerOpen")}
+					{saved ? t("settings.saved") : t("settings.save")}
 				</button>
+			</div>
+			</>}
+			{activeSettingsTab === "info" && <>
+			<div className="settings-section-divider">
+				<span>{t("settings.labSection")}</span>
+			</div>
+
+			<div className="settings-field">
+				<label>
+					{naiaKey
+						? t("settings.labConnected")
+						: t("settings.labDisconnected")}
+				</label>
+				{naiaKey ? (
+					<div className="lab-info-block">
+						{naiaUserId && (
+							<span className="lab-user-id">{naiaUserId}</span>
+						)}
+						<div className="lab-balance-row">
+							<span className="lab-balance-label">
+								{t("settings.labBalance")}
+							</span>
+							<span className="lab-balance-value">
+								{labBalanceLoading
+									? t("settings.labBalanceLoading")
+									: labBalanceError
+										? t("cost.labError")
+										: labBalance !== null
+											? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
+											: "-"}
+							</span>
+						</div>
+						<div className="lab-actions-row">
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() =>
+									openUrl(
+										`https://naia.nextain.io/${locale}/dashboard`,
+									).catch(() => {})
+								}
+							>
+								{t("settings.labDashboard")}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() =>
+									openUrl(
+										`https://naia.nextain.io/${locale}/billing`,
+									).catch(() => {})
+								}
+							>
+								{t("cost.labCharge")}
+							</button>
+							{showLabDisconnect ? (
+								<div
+									className="reset-confirm-panel"
+									style={{ marginTop: 8 }}
+								>
+									<p className="reset-confirm-msg">
+										{t("settings.labDisconnectConfirm")}
+									</p>
+									<div className="reset-confirm-actions">
+										<button
+											type="button"
+											className="settings-reset-btn"
+											onClick={async () => {
+												setNaiaKeyState("");
+												setNaiaUserIdState("");
+												setLabBalance(null);
+												setProvider("gemini");
+												setModel(getDefaultLlmModel("gemini"));
+												setDiscordDefaultUserId("");
+												setDiscordDmChannelId("");
+												setDiscordDefaultTarget("");
+												setShowLabDisconnect(false);
+												await deleteSecretKey("naiaKey");
+												const current = loadConfig();
+												if (current) {
+													saveConfig({
+														...current,
+														provider:
+															current.provider === "nextain"
+																? "gemini"
+																: current.provider,
+														model:
+															current.provider === "nextain"
+																? getDefaultLlmModel("gemini")
+																: current.model,
+														// Reset Naia-dependent STT/TTS to defaults
+														ttsProvider:
+															current.ttsProvider === "nextain"
+																? "edge"
+																: current.ttsProvider,
+														sttProvider:
+															current.sttProvider === "nextain"
+																? ""
+																: current.sttProvider,
+														naiaKey: undefined,
+														naiaUserId: undefined,
+														discordDefaultUserId: undefined,
+														discordDmChannelId: undefined,
+														discordDefaultTarget: undefined,
+													});
+												}
+												// Sync cleared Discord config to Gateway
+												const updated = loadConfig();
+												if (updated) {
+													await syncToGateway(
+														updated.provider || "gemini",
+														updated.model || getDefaultLlmModel("gemini"),
+														updated.apiKey,
+														updated.persona,
+														updated.agentName,
+														updated.userName,
+														undefined,
+														updated.locale,
+														undefined, // discordDmChannelId cleared
+														undefined, // discordDefaultUserId cleared
+														updated.ttsProvider,
+														updated.ttsVoice,
+														undefined,
+														undefined,
+														undefined, // naiaKey cleared
+														updated.ollamaHost,
+													);
+													await restartGateway();
+												}
+											}}
+										>
+											{t("settings.labDisconnect")}
+										</button>
+										<button
+											type="button"
+											className="settings-cancel-btn"
+											onClick={() => setShowLabDisconnect(false)}
+										>
+											{t("settings.cancel")}
+										</button>
+									</div>
+								</div>
+							) : (
+								<button
+									type="button"
+									className="voice-preview-btn lab-disconnect-btn"
+									onClick={() => setShowLabDisconnect(true)}
+								>
+									{t("settings.labDisconnect")}
+								</button>
+							)}
+						</div>
+					</div>
+				) : (
+					<button
+						type="button"
+						className="voice-preview-btn"
+						disabled={labWaiting}
+						onClick={startLabLogin}
+					>
+						{labWaiting
+							? t("onboard.lab.waiting")
+							: t("settings.labConnect")}
+					</button>
+				)}
+			</div>
+			{/* Log viewer (#297) */}
+			<div className="settings-field" data-testid="log-viewer-section">
+				<label>{t("settings.logViewer")}</label>
+				<div className="lab-actions-row" style={{ flexWrap: "wrap", gap: "6px" }}>
+					{(["naia.log", "gateway.log", "node-host.log", "llm-debug.log"] as const).map((file) => (
+						<button
+							key={file}
+							type="button"
+							className="voice-preview-btn"
+							onClick={async () => {
+								try {
+									const logDir = await invoke<string>("get_log_dir");
+									await invoke("open_log_in_editor", { path: `${logDir}/${file}` });
+								} catch (e) {
+									Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
+								}
+							}}
+						>
+							{file}
+						</button>
+					))}
+					<button
+						type="button"
+						className="voice-preview-btn"
+						data-testid="log-viewer-btn"
+						onClick={async () => {
+							try {
+								const logDir = await invoke<string>("get_log_dir");
+								await openPath(logDir);
+							} catch (e) {
+								Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
+							}
+						}}
+					>
+						{t("settings.logViewerOpen")}
+					</button>
+				</div>
 			</div>
 
 			<div className="settings-danger-zone">

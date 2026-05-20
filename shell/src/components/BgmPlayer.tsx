@@ -13,6 +13,7 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 const YT_BASE = "http://localhost:18791";
 
+
 interface YtVideo {
 	id: string;
 	title: string;
@@ -36,22 +37,22 @@ async function ytSearch(query: string): Promise<YtVideo[]> {
 // ── Curated categories ────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-	{ id: "lofi", label: "📚 로파이", query: "lofi hip hop beats to study relax" },
-	{ id: "rain", label: "🌧 빗소리", query: "rain sounds sleep study white noise 1 hour" },
-	{ id: "ghibli", label: "🌿 지브리", query: "studio ghibli piano collection bgm" },
-	{ id: "jazz", label: "🎷 재즈 카페", query: "jazz cafe background music lounge" },
-	{ id: "classical", label: "🎻 클래식", query: "classical music background study concentration" },
-	{ id: "nature", label: "🌲 자연 소리", query: "nature sounds forest birds water relaxing" },
-	{ id: "ambient", label: "🌌 앰비언트", query: "ambient atmospheric background music drone" },
-	{ id: "synthwave", label: "🌃 신스웨이브", query: "synthwave retrowave 80s neon background" },
-	{ id: "bossa", label: "🍵 보사노바", query: "bossa nova jazz cafe morning music" },
-	{ id: "piano", label: "🎹 솔로 피아노", query: "solo piano relaxing music sleep background" },
-	{ id: "meditation", label: "🧘 명상", query: "meditation healing music binaural beats deep" },
-	{ id: "celtic", label: "🧝 판타지/켈트", query: "celtic fantasy ambient rpg isekai music" },
-	{ id: "darkacademia", label: "📖 다크 아카데미아", query: "dark academia background music study aesthetic" },
-	{ id: "kdrama", label: "🎬 K-드라마 OST", query: "korean drama ost background music piano" },
-	{ id: "new-age", label: "✨ 뉴에이지", query: "new age relaxing music 1 hour" },
-	{ id: "jpop", label: "🌸 시티팝", query: "japanese city pop bgm 1 hour aesthetic" },
+	{ id: "lofi", labelKey: "bgm.cat.lofi", query: "lofi hip hop beats to study relax" },
+	{ id: "rain", labelKey: "bgm.cat.rain", query: "rain sounds sleep study white noise 1 hour" },
+	{ id: "ghibli", labelKey: "bgm.cat.ghibli", query: "studio ghibli piano collection bgm" },
+	{ id: "jazz", labelKey: "bgm.cat.jazz", query: "jazz cafe background music lounge" },
+	{ id: "classical", labelKey: "bgm.cat.classical", query: "classical music background study concentration" },
+	{ id: "nature", labelKey: "bgm.cat.nature", query: "nature sounds forest birds water relaxing" },
+	{ id: "ambient", labelKey: "bgm.cat.ambient", query: "ambient atmospheric background music drone" },
+	{ id: "synthwave", labelKey: "bgm.cat.synthwave", query: "synthwave retrowave 80s neon background" },
+	{ id: "bossa", labelKey: "bgm.cat.bossa", query: "bossa nova jazz cafe morning music" },
+	{ id: "piano", labelKey: "bgm.cat.piano", query: "solo piano relaxing music sleep background" },
+	{ id: "meditation", labelKey: "bgm.cat.meditation", query: "meditation healing music binaural beats deep" },
+	{ id: "celtic", labelKey: "bgm.cat.celtic", query: "celtic fantasy ambient rpg isekai music" },
+	{ id: "darkacademia", labelKey: "bgm.cat.darkacademia", query: "dark academia background music study aesthetic" },
+	{ id: "kdrama", labelKey: "bgm.cat.kdrama", query: "korean drama ost background music piano" },
+	{ id: "new-age", labelKey: "bgm.cat.newage", query: "new age relaxing music 1 hour" },
+	{ id: "jpop", labelKey: "bgm.cat.jpop", query: "japanese city pop bgm 1 hour aesthetic" },
 ] as const;
 
 // ── Favorites ─────────────────────────────────────────────────────────────────
@@ -307,7 +308,8 @@ export function BgmPlayer({ naia }: Props) {
 		if (!playerRef.current) { setPanelPos(null); return; }
 		const rect = playerRef.current.getBoundingClientRect();
 		const PANEL_W = Math.min(320, window.innerWidth - 16);
-		const safeLeft = Math.min(rect.left, window.innerWidth - PANEL_W - 8);
+		// Right-align panel to player's right edge, clamp so it doesn't overflow screen
+		const safeLeft = Math.max(8, Math.min(rect.right - PANEL_W, window.innerWidth - PANEL_W - 8));
 		setPanelPos({ top: rect.bottom + 4, left: safeLeft });
 	}, [panelExpanded, ytPanelHeight]);
 
@@ -463,7 +465,7 @@ export function BgmPlayer({ naia }: Props) {
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
-			summary: `BGM: 로컬 "${localNames[idx]}" 재생`,
+			summary: `BGM: ${t("bgm.localBgm")} "${localNames[idx]}"`,
 		});
 		const audio = audioRef.current;
 		if (!audio) return;
@@ -541,7 +543,7 @@ export function BgmPlayer({ naia }: Props) {
 	const trackLabel =
 		source === "youtube"
 			? (currentYt?.title ?? t("bgm.defaultYouTubeTrack"))
-			: (localNames[localIndex] ?? "로컬 BGM");
+			: (localNames[localIndex] ?? t("bgm.localBgm"));
 
 	// Always scroll when playing (so AI-triggered tracks with short titles also marquee)
 	const isScrolling = playing || trackLabel.length > MARQUEE_THRESHOLD;
@@ -631,7 +633,7 @@ export function BgmPlayer({ naia }: Props) {
 								className={`bgm-panel-tab${panelTab === "local" ? " bgm-panel-tab--active" : ""}`}
 								onClick={() => setPanelTab("local")}
 							>
-								♪ 로컬
+								{t("bgm.tabLocal")}
 							</button>
 						</div>
 						<button
@@ -694,7 +696,7 @@ export function BgmPlayer({ naia }: Props) {
 											className="bgm-yt-cat-btn"
 											onClick={() => loadCategory(cat.query)}
 										>
-											{cat.label}
+											{t(cat.labelKey)}
 										</button>
 									))}
 								</div>

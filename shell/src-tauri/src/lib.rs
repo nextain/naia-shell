@@ -25,35 +25,6 @@ pub(crate) fn home_dir() -> String {
         .unwrap_or_default()
 }
 
-/// Search a node version manager directory for the highest Node 22+ version.
-pub(crate) fn find_highest_node_version(
-    versions_dir: &str,
-    bin_subpath: &str,
-) -> Option<std::path::PathBuf> {
-    let entries = std::fs::read_dir(versions_dir).ok()?;
-    let mut versions: Vec<_> = entries
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            let name = name.trim_start_matches('v').to_string();
-            let major: u32 = name.split('.').next()?.parse().ok()?;
-            if major >= 22 {
-                Some((major, e.path()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    versions.sort_by(|a, b| b.0.cmp(&a.0));
-    versions.first().and_then(|(_, path)| {
-        let node_bin = path.join(bin_subpath);
-        if node_bin.exists() {
-            Some(node_bin)
-        } else {
-            None
-        }
-    })
-}
 
 /// Process a deep-link URL (naia://auth?key=xxx). Extracted as a function
 /// so both the Tauri deep-link plugin callback and the Windows file watcher
@@ -214,6 +185,10 @@ struct AppState {
     gemini_live: gemini_live::SharedHandle,
     /// Last agent-core restart timestamp — debounce to prevent restart storms (#226).
     last_agent_restart: Mutex<Option<std::time::Instant>>,
+    /// Startup IPC messages (auth_update / notify_config / creds_update) — replayed
+    /// to agent-core after every restart so credentials are never permanently lost.
+    /// Deduplicated by type: latest message of each type wins.
+    startup_messages: Mutex<Vec<String>>,
 }
 
 struct AuditState {
@@ -785,7 +760,8 @@ fn spawn_agent_core(
             if let Ok(res_dir) = app_handle.path().resource_dir() {
                 let bundled = res_dir.join("node.exe");
                 if bundled.exists() {
-                    return bundled.to_string_lossy().to_string();
+                    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
+                    return normalized.to_string_lossy().to_string();
                 }
             }
         }
@@ -796,6 +772,82 @@ fn spawn_agent_core(
 
     // In dev: tsx for TypeScript direct execution; in prod: compiled JS from bundle
     let agent_script = std::env::var("NAIA_AGENT_SCRIPT").unwrap_or_else(|_| {
+        // ── Standalone naia-agent detection ──────────────────────────────────
+        // Condition A: NAIA_AGENT_STANDALONE=1 env var (explicit opt-in)
+        // Condition B: resources/agent-standalone/dist/index.js present (auto)
+        //
+        // Deployment path:
+        //   build naia-agent → copy dist/ to Tauri external-bin or resources/
+        //   agent-standalone/ alongside the embedded agent/dist/.
+        //   Both share the same node binary and --stdio IPC protocol.
+        //
+        // No ping/pong: spawn is the handshake — process exits non-zero on fatal
+        // init failure, which restart_agent() catches as process death.
+        let standalone_requested =
+            std::env::var("NAIA_AGENT_STANDALONE").map(|v| v == "1").unwrap_or(false);
+
+        // 1. Explicit path override — activates regardless of NAIA_AGENT_STANDALONE=1.
+        //    NAIA_AGENT_STANDALONE_PATH alone is sufficient; setting it without the
+        //    flag is intentional (e.g. ad-hoc testing of a custom build).
+        if let Ok(sa_path) = std::env::var("NAIA_AGENT_STANDALONE_PATH") {
+            let p = std::path::PathBuf::from(&sa_path);
+            if p.exists() {
+                log_both(&format!(
+                    "[Naia] Standalone agent (NAIA_AGENT_STANDALONE_PATH): {}",
+                    p.display()
+                ));
+                return dunce::canonicalize(&p).unwrap_or(p).to_string_lossy().to_string();
+            }
+        }
+
+        // 2. Bundled standalone in resource dir — auto-activates when present,
+        //    regardless of NAIA_AGENT_STANDALONE=1. Bundling agent-standalone/ into
+        //    Tauri resources IS the explicit deployment opt-in; the env flag is not
+        //    required. If this fires unexpectedly, check for stale build artifacts
+        //    in resources/agent-standalone/.
+        if let Ok(resource_dir) = app_handle.path().resource_dir() {
+            let sa_bundled = resource_dir
+                .join("agent-standalone")
+                .join("dist")
+                .join("index.js");
+            if sa_bundled.exists() {
+                let normalized = dunce::canonicalize(&sa_bundled).unwrap_or(sa_bundled);
+                log_both(&format!(
+                    "[Naia] Standalone agent (bundled, auto-activated): {} \
+                     — to force embedded agent, remove resources/agent-standalone/",
+                    normalized.display()
+                ));
+                return normalized.to_string_lossy().to_string();
+            }
+        }
+
+        // 3. Dev TypeScript source — requires NAIA_AGENT_STANDALONE=1. Avoids
+        //    accidentally switching to standalone in production without the bundle.
+        if standalone_requested {
+            let sa_dev_candidates = [
+                "../../../naia-agent/bin/naia-agent.ts", // from src-tauri/
+                "../../naia-agent/bin/naia-agent.ts",    // from shell/
+            ];
+            for rel in &sa_dev_candidates {
+                let dev_path = std::env::current_dir()
+                    .map(|d| d.join(rel))
+                    .unwrap_or_default();
+                if dev_path.exists() {
+                    let normalized = dunce::canonicalize(&dev_path).unwrap_or(dev_path);
+                    log_both(&format!(
+                        "[Naia] Standalone agent (dev): {}",
+                        normalized.display()
+                    ));
+                    return normalized.to_string_lossy().to_string();
+                }
+            }
+            log_both(
+                "[Naia] NAIA_AGENT_STANDALONE=1 set but no standalone agent found \
+                 — falling back to embedded agent",
+            );
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
 
         // Flatpak: bundled agent FIRST (--filesystem=home can expose dev paths)
@@ -839,11 +891,14 @@ fn spawn_agent_core(
         if let Ok(resource_dir) = app_handle.path().resource_dir() {
             let bundled = resource_dir.join("agent/dist/index.js");
             if bundled.exists() {
+                // dunce::canonicalize strips the \\?\ extended-length prefix that
+                // Tauri's resource_dir() produces on Windows — Node.js rejects \\?\ paths.
+                let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
                 log_verbose(&format!(
                     "[Naia] Found bundled agent at: {}",
-                    bundled.display()
+                    normalized.display()
                 ));
-                return bundled.to_string_lossy().to_string();
+                return normalized.to_string_lossy().to_string();
             }
         }
 
@@ -903,6 +958,26 @@ fn spawn_agent_core(
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+
+    // Pass naia-settings directory to the agent via env var so it can resolve
+    // all user-data paths (sessions, memory, identity) without reading files
+    // at runtime. Read from ~/.naia/adk-path written by write_naia_path_cache.
+    if let Some(home) = dirs::home_dir() {
+        let adk_path_file = home.join(".naia").join("adk-path");
+        if let Ok(adk_path_str) = std::fs::read_to_string(&adk_path_file) {
+            let adk_path_str = adk_path_str.trim();
+            if !adk_path_str.is_empty() {
+                let settings_dir = std::path::PathBuf::from(adk_path_str)
+                    .join("naia-settings");
+                cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
+                log_verbose(&format!(
+                    "[Naia] agent NAIA_SETTINGS_DIR={}",
+                    settings_dir.display()
+                ));
+            }
+        }
+    }
+
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
     let mut child = cmd
@@ -1169,6 +1244,8 @@ fn restart_agent(
             log_both("[Naia] agent-core restarted");
             drop(guard);
             std::thread::sleep(std::time::Duration::from_millis(300));
+            // Replay cached startup credentials so agent recovers auth state after crash.
+            replay_startup_messages_to_agent(state);
             send_to_agent(state, message, None, audit_db)
         }
         Err(e) => Err(format!("Restart failed: {}", e)),
@@ -1361,6 +1438,71 @@ async fn delete_stt_model(app: AppHandle, model_id: String) -> Result<(), String
     tokio::task::spawn_blocking(move || stt_models::delete_model(&app, &model_id))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))?
+}
+
+/// Replay all cached startup messages to agent-core stdin.
+/// Call after spawn + startup delay so Node.js readline is ready.
+fn replay_startup_messages_to_agent(state: &AppState) {
+    let messages = {
+        let guard = state.startup_messages.lock().unwrap();
+        if guard.is_empty() {
+            return;
+        }
+        guard.clone()
+    };
+    let mut agent_guard = lock_or_recover(&state.agent, "state.agent(replay_startup)");
+    if let Some(ref mut process) = *agent_guard {
+        for msg in &messages {
+            match writeln!(process.stdin, "{}", msg) {
+                Ok(_) => {
+                    let _ = process.stdin.flush();
+                }
+                Err(e) => {
+                    log_both(&format!("[Naia] startup message replay failed: {}", e));
+                    break;
+                }
+            }
+        }
+        log_verbose(&format!(
+            "[Naia] replayed {} startup message(s) to agent-core",
+            messages.len()
+        ));
+    }
+}
+
+/// Cache a startup IPC message (auth_update / notify_config / creds_update) so it is
+/// replayed to agent-core after every restart — ensuring credentials are never lost on crash.
+/// Deduplicates by message type: a newer message of the same type replaces the previous one.
+#[tauri::command]
+async fn store_startup_message(
+    message: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    const CACHEABLE: &[&str] = &["auth_update", "notify_config", "creds_update"];
+    let parsed: serde_json::Value = serde_json::from_str(&message)
+        .map_err(|_| "store_startup_message: invalid JSON".to_string())?;
+    let msg_type = parsed
+        .get("type")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "store_startup_message: missing 'type' field".to_string())?;
+    if !CACHEABLE.contains(&msg_type) {
+        return Err(format!(
+            "store_startup_message: type '{}' is not cacheable",
+            msg_type
+        ));
+    }
+    let msg_type = msg_type.to_string();
+    let mut guard = state.startup_messages.lock().unwrap();
+    // Deduplicate: replace any existing entry of the same type
+    guard.retain(|existing| {
+        serde_json::from_str::<serde_json::Value>(existing)
+            .ok()
+            .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t.to_string()))
+            .map(|t| t != msg_type)
+            .unwrap_or(true)
+    });
+    guard.push(message);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1675,10 +1817,28 @@ async fn gateway_health(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     }
 }
 
-/// Returns the path to the gateway log file (~/.naia/logs/gateway.log). (#297)
+/// Returns the path to the Naia log file (~/.naia/logs/naia.log).
 #[tauri::command]
 fn get_gateway_log_path() -> String {
-    log_dir().join("gateway.log").to_string_lossy().into_owned()
+    log_dir().join("naia.log").to_string_lossy().into_owned()
+}
+
+/// Returns the log directory path (~/.naia/logs/).
+#[tauri::command]
+fn get_log_dir() -> String {
+    log_dir().to_string_lossy().into_owned()
+}
+
+/// Open a log file in an editor: Notepad on Windows, xdg-open/open on Linux/macOS.
+#[tauri::command]
+fn open_log_in_editor(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    let result = std::process::Command::new("notepad.exe").arg(&path).spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&path).spawn();
+    #[cfg(target_os = "linux")]
+    let result = std::process::Command::new("xdg-open").arg(&path).spawn();
+    result.map(|_| ()).map_err(|e| format!("Failed to open log file: {}", e))
 }
 
 /// Restart the Naia Gateway.
@@ -2655,6 +2815,137 @@ async fn write_naia_config(adk_path: String, json: String) -> Result<(), String>
     std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
 }
 
+/// Write an API key to naia-agent's OS keychain storage.
+///
+/// Mirrors naia-agent's `keychainSet()` so the standalone agent can read back
+/// credentials that naia-os saved — without requiring a separate `naia-agent login` run.
+///
+/// Storage layout (same as naia-agent):
+///   Windows : `{adk_path}/naia-settings/.keys/{env_key}.dpapi`  (DPAPI-encrypted)
+///   macOS   : OS Keychain via `security` CLI
+///   Linux   : Secret Service via `secret-tool`
+/// Also updates the credentials manifest at `{adk_path}/naia-settings/credentials`.
+#[tauri::command]
+async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Result<(), String> {
+    use std::io::Write as _;
+    use std::path::PathBuf;
+
+    if adk_path.is_empty() || env_key.is_empty() {
+        return Err("adk_path and env_key must not be empty".to_string());
+    }
+    // Basic safety: env_key must be alphanumeric + underscore only.
+    if !env_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(format!("invalid env_key: {env_key}"));
+    }
+
+    let settings_dir = PathBuf::from(&adk_path).join("naia-settings");
+    let keys_dir = settings_dir.join(".keys");
+    std::fs::create_dir_all(&keys_dir).map_err(|e| e.to_string())?;
+
+    // ── Platform keychain write ──────────────────────────────────────────────
+    #[cfg(target_os = "windows")]
+    {
+        // DPAPI (CurrentUser scope) via PowerShell — same script as naia-agent keychainSet.
+        let out_file = keys_dir.join(format!("{env_key}.dpapi"));
+        // Escape for PowerShell single-quoted string: ' → '' and \ → \\
+        let out_path = out_file.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
+        let script = format!(
+            "Add-Type -AssemblyName System.Security; \
+             $v = [Console]::In.ReadLine(); \
+             $b = [System.Text.Encoding]::UTF8.GetBytes($v); \
+             $e = [System.Security.Cryptography.ProtectedData]::Protect($b, $null, \
+               [System.Security.Cryptography.DataProtectionScope]::CurrentUser); \
+             [System.IO.File]::WriteAllBytes('{out_path}', $e)"
+        );
+        let mut ps_cmd = std::process::Command::new("powershell");
+        ps_cmd
+            .args(["-NonInteractive", "-Command", &script])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        platform::hide_console(&mut ps_cmd);
+        let mut child = ps_cmd
+            .spawn()
+            .map_err(|e| format!("powershell spawn failed: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(value.as_bytes()).map_err(|e| e.to_string())?;
+            drop(stdin);
+        }
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("DPAPI encrypt failed (exit {status})"));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS Keychain — same service name as naia-agent ("naia-agent").
+        let status = std::process::Command::new("security")
+            .args([
+                "add-generic-password",
+                "-a", &env_key,
+                "-s", "naia-agent",
+                "-w", &value,
+                "-U", // update if exists
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("security CLI failed: {e}"))?;
+        if !status.success() {
+            return Err(format!("macOS Keychain write failed (exit {status})"));
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // Linux Secret Service via secret-tool.
+        let status = std::process::Command::new("secret-tool")
+            .args([
+                "store",
+                "--label", &format!("naia-agent:{env_key}"),
+                "service", "naia-agent",
+                "account", &env_key,
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .and_then(|mut c| {
+                if let Some(mut s) = c.stdin.take() { let _ = s.write_all(value.as_bytes()); }
+                c.wait()
+            })
+            .map_err(|e| format!("secret-tool failed: {e}"))?;
+        if !status.success() {
+            return Err(format!("Linux Secret Service write failed (exit {status})"));
+        }
+    }
+
+    // ── Update credentials manifest ─────────────────────────────────────────
+    // Same format as naia-agent: { "keys": ["ENV_KEY_1", ...] }
+    let creds_path = settings_dir.join("credentials");
+    let existing: Vec<String> = std::fs::read_to_string(&creds_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("keys").and_then(|k| k.as_array()).cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !existing.contains(&env_key) {
+        let mut keys = existing;
+        keys.push(env_key.clone());
+        let manifest = serde_json::json!({ "keys": keys });
+        std::fs::write(&creds_path, serde_json::to_string_pretty(&manifest).unwrap() + "\n")
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 /// Check whether `{adk_path}/naia-settings/` already exists.
 #[tauri::command]
 async fn check_naia_settings(adk_path: String) -> bool {
@@ -2670,10 +2961,33 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
         return Err("adk_path is empty".to_string());
     }
     let base = std::path::PathBuf::from(&adk_path).join("naia-settings");
+    // Visible asset dirs
     for subdir in &["vrm-files", "background", "bgm-musics"] {
         std::fs::create_dir_all(base.join(subdir))
             .map_err(|e| format!("Failed to create {subdir}: {e}"))?;
     }
+    // Hidden user-data dirs (dot-prefix keeps them out of file browsers)
+    for subdir in &[".sessions", ".memory", ".identity", ".models"] {
+        std::fs::create_dir_all(base.join(subdir))
+            .map_err(|e| format!("Failed to create {subdir}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Write `~/.naia/adk-path` so naia-agent can discover the naia-settings
+/// directory on next startup without waiting for the shell JS to initialize.
+/// Called by setAdkPath() in adk-store.ts whenever the user sets or changes
+/// their workspace path.
+#[tauri::command]
+async fn write_naia_path_cache(adk_path: String) -> Result<(), String> {
+    if adk_path.is_empty() {
+        return Err("adk_path is empty".to_string());
+    }
+    let naia_dir = dirs::home_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?
+        .join(".naia");
+    std::fs::create_dir_all(&naia_dir).map_err(|e| e.to_string())?;
+    std::fs::write(naia_dir.join("adk-path"), &adk_path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -2801,6 +3115,50 @@ async fn delete_naia_settings(adk_path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to delete naia-settings: {e}"))
 }
 
+/// Delete the entire adk_path directory (full workspace wipe for "delete and reinstall").
+#[tauri::command]
+async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
+    if adk_path.is_empty() {
+        return Err("adk_path is empty".to_string());
+    }
+    let adk = std::path::PathBuf::from(&adk_path);
+    if !adk.exists() {
+        return Ok(());
+    }
+    if !adk.is_dir() {
+        return Err(format!("Not a directory: {adk_path}"));
+    }
+    std::fs::remove_dir_all(&adk)
+        .map_err(|e| format!("Failed to delete {adk_path}: {e}"))
+}
+
+/// Clone nextain/naia-adk (shallow) into adk_path.
+/// Fails if the directory already exists and is non-empty.
+#[tauri::command]
+async fn clone_naia_adk(adk_path: String) -> Result<(), String> {
+    if adk_path.is_empty() {
+        return Err("adk_path is empty".to_string());
+    }
+    let path = std::path::PathBuf::from(&adk_path);
+    if path.is_dir() {
+        let non_empty = path.read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
+        if non_empty {
+            return Err(format!("Directory is not empty: {adk_path}"));
+        }
+    }
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", "--depth", "1", "https://github.com/nextain/naia-adk", &adk_path]);
+    platform::hide_console(&mut cmd);
+    let output = cmd.output().map_err(|e| format!("git not found: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git clone failed: {stderr}"));
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize env_logger so `log` crate macros (info!, debug!, warn!) produce output.
@@ -2852,6 +3210,7 @@ pub fn run() {
             oauth_state: Arc::new(Mutex::new(None)),
             gemini_live: gemini_live::new_shared_handle(),
             last_agent_restart: Mutex::new(None),
+            startup_messages: Mutex::new(Vec::new()),
         })
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
@@ -2861,12 +3220,15 @@ pub fn run() {
             list_stt_models,
             download_stt_model,
             delete_stt_model,
+            store_startup_message,
             send_to_agent_command,
             cancel_stream,
             reset_window_state,
             reset_gateway_data,
             gateway_health,
             get_gateway_log_path,
+            get_log_dir,
+            open_log_in_editor,
             restart_gateway,
             get_audit_log,
             get_audit_stats,
@@ -2893,9 +3255,13 @@ pub fn run() {
             list_naia_assets,
             read_naia_config,
             write_naia_config,
+            write_agent_key,
             check_naia_settings,
             init_naia_settings,
+            write_naia_path_cache,
             delete_naia_settings,
+            delete_naia_adk,
+            clone_naia_adk,
             write_naia_asset,
             copy_bundled_assets,
             // Login Chrome (standalone auth window, not embedded)
@@ -2950,6 +3316,7 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pty::pty_execute_sync,
+            enable_webview2_ime,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

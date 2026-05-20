@@ -30,11 +30,16 @@ export const jobTracker = new JobTracker();
 import {
         SqliteAdapter,
         MemorySystem,
+        OfflineEmbeddingProvider,
         OpenAICompatEmbeddingProvider,
         NaiaGatewayEmbeddingProvider,
         buildLLMFactExtractor,
 } from "@nextain/naia-memory";
 import { createNaiaMemoryProvider } from "./memory-bridge.js";
+import {
+	type LocalSessionMessage,
+	saveLocalSession,
+} from "./local-sessions.js";
 import { MemoryTagScrubber } from "./memory-scrubber.js";
 import { NaiaApprovalBridge } from "./approval-bridge.js";
 import {
@@ -53,6 +58,7 @@ import {
 	parseRequest,
 } from "./protocol.js";
 import { calculateCost } from "./providers/cost.js";
+import { GATEWAY_URL } from "./providers/lab-proxy.js";
 import {
 	buildProvider,
 	getAgentNaiaKey,
@@ -72,13 +78,8 @@ import { startYoutubeServer } from "./youtube-server.js";
 const activeStreams = new Map<string, AbortController>();
 
 // ─── Memory System (singleton) ───────────────────────────────────────────────
-const MEMORY_DB_PATH = join(
-        homedir(),
-        ".naia",
-        "memory",
-        "alpha-memory-v5.db",
-);
-mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
+const MEMORY_DB_PATH = defaultPathResolver.memoryDbPath();
+mkdirSync(join(MEMORY_DB_PATH, ".."), { recursive: true });
 
 /**
  * Resolve memory system from config.
@@ -87,6 +88,7 @@ mkdirSync(join(homedir(), ".naia", "memory"), { recursive: true });
 type MemConfig = {
         adapter?: string;
         embeddingProvider?: string;
+        offlineModel?: string;
         embeddingBaseUrl?: string;
         embeddingApiKey?: string;
         embeddingModel?: string;
@@ -119,9 +121,17 @@ function buildMemorySystem(): MemorySystem {
                                 cfg.embeddingModel,
                         );
                 }
+        } else if (cfg.embeddingProvider === "offline") {
+                // Configure transformers cache dir lazily (dynamic import at encode time).
+                const modelsDir = defaultPathResolver.embeddingModelsPath();
+                import("@huggingface/transformers").then((mod) => {
+                        (mod.env as Record<string, unknown>).cacheDir = modelsDir;
+                }).catch(() => {});
+                const offlineModelName = (cfg.offlineModel ?? "all-MiniLM-L6-v2") as "all-MiniLM-L6-v2" | "all-mpnet-base-v2" | "multilingual-e5-large";
+                embeddingProvider = new OfflineEmbeddingProvider(offlineModelName) as unknown as OpenAICompatEmbeddingProvider;
         } else if (cfg.embeddingProvider === "naia") {
                 const naiaKey = getAgentNaiaKey();
-                const naiaGatewayUrl = process.env.NAIA_GATEWAY_URL ?? "https://naia-gateway.nextain.io";
+                const naiaGatewayUrl = GATEWAY_URL;
                 if (naiaKey) {
                         embeddingProvider = new NaiaGatewayEmbeddingProvider(naiaGatewayUrl, naiaKey);
                 }
@@ -172,7 +182,7 @@ void approvalBridge;
 /** Native command executor — works without Gateway connection */
 const nativeExecutor = new NativeCommandExecutor();
 
-const EMOTION_TAG_RE = /^\[(?:HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)]\s*/;
+const EMOTION_TAG_RE = /^\[(?:HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|NENEUTRAL|THINK|NE)]\s*/;
 const MAX_TOOL_ITERATIONS = 10;
 const APPROVAL_TIMEOUT_MS = 120_000;
 const PANEL_TOOL_TIMEOUT_MS = 30_000;
@@ -461,6 +471,7 @@ function logLlm(entry: Record<string, unknown>): void {
 export async function handleChatRequest(req: ChatRequest): Promise<void> {
 	const {
 		requestId,
+		sessionId,
 		provider: providerConfig,
 		messages: rawMessages,
 		systemPrompt,
@@ -1038,6 +1049,23 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 			`[agent:chat] Finish — fullText=${fullText.length} chars, reqId=${requestId}`,
 		);
 		writeLine({ type: "finish", requestId });
+
+		// ─── Local session persistence ────────────────────────────────
+		// Save the completed conversation to ~/.naia/sessions/ so HistoryTab
+		// can display it even without a gateway connection.
+		if (sessionId && fullText) {
+			const now = Date.now();
+			const sessionMessages: LocalSessionMessage[] = [
+				...rawMessages.map((m) => ({
+					role: m.role as "user" | "assistant",
+					content: typeof m.content === "string" ? m.content : "",
+					timestamp: now,
+				})),
+				{ role: "assistant" as const, content: fullText, timestamp: now },
+			];
+			saveLocalSession(sessionId, sessionMessages);
+		}
+
 		// Evict completed/failed jobs older than 5 minutes to prevent memory leaks
 		jobTracker.evictTerminal();
 	} catch (err: unknown) {
@@ -1161,21 +1189,36 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 }
 
 async function handleMemoryExport(req: MemoryExportRequest): Promise<void> {
-	// TODO(#226): Implement backup via LocalAdapter.exportBackup() once MemorySystem exposes it
-	writeLine({
-		type: "memory_export_result",
-		requestId: req.requestId,
-		error: "Memory backup export is not yet supported in this version",
-	});
+	try {
+		const blob = await memorySystem.exportBackup(req.password);
+		writeLine({
+			type: "memory_export_result",
+			requestId: req.requestId,
+			data: Array.from(blob),
+		});
+	} catch (err) {
+		writeLine({
+			type: "memory_export_result",
+			requestId: req.requestId,
+			error: String(err),
+		});
+	}
 }
 
 async function handleMemoryImport(req: MemoryImportRequest): Promise<void> {
-	// TODO(#226): Implement backup via LocalAdapter.importBackup() once MemorySystem exposes it
-	writeLine({
-		type: "memory_import_result",
-		requestId: req.requestId,
-		error: "Memory backup import is not yet supported in this version",
-	});
+	try {
+		await memorySystem.importBackup(new Uint8Array(req.data), req.password);
+		writeLine({
+			type: "memory_import_result",
+			requestId: req.requestId,
+		});
+	} catch (err) {
+		writeLine({
+			type: "memory_import_result",
+			requestId: req.requestId,
+			error: String(err),
+		});
+	}
 }
 
 /**
@@ -1307,6 +1350,53 @@ export function handleAuthUpdate(req: import("./protocol.js").AuthUpdateRequest)
 	});
 }
 
+/**
+ * Pre-download offline embedding model by initializing the transformers pipeline.
+ * Emits embedding_progress JSON lines while downloading so the shell can show progress.
+ */
+async function handleEmbeddingPrefetch(req: { model: string }): Promise<void> {
+	const model = (req.model as string) ?? "all-MiniLM-L6-v2";
+	writeLine({ type: "embedding_progress", status: "starting", model, progress: 0 });
+
+	let pipelineFn: ((task: string, model: string, opts?: Record<string, unknown>) => Promise<unknown>) | undefined;
+	let envObj: Record<string, unknown> | undefined;
+	try {
+		const mod = await import("@huggingface/transformers") as Record<string, unknown>;
+		pipelineFn = mod.pipeline as typeof pipelineFn;
+		envObj = mod.env as Record<string, unknown>;
+	} catch {
+		writeLine({ type: "embedding_progress", status: "error", model, error: "@huggingface/transformers not installed" });
+		return;
+	}
+
+	// Store models in naia-settings/.models/
+	const modelsDir = defaultPathResolver.embeddingModelsPath();
+	mkdirSync(modelsDir, { recursive: true });
+	if (envObj) envObj.cacheDir = modelsDir;
+
+	try {
+		await pipelineFn!("feature-extraction", `Xenova/${model}`, {
+			progress_callback: (p: Record<string, unknown>) => {
+				writeLine({
+					type: "embedding_progress",
+					model,
+					status: p.status ?? "downloading",
+					progress: typeof p.progress === "number" ? Math.round(p.progress) : 0,
+					file: p.file,
+				});
+			},
+		});
+		writeLine({ type: "embedding_progress", status: "done", model, progress: 100 });
+	} catch (err) {
+		writeLine({
+			type: "embedding_progress",
+			status: "error",
+			model,
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+}
+
 function main(): void {
 	const rl = readline.createInterface({
 		input: process.stdin,
@@ -1339,6 +1429,13 @@ function main(): void {
 
 		if (request.type === "creds_update") {
 			handleCredsUpdate(request);
+			return;
+		}
+
+		if (request.type === "embedding_prefetch") {
+			handleEmbeddingPrefetch(request).catch((err) => {
+				writeLine({ type: "embedding_progress", status: "error", error: String(err) });
+			});
 			return;
 		}
 

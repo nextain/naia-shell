@@ -1156,7 +1156,6 @@ fn spawn_login_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
                     if body.contains("/desktop/auth-complete") && !auth_emitted {
                         if let Some(auth) = parse_auth_complete_from_tab_list(&body) {
                             let _ = app.emit("naia_auth_complete", auth);
-                            auth_emitted = true;
                             // Give the page a moment to render before closing
                             std::thread::sleep(std::time::Duration::from_millis(800));
                             let mut s = LOGIN_CHROME.lock().unwrap();

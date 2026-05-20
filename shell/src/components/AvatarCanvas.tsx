@@ -345,22 +345,16 @@ export function AvatarCanvas() {
 			controls.update();
 		};
 		_cameraActions.reset = () => {
-			// x, z: always use DEFAULT_CAMERA absolute values (user-tuned).
-			// y: offset by model center height so the camera frames the avatar
-			//    correctly regardless of model scale/position.
-			const yBias = lastModelCenter
-				? lastModelCenter.y - DEFAULT_CAMERA.target.y
-				: 0;
-			camera.position.set(
-				DEFAULT_CAMERA.position.x,
-				DEFAULT_CAMERA.position.y + yBias,
-				DEFAULT_CAMERA.position.z,
-			);
-			controls.target.set(
-				DEFAULT_CAMERA.target.x,
-				DEFAULT_CAMERA.target.y + yBias,
-				DEFAULT_CAMERA.target.z,
-			);
+			// Pivot = model center (so rotation always orbits the character).
+			// Camera position = model center + DEFAULT offset vector.
+			const center = lastModelCenter
+				? lastModelCenter.clone()
+				: new Vector3(DEFAULT_CAMERA.target.x, DEFAULT_CAMERA.target.y, DEFAULT_CAMERA.target.z);
+			const offsetX = DEFAULT_CAMERA.position.x - DEFAULT_CAMERA.target.x;
+			const offsetY = DEFAULT_CAMERA.position.y - DEFAULT_CAMERA.target.y;
+			const offsetZ = DEFAULT_CAMERA.position.z - DEFAULT_CAMERA.target.z;
+			controls.target.copy(center);
+			camera.position.set(center.x + offsetX, center.y + offsetY, center.z + offsetZ);
 			camera.lookAt(controls.target);
 			camera.filmOffset = computeFilmOffset(camera, container.clientWidth);
 			camera.updateProjectionMatrix();
@@ -527,15 +521,12 @@ export function AvatarCanvas() {
 
 				vrm = result._vrm;
 
-				// Use modelCenter (bounding-box chest level, computed by VRM loader).
-				// Always save so reset() can restore it; only adjust camera on first load.
+				// Always snap orbit pivot to model center so rotation orbits the character.
 				lastModelCenter = result.modelCenter.clone();
-				if (!savedCam) {
-					const diff = result.modelCenter.clone().sub(controls.target);
-					camera.position.add(diff);
-					controls.target.copy(result.modelCenter);
-					controls.update();
-				}
+				const pivotDiff = result.modelCenter.clone().sub(controls.target);
+				camera.position.add(pivotDiff);
+				controls.target.copy(result.modelCenter);
+				controls.update();
 
 				emotionCtrl = createEmotionController(vrm);
 				mouthCtrl = createMouthController(vrm);

@@ -10,28 +10,11 @@
 mod linux;
 #[cfg(windows)]
 mod windows;
-#[cfg(windows)]
-pub(crate) mod wsl;
 
 #[cfg(unix)]
 pub(crate) use linux::*;
 #[cfg(windows)]
 pub(crate) use windows::*;
-
-use std::process::Child;
-
-/// Result of platform-specific gateway spawn attempt.
-pub(crate) enum GatewaySpawnResult {
-    /// Platform says skip gateway entirely (e.g. Windows Tier 1).
-    Skip { reason: String },
-    /// Platform spawned the gateway itself (e.g. Windows Tier 2 via WSL).
-    Spawned {
-        child: Child,
-        node_host: Option<Child>,
-    },
-    /// Platform has no special handling — use default flow.
-    UseDefault,
-}
 
 // ─── Browser window embedding abstraction ────────────────────────────────────
 

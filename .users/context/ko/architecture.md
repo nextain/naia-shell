@@ -35,6 +35,14 @@ Naia OS 는 현재 **임베드 에이전트** 구조 — hybrid daemon 스택이
 
 OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨**. 아래 historical hybrid framing 은 맥락 보존용 — 현재 design 으로 보면 안됨.
 
+## 최근 변경사항 (2026-05-21)
+
+- **naia-adk 스캐폴드 배포**: `clone_naia_adk` / `delete_naia_adk` Tauri 커맨드 — 새 설정 시 `git clone --depth 1 nextain/naia-adk` 실행. Windows `CREATE_NO_WINDOW` 적용. `AdkSetupScreen` cloning 상태 + i18n 추가.
+- **루트 정리**: repo 루트 `naia-settings/` 제거 (실제 번들 소스인 `shell/public/assets/` 의 중복 사본이었음).
+- **유저 데이터 마이그레이션**: `agent/src/migrate-user-data.ts` — `~/.naia/{sessions,memory,identity}` → `naia-settings/.{sessions,memory,identity}` 단방향 additive 마이그레이션.
+- **로컬 세션**: `agent/src/local-sessions.ts` — `naia-settings/.sessions/` 기반 세션 영속성.
+- **OnboardingWizard**: `memoryEmbeddingProvider` + `memoryLlmProvider` 설정 단계 추가 (none / offline / vllm / ollama / naia).
+
 ## 최근 hardening (2026-05-12 적대적 리뷰 배치)
 
 한 번의 자율 세션에서 7건 closed — 상세는 [`agent-bridges.md > 보안 hardening`](./agent-bridges.md#보안-hardening-256-260--follow-up).

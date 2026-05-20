@@ -1,0 +1,2 @@
+{"type":"REVIEW_STARTED","review_id":"cr-20260519-180000","profile":"code-review","target":"announcements system","timestamp":"2026-05-19T18:00:00Z"}
+{"type":"REVIEW_COMPLETED","review_id":"cr-20260519-180000","rounds_total":1,"final_status":"FOUND_ISSUES_FIXED","timestamp":"2026-05-19T18:30:00Z"}
