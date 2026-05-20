@@ -6,7 +6,8 @@
       "nsis": {
         "displayLanguageSelector": false,
         "languages": ["Korean", "English"],
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "nsis-hooks.nsh"
       }
     }
   },
