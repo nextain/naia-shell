@@ -288,12 +288,11 @@ jobs:
         run: |
           Write-Host "Installing Naia-Shell-x86_64-setup.exe silently..."
           Start-Process -FilePath ".\Naia-Shell-x86_64-setup.exe" -ArgumentList "/S" -Wait
-          # Find installed executable
-          $appExe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter "naia-shell.exe" -ErrorAction SilentlyContinue |
+          # Find installed executable (productName=Naia, installs to $LOCALAPPDATA\Naia or $LOCALAPPDATA\Programs\Naia)
+          $appExe = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter "naia-shell.exe" -ErrorAction SilentlyContinue -Depth 3 |
                     Select-Object -First 1
           if (-not $appExe) {
-            $appExe = Get-ChildItem "C:\Program Files\Naia Shell" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue |
-                      Where-Object { $_.Name -notlike "*uninstall*" } |
+            $appExe = Get-ChildItem "C:\Program Files" -Recurse -Filter "naia-shell.exe" -ErrorAction SilentlyContinue -Depth 3 |
                       Select-Object -First 1
           }
           if (-not $appExe) { Write-Error "Installed exe not found"; exit 1 }

@@ -15,7 +15,10 @@
 			"resources/libvosk.dll": "libvosk.dll",
 			"resources/libgcc_s_seh-1.dll": "libgcc_s_seh-1.dll",
 			"resources/libstdc++-6.dll": "libstdc++-6.dll",
-			"resources/libwinpthread-1.dll": "libwinpthread-1.dll"
+			"resources/libwinpthread-1.dll": "libwinpthread-1.dll",
+			"resources/msvcp140.dll": "msvcp140.dll",
+			"resources/vcruntime140.dll": "vcruntime140.dll",
+			"resources/vcruntime140_1.dll": "vcruntime140_1.dll"
 		},
 		"publisher": "Nextain Inc.",
 		"windows": {
