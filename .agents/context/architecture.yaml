@@ -28,12 +28,13 @@ recent_changes:
     ~/.naia/ → naia-settings/, local session persistence, memory AI provider config
     in OnboardingWizard, root naia-settings/ duplicate removed.
   changes:
-    - "clone_naia_adk / delete_naia_adk Tauri commands — shallow git clone nextain/naia-adk on new start; CREATE_NO_WINDOW on Windows"
+    - "clone_naia_adk / delete_naia_adk Tauri commands — git clone --depth 1 nextain/naia-adk; zip fallback (reqwest+zip) when git absent; CREATE_NO_WINDOW on Windows"
     - "AdkSetupScreen: cloning flow + cloning state + i18n for new-start and delete-reinstall modes"
     - "remove root naia-settings/ (duplicate of shell/public/assets/, now authoritative)"
     - "migrate-user-data.ts: one-shot additive migration ~/.naia/{sessions,memory,identity} → naia-settings/.{sessions,memory,identity}"
     - "local-sessions.ts: local session persistence in naia-settings/.sessions/"
     - "OnboardingWizard: memoryEmbeddingProvider + memoryLlmProvider config (none/offline/vllm/ollama/naia)"
+    - "remove bundled naia-settings assets (vrm-files/bgm-musics/background) — served from naia-adk clone; copy_bundled_assets now scope-extension only"
 
 recent_hardening:
   date: "2026-05-12"

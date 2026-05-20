@@ -37,8 +37,9 @@ OpenClaw 는 #201 이전 gateway daemon 이었으며 **런타임에서 제거됨
 
 ## 최근 변경사항 (2026-05-21)
 
-- **naia-adk 스캐폴드 배포**: `clone_naia_adk` / `delete_naia_adk` Tauri 커맨드 — 새 설정 시 `git clone --depth 1 nextain/naia-adk` 실행. Windows `CREATE_NO_WINDOW` 적용. `AdkSetupScreen` cloning 상태 + i18n 추가.
-- **루트 정리**: repo 루트 `naia-settings/` 제거 (실제 번들 소스인 `shell/public/assets/` 의 중복 사본이었음).
+- **naia-adk 스캐폴드 배포**: `clone_naia_adk` / `delete_naia_adk` Tauri 커맨드 — `git clone --depth 1 nextain/naia-adk`; git 없을 시 zip fallback (reqwest + zip crate); Windows `CREATE_NO_WINDOW` 적용.
+- **루트 정리**: repo 루트 `naia-settings/` 제거.
+- **번들 에셋 제거**: `shell/public/assets/` (vrm-files, bgm-musics, background) 전체 제거 — naia-adk clone으로 제공. `copy_bundled_assets`는 scope extension 전용으로 축소.
 - **유저 데이터 마이그레이션**: `agent/src/migrate-user-data.ts` — `~/.naia/{sessions,memory,identity}` → `naia-settings/.{sessions,memory,identity}` 단방향 additive 마이그레이션.
 - **로컬 세션**: `agent/src/local-sessions.ts` — `naia-settings/.sessions/` 기반 세션 영속성.
 - **OnboardingWizard**: `memoryEmbeddingProvider` + `memoryLlmProvider` 설정 단계 추가 (none / offline / vllm / ollama / naia).
