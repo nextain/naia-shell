@@ -84,8 +84,27 @@ pub(crate) fn find_node_version_manager(home: &str) -> Option<PathBuf> {
         format!("{}/.config/nvm/versions/node", home),
     ];
     for nvm_dir in &nvm_dirs {
-        if let Some(path) = crate::find_highest_node_version(nvm_dir, "bin/node") {
-            return Some(path);
+        if let Ok(entries) = std::fs::read_dir(nvm_dir) {
+            let mut versions: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let major: u32 = name
+                        .trim_start_matches('v')
+                        .split('.')
+                        .next()?
+                        .parse()
+                        .ok()?;
+                    if major >= 22 { Some((major, e.path())) } else { None }
+                })
+                .collect();
+            versions.sort_by(|a, b| b.0.cmp(&a.0));
+            if let Some((_, path)) = versions.first() {
+                let node_bin = path.join("bin/node");
+                if node_bin.exists() {
+                    return Some(node_bin);
+                }
+            }
         }
     }
     None

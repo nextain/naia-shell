@@ -197,14 +197,31 @@ jobs:
           New-Item -ItemType Directory -Force -Path shell/src-tauri/resources
           Copy-Item "node-extracted/node-v22.14.0-win-x64/node.exe" "shell/src-tauri/resources/node.exe"
 
-      - name: Download libvosk for bundling
+      - name: Download libvosk and MinGW DLLs for bundling
         shell: pwsh
         run: |
           $voskUrl = "https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-win64-0.3.45.zip"
           Invoke-WebRequest -Uri $voskUrl -OutFile vosk.zip
           Expand-Archive vosk.zip -DestinationPath vosk-extracted
-          Copy-Item "vosk-extracted/vosk-win64-0.3.45/libvosk.dll" "shell/src-tauri/resources/libvosk.dll"
-          Write-Host "libvosk.dll downloaded: $((Get-Item shell/src-tauri/resources/libvosk.dll).Length) bytes"
+          # Copy all DLLs from vosk package (libvosk.dll + MinGW runtime DLLs)
+          Get-ChildItem "vosk-extracted/vosk-win64-0.3.45/*.dll" | ForEach-Object {
+            Copy-Item $_.FullName "shell/src-tauri/resources/$($_.Name)"
+            Write-Host "$($_.Name) copied: $($_.Length) bytes"
+          }
+
+      - name: Copy VC++ runtime DLLs from System32
+        shell: pwsh
+        run: |
+          foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+            $src = "$env:SystemRoot\System32\$dll"
+            if (Test-Path $src) {
+              Copy-Item $src "shell/src-tauri/resources/$dll"
+              Write-Host "$dll copied: $((Get-Item shell/src-tauri/resources/$dll).Length) bytes"
+            } else {
+              Write-Error "$dll not found in $env:SystemRoot\System32"
+              exit 1
+            }
+          }
 
       - name: Install frontend dependencies
         working-directory: shell
