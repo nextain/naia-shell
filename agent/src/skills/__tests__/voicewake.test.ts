@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	type MockGateway,
@@ -11,8 +14,12 @@ describe("skill_voicewake", () => {
 	let mock: MockGateway;
 	let client: GatewayClient;
 	let skill: SkillDefinition;
+	let tempDir: string;
 
 	beforeAll(async () => {
+		tempDir = mkdtempSync(join(tmpdir(), "naia-voicewake-"));
+		process.env.NAIA_VOICEWAKE_PATH = join(tempDir, "voicewake.json");
+
 		mock = createMockGateway(
 			(method, params, respond) => {
 				switch (method) {
@@ -43,12 +50,14 @@ describe("skill_voicewake", () => {
 	afterAll(() => {
 		client.close();
 		mock.close();
+		process.env.NAIA_VOICEWAKE_PATH = undefined;
+		rmSync(tempDir, { recursive: true, force: true });
 	});
 
 	it("has correct metadata", () => {
 		expect(skill.name).toBe("skill_voicewake");
 		expect(skill.tier).toBe(0);
-		expect(skill.requiresGateway).toBe(true);
+		expect(skill.requiresGateway).toBe(false);
 		expect(skill.source).toBe("built-in");
 	});
 
@@ -78,11 +87,12 @@ describe("skill_voicewake", () => {
 		expect(result.error).toContain("triggers");
 	});
 
-	it("returns error without gateway", async () => {
+	it("falls back to local defaults without gateway", async () => {
 		const result = await skill.execute({ action: "get" }, {});
 
-		expect(result.success).toBe(false);
-		expect(result.error).toContain("Gateway not connected");
+		expect(result.success).toBe(true);
+		const parsed = JSON.parse(result.output);
+		expect(parsed.triggers).toEqual(["낸", "naia"]);
 	});
 
 	it("returns error for unknown action", async () => {

@@ -11,7 +11,7 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
-const YT_BASE = "http://localhost:18791";
+const YT_BASE = "http://127.0.0.1:18791";
 
 
 interface YtVideo {
@@ -507,10 +507,16 @@ export function BgmPlayer({ naia }: Props) {
 			setSearchResults(results);
 		} catch (err) {
 			const msg = String(err);
-			Logger.error("BgmPlayer", "yt search failed", { error: msg });
-			// Connection refused → agent not running
-			if (msg.includes("Failed to fetch") || msg.includes("ECONNREFUSED") || msg.includes("fetch")) {
-				setSearchError("에이전트 서버에 연결할 수 없습니다 (localhost:18791). 앱을 재시작해 보세요.");
+			const lower = msg.toLowerCase();
+			Logger.warn("BgmPlayer", "yt search unavailable", { error: msg });
+			// Connection refused / WebKit "Load failed" → local agent helper not reachable
+			if (
+				lower.includes("failed to fetch") ||
+				lower.includes("load failed") ||
+				lower.includes("econnrefused") ||
+				lower.includes("fetch")
+			) {
+				setSearchError("에이전트 서버에 연결할 수 없습니다 (127.0.0.1:18791). 앱을 재시작해 보세요.");
 			} else {
 				setSearchError(`검색 오류: ${msg}`);
 			}

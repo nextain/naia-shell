@@ -122,13 +122,13 @@ function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 	const skipAvatarWait = showAdkSetup || showOnboarding;
 
 	useEffect(() => {
-		if (skipAvatarWait) return;
+		if (skipAvatarWait || avatarLoaded) return;
 		const t = setTimeout(() => {
 			Logger.warn("App", "useAppReady: 5 s timeout — forcing splash dismiss");
 			setTimedOut(true);
 		}, 5000);
 		return () => clearTimeout(t);
-	}, [skipAvatarWait]);
+	}, [skipAvatarWait, avatarLoaded]);
 
 	if (skipAvatarWait) return true;
 	return avatarLoaded || timedOut;

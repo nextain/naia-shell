@@ -10,6 +10,7 @@ import { createGatewayEventHandler } from "./gateway/event-handler.js";
 import { NativeCommandExecutor } from "./gateway/native-executor.js";
 import { defaultPathResolver } from "./gateway/path-resolver.js";
 import {
+	type ToolResult,
 	executeTool,
 	getAllTools,
 	skillRegistry,
@@ -310,6 +311,18 @@ function applyNotifyWebhookEnv(opts: {
 			delete process.env[envKey];
 		}
 	}
+}
+
+function canAutoRunDirectTool(
+	toolName: string,
+	args: Record<string, unknown>,
+): boolean {
+	const action = args.action;
+	return (
+		toolName === "skill_voicewake" ||
+		(toolName === "skill_tts" && action === "preview") ||
+		(toolName === "skill_config" && action === "models")
+	);
 }
 
 export function handleApprovalResponse(resp: ApprovalResponse): void {
@@ -828,7 +841,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 				);
 				jobTracker.start(jobId);
 
-				let result;
+				let result: ToolResult;
 				try {
 					result = await executeToolWithRecovery(call.name, call.args);
 					if (result.success) {
@@ -1145,7 +1158,7 @@ export async function handleToolRequest(req: ToolRequest): Promise<void> {
 		// bypassing the LLM tool-call loop where the same gate exists at
 		// index.ts:759/834. Without it, a Tier 2/3 tool name in the inbound
 		// ToolRequest would execute with no user confirmation.
-		if (needsApproval(toolName)) {
+		if (!canAutoRunDirectTool(toolName, args) && needsApproval(toolName)) {
 			const decision = await waitForApproval(requestId, toolCallId, toolName, args);
 			if (decision === "reject") {
 				const rejectOutput = "User rejected tool execution";
