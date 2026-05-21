@@ -25,7 +25,9 @@
 		"dialog:default",
 		"dialog:allow-open",
 		"deep-link:default",
+		"process:default",
 		"store:default",
-		"stt:default"
+		"stt:default",
+		"updater:default"
 	]
 }

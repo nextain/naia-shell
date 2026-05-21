@@ -272,104 +272,69 @@ fn pty_execute_sync_blocking(
     }
 
     let timeout = timeout_secs.unwrap_or(60);
-
-    let pty_system = NativePtySystem::default();
-    let size = PtySize {
-        rows: 24,
-        cols: 80,
-        pixel_width: 0,
-        pixel_height: 0,
-    };
-    let pair = pty_system
-        .openpty(size)
-        .map_err(|e| format!("openpty failed: {e}"))?;
-
-    let shell = if cfg!(target_os = "windows") {
-        "cmd"
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.arg("/C").arg(&command);
+        cmd
     } else {
-        "bash"
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg("-lc").arg(&command);
+        cmd
     };
-    let mut cmd = CommandBuilder::new(shell);
-    cmd.cwd(&dir);
+    cmd.current_dir(&dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
 
-    let mut child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| format!("spawn failed: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
 
-    let mut writer = pair
-        .master
-        .take_writer()
-        .map_err(|e| format!("take_writer failed: {e}"))?;
-
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| format!("clone_reader failed: {e}"))?;
-
-    let exit_marker = format!(
-        "\n__NAIA_EXIT_{}__\n",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    );
-
-    let full_command = format!("{}\necho '{}'\n", command, exit_marker.trim());
-
-    writer
-        .write_all(full_command.as_bytes())
-        .map_err(|e| format!("write failed: {e}"))?;
-    writer.flush().map_err(|e| format!("flush failed: {e}"))?;
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(ref mut stream) = stdout {
+            let _ = stream.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(ref mut stream) = stderr {
+            let _ = stream.read_to_end(&mut buf);
+        }
+        buf
+    });
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout);
-    let mut output_buf = Vec::new();
-    let mut tmp = [0u8; 4096];
-    let mut exit_code = -1i32;
-
-    loop {
-        if std::time::Instant::now() > deadline {
-            let _ = child.kill();
-            let output = String::from_utf8_lossy(&output_buf).to_string();
-            return Ok(PtyExecResult {
-                success: false,
-                output,
-                exit_code: -1,
-            });
-        }
-
-        match reader.read(&mut tmp) {
-            Ok(0) => break,
-            Ok(n) => {
-                output_buf.extend_from_slice(&tmp[..n]);
-                let s = String::from_utf8_lossy(&output_buf);
-                if s.contains(&exit_marker) {
-                    break;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let mut output = stdout_handle.join().unwrap_or_default();
+                    let stderr = stderr_handle.join().unwrap_or_default();
+                    output.extend_from_slice(&stderr);
+                    return Ok(PtyExecResult {
+                        success: false,
+                        output: String::from_utf8_lossy(&output).to_string(),
+                        exit_code: -1,
+                    });
                 }
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            Err(_) => break,
+            Err(e) => {
+                let _ = child.kill();
+                return Err(format!("wait failed: {e}"));
+            }
         }
-    }
+    };
 
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            exit_code = status.exit_code() as i32;
-        }
-        Ok(None) => {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        Err(_) => {
-            let _ = child.kill();
-        }
-    }
-
-    let output = String::from_utf8_lossy(&output_buf).to_string();
-    let cleaned = output
-        .lines()
-        .filter(|line| !line.contains(&exit_marker) && !line.contains("echo"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut output = stdout_handle.join().unwrap_or_default();
+    let stderr = stderr_handle.join().unwrap_or_default();
+    output.extend_from_slice(&stderr);
+    let cleaned = String::from_utf8_lossy(&output).to_string();
+    let exit_code = status.code().unwrap_or(-1);
 
     Ok(PtyExecResult {
         success: exit_code == 0,

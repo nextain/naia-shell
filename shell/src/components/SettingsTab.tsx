@@ -889,7 +889,6 @@ export function SettingsTab() {
 					toolName: "skill_config",
 					args: { action: "models" },
 					requestId: `fetch-models-${Date.now()}`,
-					gatewayUrl: gatewayUrl.trim() || DEFAULT_GATEWAY_URL,
 				});
 
 				if (res.success && res.output) {
@@ -955,7 +954,7 @@ export function SettingsTab() {
 			}
 		}
 		fetchModels();
-	}, [gatewayUrl, gatewayToken]);
+	}, []);
 
 	useEffect(() => {
 		if (provider !== "ollama") return;
@@ -1187,8 +1186,30 @@ export function SettingsTab() {
 
 	const startLabLogin = async () => {
 		setLabWaiting(true);
-		setTimeout(() => setLabWaiting(false), 60_000);
+		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
 		try {
+			const embeddedParams = new URLSearchParams({
+				redirect: "desktop",
+				source: "embedded",
+			});
+			const embeddedUrl = `${getNaiaWebBaseUrl()}/${locale}/login?${embeddedParams.toString()}`;
+			Logger.info("SettingsTab", "[lab-login] opening embedded browser");
+			const embeddedOpened = await invoke("browser_open_login", {
+				url: embeddedUrl,
+			}).then(
+				() => true,
+				(e: unknown) => {
+					Logger.warn("SettingsTab", "[lab-login] embedded browser failed", {
+						error: String(e),
+					});
+					return false;
+				},
+			);
+			if (embeddedOpened) {
+				labBrowserVisibleRef.current = true;
+				return;
+			}
+
 			const state = await invoke<string>("generate_oauth_state").catch(() => "");
 			const params = new URLSearchParams({
 				redirect: "desktop",
@@ -1202,12 +1223,14 @@ export function SettingsTab() {
 				Logger.error("SettingsTab", "[lab-login] openUrl failed", {
 					error: String(e),
 				});
+				window.clearTimeout(timeout);
 				setLabWaiting(false);
 			});
 		} catch (e: unknown) {
 			Logger.error("SettingsTab", "[lab-login] unexpected error", {
 				error: String(e),
 			});
+			window.clearTimeout(timeout);
 			setLabWaiting(false);
 		}
 	};
@@ -1238,14 +1261,12 @@ export function SettingsTab() {
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	const fetchVoiceWake = useCallback(async () => {
-		const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
 		setVoiceWakeLoading(true);
 		try {
 			const result = await directToolCall({
 				toolName: "skill_voicewake",
 				args: { action: "get" },
 				requestId: `vw-get-${Date.now()}`,
-				gatewayUrl: effectiveGatewayUrl,
 			});
 			if (result.success && result.output) {
 				const data = JSON.parse(result.output);
@@ -1258,7 +1279,7 @@ export function SettingsTab() {
 		} finally {
 			setVoiceWakeLoading(false);
 		}
-	}, [gatewayUrl, gatewayToken]);
+	}, []);
 
 	// Discord integration — unverified, hidden until stabilized
 	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
@@ -1684,12 +1705,10 @@ export function SettingsTab() {
 						existing?.openaiTtsApiKey ||
 						undefined,
 				};
-				const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
 				const result = await directToolCall({
 					toolName: "skill_tts",
 					args: previewArgs,
 					requestId: `tts-preview-${Date.now()}`,
-					gatewayUrl: effectiveGatewayUrl,
 				});
 				if (!result.success || !result.output) {
 					throw new Error(
@@ -1722,12 +1741,10 @@ export function SettingsTab() {
 				if (selectedProvider === "nextain" && naiaKey) {
 					previewArgs.naiaKey = naiaKey;
 				}
-				const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
 				const result = await directToolCall({
 					toolName: "skill_tts",
 					args: previewArgs,
 					requestId: `tts-preview-${Date.now()}`,
-					gatewayUrl: effectiveGatewayUrl,
 				});
 				if (!result.success || !result.output) {
 					const providerName =
@@ -1767,13 +1784,11 @@ export function SettingsTab() {
 	}
 
 	async function handleVoiceWakeSave() {
-		const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
 		try {
 			await directToolCall({
 				toolName: "skill_voicewake",
 				args: { action: "set", triggers: voiceWakeTriggers },
 				requestId: `vw-set-${Date.now()}`,
-				gatewayUrl: effectiveGatewayUrl,
 			});
 			setVoiceWakeSaved(true);
 			setTimeout(() => setVoiceWakeSaved(false), 2000);

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
@@ -884,96 +884,4 @@ pub fn workspace_get_git_info(path: String) -> Result<GitInfo, String> {
     Ok(GitInfo {
         branch: get_branch(&safe_path),
     })
-}
-
-#[tauri::command]
-pub fn workspace_get_pty_agents(pids: Vec<u32>) -> Result<HashMap<u32, String>, String> {
-    if pids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let mut system = sysinfo::System::new();
-    system.refresh_processes_specifics(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-        sysinfo::ProcessRefreshKind::nothing()
-            .with_cmd(sysinfo::UpdateKind::Always)
-            .with_exe(sysinfo::UpdateKind::OnlyIfNotSet)
-            .without_tasks(),
-    );
-
-    let mut children_by_parent: HashMap<u32, Vec<u32>> = HashMap::new();
-    let mut agent_by_pid: HashMap<u32, String> = HashMap::new();
-
-    for (pid, process) in system.processes() {
-        let pid_u32 = pid.as_u32();
-        if let Some(parent) = process.parent() {
-            children_by_parent
-                .entry(parent.as_u32())
-                .or_default()
-                .push(pid_u32);
-        }
-        if let Some(agent) = detect_agent_process(process) {
-            agent_by_pid.insert(pid_u32, agent.to_string());
-        }
-    }
-
-    for children in children_by_parent.values_mut() {
-        children.sort_unstable();
-    }
-
-    let mut result = HashMap::new();
-    for pid in pids {
-        if let Some(agent) = find_agent_descendant(pid, &children_by_parent, &agent_by_pid) {
-            result.insert(pid, agent);
-        }
-    }
-    Ok(result)
-}
-
-fn find_agent_descendant(
-    root_pid: u32,
-    children_by_parent: &HashMap<u32, Vec<u32>>,
-    agent_by_pid: &HashMap<u32, String>,
-) -> Option<String> {
-    if let Some(agent) = agent_by_pid.get(&root_pid) {
-        return Some(agent.clone());
-    }
-
-    let mut seen = HashSet::new();
-    let mut stack = children_by_parent
-        .get(&root_pid)
-        .cloned()
-        .unwrap_or_default();
-    while let Some(pid) = stack.pop() {
-        if !seen.insert(pid) {
-            continue;
-        }
-        if let Some(agent) = agent_by_pid.get(&pid) {
-            return Some(agent.clone());
-        }
-        if let Some(children) = children_by_parent.get(&pid) {
-            stack.extend(children.iter().copied());
-        }
-    }
-    None
-}
-
-fn detect_agent_process(process: &sysinfo::Process) -> Option<&'static str> {
-    let mut haystack = process.name().to_string_lossy().to_ascii_lowercase();
-    if let Some(exe) = process.exe() {
-        haystack.push(' ');
-        haystack.push_str(&exe.to_string_lossy().to_ascii_lowercase());
-    }
-    for arg in process.cmd() {
-        haystack.push(' ');
-        haystack.push_str(&arg.to_string_lossy().to_ascii_lowercase());
-    }
-
-    for agent in ["claude", "opencode", "codex", "gemini"] {
-        if haystack.contains(agent) {
-            return Some(agent);
-        }
-    }
-    None
 }

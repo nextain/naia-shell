@@ -25,6 +25,13 @@ pub(crate) fn home_dir() -> String {
         .unwrap_or_default()
 }
 
+fn is_valid_gateway_key(value: &str) -> bool {
+    value.starts_with("gw-")
+        && value.len() <= 256
+        && value
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+}
 
 /// Process a deep-link URL (naia://auth?key=xxx). Extracted as a function
 /// so both the Tauri deep-link plugin callback and the Windows file watcher
@@ -68,6 +75,8 @@ pub(crate) fn process_deep_link_url(
             _ => {}
         }
     }
+    let has_direct_gateway_key = key.as_deref().is_some_and(is_valid_gateway_key)
+        || code.as_deref().is_some_and(is_valid_gateway_key);
     if let Some(state_mutex) = oauth_state {
         let expected = lock_or_recover(state_mutex, "oauth_state(deep_link)").clone();
         if let Some(ref expected_val) = expected {
@@ -78,6 +87,10 @@ pub(crate) fn process_deep_link_url(
                 Some(_) => {
                     log_both("[Naia] Deep link rejected: state mismatch");
                     return;
+                }
+                None if has_direct_gateway_key => {
+                    *lock_or_recover(state_mutex, "oauth_state(clear_direct_key)") = None;
+                    log_both("[Naia] Deep link accepted without state: direct gateway key");
                 }
                 None => {
                     log_both("[Naia] Deep link rejected: missing state parameter");
@@ -105,11 +118,7 @@ pub(crate) fn process_deep_link_url(
         None
     };
     if let Some(naia_key) = resolved_key {
-        let is_valid = naia_key.starts_with("gw-")
-            && naia_key.len() <= 256
-            && naia_key
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+        let is_valid = is_valid_gateway_key(&naia_key);
         if is_valid {
             let payload =
                 serde_json::json!({ "naiaKey": naia_key, "naiaUserId": validated_user_id });
@@ -1842,46 +1851,14 @@ fn open_log_in_editor(path: String) -> Result<(), String> {
 }
 
 /// Restart the Naia Gateway.
-/// Kills existing gateway + node host, then respawns both.
-/// Call this after writing gateway config to ensure the gateway reads fresh config.
+///
+/// OpenClaw Gateway was removed in #201; naia-agent now handles tools directly
+/// over stdio. Keep this command as a compatibility no-op for existing frontend
+/// settings flows that still call `restart_gateway` after saving config.
 #[tauri::command]
-async fn restart_gateway(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    log_verbose("[Naia] restart_gateway requested");
-    // spawn_gateway calls check_gateway_health_sync which uses reqwest::blocking::Client.
-    // Dropping that client's internal runtime inside an async context panics with
-    // "Cannot drop a runtime in a context where blocking is not allowed".
-    // block_in_place signals Tokio that this thread may block, preventing the panic.
-    tokio::task::block_in_place(|| {
-        let guard_result = state.gateway.lock();
-        if let Ok(mut guard) = guard_result {
-            // Kill existing processes
-            if let Some(mut old) = guard.take() {
-                if let Some(ref mut nh) = old.node_host {
-                    let _ = nh.kill();
-                }
-                if old.we_spawned {
-                    let _ = old.child.kill();
-                }
-                // Give processes time to exit cleanly
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-            // Respawn
-            match spawn_gateway() {
-                Ok(process) => {
-                    let managed = process.we_spawned;
-                    *guard = Some(process);
-                    log_both(&format!("[Naia] Gateway restarted (managed={})", managed));
-                    Ok(true)
-                }
-                Err(e) => {
-                    log_both(&format!("[Naia] Gateway restart failed: {}", e));
-                    Err(e)
-                }
-            }
-        } else {
-            Err("Failed to acquire gateway lock".to_string())
-        }
-    })
+async fn restart_gateway(_state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    log_verbose("[Naia] restart_gateway skipped: Gateway removed; naia-agent handles tools directly");
+    Ok(false)
 }
 
 /// Generate a random state token for OAuth deep link CSRF protection.
@@ -3189,7 +3166,19 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_focus();
             }
-            let _ = args; // deep link URLs are handled by on_open_url
+            let oauth_state = app
+                .try_state::<AppState>()
+                .map(|state| state.oauth_state.clone());
+            for arg in args {
+                if arg.starts_with("naia://") {
+                    process_deep_link_url(
+                        &arg,
+                        app,
+                        oauth_state.as_ref(),
+                        "single-instance",
+                    );
+                }
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -3342,11 +3331,15 @@ pub fn run() {
             // Migrate legacy vosk-models → stt-models
             stt_models::migrate_legacy_vosk_models(&app_handle);
 
-            // Register deep-link handler for naia:// URI scheme
-            #[cfg(desktop)]
+            // Register deep-link handler for naia:// URI scheme.
+            // macOS schemes are declared in the app bundle Info.plist; runtime
+            // registration is unsupported by tauri-plugin-deep-link.
+            #[cfg(all(desktop, not(any(target_os = "macos", target_os = "ios"))))]
             app.deep_link().register_all().unwrap_or_else(|e| {
                 log_both(&format!("[Naia] Deep link registration failed: {}", e));
             });
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            log_verbose("[Naia] Deep link dynamic registration skipped on Apple platforms");
 
             let deep_link_handle = app_handle.clone();
             let deep_link_state: tauri::State<'_, AppState> = app.state();
@@ -3354,147 +3347,12 @@ pub fn run() {
             app.deep_link().on_open_url(move |event| {
                 let urls = event.urls();
                 for url in urls {
-                    let url_str = url.as_str();
-                    // Redact query params (may contain lab key)
-                    let redacted = url_str.split('?').next().unwrap_or(url_str);
-                    log_both(&format!("[Naia] Deep link received: {}?[REDACTED]", redacted));
-                    // Parse naia://auth?key=xxx or naia://auth?code=xxx
-                    if let Ok(parsed) = url::Url::parse(url_str) {
-                        if parsed.host_str() == Some("auth") || parsed.path() == "auth" || parsed.path() == "/auth" {
-                            let mut key = None;
-                            let mut code = None;
-                            let mut user_id = None;
-                            let mut incoming_state = None;
-                            let mut channel = None;
-                            let mut discord_user_id = None;
-                            let mut discord_channel_id = None;
-                            let mut discord_target = None;
-                            for (k, v) in parsed.query_pairs() {
-                                match k.as_ref() {
-                                    "key" => key = Some(v.to_string()),
-                                    "code" => code = Some(v.to_string()),
-                                    "user_id" => user_id = Some(v.to_string()),
-                                    "state" => incoming_state = Some(v.to_string()),
-                                    "channel" => channel = Some(v.to_string()),
-                                    "discord_user_id" | "discordUserId" => discord_user_id = Some(v.to_string()),
-                                    "discord_channel_id" | "discordChannelId" => {
-                                        discord_channel_id = Some(v.to_string())
-                                    }
-                                    "discord_target" | "discordTarget" => {
-                                        discord_target = Some(v.to_string())
-                                    }
-                                    _ => {}
-                                }
-                            }
-
-                            // Verify OAuth state to prevent CSRF (CWE-352).
-                            // Always require state when one was set; reject if
-                            // incoming link omits it entirely to prevent crafted
-                            // deep links from bypassing the check.
-                            let expected_state = lock_or_recover(
-                                &oauth_state_ref,
-                                "state.oauth_state(deep_link_expected)",
-                            )
-                            .clone();
-                            match (&expected_state, &incoming_state) {
-                                (Some(expected), Some(incoming)) if incoming == expected => {
-                                    // State matches — clear it (single-use)
-                                    *lock_or_recover(
-                                        &oauth_state_ref,
-                                        "state.oauth_state(deep_link_clear)",
-                                    ) = None;
-                                }
-                                (Some(_), _) => {
-                                    // Expected state set but incoming is missing or wrong
-                                    log_both("[Naia] Deep link rejected: state mismatch or missing");
-                                    continue;
-                                }
-                                (None, _) => {
-                                    // No expected state — this path is only valid when
-                                    // the deep link carries a direct key (manual entry).
-                                    // Require the key parameter to be present.
-                                    if key.is_none() {
-                                        log_both("[Naia] Deep link rejected: no state and no key");
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            // Validate user_id if present: alphanumeric, hyphens, underscores, dots, max 256 chars
-                            let validated_user_id = user_id.clone().filter(|uid| {
-                                uid.len() <= 256
-                                    && uid.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '@')
-                            });
-                            let resolved_key = if key.is_some() {
-                                key
-                            } else if let Some(code_val) = code {
-                                // Some OAuth providers return ?code=. Only accept it when it is already a gateway API key.
-                                if code_val.starts_with("gw-") {
-                                    Some(code_val)
-                                } else {
-                                    log_both("[Naia] Deep link rejected: code is not a gateway API key (expected gw-*)");
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-
-                            if let Some(naia_key) = resolved_key {
-                                // Validate key format: gw- prefix + [A-Za-z0-9_-], max 256 chars
-                                let is_valid = naia_key.starts_with("gw-")
-                                    && naia_key.len() <= 256
-                                    && naia_key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_');
-                                if !is_valid {
-                                    log_both("[Naia] Deep link rejected: invalid key format");
-                                    continue;
-                                }
-                                let payload = serde_json::json!({
-                                    "naiaKey": naia_key,
-                                    "naiaUserId": validated_user_id,
-                                });
-                                let _ = deep_link_handle.emit("naia_auth_complete", payload);
-                                log_both("[Naia] Naia auth complete — key received via deep link");
-                            }
-
-                            let is_discord_flow = matches!(channel.as_deref(), Some("discord"))
-                                || discord_user_id.is_some()
-                                || discord_channel_id.is_some()
-                                || discord_target.is_some();
-                            if is_discord_flow {
-                                let validated_discord_user_id = discord_user_id
-                                    .filter(|uid| is_valid_discord_snowflake(uid));
-                                let validated_discord_channel_id = discord_channel_id
-                                    .filter(|cid| is_valid_discord_snowflake(cid));
-                                let normalized_target = discord_target
-                                    .and_then(|target| {
-                                        let t = target.trim().to_string();
-                                        if t.starts_with("user:") || t.starts_with("channel:") {
-                                            Some(t)
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .or_else(|| {
-                                        validated_discord_user_id
-                                            .as_ref()
-                                            .map(|uid| format!("user:{}", uid))
-                                    })
-                                    .or_else(|| {
-                                        validated_discord_channel_id
-                                            .as_ref()
-                                            .map(|cid| format!("channel:{}", cid))
-                                    });
-
-                                let payload = serde_json::json!({
-                                    "discordUserId": validated_discord_user_id,
-                                    "discordChannelId": validated_discord_channel_id,
-                                    "discordTarget": normalized_target,
-                                });
-                                let _ = deep_link_handle.emit("discord_auth_complete", payload);
-                                log_both("[Naia] Discord auth complete — deep link payload received");
-                            }
-                        }
-                    }
+                    process_deep_link_url(
+                        url.as_str(),
+                        &deep_link_handle,
+                        Some(&oauth_state_ref),
+                        "plugin",
+                    );
                 }
             });
 
@@ -3612,6 +3470,7 @@ pub fn run() {
 
             // Clean up orphan processes from previous sessions
             platform::cleanup_orphan_processes();
+            platform::kill_stale_gateway();
 
             // Spawn Gateway first (Agent connects to it via WebSocket)
             let (gateway_running, gateway_managed) = match spawn_gateway() {
