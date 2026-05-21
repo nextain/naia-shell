@@ -5570,6 +5570,7 @@ body.resizing-row {
 	gap: 3px;
 	padding: 5px 8px;
 	align-self: flex-start;
+	margin: 4px 0 0 4px;
 	pointer-events: auto;
 	background: rgba(8, 14, 28, 0.52);
 	border-radius: 8px;
