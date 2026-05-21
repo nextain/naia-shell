@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { t } from "../lib/i18n";
 import type { PendingApproval } from "../stores/chat";
 import { usePanelStore } from "../stores/panel";
@@ -21,7 +22,7 @@ export function PermissionModal({ pending, onDecision }: Props) {
 		return () => popModal();
 	}, [pushModal, popModal]);
 
-	return (
+	return createPortal(
 		<div className="permission-overlay">
 			<div className="permission-modal">
 				<h3>{t("permission.title")}</h3>
@@ -61,6 +62,7 @@ export function PermissionModal({ pending, onDecision }: Props) {
 					</button>
 				</div>
 			</div>
-		</div>
+		</div>,
+		document.body,
 	);
 }

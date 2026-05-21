@@ -2955,6 +2955,9 @@ body.resizing-row {
 	padding: 20px;
 	width: 340px;
 	max-width: 90vw;
+	max-height: 85vh;
+	display: flex;
+	flex-direction: column;
 	font-family: var(--mono);
 }
 
@@ -2962,6 +2965,7 @@ body.resizing-row {
 	font-size: 14px;
 	color: var(--latte);
 	margin-bottom: 12px;
+	flex-shrink: 0;
 }
 
 .permission-info {
@@ -2969,6 +2973,7 @@ body.resizing-row {
 	align-items: center;
 	gap: 8px;
 	margin-bottom: 10px;
+	flex-shrink: 0;
 }
 
 .permission-tier-badge {
@@ -2999,6 +3004,9 @@ body.resizing-row {
 
 .permission-args {
 	margin-bottom: 12px;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
 }
 
 .permission-args pre {
@@ -3011,13 +3019,14 @@ body.resizing-row {
 	padding: 8px;
 	white-space: pre-wrap;
 	word-break: break-all;
-	max-height: 120px;
+	max-height: 100%;
 	overflow-y: auto;
 }
 
 .permission-actions {
 	display: flex;
 	gap: 6px;
+	flex-shrink: 0;
 }
 
 .permission-btn-once,

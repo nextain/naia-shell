@@ -217,6 +217,9 @@ export function createClaudeCodeCliProvider(model: string): LLMProvider {
 			const child = spawn(spawnCmd, spawnArgs, {
 				stdio: ["pipe", "pipe", "pipe"],
 				env,
+				// On Windows, .cmd batch files (claude.cmd) require shell:true
+				// because CreateProcess does not resolve .cmd without cmd.exe.
+				shell: process.platform === "win32",
 			});
 
 			let stderr = "";
