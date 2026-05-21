@@ -259,6 +259,23 @@ jobs:
             if [ $total -gt 240 ]; then rm -f "$f"; fi
           done
 
+      - name: Resolve pnpm junctions for Windows bundling
+        shell: pwsh
+        run: |
+          $base = Resolve-Path "agent/node_modules"
+          $junctions = Get-ChildItem -LiteralPath $base -Directory | Where-Object { $_.LinkType -eq 'Junction' }
+          foreach ($j in $junctions) {
+            $targetPath = if ($j.Target -is [array]) { $j.Target[0] } else { $j.Target }
+            if (-not (Test-Path $targetPath)) { Write-Host "SKIP (target missing): $($j.Name)"; continue }
+            $name = $j.Name
+            $parent = $j.Parent.FullName
+            $dest = Join-Path $parent $name
+            Remove-Item -LiteralPath $j.FullName -Force -Recurse
+            robocopy $targetPath $dest /E /R:0 /W:0 /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            Write-Host "Resolved junction: $name"
+          }
+          Write-Host "All junctions resolved."
+
       - name: Build Tauri app (Windows)
         working-directory: shell
         env:

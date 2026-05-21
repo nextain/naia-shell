@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+declare const __BUILD_ID__: string;
+
 interface SplashScreenProps {
 	onDone: () => void;
 	/** Gate: splash won't begin fading until this is true. Prevents premature dismiss. */
@@ -141,6 +143,20 @@ export function SplashScreen({
 					<span className="splash-dot" />
 				</div>
 			</div>
+			<span
+				style={{
+					position: "absolute",
+					bottom: 8,
+					right: 12,
+					fontSize: 10,
+					color: "rgba(34,211,238,0.35)",
+					fontFamily: "monospace",
+					pointerEvents: "none",
+					userSelect: "none",
+				}}
+			>
+				{__BUILD_ID__}
+			</span>
 		</div>
 	);
 }
