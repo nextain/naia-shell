@@ -6835,6 +6835,10 @@ body.resizing-row {
 	pointer-events: none;
 }
 
+.content-panel__slot--active .browser-panel__overlay--error {
+	pointer-events: auto;
+}
+
 /* Text inside overlay (inline — no absolute positioning) */
 .browser-panel__overlay-text {
 	color: var(--cream-dim);

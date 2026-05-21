@@ -6,15 +6,19 @@
 //! Browser embedding uses `PlatformWindowManager` trait — each platform implements
 //! window discovery, embedding, focus, and visibility using native APIs.
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub(crate) mod wsl;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub(crate) use linux::*;
+#[cfg(target_os = "macos")]
+pub(crate) use macos::*;
 #[cfg(windows)]
 pub(crate) use windows::*;
 
@@ -187,8 +191,9 @@ pub fn window_manager() -> &'static dyn PlatformWindowManager {
         static INSTANCE: windows::Win32WindowManager = windows::Win32WindowManager;
         &INSTANCE
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(target_os = "macos")]
     {
-        compile_error!("Unsupported platform — implement PlatformWindowManager for this OS");
+        static INSTANCE: macos::MacWindowManager = macos::MacWindowManager;
+        &INSTANCE
     }
 }
