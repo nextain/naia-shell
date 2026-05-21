@@ -15,8 +15,12 @@ export const MODEL_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
 	["claude-3-7-sonnet-20250219", 200_000],
 
 	// Google Gemini
-	["gemini-3-pro-preview", 1_000_000],
+	// Gemini 3.x — global endpoint (Gemini Enterprise Agent Platform)
+	["gemini-3.5-flash", 1_000_000],
+	["gemini-3.1-pro-preview", 1_000_000],
+	["gemini-3.1-flash-lite-preview", 1_000_000],
 	["gemini-3-flash-preview", 1_000_000],
+	// Gemini 2.5
 	["gemini-2.5-flash", 1_000_000],
 	["gemini-2.5-flash-lite-preview-06-17", 1_000_000],
 	["gemini-2.5-pro", 1_000_000],

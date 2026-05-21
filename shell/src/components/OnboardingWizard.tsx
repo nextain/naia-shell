@@ -2,7 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
-import { getAdkPath, listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
+import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeNaiaConfig } from "../lib/adk-store";
+import { syncToGateway } from "../lib/gateway-sync";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { sendAuthUpdate } from "../lib/chat-service";
 import { loadConfig, saveConfig } from "../lib/config";
@@ -11,6 +12,7 @@ import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 
 type Step =
+	| "welcome"
 	| "agentName"
 	| "userName"
 	| "speechStyle"
@@ -19,16 +21,8 @@ type Step =
 	| "provider"
 	| "complete";
 
-// Steps shown when Naia key is already set (skip provider)
-const STEPS_WITH_NAIA: Step[] = [
-	"agentName",
-	"userName",
-	"speechStyle",
-	"character",
-	"background",
-	"complete",
-];
 const STEPS_WITHOUT_NAIA: Step[] = [
+	"welcome",
 	"agentName",
 	"userName",
 	"speechStyle",
@@ -49,6 +43,8 @@ function stepChat(step: Step, name: string, user: string): string {
 	const n = name || "나이아";
 	const u = user ? `${user}님` : "";
 	switch (step) {
+		case "welcome":
+			return "안녕하세요! 시작하기 전에 잠깐 확인해 주세요 😊";
 		case "agentName":
 			return "안녕하세요! 저는 나이아예요. 제 이름을 지어주세요! ✨";
 		case "userName":
@@ -89,6 +85,8 @@ interface OnboardingSnapshot {
 	selectedBg: string;
 	apiKey: string;
 	naiaLoginDone: boolean;
+	memoryEmbeddingProvider: "none" | "offline" | "vllm" | "ollama" | "naia";
+	memoryLlmProvider: "none" | "naia" | "vllm" | "ollama";
 }
 
 function getBackgroundMediaType(path: string): "image" | "video" | "" {
@@ -115,9 +113,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const addMessage = useChatStore((s) => s.addMessage);
 
 	const hasNaiaKey = !!localStorage.getItem("naia-remote-key");
-	const STEPS = hasNaiaKey ? STEPS_WITH_NAIA : STEPS_WITHOUT_NAIA;
+	// Always use full steps so user can see/confirm the provider connection during onboarding
+	const STEPS = STEPS_WITHOUT_NAIA;
 
-	const [step, setStep] = useState<Step>("agentName");
+	const [step, setStep] = useState<Step>("welcome");
 	const [agentName, setAgentName] = useState("");
 	const [userName, setUserName] = useState("");
 	const [speechStyle, setSpeechStyle] = useState<"casual" | "formal">("casual");
@@ -132,6 +131,15 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [apiKeyMode, setApiKeyMode] = useState(false);
 	const [naiaLoginWaiting, setNaiaLoginWaiting] = useState(false);
 	const [naiaLoginDone, setNaiaLoginDone] = useState(hasNaiaKey);
+	// Auth payload from OAuth — held until wizard completes
+	const [naiaAuthPayload, setNaiaAuthPayload] = useState<NaiaAuthPayload | null>(null);
+	// memoryAI step state — default to "naia" when Naia key already present
+	const [memoryEmbeddingProvider, setMemoryEmbeddingProvider] = useState<
+		"none" | "offline" | "vllm" | "ollama" | "naia"
+	>(hasNaiaKey ? "naia" : "none");
+	const [memoryLlmProvider, setMemoryLlmProvider] = useState<
+		"none" | "naia" | "vllm" | "ollama"
+	>(hasNaiaKey ? "naia" : "none");
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const latestRef = useRef<OnboardingSnapshot | null>(null);
 
@@ -151,6 +159,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			selectedBg,
 			apiKey,
 			naiaLoginDone,
+			memoryEmbeddingProvider,
+			memoryLlmProvider,
 		};
 	});
 
@@ -163,20 +173,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		});
 	}, []);
 
-	// Initial chat message + default background
+	// Reset background on mount
 	useEffect(() => {
 		if (!didMount.current) {
 			didMount.current = true;
 			setBackgroundVideoUrl("");
 			setBackgroundMediaType("");
-			setTimeout(() => {
-				addMessage({
-					role: "assistant",
-					content: stepChat("agentName", "", ""),
-				});
-			}, 800);
 		}
-	}, [addMessage, setBackgroundMediaType, setBackgroundVideoUrl]);
+	}, [setBackgroundMediaType, setBackgroundVideoUrl]);
 
 	// Load backgrounds from naia-settings
 	useEffect(() => {
@@ -185,8 +189,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				const bgs: BgOption[] = await Promise.all(
 					paths.map(async (p) => {
 						const type = getBackgroundMediaType(p);
-						// Skip loading video files (30-50 MB each, crashes WebView2).
-						const url = type === "video" ? p : await toLocalBlobUrl(p);
+						// Videos: use asset:// URL (blob URL crashes WebView2 for large files).
+						const url = type === "video" ? toAssetUrl(p) : await toLocalBlobUrl(p);
 						return {
 							url,
 							label: p.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") ?? p,
@@ -213,6 +217,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const onCompleteRef = useRef(onComplete);
 	onCompleteRef.current = onComplete;
 
+	// When Naia login completes, auto-select "naia" for memory AI providers.
+	useEffect(() => {
+		if (naiaLoginDone) {
+			setMemoryEmbeddingProvider("naia");
+			setMemoryLlmProvider("naia");
+		}
+	}, [naiaLoginDone]);
+
 	// Listen for Naia OAuth callback in provider step.
 	// [] dep — register once. onCompleteRef.current always points to latest prop.
 	useEffect(() => {
@@ -226,9 +238,18 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				}
 				setNaiaLoginWaiting(false);
 				setNaiaLoginDone(true);
-				saveCompletedConfig(event.payload, latestRef.current ?? undefined);
-				sendAuthUpdate(event.payload.naiaKey).catch(() => {});
-				onCompleteRef.current();
+				setNaiaAuthPayload(event.payload);
+				// Cache before sending so crash-restart can replay the key.
+				invoke("store_startup_message", {
+					message: JSON.stringify({
+						type: "auth_update",
+						naiaKey: event.payload.naiaKey,
+					}),
+				})
+					.catch(() => {})
+					.then(() => sendAuthUpdate(event.payload.naiaKey).catch(() => {}));
+				// Advance to complete step after Naia login
+				setStep("complete");
 			},
 		);
 		return () => {
@@ -244,10 +265,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		transitioning.current = true;
 		setStep(next);
 		setTimeout(() => {
-			addMessage({
-				role: "assistant",
-				content: stepChat(next, agentName.trim() || "나이아", userName.trim()),
-			});
+			// "complete" message is added by handleComplete after saving — skip here
+			if (next !== "complete") {
+				addMessage({
+					role: "assistant",
+					content: stepChat(next, agentName.trim() || "나이아", userName.trim()),
+				});
+			}
 			transitioning.current = false;
 		}, 300);
 	}
@@ -278,24 +302,20 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		);
 		try {
 			const lang = getLocale();
-			const url = `${getNaiaWebBaseUrl()}/${lang}/login?redirect=desktop&source=embedded`;
-			const ok = await invoke("browser_open_login", { url }).then(
-				() => true,
-				() => false,
+			// Onboarding runs before the browser panel is mounted, so
+			// browser_open_login would succeed but the panel can't show.
+			// Use the system browser directly instead.
+			const state = await invoke<string>("generate_oauth_state").catch(
+				() => "",
 			);
-			if (!ok) {
-				const state = await invoke<string>("generate_oauth_state").catch(
-					() => "",
-				);
-				const params = new URLSearchParams({
-					redirect: "desktop",
-					source: "desktop",
-				});
-				if (state) params.set("state", state);
-				await openUrl(
-					`${getNaiaWebBaseUrl()}/${lang}/login?${params.toString()}`,
-				);
-			}
+			const params = new URLSearchParams({
+				redirect: "desktop",
+				source: "desktop",
+			});
+			if (state) params.set("state", state);
+			await openUrl(
+				`${getNaiaWebBaseUrl()}/${lang}/login?${params.toString()}`,
+			);
 		} catch {
 			setNaiaLoginWaiting(false);
 		}
@@ -314,6 +334,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			selectedBg,
 			apiKey,
 			naiaLoginDone,
+			memoryEmbeddingProvider,
+			memoryLlmProvider,
 		},
 	) {
 		const base = loadConfig() ?? {
@@ -358,13 +380,47 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				: {}),
 			workspaceRoot: getAdkPath() || base.workspaceRoot || undefined,
 			onboardingComplete: true,
+			...(snapshot.memoryEmbeddingProvider !== "none"
+				? { memoryEmbeddingProvider: snapshot.memoryEmbeddingProvider }
+				: {}),
+			...(snapshot.memoryLlmProvider !== "none"
+				? { memoryLlmProvider: snapshot.memoryLlmProvider }
+				: {}),
 		});
 
 		setAvatarModelPath(vrmPath);
 	}
 
 	function handleComplete() {
-		saveCompletedConfig();
+		saveCompletedConfig(naiaAuthPayload ?? undefined);
+		// G-01: sync to naia-settings/config.json so standalone agent picks up the onboarding result.
+		const saved = loadConfig();
+		if (saved) void writeNaiaConfig({ ...(saved as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(saved) });
+		// Sync memory AI settings to memory-config.json via gateway config.
+		if (saved) {
+			void syncToGateway(
+				saved.provider ?? "nextain",
+				saved.model ?? "",
+				saved.apiKey || undefined,
+				saved.persona,
+				saved.agentName,
+				saved.userName,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				saved.naiaKey || undefined,
+				undefined,
+				{
+					memoryEmbeddingProvider: saved.memoryEmbeddingProvider,
+					memoryLlmProvider: saved.memoryLlmProvider,
+				},
+			);
+		}
 		addMessage({
 			role: "assistant",
 			content: stepChat(
@@ -396,6 +452,54 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 			{/* Step content */}
 			<div className="onboarding-step">
+				{step === "welcome" && (
+					<>
+						<h2 className="onboarding-step__title">Naia Alpha</h2>
+						<div className="onboarding-welcome">
+							<p className="onboarding-welcome__text">
+								{t("onboard.welcome.opensourceDesc")}
+							</p>
+							<div className="onboarding-welcome__badge">⚠ Alpha</div>
+							<p className="onboarding-welcome__text">
+								{t("onboard.welcome.alphaDesc")}
+							</p>
+							<button
+								type="button"
+								className="onboarding-welcome__github-btn"
+								onClick={() =>
+									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+										openUrl("https://github.com/nextain/naia-os"),
+									)
+								}
+							>
+								{t("onboard.welcome.githubBtn")}
+							</button>
+							<button
+								type="button"
+								className="onboarding-welcome__github-btn"
+								onClick={() =>
+									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+										openUrl("https://discord.com/invite/FGYJN7auty"),
+									)
+								}
+							>
+								{t("onboard.welcome.discordBtn")}
+							</button>
+							<button
+								type="button"
+								className="onboarding-welcome__github-btn"
+								onClick={() =>
+									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+										openUrl("https://naia.nextain.io/donation"),
+									)
+								}
+							>
+								{t("onboard.welcome.donationBtn")}
+							</button>
+						</div>
+					</>
+				)}
+
 				{step === "agentName" && (
 					<>
 						<h2 className="onboarding-step__title">
@@ -566,11 +670,21 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					<>
 						<h2 className="onboarding-step__title">{t("onboard.lab.title")}</h2>
 						{naiaLoginDone ? (
-							<div className="onboarding-step__provider-done">
-								<span className="onboarding-step__provider-check">✓</span>
-								<p>{t("onboard.lab.connected")}</p>
-							</div>
-						) : apiKeyMode ? (
+							<>
+								<div className="onboarding-step__provider-done">
+									<span className="onboarding-step__provider-check">✓</span>
+									<p>{t("onboard.lab.connected")}</p>
+								</div>
+								<button
+									type="button"
+									className="onboarding-step__link onboarding-step__link--muted"
+									onClick={goNext}
+									style={{ marginTop: 16 }}
+								>
+									다음 →
+								</button>
+							</>
+					) : apiKeyMode ? (
 							<>
 								<p className="onboarding-step__hint">
 									API 키를 입력하세요. 나중에 설정에서 변경할 수 있어요.
@@ -602,19 +716,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 										? t("onboard.lab.waiting")
 										: t("onboard.lab.login")}
 								</button>
-								<div className="onboarding-step__provider-or">
-									{t("onboard.lab.or")}
-								</div>
+								<p className="onboarding-step__hint" style={{ whiteSpace: "pre-line" }}>{t("onboard.lab.naiaHint")}</p>
 								<button
-									type="button"
-									className="onboarding-step__link"
-									onClick={() => setApiKeyMode(true)}
-								>
-									{t("provider.apiKeyRequired")} 직접 입력
-								</button>
-								<button
-									type="button"
 									className="onboarding-step__link onboarding-step__link--muted"
+									type="button"
 									onClick={goNext}
 								>
 									나중에 설정 →

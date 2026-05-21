@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import {
 	readNaiaConfig,
 	setAdkPath,
 	toLocalBlobUrl,
+	buildNaiaConfigEnv,
 	writeNaiaConfig,
 } from "./lib/adk-store";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
@@ -33,6 +35,7 @@ import {
 } from "./lib/chat-service";
 import {
 	type ThemeId,
+	addAllowedTool,
 	isOnboardingComplete,
 	loadConfig,
 	migrateLabKeyToNaiaKey,
@@ -47,6 +50,11 @@ import { loadInstalledPanels } from "./lib/panel-loader";
 import { shouldMigrateNextainModel } from "./lib/llm/registry";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
+import {
+	type Announcement,
+	fetchUnreadAnnouncements,
+} from "./lib/announcements";
+import { AnnouncementBanner } from "./components/AnnouncementBanner";
 import { useAvatarStore } from "./stores/avatar";
 import "./panels/browser/index"; // register browser panel
 import "./panels/workspace/index"; // register workspace panel
@@ -152,6 +160,7 @@ export function App() {
 		moved: boolean;
 	} | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+	const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
 	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
@@ -289,6 +298,13 @@ export function App() {
 		});
 	}, [showAdkSetup]);
 
+	// Auto-allow built-in skills that are always available (no per-session approval needed).
+	// Same pattern as BrowserCenterPanel auto-allowing browser tools on mount.
+	useEffect(() => {
+		addAllowedTool("skill_panel");
+		addAllowedTool("skill_youtube_bgm");
+	}, []);
+
 	useEffect(() => {
 		void migrateLabKeyToNaiaKey();
 		migrateSpeechStyleValues();
@@ -337,7 +353,10 @@ export function App() {
 			if (debounceTimer) clearTimeout(debounceTimer);
 			debounceTimer = setTimeout(() => {
 				const cfg = loadConfig();
-				if (cfg) void writeNaiaConfig(cfg as unknown as Record<string, unknown>);
+				if (cfg) void writeNaiaConfig({
+					...(cfg as unknown as Record<string, unknown>),
+					...buildNaiaConfigEnv(cfg),
+				});
 			}, 800);
 		};
 
@@ -351,19 +370,33 @@ export function App() {
 		window.addEventListener("naia-config-changed", handleConfigChanged);
 		window.addEventListener("storage", updateTitle);
 		return () => {
-			if (debounceTimer) clearTimeout(debounceTimer);
 			window.removeEventListener("naia-config-changed", handleConfigChanged);
 			window.removeEventListener("storage", updateTitle);
+			// G-10: flush pending debounced write immediately on unmount / app close.
+			if (debounceTimer) {
+				clearTimeout(debounceTimer);
+				const cfg = loadConfig();
+				if (cfg) void writeNaiaConfig({ ...(cfg as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(cfg) });
+			}
 		};
 	}, []);
 
 	useEffect(() => {
 		if (showOnboarding) return;
+		let active = true;
 		checkForUpdate()
 			.then((info) => {
-				if (info) setUpdateInfo(info);
+				if (active && info) setUpdateInfo(info);
 			})
 			.catch(() => {});
+		fetchUnreadAnnouncements()
+			.then((list) => {
+				if (active && list.length > 0) setAnnouncements(list);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
 	}, [showOnboarding]);
 
 	// Follow OS color scheme changes — apply only when saved theme is "system"
@@ -426,8 +459,14 @@ export function App() {
 		const unlisten = listen<{ naiaKey?: string }>(
 			"naia_auth_complete",
 			(event) => {
-				if (event.payload.naiaKey) {
-					sendAuthUpdate(event.payload.naiaKey).catch(() => {});
+				const key = event.payload.naiaKey;
+				if (key) {
+					// Cache before sending so crash-restart can replay the key.
+					invoke("store_startup_message", {
+						message: JSON.stringify({ type: "auth_update", naiaKey: key }),
+					})
+						.catch(() => {})
+						.then(() => sendAuthUpdate(key).catch(() => {}));
 				}
 				void syncLinkedChannels();
 			},
@@ -437,8 +476,10 @@ export function App() {
 		};
 	}, []);
 
-	// On init: if naiaKey exists in config, push it to the agent (backend).
-	// Handles the case where the app restarts after a previous login.
+	// On init: push auth + credentials + webhooks to the agent (backend).
+	// Uses sequential await so store_startup_message caching precedes the IPC
+	// send — guaranteeing the Rust cache is populated before the message
+	// reaches the agent (safe replay after any future crash/restart).
 	useEffect(() => {
 		// Migrate saved config that points at a removed gateway model (#248).
 		// Previously-saved gemini-3.x selections on the Naia provider now
@@ -458,41 +499,69 @@ export function App() {
 				saveConfig({ ...preMigrate, model: decision.to });
 			}
 		}
-		const cfg = loadConfig();
-		const naiaKey = cfg?.naiaKey;
-		if (naiaKey) {
-			sendAuthUpdate(naiaKey).catch(() => {});
-		}
-		// Push webhook URLs + Discord defaults to the agent ONCE at startup (#260).
-		// Replaces per-chat_request transmission so credentials stop appearing
-		// in every stdio frame / log capture.
-		if (cfg) {
-			sendNotifyConfig({
+
+		let active = true; // unmount guard: prevents stale invocations after cleanup
+
+		async function initAuth() {
+			const cfg = loadConfig();
+			if (!cfg || !active) return;
+
+			// auth_update: cache first, then send
+			const naiaKey = cfg.naiaKey;
+			if (naiaKey && active) {
+				await invoke("store_startup_message", {
+					message: JSON.stringify({ type: "auth_update", naiaKey }),
+				}).catch(() => {});
+				if (active) await sendAuthUpdate(naiaKey).catch(() => {});
+			}
+
+			if (!active) return;
+
+			// notify_config: cache first, then send
+			const notifyPayload = {
 				slackWebhookUrl: cfg.slackWebhookUrl,
 				discordWebhookUrl: cfg.discordWebhookUrl,
 				googleChatWebhookUrl: cfg.googleChatWebhookUrl,
 				discordDefaultUserId: cfg.discordDefaultUserId,
 				discordDefaultTarget: cfg.discordDefaultTarget,
 				discordDmChannelId: cfg.discordDmChannelId,
+			};
+			await invoke("store_startup_message", {
+				message: JSON.stringify({ type: "notify_config", ...notifyPayload }),
 			}).catch(() => {});
+			if (active) await sendNotifyConfig(notifyPayload).catch(() => {});
+
+			if (!active) return;
+
+			// creds_update: cache first, then send
 			// Push all per-session credentials once at startup (#260 follow-up).
-			// Mirrors the notify_config pattern — agent caches the values; chat /
-			// tool / tts request paths no longer carry credentials at all.
 			const ttsKeys: Record<string, string> = {};
 			if (cfg.googleApiKey) ttsKeys.google = cfg.googleApiKey;
 			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
 			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
-			sendCredsUpdate({
+			// G-11: map naia-os provider → naia-agent creds_update keyMap
+			const credsProvider = cfg.provider === "nextain" ? "naia-anyllm" : cfg.provider;
+			const credsPayload = {
 				keys:
 					cfg.apiKey && cfg.provider
-						? { [cfg.provider]: cfg.apiKey }
+						? { [credsProvider]: cfg.apiKey }
 						: {},
 				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
 				...(cfg.gatewayToken !== undefined && {
 					gatewayToken: cfg.gatewayToken,
 				}),
+			};
+			await invoke("store_startup_message", {
+				message: JSON.stringify({ type: "creds_update", ...credsPayload }),
 			}).catch(() => {});
+			if (active) await sendCredsUpdate(credsPayload).catch(() => {});
 		}
+
+		void initAuth();
+
+		return () => {
+			active = false; // cancel any in-flight async operations on unmount
+		};
 	}, []);
 
 	const handleWinResize = (dir: WinResizeDir) => (e: React.PointerEvent) => {
@@ -649,6 +718,15 @@ export function App() {
 							onDismiss={() => setUpdateInfo(null)}
 						/>
 					)}
+					{announcements.length > 0 && !showOnboarding && (
+						<AnnouncementBanner
+							announcements={announcements}
+							onDismissOne={(id) =>
+								setAnnouncements((prev) => prev.filter((a) => a.id !== id))
+							}
+							onDismissAll={() => setAnnouncements([])}
+						/>
+					)}
 					{naiaVisible && !showOnboarding && (
 						<div
 							className="naia-work-rail"
@@ -725,7 +803,7 @@ export function App() {
 						}
 					>
 						<div className="right-area">
-							{!showOnboarding && (
+							{!showSplash && !showOnboarding && (
 								<>
 									<ModeBar onAddMode={() => setShowPanelInstall(true)} />
 									{showPanelInstall && (

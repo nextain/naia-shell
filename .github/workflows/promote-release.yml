@@ -1,0 +1,70 @@
+name: Promote Release (pre-release → public)
+
+# Run manually after verifying the pre-release build.
+# This is the ONLY way a release becomes public (available to the auto-updater).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to promote (e.g. v0.1.4)"
+        required: true
+      verified_by:
+        description: "Who verified this release (name / initials)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Promote ${{ inputs.tag }} to public release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify pre-release exists and has all required assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          echo "Checking release: $TAG"
+          ASSETS=$(gh release view "$TAG" --repo ${{ github.repository }} --json assets -q '.assets[].name')
+          echo "Assets found:"
+          echo "$ASSETS"
+
+          REQUIRED=(
+            "Naia-Shell-x86_64-setup.exe"
+            "Naia-Shell-x86_64.msi"
+            "Naia-Shell-x86_64.flatpak"
+            "latest.json"
+          )
+          MISSING=()
+          for f in "${REQUIRED[@]}"; do
+            if ! echo "$ASSETS" | grep -qF "$f"; then
+              MISSING+=("$f")
+            fi
+          done
+
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Missing required assets: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "✅ All required assets present"
+
+      - name: Promote to public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          VERIFIED_BY="${{ inputs.verified_by }}"
+
+          # Strip [TEST] from title if present
+          CURRENT_TITLE=$(gh release view "$TAG" --repo ${{ github.repository }} --json name -q '.name')
+          NEW_TITLE="${CURRENT_TITLE/ \[TEST\]/}"
+
+          gh release edit "$TAG" \
+            --repo ${{ github.repository }} \
+            --prerelease=false \
+            --title "$NEW_TITLE" \
+            --notes-prepend "✅ **Verified and approved for release** by: $VERIFIED_BY"
+
+          echo "✅ $TAG promoted to public release"
+          echo "Updater endpoint now active: https://github.com/${{ github.repository }}/releases/latest/download/latest.json"

@@ -3,7 +3,7 @@ import { panelRegistry } from "../../lib/panel-registry";
 
 function SettingsCenterPanel() {
 	return (
-		<div style={{ height: "100%", overflowY: "auto" }}>
+		<div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 			<SettingsTab />
 		</div>
 	);
@@ -15,6 +15,6 @@ panelRegistry.register({
 	names: { ko: "설정", en: "Settings" },
 	icon: "⚙️",
 	builtIn: true,
-	keepAlive: false,
+	keepAlive: true, // SettingsTab must stay mounted during browser-panel login to keep naia_auth_complete listener alive
 	center: SettingsCenterPanel,
 });

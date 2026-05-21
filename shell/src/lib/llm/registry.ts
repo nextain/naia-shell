@@ -208,29 +208,28 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gemini-2.5-pro",
+	defaultModel: "gemini-2.5-flash",
 	models: [
-		// Gemini 3.x models are NOT available via the Naia Gateway route (#248).
-		// The gateway's GCP project does not have Vertex AI Publisher Model
-		// access for gemini-3.x — every streaming call returns 0-byte SSE
-		// (Vertex returns 404 NOT_FOUND, which the gateway swallows on
-		// stream). When/if the gateway project gets gemini-3.x access, restore
-		// these entries. Users who need gemini-3.x today should use the
-		// "Google Gemini" provider (direct GEMINI_API_KEY) instead, which
-		// reaches Google AI Studio without the Vertex routing.
-		// -- Gemini 2.5 --------------------------------------------------------------------
-		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.25, 10.0] },
+		// -- Gemini 3.5 -------------------------------------------------------------------
+		{ id: "gemini-3.5-flash", label: "Gemini 3.5 Flash", capabilities: ["llm"], pricing: [1.815, 10.89] },
+		// -- Gemini 3.1 -------------------------------------------------------------------
+		{ id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview", capabilities: ["llm"], pricing: [2.2, 13.2] },
+		{ id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview", capabilities: ["llm"], pricing: [0.275, 1.65] },
+		// -- Gemini 3.0 -------------------------------------------------------------------
+		{ id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview", capabilities: ["llm"], pricing: [0.55, 3.3] },
+		// -- Gemini 2.5 -------------------------------------------------------------------
+		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.375, 11.0] },
 		{
 			id: "gemini-2.5-flash",
 			label: "Gemini 2.5 Flash",
 			capabilities: ["llm"],
-			pricing: [0.3, 2.5],
+			pricing: [0.33, 2.75],
 		},
 		{
 			id: "gemini-2.5-flash-lite",
 			label: "Gemini 2.5 Flash Lite",
 			capabilities: ["llm"],
-			pricing: [0.075, 0.3],
+			pricing: [0.11, 0.44],
 		},
 		{
 			id: "gemini-2.5-flash-live",
@@ -271,20 +270,8 @@ registerLlmProvider({
 	description: "Google Gemini API — requires Google API key.",
 	descKey: "provider.apiKeyRequired",
 	requiresApiKey: true,
-	defaultModel: "gemini-3-flash-preview",
+	defaultModel: "gemini-2.5-flash",
 	models: [
-		{
-			id: "gemini-3-pro-preview",
-			label: "Gemini 3 Pro",
-			capabilities: ["llm"],
-			pricing: [2.0, 12.0],
-		},
-		{
-			id: "gemini-3-flash-preview",
-			label: "Gemini 3.0 Flash",
-			capabilities: ["llm"],
-			pricing: [0.5, 3.0],
-		},
 		{
 			id: "gemini-2.5-pro",
 			label: "Gemini 2.5 Pro",

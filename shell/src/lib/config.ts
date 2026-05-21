@@ -145,6 +145,20 @@ export interface AppConfig {
 	backgroundVideo?: string;
 	/** Filename of the selected BGM track inside naia-settings/bgm-musics/ */
 	bgmTrack?: string;
+	/** Last active BGM source ("youtube" or "local"). */
+	bgmSource?: "local" | "youtube";
+	/** Last playing YouTube video ID (for session restore). */
+	bgmYoutubeVideoId?: string;
+	/** Last playing YouTube video title. */
+	bgmYoutubeTitle?: string;
+	/** Last playing YouTube channel name. */
+	bgmYoutubeChannel?: string;
+	/** Last playing YouTube thumbnail URL. */
+	bgmYoutubeThumbnail?: string;
+	/** Last BGM volume (0–1). */
+	bgmVolume?: number;
+	/** Whether BGM was playing when the app was closed. */
+	bgmPlaying?: boolean;
 
 	// ── Memory settings ──
 	/** Memory adapter backend. Defaults to 'local' (JSON file). */

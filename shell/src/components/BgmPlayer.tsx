@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
+import { loadConfig, saveConfig } from "../lib/config";
 import { Logger } from "../lib/logger";
 import type { NaiaContextBridge } from "../lib/panel-registry";
 import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
@@ -11,6 +12,7 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 // ── YouTube server ────────────────────────────────────────────────────────────
 
 const YT_BASE = "http://localhost:18791";
+
 
 interface YtVideo {
 	id: string;
@@ -24,6 +26,10 @@ async function ytSearch(query: string): Promise<YtVideo[]> {
 	const res = await fetch(
 		`${YT_BASE}/yt/search?q=${encodeURIComponent(query)}&max=12`,
 	);
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({})) as { error?: string };
+		throw new Error(body.error ?? `HTTP ${res.status}`);
+	}
 	const data = (await res.json()) as { results?: YtVideo[] };
 	return data.results ?? [];
 }
@@ -31,22 +37,22 @@ async function ytSearch(query: string): Promise<YtVideo[]> {
 // ── Curated categories ────────────────────────────────────────────────────────
 
 const CATEGORIES = [
-	{ id: "lofi", label: "📚 로파이", query: "lofi hip hop beats to study relax" },
-	{ id: "rain", label: "🌧 빗소리", query: "rain sounds sleep study white noise 1 hour" },
-	{ id: "ghibli", label: "🌿 지브리", query: "studio ghibli piano collection bgm" },
-	{ id: "jazz", label: "🎷 재즈 카페", query: "jazz cafe background music lounge" },
-	{ id: "classical", label: "🎻 클래식", query: "classical music background study concentration" },
-	{ id: "nature", label: "🌲 자연 소리", query: "nature sounds forest birds water relaxing" },
-	{ id: "ambient", label: "🌌 앰비언트", query: "ambient atmospheric background music drone" },
-	{ id: "synthwave", label: "🌃 신스웨이브", query: "synthwave retrowave 80s neon background" },
-	{ id: "bossa", label: "🍵 보사노바", query: "bossa nova jazz cafe morning music" },
-	{ id: "piano", label: "🎹 솔로 피아노", query: "solo piano relaxing music sleep background" },
-	{ id: "meditation", label: "🧘 명상", query: "meditation healing music binaural beats deep" },
-	{ id: "celtic", label: "🧝 판타지/켈트", query: "celtic fantasy ambient rpg isekai music" },
-	{ id: "darkacademia", label: "📖 다크 아카데미아", query: "dark academia background music study aesthetic" },
-	{ id: "kdrama", label: "🎬 K-드라마 OST", query: "korean drama ost background music piano" },
-	{ id: "new-age", label: "✨ 뉴에이지", query: "new age relaxing music 1 hour" },
-	{ id: "jpop", label: "🌸 시티팝", query: "japanese city pop bgm 1 hour aesthetic" },
+	{ id: "lofi", labelKey: "bgm.cat.lofi", query: "lofi hip hop beats to study relax" },
+	{ id: "rain", labelKey: "bgm.cat.rain", query: "rain sounds sleep study white noise 1 hour" },
+	{ id: "ghibli", labelKey: "bgm.cat.ghibli", query: "studio ghibli piano collection bgm" },
+	{ id: "jazz", labelKey: "bgm.cat.jazz", query: "jazz cafe background music lounge" },
+	{ id: "classical", labelKey: "bgm.cat.classical", query: "classical music background study concentration" },
+	{ id: "nature", labelKey: "bgm.cat.nature", query: "nature sounds forest birds water relaxing" },
+	{ id: "ambient", labelKey: "bgm.cat.ambient", query: "ambient atmospheric background music drone" },
+	{ id: "synthwave", labelKey: "bgm.cat.synthwave", query: "synthwave retrowave 80s neon background" },
+	{ id: "bossa", labelKey: "bgm.cat.bossa", query: "bossa nova jazz cafe morning music" },
+	{ id: "piano", labelKey: "bgm.cat.piano", query: "solo piano relaxing music sleep background" },
+	{ id: "meditation", labelKey: "bgm.cat.meditation", query: "meditation healing music binaural beats deep" },
+	{ id: "celtic", labelKey: "bgm.cat.celtic", query: "celtic fantasy ambient rpg isekai music" },
+	{ id: "darkacademia", labelKey: "bgm.cat.darkacademia", query: "dark academia background music study aesthetic" },
+	{ id: "kdrama", labelKey: "bgm.cat.kdrama", query: "korean drama ost background music piano" },
+	{ id: "new-age", labelKey: "bgm.cat.newage", query: "new age relaxing music 1 hour" },
+	{ id: "jpop", labelKey: "bgm.cat.jpop", query: "japanese city pop bgm 1 hour aesthetic" },
 ] as const;
 
 // ── Favorites ─────────────────────────────────────────────────────────────────
@@ -93,7 +99,6 @@ export function BgmPlayer({ naia }: Props) {
 	const audioRef = useRef<HTMLAudioElement>(null);
 	const playerRef = useRef<HTMLDivElement>(null);
 	const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
-	const [handlePos, setHandlePos] = useState<{ top: number; left: number } | null>(null);
 	const [ytPanelHeight, setYtPanelHeight] = useState(loadPanelHeight);
 	const handleDragRef = useRef<{ startY: number; startH: number; moved: boolean } | null>(null);
 
@@ -120,10 +125,10 @@ export function BgmPlayer({ naia }: Props) {
 		});
 	}, [bgmTrackUrl, setBgmTrackUrl]);
 
-	// ── Playback state ────────────────────────────────────────────────────────
-	const [source, setSource] = useState<Source>("youtube");
-	const [playing, setPlaying] = useState(false);
-	const [volume, setVolume] = useState(0.3);
+	// ── Playback state (restored from persisted config) ───────────────────────
+	const [source, setSource] = useState<Source>(() => (loadConfig()?.bgmSource as Source | undefined) ?? "youtube");
+	const [playing, setPlaying] = useState(false); // never auto-play on restore
+	const [volume, setVolume] = useState(() => loadConfig()?.bgmVolume ?? 0.3);
 
 	// ── Unified panel state ───────────────────────────────────────────────────
 	// panelExpanded: the single panel is open or closed
@@ -136,10 +141,52 @@ export function BgmPlayer({ naia }: Props) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<YtVideo[]>([]);
 	const [searching, setSearching] = useState(false);
+	const [searchError, setSearchError] = useState<string | null>(null);
 	const [favs, setFavs] = useState<YtVideo[]>(loadFavs);
-	const [currentYt, setCurrentYt] = useState<YtVideo | null>(null);
+	const [currentYt, setCurrentYt] = useState<YtVideo | null>(() => {
+		const cfg = loadConfig();
+		if (cfg?.bgmYoutubeVideoId) {
+			return {
+				id: cfg.bgmYoutubeVideoId,
+				title: cfg.bgmYoutubeTitle ?? "",
+				channel: cfg.bgmYoutubeChannel ?? "",
+				thumbnail: cfg.bgmYoutubeThumbnail ?? "",
+				duration: "",
+			};
+		}
+		return null;
+	});
 	// Keep last YT track so returning to YT mode can show it
-	const lastYtRef = useRef<YtVideo | null>(null);
+	const lastYtRef = useRef<YtVideo | null>(currentYt);
+
+	// ── Volume ref (stale-closure-safe for message listener) ─────────────────
+	const volumeRef = useRef(volume);
+	useEffect(() => { volumeRef.current = volume; }, [volume]);
+
+	// ── YouTube IFrame API bridge ──────────────────────────────────────────────
+	// YouTube sends `initialDelivery` when the player finishes loading.
+	// We must reply with `{event:"listening"}` to activate the command bridge,
+	// then immediately sync the current volume. Without this handshake
+	// `setVolume` postMessages are silently ignored by the player.
+	useEffect(() => {
+		function onYtMessage(e: MessageEvent) {
+			if (!e.data || typeof e.data !== "string") return;
+			try {
+				const msg = JSON.parse(e.data) as Record<string, unknown>;
+				if (msg.event === "initialDelivery" || msg.event === "onReady") {
+					const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
+					if (!iframe?.contentWindow) return;
+					iframe.contentWindow.postMessage(JSON.stringify({ event: "listening" }), "*");
+					iframe.contentWindow.postMessage(
+						JSON.stringify({ event: "command", func: "setVolume", args: [Math.round(volumeRef.current * 100)] }),
+						"*",
+					);
+				}
+			} catch {}
+		}
+		window.addEventListener("message", onYtMessage);
+		return () => window.removeEventListener("message", onYtMessage);
+	}, []);
 
 	// ── Volume sync ───────────────────────────────────────────────────────────
 	useEffect(() => {
@@ -147,10 +194,14 @@ export function BgmPlayer({ naia }: Props) {
 		if (audio) audio.volume = volume;
 		if (source === "youtube") {
 			const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
-			iframe?.contentWindow?.postMessage(
-				JSON.stringify({ event: "command", func: "setVolume", args: [Math.round(volume * 100)] }),
-				"*",
-			);
+			if (iframe?.contentWindow) {
+				// Re-send listening before each command in case bridge was reset
+				iframe.contentWindow.postMessage(JSON.stringify({ event: "listening" }), "*");
+				iframe.contentWindow.postMessage(
+					JSON.stringify({ event: "command", func: "setVolume", args: [Math.round(volume * 100)] }),
+					"*",
+				);
+			}
 		}
 	}, [volume, source]);
 
@@ -213,6 +264,35 @@ export function BgmPlayer({ naia }: Props) {
 						saveFavs(next);
 						return next;
 					});
+				} else if (msg.type === "bgm_youtube_pause") {
+					const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
+					iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
+					setPlaying(false);
+				} else if (msg.type === "bgm_youtube_resume") {
+					const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
+					if (!iframe && currentYtRef.current) {
+						handleYtSelect(currentYtRef.current);
+					} else {
+						iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+						setPlaying(true);
+					}
+				} else if (msg.type === "bgm_youtube_next") {
+					const curFavs = favsRef.current;
+					const curYt = currentYtRef.current;
+					if (curFavs.length > 0) {
+						const curIdx = curYt ? curFavs.findIndex((f) => f.id === curYt.id) : -1;
+						handleYtSelect(curFavs[(curIdx + 1) % curFavs.length]);
+					}
+				} else if (msg.type === "bgm_youtube_prev") {
+					const curFavs = favsRef.current;
+					const curYt = currentYtRef.current;
+					if (curFavs.length > 0) {
+						const curIdx = curYt ? curFavs.findIndex((f) => f.id === curYt.id) : 0;
+						handleYtSelect(curFavs[(curIdx - 1 + curFavs.length) % curFavs.length]);
+					}
+				} else if (msg.type === "bgm_youtube_volume") {
+					const val = Number(msg.volume ?? 0.5);
+					if (val >= 0 && val <= 1) setVolume(val);
 				}
 			} catch (err) {
 				Logger.error("BgmPlayer", "agent_response parse error", { error: String(err) });
@@ -222,22 +302,53 @@ export function BgmPlayer({ naia }: Props) {
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// ── Panel anchor + drawer handle position ────────────────────────────────
+	// ── Panel anchor position ─────────────────────────────────────────────────
 	// panelPos is always calculated so the portal stays in DOM for CSS animation.
 	useEffect(() => {
-		if (!playerRef.current) { setHandlePos(null); setPanelPos(null); return; }
+		if (!playerRef.current) { setPanelPos(null); return; }
 		const rect = playerRef.current.getBoundingClientRect();
 		const PANEL_W = Math.min(320, window.innerWidth - 16);
-		const safeLeft = Math.min(rect.left, window.innerWidth - PANEL_W - 8);
-		const panelTop = rect.bottom + 4;
-		// Panel position always set (portal stays mounted; hidden via CSS class)
-		setPanelPos({ top: panelTop, left: safeLeft });
-		if (panelExpanded) {
-			setHandlePos({ top: panelTop + ytPanelHeight, left: rect.left + rect.width / 2 });
-		} else {
-			setHandlePos({ top: rect.bottom, left: rect.left + rect.width / 2 });
-		}
+		// Right-align panel to player's right edge, clamp so it doesn't overflow screen
+		const safeLeft = Math.max(8, Math.min(rect.right - PANEL_W, window.innerWidth - PANEL_W - 8));
+		setPanelPos({ top: rect.bottom + 4, left: safeLeft });
 	}, [panelExpanded, ytPanelHeight]);
+
+	// ── BGM state persistence ─────────────────────────────────────────────────
+	useEffect(() => {
+		const cfg = loadConfig();
+		if (!cfg) return;
+		saveConfig({ ...cfg, bgmVolume: volume });
+	}, [volume]);
+
+	useEffect(() => {
+		const cfg = loadConfig();
+		if (!cfg) return;
+		saveConfig({ ...cfg, bgmPlaying: playing });
+	}, [playing]);
+
+	useEffect(() => {
+		const cfg = loadConfig();
+		if (!cfg) return;
+		const ytFields = source === "youtube" && currentYt
+			? { bgmYoutubeVideoId: currentYt.id, bgmYoutubeTitle: currentYt.title, bgmYoutubeChannel: currentYt.channel, bgmYoutubeThumbnail: currentYt.thumbnail }
+			: {};
+		saveConfig({ ...cfg, bgmSource: source, ...ytFields });
+	}, [source, currentYt]);
+
+	// ── Auto-restore YouTube playback on mount ────────────────────────────────
+	// If the app was closed while YouTube was playing, resume automatically.
+	useEffect(() => {
+		const cfg = loadConfig();
+		if (!cfg?.bgmYoutubeVideoId || !cfg.bgmPlaying) return;
+		const embedUrl =
+			`https://www.youtube-nocookie.com/embed/${cfg.bgmYoutubeVideoId}` +
+			`?autoplay=1&enablejsapi=1` +
+			`&origin=${encodeURIComponent(window.location.origin)}`;
+		setBackgroundVideoUrl(embedUrl);
+		setBackgroundMediaType("iframe");
+		setPlaying(true);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	// ── AI context push ───────────────────────────────────────────────────────
 	// Provide full BGM state so Naia can control all player features via agent_response events.
@@ -295,8 +406,8 @@ export function BgmPlayer({ naia }: Props) {
 		}
 		const embedUrl =
 			`https://www.youtube-nocookie.com/embed/${video.id}` +
-			"?autoplay=1&enablejsapi=1" +
-			"&origin=tauri%3A%2F%2Flocalhost";
+			`?autoplay=1&enablejsapi=1` +
+			`&origin=${encodeURIComponent(window.location.origin)}`;
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 	}
@@ -315,8 +426,14 @@ export function BgmPlayer({ naia }: Props) {
 				sendYtCmd("pauseVideo");
 				setPlaying(false);
 			} else {
-				sendYtCmd("playVideo");
-				setPlaying(true);
+				const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
+				if (!iframe && currentYt) {
+					// No iframe yet (e.g. restored from config) — reload the video
+					handleYtSelect(currentYt);
+				} else {
+					sendYtCmd("playVideo");
+					setPlaying(true);
+				}
 			}
 			return;
 		}
@@ -348,7 +465,7 @@ export function BgmPlayer({ naia }: Props) {
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
-			summary: `BGM: 로컬 "${localNames[idx]}" 재생`,
+			summary: `BGM: ${t("bgm.localBgm")} "${localNames[idx]}"`,
 		});
 		const audio = audioRef.current;
 		if (!audio) return;
@@ -383,12 +500,20 @@ export function BgmPlayer({ naia }: Props) {
 	async function doSearch(q: string) {
 		if (!q.trim()) return;
 		setSearching(true);
+		setSearchError(null);
 		setYtView("search");
 		try {
 			const results = await ytSearch(q);
 			setSearchResults(results);
 		} catch (err) {
-			Logger.error("BgmPlayer", "yt search failed", { error: String(err) });
+			const msg = String(err);
+			Logger.error("BgmPlayer", "yt search failed", { error: msg });
+			// Connection refused → agent not running
+			if (msg.includes("Failed to fetch") || msg.includes("ECONNREFUSED") || msg.includes("fetch")) {
+				setSearchError("에이전트 서버에 연결할 수 없습니다 (localhost:18791). 앱을 재시작해 보세요.");
+			} else {
+				setSearchError(`검색 오류: ${msg}`);
+			}
 		} finally {
 			setSearching(false);
 		}
@@ -418,7 +543,7 @@ export function BgmPlayer({ naia }: Props) {
 	const trackLabel =
 		source === "youtube"
 			? (currentYt?.title ?? t("bgm.defaultYouTubeTrack"))
-			: (localNames[localIndex] ?? "로컬 BGM");
+			: (localNames[localIndex] ?? t("bgm.localBgm"));
 
 	// Always scroll when playing (so AI-triggered tracks with short titles also marquee)
 	const isScrolling = playing || trackLabel.length > MARQUEE_THRESHOLD;
@@ -487,44 +612,6 @@ export function BgmPlayer({ naia }: Props) {
 				/>
 			</div>
 
-			{/* ── Drawer handle — drag to resize, click to toggle ── */}
-			{handlePos && createPortal(
-				<button
-					type="button"
-					className={`bgm-yt-drawer-handle${panelExpanded ? " bgm-yt-drawer-handle--open" : ""}`}
-					style={{ position: "fixed", top: handlePos.top, left: handlePos.left }}
-					title={t("bgm.drawerTitle")}
-					onPointerDown={(e) => {
-						e.currentTarget.setPointerCapture(e.pointerId);
-						handleDragRef.current = { startY: e.clientY, startH: ytPanelHeight, moved: false };
-					}}
-					onPointerMove={(e) => {
-						const ref = handleDragRef.current;
-						if (!ref) return;
-						const delta = e.clientY - ref.startY;
-						if (!ref.moved && Math.abs(delta) > 4) ref.moved = true;
-						if (ref.moved) {
-							const next = Math.max(YT_PANEL_H_MIN, Math.min(YT_PANEL_H_MAX, ref.startH + delta));
-							setYtPanelHeight(next);
-							localStorage.setItem(YT_PANEL_H_KEY, String(next));
-							if (!panelExpanded) setPanelExpanded(true);
-						}
-					}}
-					onPointerUp={() => {
-						const ref = handleDragRef.current;
-						handleDragRef.current = null;
-						if (!ref?.moved) setPanelExpanded((v) => !v);
-					}}
-					onPointerCancel={() => { handleDragRef.current = null; }}
-				>
-					<span className="bgm-yt-drawer-handle__bar" />
-					<span className="bgm-yt-drawer-handle__arrow">
-						{panelExpanded ? "▲" : "▼"}
-					</span>
-				</button>,
-				document.body,
-			)}
-
 			{/* ── Unified BGM panel — always in DOM when anchor ready, hidden via CSS ── */}
 			{panelPos && createPortal(
 				<div
@@ -546,7 +633,7 @@ export function BgmPlayer({ naia }: Props) {
 								className={`bgm-panel-tab${panelTab === "local" ? " bgm-panel-tab--active" : ""}`}
 								onClick={() => setPanelTab("local")}
 							>
-								♪ 로컬
+								{t("bgm.tabLocal")}
 							</button>
 						</div>
 						<button
@@ -609,7 +696,7 @@ export function BgmPlayer({ naia }: Props) {
 											className="bgm-yt-cat-btn"
 											onClick={() => loadCategory(cat.query)}
 										>
-											{cat.label}
+											{t(cat.labelKey)}
 										</button>
 									))}
 								</div>
@@ -618,7 +705,10 @@ export function BgmPlayer({ naia }: Props) {
 							{ytView === "search" && (
 								<div className="bgm-yt-list">
 									{searching && <div className="bgm-yt-status">{t("bgm.searching")}</div>}
-									{!searching && searchResults.length === 0 && (
+									{!searching && searchError && (
+										<div className="bgm-yt-status bgm-yt-status--error">{searchError}</div>
+									)}
+									{!searching && !searchError && searchResults.length === 0 && (
 										<div className="bgm-yt-status">{t("bgm.noResults")}</div>
 									)}
 									{searchResults.map((v) => (
@@ -685,6 +775,36 @@ export function BgmPlayer({ naia }: Props) {
 							})}
 						</div>
 					)}
+				{/* ── Drawer handle — inside panel so it moves as one unit, no desync ── */}
+				<button
+					type="button"
+					className="bgm-yt-drawer-handle"
+					title={t("bgm.drawerTitle")}
+					onPointerDown={(e) => {
+						e.currentTarget.setPointerCapture(e.pointerId);
+						handleDragRef.current = { startY: e.clientY, startH: ytPanelHeight, moved: false };
+					}}
+					onPointerMove={(e) => {
+						const ref = handleDragRef.current;
+						if (!ref) return;
+						const delta = e.clientY - ref.startY;
+						if (!ref.moved && Math.abs(delta) > 4) ref.moved = true;
+						if (ref.moved) {
+							const next = Math.max(YT_PANEL_H_MIN, Math.min(YT_PANEL_H_MAX, ref.startH + delta));
+							setYtPanelHeight(next);
+							localStorage.setItem(YT_PANEL_H_KEY, String(next));
+						}
+					}}
+					onPointerUp={() => {
+						const ref = handleDragRef.current;
+						handleDragRef.current = null;
+						if (!ref?.moved) setPanelExpanded(false);
+					}}
+					onPointerCancel={() => { handleDragRef.current = null; }}
+				>
+					<span className="bgm-yt-drawer-handle__bar" />
+					<span className="bgm-yt-drawer-handle__arrow">▲</span>
+				</button>
 				</div>,
 				document.body,
 			)}

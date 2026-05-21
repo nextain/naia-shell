@@ -9,6 +9,8 @@ interface SendChatOptions {
 	history: { role: "user" | "assistant"; content: string }[];
 	onChunk: (chunk: AgentResponseChunk) => void;
 	requestId: string;
+	/** Local session ID — agent uses this to persist the conversation locally. */
+	sessionId?: string;
 	ttsVoice?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
@@ -103,6 +105,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		history,
 		onChunk,
 		requestId,
+		sessionId,
 		ttsVoice,
 		ttsEngine,
 		ttsProvider,
@@ -119,6 +122,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 	const request = {
 		type: "chat_request",
 		requestId,
+		...(sessionId && { sessionId }),
 		provider: providerSafe,
 		messages: [...history, { role: "user", content: message }],
 		...(ttsVoice && { ttsVoice }),
@@ -430,5 +434,14 @@ export async function sendPanelToolResult(
 export async function sendAuthUpdate(naiaKey: string): Promise<void> {
 	await invoke("send_to_agent_command", {
 		message: JSON.stringify({ type: "auth_update", naiaKey }),
+	});
+}
+
+/** Request the agent to pre-download an offline embedding model. */
+export async function sendEmbeddingPrefetch(
+	model: "all-MiniLM-L6-v2" | "all-mpnet-base-v2",
+): Promise<void> {
+	await invoke("send_to_agent_command", {
+		message: JSON.stringify({ type: "embedding_prefetch", model }),
 	});
 }

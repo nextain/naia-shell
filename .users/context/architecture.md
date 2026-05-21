@@ -35,6 +35,15 @@ Naia OS today is an **embedded-agent** architecture, NOT a hybrid daemon stack. 
 
 OpenClaw was the gateway daemon before #201; it is **gone from runtime**. The historical hybrid framing below is preserved for context — do not treat it as current design.
 
+## Recent changes (2026-05-21)
+
+- **naia-adk scaffold distribution**: `clone_naia_adk` / `delete_naia_adk` Tauri commands — `git clone --depth 1 nextain/naia-adk`; zip fallback (reqwest + zip crate) when git absent; `CREATE_NO_WINDOW` on Windows. `AdkSetupScreen` gains cloning flow + loading state.
+- **Root cleanup**: removed duplicate `naia-settings/` from repo root.
+- **Bundle asset removal**: `shell/public/assets/` (vrm-files, bgm-musics, background) removed — all served from naia-adk clone. `copy_bundled_assets` now scope-extension only.
+- **User data migration**: `agent/src/migrate-user-data.ts` — one-shot additive migration `~/.naia/{sessions,memory,identity}` → `naia-settings/.{sessions,memory,identity}`.
+- **Local sessions**: `agent/src/local-sessions.ts` — session persistence in `naia-settings/.sessions/`.
+- **OnboardingWizard**: `memoryEmbeddingProvider` + `memoryLlmProvider` config step (none / offline / vllm / ollama / naia).
+
 ## Recent hardening (2026-05-12 adversarial-review batch)
 
 Seven issues closed in one autonomous session — details in [`agent-bridges.md > Security hardening`](./agent-bridges.md#security-hardening-post-256-260--follow-ups).

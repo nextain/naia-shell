@@ -24,6 +24,8 @@ export interface PendingApproval {
 
 interface ChatState {
 	sessionId: string | null;
+	/** Local session ID for offline history persistence (agent-side save). */
+	localSessionId: string;
 	messages: ChatMessage[];
 	isStreaming: boolean;
 	streamingContent: string;
@@ -71,8 +73,13 @@ function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function generateLocalSessionId(): string {
+	return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
 	sessionId: null,
+	localSessionId: generateLocalSessionId(),
 	messages: [],
 	isStreaming: false,
 	streamingContent: "",
@@ -284,6 +291,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		}
 		set({
 			sessionId: null,
+			localSessionId: generateLocalSessionId(),
 			messages: [],
 			isStreaming: false,
 			streamingContent: "",

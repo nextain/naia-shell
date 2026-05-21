@@ -1,0 +1,1 @@
+{"type":"REVIEW_STARTED","review_id":"cr-20260520-194000","profile":"code-review","target":"naia-os ↔ naia-agent gap fixes: adk-store.ts (stripForAgent/buildNaiaConfigEnv/writeAgentKey), OnboardingWizard.tsx G-01, App.tsx G-10/G-11, SettingsTab.tsx G-11/G-04, lib.rs write_agent_key","timestamp":"2026-05-20T19:40:00Z"}

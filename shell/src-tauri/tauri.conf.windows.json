@@ -3,16 +3,22 @@
 		"beforeBuildCommand": ""
 	},
 	"bundle": {
-		"targets": ["nsis", "msi"],
+		"targets": [
+			"nsis",
+			"msi"
+		],
 		"resources": {
 			"../../agent/dist": "agent/dist",
 			"../../agent/package.json": "agent/package.json",
 			"../../agent/node_modules": "agent/node_modules",
-			"../public/assets/vrm-files": "assets/vrm-files",
-			"../public/assets/background": "assets/background",
-			"../public/assets/bgm-musics": "assets/bgm-musics",
 			"resources/node.exe": "node.exe",
-			"resources/libvosk.dll": "libvosk.dll"
+			"resources/libvosk.dll": "libvosk.dll",
+			"resources/libgcc_s_seh-1.dll": "libgcc_s_seh-1.dll",
+			"resources/libstdc++-6.dll": "libstdc++-6.dll",
+			"resources/libwinpthread-1.dll": "libwinpthread-1.dll",
+			"resources/msvcp140.dll": "msvcp140.dll",
+			"resources/vcruntime140.dll": "vcruntime140.dll",
+			"resources/vcruntime140_1.dll": "vcruntime140_1.dll"
 		},
 		"publisher": "Nextain Inc.",
 		"windows": {

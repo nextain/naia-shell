@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clearSavedCamera } from "./AvatarCanvas";
+import { SkillsTab } from "./SkillsTab";
 import {
 	clearAdkPath,
 	getAdkPath,
@@ -54,7 +55,6 @@ import {
 import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import {
-	clearLabConfig,
 	diffConfigs,
 	fetchLabConfig,
 	pushConfigToLab,
@@ -535,8 +535,8 @@ function DeviceSelect({
 
 export function SettingsTab() {
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
-		"settings" | "memory"
-	>("settings");
+		"general" | "ai" | "skills" | "memory" | "info"
+	>("general");
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
 		"idle" | "checking" | "healthy" | "unhealthy"
 	>("idle");
@@ -1187,75 +1187,15 @@ export function SettingsTab() {
 
 	const startLabLogin = async () => {
 		setLabWaiting(true);
-		// Extend to 3 min: first-run Chrome for Testing download can take ~60-120s
-		setTimeout(() => setLabWaiting(false), 180_000);
+		setTimeout(() => setLabWaiting(false), 60_000);
 		try {
-			const loginUrl = `${getNaiaWebBaseUrl()}/${locale}/login?redirect=desktop&source=embedded`;
-
-			// 1. agent-browser path: opens Chrome for Testing (cross-platform, headed, not embedded)
-			//    CDP monitor detects /desktop/auth-complete → emits naia_auth_complete automatically.
-			Logger.info("SettingsTab", "[lab-login] trying browser_open_login");
-			const agentBrowserOk = await invoke("browser_open_login", {
-				url: loginUrl,
-			}).then(
-				() => true,
-				(e: unknown) => {
-					Logger.warn("SettingsTab", "[lab-login] browser_open_login failed", {
-						error: String(e),
-					});
-					return false;
-				},
-			);
-			if (agentBrowserOk) {
-				Logger.info(
-					"SettingsTab",
-					"[lab-login] Chrome for Testing opened, waiting for auth",
-				);
-				return;
-			}
-
-			// 2. Embedded Chrome fallback (Linux X11, browser panel already initialized)
-			const chromeAvailable = await invoke<boolean>("browser_check").catch(
-				() => false,
-			);
-			Logger.info("SettingsTab", "[lab-login] browser_check fallback", {
-				chromeAvailable,
-			});
-			if (chromeAvailable) {
-				usePanelStore.getState().setActivePanel("browser");
-				let port = 0;
-				for (let i = 0; i < 20; i++) {
-					port = await invoke<number>("browser_embed_port").catch(() => 0);
-					if (port !== 0) break;
-					await new Promise<void>((r) => setTimeout(r, 500));
-				}
-				if (port !== 0) {
-					labBrowserVisibleRef.current = true;
-					const navErr = await invoke("browser_embed_navigate", {
-						url: loginUrl,
-					}).catch((e: unknown) => String(e));
-					if (navErr) {
-						Logger.error("SettingsTab", "[lab-login] navigate failed", {
-							error: navErr,
-						});
-					}
-					return;
-				}
-			}
-
-			// 3. System browser fallback → naia:// deep link
-			Logger.info(
-				"SettingsTab",
-				"[lab-login] falling back to system browser + deep link",
-			);
-			const state = await invoke<string>("generate_oauth_state").catch(
-				() => "",
-			);
+			const state = await invoke<string>("generate_oauth_state").catch(() => "");
 			const params = new URLSearchParams({
 				redirect: "desktop",
 				source: "desktop",
 			});
 			if (state) params.set("state", state);
+			Logger.info("SettingsTab", "[lab-login] opening system browser");
 			await openUrl(
 				`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`,
 			).catch((e: unknown) => {
@@ -1287,14 +1227,15 @@ export function SettingsTab() {
 	const [voiceWakeInput, setVoiceWakeInput] = useState("");
 	const [voiceWakeLoading, setVoiceWakeLoading] = useState(false);
 	const [voiceWakeSaved, setVoiceWakeSaved] = useState(false);
-	const [discordBotConnected, setDiscordBotConnected] = useState(false);
-	const [discordBotLoading, setDiscordBotLoading] = useState(false);
+	// Discord integration — unverified, hidden until stabilized
+	// const [discordBotConnected, setDiscordBotConnected] = useState(false);
+	// const [discordBotLoading, setDiscordBotLoading] = useState(false);
 
 	// In-app confirmation state (replaces window.confirm to avoid WebKitGTK double-dialog)
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
 	const [resetClearHistory, setResetClearHistory] = useState(false);
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
-	const [showReOnboarding, setShowReOnboarding] = useState(false);
+	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
 	const fetchVoiceWake = useCallback(async () => {
 		const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
@@ -1319,39 +1260,12 @@ export function SettingsTab() {
 		}
 	}, [gatewayUrl, gatewayToken]);
 
-	const fetchDiscordBotStatus = useCallback(async () => {
-		const effectiveGatewayUrl = gatewayUrl.trim() || DEFAULT_GATEWAY_URL;
-		setDiscordBotLoading(true);
-		try {
-			const result = await directToolCall({
-				toolName: "skill_channels",
-				args: { action: "status" },
-				requestId: `discord-status-${Date.now()}`,
-				gatewayUrl: effectiveGatewayUrl,
-			});
-			if (result.success && result.output) {
-				const channels = JSON.parse(result.output) as Array<{
-					id?: string;
-					accounts?: Array<{ connected?: boolean }>;
-				}>;
-				const discord = channels.find((ch) => ch.id === "discord");
-				const connected =
-					discord?.accounts?.some((acc) => acc.connected === true) ?? false;
-				setDiscordBotConnected(connected);
-			} else {
-				setDiscordBotConnected(false);
-			}
-		} catch {
-			setDiscordBotConnected(false);
-		} finally {
-			setDiscordBotLoading(false);
-		}
-	}, [gatewayUrl, gatewayToken]);
+	// Discord integration — unverified, hidden until stabilized
+	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
 
 	useEffect(() => {
 		fetchVoiceWake();
-		fetchDiscordBotStatus();
-	}, [fetchVoiceWake, fetchDiscordBotStatus]);
+	}, [fetchVoiceWake]);
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -1496,7 +1410,7 @@ export function SettingsTab() {
 				// Sync linked channels (e.g. Discord) after login
 				// Re-check Discord bot status after sync + gateway restart
 				syncLinkedChannels().then(() => {
-					setTimeout(() => fetchDiscordBotStatus(), 3000);
+					// setTimeout(() => fetchDiscordBotStatus(), 3000); // Discord unverified
 				});
 
 				// Try Lab pull — show diff dialog if settings differ
@@ -1534,7 +1448,7 @@ export function SettingsTab() {
 			if (discordTarget) setDiscordDefaultTarget(discordTarget);
 			else if (discordUserId) setDiscordDefaultTarget(`user:${discordUserId}`);
 			if (discordChannelId) setDiscordDmChannelId(discordChannelId);
-			setDiscordBotConnected(true);
+			// setDiscordBotConnected(true); // Discord unverified
 		});
 		return () => {
 			unlisten.then((fn) => fn());
@@ -2177,35 +2091,32 @@ export function SettingsTab() {
 	const omniVoices = selectedModelMeta?.voices;
 	const manualUrl = `https://naia.nextain.io/${locale}/manual`;
 
-	async function handleDiscordBotConnect() {
-		if (!enableTools) {
-			setError(t("settings.enableToolsFirst"));
-			return;
-		}
-		setError("");
-		setDiscordBotLoading(true);
-		try {
-			const connectUrl = `${getNaiaWebBaseUrl()}/${locale}/settings/integrations?channel=discord&source=naia-shell`;
-			await openUrl(connectUrl);
-			await fetchDiscordBotStatus();
-		} catch (err) {
-			setError(
-				`${t("settings.discordConnectError")}: ${err instanceof Error ? err.message : String(err)}`,
-			);
-		} finally {
-			setDiscordBotLoading(false);
-		}
-	}
+	// Discord integration — unverified, hidden until stabilized
+	// async function handleDiscordBotConnect() { ... }
 
 	return (
 		<div className="settings-tab">
 			<div className="settings-tab-bar">
 				<button
 					type="button"
-					className={`settings-tab-btn${activeSettingsTab === "settings" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("settings")}
+					className={`settings-tab-btn${activeSettingsTab === "general" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("general")}
 				>
-					{t("settings.tabSettings")}
+					{t("settings.tabGeneral")}
+				</button>
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "ai" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("ai")}
+				>
+					{t("settings.tabAI")}
+				</button>
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("skills")}
+				>
+					{t("settings.tabSkills")}
 				</button>
 				<button
 					type="button"
@@ -2214,8 +2125,15 @@ export function SettingsTab() {
 				>
 					{t("settings.tabMemory")}
 				</button>
+				<button
+					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "info" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("info")}
+				>
+					{t("settings.tabInfo")}
+				</button>
 			</div>
-			{activeSettingsTab === "settings" && <>
+			{activeSettingsTab === "general" && <>
 			<div className="settings-field">
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 					<label htmlFor="locale-select" style={{ margin: 0 }}>
@@ -2268,17 +2186,25 @@ export function SettingsTab() {
 						onClick={async () => {
 							const selected = await open({
 								directory: true,
-								title: "워크스페이스 폴더 선택",
+								title: t("settings.workspaceDialogTitle"),
 							});
-							if (selected && typeof selected === "string")
+							if (selected && typeof selected === "string") {
 								setWorkspaceRoot(selected);
+								const cfg = loadConfig();
+								if (!cfg) return;
+								saveConfig({ ...cfg, workspaceRoot: selected });
+								setAdkPath(selected);
+								invoke("workspace_set_root", { root: selected }).catch(() => {});
+								window.location.reload();
+							}
 						}}
 					>
-						찾아보기
+						{t("settings.workspaceBrowse")}
 					</button>
 					<button
 						type="button"
 						className="voice-preview-btn"
+						style={{ background: "var(--accent-color, #5b8cf5)", color: "#fff" }}
 						onClick={() => {
 							const trimmed = workspaceRoot.trim();
 							const cfg = loadConfig();
@@ -2298,21 +2224,18 @@ export function SettingsTab() {
 							window.location.reload();
 						}}
 					>
-						적용
+						{t("settings.workspaceApply")}
 					</button>
 					<input
 						type="text"
 						className="settings-input"
 						value={workspaceRoot}
 						onChange={(e) => setWorkspaceRoot(e.target.value)}
-						placeholder="작업할 코드 워크스페이스 경로"
+						placeholder={t("settings.workspacePlaceholder")}
 						style={{ flex: 1 }}
 					/>
 				</div>
-				<div className="settings-hint">
-					Git 레포와 skills/ 디렉토리를 탐색할 코드 워크스페이스 경로입니다.
-					VRM·배경·BGM은 아래 naia-settings 경로를 사용합니다.
-				</div>
+				<div className="settings-hint">{t("settings.workspaceHint")}</div>
 			</div>
 
 			<div className="settings-field">
@@ -2513,174 +2436,10 @@ export function SettingsTab() {
 				/>
 				<div className="settings-hint">{t("settings.personaHint")}</div>
 			</div>
+			</>
+			}
+			{activeSettingsTab === "ai" && <>
 
-			{provider !== "nextain" && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.labSection")}</span>
-					</div>
-
-					<div className="settings-field">
-						<label>
-							{naiaKey
-								? t("settings.labConnected")
-								: t("settings.labDisconnected")}
-						</label>
-						{naiaKey ? (
-							<div className="lab-info-block">
-								{naiaUserId && (
-									<span className="lab-user-id">{naiaUserId}</span>
-								)}
-								<div className="lab-balance-row">
-									<span className="lab-balance-label">
-										{t("settings.labBalance")}
-									</span>
-									<span className="lab-balance-value">
-										{labBalanceLoading
-											? t("settings.labBalanceLoading")
-											: labBalanceError
-												? t("cost.labError")
-												: labBalance !== null
-													? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
-													: "-"}
-									</span>
-								</div>
-								<div className="lab-actions-row">
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(
-												`https://naia.nextain.io/${locale}/dashboard`,
-											).catch(() => {})
-										}
-									>
-										{t("settings.labDashboard")}
-									</button>
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={() =>
-											openUrl(
-												`https://naia.nextain.io/${locale}/billing`,
-											).catch(() => {})
-										}
-									>
-										{t("cost.labCharge")}
-									</button>
-									{showLabDisconnect ? (
-										<div
-											className="reset-confirm-panel"
-											style={{ marginTop: 8 }}
-										>
-											<p className="reset-confirm-msg">
-												{t("settings.labDisconnectConfirm")}
-											</p>
-											<div className="reset-confirm-actions">
-												<button
-													type="button"
-													className="settings-reset-btn"
-													onClick={async () => {
-														setNaiaKeyState("");
-														setNaiaUserIdState("");
-														setLabBalance(null);
-														setProvider("gemini");
-														setModel(getDefaultLlmModel("gemini"));
-														setDiscordDefaultUserId("");
-														setDiscordDmChannelId("");
-														setDiscordDefaultTarget("");
-														setShowLabDisconnect(false);
-														await deleteSecretKey("naiaKey");
-														const current = loadConfig();
-														if (current) {
-															saveConfig({
-																...current,
-																provider:
-																	current.provider === "nextain"
-																		? "gemini"
-																		: current.provider,
-																model:
-																	current.provider === "nextain"
-																		? getDefaultLlmModel("gemini")
-																		: current.model,
-																// Reset Naia-dependent STT/TTS to defaults
-																ttsProvider:
-																	current.ttsProvider === "nextain"
-																		? "edge"
-																		: current.ttsProvider,
-																sttProvider:
-																	current.sttProvider === "nextain"
-																		? ""
-																		: current.sttProvider,
-																naiaKey: undefined,
-																naiaUserId: undefined,
-																discordDefaultUserId: undefined,
-																discordDmChannelId: undefined,
-																discordDefaultTarget: undefined,
-															});
-														}
-														// Sync cleared Discord config to Gateway
-														const updated = loadConfig();
-														if (updated) {
-															await syncToGateway(
-																updated.provider || "gemini",
-																updated.model || getDefaultLlmModel("gemini"),
-																updated.apiKey,
-																updated.persona,
-																updated.agentName,
-																updated.userName,
-																undefined,
-																updated.locale,
-																undefined, // discordDmChannelId cleared
-																undefined, // discordDefaultUserId cleared
-																updated.ttsProvider,
-																updated.ttsVoice,
-																undefined,
-																undefined,
-																undefined, // naiaKey cleared
-																updated.ollamaHost,
-															);
-															await restartGateway();
-														}
-													}}
-												>
-													{t("settings.labDisconnect")}
-												</button>
-												<button
-													type="button"
-													className="settings-cancel-btn"
-													onClick={() => setShowLabDisconnect(false)}
-												>
-													{t("settings.cancel")}
-												</button>
-											</div>
-										</div>
-									) : (
-										<button
-											type="button"
-											className="voice-preview-btn lab-disconnect-btn"
-											onClick={() => setShowLabDisconnect(true)}
-										>
-											{t("settings.labDisconnect")}
-										</button>
-									)}
-								</div>
-							</div>
-						) : (
-							<button
-								type="button"
-								className="voice-preview-btn"
-								disabled={labWaiting}
-								onClick={startLabLogin}
-							>
-								{labWaiting
-									? t("onboard.lab.waiting")
-									: t("settings.labConnect")}
-							</button>
-						)}
-					</div>
-				</>
-			)}
 
 			<div className="settings-section-divider">
 				<span>{t("settings.aiSection")}</span>
@@ -2891,224 +2650,6 @@ export function SettingsTab() {
 				</div>
 			)}
 
-			{provider === "nextain" ? (
-				<div className="settings-field">
-					<label>{t("settings.labSection")}</label>
-					<div className="settings-hint">
-						Naia 계정 로그인으로 API 키 없이 사용할 수 있습니다.
-					</div>
-					{naiaKey ? (
-						<div className="lab-info-block">
-							<span className="settings-hint">
-								로그인됨{naiaUserId ? ` (${naiaUserId})` : ""}
-							</span>
-							<div className="lab-balance-row">
-								<span className="lab-balance-label">
-									{t("settings.labBalance")}
-								</span>
-								<span className="lab-balance-value">
-									{labBalanceLoading
-										? t("settings.labBalanceLoading")
-										: labBalanceError
-											? t("cost.labError")
-											: labBalance !== null
-												? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
-												: "-"}
-								</span>
-							</div>
-							<div className="lab-actions-row">
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() =>
-										openUrl(
-											`https://naia.nextain.io/${locale}/dashboard`,
-										).catch(() => {})
-									}
-								>
-									{t("settings.labDashboard")}
-								</button>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() =>
-										openUrl(`https://naia.nextain.io/${locale}/billing`).catch(
-											() => {},
-										)
-									}
-								>
-									{t("cost.labCharge")}
-								</button>
-								{showLabDisconnect ? (
-									<div className="reset-confirm-panel" style={{ marginTop: 8 }}>
-										<p className="reset-confirm-msg">
-											{t("settings.labDisconnectConfirm")}
-										</p>
-										<div className="reset-confirm-actions">
-											<button
-												type="button"
-												className="settings-reset-btn"
-												onClick={async () => {
-													setNaiaKeyState("");
-													setNaiaUserIdState("");
-													setLabBalance(null);
-													setProvider("gemini");
-													setModel(getDefaultLlmModel("gemini"));
-													setDiscordDefaultUserId("");
-													setDiscordDmChannelId("");
-													setDiscordDefaultTarget("");
-													setShowLabDisconnect(false);
-													await deleteSecretKey("naiaKey");
-													const current = loadConfig();
-													if (current) {
-														saveConfig({
-															...current,
-															provider:
-																current.provider === "nextain"
-																	? "gemini"
-																	: current.provider,
-															model:
-																current.provider === "nextain"
-																	? getDefaultLlmModel("gemini")
-																	: current.model,
-															ttsProvider:
-																current.ttsProvider === "nextain"
-																	? "edge"
-																	: current.ttsProvider,
-															sttProvider:
-																current.sttProvider === "nextain"
-																	? ""
-																	: current.sttProvider,
-															naiaKey: undefined,
-															naiaUserId: undefined,
-															discordDefaultUserId: undefined,
-															discordDmChannelId: undefined,
-															discordDefaultTarget: undefined,
-														});
-													}
-													// Sync cleared Discord config to Gateway
-													const updated = loadConfig();
-													if (updated) {
-														await syncToGateway(
-															updated.provider || "gemini",
-															updated.model || getDefaultLlmModel("gemini"),
-															updated.apiKey,
-															updated.persona,
-															updated.agentName,
-															updated.userName,
-															undefined,
-															updated.locale,
-															undefined, // discordDmChannelId cleared
-															undefined, // discordDefaultUserId cleared
-															updated.ttsProvider,
-															updated.ttsVoice,
-															undefined,
-															undefined,
-															undefined, // naiaKey cleared
-															updated.ollamaHost,
-														);
-														await restartGateway();
-													}
-												}}
-											>
-												{t("settings.labDisconnect")}
-											</button>
-											<button
-												type="button"
-												className="settings-cancel-btn"
-												onClick={() => setShowLabDisconnect(false)}
-											>
-												{t("settings.cancel")}
-											</button>
-										</div>
-									</div>
-								) : (
-									<button
-										type="button"
-										className="voice-preview-btn lab-disconnect-btn"
-										onClick={() => setShowLabDisconnect(true)}
-									>
-										{t("settings.labDisconnect")}
-									</button>
-								)}
-								{showReOnboarding ? (
-									<div className="reset-confirm-panel" style={{ marginTop: 8 }}>
-										<p className="reset-confirm-msg">
-											{t("settings.reOnboardingConfirm")}
-										</p>
-										<div className="reset-confirm-actions">
-											<button
-												type="button"
-												className="settings-reset-btn"
-												onClick={async () => {
-													// Delete online config first, then reload
-													if (naiaKey && naiaUserId) {
-														await clearLabConfig(naiaKey, naiaUserId);
-													}
-													// Reset local onboarding state
-													const current = loadConfig();
-													if (current) {
-														saveConfig({
-															...current,
-															onboardingComplete: undefined,
-															userName: undefined,
-															agentName: undefined,
-															persona: undefined,
-															honorific: undefined,
-															speechStyle: undefined,
-														});
-													}
-													// Reload to trigger onboarding
-													window.location.reload();
-												}}
-											>
-												{t("settings.reOnboardingContinue")}
-											</button>
-											<button
-												type="button"
-												className="settings-cancel-btn"
-												onClick={() => setShowReOnboarding(false)}
-											>
-												{t("settings.cancel")}
-											</button>
-										</div>
-									</div>
-								) : (
-									<button
-										type="button"
-										className="voice-preview-btn re-onboarding-btn"
-										onClick={() => setShowReOnboarding(true)}
-									>
-										{t("settings.reOnboarding")}
-									</button>
-								)}
-							</div>
-						</div>
-					) : (
-						<button
-							type="button"
-							className="voice-preview-btn"
-							disabled={labWaiting}
-							onClick={startLabLogin}
-						>
-							{labWaiting ? t("onboard.lab.waiting") : t("settings.labConnect")}
-						</button>
-					)}
-					{error && <div className="settings-error">{error}</div>}
-				</div>
-			) : provider === "ollama" || provider === "vllm" ? (
-				<>{/* host shown above model selector */}</>
-			) : provider === "claude-code-cli" ? (
-				<div className="settings-field">
-					<label>{t("settings.apiKey")}</label>
-					<div className="settings-hint">
-						Claude Code CLI provider는 로컬 CLI 로그인 세션을 사용합니다.
-					</div>
-					{error && <div className="settings-error">{error}</div>}
-				</div>
-			) : (
-				<>{/* API key shown above, before model selector */}</>
-			)}
 
 			{/* Voice settings — only for LLM models (omni models have built-in STT/TTS) */}
 			{!isSelectedOmni && (
@@ -3633,242 +3174,25 @@ export function SettingsTab() {
 					스피커 테스트
 				</button>
 			</div>
-
-			<div className="settings-section-divider">
-				<span>{t("settings.toolsSection")}</span>
+			<div className="settings-actions">
+				<button
+					type="button"
+					className="settings-save-btn"
+					onClick={handleSave}
+				>
+					{saved ? t("settings.saved") : t("settings.save")}
+				</button>
 			</div>
-
-			<div className="settings-field settings-toggle-row">
-				<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
-				<input
-					id="tools-toggle"
-					type="checkbox"
-					checked={enableTools}
-					onChange={(e) => setEnableTools(e.target.checked)}
-				/>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="gateway-url-input">{t("settings.gatewayUrl")}</label>
-				<input
-					id="gateway-url-input"
-					type="text"
-					value={gatewayUrl}
-					onChange={(e) => setGatewayUrl(e.target.value)}
-					placeholder="ws://localhost:18789"
-				/>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="gateway-token-input">
-					{t("settings.gatewayToken")}
-				</label>
-				<input
-					id="gateway-token-input"
-					type="password"
-					value={gatewayToken}
-					onChange={(e) => setGatewayToken(e.target.value)}
-				/>
-			</div>
-
-			{/* Agent health check (#296) */}
-			<div className="settings-field" data-testid="agent-health-section">
-				<label>{t("settings.agentHealth")}</label>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span
-						className={`agent-health-status agent-health-status--${agentHealthStatus}`}
-						data-testid="agent-health-status"
-					>
-						{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
-						{agentHealthStatus === "checking" && t("settings.agentHealthChecking")}
-						{agentHealthStatus === "healthy" && t("settings.agentHealthHealthy")}
-						{agentHealthStatus === "unhealthy" && t("settings.agentHealthUnhealthy")}
-					</span>
-					{agentHealthCheckedAt && (
-						<span className="agent-health-time" style={{ fontSize: "0.75em", color: "var(--text-muted, #888)" }}>
-							{agentHealthCheckedAt.toLocaleTimeString()}
-						</span>
-					)}
-					<button
-						type="button"
-						className="voice-preview-btn"
-						title="agent-health-check-btn"
-						data-testid="agent-health-check-btn"
-						onClick={async () => {
-							setAgentHealthStatus("checking");
-							try {
-								const healthy = await invoke<boolean>("gateway_health");
-								setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
-							} catch {
-								setAgentHealthStatus("unhealthy");
-							}
-							setAgentHealthCheckedAt(new Date());
-						}}
-					>
-						{t("settings.agentHealthCheck")}
-					</button>
-				</div>
-			</div>
-
-			{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
-
-			{allowedToolsCount > 0 && (
-				<div className="settings-field">
-					<label>
-						{t("settings.allowedTools")} ({allowedToolsCount})
-					</label>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={() => {
-							clearAllowedTools();
-							setAllowedToolsCount(0);
-						}}
-					>
-						{t("settings.clearAllowedTools")}
-					</button>
-				</div>
-			)}
-
-			{enableTools && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.channelsSection")}</span>
-					</div>
-
-					{/* Discord channel card — full width so it doesn't drift to right column */}
-					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
-						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
-						<div className="channel-card-header">
-							<span className="channel-name">Discord</span>
-							<span
-								className={`channel-status-badge ${discordBotConnected ? "connected" : "disconnected"}`}
-								data-testid="channel-status"
-							>
-								{discordBotConnected
-									? t("channels.connected")
-									: discordBotLoading
-										? "..."
-										: t("channels.disconnected")}
-							</span>
-						</div>
-						<div className="settings-field" style={{ marginBottom: 6 }}>
-							<div style={{ display: "flex", gap: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={handleDiscordBotConnect}
-									disabled={discordBotLoading}
-								>
-									{discordBotLoading
-										? t("settings.discordBotConnecting")
-										: discordBotConnected
-											? t("settings.discordBotReconnect")
-											: t("settings.discordBotConnect")}
-								</button>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => fetchDiscordBotStatus()}
-									disabled={discordBotLoading}
-								>
-									{t("settings.discordCheckStatus")}
-								</button>
-							</div>
-						</div>
-						<div className="settings-field">
-							<label htmlFor="discord-user-id">Discord User ID</label>
-							<input
-								id="discord-user-id"
-								type="text"
-								value={discordDefaultUserId}
-								onChange={(e) => setDiscordDefaultUserId(e.target.value)}
-								placeholder={t("settings.discordUserIdPlaceholder")}
-							/>
-						</div>
-						<div className="settings-field">
-							<label htmlFor="discord-dm-channel-id">
-								Discord DM Channel ID
-							</label>
-							<input
-								id="discord-dm-channel-id"
-								type="text"
-								value={discordDmChannelId}
-								onChange={(e) => setDiscordDmChannelId(e.target.value)}
-								placeholder={t("settings.discordDmChannelIdPlaceholder")}
-							/>
-						</div>
-					</div>
-
-					<div className="settings-section-divider">
-						<span>{t("settings.voiceConversation")}</span>
-					</div>
-					<div className="settings-field">
-						<span className="settings-hint">{t("settings.voiceWakeHint")}</span>
-					</div>
-					{voiceWakeLoading ? (
-						<div className="settings-field">
-							<span className="settings-hint">
-								{t("settings.voiceWakeLoading")}
-							</span>
-						</div>
-					) : (
-						<>
-							<div className="settings-field">
-								<label>{t("settings.voiceWakeTriggers")}</label>
-								<div
-									className="voice-wake-triggers"
-									data-testid="voice-wake-triggers"
-								>
-									{voiceWakeTriggers.map((trigger) => (
-										<span key={trigger} className="voice-wake-tag">
-											{trigger}
-											<button
-												type="button"
-												className="voice-wake-tag-remove"
-												onClick={() => handleVoiceWakeRemove(trigger)}
-											>
-												×
-											</button>
-										</span>
-									))}
-								</div>
-							</div>
-							<div className="settings-field voice-wake-add-row">
-								<input
-									type="text"
-									data-testid="voice-wake-input"
-									value={voiceWakeInput}
-									onChange={(e) => setVoiceWakeInput(e.target.value)}
-									placeholder={t("settings.voiceWakePlaceholder")}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") handleVoiceWakeAdd();
-									}}
-								/>
-								<button type="button" onClick={handleVoiceWakeAdd}>
-									{t("settings.voiceWakeAdd")}
-								</button>
-							</div>
-							<div className="settings-field">
-								<button
-									type="button"
-									className="voice-preview-btn"
-									data-testid="voice-wake-save"
-									onClick={handleVoiceWakeSave}
-								>
-									{voiceWakeSaved
-										? t("settings.voiceWakeSaved")
-										: t("settings.voiceWakeSave")}
-								</button>
-							</div>
-						</>
-					)}
-				</>
-			)}
-
-			{enableTools && <DevicePairingSection />}
 			</>}
+						{activeSettingsTab === "skills" && (
+				<SkillsTab />
+			)}
 			{activeSettingsTab === "memory" && <>
+				{/* Coming soon banner */}
+				<div className="settings-coming-soon-banner">
+					<span>⏳ {t("settings.comingSoon")}</span>
+				</div>
+				<div style={{ opacity: 0.5, pointerEvents: "none" }}>
 			<div className="settings-section-divider">
 				<span>{t("settings.memorySection")}</span>
 			</div>
@@ -4237,26 +3561,454 @@ export function SettingsTab() {
 					))}
 				</div>
 			)}
+							</div>
 			</>}
-			{activeSettingsTab === "settings" && <>
-			{/* Log viewer button (#297) */}
-			<div className="settings-field" data-testid="log-viewer-section">
-				<label>{t("settings.logViewer")}</label>
+			{activeSettingsTab === "general" && <>
+						<div className="settings-section-divider">
+				<span>{t("settings.toolsSection")}</span>
+			</div>
+
+			<div className="settings-field settings-toggle-row">
+				<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
+				<input
+					id="tools-toggle"
+					type="checkbox"
+					checked={enableTools}
+					onChange={(e) => setEnableTools(e.target.checked)}
+				/>
+			</div>
+
+			<div className="settings-field">
+				<label htmlFor="gateway-url-input">{t("settings.gatewayUrl")}</label>
+				<input
+					id="gateway-url-input"
+					type="text"
+					value={gatewayUrl}
+					onChange={(e) => setGatewayUrl(e.target.value)}
+					placeholder="ws://localhost:18789"
+				/>
+			</div>
+
+			<div className="settings-field">
+				<label htmlFor="gateway-token-input">
+					{t("settings.gatewayToken")}
+				</label>
+				<input
+					id="gateway-token-input"
+					type="password"
+					value={gatewayToken}
+					onChange={(e) => setGatewayToken(e.target.value)}
+				/>
+			</div>
+
+			{/* Agent health check (#296) */}
+			<div className="settings-field" data-testid="agent-health-section">
+				<label>{t("settings.agentHealth")}</label>
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<span
+						className={`agent-health-status agent-health-status--${agentHealthStatus}`}
+						data-testid="agent-health-status"
+					>
+						{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
+						{agentHealthStatus === "checking" && t("settings.agentHealthChecking")}
+						{agentHealthStatus === "healthy" && t("settings.agentHealthHealthy")}
+						{agentHealthStatus === "unhealthy" && t("settings.agentHealthUnhealthy")}
+					</span>
+					{agentHealthCheckedAt && (
+						<span className="agent-health-time" style={{ fontSize: "0.75em", color: "var(--text-muted, #888)" }}>
+							{agentHealthCheckedAt.toLocaleTimeString()}
+						</span>
+					)}
+					<button
+						type="button"
+						className="voice-preview-btn"
+						title="agent-health-check-btn"
+						data-testid="agent-health-check-btn"
+						onClick={async () => {
+							setAgentHealthStatus("checking");
+							try {
+								const healthy = await invoke<boolean>("gateway_health");
+								setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
+							} catch {
+								setAgentHealthStatus("unhealthy");
+							}
+							setAgentHealthCheckedAt(new Date());
+						}}
+					>
+						{t("settings.agentHealthCheck")}
+					</button>
+				</div>
+			</div>
+
+			{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
+
+			{allowedToolsCount > 0 && (
+				<div className="settings-field">
+					<label>
+						{t("settings.allowedTools")} ({allowedToolsCount})
+					</label>
+					<button
+						type="button"
+						className="voice-preview-btn"
+						onClick={() => {
+							clearAllowedTools();
+							setAllowedToolsCount(0);
+						}}
+					>
+						{t("settings.clearAllowedTools")}
+					</button>
+				</div>
+			)}
+
+			{enableTools && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.channelsSection")}</span>
+					</div>
+
+					{/* Discord channel card — unverified, hidden until stabilized
+					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
+						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
+						<div className="channel-card-header">
+							<span className="channel-name">Discord</span>
+							<span
+								className={`channel-status-badge ${discordBotConnected ? "connected" : "disconnected"}`}
+								data-testid="channel-status"
+							>
+								{discordBotConnected
+									? t("channels.connected")
+									: discordBotLoading
+										? "..."
+										: t("channels.disconnected")}
+							</span>
+						</div>
+						<div className="settings-field" style={{ marginBottom: 6 }}>
+							<div style={{ display: "flex", gap: 8 }}>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={handleDiscordBotConnect}
+									disabled={discordBotLoading}
+								>
+									{discordBotLoading
+										? t("settings.discordBotConnecting")
+										: discordBotConnected
+											? t("settings.discordBotReconnect")
+											: t("settings.discordBotConnect")}
+								</button>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={() => fetchDiscordBotStatus()}
+									disabled={discordBotLoading}
+								>
+									{t("settings.discordCheckStatus")}
+								</button>
+							</div>
+						</div>
+						<div className="settings-field">
+							<label htmlFor="discord-user-id">Discord User ID</label>
+							<input
+								id="discord-user-id"
+								type="text"
+								value={discordDefaultUserId}
+								onChange={(e) => setDiscordDefaultUserId(e.target.value)}
+								placeholder={t("settings.discordUserIdPlaceholder")}
+							/>
+						</div>
+						<div className="settings-field">
+							<label htmlFor="discord-dm-channel-id">
+								Discord DM Channel ID
+							</label>
+							<input
+								id="discord-dm-channel-id"
+								type="text"
+								value={discordDmChannelId}
+								onChange={(e) => setDiscordDmChannelId(e.target.value)}
+								placeholder={t("settings.discordDmChannelIdPlaceholder")}
+							/>
+						</div>
+					</div>
+				*/}
+
+					<div className="settings-section-divider">
+						<span>{t("settings.voiceConversation")}</span>
+					</div>
+					<div className="settings-field">
+						<span className="settings-hint">{t("settings.voiceWakeHint")}</span>
+					</div>
+					{voiceWakeLoading ? (
+						<div className="settings-field">
+							<span className="settings-hint">
+								{t("settings.voiceWakeLoading")}
+							</span>
+						</div>
+					) : (
+						<>
+							<div className="settings-field">
+								<label>{t("settings.voiceWakeTriggers")}</label>
+								<div
+									className="voice-wake-triggers"
+									data-testid="voice-wake-triggers"
+								>
+									{voiceWakeTriggers.map((trigger) => (
+										<span key={trigger} className="voice-wake-tag">
+											{trigger}
+											<button
+												type="button"
+												className="voice-wake-tag-remove"
+												onClick={() => handleVoiceWakeRemove(trigger)}
+											>
+												×
+											</button>
+										</span>
+									))}
+								</div>
+							</div>
+							<div className="settings-field voice-wake-add-row">
+								<input
+									type="text"
+									data-testid="voice-wake-input"
+									value={voiceWakeInput}
+									onChange={(e) => setVoiceWakeInput(e.target.value)}
+									placeholder={t("settings.voiceWakePlaceholder")}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") handleVoiceWakeAdd();
+									}}
+								/>
+								<button type="button" onClick={handleVoiceWakeAdd}>
+									{t("settings.voiceWakeAdd")}
+								</button>
+							</div>
+							<div className="settings-field">
+								<button
+									type="button"
+									className="voice-preview-btn"
+									data-testid="voice-wake-save"
+									onClick={handleVoiceWakeSave}
+								>
+									{voiceWakeSaved
+										? t("settings.voiceWakeSaved")
+										: t("settings.voiceWakeSave")}
+								</button>
+							</div>
+						</>
+					)}
+				</>
+			)}
+
+			{enableTools && <DevicePairingSection />}
+			<div className="settings-actions">
 				<button
 					type="button"
-					className="voice-preview-btn"
-					data-testid="log-viewer-btn"
-					onClick={async () => {
-						try {
-							const logPath = await invoke<string>("get_gateway_log_path");
-							await openPath(logPath);
-						} catch (e) {
-							Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
-						}
-					}}
+					className="settings-save-btn"
+					onClick={handleSave}
 				>
-					{t("settings.logViewerOpen")}
+					{saved ? t("settings.saved") : t("settings.save")}
 				</button>
+			</div>
+			</>}
+			{activeSettingsTab === "info" && <>
+			<div className="settings-section-divider">
+				<span>{t("settings.labSection")}</span>
+			</div>
+
+			<div className="settings-field">
+				<label>
+					{naiaKey
+						? t("settings.labConnected")
+						: t("settings.labDisconnected")}
+				</label>
+				{naiaKey ? (
+					<div className="lab-info-block">
+						{naiaUserId && (
+							<span className="lab-user-id">{naiaUserId}</span>
+						)}
+						<div className="lab-balance-row">
+							<span className="lab-balance-label">
+								{t("settings.labBalance")}
+							</span>
+							<span className="lab-balance-value">
+								{labBalanceLoading
+									? t("settings.labBalanceLoading")
+									: labBalanceError
+										? t("cost.labError")
+										: labBalance !== null
+											? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
+											: "-"}
+							</span>
+						</div>
+						<div className="lab-actions-row">
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() =>
+									openUrl(
+										`https://naia.nextain.io/${locale}/dashboard`,
+									).catch(() => {})
+								}
+							>
+								{t("settings.labDashboard")}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() =>
+									openUrl(
+										`https://naia.nextain.io/${locale}/billing`,
+									).catch(() => {})
+								}
+							>
+								{t("cost.labCharge")}
+							</button>
+							{showLabDisconnect ? (
+								<div
+									className="reset-confirm-panel"
+									style={{ marginTop: 8 }}
+								>
+									<p className="reset-confirm-msg">
+										{t("settings.labDisconnectConfirm")}
+									</p>
+									<div className="reset-confirm-actions">
+										<button
+											type="button"
+											className="settings-reset-btn"
+											onClick={async () => {
+												setNaiaKeyState("");
+												setNaiaUserIdState("");
+												setLabBalance(null);
+												setProvider("gemini");
+												setModel(getDefaultLlmModel("gemini"));
+												setDiscordDefaultUserId("");
+												setDiscordDmChannelId("");
+												setDiscordDefaultTarget("");
+												setShowLabDisconnect(false);
+												await deleteSecretKey("naiaKey");
+												const current = loadConfig();
+												if (current) {
+													saveConfig({
+														...current,
+														provider:
+															current.provider === "nextain"
+																? "gemini"
+																: current.provider,
+														model:
+															current.provider === "nextain"
+																? getDefaultLlmModel("gemini")
+																: current.model,
+														// Reset Naia-dependent STT/TTS to defaults
+														ttsProvider:
+															current.ttsProvider === "nextain"
+																? "edge"
+																: current.ttsProvider,
+														sttProvider:
+															current.sttProvider === "nextain"
+																? ""
+																: current.sttProvider,
+														naiaKey: undefined,
+														naiaUserId: undefined,
+														discordDefaultUserId: undefined,
+														discordDmChannelId: undefined,
+														discordDefaultTarget: undefined,
+													});
+												}
+												// Sync cleared Discord config to Gateway
+												const updated = loadConfig();
+												if (updated) {
+													await syncToGateway(
+														updated.provider || "gemini",
+														updated.model || getDefaultLlmModel("gemini"),
+														updated.apiKey,
+														updated.persona,
+														updated.agentName,
+														updated.userName,
+														undefined,
+														updated.locale,
+														undefined, // discordDmChannelId cleared
+														undefined, // discordDefaultUserId cleared
+														updated.ttsProvider,
+														updated.ttsVoice,
+														undefined,
+														undefined,
+														undefined, // naiaKey cleared
+														updated.ollamaHost,
+													);
+													await restartGateway();
+												}
+											}}
+										>
+											{t("settings.labDisconnect")}
+										</button>
+										<button
+											type="button"
+											className="settings-cancel-btn"
+											onClick={() => setShowLabDisconnect(false)}
+										>
+											{t("settings.cancel")}
+										</button>
+									</div>
+								</div>
+							) : (
+								<button
+									type="button"
+									className="voice-preview-btn lab-disconnect-btn"
+									onClick={() => setShowLabDisconnect(true)}
+								>
+									{t("settings.labDisconnect")}
+								</button>
+							)}
+						</div>
+					</div>
+				) : (
+					<button
+						type="button"
+						className="voice-preview-btn"
+						disabled={labWaiting}
+						onClick={startLabLogin}
+					>
+						{labWaiting
+							? t("onboard.lab.waiting")
+							: t("settings.labConnect")}
+					</button>
+				)}
+			</div>
+			{/* Log viewer (#297) */}
+			<div className="settings-field" data-testid="log-viewer-section">
+				<label>{t("settings.logViewer")}</label>
+				<div className="lab-actions-row" style={{ flexWrap: "wrap", gap: "6px" }}>
+					{(["naia.log", "gateway.log", "node-host.log", "llm-debug.log"] as const).map((file) => (
+						<button
+							key={file}
+							type="button"
+							className="voice-preview-btn"
+							onClick={async () => {
+								try {
+									const logDir = await invoke<string>("get_log_dir");
+									await invoke("open_log_in_editor", { path: `${logDir}/${file}` });
+								} catch (e) {
+									Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
+								}
+							}}
+						>
+							{file}
+						</button>
+					))}
+					<button
+						type="button"
+						className="voice-preview-btn"
+						data-testid="log-viewer-btn"
+						onClick={async () => {
+							try {
+								const logDir = await invoke<string>("get_log_dir");
+								await openPath(logDir);
+							} catch (e) {
+								Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
+							}
+						}}
+					>
+						{t("settings.logViewerOpen")}
+					</button>
+				</div>
 			</div>
 
 			<div className="settings-danger-zone">
@@ -4312,6 +4064,8 @@ export function SettingsTab() {
 			</div>
 
 			<VersionFooter />
+
+			<AboutSection />
 
 			{/* STT Model Manager Modal */}
 			{sttModelModalOpen && (
@@ -4489,6 +4243,65 @@ export function SettingsTab() {
 				</div>
 			)}
 			</>}
+		</div>
+	);
+}
+
+function AboutSection() {
+	return (
+		<div className="settings-about">
+			<div className="settings-section-divider">
+				<span>About</span>
+			</div>
+			<div className="settings-about__body">
+				<p className="settings-about__desc">{t("about.desc1")}</p>
+				<div className="settings-about__alpha-badge">⚠ Alpha</div>
+				<p className="settings-about__desc">{t("about.desc2")}</p>
+				<div className="settings-about__links">
+					<a
+						href="https://github.com/nextain/naia-os"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="settings-about__link"
+						onClick={(e) => {
+							e.preventDefault();
+							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+								openUrl("https://github.com/nextain/naia-os"),
+							);
+						}}
+					>
+						{t("about.linkGithub")}
+					</a>
+					<a
+						href="https://discord.com/invite/FGYJN7auty"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="settings-about__link"
+						onClick={(e) => {
+							e.preventDefault();
+							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+								openUrl("https://discord.com/invite/FGYJN7auty"),
+							);
+						}}
+					>
+						{t("about.linkDiscord")}
+					</a>
+					<a
+						href="https://github.com/sponsors/nextain"
+						target="_blank"
+						rel="noopener noreferrer"
+						className="settings-about__link settings-about__link--sponsor"
+						onClick={(e) => {
+							e.preventDefault();
+							import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
+								openUrl("https://github.com/sponsors/nextain"),
+							);
+						}}
+					>
+						{t("about.linkSponsor")}
+					</a>
+				</div>
+			</div>
 		</div>
 	);
 }

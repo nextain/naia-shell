@@ -23,6 +23,7 @@ const TOOL_TIERS: Record<string, number> = {
 	web_search: 1,
 	sessions_spawn: 1,
 	execute_command: 2,
+	skill_sessions: 0,
 	skill_time: 0,
 	skill_system_status: 0,
 	skill_weather: 1,

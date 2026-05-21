@@ -4,7 +4,8 @@
 	"version": "0.1.3",
 	"type": "module",
 	"scripts": {
-		"build": "tsc",
+		"build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:better-sqlite3 --external:sqlite-vec --external:agent-browser --external:\"*.node\" --external:@huggingface/transformers --inject:scripts/require-shim.js",
+		"build:tsc": "tsc",
 		"start": "node dist/index.js --stdio",
 		"dev": "tsx src/index.ts --stdio",
 		"test": "vitest run",
@@ -14,6 +15,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.39.0",
+		"@bufbuild/protobuf": "^2.12.0",
 		"@google/genai": "^1.42.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@naia-adk/skills-builtin": "file:./vendor/naia-adk-skills-builtin-0.0.1.tgz",
@@ -22,11 +24,20 @@
 		"@nextain/agent-types": "file:./vendor/nextain-agent-types-0.1.0.tgz",
 		"@nextain/naia-memory": "file:./vendor/nextain-naia-memory-0.1.4.tgz",
 		"agent-browser": "0.26.0",
+		"better-sqlite3": "^12.10.0",
+		"bindings": "^1.5.0",
+		"file-uri-to-path": "1.0.0",
+		"meriyah": "^7.1.0",
 		"msedge-tts": "^2.0.4",
 		"openai": "^4.80.0",
+		"sqlite-vec": "^0.1.9",
 		"ws": "^8.19.0",
 		"youtubei.js": "^17.0.1",
 		"zod": "^4.3.6"
+	},
+	"optionalDependencies": {
+		"@huggingface/transformers": "^4.2.0",
+		"sqlite-vec-windows-x64": "^0.1.9"
 	},
 	"pnpm": {
 		"overrides": {
@@ -47,6 +58,7 @@
 		"@types/node": "^22.0.0",
 		"@types/ws": "^8.18.1",
 		"@vitest/ui": "^4.0.18",
+		"esbuild": "^0.25.0",
 		"tsx": "^4.19.0",
 		"typescript": "^5.6.0",
 		"vitest": "^4.0.18"

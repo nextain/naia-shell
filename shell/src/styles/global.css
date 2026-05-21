@@ -2156,6 +2156,40 @@ body.resizing-row {
 	overflow-y: auto;
 }
 
+/* ── Settings tab bar ──────────────────────────────────────────────────────── */
+.settings-tab-bar {
+	display: flex;
+	flex-direction: row;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	padding: 0 12px;
+	gap: 0;
+	flex-shrink: 0;
+}
+
+.settings-tab-btn {
+	background: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	padding: 10px 16px;
+	font-size: 13px;
+	color: rgba(255, 255, 255, 0.5);
+	cursor: pointer;
+	transition: color 0.15s, border-color 0.15s, background 0.15s;
+	border-radius: 4px 4px 0 0;
+	margin-bottom: -1px;
+	white-space: nowrap;
+}
+
+.settings-tab-btn:hover {
+	color: rgba(255, 255, 255, 0.85);
+	background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-tab-btn--active {
+	color: rgba(255, 255, 255, 0.95);
+	border-bottom-color: rgba(120, 170, 255, 0.85);
+}
+
 .settings-tab {
 	flex: 1;
 	display: grid;
@@ -2164,12 +2198,13 @@ body.resizing-row {
 	align-content: start;
 	overflow-y: auto;
 	min-height: 0; /* required for flex overflow-y: auto to work */
-	padding: 12px;
+	padding: 12px 12px 120px; /* bottom: space for fixed save button */
 }
 
+.settings-tab > .settings-tab-bar,
 .settings-tab > .settings-section-divider,
 .settings-tab > .settings-danger-zone,
-.settings-tab > .settings-actions {
+.settings-tab > .skills-tab {
 	grid-column: 1 / -1;
 }
 
@@ -2177,14 +2212,24 @@ body.resizing-row {
 	min-width: 0;
 }
 
-.settings-tab > .settings-field:has(.settings-persona-textarea),
-.settings-tab > .settings-field:has(.settings-hint + .settings-reset-btn),
-.settings-tab > .settings-field:has(.memory-facts-list),
-.settings-tab > .settings-toggle-row {
+/* Settings fields containing only a select should span full width */
+.settings-tab > .settings-field:has(> select) {
 	grid-column: 1 / -1;
 }
 
-@media (max-width: 900px) {
+/* General tab: no leading section-divider, so add spacing below tab bar */
+.settings-tab > .settings-tab-bar + .settings-field {
+	margin-top: 12px;
+}
+
+.settings-tab > .settings-field:has(.settings-persona-textarea),
+.settings-tab > .settings-field:has(.settings-hint + .settings-reset-btn),
+.settings-tab > .settings-toggle-row,
+.settings-tab > .facts-list {
+	grid-column: 1 / -1;
+}
+
+@media (max-width: 700px) {
 	.settings-tab {
 		grid-template-columns: minmax(0, 1fr);
 	}
@@ -2214,6 +2259,29 @@ body.resizing-row {
 	opacity: 0.7;
 }
 
+.settings-embedding-progress {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--cream-dim);
+}
+
+.settings-embedding-progress-bar {
+	height: 4px;
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 2px;
+	overflow: hidden;
+	width: 100%;
+}
+
+.settings-embedding-progress-fill {
+	height: 100%;
+	background: var(--latte);
+	border-radius: 2px;
+	transition: width 0.3s ease;
+}
+
 .settings-persona-textarea {
 	width: 100%;
 	min-height: 100px;
@@ -2236,6 +2304,17 @@ body.resizing-row {
 
 .settings-field {
 	margin-bottom: 12px;
+}
+
+/* Sub-fields shown conditionally below a dropdown — always full width, stacked */
+.settings-subfields {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	padding: 8px 12px 4px;
+	border-left: 2px solid rgba(255, 255, 255, 0.08);
+	margin-bottom: 4px;
 }
 
 .audio-device-test-row {
@@ -2324,8 +2403,13 @@ body.resizing-row {
 	margin-bottom: 4px;
 }
 
+.settings-field input[readonly] {
+	opacity: 0.6;
+	cursor: default;
+}
+
 .settings-field select,
-.settings-field input:not([type="checkbox"]) {
+.settings-field input:not([type="checkbox"]):not([type="radio"]) {
 	width: 100%;
 	padding: 8px 10px;
 	background: var(--espresso-dark);
@@ -2338,7 +2422,7 @@ body.resizing-row {
 	appearance: none;
 }
 
-.settings-field input:not([type="checkbox"]) {
+.settings-field input:not([type="checkbox"]):not([type="radio"]) {
 	font-family: var(--mono);
 }
 
@@ -2371,12 +2455,14 @@ body.resizing-row {
 	position: fixed;
 	bottom: 24px;
 	right: 24px;
-	z-index: 200;
+	z-index: 100;
 	display: flex;
 	gap: 8px;
+	pointer-events: none;
 }
 
 .settings-save-btn {
+	pointer-events: auto;
 	padding: 10px 28px;
 	border: none;
 	border-radius: 24px;
@@ -2386,7 +2472,7 @@ body.resizing-row {
 	font-weight: 600;
 	cursor: pointer;
 	transition: background 0.15s, box-shadow 0.15s;
-	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .settings-save-btn:hover {
@@ -3040,6 +3126,28 @@ body.resizing-row {
 .chat-tab:hover::after,
 .chat-tab:focus-visible::after {
 	opacity: 1;
+}
+
+/* Generic placeholder for tab content (channels, etc.) */
+.chat-tab-placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	flex: 1;
+	gap: 12px;
+	padding: 32px 16px;
+	color: var(--cream-dim);
+	font-size: 13px;
+	text-align: center;
+}
+.chat-tab-placeholder span {
+	font-size: 32px;
+	opacity: 0.5;
+}
+.chat-tab-placeholder p {
+	margin: 0;
+	opacity: 0.7;
 }
 
 /* Work Progress Panel */
@@ -4219,11 +4327,18 @@ body.resizing-row {
 }
 
 .skills-list {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 4px;
 	flex: 1;
 	overflow-y: auto;
+	align-content: start;
+}
+
+@media (max-width: 500px) {
+	.skills-list {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
 
 .skills-list::-webkit-scrollbar {
@@ -4236,6 +4351,7 @@ body.resizing-row {
 }
 
 .skills-section-title {
+	grid-column: 1 / -1;
 	font-size: 11px;
 	color: var(--cream-dim);
 	text-transform: uppercase;
@@ -4243,6 +4359,25 @@ body.resizing-row {
 	padding: 8px 0 4px;
 	border-bottom: 1px solid var(--espresso-light);
 	margin-bottom: 2px;
+}
+
+/* SkillsTab embedded inside SettingsTab — full width, own scroll */
+.settings-tab > .skills-tab {
+	min-height: 400px;
+}
+
+.settings-coming-soon-banner {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	margin: 12px 0;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 8px;
+	color: var(--cream-dim, #c8b89a);
+	font-size: 13px;
+	text-align: center;
 }
 
 .skill-card {
@@ -4961,7 +5096,7 @@ body.resizing-row {
 	display: flex;
 	align-items: center;
 	/* Fixed width so the bar never jumps when track name changes */
-	width: 260px;
+	width: 300px;
 	flex-shrink: 0;
 	padding: 3px 8px;
 	background: rgba(8, 14, 28, 0.45);
@@ -5006,6 +5141,9 @@ body.resizing-row {
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
 }
 
 .bgm-btn {
@@ -5262,6 +5400,11 @@ body.resizing-row {
 	font-size: 0.8rem;
 	padding: 16px;
 }
+.bgm-yt-status--error {
+	color: rgba(255, 120, 100, 0.85);
+	font-size: 0.75rem;
+	line-height: 1.5;
+}
 
 .bgm-yt-row {
 	display: flex;
@@ -5354,9 +5497,8 @@ body.resizing-row {
 }
 
 .bgm-track-name {
-	/* Fixed width matched to YT title max — bar never resizes */
-	width: 100px;
-	flex-shrink: 0;
+	flex: 1;
+	min-width: 0;
 	font-size: 0.72rem;
 	color: rgba(255, 255, 255, 0.6);
 	overflow: hidden;
@@ -5389,26 +5531,25 @@ body.resizing-row {
 /* YouTube drawer pull handle (portal-rendered, fixed position)
    Drag up/down to resize panel height; click to toggle open/closed */
 .bgm-yt-drawer-handle {
-	position: fixed;
-	transform: translateX(-50%);
-	padding: 3px 16px 5px;
-	background: rgba(8, 14, 28, 0.78);
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	border-top: none;
-	border-radius: 0 0 8px 8px;
+	flex-shrink: 0;
+	width: 100%;
+	padding: 4px 16px 5px;
+	background: rgba(8, 14, 28, 0.6);
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 0 0 10px 10px;
 	cursor: ns-resize;
-	color: rgba(255, 255, 255, 0.45);
+	color: rgba(255, 255, 255, 0.35);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	gap: 2px;
-	z-index: 10000;
 	transition: color 0.15s, background 0.15s;
 	user-select: none;
 	touch-action: none;
 }
 .bgm-yt-drawer-handle:hover {
-	color: rgba(255, 255, 255, 0.75);
+	color: rgba(255, 255, 255, 0.85);
+	background: rgba(30, 45, 80, 0.88);
 }
 .bgm-yt-drawer-handle__bar {
 	width: 20px;
@@ -6535,6 +6676,119 @@ body.resizing-row {
 	background: rgba(255, 255, 255, 0.15);
 }
 
+/* ── Announcement Banner ── */
+
+.announcement-banner {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 7px 12px;
+	background: rgba(30, 60, 120, 0.88);
+	border-bottom: 1px solid rgba(80, 140, 255, 0.4);
+	color: #e8efff;
+	font-size: 12px;
+	line-height: 1.4;
+	flex-shrink: 0;
+}
+
+.announcement-banner--release {
+	background: rgba(15, 60, 35, 0.88);
+	border-bottom-color: rgba(60, 200, 100, 0.45);
+}
+
+.announcement-banner--info {
+	background: rgba(20, 50, 100, 0.9);
+	border-bottom-color: rgba(80, 150, 255, 0.5);
+}
+
+.announcement-banner--warning {
+	background: rgba(100, 60, 0, 0.88);
+	border-bottom-color: rgba(255, 160, 40, 0.5);
+}
+
+.announcement-banner--maintenance {
+	background: rgba(60, 50, 20, 0.88);
+	border-bottom-color: rgba(220, 180, 40, 0.4);
+}
+
+.announcement-banner__icon {
+	flex-shrink: 0;
+	font-size: 14px;
+	line-height: 1.3;
+}
+
+.announcement-banner__content {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.announcement-banner__title {
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.announcement-banner__body {
+	opacity: 0.85;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+.announcement-banner__actions {
+	display: flex;
+	gap: 6px;
+	flex-shrink: 0;
+	align-items: flex-start;
+	padding-top: 1px;
+}
+
+.announcement-btn {
+	padding: 3px 9px;
+	border-radius: 4px;
+	font-size: 11px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.announcement-btn--link {
+	border: 1px solid rgba(100, 160, 255, 0.6);
+	background: rgba(80, 130, 255, 0.2);
+	color: #a8cfff;
+}
+
+.announcement-btn--link:hover {
+	background: rgba(80, 130, 255, 0.35);
+}
+
+.announcement-btn--dismiss {
+	border: 1px solid rgba(255, 255, 255, 0.35);
+	background: transparent;
+	color: #cdd8f0;
+}
+
+.announcement-btn--dismiss:hover {
+	background: rgba(255, 255, 255, 0.12);
+}
+
+.announcement-btn--dismiss-all {
+	border: none;
+	background: transparent;
+	color: rgba(255, 255, 255, 0.45);
+	font-size: 16px;
+	padding: 0 4px;
+	line-height: 1;
+}
+
+.announcement-btn--dismiss-all:hover {
+	color: rgba(255, 255, 255, 0.8);
+}
+
 /* ── Version Footer (Settings) ── */
 
 .version-footer {
@@ -6565,6 +6819,103 @@ body.resizing-row {
 .version-footer-status {
 	font-size: 11px;
 	opacity: 0.8;
+}
+
+/* About section */
+.settings-about {
+	margin-top: 8px;
+}
+
+.settings-about__body {
+	padding: 12px 14px;
+	background: color-mix(in srgb, var(--espresso-light) 60%, transparent);
+	border-radius: 8px;
+	border: 1px solid var(--espresso-medium);
+}
+
+.settings-about__alpha-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: color-mix(in srgb, orange 20%, transparent);
+	border: 1px solid orange;
+	color: orange;
+	font-size: 11px;
+	font-weight: 600;
+	margin-bottom: 8px;
+}
+
+.settings-about__desc {
+	font-size: 12px;
+	color: var(--cream-dim);
+	line-height: 1.6;
+	margin: 0 0 8px;
+}
+
+.settings-about__links {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 10px;
+}
+
+.settings-about__link {
+	font-size: 12px;
+	color: var(--accent-cyan, #4fc3f7);
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.settings-about__link:hover {
+	text-decoration: underline;
+}
+
+.settings-about__link--sponsor {
+	color: #f78da7;
+}
+
+.settings-about__link--sponsor:hover {
+	color: #ff6b8a;
+}
+
+/* Onboarding welcome step */
+.onboarding-welcome {
+	padding: 4px 0;
+}
+
+.onboarding-welcome__badge {
+	display: inline-block;
+	padding: 3px 10px;
+	border-radius: 4px;
+	background: color-mix(in srgb, orange 20%, transparent);
+	border: 1px solid orange;
+	color: orange;
+	font-size: 12px;
+	font-weight: 600;
+	margin-bottom: 12px;
+}
+
+.onboarding-welcome__text {
+	font-size: 13px;
+	color: var(--cream-dim);
+	line-height: 1.65;
+	margin: 0 0 10px;
+}
+
+.onboarding-welcome__github-btn {
+	margin-top: 12px;
+	padding: 7px 16px;
+	background: transparent;
+	border: 1px solid var(--accent-cyan, #4fc3f7);
+	border-radius: 6px;
+	color: var(--accent-cyan, #4fc3f7);
+	font-size: 13px;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+
+.onboarding-welcome__github-btn:hover {
+	background: color-mix(in srgb, var(--accent-cyan, #4fc3f7) 15%, transparent);
 }
 
 /* ─── Browser Panel ─────────────────────────────────────────────────────── */

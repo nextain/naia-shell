@@ -591,6 +591,52 @@ pub fn workspace_discover_adk_server() -> Option<String> {
     None
 }
 
+/// For each PTY PID, inspect its child process tree and return the agent name if found.
+/// Returns Record<pid, agentName> — missing entry means no agent detected.
+#[tauri::command]
+pub fn workspace_get_pty_agents(pids: Vec<u32>) -> std::collections::HashMap<u32, String> {
+    use sysinfo::{ProcessesToUpdate, System};
+
+    const AGENTS: &[&str] = &["claude", "opencode", "codex", "gemini"];
+
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, false);
+
+    let mut result = std::collections::HashMap::new();
+
+    for pid in pids {
+        let target = sysinfo::Pid::from(pid as usize);
+        'proc: for (proc_pid, process) in sys.processes() {
+            if *proc_pid == target {
+                continue;
+            }
+            // Walk parent chain (max depth 6) to see if this process descends from our PTY
+            let mut cur = process.parent();
+            for _ in 0..6 {
+                match cur {
+                    Some(p) if p == target => {
+                        // Descendant found — check if its name matches an agent
+                        let name = process.name().to_string_lossy().to_lowercase();
+                        for &agent in AGENTS {
+                            if name.contains(agent) {
+                                result.insert(pid, agent.to_string());
+                                break 'proc;
+                            }
+                        }
+                        break;
+                    }
+                    Some(p) => {
+                        cur = sys.process(p).and_then(|pr| pr.parent());
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
+    result
+}
+
 fn collect_search_candidates() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {

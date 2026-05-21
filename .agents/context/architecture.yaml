@@ -21,6 +21,21 @@ description: Naia architecture (mirror of .users/context/ko/architecture.md)
 # context (see `history.legacy_three_pillars` block below) so the rationale
 # for what we have today is traceable. Do not treat it as current design.
 
+recent_changes:
+  date: "2026-05-21"
+  summary: |
+    naia-adk scaffold distribution (git clone on new setup), user data migration
+    ~/.naia/ → naia-settings/, local session persistence, memory AI provider config
+    in OnboardingWizard, root naia-settings/ duplicate removed.
+  changes:
+    - "clone_naia_adk / delete_naia_adk Tauri commands — git clone --depth 1 nextain/naia-adk; zip fallback (reqwest+zip) when git absent; CREATE_NO_WINDOW on Windows"
+    - "AdkSetupScreen: cloning flow + cloning state + i18n for new-start and delete-reinstall modes"
+    - "remove root naia-settings/ (duplicate of shell/public/assets/, now authoritative)"
+    - "migrate-user-data.ts: one-shot additive migration ~/.naia/{sessions,memory,identity} → naia-settings/.{sessions,memory,identity}"
+    - "local-sessions.ts: local session persistence in naia-settings/.sessions/"
+    - "OnboardingWizard: memoryEmbeddingProvider + memoryLlmProvider config (none/offline/vllm/ollama/naia)"
+    - "remove bundled naia-settings assets (vrm-files/bgm-musics/background) — served from naia-adk clone; copy_bundled_assets now scope-extension only"
+
 recent_hardening:
   date: "2026-05-12"
   summary: |
@@ -32,6 +47,7 @@ recent_hardening:
     - "#257 — panel_install rejects file:// / http:// / git@ / bare path (8 tests)"
     - "#258 — assetProtocol.scope removes bare ** + drive roots + adds requireLiteralLeadingDot (7 tests)"
     - "#259 — discord.com removed from CSP connect-src (3 tests)"
+    - "2026-05-21 — CSP img-src += i.ytimg.com/*.ytimg.com (BGM thumbnails); frame-src += youtube.com/youtube-nocookie.com (BGM player)"
     - "#260 — webhook URLs off per-request stdio via new notify_config msg (8 tests)"
     - "#248 — Naia gateway lacks gemini-3.x access; drop from picker + migrate saved configs + accurate 0-byte SSE error (8 tests)"
     - "#254 — startup white flash backgroundColor + useAppReady onboarding short-circuit (4 tests)"

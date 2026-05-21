@@ -123,6 +123,32 @@ export function buildToolStatusPrompt(
 			"\n- Write messages naturally with emoji. Do NOT include [HAPPY]/[SAD] emotion tags in Discord messages.";
 	}
 
+	if (toolNames.includes("skill_youtube_bgm")) {
+		status +=
+			"\n\n[Tool Guide: skill_youtube_bgm]" +
+			"\n- 사용자가 배경음악/노래 재생을 요청하면 반드시 이 스킬을 사용한다. skill_browser_navigate로 유튜브를 여는 것은 FORBIDDEN." +
+			"\n- REQUIRED 2-step flow: ① action='search', query='...' → ② action='play', videoId='결과의 id', title='제목'" +
+			"\n- search 결과를 받으면 즉시 가장 적합한 항목을 골라 play까지 자동 실행한다. 사용자에게 목록을 보여주거나 확인을 구하지 않는다. 장르/분위기 키워드만 있어도 바로 검색 후 재생한다." +
+			"\n- 장르/분위기 요청(로파이, 재즈, 클래식, 디즈니 OST 등)은 영어+장르 키워드로 검색: 'disney ost piano 1 hour', 'lofi hip hop beats' 등." +
+			"\n- 사용 가능한 전체 액션: search, play, stop, pause, resume, next, prev, volume, trending, fav_add, fav_remove" +
+			"\n- 일시정지: action='pause' | 재개: action='resume' | 다음곡(즐겨찾기에서): action='next' | 이전곡: action='prev'" +
+			"\n- 볼륨 조절: action='volume', volume=0.0~1.0 (예: 50%는 0.5)" +
+			"\n- 완전 정지+초기화: action='stop'" +
+			"\n- 현재 재생 중인 곡 정보: 별도 도구 호출 불필요. 시스템 컨텍스트의 BGM context에서 직접 읽음 (currentTitle, currentVideoId, playing, volume 필드). action='status' 같은 것은 존재하지 않음." +
+			"\n- '틀어줘 / 재생해줘 / 켜줘' 요청 시 search → play 즉시 실행. '찾아볼게요'만 말하고 play 안 하는 것은 FORBIDDEN.";
+	}
+
+	if (toolNames.includes("skill_panel")) {
+		status +=
+			"\n\n[Tool Guide: skill_panel]" +
+			"\n- 패널/탭 전환 시 action='switch', panelId=<id> 사용." +
+			"\n- 알려진 panelId: browser(브라우저/인터넷 탭), workspace(워크스페이스 탭), settings(설정 탭)" +
+			"\n- '브라우저 탭 열어줘' → action='switch', panelId='browser'" +
+			"\n- '워크스페이스 탭 열어줘' → action='switch', panelId='workspace'" +
+			"\n- panelId 확인이 필요하면 action='list' 먼저 호출해서 목록을 확인한다." +
+			"\n- 절대 panelId를 모른다며 사용자에게 묻지 않는다. 위 목록에서 바로 사용한다.";
+	}
+
 	// Tool usage rules — always injected regardless of system prompt source
 	status +=
 		"\n\n[Tool Usage Rules (CRITICAL)]" +

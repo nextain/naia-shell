@@ -94,13 +94,27 @@ struct MemoryStore {
     facts: Vec<AgentFact>,
 }
 
-/// Get the Agent memory JSON file path (~/.naia/memory/alpha-memory.json)
+/// Get the Agent memory JSON file path.
+/// Prefers the workspace-scoped path from ~/.naia/adk-path (NAIA_SETTINGS_DIR).
+/// Falls back to the legacy ~/.naia/memory/alpha-memory.json if not configured.
 fn agent_memory_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".naia")
-        .join("memory")
-        .join("alpha-memory.json")
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    // Try to resolve the current workspace's settings dir from ~/.naia/adk-path
+    let adk_path_file = home.join(".naia").join("adk-path");
+    if let Ok(adk_path_str) = std::fs::read_to_string(&adk_path_file) {
+        let adk_path_str = adk_path_str.trim();
+        if !adk_path_str.is_empty() {
+            // Always use workspace path when adk-path is configured,
+            // even if the file doesn't exist yet (new workspace).
+            // If missing, get_all_agent_facts() returns empty vec.
+            return std::path::PathBuf::from(adk_path_str)
+                .join("naia-settings")
+                .join(".memory")
+                .join("alpha-memory.json");
+        }
+    }
+    // Legacy fallback (no workspace configured)
+    home.join(".naia").join("memory").join("alpha-memory.json")
 }
 
 /// Read all facts from Agent's memory JSON file.

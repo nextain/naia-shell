@@ -31,7 +31,12 @@ export async function getInnertube(): Promise<Innertube> {
 
 // ── CORS headers ──────────────────────────────────────────────────────────────
 
-const ALLOWED_ORIGINS = new Set(["tauri://localhost", "http://localhost:1420"]);
+const ALLOWED_ORIGINS = new Set([
+	"tauri://localhost",
+	"http://tauri.localhost",
+	"https://tauri.localhost",
+	"http://localhost:1420",
+]);
 
 function cors(req: IncomingMessage, res: ServerResponse) {
 	const origin = String(req.headers.origin ?? "");
@@ -40,6 +45,8 @@ function cors(req: IncomingMessage, res: ServerResponse) {
 		ALLOWED_ORIGINS.has(origin) ? origin : "tauri://localhost",
 	);
 	res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+	res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+	res.setHeader("Vary", "Origin");
 	res.setHeader("Content-Type", "application/json; charset=utf-8");
 }
 

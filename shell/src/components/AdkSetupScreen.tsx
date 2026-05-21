@@ -60,6 +60,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	// New-start always uses ~/naia-adk — never auto-detected existing paths.
 	const [newDefaultPath, setNewDefaultPath] = useState("~/naia-adk");
 	const [error, setError] = useState<string | null>(null);
+	const [cloning, setCloning] = useState(false);
 	const [loginWaiting, setLoginWaiting] = useState(false);
 	const [loginTimeout, setLoginTimeout] = useState(false);
 
@@ -99,6 +100,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						onboardingComplete: true,
 					}, adkPath)),
 				);
+				// Cache naiaKey for crash-restart replay before calling onComplete.
+				invoke("store_startup_message", {
+					message: JSON.stringify({
+						type: "auth_update",
+						naiaKey: event.payload.naiaKey,
+					}),
+				}).catch(() => {});
 				onComplete();
 			},
 		);
@@ -128,13 +136,22 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				setMode("new_exists");
 				return;
 			}
-			// Create folder structure then copy bundled defaults
+			// Clone naia-adk scaffold from GitHub
+			setCloning(true);
+			await invoke("clone_naia_adk", { adkPath });
+			setCloning(false);
+			// Initialize naia-settings subdirs and copy bundled assets
 			await invoke("init_naia_settings", { adkPath });
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
 			setAdkPath(adkPath);
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify(preserveWorkspaceRoot({}, adkPath)),
+			);
 			onComplete();
 		} catch (err) {
+			setCloning(false);
 			setError(String(err));
 		}
 	}
@@ -167,13 +184,22 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	async function handleNewRecreate() {
 		try {
 			const adkPath = path.trim() || newDefaultPath;
-			await invoke("delete_naia_settings", { adkPath });
+			// Wipe entire workspace and re-clone scaffold
+			await invoke("delete_naia_adk", { adkPath });
+			setCloning(true);
+			await invoke("clone_naia_adk", { adkPath });
+			setCloning(false);
 			await invoke("init_naia_settings", { adkPath });
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
 			setAdkPath(adkPath);
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify(preserveWorkspaceRoot({}, adkPath)),
+			);
 			onComplete();
 		} catch (err) {
+			setCloning(false);
 			setError(String(err));
 		}
 	}
@@ -346,11 +372,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						</button>
 					</div>
 					{error && <p className="adk-setup-error">{error}</p>}
+					{cloning && <p className="adk-setup-hint">{t("adk.setup.cloning")}</p>}
 					<p className="adk-setup-hint">{t("adk.setup.new.hint")}</p>
 					<button
 						type="button"
 						className="adk-setup-confirm-btn"
 						onClick={handleNewStart}
+						disabled={cloning}
 					>
 						{t("adk.setup.new.confirm")}
 					</button>

@@ -18,6 +18,10 @@
 		"core:window:allow-start-resize-dragging",
 		"core:window:allow-show",
 		"opener:default",
+		{
+			"identifier": "opener:allow-open-path",
+			"allow": [{ "path": "$HOME/.naia/logs/**" }, { "path": "$TEMP/**" }]
+		},
 		"dialog:default",
 		"dialog:allow-open",
 		"deep-link:default",

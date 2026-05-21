@@ -73,3 +73,19 @@ changes:
     description:
       en: "Memory backup API — 2-slot rolling E2E encrypted blob storage with SHA-256 integrity check"
       ko: "메모리 백업 API — SHA-256 무결성 검사를 포함한 2슬롯 롤링 E2E 암호화 blob 저장소"
+  # ── Windows installer fix ──
+  - type: fix
+    scope: shell
+    description:
+      en: "Windows installer now correctly bundles libvosk.dll — v0.1.3 crashed on launch due to missing STT library"
+      ko: "Windows 인스톨러에 libvosk.dll 포함 수정 — v0.1.3은 STT 라이브러리 누락으로 실행 즉시 크래시"
+  - type: fix
+    scope: shell
+    description:
+      en: "Implement workspace_get_pty_agents Rust command — resolves build error and enables agent detection in terminal tabs"
+      ko: "workspace_get_pty_agents Rust 커맨드 구현 — 빌드 에러 해결 및 터미널 탭 에이전트 감지 활성화"
+  - type: ci
+    scope: release
+    description:
+      en: "CI: explicit vosk DLL download + installer content verification + install smoke test before release"
+      ko: "CI: vosk DLL 명시적 다운로드 + 인스톨러 내용 검증 + 설치 smoke test 후 릴리즈"
