@@ -955,9 +955,21 @@ fn spawn_agent_core(
         "[Naia] Starting agent-core: {} {}",
         runner, agent_script
     ));
+    // Redirect agent stderr to a log file so crashes are visible in GUI mode
+    // (without this, stderr goes to the console which doesn't exist in a windowed app)
+    let stderr_stdio = {
+        let log_path = log_dir().join("agent-stderr.log");
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .ok()
+            .map(Stdio::from)
+            .unwrap_or_else(Stdio::inherit)
+    };
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(stderr_stdio);
 
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
