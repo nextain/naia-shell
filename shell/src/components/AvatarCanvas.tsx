@@ -11,7 +11,6 @@ import {
 	Object3D,
 	PerspectiveCamera,
 	Scene,
-	Spherical,
 	Vector3,
 	WebGLRenderer,
 } from "three";
