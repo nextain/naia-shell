@@ -176,11 +176,24 @@ export function startYoutubeServer(): void {
 		}
 	});
 
-	server.listen(YT_SERVER_PORT, "127.0.0.1", () => {
+	// Listen on all interfaces (no host arg) so both 127.0.0.1 and ::1 are covered.
+	// On macOS, `localhost` resolves to ::1 (IPv6) by default; binding only to
+	// 127.0.0.1 would make the server unreachable from the Tauri webview.
+	server.listen(YT_SERVER_PORT, () => {
 		process.stderr.write(`[youtube-server] listening on port ${YT_SERVER_PORT}\n`);
 	});
 
-	server.on("error", (err) => {
+	server.on("error", (err: NodeJS.ErrnoException) => {
 		process.stderr.write(`[youtube-server] error: ${err}\n`);
+		if (err.code === "EADDRINUSE") {
+			// Port already in use (stale agent from previous session).
+			// The shell kills the old agent on startup; retry after a short delay.
+			setTimeout(() => {
+				server.close();
+				server.listen(YT_SERVER_PORT, () => {
+					process.stderr.write(`[youtube-server] retry OK on port ${YT_SERVER_PORT}\n`);
+				});
+			}, 1000);
+		}
 	});
 }
