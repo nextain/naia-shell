@@ -272,6 +272,8 @@ jobs:
             $dest = Join-Path $parent $name
             Remove-Item -LiteralPath $j.FullName -Force -Recurse
             robocopy $targetPath $dest /E /R:0 /W:0 /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            if ($LASTEXITCODE -ge 8) { Write-Error "robocopy failed for $name (exit $LASTEXITCODE)" }
+            $global:LASTEXITCODE = 0
             Write-Host "Resolved junction: $name"
           }
           Write-Host "All junctions resolved."
