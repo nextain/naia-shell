@@ -1188,28 +1188,6 @@ export function SettingsTab() {
 		setLabWaiting(true);
 		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
 		try {
-			const embeddedParams = new URLSearchParams({
-				redirect: "desktop",
-				source: "embedded",
-			});
-			const embeddedUrl = `${getNaiaWebBaseUrl()}/${locale}/login?${embeddedParams.toString()}`;
-			Logger.info("SettingsTab", "[lab-login] opening embedded browser");
-			const embeddedOpened = await invoke("browser_open_login", {
-				url: embeddedUrl,
-			}).then(
-				() => true,
-				(e: unknown) => {
-					Logger.warn("SettingsTab", "[lab-login] embedded browser failed", {
-						error: String(e),
-					});
-					return false;
-				},
-			);
-			if (embeddedOpened) {
-				labBrowserVisibleRef.current = true;
-				return;
-			}
-
 			const state = await invoke<string>("generate_oauth_state").catch(() => "");
 			const params = new URLSearchParams({
 				redirect: "desktop",

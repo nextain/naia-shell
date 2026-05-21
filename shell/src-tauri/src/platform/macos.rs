@@ -4,6 +4,7 @@
 use super::{PlatformHandle, PlatformWindowManager, WindowRect};
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use tauri::Manager;
 
 /// Check if a process with the given PID is still running (Unix: kill(pid, 0)).
 pub(crate) fn is_pid_alive(pid: u32) -> bool {
@@ -194,8 +195,108 @@ pub(crate) fn resolve_tsx_from_agent(agent_dir: &std::path::Path) -> Option<(Str
     None
 }
 
-/// Start deep link file watcher (macOS: single-instance IPC handles this).
-pub(crate) fn start_deep_link_file_watcher(_app_handle: tauri::AppHandle) {}
+fn pending_deep_link_path() -> PathBuf {
+    PathBuf::from(crate::home_dir())
+        .join(".naia")
+        .join("deep-link-pending.txt")
+}
+
+#[cfg(debug_assertions)]
+fn ensure_dev_deep_link_helper() {
+    let home = crate::home_dir();
+    if home.is_empty() {
+        return;
+    }
+    let naia_dir = PathBuf::from(&home).join(".naia");
+    let helper_root = naia_dir.join("dev-deeplink");
+    let helper_app = helper_root.join("NaiaDevDeepLink.app");
+    let script_path = helper_root.join("NaiaDevDeepLink.applescript");
+    let _ = std::fs::create_dir_all(&helper_root);
+
+    let script = r#"on open location this_URL
+    set homePath to POSIX path of (path to home folder)
+    set naiaDir to homePath & ".naia"
+    set pendingPath to naiaDir & "/deep-link-pending.txt"
+    do shell script "/bin/mkdir -p " & quoted form of naiaDir
+    do shell script "/bin/chmod 700 " & quoted form of naiaDir
+    do shell script "/usr/bin/printf %s " & quoted form of this_URL & " > " & quoted form of pendingPath
+    do shell script "/bin/chmod 600 " & quoted form of pendingPath
+end open location
+"#;
+    if std::fs::write(&script_path, script).is_err() {
+        return;
+    }
+
+    let _ = std::fs::remove_dir_all(&helper_app);
+    let compiled = Command::new("osacompile")
+        .arg("-o")
+        .arg(&helper_app)
+        .arg(&script_path)
+        .output();
+    if !matches!(compiled, Ok(output) if output.status.success()) {
+        crate::log_verbose("[Naia] macOS dev deep-link helper compile skipped");
+        return;
+    }
+
+    let plist = helper_app.join("Contents").join("Info.plist");
+    let run_plist = |command: &str| {
+        let _ = Command::new("/usr/libexec/PlistBuddy")
+            .arg("-c")
+            .arg(command)
+            .arg(&plist)
+            .output();
+    };
+    run_plist("Set :CFBundleIdentifier com.naia.shell.deeplink-helper");
+    run_plist("Delete :CFBundleURLTypes");
+    run_plist("Add :CFBundleURLTypes array");
+    run_plist("Add :CFBundleURLTypes:0 dict");
+    run_plist("Add :CFBundleURLTypes:0:CFBundleTypeRole string Viewer");
+    run_plist("Add :CFBundleURLTypes:0:CFBundleURLName string com.naia.shell");
+    run_plist("Add :CFBundleURLTypes:0:CFBundleURLSchemes array");
+    run_plist("Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string naia");
+
+    let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+    let registered = Command::new(lsregister).arg("-f").arg(&helper_app).output();
+    if matches!(registered, Ok(output) if output.status.success()) {
+        crate::log_verbose(&format!(
+            "[Naia] macOS dev deep-link helper registered: {}",
+            helper_app.display()
+        ));
+    }
+}
+
+/// Start a background thread that watches for deep-link URLs written by the
+/// macOS dev helper. Bundled release builds receive links through RunEvent.
+pub(crate) fn start_deep_link_file_watcher(app_handle: tauri::AppHandle) {
+    #[cfg(debug_assertions)]
+    ensure_dev_deep_link_helper();
+
+    let oauth_state = app_handle
+        .try_state::<crate::AppState>()
+        .map(|state| state.oauth_state.clone());
+    std::thread::spawn(move || {
+        let pending_path = pending_deep_link_path();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            if !pending_path.exists() {
+                continue;
+            }
+            if let Ok(raw) = std::fs::read_to_string(&pending_path) {
+                let _ = std::fs::remove_file(&pending_path);
+                let url_str = raw.trim();
+                if !url_str.is_empty() {
+                    crate::process_deep_link_url(
+                        url_str,
+                        &app_handle,
+                        oauth_state.as_ref(),
+                        "file",
+                    );
+                }
+            }
+        }
+    });
+    crate::log_both("[Naia] Deep link file watcher started");
+}
 
 /// Normalize a path.
 pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {

@@ -3356,6 +3356,7 @@ pub fn run() {
             let deep_link_handle = app_handle.clone();
             let deep_link_state: tauri::State<'_, AppState> = app.state();
             let oauth_state_ref = deep_link_state.oauth_state.clone();
+            let current_oauth_state_ref = oauth_state_ref.clone();
             app.deep_link().on_open_url(move |event| {
                 let urls = event.urls();
                 for url in urls {
@@ -3367,6 +3368,16 @@ pub fn run() {
                     );
                 }
             });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for url in urls {
+                    process_deep_link_url(
+                        url.as_str(),
+                        &app_handle,
+                        Some(&current_oauth_state_ref),
+                        "current",
+                    );
+                }
+            }
 
             platform::start_deep_link_file_watcher(app_handle.clone());
 
