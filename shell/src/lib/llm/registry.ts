@@ -169,7 +169,10 @@ export function formatModelLabel(model: LlmModelMeta): string {
 	if (!model.pricing) return base;
 	const [input, output] = model.pricing;
 	// Use localized "Pricing" label if possible, or fallback to English
-	const pricingLabel = typeof (globalThis as any).t === "function" ? (globalThis as any).t("settings.pricing") : "Pricing";
+	const pricingLabel =
+		typeof (globalThis as any).t === "function"
+			? (globalThis as any).t("settings.pricing")
+			: "Pricing";
 	return `${base} (${pricingLabel}: $${input.toFixed(3)} / $${output.toFixed(3)})`;
 }
 
@@ -211,14 +214,39 @@ registerLlmProvider({
 	defaultModel: "gemini-2.5-flash",
 	models: [
 		// -- Gemini 3.5 -------------------------------------------------------------------
-		{ id: "gemini-3.5-flash", label: "Gemini 3.5 Flash", capabilities: ["llm"], pricing: [1.815, 10.89] },
+		{
+			id: "gemini-3.5-flash",
+			label: "Gemini 3.5 Flash",
+			capabilities: ["llm"],
+			pricing: [1.815, 10.89],
+		},
 		// -- Gemini 3.1 -------------------------------------------------------------------
-		{ id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview", capabilities: ["llm"], pricing: [2.2, 13.2] },
-		{ id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview", capabilities: ["llm"], pricing: [0.275, 1.65] },
+		{
+			id: "gemini-3.1-pro-preview",
+			label: "Gemini 3.1 Pro Preview",
+			capabilities: ["llm"],
+			pricing: [2.2, 13.2],
+		},
+		{
+			id: "gemini-3.1-flash-lite-preview",
+			label: "Gemini 3.1 Flash Lite Preview",
+			capabilities: ["llm"],
+			pricing: [0.275, 1.65],
+		},
 		// -- Gemini 3.0 -------------------------------------------------------------------
-		{ id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview", capabilities: ["llm"], pricing: [0.55, 3.3] },
+		{
+			id: "gemini-3-flash-preview",
+			label: "Gemini 3 Flash Preview",
+			capabilities: ["llm"],
+			pricing: [0.55, 3.3],
+		},
 		// -- Gemini 2.5 -------------------------------------------------------------------
-		{ id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", capabilities: ["llm"], pricing: [1.375, 11.0] },
+		{
+			id: "gemini-2.5-pro",
+			label: "Gemini 2.5 Pro",
+			capabilities: ["llm"],
+			pricing: [1.375, 11.0],
+		},
 		{
 			id: "gemini-2.5-flash",
 			label: "Gemini 2.5 Flash",
@@ -310,11 +338,20 @@ registerLlmProvider({
 			pricing: [2.5, 10.0],
 		},
 		{
-			id: "gpt-4o-realtime",
-			label: "GPT-4o Realtime (실시간)",
+			id: "gemini-2.5-flash-live",
+			label: "Gemini 2.5 Flash Live (실시간)",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
-			voices: [...OPENAI_REALTIME_VOICES],
+			voices: [...GEMINI_LIVE_VOICES],
+			transcriptProvided: true,
+		},
+		// -- Naia Local -------------------------------------------------------------------
+		{
+			id: "naia-24g-live",
+			label: "Naia 24G Live (로컬 실시간)",
+			capabilities: ["llm", "omni"],
+			voiceSelectable: true,
+			voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
 			transcriptProvided: true,
 		},
 	],
@@ -437,7 +474,8 @@ registerLlmProvider({
 registerLlmProvider({
 	id: "vllm",
 	name: "vLLM",
-	description: "Local vLLM server — OpenAI-compatible API, no API key required.",
+	description:
+		"Local vLLM server — OpenAI-compatible API, no API key required.",
 	descKey: "provider.localRequired",
 	requiresApiKey: false,
 	isLocal: true,

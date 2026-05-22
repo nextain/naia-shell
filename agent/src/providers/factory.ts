@@ -311,7 +311,13 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 	}
 
 	// Lab proxy mode: agent holds naiaKey — never read from per-request config.
+	// Exception: naia-*-live models with NAIA_LIVE_HOST set → local voice wrapper bypass.
 	const naiaKey = _agentNaiaKey;
+	const liveHost = process.env["NAIA_LIVE_HOST"] || "";
+	const isNaiaLocalLive = liveHost && /^naia-\d+[gt]-live$/i.test(config.model);
+	if (naiaKey && isNaiaLocalLive) {
+		return createOpenAIProvider("vllm", config.model, liveHost);
+	}
 	if (naiaKey) {
 		const labProxy = getLlmProviderDef("lab-proxy");
 		if (!labProxy) throw new Error("Lab proxy provider not registered.");
