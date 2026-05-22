@@ -90,7 +90,7 @@
 			"endpoints": [
 				"https://github.com/nextain/naia-os/releases/latest/download/latest.json"
 			],
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyMEYyM0RCNjgxMUUzNEMKUldSTTR4Rm8yeU1QOGpib1NhclN5MTVGZzdmUlEwRHZmYk9VdHcvNEJIVzV4T3Y5R3pSUEdPT0IK"
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkzMzFENDEzRjA4MTdGMjcKUldRbmY0SHdFOVF4azVSZWE4UXJLQW9CWXVrN1BsaTcyWEdIMlVBb0tQNGNCelc3SGswZDNaT3oK"
 		}
 	}
 }
