@@ -1,5 +1,8 @@
 {
 	"bundle": {
+		"resources": {
+			"resources/libvosk.so": "libvosk.so"
+		},
 		"targets": ["deb", "rpm", "appimage"],
 		"linux": {
 			"deb": {

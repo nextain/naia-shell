@@ -97,6 +97,17 @@ jobs:
           cp shell/src-tauri/target/release/bundle/rpm/*.rpm Naia-Shell-x86_64.rpm \
             || { echo "::error::rpm not found"; exit 1; }
 
+      - name: Smoke test Linux package layout
+        run: |
+          rm -rf linux-smoke
+          mkdir -p linux-smoke
+          dpkg-deb -x Naia-Shell-x86_64.deb linux-smoke
+          test -f linux-smoke/usr/lib/Naia/libvosk.so \
+            || { echo "::error::libvosk.so missing from deb"; exit 1; }
+          ldd linux-smoke/usr/bin/naia-shell | tee /tmp/linux-ldd.txt
+          grep -q 'libvosk.so => .*linux-smoke/usr/lib/Naia/libvosk.so' /tmp/linux-ldd.txt \
+            || { echo "::error::libvosk.so not resolved from packaged path"; exit 1; }
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
