@@ -51,14 +51,15 @@ modules:
         CARGO_HOME: /run/build/Naia-OS/cargo
         CI: "true"
     build-commands:
-      # Agent build (npx pnpm — Flatpak SDK is read-only so global install fails)
-      - cd agent && npx pnpm install --no-frozen-lockfile --shamefully-hoist
-      - cd agent && npx tsc
+      # Pin pnpm v10 because pnpm v11 applies stricter supply-chain checks
+      # to vendored workspace tarballs and breaks the CI Flatpak build.
+      - cd agent && npx --yes pnpm@10.33.4 install --no-frozen-lockfile --shamefully-hoist
+      - cd agent && npx --yes pnpm@10.33.4 exec tsc
       # Shell frontend + Tauri binary (tauri build embeds frontend properly for WebKitGTK)
       # 1. pnpm install + vite build (frontend dist)
       # 2. tauri build --no-bundle with beforeBuildCommand disabled (already built above)
-      - cd shell && npx pnpm install --no-frozen-lockfile
-      - cd shell && npx pnpm run build
+      - cd shell && npx --yes pnpm@10.33.4 install --no-frozen-lockfile
+      - cd shell && npx --yes pnpm@10.33.4 run build
       - cd shell && npx tauri build --no-bundle --config src-tauri/tauri.conf.flatpak.json
       # Install binary
       - install -Dm755 shell/src-tauri/target/release/naia-shell /app/bin/naia-os
