@@ -46,6 +46,9 @@ formats:
   deb:
     built_by: tauri build
     status: working
+    critical_notes:
+      - "Linux release CI must build with src-tauri/tauri.conf.linux.json (base config does not package libvosk.so)"
+      - "Do not trust CI build success alone — smoke-test extracted .deb for libvosk.so presence and ldd resolution"
 
   rpm:
     built_by: tauri build
