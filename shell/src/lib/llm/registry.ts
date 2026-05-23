@@ -3,7 +3,7 @@ import {
   listProviders as agentListProviders,
   fetchNaiaPricing as agentFetchNaiaPricing,
   GEMINI_LIVE_VOICES as agentGeminiVoices,
-} from "@nextain/agent-providers";
+} from "@nextain/agent-providers/registry";
 
 // ─── UI-specific overlay data ────────────────────────────────────────────────
 
