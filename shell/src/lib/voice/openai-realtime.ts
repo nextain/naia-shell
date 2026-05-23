@@ -37,21 +37,29 @@ export function createOpenAIRealtimeSession(): VoiceSession {
 			const oai = config as OpenAIRealtimeConfig;
 			const model = oai.model ?? DEFAULT_MODEL;
 
-			// Browser WebSocket cannot set custom headers, so we use a
-			// ephemeral token approach or direct key in subprotocol.
-			// For now, use the documented query-param approach via relay or
-			// the OpenAI WebSocket subprotocol header workaround.
-			const wsUrl = `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
+			const baseUrl = oai.serverUrl
+				? oai.serverUrl.replace(/^http/, "ws")
+				: "wss://api.openai.com";
+			const params = new URLSearchParams({
+				model: encodeURIComponent(model),
+			});
+			if (oai.serverUrl && oai.apiKey) {
+				params.set("api_key", oai.apiKey);
+			}
+			const wsUrl = `${baseUrl.replace(/\/+$/, "")}/v1/realtime?${params.toString()}`;
 
-			Logger.info("OpenAIRealtime", "connecting", { model });
+			Logger.info("OpenAIRealtime", "connecting", { model, baseUrl });
 
-			// OpenAI Realtime API accepts API key via WebSocket subprotocols:
-			// ["realtime", "openai-insecure-api-key.<KEY>", "openai-beta.realtime-v1"]
-			ws = new WebSocket(wsUrl, [
-				"realtime",
-				`openai-insecure-api-key.${oai.apiKey}`,
-				"openai-beta.realtime-v1",
-			]);
+			const subprotocols = oai.serverUrl
+				? undefined
+				: [
+						"realtime",
+						`openai-insecure-api-key.${oai.apiKey}`,
+						"openai-beta.realtime-v1",
+					];
+			ws = subprotocols
+				? new WebSocket(wsUrl, subprotocols)
+				: new WebSocket(wsUrl);
 
 			return new Promise<void>((resolve, reject) => {
 				if (!ws) return reject(new Error("WebSocket not created"));

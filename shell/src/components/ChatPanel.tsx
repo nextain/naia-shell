@@ -1520,15 +1520,17 @@ export function ChatPanel() {
 
 			// Determine the live provider from the current model/provider
 			const liveProvider =
-				isOmni && config.provider === "vllm"
-					? ("minicpm-o" as const) // omni model (MiniCPM-o): /v1/realtime WebSocket
-					: config.provider === "vllm"
-						? ("vllm-omni" as const) // non-omni vllm: REST
-						: config.provider === "openai"
-							? ("openai-realtime" as const)
-							: naiaKey
-								? ("naia" as const)
-								: ("gemini-live" as const);
+				config.model === "naia-24g-live"
+					? ("openai-realtime" as const)
+					: isOmni && config.provider === "vllm"
+						? ("minicpm-o" as const)
+						: config.provider === "vllm"
+							? ("vllm-omni" as const)
+							: config.provider === "openai"
+								? ("openai-realtime" as const)
+								: naiaKey
+									? ("naia" as const)
+									: ("gemini-live" as const);
 
 			Logger.info("ChatPanel", "Voice config", {
 				provider: config.provider,
@@ -1558,7 +1560,7 @@ export function ChatPanel() {
 				setVoiceMode("off");
 				return;
 			}
-			if (liveProvider === "openai-realtime") {
+			if (liveProvider === "openai-realtime" && config.model !== "naia-24g-live") {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
 				if (!openaiKey) {
 					Logger.warn("ChatPanel", "OpenAI Realtime requires API key");
@@ -1748,9 +1750,15 @@ export function ChatPanel() {
 				});
 			} else if (liveProvider === "openai-realtime") {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
+				const isNaiaVoice = config.model === "naia-24g-live";
+				const liveHost = isNaiaVoice
+					? LAB_GATEWAY_URL.replace(/^http/, "ws")
+					: undefined;
 				await session.connect({
 					provider: "openai-realtime",
-					apiKey: openaiKey!,
+					apiKey: isNaiaVoice ? (naiaKey ?? openaiKey!) : openaiKey!,
+					serverUrl: liveHost,
+					model: config.model,
 					voice: selectedVoice,
 					locale: getLocale(),
 					systemInstruction: voiceSystemPrompt,
@@ -2017,7 +2025,7 @@ export function ChatPanel() {
 					</button>
 				</div>
 				<div className="chat-header-right">
-					{totalSessionCost > 0 && (
+					{totalSessionCost > 0 && provider !== "ollama" && provider !== "vllm" && (
 						<button
 							type="button"
 							className="cost-badge session-cost cost-badge-clickable"
@@ -2110,9 +2118,11 @@ export function ChatPanel() {
 					.map((msg) => (
 						<div key={msg.id} className={`chat-message ${msg.role}`}>
 							{msg.thinking && (
-								<details className="thinking-block">
-									<summary>{t("chat.thinking") || "Thinking..."}</summary>
-									<div className="thinking-content">{msg.thinking}</div>
+								<details className="thinking-inline">
+									<summary className="thinking-inline-summary">
+										<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
+									</summary>
+									<div className="thinking-inline-content">{msg.thinking}</div>
 								</details>
 							)}
 							{msg.toolCalls?.map((tc) => (
@@ -2127,7 +2137,7 @@ export function ChatPanel() {
 									msg.content
 								)}
 							</div>
-							{msg.cost && (
+							{msg.cost && provider !== "ollama" && provider !== "vllm" && (
 								<span className="cost-badge">
 									{formatCost(msg.cost.cost)} ·{" "}
 									{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
@@ -2141,9 +2151,11 @@ export function ChatPanel() {
 				{isStreaming && (
 					<div className="chat-message assistant streaming">
 						{streamingThinking && (
-							<details className="thinking-block" open>
-								<summary>{t("chat.thinking") || "Thinking..."}</summary>
-								<div className="thinking-content">{streamingThinking}</div>
+							<details className="thinking-inline" open>
+								<summary className="thinking-inline-summary">
+									<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
+								</summary>
+								<div className="thinking-inline-content">{streamingThinking}</div>
 							</details>
 						)}
 						{streamingToolCalls.map((tc) => (

@@ -16,14 +16,13 @@
 import { describe, expect, it } from "vitest";
 
 describe("LLM registry — gateway model exclusion (#248)", () => {
-	it("Naia (gateway) provider does NOT list any gemini-3.x model", async () => {
+	it("Naia (gateway) provider lists gemini-3.x models (full catalogue from naia-agent)", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
 		expect(naia).toBeTruthy();
 		const ids = naia!.models.map((m) => m.id);
-		for (const id of ids) {
-			expect(id).not.toMatch(/^gemini-3(\.|-)/);
-		}
+		expect(ids).toContain("gemini-3.5-flash");
+		expect(ids).toContain("gemini-3.1-pro-preview");
 	});
 
 	it("Naia provider keeps the gemini-2.5-* family (verified working via gateway)", async () => {
@@ -36,40 +35,35 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		expect(ids).toContain("gemini-2.5-flash-live");
 	});
 
-	it("Direct Google Gemini provider keeps gemini-3.x (Google AI Studio works for these)", async () => {
+	it("Direct Google Gemini provider lists gemini-2.5-* family", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const direct = getLlmProvider("gemini");
 		expect(direct).toBeTruthy();
 		const ids = direct!.models.map((m) => m.id);
-		// At least one gemini-3.x should remain on the direct route.
-		const has3x = ids.some((id) => /^gemini-3(\.|-)/.test(id));
-		expect(has3x).toBe(true);
+		expect(ids).toContain("gemini-2.5-pro");
+		expect(ids).toContain("gemini-2.5-flash");
 	});
 
-	it("Naia default model is gemini-2.5-pro (verified working)", async () => {
+	it("Naia default model is gemini-3.5-flash", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		expect(naia!.defaultModel).toBe("gemini-2.5-pro");
+		expect(naia!.defaultModel).toBe("gemini-3.5-flash");
 	});
 });
 
 describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
-	it("migrates removed gemini-3.x models on nextain provider", async () => {
+	it("migrates unknown models on nextain provider to default", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
-		for (const stale of [
-			"gemini-3.1-pro-preview",
-			"gemini-3.1-flash-lite-preview",
-			"gemini-3-flash-preview",
-		]) {
-			const d = shouldMigrateNextainModel("nextain", stale);
-			expect(d.migrate).toBe(true);
-			if (d.migrate) expect(d.to).toBe("gemini-2.5-pro");
-		}
+		const d = shouldMigrateNextainModel("nextain", "some-deprecated-model");
+		expect(d.migrate).toBe(true);
+		if (d.migrate) expect(d.to).toBe("gemini-3.5-flash");
 	});
 
 	it("does NOT migrate valid models on nextain provider", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		for (const valid of [
+			"gemini-3.5-flash",
+			"gemini-3.1-pro-preview",
 			"gemini-2.5-pro",
 			"gemini-2.5-flash",
 			"gemini-2.5-flash-lite",

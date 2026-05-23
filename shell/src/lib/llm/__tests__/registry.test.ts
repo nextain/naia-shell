@@ -30,25 +30,11 @@ describe("registry — provider registration", () => {
 	});
 });
 
-describe("registry — Naia (nextain) provider pricing", () => {
-	// Note: Gemini 3.x models are not available via the Naia Gateway (#248) — not registered.
-
-	it("Gemini 2.5 Pro pricing", () => {
+describe("registry — Naia (nextain) provider models", () => {
+	it("models have no static pricing (fetched from gateway at startup)", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-pro");
 		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([1.25, 10.0]);
-	});
-
-	it("Gemini 2.5 Flash pricing", () => {
-		const model = getLlmModel("nextain", "gemini-2.5-flash");
-		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.3, 2.5]);
-	});
-
-	it("Gemini 2.5 Flash Lite pricing", () => {
-		const model = getLlmModel("nextain", "gemini-2.5-flash-lite");
-		expect(model).toBeDefined();
-		expect(model?.pricing).toEqual([0.075, 0.3]);
+		expect(model?.pricing).toBeUndefined();
 	});
 
 	it("Gemini 2.5 Flash Live is registered", () => {
@@ -71,8 +57,8 @@ describe("registry — Naia (nextain) provider pricing", () => {
 		expect(p?.requiresNaiaKey).toBe(true);
 	});
 
-	it("default model is gemini-2.5-pro", () => {
-		expect(getDefaultLlmModel("nextain")).toBe("gemini-2.5-pro");
+	it("default model is gemini-3.5-flash", () => {
+		expect(getDefaultLlmModel("nextain")).toBe("gemini-3.5-flash");
 	});
 });
 
@@ -156,10 +142,10 @@ describe("registry — fetchNaiaPricing", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("overlays gateway pricing onto Naia model list", async () => {
+	it("overlays gateway pricing with 1.1x markup onto Naia model list", async () => {
 		const gatewayResponse = [
-			{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.165, output_price_per_million: 0.66, cached_price_per_million: 0.044 },
-			{ model_key: "vertexai:gemini-2.5-pro", input_price_per_million: 1.375, output_price_per_million: 11.0, cached_price_per_million: null },
+			{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: 0.04 },
+			{ model_key: "vertexai:gemini-2.5-pro", input_price_per_million: 1.25, output_price_per_million: 10.0, cached_price_per_million: null },
 			{ model_key: "openai:gpt-4o", input_price_per_million: 2.5, output_price_per_million: 10.0, cached_price_per_million: null },
 		];
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -174,33 +160,29 @@ describe("registry — fetchNaiaPricing", () => {
 		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
 		expect(pro?.pricing).toEqual([1.375, 11.0]);
 
-		// openai model should not appear in Naia model list
 		const gpt4o = models!.find((m) => m.id === "gpt-4o");
 		expect(gpt4o).toBeUndefined();
 
 		vi.restoreAllMocks();
 	});
 
-	it("keeps static pricing for models not in gateway response", async () => {
-		// Gateway returns only gemini-2.5-flash — other models keep static price
+	it("models not in gateway response have no pricing", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify([
-				{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.999, output_price_per_million: 9.999, cached_price_per_million: null },
+				{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: null },
 			]), { status: 200 }),
 		);
 		const models = await fetchNaiaPricing("https://example.com");
 		expect(models).not.toBeNull();
 
-		// gemini-2.5-pro should keep static pricing [1.25, 10.0]
 		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
-		expect(pro?.pricing).toEqual([1.25, 10.0]);
+		expect(pro?.pricing).toBeUndefined();
 
 		vi.restoreAllMocks();
 	});
 
 	it("does not mutate original provider models (returns new objects)", async () => {
-		const staticPro = getLlmModel("nextain", "gemini-2.5-pro");
-		const staticPriceBefore = staticPro?.pricing ? [...staticPro.pricing] : null;
+		const staticProBefore = getLlmModel("nextain", "gemini-2.5-pro");
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify([
@@ -209,26 +191,24 @@ describe("registry — fetchNaiaPricing", () => {
 		);
 		await fetchNaiaPricing("https://example.com");
 
-		// Static registry should be unchanged
 		const staticProAfter = getLlmModel("nextain", "gemini-2.5-pro");
-		expect(staticProAfter?.pricing).toEqual(staticPriceBefore);
+		expect(staticProAfter?.pricing).toEqual(staticProBefore?.pricing);
 
 		vi.restoreAllMocks();
 	});
 });
 
 describe("registry — formatModelLabel", () => {
-	it("formats model with pricing correctly", () => {
+	it("returns base label when no pricing", () => {
 		const model = getLlmModel("nextain", "gemini-2.5-pro")!;
 		const label = formatModelLabel(model);
-		expect(label).toContain("Gemini 2.5 Pro");
-		expect(label).toContain("$1.250");
-		expect(label).toContain("$10.000");
+		expect(label).toBe("Gemini 2.5 Pro");
 	});
 
-	it("returns base label when no pricing", () => {
-		const model = getLlmModel("zai", "glm-5.1")!;
-		const label = formatModelLabel(model);
-		expect(label).toBe("GLM 5.1");
+	it("formats label with pricing when provided", () => {
+		const label = formatModelLabel({ id: "test", label: "Test Model", capabilities: ["llm"], pricing: [1.5, 10.0] });
+		expect(label).toContain("Test Model");
+		expect(label).toContain("$1.500");
+		expect(label).toContain("$10.000");
 	});
 });

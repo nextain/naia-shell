@@ -47,6 +47,12 @@ importers:
       '@codemirror/view':
         specifier: ^6.36.4
         version: 6.40.0
+      '@nextain/agent-providers':
+        specifier: link:../../naia-agent/packages/providers
+        version: link:../../naia-agent/packages/providers
+      '@nextain/agent-types':
+        specifier: link:../../naia-agent/packages/types
+        version: link:../../naia-agent/packages/types
       '@pixiv/three-vrm':
         specifier: ^3.4.5
         version: 3.4.5(three@0.172.0)

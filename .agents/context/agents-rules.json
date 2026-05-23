@@ -448,6 +448,32 @@
         "All above + E2E tests + BlueBuild image + ISO generation"
       ]
     },
+    "versioning": {
+      "sot": "shell/src-tauri/Cargo.toml — single source of truth for app version",
+      "files_to_update": [
+        "shell/src-tauri/Cargo.toml (SoT — change this first)",
+        "shell/package.json (must match Cargo.toml — build script enforces)"
+      ],
+      "removed": "shell/src-tauri/tauri.conf.json no longer has a version field — Tauri reads from Cargo.toml automatically",
+      "rule": "Never set version in tauri.conf.json. When bumping version, update Cargo.toml + package.json only."
+    },
+    "release_process": {
+      "description": "6-step release workflow — must be followed in strict order. AI cannot skip steps.",
+      "steps": [
+        "1. develop — implement and test the feature/fix",
+        "2. deliver_test_build — local tauri build, share installer path for user verification (NOT a CI tag push)",
+        "3. user_verification — user confirms the build works on target machine(s)",
+        "4. write_release_notes — draft release notes in CHANGELOG.md or GitHub Release draft",
+        "5. user_approval — user explicitly approves release: `echo approved > .agents/release-approved`",
+        "6. release — tag push + GitHub Release (CI builds artifacts)"
+      ],
+      "ai_constraints": {
+        "deliver_test_build": "Run `tauri build` locally. NEVER push a git tag or trigger CI for verification builds.",
+        "release_gate": "Steps 1-5 must be complete before any tag push or `gh release create`. The release-guard hook enforces this mechanically.",
+        "approval_flag": ".agents/release-approved (one-time, deleted after use). Only the user creates this file.",
+        "no_autonomous_release": "AI must NEVER push release tags without explicit user approval flag."
+      }
+    },
     "code_review": {
       "rule": "AI-assisted review encouraged. Human review for security-critical changes.",
       "fix_policy": "All issues found during review MUST be fixed — regardless of whether they are bugs or code quality improvements. Do not defer 'non-bug' findings. If it was worth identifying, it is worth fixing.",

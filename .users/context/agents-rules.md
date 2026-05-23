@@ -388,6 +388,37 @@ Assisted-by: Claude Sonnet 4.6
 | PR | above + integration tests |
 | main merge | above + E2E + BlueBuild image + ISO generation |
 
+### Versioning
+
+Single source of truth: `shell/src-tauri/Cargo.toml`
+
+| File | Role |
+|------|------|
+| `shell/src-tauri/Cargo.toml` | **SoT** — change this first |
+| `shell/package.json` | Must match Cargo.toml — build script enforces |
+| `shell/src-tauri/tauri.conf.json` | **No version field** — Tauri reads from Cargo.toml automatically |
+
+**Rule**: Never set version in `tauri.conf.json`. When bumping version, update `Cargo.toml` + `package.json` only. The build script (`scripts/build-windows.ps1`) will fail if they differ.
+
+### Release Process
+
+6-step workflow — must be followed in strict order. AI cannot skip steps.
+
+| Step | Action |
+|------|--------|
+| 1. Develop | Implement and test the feature/fix |
+| 2. Deliver test build | Local `tauri build`, share installer path for user verification — **NOT** a CI tag push |
+| 3. User verification | User confirms the build works on target machine(s) |
+| 4. Write release notes | Draft in CHANGELOG.md or GitHub Release draft |
+| 5. User approval | User explicitly approves: `echo approved > .agents/release-approved` |
+| 6. Release | Tag push + GitHub Release (CI builds artifacts) |
+
+**AI constraints:**
+- Step 2 ("deliver test build"): run `tauri build` locally. Never push a git tag or trigger CI.
+- Steps 1–5 must be complete before any tag push or `gh release create`.
+- The `release-guard.js` hook enforces this mechanically — it blocks tag pushes without the approval flag.
+- Only the **user** creates `.agents/release-approved`. It is deleted after use (one-time).
+
 ### Code Review
 
 AI review encouraged; human review required for security-critical changes.

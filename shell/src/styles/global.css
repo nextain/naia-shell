@@ -1599,37 +1599,66 @@ body.resizing-row {
 	word-break: break-word;
 }
 
-/* Thinking block (Claude extended thinking) */
-.thinking-block {
-	margin-bottom: 8px;
-	border-radius: 6px;
-	background: rgba(255, 255, 255, 0.04);
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	overflow: hidden;
+/* Thinking block — inline collapsible */
+.thinking-inline {
+	margin-bottom: 4px;
 }
 
-.thinking-block summary {
-	padding: 6px 10px;
-	font-size: 0.8em;
-	color: var(--latte);
-	opacity: 0.7;
+.thinking-inline-summary {
+	display: inline-flex;
+	align-items: center;
 	cursor: pointer;
 	user-select: none;
+	list-style: none;
 }
 
-.thinking-block summary:hover {
-	opacity: 1;
+.thinking-inline-summary::-webkit-details-marker {
+	display: none;
 }
 
-.thinking-content {
-	padding: 8px 12px;
-	font-size: 0.85em;
+.thinking-inline-summary::before {
+	content: "▶";
+	font-size: 0.55em;
+	margin-right: 4px;
+	opacity: 0.5;
+	transition: transform 0.15s ease;
+}
+
+.thinking-inline[open] > .thinking-inline-summary::before {
+	transform: rotate(90deg);
+}
+
+.thinking-inline-label {
+	font-size: 0.7em;
+	font-style: italic;
+	color: var(--latte);
+	opacity: 0.45;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 260px;
+}
+
+.thinking-inline[open] .thinking-inline-label {
+	max-width: none;
+}
+
+.thinking-inline-summary:hover .thinking-inline-label {
+	opacity: 0.7;
+}
+
+.thinking-inline-content {
+	margin-top: 2px;
+	padding: 4px 8px;
+	font-size: 0.75em;
+	font-style: italic;
 	color: var(--cream);
-	opacity: 0.6;
-	line-height: 1.5;
+	opacity: 0.4;
+	line-height: 1.4;
 	white-space: pre-wrap;
-	max-height: 200px;
+	max-height: 160px;
 	overflow-y: auto;
+	border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
 /* Markdown rendered content inside assistant messages */
