@@ -77,7 +77,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm run tauri build --bundles deb,rpm
+        run: pnpm run tauri build --config src-tauri/tauri.conf.linux.json --bundles deb,rpm
 
       - name: List build artifacts
         run: |
@@ -96,6 +96,17 @@ jobs:
             || { echo "::error::deb not found"; exit 1; }
           cp shell/src-tauri/target/release/bundle/rpm/*.rpm Naia-Shell-x86_64.rpm \
             || { echo "::error::rpm not found"; exit 1; }
+
+      - name: Smoke test Linux package layout
+        run: |
+          rm -rf linux-smoke
+          mkdir -p linux-smoke
+          dpkg-deb -x Naia-Shell-x86_64.deb linux-smoke
+          test -f linux-smoke/usr/lib/Naia/libvosk.so \
+            || { echo "::error::libvosk.so missing from deb"; exit 1; }
+          ldd linux-smoke/usr/bin/naia-shell | tee /tmp/linux-ldd.txt
+          grep -q 'libvosk.so => .*linux-smoke/.*/libvosk.so' /tmp/linux-ldd.txt \
+            || { echo "::error::libvosk.so not resolved from packaged path"; exit 1; }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
