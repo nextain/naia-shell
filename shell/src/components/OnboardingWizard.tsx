@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
-import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeNaiaConfig } from "../lib/adk-store";
+import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeAgentKey, writeNaiaConfig } from "../lib/adk-store";
 import { syncToGateway } from "../lib/gateway-sync";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { sendAuthUpdate } from "../lib/chat-service";
@@ -396,6 +396,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		// G-01: sync to naia-settings/config.json so standalone agent picks up the onboarding result.
 		const saved = loadConfig();
 		if (saved) void writeNaiaConfig({ ...(saved as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(saved) });
+		// Write naiaKey to OS keychain so standalone naia-agent can read it.
+		if (saved?.naiaKey) void writeAgentKey(saved.provider || "nextain", "naiaKey", saved.naiaKey);
+		if (saved?.apiKey) void writeAgentKey(saved.provider || "anthropic", "apiKey", saved.apiKey);
 		// Sync memory AI settings to memory-config.json via gateway config.
 		if (saved) {
 			void syncToGateway(

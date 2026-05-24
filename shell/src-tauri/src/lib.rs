@@ -1064,8 +1064,10 @@ fn spawn_agent_core(
                 let settings_dir = std::path::PathBuf::from(adk_path_str)
                     .join("naia-settings");
                 cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
+                cmd.env("NAIA_ADK_PATH", adk_path_str);
                 log_verbose(&format!(
-                    "[Naia] agent NAIA_SETTINGS_DIR={}",
+                    "[Naia] agent NAIA_ADK_PATH={} NAIA_SETTINGS_DIR={}",
+                    adk_path_str,
                     settings_dir.display()
                 ));
             }
