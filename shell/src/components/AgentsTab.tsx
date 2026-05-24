@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { directToolCall } from "../lib/chat-service";
-import { loadConfig, resolveGatewayUrl } from "../lib/config";
+import { loadConfig, resolveConfiguredGatewayUrl } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 
@@ -40,7 +40,7 @@ export function AgentsTab() {
 		setError(null);
 
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
 		if (!gatewayUrl) {
 			setLoading(false);
 			setError(t("agents.gatewayRequired"));
@@ -89,7 +89,8 @@ export function AgentsTab() {
 		async (key: string) => {
 			if (!confirm(t("agents.deleteSessionConfirm"))) return;
 			const config = loadConfig();
-			const gatewayUrl = resolveGatewayUrl(config);
+			const gatewayUrl = resolveConfiguredGatewayUrl(config);
+			if (!gatewayUrl) return;
 			try {
 				await directToolCall({
 					toolName: "skill_sessions",
@@ -113,7 +114,11 @@ export function AgentsTab() {
 		setFileContent(null);
 		setSelectedFile(null);
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
+		if (!gatewayUrl) {
+			setFilesLoading(false);
+			return;
+		}
 		try {
 			const res = await directToolCall({
 				toolName: "skill_agents",
@@ -137,7 +142,8 @@ export function AgentsTab() {
 	const handleViewFile = useCallback(async (agentId: string, path: string) => {
 		setSelectedFile(path);
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
+		if (!gatewayUrl) return;
 		try {
 			const res = await directToolCall({
 				toolName: "skill_agents",
@@ -159,7 +165,8 @@ export function AgentsTab() {
 	const handleSaveFile = useCallback(async () => {
 		if (!selectedAgent || !selectedFile || fileContent === null) return;
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
+		if (!gatewayUrl) return;
 		setFileSaveStatus(null);
 		try {
 			const res = await directToolCall({
@@ -187,7 +194,8 @@ export function AgentsTab() {
 	const handleCompactSession = useCallback(
 		async (key: string) => {
 			const config = loadConfig();
-			const gatewayUrl = resolveGatewayUrl(config);
+			const gatewayUrl = resolveConfiguredGatewayUrl(config);
+			if (!gatewayUrl) return;
 			try {
 				await directToolCall({
 					toolName: "skill_sessions",

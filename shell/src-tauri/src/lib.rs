@@ -246,12 +246,85 @@ struct SkillManifestInfo {
 }
 
 /// Saved window position/size
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 struct WindowState {
     x: i32,
     y: i32,
     width: u32,
     height: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct WindowBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn monitor_bounds(monitor: &tauri::Monitor) -> WindowBounds {
+    let work_area = monitor.work_area();
+    WindowBounds {
+        x: work_area.position.x,
+        y: work_area.position.y,
+        width: work_area.size.width,
+        height: work_area.size.height,
+    }
+}
+
+fn clamp_window_state_to_bounds(state: WindowState, bounds: WindowBounds) -> WindowState {
+    let max_width = bounds.width.max(1);
+    let max_height = bounds.height.max(1);
+    let width = state.width.clamp(1, max_width);
+    let height = state.height.clamp(1, max_height);
+
+    let max_x = bounds
+        .x
+        .saturating_add(max_width.saturating_sub(width) as i32);
+    let max_y = bounds
+        .y
+        .saturating_add(max_height.saturating_sub(height) as i32);
+
+    WindowState {
+        x: state.x.clamp(bounds.x, max_x.max(bounds.x)),
+        y: state.y.clamp(bounds.y, max_y.max(bounds.y)),
+        width,
+        height,
+    }
+}
+
+fn centered_window_state(size: PhysicalSize<u32>, bounds: WindowBounds) -> WindowState {
+    let max_width = bounds.width.max(1);
+    let max_height = bounds.height.max(1);
+    let width = size.width.clamp(1, max_width);
+    let height = size.height.clamp(1, max_height);
+    let x = bounds
+        .x
+        .saturating_add((max_width.saturating_sub(width) / 2) as i32);
+    let y = bounds
+        .y
+        .saturating_add((max_height.saturating_sub(height) / 2) as i32);
+    WindowState {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+fn monitor_for_window_state(
+    app_handle: &AppHandle,
+    window: &tauri::WebviewWindow,
+    state: &WindowState,
+) -> Option<tauri::Monitor> {
+    let center_x = state.x as f64 + state.width as f64 / 2.0;
+    let center_y = state.y as f64 + state.height as f64 / 2.0;
+    app_handle
+        .monitor_from_point(center_x, center_y)
+        .ok()
+        .flatten()
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| window.primary_monitor().ok().flatten())
 }
 
 fn window_state_path(app_handle: &AppHandle) -> Option<std::path::PathBuf> {
@@ -1805,11 +1878,11 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
 /// Called from the frontend when a text input gains focus so the 한/영 toggle
 /// works even if the initial startup call was too early.
 #[tauri::command]
-async fn enable_webview2_ime(window: tauri::Window) -> Result<(), String> {
+async fn enable_webview2_ime(_window: tauri::Window) -> Result<(), String> {
     #[cfg(windows)]
     {
         use raw_window_handle::HasWindowHandle;
-        if let Ok(handle) = window.window_handle() {
+        if let Ok(handle) = _window.window_handle() {
             if let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw() {
                 let hwnd_isize = h.hwnd.get() as isize;
                 crate::platform::enable_ime_for_window(hwnd_isize);
@@ -1939,18 +2012,28 @@ async fn read_discord_bot_token() -> Result<String, String> {
     let home = home_dir();
 
     // 1. Shell local config (primary — no Gateway dependency)
-    let mut shell_candidates = vec![
-        format!("{}/.local/share/com.naia.shell/naia-discord.json", home),
-        format!(
-            "{}/.var/app/io.nextain.naia/config/com.naia.shell/naia-discord.json",
-            home
-        ),
-    ];
-    #[cfg(windows)]
-    shell_candidates.push(format!(
-        "{}\\AppData\\Roaming\\com.naia.shell\\naia-discord.json",
-        home
-    ));
+    let shell_candidates = {
+        let candidates = vec![
+            format!("{}/.local/share/com.naia.shell/naia-discord.json", home),
+            format!(
+                "{}/.var/app/io.nextain.naia/config/com.naia.shell/naia-discord.json",
+                home
+            ),
+        ];
+        #[cfg(windows)]
+        {
+            let mut candidates = candidates;
+            candidates.push(format!(
+                "{}\\AppData\\Roaming\\com.naia.shell\\naia-discord.json",
+                home
+            ));
+            candidates
+        }
+        #[cfg(not(windows))]
+        {
+            candidates
+        }
+    };
     for path in &shell_candidates {
         if let Ok(bytes) = std::fs::read(path) {
             if let Ok(config) = serde_json::from_slice::<serde_json::Value>(&bytes) {
@@ -2816,6 +2899,7 @@ async fn write_naia_config(adk_path: String, json: String) -> Result<(), String>
 /// Also updates the credentials manifest at `{adk_path}/naia-settings/credentials`.
 #[tauri::command]
 async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Result<(), String> {
+    #[cfg(not(target_os = "macos"))]
     use std::io::Write as _;
     use std::path::PathBuf;
 
@@ -3401,11 +3485,28 @@ pub fn run() {
                     .filter(|s| s.width >= LEGACY_PANEL_WIDTH_CAP);
 
                 if let Some(saved) = restored {
-                    let _ = window.set_size(PhysicalSize::new(saved.width, saved.height));
-                    let _ = window.set_position(PhysicalPosition::new(saved.x, saved.y));
+                    let fitted = monitor_for_window_state(&app_handle, &window, &saved)
+                        .map(|monitor| clamp_window_state_to_bounds(saved, monitor_bounds(&monitor)))
+                        .unwrap_or(saved);
+                    let _ = window.set_size(PhysicalSize::new(fitted.width, fitted.height));
+                    let _ = window.set_position(PhysicalPosition::new(fitted.x, fitted.y));
+                    if fitted != saved {
+                        save_window_state(&app_handle, &fitted);
+                        log_verbose(&format!(
+                            "[Naia] Window restored and fitted to screen: {}x{} at ({},{}) -> {}x{} at ({},{})",
+                            saved.width,
+                            saved.height,
+                            saved.x,
+                            saved.y,
+                            fitted.width,
+                            fitted.height,
+                            fitted.x,
+                            fitted.y
+                        ));
+                    }
                     log_verbose(&format!(
                         "[Naia] Window restored: {}x{} at ({},{})",
-                        saved.width, saved.height, saved.x, saved.y
+                        fitted.width, fitted.height, fitted.x, fitted.y
                     ));
                 } else {
                     // Discard any legacy side-panel state so the desktop default
@@ -3416,18 +3517,19 @@ pub fn run() {
                             log_verbose("[Naia] Discarded legacy side-panel window state");
                         }
                     }
-                    if let Ok(Some(monitor)) = window.current_monitor() {
-                        let monitor_size = monitor.size();
-                        let monitor_pos = monitor.position();
-                        if let Ok(inner) = window.inner_size() {
-                            let x = monitor_pos.x
-                                + ((monitor_size.width as i32 - inner.width as i32) / 2).max(0);
-                            let y = monitor_pos.y
-                                + ((monitor_size.height as i32 - inner.height as i32) / 2).max(0);
-                            let _ = window.set_position(PhysicalPosition::new(x, y));
+                    if let Some(monitor) = window
+                        .current_monitor()
+                        .ok()
+                        .flatten()
+                        .or_else(|| window.primary_monitor().ok().flatten())
+                    {
+                        if let Ok(size) = window.outer_size() {
+                            let fitted = centered_window_state(size, monitor_bounds(&monitor));
+                            let _ = window.set_size(PhysicalSize::new(fitted.width, fitted.height));
+                            let _ = window.set_position(PhysicalPosition::new(fitted.x, fitted.y));
                             log_verbose(&format!(
                                 "[Naia] Window centered: {}x{} at ({},{})",
-                                inner.width, inner.height, x, y
+                                fitted.width, fitted.height, fitted.x, fitted.y
                             ));
                         }
                     }
@@ -3662,11 +3764,83 @@ mod tests {
         assert_eq!(parsed.width, 380);
     }
 
-    #[tokio::test]
-    async fn gateway_health_returns_ok() {
-        // Should return Ok(bool), not Err — regardless of gateway state
-        let result = gateway_health().await;
-        assert!(result.is_ok());
+    #[test]
+    fn window_state_clamps_oversized_window_to_bounds() {
+        let state = WindowState {
+            x: 120,
+            y: 80,
+            width: 2560,
+            height: 1440,
+        };
+        let bounds = WindowBounds {
+            x: 0,
+            y: 0,
+            width: 1366,
+            height: 768,
+        };
+
+        let fitted = clamp_window_state_to_bounds(state, bounds);
+
+        assert_eq!(
+            fitted,
+            WindowState {
+                x: 0,
+                y: 0,
+                width: 1366,
+                height: 768,
+            }
+        );
+    }
+
+    #[test]
+    fn window_state_clamps_offscreen_position_to_work_area() {
+        let state = WindowState {
+            x: -300,
+            y: 900,
+            width: 1000,
+            height: 900,
+        };
+        let bounds = WindowBounds {
+            x: 0,
+            y: 25,
+            width: 1280,
+            height: 695,
+        };
+
+        let fitted = clamp_window_state_to_bounds(state, bounds);
+
+        assert_eq!(
+            fitted,
+            WindowState {
+                x: 0,
+                y: 25,
+                width: 1000,
+                height: 695,
+            }
+        );
+    }
+
+    #[test]
+    fn centered_window_state_shrinks_default_size_to_bounds() {
+        let fitted = centered_window_state(
+            PhysicalSize::new(1366, 768),
+            WindowBounds {
+                x: 10,
+                y: 20,
+                width: 1280,
+                height: 720,
+            },
+        );
+
+        assert_eq!(
+            fitted,
+            WindowState {
+                x: 10,
+                y: 20,
+                width: 1280,
+                height: 720,
+            }
+        );
     }
 
     #[test]

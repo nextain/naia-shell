@@ -3,11 +3,7 @@ import { homeDir } from "@tauri-apps/api/path";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { directToolCall } from "../lib/chat-service";
-import {
-	DEFAULT_GATEWAY_URL,
-	loadConfig,
-	resolveGatewayUrl,
-} from "../lib/config";
+import { loadConfig, resolveConfiguredGatewayUrl } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import type { GatewayStatus, LogEntry } from "../lib/types";
@@ -170,7 +166,8 @@ export function DiagnosticsTab() {
 
 	const fetchGatewayStatus = useCallback(async () => {
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config) || DEFAULT_GATEWAY_URL;
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
+		if (!gatewayUrl) return;
 		try {
 			const res = await directToolCall({
 				toolName: "skill_diagnostics",
@@ -280,7 +277,8 @@ export function DiagnosticsTab() {
 
 	const pollGatewayLogs = useCallback(async () => {
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config) || DEFAULT_GATEWAY_URL;
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
+		if (!gatewayUrl) return;
 		try {
 			const res = await directToolCall({
 				toolName: "skill_diagnostics",

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock config
 vi.mock("../config", () => ({
 	loadConfig: vi.fn(),
-	resolveGatewayUrl: vi.fn(),
+	resolveConfiguredGatewayUrl: vi.fn(),
 }));
 
 // Mock chat-service
@@ -12,7 +12,7 @@ vi.mock("../chat-service", () => ({
 	directToolCall: (...args: unknown[]) => mockDirectToolCall(...args),
 }));
 
-import { loadConfig, resolveGatewayUrl } from "../config";
+import { loadConfig, resolveConfiguredGatewayUrl } from "../config";
 
 describe("gateway-sessions", () => {
 	beforeEach(() => {
@@ -20,7 +20,7 @@ describe("gateway-sessions", () => {
 			enableTools: true,
 			gatewayToken: "test-token",
 		});
-		(resolveGatewayUrl as ReturnType<typeof vi.fn>).mockReturnValue(
+		(resolveConfiguredGatewayUrl as ReturnType<typeof vi.fn>).mockReturnValue(
 			"ws://localhost:18789",
 		);
 	});
@@ -93,7 +93,9 @@ describe("gateway-sessions", () => {
 		it("still calls agent when Gateway URL unavailable (skill_sessions is local)", async () => {
 			// skill_sessions is a local agent tool — works without cloud gateway.
 			// The agent receives the request with gatewayUrl: undefined and handles it locally.
-			(resolveGatewayUrl as ReturnType<typeof vi.fn>).mockReturnValue(null);
+			(resolveConfiguredGatewayUrl as ReturnType<typeof vi.fn>).mockReturnValue(
+				null,
+			);
 			mockDirectToolCall.mockResolvedValueOnce({
 				success: true,
 				output: JSON.stringify({ sessions: [] }),

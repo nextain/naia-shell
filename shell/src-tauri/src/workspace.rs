@@ -1,9 +1,9 @@
+use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 // --- Types -------------------------------------------------------------------
 
@@ -416,13 +416,17 @@ pub fn workspace_start_watch(
     let watcher = RecommendedWatcher::new(
         move |result: notify::Result<Event>| {
             if let Ok(event) = result {
-                let is_content_change = matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
+                let is_content_change =
+                    matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
                 if !is_content_change {
                     return;
                 }
 
                 for changed_path in &event.paths {
-                    let name = changed_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let name = changed_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
                     if name.starts_with('.') || name.ends_with(".lock") {
                         continue;
                     }
@@ -508,7 +512,8 @@ pub fn workspace_set_root(root: String) -> Result<String, String> {
     if !p.is_dir() {
         return Err(format!("Workspace root is not a directory: {root}"));
     }
-    let canonical = dunce::canonicalize(&p).map_err(|e| format!("Workspace root inaccessible: {e}"))?;
+    let canonical =
+        dunce::canonicalize(&p).map_err(|e| format!("Workspace root inaccessible: {e}"))?;
     let canonical_str = canonical.to_string_lossy().to_string();
     let m = WORKSPACE_ROOT_OVERRIDE.get_or_init(|| Mutex::new(WORKSPACE_ROOT.to_string()));
     *m.lock().unwrap() = canonical_str.clone();
@@ -528,7 +533,11 @@ pub fn workspace_classify_dirs() -> Result<Vec<ClassifiedDir>, String> {
         if !path.is_dir() {
             continue;
         }
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
         if name.starts_with('.') {
             continue;
         }
@@ -575,7 +584,9 @@ pub fn workspace_check_adk_server(url: Option<String>) -> Result<serde_json::Val
         .timeout(std::time::Duration::from_secs(3))
         .call()
         .map_err(|e| format!("Server not reachable: {e}"))?;
-    let body: serde_json::Value = response.into_json().map_err(|e| format!("Parse error: {e}"))?;
+    let body: serde_json::Value = response
+        .into_json()
+        .map_err(|e| format!("Parse error: {e}"))?;
     Ok(body)
 }
 
@@ -584,7 +595,11 @@ pub fn workspace_discover_adk_server() -> Option<String> {
     for port in [3141, 3142, 8080] {
         let url = format!("http://localhost:{}", port);
         let health = format!("{}/api/health", url);
-        if ureq::get(&health).timeout(std::time::Duration::from_secs(1)).call().is_ok() {
+        if ureq::get(&health)
+            .timeout(std::time::Duration::from_secs(1))
+            .call()
+            .is_ok()
+        {
             return Some(url);
         }
     }
@@ -680,7 +695,11 @@ fn collect_search_candidates() -> Vec<PathBuf> {
 
 fn is_naia_adk_root(path: &Path) -> bool {
     let has_entry_point = path.join("AGENTS.md").is_file() || path.join("CLAUDE.md").is_file();
-    let has_rules = path.join(".agents").join("context").join("agents-rules.json").is_file();
+    let has_rules = path
+        .join(".agents")
+        .join("context")
+        .join("agents-rules.json")
+        .is_file();
     if !(has_entry_point && has_rules) {
         return false;
     }
@@ -703,13 +722,18 @@ fn is_naia_adk_root(path: &Path) -> bool {
 #[tauri::command]
 pub fn workspace_load_project_index() -> Result<serde_json::Value, String> {
     let root = canonical_workspace_root()?;
-    let index_path = root.join(".agents").join("context").join("project-index.yaml");
+    let index_path = root
+        .join(".agents")
+        .join("context")
+        .join("project-index.yaml");
     if !index_path.is_file() {
         return Err("project-index.yaml not found".to_string());
     }
     let content = std::fs::read_to_string(&index_path).map_err(|e| e.to_string())?;
-    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| format!("YAML parse error: {e}"))?;
-    let json_str = serde_json::to_string(&yaml_value).map_err(|e| format!("JSON conversion: {e}"))?;
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).map_err(|e| format!("YAML parse error: {e}"))?;
+    let json_str =
+        serde_json::to_string(&yaml_value).map_err(|e| format!("JSON conversion: {e}"))?;
     serde_json::from_str(&json_str).map_err(|e| format!("JSON parse: {e}"))
 }
 
@@ -740,7 +764,9 @@ pub fn workspace_read_skill_content(path: String) -> Result<String, String> {
 }
 
 fn visit_skill_dirs(dir: &Path, root: &Path, skills: &mut Vec<SkillMeta>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -768,18 +794,32 @@ fn parse_skill_md(path: &Path, root: &Path) -> Option<SkillMeta> {
     Some(SkillMeta {
         name,
         path: rel_str,
-        description: frontmatter.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        trigger: frontmatter.get("trigger").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        management: frontmatter.get("management").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        description: frontmatter
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        trigger: frontmatter
+            .get("trigger")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        management: frontmatter
+            .get("management")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
         has_frontmatter,
     })
 }
 
 fn parse_frontmatter(content: &str) -> (serde_yaml::Value, bool) {
     let trimmed = content.trim_start();
-    if !trimmed.starts_with("---") { return (serde_yaml::Value::Null, false); }
+    if !trimmed.starts_with("---") {
+        return (serde_yaml::Value::Null, false);
+    }
     let rest = &trimmed[3..];
-    let Some(end) = rest.find("\n---") else { return (serde_yaml::Value::Null, false); };
+    let Some(end) = rest.find("\n---") else {
+        return (serde_yaml::Value::Null, false);
+    };
     let yaml_str = &rest[..end];
     match serde_yaml::from_str(yaml_str) {
         Ok(v) => (v, true),
@@ -792,20 +832,35 @@ fn find_session_dir(file_path: &Path) -> Option<PathBuf> {
     let canonical_file = dunce::canonicalize(file_path).ok()?;
     let mut candidates = collect_workspace_git_dirs(&root);
     candidates.sort_by(|a, b| {
-        b.components().count().cmp(&a.components().count())
+        b.components()
+            .count()
+            .cmp(&a.components().count())
             .then_with(|| b.as_os_str().len().cmp(&a.as_os_str().len()))
     });
-    candidates.into_iter().find(|candidate| canonical_file.starts_with(candidate))
+    candidates
+        .into_iter()
+        .find(|candidate| canonical_file.starts_with(candidate))
 }
 
 fn get_main_worktree(path: &Path) -> Option<String> {
-    let output = git_cmd(path, &["worktree", "list", "--porcelain"]).output().ok()?;
-    if !output.status.success() { return None; }
+    let output = git_cmd(path, &["worktree", "list", "--porcelain"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let text = String::from_utf8_lossy(&output.stdout);
-    let main_path = text.lines().find_map(|l| l.strip_prefix("worktree ")).map(str::to_string)?;
+    let main_path = text
+        .lines()
+        .find_map(|l| l.strip_prefix("worktree "))
+        .map(str::to_string)?;
     let canon_main = dunce::canonicalize(&main_path).ok()?;
     let canon_path = dunce::canonicalize(path).ok()?;
-    if canon_main == canon_path { None } else { Some(canon_main.to_string_lossy().to_string()) }
+    if canon_main == canon_path {
+        None
+    } else {
+        Some(canon_main.to_string_lossy().to_string())
+    }
 }
 
 fn get_all_worktree_paths(root: &Path) -> Vec<String> {
@@ -840,8 +895,14 @@ pub fn workspace_list_dirs(parent: String) -> Result<Vec<DirEntry>, String> {
         for entry in read.flatten() {
             let p = entry.path();
             let is_dir = p.is_dir();
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-            if name.starts_with('.') { continue; }
+            let name = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            if name.starts_with('.') {
+                continue;
+            }
             entries.push(DirEntry {
                 name,
                 path: p.to_string_lossy().to_string(),
@@ -869,7 +930,9 @@ pub fn workspace_read_file_bytes(path: String) -> Result<Vec<u8>, String> {
 #[tauri::command]
 pub fn workspace_file_size(path: String) -> Result<u64, String> {
     let safe_path = validate_in_workspace(&path)?;
-    std::fs::metadata(safe_path).map(|m| m.len()).map_err(|e| e.to_string())
+    std::fs::metadata(safe_path)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

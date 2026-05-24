@@ -95,7 +95,11 @@ pub(crate) fn find_node_version_manager(home: &str) -> Option<PathBuf> {
                         .next()?
                         .parse()
                         .ok()?;
-                    if major >= 22 { Some((major, e.path())) } else { None }
+                    if major >= 22 {
+                        Some((major, e.path()))
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             versions.sort_by(|a, b| b.0.cmp(&a.0));
@@ -189,7 +193,6 @@ pub(crate) fn start_deep_link_file_watcher(_app_handle: tauri::AppHandle) {}
 pub(crate) fn normalize_path(path: &std::path::Path) -> PathBuf {
     path.to_path_buf()
 }
-
 
 // ─── Browser window embedding (X11) ──────────────────────────────────────────
 

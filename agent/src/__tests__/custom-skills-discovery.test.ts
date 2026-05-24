@@ -193,6 +193,11 @@ describe("custom skills: registry and tool delivery", () => {
 			expect(prompt).toContain("FORBIDDEN");
 		});
 
+		it("requires tool-first responses without preliminary text", () => {
+			expect(prompt).toContain("call the tool first");
+			expect(prompt).toContain("확인해 드리겠습니다");
+		});
+
 		it("instructs to use skill_github for GitHub queries", () => {
 			expect(prompt).toContain("skill_github");
 		});
@@ -208,6 +213,24 @@ describe("custom skills: registry and tool delivery", () => {
 
 		it("shows gateway connected status", () => {
 			expect(prompt).toContain("Gateway 연결됨");
+		});
+
+		it("requires reading browser page text before finishing web news searches", () => {
+			const browserPrompt = buildToolStatusPrompt("base", true, false, false, [
+				{
+					name: "skill_browser_navigate",
+					description: "Navigate browser",
+					parameters: { type: "object", properties: {} },
+				},
+				{
+					name: "skill_browser_get_text",
+					description: "Read browser text",
+					parameters: { type: "object", properties: {} },
+				},
+			]);
+			expect(browserPrompt).toContain("뉴스/검색/조사/최신 정보 요청");
+			expect(browserPrompt).toContain("do not finish after navigation alone");
+			expect(browserPrompt).toContain("skill_browser_get_text");
 		});
 
 		it("shows gateway failure with specific tool names when disconnected", () => {
@@ -294,9 +317,7 @@ describe("custom skills: registry and tool delivery", () => {
 const LIVE_E2E = process.env.CAFE_LIVE_GATEWAY_E2E === "1";
 
 function loadGatewayToken(): string | null {
-	const paths = [
-		join(homedir(), ".naia", "gateway.json"),
-	];
+	const paths = [join(homedir(), ".naia", "gateway.json")];
 	for (const p of paths) {
 		try {
 			const config = JSON.parse(readFileSync(p, "utf-8"));

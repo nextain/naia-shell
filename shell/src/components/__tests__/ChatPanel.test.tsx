@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentResponseChunk } from "../../lib/types";
@@ -17,12 +23,22 @@ vi.mock("@tauri-apps/plugin-store", () => {
 
 // Mock chat-service — capture onChunk callback
 let capturedOnChunk: ((chunk: AgentResponseChunk) => void) | null = null;
+const capturedRequests: {
+	message: string;
+	requestId: string;
+	onChunk: (chunk: AgentResponseChunk) => void;
+}[] = [];
 vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi
 		.fn()
 		.mockImplementation(
-			(opts: { onChunk: (chunk: AgentResponseChunk) => void }) => {
+			(opts: {
+				message: string;
+				requestId: string;
+				onChunk: (chunk: AgentResponseChunk) => void;
+			}) => {
 				capturedOnChunk = opts.onChunk;
+				capturedRequests.push(opts);
 				return Promise.resolve();
 			},
 		),
@@ -67,6 +83,8 @@ describe("ChatPanel", () => {
 	afterEach(() => {
 		cleanup();
 		capturedOnChunk = null;
+		capturedRequests.length = 0;
+		vi.clearAllMocks();
 		mockInvoke.mockResolvedValue(undefined);
 		useChatStore.setState(useChatStore.getInitialState());
 		useAvatarStore.setState(useAvatarStore.getInitialState());
@@ -148,9 +166,10 @@ describe("ChatPanel", () => {
 		await new Promise((r) => setTimeout(r, 50));
 
 		expect(capturedOnChunk).not.toBeNull();
+		const requestId = capturedRequests[0].requestId;
 		capturedOnChunk?.({
 			type: "tool_use",
-			requestId: "req-1",
+			requestId,
 			toolCallId: "tc-1",
 			toolName: "read_file",
 			args: { path: "/test.txt" },
@@ -182,9 +201,10 @@ describe("ChatPanel", () => {
 
 		await new Promise((r) => setTimeout(r, 50));
 
+		const requestId = capturedRequests[0].requestId;
 		capturedOnChunk?.({
 			type: "tool_use",
-			requestId: "req-1",
+			requestId,
 			toolCallId: "tc-1",
 			toolName: "read_file",
 			args: { path: "/test.txt" },
@@ -192,7 +212,7 @@ describe("ChatPanel", () => {
 
 		capturedOnChunk?.({
 			type: "tool_result",
-			requestId: "req-1",
+			requestId,
 			toolCallId: "tc-1",
 			toolName: "read_file",
 			output: "file contents",
@@ -250,9 +270,10 @@ describe("ChatPanel", () => {
 		await new Promise((r) => setTimeout(r, 50));
 
 		expect(capturedOnChunk).not.toBeNull();
+		const requestId = capturedRequests[0].requestId;
 		capturedOnChunk?.({
 			type: "approval_request",
-			requestId: "req-1",
+			requestId,
 			toolCallId: "tc-1",
 			toolName: "execute_command",
 			args: { command: "npm test" },
@@ -263,6 +284,43 @@ describe("ChatPanel", () => {
 		const { pendingApproval } = useChatStore.getState();
 		expect(pendingApproval).not.toBeNull();
 		expect(pendingApproval?.toolName).toBe("execute_command");
+
+		localStorage.removeItem("naia-config");
+	});
+
+	it("queues rapid sends until the active stream finishes", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		const { sendChatMessage } = await import("../../lib/chat-service");
+		vi.mocked(sendChatMessage).mockClear();
+
+		render(<ChatPanel />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+
+		fireEvent.change(input, { target: { value: "첫번째" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		fireEvent.change(input, { target: { value: "두번째" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(sendChatMessage).toHaveBeenCalledTimes(1));
+		expect(useChatStore.getState().messageQueue).toEqual(["두번째"]);
+
+		const first = capturedRequests[0];
+		first.onChunk({
+			type: "text",
+			requestId: first.requestId,
+			text: "첫 응답",
+		});
+		first.onChunk({ type: "finish", requestId: first.requestId });
+
+		await waitFor(() => expect(sendChatMessage).toHaveBeenCalledTimes(2));
+		expect(capturedRequests[1].message).toBe("두번째");
 
 		localStorage.removeItem("naia-config");
 	});
@@ -286,9 +344,10 @@ describe("ChatPanel", () => {
 		await new Promise((r) => setTimeout(r, 50));
 
 		expect(capturedOnChunk).not.toBeNull();
+		const requestId = capturedRequests[0].requestId;
 		capturedOnChunk?.({
 			type: "approval_request",
-			requestId: "req-1",
+			requestId,
 			toolCallId: "tc-1",
 			toolName: "execute_command",
 			args: { command: "npm test" },
@@ -343,9 +402,10 @@ describe("ChatPanel", () => {
 
 		// Simulate audio chunk via captured callback
 		expect(capturedOnChunk).not.toBeNull();
+		const requestId = capturedRequests[0].requestId;
 		capturedOnChunk?.({
 			type: "audio",
-			requestId: "req-1",
+			requestId,
 			data: "base64audio==",
 		});
 

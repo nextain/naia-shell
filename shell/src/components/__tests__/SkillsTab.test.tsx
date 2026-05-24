@@ -212,7 +212,7 @@ describe("SkillsTab gateway install", () => {
 				model: "gemini-2.5-flash",
 				apiKey: "test",
 				enableTools: true,
-				gatewayUrl: "ws://localhost:18789",
+				gatewayUrl: "ws://gateway.example.test:18789",
 			}),
 		);
 	}

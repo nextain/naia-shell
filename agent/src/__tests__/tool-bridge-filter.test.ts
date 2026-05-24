@@ -30,6 +30,16 @@ describe("getAllTools disabledSkills filtering", () => {
 		expect(hasExecCommand).toBeDefined();
 	});
 
+	it("does not expose gateway-only tools when gateway is disconnected", () => {
+		const names = getAllTools(false).map((t) => t.name);
+		expect(names).toContain("execute_command");
+		expect(names).toContain("read_file");
+		expect(names).toContain("search_files");
+		expect(names).not.toContain("web_search");
+		expect(names).not.toContain("browser");
+		expect(names).not.toContain("sessions_spawn");
+	});
+
 	it("filters multiple disabled skills", () => {
 		const allTools = getAllTools(false);
 		const disabled = getAllTools(false, ["skill_time", "skill_memo"]);

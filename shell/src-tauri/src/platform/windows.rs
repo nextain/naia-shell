@@ -152,7 +152,6 @@ pub(crate) fn start_deep_link_file_watcher(app_handle: tauri::AppHandle) {
     crate::log_both("[Naia] Deep link file watcher started");
 }
 
-
 // ─── Browser window embedding (Win32) ────────────────────────────────────────
 
 use windows_sys::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, POINT, RECT, TRUE};

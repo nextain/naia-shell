@@ -30,13 +30,14 @@ import {
 	DEFAULT_OLLAMA_HOST,
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
+	type AppConfig,
 	type SttProviderId,
 	type ThemeId,
 	type TtsProviderId,
 	clearAllowedTools,
-	getNaiaKeySecure,
 	loadConfig,
-	resolveGatewayUrl,
+	loadConfigWithSecrets,
+	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
 import {
@@ -88,6 +89,33 @@ import { useChatStore } from "../stores/chat";
 import { usePanelStore } from "../stores/panel";
 
 const LLM_PROVIDERS = listLlmProviders();
+
+function buildNaiaLoginConfig(
+	current: AppConfig | null,
+	nextNaiaKey: string,
+	nextNaiaUserId: string,
+): AppConfig {
+	const nextModel =
+		current?.provider === "nextain" && current.model
+			? current.model
+			: getDefaultLlmModel("nextain");
+	const base: AppConfig = current ?? {
+		provider: "nextain",
+		model: nextModel,
+		apiKey: "",
+		locale: getLocale(),
+	};
+
+	return {
+		...base,
+		provider: "nextain",
+		model: nextModel,
+		apiKey: "",
+		naiaKey: nextNaiaKey,
+		naiaUserId: nextNaiaUserId || undefined,
+		voice: base.voice ?? getDefaultVoiceForAvatar(base.vrmModel),
+	};
+}
 const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
 
@@ -251,7 +279,7 @@ function DevicePairingSection() {
 
 	const fetchDevices = useCallback(async () => {
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
 		if (!gatewayUrl) return;
 		setLoading(true);
 		try {
@@ -294,7 +322,8 @@ function DevicePairingSection() {
 	const handlePairAction = useCallback(
 		async (requestId: string, action: "approve" | "reject") => {
 			const config = loadConfig();
-			const gatewayUrl = resolveGatewayUrl(config);
+			const gatewayUrl = resolveConfiguredGatewayUrl(config);
+			if (!gatewayUrl) return;
 			try {
 				await directToolCall({
 					toolName: "skill_device",
@@ -674,9 +703,7 @@ export function SettingsTab() {
 	const [micTestActive, setMicTestActive] = useState(false);
 	const [micTestLevel, setMicTestLevel] = useState(0);
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
-	const [gatewayUrl, setGatewayUrl] = useState(
-		existing?.gatewayUrl ?? "ws://localhost:18789",
-	);
+	const [gatewayUrl, setGatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken, setGatewayToken] = useState(
 		existing?.gatewayToken ?? "",
 	);
@@ -1174,12 +1201,22 @@ export function SettingsTab() {
 	}
 
 	useEffect(() => {
-		getNaiaKeySecure().then((key) => {
-			if (key && key !== naiaKey) {
-				setNaiaKeyState(key);
-			}
-		});
-	}, [naiaKey]);
+		let cancelled = false;
+		loadConfigWithSecrets()
+			.then((cfg) => {
+				if (cancelled || !cfg?.naiaKey) return;
+				setNaiaKeyState(cfg.naiaKey);
+				setNaiaUserIdState(cfg.naiaUserId ?? "");
+				if (cfg.provider === "nextain") {
+					setProvider("nextain");
+					setModel(cfg.model || getDefaultLlmModel("nextain"));
+				}
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 	const [labWaiting, setLabWaiting] = useState(false);
 	const [labBalance, setLabBalance] = useState<number | null>(null);
 	const [labBalanceLoading, setLabBalanceLoading] = useState(false);
@@ -1290,19 +1327,12 @@ export function SettingsTab() {
 		})
 			.then((res) => {
 				if (res.status === 401) {
-					// Key is invalid/expired — clear it so login screen shows
 					Logger.warn(
 						"SettingsTab",
-						"Naia key invalid (401), clearing stored key",
+						"Lab balance unauthorized; preserving Naia login state",
 					);
-					setNaiaKeyState("");
-					deleteSecretKey("naiaKey").catch(() => {});
-					const cfg = loadConfig();
-					if (cfg) {
-						const { naiaKey: _removed, ...rest } = cfg;
-						saveConfig(rest as typeof cfg);
-					}
-					throw new Error("KEY_EXPIRED");
+					setLabBalanceError(true);
+					throw new Error("BALANCE_UNAUTHORIZED");
 				}
 				if (!res.ok) {
 					return res.text().then((text) => {
@@ -1317,7 +1347,7 @@ export function SettingsTab() {
 				setLabBalanceError(false);
 			})
 			.catch((err) => {
-				if (String(err).includes("KEY_EXPIRED")) return;
+				if (String(err).includes("BALANCE_UNAUTHORIZED")) return;
 				Logger.warn("SettingsTab", "Lab balance fetch failed", {
 					error: String(err),
 				});
@@ -1362,48 +1392,43 @@ export function SettingsTab() {
 				// Persist to both secure store and localStorage
 				await saveSecretKey("naiaKey", nextNaiaKey);
 				const current = loadConfig();
-				const nextModel = current?.model || getDefaultLlmModel("nextain");
-				if (current) {
-					// Auto-set default voice based on VRM avatar gender if not previously configured
-					const defaultVoice =
-						current.voice ?? getDefaultVoiceForAvatar(current.vrmModel);
-					saveConfig({
-						...current,
-						provider: "nextain",
-						model: nextModel,
-						naiaKey: nextNaiaKey,
-						naiaUserId: nextNaiaUserId || undefined,
-						voice: defaultVoice,
-					});
-				}
+				const nextConfig = buildNaiaLoginConfig(
+					current,
+					nextNaiaKey,
+					nextNaiaUserId,
+				);
+				const nextModel = nextConfig.model;
+				setModel(nextModel);
+				saveConfig(nextConfig);
+				void writeNaiaConfig(nextConfig as unknown as Record<string, unknown>);
 
 				// Sync to Gateway (no API key for Lab proxy)
-				const naiaFullPrompt = buildSystemPrompt(current?.persona, {
-					agentName: current?.agentName,
-					userName: current?.userName,
-					honorific: current?.honorific,
-					speechStyle: current?.speechStyle,
-					locale: current?.locale || getLocale(),
-					discordDefaultUserId: current?.discordDefaultUserId,
-					discordDmChannelId: current?.discordDmChannelId,
+				const naiaFullPrompt = buildSystemPrompt(nextConfig.persona, {
+					agentName: nextConfig.agentName,
+					userName: nextConfig.userName,
+					honorific: nextConfig.honorific,
+					speechStyle: nextConfig.speechStyle,
+					locale: nextConfig.locale || getLocale(),
+					discordDefaultUserId: nextConfig.discordDefaultUserId,
+					discordDmChannelId: nextConfig.discordDmChannelId,
 				});
 				await syncToGateway(
 					"nextain",
 					nextModel,
 					undefined,
-					current?.persona,
-					current?.agentName,
-					current?.userName,
+					nextConfig.persona,
+					nextConfig.agentName,
+					nextConfig.userName,
 					naiaFullPrompt,
-					current?.locale || getLocale(),
-					current?.discordDmChannelId,
-					current?.discordDefaultUserId,
+					nextConfig.locale || getLocale(),
+					nextConfig.discordDmChannelId,
+					nextConfig.discordDefaultUserId,
 					undefined,
 					undefined,
 					undefined,
 					undefined,
 					nextNaiaKey,
-					current?.ollamaHost,
+					nextConfig.ollamaHost,
 				);
 				await restartGateway();
 
@@ -1419,8 +1444,8 @@ export function SettingsTab() {
 						nextNaiaKey,
 						nextNaiaUserId,
 					);
-					if (onlineConfig && current) {
-						const diffs = diffConfigs(current, onlineConfig);
+					if (onlineConfig) {
+						const diffs = diffConfigs(nextConfig, onlineConfig);
 						if (diffs.length > 0) {
 							setSyncDialogOnlineConfig(
 								onlineConfig as Record<string, unknown>,
@@ -1930,9 +1955,12 @@ export function SettingsTab() {
 			honorific: honorific.trim() || undefined,
 			speechStyle,
 			enableTools,
-			gatewayUrl: enableTools
-				? gatewayUrl.trim() || DEFAULT_GATEWAY_URL
-				: undefined,
+			gatewayUrl:
+				enableTools &&
+				gatewayUrl.trim() &&
+				gatewayUrl.trim() !== DEFAULT_GATEWAY_URL
+					? gatewayUrl.trim()
+					: undefined,
 			gatewayToken: gatewayToken.trim() || undefined,
 			discordDefaultUserId: discordDefaultUserId.trim() || undefined,
 			discordDefaultTarget: discordDefaultTarget.trim() || undefined,
@@ -3609,7 +3637,7 @@ export function SettingsTab() {
 					type="text"
 					value={gatewayUrl}
 					onChange={(e) => setGatewayUrl(e.target.value)}
-					placeholder="ws://localhost:18789"
+					placeholder={DEFAULT_GATEWAY_URL}
 				/>
 			</div>
 

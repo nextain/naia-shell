@@ -205,18 +205,41 @@ fn get_wv(app: &AppHandle) -> Result<tauri::Webview, String> {
 
 /// Eval a JS function body in the browser webview and wait for the result.
 /// Uses the HTTP bridge for the callback — works from any page origin.
-async fn eval_and_await(app: &AppHandle, js_body: &str) -> Result<String, String> {
+async fn eval_and_await(app: &AppHandle, js_body: &str, timeout_ms: u64) -> Result<String, String> {
     let wv = get_wv(app)?;
     let id = gen_eval_id();
 
     let (tx, rx) = oneshot::channel();
     pending_evals().lock().unwrap().insert(id.clone(), tx);
 
-    // The init script's window.__naia_eval expects (id, functionBody).
-    // If the init script hasn't run yet (very first load), the call is a no-op
-    // and the eval will time out — acceptable; callers should retry on error.
+    // The init script's window.__naia_eval expects (id, functionBody), but
+    // navigation can race before the init script is available. Inline the same
+    // bridge fallback here so read/click tools fail fast instead of waiting for
+    // the full timeout with no callback.
     let trigger = format!(
-        "if(window.__naia_eval){{window.__naia_eval({id:?},{js_body:?})}}",
+        r#"(function(){{
+function _post(path, body) {{
+    fetch("naia-bridge://localhost" + path, {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify(body)
+    }}).catch(function() {{}});
+}}
+var run = window.__naia_eval || function(id, jsBody) {{
+    Promise.resolve().then(async function() {{
+        try {{
+            var result = await (new Function(jsBody))();
+            _post("/__naia_result/" + id, {{
+                result: JSON.stringify(result !== undefined ? result : null),
+                error: null
+            }});
+        }} catch (e) {{
+            _post("/__naia_result/" + id, {{ result: null, error: String(e) }});
+        }}
+    }});
+}};
+run({id:?}, {js_body:?});
+}})()"#,
         id = id,
         js_body = js_body
     );
@@ -226,12 +249,12 @@ async fn eval_and_await(app: &AppHandle, js_body: &str) -> Result<String, String
         return Err(format!("eval dispatch: {e}"));
     }
 
-    match tokio::time::timeout(std::time::Duration::from_secs(20), rx).await {
+    match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), rx).await {
         Ok(Ok(r)) => r,
         Ok(Err(_)) => Err("eval channel closed".to_string()),
         Err(_) => {
             pending_evals().lock().unwrap().remove(&id);
-            Err("eval timeout (20 s)".to_string())
+            Err(format!("eval timeout ({timeout_ms} ms)"))
         }
     }
 }
@@ -419,7 +442,7 @@ pub fn browser_wv_page_info() -> (String, String) {
 /// Evaluate JavaScript and return the serialized result (for Naia AI).
 #[tauri::command]
 pub async fn browser_wv_eval(app: AppHandle, js: String) -> Result<String, String> {
-    eval_and_await(&app, &format!("return (async()=>{{ {js} }})()")).await
+    eval_and_await(&app, &format!("return (async()=>{{ {js} }})()"), 20_000).await
 }
 
 /// Get an accessibility tree snapshot of the current page (for Naia AI).
@@ -458,6 +481,7 @@ function walk(node, d) {
 walk(document.body, 0);
 return out.join("\n");
 })()"#,
+        20_000,
 	)
 	.await
 }
@@ -489,7 +513,7 @@ return null;
 }})()"#,
         sel = selector
     );
-    eval_and_await(&app, &js).await?;
+    eval_and_await(&app, &js, 20_000).await?;
     Ok(())
 }
 
@@ -511,13 +535,17 @@ return null;
         sel = selector,
         text = text
     );
-    eval_and_await(&app, &js).await?;
+    eval_and_await(&app, &js, 20_000).await?;
     Ok(())
 }
 
 /// Get text content of an element or the full page (for Naia AI).
 #[tauri::command]
-pub async fn browser_wv_get_text(app: AppHandle, selector: String) -> Result<String, String> {
+pub async fn browser_wv_get_text(
+    app: AppHandle,
+    selector: String,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
     let js = if selector.is_empty() {
         "return document.body.innerText".to_string()
     } else {
@@ -526,7 +554,8 @@ pub async fn browser_wv_get_text(app: AppHandle, selector: String) -> Result<Str
             sel = selector
         )
     };
-    eval_and_await(&app, &js).await
+    let timeout_ms = timeout_ms.unwrap_or(20_000).clamp(500, 20_000);
+    eval_and_await(&app, &js, timeout_ms).await
 }
 
 /// Scroll the page (for Naia AI).
@@ -544,7 +573,7 @@ pub async fn browser_wv_scroll(
         _ => (0, pixels),
     };
     let js = format!("window.scrollBy({dx}, {dy}); return null;");
-    eval_and_await(&app, &js).await?;
+    eval_and_await(&app, &js, 20_000).await?;
     Ok(())
 }
 
@@ -563,7 +592,7 @@ return null;
 }})()"#,
         key = key
     );
-    eval_and_await(&app, &js).await?;
+    eval_and_await(&app, &js, 20_000).await?;
     Ok(())
 }
 

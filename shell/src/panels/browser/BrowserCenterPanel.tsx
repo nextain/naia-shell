@@ -142,6 +142,41 @@ const BROWSER_TOOL_NAMES = [
 	"skill_browser_eval",
 ] as const;
 
+export const NAVIGATE_READ_DELAY_MS = 1200;
+export const NAVIGATE_TEXT_TIMEOUT_MS = 3000;
+export const GET_TEXT_TIMEOUT_MS = 5000;
+export const NAVIGATE_TEXT_LIMIT = 6000;
+
+export function decodeBrowserEvalString(raw: string): string {
+	const trimmed = raw.trim();
+	if (!trimmed) return "";
+	try {
+		const parsed = JSON.parse(trimmed);
+		if (typeof parsed === "string") return parsed;
+		if (parsed === null || parsed === undefined) return "";
+		return String(parsed);
+	} catch {
+		return raw;
+	}
+}
+
+export function browserTextExcerpt(
+	raw: string,
+	limit = NAVIGATE_TEXT_LIMIT,
+): { text: string; truncated: boolean } {
+	const decoded = decodeBrowserEvalString(raw)
+		.replace(/\r\n/g, "\n")
+		.replace(/[ \t]+\n/g, "\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+	if (decoded.length <= limit) return { text: decoded, truncated: false };
+	return { text: decoded.slice(0, limit).trimEnd(), truncated: true };
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 // Module-level guard — persists across React StrictMode mount/unmount cycles.
 let _browserWvCreating = false;
 let _browserWvCreated = false;
@@ -246,7 +281,10 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		setError("");
 		try {
 			const el = viewportRef.current;
-			if (!el) { _browserWvCreating = false; return; }
+			if (!el) {
+				_browserWvCreating = false;
+				return;
+			}
 
 			// Wait for layout to complete — keepAlive panels mount while hidden
 			// (opacity:0), so getBoundingClientRect() may return zeros on the first
@@ -394,10 +432,12 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 	useEffect(() => {
 		if (status !== "ready") return;
 		let unlisten: (() => void) | undefined;
-		listen("tauri://window-resized", () => syncBrowserBounds()).then(
-			(fn) => { unlisten = fn; },
-		);
-		return () => { unlisten?.(); };
+		listen("tauri://window-resized", () => syncBrowserBounds()).then((fn) => {
+			unlisten = fn;
+		});
+		return () => {
+			unlisten?.();
+		};
 	}, [status, syncBrowserBounds]);
 
 	// ── Visibility sync event (from panel/chat store) ─────────────────────────
@@ -410,11 +450,15 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 				invoke("browser_wv_hide").catch(() => {});
 				return;
 			}
-			if (!_browserWvCreated) { initWebview(); return; }
+			if (!_browserWvCreated) {
+				initWebview();
+				return;
+			}
 			showBrowserWebview().catch(() => {});
 		};
 		window.addEventListener("naia-browser-visibility-sync", sync);
-		return () => window.removeEventListener("naia-browser-visibility-sync", sync);
+		return () =>
+			window.removeEventListener("naia-browser-visibility-sync", sync);
 	}, [initWebview, showBrowserWebview, status]);
 
 	// ── Panel API (BrowserPanelApi) ───────────────────────────────────────────
@@ -450,6 +494,16 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 		const denied = (label: string) =>
 			`'${label}' 도구가 비활성화되어 있습니다. 패널 하단 AI 도구 설정에서 켜주세요.`;
 
+		const readPageTextAfterNavigate = async () => {
+			await sleep(NAVIGATE_READ_DELAY_MS);
+			await refreshPageInfo();
+			const raw = await invoke<string>("browser_wv_get_text", {
+				selector: "",
+				timeout_ms: NAVIGATE_TEXT_TIMEOUT_MS,
+			});
+			return browserTextExcerpt(raw);
+		};
+
 		const u1 = naia.onToolCall("skill_browser_navigate", async (args) => {
 			if (!p.current.navigate) return denied("탐색");
 			const url = String(args.url ?? "");
@@ -460,9 +514,34 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			});
 			try {
 				await invoke("browser_wv_navigate", { url });
-				await refreshPageInfo();
+				if (!p.current.getText) {
+					await refreshPageInfo();
+					Logger.info("BrowserPanel", "browser_wv_navigate ok", { url });
+					return `Navigated to ${url}\nPage text not read: ${denied("읽기")}`;
+				}
 				Logger.info("BrowserPanel", "browser_wv_navigate ok", { url });
-				return `Navigated to ${url}`;
+				let readResult: { text: string; truncated: boolean };
+				try {
+					readResult = await readPageTextAfterNavigate();
+				} catch (readError) {
+					Logger.warn(
+						"BrowserPanel",
+						"browser_wv_get_text after navigate failed",
+						{
+							url,
+							error: String(readError),
+						},
+					);
+					return `Navigated to ${url}\nPage text read failed: ${String(readError)}\nThe page may still be loading. Call skill_browser_get_text before answering if content is needed.`;
+				}
+				const { text, truncated } = readResult;
+				if (!text) {
+					return `Navigated to ${url}\nPage text: (empty)\nIf the page is still loading, call skill_browser_get_text before answering.`;
+				}
+				const suffix = truncated
+					? `first ${NAVIGATE_TEXT_LIMIT} chars, truncated`
+					: "visible body";
+				return `Navigated to ${url}\nPage text (${suffix}):\n${text}`;
 			} catch (e) {
 				Logger.warn("BrowserPanel", "browser_wv_navigate failed", {
 					url,
@@ -546,9 +625,11 @@ export function BrowserCenterPanel({ naia }: PanelCenterProps) {
 			if (!p.current.getText) return denied("읽기");
 			const ref_ = String(args.ref ?? args.selector ?? "");
 			try {
-				const text = await invoke<string>("browser_wv_get_text", {
+				const raw = await invoke<string>("browser_wv_get_text", {
 					selector: ref_,
+					timeout_ms: GET_TEXT_TIMEOUT_MS,
 				});
+				const text = decodeBrowserEvalString(raw).trim();
 				return text || "(empty)";
 			} catch (e) {
 				return `Get text failed: ${String(e)}`;

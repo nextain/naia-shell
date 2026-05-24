@@ -6,6 +6,8 @@ import {
 	hasApiKey,
 	isToolAllowed,
 	loadConfig,
+	resolveConfiguredGatewayUrl,
+	resolveGatewayUrl,
 	saveConfig,
 } from "../config";
 
@@ -35,6 +37,16 @@ describe("config", () => {
 		expect(config?.apiKey).toBe("test-key-123");
 	});
 
+	it("defaults enableTools to true for existing configs without the field", () => {
+		saveConfig({
+			provider: "gemini",
+			model: "gemini-2.5-flash",
+			apiKey: "test-key-123",
+		});
+
+		expect(loadConfig()?.enableTools).toBe(true);
+	});
+
 	it("hasApiKey returns false when not set", () => {
 		expect(hasApiKey()).toBe(false);
 	});
@@ -55,6 +67,58 @@ describe("config", () => {
 			apiKey: "",
 		});
 		expect(hasApiKey()).toBe(false);
+	});
+
+	it("resolveGatewayUrl keeps the legacy default when tools are enabled", () => {
+		expect(
+			resolveGatewayUrl({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key-123",
+				enableTools: true,
+			}),
+		).toBe("ws://localhost:18789");
+	});
+
+	it("resolveConfiguredGatewayUrl returns only an explicit gateway URL", () => {
+		expect(
+			resolveConfiguredGatewayUrl({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key-123",
+				enableTools: true,
+			}),
+		).toBeUndefined();
+
+		expect(
+			resolveConfiguredGatewayUrl({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key-123",
+				enableTools: true,
+				gatewayUrl: " ws://gateway.example.test:18789 ",
+			}),
+		).toBe("ws://gateway.example.test:18789");
+
+		expect(
+			resolveConfiguredGatewayUrl({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key-123",
+				enableTools: true,
+				gatewayUrl: "ws://localhost:18789",
+			}),
+		).toBeUndefined();
+
+		expect(
+			resolveConfiguredGatewayUrl({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test-key-123",
+				enableTools: false,
+				gatewayUrl: "ws://localhost:18789",
+			}),
+		).toBeUndefined();
 	});
 });
 

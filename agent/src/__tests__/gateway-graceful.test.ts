@@ -69,7 +69,7 @@ describe("Gateway graceful degradation", () => {
 		vi.mocked(buildProvider).mockReturnValue({
 			stream: async function* (_msgs, systemPrompt) {
 				// Verify system prompt contains gateway failure notice
-				expect(systemPrompt).toContain("Gateway 연결 실패");
+				expect(systemPrompt).toContain("Gateway WebSocket 미연결");
 				yield { type: "text" as const, text: "안녕하세요!" };
 				yield {
 					type: "usage" as const,

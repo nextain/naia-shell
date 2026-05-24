@@ -54,6 +54,7 @@ describe("Lab Proxy Provider", () => {
 
 		const body = JSON.parse(options.body);
 		expect(body.model).toBe("vertexai:gemini-2.5-flash");
+		expect(body.max_tokens).toBe(4096);
 		expect(body.stream).toBe(true);
 		expect(body.messages[0]).toEqual({
 			role: "system",
@@ -120,6 +121,130 @@ describe("Lab Proxy Provider", () => {
 		expect(chunks[0]).toEqual({ type: "text", text: "Hello" });
 		expect(chunks[1]).toEqual({ type: "text", text: " world" });
 		expect(chunks[chunks.length - 1]).toEqual({ type: "finish" });
+	});
+
+	it("processes a final SSE data line without trailing newline", async () => {
+		const sseData = [
+			'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\n',
+			'data: {"choices":[{"delta":{"content":"world"}}]}',
+			"\n\ndata: [DONE]\n\n",
+		];
+
+		mockFetch.mockResolvedValue({
+			ok: true,
+			body: createSSEStream(sseData),
+		});
+
+		const gen = provider.stream([{ role: "user", content: "Hi" }], "sys");
+
+		const chunks = [];
+		for await (const chunk of gen) {
+			chunks.push(chunk);
+		}
+
+		expect(chunks[0]).toEqual({ type: "text", text: "Hello " });
+		expect(chunks[1]).toEqual({ type: "text", text: "world" });
+		expect(chunks[chunks.length - 1]).toEqual({ type: "finish" });
+	});
+
+	it("recovers with a full non-streaming retry when the SSE stream closes before DONE", async () => {
+		mockFetch
+			.mockResolvedValueOnce({
+				ok: true,
+				body: createSSEStream([
+					'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\n',
+				]),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					choices: [{ message: { content: "Hello world" } }],
+				}),
+			});
+
+		const gen = provider.stream([{ role: "user", content: "Hi" }], "sys");
+
+		const chunks = [];
+		for await (const chunk of gen) {
+			chunks.push(chunk);
+		}
+
+		expect(chunks[0]).toEqual({ type: "text", text: "Hello world" });
+		expect(chunks[chunks.length - 1]).toEqual({ type: "finish" });
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+
+		const fallbackBody = JSON.parse(mockFetch.mock.calls[1][1].body);
+		expect(fallbackBody.stream).toBe(false);
+		expect(fallbackBody.max_tokens).toBe(4096);
+		expect(fallbackBody.messages.at(-1)).toEqual({
+			role: "user",
+			content: "Hi",
+		});
+	});
+
+	it("returns buffered partial output instead of throwing when recovery also lacks DONE", async () => {
+		mockFetch
+			.mockResolvedValueOnce({
+				ok: true,
+				body: createSSEStream([
+					'data: {"choices":[{"delta":{"content":"Checking weather"}}]}\n\n',
+				]),
+			})
+			.mockResolvedValueOnce({
+				ok: false,
+				text: async () => "non-streaming unsupported",
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				body: createSSEStream([
+					'data: {"choices":[{"delta":{"content":"Weather result"}}]}\n\n',
+				]),
+			});
+
+		const gen = provider.stream([{ role: "user", content: "Weather?" }], "sys");
+
+		const chunks = [];
+		for await (const chunk of gen) {
+			chunks.push(chunk);
+		}
+
+		expect(chunks[0]).toEqual({ type: "text", text: "Weather result" });
+		expect(chunks[chunks.length - 1]).toEqual({ type: "finish" });
+		expect(mockFetch).toHaveBeenCalledTimes(3);
+	});
+
+	it("recovers with a full non-streaming retry when finish_reason is length", async () => {
+		mockFetch
+			.mockResolvedValueOnce({
+				ok: true,
+				body: createSSEStream([
+					'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}\n\n',
+					"data: [DONE]\n\n",
+				]),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					choices: [{ message: { content: "complete answer" } }],
+					usage: { prompt_tokens: 12, completion_tokens: 34 },
+				}),
+			});
+
+		const gen = provider.stream([{ role: "user", content: "Hi" }], "sys");
+
+		const chunks = [];
+		for await (const chunk of gen) {
+			chunks.push(chunk);
+		}
+
+		expect(chunks[0]).toEqual({ type: "text", text: "complete answer" });
+		expect(chunks[1]).toEqual({
+			type: "usage",
+			inputTokens: 12,
+			outputTokens: 34,
+		});
+		expect(chunks[chunks.length - 1]).toEqual({ type: "finish" });
+		expect(mockFetch).toHaveBeenCalledTimes(2);
 	});
 
 	it("yields tool_use chunks from SSE stream", async () => {
@@ -228,8 +353,18 @@ describe("Lab Proxy Provider", () => {
 		expect(toolUses).toHaveLength(2);
 		const a = toolUses.find((c) => c.type === "tool_use" && c.id === "tc-a");
 		const b = toolUses.find((c) => c.type === "tool_use" && c.id === "tc-b");
-		expect(a).toMatchObject({ type: "tool_use", id: "tc-a", name: "tool_a", args: { x: 1 } });
-		expect(b).toMatchObject({ type: "tool_use", id: "tc-b", name: "tool_b", args: { y: 2 } });
+		expect(a).toMatchObject({
+			type: "tool_use",
+			id: "tc-a",
+			name: "tool_a",
+			args: { x: 1 },
+		});
+		expect(b).toMatchObject({
+			type: "tool_use",
+			id: "tc-b",
+			name: "tool_b",
+			args: { y: 2 },
+		});
 	});
 
 	it("accumulates tool call arguments across multiple SSE chunks", async () => {
@@ -432,7 +567,12 @@ describe("Lab Proxy Provider", () => {
 		const chunks = [];
 		for await (const chunk of gen) chunks.push(chunk);
 		const toolUse = chunks.find((c) => c.type === "tool_use");
-		expect(toolUse).toMatchObject({ type: "tool_use", id: "tc-bad", name: "bad_tool", args: {} });
+		expect(toolUse).toMatchObject({
+			type: "tool_use",
+			id: "tc-bad",
+			name: "bad_tool",
+			args: {},
+		});
 	});
 
 	it("silently drops empty and non-content SSE events", async () => {
@@ -560,7 +700,9 @@ describe("buildProvider with naiaKey", () => {
 			body: createSSEStream(["data: [DONE]\n\n"]),
 		});
 
-		const { buildProvider, setAgentNaiaKey } = await import("../providers/factory.js");
+		const { buildProvider, setAgentNaiaKey } = await import(
+			"../providers/factory.js"
+		);
 		setAgentNaiaKey("gw-lab-key-123"); // gw- prefix required (factory validation)
 		const provider = buildProvider({
 			provider: "gemini",
@@ -587,7 +729,9 @@ describe("buildProvider with naiaKey", () => {
 			body: createSSEStream(["data: [DONE]\n\n"]),
 		});
 
-		const { buildProvider, setAgentNaiaKey } = await import("../providers/factory.js");
+		const { buildProvider, setAgentNaiaKey } = await import(
+			"../providers/factory.js"
+		);
 		setAgentNaiaKey("gw-lab-key-xyz");
 		const provider = buildProvider({
 			provider: "gemini",
