@@ -77,9 +77,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPIMAGE_EXTRACT_AND_RUN: 1
-          NO_STRIP: true
-        run: pnpm run tauri build --bundles deb,rpm,appimage
+        run: pnpm run tauri build --config src-tauri/tauri.conf.linux.json --bundles deb,rpm
 
       - name: List build artifacts
         run: |
@@ -92,14 +90,23 @@ jobs:
 
       - name: Normalize artifact filenames (remove version for stable download URLs)
         run: |
-          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage Naia-Shell-x86_64.AppImage \
-            || { echo "::error::AppImage not found — build may have failed"; exit 1; }
-          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage.sig Naia-Shell-x86_64.AppImage.sig \
-            || { echo "::error::AppImage .sig not found — TAURI_SIGNING_PRIVATE_KEY may not be set"; exit 1; }
+          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage Naia-Shell-x86_64.AppImage 2>/dev/null || true
+          cp shell/src-tauri/target/release/bundle/appimage/*.AppImage.sig Naia-Shell-x86_64.AppImage.sig 2>/dev/null || true
           cp shell/src-tauri/target/release/bundle/deb/*.deb Naia-Shell-x86_64.deb \
             || { echo "::error::deb not found"; exit 1; }
           cp shell/src-tauri/target/release/bundle/rpm/*.rpm Naia-Shell-x86_64.rpm \
             || { echo "::error::rpm not found"; exit 1; }
+
+      - name: Smoke test Linux package layout
+        run: |
+          rm -rf linux-smoke
+          mkdir -p linux-smoke
+          dpkg-deb -x Naia-Shell-x86_64.deb linux-smoke
+          test -f linux-smoke/usr/lib/Naia/libvosk.so \
+            || { echo "::error::libvosk.so missing from deb"; exit 1; }
+          ldd linux-smoke/usr/bin/naia-shell | tee /tmp/linux-ldd.txt
+          grep -q 'libvosk.so => .*linux-smoke/.*/libvosk.so' /tmp/linux-ldd.txt \
+            || { echo "::error::libvosk.so not resolved from packaged path"; exit 1; }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -258,6 +265,25 @@ jobs:
             total=$((prefix_len + ${#f}))
             if [ $total -gt 240 ]; then rm -f "$f"; fi
           done
+
+      - name: Resolve pnpm junctions for Windows bundling
+        shell: pwsh
+        run: |
+          $base = Resolve-Path "agent/node_modules"
+          $junctions = Get-ChildItem -LiteralPath $base -Directory | Where-Object { $_.LinkType -eq 'Junction' }
+          foreach ($j in $junctions) {
+            $targetPath = if ($j.Target -is [array]) { $j.Target[0] } else { $j.Target }
+            if (-not (Test-Path $targetPath)) { Write-Host "SKIP (target missing): $($j.Name)"; continue }
+            $name = $j.Name
+            $parent = $j.Parent.FullName
+            $dest = Join-Path $parent $name
+            Remove-Item -LiteralPath $j.FullName -Force -Recurse
+            robocopy $targetPath $dest /E /R:0 /W:0 /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            if ($LASTEXITCODE -ge 8) { Write-Error "robocopy failed for $name (exit $LASTEXITCODE)" }
+            $global:LASTEXITCODE = 0
+            Write-Host "Resolved junction: $name"
+          }
+          Write-Host "All junctions resolved."
 
       - name: Build Tauri app (Windows)
         working-directory: shell
@@ -455,20 +481,22 @@ jobs:
           sig = os.environ.get('APPIMAGE_SIG', '')
           nsis_sig = os.environ.get('NSIS_SIG', '')
           date = os.environ['DATE']
+          platforms = {
+              'windows-x86_64': {
+                  'signature': nsis_sig,
+                  'url': f'https://github.com/nextain/naia-os/releases/download/{tag}/Naia-Shell-x86_64-setup.exe'
+              }
+          }
+          if sig:
+              platforms['linux-x86_64'] = {
+                  'signature': sig,
+                  'url': f'https://github.com/nextain/naia-os/releases/download/{tag}/Naia-Shell-x86_64.AppImage'
+              }
           data = {
               'version': tag,
               'notes': 'See release notes on GitHub',
               'pub_date': date,
-              'platforms': {
-                  'linux-x86_64': {
-                      'signature': sig,
-                      'url': f'https://github.com/nextain/naia-os/releases/download/{tag}/Naia-Shell-x86_64.AppImage'
-                  },
-                  'windows-x86_64': {
-                      'signature': nsis_sig,
-                      'url': f'https://github.com/nextain/naia-os/releases/download/{tag}/Naia-Shell-x86_64-setup.exe'
-                  }
-              }
+              'platforms': platforms
           }
           with open('artifacts/latest.json', 'w') as f:
               json.dump(data, f, indent=2)
@@ -479,20 +507,21 @@ jobs:
       - name: Verify updater signatures are non-empty
         run: |
           NSIS_SIG=$(python3 -c "import json; d=json.load(open('artifacts/latest.json')); print(d['platforms']['windows-x86_64']['signature'])" 2>/dev/null || echo "")
-          APPIMAGE_SIG=$(python3 -c "import json; d=json.load(open('artifacts/latest.json')); print(d['platforms']['linux-x86_64']['signature'])" 2>/dev/null || echo "")
+          APPIMAGE_SIG=$(python3 -c "import json; d=json.load(open('artifacts/latest.json')); print(d['platforms'].get('linux-x86_64', {}).get('signature', ''))" 2>/dev/null || echo "")
           FAIL=0
           if [[ -z "$NSIS_SIG" ]]; then
             echo "::error::Windows updater signature is empty — TAURI_SIGNING_PRIVATE_KEY may not be set. Auto-update will not work on Windows."
             FAIL=1
           fi
-          if [[ -z "$APPIMAGE_SIG" ]]; then
-            echo "::error::Linux updater signature is empty — TAURI_SIGNING_PRIVATE_KEY may not be set. Auto-update will not work on Linux."
-            FAIL=1
+          if [[ -n "$APPIMAGE_SIG" ]]; then
+            echo "✅ Linux AppImage updater signature is present."
+          else
+            echo "::notice::Linux AppImage updater artifact not published in this workflow run."
           fi
           if [[ $FAIL -eq 1 ]]; then
             exit 1
           fi
-          echo "✅ Both updater signatures are present."
+          echo "✅ Required updater signatures are present."
 
       - name: Generate SHA256 checksums
         run: |

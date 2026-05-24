@@ -11,7 +11,7 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
-const YT_BASE = "http://127.0.0.1:18791";
+const YT_BASE = "http://localhost:18791";
 
 
 interface YtVideo {

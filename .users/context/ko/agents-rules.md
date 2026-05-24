@@ -398,6 +398,37 @@ Assisted-by: Claude Sonnet 4.6
 | PR | 위 + 통합 테스트 |
 | main merge | 위 + E2E + BlueBuild 이미지 + ISO 생성 |
 
+### 버전 관리
+
+단일 진실 공급원(SoT): `shell/src-tauri/Cargo.toml`
+
+| 파일 | 역할 |
+|------|------|
+| `shell/src-tauri/Cargo.toml` | **SoT** — 이 파일을 먼저 변경 |
+| `shell/package.json` | Cargo.toml과 반드시 일치 — 빌드 스크립트가 강제 |
+| `shell/src-tauri/tauri.conf.json` | **version 필드 없음** — Tauri가 Cargo.toml에서 자동으로 읽음 |
+
+**규칙**: `tauri.conf.json`에 version을 절대 설정하지 말 것. 버전 업 시 `Cargo.toml` + `package.json`만 수정. 빌드 스크립트(`scripts/build-windows.ps1`)는 두 파일이 다르면 실패함.
+
+### 릴리즈 프로세스
+
+6단계 워크플로우 — 반드시 순서대로 진행. AI는 단계를 건너뛸 수 없음.
+
+| 단계 | 내용 |
+|------|------|
+| 1. 개발 | 기능 구현 및 테스트 |
+| 2. 검수용 설치 파일 전달 | 로컬 `tauri build` 후 설치 파일 경로 안내 — CI 태그 푸시 **금지** |
+| 3. 유저 검수완료 | 사용자가 직접 설치/검증 후 OK 확인 |
+| 4. 릴리즈 노트 작성 | CHANGELOG.md 또는 GitHub Release 드래프트에 작성 |
+| 5. 릴리즈 유저 허가 | 사용자가 명시적으로 승인: `echo approved > .agents/release-approved` |
+| 6. 릴리즈 진행 | 태그 푸시 + GitHub Release (CI가 아티팩트 빌드) |
+
+**AI 제약사항:**
+- 2단계 "검수용 파일 전달": 로컬 빌드만. 절대 태그 푸시 또는 CI 트리거 금지.
+- 1~5단계 완료 전 태그 푸시 또는 `gh release create` 금지.
+- `release-guard.js` hook이 기계적으로 강제 차단 — 승인 플래그 없으면 태그 푸시 차단됨.
+- `.agents/release-approved`는 **사용자만** 생성. 1회 사용 후 자동 삭제.
+
 ### 코드 리뷰
 
 AI 리뷰 권장, 보안 관련은 사람 리뷰 필수.

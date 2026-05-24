@@ -5,6 +5,11 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
 	plugins: [react()],
+	define: {
+		__BUILD_ID__: JSON.stringify(
+			new Date().toISOString().replace(/[-:]/g, "").slice(0, 15),
+		),
+	},
 	test: {
 		exclude: [
 			"e2e/**",

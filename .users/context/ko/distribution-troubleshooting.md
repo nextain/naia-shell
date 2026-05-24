@@ -62,6 +62,39 @@ CI=true pnpm install --shamefully-hoist
 
 ---
 
+## Linux 릴리스: `.deb`는 빌드되지만 실행 시 실패
+
+**증상**: GitHub Actions Linux release job은 성공하지만, 추출한 `.deb`를 실행하면 다음과 같이 실패:
+```text
+error while loading shared libraries: libvosk.so: cannot open shared object file
+```
+
+**원인**:
+- Linux release workflow가 `src-tauri/tauri.conf.linux.json`이 아니라 기본 Tauri config로 빌드됨
+- `libvosk.so`가 `.deb` 패키지 안에 포함되지 않음
+- CI가 빌드 완료만 확인하고 패키지 런타임 링크 검증은 하지 않았음
+
+**수정**:
+```bash
+pnpm run tauri build --config src-tauri/tauri.conf.linux.json --bundles deb,rpm
+```
+
+추가로 다음을 보장해야 함:
+- `shell/src-tauri/tauri.conf.linux.json`에 `resources/libvosk.so` 포함
+- Linux rpath에 패키지 라이브러리 경로 포함 (`$ORIGIN:$ORIGIN/../lib/Naia`)
+- release workflow에서 `dpkg-deb -x` + `ldd`로 패키지 `.deb` smoke test 수행
+
+**CI 가드**:
+```bash
+dpkg-deb -x Naia-Shell-x86_64.deb linux-smoke
+test -f linux-smoke/usr/lib/Naia/libvosk.so
+ldd linux-smoke/usr/bin/naia-shell
+```
+
+**사례**: 2026-05-22 — run `26265448860`에서 Linux smoke step이 `libvosk.so missing from deb`로 실패.
+
+---
+
 ## Windows: Gateway 모드 미설정
 
 **증상**: 새 WSL 프로비저닝 후 `Gateway start blocked: set gateway.mode=local (current: unset)`.

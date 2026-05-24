@@ -1574,15 +1574,17 @@ export function ChatPanel() {
 
 			// Determine the live provider from the current model/provider
 			const liveProvider =
-				isOmni && config.provider === "vllm"
-					? ("minicpm-o" as const) // omni model (MiniCPM-o): /v1/realtime WebSocket
-					: config.provider === "vllm"
-						? ("vllm-omni" as const) // non-omni vllm: REST
-						: config.provider === "openai"
-							? ("openai-realtime" as const)
-							: naiaKey
-								? ("naia" as const)
-								: ("gemini-live" as const);
+				config.model === "naia-24g-live"
+					? ("openai-realtime" as const)
+					: isOmni && config.provider === "vllm"
+						? ("minicpm-o" as const)
+						: config.provider === "vllm"
+							? ("vllm-omni" as const)
+							: config.provider === "openai"
+								? ("openai-realtime" as const)
+								: naiaKey
+									? ("naia" as const)
+									: ("gemini-live" as const);
 
 			Logger.info("ChatPanel", "Voice config", {
 				provider: config.provider,
@@ -1612,7 +1614,7 @@ export function ChatPanel() {
 				setVoiceMode("off");
 				return;
 			}
-			if (liveProvider === "openai-realtime") {
+			if (liveProvider === "openai-realtime" && config.model !== "naia-24g-live") {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
 				if (!openaiKey) {
 					Logger.warn("ChatPanel", "OpenAI Realtime requires API key");
@@ -1802,9 +1804,15 @@ export function ChatPanel() {
 				});
 			} else if (liveProvider === "openai-realtime") {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
+				const isNaiaVoice = config.model === "naia-24g-live";
+				const liveHost = isNaiaVoice
+					? LAB_GATEWAY_URL.replace(/^http/, "ws")
+					: undefined;
 				await session.connect({
 					provider: "openai-realtime",
-					apiKey: openaiKey!,
+					apiKey: isNaiaVoice ? (naiaKey ?? openaiKey!) : openaiKey!,
+					serverUrl: liveHost,
+					model: config.model,
 					voice: selectedVoice,
 					locale: getLocale(),
 					systemInstruction: voiceSystemPrompt,
@@ -2029,68 +2037,68 @@ export function ChatPanel() {
 
 	return (
 		<>
-			<div className="chat-panel">
-				{/* Header with tabs */}
-				<div className="chat-header">
-					<div className="chat-tabs">
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
-							onClick={() => handleTabChange("chat")}
-							title={t("progress.tabChat")}
-							aria-label={t("progress.tabChat")}
-							data-tooltip={t("progress.tabChat")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.chat}
-							</span>
-						</button>
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
-							onClick={() => handleTabChange("history")}
-							title={t("history.tabHistory")}
-							aria-label={t("history.tabHistory")}
-							data-tooltip={t("history.tabHistory")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.history}
-							</span>
-						</button>
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-							onClick={() => handleTabChange("channels")}
-							title={t("channels.tabChannels")}
-							aria-label={t("channels.tabChannels")}
-							data-tooltip={t("channels.tabChannels")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.channels}
-							</span>
-						</button>
-					</div>
-					<div className="chat-header-right">
-						{totalSessionCost > 0 && (
-							<button
-								type="button"
-								className="cost-badge session-cost cost-badge-clickable"
-								onClick={() => setShowCostDashboard((v) => !v)}
-							>
-								{formatCost(totalSessionCost)}
-							</button>
-						)}
-						<button
-							type="button"
-							className="settings-icon-btn new-chat-btn"
-							onClick={handleNewConversation}
-							title={t("chat.newConversation")}
-							disabled={isStreaming}
-						>
-							+
-						</button>
-					</div>
+		<div className="chat-panel">
+			{/* Header with tabs */}
+			<div className="chat-header">
+				<div className="chat-tabs">
+					<button
+						type="button"
+						className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
+						onClick={() => handleTabChange("chat")}
+						title={t("progress.tabChat")}
+						aria-label={t("progress.tabChat")}
+						data-tooltip={t("progress.tabChat")}
+					>
+						<span className="chat-tab-icon" aria-hidden="true">
+							{TAB_ICONS.chat}
+						</span>
+					</button>
+					<button
+						type="button"
+						className={`chat-tab${activeTab === "history" ? " active" : ""}`}
+						onClick={() => handleTabChange("history")}
+						title={t("history.tabHistory")}
+						aria-label={t("history.tabHistory")}
+						data-tooltip={t("history.tabHistory")}
+					>
+						<span className="chat-tab-icon" aria-hidden="true">
+							{TAB_ICONS.history}
+						</span>
+					</button>
+					<button
+						type="button"
+						className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
+						onClick={() => handleTabChange("channels")}
+						title={t("channels.tabChannels")}
+						aria-label={t("channels.tabChannels")}
+						data-tooltip={t("channels.tabChannels")}
+					>
+						<span className="chat-tab-icon" aria-hidden="true">
+							{TAB_ICONS.channels}
+						</span>
+					</button>
 				</div>
+				<div className="chat-header-right">
+					{totalSessionCost > 0 && provider !== "ollama" && provider !== "vllm" && (
+						<button
+							type="button"
+							className="cost-badge session-cost cost-badge-clickable"
+							onClick={() => setShowCostDashboard((v) => !v)}
+						>
+							{formatCost(totalSessionCost)}
+						</button>
+					)}
+					<button
+						type="button"
+						className="settings-icon-btn new-chat-btn"
+						onClick={handleNewConversation}
+						title={t("chat.newConversation")}
+						disabled={isStreaming}
+					>
+						+
+					</button>
+				</div>
+			</div>
 
 				{/* Progress tab */}
 				{activeTab === "progress" && <WorkProgressPanel />}
@@ -2139,77 +2147,81 @@ export function ChatPanel() {
 					/>
 				)}
 
-				{/* Messages (chat tab) */}
-				<div
-					className="chat-messages"
-					style={{ display: activeTab === "chat" ? "flex" : "none" }}
-				>
-					{messages
-						.filter((msg) => {
-							if (
-								msg.role === "user" &&
-								msg.content.startsWith("Read HEARTBEAT.md if it exists")
-							)
-								return false;
-							if (
-								msg.role === "assistant" &&
-								/^HEARTBEAT_OK\b/.test(msg.content.trim())
-							)
-								return false;
-							return true;
-						})
-						.map((msg) => (
-							<div key={msg.id} className={`chat-message ${msg.role}`}>
-								{msg.thinking && (
-									<details className="thinking-block">
-										<summary>{t("chat.thinking") || "Thinking..."}</summary>
-										<div className="thinking-content">{msg.thinking}</div>
-									</details>
-								)}
-								{msg.toolCalls?.map((tc) => (
-									<ToolActivity key={tc.toolCallId} tool={tc} />
-								))}
-								<div className="message-content">
-									{msg.role === "assistant" ? (
-										<Markdown components={mdComponents}>
-											{parseEmotion(msg.content).cleanText}
-										</Markdown>
-									) : (
-										msg.content
-									)}
-								</div>
-								{msg.cost && (
-									<span className="cost-badge">
-										{formatCost(msg.cost.cost)} ·{" "}
-										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
-										{t("chat.tokens")}
-									</span>
-								)}
-							</div>
-						))}
-
-					{/* Streaming content */}
-					{isStreaming && (
-						<div className="chat-message assistant streaming">
-							{streamingThinking && (
-								<details className="thinking-block" open>
-									<summary>{t("chat.thinking") || "Thinking..."}</summary>
-									<div className="thinking-content">{streamingThinking}</div>
+			{/* Messages (chat tab) */}
+			<div
+				className="chat-messages"
+				style={{ display: activeTab === "chat" ? "flex" : "none" }}
+			>
+				{messages
+					.filter((msg) => {
+						if (
+							msg.role === "user" &&
+							msg.content.startsWith("Read HEARTBEAT.md if it exists")
+						)
+							return false;
+						if (
+							msg.role === "assistant" &&
+							/^HEARTBEAT_OK\b/.test(msg.content.trim())
+						)
+							return false;
+						return true;
+					})
+					.map((msg) => (
+						<div key={msg.id} className={`chat-message ${msg.role}`}>
+							{msg.thinking && (
+								<details className="thinking-inline">
+									<summary className="thinking-inline-summary">
+										<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
+									</summary>
+									<div className="thinking-inline-content">{msg.thinking}</div>
 								</details>
 							)}
-							{streamingToolCalls.map((tc) => (
+							{msg.toolCalls?.map((tc) => (
 								<ToolActivity key={tc.toolCallId} tool={tc} />
 							))}
 							<div className="message-content">
-								{streamingContent ? (
+								{msg.role === "assistant" ? (
 									<Markdown components={mdComponents}>
-										{parseEmotion(streamingContent).cleanText}
+										{parseEmotion(msg.content).cleanText}
 									</Markdown>
-								) : null}
-								<span className="cursor-blink">▌</span>
+								) : (
+									msg.content
+								)}
 							</div>
+							{msg.cost && provider !== "ollama" && provider !== "vllm" && (
+								<span className="cost-badge">
+									{formatCost(msg.cost.cost)} ·{" "}
+									{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
+									{t("chat.tokens")}
+								</span>
+							)}
 						</div>
-					)}
+					))}
+
+				{/* Streaming content */}
+				{isStreaming && (
+					<div className="chat-message assistant streaming">
+						{streamingThinking && (
+							<details className="thinking-inline" open>
+								<summary className="thinking-inline-summary">
+									<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
+								</summary>
+								<div className="thinking-inline-content">{streamingThinking}</div>
+							</details>
+						)}
+						{streamingToolCalls.map((tc) => (
+							<ToolActivity key={tc.toolCallId} tool={tc} />
+						))}
+						<div className="message-content">
+							{streamingContent ? (
+								<Markdown components={mdComponents}>
+									{parseEmotion(streamingContent).cleanText}
+								</Markdown>
+							) : null}
+							<span className="cursor-blink">▌</span>
+						</div>
+					</div>
+				)}
 
 					<div ref={messagesEndRef} />
 				</div>

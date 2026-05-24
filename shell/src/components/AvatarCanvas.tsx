@@ -11,7 +11,6 @@ import {
 	Object3D,
 	PerspectiveCamera,
 	Scene,
-	Spherical,
 	Vector3,
 	WebGLRenderer,
 } from "three";
@@ -48,24 +47,18 @@ export function getCameraActions(): CameraActions {
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 
-// Compute camera filmOffset so the avatar appears centered in the naia column (left panel).
+// Compute camera filmOffset so world x=0 projects to the chat panel center.
 // filmOffset > 0 shifts the frustum right → scene objects appear to the left on screen.
 //
-// Correct derivation:
-//   targetNDC = naiaWidth / canvasWidth * 2 - 1   (always negative — left half of screen)
-//   We want scene origin (x=0) to project at targetNDC.
-//   NDC_x(0) = -frustumCenter / frustumHalfWidth = -targetNDC
-//   frustumCenter = near * filmOffset / filmGauge * min(aspect,1)
-//   frustumHalfWidth = near * tan(fov/2) * aspect
-//   → filmOffset = targetNDC * tan(fov/2) * aspect * filmGauge / min(aspect,1)
-//   For landscape (aspect>1): min(aspect,1)=1, simplifies to:
+// Chat panel (.naia-chat-area): left=8px, width=naiaWidth-16px → center = naiaWidth/2 px.
+//   targetNDC = 2 * (naiaWidth/2) / canvasWidth - 1 = naiaWidth/canvasWidth - 1
 //   filmOffset = -targetNDC * tan(fov/2) * aspect * filmGauge
 function computeFilmOffset(camera: PerspectiveCamera, canvasWidth: number): number {
 	const naiaWidth = parseFloat(
 		getComputedStyle(document.documentElement).getPropertyValue("--naia-width"),
 	) || 320;
-	// NDC of the naia column center (negative = left side of screen)
-	const targetNDC = (naiaWidth / canvasWidth) * 2 - 1;
+	// NDC of the chat panel center = naiaWidth/2 pixels from left
+	const targetNDC = naiaWidth / canvasWidth - 1;
 	const halfFovTan = Math.tan((camera.fov * Math.PI) / 360);
 	const aspect = camera.aspect > 0 ? camera.aspect : canvasWidth / 1;
 	return -targetNDC * halfFovTan * aspect * camera.filmGauge;
@@ -73,8 +66,9 @@ function computeFilmOffset(camera: PerspectiveCamera, canvasWidth: number): numb
 const MAX_DELTA = 0.05;
 const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
-	position: { x: -0.22, y: 1.32, z: -1.78 },
-	target: { x: -0.22, y: 1.14, z: 0.03 },
+	// X=0: filmOffset already centers world-origin on the naia column → auto-aligns with chat panel.
+	position: { x: 0, y: 1.27, z: -1.83 },
+	target: { x: 0, y: 1.09, z: -0.02 },
 };
 
 interface SavedCamera {
@@ -312,18 +306,12 @@ export function AvatarCanvas() {
 		// rotate and pan are handled by AiControlBar buttons instead.
 		controls.mouseButtons = { LEFT: null as unknown as MOUSE, MIDDLE: MOUSE.DOLLY, RIGHT: null as unknown as MOUSE };
 
-		_cameraActions.rotate = (dx, dy) => {
-			const offset = camera.position.clone().sub(controls.target);
-			const spherical = new Spherical();
-			spherical.setFromVector3(offset);
-			spherical.theta -= dx * 0.005;
-			spherical.phi = Math.max(
-				0.1,
-				Math.min(Math.PI * 0.85, spherical.phi - dy * 0.005),
-			);
-			camera.position.setFromSpherical(spherical).add(controls.target);
-			camera.lookAt(controls.target);
-			controls.update();
+		_cameraActions.rotate = (dx, _dy) => {
+			// Rotate the VRM model in place (Y-axis) instead of orbiting the camera.
+			// This avoids pivot-drift issues and feels natural for a character viewer.
+			if (vrm) {
+				vrm.scene.rotation.y -= dx * 0.005;
+			}
 		};
 		let lastModelCenter: Vector3 | null = null;
 
@@ -345,16 +333,10 @@ export function AvatarCanvas() {
 			controls.update();
 		};
 		_cameraActions.reset = () => {
-			// Pivot = model center (so rotation always orbits the character).
-			// Camera position = model center + DEFAULT offset vector.
-			const center = lastModelCenter
-				? lastModelCenter.clone()
-				: new Vector3(DEFAULT_CAMERA.target.x, DEFAULT_CAMERA.target.y, DEFAULT_CAMERA.target.z);
-			const offsetX = DEFAULT_CAMERA.position.x - DEFAULT_CAMERA.target.x;
-			const offsetY = DEFAULT_CAMERA.position.y - DEFAULT_CAMERA.target.y;
-			const offsetZ = DEFAULT_CAMERA.position.z - DEFAULT_CAMERA.target.z;
-			controls.target.copy(center);
-			camera.position.set(center.x + offsetX, center.y + offsetY, center.z + offsetZ);
+			// X: use VRM model center X for auto-alignment with chat panel (filmOffset centers x=0).
+			const centerX = lastModelCenter ? lastModelCenter.x : DEFAULT_CAMERA.target.x;
+			camera.position.set(centerX, DEFAULT_CAMERA.position.y, DEFAULT_CAMERA.position.z);
+			controls.target.set(centerX, DEFAULT_CAMERA.target.y, DEFAULT_CAMERA.target.z);
 			camera.lookAt(controls.target);
 			camera.filmOffset = computeFilmOffset(camera, container.clientWidth);
 			camera.updateProjectionMatrix();

@@ -4,7 +4,7 @@ export interface AvatarPreset {
 	gender: AvatarGender;
 }
 
-export const DEFAULT_AVATAR_MODEL = "/avatars/01-Sendagaya-Shino-uniform.vrm";
+export const DEFAULT_AVATAR_MODEL = "/avatars/03-OL_Woman.vrm";
 
 export type AvatarGender = "female" | "male";
 

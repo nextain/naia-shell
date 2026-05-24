@@ -27,6 +27,19 @@ pub(crate) fn hide_console(cmd: &mut Command) {
     cmd.creation_flags(CREATE_NO_WINDOW);
 }
 
+/// Kill any stale gateway process from a previous session (Windows: wmic command-line match).
+pub(crate) fn kill_stale_gateway() {
+    // cleanup_orphan_processes() handles PID-file tracked processes.
+    // This covers any stragglers without a PID file.
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile", "-NonInteractive", "-Command",
+        "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*naia*gateway*' } | ForEach-Object { $_.Terminate() }",
+    ]);
+    hide_console(&mut cmd);
+    let _ = cmd.output();
+}
+
 /// Clean up orphan processes from a previous session (Windows: TerminateProcess).
 pub(crate) fn cleanup_orphan_processes() {
     for component in &["gateway", "node-host"] {

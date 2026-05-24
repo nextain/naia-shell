@@ -137,7 +137,7 @@ fn setup_vosk() {
 
     // Set rpath so the binary can find libvosk at runtime
     #[cfg(target_os = "linux")]
-    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN:$ORIGIN/../lib/Naia");
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path");
 
@@ -169,13 +169,9 @@ fn setup_vosk() {
                         eprintln!("cargo:warning=Copied {} to {}", name, bin_dest.display());
                     }
 
-                    // Copy to resources/ for installer bundling (Windows only)
-                    #[cfg(target_os = "windows")]
-                    {
-                        let res_dest = resources_dir.join(&name);
-                        if std::fs::copy(entry.path(), &res_dest).is_ok() {
-                            eprintln!("cargo:warning=Copied {} to resources/", name);
-                        }
+                    let res_dest = resources_dir.join(&name);
+                    if std::fs::copy(entry.path(), &res_dest).is_ok() {
+                        eprintln!("cargo:warning=Copied {} to resources/", name);
                     }
                 }
             }

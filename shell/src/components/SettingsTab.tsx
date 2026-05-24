@@ -2554,8 +2554,10 @@ export function SettingsTab() {
 				<div className="settings-hint">
 					{provider === "nextain" && selectedModelMeta?.pricing ? (
 						<span style={{ color: "var(--accent-color, #64a0ff)" }}>
-							Naia {t("settings.pricing")}: ${selectedModelMeta.pricing[0].toFixed(3)} / $
-							{selectedModelMeta.pricing[1].toFixed(3)}
+							Naia {t("settings.pricing")}:{" "}
+							{selectedModelMeta.capabilities.includes("omni")
+								? `$${selectedModelMeta.pricing[0].toFixed(2)}/hr`
+								: `$${selectedModelMeta.pricing[0].toFixed(3)} / $${selectedModelMeta.pricing[1].toFixed(3)}`}
 						</span>
 					) : (
 						selectedModelMeta?.label ?? model

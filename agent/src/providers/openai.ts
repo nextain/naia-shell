@@ -89,10 +89,12 @@ export function createOpenAIProvider(
 				{ id: string; name: string; args: string }
 			>();
 
+		let textBuffer = "";
+
 			for await (const chunk of stream) {
 				const delta = chunk.choices[0]?.delta;
 				if (delta?.content) {
-					yield { type: "text", text: delta.content };
+					textBuffer += delta.content;
 				}
 
 				// Tool calls — accumulate arguments across chunks
@@ -116,6 +118,14 @@ export function createOpenAIProvider(
 					inputTokens = chunk.usage.prompt_tokens ?? 0;
 					outputTokens = chunk.usage.completion_tokens ?? 0;
 				}
+			}
+
+			// Strip <eos> tokens leaked by Ollama/Gemma models
+			if (isOllama) {
+				textBuffer = textBuffer.replace(/<eos>/g, "");
+			}
+			if (textBuffer) {
+				yield { type: "text", text: textBuffer };
 			}
 
 			// Emit accumulated tool calls

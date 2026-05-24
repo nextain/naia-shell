@@ -76,6 +76,7 @@ export interface GeminiLiveConfig extends LiveProviderConfigBase {
 export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 	provider: "openai-realtime";
 	apiKey: string;
+	serverUrl?: string;
 }
 
 export interface MiniCpmOConfig extends LiveProviderConfigBase {

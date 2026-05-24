@@ -1599,37 +1599,66 @@ body.resizing-row {
 	word-break: break-word;
 }
 
-/* Thinking block (Claude extended thinking) */
-.thinking-block {
-	margin-bottom: 8px;
-	border-radius: 6px;
-	background: rgba(255, 255, 255, 0.04);
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	overflow: hidden;
+/* Thinking block — inline collapsible */
+.thinking-inline {
+	margin-bottom: 4px;
 }
 
-.thinking-block summary {
-	padding: 6px 10px;
-	font-size: 0.8em;
-	color: var(--latte);
-	opacity: 0.7;
+.thinking-inline-summary {
+	display: inline-flex;
+	align-items: center;
 	cursor: pointer;
 	user-select: none;
+	list-style: none;
 }
 
-.thinking-block summary:hover {
-	opacity: 1;
+.thinking-inline-summary::-webkit-details-marker {
+	display: none;
 }
 
-.thinking-content {
-	padding: 8px 12px;
-	font-size: 0.85em;
+.thinking-inline-summary::before {
+	content: "▶";
+	font-size: 0.55em;
+	margin-right: 4px;
+	opacity: 0.5;
+	transition: transform 0.15s ease;
+}
+
+.thinking-inline[open] > .thinking-inline-summary::before {
+	transform: rotate(90deg);
+}
+
+.thinking-inline-label {
+	font-size: 0.7em;
+	font-style: italic;
+	color: var(--latte);
+	opacity: 0.45;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 260px;
+}
+
+.thinking-inline[open] .thinking-inline-label {
+	max-width: none;
+}
+
+.thinking-inline-summary:hover .thinking-inline-label {
+	opacity: 0.7;
+}
+
+.thinking-inline-content {
+	margin-top: 2px;
+	padding: 4px 8px;
+	font-size: 0.75em;
+	font-style: italic;
 	color: var(--cream);
-	opacity: 0.6;
-	line-height: 1.5;
+	opacity: 0.4;
+	line-height: 1.4;
 	white-space: pre-wrap;
-	max-height: 200px;
+	max-height: 160px;
 	overflow-y: auto;
+	border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
 /* Markdown rendered content inside assistant messages */
@@ -2955,6 +2984,9 @@ body.resizing-row {
 	padding: 20px;
 	width: 340px;
 	max-width: 90vw;
+	max-height: 85vh;
+	display: flex;
+	flex-direction: column;
 	font-family: var(--mono);
 }
 
@@ -2962,6 +2994,7 @@ body.resizing-row {
 	font-size: 14px;
 	color: var(--latte);
 	margin-bottom: 12px;
+	flex-shrink: 0;
 }
 
 .permission-info {
@@ -2969,6 +3002,7 @@ body.resizing-row {
 	align-items: center;
 	gap: 8px;
 	margin-bottom: 10px;
+	flex-shrink: 0;
 }
 
 .permission-tier-badge {
@@ -2999,6 +3033,9 @@ body.resizing-row {
 
 .permission-args {
 	margin-bottom: 12px;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
 }
 
 .permission-args pre {
@@ -3011,13 +3048,14 @@ body.resizing-row {
 	padding: 8px;
 	white-space: pre-wrap;
 	word-break: break-all;
-	max-height: 120px;
+	max-height: 100%;
 	overflow-y: auto;
 }
 
 .permission-actions {
 	display: flex;
 	gap: 6px;
+	flex-shrink: 0;
 }
 
 .permission-btn-once,
@@ -5570,6 +5608,7 @@ body.resizing-row {
 	gap: 3px;
 	padding: 5px 8px;
 	align-self: flex-start;
+	margin: 4px 0 0 4px;
 	pointer-events: auto;
 	background: rgba(8, 14, 28, 0.52);
 	border-radius: 8px;
