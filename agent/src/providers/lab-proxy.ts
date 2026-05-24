@@ -36,7 +36,7 @@ export function createLabProxyProvider(
 	const resolvedGatewayUrl = gatewayUrl ?? GATEWAY_URL;
 	return {
 		async *stream(messages, systemPrompt, tools, signal): AgentStream {
-			if (!resolvedGatewayUrl.startsWith("https://")) {
+			if (!resolvedGatewayUrl.startsWith("https://") && !resolvedGatewayUrl.startsWith("http://localhost") && !resolvedGatewayUrl.startsWith("http://100.91.")) {
 				throw new Error(
 					`Lab proxy: rejecting non-HTTPS gateway URL "${resolvedGatewayUrl}" - naiaKey credential must only be sent over HTTPS.`,
 				);

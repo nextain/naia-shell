@@ -1788,7 +1788,7 @@ export function ChatPanel() {
 						session.sendAudio(pcmBase64);
 					}
 				},
-				sampleRate: 16000,
+				sampleRate: liveProvider === "openai-realtime" ? 24000 : 16000,
 			});
 			micStreamRef.current = mic;
 			mic.start();

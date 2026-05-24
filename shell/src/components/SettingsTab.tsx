@@ -218,7 +218,8 @@ const LOCALES: { id: Locale; label: string }[] = [
 
 function getNaiaWebBaseUrl() {
 	return (
-		import.meta.env.VITE_NAIA_WEB_BASE_URL?.trim() || "https://naia.nextain.io"
+		import.meta.env.VITE_NAIA_WEB_BASE_URL?.trim() ||
+		(import.meta.env.DEV ? "http://localhost:3001" : "https://naia.nextain.io")
 	);
 }
 
@@ -1510,8 +1511,7 @@ export function SettingsTab() {
 		}
 		setError("");
 		if (id === "nextain" && !naiaKey) {
-			setError("Naia 계정 로그인이 필요합니다. 먼저 Naia에 로그인하세요.");
-			startLabLogin();
+			setError(t("settings.naiaLoginRequired"));
 		}
 	}
 
@@ -1874,7 +1874,7 @@ export function SettingsTab() {
 		const resolvedApiKey = apiKey.trim() || existing?.apiKey || "";
 		const isNextainProvider = provider === "nextain";
 		if (isNextainProvider && !naiaKey) {
-			setError("Naia 계정 로그인이 필요합니다. Naia 계정 연결 후 저장하세요.");
+			setError(t("settings.naiaLoginSave"));
 			return;
 		}
 		if (
@@ -2479,6 +2479,35 @@ export function SettingsTab() {
 						{error && <div className="settings-error">{error}</div>}
 					</div>
 				)}
+
+			{/* Naia login button — shown when nextain selected and not logged in */}
+			{provider === "nextain" && !naiaKey && (
+				<div className="settings-field">
+				<label>{t("settings.naiaAccount")}</label>
+				<button
+						type="button"
+						className="settings-btn-primary"
+						disabled={labWaiting}
+						onClick={startLabLogin}
+					>
+						{labWaiting ? t("settings.naiaLoginWaiting") : t("settings.naiaLoginButton")}
+					</button>
+					<div className="settings-hint">
+						{t("settings.naiaLoginHint")}
+					</div>
+					{error && <div className="settings-error">{error}</div>}
+				</div>
+			)}
+
+			{/* Naia logged in indicator */}
+			{provider === "nextain" && naiaKey && (
+				<div className="settings-field">
+					<label>{t("settings.naiaAccount")}</label>
+					<div className="settings-hint" style={{ color: "var(--accent-color, #64a0ff)" }}>
+						{t("settings.naiaConnected")}{naiaUserId ? ` (${naiaUserId})` : ""}
+					</div>
+				</div>
+			)}
 
 			{provider === "ollama" && (
 				<div className="settings-field">
