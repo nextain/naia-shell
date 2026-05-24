@@ -130,8 +130,6 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"gatewayTtsAuto", "gatewayTtsMode",
 	// Per-session Discord state
 	"discordSessionMigrated", "lastProcessedDiscordMessageId",
-	// Onboarding flag
-	"onboardingComplete",
 	// Locale (agent receives per-request via IPC systemPrompt)
 	"locale",
 	// User display ID (not used by agent directly)
@@ -164,6 +162,13 @@ export function buildNaiaConfigEnv(cfg: {
 	memoryEmbeddingProvider?: string;
 	memoryEmbeddingModel?: string;
 	memoryEmbeddingBaseUrl?: string;
+	memoryLlmProvider?: string;
+	memoryLlmModel?: string;
+	memoryLlmBaseUrl?: string;
+	agentName?: string;
+	userName?: string;
+	speechStyle?: string;
+	locale?: string;
 }): Record<string, string> {
 	const out: Record<string, string> = {};
 
@@ -203,6 +208,17 @@ export function buildNaiaConfigEnv(cfg: {
 		if (cfg.memoryEmbeddingBaseUrl) {
 			out.NAIA_EMBED_BASE_URL = cfg.memoryEmbeddingBaseUrl;
 		}
+	}
+
+	if (cfg.agentName) out.NAIA_AGENT_NAME = cfg.agentName;
+	if (cfg.userName) out.NAIA_USER_NAME = cfg.userName;
+	if (cfg.speechStyle) out.NAIA_SPEECH_STYLE = cfg.speechStyle;
+	if (cfg.locale) out.NAIA_LOCALE = cfg.locale;
+
+	if (cfg.memoryLlmProvider && cfg.memoryLlmProvider !== "none") {
+		out.NAIA_LLM_PROVIDER = cfg.memoryLlmProvider;
+		if (cfg.memoryLlmModel) out.NAIA_LLM_MODEL = cfg.memoryLlmModel;
+		if (cfg.memoryLlmBaseUrl) out.NAIA_LLM_BASE_URL = cfg.memoryLlmBaseUrl;
 	}
 
 	return out;
