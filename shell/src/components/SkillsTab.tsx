@@ -5,7 +5,7 @@ import {
 	getDisabledSkills,
 	isSkillDisabled,
 	loadConfig,
-	resolveGatewayUrl,
+	resolveConfiguredGatewayUrl,
 	saveConfig,
 	toggleSkill,
 } from "../lib/config";
@@ -53,7 +53,7 @@ export function SkillsTab({
 
 	const fetchGatewayStatus = useCallback(async () => {
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
 		if (!gatewayUrl) return;
 
 		setGatewayLoading(true);
@@ -80,7 +80,7 @@ export function SkillsTab({
 	const handleInstallSkill = useCallback(
 		async (name: string) => {
 			const config = loadConfig();
-			const gatewayUrl = resolveGatewayUrl(config);
+			const gatewayUrl = resolveConfiguredGatewayUrl(config);
 			if (!gatewayUrl) return;
 
 			setInstallingSkills((prev) => new Set(prev).add(name));

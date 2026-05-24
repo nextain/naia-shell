@@ -200,6 +200,9 @@ export function loadConfig(): AppConfig | null {
 			const isLinux = navigator.userAgent.includes("Linux");
 			config.sttProvider = isLinux ? "vosk" : "web-speech";
 		}
+		if (config.enableTools == null) {
+			config.enableTools = true;
+		}
 		return config;
 	} catch {
 		return null;
@@ -244,6 +247,15 @@ export function resolveGatewayUrl(
 	if (!config?.enableTools) return undefined;
 	const raw = config.gatewayUrl?.trim();
 	return raw && raw.length > 0 ? raw : DEFAULT_GATEWAY_URL;
+}
+
+export function resolveConfiguredGatewayUrl(
+	config: AppConfig | null | undefined,
+): string | undefined {
+	if (!config?.enableTools) return undefined;
+	const raw = config.gatewayUrl?.trim();
+	if (!raw || raw === DEFAULT_GATEWAY_URL) return undefined;
+	return raw;
 }
 
 // ── Async API (secure store + localStorage fallback) ──

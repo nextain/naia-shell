@@ -103,6 +103,7 @@ export function buildToolStatusPrompt(
 			"\n\n[Tool Guide: skill_browser_*]" +
 			"\n- CRITICAL: 사용자가 웹사이트, URL, 유튜브, 뉴스, 지도 등 웹 콘텐츠를 요청하면 반드시 skill_browser_navigate를 호출해 인터넷 탭에서 열어줘야 한다. 링크만 알려주는 것은 FORBIDDEN." +
 			"\n- 탐색: skill_browser_navigate(url) — 인터넷 탭에서 해당 URL로 이동" +
+			"\n- 뉴스/검색/조사/최신 정보 요청: skill_browser_navigate 결과에 페이지 텍스트가 없거나 부족하면 즉시 skill_browser_get_text 또는 skill_browser_snapshot을 호출해 실제 내용을 읽은 뒤 답해야 한다. '이제 찾아보겠습니다'로 종료하는 것은 FORBIDDEN." +
 			"\n- 클릭: skill_browser_snapshot으로 @ref 확인 → skill_browser_click(ref)" +
 			"\n- 텍스트 입력: skill_browser_fill(ref, text)" +
 			"\n- 페이지 내용 읽기: skill_browser_get_text 또는 skill_browser_snapshot" +
@@ -150,14 +151,29 @@ export function buildToolStatusPrompt(
 	}
 
 	// Tool usage rules — always injected regardless of system prompt source
-	status +=
-		"\n\n[Tool Usage Rules (CRITICAL)]" +
-		"\n- When the user asks you to DO something (check, search, send, run, find, look up, etc.), you MUST call the appropriate tool. NEVER just say '할게요/확인해볼게요' without actually calling a tool." +
-		"\n- If you don't know the answer, use a tool to find out (web_search, skill_github, execute_command, etc.). Do NOT guess or make up information." +
-		"\n- When the user mentions an app or service name (옵시디안, スポティファイ, GitHub, Slack, Notion, etc.), search for it using skill_skill_manager action='search' query='{english name}'. Skill names are English: skill_obsidian, skill_github, skill_slack, etc." +
-		"\n- When asked about GitHub repos/PRs/issues, ALWAYS use skill_github. Never guess URLs." +
-		"\n- When user asks to open/visit/show a website or web content (YouTube, news, Naver, etc.), ALWAYS use skill_browser_navigate. NEVER just reply with a link." +
-		"\n- '확인해볼게' / '検索するね' / 'Let me check' without actually calling a tool is FORBIDDEN.";
+	const lookupTools = [
+		toolNames.includes("web_search") ? "web_search" : undefined,
+		toolNames.includes("skill_browser_navigate")
+			? "skill_browser_navigate/skill_browser_get_text"
+			: undefined,
+		toolNames.includes("browser") ? "browser" : undefined,
+	].filter(Boolean);
+	const lookupToolHint = lookupTools.length
+		? lookupTools.join(", ")
+		: "available read/search tools";
+	status += [
+		"",
+		"",
+		"[Tool Usage Rules (CRITICAL)]",
+		"- When the user asks you to DO something (check, search, send, run, find, look up, etc.), you MUST call the appropriate tool. NEVER just say '할게요/확인해볼게요' without actually calling a tool.",
+		"- If a tool is needed, call the tool first. Do NOT emit preliminary text such as '확인해 드리겠습니다' before the tool call.",
+		`- If you don't know the answer, use an available tool to find out (${lookupToolHint}, skill_github, execute_command, etc.). Do NOT guess or make up information.`,
+		"- When the user mentions an app or service name (옵시디안, スポティファイ, GitHub, Slack, Notion, etc.), search for it using skill_skill_manager action='search' query='{english name}'. Skill names are English: skill_obsidian, skill_github, skill_slack, etc.",
+		"- When asked about GitHub repos/PRs/issues, ALWAYS use skill_github. Never guess URLs.",
+		"- When user asks to open/visit/show a website or web content (YouTube, news, Naver, etc.), ALWAYS use skill_browser_navigate. NEVER just reply with a link.",
+		"- For web news/search/current-info requests, do not finish after navigation alone. Answer only after a tool result contains readable page text, or call skill_browser_get_text/skill_browser_snapshot first.",
+		"- '확인해볼게' / '検索するね' / 'Let me check' without actually calling a tool is FORBIDDEN.",
+	].join("\n");
 
 	return base + status;
 }

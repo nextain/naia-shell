@@ -1,5 +1,5 @@
 import { directToolCall } from "./chat-service";
-import { loadConfig, resolveGatewayUrl, saveConfig } from "./config";
+import { loadConfig, resolveConfiguredGatewayUrl, saveConfig } from "./config";
 import { Logger } from "./logger";
 import type { ChatMessage } from "./types";
 
@@ -18,7 +18,7 @@ function getGatewayOpts(): {
 	gatewayToken?: string;
 } {
 	const config = loadConfig();
-	const gatewayUrl = resolveGatewayUrl(config);
+	const gatewayUrl = resolveConfiguredGatewayUrl(config);
 	return { gatewayUrl, gatewayToken: config?.gatewayToken };
 }
 
@@ -40,11 +40,15 @@ export async function listGatewaySessions(
 			...opts,
 		});
 	} catch (e) {
-		Logger.warn("gateway-sessions", "directToolCall failed", { error: String(e) });
+		Logger.warn("gateway-sessions", "directToolCall failed", {
+			error: String(e),
+		});
 		return [];
 	}
 	if (!res.success || !res.output) {
-		Logger.warn("gateway-sessions", "agent unreachable", { success: res.success });
+		Logger.warn("gateway-sessions", "agent unreachable", {
+			success: res.success,
+		});
 		return [];
 	}
 	const parsed = JSON.parse(res.output) as {

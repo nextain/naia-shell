@@ -136,6 +136,14 @@ skillRegistry.registerToolSafety("sessions_spawn", {
 	isReadOnly: ALWAYS_FALSE,
 });
 
+const LOCAL_COMMAND_TOOL_NAMES = new Set([
+	"execute_command",
+	"read_file",
+	"write_file",
+	"search_files",
+	"apply_diff",
+]);
+
 /** Get all tools: Gateway tools + skill tools (minus disabled) */
 export function getAllTools(
 	hasGateway: boolean,
@@ -146,7 +154,10 @@ export function getAllTools(
 		disabledSkills && disabledSkills.length > 0
 			? skillTools.filter((t) => !disabledSkills.includes(t.name))
 			: skillTools;
-	return [...GATEWAY_TOOLS, ...filtered];
+	const gatewayTools = hasGateway
+		? GATEWAY_TOOLS
+		: GATEWAY_TOOLS.filter((tool) => LOCAL_COMMAND_TOOL_NAMES.has(tool.name));
+	return [...gatewayTools, ...filtered];
 }
 
 /** Result from tool execution */

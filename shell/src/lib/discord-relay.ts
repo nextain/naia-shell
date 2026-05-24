@@ -11,7 +11,7 @@ import { sendChatMessage } from "./chat-service";
 import {
 	LAB_GATEWAY_URL,
 	loadConfig,
-	resolveGatewayUrl,
+	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "./config";
 import {
@@ -161,7 +161,7 @@ async function processMessage(
 				requestId,
 				systemPrompt,
 				enableTools: config.enableTools,
-				gatewayUrl: resolveGatewayUrl(config) ?? undefined,
+				gatewayUrl: resolveConfiguredGatewayUrl(config),
 				disabledSkills: config.disabledSkills,
 			}).catch(reject);
 		});

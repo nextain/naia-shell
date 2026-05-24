@@ -38,7 +38,7 @@ import {
 	loadConfig,
 	loadConfigWithSecrets,
 	localeToSttLanguage,
-	resolveGatewayUrl,
+	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
 import { startDiscordRelay, stopDiscordRelay } from "../lib/discord-relay";
@@ -313,6 +313,7 @@ export function ChatPanel() {
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
+	const queuedSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const voiceSessionRef = useRef<VoiceSession | null>(null);
 	const micStreamRef = useRef<MicStream | null>(null);
 	const audioPlayerRef = useRef<AudioPlayer | null>(null);
@@ -455,6 +456,37 @@ export function ChatPanel() {
 		messagesEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
 	}, [messages, streamingContent]);
 
+	function isChatRequestActive(): boolean {
+		return (
+			currentRequestId.current !== null || useChatStore.getState().isStreaming
+		);
+	}
+
+	function scheduleNextQueuedMessage() {
+		if (queuedSendTimerRef.current || isChatRequestActive()) return;
+
+		const next = useChatStore.getState().dequeueMessage();
+		if (!next) return;
+
+		queuedSendTimerRef.current = setTimeout(() => {
+			queuedSendTimerRef.current = null;
+			handleSend(next);
+		}, 0);
+	}
+
+	function completeCurrentRequest(requestId?: string | null) {
+		if (
+			requestId &&
+			currentRequestId.current &&
+			requestId !== currentRequestId.current
+		) {
+			return;
+		}
+
+		currentRequestId.current = null;
+		scheduleNextQueuedMessage();
+	}
+
 	function handleCancelStreaming() {
 		const store = useChatStore.getState();
 		if (!store.isStreaming) return;
@@ -468,7 +500,7 @@ export function ChatPanel() {
 		}
 		store.finishStreaming();
 		setEmotion("neutral");
-		currentRequestId.current = null;
+		completeCurrentRequest(reqId);
 	}
 
 	// ESC key to cancel streaming
@@ -517,14 +549,8 @@ export function ChatPanel() {
 
 	// Auto-send queued messages when streaming ends
 	useEffect(() => {
-		if (!isStreaming && messageQueue.length > 0) {
-			const next = useChatStore.getState().dequeueMessage();
-			if (next) {
-				// Pass next as overrideText to avoid stale-closure over input state
-				// (setInput(next) schedules a re-render but handleSend() in the timeout
-				// still captures input="" from this render).
-				handleSend(next);
-			}
+		if (!isChatRequestActive() && messageQueue.length > 0) {
+			scheduleNextQueuedMessage();
 		}
 	}, [isStreaming, messageQueue.length]);
 
@@ -570,12 +596,17 @@ export function ChatPanel() {
 		// Pipeline voice mode: send via normal chat path (TTS handled by handleChunk)
 		// Falls through to the normal sendChatMessage flow below
 
-		// If streaming, queue the message instead
-		if (isStreaming) {
+		// If a response is active, queue instead of racing another request into the
+		// shared streaming buffer. Some callers keep an old React closure, so check
+		// the ref/store directly instead of relying only on the hook value.
+		if (isChatRequestActive()) {
 			useChatStore.getState().enqueueMessage(text);
 			setInput("");
 			return;
 		}
+
+		const requestId = generateRequestId();
+		currentRequestId.current = requestId;
 
 		setInput("");
 		useChatStore.getState().addMessage({ role: "user", content: text });
@@ -584,8 +615,6 @@ export function ChatPanel() {
 		// Reset TTS sequence for new response ordering
 		audioQueueRef.current?.resetSeq();
 
-		const requestId = generateRequestId();
-		currentRequestId.current = requestId;
 		const store = useChatStore.getState();
 
 		const config = await loadConfigWithSecrets();
@@ -596,6 +625,7 @@ export function ChatPanel() {
 					"Naia 계정 로그인이 필요합니다. 설정에서 로그인해주세요.",
 				);
 			useChatStore.getState().finishStreaming();
+			completeCurrentRequest(requestId);
 			return;
 		}
 		if (
@@ -605,9 +635,14 @@ export function ChatPanel() {
 		) {
 			useChatStore.getState().appendStreamChunk(t("chat.noApiKey"));
 			useChatStore.getState().finishStreaming();
+			completeCurrentRequest(requestId);
 			return;
 		}
-		if (!config) return;
+		if (!config) {
+			useChatStore.getState().finishStreaming();
+			completeCurrentRequest(requestId);
+			return;
+		}
 
 		const history = store.messages
 			.filter((m) => m.role === "user" || m.role === "assistant")
@@ -685,6 +720,8 @@ export function ChatPanel() {
 			});
 		}
 
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
+
 		try {
 			await sendChatMessage({
 				message: text,
@@ -707,14 +744,14 @@ export function ChatPanel() {
 					? `You are in a voice conversation. Keep responses brief and conversational (2-3 sentences max). Speak naturally as if talking to a friend.${config.enableTools ? "\nWhen the user asks you to perform an action that requires a tool, call the tool immediately in the same response. Include a short acknowledgement sentence before your tool call so the user hears feedback while the tool executes. After the tool completes, summarize the result in 1-2 sentences." : ""}\n\n${buildSystemPrompt(config.persona, memoryCtx)}`
 					: buildSystemPrompt(config.persona, memoryCtx),
 				enableTools: config.enableTools,
-				gatewayUrl: config.enableTools
-					? config.gatewayUrl || "ws://localhost:18789"
-					: undefined,
+				gatewayUrl,
 				disabledSkills: config.enableTools
 					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
 					: undefined,
 				routeViaGateway:
-					config.enableTools && (config.chatRouting ?? "auto") !== "direct"
+					!!gatewayUrl &&
+					config.enableTools &&
+					(config.chatRouting ?? "auto") !== "direct"
 						? true
 						: undefined,
 				// Webhook URLs + Discord defaults are pushed via sendNotifyConfig at
@@ -725,18 +762,27 @@ export function ChatPanel() {
 			if (errStr.includes("Naia provider requires")) {
 				useChatStore.getState().finishStreaming();
 				setShowNoAuthModal(true);
+				completeCurrentRequest(requestId);
 			} else {
-				useChatStore
-					.getState()
-					.appendStreamChunk(`
+				useChatStore.getState().appendStreamChunk(`
 [${t("chat.error")}] ${errStr}`);
 				useChatStore.getState().finishStreaming();
+				completeCurrentRequest(requestId);
 			}
 		}
 	}
 
 	function handleChunk(chunk: AgentResponseChunk, activeProvider: ProviderId) {
 		const store = useChatStore.getState();
+
+		if ("requestId" in chunk && chunk.requestId !== currentRequestId.current) {
+			Logger.info("ChatPanel", "Ignoring chunk for inactive request", {
+				type: chunk.type,
+				requestId: chunk.requestId,
+				activeRequestId: currentRequestId.current,
+			});
+			return;
+		}
 
 		if (
 			chunk.type === "text" ||
@@ -896,8 +942,9 @@ export function ChatPanel() {
 				}
 				if (store.isStreaming) {
 					store.finishStreaming();
-					setEmotion("neutral");
 				}
+				setEmotion("neutral");
+				completeCurrentRequest(chunk.requestId);
 				break;
 			case "config_update": {
 				const cfg = loadConfig();
@@ -966,6 +1013,7 @@ export function ChatPanel() {
 				store.appendStreamChunk(`\n[${t("chat.error")}] ${chunk.message}`);
 				store.finishStreaming();
 				setEmotion("neutral");
+				completeCurrentRequest(chunk.requestId);
 				break;
 		}
 	}
@@ -985,6 +1033,10 @@ export function ChatPanel() {
 	// Cleanup voice session on unmount
 	useEffect(() => {
 		return () => {
+			if (queuedSendTimerRef.current) {
+				clearTimeout(queuedSendTimerRef.current);
+				queuedSendTimerRef.current = null;
+			}
 			voiceSessionRef.current?.disconnect();
 			micStreamRef.current?.stop();
 			audioPlayerRef.current?.destroy();
@@ -1126,7 +1178,9 @@ export function ChatPanel() {
 						outputTokens: 0,
 						cost: ttsCost,
 						provider: ttsProviderForCost as ProviderId,
-						model: isNaiaTts ? "tts:nextain (+10%)" : `tts:${ttsProviderForCost}`,
+						model: isNaiaTts
+							? "tts:nextain (+10%)"
+							: `tts:${ttsProviderForCost}`,
 					});
 				}
 			},
@@ -1686,7 +1740,7 @@ export function ChatPanel() {
 						toolName,
 						args,
 						requestId: generateRequestId(),
-						gatewayUrl: resolveGatewayUrl(config),
+						gatewayUrl: resolveConfiguredGatewayUrl(config),
 					});
 					session.sendToolResponse(callId, result.output);
 				} catch (err) {
@@ -1975,307 +2029,320 @@ export function ChatPanel() {
 
 	return (
 		<>
-		<div className="chat-panel">
-			{/* Header with tabs */}
-			<div className="chat-header">
-				<div className="chat-tabs">
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
-						onClick={() => handleTabChange("chat")}
-						title={t("progress.tabChat")}
-						aria-label={t("progress.tabChat")}
-						data-tooltip={t("progress.tabChat")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.chat}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "history" ? " active" : ""}`}
-						onClick={() => handleTabChange("history")}
-						title={t("history.tabHistory")}
-						aria-label={t("history.tabHistory")}
-						data-tooltip={t("history.tabHistory")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.history}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-						onClick={() => handleTabChange("channels")}
-						title={t("channels.tabChannels")}
-						aria-label={t("channels.tabChannels")}
-						data-tooltip={t("channels.tabChannels")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.channels}
-						</span>
-					</button>
-				</div>
-				<div className="chat-header-right">
-					{totalSessionCost > 0 && (
+			<div className="chat-panel">
+				{/* Header with tabs */}
+				<div className="chat-header">
+					<div className="chat-tabs">
 						<button
 							type="button"
-							className="cost-badge session-cost cost-badge-clickable"
-							onClick={() => setShowCostDashboard((v) => !v)}
+							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
+							onClick={() => handleTabChange("chat")}
+							title={t("progress.tabChat")}
+							aria-label={t("progress.tabChat")}
+							data-tooltip={t("progress.tabChat")}
 						>
-							{formatCost(totalSessionCost)}
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.chat}
+							</span>
 						</button>
-					)}
-					<button
-						type="button"
-						className="settings-icon-btn new-chat-btn"
-						onClick={handleNewConversation}
-						title={t("chat.newConversation")}
-						disabled={isStreaming}
-					>
-						+
-					</button>
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
+							onClick={() => handleTabChange("history")}
+							title={t("history.tabHistory")}
+							aria-label={t("history.tabHistory")}
+							data-tooltip={t("history.tabHistory")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.history}
+							</span>
+						</button>
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
+							onClick={() => handleTabChange("channels")}
+							title={t("channels.tabChannels")}
+							aria-label={t("channels.tabChannels")}
+							data-tooltip={t("channels.tabChannels")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.channels}
+							</span>
+						</button>
+					</div>
+					<div className="chat-header-right">
+						{totalSessionCost > 0 && (
+							<button
+								type="button"
+								className="cost-badge session-cost cost-badge-clickable"
+								onClick={() => setShowCostDashboard((v) => !v)}
+							>
+								{formatCost(totalSessionCost)}
+							</button>
+						)}
+						<button
+							type="button"
+							className="settings-icon-btn new-chat-btn"
+							onClick={handleNewConversation}
+							title={t("chat.newConversation")}
+							disabled={isStreaming}
+						>
+							+
+						</button>
+					</div>
 				</div>
-			</div>
 
-			{/* Progress tab */}
-			{activeTab === "progress" && <WorkProgressPanel />}
+				{/* Progress tab */}
+				{activeTab === "progress" && <WorkProgressPanel />}
 
-			{/* Skills tab */}
-			{activeTab === "skills" && (
-				<SkillsTab
-					onAskAI={(message) => {
-						setInput(message);
-						setActiveTab("chat");
-						if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
-						focusTimerRef.current = setTimeout(() => {
-							inputRef.current?.focus();
-							focusTimerRef.current = null;
-						}, 50);
-					}}
-				/>
-			)}
-
-
-			{/* Agents tab */}
-			{activeTab === "agents" && <AgentsTab />}
-
-			{/* Diagnostics tab */}
-			{activeTab === "diagnostics" && <DiagnosticsTab />}
-
-			{/* Settings tab */}
-
-			{/* Channels tab */}
-			{activeTab === "channels" && (
-				<div className="chat-tab-placeholder">
-					<span>🌐</span>
-					<p>{t("channels.maintenance")}</p>
-				</div>
-			)}
-
-			{/* History tab */}
-			{activeTab === "history" && (
-				<HistoryTab
-					onLoadSession={() => setActiveTab("chat")}
+				{/* Skills tab */}
+				{activeTab === "skills" && (
+					<SkillsTab
+						onAskAI={(message) => {
+							setInput(message);
+							setActiveTab("chat");
+							if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+							focusTimerRef.current = setTimeout(() => {
+								inputRef.current?.focus();
+								focusTimerRef.current = null;
+							}, 50);
+						}}
 					/>
-			)}
+				)}
 
-			{/* Cost dashboard (dropdown) */}
-			{showCostDashboard && activeTab === "chat" && (
-				<CostDashboard
-					messages={messages}
-					sessionCostEntries={sessionCostEntries}
-				/>
-			)}
+				{/* Agents tab */}
+				{activeTab === "agents" && <AgentsTab />}
 
-			{/* Messages (chat tab) */}
-			<div
-				className="chat-messages"
-				style={{ display: activeTab === "chat" ? "flex" : "none" }}
-			>
-				{messages
-					.filter((msg) => {
-						if (
-							msg.role === "user" &&
-							msg.content.startsWith("Read HEARTBEAT.md if it exists")
-						)
-							return false;
-						if (
-							msg.role === "assistant" &&
-							/^HEARTBEAT_OK\b/.test(msg.content.trim())
-						)
-							return false;
-						return true;
-					})
-					.map((msg) => (
-						<div key={msg.id} className={`chat-message ${msg.role}`}>
-							{msg.thinking && (
-								<details className="thinking-block">
+				{/* Diagnostics tab */}
+				{activeTab === "diagnostics" && <DiagnosticsTab />}
+
+				{/* Settings tab */}
+
+				{/* Channels tab */}
+				{activeTab === "channels" && (
+					<div className="chat-tab-placeholder">
+						<span>🌐</span>
+						<p>{t("channels.maintenance")}</p>
+					</div>
+				)}
+
+				{/* History tab */}
+				{activeTab === "history" && (
+					<HistoryTab onLoadSession={() => setActiveTab("chat")} />
+				)}
+
+				{/* Cost dashboard (dropdown) */}
+				{showCostDashboard && activeTab === "chat" && (
+					<CostDashboard
+						messages={messages}
+						sessionCostEntries={sessionCostEntries}
+					/>
+				)}
+
+				{/* Messages (chat tab) */}
+				<div
+					className="chat-messages"
+					style={{ display: activeTab === "chat" ? "flex" : "none" }}
+				>
+					{messages
+						.filter((msg) => {
+							if (
+								msg.role === "user" &&
+								msg.content.startsWith("Read HEARTBEAT.md if it exists")
+							)
+								return false;
+							if (
+								msg.role === "assistant" &&
+								/^HEARTBEAT_OK\b/.test(msg.content.trim())
+							)
+								return false;
+							return true;
+						})
+						.map((msg) => (
+							<div key={msg.id} className={`chat-message ${msg.role}`}>
+								{msg.thinking && (
+									<details className="thinking-block">
+										<summary>{t("chat.thinking") || "Thinking..."}</summary>
+										<div className="thinking-content">{msg.thinking}</div>
+									</details>
+								)}
+								{msg.toolCalls?.map((tc) => (
+									<ToolActivity key={tc.toolCallId} tool={tc} />
+								))}
+								<div className="message-content">
+									{msg.role === "assistant" ? (
+										<Markdown components={mdComponents}>
+											{parseEmotion(msg.content).cleanText}
+										</Markdown>
+									) : (
+										msg.content
+									)}
+								</div>
+								{msg.cost && (
+									<span className="cost-badge">
+										{formatCost(msg.cost.cost)} ·{" "}
+										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
+										{t("chat.tokens")}
+									</span>
+								)}
+							</div>
+						))}
+
+					{/* Streaming content */}
+					{isStreaming && (
+						<div className="chat-message assistant streaming">
+							{streamingThinking && (
+								<details className="thinking-block" open>
 									<summary>{t("chat.thinking") || "Thinking..."}</summary>
-									<div className="thinking-content">{msg.thinking}</div>
+									<div className="thinking-content">{streamingThinking}</div>
 								</details>
 							)}
-							{msg.toolCalls?.map((tc) => (
+							{streamingToolCalls.map((tc) => (
 								<ToolActivity key={tc.toolCallId} tool={tc} />
 							))}
 							<div className="message-content">
-								{msg.role === "assistant" ? (
+								{streamingContent ? (
 									<Markdown components={mdComponents}>
-										{parseEmotion(msg.content).cleanText}
+										{parseEmotion(streamingContent).cleanText}
 									</Markdown>
-								) : (
-									msg.content
-								)}
+								) : null}
+								<span className="cursor-blink">▌</span>
 							</div>
-							{msg.cost && (
-								<span className="cost-badge">
-									{formatCost(msg.cost.cost)} ·{" "}
-									{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
-									{t("chat.tokens")}
-								</span>
-							)}
 						</div>
-					))}
+					)}
 
-				{/* Streaming content */}
-				{isStreaming && (
-					<div className="chat-message assistant streaming">
-						{streamingThinking && (
-							<details className="thinking-block" open>
-								<summary>{t("chat.thinking") || "Thinking..."}</summary>
-								<div className="thinking-content">{streamingThinking}</div>
-							</details>
-						)}
-						{streamingToolCalls.map((tc) => (
-							<ToolActivity key={tc.toolCallId} tool={tc} />
-						))}
-						<div className="message-content">
-							{streamingContent ? (
-								<Markdown components={mdComponents}>
-									{parseEmotion(streamingContent).cleanText}
-								</Markdown>
-							) : null}
-							<span className="cursor-blink">▌</span>
-						</div>
-					</div>
-				)}
+					<div ref={messagesEndRef} />
+				</div>
 
-				<div ref={messagesEndRef} />
-			</div>
-
-			{/* Permission Modal */}
-			{pendingApproval && (
-				<PermissionModal
-					pending={pendingApproval}
-					onDecision={handleApprovalDecision}
-				/>
-			)}
-
-			{/* Input (chat tab only) */}
-			<div
-				className="chat-input-bar"
-				style={{ display: activeTab === "chat" ? "flex" : "none" }}
-			>
-				<button
-					type="button"
-					className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
-					onClick={handleVoiceToggle}
-					disabled={voiceMode === "connecting"}
-					title={
-						voiceMode === "off"
-							? t("chat.voiceStart")
-							: voiceMode === "connecting"
-								? t("chat.voiceConnecting")
-								: ttsPlaying
-									? "끼어들기 (TTS 중단)"
-									: t("chat.voiceEnd")
-					}
-				>
-					<span className="voice-bar" />
-					<span className="voice-bar" />
-					<span className="voice-bar" />
-					<span className="voice-bar" />
-				</button>
-				{pipelineActiveRef.current && sttPartial && (
-					<div className="stt-partial">{sttPartial}</div>
-				)}
-				{atMentionOpen && (
-					<AtMentionPopover
-						ref={atMentionRef}
-						query={atMentionQuery}
-						onSelect={handleAtMentionSelect}
-						onClose={handleAtMentionClose}
+				{/* Permission Modal */}
+				{pendingApproval && (
+					<PermissionModal
+						pending={pendingApproval}
+						onDecision={handleApprovalDecision}
 					/>
 				)}
-				<textarea
-					ref={inputRef}
-					value={input}
-					onChange={handleInputChange}
-					onKeyDown={handleKeyDown}
-					placeholder={
-						pipelineActiveRef.current
-							? ttsPlaying
-								? "나이아가 말하는 중... (버튼을 눌러 끊기)"
-								: sttState === "initializing"
-									? "음성 인식 준비 중..."
-									: sttState === "listening"
-										? "듣고 있어요... (텍스트 입력도 가능)"
-										: t("chat.placeholder")
-							: t("chat.placeholder")
-					}
-					rows={3}
-					disabled={voiceMode !== "off" && !pipelineActiveRef.current}
-					className="chat-input"
-				/>
-				{messageQueue.length > 0 && (
-					<span className="queue-badge">
-						{messageQueue.length} {t("chat.queued")}
-					</span>
-				)}
-				{isStreaming ? (
+
+				{/* Input (chat tab only) */}
+				<div
+					className="chat-input-bar"
+					style={{ display: activeTab === "chat" ? "flex" : "none" }}
+				>
 					<button
 						type="button"
-						onClick={handleCancelStreaming}
-						className="chat-send-btn chat-cancel-btn"
-						title="ESC"
+						className={`chat-voice-btn${voiceMode === "connecting" ? " connecting" : voiceMode === "active" ? " active" : ""}${sttPartial ? " hearing" : ""}${ttsPlaying ? " speaking" : ""}${sttState === "initializing" && !ttsPlaying ? " preparing" : ""}`}
+						onClick={handleVoiceToggle}
+						disabled={voiceMode === "connecting"}
+						title={
+							voiceMode === "off"
+								? t("chat.voiceStart")
+								: voiceMode === "connecting"
+									? t("chat.voiceConnecting")
+									: ttsPlaying
+										? "끼어들기 (TTS 중단)"
+										: t("chat.voiceEnd")
+						}
 					>
-						■
+						<span className="voice-bar" />
+						<span className="voice-bar" />
+						<span className="voice-bar" />
+						<span className="voice-bar" />
 					</button>
-				) : (
-					<button
-						type="button"
-						onClick={() => handleSend()}
-						disabled={!input.trim()}
-						className="chat-send-btn"
-					>
-						↑
-					</button>
-				)}
-			</div>
-		</div>
-		{showNoAuthModal && (
-			<div className="sync-dialog-overlay" onClick={() => setShowNoAuthModal(false)}>
-				<div className="sync-dialog-card" onClick={(e) => e.stopPropagation()}
-					style={{ maxWidth: 360 }}>
-					<p style={{ marginBottom: 16, lineHeight: 1.6, whiteSpace: "pre-line" }}>
-						{t("chat.noAuthMessage")}
-					</p>
-					<div className="sync-dialog-actions">
+					{pipelineActiveRef.current && sttPartial && (
+						<div className="stt-partial">{sttPartial}</div>
+					)}
+					{atMentionOpen && (
+						<AtMentionPopover
+							ref={atMentionRef}
+							query={atMentionQuery}
+							onSelect={handleAtMentionSelect}
+							onClose={handleAtMentionClose}
+						/>
+					)}
+					<textarea
+						ref={inputRef}
+						value={input}
+						onChange={handleInputChange}
+						onKeyDown={handleKeyDown}
+						placeholder={
+							pipelineActiveRef.current
+								? ttsPlaying
+									? "나이아가 말하는 중... (버튼을 눌러 끊기)"
+									: sttState === "initializing"
+										? "음성 인식 준비 중..."
+										: sttState === "listening"
+											? "듣고 있어요... (텍스트 입력도 가능)"
+											: t("chat.placeholder")
+								: t("chat.placeholder")
+						}
+						rows={3}
+						disabled={voiceMode !== "off" && !pipelineActiveRef.current}
+						className="chat-input"
+					/>
+					{messageQueue.length > 0 && (
+						<span className="queue-badge">
+							{messageQueue.length} {t("chat.queued")}
+						</span>
+					)}
+					{isStreaming ? (
 						<button
 							type="button"
-							className="onboarding-next-btn"
-							onClick={() => {
-								setShowNoAuthModal(false);
-								usePanelStore.getState().setActivePanel("settings");
-								window.dispatchEvent(new CustomEvent("naia-open-settings", { detail: { tab: "ai" } }));
-							}}
+							onClick={handleCancelStreaming}
+							className="chat-send-btn chat-cancel-btn"
+							title="ESC"
 						>
-							{t("chat.noAuthConfirm")}
+							■
 						</button>
-					</div>
+					) : (
+						<button
+							type="button"
+							onClick={() => handleSend()}
+							disabled={!input.trim()}
+							className="chat-send-btn"
+						>
+							↑
+						</button>
+					)}
 				</div>
 			</div>
-		)}
+			{showNoAuthModal && (
+				<div
+					className="sync-dialog-overlay"
+					onClick={() => setShowNoAuthModal(false)}
+				>
+					<div
+						className="sync-dialog-card"
+						onClick={(e) => e.stopPropagation()}
+						style={{ maxWidth: 360 }}
+					>
+						<p
+							style={{
+								marginBottom: 16,
+								lineHeight: 1.6,
+								whiteSpace: "pre-line",
+							}}
+						>
+							{t("chat.noAuthMessage")}
+						</p>
+						<div className="sync-dialog-actions">
+							<button
+								type="button"
+								className="onboarding-next-btn"
+								onClick={() => {
+									setShowNoAuthModal(false);
+									usePanelStore.getState().setActivePanel("settings");
+									window.dispatchEvent(
+										new CustomEvent("naia-open-settings", {
+											detail: { tab: "ai" },
+										}),
+									);
+								}}
+							>
+								{t("chat.noAuthConfirm")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</>
 	);
 }

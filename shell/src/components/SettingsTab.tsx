@@ -36,7 +36,7 @@ import {
 	clearAllowedTools,
 	getNaiaKeySecure,
 	loadConfig,
-	resolveGatewayUrl,
+	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
 import {
@@ -250,7 +250,7 @@ function DevicePairingSection() {
 
 	const fetchDevices = useCallback(async () => {
 		const config = loadConfig();
-		const gatewayUrl = resolveGatewayUrl(config);
+		const gatewayUrl = resolveConfiguredGatewayUrl(config);
 		if (!gatewayUrl) return;
 		setLoading(true);
 		try {
@@ -293,7 +293,8 @@ function DevicePairingSection() {
 	const handlePairAction = useCallback(
 		async (requestId: string, action: "approve" | "reject") => {
 			const config = loadConfig();
-			const gatewayUrl = resolveGatewayUrl(config);
+			const gatewayUrl = resolveConfiguredGatewayUrl(config);
+			if (!gatewayUrl) return;
 			try {
 				await directToolCall({
 					toolName: "skill_device",
@@ -673,9 +674,7 @@ export function SettingsTab() {
 	const [micTestActive, setMicTestActive] = useState(false);
 	const [micTestLevel, setMicTestLevel] = useState(0);
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
-	const [gatewayUrl, setGatewayUrl] = useState(
-		existing?.gatewayUrl ?? "ws://localhost:18789",
-	);
+	const [gatewayUrl, setGatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken, setGatewayToken] = useState(
 		existing?.gatewayToken ?? "",
 	);
@@ -1930,9 +1929,12 @@ export function SettingsTab() {
 			honorific: honorific.trim() || undefined,
 			speechStyle,
 			enableTools,
-			gatewayUrl: enableTools
-				? gatewayUrl.trim() || DEFAULT_GATEWAY_URL
-				: undefined,
+			gatewayUrl:
+				enableTools &&
+				gatewayUrl.trim() &&
+				gatewayUrl.trim() !== DEFAULT_GATEWAY_URL
+					? gatewayUrl.trim()
+					: undefined,
 			gatewayToken: gatewayToken.trim() || undefined,
 			discordDefaultUserId: discordDefaultUserId.trim() || undefined,
 			discordDefaultTarget: discordDefaultTarget.trim() || undefined,
@@ -3578,7 +3580,7 @@ export function SettingsTab() {
 					type="text"
 					value={gatewayUrl}
 					onChange={(e) => setGatewayUrl(e.target.value)}
-					placeholder="ws://localhost:18789"
+					placeholder={DEFAULT_GATEWAY_URL}
 				/>
 			</div>
 

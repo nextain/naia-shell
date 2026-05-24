@@ -15,7 +15,7 @@ panelRegistry.register({
 		{
 			name: "skill_browser_navigate",
 			description:
-				"Navigate the browser to a URL. Use this when the user asks you to open, visit, or go to a website.",
+				"Navigate the browser to a URL and return an initial visible text excerpt after the page loads. Use this when the user asks you to open, visit, search, read, or go to a website.",
 			parameters: {
 				type: "object",
 				properties: {
