@@ -38,6 +38,7 @@ import {
 	addAllowedTool,
 	isOnboardingComplete,
 	loadConfig,
+	loadConfigWithSecrets,
 	migrateLabKeyToNaiaKey,
 	migrateLiveProviderToUnifiedModel,
 	migrateSpeechStyleValues,
@@ -503,7 +504,7 @@ export function App() {
 		let active = true; // unmount guard: prevents stale invocations after cleanup
 
 		async function initAuth() {
-			const cfg = loadConfig();
+			const cfg = await loadConfigWithSecrets();
 			if (!cfg || !active) return;
 
 			// auth_update: cache first, then send

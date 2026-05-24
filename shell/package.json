@@ -58,9 +58,7 @@
     "remark-gfm": "^4.0.1",
     "tauri-plugin-stt-api": "^0.1.1",
     "three": "^0.172.0",
-    "zustand": "^5.0.0",
-    "@nextain/agent-providers": "link:../../naia-agent/packages/providers",
-    "@nextain/agent-types": "link:../../naia-agent/packages/types"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",

@@ -49,6 +49,7 @@ impl Default for PlatformHandle {
 
 /// Geometry rectangle for window positioning (all coordinates in pixels, i32).
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub struct WindowRect {
     pub x: i32,
     pub y: i32,

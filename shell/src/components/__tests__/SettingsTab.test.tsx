@@ -1,6 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const eventListeners = vi.hoisted(
+	() => new Map<string, (event: { payload: unknown }) => void | Promise<void>>(),
+);
 
 vi.mock("@tauri-apps/plugin-store", () => {
 	const store = {
@@ -22,7 +26,12 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-	listen: vi.fn().mockResolvedValue(() => {}),
+	listen: vi.fn(
+		(event: string, callback: (event: { payload: unknown }) => void) => {
+			eventListeners.set(event, callback);
+			return Promise.resolve(() => eventListeners.delete(event));
+		},
+	),
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -37,13 +46,20 @@ vi.mock("../../lib/chat-service", () => ({
 	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../../lib/gateway-sync", () => ({
+	restartGateway: vi.fn().mockResolvedValue(undefined),
+	syncToGateway: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { SettingsTab } from "../SettingsTab";
 
 describe("SettingsTab", () => {
 	afterEach(() => {
 		cleanup();
 		localStorage.clear();
+		eventListeners.clear();
 		vi.clearAllMocks();
+		vi.unstubAllGlobals();
 	});
 
 	it("renders dynamic models with pricing info", async () => {
@@ -105,6 +121,37 @@ describe("SettingsTab", () => {
 		expect(
 			screen.getByText("Naia 계정 로그인으로 API 키 없이 사용할 수 있습니다."),
 		).toBeDefined();
+	});
+
+	it("persists Naia auth callback even when no config exists yet", async () => {
+		mockInvoke.mockResolvedValue([]);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: () => Promise.resolve({ credits: 10 }),
+			}),
+		);
+
+		render(<SettingsTab />);
+
+		await vi.waitFor(() => {
+			expect(eventListeners.get("naia_auth_complete")).toBeDefined();
+		});
+
+		await act(async () => {
+			await eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
+			});
+		});
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.provider).toBe("nextain");
+		expect(saved.model).toBeTruthy();
+		expect(saved.apiKey).toBe("");
+		expect(saved.naiaKey).toBe("gw-test-key");
+		expect(saved.naiaUserId).toBe("user-123");
 	});
 
 	it("shows STT provider selector with vosk option", () => {

@@ -526,15 +526,20 @@ const _PROD_GATEWAY =
 	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) ||
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
 
-const _DEV_GATEWAY =
-	(import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) ||
-	"https://naia-gateway-dev-181404717065.asia-northeast3.run.app";
+const _DEV_GATEWAY = (import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || "";
 
-/** any-llm Gateway URL — dev mode uses dev gateway, production uses prod gateway. */
-export const LAB_GATEWAY_URL = import.meta.env.DEV ? _DEV_GATEWAY : _PROD_GATEWAY;
+/**
+ * any-llm Gateway URL.
+ *
+ * The desktop login defaults to the production web app. A prod login key is not
+ * valid against the dev gateway, so dev builds also use prod unless a matching
+ * dev gateway is explicitly configured.
+ */
+export const LAB_GATEWAY_URL =
+	import.meta.env.DEV && _DEV_GATEWAY ? _DEV_GATEWAY : _PROD_GATEWAY;
 
 /** Dev-only gateway URL (always available regardless of mode). */
-export const DEV_GATEWAY_URL = _DEV_GATEWAY;
+export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";
