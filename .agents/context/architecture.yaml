@@ -237,6 +237,55 @@ credential_storage:
     - "agent/src/index.ts — effectiveNaiaKey resolution"
     - "agent/src/protocol.ts — ChatRequest.naiaKey field"
 
+shell_config_flow:
+  description: "Shell never reads config.json directly — all config flows through naia-agent IPC"
+  updated: "2026-05-26"
+  principle: |
+    naia-os shell does NOT call readNaiaConfig() at startup. Full config is pushed by
+    naia-agent via config_sync IPC immediately after the agent sends "ready". Shell
+    merges non-secret, non-env-var, non-UI-only fields into localStorage.
+  invariants:
+    - "Shell reads: localStorage only (via loadConfig / loadConfigWithSecrets)"
+    - "Shell writes: config.json via writeNaiaConfig (write-only, stays as is)"
+    - "Agent → Shell config: config_sync IPC message on startup + after get_config request"
+    - "Shell → Agent config: config_update IPC on settings save"
+  ipc_messages:
+    config_sync: "Agent → Shell: pushed on agent ready and on get_config request. Non-secret, non-NAIA_ fields merged into localStorage"
+    get_config: "Shell → Agent: request fresh config_sync (used on agent restart / ready event)"
+    config_update: "Shell → Agent: sent on naia-config-changed event, includes NAIA_MAIN_PROVIDER/NAIA_MAIN_MODEL etc."
+  browser_prefs: |
+    Browser bookmarks and shortcuts moved from config.json to localStorage:
+    - browserBookmarks key (migrated from legacy naia_browser_bookmarks)
+    - browserShortcuts key
+    These are UI-only, not agent config, and do not flow through IPC.
+  files:
+    - "shell/src/App.tsx — config_sync listener + sendGetConfig on ready event"
+    - "shell/src/components/AdkSetupScreen.tsx — bootstrap {onboardingComplete, workspaceRoot} only"
+    - "shell/src/lib/browser-prefs.ts — localStorage-only bookmarks/shortcuts"
+    - "shell/src/lib/chat-service.ts — sendGetConfig(), sendConfigUpdate()"
+    - "naia-agent/bin/naia-agent.ts — config_sync emit on ready + get_config handler"
+
+adk_skill_tier_enforcement:
+  description: "ADK skill tier (T0–T3) is now enforced via tierForTool lookup — Gap 4 fix (naia-os #61)"
+  updated: "2026-05-26"
+  bug: |
+    tierForTool was hardcoded () => "T1" in all three Agent creation sites.
+    The approvals.decide() gate (T2/T3 → approval_request IPC) was correctly implemented,
+    but always received T1 — so T2/T3 panel skills were always auto-approved.
+  fix: |
+    Each Agent creation site now builds a tier map from its skill source:
+    - naia-os IPC path: Map from hostInjectedDefs (panel_skills IPC)
+    - CLI direct mode: pre-load from tools.list() (SkillToolExecutor / FileSkillLoader)
+    - Service mode: pre-load from host.tools.list()
+  tier_semantics:
+    T0: "read-only, no side effects — auto-approved, no audit"
+    T1: "local workspace side effects — auto-approved (host policy)"
+    T2: "broad local side effects (shell exec) — approval_request sent to shell modal"
+    T3: "external/irreversible (network, delete) — approval_request sent to shell modal"
+  files:
+    - "naia-agent/bin/naia-agent.ts — injectedTierMap, cliToolTierMap, svcToolTierMap"
+    - "naia-agent/packages/cli-app/src/__tests__/bin-adk-skill-tier.test.ts — 8 unit tests"
+
 desktop_avatar_asset_pipeline:
   purpose: "Stable local-file loading for VRM model/background in Tauri WebView"
   rules:
