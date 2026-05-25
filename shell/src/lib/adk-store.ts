@@ -172,19 +172,39 @@ export function buildNaiaConfigEnv(cfg: {
 }): Record<string, string> {
 	const out: Record<string, string> = {};
 
-	// NAIA_MAIN_PROVIDER / NAIA_MAIN_MODEL — flattenConfig produces PROVIDER/MODEL,
-	// not NAIA_MAIN_*. Write them explicitly so --stdio mode resolves the right branch.
+	// NAIA_MAIN_PROVIDER — flattenConfig produces PROVIDER, not NAIA_MAIN_PROVIDER.
 	if (cfg.provider) {
 		out.NAIA_MAIN_PROVIDER = cfg.provider === "nextain" ? "naia" : cfg.provider;
 	}
-	if (cfg.model) out.NAIA_MAIN_MODEL = cfg.model;
 
-	// NAIA_ANYLLM_BASE_URL — naia-agent buildLLMClient() requires BOTH
-	// NAIA_ANYLLM_API_KEY AND NAIA_ANYLLM_BASE_URL to activate the naia branch.
-	// Without this, standalone cold-start falls through to lower-priority providers.
-	if (cfg.provider === "nextain") {
+	// NAIA_ANYLLM_BASE_URL + NAIA_MAIN_MODEL — all cloud providers route through the naia
+	// cloud gateway (OpenAI-compat). auth_update always sets NAIA_ANYLLM_API_KEY = naiaKey
+	// regardless of provider, so BASE_URL must be set for all gateway providers and cleared
+	// for local ones (otherwise cached naiaKey activates the NAIA_ANYLLM branch wrongly).
+	//
+	// Model format mirrors agent/src/providers/lab-proxy.ts toGatewayModel():
+	//   gemini-* → vertexai:{model}   grok-* → xai:{model}   claude-* → anthropic:{model}
+	//   everything else (glm-*, etc.) → as-is
+	const GATEWAY_PROVIDERS = new Set(["nextain", "gemini", "anthropic", "openai", "xai", "zai"]);
+	if (cfg.provider && GATEWAY_PROVIDERS.has(cfg.provider)) {
 		const gwBase = cfg.naiaGatewayUrl?.trim() || LAB_GATEWAY_URL;
 		out.NAIA_ANYLLM_BASE_URL = gwBase.replace(/\/?$/, "/v1");
+		if (cfg.model) {
+			const m = cfg.model;
+			const gwModel = m.startsWith("gemini")
+				? `vertexai:${m}`
+				: m.startsWith("grok")
+					? `xai:${m}`
+					: m.startsWith("claude")
+						? `anthropic:${m}`
+						: m;
+			out.NAIA_MAIN_MODEL = gwModel;
+		}
+	} else {
+		// Local/direct provider (ollama, vllm, claude-code-cli, etc.).
+		// Clear gateway URL so NAIA_ANYLLM branch is not activated by cached naiaKey.
+		out.NAIA_ANYLLM_BASE_URL = "";
+		if (cfg.model) out.NAIA_MAIN_MODEL = cfg.model;
 	}
 
 	// OPENAI_BASE_URL — agent uses this for both ollama and vllm (no-auth OpenAI-compat).
