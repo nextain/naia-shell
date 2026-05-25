@@ -192,7 +192,7 @@ landed on `main` (2026-04-27):
 const session = createMiniCpmOSession();
 await session.connect({
   provider: "minicpm-o",
-  serverUrl: "ws://100.91.187.24:8000",  // direct to vllm-omni; no demo gateway needed
+  serverUrl: "ws://<naia-omni-host>:8000",  // direct to vllm-omni; no demo gateway needed
   systemInstruction: "...",
   refAudio: <File | Blob | ArrayBuffer | base64 string>,  // optional voice clone
   refAudioLanguage: "en",                                  // optional, defaults to en
