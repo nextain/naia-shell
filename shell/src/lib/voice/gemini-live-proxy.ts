@@ -103,6 +103,8 @@ export function createGeminiLiveProxySession(): VoiceSession {
 					model: gemini.model ?? undefined,
 					voice: gemini.voice ?? undefined,
 					system_instruction: gemini.systemInstruction ?? undefined,
+					tools: gemini.tools ?? undefined,
+					locale: gemini.locale ?? undefined,
 				},
 			});
 
@@ -128,9 +130,9 @@ export function createGeminiLiveProxySession(): VoiceSession {
 			});
 		},
 
-		sendToolResponse(callId: string, result: unknown) {
+		sendToolResponse(callId: string, toolName: string, result: unknown) {
 			if (!connected) return;
-			invoke("gemini_live_send_tool_response", { callId, result }).catch(
+			invoke("gemini_live_send_tool_response", { callId, toolName, result }).catch(
 				(err) => {
 					Logger.warn("GeminiLiveProxy", "sendToolResponse error", {
 						error: String(err),

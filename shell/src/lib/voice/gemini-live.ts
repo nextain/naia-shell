@@ -211,12 +211,14 @@ export function createGeminiLiveSession(): VoiceSession {
 			);
 		},
 
-		sendToolResponse(callId: string, result: unknown) {
+		sendToolResponse(callId: string, toolName: string, result: unknown) {
 			if (!ws || !connected) return;
 			ws.send(
 				JSON.stringify({
 					toolResponse: {
-						functionResponses: [{ id: callId, response: { result } }],
+						functionResponses: [
+							{ id: callId, name: toolName, response: { result } },
+						],
 					},
 				}),
 			);

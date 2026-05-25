@@ -169,9 +169,10 @@ describe("GeminiLive", () => {
 			await promise;
 			lastWs.send.mockClear();
 
-			session.sendToolResponse("call-1", { result: "ok" });
+			session.sendToolResponse("call-1", "get_weather", { result: "ok" });
 			const msg = JSON.parse(lastWs.send.mock.calls[0][0]);
 			expect(msg.toolResponse.functionResponses[0].id).toBe("call-1");
+			expect(msg.toolResponse.functionResponses[0].name).toBe("get_weather");
 			expect(msg.toolResponse.functionResponses[0].response.result).toEqual({
 				result: "ok",
 			});

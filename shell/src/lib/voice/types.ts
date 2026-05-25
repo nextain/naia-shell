@@ -15,7 +15,6 @@ export type LiveProviderId =
 	| "naia-talk"
 	| "gemini-live"
 	| "openai-realtime"
-	| "minicpm-o"
 	| "vllm-omni"
 	| "edge-tts";
 
@@ -24,8 +23,7 @@ export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	"naia-talk": "naia-talk",
 	"gemini-live": "Gemini",
 	"openai-realtime": "OpenAI",
-	"minicpm-o": "MiniCPM-o (Omni Voice)",
-	"vllm-omni": "MiniCPM-o (vllm-omni)",
+	"vllm-omni": "naia-talk REST",
 	"edge-tts": "Edge (TTS 전용)",
 };
 
@@ -36,10 +34,9 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	{ cost: string; note: string }
 > = {
 	naia: { cost: "~$0.03/min", note: "Naia credits" },
-	"naia-talk": { cost: "Free", note: "Local network" },
+	"naia-talk": { cost: "Free", note: "Local / Naia credits (gateway)" },
 	"gemini-live": { cost: "~$0.03/min", note: "Google API Key" },
 	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
-	"minicpm-o": { cost: "$0.50/min", note: "Naia credits (gateway) / Free (local)" },
 	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
@@ -82,8 +79,8 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 	serverUrl?: string;
 }
 
-export interface MiniCpmOConfig extends LiveProviderConfigBase {
-	provider: "minicpm-o";
+export interface NaiaTalkConfig extends LiveProviderConfigBase {
+	provider: "naia-talk";
 	/** vllm-omni server URL for direct mode (e.g. http://localhost:8000 or ws://localhost:8000).
 	 *  Provider connects to /v1/realtime (OpenAI Realtime API extended for omni models).
 	 *  Ignored when gatewayUrl is set. */
@@ -125,7 +122,7 @@ export interface VllmOmniConfig extends LiveProviderConfigBase {
 export type LiveProviderConfig =
 	| GeminiLiveConfig
 	| OpenAIRealtimeConfig
-	| MiniCpmOConfig
+	| NaiaTalkConfig
 	| VllmOmniConfig;
 
 // ── Voice Session (provider-agnostic interface) ──
@@ -134,7 +131,7 @@ export interface VoiceSession {
 	connect: (config: LiveProviderConfig) => Promise<void>;
 	sendAudio: (pcmBase64: string) => void;
 	sendText: (text: string) => void;
-	sendToolResponse: (callId: string, result: unknown) => void;
+	sendToolResponse: (callId: string, toolName: string, result: unknown) => void;
 	disconnect: () => void;
 	readonly isConnected: boolean;
 

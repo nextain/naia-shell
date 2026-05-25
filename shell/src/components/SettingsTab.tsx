@@ -2696,7 +2696,7 @@ export function SettingsTab() {
 			{provider === "vllm" && (
 				<div className="settings-field">
 					<span className="settings-hint">
-						음성 버튼 → <code>ws://[vLLM Host]/ws</code> 자동 연결 (MiniCPM-o
+						음성 버튼 → <code>ws://[vLLM Host]/ws</code> 자동 연결 (naia-talk
 						audio output)
 					</span>
 				</div>

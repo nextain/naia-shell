@@ -13,7 +13,7 @@
  */
 import { createGeminiLiveSession } from "./gemini-live";
 import { createGeminiLiveProxySession } from "./gemini-live-proxy";
-import { createMiniCpmOSession } from "./minicpm-o";
+import { createNaiaTalkSession } from "./naia-talk";
 import { createOpenAIRealtimeSession } from "./openai-realtime";
 import type { LiveProviderId, VoiceSession } from "./types";
 import { createVllmOmniSession } from "./vllm-omni";
@@ -27,7 +27,7 @@ export {
 } from "./types";
 export type {
 	GeminiLiveConfig,
-	MiniCpmOConfig,
+	NaiaTalkConfig,
 	OpenAIRealtimeConfig,
 	VllmOmniConfig,
 	ToolDeclaration,
@@ -48,7 +48,7 @@ export function createVoiceSession(
 		case "naia":
 			return createGeminiLiveSession();
 		case "naia-talk":
-			return createMiniCpmOSession();
+			return createNaiaTalkSession();
 		case "gemini-live":
 			// Direct mode: use Rust proxy to bypass WebKitGTK WebSocket limitation
 			return options?.useProxy
@@ -56,8 +56,6 @@ export function createVoiceSession(
 				: createGeminiLiveSession();
 		case "openai-realtime":
 			return createOpenAIRealtimeSession();
-		case "minicpm-o":
-			return createMiniCpmOSession();
 		case "vllm-omni":
 			return createVllmOmniSession();
 		default:

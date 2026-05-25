@@ -2828,9 +2828,10 @@ async fn gemini_live_send_text(
 async fn gemini_live_send_tool_response(
     state: tauri::State<'_, AppState>,
     call_id: String,
+    tool_name: String,
     result: serde_json::Value,
 ) -> Result<(), String> {
-    gemini_live::send_tool_response(&state.gemini_live, call_id, result).await
+    gemini_live::send_tool_response(&state.gemini_live, call_id, tool_name, result).await
 }
 
 #[tauri::command]

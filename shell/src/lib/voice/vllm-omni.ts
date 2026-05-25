@@ -8,7 +8,7 @@
  *   Mic PCM16 16kHz → buffer → WAV → POST /v1/chat/completions {modalities:["audio"]}
  *   Response WAV → decodeAudioData (resample to 24kHz) → PCM16 chunks → onAudio
  *
- * Requires: vllm-omni feat/minicpm-o branch (audio_url input support).
+ * Requires: vllm-omni (audio_url input support).
  */
 import { Logger } from "../logger";
 import type { LiveProviderConfig, VllmOmniConfig, VoiceSession } from "./types";
@@ -148,7 +148,7 @@ export function createVllmOmniSession(): VoiceSession {
 				});
 		},
 
-		sendToolResponse(_callId: string, _result: unknown) {
+		sendToolResponse(_callId: string, _toolName: string, _result: unknown) {
 			// Tool calls not supported by vllm-omni
 		},
 

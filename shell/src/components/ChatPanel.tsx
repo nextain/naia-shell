@@ -1255,7 +1255,7 @@ export function ChatPanel() {
 			const modelMeta = getLlmModel(config.provider, config.model);
 			const isOmni = isOmniModel(config.provider, config.model ?? "");
 			// ASR mode: STT provider is vllm, or LLM model has "asr" capability,
-			// or vllm non-omni model (minicpm-o /v1/realtime WebSocket handles ASR)
+			// or vllm non-omni model (naia-talk /v1/realtime WebSocket handles ASR)
 			const isAsrModel =
 				config.sttProvider === "vllm" ||
 				(config.provider === "vllm" && !isOmni) ||
@@ -1578,7 +1578,7 @@ export function ChatPanel() {
 				isNaiaOmni
 					? ("naia-talk" as const)
 					: isOmni && config.provider === "vllm"
-						? ("minicpm-o" as const)
+						? ("naia-talk" as const)
 						: config.provider === "vllm"
 							? ("vllm-omni" as const)
 							: config.provider === "openai"
@@ -1745,9 +1745,9 @@ export function ChatPanel() {
 						requestId: generateRequestId(),
 						gatewayUrl: resolveConfiguredGatewayUrl(config),
 					});
-					session.sendToolResponse(callId, result.output);
+					session.sendToolResponse(callId, toolName, result.output);
 				} catch (err) {
-					session.sendToolResponse(callId, `Error: ${err}`);
+					session.sendToolResponse(callId, toolName, `Error: ${err}`);
 				}
 			};
 			session.onError = (err) => {
@@ -1785,19 +1785,7 @@ export function ChatPanel() {
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "naia-talk") {
-				const liveHost = config.vllmHost ?? "http://localhost:8892";
-				const wsBase = liveHost.replace(/^http/, "ws").replace(/\/+$/, "");
-				await session.connect({
-					provider: "minicpm-o",
-					serverUrl: wsBase,
-					model: config.model,
-					systemInstruction: voiceSystemPrompt,
-					voice: selectedVoice,
-					locale: getLocale(),
-					tools: voiceTools.length ? voiceTools : undefined,
-				});
-			} else if (liveProvider === "minicpm-o") {
-				// minicpm-o: gateway mode when naiaKey available, direct mode otherwise
+				// naia-talk: gateway mode when naiaKey available, direct mode otherwise
 				const useGw = !!naiaKey;
 				const vllmBase = (config.vllmHost ?? DEFAULT_VLLM_HOST).replace(
 					/\/+$/,
@@ -1805,8 +1793,8 @@ export function ChatPanel() {
 				);
 				const wsBase = vllmBase.replace(/^http/, "ws");
 				await session.connect({
-					provider: "minicpm-o",
-					serverUrl: useGw ? undefined : wsBase,
+					provider: "naia-talk",
+					serverUrl: useGw ? undefined : (config.vllmHost ? wsBase : undefined),
 					gatewayUrl: useGw ? LAB_GATEWAY_URL : undefined,
 					naiaKey: useGw ? naiaKey : undefined,
 					model: config.model,

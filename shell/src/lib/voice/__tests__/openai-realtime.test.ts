@@ -109,7 +109,7 @@ describe("OpenAIRealtime", () => {
 		await promise;
 		lastWs.send.mockClear();
 
-		session.sendToolResponse("call-1", { ok: true });
+		session.sendToolResponse("call-1", "get_weather", { ok: true });
 		const item = JSON.parse(lastWs.send.mock.calls[0][0]);
 		expect(item.type).toBe("conversation.item.create");
 		expect(item.item.type).toBe("function_call_output");

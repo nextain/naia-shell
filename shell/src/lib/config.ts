@@ -419,7 +419,7 @@ export function migrateSpeechStyleValues(): void {
  * liveProvider: "gemini-live" → provider: "gemini", model: "gemini-2.5-flash-live"
  * liveProvider: "openai-realtime" → provider: "openai", model: "gpt-4o-realtime"
  * liveProvider: "edge-tts" → ttsProvider: "edge" (pipeline TTS)
- * liveProvider: "minicpm-o" → preserved in config (backlog #33), UI hidden
+ * liveProvider: "naia-talk" → preserved in config (backlog #33), UI hidden
  */
 export function migrateLiveProviderToUnifiedModel(): void {
 	const config = loadConfig();
@@ -455,8 +455,12 @@ export function migrateLiveProviderToUnifiedModel(): void {
 			if (!raw.ttsProvider) raw.ttsProvider = "edge";
 			changed = true;
 			break;
+		case "naia-talk":
+			// naia-talk uses vllmHost/ws — clear legacy liveProvider
+			changed = true;
+			break;
 		case "minicpm-o":
-			// minicpm-o uses vllmHost/ws — clear legacy liveProvider
+			// Legacy name — migrate to naia-talk
 			changed = true;
 			break;
 	}

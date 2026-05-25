@@ -23,6 +23,8 @@ pub struct GeminiLiveConnectParams {
     pub model: Option<String>,
     pub voice: Option<String>,
     pub system_instruction: Option<String>,
+    pub tools: Option<Vec<serde_json::Value>>,
+    pub locale: Option<String>,
 }
 
 /// Handle for an active session; holds the sender half so commands can forward messages.
@@ -81,6 +83,8 @@ pub async fn connect(
 
     let (mut sink, mut stream) = ws_stream.split();
 
+    let lang_code = params.locale.unwrap_or_else(|| "ko-KR".into());
+
     // Send setup message
     let generation_config = serde_json::json!({
         "responseModalities": ["AUDIO"],
@@ -89,7 +93,8 @@ pub async fn connect(
                 "prebuiltVoiceConfig": {
                     "voiceName": voice
                 }
-            }
+            },
+            "languageCode": lang_code
         }
     });
 
@@ -105,6 +110,23 @@ pub async fn connect(
     if let Some(ref instruction) = params.system_instruction {
         setup["setup"]["systemInstruction"] =
             serde_json::json!({ "parts": [{ "text": instruction }] });
+    }
+
+    if let Some(ref tools) = params.tools {
+        let declarations: Vec<serde_json::Value> = tools
+            .iter()
+            .filter_map(|t| {
+                let name = t.get("name")?.as_str()?;
+                Some(serde_json::json!({
+                    "name": name,
+                    "description": t.get("description").and_then(|d| d.as_str()).unwrap_or(""),
+                    "parameters": t.get("parameters").cloned().unwrap_or(serde_json::json!({})),
+                }))
+            })
+            .collect();
+        if !declarations.is_empty() {
+            setup["setup"]["tools"] = serde_json::json!([{ "functionDeclarations": declarations }]);
+        }
     }
 
     sink.send(Message::Text(setup.to_string().into()))
@@ -326,6 +348,7 @@ pub async fn send_text(handle: &SharedHandle, text: String) -> Result<(), String
 pub async fn send_tool_response(
     handle: &SharedHandle,
     call_id: String,
+    tool_name: String,
     result: serde_json::Value,
 ) -> Result<(), String> {
     let guard = handle.lock().await;
@@ -334,6 +357,7 @@ pub async fn send_tool_response(
         "toolResponse": {
             "functionResponses": [{
                 "id": call_id,
+                "name": tool_name,
                 "response": { "result": result }
             }]
         }

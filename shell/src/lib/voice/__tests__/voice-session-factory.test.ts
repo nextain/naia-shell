@@ -58,7 +58,7 @@ describe("createVoiceSession factory", () => {
 	});
 
 	it("all live providers share the same VoiceSession interface", () => {
-		const providers = ["naia", "gemini-live", "openai-realtime"] as const;
+		const providers = ["naia", "naia-talk", "gemini-live", "openai-realtime"] as const;
 		for (const p of providers) {
 			const s = createVoiceSession(p);
 			// All required methods/properties exist

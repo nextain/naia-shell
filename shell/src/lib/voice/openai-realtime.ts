@@ -4,7 +4,7 @@
  * WebSocket protocol: wss://api.openai.com/v1/realtime?model=...
  * Auth: via API key in URL or headers (browser WebSocket → URL param workaround)
  *
- * Client-side VAD pattern mirrors minicpm-o.ts / vllm-omni.ts for
+ * Client-side VAD pattern mirrors naia-talk.ts / vllm-omni.ts for
  * consistent benchmark measurements across all voice providers.
  *
  * Reference: https://platform.openai.com/docs/api-reference/realtime
@@ -229,7 +229,7 @@ export function createOpenAIRealtimeSession(): VoiceSession {
 			ws.send(JSON.stringify({ type: "response.create" }));
 		},
 
-		sendToolResponse(callId: string, result: unknown) {
+		sendToolResponse(callId: string, _toolName: string, result: unknown) {
 			if (!ws || !connected) return;
 			ws.send(
 				JSON.stringify({

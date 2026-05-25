@@ -1,7 +1,7 @@
 /**
- * MiniCPM-o vllm-omni /v1/realtime full-duplex WebSocket session.
+ * naia-talk /v1/realtime full-duplex WebSocket session.
  *
- * OpenAI Realtime API compatible. Server: local vllm-omni with MiniCPM-o 4.5.
+ * OpenAI Realtime API compatible. Server: naia-talk realtime server (naia-omni models).
  *
  * This implementation uses server-side Voice Activity Detection (VAD) and
  * streams audio chunks directly to the server, mirroring the behavior of
@@ -24,7 +24,7 @@
  */
 import { Logger } from "../logger";
 import { RefAudioEncodeError, encodeRefAudio } from "./ref-audio";
-import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
+import type { LiveProviderConfig, NaiaTalkConfig, VoiceSession } from "./types";
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
 const DEFAULT_MODEL = "openbmb/MiniCPM-o-4_5";
@@ -41,10 +41,10 @@ const SPEECH_RMS_THRESHOLD = 200;
 /** Schemes accepted for `serverUrl` before conversion to `ws(s)://`. */
 const ALLOWED_SERVER_SCHEMES = new Set(["http:", "https:", "ws:", "wss:"]);
 
-export function createMiniCpmOSession(): VoiceSession {
+export function createNaiaTalkSession(): VoiceSession {
 	let ws: WebSocket | null = null;
 	let connected = false;
-	let cfg: MiniCpmOConfig | null = null;
+	let cfg: NaiaTalkConfig | null = null;
 	let silenceTimer: ReturnType<typeof setTimeout> | null = null;
 	let maxBufferTimer: ReturnType<typeof setTimeout> | null = null;
 	let pcmBuffer: Int16Array[] = [];
@@ -66,7 +66,7 @@ export function createMiniCpmOSession(): VoiceSession {
 		},
 
 		async connect(config: LiveProviderConfig) {
-			cfg = config as MiniCpmOConfig;
+			cfg = config as NaiaTalkConfig;
 
 			const useGateway = !!(cfg.gatewayUrl && cfg.naiaKey);
 
@@ -97,7 +97,7 @@ export function createMiniCpmOSession(): VoiceSession {
 					encodedRefAudio = await encodeRefAudio(cfg.refAudio);
 				} catch (err) {
 					if (err instanceof RefAudioEncodeError) {
-						Logger.warn("minicpm-o", "ref audio rejected", {
+						Logger.warn("naia-talk", "ref audio rejected", {
 							error: err.message,
 						});
 						throw err;
@@ -106,7 +106,7 @@ export function createMiniCpmOSession(): VoiceSession {
 				}
 			}
 
-			Logger.info("minicpm-o", "connecting", {
+			Logger.info("naia-talk", "connecting", {
 				url: sanitizeUrl(wsUrl),
 				mode: useGateway ? "gateway" : "direct",
 				hasRefAudio: encodedRefAudio !== null,
@@ -156,6 +156,9 @@ export function createMiniCpmOSession(): VoiceSession {
 								sessionPayload.ref_audio_language = cfg.refAudioLanguage;
 							}
 						}
+						if (cfg?.tools && cfg.tools.length > 0) {
+							sessionPayload.tools = cfg.tools;
+						}
 						ws?.send(
 							JSON.stringify({
 								type: "session.update",
@@ -164,7 +167,7 @@ export function createMiniCpmOSession(): VoiceSession {
 							}),
 						);
 						connected = true;
-						Logger.info("minicpm-o", "connected to /v1/realtime", {
+						Logger.info("naia-talk", "connected to /v1/realtime", {
 							mode: useGateway ? "gateway" : "direct",
 							refAudio: encodedRefAudio !== null,
 						});
@@ -213,7 +216,7 @@ export function createMiniCpmOSession(): VoiceSession {
 					const wasConnected = connected;
 					connected = false;
 					clearTurnTimers();
-					Logger.info("minicpm-o", "disconnected from /v1/realtime", {
+					Logger.info("naia-talk", "disconnected from /v1/realtime", {
 						code: event.code,
 						reason: event.reason,
 						wasClean: event.wasClean,
@@ -240,7 +243,7 @@ export function createMiniCpmOSession(): VoiceSession {
 
 			const chunkRms = rms(samples);
 			if (++rmsLogThrottle % 20 === 0) {
-				Logger.debug("minicpm-o", "RMS sample", {
+				Logger.debug("naia-talk", "RMS sample", {
 					rms: Math.round(chunkRms),
 					threshold: SPEECH_RMS_THRESHOLD,
 					isSpeech: chunkRms >= SPEECH_RMS_THRESHOLD,
@@ -288,8 +291,18 @@ export function createMiniCpmOSession(): VoiceSession {
 			ws.send(JSON.stringify({ type: "response.create" }));
 		},
 
-		sendToolResponse(_callId: string, _result: unknown) {
-			// Tool calls not supported by vllm-omni
+		sendToolResponse(callId: string, _toolName: string, result: unknown) {
+			if (!ws || !connected) return;
+			ws.send(
+				JSON.stringify({
+					type: "conversation.item.create",
+					item: {
+						type: "function_call_output",
+						call_id: callId,
+						output: typeof result === "string" ? result : JSON.stringify(result),
+					},
+				}),
+			);
 		},
 
 		disconnect() {
@@ -329,7 +342,7 @@ export function createMiniCpmOSession(): VoiceSession {
 		switch (type) {
 			case "response.created":
 				isAiSpeaking = true;
-				Logger.debug("minicpm-o", "response started");
+				Logger.debug("naia-talk", "response started");
 				break;
 
 			case "response.audio_transcript.delta": {
@@ -345,15 +358,33 @@ export function createMiniCpmOSession(): VoiceSession {
 				break;
 			}
 
-			case "response.done":
+			case "response.function_call_arguments.done": {
+				const callId = msg.call_id as string | undefined;
+				const name = msg.name as string | undefined;
+				const args = msg.arguments as string | undefined;
+				if (callId && name) {
+					Logger.info("naia-talk", "tool call received", { callId, name });
+					let parsedArgs: Record<string, unknown> = {};
+					try {
+						parsedArgs = JSON.parse(args ?? "{}");
+					} catch {
+						parsedArgs = {};
+					}
+					session.onToolCall?.(callId, name, parsedArgs);
+				}
+				break;
+			}
+
+			case "response.done": {
 				isAiSpeaking = false;
-				Logger.debug("minicpm-o", "response done");
+				Logger.debug("naia-talk", "response done");
 				session.onTurnEnd?.();
 				break;
+			}
 
 			case "response.cancelled":
 				isAiSpeaking = false;
-				Logger.debug("minicpm-o", "response cancelled");
+				Logger.debug("naia-talk", "response cancelled");
 				session.onInterrupted?.();
 				break;
 
@@ -378,13 +409,13 @@ export function createMiniCpmOSession(): VoiceSession {
 					// the caller so the UI can prompt for a different file
 					// or fall back to the default voice; the session
 					// itself is still usable, just without the clone.
-					Logger.warn("minicpm-o", "ref audio rejected by server", {
+					Logger.warn("naia-talk", "ref audio rejected by server", {
 						message: errMsg,
 					});
 					session.onError?.(new RefAudioEncodeError(errMsg));
 					break;
 				}
-				Logger.warn("minicpm-o", "non-fatal server error (session continues)", {
+				Logger.warn("naia-talk", "non-fatal server error (session continues)", {
 					message: errMsg,
 				});
 				break;
@@ -427,11 +458,11 @@ export function createMiniCpmOSession(): VoiceSession {
 			);
 			ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
 		} catch (err) {
-			Logger.warn("minicpm-o", "send failed", { error: String(err) });
+			Logger.warn("naia-talk", "send failed", { error: String(err) });
 			session.onError?.(err instanceof Error ? err : new Error(String(err)));
 		}
 
-		Logger.debug("minicpm-o", "committed audio", { samples: totalSamples });
+		Logger.debug("naia-talk", "committed audio", { samples: totalSamples });
 	}
 
 	return session;
