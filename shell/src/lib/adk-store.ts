@@ -183,9 +183,8 @@ export function buildNaiaConfigEnv(cfg: {
 	// NAIA_ANYLLM_API_KEY AND NAIA_ANYLLM_BASE_URL to activate the naia branch.
 	// Without this, standalone cold-start falls through to lower-priority providers.
 	if (cfg.provider === "nextain") {
-		out.NAIA_ANYLLM_BASE_URL =
-			cfg.naiaGatewayUrl?.trim() ||
-			LAB_GATEWAY_URL;
+		const gwBase = cfg.naiaGatewayUrl?.trim() || LAB_GATEWAY_URL;
+		out.NAIA_ANYLLM_BASE_URL = gwBase.replace(/\/?$/, "/v1");
 	}
 
 	// OPENAI_BASE_URL — agent uses this for both ollama and vllm (no-auth OpenAI-compat).
