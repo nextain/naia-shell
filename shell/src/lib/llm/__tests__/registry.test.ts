@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	fetchNaiaPricing,
 	formatModelLabel,
@@ -9,6 +9,7 @@ import {
 	isOmniModel,
 	listLlmProviders,
 	modelHasCapability,
+	shouldMigrateDevOnlyModel,
 } from "../registry";
 
 describe("registry — provider registration", () => {
@@ -210,5 +211,44 @@ describe("registry — formatModelLabel", () => {
 		expect(label).toContain("Test Model");
 		expect(label).toContain("$1.500");
 		expect(label).toContain("$10.000");
+	});
+});
+
+describe("registry — shouldMigrateDevOnlyModel (naia-omni guard, backlog #33)", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it("no migration in DEV build (naia-omni stays registered)", () => {
+		vi.stubEnv("DEV", true);
+		expect(shouldMigrateDevOnlyModel("openai", "naia-omni-24g")).toEqual({
+			migrate: false,
+		});
+	});
+
+	it("migrates naia-omni-24g to provider defaultModel in prod build", () => {
+		vi.stubEnv("DEV", false);
+		const decision = shouldMigrateDevOnlyModel("openai", "naia-omni-24g");
+		expect(decision).toEqual({ migrate: true, to: "gpt-5.2" });
+	});
+
+	it("migrates naia-omni-32g to provider defaultModel in prod build", () => {
+		vi.stubEnv("DEV", false);
+		const decision = shouldMigrateDevOnlyModel("openai", "naia-omni-32g");
+		expect(decision).toEqual({ migrate: true, to: "gpt-5.2" });
+	});
+
+	it("ignores non-naia-omni models in prod build", () => {
+		vi.stubEnv("DEV", false);
+		expect(shouldMigrateDevOnlyModel("openai", "gpt-5.2")).toEqual({
+			migrate: false,
+		});
+	});
+
+	it("ignores unknown provider in prod build", () => {
+		vi.stubEnv("DEV", false);
+		expect(shouldMigrateDevOnlyModel("unknown-xyz", "naia-omni-24g")).toEqual({
+			migrate: false,
+		});
 	});
 });

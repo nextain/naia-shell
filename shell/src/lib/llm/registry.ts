@@ -75,6 +75,26 @@ export function shouldMigrateNextainModel(
 	return { migrate: true, to: provider.defaultModel };
 }
 
+/**
+ * Migrate dev-only models that were removed from the catalogue in prod builds.
+ * Currently scoped to naia-omni-* (naia-talk pipeline, backlog #33) — registered
+ * only in DEV builds via `import.meta.env.DEV`. In prod, a saved
+ * `model: "naia-omni-*"` would render an empty/__custom__ selector entry and
+ * cause silent LLM failures (HTTP 400 from OpenAI for unknown model id).
+ *
+ * Returns the provider's defaultModel as the fallback target.
+ */
+export function shouldMigrateDevOnlyModel(
+	providerId: string,
+	modelId: string,
+): { migrate: false } | { migrate: true; to: string } {
+	if (import.meta.env.DEV) return { migrate: false };
+	if (!/^naia-omni/i.test(modelId)) return { migrate: false };
+	const provider = providers.get(providerId);
+	if (!provider) return { migrate: false };
+	return { migrate: true, to: provider.defaultModel };
+}
+
 /** Check if a provider does not require either a provider key or a Naia key. */
 export function isApiKeyOptional(providerId: string): boolean {
 	const p = providers.get(providerId);
@@ -339,23 +359,27 @@ registerLlmProvider({
 			voices: [...OPENAI_REALTIME_VOICES],
 			transcriptProvided: true,
 		},
-		// -- naia-talk --------------------------------------------------------------------
-		{
-			id: "naia-omni-24g",
-			label: "naia-talk (naia-omni-24g)",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
-			transcriptProvided: true,
-		},
-		{
-			id: "naia-omni-32g",
-			label: "naia-talk (naia-omni-32g)",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
-			transcriptProvided: true,
-		},
+		// -- naia-talk (dev-only while voice pipeline is under test; backlog #33) --------
+		...(import.meta.env.DEV
+			? ([
+					{
+						id: "naia-omni-24g",
+						label: "naia-talk (naia-omni-24g)",
+						capabilities: ["llm", "omni"],
+						voiceSelectable: true,
+						voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
+						transcriptProvided: true,
+					},
+					{
+						id: "naia-omni-32g",
+						label: "naia-talk (naia-omni-32g)",
+						capabilities: ["llm", "omni"],
+						voiceSelectable: true,
+						voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
+						transcriptProvided: true,
+					},
+				] as LlmModelMeta[])
+			: []),
 	],
 });
 

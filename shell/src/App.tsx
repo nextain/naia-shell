@@ -48,7 +48,10 @@ import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { Logger } from "./lib/logger";
 import { loadInstalledPanels } from "./lib/panel-loader";
-import { shouldMigrateNextainModel } from "./lib/llm/registry";
+import {
+	shouldMigrateDevOnlyModel,
+	shouldMigrateNextainModel,
+} from "./lib/llm/registry";
 import { panelRegistry } from "./lib/panel-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import {
@@ -498,6 +501,22 @@ export function App() {
 					to: decision.to,
 				});
 				saveConfig({ ...preMigrate, model: decision.to });
+			}
+
+			// Dev-only models (naia-omni-*, backlog #33) saved on dev builds
+			// would silently fail in prod (HTTP 400 for unknown model). Swap to
+			// the provider's defaultModel before any chat call.
+			const latest = loadConfig() ?? preMigrate;
+			const devOnlyDecision = shouldMigrateDevOnlyModel(
+				latest.provider,
+				latest.model,
+			);
+			if (devOnlyDecision.migrate) {
+				Logger.warn("App", "dev-only model migration (prod build)", {
+					from: latest.model,
+					to: devOnlyDecision.to,
+				});
+				saveConfig({ ...latest, model: devOnlyDecision.to });
 			}
 		}
 

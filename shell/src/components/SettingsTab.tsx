@@ -2699,8 +2699,9 @@ export function SettingsTab() {
 				</div>
 			)}
 
-			{/* vLLM provider: voice mode uses /ws endpoint on the same host */}
-			{provider === "vllm" && (
+			{/* vLLM provider: voice mode uses /ws endpoint on the same host.
+			    naia-talk is dev-only while voice pipeline is under test (backlog #33). */}
+			{provider === "vllm" && import.meta.env.DEV && (
 				<div className="settings-field">
 					<span className="settings-hint">
 						음성 버튼 → <code>ws://[vLLM Host]/ws</code> 자동 연결 (naia-talk

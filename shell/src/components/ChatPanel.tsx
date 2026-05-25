@@ -1572,12 +1572,14 @@ export function ChatPanel() {
 				return;
 			}
 
-			// Determine the live provider from the current model/provider
-			const isNaiaOmni = /^naia-omni/i.test(config.model);
+			// Determine the live provider from the current model/provider.
+			// naia-talk is dev-only while the voice pipeline is under test (backlog #33).
+			const naiaTalkAllowed = import.meta.env.DEV;
+			const isNaiaOmni = naiaTalkAllowed && /^naia-omni/i.test(config.model);
 			const liveProvider =
 				isNaiaOmni
 					? ("naia-talk" as const)
-					: isOmni && config.provider === "vllm"
+					: naiaTalkAllowed && isOmni && config.provider === "vllm"
 						? ("naia-talk" as const)
 						: config.provider === "vllm"
 							? ("vllm-omni" as const)
