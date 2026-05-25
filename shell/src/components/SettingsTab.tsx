@@ -22,7 +22,9 @@ import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	directToolCall,
 	sendAuthUpdate,
+	sendConfigUpdate,
 	sendCredsUpdate,
+	sendFactoryReset,
 	sendNotifyConfig,
 } from "../lib/chat-service";
 import {
@@ -1807,9 +1809,12 @@ export function SettingsTab() {
 	}
 
 	async function executeReset() {
+		try {
+			await sendFactoryReset();
+		} catch { /* agent not running — fall through to local cleanup */ }
 		localStorage.removeItem("naia-config");
 		clearSavedCamera();
-		clearAdkPath(); // re-triggers ADK setup screen on next launch
+		clearAdkPath();
 		invoke("reset_window_state").catch(() => {});
 		if (resetClearHistory) {
 			useChatStore.getState().newConversation();
@@ -2216,6 +2221,7 @@ export function SettingsTab() {
 								saveConfig({ ...cfg, workspaceRoot: selected });
 								setAdkPath(selected);
 								invoke("workspace_set_root", { root: selected }).catch(() => {});
+								sendConfigUpdate({ config: { NAIA_ADK_PATH: selected } }).catch(() => {});
 								window.location.reload();
 							}
 						}}
@@ -2239,6 +2245,7 @@ export function SettingsTab() {
 								invoke("workspace_set_root", {
 									root: trimmed,
 								}).catch(() => {});
+								sendConfigUpdate({ config: { NAIA_ADK_PATH: trimmed } }).catch(() => {});
 							} else {
 								clearAdkPath();
 							}

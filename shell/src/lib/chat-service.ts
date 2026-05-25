@@ -466,3 +466,9 @@ export async function sendConfigUpdate(
 		message: JSON.stringify(request),
 	});
 }
+
+export async function sendFactoryReset(): Promise<void> {
+	await invoke("send_to_agent_command", {
+		message: JSON.stringify({ type: "factory_reset", id: `fr-${Date.now()}` }),
+	});
+}
