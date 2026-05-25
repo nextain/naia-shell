@@ -472,3 +472,10 @@ export async function sendFactoryReset(): Promise<void> {
 		message: JSON.stringify({ type: "factory_reset", id: `fr-${Date.now()}` }),
 	});
 }
+
+/** Request the agent to push its currently loaded config via config_sync. */
+export async function sendGetConfig(): Promise<void> {
+	await invoke("send_to_agent_command", {
+		message: JSON.stringify({ type: "get_config" }),
+	});
+}

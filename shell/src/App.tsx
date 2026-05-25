@@ -19,7 +19,6 @@ import {
 	getAdkPath,
 	isAdkInitialized,
 	listNaiaAssets,
-	readNaiaConfig,
 	setAdkPath,
 	toLocalBlobUrl,
 	buildNaiaConfigEnv,
@@ -30,6 +29,7 @@ import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	sendAuthUpdate,
 	sendCredsUpdate,
+	sendGetConfig,
 	sendNotifyConfig,
 	sendPanelSkills,
 	sendPanelSkillsClear,
@@ -310,18 +310,55 @@ export function App() {
 		if (existingPath) copyBundledAssets(existingPath).catch(() => {});
 	}, [showAdkSetup]);
 
-	// Load naia-settings/config.json on startup and merge into localStorage.
-	// File is authoritative (persists across browser profile wipes / new installs).
+	// Listen for config_sync from naia-agent (pushed on startup + in response to get_config).
+	// Merges agent-loaded config into localStorage so shell never reads config.json directly.
 	useEffect(() => {
-		if (showAdkSetup) return;
-		readNaiaConfig().then((fileConfig) => {
-			if (!fileConfig) return;
-			const local = loadConfig();
-			// File wins — merge file over local so user settings survive reinstalls.
-			const merged = local ? { ...local, ...fileConfig } : fileConfig;
-			saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
-		});
-	}, [showAdkSetup]);
+		const UI_ONLY_KEYS = new Set([
+			"theme", "backgroundImage", "backgroundVideo", "vrmModel", "customVrms", "customBgs",
+			"sttProvider", "sttModel", "naiaCloudSttBackend",
+			"ttsEnabled", "ttsVoice", "ttsProvider", "naiaCloudTtsBackend", "ttsEngine",
+			"ttsOutputDeviceId", "sttInputDeviceId", "vllmSttHost", "vllmSttModel", "vllmTtsHost",
+			"liveProvider", "liveVoice", "liveModel", "openaiRealtimeVoice", "voice", "voiceConversation",
+			"panelPosition", "panelVisible", "panelSize", "deletedPanels",
+			"bgmTrack", "bgmSource", "bgmYoutubeVideoId", "bgmYoutubeTitle",
+			"bgmYoutubeChannel", "bgmYoutubeThumbnail", "bgmVolume", "bgmPlaying",
+			"gatewayTtsAuto", "gatewayTtsMode",
+			"discordSessionMigrated", "lastProcessedDiscordMessageId",
+			"locale", "naiaUserId",
+		]);
+		const SECRET_KEYS = new Set([
+			"apiKey", "naiaKey", "googleApiKey",
+			"openaiTtsApiKey", "elevenlabsApiKey", "gatewayToken", "openaiRealtimeApiKey",
+			"memoryEmbeddingApiKey", "memoryLlmApiKey", "qdrantApiKey",
+			"NAIA_ANYLLM_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GLM_API_KEY",
+		]);
+		let unlisten: (() => void) | undefined;
+		listen<string>("agent_response", (event) => {
+			try {
+				const msg = JSON.parse(event.payload);
+				// When agent restarts and signals ready, request a fresh config sync.
+				if (msg?.type === "ready") {
+					sendGetConfig().catch(() => {});
+					return;
+				}
+				if (msg?.type !== "config_sync" || !msg.config) return;
+				const incoming = msg.config as Record<string, string>;
+				const local = loadConfig();
+				const patch: Record<string, string> = {};
+				for (const [k, v] of Object.entries(incoming)) {
+					// Skip env-var keys (NAIA_ / OPENAI_ / ANTHROPIC_ prefix), UI-only, and secrets
+					if (k.match(/^[A-Z_]+$/) || UI_ONLY_KEYS.has(k) || SECRET_KEYS.has(k)) continue;
+					if (v) patch[k] = v;
+				}
+				if (Object.keys(patch).length > 0) {
+					saveConfig({ ...local, ...patch } as Parameters<typeof saveConfig>[0]);
+				}
+			} catch {
+				// Malformed payload — ignore
+			}
+		}).then((fn) => { unlisten = fn; }).catch(() => {});
+		return () => { unlisten?.(); };
+	}, []);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
 	// Same pattern as BrowserCenterPanel auto-allowing browser tools on mount.

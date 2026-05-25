@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import {
 	copyBundledAssets,
 	getAdkPath,
-	readNaiaConfig,
 	setAdkPath,
 } from "../lib/adk-store";
 import { getLocale, t } from "../lib/i18n";
@@ -167,18 +166,12 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			clearAllLocalData();
 			setAdkPath(adkPath);
 			sendConfigUpdate({ config: { NAIA_ADK_PATH: adkPath } }).catch(() => {});
-			const fileConfig = await readNaiaConfig();
-			if (fileConfig) {
-				localStorage.setItem(
-					"naia-config",
-					JSON.stringify(
-						preserveWorkspaceRoot(
-							{ ...fileConfig, onboardingComplete: true },
-							adkPath,
-						),
-					),
-				);
-			}
+			// Set minimal bootstrap so onboarding does not re-show.
+			// Full config is pushed by agent via config_sync after spawn.
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify(preserveWorkspaceRoot({ onboardingComplete: true }, adkPath)),
+			);
 			onComplete();
 		} catch (err) {
 			setError(String(err));
@@ -221,17 +214,10 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			// Ensure naia-settings subfolders and bundled defaults exist.
 			await invoke("init_naia_settings", { adkPath: trimmed });
 			await copyBundledAssets(trimmed);
-			// Restore config from the selected ADK folder, then mark onboarding done
-			const fileConfig = await readNaiaConfig();
-			const base = fileConfig ?? {};
+			// Set minimal bootstrap; full config pushed by agent via config_sync after spawn.
 			localStorage.setItem(
 				"naia-config",
-				JSON.stringify(
-					preserveWorkspaceRoot(
-						{ ...base, onboardingComplete: true },
-						trimmed,
-					),
-				),
+				JSON.stringify(preserveWorkspaceRoot({ onboardingComplete: true }, trimmed)),
 			);
 			onComplete();
 		} catch (err) {

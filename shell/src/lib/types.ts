@@ -184,6 +184,11 @@ export type AgentResponseChunk =
 	  }
 	| { type: "finish"; requestId: string }
 	| { type: "config_update_response"; id: string; status: "ok" | "error"; error?: string }
+	| {
+			/** Agent → Shell: push loaded config so shell can restore localStorage without reading config.json directly. */
+			type: "config_sync";
+			config: Record<string, string>;
+	  }
 	| { type: "error"; requestId: string; message: string };
 
 // === Skill Manifest (from ~/.naia/skills/{name}/skill.json) ===

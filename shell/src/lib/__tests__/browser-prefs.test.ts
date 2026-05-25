@@ -1,14 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-let config: Record<string, unknown> | null = null;
-
-vi.mock("../adk-store", () => ({
-	readNaiaConfig: vi.fn(async () => config),
-	writeNaiaConfig: vi.fn(async (next: Record<string, unknown>) => {
-		config = next;
-	}),
-}));
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
 	addBrowserBookmark,
@@ -20,12 +11,11 @@ import {
 } from "../browser-prefs";
 
 beforeEach(() => {
-	config = {};
 	localStorage.clear();
 });
 
 describe("browser-prefs", () => {
-	it("stores bookmarks in naia config and deduplicates by url", async () => {
+	it("stores bookmarks in localStorage and deduplicates by url", async () => {
 		await addBrowserBookmark("Example", "https://example.com");
 		await addBrowserBookmark("Example 2", "https://example.com");
 
@@ -34,14 +24,14 @@ describe("browser-prefs", () => {
 		]);
 	});
 
-	it("removes bookmarks from naia config", async () => {
+	it("removes bookmarks from localStorage", async () => {
 		await addBrowserBookmark("Example", "https://example.com");
 		await removeBrowserBookmark("https://example.com");
 
 		expect(await loadBrowserBookmarks()).toEqual([]);
 	});
 
-	it("stores and removes top-bar shortcuts in naia config", async () => {
+	it("stores and removes top-bar shortcuts in localStorage", async () => {
 		await addBrowserShortcut(
 			"Docs",
 			"https://docs.example.com",
@@ -59,7 +49,7 @@ describe("browser-prefs", () => {
 		expect(await loadBrowserShortcuts()).toEqual([]);
 	});
 
-	it("migrates legacy localStorage bookmarks when config is empty", async () => {
+	it("migrates legacy localStorage bookmarks when new key is absent", async () => {
 		localStorage.setItem(
 			"naia_browser_bookmarks",
 			JSON.stringify([{ title: "Legacy", url: "https://legacy.example" }]),

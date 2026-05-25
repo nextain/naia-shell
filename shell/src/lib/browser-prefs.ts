@@ -1,4 +1,3 @@
-import { readNaiaConfig, writeNaiaConfig } from "./adk-store";
 import { Logger } from "./logger";
 
 export interface BrowserLink {
@@ -13,8 +12,17 @@ const SHORTCUTS_KEY = "browserShortcuts";
 const LEGACY_BOOKMARKS_KEY = "naia_browser_bookmarks";
 const PREFS_CHANGED_EVENT = "naia-browser-prefs-changed";
 
-function hasOwn(config: Record<string, unknown>, key: string): boolean {
-	return Object.prototype.hasOwnProperty.call(config, key);
+function readLocal(key: string): BrowserLink[] {
+	try {
+		return normalizeLinks(JSON.parse(localStorage.getItem(key) ?? "[]"));
+	} catch {
+		return [];
+	}
+}
+
+function writeLocal(key: string, links: BrowserLink[]): void {
+	localStorage.setItem(key, JSON.stringify(links));
+	window.dispatchEvent(new CustomEvent(PREFS_CHANGED_EVENT));
 }
 
 function normalizeLink(value: unknown): BrowserLink | null {
@@ -58,40 +66,31 @@ function readLegacyBookmarks(): BrowserLink[] {
 	}
 }
 
-async function readConfig(): Promise<Record<string, unknown>> {
-	return (await readNaiaConfig()) ?? {};
-}
-
-async function writeConfig(config: Record<string, unknown>): Promise<void> {
-	await writeNaiaConfig(config);
-	window.dispatchEvent(new CustomEvent(PREFS_CHANGED_EVENT));
-}
-
 export function onBrowserPrefsChanged(handler: () => void): () => void {
 	window.addEventListener(PREFS_CHANGED_EVENT, handler);
 	return () => window.removeEventListener(PREFS_CHANGED_EVENT, handler);
 }
 
 export async function loadBrowserBookmarks(): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	if (hasOwn(config, BOOKMARKS_KEY)) {
-		return normalizeLinks(config[BOOKMARKS_KEY]);
+	const stored = readLocal(BOOKMARKS_KEY);
+	if (stored.length > 0 || localStorage.getItem(BOOKMARKS_KEY) !== null) {
+		return stored;
 	}
+	// First run: migrate from legacy key
 	return readLegacyBookmarks();
 }
 
 export async function loadBrowserShortcuts(): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	return normalizeLinks(config[SHORTCUTS_KEY]);
+	return readLocal(SHORTCUTS_KEY);
 }
 
 export async function addBrowserBookmark(
 	title: string,
 	url: string,
 ): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	const current = normalizeLinks(config[BOOKMARKS_KEY]);
-	const legacy = hasOwn(config, BOOKMARKS_KEY) ? [] : readLegacyBookmarks();
+	const current = readLocal(BOOKMARKS_KEY);
+	const legacy =
+		localStorage.getItem(BOOKMARKS_KEY) !== null ? [] : readLegacyBookmarks();
 	const merged = [...current, ...legacy].filter(
 		(item, index, all) => all.findIndex((x) => x.url === item.url) === index,
 	);
@@ -101,7 +100,7 @@ export async function addBrowserBookmark(
 		nextLink,
 		...merged.filter((item) => item.url !== nextLink.url),
 	];
-	await writeConfig({ ...config, [BOOKMARKS_KEY]: next });
+	writeLocal(BOOKMARKS_KEY, next);
 	Logger.info("BrowserPrefs", "bookmark saved", { url: nextLink.url });
 	return next;
 }
@@ -109,12 +108,12 @@ export async function addBrowserBookmark(
 export async function removeBrowserBookmark(
 	url: string,
 ): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	const source = hasOwn(config, BOOKMARKS_KEY)
-		? normalizeLinks(config[BOOKMARKS_KEY])
-		: readLegacyBookmarks();
+	const source =
+		localStorage.getItem(BOOKMARKS_KEY) !== null
+			? readLocal(BOOKMARKS_KEY)
+			: readLegacyBookmarks();
 	const next = source.filter((item) => item.url !== url);
-	await writeConfig({ ...config, [BOOKMARKS_KEY]: next });
+	writeLocal(BOOKMARKS_KEY, next);
 	return next;
 }
 
@@ -123,8 +122,7 @@ export async function addBrowserShortcut(
 	url: string,
 	iconUrl?: string,
 ): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	const current = normalizeLinks(config[SHORTCUTS_KEY]);
+	const current = readLocal(SHORTCUTS_KEY);
 	const nextLink = normalizeLink({
 		title,
 		url,
@@ -136,7 +134,7 @@ export async function addBrowserShortcut(
 		nextLink,
 		...current.filter((item) => item.url !== nextLink.url),
 	];
-	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
+	writeLocal(SHORTCUTS_KEY, next);
 	Logger.info("BrowserPrefs", "shortcut saved", { url: nextLink.url });
 	return next;
 }
@@ -144,11 +142,8 @@ export async function addBrowserShortcut(
 export async function removeBrowserShortcut(
 	url: string,
 ): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	const next = normalizeLinks(config[SHORTCUTS_KEY]).filter(
-		(item) => item.url !== url,
-	);
-	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
+	const next = readLocal(SHORTCUTS_KEY).filter((item) => item.url !== url);
+	writeLocal(SHORTCUTS_KEY, next);
 	return next;
 }
 
@@ -156,9 +151,8 @@ export async function removeBrowserShortcut(
 export async function reorderBrowserShortcuts(
 	ordered: BrowserLink[],
 ): Promise<BrowserLink[]> {
-	const config = await readConfig();
 	const next = normalizeLinks(ordered);
-	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
+	writeLocal(SHORTCUTS_KEY, next);
 	return next;
 }
 
@@ -167,11 +161,10 @@ export async function updateBrowserShortcutIcon(
 	url: string,
 	iconUrl: string | undefined,
 ): Promise<BrowserLink[]> {
-	const config = await readConfig();
-	const current = normalizeLinks(config[SHORTCUTS_KEY]);
+	const current = readLocal(SHORTCUTS_KEY);
 	const next = current.map((item) =>
 		item.url === url ? { ...item, iconUrl: iconUrl || undefined } : item,
 	);
-	await writeConfig({ ...config, [SHORTCUTS_KEY]: next });
+	writeLocal(SHORTCUTS_KEY, next);
 	return next;
 }
