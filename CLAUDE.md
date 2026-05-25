@@ -23,7 +23,7 @@ Load additional context from `.agents/context/` on demand as needed.
 │   ├── architecture.yaml   # Architecture (agent/gateway/Rust)
 │   ├── distribution.yaml   # Distribution (Flatpak/ISO/AppImage)
 │   ├── bazzite-rebranding.yaml # Bazzite rebranding guide
-│   ├── gateway-sync.yaml  # OpenClaw sync
+│   ├── gateway-sync.yaml  # Gateway sync
 │   └── ...                 # Full list: see project-index.yaml
 ├── workflows/              # Workflows (on-demand)
 └── skills/                 # Skill definitions
@@ -58,6 +58,12 @@ Naia-OS/
 ├── os/             # OS tests, utilities
 └── work-logs/      # Dev work logs (gitignored, {username}/ subdirs)
 ```
+
+## 🧠 Memory System (Hardened SQLite v6.0)
+- **Engine**: Switched from legacy JSON (`alpha-memory.json`) to high-performance SQLite (`alpha-memory-v5.db`).
+- **Architecture**: Async Worker-Thread isolation to prevent main-thread UI freezing.
+- **Provider**: Leverages `@nextain/naia-memory` with tiered recall (Surface: 9.7ms).
+- **Features**: AES-256-GCM encrypted backup, bi-temporal recall, and Ebbinghaus decay.
 
 ## Conventions (summary)
 
