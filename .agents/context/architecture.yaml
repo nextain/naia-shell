@@ -22,19 +22,19 @@ description: Naia architecture (mirror of .users/context/ko/architecture.md)
 # for what we have today is traceable. Do not treat it as current design.
 
 recent_changes:
-  date: "2026-05-21"
+  date: "2026-05-25"
   summary: |
-    naia-adk scaffold distribution (git clone on new setup), user data migration
-    ~/.naia/ → naia-settings/, local session persistence, memory AI provider config
-    in OnboardingWizard, root naia-settings/ duplicate removed.
+    naia-os → naia-agent IPC delegation: factory-reset, workspace ADK path,
+    and Discord bot token now all route through naia-agent stdio IPC instead
+    of direct Rust invoke. naia-agent gained factory_reset IPC handler.
   changes:
-    - "clone_naia_adk / delete_naia_adk Tauri commands — git clone --depth 1 nextain/naia-adk; zip fallback (reqwest+zip) when git absent; CREATE_NO_WINDOW on Windows"
-    - "AdkSetupScreen: cloning flow + cloning state + i18n for new-start and delete-reinstall modes"
-    - "remove root naia-settings/ (duplicate of shell/public/assets/, now authoritative)"
-    - "migrate-user-data.ts: one-shot additive migration ~/.naia/{sessions,memory,identity} → naia-settings/.{sessions,memory,identity}"
-    - "local-sessions.ts: local session persistence in naia-settings/.sessions/"
-    - "OnboardingWizard: memoryEmbeddingProvider + memoryLlmProvider config (none/offline/vllm/ollama/naia)"
-    - "remove bundled naia-settings assets (vrm-files/bgm-musics/background) — served from naia-adk clone; copy_bundled_assets now scope-extension only"
+    - "SettingsTab.executeReset: calls sendFactoryReset() IPC before local cleanup"
+    - "SettingsTab workspace browse/apply: sends config_update NAIA_ADK_PATH to agent"
+    - "AdkSetupScreen: all 5 completion paths send config_update NAIA_ADK_PATH"
+    - "channel-sync.ts: Discord bot token via sendConfigUpdate secrets (was invoke write_discord_bot_token)"
+    - "naia-agent: new factory_reset IPC handler (mirrors /factory-reset REPL)"
+    - "chat-service.ts: sendFactoryReset() added; ConfigUpdatePayload.config made optional"
+    - "Onboarding ADK step: naia-agent bin/naia-agent.ts Step 0 selects ADK path before language"
 
 recent_hardening:
   date: "2026-05-12"

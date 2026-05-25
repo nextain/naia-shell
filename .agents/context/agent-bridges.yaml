@@ -233,6 +233,36 @@ security_hardening:
   follow_up_pending:
     - "Drop ProviderConfig.apiKey from agent types entirely (currently @deprecated optional). Coordinate with any out-of-tree forks first."
 
+delegation_to_agent:
+  added: "2026-05-25"
+  principle: |
+    naia-os must NOT directly write settings/secrets that naia-agent owns.
+    All state-changing operations delegate to naia-agent via stdio IPC.
+    naia-os may keep belt-and-suspenders local writes for offline resilience,
+    but the IPC call must be the primary path.
+  operations:
+    factory_reset:
+      ipc_type: "factory_reset"
+      handler: "naia-agent bin/naia-agent.ts — mirrors /factory-reset REPL command"
+      deletes: "config.json, sessions/, bootstrap config.json, .env, adk-path cache, .keys/, credentials"
+      clears: "provider env keys (ANTHROPIC_API_KEY, etc.), cached LLM"
+      response: "factory_reset_response { id, status, removed }"
+      shell_caller: "SettingsTab.executeReset() → sendFactoryReset() in chat-service.ts"
+      note: "Shell also clears localStorage/UI state after IPC call. Belt-and-suspenders."
+    workspace_adk_path:
+      ipc_type: "config_update"
+      field: "NAIA_ADK_PATH"
+      shell_callers:
+        - "SettingsTab workspace browse/apply buttons → sendConfigUpdate({ config: { NAIA_ADK_PATH } })"
+        - "AdkSetupScreen handleNewStart/handleNewUseExisting/handleNewRecreate/handleLoadConfirm/naia_auth_complete → sendConfigUpdate({ config: { NAIA_ADK_PATH } })"
+      note: "Shell still calls setAdkPath() + invoke('workspace_set_root') locally for immediate effect."
+    discord_bot_token:
+      ipc_type: "config_update"
+      field: "secrets.NAIA_DISCORD_BOT_TOKEN"
+      shell_caller: "channel-sync.ts fetchAndRestoreDiscordBotToken → sendConfigUpdate({ secrets: { NAIA_DISCORD_BOT_TOKEN } })"
+      replaced: "invoke('write_discord_bot_token') — direct Rust invoke replaced with agent IPC"
+      note: "Agent stores in keychain via keychainSet() and caches in process.env."
+
 vendored_packages:
   paths:
     - agent/vendor/nextain-agent-protocol-0.1.0.tgz

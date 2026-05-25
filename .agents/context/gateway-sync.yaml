@@ -14,6 +14,9 @@ trigger_points:
   - After session summarization (summarizePreviousSession)
   - After auto fact extraction (every 10 messages / visibilitychange)
   - After reverse sync from Gateway memory files
+  - ADK path change (sendConfigUpdate NAIA_ADK_PATH to agent)
+  - Factory reset (sendFactoryReset IPC to agent + local cleanup)
+  - Discord bot token restore (sendConfigUpdate secrets to agent)
 
 sync_items:
   - target: gateway.json
