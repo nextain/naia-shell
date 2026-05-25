@@ -1,7 +1,7 @@
 {
 	"$schema": "https://raw.githubusercontent.com/nicollasricas/tauri-settings-schema/refs/heads/master/schemas/v2/tauri.conf.json",
 	"productName": "Naia",
-	"identifier": "com.naia.shell",
+	"identifier": "io.nextain.naia",
 	"build": {
 		"frontendDist": "../dist",
 		"devUrl": "http://localhost:1420",

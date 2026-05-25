@@ -5,7 +5,8 @@
 	"bundle": {
 		"targets": [
 			"nsis",
-			"msi"
+			"msi",
+			"msix"
 		],
 		"resources": {
 			"../../agent/dist": "agent/dist",
@@ -22,10 +23,17 @@
 		},
 		"publisher": "Nextain Inc.",
 		"windows": {
-			"certificateThumbprint": null,
+			"certificateThumbprint": "3BF69233FD9163542D37A95716FA6E9AAF893A1F",
 			"digestAlgorithm": "sha256",
 			"nsis": {
 				"installMode": "currentUser"
+			},
+			"webviewInstallMode": {
+				"type": "downloadBootstrapper"
+			},
+			"wix": null,
+			"msix": {
+				"publisher": "CN=9B8C4EA7-77FE-4650-8F34-62644BAAE3ED"
 			}
 		}
 	}
