@@ -445,3 +445,24 @@ export async function sendEmbeddingPrefetch(
 		message: JSON.stringify({ type: "embedding_prefetch", model }),
 	});
 }
+
+export interface ConfigUpdatePayload {
+	config: Record<string, unknown>;
+	secrets?: Record<string, string>;
+}
+
+export async function sendConfigUpdate(
+	payload: ConfigUpdatePayload,
+): Promise<void> {
+	const request: Record<string, unknown> = {
+		type: "config_update",
+		id: `cfg-${Date.now()}`,
+		config: payload.config,
+	};
+	if (payload.secrets && Object.keys(payload.secrets).length > 0) {
+		request.secrets = payload.secrets;
+	}
+	await invoke("send_to_agent_command", {
+		message: JSON.stringify(request),
+	});
+}

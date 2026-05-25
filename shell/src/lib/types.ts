@@ -183,6 +183,7 @@ export type AgentResponseChunk =
 			}[];
 	  }
 	| { type: "finish"; requestId: string }
+	| { type: "config_update_response"; id: string; status: "ok" | "error"; error?: string }
 	| { type: "error"; requestId: string; message: string };
 
 // === Skill Manifest (from ~/.naia/skills/{name}/skill.json) ===

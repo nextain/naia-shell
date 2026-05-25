@@ -260,6 +260,13 @@ export async function writeAgentKey(
 	await invoke("write_agent_key", { adkPath, envKey, value }).catch(() => {
 		// Keychain write failure is non-fatal — creds_update IPC handles current session.
 	});
+	invoke("send_to_agent_command", {
+		message: JSON.stringify({
+			type: "config_update",
+			id: `cfg-key-${Date.now()}`,
+			secrets: { [envKey]: value },
+		}),
+	}).catch(() => {});
 }
 
 export async function readNaiaConfig(): Promise<Record<
@@ -282,8 +289,14 @@ export async function writeNaiaConfig(
 ): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
-	await invoke("write_naia_config", {
-		adkPath,
-		json: JSON.stringify(stripForAgent(config), null, 2),
-	});
+	const stripped = stripForAgent(config);
+	const json = JSON.stringify(stripped, null, 2);
+	await invoke("write_naia_config", { adkPath, json });
+	invoke("send_to_agent_command", {
+		message: JSON.stringify({
+			type: "config_update",
+			id: `cfg-${Date.now()}`,
+			config: stripped,
+		}),
+	}).catch(() => {});
 }
