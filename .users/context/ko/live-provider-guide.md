@@ -191,7 +191,7 @@ export function createVoiceSession(provider: LiveProviderId): VoiceSession {
 const session = createMiniCpmOSession();
 await session.connect({
   provider: "minicpm-o",
-  serverUrl: "ws://100.91.187.24:8000",  // vllm-omni 직결; 데모 gateway 불필요
+  serverUrl: "ws://<naia-omni-host>:8000",  // vllm-omni 직결; 데모 gateway 불필요
   systemInstruction: "...",
   refAudio: <File | Blob | ArrayBuffer | base64 string>,  // 선택, voice clone
   refAudioLanguage: "en",                                  // 선택, 기본 en
