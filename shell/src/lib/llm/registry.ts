@@ -336,7 +336,25 @@ registerLlmProvider({
 			label: "GPT-4o Mini Realtime",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
+<<<<<<< HEAD
 			voices: [...OPENAI_REALTIME_VOICES],
+			transcriptProvided: true,
+		},
+		// -- naia-talk --------------------------------------------------------------------
+		{
+			id: "naia-omni-24g",
+			label: "naia-talk (naia-omni-24g)",
+			capabilities: ["llm", "omni"],
+			voiceSelectable: true,
+			voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
+			transcriptProvided: true,
+		},
+		{
+			id: "naia-omni-32g",
+			label: "naia-talk (naia-omni-32g)",
+			capabilities: ["llm", "omni"],
+			voiceSelectable: true,
+			voices: [{ id: "naia-ko", label: "Naia Korean (여성)" }],
 			transcriptProvided: true,
 		},
 	],

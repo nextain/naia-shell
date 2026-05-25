@@ -1573,9 +1573,10 @@ export function ChatPanel() {
 			}
 
 			// Determine the live provider from the current model/provider
+			const isNaiaOmni = /^naia-omni/i.test(config.model);
 			const liveProvider =
-				config.model === "naia-24g-live"
-					? ("openai-realtime" as const)
+				isNaiaOmni
+					? ("naia-talk" as const)
 					: isOmni && config.provider === "vllm"
 						? ("minicpm-o" as const)
 						: config.provider === "vllm"
@@ -1781,6 +1782,18 @@ export function ChatPanel() {
 					host: httpHost,
 					model: config.model ?? "",
 					systemInstruction: voiceSystemPrompt,
+					tools: voiceTools.length ? voiceTools : undefined,
+				});
+			} else if (liveProvider === "naia-talk") {
+				const liveHost = config.vllmHost ?? "http://localhost:8892";
+				const wsBase = liveHost.replace(/^http/, "ws").replace(/\/+$/, "");
+				await session.connect({
+					provider: "minicpm-o",
+					serverUrl: wsBase,
+					model: config.model,
+					systemInstruction: voiceSystemPrompt,
+					voice: selectedVoice,
+					locale: getLocale(),
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "minicpm-o") {

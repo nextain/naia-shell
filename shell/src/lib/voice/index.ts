@@ -47,6 +47,8 @@ export function createVoiceSession(
 	switch (provider) {
 		case "naia":
 			return createGeminiLiveSession();
+		case "naia-talk":
+			return createMiniCpmOSession();
 		case "gemini-live":
 			// Direct mode: use Rust proxy to bypass WebKitGTK WebSocket limitation
 			return options?.useProxy
