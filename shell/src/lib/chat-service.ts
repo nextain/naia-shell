@@ -447,7 +447,7 @@ export async function sendEmbeddingPrefetch(
 }
 
 export interface ConfigUpdatePayload {
-	config: Record<string, unknown>;
+	config?: Record<string, unknown>;
 	secrets?: Record<string, string>;
 }
 

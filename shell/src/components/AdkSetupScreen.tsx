@@ -11,6 +11,7 @@ import {
 	setAdkPath,
 } from "../lib/adk-store";
 import { getLocale, t } from "../lib/i18n";
+import { sendConfigUpdate } from "../lib/chat-service";
 
 interface AdkSetupScreenProps {
 	onComplete: () => void;
@@ -80,6 +81,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				const adkPath = path || defaultPath;
 				setLoginWaiting(false);
 				setAdkPath(adkPath);
+				sendConfigUpdate({ config: { NAIA_ADK_PATH: adkPath } }).catch(() => {});
 				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
 				if (event.payload.naiaUserId) {
 					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
@@ -145,6 +147,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
 			setAdkPath(adkPath);
+			sendConfigUpdate({ config: { NAIA_ADK_PATH: adkPath } }).catch(() => {});
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify(preserveWorkspaceRoot({}, adkPath)),
@@ -163,6 +166,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
 			setAdkPath(adkPath);
+			sendConfigUpdate({ config: { NAIA_ADK_PATH: adkPath } }).catch(() => {});
 			const fileConfig = await readNaiaConfig();
 			if (fileConfig) {
 				localStorage.setItem(
@@ -193,6 +197,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
 			setAdkPath(adkPath);
+			sendConfigUpdate({ config: { NAIA_ADK_PATH: adkPath } }).catch(() => {});
 			localStorage.setItem(
 				"naia-config",
 				JSON.stringify(preserveWorkspaceRoot({}, adkPath)),
@@ -212,6 +217,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 		}
 		try {
 			setAdkPath(trimmed);
+			sendConfigUpdate({ config: { NAIA_ADK_PATH: trimmed } }).catch(() => {});
 			// Ensure naia-settings subfolders and bundled defaults exist.
 			await invoke("init_naia_settings", { adkPath: trimmed });
 			await copyBundledAssets(trimmed);

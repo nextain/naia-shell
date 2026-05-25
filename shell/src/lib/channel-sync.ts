@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { sendConfigUpdate } from "./chat-service";
 import { loadConfig, saveConfig } from "./config";
 import { openDmChannel } from "./discord-api";
 import { restartGateway, syncToGateway } from "./gateway-sync";
@@ -40,8 +40,8 @@ async function fetchAndRestoreDiscordBotToken(naiaKey: string): Promise<void> {
 		const data = (await res.json()) as { token?: string };
 		if (!data?.token) return;
 
-		await invoke("write_discord_bot_token", { token: data.token });
-		Logger.info("channel-sync", "Discord bot token restored");
+		await sendConfigUpdate({ secrets: { NAIA_DISCORD_BOT_TOKEN: data.token } });
+		Logger.info("channel-sync", "Discord bot token restored via agent");
 		await emit("discord_auth_complete", {});
 	} catch (err) {
 		Logger.warn("channel-sync", "fetchAndRestoreDiscordBotToken failed", {
