@@ -336,7 +336,6 @@ registerLlmProvider({
 			label: "GPT-4o Mini Realtime",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
-<<<<<<< HEAD
 			voices: [...OPENAI_REALTIME_VOICES],
 			transcriptProvided: true,
 		},
