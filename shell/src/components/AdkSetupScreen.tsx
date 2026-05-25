@@ -403,6 +403,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					onClick={() => {
 						setMode("new");
 						setError(null);
+						setPath("");
 					}}
 				>
 					{t("adk.setup.back")}

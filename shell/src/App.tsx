@@ -15,6 +15,7 @@ import { TitleBar } from "./components/TitleBar";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { getBridgeForPanel } from "./lib/active-bridge";
 import {
+	copyBundledAssets,
 	getAdkPath,
 	isAdkInitialized,
 	listNaiaAssets,
@@ -280,7 +281,18 @@ export function App() {
 			if (paths.length === 0) return;
 			const config = loadConfig();
 			const saved = config?.backgroundVideo as string | undefined;
-			if (!saved) return; // no saved preference → keep default space background
+			if (!saved) {
+				// Default: use morning-coffee background if available
+				const defaultBg = paths.find((p) =>
+					p.toLowerCase().includes("morning-coffee") ||
+					p.toLowerCase().includes("morning_coffee")
+				);
+				if (defaultBg) {
+					setBackgroundMediaType(getBackgroundMediaType(defaultBg));
+					setBackgroundVideoUrl(await toLocalBlobUrl(defaultBg));
+				}
+				return;
+			}
 			const match = paths.find((p) => p.endsWith(saved));
 			if (match) {
 				setBackgroundMediaType(getBackgroundMediaType(match));
@@ -288,6 +300,15 @@ export function App() {
 			}
 		});
 	}, [showAdkSetup, setBackgroundMediaType, setBackgroundVideoUrl]);
+
+	// Re-register asset protocol scope for the existing adk path on startup.
+	// copy_bundled_assets is only called during setup; on restart the dynamic
+	// scope extension must be re-applied so asset:// URLs work for naia-settings.
+	useEffect(() => {
+		if (showAdkSetup) return;
+		const existingPath = getAdkPath();
+		if (existingPath) copyBundledAssets(existingPath).catch(() => {});
+	}, [showAdkSetup]);
 
 	// Load naia-settings/config.json on startup and merge into localStorage.
 	// File is authoritative (persists across browser profile wipes / new installs).

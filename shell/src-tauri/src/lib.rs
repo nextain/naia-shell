@@ -903,9 +903,12 @@ fn spawn_agent_core(
             }
         }
 
-        // 3. Dev TypeScript source — requires NAIA_AGENT_STANDALONE=1. Avoids
-        //    accidentally switching to standalone in production without the bundle.
-        if standalone_requested {
+        // 3. Dev TypeScript source — auto-activated when naia-agent/bin/naia-agent.ts
+        //    exists alongside this project. No env flag needed in dev; production uses
+        //    the bundled standalone (condition 2) or the deprecated embedded agent.
+        //    (Legacy: NAIA_AGENT_STANDALONE=1 was required; embedded agent is now
+        //    deprecated — standalone is the intended runtime.)
+        {
             let sa_dev_candidates = [
                 "../../../naia-agent/bin/naia-agent.ts", // from src-tauri/
                 "../../naia-agent/bin/naia-agent.ts",    // from shell/
@@ -923,6 +926,8 @@ fn spawn_agent_core(
                     return normalized.to_string_lossy().to_string();
                 }
             }
+        }
+        if standalone_requested {
             log_both(
                 "[Naia] NAIA_AGENT_STANDALONE=1 set but no standalone agent found \
                  — falling back to embedded agent",
@@ -3138,8 +3143,13 @@ async fn delete_naia_settings(adk_path: String) -> Result<(), String> {
 }
 
 /// Delete the entire adk_path directory (full workspace wipe for "delete and reinstall").
+/// On Windows, agent/gateway processes hold file locks inside the adk directory.
+/// Kill them first, wait briefly, then delete.
 #[tauri::command]
-async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
+async fn delete_naia_adk(
+    adk_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
     if adk_path.is_empty() {
         return Err("adk_path is empty".to_string());
     }
@@ -3150,6 +3160,30 @@ async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
     if !adk.is_dir() {
         return Err(format!("Not a directory: {adk_path}"));
     }
+
+    // Kill agent first (it holds file handles inside adk_path on Windows)
+    if let Ok(mut guard) = state.agent.lock() {
+        if let Some(mut process) = guard.take() {
+            log_verbose("[Naia] Terminating agent-core before adk delete...");
+            let _ = process.child.kill();
+        }
+    }
+    // Kill gateway + node host
+    if let Ok(mut guard) = state.gateway.lock() {
+        if let Some(mut process) = guard.take() {
+            if let Some(ref mut nh) = process.node_host {
+                log_verbose("[Naia] Terminating Node Host before adk delete...");
+                let _ = nh.kill();
+            }
+            if process.we_spawned {
+                log_verbose("[Naia] Terminating Gateway before adk delete...");
+                let _ = process.child.kill();
+            }
+        }
+    }
+    // Brief wait for the OS to release file handles before deletion
+    tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+
     std::fs::remove_dir_all(&adk)
         .map_err(|e| format!("Failed to delete {adk_path}: {e}"))
 }
