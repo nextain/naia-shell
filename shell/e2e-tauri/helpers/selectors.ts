@@ -3,6 +3,18 @@ export const S = {
 	// App
 	appRoot: ".app-root",
 
+	// AdkSetupScreen
+	adkSetupScreen: ".adk-setup-screen",
+	adkSetupOptionCard: ".adk-setup-option-card",
+	adkSetupInput: ".adk-setup-input",
+	adkSetupConfirmBtn: ".adk-setup-confirm-btn",
+	adkSetupHint: ".adk-setup-hint",
+	adkSetupError: ".adk-setup-error",
+	adkSetupBack: ".adk-setup-back",
+	adkSetupPathPreview: ".adk-setup-path-preview",
+	adkSetupHeadline: ".adk-setup-headline",
+	adkSetupNaiaCard: ".adk-setup-option-card--naia",
+
 	// SettingsTab (8th tab: chat, history, progress, skills, channels, agents, diagnostics, settings)
 	settingsTab: ".settings-tab",
 	settingsTabBtn: ".chat-tab:nth-child(8)",

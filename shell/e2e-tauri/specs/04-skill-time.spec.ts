@@ -10,12 +10,17 @@ describe("04 — skill_time", () => {
 	before(async () => {
 		const apiKey =
 			process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
+		const naiaKey = process.env.NAIA_API_KEY || "";
 		const gatewayToken =
 			process.env.CAFE_GATEWAY_TOKEN ||
 			process.env.GATEWAY_MASTER_KEY ||
 			"naia-dev-token";
+		// Provider routing — prefer Gemini direct (cheapest LIVE) when key is
+		// available, fall back to nextain (lab proxy) when only the naia key
+		// is present so the spec still runs in NAIA_API_KEY-only setups.
+		const useNaia = !apiKey && naiaKey;
 		await browser.execute(
-			(key: string, token: string) => {
+			(key: string, naia: string, token: string, naiaMode: boolean) => {
 				const raw = localStorage.getItem("naia-config");
 				const prev = raw ? JSON.parse(raw) : {};
 				const disabled = Array.isArray(prev.disabledSkills)
@@ -32,9 +37,10 @@ describe("04 — skill_time", () => {
 				]);
 				const config = {
 					...prev,
-					provider: "gemini",
-					model: prev.model || "gemini-2.5-flash",
-					apiKey: key || prev.apiKey || "",
+					provider: naiaMode ? "nextain" : "gemini",
+					model: prev.model || (naiaMode ? "gemini-2.5-pro" : "gemini-2.5-flash"),
+					apiKey: naiaMode ? "" : key || prev.apiKey || "",
+					naiaKey: naiaMode ? naia : prev.naiaKey || "",
 					enableTools: true,
 					gatewayUrl: prev.gatewayUrl || "ws://localhost:18789",
 					gatewayToken: token || prev.gatewayToken || "naia-dev-token",
@@ -44,7 +50,9 @@ describe("04 — skill_time", () => {
 				localStorage.setItem("naia-config", JSON.stringify(config));
 			},
 			apiKey,
+			naiaKey,
 			gatewayToken,
+			useNaia,
 		);
 		await safeRefresh();
 		const chatInput = await $(".chat-input");

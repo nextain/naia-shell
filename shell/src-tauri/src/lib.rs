@@ -3380,6 +3380,41 @@ async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
     if !adk.is_dir() {
         return Err(format!("Not a directory: {adk_path}"));
     }
+
+    // E2E mock — bypass agent kill + filesystem delete; e2e specs use
+    // disposable temp paths so a best-effort cleanup is enough.
+    if std::env::var("NAIA_E2E_MOCK_CLONE")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+    {
+        log_verbose("[delete_naia_adk] NAIA_E2E_MOCK_CLONE=1 — best-effort cleanup");
+        let _ = std::fs::remove_dir_all(&adk);
+        return Ok(());
+    }
+
+    // Kill agent first (it holds file handles inside adk_path on Windows)
+    if let Ok(mut guard) = state.agent.lock() {
+        if let Some(mut process) = guard.take() {
+            log_verbose("[Naia] Terminating agent-core before adk delete...");
+            let _ = process.child.kill();
+        }
+    }
+    // Kill gateway + node host
+    if let Ok(mut guard) = state.gateway.lock() {
+        if let Some(mut process) = guard.take() {
+            if let Some(ref mut nh) = process.node_host {
+                log_verbose("[Naia] Terminating Node Host before adk delete...");
+                let _ = nh.kill();
+            }
+            if process.we_spawned {
+                log_verbose("[Naia] Terminating Gateway before adk delete...");
+                let _ = process.child.kill();
+            }
+        }
+    }
+    // Brief wait for the OS to release file handles before deletion
+    tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+
     std::fs::remove_dir_all(&adk)
         .map_err(|e| format!("Failed to delete {adk_path}: {e}"))
 }
@@ -3407,6 +3442,23 @@ async fn clone_naia_adk(
         if non_empty {
             return Err(format!("Directory is not empty: {adk_path}"));
         }
+    }
+
+    // E2E mock — bypass network/git/zip and lay down a minimal scaffold.
+    // Activated by NAIA_E2E_MOCK_CLONE=1 (set by wdio.conf.ts). This lets
+    // the setup UI proceed through clone → init → copy-assets → onboarding
+    // in O(ms) instead of O(seconds-to-minutes) and removes network/CI
+    // flakiness from #328 e2e.
+    if std::env::var("NAIA_E2E_MOCK_CLONE")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+    {
+        log_verbose("[clone_naia_adk] NAIA_E2E_MOCK_CLONE=1 — writing mock scaffold");
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("mock create_dir_all: {e}"))?;
+        std::fs::write(path.join("README.md"), "# E2E mock naia-adk\n")
+            .map_err(|e| format!("mock write README: {e}"))?;
+        return Ok(());
     }
 
     // Try git clone first.
