@@ -8,6 +8,9 @@ import { execPath } from "node:process";
 
 // Enable debug logging for Tauri app — Rust logs all agent events to stderr + naia.log
 process.env.CAFE_DEBUG_E2E = "1";
+// E2E mock: bypass GitHub clone + agent-kill-before-delete so ADK setup
+// scenarios run in milliseconds without network/process flakiness (#328).
+process.env.NAIA_E2E_MOCK_CLONE = "1";
 
 // Load shell/.env
 const envPath = resolve(import.meta.dirname, "../.env");

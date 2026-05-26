@@ -243,13 +243,28 @@ export async function clickBySelector(selector: string): Promise<void> {
 
 const API_KEY =
 	process.env.CAFE_E2E_API_KEY || process.env.GEMINI_API_KEY || "";
-const NAIA_KEY = process.env.CAFE_NAIA_KEY || "";
+const NAIA_KEY = process.env.NAIA_API_KEY || "";
+const ADK_FIXTURE =
+	process.env.NAIA_E2E_ADK_FIXTURE ||
+	"D:\\alpha-adk\\projects\\naia-adk";
 
 /**
  * Ensure the app is ready: bypass onboarding, set base config, wait for tabs.
  * Safe to call multiple times — skips if already configured.
  */
 export async function ensureAppReady(): Promise<void> {
+	// Ensure ADK path is set so AdkSetupScreen does not gate the rest of the app.
+	// Uses NAIA_E2E_ADK_FIXTURE (default projects/naia-adk) so we never hit a
+	// fresh-install screen during specs that just need the chat surface.
+	const adkPathConfigured = await browser.execute(
+		() => !!localStorage.getItem("naia-adk-path"),
+	);
+	if (!adkPathConfigured) {
+		await browser.execute((p: string) => {
+			localStorage.setItem("naia-adk-path", p);
+		}, ADK_FIXTURE);
+	}
+
 	// Providers like claude-code-cli, ollama, and nextain don't require an apiKey.
 	// Consider configured if onboardingComplete is set — apiKey is optional depending on provider.
 	const alreadyConfigured = await browser.execute(() => {

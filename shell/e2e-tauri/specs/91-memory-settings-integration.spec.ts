@@ -24,11 +24,11 @@ const GEMINI_KEY =
  * When set, Suites 1 & 2 run against the nextain provider.
  * Suites 3 & 4 (LLM chat + semantic judge) still require GEMINI_KEY.
  */
-const NAIA_KEY = process.env.CAFE_NAIA_KEY || "";
+const NAIA_KEY = process.env.NAIA_API_KEY || "";
 
 if (!GEMINI_KEY && !NAIA_KEY) {
 	throw new Error(
-		"Auth key required: set CAFE_E2E_API_KEY/GEMINI_API_KEY (Gemini) or CAFE_NAIA_KEY (nextain) in shell/.env",
+		"Auth key required: set CAFE_E2E_API_KEY/GEMINI_API_KEY (Gemini) or NAIA_API_KEY (nextain) in shell/.env",
 	);
 }
 
