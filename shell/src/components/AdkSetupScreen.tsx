@@ -10,13 +10,29 @@ import {
 	readNaiaConfig,
 	setAdkPath,
 } from "../lib/adk-store";
-import { getLocale, t } from "../lib/i18n";
+import { getLocale, t, type TranslationKey } from "../lib/i18n";
 
 interface AdkSetupScreenProps {
 	onComplete: () => void;
 }
 
 type Mode = "select" | "new" | "new_exists" | "load" | "login";
+
+type SetupStatus =
+	| null
+	| "deleting"
+	| "cloning"
+	| "zipFallback"
+	| "initializing"
+	| "copyingAssets";
+
+const STATUS_KEYS: Record<Exclude<SetupStatus, null>, TranslationKey> = {
+	deleting: "adk.setup.status.deleting",
+	cloning: "adk.setup.cloning",
+	zipFallback: "adk.setup.status.zipFallback",
+	initializing: "adk.setup.status.initializing",
+	copyingAssets: "adk.setup.status.copyingAssets",
+};
 
 function getNaiaWebBaseUrl() {
 	return (
@@ -60,7 +76,8 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	// New-start always uses ~/naia-adk — never auto-detected existing paths.
 	const [newDefaultPath, setNewDefaultPath] = useState("~/naia-adk");
 	const [error, setError] = useState<string | null>(null);
-	const [cloning, setCloning] = useState(false);
+	const [setupStatus, setSetupStatus] = useState<SetupStatus>(null);
+	const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
 	const [loginWaiting, setLoginWaiting] = useState(false);
 	const [loginTimeout, setLoginTimeout] = useState(false);
 
@@ -71,6 +88,45 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			.then(setNewDefaultPath)
 			.catch(() => {});
 	}, []);
+
+	// Listen for ADK setup progress events emitted by clone_naia_adk
+	// (zip fallback + byte-level download progress).
+	useEffect(() => {
+		const unlisten = listen<{
+			phase: string;
+			downloaded?: number;
+			total?: number;
+		}>("adk_setup_progress", (event) => {
+			const p = event.payload;
+			if (p.phase === "zip_fallback") {
+				setSetupStatus("zipFallback");
+			} else if (p.phase === "zip_progress") {
+				if (typeof p.downloaded === "number") {
+					const mb = (p.downloaded / 1024 / 1024).toFixed(1);
+					if (typeof p.total === "number" && p.total > 0) {
+						const pct = Math.floor((p.downloaded / p.total) * 100);
+						setDownloadProgress(`${pct}% (${mb} MB)`);
+					} else {
+						setDownloadProgress(`${mb} MB`);
+					}
+				}
+			}
+		});
+		return () => {
+			unlisten.then((fn) => fn());
+		};
+	}, []);
+
+	// Clear download progress whenever the active phase moves past download.
+	useEffect(() => {
+		if (
+			setupStatus === null ||
+			setupStatus === "initializing" ||
+			setupStatus === "copyingAssets"
+		) {
+			setDownloadProgress(null);
+		}
+	}, [setupStatus]);
 
 	// Listen for Naia auth callback (login mode)
 	useEffect(() => {
@@ -136,13 +192,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				setMode("new_exists");
 				return;
 			}
-			// Clone naia-adk scaffold from GitHub
-			setCloning(true);
+			setSetupStatus("cloning");
 			await invoke("clone_naia_adk", { adkPath });
-			setCloning(false);
-			// Initialize naia-settings subdirs and copy bundled assets
+			setSetupStatus("initializing");
 			await invoke("init_naia_settings", { adkPath });
+			setSetupStatus("copyingAssets");
 			await copyBundledAssets(adkPath);
+			setSetupStatus(null);
 			clearAllLocalData();
 			setAdkPath(adkPath);
 			localStorage.setItem(
@@ -151,7 +207,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			);
 			onComplete();
 		} catch (err) {
-			setCloning(false);
+			setSetupStatus(null);
 			setError(String(err));
 		}
 	}
@@ -159,8 +215,11 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	async function handleNewUseExisting() {
 		try {
 			const adkPath = path.trim() || newDefaultPath;
+			setSetupStatus("initializing");
 			await invoke("init_naia_settings", { adkPath });
+			setSetupStatus("copyingAssets");
 			await copyBundledAssets(adkPath);
+			setSetupStatus(null);
 			clearAllLocalData();
 			setAdkPath(adkPath);
 			const fileConfig = await readNaiaConfig();
@@ -177,6 +236,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			}
 			onComplete();
 		} catch (err) {
+			setSetupStatus(null);
 			setError(String(err));
 		}
 	}
@@ -184,13 +244,15 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	async function handleNewRecreate() {
 		try {
 			const adkPath = path.trim() || newDefaultPath;
-			// Wipe entire workspace and re-clone scaffold
+			setSetupStatus("deleting");
 			await invoke("delete_naia_adk", { adkPath });
-			setCloning(true);
+			setSetupStatus("cloning");
 			await invoke("clone_naia_adk", { adkPath });
-			setCloning(false);
+			setSetupStatus("initializing");
 			await invoke("init_naia_settings", { adkPath });
+			setSetupStatus("copyingAssets");
 			await copyBundledAssets(adkPath);
+			setSetupStatus(null);
 			clearAllLocalData();
 			setAdkPath(adkPath);
 			localStorage.setItem(
@@ -199,7 +261,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			);
 			onComplete();
 		} catch (err) {
-			setCloning(false);
+			setSetupStatus(null);
 			setError(String(err));
 		}
 	}
@@ -213,8 +275,11 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 		try {
 			setAdkPath(trimmed);
 			// Ensure naia-settings subfolders and bundled defaults exist.
+			setSetupStatus("initializing");
 			await invoke("init_naia_settings", { adkPath: trimmed });
+			setSetupStatus("copyingAssets");
 			await copyBundledAssets(trimmed);
+			setSetupStatus(null);
 			// Restore config from the selected ADK folder, then mark onboarding done
 			const fileConfig = await readNaiaConfig();
 			const base = fileConfig ?? {};
@@ -229,9 +294,21 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			);
 			onComplete();
 		} catch (err) {
+			setSetupStatus(null);
 			setError(String(err));
 		}
 	}
+
+	// Status line — shown across all setup modes (new / new_exists / load).
+	// Adds byte-level download progress when zip fallback is streaming.
+	const statusLine = setupStatus ? (
+		<p className="adk-setup-hint">
+			{t(STATUS_KEYS[setupStatus])}
+			{downloadProgress &&
+				(setupStatus === "cloning" || setupStatus === "zipFallback") &&
+				` — ${downloadProgress}`}
+		</p>
+	) : null;
 
 	async function handleNaiaLogin() {
 		setLoginWaiting(true);
@@ -372,13 +449,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						</button>
 					</div>
 					{error && <p className="adk-setup-error">{error}</p>}
-					{cloning && <p className="adk-setup-hint">{t("adk.setup.cloning")}</p>}
+					{statusLine}
 					<p className="adk-setup-hint">{t("adk.setup.new.hint")}</p>
 					<button
 						type="button"
 						className="adk-setup-confirm-btn"
 						onClick={handleNewStart}
-						disabled={cloning}
+						disabled={setupStatus !== null}
 					>
 						{t("adk.setup.new.confirm")}
 					</button>
@@ -414,11 +491,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				<div className="adk-setup-form">
 					<div className="adk-setup-path-preview">{path}</div>
 					{error && <p className="adk-setup-error">{error}</p>}
+					{statusLine}
 					<div className="adk-setup-cards" style={{ marginTop: 16 }}>
 						<button
 							type="button"
 							className="adk-setup-option-card"
 							onClick={handleNewUseExisting}
+							disabled={setupStatus !== null}
 						>
 							<span className="adk-setup-option-icon">✅</span>
 							<span className="adk-setup-option-title">그대로 사용</span>
@@ -430,6 +509,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							type="button"
 							className="adk-setup-option-card"
 							onClick={handleNewRecreate}
+							disabled={setupStatus !== null}
 						>
 							<span className="adk-setup-option-icon">🗑</span>
 							<span className="adk-setup-option-title">삭제하고 새로 시작</span>
@@ -489,11 +569,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						</button>
 					</div>
 					{error && <p className="adk-setup-error">{error}</p>}
+					{statusLine}
 					<p className="adk-setup-hint">{t("adk.setup.load.hint")}</p>
 					<button
 						type="button"
 						className="adk-setup-confirm-btn"
 						onClick={handleLoadConfirm}
+						disabled={setupStatus !== null}
 					>
 						{t("adk.setup.load.confirm")}
 					</button>

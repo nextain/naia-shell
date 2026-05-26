@@ -3356,8 +3356,15 @@ async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
 /// Clone nextain/naia-adk (shallow) into adk_path.
 /// Falls back to zip download if git is not installed.
 /// Fails if the directory already exists and is non-empty.
+///
+/// Emits `adk_setup_progress` events so the UI can show what is happening:
+///   { phase: "zip_fallback" }                                  — git failed
+///   { phase: "zip_progress", downloaded, total }               — bytes received
 #[tauri::command]
-async fn clone_naia_adk(adk_path: String) -> Result<(), String> {
+async fn clone_naia_adk(
+    adk_path: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
     if adk_path.is_empty() {
         return Err("adk_path is empty".to_string());
     }
@@ -3386,23 +3393,51 @@ async fn clone_naia_adk(adk_path: String) -> Result<(), String> {
         }
     }
 
-    // Fallback: download zip from GitHub and extract.
-    naia_adk_download_zip(&adk_path).await
+    // Fallback: download zip from GitHub and extract — emit progress so UI is not silent.
+    let _ = app_handle.emit("adk_setup_progress", serde_json::json!({
+        "phase": "zip_fallback"
+    }));
+    naia_adk_download_zip(&adk_path, &app_handle).await
 }
 
-async fn naia_adk_download_zip(adk_path: &str) -> Result<(), String> {
+async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result<(), String> {
     const ZIP_URL: &str = "https://github.com/nextain/naia-adk/archive/refs/heads/main.zip";
 
-    // Download zip into memory.
-    let bytes = reqwest::get(ZIP_URL)
+    // Stream the download so we can emit byte progress (~200ms throttle).
+    let mut response = reqwest::get(ZIP_URL)
         .await
-        .map_err(|e| format!("zip download failed: {e}"))?
-        .bytes()
+        .map_err(|e| format!("zip download failed: {e}"))?;
+    let total = response.content_length();
+
+    let mut buf: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
+    let mut downloaded: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|e| format!("zip read failed: {e}"))?;
+        .map_err(|e| format!("zip read failed: {e}"))?
+    {
+        downloaded += chunk.len() as u64;
+        buf.extend_from_slice(&chunk);
+        if last_emit.elapsed() >= std::time::Duration::from_millis(200) {
+            let _ = app_handle.emit("adk_setup_progress", serde_json::json!({
+                "phase": "zip_progress",
+                "downloaded": downloaded,
+                "total": total,
+            }));
+            last_emit = std::time::Instant::now();
+        }
+    }
+    // Final progress emit so UI shows 100% before extraction starts.
+    let _ = app_handle.emit("adk_setup_progress", serde_json::json!({
+        "phase": "zip_progress",
+        "downloaded": downloaded,
+        "total": total,
+    }));
 
     // Extract — GitHub zips contain a single top-level "naia-adk-main/" folder.
-    let cursor = std::io::Cursor::new(bytes);
+    let cursor = std::io::Cursor::new(buf);
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| format!("zip open failed: {e}"))?;
 
