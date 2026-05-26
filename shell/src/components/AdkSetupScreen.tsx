@@ -78,6 +78,12 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	const [error, setError] = useState<string | null>(null);
 	const [setupStatus, setSetupStatus] = useState<SetupStatus>(null);
 	const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
+	// State of the chosen ADK directory when entering new_exists mode.
+	// "has_settings" → existing naia ADK (both "use as-is" and "delete" make sense)
+	// "has_other_files" → folder is non-empty but no naia-settings/ (only "delete" makes sense)
+	const [dirState, setDirState] = useState<
+		"has_settings" | "has_other_files" | null
+	>(null);
 	const [loginWaiting, setLoginWaiting] = useState(false);
 	const [loginTimeout, setLoginTimeout] = useState(false);
 
@@ -186,9 +192,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 	async function handleNewStart() {
 		try {
 			const adkPath = path.trim() || newDefaultPath;
-			// Check if naia-settings already exists
-			const exists = await invoke<boolean>("check_naia_settings", { adkPath });
-			if (exists) {
+			// inspect_adk_dir → "empty" | "has_settings" | "has_other_files" | "missing"
+			// Branch into new_exists for both "has_settings" and "has_other_files"
+			// so the user always sees a coherent choice instead of a raw
+			// "Directory is not empty" error from clone_naia_adk (#325).
+			const state = await invoke<string>("inspect_adk_dir", { adkPath });
+			if (state === "has_settings" || state === "has_other_files") {
+				setDirState(state);
 				setPath(adkPath);
 				setMode("new_exists");
 				return;
@@ -454,6 +464,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 
 	// ── New start — existing data found ───────────────────────────────────────
 	if (mode === "new_exists") {
+		const hasSettings = dirState === "has_settings";
 		return (
 			<div className="adk-setup-screen">
 				<button
@@ -463,6 +474,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						setMode("new");
 						setError(null);
 						setPath("");
+						setDirState(null);
 					}}
 				>
 					{t("adk.setup.back")}
@@ -471,9 +483,13 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					<span className="adk-setup-option-icon adk-setup-option-icon--lg">
 						📦
 					</span>
-					<h1 className="adk-setup-headline">이미 데이터가 있어요</h1>
+					<h1 className="adk-setup-headline">
+						{hasSettings ? "이미 데이터가 있어요" : "폴더에 파일이 있어요"}
+					</h1>
 					<p className="adk-setup-sub">
-						이 폴더에 이미 naia-settings 데이터가 있습니다.
+						{hasSettings
+							? "이 폴더에 이미 naia-settings 데이터가 있습니다."
+							: "이 폴더에 다른 파일이 있어 naia-adk를 그대로 복제할 수 없습니다."}
 					</p>
 				</div>
 
@@ -482,18 +498,20 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 					{error && <p className="adk-setup-error">{error}</p>}
 					{statusLine}
 					<div className="adk-setup-cards" style={{ marginTop: 16 }}>
-						<button
-							type="button"
-							className="adk-setup-option-card"
-							onClick={handleNewUseExisting}
-							disabled={setupStatus !== null}
-						>
-							<span className="adk-setup-option-icon">✅</span>
-							<span className="adk-setup-option-title">그대로 사용</span>
-							<span className="adk-setup-option-desc">
-								기존 VRM·배경·BGM 데이터를 유지합니다
-							</span>
-						</button>
+						{hasSettings && (
+							<button
+								type="button"
+								className="adk-setup-option-card"
+								onClick={handleNewUseExisting}
+								disabled={setupStatus !== null}
+							>
+								<span className="adk-setup-option-icon">✅</span>
+								<span className="adk-setup-option-title">그대로 사용</span>
+								<span className="adk-setup-option-desc">
+									기존 VRM·배경·BGM 데이터를 유지합니다
+								</span>
+							</button>
+						)}
 						<button
 							type="button"
 							className="adk-setup-option-card"
@@ -503,7 +521,9 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							<span className="adk-setup-option-icon">🗑</span>
 							<span className="adk-setup-option-title">삭제하고 새로 시작</span>
 							<span className="adk-setup-option-desc">
-								naia-settings를 완전히 초기화합니다
+								{hasSettings
+									? "naia-settings를 완전히 초기화합니다"
+									: "기존 파일을 삭제하고 naia-adk를 새로 받습니다"}
 							</span>
 						</button>
 					</div>
