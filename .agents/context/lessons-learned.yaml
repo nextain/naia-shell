@@ -624,3 +624,55 @@ lessons:
     root_cause: "Client was written against a fork-only experiment instead of the upstream-compatible /v1/realtime (OpenAI Realtime API) surface. Upstream had already converged on /v1/realtime with OmniRealtimeConnection emitting modalities=[audio,text]; the fork team aligned by removing /v1/omni, but the naia-os client didn't follow. ASR-only assumption in file header was already stale."
     fix: "Rewrote minicpm-o.ts to speak /v1/realtime directly: base64 PCM16 via input_audio_buffer.append, explicit input_audio_buffer.commit + response.create, response.audio.delta passthrough (no WAV decode), response.audio_transcript.delta / response.done handling, response.cancel for barge-in. Verified E2E with vllm-omni's realtime_e2e_test.py reference client on local pc-bazzite:8000 (TTFA 1.31s)."
     reference: "issues #216 (server prerequisite) and #219 (client migration); cross-review cr-20260425-021205"
+
+  - id: L059
+    date: "2026-05-27"
+    issue: "#329"
+    category: e2e, auth, ipc
+    scope: "shell/src/lib/adk-store.ts, shell/e2e-tauri/specs/*"
+    title: "apiKey/naiaKey collision on NAIA_ANYLLM_API_KEY — e2e setup bypasses prod OAuth flow → 401 against dev gateway"
+    problem: |
+      e2e 04-skill-time fails 401 against dev naia gateway even after #329
+      minimal hotfix (config_update force-applies env + invalidates cachedLlm)
+      and dev key directly curl-validates HTTP 200. Agent debug at chat_request
+      time shows process.env.NAIA_ANYLLM_API_KEY=<Gemini key prefix> rather
+      than the dev gw key (gw- prefix). Production OAuth login flow works.
+    root_cause: |
+      shell/src/lib/adk-store.ts:255-263 (resolveAgentEnvKey) maps BOTH the
+      `apiKey` field (Gemini direct key) and the `naiaKey` field (dev gw key)
+      to the SAME env var `NAIA_ANYLLM_API_KEY` when provider === "nextain".
+      Tauri Store (`%APPDATA%/io.nextain.naia/secure-keys.dat`) carries a
+      stale `apiKey` field (1ecc41ed46...) from earlier sessions. The shell
+      pushes both via separate IPC channels (`auth_update` for naiaKey,
+      a config_update derivative for apiKey-as-env) — last-write-wins, and
+      the Gemini apiKey overwrites the correct dev gw key.
+
+      Production OAuth callback only writes `naiaKey` to the secure store
+      (apiKey stays empty for nextain provider) — so the collision never
+      triggers and prod works.
+
+      e2e `ensureAppReady` writes `localStorage.setItem("naia-config", ...)`
+      directly, bypassing the OAuth path and never cleaning the stale
+      `apiKey` from the secure store. Codex cross-review (4) flagged this
+      exact divergence.
+    fix: |
+      Verified workaround (this session): delete apiKey field from
+      `%APPDATA%/io.nextain.naia/secure-keys.dat`:
+        $p="$env:APPDATA\io.nextain.naia\secure-keys.dat"; $j=Get-Content $p -Raw | ConvertFrom-Json; $j.PSObject.Properties.Remove('apiKey'); ($j | ConvertTo-Json -Compress) | Set-Content $p -Encoding utf8 -NoNewline
+      → next e2e 04 run: 401 disappears, agent receives correct dev gw key,
+      LLM responds normally (Unauthorized → tool_result frames flowing).
+
+      Proper fix (NOT done this session — deferred to follow-up):
+      - (A) shell adk-store.ts: don't map `apiKey` → `NAIA_ANYLLM_API_KEY`
+        when provider === "nextain"; `naiaKey` is the only legitimate source.
+      - (B) shell: on save with provider=nextain, deleteSecretKey("apiKey")
+        so a stale Gemini key cannot poison subsequent IPC pushes.
+      - (C) e2e ensureAppReady: mirror prod OAuth path —
+        deleteSecretKey("apiKey") + saveSecretKey("naiaKey", devKey) — instead
+        of just localStorage.setItem.
+
+      Cross-repo refs:
+      - naia-agent 6cc41a1 (force-apply lab-proxy env + invalidate cachedLlm)
+        — necessary defensive fix, but not sufficient on its own.
+      - nextain/naia-os#329 (split-brain issue) — remains OPEN, awaiting (A)/(B).
+    reference: "nextain/naia-os#329, nextain/naia-os issuecomment-4543335868"
