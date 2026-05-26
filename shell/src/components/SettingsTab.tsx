@@ -3485,19 +3485,21 @@ export function SettingsTab() {
 				</div>
 			)}
 
-			{/* Backup section */}
-			<div className="settings-field">
+			{/* Backup section — 구현 검증 전까지 비활성. */}
+			<div className="settings-field" style={{ opacity: 0.45 }}>
 				<label>{t("settings.memoryBackup")}</label>
 				<input
 					type="password"
 					value={backupPassword}
 					onChange={(e) => setBackupPassword(e.target.value)}
 					placeholder={t("settings.memoryBackupPassword")}
+					disabled
 				/>
 				<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
 					<button
 						type="button"
-						disabled={!backupPassword || backupStatus !== "idle"}
+						disabled
+						title="검증 중 — 아직 사용할 수 없습니다"
 						onClick={async () => {
 							setBackupStatus("exporting");
 							setBackupError("");
@@ -3527,7 +3529,8 @@ export function SettingsTab() {
 					</button>
 					<button
 						type="button"
-						disabled={!backupPassword || backupStatus !== "idle"}
+						disabled
+						title="검증 중 — 아직 사용할 수 없습니다"
 						onClick={async () => {
 							const pw = backupPassword;
 							const fileInput = document.createElement("input");
@@ -3556,6 +3559,9 @@ export function SettingsTab() {
 							: t("settings.memoryBackupImport")}
 					</button>
 				</div>
+				<span className="settings-hint">
+					{t("settings.memoryBackupComingSoon")}
+				</span>
 				{backupStatus === "done" && (
 					<span
 						className="settings-hint"
