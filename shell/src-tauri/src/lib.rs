@@ -3229,6 +3229,37 @@ async fn check_naia_settings(adk_path: String) -> bool {
         .is_dir()
 }
 
+/// Inspect the ADK directory and report its state so the UI can branch
+/// correctly (avoid the "Directory is not empty" raw error path).
+///
+/// Returns one of:
+/// - `"missing"`         — path empty / does not exist / not a directory
+/// - `"has_settings"`    — `naia-settings/` subdir present (full ADK)
+/// - `"has_other_files"` — non-empty directory but no `naia-settings/`
+/// - `"empty"`           — directory exists and is empty (clone target)
+#[tauri::command]
+async fn inspect_adk_dir(adk_path: String) -> String {
+    if adk_path.is_empty() {
+        return "missing".to_string();
+    }
+    let dir = std::path::PathBuf::from(&adk_path);
+    if !dir.exists() || !dir.is_dir() {
+        return "missing".to_string();
+    }
+    if dir.join("naia-settings").is_dir() {
+        return "has_settings".to_string();
+    }
+    let non_empty = dir
+        .read_dir()
+        .map(|mut d| d.next().is_some())
+        .unwrap_or(false);
+    if non_empty {
+        "has_other_files".to_string()
+    } else {
+        "empty".to_string()
+    }
+}
+
 /// Create `{adk_path}/naia-settings/` and standard subdirectories.
 #[tauri::command]
 async fn init_naia_settings(adk_path: String) -> Result<(), String> {
@@ -3580,6 +3611,7 @@ pub fn run() {
             write_naia_config,
             write_agent_key,
             check_naia_settings,
+            inspect_adk_dir,
             init_naia_settings,
             write_naia_path_cache,
             delete_naia_settings,
