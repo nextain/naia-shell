@@ -1,0 +1,291 @@
+# SPDX-License-Identifier: CC-BY-SA-4.0
+#
+# E2E Test Scenarios — naia-os feature surface × test coverage
+#
+# Source of truth for what we test, what we COULD test, and how each
+# scenario maps to a user-facing capability. Read during INVESTIGATE
+# phase when planning a new feature or audit. Updated during SYNC phase
+# after a new spec lands.
+#
+# Categories: setup, llm, skills, ui, channels, voice, memory, infra, e2e-meta
+#
+# Schema:
+#   id:              S{NNN} — sequential
+#   feature:         user-facing capability (one-line)
+#   spec_file:       shell/e2e-tauri/specs/*.spec.ts (when implemented)
+#   status:          implemented | partial | proposed | broken
+#   coverage:        what the spec actually asserts
+#   gaps:            what is NOT covered (informs new specs)
+#   manual_topic:    .users/guides/manual/<topic>.md (when user-facing)
+
+version: 1
+name: e2e-scenarios
+updated: "2026-05-27"
+
+# ─── Existing specs (29 + 1 added this session) ────────────────────────────
+existing:
+  - id: S001
+    feature: "App launch + Tauri webview baseline"
+    spec_file: "shell/e2e-tauri/specs/01-app-launch.spec.ts"
+    status: implemented
+    coverage: "App starts, webview attaches, infrastructure baseline"
+    gaps: []
+  - id: S002
+    feature: "Initial configuration via Settings UI"
+    spec_file: "shell/e2e-tauri/specs/02-configure.spec.ts"
+    status: implemented
+    coverage: "provider+key+gateway URL set through Settings tab"
+    gaps: ["secure-store cleanup on provider switch (root cause of #329)"]
+  - id: S003
+    feature: "Basic single-turn chat"
+    spec_file: "shell/e2e-tauri/specs/03-basic-chat.spec.ts"
+    status: implemented
+    coverage: "single user message → LLM response (no tools)"
+    gaps: ["multi-turn (S101 proposed)"]
+  - id: S004
+    feature: "Skill: time"
+    spec_file: "shell/e2e-tauri/specs/04-skill-time.spec.ts"
+    status: broken
+    coverage: "user asks for time → LLM calls skill_time → tool result returned"
+    gaps:
+      - "currently FAILS — LLM calls skill_sessions/skill_config/skill_voicewake instead of skill_time (LLM behavior / tool-routing, see #332 proposal)"
+      - "auth path tripped by #329 apiKey/naiaKey collision (now mitigated via secure-store cleanup)"
+  - id: S005
+    feature: "Skill: system status"
+    spec_file: "shell/e2e-tauri/specs/05-skill-system.spec.ts"
+    status: implemented
+    coverage: "skill_system_status returns OS/process metrics"
+    gaps: []
+  - id: S006
+    feature: "Skill: memo (record + recall)"
+    spec_file: "shell/e2e-tauri/specs/06-skill-memo.spec.ts"
+    status: implemented
+    coverage: "create memo + retrieve via tool"
+    gaps: ["multi-day persistence (S105 proposed)"]
+  - id: S007
+    feature: "Session cleanup (factory reset)"
+    spec_file: "shell/e2e-tauri/specs/07-cleanup.spec.ts"
+    status: implemented
+    coverage: "factory_reset IPC clears agent state"
+    gaps: ["secure-store residue (S102 proposed — direct outcome of #329 finding)"]
+  - id: S008
+    feature: "Memory: record/recall (Hardened SQLite v6.0)"
+    spec_file: "shell/e2e-tauri/specs/08-memory.spec.ts"
+    status: implemented
+    coverage: "encode → recall round-trip via naia-memory"
+    gaps: ["Ebbinghaus decay timing (S106 proposed)"]
+  - id: S009
+    feature: "Onboarding wizard"
+    spec_file: "shell/e2e-tauri/specs/09-onboarding.spec.ts"
+    status: implemented
+    coverage: "fresh-install onboarding completes"
+    gaps:
+      - "OAuth callback path coverage (S103 proposed — prod path divergence from e2e ensureAppReady, see #329 (C))"
+  - id: S010
+    feature: "History tab (previous conversations list)"
+    spec_file: "shell/e2e-tauri/specs/10-history-tab.spec.ts"
+    status: broken
+    coverage: "history list renders + click loads conversation"
+    gaps: ["#320 OPEN — previous conversation list not shown"]
+  - id: S011
+    feature: "Cost dashboard (balance + usage)"
+    spec_file: "shell/e2e-tauri/specs/11-cost-dashboard.spec.ts"
+    status: implemented
+    coverage: "naia gateway /v1/profile/balance + usage chart"
+    gaps: ["fetch failure UX (S107 proposed)"]
+  - id: S012
+    feature: "Gateway skills integration"
+    spec_file: "shell/e2e-tauri/specs/12-skills-gateway.spec.ts"
+    status: implemented
+    coverage: "gateway-provided skills register + execute"
+    gaps: []
+  - id: S013
+    feature: "Lab login (naia.nextain.io OAuth → deep-link)"
+    spec_file: "shell/e2e-tauri/specs/13-lab-login.spec.ts"
+    status: implemented
+    coverage: "deep-link callback delivers naiaKey to shell"
+    gaps: ["secure-store apiKey cleanup on lab login (S102, see #329 (B))"]
+  - id: S014
+    feature: "Skills tab (browse + toggle)"
+    spec_file: "shell/e2e-tauri/specs/14-skills-tab.spec.ts"
+    status: implemented
+    coverage: "skill list renders + enable/disable persists"
+    gaps: []
+  - id: S015
+    feature: "AI-driven skill_manager"
+    spec_file: "shell/e2e-tauri/specs/15-skill-manager-ai.spec.ts"
+    status: implemented
+    coverage: "agent uses skill_manager to enable/disable other skills via LLM"
+    gaps: []
+  - id: S016
+    feature: "Skill: weather"
+    spec_file: "shell/e2e-tauri/specs/16-skill-weather.spec.ts"
+    status: implemented
+    coverage: "skill_weather returns forecast for a location"
+    gaps: []
+  - id: S017
+    feature: "Skill: notify (Slack/Discord/Google Chat webhook)"
+    spec_file: "shell/e2e-tauri/specs/17-skill-notify.spec.ts"
+    status: implemented
+    coverage: "skill_notify_slack + skill_notify_discord webhook POST"
+    gaps: ["rate-limit retry (S108 proposed)"]
+  - id: S018
+    feature: "Provider tool-calling matrix"
+    spec_file: "shell/e2e-tauri/specs/18-provider-tool-calling.spec.ts"
+    status: implemented
+    coverage: "each provider (gemini/openai/anthropic/glm/...) does native tool calling"
+    gaps: ["nextain provider against dev gateway (blocked by #329 until proper fix)"]
+  - id: S019
+    feature: "Bulk skill operations"
+    spec_file: "shell/e2e-tauri/specs/19-skills-bulk.spec.ts"
+    status: implemented
+    coverage: "enable/disable many skills atomically"
+    gaps: []
+  - id: S020
+    feature: "Cron: one-shot scheduled task"
+    spec_file: "shell/e2e-tauri/specs/20-cron-basic.spec.ts"
+    status: implemented
+    coverage: "create cron → fires once → result captured"
+    gaps: []
+  - id: S021
+    feature: "Cron: recurring schedule"
+    spec_file: "shell/e2e-tauri/specs/21-cron-recurring.spec.ts"
+    status: implemented
+    coverage: "cron fires N times on cadence"
+    gaps: []
+  - id: S022
+    feature: "Channels configuration UI"
+    spec_file: "shell/e2e-tauri/specs/22-channels-config.spec.ts"
+    status: implemented
+    coverage: "Discord/Slack webhook URL save + agent receives notify_config IPC"
+    gaps: []
+  - id: S023
+    feature: "Channels status indicator"
+    spec_file: "shell/e2e-tauri/specs/23-channels-status.spec.ts"
+    status: implemented
+    coverage: "channel online/offline pill reflects webhook health"
+    gaps: []
+  - id: S024a
+    feature: "ADK setup flow (new / new_exists / load)"
+    spec_file: "shell/e2e-tauri/specs/24-adk-setup-flow.spec.ts"
+    status: broken
+    coverage: "this session — covers #324/#325/#327 UI flows via NAIA_E2E_MOCK_CLONE"
+    gaps:
+      - "S1 currently FAILS — wdio webview session lost during ADK switch lifecycle (#328 open)"
+      - "S2 depends on S1 path"
+      - "S3 gated on API_KEY (now resolvable post-#329 secure-store cleanup)"
+  - id: S024b
+    feature: "TTS providers (OpenAI / ElevenLabs / Edge)"
+    spec_file: "shell/e2e-tauri/specs/24-tts-providers.spec.ts"
+    status: implemented
+    coverage: "each TTS provider preview round-trips"
+    gaps: ["voice clone (S109 proposed)"]
+  - id: S025
+    feature: "Voice wake (porcupine wake-word)"
+    spec_file: "shell/e2e-tauri/specs/25-voice-wake.spec.ts"
+    status: implemented
+    coverage: "wake-word triggers chat session"
+    gaps: []
+  - id: S026
+    feature: "Sessions management (list / switch / delete)"
+    spec_file: "shell/e2e-tauri/specs/26-sessions-management.spec.ts"
+    status: implemented
+    coverage: "skill_sessions tool covers CRUD"
+    gaps: []
+  - id: S027
+    feature: "Multi-agent orchestration"
+    spec_file: "shell/e2e-tauri/specs/27-multi-agent.spec.ts"
+    status: implemented
+    coverage: "host LLM delegates sub-task to a secondary agent"
+    gaps: []
+  - id: S028
+    feature: "Skills install (from naia.nextain.io marketplace)"
+    spec_file: "shell/e2e-tauri/specs/28-skills-install.spec.ts"
+    status: implemented
+    coverage: "install + uninstall ADK-distributed skill"
+    gaps: []
+  - id: S029
+    feature: "Cron gateway (cloud-side scheduling)"
+    spec_file: "shell/e2e-tauri/specs/29-cron-gateway.spec.ts"
+    status: implemented
+    coverage: "cron registered on naia gateway fires shell IPC"
+    gaps: []
+
+# ─── Proposed new scenarios (from this session's findings + gaps audit) ────
+proposed:
+  - id: S101
+    feature: "Multi-turn chat (N consecutive turns share context)"
+    status: proposed
+    rationale: "S003 covers only single-turn. Multi-turn context retention is a core LLM capability we never assert."
+    test_outline: |
+      turn 1: "내 이름은 Tester"
+      turn 2: "내 이름이 뭐였지?"
+      assert: response mentions "Tester"
+    manual_topic: "chat-multi-turn.md"
+  - id: S102
+    feature: "Secure-store hygiene on provider switch"
+    status: proposed
+    rationale: "Root cause of #329 — apiKey field collides with naiaKey because no auto-cleanup. New spec asserts that switching provider from gemini → nextain clears stale apiKey from secure-keys.dat."
+    test_outline: |
+      step 1: settings → gemini provider + apiKey set
+      step 2: settings → nextain provider + naiaKey set
+      assert: getSecretKey('apiKey') === null after save
+    manual_topic: "settings-provider-switch.md"
+  - id: S103
+    feature: "OAuth callback path coverage (deep-link → secure store)"
+    status: proposed
+    rationale: "e2e ensureAppReady currently bypasses OAuth path via direct localStorage. Add a spec that simulates the deep-link callback so e2e matches prod login flow."
+    test_outline: |
+      step 1: trigger Naia auth deep-link with naiaKey payload
+      step 2: assert secure-store has naiaKey, apiKey empty, agent received auth_update
+    manual_topic: "login-oauth.md"
+  - id: S104
+    feature: "skill_time end-to-end with deterministic LLM prompt"
+    status: proposed
+    rationale: "S004 currently broken because LLM picks other tools. Either restrict tool list at chat_request time OR strengthen system prompt to force skill_time only."
+    test_outline: |
+      step 1: chat_request with allowedTools=[skill_time] only
+      step 2: send 'HH:MM 형식으로 현재 시각'
+      assert: tool_use=skill_time success
+    manual_topic: "skills-tool-routing.md"
+  - id: S105
+    feature: "Memo persistence across app restarts"
+    status: proposed
+    rationale: "S006 covers create+recall within one session. Add multi-restart persistence assertion."
+    test_outline: |
+      restart 1: create memo
+      restart 2: recall memo, assert content intact
+    manual_topic: "memo-persistence.md"
+  - id: S106
+    feature: "Ebbinghaus decay verifies older memories down-rank"
+    status: proposed
+    rationale: "Memory system v6.0 has decay but no assertion proves it actually affects recall ranking."
+    test_outline: |
+      step 1: encode 3 memories at t-7d, t-1d, t-0
+      step 2: recall query that matches all 3
+      assert: t-0 ranks first, t-7d last
+    manual_topic: "memory-decay.md"
+  - id: S107
+    feature: "Cost dashboard graceful UX on fetch failure"
+    status: proposed
+    rationale: "S011 covers happy path only. When gateway returns 5xx, dashboard should show fallback UI rather than blank."
+    test_outline: |
+      step 1: mock gateway balance endpoint to 503
+      assert: dashboard renders 'temporarily unavailable' card
+    manual_topic: "diagnostics-cost-dashboard.md"
+  - id: S108
+    feature: "Notify skill retries on transient webhook 429"
+    status: proposed
+    rationale: "S017 covers single-shot POST. Add 429 retry-with-backoff assertion."
+    manual_topic: "channels-rate-limit.md"
+  - id: S109
+    feature: "Voice clone (ElevenLabs voice ID)"
+    status: proposed
+    rationale: "S024b covers TTS provider switching but not voice ID selection."
+    manual_topic: "voice-clone.md"
+  - id: S110
+    feature: "Browser panel — naia.nextain.io tab embed"
+    status: proposed
+    rationale: "Browser panel skills exist (skill_browser_*) but no e2e covers the panel UI itself."
+    test_outline: "open naia.nextain.io in browser panel, assert skill_browser_get_text returns 'Naia'"
+    manual_topic: "browser-panel.md"
