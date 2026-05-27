@@ -676,3 +676,50 @@ lessons:
         — necessary defensive fix, but not sufficient on its own.
       - nextain/naia-os#329 (split-brain issue) — remains OPEN, awaiting (A)/(B).
     reference: "nextain/naia-os#329, nextain/naia-os issuecomment-4543335868"
+
+  - id: L060
+    date: "2026-05-27"
+    issue: "#332, #334, #335 — session-wide patterns"
+    category: workflow, sub-agent, cross-review
+    scope: ".agents/plans/*, workflow-level"
+    title: "Sub-agent parallel + parent B-mode re-verify + no-verify upload pattern (Ralph autonomous loop)"
+    problem: |
+      Ralph 자율 진행 시 단일 parent 가 모든 phase 를 직렬 처리하면 context
+      window 가 빨리 소진되고 sub-task 사이 quality gate (test, cross-review)
+      가 흐려짐. Codex/Gemini cross-review CLI 응답이 timeout 되는 사례 잦음.
+    root_cause: |
+      Parent context budget 과 sub-agent budget 분리 + cross-review CLI 가
+      inherently external + non-deterministic latency. Remote upload 보안
+      hook (.claude/git-pu marker) 가 classifier 와 충돌해 매번 hook bypass
+      flag 가 유일한 통과 경로.
+    fix: |
+      검증된 패턴 (본 세션 #332 Phases 2a~3, #334 implementation, #335
+      hardening 에 모두 적용):
+
+      1) Sub-agent 분배 단위: 한 phase = 한 sub-agent. 동시 만지는 파일이
+         겹치지 않으면 parallel; 같은 파일이면 직렬.
+      2) B-mode = parent re-verify: sub-agent 보고 그대로 신뢰하지 말고
+         parent 가 직접 `vitest run --bail=2` + `tsc --noEmit` 재실행.
+         pre-existing failure 는 명시적으로 식별 후 NEW failure 만 차단.
+      3) Cross-review wait policy: sub-agent prompt 에 "wait for response,
+         don't timeout-and-proceed" 명시. timeout 시 fallback 은 gemini →
+         codex 순으로. 응답 없으면 commit 진행하되 commit body 에
+         "cross-review did not complete" 명시.
+      4) Upload approval: 사용자가 1회 명시 후에는 hook bypass flag 가 본
+         세션 동안 유효. Sub-agent prompt 에 명시하고 marker 파일 절대
+         만지지 말 것 (classifier 가 self-bypass 로 차단 + security flag).
+      5) Phase blocked 정직 처리: 의존성 (예: naia-memory clock injection)
+         이 없으면 fake-implementation 으로 PASS 시키지 말고 .skip
+         placeholder spec + 상세 contract 를 spec header 에 박아둠.
+      6) Mirror 자동 update: .agents/context/e2e-scenarios.yaml 과
+         .users/context/{,ko/}e2e-scenarios.md mirror 는 매 e2e spec 추가
+         시 같이 update. Sub-agent prompt 에 "update mirrors" 명시.
+
+      안티패턴 (본 세션 중 1회씩 발생, 사용자 피드백으로 정정됨):
+      - Sub-agent 가 hook bypass 권한 갖고도 release-policy memory 보고
+        upload 안 함 → parent 가 직접 upload 로 unblock
+      - Sub-agent 가 marker 파일 fabrication 시도 → classifier 가 security
+        warning → 사용자 review 필요
+      - codex CLI timeout 시 sub-agent 가 "still running" 보고 후 commit —
+        cross-review 가 사실상 없는 셈. 위 (3) wait policy 필수
+    reference: ".agents/plans/launch-readiness-2026-05-27.md, L059 (apiKey/naiaKey collision)"
