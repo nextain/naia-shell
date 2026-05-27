@@ -531,12 +531,20 @@ const _DEV_GATEWAY = (import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || ""
 /**
  * any-llm Gateway URL.
  *
- * The desktop login defaults to the production web app. A prod login key is not
- * valid against the dev gateway, so dev builds also use prod unless a matching
- * dev gateway is explicitly configured.
+ * Mode resolution (#333 follow-up):
+ *   - `pnpm run tauri:dev`  → wrapper sets VITE_NAIA_USE_DEV_GATEWAY=1
+ *                             + VITE_NAIA_DEV_GATEWAY_URL → dev Cloud Run
+ *   - `pnpm run tauri:prod` → wrapper unsets both → prod Cloud Run
+ *   - `wdio` e2e            → loads .env.e2e which sets the same flag
+ *
+ * The previous rule "any Vite dev mode + dev URL present → dev gateway"
+ * was too greedy — a stale .env.local with VITE_NAIA_DEV_GATEWAY_URL would
+ * silently route a prod-login user to the dev gateway and 401. The explicit
+ * VITE_NAIA_USE_DEV_GATEWAY flag forces an opt-in.
  */
+const _USE_DEV_GATEWAY = import.meta.env.VITE_NAIA_USE_DEV_GATEWAY === "1";
 export const LAB_GATEWAY_URL =
-	import.meta.env.DEV && _DEV_GATEWAY ? _DEV_GATEWAY : _PROD_GATEWAY;
+	_USE_DEV_GATEWAY && _DEV_GATEWAY ? _DEV_GATEWAY : _PROD_GATEWAY;
 
 /** Dev-only gateway URL (always available regardless of mode). */
 export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
