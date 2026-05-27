@@ -2404,6 +2404,24 @@ const translations = {
 		id: "Ekstensi naia-adk",
 		vi: "Tiện ích naia-adk",
 	},
+	// #334 follow-up trap #2 — user-installed skills bucket (origin undefined
+	// or normalized to unknown). Mirrors the "naia-adk 확장 스킬" pattern.
+	"skills.group.user": {
+		ko: "사용자 설치 스킬",
+		en: "User-installed skills",
+		ja: "ユーザー導入スキル",
+		zh: "用户安装的技能",
+		fr: "compétences installées par l'utilisateur",
+		de: "Benutzerinstallierte Skills",
+		ru: "пользовательские навыки",
+		es: "habilidades instaladas por el usuario",
+		ar: "المهارات المثبتة من قبل المستخدم",
+		hi: "उपयोगकर्ता द्वारा स्थापित कौशल",
+		bn: "ব্যবহারকারী ইনস্টল করা দক্ষতা",
+		pt: "habilidades instaladas pelo usuário",
+		id: "Keterampilan dari pengguna",
+		vi: "Kỹ năng do người dùng cài đặt",
+	},
 	"skills.group.adkEmpty": {
 		ko: "naia-adk 확장 스킬 없음",
 		en: "No naia-adk extension skills",

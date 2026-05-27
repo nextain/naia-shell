@@ -12,7 +12,11 @@ import {
 } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import type { SkillManifestInfo, SkillOrigin } from "../lib/types";
+import {
+	normalizeOrigin,
+	type SkillManifestInfo,
+	type SkillOrigin,
+} from "../lib/types";
 import { useSkillsStore } from "../stores/skills";
 
 interface GatewayInstallOption {
@@ -34,8 +38,13 @@ function tierLabel(tier: number): string {
 }
 
 /** #334 — group key derived from `origin`, with a defensive fallback for
- * older Rust builds that haven't been rebuilt to emit `origin` yet. */
-type GroupKey = "agent" | "shell" | "adk";
+ * older Rust builds that haven't been rebuilt to emit `origin` yet.
+ *
+ * #334 follow-up (trap #2): added the `user` bucket. Previously, skills with
+ * undefined/unknown `origin` (user-installed via `~/.naia/skills/`) were
+ * silently merged into `shell` because the fallback was over-conservative.
+ * They now land in their own group so the misclassification is visible. */
+type GroupKey = "agent" | "shell" | "adk" | "user";
 
 function originGroupKey(skill: SkillManifestInfo): GroupKey {
 	const o = skill.origin;
@@ -44,10 +53,12 @@ function originGroupKey(skill: SkillManifestInfo): GroupKey {
 		if (o === "shell" || o.startsWith("shell:")) return "shell";
 		if (o.startsWith("adk:")) return "adk";
 	}
-	// Legacy fallback: pre-#334 Rust builds tagged everything "built-in".
-	// Conservative default = shell (matches the historical visual location
-	// of these skills as "Built-in Skills" beneath the agent name).
-	return skill.type === "built-in" ? "shell" : "shell";
+	// origin is undefined (pre-#334 build) OR normalizeOrigin() rejected the
+	// raw string. Built-ins still belong to `shell` (those are gateway/built-in
+	// skills that pre-date the origin field); everything else (user-installed
+	// gateway/command skills) goes to the dedicated `user` bucket — #334
+	// follow-up trap #2.
+	return skill.type === "built-in" ? "shell" : "user";
 }
 
 /** Best-effort source label rendered on each card. Avoids leaking the
@@ -61,13 +72,16 @@ function originBadgeText(skill: SkillManifestInfo): string {
 /* ────────────────────────────────────────────────────────────────────
  * Collapsed state persistence (gemini §8.1 #6 — versioned key)
  * ──────────────────────────────────────────────────────────────────── */
-const COLLAPSED_STATE_KEY = "naia.skillsGroupCollapsed.v2";
+// v3 = #334 follow-up trap #2 (added `user` group). v2 entries remain
+// readable because we only read known keys; missing keys default to false.
+const COLLAPSED_STATE_KEY = "naia.skillsGroupCollapsed.v3";
 
 type CollapsedState = Record<GroupKey, boolean>;
 const DEFAULT_COLLAPSED: CollapsedState = {
 	agent: false,
 	shell: false,
 	adk: false,
+	user: false,
 };
 
 function loadCollapsedState(): CollapsedState {
@@ -82,6 +96,7 @@ function loadCollapsedState(): CollapsedState {
 			agent: !!parsed.agent,
 			shell: !!parsed.shell,
 			adk: !!parsed.adk,
+			user: !!parsed.user,
 		};
 	} catch {
 		return { ...DEFAULT_COLLAPSED };
@@ -274,7 +289,16 @@ export function SkillsTab({
 		store.setLoading(true);
 		try {
 			const result = await invoke<SkillManifestInfo[]>("list_skills");
-			store.setSkills(result);
+			// #334 follow-up trap #1 — Rust returns Option<String> for `origin`;
+			// run every payload through the runtime normalizer so unknown brands
+			// (typos, future variants, third-party emitters) collapse to undefined
+			// and fall into the dedicated `user` bucket instead of silently
+			// type-cast to SkillOrigin.
+			const normalized = result.map((s) => ({
+				...s,
+				origin: normalizeOrigin(s.origin as string | undefined),
+			}));
+			store.setSkills(normalized);
 		} catch (err) {
 			Logger.warn("SkillsTab", "Failed to load skills", {
 				error: String(err),
@@ -307,8 +331,8 @@ export function SkillsTab({
 	}
 
 	/** Per-group bulk operations. Agent group is NEVER mutated (gemini §8 — built-in
-	 * skills don't expose toggles today). Shell + adk groups: toggle the names that
-	 * are actually toggleable (type !== "built-in"). */
+	 * skills don't expose toggles today). Shell + adk + user groups: toggle the names
+	 * that are actually toggleable (type !== "built-in"). */
 	function handleGroupBulk(group: GroupKey, enable: boolean) {
 		if (group === "agent") return; // no-op guard (UI also hides the button)
 		const config = loadConfig();
@@ -360,6 +384,7 @@ export function SkillsTab({
 			agent: [],
 			shell: [],
 			adk: [],
+			user: [],
 		};
 		for (const s of filtered) {
 			buckets[originGroupKey(s)].push(s);
@@ -421,7 +446,8 @@ export function SkillsTab({
 				</div>
 			</div>
 
-			{/* #334 — three source-grouped sections */}
+			{/* #334 — four source-grouped sections (agent/shell/adk/user).
+			    `user` was added in the #334 follow-up (trap #2). */}
 			<div className="skills-list">
 				<SkillsGroup
 					group="agent"
@@ -453,6 +479,18 @@ export function SkillsTab({
 					skills={grouped.adk}
 					collapsed={collapsed.adk}
 					onToggleCollapsed={() => toggleGroup("adk")}
+					onGroupBulk={handleGroupBulk}
+					onToggle={handleToggle}
+					onAskAI={onAskAI}
+					searchActive={query.length > 0}
+					adkReady={adkReady}
+				/>
+				<SkillsGroup
+					group="user"
+					title={t("skills.group.user")}
+					skills={grouped.user}
+					collapsed={collapsed.user}
+					onToggleCollapsed={() => toggleGroup("user")}
 					onGroupBulk={handleGroupBulk}
 					onToggle={handleToggle}
 					onAskAI={onAskAI}
@@ -542,9 +580,12 @@ export function SkillsTab({
  * bulk buttons, and a list of SkillCards. Empty-group rendering rules:
  *  - agent/shell empty + no search:        hide entirely
  *  - agent/shell empty + active search:    "no matches" placeholder
- *  - adk empty (regardless of search):     "no extensions" placeholder
+ *  - adk/user empty + active search:       "no matches" placeholder
+ *    (search-state always beats inventory-state — #334 follow-up trap #3)
+ *  - adk empty + no search:                "no extensions" placeholder
  *    (so users always see *something* explaining the adk slot)
- *  - adk empty AND !adkReady:              "loading…" placeholder
+ *  - adk empty + no search + !adkReady:    "loading…" placeholder
+ *  - user empty + no search:               hide entirely (no user skills installed)
  * ──────────────────────────────────────────────────────────────────── */
 function SkillsGroup({
 	group,
@@ -572,36 +613,25 @@ function SkillsGroup({
 	const disabledSet = new Set(getDisabledSkills());
 	const enabledInGroup = skills.filter((s) => !disabledSet.has(s.name)).length;
 
-	// Empty-handling per the rule table above.
+	// #334 follow-up trap #4 — bulk button visibility. Only show the button
+	// whose action is applicable: when ALL toggleable skills are already
+	// enabled, hide "전체 활성화"; when ALL are disabled, hide "전체 비활성화".
+	// Built-in skills (type === "built-in") are excluded from the toggleable
+	// pool because their toggle is gated off in the row UI.
+	const toggleable = skills.filter((s) => s.type !== "built-in");
+	const enabledToggleable = toggleable.filter(
+		(s) => !disabledSet.has(s.name),
+	).length;
+	const allEnabled =
+		toggleable.length > 0 && enabledToggleable === toggleable.length;
+	const allDisabled = toggleable.length > 0 && enabledToggleable === 0;
+	// If there's nothing toggleable at all (e.g. agent group has only built-ins),
+	// the wrapping `group !== "agent"` check already hides both buttons.
+
+	// Empty-handling per the rule table above. #334 follow-up trap #3:
+	// search-active state ALWAYS wins — even for the adk slot, "검색 결과 없음"
+	// is more honest than "naia-adk 확장 스킬 없음" (which describes inventory).
 	if (skills.length === 0) {
-		if (group === "adk") {
-			return (
-				<div
-					className="skills-group skills-group-empty"
-					data-testid={`skills-group-${group}`}
-					data-group={group}
-				>
-					<div
-						className="skills-group-header"
-						onClick={onToggleCollapsed}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") onToggleCollapsed();
-						}}
-					>
-						<span className="skills-group-caret">{collapsed ? "▶" : "▼"}</span>
-						<span className="skills-group-title">{title}</span>
-						<span className="skills-group-count">(0/0)</span>
-					</div>
-					{!collapsed && (
-						<div className="skills-group-empty-line">
-							{adkReady
-								? t("skills.group.adkEmpty")
-								: t("skills.group.adkLoading")}
-						</div>
-					)}
-				</div>
-			);
-		}
 		if (searchActive) {
 			return (
 				<div
@@ -621,14 +651,48 @@ function SkillsGroup({
 						<span className="skills-group-count">(0/0)</span>
 					</div>
 					{!collapsed && (
-						<div className="skills-group-empty-line">
+						<div
+							className="skills-group-empty-line"
+							data-testid={`skills-group-${group}-empty-search`}
+						>
 							{t("skills.group.searchNoResult")}
 						</div>
 					)}
 				</div>
 			);
 		}
-		// Hide an unused agent/shell group entirely when there's no search.
+		if (group === "adk") {
+			return (
+				<div
+					className="skills-group skills-group-empty"
+					data-testid={`skills-group-${group}`}
+					data-group={group}
+				>
+					<div
+						className="skills-group-header"
+						onClick={onToggleCollapsed}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") onToggleCollapsed();
+						}}
+					>
+						<span className="skills-group-caret">{collapsed ? "▶" : "▼"}</span>
+						<span className="skills-group-title">{title}</span>
+						<span className="skills-group-count">(0/0)</span>
+					</div>
+					{!collapsed && (
+						<div
+							className="skills-group-empty-line"
+							data-testid={`skills-group-${group}-empty-inventory`}
+						>
+							{adkReady
+								? t("skills.group.adkEmpty")
+								: t("skills.group.adkLoading")}
+						</div>
+					)}
+				</div>
+			);
+		}
+		// Hide an unused agent/shell/user group entirely when there's no search.
 		return null;
 	}
 
@@ -650,27 +714,34 @@ function SkillsGroup({
 				<span className="skills-group-count">
 					({enabledInGroup}/{skills.length})
 				</span>
-				{group !== "agent" && (
+				{group !== "agent" && toggleable.length > 0 && (
 					<div
 						className="skills-group-bulk"
 						onClick={(e) => e.stopPropagation()}
 					>
-						<button
-							type="button"
-							className="skills-action-btn"
-							data-testid={`skills-group-${group}-bulk-enable`}
-							onClick={() => onGroupBulk(group, true)}
-						>
-							{t("skills.group.bulkEnable")}
-						</button>
-						<button
-							type="button"
-							className="skills-action-btn"
-							data-testid={`skills-group-${group}-bulk-disable`}
-							onClick={() => onGroupBulk(group, false)}
-						>
-							{t("skills.group.bulkDisable")}
-						</button>
+						{/* #334 follow-up trap #4 — hide bulkEnable when all already
+						    enabled, hide bulkDisable when all already disabled. Both
+						    visible only when the group is in a mixed state. */}
+						{!allEnabled && (
+							<button
+								type="button"
+								className="skills-action-btn"
+								data-testid={`skills-group-${group}-bulk-enable`}
+								onClick={() => onGroupBulk(group, true)}
+							>
+								{t("skills.group.bulkEnable")}
+							</button>
+						)}
+						{!allDisabled && (
+							<button
+								type="button"
+								className="skills-action-btn"
+								data-testid={`skills-group-${group}-bulk-disable`}
+								onClick={() => onGroupBulk(group, false)}
+							>
+								{t("skills.group.bulkDisable")}
+							</button>
+						)}
 					</div>
 				)}
 			</div>

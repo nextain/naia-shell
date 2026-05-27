@@ -231,6 +231,105 @@ describe("SkillsTab", () => {
 			expect(screen.getByText("4/5")).toBeDefined();
 		});
 	});
+
+	// ────────────────────────────────────────────────────────────────────
+	// #334 follow-up traps (commit fix/skills #334 follow-up)
+	// ────────────────────────────────────────────────────────────────────
+
+	it("trap #1 — normalizes unknown origin strings to undefined (lands in user group)", async () => {
+		// A Rust build that emits a brand we don't recognise ("legacy", or a
+		// future variant). normalizeOrigin should reject it so the skill lands
+		// in the `user` bucket, not silently merge into shell.
+		const WEIRD_ORIGIN: SkillManifestInfo = {
+			name: "skill_weird",
+			description: "Comes from a build that emits an unrecognised origin",
+			type: "command",
+			tier: 2,
+			source: "/home/.naia/skills/weird/skill.json",
+			// Intentionally typed wrong via cast — simulates runtime payload.
+			origin: "legacyBrand" as unknown as SkillManifestInfo["origin"],
+		};
+		mockInvoke.mockResolvedValue([...BUILT_IN_SKILLS, WEIRD_ORIGIN]);
+		const { container } = render(<SkillsTab />);
+		await waitFor(() => {
+			expect(screen.getByText("skill_weird")).toBeDefined();
+		});
+		const userGroup = container.querySelector(
+			'[data-testid="skills-group-user"]',
+		);
+		expect(userGroup).not.toBeNull();
+		expect(userGroup?.textContent ?? "").toContain("skill_weird");
+		// And NOT in the shell group:
+		const shellGroup = container.querySelector(
+			'[data-testid="skills-group-shell"]',
+		);
+		expect(shellGroup?.textContent ?? "").not.toContain("skill_weird");
+	});
+
+	it("trap #2 — user-installed skills (origin undefined) land in `user` group", async () => {
+		// CUSTOM_SKILLS already omit `origin`. Pre-fix they fell into `shell`;
+		// post-fix they fall into `user`.
+		mockInvoke.mockResolvedValue(ALL_SKILLS);
+		const { container } = render(<SkillsTab />);
+		await waitFor(() => {
+			expect(screen.getByText("skill_code_review")).toBeDefined();
+		});
+		const userGroup = container.querySelector(
+			'[data-testid="skills-group-user"]',
+		);
+		expect(userGroup).not.toBeNull();
+		expect(userGroup?.textContent ?? "").toContain("skill_code_review");
+		expect(userGroup?.textContent ?? "").toContain("skill_deploy");
+	});
+
+	it("trap #3 — search-empty UX: shows 'no matches' (not inventory-empty) when search filters everything", async () => {
+		mockInvoke.mockResolvedValue(ALL_SKILLS);
+		const { container } = render(<SkillsTab />);
+		await waitFor(() => {
+			expect(screen.getByText("skill_time")).toBeDefined();
+		});
+		const searchInput = screen.getByPlaceholderText(/검색|Search/);
+		// A query that matches nothing in any group:
+		fireEvent.change(searchInput, { target: { value: "zzz-nomatch-zzz" } });
+		// Adk group used to render the inventory-empty placeholder regardless
+		// of search state. Post-fix: search-active wins → "no matches".
+		const adkSearchEmpty = container.querySelector(
+			'[data-testid="skills-group-adk-empty-search"]',
+		);
+		expect(adkSearchEmpty).not.toBeNull();
+		// And the inventory-empty placeholder must NOT be present in this state.
+		const adkInventoryEmpty = container.querySelector(
+			'[data-testid="skills-group-adk-empty-inventory"]',
+		);
+		expect(adkInventoryEmpty).toBeNull();
+	});
+
+	it("trap #4 — bulk button visibility: hides bulkDisable when all skills in group are already disabled", async () => {
+		// Disable BOTH user-bucket skills (skill_code_review + skill_deploy).
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				apiKey: "test",
+				disabledSkills: ["skill_code_review", "skill_deploy"],
+			}),
+		);
+		mockInvoke.mockResolvedValue(ALL_SKILLS);
+		const { container } = render(<SkillsTab />);
+		await waitFor(() => {
+			expect(screen.getByText("skill_code_review")).toBeDefined();
+		});
+		// User group is "all disabled" — bulkDisable should be hidden, bulkEnable visible.
+		const bulkDisable = container.querySelector(
+			'[data-testid="skills-group-user-bulk-disable"]',
+		);
+		const bulkEnable = container.querySelector(
+			'[data-testid="skills-group-user-bulk-enable"]',
+		);
+		expect(bulkDisable).toBeNull();
+		expect(bulkEnable).not.toBeNull();
+	});
 });
 
 describe("SkillsTab gateway install", () => {

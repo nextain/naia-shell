@@ -210,6 +210,42 @@ export type SkillOrigin =
 	| `shell:panel:${string}`
 	| `adk:${string}`;
 
+/**
+ * #334 follow-up (trap #1) — runtime guard for the `origin` field.
+ *
+ * `origin` is a TS-only contract: the Rust side returns `Option<String>` and
+ * any string (or `null`/`undefined`) can arrive at runtime. Pre-#334 builds
+ * omit the field; future or third-party builds might emit a typo or a brand
+ * we don't recognise. This normalizer maps the wild input space into the
+ * SkillOrigin union plus a defined `undefined` (= "user/unknown") bucket
+ * that SkillsTab routes into the dedicated `user` group.
+ *
+ * Rules:
+ *  - `"agent"` / `"shell"` → kept as-is.
+ *  - `"shell:panel:<name>"` (any non-empty suffix) → kept.
+ *  - `"adk:<name>"` (any non-empty suffix) → kept.
+ *  - everything else (including `null`, `undefined`, empty string, `"built-in"`,
+ *    unknown brands) → `undefined`, treated as user/unknown downstream.
+ *
+ * NOTE: we deliberately do NOT widen to a `"shell"` default here — that was
+ * the conservative pre-fix behaviour and is what trap #2 corrected. Misclassified
+ * unknowns should be visible in the `user` bucket, not silently merged into
+ * `shell`.
+ */
+export function normalizeOrigin(
+	raw: string | null | undefined,
+): SkillOrigin | undefined {
+	if (typeof raw !== "string" || raw.length === 0) return undefined;
+	if (raw === "agent" || raw === "shell") return raw;
+	if (raw.startsWith("shell:panel:") && raw.length > "shell:panel:".length) {
+		return raw as SkillOrigin;
+	}
+	if (raw.startsWith("adk:") && raw.length > "adk:".length) {
+		return raw as SkillOrigin;
+	}
+	return undefined;
+}
+
 export interface SkillManifestInfo {
 	name: string;
 	description: string;
@@ -221,6 +257,10 @@ export interface SkillManifestInfo {
 	 * #334 source-grouping classifier. Optional for backward-compat: older
 	 * Rust builds that haven't been rebuilt yet may omit it. SkillsTab
 	 * falls back to type-based heuristics when undefined.
+	 *
+	 * Runtime safety: always pass IPC payloads through `normalizeOrigin()`
+	 * before stuffing into this field — Rust returns `Option<String>` and
+	 * any string may arrive at runtime (#334 follow-up trap #1).
 	 */
 	origin?: SkillOrigin;
 }
