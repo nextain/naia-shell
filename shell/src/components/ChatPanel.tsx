@@ -1630,6 +1630,38 @@ export function ChatPanel() {
 				}
 			}
 
+			// #313 L1 — visibility for Live WSS endpoint resolution.
+			// Routing flips between browser direct (gemini-live.ts) and the
+			// any-llm gateway (which relays to naia-agent lab-proxy-live).
+			// The gateway path is documented text-only — audio_delta + tool_calls
+			// silently drop. This log makes the active path + URL observable
+			// without changing routing (L2/L3 work).
+			const _useDirectMode_dbg =
+				liveProvider === "gemini-live" && !!config.googleApiKey;
+			const _gatewayWsBase = LAB_GATEWAY_URL.replace(/^http/, "ws");
+			const _routingPath =
+				_useDirectMode_dbg
+					? ("browser-gemini-live" as const)
+					: ("agent-lab-proxy-live" as const);
+			const _wssUrl =
+				_useDirectMode_dbg
+					? "wss://generativelanguage.googleapis.com/ws/...BidiGenerateContent?key=***"
+					: `${_gatewayWsBase}/v1/live`;
+			const _gatewayMode =
+				import.meta.env.VITE_NAIA_USE_DEV_GATEWAY === "1" ? "dev" : "prod";
+			Logger.info("ChatPanel", "Voice live endpoint resolved (#313)", {
+				liveProvider,
+				routingPath: _routingPath,
+				wssUrl: _wssUrl,
+				gateway: _gatewayMode,
+			});
+			if (_routingPath === "agent-lab-proxy-live") {
+				Logger.warn(
+					"ChatPanel",
+					"[#313] Live routing via agent-lab-proxy-live — documented text-only; audio_delta + tool_calls will silently drop. See nextain/naia-os#313.",
+				);
+			}
+
 			const memoryCtx = await buildMemoryContext();
 			const systemPrompt = buildSystemPrompt(config.persona, memoryCtx);
 
