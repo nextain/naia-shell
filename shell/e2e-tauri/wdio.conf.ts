@@ -9,22 +9,28 @@ import { execPath } from "node:process";
 // Enable debug logging for Tauri app — Rust logs all agent events to stderr + naia.log
 process.env.CAFE_DEBUG_E2E = "1";
 
-// Load shell/.env
-const envPath = resolve(import.meta.dirname, "../.env");
-try {
-	const envContent = readFileSync(envPath, "utf-8");
-	for (const line of envContent.split("\n")) {
-		const match = line.match(/^([^#=]+)=(.*)$/);
-		if (match) {
-			const key = match[1].trim();
-			const rawVal = match[2].trim();
-			const val = rawVal.replace(/^['"]|['"]$/g, "");
-			if (!process.env[key]) process.env[key] = val;
+// Load shell/.env.e2e first (e2e-only knobs like VITE_NAIA_DEV_GATEWAY_URL),
+// then shell/.env (shared defaults). first-match-wins per key so .env.e2e
+// values take precedence. Keeping the dev-gateway URL out of .env is what
+// prevents `pnpm run tauri:dev` from breaking a prod OAuth login (#333).
+function loadEnvFile(filePath: string): void {
+	try {
+		const content = readFileSync(filePath, "utf-8");
+		for (const line of content.split("\n")) {
+			const match = line.match(/^([^#=]+)=(.*)$/);
+			if (match) {
+				const key = match[1].trim();
+				const rawVal = match[2].trim();
+				const val = rawVal.replace(/^['"]|['"]$/g, "");
+				if (!process.env[key]) process.env[key] = val;
+			}
 		}
+	} catch {
+		/* file not found — keep going */
 	}
-} catch {
-	/* .env not found — rely on env vars */
 }
+loadEnvFile(resolve(import.meta.dirname, "../.env.e2e"));
+loadEnvFile(resolve(import.meta.dirname, "../.env"));
 
 // ── Platform constants ────────────────────────────────────────────────────────
 // Linux uses WebKit2GTK + WebKitWebDriver; Windows uses WebView2 + msedgedriver.
