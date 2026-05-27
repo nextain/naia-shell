@@ -208,6 +208,94 @@ export interface AppConfig {
 
 // ── Sync API (localStorage only, backwards compatible) ──
 
+/**
+ * #332 Phase 2a.5 — Legacy 12-field memory config → new 4-field round-trip.
+ *
+ * Pure helper (no I/O). Idempotent: if the new fields are already set, the
+ * legacy mapping is skipped so user intent is never silently overwritten.
+ *
+ * Mapping rules (gemini cross-review §2a.5):
+ *   memoryAdapter
+ *     "local"      → memoryMode = "local"
+ *     "qdrant"     → memoryMode = "cloud"   (placeholder; qdrant* preserved)
+ *     absent       → memoryMode = "local"   (sensible default)
+ *
+ *   memoryEmbeddingProvider
+ *     "offline"             → memoryEmbedding = "offline"
+ *     "ollama"/"vllm"/"naia"→ memoryEmbedding = "custom"
+ *                             (keep legacy baseUrl/apiKey/model for Advanced)
+ *     "none"                → memoryMode      = "off"
+ *                             (provider=none = user-disabled memory; this
+ *                              overrides the memoryAdapter-derived mode)
+ *     absent                → memoryEmbedding = "offline" (safe default)
+ *
+ *   All absent:
+ *     memoryMode = "local", memoryEmbedding = "offline"
+ *
+ * Returns a SHALLOW COPY with the new fields filled. Legacy fields are
+ * left intact (no destructive deletion) so the rest of the codebase can
+ * still read them during the deprecation window per design §9.
+ */
+export function migrateLegacyMemoryConfig(
+	legacy: Partial<AppConfig>,
+): Partial<AppConfig> {
+	const out: Partial<AppConfig> = { ...legacy };
+
+	// Skip migration entirely if both new fields are already set.
+	const hasNewMode = out.memoryMode !== undefined;
+	const hasNewEmbed = out.memoryEmbedding !== undefined;
+	if (hasNewMode && hasNewEmbed) return out;
+
+	// Step 1: derive memoryMode from memoryAdapter (only if not already set).
+	if (!hasNewMode) {
+		switch (out.memoryAdapter) {
+			case "qdrant":
+				out.memoryMode = "cloud";
+				break;
+			case "local":
+				out.memoryMode = "local";
+				break;
+			default:
+				out.memoryMode = "local";
+		}
+	}
+
+	// Step 2: derive memoryEmbedding from memoryEmbeddingProvider.
+	//
+	// Codex cross-review (Phase 2a.5): `memoryEmbeddingProvider="none"` →
+	// `memoryMode="off"` ONLY when the adapter does not encode an explicit
+	// cloud intent. If `memoryAdapter="qdrant"` is set, the cloud-mode
+	// choice must win — otherwise a deliberate Qdrant selection silently
+	// becomes "memory off". Also: never override an already-set
+	// `memoryMode` (partial-new case — caller may have set mode but not
+	// embedding).
+	if (!hasNewEmbed) {
+		switch (out.memoryEmbeddingProvider) {
+			case "offline":
+				out.memoryEmbedding = "offline";
+				break;
+			case "ollama":
+			case "vllm":
+			case "naia":
+				out.memoryEmbedding = "custom";
+				break;
+			case "none":
+				// "none" → memory off, BUT only if the user did not also
+				// pick the qdrant adapter (explicit cloud intent wins) and
+				// only if memoryMode wasn't already set externally.
+				if (!hasNewMode && out.memoryAdapter !== "qdrant") {
+					out.memoryMode = "off";
+				}
+				out.memoryEmbedding = "offline"; // harmless default
+				break;
+			default:
+				out.memoryEmbedding = "offline";
+		}
+	}
+
+	return out;
+}
+
 export function loadConfig(): AppConfig | null {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
@@ -221,6 +309,17 @@ export function loadConfig(): AppConfig | null {
 		}
 		if (config.enableTools == null) {
 			config.enableTools = true;
+		}
+		// #332 Phase 2a.5: silently upgrade legacy 12-field memory config →
+		// new 4-field (memoryMode, memoryEmbedding) on read. Pure derivation,
+		// no localStorage write — the next saveConfig() will persist.
+		const migrated = migrateLegacyMemoryConfig(config);
+		if (
+			migrated.memoryMode !== config.memoryMode ||
+			migrated.memoryEmbedding !== config.memoryEmbedding
+		) {
+			config.memoryMode = migrated.memoryMode;
+			config.memoryEmbedding = migrated.memoryEmbedding;
 		}
 		return config;
 	} catch {
