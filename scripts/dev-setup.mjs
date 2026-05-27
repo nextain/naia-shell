@@ -101,6 +101,50 @@ function buildAgent() {
 	});
 }
 
+// ─── 3b. naia-agent submodule build ──────────────────────────────────────────
+//
+// spawn_agent_core (shell/src-tauri/src/lib.rs:912-928) PREFERS the
+// standalone `projects/naia-agent` submodule over `naia-os/agent` (legacy
+// embedded). When upstream pushes new exports (e.g. `isEnglishLocale` added
+// 2026-05-28 with the RunPod Tier B work in commit 53917e5), the user's
+// local `packages/*/dist/` becomes stale and `bin/naia-agent.ts` throws
+// `SyntaxError: ... does not provide an export named 'isEnglishLocale'`,
+// causing tauri:dev to enter an agent-restart loop.
+//
+// Fix: install + build the submodule too. No prune step — the submodule
+// uses tsc-based workspace builds, so devDeps must stay for the next run.
+function buildNaiaAgentSubmodule() {
+	const submoduleDir = resolve("../../naia-agent");
+	if (!existsSync(submoduleDir)) {
+		console.log("[dev-setup] naia-agent submodule not present — skip");
+		return;
+	}
+	console.log("[dev-setup] Installing + building naia-agent submodule...");
+	execSync("pnpm install", {
+		cwd: submoduleDir,
+		stdio: "inherit",
+		env: { ...process.env, CI: "true" },
+	});
+	try {
+		execSync("pnpm build", { cwd: submoduleDir, stdio: "inherit" });
+	} catch {
+		const runtimeDist = join(
+			submoduleDir,
+			"packages",
+			"runtime",
+			"dist",
+			"index.js",
+		);
+		if (existsSync(runtimeDist)) {
+			console.log(
+				"[dev-setup] naia-agent submodule build had type errors but runtime dist exists — continuing",
+			);
+		} else {
+			throw new Error("naia-agent submodule build failed and no runtime dist found");
+		}
+	}
+}
+
 // ─── 4. Platform env ─────────────────────────────────────────────────────────
 
 function setPlatformEnv() {
@@ -147,5 +191,6 @@ if (cleanMode) cleanRustCache();
 killStale();
 ensureGateway();
 buildAgent();
+buildNaiaAgentSubmodule();
 setPlatformEnv();
 await setDevDeepLinkHandler();
