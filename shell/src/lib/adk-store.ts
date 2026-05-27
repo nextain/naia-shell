@@ -159,7 +159,12 @@ export function buildNaiaConfigEnv(cfg: {
 	ollamaHost?: string;
 	vllmHost?: string;
 	naiaGatewayUrl?: string;
+	// New canonical fields (#332)
+	memoryMode?: "off" | "local" | "cloud";
+	memoryEmbedding?: "offline" | "gateway" | "custom";
+	// Legacy memory fields (kept for backward compat per #332 §9)
 	memoryEmbeddingProvider?: string;
+	memoryOfflineModel?: string;
 	memoryEmbeddingModel?: string;
 	memoryEmbeddingBaseUrl?: string;
 	memoryLlmProvider?: string;
@@ -214,20 +219,62 @@ export function buildNaiaConfigEnv(cfg: {
 		out.OPENAI_BASE_URL = cfg.vllmHost.replace(/\/?$/, "/v1");
 	}
 
-	// NAIA_EMBED_PROVIDER / NAIA_EMBED_MODEL — optional; absent = OfflineEmbeddingProvider.
-	const ep = cfg.memoryEmbeddingProvider;
-	if (ep && ep !== "none" && ep !== "offline") {
-		const embedDefaults: Record<string, string> = {
-			naia: "google/text-embedding-004",
-			vllm: "BAAI/bge-m3",
-			ollama: "nomic-embed-text",
-		};
-		out.NAIA_EMBED_PROVIDER = ep;
-		out.NAIA_EMBED_MODEL = cfg.memoryEmbeddingModel || embedDefaults[ep] || "";
-		if (cfg.memoryEmbeddingBaseUrl) {
-			out.NAIA_EMBED_BASE_URL = cfg.memoryEmbeddingBaseUrl;
+	// NAIA_EMBED_PROVIDER / NAIA_EMBED_MODEL (#332 redesign)
+	// New path: memoryMode + memoryEmbedding (canonical, post-#332).
+	// Legacy path: memoryEmbeddingProvider (12-field era, deprecated).
+	// Both gemini and codex confirmed: previous `if (ep !== "offline")`
+	// silently dropped offline mode so the agent never received the env
+	// signal and fell through to "no embedding configured" — a real bug.
+	if (cfg.memoryMode === "local") {
+		const me = cfg.memoryEmbedding ?? "offline";
+		if (me === "offline") {
+			out.NAIA_EMBED_PROVIDER = "offline";
+			out.NAIA_EMBED_MODEL = "all-MiniLM-L6-v2";
+			out.NAIA_EMBED_DIMS = "384";
+		} else if (me === "gateway") {
+			out.NAIA_EMBED_PROVIDER = "gateway";
+			// model + base inherit from naia-settings/llm.json embedded role
+		} else if (me === "custom") {
+			// Advanced disclosure — preserve legacy ollama/vllm fields
+			const ep = cfg.memoryEmbeddingProvider;
+			if (ep && ep !== "none" && ep !== "offline") {
+				const embedDefaults: Record<string, string> = {
+					naia: "google/text-embedding-004",
+					vllm: "BAAI/bge-m3",
+					ollama: "nomic-embed-text",
+				};
+				out.NAIA_EMBED_PROVIDER = ep;
+				out.NAIA_EMBED_MODEL = cfg.memoryEmbeddingModel || embedDefaults[ep] || "";
+				if (cfg.memoryEmbeddingBaseUrl) {
+					out.NAIA_EMBED_BASE_URL = cfg.memoryEmbeddingBaseUrl;
+				}
+			}
+		}
+	} else if (cfg.memoryMode === undefined) {
+		// Legacy fallback for configs saved before #332 — preserve old behavior
+		// but FIX the offline-skip bug (gemini cross-review confirmed agent
+		// does NOT default to OfflineEmbeddingProvider when env is absent).
+		const ep = cfg.memoryEmbeddingProvider;
+		if (ep && ep !== "none") {
+			if (ep === "offline") {
+				out.NAIA_EMBED_PROVIDER = "offline";
+				out.NAIA_EMBED_MODEL = cfg.memoryOfflineModel || "all-MiniLM-L6-v2";
+				out.NAIA_EMBED_DIMS = "384";
+			} else {
+				const embedDefaults: Record<string, string> = {
+					naia: "google/text-embedding-004",
+					vllm: "BAAI/bge-m3",
+					ollama: "nomic-embed-text",
+				};
+				out.NAIA_EMBED_PROVIDER = ep;
+				out.NAIA_EMBED_MODEL = cfg.memoryEmbeddingModel || embedDefaults[ep] || "";
+				if (cfg.memoryEmbeddingBaseUrl) {
+					out.NAIA_EMBED_BASE_URL = cfg.memoryEmbeddingBaseUrl;
+				}
+			}
 		}
 	}
+	// memoryMode === "off" || "cloud" — no NAIA_EMBED_* emitted
 
 	if (cfg.agentName) out.NAIA_AGENT_NAME = cfg.agentName;
 	if (cfg.userName) out.NAIA_USER_NAME = cfg.userName;

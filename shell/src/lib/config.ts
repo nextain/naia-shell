@@ -160,10 +160,29 @@ export interface AppConfig {
 	/** Whether BGM was playing when the app was closed. */
 	bgmPlaying?: boolean;
 
-	// ── Memory settings ──
-	/** Memory adapter backend. Defaults to 'local' (JSON file). */
+	// ── Memory settings (#332 redesign) ──
+	/**
+	 * Memory mode (#332). New canonical field. Defaults to 'local' for new
+	 * users. Drives the redesigned 3-section UI (Mode / Embedding / Backup).
+	 * - "off"   — InMemoryMemory (ephemeral, session only)
+	 * - "local" — LiteMemoryProvider + SQLite (Hardened v6.0)
+	 * - "cloud" — Qdrant (placeholder; not wired yet — see legacyQdrant field)
+	 */
+	memoryMode?: "off" | "local" | "cloud";
+	/**
+	 * Embedding transport when memoryMode === "local" (#332). Defaults to
+	 * 'offline'. Codex review: memoryEmbedding wins for embeddings; the
+	 * LLM-section embedded role is NOT silently inherited.
+	 * - "offline" — bundled ONNX `all-MiniLM-L6-v2`, no key
+	 * - "gateway" — uses naia-settings/llm.json embedded role
+	 * - "custom"  — Advanced disclosure (legacy ollama/vllm baseUrl/model)
+	 */
+	memoryEmbedding?: "offline" | "gateway" | "custom";
+
+	// ── Memory settings (legacy — kept for backward compat, see #332 §9) ──
+	/** [DEPRECATED #332] Memory adapter backend. Use memoryMode instead. */
 	memoryAdapter?: "local" | "qdrant";
-	/** Embedding provider for semantic search. Defaults to 'none' (keyword search). */
+	/** [DEPRECATED #332] Embedding provider. Use memoryEmbedding instead. */
 	memoryEmbeddingProvider?: "none" | "offline" | "vllm" | "ollama" | "naia";
 	/** Offline embedding model (used when memoryEmbeddingProvider = 'offline'). */
 	memoryOfflineModel?: "all-MiniLM-L6-v2" | "all-mpnet-base-v2";

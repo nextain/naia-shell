@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
+	buildNaiaConfigEnv,
 	clearAdkPath,
 	copyBundledAssets,
 	getAdkPath,
@@ -222,5 +223,89 @@ describe("copyBundledAssets", () => {
 		await expect(copyBundledAssets(WIN_ADK)).rejects.toThrow(
 			"Bundled assets directory not found",
 		);
+	});
+});
+
+// ── #332 Phase 2a — memory env emission ────────────────────────────────────
+//
+// Covers the adk-store.ts:219 offline-skip bug (codex + gemini both flagged)
+// and the new memoryMode + memoryEmbedding canonical path.
+describe("buildNaiaConfigEnv — memory (#332)", () => {
+	describe("new canonical path (memoryMode + memoryEmbedding)", () => {
+		it("memoryMode=local + memoryEmbedding=offline emits offline + model + dims", () => {
+			const env = buildNaiaConfigEnv({
+				memoryMode: "local",
+				memoryEmbedding: "offline",
+			});
+			expect(env.NAIA_EMBED_PROVIDER).toBe("offline");
+			expect(env.NAIA_EMBED_MODEL).toBe("all-MiniLM-L6-v2");
+			expect(env.NAIA_EMBED_DIMS).toBe("384");
+		});
+
+		it("memoryMode=local + memoryEmbedding=gateway emits gateway only (model/base inherit from llm.json)", () => {
+			const env = buildNaiaConfigEnv({
+				memoryMode: "local",
+				memoryEmbedding: "gateway",
+			});
+			expect(env.NAIA_EMBED_PROVIDER).toBe("gateway");
+			expect(env.NAIA_EMBED_MODEL).toBeUndefined();
+			expect(env.NAIA_EMBED_BASE_URL).toBeUndefined();
+		});
+
+		it("memoryMode=local + memoryEmbedding=custom + legacy ollama → preserves baseUrl/model", () => {
+			const env = buildNaiaConfigEnv({
+				memoryMode: "local",
+				memoryEmbedding: "custom",
+				memoryEmbeddingProvider: "ollama",
+				memoryEmbeddingBaseUrl: "http://localhost:11434/v1",
+				memoryEmbeddingModel: "nomic-embed-text",
+			});
+			expect(env.NAIA_EMBED_PROVIDER).toBe("ollama");
+			expect(env.NAIA_EMBED_MODEL).toBe("nomic-embed-text");
+			expect(env.NAIA_EMBED_BASE_URL).toBe("http://localhost:11434/v1");
+		});
+
+		it("memoryMode=off emits no NAIA_EMBED_* keys", () => {
+			const env = buildNaiaConfigEnv({ memoryMode: "off" });
+			expect(env.NAIA_EMBED_PROVIDER).toBeUndefined();
+			expect(env.NAIA_EMBED_MODEL).toBeUndefined();
+			expect(env.NAIA_EMBED_DIMS).toBeUndefined();
+		});
+
+		it("memoryMode=cloud (placeholder) emits no NAIA_EMBED_* keys yet", () => {
+			const env = buildNaiaConfigEnv({ memoryMode: "cloud" });
+			expect(env.NAIA_EMBED_PROVIDER).toBeUndefined();
+		});
+	});
+
+	describe("legacy path (memoryEmbeddingProvider, memoryMode absent)", () => {
+		// REGRESSION: codex + gemini both flagged that the old branch silently
+		// dropped `offline` value, so the agent never received the env signal.
+		// This test locks the FIX in place.
+		it("legacy memoryEmbeddingProvider=offline now emits NAIA_EMBED_PROVIDER=offline (was silently dropped pre-#332)", () => {
+			const env = buildNaiaConfigEnv({
+				memoryEmbeddingProvider: "offline",
+				memoryOfflineModel: "all-MiniLM-L6-v2",
+			});
+			expect(env.NAIA_EMBED_PROVIDER).toBe("offline");
+			expect(env.NAIA_EMBED_MODEL).toBe("all-MiniLM-L6-v2");
+			expect(env.NAIA_EMBED_DIMS).toBe("384");
+		});
+
+		it("legacy memoryEmbeddingProvider=none emits nothing", () => {
+			const env = buildNaiaConfigEnv({ memoryEmbeddingProvider: "none" });
+			expect(env.NAIA_EMBED_PROVIDER).toBeUndefined();
+		});
+
+		it("legacy memoryEmbeddingProvider=ollama preserves baseUrl/model", () => {
+			const env = buildNaiaConfigEnv({
+				memoryEmbeddingProvider: "ollama",
+				memoryEmbeddingBaseUrl: "http://localhost:11434/v1",
+				memoryEmbeddingModel: "nomic-embed-text",
+			});
+			expect(env.NAIA_EMBED_PROVIDER).toBe("ollama");
+			expect(env.NAIA_EMBED_MODEL).toBe("nomic-embed-text");
+			expect(env.NAIA_EMBED_BASE_URL).toBe("http://localhost:11434/v1");
+		});
 	});
 });
