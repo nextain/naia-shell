@@ -55,7 +55,7 @@ Located under `shell/e2e-tauri/specs/`. 30 specs as of 2026-05-27 (29 + 24-adk-s
 | S103 | OAuth callback path coverage (deep-link → secure store) | e2e bypasses prod OAuth path |
 | S104 | skill_time end-to-end with deterministic LLM prompt | Fix S004 by restricting tool list / strengthening prompt |
 | S105 | Memo persistence across app restarts | S006 covers only same-session |
-| S106 | Ebbinghaus decay verifies older memories down-rank | v6.0 has decay but no assertion |
+| S106 | Ebbinghaus decay verifies older memories down-rank | spec 97 placeholder (proposed-blocked); CLI memory path uses LiteMemoryProvider which has no decay-ranking + no clock injection — needs upstream naia-memory change before Phase 4 `advance_clock` IPC is meaningful |
 | S107 | Cost dashboard graceful UX on fetch failure | S011 happy path only |
 | S108 | Notify skill retries on transient webhook 429 | S017 single-shot only |
 | S109 | Voice clone (ElevenLabs voice ID) | S024b switches provider, not voice |

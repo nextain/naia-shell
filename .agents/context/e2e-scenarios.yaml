@@ -258,13 +258,33 @@ proposed:
     manual_topic: "memo-persistence.md"
   - id: S106
     feature: "Ebbinghaus decay verifies older memories down-rank"
-    status: proposed
+    spec_file: "shell/e2e-tauri/specs/97-memory-decay.spec.ts"
+    status: proposed-blocked
     rationale: "Memory system v6.0 has decay but no assertion proves it actually affects recall ranking."
     test_outline: |
-      step 1: encode 3 memories at t-7d, t-1d, t-0
-      step 2: recall query that matches all 3
+      step 1: encode 3 memories at t-7d, t-1d, t-0 (via mock clock)
+      step 2: advance_clock IPC to fast-forward 7 days deterministically
+      step 3: recall query that matches all 3
       assert: t-0 ranks first, t-7d last
+    blocked_on: |
+      The CLI memory path (naia-agent buildCliMemory) uses
+      LiteMemoryProvider, which (a) ranks by raw cosine only — no decay
+      term in scoring (lite-provider.ts:163-186), (b) has a no-op
+      consolidate() under preservation-first anchor #6
+      (lite-provider.ts:189-197), and (c) exposes no clock injection
+      point on the constructor (lite-provider.ts:84-101). The heavier
+      MemorySystem (which carries Ebbinghaus decay via decay.ts) is not
+      wired into the CLI path. Phase 4's advance_clock IPC therefore
+      has nothing in-process to advance for the CLI memory path — it
+      would falsely PASS rather than measure decay.
+    unblock_path: |
+      Either (a) add a clock-injectable decay ranker to
+      LiteMemoryProvider (constructor `clock?: () => number` option +
+      time term in cosine score), or (b) switch buildCliMemory to
+      MemorySystem and thread a clock through that path. Both are
+      naia-memory-side changes — out of scope for naia-os #332.
     manual_topic: "memory-decay.md"
+    coverage: "placeholder spec self-skips; records target contract until upstream dependency lands"
   - id: S107
     feature: "Cost dashboard graceful UX on fetch failure"
     status: proposed
