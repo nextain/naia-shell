@@ -301,3 +301,19 @@ proposed:
       assert: fallback embedder still surfaces the fact in the LLM response (top-3 inclusion proxy)
     manual_topic: "memory.md"
     coverage: "fallback trigger + recall quality preservation (Phase-4 gap: agent-side runtime fallback not yet wired — see naia-agent buildCliMemory:542-578)"
+  - id: S111
+    feature: "Memory backup export/import round-trip (AES-256-GCM)"
+    spec_file: "shell/e2e-tauri/specs/96-memory-backup.spec.ts"
+    status: implemented
+    rationale: "Backup is the user's only 'move my memory between machines' / 'snapshot before risky change' surface. Encryption is library-tested; the integration path (shell IPC → Rust → agent → memorySystem → adapter export/import) needs an e2e contract."
+    test_outline: |
+      step 1: seed 3 distinct facts via skill_memo natural language
+      step 2: snapshot fact set via memory_get_all_facts IPC
+      step 3: export backup via memory_export_backup IPC with session-local password
+      step 4: wipe by iterating memory_delete_fact over every fact id (memory-only wipe; not factory_reset)
+      step 5: import backup via memory_import_backup IPC with the same password
+      assert: post-import fact count == pre-wipe count, every pre-wipe content string reappears, sentinels present
+    manual_topic: "memory.md"
+    coverage: "round-trip without data loss (count + content + sentinel parity); password is session-local per §8.2 in-memory-only design decision"
+    deferred_dependencies:
+      - "#327 — backup-panel UI controls are still disabled; spec drives IPC directly so it does NOT depend on the UI re-enable. A UI click-through spec is added once #327's separate fix re-exposes the buttons."

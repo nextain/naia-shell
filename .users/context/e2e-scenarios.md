@@ -60,6 +60,7 @@ Located under `shell/e2e-tauri/specs/`. 30 specs as of 2026-05-27 (29 + 24-adk-s
 | S108 | Notify skill retries on transient webhook 429 | S017 single-shot only |
 | S109 | Voice clone (ElevenLabs voice ID) | S024b switches provider, not voice |
 | S110 | Browser panel — naia.nextain.io tab embed | skill_browser_* exists but no panel-UI coverage |
+| S111 | Memory backup export/import round-trip (AES-256-GCM) | spec 96 implemented; drives memory_export_backup/memory_import_backup IPC directly. UI re-enable deferred to #327 follow-up. |
 | S113 | Memory encoder fallback to offline ONNX on gateway 5xx | spec 95 implemented; runtime fallback wiring deferred to Phase 4 |
 
 ## Cross-references
