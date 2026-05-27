@@ -361,6 +361,17 @@ export function App() {
 			}, 800);
 		};
 
+		// #333 follow-up — boot-time sync. When the user switches between
+		// `pnpm run tauri:dev` / `tauri:prod`, the resolved LAB_GATEWAY_URL
+		// (config.ts:561, derived from VITE_NAIA_USE_DEV_GATEWAY flag) changes,
+		// but the persisted naia-settings/config.json carries the previous
+		// mode's NAIA_ANYLLM_BASE_URL until something fires
+		// `naia-config-changed`. That caused a stale dev URL to load into the
+		// agent and 401 against the wrong gateway after a mode switch.
+		// Force one sync on mount so the file always reflects the current
+		// build-time gateway resolution.
+		syncConfigToFile();
+
 		const updateTitle = () => {
 			setAppTitle(loadConfig()?.agentName?.trim() || "Naia");
 		};
