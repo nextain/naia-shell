@@ -18,6 +18,13 @@ export {
 	type LiveToolParameters,
 	type LiveToolRegistry,
 } from "./gemini-live";
+export {
+	attachPanelContextBridge,
+	DEFAULT_DEBOUNCE_MS as PANEL_CONTEXT_BRIDGE_DEBOUNCE_MS,
+	type PanelContextBridge,
+	type PanelContextBridgeOptions,
+	type PanelContextSource,
+} from "./panel-context-bridge";
 import { createGeminiLiveProxySession } from "./gemini-live-proxy";
 import { createNaiaTalkSession } from "./naia-talk";
 import { createOpenAIRealtimeSession } from "./openai-realtime";
@@ -37,6 +44,7 @@ export type {
 	OpenAIRealtimeConfig,
 	VllmOmniConfig,
 	ToolDeclaration,
+	PanelContextUpdate,
 } from "./types";
 // Re-export voice options from LLM registry
 export { OPENAI_REALTIME_VOICES, GEMINI_LIVE_VOICES } from "../llm/registry";

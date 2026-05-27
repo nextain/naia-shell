@@ -168,6 +168,58 @@ describe("GeminiLive", () => {
 		});
 	});
 
+	describe("sendContextUpdate (#313 L3)", () => {
+		it("sends clientContent with turnComplete:false on mid-session inject", async () => {
+			const { session, promise } = connectGateway();
+			await promise;
+			lastWs.send.mockClear();
+
+			session.sendContextUpdate?.({
+				type: "browser",
+				data: { url: "https://example.com/a", title: "A" },
+			});
+
+			expect(lastWs.send).toHaveBeenCalledTimes(1);
+			const msg = JSON.parse(lastWs.send.mock.calls[0][0]);
+			expect(msg.clientContent.turns[0].role).toBe("user");
+			expect(msg.clientContent.turns[0].parts[0].text).toContain(
+				"[panel-context:browser]",
+			);
+			expect(msg.clientContent.turns[0].parts[0].text).toContain(
+				"https://example.com/a",
+			);
+			// CRITICAL: must NOT solicit a new model response.
+			expect(msg.clientContent.turnComplete).toBe(false);
+		});
+
+		it("drops update silently when not connected", () => {
+			const session = createGeminiLiveSession();
+			expect(session.isConnected).toBe(false);
+			// Must not throw.
+			session.sendContextUpdate?.({ type: "browser", data: { url: "x" } });
+		});
+
+		it("drops update silently after disconnect", async () => {
+			const { session, promise } = connectGateway();
+			await promise;
+			session.disconnect();
+			lastWs.send.mockClear();
+			session.sendContextUpdate?.({ type: "browser", data: { url: "x" } });
+			expect(lastWs.send).not.toHaveBeenCalled();
+		});
+
+		it("drops update silently on malformed payload", async () => {
+			const { session, promise } = connectGateway();
+			await promise;
+			lastWs.send.mockClear();
+			session.sendContextUpdate?.({
+				type: "",
+				data: {},
+			});
+			expect(lastWs.send).not.toHaveBeenCalled();
+		});
+	});
+
 	describe("sendToolResponse", () => {
 		it("sends toolResponse with functionResponses", async () => {
 			const { session, promise } = connectGateway();

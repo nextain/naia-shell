@@ -125,6 +125,24 @@ export type LiveProviderConfig =
 	| NaiaTalkConfig
 	| VllmOmniConfig;
 
+// ── Mid-session Panel Context Update (#313 L3) ──
+//
+// Live providers (Gemini Live, OpenAI Realtime, ...) accept an OPEN WS for the
+// lifetime of a turn-taking voice session. The systemInstruction passed at
+// connect() time is frozen; subsequent changes to `panel-registry` context
+// (e.g. the browser panel navigates to a new URL while the user is talking)
+// must be injected as a non-blocking user-role message so the model sees the
+// new world state on its next turn without waiting for the user to speak.
+//
+// `PanelContextUpdate` is a structurally narrow subset of `PanelContext` from
+// `panel-registry.ts` — duplicated here to keep `voice/*` free of UI imports.
+export interface PanelContextUpdate {
+	/** Panel type identifier (e.g. "browser", "workspace"). */
+	type: string;
+	/** Arbitrary JSON payload describing the new panel state. */
+	data: Record<string, unknown>;
+}
+
 // ── Voice Session (provider-agnostic interface) ──
 
 export interface VoiceSession {
@@ -132,6 +150,16 @@ export interface VoiceSession {
 	sendAudio: (pcmBase64: string) => void;
 	sendText: (text: string) => void;
 	sendToolResponse: (callId: string, toolName: string, result: unknown) => void;
+	/**
+	 * Inject a panel-context delta into the running Live session without
+	 * triggering a new model response. Only providers whose wire protocol
+	 * supports mid-turn context append implement this (#313 L3); others are
+	 * `undefined` and the bridge silently drops the update.
+	 *
+	 * Implementations MUST be a no-op when the session is not yet connected
+	 * or has already been disconnected.
+	 */
+	sendContextUpdate?: (ctx: PanelContextUpdate) => void;
 	disconnect: () => void;
 	readonly isConnected: boolean;
 

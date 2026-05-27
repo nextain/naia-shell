@@ -80,7 +80,9 @@ import type {
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
 	LIVE_PROVIDER_COST_HINTS,
+	type PanelContextBridge,
 	type VoiceSession,
+	attachPanelContextBridge,
 	createVoiceSession,
 } from "../lib/voice/index";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
@@ -322,6 +324,11 @@ export function ChatPanel() {
 	const micStreamRef = useRef<MicStream | null>(null);
 	const audioPlayerRef = useRef<AudioPlayer | null>(null);
 	const voiceStartRef = useRef<{ time: number; provider: string } | null>(null);
+	// #313 L3 — panel context → Live session bridge. Attached after the
+	// session connects, detached on disconnect/error. Null when no Live
+	// session is active. Owned alongside the session lifecycle to keep the
+	// debounced timer scoped to the session it was created for.
+	const panelContextBridgeRef = useRef<PanelContextBridge | null>(null);
 
 	// ── Input history (↑↓ arrow key recall) ──────────────────────────────
 	const inputHistoryRef = useRef<string[]>([]);
@@ -1041,6 +1048,10 @@ export function ChatPanel() {
 				clearTimeout(queuedSendTimerRef.current);
 				queuedSendTimerRef.current = null;
 			}
+			// #313 L3 — detach bridge BEFORE disconnect so a pending debounced
+			// send can't fire against a half-closed WS.
+			panelContextBridgeRef.current?.detach();
+			panelContextBridgeRef.current = null;
 			voiceSessionRef.current?.disconnect();
 			micStreamRef.current?.stop();
 			audioPlayerRef.current?.destroy();
@@ -1236,6 +1247,10 @@ export function ChatPanel() {
 				cleanupPipeline();
 			} else {
 				showVoiceCostSummary();
+				// #313 L3 — detach bridge first so the debounce timer cannot
+				// fire after the session is disconnected.
+				panelContextBridgeRef.current?.detach();
+				panelContextBridgeRef.current = null;
 				voiceSessionRef.current?.disconnect();
 				micStreamRef.current?.stop();
 				audioPlayerRef.current?.destroy();
@@ -1744,6 +1759,17 @@ export function ChatPanel() {
 			});
 			voiceSessionRef.current = session;
 
+			// #313 L3 — bridge mid-session panel context changes into the open
+			// Live WS. Subscribes to the panel store, debounces 500ms (rapid
+			// URL hops), and forwards to `session.sendContextUpdate()` — which
+			// is a silent no-op for providers without a mid-session inject
+			// surface (vllm-omni, naia-talk). The bridge is detached in every
+			// cleanup path below.
+			panelContextBridgeRef.current = attachPanelContextBridge(session, {
+				subscribe: (listener) => usePanelStore.subscribe(listener),
+				getContext: () => usePanelStore.getState().activePanelContext,
+			});
+
 			// Create audio player
 			const player = createAudioPlayer({
 				sampleRate: 24000,
@@ -1815,6 +1841,10 @@ export function ChatPanel() {
 			};
 			session.onDisconnect = () => {
 				showVoiceCostSummary();
+				// #313 L3 — detach bridge when the server closes the WS so the
+				// debounce timer cannot fire against the dead session.
+				panelContextBridgeRef.current?.detach();
+				panelContextBridgeRef.current = null;
 				micStreamRef.current?.stop();
 				audioPlayerRef.current?.destroy();
 				micStreamRef.current = null;
@@ -1918,6 +1948,11 @@ export function ChatPanel() {
 			});
 			// Detach onDisconnect before cleanup to prevent double-cleanup
 			if (voiceSessionRef.current) voiceSessionRef.current.onDisconnect = null;
+			// #313 L3 — detach bridge in the connect-failure path. The bridge
+			// may have been attached before the await session.connect() threw
+			// (e.g. credential rejected mid-handshake).
+			panelContextBridgeRef.current?.detach();
+			panelContextBridgeRef.current = null;
 			voiceSessionRef.current?.disconnect();
 			micStreamRef.current?.stop();
 			audioPlayerRef.current?.destroy();
