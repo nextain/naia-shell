@@ -726,7 +726,22 @@ export function SettingsTab() {
 	>([]);
 	const [facts, setFacts] = useState<AgentFact[]>([]);
 
-	// Memory adapter settings
+	// ── Memory settings (#332 Phase 3 — canonical 4-useState) ──
+	// `memoryMode` / `memoryEmbedding` are the new canonical fields. Legacy
+	// useState below (memoryAdapter / memoryEmbeddingProvider / etc.) is kept
+	// reachable for the "Advanced (legacy)" disclosure only — they no longer
+	// drive top-level UI. loadConfig() auto-migrates legacy fields per Phase
+	// 2a.5 so `existing?.memoryMode` is populated for users upgrading from
+	// the 12-field shape.
+	const [memoryMode, setMemoryMode] = useState<"off" | "local" | "cloud">(
+		existing?.memoryMode ?? "local",
+	);
+	const [memoryEmbedding, setMemoryEmbedding] = useState<
+		"offline" | "gateway" | "custom"
+	>(existing?.memoryEmbedding ?? "offline");
+	const [memoryAdvancedOpen, setMemoryAdvancedOpen] = useState(false);
+
+	// Memory adapter settings (legacy — preserved for Advanced disclosure)
 	const [memoryAdapter, setMemoryAdapter] = useState<"local" | "qdrant">(
 		existing?.memoryAdapter ?? "local",
 	);
@@ -737,7 +752,10 @@ export function SettingsTab() {
 	const [memoryEmbeddingProvider, setMemoryEmbeddingProvider] = useState<
 		"none" | "offline" | "vllm" | "ollama" | "naia"
 	>(existing?.memoryEmbeddingProvider ?? "none");
-	const [memoryOfflineModel, setMemoryOfflineModel] = useState<
+	// #332 Phase 3: setter retained but no longer wired to UI — the canonical
+	// flow fixes the offline model to all-MiniLM-L6-v2. Kept so existing
+	// localStorage values round-trip through save/load unchanged.
+	const [memoryOfflineModel, _setMemoryOfflineModel] = useState<
 		"all-MiniLM-L6-v2" | "all-mpnet-base-v2"
 	>(existing?.memoryOfflineModel ?? "all-MiniLM-L6-v2");
 	const [memoryEmbeddingBaseUrl, setMemoryEmbeddingBaseUrl] = useState(
@@ -1980,7 +1998,12 @@ export function SettingsTab() {
 			openaiRealtimeApiKey: openaiRealtimeApiKey.trim() || undefined,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
-			// Memory settings
+			// Memory settings — #332 Phase 3: canonical fields first.
+			memoryMode,
+			memoryEmbedding,
+			// Legacy fields preserved verbatim through save/load (see §9 of
+			// .agents/plans/issue-332-memory-redesign.md). Advanced disclosure
+			// is the only UI surface that mutates them now.
 			memoryAdapter,
 			memoryEmbeddingProvider,
 			memoryOfflineModel:
@@ -3248,89 +3271,82 @@ export function SettingsTab() {
 				<SkillsTab />
 			)}
 			{activeSettingsTab === "memory" && <>
-				{/* Coming soon banner */}
-				<div className="settings-coming-soon-banner">
-					<span>⏳ {t("settings.comingSoon")}</span>
-				</div>
-				<div style={{ opacity: 0.5, pointerEvents: "none" }}>
+			{/*
+			 * #332 Phase 3 — Memory Settings UI refactor.
+			 * 3 sections (Mode / Embedding / Backup) driven by 4 useState
+			 * (memoryMode / memoryEmbedding / backupPassword / backupStatus).
+			 * Legacy 12-field state stays mounted but only reaches the
+			 * "Advanced (legacy)" disclosure below — see
+			 * .agents/plans/issue-332-memory-redesign.md §2 + §8 + §9.
+			 */}
 			<div className="settings-section-divider">
 				<span>{t("settings.memorySection")}</span>
 			</div>
 
-			{/* Memory adapter */}
-			<div className="settings-field">
-				<label>{t("settings.memoryAdapter")}</label>
-				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-					{(
-						[
-							["local", t("settings.memoryAdapterLocal")],
-							["qdrant", t("settings.memoryAdapterQdrant")],
-						] as const
-					).map(([val, label]) => (
-						<label
-							key={val}
-							style={{ display: "flex", alignItems: "center", gap: "6px" }}
-						>
-							<input
-								type="radio"
-								name="memory-adapter"
-								value={val}
-								checked={memoryAdapter === val}
-								onChange={() => setMemoryAdapter(val)}
-							/>
-							{label}
-						</label>
-					))}
+			{/* Lock-badge (gemini cross-review §8.2): local storage with remote
+			    embeddings means data stays local but query vectors traverse
+			    the gateway. Surface this explicitly so "local mode" is not a
+			    privacy lie. */}
+			{memoryMode === "local" && memoryEmbedding === "gateway" && (
+				<div
+					className="settings-field"
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: "6px",
+						padding: "8px 12px",
+						borderRadius: "6px",
+						background: "var(--badge-bg, rgba(255, 193, 7, 0.12))",
+						border: "1px solid var(--badge-border, rgba(255, 193, 7, 0.4))",
+						fontSize: "0.85em",
+					}}
+					title="저장은 로컬, 임베딩 쿼리는 gateway 로 전송됩니다"
+				>
+					<span aria-hidden="true">🔒</span>
+					<span>local storage · remote embeddings</span>
 				</div>
-			</div>
-
-			{/* Qdrant fields */}
-			{memoryAdapter === "qdrant" && (
-				<>
-					<div className="settings-field">
-						<label>{t("settings.qdrantUrl")}</label>
-						<input
-							type="text"
-							value={qdrantUrl}
-							onChange={(e) => setQdrantUrl(e.target.value)}
-							placeholder="http://localhost:6333"
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.qdrantApiKey")}</label>
-						<input
-							type="password"
-							value={qdrantApiKey}
-							onChange={(e) => setQdrantApiKey(e.target.value)}
-							placeholder="..."
-						/>
-					</div>
-				</>
 			)}
 
-			{/* Embedding provider */}
+			{/* ── Section 1: Mode ── */}
 			<div className="settings-field">
-				<label>{t("settings.memoryEmbedding")}</label>
-				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+				<label>모드 (Mode)</label>
+				<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
 					{(
 						[
-							["none", t("settings.memoryEmbeddingNone")],
-							["offline", t("settings.memoryEmbeddingOffline")],
-							["vllm", t("settings.memoryEmbeddingVllm")],
-							["ollama", t("settings.memoryEmbeddingOllama")],
-							["naia", t("settings.memoryEmbeddingNaia")],
+							["off", "Off — ephemeral, this session only", false],
+							[
+								"local",
+								"Local — Hardened SQLite v6.0 (recommended)",
+								false,
+							],
+							[
+								"cloud",
+								"Cloud — Qdrant (coming soon)",
+								true,
+							],
 						] as const
-					).map(([val, label]) => (
+					).map(([val, label, disabled]) => (
 						<label
 							key={val}
-							style={{ display: "flex", alignItems: "center", gap: "6px" }}
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: "6px",
+								opacity: disabled ? 0.5 : 1,
+							}}
+							title={
+								disabled
+									? "Cloud(Qdrant) 모드는 아직 사용할 수 없습니다 — 곧 지원됩니다"
+									: undefined
+							}
 						>
 							<input
 								type="radio"
-								name="memory-embedding"
+								name="memory-mode"
 								value={val}
-								checked={memoryEmbeddingProvider === val}
-								onChange={() => setMemoryEmbeddingProvider(val)}
+								checked={memoryMode === val}
+								disabled={disabled}
+								onChange={() => setMemoryMode(val)}
 							/>
 							{label}
 						</label>
@@ -3338,27 +3354,46 @@ export function SettingsTab() {
 				</div>
 			</div>
 
-			{/* Offline model selection */}
-			{memoryEmbeddingProvider === "offline" && (
+			{/* ── Section 2: Embedding (visible only when Mode=Local) ── */}
+			{memoryMode === "local" && (
 				<div className="settings-field">
-					<label>{t("settings.memoryOfflineModelSelect")}</label>
-					<div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+					<label>임베딩 (Embedding)</label>
+					<div
+						style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+					>
 						{(
 							[
-								["all-MiniLM-L6-v2", t("settings.memoryOfflineModelLight")],
-								["all-mpnet-base-v2", t("settings.memoryOfflineModelAccurate")],
+								[
+									"offline",
+									"Offline (no key) — bundled ONNX all-MiniLM-L6-v2",
+								],
+								[
+									"gateway",
+									"via gateway — uses your LLM gateway's embed model",
+								],
+								[
+									"custom",
+									"Custom (Advanced) — Ollama / vLLM endpoint",
+								],
 							] as const
 						).map(([val, label]) => (
 							<label
 								key={val}
-								style={{ display: "flex", alignItems: "center", gap: "6px" }}
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: "6px",
+								}}
 							>
 								<input
 									type="radio"
-									name="memory-offline-model"
+									name="memory-embedding"
 									value={val}
-									checked={memoryOfflineModel === val}
-									onChange={() => setMemoryOfflineModel(val)}
+									checked={memoryEmbedding === val}
+									onChange={() => {
+										setMemoryEmbedding(val);
+										if (val === "custom") setMemoryAdvancedOpen(true);
+									}}
 								/>
 								{label}
 							</label>
@@ -3367,139 +3402,60 @@ export function SettingsTab() {
 				</div>
 			)}
 
-			{/* vLLM/Ollama embedding fields */}
-			{(memoryEmbeddingProvider === "vllm" ||
-				memoryEmbeddingProvider === "ollama") && (
-				<>
-					<div className="settings-field">
-						<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
-						<input
-							type="text"
-							value={memoryEmbeddingBaseUrl}
-							onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
-							placeholder="http://localhost:11434"
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryEmbeddingApiKey")}</label>
-						<input
-							type="password"
-							value={memoryEmbeddingApiKey}
-							onChange={(e) => setMemoryEmbeddingApiKey(e.target.value)}
-							placeholder="sk-..."
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryEmbeddingModel")}</label>
-						<input
-							type="text"
-							value={memoryEmbeddingModel}
-							onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
-							placeholder="text-embedding-ada-002"
-						/>
-					</div>
-				</>
-			)}
-
-			{/* Naia embedding: show connection status */}
-			{memoryEmbeddingProvider === "naia" && (
-				<div className="settings-field">
-					<span className="settings-hint">
-						{naiaKey
-							? `✓ ${t("settings.memoryNaiaConnected")}`
-							: `⚠ ${t("settings.memoryNaiaRequired")}`}
-					</span>
-				</div>
-			)}
-
-			{/* LLM for memory fact extraction */}
+			{/* ── Stats panel (read-only placeholder) ──
+			    TODO(#332 Phase 4): wire to Rust IPC `fetch_memory_stats` once it
+			    lands in src-tauri/src/lib.rs. Contract sketch:
+			      #[tauri::command]
+			      async fn fetch_memory_stats() -> Result<MemoryStats, String>
+			      struct MemoryStats {
+			        total_facts: u64,
+			        surface_cache_bytes: u64,
+			        surface_avg_ms: f32,
+			        last_decay_iso: Option<String>,
+			      }
+			    Frontend: invoke<MemoryStats>("fetch_memory_stats") on mount +
+			    on memoryMode change. Until then we render em-dashes so the UI
+			    shape is committed and Phase 4 only swaps in real data. */}
 			<div className="settings-field">
-				<label>{t("settings.memoryLlm")}</label>
-				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-					{(
-						[
-							["none", t("settings.memoryLlmNone")],
-							["vllm", t("settings.memoryLlmVllm")],
-							["ollama", t("settings.memoryLlmOllama")],
-							["naia", t("settings.memoryLlmNaia")],
-						] as const
-					).map(([val, label]) => (
-						<label
-							key={val}
-							style={{ display: "flex", alignItems: "center", gap: "6px" }}
-						>
-							<input
-								type="radio"
-								name="memory-llm"
-								value={val}
-								checked={memoryLlmProvider === val}
-								onChange={() => setMemoryLlmProvider(val)}
-							/>
-							{label}
-						</label>
-					))}
+				<label>통계 (Stats)</label>
+				<div
+					style={{
+						display: "flex",
+						flexDirection: "column",
+						gap: "2px",
+						fontFamily: "monospace",
+						fontSize: "0.85em",
+						opacity: 0.75,
+					}}
+				>
+					<span>총 facts: —</span>
+					<span>표면 캐시: — / —ms 평균</span>
+					<span>마지막 decay: —</span>
 				</div>
 			</div>
 
-			{/* vLLM/Ollama LLM fields */}
-			{(memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama") && (
-				<>
-					<div className="settings-field">
-						<label>{t("settings.memoryLlmBaseUrl")}</label>
-						<input
-							type="text"
-							value={memoryLlmBaseUrl}
-							onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
-							placeholder="http://localhost:8000"
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryLlmApiKey")}</label>
-						<input
-							type="password"
-							value={memoryLlmApiKey}
-							onChange={(e) => setMemoryLlmApiKey(e.target.value)}
-							placeholder="sk-..."
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryLlmModel")}</label>
-						<input
-							type="text"
-							value={memoryLlmModel}
-							onChange={(e) => setMemoryLlmModel(e.target.value)}
-							placeholder="minicpm-4.5-omni"
-						/>
-					</div>
-				</>
-			)}
-
-			{/* Naia LLM: show connection status */}
-			{memoryLlmProvider === "naia" && (
-				<div className="settings-field">
-					<span className="settings-hint">
-						{naiaKey
-							? `✓ ${t("settings.memoryNaiaConnected")}`
-							: `⚠ ${t("settings.memoryNaiaRequired")}`}
-					</span>
-				</div>
-			)}
-
-			{/* Backup section — 구현 검증 전까지 비활성. */}
-			<div className="settings-field" style={{ opacity: 0.45 }}>
+			{/* ── Section 3: Backup (re-enabled from #327) ── */}
+			<div className="settings-field">
 				<label>{t("settings.memoryBackup")}</label>
 				<input
 					type="password"
 					value={backupPassword}
 					onChange={(e) => setBackupPassword(e.target.value)}
 					placeholder={t("settings.memoryBackupPassword")}
-					disabled
+					autoComplete="new-password"
 				/>
+				<span
+					className="settings-hint"
+					style={{ display: "block", marginTop: "4px" }}
+				>
+					비밀번호는 저장되지 않습니다 — 매번 입력하세요 (AES-256-GCM).
+				</span>
 				<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
 					<button
 						type="button"
-						disabled
-						title="검증 중 — 아직 사용할 수 없습니다"
+						disabled={
+							backupStatus === "exporting" || backupStatus === "importing"
+						}
 						onClick={async () => {
 							setBackupStatus("exporting");
 							setBackupError("");
@@ -3529,8 +3485,9 @@ export function SettingsTab() {
 					</button>
 					<button
 						type="button"
-						disabled
-						title="검증 중 — 아직 사용할 수 없습니다"
+						disabled={
+							backupStatus === "exporting" || backupStatus === "importing"
+						}
 						onClick={async () => {
 							const pw = backupPassword;
 							const fileInput = document.createElement("input");
@@ -3559,9 +3516,6 @@ export function SettingsTab() {
 							: t("settings.memoryBackupImport")}
 					</button>
 				</div>
-				<span className="settings-hint">
-					{t("settings.memoryBackupComingSoon")}
-				</span>
 				{backupStatus === "done" && (
 					<span
 						className="settings-hint"
@@ -3579,6 +3533,236 @@ export function SettingsTab() {
 					</span>
 				)}
 			</div>
+
+			{/* ── Advanced (legacy) disclosure ──
+			    Power users / migration path: ollama / vllm endpoints,
+			    qdrant URL/key, fact-extraction LLM. These knobs were the
+			    pre-#332 default surface; they now live behind a collapsed
+			    panel so the canonical 3-section UI stays uncluttered.
+			    State is preserved verbatim through save/load. */}
+			<details
+				style={{ marginTop: "12px" }}
+				open={memoryAdvancedOpen}
+				onToggle={(e) =>
+					setMemoryAdvancedOpen((e.target as HTMLDetailsElement).open)
+				}
+			>
+				<summary
+					style={{
+						cursor: "pointer",
+						padding: "6px 0",
+						fontSize: "0.9em",
+						opacity: 0.75,
+					}}
+				>
+					Advanced (legacy) — ollama / vllm / qdrant
+				</summary>
+				<div style={{ paddingLeft: "8px", borderLeft: "2px solid var(--border-color, #333)" }}>
+					{/* Legacy: memory adapter — only meaningful if user wants the qdrant placeholder preserved */}
+					<div className="settings-field">
+						<label>{t("settings.memoryAdapter")}</label>
+						<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+							{(
+								[
+									["local", t("settings.memoryAdapterLocal")],
+									["qdrant", t("settings.memoryAdapterQdrant")],
+								] as const
+							).map(([val, label]) => (
+								<label
+									key={val}
+									style={{ display: "flex", alignItems: "center", gap: "6px" }}
+								>
+									<input
+										type="radio"
+										name="memory-adapter-legacy"
+										value={val}
+										checked={memoryAdapter === val}
+										onChange={() => setMemoryAdapter(val)}
+									/>
+									{label}
+								</label>
+							))}
+						</div>
+					</div>
+
+					{memoryAdapter === "qdrant" && (
+						<>
+							<div className="settings-field">
+								<label>{t("settings.qdrantUrl")}</label>
+								<input
+									type="text"
+									value={qdrantUrl}
+									onChange={(e) => setQdrantUrl(e.target.value)}
+									placeholder="http://localhost:6333"
+								/>
+							</div>
+							<div className="settings-field">
+								<label>{t("settings.qdrantApiKey")}</label>
+								<input
+									type="password"
+									value={qdrantApiKey}
+									onChange={(e) => setQdrantApiKey(e.target.value)}
+									placeholder="..."
+								/>
+							</div>
+						</>
+					)}
+
+					{/* Legacy embedding provider (drives only when memoryEmbedding=custom) */}
+					<div className="settings-field">
+						<label>{t("settings.memoryEmbedding")} (legacy)</label>
+						<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+							{(
+								[
+									["none", t("settings.memoryEmbeddingNone")],
+									["offline", t("settings.memoryEmbeddingOffline")],
+									["vllm", t("settings.memoryEmbeddingVllm")],
+									["ollama", t("settings.memoryEmbeddingOllama")],
+									["naia", t("settings.memoryEmbeddingNaia")],
+								] as const
+							).map(([val, label]) => (
+								<label
+									key={val}
+									style={{ display: "flex", alignItems: "center", gap: "6px" }}
+								>
+									<input
+										type="radio"
+										name="memory-embedding-legacy"
+										value={val}
+										checked={memoryEmbeddingProvider === val}
+										onChange={() => setMemoryEmbeddingProvider(val)}
+									/>
+									{label}
+								</label>
+							))}
+						</div>
+					</div>
+
+					{(memoryEmbeddingProvider === "vllm" ||
+						memoryEmbeddingProvider === "ollama") && (
+						<>
+							<div className="settings-field">
+								<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
+								<input
+									type="text"
+									value={memoryEmbeddingBaseUrl}
+									onChange={(e) =>
+										setMemoryEmbeddingBaseUrl(e.target.value)
+									}
+									placeholder="http://localhost:11434"
+								/>
+							</div>
+							<div className="settings-field">
+								<label>{t("settings.memoryEmbeddingApiKey")}</label>
+								<input
+									type="password"
+									value={memoryEmbeddingApiKey}
+									onChange={(e) =>
+										setMemoryEmbeddingApiKey(e.target.value)
+									}
+									placeholder="sk-..."
+								/>
+							</div>
+							<div className="settings-field">
+								<label>{t("settings.memoryEmbeddingModel")}</label>
+								<input
+									type="text"
+									value={memoryEmbeddingModel}
+									onChange={(e) =>
+										setMemoryEmbeddingModel(e.target.value)
+									}
+									placeholder="text-embedding-ada-002"
+								/>
+							</div>
+						</>
+					)}
+
+					{memoryEmbeddingProvider === "naia" && (
+						<div className="settings-field">
+							<span className="settings-hint">
+								{naiaKey
+									? `✓ ${t("settings.memoryNaiaConnected")}`
+									: `⚠ ${t("settings.memoryNaiaRequired")}`}
+							</span>
+						</div>
+					)}
+
+					{/* Legacy LLM for memory fact extraction */}
+					<div className="settings-field">
+						<label>{t("settings.memoryLlm")}</label>
+						<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+							{(
+								[
+									["none", t("settings.memoryLlmNone")],
+									["vllm", t("settings.memoryLlmVllm")],
+									["ollama", t("settings.memoryLlmOllama")],
+									["naia", t("settings.memoryLlmNaia")],
+								] as const
+							).map(([val, label]) => (
+								<label
+									key={val}
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: "6px",
+									}}
+								>
+									<input
+										type="radio"
+										name="memory-llm-legacy"
+										value={val}
+										checked={memoryLlmProvider === val}
+										onChange={() => setMemoryLlmProvider(val)}
+									/>
+									{label}
+								</label>
+							))}
+						</div>
+					</div>
+
+					{(memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama") && (
+						<>
+							<div className="settings-field">
+								<label>{t("settings.memoryLlmBaseUrl")}</label>
+								<input
+									type="text"
+									value={memoryLlmBaseUrl}
+									onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
+									placeholder="http://localhost:8000"
+								/>
+							</div>
+							<div className="settings-field">
+								<label>{t("settings.memoryLlmApiKey")}</label>
+								<input
+									type="password"
+									value={memoryLlmApiKey}
+									onChange={(e) => setMemoryLlmApiKey(e.target.value)}
+									placeholder="sk-..."
+								/>
+							</div>
+							<div className="settings-field">
+								<label>{t("settings.memoryLlmModel")}</label>
+								<input
+									type="text"
+									value={memoryLlmModel}
+									onChange={(e) => setMemoryLlmModel(e.target.value)}
+									placeholder="minicpm-4.5-omni"
+								/>
+							</div>
+						</>
+					)}
+
+					{memoryLlmProvider === "naia" && (
+						<div className="settings-field">
+							<span className="settings-hint">
+								{naiaKey
+									? `✓ ${t("settings.memoryNaiaConnected")}`
+									: `⚠ ${t("settings.memoryNaiaRequired")}`}
+							</span>
+						</div>
+					)}
+				</div>
+			</details>
 
 			{/* Memory stats */}
 			{facts.length > 0 && (
@@ -3627,7 +3811,6 @@ export function SettingsTab() {
 					))}
 				</div>
 			)}
-							</div>
 			</>}
 			{activeSettingsTab === "general" && <>
 						<div className="settings-section-divider">
