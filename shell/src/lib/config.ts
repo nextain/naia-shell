@@ -305,6 +305,11 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 
 /**
  * Save config: sensitive fields → secure store, rest → localStorage.
+ *
+ * #329 (B) hygiene: provider="nextain" relies solely on `naiaKey`. Any
+ * stale `apiKey` from an earlier direct-provider session would collide
+ * with `naiaKey` via the secret IPC race (see L059). Delete it actively
+ * so the secure store stays clean and the agent only sees one source.
  */
 export async function saveConfigSecure(config: AppConfig): Promise<void> {
 	const publicConfig = { ...config };
@@ -315,6 +320,11 @@ export async function saveConfigSecure(config: AppConfig): Promise<void> {
 			await saveSecretKey(key, val);
 		}
 		(publicConfig as any)[key] = undefined;
+	}
+
+	// #329 (B) — purge collision-causing stale fields per provider.
+	if (config.provider === "nextain") {
+		await deleteSecretKey("apiKey");
 	}
 
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(publicConfig));
