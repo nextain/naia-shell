@@ -140,7 +140,21 @@ if (cfg.memoryMode === "local") {
 }
 ```
 
-Agent already supports this — `decideCliMemory` reads `NAIA_EMBED_*` and falls back to `naia-settings/llm.json` embedded role when needed.
+**Precedence rule (codex cross-review correction)**:
+
+`memoryEmbedding` wins for embeddings. LLM-section settings win only for
+chat. The memory choice must be a privacy/cost decision that doesn't
+silently inherit from unrelated LLM config.
+
+When `memoryMode=local && memoryEmbedding=gateway`, surface a clear UI
+badge "local storage · remote embeddings" so the user sees that data
+stays local but query vectors traverse the gateway. Without this badge,
+"local mode" becomes a privacy lie.
+
+Agent supports both — `decideCliMemory` reads `NAIA_EMBED_*` first; if
+the user chose `gateway`, falls back to `naia-settings/llm.json` embedded
+role. If the user chose `offline`, agent uses the bundled ONNX model and
+never touches the embedded role, regardless of what LLM section has.
 
 ## 3. E2E test plan (TDD-first)
 
@@ -233,23 +247,74 @@ shell/e2e-tauri/specs/
 - Users with existing local SQLite at `naia-settings/.memory/*.sqlite` 유지.
 - Users with qdrantUrl 설정해 둔 경우 — 이번 PR 에서는 "cloud mode coming soon, your old qdrant settings are preserved in legacy fields" 안내.
 
-## 7. Ralph loop phases
+## 7. Ralph loop phases (TDD order updated per codex cross-review)
 
 | Phase | Output | Cross-review |
 |-------|--------|--------------|
-| 1 — design (this doc) | `issue-332-memory-redesign.md` | codex + gemini |
-| 2 — e2e TDD | 6 new spec files (mock-friendly) | codex |
+| 1 — design (this doc) | `issue-332-memory-redesign.md` | codex + gemini ✓ |
+| 2a — config migration + env emission unit tests | vitest specs for `buildNaiaConfigEnv` new branches + `loadConfig` legacy→new conversion | codex |
+| 2b — S105 persistence | `30-memory-persistence.spec.ts` | codex |
+| 2c — S113 encoder fallback | `34-memory-encoder-fallback.spec.ts` | gemini |
+| 2d — S101 multi-turn with memory | `35-multi-turn-with-memory.spec.ts` | codex |
+| 2e — S106 decay/ranking | `31-memory-decay.spec.ts` | gemini |
+| 2f — S111 backup round-trip | `32-memory-backup.spec.ts` | codex |
+| 2g — S112 latency budget | `33-memory-latency.spec.ts` (LAST — noisy, tests stabilized path) | gemini |
 | 3 — UI refactor | SettingsTab + adk-store + config types | gemini |
 | 4 — Rust IPC | `fetch_memory_stats` command | codex |
 | 5 — Manual | `memory.md` topic page | gemini |
 | 6 — Verify + commit | full spec run + cross-review summary | codex+gemini consensus |
 
+Rationale for the reordered TDD (codex correction):
+
+- **Config migration first** (2a) — every subsequent spec depends on
+  legacy fields being correctly converted to the new 4-field shape; if
+  this regresses, all of 2b-2g fail noisily.
+- **Persistence before fallback** (2b → 2c) — fallback is a graceful
+  degradation path; persistence is the canonical happy path. Persistence
+  must work before "what if it doesn't" makes sense.
+- **Multi-turn before decay** (2d → 2e) — multi-turn exercises the
+  end-to-end recall pipeline; decay is a refinement of ranking on top
+  of a working pipeline.
+- **Latency last** (2g) — latency tests are inherently noisy (worker
+  thread scheduling, OS file cache). Running them against a stabilized
+  path catches real regressions; running them during design pollutes
+  signal with implementation noise.
+
 Each phase commits separately; assignee picks up where the loop stopped.
 
-## 8. Open questions
+## 8. Resolved (codex cross-review 2026-05-27)
 
-1. **Backup password storage** — Tauri secure-keys (with the apiKey/naiaKey collision pattern from #329!) or in-memory only? Recommend **in-memory only** + UI hint "비밀번호는 저장되지 않습니다 — 매번 입력하세요".
-2. **Stats refresh cadence** — on-mount + manual refresh button, or polling? Recommend **on-mount + manual** (no polling — memory worker thread already has enough load).
-3. **Embedded role override** — if user already configured `embedded` role under LLM section with a custom model, does that override `memoryEmbedding=offline`? Recommend **LLM section wins** with a UI badge "사용 중: gateway embed (LLM 설정 우선)".
+1. **Backup password storage** — **in-memory only** (Phase 1 default).
+   UI copy: "비밀번호는 저장되지 않습니다 — 매번 입력하세요". Re-entry
+   required for both export and restore. Secure-store deferred because
+   of the persistence/recovery ambiguity (and the #329 collision pattern
+   shows secret-store sharing across features causes real bugs).
+2. **Stats refresh cadence** — on-mount + manual refresh button. No
+   polling (memory worker thread already loaded).
+3. **Embedded role precedence** — **`memoryEmbedding` wins for
+   embeddings, LLM section wins only for chat**. Reversed from earlier
+   draft — codex flagged that "LLM section wins" makes memory privacy
+   silently inherit from an unrelated chat setting. When user picks
+   `memoryMode=local && memoryEmbedding=gateway`, UI must show a badge
+   "local storage · remote embeddings" so privacy semantics are explicit.
+
+## 9. Preserved legacy fields (codex pruning rule)
+
+Only old fields that map to **durable user intent** are kept (under a
+collapsed "Advanced (legacy)" disclosure section), not implementation
+knobs:
+
+| Legacy field | Keep? | Rationale |
+|--------------|:---:|-----------|
+| `memoryAdapter` (local/qdrant) | ✗ | replaced by `memoryMode` |
+| `memoryOfflineModel` | ✗ | implementation knob, fixed to `all-MiniLM-L6-v2` for now |
+| `memoryEmbeddingBaseUrl/ApiKey/Model` | ✗ | derived from gateway embedded role |
+| `qdrantUrl/qdrantApiKey` | **✓** legacy disclosure | explicit provider choice (cloud sync intent) |
+| `memoryLlmProvider/BaseUrl/ApiKey/Model` | ✗ | derived from gateway sub role |
+| `backupPassword` | ✗ | in-memory only now (not persisted) |
+
+Migration: `loadConfig()` reads legacy `qdrantUrl/qdrantApiKey` →
+preserves under new `legacyQdrant` field for future cloud-mode wiring.
+All other legacy fields are silently dropped on next save.
 
 🤖 Written with AI assistance. If anything looks off, please open a discussion.
