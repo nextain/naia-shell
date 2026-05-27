@@ -300,10 +300,17 @@ function resolveAgentEnvKey(
 	keyField: "apiKey" | "naiaKey",
 ): string | null {
 	if (keyField === "naiaKey") return "NAIA_ANYLLM_API_KEY";
+	// #329 fix: `apiKey` and `naiaKey` MUST NOT map to the same env var.
+	// Pre-fix, `provider === "nextain"` mapped both fields to
+	// `NAIA_ANYLLM_API_KEY`, so a stale Gemini `apiKey` from an earlier
+	// session would overwrite the valid `naiaKey` via the secret IPC race
+	// — observed as `[오류] Unauthorized` in 2026-05-26 e2e 04 debugging.
+	// nextain provider uses `naiaKey` only; the `apiKey` field is for
+	// direct providers (anthropic / openai / glm) and has no meaning here.
+	if (provider === "nextain") return null;
 	switch (provider) {
 		case "anthropic": return "ANTHROPIC_API_KEY";
 		case "openai":    return "OPENAI_API_KEY";
-		case "nextain":   return "NAIA_ANYLLM_API_KEY";
 		case "glm":       return "GLM_API_KEY";
 		default:          return null; // ollama, vllm, gemini, claude-code-cli — no persisted key
 	}
