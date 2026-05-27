@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createGeminiLiveSession } from "../gemini-live";
+import {
+	createGeminiLiveSession,
+	type LiveToolDef,
+	type LiveToolRegistry,
+	normalizeLiveTools,
+} from "../gemini-live";
 import type { GeminiLiveConfig } from "../types";
 
 // ── Mock WebSocket ──
@@ -343,5 +348,124 @@ describe("GeminiLive", () => {
 
 			await expect(promise).rejects.toThrow("WebSocket error");
 		});
+	});
+});
+
+// ─── #313 L2 — normalizeLiveTools ──────────────────────────────────────────
+
+describe("normalizeLiveTools (#313 L2)", () => {
+	it("hydrates an empty {type:object, properties:{}} schema from the registry", () => {
+		const tools: LiveToolDef[] = [
+			{
+				name: "skill_note_write",
+				description: "Write the note",
+				parameters: { type: "object", properties: {} },
+			},
+		];
+		const registry: LiveToolRegistry = new Map([
+			[
+				"skill_note_write",
+				{
+					type: "object",
+					properties: {
+						content: { type: "string", description: "Note body" },
+					},
+					required: ["content"],
+				},
+			],
+		]);
+
+		const result = normalizeLiveTools(tools, registry);
+		expect(result).toHaveLength(1);
+		const params = result[0].parameters as {
+			properties: Record<string, unknown>;
+			required: string[];
+		};
+		expect(params.properties).toHaveProperty("content");
+		expect(params.required).toEqual(["content"]);
+		// Other fields preserved
+		expect(result[0].name).toBe("skill_note_write");
+		expect(result[0].description).toBe("Write the note");
+	});
+
+	it("passes through rich schemas unchanged (does not overwrite from registry)", () => {
+		const rich: LiveToolDef = {
+			name: "skill_browser_navigate",
+			description: "Navigate to URL",
+			parameters: {
+				type: "object",
+				properties: { url: { type: "string" } },
+				required: ["url"],
+			},
+		};
+		// Registry would replace `url` with `target` if we wrongly overwrote.
+		const registry: LiveToolRegistry = new Map([
+			[
+				"skill_browser_navigate",
+				{
+					type: "object",
+					properties: { target: { type: "string" } },
+					required: ["target"],
+				},
+			],
+		]);
+
+		const result = normalizeLiveTools([rich], registry);
+		expect(result[0]).toBe(rich);
+		expect(
+			(result[0].parameters as { properties: Record<string, unknown> })
+				.properties,
+		).toHaveProperty("url");
+	});
+
+	it("passes through zero-arg tools with no canonical schema (does not drop)", () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => undefined);
+
+		const tools: LiveToolDef[] = [
+			{
+				name: "skill_browser_back",
+				description: "Go back",
+				parameters: { type: "object", properties: {} },
+			},
+		];
+		const result = normalizeLiveTools(tools, new Map());
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe("skill_browser_back");
+		expect(result[0].parameters).toEqual({
+			type: "object",
+			properties: {},
+		});
+
+		warnSpy.mockRestore();
+	});
+
+	it("tolerates a malformed parameters value by passing through", () => {
+		const warnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => undefined);
+
+		const tools = [
+			{
+				name: "skill_busted",
+				description: "Broken schema",
+				// Intentionally invalid: a string where a schema object should be.
+				parameters: "object" as unknown as LiveToolDef["parameters"],
+			},
+		] as LiveToolDef[];
+
+		const result = normalizeLiveTools(tools, new Map());
+		expect(result).toHaveLength(1);
+		expect(result[0].parameters).toBe("object");
+
+		warnSpy.mockRestore();
+	});
+
+	it("returns [] for empty / non-array input", () => {
+		expect(normalizeLiveTools([], new Map())).toEqual([]);
+		expect(
+			normalizeLiveTools(undefined as unknown as LiveToolDef[], new Map()),
+		).toEqual([]);
 	});
 });

@@ -12,6 +12,142 @@ import type {
 	VoiceSession,
 } from "./types";
 
+// ─── Live tool schema normalization (#313 L2) ──────────────────────────────────
+//
+// Gemini Live sends `tools` once at session setup. If a tool's parameters are
+// `{type:"object", properties:{}}` while a richer JSON schema exists in the
+// panel/skill registry, the model never learns the real argument shape and
+// downstream tool_call args come back malformed. `normalizeLiveTools` hydrates
+// empty-schema tools from a canonical registry; unknown tools pass through
+// with a warning so the live setup payload is never silently dropped.
+//
+// Out of scope (#313 L3): naia-agent lab-proxy-live tool_call round-trip wiring
+// and the HTTP tool path (which goes through a different normalization stage).
+
+/**
+ * Minimal JSON-Schema-ish shape that Gemini Live setup expects per function.
+ * Kept structurally compatible with `Record<string, unknown>` so callers can
+ * pass either a typed schema or an arbitrary JSON object from a registry.
+ */
+export interface LiveToolParameters {
+	type: "object";
+	properties?: Record<string, unknown>;
+	required?: string[];
+	[k: string]: unknown;
+}
+
+/** The on-wire shape: function declaration for Gemini Live setup. */
+export interface LiveToolDef {
+	name: string;
+	description: string;
+	parameters?: Record<string, unknown>;
+}
+
+/**
+ * Lookup of canonical tool schemas keyed by tool name. Sources:
+ * - active panel descriptor `tools` (panel-registry.ts)
+ * - agent skill list (chat-service.ts: fetchAgentSkills)
+ *
+ * Callers build this map once at session setup, then pass it to
+ * `normalizeLiveTools` together with the tool list actually being sent.
+ */
+export type LiveToolRegistry = Map<string, Record<string, unknown>>;
+
+/**
+ * Returns true when `params` is missing, not an object schema, or is the
+ * empty default `{type:"object", properties:{}}` (or `properties` absent).
+ * Tools with zero declared args legitimately produce this shape, but they
+ * are indistinguishable from the inline fallback at ChatPanel.tsx:1676.
+ */
+function isEmptySchema(params: LiveToolDef["parameters"] | undefined): boolean {
+	if (!params || typeof params !== "object") return true;
+	const obj = params as Record<string, unknown>;
+	if (obj.type !== "object") return true;
+	const props = obj.properties as Record<string, unknown> | undefined;
+	if (!props || typeof props !== "object") return true;
+	return Object.keys(props).length === 0;
+}
+
+function hasNonEmptySchema(
+	params: LiveToolParameters | Record<string, unknown> | undefined,
+): boolean {
+	if (!params || typeof params !== "object") return false;
+	const props = (params as Record<string, unknown>).properties as
+		| Record<string, unknown>
+		| undefined;
+	return !!props && typeof props === "object" && Object.keys(props).length > 0;
+}
+
+/**
+ * Normalize a list of tools destined for a Gemini Live `setup.tools` payload.
+ *
+ * Behavior:
+ * 1. Tools that already carry a non-empty `properties` schema are passed
+ *    through unchanged (the registry shouldn't second-guess what the tool
+ *    author declared).
+ * 2. Tools whose schema is empty/missing AND for which `registry` has a
+ *    non-empty canonical schema are hydrated with that registry schema.
+ * 3. Tools whose schema is empty/missing AND have no registry entry are
+ *    passed through unmodified — a single warn is logged so the live
+ *    payload is observable rather than silently truncated. Genuinely
+ *    zero-arg tools (e.g. `skill_browser_back`) fall into this branch and
+ *    that is correct.
+ * 4. Malformed entries (non-object `parameters` value, e.g. an accidental
+ *    `parameters: "object"` string) are warned and passed through with
+ *    `parameters` untouched so the upstream API can reject loudly if needed.
+ */
+export function normalizeLiveTools(
+	tools: LiveToolDef[],
+	registry: LiveToolRegistry,
+): LiveToolDef[] {
+	if (!Array.isArray(tools) || tools.length === 0) return [];
+
+	return tools.map((tool) => {
+		if (!tool || typeof tool !== "object" || !tool.name) {
+			Logger.warn(
+				"GeminiLive",
+				"normalizeLiveTools: dropped malformed tool entry",
+				{ tool },
+			);
+			return tool;
+		}
+
+		// 4) Detect non-object parameters values — pass through + warn.
+		if (
+			tool.parameters !== undefined &&
+			(typeof tool.parameters !== "object" || tool.parameters === null)
+		) {
+			Logger.warn(
+				"GeminiLive",
+				"normalizeLiveTools: tool has non-object parameters, passing through",
+				{ name: tool.name },
+			);
+			return tool;
+		}
+
+		// 1) Already rich — leave untouched.
+		if (hasNonEmptySchema(tool.parameters)) {
+			return tool;
+		}
+
+		// 2) Empty/default schema — try registry hydration.
+		const canonical = registry.get(tool.name);
+		if (canonical && hasNonEmptySchema(canonical)) {
+			return { ...tool, parameters: canonical };
+		}
+
+		// 3) Empty schema, no canonical replacement — passthrough + warn once.
+		if (isEmptySchema(tool.parameters)) {
+			Logger.warn(
+				"GeminiLive",
+				"normalizeLiveTools: no canonical schema for tool, passthrough",
+				{ name: tool.name },
+			);
+		}
+		return tool;
+	});
+}
+
 const GEMINI_LIVE_WS_BASE = "wss://generativelanguage.googleapis.com/ws";
 /** Direct mode: Google AI Studio model name */
 const DEFAULT_MODEL_DIRECT = "gemini-2.5-flash-native-audio-preview-12-2025";

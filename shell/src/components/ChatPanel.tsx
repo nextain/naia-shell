@@ -65,6 +65,10 @@ import {
 	createWebSpeechSttSession,
 	getSttProvider,
 } from "../lib/stt";
+import {
+	type LiveToolRegistry,
+	normalizeLiveTools,
+} from "../lib/voice/gemini-live";
 import { getTtsProviderMeta } from "../lib/tts";
 import { estimateSttCost, estimateTtsCost } from "../lib/tts/cost";
 import type {
@@ -1576,18 +1580,17 @@ export function ChatPanel() {
 			// naia-talk is dev-only while the voice pipeline is under test (backlog #33).
 			const naiaTalkAllowed = import.meta.env.DEV;
 			const isNaiaOmni = naiaTalkAllowed && /^naia-omni/i.test(config.model);
-			const liveProvider =
-				isNaiaOmni
+			const liveProvider = isNaiaOmni
+				? ("naia-talk" as const)
+				: naiaTalkAllowed && isOmni && config.provider === "vllm"
 					? ("naia-talk" as const)
-					: naiaTalkAllowed && isOmni && config.provider === "vllm"
-						? ("naia-talk" as const)
-						: config.provider === "vllm"
-							? ("vllm-omni" as const)
-							: config.provider === "openai"
-								? ("openai-realtime" as const)
-								: naiaKey
-									? ("naia" as const)
-									: ("gemini-live" as const);
+					: config.provider === "vllm"
+						? ("vllm-omni" as const)
+						: config.provider === "openai"
+							? ("openai-realtime" as const)
+							: naiaKey
+								? ("naia" as const)
+								: ("gemini-live" as const);
 
 			Logger.info("ChatPanel", "Voice config", {
 				provider: config.provider,
@@ -1617,7 +1620,10 @@ export function ChatPanel() {
 				setVoiceMode("off");
 				return;
 			}
-			if (liveProvider === "openai-realtime" && config.model !== "naia-24g-live") {
+			if (
+				liveProvider === "openai-realtime" &&
+				config.model !== "naia-24g-live"
+			) {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
 				if (!openaiKey) {
 					Logger.warn("ChatPanel", "OpenAI Realtime requires API key");
@@ -1639,14 +1645,12 @@ export function ChatPanel() {
 			const _useDirectMode_dbg =
 				liveProvider === "gemini-live" && !!config.googleApiKey;
 			const _gatewayWsBase = LAB_GATEWAY_URL.replace(/^http/, "ws");
-			const _routingPath =
-				_useDirectMode_dbg
-					? ("browser-gemini-live" as const)
-					: ("agent-lab-proxy-live" as const);
-			const _wssUrl =
-				_useDirectMode_dbg
-					? "wss://generativelanguage.googleapis.com/ws/...BidiGenerateContent?key=***"
-					: `${_gatewayWsBase}/v1/live`;
+			const _routingPath = _useDirectMode_dbg
+				? ("browser-gemini-live" as const)
+				: ("agent-lab-proxy-live" as const);
+			const _wssUrl = _useDirectMode_dbg
+				? "wss://generativelanguage.googleapis.com/ws/...BidiGenerateContent?key=***"
+				: `${_gatewayWsBase}/v1/live`;
 			const _gatewayMode =
 				import.meta.env.VITE_NAIA_USE_DEV_GATEWAY === "1" ? "dev" : "prod";
 			Logger.info("ChatPanel", "Voice live endpoint resolved (#313)", {
@@ -1702,10 +1706,27 @@ export function ChatPanel() {
 
 			// Merge panel tools + agent skills (panel tools take priority on name collision)
 			const panelNames = new Set(panelToolDefs.map((t) => t.name));
-			const voiceTools = [
+			const mergedVoiceTools = [
 				...panelToolDefs,
 				...agentSkills.filter((s) => !panelNames.has(s.name)),
 			];
+
+			// #313 L2 — hydrate any empty `{type:"object", properties:{}}` schemas
+			// from the canonical registry before they're frozen into the Live
+			// `setup.tools` payload. Tools are sent once at setup, so an empty
+			// schema there makes the model permanently unaware of the real arg
+			// shape. Build a registry from both rich sources (panel tools +
+			// agent skills) and pass it through `normalizeLiveTools`.
+			const liveToolRegistry: LiveToolRegistry = new Map();
+			for (const t of panelTools) {
+				if (t.parameters) liveToolRegistry.set(t.name, t.parameters);
+			}
+			for (const s of agentSkills) {
+				if (s.parameters && !liveToolRegistry.has(s.name)) {
+					liveToolRegistry.set(s.name, s.parameters);
+				}
+			}
+			const voiceTools = normalizeLiveTools(mergedVoiceTools, liveToolRegistry);
 
 			// Append tool usage instructions to system prompt so the model
 			// knows to call the tools instead of saying they're unavailable.
@@ -1828,7 +1849,7 @@ export function ChatPanel() {
 				const wsBase = vllmBase.replace(/^http/, "ws");
 				await session.connect({
 					provider: "naia-talk",
-					serverUrl: useGw ? undefined : (config.vllmHost ? wsBase : undefined),
+					serverUrl: useGw ? undefined : config.vllmHost ? wsBase : undefined,
 					gatewayUrl: useGw ? LAB_GATEWAY_URL : undefined,
 					naiaKey: useGw ? naiaKey : undefined,
 					model: config.model,
@@ -2072,68 +2093,70 @@ export function ChatPanel() {
 
 	return (
 		<>
-		<div className="chat-panel">
-			{/* Header with tabs */}
-			<div className="chat-header">
-				<div className="chat-tabs">
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
-						onClick={() => handleTabChange("chat")}
-						title={t("progress.tabChat")}
-						aria-label={t("progress.tabChat")}
-						data-tooltip={t("progress.tabChat")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.chat}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "history" ? " active" : ""}`}
-						onClick={() => handleTabChange("history")}
-						title={t("history.tabHistory")}
-						aria-label={t("history.tabHistory")}
-						data-tooltip={t("history.tabHistory")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.history}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-						onClick={() => handleTabChange("channels")}
-						title={t("channels.tabChannels")}
-						aria-label={t("channels.tabChannels")}
-						data-tooltip={t("channels.tabChannels")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.channels}
-						</span>
-					</button>
-				</div>
-				<div className="chat-header-right">
-					{totalSessionCost > 0 && provider !== "ollama" && provider !== "vllm" && (
+			<div className="chat-panel">
+				{/* Header with tabs */}
+				<div className="chat-header">
+					<div className="chat-tabs">
 						<button
 							type="button"
-							className="cost-badge session-cost cost-badge-clickable"
-							onClick={() => setShowCostDashboard((v) => !v)}
+							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
+							onClick={() => handleTabChange("chat")}
+							title={t("progress.tabChat")}
+							aria-label={t("progress.tabChat")}
+							data-tooltip={t("progress.tabChat")}
 						>
-							{formatCost(totalSessionCost)}
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.chat}
+							</span>
 						</button>
-					)}
-					<button
-						type="button"
-						className="settings-icon-btn new-chat-btn"
-						onClick={handleNewConversation}
-						title={t("chat.newConversation")}
-						disabled={isStreaming}
-					>
-						+
-					</button>
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
+							onClick={() => handleTabChange("history")}
+							title={t("history.tabHistory")}
+							aria-label={t("history.tabHistory")}
+							data-tooltip={t("history.tabHistory")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.history}
+							</span>
+						</button>
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
+							onClick={() => handleTabChange("channels")}
+							title={t("channels.tabChannels")}
+							aria-label={t("channels.tabChannels")}
+							data-tooltip={t("channels.tabChannels")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.channels}
+							</span>
+						</button>
+					</div>
+					<div className="chat-header-right">
+						{totalSessionCost > 0 &&
+							provider !== "ollama" &&
+							provider !== "vllm" && (
+								<button
+									type="button"
+									className="cost-badge session-cost cost-badge-clickable"
+									onClick={() => setShowCostDashboard((v) => !v)}
+								>
+									{formatCost(totalSessionCost)}
+								</button>
+							)}
+						<button
+							type="button"
+							className="settings-icon-btn new-chat-btn"
+							onClick={handleNewConversation}
+							title={t("chat.newConversation")}
+							disabled={isStreaming}
+						>
+							+
+						</button>
+					</div>
 				</div>
-			</div>
 
 				{/* Progress tab */}
 				{activeTab === "progress" && <WorkProgressPanel />}
@@ -2182,81 +2205,89 @@ export function ChatPanel() {
 					/>
 				)}
 
-			{/* Messages (chat tab) */}
-			<div
-				className="chat-messages"
-				style={{ display: activeTab === "chat" ? "flex" : "none" }}
-			>
-				{messages
-					.filter((msg) => {
-						if (
-							msg.role === "user" &&
-							msg.content.startsWith("Read HEARTBEAT.md if it exists")
-						)
-							return false;
-						if (
-							msg.role === "assistant" &&
-							/^HEARTBEAT_OK\b/.test(msg.content.trim())
-						)
-							return false;
-						return true;
-					})
-					.map((msg) => (
-						<div key={msg.id} className={`chat-message ${msg.role}`}>
-							{msg.thinking && (
-								<details className="thinking-inline">
+				{/* Messages (chat tab) */}
+				<div
+					className="chat-messages"
+					style={{ display: activeTab === "chat" ? "flex" : "none" }}
+				>
+					{messages
+						.filter((msg) => {
+							if (
+								msg.role === "user" &&
+								msg.content.startsWith("Read HEARTBEAT.md if it exists")
+							)
+								return false;
+							if (
+								msg.role === "assistant" &&
+								/^HEARTBEAT_OK\b/.test(msg.content.trim())
+							)
+								return false;
+							return true;
+						})
+						.map((msg) => (
+							<div key={msg.id} className={`chat-message ${msg.role}`}>
+								{msg.thinking && (
+									<details className="thinking-inline">
+										<summary className="thinking-inline-summary">
+											<span className="thinking-inline-label">
+												💭 {t("chat.thinking") || "Thinking..."}
+											</span>
+										</summary>
+										<div className="thinking-inline-content">
+											{msg.thinking}
+										</div>
+									</details>
+								)}
+								{msg.toolCalls?.map((tc) => (
+									<ToolActivity key={tc.toolCallId} tool={tc} />
+								))}
+								<div className="message-content">
+									{msg.role === "assistant" ? (
+										<Markdown components={mdComponents}>
+											{parseEmotion(msg.content).cleanText}
+										</Markdown>
+									) : (
+										msg.content
+									)}
+								</div>
+								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
+									<span className="cost-badge">
+										{formatCost(msg.cost.cost)} ·{" "}
+										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
+										{t("chat.tokens")}
+									</span>
+								)}
+							</div>
+						))}
+
+					{/* Streaming content */}
+					{isStreaming && (
+						<div className="chat-message assistant streaming">
+							{streamingThinking && (
+								<details className="thinking-inline" open>
 									<summary className="thinking-inline-summary">
-										<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
+										<span className="thinking-inline-label">
+											💭 {t("chat.thinking") || "Thinking..."}
+										</span>
 									</summary>
-									<div className="thinking-inline-content">{msg.thinking}</div>
+									<div className="thinking-inline-content">
+										{streamingThinking}
+									</div>
 								</details>
 							)}
-							{msg.toolCalls?.map((tc) => (
+							{streamingToolCalls.map((tc) => (
 								<ToolActivity key={tc.toolCallId} tool={tc} />
 							))}
 							<div className="message-content">
-								{msg.role === "assistant" ? (
+								{streamingContent ? (
 									<Markdown components={mdComponents}>
-										{parseEmotion(msg.content).cleanText}
+										{parseEmotion(streamingContent).cleanText}
 									</Markdown>
-								) : (
-									msg.content
-								)}
+								) : null}
+								<span className="cursor-blink">▌</span>
 							</div>
-							{msg.cost && provider !== "ollama" && provider !== "vllm" && (
-								<span className="cost-badge">
-									{formatCost(msg.cost.cost)} ·{" "}
-									{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
-									{t("chat.tokens")}
-								</span>
-							)}
 						</div>
-					))}
-
-				{/* Streaming content */}
-				{isStreaming && (
-					<div className="chat-message assistant streaming">
-						{streamingThinking && (
-							<details className="thinking-inline" open>
-								<summary className="thinking-inline-summary">
-									<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
-								</summary>
-								<div className="thinking-inline-content">{streamingThinking}</div>
-							</details>
-						)}
-						{streamingToolCalls.map((tc) => (
-							<ToolActivity key={tc.toolCallId} tool={tc} />
-						))}
-						<div className="message-content">
-							{streamingContent ? (
-								<Markdown components={mdComponents}>
-									{parseEmotion(streamingContent).cleanText}
-								</Markdown>
-							) : null}
-							<span className="cursor-blink">▌</span>
-						</div>
-					</div>
-				)}
+					)}
 
 					<div ref={messagesEndRef} />
 				</div>

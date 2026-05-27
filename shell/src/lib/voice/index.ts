@@ -12,6 +12,12 @@
  *   await session.connect({ provider: "gemini-live", googleApiKey, ... });
  */
 import { createGeminiLiveSession } from "./gemini-live";
+export {
+	normalizeLiveTools,
+	type LiveToolDef,
+	type LiveToolParameters,
+	type LiveToolRegistry,
+} from "./gemini-live";
 import { createGeminiLiveProxySession } from "./gemini-live-proxy";
 import { createNaiaTalkSession } from "./naia-talk";
 import { createOpenAIRealtimeSession } from "./openai-realtime";
