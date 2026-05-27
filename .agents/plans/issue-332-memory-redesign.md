@@ -247,20 +247,21 @@ shell/e2e-tauri/specs/
 - Users with existing local SQLite at `naia-settings/.memory/*.sqlite` 유지.
 - Users with qdrantUrl 설정해 둔 경우 — 이번 PR 에서는 "cloud mode coming soon, your old qdrant settings are preserved in legacy fields" 안내.
 
-## 7. Ralph loop phases (TDD order updated per codex cross-review)
+## 7. Ralph loop phases (TDD order — codex + gemini cross-review integrated)
 
 | Phase | Output | Cross-review |
 |-------|--------|--------------|
-| 1 — design (this doc) | `issue-332-memory-redesign.md` | codex + gemini ✓ |
-| 2a — config migration + env emission unit tests | vitest specs for `buildNaiaConfigEnv` new branches + `loadConfig` legacy→new conversion | codex |
+| 1 — design (this doc) | `issue-332-memory-redesign.md` | codex + gemini ✓ (this commit integrates both) |
+| 2a — config migration + env emission unit tests | vitest specs for `buildNaiaConfigEnv` new branches + adk-store.ts:219 bug fix | codex |
+| 2a.5 — S114 migration spec (NEW) | 12-field legacy → 4-field round-trip preserves user intent | gemini |
 | 2b — S105 persistence | `30-memory-persistence.spec.ts` | codex |
-| 2c — S113 encoder fallback | `34-memory-encoder-fallback.spec.ts` | gemini |
+| 2c — S113 encoder fallback + recall quality | `34-memory-encoder-fallback.spec.ts` — fallback happens + top-3 quality maintained | gemini |
 | 2d — S101 multi-turn with memory | `35-multi-turn-with-memory.spec.ts` | codex |
-| 2e — S106 decay/ranking | `31-memory-decay.spec.ts` | gemini |
+| 2e — S106 decay/ranking (deterministic time) | `31-memory-decay.spec.ts` — uses new agent IPC `advance_clock` | gemini |
 | 2f — S111 backup round-trip | `32-memory-backup.spec.ts` | codex |
 | 2g — S112 latency budget | `33-memory-latency.spec.ts` (LAST — noisy, tests stabilized path) | gemini |
-| 3 — UI refactor | SettingsTab + adk-store + config types | gemini |
-| 4 — Rust IPC | `fetch_memory_stats` command | codex |
+| 3 — UI refactor | SettingsTab + adk-store + config types + lock-badge UI | gemini |
+| 4 — Rust IPC + agent diagnostic IPC | `fetch_memory_stats` + `advance_clock` (e2e-only, gated by NAIA_E2E_MOCK_CLONE) | codex |
 | 5 — Manual | `memory.md` topic page | gemini |
 | 6 — Verify + commit | full spec run + cross-review summary | codex+gemini consensus |
 
@@ -282,21 +283,39 @@ Rationale for the reordered TDD (codex correction):
 
 Each phase commits separately; assignee picks up where the loop stopped.
 
-## 8. Resolved (codex cross-review 2026-05-27)
+## 8. Cross-review consensus (codex + gemini, 2026-05-27)
 
-1. **Backup password storage** — **in-memory only** (Phase 1 default).
-   UI copy: "비밀번호는 저장되지 않습니다 — 매번 입력하세요". Re-entry
-   required for both export and restore. Secure-store deferred because
-   of the persistence/recovery ambiguity (and the #329 collision pattern
-   shows secret-store sharing across features causes real bugs).
-2. **Stats refresh cadence** — on-mount + manual refresh button. No
-   polling (memory worker thread already loaded).
-3. **Embedded role precedence** — **`memoryEmbedding` wins for
-   embeddings, LLM section wins only for chat**. Reversed from earlier
-   draft — codex flagged that "LLM section wins" makes memory privacy
-   silently inherit from an unrelated chat setting. When user picks
-   `memoryMode=local && memoryEmbedding=gateway`, UI must show a badge
-   "local storage · remote embeddings" so privacy semantics are explicit.
+### 8.1 Agreed
+
+1. **`adk-store.ts:219` bug** — `if (ep !== "none" && ep !== "offline")`
+   silently drops offline mode. **Fix mandatory** in Phase 2a.
+2. **Stats refresh cadence** — on-mount + manual refresh. No polling.
+3. **Migration spec required** — 12-field legacy → 4-field new mapping
+   must be unit-tested with no silent data loss. Added as Phase 2a.5.
+
+### 8.2 Disagreed — Phase 1 defers, Phase 3 picks (user/codex assignee chooses)
+
+| Issue | codex view | gemini view | Default for Phase 2 |
+|-------|-----------|-------------|---------------------|
+| Backup password storage | **in-memory only** — backup/restore is a ceremony, re-entry acceptable, secure-store sharing burned us in #329 | **secure-store mandatory** — automated background backups need persistence; #329 was naming collision, not storage flaw | **in-memory** (codex) — Phase 1 ships simpler; secure-store is a Phase 3 opt-in via "background backup" toggle |
+| Embed precedence | **`memoryEmbedding` wins for embeddings** — memory privacy must not silently inherit from chat config | **LLM-section wins with lock UI** — "one-click" UX, but lock the Memory section visually with back-link so user sees the implication | **memoryEmbedding wins** (codex) — privacy default safer; LLM section can override only via explicit "use my chat embed model" toggle |
+| State reduction | 12→4 fine, prune implementation knobs | 12→4 loses **Local OpenAI-compat embed servers** (Ollama/vLLM baseUrl/model) — preserve as "Custom (Advanced)" | **4 + 1 Advanced disclosure** — main 4 + Custom under collapsed "Advanced" for ollama/vllm power users |
+
+### 8.3 New gaps surfaced by gemini
+
+1. **S106 decay determinism** — Ebbinghaus decay is system-time dependent
+   and inherently flaky in e2e. Need a new naia-agent diagnostic IPC
+   command (`set_fact_timestamp` or `advance_clock`) so the spec can
+   warp time deterministically. Added to Phase 4 (Rust IPC).
+2. **S113 fallback quality** — current plan asserts "fallback happens"
+   but not "recall quality is maintained". Strengthen to "after fallback,
+   a known high-similarity fact still ranks top-3".
+3. **S114 migration spec** (NEW) — verify legacy 12-field config →
+   new 4-field config round-trip preserves user intent (provider,
+   ollama/vllm endpoints if any). Added to Phase 2a.5.
+4. **UI lock pattern** — if LLM provider is `nextain` (cloud), Memory's
+   gateway-embed option should display a lock badge with "Cloud embed
+   tied to your LLM provider — click to change in LLM section".
 
 ## 9. Preserved legacy fields (codex pruning rule)
 
