@@ -337,3 +337,21 @@ proposed:
     coverage: "round-trip without data loss (count + content + sentinel parity); password is session-local per §8.2 in-memory-only design decision"
     deferred_dependencies:
       - "#327 — backup-panel UI controls are still disabled; spec drives IPC directly so it does NOT depend on the UI re-enable. A UI click-through spec is added once #327's separate fix re-exposes the buttons."
+  - id: S112
+    feature: "Memory latency budget — Tier-1 (Surface) integration-path p50/p95"
+    spec_file: "shell/e2e-tauri/specs/98-memory-latency.spec.ts"
+    status: implemented
+    rationale: "naia-memory v6.0 publishes Surface 9.74ms / Deep 80ms library benchmarks. Users feel the integration path (webview → Tauri → stdio → agent → SQLite). Phase 2g sits at the end of phase 2 (see issue-332-memory-redesign.md §7) so the path under test is no longer churning under encoder/persistence/backup changes."
+    test_outline: |
+      step 1: seed SEED_FACT_COUNT (3) distinct facts via skill_memo so the SQLite adapter exercises a real corpus (FTS5 + vector index path)
+      step 2: take 10 sequential timed calls to memory_get_all_facts (closest available proxy for Surface recall — no direct memory_recall IPC exists yet)
+      step 3: compute p50 / p95 against budget
+      assert: p50 < 50ms AND p95 < 150ms
+    manual_topic: "memory.md"
+    coverage: |
+      Surface-tier integration latency floor with 5× relaxation over the 9.74ms library benchmark to absorb IPC framing + webdriver boundary + CI runner variance. Threshold is the FLOOR, not the ceiling — tighten in follow-up once stable.
+    deferred_dependencies:
+      - "Direct memory_recall(query, topK) IPC not exposed by the agent — the spec uses memory_get_all_facts as the closest proxy (same SQLite adapter + IPC plumbing). Phase 4 adds the direct-recall IPC and a sibling spec drives query-shaped recall + Deep tier 80ms target with the same 5× methodology."
+      - "N=200 corpus target downgraded to N=SEED_FACT_COUNT for this phase because skill_memo seeding costs ~1 LLM turn per fact (200 × 5-10s ≈ 16-33min, exceeds CI budget). Restoring N=200 requires a bulk-encode IPC, tracked in Phase 4."
+      - "Deep (Tier-2) recall measurement deferred until a direct-recall IPC with deepRecall option lands."
+    rationale_phase_order: "Latency reordered to LAST in phase 2 per issue-332-memory-redesign.md §7 — noise-sensitive measurement must test a stabilized path."

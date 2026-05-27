@@ -61,6 +61,7 @@ Located under `shell/e2e-tauri/specs/`. 30 specs as of 2026-05-27 (29 + 24-adk-s
 | S109 | Voice clone (ElevenLabs voice ID) | S024b switches provider, not voice |
 | S110 | Browser panel — naia.nextain.io tab embed | skill_browser_* exists but no panel-UI coverage |
 | S111 | Memory backup export/import round-trip (AES-256-GCM) | spec 96 implemented; drives memory_export_backup/memory_import_backup IPC directly. UI re-enable deferred to #327 follow-up. |
+| S112 | Memory latency budget — Tier-1 (Surface) integration p50/p95 | spec 98 implemented; 10 sequential memory_get_all_facts calls, p50<50ms p95<150ms (5× relaxation over the 9.74ms naia-memory v6.0 library benchmark to absorb IPC framing + CI variance). Latency reordered LAST in phase 2 (#332 §7) so the path under test is stabilized. Deferred: direct memory_recall(query, topK) IPC + N=200 bulk-encode + Deep-tier 80ms measurement all move to Phase 4. |
 | S113 | Memory encoder fallback to offline ONNX on gateway 5xx | spec 95 implemented; runtime fallback wiring deferred to Phase 4 |
 
 ## Cross-references
