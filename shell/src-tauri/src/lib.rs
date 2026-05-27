@@ -184,8 +184,17 @@ struct GatewayProcess {
     we_spawned: bool, // only kill on shutdown if we spawned it
 }
 
+// YouTube BGM sidecar HTTP server (port 18791) — #335
+// Standalone Node process spawned because the standalone naia-agent submodule
+// (preferred over embedded agent/src/index.ts in spawn_agent_core lines 912-928)
+// does not contain startYoutubeServer(), so port 18791 was never bound.
+struct BgmServerProcess {
+    child: Child,
+}
+
 struct AppState {
     agent: Mutex<Option<AgentProcess>>,
+    bgm_server: Mutex<Option<BgmServerProcess>>,
     gateway: Mutex<Option<GatewayProcess>>,
     health_monitor_shutdown: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     /// Random state token for OAuth deep link CSRF protection.
@@ -1180,6 +1189,153 @@ fn spawn_agent_core(
     });
 
     Ok(AgentProcess { child, stdin })
+}
+
+/// Spawn the standalone YouTube BGM HTTP server (port 18791) — #335.
+///
+/// Mirrors `spawn_agent_core`'s tsx-direct resolution pattern (node + tsx
+/// cli.mjs from the agent's node_modules, npx fallback). Required because
+/// when the standalone naia-agent submodule is preferred (lib.rs:912-928),
+/// embedded `agent/src/index.ts::startYoutubeServer()` never runs.
+///
+/// Safety guarantees mirrored from `spawn_agent_core`:
+///  - stderr → ~/.naia/logs/bgm-server-stderr.log (crashes visible in GUI mode)
+///  - hide_console on Windows (no console flash in release builds)
+///  - kill() called on Tauri WindowEvent::Destroyed (no orphan process)
+fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, String> {
+    // Node binary — same resolution chain as spawn_agent_core
+    let node_path = std::env::var("NAIA_BGM_NODE_PATH").unwrap_or_else(|_| {
+        #[cfg(windows)]
+        {
+            if let Ok(res_dir) = app_handle.path().resource_dir() {
+                let bundled = res_dir.join("node.exe");
+                if bundled.exists() {
+                    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
+                    return normalized.to_string_lossy().to_string();
+                }
+            }
+        }
+        find_node_binary()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "node".to_string())
+    });
+
+    // BGM entry script — embedded agent/src/bgm-server-bin.ts.
+    // Always uses the embedded agent (not the standalone naia-agent submodule)
+    // because youtube-server.ts lives only in naia-os/agent/ — #335's root cause.
+    let script_path = std::env::var("NAIA_BGM_SCRIPT").unwrap_or_else(|_| {
+        let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
+
+        // Dev: prefer source tree
+        if !is_flatpak {
+            let candidates = [
+                "../../agent/src/bgm-server-bin.ts", // from src-tauri/
+                "../agent/src/bgm-server-bin.ts",    // from shell/
+            ];
+            for rel in &candidates {
+                let dev_path = std::env::current_dir()
+                    .map(|d| d.join(rel))
+                    .unwrap_or_default();
+                if dev_path.exists() {
+                    let normalized = dunce::canonicalize(&dev_path).unwrap_or(dev_path);
+                    log_verbose(&format!(
+                        "[Naia] Found dev BGM server at: {}",
+                        normalized.display()
+                    ));
+                    return normalized.to_string_lossy().to_string();
+                }
+            }
+        }
+
+        // Prod: bundled via Tauri resources (esbuild output, if added later)
+        if let Ok(resource_dir) = app_handle.path().resource_dir() {
+            let bundled = resource_dir
+                .join("agent")
+                .join("dist")
+                .join("bgm-server-bin.js");
+            if bundled.exists() {
+                let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
+                return normalized.to_string_lossy().to_string();
+            }
+        }
+
+        // Flatpak fallback
+        let flatpak_path =
+            std::path::PathBuf::from("/app/lib/naia-os/agent/dist/bgm-server-bin.js");
+        if flatpak_path.exists() {
+            return flatpak_path.to_string_lossy().to_string();
+        }
+
+        // Last-resort relative
+        "../agent/src/bgm-server-bin.ts".to_string()
+    });
+
+    let use_tsx = script_path.ends_with(".ts");
+
+    // tsx-direct resolution (same pattern as spawn_agent_core lines 1018-1024)
+    let agent_dir = std::path::Path::new(&script_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .map(std::path::Path::to_path_buf);
+
+    let tsx_direct = if use_tsx {
+        agent_dir
+            .as_deref()
+            .and_then(platform::resolve_tsx_from_agent)
+    } else {
+        None
+    };
+
+    let (runner, mut cmd) = if let Some((node_bin, tsx_cli)) = tsx_direct {
+        let mut c = Command::new(&node_bin);
+        c.arg(&tsx_cli).arg(&script_path);
+        (format!("{} {}", node_bin, tsx_cli), c)
+    } else if use_tsx {
+        let npx = std::env::var("NAIA_AGENT_RUNNER").unwrap_or_else(|_| platform::resolve_npx());
+        let mut c = Command::new(&npx);
+        c.arg("tsx").arg(&script_path);
+        (npx, c)
+    } else {
+        let mut c = Command::new(&node_path);
+        c.arg(&script_path);
+        (node_path.clone(), c)
+    };
+
+    log_verbose(&format!(
+        "[Naia] Starting BGM server (#335): {} {}",
+        runner, script_path
+    ));
+
+    // stderr → log file (same pattern as spawn_agent_core lines 1047-1056)
+    let stderr_stdio = {
+        let log_path = log_dir().join("bgm-server-stderr.log");
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .ok()
+            .map(Stdio::from)
+            .unwrap_or_else(Stdio::inherit)
+    };
+    // stdin null (no IPC), stdout inherited (status line on launch),
+    // stderr to log file (crash visibility).
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(stderr_stdio);
+
+    #[cfg(windows)]
+    platform::hide_console(&mut cmd);
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn BGM server: {}", e))?;
+
+    log_both(&format!(
+        "[Naia] BGM server spawned (pid={}, port=18791)",
+        child.id()
+    ));
+
+    Ok(BgmServerProcess { child })
 }
 
 /// Send a message to agent-core stdin, with crash recovery
@@ -3421,6 +3577,7 @@ pub fn run() {
 
     builder.manage(AppState {
             agent: Mutex::new(None),
+            bgm_server: Mutex::new(None),
             gateway: Mutex::new(None),
             health_monitor_shutdown: Mutex::new(None),
             oauth_state: Arc::new(Mutex::new(None)),
@@ -3789,6 +3946,23 @@ pub fn run() {
                 }
             }
 
+            // Spawn YouTube BGM HTTP server (port 18791) — #335.
+            // Standalone sidecar because the preferred standalone naia-agent
+            // submodule (lib.rs:912-928) lacks startYoutubeServer(), so the
+            // shell BGM player would otherwise get connection-refused on 18791.
+            // Non-fatal: BGM is an optional feature; failure only logs.
+            match spawn_youtube_bgm_server(&app_handle) {
+                Ok(process) => {
+                    let mut guard =
+                        lock_or_recover(&state.bgm_server, "state.bgm_server(setup)");
+                    *guard = Some(process);
+                }
+                Err(e) => {
+                    log_both(&format!("[Naia] BGM server not available: {}", e));
+                    log_both("[Naia] Running without BGM server (port 18791 will be empty)");
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -3831,6 +4005,15 @@ pub fn run() {
                     if let Ok(mut guard) = agent_lock {
                         if let Some(mut process) = guard.take() {
                             log_verbose("[Naia] Terminating agent-core...");
+                            let _ = process.child.kill();
+                        }
+                    }
+
+                    // Kill BGM server sidecar (#335) — independent of agent
+                    let bgm_lock = state.bgm_server.lock();
+                    if let Ok(mut guard) = bgm_lock {
+                        if let Some(mut process) = guard.take() {
+                            log_verbose("[Naia] Terminating BGM server...");
                             let _ = process.child.kill();
                         }
                     }
