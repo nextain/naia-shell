@@ -1,55 +1,74 @@
 // E2E for memory latency budget (nextain/naia-os#332 Phase 2g — S112).
 //
-// What this spec proves:
-//   1. After seeding a memory corpus, the IPC path that the host uses to
-//      read the agent's fact store completes inside a CI-tolerant latency
-//      budget (p50 < 50ms, p95 < 150ms) across 10 sequential calls.
-//   2. The measurement excludes LLM jitter — only the shell-Rust-stdio-agent
-//      round-trip + SQLite adapter read is timed, the same path the
-//      Tier-1 (Surface) recall pipeline rides through.
+// What this spec proves (honest scope — see codex cross-review correction
+// 2026-05-27 below):
+//   1. After seeding a memory corpus, the `memory_get_all_facts` IPC —
+//      which is the host's user-visible read path for the agent's fact
+//      store — completes inside a CI-tolerant latency budget
+//      (p50 < 50ms, p95 < 150ms) across 10 sequential calls.
+//   2. The measurement excludes LLM jitter — only the
+//      webview→Tauri→Rust→fs round-trip is timed.
+//
+// Codex cross-review correction (2026-05-27, post-commit):
+//   The original draft of this header claimed the spec exercised "the
+//   same SQLite adapter path Surface recall rides through". That is
+//   **wrong** for the current code: `memory_get_all_facts` (lib.rs:1870)
+//   is a Tauri command that calls `memory::get_all_agent_facts()`
+//   (shell/src-tauri/src/memory.rs:122), which reads `alpha-memory.json`
+//   directly from disk and JSON-parses it. It does NOT route through
+//   agent stdio, and it does NOT touch naia-memory's SQLite/FTS5/vec
+//   adapter. So this spec is a **memory facts IPC latency smoke test**,
+//   not a Tier-1 Surface recall benchmark. The naia-memory v6.0
+//   Surface 9.74ms / Deep 80ms numbers cannot be compared against this
+//   spec's measurements — different storage backend, different code
+//   path. The threshold (50/150ms) is a CI regression guard for the
+//   Tauri+Rust+file-IO path, sized generously enough to absorb webdriver
+//   boundary cost and CI runner variance.
 //
 // Why latency was reordered LAST in Phase 2 (issue-332-memory-redesign.md §7):
 //   naia-memory v6.0 publishes Surface 9.74ms / Deep 80ms numbers. Those
 //   are *library-internal* micro-benchmarks. The number a user feels is
-//   the **integration** path: webview tauriInvoke → Rust command → JSON
-//   over stdio → agent dispatcher → memorySystem → SQLite. Running that
-//   path against unstabilized phase-2 code would have polluted signal with
-//   every encoder/persistence/backup change. We sit at the tail of phase 2
-//   precisely because everything upstream of the recall path is now frozen.
+//   the integration path. Running latency measurement against unstabilized
+//   phase-2 code would have polluted signal with every encoder/persistence/
+//   backup change. We sit at the tail of phase 2 precisely because
+//   everything upstream is now frozen. (The fact that the host still
+//   reads JSON-on-disk rather than the SQLite library is itself part of
+//   the gap surfaced here — the migration to SQLite-via-agent-IPC is a
+//   Phase 4 item.)
 //
-// Threshold relaxation rationale (5× over the library benchmark):
-//   The 9.74ms library number was measured in-process on a warm SQLite
-//   with no IPC framing. This spec adds:
+// Threshold rationale (CI guard for the current Tauri+Rust+file-IO path):
+//   The 50/150ms budget is sized for:
 //     - webdriver -> webview boundary (browser.execute)
 //     - Tauri invoke serialization (JSON Vec<AgentFact> in lib.rs:1870)
-//     - Rust -> agent stdio newline-framed JSON
-//     - agent JSON parse + handler dispatch
-//     - SQLite cold-cache penalty on first call of the 10
-//   Each adds 1-5ms typical on Windows webdriver-tauri, plus CI VMs run
-//   2-3× slower than developer workstations on file I/O. 5× headroom
-//   (50ms p50, 150ms p95) is the smallest budget that:
-//     (a) catches a real regression (e.g., accidentally O(N) sync read,
-//         removed FTS5 index, IPC payload bloat), and
-//     (b) does not flap on the slowest GitHub Actions runner we observe.
-//   If the path stays well under budget over a stable period, a follow-up
-//   PR can tighten the budget — this is the floor, not the ceiling.
+//     - Rust fs::read_to_string + serde_json::from_str (memory.rs:122)
+//     - CI runner I/O variance (2-3× slower than developer workstations)
+//   It is generous on purpose: smallest budget that catches a real
+//   regression (accidental O(N²) parse, blocking on a lock, payload
+//   bloat) without flapping on the slowest GitHub Actions runner. This
+//   is the FLOOR, not the ceiling — tighten once stable. With N small
+//   (see below) the budget is also intentionally loose because tiny
+//   payloads should be near-instant; a creeping budget hit on a 3-row
+//   file would still flag a real regression.
 //
 // What this spec does NOT do (deferred to Phase 4):
-//   - The agent does not expose a direct `memory_recall` IPC command. The
-//     only paths that hit `memorySystem.recall(query, ...)` today are
-//     (a) the chat-loop Encoder's pre-turn recall (entangled with LLM
-//     latency), and (b) `memory_get_all_facts` which enumerates the entire
-//     fact store without a query. We use (b) here as the closest available
-//     proxy: it traverses the same SQLite adapter + IPC plumbing the
-//     Surface recall rides through. A direct `memory_recall(query, topK)`
-//     IPC is tracked for Phase 4; once available, this spec gains a
-//     companion that drives query-shaped recall with N=200 corpus + the
-//     library's published 9.74ms / 80ms tier targets.
-//   - Deep (Tier-2) recall has no separate IPC knob either. Once the
-//     direct-recall IPC lands with a `deepRecall: true` option, a sibling
-//     spec asserts the documented 80ms Deep target with the same 5×
-//     relaxation methodology (so ~400ms p50 / ~1200ms p95). Documented as
-//     deferred here so the Phase 4 follow-up has a concrete handoff.
+//   - **Direct Surface/Deep recall measurement.** The agent exposes no
+//     `memory_recall(query, topK, deep?)` IPC. The only paths that hit
+//     `memorySystem.recall(query, ...)` today are (a) the chat-loop
+//     Encoder's pre-turn recall (entangled with LLM latency) and
+//     (b) `memory_get_all_facts` which reads a JSON file in Rust
+//     (NOT the same code as Surface recall — see codex correction
+//     above). Phase 4 plan: add a direct `memory_recall` IPC that
+//     routes through agent stdio → memorySystem.recall → SQLite,
+//     bringing the path under test in line with the library benchmark.
+//     Then this spec gets a companion that measures query-shaped recall
+//     with N=200 corpus and Surface 9.74ms / Deep 80ms targets under
+//     the same 5× CI-noise relaxation methodology.
+//   - **Surface vs Deep separation.** Both share the same recall IPC
+//     when it lands (via a `deepRecall: true` flag). N=200 corpus is
+//     the minimum that meaningfully separates the two paths (Deep only
+//     kicks in past the Hot 10k cache for the full library benchmark,
+//     but in CI a smaller N still differentiates O(log N) FTS5 lookup
+//     from O(N) vector scan). N=3 cannot separate them today.
 //
 // Why N=200 was reduced to a small seeded corpus (honest scope downgrade):
 //   The original task brief asked for N=200. Without a bulk-encode IPC
@@ -157,7 +176,7 @@ function percentile(sortedAsc: number[], p: number): number {
 	return sortedAsc[idx];
 }
 
-describe("98 — Memory latency budget (#332 S112)", function () {
+describe("98 — Memory facts IPC latency smoke (#332 S112)", function () {
 	// Seed × N LLM round-trips + 10 timed calls. Mostly LLM turns.
 	this.timeout(360_000);
 
@@ -174,29 +193,34 @@ describe("98 — Memory latency budget (#332 S112)", function () {
 		await chatInput.waitForEnabled({ timeout: 15_000 });
 	});
 
-	it("seeds the corpus then meets the Surface-tier latency budget over 10 calls", async () => {
+	it("seeds the corpus then meets the memory_get_all_facts latency budget over 10 calls", async () => {
 		// 1. Seed N facts via the same skill_memo path that specs 93/94/95/96
 		//    use — this is the same encode pipeline a real user exercises, so
-		//    the resulting corpus shape matches production.
+		//    the resulting corpus shape matches production. The encoded facts
+		//    land in alpha-memory.json (the legacy LocalAdapter store), which
+		//    is exactly what memory_get_all_facts reads in Rust below.
 		for (const fact of SEED_FACTS) {
 			await sendMessage(fact.turn);
 		}
 
 		// Sanity: the corpus must be non-empty, else the latency number is
-		// measuring "read 0 rows" and is meaningless against a real adapter.
+		// measuring "read 0 rows" and is meaningless.
 		const seeded = await tauriInvoke<AgentFact[]>("memory_get_all_facts");
 		if (seeded.length < SEED_FACT_COUNT) {
 			throw new Error(
 				`Latency corpus undersized: expected at least ${SEED_FACT_COUNT} facts, got ${seeded.length}. ` +
-					`Cannot measure the adapter path against a meaningful workload.`,
+					`Cannot measure the IPC path against a meaningful workload.`,
 			);
 		}
 
-		// 2. Take MEASUREMENT_CALLS samples, each timing the *same IPC path*
-		//    the Surface recall flow uses. We deliberately do not discard the
-		//    first sample as "warmup" — the budget includes cold-cache cost,
-		//    because that's what a real user sees on the first turn after
-		//    app launch.
+		// 2. Take MEASUREMENT_CALLS samples, each timing the memory_get_all_facts
+		//    IPC. Note (codex 2026-05-27): this is NOT the Surface recall code
+		//    path — it is webview→Tauri→Rust→fs::read+serde. Phase 4 swaps
+		//    in a direct memory_recall IPC; that future spec compares against
+		//    naia-memory v6.0's 9.74ms / 80ms library targets. We deliberately
+		//    do not discard the first sample as "warmup" — the budget includes
+		//    cold-cache cost, because that's what a real user sees on the
+		//    first turn after app launch.
 		const samples: number[] = [];
 		for (let i = 0; i < MEASUREMENT_CALLS; i++) {
 			const t0 = performance.now();

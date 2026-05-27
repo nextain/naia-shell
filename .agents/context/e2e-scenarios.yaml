@@ -338,20 +338,22 @@ proposed:
     deferred_dependencies:
       - "#327 — backup-panel UI controls are still disabled; spec drives IPC directly so it does NOT depend on the UI re-enable. A UI click-through spec is added once #327's separate fix re-exposes the buttons."
   - id: S112
-    feature: "Memory latency budget — Tier-1 (Surface) integration-path p50/p95"
+    feature: "Memory facts IPC latency smoke (memory_get_all_facts p50/p95)"
     spec_file: "shell/e2e-tauri/specs/98-memory-latency.spec.ts"
     status: implemented
-    rationale: "naia-memory v6.0 publishes Surface 9.74ms / Deep 80ms library benchmarks. Users feel the integration path (webview → Tauri → stdio → agent → SQLite). Phase 2g sits at the end of phase 2 (see issue-332-memory-redesign.md §7) so the path under test is no longer churning under encoder/persistence/backup changes."
+    rationale: "naia-memory v6.0 publishes Surface 9.74ms / Deep 80ms library benchmarks. The spec is positioned at the END of phase 2 (issue-332-memory-redesign.md §7) so the path under test is no longer churning. Codex cross-review (2026-05-27) corrected the initial framing: the host's memory_get_all_facts (lib.rs:1870 → memory.rs:122) reads alpha-memory.json via Rust fs+serde and does NOT route through agent stdio or the naia-memory SQLite adapter. So this spec is a CI regression guard for the Tauri+Rust+file-IO path the user actually hits today, not a Tier-1 Surface recall benchmark."
     test_outline: |
-      step 1: seed SEED_FACT_COUNT (3) distinct facts via skill_memo so the SQLite adapter exercises a real corpus (FTS5 + vector index path)
-      step 2: take 10 sequential timed calls to memory_get_all_facts (closest available proxy for Surface recall — no direct memory_recall IPC exists yet)
+      step 1: seed SEED_FACT_COUNT (3) distinct facts via skill_memo (lands in alpha-memory.json — same store memory_get_all_facts reads)
+      step 2: take 10 sequential timed calls to memory_get_all_facts (webview → Tauri → Rust fs::read + serde_json::from_str)
       step 3: compute p50 / p95 against budget
       assert: p50 < 50ms AND p95 < 150ms
     manual_topic: "memory.md"
     coverage: |
-      Surface-tier integration latency floor with 5× relaxation over the 9.74ms library benchmark to absorb IPC framing + webdriver boundary + CI runner variance. Threshold is the FLOOR, not the ceiling — tighten in follow-up once stable.
+      CI regression guard for the current Tauri+Rust+file-IO memory IPC path. Threshold is the FLOOR for the JSON-file path (intentionally generous to absorb webdriver boundary + CI variance). Path-under-test does NOT touch naia-memory SQLite — that requires the Phase 4 direct-recall IPC migration.
     deferred_dependencies:
-      - "Direct memory_recall(query, topK) IPC not exposed by the agent — the spec uses memory_get_all_facts as the closest proxy (same SQLite adapter + IPC plumbing). Phase 4 adds the direct-recall IPC and a sibling spec drives query-shaped recall + Deep tier 80ms target with the same 5× methodology."
-      - "N=200 corpus target downgraded to N=SEED_FACT_COUNT for this phase because skill_memo seeding costs ~1 LLM turn per fact (200 × 5-10s ≈ 16-33min, exceeds CI budget). Restoring N=200 requires a bulk-encode IPC, tracked in Phase 4."
-      - "Deep (Tier-2) recall measurement deferred until a direct-recall IPC with deepRecall option lands."
+      - "Direct memory_recall(query, topK, deep?) IPC not exposed by the agent. memory_get_all_facts reads JSON-on-disk in Rust (memory.rs:122), so it cannot validate naia-memory v6.0's 9.74ms/80ms numbers — those measure a different code path (SQLite + FTS5 + sqlite-vec). Phase 4 adds the IPC + a sibling spec calibrated against the library targets with 5× CI noise relaxation."
+      - "N=200 corpus target downgraded to N=SEED_FACT_COUNT for this phase: (a) skill_memo seeding costs ~1 LLM turn per fact (200 × 5-10s ≈ 16-33min, exceeds CI budget), and (b) without query-shaped recall, larger N still does not separate Surface vs Deep on the JSON-file path. Restoring N=200 + bulk-encode tracked in Phase 4 alongside the direct-recall IPC."
+      - "Deep (Tier-2) recall measurement deferred. Both Surface and Deep target naia-memory's SQLite, not the JSON file this spec touches — Phase 4 direct-recall IPC is the prerequisite."
     rationale_phase_order: "Latency reordered to LAST in phase 2 per issue-332-memory-redesign.md §7 — noise-sensitive measurement must test a stabilized path."
+    cross_review:
+      - "codex 2026-05-27: flagged that initial spec header overstated path-under-test as 'shell-Rust-stdio-agent + SQLite adapter'. Actual path = Tauri command → memory::get_all_agent_facts (Rust fs::read + serde JSON parse). Spec name + header + e2e-scenarios entry corrected accordingly. Threshold 50/150ms accepted as reasonable CI smoke guard for this path; Surface vs Deep separation honestly deferred to Phase 4 direct-recall IPC."
