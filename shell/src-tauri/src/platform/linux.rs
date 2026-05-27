@@ -32,7 +32,7 @@ pub(crate) fn kill_pid(pid: u32) {
 }
 
 pub(crate) fn cleanup_orphan_processes() {
-    for component in &["gateway", "node-host"] {
+    for component in &["gateway", "node-host", "bgm-server"] {
         if let Some(pid) = crate::read_pid_file(component) {
             let signed_pid = match i32::try_from(pid) {
                 Ok(p) if p > 0 => p,

@@ -1330,12 +1330,56 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
         .spawn()
         .map_err(|e| format!("Failed to spawn BGM server: {}", e))?;
 
+    let pid = child.id();
     log_both(&format!(
         "[Naia] BGM server spawned (pid={}, port=18791)",
-        child.id()
+        pid
     ));
 
+    // Persist PID so the next session's cleanup_orphan_processes() can kill an
+    // orphan if Tauri crashes before WindowEvent::Destroyed fires (#335 codex
+    // review finding 1). The on-exit handler calls remove_pid_file("bgm-server").
+    write_pid_file("bgm-server", pid);
+
+    // Readiness probe — poll /health for up to 3s (#335 codex review finding
+    // 2). Catches EADDRINUSE and other startup failures that the spawn handle
+    // can't see (server.on("error") in youtube-server.ts logs but doesn't exit).
+    // Non-fatal: BGM is optional; we only log a warning on timeout so users
+    // see a recovery hint in ~/.naia/logs/naia.log.
+    if !probe_bgm_server_ready(std::time::Duration::from_secs(3)) {
+        log_both(
+            "[Naia] WARN BGM server did not respond on http://127.0.0.1:18791/health within 3s",
+        );
+        log_both(
+            "[Naia] WARN BGM player may show connection-refused; restart the app or kill any stray Node process bound to 18791",
+        );
+    }
+
     Ok(BgmServerProcess { child })
+}
+
+/// Poll `http://127.0.0.1:18791/health` every 100 ms for up to `timeout`.
+/// Returns `true` as soon as a 2xx response arrives; `false` on timeout.
+/// Used by `spawn_youtube_bgm_server` to detect EADDRINUSE / startup failure.
+fn probe_bgm_server_ready(timeout: std::time::Duration) -> bool {
+    let url = "http://127.0.0.1:18791/health";
+    let deadline = std::time::Instant::now() + timeout;
+    let interval = std::time::Duration::from_millis(100);
+    loop {
+        // Short per-request timeout so a stalled probe doesn't burn the budget.
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_millis(200))
+            .build();
+        if let Ok(resp) = agent.get(url).call() {
+            if resp.status() >= 200 && resp.status() < 300 {
+                return true;
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(interval);
+    }
 }
 
 /// Send a message to agent-core stdin, with crash recovery
@@ -4017,6 +4061,7 @@ pub fn run() {
                             let _ = process.child.kill();
                         }
                     }
+                    remove_pid_file("bgm-server");
 
                     // Kill Node Host + Gateway (only if we spawned)
                     let gateway_lock = state.gateway.lock();

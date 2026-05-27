@@ -42,7 +42,7 @@ pub(crate) fn kill_stale_gateway() {
 
 /// Clean up orphan processes from a previous session (Windows: TerminateProcess).
 pub(crate) fn cleanup_orphan_processes() {
-    for component in &["gateway", "node-host"] {
+    for component in &["gateway", "node-host", "bgm-server"] {
         if let Some(pid) = crate::read_pid_file(component) {
             if is_pid_alive(pid) {
                 crate::log_verbose(&format!(

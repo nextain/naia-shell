@@ -165,6 +165,11 @@ export function startYoutubeServer(): void {
 				await handleSearch(req, res, url.searchParams);
 			} else if (url.pathname === "/yt/stream") {
 				await handleStream(req, res, url.searchParams);
+			} else if (url.pathname === "/health") {
+				// Readiness probe — used by Rust spawn_youtube_bgm_server (#335)
+				// to confirm the server is actually listening (catches EADDRINUSE
+				// or other startup failures that the spawn handle can't see).
+				json(req, res, 200, { ok: true });
 			} else {
 				json(req, res, 404, { error: "not found" });
 			}
