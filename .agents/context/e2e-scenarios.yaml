@@ -289,3 +289,15 @@ proposed:
     rationale: "Browser panel skills exist (skill_browser_*) but no e2e covers the panel UI itself."
     test_outline: "open naia.nextain.io in browser panel, assert skill_browser_get_text returns 'Naia'"
     manual_topic: "browser-panel.md"
+  - id: S113
+    feature: "Memory encoder fallback to bundled offline ONNX when gateway embed 5xx"
+    spec_file: "shell/e2e-tauri/specs/95-memory-encoder-fallback.spec.ts"
+    status: implemented
+    rationale: "Gateway embedding endpoint failures must not crash the recall pipeline — agent should fall back to the bundled offline ONNX embedder and keep top-3 recall quality."
+    test_outline: |
+      step 1: configure memoryMode=local + memoryEmbedding=gateway (custom + bad base URL)
+      step 2: encode a high-similarity fact ("쿼츠 키보드")
+      step 3: new conversation → recall query
+      assert: fallback embedder still surfaces the fact in the LLM response (top-3 inclusion proxy)
+    manual_topic: "memory.md"
+    coverage: "fallback trigger + recall quality preservation (Phase-4 gap: agent-side runtime fallback not yet wired — see naia-agent buildCliMemory:542-578)"
