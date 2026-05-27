@@ -50,7 +50,8 @@ Each topic page follows naia.nextain.io's manual format:
 Initial scaffold landed 2026-05-27 alongside `.agents/context/e2e-scenarios.yaml`.
 
 Filled topics:
-- `getting-started.md` (this session)
+- `getting-started.md`
+- `memory.md` (this session — #332 Phase 5)
 
 Remaining: scheduled as separate PRs to keep diff sizes reviewable.
 
