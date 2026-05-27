@@ -8,6 +8,7 @@
 		"build:tsc": "tsc",
 		"start": "node dist/index.js --stdio",
 		"dev": "tsx src/index.ts --stdio",
+		"bgm-server": "tsx src/bgm-server-bin.ts",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:ui": "vitest --ui",
