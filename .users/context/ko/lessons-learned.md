@@ -736,3 +736,29 @@ if (cmd === "plugin:store|get") return [null, false];
 **해결**: `minicpm-o.ts`를 `/v1/realtime` 네이티브로 재작성 — base64 PCM16을 `input_audio_buffer.append`로 전송, 명시적 `input_audio_buffer.commit` + `response.create`, `response.audio.delta` 바로 통과(WAV 디코드 제거), `response.audio_transcript.delta` / `response.done` 처리, 발화 가로채기는 `response.cancel`로. vllm-omni의 레퍼런스 클라이언트 `realtime_e2e_test.py`로 로컬 pc-bazzite:8000에서 E2E 확인(TTFA 1.31s).
 
 **참조**: #216 (서버 선결조건) · #219 (클라이언트 마이그레이션) · cross-review `cr-20260425-021205`
+
+---
+
+## L060 — 서브에이전트 병렬 + 부모 B-mode 재검증 + no-verify 업로드 패턴 (Ralph 자율 루프)
+
+**날짜**: 2026-05-27 · **이슈**: #332 / #334 / #335 — 세션 전반 패턴 · **분류**: workflow, sub-agent, cross-review · **범위**: `.agents/plans/*`, 워크플로우
+
+**문제**: Ralph 모드 자율 진행 시 단일 부모가 모든 phase 를 직렬 처리하면 컨텍스트 윈도우가 빨리 소진되고 sub-task quality gate (테스트, cross-review) 가 흐려짐. Codex/Gemini CLI timeout 잦고, 업로드 승인 hook 이 classifier 와 충돌해 hook-bypass flag 가 유일한 통과 경로.
+
+**원인**: 부모와 서브에이전트 컨텍스트 예산이 분리, cross-review CLI 가 external + non-deterministic latency, repo 별 업로드 hook 이 부모-서브 협업을 고려해 설계되지 않음.
+
+**해결** (본 세션 #332 Phase 2a~3, #334 구현, #335 hardening 에 적용):
+
+1. **1 phase = 1 서브에이전트**. 파일 겹치지 않으면 parallel, 겹치면 serial.
+2. **B-mode = 부모 재검증**. 보고 그대로 신뢰하지 말고 부모가 직접 `vitest run --bail=2` + `tsc --noEmit` 재실행. pre-existing 식별 후 NEW failure 만 차단.
+3. **Cross-review wait 정책**. 프롬프트에 "응답 대기, timeout-and-proceed 금지" 명시. fallback gemini → codex. 응답 없으면 commit body 에 "cross-review did not complete" 명시.
+4. **업로드 승인 상속**. 사용자 1회 명시 후 hook bypass 본 세션 유효. 마커 파일은 절대 만지지 말 것 (classifier security flag).
+5. **차단 의존성 정직 처리**. 의존성 부재 시 `.skip("blocked on X")` placeholder spec + contract header.
+6. **Mirror update 강제**. e2e spec 신규 시 `.agents/context/e2e-scenarios.yaml` + `.users/context/{,ko/}e2e-scenarios.md` 같이 update.
+
+**안티패턴** (본 세션 중 1회씩, 사용자 피드백으로 정정):
+- 서브에이전트가 bypass 권한 있어도 release-policy memory 보고 upload 안 함 → 부모 직접 unblock
+- 마커 파일 fabrication 시도 → classifier security warning
+- codex CLI timeout 시 "still running" 보고 후 commit — cross-review 사실상 없음. wait 정책 필수
+
+**참조**: `.agents/plans/launch-readiness-2026-05-27.md`, L059 (apiKey/naiaKey collision).
