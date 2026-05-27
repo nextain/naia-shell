@@ -23,10 +23,11 @@
 | `#313 L1+L2` | ✓ | Live WSS endpoint log + tool schema normalize · L3 panel-context bridge 별도 |
 | `#97` | cross-link | voice pipeline tool support — `#313` L3 작업과 합치는 게 자연스러움 |
 
-Repo ranges (본 세션):
-- `nextain/naia-os` — `ab97905a..4a5b86d9` (~25 commits)
-- `nextain/naia-agent` — `d85a892..6cc41a1` (2 commits)
-- `nextain/alpha-adk` (root) — `9cab884..8f2816a` (~15 submodule bumps)
+Repo ranges (본 세션, **2026-05-28 update**):
+- `nextain/naia-os` — `ab97905a..859a6111` (~31 commits — added: #333 follow-up self-heal `1e84cb84`, #334 4 traps `d49726c8`, #313 L3 `859a6111`)
+- `nextain/naia-agent` — `d85a892..6cc41a1` (2 commits, 본 세션 작업분)
+  - 별도: 다른 세션이 `6cc41a1..53917e5` 까지 push (Slice 5-RB1 RunPod Tier B gateway path + --system-file flag + 3-XR-Docs context — 본 세션 작업과 무관)
+- `nextain/alpha-adk` (root) — `9cab884..3a81929` (~20 submodule bumps)
 
 ## Pre-launch smoke checklist
 
@@ -51,13 +52,13 @@ UI smoke
   → BgmPlayer YouTube 모드 활성 → "127.0.0.1:18791 연결 실패" 더 이상 안 뜸 (#335)
 ```
 
-## Known limitations at launch
+## Known limitations at launch (2026-05-28 update)
 
 1. **`#331` prod gateway 500** — cross-repo `any-llm` 의 SQLAlchemy `ModelPricing` DetachedInstanceError. 본 세션 범위 밖. 사용자가 직접 backend 수정 또는 별도 PR.
 2. **`#332` 메모리 decay (Phase 2e/4)** — `naia-memory` LiteMemoryProvider 가 clock injection 미지원. E2E spec 97 은 placeholder (`.skip`) 상태로 들어가 있으며, naia-memory 측에 clock-injection hook 추가되면 unblock.
-3. **`#313` L3 panel context bridge** — Live audio session 의 mid-session panel context forwarding. L1+L2 (가시화 + tool schema) 까지만 shipped.
+3. ~~`#313` L3 panel context bridge~~ ✓ **shipped 2026-05-28** — `859a6111` panel-context-bridge.ts + 12 vitest specs + codex 3-Q confirmed.
 4. **`#328` e2e spec 24 S1** — wdio webview session lifecycle 이 Tauri ADK switch 시 lost. e2e infra 문제이고 production 사용자 흐름과 무관.
-5. **`#334` 4 follow-up traps** (codex 발견) — Rust `origin` serde enum + 사용자-skill 분류 + search-empty UX + all-disabled bulk 버튼. Phase 1 implementation 위 follow-up.
+5. ~~`#334` 4 follow-up traps~~ ✓ **shipped 2026-05-28** — `d49726c8` normalizeOrigin TS guard + user group + search-vs-inventory + bulk visibility (20/20 vitest pass, codex 3-Q confirmed).
 
 ## Re-entry guide for next session / codex
 
