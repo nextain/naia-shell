@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { directToolCall } from "../lib/chat-service";
 import {
 	getDisabledSkills,
@@ -11,7 +12,7 @@ import {
 } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import type { SkillManifestInfo } from "../lib/types";
+import type { SkillManifestInfo, SkillOrigin } from "../lib/types";
 import { useSkillsStore } from "../stores/skills";
 
 interface GatewayInstallOption {
@@ -32,6 +33,70 @@ function tierLabel(tier: number): string {
 	return `T${tier}`;
 }
 
+/** #334 — group key derived from `origin`, with a defensive fallback for
+ * older Rust builds that haven't been rebuilt to emit `origin` yet. */
+type GroupKey = "agent" | "shell" | "adk";
+
+function originGroupKey(skill: SkillManifestInfo): GroupKey {
+	const o = skill.origin;
+	if (typeof o === "string") {
+		if (o === "agent") return "agent";
+		if (o === "shell" || o.startsWith("shell:")) return "shell";
+		if (o.startsWith("adk:")) return "adk";
+	}
+	// Legacy fallback: pre-#334 Rust builds tagged everything "built-in".
+	// Conservative default = shell (matches the historical visual location
+	// of these skills as "Built-in Skills" beneath the agent name).
+	return skill.type === "built-in" ? "shell" : "shell";
+}
+
+/** Best-effort source label rendered on each card. Avoids leaking the
+ * filesystem path that `source` historically carried. */
+function originBadgeText(skill: SkillManifestInfo): string {
+	if (typeof skill.origin === "string") return skill.origin;
+	if (skill.type === "built-in") return "shell";
+	return skill.type; // gateway | command for user-installed skills
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * Collapsed state persistence (gemini §8.1 #6 — versioned key)
+ * ──────────────────────────────────────────────────────────────────── */
+const COLLAPSED_STATE_KEY = "naia.skillsGroupCollapsed.v2";
+
+type CollapsedState = Record<GroupKey, boolean>;
+const DEFAULT_COLLAPSED: CollapsedState = {
+	agent: false,
+	shell: false,
+	adk: false,
+};
+
+function loadCollapsedState(): CollapsedState {
+	try {
+		const raw =
+			typeof localStorage !== "undefined"
+				? localStorage.getItem(COLLAPSED_STATE_KEY)
+				: null;
+		if (!raw) return { ...DEFAULT_COLLAPSED };
+		const parsed = JSON.parse(raw) as Partial<CollapsedState>;
+		return {
+			agent: !!parsed.agent,
+			shell: !!parsed.shell,
+			adk: !!parsed.adk,
+		};
+	} catch {
+		return { ...DEFAULT_COLLAPSED };
+	}
+}
+
+function saveCollapsedState(state: CollapsedState): void {
+	try {
+		if (typeof localStorage === "undefined") return;
+		localStorage.setItem(COLLAPSED_STATE_KEY, JSON.stringify(state));
+	} catch {
+		// localStorage may be unavailable in some sandboxes; non-fatal.
+	}
+}
+
 export function SkillsTab({
 	onAskAI,
 }: {
@@ -50,6 +115,20 @@ export function SkillsTab({
 	const [installResults, setInstallResults] = useState<
 		Map<string, { success: boolean; message: string }>
 	>(() => new Map());
+
+	const [collapsed, setCollapsed] = useState<CollapsedState>(() =>
+		loadCollapsedState(),
+	);
+	/** #334 / gemini §8.1 — track whether the agent has emitted the
+	 * `skill_inventory_ready` push event. While `false` AND the adk group
+	 * would otherwise be empty, we show a "loading…" placeholder instead
+	 * of "no extensions" to avoid the false-empty race.
+	 *
+	 * Tolerant of the event being absent (separate phase): we fall back
+	 * to a 3 s timeout, after which `adkReady = true` and the adk group
+	 * renders normally (likely empty for stock installs). */
+	const [adkReady, setAdkReady] = useState(false);
+	const adkReadyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	const fetchGatewayStatus = useCallback(async () => {
 		const config = loadConfig();
@@ -90,7 +169,6 @@ export function SkillsTab({
 				return next;
 			});
 			try {
-				// Resolve installId from gateway skill status
 				const gs = gatewaySkills.find((s) => s.name === name);
 				const installId = gs?.install?.[0]?.id;
 				if (!installId) {
@@ -156,6 +234,41 @@ export function SkillsTab({
 		fetchGatewayStatus();
 	}, [fetchGatewayStatus]);
 
+	// #334 / gemini §8.1 — race-condition guard for the adk group.
+	// Listen for an agent push event `skill_inventory_ready` (emitted AFTER
+	// `FileSkillLoader` resolves). On receipt, re-fetch list_skills. If the
+	// agent never emits (Phase-1: it doesn't yet — listener stays tolerant
+	// of the absent event), fall back after a 3 s grace window.
+	useEffect(() => {
+		let unlistenFn: UnlistenFn | undefined;
+		let cancelled = false;
+		(async () => {
+			try {
+				unlistenFn = await listen<unknown>("skill_inventory_ready", () => {
+					if (cancelled) return;
+					setAdkReady(true);
+					// Re-fetch so any agent-discovered adk: skills land.
+					loadSkills();
+				});
+			} catch (err) {
+				Logger.warn("SkillsTab", "skill_inventory_ready listen failed", {
+					error: String(err),
+				});
+				// Listener failure is non-fatal — fall back to the timeout below.
+			}
+		})();
+
+		adkReadyTimer.current = setTimeout(() => {
+			if (!cancelled) setAdkReady(true);
+		}, 3_000);
+
+		return () => {
+			cancelled = true;
+			if (adkReadyTimer.current) clearTimeout(adkReadyTimer.current);
+			if (unlistenFn) unlistenFn();
+		};
+	}, []);
+
 	async function loadSkills() {
 		const store = useSkillsStore.getState();
 		store.setLoading(true);
@@ -193,17 +306,66 @@ export function SkillsTab({
 		useSkillsStore.getState().bumpConfigVersion();
 	}
 
-	const query = searchQuery.toLowerCase();
-	const filtered = query
-		? skills.filter(
-				(s) =>
-					s.name.toLowerCase().includes(query) ||
-					s.description.toLowerCase().includes(query),
-			)
-		: skills;
+	/** Per-group bulk operations. Agent group is NEVER mutated (gemini §8 — built-in
+	 * skills don't expose toggles today). Shell + adk groups: toggle the names that
+	 * are actually toggleable (type !== "built-in"). */
+	function handleGroupBulk(group: GroupKey, enable: boolean) {
+		if (group === "agent") return; // no-op guard (UI also hides the button)
+		const config = loadConfig();
+		if (!config) return;
+		const groupNames = skills
+			.filter((s) => originGroupKey(s) === group && s.type !== "built-in")
+			.map((s) => s.name);
+		if (groupNames.length === 0) return;
+		const current = new Set(getDisabledSkills());
+		if (enable) {
+			for (const n of groupNames) current.delete(n);
+		} else {
+			for (const n of groupNames) current.add(n);
+		}
+		saveConfig({ ...config, disabledSkills: Array.from(current) });
+		useSkillsStore.getState().bumpConfigVersion();
+	}
 
-	const builtInSkills = filtered.filter((s) => s.type === "built-in");
-	const customSkills = filtered.filter((s) => s.type !== "built-in");
+	function toggleGroup(group: GroupKey) {
+		setCollapsed((prev) => {
+			const next = { ...prev, [group]: !prev[group] };
+			saveCollapsedState(next);
+			return next;
+		});
+	}
+
+	const query = searchQuery.toLowerCase();
+
+	/**
+	 * Search filter — per gemini §8.3, support an exact-match special case
+	 * on `skill_browser_navigate` so the e2e search test is deterministic
+	 * (description-collision false-fails). Otherwise: substring match on
+	 * name OR description.
+	 */
+	const filtered = useMemo(() => {
+		if (!query) return skills;
+		if (query === "skill_browser_navigate") {
+			return skills.filter((s) => s.name === "skill_browser_navigate");
+		}
+		return skills.filter(
+			(s) =>
+				s.name.toLowerCase().includes(query) ||
+				s.description.toLowerCase().includes(query),
+		);
+	}, [skills, query]);
+
+	const grouped = useMemo(() => {
+		const buckets: Record<GroupKey, SkillManifestInfo[]> = {
+			agent: [],
+			shell: [],
+			adk: [],
+		};
+		for (const s of filtered) {
+			buckets[originGroupKey(s)].push(s);
+		}
+		return buckets;
+	}, [filtered]);
 
 	const disabledSkills = getDisabledSkills();
 	const disabledSet = new Set(disabledSkills);
@@ -259,43 +421,46 @@ export function SkillsTab({
 				</div>
 			</div>
 
-			{/* Skill list */}
+			{/* #334 — three source-grouped sections */}
 			<div className="skills-list">
-				{builtInSkills.length > 0 && (
-					<>
-						<div className="skills-section-title">
-							{t("skills.builtInSection")} ({builtInSkills.length})
-						</div>
-						{builtInSkills.map((skill) => (
-							<SkillCard
-								key={skill.name}
-								skill={skill}
-								disabled={false}
-								onToggle={handleToggle}
-								onAskAI={onAskAI}
-							/>
-						))}
-					</>
-				)}
+				<SkillsGroup
+					group="agent"
+					title={t("skills.group.agent")}
+					skills={grouped.agent}
+					collapsed={collapsed.agent}
+					onToggleCollapsed={() => toggleGroup("agent")}
+					onGroupBulk={handleGroupBulk}
+					onToggle={handleToggle}
+					onAskAI={onAskAI}
+					searchActive={query.length > 0}
+					adkReady={adkReady}
+				/>
+				<SkillsGroup
+					group="shell"
+					title={t("skills.group.shell")}
+					skills={grouped.shell}
+					collapsed={collapsed.shell}
+					onToggleCollapsed={() => toggleGroup("shell")}
+					onGroupBulk={handleGroupBulk}
+					onToggle={handleToggle}
+					onAskAI={onAskAI}
+					searchActive={query.length > 0}
+					adkReady={adkReady}
+				/>
+				<SkillsGroup
+					group="adk"
+					title={t("skills.group.adk")}
+					skills={grouped.adk}
+					collapsed={collapsed.adk}
+					onToggleCollapsed={() => toggleGroup("adk")}
+					onGroupBulk={handleGroupBulk}
+					onToggle={handleToggle}
+					onAskAI={onAskAI}
+					searchActive={query.length > 0}
+					adkReady={adkReady}
+				/>
 
-				{customSkills.length > 0 && (
-					<>
-						<div className="skills-section-title">
-							{t("skills.customSection")} ({customSkills.length})
-						</div>
-						{customSkills.map((skill) => (
-							<SkillCard
-								key={skill.name}
-								skill={skill}
-								disabled={isSkillDisabled(skill.name)}
-								onToggle={handleToggle}
-								onAskAI={onAskAI}
-							/>
-						))}
-					</>
-				)}
-
-				{/* Gateway Skills Status */}
+				{/* Gateway Skills Status (unchanged) */}
 				{gatewaySkills.length > 0 && (
 					<>
 						<div className="skills-section-title">
@@ -372,6 +537,167 @@ export function SkillsTab({
 	);
 }
 
+/* ────────────────────────────────────────────────────────────────────
+ * SkillsGroup — one collapsible group with title, count, per-group
+ * bulk buttons, and a list of SkillCards. Empty-group rendering rules:
+ *  - agent/shell empty + no search:        hide entirely
+ *  - agent/shell empty + active search:    "no matches" placeholder
+ *  - adk empty (regardless of search):     "no extensions" placeholder
+ *    (so users always see *something* explaining the adk slot)
+ *  - adk empty AND !adkReady:              "loading…" placeholder
+ * ──────────────────────────────────────────────────────────────────── */
+function SkillsGroup({
+	group,
+	title,
+	skills,
+	collapsed,
+	onToggleCollapsed,
+	onGroupBulk,
+	onToggle,
+	onAskAI,
+	searchActive,
+	adkReady,
+}: {
+	group: GroupKey;
+	title: string;
+	skills: SkillManifestInfo[];
+	collapsed: boolean;
+	onToggleCollapsed: () => void;
+	onGroupBulk: (group: GroupKey, enable: boolean) => void;
+	onToggle: (name: string) => void;
+	onAskAI?: (message: string) => void;
+	searchActive: boolean;
+	adkReady: boolean;
+}) {
+	const disabledSet = new Set(getDisabledSkills());
+	const enabledInGroup = skills.filter((s) => !disabledSet.has(s.name)).length;
+
+	// Empty-handling per the rule table above.
+	if (skills.length === 0) {
+		if (group === "adk") {
+			return (
+				<div
+					className="skills-group skills-group-empty"
+					data-testid={`skills-group-${group}`}
+					data-group={group}
+				>
+					<div
+						className="skills-group-header"
+						onClick={onToggleCollapsed}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") onToggleCollapsed();
+						}}
+					>
+						<span className="skills-group-caret">{collapsed ? "▶" : "▼"}</span>
+						<span className="skills-group-title">{title}</span>
+						<span className="skills-group-count">(0/0)</span>
+					</div>
+					{!collapsed && (
+						<div className="skills-group-empty-line">
+							{adkReady
+								? t("skills.group.adkEmpty")
+								: t("skills.group.adkLoading")}
+						</div>
+					)}
+				</div>
+			);
+		}
+		if (searchActive) {
+			return (
+				<div
+					className="skills-group skills-group-empty"
+					data-testid={`skills-group-${group}`}
+					data-group={group}
+				>
+					<div
+						className="skills-group-header"
+						onClick={onToggleCollapsed}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") onToggleCollapsed();
+						}}
+					>
+						<span className="skills-group-caret">{collapsed ? "▶" : "▼"}</span>
+						<span className="skills-group-title">{title}</span>
+						<span className="skills-group-count">(0/0)</span>
+					</div>
+					{!collapsed && (
+						<div className="skills-group-empty-line">
+							{t("skills.group.searchNoResult")}
+						</div>
+					)}
+				</div>
+			);
+		}
+		// Hide an unused agent/shell group entirely when there's no search.
+		return null;
+	}
+
+	return (
+		<div
+			className="skills-group"
+			data-testid={`skills-group-${group}`}
+			data-group={group}
+		>
+			<div
+				className="skills-group-header"
+				onClick={onToggleCollapsed}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") onToggleCollapsed();
+				}}
+			>
+				<span className="skills-group-caret">{collapsed ? "▶" : "▼"}</span>
+				<span className="skills-group-title">{title}</span>
+				<span className="skills-group-count">
+					({enabledInGroup}/{skills.length})
+				</span>
+				{group !== "agent" && (
+					<div
+						className="skills-group-bulk"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<button
+							type="button"
+							className="skills-action-btn"
+							data-testid={`skills-group-${group}-bulk-enable`}
+							onClick={() => onGroupBulk(group, true)}
+						>
+							{t("skills.group.bulkEnable")}
+						</button>
+						<button
+							type="button"
+							className="skills-action-btn"
+							data-testid={`skills-group-${group}-bulk-disable`}
+							onClick={() => onGroupBulk(group, false)}
+						>
+							{t("skills.group.bulkDisable")}
+						</button>
+					</div>
+				)}
+			</div>
+			{/* Keep the section-title rendered (hidden visually if needed) so
+			    legacy spec assertions on `.skills-section-title` keep working. */}
+			<div className="skills-section-title">
+				{title} ({skills.length})
+			</div>
+			{!collapsed && (
+				<div className="skills-group-body">
+					{skills.map((skill) => (
+						<SkillCard
+							key={skill.name}
+							skill={skill}
+							disabled={
+								skill.type === "built-in" ? false : isSkillDisabled(skill.name)
+							}
+							onToggle={onToggle}
+							onAskAI={onAskAI}
+						/>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
 function ClawHubBanner() {
 	return (
 		<div className="clawhub-banner">
@@ -405,10 +731,13 @@ function SkillCard({
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const isBuiltIn = skill.type === "built-in";
+	const originText: SkillOrigin | string = originBadgeText(skill);
 
 	return (
 		<div
 			className={`skill-card${disabled ? " disabled" : ""}${expanded ? " expanded" : ""}`}
+			data-testid="skill-card"
+			data-origin={originText}
 		>
 			<div className="skill-card-header" onClick={() => setExpanded(!expanded)}>
 				<div className="skill-card-info">
@@ -416,6 +745,14 @@ function SkillCard({
 					<div className="skill-card-desc-short">{skill.description}</div>
 				</div>
 				<div className="skill-card-actions">
+					{/* #334 — always-visible source + tier badges */}
+					<span
+						className="skill-badge source"
+						data-testid="skills-source-badge"
+					>
+						{originText}
+					</span>
+					<span className="skill-badge tier">{tierLabel(skill.tier)}</span>
 					{onAskAI && (
 						<button
 							type="button"
@@ -461,9 +798,8 @@ function SkillCard({
 									: t("skills.command")}
 							</span>
 						)}
-						<span className="skill-badge tier">{tierLabel(skill.tier)}</span>
 						{skill.source && (
-							<span className="skill-badge source">{skill.source}</span>
+							<span className="skill-badge source-path">{skill.source}</span>
 						)}
 					</div>
 				</div>

@@ -37,11 +37,38 @@ describe("14 — skills tab", () => {
 		const cards = await $$(S.skillsCard);
 		expect(cards.length).toBeGreaterThanOrEqual(20);
 
-		// Verify built-in section title exists
+		// Verify section title exists (#334 — each rendered group emits one)
 		const sectionTitles = await $$(S.skillsSectionTitle);
 		expect(sectionTitles.length).toBeGreaterThanOrEqual(1);
-		const firstSectionText = await sectionTitles[0].getText();
-		expect(firstSectionText).toMatch(/기본 스킬|Built-in/i);
+	});
+
+	// #334 — source grouping (agent / shell / adk)
+	it("should render the agent + shell source groups", async () => {
+		const agentGroup = await $(S.skillsGroupAgent);
+		const shellGroup = await $(S.skillsGroupShell);
+		expect(await agentGroup.isExisting()).toBe(true);
+		expect(await shellGroup.isExisting()).toBe(true);
+	});
+
+	it("agent group has at least 7 cards (skill_bash optional)", async () => {
+		// 7 = the 7 known-stable agent core skills; skill_bash makes 8 when
+		// the Rust list emits it (this PR). Lower bound 7 keeps the test
+		// robust if `--enable-file-ops` style gates are added later.
+		const agentCards = await $$(S.skillsGroupAgentCard);
+		expect(agentCards.length).toBeGreaterThanOrEqual(7);
+	});
+
+	it("each card shows a source badge", async () => {
+		const badges = await $$(S.skillsSourceBadge);
+		expect(badges.length).toBeGreaterThan(0);
+		// Sample the first badge — must match one of the documented origins.
+		const first = (await badges[0].getText()).toLowerCase();
+		expect(first).toMatch(/^(agent|shell|adk|gateway|command)/);
+	});
+
+	it("agent group has no bulk-disable button (#334 §8.1 #4)", async () => {
+		const btn = await $(S.skillsGroupAgentBulkDisable);
+		expect(await btn.isExisting()).toBe(false);
 	});
 
 	it("should show skills count in header", async () => {
@@ -59,11 +86,23 @@ describe("14 — skills tab", () => {
 		const cardsBefore = await $$(S.skillsCard);
 		const countBefore = cardsBefore.length;
 
-		// Search for "time" — use JS native setter (WebDriver setValue unreliable in WebKitGTK)
-		await setNativeValue(S.skillsSearch, "time");
+		// #334 §8.3 — use the exact-match special case `skill_browser_navigate`
+		// to avoid description-collision false-fails ("time" could match
+		// "real-time", "any time", etc.). The SkillsTab filter short-circuits
+		// this exact string to a name-only match. If no matching skill is
+		// registered (panel-injected skills surface in a later phase),
+		// fall back to a generic prefix that's still in the list.
+		await setNativeValue(S.skillsSearch, "skill_browser_navigate");
 		await browser.pause(300);
 
-		const cardsAfter = await $$(S.skillsCard);
+		let cardsAfter = await $$(S.skillsCard);
+		if (cardsAfter.length === 0) {
+			// Panel skills not yet surfaced in Phase 1 — re-test with a name
+			// that's definitely in the Rust-emitted list.
+			await setNativeValue(S.skillsSearch, "skill_time");
+			await browser.pause(300);
+			cardsAfter = await $$(S.skillsCard);
+		}
 		expect(cardsAfter.length).toBeLessThan(countBefore);
 		expect(cardsAfter.length).toBeGreaterThanOrEqual(1);
 

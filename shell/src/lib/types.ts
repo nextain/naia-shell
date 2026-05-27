@@ -193,6 +193,23 @@ export type AgentResponseChunk =
 
 // === Skill Manifest (from ~/.naia/skills/{name}/skill.json) ===
 
+/**
+ * Skill origin classification (#334).
+ *
+ * Differentiates *who supplied* a skill — naia-agent core, naia-os shell
+ * (gateway-injected today; panel-injected in future), or naia-adk extension
+ * loaded via `--skills-dir`.
+ *
+ * Distinct from `type` ("built-in" | "gateway" | "command"), which governs
+ * the toggle-visibility gate — DO NOT conflate. `source` continues to carry
+ * the filesystem path or `"built-in"` sentinel for display purposes.
+ */
+export type SkillOrigin =
+	| "agent"
+	| "shell"
+	| `shell:panel:${string}`
+	| `adk:${string}`;
+
 export interface SkillManifestInfo {
 	name: string;
 	description: string;
@@ -200,6 +217,12 @@ export interface SkillManifestInfo {
 	tier: number;
 	source: string;
 	gatewaySkill?: string;
+	/**
+	 * #334 source-grouping classifier. Optional for backward-compat: older
+	 * Rust builds that haven't been rebuilt yet may omit it. SkillsTab
+	 * falls back to type-based heuristics when undefined.
+	 */
+	origin?: SkillOrigin;
 }
 
 // === Audit (matches Rust structs in audit.rs) ===

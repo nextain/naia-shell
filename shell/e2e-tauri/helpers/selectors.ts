@@ -98,6 +98,17 @@ export const S = {
 	skillsInstallBtn: '[data-testid="skills-install-btn"]',
 	skillInstallResultSuccess: ".skill-install-result.success",
 	skillInstallResultError: ".skill-install-result.error",
+	// #334 — source-grouped skills layout (agent / shell / adk)
+	skillsGroup: ".skills-group",
+	skillsGroupAgent: '[data-testid="skills-group-agent"]',
+	skillsGroupShell: '[data-testid="skills-group-shell"]',
+	skillsGroupAdk: '[data-testid="skills-group-adk"]',
+	skillsGroupAgentCard: '[data-testid="skills-group-agent"] [data-testid="skill-card"]',
+	skillsGroupShellCard: '[data-testid="skills-group-shell"] [data-testid="skill-card"]',
+	skillsGroupAdkCard: '[data-testid="skills-group-adk"] [data-testid="skill-card"]',
+	skillsSourceBadge: '[data-testid="skills-source-badge"]',
+	skillsGroupAgentBulkDisable: '[data-testid="skills-group-agent-bulk-disable"]',
+	skillsGroupShellBulkDisable: '[data-testid="skills-group-shell-bulk-disable"]',
 
 	// Channels tab (5th tab)
 	channelsTabBtn: ".chat-tab:nth-child(5)",

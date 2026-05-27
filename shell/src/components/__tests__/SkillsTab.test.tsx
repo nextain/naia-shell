@@ -16,6 +16,15 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
+// Mock Tauri event listener (#334 — SkillsTab listens for skill_inventory_ready).
+vi.mock("@tauri-apps/api/event", () => ({
+	listen: vi.fn(async () => {
+		// Return an unlisten function. The listener is tolerant of the event
+		// never firing (3 s timeout fallback), so we don't need to invoke it.
+		return () => {};
+	}),
+}));
+
 // Mock directToolCall
 const mockDirectToolCall = vi.fn();
 vi.mock("../../lib/chat-service", () => ({
@@ -32,6 +41,7 @@ const BUILT_IN_SKILLS: SkillManifestInfo[] = [
 		type: "built-in",
 		tier: 0,
 		source: "built-in",
+		origin: "agent",
 	},
 	{
 		name: "skill_memo",
@@ -39,6 +49,15 @@ const BUILT_IN_SKILLS: SkillManifestInfo[] = [
 		type: "built-in",
 		tier: 0,
 		source: "built-in",
+		origin: "agent",
+	},
+	{
+		name: "skill_voicewake",
+		description: "Manage voice wake triggers",
+		type: "built-in",
+		tier: 0,
+		source: "built-in",
+		origin: "shell",
 	},
 ];
 
@@ -94,12 +113,45 @@ describe("SkillsTab", () => {
 		});
 	});
 
-	it("separates built-in and custom sections", async () => {
+	it("separates skills into source groups (#334)", async () => {
 		mockInvoke.mockResolvedValue(ALL_SKILLS);
 		const { container } = render(<SkillsTab />);
 		await waitFor(() => {
-			const sections = container.querySelectorAll(".skills-section-title");
-			expect(sections.length).toBe(2);
+			// Agent group (skill_time, skill_memo) + shell group (skill_voicewake,
+			// skill_code_review, skill_deploy as legacy fallback). adk group
+			// renders as empty placeholder.
+			const groups = container.querySelectorAll(
+				'[data-testid^="skills-group-"]',
+			);
+			expect(groups.length).toBeGreaterThanOrEqual(2);
+		});
+	});
+
+	it("renders source badge on each card (#334)", async () => {
+		mockInvoke.mockResolvedValue(ALL_SKILLS);
+		const { container } = render(<SkillsTab />);
+		await waitFor(() => {
+			const badges = container.querySelectorAll(
+				'[data-testid="skills-source-badge"]',
+			);
+			expect(badges.length).toBeGreaterThanOrEqual(ALL_SKILLS.length);
+		});
+		// Verify agent skill carries origin=agent and shell skill carries origin=shell.
+		const agentCard = container.querySelector('[data-origin="agent"]');
+		const shellCard = container.querySelector('[data-origin="shell"]');
+		expect(agentCard).not.toBeNull();
+		expect(shellCard).not.toBeNull();
+	});
+
+	it("groups skill_time under the agent group (#334)", async () => {
+		mockInvoke.mockResolvedValue(ALL_SKILLS);
+		const { container } = render(<SkillsTab />);
+		await waitFor(() => {
+			const agentGroup = container.querySelector(
+				'[data-testid="skills-group-agent"]',
+			);
+			expect(agentGroup).not.toBeNull();
+			expect(agentGroup?.textContent ?? "").toContain("skill_time");
 		});
 	});
 
@@ -175,8 +227,8 @@ describe("SkillsTab", () => {
 		mockInvoke.mockResolvedValue(ALL_SKILLS);
 		render(<SkillsTab />);
 		await waitFor(() => {
-			// 4 total, 1 disabled → 3 enabled
-			expect(screen.getByText("3/4")).toBeDefined();
+			// 5 total (2 agent built-ins + 1 shell built-in + 2 custom), 1 disabled → 4 enabled
+			expect(screen.getByText("4/5")).toBeDefined();
 		});
 	});
 });

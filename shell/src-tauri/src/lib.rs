@@ -242,6 +242,12 @@ struct AgentChunk {
 }
 
 /// Skill manifest info returned from list_skills command
+///
+/// `origin` (#334) classifies *who supplied* the skill — naia-agent core,
+/// naia-os shell (gateway-injected; panel-injected in a later phase), or
+/// naia-adk extension. Distinct from `skill_type` ("built-in" | "gateway" |
+/// "command") which gates toggle visibility, and from `source` which carries
+/// the manifest path or `"built-in"` sentinel for display.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct SkillManifestInfo {
     name: String,
@@ -252,6 +258,11 @@ struct SkillManifestInfo {
     source: String,
     #[serde(rename = "gatewaySkill", skip_serializing_if = "Option::is_none")]
     gateway_skill: Option<String>,
+    /// #334 source-grouping classifier: "agent" | "shell" | "adk:<name>".
+    /// Panel-injected origins (`shell:panel:<id>`) are merged client-side
+    /// from `panelRegistry`; this field only emits the static classifications.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin: Option<String>,
 }
 
 /// Saved window position/size
@@ -1558,13 +1569,29 @@ fn restart_agent(
 async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
     let mut skills: Vec<SkillManifestInfo> = Vec::new();
 
-    // Built-in skills (always present, cannot be disabled)
-    // Must match agent/src/gateway/tool-bridge.ts built-in registrations
-    let builtins = [
+    // Built-in skills (always present, cannot be disabled).
+    // Must match agent/src/gateway/tool-bridge.ts built-in registrations.
+    //
+    // #334 — split into two arrays so the shell can group skills by origin:
+    //  - AGENT_CORE_BUILTINS (origin="agent"): naia-agent process registers
+    //    these via createXxxSkill() in naia-agent/bin/naia-agent.ts. Includes
+    //    `skill_bash` which the original Rust list omitted (audit §1.2).
+    //  - SHELL_GATEWAY_BUILTINS (origin="shell"): proxies to Gateway daemon;
+    //    the shell owns their lifecycle even though tool-bridge re-emits.
+    //
+    // (tier, type, source) are unchanged on the wire — only `origin` is new.
+    // Tier defaults still 0; per-skill tier tuning is out of scope here.
+    let agent_core_builtins: [(&str, &str); 8] = [
         ("skill_time", "Get current date and time"),
         ("skill_system_status", "Get system status information"),
         ("skill_memo", "Save and retrieve memos"),
         ("skill_weather", "Get weather information for a location"),
+        ("skill_diagnostics", "Gateway diagnostics and health checks"),
+        ("skill_sessions", "Manage Gateway sub-agent sessions"),
+        ("skill_config", "Manage Gateway configuration"),
+        ("skill_bash", "Run a shell command"),
+    ];
+    let shell_gateway_builtins: [(&str, &str); 13] = [
         (
             "skill_notify_slack",
             "Send a notification message to Slack via webhook",
@@ -1588,17 +1615,14 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
             "Connect with the Botmadang AI Agent community",
         ),
         ("skill_channels", "Manage messaging channels"),
-        ("skill_config", "Manage Gateway configuration"),
         ("skill_cron", "Manage scheduled tasks"),
         ("skill_device", "Manage Gateway nodes and device pairings"),
-        ("skill_diagnostics", "Gateway diagnostics and health checks"),
         ("skill_naia_discord", "Send and receive Discord messages"),
-        ("skill_sessions", "Manage Gateway sub-agent sessions"),
         ("skill_tts", "Manage Gateway TTS (Text-to-Speech)"),
         ("skill_voicewake", "Manage voice wake triggers"),
     ];
     let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (name, desc) in &builtins {
+    for (name, desc) in &agent_core_builtins {
         seen_names.insert(name.to_string());
         skills.push(SkillManifestInfo {
             name: name.to_string(),
@@ -1607,6 +1631,19 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
             tier: 0,
             source: "built-in".to_string(),
             gateway_skill: None,
+            origin: Some("agent".to_string()),
+        });
+    }
+    for (name, desc) in &shell_gateway_builtins {
+        seen_names.insert(name.to_string());
+        skills.push(SkillManifestInfo {
+            name: name.to_string(),
+            description: desc.to_string(),
+            skill_type: "built-in".to_string(),
+            tier: 0,
+            source: "built-in".to_string(),
+            gateway_skill: None,
+            origin: Some("shell".to_string()),
         });
     }
 
@@ -1679,6 +1716,11 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
+                // #334 — user-installed skills under ~/.naia/skills/ default
+                // to origin=None; SkillsTab classifies these as custom/user
+                // (legacy "type !== built-in" gate still applies). When the
+                // agent later emits authoritative origin via skill_inventory,
+                // shell can override.
                 skills.push(SkillManifestInfo {
                     name,
                     description,
@@ -1686,6 +1728,7 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
                     tier,
                     source: manifest_path.to_string_lossy().to_string(),
                     gateway_skill,
+                    origin: None,
                 });
             }
         }
