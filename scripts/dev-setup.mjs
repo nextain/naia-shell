@@ -88,6 +88,17 @@ function buildAgent() {
 			throw new Error("Agent build failed and no dist found");
 		}
 	}
+	// esbuild 번들 완료 후 devDependencies 제거 —
+	// @biomejs/biome의 cross-platform optional binaries(cli-darwin-arm64 등)가
+	// pnpm virtual store에 broken junction으로 남아 tauri_build resource 검증 실패를 유발.
+	// prod-only 재설치로 런타임에 필요한 native 모듈만 남긴다.
+	console.log("[dev-setup] Pruning agent devDependencies from node_modules...");
+	rmSync(join(agentDir, "node_modules"), { recursive: true, force: true });
+	execSync("pnpm install --prod", {
+		cwd: agentDir,
+		stdio: "inherit",
+		env: { ...process.env, CI: "true" },
+	});
 }
 
 // ─── 4. Platform env ─────────────────────────────────────────────────────────
