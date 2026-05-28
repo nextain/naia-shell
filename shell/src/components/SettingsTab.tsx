@@ -14,6 +14,11 @@ import {
 	writeNaiaConfig,
 } from "../lib/adk-store";
 import {
+	agentAuthLogout,
+	agentAuthStart,
+	resolveAuthMode,
+} from "../lib/agent-ipc";
+import {
 	DEFAULT_AVATAR_MODEL,
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
@@ -1246,13 +1251,38 @@ export function SettingsTab() {
 		setLabWaiting(true);
 		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
 		try {
+			// #337 Phase 5b — delegate state-token generation + URL composition to
+			// the agent. The legacy Rust `generate_oauth_state` command is retained
+			// for the fallback path below (and for the legacy secure-keys.dat
+			// listener, removed in Phase 6).
+			const mode = resolveAuthMode();
+			try {
+				const { authUrl } = await agentAuthStart({
+					mode,
+					locale: locale,
+				});
+				Logger.info("SettingsTab", "[lab-login] opening system browser (agent)", {
+					mode,
+				});
+				await openUrl(authUrl);
+				return;
+			} catch (agentErr: unknown) {
+				Logger.warn(
+					"SettingsTab",
+					"[lab-login] agentAuthStart failed — falling back to legacy URL",
+					{ error: String(agentErr) },
+				);
+			}
+
+			// Fallback: pre-#337 shell-side URL composition. Removed in Phase 6
+			// once the agent path is verified end-to-end.
 			const state = await invoke<string>("generate_oauth_state").catch(() => "");
 			const params = new URLSearchParams({
 				redirect: "desktop",
 				source: "desktop",
 			});
 			if (state) params.set("state", state);
-			Logger.info("SettingsTab", "[lab-login] opening system browser");
+			Logger.info("SettingsTab", "[lab-login] opening system browser (legacy)");
 			await openUrl(
 				`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`,
 			).catch((e: unknown) => {
@@ -4132,6 +4162,16 @@ export function SettingsTab() {
 												setDiscordDmChannelId("");
 												setDiscordDefaultTarget("");
 												setShowLabDisconnect(false);
+												// #337 Phase 5b — clear agent-side encrypted auth before
+												// the legacy secure-keys.dat slot. Both run for now; Phase 6
+												// removes the deleteSecretKey path.
+												try {
+													await agentAuthLogout(resolveAuthMode());
+												} catch (err) {
+													Logger.warn("SettingsTab", "[lab-logout] agentAuthLogout failed", {
+														error: String(err),
+													});
+												}
 												await deleteSecretKey("naiaKey");
 												const current = loadConfig();
 												if (current) {

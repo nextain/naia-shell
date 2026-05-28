@@ -120,8 +120,16 @@ pub(crate) fn process_deep_link_url(
     if let Some(naia_key) = resolved_key {
         let is_valid = is_valid_gateway_key(&naia_key);
         if is_valid {
-            let payload =
-                serde_json::json!({ "naiaKey": naia_key, "naiaUserId": validated_user_id });
+            // #337 Phase 5b: forward the raw deep-link URL so the frontend can
+            // hand it to the agent's `auth_received` handler for validation +
+            // encrypted persistence. The pre-existing `naiaKey` / `naiaUserId`
+            // fields are retained for the legacy shell-side path (Phase 6
+            // removes them).
+            let payload = serde_json::json!({
+                "naiaKey": naia_key,
+                "naiaUserId": validated_user_id,
+                "deepLinkUrl": url_str,
+            });
             let _ = app_handle.emit("naia_auth_complete", payload);
             log_both("[Naia] Naia auth complete — key received via deep link");
         } else {

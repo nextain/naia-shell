@@ -24,6 +24,7 @@ import {
 	buildNaiaConfigEnv,
 	writeNaiaConfig,
 } from "./lib/adk-store";
+import { agentAuthReceived } from "./lib/agent-ipc";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
@@ -529,9 +530,31 @@ export function App() {
 	}, []);
 
 	useEffect(() => {
-		const unlisten = listen<{ naiaKey?: string }>(
+		const unlisten = listen<{ naiaKey?: string; deepLinkUrl?: string }>(
 			"naia_auth_complete",
 			(event) => {
+				// #337 Phase 5b — forward the raw deep-link URL to the agent so it
+				// can validate state + persist the encrypted auth file. The Rust side
+				// is changed to include `deepLinkUrl` in this payload alongside the
+				// pre-existing parsed fields. Legacy `naiaKey` path is retained until
+				// Phase 6 removes the shell-side secure-keys.dat slot.
+				const rawUrl = event.payload.deepLinkUrl;
+				if (rawUrl) {
+					void agentAuthReceived(rawUrl)
+						.then((result) => {
+							if (!result.ok) {
+								Logger.warn("App", "[auth] agentAuthReceived not ok", {
+									reason: result.reason ?? "unknown",
+								});
+							}
+						})
+						.catch((err: unknown) => {
+							Logger.warn("App", "[auth] agentAuthReceived threw", {
+								error: String(err),
+							});
+						});
+				}
+
 				const key = event.payload.naiaKey;
 				if (key) {
 					// Cache before sending so crash-restart can replay the key.
