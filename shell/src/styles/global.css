@@ -9966,3 +9966,8 @@ body.resizing-col * {
 	cursor: not-allowed;
 	transform: none;
 }
+
+/* #337 Phase 6a — tri-state auth badge spinner */
+@keyframes auth-badge-spin {
+	to { transform: rotate(360deg); }
+}

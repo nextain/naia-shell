@@ -25,6 +25,11 @@ import {
 	writeNaiaConfig,
 } from "./lib/adk-store";
 import { agentAuthReceived } from "./lib/agent-ipc";
+import {
+	AuthStatusContext,
+	startAuthStatusTracking,
+	type AuthStatusSnapshot,
+} from "./lib/auth-status-store";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
@@ -167,6 +172,14 @@ export function App() {
 	} | null>(null);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 	const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+	// #337 Phase 6a — tri-state auth status sourced from the agent (not from
+	// secure-keys.dat slot). Legacy `naiaKey`-derived UI gating in SettingsTab
+	// stays additive during this phase; Phase 6c removes it entirely.
+	const [authStatus, setAuthStatus] = useState<AuthStatusSnapshot>({
+		status: "checking",
+		mode: "prod",
+	});
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
 	const backgroundMediaType = useAvatarStore((s) => s.backgroundMediaType);
 	const setBackgroundVideoUrl = useAvatarStore((s) => s.setBackgroundVideoUrl);
@@ -572,6 +585,15 @@ export function App() {
 		};
 	}, []);
 
+	// #337 Phase 6a — start tri-state auth status tracking on mount. Agent is
+	// SoT; we synchronously render "checking" until agentAuthQuery resolves,
+	// then flip to "logged_in" or "logged_out". Subsequent flips arrive via
+	// the agent's `auth_changed` push events.
+	useEffect(() => {
+		const unsubscribe = startAuthStatusTracking(setAuthStatus);
+		return unsubscribe;
+	}, []);
+
 	// On init: push auth + credentials + webhooks to the agent (backend).
 	// Uses sequential await so store_startup_message caching precedes the IPC
 	// send — guaranteeing the Rust cache is populated before the message
@@ -748,6 +770,7 @@ export function App() {
 	// Single return — SplashScreen always mounts first as a fixed overlay,
 	// app content loads underneath, splash removed when ready.
 	return (
+		<AuthStatusContext.Provider value={authStatus}>
 		<div
 			className="app-root"
 			style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
@@ -974,5 +997,6 @@ export function App() {
 				</>
 			)}
 		</div>
+		</AuthStatusContext.Provider>
 	);
 }

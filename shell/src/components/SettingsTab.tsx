@@ -18,6 +18,7 @@ import {
 	agentAuthStart,
 	resolveAuthMode,
 } from "../lib/agent-ipc";
+import { useAuthStatus } from "../lib/auth-status-store";
 import {
 	DEFAULT_AVATAR_MODEL,
 	getDefaultTtsVoiceForAvatar,
@@ -566,6 +567,72 @@ function DeviceSelect({
 					))}
 				</div>
 			)}
+		</div>
+	);
+}
+
+/**
+ * #337 Phase 6a — tri-state auth badge. Renders a single status pill near the
+ * Naia auth section. Source of truth = agent (via useAuthStatus). This is
+ * additive: legacy `naiaKey`-derived UI gating is untouched in this phase.
+ */
+function AuthStatusBadge() {
+	const snapshot = useAuthStatus();
+	let dotColor = "#9aa0a6";
+	let label = "로그인되지 않음";
+	let showSpinner = false;
+	if (snapshot.status === "checking") {
+		dotColor = "#9aa0a6";
+		label = "확인 중...";
+		showSpinner = true;
+	} else if (snapshot.status === "logged_in") {
+		dotColor = "#4caf50";
+		label = snapshot.userId
+			? `${snapshot.userId} 로그인됨`
+			: "로그인됨";
+	}
+	return (
+		<div
+			className="auth-status-badge"
+			role="status"
+			aria-live="polite"
+			data-status={snapshot.status}
+			style={{
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 6,
+				padding: "2px 8px",
+				borderRadius: 10,
+				fontSize: 11,
+				background: "rgba(0,0,0,0.06)",
+			}}
+		>
+			{showSpinner ? (
+				<span
+					aria-hidden="true"
+					style={{
+						display: "inline-block",
+						width: 8,
+						height: 8,
+						borderRadius: "50%",
+						border: "1.5px solid #9aa0a6",
+						borderTopColor: "transparent",
+						animation: "auth-badge-spin 0.8s linear infinite",
+					}}
+				/>
+			) : (
+				<span
+					aria-hidden="true"
+					style={{
+						display: "inline-block",
+						width: 8,
+						height: 8,
+						borderRadius: "50%",
+						background: dotColor,
+					}}
+				/>
+			)}
+			<span>{label}</span>
 		</div>
 	);
 }
@@ -2572,6 +2639,10 @@ export function SettingsTab() {
 			{provider === "nextain" && !naiaKey && (
 				<div className="settings-field">
 				<label>{t("settings.naiaAccount")}</label>
+				{/* #337 Phase 6a — tri-state badge sourced from agent. Additive. */}
+				<div style={{ marginBottom: 6 }}>
+					<AuthStatusBadge />
+				</div>
 				<button
 						type="button"
 						className="settings-btn-primary"
@@ -2591,6 +2662,10 @@ export function SettingsTab() {
 			{provider === "nextain" && naiaKey && (
 				<div className="settings-field">
 					<label>{t("settings.naiaAccount")}</label>
+					{/* #337 Phase 6a — tri-state badge sourced from agent. Additive. */}
+					<div style={{ marginBottom: 6 }}>
+						<AuthStatusBadge />
+					</div>
 					<div className="settings-hint" style={{ color: "var(--accent-color, #64a0ff)" }}>
 						{t("settings.naiaConnected")}{naiaUserId ? ` (${naiaUserId})` : ""}
 					</div>
