@@ -13,8 +13,15 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("../../lib/config", () => ({
 	LAB_GATEWAY_URL: "https://example.test",
-	getNaiaKeySecure: vi.fn().mockResolvedValue(null),
 	hasNaiaKeySecure: vi.fn().mockResolvedValue(false),
+}));
+
+// #337 Phase 6b: balance fetch is now an agent IPC, not a direct fetch.
+vi.mock("../../lib/agent-ipc", () => ({
+	agentLabProxyRequest: vi
+		.fn()
+		.mockResolvedValue({ ok: false, status: 401, body: null }),
+	resolveAuthMode: vi.fn().mockReturnValue("prod"),
 }));
 
 import { CostDashboard, groupCosts } from "../CostDashboard";

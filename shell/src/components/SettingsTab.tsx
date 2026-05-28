@@ -16,6 +16,7 @@ import {
 import {
 	agentAuthLogout,
 	agentAuthStart,
+	agentLabProxyRequest,
 	resolveAuthMode,
 } from "../lib/agent-ipc";
 import { useAuthStatus } from "../lib/auth-status-store";
@@ -1431,7 +1432,12 @@ export function SettingsTab() {
 			});
 	}, []);
 
-	// Fetch Lab balance for a given key
+	// Fetch Lab balance.
+	//
+	// #337 Phase 6b: routed through agent lab proxy. The `key` parameter is
+	// retained for signature stability (callers still know "is the user
+	// logged in?" via local config) and will be removed in Phase 6c when the
+	// gating switches to `agentAuthQuery`.
 	function fetchLabBalance(key: string) {
 		Logger.debug("SettingsTab", "fetchLabBalance called", {
 			keyPrefix: key.slice(0, 8),
@@ -1439,33 +1445,34 @@ export function SettingsTab() {
 		});
 		setLabBalanceLoading(true);
 		setLabBalanceError(false);
-		fetch(`${LAB_GATEWAY_URL}/v1/profile/balance`, {
-			headers: { "X-AnyLLM-Key": `Bearer ${key}` },
+		agentLabProxyRequest({
+			mode: resolveAuthMode(),
+			method: "GET",
+			path: "/v1/profile/balance",
 		})
-			.then((res) => {
-				if (res.status === 401) {
+			.then((resp) => {
+				if (resp.status === 401) {
 					Logger.warn(
 						"SettingsTab",
 						"Lab balance unauthorized; preserving Naia login state",
 					);
 					setLabBalanceError(true);
-					throw new Error("BALANCE_UNAUTHORIZED");
+					return;
 				}
-				if (!res.ok) {
-					return res.text().then((text) => {
-						throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+				if (!resp.ok) {
+					Logger.warn("SettingsTab", "Lab balance fetch failed", {
+						status: resp.status,
+						error: resp.error,
 					});
+					setLabBalanceError(true);
+					return;
 				}
-				return res.json();
-			})
-			.then((data: unknown) => {
-				const credits = parseLabCredits(data);
+				const credits = parseLabCredits(resp.body);
 				setLabBalance(credits ?? 0);
 				setLabBalanceError(false);
 			})
 			.catch((err) => {
-				if (String(err).includes("BALANCE_UNAUTHORIZED")) return;
-				Logger.warn("SettingsTab", "Lab balance fetch failed", {
+				Logger.warn("SettingsTab", "Lab balance fetch threw", {
 					error: String(err),
 				});
 				setLabBalanceError(true);
@@ -1787,25 +1794,29 @@ export function SettingsTab() {
 				const previewText = getPreviewText();
 
 				if (naiaKey) {
-					const resp = await fetch(`${LAB_GATEWAY_URL}/v1/audio/speech`, {
+					// #337 Phase 6b: voice preview routed through agent lab proxy.
+					// The `naiaKey` precondition above stays as a "logged in?"
+					// gate until Phase 6c switches it to agentAuthQuery.
+					const resp = await agentLabProxyRequest({
+						mode: resolveAuthMode(),
 						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							"X-AnyLLM-Key": `Bearer ${naiaKey}`,
-						},
-						body: JSON.stringify({
+						path: "/v1/audio/speech",
+						body: {
 							input: previewText,
 							voice: fullVoice,
 							audio_encoding: "MP3",
-						}),
+						},
 					});
 					if (!resp.ok) {
-						const body = await resp.text().catch(() => "");
+						const detail =
+							typeof resp.body === "string"
+								? resp.body.slice(0, 200)
+								: (resp.error ?? "");
 						throw new Error(
-							`미리듣기 실패 (${resp.status}): ${body.slice(0, 200)}`,
+							`미리듣기 실패 (${resp.status}): ${detail}`,
 						);
 					}
-					const data = (await resp.json()) as { audio_content?: string };
+					const data = (resp.body ?? {}) as { audio_content?: string };
 					base64 = data.audio_content ?? "";
 				} else {
 					setError("미리듣기를 사용하려면 Naia 로그인이 필요합니다.");

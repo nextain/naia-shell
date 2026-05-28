@@ -1,4 +1,5 @@
 import { emit } from "@tauri-apps/api/event";
+import { agentLabProxyRequest, resolveAuthMode } from "./agent-ipc";
 import { sendConfigUpdate } from "./chat-service";
 import { loadConfig, saveConfig } from "./config";
 import { openDmChannel } from "./discord-api";
@@ -7,9 +8,11 @@ import { getLocale } from "./i18n";
 import { Logger } from "./logger";
 import { buildSystemPrompt } from "./persona";
 
-const LINKED_CHANNELS_API =
-	"https://naia.nextain.io/api/gateway/linked-channels";
-const DISCORD_BOT_TOKEN_API = "https://naia.nextain.io/api/discord/bot-token";
+// Phase 6b (#337): these endpoints are now reached via the agent lab proxy
+// (`agentLabProxyRequest`). The agent injects `X-AnyLLM-Key` server-side from
+// its own encrypted auth store — shell never sees the naiaKey.
+const LINKED_CHANNELS_PATH = "/api/gateway/linked-channels";
+const DISCORD_BOT_TOKEN_PATH = "/api/discord/bot-token";
 
 interface LinkedChannel {
 	type: string;
@@ -23,21 +26,27 @@ interface LinkedChannelsResponse {
 /**
  * Fetch the Discord bot token from naia.nextain.io and save it to naia-discord.json.
  * Called after Lab auth succeeds. Fails silently if the endpoint is unavailable.
+ *
+ * #337 Phase 6b: routed through agent lab proxy — agent injects naiaKey
+ * server-side so the shell no longer needs the key in memory.
  */
-async function fetchAndRestoreDiscordBotToken(naiaKey: string): Promise<void> {
+async function fetchAndRestoreDiscordBotToken(): Promise<void> {
 	try {
-		const res = await fetch(DISCORD_BOT_TOKEN_API, {
-			headers: { Authorization: `Bearer ${naiaKey}` },
+		const resp = await agentLabProxyRequest({
+			mode: resolveAuthMode(),
+			method: "GET",
+			path: DISCORD_BOT_TOKEN_PATH,
 		});
-		if (!res.ok) {
-			if (res.status !== 404) {
+		if (!resp.ok) {
+			if (resp.status !== 404) {
 				Logger.warn("channel-sync", "discord bot-token API error", {
-					status: res.status,
+					status: resp.status,
+					error: resp.error,
 				});
 			}
 			return;
 		}
-		const data = (await res.json()) as { token?: string };
+		const data = (resp.body ?? {}) as { token?: string };
 		if (!data?.token) return;
 
 		await sendConfigUpdate({ secrets: { NAIA_DISCORD_BOT_TOKEN: data.token } });
@@ -52,26 +61,30 @@ async function fetchAndRestoreDiscordBotToken(naiaKey: string): Promise<void> {
 
 /**
  * Fetch linked messaging channels from naia.nextain.io BFF.
- * Uses desktop key + user id for authentication.
+ *
+ * #337 Phase 6b: routed through agent lab proxy. The BFF still keys channel
+ * lookups off the bearer token (X-AnyLLM-Key) — the X-User-Id header is now
+ * the only piece the shell forwards explicitly, and X-Desktop-Key is dropped
+ * since the agent always sets X-AnyLLM-Key.
  */
 async function fetchLinkedChannels(
-	naiaKey: string,
 	naiaUserId: string,
 ): Promise<LinkedChannel[]> {
 	try {
-		const res = await fetch(LINKED_CHANNELS_API, {
-			headers: {
-				"X-Desktop-Key": naiaKey,
-				"X-User-Id": naiaUserId,
-			},
+		const resp = await agentLabProxyRequest({
+			mode: resolveAuthMode(),
+			method: "GET",
+			path: LINKED_CHANNELS_PATH,
+			headers: { "X-User-Id": naiaUserId },
 		});
-		if (!res.ok) {
+		if (!resp.ok) {
 			Logger.warn("channel-sync", "linked-channels API error", {
-				status: res.status,
+				status: resp.status,
+				error: resp.error,
 			});
 			return [];
 		}
-		const data = (await res.json()) as LinkedChannelsResponse;
+		const data = (resp.body ?? {}) as LinkedChannelsResponse;
 		return data?.channels ?? [];
 	} catch (err) {
 		Logger.warn("channel-sync", "fetchLinkedChannels failed", {
@@ -98,9 +111,9 @@ export async function syncLinkedChannels(): Promise<void> {
 	}
 
 	// Always attempt to restore Discord bot token on Lab login
-	await fetchAndRestoreDiscordBotToken(config.naiaKey);
+	await fetchAndRestoreDiscordBotToken();
 
-	const channels = await fetchLinkedChannels(config.naiaKey, config.naiaUserId);
+	const channels = await fetchLinkedChannels(config.naiaUserId);
 	if (channels.length === 0) {
 		Logger.info("channel-sync", "No linked channels found");
 		return;

@@ -1,8 +1,12 @@
+import { agentLabProxyRequest, resolveAuthMode } from "./agent-ipc";
 import type { AppConfig } from "./config";
 import { normalizeSpeechStyle } from "./config";
 import { Logger } from "./logger";
 
-const LAB_API_BASE = "https://naia.nextain.io/api/gateway/config";
+// Phase 6b (#337): routed through agent lab proxy. Agent injects the
+// X-AnyLLM-Key header; shell forwards only X-User-Id since the BFF still
+// scopes config records by user.
+const LAB_API_PATH = "/api/gateway/config";
 
 /** Fields synced to/from Lab — excludes secrets (apiKey, gatewayToken, etc.) and local paths */
 export const LAB_SYNC_FIELDS = [
@@ -55,20 +59,27 @@ function pickSyncFields(config: Partial<AppConfig>): Partial<SyncConfig> {
 	return result as Partial<SyncConfig>;
 }
 
-/** Fetch config from Lab via BFF API */
+/**
+ * Fetch config from Lab via BFF API.
+ *
+ * #337 Phase 6b: `naiaKey` parameter is no longer used for auth — the agent
+ * injects X-AnyLLM-Key server-side. It is retained in the signature for
+ * call-site stability and will be dropped in Phase 6c when callers stop
+ * threading the key around.
+ */
 export async function fetchLabConfig(
-	naiaKey: string,
+	_naiaKey: string,
 	naiaUserId: string,
 ): Promise<Partial<SyncConfig> | null> {
 	try {
-		const res = await fetch(LAB_API_BASE, {
-			headers: {
-				"X-Desktop-Key": naiaKey,
-				"X-User-Id": naiaUserId,
-			},
+		const resp = await agentLabProxyRequest({
+			mode: resolveAuthMode(),
+			method: "GET",
+			path: LAB_API_PATH,
+			headers: { "X-User-Id": naiaUserId },
 		});
-		if (!res.ok) return null;
-		const data = (await res.json()) as {
+		if (!resp.ok) return null;
+		const data = (resp.body ?? {}) as {
 			config?: Record<string, unknown> | null;
 		};
 		const raw = data?.config;
@@ -84,21 +95,24 @@ export async function fetchLabConfig(
 	}
 }
 
-/** Push config to Lab via BFF API */
+/**
+ * Push config to Lab via BFF API.
+ *
+ * #337 Phase 6b: `naiaKey` parameter retained for signature stability; auth
+ * header injection happens inside the agent.
+ */
 export function pushConfigToLab(
-	naiaKey: string,
+	_naiaKey: string,
 	naiaUserId: string,
 	config: Partial<AppConfig>,
 ): void {
 	const syncData = pickSyncFields(config);
-	fetch(LAB_API_BASE, {
+	agentLabProxyRequest({
+		mode: resolveAuthMode(),
 		method: "PATCH",
-		headers: {
-			"Content-Type": "application/json",
-			"X-Desktop-Key": naiaKey,
-			"X-User-Id": naiaUserId,
-		},
-		body: JSON.stringify({ config: syncData }),
+		path: LAB_API_PATH,
+		headers: { "X-User-Id": naiaUserId },
+		body: { config: syncData },
 	}).catch((err) => {
 		Logger.warn("lab-sync", "pushConfigToLab failed", { error: String(err) });
 	});
@@ -106,18 +120,16 @@ export function pushConfigToLab(
 
 /** Delete all config from Lab (reset nan_config to empty) */
 export async function clearLabConfig(
-	naiaKey: string,
+	_naiaKey: string,
 	naiaUserId: string,
 ): Promise<void> {
 	try {
-		await fetch(LAB_API_BASE, {
+		await agentLabProxyRequest({
+			mode: resolveAuthMode(),
 			method: "PATCH",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Desktop-Key": naiaKey,
-				"X-User-Id": naiaUserId,
-			},
-			body: JSON.stringify({ config: {} }),
+			path: LAB_API_PATH,
+			headers: { "X-User-Id": naiaUserId },
+			body: { config: {} },
 		});
 	} catch (err) {
 		Logger.warn("lab-sync", "clearLabConfig failed", { error: String(err) });

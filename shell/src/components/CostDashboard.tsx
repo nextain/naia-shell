@@ -1,11 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useState } from "react";
-import {
-	LAB_GATEWAY_URL,
-	getNaiaKeySecure,
-	hasNaiaKeySecure,
-} from "../lib/config";
+import { agentLabProxyRequest, resolveAuthMode } from "../lib/agent-ipc";
+import { hasNaiaKeySecure } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import { Logger } from "../lib/logger";
@@ -73,8 +70,6 @@ function formatCost(cost: number): string {
 	return `$${cost.toFixed(3)}`;
 }
 
-const GATEWAY_URL = LAB_GATEWAY_URL;
-
 // Simple cache to avoid re-fetching balance on every mount
 let balanceCache: { value: number; timestamp: number } | null = null;
 const BALANCE_CACHE_TTL = 30_000; // 30 seconds
@@ -88,32 +83,36 @@ function LabBalanceSection() {
 	const [loading, setLoading] = useState(balance === null);
 	const [error, setError] = useState(false);
 
+	// #337 Phase 6b: balance fetch goes through the agent lab proxy. The
+	// agent owns the X-AnyLLM-Key injection so the shell never touches the
+	// raw key.
 	const fetchBalance = useCallback(async () => {
-		const naiaKey = await getNaiaKeySecure();
-		if (!naiaKey) {
-			setLoading(false);
-			return;
-		}
-		fetch(`${GATEWAY_URL}/v1/profile/balance`, {
-			headers: { "X-AnyLLM-Key": `Bearer ${naiaKey}` },
-		})
-			.then((res) => {
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				return res.json();
-			})
-			.then((data: unknown) => {
-				const val = parseLabCredits(data) ?? 0;
-				balanceCache = { value: val, timestamp: Date.now() };
-				setBalance(val);
-				setError(false);
-			})
-			.catch((err) => {
+		try {
+			const resp = await agentLabProxyRequest({
+				mode: resolveAuthMode(),
+				method: "GET",
+				path: "/v1/profile/balance",
+			});
+			if (!resp.ok) {
 				Logger.warn("CostDashboard", "Lab balance fetch failed", {
-					error: String(err),
+					status: resp.status,
+					error: resp.error,
 				});
 				setError(true);
-			})
-			.finally(() => setLoading(false));
+				return;
+			}
+			const val = parseLabCredits(resp.body) ?? 0;
+			balanceCache = { value: val, timestamp: Date.now() };
+			setBalance(val);
+			setError(false);
+		} catch (err) {
+			Logger.warn("CostDashboard", "Lab balance fetch threw", {
+				error: String(err),
+			});
+			setError(true);
+		} finally {
+			setLoading(false);
+		}
 	}, []);
 
 	useEffect(() => {

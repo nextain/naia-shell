@@ -1,24 +1,39 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lab-sync";
 
-// Mock fetch globally
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+// #337 Phase 6b: lab-sync now reaches the BFF via the agent lab proxy
+// (`agentLabProxyRequest`). Mock the agent-ipc wrappers instead of `fetch`.
+vi.mock("../agent-ipc", () => ({
+	agentLabProxyRequest: vi.fn(),
+	resolveAuthMode: vi.fn().mockReturnValue("prod"),
+}));
+
+import { agentLabProxyRequest } from "../agent-ipc";
+import {
+	clearLabConfig,
+	diffConfigs,
+	fetchLabConfig,
+	pushConfigToLab,
+} from "../lab-sync";
+
+const mockedLabProxy = agentLabProxyRequest as unknown as ReturnType<
+	typeof vi.fn
+>;
 
 describe("lab-sync", () => {
 	beforeEach(() => {
-		mockFetch.mockReset();
+		mockedLabProxy.mockReset();
 	});
 
 	afterEach(() => {
-		mockFetch.mockReset();
+		mockedLabProxy.mockReset();
 	});
 
 	describe("fetchLabConfig", () => {
 		it("returns sync fields from Lab response", async () => {
-			mockFetch.mockResolvedValue({
+			mockedLabProxy.mockResolvedValue({
 				ok: true,
-				json: async () => ({
+				status: 200,
+				body: {
 					config: {
 						provider: "nextain",
 						model: "gemini-3-flash-preview",
@@ -29,7 +44,7 @@ describe("lab-sync", () => {
 						apiKey: "should-be-excluded",
 						gatewayUrl: "should-be-excluded",
 					},
-				}),
+				},
 			});
 
 			const result = await fetchLabConfig("test-key", "user-123");
@@ -44,30 +59,84 @@ describe("lab-sync", () => {
 			expect((result as Record<string, unknown>).apiKey).toBeUndefined();
 			expect((result as Record<string, unknown>).gatewayUrl).toBeUndefined();
 
-			// Verify BFF API URL and headers
-			const [url, opts] = mockFetch.mock.calls[0];
-			expect(url).toContain("/api/gateway/config");
-			expect(opts.headers["X-Desktop-Key"]).toBe("test-key");
-			expect(opts.headers["X-User-Id"]).toBe("user-123");
+			// Verify proxy invocation — path is route-only; X-User-Id forwarded;
+			// auth header is injected by the agent (not asserted here).
+			expect(mockedLabProxy).toHaveBeenCalledWith({
+				mode: "prod",
+				method: "GET",
+				path: "/api/gateway/config",
+				headers: { "X-User-Id": "user-123" },
+			});
+		});
+
+		it("never forwards naiaKey through the proxy headers", async () => {
+			// Regression — Phase 6b SoT: shell must not stamp the key into any
+			// header it sends to the agent. The agent owns X-AnyLLM-Key.
+			mockedLabProxy.mockResolvedValue({
+				ok: true,
+				status: 200,
+				body: { config: {} },
+			});
+
+			await fetchLabConfig("gw-secret-key", "user-123");
+
+			const call = mockedLabProxy.mock.calls[0][0] as {
+				headers?: Record<string, string>;
+			};
+			const headers = call.headers ?? {};
+			for (const value of Object.values(headers)) {
+				expect(value).not.toContain("gw-secret-key");
+			}
+			expect(headers["X-AnyLLM-Key"]).toBeUndefined();
+			expect(headers["X-Desktop-Key"]).toBeUndefined();
+			expect(headers.Authorization).toBeUndefined();
 		});
 
 		it("returns null on HTTP error", async () => {
-			mockFetch.mockResolvedValue({ ok: false, status: 404 });
+			mockedLabProxy.mockResolvedValue({
+				ok: false,
+				status: 404,
+				body: null,
+			});
 			const result = await fetchLabConfig("bad-key", "user-123");
 			expect(result).toBeNull();
 		});
 
 		it("returns null when config is missing", async () => {
-			mockFetch.mockResolvedValue({
+			mockedLabProxy.mockResolvedValue({
 				ok: true,
-				json: async () => ({ config: null }),
+				status: 200,
+				body: { config: null },
 			});
 			const result = await fetchLabConfig("key", "user-123");
 			expect(result).toBeNull();
 		});
 
 		it("returns null on network error", async () => {
-			mockFetch.mockRejectedValue(new Error("network error"));
+			mockedLabProxy.mockRejectedValue(new Error("network error"));
+			const result = await fetchLabConfig("key", "user-123");
+			expect(result).toBeNull();
+		});
+
+		it("returns null when agent reports 401 (not_logged_in)", async () => {
+			// Surfaces cleanly to the caller — no infinite retry, no throw.
+			mockedLabProxy.mockResolvedValue({
+				ok: false,
+				status: 401,
+				body: null,
+				error: "not_logged_in",
+			});
+			const result = await fetchLabConfig("key", "user-123");
+			expect(result).toBeNull();
+		});
+
+		it("returns null on transport status 0 (offline)", async () => {
+			mockedLabProxy.mockResolvedValue({
+				ok: false,
+				status: 0,
+				body: null,
+				error: "network",
+			});
 			const result = await fetchLabConfig("key", "user-123");
 			expect(result).toBeNull();
 		});
@@ -75,7 +144,11 @@ describe("lab-sync", () => {
 
 	describe("pushConfigToLab", () => {
 		it("sends PATCH with sync fields only", () => {
-			mockFetch.mockResolvedValue({ ok: true });
+			mockedLabProxy.mockResolvedValue({
+				ok: true,
+				status: 200,
+				body: null,
+			});
 			pushConfigToLab("test-key", "user-123", {
 				provider: "nextain",
 				model: "gemini-3-flash-preview",
@@ -85,19 +158,40 @@ describe("lab-sync", () => {
 				speechStyle: "formal",
 			});
 
-			expect(mockFetch).toHaveBeenCalledTimes(1);
-			const [url, opts] = mockFetch.mock.calls[0];
-			expect(url).toContain("/api/gateway/config");
-			expect(opts.method).toBe("PATCH");
-			expect(opts.headers["X-Desktop-Key"]).toBe("test-key");
-			expect(opts.headers["X-User-Id"]).toBe("user-123");
+			expect(mockedLabProxy).toHaveBeenCalledTimes(1);
+			const call = mockedLabProxy.mock.calls[0][0] as {
+				method: string;
+				path: string;
+				headers?: Record<string, string>;
+				body: { config: Record<string, unknown> };
+			};
+			expect(call.method).toBe("PATCH");
+			expect(call.path).toBe("/api/gateway/config");
+			expect(call.headers).toEqual({ "X-User-Id": "user-123" });
 
-			const body = JSON.parse(opts.body);
-			expect(body.config.userName).toBe("Luke");
-			expect(body.config.honorific).toBe("님");
-			expect(body.config.speechStyle).toBe("formal");
+			expect(call.body.config.userName).toBe("Luke");
+			expect(call.body.config.honorific).toBe("님");
+			expect(call.body.config.speechStyle).toBe("formal");
 			// apiKey should NOT be in sync data
-			expect(body.config.apiKey).toBeUndefined();
+			expect(call.body.config.apiKey).toBeUndefined();
+		});
+	});
+
+	describe("clearLabConfig", () => {
+		it("issues PATCH with empty config", async () => {
+			mockedLabProxy.mockResolvedValue({
+				ok: true,
+				status: 200,
+				body: null,
+			});
+			await clearLabConfig("k", "user-123");
+			expect(mockedLabProxy).toHaveBeenCalledWith({
+				mode: "prod",
+				method: "PATCH",
+				path: "/api/gateway/config",
+				headers: { "X-User-Id": "user-123" },
+				body: { config: {} },
+			});
 		});
 	});
 

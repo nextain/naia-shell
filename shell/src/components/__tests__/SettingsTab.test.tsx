@@ -51,6 +51,23 @@ vi.mock("../../lib/gateway-sync", () => ({
 	syncToGateway: vi.fn().mockResolvedValue(undefined),
 }));
 
+// #337 Phase 6b: SettingsTab now reaches the lab gateway through the agent
+// (balance fetch + voice preview). The IPC wrappers internally call
+// invoke + listen — without the mock, balance fetch hangs on the 15s
+// agent_response timeout and leaks state across tests.
+vi.mock("../../lib/agent-ipc", () => ({
+	agentAuthStart: vi
+		.fn()
+		.mockResolvedValue({ authUrl: "https://example.test/auth", state: "s" }),
+	agentAuthLogout: vi.fn().mockResolvedValue(undefined),
+	agentLabProxyRequest: vi.fn().mockResolvedValue({
+		ok: true,
+		status: 200,
+		body: { credits: 0 },
+	}),
+	resolveAuthMode: vi.fn().mockReturnValue("prod"),
+}));
+
 import { SettingsTab } from "../SettingsTab";
 
 describe("SettingsTab", () => {
