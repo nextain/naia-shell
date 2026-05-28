@@ -762,3 +762,37 @@ if (cmd === "plugin:store|get") return [null, false];
 - codex CLI timeout 시 "still running" 보고 후 commit — cross-review 사실상 없음. wait 정책 필수
 
 **참조**: `.agents/plans/launch-readiness-2026-05-27.md`, L059 (apiKey/naiaKey collision).
+
+---
+
+## L061 — Shell-centric → ADK-centric 인증: 긴 서브에이전트 체인에서 phase 별 cross-review 가 contract drift 를 막는다 (#337)
+
+**날짜**: 2026-05-28 · **이슈**: #337 · **분류**: workflow · **범위**: `.agents/plans/issue-337-*`, 워크플로우
+
+**문제**: #337 (13 phases, 13 commits, 6432 lines, cross-repo naia-os + naia-agent) 을 phase 별 B-mode (부모 vitest+tsc 재검증) 로 진행했으나 **phase 별 AI 코드 리뷰는 누락**. Phase 1 design 만 codex+gemini 받음, Phase 2~9 구현은 누락. 모든 phase ship 후 retroactive cross-review 한 번이 B-mode 가 놓친 5건 발견:
+
+- **CRITICAL**: shell 이 여전히 deep-link payload (Rust) 에 naiaKey emit → localStorage `"naia-remote-key"` 저장 → contract 위반
+- **CRITICAL**: `SECRET_KEYS` 가 여전히 `"naiaKey"` 포함 → `ChatPanel.tsx` 가 계속 `config.naiaKey` 로 chat gating
+- **HIGH**: `lab_proxy_request` 가 absolute URL 받음 → naiaKey exfiltration vector
+- **HIGH**: macOS keyring 이 master password 를 `security ... -w` argv 로 노출 (`ps` 에 보임)
+- **HIGH**: auth 파일이 default umask 로 작성 → world-readable 가능
+
+5건 모두 design doc 명시 조항 위반. Unit tests + tsc 통과 — spec compliance 는 테스트 검출 가능 속성이 아님, design doc + 코드를 함께 읽어야 함.
+
+**원인**: B-mode 부모 재검증은 mechanical 실패 (tsc/vitest 깨짐, sub-agent 자가보고 버그 — Phase 5a 의 tsc false-positive 잡은 사례로 입증) 를 잡지만 **spec-vs-구현 drift 는 안 잡힘**. 서브에이전트는 자기 프롬프트를 따름, 프롬프트는 단편, drift 가 phase 마다 누적해서 어떤 단일 서브에이전트도 책임지지 않는 contract 가 깨짐. Cross-review (codex+gemini) 가 spec + 코드를 함께 읽어 그 gap 을 표면화.
+
+또 AI 리뷰어들은 severity 에 대해 의견이 다름. Codex 는 CRITICAL 2건을 잡고, Gemini 는 둘 다 놓침. 반대로 Gemini 는 Codex 가 놓친 회귀 (Phase 6c 이후 voice WebSocket 의 naiaKey 경로 깨짐, 신규 사용자) 를 잡음. 다른 bias 의 두 reviewer 가 단일보다 실질적으로 더 나은 커버리지.
+
+**해결** (phase 별 cross-review 정책):
+
+1. **ALWAYS**: 서브에이전트 → 부모 B-mode 재검증 (vitest + tsc). mechanical 버그 잡기.
+2. **Contract-critical 코드 건드리는 phase**: 부모 재검증 직후 AI cross-review 큐잉. cohesive 한 2~3 phase 묶기는 OK (예: Phase 2a+2b crypto+keyring) but 8개는 안 됨.
+3. **Cross-reviewer 가 design doc + diff 둘 다 읽도록.** 프롬프트에 검증할 contract 명시 ("shell 이 naiaKey 받나? SECRET_KEYS 에 포함되나?").
+4. **Severity 조정**: reviewer 들 disagree 시 더 엄격한 분류 채택. 단 엄격한 쪽 reasoning 이 명백히 틀리지 않는 경우.
+5. **Fix 순서**: CRITICAL/HIGH inline, MEDIUM/LOW 는 단일 tracker issue + checklist — cross-review finding 으로 PR 비대화 금지.
+
+#337 한정: retroactive cross-review 가 final ship 전 전부 잡아냄 — 정책 작동했음. 그러나 incremental 대비 ~5x 비용. Phase 별 cross-review 는 rework 1회 막으면 본전.
+
+역설적으로: phase 별 cross-review 는 AI 자신에게도 보험. Phase 6c 서브에이전트가 "deprecated/voice 외 모든 naiaKey read 제거됨" 자신있게 보고 — codex/gemini 둘 다 그 주장이 substantially 맞다고 확인했으나 shell-side read 2건을 놓침. AI tier 와 부모 모두 못 잡음, design doc 함께 본 독립 reviewer 만 잡음.
+
+**참조**: `.agents/plans/issue-337-impl-codex-review.txt`, `.agents/plans/issue-337-impl-gemini-review.txt`, L060 (sub-agent + B-mode patterns).

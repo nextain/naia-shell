@@ -763,3 +763,37 @@ if (cmd === "plugin:store|get") return [null, false];
 - Codex CLI timed out, sub-agent reported "still running" and committed anyway → effectively no cross-review. Wait policy (3) prevents this.
 
 **Reference**: `.agents/plans/launch-readiness-2026-05-27.md`, L059 (apiKey/naiaKey collision).
+
+---
+
+## L061 — Shell-centric → ADK-centric auth: per-phase cross-review prevents contract drift in long sub-agent chains (#337)
+
+**Date**: 2026-05-28 · **Issue**: #337 · **Category**: workflow · **Scope**: `.agents/plans/issue-337-*`, workflow-level
+
+**Problem**: #337 (13 phases, 13 commits, 6432 lines, cross-repo naia-os + naia-agent) was built with per-phase B-mode (parent vitest+tsc verify) but **without** per-phase AI code-review. Phase 1 design got codex+gemini; Phases 2–9 implementation did not. After all phases shipped, a single retroactive cross-review found 5 issues that B-mode missed:
+
+- **CRITICAL**: shell still emitted naiaKey in deep-link payload (Rust) → localStorage stored `"naia-remote-key"` → contract violation
+- **CRITICAL**: `SECRET_KEYS` still included `"naiaKey"` → `ChatPanel.tsx` continued to gate chat on `config.naiaKey`
+- **HIGH**: `lab_proxy_request` accepted absolute URLs → naiaKey exfiltration vector
+- **HIGH**: macOS keyring passed master password as `security ... -w` argv (visible via `ps`)
+- **HIGH**: auth file written with default umask → possibly world-readable
+
+All 5 violated explicit design-doc clauses. Unit tests + tsc passed because spec-compliance is not a test-detectable property — it requires reading the design doc + the code together.
+
+**Root cause**: B-mode parent verify catches mechanical failures (tsc/vitest fail, sub-agent self-reporting bugs — proven via Phase 5a's tsc false-positive catch) but NOT spec-vs-implementation drift. Sub-agents follow their prompt; the prompt is a snippet; spec drift compounds across phases until the sum violates contracts no single sub-agent owned. Cross-review (codex+gemini) reads the spec + code together and surfaces those gaps.
+
+Also: AI cross-reviewers disagree on severity. Codex flagged the 2 CRITICAL contract violations; Gemini missed them entirely. Conversely Gemini caught a regression Codex missed (voice WebSocket naiaKey path broken for new users post-Phase 6c). Two reviewers with different biases give materially better coverage than one.
+
+**Fix** (per-phase cross-review policy):
+
+1. **ALWAYS**: sub-agent → parent B-mode verify (vitest + tsc). Catches mechanical bugs.
+2. **For phases touching contract-critical code**: queue an AI cross-review immediately after parent verify. Acceptable to batch 2–3 cohesive phases (e.g. Phase 2a+2b crypto+keyring) but not 8.
+3. **Cross-reviewers must read BOTH the design doc AND the diff.** Prompt should explicitly list the contracts being verified ("does shell see the naiaKey? does SECRET_KEYS include it?").
+4. **Severity reconciliation**: if reviewers disagree, take the stricter classification UNLESS the strict one has clearly wrong reasoning.
+5. **Fix order**: CRITICAL/HIGH inline, MEDIUM/LOW into a single tracker issue with checklist — do not allow cross-review findings to bloat the current PR.
+
+For #337 specifically: the retrofitted cross-review caught everything before final ship, so the policy worked — but at ~5x the cost vs. catching incrementally. Per-phase cross-review pays back its token cost the first time it prevents a rework.
+
+Counterintuitively: per-phase cross-review is ALSO insurance for the AI itself. Phase 6c sub-agent reported confidently "all naiaKey reads removed except deprecated/voice" — codex/gemini both verified that claim was substantially correct, with two specific shell-side reads it missed. Both AI tiers and the parent missed these; only an independent reviewer with the same spec caught them.
+
+**Reference**: `.agents/plans/issue-337-impl-codex-review.txt`, `.agents/plans/issue-337-impl-gemini-review.txt`, L060 (sub-agent + B-mode patterns).

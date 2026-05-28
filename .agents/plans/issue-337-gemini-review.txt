@@ -1,0 +1,89 @@
+﻿node.exe : Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended for
+ a better visual experience.
+At C:\Users\LukeYang\AppData\Roaming\npm\gemini.ps1:22 char:14
++ ...    $input | & "node$exe"  "$basedir/node_modules/@google/gemini-cli/b ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning: 256-co...ual experience.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+YOLO mode is enabled. All tool calls will be automatically approved.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Ripgrep is not available. Falling back to GrepTool.
+API returned invalid content after all retries. Full report available at: C:\Users\LukeYang\AppData\Local\Temp\gemini-c
+lient-error-generateJson-invalid-content-2026-05-28T00-58-24-218Z.json Error: Retry attempts exhausted
+    at retryWithBackoff (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/chunk-7VV
+HSNDQ.js:270798:9)
+    at async BaseLlmClient._generateWithRetry (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemin
+i-cli/bundle/chunk-7VVHSNDQ.js:270941:14)
+    at async BaseLlmClient.generateJson (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/
+bundle/chunk-7VVHSNDQ.js:270848:21)
+    at async NumericalClassifierStrategy.route (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemi
+ni-cli/bundle/chunk-7VVHSNDQ.js:318678:28)
+    at async CompositeStrategy.route (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bun
+dle/chunk-7VVHSNDQ.js:318743:26)
+    at async ModelRouterService.route (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bu
+ndle/chunk-7VVHSNDQ.js:318904:18)
+    at async GeminiClient.processTurn (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bu
+ndle/chunk-7VVHSNDQ.js:306691:24)
+    at async GeminiClient.sendMessageStream (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-
+cli/bundle/chunk-7VVHSNDQ.js:306797:14)
+    at async file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/gemini-QSTQ2DBG.js:10
+859:26
+    at async main (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/gemini-QSTQ2DBG
+.js:16137:5)
+[Routing] NumericalClassifierStrategy failed: Error: Failed to generate content: Retry attempts exhausted
+    at BaseLlmClient._generateWithRetry (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/
+bundle/chunk-7VVHSNDQ.js:270971:13)
+    at async BaseLlmClient.generateJson (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/
+bundle/chunk-7VVHSNDQ.js:270848:21)
+    at async NumericalClassifierStrategy.route (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemi
+ni-cli/bundle/chunk-7VVHSNDQ.js:318678:28)
+    at async CompositeStrategy.route (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bun
+dle/chunk-7VVHSNDQ.js:318743:26)
+    at async ModelRouterService.route (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bu
+ndle/chunk-7VVHSNDQ.js:318904:18)
+    at async GeminiClient.processTurn (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bu
+ndle/chunk-7VVHSNDQ.js:306691:24)
+    at async GeminiClient.sendMessageStream (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-
+cli/bundle/chunk-7VVHSNDQ.js:306797:14)
+    at async file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/gemini-QSTQ2DBG.js:10
+859:26
+    at async main (file:///C:/Users/LukeYang/AppData/Roaming/npm/node_modules/@google/gemini-cli/bundle/gemini-QSTQ2DBG
+.js:16137:5)
+Error executing tool read_file: File path 'D:\alpha-adk\projects\naia-os\.agents\plans\issue-337-adk-auth-persistence.m
+d' is ignored by configured ignore patterns.
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+1. **Master password lifecycle**: A static 32-byte master password stored in the OS keyring without rotation is completely acceptable. Adding rotation complexity introduces risk without substantial security gain, as compromising the OS keyring bypasses local file encryption regardless. Correctness and simplicity are more valuable here than over-engineered rotation mechanisms.
+
+2. **`BackupCapable` reuse**: The ~50ms cost of PBKDF2 is negligible since it only occurs on boot, login, and rare refresh events. Reusing the well-tested `BackupCapable` implementation guarantees cryptographic correctness and structural consistency without introducing new bugs. Do not build a thinner wrapper unless empirical profiling proves this ~50ms causes unacceptable UI blocking.
+
+3. **State token binding**: Accepting that the user must retry login if the agent crashes is the right, pragmatic choice. Storing transient OAuth state on disk adds unnecessary I/O complexity and risks state corruption for an edge case that should be exceptionally rare. Keep it memory-bound to maintain a simple and reliable state machine.
+
+4. **`auth_query` race**: Show a explicit "checking..." state (or loading skeleton) during the ~100ms decryption window. Assuming a logged-in state and rolling back causes jarring UI jitter and risks triggering authenticated UI side-effects that will ultimately fail. Correctness and predictable UX must supersede the desire for instant, speculative rendering.
+
+5. **gatewayToken scope decision**: Strictly defer the `gatewayToken` migration to a subsequent, separate issue. Bundling it expands the scope unnecessarily and risks breaking the WebSocket flow while you are still stabilizing the HTTP auth flow. Isolate the variables to ensure this migration is rigorously and safely verified.
+
+6. **Migration backout**: If the agent fails to acknowledge the migration, hard-fail and require a new login. Silently falling back to the legacy shell store creates a split-brain scenario where the agent and shell disagree on the source of truth. Failing visibly guarantees consistency and prevents subtle, long-tail data synchronization bugs.
+
+## Additional concerns
+
+- **Missing PKCE**: The design mentions OAuth `state` for CSRF but omits PKCE (Proof Key for Code Exchange). For a native desktop application capturing a deep-link callback, standard OAuth 2.0 requires PKCE to prevent malicious local apps from intercepting the `naia://` redirect and stealing the authorization code.
+- **Refresh Token Race Conditions**: While a single-flight mutex is planned for the 401 retry loop, ensure that incoming chat requests properly await the *new* token from the in-flight refresh rather than immediately failing or triggering duplicate refresh requests.
+- **File Read/Write Concurrency**: Atomic writes (via `.tmp` and rename) prevent file corruption, but concurrent reads during a token refresh event must be handled gracefully so they do not read a partially swapped state or miss the new key.
+- **OS Keyring Availability**: On Linux, `libsecret` may not be available on headless or minimal desktop environments, causing keyring operations to fail. Ensure there is explicit error handling or a secure fallback if the OS keyring is locked or inaccessible.

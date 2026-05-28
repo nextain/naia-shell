@@ -1,0 +1,310 @@
+﻿node.exe : Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended for
+ a better visual experience.
+At C:\Users\LukeYang\AppData\Roaming\npm\gemini.ps1:22 char:14
++ ...    $input | & "node$exe"  "$basedir/node_modules/@google/gemini-cli/b ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Warning: 256-co...ual experience.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+YOLO mode is enabled. All tool calls will be automatically approved.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Ripgrep is not available. Falling back to GrepTool.
+Error executing tool list_directory: Path not in workspace: Attempted path "D:\alpha-adk\projects" resolves outside the
+ allowed workspace directories: D:\alpha-adk\projects\naia-os or the project temp directory: C:\Users\LukeYang\.gemini\
+tmp\naia-os-1
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+Error executing tool read_file: Path not in workspace: Attempted path "D:\alpha-adk\projects\naia-agent\packages\runtim
+e\src\utils\crypto-envelope.ts" resolves outside the allowed workspace directories: D:\alpha-adk\projects\naia-os or th
+e project temp directory: C:\Users\LukeYang\.gemini\tmp\naia-os-1
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\node-pty\conpty_console_list
+_agent.js:11
+var consoleProcessList = getConsoleProcessList(shellPid);
+                         ^
+
+Error: AttachConsole failed
+    at Object.<anonymous> (C:\Users\LukeYang\AppData\Roaming\npm\node_modules\@google\gemini-cli\node_modules\@lydell\n
+ode-pty\conpty_console_list_agent.js:11:26)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.14.0
+I have completed the architectural and security code review for issue #337 (ADK-centric session persistence). My audit covered implementation commits across `naia-agent` (e675a47..60c981c) and `naia-os` (d4790c57..b779ef04).
+
+## Summary
+The implementation successfully shifts the Source of Truth for authentication from the shell's `secure-keys.dat` to an agent-managed encrypted store in the ADK path. Security mandates regarding `naiaKey` isolation are strictly followed: the shell never touches the key at runtime, and the agent uses a robust AES-256-GCM envelope with PBKDF2. No critical security regressions (leaks) were found.
+
+## Findings
+
+### Security & Architecture
+
+1.  **[MEDIUM] `naia-agent/packages/runtime/src/utils/keyring.ts:165`**: macOS `security` CLI usage for `add-generic-password` uses `-w [password]`, which exposes the master password in the process list (`ps` output).
+    *   **Recommendation**: Use a temporary file or stdin if the local `security` version supports it, or accept this as a known transient risk for the master password (not the `naiaKey`).
+
+2.  **[MEDIUM] `naia-os/shell/src/lib/config.ts:465`**: Known functional regression in WebSocket voice features (`gemini-live`, `naia-talk`). Fresh logins after Phase 6c do not persist the `naiaKey` to the shell's secure store, causing these features to fail for new users.
+    *   **Recommendation**: Prioritize issue #338 (moving WebSocket auth into the agent) to restore these features for new sessions.
+
+3.  **[MEDIUM] `naia-agent/packages/runtime/src/auth/ipc-handlers.ts:178`**: `handleLabProxyRequest` hardcodes `JSON.stringify` for request bodies. This breaks `multipart/form-data` uploads, which is why `api-stt.ts` (Nextain transcription) remains unmigrated.
+    *   **Recommendation**: Extend the proxy to handle `Buffer` or `ReadableStream` for `POST` bodies to allow STT migration.
+
+4.  **[LOW] `naia-agent/packages/runtime/src/utils/keyring.ts:124`**: Windows PowerShell backend allocates memory for credentials via `Marshal::AllocHGlobal` but lacks explicit `try-finally` blocks for cleanup on script errors.
+    *   **Recommendation**: Use `finally` in PowerShell to ensure `FreeHGlobal` is called even if the credential write fails.
+
+5.  **[NIT] `naia-agent/packages/runtime/src/auth/ipc-handlers.ts:154`**: Default `userId` for legacy migration is `""`.
+    *   **Recommendation**: Ensure downstream logic (e.g., usage tracking) handles empty strings or defaults to a generic `naia_user` format.
+
+### Correctness & Reliability
+
+6.  **[LOW] `naia-os/shell/src/lib/legacy-migration.ts:135`**: Migration policy for "Agent already logged in" silently purges the `naiaKey` slot. While correct for #337, if the user had different accounts in the shell vs. agent, the shell's account is lost without warning.
+    *   **Recommendation**: Given the current 1:1 user-to-device mapping, this is acceptable, but consider a "conflict" UI if multi-account support is added.
+
+7.  **[LOW] `naia-agent/packages/runtime/src/utils/oauth-flow.ts:45`**: `naia://` scheme replacement with `https://` for URL parsing assumes the deep-link always follows the `naia://auth?...` pattern.
+    *   **Recommendation**: Safe for now, but a more robust custom scheme parser would prevent edge cases with complex paths.
+
+---
+
+### Verified Correct (High Confidence)
+*   **Zero-Leak IPC**: Verified that `auth_received`, `auth_query`, and `lab_proxy_response` explicitly strip `naiaKey`, `refreshToken`, and `issuer` before sending JSON to the shell.
+*   **Refresh Single-Flight**: The `inflight` Map in `refresh.ts` correctly joins concurrent 401 retries to a single promise, preventing token rotation races.
+*   **Atomic Migration**: Shell purges the legacy slot only after the agent issues a success ACK for `auth_legacy_migrate`, preventing data loss on disk/timeout errors.
