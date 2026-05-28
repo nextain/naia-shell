@@ -78,9 +78,9 @@ export interface CredsPayload {
 /**
  * Push all per-session credentials to the agent (#260 follow-up).
  *
- * Same one-shot pattern as sendAuthUpdate / sendNotifyConfig. Called at
- * startup and on every settings save. Agent caches per-provider; chat /
- * tool / tts request paths no longer carry credentials at all.
+ * Same one-shot pattern as sendNotifyConfig. Called at startup and on every
+ * settings save. Agent caches per-provider; chat / tool / tts request paths
+ * no longer carry credentials at all.
  *
  * Empty string for any entry clears the agent-side cached value (explicit
  * unset when the user removes a key from settings).
@@ -430,12 +430,11 @@ export async function sendPanelToolResult(
 	});
 }
 
-/** Send naiaKey to the agent (backend). Call on login and on app init if key exists. */
-export async function sendAuthUpdate(naiaKey: string): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({ type: "auth_update", naiaKey }),
-	});
-}
+// #337 Phase 6c — sendAuthUpdate removed. Auth flow is now agent → ADK
+// encrypted file via the agentAuthReceived IPC (see shell/src/lib/agent-ipc.ts).
+// The agent no longer accepts auth_update from the shell; the naia_auth_complete
+// listener forwards the raw deep-link URL straight to the agent for state
+// validation + encrypted persistence.
 
 /** Request the agent to pre-download an offline embedding model. */
 export async function sendEmbeddingPrefetch(

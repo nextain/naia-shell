@@ -224,13 +224,9 @@ describe("chat-service", () => {
 		expect(parsed.provider?.naiaKey).toBeUndefined();
 	});
 
-	it("sendAuthUpdate sends auth_update message to agent", async () => {
-		const { sendAuthUpdate } = await import("../chat-service");
-		await sendAuthUpdate("gw-test-key");
-		expect(mockInvoke).toHaveBeenCalledWith("send_to_agent_command", {
-			message: JSON.stringify({ type: "auth_update", naiaKey: "gw-test-key" }),
-		});
-	});
+	// #337 Phase 6c — `sendAuthUpdate` was removed from chat-service.ts.
+	// Auth flow is now agent → ADK encrypted file via `agentAuthReceived`.
+	// (No replacement test here — coverage moves to agent-ipc.test.ts.)
 
 	it("requestTts does NOT include naiaKey in tts_request payload", async () => {
 		const { requestTts } = await import("../chat-service");

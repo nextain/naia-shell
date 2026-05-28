@@ -27,8 +27,11 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 	open: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("../../lib/chat-service", () => ({
-	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
+// #337 Phase 6c — chat-service no longer exports sendAuthUpdate; the test
+// no longer needs to mock anything from this module. agent-ipc handles the
+// post-login forwarding now.
+vi.mock("../../lib/agent-ipc", () => ({
+	agentAuthReceived: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // Mock getLocale to return "ko" so Korean strings are used

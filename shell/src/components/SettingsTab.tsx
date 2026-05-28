@@ -28,7 +28,6 @@ import {
 import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	directToolCall,
-	sendAuthUpdate,
 	sendConfigUpdate,
 	sendCredsUpdate,
 	sendFactoryReset,
@@ -39,13 +38,11 @@ import {
 	DEFAULT_OLLAMA_HOST,
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
-	type AppConfig,
 	type SttProviderId,
 	type ThemeId,
 	type TtsProviderId,
 	clearAllowedTools,
 	loadConfig,
-	loadConfigWithSecrets,
 	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
@@ -88,7 +85,8 @@ import {
 	FORMALITY_LOCALES,
 	buildSystemPrompt,
 } from "../lib/persona";
-import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
+// #337 Phase 6c — secure-store naiaKey writes/deletes removed; the agent owns
+// the auth file (<ADK>/naia-settings/auth/{mode}.json.enc).
 import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
 import type { ProviderId } from "../lib/types";
@@ -99,32 +97,9 @@ import { usePanelStore } from "../stores/panel";
 
 const LLM_PROVIDERS = listLlmProviders();
 
-function buildNaiaLoginConfig(
-	current: AppConfig | null,
-	nextNaiaKey: string,
-	nextNaiaUserId: string,
-): AppConfig {
-	const nextModel =
-		current?.provider === "nextain" && current.model
-			? current.model
-			: getDefaultLlmModel("nextain");
-	const base: AppConfig = current ?? {
-		provider: "nextain",
-		model: nextModel,
-		apiKey: "",
-		locale: getLocale(),
-	};
-
-	return {
-		...base,
-		provider: "nextain",
-		model: nextModel,
-		apiKey: "",
-		naiaKey: nextNaiaKey,
-		naiaUserId: nextNaiaUserId || undefined,
-		voice: base.voice ?? getDefaultVoiceForAvatar(base.vrmModel),
-	};
-}
+// #337 Phase 6c — `buildNaiaLoginConfig` removed. The login completion
+// handler in SettingsTab inlines the localStorage write (provider/userId
+// only) since `naiaKey` itself now lives in the agent's encrypted auth file.
 const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
 
@@ -253,12 +228,8 @@ const LOCALES: { id: Locale; label: string }[] = [
 	{ id: "vi", label: "Tiếng Việt" },
 ];
 
-function getNaiaWebBaseUrl() {
-	return (
-		import.meta.env.VITE_NAIA_WEB_BASE_URL?.trim() ||
-		(import.meta.env.DEV ? "http://localhost:3001" : "https://naia.nextain.io")
-	);
-}
+// #337 Phase 6c — `getNaiaWebBaseUrl` removed: the agent owns OAuth URL
+// composition (see startLabLogin's call to agentAuthStart).
 
 interface DeviceNode {
 	nodeId: string;
@@ -574,8 +545,10 @@ function DeviceSelect({
 
 /**
  * #337 Phase 6a — tri-state auth badge. Renders a single status pill near the
- * Naia auth section. Source of truth = agent (via useAuthStatus). This is
- * additive: legacy `naiaKey`-derived UI gating is untouched in this phase.
+ * Naia auth section. Source of truth = agent (via useAuthStatus).
+ *
+ * Phase 6c: this is now the sole UI gating signal — the legacy
+ * `naiaKey`-derived state was removed.
  */
 function AuthStatusBadge() {
 	const snapshot = useAuthStatus();
@@ -861,8 +834,15 @@ export function SettingsTab() {
 	const [allowedToolsCount, setAllowedToolsCount] = useState(
 		existing?.allowedTools?.length ?? 0,
 	);
-	const [naiaKey, setNaiaKeyState] = useState(existing?.naiaKey ?? "");
-	const [naiaUserId, setNaiaUserIdState] = useState(existing?.naiaUserId ?? "");
+	// #337 Phase 6c — auth state is sourced from the agent (useAuthStatus).
+	// Shell no longer reads `naiaKey` from secure-keys.dat for UI gating; we
+	// derive `isLoggedIn` from the tri-state badge snapshot and surface the
+	// user-id (a non-secret display value still tracked locally).
+	const authStatus = useAuthStatus();
+	const isLoggedIn = authStatus.status === "logged_in";
+	const [naiaUserId, setNaiaUserIdState] = useState(
+		existing?.naiaUserId ?? authStatus.userId ?? "",
+	);
 	const [sttModelModalOpen, setSttModelModalOpen] = useState(false);
 	const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 	const [syncDialogOnlineConfig, setSyncDialogOnlineConfig] = useState<Record<
@@ -1293,23 +1273,29 @@ export function SettingsTab() {
 		audio.onended = () => URL.revokeObjectURL(url);
 	}
 
+	// #337 Phase 6c — `naiaKey` is no longer read from secure-keys.dat. The
+	// agent is the SoT and the auth status badge (useAuthStatus) drives UI
+	// gating. We still hydrate `naiaUserId` from localStorage so the user-id
+	// label renders before the first agent_query response arrives, and
+	// snap the provider/model to nextain when the user is logged in.
 	useEffect(() => {
-		let cancelled = false;
-		loadConfigWithSecrets()
-			.then((cfg) => {
-				if (cancelled || !cfg?.naiaKey) return;
-				setNaiaKeyState(cfg.naiaKey);
-				setNaiaUserIdState(cfg.naiaUserId ?? "");
-				if (cfg.provider === "nextain") {
-					setProvider("nextain");
-					setModel(cfg.model || getDefaultLlmModel("nextain"));
-				}
-			})
-			.catch(() => {});
-		return () => {
-			cancelled = true;
-		};
+		const cfg = loadConfig();
+		if (!cfg) return;
+		if (cfg.naiaUserId) setNaiaUserIdState(cfg.naiaUserId);
+		if (cfg.provider === "nextain") {
+			setProvider("nextain");
+			setModel(cfg.model || getDefaultLlmModel("nextain"));
+		}
 	}, []);
+
+	// Keep the user-id label in sync once the agent answers `auth_query` (the
+	// snapshot updates asynchronously after mount).
+	useEffect(() => {
+		if (authStatus.userId && authStatus.userId !== naiaUserId) {
+			setNaiaUserIdState(authStatus.userId);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [authStatus.userId]);
 	const [labWaiting, setLabWaiting] = useState(false);
 	const [labBalance, setLabBalance] = useState<number | null>(null);
 	const [labBalanceLoading, setLabBalanceLoading] = useState(false);
@@ -1319,51 +1305,25 @@ export function SettingsTab() {
 		setLabWaiting(true);
 		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
 		try {
-			// #337 Phase 5b — delegate state-token generation + URL composition to
-			// the agent. The legacy Rust `generate_oauth_state` command is retained
-			// for the fallback path below (and for the legacy secure-keys.dat
-			// listener, removed in Phase 6).
+			// #337 Phase 6c — agent is the SoT for OAuth state + URL composition.
+			// The legacy pre-#337 shell-side fallback (Rust `generate_oauth_state`
+			// + manual URL build) is removed: if the agent is unavailable the
+			// login fails fast with a clear error rather than silently routing
+			// through the deprecated path that would re-introduce shell-held key.
 			const mode = resolveAuthMode();
-			try {
-				const { authUrl } = await agentAuthStart({
-					mode,
-					locale: locale,
-				});
-				Logger.info("SettingsTab", "[lab-login] opening system browser (agent)", {
-					mode,
-				});
-				await openUrl(authUrl);
-				return;
-			} catch (agentErr: unknown) {
-				Logger.warn(
-					"SettingsTab",
-					"[lab-login] agentAuthStart failed — falling back to legacy URL",
-					{ error: String(agentErr) },
-				);
-			}
-
-			// Fallback: pre-#337 shell-side URL composition. Removed in Phase 6
-			// once the agent path is verified end-to-end.
-			const state = await invoke<string>("generate_oauth_state").catch(() => "");
-			const params = new URLSearchParams({
-				redirect: "desktop",
-				source: "desktop",
+			const { authUrl } = await agentAuthStart({
+				mode,
+				locale: locale,
 			});
-			if (state) params.set("state", state);
-			Logger.info("SettingsTab", "[lab-login] opening system browser (legacy)");
-			await openUrl(
-				`${getNaiaWebBaseUrl()}/${locale}/login?${params.toString()}`,
-			).catch((e: unknown) => {
-				Logger.error("SettingsTab", "[lab-login] openUrl failed", {
-					error: String(e),
-				});
-				window.clearTimeout(timeout);
-				setLabWaiting(false);
+			Logger.info("SettingsTab", "[lab-login] opening system browser", {
+				mode,
 			});
+			await openUrl(authUrl);
 		} catch (e: unknown) {
-			Logger.error("SettingsTab", "[lab-login] unexpected error", {
+			Logger.error("SettingsTab", "[lab-login] failed", {
 				error: String(e),
 			});
+			setError(t("settings.naiaLoginRequired"));
 			window.clearTimeout(timeout);
 			setLabWaiting(false);
 		}
@@ -1434,15 +1394,11 @@ export function SettingsTab() {
 
 	// Fetch Lab balance.
 	//
-	// #337 Phase 6b: routed through agent lab proxy. The `key` parameter is
-	// retained for signature stability (callers still know "is the user
-	// logged in?" via local config) and will be removed in Phase 6c when the
-	// gating switches to `agentAuthQuery`.
-	function fetchLabBalance(key: string) {
-		Logger.debug("SettingsTab", "fetchLabBalance called", {
-			keyPrefix: key.slice(0, 8),
-			keyLength: key.length,
-		});
+	// #337 Phase 6c: routed through agent lab proxy. The shell never holds
+	// the naiaKey — the agent injects X-AnyLLM-Key server-side. UI gating
+	// for "should we even bother fetching?" comes from `useAuthStatus`.
+	function fetchLabBalance() {
+		Logger.debug("SettingsTab", "fetchLabBalance called");
 		setLabBalanceLoading(true);
 		setLabBalanceError(false);
 		agentLabProxyRequest({
@@ -1480,20 +1436,24 @@ export function SettingsTab() {
 			.finally(() => setLabBalanceLoading(false));
 	}
 
-	// Fetch Lab balance when naiaKey is available
+	// Fetch Lab balance when the agent reports a logged-in session.
 	useEffect(() => {
-		if (!naiaKey) return;
-		fetchLabBalance(naiaKey);
-	}, [naiaKey]);
+		if (!isLoggedIn) return;
+		fetchLabBalance();
+	}, [isLoggedIn]);
 
-	// Listen for Lab auth deep-link callback
+	// Listen for Lab auth deep-link callback.
+	//
+	// #337 Phase 6c — the agent receives + persists the naiaKey via
+	// agentAuthReceived (App.tsx forwards the deep-link). This listener is
+	// reduced to UI-state updates (provider/model snap, balance fetch, lab
+	// config diff dialog). The legacy `saveSecretKey("naiaKey", ...)` +
+	// `sendAuthUpdate` + naiaKey-in-localStorage persistence is REMOVED.
 	useEffect(() => {
-		const unlisten = listen<{ naiaKey: string; naiaUserId?: string }>(
+		const unlisten = listen<{ naiaKey?: string; naiaUserId?: string }>(
 			"naia_auth_complete",
 			async (event) => {
-				const nextNaiaKey = event.payload.naiaKey;
 				const nextNaiaUserId = event.payload.naiaUserId ?? "";
-				sendAuthUpdate(nextNaiaKey).catch(() => {});
 
 				// Close Chrome and return to default view if we opened it for login
 				if (labBrowserVisibleRef.current) {
@@ -1501,7 +1461,6 @@ export function SettingsTab() {
 					usePanelStore.getState().setActivePanel(null);
 				}
 
-				setNaiaKeyState(nextNaiaKey);
 				setNaiaUserIdState(nextNaiaUserId);
 				setProvider("nextain");
 				setModel((prev) => prev || getDefaultLlmModel("nextain"));
@@ -1510,23 +1469,36 @@ export function SettingsTab() {
 				setApiKey("");
 				setLabWaiting(false);
 
-				// Fetch balance immediately with the new key
-				fetchLabBalance(nextNaiaKey);
-
-				// Persist to both secure store and localStorage
-				await saveSecretKey("naiaKey", nextNaiaKey);
+				// Persist non-secret provider/user-id selection to localStorage.
+				// `naiaKey` itself is owned by the agent's encrypted auth file —
+				// it is NOT written here.
 				const current = loadConfig();
-				const nextConfig = buildNaiaLoginConfig(
-					current,
-					nextNaiaKey,
-					nextNaiaUserId,
-				);
-				const nextModel = nextConfig.model;
+				const nextModel =
+					current?.provider === "nextain" && current.model
+						? current.model
+						: getDefaultLlmModel("nextain");
+				const nextConfig = {
+					...(current ?? {
+						provider: "nextain" as const,
+						model: nextModel,
+						apiKey: "",
+						locale: getLocale(),
+					}),
+					provider: "nextain" as const,
+					model: nextModel,
+					apiKey: "",
+					naiaUserId: nextNaiaUserId || undefined,
+				};
 				setModel(nextModel);
 				saveConfig(nextConfig);
 				void writeNaiaConfig(nextConfig as unknown as Record<string, unknown>);
 
-				// Sync to Gateway (no API key for Lab proxy)
+				// Fetch balance through the agent lab proxy. The agent has the
+				// naiaKey loaded from its encrypted file by this point.
+				fetchLabBalance();
+
+				// Sync provider/model + prompt to Gateway. No naiaKey is forwarded
+				// from the shell — the agent injects it.
 				const naiaFullPrompt = buildSystemPrompt(nextConfig.persona, {
 					agentName: nextConfig.agentName,
 					userName: nextConfig.userName,
@@ -1551,23 +1523,20 @@ export function SettingsTab() {
 					undefined,
 					undefined,
 					undefined,
-					nextNaiaKey,
+					undefined,
 					nextConfig.ollamaHost,
 				);
 				await restartGateway();
 
 				// Sync linked channels (e.g. Discord) after login
-				// Re-check Discord bot status after sync + gateway restart
 				syncLinkedChannels().then(() => {
 					// setTimeout(() => fetchDiscordBotStatus(), 3000); // Discord unverified
 				});
 
-				// Try Lab pull — show diff dialog if settings differ
+				// Try Lab pull — show diff dialog if settings differ. The agent
+				// authenticates the fetch; the `naiaKey` parameter is ignored.
 				if (nextNaiaUserId) {
-					const onlineConfig = await fetchLabConfig(
-						nextNaiaKey,
-						nextNaiaUserId,
-					);
+					const onlineConfig = await fetchLabConfig("", nextNaiaUserId);
 					if (onlineConfig) {
 						const diffs = diffConfigs(nextConfig, onlineConfig);
 						if (diffs.length > 0) {
@@ -1659,7 +1628,7 @@ export function SettingsTab() {
 			setModel(getDefaultLlmModel(id));
 		}
 		setError("");
-		if (id === "nextain" && !naiaKey) {
+		if (id === "nextain" && !isLoggedIn) {
 			setError(t("settings.naiaLoginRequired"));
 		}
 	}
@@ -1710,8 +1679,12 @@ export function SettingsTab() {
 		labSyncTimerRef.current = setTimeout(() => {
 			const cfg = loadConfig();
 			if (!cfg) return;
-			if (naiaKey && naiaUserId) pushConfigToLab(naiaKey, naiaUserId, cfg);
-			// Also sync TTS settings to Gateway config
+			// #337 Phase 6c — pushConfigToLab routes through agentLabProxyRequest;
+			// the naiaKey argument is ignored. We still gate on the local
+			// userId presence + agent-reported login state.
+			if (isLoggedIn && naiaUserId) pushConfigToLab("", naiaUserId, cfg);
+			// Also sync TTS settings to Gateway config. The naiaKey argument
+			// to syncToGateway is no longer forwarded — the agent handles auth.
 			syncToGateway(
 				cfg.provider,
 				cfg.model,
@@ -1727,7 +1700,7 @@ export function SettingsTab() {
 				undefined,
 				undefined,
 				undefined,
-				naiaKey || undefined,
+				undefined,
 			);
 		}, 2000);
 	}
@@ -1793,10 +1766,9 @@ export function SettingsTab() {
 				const fullVoice = `ko-KR-Chirp3-HD-${voiceName}`;
 				const previewText = getPreviewText();
 
-				if (naiaKey) {
-					// #337 Phase 6b: voice preview routed through agent lab proxy.
-					// The `naiaKey` precondition above stays as a "logged in?"
-					// gate until Phase 6c switches it to agentAuthQuery.
+				if (isLoggedIn) {
+					// #337 Phase 6c: voice preview routed through agent lab proxy.
+					// Gate uses tri-state auth status — no shell-side key read.
 					const resp = await agentLabProxyRequest({
 						mode: resolveAuthMode(),
 						method: "POST",
@@ -1869,9 +1841,8 @@ export function SettingsTab() {
 				} else if (selectedProvider === "google" && gatewayTtsApiKey) {
 					previewArgs.apiKey = gatewayTtsApiKey;
 				}
-				if (selectedProvider === "nextain" && naiaKey) {
-					previewArgs.naiaKey = naiaKey;
-				}
+				// #337 Phase 6c — `naiaKey` no longer forwarded; the agent has it
+				// cached from its encrypted auth file and injects it server-side.
 				const result = await directToolCall({
 					toolName: "skill_tts",
 					args: previewArgs,
@@ -2029,7 +2000,7 @@ export function SettingsTab() {
 		// Keep previous key when input is empty (password field UX).
 		const resolvedApiKey = apiKey.trim() || existing?.apiKey || "";
 		const isNextainProvider = provider === "nextain";
-		if (isNextainProvider && !naiaKey) {
+		if (isNextainProvider && !isLoggedIn) {
 			setError(t("settings.naiaLoginSave"));
 			return;
 		}
@@ -2037,7 +2008,7 @@ export function SettingsTab() {
 			!isNextainProvider &&
 			!isApiKeyOptional(provider) &&
 			!resolvedApiKey &&
-			!naiaKey
+			!isLoggedIn
 		) {
 			setError(t("settings.apiKeyRequired"));
 			return;
@@ -2052,7 +2023,10 @@ export function SettingsTab() {
 			model,
 			apiKey:
 				isNextainProvider || isApiKeyOptional(provider) ? "" : resolvedApiKey,
-			naiaKey: naiaKey || undefined,
+			// #337 Phase 6c — the legacy `naiaKey` localStorage field is preserved
+			// verbatim from the previously-loaded config so Phase 8 migration can
+			// still see it. Never write or refresh it from shell-side state.
+			naiaKey: existing?.naiaKey,
 			naiaUserId: naiaUserId || undefined,
 			locale,
 			theme,
@@ -2151,7 +2125,7 @@ export function SettingsTab() {
 		saveConfig(newConfig);
 		// Also persist to naia-settings/config.json so ADK reload restores the same settings
 		void writeNaiaConfig(newConfig as unknown as Record<string, unknown>);
-		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
+		// #337 Phase 6c — `saveSecretKey("naiaKey", ...)` REMOVED. Agent owns it.
 		// Push webhook URLs + Discord defaults to the agent (#260). Replaces
 		// per-chat_request webhook field transmission with a one-shot config
 		// update so credentials don't appear in every stdio frame.
@@ -2224,14 +2198,16 @@ export function SettingsTab() {
 			undefined,
 			undefined,
 			undefined,
-			naiaKey || undefined,
+			// #337 Phase 6c — naiaKey no longer forwarded; agent injects auth.
+			undefined,
 			newConfig.ollamaHost || undefined,
 			memorySyncParams,
 		).then(() => restartGateway());
 
-		// Auto-sync to Lab if connected
-		if (naiaKey && naiaUserId) {
-			pushConfigToLab(naiaKey, naiaUserId, newConfig);
+		// Auto-sync to Lab if connected. #337 Phase 6c: agent authenticates the
+		// fetch; the first parameter is ignored.
+		if (isLoggedIn && naiaUserId) {
+			pushConfigToLab("", naiaUserId, newConfig);
 		}
 	}
 
@@ -2647,7 +2623,7 @@ export function SettingsTab() {
 				)}
 
 			{/* Naia login button — shown when nextain selected and not logged in */}
-			{provider === "nextain" && !naiaKey && (
+			{provider === "nextain" && !isLoggedIn && (
 				<div className="settings-field">
 				<label>{t("settings.naiaAccount")}</label>
 				{/* #337 Phase 6a — tri-state badge sourced from agent. Additive. */}
@@ -2670,7 +2646,7 @@ export function SettingsTab() {
 			)}
 
 			{/* Naia logged in indicator */}
-			{provider === "nextain" && naiaKey && (
+			{provider === "nextain" && isLoggedIn && (
 				<div className="settings-field">
 					<label>{t("settings.naiaAccount")}</label>
 					{/* #337 Phase 6a — tri-state badge sourced from agent. Additive. */}
@@ -2908,11 +2884,11 @@ export function SettingsTab() {
 										<option
 											key={p.id}
 											value={p.id}
-											disabled={p.requiresNaiaKey && !naiaKey}
+											disabled={p.requiresNaiaKey && !isLoggedIn}
 										>
 											{p.name}
 											{p.pricing ? ` - ${p.pricing}` : ""}
-											{p.requiresNaiaKey && !naiaKey
+											{p.requiresNaiaKey && !isLoggedIn
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
 										</option>
@@ -2920,7 +2896,7 @@ export function SettingsTab() {
 								</select>
 							</div>
 							{/* Naia Cloud STT — backend engine selector */}
-							{sttProvider === "nextain" && naiaKey && (
+							{sttProvider === "nextain" && isLoggedIn && (
 								<div className="settings-field">
 									<label>{t("settings.naiaCloudBackend")}</label>
 									<select
@@ -2942,7 +2918,7 @@ export function SettingsTab() {
 								const sttMeta = listSttProviders().find(
 									(p) => p.id === sttProvider,
 								);
-								if (sttMeta?.requiresNaiaKey && !naiaKey) {
+								if (sttMeta?.requiresNaiaKey && !isLoggedIn) {
 									return (
 										<div className="settings-field">
 											<span className="settings-hint">
@@ -3119,11 +3095,11 @@ export function SettingsTab() {
 								<option
 									key={p.id}
 									value={p.id}
-									disabled={p.requiresNaiaKey && !naiaKey}
+									disabled={p.requiresNaiaKey && !isLoggedIn}
 								>
 									{p.name}
 									{p.pricing ? ` - ${p.pricing}` : ""}
-									{p.requiresNaiaKey && !naiaKey
+									{p.requiresNaiaKey && !isLoggedIn
 										? ` (${t("settings.ttsNaiaRequired")})`
 										: ""}
 								</option>
@@ -3131,7 +3107,7 @@ export function SettingsTab() {
 						</select>
 					</div>
 					{/* Naia Cloud TTS — backend engine selector */}
-					{ttsProvider === "nextain" && naiaKey && (
+					{ttsProvider === "nextain" && isLoggedIn && (
 						<div className="settings-field">
 							<label>{t("settings.naiaCloudBackend")}</label>
 							<select
@@ -3194,7 +3170,7 @@ export function SettingsTab() {
 								</div>
 							);
 						}
-						if (providerMeta?.requiresNaiaKey && !naiaKey) {
+						if (providerMeta?.requiresNaiaKey && !isLoggedIn) {
 							return (
 								<div className="settings-field">
 									<span className="settings-hint">
@@ -3796,7 +3772,7 @@ export function SettingsTab() {
 					{memoryEmbeddingProvider === "naia" && (
 						<div className="settings-field">
 							<span className="settings-hint">
-								{naiaKey
+								{isLoggedIn
 									? `✓ ${t("settings.memoryNaiaConnected")}`
 									: `⚠ ${t("settings.memoryNaiaRequired")}`}
 							</span>
@@ -3871,7 +3847,7 @@ export function SettingsTab() {
 					{memoryLlmProvider === "naia" && (
 						<div className="settings-field">
 							<span className="settings-hint">
-								{naiaKey
+								{isLoggedIn
 									? `✓ ${t("settings.memoryNaiaConnected")}`
 									: `⚠ ${t("settings.memoryNaiaRequired")}`}
 							</span>
@@ -4180,11 +4156,11 @@ export function SettingsTab() {
 
 			<div className="settings-field">
 				<label>
-					{naiaKey
+					{isLoggedIn
 						? t("settings.labConnected")
 						: t("settings.labDisconnected")}
 				</label>
-				{naiaKey ? (
+				{isLoggedIn ? (
 					<div className="lab-info-block">
 						{naiaUserId && (
 							<span className="lab-user-id">{naiaUserId}</span>
@@ -4239,7 +4215,6 @@ export function SettingsTab() {
 											type="button"
 											className="settings-reset-btn"
 											onClick={async () => {
-												setNaiaKeyState("");
 												setNaiaUserIdState("");
 												setLabBalance(null);
 												setProvider("gemini");
@@ -4248,9 +4223,11 @@ export function SettingsTab() {
 												setDiscordDmChannelId("");
 												setDiscordDefaultTarget("");
 												setShowLabDisconnect(false);
-												// #337 Phase 5b — clear agent-side encrypted auth before
-												// the legacy secure-keys.dat slot. Both run for now; Phase 6
-												// removes the deleteSecretKey path.
+												// #337 Phase 6c — the agent is the sole owner of the
+												// encrypted auth file. agentAuthLogout wipes it; the
+												// legacy `deleteSecretKey("naiaKey")` path is REMOVED.
+												// Local UI state clears via the onAgentAuthChanged event
+												// that fires once the agent has wiped its cache.
 												try {
 													await agentAuthLogout(resolveAuthMode());
 												} catch (err) {
@@ -4258,7 +4235,6 @@ export function SettingsTab() {
 														error: String(err),
 													});
 												}
-												await deleteSecretKey("naiaKey");
 												const current = loadConfig();
 												if (current) {
 													saveConfig({
@@ -4280,14 +4256,17 @@ export function SettingsTab() {
 															current.sttProvider === "nextain"
 																? ""
 																: current.sttProvider,
-														naiaKey: undefined,
+														// #337 Phase 6c — the legacy localStorage
+														// `naiaKey` field is left untouched (Phase 8
+														// migration may still read it).
 														naiaUserId: undefined,
 														discordDefaultUserId: undefined,
 														discordDmChannelId: undefined,
 														discordDefaultTarget: undefined,
 													});
 												}
-												// Sync cleared Discord config to Gateway
+												// Sync cleared Discord config to Gateway. The agent
+												// authenticates the call — no naiaKey forwarded.
 												const updated = loadConfig();
 												if (updated) {
 													await syncToGateway(
@@ -4305,7 +4284,7 @@ export function SettingsTab() {
 														updated.ttsVoice,
 														undefined,
 														undefined,
-														undefined, // naiaKey cleared
+														undefined, // #337 Phase 6c — naiaKey not forwarded
 														updated.ollamaHost,
 													);
 													await restartGateway();

@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeAgentKey, writeNaiaConfig } from "../lib/adk-store";
 import { syncToGateway } from "../lib/gateway-sync";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
-import { sendAuthUpdate } from "../lib/chat-service";
+// #337 Phase 6c — sendAuthUpdate removed; agent receives the naiaKey directly
+// via App.tsx's `naia_auth_complete` → agentAuthReceived bridge.
+import { agentAuthReceived } from "../lib/agent-ipc";
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
@@ -227,8 +229,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	// Listen for Naia OAuth callback in provider step.
 	// [] dep — register once. onCompleteRef.current always points to latest prop.
+	//
+	// #337 Phase 6c: the legacy `sendAuthUpdate` + `store_startup_message`
+	// auth-replay path was removed. App.tsx forwards the raw deep-link URL
+	// to the agent via `agentAuthReceived`; the agent owns persistence. The
+	// listener here keeps UI state in sync (naiaLoginDone, complete step).
 	useEffect(() => {
-		const unlisten = listen<NaiaAuthPayload>(
+		const unlisten = listen<NaiaAuthPayload & { deepLinkUrl?: string }>(
 			"naia_auth_complete",
 			(event) => {
 				if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
@@ -239,15 +246,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				setNaiaLoginWaiting(false);
 				setNaiaLoginDone(true);
 				setNaiaAuthPayload(event.payload);
-				// Cache before sending so crash-restart can replay the key.
-				invoke("store_startup_message", {
-					message: JSON.stringify({
-						type: "auth_update",
-						naiaKey: event.payload.naiaKey,
-					}),
-				})
-					.catch(() => {})
-					.then(() => sendAuthUpdate(event.payload.naiaKey).catch(() => {}));
+				// Defensive: also forward to the agent in case App.tsx hasn't
+				// mounted yet (onboarding may complete before main app renders).
+				if (event.payload.deepLinkUrl) {
+					void agentAuthReceived(event.payload.deepLinkUrl).catch(() => {});
+				}
 				// Advance to complete step after Naia login
 				setStep("complete");
 			},

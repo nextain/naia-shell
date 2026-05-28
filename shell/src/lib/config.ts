@@ -350,11 +350,25 @@ export function isReadyToChat(): boolean {
 	return noKeyNeeded || !!config.apiKey || !!config.naiaKey;
 }
 
+/**
+ * @deprecated #337 Phase 6c — naiaKey lives in the agent's encrypted auth file
+ * (<ADK>/naia-settings/auth/{mode}.json.enc) and is read exclusively by the
+ * agent. UI gating consumers should use `useAuthStatus()` from
+ * `auth-status-store.ts` instead of polling localStorage.
+ *
+ * RETAINED ONLY FOR: Phase 8 legacy migration (one-time read of the stale
+ * `naia-config.naiaKey` localStorage value to seed the agent's auth file).
+ * Do not call from new code.
+ */
 export function hasNaiaKey(): boolean {
 	const config = loadConfig();
 	return !!config?.naiaKey;
 }
 
+/**
+ * @deprecated #337 Phase 6c — see {@link hasNaiaKey} JSDoc. Phase 8 legacy
+ * migration only — do not call from new code.
+ */
 export function getNaiaKey(): string | undefined {
 	return loadConfig()?.naiaKey;
 }
@@ -465,12 +479,30 @@ export async function hasApiKeySecure(): Promise<boolean> {
 	return hasApiKey();
 }
 
+/**
+ * @deprecated #337 Phase 6c — the agent is the SoT for `naiaKey`. Shell-side
+ * runtime code must not read this slot; consumers should use
+ * {@link agentAuthQuery} (for boolean "logged in?" gating) or route through
+ * {@link agentLabProxyRequest} (for authenticated HTTP calls).
+ *
+ * RETAINED ONLY FOR:
+ *   - Phase 8 legacy migration (one-time read of the stale `secure-keys.dat`
+ *     slot to seed the agent's encrypted auth file).
+ *   - WebSocket voice auth (gemini-live, naia-talk) until that path is moved
+ *     into the agent — tracked in nextain/naia-os#338.
+ *
+ * Do not add new consumers.
+ */
 export async function getNaiaKeySecure(): Promise<string | undefined> {
 	const secureVal = await getSecretKey("naiaKey");
 	if (secureVal) return secureVal;
 	return getNaiaKey();
 }
 
+/**
+ * @deprecated #337 Phase 6c — see {@link getNaiaKeySecure} JSDoc. Phase 8
+ * legacy migration only.
+ */
 export async function hasNaiaKeySecure(): Promise<boolean> {
 	const key = await getNaiaKeySecure();
 	return !!key;
@@ -479,6 +511,11 @@ export async function hasNaiaKeySecure(): Promise<boolean> {
 /**
  * Migrate labKey/labUserId → naiaKey/naiaUserId.
  * Call once on app startup after migrateSecretsToSecureStore(). Idempotent.
+ *
+ * @deprecated #337 Phase 6c — replaced by Phase 8 secure-keys.dat →
+ * `<ADK>/naia-settings/auth/{mode}.json.enc` migration. This function only
+ * touches the legacy `labKey` → `naiaKey` rename; once Phase 8 lands the
+ * whole shell-side secure-keys.dat slot is purged. Do not call from new code.
  */
 export async function migrateLabKeyToNaiaKey(): Promise<void> {
 	// 1. Secure store: labKey → naiaKey (skip if Tauri not available)

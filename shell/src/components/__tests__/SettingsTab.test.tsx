@@ -41,7 +41,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 import { directToolCall } from "../../lib/chat-service";
 vi.mock("../../lib/chat-service", () => ({
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
-	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
+	// #337 Phase 6c — sendAuthUpdate removed from chat-service; not mocked.
 	sendNotifyConfig: vi.fn().mockResolvedValue(undefined),
 	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
 }));
@@ -141,6 +141,10 @@ describe("SettingsTab", () => {
 	});
 
 	it("persists Naia auth callback even when no config exists yet", async () => {
+		// #337 Phase 6c — the listener no longer writes `naiaKey` to localStorage
+		// (the agent's encrypted auth file is SoT). We still snap provider/model
+		// + persist `naiaUserId` so the UI labels render before agentAuthQuery
+		// resolves.
 		mockInvoke.mockResolvedValue([]);
 		vi.stubGlobal(
 			"fetch",
@@ -167,7 +171,9 @@ describe("SettingsTab", () => {
 		expect(saved.provider).toBe("nextain");
 		expect(saved.model).toBeTruthy();
 		expect(saved.apiKey).toBe("");
-		expect(saved.naiaKey).toBe("gw-test-key");
+		// #337 Phase 6c — naiaKey is owned by the agent's encrypted auth file
+		// and NOT written to localStorage by the shell listener.
+		expect(saved.naiaKey).toBeUndefined();
 		expect(saved.naiaUserId).toBe("user-123");
 	});
 

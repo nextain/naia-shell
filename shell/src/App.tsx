@@ -33,7 +33,6 @@ import {
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
-	sendAuthUpdate,
 	sendCredsUpdate,
 	sendGetConfig,
 	sendNotifyConfig,
@@ -546,11 +545,11 @@ export function App() {
 		const unlisten = listen<{ naiaKey?: string; deepLinkUrl?: string }>(
 			"naia_auth_complete",
 			(event) => {
-				// #337 Phase 5b — forward the raw deep-link URL to the agent so it
-				// can validate state + persist the encrypted auth file. The Rust side
-				// is changed to include `deepLinkUrl` in this payload alongside the
-				// pre-existing parsed fields. Legacy `naiaKey` path is retained until
-				// Phase 6 removes the shell-side secure-keys.dat slot.
+				// #337 Phase 6c — agent is the SoT for auth. We forward the raw
+				// deep-link URL to the agent which validates state + persists the
+				// encrypted auth file. The legacy `sendAuthUpdate` path (shell-held
+				// naiaKey → agent process.env) is removed: auth flow is now
+				// agent → ADK file end-to-end.
 				const rawUrl = event.payload.deepLinkUrl;
 				if (rawUrl) {
 					void agentAuthReceived(rawUrl)
@@ -566,16 +565,6 @@ export function App() {
 								error: String(err),
 							});
 						});
-				}
-
-				const key = event.payload.naiaKey;
-				if (key) {
-					// Cache before sending so crash-restart can replay the key.
-					invoke("store_startup_message", {
-						message: JSON.stringify({ type: "auth_update", naiaKey: key }),
-					})
-						.catch(() => {})
-						.then(() => sendAuthUpdate(key).catch(() => {}));
 				}
 				void syncLinkedChannels();
 			},
@@ -640,14 +629,9 @@ export function App() {
 			const cfg = await loadConfigWithSecrets();
 			if (!cfg || !active) return;
 
-			// auth_update: cache first, then send
-			const naiaKey = cfg.naiaKey;
-			if (naiaKey && active) {
-				await invoke("store_startup_message", {
-					message: JSON.stringify({ type: "auth_update", naiaKey }),
-				}).catch(() => {});
-				if (active) await sendAuthUpdate(naiaKey).catch(() => {});
-			}
+			// #337 Phase 6c: sendAuthUpdate removed — auth flow is now agent → ADK
+			// file. The agent self-restores naiaKey from its encrypted auth file at
+			// boot, so the shell no longer needs to push the key on init.
 
 			if (!active) return;
 

@@ -37,7 +37,17 @@ export async function deleteSecretKey(name: string): Promise<void> {
 	await store.delete(name);
 }
 
-/** Keys that should be stored securely (not in localStorage). */
+/**
+ * Keys that should be stored securely (not in localStorage).
+ *
+ * NOTE (#337 Phase 6c): the `"naiaKey"` entry is RETAINED ONLY for Phase 8
+ * legacy migration (a one-time read of the stale slot to seed the agent's
+ * encrypted auth file). Runtime code MUST NOT call
+ * `(save|get|delete)SecretKey("naiaKey")` directly — the agent is the
+ * source of truth and exposes its state via `agentAuthQuery` /
+ * `agentAuthLogout` / `agentLabProxyRequest`. The entry is removed from this
+ * array as part of Phase 8 wrap-up.
+ */
 export const SECRET_KEYS = [
 	"apiKey",
 	"googleApiKey",
