@@ -9,6 +9,7 @@ import {
 	getAdkPath,
 	setAdkPath,
 } from "../lib/adk-store";
+import { agentAuthReceived } from "../lib/agent-ipc";
 import { getLocale, t, type TranslationKey } from "../lib/i18n";
 import { sendConfigUpdate } from "../lib/chat-service";
 
@@ -134,20 +135,32 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 		}
 	}, [setupStatus]);
 
-	// Listen for Naia auth callback (login mode)
+	// Listen for Naia auth callback (login mode).
+	//
+	// #337 Phase 10-pre cross-review CRITICAL #1: the Rust payload is now
+	// `{deepLinkUrl}` only — no raw key, no user-id. The agent parses the URL
+	// and writes the encrypted ADK auth file. The legacy
+	// `naia-remote-key` / `naia-remote-user-id` localStorage writes and the
+	// `store_startup_message` (auth_update) replay cache are removed: the
+	// agent's own persistence eliminates the need for crash-restart replay
+	// of the key, and `naia-config.naiaKey` is no longer written from here.
 	useEffect(() => {
-		const unlisten = listen<{ naiaKey: string; naiaUserId?: string }>(
+		const unlisten = listen<{ deepLinkUrl?: string }>(
 			"naia_auth_complete",
 			(event) => {
 				const adkPath = path || defaultPath;
 				setLoginWaiting(false);
 				setAdkPath(adkPath);
 				sendConfigUpdate({ config: { NAIA_ADK_PATH: adkPath } }).catch(() => {});
-				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
-				if (event.payload.naiaUserId) {
-					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
+				// Defensive: forward the deep-link URL to the agent in case
+				// App.tsx hasn't mounted yet (setup runs before main shell).
+				if (event.payload.deepLinkUrl) {
+					void agentAuthReceived(event.payload.deepLinkUrl).catch(() => {});
 				}
-				// Mark onboarding complete — Naia login implies an existing account/setup.
+				// Mark onboarding complete — Naia login implies an existing
+				// account/setup. naiaKey + naiaUserId are NOT written to
+				// `naia-config` (agent SoT); userId surfaces later via
+				// `useAuthStatus()` after the agent emits `auth_changed`.
 				const existing = JSON.parse(
 					localStorage.getItem("naia-config") ?? "{}",
 				);
@@ -158,18 +171,9 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 						model: "gemini-2.5-flash",
 						apiKey: "",
 						...existing,
-						naiaKey: event.payload.naiaKey,
-						naiaUserId: event.payload.naiaUserId,
 						onboardingComplete: true,
 					}, adkPath)),
 				);
-				// Cache naiaKey for crash-restart replay before calling onComplete.
-				invoke("store_startup_message", {
-					message: JSON.stringify({
-						type: "auth_update",
-						naiaKey: event.payload.naiaKey,
-					}),
-				}).catch(() => {});
 				onComplete();
 			},
 		);

@@ -34,6 +34,10 @@ import {
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
 	addAllowedTool,
+	// eslint-disable-next-line @typescript-eslint/no-deprecated -- WebSocket voice
+	// paths (naia-talk, gemini-live) still need the raw naiaKey for direct
+	// connections. Tracked for migration to agent-mediated proxy in #338.
+	getNaiaKeySecure,
 	isToolAllowed,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -41,6 +45,7 @@ import {
 	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
+import { useAuthStatus } from "../lib/auth-status-store";
 import { startDiscordRelay, stopDiscordRelay } from "../lib/discord-relay";
 import {
 	discoverAndPersistDiscordDmChannel,
@@ -309,6 +314,11 @@ function sendApprovalResponse(
 export function ChatPanel() {
 	const [input, setInput] = useState("");
 	const [activeTab, setActiveTab] = useState<TabId>("chat");
+	// #337 Phase 10-pre cross-review CRITICAL #2: chat gating now sources its
+	// "logged in?" signal from the tri-state auth status (agent SoT) instead
+	// of reading `config.naiaKey`, which is removed from the generic secret
+	// hydration path.
+	const authStatus = useAuthStatus();
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
@@ -629,7 +639,12 @@ export function ChatPanel() {
 		const store = useChatStore.getState();
 
 		const config = await loadConfigWithSecrets();
-		if (config?.provider === "nextain" && !config?.naiaKey) {
+		// #337 Phase 10-pre cross-review CRITICAL #2: gate on the agent's
+		// authoritative auth status, not on a shell-held `config.naiaKey`. The
+		// agent's encrypted ADK auth file is the SoT; the shell only learns
+		// "logged in or not" via `useAuthStatus()`.
+		const isNaiaLoggedIn = authStatus.status === "logged_in";
+		if (config?.provider === "nextain" && !isNaiaLoggedIn) {
 			useChatStore
 				.getState()
 				.appendStreamChunk(
@@ -642,7 +657,7 @@ export function ChatPanel() {
 		if (
 			!isApiKeyOptional(config?.provider ?? "") &&
 			!config?.apiKey &&
-			!config?.naiaKey
+			!isNaiaLoggedIn
 		) {
 			useChatStore.getState().appendStreamChunk(t("chat.noApiKey"));
 			useChatStore.getState().finishStreaming();
@@ -1270,7 +1285,15 @@ export function ChatPanel() {
 				setVoiceMode("off");
 				return;
 			}
-			const naiaKey = config?.naiaKey;
+			// #337 Phase 10-pre cross-review CRITICAL #2: `loadConfigWithSecrets`
+			// no longer hydrates `naiaKey` (removed from SECRET_KEYS). The
+			// WebSocket voice paths (naia-talk, gemini-live, naia-omni) below
+			// still need the raw key for direct gateway connections — those
+			// callers are tracked for migration to an agent-mediated proxy in
+			// #338. Until then, read the legacy slot directly via the
+			// `getNaiaKeySecure` escape hatch documented in config.ts.
+			// eslint-disable-next-line @typescript-eslint/no-deprecated -- #338
+			const naiaKey = (await getNaiaKeySecure()) ?? undefined;
 			const modelMeta = getLlmModel(config.provider, config.model);
 			const isOmni = isOmniModel(config.provider, config.model ?? "");
 			// ASR mode: STT provider is vllm, or LLM model has "asr" capability,
@@ -1412,8 +1435,12 @@ export function ChatPanel() {
 
 					if (isApiBased) {
 						// API-based STT — browser MediaStream + cloud API
+						// #337 Phase 10-pre cross-review CRITICAL #2: naiaKey now
+						// comes from the legacy slot via `getNaiaKeySecure` (read
+						// once at line ~1296), not from `config.naiaKey`. Tracked
+						// for full agent-proxy migration in #338.
 						const apiKey = sttMeta?.requiresNaiaKey
-							? config.naiaKey
+							? naiaKey
 							: sttMeta?.apiKeyConfigField === "googleApiKey"
 								? config.googleApiKey
 								: sttMeta?.apiKeyConfigField === "elevenlabsApiKey"

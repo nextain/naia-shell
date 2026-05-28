@@ -40,18 +40,17 @@ export async function deleteSecretKey(name: string): Promise<void> {
 /**
  * Keys that should be stored securely (not in localStorage).
  *
- * NOTE (#337 Phase 6c): the `"naiaKey"` entry is RETAINED ONLY for Phase 8
- * legacy migration (a one-time read of the stale slot to seed the agent's
- * encrypted auth file). Runtime code MUST NOT call
- * `(save|get|delete)SecretKey("naiaKey")` directly — the agent is the
- * source of truth and exposes its state via `agentAuthQuery` /
- * `agentAuthLogout` / `agentLabProxyRequest`. The entry is removed from this
- * array as part of Phase 8 wrap-up.
+ * #337 Phase 10-pre cross-review CRITICAL #2: `"naiaKey"` is no longer a
+ * generic secret managed by `loadConfigWithSecrets` / `saveConfigSecure`.
+ * The agent is the SoT and the encrypted ADK auth file is the persistence
+ * layer. Runtime code must drive auth via `agentAuthQuery` /
+ * `agentAuthLogout` / `agentLabProxyRequest`. The legacy migration path
+ * (legacy-migration.ts) still reads/deletes the slot directly via
+ * {@link LEGACY_NAIA_KEY_SLOT} to drain pre-#337 installations.
  */
 export const SECRET_KEYS = [
 	"apiKey",
 	"googleApiKey",
-	"naiaKey",
 	"gatewayToken",
 	"openaiRealtimeApiKey",
 ] as const;
@@ -61,3 +60,11 @@ export type SecretKeyName = (typeof SECRET_KEYS)[number];
 export function isSecretKey(key: string): key is SecretKeyName {
 	return (SECRET_KEYS as readonly string[]).includes(key);
 }
+
+/**
+ * Legacy `secure-keys.dat` slot for the pre-#337 `naiaKey`. Deliberately NOT a
+ * member of {@link SECRET_KEYS} — generic hydrate/persist must not touch it.
+ * Phase 8 (legacy-migration.ts) is the only consumer: it reads this slot once
+ * to seed the agent's encrypted auth file then deletes it.
+ */
+export const LEGACY_NAIA_KEY_SLOT = "naiaKey";

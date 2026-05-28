@@ -60,6 +60,13 @@ vi.mock("../../lib/agent-ipc", () => ({
 		.fn()
 		.mockResolvedValue({ authUrl: "https://example.test/auth", state: "s" }),
 	agentAuthLogout: vi.fn().mockResolvedValue(undefined),
+	// #337 Phase 10-pre cross-review CRITICAL #1: SettingsTab now asks the
+	// agent for the userId via agentAuthQuery after a deep-link arrives
+	// (Rust payload no longer carries naiaUserId).
+	agentAuthQuery: vi.fn().mockResolvedValue({
+		loggedIn: true,
+		userId: "user-123",
+	}),
 	agentLabProxyRequest: vi.fn().mockResolvedValue({
 		ok: true,
 		status: 200,
@@ -141,10 +148,11 @@ describe("SettingsTab", () => {
 	});
 
 	it("persists Naia auth callback even when no config exists yet", async () => {
-		// #337 Phase 6c — the listener no longer writes `naiaKey` to localStorage
-		// (the agent's encrypted auth file is SoT). We still snap provider/model
-		// + persist `naiaUserId` so the UI labels render before agentAuthQuery
-		// resolves.
+		// #337 Phase 10-pre cross-review CRITICAL #1: the Rust payload is now
+		// `{deepLinkUrl}` only. SettingsTab pulls userId via agentAuthQuery
+		// (mocked to return `user-123` above). The listener snaps
+		// provider/model + writes naiaUserId so the UI labels render before
+		// the auth-status-store flips.
 		mockInvoke.mockResolvedValue([]);
 		vi.stubGlobal(
 			"fetch",
@@ -163,7 +171,7 @@ describe("SettingsTab", () => {
 
 		await act(async () => {
 			await eventListeners.get("naia_auth_complete")?.({
-				payload: { naiaKey: "gw-test-key", naiaUserId: "user-123" },
+				payload: { deepLinkUrl: "naia://auth?key=gw-test-key&user_id=user-123" },
 			});
 		});
 
@@ -171,9 +179,11 @@ describe("SettingsTab", () => {
 		expect(saved.provider).toBe("nextain");
 		expect(saved.model).toBeTruthy();
 		expect(saved.apiKey).toBe("");
-		// #337 Phase 6c — naiaKey is owned by the agent's encrypted auth file
-		// and NOT written to localStorage by the shell listener.
+		// #337 Phase 10-pre — naiaKey is owned by the agent's encrypted auth
+		// file and NOT written to localStorage by the shell listener.
 		expect(saved.naiaKey).toBeUndefined();
+		// userId is resolved via the mocked agentAuthQuery (returning
+		// "user-123") and persisted as a non-secret UI-state field.
 		expect(saved.naiaUserId).toBe("user-123");
 	});
 

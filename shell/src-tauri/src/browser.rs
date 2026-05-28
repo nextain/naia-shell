@@ -175,8 +175,18 @@ fn spawn_chrome_monitor(app: AppHandle, pid: u32, port: u16) {
     });
 }
 
-/// Parse `key` and `user_id` from the CDP /json/list response body.
-/// Returns `None` if the auth-complete URL is not found or has no key.
+/// Parse the CDP /json/list response body looking for a `/desktop/auth-complete`
+/// tab and synthesize a `naia://auth?...` deep-link URL from its query string.
+///
+/// #337 Phase 10-pre cross-review CRITICAL #1: this function previously
+/// returned `{naiaKey, naiaUserId}` for the frontend to consume directly. The
+/// shell must never see the raw `naiaKey`. We now return the same shape the
+/// system-browser deep-link path emits — a single `deepLinkUrl` string — so
+/// the frontend can forward verbatim to the agent's `auth_received` handler,
+/// which is the SoT for key persistence.
+///
+/// Returns `None` if no auth-complete tab is found, the host is not a trusted
+/// Naia origin, or no `key=` query parameter is present.
 /// Allowed hosts for auth-complete tab detection.
 /// Only tabs served by the Naia web app may trigger token extraction.
 const AUTH_COMPLETE_HOSTS: &[&str] = &["naia.nextain.io", "localhost", "127.0.0.1"];
@@ -207,14 +217,25 @@ fn parse_auth_complete_from_tab_list(body: &str) -> Option<serde_json::Value> {
         if key.is_empty() {
             continue;
         }
-        let user_id = parsed
+        // Synthesize a `naia://auth?...` deep-link URL preserving every query
+        // pair the portal sent (key, user_id, state, etc.). The agent parses
+        // this exactly like the system-browser deep-link path so the CSRF
+        // state-token check + persistence flow stays identical.
+        let mut synthesized = String::from("naia://auth");
+        let pairs: Vec<(String, String)> = parsed
             .query_pairs()
-            .find(|(k, _)| k == "user_id")
-            .map(|(_, v)| v.into_owned())
-            .unwrap_or_default();
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        if !pairs.is_empty() {
+            synthesized.push('?');
+            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+            for (k, v) in &pairs {
+                serializer.append_pair(k, v);
+            }
+            synthesized.push_str(&serializer.finish());
+        }
         return Some(serde_json::json!({
-            "naiaKey": key,
-            "naiaUserId": user_id,
+            "deepLinkUrl": synthesized,
         }));
     }
     None
@@ -1511,16 +1532,20 @@ mod tests {
             "https://naia.nextain.io/desktop/auth-complete?key=gw-abc123&user_id=user-42",
         );
         let result = parse_auth_complete_from_tab_list(&body).unwrap();
-        assert_eq!(result["naiaKey"], "gw-abc123");
-        assert_eq!(result["naiaUserId"], "user-42");
+        let deep_link = result["deepLinkUrl"].as_str().unwrap();
+        assert!(deep_link.starts_with("naia://auth?"));
+        assert!(deep_link.contains("key=gw-abc123"));
+        assert!(deep_link.contains("user_id=user-42"));
     }
 
     #[test]
     fn parses_key_without_user_id() {
         let body = make_tab_list("https://naia.nextain.io/desktop/auth-complete?key=gw-xyz");
         let result = parse_auth_complete_from_tab_list(&body).unwrap();
-        assert_eq!(result["naiaKey"], "gw-xyz");
-        assert_eq!(result["naiaUserId"], "");
+        let deep_link = result["deepLinkUrl"].as_str().unwrap();
+        assert!(deep_link.starts_with("naia://auth?"));
+        assert!(deep_link.contains("key=gw-xyz"));
+        assert!(!deep_link.contains("user_id="));
     }
 
     #[test]
@@ -1557,8 +1582,9 @@ mod tests {
 			]"#
         );
         let result = parse_auth_complete_from_tab_list(&body).unwrap();
-        assert_eq!(result["naiaKey"], "gw-multi");
-        assert_eq!(result["naiaUserId"], "u-99");
+        let deep_link = result["deepLinkUrl"].as_str().unwrap();
+        assert!(deep_link.contains("key=gw-multi"));
+        assert!(deep_link.contains("user_id=u-99"));
     }
 
     #[test]
@@ -1568,6 +1594,24 @@ mod tests {
 			{"id":"2","title":"Login Successful","type":"page","url":"https://naia.nextain.io/desktop/auth-complete?key=gw-sw&user_id=u-sw"}
 		]"#;
         let result = parse_auth_complete_from_tab_list(body).unwrap();
-        assert_eq!(result["naiaKey"], "gw-sw");
+        let deep_link = result["deepLinkUrl"].as_str().unwrap();
+        assert!(deep_link.contains("key=gw-sw"));
+    }
+
+    /// #337 Phase 10-pre cross-review CRITICAL #1: ensure the payload no
+    /// longer exposes the raw `naiaKey` or `naiaUserId` to the frontend.
+    /// The agent is the sole consumer of the deep-link URL.
+    #[test]
+    fn payload_never_includes_raw_key_or_user_id() {
+        let body = make_tab_list(
+            "https://naia.nextain.io/desktop/auth-complete?key=gw-secret&user_id=user-99&state=abc",
+        );
+        let result = parse_auth_complete_from_tab_list(&body).unwrap();
+        assert!(result.get("naiaKey").is_none());
+        assert!(result.get("naiaUserId").is_none());
+        // Only the `deepLinkUrl` field should be present.
+        let obj = result.as_object().unwrap();
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("deepLinkUrl"));
     }
 }

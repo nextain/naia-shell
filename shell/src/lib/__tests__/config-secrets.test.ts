@@ -13,9 +13,13 @@ vi.mock("@tauri-apps/plugin-store", () => {
 	};
 });
 
-import { loadConfigWithSecrets, saveConfig } from "../config";
+import { loadConfigWithSecrets, saveConfig, saveConfigSecure } from "../config";
 
-describe("loadConfigWithSecrets", () => {
+// #337 Phase 10-pre cross-review CRITICAL #2: `naiaKey` is no longer in
+// SECRET_KEYS — generic hydrate (`loadConfigWithSecrets`) and persist
+// (`saveConfigSecure`) skip the slot entirely. These tests pin the new
+// contract so we don't regress back to the dual-SoT design.
+describe("loadConfigWithSecrets — post-#337 naiaKey contract", () => {
 	let mockStore: {
 		get: ReturnType<typeof vi.fn>;
 		set: ReturnType<typeof vi.fn>;
@@ -29,7 +33,7 @@ describe("loadConfigWithSecrets", () => {
 		mockStore = (mod as any).__mockStore;
 	});
 
-	it("returns naiaKey from localStorage when secure store is empty", async () => {
+	it("returns naiaKey from localStorage AppConfig (legacy field still readable)", async () => {
 		saveConfig({
 			provider: "nextain",
 			model: "gemini-2.5-flash",
@@ -39,66 +43,88 @@ describe("loadConfigWithSecrets", () => {
 		mockStore.get.mockResolvedValue(null);
 
 		const config = await loadConfigWithSecrets();
+		// The field is still present on AppConfig and saveConfig still writes
+		// it to localStorage — only the generic secure-store iteration was
+		// removed. (Legacy AppConfig field exists for type-shape compatibility
+		// and is only populated via the explicit lab-auth tests.)
 		expect(config?.naiaKey).toBe("fresh-key-123");
 	});
 
-	it("returns naiaKey from secure store when localStorage is empty", async () => {
+	it("does NOT hydrate naiaKey from the secure store (slot is no longer iterated)", async () => {
 		saveConfig({
 			provider: "nextain",
 			model: "gemini-2.5-flash",
 			apiKey: "",
-			// naiaKey not set (simulates post-migration state)
+			// naiaKey not set
 		});
 		mockStore.get.mockImplementation(async (name: string) =>
 			name === "naiaKey" ? "secure-key-456" : null,
 		);
 
 		const config = await loadConfigWithSecrets();
-		expect(config?.naiaKey).toBe("secure-key-456");
+		// Post-#337: only the agent (via agentAuthQuery/agentLabProxyRequest)
+		// is allowed to surface naiaKey. The shell secure-store slot is
+		// untouched by the generic hydrate path.
+		expect(config?.naiaKey).toBeUndefined();
 	});
 
-	it("prefers localStorage naiaKey over stale secure store value", async () => {
+	it("does NOT issue a generic getSecretKey('naiaKey') during loadConfigWithSecrets", async () => {
 		saveConfig({
 			provider: "nextain",
 			model: "gemini-2.5-flash",
-			apiKey: "",
-			naiaKey: "new-login-key",
+			apiKey: "direct-key",
 		});
-		mockStore.get.mockImplementation(async (name: string) =>
-			name === "naiaKey" ? "old-stale-key" : null,
-		);
-
-		const config = await loadConfigWithSecrets();
-		expect(config?.naiaKey).toBe("new-login-key");
-	});
-
-	it("syncs localStorage naiaKey to secure store when different", async () => {
-		saveConfig({
-			provider: "nextain",
-			model: "gemini-2.5-flash",
-			apiKey: "",
-			naiaKey: "new-login-key",
-		});
-		mockStore.get.mockImplementation(async (name: string) =>
-			name === "naiaKey" ? "old-stale-key" : null,
-		);
+		mockStore.get.mockResolvedValue(null);
 
 		await loadConfigWithSecrets();
-		expect(mockStore.set).toHaveBeenCalledWith("naiaKey", "new-login-key");
+		// SECRET_KEYS still hydrates apiKey/googleApiKey/gatewayToken/
+		// openaiRealtimeApiKey, but never `naiaKey`.
+		const naiaKeyCalls = mockStore.get.mock.calls.filter(
+			(args) => args[0] === "naiaKey",
+		);
+		expect(naiaKeyCalls).toHaveLength(0);
+	});
+});
+
+describe("saveConfigSecure — post-#337 naiaKey contract", () => {
+	let mockStore: {
+		get: ReturnType<typeof vi.fn>;
+		set: ReturnType<typeof vi.fn>;
+		delete: ReturnType<typeof vi.fn>;
+	};
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		localStorage.clear();
+		const mod = await import("@tauri-apps/plugin-store");
+		mockStore = (mod as any).__mockStore;
 	});
 
-	it("does not sync when localStorage and secure store match", async () => {
-		saveConfig({
+	it("does NOT persist naiaKey to the secure store", async () => {
+		// Caller passes naiaKey (e.g. from a pre-#337 codepath that hasn't
+		// been pruned yet) — saveConfigSecure must silently skip the slot.
+		await saveConfigSecure({
 			provider: "nextain",
 			model: "gemini-2.5-flash",
 			apiKey: "",
-			naiaKey: "same-key",
+			naiaKey: "should-never-be-persisted",
 		});
-		mockStore.get.mockImplementation(async (name: string) =>
-			name === "naiaKey" ? "same-key" : null,
-		);
 
-		await loadConfigWithSecrets();
-		expect(mockStore.set).not.toHaveBeenCalledWith("naiaKey", "same-key");
+		const naiaKeySets = mockStore.set.mock.calls.filter(
+			(args) => args[0] === "naiaKey",
+		);
+		expect(naiaKeySets).toHaveLength(0);
+	});
+
+	it("still persists generic secrets (apiKey, googleApiKey, etc.)", async () => {
+		await saveConfigSecure({
+			provider: "gemini",
+			model: "gemini-2.5-flash",
+			apiKey: "real-api-key",
+			googleApiKey: "google-key",
+		});
+
+		expect(mockStore.set).toHaveBeenCalledWith("apiKey", "real-api-key");
+		expect(mockStore.set).toHaveBeenCalledWith("googleApiKey", "google-key");
 	});
 });

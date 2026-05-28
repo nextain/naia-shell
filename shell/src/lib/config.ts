@@ -334,11 +334,20 @@ export function saveConfig(config: AppConfig): void {
 	}
 }
 
+/**
+ * Legacy predicate: "do we have any usable API credential?". The `naiaKey`
+ * branch here is **legacy** — post-#337 the agent owns the naia key and the
+ * shell only learns "logged in?" via `useAuthStatus()`. The `config.naiaKey`
+ * read survives because the field is preserved on AppConfig for legacy
+ * migration / lab-auth tests, but new runtime callers should consult the
+ * tri-state auth store instead of this predicate.
+ */
 export function hasApiKey(): boolean {
 	const config = loadConfig();
 	return !!config?.apiKey || !!config?.naiaKey;
 }
 
+/** See {@link hasApiKey} for the `config.naiaKey` legacy caveat. */
 export function isReadyToChat(): boolean {
 	const config = loadConfig();
 	if (!config) return false;

@@ -215,9 +215,13 @@ describe("OnboardingWizard", () => {
 		expect(loginButton).toBeDefined();
 		fireEvent.click(loginButton!);
 
+		// #337 Phase 10-pre cross-review CRITICAL #1: the Rust payload no
+		// longer carries `naiaKey`/`naiaUserId` — only `deepLinkUrl`. The
+		// agent persists those into the encrypted ADK auth file. The wizard
+		// only needs the arrival signal to advance to the complete step.
 		act(() => {
 			eventListeners.get("naia_auth_complete")?.({
-				payload: { naiaKey: "gw-test-key", naiaUserId: "user-1" },
+				payload: { deepLinkUrl: "naia://auth?key=gw-test-key&user_id=user-1" },
 			});
 		});
 
@@ -226,8 +230,11 @@ describe("OnboardingWizard", () => {
 
 		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(config.onboardingComplete).toBe(true);
-		expect(config.naiaKey).toBe("gw-test-key");
-		expect(config.naiaUserId).toBe("user-1");
+		// Post-#337: naiaKey + naiaUserId must NOT be written to localStorage
+		// by the onboarding wizard. The agent owns both via the encrypted
+		// auth file.
+		expect(config.naiaKey).toBeUndefined();
+		expect(config.naiaUserId).toBeUndefined();
 		expect(config.userName).toBe("Luke");
 		expect(config.agentName).toBe("Mochi");
 		expect(config.workspaceRoot).toBe("D:\\alpha-adk\\projects\\naia-adk");

@@ -1,5 +1,9 @@
 import { emit } from "@tauri-apps/api/event";
-import { agentLabProxyRequest, resolveAuthMode } from "./agent-ipc";
+import {
+	agentAuthQuery,
+	agentLabProxyRequest,
+	resolveAuthMode,
+} from "./agent-ipc";
 import { sendConfigUpdate } from "./chat-service";
 import { loadConfig, saveConfig } from "./config";
 import { openDmChannel } from "./discord-api";
@@ -104,16 +108,36 @@ async function fetchLinkedChannels(
  * 3. Persist to config + sync to Naia Gateway + restart
  */
 export async function syncLinkedChannels(): Promise<void> {
+	// #337 Phase 10-pre cross-review CRITICAL #2: the gate is now "agent
+	// reports logged-in" instead of "shell has naiaKey in localStorage".
+	// The userId still comes from `naia-config.naiaUserId` (UI-state copy
+	// written by SettingsTab.tsx after `agentAuthQuery`), with a fallback
+	// query if it hasn't propagated yet.
+	const mode = resolveAuthMode();
+	let agentLoggedIn = false;
+	let resolvedUserId: string | undefined;
+	try {
+		const queryResult = await agentAuthQuery(mode);
+		agentLoggedIn = queryResult.loggedIn;
+		resolvedUserId = queryResult.userId;
+	} catch (err) {
+		Logger.warn("channel-sync", "agentAuthQuery failed", { error: String(err) });
+	}
+	if (!agentLoggedIn) {
+		Logger.info("channel-sync", "Agent not logged in, skipping channel sync");
+		return;
+	}
 	const config = loadConfig();
-	if (!config?.naiaKey || !config?.naiaUserId) {
-		Logger.info("channel-sync", "No lab credentials, skipping channel sync");
+	const naiaUserId = resolvedUserId || config?.naiaUserId;
+	if (!naiaUserId) {
+		Logger.info("channel-sync", "No userId resolved, skipping channel sync");
 		return;
 	}
 
 	// Always attempt to restore Discord bot token on Lab login
 	await fetchAndRestoreDiscordBotToken();
 
-	const channels = await fetchLinkedChannels(config.naiaUserId);
+	const channels = await fetchLinkedChannels(naiaUserId);
 	if (channels.length === 0) {
 		Logger.info("channel-sync", "No linked channels found");
 		return;
@@ -206,7 +230,10 @@ async function syncGatewayChannels(
 			config.ttsVoice,
 			config.ttsEnabled ? "always" : "off",
 			undefined,
-			config.naiaKey,
+			// #337 Phase 10-pre cross-review CRITICAL #2: shell never sees the
+			// raw `naiaKey`. The gateway-sync wrapper accepts `undefined` here
+			// — the agent injects auth at the actual gateway hop.
+			undefined,
 			config.ollamaHost,
 		);
 		await restartGateway();

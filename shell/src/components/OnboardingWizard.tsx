@@ -8,6 +8,7 @@ import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 // #337 Phase 6c — sendAuthUpdate removed; agent receives the naiaKey directly
 // via App.tsx's `naia_auth_complete` → agentAuthReceived bridge.
 import { agentAuthReceived } from "../lib/agent-ipc";
+import { useAuthStatus } from "../lib/auth-status-store";
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
@@ -71,9 +72,15 @@ interface BgOption {
 	type: "image" | "video" | "";
 }
 
-interface NaiaAuthPayload {
-	naiaKey: string;
-	naiaUserId?: string;
+/**
+ * #337 Phase 10-pre cross-review CRITICAL #1: the Rust `naia_auth_complete`
+ * payload no longer carries the raw key/user-id — only `deepLinkUrl`. The
+ * agent is the SoT for both. This wizard only needs to know "login arrived"
+ * so it can advance to the complete step; the actual persistence happens via
+ * `agentAuthReceived(deepLinkUrl)`.
+ */
+interface NaiaAuthArrival {
+	receivedAt: number;
 }
 
 interface OnboardingSnapshot {
@@ -114,7 +121,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	);
 	const addMessage = useChatStore((s) => s.addMessage);
 
-	const hasNaiaKey = !!localStorage.getItem("naia-remote-key");
+	// #337 Phase 10-pre cross-review CRITICAL #1: the legacy
+	// `localStorage["naia-remote-key"]` flag is gone — the agent is the SoT
+	// for login state. We surface it via the tri-state auth store.
+	const authStatus = useAuthStatus();
+	const hasNaiaKey = authStatus.status === "logged_in";
 	// Always use full steps so user can see/confirm the provider connection during onboarding
 	const STEPS = STEPS_WITHOUT_NAIA;
 
@@ -133,8 +144,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [apiKeyMode, setApiKeyMode] = useState(false);
 	const [naiaLoginWaiting, setNaiaLoginWaiting] = useState(false);
 	const [naiaLoginDone, setNaiaLoginDone] = useState(hasNaiaKey);
-	// Auth payload from OAuth — held until wizard completes
-	const [naiaAuthPayload, setNaiaAuthPayload] = useState<NaiaAuthPayload | null>(null);
+	// #337 Phase 10-pre cross-review CRITICAL #1: we only need to record that
+	// the deep-link arrived — the agent persists the key + userId. Held until
+	// the wizard completes so saveCompletedConfig knows the user finished
+	// Naia login (vs. picking the direct-API-key flow).
+	const [naiaAuthArrival, setNaiaAuthArrival] = useState<NaiaAuthArrival | null>(null);
 	// memoryAI step state — default to "naia" when Naia key already present
 	const [memoryEmbeddingProvider, setMemoryEmbeddingProvider] = useState<
 		"none" | "offline" | "vllm" | "ollama" | "naia"
@@ -230,22 +244,20 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	// Listen for Naia OAuth callback in provider step.
 	// [] dep — register once. onCompleteRef.current always points to latest prop.
 	//
-	// #337 Phase 6c: the legacy `sendAuthUpdate` + `store_startup_message`
-	// auth-replay path was removed. App.tsx forwards the raw deep-link URL
-	// to the agent via `agentAuthReceived`; the agent owns persistence. The
-	// listener here keeps UI state in sync (naiaLoginDone, complete step).
+	// #337 Phase 10-pre cross-review CRITICAL #1: the Rust payload is now
+	// `{deepLinkUrl}` only — no raw key, no user-id. The agent parses the URL,
+	// validates the CSRF state token, and writes the encrypted ADK auth file.
+	// We forward defensively (in case App.tsx hasn't mounted) and update UI
+	// state. The legacy `naia-remote-key` / `naia-remote-user-id` localStorage
+	// writes are gone — `useAuthStatus()` is the only "logged in?" surface.
 	useEffect(() => {
-		const unlisten = listen<NaiaAuthPayload & { deepLinkUrl?: string }>(
+		const unlisten = listen<{ deepLinkUrl?: string }>(
 			"naia_auth_complete",
 			(event) => {
 				if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
-				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
-				if (event.payload.naiaUserId) {
-					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
-				}
 				setNaiaLoginWaiting(false);
 				setNaiaLoginDone(true);
-				setNaiaAuthPayload(event.payload);
+				setNaiaAuthArrival({ receivedAt: Date.now() });
 				// Defensive: also forward to the agent in case App.tsx hasn't
 				// mounted yet (onboarding may complete before main app renders).
 				if (event.payload.deepLinkUrl) {
@@ -325,7 +337,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}
 
 	function saveCompletedConfig(
-		auth?: NaiaAuthPayload,
+		auth?: NaiaAuthArrival,
 		snapshot: OnboardingSnapshot = {
 			agentName,
 			userName,
@@ -364,6 +376,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
 			: personaBase;
 
+		// #337 Phase 10-pre cross-review CRITICAL #1+#2: do NOT write
+		// `naiaKey` or `naiaUserId` into the localStorage AppConfig. The agent
+		// owns both via its encrypted ADK auth file; the shell learns userId
+		// through `useAuthStatus()` once the agent emits `auth_changed`.
 		saveConfig({
 			...base,
 			provider: auth ? "nextain" : base.provider,
@@ -377,9 +393,6 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			persona,
 			...(snapshot.apiKey.trim() && !snapshot.naiaLoginDone && !auth
 				? { apiKey: snapshot.apiKey.trim() }
-				: {}),
-			...(auth
-				? { naiaKey: auth.naiaKey, naiaUserId: auth.naiaUserId }
 				: {}),
 			workspaceRoot: getAdkPath() || base.workspaceRoot || undefined,
 			onboardingComplete: true,
@@ -395,12 +408,17 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}
 
 	function handleComplete() {
-		saveCompletedConfig(naiaAuthPayload ?? undefined);
+		saveCompletedConfig(naiaAuthArrival ?? undefined);
 		// G-01: sync to naia-settings/config.json so standalone agent picks up the onboarding result.
 		const saved = loadConfig();
 		if (saved) void writeNaiaConfig({ ...(saved as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(saved) });
-		// Write naiaKey to OS keychain so standalone naia-agent can read it.
-		if (saved?.naiaKey) void writeAgentKey(saved.provider || "nextain", "naiaKey", saved.naiaKey);
+		// #337 Phase 10-pre cross-review CRITICAL #1: the `naiaKey` keychain
+		// write is gone — the agent persists Naia auth in its encrypted ADK
+		// auth file (`<ADK>/naia-settings/auth/{mode}.json.enc`) via
+		// `agentAuthReceived`. The `apiKey` write below is unaffected: direct
+		// provider keys (Anthropic, OpenAI, etc.) are still OS-keychain-backed
+		// because they ride a separate non-Naia channel that has no
+		// agent-owned persistence layer.
 		if (saved?.apiKey) void writeAgentKey(saved.provider || "anthropic", "apiKey", saved.apiKey);
 		// Sync memory AI settings to memory-config.json via gateway config.
 		if (saved) {
@@ -419,7 +437,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				undefined,
 				undefined,
 				undefined,
-				saved.naiaKey || undefined,
+				// #337 Phase 10-pre: naiaKey is owned by the agent; no shell
+				// forwarding to gateway-sync.
+				undefined,
 				undefined,
 				{
 					memoryEmbeddingProvider: saved.memoryEmbeddingProvider,

@@ -19,13 +19,21 @@ vi.mock("../persona", () => ({
 
 // #337 Phase 6b: channel-sync now talks to the agent via lab_proxy_request
 // instead of doing raw fetch with the naiaKey. Mock the agent-ipc wrappers.
+//
+// #337 Phase 10-pre cross-review CRITICAL #2: the entry gate is now
+// `agentAuthQuery({loggedIn: true})` instead of `config.naiaKey` —
+// shell never sees the raw key.
 vi.mock("../agent-ipc", () => ({
 	agentLabProxyRequest: vi.fn(),
+	agentAuthQuery: vi.fn().mockResolvedValue({
+		loggedIn: true,
+		userId: "test-user-id",
+	}),
 	resolveAuthMode: vi.fn().mockReturnValue("prod"),
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { agentLabProxyRequest } from "../agent-ipc";
+import { agentAuthQuery, agentLabProxyRequest } from "../agent-ipc";
 import { syncLinkedChannels } from "../channel-sync";
 import { loadConfig } from "../config";
 import { restartGateway, syncToGateway } from "../gateway-sync";
@@ -34,6 +42,7 @@ const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
 const mockedLabProxy = agentLabProxyRequest as unknown as ReturnType<
 	typeof vi.fn
 >;
+const mockedAuthQuery = agentAuthQuery as unknown as ReturnType<typeof vi.fn>;
 
 /** Seed localStorage with a base config that has lab credentials. */
 function seedConfig(overrides: Record<string, unknown> = {}) {
@@ -90,6 +99,14 @@ describe("syncLinkedChannels", () => {
 	beforeEach(() => {
 		localStorage.clear();
 		vi.clearAllMocks();
+		// #337 Phase 10-pre cross-review CRITICAL #2: re-prime the default
+		// `agentAuthQuery` response after `clearAllMocks` — most tests rely
+		// on the agent reporting logged-in. The "skips when no lab
+		// credentials" test overrides this to logged_out.
+		mockedAuthQuery.mockResolvedValue({
+			loggedIn: true,
+			userId: "test-user-id",
+		});
 		// Default: openDmChannel via Rust returns a DM channel ID
 		mockedInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
 			if (cmd === "discord_api") {
@@ -108,6 +125,10 @@ describe("syncLinkedChannels", () => {
 	});
 
 	it("skips when no lab credentials", async () => {
+		// #337 Phase 10-pre: the gate is the agent's auth state, not
+		// localStorage. "No credentials" = `agentAuthQuery` returns
+		// `loggedIn: false`.
+		mockedAuthQuery.mockResolvedValue({ loggedIn: false });
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({ provider: "gemini", model: "", apiKey: "" }),
@@ -212,7 +233,10 @@ describe("syncLinkedChannels", () => {
 			undefined, // ttsVoice
 			"off", // ttsAuto (ttsEnabled unset → "off")
 			undefined, // ttsMode
-			"gw-test-lab-key",
+			// #337 Phase 10-pre cross-review CRITICAL #2: naiaKey is owned by
+			// the agent — channel-sync passes `undefined` and the agent
+			// injects auth at the actual gateway hop.
+			undefined,
 			undefined, // ollamaHost (not set in seedConfig)
 		);
 		expect(restartGateway).toHaveBeenCalled();
@@ -222,6 +246,15 @@ describe("syncLinkedChannels", () => {
 		// #337 Phase 6b: the X-AnyLLM-Key header is injected by the agent —
 		// shell only forwards X-User-Id. The naiaKey value never leaves the
 		// agent process.
+		//
+		// #337 Phase 10-pre cross-review CRITICAL #2: the userId now comes
+		// from `agentAuthQuery` (agent SoT), not from `config.naiaUserId`.
+		// Override the default mock so this test asserts the agent-supplied
+		// userId reaches the X-User-Id header.
+		mockedAuthQuery.mockResolvedValue({
+			loggedIn: true,
+			userId: "uid-123",
+		});
 		seedConfig({ naiaKey: "gw-my-key", naiaUserId: "uid-123" });
 		wireLabProxy(okChannels([]));
 

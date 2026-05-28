@@ -15,6 +15,7 @@ import {
 } from "../lib/adk-store";
 import {
 	agentAuthLogout,
+	agentAuthQuery,
 	agentAuthStart,
 	agentLabProxyRequest,
 	resolveAuthMode,
@@ -1458,16 +1459,29 @@ export function SettingsTab() {
 
 	// Listen for Lab auth deep-link callback.
 	//
-	// #337 Phase 6c — the agent receives + persists the naiaKey via
-	// agentAuthReceived (App.tsx forwards the deep-link). This listener is
-	// reduced to UI-state updates (provider/model snap, balance fetch, lab
-	// config diff dialog). The legacy `saveSecretKey("naiaKey", ...)` +
-	// `sendAuthUpdate` + naiaKey-in-localStorage persistence is REMOVED.
+	// #337 Phase 10-pre cross-review CRITICAL #1: the Rust payload no longer
+	// carries `naiaKey` / `naiaUserId`. The agent owns both, so we ask it for
+	// the userId via `agentAuthQuery` after the deep-link arrives. The agent
+	// has already persisted the encrypted auth file by the time the
+	// `naia_auth_complete` event surfaces (App.tsx forwards the deep-link
+	// synchronously). Falls back to empty userId on IPC failure — the badge
+	// (`useAuthStatus`) is the SoT for "logged in?" state, not this string.
 	useEffect(() => {
-		const unlisten = listen<{ naiaKey?: string; naiaUserId?: string }>(
+		const unlisten = listen<{ deepLinkUrl?: string }>(
 			"naia_auth_complete",
-			async (event) => {
-				const nextNaiaUserId = event.payload.naiaUserId ?? "";
+			async () => {
+				let nextNaiaUserId = "";
+				try {
+					const mode = resolveAuthMode();
+					const queryResult = await agentAuthQuery(mode);
+					if (queryResult.userId) {
+						nextNaiaUserId = queryResult.userId;
+					}
+				} catch (err) {
+					Logger.warn("SettingsTab", "agentAuthQuery after deep-link failed", {
+						error: String(err),
+					});
+				}
 
 				// Close Chrome and return to default view if we opened it for login
 				if (labBrowserVisibleRef.current) {

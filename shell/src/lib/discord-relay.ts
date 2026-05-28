@@ -10,6 +10,10 @@
 import { sendChatMessage } from "./chat-service";
 import {
 	LAB_GATEWAY_URL,
+	// eslint-disable-next-line @typescript-eslint/no-deprecated -- Discord
+	// Cloud Run relay still authenticates via raw `naiaKey` Bearer; tracked
+	// for migration to an agent-mediated relay in #338.
+	getNaiaKeySecure,
 	loadConfig,
 	resolveConfiguredGatewayUrl,
 	saveConfig,
@@ -67,8 +71,12 @@ export async function sendRelayReply(
 		return false;
 	}
 
-	const config = loadConfig();
-	const naiaKey = config?.naiaKey;
+	// #337 Phase 10-pre cross-review CRITICAL #2: read the legacy slot
+	// directly (the @deprecated escape hatch) — `loadConfig().naiaKey` is no
+	// longer populated. Tracked for migration to an agent-mediated relay in
+	// #338.
+	// eslint-disable-next-line @typescript-eslint/no-deprecated -- #338
+	const naiaKey = await getNaiaKeySecure();
 	if (!naiaKey) {
 		Logger.warn("discord-relay", "No naiaKey for relay auth");
 		return false;

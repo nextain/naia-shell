@@ -67,7 +67,12 @@ describe("secure-store", () => {
 
 	it("identifies secret key names", () => {
 		expect(isSecretKey("apiKey")).toBe(true);
-		expect(isSecretKey("naiaKey")).toBe(true);
+		// #337 Phase 10-pre cross-review CRITICAL #2: naiaKey was removed
+		// from SECRET_KEYS — the agent owns it via the encrypted ADK auth
+		// file, NOT the generic shell secure-store iteration. The literal
+		// slot is reachable via LEGACY_NAIA_KEY_SLOT for the one-shot
+		// Phase 8 legacy-migration drain.
+		expect(isSecretKey("naiaKey")).toBe(false);
 		expect(isSecretKey("gatewayToken")).toBe(true);
 		expect(isSecretKey("provider")).toBe(false);
 		expect(isSecretKey("model")).toBe(false);
@@ -76,7 +81,8 @@ describe("secure-store", () => {
 	it("SECRET_KEYS includes expected keys", () => {
 		expect(SECRET_KEYS).toContain("apiKey");
 		expect(SECRET_KEYS).toContain("googleApiKey");
-		expect(SECRET_KEYS).toContain("naiaKey");
+		// #337 Phase 10-pre — naiaKey must NOT be in SECRET_KEYS post-fix.
+		expect(SECRET_KEYS).not.toContain("naiaKey");
 		expect(SECRET_KEYS).toContain("gatewayToken");
 	});
 });
