@@ -20,7 +20,7 @@
 
 version: 1
 name: e2e-scenarios
-updated: "2026-05-27"
+updated: "2026-05-28"
 
 # ─── Existing specs (29 + 1 added this session) ────────────────────────────
 existing:
@@ -309,6 +309,120 @@ proposed:
     rationale: "Browser panel skills exist (skill_browser_*) but no e2e covers the panel UI itself."
     test_outline: "open naia.nextain.io in browser panel, assert skill_browser_get_text returns 'Naia'"
     manual_topic: "browser-panel.md"
+  - id: S115
+    feature: "Restart preserves login (single mode)"
+    spec_file: "packages/runtime/src/auth/__tests__/restart-preserves-login.test.ts (naia-agent repo)"
+    status: implemented
+    goal: |
+      Verify that after a dev-mode login, killing the agent and respawning it
+      with the same NAIA_ADK_PATH + mode results in `auth_query` reporting
+      loggedIn:true with the original userId — i.e. the encrypted
+      `<ADK>/naia-settings/auth/dev.json.enc` blob survives the cross-restart
+      boundary and decrypts correctly against the keyring-stored master
+      password.
+    preconditions:
+      - "tmpdir-isolated NAIA_ADK_PATH (per-test mkdtemp)"
+      - "file-backed test keyring (NAIA_KEYRING_TEST_FILE) — bypasses real OS keyring"
+      - "auth IPC handlers wired (#337 Phase 5a)"
+    steps: |
+      1. boot agent (mode=dev) → auth_start → receive {authUrl, state}
+      2. craft naia://auth?key=…&user_id=naia_test&state={state}
+      3. auth_received with the deep-link URL → expect {ok: true}
+      4. auth_query (in-process) → loggedIn:true, userId matches, naiaKey NOT in response JSON
+      5. read <ADK>/naia-settings/auth/dev.json.enc — present, naiaKey NOT plaintext
+      6. simulate restart (reset in-process caches: auth-store, keyring, oauth-flow, refresh)
+      7. auth_query (post-restart) → loggedIn:true, userId matches, naiaKey NOT in response JSON
+    expected: "auth_query returns the same shape post-restart as pre-restart; naiaKey never leaks"
+    coverage_strategy: "Node integration (vitest, in-process w/ cache-reset simulating cross-process boundary; see test file header for rationale on why child-process spawn was not viable — dist is stale due to pre-existing codegraph tsc errors)"
+    links:
+      - "issue #337 — ADK-centric auth persistence (acceptance §7.1)"
+      - "Phase 10"
+  - id: S116
+    feature: "dev/prod mode swap — both sessions survive restart"
+    spec_file: "packages/runtime/src/auth/__tests__/restart-preserves-login.test.ts (naia-agent repo)"
+    status: implemented
+    goal: |
+      Verify that logging in to BOTH dev and prod modes produces two distinct
+      encrypted blobs (dev.json.enc + prod.json.enc), each decrypts correctly
+      after a restart in EITHER mode, and the cross-mode auth_query (e.g.
+      querying prod from a dev-mode process) also succeeds — the handler
+      takes mode as an explicit arg, not env-derived.
+    preconditions:
+      - "Same as S115 (tmpdir + file-backed keyring)"
+    steps: |
+      1. boot dev mode + login (naiaKey="gw-dev-key-A")
+      2. simulate restart → boot prod mode + login (naiaKey="gw-prod-key-B")
+      3. assert dev.json.enc + prod.json.enc both present on disk
+      4. assert the two blobs differ byte-for-byte (different nonce + different plaintext)
+      5. assert NEITHER blob contains its respective naiaKey in plaintext
+      6. simulate restart → boot dev mode → auth_query(dev) + auth_query(prod) both loggedIn:true
+      7. simulate restart → boot prod mode → auth_query(prod) + auth_query(dev) both loggedIn:true
+    expected: "Both blobs decrypt across any mode-swap restart sequence; neither leaks its naiaKey"
+    coverage_strategy: "Node integration (vitest, in-process w/ cache-reset)"
+    links:
+      - "issue #337 — ADK-centric auth persistence (acceptance §7.2)"
+      - "Phase 10"
+  - id: S117
+    feature: "Legacy migration happy path (secure-keys.dat naiaKey → ADK file)"
+    spec_file: "shell/src/__tests__/legacy-migration-e2e.test.ts (naia-os repo)"
+    status: implemented
+    goal: |
+      Verify the one-shot Phase 8 migration: a pre-existing
+      `secure-keys.dat:naiaKey` slot + an agent reporting loggedIn:false +
+      a successful migrate ack → runLegacyMigration() returns
+      kind:"migrated", the migrate IPC is invoked exactly once with the
+      legacy key, and BOTH the `naiaKey` slot AND the D3 stale-garbage
+      `apiKey` slot are purged from secure-store.
+    preconditions:
+      - "stateful in-memory @tauri-apps/plugin-store mock (real secure-store.ts reads/writes)"
+      - "agent-ipc agentAuthQuery + agentAuthLegacyMigrate stubbed at the module boundary"
+      - "Logger mocked to noop (real one bridges to a Tauri invoke unavailable in vitest)"
+    steps: |
+      1. saveSecretKey("naiaKey", "gw-legacy-test-117") via real secure-store
+      2. saveSecretKey("apiKey", "garbage-1") — seed the D3 stale slot
+      3. stub agentAuthQuery → {loggedIn:false}
+      4. stub agentAuthLegacyMigrate → {ok:true} + capture call args
+      5. runLegacyMigration()
+      6. assert result.kind === "migrated"
+      7. assert agentAuthLegacyMigrate called once with {mode:"prod", naiaKey:"gw-legacy-test-117"}
+      8. assert getSecretKey("naiaKey") === null AND getSecretKey("apiKey") === null
+      9. assert no failure listener fires
+    expected: "Migration succeeds, secure-store cleanup completes, no failure surface"
+    coverage_strategy: "vitest (integration above the unit-mocked legacy-migration.test.ts; uses real secure-store with stateful in-memory backing)"
+    links:
+      - "issue #337 — ADK-centric auth persistence (design §3 migration flow)"
+      - "Phase 10"
+  - id: S118
+    feature: "Legacy migration ack failure — hard fail, slot preserved"
+    spec_file: "shell/src/__tests__/legacy-migration-e2e.test.ts (naia-os repo)"
+    status: implemented
+    goal: |
+      Verify the hard-fail invariant from design §3: when the agent acks the
+      migrate IPC with {ok:false}, runLegacyMigration() returns kind:"failed"
+      with the reason from the agent, the onLegacyMigrationFailed listener
+      fires with the same reason, and the `secure-keys.dat:naiaKey` slot is
+      LEFT INTACT so the user can retry. NO fallback-to-shell-store path —
+      that would re-introduce the dual-SoT bug we're fixing.
+    preconditions:
+      - "Same as S117 (in-memory secure-store + agent-ipc stubs)"
+    steps: |
+      1. saveSecretKey("naiaKey", "gw-legacy-test-118")
+      2. saveSecretKey("apiKey", "garbage-2")
+      3. stub agentAuthQuery → {loggedIn:false}
+      4. stub agentAuthLegacyMigrate → {ok:false, reason:"agent_disk_error"}
+      5. onLegacyMigrationFailed(reason => failures.push(reason))
+      6. runLegacyMigration()
+      7. assert result.kind === "failed", result.reason === "agent_disk_error"
+      8. assert failures.length === 1 && failures[0] === "agent_disk_error"
+      9. assert getSecretKey("naiaKey") === "gw-legacy-test-118" (preserved)
+      10. assert getSecretKey("apiKey") === "garbage-2" (also preserved on hard-fail)
+      11. additional case: missing-reason field → fallback to "agent_returned_not_ok"
+      12. additional case: retry after reset succeeds without re-seeding
+    expected: "Failure surfaces via listener; slot preserved for retry; no auth_changed side effect observed"
+    coverage_strategy: "vitest"
+    links:
+      - "issue #337 — ADK-centric auth persistence (design §3 hard-fail clause)"
+      - "Phase 10"
   - id: S113
     feature: "Memory encoder fallback to bundled offline ONNX when gateway embed 5xx"
     spec_file: "shell/e2e-tauri/specs/95-memory-encoder-fallback.spec.ts"
