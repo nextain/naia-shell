@@ -44,6 +44,17 @@ export interface AgentAuthQueryResult {
 	scope?: string[];
 }
 
+export interface AgentAuthLegacyMigrateOpts {
+	mode: AuthMode;
+	naiaKey: string;
+	userId?: string;
+}
+
+export interface AgentAuthLegacyMigrateResult {
+	ok: boolean;
+	reason?: string;
+}
+
 export interface AgentLabProxyRequestOpts {
 	mode: AuthMode;
 	method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
@@ -250,6 +261,36 @@ export async function agentAuthQuery(
 		out.scope = resp.scope.filter(
 			(s: unknown): s is string => typeof s === "string",
 		);
+	}
+	return out;
+}
+
+/**
+ * #337 Phase 8 — one-shot migration trigger. Pushes the legacy
+ * `secure-keys.dat:naiaKey` slot into the agent's encrypted ADK auth file.
+ * Caller MUST NOT delete the legacy slot on `ok: false` — the user can retry.
+ */
+export async function agentAuthLegacyMigrate(
+	opts: AgentAuthLegacyMigrateOpts,
+): Promise<AgentAuthLegacyMigrateResult> {
+	const id = newRequestId("auth-legacy-migrate");
+	const request: Record<string, unknown> = {
+		type: "auth_legacy_migrate",
+		id,
+		mode: opts.mode,
+		naiaKey: opts.naiaKey,
+	};
+	if (opts.userId !== undefined) request.userId = opts.userId;
+	type Wire = AgentAuthLegacyMigrateResult & { error?: string };
+	const resp = await requestAgent<Wire>({
+		request,
+		responseType: "auth_legacy_migrate_response",
+		id,
+	});
+	const out: AgentAuthLegacyMigrateResult = { ok: resp.ok === true };
+	if (!out.ok) {
+		if (typeof resp.reason === "string") out.reason = resp.reason;
+		else if (typeof resp.error === "string") out.reason = resp.error;
 	}
 	return out;
 }

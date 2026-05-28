@@ -30,6 +30,7 @@ import {
 	startAuthStatusTracking,
 	type AuthStatusSnapshot,
 } from "./lib/auth-status-store";
+import { runLegacyMigration } from "./lib/legacy-migration";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
@@ -578,8 +579,31 @@ export function App() {
 	// SoT; we synchronously render "checking" until agentAuthQuery resolves,
 	// then flip to "logged_in" or "logged_out". Subsequent flips arrive via
 	// the agent's `auth_changed` push events.
+	//
+	// #337 Phase 8 — once the FIRST non-"checking" snapshot lands (so the
+	// agent has answered our initial auth_query and there is no race with the
+	// migration's own auth_query call), fire the one-shot legacy migration.
+	// `runLegacyMigration` is internally idempotent — the guard here just
+	// avoids waiting on the agent twice.
 	useEffect(() => {
-		const unsubscribe = startAuthStatusTracking(setAuthStatus);
+		let migrationAttempted = false;
+		const unsubscribe = startAuthStatusTracking((snap) => {
+			setAuthStatus(snap);
+			if (!migrationAttempted && snap.status !== "checking") {
+				migrationAttempted = true;
+				runLegacyMigration()
+					.then((result) => {
+						Logger.info("App", "[#337 Phase 8 migration]", {
+							...result,
+						});
+					})
+					.catch((err: unknown) => {
+						Logger.warn("App", "[#337 Phase 8 migration] threw", {
+							error: String(err),
+						});
+					});
+			}
+		});
 		return unsubscribe;
 	}, []);
 

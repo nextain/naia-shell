@@ -20,6 +20,7 @@ import {
 	resolveAuthMode,
 } from "../lib/agent-ipc";
 import { useAuthStatus } from "../lib/auth-status-store";
+import { onLegacyMigrationFailed } from "../lib/legacy-migration";
 import {
 	DEFAULT_AVATAR_MODEL,
 	getDefaultTtsVoiceForAvatar,
@@ -621,6 +622,19 @@ export function SettingsTab() {
 	const [agentHealthCheckedAt, setAgentHealthCheckedAt] = useState<
 		Date | null
 	>(null);
+	// #337 Phase 8 — surface a banner when the one-shot legacy migration
+	// (secure-keys.dat:naiaKey → ADK auth file) fails. Per design doc §3 we
+	// hard-fail on ack failure: the legacy slot is preserved so the user can
+	// retry, and this banner tells them to re-login.
+	const [legacyMigrationFailReason, setLegacyMigrationFailReason] = useState<
+		string | null
+	>(null);
+	useEffect(() => {
+		const unsub = onLegacyMigrationFailed((reason) => {
+			setLegacyMigrationFailReason(reason);
+		});
+		return unsub;
+	}, []);
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
@@ -2630,6 +2644,19 @@ export function SettingsTab() {
 				<div style={{ marginBottom: 6 }}>
 					<AuthStatusBadge />
 				</div>
+				{/* #337 Phase 8 — legacy migration failure banner. Hard-fail
+				    semantics: the secure-keys.dat slot was NOT purged, so the
+				    user can retry the login flow. */}
+				{legacyMigrationFailReason && (
+					<div
+						role="alert"
+						className="settings-error"
+						data-testid="legacy-migration-fail-banner"
+						style={{ marginBottom: 8 }}
+					>
+						이전 로그인 정보를 옮기지 못했습니다. 다시 로그인해 주세요.
+					</div>
+				)}
 				<button
 						type="button"
 						className="settings-btn-primary"
