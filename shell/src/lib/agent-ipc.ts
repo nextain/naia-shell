@@ -282,10 +282,14 @@ export async function agentAuthLegacyMigrate(
 	};
 	if (opts.userId !== undefined) request.userId = opts.userId;
 	type Wire = AgentAuthLegacyMigrateResult & { error?: string };
+	// 45s: agent-side first-call may block on Windows keyring bootstrap (PowerShell
+	// + Add-Type C# compile, up to 3 sequential PS spawns). See codex diag
+	// 2026-05-28 for details. Aligned with legacy-migration.ts MIGRATE_TIMEOUT_MS.
 	const resp = await requestAgent<Wire>({
 		request,
 		responseType: "auth_legacy_migrate_response",
 		id,
+		timeoutMs: 45_000,
 	});
 	const out: AgentAuthLegacyMigrateResult = { ok: resp.ok === true };
 	if (!out.ok) {

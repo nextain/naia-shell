@@ -104,7 +104,20 @@ pub(crate) fn resolve_npx() -> String {
 /// Returns (node_exe, tsx_cli_mjs_path) if found, None otherwise.
 /// .cmd batch files fail under CREATE_NO_WINDOW, so we invoke node directly.
 pub(crate) fn resolve_tsx_from_agent(agent_dir: &std::path::Path) -> Option<(String, String)> {
-    // Find tsx cli.mjs inside pnpm store (version-agnostic glob)
+    // 1) npm-style direct hoist: node_modules/tsx/dist/cli.mjs
+    //    Required when `pnpm install --prod` flattens devDeps (naia-os/agent
+    //    layout after dev-setup.mjs prune) or hoisted-layouts skip the .pnpm
+    //    sentinel. Codex diag 2026-05-28.
+    let direct = agent_dir
+        .join("node_modules")
+        .join("tsx")
+        .join("dist")
+        .join("cli.mjs");
+    if direct.exists() {
+        return Some(("node".to_string(), direct.to_string_lossy().to_string()));
+    }
+
+    // 2) pnpm-store layout (version-agnostic glob)
     let pnpm_dir = agent_dir.join("node_modules").join(".pnpm");
     if pnpm_dir.is_dir() {
         if let Ok(entries) = std::fs::read_dir(&pnpm_dir) {

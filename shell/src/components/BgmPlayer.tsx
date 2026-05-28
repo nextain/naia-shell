@@ -516,7 +516,7 @@ export function BgmPlayer({ naia }: Props) {
 				lower.includes("econnrefused") ||
 				lower.includes("fetch")
 			) {
-				setSearchError("에이전트 서버에 연결할 수 없습니다 (127.0.0.1:18791). 앱을 재시작해 보세요.");
+				setSearchError("YouTube BGM 서버에 연결할 수 없습니다 (127.0.0.1:18791). 앱을 재시작해 보세요.");
 			} else {
 				setSearchError(`검색 오류: ${msg}`);
 			}

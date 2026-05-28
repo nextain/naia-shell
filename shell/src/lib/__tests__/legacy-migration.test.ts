@@ -140,7 +140,7 @@ describe("runLegacyMigration", () => {
 	it("(5) legacy key + agent not logged in + IPC times out → failed, no delete, listener fires", async () => {
 		mockGetNaiaKeySecure.mockResolvedValue("gw-legacy-abc");
 		mockAgentAuthQuery.mockResolvedValue({ loggedIn: false });
-		// Never resolve — the 5 s timeout in legacy-migration must trip.
+		// Never resolve — the 45 s timeout in legacy-migration must trip.
 		mockAgentAuthLegacyMigrate.mockReturnValue(new Promise(() => {}));
 
 		const failures: string[] = [];
@@ -150,9 +150,9 @@ describe("runLegacyMigration", () => {
 		const resultPromise = runLegacyMigration();
 		// Let the (1) getNaiaKey + (2) agentAuthQuery microtasks resolve so
 		// the migrate call has actually been issued by the time we advance
-		// the timer past the 5 s threshold.
+		// the timer past the 45 s threshold.
 		await vi.advanceTimersByTimeAsync(0);
-		await vi.advanceTimersByTimeAsync(5_001);
+		await vi.advanceTimersByTimeAsync(45_001);
 
 		const result = await resultPromise;
 

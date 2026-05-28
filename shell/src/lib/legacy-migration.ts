@@ -46,8 +46,14 @@ export type LegacyMigrationResult =
 
 /** Hard cap on `agentAuthLegacyMigrate` round-trip. Per design §3, on timeout
  *  the legacy slot is left intact and a UI toast surfaces so the user can
- *  re-login. */
-const MIGRATE_TIMEOUT_MS = 5_000;
+ *  re-login.
+ *
+ *  NOTE 2026-05-28: bumped from 5s → 30s. Root cause: agent-side first-call
+ *  `saveAuth` triggers Windows keyring `set` which spawns PowerShell with
+ *  `Add-Type -Language CSharp` (keyring.ts:291). The C# compile on a cold
+ *  PowerShell process commonly takes 3–10s, exceeding the original 5s budget.
+ *  Deeper fix would be cmdkey-based or cached PSHost — tracked separately. */
+const MIGRATE_TIMEOUT_MS = 45_000;
 
 const failureListeners = new Set<(reason: string) => void>();
 let migrationPromise: Promise<LegacyMigrationResult> | null = null;
