@@ -139,26 +139,53 @@ describe("auth-status-store", () => {
 			]);
 		});
 
-		it("defaults to 'logged_out' when agentAuthQuery throws", async () => {
+		it("does NOT flip to 'logged_out' on the FIRST agentAuthQuery throw (retry hardening)", async () => {
+			// 2026-05-28 — startAuthStatusTracking now retries once on first
+			// failure. The badge must stay in "checking" until the retry runs.
+			mockAgentAuthQuery.mockRejectedValueOnce(new Error("transient"));
+			// Second call resolves successfully so the badge ends in logged_in.
+			mockAgentAuthQuery.mockResolvedValueOnce({
+				loggedIn: true,
+				userId: "u-retry",
+			});
+
+			const snapshots: AuthStatusSnapshot[] = [];
+			startAuthStatusTracking((s) => snapshots.push(s));
+
+			// Wait for the 1500ms retry delay plus microtasks.
+			await new Promise((r) => setTimeout(r, 1700));
+
+			expect(snapshots).toEqual([
+				{ status: "checking", mode: "prod" },
+				{ status: "logged_in", mode: "prod", userId: "u-retry" },
+			]);
+			expect(mockAgentAuthQuery).toHaveBeenCalledTimes(2);
+			// First failure logs a warning but does NOT flip status.
+			const warnedRetry = loggerWarn.mock.calls.find((c) =>
+				String(c[1]).includes("retrying once"),
+			);
+			expect(warnedRetry).toBeDefined();
+		}, 5000);
+
+		it("defaults to 'logged_out' only after BOTH attempts fail", async () => {
 			mockAgentAuthQuery.mockRejectedValue(new Error("agent dead"));
 
 			const snapshots: AuthStatusSnapshot[] = [];
 			startAuthStatusTracking((s) => snapshots.push(s));
 
-			// Flush microtasks for the .catch() handler.
-			await Promise.resolve();
-			await Promise.resolve();
-			await Promise.resolve();
+			// Wait for the 1500ms retry delay plus microtasks.
+			await new Promise((r) => setTimeout(r, 1700));
 
 			expect(snapshots).toEqual([
 				{ status: "checking", mode: "prod" },
 				{ status: "logged_out", mode: "prod" },
 			]);
-			expect(loggerWarn).toHaveBeenCalled();
-			const warnArgs = loggerWarn.mock.calls[0];
-			expect(warnArgs[0]).toBe("auth-status-store");
-			expect(String(warnArgs[1])).toMatch(/agentAuthQuery failed/);
-		});
+			expect(mockAgentAuthQuery).toHaveBeenCalledTimes(2);
+			const finalFailure = loggerWarn.mock.calls.find((c) =>
+				String(c[1]).includes("failed twice"),
+			);
+			expect(finalFailure).toBeDefined();
+		}, 5000);
 
 		it("flips status on auth_changed event for the SAME mode", async () => {
 			mockResolveAuthMode.mockReturnValue("dev");

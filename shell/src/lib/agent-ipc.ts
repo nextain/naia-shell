@@ -83,6 +83,17 @@ export interface AgentAuthExpiredEvent {
 /** Default timeout for an agent request/response round-trip (ms). */
 const REQUEST_TIMEOUT_MS = 15_000;
 
+/**
+ * Timeout for any IPC whose agent-side handler touches the OS keyring
+ * (auth-store loadAuth/saveAuth/deleteAuth). On Windows the first call
+ * bootstraps a PowerShell process + Add-Type C# compile and can take
+ * up to 30s sequentially across the dev/prod modes. The default 15s
+ * timeout fires before the keyring bootstrap completes, which surfaces
+ * as a hanging login flow even though the deep-link was received OK.
+ * See commit 6a3b18af for the prior `auth_legacy_migrate` fix.
+ */
+const KEYRING_IPC_TIMEOUT_MS = 45_000;
+
 let nextRequestSeq = 0;
 
 function newRequestId(prefix: string): string {
@@ -195,6 +206,7 @@ export async function agentAuthStart(opts: {
 		request,
 		responseType: "auth_start_response",
 		id,
+		timeoutMs: KEYRING_IPC_TIMEOUT_MS,
 	});
 	if (resp.error) {
 		throw new Error(`auth_start failed: ${resp.error}`);
@@ -219,6 +231,7 @@ export async function agentAuthReceived(
 		request,
 		responseType: "auth_received_response",
 		id,
+		timeoutMs: KEYRING_IPC_TIMEOUT_MS,
 	});
 	// `error` is a transport/parser-level fault from the agent dispatcher.
 	// `reason` is a structured rejection (state mismatch, expired, etc.).
@@ -240,6 +253,7 @@ export async function agentAuthLogout(mode: AuthMode): Promise<void> {
 		request,
 		responseType: "auth_logout_response",
 		id,
+		timeoutMs: KEYRING_IPC_TIMEOUT_MS,
 	});
 }
 
@@ -253,6 +267,7 @@ export async function agentAuthQuery(
 		request,
 		responseType: "auth_query_response",
 		id,
+		timeoutMs: KEYRING_IPC_TIMEOUT_MS,
 	});
 	const out: AgentAuthQueryResult = { loggedIn: resp.loggedIn === true };
 	if (typeof resp.expiresAt === "number") out.expiresAt = resp.expiresAt;
@@ -282,14 +297,13 @@ export async function agentAuthLegacyMigrate(
 	};
 	if (opts.userId !== undefined) request.userId = opts.userId;
 	type Wire = AgentAuthLegacyMigrateResult & { error?: string };
-	// 45s: agent-side first-call may block on Windows keyring bootstrap (PowerShell
-	// + Add-Type C# compile, up to 3 sequential PS spawns). See codex diag
-	// 2026-05-28 for details. Aligned with legacy-migration.ts MIGRATE_TIMEOUT_MS.
+	// Keyring-bootstrap-sensitive IPC — see KEYRING_IPC_TIMEOUT_MS doc.
+	// Aligned with legacy-migration.ts MIGRATE_TIMEOUT_MS.
 	const resp = await requestAgent<Wire>({
 		request,
 		responseType: "auth_legacy_migrate_response",
 		id,
-		timeoutMs: 45_000,
+		timeoutMs: KEYRING_IPC_TIMEOUT_MS,
 	});
 	const out: AgentAuthLegacyMigrateResult = { ok: resp.ok === true };
 	if (!out.ok) {
@@ -313,10 +327,13 @@ export async function agentLabProxyRequest(
 	if (opts.body !== undefined) request.body = opts.body;
 	if (opts.headers !== undefined) request.headers = opts.headers;
 	type Wire = AgentLabProxyResult;
+	// lab_proxy_request hits handleLabProxyRequest → loadAuth → keyring read.
+	// Subject to the same keyring bootstrap cost as auth_* IPCs on cold boot.
 	const resp = await requestAgent<Wire>({
 		request,
 		responseType: "lab_proxy_response",
 		id,
+		timeoutMs: KEYRING_IPC_TIMEOUT_MS,
 	});
 	const out: AgentLabProxyResult = {
 		ok: resp.ok === true,

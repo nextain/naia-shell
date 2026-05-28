@@ -101,30 +101,219 @@ import surface 안정성 보장.
 `NEXTAIN_VLLM=1` 이라도 네이티브 path 유지. #272 가 광범위 `/[-_]o\b/i`
 fallback 제거 — `claude-opus-4-o`, `gemma-4-o` 오분류 원인.
 
-## 인증 흐름
+## 인증 흐름 (v2 — issue #337, 2026-05-28)
 
-Agent 가 credential 소유. Shell 은 `auth_update` 1회만 전송, 매 request 마다
-`naiaKey` 보내지 않음.
+> 구 `auth_update` IPC 흐름은 아래 "구 auth_update" 절에 reference 로 보존.
+> standalone naia-agent runtime (dev/prod 기본) 은 v2 흐름만 사용.
 
-```ts
-// shell 측
-agent.write({ type: "auth_update", naiaKey: "gw-..." });
+**Runtime 선택** — shell `spawn_agent_core` (`shell/src-tauri/src/lib.rs`) 가
+agent binary 를 다음 순서로 resolve:
 
-// agent 측 (factory.ts)
-let _agentNaiaKey: string | undefined;
-export function setAgentNaiaKey(key: string): void { _agentNaiaKey = key; }
+1. `NAIA_AGENT_STANDALONE_PATH` env override
+2. `resources/agent-standalone/dist/index.js` (bundled standalone)
+3. `../../naia-agent/bin/naia-agent.ts` (dev TypeScript, **자동 활성화**)
+4. `../agent/src/index.ts` (embedded, legacy)
+5. `agent/dist/index.js` (bundled embedded, legacy)
 
-// 매 request
-export function buildProvider(config: ProviderConfig): LLMProvider {
-  const naiaKey = _agentNaiaKey;
-  if (naiaKey) return /* lab-proxy 라우팅 */;
-  return /* 네이티브 또는 env-gated strangler-fig */;
-}
+dev 모드에서는 조건 3 이 발동되어 standalone `naia-agent` repo 의 인증 코드가
+사용됨. embedded `naia-os/agent/dist` 는 로그인 경로와 무관.
+
+**Credential 소유** — `naia-agent` 가 naiaKey 를 end-to-end 소유. shell 은
+Phase 6c (commit `c44fdd6c`) 이후 key 를 읽거나 쓰지 않음. 오직 raw `naia://`
+deep-link URL 을 agent 에 그대로 전달.
+
+**암호화 영속화** — `<NAIA_ADK_PATH>/naia-settings/auth/{dev,prod}.json.enc`
+- 암호화: AES-256-GCM via `crypto-envelope` (magic `NAIA`, salt 16 / nonce 12 / authTag 16)
+- 마스터 키: OS keyring (service `io.nextain.naia`, account `auth-master-v1`)
+  Windows DPAPI / macOS Keychain / Linux secret-tool + headless degraded mode
+- 원자적 쓰기: `.tmp` + rename. mode 별 RW lock 으로 dev/prod 독립.
+
+**IPC 표면** (모두 `naia-agent/bin/naia-agent.ts:1603-1700` 에서 dispatch):
+
+| Type | 방향 | 목적 |
+|---|---|---|
+| `auth_start` | shell → agent | `{ authUrl, state }` 반환. agent 가 64-hex state 토큰 생성, 5분 TTL in-memory `stateMap` 에 저장. authUrl 에 `state`, `app=naia-os`, `redirect=desktop`, `source=desktop`, `platform`, `scope?` 포함. |
+| `auth_received` | shell → agent | raw `deepLinkUrl` 전달. agent 가 파싱, state map 검증, 암호화 파일 저장, `auth_changed loggedIn:true` emit. 응답에 naiaKey **절대** 포함 안 됨. |
+| `auth_query` | shell → agent | `{ loggedIn, expiresAt?, userId?, scope? }` 반환. tri-state 배지 구동. |
+| `auth_logout` | shell → agent | 암호화 파일 삭제, `auth_changed loggedIn:false` emit. |
+| `auth_legacy_migrate` | shell → agent | Phase 8 일회성. 구 `secure-keys.dat:naiaKey` 에서 암호화 파일로 seed. ack 실패 시 hard-fail. |
+| `lab_proxy_request` | shell → agent | shell 은 naiaKey 를 **절대** 보유 안 함. agent 가 암호화 파일에서 읽고 `X-AnyLLM-Key: Bearer …` 주입, upstream 응답만 반환. 401 → single-flight refresh + 1회 재시도. **경로 prefix 라우팅** (2026-05-28): `/v1/*` → mode-mapped Lab Gateway origin, 나머지 → portal issuer. 절대 URL 은 origin 이 issuer 또는 mode-mapped gateway 일 때만 허용; 그 외 → `disallowed_host`. |
+| `auth_changed` | agent → shell push | `{ mode, loggedIn }` save/delete 시. |
+| `auth_expired` | agent → shell push | `{ mode, reason: "refresh_failed" \| "revoked" }`. |
+
+**OAuth URL 구성** (`naia-agent/packages/runtime/src/utils/oauth-flow.ts:118`):
+
+```
+{issuer}/{locale}/login
+  ?state={64-hex-csrf}
+  &app=naia-os
+  &platform={win32|darwin|linux}
+  &redirect=desktop
+  &source=desktop
+  &scope={csv}?
 ```
 
-테스트 규율: `beforeEach` 에 `setAgentNaiaKey("gw-...")` 로 seed,
-`afterEach` 에서 clear. 제거된 `config.naiaKey` 필드는 함정 — 아직 그걸
-넘기는 테스트는 silent 하게 fall-through path 를 탑니다.
+`issuer` 는 dev 모드에서 `http://localhost:3001` (로컬 naia.nextain.io dev
+서버), prod 모드에서 `https://naia.nextain.io`.
+
+**Lab Gateway URL** (lab_proxy_request `/v1/*` 라우팅):
+
+- dev: `https://naia-gateway-dev-181404717065.asia-northeast3.run.app`
+  (`NAIA_LAB_GATEWAY_URL_DEV` env override)
+- prod: `https://naia-gateway-181404717065.asia-northeast3.run.app`
+  (`NAIA_LAB_GATEWAY_URL_PROD` env override)
+
+**Cross-repo 결합 — Portal middleware**
+(`projects/naia.nextain.io/src/proxy.ts`):
+
+- desktop-auth 분기 진입은 `redirect=desktop` **AND** `app=naia-os` **둘 다**
+  필요. 이전 OR 의미론은 조작된 phishing 링크가 인증된 사용자에게 desktop
+  flow 를 silent 하게 트리거할 수 있었음.
+- 매치 시: `/{lang}/callback` 로 redirect 하면서 **원래 query param 전체를
+  forward** — `state` 보존됨. skip list: `source` (정규화됨), `callbackUrl`
+  (SSO open-redirect guard 가 이미 처리), `redirect`, `app`.
+- `state` 는 forward 전에 `/^[0-9a-f]{64}$/` 로 형식 검증 — 공격자의 임의
+  state 값 주입 차단.
+
+이 contract 없이는 callback 페이지가 `state=null` 을 받고,
+`buildNaiaAuthDeepLink` 가 state 파라미터 생략, agent 의
+`receiveOAuthDeepLink` 가 `missing_state` 로 reject — 2026-05-28 에 진단된
+"로그인이 멈춘 듯 보이는" 증상이 됩니다.
+
+**State token (CSRF)** — in-memory 만 (`oauth-flow.ts:92 stateMap`):
+- 32 random byte → 64-char hex
+- 5분 TTL
+- 일회성: receive 시 TTL 검사 **전에** 삭제
+- `mode`, `issuer`, `scope` 에 binding
+- agent crash 시 re-login 강제 (state 손실)
+
+**Shell UI** — tri-state 배지 `checking / logged_in / logged_out` — `useAuthStatus`
+hook 이 `onAgentAuthChanged` 를 consume. 낙관적 render 없음 — agent process
+spawn 후 부팅 SLA 목표 <200 ms p95. `auth_received ok:false` 시 에러
+surface 는 현재 warn 로그만 (`App.tsx:559`); UI 배너는 follow-up.
+
+**알려진 위험** (향후 hardening 을 위해 기록):
+
+- `NAIA_ADK_PATH` poisoning (공격자 제어 env var → 잘못된 저장 디렉토리)
+- OS keyring 이 단일 실패점 (macOS unlocked Keychain, Linux DBUS 노출,
+  Windows DPAPI per-user 만)
+- TPM / Secure Enclave 하드웨어 binding 없음 (follow-up, #337 §6)
+- forensic 로그 버퍼 (`oauth-flow.ts:96-112`) 가 start event 시 full 64-hex
+  state 를 기록. `onOAuthLog` subscriber 가 plaintext 로 볼 수 있음 —
+  defense-in-depth truncation 보류
+
+## Observability — 로그 SoT + AI 자가 진단
+
+> **이 프로젝트에서 작업하는 AI 에게**: 런타임 증상을 조사할 때,
+> **로그 파일을 직접 읽으십시오**. 사용자에게 paste 를 요청하지 마십시오.
+> 사용자의 역할은 앱에서 액션을 취하는 것; AI 의 역할은 로그에서 상태를
+> 관찰하는 것.
+
+### 로그 파일 (Single Source of Truth)
+
+모든 Tauri-side 및 agent-side 로그는 `$HOME/.naia/logs/` 아래 위치
+(Windows 에서는 `%USERPROFILE%\.naia\logs\` — 예: `C:\Users\<user>\.naia\logs\`).
+
+| 파일 | Owner | 언제 읽나 |
+|---|---|---|
+| `naia.log` | Rust shell | 세션 lifecycle, deep-link 수신, agent spawn, gateway sync |
+| `agent-stderr.log` | naia-agent stderr | **모든 IPC timeout** — agent 가 import 중 crash 했을 수 있음 |
+| `node-host.log` | Legacy openclaw (#201 이후 inert) | 현재 거의 무용 |
+| `gateway.log` | Legacy Naia Gateway (#201 제거) | Inert |
+| `bgm-server-stderr.log` | BGM tsx subprocess | 오디오 loop 오류 |
+| `llm-debug.log` | LLM client (`NAIA_LLM_DEBUG=1` 일 때만) | opt-in 시 상세 request/response |
+
+### 결정 트리 — 흔한 증상
+
+**증상: DevTools 또는 `naia.log` 에 `agent-ipc timeout: <responseType>`**
+
+1. `agent-stderr.log` tail 을 읽으십시오. `SyntaxError` 또는 처리되지 않은
+   오류 = agent 가 module import 중 crash. 가장 흔한 원인: runtime `dist/`
+   가 `src/` 와 sync 안 됨. 수정:
+   ```bash
+   cd projects/naia-agent && pnpm exec tsc --build packages/runtime
+   ```
+2. `naia.log` tail. `agent-core started` 확인 + 즉시 `Session ended` 가
+   따라오지 않는지 확인.
+3. agent 가 살아있는데 모든 IPC 가 timeout 이면: Windows keyring 부트스트랩.
+   `bin/naia-agent.ts:runStdio()` 에서 `await prewarmKeyring()` 이 `ready`
+   신호 **전에** 호출되는지 확인.
+4. stdio probe 를 직접 실행하십시오. 사용자를 기다리지 마십시오. 아래
+   **probe recipe** 참조.
+
+**증상: Lab 로그인이 멈춤 — 시스템 브라우저는 열리지만 앱이 `logged_in`
+도달 못 함**
+
+1. `naia.log` — `Deep link received` 라인 찾기. 없으면 portal redirect 가
+   발사 안 됐거나 `naia://` 스킴이 등록 안 됨.
+2. Portal middleware (`projects/naia.nextain.io/src/proxy.ts`) 가 `state`
+   query param 을 forward 하는지 확인. 2026-05-28 fix 이후 필수.
+3. `agent-stderr.log` 에서 `receiveOAuthDeepLink` reject 이유 (`missing_state`
+   / `unknown_state` / `expired_state`) 찾기.
+4. `<NAIA_ADK_PATH>/naia-settings/auth/{mode}.json.enc` 가 실제로 생성됐는지
+   확인.
+
+**증상: chat 이 `no LLM provider configured` 반환**
+
+1. `naia.log` — mount 시 `sendCredsUpdate` emit 확인.
+2. `agent-stderr.log` 에서 credential 파싱 실패 찾기.
+3. `AppConfig.provider` / `AppConfig.model` 이 비어있지 않은지 (shell
+   `config.ts`) 확인.
+
+### Probe recipe — Tauri shell 없이 직접 stdio 검증
+
+```bash
+cd projects/naia-agent
+node -e "
+const { spawn } = require('child_process');
+const child = spawn('node',
+  ['node_modules/tsx/dist/cli.mjs', 'bin/naia-agent.ts', '--stdio'],
+  { env: { ...process.env, NAIA_ADK_PATH: '<your-adk-path>',
+           NAIA_AGENT_MODE: 'dev' },
+    stdio: ['pipe','pipe','pipe'] });
+let buf = '';
+child.stdout.on('data', d => {
+  buf += d.toString();
+  for (const line of buf.split(/\r?\n/).slice(0,-1)) {
+    try {
+      const j = JSON.parse(line);
+      if (j.type === 'ready') {
+        child.stdin.write(JSON.stringify({type:'auth_query',id:'p1',mode:'dev'})+'\n');
+      } else if (j.type === 'auth_query_response') {
+        console.log(JSON.stringify(j));
+        child.kill(); process.exit(0);
+      }
+    } catch {}
+  }
+  buf = buf.split(/\r?\n/).slice(-1)[0];
+});
+setTimeout(() => process.exit(1), 60000);
+"
+```
+
+기대 (Windows): `ready` 가 ~10초 이내 (keyring 사전 워밍) + `auth_query_response`
+가 <5ms. 그보다 느리면 머신 특정 이슈.
+
+### Anti-patterns
+
+- **사용자에게 로그 paste 요청 금지** — `agent-stderr.log` 를 Read 도구로 직접 읽기.
+- **단일 timeout 만 보고 IPC wiring 추정 금지** — `agent-stderr.log` 에서 agent 가 살아있는지 먼저 확인.
+- **shell timeout 을 60s 이상으로 늘리기 금지** — 진짜 원인 (build artifact, keyring, 파일시스템) 을 찾으십시오. 현재 `KEYRING_IPC_TIMEOUT_MS = 45_000` 은 Windows 첫 부팅 keyring 부트스트랩 최악 케이스만 cover 하기 위함.
+
+### 구 auth_update (#337 이전, embedded agent 만)
+
+#337 이전 흐름은 단일 `auth_update` IPC 사용; shell 이 startup 에서
+`secure-keys.dat` 에서 key 를 읽어 agent 의 module-scope `_agentNaiaKey`
+cache 로 push:
+
+```ts
+agent.write({ type: "auth_update", naiaKey: "gw-..." });
+```
+
+이 경로는 `naia-os/agent/src/index.ts` 에 backward compat 용으로 남아있지만
+dev 모드에서는 bypass 됨 (standalone runtime 우선 — 위 spawn resolution 순서
+참조). `naia-agent` sibling repo 없이 cold clone 된 `naia-os` 만 이 경로를
+사용; legacy 코드는 maintenance only.
 
 ## Creds update 흐름 (#260 follow-up, 2026-05-12)
 

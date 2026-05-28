@@ -85,17 +85,34 @@ export function startAuthStatusTracking(
 		});
 	});
 
-	// (2) Kick off the initial query. Defensive: any throw → logged_out.
-	const startedAt = Date.now();
-	agentAuthQuery(mode)
-		.then((result) => {
+	// (2) Kick off the initial query with one silent retry. Only the FINAL
+	// attempt is allowed to flip the badge to logged_out.
+	//
+	// 2026-05-28 hardening — the agent's stdio dispatcher is serial and the
+	// FIRST auth_received after lab-login takes 10–30s on Windows (keyring
+	// saveAuth + PowerShell + Add-Type compile). If the shell's initial
+	// agentAuthQuery lands behind that saveAuth in the agent queue, the 45s
+	// KEYRING_IPC_TIMEOUT fires and a naive catch would flash "logged_out"
+	// on the badge milliseconds before the auth_changed push event arrives
+	// and corrects it. Symptom: "로그인이 갑자기 튕김".
+	//
+	// Mitigation: on first failure stay in "checking" and retry once after
+	// a short delay. The agent will have processed the in-flight saveAuth
+	// by then, and the second query lands on a cached cachedMasterPassword
+	// (sub-ms). If the retry also fails, fall back to logged_out as a true
+	// defensive signal.
+	const RETRY_DELAY_MS = 1500;
+	const runQuery = async (attempt: number): Promise<void> => {
+		const startedAt = Date.now();
+		try {
+			const result = await agentAuthQuery(mode);
 			if (cancelled) return;
 			const elapsed = Date.now() - startedAt;
 			if (elapsed > QUERY_WARN_MS) {
 				Logger.warn(
 					"auth-status-store",
 					"agentAuthQuery exceeded SLA threshold",
-					{ elapsedMs: elapsed, mode },
+					{ elapsedMs: elapsed, mode, attempt },
 				);
 			}
 			const snapshot: AuthStatusSnapshot = {
@@ -105,16 +122,28 @@ export function startAuthStatusTracking(
 			if (result.userId !== undefined) snapshot.userId = result.userId;
 			if (result.expiresAt !== undefined) snapshot.expiresAt = result.expiresAt;
 			onUpdate(snapshot);
-		})
-		.catch((err: unknown) => {
+		} catch (err) {
 			if (cancelled) return;
+			if (attempt === 0) {
+				Logger.warn(
+					"auth-status-store",
+					"agentAuthQuery failed — retrying once before flipping badge",
+					{ error: String(err), mode, attempt },
+				);
+				await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+				if (cancelled) return;
+				await runQuery(attempt + 1);
+				return;
+			}
 			Logger.warn(
 				"auth-status-store",
-				"agentAuthQuery failed — defaulting to logged_out",
-				{ error: String(err), mode },
+				"agentAuthQuery failed twice — defaulting to logged_out",
+				{ error: String(err), mode, attempt },
 			);
 			onUpdate({ status: "logged_out", mode });
-		});
+		}
+	};
+	void runQuery(0);
 
 	return () => {
 		cancelled = true;

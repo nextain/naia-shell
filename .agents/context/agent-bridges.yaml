@@ -50,15 +50,24 @@ bridges:
         Read-on-access JS semantics: each call site reads the current binding,
         not a captured value.
       auth_update_flow:
-        - capture old memorySystem reference
-        - build new memorySystem (with rebuilt embedding/extractor from current key)
-        - startConsolidation on new
-        - rebuild memoryProvider with new memorySystem
-        - schedule old.close() async (errors logged, not silent)
+        deprecated: "#337 (2026-05-28) — `auth_update` IPC removed. See auth_flow.version=2 below."
+        replacement: |
+          The standalone naia-agent (preferred runtime, see auth_flow.runtime below)
+          handles auth via `auth_start` / `auth_received` IPC + encrypted ADK file
+          persistence. The embedded naia-os/agent path retained `auth_update` for
+          legacy compatibility but is bypassed in dev mode (standalone takes priority).
+        legacy_flow_for_reference:
+          - capture old memorySystem reference
+          - build new memorySystem (with rebuilt embedding/extractor from current key)
+          - startConsolidation on new
+          - rebuild memoryProvider with new memorySystem
+          - schedule old.close() async (errors logged, not silent)
       race_caveat: |
         in-flight memoryProvider.encode (fire-and-forget) or .sessionRecall during
         auth_update may land on the OLD MemorySystem. Currently logs encode errors;
-        full drain barrier deferred to a follow-up issue.
+        full drain barrier deferred to a follow-up issue. The standalone naia-agent
+        runtime (see auth_flow.version=2 below) has the same race; saveAuth +
+        cache-invalidation are not yet atomic.
 
   approval_bridge:
     file: agent/src/approval-bridge.ts
@@ -98,19 +107,228 @@ provider_adapters:
       `/[-_]o\b/i` fallback that misclassified claude-opus-4-o, gemma-4-o.
 
 auth_flow:
-  credential_owner: agent
-  contract: |
-    Shell sends `auth_update` once at session start (or whenever the user's
-    Naia key changes). The agent stores it module-scope (`_agentNaiaKey` in
-    factory.ts). Per-request configs never carry naiaKey.
-  why: |
-    Single source of truth for credentials. Provider build does not depend
-    on what the shell sends per chat — it depends on what was last
-    authenticated. Tests must use `setAgentNaiaKey()` to seed, never pass
-    `naiaKey` in the ProviderConfig (that field was removed during #272).
-  related_flow: handleAuthUpdate at agent/src/index.ts rebuilds both
-    memorySystem AND memoryProvider when the key arrives, so naia embedding
-    + LLM fact extractor pick up the credential immediately.
+  version: 2
+  introduced: "#337 (2026-05-28, commits b05386a0 → 6a3b18af)"
+  credential_owner: agent (standalone naia-agent runtime)
+  runtime:
+    description: |
+      Tauri shell spawns the standalone naia-agent (projects/naia-agent/bin/naia-agent.ts)
+      in dev mode, NOT the embedded projects/naia-os/agent/dist. Resolution order in
+      shell/src-tauri/src/lib.rs spawn_agent_core (≈L864-:1005):
+        1. NAIA_AGENT_STANDALONE_PATH env override
+        2. resources/agent-standalone/dist/index.js (bundled standalone)
+        3. ../../naia-agent/bin/naia-agent.ts (dev TypeScript, AUTO-ACTIVATES)
+        4. ../agent/src/index.ts (embedded, legacy)
+        5. agent/dist/index.js (bundled embedded, legacy)
+      The embedded agent's auth_update flow is the legacy_flow_for_reference
+      under memory_bridge.paired_lifecycle.auth_update_flow above. Only Phase 3+
+      (cold-clone install of naia-os without naia-agent sibling) hits embedded.
+    build_invariant: |
+      The standalone naia-agent uses `@nextain/agent-runtime` via pnpm workspace
+      (file:./packages/runtime). When ANY src/ file in packages/runtime changes,
+      the dist/ MUST be rebuilt before `tauri:dev` will work — tsx loads bin/
+      from source but `@nextain/agent-runtime` resolves to dist/.
+      Symptom of stale runtime dist: agent-stderr.log shows
+      `SyntaxError: The requested module '@nextain/agent-runtime' does not
+      provide an export named '<symbol>'` and the agent exits before stdio
+      readline. Shell IPC then times out on every request with no readable
+      cause from shell logs alone — you MUST read agent-stderr.log.
+      Fix: `cd projects/naia-agent && pnpm exec tsc --build packages/runtime`
+    keyring_bootstrap: |
+      On Windows the first OS-keyring call (getMasterPassword in
+      packages/runtime/src/utils/keyring.ts) bootstraps a PowerShell process
+      + Add-Type C# compile for Win32 CredRead/CredWrite P/Invoke. This
+      takes ~10s on a warm machine, up to 30s on first-ever launch. The
+      agent calls `await prewarmKeyring()` BEFORE emitting `{type:"ready"}`
+      so all subsequent auth_* IPCs respond in <100ms. Shell side
+      KEYRING_IPC_TIMEOUT_MS = 45_000 covers the worst case if prewarm fails.
+      Symptom of missing prewarm: shell sees `agent-ipc timeout:
+      auth_query_response` at 15s but Rust log shows `Naia auth complete —
+      deep-link forwarded to agent` succeeded — the agent IS processing,
+      just slowly. Do NOT increase shell timeouts past 60s; fix the
+      keyring bootstrap path instead.
+  storage:
+    path: "<NAIA_ADK_PATH>/naia-settings/auth/{dev,prod}.json.enc"
+    encryption: "AES-256-GCM (crypto-envelope: magic NAIA, salt(16), nonce(12), authTag(16), ciphertext)"
+    master_key:
+      backend: "OS keyring abstraction (Windows DPAPI / macOS Keychain / Linux secret-tool + headless degraded mode)"
+      service: "io.nextain.naia"
+      account: "auth-master-v1 (keyVersion=1, future rotation = multi-key try-decrypt)"
+    atomic_write: ".tmp + rename, per-mode RW lock (oauth-flow + auth-store)"
+    known_risks:
+      - "NAIA_ADK_PATH poisoning: attacker-controlled env var → read/write wrong directory. Mitigated by shell init validation (not yet wired)."
+      - "OS keyring is the single point of failure. macOS unlocked Keychain, Linux DBUS exposure, Windows DPAPI per-user only."
+      - "No TPM / Secure Enclave hardware binding (deferred follow-up, see #337 §6)."
+      - "Forensic log buffer (oauth-flow.ts:96-112) records full 64-hex state tokens on start event. Subscribers via onOAuthLog see plaintext — defense-in-depth: truncate to 8-char prefix in future hardening."
+  ipc:
+    request_response:
+      auth_start:
+        sender: "shell agentAuthStart (shell/src/lib/agent-ipc.ts:179)"
+        handler: "naia-agent/packages/runtime/src/auth/ipc-handlers.ts:100 handleAuthStart"
+        dispatch: "naia-agent/bin/naia-agent.ts:1603"
+        request: "{ type: 'auth_start', id, mode: 'dev'|'prod', scope?: string[], locale?: string }"
+        response: "{ type: 'auth_start_response', id, authUrl, state }"
+        side_effect: "stateMap.set(state, { mode, issuer, scope, expiresAt: now+5min }) — in-memory only"
+      auth_received:
+        sender: "shell agentAuthReceived (agent-ipc.ts:208) — App.tsx:546 forwards naia_auth_complete.deepLinkUrl"
+        handler: "ipc-handlers.ts:108 handleAuthReceived → oauth-flow.ts:159 receiveOAuthDeepLink"
+        dispatch: "naia-agent.ts:1622"
+        request: "{ type: 'auth_received', id, deepLinkUrl: string }"
+        response: "{ type: 'auth_received_response', id, ok, reason?, userId?, mode? }"
+        side_effect: "On ok=true: saveAuth → encrypted ADK file + emit auth_changed loggedIn:true. Response NEVER includes naiaKey."
+      auth_query:
+        sender: "shell agentAuthQuery (agent-ipc.ts:246)"
+        handler: "ipc-handlers.ts:134 handleAuthQuery"
+        dispatch: "naia-agent.ts:1665"
+        response: "{ loggedIn, expiresAt?, userId?, scope? } — NEVER naiaKey. Powers tri-state badge."
+      auth_logout:
+        sender: "shell agentAuthLogout (agent-ipc.ts:236)"
+        handler: "ipc-handlers.ts:127 handleAuthLogout"
+        dispatch: "naia-agent.ts:1646"
+        side_effect: "deleteAuth → encrypted file removed + emit auth_changed loggedIn:false."
+      auth_legacy_migrate:
+        sender: "shell agentAuthLegacyMigrate (agent-ipc.ts:273) — Phase 8 one-shot from App.tsx mount"
+        handler: "ipc-handlers.ts:164 handleAuthLegacyMigrate"
+        dispatch: "naia-agent.ts:1679"
+        purpose: "Seed encrypted file from legacy shell secure-keys.dat:naiaKey slot. Hard-fail on ack failure (no fallback)."
+      lab_proxy_request:
+        sender: "shell agentLabProxyRequest (agent-ipc.ts:302)"
+        handler: "ipc-handlers.ts:247 handleLabProxyRequest"
+        purpose: |
+          Shell never holds naiaKey. Agent loads from encrypted file, injects
+          X-AnyLLM-Key: Bearer header, returns upstream response body without key.
+          401 → single-flight refresh (refresh.ts) → retry once.
+        url_validation: "resolveProxyUrl (ipc-handlers.ts:230): path MUST start with `/` OR be absolute URL with origin === issuer. Rejects cross-host paths."
+        used_for:
+          - "/v1/profile/balance (SettingsTab.fetchLabBalance)"
+          - "/v1/profile/usage (usage charts)"
+          - "/api/desktop/channels/discord (channel-sync.ts)"
+          - "/api/desktop/discord-bot-token (channel-sync.ts)"
+          - "/api/lab/sync (lab-sync.ts)"
+        path_prefix_routing: |
+          Agent ipc-handlers.ts:resolveProxyUrl routes relative paths by
+          prefix:
+            /v1/*   → Lab Gateway origin (mode-mapped, see LAB_GATEWAY_URLS)
+            /api/*  → portal issuer origin (NextAuth-gated)
+            other/* → portal issuer origin
+          Absolute URLs are accepted only when the origin matches issuer OR
+          the mode-mapped Lab Gateway. Anything else → disallowed_host.
+        gateway_urls:
+          dev: "https://naia-gateway-dev-181404717065.asia-northeast3.run.app (env NAIA_LAB_GATEWAY_URL_DEV override)"
+          prod: "https://naia-gateway-181404717065.asia-northeast3.run.app (env NAIA_LAB_GATEWAY_URL_PROD override)"
+        why_per_prefix: |
+          Pre-2026-05-28 the proxy sent EVERY path to state.issuer (portal).
+          /v1/profile/balance is a Gateway endpoint not implemented on the
+          portal — symptom: 404 HTML on Settings balance fetch even after
+          login succeeded. Per-prefix routing fixes this without requiring
+          shell to supply a URL on every call (which would re-introduce the
+          arbitrary-host exfil risk the issuer-only check originally closed).
+    push_events:
+      auth_changed:
+        emitter: "agent on saveAuth/deleteAuth success"
+        subscriber: "shell onAgentAuthChanged (agent-ipc.ts:334)"
+        payload: "{ mode, loggedIn }"
+        consumer: "useAuthStatus → tri-state badge"
+      auth_expired:
+        emitter: "agent on refresh-token exchange failure (refresh.ts)"
+        subscriber: "shell onAgentAuthExpired (agent-ipc.ts:379)"
+        payload: "{ mode, reason: 'refresh_failed' | 'revoked' | ... }"
+  state_token:
+    storage: "in-memory map only (oauth-flow.ts:92 stateMap)"
+    ttl: "5 minutes (STATE_TTL_MS)"
+    format: "32 random bytes → 64-char hex (oauth-flow.ts:124 randomBytes(32).toString('hex'))"
+    bindings: ["mode", "issuer", "scope"]
+    single_use: "deleted from map on receive (oauth-flow.ts:182) BEFORE TTL check"
+    crash_semantics: "agent process restart loses all stateMap entries → user must restart login flow"
+  llm_env_population:
+    introduced: "#337 follow-up (2026-05-28)"
+    contract: |
+      The agent's primary chat path (buildLLMClient first branch in
+      bin/naia-agent.ts:425-459) requires `process.env.NAIA_ANYLLM_API_KEY`
+      to be set together with `NAIA_ANYLLM_BASE_URL`. Pre-#337 the shell
+      pushed the key via `auth_update`. Phase 6c removed that — the agent
+      now self-populates from the encrypted ADK auth file.
+    helper: |
+      bin/naia-agent.ts: `populateNaiaEnvFromAuth(mode?)` reads the
+      encrypted blob at <NAIA_ADK_PATH>/naia-settings/auth/{mode}.json.enc
+      and sets process.env.NAIA_ANYLLM_API_KEY = state.naiaKey. Silent on
+      missing/expired auth — buildLLMClient surfaces the canonical error.
+    invocation_points:
+      boot: |
+        runStdio() — after `await prewarmKeyring()`, before the `ready`
+        signal. Ensures the FIRST chat_request on a previously-logged-in
+        agent resolves without restart.
+      after_auth_received: |
+        case "auth_received" — after `cachedLlm = undefined`, before the
+        auth_changed emit. Re-login picks up the new naiaKey without
+        restart.
+      after_auth_logout: |
+        case "auth_logout" — `delete process.env.NAIA_ANYLLM_API_KEY` so
+        buildLLMClient cannot silently keep using a key the user just
+        invalidated.
+    symptom_of_missing_population: |
+      "no LLM provider configured" error emitted from bin/naia-agent.ts:543
+      on every chat_request, even though auth_query returns loggedIn:true
+      and ADK auth file exists. Distinguishes #337-incomplete-follow-up
+      from genuine missing-credentials state.
+  oauth_url_composition:
+    issuer:
+      dev: "http://localhost:3001 (local naia.nextain.io dev server, port 3001 per project AGENTS.md)"
+      prod: "https://naia.nextain.io"
+    params_set: [state, app=naia-os, platform, redirect=desktop, source=desktop, scope?]
+    locale_segment: "{issuer}/{locale}/login?{params}"
+    important: |
+      Portal middleware (cross-repo coupling, see below) requires BOTH redirect=desktop
+      AND app=naia-os to enter the desktop-auth branch (post-#337-fix). Older
+      builds using OR semantics are NOT compatible with the AND-gated portal.
+  cross_repo_coupling:
+    portal_middleware:
+      file: "projects/naia.nextain.io/src/proxy.ts"
+      contract: |
+        On authenticated user hitting /{lang}/login with redirect=desktop AND
+        app=naia-os, redirect to /{lang}/callback FORWARDING all original
+        query params (especially state). Without state forwarded, agent's
+        receiveOAuthDeepLink rejects with `missing_state` and login appears
+        to hang indefinitely.
+      skip_list: "source (normalized), callbackUrl (rejected SSO guard), redirect, app (already consumed)"
+      state_format_validation: "/^[0-9a-f]{64}$/ — drops attacker-supplied invalid state"
+      and_logic_security: |
+        BOTH redirect=desktop AND app=naia-os required. OR semantics allowed
+        crafted phishing links with `?app=naia-os` to silently trigger
+        desktop-auth flow on any authenticated user. AND closes that.
+    portal_callback_page:
+      file: "projects/naia.nextain.io/src/app/[lang]/(auth)/callback/page.tsx"
+      issues_key: "POST /api/gateway/desktop-key (NextAuth session-gated)"
+      fires_deep_link: "buildNaiaAuthDeepLink (deep-link.ts:15-17) — state conditionally included only when truthy"
+      embedded_fallback: "buildDesktopAuthCallbackUrl for source=embedded path (Chrome CDP URL monitor)"
+  shell_ui:
+    tri_state_badge:
+      states: [checking, logged_in, logged_out]
+      driver: "shell useAuthStatus hook (consumes onAgentAuthChanged)"
+      no_optimistic: "Renders 'checking' until first auth_changed snapshot. Boot SLA target: <200ms p95 from agent process spawn."
+    error_surfacing:
+      current: "App.tsx:559 Logger.warn only — no UI banner. (Defer fix to hygiene follow-up.)"
+      desired: "useAuthStatus error field + banner on auth_received ok:false."
+  legacy_removed:
+    shell_naia_key_slot:
+      from: "secure-keys.dat:naiaKey"
+      removed_in: "Phase 6c (commit c44fdd6c) — shell no longer reads or writes the slot"
+      retained: "secure-keys.dat:gatewayToken (separate slot, separate flow, deferred to follow-up)"
+    auth_update_ipc:
+      removed_in: "Phase 6c — superseded by auth_start / auth_received / auth_query"
+      legacy_handler: "embedded agent/src/index.ts handleAuthUpdate (still present but unreachable in standalone runtime)"
+    shell_held_naia_key:
+      note: |
+        naiaKey identifier still appears in shell/src/lib/{voice,discord-relay,adk-store}.ts
+        for legacy paths (voice provider config, Discord Bearer). These are reads from
+        the agent's auth file via the lab-proxy abstraction or vestigial code paths
+        slated for cleanup. They do NOT re-introduce shell-side persistence.
+  tests:
+    - "naia-agent/packages/runtime/src/auth/__tests__/ipc-handlers.test.ts"
+    - "naia-agent/packages/runtime/src/auth/__tests__/restart-preserves-login.test.ts (dev + prod cross-restart)"
+    - "naia-agent/packages/runtime/src/auth/__tests__/refresh.test.ts (single-flight, 401 retry, portal error)"
+    - "shell/src/lib/__tests__/agent-ipc.test.ts"
+    - "shell/e2e/204-onboarding-login.spec.ts (B13-B17: embedded Chrome path)"
 
 creds_flow:
   credential_owner: agent (module-scope caches)
@@ -155,6 +373,106 @@ creds_flow:
   tests:
     - "agent/src/__tests__/creds-update.test.ts (11 cases: LLM keys cache, empty clears, overwrite, malformed skipped, missing tolerated, cache vs env priority, TTS keys cache + clear, gatewayToken cache + clear, partial update preserves)"
     - "shell/src/lib/__tests__/chat-service.test.ts — sendCredsUpdate emits all three fields + empty-string clear + omits optional fields when undefined"
+
+observability:
+  # ────────────────────────────────────────────────────────────────────
+  # CRITICAL FOR AI AGENTS: Before asking the user to paste logs, READ THESE
+  # FILES DIRECTLY. The user does not need to be a log-paste proxy.
+  # ────────────────────────────────────────────────────────────────────
+  log_locations:
+    base_dir: "{HOME}/.naia/logs/"
+    home_resolution:
+      windows: "%USERPROFILE%\\.naia\\logs\\ — typically C:\\Users\\<user>\\.naia\\logs\\"
+      linux_macos: "$HOME/.naia/logs/"
+    files:
+      naia.log:
+        owner: "Rust shell (log_both / log_verbose / log_to_file)"
+        contains: "session start/end, deep-link receive, agent spawn, gateway sync, window state, important auth events"
+        format: "[<unix-ms-or-iso>] [<component>] <message>"
+        rotation: "appended; not truncated automatically"
+      agent-stderr.log:
+        owner: "naia-agent process stderr (redirected by Rust shell)"
+        contains: "agent import errors, dispatch errors, stderr from PowerShell calls, ERROR exit messages"
+        critical: "If agent crashes during import, the symptom from shell side is `agent-ipc timeout` on every IPC. ALWAYS check this file when shell IPCs time out."
+        format: "raw Node.js stderr (multi-line stack traces)"
+      node-host.log:
+        owner: "Legacy openclaw node-host (mostly empty post-#201)"
+        contains: "currently inert; do not rely on for active diagnosis"
+      gateway.log:
+        owner: "Legacy Naia Gateway (removed #201)"
+        contains: "inert"
+      bgm-server-stderr.log:
+        owner: "BGM tsx subprocess stderr"
+        contains: "audio loop errors"
+      llm-debug.log:
+        owner: "LLM client debug (when NAIA_LLM_DEBUG=1)"
+        contains: "verbose request/response when explicitly enabled"
+  ai_self_diagnosis_protocol:
+    purpose: |
+      When investigating a runtime symptom (login hang, chat fail, panel
+      missing), DO NOT ask the user to paste logs. Read the files directly.
+      The user's role is to take ACTIONS in the app; the AI's role is to
+      OBSERVE state from logs + code.
+    decision_tree:
+      symptom_shell_ipc_timeout:
+        condition: "shell logs (DevTools console OR naia.log) show `agent-ipc timeout: <responseType>`"
+        diagnosis_steps:
+          - "1. Read tail of agent-stderr.log — if SyntaxError / unhandled error: agent crashed during import. Likely a runtime build out of sync. Rebuild: cd projects/naia-agent && pnpm exec tsc --build packages/runtime"
+          - "2. Read tail of naia.log — confirm agent-core started AND did NOT immediately session-end"
+          - "3. If agent is alive but unresponsive: keyring bootstrap on Windows. Verify prewarmKeyring is invoked BEFORE ready signal in bin/naia-agent.ts:runStdio()"
+          - "4. Probe stdio directly (do not wait for the user) — see probe_recipe below"
+      symptom_login_hangs:
+        condition: "Lab login click → system browser opens → never returns to logged_in state"
+        diagnosis_steps:
+          - "1. Read naia.log — look for `Deep link received` line. Absent = portal redirect did not fire OR `naia://` scheme not registered."
+          - "2. Verify portal middleware (projects/naia.nextain.io/src/proxy.ts) forwards state param. After 2026-05-28 fix this is mandatory."
+          - "3. Read agent-stderr.log for receiveOAuthDeepLink rejections (missing_state / unknown_state / expired_state)"
+          - "4. Inspect <NAIA_ADK_PATH>/naia-settings/auth/{mode}.json.enc to verify saveAuth completed"
+      symptom_no_llm_provider:
+        condition: "chat returns `no LLM provider configured` error"
+        diagnosis_steps:
+          - "1. Verify creds_update arrived: read naia.log for sendCredsUpdate emit"
+          - "2. Check agent-stderr.log for credential parse failures"
+          - "3. Confirm AppConfig.provider/model are non-empty (shell config.ts)"
+    probe_recipe: |
+      Direct stdio probe (Windows; bash sandbox OK) — verifies agent boot
+      and first auth_query latency without depending on the Tauri shell:
+
+        cd projects/naia-agent && node -e "
+          const { spawn } = require('child_process');
+          const child = spawn('node',
+            ['node_modules/tsx/dist/cli.mjs', 'bin/naia-agent.ts', '--stdio'],
+            { env: { ...process.env, NAIA_ADK_PATH: '<your-adk-path>',
+                     NAIA_AGENT_MODE: 'dev' },
+              stdio: ['pipe','pipe','pipe'] });
+          let buf = '';
+          child.stdout.on('data', d => {
+            buf += d.toString();
+            for (const line of buf.split(/\r?\n/).slice(0,-1)) {
+              try {
+                const j = JSON.parse(line);
+                if (j.type === 'ready') {
+                  child.stdin.write(JSON.stringify({
+                    type:'auth_query', id:'p1', mode:'dev'
+                  })+'\n');
+                } else if (j.type === 'auth_query_response') {
+                  console.log(JSON.stringify(j));
+                  child.kill(); process.exit(0);
+                }
+              } catch {}
+            }
+            buf = buf.split(/\r?\n/).slice(-1)[0];
+          });
+          setTimeout(() => process.exit(1), 60000);
+        "
+
+      Expected: `ready` within ~10s on Windows (prewarmKeyring) followed by
+      `auth_query_response` within ~5ms. Anything slower indicates a
+      keyring or filesystem issue specific to the user's machine.
+  anti_patterns:
+    - "DO NOT ask the user 'can you paste the agent log' — read C:/Users/<user>/.naia/logs/agent-stderr.log via the Read tool"
+    - "DO NOT assume IPC wiring is broken from a single timeout — verify the agent is actually alive via agent-stderr.log first"
+    - "DO NOT increase shell timeouts > 60s without investigating WHY the agent is slow — there is always a real cause (build artifact, keyring, file I/O)"
 
 notify_flow:
   credential_owner: agent (env-cached)
