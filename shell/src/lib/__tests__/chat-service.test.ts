@@ -100,6 +100,20 @@ describe("chat-service", () => {
 		});
 	});
 
+	// Phase 3 #337 follow-up — agent.session_close IPC released by chat
+	// store's newConversation; serialized as a single-line JSON-over-stdio
+	// command, fire-and-forget.
+	it("sendSessionClose serializes a session_close command", async () => {
+		const { sendSessionClose } = await import("../chat-service");
+		await sendSessionClose("chat-abc");
+		expect(mockInvoke).toHaveBeenCalledWith("send_to_agent_command", {
+			message: JSON.stringify({
+				type: "session_close",
+				sessionId: "chat-abc",
+			}),
+		});
+	});
+
 	it("cleans up listener when invoke throws", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 		mockInvoke.mockRejectedValueOnce(new Error("backend crash"));

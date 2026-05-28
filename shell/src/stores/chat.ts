@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { sendSessionClose } from "../lib/chat-service";
 import { Logger } from "../lib/logger";
 import type {
 	ChatMessage,
@@ -289,6 +290,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		) {
 			requestBrowserVisibilitySync();
 		}
+		// Capture the old sessionId BEFORE generating the new one so the
+		// agent can release the cached Agent + in-flight streams for the
+		// retiring conversation (naia-agent Phase 2 #337 follow-up).
+		const oldLocalSessionId = get().localSessionId;
 		set({
 			sessionId: null,
 			localSessionId: generateLocalSessionId(),
@@ -301,6 +306,11 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			sessionCostEntries: [],
 			pendingApproval: null,
 			messageQueue: [],
+		});
+		// Fire-and-forget — failure is non-fatal (the agent LRU evicts
+		// stale Agents eventually). Run AFTER set() so UI updates first.
+		sendSessionClose(oldLocalSessionId).catch((err) => {
+			Logger.warn("ChatStore", "sendSessionClose failed", { err });
 		});
 	},
 

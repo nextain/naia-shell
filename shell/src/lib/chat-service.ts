@@ -179,6 +179,21 @@ export async function cancelChat(requestId: string): Promise<void> {
 	await invoke("cancel_stream", { requestId });
 }
 
+/**
+ * Tell the agent to release the cached Agent + abort any in-flight stream
+ * for `sessionId`. Fired by the chat store's `newConversation()` so the
+ * agent's sessionId-keyed cache doesn't leak the old session's `#history`
+ * forever (see naia-agent Phase 2 #337 follow-up).
+ *
+ * Fire-and-forget — failure is non-fatal (LRU eviction will reclaim the
+ * Agent eventually). No response is expected from the agent.
+ */
+export async function sendSessionClose(sessionId: string): Promise<void> {
+	await invoke("send_to_agent_command", {
+		message: JSON.stringify({ type: "session_close", sessionId }),
+	});
+}
+
 /** Pipeline TTS: synthesize a single sentence → returns MP3 base64 via callback */
 export async function requestTts(opts: {
 	text: string;

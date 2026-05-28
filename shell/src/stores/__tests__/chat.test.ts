@@ -1,7 +1,26 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Phase 3 #337 follow-up — newConversation fires sendSessionClose
+// fire-and-forget for the retiring localSessionId. Mock it so we can
+// assert the argument without depending on a Tauri runtime in test env.
+vi.mock("../../lib/chat-service", async () => {
+	const actual =
+		await vi.importActual<typeof import("../../lib/chat-service")>(
+			"../../lib/chat-service",
+		);
+	return {
+		...actual,
+		sendSessionClose: vi.fn(async () => {}),
+	};
+});
+
+import { sendSessionClose } from "../../lib/chat-service";
 import { useChatStore } from "../chat";
 
 describe("useChatStore", () => {
+	beforeEach(() => {
+		vi.mocked(sendSessionClose).mockClear();
+	});
 	afterEach(() => {
 		useChatStore.setState(useChatStore.getInitialState());
 	});
@@ -52,6 +71,24 @@ describe("useChatStore", () => {
 		expect(state.totalSessionCost).toBe(0);
 		// provider is preserved (not reset by newConversation)
 		expect(state.provider).toBe("xai");
+	});
+
+	// Phase 3 #337 follow-up — newConversation must (a) rotate localSessionId
+	// so the agent's sessionId-keyed cache doesn't collide, and (b) fire
+	// session_close for the RETIRING sessionId so the agent releases its
+	// cached Agent + aborts in-flight streams.
+	it("newConversation rotates localSessionId and fires sendSessionClose with the OLD one", () => {
+		const oldLocal = useChatStore.getState().localSessionId;
+		expect(oldLocal).toMatch(/^chat-/);
+
+		useChatStore.getState().newConversation();
+
+		const newLocal = useChatStore.getState().localSessionId;
+		expect(newLocal).not.toBe(oldLocal);
+		expect(newLocal).toMatch(/^chat-/);
+
+		expect(sendSessionClose).toHaveBeenCalledTimes(1);
+		expect(sendSessionClose).toHaveBeenCalledWith(oldLocal);
 	});
 
 	it("addMessage adds user message", () => {
