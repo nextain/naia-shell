@@ -206,7 +206,7 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gemini-3.5-flash",
+	defaultModel: "gemini-3.1-flash-lite-preview",
 	models: [
 		{
 			id: "gemini-3.5-flash",

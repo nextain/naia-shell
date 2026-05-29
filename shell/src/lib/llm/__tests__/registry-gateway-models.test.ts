@@ -44,10 +44,10 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		expect(ids).toContain("gemini-2.5-flash");
 	});
 
-	it("Naia default model is gemini-3.5-flash", async () => {
+	it("Naia default model is gemini-3.1-flash-lite-preview", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		expect(naia!.defaultModel).toBe("gemini-3.5-flash");
+		expect(naia!.defaultModel).toBe("gemini-3.1-flash-lite-preview");
 	});
 });
 
@@ -56,7 +56,7 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		const d = shouldMigrateNextainModel("nextain", "some-deprecated-model");
 		expect(d.migrate).toBe(true);
-		if (d.migrate) expect(d.to).toBe("gemini-3.5-flash");
+		if (d.migrate) expect(d.to).toBe("gemini-3.1-flash-lite-preview");
 	});
 
 	it("does NOT migrate valid models on nextain provider", async () => {

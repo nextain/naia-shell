@@ -271,13 +271,14 @@ export function App() {
 	}, []);
 
 	// Load background video from naia-settings/background/
+	// #342: fall back to morning-coffee when no saved preference
+	const DEFAULT_BG_VIDEO = "morning-coffee.3840x2160.mp4";
 	useEffect(() => {
 		if (showAdkSetup) return;
 		listNaiaAssets("background").then(async (paths) => {
 			if (paths.length === 0) return;
 			const config = loadConfig();
-			const saved = config?.backgroundVideo as string | undefined;
-			if (!saved) return; // no saved preference → keep default space background
+			const saved = (config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
 			const match = paths.find((p) => p.endsWith(saved));
 			if (match) {
 				setBackgroundMediaType(getBackgroundMediaType(match));
@@ -395,6 +396,18 @@ export function App() {
 
 	useEffect(() => {
 		if (showOnboarding) return;
+		// #345: Re-send auth_update after onboarding completion (or on app start when
+		// showOnboarding stays false). This is a defensive guard — primary auth flow
+		// is the auth_update in OnboardingWizard's naia_auth_complete handler, but if
+		// that send was dropped (timing / agent not yet ready), this catches it.
+		// On normal app start this runs in parallel with initAuth() — harmless duplicate.
+		void loadConfigWithSecrets().then((cfg) => {
+			if (!cfg?.naiaKey) return;
+			invoke("store_startup_message", {
+				message: JSON.stringify({ type: "auth_update", naiaKey: cfg.naiaKey }),
+			}).catch(() => {});
+			sendAuthUpdate(cfg.naiaKey).catch(() => {});
+		});
 		let active = true;
 		checkForUpdate()
 			.then((info) => {
@@ -453,6 +466,11 @@ export function App() {
 		void naiaWidth;
 		window.dispatchEvent(new CustomEvent("naia-width-changed"));
 	}, [naiaWidth]);
+
+	// #344: onboarding takes full screen — notify AvatarCanvas to recompute filmOffset
+	useEffect(() => {
+		window.dispatchEvent(new CustomEvent("naia-width-changed"));
+	}, [showOnboarding]);
 
 	useEffect(() => {
 		const unlisten = listen<{
@@ -650,7 +668,7 @@ export function App() {
 	return (
 		<div
 			className="app-root"
-			style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
+			style={{ "--naia-width": showOnboarding ? `${window.innerWidth}px` : `${naiaWidth}px` } as React.CSSProperties}
 		>
 			{/* ①-a Default background — always base layer (#36 fix).
 			    YouTube BGM iframe 이 autoplay 안 되거나 로딩 실패해도 깨진 X 박스

@@ -57,8 +57,8 @@ describe("registry — Naia (nextain) provider models", () => {
 		expect(p?.requiresNaiaKey).toBe(true);
 	});
 
-	it("default model is gemini-3.5-flash", () => {
-		expect(getDefaultLlmModel("nextain")).toBe("gemini-3.5-flash");
+	it("default model is gemini-3.1-flash-lite-preview", () => {
+		expect(getDefaultLlmModel("nextain")).toBe("gemini-3.1-flash-lite-preview");
 	});
 });
 
