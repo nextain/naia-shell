@@ -89,6 +89,31 @@ describe("realtime handshake E2E — reproduce device 4001", () => {
 		expect(true).toBe(true);
 	});
 
+	// CONTROL — prove the SAME key is valid on this gateway via chat.
+	// If chat=200 but realtime rejects, the realtime auth path is the bug.
+	it.skipIf(!naiaKey)(
+		"control: same key authenticates /v1/chat/completions (key is valid here)",
+		async () => {
+			const res = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-AnyLLM-Key": `Bearer ${naiaKey}`,
+				},
+				body: JSON.stringify({
+					model: "vertexai:gemini-2.5-flash",
+					messages: [{ role: "user", content: "ok" }],
+					max_tokens: 5,
+					stream: true,
+				}),
+				signal: AbortSignal.timeout(15000),
+			});
+			console.log("[chat control] status=%d (200 == key valid on gateway)", res.status);
+			expect(res.status).toBe(200);
+		},
+		20000,
+	);
+
 	it.skipIf(!naiaKey)(
 		"WS /v1/realtime setup.apiKey → close code must NOT be 4001",
 		async () => {

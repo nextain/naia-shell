@@ -8,7 +8,7 @@
  * Returns null when no key is available (tests should `it.skipIf(!key)`).
  */
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** PROD by default; override with NAIA_TEST_GATEWAY for the dev gateway. */
@@ -18,6 +18,37 @@ export const GATEWAY_URL =
 
 export function loadNaiaKey(): string | null {
 	if (process.env.NAIA_TEST_KEY) return process.env.NAIA_TEST_KEY;
+	if (process.env.NAIA_PROD_KEY) return process.env.NAIA_PROD_KEY;
+	// data-private plaintext env file (the real account key). Prefer the
+	// explicitly-prod NAIA_PROD_KEY entry; value is never logged.
+	for (const envFile of [
+		join(
+			process.env.USERPROFILE || process.env.HOME || "",
+			"dev",
+			"alpha-adk",
+			"data-private",
+			"key",
+			"llm-key.env",
+		),
+		"D:/alpha-adk/data-private/key/llm-key.env",
+	]) {
+		if (!existsSync(envFile)) continue;
+		try {
+			const content = readFileSync(envFile, "utf-8");
+			const prod = content.match(/NAIA_PROD_KEY\s*=\s*["']?(gw-[A-Za-z0-9_-]+)/);
+			if (prod) {
+				console.log("[naia-test-key] source: data-private NAIA_PROD_KEY");
+				return prod[1];
+			}
+			const any = content.match(/gw-[A-Za-z0-9_-]+/);
+			if (any) {
+				console.log("[naia-test-key] source: data-private (first gw- token)");
+				return any[0];
+			}
+		} catch {
+			/* fall through to DPAPI */
+		}
+	}
 	const candidates = [
 		join(
 			process.env.USERPROFILE || process.env.HOME || "",
