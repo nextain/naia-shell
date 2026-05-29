@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clearSavedCamera } from "./AvatarCanvas";
+import { RefAudioSection } from "./RefAudioSection";
 import { SkillsTab } from "./SkillsTab";
 import {
 	clearAdkPath,
@@ -3129,7 +3130,10 @@ export function SettingsTab() {
 				</>
 			)}
 
-			{/* 오디오 장치 */}
+			{/* Voice Reference (naia-anyllm #31, plan §7) */}
+				<RefAudioSection />
+
+				{/* 오디오 장치 */}
 			<div className="settings-section-divider">
 				<span>오디오 장치</span>
 			</div>
