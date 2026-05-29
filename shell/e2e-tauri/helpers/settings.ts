@@ -381,10 +381,14 @@ export async function ensureAppReady(): Promise<void> {
 			),
 		{ timeout: 60_000 },
 	);
+	// jikime c0d967e9 baseline 의 ChatPanel.tsx 는 chat-tabs 안에 button.chat-tab
+	// 3개 (chat / history / channels). origin/main 의 #337 시리즈에서 8 tab 으로
+	// 확장됐던 helper 가 cherry-pick 으로 baseline 위에 그대로 들어옴 = mismatch.
+	// 3 tab 이 baseline 의 정확한 contract. (debug log 에서 무한 false 확인.)
 	await browser.waitUntil(
 		async () =>
 			browser.execute(
-				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 8,
+				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 3,
 			),
 		{ timeout: 60_000 },
 	);
