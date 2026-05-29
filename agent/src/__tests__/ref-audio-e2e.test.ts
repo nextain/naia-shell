@@ -51,11 +51,20 @@ describe("ref-audio gateway E2E — reproduce device 'Failed to fetch'", () => {
 			const res = await fetch(`${GATEWAY_URL}/v1/ref-audio/presets`, {
 				headers: { Authorization: `Bearer ${naiaKey}`, Origin: TAURI_ORIGIN },
 			});
+			const body = (await res.json()) as {
+				presets?: Array<{ id?: string; sample_url?: string; sample_format?: string }>;
+			};
 			console.log(
 				"[presets] status=%d headers=%o",
 				res.status,
 				fmtHeaders(res),
 			);
+			// preview uses `new Audio(sample_url)` → governed by CSP media-src.
+			// Log the URL host so we know whether media-src needs the domain
+			// (or we must fetch→blob, since blob: is already allowed).
+			for (const p of (body.presets ?? []).slice(0, 3)) {
+				console.log("[preset sample_url]", p.id, "→", p.sample_url, `(${p.sample_format})`);
+			}
 			expect(res.status).toBe(200);
 		},
 	);
