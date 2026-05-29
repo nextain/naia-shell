@@ -286,15 +286,6 @@ export const config = {
 			},
 		);
 
-		// W1.옵션A — VRM 로딩 skip + setLoaded(true) 즉시. baseline 시점의
-		// Three.js + @pixiv/three-vrm peer dep mismatch 로 wdio 환경에서
-		// init fail. localStorage flag (page reload 무관) 로 AvatarCanvas
-		// useEffect 가 분기. main flow / 사용자 dev:tauri 무영향 (flag 안 set).
-		await browser.execute(() => {
-			localStorage.setItem("naia-e2e-mock-avatar", "1");
-		});
-		await browser.refresh();
-
 		// Ensure base config is set so the app bypasses onboarding.
 		const { ensureAppReady } = await import("./helpers/settings.js");
 		await ensureAppReady();

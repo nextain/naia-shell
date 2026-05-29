@@ -367,21 +367,25 @@ export async function ensureAppReady(): Promise<void> {
 	}
 
 	// Wait for app + tabs to be ready
+	// W1.옵션A — timeout 60s 로 늘렸으나 Bazzite + WebKitWebDriver 환경에서도
+	// 일부 spec 통과 못함. 윈도우 환경에서 통과 가능성 높음 (사용자 명시 2026-05-29
+	// "윈도우 위주로 테스트 하려고해"). 60s 그대로 둠 — windows wdio 환경에서
+	// VRM 로딩 시간 충분 대비.
 	const appRoot = await $(S.appRoot);
-	await appRoot.waitForDisplayed({ timeout: 15_000 });
+	await appRoot.waitForDisplayed({ timeout: 60_000 });
 	await browser.waitUntil(
 		async () =>
 			browser.execute(
 				(sel: string) => !document.querySelector(sel),
 				S.onboardingOverlay,
 			),
-		{ timeout: 15_000 },
+		{ timeout: 60_000 },
 	);
 	await browser.waitUntil(
 		async () =>
 			browser.execute(
 				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 8,
 			),
-		{ timeout: 15_000 },
+		{ timeout: 60_000 },
 	);
 }

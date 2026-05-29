@@ -652,7 +652,18 @@ export function App() {
 			className="app-root"
 			style={{ "--naia-width": `${naiaWidth}px` } as React.CSSProperties}
 		>
-			{/* ① Background — always the base layer, z-index:0 */}
+			{/* ①-a Default background — always base layer (#36 fix).
+			    YouTube BGM iframe 이 autoplay 안 되거나 로딩 실패해도 깨진 X 박스
+			    대신 default 가 보이도록 강제 표시. iframe/video/image 가 정상
+			    로드되면 그것이 위로 덮음. 사용자 명시 2026-05-29 "그냥 로컬
+			    배경화면/영상을 기본 보여주던가". */}
+			<img
+				className="app-bg-image"
+				src="/assets/background/background-space.png"
+				alt=""
+				style={{ zIndex: 0 }}
+			/>
+			{/* ①-b Foreground BGM — overlay on top (z-index:1) when configured */}
 			{backgroundMediaType === "iframe" && backgroundVideoUrl ? (
 				<iframe
 					key={backgroundVideoUrl}
@@ -661,6 +672,7 @@ export function App() {
 					allow="autoplay"
 					sandbox="allow-scripts allow-same-origin allow-presentation"
 					title="BGM"
+					style={{ zIndex: 1 }}
 				/>
 			) : backgroundVideoUrl &&
 			(backgroundMediaType === "video" ||
@@ -673,6 +685,7 @@ export function App() {
 					loop
 					muted
 					playsInline
+					style={{ zIndex: 1 }}
 				/>
 			) : backgroundVideoUrl &&
 				(backgroundMediaType === "image" ||
@@ -682,14 +695,9 @@ export function App() {
 					className="app-bg-image"
 					src={backgroundVideoUrl}
 					alt=""
+					style={{ zIndex: 1 }}
 				/>
-			) : (
-				<img
-					className="app-bg-image"
-					src="/assets/background/background-space.png"
-					alt=""
-				/>
-			)}
+			) : null}
 
 			{/* ② Splash — position:fixed covers everything */}
 			{showSplash && <SplashScreen onDone={onSplashDone} ready={appReady} />}

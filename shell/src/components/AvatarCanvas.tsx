@@ -422,21 +422,6 @@ export function AvatarCanvas() {
 		async function init() {
 			let stage = "init";
 			let localReadError = "";
-			// W1.옵션A — E2E 환경 (wdio + tauri-driver + WebKitWebDriver) 에서 VRM
-			// asset 로딩이 baseline 시점의 Three.js + @pixiv/three-vrm peer dep
-			// mismatch 로 fail. main flow (useAppReady) 가 5s timeout 후 force
-			// ready 하긴 하나, ensureAppReady helper 가 .app-root 미표시 로 다시
-            // fail. E2E mock flag (localStorage = page reload 무관) 로 즉시
-            // setLoaded(true) → splash 즉시 dismiss.
-			if (
-				typeof window !== "undefined" &&
-				typeof localStorage !== "undefined" &&
-				localStorage.getItem("naia-e2e-mock-avatar") === "1"
-			) {
-				setLoaded(true);
-				setLoadStage("e2e-mock");
-				return;
-			}
 			try {
 				setLoadError("");
 				setLoaded(false);
