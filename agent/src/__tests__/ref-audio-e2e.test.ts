@@ -83,6 +83,37 @@ describe("ref-audio gateway E2E — reproduce device 'Failed to fetch'", () => {
 		},
 	);
 
+	// REGRESSION (#31) — the ACTUAL root cause of "프리셋 안뜸" / device auth fail.
+	// The pre-1ab7c7c7 client sent `X-AnyLLM-Key: Bearer <key>`, but the gateway
+	// ref-audio routes (ref_audio.py _extract_bearer) read ONLY `Authorization`.
+	// So the old build got 401 license-failed on every ref-audio call, while
+	// node prod tests that only checked the 200 control looked "fine". This
+	// pins the header contract: WRONG header → 401, RIGHT header → 200.
+	it.skipIf(!naiaKey)(
+		"header contract: X-AnyLLM-Key → 401 (old bug), Authorization → 200 (fix)",
+		async () => {
+			// (a) old client header — must be rejected (reproduces the device bug).
+			const wrong = await fetch(`${GATEWAY_URL}/v1/ref-audio`, {
+				headers: {
+					"X-AnyLLM-Key": `Bearer ${naiaKey}`,
+					Origin: TAURI_ORIGIN,
+				},
+			});
+			console.log("[header contract] X-AnyLLM-Key status=%d (expect 401)", wrong.status);
+			expect(wrong.status).toBe(401);
+
+			// (b) fixed client header — must succeed (error is gone).
+			const right = await fetch(`${GATEWAY_URL}/v1/ref-audio`, {
+				headers: {
+					Authorization: `Bearer ${naiaKey}`,
+					Origin: TAURI_ORIGIN,
+				},
+			});
+			console.log("[header contract] Authorization status=%d (expect 200)", right.status);
+			expect(right.status).toBe(200);
+		},
+	);
+
 	// REPRO — the actual CORS gate for upload: OPTIONS preflight from tauri origin.
 	it.skipIf(!naiaKey)(
 		"OPTIONS /v1/ref-audio (preflight for POST) — tauri origin allowed?",
