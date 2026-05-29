@@ -385,11 +385,60 @@ describe("chat-service", () => {
 		});
 
 		it("sendCredsUpdate naia-agent 없어도 throw 안 함", async () => {
+			// W2.review P1-1 fix: 옛 test 는 mockRejectedValue 누락 → happy path
+			// 만 검증. swallow 경로 직접 실행.
 			mockInvoke.mockRejectedValue(new Error("agent-core died"));
 			const { sendCredsUpdate } = await import("../chat-service");
 			await expect(
 				sendCredsUpdate({ keys: { anthropic: "sk-ant-xyz" } }),
 			).resolves.toBeUndefined();
+		});
+
+		// W2.review P1-2 — listener 연동 3 함수의 `if (!sent)` 브랜치 미커버.
+		// 실패 시 timeout cleanup + rejectPromise / silent resolve 검증.
+
+		it("directToolCall naia-agent 없으면 rejectPromise + listener cleanup", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { directToolCall } = await import("../chat-service");
+
+			await expect(
+				directToolCall({
+					toolName: "skill_time",
+					arguments: {},
+					requestId: "req-dt-1",
+				}),
+			).rejects.toThrow(/naia-agent unavailable/);
+
+			// listener cleanup 검증 — mockUnlisten 1회 호출
+			expect(mockUnlisten).toHaveBeenCalled();
+		});
+
+		it("fetchAgentSkills naia-agent 없으면 rejectPromise + listener cleanup", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { fetchAgentSkills } = await import("../chat-service");
+
+			await expect(fetchAgentSkills()).rejects.toThrow(
+				/naia-agent unavailable/,
+			);
+			expect(mockUnlisten).toHaveBeenCalled();
+		});
+
+		it("requestTts naia-agent 없으면 silent resolve + listener cleanup (onAudio never called)", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const onAudio = vi.fn();
+			const { requestTts } = await import("../chat-service");
+
+			await expect(
+				requestTts({
+					text: "hello",
+					ttsProvider: "edge",
+					requestId: "req-tts-1",
+					onAudio,
+				}),
+			).resolves.toBeUndefined();
+
+			expect(onAudio).not.toHaveBeenCalled();
+			expect(mockUnlisten).toHaveBeenCalled();
 		});
 
 		it("sendEmbeddingPrefetch naia-agent 없어도 throw 안 함", async () => {
