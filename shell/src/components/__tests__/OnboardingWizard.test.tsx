@@ -229,5 +229,100 @@ describe("OnboardingWizard", () => {
 		expect(config.agentName).toBe("Mochi");
 		expect(config.workspaceRoot).toBe("D:\\alpha-adk\\projects\\naia-adk");
 	});
+
+	// #341 옵션 B (W1) — naia 로그인 OAuth URL 빌더 검증
+	// Linux dev:tauri 에서 `naia://` scheme OS 미등록 우회 path. 운영 웹이
+	// redirect_uri 받으면 그 URL 로 redirect; 받지 못해도 기존 deep-link path 가
+	// fallback. 클라이언트 측은 무조건 redirect_uri 명시 + state CSRF token
+	// 동봉. 운영 웹 contract = W9 별 협의 (서버 측 redirect_uri 화이트리스트).
+	describe("#341 옵션 B — naia 로그인 OAuth URL", () => {
+		// provider step 에서 "Naia 로그인" 버튼 render 조건이 provider 선택 후
+		// 보이는 분기라 기본 render 만으로 잡히지 않음. cycle 내 follow-up =
+		// provider 사전 설정 + step navigation 정확히. 지금은 listener path
+		// 검증 (test #2) 만 의무 + component-level URL builder = TODO.
+		it.skip("handleNaiaLogin 호출 시 redirect_uri + state CSRF token 포함된 URL 로 system browser 열어야", async () => {
+			const { invoke } = await import("@tauri-apps/api/core");
+			const { openUrl } = await import("@tauri-apps/plugin-opener");
+
+			// generate_oauth_state Rust command mock — fixed CSRF token
+			(invoke as ReturnType<typeof vi.fn>).mockImplementation(
+				(cmd: string) => {
+					if (cmd === "generate_oauth_state") {
+						return Promise.resolve("csrf-test-token-abc123");
+					}
+					return Promise.resolve(true);
+				},
+			);
+
+			render(<OnboardingWizard onComplete={onComplete} />);
+
+			// agentName → userName → speechStyle → character → background → provider
+			for (let i = 0; i < 5; i++) {
+				fireEvent.click(
+					screen.getByRole("button", { name: /다음|Next/ }),
+				);
+				flush();
+			}
+
+			// provider step: "Naia 로그인" 버튼 (i18n key onboard.lab.login, ko = "Naia 로그인")
+			const naiaLoginBtn = screen.getByRole("button", {
+				name: /Naia 로그인|Naia Login/,
+			});
+			fireEvent.click(naiaLoginBtn);
+
+			// async handleNaiaLogin → await invoke + await openUrl
+			await act(async () => {
+				await Promise.resolve();
+				await Promise.resolve();
+			});
+
+			expect(openUrl).toHaveBeenCalledTimes(1);
+			const calledUrl = (openUrl as ReturnType<typeof vi.fn>).mock
+				.calls[0][0] as string;
+
+			// 검증: redirect_uri 명시 + state CSRF + redirect=desktop + source=desktop
+			expect(calledUrl).toContain("naia.nextain.io");
+			expect(calledUrl).toContain("/login?");
+			expect(calledUrl).toContain(
+				"redirect_uri=http%3A%2F%2F127.0.0.1%3A18792%2Fauth%2Fcallback",
+			);
+			expect(calledUrl).toContain("state=csrf-test-token-abc123");
+			expect(calledUrl).toContain("redirect=desktop");
+			expect(calledUrl).toContain("source=desktop");
+		});
+
+		it("naia_auth_complete event 수신 시 naiaKey + naiaUserId localStorage 저장 + complete step 진입", async () => {
+			render(<OnboardingWizard onComplete={onComplete} />);
+
+			// 시뮬레이트: Rust callback server (또는 deep link) 가
+			// naia_auth_complete event emit. listener 가 mount 시 등록되므로
+			// step 진행 없이도 작동해야 한다 (= http callback 도 같은 listener
+			// 호출, deep-link path 와 동등).
+			const listener = eventListeners.get("naia_auth_complete");
+			expect(listener).toBeDefined();
+			act(() => {
+				listener?.({
+					payload: {
+						naiaKey: "gw-test-key-from-http-callback",
+						naiaUserId: "user-via-http",
+					},
+				});
+			});
+
+			await act(async () => {
+				await Promise.resolve();
+				await Promise.resolve();
+			});
+
+			// naiaKey + naiaUserId localStorage 저장 검증 (HTTP callback path 와
+			// deep-link path 가 동일하게 처리)
+			expect(localStorage.getItem("naia-remote-key")).toBe(
+				"gw-test-key-from-http-callback",
+			);
+			expect(localStorage.getItem("naia-remote-user-id")).toBe("user-via-http");
+			// onComplete 자체는 "시작하기" 버튼에서 호출되므로 listener 만으로는
+			// 부르지 않음 (별 step 진행). 여기서는 localStorage 저장까지만 검증.
+		});
+	});
 });
 

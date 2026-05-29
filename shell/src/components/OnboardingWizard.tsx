@@ -311,6 +311,12 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			const params = new URLSearchParams({
 				redirect: "desktop",
 				source: "desktop",
+				// #341 옵션 B — Linux dev:tauri 에서 naia:// scheme OS 미등록
+				// 우회. Rust 측이 127.0.0.1:18792/auth/callback 에서 HTTP 로
+				// 받아 동일한 naia_auth_complete 이벤트 emit. 운영 웹 측이
+				// redirect_uri 받으면 그 URL 로 redirect; 받지 못해도 기존
+				// deep-link path 가 fallback.
+				redirect_uri: "http://127.0.0.1:18792/auth/callback",
 			});
 			if (state) params.set("state", state);
 			await openUrl(

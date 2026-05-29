@@ -33,6 +33,13 @@ fn is_valid_gateway_key(value: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
+/// OAuth callback HTTP server bind port (#341 옵션 B — Linux dev:tauri 의
+/// `naia://` scheme OS 미등록 우회). 운영 웹은 redirect_uri 로 이 endpoint 를
+/// 받아 redirect: `http://127.0.0.1:18792/auth/callback?key=...&state=...&user_id=...`.
+/// 동일 query 파라미터 셋이라 `process_deep_link_url` 의 검증 로직 그대로 활용.
+pub(crate) const OAUTH_CALLBACK_PORT: u16 = 18792;
+pub(crate) const OAUTH_CALLBACK_PATH: &str = "/auth/callback";
+
 /// Process a deep-link URL (naia://auth?key=xxx). Extracted as a function
 /// so both the Tauri deep-link plugin callback and the Windows file watcher
 /// can share the same parsing + validation logic.
@@ -164,6 +171,70 @@ pub(crate) fn process_deep_link_url(
         let _ = app_handle.emit("discord_auth_complete", payload);
         log_both("[Naia] Discord auth complete — deep link payload received");
     }
+}
+
+/// Spawn the OAuth callback HTTP server (#341 옵션 B).
+///
+/// Listens on `127.0.0.1:OAUTH_CALLBACK_PORT` for `GET /auth/callback?key=...`
+/// and emits the same `naia_auth_complete` Tauri event as the deep-link path.
+/// Designed for Linux dev:tauri where `naia://` URI scheme is not registered
+/// with the OS — release builds still use the deep-link path via Tauri plugin.
+///
+/// **Lifecycle**: best-effort daemon thread. Tauri 종료 시 OS 가 listener
+/// 정리. 별도 shutdown signal X — Tauri 자체 종료가 충분.
+///
+/// **Security**: 127.0.0.1 bind 만 (외부 인터페이스 X). Cross-site request
+/// 차단 = `Origin`/`Referer` 검증 없음 (브라우저가 GET / 발신, 어차피 CORS X).
+/// 검증은 `state` CSRF token (process_deep_link_url 내부) 으로 한다.
+pub(crate) fn spawn_oauth_callback_server(
+    app_handle: AppHandle,
+    oauth_state: Arc<Mutex<Option<String>>>,
+) -> Result<(), String> {
+    use tiny_http::{Header, Response, Server};
+
+    let bind_addr = format!("127.0.0.1:{}", OAUTH_CALLBACK_PORT);
+    let server = Server::http(&bind_addr).map_err(|e| {
+        format!(
+            "[Naia] OAuth callback server bind failed ({}): {}",
+            bind_addr, e
+        )
+    })?;
+
+    log_both(&format!(
+        "[Naia] OAuth callback server listening on http://{}{}",
+        bind_addr, OAUTH_CALLBACK_PATH
+    ));
+
+    std::thread::spawn(move || {
+        for request in server.incoming_requests() {
+            // Only accept GET on the dedicated path. Any other URL → 404.
+            let raw_url = request.url().to_string();
+            if !raw_url.starts_with(OAUTH_CALLBACK_PATH) {
+                let _ = request.respond(Response::from_string("Not Found").with_status_code(404));
+                continue;
+            }
+
+            // Reuse `process_deep_link_url` so the parameter parsing, state CSRF
+            // verification, and event emit stay identical to the deep-link path.
+            // The function only inspects scheme-agnostic parts (path + query).
+            let url_str = format!(
+                "http://127.0.0.1:{}{}",
+                OAUTH_CALLBACK_PORT, raw_url
+            );
+            process_deep_link_url(&url_str, &app_handle, Some(&oauth_state), "http_callback");
+
+            // Send a small HTML page that closes the tab and informs the user.
+            // The browser stays on this page until the user closes it manually.
+            let body = r#"<!doctype html><html><head><meta charset="utf-8"><title>naia 로그인 완료</title><style>body{font-family:system-ui;background:#0f1117;color:#e5e7eb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{background:#1a1d27;border:1px solid #2c303a;padding:32px 40px;border-radius:12px;text-align:center;max-width:420px}h1{margin:0 0 12px;font-size:20px;font-weight:600}p{margin:0;color:#9ca3af;line-height:1.6}</style></head><body><div class="card"><h1>naia 로그인 완료</h1><p>이 창은 닫아도 됩니다. naia 앱으로 돌아가주세요.</p></div><script>setTimeout(()=>window.close(),1500)</script></body></html>"#;
+            let response = Response::from_string(body).with_header(
+                Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
+                    .expect("valid header"),
+            );
+            let _ = request.respond(response);
+        }
+    });
+
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -3368,8 +3439,15 @@ async fn delete_naia_settings(adk_path: String) -> Result<(), String> {
 }
 
 /// Delete the entire adk_path directory (full workspace wipe for "delete and reinstall").
+///
+/// `state` 인자 추가 (cherry-pick 0e7a5960 후 body 가 state.agent / state.gateway
+/// lock 호출 — agent/gateway 가 adk_path 안 file handle 잡고 있어 Windows 에서
+/// remove_dir_all 실패 방지). Tauri 가 자동 inject 하므로 frontend 호출은 그대로.
 #[tauri::command]
-async fn delete_naia_adk(adk_path: String) -> Result<(), String> {
+async fn delete_naia_adk(
+    state: tauri::State<'_, AppState>,
+    adk_path: String,
+) -> Result<(), String> {
     if adk_path.is_empty() {
         return Err("adk_path is empty".to_string());
     }
@@ -3748,6 +3826,17 @@ pub fn run() {
 
             // Migrate legacy vosk-models → stt-models
             stt_models::migrate_legacy_vosk_models(&app_handle);
+
+            // OAuth callback HTTP server (#341 옵션 B — Linux dev:tauri 의
+            // `naia://` 미등록 우회). 동일 query parameter shape 라
+            // process_deep_link_url 그대로 활용. Best-effort: bind 실패 시
+            // (port 충돌 등) 경고만 + deep-link path 로만 동작.
+            let oauth_state_clone = state.oauth_state.clone();
+            if let Err(e) =
+                spawn_oauth_callback_server(app_handle.clone(), oauth_state_clone)
+            {
+                log_both(&format!("[Naia] {}", e));
+            }
 
             // Register deep-link handler for naia:// URI scheme.
             // macOS schemes are declared in the app bundle Info.plist; runtime

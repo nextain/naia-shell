@@ -47,6 +47,10 @@ zip = "2"
 # HTTP client for CDP health-check (tiny, no async needed here)
 ureq = { version = "2", features = ["json"] }
 notify = "6"
+# Small synchronous HTTP server for OAuth callback (#341 옵션 B —
+# Linux dev:tauri 에서 naia:// scheme OS 등록 안 되는 문제 우회).
+# tiny_http = ~1k LOC, std::net 기반, 의존성 최소.
+tiny_http = "0.12"
 png = "0.17"
 portable-pty = "0.9.0"
 sysinfo = { version = "0.34", default-features = false, features = ["system"] }

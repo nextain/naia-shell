@@ -1230,6 +1230,10 @@ export function SettingsTab() {
 			const params = new URLSearchParams({
 				redirect: "desktop",
 				source: "desktop",
+				// #341 옵션 B — Linux dev:tauri 의 naia:// 미등록 우회.
+				// 운영 웹 측이 redirect_uri 받으면 그 URL 로 redirect;
+				// 받지 못해도 기존 deep-link path 가 fallback.
+				redirect_uri: "http://127.0.0.1:18792/auth/callback",
 			});
 			if (state) params.set("state", state);
 			Logger.info("SettingsTab", "[lab-login] opening system browser");
