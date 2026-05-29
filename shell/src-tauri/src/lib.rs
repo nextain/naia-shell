@@ -58,7 +58,16 @@ pub(crate) fn process_deep_link_url(
         Ok(u) => u,
         Err(_) => return,
     };
-    if parsed.host_str() != Some("auth") && parsed.path() != "auth" && parsed.path() != "/auth" {
+    // Accept both shapes:
+    //   1) Deep link: `naia://auth?...`  →  host_str() == "auth", path() == ""
+    //   2) HTTP callback: `http://127.0.0.1:18792/auth/callback?...`
+    //                                   →  host_str() == "127.0.0.1",
+    //                                      path() starts with "/auth"
+    // The old guard only matched (1) and silently rejected (2), which
+    // broke #341 옵션 B end-to-end. (Caught by Claude CLI W1.review P0.)
+    let is_deep_link_auth = parsed.host_str() == Some("auth");
+    let is_http_callback = parsed.path().starts_with("/auth");
+    if !is_deep_link_auth && !is_http_callback {
         return;
     }
     let mut key = None;
@@ -4339,5 +4348,54 @@ mod tests {
         let dir = log_dir();
         assert!(dir.exists());
         assert!(dir.ends_with(".naia/logs"));
+    }
+
+    // W1.review P0 (#341 옵션 B) — path guard 가 HTTP callback 형식도 받아야 함.
+    // 옛 guard 는 host_str=="auth" 만 인정해 HTTP `http://127.0.0.1:18792/auth/callback`
+    // 을 silently reject. 수정 = `is_deep_link_auth || is_http_callback` 형식.
+    #[test]
+    fn path_guard_accepts_http_callback() {
+        let url = url::Url::parse(
+            "http://127.0.0.1:18792/auth/callback?key=gw-abc&state=xyz",
+        )
+        .unwrap();
+        let is_deep_link_auth = url.host_str() == Some("auth");
+        let is_http_callback = url.path().starts_with("/auth");
+        assert!(
+            !is_deep_link_auth && is_http_callback,
+            "HTTP callback URL must pass via is_http_callback branch"
+        );
+    }
+
+    #[test]
+    fn path_guard_accepts_deep_link() {
+        let url = url::Url::parse("naia://auth?key=gw-abc&state=xyz").unwrap();
+        let is_deep_link_auth = url.host_str() == Some("auth");
+        assert!(
+            is_deep_link_auth,
+            "Deep link naia://auth must pass via is_deep_link_auth branch"
+        );
+    }
+
+    #[test]
+    fn path_guard_rejects_arbitrary_url() {
+        let url = url::Url::parse("http://attacker.example.com/foo?evil=1").unwrap();
+        let is_deep_link_auth = url.host_str() == Some("auth");
+        let is_http_callback = url.path().starts_with("/auth");
+        assert!(
+            !is_deep_link_auth && !is_http_callback,
+            "Arbitrary URLs must be rejected by both branches"
+        );
+    }
+
+    #[test]
+    fn path_guard_rejects_non_auth_path_on_localhost() {
+        let url = url::Url::parse("http://127.0.0.1:18792/some/other/path").unwrap();
+        let is_deep_link_auth = url.host_str() == Some("auth");
+        let is_http_callback = url.path().starts_with("/auth");
+        assert!(
+            !is_deep_link_auth && !is_http_callback,
+            "Localhost paths outside /auth must be rejected (defense-in-depth)"
+        );
     }
 }
