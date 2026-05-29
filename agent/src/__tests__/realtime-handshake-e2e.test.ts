@@ -83,6 +83,77 @@ function handshake(key: string): Promise<HandshakeResult> {
 	});
 }
 
+/**
+ * SERVER HANDOFF — auth delivery matrix.
+ *
+ * The client sends the key as `setup.apiKey` (a body message). The OpenAI
+ * Realtime convention is the `Authorization: Bearer` handshake header. If the
+ * gateway's `_verify_api_key_ws` reads the header (or a query param) instead
+ * of `setup.apiKey`, the body key is ignored → "Invalid API key". This probe
+ * tries each transport so the server team can see which one the gateway
+ * actually accepts — and whether the fix is server-side (accept setup.apiKey)
+ * or client-side (also send the header).
+ */
+interface ProbeOpts {
+	url?: string;
+	headers?: Record<string, string>;
+	sendSetup?: boolean;
+}
+function probe(key: string, label: string, opts: ProbeOpts = {}): Promise<string> {
+	const url = opts.url ?? WS_URL;
+	const sendSetup = opts.sendSetup ?? true;
+	return new Promise((resolve) => {
+		const ws = new WebSocket(url, { headers: opts.headers ?? {} });
+		let done = false;
+		const fin = (r: string) => {
+			if (done) return;
+			done = true;
+			try {
+				ws.close();
+			} catch {
+				/* ignore */
+			}
+			resolve(`${label} → ${r}`);
+		};
+		const t = setTimeout(
+			() => fin("TIMEOUT(12s) — no auth reject (auth likely PASSED; cold-start/backend)"),
+			12000,
+		);
+		ws.on("open", () => {
+			if (sendSetup) {
+				ws.send(
+					JSON.stringify({
+						setup: { apiKey: key, backend: "runpod", locale: "ko", instanceId: "probe" },
+					}),
+				);
+			}
+		});
+		ws.on("message", (data) => {
+			let m: Record<string, unknown>;
+			try {
+				m = JSON.parse(data.toString());
+			} catch {
+				return;
+			}
+			if (m.type === "session.created") {
+				clearTimeout(t);
+				fin("✅ session.created (AUTH OK)");
+			} else if (m.error) {
+				clearTimeout(t);
+				fin(`❌ ${JSON.stringify(m.error).slice(0, 90)}`);
+			}
+		});
+		ws.on("close", (c, r) => {
+			clearTimeout(t);
+			fin(`close ${c} ${r.toString().slice(0, 40)}`);
+		});
+		ws.on("error", (e) => {
+			clearTimeout(t);
+			fin(`wserror ${String(e).slice(0, 60)}`);
+		});
+	});
+}
+
 describe("realtime handshake E2E — reproduce device 4001", () => {
 	it("naiaKey available (else inconclusive)", () => {
 		if (!naiaKey) console.warn("[realtime-e2e] no naiaKey — repro skipped");
@@ -130,5 +201,39 @@ describe("realtime handshake E2E — reproduce device 4001", () => {
 			expect(authRejected).toBe(false);
 		},
 		25000,
+	);
+
+	// SERVER HANDOFF — print which key-transport the gateway accepts.
+	// No assert: this is a diagnostic the server team reads from the log.
+	it.skipIf(!naiaKey)(
+		"diagnostic: auth delivery matrix (setup.apiKey vs header vs query)",
+		async () => {
+			const k = naiaKey as string;
+			const results = [
+				await probe(k, "A. setup.apiKey only (CURRENT client)"),
+				await probe(k, "B. Authorization: Bearer header + setup", {
+					headers: { Authorization: `Bearer ${k}` },
+				}),
+				await probe(k, "C. Authorization: Bearer header, NO setup body", {
+					headers: { Authorization: `Bearer ${k}` },
+					sendSetup: false,
+				}),
+				await probe(k, "D. ?api_key= query param, NO setup body", {
+					url: `${WS_URL}&api_key=${encodeURIComponent(k)}`,
+					sendSetup: false,
+				}),
+				await probe(k, "E. X-AnyLLM-Key: Bearer header + setup", {
+					headers: { "X-AnyLLM-Key": `Bearer ${k}` },
+				}),
+			];
+			console.log("\n===== REALTIME AUTH DELIVERY MATRIX =====");
+			for (const line of results) console.log("  " + line);
+			console.log("=========================================\n");
+			// A '✅' on B/C/D but '❌' on A ⇒ client must send that transport.
+			// All '❌' ⇒ pure server-side key-lookup bug (chat path accepts the
+			// same key at 200, so the realtime verifier diverges).
+			expect(results.length).toBe(5);
+		},
+		70000,
 	);
 });
