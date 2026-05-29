@@ -1,11 +1,11 @@
 /**
  * On-demand Pod retry logic per CLIENT-ONDEMAND-CONTRACT.md §3, §4, §7.
  *
- * Handles 503 pod-starting (exponential backoff, 5min cap),
+ * Handles 503 pod-starting (exponential backoff, 10min cap),
  * 503 sold-out (immediate throw), and abandon (user cancel).
  */
 
-const COLD_START_CAP_MS = 5 * 60 * 1000; // 5 min
+const COLD_START_CAP_MS = 10 * 60 * 1000; // 10 min (server v15: live RunPod smoke result, CLIENT-ONDEMAND-CONTRACT)
 const INITIAL_RETRY_MS = 5_000;
 const MAX_RETRY_MS = 60_000;
 

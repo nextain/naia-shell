@@ -30,7 +30,7 @@ import {
 import { RefAudioEncodeError, encodeRefAudio } from "./ref-audio";
 import type { LiveProviderConfig, NaiaOmniConfig, VoiceSession } from "./types";
 
-const COLD_START_CAP_MS = 5 * 60 * 1000;
+const COLD_START_CAP_MS = 10 * 60 * 1000; // server v15: 10 min cap (CLIENT-ONDEMAND-CONTRACT)
 const INITIAL_RETRY_MS = 5_000;
 const MAX_RETRY_MS = 60_000;
 

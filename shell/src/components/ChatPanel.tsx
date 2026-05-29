@@ -640,6 +640,20 @@ export function ChatPanel() {
 			completeCurrentRequest(requestId);
 			return;
 		}
+		// naia-omni models (naia-*-omni-*) are realtime-voice only. Sending them
+		// down the text chat path makes the gateway return 0 bytes, so guide the
+		// user to voice or a text-capable model instead.
+		if (
+			config?.provider === "nextain" &&
+			config?.model &&
+			isOmniModel(config.provider, config.model) &&
+			config.model.startsWith("naia-")
+		) {
+			useChatStore.getState().appendStreamChunk(t("chat.omniVoiceOnly"));
+			useChatStore.getState().finishStreaming();
+			completeCurrentRequest(requestId);
+			return;
+		}
 		if (
 			!isApiKeyOptional(config?.provider ?? "") &&
 			!config?.apiKey &&

@@ -76,7 +76,7 @@ describe("callWithRetry — CONTRACT T1-T7", () => {
 		).rejects.toThrow(SoldOutError);
 	});
 
-	it("T3: cold start exceeds 5min cap → ColdStartTimeoutError", async () => {
+	it("T3: cold start exceeds 10min cap → ColdStartTimeoutError", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () =>
@@ -97,10 +97,8 @@ describe("callWithRetry — CONTRACT T1-T7", () => {
 
 		const promise = callWithRetry("https://gw/v1/chat/completions", {});
 
-		// Simulate time passing beyond 5 min cap
-		// The function sleeps 60s each iteration; after ~5 iterations it should exceed 5 min
-		// We need to make Date.now() return > 5 min from start
-		elapsed = 5 * 60 * 1000 + 1;
+		// Simulate time passing beyond 10 min cap (server v15: COLD_START_CAP_MS = 10min)
+		elapsed = 10 * 60 * 1000 + 1;
 
 		await expect(promise).rejects.toThrow(ColdStartTimeoutError);
 		Date.now = realDateNow;

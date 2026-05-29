@@ -118,7 +118,7 @@ export function attachPanelContextBridge(
 	if (typeof session.sendContextUpdate !== "function") {
 		Logger.info(
 			"PanelContextBridge",
-			"session has no sendContextUpdate — bridge is a no-op (likely vllm-omni or naia-talk; mid-session inject not supported)",
+			"session has no sendContextUpdate — bridge is a no-op (likely vllm-omni or naia-omni; mid-session inject not supported)",
 		);
 		// Still return a real bridge handle so callers do not branch on null.
 		return {

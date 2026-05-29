@@ -102,7 +102,10 @@ async function authHeader(): Promise<Record<string, string>> {
 			"naia account is not signed in",
 		);
 	}
-	return { "X-AnyLLM-Key": `Bearer ${naiaKey}` };
+	// Gateway ref-audio routes read the `Authorization` header (ref_audio.py
+	// _extract_bearer), NOT X-AnyLLM-Key — mismatched header name was causing
+	// 401 on status/presets even while signed in.
+	return { Authorization: `Bearer ${naiaKey}` };
 }
 
 function mapErrorCode(status: number, body: unknown): RefAudioErrorCode {
