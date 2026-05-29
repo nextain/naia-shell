@@ -404,7 +404,7 @@ describe("chat-service", () => {
 			await expect(
 				directToolCall({
 					toolName: "skill_time",
-					arguments: {},
+					args: {},
 					requestId: "req-dt-1",
 				}),
 			).rejects.toThrow(/naia-agent unavailable/);

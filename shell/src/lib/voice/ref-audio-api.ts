@@ -46,6 +46,9 @@ export type RefAudioErrorCode =
 	| "duration-out-of-range"
 	| "file-too-large"
 	| "upload-in-progress"
+	// W5 — gateway GPU pool 매진 (모든 후보 cap 초과 OR 가용 0).
+	// 사용자 UI = "현재 매진입니다. 잠시 후 다시 시도해주세요" + Tier A 권장.
+	| "sold-out"
 	| "network"
 	| "unknown";
 
@@ -92,6 +95,11 @@ function mapErrorCode(status: number, body: unknown): RefAudioErrorCode {
 	if (status === 422 && tag === "duration-out-of-range")
 		return "duration-out-of-range";
 	if (status === 422) return "invalid-audio-format";
+	// W5 — gateway GPU pool 매진 (503 + error="sold-out").
+	// plan §0.2.1 매진 UX 일관: 새 session 거부 + 사용자 안내.
+	// (gateway pool orchestrator follow-up = W4-follow-up)
+	if (status === 503 && tag === "sold-out") return "sold-out";
+	if (status === 503) return "sold-out"; // 운영 시 backend overload 도 매진 처리
 	return "unknown";
 }
 

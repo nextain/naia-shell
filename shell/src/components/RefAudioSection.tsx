@@ -48,6 +48,8 @@ const STRINGS = {
 			format: "오디오 형식 오류 — 5–30초, 16 kHz mono 권장.",
 			tooLarge: "파일이 너무 큽니다 (최대 4 MiB).",
 			uploadInProgress: "동일한 업로드가 진행 중입니다.",
+			soldOut:
+				"현재 매진입니다. 잠시 후 다시 시도해주세요. naia OS 로컬 모델로 즉시 사용도 가능합니다.",
 			unknown: "알 수 없는 오류 — 다시 시도해주세요.",
 		},
 		uploadSuccess: (newBal: string) => `업로드 완료 · 잔액 $${newBal}`,
@@ -73,6 +75,8 @@ const STRINGS = {
 			format: "Invalid audio — please use a 5–30s 16 kHz mono clip.",
 			tooLarge: "File too large (4 MiB max).",
 			uploadInProgress: "An upload with the same key is in progress.",
+			soldOut:
+				"Sold out — please retry shortly. You can also switch to the naia OS local model for instant use.",
 			unknown: "Unknown error — please retry.",
 		},
 		uploadSuccess: (newBal: string) => `Upload complete · balance $${newBal}`,
@@ -115,6 +119,8 @@ function describeError(
 				return S.err.tooLarge;
 			case "upload-in-progress":
 				return S.err.uploadInProgress;
+			case "sold-out":
+				return S.err.soldOut;
 			default:
 				return S.err.unknown;
 		}
