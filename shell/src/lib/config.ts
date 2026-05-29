@@ -429,7 +429,7 @@ export function migrateSpeechStyleValues(): void {
  * liveProvider: "gemini-live" → provider: "gemini", model: "gemini-2.5-flash-live"
  * liveProvider: "openai-realtime" → provider: "openai", model: "gpt-4o-realtime"
  * liveProvider: "edge-tts" → ttsProvider: "edge" (pipeline TTS)
- * liveProvider: "minicpm-o" → preserved in config (backlog #33), UI hidden
+ * liveProvider: "naia-omni" → preserved in config (backlog #33), UI hidden
  */
 export function migrateLiveProviderToUnifiedModel(): void {
 	const config = loadConfig();
@@ -465,8 +465,8 @@ export function migrateLiveProviderToUnifiedModel(): void {
 			if (!raw.ttsProvider) raw.ttsProvider = "edge";
 			changed = true;
 			break;
-		case "minicpm-o":
-			// minicpm-o uses vllmHost/ws — clear legacy liveProvider
+		case "naia-omni":
+			// naia-omni uses vllmHost/ws — clear legacy liveProvider
 			changed = true;
 			break;
 	}
@@ -561,3 +561,15 @@ export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";
+
+const INSTANCE_ID_KEY = "naia-os-instance-id";
+
+/** Get or create a persistent naia-os install UUID (CONTRACT §1.2). */
+export function getNaiaInstanceId(userId?: string): string {
+	let id = localStorage.getItem(INSTANCE_ID_KEY);
+	if (!id) {
+		id = crypto.randomUUID();
+		localStorage.setItem(INSTANCE_ID_KEY, id);
+	}
+	return userId ? `${userId}:${id}` : id;
+}

@@ -2115,6 +2115,13 @@ export function SettingsTab() {
 		(provider === "vllm" &&
 			(modelIdLower.includes("asr") || modelIdLower.includes("whisper")));
 	const omniVoices = selectedModelMeta?.voices;
+	// Ref-audio (voice clone) only applies to naia-omni sessions — naia-* omni
+	// models or a local vllm-omni server. Gemini Live is omni too but has no
+	// voice-clone surface, so mounting RefAudioSection there just 404s on
+	// GET /v1/ref-audio. Gate the section on this.
+	const supportsRefAudio =
+		isSelectedOmni &&
+		(modelIdLower.startsWith("naia-") || provider === "vllm");
 	const manualUrl = `https://naia.nextain.io/${locale}/manual`;
 
 	// Discord integration — unverified, hidden until stabilized
@@ -3134,8 +3141,8 @@ export function SettingsTab() {
 				</>
 			)}
 
-			{/* Voice Reference (naia-anyllm #31, plan §7) */}
-				<RefAudioSection />
+			{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
+				{supportsRefAudio && <RefAudioSection />}
 
 				{/* 오디오 장치 */}
 			<div className="settings-section-divider">

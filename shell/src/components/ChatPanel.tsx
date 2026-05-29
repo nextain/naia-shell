@@ -34,6 +34,7 @@ import {
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
 	addAllowedTool,
+	getNaiaInstanceId,
 	isToolAllowed,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -76,8 +77,12 @@ import type {
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
 	LIVE_PROVIDER_COST_HINTS,
+	type PanelContextBridge,
+	SPEECH_RMS_THRESHOLD,
 	type VoiceSession,
+	attachPanelContextBridge,
 	createVoiceSession,
+	rmsFromBase64Pcm,
 } from "../lib/voice/index";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { parseEmotion } from "../lib/vrm/expression";
@@ -315,6 +320,9 @@ export function ChatPanel() {
 	const currentRequestId = useRef<string | null>(null);
 	const queuedSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const voiceSessionRef = useRef<VoiceSession | null>(null);
+	// #313 L3 — mid-session panel context bridge handle (detached in every
+	// voice cleanup path).
+	const panelContextBridgeRef = useRef<PanelContextBridge | null>(null);
 	const micStreamRef = useRef<MicStream | null>(null);
 	const audioPlayerRef = useRef<AudioPlayer | null>(null);
 	const voiceStartRef = useRef<{ time: number; provider: string } | null>(null);
@@ -583,13 +591,17 @@ export function ChatPanel() {
 		historyIndexRef.current = -1;
 		historyDraftRef.current = "";
 
-		// Omni voice mode: send text via Live session
+		// Omni voice mode: send text via the open Live session so a typed
+		// message gets the SAME treatment as spoken input (Naia answers in
+		// voice). Mirror it into the transcript too — otherwise the user's own
+		// line never appears on screen.
 		if (
 			voiceMode === "active" &&
 			!pipelineActiveRef.current &&
 			voiceSessionRef.current?.isConnected
 		) {
 			setInput("");
+			useChatStore.getState().addMessage({ role: "user", content: text });
 			voiceSessionRef.current.sendText(text);
 			return;
 		}
@@ -772,6 +784,67 @@ export function ChatPanel() {
 		}
 	}
 
+	// Shared panel-tool dispatch — used by both the streaming-chat handleChunk
+	// path AND the voice directToolCall path (so voice can run panel tools like
+	// skill_browser_*). Auto-switches to the owning panel first (tool-level), so
+	// a tool targeting a non-active panel brings that panel forward.
+	function dispatchPanelToolCall(req: {
+		requestId: string;
+		toolCallId: string;
+		toolName: string;
+		args: Record<string, unknown>;
+	}) {
+		const ownerPanel = panelRegistry
+			.list()
+			.find((p) => p.tools?.some((t) => t.name === req.toolName));
+		// Tool-level auto panel switch (user request): if the tool belongs to a
+		// panel that isn't currently active, bring it forward before running.
+		if (ownerPanel && usePanelStore.getState().activePanel !== ownerPanel.id) {
+			usePanelStore.getState().setActivePanel(ownerPanel.id);
+			Logger.info("ChatPanel", "panel auto-switch for tool", {
+				tool: req.toolName,
+				panel: ownerPanel.id,
+			});
+		}
+		const bridge = ownerPanel ? getBridgeForPanel(ownerPanel.id) : activeBridge;
+		Logger.info("ChatPanel", "panel_tool_call dispatch", {
+			tool: req.toolName,
+			owner: ownerPanel?.id ?? "(none→activeBridge)",
+		});
+		bridge
+			.callTool(req.toolName, req.args)
+			.then((result) => {
+				Logger.info("ChatPanel", "panel_tool_call result", {
+					tool: req.toolName,
+					result: result.slice(0, 120),
+				});
+				return sendPanelToolResult(req.requestId, req.toolCallId, result, true);
+			})
+			.catch((err) => {
+				Logger.warn("ChatPanel", "panel_tool_call error", {
+					tool: req.toolName,
+					error: String(err),
+				});
+				return sendPanelToolResult(
+					req.requestId,
+					req.toolCallId,
+					String(err),
+					false,
+				);
+			});
+	}
+
+	function dispatchPanelControl(req: { action: string; panelId?: string }) {
+		const { setActivePanel } = usePanelStore.getState();
+		if (req.action === "switch" && req.panelId) {
+			setActivePanel(req.panelId);
+		} else if (req.action === "reload") {
+			import("../lib/panel-loader").then(({ loadInstalledPanels }) => {
+				loadInstalledPanels().catch(() => {});
+			});
+		}
+	}
+
 	function handleChunk(chunk: AgentResponseChunk, activeProvider: ProviderId) {
 		const store = useChatStore.getState();
 
@@ -858,55 +931,19 @@ export function ChatPanel() {
 				}
 				break;
 			case "panel_tool_call": {
-				// Route to the panel that declared the tool, fall back to activeBridge.
-				const ownerPanel = panelRegistry
-					.list()
-					.find((p) => p.tools?.some((t) => t.name === chunk.toolName));
-				const bridge = ownerPanel
-					? getBridgeForPanel(ownerPanel.id)
-					: activeBridge;
-				Logger.info("ChatPanel", "panel_tool_call dispatch", {
-					tool: chunk.toolName,
-					owner: ownerPanel?.id ?? "(none→activeBridge)",
+				dispatchPanelToolCall({
+					requestId: chunk.requestId,
+					toolCallId: chunk.toolCallId,
+					toolName: chunk.toolName,
+					args: chunk.args,
 				});
-				bridge
-					.callTool(chunk.toolName, chunk.args)
-					.then((result) => {
-						Logger.info("ChatPanel", "panel_tool_call result", {
-							tool: chunk.toolName,
-							result: result.slice(0, 120),
-						});
-						return sendPanelToolResult(
-							chunk.requestId,
-							chunk.toolCallId,
-							result,
-							true,
-						);
-					})
-					.catch((err) => {
-						Logger.warn("ChatPanel", "panel_tool_call error", {
-							tool: chunk.toolName,
-							error: String(err),
-						});
-						return sendPanelToolResult(
-							chunk.requestId,
-							chunk.toolCallId,
-							String(err),
-							false,
-						);
-					});
 				break;
 			}
 			case "panel_control": {
-				const { setActivePanel } = usePanelStore.getState();
-				if (chunk.action === "switch" && chunk.panelId) {
-					setActivePanel(chunk.panelId);
-				} else if (chunk.action === "reload") {
-					// Re-scan ~/.naia/panels/ and register any newly installed panels
-					import("../lib/panel-loader").then(({ loadInstalledPanels }) => {
-						loadInstalledPanels().catch(() => {});
-					});
-				}
+				dispatchPanelControl({
+					action: chunk.action,
+					panelId: chunk.panelId,
+				});
 				break;
 			}
 			case "panel_install_result": {
@@ -1037,6 +1074,8 @@ export function ChatPanel() {
 				clearTimeout(queuedSendTimerRef.current);
 				queuedSendTimerRef.current = null;
 			}
+			panelContextBridgeRef.current?.detach();
+			panelContextBridgeRef.current = null;
 			voiceSessionRef.current?.disconnect();
 			micStreamRef.current?.stop();
 			audioPlayerRef.current?.destroy();
@@ -1232,6 +1271,8 @@ export function ChatPanel() {
 				cleanupPipeline();
 			} else {
 				showVoiceCostSummary();
+				panelContextBridgeRef.current?.detach();
+				panelContextBridgeRef.current = null;
 				voiceSessionRef.current?.disconnect();
 				micStreamRef.current?.stop();
 				audioPlayerRef.current?.destroy();
@@ -1255,7 +1296,7 @@ export function ChatPanel() {
 			const modelMeta = getLlmModel(config.provider, config.model);
 			const isOmni = isOmniModel(config.provider, config.model ?? "");
 			// ASR mode: STT provider is vllm, or LLM model has "asr" capability,
-			// or vllm non-omni model (minicpm-o /v1/realtime WebSocket handles ASR)
+			// or vllm non-omni model (naia-omni /v1/realtime WebSocket handles ASR)
 			const isAsrModel =
 				config.sttProvider === "vllm" ||
 				(config.provider === "vllm" && !isOmni) ||
@@ -1572,12 +1613,16 @@ export function ChatPanel() {
 				return;
 			}
 
-			// Determine the live provider from the current model/provider
+			// Determine the live provider from the current model/provider.
+			// Naia omni (naia-*-omni-*, e.g. naia-0.9-omni-24g) routes to OpenAI
+			// Realtime (/v1/realtime via gateway). Gemini live (gemini-*-live)
+			// routes to Gemini Live (/v1/live) under "naia". Both are isOmni,
+			// so branch on the model id prefix first.
 			const liveProvider =
-				config.model === "naia-24g-live"
-					? ("openai-realtime" as const)
+				isOmni && config.model?.startsWith("naia-")
+					? ("naia-omni" as const)
 					: isOmni && config.provider === "vllm"
-						? ("minicpm-o" as const)
+						? ("naia-omni" as const)
 						: config.provider === "vllm"
 							? ("vllm-omni" as const)
 							: config.provider === "openai"
@@ -1614,7 +1659,7 @@ export function ChatPanel() {
 				setVoiceMode("off");
 				return;
 			}
-			if (liveProvider === "openai-realtime" && config.model !== "naia-24g-live") {
+			if (liveProvider === "openai-realtime") {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
 				if (!openaiKey) {
 					Logger.warn("ChatPanel", "OpenAI Realtime requires API key");
@@ -1688,6 +1733,16 @@ export function ChatPanel() {
 			});
 			voiceSessionRef.current = session;
 
+			// #313 L3 — bridge mid-session panel context changes into the open
+			// Live WS. Subscribes to the panel store, debounces 500ms (rapid
+			// URL hops), and forwards to `session.sendContextUpdate()` — a silent
+			// no-op for providers without a mid-session inject surface
+			// (vllm-omni, naia-omni). Detached in every cleanup path below.
+			panelContextBridgeRef.current = attachPanelContextBridge(session, {
+				subscribe: (listener) => usePanelStore.subscribe(listener),
+				getContext: () => usePanelStore.getState().activePanelContext,
+			});
+
 			// Create audio player
 			const player = createAudioPlayer({
 				sampleRate: 24000,
@@ -1743,6 +1798,19 @@ export function ChatPanel() {
 						args,
 						requestId: generateRequestId(),
 						gatewayUrl: resolveConfiguredGatewayUrl(config),
+						// Voice mode: the user spoke the request out loud, which is
+						// implicit consent. Auto-approve Tier>0 tools instead of
+						// popping a modal the user would have to hunt for mid-
+						// conversation (which otherwise hangs until timeout). The
+						// server-side tier gate still logs the decision.
+						onApprovalRequest: (req) => {
+							sendApprovalResponse(req.requestId, req.toolCallId, "once");
+						},
+						// Panel-owned tools (skill_browser_*, skill_panel switch)
+						// only ran in streaming chat before; route them here too so
+						// voice can drive panels. Auto-switches to the owner panel.
+						onPanelToolCall: (req) => dispatchPanelToolCall(req),
+						onPanelControl: (req) => dispatchPanelControl(req),
 					});
 					session.sendToolResponse(callId, result.output);
 				} catch (err) {
@@ -1759,6 +1827,8 @@ export function ChatPanel() {
 			};
 			session.onDisconnect = () => {
 				showVoiceCostSummary();
+				panelContextBridgeRef.current?.detach();
+				panelContextBridgeRef.current = null;
 				micStreamRef.current?.stop();
 				audioPlayerRef.current?.destroy();
 				micStreamRef.current = null;
@@ -1783,8 +1853,8 @@ export function ChatPanel() {
 					systemInstruction: voiceSystemPrompt,
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
-			} else if (liveProvider === "minicpm-o") {
-				// minicpm-o: gateway mode when naiaKey available, direct mode otherwise
+			} else if (liveProvider === "naia-omni") {
+				// naia-omni: gateway mode when naiaKey available, direct mode otherwise
 				const useGw = !!naiaKey;
 				const vllmBase = (config.vllmHost ?? DEFAULT_VLLM_HOST).replace(
 					/\/+$/,
@@ -1792,10 +1862,11 @@ export function ChatPanel() {
 				);
 				const wsBase = vllmBase.replace(/^http/, "ws");
 				await session.connect({
-					provider: "minicpm-o",
+					provider: "naia-omni",
 					serverUrl: useGw ? undefined : wsBase,
 					gatewayUrl: useGw ? LAB_GATEWAY_URL : undefined,
 					naiaKey: useGw ? naiaKey : undefined,
+					instanceId: useGw ? getNaiaInstanceId(config.naiaUserId) : undefined,
 					model: config.model,
 					systemInstruction: voiceSystemPrompt,
 					voice: selectedVoice,
@@ -1803,15 +1874,12 @@ export function ChatPanel() {
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "openai-realtime") {
+				// Pure OpenAI Realtime (user's own key). Naia voice routes via the
+				// "naia-omni" provider branch above (/v1/realtime gateway), never here.
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
-				const isNaiaVoice = config.model === "naia-24g-live";
-				const liveHost = isNaiaVoice
-					? LAB_GATEWAY_URL.replace(/^http/, "ws")
-					: undefined;
 				await session.connect({
 					provider: "openai-realtime",
-					apiKey: isNaiaVoice ? (naiaKey ?? openaiKey!) : openaiKey!,
-					serverUrl: liveHost,
+					apiKey: openaiKey!,
 					model: config.model,
 					voice: selectedVoice,
 					locale: getLocale(),
@@ -1835,12 +1903,24 @@ export function ChatPanel() {
 			// Create mic stream
 			const mic = await createMicStream({
 				onChunk: (pcmBase64) => {
-					// Mute mic while Naia is speaking to prevent echo feedback (Issue #22).
-					// WebKitGTK (Tauri) does not support browser-level AEC effectively,
-					// so we suppress mic input during playback at the application level.
-					if (!audioPlayerRef.current?.isPlaying) {
-						session.sendAudio(pcmBase64);
+					// Barge-in (#22 revisited). Stream the mic continuously so the
+					// server VAD can detect the user interrupting Naia mid-utterance
+					// → fires `interrupted` → onInterrupted clears the audio player
+					// (Naia stops talking). AEC is requested at capture time
+					// (mic-stream.ts: echoCancellation/noiseSuppression/autoGainControl).
+					//
+					// To stop AEC-residual echo from self-triggering the VAD on
+					// weak-AEC platforms (WebKitGTK), apply an energy gate ONLY while
+					// Naia is speaking: forward a mid-playback chunk only if its RMS
+					// exceeds the omni-validated speech threshold (#216,
+					// SPEECH_RMS_THRESHOLD=200). When Naia is silent, forward all.
+					if (
+						audioPlayerRef.current?.isPlaying &&
+						rmsFromBase64Pcm(pcmBase64) < SPEECH_RMS_THRESHOLD
+					) {
+						return;
 					}
+					session.sendAudio(pcmBase64);
 				},
 				sampleRate: 16000,
 			});
@@ -1862,6 +1942,8 @@ export function ChatPanel() {
 			});
 			// Detach onDisconnect before cleanup to prevent double-cleanup
 			if (voiceSessionRef.current) voiceSessionRef.current.onDisconnect = null;
+			panelContextBridgeRef.current?.detach();
+			panelContextBridgeRef.current = null;
 			voiceSessionRef.current?.disconnect();
 			micStreamRef.current?.stop();
 			audioPlayerRef.current?.destroy();
@@ -2287,7 +2369,11 @@ export function ChatPanel() {
 								: t("chat.placeholder")
 						}
 						rows={3}
-						disabled={voiceMode !== "off" && !pipelineActiveRef.current}
+						// Allow typing during an active Live voice session too — a
+						// typed line is routed to the Live session (see sendChat above)
+						// and answered in voice, same as spoken input. Only block
+						// while the session is still connecting.
+						disabled={voiceMode === "connecting"}
 						className="chat-input"
 					/>
 					{messageQueue.length > 0 && (

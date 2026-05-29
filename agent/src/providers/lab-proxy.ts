@@ -30,6 +30,10 @@ function toGatewayModel(model: string): string {
 	if (model.startsWith("gemini")) return `vertexai:${model}`;
 	if (model.startsWith("grok")) return `xai:${model}`;
 	if (model.startsWith("claude")) return `anthropic:${model}`;
+	// Naia RunPod models (e.g. naia-0.9-omni-24g) — TEXT chat path only.
+	// Gateway routes these to its vllm backend slot. Realtime voice goes
+	// through /v1/realtime (OpenAI Realtime API) in naia-omni.ts, NOT here.
+	if (model.startsWith("naia-")) return `vllm:${model}`;
 	return model;
 }
 

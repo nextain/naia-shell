@@ -1,7 +1,7 @@
 /**
- * MiniCPM-o vllm-omni /v1/realtime full-duplex WebSocket session.
+ * Naia Omni /v1/realtime full-duplex WebSocket session.
  *
- * OpenAI Realtime API compatible. Server: local vllm-omni with MiniCPM-o 4.5.
+ * OpenAI Realtime API compatible. Connects to naia-anyllm gateway or local vllm-omni.
  *
  * This implementation uses server-side Voice Activity Detection (VAD) and
  * streams audio chunks directly to the server, mirroring the behavior of
@@ -23,11 +23,19 @@
  *     {"type": "error", "error": "..."}
  */
 import { Logger } from "../logger";
+import {
+	ColdStartTimeoutError,
+	SoldOutError,
+} from "./ondemand-retry";
 import { RefAudioEncodeError, encodeRefAudio } from "./ref-audio";
-import type { LiveProviderConfig, MiniCpmOConfig, VoiceSession } from "./types";
+import type { LiveProviderConfig, NaiaOmniConfig, VoiceSession } from "./types";
+
+const COLD_START_CAP_MS = 5 * 60 * 1000;
+const INITIAL_RETRY_MS = 5_000;
+const MAX_RETRY_MS = 60_000;
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
-const DEFAULT_MODEL = "openbmb/MiniCPM-o-4_5";
+const DEFAULT_MODEL = "naia-0.9-omni-24g";
 const GATEWAY_REALTIME_PATH = "/v1/realtime";
 
 /** ms of silence after last speech chunk before committing turn to server */
@@ -36,15 +44,20 @@ const SILENCE_TIMEOUT_MS = 1500;
 const MAX_BUFFER_MS = 6000;
 /** minimum samples to bother sending (0.5s @ 16kHz) */
 const MIN_AUDIO_SAMPLES = 8000;
-/** RMS threshold for client-side speech detection (Int16 scale 0–32767) */
-const SPEECH_RMS_THRESHOLD = 200;
+/**
+ * RMS threshold for client-side speech detection (Int16 scale 0–32767,
+ * ~3% of full scale). Validated during omni development (#216 minicpm-o).
+ * Exported as the SoT for the barge-in energy gate so Gemini Live and
+ * naia-omni share one threshold.
+ */
+export const SPEECH_RMS_THRESHOLD = 200;
 /** Schemes accepted for `serverUrl` before conversion to `ws(s)://`. */
 const ALLOWED_SERVER_SCHEMES = new Set(["http:", "https:", "ws:", "wss:"]);
 
-export function createMiniCpmOSession(): VoiceSession {
+export function createNaiaOmniSession(): VoiceSession {
 	let ws: WebSocket | null = null;
 	let connected = false;
-	let cfg: MiniCpmOConfig | null = null;
+	let cfg: NaiaOmniConfig | null = null;
 	let silenceTimer: ReturnType<typeof setTimeout> | null = null;
 	let maxBufferTimer: ReturnType<typeof setTimeout> | null = null;
 	let pcmBuffer: Int16Array[] = [];
@@ -66,7 +79,7 @@ export function createMiniCpmOSession(): VoiceSession {
 		},
 
 		async connect(config: LiveProviderConfig) {
-			cfg = config as MiniCpmOConfig;
+			cfg = config as NaiaOmniConfig;
 
 			const useGateway = !!(cfg.gatewayUrl && cfg.naiaKey);
 
@@ -78,7 +91,8 @@ export function createMiniCpmOSession(): VoiceSession {
 						`Invalid gatewayUrl: expected http(s):// or ws(s)://, got ${cfg.gatewayUrl}`,
 					);
 				}
-				wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}`;
+				const modelParam = encodeURIComponent(cfg.model ?? DEFAULT_MODEL);
+			wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}?model=${modelParam}`;
 			} else {
 				const normalizedBase = normalizeServerUrl(
 					cfg.serverUrl ?? DEFAULT_SERVER_URL,
@@ -97,7 +111,7 @@ export function createMiniCpmOSession(): VoiceSession {
 					encodedRefAudio = await encodeRefAudio(cfg.refAudio);
 				} catch (err) {
 					if (err instanceof RefAudioEncodeError) {
-						Logger.warn("minicpm-o", "ref audio rejected", {
+						Logger.warn("naia-omni", "ref audio rejected", {
 							error: err.message,
 						});
 						throw err;
@@ -106,12 +120,17 @@ export function createMiniCpmOSession(): VoiceSession {
 				}
 			}
 
-			Logger.info("minicpm-o", "connecting", {
+			Logger.info("naia-omni", "connecting", {
 				url: sanitizeUrl(wsUrl),
 				mode: useGateway ? "gateway" : "direct",
 				hasRefAudio: encodedRefAudio !== null,
 			});
 
+			// On-demand retry loop (CONTRACT §3): 503 pod-starting → backoff, sold-out → throw
+			const retryStart = Date.now();
+			let retryDelay = INITIAL_RETRY_MS;
+
+			const attemptConnect = (): Promise<void> => {
 			ws = new WebSocket(wsUrl);
 
 			return new Promise<void>((resolve, reject) => {
@@ -164,7 +183,7 @@ export function createMiniCpmOSession(): VoiceSession {
 							}),
 						);
 						connected = true;
-						Logger.info("minicpm-o", "connected to /v1/realtime", {
+						Logger.info("naia-omni", "connected to /v1/realtime", {
 							mode: useGateway ? "gateway" : "direct",
 							refAudio: encodedRefAudio !== null,
 						});
@@ -202,6 +221,7 @@ export function createMiniCpmOSession(): VoiceSession {
 									apiKey: cfg?.naiaKey,
 									backend: "runpod",
 									locale: cfg?.locale ?? "en",
+									instanceId: cfg?.instanceId,
 								},
 							}),
 						);
@@ -213,7 +233,7 @@ export function createMiniCpmOSession(): VoiceSession {
 					const wasConnected = connected;
 					connected = false;
 					clearTurnTimers();
-					Logger.info("minicpm-o", "disconnected from /v1/realtime", {
+					Logger.info("naia-omni", "disconnected from /v1/realtime", {
 						code: event.code,
 						reason: event.reason,
 						wasClean: event.wasClean,
@@ -224,11 +244,38 @@ export function createMiniCpmOSession(): VoiceSession {
 					session.onDisconnect?.();
 				};
 			});
+			}; // end attemptConnect
+
+			// Retry loop for on-demand pods (CONTRACT §3.2)
+			while (true) {
+				try {
+					await attemptConnect();
+					return; // connected successfully
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					// Check for pod-starting (503) in error message
+					if (useGateway && msg.includes("pod-starting")) {
+						if (Date.now() - retryStart > COLD_START_CAP_MS) {
+							throw new ColdStartTimeoutError();
+						}
+						Logger.info("naia-omni", "pod starting, retrying", {
+							delay: retryDelay,
+							elapsed: Date.now() - retryStart,
+						});
+						await new Promise((r) => setTimeout(r, retryDelay));
+						retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
+						continue;
+					}
+					if (msg.includes("sold-out")) {
+						throw new SoldOutError(msg);
+					}
+					throw err; // other errors — don't retry
+				}
+			}
 		},
 
 		sendAudio(pcmBase64: string) {
 			if (!ws || !connected) return;
-			if (isAiSpeaking) return;
 
 			const bytes = base64ToUint8Array(pcmBase64);
 			const samples = new Int16Array(
@@ -236,11 +283,21 @@ export function createMiniCpmOSession(): VoiceSession {
 				bytes.byteOffset,
 				bytes.byteLength / 2,
 			);
-			pcmBuffer.push(samples.slice());
 
 			const chunkRms = rms(samples);
+
+			// Barge-in (#22/#216 revisited). #216 hard-discarded ALL mic input
+			// while the AI spoke (`if (isAiSpeaking) return`) to kill the echo
+			// loop — but that also made interruption impossible. Gate on energy
+			// instead: while the AI is speaking, forward only chunks loud enough
+			// to be a real interruption (>= SPEECH_RMS_THRESHOLD) so the server
+			// VAD can fire an interrupt; AEC-residual echo (below threshold) is
+			// still dropped to avoid self-triggering the echo loop.
+			if (isAiSpeaking && chunkRms < SPEECH_RMS_THRESHOLD) return;
+
+			pcmBuffer.push(samples.slice());
 			if (++rmsLogThrottle % 20 === 0) {
-				Logger.debug("minicpm-o", "RMS sample", {
+				Logger.debug("naia-omni", "RMS sample", {
 					rms: Math.round(chunkRms),
 					threshold: SPEECH_RMS_THRESHOLD,
 					isSpeech: chunkRms >= SPEECH_RMS_THRESHOLD,
@@ -329,7 +386,7 @@ export function createMiniCpmOSession(): VoiceSession {
 		switch (type) {
 			case "response.created":
 				isAiSpeaking = true;
-				Logger.debug("minicpm-o", "response started");
+				Logger.debug("naia-omni", "response started");
 				break;
 
 			case "response.audio_transcript.delta": {
@@ -347,13 +404,13 @@ export function createMiniCpmOSession(): VoiceSession {
 
 			case "response.done":
 				isAiSpeaking = false;
-				Logger.debug("minicpm-o", "response done");
+				Logger.debug("naia-omni", "response done");
 				session.onTurnEnd?.();
 				break;
 
 			case "response.cancelled":
 				isAiSpeaking = false;
-				Logger.debug("minicpm-o", "response cancelled");
+				Logger.debug("naia-omni", "response cancelled");
 				session.onInterrupted?.();
 				break;
 
@@ -378,13 +435,13 @@ export function createMiniCpmOSession(): VoiceSession {
 					// the caller so the UI can prompt for a different file
 					// or fall back to the default voice; the session
 					// itself is still usable, just without the clone.
-					Logger.warn("minicpm-o", "ref audio rejected by server", {
+					Logger.warn("naia-omni", "ref audio rejected by server", {
 						message: errMsg,
 					});
 					session.onError?.(new RefAudioEncodeError(errMsg));
 					break;
 				}
-				Logger.warn("minicpm-o", "non-fatal server error (session continues)", {
+				Logger.warn("naia-omni", "non-fatal server error (session continues)", {
 					message: errMsg,
 				});
 				break;
@@ -427,11 +484,11 @@ export function createMiniCpmOSession(): VoiceSession {
 			);
 			ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
 		} catch (err) {
-			Logger.warn("minicpm-o", "send failed", { error: String(err) });
+			Logger.warn("naia-omni", "send failed", { error: String(err) });
 			session.onError?.(err instanceof Error ? err : new Error(String(err)));
 		}
 
-		Logger.debug("minicpm-o", "committed audio", { samples: totalSamples });
+		Logger.debug("naia-omni", "committed audio", { samples: totalSamples });
 	}
 
 	return session;
@@ -442,6 +499,22 @@ function rms(samples: Int16Array): number {
 	let sum = 0;
 	for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
 	return Math.sqrt(sum / samples.length);
+}
+
+/**
+ * RMS (Int16 scale 0–32767) of a base64-encoded Int16-LE PCM chunk. Shared
+ * SoT helper for the barge-in energy gate (see {@link SPEECH_RMS_THRESHOLD}).
+ * Same decode + rms() path used internally by naia-omni's `sendAudio`.
+ */
+export function rmsFromBase64Pcm(b64: string): number {
+	const bytes = base64ToUint8Array(b64);
+	if (bytes.byteLength < 2) return 0;
+	const samples = new Int16Array(
+		bytes.buffer,
+		bytes.byteOffset,
+		bytes.byteLength >> 1,
+	);
+	return rms(samples);
 }
 
 function base64ToUint8Array(b64: string): Uint8Array {

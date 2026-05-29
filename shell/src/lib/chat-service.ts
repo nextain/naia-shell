@@ -290,6 +290,44 @@ export async function directToolCall(opts: {
 	gatewayUrl?: string;
 	// Credentials (gatewayToken) + webhook URLs flow via sendCredsUpdate /
 	// sendNotifyConfig at startup + on save. Never per-request.
+	/**
+	 * Called when the agent emits an `approval_request` for a Tier>0 tool.
+	 * The voice tool path has no streaming-chat UI loop (which normally
+	 * handles approvals in handleChunk), so without this the agent waits for
+	 * an approval that never comes → RESPONSE_TIMEOUT_MS hang. The caller
+	 * decides how to resolve it (voice mode auto-approves — the user spoke
+	 * the request, which is implicit consent).
+	 */
+	onApprovalRequest?: (req: {
+		requestId: string;
+		toolCallId: string;
+		toolName: string;
+		args: Record<string, unknown>;
+		tier?: number;
+		description?: string;
+	}) => void;
+	/**
+	 * Called when the agent emits `panel_tool_call` (a panel-owned tool like
+	 * skill_browser_*). The voice path has no chat UI loop, so without this the
+	 * panel tool never runs and the agent hangs. The caller routes it to the
+	 * owning panel's bridge and replies via `sendPanelToolResult`.
+	 */
+	onPanelToolCall?: (req: {
+		requestId: string;
+		toolCallId: string;
+		toolName: string;
+		args: Record<string, unknown>;
+	}) => void;
+	/**
+	 * Called when the agent emits `panel_control` (e.g. skill_panel switch).
+	 * The caller performs the panel switch/reload. Without this, voice mode
+	 * reports "switched" but the panel never actually changes.
+	 */
+	onPanelControl?: (req: {
+		requestId: string;
+		action: string;
+		panelId?: string;
+	}) => void;
 }): Promise<{ success: boolean; output: string }> {
 	const { toolName, args, requestId, gatewayUrl } = opts;
 
@@ -326,6 +364,53 @@ export async function directToolCall(opts: {
 					success: chunk.success,
 					output: chunk.output,
 				};
+			} else if (chunk.type === "approval_request") {
+				// Tier>0 tool needs approval. The voice path has no chat UI loop
+				// to handle it, so delegate to the caller (voice mode auto-
+				// approves). Without this the agent waits → timeout hang.
+				const ar = chunk as unknown as {
+					requestId: string;
+					toolCallId: string;
+					toolName: string;
+					args: Record<string, unknown>;
+					tier?: number;
+					description?: string;
+				};
+				opts.onApprovalRequest?.({
+					requestId: ar.requestId,
+					toolCallId: ar.toolCallId,
+					toolName: ar.toolName,
+					args: ar.args,
+					tier: ar.tier,
+					description: ar.description,
+				});
+			} else if (chunk.type === "panel_tool_call") {
+				// Panel-owned tool (skill_browser_* etc.). Route to the panel
+				// bridge via the caller; the bridge replies with sendPanelToolResult,
+				// after which the agent emits tool_result/finish.
+				const pc = chunk as unknown as {
+					requestId: string;
+					toolCallId: string;
+					toolName: string;
+					args: Record<string, unknown>;
+				};
+				opts.onPanelToolCall?.({
+					requestId: pc.requestId,
+					toolCallId: pc.toolCallId,
+					toolName: pc.toolName,
+					args: pc.args,
+				});
+			} else if (chunk.type === "panel_control") {
+				const pc = chunk as unknown as {
+					requestId: string;
+					action: string;
+					panelId?: string;
+				};
+				opts.onPanelControl?.({
+					requestId: pc.requestId,
+					action: pc.action,
+					panelId: pc.panelId,
+				});
 			} else if (chunk.type === "finish") {
 				clearTimeout(timeoutId);
 				unlisten();

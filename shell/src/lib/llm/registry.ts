@@ -49,6 +49,8 @@ export function isOmniModel(providerId: string, modelId: string): boolean {
 	return (
 		mid.includes("minicpm-o") ||
 		mid.includes("minicpmo") ||
+		// naia-<ver>-omni-<vram> (e.g. naia-0.9-omni-24g) — match the "omni" segment.
+		mid.includes("omni") ||
 		mid.includes("realtime")
 	);
 }
@@ -161,7 +163,7 @@ export async function fetchNaiaPricing(
 /** Format model label with pricing and capability hints. */
 export function formatModelLabel(model: LlmModelMeta): string {
 	const isAsr = model.capabilities.includes("asr");
-	const base = isAsr ? `${model.label} (전용)` : model.label;
+	const base = isAsr ? `${model.label} (ASR)` : model.label;
 	if (!model.pricing) return base;
 	const [input, output] = model.pricing;
 	const pricingLabel =
@@ -206,46 +208,33 @@ registerLlmProvider({
 	descKey: "onboard.lab.description",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	defaultModel: "gemini-3.1-flash-lite-preview",
+	defaultModel: "gemini-3.1-flash-lite",
+	// 사용자 확정 4-model lineup (순서 유지, 2026-05-29):
+	//   1) Gemini 3.1 Flash Lite  2) Naia 0.9 Omni 24G (Realtime Voice)
+	//   3) Gemini 3.5 Flash  4) Gemini 2.5 Flash Live (Realtime Voice)
+	// Naia 공식 명칭 컨벤션: {모델명}-{버전}-{모델성격}-{필요vram} = naia-0.9-omni-24g
+	// (SoT: naia-model-infra MODEL-NAMING.md). 서비스명 naia-talk 폐기 — 모델명으로 통합.
+	// 2.5-flash-live 와 naia-omni 둘 다 realtime voice — 표기 통일.
 	models: [
+		{
+			id: "gemini-3.1-flash-lite",
+			label: "Gemini 3.1 Flash Lite",
+			capabilities: ["llm"],
+		},
+		{
+			id: "naia-0.9-omni-24g",
+			label: "Naia 0.9 Omni 24G (Realtime Voice)",
+			capabilities: ["llm", "omni"],
+			transcriptProvided: true,
+		},
 		{
 			id: "gemini-3.5-flash",
 			label: "Gemini 3.5 Flash",
 			capabilities: ["llm"],
 		},
 		{
-			id: "gemini-3.1-pro-preview",
-			label: "Gemini 3.1 Pro Preview",
-			capabilities: ["llm"],
-		},
-		{
-			id: "gemini-3.1-flash-lite-preview",
-			label: "Gemini 3.1 Flash Lite Preview",
-			capabilities: ["llm"],
-		},
-		{
-			id: "gemini-3-flash-preview",
-			label: "Gemini 3 Flash Preview",
-			capabilities: ["llm"],
-		},
-		{
-			id: "gemini-2.5-pro",
-			label: "Gemini 2.5 Pro",
-			capabilities: ["llm"],
-		},
-		{
-			id: "gemini-2.5-flash",
-			label: "Gemini 2.5 Flash",
-			capabilities: ["llm"],
-		},
-		{
-			id: "gemini-2.5-flash-lite",
-			label: "Gemini 2.5 Flash Lite",
-			capabilities: ["llm"],
-		},
-		{
 			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live (실시간)",
+			label: "Gemini 2.5 Flash Live (Realtime Voice)",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
@@ -303,7 +292,7 @@ registerLlmProvider({
 		},
 		{
 			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live (실시간)",
+			label: "Gemini 2.5 Flash Live (Realtime)",
 			capabilities: ["llm", "omni"],
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
@@ -476,7 +465,7 @@ registerLlmProvider({
 						: ["llm"];
 				return {
 					id: model.id,
-					label: isOmni ? `${model.id} (실시간)` : model.id,
+					label: isOmni ? `${model.id} (Realtime)` : model.id,
 					capabilities,
 				};
 			});

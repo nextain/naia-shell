@@ -9,6 +9,7 @@ import { Logger } from "../logger";
 import type {
 	GeminiLiveConfig,
 	LiveProviderConfig,
+	PanelContextUpdate,
 	VoiceSession,
 } from "./types";
 
@@ -217,6 +218,47 @@ export function createGeminiLiveSession(): VoiceSession {
 				JSON.stringify({
 					toolResponse: {
 						functionResponses: [{ id: callId, response: { result } }],
+					},
+				}),
+			);
+		},
+
+		// #313 L3 — mid-session panel context bridge.
+		//
+		// Gemini Live's `clientContent` event with `turnComplete: false` appends
+		// the parts to the running session context WITHOUT triggering a model
+		// response (per Live API docs: turn boundaries are user-controlled; an
+		// incomplete turn is treated as additional grounding for the next model
+		// turn). We use this surface to inject panel-state deltas (e.g. browser
+		// URL change) so the model's NEXT spoken turn is grounded in current
+		// world state instead of the snapshot frozen at session open.
+		//
+		// Payload is a compact text serialization of the panel context — kept
+		// minimal so rapid URL hops (debounced upstream at 500ms) do not fill
+		// the WS with bloated JSON. Drops silently when WS is not connected so
+		// the bridge can fire-and-forget without paused/closed checks.
+		sendContextUpdate(ctx: PanelContextUpdate) {
+			if (!ws || !connected) return;
+			if (!ctx || typeof ctx !== "object" || !ctx.type) return;
+			let serialized: string;
+			try {
+				serialized = JSON.stringify(ctx.data ?? {});
+			} catch {
+				// Circular refs / BigInt etc. — drop rather than crash the WS.
+				Logger.warn("GeminiLive", "sendContextUpdate: non-serializable data", {
+					type: ctx.type,
+				});
+				return;
+			}
+			const text = `[panel-context:${ctx.type}] ${serialized}`;
+			ws.send(
+				JSON.stringify({
+					clientContent: {
+						turns: [{ role: "user", parts: [{ text }] }],
+						// turnComplete:false — append to running context, do NOT
+						// solicit a new model response. Critical: setting true here
+						// would make every URL change generate a spoken reply.
+						turnComplete: false,
 					},
 				}),
 			);

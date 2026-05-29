@@ -32,7 +32,7 @@ describe("registry — provider registration", () => {
 
 describe("registry — Naia (nextain) provider models", () => {
 	it("models have no static pricing (fetched from gateway at startup)", () => {
-		const model = getLlmModel("nextain", "gemini-2.5-pro");
+		const model = getLlmModel("nextain", "gemini-3.5-flash");
 		expect(model).toBeDefined();
 		expect(model?.pricing).toBeUndefined();
 	});
@@ -57,8 +57,8 @@ describe("registry — Naia (nextain) provider models", () => {
 		expect(p?.requiresNaiaKey).toBe(true);
 	});
 
-	it("default model is gemini-3.1-flash-lite-preview", () => {
-		expect(getDefaultLlmModel("nextain")).toBe("gemini-3.1-flash-lite-preview");
+	it("default model is gemini-3.1-flash-lite", () => {
+		expect(getDefaultLlmModel("nextain")).toBe("gemini-3.1-flash-lite");
 	});
 });
 
@@ -144,8 +144,8 @@ describe("registry — fetchNaiaPricing", () => {
 
 	it("overlays gateway pricing with 1.1x markup onto Naia model list", async () => {
 		const gatewayResponse = [
-			{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: 0.04 },
-			{ model_key: "vertexai:gemini-2.5-pro", input_price_per_million: 1.25, output_price_per_million: 10.0, cached_price_per_million: null },
+			{ model_key: "vertexai:gemini-3.1-flash-lite", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: 0.04 },
+			{ model_key: "vertexai:gemini-3.5-flash", input_price_per_million: 1.25, output_price_per_million: 10.0, cached_price_per_million: null },
 			{ model_key: "openai:gpt-4o", input_price_per_million: 2.5, output_price_per_million: 10.0, cached_price_per_million: null },
 		];
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -154,11 +154,11 @@ describe("registry — fetchNaiaPricing", () => {
 		const models = await fetchNaiaPricing("https://example.com");
 		expect(models).not.toBeNull();
 
-		const flash = models!.find((m) => m.id === "gemini-2.5-flash");
-		expect(flash?.pricing).toEqual([0.165, 0.66]);
+		const flashLite = models!.find((m) => m.id === "gemini-3.1-flash-lite");
+		expect(flashLite?.pricing).toEqual([0.165, 0.66]);
 
-		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
-		expect(pro?.pricing).toEqual([1.375, 11.0]);
+		const flash = models!.find((m) => m.id === "gemini-3.5-flash");
+		expect(flash?.pricing).toEqual([1.375, 11.0]);
 
 		const gpt4o = models!.find((m) => m.id === "gpt-4o");
 		expect(gpt4o).toBeUndefined();
@@ -169,30 +169,30 @@ describe("registry — fetchNaiaPricing", () => {
 	it("models not in gateway response have no pricing", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify([
-				{ model_key: "vertexai:gemini-2.5-flash", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: null },
+				{ model_key: "vertexai:gemini-3.1-flash-lite", input_price_per_million: 0.15, output_price_per_million: 0.6, cached_price_per_million: null },
 			]), { status: 200 }),
 		);
 		const models = await fetchNaiaPricing("https://example.com");
 		expect(models).not.toBeNull();
 
-		const pro = models!.find((m) => m.id === "gemini-2.5-pro");
-		expect(pro?.pricing).toBeUndefined();
+		const flash = models!.find((m) => m.id === "gemini-3.5-flash");
+		expect(flash?.pricing).toBeUndefined();
 
 		vi.restoreAllMocks();
 	});
 
 	it("does not mutate original provider models (returns new objects)", async () => {
-		const staticProBefore = getLlmModel("nextain", "gemini-2.5-pro");
+		const staticFlashBefore = getLlmModel("nextain", "gemini-3.5-flash");
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
 			new Response(JSON.stringify([
-				{ model_key: "vertexai:gemini-2.5-pro", input_price_per_million: 99.0, output_price_per_million: 99.0, cached_price_per_million: null },
+				{ model_key: "vertexai:gemini-3.5-flash", input_price_per_million: 99.0, output_price_per_million: 99.0, cached_price_per_million: null },
 			]), { status: 200 }),
 		);
 		await fetchNaiaPricing("https://example.com");
 
-		const staticProAfter = getLlmModel("nextain", "gemini-2.5-pro");
-		expect(staticProAfter?.pricing).toEqual(staticProBefore?.pricing);
+		const staticFlashAfter = getLlmModel("nextain", "gemini-3.5-flash");
+		expect(staticFlashAfter?.pricing).toEqual(staticFlashBefore?.pricing);
 
 		vi.restoreAllMocks();
 	});
@@ -200,9 +200,9 @@ describe("registry — fetchNaiaPricing", () => {
 
 describe("registry — formatModelLabel", () => {
 	it("returns base label when no pricing", () => {
-		const model = getLlmModel("nextain", "gemini-2.5-pro")!;
+		const model = getLlmModel("nextain", "gemini-3.5-flash")!;
 		const label = formatModelLabel(model);
-		expect(label).toBe("Gemini 2.5 Pro");
+		expect(label).toBe("Gemini 3.5 Flash");
 	});
 
 	it("formats label with pricing when provided", () => {

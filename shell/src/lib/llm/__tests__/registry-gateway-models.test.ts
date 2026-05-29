@@ -16,23 +16,28 @@
 import { describe, expect, it } from "vitest";
 
 describe("LLM registry — gateway model exclusion (#248)", () => {
-	it("Naia (gateway) provider lists gemini-3.x models (full catalogue from naia-agent)", async () => {
+	// 2026-05-29: nextain provider trimmed to the user-confirmed 4-model lineup.
+	it("Naia (gateway) provider exposes the confirmed 4-model lineup in order", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
 		expect(naia).toBeTruthy();
 		const ids = naia!.models.map((m) => m.id);
-		expect(ids).toContain("gemini-3.5-flash");
-		expect(ids).toContain("gemini-3.1-pro-preview");
+		expect(ids).toEqual([
+			"gemini-3.1-flash-lite",
+			"naia-0.9-omni-24g",
+			"gemini-3.5-flash",
+			"gemini-2.5-flash-live",
+		]);
 	});
 
-	it("Naia provider keeps the gemini-2.5-* family (verified working via gateway)", async () => {
+	it("Naia provider includes the realtime-voice models (omni)", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		const ids = naia!.models.map((m) => m.id);
-		expect(ids).toContain("gemini-2.5-pro");
-		expect(ids).toContain("gemini-2.5-flash");
-		expect(ids).toContain("gemini-2.5-flash-lite");
-		expect(ids).toContain("gemini-2.5-flash-live");
+		const omni = naia!.models.filter((m) => m.capabilities.includes("omni"));
+		expect(omni.map((m) => m.id)).toEqual([
+			"naia-0.9-omni-24g",
+			"gemini-2.5-flash-live",
+		]);
 	});
 
 	it("Direct Google Gemini provider lists gemini-2.5-* family", async () => {
@@ -44,10 +49,10 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		expect(ids).toContain("gemini-2.5-flash");
 	});
 
-	it("Naia default model is gemini-3.1-flash-lite-preview", async () => {
+	it("Naia default model is gemini-3.1-flash-lite", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
-		expect(naia!.defaultModel).toBe("gemini-3.1-flash-lite-preview");
+		expect(naia!.defaultModel).toBe("gemini-3.1-flash-lite");
 	});
 });
 
@@ -56,17 +61,15 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		const d = shouldMigrateNextainModel("nextain", "some-deprecated-model");
 		expect(d.migrate).toBe(true);
-		if (d.migrate) expect(d.to).toBe("gemini-3.1-flash-lite-preview");
+		if (d.migrate) expect(d.to).toBe("gemini-3.1-flash-lite");
 	});
 
 	it("does NOT migrate valid models on nextain provider", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
 		for (const valid of [
+			"gemini-3.1-flash-lite",
+			"naia-0.9-omni-24g",
 			"gemini-3.5-flash",
-			"gemini-3.1-pro-preview",
-			"gemini-2.5-pro",
-			"gemini-2.5-flash",
-			"gemini-2.5-flash-lite",
 			"gemini-2.5-flash-live",
 		]) {
 			expect(shouldMigrateNextainModel("nextain", valid).migrate).toBe(false);

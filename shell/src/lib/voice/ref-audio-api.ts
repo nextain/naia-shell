@@ -21,14 +21,35 @@ import { encodeRefAudio } from "./ref-audio";
 const TAG = "RefAudioApi";
 
 export interface RefAudioActive {
+	/** "upload" | "preset" — absent on legacy gateway = treat as "upload". */
+	kind?: "upload" | "preset";
 	uploadedAt: string;
 	sizeBytes: number;
 	durationSeconds: number;
+	/** Present only when kind === "preset". */
+	presetId?: string;
+	presetName?: string;
 }
 
 export interface RefAudioStatus {
 	active: RefAudioActive | null;
 	historyCount: number;
+}
+
+/** A pre-provided voice reference preset (REF-AUDIO-PRESET-CONTRACT §2). */
+export interface RefAudioPreset {
+	id: string;
+	name: string;
+	description?: string;
+	locale: string;
+	gender?: string;
+	ageRange?: string;
+	durationSeconds: number;
+	sampleUrl: string;
+	sampleFormat: string;
+	sampleSha256?: string;
+	source: string;
+	license: string;
 }
 
 export interface RefAudioUploadResult {
@@ -49,6 +70,8 @@ export type RefAudioErrorCode =
 	// W5 — gateway GPU pool 매진 (모든 후보 cap 초과 OR 가용 0).
 	// 사용자 UI = "현재 매진입니다. 잠시 후 다시 시도해주세요" + Tier A 권장.
 	| "sold-out"
+	// preset 선택 시 preset_id 미존재 (404).
+	| "preset-not-found"
 	| "network"
 	| "unknown";
 
@@ -88,6 +111,7 @@ function mapErrorCode(status: number, body: unknown): RefAudioErrorCode {
 			? String((body as { error: unknown }).error)
 			: "";
 	if (status === 401) return "unauthenticated";
+	if (status === 404 && tag === "preset-not-found") return "preset-not-found";
 	if (status === 402) return "credit-insufficient";
 	if (status === 409 && tag === "upload-in-progress")
 		return "upload-in-progress";
@@ -138,22 +162,142 @@ export async function getRefAudioStatus(): Promise<RefAudioStatus> {
 	}
 	const body = (await res.json()) as {
 		active?: {
+			kind?: "upload" | "preset";
 			uploaded_at?: string;
 			size_bytes?: number;
 			duration_seconds?: number;
+			preset_id?: string;
+			preset_name?: string;
 		} | null;
 		history_count?: number;
 	};
 	const active = body.active;
+	if (!active) return { active: null, historyCount: body.history_count ?? 0 };
+
+	// Backward compat (§3.2): no `kind` + uploaded_at present → "upload".
+	const kind: "upload" | "preset" =
+		active.kind ?? (active.uploaded_at ? "upload" : "upload");
+	if (kind === "preset" && active.preset_id) {
+		return {
+			active: {
+				kind: "preset",
+				uploadedAt: active.uploaded_at ?? "",
+				sizeBytes: active.size_bytes ?? 0,
+				durationSeconds: active.duration_seconds ?? 0,
+				presetId: active.preset_id,
+				presetName: active.preset_name,
+			},
+			historyCount: body.history_count ?? 0,
+		};
+	}
 	return {
-		active: active?.uploaded_at
+		active: active.uploaded_at
 			? {
+					kind: "upload",
 					uploadedAt: active.uploaded_at,
 					sizeBytes: active.size_bytes ?? 0,
 					durationSeconds: active.duration_seconds ?? 0,
 				}
 			: null,
 		historyCount: body.history_count ?? 0,
+	};
+}
+
+/**
+ * Fetch the list of pre-provided voice presets (CONTRACT §2).
+ * Free (no charge). Client may cache for ~1h (Cache-Control hint).
+ */
+export async function getRefAudioPresets(): Promise<RefAudioPreset[]> {
+	const headers = await authHeader();
+	let res: Response;
+	try {
+		res = await fetch(`${LAB_GATEWAY_URL}/v1/ref-audio/presets`, { headers });
+	} catch (err) {
+		Logger.warn(TAG, "presets GET network error", { error: String(err) });
+		throw new RefAudioApiError("network", 0, String(err));
+	}
+	if (!res.ok) {
+		const body = await readErrorBody(res);
+		throw new RefAudioApiError(
+			mapErrorCode(res.status, body),
+			res.status,
+			`GET /v1/ref-audio/presets failed (${res.status})`,
+			body,
+		);
+	}
+	const body = (await res.json()) as {
+		presets?: Array<{
+			id?: string;
+			name?: string;
+			description?: string;
+			locale?: string;
+			gender?: string;
+			age_range?: string;
+			duration_seconds?: number;
+			sample_url?: string;
+			sample_format?: string;
+			sample_sha256?: string;
+			source?: string;
+			license?: string;
+		}>;
+	};
+	return (body.presets ?? [])
+		.filter((p) => p.id && p.sample_url)
+		.map((p) => ({
+			id: p.id as string,
+			name: p.name ?? (p.id as string),
+			description: p.description,
+			locale: p.locale ?? "",
+			gender: p.gender,
+			ageRange: p.age_range,
+			durationSeconds: p.duration_seconds ?? 0,
+			sampleUrl: p.sample_url as string,
+			sampleFormat: p.sample_format ?? "wav",
+			sampleSha256: p.sample_sha256,
+			source: p.source ?? "",
+			license: p.license ?? "",
+		}));
+}
+
+/**
+ * Select a preset as the active reference voice (CONTRACT §3).
+ * Free (no charge), idempotent. Returns the applied preset metadata.
+ */
+export async function applyRefAudioPreset(
+	presetId: string,
+): Promise<{ presetId: string; presetName: string; appliedAt: string }> {
+	const headers: Record<string, string> = {
+		...(await authHeader()),
+		"Content-Type": "application/json",
+	};
+	let res: Response;
+	try {
+		res = await fetch(`${LAB_GATEWAY_URL}/v1/ref-audio/preset`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({ preset_id: presetId }),
+		});
+	} catch (err) {
+		Logger.warn(TAG, "preset POST network error", { error: String(err) });
+		throw new RefAudioApiError("network", 0, String(err));
+	}
+	if (!res.ok) {
+		const body = await readErrorBody(res);
+		throw new RefAudioApiError(
+			mapErrorCode(res.status, body),
+			res.status,
+			`POST /v1/ref-audio/preset failed (${res.status})`,
+			body,
+		);
+	}
+	const data = (await res.json()) as {
+		active?: { preset_id?: string; name?: string; applied_at?: string };
+	};
+	Logger.info(TAG, "preset applied", { presetId: data.active?.preset_id });
+	return {
+		presetId: data.active?.preset_id ?? presetId,
+		presetName: data.active?.name ?? "",
+		appliedAt: data.active?.applied_at ?? new Date().toISOString(),
 	};
 }
 

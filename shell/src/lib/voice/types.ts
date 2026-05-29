@@ -14,7 +14,7 @@ export type LiveProviderId =
 	| "naia"
 	| "gemini-live"
 	| "openai-realtime"
-	| "minicpm-o"
+	| "naia-omni"
 	| "vllm-omni"
 	| "edge-tts";
 
@@ -22,9 +22,9 @@ export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	naia: "Naia OS",
 	"gemini-live": "Gemini",
 	"openai-realtime": "OpenAI",
-	"minicpm-o": "MiniCPM-o (Omni Voice)",
-	"vllm-omni": "MiniCPM-o (vllm-omni)",
-	"edge-tts": "Edge (TTS 전용)",
+	"naia-omni": "Naia Omni",
+	"vllm-omni": "vLLM Omni (Local)",
+	"edge-tts": "Edge (TTS Only)",
 };
 
 // ── Provider Cost Hints (approximate per-minute voice conversation cost) ──
@@ -36,7 +36,7 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	naia: { cost: "~$0.03/min", note: "Naia credits" },
 	"gemini-live": { cost: "~$0.03/min", note: "Google API Key" },
 	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
-	"minicpm-o": { cost: "$0.50/min", note: "Naia credits (gateway) / Free (local)" },
+	"naia-omni": { cost: "$0.50/min", note: "Naia credits (gateway) / Free (local)" },
 	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
@@ -51,6 +51,17 @@ export interface ToolDeclaration {
 	name: string;
 	description: string;
 	parameters?: Record<string, unknown>;
+}
+
+// ── Panel Context Update (#313 L3 — mid-session panel context bridge) ──
+
+// `PanelContextUpdate` is a structurally narrow subset of `PanelContext` from
+// `panel-registry.ts` — duplicated here to keep `voice/*` free of UI imports.
+export interface PanelContextUpdate {
+	/** Panel type identifier (e.g. "browser", "workspace"). */
+	type: string;
+	/** Arbitrary JSON payload describing the new panel state. */
+	data: Record<string, unknown>;
 }
 
 // ── Provider Config ──
@@ -79,8 +90,8 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 	serverUrl?: string;
 }
 
-export interface MiniCpmOConfig extends LiveProviderConfigBase {
-	provider: "minicpm-o";
+export interface NaiaOmniConfig extends LiveProviderConfigBase {
+	provider: "naia-omni";
 	/** vllm-omni server URL for direct mode (e.g. http://localhost:8000 or ws://localhost:8000).
 	 *  Provider connects to /v1/realtime (OpenAI Realtime API extended for omni models).
 	 *  Ignored when gatewayUrl is set. */
@@ -91,6 +102,8 @@ export interface MiniCpmOConfig extends LiveProviderConfigBase {
 	gatewayUrl?: string;
 	/** API key for gateway auth (gw-... format). Required when gatewayUrl is set. */
 	naiaKey?: string;
+	/** Naia OS instance ID (user_id:install_uuid). Used for Pod routing (CONTRACT §1.2). */
+	instanceId?: string;
 	/**
 	 * Optional voice-clone reference. The session sends this on the initial
 	 * `session.update` so the server clones its timbre for every response in
@@ -122,7 +135,7 @@ export interface VllmOmniConfig extends LiveProviderConfigBase {
 export type LiveProviderConfig =
 	| GeminiLiveConfig
 	| OpenAIRealtimeConfig
-	| MiniCpmOConfig
+	| NaiaOmniConfig
 	| VllmOmniConfig;
 
 // ── Voice Session (provider-agnostic interface) ──
@@ -132,6 +145,12 @@ export interface VoiceSession {
 	sendAudio: (pcmBase64: string) => void;
 	sendText: (text: string) => void;
 	sendToolResponse: (callId: string, result: unknown) => void;
+	/**
+	 * Inject a mid-session panel-context delta (#313 L3). Optional — providers
+	 * without a mid-session inject surface (vllm-omni, naia-omni) simply omit
+	 * it, and the panel-context bridge degrades to the next-turn system prompt.
+	 */
+	sendContextUpdate?: (ctx: PanelContextUpdate) => void;
 	disconnect: () => void;
 	readonly isConnected: boolean;
 

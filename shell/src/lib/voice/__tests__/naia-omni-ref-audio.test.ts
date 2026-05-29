@@ -10,8 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMiniCpmOSession } from "../minicpm-o";
-import type { MiniCpmOConfig } from "../types";
+import { createNaiaOmniSession } from "../naia-omni";
+import type { NaiaOmniConfig } from "../types";
 
 interface MockWSInstance {
 	url: string;
@@ -51,8 +51,8 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-function connect(config: MiniCpmOConfig) {
-	const session = createMiniCpmOSession();
+function connect(config: NaiaOmniConfig) {
+	const session = createNaiaOmniSession();
 	const promise = session.connect(config);
 	setTimeout(() => {
 		lastWs.onmessage?.({ data: JSON.stringify({ type: "session.created" }) });
@@ -63,7 +63,7 @@ function connect(config: MiniCpmOConfig) {
 describe("MiniCPM-o ref_audio wire plumbing", () => {
 	it("omits ref_audio fields when refAudio is not set", async () => {
 		const { promise } = connect({
-			provider: "minicpm-o",
+			provider: "naia-omni",
 			serverUrl: "http://localhost:8000",
 		});
 		await promise;
@@ -79,7 +79,7 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 		// the AudioContext path.
 		const refAudio = "A".repeat(32);
 		const { promise } = connect({
-			provider: "minicpm-o",
+			provider: "naia-omni",
 			serverUrl: "http://localhost:8000",
 			refAudio,
 		});
@@ -91,7 +91,7 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 	it("forwards refAudioLanguage alongside ref_audio", async () => {
 		const refAudio = "A".repeat(32);
 		const { promise } = connect({
-			provider: "minicpm-o",
+			provider: "naia-omni",
 			serverUrl: "http://localhost:8000",
 			refAudio,
 			refAudioLanguage: "zh",
@@ -104,7 +104,7 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 
 	it("surfaces 'Invalid ref_audio' server errors via onError", async () => {
 		const { session, promise } = connect({
-			provider: "minicpm-o",
+			provider: "naia-omni",
 			serverUrl: "http://localhost:8000",
 			refAudio: "A".repeat(32),
 		});
@@ -131,7 +131,7 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 
 	it("treats unrelated server errors as non-fatal (no onError surfacing)", async () => {
 		const { session, promise } = connect({
-			provider: "minicpm-o",
+			provider: "naia-omni",
 			serverUrl: "http://localhost:8000",
 		});
 		await promise;
@@ -150,10 +150,10 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 	});
 
 	it("rejects the connect promise when refAudio string is not pure base64", async () => {
-		const session = createMiniCpmOSession();
+		const session = createNaiaOmniSession();
 		await expect(
 			session.connect({
-				provider: "minicpm-o",
+				provider: "naia-omni",
 				serverUrl: "http://localhost:8000",
 				refAudio: "!!! not base64 !!!",
 			}),

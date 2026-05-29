@@ -19,22 +19,12 @@ import { spawnSync } from "node:child_process";
 const mode = process.argv[2] === "dev" ? "dev" : "prod";
 const env = { ...process.env };
 
-if (mode === "dev") {
-	env.VITE_NAIA_USE_DEV_GATEWAY = "1";
-	env.VITE_NAIA_DEV_GATEWAY_URL =
-		env.VITE_NAIA_DEV_GATEWAY_URL ||
-		"https://naia-gateway-dev-181404717065.asia-northeast3.run.app";
-	process.stdout.write(
-		`[tauri-with-mode] DEV — VITE_NAIA_DEV_GATEWAY_URL=${env.VITE_NAIA_DEV_GATEWAY_URL}\n`,
-	);
-} else {
-	// prod — explicitly clear so a leaked `.env.local` cannot route to dev
-	delete env.VITE_NAIA_USE_DEV_GATEWAY;
-	delete env.VITE_NAIA_DEV_GATEWAY_URL;
-	process.stdout.write(
-		"[tauri-with-mode] PROD — using _PROD_GATEWAY default in config.ts\n",
-	);
-}
+// Always use PROD gateway — dev/prod split deferred.
+delete env.VITE_NAIA_USE_DEV_GATEWAY;
+delete env.VITE_NAIA_DEV_GATEWAY_URL;
+process.stdout.write(
+	`[tauri-with-mode] ${mode.toUpperCase()} — using PROD gateway\n`,
+);
 
 const r = spawnSync("pnpm", ["run", "tauri", "dev"], {
 	env,
