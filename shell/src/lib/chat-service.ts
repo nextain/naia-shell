@@ -1,7 +1,40 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Logger } from "./logger";
 import type { NaiaTool } from "./panel-registry";
 import type { AgentResponseChunk, ProviderConfig } from "./types";
+
+/**
+ * Invoke `send_to_agent_command` but swallow errors when naia-agent is
+ * unavailable (W2 — 사용자 명시 "naia-agent / naia-memory 의존성 제외").
+ *
+ * Returns `true` on successful invoke, `false` on caught error (naia-agent
+ * down / not spawned / IPC dropped). Callers that depend on the request
+ * actually landing should check the return value; fire-and-forget callers
+ * (auth_update, notify_config, creds_update, panel_*) can ignore it.
+ *
+ * Logged with `Logger.warn` so the operator sees it in dev console without
+ * the main flow throwing. Main flow degrades gracefully:
+ *   - F2 Gemini Live direct (googleApiKey 모드) — 영향 없음
+ *   - F2 naia 계정 chat — sendChatMessage 실패 → caller 가 안내 표시
+ *   - F4 자체 스킬 (directToolCall) — caller 가 안내 표시
+ */
+async function safeSendToAgent(
+	message: object,
+	opName: string,
+): Promise<boolean> {
+	try {
+		await invoke("send_to_agent_command", {
+			message: JSON.stringify(message),
+		});
+		return true;
+	} catch (err) {
+		Logger.warn("ChatService", `${opName} swallowed — naia-agent unavailable`, {
+			error: String(err),
+		});
+		return false;
+	}
+}
 
 interface SendChatOptions {
 	message: string;
@@ -63,7 +96,7 @@ export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
 			discordDmChannelId: cfg.discordDmChannelId,
 		}),
 	};
-	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
+	await safeSendToAgent(request, "sendNotifyConfig");
 }
 
 export interface CredsPayload {
@@ -93,7 +126,7 @@ export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
 	if (payload.ttsKeys !== undefined) request.ttsKeys = payload.ttsKeys;
 	if (payload.gatewayToken !== undefined)
 		request.gatewayToken = payload.gatewayToken;
-	await invoke("send_to_agent_command", { message: JSON.stringify(request) });
+	await safeSendToAgent(request, "sendCredsUpdate");
 }
 
 const RESPONSE_TIMEOUT_MS = 120_000; // Safety: clean up listener if no finish/error
@@ -164,6 +197,9 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		onChunk({ type: "error", requestId, message: "Agent response timeout" });
 	}, RESPONSE_TIMEOUT_MS);
 
+	// sendChatMessage 는 caller (= ChatPanel) 가 "naia 계정 chat 사용 불가"
+	// UI 안내 하도록 fail 시 throw 유지 — safeSendToAgent 사용 X. Logger.warn
+	// 은 helper 가 처리하지 않고 caller 의 catch 가 surface.
 	try {
 		await invoke("send_to_agent_command", {
 			message: JSON.stringify(request),
@@ -171,12 +207,22 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 	} catch (err) {
 		clearTimeout(timeoutId);
 		unlisten();
+		Logger.warn("ChatService", "sendChatMessage failed — naia-agent unavailable", {
+			error: String(err),
+		});
 		throw err;
 	}
 }
 
 export async function cancelChat(requestId: string): Promise<void> {
-	await invoke("cancel_stream", { requestId });
+	// cancel_stream 은 별 Tauri command — fire-and-forget swallow.
+	try {
+		await invoke("cancel_stream", { requestId });
+	} catch (err) {
+		Logger.warn("ChatService", "cancelChat swallowed — naia-agent unavailable", {
+			error: String(err),
+		});
+	}
 }
 
 /** Pipeline TTS: synthesize a single sentence → returns MP3 base64 via callback */
@@ -229,11 +275,8 @@ export async function requestTts(opts: {
 		unlisten();
 	}, 30_000);
 
-	try {
-		await invoke("send_to_agent_command", {
-			message: JSON.stringify(request),
-		});
-	} catch {
+	const sent = await safeSendToAgent(request, "requestTts");
+	if (!sent) {
 		clearTimeout(timeoutId);
 		unlisten();
 	}
@@ -302,14 +345,11 @@ export async function directToolCall(opts: {
 		rejectPromise(new Error("Tool request timeout"));
 	}, RESPONSE_TIMEOUT_MS);
 
-	try {
-		await invoke("send_to_agent_command", {
-			message: JSON.stringify(request),
-		});
-	} catch (err) {
+	const sent = await safeSendToAgent(request, "directToolCall");
+	if (!sent) {
 		clearTimeout(timeoutId);
 		unlisten();
-		rejectPromise(err);
+		rejectPromise(new Error("naia-agent unavailable"));
 	}
 
 	return promise;
@@ -366,14 +406,14 @@ export async function fetchAgentSkills(): Promise<
 		rejectPromise(new Error("Skill list request timeout"));
 	}, 10_000);
 
-	try {
-		await invoke("send_to_agent_command", {
-			message: JSON.stringify({ type: "skill_list", requestId }),
-		});
-	} catch (err) {
+	const sent = await safeSendToAgent(
+		{ type: "skill_list", requestId },
+		"fetchAgentSkills",
+	);
+	if (!sent) {
 		clearTimeout(timeoutId);
 		unlisten();
-		rejectPromise(err);
+		rejectPromise(new Error("naia-agent unavailable"));
 	}
 
 	return promise;
@@ -384,8 +424,8 @@ export async function sendPanelSkills(
 	panelId: string,
 	tools: NaiaTool[],
 ): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({
+	await safeSendToAgent(
+		{
 			type: "panel_skills",
 			panelId,
 			tools: tools.map((t) => ({
@@ -394,22 +434,25 @@ export async function sendPanelSkills(
 				parameters: t.parameters ?? { type: "object", properties: {} },
 				...(t.tier != null && { tier: t.tier }),
 			})),
-		}),
-	});
+		},
+		"sendPanelSkills",
+	);
 }
 
 /** Tell the agent to remove panel's proxy skills (on panel deactivate) */
 export async function sendPanelSkillsClear(panelId: string): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({ type: "panel_skills_clear", panelId }),
-	});
+	await safeSendToAgent(
+		{ type: "panel_skills_clear", panelId },
+		"sendPanelSkillsClear",
+	);
 }
 
 /** Install a panel from a git URL or local zip file path (delegated to agent) */
 export async function sendPanelInstall(source: string): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({ type: "panel_install", source }),
-	});
+	await safeSendToAgent(
+		{ type: "panel_install", source },
+		"sendPanelInstall",
+	);
 }
 
 /** Send panel tool execution result back to the agent */
@@ -419,29 +462,29 @@ export async function sendPanelToolResult(
 	result: string,
 	success: boolean,
 ): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({
+	await safeSendToAgent(
+		{
 			type: "panel_tool_result",
 			requestId,
 			toolCallId,
 			result,
 			success,
-		}),
-	});
+		},
+		"sendPanelToolResult",
+	);
 }
 
 /** Send naiaKey to the agent (backend). Call on login and on app init if key exists. */
 export async function sendAuthUpdate(naiaKey: string): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({ type: "auth_update", naiaKey }),
-	});
+	await safeSendToAgent({ type: "auth_update", naiaKey }, "sendAuthUpdate");
 }
 
 /** Request the agent to pre-download an offline embedding model. */
 export async function sendEmbeddingPrefetch(
 	model: "all-MiniLM-L6-v2" | "all-mpnet-base-v2",
 ): Promise<void> {
-	await invoke("send_to_agent_command", {
-		message: JSON.stringify({ type: "embedding_prefetch", model }),
-	});
+	await safeSendToAgent(
+		{ type: "embedding_prefetch", model },
+		"sendEmbeddingPrefetch",
+	);
 }

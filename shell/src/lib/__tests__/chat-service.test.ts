@@ -364,4 +364,78 @@ describe("chat-service", () => {
 		expect("ttsKeys" in parsed).toBe(false);
 		expect("gatewayToken" in parsed).toBe(false);
 	});
+
+	// W2 — naia-agent 의존성 제외 (사용자 명시 2026-05-29)
+	// stdio invoke 가 throw 해도 fire-and-forget 함수들은 main flow 안 깸.
+	// sendChatMessage 만 caller (= ChatPanel) "naia 계정 chat 사용 불가" UI 표시
+	// 가능하도록 throw 유지.
+	describe("W2 — naia-agent unavailable swallow", () => {
+		it("sendAuthUpdate naia-agent 없어도 throw 안 함", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { sendAuthUpdate } = await import("../chat-service");
+			await expect(sendAuthUpdate("gw-test-key")).resolves.toBeUndefined();
+		});
+
+		it("sendNotifyConfig naia-agent 없어도 throw 안 함", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { sendNotifyConfig } = await import("../chat-service");
+			await expect(
+				sendNotifyConfig({ slackWebhookUrl: "https://example.com" }),
+			).resolves.toBeUndefined();
+		});
+
+		it("sendCredsUpdate naia-agent 없어도 throw 안 함", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { sendCredsUpdate } = await import("../chat-service");
+			await expect(
+				sendCredsUpdate({ keys: { anthropic: "sk-ant-xyz" } }),
+			).resolves.toBeUndefined();
+		});
+
+		it("sendEmbeddingPrefetch naia-agent 없어도 throw 안 함", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { sendEmbeddingPrefetch } = await import("../chat-service");
+			await expect(
+				sendEmbeddingPrefetch("all-MiniLM-L6-v2"),
+			).resolves.toBeUndefined();
+		});
+
+		it("sendPanelSkills / sendPanelSkillsClear / sendPanelInstall / sendPanelToolResult naia-agent 없어도 throw 안 함", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const {
+				sendPanelSkills,
+				sendPanelSkillsClear,
+				sendPanelInstall,
+				sendPanelToolResult,
+			} = await import("../chat-service");
+			await expect(sendPanelSkills("p1", [])).resolves.toBeUndefined();
+			await expect(sendPanelSkillsClear("p1")).resolves.toBeUndefined();
+			await expect(
+				sendPanelInstall("https://github.com/x/y"),
+			).resolves.toBeUndefined();
+			await expect(
+				sendPanelToolResult("r1", "c1", "ok", true),
+			).resolves.toBeUndefined();
+		});
+
+		it("cancelChat naia-agent 없어도 throw 안 함 (별 cancel_stream 명령도 swallow)", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { cancelChat } = await import("../chat-service");
+			await expect(cancelChat("req-1")).resolves.toBeUndefined();
+		});
+
+		it("sendChatMessage 는 caller UX 위해 throw 유지", async () => {
+			mockInvoke.mockRejectedValue(new Error("agent-core died"));
+			const { sendChatMessage } = await import("../chat-service");
+			await expect(
+				sendChatMessage({
+					message: "hi",
+					provider: { id: "nextain" } as any,
+					history: [],
+					onChunk: () => {},
+					requestId: "req-x",
+				}),
+			).rejects.toThrow(/agent-core died/);
+		});
+	});
 });
