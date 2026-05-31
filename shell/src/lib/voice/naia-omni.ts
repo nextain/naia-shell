@@ -316,8 +316,22 @@ export function createNaiaOmniSession(): VoiceSession {
 			ws.send(JSON.stringify({ type: "response.create" }));
 		},
 
-		sendToolResponse(_callId: string, _result: unknown) {
-			// Tool calls not supported by vllm-omni
+		sendToolResponse(callId: string, result: unknown) {
+			if (!ws || !connected) return;
+			// Server consumes function_call_output and auto-resumes the turn
+			// (_resume_after_tools) once all pending tool calls are answered.
+			// Do NOT send response.create — that would double-trigger a response.
+			ws.send(
+				JSON.stringify({
+					type: "conversation.item.create",
+					item: {
+						type: "function_call_output",
+						call_id: callId,
+						output:
+							typeof result === "string" ? result : JSON.stringify(result),
+					},
+				}),
+			);
 		},
 
 		disconnect() {
@@ -375,11 +389,37 @@ export function createNaiaOmniSession(): VoiceSession {
 				break;
 			}
 
-			case "response.done":
+			case "response.done": {
 				isAiSpeaking = false;
+				// requires_action: the model emitted tool calls and is waiting for
+				// function_call_output before its real reply. Don't end the turn —
+				// the server auto-resumes (_resume_after_tools) once we answer.
+				const resp = msg.response as { requires_action?: boolean } | undefined;
+				if (resp?.requires_action) {
+					Logger.debug("naia-omni", "response.done — awaiting tool output");
+					break;
+				}
 				Logger.debug("naia-omni", "response done");
 				session.onTurnEnd?.();
 				break;
+			}
+
+			case "response.function_call_arguments.done": {
+				// Server (naia_realtime_server) emits this per tool call, then a
+				// response.done{requires_action}. Surface to onToolCall; ChatPanel
+				// runs the skill and calls sendToolResponse with the result.
+				const callId = msg.call_id as string | undefined;
+				const name = msg.name as string | undefined;
+				if (!callId || !name) break;
+				let args: Record<string, unknown> = {};
+				try {
+					args = JSON.parse((msg.arguments as string) ?? "{}");
+				} catch {
+					// malformed arguments — invoke with empty args
+				}
+				session.onToolCall?.(callId, name, args);
+				break;
+			}
 
 			case "response.cancelled":
 				isAiSpeaking = false;
