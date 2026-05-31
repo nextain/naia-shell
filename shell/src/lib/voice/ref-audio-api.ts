@@ -72,6 +72,8 @@ export type RefAudioErrorCode =
 	| "sold-out"
 	// preset 선택 시 preset_id 미존재 (404).
 	| "preset-not-found"
+	// content 미리듣기 시 active ref 없음 (404, GET /v1/ref-audio/content).
+	| "no-active-ref"
 	| "network"
 	| "unknown";
 
@@ -114,6 +116,7 @@ function mapErrorCode(status: number, body: unknown): RefAudioErrorCode {
 			? String((body as { error: unknown }).error)
 			: "";
 	if (status === 401) return "unauthenticated";
+	if (status === 404 && tag === "no-active-ref") return "no-active-ref";
 	if (status === 404 && tag === "preset-not-found") return "preset-not-found";
 	if (status === 402) return "credit-insufficient";
 	if (status === 409 && tag === "upload-in-progress")
@@ -425,4 +428,34 @@ export async function getActiveRefAudioUrl(): Promise<string | null> {
 		return match?.sampleUrl ?? null;
 	}
 	return null;
+}
+
+/**
+ * Stream the user's active *uploaded* ref-audio back as a WAV blob for
+ * in-app preview (GET /v1/ref-audio/content). Free (no charge).
+ *
+ * Only valid when the active slot is an upload — presets store no GCS blob,
+ * so the gateway returns 404 `no-active-ref` for them; callers must preview
+ * presets via their `sampleUrl` instead. Throws `RefAudioApiError` with code
+ * `no-active-ref` (404), `unauthenticated` (401), or `network`/`unknown`.
+ */
+export async function getRefAudioContent(): Promise<Blob> {
+	const headers = await authHeader();
+	let res: Response;
+	try {
+		res = await fetch(`${LAB_GATEWAY_URL}/v1/ref-audio/content`, { headers });
+	} catch (err) {
+		Logger.warn(TAG, "ref-audio content network error", { error: String(err) });
+		throw new RefAudioApiError("network", 0, String(err));
+	}
+	if (!res.ok) {
+		const body = await readErrorBody(res);
+		throw new RefAudioApiError(
+			mapErrorCode(res.status, body),
+			res.status,
+			`GET /v1/ref-audio/content failed (${res.status})`,
+			body,
+		);
+	}
+	return res.blob();
 }

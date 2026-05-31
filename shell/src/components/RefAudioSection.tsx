@@ -1,17 +1,19 @@
 /**
  * Voice Reference Audio section for SettingsTab.
  *
- * Lets a signed-in user upload a 5-30 second voice clip to the
- * naia-anyllm gateway (POST /v1/ref-audio). The realtime proxy
- * picks it up automatically on every /v1/realtime connect — see
- * the gateway side commit naia-anyllm@69d133f and the Pod side
- * commit naia-model-infra@43dfa82.
+ * Lets a signed-in user set the voice Naia Omni clones for realtime-voice
+ * replies. Three sources, all on one screen (no tabs):
+ *   1. "Current voice" card — shows the active ref (upload or preset) with
+ *      in-app preview (▶) and remove.
+ *   2. "Make your voice" — record in-app (🎤, 5–30 s) OR upload a file. Both
+ *      go through the gateway POST /v1/ref-audio ($0.01 each).
+ *   3. Presets — collapsible (<details>, lazy-loaded on open).
+ *
+ * The realtime proxy picks the active ref up automatically on every
+ * /v1/realtime connect — see naia-anyllm@69d133f / naia-model-infra@43dfa82.
  *
  * Plan SoT: alpha-adk/.agents/progress/ref-audio-service-plan-2026-05-29.md §7.
- *
- * Inline ko/en strings — i18n.ts 14-language dictionary expansion
- * (~210 entries) is intentionally deferred to a follow-up commit so
- * this can ship with the Naia Omni realtime-voice launch slice.
+ * Inline ko/en strings — full 14-language i18n is deferred to a follow-up.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,26 +25,43 @@ import {
 	type RefAudioPreset,
 	applyRefAudioPreset,
 	deleteRefAudio,
+	getRefAudioContent,
 	getRefAudioPresets,
 	getRefAudioStatus,
 	uploadRefAudio,
 } from "../lib/voice/ref-audio-api";
+import { type RefRecording, startRefRecording } from "../lib/voice/ref-recorder";
 
 const TAG = "RefAudioSection";
+const MIN_DURATION_S = 5;
+const MAX_DURATION_S = 30;
 
 const STRINGS = {
 	ko: {
 		sectionTitle: "음성 참조 (Voice Reference)",
-		hint: "5–30초 음성 클립을 업로드하면 Naia Omni 실시간 음성 세션이 사용자 음색으로 응답합니다. 16 kHz mono WAV 권장.",
-		statusNone: "업로드된 참조 음성 없음",
-		statusActive: (d: string, kb: string, when: string) =>
-			`적용 중 · ${d}초 · ${kb} KB · ${when} 업로드`,
-		uploadBtn: "업로드",
-		replaceBtn: "교체",
+		hint: "Naia Omni 실시간 음성이 사용할 음색입니다. 5–30초 녹음하거나 클립을 업로드하세요.",
+		currentTitle: "현재 음색",
+		statusNone: "설정된 음색 없음 — 기본 음색 사용 중",
+		statusActiveUpload: (d: string, kb: string, when: string) =>
+			`내 업로드 · ${d}초 · ${kb} KB · ${when}`,
+		presetActiveLabel: (name: string) => `프리셋 · ${name}`,
+		previewBtn: "▶ 듣기",
+		previewStop: "■ 정지",
+		previewLoading: "불러오는 중…",
 		removeBtn: "제거",
+		confirmRemove: "현재 음색을 제거할까요?",
+		confirmYes: "제거",
+		confirmNo: "취소",
+		myVoiceTitle: "내 목소리로 만들기",
+		recordBtn: "🎤 녹음",
+		recordStop: "■ 녹음 정지",
+		recording: (s: string) => `녹음 중… ${s}초`,
+		recordTooShort: `너무 짧습니다 (최소 ${MIN_DURATION_S}초).`,
+		recordCancel: "취소",
+		uploadBtn: "파일 업로드",
+		replaceBtn: "파일로 교체",
 		uploading: "업로드 중…",
-		cost: "업로드당 $0.01 차감",
-		confirmRemove: "참조 음성을 제거할까요? (히스토리는 90일간 보존)",
+		cost: "녹음·업로드 모두 1회당 $0.01 차감",
 		err: {
 			network: "네트워크 오류 — 재시도해주세요.",
 			auth: "naia 계정 로그인이 필요합니다.",
@@ -53,12 +72,13 @@ const STRINGS = {
 			uploadInProgress: "동일한 업로드가 진행 중입니다.",
 			soldOut:
 				"현재 매진입니다. 잠시 후 다시 시도해주세요. naia OS 로컬 모델로 즉시 사용도 가능합니다.",
+			noActiveRef: "재생할 음색이 없습니다.",
+			record: "녹음을 시작할 수 없습니다 — 마이크 권한을 확인하세요.",
 			unknown: "알 수 없는 오류 — 다시 시도해주세요.",
 		},
-		uploadSuccess: (newBal: string) => `업로드 완료 · 잔액 $${newBal}`,
-		removeSuccess: "참조 음성이 제거되었습니다.",
-		uploadTab: "내 업로드",
-		presetTab: "프리셋 선택",
+		uploadSuccess: (newBal: string) => `완료 · 잔액 $${newBal}`,
+		removeSuccess: "음색이 제거되었습니다.",
+		presetTitle: "프리셋에서 고르기",
 		presetLoading: "프리셋 불러오는 중…",
 		presetEmpty: "사용 가능한 프리셋이 없습니다.",
 		presetPlay: "듣기",
@@ -67,21 +87,33 @@ const STRINGS = {
 		presetApplied: "적용 중",
 		presetApplySuccess: (name: string) => `${name} 음색으로 변경되었습니다.`,
 		presetFilterAll: "전체",
-		presetActiveLabel: (name: string) => `적용 중인 프리셋 · ${name}`,
 		presetNotFound: "선택한 프리셋을 찾을 수 없습니다.",
 	},
 	en: {
 		sectionTitle: "Voice Reference",
-		hint: "Upload a 5–30 second clip; Naia Omni realtime-voice sessions will respond in your voice. 16 kHz mono WAV recommended.",
-		statusNone: "No reference voice uploaded",
-		statusActive: (d: string, kb: string, when: string) =>
-			`Active · ${d}s · ${kb} KB · uploaded ${when}`,
-		uploadBtn: "Upload",
-		replaceBtn: "Replace",
+		hint: "The voice Naia Omni clones for realtime replies. Record 5–30 s or upload a clip.",
+		currentTitle: "Current voice",
+		statusNone: "No voice set — using the default voice",
+		statusActiveUpload: (d: string, kb: string, when: string) =>
+			`My upload · ${d}s · ${kb} KB · ${when}`,
+		presetActiveLabel: (name: string) => `Preset · ${name}`,
+		previewBtn: "▶ Play",
+		previewStop: "■ Stop",
+		previewLoading: "Loading…",
 		removeBtn: "Remove",
+		confirmRemove: "Remove the current voice?",
+		confirmYes: "Remove",
+		confirmNo: "Cancel",
+		myVoiceTitle: "Make your voice",
+		recordBtn: "🎤 Record",
+		recordStop: "■ Stop",
+		recording: (s: string) => `Recording… ${s}s`,
+		recordTooShort: `Too short (min ${MIN_DURATION_S}s).`,
+		recordCancel: "Cancel",
+		uploadBtn: "Upload file",
+		replaceBtn: "Replace with file",
 		uploading: "Uploading…",
-		cost: "$0.01 charged per upload",
-		confirmRemove: "Remove the reference voice? (history retained for 90 days)",
+		cost: "$0.01 charged per record or upload",
 		err: {
 			network: "Network error — please retry.",
 			auth: "Please sign in to your naia account.",
@@ -91,13 +123,14 @@ const STRINGS = {
 			tooLarge: "File too large (4 MiB max).",
 			uploadInProgress: "An upload with the same key is in progress.",
 			soldOut:
-				"Sold out — please retry shortly. You can also switch to the naia OS local model for instant use.",
+				"Sold out — please retry shortly. You can also switch to the naia OS local model.",
+			noActiveRef: "No voice to play.",
+			record: "Couldn't start recording — check microphone permission.",
 			unknown: "Unknown error — please retry.",
 		},
-		uploadSuccess: (newBal: string) => `Upload complete · balance $${newBal}`,
-		removeSuccess: "Reference voice removed.",
-		uploadTab: "My Upload",
-		presetTab: "Preset",
+		uploadSuccess: (newBal: string) => `Done · balance $${newBal}`,
+		removeSuccess: "Voice removed.",
+		presetTitle: "Pick from presets",
 		presetLoading: "Loading presets…",
 		presetEmpty: "No presets available.",
 		presetPlay: "Play",
@@ -106,7 +139,6 @@ const STRINGS = {
 		presetApplied: "Active",
 		presetApplySuccess: (name: string) => `Voice changed to ${name}.`,
 		presetFilterAll: "All",
-		presetActiveLabel: (name: string) => `Active preset · ${name}`,
 		presetNotFound: "The selected preset was not found.",
 	},
 } as const;
@@ -148,6 +180,8 @@ function describeError(
 				return S.err.uploadInProgress;
 			case "sold-out":
 				return S.err.soldOut;
+			case "no-active-ref":
+				return S.err.noActiveRef;
 			case "preset-not-found":
 				return S.presetNotFound;
 			default:
@@ -164,12 +198,25 @@ export function RefAudioSection() {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>("");
 	const [notice, setNotice] = useState<string>("");
-	const [tab, setTab] = useState<"upload" | "preset">("upload");
+	const [confirmingRemove, setConfirmingRemove] = useState(false);
+
+	// Recording state.
+	const [recording, setRecording] = useState(false);
+	const [recElapsed, setRecElapsed] = useState(0);
+	const recorderRef = useRef<RefRecording | null>(null);
+
+	// Preview (active card) — shared <audio> element, tracked objectURL.
+	const [previewState, setPreviewState] = useState<"idle" | "loading" | "playing">(
+		"idle",
+	);
+	const audioRef = useRef<HTMLAudioElement | null>(null);
+	const objectUrlRef = useRef<string | null>(null);
+
+	// Presets (collapsible, lazy-loaded).
 	const [presets, setPresets] = useState<RefAudioPreset[] | null>(null);
 	const [presetsLoading, setPresetsLoading] = useState(false);
-	const [playingId, setPlayingId] = useState<string | null>(null);
+	const [playingPresetId, setPlayingPresetId] = useState<string | null>(null);
 	const [genderFilter, setGenderFilter] = useState<string>("all");
-	const audioRef = useRef<HTMLAudioElement | null>(null);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -188,7 +235,6 @@ export function RefAudioSection() {
 		void refresh();
 	}, [refresh]);
 
-	// Lazy-load presets the first time the preset tab is opened.
 	const loadPresets = useCallback(async () => {
 		if (presets !== null || presetsLoading) return;
 		setPresetsLoading(true);
@@ -205,38 +251,181 @@ export function RefAudioSection() {
 		}
 	}, [presets, presetsLoading, S]);
 
-	useEffect(() => {
-		if (tab === "preset") void loadPresets();
-	}, [tab, loadPresets]);
-
-	// Stop any preview playback on unmount.
-	useEffect(() => {
-		return () => {
-			audioRef.current?.pause();
-			audioRef.current = null;
-		};
-	}, []);
-
-	const onPreview = useCallback((preset: RefAudioPreset) => {
-		// Toggle: clicking the playing one stops it.
+	// Stop any playback + free objectURL + abort a live recording on unmount.
+	const stopPlayback = useCallback(() => {
 		if (audioRef.current) {
 			audioRef.current.pause();
 			audioRef.current = null;
 		}
-		setPlayingId((cur) => {
-			if (cur === preset.id) return null;
-			const audio = new Audio(preset.sampleUrl);
+		if (objectUrlRef.current) {
+			URL.revokeObjectURL(objectUrlRef.current);
+			objectUrlRef.current = null;
+		}
+		setPreviewState("idle");
+		setPlayingPresetId(null);
+	}, []);
+
+	useEffect(() => {
+		return () => {
+			stopPlayback();
+			recorderRef.current?.cancel();
+			recorderRef.current = null;
+		};
+	}, [stopPlayback]);
+
+	/** Play a URL through the shared <audio>; `revoke` frees it when done. */
+	const playUrl = useCallback(
+		(url: string, revoke: boolean, onStop: () => void) => {
+			stopPlayback();
+			const audio = new Audio(url);
 			audio.preload = "none";
-			audio.onended = () => setPlayingId(null);
+			const done = () => {
+				if (revoke) {
+					URL.revokeObjectURL(url);
+					if (objectUrlRef.current === url) objectUrlRef.current = null;
+				}
+				onStop();
+			};
+			audio.onended = done;
 			audio.onerror = () => {
-				Logger.warn(TAG, "preview play failed", { id: preset.id });
-				setPlayingId(null);
+				Logger.warn(TAG, "playback failed");
+				done();
 			};
 			audioRef.current = audio;
-			void audio.play().catch(() => setPlayingId(null));
-			return preset.id;
-		});
+			if (revoke) objectUrlRef.current = url;
+			void audio.play().catch(() => done());
+		},
+		[stopPlayback],
+	);
+
+	// ── Current-voice preview (active card) ──
+	const onPreviewActive = useCallback(async () => {
+		if (!active) return;
+		if (previewState !== "idle") {
+			stopPlayback();
+			return;
+		}
+		setError("");
+		try {
+			if (active.kind === "preset") {
+				// Presets store no GCS blob — the content endpoint 404s for them.
+				// Preview via the preset's public sampleUrl instead.
+				const list = presets ?? (await getRefAudioPresets());
+				if (presets === null) setPresets(list);
+				const p = list.find((x) => x.id === active.presetId);
+				if (!p) {
+					setError(S.presetNotFound);
+					return;
+				}
+				setPreviewState("playing");
+				playUrl(p.sampleUrl, false, () => setPreviewState("idle"));
+			} else {
+				setPreviewState("loading");
+				const blob = await getRefAudioContent();
+				const url = URL.createObjectURL(blob);
+				setPreviewState("playing");
+				playUrl(url, true, () => setPreviewState("idle"));
+			}
+		} catch (err) {
+			Logger.warn(TAG, "active preview failed", { error: String(err) });
+			setError(describeError(err, S));
+			setPreviewState("idle");
+		}
+	}, [active, previewState, presets, playUrl, stopPlayback, S]);
+
+	// ── Upload (file) ──
+	const handleUploadBlob = useCallback(
+		async (input: Blob, sourceLabel: string) => {
+			setBusy(true);
+			setError("");
+			setNotice("");
+			try {
+				const result = await uploadRefAudio(input);
+				// kind:"upload" must be explicit — the active card + replace/remove
+				// affordances branch on it, and the gateway would only echo it on a
+				// follow-up status GET otherwise.
+				setActive({
+					kind: "upload",
+					uploadedAt: result.uploadedAt,
+					sizeBytes: result.sizeBytes,
+					durationSeconds: result.durationSeconds,
+				});
+				setNotice(S.uploadSuccess(formatBalance(result.newBalanceUsd)));
+			} catch (err) {
+				Logger.warn(TAG, `${sourceLabel} failed`, { error: String(err) });
+				setError(describeError(err, S));
+			} finally {
+				setBusy(false);
+			}
+		},
+		[S],
+	);
+
+	const onFileInput = useCallback(
+		(e: React.ChangeEvent<HTMLInputElement>) => {
+			const f = e.target.files?.[0];
+			e.target.value = ""; // allow re-pick after a failure
+			if (f) void handleUploadBlob(f, "upload");
+		},
+		[handleUploadBlob],
+	);
+
+	// ── Record ──
+	const finishRecording = useCallback(async () => {
+		const rec = recorderRef.current;
+		if (!rec) return;
+		recorderRef.current = null;
+		setRecording(false);
+		const { blob, durationSeconds } = rec.stop();
+		if (durationSeconds < MIN_DURATION_S) {
+			setError(S.recordTooShort);
+			return;
+		}
+		// Wrap is unnecessary — rec.stop() already returns a WAV Blob, which
+		// encodeRefAudio (inside uploadRefAudio) decodes + resamples to 16kHz.
+		await handleUploadBlob(blob, "record");
+	}, [handleUploadBlob, S]);
+
+	const startRecording = useCallback(async () => {
+		setError("");
+		setNotice("");
+		stopPlayback();
+		setRecElapsed(0);
+		try {
+			const rec = await startRefRecording({
+				maxSeconds: MAX_DURATION_S,
+				onElapsed: (s) => setRecElapsed(s),
+				onAutoStop: () => {
+					void finishRecording();
+				},
+			});
+			recorderRef.current = rec;
+			setRecording(true);
+		} catch (err) {
+			Logger.warn(TAG, "record start failed", { error: String(err) });
+			setError(S.err.record);
+		}
+	}, [finishRecording, stopPlayback, S]);
+
+	const cancelRecording = useCallback(() => {
+		recorderRef.current?.cancel();
+		recorderRef.current = null;
+		setRecording(false);
+		setRecElapsed(0);
 	}, []);
+
+	// ── Presets ──
+	const onPreviewPreset = useCallback(
+		(preset: RefAudioPreset) => {
+			if (playingPresetId === preset.id) {
+				stopPlayback();
+				return;
+			}
+			setPlayingPresetId(preset.id);
+			playUrl(preset.sampleUrl, false, () => setPlayingPresetId(null));
+		},
+		[playingPresetId, playUrl, stopPlayback],
+	);
 
 	const onApplyPreset = useCallback(
 		async (preset: RefAudioPreset) => {
@@ -264,49 +453,14 @@ export function RefAudioSection() {
 		[S],
 	);
 
-	const visiblePresets = (presets ?? []).filter(
-		(p) => genderFilter === "all" || p.gender === genderFilter,
-	);
-
-	const handleFile = useCallback(
-		async (file: File) => {
-			setBusy(true);
-			setError("");
-			setNotice("");
-			try {
-				const result = await uploadRefAudio(file);
-				setActive({
-					uploadedAt: result.uploadedAt,
-					sizeBytes: result.sizeBytes,
-					durationSeconds: result.durationSeconds,
-				});
-				setNotice(S.uploadSuccess(formatBalance(result.newBalanceUsd)));
-			} catch (err) {
-				Logger.warn(TAG, "upload failed", { error: String(err) });
-				setError(describeError(err, S));
-			} finally {
-				setBusy(false);
-			}
-		},
-		[S],
-	);
-
-	const onFileInput = useCallback(
-		(e: React.ChangeEvent<HTMLInputElement>) => {
-			const f = e.target.files?.[0];
-			// reset the input so the same file can be re-picked after a failure
-			e.target.value = "";
-			if (f) void handleFile(f);
-		},
-		[handleFile],
-	);
-
+	// ── Remove (in-app confirm — WebKitGTK double-dialog parity with SettingsTab) ──
 	const onRemove = useCallback(async () => {
-		if (!confirm(S.confirmRemove)) return;
+		setConfirmingRemove(false);
 		setBusy(true);
 		setError("");
 		setNotice("");
 		try {
+			stopPlayback();
 			await deleteRefAudio();
 			setActive(null);
 			setNotice(S.removeSuccess);
@@ -316,21 +470,18 @@ export function RefAudioSection() {
 		} finally {
 			setBusy(false);
 		}
-	}, [S]);
+	}, [stopPlayback, S]);
 
-	const activeLine = !active ? (
-		<span>{S.statusNone}</span>
-	) : active.kind === "preset" ? (
-		<span>{S.presetActiveLabel(active.presetName ?? active.presetId ?? "")}</span>
-	) : (
-		<span>
-			{S.statusActive(
-				active.durationSeconds.toFixed(1),
-				Math.round(active.sizeBytes / 1024).toLocaleString(),
-				formatDate(active.uploadedAt),
-			)}
-		</span>
+	const visiblePresets = (presets ?? []).filter(
+		(p) => genderFilter === "all" || p.gender === genderFilter,
 	);
+
+	const previewLabel =
+		previewState === "loading"
+			? S.previewLoading
+			: previewState === "playing"
+				? S.previewStop
+				: S.previewBtn;
 
 	return (
 		<>
@@ -340,54 +491,130 @@ export function RefAudioSection() {
 			<div className="settings-field">
 				<span className="settings-hint">{S.hint}</span>
 
-				{/* Tabs */}
+				{/* ── Current voice card ── */}
 				<div
-					style={{ marginTop: 8, display: "flex", gap: 8 }}
-					role="tablist"
+					className="ref-current-card"
+					style={{
+						marginTop: 10,
+						padding: "10px 12px",
+						border: "1px solid var(--border, #333)",
+						borderRadius: 8,
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "space-between",
+						gap: 8,
+					}}
 				>
-					<button
-						type="button"
-						role="tab"
-						aria-selected={tab === "upload"}
-						className={`voice-preview-btn${tab === "upload" ? " active" : ""}`}
-						onClick={() => setTab("upload")}
-					>
-						{S.uploadTab}
-					</button>
-					<button
-						type="button"
-						role="tab"
-						aria-selected={tab === "preset"}
-						className={`voice-preview-btn${tab === "preset" ? " active" : ""}`}
-						onClick={() => setTab("preset")}
-					>
-						{S.presetTab}
-					</button>
-				</div>
-
-				<div style={{ marginTop: 8 }}>
-					{loading ? <span className="settings-hint">…</span> : activeLine}
-				</div>
-
-				{tab === "upload" ? (
-					<>
+					<div style={{ minWidth: 0 }}>
+						<div style={{ fontSize: 12, opacity: 0.7 }}>{S.currentTitle}</div>
+						<div style={{ marginTop: 2 }}>
+							{loading ? (
+								<span className="settings-hint">…</span>
+							) : !active ? (
+								<span className="settings-hint">{S.statusNone}</span>
+							) : active.kind === "preset" ? (
+								<span>
+									{S.presetActiveLabel(
+										active.presetName ?? active.presetId ?? "",
+									)}
+								</span>
+							) : (
+								<span>
+									{S.statusActiveUpload(
+										active.durationSeconds.toFixed(1),
+										Math.round(active.sizeBytes / 1024).toLocaleString(),
+										formatDate(active.uploadedAt),
+									)}
+								</span>
+							)}
+						</div>
+					</div>
+					{active && !confirmingRemove && (
+						<div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								disabled={previewState === "loading"}
+								onClick={() => void onPreviewActive()}
+							>
+								{previewLabel}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								disabled={busy}
+								onClick={() => setConfirmingRemove(true)}
+							>
+								{S.removeBtn}
+							</button>
+						</div>
+					)}
+					{active && confirmingRemove && (
 						<div
-							style={{
-								marginTop: 8,
-								display: "flex",
-								gap: 8,
-								flexWrap: "wrap",
-							}}
+							style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}
 						>
+							<span className="settings-hint">{S.confirmRemove}</span>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								disabled={busy}
+								onClick={() => void onRemove()}
+							>
+								{S.confirmYes}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => setConfirmingRemove(false)}
+							>
+								{S.confirmNo}
+							</button>
+						</div>
+					)}
+				</div>
+
+				{/* ── Make your voice: record + upload ── */}
+				<div style={{ marginTop: 12 }}>
+					<div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>
+						{S.myVoiceTitle}
+					</div>
+					<div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+						{!recording ? (
+							<button
+								type="button"
+								className="voice-preview-btn"
+								disabled={busy}
+								onClick={() => void startRecording()}
+							>
+								{busy ? S.uploading : S.recordBtn}
+							</button>
+						) : (
+							<>
+								<button
+									type="button"
+									className="voice-preview-btn active"
+									onClick={() => void finishRecording()}
+								>
+									{S.recordStop}
+								</button>
+								<span className="settings-hint">
+									{S.recording(recElapsed.toFixed(0))}
+								</span>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={cancelRecording}
+								>
+									{S.recordCancel}
+								</button>
+							</>
+						)}
+						{!recording && (
 							<label
 								className="voice-preview-btn"
 								style={{ cursor: busy ? "not-allowed" : "pointer" }}
 							>
-								{busy
-									? S.uploading
-									: active?.kind === "upload"
-										? S.replaceBtn
-										: S.uploadBtn}
+								{active?.kind === "upload" ? S.replaceBtn : S.uploadBtn}
 								<input
 									type="file"
 									accept="audio/*"
@@ -396,23 +623,24 @@ export function RefAudioSection() {
 									onChange={onFileInput}
 								/>
 							</label>
-							{active?.kind === "upload" && !busy && (
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => void onRemove()}
-								>
-									{S.removeBtn}
-								</button>
-							)}
-						</div>
-						<div className="settings-hint" style={{ marginTop: 6 }}>
-							{S.cost}
-						</div>
-					</>
-				) : (
+						)}
+					</div>
+					<div className="settings-hint" style={{ marginTop: 6 }}>
+						{S.cost}
+					</div>
+				</div>
+
+				{/* ── Presets (collapsible, lazy-loaded) ── */}
+				<details
+					style={{ marginTop: 12 }}
+					onToggle={(e) => {
+						if ((e.target as HTMLDetailsElement).open) void loadPresets();
+					}}
+				>
+					<summary style={{ cursor: "pointer", fontSize: 13 }}>
+						{S.presetTitle}
+					</summary>
 					<div style={{ marginTop: 8 }}>
-						{/* Gender filter */}
 						<div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
 							<select
 								value={genderFilter}
@@ -427,7 +655,9 @@ export function RefAudioSection() {
 						{presetsLoading ? (
 							<span className="settings-hint">{S.presetLoading}</span>
 						) : visiblePresets.length === 0 ? (
-							<span className="settings-hint">{S.presetEmpty}</span>
+							<span className="settings-hint">
+								{presets === null ? S.presetLoading : S.presetEmpty}
+							</span>
 						) : (
 							<ul
 								className="ref-preset-list"
@@ -460,9 +690,9 @@ export function RefAudioSection() {
 												<button
 													type="button"
 													className="voice-preview-btn"
-													onClick={() => onPreview(p)}
+													onClick={() => onPreviewPreset(p)}
 												>
-													{playingId === p.id ? S.presetStop : S.presetPlay}
+													{playingPresetId === p.id ? S.presetStop : S.presetPlay}
 												</button>
 												<button
 													type="button"
@@ -479,7 +709,7 @@ export function RefAudioSection() {
 							</ul>
 						)}
 					</div>
-				)}
+				</details>
 
 				{notice && (
 					<div

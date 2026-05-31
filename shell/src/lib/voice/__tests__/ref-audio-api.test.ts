@@ -21,6 +21,7 @@ vi.mock("../../logger", () => ({
 import {
 	RefAudioApiError,
 	applyRefAudioPreset,
+	getRefAudioContent,
 	getRefAudioPresets,
 	getRefAudioStatus,
 	uploadRefAudio,
@@ -238,6 +239,52 @@ describe("ref-audio preset (CONTRACT P1-P7)", () => {
 	it("preset list network error → 'network' code", async () => {
 		mockFetch.mockRejectedValue(new Error("offline"));
 		await expect(getRefAudioPresets()).rejects.toMatchObject({
+			code: "network",
+		});
+	});
+});
+
+// ── getRefAudioContent (in-app preview transport) ──
+describe("getRefAudioContent (upload preview)", () => {
+	const mockFetch = vi.fn();
+
+	beforeEach(() => {
+		globalThis.fetch = mockFetch as unknown as typeof fetch;
+		mockFetch.mockReset();
+	});
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	it("200 → WAV blob, GET content with Bearer Authorization", async () => {
+		mockFetch.mockResolvedValue(
+			new Response(new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }), {
+				status: 200,
+			}),
+		);
+		const blob = await getRefAudioContent();
+		expect(blob).toBeInstanceOf(Blob);
+		const [url, init] = mockFetch.mock.calls[0];
+		expect(url).toBe("https://gateway.test/v1/ref-audio/content");
+		expect((init.headers as Record<string, string>).Authorization).toBe(
+			"Bearer gw-test-key",
+		);
+	});
+
+	it("404 no-active-ref → 'no-active-ref' code (preset has no GCS blob)", async () => {
+		mockFetch.mockResolvedValue(
+			new Response(JSON.stringify({ error: "no-active-ref" }), { status: 404 }),
+		);
+		await expect(getRefAudioContent()).rejects.toMatchObject({
+			code: "no-active-ref",
+			status: 404,
+		});
+	});
+
+	it("network error → 'network' code", async () => {
+		mockFetch.mockRejectedValue(new Error("offline"));
+		await expect(getRefAudioContent()).rejects.toMatchObject({
 			code: "network",
 		});
 	});

@@ -182,7 +182,7 @@ async function resampleTo(
 	return rendered.getChannelData(0).slice();
 }
 
-function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
+export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
 	const numFrames = samples.length;
 	const bytesPerSample = 2;
 	const dataSize = numFrames * bytesPerSample;
