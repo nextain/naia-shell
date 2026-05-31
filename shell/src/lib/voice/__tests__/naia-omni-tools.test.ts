@@ -131,6 +131,40 @@ describe("naia-omni tool calls", () => {
 		expect(turnEnded).toBe(1);
 	});
 
+	it("forwards configured skills as session.update function tools (so the LLM can emit tool calls)", async () => {
+		const { promise } = connect({
+			...DIRECT,
+			tools: [
+				{
+					name: "skill_agent_browser",
+					description: "search the web",
+					parameters: {
+						type: "object",
+						properties: { query: { type: "string" } },
+					},
+				},
+			],
+		});
+		await promise;
+		const update = JSON.parse(lastWs.send.mock.calls[0][0] as string);
+		expect(update.type).toBe("session.update");
+		expect(update.session.tools).toEqual([
+			{
+				type: "function",
+				name: "skill_agent_browser",
+				description: "search the web",
+				parameters: { type: "object", properties: { query: { type: "string" } } },
+			},
+		]);
+	});
+
+	it("omits session.update tools when no skills are configured", async () => {
+		const { promise } = connect(DIRECT);
+		await promise;
+		const update = JSON.parse(lastWs.send.mock.calls[0][0] as string);
+		expect(update.session).not.toHaveProperty("tools");
+	});
+
 	it("malformed tool arguments invoke onToolCall with empty args", async () => {
 		const { session, promise } = connect(DIRECT);
 		await promise;

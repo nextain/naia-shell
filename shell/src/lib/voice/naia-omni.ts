@@ -167,6 +167,24 @@ export function createNaiaOmniSession(): VoiceSession {
 							output_audio_format: "pcm16",
 							instructions: cfg?.systemInstruction ?? "",
 							turn_detection: { type: "server_vad" },
+							// Forward skills as OpenAI-style function tools so the cascade
+							// registers them (tools_registry) and the LLM can actually emit
+							// tool calls. Without this the server's registry stays empty and
+							// no tool call is ever generated. Server expects flat
+							// {type:"function", name, description, parameters}.
+							...(cfg?.tools && cfg.tools.length > 0
+								? {
+										tools: cfg.tools.map((t) => ({
+											type: "function",
+											name: t.name,
+											description: t.description,
+											parameters: t.parameters ?? {
+												type: "object",
+												properties: {},
+											},
+										})),
+									}
+								: {}),
 							// #15: prefer a URL (preset sample_url / upload URL) over a
 							// heavy base64 blob — backend downloads it once. Server
 							// priority: ref_audio_url > ref_audio > x-naia-voice-ref.
