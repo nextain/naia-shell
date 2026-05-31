@@ -334,6 +334,53 @@ describe("WorkspaceCenterPanel", () => {
 		});
 	});
 
+	it("skill_workspace_execute resolves a session basename dir to its absolute path", async () => {
+		// Regression: get_sessions/focus_session expose sessions[].dir as a basename
+		// ("naia-os"), but pty_execute_sync requires an absolute path. The agent reused
+		// that basename as execute's `dir`, so the backend rejected it with
+		// "Invalid working directory". The handler must resolve it to the session path.
+		const { invoke } = await import("@tauri-apps/api/core");
+		const testSessions: SessionInfo[] = [
+			{ dir: "naia-os", path: "/var/home/luke/dev/naia-os", status: "active" },
+		];
+		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		vi.mocked(IssuesPanel).mockImplementationOnce(({ onSessionsUpdate }) => {
+			useEffect(() => {
+				onSessionsUpdate?.(testSessions);
+			}, [onSessionsUpdate]);
+			return null as unknown as React.ReactElement;
+		});
+
+		const { WorkspaceCenterPanel } = await import(
+			"../workspace/WorkspaceCenterPanel"
+		);
+		const bridge = new MockBridge();
+		render(<WorkspaceCenterPanel naia={bridge} />);
+
+		await waitFor(() =>
+			expect(bridge.hasHandler("skill_workspace_execute")).toBe(true),
+		);
+		// Wait until the injected session is visible to the handler (sessionsRef).
+		await waitFor(async () => {
+			const r = await bridge.callTool("skill_workspace_get_sessions", {});
+			expect(JSON.parse(r).summary.total).toBe(1);
+		});
+
+		vi.mocked(invoke).mockClear();
+		await bridge.callTool("skill_workspace_execute", {
+			command: "ls -F",
+			dir: "naia-os",
+		});
+		const ptyCall = vi
+			.mocked(invoke)
+			.mock.calls.find((c) => c[0] === "pty_execute_sync");
+		expect(ptyCall).toBeDefined();
+		expect(ptyCall?.[1]).toMatchObject({
+			dir: "/var/home/luke/dev/naia-os",
+			command: "ls -F",
+		});
+	});
+
 	it("Panel API: getApi returns WorkspacePanelApi after mount, undefined after unmount", async () => {
 		// Ensure workspace panel is registered in the registry (normally done by index.tsx)
 		await import("../workspace/index");

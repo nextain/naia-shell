@@ -1358,7 +1358,23 @@ export function WorkspaceCenterPanel({ naia }: PanelCenterProps) {
 			async (args) => {
 				const command = String(args.command ?? "");
 				if (!command.trim()) return "Error: command is required";
-				const dir = String(args.dir ?? resolvedRoot ?? "");
+				// `dir` is overloaded across workspace tools: focus_session/send_to_session
+				// pass sessions[].dir (a basename like "naia-os"), but pty_execute_sync
+				// requires an absolute path. Resolve any non-absolute dir before invoking,
+				// otherwise the backend rejects it with "Invalid working directory".
+				let dir = String(args.dir ?? "").trim();
+				// Absolute = POSIX (/...), Windows drive (C:\ or C:/), or UNC (\\...)
+				if (dir && !/^(\/|[a-zA-Z]:[\\/]|\\\\)/.test(dir)) {
+					const match = sessionsRef.current.find(
+						(s) => s.dir === dir || s.path === dir,
+					);
+					if (match) {
+						dir = match.path;
+					} else if (resolvedRoot) {
+						dir = `${resolvedRoot.replace(/[\\/]+$/, "")}/${dir}`;
+					}
+				}
+				if (!dir) dir = resolvedRoot ?? "";
 				if (!dir) return "Error: no working directory available";
 				const timeout_secs =
 					typeof args.timeout_secs === "number" ? args.timeout_secs : undefined;
