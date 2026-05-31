@@ -123,6 +123,15 @@ export interface NaiaOmniConfig extends LiveProviderConfigBase {
 	 * back to the server's default voice for the rest of the session.
 	 */
 	refAudio?: ArrayBuffer | Blob | string;
+	/**
+	 * Optional voice-clone reference as an https URL (#15). Sent on the
+	 * initial `session.update` as `ref_audio_url`; the backend downloads it
+	 * once (allowlist: storage.googleapis.com / naia.nextain.io) and clones
+	 * the timbre. Takes priority over `refAudio` (base64) server-side, so
+	 * presets (sample_url) and uploads (storage URL) avoid shipping a heavy
+	 * blob each session.
+	 */
+	refAudioUrl?: string;
 	/** BCP-47-ish hint to the speech tokenizer. Server defaults to "en". */
 	refAudioLanguage?: "en" | "zh" | "ko";
 }

@@ -168,6 +168,12 @@ export function createNaiaOmniSession(): VoiceSession {
 							output_audio_format: "pcm16",
 							instructions: cfg?.systemInstruction ?? "",
 							turn_detection: { type: "server_vad" },
+							// #15: prefer a URL (preset sample_url / upload URL) over a
+							// heavy base64 blob — backend downloads it once. Server
+							// priority: ref_audio_url > ref_audio > x-naia-voice-ref.
+							...(cfg?.refAudioUrl
+								? { ref_audio_url: cfg.refAudioUrl }
+								: {}),
 						};
 						if (encodedRefAudio !== null) {
 							sessionPayload.ref_audio = encodedRefAudio;

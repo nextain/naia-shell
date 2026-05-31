@@ -84,6 +84,7 @@ import {
 	createVoiceSession,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
+import { getActiveRefAudioUrl } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { parseEmotion } from "../lib/vrm/expression";
 import { useAvatarStore } from "../stores/avatar";
@@ -1889,8 +1890,15 @@ export function ChatPanel() {
 					"",
 				);
 				const wsBase = vllmBase.replace(/^http/, "ws");
+				// #15: gateway mode — pass the active preset sample_url so the
+				// backend downloads the ref voice via URL (no heavy base64).
+				// Best-effort: null/error → default voice, never blocks connect.
+				const naiaRefAudioUrl = useGw
+					? ((await getActiveRefAudioUrl().catch(() => null)) ?? undefined)
+					: undefined;
 				await session.connect({
 					provider: "naia-omni",
+					refAudioUrl: naiaRefAudioUrl,
 					serverUrl: useGw ? undefined : wsBase,
 					gatewayUrl: useGw ? LAB_GATEWAY_URL : undefined,
 					naiaKey: useGw ? naiaKey : undefined,

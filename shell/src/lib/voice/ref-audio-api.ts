@@ -406,3 +406,23 @@ export async function deleteRefAudio(
 	}
 	Logger.info(TAG, "ref-audio deleted", { hardDelete: !!options.hardDelete });
 }
+
+/**
+ * Resolve the user's active ref-audio to an https URL for
+ * `session.update.ref_audio_url` (#15). A preset maps to its `sample_url`
+ * (GCS, on the backend allowlist). Uploads currently have no client-visible
+ * URL, so this returns `null` and the caller proceeds without a ref-url
+ * (the realtime session uses the default voice). Best-effort: any error
+ * returns `null` rather than blocking the voice session.
+ */
+export async function getActiveRefAudioUrl(): Promise<string | null> {
+	const status = await getRefAudioStatus();
+	const active = status.active;
+	if (!active) return null;
+	if (active.kind === "preset" && active.presetId) {
+		const presets = await getRefAudioPresets();
+		const match = presets.find((p) => p.id === active.presetId);
+		return match?.sampleUrl ?? null;
+	}
+	return null;
+}

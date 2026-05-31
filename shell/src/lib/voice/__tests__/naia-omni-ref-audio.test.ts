@@ -159,4 +159,27 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 			}),
 		).rejects.toThrow(/not pure base64/);
 	});
+
+	it("forwards refAudioUrl as session.update.session.ref_audio_url (#15)", async () => {
+		const url =
+			"https://storage.googleapis.com/naia-ref-audio-presets/aihub-10/female-30s-01.wav";
+		const { promise } = connect({
+			provider: "naia-omni",
+			serverUrl: "http://localhost:8000",
+			refAudioUrl: url,
+		});
+		await promise;
+		const update = JSON.parse(lastWs.send.mock.calls[0][0]);
+		expect(update.session.ref_audio_url).toBe(url);
+	});
+
+	it("omits ref_audio_url when refAudioUrl is not set", async () => {
+		const { promise } = connect({
+			provider: "naia-omni",
+			serverUrl: "http://localhost:8000",
+		});
+		await promise;
+		const update = JSON.parse(lastWs.send.mock.calls[0][0]);
+		expect(update.session).not.toHaveProperty("ref_audio_url");
+	});
 });
