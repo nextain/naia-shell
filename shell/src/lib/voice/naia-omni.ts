@@ -384,12 +384,26 @@ export function createNaiaOmniSession(): VoiceSession {
 		const type = msg.type as string;
 
 		switch (type) {
+			case "conversation.item.input_audio_transcription.completed": {
+				// Server STT result for the user's spoken turn (emitted by the
+				// server's _process_turn). registry marks naia-0.9-omni-24g
+				// transcriptProvided:true — surface the real transcript for the
+				// user's spoken turn (the mic button already shows listening state).
+				const transcript = msg.transcript as string | undefined;
+				if (transcript) session.onInputTranscript?.(transcript);
+				break;
+			}
+
 			case "response.created":
 				isAiSpeaking = true;
 				Logger.debug("naia-omni", "response started");
 				break;
 
-			case "response.audio_transcript.delta": {
+			case "response.audio_transcript.delta":
+			// Text-input turns stream the assistant's reply via response.text.delta
+			// (server _process_text_turn); voice turns use audio_transcript.delta.
+			// Both carry the assistant output text → same transcript surface.
+			case "response.text.delta": {
 				const delta = msg.delta as string | undefined;
 				if (delta) session.onOutputTranscript?.(delta);
 				break;
@@ -470,8 +484,6 @@ export function createNaiaOmniSession(): VoiceSession {
 			offset += chunk.length;
 		}
 		pcmBuffer = [];
-
-		session.onInputTranscript?.("🎤 음성 입력");
 
 		try {
 			ws.send(

@@ -640,18 +640,22 @@ export function ChatPanel() {
 			completeCurrentRequest(requestId);
 			return;
 		}
-		// naia-omni models (naia-*-omni-*) are realtime-voice only. Sending them
-		// down the text chat path makes the gateway return 0 bytes, so guide the
-		// user to voice or a text-capable model instead.
+		// naia-omni models (naia-*-omni-*) are realtime-only via the /v1/realtime
+		// WebSocket — they have no text-completion path. If no voice session is
+		// open yet, auto-start one (handleVoiceToggle connects the WS, then opens
+		// the mic for voice transition) and route this text turn through it via
+		// sendText. The user message was already added above; the realtime
+		// session streams the reply (response.text.delta → onOutputTranscript).
 		if (
 			config?.provider === "nextain" &&
 			config?.model &&
 			isOmniModel(config.provider, config.model) &&
 			config.model.startsWith("naia-")
 		) {
-			useChatStore.getState().appendStreamChunk(t("chat.omniVoiceOnly"));
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
+			await handleVoiceToggle();
+			voiceSessionRef.current?.sendText(text);
 			return;
 		}
 		if (
@@ -1108,18 +1112,28 @@ export function ChatPanel() {
 				info.provider as keyof typeof LIVE_PROVIDER_COST_HINTS
 			];
 		if (!hint || hint.cost === "Free") return;
-		const match = hint.cost.match(/\$([\d.]+)/);
+		// Cost hints carry a unit: "/hr" (hourly session models like naia-omni)
+		// or "/min" (per-minute providers). Hourly models bill by wall-clock
+		// time — applying the per-minute formula over-charged ~60×.
+		const match = hint.cost.match(/\$([\d.]+)\s*\/\s*(hr|min)/);
 		if (!match) return;
 		const rate = Number.parseFloat(match[1]);
-		const totalCost = rate * minutes;
+		const perHour = match[2] === "hr";
+		const totalCost = perHour ? rate * (elapsed / 3600) : rate * minutes;
 		const durationStr =
 			minutes < 1
 				? `${Math.round(elapsed)}s`
 				: `${Math.floor(minutes)}m ${Math.round(elapsed % 60)}s`;
-		// Estimate tokens: Gemini=32tok/s, OpenAI input=10tok/s output=20tok/s
+		// Per-minute providers (Gemini/OpenAI) bill by tokens — estimate for the
+		// breakdown. Hourly session models (naia-omni) do NOT bill by tokens, so
+		// don't fabricate token counts for them (showed up as inflated usage).
 		const isOpenAI = info.provider === "openai-realtime";
-		const inputTokens = Math.round(elapsed * (isOpenAI ? 10 : 32));
-		const outputTokens = Math.round(elapsed * (isOpenAI ? 20 : 32));
+		const inputTokens = perHour
+			? 0
+			: Math.round(elapsed * (isOpenAI ? 10 : 32));
+		const outputTokens = perHour
+			? 0
+			: Math.round(elapsed * (isOpenAI ? 20 : 32));
 		// Map provider to ProviderId-compatible string
 		const providerMap: Record<string, string> = {
 			naia: "nextain",

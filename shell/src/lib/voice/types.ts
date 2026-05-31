@@ -36,7 +36,10 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	naia: { cost: "~$0.03/min", note: "Naia credits" },
 	"gemini-live": { cost: "~$0.03/min", note: "Google API Key" },
 	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
-	"naia-omni": { cost: "$0.50/min", note: "Naia credits (gateway) / Free (local)" },
+	"naia-omni": {
+		cost: "~$0.33/hr",
+		note: "Naia credits — hourly session (local: free)",
+	},
 	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
