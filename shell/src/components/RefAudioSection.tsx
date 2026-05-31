@@ -58,10 +58,13 @@ const STRINGS = {
 		recording: (s: string) => `녹음 중… ${s}초`,
 		recordTooShort: `너무 짧습니다 (최소 ${MIN_DURATION_S}초).`,
 		recordCancel: "취소",
+		takeReady: (s: string) => `녹음됨 · ${s}초 — 들어보고 적용하세요`,
+		takeApply: "적용 ($0.01)",
+		takeDiscard: "다시 녹음",
 		uploadBtn: "파일 업로드",
 		replaceBtn: "파일로 교체",
 		uploading: "업로드 중…",
-		cost: "녹음·업로드 모두 1회당 $0.01 차감",
+		cost: "적용·업로드 시 1회당 $0.01 차감 (녹음만으로는 차감 없음)",
 		err: {
 			network: "네트워크 오류 — 재시도해주세요.",
 			auth: "naia 계정 로그인이 필요합니다.",
@@ -110,10 +113,13 @@ const STRINGS = {
 		recording: (s: string) => `Recording… ${s}s`,
 		recordTooShort: `Too short (min ${MIN_DURATION_S}s).`,
 		recordCancel: "Cancel",
+		takeReady: (s: string) => `Recorded · ${s}s — preview, then apply`,
+		takeApply: "Apply ($0.01)",
+		takeDiscard: "Record again",
 		uploadBtn: "Upload file",
 		replaceBtn: "Replace with file",
 		uploading: "Uploading…",
-		cost: "$0.01 charged per record or upload",
+		cost: "$0.01 charged when you apply or upload (recording itself is free)",
 		err: {
 			network: "Network error — please retry.",
 			auth: "Please sign in to your naia account.",
@@ -205,6 +211,15 @@ export function RefAudioSection() {
 	const [recElapsed, setRecElapsed] = useState(0);
 	const recorderRef = useRef<RefRecording | null>(null);
 
+	// A finished take held for review (record -> preview -> apply/discard).
+	// Not uploaded until the user confirms, so they can listen first.
+	const [recordedTake, setRecordedTake] = useState<{
+		blob: Blob;
+		durationSeconds: number;
+		url: string;
+	} | null>(null);
+	const [takePlaying, setTakePlaying] = useState(false);
+
 	// Preview (active card) — shared <audio> element, tracked objectURL.
 	const [previewState, setPreviewState] = useState<"idle" | "loading" | "playing">(
 		"idle",
@@ -263,6 +278,7 @@ export function RefAudioSection() {
 		}
 		setPreviewState("idle");
 		setPlayingPresetId(null);
+		setTakePlaying(false);
 	}, []);
 
 	useEffect(() => {
@@ -272,6 +288,13 @@ export function RefAudioSection() {
 			recorderRef.current = null;
 		};
 	}, [stopPlayback]);
+
+	// Free the held-take objectURL when it's replaced or on unmount.
+	useEffect(() => {
+		return () => {
+			if (recordedTake) URL.revokeObjectURL(recordedTake.url);
+		};
+	}, [recordedTake]);
 
 	/** Play a URL through the shared <audio>; `revoke` frees it when done. */
 	const playUrl = useCallback(
@@ -371,7 +394,7 @@ export function RefAudioSection() {
 	);
 
 	// ── Record ──
-	const finishRecording = useCallback(async () => {
+	const finishRecording = useCallback(() => {
 		const rec = recorderRef.current;
 		if (!rec) return;
 		recorderRef.current = null;
@@ -381,10 +404,35 @@ export function RefAudioSection() {
 			setError(S.recordTooShort);
 			return;
 		}
-		// Wrap is unnecessary — rec.stop() already returns a WAV Blob, which
-		// encodeRefAudio (inside uploadRefAudio) decodes + resamples to 16kHz.
-		await handleUploadBlob(blob, "record");
-	}, [handleUploadBlob, S]);
+		// Hold the take for preview instead of uploading immediately — the user
+		// listens (local objectURL, no server round-trip) and applies on confirm.
+		setRecordedTake({ blob, durationSeconds, url: URL.createObjectURL(blob) });
+	}, [S]);
+
+	const discardTake = useCallback(() => {
+		stopPlayback();
+		setRecordedTake(null); // the effect revokes the url
+	}, [stopPlayback]);
+
+	const onPreviewTake = useCallback(() => {
+		if (!recordedTake) return;
+		if (takePlaying) {
+			stopPlayback();
+			return;
+		}
+		// revoke:false — discardTake / the unmount effect own the url's lifetime.
+		playUrl(recordedTake.url, false, () => setTakePlaying(false));
+		setTakePlaying(true);
+	}, [recordedTake, takePlaying, playUrl, stopPlayback]);
+
+	const applyRecordedTake = useCallback(async () => {
+		if (!recordedTake) return;
+		stopPlayback();
+		// rec.stop() already returns a WAV Blob; encodeRefAudio (inside
+		// uploadRefAudio) decodes + resamples to 16kHz on upload.
+		await handleUploadBlob(recordedTake.blob, "record");
+		setRecordedTake(null);
+	}, [recordedTake, handleUploadBlob, stopPlayback]);
 
 	const startRecording = useCallback(async () => {
 		setError("");
@@ -579,21 +627,12 @@ export function RefAudioSection() {
 						{S.myVoiceTitle}
 					</div>
 					<div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-						{!recording ? (
-							<button
-								type="button"
-								className="voice-preview-btn"
-								disabled={busy}
-								onClick={() => void startRecording()}
-							>
-								{busy ? S.uploading : S.recordBtn}
-							</button>
-						) : (
+						{recording ? (
 							<>
 								<button
 									type="button"
 									className="voice-preview-btn active"
-									onClick={() => void finishRecording()}
+									onClick={() => finishRecording()}
 								>
 									{S.recordStop}
 								</button>
@@ -608,21 +647,59 @@ export function RefAudioSection() {
 									{S.recordCancel}
 								</button>
 							</>
-						)}
-						{!recording && (
-							<label
-								className="voice-preview-btn"
-								style={{ cursor: busy ? "not-allowed" : "pointer" }}
-							>
-								{active?.kind === "upload" ? S.replaceBtn : S.uploadBtn}
-								<input
-									type="file"
-									accept="audio/*"
-									style={{ display: "none" }}
+						) : recordedTake ? (
+							<>
+								<span className="settings-hint">
+									{S.takeReady(recordedTake.durationSeconds.toFixed(0))}
+								</span>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={onPreviewTake}
+								>
+									{takePlaying ? S.previewStop : S.previewBtn}
+								</button>
+								<button
+									type="button"
+									className="voice-preview-btn"
 									disabled={busy}
-									onChange={onFileInput}
-								/>
-							</label>
+									onClick={() => void applyRecordedTake()}
+								>
+									{busy ? S.uploading : S.takeApply}
+								</button>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									disabled={busy}
+									onClick={discardTake}
+								>
+									{S.takeDiscard}
+								</button>
+							</>
+						) : (
+							<>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									disabled={busy}
+									onClick={() => void startRecording()}
+								>
+									{busy ? S.uploading : S.recordBtn}
+								</button>
+								<label
+									className="voice-preview-btn"
+									style={{ cursor: busy ? "not-allowed" : "pointer" }}
+								>
+									{active?.kind === "upload" ? S.replaceBtn : S.uploadBtn}
+									<input
+										type="file"
+										accept="audio/*"
+										style={{ display: "none" }}
+										disabled={busy}
+										onChange={onFileInput}
+									/>
+								</label>
+							</>
 						)}
 					</div>
 					<div className="settings-hint" style={{ marginTop: 6 }}>

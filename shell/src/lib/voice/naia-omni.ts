@@ -27,6 +27,7 @@
  *     {"type": "error", "error": "..."}
  */
 import { Logger } from "../logger";
+import { emotionTagsToChatText } from "./emotion-tags";
 import {
 	ColdStartTimeoutError,
 	SoldOutError,
@@ -361,7 +362,9 @@ export function createNaiaOmniSession(): VoiceSession {
 			// Both carry the assistant output text → same transcript surface.
 			case "response.text.delta": {
 				const delta = msg.delta as string | undefined;
-				if (delta) session.onOutputTranscript?.(delta);
+				// Map VoxCPM2 prosody tags ([sigh] etc.) to chat emoji for display.
+				// The TTS path keeps the raw tags server-side for prosody.
+				if (delta) session.onOutputTranscript?.(emotionTagsToChatText(delta));
 				break;
 			}
 
