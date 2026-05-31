@@ -13,6 +13,12 @@ export interface MicStreamOptions {
 	onChunk: (base64Pcm: string) => void;
 	sampleRate?: number;
 	bufferSize?: number;
+	/**
+	 * getUserMedia `autoGainControl`. Default true (legacy behavior). Streaming
+	 * omni paths pass false to preserve vocal dynamics for the server VAD.
+	 * `echoCancellation` stays on regardless — the weak-AEC echo protection.
+	 */
+	autoGainControl?: boolean;
 }
 
 export async function createMicStream(
@@ -20,12 +26,13 @@ export async function createMicStream(
 ): Promise<MicStream> {
 	const sampleRate = opts.sampleRate ?? 16000;
 	const bufferSize = opts.bufferSize ?? 4096;
+	const autoGainControl = opts.autoGainControl ?? true;
 
 	const stream = await navigator.mediaDevices.getUserMedia({
 		audio: {
 			echoCancellation: true,
 			noiseSuppression: true,
-			autoGainControl: true,
+			autoGainControl,
 		},
 	});
 	// AudioContext({ sampleRate }) causes GStreamer CRITICAL in WebKitGTK.

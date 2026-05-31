@@ -6,12 +6,16 @@
  * This implementation uses server-side Voice Activity Detection (VAD) and
  * streams audio chunks directly to the server, mirroring the behavior of
  * the `openai-realtime.ts` provider for maximum performance and low latency.
+ * `sendAudio` is a pure passthrough — no client-side buffering, silence
+ * timer, or manual commit. The server's silero VAD auto-commits and responds
+ * on end-of-speech. The AI-speaking echo gate lives in ChatPanel
+ * (`audioInput.gateWhilePlaying`), not here.
  *
  * Protocol (/v1/realtime):
  *   Server → Client (on open): {"type": "session.created"}
  *   Client → Server:
  *     {"type": "session.update", "model": ..., "session": {..., turn_detection}}
- *     {"type": "input_audio_buffer.append", "audio": "<base64 PCM16 16kHz>"}
+ *     {"type": "input_audio_buffer.append", "audio": "<base64 PCM16 24kHz>"}
  *     {"type": "response.cancel"}  (interrupt)
  *
  *   Server → Client:
@@ -38,19 +42,9 @@ const DEFAULT_SERVER_URL = "http://localhost:8000";
 const DEFAULT_MODEL = "naia-0.9-omni-24g";
 const GATEWAY_REALTIME_PATH = "/v1/realtime";
 
-/** ms of silence after last speech chunk before committing turn to server */
-const SILENCE_TIMEOUT_MS = 1500;
-/** force commit after this many ms even if speech is continuous */
-const MAX_BUFFER_MS = 6000;
-/** minimum samples to bother sending (0.5s @ 16kHz) */
-const MIN_AUDIO_SAMPLES = 8000;
-/**
- * RMS threshold for client-side speech detection (Int16 scale 0–32767,
- * ~3% of full scale). Validated during omni development (#216 minicpm-o).
- * Exported as the SoT for the barge-in energy gate so Gemini Live and
- * naia-omni share one threshold.
- */
-export const SPEECH_RMS_THRESHOLD = 200;
+/** PCM capture rate (Hz) sent on the wire. Server INPUT_SR default = 24000. */
+const INPUT_SAMPLE_RATE = 24000;
+
 /** Schemes accepted for `serverUrl` before conversion to `ws(s)://`. */
 const ALLOWED_SERVER_SCHEMES = new Set(["http:", "https:", "ws:", "wss:"]);
 
@@ -58,13 +52,17 @@ export function createNaiaOmniSession(): VoiceSession {
 	let ws: WebSocket | null = null;
 	let connected = false;
 	let cfg: NaiaOmniConfig | null = null;
-	let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-	let maxBufferTimer: ReturnType<typeof setTimeout> | null = null;
-	let pcmBuffer: Int16Array[] = [];
-	let rmsLogThrottle = 0;
 	let isAiSpeaking = false;
 
 	const session: VoiceSession = {
+		audioInput: {
+			// Server INPUT_SR=24000; stream raw mic to server VAD with no AGC so
+			// true energy reaches the VAD. Echo gate stays on (WebKitGTK weak AEC)
+			// — it only drops sub-threshold chunks while the AI speaks.
+			sampleRate: INPUT_SAMPLE_RATE,
+			autoGainControl: false,
+			gateWhilePlaying: true,
+		},
 		onAudio: null,
 		onInputTranscript: null,
 		onOutputTranscript: null,
@@ -238,7 +236,6 @@ export function createNaiaOmniSession(): VoiceSession {
 					clearTimeout(timeout);
 					const wasConnected = connected;
 					connected = false;
-					clearTurnTimers();
 					Logger.info("naia-omni", "disconnected from /v1/realtime", {
 						code: event.code,
 						reason: event.reason,
@@ -282,57 +279,24 @@ export function createNaiaOmniSession(): VoiceSession {
 
 		sendAudio(pcmBase64: string) {
 			if (!ws || !connected) return;
-
-			const bytes = base64ToUint8Array(pcmBase64);
-			const samples = new Int16Array(
-				bytes.buffer,
-				bytes.byteOffset,
-				bytes.byteLength / 2,
-			);
-
-			const chunkRms = rms(samples);
-
-			// Barge-in (#22/#216 revisited). #216 hard-discarded ALL mic input
-			// while the AI spoke (`if (isAiSpeaking) return`) to kill the echo
-			// loop — but that also made interruption impossible. Gate on energy
-			// instead: while the AI is speaking, forward only chunks loud enough
-			// to be a real interruption (>= SPEECH_RMS_THRESHOLD) so the server
-			// VAD can fire an interrupt; AEC-residual echo (below threshold) is
-			// still dropped to avoid self-triggering the echo loop.
-			if (isAiSpeaking && chunkRms < SPEECH_RMS_THRESHOLD) return;
-
-			pcmBuffer.push(samples.slice());
-			if (++rmsLogThrottle % 20 === 0) {
-				Logger.debug("naia-omni", "RMS sample", {
-					rms: Math.round(chunkRms),
-					threshold: SPEECH_RMS_THRESHOLD,
-					isSpeech: chunkRms >= SPEECH_RMS_THRESHOLD,
-				});
-			}
-
-			const isSpeech = chunkRms >= SPEECH_RMS_THRESHOLD;
-			if (isSpeech) {
-				if (silenceTimer) clearTimeout(silenceTimer);
-				silenceTimer = setTimeout(() => {
-					silenceTimer = null;
-					flushAudio();
-				}, SILENCE_TIMEOUT_MS);
-
-				if (!maxBufferTimer) {
-					maxBufferTimer = setTimeout(() => {
-						maxBufferTimer = null;
-						if (silenceTimer) {
-							clearTimeout(silenceTimer);
-							silenceTimer = null;
-						}
-						flushAudio();
-					}, MAX_BUFFER_MS);
-				}
-			} else if (!silenceTimer) {
-				silenceTimer = setTimeout(() => {
-					silenceTimer = null;
-					flushAudio();
-				}, SILENCE_TIMEOUT_MS);
+			// Passthrough: stream each mic chunk straight to the server's
+			// input_audio_buffer. The server runs silero VAD (turn_detection:
+			// server_vad) and auto-commits + responds on end-of-speech — no
+			// client-side buffering, silence timer, or manual commit. Mirrors
+			// openai-realtime.ts and the web demo for low latency. Barge-in is
+			// server-side via input_audio_buffer.speech_started (see
+			// handleMessage); the AI-speaking echo gate lives in ChatPanel
+			// (audioInput.gateWhilePlaying).
+			try {
+				ws.send(
+					JSON.stringify({
+						type: "input_audio_buffer.append",
+						audio: pcmBase64,
+					}),
+				);
+			} catch (err) {
+				Logger.warn("naia-omni", "send failed", { error: String(err) });
+				session.onError?.(err instanceof Error ? err : new Error(String(err)));
 			}
 		},
 
@@ -364,9 +328,6 @@ export function createNaiaOmniSession(): VoiceSession {
 				}
 			}
 			connected = false;
-			clearTurnTimers();
-			pcmBuffer = [];
-			rmsLogThrottle = 0;
 			isAiSpeaking = false;
 			if (ws) {
 				ws.close();
@@ -374,17 +335,6 @@ export function createNaiaOmniSession(): VoiceSession {
 			}
 		},
 	};
-
-	function clearTurnTimers() {
-		if (silenceTimer) {
-			clearTimeout(silenceTimer);
-			silenceTimer = null;
-		}
-		if (maxBufferTimer) {
-			clearTimeout(maxBufferTimer);
-			maxBufferTimer = null;
-		}
-	}
 
 	function handleMessage(msg: Record<string, unknown>) {
 		const type = msg.type as string;
@@ -469,90 +419,7 @@ export function createNaiaOmniSession(): VoiceSession {
 		}
 	}
 
-	/** Send buffered PCM to server as base64 append + commit. */
-	function flushAudio() {
-		if (maxBufferTimer) {
-			clearTimeout(maxBufferTimer);
-			maxBufferTimer = null;
-		}
-		if (!ws || !connected) return;
-
-		const totalSamples = pcmBuffer.reduce((n, c) => n + c.length, 0);
-		if (totalSamples < MIN_AUDIO_SAMPLES) {
-			pcmBuffer = [];
-			return;
-		}
-
-		const pcm = new Int16Array(totalSamples);
-		let offset = 0;
-		for (const chunk of pcmBuffer) {
-			pcm.set(chunk, offset);
-			offset += chunk.length;
-		}
-		pcmBuffer = [];
-
-		try {
-			ws.send(
-				JSON.stringify({
-					type: "input_audio_buffer.append",
-					audio: uint8ArrayToBase64(
-						new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength),
-					),
-				}),
-			);
-			ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-		} catch (err) {
-			Logger.warn("naia-omni", "send failed", { error: String(err) });
-			session.onError?.(err instanceof Error ? err : new Error(String(err)));
-		}
-
-		Logger.debug("naia-omni", "committed audio", { samples: totalSamples });
-	}
-
 	return session;
-}
-
-function rms(samples: Int16Array): number {
-	if (samples.length === 0) return 0;
-	let sum = 0;
-	for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
-	return Math.sqrt(sum / samples.length);
-}
-
-/**
- * RMS (Int16 scale 0–32767) of a base64-encoded Int16-LE PCM chunk. Shared
- * SoT helper for the barge-in energy gate (see {@link SPEECH_RMS_THRESHOLD}).
- * Same decode + rms() path used internally by naia-omni's `sendAudio`.
- */
-export function rmsFromBase64Pcm(b64: string): number {
-	const bytes = base64ToUint8Array(b64);
-	if (bytes.byteLength < 2) return 0;
-	const samples = new Int16Array(
-		bytes.buffer,
-		bytes.byteOffset,
-		bytes.byteLength >> 1,
-	);
-	return rms(samples);
-}
-
-function base64ToUint8Array(b64: string): Uint8Array {
-	let bin: string;
-	try {
-		bin = atob(b64);
-	} catch {
-		// Malformed base64 from the mic encoder is treated as a silent chunk
-		// rather than a thrown exception that would kill `sendAudio`.
-		return new Uint8Array(0);
-	}
-	const arr = new Uint8Array(bin.length);
-	for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-	return arr;
-}
-
-function uint8ArrayToBase64(arr: Uint8Array): string {
-	let bin = "";
-	for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
-	return btoa(bin);
 }
 
 /**

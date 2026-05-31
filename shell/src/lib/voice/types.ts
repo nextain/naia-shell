@@ -150,9 +150,46 @@ export type LiveProviderConfig =
 	| NaiaOmniConfig
 	| VllmOmniConfig;
 
+// ── Audio input requirements (per-provider, read by the shared mic layer) ──
+
+/**
+ * Per-provider microphone capture requirements. The shared UI (ChatPanel)
+ * reads these off the session instead of branching on provider id, so the
+ * mic-stream config and the AI-speaking echo gate stay declarative and each
+ * provider owns its own wire contract.
+ */
+export interface AudioInputConfig {
+	/**
+	 * PCM capture rate sent on the wire. naia-omni: 24000 (server INPUT_SR).
+	 * All others (openai-realtime / gemini-live / gemini-live-proxy /
+	 * vllm-omni): 16000 (wire format `audio/pcm;rate=16000` / WAV header /
+	 * prior hardcoded default). Mismatching this rate makes the server
+	 * reinterpret the audio at the wrong speed/pitch.
+	 */
+	sampleRate: number;
+	/**
+	 * getUserMedia `autoGainControl`. false for the streaming omni/openai paths
+	 * (preserve vocal dynamics so server VAD sees true energy); true elsewhere
+	 * (legacy default, matches prior behavior).
+	 */
+	autoGainControl: boolean;
+	/**
+	 * Apply the RMS echo gate while the AI is speaking. true on weak-AEC paths
+	 * (WebKitGTK) so AEC-residual echo doesn't self-trigger the server VAD into
+	 * an interrupt loop. The gate only drops sub-threshold chunks while audio is
+	 * playing, so real user speech still passes.
+	 */
+	gateWhilePlaying: boolean;
+}
+
 // ── Voice Session (provider-agnostic interface) ──
 
 export interface VoiceSession {
+	/**
+	 * Microphone capture + echo-gate requirements for this provider. Read by
+	 * ChatPanel when it creates the shared mic stream (provider-agnostic UI).
+	 */
+	readonly audioInput: AudioInputConfig;
 	connect: (config: LiveProviderConfig) => Promise<void>;
 	sendAudio: (pcmBase64: string) => void;
 	sendText: (text: string) => void;

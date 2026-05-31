@@ -1939,18 +1939,18 @@ export function ChatPanel() {
 			// Create mic stream
 			const mic = await createMicStream({
 				onChunk: (pcmBase64) => {
-					// Barge-in (#22 revisited). Stream the mic continuously so the
-					// server VAD can detect the user interrupting Naia mid-utterance
-					// → fires `interrupted` → onInterrupted clears the audio player
-					// (Naia stops talking). AEC is requested at capture time
-					// (mic-stream.ts: echoCancellation/noiseSuppression/autoGainControl).
+					// Barge-in: stream the mic continuously so the server VAD can
+					// detect the user interrupting Naia mid-utterance → fires
+					// `interrupted` → onInterrupted clears the audio player.
 					//
-					// To stop AEC-residual echo from self-triggering the VAD on
-					// weak-AEC platforms (WebKitGTK), apply an energy gate ONLY while
-					// Naia is speaking: forward a mid-playback chunk only if its RMS
-					// exceeds the omni-validated speech threshold (#216,
-					// SPEECH_RMS_THRESHOLD=200). When Naia is silent, forward all.
+					// Echo gate, declared per-provider via session.audioInput.
+					// On weak-AEC paths (WebKitGTK) gateWhilePlaying drops
+					// sub-threshold chunks while Naia speaks so AEC-residual echo
+					// doesn't self-trigger the server VAD (#216,
+					// SPEECH_RMS_THRESHOLD=200). Real user speech still passes; the
+					// short-circuit skips the RMS decode when the gate is off.
 					if (
+						session.audioInput.gateWhilePlaying &&
 						audioPlayerRef.current?.isPlaying &&
 						rmsFromBase64Pcm(pcmBase64) < SPEECH_RMS_THRESHOLD
 					) {
@@ -1958,7 +1958,8 @@ export function ChatPanel() {
 					}
 					session.sendAudio(pcmBase64);
 				},
-				sampleRate: 16000,
+				sampleRate: session.audioInput.sampleRate,
+				autoGainControl: session.audioInput.autoGainControl,
 			});
 			micStreamRef.current = mic;
 			mic.start();

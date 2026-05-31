@@ -19,6 +19,12 @@ export function createGeminiLiveProxySession(): VoiceSession {
 	const unlisteners: UnlistenFn[] = [];
 
 	const session: VoiceSession = {
+		// Mirrors gemini-live: 16kHz wire format, AGC on, echo gate on.
+		audioInput: {
+			sampleRate: 16000,
+			autoGainControl: true,
+			gateWhilePlaying: true,
+		},
 		onAudio: null,
 		onInputTranscript: null,
 		onOutputTranscript: null,

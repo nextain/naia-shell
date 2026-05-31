@@ -21,7 +21,11 @@ const OUTPUT_SAMPLE_RATE = 24000;
 const MAX_TOKENS = 1024;
 /** RMS amplitude threshold for speech detection (Int16 scale, 0–32767).
  *  Chunks below this are treated as silence and do not reset the flush timer.
- *  ~3% of full scale — filters ambient noise, passes normal speech. */
+ *  ~3% of full scale — filters ambient noise, passes normal speech.
+ *  NOTE: intentionally separate from echo-gate.ts's SPEECH_RMS_THRESHOLD —
+ *  this drives vllm-omni's half-duplex REST flush timing, not the AI-speaking
+ *  barge-in echo gate. Same calibration today, but different purposes; do not
+ *  "deduplicate" by importing the echo-gate constant. */
 const SPEECH_RMS_THRESHOLD = 200;
 /** Force flush after this many ms even if speech is still ongoing. */
 const MAX_BUFFER_MS = 6000;
@@ -36,6 +40,14 @@ export function createVllmOmniSession(): VoiceSession {
 	let rmsLogThrottle = 0; // log RMS every N chunks
 
 	const session: VoiceSession = {
+		// Half-duplex REST: client buffers to 16kHz WAV (INPUT_SAMPLE_RATE). The
+		// batch in sendAudio is intentional (no streaming commit endpoint). AGC
+		// on + echo gate on — unchanged from prior behavior.
+		audioInput: {
+			sampleRate: 16000,
+			autoGainControl: true,
+			gateWhilePlaying: true,
+		},
 		onAudio: null,
 		onInputTranscript: null,
 		onOutputTranscript: null,

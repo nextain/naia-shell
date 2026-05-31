@@ -24,6 +24,13 @@ export function createGeminiLiveSession(): VoiceSession {
 	let connected = false;
 
 	const session: VoiceSession = {
+		// Gemini Live hardcodes audio/pcm;rate=16000 on the wire (see sendAudio).
+		// AGC on + echo gate on — unchanged from prior behavior.
+		audioInput: {
+			sampleRate: 16000,
+			autoGainControl: true,
+			gateWhilePlaying: true,
+		},
 		onAudio: null,
 		onInputTranscript: null,
 		onOutputTranscript: null,

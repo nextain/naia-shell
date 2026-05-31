@@ -16,7 +16,7 @@ import { createGeminiLiveProxySession } from "./gemini-live-proxy";
 import { createNaiaOmniSession } from "./naia-omni";
 
 // Barge-in energy gate — shared SoT from omni development (#216).
-export { SPEECH_RMS_THRESHOLD, rmsFromBase64Pcm } from "./naia-omni";
+export { SPEECH_RMS_THRESHOLD, rmsFromBase64Pcm } from "./echo-gate";
 
 import { createOpenAIRealtimeSession } from "./openai-realtime";
 import type { LiveProviderId, VoiceSession } from "./types";
