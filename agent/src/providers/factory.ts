@@ -301,40 +301,52 @@ export function _clearGatewayToken(): void {
 
 // ── Factory ──
 
-export function buildProvider(config: ProviderConfig): LLMProvider {
-	// claude-code-cli always routes through the local CLI — never lab-proxy.
-	// (Naia key does not grant access to Anthropic models on the gateway.)
-	if (config.provider === "claude-code-cli") {
-		const def = getLlmProviderDef("claude-code-cli");
-		if (!def) throw new Error("claude-code-cli provider not registered.");
-		return def.create("", config.model);
-	}
+/** Which route a config takes. Resolved once (pure), then dispatched by switch. */
+type ProviderRoute = "claude-cli" | "local-live" | "lab-proxy" | "nextain-error" | "native";
 
-	// Lab proxy mode: agent holds naiaKey — never read from per-request config.
-	// Exception: naia-*-live models with NAIA_LIVE_HOST set → local voice wrapper bypass.
-	const naiaKey = _agentNaiaKey;
-	const liveHost = process.env["NAIA_LIVE_HOST"] || "";
-	const isNaiaLocalLive = liveHost && /^naia-\d+[gt]-live$/i.test(config.model);
-	if (naiaKey && isNaiaLocalLive) {
-		return createOpenAIProvider("vllm", config.model, liveHost);
+/**
+ * Decide a config's route — pure and side-effect-free (easy to unit test).
+ * Order mirrors the original buildProvider precedence exactly:
+ *   1. claude-code-cli → always the local CLI (Naia key grants no Anthropic access).
+ *   2. naia-*-live + NAIA_LIVE_HOST → local voice wrapper bypass.
+ *   3. logged in (naiaKey) + cloud provider → lab-proxy (Naia account credit relays it).
+ *      ollama/vllm stay local even while logged in — the gateway has no knowledge of
+ *      the user's local models, so routing them through lab-proxy 500s (naia-os#356).
+ *   4. nextain pseudo-provider WITHOUT login → error. (With login it already took the
+ *      lab-proxy route at step 3, since nextain is not an explicit-local provider.)
+ *   5. otherwise → the provider's own native/adapter impl.
+ */
+function resolveProviderRoute(
+	config: ProviderConfig,
+	naiaKey: string | undefined,
+	liveHost: string,
+): ProviderRoute {
+	if (config.provider === "claude-code-cli") return "claude-cli";
+	if (naiaKey && liveHost && /^naia-\d+[gt]-live$/i.test(config.model)) {
+		return "local-live";
 	}
-	if (naiaKey) {
-		const labProxy = getLlmProviderDef("lab-proxy");
-		if (!labProxy) throw new Error("Lab proxy provider not registered.");
-		return labProxy.create(naiaKey, config.model, { labGatewayUrl: config.labGatewayUrl });
-	}
+	const isExplicitLocalProvider =
+		config.provider === "ollama" || config.provider === "vllm";
+	if (naiaKey && !isExplicitLocalProvider) return "lab-proxy";
+	if (config.provider === "nextain") return "nextain-error";
+	return "native";
+}
 
-	if (config.provider === "nextain") {
-		throw new Error("Naia provider requires Naia account login.");
-	}
+function requireProviderDef(id: string) {
+	const def = getLlmProviderDef(id);
+	if (!def) throw new Error(`${id} provider not registered.`);
+	return def;
+}
 
+/**
+ * Create the provider's own native/adapter impl, resolving its API key by priority:
+ *   1. cached key from `creds_update` (#260 follow-up)
+ *   2. per-request `config.apiKey` (backwards compat — older shells)
+ *   3. envVar (CI / dev override)
+ */
+function createNativeProvider(config: ProviderConfig): LLMProvider {
 	const def = getLlmProviderDef(config.provider);
 	if (!def) throw new Error(`Unknown provider: ${config.provider}`);
-
-	// Resolution priority (post-creds_update):
-	//   1. cached key from `creds_update` (#260 follow-up)
-	//   2. per-request `config.apiKey` (backwards compat — older shells)
-	//   3. envVar (CI / dev override)
 	const apiKey =
 		_providerApiKeys.get(config.provider) ||
 		config.apiKey ||
@@ -343,4 +355,25 @@ export function buildProvider(config: ProviderConfig): LLMProvider {
 		ollamaHost: config.ollamaHost,
 		vllmHost: config.vllmHost,
 	});
+}
+
+export function buildProvider(config: ProviderConfig): LLMProvider {
+	// naiaKey is owned by the agent (auth_update) — never read from per-request config.
+	const naiaKey = _agentNaiaKey;
+	const liveHost = process.env["NAIA_LIVE_HOST"] || "";
+
+	switch (resolveProviderRoute(config, naiaKey, liveHost)) {
+		case "claude-cli":
+			return requireProviderDef("claude-code-cli").create("", config.model);
+		case "local-live":
+			return createOpenAIProvider("vllm", config.model, liveHost);
+		case "lab-proxy":
+			return requireProviderDef("lab-proxy").create(naiaKey as string, config.model, {
+				labGatewayUrl: config.labGatewayUrl,
+			});
+		case "nextain-error":
+			throw new Error("Naia provider requires Naia account login.");
+		case "native":
+			return createNativeProvider(config);
+	}
 }
