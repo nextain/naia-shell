@@ -28,6 +28,10 @@ agent/.claude/
 # Progress files (session-local, not committed)
 .agents/progress/*.json
 
+# Temporary work scripts (session-local, never committed)
+.agents/work/
+**/.agents/work/
+
 # Windows build resources (downloaded at build time)
 shell/src-tauri/resources/
 

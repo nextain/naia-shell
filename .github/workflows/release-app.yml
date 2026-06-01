@@ -326,6 +326,36 @@ jobs:
           if ($sig) { Copy-Item $sig "Naia-Shell-x86_64-setup.exe.sig" }
           Copy-Item (Get-ChildItem shell/src-tauri/target/release/bundle/msi/*.msi | Select-Object -First 1) "Naia-Shell-x86_64.msi"
 
+      - name: Code-sign installers (only if certificate secret is present)
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERT_PFX_BASE64) {
+            Write-Host "::notice::No WINDOWS_CERT_PFX_BASE64 secret — skipping code signing. Installers will be unsigned (SmartScreen warning expected; add the secret to enable signing)."
+            exit 0
+          }
+          # Decode the PFX to a temp file
+          $pfxPath = Join-Path $env:RUNNER_TEMP "naia-codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+          # Locate signtool.exe (Windows SDK, x64)
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "\\x64\\" } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { Write-Error "signtool.exe not found in Windows SDK"; exit 1 }
+          Write-Host "Using signtool: $($signtool.FullName)"
+          foreach ($f in @("Naia-Shell-x86_64-setup.exe", "Naia-Shell-x86_64.msi")) {
+            if (-not (Test-Path $f)) { continue }
+            & $signtool.FullName sign /fd sha256 /td sha256 `
+              /tr "http://timestamp.digicert.com" `
+              /f $pfxPath /p $env:WINDOWS_CERT_PASSWORD $f
+            if ($LASTEXITCODE -ne 0) { Write-Error "signtool failed for $f"; exit 1 }
+            & $signtool.FullName verify /pa $f
+            if ($LASTEXITCODE -ne 0) { Write-Error "signature verify failed for $f"; exit 1 }
+            Write-Host "✅ Signed + verified: $f"
+          }
+          Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+
       - name: Smoke test — install and verify app launches
         shell: pwsh
         run: |
@@ -350,6 +380,24 @@ jobs:
           Write-Host "✅ App is running (PID $($proc.Id))"
           Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 
+      - name: Package portable tree for Steam
+        shell: pwsh
+        run: |
+          # Reuse the app installed by the smoke-test step. Steam ships an
+          # already-laid-out app tree (no second installer), so we zip the
+          # install directory rather than the NSIS setup.exe.
+          $appExe = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter "naia-shell.exe" -ErrorAction SilentlyContinue -Depth 4 |
+                    Select-Object -First 1
+          if (-not $appExe) {
+            $appExe = Get-ChildItem "C:\Program Files" -Recurse -Filter "naia-shell.exe" -ErrorAction SilentlyContinue -Depth 4 |
+                      Select-Object -First 1
+          }
+          if (-not $appExe) { Write-Error "Installed app not found for portable packaging"; exit 1 }
+          $installDir = $appExe.Directory.FullName
+          Write-Host "Portable source: $installDir"
+          Compress-Archive -Path "$installDir\*" -DestinationPath "Naia-Shell-x86_64-portable.zip" -Force
+          Write-Host "Portable zip: $((Get-Item Naia-Shell-x86_64-portable.zip).Length) bytes"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -358,6 +406,7 @@ jobs:
             Naia-Shell-x86_64-setup.exe
             Naia-Shell-x86_64-setup.exe.sig
             Naia-Shell-x86_64.msi
+            Naia-Shell-x86_64-portable.zip
           if-no-files-found: error
 
   release:
@@ -601,9 +650,18 @@ jobs:
           export TAG="${{ steps.version.outputs.tag }}"
           export VERSION="${TAG#v}"
 
-          # Generate VDF depot manifest
+          # Generate VDF depot manifest.
+          # Steam ships a ready-to-run app tree (no installer): unpack the
+          # portable zip into the depot so Steam launches naia-shell.exe directly.
           mkdir -p steam-build/output steam-build/content/windows
-          cp artifacts/Naia-Shell-x86_64-setup.exe steam-build/content/windows/
+          if [[ -f artifacts/Naia-Shell-x86_64-portable.zip ]]; then
+            unzip -q artifacts/Naia-Shell-x86_64-portable.zip -d steam-build/content/windows/
+            echo "Unpacked portable tree into depot:"
+            ls steam-build/content/windows/ | head
+          else
+            echo "::warning::portable.zip missing — falling back to setup.exe (Steam will require a second install)"
+            cp artifacts/Naia-Shell-x86_64-setup.exe steam-build/content/windows/
+          fi
 
           cat > steam-build/depot_windows.vdf <<DEPOT_EOF
           "DepotBuildConfig"

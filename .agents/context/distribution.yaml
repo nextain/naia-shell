@@ -60,12 +60,13 @@ formats:
     build_command: "cd shell && pnpm tauri build --config src-tauri/tauri.conf.windows.json"
     output: "shell/src-tauri/target/release/bundle/nsis/Naia_{version}_x64-setup.exe"
     config_overlay: "shell/src-tauri/tauri.conf.windows.json"
-    bundle_targets: ["nsis"]
+    bundle_targets: ["nsis", "msi"]
+    webview_install_mode: "offlineInstaller — WebView2 runtime embedded in the installer (required for MS Store / offline install). Adds ~150MB to installer size."
     nsis_config:
       install_mode: "currentUser"
       languages: ["English", "Korean", "Japanese"]
       start_menu_folder: "Naia"
-      code_signing: "not configured (SmartScreen warning on install)"
+      code_signing: "conditional in CI — signtool runs only when WINDOWS_CERT_PFX_BASE64 + WINDOWS_CERT_PASSWORD secrets are present; otherwise installers ship unsigned (SmartScreen warning)"
       uninstall_hooks: "not implemented — see issue #53"
     bundled_resources:
       node_exe: "resources/node.exe (downloaded at CI build time, ~45MB)"
@@ -182,7 +183,31 @@ formats:
       - "Gateway /health endpoint: version/methods not exposed — only available via WebSocket skill_diagnostics"
       - "tauri:dev npm script has Linux-only GDK_BACKEND=x11 — Windows must use cargo tauri dev directly"
       - "Onboarding button border invisible in light theme (rgba(255,255,255,0.08) on white)"
-    ci_status: "build-windows job added to release-app.yml (NSIS + MSI + updater sig)"
+    ci_status: "build-windows job added to release-app.yml (NSIS + MSI + updater sig + conditional signtool + portable zip for Steam)"
+    ms_store:
+      method: "Path A — Win32 app linking (Tauri 2 has NO native MSIX support as of 2026)"
+      rationale: "MSIX would sandbox the app; our agent spawns node.exe + ships node_modules resources, which is friction under MSIX. Win32 linking keeps full-trust behavior."
+      prerequisites:
+        - "Microsoft Partner Center account (HAVE)"
+        - "Code signing cert recommended for SmartScreen reputation (not strictly required for Win32 listing)"
+        - "WebView2 offlineInstaller already enabled in tauri.conf.windows.json"
+      manual_steps:
+        1: "Partner Center → Apps and Games → create app, reserve name 'Naia'"
+        2: "Product type: MSI/EXE (Win32 app). Publisher must differ from product name (Nextain Inc. vs Naia — OK)"
+        3: "Installer URL = GitHub Release asset https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64-setup.exe"
+        4: "Submit for certification (Win32 apps reviewed for malware/behavior; full-trust allowed)"
+      note: "Store links to the installer; it does not host MSIX. Auto-update keeps using the Tauri updater (latest.json)."
+    steam:
+      method: "Portable app tree in SteamPipe depot (NOT the installer — Steam ships a ready-to-run tree)"
+      ci: "build-windows silent-installs setup.exe then zips the install dir → Naia-Shell-x86_64-portable.zip artifact; Steam job unzips it into the depot ContentRoot"
+      launch_executable: "naia-shell.exe (set in Steamworks → Installation → Launch Options, manual)"
+      secrets: ["STEAM_USERNAME", "STEAM_PASSWORD", "STEAM_APP_ID", "STEAM_DEPOT_ID", "STEAM_CONFIG_VDF"]
+      note: "Falls back to setup.exe in depot if portable.zip is missing (with a CI warning)."
+    required_ci_secrets:
+      code_signing: ["WINDOWS_CERT_PFX_BASE64 (base64 of .pfx)", "WINDOWS_CERT_PASSWORD"]
+      steam: ["STEAM_USERNAME", "STEAM_PASSWORD", "STEAM_APP_ID", "STEAM_DEPOT_ID", "STEAM_CONFIG_VDF (base64 of config.vdf for 2FA-less login)"]
+      itch: ["BUTLER_API_KEY"]
+    release_gate: "Tag push / actual Store + Steam submission require explicit user approval (feedback_release_policy). CI builds artifacts only."
 
   iso:
     builder: ublue-os/titanoboa@main
@@ -489,7 +514,7 @@ bootable_usb:
     - Live session = read-only squashfs + RAM overlay (ephemeral)
     - Pre-installed apps (Chrome, Discord, Firefox, Naia Shell) persist across boots
     - User data, settings, AI conversations are lost on reboot
-    - "Install to Hard Drive" for permanent installation
+    - Install to Hard Drive for permanent installation
   notes:
     - Must unmount USB first (sudo umount /dev/sdX1)
     - ISO is hybrid — works for both UEFI and legacy BIOS boot
