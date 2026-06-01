@@ -1,11 +1,12 @@
 import OpenAI from "openai";
-import { toOpenAIMessages, toOpenAITools } from "./openai-compat.js";
+import { sniffTextToolCall, toOpenAIMessages, toOpenAITools } from "./openai-compat.js";
 import type { AgentStream, LLMProvider } from "./types.js";
 
 export function createOpenAIProvider(
 	apiKey: string,
 	model: string,
 	localHost?: string,
+	enableThinking?: boolean,
 ): LLMProvider {
 	const isOllama = apiKey === "ollama";
 	const isVllm = apiKey === "vllm";
@@ -62,7 +63,7 @@ export function createOpenAIProvider(
 				yield { type: "finish" };
 				return;
 			}
-			const body: OpenAI.ChatCompletionCreateParamsStreaming = {
+			const body: OpenAI.ChatCompletionCreateParamsStreaming & { think?: boolean } = {
 				model,
 				temperature: 0.7,
 				messages: toOpenAIMessages(
@@ -72,6 +73,9 @@ export function createOpenAIProvider(
 				stream: true,
 				stream_options: { include_usage: true },
 			};
+			if (isOllama && enableThinking !== undefined) {
+				body.think = enableThinking;
+			}
 			if (tools && tools.length > 0) {
 				body.tools = toOpenAITools(tools) as OpenAI.ChatCompletionTool[];
 			}
@@ -90,11 +94,22 @@ export function createOpenAIProvider(
 			>();
 
 		let textBuffer = "";
+			let thinkingBuffer = "";
 
 			for await (const chunk of stream) {
-				const delta = chunk.choices[0]?.delta;
+				const delta = chunk.choices[0]?.delta as OpenAI.ChatCompletionChunk.Choice.Delta & {
+					reasoning_content?: string;
+					reasoning?: string;
+				};
 				if (delta?.content) {
 					textBuffer += delta.content;
+				}
+				// Reasoning field name differs by backend: vLLM/DeepSeek emit
+				// `reasoning_content`, Ollama emits `reasoning`. Accept either so
+				// thinking is separated instead of leaking into the visible answer.
+				const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning;
+				if (reasoningDelta) {
+					thinkingBuffer += reasoningDelta;
 				}
 
 				// Tool calls — accumulate arguments across chunks
@@ -124,7 +139,19 @@ export function createOpenAIProvider(
 			if (isOllama) {
 				textBuffer = textBuffer.replace(/<eos>/g, "");
 			}
-			if (textBuffer) {
+			// Recovery net: small local models (e.g. Ollama qwen3.5:4b) sometimes
+			// emit a tool call as plain text instead of a native tool_calls delta.
+			// Only consulted when there are no native tool calls; suppresses the
+			// JSON from the visible answer when it is promoted to a tool_use.
+			const recovered =
+				pendingToolCalls.size === 0 && tools && tools.length > 0
+					? sniffTextToolCall(textBuffer, tools)
+					: null;
+
+			if (thinkingBuffer) {
+				yield { type: "thinking", text: thinkingBuffer };
+			}
+			if (textBuffer && !recovered) {
 				yield { type: "text", text: textBuffer };
 			}
 
@@ -137,6 +164,15 @@ export function createOpenAIProvider(
 					// malformed JSON — emit empty args
 				}
 				yield { type: "tool_use", id: tc.id, name: tc.name, args };
+			}
+
+			if (recovered) {
+				yield {
+					type: "tool_use",
+					id: recovered.id,
+					name: recovered.name,
+					args: recovered.args,
+				};
 			}
 
 			if (inputTokens > 0 || outputTokens > 0) {

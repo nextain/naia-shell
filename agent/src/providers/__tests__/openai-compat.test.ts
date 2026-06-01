@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toOpenAIMessages, toOpenAITools } from "../openai-compat.js";
+import { sniffTextToolCall, toOpenAIMessages, toOpenAITools } from "../openai-compat.js";
 import type { ChatMessage, ToolDefinition } from "../types.js";
 
 describe("openai-compat", () => {
@@ -141,6 +141,120 @@ describe("openai-compat", () => {
 			const result = toOpenAITools(tools);
 
 			expect(result[0].function.parameters).toEqual(tools[0].parameters);
+		});
+	});
+
+	describe("sniffTextToolCall", () => {
+		const YOUTUBE: ToolDefinition = {
+			name: "skill_youtube_bgm",
+			description: "Play YouTube BGM",
+			parameters: {
+				type: "object",
+				properties: {
+					action: { type: "string" },
+					query: { type: "string" },
+					videoId: { type: "string" },
+				},
+				required: ["action"],
+			},
+		};
+		const WEATHER: ToolDefinition = {
+			name: "skill_weather",
+			description: "Get weather",
+			parameters: {
+				type: "object",
+				properties: { city: { type: "string" } },
+				required: ["city"],
+			},
+		};
+
+		it("Shape A — explicit name + arguments", () => {
+			const out = sniffTextToolCall(
+				'{"name":"skill_youtube_bgm","arguments":{"action":"search","query":"lofi"}}',
+				[YOUTUBE, WEATHER],
+			);
+			expect(out).toEqual({
+				id: "call_recovered_skill_youtube_bgm",
+				name: "skill_youtube_bgm",
+				args: { action: "search", query: "lofi" },
+			});
+		});
+
+		it("Shape A — accepts stringified arguments and `parameters` alias", () => {
+			const out = sniffTextToolCall(
+				'{"name":"skill_weather","parameters":"{\\"city\\":\\"Seoul\\"}"}',
+				[YOUTUBE, WEATHER],
+			);
+			expect(out).toEqual({
+				id: "call_recovered_skill_weather",
+				name: "skill_weather",
+				args: { city: "Seoul" },
+			});
+		});
+
+		it("Shape B — single tool-named key (the reproduced screen case)", () => {
+			const out = sniffTextToolCall(
+				'{"skill_youtube_bgm":{"action":"search","query":"music"}}',
+				[YOUTUBE, WEATHER],
+			);
+			expect(out).toEqual({
+				id: "call_recovered_skill_youtube_bgm",
+				name: "skill_youtube_bgm",
+				args: { action: "search", query: "music" },
+			});
+		});
+
+		it("Shape C — bare args promoted to the unique matching tool", () => {
+			const out = sniffTextToolCall(
+				'{\n  "action": "search",\n  "query": "lofi hip hop beats"\n}',
+				[YOUTUBE, WEATHER],
+			);
+			expect(out).toEqual({
+				id: "call_recovered_skill_youtube_bgm",
+				name: "skill_youtube_bgm",
+				args: { action: "search", query: "lofi hip hop beats" },
+			});
+		});
+
+		it("strips a ```json fenced block", () => {
+			const out = sniffTextToolCall(
+				'```json\n{"skill_weather":{"city":"Busan"}}\n```',
+				[YOUTUBE, WEATHER],
+			);
+			expect(out?.name).toBe("skill_weather");
+		});
+
+		it("returns null when bare args match more than one tool (ambiguous)", () => {
+			const A: ToolDefinition = {
+				name: "tool_a",
+				description: "",
+				parameters: { type: "object", properties: { q: { type: "string" } } },
+			};
+			const B: ToolDefinition = {
+				name: "tool_b",
+				description: "",
+				parameters: { type: "object", properties: { q: { type: "string" } } },
+			};
+			expect(sniffTextToolCall('{"q":"x"}', [A, B])).toBeNull();
+		});
+
+		it("returns null for an unknown tool name", () => {
+			expect(
+				sniffTextToolCall('{"name":"nonexistent","arguments":{}}', [YOUTUBE]),
+			).toBeNull();
+		});
+
+		it("returns null for plain prose / non-JSON", () => {
+			expect(sniffTextToolCall("안녕하세요! 무엇을 도와드릴까요?", [YOUTUBE])).toBeNull();
+		});
+
+		it("returns null when no tools are provided", () => {
+			expect(sniffTextToolCall('{"action":"search"}', [])).toBeNull();
+		});
+
+		it("returns null for bare args with an unknown key", () => {
+			// `foo` is not a property of any tool → no unique match
+			expect(sniffTextToolCall('{"foo":"bar"}', [YOUTUBE, WEATHER])).toBeNull();
 		});
 	});
 });

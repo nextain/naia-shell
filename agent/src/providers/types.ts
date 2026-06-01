@@ -16,6 +16,14 @@ export interface ProviderConfig {
 	vllmHost?: string;
 	/** Override URL for lab-proxy (Naia gateway). Passed directly from chat request. */
 	labGatewayUrl?: string;
+	/** Enable thinking/reasoning mode for models that support it (ollama qwen3.5, gemma4, etc.). */
+	enableThinking?: boolean;
+	/**
+	 * Context window (num_ctx) for the Ollama native /api/chat path. Ollama
+	 * defaults to 4096 regardless of the model's real capacity, which silently
+	 * truncates multi-turn history. Only applied by the native Ollama provider.
+	 */
+	ollamaNumCtx?: number;
 }
 
 /** Tool call info returned by LLM function calling */

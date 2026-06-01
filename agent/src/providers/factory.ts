@@ -8,6 +8,7 @@ import { createAnthropicProvider } from "./anthropic.js";
 import { createClaudeCodeCliProvider } from "./claude-code-cli.js";
 import { createGeminiProvider } from "./gemini.js";
 import { createLabProxyProvider } from "./lab-proxy.js";
+import { createOllamaProvider } from "./ollama.js";
 import { createOpenAIProvider } from "./openai.js";
 import { getLlmProviderDef, registerLlmProvider } from "./registry.js";
 import type { LLMProvider, ProviderConfig } from "./types.js";
@@ -155,19 +156,26 @@ registerLlmProvider({
 	},
 });
 
-registerLlmProvider({
-	id: "ollama",
-	name: "Ollama",
-	create: (_apiKey, model, opts) => {
-		if (useNextainAdapterFor("ollama")) {
-			return createNextainOpenAIProvider("", model, {
-				family: "ollama",
-				baseUrlOverride: opts?.ollamaHost ?? "",
-			});
-		}
-		return createOpenAIProvider("ollama", model, opts?.ollamaHost);
-	},
-});
+	registerLlmProvider({
+		id: "ollama",
+		name: "Ollama",
+		create: (_apiKey, model, opts) => {
+			if (useNextainAdapterFor("ollama")) {
+				return createNextainOpenAIProvider("", model, {
+					family: "ollama",
+					baseUrlOverride: opts?.ollamaHost ?? "",
+				});
+			}
+			// Native /api/chat path: the OpenAI-compat endpoint ignores num_ctx,
+			// so it always loads at Ollama's 4096 default and truncates history.
+			return createOllamaProvider(
+				model,
+				opts?.ollamaHost,
+				opts?.enableThinking,
+				opts?.ollamaNumCtx,
+			);
+		},
+	});
 
 registerLlmProvider({
 	id: "vllm",
@@ -183,7 +191,7 @@ registerLlmProvider({
 				baseUrlOverride: opts?.vllmHost ?? "",
 			});
 		}
-		return createOpenAIProvider("vllm", model, opts?.vllmHost);
+		return createOpenAIProvider("vllm", model, opts?.vllmHost, opts?.enableThinking);
 	},
 });
 
@@ -354,6 +362,8 @@ function createNativeProvider(config: ProviderConfig): LLMProvider {
 	return def.create(apiKey, config.model, {
 		ollamaHost: config.ollamaHost,
 		vllmHost: config.vllmHost,
+		enableThinking: config.enableThinking,
+		ollamaNumCtx: config.ollamaNumCtx,
 	});
 }
 
