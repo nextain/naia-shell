@@ -177,6 +177,10 @@ formats:
     build_env_vars:
       LIBCLANG_PATH: "C:/Program Files/LLVM/bin"
     dev_note: "cargo tauri dev (without --config windows) for dev mode — windows config requires bundled node.exe"
+    local_build_gotchas:
+      node_modules_prune: "Local `tauri build --config windows` FAILS in NSIS bundling on >260-char paths (e.g. @langchain .cjs.map) unless agent/node_modules is pruned first — run the same prune as release-app.yml 'Prune agent node_modules' step (deletes *.d.ts, *.map under .pnpm, and files whose bundled path >240 chars). Restore dev with `pnpm install` afterwards."
+      updater_signing: "Local build errors at the end with 'no private key' (createUpdaterArtifacts=true). The NSIS/MSI bundles are already produced before this — only the updater .sig is skipped. CI sets TAURI_SIGNING_PRIVATE_KEY; local verification builds are unsigned."
+      verified_2026_06: "Local build OK: NSIS setup.exe ~422MB + MSI ~518MB, WebView2 offlineInstaller embedded (linkid=2124701 downloaded)."
     whisper_rs: "upstream codeberg (tazz4843/whisper-rs) — NOT nextain fork. Fork decision reversed."
     pending_issues:
       - "Config sync: should_skip_gateway_sync prevents runtime provider/model sync to WSL"
@@ -197,12 +201,35 @@ formats:
         3: "Installer URL = GitHub Release asset https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64-setup.exe"
         4: "Submit for certification (Win32 apps reviewed for malware/behavior; full-trust allowed)"
       note: "Store links to the installer; it does not host MSIX. Auto-update keeps using the Tauri updater (latest.json)."
+      listing_assets:
+        note: "App icons in shell/src-tauri/icons/ (Square*/StoreLogo) are the APP's own tiles (MSIX VisualAssets) — NOT the Store listing images. Listing images are separate and must be uploaded in Partner Center > Store listings. Per-language upload if multilingual."
+        required:
+          screenshots: "PNG, Desktop 1366x768+ (4K 3840x2160 ok), <=50MB, up to 10. Min 1, recommend 4+. Real app screens (avatar+chat, settings, skills, workspace)."
+        recommended:
+          app_tile_icon_1x1: "300x300 PNG — app's main logo in Store. Win32 has no package icon to fall back on, so effectively required."
+        optional:
+          super_hero_16x9: "1920x1080 or 3840x2160 PNG, NO text — featuring/promo only"
+          trailer: "mp4/mov 1920x1080, <=2GB, thumbnail 1920x1080 png"
+        not_applicable: "2:3 poster / 1:1 box art (games only), Xbox/Holographic images"
+        status: "NOT YET CREATED — need real app captures + 300x300 brand logo"
     steam:
       method: "Portable app tree in SteamPipe depot (NOT the installer — Steam ships a ready-to-run tree)"
       ci: "build-windows silent-installs setup.exe then zips the install dir → Naia-Shell-x86_64-portable.zip artifact; Steam job unzips it into the depot ContentRoot"
       launch_executable: "naia-shell.exe (set in Steamworks → Installation → Launch Options, manual)"
       secrets: ["STEAM_USERNAME", "STEAM_PASSWORD", "STEAM_APP_ID", "STEAM_DEPOT_ID", "STEAM_CONFIG_VDF"]
       note: "Falls back to setup.exe in depot if portable.zip is missing (with a CI warning)."
+      store_assets:
+        note: "Steamworks store graphical assets — uploaded in Steamworks store page, NOT in the repo. Much heavier than MS Store."
+        required:
+          header_capsule: "920x430"
+          small_capsule: "462x174 (logo must nearly fill it)"
+          main_capsule: "1232x706"
+          vertical_capsule: "748x896"
+          screenshots: "1920x1080 16:9, MIN 5, real screens only"
+        library_assets: "library capsule 600x900, library hero 3840x1240, library logo (separate Steamworks page)"
+        optional:
+          page_background: "1438x810 (defaults to last screenshot if omitted)"
+        status: "NOT YET CREATED — capsule set needs design work (logo + key visual)"
     required_ci_secrets:
       code_signing: ["WINDOWS_CERT_PFX_BASE64 (base64 of .pfx)", "WINDOWS_CERT_PASSWORD"]
       steam: ["STEAM_USERNAME", "STEAM_PASSWORD", "STEAM_APP_ID", "STEAM_DEPOT_ID", "STEAM_CONFIG_VDF (base64 of config.vdf for 2FA-less login)"]
