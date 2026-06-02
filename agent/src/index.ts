@@ -382,7 +382,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 	const {
 		requestId,
 		sessionId,
-		provider: providerConfig,
+		provider: providerConfigBase,
 		messages: rawMessages,
 		systemPrompt,
 		ttsVoice,
@@ -390,6 +390,7 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 		ttsEngine = "auto",
 		ttsProvider,
 		enableTools,
+		enableThinking,
 		gatewayUrl,
 		gatewayToken,
 		disabledSkills,
@@ -401,6 +402,10 @@ export async function handleChatRequest(req: ChatRequest): Promise<void> {
 		discordDefaultTarget,
 		discordDmChannelId,
 	} = req;
+	const providerConfig = {
+		...providerConfigBase,
+		enableThinking,
+	};
 	applyNotifyWebhookEnv({
 		slackWebhookUrl,
 		discordWebhookUrl,

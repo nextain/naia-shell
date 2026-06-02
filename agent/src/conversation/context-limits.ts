@@ -57,6 +57,14 @@ export const MODEL_CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map([
 	["glm-4.5", 128_000],
 	["glm-4.5-air", 128_000],
 
+	// Local (ollama)
+	["qwen3.5:4b", 262_144],
+	["qwen3:4b", 131_072],
+	["qwen3:8b", 131_072],
+	["gemma4:e2b", 131_072],
+	["gemma4-e4b-q8_0", 131_072],
+	["gemma4-e4b-q4_k_m", 131_072],
+
 	// Local (vllm)
 	["qwen3-8b", 32_768],
 	["minicpm-o-2_6", 8_192],

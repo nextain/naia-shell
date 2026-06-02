@@ -161,6 +161,7 @@ async function processMessage(
 				requestId,
 				systemPrompt,
 				enableTools: config.enableTools,
+				enableThinking: config.enableThinking,
 				gatewayUrl: resolveConfiguredGatewayUrl(config),
 				disabledSkills: config.disabledSkills,
 			}).catch(reject);

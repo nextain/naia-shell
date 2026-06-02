@@ -556,6 +556,8 @@ export function AvatarCanvas() {
 						error: String(animationErr),
 						animationPath,
 					});
+					stage = "ready";
+					setLoadStage(stage);
 				}
 			} catch (err) {
 				setLoadError(
@@ -641,7 +643,13 @@ export function AvatarCanvas() {
 			data-avatar-model-path={modelPath}
 			data-avatar-load-error={loadError}
 			data-avatar-load-stage={loadStage}
-			style={{ width: "100%", height: "100%", position: "relative" }}
+			style={{
+				width: "100%",
+				height: "100%",
+				position: "relative",
+				opacity: loadStage === "ready" || loadStage.startsWith("error:") ? 1 : 0,
+				transition: "opacity 0.3s ease",
+			}}
 		>
 			<div
 				ref={debugRef}

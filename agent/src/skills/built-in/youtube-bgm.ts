@@ -180,10 +180,14 @@ export function createYoutubeBgmSkill(): SkillDefinition {
 			}
 
 			if (action === "fav_list") {
+				// This skill runs in the agent process and cannot read the Shell's
+				// favorites store. The real list is injected into the system prompt
+				// as BGM context (favoritesList). Point the model there instead of
+				// returning fabricated data.
 				return {
 					success: true,
 					output:
-						"Favorites list is available in BGM context (favoritesList field). Use it to see what the user has saved.",
+						"Do not call this action to read favorites. The favorites list is in the BGM context 'favoritesList' field ([{id,title}]). Read it directly from context. If favoritesList is absent or empty, the favorites are empty — do not invent titles.",
 				};
 			}
 

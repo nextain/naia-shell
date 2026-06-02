@@ -13,6 +13,8 @@ export interface ChatRequest {
 	ttsEngine?: "auto" | "gateway" | "google";
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
 	enableTools?: boolean;
+	/** Enable thinking/reasoning output from models that support it. */
+	enableThinking?: boolean;
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	disabledSkills?: string[];

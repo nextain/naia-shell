@@ -189,29 +189,40 @@ formats:
       - "Onboarding button border invisible in light theme (rgba(255,255,255,0.08) on white)"
     ci_status: "build-windows job added to release-app.yml (NSIS + MSI + updater sig + conditional signtool + portable zip for Steam)"
     ms_store:
-      method: "Path A — Win32 app linking (Tauri 2 has NO native MSIX support as of 2026)"
-      rationale: "MSIX would sandbox the app; our agent spawns node.exe + ships node_modules resources, which is friction under MSIX. Win32 linking keeps full-trust behavior."
-      prerequisites:
-        - "Microsoft Partner Center account (HAVE)"
-        - "Code signing cert recommended for SmartScreen reputation (not strictly required for Win32 listing)"
-        - "WebView2 offlineInstaller already enabled in tauri.conf.windows.json"
+      method: "MS Store EXE/MSI app (unpackaged Win32). NOT MSIX. Tauri 2 has no native MSIX, and MSIX would sandbox our node.exe child + node_modules resources. The EXE/MSI app type uploads NO package — the Store links a versioned installer URL we host, keeping full-trust behavior."
+      app_name: "Naia (reserved in Partner Center — DONE)"
+      publisher: "Nextain Inc. (differs from product name — OK)"
+      exe_msi_requirements:
+        - "STANDALONE installer (not a downloader stub). Our WebView2 offlineInstaller build satisfies this; the old downloadBootstrapper build does NOT."
+        - "Silent install required — NSIS /S (verified by smoke-test). Provide /S as the silent arg in Partner Center."
+        - "Versioned, publicly-reachable download URL; binary MUST NOT change after submission."
+        - "Standard exit code 0 on success (NSIS default)."
+      installer_size_note: "offlineInstaller (WebView2 bundled) ≈443MB. The 240MB asset on the v0.1.4 release is a DOWNLOADER STUB (downloadBootstrapper) → unusable for Store."
+      updater_isolation:
+        rule: "Updater endpoint = .../releases/latest/download/latest.json → only GitHub's 'Latest' release. GitHub excludes prereleases from 'Latest'. Current 'Latest' = v0.1.3 (v0.1.4 is a prerelease)."
+        strategy: "Host the Store installer on a PRERELEASE GitHub release (e.g. v0.1.5) and do NOT upload latest.json there. Existing Tauri users get no update prompt (Latest stays v0.1.3). Promote to non-prerelease + refresh latest.json ONLY when intentionally pushing the GitHub/updater audience."
+      code_signing:
+        cert: "data-private/key/naia-msix-code-signing.pfx (Authenticode). Sign setup.exe before upload for SmartScreen reputation. Not strictly required (Store validates too), but recommended."
       manual_steps:
-        1: "Partner Center → Apps and Games → create app, reserve name 'Naia'"
-        2: "Product type: MSI/EXE (Win32 app). Publisher must differ from product name (Nextain Inc. vs Naia — OK)"
-        3: "Installer URL = GitHub Release asset https://github.com/nextain/naia-os/releases/latest/download/Naia-Shell-x86_64-setup.exe"
-        4: "Submit for certification (Win32 apps reviewed for malware/behavior; full-trust allowed)"
-      note: "Store links to the installer; it does not host MSIX. Auto-update keeps using the Tauri updater (latest.json)."
+        1: "Partner Center → reserve name 'Naia' (DONE)"
+        2: "Create product as EXE/MSI app type (NOT MSIX). Publisher Nextain Inc."
+        3: "Build offlineInstaller (standalone) for the target version → code-sign with pfx → upload to a PRERELEASE GitHub release as a separate asset (leave existing updater assets/latest.json untouched)."
+        4: "Packages: submit the versioned installer URL (e.g. .../releases/download/v0.1.5/Naia-Shell-x86_64-setup.exe) + silent arg /S."
+        5: "Fill Store listing (copy + assets below), age-rating questionnaire, privacy policy URL, support contact."
+        6: "Submit for certification (full-trust EXE/MSI reviewed for malware/behavior)."
       listing_assets:
-        note: "App icons in shell/src-tauri/icons/ (Square*/StoreLogo) are the APP's own tiles (MSIX VisualAssets) — NOT the Store listing images. Listing images are separate and must be uploaded in Partner Center > Store listings. Per-language upload if multilingual."
+        note: "App icons in shell/src-tauri/icons/ (Square*/StoreLogo) are the APP's own tiles — NOT the Store listing images. Listing images are uploaded separately in Partner Center > Store listings (per-language if multilingual)."
+        copy: ".agents/context/store-listing.md (en/ko: name, short/long description, 10 features, 7 search terms, what's new, category Productivity, © 2026 Nextain Inc.) — DONE"
+        privacy_policy_url: "https://naia.nextain.io/{lang}/privacy (verified live; GDPR/CCPA; states inputs/outputs not used for AI training) — HAVE"
         required:
-          screenshots: "PNG, Desktop 1366x768+ (4K 3840x2160 ok), <=50MB, up to 10. Min 1, recommend 4+. Real app screens (avatar+chat, settings, skills, workspace)."
+          screenshots: "PNG, Desktop 1366x768+ (4K 3840x2160 ok), <=50MB, up to 10. Min 1, recommend 4+. Real app screens (avatar+chat, settings, skills, workspace). — STILL NEEDED (app capture)"
         recommended:
-          app_tile_icon_1x1: "300x300 PNG — app's main logo in Store. Win32 has no package icon to fall back on, so effectively required."
+          app_tile_icon_1x1: "300x300 PNG — HAVE: assets/logos/naia-bubble-icon-300x300.png (32bpp, transparent corners, bubble bg safe on light/dark)"
         optional:
           super_hero_16x9: "1920x1080 or 3840x2160 PNG, NO text — featuring/promo only"
           trailer: "mp4/mov 1920x1080, <=2GB, thumbnail 1920x1080 png"
         not_applicable: "2:3 poster / 1:1 box art (games only), Xbox/Holographic images"
-        status: "NOT YET CREATED — need real app captures + 300x300 brand logo"
+        status: "Copy DONE (en/ko) · 300x300 logo DONE · privacy URL DONE · screenshots STILL NEEDED"
     steam:
       method: "Portable app tree in SteamPipe depot (NOT the installer — Steam ships a ready-to-run tree)"
       ci: "build-windows silent-installs setup.exe then zips the install dir → Naia-Shell-x86_64-portable.zip artifact; Steam job unzips it into the depot ContentRoot"

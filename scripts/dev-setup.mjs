@@ -108,6 +108,18 @@ function buildNaiaAgentSubmodule() {
 		console.log("[dev-setup] naia-agent submodule not present — skip");
 		return;
 	}
+	// SDLC reorg (#77, db201ea) moved the agent code under naia-agent-old/ and
+	// left the submodule root WITHOUT a package.json. `pnpm install` then throws
+	// ERR_PNPM_NO_PKG_MANIFEST and blocks the whole dev-setup. Skip when the root
+	// has no package.json — the embedded naia-os/agent (already built) is the
+	// fallback (spawn_agent_core). Remove this guard once the reorg lands a real
+	// root package.json + packages/*.
+	if (!existsSync(join(submoduleDir, "package.json"))) {
+		console.log(
+			"[dev-setup] naia-agent submodule has no root package.json (reorg in progress) — skip, using embedded naia-os/agent",
+		);
+		return;
+	}
 	console.log("[dev-setup] Installing + building naia-agent submodule...");
 	execSync("pnpm install", {
 		cwd: submoduleDir,

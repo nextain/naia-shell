@@ -92,7 +92,7 @@ import { parseEmotion } from "../lib/vrm/expression";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
-import { usePanelStore } from "../stores/panel";
+import { selectPromptPanelContexts, usePanelStore } from "../stores/panel";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import { AgentsTab } from "./AgentsTab";
@@ -234,9 +234,13 @@ async function buildMemoryContext(): Promise<MemoryContext> {
 		ctx.discordDefaultUserId = cfg?.discordDefaultUserId;
 		ctx.discordDmChannelId = cfg?.discordDmChannelId;
 
-		const panelCtx = usePanelStore.getState().activePanelContext;
-		if (panelCtx) {
-			ctx.panelContext = panelCtx;
+		// Active panel context + persistent contexts (bgm favorites/current track).
+		// Persistent contexts survive panel switches so background music state is
+		// always available — fixes the AI hallucinating favorites when another
+		// panel was active.
+		const panelCtxList = selectPromptPanelContexts(usePanelStore.getState());
+		if (panelCtxList.length > 0) {
+			ctx.panelContexts = panelCtxList;
 		}
 	} catch (err) {
 		Logger.warn("ChatPanel", "Failed to build memory context", {
@@ -638,8 +642,33 @@ export function ChatPanel() {
 		}
 	}, [isStreaming, messageQueue.length]);
 
+	/**
+	 * Stop any in-flight TTS so a new turn does not keep reading the previous
+	 * response. Covers both paths: the AudioQueue (server/edge MP3 chunks) AND
+	 * the browser client-side `speechSynthesis` path, which AudioQueue.clear()
+	 * does not control. Also clears the sentence chunker and pending request
+	 * tracking, and resets the speaking/avatar state.
+	 */
+	function interruptTts(): void {
+		audioQueueRef.current?.clear();
+		sentenceChunkerRef.current?.clear();
+		activeTtsRequestsRef.current.clear();
+		if (typeof window !== "undefined" && "speechSynthesis" in window) {
+			try {
+				window.speechSynthesis.cancel();
+			} catch {
+				// best-effort — some webviews throw if no utterance is active
+			}
+		}
+		ttsPlayingRef.current = false;
+		setTtsPlaying(false);
+		useAvatarStore.getState().setSpeaking(false);
+	}
+
 	async function handleNewConversation() {
 		const store = useChatStore.getState();
+		// Stop any TTS still reading the previous conversation.
+		interruptTts();
 		store.newConversation();
 
 		// Reset Gateway session and set local session ID
@@ -700,8 +729,10 @@ export function ChatPanel() {
 		useChatStore.getState().addMessage({ role: "user", content: text });
 
 		useChatStore.getState().startStreaming();
-		// Reset TTS sequence for new response ordering
-		audioQueueRef.current?.resetSeq();
+		// New turn supersedes any in-flight TTS: stop the previous response's
+		// audio (queue + browser speechSynthesis) instead of letting it finish.
+		// clear() also resets the ordering sequence for the new response.
+		interruptTts();
 
 		const store = useChatStore.getState();
 
@@ -1300,7 +1331,14 @@ export function ChatPanel() {
 					size: mp3Base64.length,
 					costUsd,
 				});
-				audioQueueRef.current?.enqueueOrdered(seq, mp3Base64);
+				// Drop stale audio from a superseded turn. interruptTts() clears
+				// activeTtsRequestsRef on a new turn / new conversation, so a
+				// late-arriving response whose reqId is no longer active must NOT
+				// be enqueued — clear() reset the sequence counter, so an old
+				// seq=0 chunk would otherwise replay as the new turn's first audio.
+				if (activeTtsRequestsRef.current.has(reqId)) {
+					audioQueueRef.current?.enqueueOrdered(seq, mp3Base64);
+				}
 				activeTtsRequestsRef.current.delete(reqId);
 				// Track TTS cost: use server cost for Naia Cloud, estimate for others.
 				// Naia account (nextain): apply 10% service markup on top of base cost.

@@ -126,8 +126,12 @@ export interface MemoryContext {
 	locale?: string;
 	discordDefaultUserId?: string;
 	discordDmChannelId?: string;
-	/** Active panel context — pushed by the current panel via NaiaContextBridge */
-	panelContext?: { type: string; data: Record<string, unknown> };
+	/**
+	 * Panel contexts pushed via NaiaContextBridge — the active (switchable)
+	 * panel plus any persistent contexts (e.g. bgm favorites). One block is
+	 * rendered per entry. Assembled by `selectPromptPanelContexts`.
+	 */
+	panelContexts?: { type: string; data: Record<string, unknown> }[];
 }
 
 /** Build full system prompt from persona text + optional memory context */
@@ -192,10 +196,12 @@ export function buildSystemPrompt(
 			}
 		}
 
-		if (context.panelContext) {
-			contextLines.push(
-				`Active panel: ${context.panelContext.type}\nPanel context: ${JSON.stringify(context.panelContext.data)}`,
-			);
+		if (context.panelContexts?.length) {
+			for (const pc of context.panelContexts) {
+				contextLines.push(
+					`Panel [${pc.type}] context: ${JSON.stringify(pc.data)}`,
+				);
+			}
 		}
 
 		if (contextLines.length > 0) {

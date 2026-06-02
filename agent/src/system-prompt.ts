@@ -131,11 +131,14 @@ export function buildToolStatusPrompt(
 			"\n- REQUIRED 2-step flow: ① action='search', query='...' → ② action='play', videoId='결과의 id', title='제목'" +
 			"\n- search 결과를 받으면 즉시 가장 적합한 항목을 골라 play까지 자동 실행한다. 사용자에게 목록을 보여주거나 확인을 구하지 않는다. 장르/분위기 키워드만 있어도 바로 검색 후 재생한다." +
 			"\n- 장르/분위기 요청(로파이, 재즈, 클래식, 디즈니 OST 등)은 영어+장르 키워드로 검색: 'disney ost piano 1 hour', 'lofi hip hop beats' 등." +
-			"\n- 사용 가능한 전체 액션: search, play, stop, pause, resume, next, prev, volume, trending, fav_add, fav_remove" +
+			"\n- 사용 가능한 전체 액션: search, play, stop, pause, resume, next, prev, volume, trending, fav_add, fav_remove, fav_list" +
 			"\n- 일시정지: action='pause' | 재개: action='resume' | 다음곡(즐겨찾기에서): action='next' | 이전곡: action='prev'" +
 			"\n- 볼륨 조절: action='volume', volume=0.0~1.0 (예: 50%는 0.5)" +
 			"\n- 완전 정지+초기화: action='stop'" +
 			"\n- 현재 재생 중인 곡 정보: 별도 도구 호출 불필요. 시스템 컨텍스트의 BGM context에서 직접 읽음 (currentTitle, currentVideoId, playing, volume 필드). action='status' 같은 것은 존재하지 않음." +
+			"\n- 즐겨찾기 목록: BGM context의 favoritesList(= [{id, title}] 배열)와 favoritesCount 필드에서 직접 읽는다. fav_list 액션은 실제 목록을 반환하지 않으므로 즐겨찾기 내용을 답할 때는 반드시 BGM context의 favoritesList를 근거로 한다." +
+			"\n- favoritesList는 처음 일부(최대 10개)만 표시될 수 있고 favoritesCount가 실제 총 개수다. favoritesCount > favoritesList 길이면 '처음 N개만 보인다'고 안내하고, 보이지 않는 곡 제목은 절대 지어내지 않는다." +
+			"\n- ⚠️ BGM context가 없거나 favoritesList가 비어 있으면 즐겨찾기가 비어 있거나 음악 플레이어가 비활성인 상태다. 이 경우 곡 제목을 절대 지어내지 말고 '즐겨찾기가 비어 있다' 또는 '확인할 수 없다'고 정직하게 답한다." +
 			"\n- '틀어줘 / 재생해줘 / 켜줘' 요청 시 search → play 즉시 실행. '찾아볼게요'만 말하고 play 안 하는 것은 FORBIDDEN.";
 	}
 

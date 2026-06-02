@@ -12,10 +12,17 @@ import {
 import { loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
+import { getBridgeForPanel } from "../lib/active-bridge";
 import { removeInstalledPanel } from "../lib/panel-loader";
 import { panelRegistry } from "../lib/panel-registry";
 import { usePanelStore } from "../stores/panel";
 import { BgmPlayer } from "./BgmPlayer";
+
+// BGM player lives in the always-on mode-bar (not a switchable panel), so it
+// needs its own persistent bridge to push BGM context (favorites, current
+// track) into Naia's system prompt. Without a bridge the push is dead code
+// (`if (!naia) return` in BgmPlayer) and the AI never sees favoritesList.
+const bgmBridge = getBridgeForPanel("bgm");
 
 interface ModeBarProps {
 	onAddMode?: () => void;
@@ -557,7 +564,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 				</div>
 			, document.body)}
 			{/* ── BGM (right side of mode-bar) ─── */}
-			<BgmPlayer />
+			<BgmPlayer naia={bgmBridge} />
 			<button
 				type="button"
 				className={`mode-bar-settings${activePanel === "settings" ? " mode-bar-settings--active" : ""}`}
