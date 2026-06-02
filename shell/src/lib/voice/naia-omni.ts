@@ -28,10 +28,7 @@
  */
 import { Logger } from "../logger";
 import { emotionTagsToChatText } from "./emotion-tags";
-import {
-	ColdStartTimeoutError,
-	SoldOutError,
-} from "./ondemand-retry";
+import { ColdStartTimeoutError, SoldOutError } from "./ondemand-retry";
 import { RefAudioEncodeError, encodeRefAudio } from "./ref-audio";
 import type { LiveProviderConfig, NaiaOmniConfig, VoiceSession } from "./types";
 
@@ -91,7 +88,7 @@ export function createNaiaOmniSession(): VoiceSession {
 					);
 				}
 				const modelParam = encodeURIComponent(cfg.model ?? DEFAULT_MODEL);
-			wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}?model=${modelParam}`;
+				wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}?model=${modelParam}`;
 			} else {
 				const normalizedBase = normalizeServerUrl(
 					cfg.serverUrl ?? DEFAULT_SERVER_URL,
@@ -102,6 +99,14 @@ export function createNaiaOmniSession(): VoiceSession {
 					);
 				}
 				wsUrl = `${normalizedBase}/v1/realtime`;
+				// Naia Local host policy: plaintext ws:// only for loopback; a
+				// remote container MUST use wss:// (the subscriber key flows over
+				// it). Hard reject, not warn. (cross-review BLOCKING)
+				if (cfg.localContainer && !isLoopbackOrTlsWs(wsUrl)) {
+					throw new Error(
+						`Naia Local requires wss:// for a remote address (got ${cfg.serverUrl}). Use ws://localhost or a wss:// URL.`,
+					);
+				}
 			}
 
 			let encodedRefAudio: string | null = null;
@@ -130,142 +135,187 @@ export function createNaiaOmniSession(): VoiceSession {
 			let retryDelay = INITIAL_RETRY_MS;
 
 			const attemptConnect = (): Promise<void> => {
-			ws = new WebSocket(wsUrl);
+				ws = new WebSocket(wsUrl);
 
-			return new Promise<void>((resolve, reject) => {
-				if (!ws) return reject(new Error("WebSocket not created"));
+				return new Promise<void>((resolve, reject) => {
+					if (!ws) return reject(new Error("WebSocket not created"));
 
-				const timeout = setTimeout(() => {
-					reject(new Error("Connection timeout"));
-					ws?.close();
-				}, 15000);
+					const timeout = setTimeout(() => {
+						reject(new Error("Connection timeout"));
+						ws?.close();
+					}, 15000);
 
-				let connectErrored = false;
+					let connectErrored = false;
 
-				ws.onmessage = (event: MessageEvent) => {
-					if (typeof event.data !== "string") return;
-					let msg: Record<string, unknown>;
-					try {
-						msg = JSON.parse(event.data) as Record<string, unknown>;
-					} catch {
-						return;
-					}
-
-					if (!connected && useGateway && msg.error) {
-						clearTimeout(timeout);
-						connectErrored = true;
-						const errMsg = extractServerErrorMessage(msg);
-						reject(new Error(errMsg));
-						return;
-					}
-
-					if (!connected && msg.type === "session.created") {
-						clearTimeout(timeout);
-						const sessionPayload: Record<string, unknown> = {
-							modalities: ["text", "audio"],
-							input_audio_format: "pcm16",
-							output_audio_format: "pcm16",
-							instructions: cfg?.systemInstruction ?? "",
-							turn_detection: { type: "server_vad" },
-							// Forward skills as OpenAI-style function tools so the cascade
-							// registers them (tools_registry) and the LLM can actually emit
-							// tool calls. Without this the server's registry stays empty and
-							// no tool call is ever generated. Server expects flat
-							// {type:"function", name, description, parameters}.
-							...(cfg?.tools && cfg.tools.length > 0
-								? {
-										tools: cfg.tools.map((t) => ({
-											type: "function",
-											name: t.name,
-											description: t.description,
-											parameters: t.parameters ?? {
-												type: "object",
-												properties: {},
-											},
-										})),
-									}
-								: {}),
-							// #15: prefer a URL (preset sample_url / upload URL) over a
-							// heavy base64 blob — backend downloads it once. Server
-							// priority: ref_audio_url > ref_audio > x-naia-voice-ref.
-							...(cfg?.refAudioUrl
-								? { ref_audio_url: cfg.refAudioUrl }
-								: {}),
-						};
-						if (encodedRefAudio !== null) {
-							sessionPayload.ref_audio = encodedRefAudio;
-							if (cfg?.refAudioLanguage) {
-								sessionPayload.ref_audio_language = cfg.refAudioLanguage;
-							}
+					ws.onmessage = (event: MessageEvent) => {
+						if (typeof event.data !== "string") return;
+						let msg: Record<string, unknown>;
+						try {
+							msg = JSON.parse(event.data) as Record<string, unknown>;
+						} catch {
+							return;
 						}
-						ws?.send(
-							JSON.stringify({
-								type: "session.update",
-								model: cfg?.model ?? DEFAULT_MODEL,
-								session: sessionPayload,
-							}),
-						);
-						connected = true;
-						Logger.info("naia-omni", "connected to /v1/realtime", {
-							mode: useGateway ? "gateway" : "direct",
-							refAudio: encodedRefAudio !== null,
-						});
-						resolve();
-						return;
-					}
 
-					if (!connected && msg.type === "error") {
+						if (!connected && useGateway && msg.error) {
+							clearTimeout(timeout);
+							connectErrored = true;
+							const errMsg = extractServerErrorMessage(msg);
+							reject(new Error(errMsg));
+							return;
+						}
+
+						if (!connected && msg.type === "session.created") {
+							clearTimeout(timeout);
+							const sessionPayload: Record<string, unknown> = {
+								modalities: ["text", "audio"],
+								input_audio_format: "pcm16",
+								output_audio_format: "pcm16",
+								instructions: cfg?.systemInstruction ?? "",
+								turn_detection: { type: "server_vad" },
+								// Forward skills as OpenAI-style function tools so the cascade
+								// registers them (tools_registry) and the LLM can actually emit
+								// tool calls. Without this the server's registry stays empty and
+								// no tool call is ever generated. Server expects flat
+								// {type:"function", name, description, parameters}.
+								...(cfg?.tools && cfg.tools.length > 0
+									? {
+											tools: cfg.tools.map((t) => ({
+												type: "function",
+												name: t.name,
+												description: t.description,
+												parameters: t.parameters ?? {
+													type: "object",
+													properties: {},
+												},
+											})),
+										}
+									: {}),
+								// #15: prefer a URL (preset sample_url / upload URL) over a
+								// heavy base64 blob — backend downloads it once. Server
+								// priority: ref_audio_url > ref_audio > x-naia-voice-ref.
+								...(cfg?.refAudioUrl ? { ref_audio_url: cfg.refAudioUrl } : {}),
+							};
+							if (encodedRefAudio !== null) {
+								sessionPayload.ref_audio = encodedRefAudio;
+								if (cfg?.refAudioLanguage) {
+									sessionPayload.ref_audio_language = cfg.refAudioLanguage;
+								}
+							}
+							ws?.send(
+								JSON.stringify({
+									type: "session.update",
+									model: cfg?.model ?? DEFAULT_MODEL,
+									session: sessionPayload,
+								}),
+							);
+							connected = true;
+							Logger.info("naia-omni", "connected to /v1/realtime", {
+								mode: useGateway ? "gateway" : "direct",
+								refAudio: encodedRefAudio !== null,
+							});
+							resolve();
+							return;
+						}
+
+						if (!connected && msg.type === "session.error") {
+							// Naia Local container entitlement gate (or other pre-session
+							// server error). entitlement_denied = not a paid subscriber →
+							// surface a distinct reason the UI maps to a "subscription
+							// required" toast (no retry). Pairs with the 4003 close-code
+							// mapping above (cross-review: catch both).
+							clearTimeout(timeout);
+							connectErrored = true;
+							const errObj = (msg.error ?? {}) as Record<string, unknown>;
+							reject(
+								new Error(
+									String(errObj.code ?? "") === "entitlement_denied"
+										? "subscription-required"
+										: extractServerErrorMessage(msg),
+								),
+							);
+							return;
+						}
+
+						if (!connected && msg.type === "error") {
+							clearTimeout(timeout);
+							connectErrored = true;
+							const errMsg = extractServerErrorMessage(msg);
+							reject(new Error(errMsg));
+							return;
+						}
+
+						handleMessage(msg);
+					};
+
+					ws.onerror = () => {
 						clearTimeout(timeout);
 						connectErrored = true;
-						const errMsg = extractServerErrorMessage(msg);
-						reject(new Error(errMsg));
-						return;
-					}
+						const err = new Error("WebSocket error");
+						if (connected) {
+							session.onError?.(err);
+						} else {
+							reject(err);
+						}
+					};
 
-					handleMessage(msg);
-				};
+					ws.onopen = () => {
+						if (useGateway) {
+							ws?.send(
+								JSON.stringify({
+									setup: {
+										apiKey: cfg?.naiaKey,
+										backend: "runpod",
+										locale: cfg?.locale ?? "en",
+										instanceId: cfg?.instanceId,
+									},
+								}),
+							);
+						} else if (cfg?.localContainer && cfg?.naiaKey) {
+							// Naia Local (entitlement mode): the subscriber connects directly
+							// to a container they run on their own GPU (serverUrl=ws://…:8892).
+							// Send the subscription key so the container validates it against
+							// the gateway before serving. backend "user" = the user's own GPU.
+							// GATED on `localContainer` (not just naiaKey) so the key never
+							// leaks to an arbitrary direct server, e.g. a 3rd-party vLLM in
+							// direct naia-omni mode (cross-review BLOCKING).
+							ws?.send(
+								JSON.stringify({
+									setup: {
+										apiKey: cfg?.naiaKey,
+										backend: "user",
+										locale: cfg?.locale ?? "en",
+										instanceId: cfg?.instanceId,
+									},
+								}),
+							);
+						}
+					};
 
-				ws.onerror = () => {
-					clearTimeout(timeout);
-					connectErrored = true;
-					const err = new Error("WebSocket error");
-					if (connected) {
-						session.onError?.(err);
-					} else {
-						reject(err);
-					}
-				};
-
-				ws.onopen = () => {
-					if (useGateway) {
-						ws?.send(
-							JSON.stringify({
-								setup: {
-									apiKey: cfg?.naiaKey,
-									backend: "runpod",
-									locale: cfg?.locale ?? "en",
-									instanceId: cfg?.instanceId,
-								},
-							}),
-						);
-					}
-				};
-
-				ws.onclose = (event) => {
-					clearTimeout(timeout);
-					const wasConnected = connected;
-					connected = false;
-					Logger.info("naia-omni", "disconnected from /v1/realtime", {
-						code: event.code,
-						reason: event.reason,
-						wasClean: event.wasClean,
-					});
-					if (!wasConnected && !connectErrored) {
-						reject(new Error("Connection closed before session ready"));
-					}
-					session.onDisconnect?.();
-				};
-			});
+					ws.onclose = (event) => {
+						clearTimeout(timeout);
+						const wasConnected = connected;
+						connected = false;
+						Logger.info("naia-omni", "disconnected from /v1/realtime", {
+							code: event.code,
+							reason: event.reason,
+							wasClean: event.wasClean,
+						});
+						if (!wasConnected && !connectErrored) {
+							// Map known close codes so the UI shows the right message and the
+							// caller does NOT retry. Container entitlement gate closes 4003
+							// (not a paid subscriber); 4001 = auth. (cross-review: catch the
+							// denial on close AND via session.error — either may arrive first.)
+							const reason =
+								event.code === 4003
+									? "subscription-required"
+									: event.code === 4001
+										? "auth-failed"
+										: "Connection closed before session ready";
+							reject(new Error(reason));
+						}
+						session.onDisconnect?.();
+					};
+				});
 			}; // end attemptConnect
 
 			// Retry loop for on-demand pods (CONTRACT §3.2)
@@ -494,6 +544,26 @@ export function createNaiaOmniSession(): VoiceSession {
  * free-text, so a `http://user:pass@host:8000` paste must not survive into
  * either the WebSocket URL or the structured log line.
  */
+/**
+ * Naia Local host policy: plaintext ws:// is allowed ONLY for loopback
+ * (localhost / 127.0.0.1 / [::1]); any remote host MUST use wss:// because the
+ * subscriber key flows over the socket. Bypass-ish forms (0.0.0.0, *.local,
+ * nip.io, …) are NOT loopback → require wss. wss:// is accepted for any host.
+ * (cross-review BLOCKING)
+ */
+function isLoopbackOrTlsWs(wsUrl: string): boolean {
+	let u: URL;
+	try {
+		u = new URL(wsUrl);
+	} catch {
+		return false;
+	}
+	if (u.protocol === "wss:") return true; // TLS — any host ok
+	if (u.protocol !== "ws:") return false;
+	const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+	return h === "localhost" || h === "127.0.0.1" || h === "::1";
+}
+
 function normalizeServerUrl(raw: string): string | null {
 	let parsed: URL;
 	try {
