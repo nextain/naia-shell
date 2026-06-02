@@ -79,6 +79,8 @@ import {
 	LIVE_PROVIDER_COST_HINTS,
 	type PanelContextBridge,
 	SPEECH_RMS_THRESHOLD,
+	type VoiceCloseReason,
+	type VoiceConnectionStatus,
 	type VoiceSession,
 	attachPanelContextBridge,
 	createVoiceSession,
@@ -306,15 +308,88 @@ function sendApprovalResponse(
 	});
 }
 
+/**
+ * Pick a scenario-specific failure message from the last voice connection
+ * status the session emitted (sold-out / out-of-credits / auth / timeout),
+ * falling back to a raw error dump. Taking `st` as a typed parameter keeps the
+ * full status union in scope (a ref read at the call site gets control-flow
+ * narrowed to the literals assigned earlier in the same function).
+ */
+function voiceFailureMessage(
+	st: VoiceConnectionStatus | null,
+	err: unknown,
+): string {
+	if (st?.phase === "sold-out") return t("chat.voiceSoldOut");
+	if (st?.phase === "error" && st.reason === "credits")
+		return t("chat.voiceErrorCredits");
+	if (st?.phase === "error" && st.reason === "auth")
+		return t("chat.voiceErrorAuth");
+	if (st?.phase === "error" && st.reason === "superseded")
+		return t("chat.voiceErrorSuperseded");
+	if (st?.phase === "error" && st.reason === "consent")
+		return t("chat.voiceErrorConsent");
+	if (st?.phase === "error" && st.reason === "timeout")
+		return t("chat.voiceErrorTimeout");
+	return `${t("chat.voiceError")}: ${err}`;
+}
+
+/**
+ * Message for a mid-call disconnect, keyed off the close reason. Returns null
+ * for normal/unknown closes (user stop, clean exit) so they stay silent. Used by
+ * the onDisconnect handler — superseded/credits/auth deserve an explanation, a
+ * user-initiated stop does not.
+ */
+function voiceCloseMessage(reason: VoiceCloseReason): string | null {
+	switch (reason) {
+		case "superseded":
+			return t("chat.voiceErrorSuperseded");
+		case "consent":
+			return t("chat.voiceErrorConsent");
+		case "credits":
+			return t("chat.voiceErrorCredits");
+		case "auth":
+			return t("chat.voiceErrorAuth");
+		default:
+			return null; // normal / unknown → silent
+	}
+}
+
+/**
+ * Derive the voice button mode from the connection status — the single source of
+ * truth. No parallel voiceMode state. Mirrors naia.nextain.io deriving its badge
+ * straight from ConnectionState.
+ */
+function phaseToMode(
+	s: VoiceConnectionStatus | null,
+): "off" | "connecting" | "active" {
+	switch (s?.phase) {
+		case "connecting":
+		case "cold-start":
+			return "connecting";
+		case "active":
+			return "active";
+		default:
+			return "off"; // idle / sold-out / error / closed / null
+	}
+}
+
 export function ChatPanel() {
 	const [input, setInput] = useState("");
 	const [activeTab, setActiveTab] = useState<TabId>("chat");
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
-	const [voiceMode, setVoiceMode] = useState<"off" | "connecting" | "active">(
-		"off",
-	);
+	// Single source of truth for voice UI state (naia-omni RunPod on-demand +
+	// every other provider). Drives the status banner (cold-start / sold-out /
+	// credit failures) and the voice button — `voiceMode` is derived, not stored,
+	// so the two can never disagree. `lastVoiceStatusRef` mirrors it for the
+	// connect() catch (state is stale inside that closure).
+	const [voiceStatus, setVoiceStatus] = useState<VoiceConnectionStatus>({
+		phase: "idle",
+	});
+	const voiceMode = phaseToMode(voiceStatus);
+	const lastVoiceStatusRef = useRef<VoiceConnectionStatus>({ phase: "idle" });
+	const voiceCancelledRef = useRef(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
@@ -775,6 +850,7 @@ export function ChatPanel() {
 					? `You are in a voice conversation. Keep responses brief and conversational (2-3 sentences max). Speak naturally as if talking to a friend.${config.enableTools ? "\nWhen the user asks you to perform an action that requires a tool, call the tool immediately in the same response. Include a short acknowledgement sentence before your tool call so the user hears feedback while the tool executes. After the tool completes, summarize the result in 1-2 sentences." : ""}\n\n${buildSystemPrompt(config.persona, memoryCtx)}`
 					: buildSystemPrompt(config.persona, memoryCtx),
 				enableTools: config.enableTools,
+				enableThinking: config.enableThinking,
 				gatewayUrl,
 				disabledSkills: config.enableTools
 					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
@@ -1309,16 +1385,19 @@ export function ChatPanel() {
 				micStreamRef.current = null;
 				audioPlayerRef.current = null;
 			}
-			setVoiceMode("off");
+			setVoiceStatus({ phase: "idle" });
+			lastVoiceStatusRef.current = { phase: "idle" };
 			return;
 		}
 
-		setVoiceMode("connecting");
+		voiceCancelledRef.current = false;
+		lastVoiceStatusRef.current = { phase: "connecting" };
+		setVoiceStatus({ phase: "connecting" });
 
 		try {
 			const config = await loadConfigWithSecrets();
 			if (!config) {
-				setVoiceMode("off");
+				setVoiceStatus({ phase: "idle" });
 				return;
 			}
 			const naiaKey = config?.naiaKey;
@@ -1341,7 +1420,7 @@ export function ChatPanel() {
 					!isAsrModel &&
 					(!config.sttProvider || (needsModel && !config.sttModel))
 				) {
-					setVoiceMode("off");
+					setVoiceStatus({ phase: "idle" });
 					if (
 						globalThis.confirm(
 							`${t("voice.setupRequired")}\n\n${t("voice.goToSettings")}?`,
@@ -1476,7 +1555,7 @@ export function ChatPanel() {
 							});
 							setSttState("idle");
 							pipelineActiveRef.current = false;
-							setVoiceMode("off");
+							setVoiceStatus({ phase: "idle" });
 							if (
 								globalThis.confirm(
 									"STT API key is required.\n\nGo to Settings?",
@@ -1626,7 +1705,7 @@ export function ChatPanel() {
 					pipelineActiveRef.current = false;
 					audioQueueRef.current = null;
 					sentenceChunkerRef.current = null;
-					setVoiceMode("off");
+					setVoiceStatus({ phase: "idle" });
 					return;
 				}
 
@@ -1636,7 +1715,12 @@ export function ChatPanel() {
 					ttsProvider: config.ttsProvider || "edge",
 				});
 
-				setVoiceMode("active");
+				// Pipeline voice (Vosk/Whisper STT → LLM → TTS) is live. Set the
+				// canonical status so the derived button shows active — without this
+				// the derived voiceMode would stay stuck "connecting" for pipeline
+				// sessions (they never emit onStatusChange "active").
+				setVoiceStatus({ phase: "active" });
+				lastVoiceStatusRef.current = { phase: "active" };
 				// Voice mode notification — not sent to agent, not read by TTS
 				Logger.info("ChatPanel", "Voice mode started notification displayed");
 				return;
@@ -1676,7 +1760,7 @@ export function ChatPanel() {
 					role: "assistant",
 					content: t("chat.voiceNeedLabKey"),
 				});
-				setVoiceMode("off");
+				setVoiceStatus({ phase: "idle" });
 				return;
 			}
 			if (liveProvider === "gemini-live" && !naiaKey && !config.googleApiKey) {
@@ -1685,7 +1769,7 @@ export function ChatPanel() {
 					role: "assistant",
 					content: "Gemini Live를 사용하려면 Google API Key를 입력하세요.",
 				});
-				setVoiceMode("off");
+				setVoiceStatus({ phase: "idle" });
 				return;
 			}
 			if (liveProvider === "openai-realtime") {
@@ -1696,7 +1780,7 @@ export function ChatPanel() {
 						role: "assistant",
 						content: "OpenAI Realtime을 사용하려면 API Key를 입력하세요.",
 					});
-					setVoiceMode("off");
+					setVoiceStatus({ phase: "idle" });
 					return;
 				}
 			}
@@ -1761,6 +1845,13 @@ export function ChatPanel() {
 				useProxy: useDirectMode,
 			});
 			voiceSessionRef.current = session;
+
+			// Cold-start-aware status → banner. naia-omni emits connecting /
+			// cold-start(elapsed) / sold-out / error; other providers leave it unset.
+			session.onStatusChange = (status) => {
+				lastVoiceStatusRef.current = status;
+				setVoiceStatus(status);
+			};
 
 			// #313 L3 — bridge mid-session panel context changes into the open
 			// Live WS. Subscribes to the panel store, debounces 500ms (rapid
@@ -1854,15 +1945,36 @@ export function ChatPanel() {
 				});
 				session.disconnect();
 			};
-			session.onDisconnect = () => {
+			session.onDisconnect = (info) => {
+				// Atomic terminal transition for a mid-call drop. Tear down (cost
+				// summary, bridge, mic, player) SYNCHRONOUSLY first, THEN set the
+				// terminal status once — so the derived voice button can't re-enable
+				// against a half-cleaned session, and the close reason isn't lost to
+				// a state thrash. showVoiceCostSummary is idempotent, so a
+				// user-initiated stop that also runs the toggle path stays safe.
 				showVoiceCostSummary();
 				panelContextBridgeRef.current?.detach();
 				panelContextBridgeRef.current = null;
 				micStreamRef.current?.stop();
 				audioPlayerRef.current?.destroy();
+				voiceSessionRef.current = null;
 				micStreamRef.current = null;
 				audioPlayerRef.current = null;
-				setVoiceMode("off");
+				// Surface why the call ended (superseded / credits / auth); a normal
+				// or user-initiated close stays silent.
+				const reason: VoiceCloseReason = info?.reason ?? "normal";
+				const msg = voiceCloseMessage(reason);
+				if (msg) {
+					useChatStore
+						.getState()
+						.addMessage({ role: "assistant", content: msg });
+				}
+				const terminal: VoiceConnectionStatus =
+					reason === "normal" || reason === "unknown"
+						? { phase: "idle" }
+						: { phase: "closed", code: info?.code, reason };
+				setVoiceStatus(terminal);
+				lastVoiceStatusRef.current = terminal;
 			};
 
 			// Build provider-specific config and connect
@@ -1964,19 +2076,28 @@ export function ChatPanel() {
 			micStreamRef.current = mic;
 			mic.start();
 
-			setVoiceMode("active");
+			setVoiceStatus({ phase: "active" });
+			lastVoiceStatusRef.current = { phase: "active" };
 			voiceStartRef.current = { time: Date.now(), provider: liveProvider };
 			Logger.info("ChatPanel", "Voice conversation started", {
 				provider: liveProvider,
 			});
 		} catch (err) {
+			const cancelled =
+				voiceCancelledRef.current ||
+				(err instanceof Error && err.name === "AbortError");
 			Logger.warn("ChatPanel", "Voice connection failed", {
 				error: String(err),
+				cancelled,
 			});
-			useChatStore.getState().addMessage({
-				role: "assistant",
-				content: `${t("chat.voiceError")}: ${err}`,
-			});
+			// User-initiated cold-start cancel → no error message. Otherwise pick a
+			// scenario-specific message from the last status the session emitted
+			// (sold-out / out-of-credits / auth / timeout) instead of a raw dump.
+			if (!cancelled) {
+				const content = voiceFailureMessage(lastVoiceStatusRef.current, err);
+				useChatStore.getState().addMessage({ role: "assistant", content });
+			}
+			voiceCancelledRef.current = false;
 			// Detach onDisconnect before cleanup to prevent double-cleanup
 			if (voiceSessionRef.current) voiceSessionRef.current.onDisconnect = null;
 			panelContextBridgeRef.current?.detach();
@@ -1987,8 +2108,18 @@ export function ChatPanel() {
 			voiceSessionRef.current = null;
 			micStreamRef.current = null;
 			audioPlayerRef.current = null;
-			setVoiceMode("off");
+			// Single terminal transition back to idle (button + banner derive off).
+			setVoiceStatus({ phase: "idle" });
+			lastVoiceStatusRef.current = { phase: "idle" };
 		}
+	}
+
+	function handleVoiceCancel() {
+		// Cancel an in-progress cold-start. disconnect() breaks naia-omni's retry
+		// loop (abortableSleep → AbortError) and fires abandonPod to release the
+		// warming Pod; the connect() catch then runs cleanup and clears the banner.
+		voiceCancelledRef.current = true;
+		voiceSessionRef.current?.disconnect();
 	}
 
 	function handleTabChange(tab: TabId) {
@@ -2156,68 +2287,70 @@ export function ChatPanel() {
 
 	return (
 		<>
-		<div className="chat-panel">
-			{/* Header with tabs */}
-			<div className="chat-header">
-				<div className="chat-tabs">
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
-						onClick={() => handleTabChange("chat")}
-						title={t("progress.tabChat")}
-						aria-label={t("progress.tabChat")}
-						data-tooltip={t("progress.tabChat")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.chat}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "history" ? " active" : ""}`}
-						onClick={() => handleTabChange("history")}
-						title={t("history.tabHistory")}
-						aria-label={t("history.tabHistory")}
-						data-tooltip={t("history.tabHistory")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.history}
-						</span>
-					</button>
-					<button
-						type="button"
-						className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-						onClick={() => handleTabChange("channels")}
-						title={t("channels.tabChannels")}
-						aria-label={t("channels.tabChannels")}
-						data-tooltip={t("channels.tabChannels")}
-					>
-						<span className="chat-tab-icon" aria-hidden="true">
-							{TAB_ICONS.channels}
-						</span>
-					</button>
-				</div>
-				<div className="chat-header-right">
-					{totalSessionCost > 0 && provider !== "ollama" && provider !== "vllm" && (
+			<div className="chat-panel">
+				{/* Header with tabs */}
+				<div className="chat-header">
+					<div className="chat-tabs">
 						<button
 							type="button"
-							className="cost-badge session-cost cost-badge-clickable"
-							onClick={() => setShowCostDashboard((v) => !v)}
+							className={`chat-tab${activeTab === "chat" ? " active" : ""}`}
+							onClick={() => handleTabChange("chat")}
+							title={t("progress.tabChat")}
+							aria-label={t("progress.tabChat")}
+							data-tooltip={t("progress.tabChat")}
 						>
-							{formatCost(totalSessionCost)}
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.chat}
+							</span>
 						</button>
-					)}
-					<button
-						type="button"
-						className="settings-icon-btn new-chat-btn"
-						onClick={handleNewConversation}
-						title={t("chat.newConversation")}
-						disabled={isStreaming}
-					>
-						+
-					</button>
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "history" ? " active" : ""}`}
+							onClick={() => handleTabChange("history")}
+							title={t("history.tabHistory")}
+							aria-label={t("history.tabHistory")}
+							data-tooltip={t("history.tabHistory")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.history}
+							</span>
+						</button>
+						<button
+							type="button"
+							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
+							onClick={() => handleTabChange("channels")}
+							title={t("channels.tabChannels")}
+							aria-label={t("channels.tabChannels")}
+							data-tooltip={t("channels.tabChannels")}
+						>
+							<span className="chat-tab-icon" aria-hidden="true">
+								{TAB_ICONS.channels}
+							</span>
+						</button>
+					</div>
+					<div className="chat-header-right">
+						{totalSessionCost > 0 &&
+							provider !== "ollama" &&
+							provider !== "vllm" && (
+								<button
+									type="button"
+									className="cost-badge session-cost cost-badge-clickable"
+									onClick={() => setShowCostDashboard((v) => !v)}
+								>
+									{formatCost(totalSessionCost)}
+								</button>
+							)}
+						<button
+							type="button"
+							className="settings-icon-btn new-chat-btn"
+							onClick={handleNewConversation}
+							title={t("chat.newConversation")}
+							disabled={isStreaming}
+						>
+							+
+						</button>
+					</div>
 				</div>
-			</div>
 
 				{/* Progress tab */}
 				{activeTab === "progress" && <WorkProgressPanel />}
@@ -2266,81 +2399,89 @@ export function ChatPanel() {
 					/>
 				)}
 
-			{/* Messages (chat tab) */}
-			<div
-				className="chat-messages"
-				style={{ display: activeTab === "chat" ? "flex" : "none" }}
-			>
-				{messages
-					.filter((msg) => {
-						if (
-							msg.role === "user" &&
-							msg.content.startsWith("Read HEARTBEAT.md if it exists")
-						)
-							return false;
-						if (
-							msg.role === "assistant" &&
-							/^HEARTBEAT_OK\b/.test(msg.content.trim())
-						)
-							return false;
-						return true;
-					})
-					.map((msg) => (
-						<div key={msg.id} className={`chat-message ${msg.role}`}>
-							{msg.thinking && (
-								<details className="thinking-inline">
+				{/* Messages (chat tab) */}
+				<div
+					className="chat-messages"
+					style={{ display: activeTab === "chat" ? "flex" : "none" }}
+				>
+					{messages
+						.filter((msg) => {
+							if (
+								msg.role === "user" &&
+								msg.content.startsWith("Read HEARTBEAT.md if it exists")
+							)
+								return false;
+							if (
+								msg.role === "assistant" &&
+								/^HEARTBEAT_OK\b/.test(msg.content.trim())
+							)
+								return false;
+							return true;
+						})
+						.map((msg) => (
+							<div key={msg.id} className={`chat-message ${msg.role}`}>
+								{msg.thinking && (
+									<details className="thinking-inline">
+										<summary className="thinking-inline-summary">
+											<span className="thinking-inline-label">
+												💭 {t("chat.thinking") || "Thinking..."}
+											</span>
+										</summary>
+										<div className="thinking-inline-content">
+											{msg.thinking}
+										</div>
+									</details>
+								)}
+								{msg.toolCalls?.map((tc) => (
+									<ToolActivity key={tc.toolCallId} tool={tc} />
+								))}
+								<div className="message-content">
+									{msg.role === "assistant" ? (
+										<Markdown components={mdComponents}>
+											{parseEmotion(msg.content).cleanText}
+										</Markdown>
+									) : (
+										msg.content
+									)}
+								</div>
+								{msg.cost && provider !== "ollama" && provider !== "vllm" && (
+									<span className="cost-badge">
+										{formatCost(msg.cost.cost)} ·{" "}
+										{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
+										{t("chat.tokens")}
+									</span>
+								)}
+							</div>
+						))}
+
+					{/* Streaming content */}
+					{isStreaming && (
+						<div className="chat-message assistant streaming">
+							{streamingThinking && (
+								<details className="thinking-inline" open>
 									<summary className="thinking-inline-summary">
-										<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
+										<span className="thinking-inline-label">
+											💭 {t("chat.thinking") || "Thinking..."}
+										</span>
 									</summary>
-									<div className="thinking-inline-content">{msg.thinking}</div>
+									<div className="thinking-inline-content">
+										{streamingThinking}
+									</div>
 								</details>
 							)}
-							{msg.toolCalls?.map((tc) => (
+							{streamingToolCalls.map((tc) => (
 								<ToolActivity key={tc.toolCallId} tool={tc} />
 							))}
 							<div className="message-content">
-								{msg.role === "assistant" ? (
+								{streamingContent ? (
 									<Markdown components={mdComponents}>
-										{parseEmotion(msg.content).cleanText}
+										{parseEmotion(streamingContent).cleanText}
 									</Markdown>
-								) : (
-									msg.content
-								)}
+								) : null}
+								<span className="cursor-blink">▌</span>
 							</div>
-							{msg.cost && provider !== "ollama" && provider !== "vllm" && (
-								<span className="cost-badge">
-									{formatCost(msg.cost.cost)} ·{" "}
-									{msg.cost.inputTokens + msg.cost.outputTokens}{" "}
-									{t("chat.tokens")}
-								</span>
-							)}
 						</div>
-					))}
-
-				{/* Streaming content */}
-				{isStreaming && (
-					<div className="chat-message assistant streaming">
-						{streamingThinking && (
-							<details className="thinking-inline" open>
-								<summary className="thinking-inline-summary">
-									<span className="thinking-inline-label">💭 {t("chat.thinking") || "Thinking..."}</span>
-								</summary>
-								<div className="thinking-inline-content">{streamingThinking}</div>
-							</details>
-						)}
-						{streamingToolCalls.map((tc) => (
-							<ToolActivity key={tc.toolCallId} tool={tc} />
-						))}
-						<div className="message-content">
-							{streamingContent ? (
-								<Markdown components={mdComponents}>
-									{parseEmotion(streamingContent).cleanText}
-								</Markdown>
-							) : null}
-							<span className="cursor-blink">▌</span>
-						</div>
-					</div>
-				)}
+					)}
 
 					<div ref={messagesEndRef} />
 				</div>
@@ -2351,6 +2492,35 @@ export function ChatPanel() {
 						pending={pendingApproval}
 						onDecision={handleApprovalDecision}
 					/>
+				)}
+
+				{/* Cold-start-aware voice connection status (naia-omni RunPod). The
+				    voice button is disabled while connecting, so cold-start exposes
+				    an explicit Cancel here (→ abandon Pod) instead of a frozen wait. */}
+				{activeTab === "chat" && voiceMode === "connecting" && (
+					<div className="voice-status-banner">
+						<span className="voice-status-spinner" />
+						<span className="voice-status-text">
+							{voiceStatus.phase === "cold-start"
+								? `${t("chat.voiceColdStart")} · ${voiceStatus.elapsedSeconds}s` +
+									(voiceStatus.queuePosition != null
+										? ` · ${t("chat.voiceColdStartQueue")} ${voiceStatus.queuePosition}`
+										: "") +
+									(voiceStatus.etaSeconds != null
+										? ` · ${t("chat.voiceColdStartEta")} ~${voiceStatus.etaSeconds}s`
+										: "")
+								: t("chat.voiceConnecting")}
+						</span>
+						{voiceStatus.phase === "cold-start" && (
+							<button
+								type="button"
+								className="voice-status-cancel"
+								onClick={handleVoiceCancel}
+							>
+								{t("chat.voiceColdStartCancel")}
+							</button>
+						)}
+					</div>
 				)}
 
 				{/* Input (chat tab only) */}

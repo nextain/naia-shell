@@ -89,6 +89,7 @@ export interface AppConfig {
 	ttsEngine?: "auto" | "gateway" | "google";
 	persona?: string;
 	enableTools?: boolean;
+	enableThinking?: boolean;
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	chatRouting?: "gateway" | "direct" | "auto";

@@ -34,6 +34,7 @@ export {
 export {
 	type LiveProviderId,
 	type LiveProviderConfig,
+	type VoiceConnectionStatus,
 	type VoiceSession,
 	LIVE_PROVIDER_LABELS,
 	LIVE_PROVIDER_COST_HINTS,
@@ -45,6 +46,8 @@ export type {
 	VllmOmniConfig,
 	ToolDeclaration,
 	PanelContextUpdate,
+	VoiceCloseReason,
+	VoiceCloseInfo,
 } from "./types";
 // Re-export voice options from LLM registry
 export { OPENAI_REALTIME_VOICES, GEMINI_LIVE_VOICES } from "../llm/registry";

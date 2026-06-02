@@ -36,6 +36,8 @@ export interface ProviderConfig {
 	vllmHost?: string;
 	/** Override URL for lab-proxy (Naia gateway). Used to route to dev vs prod gateway. */
 	labGatewayUrl?: string;
+	/** Enable thinking/reasoning output from models that support it. */
+	enableThinking?: boolean;
 }
 
 // === Chat Messages ===

@@ -182,6 +182,82 @@ export interface AudioInputConfig {
 	gateWhilePlaying: boolean;
 }
 
+// ── Voice connection status (cold-start aware) ──
+
+/**
+ * Why a voice connection ended, mapped 1:1 from the gateway WS application close
+ * code. Single source of truth = `closeCodeReason` in naia-omni.ts, which mirrors
+ * naia.nextain.io's `naia-omni-client.closeReason` so desktop and web agree on
+ * the wire semantics.
+ *  - `auth`        — 4001, credential rejected / session expired
+ *  - `credits`     — 4003, insufficient credits
+ *  - `superseded`  — 4002, same account took over on another device (last-wins)
+ *  - `consent`     — 4409, same account already has a live session and the
+ *                    backend wants a replace/add decision (SoT §4)
+ *  - `normal`      — clean close (1000) or user-initiated stop
+ *  - `unknown`     — any other / abnormal code
+ */
+export type VoiceCloseReason =
+	| "auth"
+	| "credits"
+	| "superseded"
+	| "consent"
+	| "normal"
+	| "unknown";
+
+/** Terminal close detail handed to `onDisconnect` when a LIVE session drops. */
+export interface VoiceCloseInfo {
+	code?: number;
+	reason: VoiceCloseReason;
+}
+
+/**
+ * Connection lifecycle status. The single source of truth for voice UI state —
+ * ChatPanel derives the voice button mode from the current phase (no parallel
+ * `voiceMode`). Phases mirror naia.nextain.io's `ConnectionState` so desktop and
+ * web stay semantically aligned.
+ *
+ *  - `idle`        — no session (initial / fully torn down)
+ *  - `connecting`  — WebSocket opening, no cold-start signal yet
+ *  - `cold-start`  — server returned pod-starting; retrying with backoff
+ *  - `active`      — session live. Set by ChatPanel once mic setup succeeds, NOT
+ *                    by the provider — active is UI-readiness, not just connected.
+ *  - `sold-out`    — capacity exhausted, no Pod available (terminal, pre-active)
+ *  - `error`       — terminal pre-active failure, classified for a message
+ *  - `closed`      — a previously-active session dropped mid-call (carries the
+ *                    close reason so superseded/credits/auth can be surfaced)
+ *
+ * Providers emit only the pre-active phases via `onStatusChange`
+ * (connecting / cold-start / sold-out / error). `active` is owned by ChatPanel;
+ * `closed` is derived by ChatPanel from `onDisconnect(info)` so teardown and the
+ * terminal transition stay atomic (no re-enable-against-stale-refs race).
+ */
+export type VoiceConnectionStatus =
+	| { phase: "idle" }
+	| { phase: "connecting" }
+	| {
+			phase: "cold-start";
+			elapsedSeconds: number;
+			attempt: number;
+			// SoT §4 session.preparing/queued hints (optional — gateway may omit).
+			etaSeconds?: number;
+			queuePosition?: number;
+	  }
+	| { phase: "active" }
+	| { phase: "sold-out"; tierAHint?: string }
+	| {
+			phase: "error";
+			reason:
+				| "auth"
+				| "credits"
+				| "timeout"
+				| "superseded"
+				| "consent"
+				| "unknown";
+			message: string;
+	  }
+	| { phase: "closed"; code?: number; reason: VoiceCloseReason };
+
 // ── Voice Session (provider-agnostic interface) ──
 
 export interface VoiceSession {
@@ -213,7 +289,20 @@ export interface VoiceSession {
 	onTurnEnd: (() => void) | null;
 	onInterrupted: (() => void) | null;
 	onError: ((error: Error) => void) | null;
-	onDisconnect: (() => void) | null;
+	/**
+	 * A LIVE session dropped. `info` carries the close code + classified reason
+	 * (superseded / credits / auth / normal) so ChatPanel can surface the right
+	 * message and do teardown atomically. Absent `info` (or pre-`info` callers) =
+	 * an unspecified disconnect. Pre-session failures reject `connect()` instead.
+	 */
+	onDisconnect: ((info?: VoiceCloseInfo) => void) | null;
+	/**
+	 * Pre-active connection lifecycle updates (cold-start aware). Optional — only
+	 * providers with a non-instant connect (naia-omni RunPod on-demand) emit
+	 * "connecting" / "cold-start" / "sold-out" / "error". Never carries "active"
+	 * (ChatPanel owns that, mic-gated) or "closed" (flows via onDisconnect).
+	 */
+	onStatusChange?: ((status: VoiceConnectionStatus) => void) | null;
 }
 
 // ── Factory signature ──

@@ -31,9 +31,16 @@ import { emotionTagsToChatText } from "./emotion-tags";
 import {
 	ColdStartTimeoutError,
 	SoldOutError,
+	abandonPod,
 } from "./ondemand-retry";
 import { RefAudioEncodeError, encodeRefAudio } from "./ref-audio";
-import type { LiveProviderConfig, NaiaOmniConfig, VoiceSession } from "./types";
+import type {
+	LiveProviderConfig,
+	NaiaOmniConfig,
+	VoiceCloseReason,
+	VoiceConnectionStatus,
+	VoiceSession,
+} from "./types";
 
 const COLD_START_CAP_MS = 10 * 60 * 1000; // server v15: 10 min cap (CLIENT-ONDEMAND-CONTRACT)
 const INITIAL_RETRY_MS = 5_000;
@@ -54,6 +61,12 @@ export function createNaiaOmniSession(): VoiceSession {
 	let connected = false;
 	let cfg: NaiaOmniConfig | null = null;
 	let isAiSpeaking = false;
+	// Cold-start cancellation: disconnect() during a pod-starting retry sets
+	// `aborted`, signals `connectAbort` to break the backoff sleep immediately,
+	// and (if a Pod is warming) fires abandonPod so we stop paying for it.
+	let aborted = false;
+	let coldStartActive = false;
+	let connectAbort: AbortController | null = null;
 
 	const session: VoiceSession = {
 		audioInput: {
@@ -72,6 +85,7 @@ export function createNaiaOmniSession(): VoiceSession {
 		onInterrupted: null,
 		onError: null,
 		onDisconnect: null,
+		onStatusChange: null,
 
 		get isConnected() {
 			return connected;
@@ -79,6 +93,10 @@ export function createNaiaOmniSession(): VoiceSession {
 
 		async connect(config: LiveProviderConfig) {
 			cfg = config as NaiaOmniConfig;
+			aborted = false;
+			coldStartActive = false;
+			connectAbort = new AbortController();
+			const abortSignal = connectAbort.signal;
 
 			const useGateway = !!(cfg.gatewayUrl && cfg.naiaKey);
 
@@ -91,7 +109,7 @@ export function createNaiaOmniSession(): VoiceSession {
 					);
 				}
 				const modelParam = encodeURIComponent(cfg.model ?? DEFAULT_MODEL);
-			wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}?model=${modelParam}`;
+				wsUrl = `${normalizedGw}${GATEWAY_REALTIME_PATH}?model=${modelParam}`;
 			} else {
 				const normalizedBase = normalizeServerUrl(
 					cfg.serverUrl ?? DEFAULT_SERVER_URL,
@@ -126,146 +144,207 @@ export function createNaiaOmniSession(): VoiceSession {
 			});
 
 			// On-demand retry loop (CONTRACT §3): 503 pod-starting → backoff, sold-out → throw
+			emitStatus({ phase: "connecting" });
 			const retryStart = Date.now();
 			let retryDelay = INITIAL_RETRY_MS;
+			let attempt = 0;
 
 			const attemptConnect = (): Promise<void> => {
-			ws = new WebSocket(wsUrl);
+				ws = new WebSocket(wsUrl);
 
-			return new Promise<void>((resolve, reject) => {
-				if (!ws) return reject(new Error("WebSocket not created"));
+				return new Promise<void>((resolve, reject) => {
+					if (!ws) return reject(new Error("WebSocket not created"));
 
-				const timeout = setTimeout(() => {
-					reject(new Error("Connection timeout"));
-					ws?.close();
-				}, 15000);
+					const timeout = setTimeout(() => {
+						reject(new Error("Connection timeout"));
+						ws?.close();
+					}, 15000);
 
-				let connectErrored = false;
+					let connectErrored = false;
 
-				ws.onmessage = (event: MessageEvent) => {
-					if (typeof event.data !== "string") return;
-					let msg: Record<string, unknown>;
-					try {
-						msg = JSON.parse(event.data) as Record<string, unknown>;
-					} catch {
-						return;
-					}
+					ws.onmessage = (event: MessageEvent) => {
+						if (typeof event.data !== "string") return;
+						let msg: Record<string, unknown>;
+						try {
+							msg = JSON.parse(event.data) as Record<string, unknown>;
+						} catch {
+							return;
+						}
 
-					if (!connected && useGateway && msg.error) {
-						clearTimeout(timeout);
-						connectErrored = true;
-						const errMsg = extractServerErrorMessage(msg);
-						reject(new Error(errMsg));
-						return;
-					}
+						if (!connected && useGateway && msg.error) {
+							clearTimeout(timeout);
+							connectErrored = true;
+							const errMsg = extractServerErrorMessage(msg);
+							reject(new Error(errMsg));
+							return;
+						}
 
-					if (!connected && msg.type === "session.created") {
-						clearTimeout(timeout);
-						const sessionPayload: Record<string, unknown> = {
-							modalities: ["text", "audio"],
-							input_audio_format: "pcm16",
-							output_audio_format: "pcm16",
-							instructions: cfg?.systemInstruction ?? "",
-							turn_detection: { type: "server_vad" },
-							// Forward skills as OpenAI-style function tools so the cascade
-							// registers them (tools_registry) and the LLM can actually emit
-							// tool calls. Without this the server's registry stays empty and
-							// no tool call is ever generated. Server expects flat
-							// {type:"function", name, description, parameters}.
-							...(cfg?.tools && cfg.tools.length > 0
-								? {
-										tools: cfg.tools.map((t) => ({
-											type: "function",
-											name: t.name,
-											description: t.description,
-											parameters: t.parameters ?? {
-												type: "object",
-												properties: {},
-											},
-										})),
-									}
-								: {}),
-							// #15: prefer a URL (preset sample_url / upload URL) over a
-							// heavy base64 blob — backend downloads it once. Server
-							// priority: ref_audio_url > ref_audio > x-naia-voice-ref.
-							...(cfg?.refAudioUrl
-								? { ref_audio_url: cfg.refAudioUrl }
-								: {}),
-						};
-						if (encodedRefAudio !== null) {
-							sessionPayload.ref_audio = encodedRefAudio;
-							if (cfg?.refAudioLanguage) {
-								sessionPayload.ref_audio_language = cfg.refAudioLanguage;
+						// SoT §4 admission status events (mirrors naia.nextain.io
+						// naia-omni-client #34): the gateway sends a typed JSON status,
+						// then closes 4503/4409. preparing/queued = cold-start WAIT →
+						// reuse the retry loop (same instanceId re-enters arrival until
+						// READY). sold_out / consent_required / session.error = terminal.
+						// The msg.error branch above still handles the legacy error-string
+						// wire, so both transports are supported.
+						if (!connected) {
+							const tp = msg.type as string;
+							if (tp === "session.preparing" || tp === "session.queued") {
+								clearTimeout(timeout);
+								connectErrored = true;
+								const eta =
+									typeof msg.eta_s === "number" ? msg.eta_s : undefined;
+								const pos =
+									typeof msg.position === "number" ? msg.position : undefined;
+								reject(
+									new Error(
+										`pod-starting${eta != null ? `:eta=${eta}` : ""}${pos != null ? `:pos=${pos}` : ""}`,
+									),
+								);
+								return;
+							}
+							if (tp === "session.sold_out") {
+								clearTimeout(timeout);
+								connectErrored = true;
+								reject(new Error("sold-out"));
+								return;
+							}
+							if (tp === "session.consent_required") {
+								// Same account already has a live session. The branch
+								// (replace/add) selection protocol is not yet defined by the
+								// gateway or the manual, so surface a terminal consent state
+								// instead of guessing the send-back wire.
+								clearTimeout(timeout);
+								connectErrored = true;
+								reject(new Error("consent-required"));
+								return;
+							}
+							if (tp === "session.error") {
+								clearTimeout(timeout);
+								connectErrored = true;
+								reject(new Error(extractServerErrorMessage(msg)));
+								return;
 							}
 						}
-						ws?.send(
-							JSON.stringify({
-								type: "session.update",
-								model: cfg?.model ?? DEFAULT_MODEL,
-								session: sessionPayload,
-							}),
-						);
-						connected = true;
-						Logger.info("naia-omni", "connected to /v1/realtime", {
-							mode: useGateway ? "gateway" : "direct",
-							refAudio: encodedRefAudio !== null,
-						});
-						resolve();
-						return;
-					}
 
-					if (!connected && msg.type === "error") {
+						if (!connected && msg.type === "session.created") {
+							clearTimeout(timeout);
+							const sessionPayload: Record<string, unknown> = {
+								modalities: ["text", "audio"],
+								input_audio_format: "pcm16",
+								output_audio_format: "pcm16",
+								instructions: cfg?.systemInstruction ?? "",
+								turn_detection: { type: "server_vad" },
+								// Forward skills as OpenAI-style function tools so the cascade
+								// registers them (tools_registry) and the LLM can actually emit
+								// tool calls. Without this the server's registry stays empty and
+								// no tool call is ever generated. Server expects flat
+								// {type:"function", name, description, parameters}.
+								...(cfg?.tools && cfg.tools.length > 0
+									? {
+											tools: cfg.tools.map((t) => ({
+												type: "function",
+												name: t.name,
+												description: t.description,
+												parameters: t.parameters ?? {
+													type: "object",
+													properties: {},
+												},
+											})),
+										}
+									: {}),
+								// #15: prefer a URL (preset sample_url / upload URL) over a
+								// heavy base64 blob — backend downloads it once. Server
+								// priority: ref_audio_url > ref_audio > x-naia-voice-ref.
+								...(cfg?.refAudioUrl ? { ref_audio_url: cfg.refAudioUrl } : {}),
+							};
+							if (encodedRefAudio !== null) {
+								sessionPayload.ref_audio = encodedRefAudio;
+								if (cfg?.refAudioLanguage) {
+									sessionPayload.ref_audio_language = cfg.refAudioLanguage;
+								}
+							}
+							ws?.send(
+								JSON.stringify({
+									type: "session.update",
+									model: cfg?.model ?? DEFAULT_MODEL,
+									session: sessionPayload,
+								}),
+							);
+							connected = true;
+							Logger.info("naia-omni", "connected to /v1/realtime", {
+								mode: useGateway ? "gateway" : "direct",
+								refAudio: encodedRefAudio !== null,
+							});
+							resolve();
+							return;
+						}
+
+						if (!connected && msg.type === "error") {
+							clearTimeout(timeout);
+							connectErrored = true;
+							const errMsg = extractServerErrorMessage(msg);
+							reject(new Error(errMsg));
+							return;
+						}
+
+						handleMessage(msg);
+					};
+
+					ws.onerror = () => {
 						clearTimeout(timeout);
 						connectErrored = true;
-						const errMsg = extractServerErrorMessage(msg);
-						reject(new Error(errMsg));
-						return;
-					}
+						const err = new Error("WebSocket error");
+						if (connected) {
+							session.onError?.(err);
+						} else {
+							reject(err);
+						}
+					};
 
-					handleMessage(msg);
-				};
+					ws.onopen = () => {
+						if (useGateway) {
+							ws?.send(
+								JSON.stringify({
+									setup: {
+										apiKey: cfg?.naiaKey,
+										backend: "runpod",
+										locale: cfg?.locale ?? "en",
+										instanceId: cfg?.instanceId,
+									},
+								}),
+							);
+						}
+					};
 
-				ws.onerror = () => {
-					clearTimeout(timeout);
-					connectErrored = true;
-					const err = new Error("WebSocket error");
-					if (connected) {
-						session.onError?.(err);
-					} else {
-						reject(err);
-					}
-				};
-
-				ws.onopen = () => {
-					if (useGateway) {
-						ws?.send(
-							JSON.stringify({
-								setup: {
-									apiKey: cfg?.naiaKey,
-									backend: "runpod",
-									locale: cfg?.locale ?? "en",
-									instanceId: cfg?.instanceId,
-								},
-							}),
-						);
-					}
-				};
-
-				ws.onclose = (event) => {
-					clearTimeout(timeout);
-					const wasConnected = connected;
-					connected = false;
-					Logger.info("naia-omni", "disconnected from /v1/realtime", {
-						code: event.code,
-						reason: event.reason,
-						wasClean: event.wasClean,
-					});
-					if (!wasConnected && !connectErrored) {
-						reject(new Error("Connection closed before session ready"));
-					}
-					session.onDisconnect?.();
-				};
-			});
+					ws.onclose = (event) => {
+						clearTimeout(timeout);
+						const wasConnected = connected;
+						connected = false;
+						Logger.info("naia-omni", "disconnected from /v1/realtime", {
+							code: event.code,
+							reason: event.reason,
+							wasClean: event.wasClean,
+						});
+						if (!wasConnected && !connectErrored) {
+							// Map application close codes (4001 auth / 4002 superseded /
+							// 4003 credits) so a pre-session reject classifies into the
+							// right status banner.
+							reject(new Error(closeCodeMessage(event.code)));
+						}
+						// Only surface a session-level disconnect when a LIVE session
+						// dropped. Pre-connect closes (cold-start retries, auth/credit
+						// rejects) are driven by connect()'s promise rejection →
+						// ChatPanel's catch; firing onDisconnect here too would tear
+						// down the UI mid-cold-start. Carry the close reason so a
+						// mid-call superseded/credits drop isn't a silent disconnect.
+						if (wasConnected) {
+							session.onDisconnect?.({
+								code: event.code,
+								reason: closeCodeReason(event.code),
+							});
+						}
+					};
+				});
 			}; // end attemptConnect
 
 			// Retry loop for on-demand pods (CONTRACT §3.2)
@@ -274,23 +353,48 @@ export function createNaiaOmniSession(): VoiceSession {
 					await attemptConnect();
 					return; // connected successfully
 				} catch (err) {
+					if (aborted) throw err; // user cancelled mid-cold-start — silent
 					const msg = err instanceof Error ? err.message : String(err);
 					// Check for pod-starting (503) in error message
 					if (useGateway && msg.includes("pod-starting")) {
 						if (Date.now() - retryStart > COLD_START_CAP_MS) {
+							emitStatus({
+								phase: "error",
+								reason: "timeout",
+								message: "cold-start-timeout",
+							});
 							throw new ColdStartTimeoutError();
 						}
+						coldStartActive = true;
+						attempt += 1;
+						// SoT §4 session.preparing/queued hints, encoded in the reject
+						// message as ":eta=<s>" / ":pos=<n>" (see onmessage).
+						const etaMatch = msg.match(/:eta=(\d+)/);
+						const posMatch = msg.match(/:pos=(\d+)/);
+						emitStatus({
+							phase: "cold-start",
+							elapsedSeconds: Math.floor((Date.now() - retryStart) / 1000),
+							attempt,
+							...(etaMatch ? { etaSeconds: Number(etaMatch[1]) } : {}),
+							...(posMatch ? { queuePosition: Number(posMatch[1]) } : {}),
+						});
 						Logger.info("naia-omni", "pod starting, retrying", {
 							delay: retryDelay,
 							elapsed: Date.now() - retryStart,
 						});
-						await new Promise((r) => setTimeout(r, retryDelay));
+						await abortableSleep(retryDelay, abortSignal);
 						retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
 						continue;
 					}
 					if (msg.includes("sold-out")) {
+						emitStatus({ phase: "sold-out" });
 						throw new SoldOutError(msg);
 					}
+					emitStatus({
+						phase: "error",
+						reason: classifyErrorReason(msg),
+						message: msg,
+					});
 					throw err; // other errors — don't retry
 				}
 			}
@@ -353,6 +457,20 @@ export function createNaiaOmniSession(): VoiceSession {
 		},
 
 		disconnect() {
+			// Cancel an in-progress cold-start: break the backoff loop and
+			// release the half-started Pod so we stop paying for it (the retry
+			// loop's abortableSleep rejects with AbortError → connect() rejects).
+			if (
+				!connected &&
+				coldStartActive &&
+				cfg?.gatewayUrl &&
+				cfg.instanceId &&
+				cfg.naiaKey
+			) {
+				void abandonPod(cfg.gatewayUrl, cfg.instanceId, cfg.naiaKey);
+			}
+			aborted = true;
+			connectAbort?.abort();
 			if (ws && connected && isAiSpeaking) {
 				try {
 					ws.send(JSON.stringify({ type: "response.cancel" }));
@@ -368,6 +486,14 @@ export function createNaiaOmniSession(): VoiceSession {
 			}
 		},
 	};
+
+	function emitStatus(status: VoiceConnectionStatus): void {
+		try {
+			session.onStatusChange?.(status);
+		} catch {
+			// A listener error must never break the connect/retry loop.
+		}
+	}
 
 	function handleMessage(msg: Record<string, unknown>) {
 		const type = msg.type as string;
@@ -533,6 +659,85 @@ function sanitizeUrl(url: string): string {
  * Extract a human-readable error string from a Realtime `error` event.
  * Server may send `{error: "string"}` or `{error: {message, ...}}`.
  */
+/** Abortable backoff sleep — rejects with AbortError the moment connectAbort fires. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		if (signal.aborted) {
+			reject(new DOMException("Aborted", "AbortError"));
+			return;
+		}
+		const timer = setTimeout(resolve, ms);
+		signal.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timer);
+				reject(new DOMException("Aborted", "AbortError"));
+			},
+			{ once: true },
+		);
+	});
+}
+
+/**
+ * Single source of truth: map a gateway WS application close code to a canonical
+ * reason. Mirrors naia.nextain.io's `naia-omni-client.closeReason` so desktop and
+ * web agree on the wire (probe-confirmed in the cascade demo plan §4):
+ *   4001 = auth · 4002 = superseded (same account took over elsewhere, last-wins)
+ *   4003 = credits · 1000/1005 = normal · else = unknown.
+ */
+function closeCodeReason(code: number): VoiceCloseReason {
+	if (code === 4001) return "auth";
+	if (code === 4002) return "superseded";
+	if (code === 4003) return "credits";
+	if (code === 4409) return "consent";
+	if (code === 1000 || code === 1005) return "normal";
+	return "unknown";
+}
+
+/**
+ * Pre-session close → a classifiable reject message. Built from the close-code
+ * SoT so `classifyErrorReason` recovers the same reason on the connect() catch.
+ * SoT §4: a bare 4503 (transient unavailable — warming/queued, no preceding
+ * status event) maps to pod-starting so the retry loop waits, never errors.
+ */
+function closeCodeMessage(code: number): string {
+	switch (closeCodeReason(code)) {
+		case "auth":
+			return "auth-failed (4001)";
+		case "superseded":
+			return "superseded (4002)";
+		case "credits":
+			return "insufficient-credits (4003)";
+		case "consent":
+			return "consent-required";
+		default:
+			return code === 4503
+				? "pod-starting"
+				: "Connection closed before session ready";
+	}
+}
+
+/** Classify a terminal connect error into a scenario for the status banner. */
+function classifyErrorReason(
+	message: string,
+): "auth" | "credits" | "timeout" | "superseded" | "consent" | "unknown" {
+	const m = message.toLowerCase();
+	if (m.includes("superseded")) return "superseded";
+	if (m.includes("consent")) return "consent";
+	if (m.includes("credit") || m.includes("insufficient")) return "credits";
+	if (
+		m.includes("auth") ||
+		m.includes("unauthorized") ||
+		m.includes("invalid api") ||
+		m.includes("api key") ||
+		m.includes("4001")
+	) {
+		return "auth";
+	}
+	if (m.includes("cold start") || m.includes("timeout")) return "timeout";
+	return "unknown";
+}
+
 function extractServerErrorMessage(msg: Record<string, unknown>): string {
 	const err = msg.error;
 	if (typeof err === "string") return err;

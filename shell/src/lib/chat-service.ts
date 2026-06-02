@@ -49,6 +49,8 @@ interface SendChatOptions {
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
 	systemPrompt?: string;
 	enableTools?: boolean;
+	/** Enable thinking/reasoning output from models that support it. */
+	enableThinking?: boolean;
 	gatewayUrl?: string;
 	disabledSkills?: string[];
 	routeViaGateway?: boolean;
@@ -144,6 +146,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		ttsProvider,
 		systemPrompt,
 		enableTools,
+		enableThinking,
 		gatewayUrl,
 		disabledSkills,
 		routeViaGateway,
@@ -163,6 +166,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		...(ttsProvider && { ttsProvider }),
 		...(systemPrompt && { systemPrompt }),
 		...(enableTools != null && { enableTools }),
+		...(enableThinking != null && { enableThinking }),
 		...(gatewayUrl && { gatewayUrl }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
 		...(routeViaGateway != null && { routeViaGateway }),
