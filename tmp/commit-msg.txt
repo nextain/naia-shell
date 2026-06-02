@@ -1,0 +1,41 @@
+feat(voice): align connection state with web §4 contract (superseded/4503/4409)
+
+Sync naia-os voice connection state to naia.nextain.io's SoT §4 client status
+contract (web #34). naia-os lacked the multi-device + admission signals, so a
+takeover or cold-start surfaced as a generic error or a silent drop.
+
+- VoiceConnectionStatus mirrors the web ConnectionState 1:1 (idle/connecting/
+  cold-start/active/sold-out/error/closed); voiceMode is now derived
+  (phaseToMode), not a parallel useState.
+- closeCodeReason SoT: 4001 auth / 4002 superseded / 4003 credits /
+  4409 consent / 4503 transient (pod-starting → retry, never an error) /
+  1000·1005 normal.
+- onmessage handles §4 typed events: session.preparing/queued (cold-start +
+  eta/position), session.sold_out, session.consent_required, session.error;
+  the legacy error-string wire still works.
+- mid-session close threads its reason through onDisconnect(info) → atomic
+  teardown + single terminal status in ChatPanel (no re-enable-against-stale-
+  refs race).
+- i18n: voiceErrorSuperseded / voiceErrorConsent / voiceColdStartQueue /
+  voiceColdStartEta ×14 languages.
+
+consent (4409) is surfaced as a terminal state + message. The branches
+(replace/add) interactive choice is deferred — the send-back protocol is not
+yet defined by the gateway or the manual.
+
+Also threads the (pre-existing) enableThinking config field through the voice
+chat path, as a compile dependency of ChatPanel.
+
+Verified: vitest 135 passed (voice 116 + ChatPanel 19), tsc clean. Staged
+snapshot compiles in isolation. Cross-reviewed (codex + gemini) at plan, S1,
+S2 and §4 — all GO.
+
+## AI Context
+- Gotcha: the web spec lives on naia.nextain.io origin/main #34, not the
+  naia-omni-0.9 branch (git pull was a no-op there).
+- Gotcha: 4503 must never render as closed/error — it is a cold-start signal.
+- Pattern: mirrors naia.nextain.io src/lib/realtime/naia-omni-client.ts
+  closeReason + the §4 onmessage admission handling.
+- Risk: consent branches(replace/add) send protocol is undefined upstream.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

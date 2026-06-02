@@ -1,0 +1,22 @@
+Final HOLISTIC cross-review of a completed, committed feature in naia-os (commit 6d078b40 on main). Earlier we reviewed it incrementally (plan/S1/S2/§4, all GO); now review the WHOLE feature end-to-end for anything the incremental passes missed: integration gaps, edge cases, state-machine holes, contract deviations.
+
+Feature: sync naia-os voice connection state to naia.nextain.io's "SoT §4 client status contract". naia-omni (naia-0.9-omni-24g) runs on RunPod on-demand; the gateway sends typed JSON admission events then closes with app codes. Goal = desktop client behaves identically to the web for: cold-start, sold-out, multi-device takeover (4002 superseded), consent (4409), credits (4003), auth (4001).
+
+Read the committed files (current working copy):
+- shell/src/lib/voice/types.ts  (VoiceConnectionStatus union, VoiceCloseReason, VoiceCloseInfo, VoiceSession.onDisconnect signature)
+- shell/src/lib/voice/naia-omni.ts  (connect/attemptConnect, onmessage §4 typed events, ws.onclose, retry loop, closeCodeReason/closeCodeMessage/classifyErrorReason)
+- shell/src/components/ChatPanel.tsx  (phaseToMode, voiceFailureMessage, voiceCloseMessage, handleVoiceToggle, session.onStatusChange/onDisconnect wiring, connect() catch, voice-status-banner JSX, voice button)
+- shell/src/lib/i18n.ts  (chat.voiceError* / voiceColdStart* keys)
+- shell/src/lib/voice/__tests__/naia-omni-coldstart.test.ts  (14 tests)
+
+Reference (TARGET): projects/naia.nextain.io — git show origin/main:src/lib/realtime/naia-omni-client.ts  and  git show origin/main:src/content/manual/ko/naia-omni-cascade.md (§5 event+close-code contract).
+
+Review the COMPLETE feature, concisely (<450 words, no code). Hunt specifically for:
+1) State-machine integrity end-to-end: can voiceStatus ever get stuck (connecting/cold-start/active) with no path back to idle/closed? Trace every connect/disconnect/error/cancel path including the cold-start retry loop and user cancel (abandonPod).
+2) Cross-module integration: provider emits (onStatusChange pre-active only; onDisconnect(info) for mid-session) ↔ ChatPanel consumption (derived voiceMode, atomic onDisconnect teardown, catch). Any mismatch, double-handling, or lost signal between naia-omni.ts and ChatPanel.tsx?
+3) §4 contract faithfulness: 4503 never an error; typed events (preparing/queued/sold_out/consent_required/error) AND legacy error-string wire both handled; eta/position; 4001/4002/4003/4409 mapping. Any deviation from the web reference / manual?
+4) Concurrency/races: cold-start retry + user cancel (disconnect during abortableSleep), onDisconnect vs toggle-off double cleanup, stale refs, WS event after close.
+5) Edge cases: eta_s=0, multi-key/multi-instance, reconnect with same instance, close codes not in the map, message arriving after settle.
+6) Any real correctness bug, type hole, or i18n key mismatch.
+
+Be adversarial — assume there IS a bug and try to find it. Final verdict: SHIP / FIX-FIRST + list concrete issues (file:symbol) by severity. If clean, say so plainly.

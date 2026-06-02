@@ -1,0 +1,5 @@
+Warning: True color (24-bit) support not detected. Using a terminal with true color enabled will result in a better visual experience.
+Ripgrep is not available. Falling back to GrepTool.
+This is an excellent and detailed request. I will act as an independent, adversarial reviewer. My goal is to find flaws in the diagnosis and plan before any code is written. I will now begin the investigation. My process will be to first read all relevant source files, then critically evaluate each diagnosed root cause and the proposed plan, answer the open questions, and finally provide a recommended path forward.
+
+I am starting by reading all the source files mentioned in the request to build a complete understanding of the interacting systems. This will be done in a single, parallel step to be efficient. After I have the content of all files, I will proceed with the analysis.

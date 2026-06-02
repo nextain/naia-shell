@@ -1,0 +1,20 @@
+Focused review of an S2 refactor in projects/naia-os/shell/src/components/ChatPanel.tsx. Ignore pre-existing reformatting noise in the file; review ONLY the voice-state changes described.
+
+Goal: make voice state the single source of truth (`voiceStatus`), derive the button mode (no parallel `voiceMode` useState), and surface WS close-code 4002 "superseded" (account taken over on another device). Two prior AI reviews flagged: (a) pipeline voice path must set voiceStatus or it sticks on "connecting"; (b) emitting closed before cleanup races and re-enables the button against stale mic/player refs.
+
+What changed (verify each):
+1) `voiceStatus` is now non-nullable `useState<VoiceConnectionStatus>({phase:"idle"})`; `const voiceMode = phaseToMode(voiceStatus)` (derived). Helper `phaseToMode`: connecting/cold-start→"connecting", active→"active", else→"off".
+2) All former `setVoiceMode("off")` guard paths → `setVoiceStatus({phase:"idle"})`. `setVoiceMode("connecting")` removed (setVoiceStatus connecting already adjacent). `setVoiceMode("active")` removed where setVoiceStatus active already adjacent (omni path).
+3) Pipeline voice (non-omni, Vosk/Whisper) path now sets `setVoiceStatus({phase:"active"})` + lastVoiceStatusRef (the fix for the stick-on-connecting bug).
+4) `session.onDisconnect = (info) => {...}` now ATOMIC: runs showVoiceCostSummary + bridge detach + mic stop + player destroy + null refs SYNCHRONOUSLY, THEN posts a chat message via voiceCloseMessage(reason) (superseded/credits/auth; normal/unknown silent), THEN a single setVoiceStatus(terminal) where terminal = idle for normal/unknown else {phase:"closed",code,reason}. naia-omni.ts fires onDisconnect({code, reason}) on a mid-session close.
+5) connect() catch path: removed early setVoiceStatus(null); now a single terminal setVoiceStatus({phase:"idle"}) after cleanup; still detaches onDisconnect before cleanup.
+6) voiceFailureMessage gained an error+superseded case; new voiceCloseMessage(reason) helper. i18n key chat.voiceErrorSuperseded added in 14 languages.
+
+Review concisely (<350 words, no code):
+A) Is the race actually fixed? onDisconnect does sync teardown before the single setVoiceStatus — does the derived button (off) ever expose itself against stale refs? Any remaining ordering hazard?
+B) Derivation completeness: with voiceMode derived, is there ANY path that leaves voiceStatus in a non-terminal phase (e.g., stuck "connecting"/"active") after the session is gone? Check toggle-off, all guard early-returns, STT-start catch, pipeline path, omni catch.
+C) Double-fire safety: a user toggle-off calls disconnect() which (mid-session) also triggers onDisconnect — is double cleanup safe given showVoiceCostSummary is idempotent and refs use ?.? Any double chat message?
+D) Any correctness/typing bug, or a phase the UI now mishandles (banner shows only when voiceMode==="connecting").
+Verdict: GO / GO-WITH-CHANGES / NO-GO + single most important fix.
+
+Read the current working copy of projects/naia-os/shell/src/components/ChatPanel.tsx (functions: phaseToMode, voiceFailureMessage, voiceCloseMessage near top; handleVoiceToggle; the session.onDisconnect assignment; the connect() catch; the voice-status-banner JSX).

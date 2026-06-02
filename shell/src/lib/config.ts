@@ -11,6 +11,8 @@ import type { LiveProviderId } from "./voice/types";
 
 const STORAGE_KEY = "naia-config";
 export const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
+/** Default address for the Naia Local container (omni-24g realtime WS). */
+export const DEFAULT_NAIA_LOCAL_URL = "ws://localhost:8892";
 
 export type ThemeId =
 	| "system"
@@ -104,6 +106,11 @@ export interface AppConfig {
 	onboardingComplete?: boolean;
 	naiaKey?: string;
 	naiaUserId?: string;
+	/** Naia Local: ws:// address of the user's own omni-24g container.
+	 *  Shown/edited when the `naia-local` model is selected; the logged-in naiaKey
+	 *  is reused (no key input). Only loopback may be plaintext ws://; remote must
+	 *  be wss:// (cross-review). Default DEFAULT_NAIA_LOCAL_URL. */
+	naiaLocalUrl?: string;
 	disabledSkills?: string[];
 	slackWebhookUrl?: string;
 	discordWebhookUrl?: string;
@@ -537,7 +544,8 @@ const _PROD_GATEWAY =
 	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) ||
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
 
-const _DEV_GATEWAY = (import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || "";
+const _DEV_GATEWAY =
+	(import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || "";
 
 /**
  * any-llm Gateway URL.

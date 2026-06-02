@@ -1,0 +1,14 @@
+You are a senior reviewer. Read this design/gap plan file: projects/naia-os/tmp/voice-state-sync-plan.md
+
+Reference (TARGET, web): projects/naia.nextain.io/src/lib/realtime/naia-omni-client.ts
+Current (naia-os, to change): projects/naia-os/shell/src/lib/voice/naia-omni.ts , projects/naia-os/shell/src/lib/voice/types.ts , projects/naia-os/shell/src/components/ChatPanel.tsx (voice parts)
+
+The plan syncs naia-os voice connection state to the web's. Key gap = WS close code 4002 "superseded" (same account taken over on another device).
+
+Answer concisely and concretely:
+1) Q1-Q6 in section 7 of the plan — direct recommendation for each.
+2) ADDITIONAL gaps/design flaws the plan missed (specific, cite code lines).
+3) RISK in the refactor, especially: (a) deriving voiceMode purely from voiceStatus; (b) emitting "closed" mid-session before onDisconnect cleanup runs (race where button re-enables against stale refs).
+4) Final verdict: GO / GO-WITH-CHANGES / NO-GO + single most important fix.
+
+Under 400 words. No code, just review.

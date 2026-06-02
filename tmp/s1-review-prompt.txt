@@ -1,0 +1,18 @@
+Focused code review. Only review the SPECIFIC additions below; the file has pre-existing uncommitted cold-start/abandonPod code that is NOT under review — ignore it.
+
+Context: syncing naia-os voice state to web (naia.nextain.io). Adding WS close-code 4002 "superseded" (same account taken over on another device, last-wins) which naia-os lacked.
+
+Files (read current working-copy versions):
+- projects/naia-os/shell/src/lib/voice/types.ts  — new: VoiceCloseReason, VoiceCloseInfo; VoiceConnectionStatus now has phases idle + closed{code,reason}, error.reason gained "superseded"; onDisconnect signature changed to (info?: VoiceCloseInfo)=>void.
+- projects/naia-os/shell/src/lib/voice/naia-omni.ts — new functions closeCodeReason() and closeCodeMessage() (replacing old closeCodeToMessage), classifyErrorReason() gained a "superseded" branch, and ws.onclose now: pre-session reject uses closeCodeMessage(code); mid-session (wasConnected) calls onDisconnect({code, reason: closeCodeReason(code)}).
+- projects/naia-os/shell/src/lib/voice/__tests__/naia-omni-coldstart.test.ts — 4 new tests (4002 pre-session error reason superseded; 4002 mid-session onDisconnect reason; 1000 normal; existing pass).
+
+Reference (TARGET to match): projects/naia.nextain.io/src/lib/realtime/naia-omni-client.ts function closeReason() — 4001 auth, 4002 superseded, 4003 insufficient credits.
+
+Verify concisely (<300 words, no code):
+1) Is closeCodeReason/closeCodeMessage correct and faithful to the web's closeReason semantics? Any code I mis-mapped?
+2) Does classifyErrorReason("superseded (4002)") correctly resolve to "superseded" given branch order? Any ordering bug (e.g. "superseded" containing a substring that an earlier branch catches)?
+3) Is mapping close 1000/1005 to "normal" sound? Edge cases (1006 abnormal)?
+4) Test correctness: do the new tests actually exercise the paths (esp. mid-session needs a LIVE session via session.created before onclose)? Any false-pass risk?
+5) Any correctness bug or missed case in JUST these additions.
+Verdict: GO / GO-WITH-CHANGES / NO-GO + the single most important fix.

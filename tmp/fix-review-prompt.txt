@@ -1,0 +1,17 @@
+Review a concurrency FIX in projects/naia-os/shell/src/lib/voice/naia-omni.ts (function createNaiaOmniSession → attemptConnect). Earlier holistic review (codex+gemini) found a HIGH bug: `ws` and `connected` are shared across cold-start retry attempts, so a stale socket's late onclose (e.g. the 4503 ending a cold-start attempt, arriving after a newer attempt went active) would flip `connected`/fire onDisconnect and tear down the live session.
+
+The fix:
+- attemptConnect captures `const sock = ws;` right after `ws = new WebSocket(wsUrl)`.
+- Guards added: `if (sock !== ws) return;` at the top of ws.onmessage, ws.onerror, ws.onopen, and the 15s timeout callback (timeout also now calls sock.close() not ws?.close()). onopen sends setup on `sock` not the global `ws`.
+- ws.onclose uses a DIFFERENT guard: `if (ws !== null && sock !== ws) return;` — because disconnect() sets the global `ws = null` during teardown, and the current socket's onclose must still settle the pending connect() promise (otherwise disconnect-during-connecting hangs). So onclose proceeds when ws===null (teardown) or sock===ws (current), and only skips when a newer non-null socket has superseded this one.
+
+Context: disconnect() sets aborted=true, connectAbort.abort(), then `if (ws) { ws.close(); ws = null; }`. The retry loop catches attemptConnect rejections; `if (aborted) throw`.
+
+Tests: 15 coldstart tests pass incl. a new regression "ignores a superseded attempt's late close after a newer attempt is active" (fake timers: preparing→retry→new socket active→old socket 4503 close ignored, onDisconnect not called, isConnected stays true) AND the existing "does not abandon a Pod when cancelling before any cold-start" (disconnect then manual onclose → connect rejects fast). tsc clean, full suite 136 passed.
+
+Verify concisely (<300 words, no code):
+1) Does the fix fully close the stale-socket race for ALL pre-active exit paths (session.preparing/queued, bare 4503, sold_out, error)? Any path where a stale socket can still tear down the live session?
+2) Is the asymmetric onclose guard (`ws !== null && sock !== ws`) correct? Any case where it WRONGLY proceeds (stale socket close after disconnect that shouldn't fire onDisconnect) or WRONGLY skips (current socket close that should settle)?
+3) onmessage/onopen/onerror/timeout use plain `sock !== ws` — correct that these skip when ws===null (post-disconnect/superseded)? Any handler that now mis-skips a needed action?
+4) Any NEW race/leak introduced (e.g., orphaned socket never closed, double settle, onDisconnect after disconnect)?
+Verdict: SHIP / FIX-FIRST + the single most important remaining issue, if any.

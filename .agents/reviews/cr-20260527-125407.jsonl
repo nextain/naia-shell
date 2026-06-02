@@ -1,0 +1,24 @@
+{"type":"REVIEW_STARTED","review_id":"cr-20260527-125407","profile":"analysis-review","target":"naia-runpod-phase1-plan-2026-05-27.md","timestamp":"2026-05-27T12:54:07+09:00"}
+{"type":"REPORT_SUBMITTED","review_id":"cr-20260527-125407","round":1,"reviewer_id":"platform-specialist","verdict":"FOUND_ISSUES","findings_count":2,"timestamp":"2026-05-27T13:00:38+09:00"}
+{"type":"REPORT_SUBMITTED","review_id":"cr-20260527-125407","round":1,"reviewer_id":"reasoning-auditor","verdict":"FOUND_ISSUES","findings_count":13,"timestamp":"2026-05-27T13:00:38+09:00"}
+{"type":"REPORT_SUBMITTED","review_id":"cr-20260527-125407","round":1,"reviewer_id":"slop-detector","verdict":"FOUND_ISSUES","findings_count":4,"timestamp":"2026-05-27T13:00:38+09:00"}
+{"type":"FINDING_CONFIRMED","review_id":"cr-20260527-125407","round":1,"finding_id":"price-inconsistency","severity":"CRITICAL","supporters":["platform-specialist","reasoning-auditor","slop-detector"],"threshold":"3/3","strategy":"unanimous","rationale":"all 3 reviewers cited 0.39/0.49/0.33 inconsistency + code constants at realtime.py:52 + live.py:355"}
+{"type":"FINDING_CONFIRMED","review_id":"cr-20260527-125407","round":1,"finding_id":"cold-start-estimate-unsourced","severity":"MEDIUM","supporters":["reasoning-auditor","slop-detector","platform-specialist"],"threshold":"3/3","strategy":"unanimous","rationale":"no STATUS.md measurement source, all 3 flagged"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":1,"confirmed":2,"dismissed":13,"contested":0,"clean_count":0,"timestamp":"2026-05-27T13:00:38+09:00"}
+{"type":"REPORT_SUBMITTED","review_id":"cr-20260527-125407","round":2,"reviewer_id":"platform-specialist","verdict":"FOUND_ISSUES","findings_count":5,"timestamp":"2026-05-27T13:12:01+09:00"}
+{"type":"REPORT_SUBMITTED","review_id":"cr-20260527-125407","round":2,"reviewer_id":"reasoning-auditor","verdict":"FOUND_ISSUES","findings_count":6,"timestamp":"2026-05-27T13:12:01+09:00"}
+{"type":"REPORT_SUBMITTED","review_id":"cr-20260527-125407","round":2,"reviewer_id":"slop-detector","verdict":"FOUND_ISSUES","findings_count":3,"timestamp":"2026-05-27T13:12:01+09:00"}
+{"type":"FINDING_CONFIRMED","review_id":"cr-20260527-125407","round":2,"finding_id":"32g-voice-false-claim","severity":"HIGH","supporters":["platform-specialist","slop-detector"],"threshold":"2-of-3","strategy":"factual","rationale":"both raised + filesystem verified"}
+{"type":"FINDING_CONFIRMED","review_id":"cr-20260527-125407","round":2,"finding_id":"volume-unit-typo","severity":"MEDIUM","supporters":["platform-specialist","slop-detector"],"threshold":"2-of-3","strategy":"factual"}
+{"type":"FINDING_CONFIRMED","review_id":"cr-20260527-125407","round":2,"finding_id":"license-token-storage-false-premise","severity":"CRITICAL","supporters":["reasoning-auditor"],"threshold":"1-of-3 but code-verified","rationale":"saveApiKeys at bin/naia-agent.ts:2679 writes to keychain not llm.json — verified"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":2,"confirmed":6,"dismissed":8,"contested":0,"clean_count":0,"timestamp":"2026-05-27T13:12:01+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":3,"confirmed":0,"dismissed":5,"verdict":"FOUND_ISSUES_LOW_ONLY","clean_count":0,"timestamp":"2026-05-27T13:24:32+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":4,"confirmed":1,"dismissed":0,"verdict":"FOUND_ISSUES_LOW_ONLY","clean_count":0,"timestamp":"2026-05-27T13:24:32+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":5,"confirmed":0,"dismissed":0,"verdict":"CLEAN","clean_count":1,"timestamp":"2026-05-27T13:24:32+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":6,"confirmed":1,"verdict":"FOUND_ISSUES","clean_count":0,"timestamp":"2026-05-27T13:43:02+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":7,"confirmed":1,"verdict":"FOUND_ISSUES","clean_count":0,"timestamp":"2026-05-27T13:43:02+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":8,"confirmed":0,"verdict":"FOUND_ISSUES_LOW_ONLY","clean_count":0,"timestamp":"2026-05-27T13:43:02+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":9,"confirmed":0,"verdict":"FOUND_ISSUES_LOW_ONLY","clean_count":0,"timestamp":"2026-05-27T13:43:02+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":10,"confirmed":0,"verdict":"CLEAN","clean_count":1,"timestamp":"2026-05-27T13:43:02+09:00"}
+{"type":"ROUND_COMPLETED","review_id":"cr-20260527-125407","round":11,"confirmed":0,"verdict":"CLEAN","clean_count":2,"timestamp":"2026-05-27T13:43:02+09:00"}
+{"type":"REVIEW_COMPLETED","review_id":"cr-20260527-125407","rounds_total":11,"final_status":"CLEAN_GATE_PASS","timestamp":"2026-05-27T13:43:02+09:00"}

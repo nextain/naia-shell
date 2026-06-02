@@ -1,0 +1,270 @@
+warning: in the working copy of 'shell/src/lib/persona.ts', LF will be replaced by CRLF the next time Git touches it
+diff --git a/agent/src/skills/built-in/youtube-bgm.ts b/agent/src/skills/built-in/youtube-bgm.ts
+index 64b667f7..0f0a4b81 100644
+--- a/agent/src/skills/built-in/youtube-bgm.ts
++++ b/agent/src/skills/built-in/youtube-bgm.ts
+@@ -180,10 +180,14 @@ export function createYoutubeBgmSkill(): SkillDefinition {
+ 			}
+ 
+ 			if (action === "fav_list") {
++				// This skill runs in the agent process and cannot read the Shell's
++				// favorites store. The real list is injected into the system prompt
++				// as BGM context (favoritesList). Point the model there instead of
++				// returning fabricated data.
+ 				return {
+ 					success: true,
+ 					output:
+-						"Favorites list is available in BGM context (favoritesList field). Use it to see what the user has saved.",
++						"Do not call this action to read favorites. The favorites list is in the BGM context 'favoritesList' field ([{id,title}]). Read it directly from context. If favoritesList is absent or empty, the favorites are empty — do not invent titles.",
+ 				};
+ 			}
+ 
+diff --git a/agent/src/system-prompt.ts b/agent/src/system-prompt.ts
+index 5c344f30..717cc454 100644
+--- a/agent/src/system-prompt.ts
++++ b/agent/src/system-prompt.ts
+@@ -131,11 +131,13 @@ export function buildToolStatusPrompt(
+ 			"\n- REQUIRED 2-step flow: ① action='search', query='...' → ② action='play', videoId='결과의 id', title='제목'" +
+ 			"\n- search 결과를 받으면 즉시 가장 적합한 항목을 골라 play까지 자동 실행한다. 사용자에게 목록을 보여주거나 확인을 구하지 않는다. 장르/분위기 키워드만 있어도 바로 검색 후 재생한다." +
+ 			"\n- 장르/분위기 요청(로파이, 재즈, 클래식, 디즈니 OST 등)은 영어+장르 키워드로 검색: 'disney ost piano 1 hour', 'lofi hip hop beats' 등." +
+-			"\n- 사용 가능한 전체 액션: search, play, stop, pause, resume, next, prev, volume, trending, fav_add, fav_remove" +
++			"\n- 사용 가능한 전체 액션: search, play, stop, pause, resume, next, prev, volume, trending, fav_add, fav_remove, fav_list" +
+ 			"\n- 일시정지: action='pause' | 재개: action='resume' | 다음곡(즐겨찾기에서): action='next' | 이전곡: action='prev'" +
+ 			"\n- 볼륨 조절: action='volume', volume=0.0~1.0 (예: 50%는 0.5)" +
+ 			"\n- 완전 정지+초기화: action='stop'" +
+ 			"\n- 현재 재생 중인 곡 정보: 별도 도구 호출 불필요. 시스템 컨텍스트의 BGM context에서 직접 읽음 (currentTitle, currentVideoId, playing, volume 필드). action='status' 같은 것은 존재하지 않음." +
++			"\n- 즐겨찾기 목록: BGM context의 favoritesList(= [{id, title}] 배열)와 favoritesCount 필드에서 직접 읽는다. fav_list 액션은 실제 목록을 반환하지 않으므로 즐겨찾기 내용을 답할 때는 반드시 BGM context의 favoritesList를 근거로 한다." +
++			"\n- ⚠️ BGM context가 없거나 favoritesList가 비어 있으면 즐겨찾기가 비어 있거나 음악 플레이어가 비활성인 상태다. 이 경우 곡 제목을 절대 지어내지 말고 '즐겨찾기가 비어 있다' 또는 '확인할 수 없다'고 정직하게 답한다." +
+ 			"\n- '틀어줘 / 재생해줘 / 켜줘' 요청 시 search → play 즉시 실행. '찾아볼게요'만 말하고 play 안 하는 것은 FORBIDDEN.";
+ 	}
+ 
+diff --git a/shell/src/components/ChatPanel.tsx b/shell/src/components/ChatPanel.tsx
+index a56ef87c..75e8d6ff 100644
+--- a/shell/src/components/ChatPanel.tsx
++++ b/shell/src/components/ChatPanel.tsx
+@@ -92,7 +92,7 @@ import { parseEmotion } from "../lib/vrm/expression";
+ import { useAvatarStore } from "../stores/avatar";
+ import { useChatStore } from "../stores/chat";
+ import { useLogsStore } from "../stores/logs";
+-import { usePanelStore } from "../stores/panel";
++import { selectPromptPanelContexts, usePanelStore } from "../stores/panel";
+ import { useProgressStore } from "../stores/progress";
+ import { useSkillsStore } from "../stores/skills";
+ import { AgentsTab } from "./AgentsTab";
+@@ -234,9 +234,13 @@ async function buildMemoryContext(): Promise<MemoryContext> {
+ 		ctx.discordDefaultUserId = cfg?.discordDefaultUserId;
+ 		ctx.discordDmChannelId = cfg?.discordDmChannelId;
+ 
+-		const panelCtx = usePanelStore.getState().activePanelContext;
+-		if (panelCtx) {
+-			ctx.panelContext = panelCtx;
++		// Active panel context + persistent contexts (bgm favorites/current track).
++		// Persistent contexts survive panel switches so background music state is
++		// always available — fixes the AI hallucinating favorites when another
++		// panel was active.
++		const panelCtxList = selectPromptPanelContexts(usePanelStore.getState());
++		if (panelCtxList.length > 0) {
++			ctx.panelContexts = panelCtxList;
+ 		}
+ 	} catch (err) {
+ 		Logger.warn("ChatPanel", "Failed to build memory context", {
+@@ -638,8 +642,33 @@ export function ChatPanel() {
+ 		}
+ 	}, [isStreaming, messageQueue.length]);
+ 
++	/**
++	 * Stop any in-flight TTS so a new turn does not keep reading the previous
++	 * response. Covers both paths: the AudioQueue (server/edge MP3 chunks) AND
++	 * the browser client-side `speechSynthesis` path, which AudioQueue.clear()
++	 * does not control. Also clears the sentence chunker and pending request
++	 * tracking, and resets the speaking/avatar state.
++	 */
++	function interruptTts(): void {
++		audioQueueRef.current?.clear();
++		sentenceChunkerRef.current?.clear();
++		activeTtsRequestsRef.current.clear();
++		if (typeof window !== "undefined" && "speechSynthesis" in window) {
++			try {
++				window.speechSynthesis.cancel();
++			} catch {
++				// best-effort — some webviews throw if no utterance is active
++			}
++		}
++		ttsPlayingRef.current = false;
++		setTtsPlaying(false);
++		useAvatarStore.getState().setSpeaking(false);
++	}
++
+ 	async function handleNewConversation() {
+ 		const store = useChatStore.getState();
++		// Stop any TTS still reading the previous conversation.
++		interruptTts();
+ 		store.newConversation();
+ 
+ 		// Reset Gateway session and set local session ID
+@@ -700,8 +729,10 @@ export function ChatPanel() {
+ 		useChatStore.getState().addMessage({ role: "user", content: text });
+ 
+ 		useChatStore.getState().startStreaming();
+-		// Reset TTS sequence for new response ordering
+-		audioQueueRef.current?.resetSeq();
++		// New turn supersedes any in-flight TTS: stop the previous response's
++		// audio (queue + browser speechSynthesis) instead of letting it finish.
++		// clear() also resets the ordering sequence for the new response.
++		interruptTts();
+ 
+ 		const store = useChatStore.getState();
+ 
+diff --git a/shell/src/components/ModeBar.tsx b/shell/src/components/ModeBar.tsx
+index 072432b9..d73f3ed4 100644
+--- a/shell/src/components/ModeBar.tsx
++++ b/shell/src/components/ModeBar.tsx
+@@ -12,11 +12,18 @@ import {
+ import { loadConfig, saveConfig } from "../lib/config";
+ import { getLocale, t } from "../lib/i18n";
+ import { Logger } from "../lib/logger";
++import { getBridgeForPanel } from "../lib/active-bridge";
+ import { removeInstalledPanel } from "../lib/panel-loader";
+ import { panelRegistry } from "../lib/panel-registry";
+ import { usePanelStore } from "../stores/panel";
+ import { BgmPlayer } from "./BgmPlayer";
+ 
++// BGM player lives in the always-on mode-bar (not a switchable panel), so it
++// needs its own persistent bridge to push BGM context (favorites, current
++// track) into Naia's system prompt. Without a bridge the push is dead code
++// (`if (!naia) return` in BgmPlayer) and the AI never sees favoritesList.
++const bgmBridge = getBridgeForPanel("bgm");
++
+ interface ModeBarProps {
+ 	onAddMode?: () => void;
+ }
+@@ -557,7 +564,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
+ 				</div>
+ 			, document.body)}
+ 			{/* ── BGM (right side of mode-bar) ─── */}
+-			<BgmPlayer />
++			<BgmPlayer naia={bgmBridge} />
+ 			<button
+ 				type="button"
+ 				className={`mode-bar-settings${activePanel === "settings" ? " mode-bar-settings--active" : ""}`}
+diff --git a/shell/src/lib/persona.ts b/shell/src/lib/persona.ts
+index 83d96018..43c7f272 100644
+--- a/shell/src/lib/persona.ts
++++ b/shell/src/lib/persona.ts
+@@ -126,8 +126,12 @@ export interface MemoryContext {
+ 	locale?: string;
+ 	discordDefaultUserId?: string;
+ 	discordDmChannelId?: string;
+-	/** Active panel context — pushed by the current panel via NaiaContextBridge */
+-	panelContext?: { type: string; data: Record<string, unknown> };
++	/**
++	 * Panel contexts pushed via NaiaContextBridge — the active (switchable)
++	 * panel plus any persistent contexts (e.g. bgm favorites). One block is
++	 * rendered per entry. Assembled by `selectPromptPanelContexts`.
++	 */
++	panelContexts?: { type: string; data: Record<string, unknown> }[];
+ }
+ 
+ /** Build full system prompt from persona text + optional memory context */
+@@ -192,10 +196,12 @@ export function buildSystemPrompt(
+ 			}
+ 		}
+ 
+-		if (context.panelContext) {
+-			contextLines.push(
+-				`Active panel: ${context.panelContext.type}\nPanel context: ${JSON.stringify(context.panelContext.data)}`,
+-			);
++		if (context.panelContexts?.length) {
++			for (const pc of context.panelContexts) {
++				contextLines.push(
++					`Panel [${pc.type}] context: ${JSON.stringify(pc.data)}`,
++				);
++			}
+ 		}
+ 
+ 		if (contextLines.length > 0) {
+diff --git a/shell/src/stores/panel.ts b/shell/src/stores/panel.ts
+index 585b983f..a93fdb2e 100644
+--- a/shell/src/stores/panel.ts
++++ b/shell/src/stores/panel.ts
+@@ -6,12 +6,31 @@ function requestBrowserVisibilitySync() {
+ 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
+ }
+ 
++/**
++ * Context types that persist across panel switches. These belong to always-on
++ * UI (the mode-bar BGM player) rather than a switchable panel, so they must NOT
++ * be cleared when the active panel changes, and they live in a separate keyed
++ * bucket so a transient panel push can never overwrite them. See
++ * `selectPromptPanelContexts` for how they are merged into the system prompt.
++ */
++const PERSISTENT_CONTEXT_TYPES = new Set<string>(["bgm"]);
++
+ interface PanelState {
+ 	/** Currently active panel id. null = default avatar view. */
+ 	activePanel: string | null;
+ 	setActivePanel: (id: string | null) => void;
+-	/** Latest context pushed by the active panel (for Naia's system prompt). */
++	/** Latest context pushed by the active (switchable) panel. Cleared on switch. */
+ 	activePanelContext: PanelContext | null;
++	/**
++	 * Persistent contexts keyed by type (e.g. "bgm"). Survive panel switches and
++	 * are never overwritten by transient panel pushes.
++	 */
++	persistentPanelContexts: Record<string, PanelContext>;
++	/**
++	 * Route a pushed context: persistent types (bgm) go to the keyed bucket,
++	 * everything else replaces the single active-panel slot. Passing null clears
++	 * only the active slot (persistent contexts are unaffected).
++	 */
+ 	setActivePanelContext: (ctx: PanelContext | null) => void;
+ 	/**
+ 	 * Incremented whenever panels are installed or removed at runtime.
+@@ -43,13 +62,27 @@ export const usePanelStore = create<PanelState>((set, get) => ({
+ 		if (current === "browser" && id !== "browser") {
+ 			invoke("browser_wv_hide").catch(() => {});
+ 		}
++		// Clear only the transient active-panel slot; persistent contexts (bgm)
++		// must survive the switch so background music favorites stay available.
+ 		set({ activePanel: id, activePanelContext: null });
+ 		if (id === "browser" && current !== "browser") {
+ 			requestBrowserVisibilitySync();
+ 		}
+ 	},
+ 	activePanelContext: null,
+-	setActivePanelContext: (ctx) => set({ activePanelContext: ctx }),
++	persistentPanelContexts: {},
++	setActivePanelContext: (ctx) => {
++		if (ctx && PERSISTENT_CONTEXT_TYPES.has(ctx.type)) {
++			set((s) => ({
++				persistentPanelContexts: {
++					...s.persistentPanelContexts,
++					[ctx.type]: ctx,
++				},
++			}));
++			return;
++		}
++		set({ activePanelContext: ctx });
++	},
+ 	panelListVersion: 0,
+ 	bumpPanelListVersion: () =>
+ 		set((s) => ({ panelListVersion: s.panelListVersion + 1 })),
+@@ -77,3 +110,18 @@ export const usePanelStore = create<PanelState>((set, get) => ({
+ 	setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
+ 	toggleTtsEnabled: () => set((s) => ({ ttsEnabled: !s.ttsEnabled })),
+ }));
++
++/**
++ * Contexts to inject into Naia's system prompt: the active (switchable) panel
++ * plus all persistent contexts (bgm). The active context wins if a persistent
++ * type collides, and we skip large/all-panel injection — only active +
++ * persistent, never every panel that has ever pushed.
++ */
++export function selectPromptPanelContexts(state: PanelState): PanelContext[] {
++	const out: PanelContext[] = [];
++	if (state.activePanelContext) out.push(state.activePanelContext);
++	for (const ctx of Object.values(state.persistentPanelContexts)) {
++		if (ctx && ctx.type !== state.activePanelContext?.type) out.push(ctx);
++	}
++	return out;
++}

@@ -1,0 +1,26 @@
+fix(voice): ignore superseded cold-start sockets (stale-close race)
+
+Holistic cross-review (codex + gemini) found a HIGH race the per-step reviews
+missed: `ws`/`connected` are shared across cold-start retry attempts, so a
+stale socket's late close (the 4503 that ends a cold-start attempt, arriving
+after a newer attempt already went active) flipped `connected` and fired
+onDisconnect — tearing down the live session. The new §4 paths
+(session.preparing/queued, bare 4503) widened the window by adding retries.
+
+- attemptConnect captures the per-attempt socket (`sock`); every handler
+  guards `sock !== ws` so a superseded socket's events are ignored.
+- onclose uses `ws !== null && sock !== ws` so a teardown close (disconnect()
+  nulls ws) still settles the pending connect() promise — otherwise
+  disconnect-during-connecting would hang.
+- onopen/timeout act on `sock`, not the global `ws`.
+
+Regression test: a superseded attempt's late 4503 close is ignored
+(onDisconnect not fired, session stays connected). 15 coldstart tests pass,
+full suite 136, tsc clean. Re-cross-reviewed (codex + gemini): SHIP.
+
+## AI Context
+- Gotcha: disconnect() sets ws=null, so onclose needs the ws-null exception or
+  disconnect-during-connecting hangs (caught by the existing cancel test).
+- Pattern: per-attempt socket ownership guard (sock === ws).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

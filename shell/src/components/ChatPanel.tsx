@@ -31,6 +31,7 @@ import {
 	sendPanelToolResult,
 } from "../lib/chat-service";
 import {
+	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
 	addAllowedTool,
@@ -2033,8 +2034,20 @@ export function ChatPanel() {
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			} else if (liveProvider === "naia-omni") {
-				// naia-omni: gateway mode when naiaKey available, direct mode otherwise
-				const useGw = !!naiaKey;
+				// naia-omni: gateway when logged in; Naia Local = direct to the
+				// user's OWN container (even when logged in); else direct (vllm).
+				const isLocalContainer = config.model === "naia-local";
+				// Naia Local needs the login key — the container validates entitlement.
+				if (isLocalContainer && !naiaKey) {
+					Logger.warn("ChatPanel", "Naia Local requires login (Naia key)");
+					useChatStore.getState().addMessage({
+						role: "assistant",
+						content: t("chat.voiceNeedLabKey"),
+					});
+					setVoiceStatus({ phase: "idle" });
+					return;
+				}
+				const useGw = !!naiaKey && !isLocalContainer;
 				const vllmBase = (config.vllmHost ?? DEFAULT_VLLM_HOST).replace(
 					/\/+$/,
 					"",
@@ -2048,12 +2061,24 @@ export function ChatPanel() {
 					: undefined;
 				await session.connect({
 					provider: "naia-omni",
+					localContainer: isLocalContainer || undefined,
 					refAudioUrl: naiaRefAudioUrl,
-					serverUrl: useGw ? undefined : wsBase,
+					serverUrl: isLocalContainer
+						? (config.naiaLocalUrl ?? DEFAULT_NAIA_LOCAL_URL)
+						: useGw
+							? undefined
+							: wsBase,
 					gatewayUrl: useGw ? LAB_GATEWAY_URL : undefined,
-					naiaKey: useGw ? naiaKey : undefined,
-					instanceId: useGw ? getNaiaInstanceId(config.naiaUserId) : undefined,
-					model: config.model,
+					// Naia Local reuses the logged-in key (no key input) so the
+					// container can validate entitlement (gated by localContainer).
+					naiaKey: useGw || isLocalContainer ? naiaKey : undefined,
+					instanceId:
+						useGw || isLocalContainer
+							? getNaiaInstanceId(config.naiaUserId)
+							: undefined,
+					// Wire model = the real model the container serves; "naia-local" is
+					// a UI alias only (cross-review: don't send the alias on the wire).
+					model: isLocalContainer ? "naia-0.9-omni-24g" : config.model,
 					systemInstruction: voiceSystemPrompt,
 					voice: selectedVoice,
 					locale: getLocale(),
@@ -2124,15 +2149,22 @@ export function ChatPanel() {
 			const cancelled =
 				voiceCancelledRef.current ||
 				(err instanceof Error && err.name === "AbortError");
+			const errStr = String(err);
 			Logger.warn("ChatPanel", "Voice connection failed", {
-				error: String(err),
+				error: errStr,
 				cancelled,
 			});
-			// User-initiated cold-start cancel → no error message. Otherwise pick a
-			// scenario-specific message from the last status the session emitted
-			// (sold-out / out-of-credits / auth / timeout) instead of a raw dump.
+			// User-initiated cold-start cancel → no message. Otherwise: Naia Local
+			// entitlement gate (subscription-required / auth-failed) takes priority,
+			// then a scenario message from the last status the session emitted
+			// (sold-out / credits / auth / superseded / consent / timeout), else a
+			// raw dump. Cleanup below turns voice off so there is no retry loop.
 			if (!cancelled) {
-				const content = voiceFailureMessage(lastVoiceStatusRef.current, err);
+				const content = errStr.includes("subscription-required")
+					? t("chat.voiceSubscriptionRequired")
+					: errStr.includes("auth-failed")
+						? t("chat.voiceNeedLabKey")
+						: voiceFailureMessage(lastVoiceStatusRef.current, err);
 				useChatStore.getState().addMessage({ role: "assistant", content });
 			}
 			voiceCancelledRef.current = false;

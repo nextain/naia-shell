@@ -1,0 +1,1041 @@
+OpenAI Codex v0.133.0
+--------
+workdir: D:\alpha-adk\projects\naia-os
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 019e86a1-1673-7701-8043-a352075c80df
+--------
+user
+# Cross-review request — naia-os panel-context / chat-TTS fixes
+
+You are an independent reviewer. Read the ACTUAL source files referenced below
+(they exist in this repo) and critically review the diagnosis and the proposed
+fix plan. Be adversarial: look for wrong root-cause, missed call sites,
+regressions, race conditions, token-cost blowups, and simpler alternatives.
+Do NOT write code. Return: (1) confirm/refute each root cause, (2) risks in the
+plan, (3) concrete answers to the open questions, (4) a recommended final plan.
+
+## Context
+naia-os = Tauri shell (`shell/`) + separate agent process (`agent/`). The agent
+runs skills; it cannot read the shell's browser localStorage. The shell pushes
+"panel context" to the agent, which is baked into the LLM system prompt.
+
+Two user-reported bugs:
+1. Chat TTS: when a NEW conversation turn starts, the previous turn's TTS keeps
+   reading to the end instead of stopping and starting from the new turn.
+2. The AI cannot read the YouTube BGM favorites list and hallucinates song
+   titles (real first favorite is "Fantasy RPG Game"; AI invented lofi titles).
+
+## Diagnosed root causes (verify against the real code)
+
+### A — TTS interrupt missing
+`shell/src/components/ChatPanel.tsx:704` — on a new turn it calls
+`audioQueueRef.current?.resetSeq()`.
+`shell/src/lib/voice/audio-queue.ts`: `resetSeq()` (line 58) only resets the
+ordering counters + `pendingOrdered`; it does NOT touch the currently playing
+audio (`this.current`) or the waiting `this.queue`. `clear()` (line 76) pauses
+current + empties queue + resets counters. The voice barge-in path
+(`ChatPanel.tsx:1364`) already uses `clear()`. So old TTS continues and new
+chunks append behind it.
+
+### B — single-slot panel context overwrite (structural)
+- `shell/src/stores/panel.ts:14,52`: `activePanelContext: PanelContext | null`
+  single slot; `setActivePanelContext` replaces it wholesale. Note line 46:
+  `setActivePanel` nulls the context on panel switch.
+- `shell/src/lib/panel-registry.ts:147`: `pushContext(ctx)` →
+  `setActivePanelContext(ctx)`.
+- Consumers: `ChatPanel.tsx:237` `buildMemoryContext` reads the single slot →
+  `persona.ts:195` renders it as ONE block. Voice path `ChatPanel.tsx:1863`
+  also reads the same single slot (fed to `panel-context-bridge.ts`).
+- 5 panels push into this one slot: workspace
+  (`WorkspaceCenterPanel.tsx` lines 599,645,661,695,735 — 5 sites), bgm
+  (`BgmPlayer.tsx:358`), browser (`BrowserCenterPanel.tsx:237`), sample-note
+  (`SampleNoteCenterPanel.tsx:37,51`), avatar (`avatar/index.tsx:12`).
+- Last writer wins. Background BGM only re-pushes when its state changes, so
+  workspace/etc. overwrite the BGM favorites → AI loses `favoritesList` →
+  hallucinates. Same failure applies to "what page am I on" (browser) etc.
+
+### C — `fav_list` skill returns no data
+`agent/src/skills/built-in/youtube-bgm.ts:186`: `fav_list` returns a static
+string "Favorites list is available in BGM context (favoritesList field)..."
+with no real data. The skill cannot read localStorage. Also
+`agent/src/system-prompt.ts:134` action list omits `fav_list`, and only the BGM
+block (line 138) tells the AI to read context fields.
+(Storage itself is fine: favorites live in browser localStorage key
+`yt-bgm-favorites`, unrelated to ADK.)
+
+## Proposed plan (user approved "option 1" = panel-context map + fix A & C)
+1. A: `ChatPanel.tsx:704` `resetSeq()` → `clear()`.
+2. B: `stores/panel.ts` single slot → `panelContexts: Record<string, PanelContext>`
+   keyed by `ctx.type`; merge on push. Re-evaluate the null-on-switch behavior
+   (line 46). Inject active panel + persistent (BGM) contexts MERGED into the
+   system prompt (`persona.ts`). Update voice path (`panel-context-bridge`,
+   `ChatPanel:1863`) to the map.
+3. C: make `fav_list` return the real favorites (via guaranteed context), and
+   add `fav_list` + favoritesList read guidance to `system-prompt.ts`.
+
+## Open questions
+- Map approach: token-cost blowup from injecting all 5 panel contexts vs only
+  active + persistent(BGM). Which is better?
+- How to carry the "invalidate stale context on panel switch" policy
+  (current line 46) into a map without leaking stale data?
+- Interaction of the map merge with the voice Live mid-session inject
+  (`panel-context-bridge.ts` debounce + JSON diff) — anything missed?
+- When changing A to `clear()`, any conflict with the sequential queued-message
+  send (`ChatPanel.tsx:635-639`) where a previous turn's audio should
+  legitimately continue?
+
+codex
+I’ll use the cross-review skill and read the project rules plus the referenced source before judging the diagnosis. Since this is review-only and the workspace is read-only, I’ll avoid edits and focus on verifying the actual call paths.
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'Get-Content -Path .agents/context/agents-rules.json' in D:\alpha-adk\projects\naia-os
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'Get-Content -Path .agents/skills/cross-review/SKILL.md' in D:\alpha-adk\projects\naia-os
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'Get-Content -Path .agents/context/project-index.yaml' in D:\alpha-adk\projects\naia-os
+ exited 1 in 6126ms:
+D:\OneDrive - nextain\문서\WindowsPowerShell\Microsoft.PowerShell_profile.ps1 : 이 명령은 다른 언어 모드에서 정의되었으
+므로 도트 소싱할 수 없습니다. 해당 콘텐츠를 가져오지 않고 이 명령을 호출하려면 '.' 연산자를 생략하십시오.
+위치 줄:1 문자:1
++ . 'D:\OneDrive - nextain\문서\WindowsPowerShell\Microsoft.PowerShell_pr ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Microsoft.PowerShell_profile.ps1], NotSupportedException
+    + FullyQualifiedErrorId : DotSourceNotSupported,Microsoft.PowerShell_profile.ps1
+ 
+속성을 설정할 수 없습니다. 속성 설정은 이 언어 모드의 핵심 유형에 대해서만 지원됩니다.
+위치 줄:1 문자:1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+Get-Content : 'D:\alpha-adk\.agents\skills\cross-review\SKILL.md' 경로는 존재하지 않으므로 찾을 수 없습니다.
+위치 줄:2 문자:1
++ Get-Content -Path .agents/skills/cross-review/SKILL.md
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\alpha-adk\.a...review\SKILL.md:String) [Get-Content], ItemNotFoundEx 
+   ception
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
+ 
+
+2026-06-02T04:39:47.016171Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 6.1 seconds
+Output:
+D:\OneDrive - nextain\문서\WindowsPowerShell\Microsoft.PowerShell_profile.ps1 : 이 명령은 다른 언어 모드에서 정의되었으
+므로 도트 소싱할 수 없습니다. 해당 콘텐츠를 가져오지 않고 이 명령을 호출하려면 '.' 연산자를 생략하십시오.
+위치 줄:1 문자:1
++ . 'D:\OneDrive - nextain\문서\WindowsPowerShell\Microsoft.PowerShell_pr ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Microsoft.PowerShell_profile.ps1], NotSupportedException
+    + FullyQualifiedErrorId : DotSourceNotSupported,Microsoft.PowerShell_profile.ps1
+ 
+속성을 설정할 수 없습니다. 속성 설정은 이 언어 모드의 핵심 유형에 대해서만 지원됩니다.
+위치 줄:1 문자:1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+Get-Content : 'D:\alpha-adk\.agents\skills\cross-review\SKILL.md' 경로는 존재하지 않으므로 찾을 수 없습니다.
+위치 줄:2 문자:1
++ Get-Content -Path .agents/skills/cross-review/SKILL.md
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (D:\alpha-adk\.a...review\SKILL.md:String) [Get-Content], ItemNotFoundEx 
+   ception
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand
+ 
+
+ succeeded in 6143ms:
+# Copyright 2026 Nextain Inc. All rights reserved.
+#
+# Naia OS ?�크?�페?�스 ?�덱??
+# AI가 ?�브모듈�?규칙�?진입?�을 찾는 ???�용
+version: "2.0"
+
+workspace:
+  type: personal
+  name: alpha-adk
+  owner: luke
+  org: nextain
+  repo: nextain/alpha-adk
+  visibility: private
+
+# ?�브모듈 ?�의
+submodules:
+  # === 문서 ===
+  nextain-docs:
+    path: ./data-company/nextain-docs
+    type: docs
+    description: "Company-wide docs (onboarding, meetings, design)"
+    repo: nextain/nextain-docs
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+
+  nextain-team-strategy:
+    path: ./data-teams/nextain-team-strategy
+    type: docs
+    description: "Strategy team documents (proposals, strategy, IR)"
+    repo: nextain/nextain-team-strategy
+    visibility: private
+    rulesEntrypoint: README.md
+    status: active
+
+  nextain-team-accounting:
+    path: ./data-teams/nextain-team-accounting
+    type: docs
+    description: "Accounting team documents"
+    repo: nextain/nextain-team-accounting
+    visibility: private
+    rulesEntrypoint: README.md
+    status: active
+
+  # === ?�로?�트 ===
+  cafelua.com:
+    path: ./cafelua.com
+    type: project
+    description: "Cafelua personal website"
+    repo: luke-n-alpha/cafelua-private
+    visibility: private
+    rulesEntrypoint: README.md
+    status: active
+
+  project-any-llm:
+    path: ./project-any-llm
+    type: lib
+    description: "Naia AnyLLM SDK + FastAPI gateway (LLM proxy, credits, auth, usage tracking)"
+    repo: nextain/naia-anyllm
+    visibility: public
+    rulesEntrypoint: README.md
+    status: active
+
+  www.onmam.com:
+    type: project
+    description: "OnMam website ??CI+WP church homepage service (PHP 7.4 + CodeIgniter + MySQL 8.0 + Apache)"
+    repo: nextain/www.onmam.com
+    visibility: private
+    rulesEntrypoint: projects/onmam-dev/AGENTS.md  # 로컬 ?�론 ?�음 ??onmam-dev 경유
+    status: active
+    notes: "no-local-clone. Alpha: *.onmampick.org, Staging: *.onmam.net, Prod: *.onmam.com. Remote dev on onmam-dev GCE."
+
+  onmam-dev:
+    path: ./projects/onmam-dev
+    type: project
+    description: "OnMam remote dev environment context ??AI agent entrypoint for onmam-dev GCE VM"
+    repo: onmam-com/onmam-dev
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+    notes: "Source SoT is on onmam-dev server (/opt/onmam/luke/). Local clone is reference-only."
+
+  naia-memory:
+    path: ./projects/naia-memory
+    type: project
+    description: "Naia Memory cognitive memory system (formerly alpha-memory)"
+    repo: nextain/naia-memory
+    visibility: private
+    rulesEntrypoint: GEMINI.md
+    status: active
+
+  onmam-adk:
+    path: ./projects/onmam-adk
+    type: project
+    description: "OnMam ADK workspace ??fork of naia-business-adk with onmam-specific skills"
+    repo: onmam-com/onmam-adk
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+
+  naia-adk:
+    path: ./projects/naia-adk
+    type: project
+    description: "Naia ADK workspace"
+    repo: nextain/naia-adk
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+
+  naia-business-adk:
+    path: ./projects/naia-business-adk
+    type: project
+    description: "Naia Business ADK workspace"
+    repo: nextain/naia-business-adk
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+
+  # === 참조??(Upstream Tracking, Read-Only) ===
+  ref-cline:
+    path: ./ref-cline
+    type: reference
+    description: "Cline upstream reference (VS Code AI extension)"
+    source: https://github.com/cline/cline
+    visibility: public  # external
+    status: active
+
+  ref-opencode:
+    path: ./ref-opencode
+    type: reference
+    description: "OpenCode reference (TUI-based AI coding agent)"
+    source: https://github.com/anomalyco/opencode
+    visibility: public  # external
+    status: active
+
+  ref-nanoclaw:
+    path: ./ref-nanoclaw
+    type: reference
+    description: "NanoClaw reference (lightweight AI agent framework)"
+    source: https://github.com/qwibitai/nanoclaw
+    visibility: public  # external
+    status: active
+
+  ref-moltbot:
+    path: ./ref-moltbot
+    type: reference
+    description: "Moltbot reference"
+    source: https://github.com/moltbot/moltbot
+    visibility: public  # external
+    status: active
+
+  ref-project-airi:
+    path: ./ref-project-airi
+    type: reference
+    description: "AIRI reference (AI character project)"
+    source: https://github.com/moeru-ai/airi
+    visibility: public  # external
+    status: active
+
+  ref-jikime-adk:
+    path: ./ref-jikime-adk
+    type: reference
+    description: "Jikime ADK reference (Agent Development Kit)"
+    source: https://github.com/jikime/jikime-adk
+    visibility: public  # external
+    status: active
+
+  ref-jikime-mem:
+    path: ./ref-jikime-mem
+    type: reference
+    description: "Jikime Memory reference"
+    source: https://github.com/jikime/jikime-mem
+    visibility: public  # external
+    status: active
+
+  ref-cc:
+    path: ./projects/refs/ref-cc
+    type: reference
+    description: "Claude Code CLI reference (AI coding agent, TypeScript, 1884 files)"
+    source: "Extracted from Claude Code CLI (Anthropic)"
+    visibility: private  # internal analysis
+    rulesEntrypoint: AGENTS.md
+    status: active
+    notes: "Dual-mirror context (.agents/ + .users/). Naia OS adoption analysis in .agents/context/naia-os-adoption.yaml"
+
+# 로컬 ?�로?�트 (?�브모듈 ?�님)
+local_projects:
+  naia-os:
+    path: ./naia-os
+    type: project
+    description: "Naia OS desktop app (Tauri 2 + React + Three.js + Node.js agent)"
+    repo: nextain/naia-os
+    visibility: public
+    rulesEntrypoint: AGENTS.md
+    status: active
+
+  about.nextain.io:
+    path: ./about.nextain.io
+    type: project
+    description: "Nextain corporate website (Next.js 14 + next-intl)"
+    repo: nextain/about.nextain.io
+    visibility: public
+    rulesEntrypoint: README.md
+    status: active
+
+  naia.nextain.io:
+    path: ./naia.nextain.io
+    type: project
+    description: "Naia web app / Lab portal (Next.js + BFF for gateway)"
+    repo: nextain/naia.nextain.io
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+
+  aiedu.nextain.io:
+    path: ./aiedu.nextain.io
+    type: project
+    description: "AI education platform ??curriculum-driven AI teacher (Next.js + Monaco + Pyodide + any-llm)"
+    repo: nextain/aiedu.nextain.io
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+    notes: "B2B commercial product. Dual-mirror context. Curriculum as plugin. Depends on any-llm B2B extension."
+
+  admin.nextain.io:
+    path: ./admin.nextain.io
+    type: project
+    description: "Nextain B2B admin control plane (license key mgmt, token tracking, client mgmt)"
+    repo: nextain/admin.nextain.io
+    visibility: private
+    rulesEntrypoint: AGENTS.md
+    status: active
+    notes: "Internal tool. Manages aiedu.nextain.io and future B2B products."
+
+  9router:
+    path: ./9router
+    type: project
+    description: "9Router ??Free AI Router dashboard (Next.js). Auto-routes Claude Code, Cursor, Cline, etc. to 40+ AI providers & 100+ models."
+    repo: decolua/9router
+    visibility: public
+    rulesEntrypoint: README.md
+    status: active
+    notes: "Standalone git repo (not a submodule). External open-source project maintained by luke."
+
+  issue-desk:
+    path: ./issue-desk
+    type: project
+    description: "IssueDesk ??standalone Vite+React panel for naia-os. GitHub issue/PR triage, community assistant, notification triage."
+    repo: nextain/issue-desk
+    visibility: private
+    rulesEntrypoint: README.md
+    status: active
+    notes: "Standalone git repo (not a submodule). Served as panel.json + index.html from naia-os shell. Design doc: naia-os/docs/design/issue-desk.ko.md"
+
+# GitHub-only repos (not in workspace)
+github_only_repos:
+  titanoboa:
+    type: tool
+    description: "Naia OS Live ISO builder (fork of ublue-os/titanoboa)"
+    repo: nextain/titanoboa
+    visibility: public
+    usedBy: naia-os  # .github/workflows/iso.yml
+    status: active
+
+  member-template:
+    type: template
+    description: "Member workspace template for onboarding"
+    repo: nextain/member-template
+    visibility: private
+    status: active
+
+  project-any-llm:
+    type: duplicate
+    description: "DUPLICATE of nextain/any-llm ??TO BE DELETED"
+    repo: nextain/project-any-llm
+    visibility: public
+    status: deprecated
+
+# ?�이�?컨벤??
+namingConventions:
+  projects: "project-*"
+  libs: "lib-*"
+  docs: "nextain-*"
+  references: "ref-*"
+
+# 컨텍?�트 ?�일 ?�덱??
+contextFiles:
+  philosophy:
+    path: .agents/context/philosophy.yaml
+    description: "Core project philosophy (the 'why')"
+    mirrors:
+      korean: .users/context/philosophy.md
+      english: .users/context/en/philosophy.md
+  contributing:
+    path: .agents/context/contributing.yaml
+    description: "AI contribution guide"
+    mirrors:
+      korean: .users/context/contributing.md
+      english: .users/context/en/contributing.md
+  terminology:
+    path: .agents/context/terminology.yaml
+    description: "Terminology & communication policy ??no neologisms, plain Korean default, parenthesize academic/acronym"
+    mirrors:
+      korean: .users/context/terminology.md
+      english: .users/context/en/terminology.md
+
+on_demand_loading:
+  lessons_workflow:
+    file: .agents/context/lessons-workflow.yaml
+    id: alpha-adk:lessons_workflow
+    description: "workflow / IDD / review / harness-design / destructive-action lessons"
+  lessons_upstream:
+    file: .agents/context/lessons-upstream.yaml
+    id: alpha-adk:lessons_upstream
+    description: "upstream integration / fork / contribution / pattern-compliance lessons"
+  lessons_platform:
+    file: .agents/context/lessons-platform.yaml
+    id: alpha-adk:lessons_platform
+    description: "platform / CI / vLLM / Plymouth / RunPod / GPU lessons"
+  lessons_frontend:
+    file: .agents/context/lessons-frontend.yaml
+    id: alpha-adk:lessons_frontend
+    description: "React / IndexedDB / GitHub API / regex lessons"
+  lessons_documents:
+    file: .agents/context/lessons-documents.yaml
+    id: alpha-adk:lessons_documents
+    description: "document extraction (HWP/DOCX/PPTX) lessons"
+  gstack_comparison:
+    file: .agents/context/gstack-comparison.md
+    id: alpha-adk:gstack_comparison
+    description: "gstack comparison sections 1-8 + strengths"
+  gstack_hooks:
+    file: .agents/context/gstack-hooks.md
+    id: alpha-adk:gstack_hooks
+    description: "gstack hook system analysis + findings A-E, F1-F10"
+  gstack_priority:
+    file: .agents/context/gstack-priority.md
+    id: alpha-adk:gstack_priority
+    description: "gstack improvement priority list P0-P3"
+
+# 진입???�선?�위
+entrypointPriority:
+  - GEMINI.md
+  - CLAUDE.md
+  - .agents/context/agents-rules.json
+  - README.md
+D:\OneDrive - nextain\����\WindowsPowerShell\Microsoft.PowerShell_profile.ps1 : �� ������ �ٸ� ��� ��忡�� ���ǵǾ���
+�Ƿ� ��Ʈ �ҽ��� �� �����ϴ�. �ش� �������� �������� �ʰ� �� ������ ȣ���Ϸ��� '.' �����ڸ� �����Ͻʽÿ�.
+��ġ ��:1 ����:1
++ . 'D:\OneDrive - nextain\����\WindowsPowerShell\Microsoft.PowerShell_pr ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Microsoft.PowerShell_profile.ps1], NotSupportedException
+    + FullyQualifiedErrorId : DotSourceNotSupported,Microsoft.PowerShell_profile.ps1
+ 
+�Ӽ��� ������ �� �����ϴ�. �Ӽ� ������ �� ��� ����� �ٽ� ������ ���ؼ��� �����˴ϴ�.
+��ġ ��:1 ����:1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+ succeeded in 6207ms:
+{
+  "_copyright": "Copyright 2026 Nextain Inc. All rights reserved.",
+  "project_identity": {
+    "name": "Alpha ADK",
+    "nature": "Luke's personal multi-project ADK workspace (fork of nextain-adk)",
+    "philosophy": "?澕 ?岉伂?ろ帢?挫姢?愳劀 Naia OS, OnMam, any-llm ???煬 ?勲?濏姼毳?甏€毽?,
+    "org": "nextain",
+    "repo": "nextain/alpha-adk"
+  },
+  "local_projects": {
+    "naia-os": {
+      "purpose": "Naia OS desktop app (Tauri 2 + React + Three.js + Node.js agent)",
+      "repo": "nextain/naia-os",
+      "visibility": "public",
+      "entry_point": "naia-os/AGENTS.md"
+    },
+    "issue-desk": {
+      "purpose": "IssueDesk ??standalone Vite+React panel for naia-os. GitHub issue/PR triage, community assistant, notification triage.",
+      "repo": "nextain/issue-desk",
+      "visibility": "private",
+      "entry_point": "issue-desk/panel.json",
+      "notes": "Standalone git repo, not a submodule. Design doc: naia-os/docs/design/issue-desk.ko.md"
+    },
+    "about.nextain.io": {
+      "purpose": "Nextain corporate website (Next.js 14 + next-intl)",
+      "repo": "nextain/about.nextain.io",
+      "visibility": "public",
+      "entry_point": "about.nextain.io/README.md"
+    },
+    "naia.nextain.io": {
+      "purpose": "Naia web app / Lab portal (Next.js + BFF for gateway)",
+      "repo": "nextain/naia.nextain.io",
+      "visibility": "private",
+      "entry_point": "naia.nextain.io/AGENTS.md"
+    },
+    "aiedu.nextain.io": {
+      "purpose": "AI education platform ??curriculum-driven AI teacher (Next.js + Monaco + Pyodide + any-llm)",
+      "repo": "nextain/aiedu.nextain.io",
+      "visibility": "private",
+      "entry_point": "aiedu.nextain.io/AGENTS.md",
+      "notes": "B2B commercial product. Dual-mirror context. Curriculum as plugin. Depends on any-llm B2B extension."
+    },
+    "admin.nextain.io": {
+      "purpose": "Nextain B2B admin control plane (license key mgmt, token tracking, client mgmt)",
+      "repo": "nextain/admin.nextain.io",
+      "visibility": "private",
+      "entry_point": "admin.nextain.io/AGENTS.md",
+      "notes": "Internal tool. Manages aiedu.nextain.io and future B2B products."
+    }
+  },
+  "infrastructure": {
+    "onmam_production_db": {
+      "host": "34.64.97.164",
+      "database": "onmam",
+      "guard": "CRITICAL ???挫榿 DB. SELECT毵??愳湢. INSERT/UPDATE/DELETE/DDL ?瓣赴 ?戩梾 氚??瓣赴 ?ろ伂毽巾姼 ?戩劚?€ ?毄?愳潣 氇呾嫓???轨澑 ?勳垬. ?轨澑 ?嗢澊 ?ろ枆?橁卑???ろ伂毽巾姼毳??戩劚?橂┐ ???? dev ?勳毄 DB(onmam_dev) ?毄 甓岇灔."
+    },
+    "gateway": {
+      "prod": {
+        "url": "https://naia-gateway-181404717065.asia-northeast3.run.app",
+        "key_env": "GATEWAY_MASTER_KEY",
+        "db": "any_llm_gateway (cafelua-db, Cloud SQL PostgreSQL 15, asia-northeast3-a)"
+      },
+      "dev": {
+        "url": "https://naia-gateway-dev-181404717065.asia-northeast3.run.app",
+        "key": "5bwp-Jd07YSMAqY6yrYvjCJ2UPo5Sb72MLgyGWZ0_f8",
+        "db": "any_llm_gateway_dev (same cafelua-db instance, separate DB)",
+        "min_instances": 0
+      },
+      "env_rule": ".env.local ??dev gateway. .env.production.local ??prod gateway. NEVER write prod credentials to .env.local.",
+      "guard_hook": ".claude/hooks/prod-gateway-guard.js ??blocks prod credentials in .env.local at Edit|Write time",
+      "sync_script": "project-any-llm/scripts/sync-prod-to-dev.sh ??manual only, requires 'yes' confirmation, OVERWRITES all dev data"
+    },
+    "ci_runners": {
+      "self_hosted": {
+        "name": "luke-bazzite",
+        "host": "this Bazzite PC (/opt/actions-runner)",
+        "scope": "nextain org ??private repos only (public repos use free GitHub-hosted runners)",
+        "labels": [
+          "self-hosted",
+          "linux",
+          "x64",
+          "bazzite"
+        ],
+        "service": "actions.runner.nextain.luke-bazzite.service",
+        "note": "DO NOT attach self-hosted runners to public repos ??fork PR security risk",
+        "install_note": "/var/home causes SELinux exec block; always install under /opt/"
+      },
+      "workflow_usage": "runs-on: [self-hosted, linux, x64]"
+    },
+    "aihub": {
+      "purpose": "AI Hub (aihub.or.kr) ?滉淡???办澊???れ毚搿滊摐 ???岇劚/?措?歆€/?嶌姢????瓿店皽 ?办澊?办厠",
+      "cli_path": "/var/home/luke/alpha-adk/projects/naia-sing/aihubshell",
+      "api_key_env_file": "/var/home/luke/dev/my-envs/aihub.env",
+      "api_key_env_var": "AIHUB_API_KEY",
+      "data_root": "/var/home/luke/data/aihub/",
+      "usage": [
+        "list datasets:    bash $CLI -aihubapikey $AIHUB_API_KEY -mode l",
+        "list files:       bash $CLI -aihubapikey $AIHUB_API_KEY -mode l -datasetkey {ID}",
+        "download dataset: bash $CLI -aihubapikey $AIHUB_API_KEY -mode d -datasetkey {ID} [-filekey {N1,N2}]",
+        "package list/dl:  -mode pl / -mode pd -datapckagekey {ID}"
+      ],
+      "preconditions": "?办澊?办厠氤??爠 ?轨澑 ?勳殧 (https://aihub.or.kr ?愳劀 ?犾箔 ???轨澑 ?勲 ???れ毚搿滊摐 臧€??",
+      "owned_datasets": [
+        {"key": 123, "name": "?滉淡???岇劚 (KsponSpeech)", "path": "/var/home/luke/data/aihub/10.?滉淡?挫潓??", "size": "??1,000h (KsponSpeech_01~05 + eval + scripts)"}
+      ],
+      "tts_relevant_dataset_keys": {
+        "542": "?ろ檾???岇劚?╈劚 ?办澊??(TTS 臧€??歆侅爲)",
+        "485": "氍疙暀?戫拡 ??啞路??弲 ?岇劚 (?ろ姕?旍槫 ?堨)",
+        "466": "臧愳劚 氚?氚滍檾 ?ろ??茧硠 ?岇劚?╈劚",
+        "71349": "臧愳劚 氚?氚滍檾?ろ????欖嫓 瓿犽牑 ?岇劚?╈劚",
+        "463": "氚╈啞 旖橅厫旄??€?旍泊 ?岇劚?胳嫕 (旯仐???ろ檾??",
+        "537": "?旍瀽 ?胳嫕???岇劚 ?办澊??,
+        "109": "?愳湢?€???岇劚(?茧皹?棳)",
+        "130": "?滉淡???€?旍潓??
+      }
+    }
+  },
+  "submodules": {
+    "nextain-docs": {
+      "purpose": "Company-wide docs (onboarding, meetings, design)",
+      "repo": "nextain/nextain-docs",
+      "visibility": "private",
+      "entry_point": "data-company/nextain-docs/AGENTS.md"
+    },
+    "nextain-team-strategy": {
+      "purpose": "Strategy team documents (proposals, strategy, IR)",
+      "repo": "nextain/nextain-team-strategy",
+      "visibility": "private",
+      "entry_point": "data-teams/nextain-team-strategy/README.md"
+    },
+    "nextain-team-accounting": {
+      "purpose": "Accounting team documents",
+      "repo": "nextain/nextain-team-accounting",
+      "visibility": "private",
+      "entry_point": "data-teams/nextain-team-accounting/README.md"
+    },
+    "cafelua.com": {
+      "purpose": "Cafelua personal website",
+      "repo": "luke-n-alpha/cafelua-private",
+      "visibility": "private",
+      "entry_point": "cafelua.com/AGENTS.md"
+    },
+    "www.onmam.com": {
+      "purpose": "OnMam website ??CI+WP church homepage service (PHP 7.4 + CodeIgniter + MySQL 8.0 + Apache)",
+      "repo": "nextain/www.onmam.com",
+      "visibility": "private",
+      "entry_point": "onmam-dev/AGENTS.md",
+      "notes": "搿滌滑 ?措 ?嗢潓. Alpha: *.onmampick.org, Staging: *.onmam.net, Prod: *.onmam.com. Remote dev on onmam-dev GCE."
+    },
+    "onmam-dev": {
+      "purpose": "OnMam remote dev environment context ??AI agent entrypoint for onmam-dev GCE VM",
+      "repo": "onmam-com/onmam-dev",
+      "visibility": "private",
+      "entry_point": "onmam-dev/AGENTS.md",
+      "notes": "Source SoT is on onmam-dev server (/opt/onmam/luke/). Local clone is reference-only."
+    },
+    "alpha-memory": {
+      "purpose": "Alpha memory system",
+      "repo": "nextain/alpha-memory",
+      "visibility": "private",
+      "entry_point": "alpha-memory/AGENTS.md"
+    },
+    "onmam-adk": {
+      "purpose": "OnMam ADK workspace ??fork of naia-business-adk with onmam-specific skills (channel-mgmt, service-mgmt, web-monitoring, deploy-alpha/staging)",
+      "repo": "onmam-com/onmam-adk",
+      "visibility": "private",
+      "entry_point": "onmam-adk/AGENTS.md"
+    },
+    "naia-adk": {
+      "purpose": "Naia ADK workspace",
+      "repo": "nextain/naia-adk",
+      "visibility": "private",
+      "entry_point": "naia-adk/AGENTS.md"
+    },
+    "naia-business-adk": {
+      "purpose": "Naia Business ADK workspace",
+      "repo": "nextain/naia-business-adk",
+      "visibility": "private",
+      "entry_point": "naia-business-adk/AGENTS.md"
+    },
+    "project-any-llm": {
+      "purpose": "Any-LLM SDK + FastAPI gateway (LLM proxy, credits, auth, usage tracking)",
+      "repo": "nextain/any-llm",
+      "visibility": "public",
+      "entry_point": "project-any-llm/README.md"
+    }
+  },
+  "reference_submodules": {
+    "_description": "Reference repos for upstream tracking (read-only, periodic sync)",
+    "ref-cline": {
+      "purpose": "Cline upstream reference (VS Code AI extension)",
+      "source": "https://github.com/cline/cline",
+      "usage": "Architecture/pattern reference"
+    },
+    "ref-opencode": {
+      "purpose": "OpenCode reference (TUI-based AI coding agent)",
+      "source": "https://github.com/anomalyco/opencode",
+      "usage": "Architecture/pattern reference for CLI features"
+    },
+    "ref-nanoclaw": {
+      "purpose": "NanoClaw reference (lightweight AI agent framework)",
+      "source": "https://github.com/qwibitai/nanoclaw",
+      "usage": "Agent framework reference"
+    },
+    "ref-moltbot": {
+      "purpose": "Moltbot reference",
+      "source": "https://github.com/moltbot/moltbot",
+      "usage": "Bot framework reference"
+    },
+    "ref-project-airi": {
+      "purpose": "AIRI reference (AI character project)",
+      "source": "https://github.com/moeru-ai/airi",
+      "usage": "AI character/avatar reference"
+    },
+    "ref-jikime-adk": {
+      "purpose": "Jikime ADK reference (Agent Development Kit)",
+      "source": "https://github.com/jikime/jikime-adk",
+      "usage": "Agent development reference"
+    },
+    "ref-jikime-mem": {
+      "purpose": "Jikime Memory reference",
+      "source": "https://github.com/jikime/jikime-mem",
+      "usage": "Memory/RAG reference"
+    }
+  },
+  "architecture_rules": {
+    "modification_levels": {
+      "L2_conditional": "docs-nextain, docs-business, cafelua.com, project-any-llm"
+    }
+  },
+  "skills": {
+    "read-doc": {
+      "trigger": "MANDATORY ??any time a file with extension .hwp, .hwpx, .pdf, .docx, .xlsx, .pptx needs to be read or analyzed",
+      "command": "/read-doc <file-path>",
+      "rule": "NEVER say 'I cannot read this file type'. Always use /read-doc first. The skill handles all extraction automatically.",
+      "sidecar_note": "docs-business HWP/HWPX files have pre-extracted .txt sidecars ??/read-doc checks these first automatically",
+      "use_cases": [
+        "docs-business ?滌晥???梾瓿勴殟??攵勳劃",
+        "氚滍憸 ?愲(PPTX) ?挫毄 ?岇晠",
+        "?措牓??DOCX) 瓴€??,
+        "?曤?瓿检牅 ?滌稖?滊 瓴€??
+      ]
+    },
+    "webapp-testing": {
+      "trigger": "MANDATORY ??any E2E test, UI behavior verification, screenshot capture, or console log check for local web apps (naia.nextain.io, about.nextain.io, aiedu.nextain.io, etc.)",
+      "command": "/webapp-testing",
+      "rule": "NEVER ask the user to manually test. Always use this skill to verify directly. Uses Playwright Python scripts.",
+      "use_cases": [
+        "Next.js ??E2E ?岇姢??,
+        "UI ?欖瀾 瓴€歃?(氩勴娂 ?措Ν, ???滌稖 ??",
+        "?ろ伂毽办兎 旌§矘",
+        "旖橃啍 搿滉犯/?愲煬 ?曥澑"
+      ]
+    },
+    "doc-coauthoring": {
+      "trigger": "MANDATORY ??any request to write a structured document: tech spec, proposal, RFC, design doc, PRD, decision record",
+      "command": "/doc-coauthoring",
+      "rule": "Invoke before writing the document. 3-stage workflow: context collection ??structured writing ??reader test.",
+      "use_cases": [
+        "旮办垹 ?ろ帣 ?戩劚",
+        "?滌晥??IR 氍胳劀",
+        "RFC / ?り硠 瓴办爼 旮半",
+        "GitHub Issue 旮半皹 旮半姤 ?り硠 ?ろ帣"
+      ]
+    }
+  },
+  "ai_workflow": {
+    "knowledge_principle": "AI knowledge = Developer knowledge (1:1 parity)",
+    "default_workflow": "issue-driven-development.yaml (feature-level work)",
+    "lightweight_workflow": "development-cycle.yaml (non-feature changes: typos, config values, simple directives)",
+    "permission_model": {
+      "code_files": "AI = implementer. Can read, modify, create, delete freely.",
+      "design_docs": "AI = reviewer. CANNOT modify unless: (A) typo/grammar, (B) internal contradiction within the doc, (C) broken link/reference. ANY other change requires surfacing to user first.",
+      "design_doc_paths": [
+        "docs/design/",
+        "design/",
+        "spec/"
+      ],
+      "design_doc_extensions": [
+        ".md",
+        ".txt",
+        ".yaml",
+        ".json"
+      ],
+      "note": "Any file matching these path prefixes + extensions is treated as a design doc. Hook enforces this at Edit|Write time.",
+      "key_distinction": "Code review clean pass = no code issues. Design doc review clean pass = no NEW findings (typos/contradictions/broken links). Never: 'design should match implementation'."
+    },
+    "escalation_path": {
+      "design_gap_found_during_build": [
+        "1. Do NOT modify the design doc to match implementation",
+        "2. Do NOT silently adapt implementation to paper over the gap",
+        "3. Surface to user: state the gap (design says X, implementation does Y), present options (A: update design, B: fix implementation, C: accept as intentional deviation)",
+        "4. Wait for user decision before proceeding"
+      ],
+      "design_flaw_found_during_review": [
+        "1. Report to user: 'Found potential design issue at [file:line]: [description]'",
+        "2. Propose: 'Options: A) fix typo/grammar (allowed), B) this is a design decision I should not change ??your call'",
+        "3. Do not make the change until user confirms it's (A)"
+      ]
+    },
+    "mandatory_pre_checks": [
+      "Read agents-rules.json first",
+      "BLOCKING: when working inside projects/<name>/ (code read, edit, deploy, gh, shell), read that project's own context FIRST: projects/<name>/CLAUDE.md or AGENTS.md, plus projects/<name>/.agents/context/agents-rules.json and project-index.yaml if present. Root context and memory are NOT substitutes ??each subproject carries its own truth (alpha infra, dev URLs, deploy scripts, DB names). Switching subprojects mid-session re-triggers this.",
+      "For feature-level work: follow issue-driven-development.yaml gates (understand ??scope ??plan confirmation required before proceeding)",
+      "Apply minimal-change principles",
+      "For any .hwp/.hwpx/.pdf/.docx/.xlsx/.pptx file: use /read-doc skill FIRST ??never claim inability to read documents",
+      "Design docs (docs/design/, spec/, design/) + extensions (.md/.txt/.yaml/.json): see permission_model above. Hook fires on edits ??surface reason to user first.",
+      "Before running destructive git commands (git checkout --, git reset --hard, git clean -f): ALWAYS ask user for explicit confirmation first. State exactly what will be deleted. No exceptions."
+    ],
+    "completeness_principle": {
+      "statement": "AI marginal cost ??0 ??when approved to build something, build it completely (all edge cases, error handling, tests included).",
+      "three_principles_distinction": {
+        "no_autonomous_development": "WHAT to build = user decides. Never add features or scope without asking.",
+        "minimal_modification": "HOW FAR to deviate from upstream = minimize. For fork-based work: overlay custom changes with minimal delta from upstream.",
+        "completeness": "QUALITY of approved work = complete. If user approves X, implement X fully. Option A (complete) vs Option B (partial) ??always recommend A unless user explicitly asks for partial."
+      },
+      "boilable_lake_rule": "A bounded, scoped module is 'boilable'. If scope is finite, implement it completely. Never deliver partial when complete costs AI nothing extra."
+    },
+    "ask_user_question_format": {
+      "description": "Standard structure for user-facing decision questions (gates, options, scope choices). Makes trade-offs explicit.",
+      "structure": [
+        "1. Re-ground (1-2 sentences): state the project, current phase, and specific question in plain terms",
+        "2. Simplify: ask without jargon ??as if explaining to a non-engineer",
+        "3. Recommend: explicit recommendation with completeness score (1-10) + AI time + human review time",
+        "4. Options: lettered A/B/C, each with effort estimate + completeness score + one-sentence trade-off"
+      ],
+      "example": "RECOMMENDATION: A (completeness 9/10 | AI: ~30min | review: ~10min)\nA) Full implementation ??all edge cases covered [completeness 9/10]\nB) Minimal ??ships faster, revisit later [completeness 5/10]"
+    },
+    "review_skill": "Use '/review-pass stage=planning|development|test|integration files=...' for stage-specific multi-AI cross-validation review. REQ-IDs required for feature-level work. Simple changes (lightweight cycle: <3 files, single module) skip REQ-ID creation. Read .agents/requirements/_index.yaml when entering Plan or Review phases.",
+    "requirements_management": {
+      "storage": ".agents/requirements/",
+      "index": ".agents/requirements/_index.yaml",
+      "load_timing": "on-demand when entering Plan or Review phases (NOT session-injected)",
+      "req_id_threshold": "Feature-level work only. Lightweight cycle changes (typos, config, <3 files, single module) skip REQ-ID creation.",
+      "source_authority": {
+        "candidate": "Code is source of truth. Requirements are descriptive (derived from existing code).",
+        "human": "Requirements are normative. Code must conform.",
+        "default": "When requirements conflict with code: candidate?抍ode wins, human?扲EQ wins."
+      },
+      "retrofitted_requirements": "Always status: candidate. Require explicit human promotion to active/verified.",
+      "dual_mirror": "Requirements live in .agents/requirements/ ONLY (no .users/ mirror). Use title_ko field for Korean title.",
+      "trace_format": "Use file + symbol references. Never hardcode line numbers (they rot immediately)."
+    },
+    "submodule_rule": "Each submodule has own rules. Read entry_point before modifications.",
+    "financial_integrity": {
+      "cost_estimation_first": "Before performing any large-scale cloud operations, the agent MUST estimate the potential cost and obtain explicit user approval.",
+      "expensive_operations_blacklist": [
+        "GCS: Data movement > 10GB or API ops > 1,000 via mount points (e.g., rsync via gcsfuse)",
+        "GCE: Provisioning high-tier GPU instances (A100, H100, etc.)",
+        "Vertex AI/LLM: Massive batch inference or fine-tuning jobs",
+        "Cloud SQL: Massive data migrations or large-scale index rebuilds"
+      ],
+      "resource_awareness": "Always monitor Class A/B API operation counts for GCS and egress traffic costs for GCE/Cloud Run."
+    }
+  },
+  "conventions": {
+    "response_language": "Korean (?滉淡?措 ?戨嫷)",
+    "development_approach": "Issue-driven development (default). TDD where applicable.",
+    "test_code_review": "After writing tests, never trust results blindly. Review test logic itself with iterative review (2 consecutive clean passes) before trusting outcomes. Signs of invalid tests: assertions that always pass, mocked internals that diverge from real behavior, missing negative cases.",
+    "signature_change_completeness": "When a function/method signature changes (new/removed/renamed params, return type change, constructor args), grep for ALL call sites across the entire codebase and verify every caller is updated. Missing a call site is a HIGH-severity bug by definition. This applies to both implementation changes and refactoring.",
+    "documentation_paths": {
+      "rule": "All documentation paths MUST be written relative to the ADK root. Never use local absolute filesystem paths in repository docs, mirrored context, skills, or workflow guidance. Machine-oriented config may keep environment-specific paths when operationally required.",
+      "examples": {
+        "good": "projects/naia-adk/README.md",
+        "bad": "<absolute local filesystem path>"
+      }
+    },
+    "tmp_files": {
+      "rule": "All temporary/debug/scratch scripts MUST be created inside tmp/ at the root of the active working directory (alpha-adk/tmp/ for workspace-level work, or projects/<name>/tmp/ for subproject work). NEVER create tmp-* or tmp_* files in the repo root or subproject roots.",
+      "gitignore": "tmp/, tmp-*, tmp_* are gitignored at root. Files placed there are never tracked.",
+      "naming": "Use descriptive names inside tmp/ (e.g. tmp/check-db.php, tmp/debug-redis.sh) ??no tmp- prefix needed since the directory provides the namespace."
+    },
+    "work_logs": "Don't modify unless explicitly requested",
+    "workfile_lifecycle": {
+      "principle": "All work files (progress reports, scratch scripts, temp data) MUST follow explicit lifecycle. No accumulation without policy.",
+      "directories": {
+        ".agents/context/": "Permanent context (on_demand loaded). Long-lived. In-place corrections only. Never delete.",
+        ".agents/progress/": "Active work reports + completed reports. JSON files = harness 1st-class (session-inject reads). MD reports = lifecycle-tracked.",
+        ".agents/progress/archive/YYYY-MM/": "Completed reports moved here (preserved + searchable). readdirSync skips subdirs = automatically excluded from session-inject/commit-guard active set.",
+        ".agents/work/": "Temporary work scripts. gitignored at root (.gitignore: .agents/work/). User-managed cleanup (no AI auto-delete).",
+        "tmp/, tmp-*, tmp_*": "Debug/scratch (see tmp_files above). gitignored."
+      },
+      "completion_criteria": "A work file is 'complete' when 2+ of: (a) related code committed/pushed to origin, (b) user explicitly declares done/closed, (c) cross-review GO + user acceptance, (d) superseded by next-step plan/issue. AI self-declaring 'complete' is prohibited.",
+      "triggers": {
+        "work_start": "Create or update one progress file (1 per work, not 1 per session).",
+        "session_end_or_milestone": "Add status line ('??done' / '??in-progress' / '?敶 blocked').",
+        "after_commit_push": "Move that work's progress to .agents/progress/archive/YYYY-MM/ (selective ??mention in commit message).",
+        "monthly_cleanup": "Review 30+ day progress files; archive completed or inline-resolve.",
+        "work_30d": ".agents/work/ 30+ day = user-decided deletion (volatile by design)."
+      },
+      "naming": "Existing convention: <topic>-YYYY-MM-DD.md. On archive: move only (no rename) to preserve cross-references.",
+      "archive_unit": "Archive MD/JSON pair together (same base name). If JSON has current_phase != close, set to close OR unbind before move ??otherwise session-inject still treats it active (codex correction).",
+      "inbound_references": "Default: allow link breakage on archive (archived = historical). On case-by-case need: leave 1-line stub at original path pointing to archive/YYYY-MM/<file> (user decision). No automatic archive index ??over-engineering.",
+      "harness_scope_asymmetry": "session-inject collects cwd + IMMEDIATE child subdirs only (projects/<sub>/.agents/progress/). 2nd-level subs not scanned. commit-guard scans cwd only. Policy applies repo-wide as convention but ENFORCEMENT range is root + direct children. 2nd-level subs need own hooks for enforcement (manual convention until then).",
+      "session_map_cleanup": "On archive: .agents/progress/.session-map.json entries pointing to archived files become stale. session-inject auto-prunes on next run, but explicit cleanup is cleaner (jq or manual edit)."
+    },
+    "git_workflow": {
+      "maintainer_rule": "Luke is a maintainer of all Nextain repos. NEVER create PRs for Nextain repos ??commit and push directly to main (or the relevant branch). PRs are for external contributors only.",
+      "pr_prohibition": "DO NOT run `gh pr create` for nextain/* repos. The pr-guard hook will block this automatically."
+    },
+    "external_repo_policy": {
+      "principle": "Information gathering first ??before any action on external repos",
+      "steps": [
+        "1. Read CONTRIBUTING.md / contributing guide of the external repo",
+        "2. Search existing issues and PRs to avoid duplicates",
+        "3. Study code patterns and conventions used in the repo",
+        "4. Prototype and validate internally before reaching out",
+        "5. Draft issue/PR content and show to user for review",
+        "6. Get explicit user approval before posting anything"
+      ],
+      "community_context_first": "Before engaging in any external community (repo, Discord, Slack, forum, etc.), gather context first: (1) communication tone ??formal/casual, terse/verbose, (2) explicit rules ??CoC, PR/issue templates, labeling conventions, (3) community tendencies ??what they value, what they reject, how they respond to outsiders, who the influential members are, what past interactions look like",
+      "rule": "Never post issues, PRs, or comments to external repos without explicit user approval of the reviewed content",
+      "tone_matching": "Technical issues and PRs are read by people. Write in a tone that fits the community's atmosphere ??not just technically correct, but culturally appropriate. A dry RFC-style community expects concise technical prose; a friendly community expects warmth. Match the room.",
+      "ai_disclosure": "When posting AI-assisted content to external repos, always include a disclosure footer: state it was written with AI assistance AND provide a contact point for the developer in case of issues (e.g. '? Written with AI assistance. If anything looks off, please ping @luke-n-alpha or open a discussion.'). Transparency and accountability both required. [HOOK-ENFORCED 2026-05-16: .claude/hooks/pr-guard.js ???鸽? repo content op(gh issue/pr create路comment, pr review, release create) ??disclosure footer(?/AI assistance) 氙疙彫?澊氅?彀嫧(OSS-access 毵堨护 ?岆箘 ??. ?措? nextain/* 氅挫牅. merge/reopen/edit ??牍?content op 氅挫牅.]"
+    },
+    "contribution_fork_policy": {
+      "account": "Use nextain org (e.g. nextain/vllm) ??this is an official Nextain-backed contribution, not a personal side project",
+      "naming": "Same name as upstream repo ??no prefix",
+      "readme_required": "Every contribution fork MUST have a README clearly stating: (1) this is a contribution fork, not a hard fork, (2) upstream repo link, (3) what feature/fix is being contributed, (4) current status (in progress / PR submitted / merged), (5) contact: @luke-n-alpha",
+      "repo_description": "Set GitHub repo description to: 'Contribution fork ??[feature] upstream PR in progress. See [upstream url]'",
+      "branch_strategy": {
+        "main": "fork main = upstream main + AGENTS.md (AI context, version controlled here)",
+        "feature": "feature branch = based on upstream main, code changes only ??NEVER add AGENTS.md here",
+        "pr": "PR = feature branch ??upstream. AGENTS.md is on main only, so it is automatically excluded from the PR diff"
+      },
+      "main_sync": "Keep main branch in sync with upstream at all times (rebase or merge upstream main regularly)",
+      "work_branch": "All work on feature branches only (e.g. feat/minicpm-audio-output)",
+      "lifecycle": "Archive or delete after upstream PR is merged"
+    }
+  },
+  "cascadeRules": {
+    "_description": "When context changes, propagate to related modules.",
+    "onSubmoduleAdd": {
+      "trigger": "New submodule added",
+      "propagateTo": [
+        "parent"
+      ],
+      "actions": [
+        "Add entry to parent/.gitmodules",
+        "Add entry to parent/.agents/context/agents-rules.json submodules",
+        "Update parent/CLAUDE.md submodule table",
+        "Add category to parent/.agents/context/ai-work-index.yaml (if needed)"
+      ]
+    },
+    "onSubmoduleRemove": {
+      "trigger": "Submodule removed",
+      "propagateTo": [
+        "parent"
+      ],
+      "actions": [
+        "Remove from parent/.gitmodules",
+        "Remove from parent/.agents/context/agents-rules.json submodules",
+        "Remove from parent/CLAUDE.md submodule table"
+      ]
+    },
+    "onRulesChange": {
+      "trigger": ".agents/context/agents-rules.json changed",
+      "propagateTo": [
+        "mirror"
+      ],
+      "actions": [
+        "Sync update .users/context/agents-rules.md (1:1 mirroring)"
+      ]
+    },
+    "onEntryPointChange": {
+      "trigger": "CLAUDE.md or AGENTS.md or GEMINI.md changed",
+      "propagateTo": [
+        "self"
+      ],
+      "actions": [
+        "Copy the changed file to the other two (CLAUDE.md = AGENTS.md = GEMINI.md, always identical)"
+      ]
+    },
+    "propagationOrder": {
+      "_description": "Propagation order (dependency order)",
+      "order": [
+        "1. self ??complete own changes",
+        "2. parent ??update parent context",
+        "3. siblings ??update referencing sibling modules",
+        "4. children ??update referencing child modules",
+        "5. mirror ??sync .users/"
+      ]
+    }
+  },
+  "workflows": {
+    "instruction": "Read workflows on demand. Do not load all at once.",
+    "selection_guide": {
+      "reference": ".agents/context/ai-work-index.yaml",
+      "steps": [
+        "Extract keywords from the user request",
+        "Match the category in ai-work-index.yaml",
+        "Read the matching root quick reference first",
+        "Load the workflow document only if the task still needs details"
+      ]
+    },
+    "index": {
+      "submodule_init": "git submodule update --init --recursive",
+      "development_cycle": ".agents/workflows/development-cycle.yaml",
+      "issue_driven_development": ".agents/workflows/issue-driven-development.yaml"
+    }
+  }
+}
+D:\OneDrive - nextain\巩辑\WindowsPowerShell\Microsoft.PowerShell_profile.ps1 : 捞 疙飞篮 促弗 攫绢 葛靛俊辑 沥狼登菌栏
+骨肺 档飘 家教且 荐 绝嚼聪促. 秦寸 能刨明甫 啊廉坷瘤 臼绊 捞 疙飞阑 龋免窍妨搁 '.' 楷魂磊甫 积帆窍绞矫坷.
+困摹 临:1 巩磊:1
++ . 'D:\OneDrive - nextain\巩辑\WindowsPowerShell\Microsoft.PowerShell_pr ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Microsoft.PowerShell_profile.ps1], NotSupportedException
+    + FullyQualifiedErrorId : DotSourceNotSupported,Microsoft.PowerShell_profile.ps1
+ 
+加己阑 汲沥且 荐 绝嚼聪促. 加己 汲沥篮 捞 攫绢 葛靛狼 琴缴 蜡屈俊 措秦辑父 瘤盔邓聪促.
+困摹 临:1 巩磊:1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+codex
+The initial reads exposed a path quirk in PowerShell: one relative command resolved against the workspace parent. I’m switching to absolute paths for the repo and skill files so the review is anchored to `D:\alpha-adk\projects\naia-os`.
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "Get-Content -LiteralPath 'D:\\alpha-adk\\projects\\naia-os\\.agents\\context\\agents-rules.json'" in D:\alpha-adk\projects\naia-os
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "Get-Content -LiteralPath 'D:\\alpha-adk\\projects\\naia-os\\.agents\\skills\\cross-review\\SKILL.md'" in D:\alpha-adk\projects\naia-os
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -Command "Get-Content -LiteralPath 'D:\\alpha-adk\\projects\\naia-os\\.agents\\context\\project-index.yaml'" in D:\alpha-adk\projects\naia-os

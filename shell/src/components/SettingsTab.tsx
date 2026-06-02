@@ -3,9 +3,6 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clearSavedCamera } from "./AvatarCanvas";
-import { RefAudioSection } from "./RefAudioSection";
-import { SkillsTab } from "./SkillsTab";
 import {
 	clearAdkPath,
 	getAdkPath,
@@ -27,11 +24,12 @@ import {
 	sendNotifyConfig,
 } from "../lib/chat-service";
 import {
+	type AppConfig,
 	DEFAULT_GATEWAY_URL,
+	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_OLLAMA_HOST,
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
-	type AppConfig,
 	type SttProviderId,
 	type ThemeId,
 	type TtsProviderId,
@@ -56,11 +54,7 @@ import {
 } from "../lib/gateway-sync";
 import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
-import {
-	diffConfigs,
-	fetchLabConfig,
-	pushConfigToLab,
-} from "../lib/lab-sync";
+import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
 import {
 	type LlmModelMeta,
 	fetchNaiaPricing,
@@ -88,6 +82,9 @@ import { type UpdateInfo, checkForUpdate } from "../lib/updater";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 import { usePanelStore } from "../stores/panel";
+import { clearSavedCamera } from "./AvatarCanvas";
+import { RefAudioSection } from "./RefAudioSection";
+import { SkillsTab } from "./SkillsTab";
 
 const LLM_PROVIDERS = listLlmProviders();
 
@@ -570,9 +567,9 @@ export function SettingsTab() {
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
 		"idle" | "checking" | "healthy" | "unhealthy"
 	>("idle");
-	const [agentHealthCheckedAt, setAgentHealthCheckedAt] = useState<
-		Date | null
-	>(null);
+	const [agentHealthCheckedAt, setAgentHealthCheckedAt] = useState<Date | null>(
+		null,
+	);
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
@@ -651,9 +648,13 @@ export function SettingsTab() {
 
 	const [ttsEnabled, setTtsEnabled] = useState(existing?.ttsEnabled ?? false);
 	// Keep panel store in sync so QuickToggles button reflects settings changes
-	useEffect(() => { setStoreTtsEnabled(ttsEnabled); }, [ttsEnabled, setStoreTtsEnabled]);
+	useEffect(() => {
+		setStoreTtsEnabled(ttsEnabled);
+	}, [ttsEnabled, setStoreTtsEnabled]);
 	// Sync back from store so QuickToggles TTS button changes are reflected here
-	useEffect(() => { setTtsEnabled(storeTtsEnabled); }, [storeTtsEnabled]);
+	useEffect(() => {
+		setTtsEnabled(storeTtsEnabled);
+	}, [storeTtsEnabled]);
 	const [persona, setPersona] = useState(existing?.persona ?? DEFAULT_PERSONA);
 	const [userName, setUserName] = useState(existing?.userName ?? "");
 	const [agentName, setAgentName] = useState(existing?.agentName ?? "");
@@ -662,7 +663,6 @@ export function SettingsTab() {
 		existing?.speechStyle ?? "casual",
 	);
 	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
-	const [enableThinking, setEnableThinking] = useState(existing?.enableThinking ?? false);
 	const [workspaceRoot, setWorkspaceRoot] = useState(() => {
 		return existing?.workspaceRoot || getAdkPath() || "";
 	});
@@ -681,6 +681,11 @@ export function SettingsTab() {
 	const [ollamaConnected, setOllamaConnected] = useState(false);
 	const [vllmHost, setVllmHost] = useState(
 		existing?.vllmHost ?? DEFAULT_VLLM_HOST,
+	);
+	// Naia Local: ws:// address of the user's own omni-24g container (shown when
+	// the `naia-local` model is selected). Reuses the logged-in key — no key input.
+	const [naiaLocalUrl, setNaiaLocalUrl] = useState(
+		existing?.naiaLocalUrl ?? DEFAULT_NAIA_LOCAL_URL,
 	);
 	const [vllmConnected, setVllmConnected] = useState(false);
 	const [vllmSttHost, setVllmSttHost] = useState(existing?.vllmSttHost ?? "");
@@ -1227,7 +1232,9 @@ export function SettingsTab() {
 		setLabWaiting(true);
 		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
 		try {
-			const state = await invoke<string>("generate_oauth_state").catch(() => "");
+			const state = await invoke<string>("generate_oauth_state").catch(
+				() => "",
+			);
 			const params = new URLSearchParams({
 				redirect: "desktop",
 				source: "desktop",
@@ -1961,7 +1968,6 @@ export function SettingsTab() {
 			honorific: honorific.trim() || undefined,
 			speechStyle,
 			enableTools,
-			enableThinking,
 			gatewayUrl:
 				enableTools &&
 				gatewayUrl.trim() &&
@@ -1978,6 +1984,7 @@ export function SettingsTab() {
 					: existing?.ollamaHost,
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
+			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
 			voice: isOmniModel(provider, model) ? voice : existing?.voice,
 			openaiRealtimeApiKey: openaiRealtimeApiKey.trim() || undefined,
 			sttInputDeviceId: sttInputDeviceId || undefined,
@@ -2122,8 +2129,7 @@ export function SettingsTab() {
 	// voice-clone surface, so mounting RefAudioSection there just 404s on
 	// GET /v1/ref-audio. Gate the section on this.
 	const supportsRefAudio =
-		isSelectedOmni &&
-		(modelIdLower.startsWith("naia-") || provider === "vllm");
+		isSelectedOmni && (modelIdLower.startsWith("naia-") || provider === "vllm");
 	const manualUrl = `https://naia.nextain.io/${locale}/manual`;
 
 	// Discord integration — unverified, hidden until stabilized
@@ -2168,581 +2174,842 @@ export function SettingsTab() {
 					{t("settings.tabInfo")}
 				</button>
 			</div>
-			{activeSettingsTab === "general" && <>
-			<div className="settings-field">
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<label htmlFor="locale-select" style={{ margin: 0 }}>
-						{t("settings.language")}
-					</label>
-					<select
-						id="locale-select"
-						value={locale}
-						onChange={(e) => handleLocaleChange(e.target.value as Locale)}
-						style={{ width: "auto", minWidth: 120 }}
-					>
-						{LOCALES.map((l) => (
-							<option key={l.id} value={l.id}>
-								{l.label}
-							</option>
-						))}
-					</select>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={() => openUrl(manualUrl).catch(() => {})}
-					>
-						{t("settings.manual")}
-					</button>
-				</div>
-			</div>
-
-			<div className="settings-field">
-				<label>{t("settings.theme")}</label>
-				<div className="theme-picker">
-					{THEMES.map((th) => (
-						<button
-							key={th.id}
-							type="button"
-							className={`theme-swatch ${theme === th.id ? "active" : ""}`}
-							style={{ background: th.preview }}
-							onClick={() => handleThemeChange(th.id)}
-							title={th.label}
-						/>
-					))}
-				</div>
-			</div>
-
-			<div className="settings-field">
-				<label>워크스페이스</label>
-				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={async () => {
-							const selected = await open({
-								directory: true,
-								title: t("settings.workspaceDialogTitle"),
-							});
-							if (selected && typeof selected === "string") {
-								setWorkspaceRoot(selected);
-								const cfg = loadConfig();
-								if (!cfg) return;
-								saveConfig({ ...cfg, workspaceRoot: selected });
-								setAdkPath(selected);
-								invoke("workspace_set_root", { root: selected }).catch(() => {});
-								window.location.reload();
-							}
-						}}
-					>
-						{t("settings.workspaceBrowse")}
-					</button>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						style={{ background: "var(--accent-color, #5b8cf5)", color: "#fff" }}
-						onClick={() => {
-							const trimmed = workspaceRoot.trim();
-							const cfg = loadConfig();
-							if (!cfg) return;
-							saveConfig({
-								...cfg,
-								workspaceRoot: trimmed || undefined,
-							});
-							if (trimmed) {
-								setAdkPath(trimmed);
-								invoke("workspace_set_root", {
-									root: trimmed,
-								}).catch(() => {});
-							} else {
-								clearAdkPath();
-							}
-							window.location.reload();
-						}}
-					>
-						{t("settings.workspaceApply")}
-					</button>
-					<input
-						type="text"
-						className="settings-input"
-						value={workspaceRoot}
-						onChange={(e) => setWorkspaceRoot(e.target.value)}
-						placeholder={t("settings.workspacePlaceholder")}
-						style={{ flex: 1 }}
-					/>
-				</div>
-				<div className="settings-hint">{t("settings.workspaceHint")}</div>
-			</div>
-
-			<div className="settings-field">
-				<label>naia-adk 경로 재설정</label>
-				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={() => {
-							clearAdkPath();
-							window.location.reload();
-						}}
-					>
-						재설정 (앱 재시작)
-					</button>
-				</div>
-				<div className="settings-hint">
-					naia-adk 폴더를 변경하거나 초기 설정을 다시 진행할 때 사용하세요
-				</div>
-			</div>
-
-			<div className="settings-field">
-				<label>카메라 위치 초기화</label>
-				<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={() => {
-							clearSavedCamera();
-							window.location.reload();
-						}}
-					>
-						기본값으로 (앱 재시작)
-					</button>
-				</div>
-				<div className="settings-hint">
-					저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
-				</div>
-			</div>
-
-			<div className="settings-section-divider">
-				<span>{t("settings.avatarSection")}</span>
-			</div>
-
-			<div className="settings-field">
-				<label>{t("settings.vrmModel")}</label>
-				<div className="vrm-list">
-					{naiaVrms.length === 0 && (
-						<span className="vrm-list-empty">
-							naia-settings/vrm-files/ 에 VRM 파일을 추가하세요
-						</span>
-					)}
-					{naiaVrms.map((path) => {
-						const filename = path.split(/[/\\]/).pop() ?? path;
-						const label = filename.replace(/\.vrm$/i, "");
-						const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
-						return (
-							<button
-								key={path}
-								type="button"
-								className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
-								onClick={() => handleVrmSelect(path)}
-							>
-								<img
-									src={thumb}
-									className="vrm-list-item__thumb"
-									alt={label}
-									onError={(e) => {
-										(e.currentTarget as HTMLImageElement).style.display = "none";
-									}}
-								/>
-								{label}
-							</button>
-						);
-					})}
-					{customVrms.map((path) => {
-						const label = (path.split(/[/\\]/).pop() ?? path).replace(
-							/\.vrm$/i,
-							"",
-						);
-						return (
-							<button
-								key={path}
-								type="button"
-								className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
-								onClick={() => handleVrmSelect(path)}
-							>
-								{label}
-							</button>
-						);
-					})}
-				</div>
-			</div>
-
-			<div className="settings-field">
-				<label>{t("settings.background")}</label>
-				<div className="vrm-list">
-					<button
-						type="button"
-						className={`vrm-list-item${!activeBgPath ? " vrm-list-item--active" : ""}`}
-						onClick={handleClearNaiaBg}
-					>
-						없음 (기본)
-					</button>
-					{naiaBgs.length === 0 && (
-						<span className="vrm-list-empty">
-							naia-settings/background/ 에 파일을 추가하세요
-						</span>
-					)}
-					{naiaBgs.map((path) => {
-						const label = (path.split(/[/\\]/).pop() ?? path).replace(
-							/\.[^.]+$/,
-							"",
-						);
-						return (
-							<button
-								key={path}
-								type="button"
-								className={`vrm-list-item${activeBgPath === path ? " vrm-list-item--active" : ""}`}
-								onClick={() => handleNaiaBgSelect(path)}
-							>
-								{label}
-							</button>
-						);
-					})}
-				</div>
-			</div>
-
-			<div className="settings-section-divider">
-				<span>{t("settings.personaSection")}</span>
-			</div>
-
-			<div className="settings-field">
-				<label>{t("settings.agentName")}</label>
-				<input
-					type="text"
-					className="settings-input"
-					value={agentName}
-					onChange={(e) => setAgentName(e.target.value)}
-					onBlur={(e) => savePersonaFields({ agentName: e.target.value })}
-					placeholder="Naia"
-				/>
-			</div>
-			<div className="settings-field">
-				<label>{t("settings.userName")}</label>
-				<input
-					type="text"
-					className="settings-input"
-					value={userName}
-					onChange={(e) => setUserName(e.target.value)}
-					onBlur={(e) => savePersonaFields({ userName: e.target.value })}
-				/>
-			</div>
-			{FORMALITY_LOCALES.has(locale) && (
+			{activeSettingsTab === "general" && (
 				<>
 					<div className="settings-field">
-						<label>{t("settings.honorific")}</label>
+						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+							<label htmlFor="locale-select" style={{ margin: 0 }}>
+								{t("settings.language")}
+							</label>
+							<select
+								id="locale-select"
+								value={locale}
+								onChange={(e) => handleLocaleChange(e.target.value as Locale)}
+								style={{ width: "auto", minWidth: 120 }}
+							>
+								{LOCALES.map((l) => (
+									<option key={l.id} value={l.id}>
+										{l.label}
+									</option>
+								))}
+							</select>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => openUrl(manualUrl).catch(() => {})}
+							>
+								{t("settings.manual")}
+							</button>
+						</div>
+					</div>
+
+					<div className="settings-field">
+						<label>{t("settings.theme")}</label>
+						<div className="theme-picker">
+							{THEMES.map((th) => (
+								<button
+									key={th.id}
+									type="button"
+									className={`theme-swatch ${theme === th.id ? "active" : ""}`}
+									style={{ background: th.preview }}
+									onClick={() => handleThemeChange(th.id)}
+									title={th.label}
+								/>
+							))}
+						</div>
+					</div>
+
+					<div className="settings-field">
+						<label>워크스페이스</label>
+						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={async () => {
+									const selected = await open({
+										directory: true,
+										title: t("settings.workspaceDialogTitle"),
+									});
+									if (selected && typeof selected === "string") {
+										setWorkspaceRoot(selected);
+										const cfg = loadConfig();
+										if (!cfg) return;
+										saveConfig({ ...cfg, workspaceRoot: selected });
+										setAdkPath(selected);
+										invoke("workspace_set_root", { root: selected }).catch(
+											() => {},
+										);
+										window.location.reload();
+									}
+								}}
+							>
+								{t("settings.workspaceBrowse")}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								style={{
+									background: "var(--accent-color, #5b8cf5)",
+									color: "#fff",
+								}}
+								onClick={() => {
+									const trimmed = workspaceRoot.trim();
+									const cfg = loadConfig();
+									if (!cfg) return;
+									saveConfig({
+										...cfg,
+										workspaceRoot: trimmed || undefined,
+									});
+									if (trimmed) {
+										setAdkPath(trimmed);
+										invoke("workspace_set_root", {
+											root: trimmed,
+										}).catch(() => {});
+									} else {
+										clearAdkPath();
+									}
+									window.location.reload();
+								}}
+							>
+								{t("settings.workspaceApply")}
+							</button>
+							<input
+								type="text"
+								className="settings-input"
+								value={workspaceRoot}
+								onChange={(e) => setWorkspaceRoot(e.target.value)}
+								placeholder={t("settings.workspacePlaceholder")}
+								style={{ flex: 1 }}
+							/>
+						</div>
+						<div className="settings-hint">{t("settings.workspaceHint")}</div>
+					</div>
+
+					<div className="settings-field">
+						<label>naia-adk 경로 재설정</label>
+						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => {
+									clearAdkPath();
+									window.location.reload();
+								}}
+							>
+								재설정 (앱 재시작)
+							</button>
+						</div>
+						<div className="settings-hint">
+							naia-adk 폴더를 변경하거나 초기 설정을 다시 진행할 때 사용하세요
+						</div>
+					</div>
+
+					<div className="settings-field">
+						<label>카메라 위치 초기화</label>
+						<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => {
+									clearSavedCamera();
+									window.location.reload();
+								}}
+							>
+								기본값으로 (앱 재시작)
+							</button>
+						</div>
+						<div className="settings-hint">
+							저장된 카메라 위치를 지우고 기본값으로 돌아갑니다
+						</div>
+					</div>
+
+					<div className="settings-section-divider">
+						<span>{t("settings.avatarSection")}</span>
+					</div>
+
+					<div className="settings-field">
+						<label>{t("settings.vrmModel")}</label>
+						<div className="vrm-list">
+							{naiaVrms.length === 0 && (
+								<span className="vrm-list-empty">
+									naia-settings/vrm-files/ 에 VRM 파일을 추가하세요
+								</span>
+							)}
+							{naiaVrms.map((path) => {
+								const filename = path.split(/[/\\]/).pop() ?? path;
+								const label = filename.replace(/\.vrm$/i, "");
+								const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
+								return (
+									<button
+										key={path}
+										type="button"
+										className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+										onClick={() => handleVrmSelect(path)}
+									>
+										<img
+											src={thumb}
+											className="vrm-list-item__thumb"
+											alt={label}
+											onError={(e) => {
+												(e.currentTarget as HTMLImageElement).style.display =
+													"none";
+											}}
+										/>
+										{label}
+									</button>
+								);
+							})}
+							{customVrms.map((path) => {
+								const label = (path.split(/[/\\]/).pop() ?? path).replace(
+									/\.vrm$/i,
+									"",
+								);
+								return (
+									<button
+										key={path}
+										type="button"
+										className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+										onClick={() => handleVrmSelect(path)}
+									>
+										{label}
+									</button>
+								);
+							})}
+						</div>
+					</div>
+
+					<div className="settings-field">
+						<label>{t("settings.background")}</label>
+						<div className="vrm-list">
+							<button
+								type="button"
+								className={`vrm-list-item${!activeBgPath ? " vrm-list-item--active" : ""}`}
+								onClick={handleClearNaiaBg}
+							>
+								없음 (기본)
+							</button>
+							{naiaBgs.length === 0 && (
+								<span className="vrm-list-empty">
+									naia-settings/background/ 에 파일을 추가하세요
+								</span>
+							)}
+							{naiaBgs.map((path) => {
+								const label = (path.split(/[/\\]/).pop() ?? path).replace(
+									/\.[^.]+$/,
+									"",
+								);
+								return (
+									<button
+										key={path}
+										type="button"
+										className={`vrm-list-item${activeBgPath === path ? " vrm-list-item--active" : ""}`}
+										onClick={() => handleNaiaBgSelect(path)}
+									>
+										{label}
+									</button>
+								);
+							})}
+						</div>
+					</div>
+
+					<div className="settings-section-divider">
+						<span>{t("settings.personaSection")}</span>
+					</div>
+
+					<div className="settings-field">
+						<label>{t("settings.agentName")}</label>
 						<input
 							type="text"
 							className="settings-input"
-							value={honorific}
-							onChange={(e) => setHonorific(e.target.value)}
-							onBlur={(e) => savePersonaFields({ honorific: e.target.value })}
-							placeholder={t("onboard.speechStyle.honorificPlaceholder")}
+							value={agentName}
+							onChange={(e) => setAgentName(e.target.value)}
+							onBlur={(e) => savePersonaFields({ agentName: e.target.value })}
+							placeholder="Naia"
 						/>
 					</div>
 					<div className="settings-field">
-						<label>{t("settings.speechStyle")}</label>
-						<select
-							className="settings-select"
-							data-testid="settings-speech-style"
-							value={speechStyle}
-							onChange={(e) => {
-								setSpeechStyle(e.target.value);
-								savePersonaFields({ speechStyle: e.target.value });
-							}}
-						>
-							<option value="casual">
-								{t("onboard.speechStyle.casual")} (Casual)
-							</option>
-							<option value="formal">
-								{t("onboard.speechStyle.formal")} (Formal)
-							</option>
-						</select>
+						<label>{t("settings.userName")}</label>
+						<input
+							type="text"
+							className="settings-input"
+							value={userName}
+							onChange={(e) => setUserName(e.target.value)}
+							onBlur={(e) => savePersonaFields({ userName: e.target.value })}
+						/>
+					</div>
+					{FORMALITY_LOCALES.has(locale) && (
+						<>
+							<div className="settings-field">
+								<label>{t("settings.honorific")}</label>
+								<input
+									type="text"
+									className="settings-input"
+									value={honorific}
+									onChange={(e) => setHonorific(e.target.value)}
+									onBlur={(e) =>
+										savePersonaFields({ honorific: e.target.value })
+									}
+									placeholder={t("onboard.speechStyle.honorificPlaceholder")}
+								/>
+							</div>
+							<div className="settings-field">
+								<label>{t("settings.speechStyle")}</label>
+								<select
+									className="settings-select"
+									data-testid="settings-speech-style"
+									value={speechStyle}
+									onChange={(e) => {
+										setSpeechStyle(e.target.value);
+										savePersonaFields({ speechStyle: e.target.value });
+									}}
+								>
+									<option value="casual">
+										{t("onboard.speechStyle.casual")} (Casual)
+									</option>
+									<option value="formal">
+										{t("onboard.speechStyle.formal")} (Formal)
+									</option>
+								</select>
+							</div>
+						</>
+					)}
+
+					<div className="settings-field">
+						<label htmlFor="persona-input">{t("settings.persona")}</label>
+						<textarea
+							id="persona-input"
+							className="settings-persona-textarea"
+							value={persona}
+							onChange={(e) => setPersona(e.target.value)}
+							onBlur={(e) => savePersonaFields({ persona: e.target.value })}
+							rows={6}
+						/>
+						<div className="settings-hint">{t("settings.personaHint")}</div>
 					</div>
 				</>
 			)}
+			{activeSettingsTab === "ai" && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.aiSection")}</span>
+					</div>
 
-			<div className="settings-field">
-				<label htmlFor="persona-input">{t("settings.persona")}</label>
-				<textarea
-					id="persona-input"
-					className="settings-persona-textarea"
-					value={persona}
-					onChange={(e) => setPersona(e.target.value)}
-					onBlur={(e) => savePersonaFields({ persona: e.target.value })}
-					rows={6}
-				/>
-				<div className="settings-hint">{t("settings.personaHint")}</div>
-			</div>
-			</>
-			}
-			{activeSettingsTab === "ai" && <>
-
-
-			<div className="settings-section-divider">
-				<span>{t("settings.aiSection")}</span>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="provider-select">{t("settings.provider")}</label>
-				<select
-					id="provider-select"
-					value={provider}
-					onChange={(e) => handleProviderChange(e.target.value as ProviderId)}
-				>
-					{LLM_PROVIDERS.map((p) => (
-						<option key={p.id} value={p.id} disabled={p.disabled}>
-							{p.name}
-						</option>
-					))}
-				</select>
-			</div>
-
-			{/* API key — shown before model selector so user can enter key first */}
-			{provider !== "nextain" &&
-				provider !== "ollama" &&
-				provider !== "vllm" &&
-				provider !== "claude-code-cli" && (
 					<div className="settings-field">
-						<label htmlFor="apikey-input">{t("settings.apiKey")}</label>
-						<input
-							id="apikey-input"
-							type="password"
-							value={apiKey}
-							onChange={(e) => {
-								setApiKey(e.target.value);
-								setError("");
-							}}
-							placeholder="sk-..."
-						/>
-						{provider === "zai" && (
-							<div className="settings-hint">
-								Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를
-								입력하세요.
-							</div>
-						)}
-						{error && <div className="settings-error">{error}</div>}
-					</div>
-				)}
-
-			{provider === "ollama" && (
-				<div className="settings-field">
-					<label>Ollama Host</label>
-					<input
-						type="text"
-						value={ollamaHost}
-						onChange={(e) => setOllamaHost(e.target.value)}
-						placeholder={DEFAULT_OLLAMA_HOST}
-					/>
-					<div className="settings-hint">
-						{ollamaConnected
-							? `연결됨 — ${(dynamicModels.ollama ?? []).length}개 모델`
-							: "연결 안 됨 — Ollama 서버가 실행 중인지 확인하세요"}
-					</div>
-					{error && <div className="settings-error">{error}</div>}
-				</div>
-			)}
-			{provider === "vllm" && (
-				<div className="settings-field">
-					<label>vLLM Host</label>
-					<input
-						type="text"
-						value={vllmHost}
-						onChange={(e) => setVllmHost(e.target.value)}
-						placeholder={DEFAULT_VLLM_HOST}
-					/>
-					<div className="settings-hint">
-						{vllmConnected
-							? `연결됨 — ${(dynamicModels.vllm ?? []).length}개 모델`
-							: "연결 안 됨 — vLLM 서버가 실행 중인지 확인하세요"}
-					</div>
-					{error && <div className="settings-error">{error}</div>}
-				</div>
-			)}
-
-			<div className="settings-field">
-				<label htmlFor="model-select">{t("settings.model")}</label>
-				<select
-					id="model-select"
-					value={hasSelectedModel ? model : "__custom__"}
-					onChange={(e) => {
-						if (e.target.value === "__custom__") return;
-						setModel(e.target.value);
-						// When switching to an omni model, set default voice if not already set
-						const newMeta = providerModels.find((m) => m.id === e.target.value);
-						if (
-							newMeta?.capabilities.includes("omni") &&
-							newMeta.voices?.length
-						) {
-							const currentVoiceValid = newMeta.voices.some(
-								(v) => v.id === voice,
-							);
-							if (!currentVoiceValid) {
-								setVoice(newMeta.voices[0].id);
-							}
-						}
-					}}
-				>
-					{!hasSelectedModel && model ? (
-						<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
-					) : null}
-					{providerModels
-						.filter((m) => !m.capabilities.includes("asr"))
-						.map((m) => (
-							<option key={m.id} value={m.id}>
-								{formatModelLabel(m)}
-							</option>
-						))}
-				</select>
-				<div className="settings-hint">
-					{provider === "nextain" && selectedModelMeta?.pricing ? (
-						<span style={{ color: "var(--accent-color, #64a0ff)" }}>
-							Naia {t("settings.pricing")}:{" "}
-							{selectedModelMeta.capabilities.includes("omni")
-								? `$${selectedModelMeta.pricing[0].toFixed(2)}/hr`
-								: `$${selectedModelMeta.pricing[0].toFixed(3)} / $${selectedModelMeta.pricing[1].toFixed(3)}`}
-						</span>
-					) : (
-						selectedModelMeta?.label ?? model
-					)}
-				</div>
-			</div>
-
-			{/* Omni model voice selection */}
-			{isSelectedOmni && omniVoices && omniVoices.length > 0 && (
-				<div className="settings-field">
-					<label htmlFor="omni-voice-select">{t("settings.naiaVoice")}</label>
-					<div className="voice-picker">
+						<label htmlFor="provider-select">{t("settings.provider")}</label>
 						<select
-							id="omni-voice-select"
-							value={voice}
-							onChange={(e) => {
-								setVoice(e.target.value);
-								if (existing)
-									saveConfig({ ...existing, voice: e.target.value });
-							}}
+							id="provider-select"
+							value={provider}
+							onChange={(e) =>
+								handleProviderChange(e.target.value as ProviderId)
+							}
 						>
-							{omniVoices.map((v) => (
-								<option key={v.id} value={v.id}>
-									{v.label}
+							{LLM_PROVIDERS.map((p) => (
+								<option key={p.id} value={p.id} disabled={p.disabled}>
+									{p.name}
 								</option>
 							))}
 						</select>
-						<button
-							type="button"
-							className="voice-preview-btn"
-							onClick={handleVoicePreview}
-							disabled={isPreviewing}
-						>
-							{isPreviewing
-								? t("settings.voicePreviewing")
-								: t("settings.voicePreview")}
-						</button>
-					</div>
-				</div>
-			)}
-
-			{/* Omni model: Gemini Direct mode needs Google API Key */}
-			{isSelectedOmni && provider === "gemini" && (
-				<div className="settings-field">
-					<label htmlFor="google-apikey-input">Google API Key</label>
-					<input
-						id="google-apikey-input"
-						type="password"
-						value={googleApiKey}
-						onChange={(e) => {
-							setGoogleApiKey(e.target.value);
-							if (existing)
-								saveConfig({ ...existing, googleApiKey: e.target.value });
-						}}
-						placeholder="AIza..."
-					/>
-				</div>
-			)}
-
-			{/* Omni model: OpenAI Realtime needs API Key */}
-			{isSelectedOmni && provider === "openai" && (
-				<div className="settings-field">
-					<label>OpenAI API Key</label>
-					<input
-						type="password"
-						value={openaiRealtimeApiKey}
-						onChange={(e) => {
-							setOpenaiRealtimeApiKey(e.target.value);
-							if (existing)
-								saveConfig({
-									...existing,
-									openaiRealtimeApiKey: e.target.value,
-								});
-						}}
-						placeholder="sk-..."
-					/>
-				</div>
-			)}
-
-			{/* vLLM provider: voice mode uses /ws endpoint on the same host */}
-			{provider === "vllm" && (
-				<div className="settings-field">
-					<span className="settings-hint">
-						음성 버튼 → <code>ws://[vLLM Host]/ws</code> 자동 연결 (MiniCPM-o
-						audio output)
-					</span>
-				</div>
-			)}
-
-
-			{/* Voice settings — only for LLM models (omni models have built-in STT/TTS) */}
-			{!isSelectedOmni && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.voiceSection")}</span>
 					</div>
 
-					{/* TTS enable — top of voice section for visibility */}
-					<div className="settings-field settings-toggle-row">
-						<label htmlFor="tts-toggle">{t("settings.ttsEnabled")}</label>
-						<input
-							id="tts-toggle"
-							type="checkbox"
-							checked={ttsEnabled}
-							onChange={(e) => setTtsEnabled(e.target.checked)}
-						/>
-					</div>
-
-					{!isSelectedAsr && (
-						<>
-							{/* Voice status summary */}
-							<div
-								className="settings-field"
-								style={{ fontSize: "0.85em", opacity: 0.8, lineHeight: 1.6 }}
-							>
-								{!sttProvider && (
-									<div>{t("settings.voiceStatusSttNeeded")}</div>
-								)}
-								{sttProvider && !sttModel && (
-									<div>{t("settings.voiceStatusModelNeeded")}</div>
-								)}
-								{sttProvider && sttModel && !ttsEnabled && (
-									<div>{t("settings.voiceStatusTtsOff")}</div>
-								)}
-								{sttProvider && sttModel && ttsEnabled && (
-									<div style={{ color: "var(--success-color, #4caf50)" }}>
-										{t("settings.voiceStatusReady")}
+					{/* API key — shown before model selector so user can enter key first */}
+					{provider !== "nextain" &&
+						provider !== "ollama" &&
+						provider !== "vllm" &&
+						provider !== "claude-code-cli" && (
+							<div className="settings-field">
+								<label htmlFor="apikey-input">{t("settings.apiKey")}</label>
+								<input
+									id="apikey-input"
+									type="password"
+									value={apiKey}
+									onChange={(e) => {
+										setApiKey(e.target.value);
+										setError("");
+									}}
+									placeholder="sk-..."
+								/>
+								{provider === "zai" && (
+									<div className="settings-hint">
+										Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를
+										입력하세요.
 									</div>
 								)}
+								{error && <div className="settings-error">{error}</div>}
 							</div>
+						)}
 
-							{/* STT Provider */}
-							<div className="settings-field">
-								<label>{t("settings.sttProvider")}</label>
+					{provider === "ollama" && (
+						<div className="settings-field">
+							<label>Ollama Host</label>
+							<input
+								type="text"
+								value={ollamaHost}
+								onChange={(e) => setOllamaHost(e.target.value)}
+								placeholder={DEFAULT_OLLAMA_HOST}
+							/>
+							<div className="settings-hint">
+								{ollamaConnected
+									? `연결됨 — ${(dynamicModels.ollama ?? []).length}개 모델`
+									: "연결 안 됨 — Ollama 서버가 실행 중인지 확인하세요"}
+							</div>
+							{error && <div className="settings-error">{error}</div>}
+						</div>
+					)}
+					{provider === "vllm" && (
+						<div className="settings-field">
+							<label>vLLM Host</label>
+							<input
+								type="text"
+								value={vllmHost}
+								onChange={(e) => setVllmHost(e.target.value)}
+								placeholder={DEFAULT_VLLM_HOST}
+							/>
+							<div className="settings-hint">
+								{vllmConnected
+									? `연결됨 — ${(dynamicModels.vllm ?? []).length}개 모델`
+									: "연결 안 됨 — vLLM 서버가 실행 중인지 확인하세요"}
+							</div>
+							{error && <div className="settings-error">{error}</div>}
+						</div>
+					)}
+
+					<div className="settings-field">
+						<label htmlFor="model-select">{t("settings.model")}</label>
+						<select
+							id="model-select"
+							value={hasSelectedModel ? model : "__custom__"}
+							onChange={(e) => {
+								if (e.target.value === "__custom__") return;
+								setModel(e.target.value);
+								// When switching to an omni model, set default voice if not already set
+								const newMeta = providerModels.find(
+									(m) => m.id === e.target.value,
+								);
+								if (
+									newMeta?.capabilities.includes("omni") &&
+									newMeta.voices?.length
+								) {
+									const currentVoiceValid = newMeta.voices.some(
+										(v) => v.id === voice,
+									);
+									if (!currentVoiceValid) {
+										setVoice(newMeta.voices[0].id);
+									}
+								}
+							}}
+						>
+							{!hasSelectedModel && model ? (
+								<option value="__custom__">{`${model}${isSelectedAsr ? " 🎤" : ""} (현재값)`}</option>
+							) : null}
+							{providerModels
+								.filter((m) => !m.capabilities.includes("asr"))
+								.map((m) => (
+									<option key={m.id} value={m.id}>
+										{formatModelLabel(m)}
+									</option>
+								))}
+						</select>
+						<div className="settings-hint">
+							{provider === "nextain" && selectedModelMeta?.pricing ? (
+								<span style={{ color: "var(--accent-color, #64a0ff)" }}>
+									Naia {t("settings.pricing")}:{" "}
+									{selectedModelMeta.capabilities.includes("omni")
+										? `$${selectedModelMeta.pricing[0].toFixed(2)}/hr`
+										: `$${selectedModelMeta.pricing[0].toFixed(3)} / $${selectedModelMeta.pricing[1].toFixed(3)}`}
+								</span>
+							) : (
+								(selectedModelMeta?.label ?? model)
+							)}
+						</div>
+					</div>
+
+					{/* Omni model voice selection */}
+					{isSelectedOmni && omniVoices && omniVoices.length > 0 && (
+						<div className="settings-field">
+							<label htmlFor="omni-voice-select">
+								{t("settings.naiaVoice")}
+							</label>
+							<div className="voice-picker">
 								<select
-									value={sttProvider}
+									id="omni-voice-select"
+									value={voice}
 									onChange={(e) => {
-										const next = e.target.value as SttProviderId;
-										setSttProvider(next);
-										// Clear model selection when switching engine type
-										setSttModel("");
+										setVoice(e.target.value);
+										if (existing)
+											saveConfig({ ...existing, voice: e.target.value });
 									}}
 								>
-									<option value="">{t("settings.sttNone")}</option>
-									{listSttProviders().map((p) => (
+									{omniVoices.map((v) => (
+										<option key={v.id} value={v.id}>
+											{v.label}
+										</option>
+									))}
+								</select>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={handleVoicePreview}
+									disabled={isPreviewing}
+								>
+									{isPreviewing
+										? t("settings.voicePreviewing")
+										: t("settings.voicePreview")}
+								</button>
+							</div>
+						</div>
+					)}
+
+					{/* Omni model: Gemini Direct mode needs Google API Key */}
+					{isSelectedOmni && provider === "gemini" && (
+						<div className="settings-field">
+							<label htmlFor="google-apikey-input">Google API Key</label>
+							<input
+								id="google-apikey-input"
+								type="password"
+								value={googleApiKey}
+								onChange={(e) => {
+									setGoogleApiKey(e.target.value);
+									if (existing)
+										saveConfig({ ...existing, googleApiKey: e.target.value });
+								}}
+								placeholder="AIza..."
+							/>
+						</div>
+					)}
+
+					{/* Omni model: OpenAI Realtime needs API Key */}
+					{isSelectedOmni && provider === "openai" && (
+						<div className="settings-field">
+							<label>OpenAI API Key</label>
+							<input
+								type="password"
+								value={openaiRealtimeApiKey}
+								onChange={(e) => {
+									setOpenaiRealtimeApiKey(e.target.value);
+									if (existing)
+										saveConfig({
+											...existing,
+											openaiRealtimeApiKey: e.target.value,
+										});
+								}}
+								placeholder="sk-..."
+							/>
+						</div>
+					)}
+
+					{/* Naia Local: address of the user's own omni-24g container.
+			    Reuses the logged-in key (no key input); voice starts on the voice
+			    button (lazy connect). Loopback may be ws://; remote must be wss://. */}
+					{provider === "nextain" && model === "naia-local" && (
+						<div className="settings-field">
+							<label>{t("settings.naiaLocalUrl")}</label>
+							<input
+								type="text"
+								value={naiaLocalUrl}
+								placeholder={DEFAULT_NAIA_LOCAL_URL}
+								onChange={(e) => {
+									setNaiaLocalUrl(e.target.value);
+									if (existing)
+										saveConfig({
+											...existing,
+											naiaLocalUrl: e.target.value.trim() || undefined,
+										});
+								}}
+							/>
+							<span className="settings-hint">
+								{t("settings.naiaLocalUrlHint")}
+							</span>
+						</div>
+					)}
+
+					{/* vLLM provider: voice mode uses /ws endpoint on the same host */}
+					{provider === "vllm" && (
+						<div className="settings-field">
+							<span className="settings-hint">
+								음성 버튼 → <code>ws://[vLLM Host]/ws</code> 자동 연결
+								(MiniCPM-o audio output)
+							</span>
+						</div>
+					)}
+
+					{/* Voice settings — only for LLM models (omni models have built-in STT/TTS) */}
+					{!isSelectedOmni && (
+						<>
+							<div className="settings-section-divider">
+								<span>{t("settings.voiceSection")}</span>
+							</div>
+
+							{/* TTS enable — top of voice section for visibility */}
+							<div className="settings-field settings-toggle-row">
+								<label htmlFor="tts-toggle">{t("settings.ttsEnabled")}</label>
+								<input
+									id="tts-toggle"
+									type="checkbox"
+									checked={ttsEnabled}
+									onChange={(e) => setTtsEnabled(e.target.checked)}
+								/>
+							</div>
+
+							{!isSelectedAsr && (
+								<>
+									{/* Voice status summary */}
+									<div
+										className="settings-field"
+										style={{
+											fontSize: "0.85em",
+											opacity: 0.8,
+											lineHeight: 1.6,
+										}}
+									>
+										{!sttProvider && (
+											<div>{t("settings.voiceStatusSttNeeded")}</div>
+										)}
+										{sttProvider && !sttModel && (
+											<div>{t("settings.voiceStatusModelNeeded")}</div>
+										)}
+										{sttProvider && sttModel && !ttsEnabled && (
+											<div>{t("settings.voiceStatusTtsOff")}</div>
+										)}
+										{sttProvider && sttModel && ttsEnabled && (
+											<div style={{ color: "var(--success-color, #4caf50)" }}>
+												{t("settings.voiceStatusReady")}
+											</div>
+										)}
+									</div>
+
+									{/* STT Provider */}
+									<div className="settings-field">
+										<label>{t("settings.sttProvider")}</label>
+										<select
+											value={sttProvider}
+											onChange={(e) => {
+												const next = e.target.value as SttProviderId;
+												setSttProvider(next);
+												// Clear model selection when switching engine type
+												setSttModel("");
+											}}
+										>
+											<option value="">{t("settings.sttNone")}</option>
+											{listSttProviders().map((p) => (
+												<option
+													key={p.id}
+													value={p.id}
+													disabled={p.requiresNaiaKey && !naiaKey}
+												>
+													{p.name}
+													{p.pricing ? ` - ${p.pricing}` : ""}
+													{p.requiresNaiaKey && !naiaKey
+														? ` (${t("settings.ttsNaiaRequired")})`
+														: ""}
+												</option>
+											))}
+										</select>
+									</div>
+									{/* Naia Cloud STT — backend engine selector */}
+									{sttProvider === "nextain" && naiaKey && (
+										<div className="settings-field">
+											<label>{t("settings.naiaCloudBackend")}</label>
+											<select
+												value={
+													existing?.naiaCloudSttBackend ?? "google-cloud-stt"
+												}
+												onChange={(e) => {
+													if (existing)
+														saveConfig({
+															...existing,
+															naiaCloudSttBackend: e.target.value,
+														});
+												}}
+											>
+												<option value="google-cloud-stt">
+													Google Cloud STT
+												</option>
+											</select>
+										</div>
+									)}
+									{/* STT API key — shown for API-based providers */}
+									{(() => {
+										const sttMeta = listSttProviders().find(
+											(p) => p.id === sttProvider,
+										);
+										if (sttMeta?.requiresNaiaKey && !naiaKey) {
+											return (
+												<div className="settings-field">
+													<span className="settings-hint">
+														{t("settings.ttsNaiaRequired")}
+													</span>
+												</div>
+											);
+										}
+										if (sttMeta?.requiresApiKey) {
+											const currentKey =
+												sttMeta.apiKeyConfigField === "googleApiKey"
+													? (existing?.googleApiKey ?? "")
+													: sttMeta.apiKeyConfigField === "elevenlabsApiKey"
+														? (existing?.elevenlabsApiKey ?? "")
+														: "";
+											return (
+												<div className="settings-field">
+													<label htmlFor="stt-api-key">
+														{t("settings.sttApiKey")}
+													</label>
+													<input
+														id="stt-api-key"
+														type="password"
+														defaultValue={currentKey}
+														onChange={(e) => {
+															if (
+																sttMeta.apiKeyConfigField === "googleApiKey"
+															) {
+																setGatewayTtsApiKey(e.target.value);
+															}
+														}}
+														placeholder={`${sttMeta.name} API Key`}
+													/>
+												</div>
+											);
+										}
+										return null;
+									})()}
+
+									{/* STT Model — current selection + manage button (offline engines only) */}
+									{/* vLLM ASR: endpoint URL + ASR model picker */}
+									{sttProvider === "vllm" && (
+										<>
+											<div className="settings-field">
+												<label>vLLM STT Host</label>
+												<input
+													type="text"
+													value={vllmSttHost}
+													onChange={(e) => {
+														setVllmSttHost(e.target.value);
+														if (existing)
+															saveConfig({
+																...existing,
+																vllmSttHost: e.target.value,
+															});
+													}}
+													placeholder={DEFAULT_VLLM_HOST}
+												/>
+											</div>
+											{(() => {
+												const asrModels = vllmSttModels;
+												if (asrModels.length === 0)
+													return (
+														<div className="settings-field">
+															<span className="settings-hint">
+																ASR 모델 불러오는 중... (Host URL 확인)
+															</span>
+														</div>
+													);
+												return (
+													<div className="settings-field">
+														<label>ASR 모델</label>
+														<select
+															value={existing?.vllmSttModel ?? ""}
+															onChange={(e) => {
+																if (existing)
+																	saveConfig({
+																		...existing,
+																		vllmSttModel: e.target.value,
+																	});
+															}}
+														>
+															{asrModels.map((m) => (
+																<option key={m.id} value={m.id}>
+																	{m.label} 🎤
+																</option>
+															))}
+														</select>
+													</div>
+												);
+											})()}
+										</>
+									)}
+
+									{(sttProvider === "vosk" || sttProvider === "whisper") && (
+										<div className="settings-field">
+											<label>{t("settings.sttCurrentModel")}</label>
+											<div
+												style={{
+													display: "flex",
+													alignItems: "center",
+													gap: "8px",
+												}}
+											>
+												<span style={{ fontSize: "0.9em" }}>
+													{sttModel
+														? (sttModels.find((m) => m.modelId === sttModel)
+																?.modelName ?? sttModel)
+														: "—"}
+												</span>
+												<button
+													type="button"
+													className="onboarding-next-btn"
+													style={{ fontSize: "0.8em", padding: "4px 12px" }}
+													onClick={() => setSttModelModalOpen(true)}
+												>
+													{t("settings.sttManageModels")}
+												</button>
+											</div>
+										</div>
+									)}
+								</>
+							)}
+
+							{/* TTS Provider selector */}
+							<div className="settings-field">
+								<label htmlFor="tts-provider-select">
+									{t("settings.ttsProvider")}
+								</label>
+								<select
+									id="tts-provider-select"
+									data-testid="gateway-tts-provider"
+									value={ttsProvider}
+									onChange={(e) => {
+										const next = e.target.value as TtsProviderId;
+										setTtsProvider(next);
+										setDynamicTtsVoices([]);
+										// Load API key for the selected provider
+										if (next === "openai")
+											setGatewayTtsApiKey(existing?.openaiTtsApiKey ?? "");
+										else if (next === "elevenlabs")
+											setGatewayTtsApiKey(existing?.elevenlabsApiKey ?? "");
+										else if (next === "google")
+											setGatewayTtsApiKey(existing?.googleApiKey ?? "");
+										else setGatewayTtsApiKey("");
+										// Reset voice to provider default
+										const meta = listTtsProviderMetas().find(
+											(p) => p.id === next,
+										);
+										if (meta?.voices?.[0]) {
+											persistTtsVoice(meta.voices[0].id);
+										} else if (next === "edge") {
+											// Edge voice will be selected from gateway/hardcoded list
+											persistTtsVoice("");
+										}
+										// Fetch dynamic voices — use saved key or current input
+										const savedKey =
+											next === "openai"
+												? (existing?.openaiTtsApiKey ?? "")
+												: next === "elevenlabs"
+													? (existing?.elevenlabsApiKey ?? "")
+													: next === "google"
+														? (existing?.googleApiKey ?? "")
+														: "";
+										const effectiveKey = savedKey || gatewayTtsApiKey;
+										if (meta?.fetchVoices && effectiveKey) {
+											meta.fetchVoices(effectiveKey).then((voices) => {
+												if (voices && voices.length > 0) {
+													setDynamicTtsVoices(voices);
+													if (voices[0] && !meta.voices?.length)
+														persistTtsVoice(voices[0].id);
+												}
+											});
+										}
+									}}
+								>
+									{listTtsProviderMetas().map((p) => (
 										<option
 											key={p.id}
 											value={p.id}
@@ -2757,30 +3024,73 @@ export function SettingsTab() {
 									))}
 								</select>
 							</div>
-							{/* Naia Cloud STT — backend engine selector */}
-							{sttProvider === "nextain" && naiaKey && (
+							{/* Naia Cloud TTS — backend engine selector */}
+							{ttsProvider === "nextain" && naiaKey && (
 								<div className="settings-field">
 									<label>{t("settings.naiaCloudBackend")}</label>
 									<select
-										value={existing?.naiaCloudSttBackend ?? "google-cloud-stt"}
+										value={existing?.naiaCloudTtsBackend ?? "google-chirp3-hd"}
 										onChange={(e) => {
 											if (existing)
 												saveConfig({
 													...existing,
-													naiaCloudSttBackend: e.target.value,
+													naiaCloudTtsBackend: e.target.value,
 												});
 										}}
 									>
-										<option value="google-cloud-stt">Google Cloud STT</option>
+										<option value="google-chirp3-hd">Google Chirp 3 HD</option>
 									</select>
 								</div>
 							)}
-							{/* STT API key — shown for API-based providers */}
+							{/* TTS API key input — shown when provider requires it */}
 							{(() => {
-								const sttMeta = listSttProviders().find(
-									(p) => p.id === sttProvider,
+								const providerMeta = listTtsProviderMetas().find(
+									(p) => p.id === ttsProvider,
 								);
-								if (sttMeta?.requiresNaiaKey && !naiaKey) {
+								if (providerMeta?.requiresApiKey) {
+									return (
+										<div className="settings-field">
+											<label htmlFor="tts-api-key">
+												{t("settings.ttsApiKey")}
+											</label>
+											<input
+												id="tts-api-key"
+												type="password"
+												value={gatewayTtsApiKey}
+												onChange={(e) => {
+													const val = e.target.value;
+													setGatewayTtsApiKey(val);
+													const meta = listTtsProviderMetas().find(
+														(p) => p.id === ttsProvider,
+													);
+													if (meta?.fetchVoices && val.length > 10) {
+														meta.fetchVoices(val).then((voices) => {
+															if (voices && voices.length > 0)
+																setDynamicTtsVoices(voices);
+														});
+													}
+												}}
+												onPaste={(e) => {
+													// Handle paste — onChange may not fire in WebKitGTK
+													setTimeout(() => {
+														const val = (e.target as HTMLInputElement).value;
+														if (val.length > 10) {
+															const meta = listTtsProviderMetas().find(
+																(p) => p.id === ttsProvider,
+															);
+															meta?.fetchVoices?.(val).then((voices) => {
+																if (voices && voices.length > 0)
+																	setDynamicTtsVoices(voices);
+															});
+														}
+													}, 100);
+												}}
+												placeholder={`${providerMeta.name} API Key`}
+											/>
+										</div>
+									);
+								}
+								if (providerMeta?.requiresNaiaKey && !naiaKey) {
 									return (
 										<div className="settings-field">
 											<span className="settings-hint">
@@ -2789,940 +3099,743 @@ export function SettingsTab() {
 										</div>
 									);
 								}
-								if (sttMeta?.requiresApiKey) {
-									const currentKey =
-										sttMeta.apiKeyConfigField === "googleApiKey"
-											? (existing?.googleApiKey ?? "")
-											: sttMeta.apiKeyConfigField === "elevenlabsApiKey"
-												? (existing?.elevenlabsApiKey ?? "")
-												: "";
+								return null;
+							})()}
+							{/* vLLM TTS: host URL input */}
+							{ttsProvider === "vllm" && (
+								<div className="settings-field">
+									<label>vLLM TTS Host</label>
+									<input
+										type="text"
+										value={vllmTtsHost}
+										onChange={(e) => {
+											setVllmTtsHost(e.target.value);
+											if (existing)
+												saveConfig({
+													...existing,
+													vllmTtsHost: e.target.value,
+												});
+										}}
+										placeholder={DEFAULT_VLLM_HOST}
+									/>
+									<div className="settings-hint">
+										Free (local) — e.g. Kokoro
+									</div>
+								</div>
+							)}
+
+							{/* TTS Voice picker — dynamic based on provider */}
+							{(() => {
+								const providerMeta = listTtsProviderMetas().find(
+									(p) => p.id === ttsProvider,
+								);
+								// Edge: use locale-based hardcoded voice list
+								if (ttsProvider === "edge") {
+									const voices = getEdgeVoicesForLocale(locale);
+									return voices.length > 0 ? (
+										<div className="settings-field">
+											<label htmlFor="tts-voice-select">
+												{t("settings.ttsVoice")}
+											</label>
+											<div className="voice-picker">
+												<select
+													id="tts-voice-select"
+													data-testid="gateway-tts-voice"
+													value={ttsVoice}
+													onChange={(e) => persistTtsVoice(e.target.value)}
+												>
+													{voices.map((v) => (
+														<option key={v} value={v}>
+															{v}
+														</option>
+													))}
+												</select>
+												<button
+													type="button"
+													className="voice-preview-btn"
+													onClick={handleVoicePreview}
+													disabled={isPreviewing}
+												>
+													{isPreviewing
+														? t("settings.voicePreviewing")
+														: t("settings.voicePreview")}
+												</button>
+											</div>
+										</div>
+									) : null;
+								}
+								// Other providers: use dynamic voices (if fetched) or static registry voices
+								const voiceList =
+									dynamicTtsVoices.length > 0
+										? dynamicTtsVoices
+										: (providerMeta?.voices ?? []);
+								if (voiceList.length > 0) {
 									return (
 										<div className="settings-field">
-											<label htmlFor="stt-api-key">
-												{t("settings.sttApiKey")}
+											<label htmlFor="tts-voice-select">
+												{t("settings.ttsVoice")}
 											</label>
-											<input
-												id="stt-api-key"
-												type="password"
-												defaultValue={currentKey}
-												onChange={(e) => {
-													if (sttMeta.apiKeyConfigField === "googleApiKey") {
-														setGatewayTtsApiKey(e.target.value);
-													}
-												}}
-												placeholder={`${sttMeta.name} API Key`}
-											/>
+											<div className="voice-picker">
+												<select
+													id="tts-voice-select"
+													value={ttsVoice}
+													onChange={(e) => persistTtsVoice(e.target.value)}
+												>
+													{voiceList.map((v) => (
+														<option key={v.id} value={v.id}>
+															{v.label}
+														</option>
+													))}
+												</select>
+												<button
+													type="button"
+													className="voice-preview-btn"
+													onClick={handleVoicePreview}
+													disabled={isPreviewing}
+												>
+													{isPreviewing
+														? t("settings.voicePreviewing")
+														: t("settings.voicePreview")}
+												</button>
+											</div>
 										</div>
 									);
 								}
 								return null;
 							})()}
-
-							{/* STT Model — current selection + manage button (offline engines only) */}
-							{/* vLLM ASR: endpoint URL + ASR model picker */}
-							{sttProvider === "vllm" && (
-								<>
-									<div className="settings-field">
-										<label>vLLM STT Host</label>
-										<input
-											type="text"
-											value={vllmSttHost}
-											onChange={(e) => {
-												setVllmSttHost(e.target.value);
-												if (existing)
-													saveConfig({
-														...existing,
-														vllmSttHost: e.target.value,
-													});
-											}}
-											placeholder={DEFAULT_VLLM_HOST}
-										/>
-									</div>
-									{(() => {
-										const asrModels = vllmSttModels;
-										if (asrModels.length === 0)
-											return (
-												<div className="settings-field">
-													<span className="settings-hint">
-														ASR 모델 불러오는 중... (Host URL 확인)
-													</span>
-												</div>
-											);
-										return (
-											<div className="settings-field">
-												<label>ASR 모델</label>
-												<select
-													value={existing?.vllmSttModel ?? ""}
-													onChange={(e) => {
-														if (existing)
-															saveConfig({
-																...existing,
-																vllmSttModel: e.target.value,
-															});
-													}}
-												>
-													{asrModels.map((m) => (
-														<option key={m.id} value={m.id}>
-															{m.label} 🎤
-														</option>
-													))}
-												</select>
-											</div>
-										);
-									})()}
-								</>
-							)}
-
-							{(sttProvider === "vosk" || sttProvider === "whisper") && (
-								<div className="settings-field">
-									<label>{t("settings.sttCurrentModel")}</label>
-									<div
-										style={{
-											display: "flex",
-											alignItems: "center",
-											gap: "8px",
-										}}
-									>
-										<span style={{ fontSize: "0.9em" }}>
-											{sttModel
-												? (sttModels.find((m) => m.modelId === sttModel)
-														?.modelName ?? sttModel)
-												: "—"}
-										</span>
-										<button
-											type="button"
-											className="onboarding-next-btn"
-											style={{ fontSize: "0.8em", padding: "4px 12px" }}
-											onClick={() => setSttModelModalOpen(true)}
-										>
-											{t("settings.sttManageModels")}
-										</button>
-									</div>
-								</div>
-							)}
 						</>
 					)}
 
-					{/* TTS Provider selector */}
-					<div className="settings-field">
-						<label htmlFor="tts-provider-select">
-							{t("settings.ttsProvider")}
-						</label>
-						<select
-							id="tts-provider-select"
-							data-testid="gateway-tts-provider"
-							value={ttsProvider}
-							onChange={(e) => {
-								const next = e.target.value as TtsProviderId;
-								setTtsProvider(next);
-								setDynamicTtsVoices([]);
-								// Load API key for the selected provider
-								if (next === "openai")
-									setGatewayTtsApiKey(existing?.openaiTtsApiKey ?? "");
-								else if (next === "elevenlabs")
-									setGatewayTtsApiKey(existing?.elevenlabsApiKey ?? "");
-								else if (next === "google")
-									setGatewayTtsApiKey(existing?.googleApiKey ?? "");
-								else setGatewayTtsApiKey("");
-								// Reset voice to provider default
-								const meta = listTtsProviderMetas().find((p) => p.id === next);
-								if (meta?.voices?.[0]) {
-									persistTtsVoice(meta.voices[0].id);
-								} else if (next === "edge") {
-									// Edge voice will be selected from gateway/hardcoded list
-									persistTtsVoice("");
-								}
-								// Fetch dynamic voices — use saved key or current input
-								const savedKey =
-									next === "openai"
-										? (existing?.openaiTtsApiKey ?? "")
-										: next === "elevenlabs"
-											? (existing?.elevenlabsApiKey ?? "")
-											: next === "google"
-												? (existing?.googleApiKey ?? "")
-												: "";
-								const effectiveKey = savedKey || gatewayTtsApiKey;
-								if (meta?.fetchVoices && effectiveKey) {
-									meta.fetchVoices(effectiveKey).then((voices) => {
-										if (voices && voices.length > 0) {
-											setDynamicTtsVoices(voices);
-											if (voices[0] && !meta.voices?.length)
-												persistTtsVoice(voices[0].id);
-										}
-									});
-								}
+					{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
+					{supportsRefAudio && <RefAudioSection />}
+
+					{/* 오디오 장치 */}
+					<div className="settings-section-divider">
+						<span>오디오 장치</span>
+					</div>
+
+					{/* 마이크 + 스피커 2-column layout */}
+					<div className="audio-device-col">
+						<label>마이크 (입력 장치)</label>
+						<DeviceSelect
+							value={sttInputDeviceId}
+							options={audioInputDevices.map((d) => ({
+								value: d.deviceId,
+								label:
+									sanitizeDeviceLabel(d.label) ||
+									`마이크 ${d.deviceId.slice(0, 8)}`,
+							}))}
+							onChange={(v) => {
+								setSttInputDeviceId(v);
+								if (existing)
+									saveConfig({ ...existing, sttInputDeviceId: v || undefined });
 							}}
-						>
-							{listTtsProviderMetas().map((p) => (
-								<option
-									key={p.id}
-									value={p.id}
-									disabled={p.requiresNaiaKey && !naiaKey}
-								>
-									{p.name}
-									{p.pricing ? ` - ${p.pricing}` : ""}
-									{p.requiresNaiaKey && !naiaKey
-										? ` (${t("settings.ttsNaiaRequired")})`
-										: ""}
-								</option>
-							))}
-						</select>
-					</div>
-					{/* Naia Cloud TTS — backend engine selector */}
-					{ttsProvider === "nextain" && naiaKey && (
-						<div className="settings-field">
-							<label>{t("settings.naiaCloudBackend")}</label>
-							<select
-								value={existing?.naiaCloudTtsBackend ?? "google-chirp3-hd"}
-								onChange={(e) => {
-									if (existing)
-										saveConfig({
-											...existing,
-											naiaCloudTtsBackend: e.target.value,
-										});
-								}}
-							>
-								<option value="google-chirp3-hd">Google Chirp 3 HD</option>
-							</select>
-						</div>
-					)}
-					{/* TTS API key input — shown when provider requires it */}
-					{(() => {
-						const providerMeta = listTtsProviderMetas().find(
-							(p) => p.id === ttsProvider,
-						);
-						if (providerMeta?.requiresApiKey) {
-							return (
-								<div className="settings-field">
-									<label htmlFor="tts-api-key">{t("settings.ttsApiKey")}</label>
-									<input
-										id="tts-api-key"
-										type="password"
-										value={gatewayTtsApiKey}
-										onChange={(e) => {
-											const val = e.target.value;
-											setGatewayTtsApiKey(val);
-											const meta = listTtsProviderMetas().find(
-												(p) => p.id === ttsProvider,
-											);
-											if (meta?.fetchVoices && val.length > 10) {
-												meta.fetchVoices(val).then((voices) => {
-													if (voices && voices.length > 0)
-														setDynamicTtsVoices(voices);
-												});
-											}
-										}}
-										onPaste={(e) => {
-											// Handle paste — onChange may not fire in WebKitGTK
-											setTimeout(() => {
-												const val = (e.target as HTMLInputElement).value;
-												if (val.length > 10) {
-													const meta = listTtsProviderMetas().find(
-														(p) => p.id === ttsProvider,
-													);
-													meta?.fetchVoices?.(val).then((voices) => {
-														if (voices && voices.length > 0)
-															setDynamicTtsVoices(voices);
-													});
-												}
-											}, 100);
-										}}
-										placeholder={`${providerMeta.name} API Key`}
-									/>
-								</div>
-							);
-						}
-						if (providerMeta?.requiresNaiaKey && !naiaKey) {
-							return (
-								<div className="settings-field">
-									<span className="settings-hint">
-										{t("settings.ttsNaiaRequired")}
-									</span>
-								</div>
-							);
-						}
-						return null;
-					})()}
-					{/* vLLM TTS: host URL input */}
-					{ttsProvider === "vllm" && (
-						<div className="settings-field">
-							<label>vLLM TTS Host</label>
-							<input
-								type="text"
-								value={vllmTtsHost}
-								onChange={(e) => {
-									setVllmTtsHost(e.target.value);
-									if (existing)
-										saveConfig({ ...existing, vllmTtsHost: e.target.value });
-								}}
-								placeholder={DEFAULT_VLLM_HOST}
-							/>
-							<div className="settings-hint">Free (local) — e.g. Kokoro</div>
-						</div>
-					)}
-
-					{/* TTS Voice picker — dynamic based on provider */}
-					{(() => {
-						const providerMeta = listTtsProviderMetas().find(
-							(p) => p.id === ttsProvider,
-						);
-						// Edge: use locale-based hardcoded voice list
-						if (ttsProvider === "edge") {
-							const voices = getEdgeVoicesForLocale(locale);
-							return voices.length > 0 ? (
-								<div className="settings-field">
-									<label htmlFor="tts-voice-select">
-										{t("settings.ttsVoice")}
-									</label>
-									<div className="voice-picker">
-										<select
-											id="tts-voice-select"
-											data-testid="gateway-tts-voice"
-											value={ttsVoice}
-											onChange={(e) => persistTtsVoice(e.target.value)}
-										>
-											{voices.map((v) => (
-												<option key={v} value={v}>
-													{v}
-												</option>
-											))}
-										</select>
-										<button
-											type="button"
-											className="voice-preview-btn"
-											onClick={handleVoicePreview}
-											disabled={isPreviewing}
-										>
-											{isPreviewing
-												? t("settings.voicePreviewing")
-												: t("settings.voicePreview")}
-										</button>
-									</div>
-								</div>
-							) : null;
-						}
-						// Other providers: use dynamic voices (if fetched) or static registry voices
-						const voiceList =
-							dynamicTtsVoices.length > 0
-								? dynamicTtsVoices
-								: (providerMeta?.voices ?? []);
-						if (voiceList.length > 0) {
-							return (
-								<div className="settings-field">
-									<label htmlFor="tts-voice-select">
-										{t("settings.ttsVoice")}
-									</label>
-									<div className="voice-picker">
-										<select
-											id="tts-voice-select"
-											value={ttsVoice}
-											onChange={(e) => persistTtsVoice(e.target.value)}
-										>
-											{voiceList.map((v) => (
-												<option key={v.id} value={v.id}>
-													{v.label}
-												</option>
-											))}
-										</select>
-										<button
-											type="button"
-											className="voice-preview-btn"
-											onClick={handleVoicePreview}
-											disabled={isPreviewing}
-										>
-											{isPreviewing
-												? t("settings.voicePreviewing")
-												: t("settings.voicePreview")}
-										</button>
-									</div>
-								</div>
-							);
-						}
-						return null;
-					})()}
-				</>
-			)}
-
-			{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
-				{supportsRefAudio && <RefAudioSection />}
-
-				{/* 오디오 장치 */}
-			<div className="settings-section-divider">
-				<span>오디오 장치</span>
-			</div>
-
-			{/* 마이크 + 스피커 2-column layout */}
-			<div className="audio-device-col">
-				<label>마이크 (입력 장치)</label>
-				<DeviceSelect
-					value={sttInputDeviceId}
-					options={audioInputDevices.map((d) => ({
-						value: d.deviceId,
-						label:
-							sanitizeDeviceLabel(d.label) ||
-							`마이크 ${d.deviceId.slice(0, 8)}`,
-					}))}
-					onChange={(v) => {
-						setSttInputDeviceId(v);
-						if (existing)
-							saveConfig({ ...existing, sttInputDeviceId: v || undefined });
-					}}
-				/>
-				<div className="audio-device-test-row">
-					<button
-						type="button"
-						className="onboarding-next-btn"
-						style={{ fontSize: "0.8em", padding: "4px 12px" }}
-						onClick={micTestActive ? stopMicTest : startMicTest}
-					>
-						{micTestActive ? "중지" : "마이크 테스트"}
-					</button>
-					{micTestActive && (
-						<div className="mic-level-bar-outer">
-							<div
-								className="mic-level-bar-inner"
-								style={{ width: `${Math.min(100, micTestLevel)}%` }}
-							/>
-						</div>
-					)}
-				</div>
-			</div>
-
-			<div className="audio-device-col">
-				<label>스피커 (출력 장치)</label>
-				<DeviceSelect
-					value={ttsOutputDeviceId}
-					options={audioOutputDevices.map((d) => ({
-						value: d.deviceId,
-						label:
-							sanitizeDeviceLabel(d.label) ||
-							`스피커 ${d.deviceId.slice(0, 8)}`,
-					}))}
-					onChange={(v) => {
-						setTtsOutputDeviceId(v);
-						if (existing)
-							saveConfig({ ...existing, ttsOutputDeviceId: v || undefined });
-					}}
-					placeholder="기본 장치"
-				/>
-				<button
-					type="button"
-					className="onboarding-next-btn"
-					style={{ fontSize: "0.8em", padding: "4px 12px", marginTop: "6px" }}
-					onClick={playTestBeep}
-				>
-					스피커 테스트
-				</button>
-			</div>
-			<div className="settings-actions">
-				<button
-					type="button"
-					className="settings-save-btn"
-					onClick={handleSave}
-				>
-					{saved ? t("settings.saved") : t("settings.save")}
-				</button>
-			</div>
-			</>}
-						{activeSettingsTab === "skills" && (
-				<SkillsTab />
-			)}
-			{activeSettingsTab === "memory" && <>
-				{/* Coming soon banner */}
-				<div className="settings-coming-soon-banner">
-					<span>⏳ {t("settings.comingSoon")}</span>
-				</div>
-				<div style={{ opacity: 0.5, pointerEvents: "none" }}>
-			<div className="settings-section-divider">
-				<span>{t("settings.memorySection")}</span>
-			</div>
-
-			{/* Memory adapter */}
-			<div className="settings-field">
-				<label>{t("settings.memoryAdapter")}</label>
-				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-					{(
-						[
-							["local", t("settings.memoryAdapterLocal")],
-							["qdrant", t("settings.memoryAdapterQdrant")],
-						] as const
-					).map(([val, label]) => (
-						<label
-							key={val}
-							style={{ display: "flex", alignItems: "center", gap: "6px" }}
-						>
-							<input
-								type="radio"
-								name="memory-adapter"
-								value={val}
-								checked={memoryAdapter === val}
-								onChange={() => setMemoryAdapter(val)}
-							/>
-							{label}
-						</label>
-					))}
-				</div>
-			</div>
-
-			{/* Qdrant fields */}
-			{memoryAdapter === "qdrant" && (
-				<>
-					<div className="settings-field">
-						<label>{t("settings.qdrantUrl")}</label>
-						<input
-							type="text"
-							value={qdrantUrl}
-							onChange={(e) => setQdrantUrl(e.target.value)}
-							placeholder="http://localhost:6333"
 						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.qdrantApiKey")}</label>
-						<input
-							type="password"
-							value={qdrantApiKey}
-							onChange={(e) => setQdrantApiKey(e.target.value)}
-							placeholder="..."
-						/>
-					</div>
-				</>
-			)}
-
-			{/* Embedding provider */}
-			<div className="settings-field">
-				<label>{t("settings.memoryEmbedding")}</label>
-				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-					{(
-						[
-							["none", t("settings.memoryEmbeddingNone")],
-							["offline", t("settings.memoryEmbeddingOffline")],
-							["vllm", t("settings.memoryEmbeddingVllm")],
-							["ollama", t("settings.memoryEmbeddingOllama")],
-							["naia", t("settings.memoryEmbeddingNaia")],
-						] as const
-					).map(([val, label]) => (
-						<label
-							key={val}
-							style={{ display: "flex", alignItems: "center", gap: "6px" }}
-						>
-							<input
-								type="radio"
-								name="memory-embedding"
-								value={val}
-								checked={memoryEmbeddingProvider === val}
-								onChange={() => setMemoryEmbeddingProvider(val)}
-							/>
-							{label}
-						</label>
-					))}
-				</div>
-			</div>
-
-			{/* Offline model selection */}
-			{memoryEmbeddingProvider === "offline" && (
-				<div className="settings-field">
-					<label>{t("settings.memoryOfflineModelSelect")}</label>
-					<div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-						{(
-							[
-								["all-MiniLM-L6-v2", t("settings.memoryOfflineModelLight")],
-								["all-mpnet-base-v2", t("settings.memoryOfflineModelAccurate")],
-							] as const
-						).map(([val, label]) => (
-							<label
-								key={val}
-								style={{ display: "flex", alignItems: "center", gap: "6px" }}
-							>
-								<input
-									type="radio"
-									name="memory-offline-model"
-									value={val}
-									checked={memoryOfflineModel === val}
-									onChange={() => setMemoryOfflineModel(val)}
-								/>
-								{label}
-							</label>
-						))}
-					</div>
-				</div>
-			)}
-
-			{/* vLLM/Ollama embedding fields */}
-			{(memoryEmbeddingProvider === "vllm" ||
-				memoryEmbeddingProvider === "ollama") && (
-				<>
-					<div className="settings-field">
-						<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
-						<input
-							type="text"
-							value={memoryEmbeddingBaseUrl}
-							onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
-							placeholder="http://localhost:11434"
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryEmbeddingApiKey")}</label>
-						<input
-							type="password"
-							value={memoryEmbeddingApiKey}
-							onChange={(e) => setMemoryEmbeddingApiKey(e.target.value)}
-							placeholder="sk-..."
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryEmbeddingModel")}</label>
-						<input
-							type="text"
-							value={memoryEmbeddingModel}
-							onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
-							placeholder="text-embedding-ada-002"
-						/>
-					</div>
-				</>
-			)}
-
-			{/* Naia embedding: show connection status */}
-			{memoryEmbeddingProvider === "naia" && (
-				<div className="settings-field">
-					<span className="settings-hint">
-						{naiaKey
-							? `✓ ${t("settings.memoryNaiaConnected")}`
-							: `⚠ ${t("settings.memoryNaiaRequired")}`}
-					</span>
-				</div>
-			)}
-
-			{/* LLM for memory fact extraction */}
-			<div className="settings-field">
-				<label>{t("settings.memoryLlm")}</label>
-				<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-					{(
-						[
-							["none", t("settings.memoryLlmNone")],
-							["vllm", t("settings.memoryLlmVllm")],
-							["ollama", t("settings.memoryLlmOllama")],
-							["naia", t("settings.memoryLlmNaia")],
-						] as const
-					).map(([val, label]) => (
-						<label
-							key={val}
-							style={{ display: "flex", alignItems: "center", gap: "6px" }}
-						>
-							<input
-								type="radio"
-								name="memory-llm"
-								value={val}
-								checked={memoryLlmProvider === val}
-								onChange={() => setMemoryLlmProvider(val)}
-							/>
-							{label}
-						</label>
-					))}
-				</div>
-			</div>
-
-			{/* vLLM/Ollama LLM fields */}
-			{(memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama") && (
-				<>
-					<div className="settings-field">
-						<label>{t("settings.memoryLlmBaseUrl")}</label>
-						<input
-							type="text"
-							value={memoryLlmBaseUrl}
-							onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
-							placeholder="http://localhost:8000"
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryLlmApiKey")}</label>
-						<input
-							type="password"
-							value={memoryLlmApiKey}
-							onChange={(e) => setMemoryLlmApiKey(e.target.value)}
-							placeholder="sk-..."
-						/>
-					</div>
-					<div className="settings-field">
-						<label>{t("settings.memoryLlmModel")}</label>
-						<input
-							type="text"
-							value={memoryLlmModel}
-							onChange={(e) => setMemoryLlmModel(e.target.value)}
-							placeholder="minicpm-4.5-omni"
-						/>
-					</div>
-				</>
-			)}
-
-			{/* Naia LLM: show connection status */}
-			{memoryLlmProvider === "naia" && (
-				<div className="settings-field">
-					<span className="settings-hint">
-						{naiaKey
-							? `✓ ${t("settings.memoryNaiaConnected")}`
-							: `⚠ ${t("settings.memoryNaiaRequired")}`}
-					</span>
-				</div>
-			)}
-
-			{/* Backup section — 구현 검증 전까지 비활성. */}
-			<div className="settings-field" style={{ opacity: 0.45 }}>
-				<label>{t("settings.memoryBackup")}</label>
-				<input
-					type="password"
-					value={backupPassword}
-					onChange={(e) => setBackupPassword(e.target.value)}
-					placeholder={t("settings.memoryBackupPassword")}
-					disabled
-				/>
-				<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-					<button
-						type="button"
-						disabled
-						title="검증 중 — 아직 사용할 수 없습니다"
-						onClick={async () => {
-							setBackupStatus("exporting");
-							setBackupError("");
-							try {
-								const blob = await exportMemoryBackup(backupPassword);
-								const url = URL.createObjectURL(
-									new Blob([blob as BlobPart], {
-										type: "application/octet-stream",
-									}),
-								);
-								const a = document.createElement("a");
-								a.href = url;
-								a.download = "naia-memory-backup.bin";
-								a.click();
-								URL.revokeObjectURL(url);
-								setBackupStatus("done");
-								setTimeout(() => setBackupStatus("idle"), 2000);
-							} catch (err) {
-								setBackupStatus("error");
-								setBackupError(String(err));
-							}
-						}}
-					>
-						{backupStatus === "exporting"
-							? "..."
-							: t("settings.memoryBackupExport")}
-					</button>
-					<button
-						type="button"
-						disabled
-						title="검증 중 — 아직 사용할 수 없습니다"
-						onClick={async () => {
-							const pw = backupPassword;
-							const fileInput = document.createElement("input");
-							fileInput.type = "file";
-							fileInput.accept = ".bin,.bak";
-							fileInput.onchange = async () => {
-								const file = fileInput.files?.[0];
-								if (!file) return;
-								setBackupStatus("importing");
-								setBackupError("");
-								try {
-									const arrayBuffer = await file.arrayBuffer();
-									await importMemoryBackup(new Uint8Array(arrayBuffer), pw);
-									setBackupStatus("done");
-									setTimeout(() => setBackupStatus("idle"), 2000);
-								} catch (err) {
-									setBackupStatus("error");
-									setBackupError(String(err));
-								}
-							};
-							fileInput.click();
-						}}
-					>
-						{backupStatus === "importing"
-							? "..."
-							: t("settings.memoryBackupImport")}
-					</button>
-				</div>
-				<span className="settings-hint">
-					{t("settings.memoryBackupComingSoon")}
-				</span>
-				{backupStatus === "done" && (
-					<span
-						className="settings-hint"
-						style={{ color: "var(--success-color, #4caf50)" }}
-					>
-						✓
-					</span>
-				)}
-				{backupStatus === "error" && (
-					<span
-						className="settings-hint"
-						style={{ color: "var(--error-color, #f44336)" }}
-					>
-						{backupError}
-					</span>
-				)}
-			</div>
-
-			{/* Memory stats */}
-			{facts.length > 0 && (
-				<div className="settings-field">
-					<span className="settings-hint">
-						{t("settings.memoryStats")}:{" "}
-						{t("settings.memoryFactCount").replace(
-							"{{count}}",
-							String(facts.length),
-						)}
-					</span>
-				</div>
-			)}
-
-			{facts.length === 0 ? (
-				<div className="settings-field">
-					<span className="settings-hint">{t("settings.factsEmpty")}</span>
-				</div>
-			) : (
-				<div className="facts-list">
-					{facts.map((f) => (
-						<div key={f.id} className="fact-item">
-							<div className="fact-content">
-								<span className="fact-key">{f.content}</span>
-								{f.entities.length > 0 && (
-									<span className="fact-value">{f.entities.join(", ")}</span>
-								)}
-							</div>
+						<div className="audio-device-test-row">
 							<button
 								type="button"
-								className="fact-delete-btn"
-								onClick={async () => {
-									try {
-										await deleteAgentFact(f.id);
-										setFacts((prev) => prev.filter((x) => x.id !== f.id));
-									} catch (err) {
-										Logger.warn("SettingsTab", "Failed to delete memory", {
-											error: String(err),
-										});
-									}
-								}}
+								className="onboarding-next-btn"
+								style={{ fontSize: "0.8em", padding: "4px 12px" }}
+								onClick={micTestActive ? stopMicTest : startMicTest}
 							>
-								{t("settings.factDelete")}
+								{micTestActive ? "중지" : "마이크 테스트"}
 							</button>
+							{micTestActive && (
+								<div className="mic-level-bar-outer">
+									<div
+										className="mic-level-bar-inner"
+										style={{ width: `${Math.min(100, micTestLevel)}%` }}
+									/>
+								</div>
+							)}
 						</div>
-					))}
-				</div>
-			)}
-							</div>
-			</>}
-			{activeSettingsTab === "general" && <>
-						<div className="settings-section-divider">
-				<span>{t("settings.toolsSection")}</span>
-			</div>
-
-			<div className="settings-field settings-toggle-row">
-				<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
-				<input
-					id="tools-toggle"
-					type="checkbox"
-					checked={enableTools}
-					onChange={(e) => setEnableTools(e.target.checked)}
-				/>
-			</div>
-
-			<div className="settings-field settings-toggle-row">
-				<label htmlFor="thinking-toggle">{t("settings.enableThinking")}</label>
-				<input
-					id="thinking-toggle"
-					type="checkbox"
-					checked={enableThinking}
-					onChange={(e) => setEnableThinking(e.target.checked)}
-				/>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="gateway-url-input">{t("settings.gatewayUrl")}</label>
-				<input
-					id="gateway-url-input"
-					type="text"
-					value={gatewayUrl}
-					onChange={(e) => setGatewayUrl(e.target.value)}
-					placeholder={DEFAULT_GATEWAY_URL}
-				/>
-			</div>
-
-			<div className="settings-field">
-				<label htmlFor="gateway-token-input">
-					{t("settings.gatewayToken")}
-				</label>
-				<input
-					id="gateway-token-input"
-					type="password"
-					value={gatewayToken}
-					onChange={(e) => setGatewayToken(e.target.value)}
-				/>
-			</div>
-
-			{/* Agent health check (#296) */}
-			<div className="settings-field" data-testid="agent-health-section">
-				<label>{t("settings.agentHealth")}</label>
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span
-						className={`agent-health-status agent-health-status--${agentHealthStatus}`}
-						data-testid="agent-health-status"
-					>
-						{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
-						{agentHealthStatus === "checking" && t("settings.agentHealthChecking")}
-						{agentHealthStatus === "healthy" && t("settings.agentHealthHealthy")}
-						{agentHealthStatus === "unhealthy" && t("settings.agentHealthUnhealthy")}
-					</span>
-					{agentHealthCheckedAt && (
-						<span className="agent-health-time" style={{ fontSize: "0.75em", color: "var(--text-muted, #888)" }}>
-							{agentHealthCheckedAt.toLocaleTimeString()}
-						</span>
-					)}
-					<button
-						type="button"
-						className="voice-preview-btn"
-						title="agent-health-check-btn"
-						data-testid="agent-health-check-btn"
-						onClick={async () => {
-							setAgentHealthStatus("checking");
-							try {
-								const healthy = await invoke<boolean>("gateway_health");
-								setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
-							} catch {
-								setAgentHealthStatus("unhealthy");
-							}
-							setAgentHealthCheckedAt(new Date());
-						}}
-					>
-						{t("settings.agentHealthCheck")}
-					</button>
-				</div>
-			</div>
-
-			{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
-
-			{allowedToolsCount > 0 && (
-				<div className="settings-field">
-					<label>
-						{t("settings.allowedTools")} ({allowedToolsCount})
-					</label>
-					<button
-						type="button"
-						className="voice-preview-btn"
-						onClick={() => {
-							clearAllowedTools();
-							setAllowedToolsCount(0);
-						}}
-					>
-						{t("settings.clearAllowedTools")}
-					</button>
-				</div>
-			)}
-
-			{enableTools && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.channelsSection")}</span>
 					</div>
 
-					{/* Discord channel card — unverified, hidden until stabilized
+					<div className="audio-device-col">
+						<label>스피커 (출력 장치)</label>
+						<DeviceSelect
+							value={ttsOutputDeviceId}
+							options={audioOutputDevices.map((d) => ({
+								value: d.deviceId,
+								label:
+									sanitizeDeviceLabel(d.label) ||
+									`스피커 ${d.deviceId.slice(0, 8)}`,
+							}))}
+							onChange={(v) => {
+								setTtsOutputDeviceId(v);
+								if (existing)
+									saveConfig({
+										...existing,
+										ttsOutputDeviceId: v || undefined,
+									});
+							}}
+							placeholder="기본 장치"
+						/>
+						<button
+							type="button"
+							className="onboarding-next-btn"
+							style={{
+								fontSize: "0.8em",
+								padding: "4px 12px",
+								marginTop: "6px",
+							}}
+							onClick={playTestBeep}
+						>
+							스피커 테스트
+						</button>
+					</div>
+					<div className="settings-actions">
+						<button
+							type="button"
+							className="settings-save-btn"
+							onClick={handleSave}
+						>
+							{saved ? t("settings.saved") : t("settings.save")}
+						</button>
+					</div>
+				</>
+			)}
+			{activeSettingsTab === "skills" && <SkillsTab />}
+			{activeSettingsTab === "memory" && (
+				<>
+					{/* Coming soon banner */}
+					<div className="settings-coming-soon-banner">
+						<span>⏳ {t("settings.comingSoon")}</span>
+					</div>
+					<div style={{ opacity: 0.5, pointerEvents: "none" }}>
+						<div className="settings-section-divider">
+							<span>{t("settings.memorySection")}</span>
+						</div>
+
+						{/* Memory adapter */}
+						<div className="settings-field">
+							<label>{t("settings.memoryAdapter")}</label>
+							<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+								{(
+									[
+										["local", t("settings.memoryAdapterLocal")],
+										["qdrant", t("settings.memoryAdapterQdrant")],
+									] as const
+								).map(([val, label]) => (
+									<label
+										key={val}
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: "6px",
+										}}
+									>
+										<input
+											type="radio"
+											name="memory-adapter"
+											value={val}
+											checked={memoryAdapter === val}
+											onChange={() => setMemoryAdapter(val)}
+										/>
+										{label}
+									</label>
+								))}
+							</div>
+						</div>
+
+						{/* Qdrant fields */}
+						{memoryAdapter === "qdrant" && (
+							<>
+								<div className="settings-field">
+									<label>{t("settings.qdrantUrl")}</label>
+									<input
+										type="text"
+										value={qdrantUrl}
+										onChange={(e) => setQdrantUrl(e.target.value)}
+										placeholder="http://localhost:6333"
+									/>
+								</div>
+								<div className="settings-field">
+									<label>{t("settings.qdrantApiKey")}</label>
+									<input
+										type="password"
+										value={qdrantApiKey}
+										onChange={(e) => setQdrantApiKey(e.target.value)}
+										placeholder="..."
+									/>
+								</div>
+							</>
+						)}
+
+						{/* Embedding provider */}
+						<div className="settings-field">
+							<label>{t("settings.memoryEmbedding")}</label>
+							<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+								{(
+									[
+										["none", t("settings.memoryEmbeddingNone")],
+										["offline", t("settings.memoryEmbeddingOffline")],
+										["vllm", t("settings.memoryEmbeddingVllm")],
+										["ollama", t("settings.memoryEmbeddingOllama")],
+										["naia", t("settings.memoryEmbeddingNaia")],
+									] as const
+								).map(([val, label]) => (
+									<label
+										key={val}
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: "6px",
+										}}
+									>
+										<input
+											type="radio"
+											name="memory-embedding"
+											value={val}
+											checked={memoryEmbeddingProvider === val}
+											onChange={() => setMemoryEmbeddingProvider(val)}
+										/>
+										{label}
+									</label>
+								))}
+							</div>
+						</div>
+
+						{/* Offline model selection */}
+						{memoryEmbeddingProvider === "offline" && (
+							<div className="settings-field">
+								<label>{t("settings.memoryOfflineModelSelect")}</label>
+								<div
+									style={{
+										display: "flex",
+										flexDirection: "column",
+										gap: "8px",
+									}}
+								>
+									{(
+										[
+											[
+												"all-MiniLM-L6-v2",
+												t("settings.memoryOfflineModelLight"),
+											],
+											[
+												"all-mpnet-base-v2",
+												t("settings.memoryOfflineModelAccurate"),
+											],
+										] as const
+									).map(([val, label]) => (
+										<label
+											key={val}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+											}}
+										>
+											<input
+												type="radio"
+												name="memory-offline-model"
+												value={val}
+												checked={memoryOfflineModel === val}
+												onChange={() => setMemoryOfflineModel(val)}
+											/>
+											{label}
+										</label>
+									))}
+								</div>
+							</div>
+						)}
+
+						{/* vLLM/Ollama embedding fields */}
+						{(memoryEmbeddingProvider === "vllm" ||
+							memoryEmbeddingProvider === "ollama") && (
+							<>
+								<div className="settings-field">
+									<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
+									<input
+										type="text"
+										value={memoryEmbeddingBaseUrl}
+										onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
+										placeholder="http://localhost:11434"
+									/>
+								</div>
+								<div className="settings-field">
+									<label>{t("settings.memoryEmbeddingApiKey")}</label>
+									<input
+										type="password"
+										value={memoryEmbeddingApiKey}
+										onChange={(e) => setMemoryEmbeddingApiKey(e.target.value)}
+										placeholder="sk-..."
+									/>
+								</div>
+								<div className="settings-field">
+									<label>{t("settings.memoryEmbeddingModel")}</label>
+									<input
+										type="text"
+										value={memoryEmbeddingModel}
+										onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
+										placeholder="text-embedding-ada-002"
+									/>
+								</div>
+							</>
+						)}
+
+						{/* Naia embedding: show connection status */}
+						{memoryEmbeddingProvider === "naia" && (
+							<div className="settings-field">
+								<span className="settings-hint">
+									{naiaKey
+										? `✓ ${t("settings.memoryNaiaConnected")}`
+										: `⚠ ${t("settings.memoryNaiaRequired")}`}
+								</span>
+							</div>
+						)}
+
+						{/* LLM for memory fact extraction */}
+						<div className="settings-field">
+							<label>{t("settings.memoryLlm")}</label>
+							<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+								{(
+									[
+										["none", t("settings.memoryLlmNone")],
+										["vllm", t("settings.memoryLlmVllm")],
+										["ollama", t("settings.memoryLlmOllama")],
+										["naia", t("settings.memoryLlmNaia")],
+									] as const
+								).map(([val, label]) => (
+									<label
+										key={val}
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: "6px",
+										}}
+									>
+										<input
+											type="radio"
+											name="memory-llm"
+											value={val}
+											checked={memoryLlmProvider === val}
+											onChange={() => setMemoryLlmProvider(val)}
+										/>
+										{label}
+									</label>
+								))}
+							</div>
+						</div>
+
+						{/* vLLM/Ollama LLM fields */}
+						{(memoryLlmProvider === "vllm" ||
+							memoryLlmProvider === "ollama") && (
+							<>
+								<div className="settings-field">
+									<label>{t("settings.memoryLlmBaseUrl")}</label>
+									<input
+										type="text"
+										value={memoryLlmBaseUrl}
+										onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
+										placeholder="http://localhost:8000"
+									/>
+								</div>
+								<div className="settings-field">
+									<label>{t("settings.memoryLlmApiKey")}</label>
+									<input
+										type="password"
+										value={memoryLlmApiKey}
+										onChange={(e) => setMemoryLlmApiKey(e.target.value)}
+										placeholder="sk-..."
+									/>
+								</div>
+								<div className="settings-field">
+									<label>{t("settings.memoryLlmModel")}</label>
+									<input
+										type="text"
+										value={memoryLlmModel}
+										onChange={(e) => setMemoryLlmModel(e.target.value)}
+										placeholder="minicpm-4.5-omni"
+									/>
+								</div>
+							</>
+						)}
+
+						{/* Naia LLM: show connection status */}
+						{memoryLlmProvider === "naia" && (
+							<div className="settings-field">
+								<span className="settings-hint">
+									{naiaKey
+										? `✓ ${t("settings.memoryNaiaConnected")}`
+										: `⚠ ${t("settings.memoryNaiaRequired")}`}
+								</span>
+							</div>
+						)}
+
+						{/* Backup section — 구현 검증 전까지 비활성. */}
+						<div className="settings-field" style={{ opacity: 0.45 }}>
+							<label>{t("settings.memoryBackup")}</label>
+							<input
+								type="password"
+								value={backupPassword}
+								onChange={(e) => setBackupPassword(e.target.value)}
+								placeholder={t("settings.memoryBackupPassword")}
+								disabled
+							/>
+							<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+								<button
+									type="button"
+									disabled
+									title="검증 중 — 아직 사용할 수 없습니다"
+									onClick={async () => {
+										setBackupStatus("exporting");
+										setBackupError("");
+										try {
+											const blob = await exportMemoryBackup(backupPassword);
+											const url = URL.createObjectURL(
+												new Blob([blob as BlobPart], {
+													type: "application/octet-stream",
+												}),
+											);
+											const a = document.createElement("a");
+											a.href = url;
+											a.download = "naia-memory-backup.bin";
+											a.click();
+											URL.revokeObjectURL(url);
+											setBackupStatus("done");
+											setTimeout(() => setBackupStatus("idle"), 2000);
+										} catch (err) {
+											setBackupStatus("error");
+											setBackupError(String(err));
+										}
+									}}
+								>
+									{backupStatus === "exporting"
+										? "..."
+										: t("settings.memoryBackupExport")}
+								</button>
+								<button
+									type="button"
+									disabled
+									title="검증 중 — 아직 사용할 수 없습니다"
+									onClick={async () => {
+										const pw = backupPassword;
+										const fileInput = document.createElement("input");
+										fileInput.type = "file";
+										fileInput.accept = ".bin,.bak";
+										fileInput.onchange = async () => {
+											const file = fileInput.files?.[0];
+											if (!file) return;
+											setBackupStatus("importing");
+											setBackupError("");
+											try {
+												const arrayBuffer = await file.arrayBuffer();
+												await importMemoryBackup(
+													new Uint8Array(arrayBuffer),
+													pw,
+												);
+												setBackupStatus("done");
+												setTimeout(() => setBackupStatus("idle"), 2000);
+											} catch (err) {
+												setBackupStatus("error");
+												setBackupError(String(err));
+											}
+										};
+										fileInput.click();
+									}}
+								>
+									{backupStatus === "importing"
+										? "..."
+										: t("settings.memoryBackupImport")}
+								</button>
+							</div>
+							<span className="settings-hint">
+								{t("settings.memoryBackupComingSoon")}
+							</span>
+							{backupStatus === "done" && (
+								<span
+									className="settings-hint"
+									style={{ color: "var(--success-color, #4caf50)" }}
+								>
+									✓
+								</span>
+							)}
+							{backupStatus === "error" && (
+								<span
+									className="settings-hint"
+									style={{ color: "var(--error-color, #f44336)" }}
+								>
+									{backupError}
+								</span>
+							)}
+						</div>
+
+						{/* Memory stats */}
+						{facts.length > 0 && (
+							<div className="settings-field">
+								<span className="settings-hint">
+									{t("settings.memoryStats")}:{" "}
+									{t("settings.memoryFactCount").replace(
+										"{{count}}",
+										String(facts.length),
+									)}
+								</span>
+							</div>
+						)}
+
+						{facts.length === 0 ? (
+							<div className="settings-field">
+								<span className="settings-hint">
+									{t("settings.factsEmpty")}
+								</span>
+							</div>
+						) : (
+							<div className="facts-list">
+								{facts.map((f) => (
+									<div key={f.id} className="fact-item">
+										<div className="fact-content">
+											<span className="fact-key">{f.content}</span>
+											{f.entities.length > 0 && (
+												<span className="fact-value">
+													{f.entities.join(", ")}
+												</span>
+											)}
+										</div>
+										<button
+											type="button"
+											className="fact-delete-btn"
+											onClick={async () => {
+												try {
+													await deleteAgentFact(f.id);
+													setFacts((prev) => prev.filter((x) => x.id !== f.id));
+												} catch (err) {
+													Logger.warn(
+														"SettingsTab",
+														"Failed to delete memory",
+														{
+															error: String(err),
+														},
+													);
+												}
+											}}
+										>
+											{t("settings.factDelete")}
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+					</div>
+				</>
+			)}
+			{activeSettingsTab === "general" && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.toolsSection")}</span>
+					</div>
+
+					<div className="settings-field settings-toggle-row">
+						<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
+						<input
+							id="tools-toggle"
+							type="checkbox"
+							checked={enableTools}
+							onChange={(e) => setEnableTools(e.target.checked)}
+						/>
+					</div>
+
+					<div className="settings-field">
+						<label htmlFor="gateway-url-input">
+							{t("settings.gatewayUrl")}
+						</label>
+						<input
+							id="gateway-url-input"
+							type="text"
+							value={gatewayUrl}
+							onChange={(e) => setGatewayUrl(e.target.value)}
+							placeholder={DEFAULT_GATEWAY_URL}
+						/>
+					</div>
+
+					<div className="settings-field">
+						<label htmlFor="gateway-token-input">
+							{t("settings.gatewayToken")}
+						</label>
+						<input
+							id="gateway-token-input"
+							type="password"
+							value={gatewayToken}
+							onChange={(e) => setGatewayToken(e.target.value)}
+						/>
+					</div>
+
+					{/* Agent health check (#296) */}
+					<div className="settings-field" data-testid="agent-health-section">
+						<label>{t("settings.agentHealth")}</label>
+						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+							<span
+								className={`agent-health-status agent-health-status--${agentHealthStatus}`}
+								data-testid="agent-health-status"
+							>
+								{agentHealthStatus === "idle" && t("settings.agentHealthIdle")}
+								{agentHealthStatus === "checking" &&
+									t("settings.agentHealthChecking")}
+								{agentHealthStatus === "healthy" &&
+									t("settings.agentHealthHealthy")}
+								{agentHealthStatus === "unhealthy" &&
+									t("settings.agentHealthUnhealthy")}
+							</span>
+							{agentHealthCheckedAt && (
+								<span
+									className="agent-health-time"
+									style={{
+										fontSize: "0.75em",
+										color: "var(--text-muted, #888)",
+									}}
+								>
+									{agentHealthCheckedAt.toLocaleTimeString()}
+								</span>
+							)}
+							<button
+								type="button"
+								className="voice-preview-btn"
+								title="agent-health-check-btn"
+								data-testid="agent-health-check-btn"
+								onClick={async () => {
+									setAgentHealthStatus("checking");
+									try {
+										const healthy = await invoke<boolean>("gateway_health");
+										setAgentHealthStatus(healthy ? "healthy" : "unhealthy");
+									} catch {
+										setAgentHealthStatus("unhealthy");
+									}
+									setAgentHealthCheckedAt(new Date());
+								}}
+							>
+								{t("settings.agentHealthCheck")}
+							</button>
+						</div>
+					</div>
+
+					{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
+
+					{allowedToolsCount > 0 && (
+						<div className="settings-field">
+							<label>
+								{t("settings.allowedTools")} ({allowedToolsCount})
+							</label>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => {
+									clearAllowedTools();
+									setAllowedToolsCount(0);
+								}}
+							>
+								{t("settings.clearAllowedTools")}
+							</button>
+						</div>
+					)}
+
+					{enableTools && (
+						<>
+							<div className="settings-section-divider">
+								<span>{t("settings.channelsSection")}</span>
+							</div>
+
+							{/* Discord channel card — unverified, hidden until stabilized
 					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
 						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
 						<div className="channel-card-header">
@@ -3787,518 +3900,550 @@ export function SettingsTab() {
 					</div>
 				*/}
 
-					<div className="settings-section-divider">
-						<span>{t("settings.voiceConversation")}</span>
-					</div>
-					<div className="settings-field">
-						<span className="settings-hint">{t("settings.voiceWakeHint")}</span>
-					</div>
-					{voiceWakeLoading ? (
-						<div className="settings-field">
-							<span className="settings-hint">
-								{t("settings.voiceWakeLoading")}
-							</span>
-						</div>
-					) : (
-						<>
+							<div className="settings-section-divider">
+								<span>{t("settings.voiceConversation")}</span>
+							</div>
 							<div className="settings-field">
-								<label>{t("settings.voiceWakeTriggers")}</label>
-								<div
-									className="voice-wake-triggers"
-									data-testid="voice-wake-triggers"
-								>
-									{voiceWakeTriggers.map((trigger) => (
-										<span key={trigger} className="voice-wake-tag">
-											{trigger}
-											<button
-												type="button"
-												className="voice-wake-tag-remove"
-												onClick={() => handleVoiceWakeRemove(trigger)}
-											>
-												×
-											</button>
-										</span>
-									))}
+								<span className="settings-hint">
+									{t("settings.voiceWakeHint")}
+								</span>
+							</div>
+							{voiceWakeLoading ? (
+								<div className="settings-field">
+									<span className="settings-hint">
+										{t("settings.voiceWakeLoading")}
+									</span>
 								</div>
-							</div>
-							<div className="settings-field voice-wake-add-row">
-								<input
-									type="text"
-									data-testid="voice-wake-input"
-									value={voiceWakeInput}
-									onChange={(e) => setVoiceWakeInput(e.target.value)}
-									placeholder={t("settings.voiceWakePlaceholder")}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") handleVoiceWakeAdd();
-									}}
-								/>
-								<button type="button" onClick={handleVoiceWakeAdd}>
-									{t("settings.voiceWakeAdd")}
-								</button>
-							</div>
-							<div className="settings-field">
-								<button
-									type="button"
-									className="voice-preview-btn"
-									data-testid="voice-wake-save"
-									onClick={handleVoiceWakeSave}
-								>
-									{voiceWakeSaved
-										? t("settings.voiceWakeSaved")
-										: t("settings.voiceWakeSave")}
-								</button>
-							</div>
-						</>
-					)}
-				</>
-			)}
-
-			{enableTools && <DevicePairingSection />}
-			<div className="settings-actions">
-				<button
-					type="button"
-					className="settings-save-btn"
-					onClick={handleSave}
-				>
-					{saved ? t("settings.saved") : t("settings.save")}
-				</button>
-			</div>
-			</>}
-			{activeSettingsTab === "info" && <>
-			<div className="settings-section-divider">
-				<span>{t("settings.labSection")}</span>
-			</div>
-
-			<div className="settings-field">
-				<label>
-					{naiaKey
-						? t("settings.labConnected")
-						: t("settings.labDisconnected")}
-				</label>
-				{naiaKey ? (
-					<div className="lab-info-block">
-						{naiaUserId && (
-							<span className="lab-user-id">{naiaUserId}</span>
-						)}
-						<div className="lab-balance-row">
-							<span className="lab-balance-label">
-								{t("settings.labBalance")}
-							</span>
-							<span className="lab-balance-value">
-								{labBalanceLoading
-									? t("settings.labBalanceLoading")
-									: labBalanceError
-										? t("cost.labError")
-										: labBalance !== null
-											? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
-											: "-"}
-							</span>
-						</div>
-						<div className="lab-actions-row">
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() =>
-									openUrl(
-										`https://naia.nextain.io/${locale}/dashboard`,
-									).catch(() => {})
-								}
-							>
-								{t("settings.labDashboard")}
-							</button>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() =>
-									openUrl(
-										`https://naia.nextain.io/${locale}/billing`,
-									).catch(() => {})
-								}
-							>
-								{t("cost.labCharge")}
-							</button>
-							{showLabDisconnect ? (
-								<div
-									className="reset-confirm-panel"
-									style={{ marginTop: 8 }}
-								>
-									<p className="reset-confirm-msg">
-										{t("settings.labDisconnectConfirm")}
-									</p>
-									<div className="reset-confirm-actions">
+							) : (
+								<>
+									<div className="settings-field">
+										<label>{t("settings.voiceWakeTriggers")}</label>
+										<div
+											className="voice-wake-triggers"
+											data-testid="voice-wake-triggers"
+										>
+											{voiceWakeTriggers.map((trigger) => (
+												<span key={trigger} className="voice-wake-tag">
+													{trigger}
+													<button
+														type="button"
+														className="voice-wake-tag-remove"
+														onClick={() => handleVoiceWakeRemove(trigger)}
+													>
+														×
+													</button>
+												</span>
+											))}
+										</div>
+									</div>
+									<div className="settings-field voice-wake-add-row">
+										<input
+											type="text"
+											data-testid="voice-wake-input"
+											value={voiceWakeInput}
+											onChange={(e) => setVoiceWakeInput(e.target.value)}
+											placeholder={t("settings.voiceWakePlaceholder")}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") handleVoiceWakeAdd();
+											}}
+										/>
+										<button type="button" onClick={handleVoiceWakeAdd}>
+											{t("settings.voiceWakeAdd")}
+										</button>
+									</div>
+									<div className="settings-field">
 										<button
 											type="button"
-											className="settings-reset-btn"
-											onClick={async () => {
-												setNaiaKeyState("");
-												setNaiaUserIdState("");
-												setLabBalance(null);
-												setProvider("gemini");
-												setModel(getDefaultLlmModel("gemini"));
-												setDiscordDefaultUserId("");
-												setDiscordDmChannelId("");
-												setDiscordDefaultTarget("");
-												setShowLabDisconnect(false);
-												await deleteSecretKey("naiaKey");
-												const current = loadConfig();
-												if (current) {
-													saveConfig({
-														...current,
-														provider:
-															current.provider === "nextain"
-																? "gemini"
-																: current.provider,
-														model:
-															current.provider === "nextain"
-																? getDefaultLlmModel("gemini")
-																: current.model,
-														// Reset Naia-dependent STT/TTS to defaults
-														ttsProvider:
-															current.ttsProvider === "nextain"
-																? "edge"
-																: current.ttsProvider,
-														sttProvider:
-															current.sttProvider === "nextain"
-																? ""
-																: current.sttProvider,
-														naiaKey: undefined,
-														naiaUserId: undefined,
-														discordDefaultUserId: undefined,
-														discordDmChannelId: undefined,
-														discordDefaultTarget: undefined,
-													});
-												}
-												// Sync cleared Discord config to Gateway
-												const updated = loadConfig();
-												if (updated) {
-													await syncToGateway(
-														updated.provider || "gemini",
-														updated.model || getDefaultLlmModel("gemini"),
-														updated.apiKey,
-														updated.persona,
-														updated.agentName,
-														updated.userName,
-														undefined,
-														updated.locale,
-														undefined, // discordDmChannelId cleared
-														undefined, // discordDefaultUserId cleared
-														updated.ttsProvider,
-														updated.ttsVoice,
-														undefined,
-														undefined,
-														undefined, // naiaKey cleared
-														updated.ollamaHost,
-													);
-													await restartGateway();
-												}
-											}}
+											className="voice-preview-btn"
+											data-testid="voice-wake-save"
+											onClick={handleVoiceWakeSave}
+										>
+											{voiceWakeSaved
+												? t("settings.voiceWakeSaved")
+												: t("settings.voiceWakeSave")}
+										</button>
+									</div>
+								</>
+							)}
+						</>
+					)}
+
+					{enableTools && <DevicePairingSection />}
+					<div className="settings-actions">
+						<button
+							type="button"
+							className="settings-save-btn"
+							onClick={handleSave}
+						>
+							{saved ? t("settings.saved") : t("settings.save")}
+						</button>
+					</div>
+				</>
+			)}
+			{activeSettingsTab === "info" && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.labSection")}</span>
+					</div>
+
+					<div className="settings-field">
+						<label>
+							{naiaKey
+								? t("settings.labConnected")
+								: t("settings.labDisconnected")}
+						</label>
+						{naiaKey ? (
+							<div className="lab-info-block">
+								{naiaUserId && (
+									<span className="lab-user-id">{naiaUserId}</span>
+								)}
+								<div className="lab-balance-row">
+									<span className="lab-balance-label">
+										{t("settings.labBalance")}
+									</span>
+									<span className="lab-balance-value">
+										{labBalanceLoading
+											? t("settings.labBalanceLoading")
+											: labBalanceError
+												? t("cost.labError")
+												: labBalance !== null
+													? `${labBalance.toFixed(2)} ${t("cost.labCredits")}`
+													: "-"}
+									</span>
+								</div>
+								<div className="lab-actions-row">
+									<button
+										type="button"
+										className="voice-preview-btn"
+										onClick={() =>
+											openUrl(
+												`https://naia.nextain.io/${locale}/dashboard`,
+											).catch(() => {})
+										}
+									>
+										{t("settings.labDashboard")}
+									</button>
+									<button
+										type="button"
+										className="voice-preview-btn"
+										onClick={() =>
+											openUrl(
+												`https://naia.nextain.io/${locale}/billing`,
+											).catch(() => {})
+										}
+									>
+										{t("cost.labCharge")}
+									</button>
+									{showLabDisconnect ? (
+										<div
+											className="reset-confirm-panel"
+											style={{ marginTop: 8 }}
+										>
+											<p className="reset-confirm-msg">
+												{t("settings.labDisconnectConfirm")}
+											</p>
+											<div className="reset-confirm-actions">
+												<button
+													type="button"
+													className="settings-reset-btn"
+													onClick={async () => {
+														setNaiaKeyState("");
+														setNaiaUserIdState("");
+														setLabBalance(null);
+														setProvider("gemini");
+														setModel(getDefaultLlmModel("gemini"));
+														setDiscordDefaultUserId("");
+														setDiscordDmChannelId("");
+														setDiscordDefaultTarget("");
+														setShowLabDisconnect(false);
+														await deleteSecretKey("naiaKey");
+														const current = loadConfig();
+														if (current) {
+															saveConfig({
+																...current,
+																provider:
+																	current.provider === "nextain"
+																		? "gemini"
+																		: current.provider,
+																model:
+																	current.provider === "nextain"
+																		? getDefaultLlmModel("gemini")
+																		: current.model,
+																// Reset Naia-dependent STT/TTS to defaults
+																ttsProvider:
+																	current.ttsProvider === "nextain"
+																		? "edge"
+																		: current.ttsProvider,
+																sttProvider:
+																	current.sttProvider === "nextain"
+																		? ""
+																		: current.sttProvider,
+																naiaKey: undefined,
+																naiaUserId: undefined,
+																discordDefaultUserId: undefined,
+																discordDmChannelId: undefined,
+																discordDefaultTarget: undefined,
+															});
+														}
+														// Sync cleared Discord config to Gateway
+														const updated = loadConfig();
+														if (updated) {
+															await syncToGateway(
+																updated.provider || "gemini",
+																updated.model || getDefaultLlmModel("gemini"),
+																updated.apiKey,
+																updated.persona,
+																updated.agentName,
+																updated.userName,
+																undefined,
+																updated.locale,
+																undefined, // discordDmChannelId cleared
+																undefined, // discordDefaultUserId cleared
+																updated.ttsProvider,
+																updated.ttsVoice,
+																undefined,
+																undefined,
+																undefined, // naiaKey cleared
+																updated.ollamaHost,
+															);
+															await restartGateway();
+														}
+													}}
+												>
+													{t("settings.labDisconnect")}
+												</button>
+												<button
+													type="button"
+													className="settings-cancel-btn"
+													onClick={() => setShowLabDisconnect(false)}
+												>
+													{t("settings.cancel")}
+												</button>
+											</div>
+										</div>
+									) : (
+										<button
+											type="button"
+											className="voice-preview-btn lab-disconnect-btn"
+											onClick={() => setShowLabDisconnect(true)}
 										>
 											{t("settings.labDisconnect")}
 										</button>
-										<button
-											type="button"
-											className="settings-cancel-btn"
-											onClick={() => setShowLabDisconnect(false)}
-										>
-											{t("settings.cancel")}
-										</button>
-									</div>
+									)}
 								</div>
-							) : (
+							</div>
+						) : (
+							<button
+								type="button"
+								className="voice-preview-btn"
+								disabled={labWaiting}
+								onClick={startLabLogin}
+							>
+								{labWaiting
+									? t("onboard.lab.waiting")
+									: t("settings.labConnect")}
+							</button>
+						)}
+					</div>
+					{/* Log viewer (#297) */}
+					<div className="settings-field" data-testid="log-viewer-section">
+						<label>{t("settings.logViewer")}</label>
+						<div
+							className="lab-actions-row"
+							style={{ flexWrap: "wrap", gap: "6px" }}
+						>
+							{(
+								[
+									"naia.log",
+									"gateway.log",
+									"node-host.log",
+									"llm-debug.log",
+								] as const
+							).map((file) => (
 								<button
+									key={file}
 									type="button"
-									className="voice-preview-btn lab-disconnect-btn"
-									onClick={() => setShowLabDisconnect(true)}
+									className="voice-preview-btn"
+									onClick={async () => {
+										try {
+											const logDir = await invoke<string>("get_log_dir");
+											await invoke("open_log_in_editor", {
+												path: `${logDir}/${file}`,
+											});
+										} catch (e) {
+											Logger.warn("SettingsTab", "[log-viewer] open failed", {
+												error: String(e),
+											});
+										}
+									}}
 								>
-									{t("settings.labDisconnect")}
+									{file}
 								</button>
-							)}
+							))}
+							<button
+								type="button"
+								className="voice-preview-btn"
+								data-testid="log-viewer-btn"
+								onClick={async () => {
+									try {
+										const logDir = await invoke<string>("get_log_dir");
+										await openPath(logDir);
+									} catch (e) {
+										Logger.warn("SettingsTab", "[log-viewer] open failed", {
+											error: String(e),
+										});
+									}
+								}}
+							>
+								{t("settings.logViewerOpen")}
+							</button>
 						</div>
 					</div>
-				) : (
-					<button
-						type="button"
-						className="voice-preview-btn"
-						disabled={labWaiting}
-						onClick={startLabLogin}
-					>
-						{labWaiting
-							? t("onboard.lab.waiting")
-							: t("settings.labConnect")}
-					</button>
-				)}
-			</div>
-			{/* Log viewer (#297) */}
-			<div className="settings-field" data-testid="log-viewer-section">
-				<label>{t("settings.logViewer")}</label>
-				<div className="lab-actions-row" style={{ flexWrap: "wrap", gap: "6px" }}>
-					{(["naia.log", "gateway.log", "node-host.log", "llm-debug.log"] as const).map((file) => (
-						<button
-							key={file}
-							type="button"
-							className="voice-preview-btn"
-							onClick={async () => {
-								try {
-									const logDir = await invoke<string>("get_log_dir");
-									await invoke("open_log_in_editor", { path: `${logDir}/${file}` });
-								} catch (e) {
-									Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
-								}
-							}}
-						>
-							{file}
-						</button>
-					))}
-					<button
-						type="button"
-						className="voice-preview-btn"
-						data-testid="log-viewer-btn"
-						onClick={async () => {
-							try {
-								const logDir = await invoke<string>("get_log_dir");
-								await openPath(logDir);
-							} catch (e) {
-								Logger.warn("SettingsTab", "[log-viewer] open failed", { error: String(e) });
-							}
-						}}
-					>
-						{t("settings.logViewerOpen")}
-					</button>
-				</div>
-			</div>
 
-			<div className="settings-danger-zone">
-				{showResetConfirm ? (
-					<div className="reset-confirm-panel">
-						<p className="reset-confirm-msg">{t("settings.resetConfirm")}</p>
-						<label className="reset-confirm-checkbox">
-							<input
-								type="checkbox"
-								checked={resetClearHistory}
-								onChange={(e) => setResetClearHistory(e.target.checked)}
-							/>
-							{t("settings.resetClearHistory")}
-						</label>
-						<div className="reset-confirm-actions">
+					<div className="settings-danger-zone">
+						{showResetConfirm ? (
+							<div className="reset-confirm-panel">
+								<p className="reset-confirm-msg">
+									{t("settings.resetConfirm")}
+								</p>
+								<label className="reset-confirm-checkbox">
+									<input
+										type="checkbox"
+										checked={resetClearHistory}
+										onChange={(e) => setResetClearHistory(e.target.checked)}
+									/>
+									{t("settings.resetClearHistory")}
+								</label>
+								<div className="reset-confirm-actions">
+									<button
+										type="button"
+										className="settings-reset-btn"
+										onClick={executeReset}
+									>
+										{t("settings.resetExecute")}
+									</button>
+									<button
+										type="button"
+										className="settings-cancel-btn"
+										onClick={() => {
+											setShowResetConfirm(false);
+										}}
+									>
+										{t("settings.cancel")}
+									</button>
+								</div>
+							</div>
+						) : (
 							<button
 								type="button"
 								className="settings-reset-btn"
-								onClick={executeReset}
+								onClick={handleReset}
 							>
-								{t("settings.resetExecute")}
+								{t("settings.reset")}
 							</button>
-							<button
-								type="button"
-								className="settings-cancel-btn"
-								onClick={() => {
-									setShowResetConfirm(false);
-								}}
-							>
-								{t("settings.cancel")}
-							</button>
-						</div>
+						)}
 					</div>
-				) : (
-					<button
-						type="button"
-						className="settings-reset-btn"
-						onClick={handleReset}
-					>
-						{t("settings.reset")}
-					</button>
-				)}
-			</div>
 
-			<div className="settings-actions">
-				<button
-					type="button"
-					className="settings-save-btn"
-					onClick={handleSave}
-				>
-					{saved ? t("settings.saved") : t("settings.save")}
-				</button>
-			</div>
+					<div className="settings-actions">
+						<button
+							type="button"
+							className="settings-save-btn"
+							onClick={handleSave}
+						>
+							{saved ? t("settings.saved") : t("settings.save")}
+						</button>
+					</div>
 
-			<VersionFooter />
+					<VersionFooter />
 
-			<AboutSection />
+					<AboutSection />
 
-			{/* STT Model Manager Modal */}
-			{sttModelModalOpen && (
-				<div
-					className="panel-modal-overlay"
-					onClick={() => setSttModelModalOpen(false)}
-				>
-					<div
-						className="sync-dialog-card"
-						style={{ maxWidth: "520px", maxHeight: "85vh", overflow: "auto" }}
-						onClick={(e) => e.stopPropagation()}
-					>
-						<h3>{t("settings.sttModelManagerTitle")}</h3>
-						{sttModels
-							.filter((m) => m.engine === sttProvider)
-							.map((m) => (
-								<div
-									key={m.modelId}
-									className="stt-model-row"
-									style={{
-										display: "flex",
-										alignItems: "center",
-										justifyContent: "space-between",
-										gap: "8px",
-										padding: "5px 0",
-										borderBottom: "1px solid var(--border-color, #333)",
-									}}
-								>
-									<div style={{ flex: 1, minWidth: 0 }}>
+					{/* STT Model Manager Modal */}
+					{sttModelModalOpen && (
+						<div
+							className="panel-modal-overlay"
+							onClick={() => setSttModelModalOpen(false)}
+						>
+							<div
+								className="sync-dialog-card"
+								style={{
+									maxWidth: "520px",
+									maxHeight: "85vh",
+									overflow: "auto",
+								}}
+								onClick={(e) => e.stopPropagation()}
+							>
+								<h3>{t("settings.sttModelManagerTitle")}</h3>
+								{sttModels
+									.filter((m) => m.engine === sttProvider)
+									.map((m) => (
 										<div
+											key={m.modelId}
+											className="stt-model-row"
 											style={{
 												display: "flex",
 												alignItems: "center",
-												gap: "6px",
+												justifyContent: "space-between",
+												gap: "8px",
+												padding: "5px 0",
+												borderBottom: "1px solid var(--border-color, #333)",
 											}}
 										>
-											<input
-												type="radio"
-												name="stt-model-modal"
-												value={m.modelId}
-												checked={sttModel === m.modelId}
-												disabled={!m.downloaded || !m.ready}
-												onChange={() => setSttModel(m.modelId)}
-											/>
-											<strong style={{ fontSize: "0.9em" }}>
-												{m.modelName}
-											</strong>
-											{m.downloaded && (
-												<span
+											<div style={{ flex: 1, minWidth: 0 }}>
+												<div
 													style={{
-														color: "var(--success-color, #4caf50)",
+														display: "flex",
+														alignItems: "center",
+														gap: "6px",
+													}}
+												>
+													<input
+														type="radio"
+														name="stt-model-modal"
+														value={m.modelId}
+														checked={sttModel === m.modelId}
+														disabled={!m.downloaded || !m.ready}
+														onChange={() => setSttModel(m.modelId)}
+													/>
+													<strong style={{ fontSize: "0.9em" }}>
+														{m.modelName}
+													</strong>
+													{m.downloaded && (
+														<span
+															style={{
+																color: "var(--success-color, #4caf50)",
+																fontSize: "0.75em",
+															}}
+														>
+															✓
+														</span>
+													)}
+												</div>
+												<div
+													style={{
 														fontSize: "0.75em",
+														opacity: 0.7,
+														marginLeft: "22px",
 													}}
 												>
-													✓
-												</span>
-											)}
-										</div>
-										<div
-											style={{
-												fontSize: "0.75em",
-												opacity: 0.7,
-												marginLeft: "22px",
-											}}
-										>
-											{m.language === "multilingual"
-												? t("settings.sttLangMultilingual")
-												: m.language}{" "}
-											· {m.sizeMb}MB
-											{m.wer && m.wer !== "—" ? ` · WER ${m.wer}` : ""}
-											{m.description &&
-												` · ${
-													(
-														{
-															"Fast, low quality. Not recommended for Korean.":
-																t("settings.sttDescWhisperTiny"),
-															"Similar quality to Vosk small.": t(
-																"settings.sttDescWhisperBase",
-															),
-															"Noticeable improvement over Vosk.": t(
-																"settings.sttDescWhisperSmall",
-															),
-															"Recommended. Good accuracy for Korean.": t(
-																"settings.sttDescWhisperMedium",
-															),
-															"Best quality. Large download.": t(
-																"settings.sttDescWhisperLarge",
-															),
-														} as Record<string, string>
-													)[m.description] || m.description
-												}`}
-										</div>
-									</div>
-									<div style={{ flexShrink: 0, display: "flex", gap: "4px" }}>
-										{!m.downloaded &&
-											m.ready &&
-											sttDownloading !== m.modelId && (
-												<button
-													type="button"
-													style={{
-														fontSize: "0.8em",
-														padding: "2px 8px",
-														cursor: "pointer",
-													}}
-													onClick={() => handleSttModelDownload(m.modelId)}
-												>
-													{t("settings.sttModelDownload")}
-												</button>
-											)}
-										{!m.downloaded && !m.ready && (
-											<span style={{ fontSize: "0.75em", opacity: 0.5 }}>
-												{t("settings.sttModelNotReady")}
-											</span>
-										)}
-										{sttDownloading === m.modelId && (
-											<span style={{ fontSize: "0.8em" }}>
-												{sttDownloadProgress}%
-											</span>
-										)}
-										{m.downloaded && (
-											<button
-												type="button"
-												style={{
-													fontSize: "0.8em",
-													padding: "2px 8px",
-													cursor: "pointer",
-													color: "var(--error-color, #f44)",
-												}}
-												onClick={() => handleSttModelDelete(m.modelId)}
+													{m.language === "multilingual"
+														? t("settings.sttLangMultilingual")
+														: m.language}{" "}
+													· {m.sizeMb}MB
+													{m.wer && m.wer !== "—" ? ` · WER ${m.wer}` : ""}
+													{m.description &&
+														` · ${
+															(
+																{
+																	"Fast, low quality. Not recommended for Korean.":
+																		t("settings.sttDescWhisperTiny"),
+																	"Similar quality to Vosk small.": t(
+																		"settings.sttDescWhisperBase",
+																	),
+																	"Noticeable improvement over Vosk.": t(
+																		"settings.sttDescWhisperSmall",
+																	),
+																	"Recommended. Good accuracy for Korean.": t(
+																		"settings.sttDescWhisperMedium",
+																	),
+																	"Best quality. Large download.": t(
+																		"settings.sttDescWhisperLarge",
+																	),
+																} as Record<string, string>
+															)[m.description] || m.description
+														}`}
+												</div>
+											</div>
+											<div
+												style={{ flexShrink: 0, display: "flex", gap: "4px" }}
 											>
-												{t("settings.sttModelDelete")}
-											</button>
-										)}
-									</div>
+												{!m.downloaded &&
+													m.ready &&
+													sttDownloading !== m.modelId && (
+														<button
+															type="button"
+															style={{
+																fontSize: "0.8em",
+																padding: "2px 8px",
+																cursor: "pointer",
+															}}
+															onClick={() => handleSttModelDownload(m.modelId)}
+														>
+															{t("settings.sttModelDownload")}
+														</button>
+													)}
+												{!m.downloaded && !m.ready && (
+													<span style={{ fontSize: "0.75em", opacity: 0.5 }}>
+														{t("settings.sttModelNotReady")}
+													</span>
+												)}
+												{sttDownloading === m.modelId && (
+													<span style={{ fontSize: "0.8em" }}>
+														{sttDownloadProgress}%
+													</span>
+												)}
+												{m.downloaded && (
+													<button
+														type="button"
+														style={{
+															fontSize: "0.8em",
+															padding: "2px 8px",
+															cursor: "pointer",
+															color: "var(--error-color, #f44)",
+														}}
+														onClick={() => handleSttModelDelete(m.modelId)}
+													>
+														{t("settings.sttModelDelete")}
+													</button>
+												)}
+											</div>
+										</div>
+									))}
+								<div
+									className="sync-dialog-actions"
+									style={{ marginTop: "12px" }}
+								>
+									<button
+										type="button"
+										className="onboarding-next-btn"
+										onClick={() => setSttModelModalOpen(false)}
+									>
+										OK
+									</button>
 								</div>
-							))}
-						<div className="sync-dialog-actions" style={{ marginTop: "12px" }}>
-							<button
-								type="button"
-								className="onboarding-next-btn"
-								onClick={() => setSttModelModalOpen(false)}
-							>
-								OK
-							</button>
+							</div>
 						</div>
-					</div>
-				</div>
-			)}
+					)}
 
-			{syncDialogOpen && (
-				<div className="sync-dialog-overlay">
-					<div className="sync-dialog-card">
-						<h3>{t("settings.labSyncDialog.title")}</h3>
-						<p>{t("settings.labSyncDialog.message")}</p>
-						<div className="sync-dialog-actions">
-							<button
-								type="button"
-								className="onboarding-next-btn"
-								onClick={handleSyncDialogApply}
-							>
-								{t("settings.labSyncDialog.useOnline")}
-							</button>
-							<button
-								type="button"
-								className="onboarding-back-btn"
-								onClick={() => {
-									setSyncDialogOpen(false);
-									setSyncDialogOnlineConfig(null);
-								}}
-							>
-								{t("settings.labSyncDialog.keepLocal")}
-							</button>
+					{syncDialogOpen && (
+						<div className="sync-dialog-overlay">
+							<div className="sync-dialog-card">
+								<h3>{t("settings.labSyncDialog.title")}</h3>
+								<p>{t("settings.labSyncDialog.message")}</p>
+								<div className="sync-dialog-actions">
+									<button
+										type="button"
+										className="onboarding-next-btn"
+										onClick={handleSyncDialogApply}
+									>
+										{t("settings.labSyncDialog.useOnline")}
+									</button>
+									<button
+										type="button"
+										className="onboarding-back-btn"
+										onClick={() => {
+											setSyncDialogOpen(false);
+											setSyncDialogOnlineConfig(null);
+										}}
+									>
+										{t("settings.labSyncDialog.keepLocal")}
+									</button>
+								</div>
+							</div>
 						</div>
-					</div>
-				</div>
+					)}
+				</>
 			)}
-			</>}
 		</div>
 	);
 }

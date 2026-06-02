@@ -108,6 +108,14 @@ export interface NaiaOmniConfig extends LiveProviderConfigBase {
 	/** Naia OS instance ID (user_id:install_uuid). Used for Pod routing (CONTRACT §1.2). */
 	instanceId?: string;
 	/**
+	 * Naia Local mode: connect direct to a user-run container (serverUrl, no
+	 * gatewayUrl) AND send the subscriber key in the first `setup` frame so the
+	 * container validates entitlement (backend "user"). ONLY set true for the
+	 * `naia-local` model — gates the key-bearing `setup` so `naiaKey` never leaks
+	 * to an arbitrary direct server (e.g. a third-party vLLM). (cross-review BLOCKING)
+	 */
+	localContainer?: boolean;
+	/**
 	 * Optional voice-clone reference. The session sends this on the initial
 	 * `session.update` so the server clones its timbre for every response in
 	 * the session.

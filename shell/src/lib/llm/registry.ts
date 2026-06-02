@@ -228,6 +228,18 @@ registerLlmProvider({
 			transcriptProvided: true,
 		},
 		{
+			// Naia Local — run the omni-24g container on your OWN GPU and point
+			// Naia OS at it. Same realtime-voice wire as naia-0.9-omni-24g, but
+			// the WebSocket goes direct to a local ws:// address (set in Settings)
+			// instead of the cloud gateway. The logged-in Naia key is reused so the
+			// container validates the subscription (no key input). id starts with
+			// "naia-" + the omni capability → routes to liveProvider "naia-omni".
+			id: "naia-local",
+			label: "Naia Local (Realtime Voice · own GPU)",
+			capabilities: ["llm", "omni"],
+			transcriptProvided: true,
+		},
+		{
 			id: "gemini-3.5-flash",
 			label: "Gemini 3.5 Flash",
 			capabilities: ["llm"],

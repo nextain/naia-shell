@@ -1,0 +1,28 @@
+Focused review of the §4 admission-contract changes in naia-os. Ignore pre-existing reformatting noise; review ONLY the §4 additions described.
+
+Goal: make naia-os follow naia.nextain.io's new "SoT §4 client status contract" (commit #34). The web gateway now sends typed JSON status events then closes with 4503/4409. CRITICAL rule: 4503 must NOT be treated as an error — it's a transient cold-start/queued/sold-out signal → retry, never a hard error.
+
+Reference (TARGET): projects/naia.nextain.io @ origin/main — git show origin/main:src/lib/realtime/naia-omni-client.ts (onmessage session.preparing/queued/sold_out/consent_required/error; onclose bare-4503→pod-starting) and git show origin/main:src/content/manual/ko/naia-omni-cascade.md (§5 table: events + close codes 4001/4002/4003/4409/4503).
+
+What I changed in naia-os (current working copy):
+- shell/src/lib/voice/naia-omni.ts:
+  - onmessage: added a `if (!connected)` block handling typed events — session.preparing/session.queued → reject("pod-starting:eta=<n>:pos=<n>"); session.sold_out → reject("sold-out"); session.consent_required → reject("consent-required"); session.error → reject(errMsg). Each sets connectErrored=true. The legacy `msg.error` branch above is kept (both wires supported).
+  - closeCodeReason(): added 4409 → "consent".
+  - closeCodeMessage(): added consent case → "consent-required"; default now returns code===4503 ? "pod-starting" : "Connection closed before session ready" (so a BARE 4503 close with no preceding event retries).
+  - classifyErrorReason(): added `if (m.includes("consent")) return "consent"` (after superseded, before credits).
+  - retry loop: on "pod-starting", parses :eta= / :pos= from the message and includes etaSeconds/queuePosition in the cold-start status.
+- shell/src/lib/voice/types.ts: VoiceCloseReason += "consent"; error.reason union += "consent"; cold-start phase += optional etaSeconds/queuePosition.
+- shell/src/components/ChatPanel.tsx: voiceFailureMessage + voiceCloseMessage += consent → t("chat.voiceErrorConsent"); banner shows queuePosition + etaSeconds when present.
+- shell/src/lib/i18n.ts: added chat.voiceErrorConsent / voiceColdStartQueue / voiceColdStartEta (×14 langs).
+- tests: added preparing(eta/pos)→cold-start, sold_out→sold-out, consent_required→error reason consent, bare 4503→cold-start(not error), 4409→consent. All 14 coldstart + 19 ChatPanel tests pass, tsc clean.
+
+NOTE (intentional, surfaced to user): session.consent_required's branches(replace/add) interactive choice protocol is NOT defined in the manual OR the web reference (web just rejects "consent-required"). So I surface consent as a terminal state + message, and DEFER the interactive replace/add flow. Confirm this is the right call (don't invent the wire), not a bug.
+
+Review concisely (<350 words, no code):
+1) Is the 4503 handling correct and complete? Both typed (session.preparing/queued) AND bare 4503-close paths → cold-start retry, never error? Any path where 4503 still becomes an error?
+2) Event branch ordering vs the legacy msg.error branch — any event that gets mis-caught or double-handled? Is setting connectErrored=true correct/needed?
+3) eta/pos round-trip (encode in reject string → regex parse in retry loop) — fragile? Any parse bug (e.g., eta=0 dropped by `!= null`, negative, multi-digit)?
+4) consent: is surfacing-only (defer interactive replace/add) the right call given no protocol exists? Any risk?
+5) Backward compat: does the legacy error-string wire ("pod-starting"/"sold-out" via msg.error) still work?
+6) Any correctness/typing bug in the §4 additions.
+Verdict: GO / GO-WITH-CHANGES / NO-GO + single most important fix.
