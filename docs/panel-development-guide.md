@@ -1,6 +1,8 @@
 # Naia Panel Development Guide
 
-Naia OS is extensible through **panels** — UI components that live in the right area of the shell alongside Naia's chat interface. Panels can expose AI tools to Naia so she can read and update panel state autonomously.
+Naia OS is extensible through **panels** — UI components that live in the right area of the shell alongside Naia's chat interface.
+
+> **Read the spec first.** The authoritative, code-accurate contract is **[`panel-spec.md`](./panel-spec.md)** — manifest fields, the two host-access channels (built-in prop vs installed iframe bridge), the security model, and the trust tiers. This guide is the how-to companion. AI-tool exposure (`onToolCall`) and AI-interference are **built-in-panel-only / 현재 개발 중** for installed panels.
 
 ## What is a Panel?
 
@@ -54,8 +56,7 @@ https://github.com/your-org/my-panel.git
 https://TOKEN@github.com/your-org/my-panel.git
 ```
 
-**Zip file** (on-premises, no internet):
-Select a `.zip` file containing the panel directory. The zip must extract to a folder with `panel.json` at its root.
+**Zip file**: currently gated. The zip tab is shown in the installer but disabled ("준비 중") — local-zip install was removed in #257 (RCE hardening) and is being safely restored (warning + consent + extraction hardening) in #359. Use a Git URL for now.
 
 You can also ask Naia directly:
 > "my-panel 패널 https://github.com/... 에서 설치해줘"
@@ -69,7 +70,7 @@ my-panel/
 └── MyCenterPanel.tsx   # UI component
 ```
 
-> **Note**: Currently, panels are registered at shell build time. Dynamic JS loading is planned for a future release. For now, create a PR to add your panel to the shell or use the sample-note pattern as an installable template.
+> **Two kinds of panel.** *Built-in* panels (React, bundled in the shell) are registered at build time via `panelRegistry.register()`. *Installed* panels are dropped into `~/.naia/panels/{id}/` as a `panel.json` + `index.html` and loaded at runtime into an iframe — no shell rebuild needed. The sections below cover both; for the precise contract see [`panel-spec.md`](./panel-spec.md). For an installable starting point, copy [`examples/hello-naia/`](./examples/hello-naia/).
 
 ## Registering a Panel
 
@@ -193,7 +194,7 @@ Naia has a built-in `skill_panel` tool for panel management:
 ```
 skill_panel list      — list installed panels
 skill_panel switch    — activate a panel by id
-skill_panel install   — install from git URL or zip path
+skill_panel install   — install from an https git URL (zip gated, see #359)
 skill_panel remove    — uninstall a panel by id
 ```
 
@@ -202,13 +203,10 @@ Users can invoke these naturally:
 > "my-panel 설치해줘 (https://github.com/...)"
 > "sample-note 삭제해줘"
 
-## Reference Implementation
+## Reference Implementations
 
-See `shell/src/panels/sample-note/` for a complete working example:
-
-- `panel.json` — manifest
-- `index.tsx` — registration with `skill_note_read` / `skill_note_write`
-- `SampleNoteCenterPanel.tsx` — textarea UI + tool handlers
+- **Installed (iframe) panel** — [`docs/examples/hello-naia/`](./examples/hello-naia/): `panel.json` + `index.html` + `icon.svg`, using the bridge's `logBehavior` (non-AI). Copy it into `~/.naia/panels/hello-naia/` to install. This is the reference for panels users install.
+- **Built-in (React) panel** — `shell/src/panels/sample-note/` (`index.tsx` + `SampleNoteCenterPanel.tsx`): registered via `panelRegistry.register()` with `skill_note_read` / `skill_note_write` tool handlers. This is the reference for AI-tool panels bundled in the shell. Note: it has **no** `panel.json`/`index.html` — it is a built-in, not an installed panel.
 
 ## Directory Layout After Install
 
@@ -228,4 +226,19 @@ The shell scans `~/.naia/panels/` on startup and after each install/remove.
 - **Keep tools focused** — one tool per action, clear description
 - **Tool descriptions are LLM prompts** — write them as instructions to an AI, not documentation
 - **Avoid blocking handlers** — tool handlers must return synchronously (or return a Promise that resolves quickly)
-- **Test with the sample-note pattern** — build your panel as a variation of sample-note first
+- **Start from the example** — build your installed panel as a variation of [`examples/hello-naia/`](./examples/hello-naia/) (or the built-in `sample-note` for a React panel)
+
+## Collaboration model — where panels are headed (현재 개발 중)
+
+A panel is meant to be a surface **you and Naia use together**, not just a widget you operate alone. Two directions complete this:
+
+1. **Naia acts on the panel** — the panel exposes tools (`onToolCall`) Naia can call to read/update its state on your behalf.
+2. **Naia notices your activity** — when you operate the panel and **AI Interference** is on, the panel emits an activity event so Naia can chime in *only when it helps*.
+
+Today both directions are wired for **built-in** panels only. For installed (iframe) panels they are **현재 개발 중 / in development** — `ai-interference.ts` even reserves `source:"panel"` for exactly this, but nothing emits it yet.
+
+Distribution follows the same staged path (see [`panel-spec.md`](./panel-spec.md) §9): **Tier A sideload** (unsigned, warning + consent — #359) today → **Tier B verified** (Nextain-signed, a panel hub/store) later.
+
+Authoring is also moving in-app: **developing and publishing a panel from the Workspace panel** (editor + terminal) is planned (연동 예정) — an in-app build → install → publish loop, without leaving Naia.
+
+This vision is recorded so contributors build installable, self-contained panels now that slot cleanly into the collaborative + hub future.

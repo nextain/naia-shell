@@ -1,5 +1,4 @@
 import { listen } from "@tauri-apps/api/event";
-import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { sendPanelInstall } from "../lib/chat-service";
 import { Logger } from "../lib/logger";
@@ -20,7 +19,6 @@ interface InstallResult {
 export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 	const [mode, setMode] = useState<Mode>("git");
 	const [gitUrl, setGitUrl] = useState("");
-	const [filePath, setFilePath] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [result, setResult] = useState<InstallResult | null>(null);
 	const successRef = useRef(false);
@@ -83,19 +81,10 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 		};
 	}, [onClose]);
 
-	async function handlePickFile() {
-		const selected = await openFilePicker({
-			title: "패널 zip 파일 선택",
-			filters: [{ name: "Zip", extensions: ["zip"] }],
-			multiple: false,
-		});
-		if (typeof selected === "string") {
-			setFilePath(selected);
-		}
-	}
-
 	async function handleInstall() {
-		const source = mode === "git" ? gitUrl.trim() : filePath.trim();
+		// Zip install is gated (#359) — only Git URL is wired today.
+		if (mode !== "git") return;
+		const source = gitUrl.trim();
 		if (!source) return;
 
 		setLoading(true);
@@ -156,28 +145,9 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 					</div>
 				) : (
 					<div className="panel-install-body">
-						<label className="panel-install-label" htmlFor="file-path-input">
-							Zip 파일 경로
-						</label>
-						<div className="panel-install-file-row">
-							<input
-								id="file-path-input"
-								type="text"
-								className="panel-install-input"
-								placeholder="/path/to/my-panel.zip"
-								value={filePath}
-								onChange={(e) => setFilePath(e.target.value)}
-								onKeyDown={(e) => e.key === "Enter" && handleInstall()}
-								disabled={loading}
-							/>
-							<button
-								type="button"
-								className="panel-install-pick-btn"
-								onClick={handlePickFile}
-								disabled={loading}
-							>
-								선택
-							</button>
+						<div className="panel-install-notice">
+							🚧 Zip 파일 설치는 보안 강화 작업 중입니다 (#359). 현재는 Git URL
+							설치만 지원합니다.
 						</div>
 					</div>
 				)}
@@ -204,7 +174,7 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 							className={`panel-install-tab${mode === "file" ? " active" : ""}`}
 							onClick={() => setMode("file")}
 						>
-							파일 (Zip)
+							파일 (Zip · 준비 중)
 						</button>
 					</div>
 					<button
@@ -219,9 +189,7 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 						type="button"
 						className="panel-install-confirm-btn"
 						onClick={handleInstall}
-						disabled={
-							loading || (mode === "git" ? !gitUrl.trim() : !filePath.trim())
-						}
+						disabled={loading || mode !== "git" || !gitUrl.trim()}
 					>
 						{loading ? "설치 중..." : "추가"}
 					</button>

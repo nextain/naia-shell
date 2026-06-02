@@ -1,0 +1,9 @@
+{
+  "id": "hello-naia",
+  "name": "Hello Naia",
+  "names": { "ko": "헬로 나이아", "en": "Hello Naia" },
+  "description": "The simplest installable Naia panel — a hello-world starting point. Greets you and logs one behavior event through the Naia bridge.",
+  "icon": "👋",
+  "iconUrl": "icon.svg",
+  "version": "1.0.0"
+}
