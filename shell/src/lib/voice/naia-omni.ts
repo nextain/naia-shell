@@ -151,18 +151,27 @@ export function createNaiaOmniSession(): VoiceSession {
 
 			const attemptConnect = (): Promise<void> => {
 				ws = new WebSocket(wsUrl);
+				// Capture this attempt's socket. The retry loop reassigns `ws` on the
+				// next attempt, so every handler below guards `sock !== ws` to ignore
+				// events from a superseded socket. Otherwise a stale onclose (e.g. the
+				// 4503 that ended a cold-start attempt, arriving after a newer attempt
+				// already went active) would flip `connected` / fire onDisconnect and
+				// tear down the live session.
+				const sock = ws;
 
 				return new Promise<void>((resolve, reject) => {
 					if (!ws) return reject(new Error("WebSocket not created"));
 
 					const timeout = setTimeout(() => {
+						if (sock !== ws) return;
 						reject(new Error("Connection timeout"));
-						ws?.close();
+						sock.close();
 					}, 15000);
 
 					let connectErrored = false;
 
 					ws.onmessage = (event: MessageEvent) => {
+						if (sock !== ws) return;
 						if (typeof event.data !== "string") return;
 						let msg: Record<string, unknown>;
 						try {
@@ -291,6 +300,7 @@ export function createNaiaOmniSession(): VoiceSession {
 					};
 
 					ws.onerror = () => {
+						if (sock !== ws) return;
 						clearTimeout(timeout);
 						connectErrored = true;
 						const err = new Error("WebSocket error");
@@ -302,8 +312,9 @@ export function createNaiaOmniSession(): VoiceSession {
 					};
 
 					ws.onopen = () => {
+						if (sock !== ws) return;
 						if (useGateway) {
-							ws?.send(
+							sock.send(
 								JSON.stringify({
 									setup: {
 										apiKey: cfg?.naiaKey,
@@ -317,6 +328,12 @@ export function createNaiaOmniSession(): VoiceSession {
 					};
 
 					ws.onclose = (event) => {
+						// Skip only if a NEWER attempt's socket has superseded this one.
+						// When ws is null the session was disconnected (teardown nulls
+						// it) — this close IS the current socket closing, so it must
+						// still settle the pending connect() promise (otherwise connect()
+						// hangs on disconnect-during-connecting).
+						if (ws !== null && sock !== ws) return;
 						clearTimeout(timeout);
 						const wasConnected = connected;
 						connected = false;

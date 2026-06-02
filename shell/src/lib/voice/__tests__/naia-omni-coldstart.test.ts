@@ -309,4 +309,41 @@ describe("naia-omni cold-start status", () => {
 			expect.objectContaining({ phase: "error", reason: "consent" }),
 		);
 	});
+
+	// Regression: a cold-start attempt's socket closes (4503) AFTER the retry
+	// opened a newer socket that went active. The stale close must be ignored —
+	// it must NOT tear down the live session (sock !== ws guard).
+	it("ignores a superseded attempt's late close after a newer attempt is active", async () => {
+		vi.useFakeTimers();
+		try {
+			const session = createNaiaOmniSession();
+			const onDisconnect = vi.fn();
+			session.onStatusChange = vi.fn();
+			session.onDisconnect = onDisconnect;
+			const promise = session.connect(GATEWAY);
+			await vi.advanceTimersByTimeAsync(0);
+			const oldWs = lastWs;
+			oldWs.onopen?.();
+			// First attempt: gateway says preparing → reject pod-starting → retry.
+			oldWs.onmessage?.({
+				data: JSON.stringify({ type: "session.preparing" }),
+			});
+			// Advance past the 5s backoff so the retry opens a fresh socket.
+			await vi.advanceTimersByTimeAsync(5_000);
+			const newWs = lastWs;
+			expect(newWs).not.toBe(oldWs);
+			// Newer attempt goes live.
+			newWs.onopen?.();
+			newWs.onmessage?.({ data: JSON.stringify({ type: "session.created" }) });
+			await vi.advanceTimersByTimeAsync(0);
+			await promise;
+			expect(session.isConnected).toBe(true);
+			// The OLD socket finally delivers its 4503 close — must be a no-op.
+			oldWs.onclose?.({ code: 4503, reason: "", wasClean: false });
+			expect(onDisconnect).not.toHaveBeenCalled();
+			expect(session.isConnected).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
