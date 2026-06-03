@@ -57,7 +57,8 @@ formats:
   windows:
     description: "Windows desktop app (NSIS installer with embedded frontend)"
     status: working
-    build_command: "cd shell && pnpm tauri build --config src-tauri/tauri.conf.windows.json"
+    build_command: "RELEASE (auto-update ON — the ONLY distributable path): CI release-app.yml runs `pnpm run tauri build --config src-tauri/tauri.conf.windows.json` (createUpdaterArtifacts:true) + signtool code-sign + generates latest.json → GitHub Releases updater endpoint. NEVER ship a local build. LOCAL VERIFY ONLY (auto-update OFF — DO NOT distribute): `pnpm run tauri:build:windows:local` layers tauri.conf.windows-local.json (createUpdaterArtifacts:false) so it builds exit 0 without a signing key — offlineInstaller NSIS(~434MB)+MSI(~522MB) for inspection only. tauri:build:local (tauri.conf.local.json) = downloadBootstrapper STUB (~232MB), dev only."
+    auto_update_guard: "Auto-update integrity: updater endpoint = https://github.com/nextain/naia-os/releases/latest/download/latest.json (GitHub, NOT cloud run). createUpdaterArtifacts:true lives in base tauri.conf.json; tauri.conf.windows-local.json sets it false for LOCAL VERIFY builds ONLY. A local (windows-local or local.json) build has NO signed updater artifacts → if distributed it BREAKS auto-update. Releases must come from CI (signed + latest.json)."
     output: "shell/src-tauri/target/release/bundle/nsis/Naia_{version}_x64-setup.exe"
     config_overlay: "shell/src-tauri/tauri.conf.windows.json"
     bundle_targets: ["nsis", "msi"]
@@ -71,6 +72,7 @@ formats:
     bundled_resources:
       node_exe: "resources/node.exe (downloaded at CI build time, ~45MB)"
       agent: "agent/dist + agent/node_modules (from base config)"
+      content_assets: "VRM / BGM / background are NOT bundled in the installer (MS Store build included). They are distributed via naia-adk (git clone / zip fallback) and materialized under {adkPath}/naia-settings/{vrm-files,bgm-musics,background}/ at onboarding — always-online app (e7d32b3, 2026-05-21). Only node.exe + agent ship. GOTCHA: e7d32b3 dropped the assets/* resource entries from tauri.conf.json/windows/linux/flatpak but MISSED tauri.conf.local.json, leaving stale `../public/assets/{vrm-files,background,bgm-musics}` entries that fail the build (public/assets/ was deleted in the same commit). Fixed 2026-06-03. Build/verify with `--config src-tauri/tauri.conf.windows.json` (release) or the fixed local.json — both bundle NO content assets."
     wsl_requirement:
       description: "Windows app requires WSL2 + NaiaEnv distro for Gateway execution"
       tiers:

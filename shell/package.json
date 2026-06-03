@@ -12,6 +12,7 @@
     "tauri:prod": "node ../scripts/dev-setup.mjs && node ../scripts/tauri-with-mode.mjs prod",
     "tauri:dev:clean": "node ../scripts/dev-setup.mjs --clean && node ../scripts/tauri-with-mode.mjs dev",
     "tauri:build:local": "pnpm run tauri build --config src-tauri/tauri.conf.local.json",
+    "tauri:build:windows:local": "cd ../agent && pnpm install --frozen-lockfile && pnpm run build && cd ../shell && pnpm build && python3 ../scripts/prune-nsis.py && pnpm run tauri build --config src-tauri/tauri.conf.windows.json --config src-tauri/tauri.conf.windows-local.json",
     "check": "biome check --write .",
     "format": "biome format --write .",
     "test": "vitest run",

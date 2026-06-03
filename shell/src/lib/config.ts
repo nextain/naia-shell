@@ -540,6 +540,12 @@ export function getUserName(): string | undefined {
 	return loadConfig()?.userName;
 }
 
+// Release runtime gateway (the gateway a DISTRIBUTED build talks to — distinct
+// from the auto-updater endpoint, which is GitHub Releases).
+// ⚠️ MIGRATION PLANNED: this Cloud Run URL is being replaced by a prod GCP VM
+// (mirrors the dev VM move already done — dev = http://34.64.69.73:8080). When
+// the prod VM is live, update this fallback (or ship VITE_NAIA_GATEWAY_URL via
+// the prod env). See memory: naia-anyllm-vm-migration.
 const _PROD_GATEWAY =
 	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) ||
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
