@@ -115,6 +115,167 @@ const EMOTION_STATES: Record<EmotionName, EmotionState> = {
 
 const EMOTION_TAG_RE = /\[(HAPPY|SAD|ANGRY|SURPRISED|NEUTRAL|THINK)]\s*/gi;
 
+const KNOWN_EMOTIONS: readonly EmotionName[] = [
+	"happy",
+	"sad",
+	"angry",
+	"surprised",
+	"neutral",
+	"think",
+];
+
+/**
+ * Server prosody tag → avatar EmotionName.
+ *
+ * The voice server emits one `emotion.updated {state: <tag>}` per inline `[tag]`
+ * in the reply (`state == tag`, lowercase). These are PROSODY tags (laughter /
+ * sigh / breath…), NOT the six avatar emotion names, so we map them by meaning.
+ *
+ * Non-emotive prosody (breath / inhale / pause / hum / cough / sneeze / yawn /
+ * sniff / whisper) is intentionally absent → maps to null → the avatar keeps its
+ * current expression instead of flickering to neutral on every micro-pause
+ * (the server asks the LLM to tag ≥70% of replies, so these are frequent).
+ */
+const SERVER_PROSODY_TO_EMOTION: Readonly<Record<string, EmotionName>> = {
+	// laughter / delight → happy
+	laughing: "happy",
+	laugh: "happy",
+	laughter: "happy",
+	chuckle: "happy",
+	giggle: "happy",
+	cheer: "happy",
+	// sigh / crying / low energy → sad
+	sigh: "sad",
+	exhale: "sad",
+	cry: "sad",
+	sob: "sad",
+	moan: "sad",
+	// sharp intake → surprised
+	gasp: "surprised",
+	// raised voice → angry
+	shout: "angry",
+	// unsure / polite-hard-answer beat → think
+	hesitation: "think",
+};
+
+/**
+ * Map a server `emotion.updated` state to an avatar EmotionName.
+ *
+ * Case- and bracket-insensitive. Accepts either a direct EmotionName (defensive,
+ * in case a caller passes one) or a server prosody tag (the actual server wire).
+ * Returns null for non-emotive / unknown tags so the caller leaves the current
+ * expression unchanged (safe default).
+ */
+export function mapServerEmotion(state: string): EmotionName | null {
+	const key = state
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "");
+	if ((KNOWN_EMOTIONS as readonly string[]).includes(key)) {
+		return key as EmotionName;
+	}
+	return SERVER_PROSODY_TO_EMOTION[key] ?? null;
+}
+
+const LOWER_PROSODY_TAG_RE = /\[([a-z][a-z_-]{1,15})\]/g;
+
+/**
+ * Action words inside (parentheses) or *asterisks* → emotion. The cascade
+ * server forbids stage directions, but LLMs are not perfectly obedient and leak
+ * them, so we still react instead of speaking the literal "(smiles)".
+ */
+const ACTION_TO_EMOTION: Readonly<Record<string, EmotionName>> = {
+	smile: "happy",
+	smiles: "happy",
+	smiling: "happy",
+	laugh: "happy",
+	laughs: "happy",
+	laughing: "happy",
+	giggle: "happy",
+	giggles: "happy",
+	grin: "happy",
+	grins: "happy",
+	sigh: "sad",
+	sighs: "sad",
+	cry: "sad",
+	cries: "sad",
+	crying: "sad",
+	sob: "sad",
+	sobs: "sad",
+	frown: "sad",
+	frowns: "sad",
+	gasp: "surprised",
+	gasps: "surprised",
+	surprised: "surprised",
+	shocked: "surprised",
+	scowl: "angry",
+	scowls: "angry",
+	glare: "angry",
+	glares: "angry",
+	angry: "angry",
+	think: "think",
+	thinks: "think",
+	thinking: "think",
+	ponder: "think",
+	ponders: "think",
+};
+
+const STAGE_DIRECTION_RE = /\(([^)]{1,40})\)|\*([^*]{1,40})\*/g;
+
+/**
+ * Robustly extract an avatar emotion + clean display text from one assistant
+ * output string, tolerant of the several formats an LLM may produce even when
+ * the server prompt asks only for lowercase prosody tags:
+ *   - uppercase emotion tag   [HAPPY]            → direct
+ *   - lowercase prosody tag    [laughing]/[sigh] → mapped (server prosody vocab)
+ *   - stage direction          (smiles) / *sigh* → action-word mapped + stripped
+ *
+ * Returns `emotion: null` when nothing matches so the caller leaves the current
+ * expression unchanged — it NEVER forces neutral (LLM output is imperfect; a
+ * missing cue must not reset the face). `cleanText` has all of the above removed
+ * for the chat row. First cue wins (the leading tag is the turn's intent).
+ */
+export function extractExpression(text: string): {
+	emotion: EmotionName | null;
+	cleanText: string;
+} {
+	let emotion: EmotionName | null = null;
+	const take = (e: EmotionName | null) => {
+		if (!emotion && e) emotion = e;
+	};
+
+	// 1) uppercase emotion tag (highest-intent, persona-style)
+	let clean = text.replace(EMOTION_TAG_RE, (_m, tag: string) => {
+		take(tag.toLowerCase() as EmotionName);
+		return "";
+	});
+	// 2) lowercase server prosody tag
+	clean = clean.replace(LOWER_PROSODY_TAG_RE, (_m, tag: string) => {
+		take(mapServerEmotion(tag));
+		return "";
+	});
+	// 3) leaked stage direction (forbidden by server, but tolerate + strip)
+	clean = clean.replace(
+		STAGE_DIRECTION_RE,
+		(_m, paren?: string, star?: string) => {
+			const inner = (paren ?? star ?? "").toLowerCase();
+			for (const word of inner.split(/[^a-z]+/)) {
+				if (word && ACTION_TO_EMOTION[word]) {
+					take(ACTION_TO_EMOTION[word]);
+					break;
+				}
+			}
+			return "";
+		},
+	);
+
+	clean = clean
+		.replace(/[ \t]{2,}/g, " ")
+		.replace(/\s+([.,!?。、！？])/g, "$1")
+		.trim();
+	return { emotion, cleanText: clean };
+}
+
 export function parseEmotion(text: string): {
 	emotion: EmotionName;
 	cleanText: string;

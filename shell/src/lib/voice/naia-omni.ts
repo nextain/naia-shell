@@ -83,6 +83,7 @@ export function createNaiaOmniSession(): VoiceSession {
 		onToolCall: null,
 		onTurnEnd: null,
 		onInterrupted: null,
+		onEmotion: null,
 		onError: null,
 		onDisconnect: null,
 		onStatusChange: null,
@@ -120,6 +121,14 @@ export function createNaiaOmniSession(): VoiceSession {
 					);
 				}
 				wsUrl = `${normalizedBase}/v1/realtime`;
+				// Naia Local host policy: we do NOT block remote plaintext ws:// at
+				// the OS layer. The subscriber key flows over the `setup` frame, but
+				// securing the transport (Tailscale / WireGuard / SSH tunnel / wss
+				// terminator / trusted LAN) is the USER's responsibility — naia-os is
+				// not always on Tailscale, and forcing wss:// would break legitimate
+				// trusted-network setups. We guide this in the manual (naia-model-dev)
+				// instead of enforcing it. URL scheme validity is still checked by
+				// normalizeServerUrl above.
 			}
 
 			let encodedRefAudio: string | null = null;
@@ -228,9 +237,19 @@ export function createNaiaOmniSession(): VoiceSession {
 								return;
 							}
 							if (tp === "session.error") {
+								// Naia Local container entitlement gate. entitlement_denied =
+								// not a paid subscriber → distinct "subscription-required" (UI
+								// shows a subscribe toast, no retry). Else generic.
 								clearTimeout(timeout);
 								connectErrored = true;
-								reject(new Error(extractServerErrorMessage(msg)));
+								const errObj = (msg.error ?? {}) as Record<string, unknown>;
+								reject(
+									new Error(
+										String(errObj.code ?? "") === "entitlement_denied"
+											? "subscription-required"
+											: extractServerErrorMessage(msg),
+									),
+								);
 								return;
 							}
 						}
@@ -324,6 +343,22 @@ export function createNaiaOmniSession(): VoiceSession {
 									},
 								}),
 							);
+						} else if (cfg?.localContainer && cfg?.naiaKey) {
+							// Naia Local (entitlement mode): the subscriber connects directly
+							// to a container on their OWN GPU. Send the subscription key so the
+							// container validates it (backend "user"). GATED on localContainer
+							// so the key never leaks to an arbitrary direct server (e.g. a
+							// 3rd-party vLLM in direct naia-omni mode).
+							sock.send(
+								JSON.stringify({
+									setup: {
+										apiKey: cfg?.naiaKey,
+										backend: "user",
+										locale: cfg?.locale ?? "en",
+										instanceId: cfg?.instanceId,
+									},
+								}),
+							);
 						}
 					};
 
@@ -343,10 +378,17 @@ export function createNaiaOmniSession(): VoiceSession {
 							wasClean: event.wasClean,
 						});
 						if (!wasConnected && !connectErrored) {
-							// Map application close codes (4001 auth / 4002 superseded /
-							// 4003 credits) so a pre-session reject classifies into the
-							// right status banner.
-							reject(new Error(closeCodeMessage(event.code)));
+							// Pre-session close → classifiable reject. Naia Local container
+							// entitlement gate closes 4003 (not a paid subscriber); in gateway
+							// mode 4003 = insufficient credits. Disambiguate by mode.
+							const reason = cfg?.localContainer
+								? event.code === 4003
+									? "subscription-required"
+									: event.code === 4001
+										? "auth-failed"
+										: "Connection closed before session ready"
+								: closeCodeMessage(event.code);
+							reject(new Error(reason));
 						}
 						// Only surface a session-level disconnect when a LIVE session
 						// dropped. Pre-connect closes (cold-start retries, auth/credit
@@ -537,7 +579,7 @@ export function createNaiaOmniSession(): VoiceSession {
 			// Both carry the assistant output text → same transcript surface.
 			case "response.text.delta": {
 				const delta = msg.delta as string | undefined;
-				// Map VoxCPM2 prosody tags ([sigh] etc.) to chat emoji for display.
+				// Map server prosody tags ([sigh] etc.) to chat emoji for display.
 				// The TTS path keeps the raw tags server-side for prosody.
 				if (delta) session.onOutputTranscript?.(emotionTagsToChatText(delta));
 				break;
@@ -566,7 +608,7 @@ export function createNaiaOmniSession(): VoiceSession {
 			}
 
 			case "response.function_call_arguments.done": {
-				// Server (naia_realtime_server) emits this per tool call, then a
+				// Server emits this per tool call, then a
 				// response.done{requires_action}. Surface to onToolCall; ChatPanel
 				// runs the skill and calls sendToolResponse with the result.
 				const callId = msg.call_id as string | undefined;
@@ -587,6 +629,16 @@ export function createNaiaOmniSession(): VoiceSession {
 				Logger.debug("naia-omni", "response cancelled");
 				session.onInterrupted?.();
 				break;
+
+			case "emotion.updated": {
+				// Server prosody/emotion tag update (manual §5): one event per
+				// bracketed tag in the reply. `state` = tag name (e.g. "happy").
+				// Forward raw — ChatPanel maps it to an avatar EmotionName
+				// (unknown tags are ignored, expression unchanged).
+				const state = msg.state as string | undefined;
+				if (state) session.onEmotion?.(state);
+				break;
+			}
 
 			case "input_audio_buffer.speech_started":
 				// Server VAD detected user speech while AI was responding.

@@ -17,16 +17,19 @@ import { describe, expect, it } from "vitest";
 
 describe("LLM registry — gateway model exclusion (#248)", () => {
 	// 2026-05-29: nextain provider trimmed to the user-confirmed 4-model lineup.
-	it("Naia (gateway) provider exposes the confirmed 4-model lineup in order", async () => {
+	// 2026-06-03: + naia-local (Naia Local container on the user's own GPU, #313).
+	// 2026-06-03: naia-0.9-omni-24g not yet live → comingSoon flag, moved LAST.
+	it("Naia (gateway) provider exposes the confirmed model lineup in order", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
 		expect(naia).toBeTruthy();
 		const ids = naia!.models.map((m) => m.id);
 		expect(ids).toEqual([
 			"gemini-3.1-flash-lite",
-			"naia-0.9-omni-24g",
+			"naia-local",
 			"gemini-3.5-flash",
 			"gemini-2.5-flash-live",
+			"naia-0.9-omni-24g",
 		]);
 	});
 
@@ -35,9 +38,37 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		const naia = getLlmProvider("nextain");
 		const omni = naia!.models.filter((m) => m.capabilities.includes("omni"));
 		expect(omni.map((m) => m.id)).toEqual([
-			"naia-0.9-omni-24g",
+			"naia-local",
 			"gemini-2.5-flash-live",
+			"naia-0.9-omni-24g",
 		]);
+	});
+
+	it("naia-0.9-omni-24g is flagged comingSoon and listed last", async () => {
+		const { getLlmProvider } = await import("../registry.js");
+		const naia = getLlmProvider("nextain")!;
+		const last = naia.models[naia.models.length - 1];
+		expect(last.id).toBe("naia-0.9-omni-24g");
+		expect(last.comingSoon).toBe(true);
+	});
+
+	it("formatModelLabel appends a tag for comingSoon models (language-agnostic)", async () => {
+		const { formatModelLabel } = await import("../registry.js");
+		const base = formatModelLabel({
+			id: "x",
+			label: "X",
+			capabilities: ["llm"],
+		});
+		const tagged = formatModelLabel({
+			id: "x",
+			label: "X",
+			capabilities: ["llm"],
+			comingSoon: true,
+		});
+		// A tag is appended regardless of the active UI language.
+		expect(tagged).not.toBe(base);
+		expect(tagged.startsWith(base)).toBe(true);
+		expect(tagged.length).toBeGreaterThan(base.length);
 	});
 
 	it("Direct Google Gemini provider lists gemini-2.5-* family", async () => {
@@ -69,6 +100,7 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		for (const valid of [
 			"gemini-3.1-flash-lite",
 			"naia-0.9-omni-24g",
+			"naia-local",
 			"gemini-3.5-flash",
 			"gemini-2.5-flash-live",
 		]) {
@@ -81,8 +113,12 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		expect(
 			shouldMigrateNextainModel("gemini", "gemini-3-flash-preview").migrate,
 		).toBe(false);
-		expect(shouldMigrateNextainModel("gemini", "any-model").migrate).toBe(false);
-		expect(shouldMigrateNextainModel("ollama", "qwen3:14b").migrate).toBe(false);
+		expect(shouldMigrateNextainModel("gemini", "any-model").migrate).toBe(
+			false,
+		);
+		expect(shouldMigrateNextainModel("ollama", "qwen3:14b").migrate).toBe(
+			false,
+		);
 	});
 
 	it("does NOT migrate unknown providers", async () => {

@@ -126,6 +126,32 @@ describe("naia-omni transcript surfacing", () => {
 		expect(outputs).toEqual(["네"]);
 	});
 
+	it("forwards server emotion tags via onEmotion (emotion.updated, manual §5)", async () => {
+		const { session, promise } = connect(DIRECT);
+		await promise;
+
+		const emotions: string[] = [];
+		session.onEmotion = (state) => emotions.push(state);
+
+		emit({ type: "emotion.updated", state: "happy", tag: "[happy]", known: true });
+		emit({ type: "emotion.updated", state: "shy", tag: "[shy]", known: false });
+
+		// Raw state forwarded (UI maps to an avatar EmotionName; unknown ignored).
+		expect(emotions).toEqual(["happy", "shy"]);
+	});
+
+	it("ignores emotion.updated with no state", async () => {
+		const { session, promise } = connect(DIRECT);
+		await promise;
+
+		const emotions: string[] = [];
+		session.onEmotion = (state) => emotions.push(state);
+
+		emit({ type: "emotion.updated" });
+
+		expect(emotions).toEqual([]);
+	});
+
 	it("ignores transcript events that carry no payload", async () => {
 		const { session, promise } = connect(DIRECT);
 		await promise;

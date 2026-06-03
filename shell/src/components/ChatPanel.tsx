@@ -89,7 +89,7 @@ import {
 } from "../lib/voice/index";
 import { getActiveRefAudioUrl } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
-import { parseEmotion } from "../lib/vrm/expression";
+import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
@@ -1005,8 +1005,8 @@ export function ChatPanel() {
 				// Parse emotion from accumulated text (tag may span multiple chunks)
 				const accumulated = store.streamingContent;
 				if (accumulated.length <= 30 && accumulated.length >= 4) {
-					const { emotion } = parseEmotion(accumulated);
-					setEmotion(emotion);
+					const { emotion } = extractExpression(accumulated);
+					if (emotion) setEmotion(emotion);
 				}
 				// Sentence-level TTS — same path for both pipeline and chat mode
 				if (sentenceChunkerRef.current) {
@@ -1915,6 +1915,9 @@ export function ChatPanel() {
 			let outputTurnDirty = false;
 			let inputAccum = "";
 			let outputAccum = "";
+			// Precedence: a server emotion.updated this turn is authoritative, so the
+			// transcript-derived fallback below must not override it.
+			let serverEmotionSeenThisTurn = false;
 
 			session.onAudio = (pcmBase64) => player.enqueue(pcmBase64);
 			session.onInputTranscript = (text) => {
@@ -1930,11 +1933,30 @@ export function ChatPanel() {
 			session.onOutputTranscript = (text) => {
 				const store = useChatStore.getState();
 				outputAccum += text;
+				// Robust fallback: derive the avatar expression from the transcript
+				// itself (uppercase/lowercase tags or a leaked stage direction) when
+				// the server did NOT send emotion.updated this turn — LLM output is
+				// imperfect. A present server emotion.updated takes precedence. Also
+				// use the cleaned text for the chat row so tags/stage directions don't
+				// show. emotion=null leaves the current face unchanged (no neutral reset).
+				const { emotion, cleanText } = extractExpression(outputAccum);
+				if (emotion && !serverEmotionSeenThisTurn) setEmotion(emotion);
 				if (outputTurnDirty) {
-					store.updateLastMessage("assistant", outputAccum);
+					store.updateLastMessage("assistant", cleanText);
 				} else {
-					store.addMessage({ role: "assistant", content: text });
+					store.addMessage({ role: "assistant", content: cleanText });
 					outputTurnDirty = true;
+				}
+			};
+			session.onEmotion = (state) => {
+				// naia-omni emotion.updated (manual §5) → avatar expression. This is
+				// authoritative for the turn: mark it so the transcript fallback in
+				// onOutputTranscript does not override it. Unknown tags map to null →
+				// leave the current expression as is.
+				const emotion = mapServerEmotion(state);
+				if (emotion) {
+					setEmotion(emotion);
+					serverEmotionSeenThisTurn = true;
 				}
 			};
 			session.onInterrupted = () => {
@@ -1943,12 +1965,14 @@ export function ChatPanel() {
 				outputTurnDirty = false;
 				inputAccum = "";
 				outputAccum = "";
+				serverEmotionSeenThisTurn = false;
 			};
 			session.onTurnEnd = () => {
 				inputTurnDirty = false;
 				outputTurnDirty = false;
 				inputAccum = "";
 				outputAccum = "";
+				serverEmotionSeenThisTurn = false;
 			};
 			session.onToolCall = async (callId, toolName, args) => {
 				try {
@@ -2508,7 +2532,7 @@ export function ChatPanel() {
 								<div className="message-content">
 									{msg.role === "assistant" ? (
 										<Markdown components={mdComponents}>
-											{parseEmotion(msg.content).cleanText}
+											{extractExpression(msg.content).cleanText}
 										</Markdown>
 									) : (
 										msg.content
@@ -2545,7 +2569,7 @@ export function ChatPanel() {
 							<div className="message-content">
 								{streamingContent ? (
 									<Markdown components={mdComponents}>
-										{parseEmotion(streamingContent).cleanText}
+										{extractExpression(streamingContent).cleanText}
 									</Markdown>
 								) : null}
 								<span className="cursor-blink">▌</span>

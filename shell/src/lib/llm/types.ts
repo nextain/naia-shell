@@ -20,6 +20,8 @@ export interface LlmModelMeta {
 	voices?: LlmVoiceMeta[];
 	/** Omni: model provides input transcription. */
 	transcriptProvided?: boolean;
+	/** Not yet generally available — shown with a "(준비중)" tag and blocks Apply. */
+	comingSoon?: boolean;
 }
 
 /** LLM provider metadata for settings UI auto-discovery. */

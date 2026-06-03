@@ -1,5 +1,83 @@
 import { describe, expect, it } from "vitest";
-import { createEmotionController, parseEmotion } from "../expression";
+import {
+	createEmotionController,
+	extractExpression,
+	mapServerEmotion,
+	parseEmotion,
+} from "../expression";
+
+describe("extractExpression (robust avatar cue extraction)", () => {
+	it("reads an uppercase emotion tag and strips it", () => {
+		expect(extractExpression("[HAPPY] 좋아!")).toEqual({
+			emotion: "happy",
+			cleanText: "좋아!",
+		});
+	});
+
+	it("maps a lowercase server prosody tag", () => {
+		expect(extractExpression("정말요? [laughing] 처음 들어봐요.").emotion).toBe(
+			"happy",
+		);
+		expect(extractExpression("[sigh] 오늘 피곤하셨겠어요.").emotion).toBe("sad");
+	});
+
+	it("strips the prosody tag from cleanText", () => {
+		expect(extractExpression("정말요? [laughing] 처음.").cleanText).toBe(
+			"정말요? 처음.",
+		);
+	});
+
+	it("reads a leaked parenthetical stage direction and strips it", () => {
+		const r = extractExpression("(smiles) 안녕하세요");
+		expect(r.emotion).toBe("happy");
+		expect(r.cleanText).toBe("안녕하세요");
+	});
+
+	it("reads a leaked asterisk narration", () => {
+		expect(extractExpression("*sighs* 그렇군요").emotion).toBe("sad");
+	});
+
+	it("returns null (no neutral reset) when there is no cue", () => {
+		expect(extractExpression("그냥 평범한 문장입니다").emotion).toBeNull();
+	});
+
+	it("first cue wins", () => {
+		expect(extractExpression("[HAPPY] 좋아 [sigh] 근데").emotion).toBe("happy");
+	});
+
+	it("ignores non-emotive prosody (breath/pause) → null, still stripped", () => {
+		expect(extractExpression("[breath] 음, 그건").emotion).toBeNull();
+		expect(extractExpression("[breath] 음.").cleanText).toBe("음.");
+	});
+});
+
+describe("mapServerEmotion (naia-omni emotion.updated → avatar)", () => {
+	it("maps each known emotion (case/bracket-insensitive)", () => {
+		expect(mapServerEmotion("happy")).toBe("happy");
+		expect(mapServerEmotion("HAPPY")).toBe("happy");
+		expect(mapServerEmotion("[Sad]")).toBe("sad");
+		expect(mapServerEmotion(" angry ")).toBe("angry");
+		expect(mapServerEmotion("surprised")).toBe("surprised");
+		expect(mapServerEmotion("neutral")).toBe("neutral");
+		expect(mapServerEmotion("think")).toBe("think");
+	});
+
+	it("maps server prosody tags to avatar emotions", () => {
+		expect(mapServerEmotion("laughing")).toBe("happy");
+		expect(mapServerEmotion("chuckle")).toBe("happy");
+		expect(mapServerEmotion("sigh")).toBe("sad");
+		expect(mapServerEmotion("gasp")).toBe("surprised");
+		expect(mapServerEmotion("shout")).toBe("angry");
+		expect(mapServerEmotion("hesitation")).toBe("think");
+	});
+
+	it("returns null for non-emotive / unknown tags (no neutral reset)", () => {
+		expect(mapServerEmotion("breath")).toBeNull();
+		expect(mapServerEmotion("pause")).toBeNull();
+		expect(mapServerEmotion("shy")).toBeNull(); // not in the server prosody vocab
+		expect(mapServerEmotion("")).toBeNull();
+	});
+});
 
 describe("parseEmotion", () => {
 	it("parses [HAPPY] tag", () => {

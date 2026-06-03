@@ -1,2 +1,4 @@
 .env.local
 .env.e2e
+.env.dev
+.env.prod

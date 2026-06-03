@@ -296,6 +296,13 @@ export interface VoiceSession {
 		| null;
 	onTurnEnd: (() => void) | null;
 	onInterrupted: (() => void) | null;
+	/**
+	 * Server emotion tag update (naia-omni `emotion.updated`, manual §5). `state`
+	 * is the tag name (e.g. "happy"); the UI maps it to an avatar expression.
+	 * Optional — only naia-omni emits it; other providers omit it (their avatar
+	 * expression is driven from the streamed transcript tag instead).
+	 */
+	onEmotion?: ((state: string) => void) | null;
 	onError: ((error: Error) => void) | null;
 	/**
 	 * A LIVE session dropped. `info` carries the close code + classified reason

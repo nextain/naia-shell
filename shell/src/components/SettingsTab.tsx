@@ -663,6 +663,9 @@ export function SettingsTab() {
 		existing?.speechStyle ?? "casual",
 	);
 	const [enableTools, setEnableTools] = useState(existing?.enableTools ?? true);
+	const [enableThinking, setEnableThinking] = useState(
+		existing?.enableThinking ?? false,
+	);
 	const [workspaceRoot, setWorkspaceRoot] = useState(() => {
 		return existing?.workspaceRoot || getAdkPath() || "";
 	});
@@ -1968,6 +1971,7 @@ export function SettingsTab() {
 			honorific: honorific.trim() || undefined,
 			speechStyle,
 			enableTools,
+			enableThinking,
 			gatewayUrl:
 				enableTools &&
 				gatewayUrl.trim() &&
@@ -3289,6 +3293,12 @@ export function SettingsTab() {
 							type="button"
 							className="settings-save-btn"
 							onClick={handleSave}
+							disabled={selectedModelMeta?.comingSoon ?? false}
+							title={
+								selectedModelMeta?.comingSoon
+									? t("settings.comingSoon")
+									: undefined
+							}
 						>
 							{saved ? t("settings.saved") : t("settings.save")}
 						</button>
@@ -3733,6 +3743,18 @@ export function SettingsTab() {
 							type="checkbox"
 							checked={enableTools}
 							onChange={(e) => setEnableTools(e.target.checked)}
+						/>
+					</div>
+
+					<div className="settings-field settings-toggle-row">
+						<label htmlFor="thinking-toggle">
+							{t("settings.enableThinking")}
+						</label>
+						<input
+							id="thinking-toggle"
+							type="checkbox"
+							checked={enableThinking}
+							onChange={(e) => setEnableThinking(e.target.checked)}
 						/>
 					</div>
 

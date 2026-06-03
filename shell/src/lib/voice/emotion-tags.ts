@@ -1,9 +1,9 @@
 /**
- * VoxCPM2 prosody tags → chat-display text (naia-omni cascade).
+ * Server prosody tags → chat-display text (naia-omni).
  *
- * The cascade server keeps inline tags like `[sigh]` / `[laughing]` in its
- * `response.audio_transcript.delta` so VoxCPM2 can prosody them on the TTS
- * path. For the *chat row* those raw tags read badly, so we map the
+ * The voice server keeps inline tags like `[sigh]` / `[laughing]` in its
+ * `response.audio_transcript.delta` so the synthesis path can render their
+ * prosody. For the *chat row* those raw tags read badly, so we map the
  * emotionally-meaningful ones to an emoji and strip the purely functional
  * ones (breath/pause/etc.). "필요에 따라" — only clear emotions become an
  * emoji; unknown or functional tags are removed so the text stays clean.
