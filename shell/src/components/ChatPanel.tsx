@@ -33,6 +33,7 @@ import {
 import {
 	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_VLLM_HOST,
+	DEFAULT_VOICE_REF_URL,
 	LAB_GATEWAY_URL,
 	addAllowedTool,
 	getNaiaInstanceId,
@@ -87,7 +88,7 @@ import {
 	createVoiceSession,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
-import { getActiveRefAudioUrl } from "../lib/voice/ref-audio-api";
+import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
 import { useAvatarStore } from "../stores/avatar";
@@ -406,7 +407,12 @@ export function ChatPanel() {
 	const panelContextBridgeRef = useRef<PanelContextBridge | null>(null);
 	const micStreamRef = useRef<MicStream | null>(null);
 	const audioPlayerRef = useRef<AudioPlayer | null>(null);
-	const voiceStartRef = useRef<{ time: number; provider: string } | null>(null);
+	const voiceStartRef = useRef<{
+		time: number;
+		provider: string;
+		/** Naia Local (own GPU container) — no Naia-credit cost. */
+		localContainer?: boolean;
+	} | null>(null);
 
 	// ── Input history (↑↓ arrow key recall) ──────────────────────────────
 	const inputHistoryRef = useRef<string[]>([]);
@@ -622,6 +628,27 @@ export function ChatPanel() {
 				clearTimeout(focusTimerRef.current);
 				focusTimerRef.current = null;
 			}
+		};
+	}, []);
+
+	// Mid-session reference-voice switch: when the user applies a preset in
+	// Settings, RefAudioSection dispatches "naia:voice-ref-url". If a voice
+	// session is live, switch the cloned voice now (no reconnect) — web-demo
+	// parity. Otherwise it's a no-op; the next connect reads config.voiceRefUrl.
+	useEffect(() => {
+		const onUrl = (e: Event) => {
+			const url = (e as CustomEvent<string | null>).detail ?? null;
+			voiceSessionRef.current?.setRefAudioUrl?.(url);
+		};
+		const onB64 = (e: Event) => {
+			const b64 = (e as CustomEvent<string | null>).detail ?? null;
+			voiceSessionRef.current?.setRefAudio?.(b64);
+		};
+		window.addEventListener("naia:voice-ref-url", onUrl);
+		window.addEventListener("naia:voice-ref-audio", onB64);
+		return () => {
+			window.removeEventListener("naia:voice-ref-url", onUrl);
+			window.removeEventListener("naia:voice-ref-audio", onB64);
 		};
 	}, []);
 
@@ -1215,6 +1242,19 @@ export function ChatPanel() {
 		voiceStartRef.current = null;
 		const elapsed = (Date.now() - info.time) / 1000;
 		if (elapsed < 3) return; // ignore very short sessions
+		// Naia Local runs on the user's own GPU — no Naia-credit charge. Show a
+		// free indicator (no $ amount, no cost entry) instead of an hourly estimate.
+		if (info.localContainer) {
+			const dur =
+				elapsed < 60
+					? `${Math.round(elapsed)}s`
+					: `${Math.floor(elapsed / 60)}m ${Math.round(elapsed % 60)}s`;
+			useChatStore.getState().addMessage({
+				role: "assistant",
+				content: `🎙️ ${dur} · 로컬 (무료)`,
+			});
+			return;
+		}
 		const minutes = elapsed / 60;
 		const hint =
 			LIVE_PROVIDER_COST_HINTS[
@@ -2077,16 +2117,39 @@ export function ChatPanel() {
 					"",
 				);
 				const wsBase = vllmBase.replace(/^http/, "ws");
-				// #15: gateway mode — pass the active preset sample_url so the
-				// backend downloads the ref voice via URL (no heavy base64).
-				// Best-effort: null/error → default voice, never blocks connect.
-				const naiaRefAudioUrl = useGw
-					? ((await getActiveRefAudioUrl().catch(() => null)) ?? undefined)
-					: undefined;
+				// Reference voice: send the preset sample_url the user picked, taken
+				// DIRECTLY from config — the same deterministic source the web demo
+				// uses (no unreliable GET /v1/ref-audio status round-trip).
+				// Sent for BOTH cloud gateway AND Naia Local (own container, direct
+				// mode): both run the same omni cascade and accept ref_audio_url in
+				// session.update. For Naia Local there is NO gateway GCS injection in
+				// the path, so the client sending the URL is the ONLY way the cloned
+				// voice reaches the container — gating this behind gateway mode left
+				// local-container voice with a random per-turn voice. The sample_url
+				// is a public storage.googleapis.com URL (no secret), so it is safe
+				// on the direct socket. Empty for uploads (injected server-side).
+				// Naia Local recorded/uploaded voice is kept as a base64 WAV locally
+				// (no gateway upload → no credit charge) and sent embedded. It wins
+				// over a preset URL when present.
+				const localRefB64 = isLocalContainer ? getLocalRefAudioB64() : null;
+				// Default the voice to "여성 음색 1" when nothing is chosen, so the
+				// omni voice is never the unconditioned/random default (the "이상한
+				// 목소리" the user hit after removing a ref). A custom recording
+				// (base64) takes priority over any URL.
+				const naiaRefAudioUrl = localRefB64
+					? undefined
+					: useGw || isLocalContainer
+						? config.voiceRefUrl || DEFAULT_VOICE_REF_URL
+						: undefined;
+				Logger.info("ChatPanel", "naia-omni ref audio resolved", {
+					hasRefAudioUrl: !!naiaRefAudioUrl,
+					hasRefAudioB64: !!localRefB64,
+				});
 				await session.connect({
 					provider: "naia-omni",
 					localContainer: isLocalContainer || undefined,
 					refAudioUrl: naiaRefAudioUrl,
+					refAudio: localRefB64 ?? undefined,
 					serverUrl: isLocalContainer
 						? (config.naiaLocalUrl ?? DEFAULT_NAIA_LOCAL_URL)
 						: useGw
@@ -2165,7 +2228,12 @@ export function ChatPanel() {
 
 			setVoiceStatus({ phase: "active" });
 			lastVoiceStatusRef.current = { phase: "active" };
-			voiceStartRef.current = { time: Date.now(), provider: liveProvider };
+			voiceStartRef.current = {
+				time: Date.now(),
+				provider: liveProvider,
+				// Naia Local runs on the user's OWN GPU (direct, no cloud pod) → free.
+				localContainer: config.model === "naia-local",
+			};
 			Logger.info("ChatPanel", "Voice conversation started", {
 				provider: liveProvider,
 			});

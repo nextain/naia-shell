@@ -1,4 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+} from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,20 +76,34 @@ describe("OnboardingWizard", () => {
 
 	/** Advance past the goNext() 300ms transition lock. */
 	function flush() {
-		act(() => { vi.advanceTimersByTime(400); });
+		act(() => {
+			vi.advanceTimersByTime(400);
+		});
+	}
+
+	/**
+	 * Render and advance past the welcome step (Naia Alpha intro, #313) to the
+	 * first persona step (agentName). The persona-flow tests below assume
+	 * agentName renders first; the welcome step is now step 0.
+	 */
+	function renderAtAgentName() {
+		render(<OnboardingWizard onComplete={onComplete} />);
+		// welcome → Next → agentName
+		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
+		flush();
 	}
 
 	it("renders agentName step first", () => {
-		render(<OnboardingWizard onComplete={onComplete} />);
-		// First step is agentName — shows "Naia" placeholder input
+		renderAtAgentName();
+		// First persona step is agentName — shows "Naia" placeholder input
 		expect(screen.getByPlaceholderText("Naia")).toBeDefined();
 		expect(screen.getByRole("button", { name: /다음|Next/ })).toBeDefined();
 	});
 
 	it("shows agentName input and advances to userName on Next", () => {
-		render(<OnboardingWizard onComplete={onComplete} />);
+		renderAtAgentName();
 
-		// First step: agentName
+		// First persona step: agentName
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
@@ -92,15 +112,19 @@ describe("OnboardingWizard", () => {
 	});
 
 	it("progresses through steps: agentName → userName → speechStyle → character → background → provider", () => {
-		render(<OnboardingWizard onComplete={onComplete} />);
+		renderAtAgentName();
 
 		// agentName → Next
-		fireEvent.change(screen.getByPlaceholderText("Naia"), { target: { value: "Mochi" } });
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "Mochi" },
+		});
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
 		// userName → Next
-		fireEvent.change(screen.getByPlaceholderText("Luke"), { target: { value: "Luke" } });
+		fireEvent.change(screen.getByPlaceholderText("Luke"), {
+			target: { value: "Luke" },
+		});
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
@@ -122,10 +146,12 @@ describe("OnboardingWizard", () => {
 	});
 
 	it("Next button is always enabled (agentName is optional)", () => {
-		render(<OnboardingWizard onComplete={onComplete} />);
+		renderAtAgentName();
 
-		// First step: Next button should not be disabled
-		const nextBtn = screen.getByRole("button", { name: /다음|Next/ }) as HTMLButtonElement;
+		// agentName step: Next button should not be disabled
+		const nextBtn = screen.getByRole("button", {
+			name: /다음|Next/,
+		}) as HTMLButtonElement;
 		expect(nextBtn.disabled).toBe(false);
 
 		// Click Next without filling agentName → advances to userName step
@@ -135,15 +161,19 @@ describe("OnboardingWizard", () => {
 	});
 
 	it("complete step calls onComplete and saves config", () => {
-		render(<OnboardingWizard onComplete={onComplete} />);
+		renderAtAgentName();
 
 		// agentName
-		fireEvent.change(screen.getByPlaceholderText("Naia"), { target: { value: "Mochi" } });
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "Mochi" },
+		});
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
 		// userName
-		fireEvent.change(screen.getByPlaceholderText("Luke"), { target: { value: "Luke" } });
+		fireEvent.change(screen.getByPlaceholderText("Luke"), {
+			target: { value: "Luke" },
+		});
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
@@ -164,11 +194,15 @@ describe("OnboardingWizard", () => {
 		flush();
 
 		// complete → click "시작하기"
-		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
+		fireEvent.click(
+			screen.getByRole("button", { name: /시작하기|Get Started/ }),
+		);
 		flush();
 
 		// Wait for the 1200ms onComplete setTimeout
-		act(() => { vi.advanceTimersByTime(1300); });
+		act(() => {
+			vi.advanceTimersByTime(1300);
+		});
 
 		expect(onComplete).toHaveBeenCalled();
 
@@ -181,7 +215,7 @@ describe("OnboardingWizard", () => {
 
 	it("completes onboarding immediately after Naia login succeeds", () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk\\projects\\naia-adk");
-		render(<OnboardingWizard onComplete={onComplete} />);
+		renderAtAgentName();
 
 		const clickNext = () => {
 			const buttons = screen.getAllByRole("button");
@@ -218,8 +252,20 @@ describe("OnboardingWizard", () => {
 			});
 		});
 
-		expect(onComplete).toHaveBeenCalled();
+		// auth_complete advances to the complete step (no agentName input there);
+		// config save + onComplete fire when the user clicks "시작하기"
+		// (handleComplete → setTimeout(onComplete, 1200)). #313 added the welcome
+		// step but the login→complete→start flow is unchanged.
 		expect(screen.queryByPlaceholderText("Naia")).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: /시작하기|Get Started/ }),
+		);
+		flush();
+		act(() => {
+			vi.advanceTimersByTime(1300);
+		});
+
+		expect(onComplete).toHaveBeenCalled();
 
 		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(config.onboardingComplete).toBe(true);
@@ -245,22 +291,18 @@ describe("OnboardingWizard", () => {
 			const { openUrl } = await import("@tauri-apps/plugin-opener");
 
 			// generate_oauth_state Rust command mock — fixed CSRF token
-			(invoke as ReturnType<typeof vi.fn>).mockImplementation(
-				(cmd: string) => {
-					if (cmd === "generate_oauth_state") {
-						return Promise.resolve("csrf-test-token-abc123");
-					}
-					return Promise.resolve(true);
-				},
-			);
+			(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
+				if (cmd === "generate_oauth_state") {
+					return Promise.resolve("csrf-test-token-abc123");
+				}
+				return Promise.resolve(true);
+			});
 
 			render(<OnboardingWizard onComplete={onComplete} />);
 
 			// agentName → userName → speechStyle → character → background → provider
 			for (let i = 0; i < 5; i++) {
-				fireEvent.click(
-					screen.getByRole("button", { name: /다음|Next/ }),
-				);
+				fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 				flush();
 			}
 
@@ -325,4 +367,3 @@ describe("OnboardingWizard", () => {
 		});
 	});
 });
-

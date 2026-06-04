@@ -10,6 +10,7 @@ import {
 	readNaiaConfig,
 	setAdkPath,
 } from "../lib/adk-store";
+import { NAIA_WEB_BASE_URL } from "../lib/config";
 import { getLocale, t, type TranslationKey } from "../lib/i18n";
 
 interface AdkSetupScreenProps {
@@ -35,9 +36,7 @@ const STATUS_KEYS: Record<Exclude<SetupStatus, null>, TranslationKey> = {
 };
 
 function getNaiaWebBaseUrl() {
-	return (
-		import.meta.env.VITE_NAIA_WEB_BASE_URL?.trim() || "https://naia.nextain.io"
-	);
+	return NAIA_WEB_BASE_URL;
 }
 
 function clearAllLocalData() {

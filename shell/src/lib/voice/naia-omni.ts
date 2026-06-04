@@ -302,6 +302,7 @@ export function createNaiaOmniSession(): VoiceSession {
 							Logger.info("naia-omni", "connected to /v1/realtime", {
 								mode: useGateway ? "gateway" : "direct",
 								refAudio: encodedRefAudio !== null,
+								refAudioUrl: !!cfg?.refAudioUrl,
 							});
 							resolve();
 							return;
@@ -495,6 +496,42 @@ export function createNaiaOmniSession(): VoiceSession {
 				}),
 			);
 			ws.send(JSON.stringify({ type: "response.create" }));
+		},
+
+		setRefAudioUrl(url: string | null) {
+			// Persist so a later (re)connect re-sends it in the initial
+			// session.update; if a session is already live, switch the cloned
+			// voice now via session.update (web-demo parity, no reconnect).
+			if (cfg) cfg.refAudioUrl = url ?? undefined;
+			if (!ws || !connected || !url) return;
+			ws.send(
+				JSON.stringify({
+					type: "session.update",
+					model: cfg?.model ?? DEFAULT_MODEL,
+					session: { ref_audio_url: url },
+				}),
+			);
+		},
+
+		async setRefAudio(b64: string | null) {
+			// Embedded base64 ref voice (Naia Local recorded clip). Persist for a
+			// later (re)connect; if live, switch now via session.update.ref_audio.
+			if (cfg) cfg.refAudio = b64 ?? undefined;
+			if (!ws || !connected || !b64) return;
+			try {
+				const encoded = await encodeRefAudio(b64);
+				ws.send(
+					JSON.stringify({
+						type: "session.update",
+						model: cfg?.model ?? DEFAULT_MODEL,
+						session: { ref_audio: encoded },
+					}),
+				);
+			} catch (err) {
+				Logger.warn("naia-omni", "mid-session ref_audio rejected", {
+					error: String(err),
+				});
+			}
 		},
 
 		sendToolResponse(callId: string, result: unknown) {

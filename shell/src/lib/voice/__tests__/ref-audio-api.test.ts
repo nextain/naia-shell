@@ -127,10 +127,9 @@ describe("ref-audio preset (CONTRACT P1-P7)", () => {
 
 	it("P1: preset list fetch → maps snake_case to camelCase", async () => {
 		mockFetch.mockResolvedValue(
-			new Response(
-				JSON.stringify({ presets: [SAMPLE_PRESET], total: 1 }),
-				{ status: 200 },
-			),
+			new Response(JSON.stringify({ presets: [SAMPLE_PRESET], total: 1 }), {
+				status: 200,
+			}),
 		);
 		const list = await getRefAudioPresets();
 		expect(list).toHaveLength(1);
@@ -259,9 +258,12 @@ describe("getRefAudioContent (upload preview)", () => {
 
 	it("200 → WAV blob, GET content with Bearer Authorization", async () => {
 		mockFetch.mockResolvedValue(
-			new Response(new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }), {
-				status: 200,
-			}),
+			new Response(
+				new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" }),
+				{
+					status: 200,
+				},
+			),
 		);
 		const blob = await getRefAudioContent();
 		expect(blob).toBeInstanceOf(Blob);

@@ -30,6 +30,7 @@ import {
 	DEFAULT_OLLAMA_HOST,
 	DEFAULT_VLLM_HOST,
 	LAB_GATEWAY_URL,
+	NAIA_WEB_BASE_URL,
 	type SttProviderId,
 	type ThemeId,
 	type TtsProviderId,
@@ -243,9 +244,9 @@ const LOCALES: { id: Locale; label: string }[] = [
 ];
 
 function getNaiaWebBaseUrl() {
-	return (
-		import.meta.env.VITE_NAIA_WEB_BASE_URL?.trim() || "https://naia.nextain.io"
-	);
+	// dev (tauri:dev) → localhost:3001, prod (tauri:prod) → naia.nextain.io.
+	// Same VITE_NAIA_USE_DEV_GATEWAY flag as the gateway (see config.ts).
+	return NAIA_WEB_BASE_URL;
 }
 
 interface DeviceNode {
@@ -1240,6 +1241,10 @@ export function SettingsTab() {
 			);
 			const params = new URLSearchParams({
 				redirect: "desktop",
+				// naia.nextain.io buildLoginRedirect requires BOTH redirect=desktop
+				// AND app=naia-os (2026-05-28 security gate) — without `app` it
+				// redirects to /dashboard and the desktop callback never fires.
+				app: "naia-os",
 				source: "desktop",
 				// #341 옵션 B — Linux dev:tauri 의 naia:// 미등록 우회.
 				// 운영 웹 측이 redirect_uri 받으면 그 URL 로 redirect;
@@ -2134,7 +2139,7 @@ export function SettingsTab() {
 	// GET /v1/ref-audio. Gate the section on this.
 	const supportsRefAudio =
 		isSelectedOmni && (modelIdLower.startsWith("naia-") || provider === "vllm");
-	const manualUrl = `https://naia.nextain.io/${locale}/manual`;
+	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
 	// Discord integration — unverified, hidden until stabilized
 	// async function handleDiscordBotConnect() { ... }
@@ -4039,7 +4044,7 @@ export function SettingsTab() {
 										className="voice-preview-btn"
 										onClick={() =>
 											openUrl(
-												`https://naia.nextain.io/${locale}/dashboard`,
+												`${getNaiaWebBaseUrl()}/${locale}/dashboard`,
 											).catch(() => {})
 										}
 									>
@@ -4050,7 +4055,7 @@ export function SettingsTab() {
 										className="voice-preview-btn"
 										onClick={() =>
 											openUrl(
-												`https://naia.nextain.io/${locale}/billing`,
+												`${getNaiaWebBaseUrl()}/${locale}/billing`,
 											).catch(() => {})
 										}
 									>

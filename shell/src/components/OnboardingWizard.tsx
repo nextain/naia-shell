@@ -6,7 +6,7 @@ import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlob
 import { syncToGateway } from "../lib/gateway-sync";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { sendAuthUpdate } from "../lib/chat-service";
-import { loadConfig, saveConfig } from "../lib/config";
+import { NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
@@ -99,9 +99,7 @@ function getBackgroundMediaType(path: string): "image" | "video" | "" {
 }
 
 function getNaiaWebBaseUrl() {
-	return (
-		import.meta.env.VITE_NAIA_WEB_BASE_URL?.trim() || "https://naia.nextain.io"
-	);
+	return NAIA_WEB_BASE_URL;
 }
 
 export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
@@ -310,6 +308,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			);
 			const params = new URLSearchParams({
 				redirect: "desktop",
+				// naia.nextain.io buildLoginRedirect requires BOTH redirect=desktop
+				// AND app=naia-os (2026-05-28 security gate) — without `app` it
+				// redirects to /dashboard and the desktop callback never fires.
+				app: "naia-os",
 				source: "desktop",
 				// #341 옵션 B — Linux dev:tauri 에서 naia:// scheme OS 미등록
 				// 우회. Rust 측이 127.0.0.1:18792/auth/callback 에서 HTTP 로

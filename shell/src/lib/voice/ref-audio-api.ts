@@ -20,6 +20,34 @@ import { encodeRefAudio } from "./ref-audio";
 
 const TAG = "RefAudioApi";
 
+// ── Naia Local recorded/uploaded reference voice (no gateway, no credits) ──
+// For Naia Local the voice WS goes direct to the user's own container, so the
+// gateway GCS upload+inject path can't reach it (and would charge $0.01). We
+// instead keep the recorded clip as a base64 WAV in localStorage and send it
+// straight to the container as `session.update.session.ref_audio`. Stored
+// outside AppConfig so the (large) blob never bloats the frequently-saved
+// config JSON.
+const LOCAL_REF_AUDIO_KEY = "naia.voiceRefAudioB64";
+
+/** Persist (or clear) the local recorded reference voice as a base64 WAV. */
+export function setLocalRefAudioB64(b64: string | null): void {
+	try {
+		if (b64) localStorage.setItem(LOCAL_REF_AUDIO_KEY, b64);
+		else localStorage.removeItem(LOCAL_REF_AUDIO_KEY);
+	} catch {
+		// localStorage unavailable — non-fatal.
+	}
+}
+
+/** The locally-stored recorded reference voice (base64 WAV), or null. */
+export function getLocalRefAudioB64(): string | null {
+	try {
+		return localStorage.getItem(LOCAL_REF_AUDIO_KEY);
+	} catch {
+		return null;
+	}
+}
+
 export interface RefAudioActive {
 	/** "upload" | "preset" — absent on legacy gateway = treat as "upload". */
 	kind?: "upload" | "preset";
@@ -408,26 +436,6 @@ export async function deleteRefAudio(
 		);
 	}
 	Logger.info(TAG, "ref-audio deleted", { hardDelete: !!options.hardDelete });
-}
-
-/**
- * Resolve the user's active ref-audio to an https URL for
- * `session.update.ref_audio_url` (#15). A preset maps to its `sample_url`
- * (GCS, on the backend allowlist). Uploads currently have no client-visible
- * URL, so this returns `null` and the caller proceeds without a ref-url
- * (the realtime session uses the default voice). Best-effort: any error
- * returns `null` rather than blocking the voice session.
- */
-export async function getActiveRefAudioUrl(): Promise<string | null> {
-	const status = await getRefAudioStatus();
-	const active = status.active;
-	if (!active) return null;
-	if (active.kind === "preset" && active.presetId) {
-		const presets = await getRefAudioPresets();
-		const match = presets.find((p) => p.id === active.presetId);
-		return match?.sampleUrl ?? null;
-	}
-	return null;
 }
 
 /**

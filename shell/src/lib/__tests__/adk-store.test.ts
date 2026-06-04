@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockInvoke, mockConvertFileSrc } = vi.hoisted(() => ({
 	mockInvoke: vi.fn(),
-	mockConvertFileSrc: vi.fn((path: string) =>
-		`asset://localhost/${path.replace(/\\/g, "/")}`,
+	mockConvertFileSrc: vi.fn(
+		(path: string) => `asset://localhost/${path.replace(/\\/g, "/")}`,
 	),
 }));
 
@@ -36,6 +36,10 @@ const UNIX_ADK = "/home/luke/naia-adk";
 beforeEach(() => {
 	localStorage.clear();
 	mockInvoke.mockReset();
+	// Default: any invoke resolves. setAdkPath fires a fire-and-forget
+	// invoke("write_naia_path_cache").catch(...); without a resolved default the
+	// reset mock returns undefined and the .catch() throws (#313 Naia Local).
+	mockInvoke.mockResolvedValue(undefined);
 	mockConvertFileSrc.mockClear();
 });
 
@@ -90,13 +94,17 @@ describe("clearAdkPath", () => {
 
 describe("toAssetUrl", () => {
 	it("converts a Windows absolute path to an asset:// URL", () => {
-		const url = toAssetUrl("D:\\Users\\luke\\naia-adk\\naia-settings\\background\\bg.png");
+		const url = toAssetUrl(
+			"D:\\Users\\luke\\naia-adk\\naia-settings\\background\\bg.png",
+		);
 		expect(url).toContain("asset://");
 		expect(url).toContain("bg.png");
 	});
 
 	it("converts a Unix absolute path to an asset:// URL", () => {
-		const url = toAssetUrl("/home/luke/naia-adk/naia-settings/vrm-files/naia.vrm");
+		const url = toAssetUrl(
+			"/home/luke/naia-adk/naia-settings/vrm-files/naia.vrm",
+		);
 		expect(url).toContain("asset://");
 		expect(url).toContain("naia.vrm");
 	});
@@ -132,7 +140,10 @@ describe("listNaiaAssets", () => {
 
 	it("calls invoke with correct args and maps filenames to absolute paths (Unix)", async () => {
 		setAdkPath(UNIX_ADK);
-		mockInvoke.mockResolvedValue(["background-space.png", "anime-rainbow-landscape.jpg"]);
+		mockInvoke.mockResolvedValue([
+			"background-space.png",
+			"anime-rainbow-landscape.jpg",
+		]);
 
 		const result = await listNaiaAssets("background");
 
@@ -180,7 +191,9 @@ describe("readNaiaConfig", () => {
 
 	it("parses and returns config JSON", async () => {
 		setAdkPath(WIN_ADK);
-		mockInvoke.mockResolvedValue(JSON.stringify({ provider: "gemini", apiKey: "key123" }));
+		mockInvoke.mockResolvedValue(
+			JSON.stringify({ provider: "gemini", apiKey: "key123" }),
+		);
 
 		const config = await readNaiaConfig();
 		expect(config).not.toBeNull();
@@ -214,11 +227,15 @@ describe("copyBundledAssets", () => {
 	it("calls invoke copy_bundled_assets with adkPath", async () => {
 		mockInvoke.mockResolvedValue(undefined);
 		await copyBundledAssets(WIN_ADK);
-		expect(mockInvoke).toHaveBeenCalledWith("copy_bundled_assets", { adkPath: WIN_ADK });
+		expect(mockInvoke).toHaveBeenCalledWith("copy_bundled_assets", {
+			adkPath: WIN_ADK,
+		});
 	});
 
 	it("throws copy errors so setup can surface them", async () => {
-		mockInvoke.mockRejectedValue(new Error("Bundled assets directory not found"));
+		mockInvoke.mockRejectedValue(
+			new Error("Bundled assets directory not found"),
+		);
 		await expect(copyBundledAssets(WIN_ADK)).rejects.toThrow(
 			"Bundled assets directory not found",
 		);

@@ -14,6 +14,15 @@ export const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
 /** Default address for the Naia Local container (omni-24g realtime WS). */
 export const DEFAULT_NAIA_LOCAL_URL = "ws://localhost:8892";
 
+/**
+ * Default reference voice ("여성 음색 1" / cc0-ko-female-01) used when the user
+ * has no custom ref and no preset selected. Public CC0 sample (Mozilla Common
+ * Voice) on the gateway's public bucket — sent as `ref_audio_url` so the omni
+ * voice is always a stable human voice, never the unconditioned/random default.
+ */
+export const DEFAULT_VOICE_REF_URL =
+	"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-female-01.wav";
+
 export type ThemeId =
 	| "system"
 	| "espresso"
@@ -89,6 +98,14 @@ export interface AppConfig {
 	/** Naia Cloud TTS backend engine (e.g. "google-chirp3-hd"). */
 	naiaCloudTtsBackend?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
+	/**
+	 * Active voice-reference preset sample URL for realtime voice (omni). Set
+	 * when the user applies a preset in Settings; sent verbatim as
+	 * `session.update.ref_audio_url` at connect (the deterministic source the
+	 * web demo uses — no dependence on the GET /v1/ref-audio status round-trip).
+	 * Empty for uploads/recordings (those are injected server-side from GCS).
+	 */
+	voiceRefUrl?: string;
 	persona?: string;
 	enableTools?: boolean;
 	enableThinking?: boolean;
@@ -543,9 +560,10 @@ export function getUserName(): string | undefined {
 // Release runtime gateway (the gateway a DISTRIBUTED build talks to — distinct
 // from the auto-updater endpoint, which is GitHub Releases).
 // ⚠️ MIGRATION PLANNED: this Cloud Run URL is being replaced by a prod GCP VM
-// (mirrors the dev VM move already done — dev = http://34.64.69.73:8080). When
-// the prod VM is live, update this fallback (or ship VITE_NAIA_GATEWAY_URL via
-// the prod env). See memory: naia-anyllm-vm-migration.
+// (mirrors the dev VM move already done). When the prod VM is live, set the URL
+// via the prod env (VITE_NAIA_GATEWAY_URL) rather than hardcoding it. Dev/prod
+// VM addresses are kept OUT of this public repo (use .env, gitignored) — see
+// memory: naia-anyllm-vm-migration.
 const _PROD_GATEWAY =
 	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) ||
 	"https://naia-gateway-181404717065.asia-northeast3.run.app";
@@ -573,6 +591,13 @@ export const LAB_GATEWAY_URL =
 
 /** Dev-only gateway URL (always available regardless of mode). */
 export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
+
+// Naia web app base (login portal / dashboard / manual). Set per environment in
+// .env.{dev,prod} via VITE_NAIA_WEB_BASE_URL (loaded by scripts/tauri-with-mode.mjs):
+// `tauri:dev` → http://localhost:3001, `tauri:prod` → https://naia.nextain.io.
+export const NAIA_WEB_BASE_URL =
+	(import.meta.env.VITE_NAIA_WEB_BASE_URL as string) ||
+	"https://naia.nextain.io";
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";

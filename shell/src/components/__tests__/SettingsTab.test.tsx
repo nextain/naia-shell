@@ -1,9 +1,16 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+} from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const eventListeners = vi.hoisted(
-	() => new Map<string, (event: { payload: unknown }) => void | Promise<void>>(),
+	() =>
+		new Map<string, (event: { payload: unknown }) => void | Promise<void>>(),
 );
 
 vi.mock("@tauri-apps/plugin-store", () => {
@@ -53,6 +60,22 @@ vi.mock("../../lib/gateway-sync", () => ({
 
 import { SettingsTab } from "../SettingsTab";
 
+// SettingsTab was rewritten into a 5-tab layout (#313): the old flat / 2-tab
+// structure split into general | ai | skills | memory | info. Provider+API key,
+// STT/TTS and the model list moved to the "ai" tab; memory to "memory";
+// log viewer + danger zone to "info". Tests navigate via this helper.
+const SETTINGS_TAB_INDEX = {
+	general: 0,
+	ai: 1,
+	skills: 2,
+	memory: 3,
+	info: 4,
+} as const;
+function gotoSettingsTab(name: keyof typeof SETTINGS_TAB_INDEX) {
+	const btns = document.querySelectorAll(".settings-tab-btn");
+	fireEvent.click(btns[SETTINGS_TAB_INDEX[name]] as HTMLButtonElement);
+}
+
 describe("SettingsTab", () => {
 	afterEach(() => {
 		cleanup();
@@ -78,6 +101,7 @@ describe("SettingsTab", () => {
 			}),
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("ai");
 
 		await vi.waitFor(() => {
 			expect(screen.getByText("Test Model ($1.5 / $2.5)")).toBeDefined();
@@ -96,6 +120,7 @@ describe("SettingsTab", () => {
 			]),
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("ai");
 
 		await vi.waitFor(() => {
 			expect(screen.getByText("Gemini Ultra Test")).toBeDefined();
@@ -105,22 +130,24 @@ describe("SettingsTab", () => {
 	it("renders provider select and API key input", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("ai");
 		const providerSelect = document.getElementById("provider-select");
 		expect(providerSelect).toBeDefined();
 		expect(screen.getByLabelText(/^API/i)).toBeDefined();
 	});
 
-	it("replaces API key input with Naia account UI", () => {
+	it("hides API key input for Naia (nextain) provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("ai");
 		const providerSelect = document.getElementById(
 			"provider-select",
 		) as HTMLSelectElement;
 		fireEvent.change(providerSelect, { target: { value: "nextain" } });
+		// #313 rewrite: nextain reuses the logged-in Naia key, so the AI tab just
+		// omits the API key input (the account login UI lives on the info tab).
 		expect(screen.queryByLabelText(/^API/i)).toBeNull();
-		expect(
-			screen.getByText("Naia 계정 로그인으로 API 키 없이 사용할 수 있습니다."),
-		).toBeDefined();
+		expect(providerSelect.value).toBe("nextain");
 	});
 
 	it("persists Naia auth callback even when no config exists yet", async () => {
@@ -157,8 +184,9 @@ describe("SettingsTab", () => {
 	it("shows STT provider selector with vosk option", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("ai");
 
-		// STT provider selector is always visible in voice section
+		// STT provider selector is in the voice section of the AI tab
 		const sttSelect = screen
 			.getByText(/Vosk/)
 			?.closest("select") as HTMLSelectElement;
@@ -170,16 +198,15 @@ describe("SettingsTab", () => {
 	it("hides API key input for Claude Code CLI provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("ai");
 		const providerSelect = document.getElementById(
 			"provider-select",
 		) as HTMLSelectElement;
 		fireEvent.change(providerSelect, { target: { value: "claude-code-cli" } });
+		// #313 rewrite: claude-code-cli uses the local CLI login session, so the
+		// AI tab omits the API key input (no separate hint text).
 		expect(screen.queryByLabelText(/^API/i)).toBeNull();
-		expect(
-			screen.getByText(
-				"Claude Code CLI provider는 로컬 CLI 로그인 세션을 사용합니다.",
-			),
-		).toBeDefined();
+		expect(providerSelect.value).toBe("claude-code-cli");
 	});
 
 	it("renders VRM model picker — shows empty state when no VRMs in naia-settings", () => {
@@ -194,7 +221,8 @@ describe("SettingsTab", () => {
 		// Set adkPath so listNaiaAssets actually calls invoke
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		mockInvoke.mockImplementation((cmd: string) => {
-			if (cmd === "list_naia_assets") return Promise.resolve(["03-OL_Woman.vrm", "04-Hood_Boy.vrm"]);
+			if (cmd === "list_naia_assets")
+				return Promise.resolve(["03-OL_Woman.vrm", "04-Hood_Boy.vrm"]);
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
@@ -222,7 +250,8 @@ describe("SettingsTab", () => {
 	it("selects VRM item from naia-settings and marks as active", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		mockInvoke.mockImplementation((cmd: string) => {
-			if (cmd === "list_naia_assets") return Promise.resolve(["03-OL_Woman.vrm"]);
+			if (cmd === "list_naia_assets")
+				return Promise.resolve(["03-OL_Woman.vrm"]);
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
@@ -236,11 +265,8 @@ describe("SettingsTab", () => {
 	it("renders memory section with empty state", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		// Switch to memory tab first (tab bar separates memory from settings)
-		const memoryTabBtn = document.querySelector(
-			".settings-tab-btn:not(.settings-tab-btn--active)",
-		) as HTMLButtonElement;
-		fireEvent.click(memoryTabBtn);
+		// Switch to the memory tab first (tab bar separates memory from settings)
+		gotoSettingsTab("memory");
 		// Multiple elements match /Memory/i (Memory Adapter, Memory LLM, etc.) — use getAllByText
 		expect(screen.getAllByText(/기억|Memory/i).length).toBeGreaterThan(0);
 		expect(screen.getByText(/저장된 기억이|No stored memories/i)).toBeDefined();
@@ -263,11 +289,8 @@ describe("SettingsTab", () => {
 			},
 		]);
 		render(<SettingsTab />);
-		// Switch to memory tab first
-		const memoryTabBtn = document.querySelector(
-			".settings-tab-btn:not(.settings-tab-btn--active)",
-		) as HTMLButtonElement;
-		fireEvent.click(memoryTabBtn);
+		// Switch to the memory tab first
+		gotoSettingsTab("memory");
 
 		await vi.waitFor(() => {
 			expect(screen.getByText("favorite_lang is Rust")).toBeDefined();
@@ -278,16 +301,19 @@ describe("SettingsTab", () => {
 	it("saves config with VRM model from naia-settings", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		mockInvoke.mockImplementation((cmd: string) => {
-			if (cmd === "list_naia_assets") return Promise.resolve(["03-OL_Woman.vrm"]);
+			if (cmd === "list_naia_assets")
+				return Promise.resolve(["03-OL_Woman.vrm"]);
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
 
-		// Set API key
+		// Set API key (AI tab); state persists across tab switches
+		gotoSettingsTab("ai");
 		const apiInput = screen.getByLabelText(/^API/i);
 		fireEvent.change(apiInput, { target: { value: "test-key" } });
 
-		// Wait for VRM item to appear and select it
+		// VRM picker lives on the general tab — switch back, then select it
+		gotoSettingsTab("general");
 		const vrmImg = await screen.findByAltText("03-OL_Woman");
 		fireEvent.click(vrmImg.closest("button")!);
 
@@ -311,8 +337,8 @@ describe("SettingsTab", () => {
 	it("shows error for empty API key", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		// Use the settings-save-btn class to find the correct save button
-		// (avoid matching "저장된 기억이..." text nodes that also contain "저장")
+		// Provider/API key + the save error banner live on the AI tab.
+		gotoSettingsTab("ai");
 		const saveBtn = document.querySelector(".settings-save-btn") as HTMLElement;
 		fireEvent.click(saveBtn);
 		expect(screen.getByText(/입력해주세요|enter.*api/i)).toBeDefined();
@@ -328,13 +354,14 @@ describe("SettingsTab — memory tab (#298)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("renders settings tab bar with two tab buttons", () => {
+	it("renders settings tab bar with five tab buttons", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		const tabBar = document.querySelector(".settings-tab-bar");
 		expect(tabBar).toBeTruthy();
+		// #313 rewrite: general | ai | skills | memory | info
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		expect(tabBtns.length).toBe(2);
+		expect(tabBtns.length).toBe(5);
 	});
 
 	it("first tab button is active by default", () => {
@@ -370,13 +397,15 @@ describe("SettingsTab — memory tab (#298)", () => {
 	it("clicking memory tab button shows memory section", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		// Click the second tab button (memory)
+		// Click the memory tab button (index 3 in the 5-tab bar)
+		gotoSettingsTab("memory");
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		fireEvent.click(tabBtns[1]!);
-		// Now the second button is active
-		expect(tabBtns[1]?.classList.contains("settings-tab-btn--active")).toBe(
-			true,
-		);
+		// The memory tab button is now active
+		expect(
+			tabBtns[SETTINGS_TAB_INDEX.memory]?.classList.contains(
+				"settings-tab-btn--active",
+			),
+		).toBe(true);
 		// Memory section divider should now appear
 		const dividerTexts = Array.from(
 			document.querySelectorAll(".settings-section-divider span"),
@@ -390,22 +419,21 @@ describe("SettingsTab — memory tab (#298)", () => {
 	it("switching to memory tab hides settings-danger-zone", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		// Initially danger zone is visible (settings tab)
+		// #313 rewrite: the danger zone moved to the info tab.
+		gotoSettingsTab("info");
 		expect(document.querySelector(".settings-danger-zone")).toBeTruthy();
-		// Switch to memory tab (second button)
-		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		fireEvent.click(tabBtns[1]!);
+		// Switch to memory tab — danger zone hidden
+		gotoSettingsTab("memory");
 		expect(document.querySelector(".settings-danger-zone")).toBeNull();
 	});
 
-	it("switching back to settings tab restores danger-zone and hides memory section", () => {
+	it("switching back to info tab restores danger-zone and hides memory section", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		// Go to memory tab
-		fireEvent.click(tabBtns[1]!);
-		// Go back to settings tab (first button)
-		fireEvent.click(tabBtns[0]!);
+		// Info tab → memory tab → back to info tab (danger zone lives on info).
+		gotoSettingsTab("info");
+		gotoSettingsTab("memory");
+		gotoSettingsTab("info");
 		// Danger zone back
 		expect(document.querySelector(".settings-danger-zone")).toBeTruthy();
 		// Memory section divider gone
@@ -431,14 +459,20 @@ describe("SettingsTab — agent health check (#296)", () => {
 	it("renders agent health section with check button", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		expect(document.querySelector("[data-testid='agent-health-section']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='agent-health-check-btn']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='agent-health-section']"),
+		).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='agent-health-check-btn']"),
+		).toBeTruthy();
 	});
 
 	it("shows idle status initially", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
+		const statusEl = document.querySelector(
+			"[data-testid='agent-health-status']",
+		) as HTMLElement;
 		expect(statusEl).toBeTruthy();
 		// In English test env, "Not checked" is shown
 		expect(statusEl.classList.contains("agent-health-status--idle")).toBe(true);
@@ -447,7 +481,9 @@ describe("SettingsTab — agent health check (#296)", () => {
 	it("clicking check button calls gateway_health invoke", async () => {
 		mockInvoke.mockResolvedValue(true);
 		render(<SettingsTab />);
-		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		const btn = document.querySelector(
+			"[data-testid='agent-health-check-btn']",
+		) as HTMLButtonElement;
 		fireEvent.click(btn);
 
 		await vi.waitFor(() => {
@@ -464,12 +500,18 @@ describe("SettingsTab — agent health check (#296)", () => {
 			return [];
 		});
 		render(<SettingsTab />);
-		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		const btn = document.querySelector(
+			"[data-testid='agent-health-check-btn']",
+		) as HTMLButtonElement;
 		fireEvent.click(btn);
 
 		await vi.waitFor(() => {
-			const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
-			expect(statusEl.classList.contains("agent-health-status--healthy")).toBe(true);
+			const statusEl = document.querySelector(
+				"[data-testid='agent-health-status']",
+			) as HTMLElement;
+			expect(statusEl.classList.contains("agent-health-status--healthy")).toBe(
+				true,
+			);
 		});
 	});
 
@@ -479,12 +521,18 @@ describe("SettingsTab — agent health check (#296)", () => {
 			return [];
 		});
 		render(<SettingsTab />);
-		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		const btn = document.querySelector(
+			"[data-testid='agent-health-check-btn']",
+		) as HTMLButtonElement;
 		fireEvent.click(btn);
 
 		await vi.waitFor(() => {
-			const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
-			expect(statusEl.classList.contains("agent-health-status--unhealthy")).toBe(true);
+			const statusEl = document.querySelector(
+				"[data-testid='agent-health-status']",
+			) as HTMLElement;
+			expect(
+				statusEl.classList.contains("agent-health-status--unhealthy"),
+			).toBe(true);
 		});
 	});
 
@@ -492,11 +540,15 @@ describe("SettingsTab — agent health check (#296)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		// By default on settings tab — health section should be visible
-		expect(document.querySelector("[data-testid='agent-health-section']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='agent-health-section']"),
+		).toBeTruthy();
 		// Switch to memory tab — health section should disappear
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
 		fireEvent.click(tabBtns[1]!);
-		expect(document.querySelector("[data-testid='agent-health-section']")).toBeNull();
+		expect(
+			document.querySelector("[data-testid='agent-health-section']"),
+		).toBeNull();
 	});
 
 	it("shows unhealthy status when gateway_health throws", async () => {
@@ -505,12 +557,18 @@ describe("SettingsTab — agent health check (#296)", () => {
 			return [];
 		});
 		render(<SettingsTab />);
-		const btn = document.querySelector("[data-testid='agent-health-check-btn']") as HTMLButtonElement;
+		const btn = document.querySelector(
+			"[data-testid='agent-health-check-btn']",
+		) as HTMLButtonElement;
 		fireEvent.click(btn);
 
 		await vi.waitFor(() => {
-			const statusEl = document.querySelector("[data-testid='agent-health-status']") as HTMLElement;
-			expect(statusEl.classList.contains("agent-health-status--unhealthy")).toBe(true);
+			const statusEl = document.querySelector(
+				"[data-testid='agent-health-status']",
+			) as HTMLElement;
+			expect(
+				statusEl.classList.contains("agent-health-status--unhealthy"),
+			).toBe(true);
 		});
 	});
 });
@@ -533,44 +591,53 @@ describe("SettingsTab — log viewer (#297)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("renders log viewer button on settings tab", () => {
+	it("renders log viewer button on info tab", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeTruthy();
+		// #313 rewrite: the log viewer moved to the info tab.
+		gotoSettingsTab("info");
+		expect(
+			document.querySelector("[data-testid='log-viewer-btn']"),
+		).toBeTruthy();
 	});
 
-	it("log viewer button is on settings tab only (not memory tab)", () => {
+	it("log viewer button is on info tab only (not memory tab)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		// Settings tab: visible
-		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeTruthy();
+		// Info tab: visible
+		gotoSettingsTab("info");
+		expect(
+			document.querySelector("[data-testid='log-viewer-btn']"),
+		).toBeTruthy();
 		// Switch to memory tab: hidden
-		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		fireEvent.click(tabBtns[1]!);
+		gotoSettingsTab("memory");
 		expect(document.querySelector("[data-testid='log-viewer-btn']")).toBeNull();
 	});
 
-	it("clicking log viewer button calls get_gateway_log_path then openPath", async () => {
-		const logPath = "/home/user/.naia/logs/gateway.log";
+	it("clicking log viewer button calls get_log_dir then openPath", async () => {
+		const logDir = "/home/user/.naia/logs";
 		mockInvoke.mockImplementation(async (cmd: string) => {
-			if (cmd === "get_gateway_log_path") return logPath;
+			if (cmd === "get_log_dir") return logDir;
 			return [];
 		});
 		mockOpenPath.mockResolvedValue(undefined);
 
 		render(<SettingsTab />);
-		const btn = document.querySelector("[data-testid='log-viewer-btn']") as HTMLButtonElement;
+		gotoSettingsTab("info");
+		const btn = document.querySelector(
+			"[data-testid='log-viewer-btn']",
+		) as HTMLButtonElement;
 		fireEvent.click(btn);
 
 		await vi.waitFor(() => {
-			const logPathCalls = (mockInvoke as any).mock.calls.filter(
-				([cmd]: [string]) => cmd === "get_gateway_log_path",
+			const logDirCalls = (mockInvoke as any).mock.calls.filter(
+				([cmd]: [string]) => cmd === "get_log_dir",
 			);
-			expect(logPathCalls.length).toBeGreaterThanOrEqual(1);
+			expect(logDirCalls.length).toBeGreaterThanOrEqual(1);
 		});
 
 		await vi.waitFor(() => {
-			expect(mockOpenPath).toHaveBeenCalledWith(logPath);
+			expect(mockOpenPath).toHaveBeenCalledWith(logDir);
 		});
 	});
 });

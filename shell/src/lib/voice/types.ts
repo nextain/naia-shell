@@ -284,6 +284,21 @@ export interface VoiceSession {
 	 * it, and the panel-context bridge degrades to the next-turn system prompt.
 	 */
 	sendContextUpdate?: (ctx: PanelContextUpdate) => void;
+	/**
+	 * Switch the reference (cloned) voice mid-session. Sends a `session.update`
+	 * with the new `ref_audio_url` so the change takes effect WITHOUT a reconnect
+	 * (web-demo parity — `naia-omni-client.setRefAudioUrl`). Optional; providers
+	 * without realtime ref switching omit it. `null` keeps the current voice.
+	 */
+	setRefAudioUrl?: (url: string | null) => void;
+	/**
+	 * Switch the reference voice mid-session using an embedded base64 WAV
+	 * (`session.update.session.ref_audio`). Used by Naia Local for a
+	 * recorded/uploaded voice that is NOT on a public URL — the clip is sent
+	 * straight to the user's own container (no gateway, no credit charge).
+	 * Optional; `null` keeps the current voice.
+	 */
+	setRefAudio?: (b64: string | null) => void;
 	disconnect: () => void;
 	readonly isConnected: boolean;
 

@@ -22,8 +22,10 @@ vi.mock("../../lib/browser-prefs", () => ({
 	loadBrowserShortcuts: (...a: unknown[]) => mockLoadBrowserShortcuts(...a),
 	addBrowserShortcut: vi.fn().mockResolvedValue([]),
 	removeBrowserShortcut: (...a: unknown[]) => mockRemoveBrowserShortcut(...a),
-	reorderBrowserShortcuts: (...a: unknown[]) => mockReorderBrowserShortcuts(...a),
-	updateBrowserShortcutIcon: (...a: unknown[]) => mockUpdateBrowserShortcutIcon(...a),
+	reorderBrowserShortcuts: (...a: unknown[]) =>
+		mockReorderBrowserShortcuts(...a),
+	updateBrowserShortcutIcon: (...a: unknown[]) =>
+		mockUpdateBrowserShortcutIcon(...a),
 	onBrowserPrefsChanged: vi.fn().mockReturnValue(() => {}),
 }));
 
@@ -42,6 +44,15 @@ vi.mock("../../lib/panel-registry", () => ({
 		get: vi.fn().mockReturnValue(undefined),
 		getApi: vi.fn().mockReturnValue(undefined),
 		unregister: vi.fn(),
+	},
+	// Stub bridge: active-bridge.ts constructs one at module load. Keep it a
+	// no-op so the registry stays fully isolated from stores/panel (the real
+	// pushContext dynamic-imports the store). (#313 added ActivePanelBridge.)
+	ActivePanelBridge: class {
+		pushContext = vi.fn();
+		onToolCall = vi.fn().mockReturnValue(() => {});
+		callTool = vi.fn().mockResolvedValue("ok");
+		logBehavior = vi.fn().mockResolvedValue(undefined);
 	},
 }));
 
@@ -79,7 +90,12 @@ vi.mock("../../stores/panel", () => ({
 import { act } from "@testing-library/react";
 import { ModeBar } from "../ModeBar";
 
-const SHORTCUT = { title: "Google", url: "https://google.com", iconUrl: undefined, createdAt: 1000 };
+const SHORTCUT = {
+	title: "Google",
+	url: "https://google.com",
+	iconUrl: undefined,
+	createdAt: 1000,
+};
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
@@ -180,7 +196,7 @@ describe("ModeBar — edit mode (#295)", () => {
 	});
 
 	it("clicking ✕ calls removeBrowserShortcut with correct url", async () => {
-		const updated: typeof SHORTCUT[] = [];
+		const updated: (typeof SHORTCUT)[] = [];
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
 		mockRemoveBrowserShortcut.mockResolvedValue(updated);
 		render(<ModeBar />);
@@ -196,10 +212,14 @@ describe("ModeBar — edit mode (#295)", () => {
 		await act(async () => {});
 		fireEvent.click(document.querySelector(".mode-bar-edit")!);
 		// In edit mode, clicking shortcut opens icon editor (not browser navigation)
-		const shortcutBtn = document.querySelector(".mode-bar-tab--edit") as HTMLButtonElement;
+		const shortcutBtn = document.querySelector(
+			".mode-bar-tab--edit",
+		) as HTMLButtonElement;
 		fireEvent.click(shortcutBtn);
 		// Icon editor input should appear
-		expect(screen.getByPlaceholderText("이모지 또는 이미지 URL (비우면 기본값)")).toBeDefined();
+		expect(
+			screen.getByPlaceholderText("이모지 또는 이미지 URL (비우면 기본값)"),
+		).toBeDefined();
 	});
 
 	it("icon editor save calls updateBrowserShortcutIcon", async () => {
@@ -211,11 +231,16 @@ describe("ModeBar — edit mode (#295)", () => {
 		fireEvent.click(document.querySelector(".mode-bar-edit")!);
 		fireEvent.click(document.querySelector(".mode-bar-tab--edit")!);
 		// Type new icon
-		const input = screen.getByPlaceholderText("이모지 또는 이미지 URL (비우면 기본값)");
+		const input = screen.getByPlaceholderText(
+			"이모지 또는 이미지 URL (비우면 기본값)",
+		);
 		fireEvent.change(input, { target: { value: "🎯" } });
 		// Submit
 		fireEvent.click(screen.getByText("settings.save"));
 		await act(async () => {});
-		expect(mockUpdateBrowserShortcutIcon).toHaveBeenCalledWith(SHORTCUT.url, "🎯");
+		expect(mockUpdateBrowserShortcutIcon).toHaveBeenCalledWith(
+			SHORTCUT.url,
+			"🎯",
+		);
 	});
 });

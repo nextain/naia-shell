@@ -57,12 +57,11 @@ export function createLabProxyProvider(
 	const resolvedGatewayUrl = gatewayUrl ?? GATEWAY_URL;
 	return {
 		async *stream(messages, systemPrompt, tools, signal): AgentStream {
-			if (!resolvedGatewayUrl.startsWith("https://")) {
-				throw new Error(
-					`Lab proxy: rejecting non-HTTPS gateway URL "${resolvedGatewayUrl}" - naiaKey credential must only be sent over HTTPS.`,
-				);
-			}
-
+			// Plaintext (non-HTTPS) gateway URLs are NOT blocked at the OS layer:
+			// securing the transport — TLS / VPN / Tailscale / trusted LAN — is the
+			// user's responsibility, guided in the manual rather than enforced
+			// (mirrors naia-omni voice). The naiaKey flows over this connection, so
+			// only point at a non-HTTPS gateway (e.g. a dev VM) on a trusted path.
 			const baseMessages = toOpenAIMessages(messages, systemPrompt);
 			const gatewayModel = toGatewayModel(model);
 			const gatewayTools =
