@@ -1,0 +1,256 @@
+version: "0.1.5"
+date: "2026-06-05"
+summary:
+  en: "Naia-0.9-Omni-24g is here — a smart AI that clones your voice, talks in real time, and runs skills, all on a single RTX 3090 PC. This release adds voice tool execution, a redesigned voice-cloning UI with record & preview, natural barge-in, 30-language support, native Ollama local AI, and MS Store & Steam distribution."
+  ko: "RTX 3090 PC에서 목소리 복제와 실시간 대화, 스킬까지 가능한 똑똑한 AI — Naia-0.9-Omni-24g 출시. 이번 릴리즈는 음성 대화 중 도구 실행, 녹음·미리듣기를 갖춘 음성 복제 UI 재설계, 자연스러운 끼어들기, 30개국어, 네이티브 Ollama 로컬 AI, MS Store·Steam 배포를 더했습니다."
+  ja: "Naia-0.9-Omni-24g が登場 — RTX 3090 PC 1台で、声を複製し、リアルタイムで会話し、スキルまで実行する賢い AI。本リリースでは、音声対話中のツール実行、録音・プレビュー対応の音声複製 UI の刷新、自然な割り込み、30言語対応、ネイティブ Ollama ローカル AI、MS Store・Steam 配信を追加しました。"
+  zh: "Naia-0.9-Omni-24g 现已发布 — 一台 RTX 3090 PC 即可克隆你的声音、实时对话并执行技能的智能 AI。本次发布新增语音对话中的工具执行、带录制与预览的全新语音克隆界面、自然插话、30 种语言支持、原生 Ollama 本地 AI，以及 MS Store 与 Steam 分发。"
+  fr: "Naia-0.9-Omni-24g est là — une IA intelligente qui clone votre voix, parle en temps réel et exécute des compétences, le tout sur un seul PC RTX 3090. Cette version ajoute l'exécution d'outils en cours de conversation vocale, une interface de clonage vocal repensée avec enregistrement et aperçu, l'interruption naturelle, la prise en charge de 30 langues, l'IA locale native Ollama, ainsi que la distribution via MS Store et Steam."
+  de: "Naia-0.9-Omni-24g ist da — eine smarte KI, die deine Stimme klont, in Echtzeit spricht und Skills ausführt, alles auf einem einzigen RTX-3090-PC. Dieses Release ergänzt Tool-Ausführung während des Sprachgesprächs, eine überarbeitete Stimmklon-Oberfläche mit Aufnahme und Vorschau, natürliches Unterbrechen, Unterstützung für 30 Sprachen, native lokale Ollama-KI sowie Distribution über MS Store und Steam."
+  ru: "Naia-0.9-Omni-24g уже здесь — умный ИИ, который клонирует ваш голос, общается в реальном времени и выполняет навыки, и всё это на одном ПК с RTX 3090. В этом релизе добавлены выполнение инструментов во время голосового разговора, переработанный интерфейс клонирования голоса с записью и предпрослушиванием, естественное прерывание, поддержка 30 языков, нативный локальный ИИ Ollama, а также распространение через MS Store и Steam."
+  es: "Naia-0.9-Omni-24g ya está aquí — una IA inteligente que clona tu voz, habla en tiempo real y ejecuta habilidades, todo en un solo PC con RTX 3090. Esta versión añade la ejecución de herramientas durante la conversación por voz, una interfaz de clonación de voz rediseñada con grabación y vista previa, interrupción natural, compatibilidad con 30 idiomas, IA local nativa con Ollama y distribución en MS Store y Steam."
+  ar: "Naia-0.9-Omni-24g وصل — ذكاء اصطناعي ذكي يستنسخ صوتك، ويتحدث في الوقت الفعلي، وينفّذ المهارات، كل ذلك على جهاز RTX 3090 واحد. يضيف هذا الإصدار تنفيذ الأدوات أثناء المحادثة الصوتية، وواجهة معاد تصميمها لاستنساخ الصوت مع التسجيل والمعاينة، والمقاطعة الطبيعية، ودعم 30 لغة، وذكاء Ollama المحلي الأصلي، والتوزيع عبر MS Store وSteam."
+  hi: "Naia-0.9-Omni-24g आ गया है — एक स्मार्ट AI जो आपकी आवाज़ की नकल करता है, रीयल-टाइम में बात करता है और स्किल्स चलाता है, वह भी सिर्फ़ एक RTX 3090 PC पर। इस रिलीज़ में वॉइस बातचीत के दौरान टूल निष्पादन, रिकॉर्ड और प्रीव्यू वाली नई वॉइस-क्लोनिंग UI, स्वाभाविक रूप से बीच में बोलना, 30 भाषाओं का समर्थन, नेटिव Ollama लोकल AI, और MS Store व Steam वितरण जोड़ा गया है।"
+  bn: "Naia-0.9-Omni-24g এসে গেছে — একটি স্মার্ট AI যা আপনার কণ্ঠস্বর ক্লোন করে, রিয়েল-টাইমে কথা বলে এবং স্কিল চালায়, সবই একটিমাত্র RTX 3090 PC-তে। এই রিলিজে যুক্ত হয়েছে ভয়েস কথোপকথনের সময় টুল চালানো, রেকর্ড ও প্রিভিউ সহ নতুন করে ডিজাইন করা ভয়েস-ক্লোনিং UI, স্বাভাবিকভাবে মাঝে কথা বলা, ৩০টি ভাষার সমর্থন, নেটিভ Ollama লোকাল AI, এবং MS Store ও Steam বিতরণ।"
+  pt: "Naia-0.9-Omni-24g chegou — uma IA inteligente que clona a sua voz, fala em tempo real e executa skills, tudo num único PC com RTX 3090. Esta versão adiciona execução de ferramentas durante a conversa por voz, uma interface de clonagem de voz reformulada com gravação e pré-visualização, interrupção natural, suporte a 30 idiomas, IA local nativa com Ollama e distribuição na MS Store e Steam."
+  id: "Naia-0.9-Omni-24g hadir — AI cerdas yang mengkloning suara Anda, berbicara secara real-time, dan menjalankan skill, semuanya di satu PC RTX 3090. Rilis ini menambahkan eksekusi alat saat percakapan suara, antarmuka kloning suara yang didesain ulang dengan rekam & pratinjau, interupsi alami, dukungan 30 bahasa, AI lokal Ollama native, serta distribusi MS Store & Steam."
+  vi: "Naia-0.9-Omni-24g đã ra mắt — một AI thông minh có thể nhân bản giọng nói của bạn, trò chuyện theo thời gian thực và chạy các kỹ năng, tất cả trên một chiếc PC RTX 3090 duy nhất. Bản phát hành này bổ sung khả năng thực thi công cụ trong khi trò chuyện bằng giọng nói, giao diện nhân bản giọng nói được thiết kế lại với ghi âm & nghe thử, ngắt lời tự nhiên, hỗ trợ 30 ngôn ngữ, AI cục bộ Ollama gốc, cùng phân phối qua MS Store & Steam."
+changes:
+  # ── naia-omni Voice (headline) ──
+  - type: feat
+    scope: voice
+    issue: 352
+    description:
+      en: "naia-0.9-omni-24g runs tools during voice conversation — ask by voice and it actually creates files, searches, and runs skills, not just talks"
+      ko: "naia-0.9-omni-24g가 음성 대화 중 도구를 실행 — 말로 시키면 파일 생성·검색·스킬 실행까지 실제로 수행 (대화만 하지 않음)"
+      ja: "naia-0.9-omni-24g が音声対話中にツールを実行 — 声で頼むと、会話するだけでなく実際にファイル作成・検索・スキル実行まで行います"
+      zh: "naia-0.9-omni-24g 在语音对话中执行工具 — 用语音下达指令，它会真正创建文件、搜索并运行技能，而不只是对话"
+      fr: "naia-0.9-omni-24g exécute des outils pendant la conversation vocale — demandez à la voix et il crée réellement des fichiers, effectue des recherches et lance des compétences, au lieu de seulement parler"
+      de: "naia-0.9-omni-24g führt Tools während des Sprachgesprächs aus — per Stimme angefragt, erstellt es tatsächlich Dateien, sucht und führt Skills aus, statt nur zu reden"
+      ru: "naia-0.9-omni-24g выполняет инструменты во время голосового разговора — попросите голосом, и он действительно создаёт файлы, выполняет поиск и запускает навыки, а не просто говорит"
+      es: "naia-0.9-omni-24g ejecuta herramientas durante la conversación por voz — pídelo con la voz y realmente crea archivos, busca y ejecuta habilidades, no solo habla"
+      ar: "naia-0.9-omni-24g ينفّذ الأدوات أثناء المحادثة الصوتية — اطلب بصوتك فيقوم فعليًا بإنشاء الملفات والبحث وتشغيل المهارات، لا مجرد الحديث"
+      hi: "naia-0.9-omni-24g वॉइस बातचीत के दौरान टूल चलाता है — आवाज़ से कहें और यह केवल बात ही नहीं करता, बल्कि सचमुच फ़ाइलें बनाता है, खोजता है और स्किल्स चलाता है"
+      bn: "naia-0.9-omni-24g ভয়েস কথোপকথনের সময় টুল চালায় — কণ্ঠে বললে এটি কেবল কথা বলে না, সত্যিই ফাইল তৈরি করে, খোঁজে এবং স্কিল চালায়"
+      pt: "naia-0.9-omni-24g executa ferramentas durante a conversa por voz — peça por voz e ele realmente cria arquivos, faz buscas e executa skills, não apenas conversa"
+      id: "naia-0.9-omni-24g menjalankan alat saat percakapan suara — minta dengan suara dan ia benar-benar membuat file, mencari, dan menjalankan skill, bukan sekadar bicara"
+      vi: "naia-0.9-omni-24g thực thi công cụ trong khi trò chuyện bằng giọng nói — yêu cầu bằng giọng nói và nó thực sự tạo tệp, tìm kiếm và chạy kỹ năng, chứ không chỉ nói chuyện"
+  - type: feat
+    scope: voice
+    issue: 349
+    description:
+      en: "Redesigned reference-audio (voice cloning) settings — card UI with in-app recording and instant preview"
+      ko: "레퍼런스 음성(음성 복제) 설정 재설계 — 카드 UI, 앱 내 녹음, 즉시 미리듣기"
+      ja: "リファレンス音声（音声複製）設定を刷新 — カード UI、アプリ内録音、即時プレビュー"
+      zh: "重新设计参考音频（语音克隆）设置 — 卡片式界面，应用内录制，即时预览"
+      fr: "Paramètres d'audio de référence (clonage vocal) repensés — interface en cartes avec enregistrement intégré et aperçu instantané"
+      de: "Überarbeitete Einstellungen für Referenz-Audio (Stimmklonen) — Karten-UI mit In-App-Aufnahme und sofortiger Vorschau"
+      ru: "Переработанные настройки референсного аудио (клонирование голоса) — карточный интерфейс с записью в приложении и мгновенным предпрослушиванием"
+      es: "Ajustes de audio de referencia (clonación de voz) rediseñados — interfaz de tarjetas con grabación integrada y vista previa instantánea"
+      ar: "إعادة تصميم إعدادات الصوت المرجعي (استنساخ الصوت) — واجهة بطاقات مع تسجيل داخل التطبيق ومعاينة فورية"
+      hi: "रेफ़रेंस ऑडियो (वॉइस क्लोनिंग) सेटिंग्स का नया डिज़ाइन — कार्ड UI, ऐप के भीतर रिकॉर्डिंग और तुरंत प्रीव्यू"
+      bn: "রেফারেন্স অডিও (ভয়েস ক্লোনিং) সেটিংস নতুন করে ডিজাইন — কার্ড UI, অ্যাপের ভেতরে রেকর্ডিং ও তাৎক্ষণিক প্রিভিউ"
+      pt: "Configurações de áudio de referência (clonagem de voz) reformuladas — interface em cartões com gravação no app e pré-visualização instantânea"
+      id: "Pengaturan audio referensi (kloning suara) yang didesain ulang — antarmuka kartu dengan perekaman dalam aplikasi dan pratinjau instan"
+      vi: "Thiết kế lại cài đặt âm thanh tham chiếu (nhân bản giọng nói) — giao diện thẻ với ghi âm trong ứng dụng và nghe thử tức thì"
+  - type: feat
+    scope: voice
+    issue: 350
+    description:
+      en: "Prosody tags from voice replies map to avatar expressions and chat emoji — the avatar reacts as Naia speaks"
+      ko: "음성 답변의 운율 태그를 아바타 표정·채팅 이모지로 매핑 — 말하는 동안 아바타가 반응"
+      ja: "音声応答の韻律タグをアバターの表情・チャット絵文字にマッピング — Naia が話す間、アバターが反応します"
+      zh: "将语音回复的韵律标签映射到虚拟形象表情和聊天表情符号 — Naia 说话时虚拟形象会做出反应"
+      fr: "Les balises de prosodie des réponses vocales sont associées aux expressions de l'avatar et aux émojis du chat — l'avatar réagit pendant que Naia parle"
+      de: "Prosodie-Tags aus Sprachantworten werden auf Avatar-Mimik und Chat-Emojis abgebildet — der Avatar reagiert, während Naia spricht"
+      ru: "Просодические теги из голосовых ответов сопоставляются с мимикой аватара и эмодзи в чате — аватар реагирует, пока Naia говорит"
+      es: "Las etiquetas de prosodia de las respuestas de voz se asignan a las expresiones del avatar y a los emojis del chat — el avatar reacciona mientras Naia habla"
+      ar: "تُربط وسوم النبرة في الردود الصوتية بتعابير الأفاتار ورموز الدردشة التعبيرية — يتفاعل الأفاتار أثناء حديث Naia"
+      hi: "वॉइस उत्तरों के प्रोसोडी टैग अवतार के भाव और चैट इमोजी से मैप होते हैं — Naia के बोलते समय अवतार प्रतिक्रिया देता है"
+      bn: "ভয়েস উত্তরের প্রসোডি ট্যাগ অবতারের অভিব্যক্তি ও চ্যাট ইমোজির সাথে ম্যাপ হয় — Naia কথা বলার সময় অবতার প্রতিক্রিয়া দেখায়"
+      pt: "As tags de prosódia das respostas de voz são mapeadas para expressões do avatar e emojis do chat — o avatar reage enquanto a Naia fala"
+      id: "Tag prosodi dari balasan suara dipetakan ke ekspresi avatar dan emoji chat — avatar bereaksi saat Naia berbicara"
+      vi: "Các thẻ ngữ điệu từ phản hồi giọng nói được ánh xạ sang biểu cảm của avatar và emoji trò chuyện — avatar phản ứng khi Naia nói"
+  - type: feat
+    scope: voice
+    issue: 313
+    description:
+      en: "Gemini Live voice UX — context bridge, barge-in (interrupt mid-speech), text/voice parity, and voice panel tools"
+      ko: "Gemini Live 음성 경험 — 컨텍스트 브릿지, 끼어들기(말하는 도중 중단), 텍스트·음성 동등, 음성 패널 도구"
+      ja: "Gemini Live 音声体験 — コンテキストブリッジ、割り込み（発話中の中断）、テキストと音声の同等性、音声パネルツール"
+      zh: "Gemini Live 语音体验 — 上下文桥接、插话（说话中途打断）、文本与语音对等，以及语音面板工具"
+      fr: "Expérience vocale Gemini Live — pont de contexte, interruption (couper la parole en cours), parité texte/voix et outils du panneau vocal"
+      de: "Gemini-Live-Spracherlebnis — Kontextbrücke, Unterbrechen (mitten in der Rede), Text-/Sprach-Parität und Werkzeuge im Sprachpanel"
+      ru: "Голосовой опыт Gemini Live — мост контекста, прерывание (вмешательство во время речи), паритет текста и голоса и инструменты голосовой панели"
+      es: "Experiencia de voz de Gemini Live — puente de contexto, interrupción (cortar a mitad del habla), paridad texto/voz y herramientas del panel de voz"
+      ar: "تجربة Gemini Live الصوتية — جسر السياق، والمقاطعة (التدخل أثناء الكلام)، والتكافؤ بين النص والصوت، وأدوات لوحة الصوت"
+      hi: "Gemini Live वॉइस अनुभव — कॉन्टेक्स्ट ब्रिज, बीच में बोलना (बोलते समय रोकना), टेक्स्ट/वॉइस समानता, और वॉइस पैनल टूल"
+      bn: "Gemini Live ভয়েস অভিজ্ঞতা — কনটেক্সট ব্রিজ, মাঝে কথা বলা (বলার মাঝপথে থামানো), টেক্সট/ভয়েস সমতা, এবং ভয়েস প্যানেল টুল"
+      pt: "Experiência de voz do Gemini Live — ponte de contexto, interrupção (cortar no meio da fala), paridade entre texto e voz e ferramentas do painel de voz"
+      id: "Pengalaman suara Gemini Live — jembatan konteks, interupsi (memotong di tengah ucapan), kesetaraan teks/suara, dan alat panel suara"
+      vi: "Trải nghiệm giọng nói Gemini Live — cầu nối ngữ cảnh, ngắt lời (xen vào giữa lúc đang nói), sự tương đương giữa văn bản và giọng nói, và công cụ bảng điều khiển giọng nói"
+  - type: feat
+    scope: voice
+    description:
+      en: "Reference voice for Naia Local — direct ref-audio, default voice selection, and mid-session voice switching"
+      ko: "Naia Local 레퍼런스 음성 — 직접 ref-audio 지정, 기본 음성 선택, 세션 중 음성 전환"
+      ja: "Naia Local のリファレンス音声 — ref-audio の直接指定、デフォルト音声の選択、セッション中の音声切り替え"
+      zh: "Naia Local 参考语音 — 直接指定 ref-audio、默认语音选择、会话中切换语音"
+      fr: "Voix de référence pour Naia Local — ref-audio direct, choix de la voix par défaut et changement de voix en cours de session"
+      de: "Referenzstimme für Naia Local — direktes Ref-Audio, Auswahl der Standardstimme und Stimmwechsel während der Sitzung"
+      ru: "Референсный голос для Naia Local — прямое ref-audio, выбор голоса по умолчанию и переключение голоса в течение сессии"
+      es: "Voz de referencia para Naia Local — ref-audio directo, selección de voz predeterminada y cambio de voz durante la sesión"
+      ar: "صوت مرجعي لـ Naia Local — تحديد ref-audio مباشرة، واختيار الصوت الافتراضي، وتبديل الصوت أثناء الجلسة"
+      hi: "Naia Local के लिए रेफ़रेंस वॉइस — सीधे ref-audio, डिफ़ॉल्ट वॉइस चयन, और सत्र के बीच वॉइस बदलना"
+      bn: "Naia Local-এর জন্য রেফারেন্স ভয়েস — সরাসরি ref-audio, ডিফল্ট ভয়েস নির্বাচন, এবং সেশনের মাঝে ভয়েস পরিবর্তন"
+      pt: "Voz de referência para o Naia Local — ref-audio direto, seleção de voz padrão e troca de voz durante a sessão"
+      id: "Suara referensi untuk Naia Local — ref-audio langsung, pemilihan suara default, dan pergantian suara di tengah sesi"
+      vi: "Giọng tham chiếu cho Naia Local — ref-audio trực tiếp, chọn giọng mặc định và chuyển giọng giữa phiên"
+  - type: fix
+    scope: voice
+    issue: 219
+    description:
+      en: "Real-time voice stability — server-VAD passthrough, transcript handling, cold-start socket races, and reference-audio auth fixes"
+      ko: "실시간 음성 안정화 — 서버 VAD passthrough, 자막(transcript) 처리, 콜드스타트 소켓 경쟁, 레퍼런스 음성 인증 수정"
+      ja: "リアルタイム音声の安定化 — サーバー VAD パススルー、字幕（transcript）処理、コールドスタート時のソケット競合、リファレンス音声認証の修正"
+      zh: "实时语音稳定性 — 服务端 VAD 透传、字幕（transcript）处理、冷启动套接字竞争，以及参考音频鉴权修复"
+      fr: "Stabilité de la voix en temps réel — passthrough VAD côté serveur, gestion des transcriptions, courses de sockets au démarrage à froid et corrections d'authentification de l'audio de référence"
+      de: "Echtzeit-Sprachstabilität — Server-VAD-Passthrough, Transkript-Handling, Socket-Races beim Kaltstart und Korrekturen der Referenz-Audio-Authentifizierung"
+      ru: "Стабильность голоса в реальном времени — passthrough серверного VAD, обработка транскриптов, гонки сокетов при холодном старте и исправления авторизации референсного аудио"
+      es: "Estabilidad de voz en tiempo real — passthrough de VAD en el servidor, gestión de transcripciones, condiciones de carrera de sockets en arranque en frío y correcciones de autenticación del audio de referencia"
+      ar: "استقرار الصوت في الوقت الفعلي — تمرير VAD من الخادم، ومعالجة النص المنسوخ (transcript)، وتسابق الاتصالات عند البدء البارد، وإصلاحات مصادقة الصوت المرجعي"
+      hi: "रीयल-टाइम वॉइस स्थिरता — सर्वर VAD पासथ्रू, ट्रांसक्रिप्ट प्रबंधन, कोल्ड-स्टार्ट सॉकेट रेस, और रेफ़रेंस-ऑडियो प्रमाणन सुधार"
+      bn: "রিয়েল-টাইম ভয়েস স্থিতিশীলতা — সার্ভার VAD পাসথ্রু, ট্রান্সক্রিপ্ট হ্যান্ডলিং, কোল্ড-স্টার্ট সকেট রেস, এবং রেফারেন্স-অডিও প্রমাণীকরণ সংশোধন"
+      pt: "Estabilidade de voz em tempo real — passthrough de VAD no servidor, tratamento de transcrições, condições de corrida de sockets no arranque a frio e correções de autenticação do áudio de referência"
+      id: "Stabilitas suara real-time — passthrough VAD sisi server, penanganan transkrip, race kondisi soket saat cold-start, dan perbaikan autentikasi audio referensi"
+      vi: "Độ ổn định giọng nói thời gian thực — passthrough VAD phía máy chủ, xử lý bản ghi (transcript), tranh chấp socket khi khởi động nguội, và sửa lỗi xác thực âm thanh tham chiếu"
+  # ── Local AI ──
+  - type: feat
+    scope: agent
+    issue: 357
+    description:
+      en: "Native Ollama provider — reasoning, tool calls, and num_ctx handling for fully local LLMs"
+      ko: "네이티브 Ollama 프로바이더 — 추론, 도구 호출, num_ctx 처리로 완전 로컬 LLM 지원"
+      ja: "ネイティブ Ollama プロバイダー — 推論、ツール呼び出し、num_ctx 処理に対応し、完全ローカルの LLM をサポート"
+      zh: "原生 Ollama 提供方 — 支持推理、工具调用和 num_ctx 处理，实现完全本地的 LLM"
+      fr: "Fournisseur Ollama natif — raisonnement, appels d'outils et gestion de num_ctx pour des LLM entièrement locaux"
+      de: "Nativer Ollama-Provider — Reasoning, Tool-Calls und num_ctx-Handling für vollständig lokale LLMs"
+      ru: "Нативный провайдер Ollama — рассуждение, вызовы инструментов и обработка num_ctx для полностью локальных LLM"
+      es: "Proveedor Ollama nativo — razonamiento, llamadas a herramientas y gestión de num_ctx para LLM totalmente locales"
+      ar: "مزوّد Ollama أصلي — الاستدلال واستدعاء الأدوات ومعالجة num_ctx لنماذج لغوية محلية بالكامل"
+      hi: "नेटिव Ollama प्रोवाइडर — पूरी तरह लोकल LLM के लिए रीज़निंग, टूल कॉल और num_ctx प्रबंधन"
+      bn: "নেটিভ Ollama প্রোভাইডার — সম্পূর্ণ লোকাল LLM-এর জন্য রিজনিং, টুল কল এবং num_ctx হ্যান্ডলিং"
+      pt: "Provedor Ollama nativo — raciocínio, chamadas de ferramentas e tratamento de num_ctx para LLMs totalmente locais"
+      id: "Penyedia Ollama native — penalaran, pemanggilan alat, dan penanganan num_ctx untuk LLM sepenuhnya lokal"
+      vi: "Nhà cung cấp Ollama gốc — suy luận, gọi công cụ và xử lý num_ctx cho các LLM hoàn toàn cục bộ"
+  # ── Distribution ──
+  - type: feat
+    scope: dist
+    issue: 314
+    description:
+      en: "MS Store (Win32 listing) and Steam portable distribution with conditional code signing"
+      ko: "MS Store(Win32) 및 Steam 포터블 배포 — 조건부 코드 서명 지원"
+      ja: "MS Store（Win32 掲載）および Steam ポータブル配信 — 条件付きコード署名に対応"
+      zh: "MS Store（Win32 上架）和 Steam 便携版分发 — 支持条件式代码签名"
+      fr: "Distribution MS Store (référencement Win32) et version portable Steam avec signature de code conditionnelle"
+      de: "MS-Store-Distribution (Win32-Eintrag) und portable Steam-Verteilung mit bedingter Codesignierung"
+      ru: "Распространение через MS Store (листинг Win32) и портативная версия Steam с условной подписью кода"
+      es: "Distribución en MS Store (publicación Win32) y versión portable de Steam con firma de código condicional"
+      ar: "التوزيع عبر MS Store (إدراج Win32) والإصدار المحمول على Steam مع توقيع شيفرة مشروط"
+      hi: "MS Store (Win32 लिस्टिंग) और Steam पोर्टेबल वितरण, सशर्त कोड साइनिंग के साथ"
+      bn: "MS Store (Win32 তালিকাভুক্তি) এবং Steam পোর্টেবল বিতরণ, শর্তসাপেক্ষ কোড সাইনিং সহ"
+      pt: "Distribuição na MS Store (listagem Win32) e versão portátil na Steam com assinatura de código condicional"
+      id: "Distribusi MS Store (listing Win32) dan versi portabel Steam dengan penandatanganan kode bersyarat"
+      vi: "Phân phối qua MS Store (niêm yết Win32) và bản portable trên Steam với ký mã có điều kiện"
+  # ── Shell & UX ──
+  - type: feat
+    scope: shell
+    issue: 358
+    description:
+      en: "Panel spec, docs, and examples for the extensible panel system, plus a zip-tab gate"
+      ko: "확장형 패널 시스템 스펙·문서·예제 + zip 탭 게이트"
+      ja: "拡張可能なパネルシステムの仕様・ドキュメント・サンプル、および zip タブゲート"
+      zh: "可扩展面板系统的规范、文档与示例，以及 zip 标签门控"
+      fr: "Spécification, documentation et exemples pour le système de panneaux extensible, ainsi qu'un contrôle d'onglet zip"
+      de: "Spezifikation, Dokumentation und Beispiele für das erweiterbare Panel-System sowie ein Zip-Tab-Gate"
+      ru: "Спецификация, документация и примеры для расширяемой системы панелей, а также контроль вкладки zip"
+      es: "Especificación, documentación y ejemplos para el sistema de paneles extensible, además de un control de pestaña zip"
+      ar: "مواصفات ووثائق وأمثلة لنظام اللوحات القابل للتوسعة، إضافةً إلى بوابة تبويب zip"
+      hi: "विस्तार-योग्य पैनल सिस्टम के लिए स्पेसिफ़िकेशन, दस्तावेज़ और उदाहरण, साथ ही zip-टैब गेट"
+      bn: "এক্সটেনসিবল প্যানেল সিস্টেমের জন্য স্পেক, ডকুমেন্টেশন ও উদাহরণ, সাথে zip-ট্যাব গেট"
+      pt: "Especificação, documentação e exemplos para o sistema de painéis extensível, além de um controle de aba zip"
+      id: "Spesifikasi, dokumentasi, dan contoh untuk sistem panel yang dapat diperluas, plus gerbang tab zip"
+      vi: "Đặc tả, tài liệu và ví dụ cho hệ thống bảng điều khiển mở rộng, cùng cổng kiểm soát tab zip"
+  - type: feat
+    scope: launch
+    description:
+      en: "YouTube BGM background fallback on launch — music keeps playing even before AI connects"
+      ko: "실행 시 YouTube BGM 배경 fallback — AI 연결 전에도 음악이 이어짐"
+      ja: "起動時の YouTube BGM バックグラウンドフォールバック — AI が接続する前でも音楽が流れ続けます"
+      zh: "启动时的 YouTube BGM 后台回退 — 即使在 AI 连接之前音乐也会持续播放"
+      fr: "Repli BGM YouTube en arrière-plan au lancement — la musique continue même avant la connexion de l'IA"
+      de: "YouTube-BGM-Hintergrund-Fallback beim Start — die Musik läuft weiter, schon bevor die KI verbunden ist"
+      ru: "Фоновый запасной вариант YouTube BGM при запуске — музыка продолжает играть ещё до подключения ИИ"
+      es: "Reserva de BGM de YouTube en segundo plano al iniciar — la música sigue sonando incluso antes de que la IA se conecte"
+      ar: "احتياطي موسيقى YouTube الخلفية عند التشغيل — تستمر الموسيقى حتى قبل اتصال الذكاء الاصطناعي"
+      hi: "लॉन्च पर YouTube BGM बैकग्राउंड फ़ॉलबैक — AI के कनेक्ट होने से पहले भी संगीत चलता रहता है"
+      bn: "চালু করার সময় YouTube BGM ব্যাকগ্রাউন্ড ফলব্যাক — AI সংযুক্ত হওয়ার আগেও সংগীত চলতে থাকে"
+      pt: "Fallback de BGM do YouTube em segundo plano ao iniciar — a música continua tocando mesmo antes de a IA se conectar"
+      id: "Fallback BGM YouTube di latar saat peluncuran — musik tetap diputar bahkan sebelum AI terhubung"
+      vi: "Dự phòng nhạc nền YouTube khi khởi động — nhạc vẫn phát ngay cả trước khi AI kết nối"
+  # ── Auth ──
+  - type: feat
+    scope: auth
+    issue: 341
+    description:
+      en: "Rust localhost HTTP callback server — more reliable desktop OAuth/deep-link sign-in"
+      ko: "Rust localhost HTTP 콜백 서버 — 데스크탑 OAuth·딥링크 로그인 안정성 향상"
+      ja: "Rust 製 localhost HTTP コールバックサーバー — デスクトップの OAuth・ディープリンクログインの信頼性を向上"
+      zh: "Rust 编写的 localhost HTTP 回调服务器 — 提升桌面端 OAuth／深层链接登录的可靠性"
+      fr: "Serveur de rappel HTTP localhost en Rust — connexion OAuth/lien profond plus fiable sur le bureau"
+      de: "HTTP-Callback-Server auf localhost in Rust — zuverlässigere OAuth-/Deeplink-Anmeldung auf dem Desktop"
+      ru: "HTTP-сервер обратного вызова на localhost на Rust — более надёжный вход через OAuth/deep-link на десктопе"
+      es: "Servidor de callback HTTP en localhost escrito en Rust — inicio de sesión OAuth/deep-link más fiable en el escritorio"
+      ar: "خادم استدعاء HTTP على localhost مكتوب بلغة Rust — تسجيل دخول OAuth/الروابط العميقة أكثر موثوقية على سطح المكتب"
+      hi: "Rust में लिखा localhost HTTP कॉलबैक सर्वर — डेस्कटॉप OAuth/डीप-लिंक साइन-इन अधिक विश्वसनीय"
+      bn: "Rust-এ লেখা localhost HTTP কলব্যাক সার্ভার — ডেস্কটপ OAuth/ডিপ-লিংক সাইন-ইন আরও নির্ভরযোগ্য"
+      pt: "Servidor de callback HTTP em localhost escrito em Rust — login OAuth/deep-link mais confiável no desktop"
+      id: "Server callback HTTP localhost berbasis Rust — login OAuth/deep-link desktop lebih andal"
+      vi: "Máy chủ callback HTTP localhost viết bằng Rust — đăng nhập OAuth/deep-link trên máy tính đáng tin cậy hơn"
+  # ── Fixes ──
+  - type: fix
+    scope: shell
+    issue: 342
+    description:
+      en: "0.1.5 launch bugfixes — startup, config, and provider routing corrections"
+      ko: "0.1.5 런치 버그픽스 — 시작, 설정, 프로바이더 라우팅 보정"
+      ja: "0.1.5 リリースのバグ修正 — 起動、設定、プロバイダールーティングの補正"
+      zh: "0.1.5 发布版错误修复 — 启动、配置和提供方路由校正"
+      fr: "Corrections de bugs pour la version 0.1.5 — démarrage, configuration et routage des fournisseurs"
+      de: "Bugfixes zum 0.1.5-Launch — Korrekturen bei Start, Konfiguration und Provider-Routing"
+      ru: "Исправления ошибок для выпуска 0.1.5 — корректировки запуска, конфигурации и маршрутизации провайдеров"
+      es: "Correcciones de errores para la versión 0.1.5 — arranque, configuración y enrutamiento de proveedores"
+      ar: "إصلاحات أخطاء إصدار 0.1.5 — تصحيحات بدء التشغيل والإعدادات وتوجيه المزوّدين"
+      hi: "0.1.5 लॉन्च बगफ़िक्स — स्टार्टअप, कॉन्फ़िग और प्रोवाइडर रूटिंग सुधार"
+      bn: "0.1.5 লঞ্চ বাগফিক্স — স্টার্টআপ, কনফিগ এবং প্রোভাইডার রাউটিং সংশোধন"
+      pt: "Correções de bugs do lançamento 0.1.5 — inicialização, configuração e roteamento de provedores"
+      id: "Perbaikan bug rilis 0.1.5 — koreksi startup, konfigurasi, dan perutean penyedia"
+      vi: "Sửa lỗi bản phát hành 0.1.5 — chỉnh sửa khởi động, cấu hình và định tuyến nhà cung cấp"
+  - type: fix
+    scope: env
+    issue: 333
+    description:
+      en: "Separate dev/prod gateway environments — tauri:dev and tauri:prod target the right gateway"
+      ko: "dev/prod 게이트웨이 환경 분리 — tauri:dev·tauri:prod가 올바른 게이트웨이로 연결"
+      ja: "dev/prod ゲートウェイ環境の分離 — tauri:dev と tauri:prod がそれぞれ正しいゲートウェイに接続"
+      zh: "分离 dev/prod 网关环境 — tauri:dev 与 tauri:prod 分别连接到正确的网关"
+      fr: "Séparation des environnements de passerelle dev/prod — tauri:dev et tauri:prod ciblent la bonne passerelle"
+      de: "Trennung der Gateway-Umgebungen für dev/prod — tauri:dev und tauri:prod nutzen jeweils das richtige Gateway"
+      ru: "Разделение сред шлюза dev/prod — tauri:dev и tauri:prod подключаются к нужному шлюзу"
+      es: "Separación de entornos de gateway dev/prod — tauri:dev y tauri:prod apuntan al gateway correcto"
+      ar: "فصل بيئات البوابة dev/prod — يتصل tauri:dev وtauri:prod بالبوابة الصحيحة لكلٍّ منهما"
+      hi: "dev/prod गेटवे एनवायरनमेंट अलग — tauri:dev और tauri:prod सही गेटवे से जुड़ते हैं"
+      bn: "dev/prod গেটওয়ে এনভায়রনমেন্ট পৃথকীকরণ — tauri:dev ও tauri:prod সঠিক গেটওয়েতে সংযুক্ত হয়"
+      pt: "Separação dos ambientes de gateway dev/prod — tauri:dev e tauri:prod apontam para o gateway correto"
+      id: "Pemisahan lingkungan gateway dev/prod — tauri:dev dan tauri:prod menuju gateway yang tepat"
+      vi: "Tách môi trường gateway dev/prod — tauri:dev và tauri:prod kết nối đúng gateway tương ứng"
