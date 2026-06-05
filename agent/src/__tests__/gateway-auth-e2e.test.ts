@@ -12,8 +12,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const PROD_GATEWAY =
-	"https://naia-gateway-181404717065.asia-northeast3.run.app";
+const PROD_GATEWAY = "https://api.nextain.io";
 
 /** Read naiaKey from DPAPI keychain or env */
 function loadNaiaKey(): string | null {

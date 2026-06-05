@@ -956,8 +956,8 @@ voice_architecture:
       - Emotion tags ([HAPPY] etc.) and emoji stripped before TTS
     gateway_separation: "STT/TTS fully decoupled from Naia Gateway. Shell handles all STT/TTS directly via agent IPC. Gateway used only for LLM routing + skills/tools."
     naia_cloud:
-      tts_endpoint: "https://naia-gateway-181404717065.asia-northeast3.run.app/v1/audio/speech"
-      stt_endpoint: "https://naia-gateway-181404717065.asia-northeast3.run.app/v1/audio/transcriptions"
+      tts_endpoint: "https://api.nextain.io/v1/audio/speech"
+      stt_endpoint: "https://api.nextain.io/v1/audio/transcriptions"
       auth: "X-AnyLLM-Key: Bearer {naiaKey}"
       pricing_tts: "$0.000016/char (Neural2)"
       pricing_stt: "$0.006/15s"

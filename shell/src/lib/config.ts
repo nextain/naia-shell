@@ -558,15 +558,13 @@ export function getUserName(): string | undefined {
 }
 
 // Release runtime gateway (the gateway a DISTRIBUTED build talks to — distinct
-// from the auto-updater endpoint, which is GitHub Releases).
-// ⚠️ MIGRATION PLANNED: this Cloud Run URL is being replaced by a prod GCP VM
-// (mirrors the dev VM move already done). When the prod VM is live, set the URL
-// via the prod env (VITE_NAIA_GATEWAY_URL) rather than hardcoding it. Dev/prod
-// VM addresses are kept OUT of this public repo (use .env, gitignored) — see
-// memory: naia-anyllm-vm-migration.
+// from the auto-updater endpoint, which is GitHub Releases). This is the public
+// prod API gateway (api.nextain.io — TLS in front of the prod gateway VM); the
+// raw VM IP stays out of this public repo. Override per-environment with
+// VITE_NAIA_GATEWAY_URL. The earlier Cloud Run → VM migration is now complete —
+// see memory: naia-anyllm-vm-migration.
 const _PROD_GATEWAY =
-	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) ||
-	"https://naia-gateway-181404717065.asia-northeast3.run.app";
+	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) || "https://api.nextain.io";
 
 const _DEV_GATEWAY =
 	(import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || "";

@@ -13,8 +13,7 @@ import { join } from "node:path";
 
 /** PROD by default; override with NAIA_TEST_GATEWAY for the dev gateway. */
 export const GATEWAY_URL =
-	process.env.NAIA_TEST_GATEWAY ||
-	"https://naia-gateway-181404717065.asia-northeast3.run.app";
+	process.env.NAIA_TEST_GATEWAY || "https://api.nextain.io";
 
 export function loadNaiaKey(): string | null {
 	if (process.env.NAIA_TEST_KEY) return process.env.NAIA_TEST_KEY;

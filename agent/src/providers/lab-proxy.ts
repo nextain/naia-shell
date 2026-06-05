@@ -10,8 +10,9 @@ import {
 } from "./openai-compat.js";
 import type { AgentStream, LLMProvider, StreamChunk } from "./types.js";
 
-export const PROD_GATEWAY_URL =
-	"https://naia-gateway-181404717065.asia-northeast3.run.app";
+// Public prod API gateway (TLS in front of the prod gateway VM). The raw VM IP
+// stays out of this repo; override at runtime with NAIA_GATEWAY_URL if needed.
+export const PROD_GATEWAY_URL = "https://api.nextain.io";
 const LAB_PROXY_MAX_TOKENS = 4096;
 
 /** Resolved gateway URL from environment or default prod URL */

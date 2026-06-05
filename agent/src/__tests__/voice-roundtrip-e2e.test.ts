@@ -22,8 +22,7 @@ import { synthesizeEdgeSpeech } from "../tts/edge-tts.js";
 
 // PROD by default; override with NAIA_TEST_GATEWAY for the dev gateway.
 const GATEWAY_URL =
-	process.env.NAIA_TEST_GATEWAY ||
-	"https://naia-gateway-181404717065.asia-northeast3.run.app";
+	process.env.NAIA_TEST_GATEWAY || "https://api.nextain.io";
 
 /** Read naiaKey from env or Windows DPAPI keychain. */
 function loadNaiaKey(): string | null {
