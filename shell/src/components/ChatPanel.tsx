@@ -2198,7 +2198,12 @@ export function ChatPanel() {
 				});
 			}
 
-			// Create mic stream
+			// Create mic stream — tolerate a missing/erroring mic. The omni session
+			// is already connected and can still answer TYPED text (+ voice output),
+			// exactly like the web demo. A mic failure (e.g. no input device →
+			// OverconstrainedError) must NOT tear down the session, so catch it here
+			// instead of letting it reach the outer catch that disconnects everything.
+			try {
 			const mic = await createMicStream({
 				onChunk: (pcmBase64) => {
 					// Barge-in: stream the mic continuously so the server VAD can
@@ -2225,6 +2230,15 @@ export function ChatPanel() {
 			});
 			micStreamRef.current = mic;
 			mic.start();
+			} catch (micErr) {
+				// No usable microphone → keep the session alive for typed input +
+				// voice output (web-demo parity). Do not rethrow / disconnect.
+				Logger.warn(
+					"ChatPanel",
+					"mic unavailable — voice session continues text-only",
+					{ error: String(micErr) },
+				);
+			}
 
 			setVoiceStatus({ phase: "active" });
 			lastVoiceStatusRef.current = { phase: "active" };
