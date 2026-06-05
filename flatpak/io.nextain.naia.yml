@@ -6,12 +6,13 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
   - org.freedesktop.Sdk.Extension.node22
   - org.freedesktop.Sdk.Extension.llvm20
-command: naia-os
+# naia-launch picks GDK_BACKEND per session (wayland session -> wayland so the
+# main window renders; x11 session -> x11 so browser-panel Chrome embedding works).
+# Forcing GDK_BACKEND=x11 globally made the main window map at 1x1 on KDE Wayland.
+command: naia-launch
 finish-args:
   - --share=ipc
-  # x11: always provide X11 socket (XWayland) — required for Chrome XReparentWindow embedding.
-  # GDK_BACKEND=x11 forces Tauri/GTK into XWayland mode so find_tauri_xid() can locate
-  # the window via X11 atoms. Without this the app defaults to Wayland and embedding fails.
+  # x11 socket kept (XWayland) — required for Chrome XReparentWindow embedding on X11 sessions.
   - --socket=x11
   - --socket=wayland
   - --socket=pulseaudio
@@ -23,7 +24,6 @@ finish-args:
   - --own-name=io.nextain.naia.*
   - --env=FLATPAK=1
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
-  - --env=GDK_BACKEND=x11
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin:/usr/lib/sdk/llvm20/bin
   env:
@@ -63,6 +63,12 @@ modules:
       - cd shell && npx tauri build --no-bundle --config src-tauri/tauri.conf.flatpak.json
       # Install binary
       - install -Dm755 shell/src-tauri/target/release/naia-shell /app/bin/naia-os
+      # Launcher wrapper: selects GDK_BACKEND per session (see flatpak/naia-launch.sh).
+      - install -Dm755 flatpak/naia-launch.sh /app/bin/naia-launch
+      # Vosk STT shared library (tauri-plugin-stt dynamically links libvosk.so).
+      # Vendored in shell/src-tauri/resources; /app/lib is on the flatpak LD path.
+      # Without this the binary fails at startup: "libvosk.so: cannot open shared object file".
+      - install -Dm755 shell/src-tauri/resources/libvosk.so /app/lib/libvosk.so
       # Node.js runtime (for agent)
       - install -Dm755 /usr/lib/sdk/node22/bin/node /app/bin/node
       # Agent bundle (dist + node_modules for runtime)
