@@ -11,8 +11,12 @@ import type { LiveProviderId } from "./voice/types";
 
 const STORAGE_KEY = "naia-config";
 export const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
-/** Default address for the Naia Local container (omni-24g realtime WS). */
-export const DEFAULT_NAIA_LOCAL_URL = "ws://localhost:8892";
+/** Default address for the Naia Local container (omni-24g realtime WS).
+ *  Use 127.0.0.1, not "localhost": localhost resolves to IPv6 ::1 first in many
+ *  setups, but rootless-podman publishes the container on IPv4 only — so
+ *  ws://localhost:8892 hits ::1 and fails ("WebSocket error"), while 127.0.0.1
+ *  reaches the container. */
+export const DEFAULT_NAIA_LOCAL_URL = "ws://127.0.0.1:8892";
 
 /**
  * Default reference voice ("여성 음색 1" / cc0-ko-female-01) used when the user
