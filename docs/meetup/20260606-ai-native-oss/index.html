@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>naia — AI로 만들고, slop 없이 운영하는 오픈소스</title>
+<style>
+	:root {
+		--bg: #0e1116;
+		--fg: #e6edf3;
+		--dim: #8b949e;
+		--accent: #6ea8fe;
+		--accent2: #7ee787;
+		--red: #ff7b72;
+		--box: #161b22;
+		--border: #30363d;
+	}
+	* { box-sizing: border-box; margin: 0; padding: 0; }
+	html, body { height: 100%; }
+	body {
+		background: var(--bg);
+		color: var(--fg);
+		font-family: -apple-system, "Pretendard", "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+		font-size: 2.1vh;
+		line-height: 1.55;
+		overflow: hidden;
+	}
+	#deck { height: 100vh; width: 100vw; }
+	.slide {
+		display: none;
+		height: 100vh;
+		width: 100vw;
+		padding: 7vh 9vw;
+		flex-direction: column;
+		justify-content: center;
+		gap: 1.6vh;
+		animation: fade 0.25s ease;
+	}
+	.slide.active { display: flex; }
+	@keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+	h1 { font-size: 6vh; line-height: 1.15; letter-spacing: -0.02em; }
+	h1 .sub { display: block; font-size: 2.6vh; color: var(--accent); margin-top: 2vh; font-weight: 500; }
+	h2 { font-size: 4vh; letter-spacing: -0.02em; color: var(--fg); }
+	h2 .tag { color: var(--accent); }
+	p { font-size: 2.4vh; color: var(--fg); }
+	ul { padding-left: 3vh; display: flex; flex-direction: column; gap: 1vh; }
+	li { font-size: 2.3vh; }
+	strong { color: var(--accent2); font-weight: 600; }
+	em { color: var(--accent); font-style: normal; }
+	.muted { color: var(--dim); }
+	blockquote {
+		border-left: 3px solid var(--accent);
+		padding: 1.2vh 2vw;
+		color: var(--fg);
+		background: var(--box);
+		border-radius: 0 8px 8px 0;
+		font-size: 2.5vh;
+	}
+	pre {
+		background: var(--box);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		padding: 2vh 2vw;
+		overflow: auto;
+		font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+		font-size: 1.9vh;
+		line-height: 1.5;
+		white-space: pre;
+	}
+	pre .ok { color: var(--accent2); }
+	pre .bad { color: var(--red); }
+	pre .cm { color: var(--dim); }
+	table { border-collapse: collapse; font-size: 2vh; }
+	th, td { border: 1px solid var(--border); padding: 1vh 1.4vw; text-align: left; }
+	th { background: var(--box); color: var(--accent); }
+	code { font-family: "JetBrains Mono", Menlo, monospace; background: var(--box); padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.92em; }
+	aside.notes {
+		display: none;
+		margin-top: 2vh;
+		padding: 1.4vh 1.6vw;
+		border: 1px dashed var(--border);
+		border-radius: 8px;
+		color: var(--dim);
+		font-size: 1.7vh;
+	}
+	body.show-notes aside.notes { display: block; }
+	#hud {
+		position: fixed;
+		bottom: 2.5vh;
+		right: 3vw;
+		color: var(--dim);
+		font-size: 1.7vh;
+		font-family: Menlo, monospace;
+		user-select: none;
+	}
+	#hud .hint { margin-right: 1.5vw; }
+	.kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 0.4em; }
+	.big { font-size: 3vh; }
+	.center { text-align: center; align-items: center; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+	<section class="slide active center">
+		<h1>naia
+			<span class="sub">당신의 AI를, 당신의 기계에서. 코드로 검증 가능하게.</span>
+		</h1>
+		<p class="muted">겉모습은 아바타. 본질은 <strong>함께 일하는 AI 동료</strong>.</p>
+		<aside class="notes">제품 자랑으로 시작하지 않는다. naia가 무엇인지 한 줄. "버튜버처럼 보이지만 개발 동료"라는 반전은 12장에서 푼다. 여기선 톤만 — 소유·로컬·검증가능.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>그런데 — 오픈소스가 AI에 지쳤습니다</h2>
+		<ul>
+			<li><strong>curl</strong>, 7년 운영한 버그바운티를 2026년 1월 닫았습니다. 이유: AI가 만든 가짜 보안 제보 홍수.</li>
+			<li>2025년 제보의 <strong>20%가 AI slop</strong>, 진짜 취약점은 <strong>5%</strong>.</li>
+			<li><em>"the mind-numbing AI slop, humans doing worse than ever."</em> — Daniel Stenberg</li>
+			<li>2025년 <strong>올해의 단어</strong> = "slop"(Merriam-Webster) / "AI slop"(Macquarie)</li>
+			<li>Gentoo·NetBSD·QEMU는 AI 코드 기여 금지. Linux·LLVM·Fedora는 <code>Assisted-by:</code> + 사람 검토 의무화.</li>
+		</ul>
+		<aside class="notes">청중이 다 공감하는 현실부터. 숫자는 curl 본인 블로그 기준. "여러분도 AI slop PR 받아보셨죠?"</aside>
+	</section>
+
+	<section class="slide">
+		<h2>그들이 막는 건 AI가 아닙니다 — <span class="tag">검증 없는 AI</span>입니다</h2>
+		<blockquote>"검토 안 된 LLM 출력을 메인테이너에게 보내는 것은 그들의 작업(설계·리뷰)을 <strong>추출</strong>하는 것이다." — LLVM AI Tool Policy RFC</blockquote>
+		<p>문제의 핵심은 <strong>검토 부담의 전가</strong>. AI 자체가 아니라, <em>거를 게이트가 없다는 것</em>.</p>
+		<aside class="notes">이 한 장이 발표의 축. 적개심의 대상을 정확히 짚으면 우리 포지션이 선다.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>빈자리: "AI가 만들되 게이트로 품질을 보증하는" 모델</h2>
+		<ul>
+			<li>인기 GitHub 1,000개 레포 조사(arXiv 2605.16706, 2026): 공식 AI 정책은 118개뿐, 전부 <strong>"환영~금지"의 방어 스펙트럼</strong>.</li>
+			<li>저자 결론: <strong>"AI-native로 규정·운영되는 프로젝트는 없다."</strong></li>
+			<li>가장 근접한 Aider도 <em>AI 작성 비중을 공개</em>할 뿐, 계약·게이트로 slop을 능동 차단하진 않습니다.</li>
+		</ul>
+		<p>세상은 "AI 기여를 어떻게 <em>막을까</em>"를 묻습니다. 우리는 <strong>"AI로 만들되 slop을 어떻게 막을까"</strong>를 풉니다.</p>
+		<aside class="notes">"세계 최초"라고 말하지 않는다. "선례가 드문 반대편"이라고만. 정직이 신뢰를 만든다.</aside>
+	</section>
+
+	<section class="slide center">
+		<h2>우리 답 — 흔들림 없는 구성</h2>
+		<p class="big">AI로 빠르게 만든다. 단, <strong>깨지지 않게.</strong></p>
+		<p>slop을 사람 의지가 아니라 <strong>구조(게이트)로</strong> 막는다.</p>
+		<aside class="notes">다음 장들이 이 한 문장의 실제 구현. 추상 구호로 끝내지 않고 바로 데모로 간다.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>"깨지지 않음"의 정체 — slop 5가지</h2>
+		<ul>
+			<li>① 사전 합의 없는 <strong>파일/폴더</strong> 생성 (루트뿐 아니라 <em>전 계층</em>)</li>
+			<li>② <strong>컨텍스트 드리프트</strong> — 어느새 전혀 다른 방식으로 구현</li>
+			<li>③ 추적 안 되는 <strong>고아 파일</strong></li>
+			<li>④ 고아/합의 없는 <strong>함수</strong></li>
+			<li>⑤ <strong>지켜지지 않는 코딩 컨벤션</strong></li>
+		</ul>
+		<aside class="notes">추상적 "AI slop 방지"가 아니라 구체적으로 이 5가지. 청중이 "맞아 저거"라고 느끼게.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>헥사고날 — 경계가 곧 게이트</h2>
+		<pre>adapters  →  ports  →  domain
+(바깥/구현)   (계약)     (안/순수)</pre>
+		<ul>
+			<li>의존은 <strong>한 방향만</strong>. domain은 아무것도 모른다.</li>
+			<li>위 5가지가 <strong>하나의 메커니즘</strong>으로 잡힘: 위치=① · 의존방향=② · 미연결 노드=③④ · 컨벤션=⑤</li>
+			<li>제공자(TTS·LLM, 나중엔 naia 런타임)는 <strong>어댑터로 교체</strong> — 코어는 안 바뀝니다.</li>
+		</ul>
+		<aside class="notes">"다 추적"은 파일마다 등록(무겁다)이 아니라 규칙이 추적한다. 기여자는 규칙대로 짜면 통과.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>추적 체인 — 무엇이 무엇과 묶여 있나</h2>
+		<pre>이슈(의도) → 문서(설계) → 코드(포트 interface) → 테스트(계약)</pre>
+		<p><strong>2층 계약 SoT</strong> (각 계약은 한 곳에만 → 갈라질 수 없음):</p>
+		<ul>
+			<li>용어·의도·불변식 → <strong>문서</strong>(단어사전)</li>
+			<li>시그니처·타입 → <strong>코드의 interface</strong> (코드가 곧 계약)</li>
+			<li>코드 주석엔 계약을 <em>다시 쓰지 않고</em> 문서를 가리키기만.</li>
+		</ul>
+		<p class="muted">→ "이 코드 고치면 뭐가 깨지지?"의 답이 항상 추적 가능.</p>
+		<aside class="notes">회귀(수정→다른 데 깨짐)가 빈번한 이유 = 추적이 끊겨서. 이게 그 해법.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>데모 ① — 하나의 계약, 여러 어댑터 (그리고 이식)</h2>
+		<p>목업과 <strong>실제(Edge TTS — 기존 코드에서 이식)</strong>가 <em>같은 계약</em>을 통과:</p>
+		<pre><span class="ok">✓</span> TtsPort contract: MockTtsAdapter (2 tests)
+<span class="ok">✓</span> TtsPort contract: EdgeTtsAdapter (2 tests)   <span class="cm">← 기존 코드 선별 이식</span>
+  Test Files  <span class="ok">2 passed (2)</span>
+       Tests  <span class="ok">4 passed (4)</span></pre>
+		<aside class="notes">라이브로 pnpm test. 계약 러너에 어댑터 한 줄 추가 = 기존 코드 이식. 같은 계약이 mock·real을 동시에 지킨다. "통째 재작성"이 아니라 "계약 아래로 한 조각씩".</aside>
+	</section>
+
+	<section class="slide">
+		<h2>데모 ② — 슬롭을 넣으면 게이트가 빨개진다</h2>
+		<p>일부러 위반 주입: domain이 adapter를 import하게:</p>
+		<pre><span class="cm">1) 정상</span>      <span class="ok">✔ no dependency violations (5 modules)</span>
+<span class="cm">2) 위반 주입</span>  <span class="bad">✗ domain-stays-pure: _probe.ts → adapter</span>   ← 게이트가 잡음
+<span class="cm">3) 되돌림</span>     <span class="ok">✔ no dependency violations</span></pre>
+		<aside class="notes">이게 절정. 슬롭을 심으면 자동으로 RED, 빼면 GREEN. 사람이 안 봐도 막힌다.</aside>
+	</section>
+
+	<section class="slide center">
+		<h2>왜 다른가 — 자기 선언이 아니라 반증 가능</h2>
+		<p>"우리 코드 깨끗합니다"(자기 선언) <span class="bad">✗</span></p>
+		<p class="big">→ <strong>"슬롭을 심어봤더니 게이트가 RED로 잡더라"</strong>(반증 가능) <span style="color:var(--accent2)">✓</span></p>
+		<p class="muted">AI가 통과시키려 해도 게이트는 반증을 겨냥합니다.</p>
+		<aside class="notes">우리 철학 한 줄 — "가짜를 스스로 RED로 만들 수 있는가." 이게 검증의 기준.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>그래서, naia란</h2>
+		<ul>
+			<li><strong>개발자가 소유하는 자기만의 AI.</strong> 내 기계, 내 데이터, 코드로 검증 가능.</li>
+			<li>겉은 아바타지만 본질은 <strong>함께 일하는 동료</strong> — 이슈·터미널·코드를 같이 다룬다.</li>
+			<li>클라우드 종속이 아니라 <strong>로컬·프라이버시 우선</strong>.</li>
+			<li>그리고 이 naia를, <strong>방금 보여준 그 구성으로 만듭니다.</strong> <span class="muted">(dogfooding)</span></li>
+		</ul>
+		<aside class="notes">1장의 반전을 여기서 회수. naia는 컴패니언 단일 제품이 아니라 "소유"가 쐐기. 과장 금지.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>함께 만들자 — 기여는 이렇게</h2>
+		<ul>
+			<li>흐름: <strong>이슈 → 문서 → 코드 → 테스트</strong> (게이트가 빠진 칸을 알려줌)</li>
+			<li>두 갈래 트랙: <strong>quick-fix</strong>(가벼운 수정) / <strong>feature</strong>(시나리오부터 풀 추적)</li>
+			<li>당신의 AI(codex·claude…)를 데려와도 됩니다 — <strong>게이트가 slop을 거르니까.</strong></li>
+			<li>AI 사용은 정직하게 표기(<code>Assisted-by:</code>), 과정은 <em>샘플링 감사</em>로.</li>
+		</ul>
+		<aside class="notes">진입장벽 낮추기. "AI 써도 된다, 단 게이트를 통과해야 한다"가 차별점.</aside>
+	</section>
+
+	<section class="slide">
+		<h2>로드맵 — 정직하게</h2>
+		<table>
+			<tr><th>지금 (있음)</th><th>나중 (방향)</th></tr>
+			<tr><td>헥사고날 코어 + 의존성 게이트</td><td>코드그래프(코드에서 추출하는 살아있는 지도)</td></tr>
+			<tr><td>TTS 포트 + 계약 테스트</td><td>어댑터로 naia 자체 런타임 교체</td></tr>
+			<tr><td>추적 체인 + 2층 계약 SoT</td><td>의미 드리프트 3자 매핑</td></tr>
+		</table>
+		<aside class="notes">안 만든 걸 만든 척하지 않는다. "방향"과 "있음"을 명확히 가른다. 이 정직함이 곧 데모의 신뢰.</aside>
+	</section>
+
+	<section class="slide center">
+		<h2>초대</h2>
+		<ul style="align-items:flex-start">
+			<li>저장소: <code>(링크)</code></li>
+			<li>good-first-issue: <code>(링크)</code></li>
+			<li>기여 가이드 / 단어사전 / 게이트 실행법: <code>core/README.md</code></li>
+		</ul>
+		<p class="big" style="margin-top:3vh"><strong>AI로 빠르게. 그러나 깨지지 않게. 함께.</strong></p>
+		<aside class="notes">마지막은 행동 유도 — 클론하고, 첫 이슈 잡고, 게이트를 직접 돌려보게.</aside>
+	</section>
+
+	<section class="slide">
+		<h2 class="muted">부록 — 출처 / 데모 재현</h2>
+		<p class="muted">출처(1차 확인): curl daniel.haxx.se(2025-07·2026-01) · The Register 2026-01-21 · Merriam-Webster/Macquarie 2025 · LLVM RFC 2025-12 · docs.kernel.org 2026-04 · arXiv 2605.16706</p>
+		<pre>cd core &amp;&amp; pnpm install
+pnpm test     <span class="cm"># 계약 테스트 GREEN</span>
+pnpm arch     <span class="cm"># 의존성 방향 게이트</span>
+<span class="cm"># 반증: domain에 adapter import 한 줄 → pnpm arch → RED</span></pre>
+		<aside class="notes">질문 대비용. 라이브 데모가 막히면 이 슬라이드로 재현 절차만 보여줘도 됨.</aside>
+	</section>
+
+</div>
+
+<div id="hud">
+	<span class="hint"><span class="kbd">←</span> <span class="kbd">→</span> 이동 · <span class="kbd">n</span> 노트</span>
+	<span id="counter"></span>
+</div>
+
+<script>
+	const slides = Array.from(document.querySelectorAll(".slide"));
+	let idx = 0;
+	const counter = document.getElementById("counter");
+	function show(i) {
+		idx = Math.max(0, Math.min(slides.length - 1, i));
+		slides.forEach((s, n) => s.classList.toggle("active", n === idx));
+		counter.textContent = (idx + 1) + " / " + slides.length;
+		if (location.hash !== "#" + (idx + 1)) history.replaceState(null, "", "#" + (idx + 1));
+	}
+	function next() { show(idx + 1); }
+	function prev() { show(idx - 1); }
+	document.addEventListener("keydown", (e) => {
+		if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") { e.preventDefault(); next(); }
+		else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); prev(); }
+		else if (e.key === "n" || e.key === "N") { document.body.classList.toggle("show-notes"); }
+		else if (e.key === "Home") { show(0); }
+		else if (e.key === "End") { show(slides.length - 1); }
+	});
+	document.addEventListener("click", (e) => { if (!e.target.closest("a")) next(); });
+	const start = parseInt((location.hash || "#1").slice(1), 10);
+	show(Number.isFinite(start) ? start - 1 : 0);
+</script>
+</body>
+</html>
