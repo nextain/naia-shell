@@ -1,0 +1,22 @@
+{
+	"name": "@naia/core",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Naia hexagonal core — domain/ports/adapters. The core never depends on a provider.",
+	"dependencies": {
+		"msedge-tts": "^2.0.4"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"arch": "depcruise src --config .dependency-cruiser.cjs",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"dependency-cruiser": "^16.4.0",
+		"typescript": "^5.6.0",
+		"vitest": "^2.1.0"
+	}
+}
