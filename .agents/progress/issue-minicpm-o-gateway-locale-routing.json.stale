@@ -1,0 +1,99 @@
+{
+  "issue": "minicpm-o-gateway-locale-routing",
+  "title": "MiniCPM-o gateway mode with locale-based backend routing (KO vs EN/ZH)",
+  "project": "naia-os + any-llm",
+  "current_phase": "build",
+  "gate_approvals": {
+    "understand": "Full data flow mapped. 6 gaps identified across 3 layers (naia-os client, any-llm gateway, config).",
+    "scope": "Gateway mode only. Direct mode untouched. KO→KO pod, EN/ZH→base pod. Fallback to base for unknown locales.",
+    "plan": "See implementation plan below."
+  },
+  "decisions": [
+    {
+      "decision": "setup message carries locale field for gateway routing",
+      "rationale": "User selected 'setup 메시지에 locale 추가' approach. Single /v1/realtime route, gateway resolves backend by locale.",
+      "date": "2026-05-03"
+    },
+    {
+      "decision": "Gateway config: runpod.realtime_backends.ko / .base pattern",
+      "rationale": "Avoids proliferating top-level keys. Backward compatible (pod_url/realtime_url still work as defaults).",
+      "date": "2026-05-03"
+    },
+    {
+      "decision": "ChatPanel auto-selects gateway mode when naiaKey present",
+      "rationale": "Follows same pattern as Gemini Live (L1728-1737). If naiaKey available → gateway; else → direct (serverUrl).",
+      "date": "2026-05-03"
+    },
+    {
+      "decision": "refAudioLanguage type extended to include 'ko'",
+      "rationale": "Phase 7-F is Korean-only. Voice clone input audio will be Korean. Server needs to know.",
+      "date": "2026-05-03"
+    }
+  ],
+  "rejected_alternatives": [
+    {
+      "approach": "Separate routes (/v1/realtime/ko, /v1/realtime/base)",
+      "reason": "Endpoint proliferation. Client needs to know which route to hit. locale in setup is cleaner.",
+      "date": "2026-05-03"
+    },
+    {
+      "approach": "model field for routing (setup.model = 'minicpm-o-4.5-ko')",
+      "reason": "Model field is meaningful to vllm-omni backend. Overloading it for routing is fragile.",
+      "date": "2026-05-03"
+    }
+  ],
+  "constraints_discovered": [
+    {
+      "constraint": "Gateway must not break existing direct-mode clients",
+      "scope": "realtime.py _resolve_backend_url",
+      "date": "2026-05-03"
+    },
+    {
+      "constraint": "session.created must come from backend, not gateway (gateway already handles this correctly)",
+      "scope": "realtime.py L210-214",
+      "date": "2026-05-03"
+    }
+  ],
+  "surprises": [],
+  "blockers": [],
+  "implementation_plan": {
+    "steps": [
+      {
+        "id": 1,
+        "layer": "gateway-config",
+        "file": "projects/project-any-llm/docker/config.naia.yml",
+        "change": "Add runpod.realtime_backends: {ko: URL, base: URL}. Keep pod_url/realtime_url as fallback.",
+        "gaps_addressed": [4]
+      },
+      {
+        "id": 2,
+        "layer": "gateway",
+        "file": "projects/project-any-llm/src/any_llm/gateway/routes/realtime.py",
+        "change": "Update _resolve_backend_url() to accept locale from setup. Route KO→runpod.realtime_backends.ko, else→.base. Fall back to pod_url/realtime_url if backends not configured.",
+        "gaps_addressed": [3]
+      },
+      {
+        "id": 3,
+        "layer": "naia-os-types",
+        "file": "projects/naia-os/shell/src/lib/voice/types.ts",
+        "change": "Extend refAudioLanguage to include 'ko'. MiniCpmOConfig already has locale via LiveProviderConfigBase.",
+        "gaps_addressed": [5, 6]
+      },
+      {
+        "id": 4,
+        "layer": "naia-os-client",
+        "file": "projects/naia-os/shell/src/lib/voice/minicpm-o.ts",
+        "change": "Add locale to setup message: {setup: {apiKey, backend, locale}}. Pass cfg.locale or derive from refAudioLanguage.",
+        "gaps_addressed": [2]
+      },
+      {
+        "id": 5,
+        "layer": "naia-os-ui",
+        "file": "projects/naia-os/shell/src/components/ChatPanel.tsx",
+        "change": "In minicpm-o branch (L1698-1715): when naiaKey available, use gateway mode (gatewayUrl: LAB_GATEWAY_URL, naiaKey). Pass locale: getLocale(). When no naiaKey, keep direct mode.",
+        "gaps_addressed": [1]
+      }
+    ]
+  },
+  "updated_at": "2026-05-03T22:00Z"
+}
