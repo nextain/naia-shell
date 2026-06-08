@@ -46,7 +46,7 @@ ports/     인터페이스(계약) — domain만
 adapters/  포트 구현 — ports+domain   (driving adapter = transport: protocol/stdio 포함)
 app/       use case orchestration — ports만 (※ shell 경계 자체가 아님; god-layer 금지)
 ```
-의존성 규칙(dependency-cruiser): `adapters→ports→domain` · **`app→ports`(adapters 직접 import 금지)** · `driving(transport)→app` · orphan 0.
+의존성 규칙(dependency-cruiser) — **모든 정적 의존은 ports/domain 으로 수렴(R3 codex MED: transport→app 충돌 제거)**: `adapters→ports→domain` · **`app→ports`**(app 은 driving 포트 `AppPort` 를 *구현* + driven 포트를 *사용*; adapters 직접 import 금지) · **`driving(transport)→ports(AppPort·protocol)`**(transport 는 app 에 정적 의존 X — app 의 AppPort 구현체는 composition root 가 주입) · orphan 0.
 - **포트 방향은 관심사에 맞게 (R1 codex MED 수정)**: 이벤트 스트림이 *실제로 있는* 포트만 bidirectional(`invoke` + `subscribe/onEvent`, EventPort). 순수 요청/응답 포트는 `invoke`-only. 무차별 양방향 강제 = hollow event channel + transport 모양 역침투 → 금지.
 
 ## 슬라이스 (관심사 단위 = cut line, 12) — 출처 = old-naia-os/agent
