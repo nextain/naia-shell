@@ -133,7 +133,10 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 - **측정 간 상태 격리(R2 codex)**: 반복 측정·이식본 비교 전 workspace write·pty·cache·session **리셋/롤백**(잔존 상태를 로직 회귀로 오판 방지). 환경 정규화 = 측정 스크립트가 외부 키/엔드포인트 stub 강제(루크 env 부작용 분리).
 
 ### 오류 분류축 (R1) — 모든 측정/실패에 라벨
-`auth · policy · infra · timeout · flaky · old-bug · new-regression`. → "깨짐"을 baseline 에 뭉뚱그리지 않음. **거버넌스 연결(R3)**: `new-regression` = 무조건 FAIL. `security/policy/approval` 계열 `old-bug` = **자동 FAIL + tranche exit 차단**(승계·격리만으로 통과 금지). 그 외 `old-bug` = 승계 가능(별도 결정).
+**2개 직교 축(R4)**:
+- **오류-유형 축**: `auth · infra · timeout · flaky · old-bug · new-regression`.
+- **민감-도메인 축(직교)**: `security · policy · approval · safety`(해당 시 라벨).
+→ "깨짐"을 baseline 에 뭉뚱그리지 않음. **거버넌스(결정론 집행)**: `new-regression` = 무조건 FAIL. **(민감-도메인) ∩ (old-bug)** = 자동 FAIL + tranche exit 차단(승계·격리만으로 통과 금지). 그 외 `old-bug` = 승계 가능(별도 결정).
 
 ### ⚠️ 측정 불가/깨짐 ≠ baseline (R1 수렴 — 핵심 교정)
 미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로(오류 분류 라벨 + 사유). baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상. **거버넌스(R2): high-importance 격리 항목은 해당 tranche exit 를 차단**(중요도만 적고 진행 금지 — 루크 명시 면제만 통과).
