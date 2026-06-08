@@ -139,7 +139,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 → "깨짐"을 baseline 에 뭉뚱그리지 않음. **거버넌스(결정론 집행)**: `new-regression` = 무조건 FAIL. **(민감-도메인) ∩ (old-bug)** = 자동 FAIL + tranche exit 차단(승계·격리만으로 통과 금지). 그 외 `old-bug` = 승계 가능(별도 결정).
 
 ### ⚠️ 측정 불가/깨짐 ≠ baseline (R1 수렴 — 핵심 교정)
-미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로(오류 분류 라벨 + 사유). baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상. **거버넌스(R2): high-importance 격리 항목은 해당 tranche exit 를 차단**(중요도만 적고 진행 금지 — 루크 명시 면제만 통과).
+미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로. **격리 상태 라벨(비-bug, 오류-유형 축과 별개)**: `unwired · unimplemented · disabled-by-design · unsupported-env` + 사유. baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상. **거버넌스(R2): high-importance 격리 항목은 해당 tranche exit 를 차단**(중요도만 적고 진행 금지 — 루크 명시 면제만 통과).
 
 ### baseline 갱신·coverage 규칙 (R1)
 - **old-bug 승계 vs new 교정**: old 버그 *승계(동일 재현)* 기본, 교정은 별도 결정. ⚠️ **단 민감-도메인(security/policy/approval/safety) old-bug = 승계 금지**(명시 승인 필요) — deny-by-default 우선(R2 codex, R5 safety 포함).
@@ -174,7 +174,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 | OS-core(DEFER) | S45·S46 | SafetyPort·ClientSessionPort 계약(F3 후) |
 | 보류 | S41·S42·S52b | naia-memory 트랙(미배선 = **격리/면제 목록**, golden baseline 아님) |
 
-> P02 착수 = **F0~F3 Old-Baseline 측정부터**(old-naia-os 실구동 필요 — 환경/키 = 루크 게이트). 측정 결과로 계약·통합 테스트 구체화.
+> P02 착수 = **F0~F3 Old-Baseline 측정부터**. F0~F3 은 로컬·외부키X·read-only/승인 범위라 **루크 게이트 없이 측정 가능**(R6). 루크 게이트(실구동·키·env)는 *외부 의존* 측정(V1/V2·채널·voice)에만. 측정 결과로 계약·통합 테스트 구체화.
 
 ## 기반 성숙도 (vertical 선정 1순위 기준 — 검증된 subsystem 위에 올려야)
 
