@@ -70,7 +70,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | S27 | browser 패널 | UC6 | EnvironmentPort.app-surface | 측정 |
 | S28 | panel 설치(panel) | UC9 | skill·EnvironmentPort.app-surface | 측정 |
 | S29 | generic-installed 패널 | UC9 | EnvironmentPort.app-surface | 측정 |
-| S30 | sample-note 패널 | UC9 | EnvironmentPort.app-surface | 측정 |
+| S30 | sample-note 패널 | UC9 | EnvironmentPort.app-surface | ⚠️ App.tsx 에서 제거/미배선(완전성R12) — rejected 후보 |
 | S31 | youtube-bgm | UC8 | EnvironmentPort.space | 측정(YouTube 변동) |
 | S32 | 배경화면/scene | UC8 | EnvironmentPort.space | 측정 |
 | S33 | workspace(fs·editor·filetree) | UC7 | EnvironmentPort.host-system | 측정 |
