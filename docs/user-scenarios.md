@@ -22,21 +22,21 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC9 패널 앱** | 패널 설치→그 앱 스킬 사용 | Chat → 능력(panel install) → 환경(app-surface tool) | skill(panel)·EnvironmentPort.app-surface |
 | **UC10 멀티 채널** | discord/slack 에서 naia 응답 | (외부 채널 ingress, 다중 client) → 사고 → 표현(채널) | ClientSessionPort·gateway·channels |
 | **UC11 자기상태 인지** | "너 지금 상태 어때?"(system-status/진단) | **내수용**(시스템 상태) → 지각 → 표현 | InteroceptivePort·system-status·ExpressionPort |
-| **UC12 온보딩/설정** | 첫 실행 wizard·키 설정 | (control-plane: 설정·신원) | control-plane(session)·config |
+| **UC12-min 최소 부팅 설정** | naia-adk workspace init(**외부 키 없이** 부팅 가능분) | (control-plane init) | control-plane·config |
+| **UC12 전체 온보딩/설정** | wizard + 모델/provider + naia 계정/api key | (control-plane: 설정·신원·외부 auth) | control-plane(session)·config |
 | **UC13 승인 게이트** | 위험 행위 전 사용자 승인 | 사고 → **승인**(규범) → 행위 | ApprovalPort·control-plane |
 | **UC13a 실행 중 중단/취소/e-stop** (신규) | 돌아가는 browser/pty/system 작업을 끊음·회수 | (저지연) 중단·lease revoke·강등 | **SafetyPort**(≠Approval)·reactive path |
 | **UC10a 다중 클라이언트 점유 충돌** (신규) | Discord·로컬 UI 동시 명령 → owner·lease·handoff·revoke | (control-plane 중재) | ClientSessionPort(lease/arbitration) |
 | **UC12a 설정 검증** (신규) | "키 저장됨"이 아니라 *provider/계정 연결 상태를 자기상태에서 관측* | 내수용 → 진단 | InteroceptivePort·system-status |
 | **UC14 graceful degradation** (신규) ★ | 외부 인증/키 깨짐(Discord 등)을 **감지·보고·대체** | 내수용(실패 감지) → 지각 → 표현(정직 보고) | InteroceptivePort·ExpressionPort |
 
-★ = naia 차별점(기억·경험·능동) = vertical 강력 후보.
+★ = naia 차별점(기억·경험·능동) — *기반 성숙 후* 별도 트랙(아래 순서 SoT).
+
+> **우선순위 SoT = 아래 "Foundation tranche + vertical 순서"** (F0→F1→F2→F3 → V1·V2). UC3(기억)은 baseline 부재로 deferred. (인지흐름 관통 깊이는 *분류* 기준일 뿐, 착수 우선순위는 *기반 성숙도*가 결정.)
 
 ## Test Coverage Map (P02 선행 스케치)
 
-각 UC → 계약 테스트(port) + 통합 테스트(app use case) 매핑은 P02. 초안 우선순위:
-- **UC2(음성)·UC3(기억)** = 인지흐름 최다 관통 → vertical 1순위 후보 (감각→지각→기억→사고→표현 1회전).
-- UC1(텍스트) = 최소 관통, smoke baseline.
-- UC11(자기상태) = InteroceptivePort 신설 검증.
+각 UC → 계약 테스트(port) + 통합 테스트(app use case) 매핑은 P02. 순서는 ↓ foundation tranche 를 따름(별도 우선순위 두지 않음). P02 착수 전 = Old-Baseline 측정 필수.
 
 ## 기반 성숙도 (vertical 선정 1순위 기준 — 검증된 subsystem 위에 올려야)
 
@@ -73,10 +73,10 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 **그 다음 (외부 의존, F1 자기상태로 연결 검증 후):**
 - **V1: UC1 텍스트 대화** — provider 키 유효 확인 후 Chat→사고→표현.
 - **V2: UC2 음성 대화** — voice substrate 축 확장(다슬라이스, 데모).
-- **OS-core (P01 필수, 시점 G1):** UC10a 다중 클라이언트 lease/handoff/revoke · UC13a stop/e-stop/revoke. — 부가 아니라 OS성 핵심.
+- **OS-core (P01 시나리오에 포함 확정, 구현 = F-tranche 안정화 후 DEFER):** UC10a 다중 클라이언트 lease/handoff/revoke · UC13a stop/e-stop/revoke. — 부가 아니라 OS성 핵심이라 *시나리오는 지금 박되* 착수는 F3 이후.
 - **보류: UC3/UC4 기억·능동** — old 미배선 → naia-memory 통합 트랙 후.
 
-→ **G1 에서 루크가 F0~F3 순서 + OS-core(UC10a/13a) 포함 확정.** "가장 안전한 vertical"이 아니라 *얇게 쪼갠 foundation tranche*.
+→ "가장 안전한 vertical"이 아니라 *얇게 쪼갠 foundation tranche*. G1 = 이 순서 승인.
 
 ## golden 기준선 — 1회 smoke ≠ golden (R1 codex)
 
@@ -87,9 +87,11 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 > **이식 coverage 함의**: 1단계 슬라이스의 `memory` = old 소스엔 scrubber·prompt convention(`<recalled_memories>`)만 → `accepted`(scrubber) + `deferred`(실제 store/recall = naia-memory 통합 대기). 커버리지 manifest 에 명시.
 
-## 열린 질문 (G1 결정)
-1. Foundation tranche 순서 F0(설정-min)→F1(자기상태 read-only)→F2(시스템 관측)→F3(시스템 조작) 확정?
-2. OS-core(UC10a 다중클라이언트 lease·UC13a stop/e-stop)를 P01 에 지금 넣을지, 시점은?
-3. ~~UC7 포트 축~~ = **해소(R1)**: host-system = `EnvironmentPort`(body 밖 세계), `ActionPort`=body movement. UC7 = EnvironmentPort.
-4. step-2 계약 backlog(goal-governance 소유자 등) 중 foundation tranche 에 필요한 것 우선 계약화 순서.
-5. notify/memo(non-memory) 계열 독립 UC 필요 여부 — old 실측 확인 후.
+## 열린 질문 (G1 결정 — 진짜 결정 사항만)
+1. Foundation tranche 순서 F0(설정-min)→F1(자기상태 read-only)→F2(시스템 관측)→F3(시스템 조작) 승인?
+
+## 해소·DEFER (재논 금지)
+- ~~UC7 포트 축~~ = 해소(R1): UC7 = `EnvironmentPort`(host-system). `ActionPort`=body movement(별개).
+- OS-core(UC10a·UC13a) = P01 시나리오 **포함 확정**, 구현 DEFER(F3 후).
+- step-2 계약 backlog(goal-governance 소유자·포트 시그니처 등) = DEFER(step-2 계약 단계).
+- notify/memo(non-memory) 독립 UC 여부 = **Old-Baseline 측정 시 확인**(DEFER).
