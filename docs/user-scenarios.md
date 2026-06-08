@@ -83,9 +83,9 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | 단계 | UC | 비고 |
 |---|---|---|
 | **F0** | UC12-min | 외부키 없는 최소 부팅 |
-| **F1** | UC11 · UC14 · **UC12a**(흡수: 연결상태 관측=자기상태 facet) | read-only 진단·실패감지 |
+| **F1** | UC11 · UC14 *(UC12a = UC11/14 facet, 흡수 — 독립 카운트 아님)* | read-only 진단·실패감지 |
 | **F2** | UC7a | host-system read-only 관측 |
-| **F3** | UC7 (+ **선행조건 UC13 승인 게이트** — mutating 행위 규범 경로 필수) | 첫 efferent+reafference |
+| **F3** | UC7 · **UC13 승인 게이트**(F3 에 배치 — mutating 행위 규범 경로, F3 선행조건) | 첫 efferent+reafference |
 | **V1** | UC1 (+ UC12 전체 = provider/계정/키 설정 완료, V1 직전) | provider 검증 후 |
 | **V2** | UC2 | voice |
 | **도구·환경 tranche**(V 이후, *기능별 Old-Baseline 게이트*) | UC5 도구 · UC6 브라우저 · UC8 BGM · UC9 패널 · UC10 멀티채널(기본) | 외부 의존 개별 실측 후 |
