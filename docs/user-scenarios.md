@@ -37,22 +37,42 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 첫 vertical 목적 = *이식 방법론이 인지흐름 1회전을 제대로 도는지* 검증. **검증 안 된 subsystem 위에 올리면 "이식 실패 vs subsystem 실패"가 섞여 vertical 이 무의미.** → 기반이 *이미 검증된* UC 를 골라 transplant 만 격리 검증.
 
-| UC | 기반 subsystem | 검증 상태 |
-|---|---|---|
-| UC1 텍스트 | llm provider | ✅ 작동 |
-| **UC2 음성** | voice cascade(omni/VoxCPM2)·아바타 | ✅ **출시·라이브 검증** |
-| UC3 기억 | **naia-memory** | ⛔ **old-naia-os에 미배선**(scrubber만 존재, bridge/store/recall 호출 0 — baseline pivot 단순화로 끊김). 미검증 이전에 *소스에 기능 없음* → 이식 `deferred` |
-| UC4 능동회상 | naia-memory + 동기(신설) + temporal | ⛔ 미배선 + 신설 의존 → deferred |
-| UC5~UC10 환경/도구/채널 | skill·browser·gateway | 대체로 작동(개별 확인) |
-| UC11 자기상태 | system-status + InteroceptivePort(신설) | 부분 |
+> ⚠️ 아래 "검증" 열 = **old-naia-os *소스* 기능 검증 상태 = 이식 golden 기준선의 존재/신뢰도**. *이식 완료도 아님*(이식은 아직 0, step-1 막 닫힘). old가 known-good 이어야 이식 후 golden-trace/record-replay 로 "이식본 ≡ old 동작"을 격리 검증 가능. old에 없는 기능(memory)은 기준선 자체가 없어 vertical 불가.
 
-## Vertical (5단계) 후보 — G1 에서 선정 (성숙도 반영)
+> ⚠️ **실측 경고(루크 2026-06-08)**: 아래 "기준선" 열은 **아직 실제로 돌려보지 않은 추정**. "예전엔 됐다" ≠ "지금 된다". 외부 인증/키 의존 기능은 토큰 만료로 *지금 깨진* 경우가 많음(예: **Discord = 앱 인증 풀린 듯**). **vertical 선정 전 = 후보 기능을 old-naia-os에서 *실제 기동·작동 확인*(golden 기준선 확립)이 필수 선행.**
 
-- **후보 A(권고): UC1 텍스트 대화** — 검증된 llm 위, *가장 얇고 완결*(Chat→사고→표현). 이식 방법론을 깨끗이 격리 검증. 데모 약하나 vertical 1순위로 최저위험.
-- **후보 B: UC2 음성 대화** — voice 검증됨(✅), 데모 임팩트 최고. 단 다(多)슬라이스라 transplant 표면 큼(2순위로 substrate 축 확장 적합).
-- **후보 C: UC3 기억 / UC4 능동** — naia 핵심 차별이나 **old-naia-os에 memory 미배선**(scrubber만) → 이식할 소스 자체가 없음 = vertical 불가. **naia-memory 통합 = 별도 트랙**(memory 배선+검증 후 그때 vertical). 지금 1순위로 두면 이식·기억·미배선 세 실패원 혼입.
+| UC | 기반 subsystem | 의존성 | 기준선 상태(실측 전 추정) |
+|---|---|---|---|
+| UC1 텍스트 | llm provider | 외부 키(LLM API/gateway) | 키 유효 시 작동 추정 — **실측 필요** |
+| UC2 음성 | voice cascade(omni/VoxCPM2)·아바타 | gateway realtime·키·GPU | 라이브 데모 이력 있으나 **현 작동 실측 필요**(키/서버 의존) |
+| UC3 기억 | naia-memory | — | ⛔ **old에 미배선**(scrubber만) — 기준선 자체 없음 → deferred |
+| UC4 능동회상 | naia-memory+동기(신설)+temporal | — | ⛔ 미배선+신설 → deferred |
+| UC5 도구 | weather·time·github·web | 일부 외부 키 | 혼재 — 개별 실측 |
+| UC6 브라우저 | agent-browser | 로컬(webview) | 로컬 의존 낮음 — 실측 필요 |
+| UC7 시스템 | workspace·pty·memo | 로컬(fs/proc) | 로컬 — 비교적 견고 추정, 실측 |
+| UC8 BGM | youtube-bgm | 외부(YouTube/InnerTube) | YouTube 변동 취약 — 실측 |
+| UC9 패널 | panel install | 로컬 | 실측 |
+| UC10 멀티채널 | discord·slack·google-chat | **외부 앱 인증** | ⚠️ **Discord 깨진 듯(앱 인증 만료?)** — 인증 의존 전반 의심 |
+| UC11 자기상태 | system-status+InteroceptivePort(신설) | 로컬 | 부분(신설 포함) |
 
-→ **G1 에서 루크가 vertical 확정.** 권고 = A(텍스트, 방법론 격리) 또는 B(음성, 검증+데모). 기억(UC3/4)은 naia-memory 트랙이 따라온 뒤.
+## Vertical 순서 — 로컬·introspective foundation 먼저 (루크 2026-06-08)
+
+**원칙: 외부 인증/키에 안 흔들리는 *로컬·자기관찰* 부터.** 외부키 의존(provider·voice·채널)은 지금 깨진 게 많아(Discord 인증 등) golden 기준선이 불안정 → 후순위. 로컬은 견고 + 진단의 렌즈.
+
+- **★ V0 (foundation = 로컬·auth-독립·introspective 클러스터, 권고 1순위)**:
+  - **UC11 자기상태(interoception)** — naia 가 *자기 상태*(설정된 provider·연결·시스템·뭐가 깨짐)를 본다. `InteroceptivePort`. **= 진단 렌즈**(다른 모든 것의 "지금 되나"를 여기서 확인). 로컬, 가장 견고.
+  - **UC7 시스템(host-system)** — 로컬 fs·pty(workspace/terminal). 외부 의존 0, host-system 환경축 실증.
+  - **UC12 substrate 바인딩 설정**:
+    - **workspace 설정** = **naia-adk 설정**(워크스페이스/런타임 환경, AdkSetupScreen·WslSetup) + **naia 계정 / api key 설정**(naia 게이트웨이 계정·entitlement·`naia-token` + provider api key). control-plane. ※ workspace = 설정의 집이자 host-system 표면(UC7과 동일 단위).
+    - **모델 설정** — *어떤 provider/model*(anthropic/openai/gemini/ollama/local/gateway — `agent/providers`) = 뇌↔reasoning substrate.
+    - (+ 환경: 배경화면/공간 `EnvironmentPort` space · body: 아바타 VRM — substrate 외관축)
+    - config = "뇌는 substrate 모름"을 묶음. 계정/키/provider 는 외부 의존 → **UC11 자기상태로 연결을 관찰·검증**.
+  - → 로컬 3종이 첫 transplant 실증이자 기준선 인프라. 완료 시 외부키 기능들의 기준선도 *진단 가능*해짐.
+- **V1: UC1 텍스트 대화** — provider 연결 검증(키 유효) 후, 얇은 cognitive-flow 1회전(Chat→사고→표현).
+- **V2: UC2 음성 대화** — voice substrate 축 확장. 데모 임팩트(다슬라이스).
+- **보류: UC3/UC4 기억·능동** — old 미배선 → naia-memory 통합 트랙 후.
+
+→ **G1 에서 루크가 V0 클러스터(UC11+UC7+UC12) 범위·순서 확정.** 로컬·introspective 가 흔들리지 않는 첫 실증.
 
 > **이식 coverage 함의**: 1단계 슬라이스의 `memory` = old 소스엔 scrubber·prompt convention(`<recalled_memories>`)만 → `accepted`(scrubber) + `deferred`(실제 store/recall = naia-memory 통합 대기). 커버리지 manifest 에 명시.
 
