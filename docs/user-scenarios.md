@@ -151,14 +151,14 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 ### per-skill 샘플링 (R1 — coverage illusion 방지)
 default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/auth/env/schema drift 공유). → **capability class 대표 샘플 + 변이점별 예외 샘플**(통계 추론). **샘플 manifest 고정(R3)**: class별 ≥1 대표 + 알려진 변이축(auth·env·schema·runtime)별 예외 1 = 고정 목록(리뷰어/tranche 무관 동일, coverage drift 방지).
 
-### Foundation tranche 테스트 매핑 (F0~F3 구체)
+### Foundation tranche 테스트 매핑 (F0~F3 구체) — *provisional(실측 전 추정), Old-Baseline 측정 후 final*
 
 | 단계 | 시나리오 | Old-Baseline 측정 | 계약 테스트 | 통합 테스트(인지흐름) |
 |---|---|---|---|---|
 | **F0** | UC12-min workspace init(최소 부팅, 외부키X) | naia-adk 부팅·workspace init trace | config/control-plane port | 부팅→workspace 준비 / **negative**: 손상·부분 설정→정직 보고(차단/비차단은 손상 유형별 계약 — fail-closed 차단도 정상일 수 있음) |
 | **F1** | S09/S10/S11 자기상태 · S44 degradation · S52 facts · **+ApprovalPort 최소계약 선잠금** | system-status·diagnostics·device 상태 trace **+ 승인 플로우(부재·거부·만료·중복·승인후변경) 상태전이 trace** | `InteroceptivePort`(read-only 최소) **+ `ApprovalPort` 최소계약** | 내수용→지각→정직 보고 / **negative(exit-block)**: 승인부재·거부 시 행위 차단·degradation 오보 금지 / **downstream contamination**: 상태/승인 실패가 planning·route·skill 선택 오판으로 전염되지 않음 |
 | **F2** | S07a workspace 관측(read-only) | workspace_* read 류 trace | `EnvironmentPort`(host-system) observe | 사고→환경 관측 / **negative(exit-block)**: 권한 밖 경로 거부·미지원 환경 정직 보고 |
-| **F3** | S07 workspace 조작 + S12 승인 | workspace write·pty trace + 승인 흐름 + **거부/권한부족/timeout trace** | `EnvironmentPort` mutate + `ApprovalPort` | 승인→환경 행위→**observed→mismatch** / **negative(exit-block)**: 승인거부·권한부족·timeout→행위 차단·롤백 |
+| **F3** | S07 workspace 조작 + S12 승인 | workspace write·pty trace + 승인 흐름 + **거부/권한부족/timeout trace** | `EnvironmentPort` mutate + `ApprovalPort` | 승인→환경 행위→**observed→mismatch** / **negative(exit-block)**: 승인거부·권한부족→행위 차단; timeout→부분반영·rollback불가 시 *결과 미확정 정직 보고*(rollback 항상 가능 가정 금지) |
 
 ### 나머지 시나리오 매핑 (템플릿 — 각 tranche 착수 시 구체화)
 
