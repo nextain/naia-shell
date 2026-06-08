@@ -9,6 +9,7 @@
 - [이식 구조 (1단계 뼈대) v5](./STRUCTURE.md) — 뇌/육체/OS·인지흐름 재그룹핑·포트 canon·이식 메커니즘 (naia-os 이식 SoT)
 - [사용자 시나리오 (2단계 P01)](./user-scenarios.md) — UC 카탈로그·인지흐름 관통·vertical 후보 (G1 대기)
 - [워드사전 (2단계)](./glossary.md) — 도메인 용어 통일 (뇌/육체/환경·faculty·포트·이식)
+- [요구사항 (2단계 P03)](./requirements.md) — foundation tranche FR/NFR (P04 통합테스트 대상)
 - [프로젝트 구조 표준](./project-structure.md) — F12/F13 루트 화이트리스트, 디렉터리 규약
 - [위협 모델](./threat-model.md) — 보안 경계, 시크릿 격리(T3), 추적 금지 경로
 - [LLM 역할 분담](./llm-roles.md) — 작은(라이트) 모델 ↔ 큰 모델 분담, 단일 CLI 어댑터, 검출 계층
