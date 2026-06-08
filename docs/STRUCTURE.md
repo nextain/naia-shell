@@ -1,7 +1,7 @@
 # naia-os 이식 구조 (1단계 산출물 — 구조 뼈대) v5 (인지흐름 재그룹핑)
 
 > 추적: L0 미션(naia-os 전체를 헥사고날 gRPC로 이식) / 진행 단계 **1**.
-> 상태: **v5 = 인지흐름 정렬 재그룹핑(뇌/육체/OS).** v4 골격(R1~R4 수렴) 위에 brain↔body·OS·인지흐름·경험 사상 추가 → v5 신규 리뷰 R1~R6: gemini PASS, codex 구조 결함 전부 RESOLVED(포트 명명 canon 통일 = 마지막 step-1 항목). **DEFER 항목(메서드 계약·ingress 매핑·서브포트 책임·dependency-cruiser 강제) = 2~3단계.** → **루크 최종 승인 = 1단계 닫기.** 승인 전 슬라이스 이식 금지.
+> 상태: **v5 = 인지흐름 정렬 재그룹핑(뇌/육체/OS) — 2회 클린 리뷰 통과(gemini PASS · codex PASS, "step-1 구조 결함 없음").** v4 골격(R1~R4) + brain↔body·OS·인지흐름·경험 사상 + v5 R1~R7 적대 리뷰 수렴. **DEFER(메서드 계약·ingress 매핑·서브포트 책임·dependency-cruiser 강제) = 2~3단계.** → **루크 최종 승인 = 1단계 닫기.** 승인 전 슬라이스 이식 금지.
 > 범위 주의: 1단계 = *원칙 + 슬라이스 목록 + 레이어 규칙 + 경계 포트 + 이식 메커니즘*. **파일별 정밀 분류는 슬라이스 이식 시**(2~3단계).
 > 작업장·이식 메커니즘 SoT = alpha-adk `.agents/progress/new-naia-transplant-workspace-2026-06-08.md`.
 
