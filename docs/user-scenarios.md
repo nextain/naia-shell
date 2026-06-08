@@ -28,7 +28,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC13a 실행 중 중단/취소/e-stop** (신규) | 돌아가는 browser/pty/system 작업을 끊음·회수 | (저지연) 중단·lease revoke·강등 | **SafetyPort**(≠Approval)·reactive path |
 | **UC10a 다중 클라이언트 점유 충돌** (신규) | Discord·로컬 UI 동시 명령 → owner·lease·handoff·revoke | (control-plane 중재) | ClientSessionPort(lease/arbitration) |
 | **UC12a 설정 검증** (UC11/14 **facet, 독립 UC 아님** — F1 흡수) | "키 저장됨"이 아니라 *provider/계정 연결 상태를 자기상태에서 관측* | 내수용 → 진단 | InteroceptivePort·system-status |
-| **UC14 graceful degradation** (신규) ★ | 외부 인증/키 깨짐 **감지·보고**(read-only). *대체(fallback)는 후속 tranche*(행위라 F1 밖) | 내수용(실패 감지) → 지각 → 표현(정직 보고) | InteroceptivePort·ExpressionPort |
+| **UC14 graceful degradation** (신규) ★ | **현 설정된 것의 degradation 감지·보고**(read-only) — F1=미설정·시스템 이상, *UC12 후 자동 확장*=외부 인증/키 깨짐(Discord). *대체(fallback)=후속 tranche*(행위라 밖) | 내수용(실패 감지)→지각→표현(정직 보고) | InteroceptivePort·ExpressionPort |
 
 ★ = naia 차별점(기억·경험·능동) — *기반 성숙 후* 별도 트랙(아래 순서 SoT).
 
@@ -66,7 +66,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 **Foundation tranche (얇은 순차 단계, read-only→mutating):**
 - **F0 (전제조건, vertical 아님): UC12-min 로컬 최소 설정** — naia-adk workspace 최소(외부 키 없이 부팅 가능분). control-plane init. *인지흐름 아님 = vertical 분류 제외.*
-- **F1: UC11 + UC14 자기상태 진단(read-only, afferent-only)** — naia 가 자기 상태 관측·보고. `InteroceptivePort`. **= 진단 렌즈**. **범위(R5)**: F0-min 이 남긴 *persisted config + 시스템 상태 + 무엇이 설정/미설정*까지(대체·행위 없음). ⚠️ **외부 provider/계정 auth 깨짐(Discord 등) 감지는 그 auth 가 설정된 *UC12 이후***(F1 시점엔 판정 기준 부재) — UC14 의 외부-auth degradation 부분은 UC12 후 활성. golden-trace 첫 성과물 = "설정/미설정·시스템 상태를 정직 보고".
+- **F1: UC11 + UC14 자기상태 진단(read-only, afferent-only)** — naia 가 자기 상태 관측·보고. `InteroceptivePort`. **= 진단 렌즈**. **범위(R5)**: F0-min 이 남긴 *persisted config + 시스템 상태 + 무엇이 설정/미설정*까지(대체·행위 없음). UC14 = **현 설정된 것의 degradation 보고**(F1=미설정·시스템 이상; 외부 provider/계정 auth 깨짐은 그 auth 가 설정된 *UC12 이후 자동 확장* — F1 시점엔 판정 기준 부재라 다루지 않음). golden-trace 첫 성과물 = "설정/미설정·시스템 상태를 정직 보고".
 - **F2: UC7a 시스템 관측(read-only)** — host-system 상태 조회(변경 X). 가장 안전한 첫 환경 이식.
 - **F3: UC7 시스템 조작(mutating)** — Action→Environment→**observed→mismatch**(reafference) 완결. = 얇지만 완전한 cognitive 1회전(첫 efferent+reafferent 실증).
 
