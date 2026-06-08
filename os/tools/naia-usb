@@ -74,10 +74,13 @@ check_safety() {
 		return 0
 	fi
 
-	local root_src root_disk
+	local root_src root_disk=""
 	root_src="$(findmnt -no SOURCE / 2>/dev/null || true)"
-	if [[ -n "$root_src" ]]; then
-		root_disk="$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1)"
+	# On composefs/overlay/tmpfs roots (e.g. Fedora Atomic / Bazzite) the SOURCE
+	# is not a block device, so skip the backing-disk lookup — lsblk on a
+	# non-device argument exits non-zero and would abort under set -euo pipefail.
+	if [[ -n "$root_src" && -b "$root_src" ]]; then
+		root_disk="$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1 || true)"
 		if [[ -n "$root_disk" && "/dev/$root_disk" == "$dev" ]]; then
 			die "$dev is the root disk — refusing"
 		fi
