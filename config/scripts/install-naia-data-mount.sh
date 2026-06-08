@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# install-naia-data-mount.sh — register the var-naia.mount unit during image build.
+# install-naia-data-mount.sh — register the persistent-data mount unit during image build.
 #
-# At runtime, var-naia.mount auto-mounts a partition labeled "naia-data" at /var/naia.
-# A xdg-autostart entry then symlinks ~/naia-adk → /var/naia/naia-adk per user.
+# At runtime, var-home-liveuser.mount auto-mounts a partition labeled "naia-data"
+# directly at /var/home/liveuser (the live session user's home), BEFORE livesys
+# creates the live user. livesys then sees a pre-existing home (useradd -M) and
+# chowns + restorecons it, so the entire home — settings, conversations, memory,
+# and ~/naia-adk — persists across reboots of the live USB.
 #
-# If no naia-data partition exists (e.g., installed system without persistent USB),
-# the mount is a no-op (ConditionPathExists + nofail).
+# If no naia-data partition exists (e.g., installed system, or live boot without
+# the persistent USB), the mount is a no-op (nofail + device Requires).
+#
+# Legacy var-naia.mount (+ ~/naia-adk symlink) is left in the image but NOT
+# enabled — superseded by whole-home persistence.
 #
 # See issue #262.
 
-echo "[naia] Setting up persistent data mount..."
+echo "[naia] Setting up persistent liveuser-home mount..."
 
-# Ensure the symlink helper is executable
+# Keep the legacy symlink helper executable (harmless no-op when /var/naia absent)
 chmod 0755 /usr/libexec/naia-adk-link
 
-# /var/naia mount target is created at boot via tmpfiles.d
-# (config/files/usr/lib/tmpfiles.d/naia-data-mount.conf) — /var is regenerated
-# per-deployment on rpm-ostree systems, so we cannot create it at image build.
+# Enable the whole-home persistent mount so systemd attempts it on boot
+# (ordered before livesys.service via the unit's Before=).
+systemctl enable var-home-liveuser.mount
 
-# Enable the mount unit so systemd attempts to mount on boot
-systemctl enable var-naia.mount
-
-echo "[naia] Persistent data mount registered (var-naia.mount enabled)"
+echo "[naia] Persistent home mount registered (var-home-liveuser.mount enabled)"

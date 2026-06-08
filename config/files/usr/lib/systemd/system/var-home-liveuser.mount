@@ -1,0 +1,18 @@
+[Unit]
+Description=Naia persistent liveuser home
+Documentation=https://github.com/nextain/naia-os/issues/262
+# Must attach before livesys creates the live user, so livesys sees a
+# pre-existing /home/liveuser (uses useradd -M, then chowns + restorecons it)
+# and user data lands on the persistent partition instead of the RAM overlay.
+After=dev-disk-by\x2dlabel-naia\x2ddata.device
+Requires=dev-disk-by\x2dlabel-naia\x2ddata.device
+Before=livesys.service
+
+[Mount]
+What=/dev/disk/by-label/naia-data
+Where=/var/home/liveuser
+Type=btrfs
+Options=defaults,nofail,x-systemd.device-timeout=10,compress=zstd:1,noatime,nodiscard,commit=120,seclabel
+
+[Install]
+WantedBy=local-fs.target
