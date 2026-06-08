@@ -78,6 +78,22 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 → "가장 안전한 vertical"이 아니라 *얇게 쪼갠 foundation tranche*. G1 = 이 순서 승인.
 
+### 전체 UC 배치 (단일 착수 SoT — 모든 UC 명시, R3 codex)
+
+| 단계 | UC | 비고 |
+|---|---|---|
+| **F0** | UC12-min | 외부키 없는 최소 부팅 |
+| **F1** | UC11 · UC14 · **UC12a**(흡수: 연결상태 관측=자기상태 facet) | read-only 진단·실패감지 |
+| **F2** | UC7a | host-system read-only 관측 |
+| **F3** | UC7 (+ **선행조건 UC13 승인 게이트** — mutating 행위 규범 경로 필수) | 첫 efferent+reafference |
+| **V1** | UC1 (+ UC12 전체 = provider/계정/키 설정 완료, V1 직전) | provider 검증 후 |
+| **V2** | UC2 | voice |
+| **도구·환경 tranche**(V 이후, *기능별 Old-Baseline 게이트*) | UC5 도구 · UC6 브라우저 · UC8 BGM · UC9 패널 · UC10 멀티채널(기본) | 외부 의존 개별 실측 후 |
+| **OS-core**(F3 후) | UC10a 다중클라이언트 lease · UC13a stop/e-stop | 구현 DEFER |
+| **deferred**(naia-memory 트랙) | UC3 기억 · UC4 능동 | old 미배선 |
+
+미배치 UC = 0(전수 배치). 착수 순서 해석 단일.
+
 ## golden 기준선 — 1회 smoke ≠ golden (R1 codex)
 
 외부 인증/모델/YouTube/Discord 는 drift source. baseline 에 함께 **freeze**: `입력 trace` + `출력 trace` + `설정/버전/키 상태` + `실패 분류(인증 실패 vs 제품 버그)`. 안 그러면 "old 가 오늘 운 좋게 됨"을 canonical 로 오인. (UC14 가 인증실패 분류를 담당.)
