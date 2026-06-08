@@ -1,63 +1,51 @@
 <!-- src-sha: 9ca11b69fa066f2f -->
 <!-- 자동 번역 미러 (M13-mirror). 원본: .agents/context/project-index.yaml -->
 
-```markdown
-# naia-os 컨텍스트 인덱스
-
-프로젝트: naia-os  
-버전: 0.1.0  
-업데이트: 2026-06-08  
-설명: Bazzite 기반 배포형 AI 운영체제 — naia-template-project 전면 재구성 (육각형 아키텍처 이식)
-
 ---
+프로젝트: "naia-os"
+버전: "0.1.0"
+갱신일: "2026-06-08"
+설명: |
+  바자이트(Bazzite) 기반의 배포형 인공지능 운영체제(AI OS) — 나이아(naia) 템플릿 프로젝트를 헥사고날 아키텍처(Hexagonal Architecture)로 다시 구축.
 
-## 세션 시작 시 반드시 읽을 파일 (순서 중요)
+# 세션 시작 시 반드시 읽는 파일 (순서 중요)
+필수_읽기_항목:
+  - 파일: .agents/context/process-status.json
+    목적: "현재 진행 중인 문제 및 소프트웨어 개발 생명주기(SDLC) 단계 상태 확인. 세션 시작 시 마지막 갱신 일자(last_updated) 업데이트 필수."
+  - 파일: .agents/context/agents-rules.json
+    목적: "규칙의 단일 정보원(SoT) — 프로젝트의 모든 금지 사항 및 필수 규칙 포함."
+  - 파일: docs/project-structure.md
+    목적: "허용된 최상위 디렉토리 및 파일 구조 명세."
 
-| 파일 | 목적 |
-|------|------|
-| `.agents/context/process-status.json` | 현재 이슈 및 SDLC(Software Development Life Cycle) 게이트 상태. 세션 시작 시 `last_updated` 갱신 필수 |
-| `.agents/context/agents-rules.json` | 규칙 단일 정보원 (Single Source of Truth) — 전체 금지·필수 사항 |
-| `docs/project-structure.md` | 루트 디렉토리·파일 허용 명세 |
+# 진입점
+진입점:
+  - 파일: AGENTS.md
+    목적: "AI 도구 연동을 위한 기준 정보(canonical SoT)."
+  - 파일: CLAUDE.md
+    목적: "클로드 코드(Claude Code)에서 사용하는 AGENTS.md의 복제본(mirror)."
 
----
+# 필요 시 불러오기 (온디맨드 로딩)
+필요시_불러오기:
+  프로세스:
+    - 파일: docs/user-scenarios.md
+      주제: [사용자 사례(UC), 테스트 커버리지]
+    - 파일: docs/requirements.md
+      주제: [기능 요구사항(FR), 비기능 요구사항(NFR)]
+    - 파일: docs/glossary.md
+      주제: [용어 정의]
+  아키텍처:
+    - 파일: docs/ARCHITECTURE.md
+      주제: [시스템 아키텍처, 패키지 구성, 의존성]
+  진행_중인_이슈:
+    - 파일: .agents/progress/
+      주제: [이슈, 진행 현황, SDLC 단계]
+  격리_보관소:
+    - 파일: quarantine/MANIFEST.json
+      주제: [격리(quarantine), 보류 자산, 방치 자산]
+      참고: "시스템 안전을 위해 별도로 격리한 방치 의심 자산 목록. 비어있지 않은 경우 보존된 자산이 있음을 의미하며, 대기 중인 항목(pending_notice)은 관리자의 확인이 필요함. (도구: scripts/quarantine.mjs)"
 
-## 진입점
-
-| 파일 | 목적 |
-|------|------|
-| `AGENTS.md` | AI 도구 통합 진입점 (canonical SoT) |
-| `CLAUDE.md` | AGENTS.md의 Claude Code 미러 |
-
----
-
-## 필요할 때만 로드하는 섹션
-
-### 프로세스·요구사항
-
-- **`docs/user-scenarios.md`** — 사용 사례(UC), 사용자 시나리오, 테스트 커버리지 맵
-- **`docs/requirements.md`** — 기능 요구사항(FR), 비기능 요구사항(NFR)
-- **`docs/glossary.md`** — 도메인 용어사전
-
-### 아키텍처
-
-- **`docs/ARCHITECTURE.md`** — 시스템 아키텍처, 패키지 맵, 의존성
-
-### 진행 상황
-
-- **`.agents/progress/`** — 이슈, 진행 중 작업, SDLC 게이트
-
-### 격리 자산
-
-- **`quarantine/MANIFEST.json`** — 보류·격리된 미사용 자산 목록 (강제 추적)
-  - 비어있지 않으면: 백업 자산 존재 의미
-  - `pending_notice` 항목: 권한자 처분 대기 중
-  - 관리: `scripts/quarantine.mjs`
-
----
-
-## 컨텍스트 단일 정보원(SoT) 우선순위
-
-1. `.agents/context/agents-rules.json`
-2. `AGENTS.md`
-3. `.agents/context/project-index.yaml`
-```
+# 컨텍스트 정보 우선순위
+정보_우선순위:
+  - .agents/context/agents-rules.json
+  - AGENTS.md
+  - .agents/context/project-index.yaml

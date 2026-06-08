@@ -47,6 +47,10 @@
           {
             "type": "command",
             "command": "node .agents/hooks/conform-gate.js"
+          },
+          {
+            "type": "command",
+            "command": "node .agents/hooks/mirror-sync.js"
           }
         ]
       }
