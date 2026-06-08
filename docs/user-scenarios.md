@@ -58,7 +58,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | S15 | gemini-live 음성 | UC2 | voice provider·ws | 측정 |
 | S16 | openai-realtime 음성 | UC2 | voice provider·ws | 측정 |
 | S17 | tts | UC2 | ExpressionPort(speech) | 측정 |
-| S18 | **voicewake(이름 불러 활성화)** | UC2 | SensoryPort·wake | ⚠️ **OpenClaw 잔재 의심, 개발검증 X — 확인 필요** |
+| S18 | **voicewake(이름 불러 활성화)** | UC2 | SensoryPort·wake | ✓루크확인: OpenClaw 잔재·미검증(개발검증 X) |
 | S19 | avatar 표현(VRM, AvatarCanvas) | UC2 | ExpressionPort | 측정 |
 | S20 | time | UC5 | skill(temporal) | 측정 |
 | S21 | weather | UC5 | skill(외부) | 측정 |
@@ -76,19 +76,33 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | S33 | workspace(fs·editor·filetree) | UC7 | EnvironmentPort.host-system | 측정 |
 | S34 | terminal(pty) | UC7 | EnvironmentPort.host-system | 측정 |
 | S35 | channels(채널 일반) | UC10 | gateway·channels | 측정 |
-| S36 | naia-discord | UC10 | gateway·channels | ⚠️ **Discord 앱 인증 만료 의심 — 확인** |
+| S36 | naia-discord | UC10 | gateway·channels | ✓루크확인: 안 됨(앱 인증 만료 추정) |
 | S37 | notify-discord | UC10 | channels | 측정(인증) |
 | S38 | notify-google-chat | UC10 | channels | 측정(인증) |
 | S39 | notify-slack | UC10 | channels | 측정(인증) |
-| S40 | botmadang(봇마당?) | UC10? | ? | ⚠️ **기능 미상 — 루크 확인** |
-| S41 | 기억 recall/주입(`<recalled_memories>`) | UC3 | memory·scrubber | ⚠️ **scrubber만 배선, store/recall 미배선 — naia-memory 트랙** |
+| S41 | 기억 recall/주입(`<recalled_memories>`) | UC3 | memory·scrubber | ✓루크확인: store/recall 미배선(scrubber만) — 검증 필요·naia-memory 트랙 |
 | S42 | 능동 회상(기념일/시간 앵커) | UC4 | memory·cron·motivation | ⚠️ **미배선(memory+cron) — 트랙 후** |
-| S43 | **cron 작업 생성/실행** | (temporal) | cron·CronPort | ⚠️ **만들기로 함, index.ts 미배선·gateway 의존 — 확인** |
+| S43 | **cron 작업 생성/실행** | (temporal) | cron·CronPort | ✓루크확인: 미배선(만들기로 함)·gateway 의존 |
 | S44 | graceful degradation(설정 degradation 감지·보고) | UC14 | InteroceptivePort·ExpressionPort | 신설(F1) |
 | S45 | 실행 중 중단/e-stop | UC13a | SafetyPort | 신설 |
 | S46 | 다중 클라이언트 점유 충돌 | UC10a | ClientSessionPort | 신설 |
+| S47 | **페르소나/personality**(config.persona·OnboardingWizard·system-prompt buildSystemPrompt) | UC12·표현 | control-plane·ExpressionPort | 측정 |
+| S48 | **naia-adk 로컬 스킬 로딩·확장**(workspace_discover_skills·SKILL.md·gateway agent 실행) — *배선 시 로컬에서 가져와 확장* | skill | skill·EnvironmentPort | ⚠️ **배선 의존 — 확인** |
+| S49 | STT 모델 관리(download/delete/list stt models) | UC2(음성 입력) | SensoryPort·adapter | 측정 |
+| S50 | 오디오 출력 장치(list_audio_output_devices) | UC2 | 효과기(audio) | 측정 |
+| S51 | gateway 운영(health·restart·reset·sync) | (control-plane) | control-plane·gateway | 측정 |
+| S52 | memory facts CRUD(get_all/delete/export/import — tauri) | UC3 | memory(facts 표면) | ⚠️ facts 표면 존재 / recall 주입 미배선(S41) |
+| S53 | audit log(get_audit_log·stats) | (control-plane) | 메타인지·감사 | 측정 |
+| S54 | OAuth/로그인·api key 검증(oauth_state·open_login·validate_api_key·write_agent_key) | UC12 | control-plane auth | 측정 |
+| S55 | gateway 스킬: **web_search · x(트위터) · discord**(gateway-tier, gateway LLM agent 실행) | UC5·UC10 | gateway·tool-tiers | 측정 |
+| S56 | (external 광고 tool: github·obsidian·notion·slack·spotify·trello·canvas·code_review 등 — gateway/mcp 경유) | UC5 | gateway·mcp | ⚠️ **실재 vs 광고-only 구분 = 측정** |
 
-> 누락 0 목표. 추가 발견 기능은 이 표에 즉시 행 추가. **검증 열은 측정/루크 확인으로만 확정**(추측 ✅ 금지). S18·S36·S40·S41·S42·S43 = 우선 확인 대상.
+> **브라우저(S26/27) = command-group(~50)**: embed lifecycle·webview·navigate/click/fill/get_text/snapshot/screenshot/eval/press/scroll/forward-back/resize/show-hide/login/permission. **워크스페이스(S33) = command-group(~25)**: adk-server discover·skills discover·sessions·git·progress·file read/write·watch·classify·set-root·project-index. (이식 시 sub-capability 별 분해.)
+> 누락 0 목표. **검증 열 = 측정/루크 확인으로만**(추측 ✅ 금지). 우선 확인: S18(잔재✓)·S36(깨짐✓)·S41/43(미배선✓)·S42·S48·S52·S56.
+
+### 왜 전수인가 — fault isolation (루크 2026-06-09)
+
+혼자 개발 → **다 작동한다는 보장 없음.** 목표는 "전부 검증"이 아니라 **구조적 이식으로 고장을 가두는 것**: 각 기능이 자기 slice/port 경계에 들어가면, 깨진 기능(Discord·cron·memory recall…)이 *그 슬라이스에 격리*되어 다른 영역으로 안 번진다. 전수 enumerate = 각 기능에 구조적 슬롯을 줘 *고장 전파 차단* + UC11 자기상태가 *어디가 깨졌는지 표면화*. (검증은 그 위에서 점진.)
 
 ## Test Coverage Map (P02 선행 스케치)
 
