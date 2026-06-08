@@ -123,12 +123,28 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 ## Test Coverage Map (P02)
 
-각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지, 단계별 역할:
-1. **Old-Baseline 측정**(이식 *전*, old 에서): 입력 trace + 출력 trace + 설정/버전/키 상태 + 실패분류(인증실패 vs 버그). = golden 기준선. *측정 불가(미배선/깨짐)면 그 사실 자체를 baseline 으로 기록*(fault isolation: 깨진 채로 이식돼도 slice 격리).
-2. **계약 테스트(contract, port)**: 이식본 port 가 계약(시그니처·불변식)을 만족 — 모든 adapter 공통. 0토큰 결정론(conform-gate).
-3. **통합 테스트(integration, app use case)**: 시나리오가 인지흐름을 관통(감각→…→표현) — golden trace 와 행동 등가(record-replay).
+각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
+1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
+2. **계약 테스트(contract, port)**: 시그니처·불변식 **+ 오류 의미론·timeout·cancel·retry·partial·ordering·idempotency**(adapter 공통이라 필수). 0토큰 결정론(conform-gate).
+3. **통합 테스트(integration)**: 인지흐름 관통(감각→…→표현) + golden 행동 등가 **+ Negative/부정 path**(거부될 요청·승인실패·권한부족·미지원 환경·timeout·침묵) **+ downstream contamination**(상태보고 실패가 planning/route/skill 선택 오판 일으키나).
 
-**검증 ≠ 이식 성공만 봄**: contract+integration GREEN 이어도 Old-Baseline 과 행동 다르면 FAIL(가짜성공 차단, drift-gate).
+**검증 ≠ 이식 성공만**: contract+integration GREEN 이어도 baseline 행동과 다르면 FAIL(drift-gate). happy-path만 GREEN = 가짜성공(Negative 필수).
+
+### 오류 분류축 (R1) — 모든 측정/실패에 라벨
+`auth · policy · infra · timeout · flaky · old-bug · new-regression`. → "깨짐"을 baseline 에 뭉뚱그리지 않음.
+
+### ⚠️ 측정 불가/깨짐 ≠ baseline (R1 수렴 — 핵심 교정)
+미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로(오류 분류 라벨 + 사유). baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상.
+
+### baseline 갱신·coverage 규칙 (R1)
+- **old-bug 승계 vs new 교정**: baseline 에 old 버그가 있으면 *승계(동일 재현)* 기본, 교정은 별도 결정 기록.
+- **coverage = 중요도 기준**(루크 측정가능성 skew 방지): 측정 불가여도 중요 시나리오는 격리 목록에 *중요도* 명시(후순위 자동화 방지).
+
+### deny-by-default 선잠금 (R1 codex — F3 전)
+`ApprovalPort` 최소 계약(승인 부재·거부·만료·중복·승인후 컨텍스트변경)을 **F3 진입 전**(F1 계약 수준)에 먼저 잠금 — 안 그러면 F1~F2 통합이 과권한/우회 전제로 굴러감.
+
+### per-skill 샘플링 (R1 — coverage illusion 방지)
+default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/auth/env/schema drift 공유). → **capability class 대표 샘플 + 변이점별 예외 샘플**(통계 추론).
 
 ### Foundation tranche 테스트 매핑 (F0~F3 구체)
 
