@@ -1,0 +1,47 @@
+project: "{{PROJECT_NAME}}"
+version: "0.1.0"
+updated: "{{DATE}}"
+description: |
+  {{PROJECT_DESCRIPTION}}
+
+# 세션 시작 시 반드시 읽는 파일 (순서 중요)
+mandatory_reads:
+  - file: .agents/context/process-status.json
+    purpose: "현재 이슈 + SDLC 게이트 상태. last_updated 갱신 필수."
+  - file: .agents/context/agents-rules.json
+    purpose: "규칙 SoT — 금지/필수 전체."
+  - file: docs/project-structure.md
+    purpose: "허용된 루트 구조 명세."
+
+# 진입점
+entry_points:
+  - file: AGENTS.md
+    purpose: "AI 도구 harness 진입점 (canonical SoT)"
+  - file: CLAUDE.md
+    purpose: "Claude Code mirror of AGENTS.md"
+
+# 온디맨드 로딩 — 필요한 섹션만 로드
+on_demand_loading:
+  process:
+    - file: docs/user-scenarios.md
+      topics: [UC, 사용자시나리오, test coverage]
+    - file: docs/requirements.md
+      topics: [FR, NFR, 요구사항]
+    - file: docs/glossary.md
+      topics: [용어, 명칭, terms]
+  architecture:
+    - file: docs/ARCHITECTURE.md
+      topics: [아키텍처, 패키지맵, 의존성]
+  active_issues:
+    - file: .agents/progress/
+      topics: [이슈, 진행중, SDLC]
+  quarantine:
+    - file: quarantine/MANIFEST.json
+      topics: [보류격리, 백업자산, 방치자산, quarantine]
+      note: "harden 이 보류 격리한 방치 의심 자산 목록(force-추적). 비어있지 않으면 백업 자산이 존재 — pending_notice 항목은 권한 유저 처분 대기. scripts/quarantine.mjs"
+
+# 컨텍스트 SoT 우선순위
+context_priority:
+  - .agents/context/agents-rules.json
+  - AGENTS.md
+  - .agents/context/project-index.yaml

@@ -1,0 +1,303 @@
+{
+	"$schema": "https://nextain.com/schemas/agents-rules/v2",
+	"version": "2.0.0",
+	"project": "{{PROJECT_NAME}}",
+	"description": "Machine-readable rules for AI tools. SoT for all enforcement gates. Edit this file, then run scripts/sync-harness-mirrors.sh.",
+	"charter_immutability": {
+		"description": "확정된 헌장 파일은 AI가 절대 단독 수정 불가. 수정 시 사용자 명시 승인 + 새 이슈 등록 필수.",
+		"charter_files": [
+			"AGENTS.md",
+			"CLAUDE.md",
+			"GEMINI.md",
+			"OPENCODE.md",
+			"CODEX.md",
+			".agents/context/agents-rules.json",
+			".agents/context/process-status.json",
+			"docs/project-structure.md"
+		],
+		"violation_action": "BLOCK — 사용자 승인 없이 헌장 파일 수정 시 작업 중단",
+		"status": "ACTIVE"
+	},
+	"resource_registry": {
+		"description": "모든 파일/폴더/패키지는 생성 전 레지스트리에 먼저 등록. 미등록 리소스 발견 시 enforce 스크립트가 삭제.",
+		"principle": "등록 → 승인 → 생성. 미등록 = BLOCK.",
+		"registries": {
+			"root_dirs": "F12 allowed_root_dirs (이 파일)",
+			"root_files": "F13 allowed_root_files (이 파일)",
+			"packages": "pnpm-workspace.yaml packages 목록 (있는 경우)",
+			"docs": "AGENTS.md 정규 디자인 문서 표 + docs/project-structure.md Doc Registry"
+		},
+		"enforcement_script": "scripts/enforce-root-structure.sh",
+		"enforcement_mode": "delete_on_fix — --fix 플래그 시 미등록 리소스 삭제"
+	},
+	"F12": {
+		"id": "F12",
+		"rule": "root_directory_whitelist",
+		"description": "루트 디렉토리는 이 목록만 허용. 새 디렉토리 생성 전 목록에 먼저 추가 (사용자 승인 후).",
+		"allowed_root_dirs": [
+			".agents",
+			".claude",
+			".github",
+			".users",
+			"READMES",
+			"about-docs",
+			"benchmark",
+			"bin",
+			"data-private",
+			"docs",
+			"examples",
+			"node_modules",
+			"packages",
+			"quarantine",
+			"scripts",
+			"src"
+		],
+		"note": "목록 수정 = 헌장 수정 → 사용자 승인 필수 | data-private = T3 보안(키/시크릿/개인정보) — 디렉터리는 허용하되 내용은 .gitignore (절대 추적 금지) | about-docs = 이 표준 repo 자체에 대한 메타 문서(설명·검증·실험). payload 아님 — project-create/migration 이 복제 제외 | quarantine = 보류 격리(처분 6번째). 방치 의심 자산 백업. 실물은 gitignore, MANIFEST.json/README.md 만 추적. scripts/quarantine.mjs 관리 — quarantine_policy 참조",
+		"violation_action": "BLOCK — enforce-root-structure.sh --fix 가 삭제",
+		"status": "ACTIVE"
+	},
+	"F13": {
+		"id": "F13",
+		"rule": "root_file_whitelist",
+		"description": "루트 파일은 이 목록만 허용. 새 파일 생성 전 목록에 먼저 추가 (사용자 승인 후).",
+		"allowed_root_files": [
+			"AGENTS.md",
+			"CLAUDE.md",
+			"GEMINI.md",
+			"OPENCODE.md",
+			"CODEX.md",
+			".gitignore",
+			".gitmodules",
+			"LICENSE",
+			"package.json",
+			"pnpm-workspace.yaml",
+			"pnpm-lock.yaml",
+			"tsconfig.json",
+			"tsconfig.base.json",
+			"README.md",
+			"README.template.md",
+			"CHANGELOG.md",
+			"review-pass.yaml"
+		],
+		"note": "목록 수정 = 헌장 수정 → 사용자 승인 필수 | README.md = 이 repo 소개(복제 제외) / README.template.md = 새 프로젝트가 받는 skeleton(create·migration 이 README.md 로 사용) | review-pass.yaml = 크로스리뷰 리뷰어 패널 project-local override (정본 SoT = naia-settings/review.json)",
+		"violation_action": "BLOCK — enforce-root-structure.sh --fix 가 삭제",
+		"status": "ACTIVE"
+	},
+	"quarantine_policy": {
+		"description": "보류 격리(처분 6번째 방식). 마이그레이션(harden) 중 만난 방치 의심 자산(빌드 미연결 + 한두 커밋 뒤 방치된 스캐폴드/잔재이나 지금 지우기도 애매한 회색 자산)을 즉시 삭제/유지 강요 대신 quarantine/ 로 보류하고 정책 기록 후 사용자 처분.",
+		"manager": "scripts/quarantine.mjs (add|check|list|restore|extend|purge)",
+		"manifest": "quarantine/MANIFEST.json (force-추적 — 컨텍스트가 '백업 자산이 있었다'를 항상 인지)",
+		"storage": "quarantine/ 실물 = gitignore(추적 제외) | git rm --cached 로 격리 = 이력 보존 | purge 후에도 git history 잔존",
+		"default_retention_months": 3,
+		"compress_on_expiry": true,
+		"lifecycle": "active → (cron check 가 review_by 경과 검출) → 자동 tar.gz 압축(비파괴) → archived + pending_notice → (SessionStart hook quarantine-notice.js 가 첫 세션에 surface) → 권한 유저 질의 → purge(삭제)/extend(연장)/restore(복원)",
+		"invariants": [
+			"백그라운드(cron/verify-watch)는 검출·압축·보고만 — 자동 삭제 절대 금지 (보존 우선 directive 정합)",
+			"파괴(삭제 purge)는 사용자가 의도적으로 호출할 때만 — 첫 세션 진입 시 권한 유저가 결정",
+			"만료 자동 처리 = 압축까지만 (디스크 절약, 비파괴)"
+		],
+		"status": "ACTIVE"
+	},
+	"required_process_gate": {
+		"description": "모든 신규 기능/수정 작업은 이 순서를 반드시 따른다. 순서를 건너뛰면 코드 작성 금지.",
+		"process_status_file": ".agents/context/process-status.json",
+		"update_rule": {
+			"session_start": "process-status.json 읽고 current_work 확인 + last_updated 갱신",
+			"session_end": "완료된 게이트 status → done, deliverable 기재, process-status.md 동기화"
+		},
+		"steps": [
+			{
+				"id": "P01",
+				"name": "user_scenarios",
+				"description": "docs/user-scenarios.md에 해당 UC를 추가/업데이트. 누가, 무엇을, 왜 하는지.",
+				"deliverable": "docs/user-scenarios.md UC 항목",
+				"gate": "UC 항목 없으면 다음 단계 금지"
+			},
+			{
+				"id": "P02",
+				"name": "test_scenarios",
+				"description": "UC에 대응하는 테스트 시나리오를 user-scenarios.md Test Coverage Map에 매핑.",
+				"deliverable": "docs/user-scenarios.md Test Coverage Map 항목",
+				"gate": "테스트 파일명/그룹명 명시 없으면 다음 단계 금지"
+			},
+			{
+				"id": "P03",
+				"name": "requirements",
+				"description": "docs/requirements.md에 FR/NFR 항목 추가/업데이트 (상태: Pending).",
+				"deliverable": "docs/requirements.md FR/NFR 항목",
+				"gate": "요구사항 항목 없으면 코드 작성 금지"
+			},
+			{
+				"id": "P04",
+				"name": "integration_test",
+				"description": "통합 테스트 파일 생성 또는 검증 스크립트 결과 첨부.",
+				"deliverable": "테스트 파일 경로 또는 검증 결과",
+				"gate": "테스트 없으면 PR 머지 금지"
+			},
+			{
+				"id": "P05",
+				"name": "requirements_complete",
+				"description": "작업 완료 후 requirements.md 상태 Done, process-status.json 게이트 done으로 업데이트.",
+				"deliverable": "requirements.md 상태 Done + process-status.json 전체 게이트 done",
+				"gate": "커밋 전 상태 업데이트 필수"
+			}
+		]
+	},
+	"mandatory_reads": {
+		"description": "모든 세션 시작 시 순서대로 읽어야 하는 파일.",
+		"files": [
+			{
+				"order": 1,
+				"path": ".agents/context/process-status.json",
+				"reason": "현재 진행 이슈 + SDLC 게이트 상태 파악. last_updated 갱신."
+			},
+			{
+				"order": 2,
+				"path": ".agents/context/agents-rules.json",
+				"reason": "규칙 SoT. 금지/필수 규칙 전체."
+			},
+			{
+				"order": 3,
+				"path": "docs/project-structure.md",
+				"reason": "허용된 루트 구조 명세."
+			}
+		]
+	},
+	"forbidden_actions": [
+		{
+			"id": "F01",
+			"rule": "charter_modification_without_approval",
+			"description": "헌장 파일 수정 시 사용자 명시 승인 없으면 BLOCK.",
+			"status": "ACTIVE"
+		},
+		{
+			"id": "F02",
+			"rule": "unregistered_root_dir_creation",
+			"description": "F12 allowed_root_dirs에 없는 루트 디렉토리 생성 금지.",
+			"status": "ACTIVE"
+		},
+		{
+			"id": "F03",
+			"rule": "unregistered_root_file_creation",
+			"description": "F13 allowed_root_files에 없는 루트 파일 생성 금지.",
+			"status": "ACTIVE"
+		},
+		{
+			"id": "F04",
+			"rule": "process_gate_skip",
+			"description": "P01~P05 순서 건너뛰고 코드 작성 금지.",
+			"status": "ACTIVE"
+		},
+		{
+			"id": "F05",
+			"rule": "process_status_not_updated",
+			"description": "세션 시작/종료 시 process-status.json 미업데이트 금지.",
+			"status": "ACTIVE"
+		},
+		{
+			"id": "F-SEC01",
+			"rule": "no_secrets_in_tracked_paths",
+			"description": "키·토큰·시크릿·개인정보(음성/얼굴 등)는 git 추적 경로에 두지 않는다. data-private/ (gitignored) 또는 외부 시크릿 매니저에만. 추적 발견 시 git rm --cached + (push됐으면) history purge.",
+			"violation_action": "BLOCK — security.test.mjs 가 추적 경로의 시크릿/개인정보 패턴 검출 시 실패",
+			"status": "ACTIVE"
+		}
+	],
+	"self_trust_config": {
+		"description": "self-trust 게이트(M2 SDLC / M4 완료증거 / M3 구조) 공통 설정. hook과 CI 스크립트가 하드코딩 대신 여기서 읽는다. 언어·경로·파일명 비종속을 위해 외부화. 프로젝트는 이 값을 자기 스택에 맞게 오버라이드한다.",
+		"enforcement_level": "enforced",
+		"_enforcement_levels": "off=검사안함 | advisory=경고만(차단 안함) | enforced=차단",
+		"completion": {
+			"_comment": "완료선언 탐지. 다국어. ASCII는 단어경계, CJK/한글은 부분일치. negations에 걸리면 완료선언 아님으로 간주.",
+			"keywords": [
+				"완료",
+				"통과",
+				"끝남",
+				"해결함",
+				"done",
+				"complete",
+				"completed",
+				"finished",
+				"shipped",
+				"resolved",
+				"fixed",
+				"CLEAN",
+				"all pass",
+				"all passed",
+				"green",
+				"完了",
+				"完成"
+			],
+			"negations": [
+				"미완료",
+				"안 됨",
+				"아직",
+				"not done",
+				"unfinished",
+				"incomplete",
+				"未完",
+				"WIP",
+				"wip"
+			],
+			"evidence_patterns": [
+				"Verified:",
+				"Evidence:",
+				"artifact:",
+				"sha256",
+				"coverage",
+				"closes #",
+				"resolves #",
+				"fixes #"
+			],
+			"_strong_evidence_comment": "강한 증거 = 재실행 가능한 검증 인용(review-pass 리포트 경로 / acceptance check 명령). 키워드(evidence_patterns)는 위조 가능 → 약한 증거로 advisory 경고. docs/acceptance-criteria.md 참조.",
+			"strong_evidence_patterns": [
+				"review-pass:",
+				"review-log",
+				".agents/reviews/",
+				"acceptance:",
+				"VERDICT=",
+				"CONFIRMED-resolved"
+			]
+		},
+		"change_set_rules": [
+			{
+				"id": "production-source",
+				"description": "프로덕션 소스 변경 시 시나리오+요구사항 산출물 필요. 프로젝트는 when_changed_glob를 자기 소스 경로로 바꾼다(예: Python은 src/**/*.py, Rust는 crates/**).",
+				"when_changed_glob": [
+					"src/main/**"
+				],
+				"requires": [
+					"docs/user-scenarios.md",
+					"docs/requirements.md"
+				],
+				"exempt_glob": [
+					"**/*.test.*",
+					"**/test/**",
+					"docs/**",
+					"**/*.md"
+				]
+			}
+		],
+		"artifact_min_meaningful_chars": 100,
+		"terminology": {
+			"_comment": "용어 게이트. 프로젝트 약어는 glossary에 정의하거나 풀어쓴다(불친절한 약자 금지). 일반 상식 약어만 whitelist. forbidden_terms = 금지 신조어/자체용어 블랙리스트(프로젝트가 채움).",
+			"glossary_file": "docs/glossary.md",
+			"acronym_min_len": 3,
+			"acronym_whitelist": [
+				"API",
+				"URL",
+				"JSON",
+				"YAML",
+				"HTTP",
+				"HTML",
+				"CSS",
+				"SDK",
+				"CLI",
+				"NFC",
+				"PDF",
+				"CSV",
+				"SQL"
+			],
+			"forbidden_terms": []
+		}
+	}
+}

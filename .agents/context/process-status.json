@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "description": "프로세스 현황 SoT. 세션 시작/종료 시 반드시 업데이트. 구조명세·이슈·리소스를 유기적으로 링크.",
+
+  "refs": {
+    "project_structure": "docs/project-structure.md",
+    "agents_rules": ".agents/context/agents-rules.json",
+    "issue_docs_dir": ".agents/progress/"
+  },
+
+  "current_work": {
+    "issue": null,
+    "title": null,
+    "issue_doc": null,
+    "github_issue": null,
+    "started": null,
+    "last_updated": null,
+    "status": "idle"
+  },
+
+  "sdlc_gates": {
+    "P01": { "status": "n/a", "name": "user_scenarios", "deliverable": null, "ref": null },
+    "P02": { "status": "n/a", "name": "test_scenarios", "deliverable": null, "ref": null },
+    "P03": { "status": "n/a", "name": "requirements", "deliverable": null, "ref": null },
+    "P04": { "status": "n/a", "name": "integration_test", "deliverable": null, "ref": null },
+    "P05": { "status": "n/a", "name": "requirements_complete", "deliverable": null, "ref": null }
+  },
+
+  "resource_registry": {
+    "last_enforce_run": null,
+    "violations": []
+  },
+
+  "_usage": {
+    "session_start": [
+      "1. 이 파일 읽기",
+      "2. current_work 확인",
+      "3. last_updated를 현재 시각으로 갱신",
+      "4. sdlc_gates 상태 확인 후 작업 시작"
+    ],
+    "session_end": [
+      "1. 완료된 게이트 status → done",
+      "2. deliverable 경로 기재",
+      "3. last_updated 갱신",
+      "4. .users/context/process-status.md 동기화",
+      "5. 이 파일을 커밋에 포함"
+    ],
+    "new_issue": [
+      "1. current_work 필드 업데이트",
+      "2. .agents/progress/issue-{N}-{slug}.md 신규 생성",
+      "3. sdlc_gates 전체 status → pending으로 리셋",
+      "4. resource_registry.violations 초기화"
+    ]
+  }
+}

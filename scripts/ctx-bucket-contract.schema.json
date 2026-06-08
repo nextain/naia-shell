@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nextain.com/schemas/ctx-bucket-contract/v0.1",
+  "title": "ctx-bucket contract (v0.1 PoC)",
+  "description": "한 에이전트가 한 번에 안전하게 떠안는 작업 단위(버킷)의 계약. 두 축으로 크기를 잰다 — ①컨텍스트 예산(부피) ②경계복잡도(난이도). 작은 프로젝트에선 ②가 더 binding(단 ①도 히스토리/툴출력/로그로 운영 제약은 유효). v0.1 = codex+gemini 적대 리뷰 반영: generator/judge 실체 식별로 judge!=generator를 검증 규칙화 / falsifier.mutation_target 필수화(가짜 QA 차단) / anchor 불변 locator / acceptance↔falsifier 커버리지 매핑 / complexity_caps가 못 재는 인지 난이도는 risk_flags 로 사람이 명시. 스키마가 못 거는 cross-field 규칙(generator!=judge 등)은 scripts/ctx-bucket.mjs checker 가 강제. cf scripts/cleanse-scan.mjs, scripts/mutation-probe.mjs.",
+  "type": "object",
+  "required": ["id", "goal", "generator", "judge", "allowed_paths", "anchors", "acceptance", "falsifiers", "budget", "complexity_caps", "handoff_pack"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "버킷 식별자 (kebab-case)." },
+    "goal": { "type": "string", "description": "단 하나의 *검증 가능한* 결과. '~를 개선' 금지." },
+    "non_goal": { "type": "array", "items": { "type": "string" }, "description": "건드리지 않는다고 명시. scope creep 차단." },
+
+    "generator": {
+      "type": "object",
+      "description": "이 버킷을 *수행/생성*하는 주체의 실체 식별. judge 와 같으면 닫힌 루프 → checker 가 RED.",
+      "required": ["actor_id"],
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": { "type": "string", "description": "예 'claude:opus-4-8', 'codex:gpt-5.4'." },
+        "tool_id": { "type": "string" },
+        "run_id": { "type": "string" }
+      }
+    },
+    "judge": {
+      "type": "object",
+      "description": "판정 주체의 실체 식별. generator.actor_id 와 달라야 함(checker 강제). risk_flags 가 비어있지 않으면 kind 는 'deterministic-checker' 단독 불가(사람/외부AI 필요).",
+      "required": ["actor_id", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": { "type": "string", "description": "예 'human:luke', 'codex:gpt-5.4', 'tool:ctx-bucket.mjs'." },
+        "kind": { "type": "string", "enum": ["human", "external-ai", "deterministic-checker"], "description": "판정 종류. 'self' 없음." },
+        "run_id": { "type": "string" }
+      }
+    },
+
+    "allowed_paths": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "읽거나 수정해도 되는 경로(glob). 밖을 touch하면 checker RED." },
+    "forbidden_paths": { "type": "array", "items": { "type": "string" }, "description": "절대 touch 금지. touch 시 즉시 RED." },
+
+    "budget": {
+      "type": "object",
+      "description": "축①. E(유효윈도우)=min(user_cap_tokens, max_window_tokens*ratio). 광고 최대창 아니라 E 기준으로만 계약(context rot 반영).",
+      "required": ["max_window_tokens", "user_cap_tokens", "ratio"],
+      "additionalProperties": false,
+      "properties": {
+        "max_window_tokens": { "type": "integer" },
+        "user_cap_tokens": { "type": "integer" },
+        "ratio": { "type": "number", "minimum": 0.05, "maximum": 0.5, "default": 0.25, "description": "기본 0.25, 0.4 초과 비권장." },
+        "static_pack_max_ratio": { "type": "number", "default": 0.4, "description": "시작 정적 문맥 상한 = 이값*E." },
+        "halt_ratio": { "type": "number", "default": 0.7, "description": "누적 문맥이 이값*E 닿으면 강제 handoff." }
+      }
+    },
+
+    "complexity_caps": {
+      "type": "object",
+      "description": "축②. 단 fanout/artifact/interface 개수는 변경 표면적의 *부피 프록시* — 진짜 인지 난이도는 risk_flags 로 보완(codex+gemini 지적: 단일 파일 고난도 로직 과소평가 위험).",
+      "required": ["fanout_cap", "artifact_cap", "interface_cap"],
+      "additionalProperties": false,
+      "properties": {
+        "fanout_cap": { "type": "integer", "minimum": 1, "description": "의존/참조 distinct 모듈·디렉터리 최대." },
+        "artifact_cap": { "type": "integer", "minimum": 1, "description": "생성·수정 파일 최대." },
+        "interface_cap": { "type": "integer", "minimum": 0, "description": "변경 허용 public interface 최대." },
+        "new_concept_cap": { "type": "integer", "minimum": 0, "default": 1 }
+      }
+    },
+    "risk_flags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "complexity_caps 가 못 재는 인지 난이도/위험을 *사람이* 명시(예 'concurrency','crypto','money-path','data-loss','migration'). 비어있지 않으면 judge.kind 가 deterministic-checker 단독일 수 없음 — checker 강제."
+    },
+
+    "anchors": {
+      "type": "array",
+      "minItems": 1,
+      "description": "외부 앵커 — 반드시 만족해야 하는 루프 밖 기준의 *불변* 참조(설계 섹션·계약·요구 ID). 작성자가 임의 생성 불가. checker 가 locator 존재를 확인.",
+      "items": {
+        "type": "object",
+        "required": ["ref", "locator"],
+        "additionalProperties": false,
+        "properties": {
+          "ref": { "type": "string", "description": "무엇인지(예 'tile-spec.md §2 밝기 매핑')." },
+          "locator": { "type": "string", "description": "경로 또는 path#섹션 또는 path:line. checker 가 파일 존재 확인." },
+          "sha": { "type": "string", "description": "선택 — 불변 고정용 commit/content hash." }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "minItems": 1,
+      "description": "수용 기준. 각 기준은 ≥1개 falsifier 로 커버돼야(covered_by) — checker 가 dangling/미커버 RED.",
+      "items": {
+        "type": "object",
+        "required": ["criterion", "covered_by"],
+        "additionalProperties": false,
+        "properties": {
+          "criterion": { "type": "string", "description": "사람이 go/no-go 가능한 기준." },
+          "covered_by": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "이 기준을 검증하는 falsifier id 목록." }
+        }
+      }
+    },
+    "falsifiers": {
+      "type": "array",
+      "minItems": 1,
+      "description": "반증가능 명령 — '됐다'고 인정받으려면 반드시 통과(expect_exit). 통과 못 하면 미완. cmd 가 의미 있는지(가짜 QA 아닌지)는 mutation_target 으로 mutation-probe 가 별도 검증(필수).",
+      "items": {
+        "type": "object",
+        "required": ["id", "cmd", "expect_exit", "mutation_target"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "description": "acceptance.covered_by 가 참조." },
+          "cmd": { "type": "string", "description": "실행 명령(예 'make test')." },
+          "expect_exit": { "type": "integer", "default": 0 },
+          "cwd": { "type": "string", "default": ".", "description": "실행 디렉터리." },
+          "timeout_s": { "type": "integer", "default": 120 },
+          "mutation_target": { "type": "string", "description": "이 falsifier 가 *진짜 검증*하는지 mutation-probe 로 칠 대상 파일(필수). 변이해도 통과하면 가짜 QA. 행위 검증이라 대상 파일이 없으면 'N/A:사유' 로 명시(사람 판정 대상)." }
+        }
+      }
+    },
+
+    "handoff_pack": {
+      "type": "object",
+      "description": "compaction rule — 완료 시 컨텍스트 reset 전 넘길 요약 규격. 긴 세션 전제 X.",
+      "required": ["summary_max_tokens", "must_include"],
+      "additionalProperties": false,
+      "properties": {
+        "summary_max_tokens": { "type": "integer" },
+        "must_include": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

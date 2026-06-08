@@ -1,0 +1,8 @@
+{
+  "_doc": "Contract<->code regions for the conform gate. EMPTY by default = inert. Fill 'regions' with your project's contract(header)/code(source) pairs. 'expect' = known public symbols the extractor MUST recover (sanity gate: an empty parse can't masquerade as 'drift 0'). Paths are relative to the project root. The bundled extractor is C; for another language, replace extract() in check.py.",
+  "_example": {
+    "name": "game", "header": "src/game.h", "source": "src/game.c",
+    "expect": ["game_init", "game_handle_key"]
+  },
+  "regions": []
+}

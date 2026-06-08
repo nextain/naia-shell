@@ -1,0 +1,65 @@
+# self-trust 게이트 — 원격 CI 강제 레이어.
+# 로컬 hook은 1차 마찰일 뿐(bash로 우회 가능). 진짜 강제는 이 CI가 변경 전체를 재계산하는 것.
+name: self-trust gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git diff base 계산용 전체 이력
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 1) hook 로직 회귀 — 모든 자체 테스트가 통과해야 한다 (하네스가 하네스를 검증)
+      - name: hook self-tests
+        run: |
+          fail=0
+          for t in src/test/*.test.mjs; do
+            echo "── $t"
+            node "$t" || fail=1
+          done
+          exit $fail
+
+      # 2) self-trust 재검증 — 변경 전체를 재계산 (로컬 hook의 bash 우회를 무력화)
+      #    M3 구조 + M2 SDLC + M4 완료증거를 CI에서 다시 본다.
+      - name: self-trust re-verification (M3 structure + M2 SDLC + M4 completion)
+        env:
+          # PR에 'charter-approved' 라벨이 있을 때만 헌장/hook/workflow 변경 허용
+          CHARTER_APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'charter-approved') && '1' || '' }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          # base가 비었거나 초기 커밋이면 직전 커밋 기준
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || git hash-object -t tree /dev/null)"
+          fi
+          # 공백 포함 파일명 안전 처리 (word-splitting 회피): mapfile로 줄단위 배열
+          mapfile -t FILES < <(git diff --name-only "$BASE" HEAD)
+          printf '변경 파일: %s\n' "${FILES[@]}"
+          if [ ${#FILES[@]} -gt 0 ]; then
+            node scripts/ci-verify-structure.mjs "${FILES[@]}"   # M3
+            node scripts/ci-verify-sdlc.mjs "${FILES[@]}"        # M2
+          else
+            echo "변경 파일 없음 — 구조/SDLC 검증 생략"
+          fi
+          # CI 자가보호: hook/workflow/charter 변경은 사람 승인(CHARTER_APPROVED) 필요
+          node scripts/ci-verify-charter.mjs "${FILES[@]}"
+          # M4: PR 범위 커밋 '전체'의 완료선언 검사 (codex③: HEAD 1개만 보면 앞 커밋의 무증거 완료선언이 숨는다)
+          COMMITS=$(git rev-list "$BASE..HEAD" 2>/dev/null)
+          [ -z "$COMMITS" ] && COMMITS=$(git rev-parse HEAD)
+          for sha in $COMMITS; do
+            echo "── M4 검사 커밋 $sha"
+            git log -1 --format=%B "$sha" | node scripts/ci-verify-completion.mjs "${FILES[@]}" || exit 1
+          done

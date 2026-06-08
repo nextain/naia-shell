@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "template-project self-trust 하네스 등록. 로컬 hook = 1차 마찰(UX). 진짜 강제는 원격 CI(danger.js). git hook 레이어는 lefthook으로 추가 예정.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/quarantine-notice.js"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/completion-evidence-guard.js"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/charter-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node .agents/hooks/sdlc-gate-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node .agents/hooks/structure-guard.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/conform-gate.js"
+          }
+        ]
+      }
+    ]
+  }
+}

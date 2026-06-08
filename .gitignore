@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+*.js.map
+
+# Environment / secrets — NEVER commit
+*.env
+!*.env.example
+*.json.local
+.naia-agent.json
+naia-agent.env
+
+# Archive (local only)
+*-old/
+*-archive/
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# AI 작업 임시물 + 주기 검증 러너 산출물 (로그/상태/PID — 추적 제외)
+.agents/work/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# T3 보안 — 키/시크릿/개인정보 (절대 추적 금지, README 마커만)
+data-private/
+!data-private/README.md
+
+# 보류 격리(Quarantine) — 방치 의심 자산 백업. 실물은 추적 제외, MANIFEST/README 만 추적
+# (컨텍스트가 "백업 자산이 있었다"를 알도록). scripts/quarantine.mjs 가 관리.
+quarantine/*
+!quarantine/MANIFEST.json
+!quarantine/README.md
