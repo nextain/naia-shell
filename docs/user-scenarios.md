@@ -121,9 +121,39 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 혼자 개발 → **다 작동한다는 보장 없음.** 목표는 "전부 검증"이 아니라 **구조적 이식으로 고장을 가두는 것**: 각 기능이 자기 slice/port 경계에 들어가면, 깨진 기능(Discord·cron·memory recall…)이 *그 슬라이스에 격리*되어 다른 영역으로 안 번진다. 전수 enumerate = 각 기능에 구조적 슬롯을 줘 *고장 전파 차단* + UC11 자기상태가 *어디가 깨졌는지 표면화*. (검증은 그 위에서 점진.)
 
-## Test Coverage Map (P02 선행 스케치)
+## Test Coverage Map (P02)
 
-각 UC → 계약 테스트(port) + 통합 테스트(app use case) 매핑은 P02. 순서는 ↓ foundation tranche 를 따름(별도 우선순위 두지 않음). P02 착수 전 = Old-Baseline 측정 필수.
+각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지, 단계별 역할:
+1. **Old-Baseline 측정**(이식 *전*, old 에서): 입력 trace + 출력 trace + 설정/버전/키 상태 + 실패분류(인증실패 vs 버그). = golden 기준선. *측정 불가(미배선/깨짐)면 그 사실 자체를 baseline 으로 기록*(fault isolation: 깨진 채로 이식돼도 slice 격리).
+2. **계약 테스트(contract, port)**: 이식본 port 가 계약(시그니처·불변식)을 만족 — 모든 adapter 공통. 0토큰 결정론(conform-gate).
+3. **통합 테스트(integration, app use case)**: 시나리오가 인지흐름을 관통(감각→…→표현) — golden trace 와 행동 등가(record-replay).
+
+**검증 ≠ 이식 성공만 봄**: contract+integration GREEN 이어도 Old-Baseline 과 행동 다르면 FAIL(가짜성공 차단, drift-gate).
+
+### Foundation tranche 테스트 매핑 (F0~F3 구체)
+
+| 단계 | 시나리오 | Old-Baseline 측정 | 계약 테스트 | 통합 테스트(인지흐름) |
+|---|---|---|---|---|
+| **F0** | S12-min workspace init(외부키X) | naia-adk 부팅·workspace init trace | config/control-plane port | 부팅→workspace 준비 |
+| **F1** | S09/S10/S11 자기상태 · S44 degradation · S52 facts | system-status·diagnostics·device 상태 trace(로컬) | `InteroceptivePort`(read-only 최소) | 내수용 감각→지각→정직 보고 |
+| **F2** | S07a workspace 관측(read-only) | workspace_* read 류 trace | `EnvironmentPort`(host-system) observe | 사고→환경 관측 |
+| **F3** | S07 workspace 조작 + S12 승인 | workspace write·pty trace + 승인 흐름 | `EnvironmentPort` mutate + `ApprovalPort` | 승인→환경 행위→**observed→mismatch**(reafference) |
+
+### 나머지 시나리오 매핑 (템플릿 — 각 tranche 착수 시 구체화)
+
+| 묶음 | 시나리오 | 검증 핵심 |
+|---|---|---|
+| V1 텍스트 | S13 | provider 키 검증(Old-Baseline) → ChatPort 계약 → 대화 1회전 통합 |
+| V2 음성 | S14~S19·S49·S50·S66 | voice ws/키/GPU Old-Baseline → voice provider·ExpressionPort 계약 → 감각→음성+아바타 통합 |
+| 도구 | S20~S25·S55·S56·S71(per-skill) | skill/mcp/gateway Old-Baseline → SkillPort 계약 → 도구 호출 통합. **default-skills 60+ = per-skill 측정** |
+| 환경-앱 | S26~S30·S62~S64·S70 | 브라우저/워크스페이스 group Old-Baseline → EnvironmentPort.app-surface 계약 |
+| 환경-공간 | S31·S32 | BGM/배경 Old-Baseline → EnvironmentPort.space |
+| 채널 | S35~S39·S60 | 외부 인증 Old-Baseline(깨짐 분류) → channels/ClientSessionPort |
+| 설정·control | S01~S08·S47·S51·S53·S54·S57~S59·S67 | control-plane Old-Baseline → 각 port |
+| OS-core(DEFER) | S45·S46 | SafetyPort·ClientSessionPort 계약(F3 후) |
+| 보류 | S41·S42·S52b | naia-memory 트랙(미배선 = baseline "없음" 기록) |
+
+> P02 착수 = **F0~F3 Old-Baseline 측정부터**(old-naia-os 실구동 필요 — 환경/키 = 루크 게이트). 측정 결과로 계약·통합 테스트 구체화.
 
 ## 기반 성숙도 (vertical 선정 1순위 기준 — 검증된 subsystem 위에 올려야)
 
