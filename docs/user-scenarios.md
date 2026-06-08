@@ -33,13 +33,28 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 - UC1(텍스트) = 최소 관통, smoke baseline.
 - UC11(자기상태) = InteroceptivePort 신설 검증.
 
-## Vertical (5단계) 후보 — G1 에서 선정
+## 기반 성숙도 (vertical 선정 1순위 기준 — 검증된 subsystem 위에 올려야)
 
-- **후보 A: UC3 기억하는 대화** — "감각/입력 → 지각 → 장기기억 recall → 사고 → 표현" 인지 1회전. naia 핵심 차별(기억). 물리 행위 없어 desktop 으로 완결.
-- **후보 B: UC2 음성 대화** — 감각(audio)→표현(음성+아바타) 전 substrate 축. 발표 데모 임팩트.
-- **후보 C: UC4 능동 회상** — 가장 naia다운 "경험하고 사는" 실증이나 temporal·motivation 신설 의존 큼.
+첫 vertical 목적 = *이식 방법론이 인지흐름 1회전을 제대로 도는지* 검증. **검증 안 된 subsystem 위에 올리면 "이식 실패 vs subsystem 실패"가 섞여 vertical 이 무의미.** → 기반이 *이미 검증된* UC 를 골라 transplant 만 격리 검증.
 
-→ **G1 에서 루크가 vertical 1개 확정** + 시나리오 정확성·누락 검토.
+| UC | 기반 subsystem | 검증 상태 |
+|---|---|---|
+| UC1 텍스트 | llm provider | ✅ 작동 |
+| **UC2 음성** | voice cascade(omni/VoxCPM2)·아바타 | ✅ **출시·라이브 검증** |
+| UC3 기억 | **naia-memory** | ⛔ **old-naia-os에 미배선**(scrubber만 존재, bridge/store/recall 호출 0 — baseline pivot 단순화로 끊김). 미검증 이전에 *소스에 기능 없음* → 이식 `deferred` |
+| UC4 능동회상 | naia-memory + 동기(신설) + temporal | ⛔ 미배선 + 신설 의존 → deferred |
+| UC5~UC10 환경/도구/채널 | skill·browser·gateway | 대체로 작동(개별 확인) |
+| UC11 자기상태 | system-status + InteroceptivePort(신설) | 부분 |
+
+## Vertical (5단계) 후보 — G1 에서 선정 (성숙도 반영)
+
+- **후보 A(권고): UC1 텍스트 대화** — 검증된 llm 위, *가장 얇고 완결*(Chat→사고→표현). 이식 방법론을 깨끗이 격리 검증. 데모 약하나 vertical 1순위로 최저위험.
+- **후보 B: UC2 음성 대화** — voice 검증됨(✅), 데모 임팩트 최고. 단 다(多)슬라이스라 transplant 표면 큼(2순위로 substrate 축 확장 적합).
+- **후보 C: UC3 기억 / UC4 능동** — naia 핵심 차별이나 **old-naia-os에 memory 미배선**(scrubber만) → 이식할 소스 자체가 없음 = vertical 불가. **naia-memory 통합 = 별도 트랙**(memory 배선+검증 후 그때 vertical). 지금 1순위로 두면 이식·기억·미배선 세 실패원 혼입.
+
+→ **G1 에서 루크가 vertical 확정.** 권고 = A(텍스트, 방법론 격리) 또는 B(음성, 검증+데모). 기억(UC3/4)은 naia-memory 트랙이 따라온 뒤.
+
+> **이식 coverage 함의**: 1단계 슬라이스의 `memory` = old 소스엔 scrubber·prompt convention(`<recalled_memories>`)만 → `accepted`(scrubber) + `deferred`(실제 store/recall = naia-memory 통합 대기). 커버리지 manifest 에 명시.
 
 ## 열린 질문 (G1 결정)
 1. vertical 1순위 = UC3(기억) vs UC2(음성) vs UC4(능동)?

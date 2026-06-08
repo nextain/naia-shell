@@ -188,7 +188,7 @@ app/       use case orchestration — ports만 (※ shell 경계 자체가 아�
 | llm | providers/* | ports(types·factory) + domain(cost) + adapters(구현) | LlmPort |
 | voice (provider) | **shell/lib/voice→agent** (naia-omni·gemini-live·openai-realtime·vllm-omni) | providers 확장/분기(ws adapter) — 처리는 전부 agent | LlmPort 계열 |
 | tts | tts/* | adapters | TtsPort |
-| memory | memory-scrubber(domain) + (bridge) | adapters + domain | MemoryPort |
+| memory | memory-scrubber(domain, ✅존재) — **store/recall bridge 미배선**(old-naia-os baseline 단순화로 끊김) | adapters + domain | MemoryPort (scrubber=accepted / store·recall=**deferred**=naia-memory 통합 트랙) |
 | skill | skills/built-in/*, loader | adapters(loader) + app(빌트인=gateway proxy 응용) | SkillPort |
 | gateway | gateway/* | ports(types)+domain(tool-tiers)+adapters(client)+app(tool-bridge) | GatewayPort |
 | mcp | mcp/* | adapters | McpPort |
