@@ -34,6 +34,62 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 > **우선순위 SoT = 아래 "Foundation tranche + vertical 순서"** (F0→F1→F2→F3 → V1·V2). UC3(기억)은 baseline 부재로 deferred. (인지흐름 관통 깊이는 *분류* 기준일 뿐, 착수 우선순위는 *기반 성숙도*가 결정.)
 
+## Granular 시나리오 카탈로그 (전수 — 검증 여부 무관, 누락 금지)
+
+> 원칙(루크 2026-06-08): **개발된 기능은 검증 여부와 무관하게 전부 시나리오로 enumerate.** 동작 여부(검증)는 *진행 중 Old-Baseline 측정* 또는 *루크 확인*으로 확정 — 내 추측으로 빼거나 deferred 안 함. "검증" 열 = **미측정**(측정/확인 예정)이 기본, 알려진 플래그만 표기(제외 아님).
+> 13 UC = 인지흐름 분류 맵 / 아래 = 그 아래 실제 기능 단위(소스: 25 built-in skill + 6 패널 + provider/voice/채널). 각 행 = Old-Baseline 측정·이식·검증 단위.
+
+| # | granular 시나리오 (소스) | UC 분류 | 슬라이스/포트 | 검증(측정/확인 예정) |
+|---|---|---|---|---|
+| S01 | 온보딩/welcome | UC12 | control-plane·config | 측정 |
+| S02 | 설정 config / settings 패널 | UC12 | control-plane·config | 측정 |
+| S03 | provider 설정(anthropic·openai·gemini·ollama·xai·zai·claude-code-cli·lab-proxy 각각) — **계정+비용 얽힘(복잡)** | UC12·UC1 | providers·control-plane | 측정(복잡) |
+| S04 | naia 계정 / api key 설정 | UC12 | control-plane(entitlement·naia-token) | 측정 |
+| S05 | sessions 관리 | UC12 | session(control-plane) | 측정 |
+| S06 | agents 관리 | UC12 | control-plane·skill | 측정 |
+| S07 | skill-manager(스킬 설치·관리) | UC12·skill | skill | 측정 |
+| S08 | notify-config(알림 설정) | UC12 | control-plane | 측정 |
+| S09 | system-status(자기 상태) | UC11 | InteroceptivePort | 측정 |
+| S10 | diagnostics(진단) | UC11 | InteroceptivePort | 측정 |
+| S11 | device(디바이스 상태/제어) | UC11·UC7 | 로컬 | 측정 |
+| S12 | approvals(승인 게이트) | UC13 | ApprovalPort | 측정 |
+| S13 | 텍스트 대화(ChatPanel) | UC1 | ChatPort·llm·ExpressionPort | 측정 |
+| S14 | omni 음성(naia-omni realtime) | UC2 | voice provider·ws | 측정(키/서버) |
+| S15 | gemini-live 음성 | UC2 | voice provider·ws | 측정 |
+| S16 | openai-realtime 음성 | UC2 | voice provider·ws | 측정 |
+| S17 | tts | UC2 | ExpressionPort(speech) | 측정 |
+| S18 | **voicewake(이름 불러 활성화)** | UC2 | SensoryPort·wake | ⚠️ **OpenClaw 잔재 의심, 개발검증 X — 확인 필요** |
+| S19 | avatar 표현(VRM, AvatarCanvas) | UC2 | ExpressionPort | 측정 |
+| S20 | time | UC5 | skill(temporal) | 측정 |
+| S21 | weather | UC5 | skill(외부) | 측정 |
+| S22 | memo(로컬 노트) | UC5 | skill(로컬 fs) | 측정 |
+| S23 | github(skill_github) | UC5 | skill·mcp(외부 auth) | 측정 |
+| S24 | obsidian(skill_obsidian) | UC5 | skill(로컬/외부) | 측정 |
+| S25 | mcp 연결 | UC5 | mcp | 측정 |
+| S26 | agent-browser(브라우저 조작) | UC6 | EnvironmentPort.app-surface | 측정 |
+| S27 | browser 패널 | UC6 | EnvironmentPort.app-surface | 측정 |
+| S28 | panel 설치(panel) | UC9 | skill·EnvironmentPort.app-surface | 측정 |
+| S29 | generic-installed 패널 | UC9 | EnvironmentPort.app-surface | 측정 |
+| S30 | sample-note 패널 | UC9 | EnvironmentPort.app-surface | 측정 |
+| S31 | youtube-bgm | UC8 | EnvironmentPort.space | 측정(YouTube 변동) |
+| S32 | 배경화면/scene | UC8 | EnvironmentPort.space | 측정 |
+| S33 | workspace(fs·editor·filetree) | UC7 | EnvironmentPort.host-system | 측정 |
+| S34 | terminal(pty) | UC7 | EnvironmentPort.host-system | 측정 |
+| S35 | channels(채널 일반) | UC10 | gateway·channels | 측정 |
+| S36 | naia-discord | UC10 | gateway·channels | ⚠️ **Discord 앱 인증 만료 의심 — 확인** |
+| S37 | notify-discord | UC10 | channels | 측정(인증) |
+| S38 | notify-google-chat | UC10 | channels | 측정(인증) |
+| S39 | notify-slack | UC10 | channels | 측정(인증) |
+| S40 | botmadang(봇마당?) | UC10? | ? | ⚠️ **기능 미상 — 루크 확인** |
+| S41 | 기억 recall/주입(`<recalled_memories>`) | UC3 | memory·scrubber | ⚠️ **scrubber만 배선, store/recall 미배선 — naia-memory 트랙** |
+| S42 | 능동 회상(기념일/시간 앵커) | UC4 | memory·cron·motivation | ⚠️ **미배선(memory+cron) — 트랙 후** |
+| S43 | **cron 작업 생성/실행** | (temporal) | cron·CronPort | ⚠️ **만들기로 함, index.ts 미배선·gateway 의존 — 확인** |
+| S44 | graceful degradation(설정 degradation 감지·보고) | UC14 | InteroceptivePort·ExpressionPort | 신설(F1) |
+| S45 | 실행 중 중단/e-stop | UC13a | SafetyPort | 신설 |
+| S46 | 다중 클라이언트 점유 충돌 | UC10a | ClientSessionPort | 신설 |
+
+> 누락 0 목표. 추가 발견 기능은 이 표에 즉시 행 추가. **검증 열은 측정/루크 확인으로만 확정**(추측 ✅ 금지). S18·S36·S40·S41·S42·S43 = 우선 확인 대상.
+
 ## Test Coverage Map (P02 선행 스케치)
 
 각 UC → 계약 테스트(port) + 통합 테스트(app use case) 매핑은 P02. 순서는 ↓ foundation tranche 를 따름(별도 우선순위 두지 않음). P02 착수 전 = Old-Baseline 측정 필수.
