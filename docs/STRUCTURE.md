@@ -1,7 +1,8 @@
 # naia-os 이식 구조 (1단계 산출물 — 구조 뼈대) v4
 
 > 추적: L0 미션(naia-os 전체를 헥사고날 gRPC로 이식) / 진행 단계 **1**.
-> 상태: **R1+R2 적대 리뷰(codex·gemini) 반영 완료. R2: gemini PASS · codex HIGH 전부 RESOLVED + MED 2건(protocol transport-neutrality, src 루트 canon) 교정. 루크 최종 승인 = 1단계 닫기.** 승인 전 슬라이스 이식 금지.
+> 상태: **R1~R4 적대 리뷰 수렴 완료(codex·gemini). gemini R2·R3 연속 PASS, codex R4 PASS(새 결함 0). HIGH 3·MED 5 전부 닫힘. → 루크 최종 승인 = 1단계 닫기.** 승인 전 슬라이스 이식 금지.
+> 잔여 노트(문서 결함 아님): 의존성 규칙을 *구현 단계*에 dependency-cruiser/composition 검증으로 강제(3단계) · composition factory 노출 internal 표기 + voice↔shell 인터페이스 계약(2단계 구체화).
 > 범위 주의: 1단계 = *원칙 + 슬라이스 목록 + 레이어 규칙 + 경계 포트 + 이식 메커니즘*. **파일별 정밀 분류는 슬라이스 이식 시**(2~3단계).
 > 작업장·이식 메커니즘 SoT = alpha-adk `.agents/progress/new-naia-transplant-workspace-2026-06-08.md`.
 
