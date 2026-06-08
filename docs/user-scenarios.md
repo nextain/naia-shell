@@ -142,7 +142,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로(오류 분류 라벨 + 사유). baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상. **거버넌스(R2): high-importance 격리 항목은 해당 tranche exit 를 차단**(중요도만 적고 진행 금지 — 루크 명시 면제만 통과).
 
 ### baseline 갱신·coverage 규칙 (R1)
-- **old-bug 승계 vs new 교정**: old 버그 *승계(동일 재현)* 기본, 교정은 별도 결정. ⚠️ **단 security/policy/approval 계열 old-bug = 승계 금지**(명시 승인 필요) — deny-by-default 우선(R2 codex).
+- **old-bug 승계 vs new 교정**: old 버그 *승계(동일 재현)* 기본, 교정은 별도 결정. ⚠️ **단 민감-도메인(security/policy/approval/safety) old-bug = 승계 금지**(명시 승인 필요) — deny-by-default 우선(R2 codex, R5 safety 포함).
 - **coverage = 중요도 기준**(루크 측정가능성 skew 방지): 측정 불가여도 중요 시나리오는 격리 목록에 *중요도* 명시(후순위 자동화 방지).
 
 ### deny-by-default 선잠금 (R1 codex — F3 전)
@@ -172,7 +172,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 | 채널 | S35~S39·S60 | 외부 인증 Old-Baseline(깨짐 분류) → channels/ClientSessionPort |
 | 설정·control | S01~S08·S47·S51·S53·S54·S57~S59·S67 | control-plane Old-Baseline → 각 port |
 | OS-core(DEFER) | S45·S46 | SafetyPort·ClientSessionPort 계약(F3 후) |
-| 보류 | S41·S42·S52b | naia-memory 트랙(미배선 = baseline "없음" 기록) |
+| 보류 | S41·S42·S52b | naia-memory 트랙(미배선 = **격리/면제 목록**, golden baseline 아님) |
 
 > P02 착수 = **F0~F3 Old-Baseline 측정부터**(old-naia-os 실구동 필요 — 환경/키 = 루크 게이트). 측정 결과로 계약·통합 테스트 구체화.
 
