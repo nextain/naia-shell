@@ -16,13 +16,18 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC4 경험→능동 회상** ★ | 기념일·시간 앵커에 naia가 *먼저* 말 검 | (시간 trigger) → 장기기억 → 동기 → 표현 | temporal(cron)·memory·motivation·ExpressionPort |
 | **UC5 도구 사용** | 날씨·시간·웹검색·github | Chat → 사고(의도) → 능력·도구(skill/mcp) → 표현 | ChatPort·skill·mcp/gateway·ExpressionPort |
 | **UC6 환경 조작-브라우저** | "이거 찾아서 눌러줘" | Chat → 사고 → **환경 행위**(browser navigate/click) + 관측 | EnvironmentPort(app-surface)·skill |
-| **UC7 환경 조작-시스템** | 파일 편집·명령 실행(workspace/terminal) | Chat → 사고 → **환경 행위**(host-system) + 관측(결과) | EnvironmentPort(host-system)·ActionPort? |
+| **UC7a 시스템 관측(read-only)** | 파일/프로세스 *상태 조회*(변경 X) | Chat → 사고 → 환경 관측 | EnvironmentPort(host-system) observe |
+| **UC7 시스템 조작(mutating)** | 파일 편집·명령 실행 + **결과 관측**(reafference) | Chat → 사고 → 환경 행위 → observed→mismatch | EnvironmentPort(host-system) + reafference |
 | **UC8 공간 분위기** | "음악 틀어줘"(BGM) | Chat → 사고 → 환경 변경(space) + 관측(BGM context) | EnvironmentPort(space)·youtube-bgm skill |
 | **UC9 패널 앱** | 패널 설치→그 앱 스킬 사용 | Chat → 능력(panel install) → 환경(app-surface tool) | skill(panel)·EnvironmentPort.app-surface |
 | **UC10 멀티 채널** | discord/slack 에서 naia 응답 | (외부 채널 ingress, 다중 client) → 사고 → 표현(채널) | ClientSessionPort·gateway·channels |
 | **UC11 자기상태 인지** | "너 지금 상태 어때?"(system-status/진단) | **내수용**(시스템 상태) → 지각 → 표현 | InteroceptivePort·system-status·ExpressionPort |
 | **UC12 온보딩/설정** | 첫 실행 wizard·키 설정 | (control-plane: 설정·신원) | control-plane(session)·config |
 | **UC13 승인 게이트** | 위험 행위 전 사용자 승인 | 사고 → **승인**(규범) → 행위 | ApprovalPort·control-plane |
+| **UC13a 실행 중 중단/취소/e-stop** (신규) | 돌아가는 browser/pty/system 작업을 끊음·회수 | (저지연) 중단·lease revoke·강등 | **SafetyPort**(≠Approval)·reactive path |
+| **UC10a 다중 클라이언트 점유 충돌** (신규) | Discord·로컬 UI 동시 명령 → owner·lease·handoff·revoke | (control-plane 중재) | ClientSessionPort(lease/arbitration) |
+| **UC12a 설정 검증** (신규) | "키 저장됨"이 아니라 *provider/계정 연결 상태를 자기상태에서 관측* | 내수용 → 진단 | InteroceptivePort·system-status |
+| **UC14 graceful degradation** (신규) ★ | 외부 인증/키 깨짐(Discord 등)을 **감지·보고·대체** | 내수용(실패 감지) → 지각 → 표현(정직 보고) | InteroceptivePort·ExpressionPort |
 
 ★ = naia 차별점(기억·경험·능동) = vertical 강력 후보.
 
@@ -55,28 +60,33 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | UC10 멀티채널 | discord·slack·google-chat | **외부 앱 인증** | ⚠️ **Discord 깨진 듯(앱 인증 만료?)** — 인증 의존 전반 의심 |
 | UC11 자기상태 | system-status+InteroceptivePort(신설) | 로컬 | 부분(신설 포함) |
 
-## Vertical 순서 — 로컬·introspective foundation 먼저 (루크 2026-06-08)
+## Foundation tranche + vertical 순서 (R1 codex·gemini 반영)
 
-**원칙: 외부 인증/키에 안 흔들리는 *로컬·자기관찰* 부터.** 외부키 의존(provider·voice·채널)은 지금 깨진 게 많아(Discord 인증 등) golden 기준선이 불안정 → 후순위. 로컬은 견고 + 진단의 렌즈.
+**원칙: 외부 인증/키에 안 흔들리는 *로컬·read-only·introspective* 부터, 얇게 쪼개 결함 격리.** (V0를 "클러스터"로 묶으면 실패 시 interoception/host-adapter/setup/auth 중 어디인지 분해 불가 → 번들 금지.)
 
-- **★ V0 (foundation = 로컬·auth-독립·introspective 클러스터, 권고 1순위)**:
-  - **UC11 자기상태(interoception)** — naia 가 *자기 상태*(설정된 provider·연결·시스템·뭐가 깨짐)를 본다. `InteroceptivePort`. **= 진단 렌즈**(다른 모든 것의 "지금 되나"를 여기서 확인). 로컬, 가장 견고.
-  - **UC7 시스템(host-system)** — 로컬 fs·pty(workspace/terminal). 외부 의존 0, host-system 환경축 실증.
-  - **UC12 substrate 바인딩 설정**:
-    - **workspace 설정** = **naia-adk 설정**(워크스페이스/런타임 환경, AdkSetupScreen·WslSetup) + **naia 계정 / api key 설정**(naia 게이트웨이 계정·entitlement·`naia-token` + provider api key). control-plane. ※ workspace = 설정의 집이자 host-system 표면(UC7과 동일 단위).
-    - **모델 설정** — *어떤 provider/model*(anthropic/openai/gemini/ollama/local/gateway — `agent/providers`) = 뇌↔reasoning substrate.
-    - (+ 환경: 배경화면/공간 `EnvironmentPort` space · body: 아바타 VRM — substrate 외관축)
-    - config = "뇌는 substrate 모름"을 묶음. 계정/키/provider 는 외부 의존 → **UC11 자기상태로 연결을 관찰·검증**.
-  - → 로컬 3종이 첫 transplant 실증이자 기준선 인프라. 완료 시 외부키 기능들의 기준선도 *진단 가능*해짐.
-- **V1: UC1 텍스트 대화** — provider 연결 검증(키 유효) 후, 얇은 cognitive-flow 1회전(Chat→사고→표현).
-- **V2: UC2 음성 대화** — voice substrate 축 확장. 데모 임팩트(다슬라이스).
+**Foundation tranche (얇은 순차 단계, read-only→mutating):**
+- **F0 (전제조건, vertical 아님): UC12-min 로컬 최소 설정** — naia-adk workspace 최소(외부 키 없이 부팅 가능분). control-plane init. *인지흐름 아님 = vertical 분류 제외.*
+- **F1: UC11 + UC14 자기상태 진단(read-only, afferent-only)** — naia 가 자기 상태(설정·연결·시스템·**뭐가 깨짐**) 관측·보고. `InteroceptivePort`. **= 진단 렌즈**. ★ 깨진 외부인증(Discord 등)을 *정직하게 감지·보고*하는 능력을 **golden-trace 첫 성과물**로(깨진 상태를 무시 말고 진단으로 활용).
+- **F2: UC7a 시스템 관측(read-only)** — host-system 상태 조회(변경 X). 가장 안전한 첫 환경 이식.
+- **F3: UC7 시스템 조작(mutating)** — Action→Environment→**observed→mismatch**(reafference) 완결. = 얇지만 완전한 cognitive 1회전(첫 efferent+reafferent 실증).
+
+**그 다음 (외부 의존, F1 자기상태로 연결 검증 후):**
+- **V1: UC1 텍스트 대화** — provider 키 유효 확인 후 Chat→사고→표현.
+- **V2: UC2 음성 대화** — voice substrate 축 확장(다슬라이스, 데모).
+- **OS-core (P01 필수, 시점 G1):** UC10a 다중 클라이언트 lease/handoff/revoke · UC13a stop/e-stop/revoke. — 부가 아니라 OS성 핵심.
 - **보류: UC3/UC4 기억·능동** — old 미배선 → naia-memory 통합 트랙 후.
 
-→ **G1 에서 루크가 V0 클러스터(UC11+UC7+UC12) 범위·순서 확정.** 로컬·introspective 가 흔들리지 않는 첫 실증.
+→ **G1 에서 루크가 F0~F3 순서 + OS-core(UC10a/13a) 포함 확정.** "가장 안전한 vertical"이 아니라 *얇게 쪼갠 foundation tranche*.
+
+## golden 기준선 — 1회 smoke ≠ golden (R1 codex)
+
+외부 인증/모델/YouTube/Discord 는 drift source. baseline 에 함께 **freeze**: `입력 trace` + `출력 trace` + `설정/버전/키 상태` + `실패 분류(인증 실패 vs 제품 버그)`. 안 그러면 "old 가 오늘 운 좋게 됨"을 canonical 로 오인. (UC14 가 인증실패 분류를 담당.)
 
 > **이식 coverage 함의**: 1단계 슬라이스의 `memory` = old 소스엔 scrubber·prompt convention(`<recalled_memories>`)만 → `accepted`(scrubber) + `deferred`(실제 store/recall = naia-memory 통합 대기). 커버리지 manifest 에 명시.
 
 ## 열린 질문 (G1 결정)
-1. vertical 1순위 = UC3(기억) vs UC2(음성) vs UC4(능동)?
-2. UC7(시스템 행위)을 EnvironmentPort(host-system)로 둘지 ActionPort 경계인지 (express≠act≠environment 3축 적용).
-3. step-2 계약 backlog(goal-governance 소유자 등) 중 vertical 에 필요한 것 우선 계약화 순서.
+1. Foundation tranche 순서 F0(설정-min)→F1(자기상태 read-only)→F2(시스템 관측)→F3(시스템 조작) 확정?
+2. OS-core(UC10a 다중클라이언트 lease·UC13a stop/e-stop)를 P01 에 지금 넣을지, 시점은?
+3. ~~UC7 포트 축~~ = **해소(R1)**: host-system = `EnvironmentPort`(body 밖 세계), `ActionPort`=body movement. UC7 = EnvironmentPort.
+4. step-2 계약 backlog(goal-governance 소유자 등) 중 foundation tranche 에 필요한 것 우선 계약화 순서.
+5. notify/memo(non-memory) 계열 독립 UC 필요 여부 — old 실측 확인 후.
