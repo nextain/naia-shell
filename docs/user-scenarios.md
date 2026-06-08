@@ -129,15 +129,17 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 3. **통합 테스트(integration)**: 인지흐름 관통(감각→…→표현) + golden 행동 등가 **+ Negative/부정 path**(거부될 요청·승인실패·권한부족·미지원 환경·timeout·침묵) **+ downstream contamination**(상태보고 실패가 planning/route/skill 선택 오판 일으키나).
 
 **검증 ≠ 이식 성공만**: contract+integration GREEN 이어도 baseline 행동과 다르면 FAIL(drift-gate). happy-path만 GREEN = 가짜성공(Negative 필수).
+- **drift-gate 차등 필터(R2)**: trivial 상태차(timestamp·PID·랜덤·경로) 정규화 제외, *의미 있는* 상태/출력 차만 FAIL.
+- **측정 간 상태 격리(R2 codex)**: 반복 측정·이식본 비교 전 workspace write·pty·cache·session **리셋/롤백**(잔존 상태를 로직 회귀로 오판 방지). 환경 정규화 = 측정 스크립트가 외부 키/엔드포인트 stub 강제(루크 env 부작용 분리).
 
 ### 오류 분류축 (R1) — 모든 측정/실패에 라벨
 `auth · policy · infra · timeout · flaky · old-bug · new-regression`. → "깨짐"을 baseline 에 뭉뚱그리지 않음.
 
 ### ⚠️ 측정 불가/깨짐 ≠ baseline (R1 수렴 — 핵심 교정)
-미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로(오류 분류 라벨 + 사유). baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상.
+미배선(memory·cron)·깨짐(Discord)·disabled(memory backup)는 **golden baseline 아님** → **별도 "기능 격리/면제 목록"** 으로(오류 분류 라벨 + 사유). baseline 에 넣으면 *구현 실패*와 *원래 없음*이 섞여 **regression 은닉 장치**가 됨(codex). 격리 목록 항목은 slice 격리 + UC11 자기상태 보고 대상. **거버넌스(R2): high-importance 격리 항목은 해당 tranche exit 를 차단**(중요도만 적고 진행 금지 — 루크 명시 면제만 통과).
 
 ### baseline 갱신·coverage 규칙 (R1)
-- **old-bug 승계 vs new 교정**: baseline 에 old 버그가 있으면 *승계(동일 재현)* 기본, 교정은 별도 결정 기록.
+- **old-bug 승계 vs new 교정**: old 버그 *승계(동일 재현)* 기본, 교정은 별도 결정. ⚠️ **단 security/policy/approval 계열 old-bug = 승계 금지**(명시 승인 필요) — deny-by-default 우선(R2 codex).
 - **coverage = 중요도 기준**(루크 측정가능성 skew 방지): 측정 불가여도 중요 시나리오는 격리 목록에 *중요도* 명시(후순위 자동화 방지).
 
 ### deny-by-default 선잠금 (R1 codex — F3 전)
@@ -151,7 +153,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 | 단계 | 시나리오 | Old-Baseline 측정 | 계약 테스트 | 통합 테스트(인지흐름) |
 |---|---|---|---|---|
 | **F0** | S12-min workspace init(외부키X) | naia-adk 부팅·workspace init trace | config/control-plane port | 부팅→workspace 준비 |
-| **F1** | S09/S10/S11 자기상태 · S44 degradation · S52 facts | system-status·diagnostics·device 상태 trace(로컬) | `InteroceptivePort`(read-only 최소) | 내수용 감각→지각→정직 보고 |
+| **F1** | S09/S10/S11 자기상태 · S44 degradation · S52 facts · **+ApprovalPort 최소계약 선잠금** | system-status·diagnostics·device 상태 trace(로컬) | `InteroceptivePort`(read-only 최소) **+ `ApprovalPort` 최소계약**(승인부재·거부·만료·중복) | 내수용 감각→지각→정직 보고 |
 | **F2** | S07a workspace 관측(read-only) | workspace_* read 류 trace | `EnvironmentPort`(host-system) observe | 사고→환경 관측 |
 | **F3** | S07 workspace 조작 + S12 승인 | workspace write·pty trace + 승인 흐름 | `EnvironmentPort` mutate + `ApprovalPort` | 승인→환경 행위→**observed→mismatch**(reafference) |
 
@@ -161,7 +163,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 |---|---|---|
 | V1 텍스트 | S13 | provider 키 검증(Old-Baseline) → ChatPort 계약 → 대화 1회전 통합 |
 | V2 음성 | S14~S19·S49·S50·S66 | voice ws/키/GPU Old-Baseline → voice provider·ExpressionPort 계약 → 감각→음성+아바타 통합 |
-| 도구 | S20~S25·S55·S56·S71(per-skill) | skill/mcp/gateway Old-Baseline → SkillPort 계약 → 도구 호출 통합. **default-skills 60+ = per-skill 측정** |
+| 도구 | S20~S25·S55·S56·S71(per-skill) | skill/mcp/gateway Old-Baseline → SkillPort 계약 → 도구 호출 통합. **default-skills 60+ = capability-class 대표+변이점 샘플**(per-skill 전수 아님) |
 | 환경-앱 | S26~S30·S62~S64·S70 | 브라우저/워크스페이스 group Old-Baseline → EnvironmentPort.app-surface 계약 |
 | 환경-공간 | S31·S32 | BGM/배경 Old-Baseline → EnvironmentPort.space |
 | 채널 | S35~S39·S60 | 외부 인증 Old-Baseline(깨짐 분류) → channels/ClientSessionPort |
