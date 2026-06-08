@@ -20,7 +20,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC7 시스템 조작(mutating)** | 파일 편집·명령 실행 + **결과 관측**(reafference) | Chat → 사고 → 환경 행위 → observed→mismatch | EnvironmentPort(host-system) + reafference |
 | **UC8 공간 분위기** | "음악 틀어줘"(BGM) | Chat → 사고 → 환경 변경(space) + 관측(BGM context) | EnvironmentPort(space)·youtube-bgm skill |
 | **UC9 패널 앱** | 패널 설치→그 앱 스킬 사용 | Chat → 능력(panel install) → 환경(app-surface tool) | skill(panel)·EnvironmentPort.app-surface |
-| **UC10 멀티 채널** | discord/slack 에서 naia 응답 | (외부 채널 ingress, 다중 client) → 사고 → 표현(채널) | ClientSessionPort·gateway·channels |
+| **UC10 멀티 채널(기본)** | discord/slack 에서 naia 응답 — **단일 active owner(동시 점유 없음)**. 동시성·충돌 중재 = UC10a | (채널 ingress) → 사고 → 표현(채널) | gateway·channels |
 | **UC11 자기상태 인지** | "너 지금 상태 어때?"(system-status/진단) | **내수용**(시스템 상태) → 지각 → 표현 | InteroceptivePort·system-status·ExpressionPort |
 | **UC12-min 최소 부팅 설정** | naia-adk workspace init(**외부 키 없이** 부팅 가능분) | (control-plane init) | control-plane·config |
 | **UC12 전체 온보딩/설정** | wizard + 모델/provider + naia 계정/api key | (control-plane: 설정·신원·외부 auth) | control-plane(session)·config |
@@ -85,7 +85,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **F0** | UC12-min | 외부키 없는 최소 부팅 |
 | **F1** | UC11 · UC14 *(UC12a = UC11/14 facet, 흡수 — 독립 카운트 아님)* | read-only 진단·실패감지 |
 | **F2** | UC7a | host-system read-only 관측 |
-| **F3** | UC7 · **UC13 승인 게이트**(F3 에 배치 — mutating 행위 규범 경로, F3 선행조건) | 첫 efferent+reafference |
+| **F3** | **UC13 승인 게이트 → UC7**(F3 내부 순서: 승인 경로 먼저, 그 위에 mutating) | 첫 efferent+reafference |
 | **V1** | UC1 (+ UC12 전체 = provider/계정/키 설정 완료, V1 직전) | provider 검증 후 |
 | **V2** | UC2 | voice |
 | **도구·환경 tranche**(V 이후, *기능별 Old-Baseline 게이트*) | UC5 도구 · UC6 브라우저 · UC8 BGM · UC9 패널 · UC10 멀티채널(기본) | 외부 의존 개별 실측 후 |
