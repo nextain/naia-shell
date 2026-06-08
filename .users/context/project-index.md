@@ -2,14 +2,14 @@
 <!-- 자동 번역 미러 (M13-mirror). 원본: .agents/context/project-index.yaml -->
 
 ```markdown
-# {{PROJECT_NAME}} 프로젝트 인덱스
+# naia-os 프로젝트 인덱스
 
 **버전:** 0.1.0  
-**최종 업데이트:** {{DATE}}
+**최종 업데이트:** 2026-06-08
 
 ## 개요
 
-{{PROJECT_DESCRIPTION}}
+Bazzite 기반 배포형 AI OS — naia-template-project clean rebuild (헥사고날 이식)
 
 ---
 

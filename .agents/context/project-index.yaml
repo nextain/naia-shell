@@ -1,8 +1,8 @@
-project: "{{PROJECT_NAME}}"
+project: "naia-os"
 version: "0.1.0"
-updated: "{{DATE}}"
+updated: "2026-06-08"
 description: |
-  {{PROJECT_DESCRIPTION}}
+  Bazzite 기반 배포형 AI OS — naia-template-project clean rebuild (헥사고날 이식)
 
 # 세션 시작 시 반드시 읽는 파일 (순서 중요)
 mandatory_reads:

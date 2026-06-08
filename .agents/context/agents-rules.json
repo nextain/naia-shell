@@ -1,7 +1,7 @@
 {
 	"$schema": "https://nextain.com/schemas/agents-rules/v2",
 	"version": "2.0.0",
-	"project": "{{PROJECT_NAME}}",
+	"project": "naia-os",
 	"description": "Machine-readable rules for AI tools. SoT for all enforcement gates. Edit this file, then run scripts/sync-harness-mirrors.sh.",
 	"charter_immutability": {
 		"description": "확정된 헌장 파일은 AI가 절대 단독 수정 불가. 수정 시 사용자 명시 승인 + 새 이슈 등록 필수.",

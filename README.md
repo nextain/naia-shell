@@ -1,13 +1,13 @@
-# {{PROJECT_NAME}}
+# naia-os
 
-{{PROJECT_DESCRIPTION}}
+Bazzite 기반 배포형 AI OS — naia-template-project clean rebuild (헥사고날 이식)
 
 ---
 
 ## 프로젝트 구조
 
 ```
-{{PROJECT_NAME}}/
+naia-os/
 │
 │  # ── 헌장 (Charter) ──────────────────────────────────────────
 │  # AI 도구와 사람 모두가 읽는 프로젝트 규칙과 진입점.
