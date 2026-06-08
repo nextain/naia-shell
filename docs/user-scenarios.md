@@ -91,7 +91,8 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | S49 | STT 모델 관리(download/delete/list stt models) | UC2(음성 입력) | SensoryPort·adapter | 측정 |
 | S50 | 오디오 출력 장치(list_audio_output_devices) | UC2 | 효과기(audio) | 측정 |
 | S51 | gateway 운영(health·restart·reset·sync) | (control-plane) | control-plane·gateway | 측정 |
-| S52 | memory facts CRUD(get_all/delete/export/import — tauri) | UC3 | memory(facts 표면) | ⚠️ facts 표면 존재 / recall 주입 미배선(S41) |
+| S52 | memory facts CRUD(get_all/delete — tauri) | UC3 | memory(facts 표면) | ⚠️ facts 표면 존재 / recall 주입 미배선(S41) |
+| S52b | 메모리 **백업/복원**(암호화 export/import, Settings 메모리 탭 Backup UI) | UC3 | memory | ⚠️ **UI disabled/ComingSoon**(완전성R7) |
 | S53 | audit log(get_audit_log·stats) | (control-plane) | 메타인지·감사 | 측정 |
 | S54 | OAuth/로그인·api key 검증(oauth_state·open_login·validate_api_key·write_agent_key) | UC12 | control-plane auth | 측정 |
 | S55 | gateway 스킬: **web_search · x(트위터) · discord**(gateway-tier, gateway LLM agent 실행) | UC5·UC10 | gateway·tool-tiers | 측정 |
