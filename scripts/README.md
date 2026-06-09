@@ -1,0 +1,49 @@
+# scripts/ — 스크립트 레지스트리 (표준)
+
+> **표준 규칙**: 모든 스크립트는 아래 카테고리 중 하나에 등록한다. 신규 스크립트 추가 시 이 표에 1줄 등록 필수(미등록 = 리뷰 차단). 물리 하위폴더는 *참조 안전이 보장된 것만* 사용(현재 `builds/`, `conform/`, `cron/`). 나머지는 참조(CLAUDE.md·hooks·tests) 파급 때문에 루트 평면 유지 + 본 레지스트리로 분류.
+> 카테고리 = 목적별 논리 분류. SoT 연결: `docs/project-structure.md`(구조) · `.agents/context/process-status.json`(refs.scripts_registry).
+
+## A. 구조·게이트 검증 (structure / SDLC gates)
+| 스크립트 | 용도 |
+|---|---|
+| `enforce-root-structure.sh` | F12/F13 루트 구조 화이트리스트 강제(미등록 삭제). `--fix`. |
+| `ci-verify-structure.mjs` | 루트 구조(F12/F13) CI 검증. |
+| `ci-verify-charter.mjs` | 헌장 불변(charter immutability) CI 검증. |
+| `ci-verify-sdlc.mjs` | SDLC P01~P05 게이트 상태 CI 검증. |
+| `ci-verify-completion.mjs` | 완료 근거(completion evidence) 게이트 검증. |
+| `verify-watch.sh` | 주기 검증 러너 — 구조·문서·미러 이탈 백그라운드 검출(`once` 1회). |
+
+## B. 문서·용어·링크 (docs integrity)
+| 스크립트 | 용도 |
+|---|---|
+| `check-doc-graph.mjs` | 문서 그래프 무결성(orphan 문서 0) 검사. |
+| `doc-link.mjs` | 문서 간 링크 무결성 검사. |
+| `check-terminology.mjs` | 용어 정책(신조어 금지·평이한 한국어) 검사. |
+| `gen-lists.mjs` | 컨텍스트 인덱스/목록 생성. |
+
+## C. 컨텍스트·미러 (context / mirror sync)
+| 스크립트 | 용도 |
+|---|---|
+| `mirror-translate.mjs` | `.agents/`(SoT) ↔ `.users/`(휴먼 미러) 번역 동기화. |
+| `sync-harness-mirrors.sh` | `AGENTS.md`(canonical) → `CLAUDE/GEMINI/OPENCODE/CODEX.md` 미러 동기화. |
+| `ctx-bucket.mjs` (+ `ctx-bucket-contract.schema.json`) | 작업단위(컨텍스트 버킷) 예산·경계 계약. |
+
+## D. 이식·반증 (transplant / anti-false-success)
+| 스크립트 | 용도 |
+|---|---|
+| `cleanse-scan.mjs` | 이식 cleanse-scan(deny-by-default, 미분류 자산 차단). |
+| `mutation-probe.mjs` | 변이 테스트(가짜성공을 RED로 잡는 반증 프로브). |
+| `conform/` | 계약↔코드 드리프트 결정론 게이트(0토큰). `conform/README.md` 참조. |
+
+## E. 거버넌스 (governance)
+| 스크립트 | 용도 |
+|---|---|
+| `quarantine.mjs` | 보류 격리(처분 6번째) 관리 — 방치 의심 자산 백업(`quarantine_policy`). |
+
+## F. 빌드·실행 (builds/)
+| 스크립트 | 용도 |
+|---|---|
+| `builds/f0-graft-smoke.sh` | F0 부팅 결정 등가 스모크(P02 1단계 Old-Baseline drift-gate). 빌드+테스트+DevTools 스니펫 emit. |
+| `builds/f0-graft-snippet.js` | (생성물, gitignore) 위 스크립트가 만드는 붙여넣기용 콘솔 스니펫. |
+
+> **하위폴더 정책**: `cron/`(주기 배치)·`builds/`(빌드·graft)·`conform/`(전용 게이트)는 물리 폴더 허용(자기완결, 참조 안전). A~E 의 루트 평면 스크립트를 폴더로 옮기려면 — CLAUDE.md·`.agents/hooks/`·`src/test/*.mjs` 참조를 전부 갱신한 뒤에만(별도 작업).

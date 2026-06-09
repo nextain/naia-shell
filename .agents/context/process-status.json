@@ -5,29 +5,31 @@
   "refs": {
     "project_structure": "docs/project-structure.md",
     "agents_rules": ".agents/context/agents-rules.json",
-    "issue_docs_dir": ".agents/progress/"
+    "issue_docs_dir": ".agents/progress/",
+    "scripts_registry": "scripts/README.md"
   },
 
   "current_work": {
-    "issue": null,
-    "title": null,
-    "issue_doc": null,
+    "issue": "naia-os-transplant",
+    "title": "naia-os 헥사고날 이식 — foundation tranche F0~F3 (control-plane/자기상태/관측/조작)",
+    "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
-    "started": null,
-    "last_updated": "2026-06-08T00:00:00Z",
-    "status": "idle"
+    "started": "2026-06-08T00:00:00Z",
+    "last_updated": "2026-06-10T00:12:00Z",
+    "status": "in_progress",
+    "note": "F0~F3 계약(codex/gemini/GLM 교차리뷰 수렴) + 코드 스캐폴드(async, src/main). 계약+통합 테스트 67/67. 실제 부팅(graft)=루크 머신 대기."
   },
 
   "sdlc_gates": {
-    "P01": { "status": "pending", "name": "user_scenarios", "deliverable": null, "ref": null },
-    "P02": { "status": "pending", "name": "test_scenarios", "deliverable": null, "ref": null },
-    "P03": { "status": "pending", "name": "requirements", "deliverable": null, "ref": null },
-    "P04": { "status": "pending", "name": "integration_test", "deliverable": null, "ref": null },
-    "P05": { "status": "pending", "name": "requirements_complete", "deliverable": null, "ref": null }
+    "P01": { "status": "done", "name": "user_scenarios", "deliverable": "docs/user-scenarios.md (UC1-14, S01~S71)", "ref": "완전성 13R 3연속 NONE" },
+    "P02": { "status": "done", "name": "test_scenarios", "deliverable": "docs/user-scenarios.md Test Coverage Map + src/test/*.contract.test.ts (계약 67/67)", "ref": "13R" },
+    "P03": { "status": "done", "name": "requirements", "deliverable": "docs/requirements.md (FR-F0~F3, NFR)", "ref": "8R" },
+    "P04": { "status": "in_progress", "name": "integration_test", "deliverable": "src/test/integration-reafference.test.ts (인지흐름 관통+negative+contamination) + scripts/builds/f0-graft-smoke.sh (Old-Baseline drift-gate harness)", "ref": "통합 67/67 통과; 라이브 trace(루크 머신 graft) 대기" },
+    "P05": { "status": "pending", "name": "requirements_complete", "deliverable": null, "ref": "라이브 trace 등가 확인 + 후속 슬라이스 후" }
   },
 
   "resource_registry": {
-    "last_enforce_run": null,
+    "last_enforce_run": "2026-06-10T00:06:00Z",
     "violations": []
   },
 

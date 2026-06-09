@@ -23,7 +23,7 @@
 | `packages/` | 소스 패키지 (pnpm-workspace.yaml 등록된 것만) |
 | `quarantine/` | **보류 격리**(처분 6번째) — 방치 의심 자산 백업. 실물은 gitignore, `MANIFEST.json`/`README.md` 만 추적. `scripts/quarantine.mjs` 관리 (agents-rules `quarantine_policy`) |
 | `READMES/` | 다국어 README |
-| `scripts/` | 빌드·검증·운영 스크립트 (하위: `cron/` 주기적 배치 작업) |
+| `scripts/` | 빌드·검증·운영 스크립트. **분류 레지스트리=`scripts/README.md`**(신규 스크립트 등록 필수). 물리 하위: `cron/`·`builds/`·`conform/`(참조 안전). |
 | `src/` | 소스 코드 (하위: `main/` 메인 소스, `test/` 테스트) |
 
 > 새 디렉토리 추가 시: `agents-rules.json` F12 → 이 표 → 사용자 승인 순서 필수.

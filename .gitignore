@@ -48,3 +48,6 @@ data-private/
 quarantine/*
 !quarantine/MANIFEST.json
 !quarantine/README.md
+
+# builds/ 생성물 (f0-graft-smoke.sh 가 만드는 붙여넣기 스니펫)
+scripts/builds/f0-graft-snippet.js
