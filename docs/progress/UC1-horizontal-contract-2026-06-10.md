@@ -26,8 +26,8 @@
 ## B.1 domain/ (순수, import 0)
 | 값객체 | 규칙 |
 |---|---|
-| `ChatRequest` | `{requestId, clientId, sessionId?, provider:{id,model,host?,labGatewayUrl?, ...baseline 동작필드 passthrough}, gatewayUrl?(도구/enableTools 게이트웨이 — provider 와 별개), messages, systemPrompt?, enableTools?, enableThinking?, disabledSkills?}`. **provider *선택*(id/model/host)=포함(비밀 아님, baseline 재현 필수). secret(apiKey 등)만 `creds_update` 별채널**(F0 stripForAgent 정합). clientId=다중클라이언트 라우팅. **매핑(어댑터 검증)**: provider `id→provider`·`model→model`·`host→ollamaHost|vllmHost`(종류별); **최상위 `gatewayUrl`=도구 gateway 연결(enableTools 흐름)**, provider 슬롯 `labGatewayUrl`(provider 라우팅용, providers/types.ts 매핑)과 *별개 canon*. 필수=`id,model`; **provider 객체 = baseline `ProviderConfig`(providers/types.ts) 동작필드 passthrough**(ollamaNumCtx·vllm* 등 — 열거 아닌 baseline 스키마가 권위, 동작 등가 보존) **단 secret 키만 strip**(F0). 허용 외(비-ProviderConfig 키) 거부(계약 테스트). |
-| `ChatChunk` | **chat-turn 관련 subset (권위=agent writeLine 출력 index.ts; shell types.ts=부분뷰, 추측 금지): 최소 `text·thinking·toolUse·toolResult·approvalRequest·finish·error` + 스트림 부수(usage·logEntry 등 types.ts 에 *실재하는* 것만). **transport-neutral**, `{requestId,clientId}` 소유권. payload canon=agent 출력(index.ts) 기준. ⚠️ **demux 규칙(exhaustive — 열거 아닌 클래스, 수행=transport-adapter 라우터 B.4)**: `AgentMessage`(권위=agent index.ts 출력) *전 variant* 를 switch — chat-turn→ChatChunk / 비-chat(discord_message=UC10·panel_control·panel_install·panel_tool_call=UC9·skill_list_response=UC5·config_update·embedding_progress·ready·gateway_approval_request 등)→해당 포트 / **미지 타입=error+log, silent drop 금지**. variant 권위 = `AgentMessage`(=agent writeLine 출력 index.ts, superset). shell `lib/types.ts AgentResponseChunk`=부분뷰. demux exhaustive=AgentMessage 기준, 미지=error+log. |
+| `ChatRequest` | `{requestId, clientId, sessionId?, provider:ProviderConfig*, gatewayUrl?(도구/enableTools 게이트웨이 — provider 와 별개), messages, systemPrompt?, enableTools?, disabledSkills?}`. ⚠️ **provider = baseline `ProviderConfig`(providers/types.ts) 형상 *verbatim passthrough*** — 키 재명명·재형상화 **없음**(`provider, model, ollamaHost?, vllmHost?, labGatewayUrl?, enableThinking?, ollamaNumCtx?`). **단 secret(`apiKey`/`naiaKey`@deprecated)만 strip**(`creds_update` 별채널, F0 stripForAgent 정합). 어댑터=ProviderConfig 스키마로 검증(secret 제외 키만 허용). 필수=`provider,model`. clientId=다중클라이언트 라우팅. **최상위 `gatewayUrl`=도구 gateway(enableTools 흐름)** — provider 내부 `labGatewayUrl`(provider 라우팅, ProviderConfig 소속)과 *별개 canon*. |
+| `ChatChunk` | **chat-turn 관련 subset (권위=agent writeLine 출력 index.ts; shell types.ts=부분뷰, 추측 금지): 최소 `text·thinking·toolUse·toolResult·approvalRequest·finish·error` + 스트림 부수(usage·logEntry 등 types.ts 에 *실재하는* 것만). **transport-neutral**, `{requestId,clientId}` 소유권. payload canon=agent 출력(index.ts) 기준. ⚠️ **demux 규칙(exhaustive — 열거 아닌 클래스, 수행=transport-adapter 라우터 B.4)**: `AgentMessage`(권위=agent index.ts 출력) *전 variant* 를 switch — chat-turn(text·thinking·tool_use·tool_result·approval_request·finish·error·usage·log_entry·token_warning)→ChatChunk / 비-chat(panel_control·panel_install_result·panel_tool_call=UC9·skill_list_response=UC5·audio=voice·object·embedding_progress·ready 등 — *실재 variant 만*)→해당 포트 / **미지 타입=error+log, silent drop 금지**. variant 권위 = `AgentMessage`(=agent writeLine 출력 index.ts, superset). shell `lib/types.ts AgentResponseChunk`=부분뷰. demux exhaustive=AgentMessage 기준, 미지=error+log. |
 | `ChatTurn` | requestId 로 묶인 chunk 시퀀스 상태(streaming→finish/error). 순수 상태기계. |
 
 ## B.2 ports/ (driven+driving)
@@ -40,6 +40,7 @@ AgentMessage = **raw 디코드 union (SoT here)**. variant 집합 권위 = agent
 ChatPort:                                   # 대화 ingress (driving — shell이 호출)
     startTurn(req, onChunk): { handle: TurnHandle, sent: Promise<void> }   # ⚠️ 원자적 listen-then-send. **sent Promise = send reject 호출자 전파(baseline 등가)**; 추가로 onChunk(error)+구독/레지스트리 해제. handle=취소/소유, sent=발신 결과.
     cancel(handle: TurnHandle): void          # cancel_stream (실행 중 중단)
+    deliverChunk(chunk: ChatChunk): void      # ⚠️ 수신 sink (driving-in, **ports 계약**) — router(B.4)가 chat-turn chunk 를 여기로. app 의 ChatService 가 *구현*(adapter→ports canon, 구상 직접의존 금지). requestId→onChunk 라우팅은 ownership 레지스트리.
     # approvalRequest chunk = ChatPort 가 *노출만*. 응답은 **ApprovalPort(F1, AppPort 밖 독립 control-plane)** 경유 — ChatPort 흡수 금지(canon, codex R2)
 TurnHandle = { requestId, clientId, unsubscribe }   # (startTurn 은 {handle, sent:Promise} 반환)   # 핸들(위조 방지 = 아래 레지스트리가 권위, 핸들 단독 아님)
   # ⚠️ ownership 레지스트리(ClientSessionPort/adapter): startTurn 시 requestId→clientId 등록 + **충돌 거부**(중복 requestId) + **모든 terminal(finish·cancel·error·send실패·timeout)** 시 해제(미해제=requestId 영구 점유). legacy agent_response 엔 clientId 없으므로 *shell측 어댑터가 requestId→clientId 매핑 보유*. cancel/approval 권한 = 레지스트리 소유주만(타 client 차단)
@@ -55,7 +56,7 @@ ClientSessionPort:                           # 다중 클라이언트 신원·ow
 ```
 ChatService:
   startTurn(req, onChunk): { handle, sent: Promise<void> }   # 구독 선행 등록 → AgentTransportPort.send(req)(sent 반환). ⚠️ encode/decode·demux 안 함 — 도메인 ChatRequest 그대로 넘김
-  onChatChunk(chunk): ...   # ⚠️ **router(B.4)가 이미 demux 해 *chat-turn chunk 만* 전달** — ChatService 는 전체 union 안 봄(STRUCTURE canon: 번역/demux=transport-adapter). (clientId,requestId) 소유 turn 라우팅
+  implements ChatPort.deliverChunk(chunk)   # ⚠️ **router(B.4)가 이미 demux 해 *chat-turn ChatChunk 만* 전달**(ChatService 는 전체 union·wire 안 봄). adapter 는 ports 의 ChatPort 의존, ChatService 가 그 구현. (clientId,requestId) 소유 turn 라우팅
   # ChatTurn 상태기계: text 누적·finish/error 종결·cancel. 인지: Chat ingress→agent(brain)→Express 출력
   # ⚠️ wire DTO(JSON-line/gRPC msg)·raw union 모두 app 모름 — transport 어댑터만(canon)
 ```
@@ -63,7 +64,7 @@ ChatService:
 ## B.4 adapters/
 | 어댑터 | 포트 | 구현 |
 |---|---|---|
-| `StdioTransportAdapter` | AgentTransportPort | **ChatRequest→wire JSON-line encode / wire→`AgentMessage` union decode**. 번역=여기. ⚠️ **demux 라우터(이 어댑터 계층)**: AgentMessage 전 variant switch → chat-turn→ChatService.onChatChunk / 비-chat→해당 semantic port(ToolPort 등) / 미지=error+log(STRUCTURE:221 canon — app 은 demux 안 함). `send_to_agent_command`(stdin)+`agent_response`(stdout). ⚠️ **flat newline JSON 만**(agent 는 한 줄 곧바로 parseRequest). protocol-bridge StdioFrame v1=미사용 scaffold라 *보내지 않음*. gRPC=후속 어댑터(envelope 그때). |
+| `StdioTransportAdapter` | AgentTransportPort | **ChatRequest→wire JSON-line encode / wire→`AgentMessage` union decode**. 번역=여기. ⚠️ **demux 라우터(이 어댑터 계층)**: AgentMessage 전 variant switch → chat-turn→**`ChatPort.deliverChunk`**(ports 계약, ChatService 가 구현 — adapter→ports canon, 구상 app 직접의존 아님) / 비-chat→해당 semantic port(ToolPort 등) / 미지=error+log(STRUCTURE:215~221 canon — app 은 demux 안 함). `send_to_agent_command`(stdin)+`agent_response`(stdout). ⚠️ **flat newline JSON 만**(agent 는 한 줄 곧바로 parseRequest). protocol-bridge StdioFrame v1=미사용 scaffold라 *보내지 않음*. gRPC=후속 어댑터(envelope 그때). |
 | `GrpcTransportAdapter` (future) | AgentTransportPort | gRPC 다중클라이언트 — 어댑터 교체만(protocol 불변) |
 | `TauriChatBridge` | ChatPort | shell ChatPanel ↔ ChatService 연결 |
 
