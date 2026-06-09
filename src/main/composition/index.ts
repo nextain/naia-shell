@@ -48,3 +48,9 @@ export function wireObservationServiceTauri(now: () => number): ObservationServi
 export function wireDriftDetectorTauri(onDrift: (d: DriftSignal) => void): DriftDetector {
   return new DriftDetector(tauriEnvObserve, expectedStateProvider, onDrift);
 }
+
+// ── F0 실배선 (graft: old 함수 주입) ──
+import { makeF0LiveAdapters, type LiveDeps } from "../adapters/tauri/live.js";
+export function wireControlPlaneLive(deps: LiveDeps): ControlPlaneBoot {
+  return new ControlPlaneBoot(makeF0LiveAdapters(deps));
+}
