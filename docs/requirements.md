@@ -1,5 +1,7 @@
 # 요구사항 (P03 — FR/NFR) — 2단계 산출물
 
+`[Phase 05 (P03 요구사항)]`
+
 > 추적: P01 `user-scenarios.md` + P02 Test Coverage Map → P03. **범위 = foundation tranche(F0~F3)** 우선(나머지 tranche 는 착수 시 확장). **상태: 초안 — 2회 클린 리뷰 대기.**
 > 원칙: FR=foundation 시나리오에서 도출, NFR=1단계 구조 불변식 + fault-isolation. 각 요구사항 = P04 통합 테스트 대상.
 

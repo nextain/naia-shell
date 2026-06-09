@@ -1,5 +1,7 @@
 # naia-os 이식 구조 (1단계 산출물 — 구조 뼈대) v5 (인지흐름 재그룹핑)
 
+`[Phase 01]`
+
 > 추적: L0 미션(naia-os 전체를 헥사고날 gRPC로 이식) / 진행 단계 **1**.
 > 상태: **1단계 닫힘 (루크 승인 2026-06-08).** v5 인지흐름 재그룹핑(뇌/육체/OS) · v5 적대 리뷰 R1~R7(gemini PASS·codex PASS) · 완전성 크로스체크 C1~C9(gemini 8연속 NONE, codex step-2-소유 long-tail은 바운드). physical-AI 先占 보강 완료.
 > **step-2 계약 backlog(C-라운드 deferred)**: goal-governance 구현 소유자 · 포트별 메서드 시그니처 계약 · ingress 상세 매핑 · execution-id/backlink 스키마 · SafetyPort↔reactive 런타임 경계 · dependency-cruiser/composition 강제. — 전부 step-2(시나리오·계약)에서 확정.
