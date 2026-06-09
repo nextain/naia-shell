@@ -79,6 +79,9 @@ export class ChatService implements ChatPort {
   deliverChunk(chunk: ChatChunk, owner: { requestId: string; clientId: string }): void {
     const turn = this.turns.get(owner.requestId);
     if (!turn) return; // 종료/미지 turn — silent (router 가 DiagnosticSink 책임)
+    // ⚠️ 이미 종결된 turn(맵에 남아있으나 finished/errored) = 후속 chunk 무시 — terminal 콜백 중 재진입 deliverChunk 의
+    //    중복 전달·재전이 방지(코드리뷰7 HIGH). release 는 콜백 반환 후 일어나므로 이 창에서 turn 이 잔존할 수 있음.
+    if (isTerminalState(turn.state)) return;
     // ⚠️ 오라우팅 방어: owner.clientId 가 turn 소유주와 다르면 거부(타 client turn 종결/해제 방지, 코드리뷰4 HIGH).
     if (turn.clientId !== owner.clientId) return;
     // ⚠️ 상태전이 *먼저* → 콜백이 post-transition 상태 관측(재진입 시 stale 상태·불필요 cancel 방지, 코드리뷰4 MED).

@@ -264,6 +264,23 @@ describe("런타임 누수/예외 격리 (codex 코드리뷰 HIGH)", () => {
     transport.emit({ type: "finish", requestId: "r1" }); // finish 콜백 안에서 cancel 시도
     expect(transport.sent.length).toBe(before); // cancel_stream 미전송(terminal no-op)
   });
+  it("terminal 콜백 중 재진입 deliverChunk(동일 turn) = 중복 전달·재전이 무시(코드리뷰7 HIGH)", async () => {
+    const { transport, sessions, chat } = wire();
+    const got: ChatChunk[] = [];
+    let reentered = false;
+    const r = chat.startTurn(req(), (c) => {
+      got.push(c);
+      if (c.kind === "finish" && !reentered) {
+        reentered = true;
+        // finish 콜백 *안에서* 같은 turn 으로 재진입 — 종결 turn 은 무시되어야(중복 콜백/예외 없음)
+        chat.deliverChunk({ kind: "text", text: "stale" }, { requestId: "r1", clientId: "c1" });
+      }
+    });
+    await r.sent;
+    expect(() => transport.emit({ type: "finish", requestId: "r1" })).not.toThrow();
+    expect(got.map((c) => c.kind)).toEqual(["finish"]); // 재진입 text 는 무시(중복 전달 없음)
+    expect(sessions.ownerOf("r1")).toBeUndefined(); // 정상 해제
+  });
   it("재진입 ABA: terminal chunk 콜백이 unsubscribe+동일 id 재등록 → 옛 turn 의 무조건 release 가 새 turn 삭제 안 함(코드리뷰2 HIGH)", async () => {
     const { transport, sessions, chat } = wire();
     let h1: { unsubscribe: () => void } | null = null;
