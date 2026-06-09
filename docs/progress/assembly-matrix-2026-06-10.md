@@ -26,7 +26,9 @@
 | H-tx | transport 어댑터 | stdio(now)→gRPC(목표), 어댑터 교체 | O(stdio) | 이식+보충 | old(stdio)/scen(gRPC) | pending |
 | H-client | `ClientSessionPort` | 다중 클라이언트 신원·lease·arbitration | △ | 보충 | scenario | pending(UC10a) |
 | H-safety | `SafetyPort` | e-stop·lease revoke·강등(reactive) | △ | 보충 | scenario | pending(UC13a) |
-| H-app | `AppPort`(=Chat+Tool facade) | 대화·툴 interaction **만** | △직접호출 | 보충 | scenario | pending(UC1) |
+| H-app | `AppPort`(=ChatPort+ToolPort *조립 facade*, 재흡수 아님) | facade | △ | 보충 | scenario | pending |
+| H-chat | `ChatPort` | 대화 ingress(독립) | △직접호출 | 보충 | scenario | pending(UC1) |
+| H-tool | `ToolPort` | 툴 interaction(독립) | △직접호출 | 보충 | scenario | pending(UC5) |
 | H-sensory | `SensoryPort` | 감각(audio/vision/screen) | O(부분) | 이식+보충 | mixed | pending(UC2/61) |
 | H-intero | `InteroceptivePort` | 내수용(시스템 상태) | O | 이식 | old | **F1 계약+코드** |
 | H-express | `ExpressionPort` | 표현(speak/emote, embodiment-neutral) | △(UI직결) | 보충 | scenario | pending(UC1/2) |
@@ -98,7 +100,7 @@
 | S10 | diagnostics | UC11 | 이식 | InteroceptivePort | old-auth | F1 계약+코드 |
 | S11 | device 상태/제어 | UC11·UC7 | 이식 | InteroceptivePort·EnvironmentPort | old-auth | F1(부분) |
 | S12 | approvals 승인 | UC13 | 이식+보충 | ApprovalPort | mixed | F1 계약+코드 |
-| S13 | 텍스트 대화 | UC1 | 이식 | ChatPort·llm·ExpressionPort | old-auth(UI)/scenario(agent) | pending |
+| S13 | 텍스트 대화 | UC1 | 이식+보충 | ChatPort(UI 이식)·llm/agent·ExpressionPort(보충) | old-auth(UI)/scenario(agent·Express) | pending |
 | S14 | omni 음성 | UC2 | 이식+보충 | SensoryPort·voice | mixed | pending(외부키) |
 | S15 | gemini-live 음성 | UC2 | 이식 | SensoryPort·voice | mixed | pending(외부키) |
 | S16 | openai-realtime 음성 | UC2 | 이식 | SensoryPort·voice | mixed | pending(외부키) |
@@ -125,14 +127,14 @@
 | S37 | notify-discord | UC10 | 이식 | (notify) | old-auth | pending |
 | S38 | notify-google-chat | UC10 | 이식 | (notify) | old-auth | pending |
 | S39 | notify-slack | UC10 | 이식 | (notify) | old-auth | pending |
-| S41 | 기억 recall/주입 | UC3 | 보충 | memory·scrubber | scenario-auth | pending(미배선) |
+| S41 | 기억 recall/주입 | UC3 | 이식+보충 | memory·scrubber(scrubber 이식, recall 보충) | mixed | pending(recall 미배선) |
 | S42 | 능동 회상 | UC4 | 보충 | memory·CronPort | scenario-auth | pending(미배선) |
-| S43 | cron 작업 | temporal | 보충 | CronPort | scenario-auth | pending(미빌드) |
+| S43 | cron 작업 | temporal·UC4 | 보충 | CronPort | scenario-auth | pending(미빌드; scaffold 발견 시 이식+보충 재평가) |
 | S44 | graceful degradation | UC14 | 보충 | InteroceptivePort·ExpressionPort | scenario-auth | F1(신설) |
 | S45 | 실행 중 중단/e-stop | UC13a | 보충 | SafetyPort | scenario-auth | pending |
 | S46 | 다중 클라이언트 충돌 | UC10a | 보충 | ClientSessionPort | scenario-auth | pending |
 | S47 | 페르소나/personality | UC12·표현 | 이식 | control-plane·ExpressionPort | old-auth | pending |
-| S48 | 로컬 스킬 로딩·확장 | UC5·skill | 보충 | ToolPort·EnvironmentPort | scenario-auth | pending(배선의존) |
+| S48 | 로컬 스킬 로딩·확장 | UC5·skill | 이식+보충 | ToolPort·EnvironmentPort(loader 이식, 확장배선 보충) | mixed | pending(배선의존) |
 | S49 | STT 모델 관리 | UC2 | 이식 | SensoryPort·adapter | old-auth | pending |
 | S50 | 오디오 출력 장치 | UC2 | 이식 | (효과기 audio) | old-auth | pending |
 | S51 | gateway 운영 | control-plane | 이식 | control-plane | old-auth | pending |
@@ -154,8 +156,15 @@
 | S66 | 참조 오디오/voice clone | UC2 | 이식 | voice·ExpressionPort(timbre) | old-auth | pending |
 | S67 | Naia Lab 설정 동기화 | UC12 | 이식 | control-plane | old-auth | pending |
 | S70 | 채팅 파일 deeplink | UC1·UC7 | 이식 | ChatPort·EnvironmentPort(app-surface 행위) | old-auth | pending |
+| S71 | 번들 default-skills(~60+, OpenClaw) | UC5·skill | 이식 | ToolPort/SkillPort·gateway | old-auth | pending(per-skill 검증) |
 
 > (S40·S68·S69 = user-scenarios 인벤토리에 없음/배포 out-of-scope.)
 
 ## 갱신/체크 규칙
 조각 작업 시 해당 행 상태·fit 갱신, mismatch=즉시 기록+해결경로. **commit 전 `node scripts/check-assembly-coverage.mjs` 통과 필수**(미분류 0 + 상태≥코드 행 fit≠미평가). 다음 UC는 같은 수평 위에 수직만 추가.
+
+## 검증 한계 (바운드 — 4계보 교차 후 정직 기록)
+codex·gemini·GLM 4라운드로 *내용 결함*(미분류0 거짓·수평 좁힘·canon포트 누락·per-S 오분류·S71 누락·H-app 재결합)은 정정됨. 남은 결함 = **체크 스크립트가 prose markdown 을 regex 로 검사**하는 한 내재적:
+- staleness 가 숫자 출력뿐(기준시각·증가차단 없음 → 무한 pending 가능) — backlog 가시화로 *은닉*은 막았으나 *강제*는 못 함.
+- per-S 행 검증이 컬럼 수·중복·테이블 소속까지는 못 봄(regex 한계).
+**근본 해결(권장, 미실행)**: 매트릭스를 **structured-data(YAML/JSON) + schema 검증**으로 — 그러면 regex 우회·format 누락 class 가 한 번에 닫힘. 지금은 prose+regex 로 *우발적 드롭은 잡고*(미분류0·per-S 분류·fit게이트·활성선언) 무한 하드닝은 바운드. AI "한 축만" 방지의 1차 안전망으로 충분, 2차(structured)는 이식 진행하며.

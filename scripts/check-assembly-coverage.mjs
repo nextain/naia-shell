@@ -6,13 +6,16 @@ const src = readFileSync("docs/user-scenarios.md", "utf8");
 const mtx = readFileSync("docs/progress/assembly-matrix-2026-06-10.md", "utf8");
 const lines = mtx.split("\n");
 
-const sInv = [...new Set([...src.matchAll(/^\|\s*(S\d+b?)\s*\|/gm)].map((m) => m[1]))];
+const sInv = [...new Set([...src.matchAll(/^\|\s*\*{0,2}(S\d+b?)\b/gm)].map((m) => m[1]))]; // bold(**S71**) 포함
 const ucInv = [...new Set([...src.matchAll(/\*\*(UC\d+[a-z-]*)/g)].map((m) => m[1]))];
 
 // per-S: 각 S 는 *자기 표 행*(| S## | ... |)을 갖고 이식/보충/rej 분류 동반해야 (GLM C-2: 불릿 그룹 우회 차단)
 const CLASSIFY = /(이식|보충|reject|rejected|rej\b)/;
 const sRow = (tok) => lines.find((l) => new RegExp(`^\\|\\s*${tok}\\s*\\|`).test(l));
-const missingS = sInv.filter((s) => { const r = sRow(s); return !r || !CLASSIFY.test(r); });
+const missingS = sInv.filter((s) => {
+  const r = sRow(s); if (!r || !CLASSIFY.test(r)) return true;
+  return r.split("|").map((c)=>c.trim()).filter(Boolean).length < 6; // S|기능|UC|이식/보충|포트|권위|상태 ≈ 7칸(여유 6)
+});
 // UC: 분류 라인 내 존재
 const CLASS = /(이식|보충|reject|rejected|old-auth|scenario|F0|F1|F2|F3|pending|계약|코드|검증|Port|control-plane|out-of-scope)/;
 const classifiedLines = lines.filter((l) => (/^\s*\|/.test(l) || /^\s*-/.test(l)) && CLASS.test(l));
