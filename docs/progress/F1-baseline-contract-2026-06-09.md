@@ -59,7 +59,8 @@
 | `SystemStatus` | 구성요소 상태 집계값(agent-liveness·gateway·provider). 순수 값. |
 | `DegradationSignal` | **`{configured: bool, reachable: bool}`** — *key-presence 와 connection-state 분리*. `degraded = configured && !reachable`(정직: 키 있어도 unreachable=degraded). **오보 금지의 핵심 규칙**(FR-F1.1). |
 | `DeviceStatus` | device 종류·가용성(audio/permission). 순수 값. |
-| `Tier` | `T0`(auto) \| `T1`·`T2`(approval) \| `T3`(**blocked/disallowed — 승인 불가, 차단**, R1 정정). `needsApproval = tier ∈ {T1,T2}`; `isBlocked = tier == T3`. 미매핑→T2(보수적). |
+| `Tier` | `T0`(auto) \| `T1`·`T2`(approval) \| `T3`(**blocked/disallowed — 승인 불가, 차단**, R1). `needsApproval = tier ∈ {T1,T2}`; `isBlocked = tier == T3`. 미매핑→T2(보수적). |
+| `AutoBypass` | tier와 무관히 **자동 승인되는 direct-tool 명시 집합**(`skill_voicewake`·`skill_tts` preview·`skill_config` models, §A.2). 순수 멤버십 규칙(gemini R2). |
 | `ApprovalRequest` | `{tool, args, tier, toolCallId, sessionId}`. |
 | `ContextIdentityDigest` | **결정적 digest** = {session id + canonical workspace root(symlink/mount/대소문자 정규화 or 안정 id) + active surface/panel(headless=null 허용) + 승인시점 config 버전 + client id}. 순수 계산(FR-F1.4). |
 | `ActionScope` | `{target, op, body, env}` — 승인이 묶이는 구체 행위(FR-F1.4). |
@@ -107,7 +108,8 @@ ApprovalGate:
   gate(tool, args, ctx):
     tier = ApprovalPort.classify(tool, args)
     if tier == T3: return Blocked   # ⚠️ T3 = 차단(승인 불가, R1)
-    if tier == T0 or PersistentGrantPort.isAllowed(tool): return Approved(once)   # auto (+ direct-tool 예외 §A.2)
+    if AutoBypass.contains(tool): return Approved(once)   # direct-tool 명시 예외(skill_voicewake·tts preview·config models, §A.2; gemini R2)
+    if tier == T0 or PersistentGrantPort.isAllowed(tool): return Approved(once)   # T0/영구grant auto
     binding = ApprovalBinding{ correlationId, digest=ContextIdentityDigest(ctx), scope=ActionScope(tool,args,ctx) }
     decision = ApprovalPort.request(req, binding)        # 거부·만료·중복 처리
     # ⚠️ 실행 *직전* drift 재검사(FR-F1.4): 현재 digest/scope ≠ binding → block(재승인, side-effect 없음)
