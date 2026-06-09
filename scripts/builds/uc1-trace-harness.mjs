@@ -27,19 +27,41 @@ rl.on('line', (l) => {
 
 const agentCmd = process.env.AGENT_CMD;
 const child = agentCmd
-  ? spawn(agentCmd, { shell: true, stdio: ["pipe", "pipe", "inherit"] })
+  ? spawn(agentCmd, { shell: true, stdio: ["pipe", "pipe", "inherit"], detached: true }) // detached=자체 프로세스 그룹(그룹 kill 위함, SEV-2)
   : spawn(process.execPath, ["-e", FAKE_AGENT], { stdio: ["pipe", "pipe", "inherit"] });
 
 console.log(`[UC1-TRACE] agent = ${agentCmd ? `실제(${agentCmd})` : "fake(에코)"} pid=${child.pid}`);
+
+// ⚠️ stdin 'error'(EPIPE 등) 가 uncaught 로 프로세스 크래시하지 않게 잡고, 이후 write 를 차단(SEV-1).
+let streamBroken = null;
+child.stdin.on("error", (e) => { streamBroken = e; });
+child.on("error", (e) => { streamBroken = streamBroken || e; });
 
 // child_process stdio → LineIO
 const rl = createInterface({ input: child.stdout });
 let lineCb = null;
 const io = {
-  writeLine: (line) => { child.stdin.write(line + "\n"); },
+  writeLine: (line) => {
+    // 스트림 깨졌거나 쓸 수 없으면 throw → send() rejection 전파(거짓 성공 방지, SEV-1).
+    if (streamBroken) throw streamBroken;
+    if (!child.stdin.writable) throw new Error("agent stdin 쓰기 불가(종료/닫힘)");
+    child.stdin.write(line + "\n", (err) => { if (err) streamBroken = err; });
+  },
   onLine: (cb) => { lineCb = cb; return () => { lineCb = null; }; },
 };
 rl.on("line", (l) => lineCb?.(l));
+
+// 종료 = 그룹 kill(shell 누수 방지) + child exit 대기 후 process.exit(SEV-2).
+function teardown(code) {
+  try { rl.close(); } catch { /* noop */ }
+  let exited = false;
+  child.on("exit", () => { exited = true; process.exit(code); });
+  try {
+    if (agentCmd && child.pid) process.kill(-child.pid, "SIGTERM"); // detached 그룹 전체
+    else child.kill("SIGTERM");
+  } catch { /* 이미 종료 */ }
+  setTimeout(() => { if (!exited) process.exit(code); }, 1500); // fallback
+}
 
 // 새 core 결선(child-stdio transport)
 const sessions = new InMemoryClientSession();
@@ -70,11 +92,9 @@ const poll = setInterval(() => {
   if (done || Date.now() > deadline) {
     clearInterval(poll);
     const ownerReleased = sessions.ownerOf("trace-1") === undefined;
-    const pass = rendered.includes("text") && rendered.includes("finish") && ownerReleased;
-    console.log("[UC1-TRACE] 결과", JSON.stringify({ rendered, ownerReleased, verdict: pass ? "✅ PASS — 실 process stdio 1턴 end-to-end" : "⚠ 미완(타임아웃/누락)" }));
+    const pass = rendered.includes("text") && rendered.includes("finish") && ownerReleased && !streamBroken;
+    console.log("[UC1-TRACE] 결과", JSON.stringify({ rendered, ownerReleased, streamBroken: streamBroken ? String(streamBroken) : null, verdict: pass ? "✅ PASS — 실 process stdio 1턴 end-to-end" : "⚠ 미완(타임아웃/누락/스트림오류)" }));
     void handle;
-    child.kill();
-    rl.close();
-    process.exit(pass ? 0 : 1);
+    teardown(pass ? 0 : 1);
   }
 }, 50);
