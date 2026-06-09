@@ -59,11 +59,17 @@ function teardown(code) {
   try { rl.close(); } catch { /* noop */ }
   let exited = false;
   child.on("exit", () => { exited = true; process.exit(code); });
-  try {
-    if (agentCmd && child.pid) process.kill(-child.pid, "SIGTERM"); // detached 그룹 전체
-    else child.kill("SIGTERM");
-  } catch { /* 이미 종료 */ }
-  setTimeout(() => { if (!exited) process.exit(code); }, 1500); // fallback
+  const killGroup = (sig) => {
+    try {
+      if (agentCmd && child.pid) process.kill(-child.pid, sig); // detached 그룹 전체(후손 포함)
+      else child.kill(sig);
+    } catch { /* 이미 종료/그룹 없음 */ }
+  };
+  killGroup("SIGTERM");
+  // 후손이 SIGTERM 무시 시 그룹에 SIGKILL 에스컬레이션(누수 방지, codex SEV-2).
+  setTimeout(() => { if (!exited) killGroup("SIGKILL"); }, 800);
+  // SIGKILL 후에도 exit 이벤트 안 오면 하네스는 빠짐(그룹엔 이미 KILL 전송됨).
+  setTimeout(() => { if (!exited) process.exit(code); }, 1600);
 }
 
 // 새 core 결선(child-stdio transport)
