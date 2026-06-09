@@ -72,6 +72,12 @@ ChatService (implements ChatPort: startTurn/cancel/deliverChunk):
 | `GrpcTransportAdapter` (future) | AgentTransportPort | gRPC 다중클라이언트 — 어댑터 교체만(protocol 불변) |
 | `TauriChatBridge` | (ChatPort *의존/호출* — 구현 아님) | **outbound 전용 driving adapter**: shell ChatPanel `invoke`→`ChatPort.startTurn/cancel` 호출 + startTurn `onChunk`→shell 렌더(event) 전달. ⚠️ **agent stdout(`agent_response`) 수신은 Bridge 아님** = StdioTransportAdapter+MessageRouter 단일 경로(중복 구독 금지, R15). ChatPort 구현자=app 의 ChatService. |
 
+## B.4.1 ⚠️ 경계(conceded) — requestId 고유성 불변식
+**requestId 는 turn 마다 전역 고유**(baseline: 매 chat send 새 id 생성, 재사용 안 함). wire(`agent_response`)는 **generation/epoch 를 싣지 않으므로**, inbound 라우팅·cancel 이 "옛 세대 vs 새 세대"를 wire 만으로 구분하는 것은 **프로토콜상 불가능**. 따라서:
+- **reuse-safety = 프로토콜 계약(불변식)** 이지 코드 책임 아님 — 동일 requestId 재등록은 *계약 위반*(레지스트리가 충돌 거부로 1차 방어).
+- 코드는 *단일 콜스택 재진입*(콜백이 unsubscribe+재등록)에 대해 turn-reference 가드로 방어(defense-in-depth). 그러나 *세대 간(cross-generation) wire 재사용*은 위 불변식 밖 = **본 UC1 범위 밖**(에픽-온-와이어가 필요하면 gRPC/UC10a 에서 메시지에 turnInstanceId 추가).
+- 결론: stale TurnHandle/지연 chunk 의 cross-generation 오작용 = requestId 고유성으로 차단됨(추가 하드닝 불필요, 무한 하드닝 경계).
+
 ## B.5 composition/ — `src/main/composition/` 단일 root, ChatPort+AppPort+AgentTransport(stdio) 주입.
 
 ## B.6 검증

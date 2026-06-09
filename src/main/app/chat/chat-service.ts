@@ -1,6 +1,9 @@
 // app/chat — UC1 (contract §B.3). 포트만 사용. domain 만 다룸(protocol/wire 무지).
 // ChatService implements ChatPort: startTurn/cancel/deliverChunk.
 // domain↔protocol↔wire 변환·demux 는 전부 adapter(canon). 여기선 domain ChatRequest 를 transport 에 그대로.
+// ⚠️ 불변식(conceded, 계약 §B.4.1): requestId 는 turn 마다 전역 고유(baseline 보장). wire 에 generation 없음 →
+//   cross-generation 재사용 안전은 *프로토콜 계약*(코드 책임 아님). 코드는 단일 콜스택 재진입만 reference 가드로 방어.
+//   동일 id 재등록은 register() 충돌 거부가 1차 차단. (세대-구분이 필요하면 UC10a/gRPC turnInstanceId.)
 import type {
   ChatRequest, ChatChunk, CancelTurn,
   ChatTurnState,
