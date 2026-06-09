@@ -18,14 +18,14 @@
 | 기능 | 소스 | 거동 |
 |---|---|---|
 | execute_command | `tool-bridge.ts:681` | **isBlockedCommand 먼저**(T3 패턴) → `exec.bash` RPC → `node.invoke` fallback |
-| executor | `command-executor.ts:55`(RPC, idempotency UUID) · `native-executor.ts:27`(child_process.spawn; Flatpak→`flatpak-spawn --host`) | 라우팅 |
+| executor | `command-executor.ts:55 execute()`(RPC; idempotency UUID ~88) · `native-executor.ts:27`(child_process.spawn; Flatpak→`flatpak-spawn --host`) | 라우팅 |
 | pty exec | `pty.rs:33 pty_create`(shell allowlist·절대경로 검증) · `250 pty_execute_sync`(timeout 폴링) | 터미널 실행 |
 
 ## A.3 pty write 측
 - `pty.rs:170 pty_write`(stdin 입력·flush) · `196 pty_resize`(SIGWINCH) · `224 pty_kill`(master close → exit emit).
 
 ## A.4 reafference (commanded vs observed)
-- 결과 흐름(`agent/index.ts:701-730`): `executeToolWithRecovery` → result{success,output,error} → jobTracker.complete/fail → `tool_result` emit → chatMessages push → 다음 LLM 입력.
+- 결과 흐름(`agent/index.ts`: `executeToolWithRecovery` 정의 ~498, 결과 처리 701-730): → result{success,output,error} → jobTracker.complete/fail → `tool_result` emit → chatMessages push → 다음 LLM 입력.
 - ⚠️ **부분(NOT 순수 fire-and-forget이나 mismatch 단언 없음)**: ack/observed(결과 보고)는 존재하나 — **자율 검증 없음**(exitCode=0 면 stdout 신뢰, 후속 read/git-status 확인 없음), **commanded-vs-observed mismatch 단언 없음**(LLM 이 후속 tool 호출할 *수* 있으나 자동 아님). = **FR-F3.2 reafference 의 mismatch/검증 = F3 신설**.
 
 ## A.5 안전/차단 + 불확정
