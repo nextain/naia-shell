@@ -55,10 +55,10 @@
 
 ## 7. 현재 위치 — 정직하게
 
-- **F0 = CLOSED**(baseline+계약 둘 다 2연속 NONE). **F1 = 작성·R1 정정**(2클린 전). **F2·F3 = 초안**.
-- F1 = 자기상태/진단(정직 degradation: *키 저장됨 ≠ 실제 연결됨*) + 승인 결속. F2 = host-system 관측+drift. F3 = 승인먼저 mutate + reafference(commanded→ack→observed→mismatch) + 불확정 정직 abort.
-- **코드 이식은 0** — 전부 *계약 문서*. 정직하게: 지금 단계는 "측정+계약"이고, 코드/툴체인은 다음.
-- (현재 codex 사용량 한도로 F1~F3 일괄 리뷰 대기 중 — 외부 자원 제약, 리셋 후 재개.)
+- **F0~F3 포트 계약 = 전부 2연속 클린.** F0=codex 14R씩(baseline+계약), F1·F2·F3=gemini 2클린(codex 한도→대체 리뷰어).
+- F1 = 자기상태/진단(정직 degradation: *키 저장됨 ≠ 실제 연결됨*) + 승인 결속(context digest). F2 = host-system 관측+drift(외부간섭, 권위우선). F3 = 승인먼저 mutate + reafference(commanded→ack→observed→mismatch/observationFailed) + 불확정 정직 abort.
+- **코드 이식은 0** — 전부 *계약 문서*. 정직하게: 지금은 "측정+계약" 단계, 코드/툴체인은 다음.
+- **리뷰어 가용성도 정직하게**: codex(GPT) 한도 도달 → gemini(Google)로 F1~F3 2클린, **codex 풀 재독 최종 게이트는 리셋 후**. 단일 리뷰어 의존 안 함 = 다계보 교차의 실전 모습.
 
 ## 8. 다음 / 기여 포인트
 
