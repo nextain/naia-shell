@@ -78,14 +78,14 @@ describe("wire variant 분류 SoT (router·관측 스니펫 공유)", () => {
   it("classifyVariant: chat-turn / nonchat-known / unknown 망라", () => {
     for (const t of CHAT_TURN_VARIANTS) expect(classifyVariant(t)).toBe("chat-turn");
     for (const t of NONCHAT_KNOWN_VARIANTS) expect(classifyVariant(t)).toBe("nonchat-known");
-    expect(classifyVariant("discord_message")).toBe("unknown");
+    expect(classifyVariant("totally_made_up_type")).toBe("unknown");
     expect(classifyVariant("")).toBe("unknown");
   });
-  it("18 variant 집합 = 10 chat-turn + 8 nonchat-known, 중복 없음", () => {
+  it("variant 집합 = 10 chat-turn + 11 nonchat-known(=21), 중복 없음", () => {
     expect(CHAT_TURN_VARIANTS.length).toBe(10);
-    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(8);
+    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(11);
     const all = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
-    expect(all.size).toBe(18); // 겹침 없음
+    expect(all.size).toBe(21); // 겹침 없음(10 chat + 11 nonchat)
   });
   it("outboundCommandOf: cancel 만 별 command(cancel_stream), 나머지 send_to_agent_command", () => {
     expect(outboundCommandOf("cancel")).toBe("cancel_stream");
@@ -278,7 +278,7 @@ describe("exhaustive demux (router)", () => {
   });
   it("Unknown variant → DiagnosticSink(silent drop 금지)", () => {
     const { transport, diag } = wire();
-    transport.emit({ type: "discord_message", raw: {} });
+    transport.emit({ type: "totally_made_up_type", raw: {} });
     expect(diag.some((d) => d.reason.includes("unknown variant"))).toBe(true);
   });
   it("chat-turn without requestId → DiagnosticSink", () => {

@@ -124,6 +124,10 @@ export const CHAT_TURN_VARIANTS = [
 export const NONCHAT_KNOWN_VARIANTS = [
   "audio", "object", "panel_control", "panel_install_result",
   "panel_tool_call", "ready", "skill_list_response", "embedding_progress",
+  // shell AgentResponseChunk 소비자 집합에서 발견(uc1-variant-probe drift) — 비-chat, 해당 UC 에서 배선:
+  "config_update",            // 설정 동기화
+  "discord_message",          // UC10 discord
+  "gateway_approval_request", // gateway 레벨 승인(chat approval_request 와 별개)
 ] as const;
 
 export type VariantLane = "chat-turn" | "nonchat-known" | "unknown";
