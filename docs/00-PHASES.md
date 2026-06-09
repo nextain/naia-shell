@@ -34,4 +34,5 @@
 - ⚠️ **codex 풀 재독 최종 게이트 = 리셋(~22:47) 후 대기**. gemini=경량(ground-truth 인라인)이라 codex 코드 직독 재검증은 유지.
 - **툴체인 결정 = TS**(루크 'b 진행'; F13이 package.json/tsconfig 이미 허용 = 헌장수정 불요).
 - **F0 코드 스캐폴드 완료**: `src/main/{domain,ports,adapters,app,composition}` 헥사고날 — tsc clean + **계약 테스트 16/16 통과**(vitest). 어댑터=Tauri stub(라이브 trace 대기). **첫 이식 코드 = 측정→계약→코드 관통.**
-- **다음**: F1~F3 코드 스캐폴드(같은 패턴) · codex 리셋 후 F1~F3 계약 최종 재검증 · 라이브 trace(루크 머신).
+- **F0·F1 코드 스캐폴드 완료**(tsc clean + 계약테스트 **32/32**). F1=DegradationSignal 정직(configured&&!reachable)·ApprovalGate(context-digest drift block).
+- **다음**: F2·F3 코드 스캐폴드(같은 패턴) · codex 리셋 후 계약 최종 재검증 · 라이브 trace(루크 머신).
