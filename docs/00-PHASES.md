@@ -35,4 +35,5 @@
 - **툴체인 결정 = TS**(루크 'b 진행'; F13이 package.json/tsconfig 이미 허용 = 헌장수정 불요).
 - **F0 코드 스캐폴드 완료**: `src/main/{domain,ports,adapters,app,composition}` 헥사고날 — tsc clean + **계약 테스트 16/16 통과**(vitest). 어댑터=Tauri stub(라이브 trace 대기). **첫 이식 코드 = 측정→계약→코드 관통.**
 - **F0·F1·F2 코드 스캐폴드 완료**(tsc clean + 계약테스트 **50/50**). **codex 코드리뷰 6 HIGH+4 MED 정정**(classify 신뢰X·binding 게이트author·auto-bypass 인자조건·digest 충돌방지·load base·clone/delete·mount/activate 분리·always grant·status contain). F2=resolveExpected 권위우선·DriftDetector.
-- **다음**: F3 코드 스캐폴드(같은 패턴) · F2/F3 codex 코드리뷰 · 라이브 trace(루크 머신).
+- **방법 갱신(2026-06-10, 루크)**: 진실=사용자 시나리오(UC), 옛동작은 *맞던 곳만* 참조. 수평 gRPC배선=인지재단(old UC와 1:1 아닐 수 있음)→이식=인지포트 *재표현*, mismatch 표면화. 이식(있는것)+보충(없던것 agent↔os) 둘 다. **드롭 방지 = 조립 매트릭스**(`docs/progress/assembly-matrix-2026-06-10.md`, UC수직 × gRPC수평 × 이식/보충 × old/scenario-auth × 인지매핑/fit, 미분류 0).
+- **다음**: UC1 = 첫 수직 슬라이스 — 수평(ChatPort/protocol/transport/agent연결 H1~H4) 먼저 깔고 그 위에 UC1 재표현. (foundation F0~F3 배관은 old-auth로 유효, agent연결=scenario-auth 보충.)
