@@ -15,7 +15,7 @@
 | **03** | 시나리오 P01 | 개발 기능 전수 enumerate(검증여부 무관) → S01~S71 + 그룹. **코드 대조로 60+ OpenClaw 스킬 등 누락 19개 발견** | 완전성 13R, **3연속 NONE** | [user-scenarios.md](./user-scenarios.md) | ✅ |
 | **04** | 테스트맵 P02 | 검증 3단(Old-Baseline golden trace→계약→통합 reafference) · fault disposition · 오류 2직교축 | 13R, gemini 7×PASS·codex 바운드 | [user-scenarios.md](./user-scenarios.md) (P02 섹션) | ✅ |
 | **05** | 요구사항 P03 | foundation tranche FR(F0~F3) + 횡단 NFR + 승인-행위 결속·provenance 인과체인 | 8R, gemini 6×PASS·codex 바운드 | [requirements.md](./requirements.md) | ✅ |
-| **06** | 실행 F0~ | Old-Baseline 측정(로컬·외부키X) → 슬라이스 이식(F0→F1→F2→F3) → P04 통합테스트 → P05 완료 | F0 baseline codex 14R·R13/R14 2연속 NONE | F0 [baseline](./progress/F0-baseline-2026-06-09.md)·[contract](./progress/F0-contract-2026-06-09.md) | ⏳ 진행(F0 baseline ✅+contract ✅ 2클린, 다음=툴체인 결정→스캐폴드) |
+| **06** | 실행 F0~ | Old-Baseline 측정(로컬·외부키X) → 슬라이스 이식(F0→F1→F2→F3) → P04 통합테스트 → P05 완료 | F0 baseline codex 14R·R13/R14 2연속 NONE | F0 baseline·contract·**code(src/main)** + F1·F2·F3 계약 | ⏳ 진행(F0 코드 ✅ tsc+16/16 test, F1-F3 계약 2클린+GLM) |
 
 ## 왜 이 순서
 
@@ -32,4 +32,6 @@
 - **루크 결정(2026-06-09)**: 툴체인/스캐폴드보다 **F1~F3 포트 계약 먼저**(설계 두텁게, 런타임 커밋 보류).
 - **F1·F2·F3 = gemini 2연속 클린 ✅** (codex 한도 → gemini 대체 리뷰어, 코드표면 ground-truth 인라인). F1(자기상태/진단+승인 결속) gemini R3·R4 / F2(관측+drift) R3·R4 / F3(승인먼저 mutate+reafference+불확정) R4·R5.
 - ⚠️ **codex 풀 재독 최종 게이트 = 리셋(~22:47) 후 대기**. gemini=경량(ground-truth 인라인)이라 codex 코드 직독 재검증은 유지.
-- **다음**: codex 리셋 후 F1~F3 최종 재검증 → 툴체인 결정(루크, F13) → `src/main` 스캐폴드.
+- **툴체인 결정 = TS**(루크 'b 진행'; F13이 package.json/tsconfig 이미 허용 = 헌장수정 불요).
+- **F0 코드 스캐폴드 완료**: `src/main/{domain,ports,adapters,app,composition}` 헥사고날 — tsc clean + **계약 테스트 16/16 통과**(vitest). 어댑터=Tauri stub(라이브 trace 대기). **첫 이식 코드 = 측정→계약→코드 관통.**
+- **다음**: F1~F3 코드 스캐폴드(같은 패턴) · codex 리셋 후 F1~F3 계약 최종 재검증 · 라이브 trace(루크 머신).

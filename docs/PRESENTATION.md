@@ -57,8 +57,9 @@
 
 - **F0~F3 포트 계약 = 전부 2연속 클린.** F0=codex 14R씩(baseline+계약), F1·F2·F3=gemini 2클린(codex 한도→대체 리뷰어).
 - F1 = 자기상태/진단(정직 degradation: *키 저장됨 ≠ 실제 연결됨*) + 승인 결속(context digest). F2 = host-system 관측+drift(외부간섭, 권위우선). F3 = 승인먼저 mutate + reafference(commanded→ack→observed→mismatch/observationFailed) + 불확정 정직 abort.
-- **코드 이식은 0** — 전부 *계약 문서*. 정직하게: 지금은 "측정+계약" 단계, 코드/툴체인은 다음.
-- **리뷰어 가용성도 정직하게**: codex(GPT) 한도 도달 → gemini(Google)로 F1~F3 2클린, **codex 풀 재독 최종 게이트는 리셋 후**. 단일 리뷰어 의존 안 함 = 다계보 교차의 실전 모습.
+- **첫 코드 이식 완료(F0).** TS 헥사고날 스캐폴드 `src/main/{domain,ports,adapters,app,composition}` — tsc clean + **계약 테스트 16/16 통과**(boot 게이트·initAuth 고정순서·setup 모드별 완료·workspace contain+fallback). 어댑터=Tauri stub(라이브 trace 대기).
+- 측정(baseline)→계약→**코드+계약테스트**까지 한 슬라이스 관통 = 방법론 실증.
+- **리뷰어 다계보**: F0=codex 2클린, F1~F3=gemini 2클린+GLM-5.1 클린(GLM이 실코드로 gemini 놓친 정밀결함 발견). codex 풀 재독 최종 게이트=리셋 후.
 
 ## 8. 다음 / 기여 포인트
 
