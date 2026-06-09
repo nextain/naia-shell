@@ -2,7 +2,7 @@
 
 `[Phase 03·04 (P01 시나리오 + P02 테스트맵)]`
 
-> 추적: 1단계 `STRUCTURE.md` v5 → 2단계 P01. **상태: 완전성 수렴(13R, 3연속 NONE). foundation tranche 순서 채택(F0→F1→F2→F3→V1→V2) — 06 실행 착수 대기.**
+> 추적: 1단계 `STRUCTURE.md` v5 → 2단계 P01. **상태: 완전성 수렴(13R, 3연속 NONE). foundation tranche 순서 = 아이디어 수준 잠정안(F0→…→V2, 실행 시 재검토). G1 게이트 아님.**
 > 완전성 추이: 초안 46 → 누락 발견·추가 R1~R10(ADK부트스트랩·비용·업데이트·공지·비전캡처·@멘션·Issues·ModeBar·botmadang·ref오디오·Lab동기화·deeplink·**default-skills 60+ 컬렉션**·메모리백업) → R11~R13 3연속 NONE. 앱 표면 ≈ S01~S71(+S52b) + 브라우저/워크스페이스/default-skills 그룹. 분포/OS(S68/69)=범위 밖.
 > 원칙: 시나리오는 *발명*이 아니라 old-naia-os **실제 기능**에서 도출(built-in skills 25·패널 6·멀티채널). 각 UC = 인지흐름 경로 + 관통 슬라이스/포트.
 > 용어 = `glossary.md`.
@@ -243,8 +243,9 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 
 > **이식 coverage 함의**: 1단계 슬라이스의 `memory` = old 소스엔 scrubber·prompt convention(`<recalled_memories>`)만 → `accepted`(scrubber) + `deferred`(실제 store/recall = naia-memory 통합 대기). 커버리지 manifest 에 명시.
 
-## 결정 완료
-- Foundation tranche 순서 F0→F1→F2→F3→V1→V2 = **채택**(루크 2026-06-09). botmadang(S65)=**rejected**.
+## 결정/잠정
+- Foundation tranche 순서 F0→…→V2 = **아이디어 수준 잠정**(루크: 우선 적어둔 것, 실행 시 재검토 — 못 박은 결정 아님). G1 = 게이트로 두지 않음.
+- botmadang(S65) = **rejected**(이식 제외, 명확 결정).
 
 ## 해소·DEFER (재논 금지)
 - ~~UC7 포트 축~~ = 해소(R1): UC7 = `EnvironmentPort`(host-system). `ActionPort`=body movement(별개).
