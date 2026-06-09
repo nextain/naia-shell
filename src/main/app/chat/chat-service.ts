@@ -44,7 +44,8 @@ export class ChatService implements ChatPort {
     };
 
     // 구독 선행 → send(domain req). 변환은 adapter. sent=send 결과(reject 전파).
-    const sent = this.transport.send(req).catch((err) => {
+    // ⚠️ send 가 *동기* throw 해도 catch 가 cleanup 하도록 reject promise 로 정규화(codex 코드리뷰4 HIGH).
+    const sent = this.invokeSend(() => this.transport.send(req)).catch((err) => {
       // 초기 send reject = 요청이 agent 에 도달 못 함(chunk 안 옴) → 해제 안전.
       // ⚠️ ABA 가드: 그 사이 해제·재등록됐으면(다른 turn) 건드리지 않음.
       if (this.turns.get(req.requestId) === turn) {
@@ -66,9 +67,9 @@ export class ChatService implements ChatPort {
       throw new Error(`cancel 권한 없음(소유주 불일치): ${handle.requestId}`);
     }
     const turn = this.turns.get(handle.requestId);
-    if (turn && !isTerminalState(turn.state)) {
-      turn.state = nextTurnState(turn.state, { type: "cancelRequested" }); // → cancelling(비종결)
-    }
+    // ⚠️ 이미 종료/없는 turn = cancel 불필요(no-op) — 불필요한 cancel_stream 전송 방지(코드리뷰4 MED).
+    if (!turn || isTerminalState(turn.state)) return;
+    turn.state = nextTurnState(turn.state, { type: "cancelRequested" }); // → cancelling(비종결)
     const out: CancelTurn = { kind: "cancel", requestId: handle.requestId, clientId: handle.clientId };
     // ⚠️ cancel_stream send reject 로는 해제 안 함(turn 라이브 가능 — 후속 finish/error 가 해제).
     return this.transport.send(out);
@@ -77,11 +78,14 @@ export class ChatService implements ChatPort {
   deliverChunk(chunk: ChatChunk, owner: { requestId: string; clientId: string }): void {
     const turn = this.turns.get(owner.requestId);
     if (!turn) return; // 종료/미지 turn — silent (router 가 DiagnosticSink 책임)
-    // ⚠️ onChunk(소비자 콜백) 예외가 상태전이·해제·라우터를 깨뜨리지 않게 격리(codex HIGH).
-    this.safeOnChunk(turn, chunk);
-    // ⚠️ 재진입 가드: 콜백이 unsubscribe + 동일 requestId 재등록 했을 수 있음 → 같은 turn 일 때만 진행(codex 코드리뷰2 HIGH).
-    if (this.turns.get(owner.requestId) !== turn) return;
+    // ⚠️ 오라우팅 방어: owner.clientId 가 turn 소유주와 다르면 거부(타 client turn 종결/해제 방지, 코드리뷰4 HIGH).
+    if (turn.clientId !== owner.clientId) return;
+    // ⚠️ 상태전이 *먼저* → 콜백이 post-transition 상태 관측(재진입 시 stale 상태·불필요 cancel 방지, 코드리뷰4 MED).
     turn.state = nextTurnState(turn.state, { type: "chunk", chunk });
+    // ⚠️ onChunk(소비자 콜백) 예외가 해제·라우터를 깨뜨리지 않게 격리(코드리뷰 HIGH).
+    this.safeOnChunk(turn, chunk);
+    // ⚠️ 재진입 가드: 콜백이 unsubscribe + 동일 requestId 재등록 했을 수 있음 → 같은 turn 일 때만 해제(코드리뷰2 HIGH).
+    if (this.turns.get(owner.requestId) !== turn) return;
     if (isTerminalState(turn.state)) {
       this.releaseTurn(owner.requestId, turn); // finish/error = terminal → ownership 해제(reference 가드)
     }
@@ -97,6 +101,11 @@ export class ChatService implements ChatPort {
     if (this.turns.get(requestId) !== turn) return;
     this.turns.delete(requestId);
     this.sessions.release(requestId);
+  }
+  /** send 호출 정규화 — *동기* throw 도 reject promise 로(catch 가 cleanup 하도록, codex 코드리뷰4 HIGH). */
+  private invokeSend(fn: () => Promise<void>): Promise<void> {
+    try { return fn(); }
+    catch (e) { return Promise.reject(e); }
   }
   /** 소비자 콜백 격리 — 예외를 삼켜 상태기계·ownership·라우팅이 깨지지 않게(codex HIGH). */
   private safeOnChunk(turn: Turn, chunk: ChatChunk): void {

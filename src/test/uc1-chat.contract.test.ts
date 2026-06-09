@@ -220,6 +220,41 @@ describe("런타임 누수/예외 격리 (codex 코드리뷰 HIGH)", () => {
     expect(() => transport.emit({ type: "finish", requestId: "r1" })).not.toThrow();
     expect(sessions.ownerOf("r1")).toBeUndefined();
   });
+  it("send 동기 throw → catch cleanup(turn/ownership 누수 없음, 코드리뷰4 HIGH)", async () => {
+    const transport = new MockTransport();
+    // send 가 동기 throw 하도록 패치
+    transport.send = () => { throw new Error("sync send fail"); };
+    const sessions = new InMemoryClientSession();
+    const chat = new ChatService(transport, sessions);
+    const { sent } = chat.startTurn(req(), () => {});
+    await expect(sent).rejects.toThrow("sync send fail");
+    expect(sessions.ownerOf("r1")).toBeUndefined(); // 동기 throw 여도 해제됨
+    expect(chat.turnState("r1")).toBeUndefined();
+  });
+  it("deliverChunk: owner.clientId 불일치 = 거부(타 client turn 보호, 코드리뷰4 HIGH)", async () => {
+    const { sessions, chat } = wire();
+    const got: ChatChunk[] = [];
+    const { sent } = chat.startTurn(req(), (c) => got.push(c));
+    await sent;
+    // 잘못된 clientId 로 직접 deliver 시도
+    chat.deliverChunk({ kind: "finish" }, { requestId: "r1", clientId: "WRONG" });
+    expect(got.length).toBe(0); // 전달 안 됨
+    expect(sessions.ownerOf("r1")).toBe("c1"); // 종결/해제 안 됨
+    expect(chat.turnState("r1")).toBe("streaming");
+  });
+  it("재진입 cancel: finish 콜백 내 cancel(handle) = terminal no-op(불필요 cancel_stream 전송 안 함, 코드리뷰4 MED)", async () => {
+    const { transport, chat } = wire();
+    let h: { requestId: string; clientId: string } | null = null;
+    const r = chat.startTurn(req(), (c) => {
+      // 상태전이 먼저(MED) → 콜백이 finished 상태 관측 → reentrant cancel 은 no-op
+      if (c.kind === "finish" && h) void chat.cancel(h as never);
+    });
+    h = r.handle;
+    await r.sent;
+    const before = transport.sent.length;
+    transport.emit({ type: "finish", requestId: "r1" }); // finish 콜백 안에서 cancel 시도
+    expect(transport.sent.length).toBe(before); // cancel_stream 미전송(terminal no-op)
+  });
   it("재진입 ABA: terminal chunk 콜백이 unsubscribe+동일 id 재등록 → 옛 turn 의 무조건 release 가 새 turn 삭제 안 함(코드리뷰2 HIGH)", async () => {
     const { transport, sessions, chat } = wire();
     let h1: { unsubscribe: () => void } | null = null;
