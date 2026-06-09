@@ -98,10 +98,11 @@ export function wireChatUC1(opts?: {
   return { chat, router, sessions, bridge };
 }
 
-// baseline 등가 생성기(ChatPanel generateRequestId) — shell 미주입 시 fallback. 실 shell 은 crypto.randomUUID 권장.
+// fallback 생성기 — shell 미주입 시만 사용(실 shell 은 crypto.randomUUID 주입 권장, §B.4.1).
+// ⚠️ `__reqSeq` = **모듈 전역**(composition 마다 초기화 X — 모든 wireChatUC1 호출이 공유) → 프로세스 내 단조 고유.
+//    프로세스 *간*(다중 창/인스턴스) 충돌 완화 위해 Date.now 결합(baseline generateRequestId 등가). 강한 보장이 필요하면 shell 이 randomUUID 주입.
 let __reqSeq = 0;
 function defaultRequestId(): string {
-  // Date.now()/Math.random() 는 일부 실행환경(워크플로 등)서 제약 → 단조 시퀀스 + clientless 접두. 고유성 보장.
   __reqSeq += 1;
-  return `req-${__reqSeq}-${(__reqSeq * 2654435761) % 1000000}`;
+  return `req-${Date.now()}-${__reqSeq}-${Math.random().toString(36).slice(2, 7)}`;
 }
