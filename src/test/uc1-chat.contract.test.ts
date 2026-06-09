@@ -151,6 +151,27 @@ describe("라이브 StdioTransportAdapter (주입형, Tauri 경계 — 앱 무�
     await Promise.resolve(); await Promise.resolve();
     expect(wasUnlistened()).toBe(true); // resolve 후 자동 unlisten
   });
+  it("unsub 후 도착 이벤트는 cb 에 전달 안 됨(구독해제 후 누출 금지, 라이브리뷰 S2)", async () => {
+    const { deps, emit } = mockDeps();
+    const got: AgentMessage[] = [];
+    const unsub = makeLiveStdioTransport(deps).onMessage((m) => got.push(m));
+    await Promise.resolve(); // listen resolve
+    unsub();
+    emit('{"type":"text","requestId":"r1","text":"late"}'); // 해제 후 도착
+    expect(got.length).toBe(0); // 전달 안 됨
+  });
+  it("listen() rejection = onListenError 로(unhandled rejection 방지, 라이브리뷰 S2)", async () => {
+    const errs: unknown[] = [];
+    const deps: LiveTransportDeps = {
+      invoke: async () => undefined,
+      listen: async () => { throw new Error("listen denied"); },
+      onListenError: (e) => errs.push(e),
+    };
+    makeLiveStdioTransport(deps).onMessage(() => {});
+    await Promise.resolve(); await Promise.resolve();
+    expect(errs.length).toBe(1);
+    expect(String(errs[0])).toContain("listen denied");
+  });
 });
 
 describe("ChatService + MessageRouter 계약", () => {

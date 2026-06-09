@@ -76,6 +76,8 @@ export interface LiveTransportDeps {
   invoke(cmd: string, args: Record<string, unknown>): Promise<unknown>;
   /** Tauri listen — unlisten 함수를 Promise 로 반환(비동기). payload = event.payload. */
   listen(event: string, cb: (payload: unknown) => void): Promise<() => void>;
+  /** listen 구독 실패 관측(옵션) — 미주입 시 swallow(unhandled rejection 방지). */
+  onListenError?(err: unknown): void;
 }
 
 /**
@@ -99,12 +101,14 @@ export function makeLiveStdioTransport(deps: LiveTransportDeps): AgentTransportP
       // listen 은 async — unsub 가 listen resolve 전에 호출될 경쟁 처리(즉시 dispose 플래그).
       let unlisten: (() => void) | null = null;
       let disposed = false;
-      void deps
+      deps
         .listen("agent_response", (payload) => {
+          if (disposed) return; // ⚠️ unlisten 발효 전/resolve 전 도착 이벤트 차단(구독 해제 후 전달 금지)
           const raw = typeof payload === "string" ? payload : JSON.stringify(payload);
           cb(decodeAgentMessage(raw));
         })
-        .then((u) => { if (disposed) u(); else unlisten = u; });
+        .then((u) => { if (disposed) u(); else unlisten = u; })
+        .catch((err) => { deps.onListenError?.(err); }); // ⚠️ listen rejection 처리(unhandled rejection 방지)
       return () => { disposed = true; unlisten?.(); unlisten = null; };
     },
   };
