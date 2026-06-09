@@ -67,8 +67,13 @@ EnvironmentObservePort:                      # host-system read-only (FR-F2)
     fileStatus(path): Meta | NotFound
     sessions(): SessionInfo[]                 # git repos 상태
     processStatus(): ProcessInfo[]            # system-status·pty-agents
+    worktrees(): WorktreeInfo[]                   # repo 상태(get_main_worktree/all_worktree_paths) — fs/session 계열(gemini R2: processStatus 아님)
     subscribeChanges(): stream<FileChangeEvent>   # watcher(외부변경 포함)
     # ⚠️ 모두 read-only — mutate 0 (mutate=F3 EnvironmentMutatePort)
+ExpectedStateProviderPort:                   # ⚠️ drift 의 expected 입력 출처(gemini R2 MED — hidden dep 해소)
+    goal(): DeclaredGoal | null               # 선언적 목표상태(최상위 권위)
+    approvedIntent(): ApprovedIntent | null    # 마지막 승인 의도(F1 ApprovalBinding 연계)
+    lastSnapshot(target): ObservedState | null # 직전 관측 스냅샷(저장/조회 — adapter 영속)
 PtyReadPort:
     output(): stream<chunk> / exit(): stream<code>    # pty read 측
 ```
@@ -83,7 +88,7 @@ ObservationService:
 DriftDetector:                                   # FR-F2 신설
   onChange(evt):                                  # subscribeChanges 구독
     observed = EnvironmentObservePort.fileStatus(evt.file)
-    expected = ExpectedState.resolve(goal, approvedIntent, lastSnapshot)   # 권위 우선순위
+    expected = ExpectedState.resolve(ExpectedStateProviderPort.goal(), .approvedIntent(), .lastSnapshot(evt.file))   # 권위 우선순위(포트로 조회, R2)
     if DriftSignal(observed, expected): report(drift)   # contain + 정직(상위 오염 X, FR-F1.3)
 ```
 > 관측/​drift 실패는 contain — planning/route/skill 입력 오염 금지(FR-F1.3 연속). NFR-substrate-agnostic: 포트는 host-neutral(headless 값 부재 허용).
@@ -92,7 +97,9 @@ DriftDetector:                                   # FR-F2 신설
 | 어댑터 | 포트 | 호출 |
 |---|---|---|
 | `TauriWorkspaceReadAdapter` | EnvironmentObservePort | `workspace_list_dirs`·`_read_file`·`_file_size`·`_get_sessions`·`_load_project_index`·`_discover_skills` + `validate_in_workspace` |
-| `TauriProcessAdapter` | EnvironmentObservePort.processStatus | `system-status`·`diagnostics-proxy`·`get_branch`·`workspace_get_pty_agents` |
+| `TauriProcessAdapter` | EnvironmentObservePort.processStatus | `system-status`·`diagnostics-proxy`·`workspace_get_pty_agents` |
+| `TauriWorktreeAdapter` | EnvironmentObservePort.worktrees/sessions | `get_branch`·`get_main_worktree`·`get_all_worktree_paths`(repo 상태, R2) |
+| `ExpectedStateAdapter` | ExpectedStateProviderPort | goal/approvedIntent(F1 binding) + lastSnapshot 영속(store/조회) |
 | `NotifyWatchAdapter` | EnvironmentObservePort.subscribeChanges | `workspace_start_watch`/`stop_watch`(notify crate) |
 | `TauriPtyReadAdapter` | PtyReadPort | `pty:output`/`pty:exit` event |
 
