@@ -13,7 +13,7 @@
 |---|---|---|
 | 세션/git 조회 | `workspace.rs:308 workspace_get_sessions()` | workspace 내 git repo 목록(dir·path·branch·status·last_change·recent_file) |
 | 디렉터리 목록 | `workspace.rs:891 workspace_list_dirs(parent)` | entries(name·path·is_dir, dotfile 제외) |
-| 파일 read | `workspace.rs:919 workspace_read_file`·`925 _bytes`·`931 _file_size` | 내용/바이트/크기 — **경로 workspace 경계 검증** |
+| 파일 read | `workspace.rs:919 workspace_read_file`·`925 workspace_read_file_bytes`·`931 workspace_file_size` | 내용/바이트/크기 — **경로 workspace 경계 검증** |
 | 인덱스/스킬 | `723 load_project_index`(YAML)·`741 discover_skills`(SKILL.md)·`753 read_skill_content` | 메타 read(in-workspace 검증) |
 | 권한 검증 | `116 validate_in_workspace`(canonicalize + starts_with root) | 권한 밖 경로 거부(read) |
 
@@ -25,13 +25,13 @@
 ## A.3 프로세스/시스템 read
 | 기능 | 소스 | 거동 |
 |---|---|---|
-| system-status | `agent/.../system-status.ts:13` | mem/cpu/os/uptime (`os.*`) |
+| system-status | `agent/.../system-status.ts:13`(execute 진입; `os.*` 호출 17~35) | mem/cpu/os/uptime |
 | diagnostics proxy | `diagnostics-proxy.ts` getHealth/getUsageStatus/getUsageCost/getGatewayStatus/pollLogsTail(cursor) | RPC 상태/사용량/로그 tail |
 | git/worktree | `workspace.rs:213 get_branch`·`845 get_main_worktree`·`866 get_all_worktree_paths` | read-only git 조회 |
 | pty 프로세스 | `workspace.rs:612 workspace_get_pty_agents(pids)` | 프로세스 트리(sysinfo)서 AI agent(claude/opencode/codex/gemini) 자손 탐지 |
 
 ## A.4 terminal/pty read
-- `pty.rs:122 pty_create()` reader thread: PTY master 4096B chunk → `pty:output:{id}` event. child-wait thread → `pty:exit:{id}`. `pty_execute_sync()`=동기 stdout/stderr 버퍼 + try_wait 폴링.
+- `pty.rs:122 pty_create()` reader thread: PTY master 4096B chunk → `pty:output:{id}` event. child-wait thread → `pty:exit:{id}`. `pty_execute_sync()`(pty.rs:261~344) = **PTY 아님** — `std::process::Command`+`Stdio::piped()`로 `bash -lc` 직접 spawn → stdout/stderr 스레드 read + try_wait 폴링(동기 exec, GLM-5.1 M2 정정).
 
 ## A.5 오류 분류 / disposition (F2)
 - 관측 실패/권한 밖 경로 = **contain + 정직 보고**(거부; 상위 planning 오염 차단, FR-F1.3 연속), 부팅·다른 관측 차단 X.
