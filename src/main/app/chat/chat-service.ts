@@ -29,23 +29,28 @@ export class ChatService implements ChatPort {
     if (!this.sessions.register(req.requestId, req.clientId)) {
       throw new Error(`requestId 충돌(중복 등록 거부): ${req.requestId}`);
     }
-    this.turns.set(req.requestId, { clientId: req.clientId, onChunk, state: "streaming" });
+    // ⚠️ turn 객체 *식별자*(reference)로 ABA 가드 — 해제 후 동일 requestId 재등록 시 옛 클로저가 새 turn 을 건드리지 않게.
+    const turn: Turn = { clientId: req.clientId, onChunk, state: "streaming" };
+    this.turns.set(req.requestId, turn);
 
     const handle: TurnHandle = {
       requestId: req.requestId,
       clientId: req.clientId,
-      unsubscribe: () => this.disposeTurn(req.requestId),
+      // unsubscribe = ownership 까지 해제(누수 방지). 단 *이 turn* 이 아직 현재일 때만(ABA 가드).
+      unsubscribe: () => { if (this.turns.get(req.requestId) === turn) this.releaseTurn(req.requestId); },
     };
 
     // 구독 선행 → send(domain req). 변환은 adapter. sent=send 결과(reject 전파).
     const sent = this.transport.send(req).catch((err) => {
       // 초기 send reject = 요청이 agent 에 도달 못 함(chunk 안 옴) → 해제 안전.
-      const turn = this.turns.get(req.requestId);
-      if (turn && !isTerminalState(turn.state)) {
-        turn.state = "errored";
-        turn.onChunk({ kind: "error", message: errMessage(err) });
+      // ⚠️ ABA 가드: 그 사이 해제·재등록됐으면(다른 turn) 건드리지 않음.
+      if (this.turns.get(req.requestId) === turn) {
+        if (!isTerminalState(turn.state)) {
+          turn.state = "errored";
+          this.safeOnChunk(turn, { kind: "error", message: errMessage(err) });
+        }
+        this.releaseTurn(req.requestId);
       }
-      this.releaseTurn(req.requestId);
       throw err; // 호출자 전파(baseline 등가)
     });
 
@@ -69,10 +74,11 @@ export class ChatService implements ChatPort {
   deliverChunk(chunk: ChatChunk, owner: { requestId: string; clientId: string }): void {
     const turn = this.turns.get(owner.requestId);
     if (!turn) return; // 종료/미지 turn — silent (router 가 DiagnosticSink 책임)
-    turn.onChunk(chunk);
+    // ⚠️ onChunk(소비자 콜백) 예외가 상태전이·해제·라우터를 깨뜨리지 않게 격리(codex HIGH).
+    this.safeOnChunk(turn, chunk);
     turn.state = nextTurnState(turn.state, { type: "chunk", chunk });
     if (isTerminalState(turn.state)) {
-      this.releaseTurn(owner.requestId); // finish/error = terminal → ownership 해제
+      this.releaseTurn(owner.requestId); // finish/error = terminal → ownership 해제(예외와 무관 보장)
     }
   }
 
@@ -81,12 +87,14 @@ export class ChatService implements ChatPort {
     return this.turns.get(requestId)?.state;
   }
 
-  private disposeTurn(requestId: string): void {
-    this.turns.delete(requestId);
-  }
   private releaseTurn(requestId: string): void {
     this.turns.delete(requestId);
     this.sessions.release(requestId);
+  }
+  /** 소비자 콜백 격리 — 예외를 삼켜 상태기계·ownership·라우팅이 깨지지 않게(codex HIGH). */
+  private safeOnChunk(turn: Turn, chunk: ChatChunk): void {
+    try { turn.onChunk(chunk); }
+    catch { /* 소비자(렌더) 콜백 오류는 turn 생명주기와 무관 — silent (관측은 호출측 책임) */ }
   }
 }
 

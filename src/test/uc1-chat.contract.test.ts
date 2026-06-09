@@ -188,4 +188,36 @@ describe("exhaustive demux (router)", () => {
     transport.emit({ type: "text", requestId: "ghost", text: "x" });
     expect(diag.some((d) => d.reason.includes("no owner"))).toBe(true);
   });
+  it("malformed chat-turn(필수필드 누락) → DiagnosticSink(정상 chunk 위장 금지, codex MED⑤)", () => {
+    const { transport, sessions, chat, diag } = wire();
+    const got: ChatChunk[] = [];
+    const { sent } = chat.startTurn(req(), (c) => got.push(c));
+    void sent;
+    void sessions;
+    transport.emit({ type: "text", requestId: "r1" }); // text 필드 없음 = 손상
+    expect(got.length).toBe(0); // 위장 전달 안 됨
+    expect(diag.some((d) => d.reason.includes("malformed"))).toBe(true);
+  });
+});
+
+describe("런타임 누수/예외 격리 (codex 코드리뷰 HIGH)", () => {
+  it("unsubscribe → ownership 까지 해제(누수 방지, HIGH②)", async () => {
+    const { sessions, chat } = wire();
+    const { handle, sent } = chat.startTurn(req(), () => {});
+    await sent;
+    expect(sessions.ownerOf("r1")).toBe("c1");
+    handle.unsubscribe();
+    expect(sessions.ownerOf("r1")).toBeUndefined(); // ownership 해제됨
+    expect(chat.turnState("r1")).toBeUndefined();
+  });
+  it("onChunk 예외가 상태전이·해제·라우팅을 깨지 않음(HIGH③)", async () => {
+    const { transport, sessions, chat } = wire();
+    const { sent } = chat.startTurn(req(), () => { throw new Error("render boom"); });
+    await sent;
+    // 예외 콜백이어도 router.route 가 throw 하지 않아야(전파 차단)
+    expect(() => transport.emit({ type: "text", requestId: "r1", text: "x" })).not.toThrow();
+    // finish = terminal → 예외와 무관하게 해제 보장
+    expect(() => transport.emit({ type: "finish", requestId: "r1" })).not.toThrow();
+    expect(sessions.ownerOf("r1")).toBeUndefined();
+  });
 });

@@ -54,11 +54,19 @@ export class MessageRouter {
       }
       const clientId = this.deps.sessions.ownerOf(requestId);
       if (!clientId) {
-        // 소유주 없음(종료/미지 turn) — deliverChunk 소유권 필수와 충돌 → DiagnosticSink
+        // 소유주 없음(종료/미지 turn) — deliverChunk 소유권 필수와 충돌 → DiagnosticSink.
+        // ⚠️ requestId 재사용 가드: baseline 은 turn 마다 *unique* requestId 생성(불변식). 해제된 옛 id 의
+        //   지연 chunk 는 owner 없음→여기로 진단. 재사용이 없으므로 새 turn 으로 오라우팅되지 않음(MED⑥ 바운드).
         this.deps.diagnostic.diagnose(m, `no owner for requestId=${requestId}`);
         return;
       }
-      this.deps.chat.deliverChunk(toChatChunk(type, m), { requestId, clientId });
+      const chunk = toChatChunk(type, m);
+      if (!chunk) {
+        // 필수 필드 누락/타입 불일치 = 프로토콜 손상 → 정상 chunk 위장 금지(MED⑤), 진단으로.
+        this.deps.diagnostic.diagnose(m, `malformed chat-turn payload: ${type}`);
+        return;
+      }
+      this.deps.chat.deliverChunk(chunk, { requestId, clientId });
       return;
     }
     if (NONCHAT_KNOWN_TYPES.has(type)) {
@@ -70,24 +78,42 @@ export class MessageRouter {
   }
 }
 
-/** protocol chat-turn message → domain ChatChunk (권위=agent index.ts 출력 형상). */
-function toChatChunk(type: string, m: AgentMessage): ChatChunk {
+/**
+ * protocol chat-turn message → domain ChatChunk (권위=agent index.ts 출력 형상).
+ * ⚠️ 필수 string 필드가 없거나 타입 불일치 = null 반환(=프로토콜 손상). 강제변환으로 정상 chunk 위장 금지(MED⑤).
+ * 선택/임의(usage·tokenWarning raw, args)만 관대.
+ */
+function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
   const r = m as Record<string, unknown>;
   switch (type) {
-    case "text": return { kind: "text", text: str(r["text"]) };
-    case "thinking": return { kind: "thinking", text: str(r["text"]) };
-    case "tool_use": return { kind: "toolUse", toolCallId: str(r["toolCallId"]), name: str(r["toolName"] ?? r["name"]), args: r["args"] };
-    case "tool_result": return { kind: "toolResult", toolCallId: str(r["toolCallId"]), output: str(r["output"]) };
-    case "approval_request": return { kind: "approvalRequest", toolCallId: str(r["toolCallId"]), toolName: str(r["toolName"]), tier: str(r["tier"]) };
+    case "text": { const text = reqStr(r["text"]); return text === null ? null : { kind: "text", text }; }
+    case "thinking": { const text = reqStr(r["text"]); return text === null ? null : { kind: "thinking", text }; }
+    case "tool_use": {
+      const toolCallId = reqStr(r["toolCallId"]); const name = reqStr(r["toolName"] ?? r["name"]);
+      return toolCallId === null || name === null ? null : { kind: "toolUse", toolCallId, name, args: r["args"] };
+    }
+    case "tool_result": {
+      const toolCallId = reqStr(r["toolCallId"]); const output = reqStr(r["output"]);
+      return toolCallId === null || output === null ? null : { kind: "toolResult", toolCallId, output };
+    }
+    case "approval_request": {
+      const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]); const tier = reqStr(r["tier"]);
+      return toolCallId === null || toolName === null || tier === null
+        ? null : { kind: "approvalRequest", toolCallId, toolName, tier };
+    }
     case "usage": return { kind: "usage", raw: m };
-    case "log_entry": return { kind: "logEntry", level: str(r["level"]), message: str(r["message"]) };
+    case "log_entry": {
+      const level = reqStr(r["level"]); const message = reqStr(r["message"]);
+      return level === null || message === null ? null : { kind: "logEntry", level, message };
+    }
     case "token_warning": return { kind: "tokenWarning", raw: m };
     case "finish": return { kind: "finish" };
-    case "error": return { kind: "error", message: str(r["message"]) };
-    default: return { kind: "error", message: `unmapped chat-turn type: ${type}` };
+    case "error": { const message = reqStr(r["message"]); return message === null ? null : { kind: "error", message }; }
+    default: return null; // CHAT_TURN_TYPES 에 있으나 매핑 없음 = 손상
   }
 }
 
-function str(v: unknown): string {
-  return typeof v === "string" ? v : v === undefined || v === null ? "" : String(v);
+/** 필수 string — 문자열 아니면 null(손상 신호). */
+function reqStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
 }
