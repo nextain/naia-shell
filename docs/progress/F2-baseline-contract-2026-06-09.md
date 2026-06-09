@@ -1,6 +1,6 @@
 # F2 — host-system read-only 관측 (baseline + 포트 계약, 2026-06-09)
 
-> 06 실행 4단계 = F2 슬라이스. **상태: gemini 2클린 + GLM-5.1 교차검증(실코드 직독)** — codex 풀 재독 최종게이트 리셋후 대기(codex 리뷰 = 사용량 한도 리셋 후 일괄 — clean 미선언). **범위(FR-F2)**: host-system **read-only 관측**(파일·프로세스 상태 조회, 변경 X) — 권한 밖 경로 거부·미지원 환경 정직 보고 + **외부 간섭 drift 감지**(observed vs expected; expected 권위 우선 = 선언적 목표상태 > 마지막 승인 의도 > 직전 관측 스냅샷). UC7a / S33·S34(read). EnvironmentPort observe.
+> 06 실행 4단계 = F2 슬라이스. **상태: gemini 2클린 + GLM-5.1 클린(실코드 직독)** — codex 풀 재독 최종게이트 리셋후 대기(codex 리뷰 = 사용량 한도 리셋 후 일괄 — clean 미선언). **범위(FR-F2)**: host-system **read-only 관측**(파일·프로세스 상태 조회, 변경 X) — 권한 밖 경로 거부·미지원 환경 정직 보고 + **외부 간섭 drift 감지**(observed vs expected; expected 권위 우선 = 선언적 목표상태 > 마지막 승인 의도 > 직전 관측 스냅샷). UC7a / S33·S34(read). EnvironmentPort observe.
 > 구성/규칙 = F1 문서와 동일(§A baseline + §B 계약; STRUCTURE.md 171~297 레이어; 언어/툴체인 미정; F2=control-plane 인접 환경 관측, 인지 0).
 > ⚠️ **sensory(audio/vision)는 F2 범위 밖**: capture(vision)·voice STT 등 SensoryPort = 외부키/voice 의존 → 후속 sensory tranche. F2 = host-system 환경 관측만.
 
@@ -97,7 +97,7 @@ DriftDetector:                                   # FR-F2 신설
 ## B.4 adapters/ (Tauri, 스캐폴드 시 stub)
 | 어댑터 | 포트 | 호출 |
 |---|---|---|
-| `TauriWorkspaceReadAdapter` | EnvironmentObservePort | `workspace_list_dirs`·`_read_file`·`_file_size`·`_get_sessions`·`_load_project_index`·`_discover_skills` + `validate_in_workspace` |
+| `TauriWorkspaceReadAdapter` | EnvironmentObservePort | `workspace_list_dirs`·`workspace_read_file`·`workspace_file_size`·`workspace_get_sessions`·`workspace_load_project_index`·`workspace_discover_skills`·`workspace_classify_dirs` + `validate_in_workspace` |
 | `TauriProcessAdapter` | EnvironmentObservePort.processStatus | `system-status`·`diagnostics-proxy`·`workspace_get_pty_agents` |
 | `TauriWorktreeAdapter` | EnvironmentObservePort.worktrees/sessions | `get_branch`·`get_main_worktree`·`get_all_worktree_paths`(repo 상태, R2) |
 | `ExpectedStateAdapter` | ExpectedStateProviderPort | goal/approvedIntent(F1 binding) + lastSnapshot 영속(store/조회) |

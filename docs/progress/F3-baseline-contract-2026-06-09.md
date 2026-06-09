@@ -1,6 +1,6 @@
 # F3 — 승인→host-system mutating + reafference (baseline + 포트 계약, 2026-06-09)
 
-> 06 실행 5단계 = F3 슬라이스. **상태: gemini 2클린 + GLM-5.1 교차검증(실코드 직독)** — codex 풀 재독 최종게이트 리셋후 대기(codex 리뷰 = 사용량 한도 리셋 후 일괄 — clean 미선언). **범위(FR-F3.1~3.3)**: ① 승인 *먼저* → host-system mutating(파일 편집·명령 실행) ② mutating 결과 **reafference**(commanded→ack→observed→mismatch) ③ negative/불확정(거부·권한부족→차단; timeout·partial·실행후 drift·ack-not-observed → abort + 미확정 정직 보고 + disposition). UC7·UC13→UC7 / S07·S12. ApprovalPort(F1)+EnvironmentMutatePort+reafference.
+> 06 실행 5단계 = F3 슬라이스. **상태: gemini 2클린 + GLM-5.1 클린(실코드 직독)** — codex 풀 재독 최종게이트 리셋후 대기(codex 리뷰 = 사용량 한도 리셋 후 일괄 — clean 미선언). **범위(FR-F3.1~3.3)**: ① 승인 *먼저* → host-system mutating(파일 편집·명령 실행) ② mutating 결과 **reafference**(commanded→ack→observed→mismatch) ③ negative/불확정(거부·권한부족→차단; timeout·partial·실행후 drift·ack-not-observed → abort + 미확정 정직 보고 + disposition). UC7·UC13→UC7 / S07·S12. ApprovalPort(F1)+EnvironmentMutatePort+reafference.
 > 구성/규칙 = F1/F2 문서와 동일(§A baseline + §B 계약; STRUCTURE.md 171~297; 언어/툴체인 미정; control-plane). **F1 ApprovalPort·F2 EnvironmentObservePort 재사용**.
 
 ---
