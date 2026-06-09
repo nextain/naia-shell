@@ -67,6 +67,7 @@ import { ChatService } from "../app/chat/chat-service.js";
 import { InMemoryClientSession } from "../app/chat/client-session.js";
 import { MessageRouter } from "../adapters/message-router.js";
 import { stdioTransport, makeLiveStdioTransport, type LiveTransportDeps } from "../adapters/tauri/uc1.js";
+import { ChatBridge } from "../adapters/chat-bridge.js";
 import type { AgentTransportPort, PendingRouteSink, DiagnosticSink } from "../ports/uc1.js";
 
 /**
@@ -78,12 +79,29 @@ export function wireChatUC1(opts?: {
   live?: LiveTransportDeps;
   pending?: PendingRouteSink;
   diagnostic?: DiagnosticSink;
-}): { chat: ChatService; router: MessageRouter; sessions: InMemoryClientSession } {
+  /** 이 클라이언트 신원(bridge). 미주입 시 "shell". */
+  clientId?: string;
+  /** turn 마다 고유 requestId 생성(§B.4.1). 미주입 시 baseline 패턴(req-ts-rand). shell 은 crypto.randomUUID 권장. */
+  newRequestId?: () => string;
+}): { chat: ChatService; router: MessageRouter; sessions: InMemoryClientSession; bridge: ChatBridge } {
   const sessions = new InMemoryClientSession();
   const transport: AgentTransportPort = opts?.live ? makeLiveStdioTransport(opts.live) : stdioTransport;
   const chat = new ChatService(transport, sessions);
   const pending: PendingRouteSink = opts?.pending ?? { pending: (m) => console.warn("[UC1 pending route]", m.type) };
   const diagnostic: DiagnosticSink = opts?.diagnostic ?? { diagnose: (m, reason) => console.error("[UC1 diagnostic]", m.type, reason) };
   const router = new MessageRouter({ transport, chat, sessions, pending, diagnostic });
-  return { chat, router, sessions };
+  const bridge = new ChatBridge({
+    chat,
+    clientId: opts?.clientId ?? "shell",
+    newRequestId: opts?.newRequestId ?? defaultRequestId,
+  });
+  return { chat, router, sessions, bridge };
+}
+
+// baseline 등가 생성기(ChatPanel generateRequestId) — shell 미주입 시 fallback. 실 shell 은 crypto.randomUUID 권장.
+let __reqSeq = 0;
+function defaultRequestId(): string {
+  // Date.now()/Math.random() 는 일부 실행환경(워크플로 등)서 제약 → 단조 시퀀스 + clientless 접두. 고유성 보장.
+  __reqSeq += 1;
+  return `req-${__reqSeq}-${(__reqSeq * 2654435761) % 1000000}`;
 }
