@@ -9,6 +9,9 @@
 - **권위**: `old-auth`(옛 *관측 행동* 기준, 구조는 인지 포트 재표현) / `scenario-auth`(UC 기준, 옛것과 달라도 됨).
 - **인지 포트 매핑 + fit**: clean / **mismatch**(1급 표면화) / 미평가.
 
+## 현재 활성 슬라이스
+- **활성 = UC1** (텍스트 대화). 활성 슬라이스의 fit=미평가 backlog 는 check 가 *가시화*(영구 은닉 금지, GLM 3차 C-1). 진전 없이 무한 pending 금지 — 활성은 항상 명시.
+
 ## fit 게이트 (이빨 — codex HIGH 정정)
 - `미평가`는 **상태 ∈ {pending, 계약} 에서만 허용.** 상태를 `코드`/`검증`으로 올리려면 fit ∈ {clean, mismatch-resolved} **필수**. 즉 **미평가인 채 슬라이스 done 금지.**
 - `mismatch` 발견 = 행에 **해결경로 명시**(=(a) UC 인지흐름 재매핑 / (b) 수평 갭 재검토) + 미해결 시 그 슬라이스 commit 차단.
@@ -29,9 +32,12 @@
 | H-express | `ExpressionPort` | 표현(speak/emote, embodiment-neutral) | △(UI직결) | 보충 | scenario | pending(UC1/2) |
 | H-env | `EnvironmentPort`(observe/act/space/app-surface/host) | 환경 관측·행위 | O | 이식 | old | **F2(observe)+F3(mutate) 계약+코드**; app-surface/space pending |
 | H-approval | `ApprovalPort` | 승인 게이트+결속 | O(부분) | 이식+보충 | mixed | **F1 계약+코드** |
+| H-proprio | `ProprioceptivePort` | 고유수용(자세·관절·self/body model) | △ | 보충 | scenario | pending(2단계·로봇) |
+| H-action | `ActionPort` | 행위(body 이동·조작·파지) | △ | 보충 | scenario | pending(2단계·로봇) |
+| H-cron | `CronPort` | temporal 작업 스케줄 | △(미빌드) | 보충 | scenario | pending(2단계) |
 | **H-agent** | **agent(brain)↔os 연결** | 위 포트들이 agent로 닿는 seam | **△ 제대로 연결된 적 없음** | **보충** | **scenario** | **pending(핵심 리스크)** |
 
-> ⚠️ v1처럼 "protocol→AppPort 단일경로"로 좁히지 않음. AppPort=Chat/Tool 하나일 뿐, 나머지 포트는 독립(canon). 다중 클라이언트=H-client.
+> ⚠️ v1처럼 "protocol→AppPort 단일경로"로 좁히지 않음. AppPort=Chat/Tool 하나일 뿐, 나머지 포트는 독립(canon: Sensory·Interoceptive·**Proprioceptive**·Chat·Express·Environment·**Action**·Approval·ClientSession·Safety·Cron). 다중 클라이언트=H-client. (GLM 3차: Proprioceptive·Action·Cron 누락 정정.)
 
 ---
 
@@ -75,27 +81,81 @@
 
 ---
 
-## S 전수 분류 (S01~71 — 미분류 0; 기계 체크 대상)
-> 형식 `S## 이식/보충/rej · 권위 · 주포트`. F0~F3 커버분=상태표시.
-- **control-plane/config (F0 인접, 이식·old)**: S01 온보딩 · S02 설정 · S04 naia계정/key · S05 sessions · S06 agents · S08 notify-config · S47 페르소나 · S54 OAuth/key검증 · S57 ADK부트스트랩(**F0**) · S58 비용대시 · S59 앱업데이트 · S60 공지배너 · S67 lab-sync · S51 gateway운영 · S53 audit
-- **InteroceptivePort (F1, 이식·old)**: S09 system-status · S10 diagnostics · S11 device · S44 degradation(**보충/scenario** 신설)
-- **ApprovalPort (F1, 이식+보충)**: S12 approvals
-- **EnvironmentPort observe (F2, 이식·old)**: S33 workspace(read) · S34 terminal(read) · S63 GitHub Issues 패널
-- **EnvironmentPort act (F3, 이식·old)**: S33 workspace(write) · S34 terminal(write) · S07 skill-manager(exec)
-- **ChatPort (UC1, 이식·old)**: S13 텍스트대화 · S62 @멘션 · S70 deeplink(UC7 공유)
-- **SensoryPort/voice (UC2, 이식+보충·mixed, 외부키)**: S14 omni · S15 gemini-live · S16 openai-realtime · S17 tts · S18 voicewake(**잔재·미검증**) · S19 avatar · S49 STT모델 · S50 오디오장치 · S61 화면캡처(vision) · S66 ref-audio
-- **ToolPort/skills (UC5, 이식·old; 일부 보충)**: S20 time · S21 weather · S22 memo · S23 github · S24 obsidian · S25 mcp · S55 gateway스킬(web_search/x/discord) · S56 external광고tool · S48 로컬스킬로딩(**보충**·배선의존) · S64 ModeBar바로가기
-- **EnvironmentPort app-surface (UC6/9, 이식·old)**: S26 agent-browser · S27 browser패널 · S28 panel설치 · S29 generic패널 · S30 sample-note(**제거됨**)
-- **EnvironmentPort space (UC8, 이식·old)**: S31 youtube-bgm · S32 배경/scene
-- **채널 (UC10, 이식+보충)**: S35 channels · S36 naia-discord(**보충/scenario — 깨짐**) · S37 notify-discord · S38 notify-google-chat · S39 notify-slack
-- **memory (UC3/4, 보충·scenario)**: S41 recall주입(**미배선**) · S42 능동회상(**미배선**) · S52 facts CRUD · S52b 백업/복원
-- **temporal (보충·scenario)**: S43 cron(**미빌드**)
-- **SafetyPort (UC13a, 보충·scenario)**: S45 중단/e-stop
-- **ClientSessionPort (UC10a, 보충·scenario)**: S46 다중클라이언트 충돌
-- **rejected (이식 제외)**: S65 botmadang(루크 결정)
-- (S68/69 배포 = out-of-scope, distribution tranche)
+## S 전수 분류 (S01~71 — per-S 테이블, 행단위 미분류 0; 기계 검증 대상)
+> GLM 3차: 불릿 그룹핑은 S별 이식/보충·multi-UC를 흐림 → per-S 행으로 전환. 각 행에 이식/보충/rej·UC(들)·포트·권위 필수.
 
----
+| S | 기능 | UC(들) | 이식/보충/rej | 주 포트 | 권위 | 상태 |
+|---|---|---|---|---|---|---|
+| S01 | 온보딩/welcome | UC12 | 이식 | control-plane | old-auth | pending |
+| S02 | 설정/settings 패널 | UC12 | 이식 | control-plane | old-auth | pending |
+| S03 | provider 설정 | UC12·UC1 | 이식 | control-plane (연결=H-agent 보충) | old-auth | pending(복잡·미측정) |
+| S04 | naia 계정/api key | UC12 | 이식 | control-plane | old-auth | pending |
+| S05 | sessions 관리 | UC12 | 이식 | ClientSessionPort/control | old-auth | pending |
+| S06 | agents 관리 | UC12 | 이식 | control-plane·skill | old-auth | pending |
+| S07 | skill-manager | UC12·skill | 이식 | ToolPort·EnvironmentPort(exec) | old-auth | pending(F3 인접) |
+| S08 | notify-config | UC12 | 이식 | control-plane | old-auth | pending |
+| S09 | system-status | UC11 | 이식 | InteroceptivePort | old-auth | F1 계약+코드 |
+| S10 | diagnostics | UC11 | 이식 | InteroceptivePort | old-auth | F1 계약+코드 |
+| S11 | device 상태/제어 | UC11·UC7 | 이식 | InteroceptivePort·EnvironmentPort | old-auth | F1(부분) |
+| S12 | approvals 승인 | UC13 | 이식+보충 | ApprovalPort | mixed | F1 계약+코드 |
+| S13 | 텍스트 대화 | UC1 | 이식 | ChatPort·llm·ExpressionPort | old-auth(UI)/scenario(agent) | pending |
+| S14 | omni 음성 | UC2 | 이식+보충 | SensoryPort·voice | mixed | pending(외부키) |
+| S15 | gemini-live 음성 | UC2 | 이식 | SensoryPort·voice | mixed | pending(외부키) |
+| S16 | openai-realtime 음성 | UC2 | 이식 | SensoryPort·voice | mixed | pending(외부키) |
+| S17 | tts | UC2 | 이식 | ExpressionPort(speech) | old-auth | pending |
+| S18 | voicewake | UC2 | 이식 | SensoryPort·wake | old-auth(잔재·미검증) | pending |
+| S19 | avatar 표현 | UC2 | 이식 | ExpressionPort(avatar) | old-auth | pending |
+| S20 | time | UC5 | 이식 | ToolPort | old-auth | pending |
+| S21 | weather | UC5 | 이식 | ToolPort | old-auth | pending |
+| S22 | memo | UC5 | 이식 | ToolPort | old-auth | pending |
+| S23 | github skill | UC5 | 이식 | ToolPort | old-auth | pending |
+| S24 | obsidian skill | UC5 | 이식 | ToolPort | old-auth | pending |
+| S25 | mcp 연결 | UC5 | 이식 | ToolPort | old-auth | pending |
+| S26 | agent-browser | UC6 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
+| S27 | browser 패널 | UC6 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
+| S28 | panel 설치 | UC9 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
+| S29 | generic-installed 패널 | UC9 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
+| S30 | sample-note 패널 | UC9 | rejected | — | — | rejected(제거됨) |
+| S31 | youtube-bgm | UC8 | 이식 | EnvironmentPort(space) | old-auth | pending |
+| S32 | 배경화면/scene | UC8 | 이식 | EnvironmentPort(space) | old-auth | pending |
+| S33 | workspace(fs·editor·filetree) | UC7 | 이식 | EnvironmentPort(observe+act) | old-auth | F2(observe)+F3(act) |
+| S34 | terminal(pty) | UC7 | 이식 | EnvironmentPort(observe+act) | old-auth | F2+F3(부분) |
+| S35 | channels 일반 | UC10 | 이식+보충 | (채널 ingress) | mixed | pending |
+| S36 | naia-discord | UC10 | 보충 | (채널) | scenario-auth | pending(깨짐) |
+| S37 | notify-discord | UC10 | 이식 | (notify) | old-auth | pending |
+| S38 | notify-google-chat | UC10 | 이식 | (notify) | old-auth | pending |
+| S39 | notify-slack | UC10 | 이식 | (notify) | old-auth | pending |
+| S41 | 기억 recall/주입 | UC3 | 보충 | memory·scrubber | scenario-auth | pending(미배선) |
+| S42 | 능동 회상 | UC4 | 보충 | memory·CronPort | scenario-auth | pending(미배선) |
+| S43 | cron 작업 | temporal | 보충 | CronPort | scenario-auth | pending(미빌드) |
+| S44 | graceful degradation | UC14 | 보충 | InteroceptivePort·ExpressionPort | scenario-auth | F1(신설) |
+| S45 | 실행 중 중단/e-stop | UC13a | 보충 | SafetyPort | scenario-auth | pending |
+| S46 | 다중 클라이언트 충돌 | UC10a | 보충 | ClientSessionPort | scenario-auth | pending |
+| S47 | 페르소나/personality | UC12·표현 | 이식 | control-plane·ExpressionPort | old-auth | pending |
+| S48 | 로컬 스킬 로딩·확장 | UC5·skill | 보충 | ToolPort·EnvironmentPort | scenario-auth | pending(배선의존) |
+| S49 | STT 모델 관리 | UC2 | 이식 | SensoryPort·adapter | old-auth | pending |
+| S50 | 오디오 출력 장치 | UC2 | 이식 | (효과기 audio) | old-auth | pending |
+| S51 | gateway 운영 | control-plane | 이식 | control-plane | old-auth | pending |
+| S52 | memory facts CRUD | UC3 | 이식 | memory(facts) | old-auth | pending |
+| S52b | 메모리 백업/복원 | UC3 | 이식 | memory | old-auth | pending |
+| S53 | audit log | control-plane | 이식 | control-plane | old-auth | pending |
+| S54 | OAuth/로그인·key 검증 | UC12 | 이식+보충 | control-plane(auth) | mixed | pending(외부auth) |
+| S55 | gateway 스킬(web_search·x·discord) | UC5·UC10 | 이식 | ToolPort(gateway) | old-auth | pending |
+| S56 | external 광고 tool | UC5 | 이식 | ToolPort(gateway/mcp) | old-auth | pending |
+| S57 | ADK 부트스트랩 | UC12 | 이식 | control-plane | old-auth | F0 계약+코드 |
+| S58 | 비용 대시보드·잔액 | UC12 | 이식 | control-plane | old-auth | pending |
+| S59 | 앱 업데이트 알림/설치 | control-plane | 이식 | control-plane | old-auth | pending |
+| S60 | 원격 공지 배너 | control-plane | 이식 | control-plane | old-auth | pending |
+| S61 | 화면/패널 비전 캡처 | UC11·UC6 | 이식 | SensoryPort(vision) | old-auth | pending |
+| S62 | 채팅 @멘션 파일선택 | UC1 | 이식 | ChatPort·EnvironmentPort(observe) | old-auth | pending |
+| S63 | GitHub Issues 패널 | UC5·UC7 | 이식 | ToolPort·EnvironmentPort | old-auth | pending |
+| S64 | ModeBar 브라우저 바로가기 | UC6 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
+| S65 | botmadang 연동 | UC10·UC5 | rejected | — | — | rejected(루크 결정) |
+| S66 | 참조 오디오/voice clone | UC2 | 이식 | voice·ExpressionPort(timbre) | old-auth | pending |
+| S67 | Naia Lab 설정 동기화 | UC12 | 이식 | control-plane | old-auth | pending |
+| S70 | 채팅 파일 deeplink | UC1·UC7 | 이식 | ChatPort·EnvironmentPort(app-surface 행위) | old-auth | pending |
+
+> (S40·S68·S69 = user-scenarios 인벤토리에 없음/배포 out-of-scope.)
 
 ## 갱신/체크 규칙
 조각 작업 시 해당 행 상태·fit 갱신, mismatch=즉시 기록+해결경로. **commit 전 `node scripts/check-assembly-coverage.mjs` 통과 필수**(미분류 0 + 상태≥코드 행 fit≠미평가). 다음 UC는 같은 수평 위에 수직만 추가.
