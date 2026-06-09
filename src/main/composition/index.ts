@@ -54,3 +54,10 @@ import { makeF0LiveAdapters, type LiveDeps } from "../adapters/tauri/live.js";
 export function wireControlPlaneLive(deps: LiveDeps): ControlPlaneBoot {
   return new ControlPlaneBoot(makeF0LiveAdapters(deps));
 }
+
+// ── F3 슬라이스 (승인먼저 mutate + reafference) ──
+import { MutationGate } from "../app/control/mutate.js";
+import { tauriMutate } from "../adapters/tauri/f3.js";
+export function wireMutationGateTauri(approvalGate: ApprovalGate): MutationGate {
+  return new MutationGate({ approvalGate, mutate: tauriMutate, observe: tauriEnvObserve });
+}
