@@ -24,5 +24,6 @@
 3. **완전성은 추측 아닌 코드 대조** — "2~3연속 NONE까지" 고수가 60+ 스킬 누락을 잡음.
 4. **검증≠작동만** — Old-Baseline golden trace 대비 행동 등가까지(가짜성공 차단).
 
-## 잔여 결정 / 다음
-- botmadang(S65) keep/reject · G1(foundation tranche 순서) 승인 · **06 실행 착수**(F0, 루크 머신 구동 필요).
+## 결정 완료 / 다음
+- foundation tranche 순서 = **채택**, botmadang(S65) = **rejected** (루크 2026-06-09).
+- **다음 = 06 실행 착수**(F0 Old-Baseline 측정, old-naia-os 구동 = 루크 머신 필요).
