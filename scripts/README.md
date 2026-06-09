@@ -51,6 +51,7 @@
 | `builds/uc1-graft-observe.sh` | UC1 수평 관측 스모크(Option A). 빌드+테스트+관측 스니펫 emit. 앱 무수정 — 새 core wire variant 분류가 라이브와 등가인지 1차 확인. |
 | `builds/uc1-graft-observe.mjs` | 위 스니펫 생성기 — `dist/main/domain/chat.js` 의 variant 세트 파생(드리프트 0). |
 | `builds/uc1-variant-probe.mjs` | **헤드리스 등가 게이트**(앱 불요) — frozen shell `AgentResponseChunk`(소비자 권위)을 추출해 새 core 분류가 전부 커버하는지 결정론 비교. drift 시 exit 1. f0-boot-probe 의 UC1 판. |
+| `builds/uc1-outbound-probe.mjs` | **송신 헤드리스 등가 게이트** — 새 core toAgentOutbound type 을 frozen agent `parseRequest` 수용 집합과 결정론 비교. drift 시 exit 1. (수신=variant-probe 와 대칭) |
 | `builds/uc1-trace-harness.mjs` | **Option C 헤드리스 trace** — 새 core(dist)를 *실 child_process stdio* 로 구동, fake agent(에코)로 1턴 end-to-end(송신→스트리밍→렌더→해제). 실 frozen agent=`AGENT_CMD` 로 spawn 교체. 라이브 admin 무접촉. PASS 시 exit 0. |
 | `builds/uc1-graft-snippet.js` | (생성물, gitignore) DevTools 붙여넣기용 `window.uc1` 관측 헬퍼(classify/observeConsole/report). |
 

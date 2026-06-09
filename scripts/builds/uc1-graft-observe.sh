@@ -12,7 +12,17 @@ pnpm build
 pnpm test
 
 echo ""
-echo "== [2/3] 관측 스니펫 생성(dist 파생 = 드리프트 0) =="
+echo "== [2a/3] 헤드리스 등가 게이트(frozen agent/shell 대비, 데몬·LLM·앱 불요) =="
+echo "-- 수신: shell 소비자 surface vs 새 core 분류 --"
+node scripts/builds/uc1-variant-probe.mjs | grep -E '"verdict"'
+node scripts/builds/uc1-variant-probe.mjs >/dev/null || { echo "❌ 수신 등가 DRIFT"; exit 1; }
+echo "-- 송신: 새 core outbound vs 실 agent parseRequest 수용 --"
+node scripts/builds/uc1-outbound-probe.mjs | grep -E '"verdict"'
+node scripts/builds/uc1-outbound-probe.mjs >/dev/null || { echo "❌ 송신 등가 DRIFT"; exit 1; }
+echo "✅ 송·수신 양방향 등가 PASS"
+
+echo ""
+echo "== [2b/3] 관측 스니펫 생성(dist 파생 = 드리프트 0) =="
 node scripts/builds/uc1-graft-observe.mjs
 SNIPPET="$HERE/scripts/builds/uc1-graft-snippet.js"
 
