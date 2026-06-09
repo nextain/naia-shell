@@ -52,7 +52,7 @@ export const tauriPanels: PanelInventoryPort = {
 export const tauriSetup: AdkSetupPort = {
   initSettings(_a: string): void { throw new NotWired("init_naia_settings"); },
   copyBundledAssets(_a: string): void { throw new NotWired("copy_bundled_assets"); },
-  inspectAdkDir(_p: string): unknown { throw new NotWired("inspect_adk_dir"); },
+  inspectAdkDir(_p: string): import("../../domain/boot.js").AdkDirState { throw new NotWired("inspect_adk_dir"); },
   cloneAdk(_p: string): void { throw new NotWired("clone_naia_adk"); },
   deleteAdk(_p: string): void { throw new NotWired("delete_naia_adk"); },
 };

@@ -16,6 +16,8 @@ function mkPorts(over: {
   fileConfig?: NaiaConfig | null;
   setRootOk?: boolean;
   panelThrows?: boolean;
+  adkDirExists?: boolean;
+  adkDirIsAdk?: boolean;
 } = {}) {
   const calls: string[] = [];
   const rec = (s: string) => calls.push(s);
@@ -56,7 +58,7 @@ function mkPorts(over: {
     setup: {
       initSettings: (a) => rec(`initSettings:${a}`),
       copyBundledAssets: (a) => rec(`copyBundledAssets:${a}`),
-      inspectAdkDir: (p) => { rec(`inspectAdkDir:${p}`); return {}; },
+      inspectAdkDir: (p) => { rec(`inspectAdkDir:${p}`); return { exists: over.adkDirExists ?? false, isAdk: over.adkDirIsAdk ?? false }; },
       cloneAdk: (p) => rec(`cloneAdk:${p}`),
       deleteAdk: (p) => rec(`deleteAdk:${p}`),
     },
@@ -132,7 +134,7 @@ describe("initAuth() — 게이트 독립, config 조건부", () => {
 describe("workspace 패널 — boot 공통 아님, contain+fallback", () => {
   it("setRoot Err → clearWorkspaceRoot + startWatch (block 아님)", () => {
     const { ports, calls } = mkPorts({ setRootOk: false });
-    new ControlPlaneBoot(ports).onWorkspacePanelActivate("/bad");
+    new ControlPlaneBoot(ports).onWorkspacePanelMount("/bad");
     expect(calls).toEqual(["setRoot:/bad", "clearWorkspaceRoot", "startWatch"]);
   });
 });
@@ -161,5 +163,31 @@ describe("setup 분기 — 모드별 완료조건 (C-R5/R6)", () => {
     const { ports, calls } = mkPorts({ fileConfig: cfg() });
     new ControlPlaneBoot(ports).onSetupConfirm("use-existing", "/p");
     expect(calls).toContain("markOnboardingComplete");
+  });
+});
+
+describe("setup clone/delete + workspace mount/activate (codex HIGH/MED)", () => {
+  it("new + dir 없음 → cloneAdk 호출", () => {
+    const { ports, calls } = mkPorts({ adkDirExists: false });
+    new ControlPlaneBoot(ports).onSetupConfirm("new", "/p");
+    expect(calls).toContain("cloneAdk:/p");
+    expect(calls).not.toContain("deleteAdk:/p");
+  });
+  it("recreate + dir 존재 → deleteAdk 후 cloneAdk", () => {
+    const { ports, calls } = mkPorts({ adkDirExists: true });
+    new ControlPlaneBoot(ports).onSetupConfirm("recreate", "/p");
+    expect(calls.indexOf("deleteAdk:/p")).toBeGreaterThanOrEqual(0);
+    expect(calls.indexOf("deleteAdk:/p")).toBeLessThan(calls.indexOf("cloneAdk:/p"));
+  });
+  it("load + fileConfig null → replaceLocalConfig(base) 수행(누락 금지)", () => {
+    const { ports, calls } = mkPorts({ fileConfig: null });
+    new ControlPlaneBoot(ports).onSetupConfirm("load", "/p");
+    expect(calls).toContain("replaceLocalConfig");
+    expect(calls).toContain("markOnboardingComplete");
+  });
+  it("onWorkspacePanelActivate() = startWatch 만 (setRoot 안 함)", () => {
+    const { ports, calls } = mkPorts();
+    new ControlPlaneBoot(ports).onWorkspacePanelActivate();
+    expect(calls).toEqual(["startWatch"]);
   });
 });

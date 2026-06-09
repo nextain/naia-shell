@@ -4,8 +4,8 @@ import type {
   ConfigPort, BootStatePort, AdkPathPort, WorkspacePort,
   StartupMessagePort, PanelInventoryPort, AdkSetupPort,
 } from "../../ports/index.js";
-import { decideBoot, type BootDecision, type SetupMode } from "../../domain/boot.js";
-import { hasNaiaKey } from "../../domain/config.js";
+import { decideBoot, adkPrepAction, type BootDecision, type SetupMode } from "../../domain/boot.js";
+import { hasNaiaKey, baseConfig } from "../../domain/config.js";
 import { startupMessagesToSend } from "../../domain/startup.js";
 
 export interface ControlPlanePorts {
@@ -64,13 +64,18 @@ export class ControlPlaneBoot {
     }
   }
 
-  /** §3-B WorkspaceCenterPanel 마운트 — boot 공통 아님. */
-  onWorkspacePanelActivate(rawRoot: string): void {
+  /** §3-B 마운트 — setRoot(+성공시 startWatch). 활성화와 분리(codex MED). */
+  onWorkspacePanelMount(rawRoot: string): void {
     const result = this.p.workspace.setRoot(rawRoot);
     if (!result.ok) {
       this.p.bootState.clearWorkspaceRoot(); // contain+fallback (block 아님)
     }
-    this.p.workspace.startWatch(); // 성공/fallback 후 (마운트+활성화)
+    this.p.workspace.startWatch(); // 마운트 setRoot 후 (성공/fallback)
+  }
+
+  /** §3-B 활성화 — 인자 없는 startWatch 재호출만 (setRoot 안 함, codex MED). */
+  onWorkspacePanelActivate(): void {
+    this.p.workspace.startWatch();
   }
 
   onWorkspacePanelDeactivate(): void {
@@ -80,14 +85,17 @@ export class ControlPlaneBoot {
   /** §3-C setup 완료 분기 — 모드별 reset/replace + 완료조건. */
   onSetupConfirm(mode: SetupMode, path: string): void {
     if (mode === "new" || mode === "recreate") {
-      this.p.setup.inspectAdkDir(path); // 조건부 clone/delete 는 adapter 내부
+      const st = this.p.setup.inspectAdkDir(path); // 결과로 clone/delete 결정 (codex HIGH)
+      const action = adkPrepAction(mode, st);
+      if (action === "delete-then-clone") { this.p.setup.deleteAdk(path); this.p.setup.cloneAdk(path); }
+      else if (action === "clone") { this.p.setup.cloneAdk(path); }
     }
     this.p.setup.initSettings(path); // init_naia_settings (먼저)
     this.p.setup.copyBundledAssets(path); // asset:// scope 확장
 
     if (mode === "load") {
       const cfg = this.p.config.read(path);
-      if (cfg) this.p.bootState.replaceLocalConfig(cfg);
+      this.p.bootState.replaceLocalConfig(cfg ?? baseConfig()); // 통째 교체(null=base, codex HIGH)
       this.p.bootState.setWorkspaceRoot(path); // 선택 path 강제 보존
       this.p.bootState.markOnboardingComplete(); // 무조건
     } else if (mode === "use-existing") {

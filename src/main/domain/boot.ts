@@ -25,3 +25,20 @@ export function decideBoot(
 
 /** setup 분기 모드 (path 부재 → 사용자 확정). login 카드는 disabled(계약 §A). */
 export type SetupMode = "new" | "load" | "use-existing" | "recreate";
+
+/** inspectAdkDir 결과 — app 이 clone/delete 결정에 사용 (codex HIGH 정정). */
+export interface AdkDirState {
+  readonly exists: boolean;
+  readonly isAdk: boolean; // 이미 유효 ADK 디렉터리인가
+}
+
+/**
+ * new/recreate 디렉터리 준비 결정 (순수 규칙).
+ * new: 없으면 clone. recreate: 있으면 delete 후 clone.
+ */
+export type AdkPrepAction = "clone" | "delete-then-clone" | "none";
+export function adkPrepAction(mode: "new" | "recreate", st: AdkDirState): AdkPrepAction {
+  if (mode === "recreate") return st.exists ? "delete-then-clone" : "clone";
+  // new
+  return st.exists && st.isAdk ? "none" : "clone";
+}

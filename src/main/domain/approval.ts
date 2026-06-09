@@ -10,14 +10,17 @@ export function isBlocked(t: Tier): boolean {
   return t === "T3";
 }
 
-/** tier 무관 자동 승인되는 direct-tool 명시 집합 (baseline §A.2). */
-export const AUTO_BYPASS: ReadonlySet<string> = new Set([
-  "skill_voicewake",
-  "skill_tts",
-  "skill_config",
-]);
-export function isAutoBypass(tool: string): boolean {
-  return AUTO_BYPASS.has(tool);
+/**
+ * 자동 승인 direct-tool 예외 — **인자 조건 포함**(baseline §A.2; codex HIGH 정정).
+ * skill_voicewake=전체 / skill_tts=preview 만 / skill_config=models 만.
+ */
+export function isAutoBypass(tool: string, args: Readonly<Record<string, unknown>>): boolean {
+  switch (tool) {
+    case "skill_voicewake": return true;
+    case "skill_tts": return args["action"] === "preview";
+    case "skill_config": return args["action"] === "models";
+    default: return false;
+  }
 }
 
 export interface ActionScope {
@@ -36,15 +39,18 @@ export interface ContextIdentity {
   readonly clientId: string;
 }
 
-/** 결정적 digest (순수 직렬화). 같은 입력 → 같은 문자열. */
+/**
+ * 결정적 digest (순수). 구분자 충돌 불가 — JSON 배열 직렬화(필드에 구분자 포함돼도
+ * 배열 경계가 보존됨, codex HIGH 정정). 같은 입력 → 같은 문자열.
+ */
 export function contextDigest(c: ContextIdentity): string {
-  return [
+  return JSON.stringify([
     c.sessionId,
     c.canonicalRoot,
-    c.activeSurface ?? "∅",
+    c.activeSurface, // null 그대로 (headless) — JSON 이 ∅ 없이 구분
     c.configVersion,
     c.clientId,
-  ].join("|");
+  ]);
 }
 
 export interface ApprovalBinding {
@@ -64,8 +70,9 @@ function sameScope(a: ActionScope, b: ActionScope): boolean {
 export interface ApprovalRequest {
   readonly tool: string;
   readonly args: Readonly<Record<string, unknown>>;
-  readonly tier: Tier;
+  readonly tier: Tier; // ApprovalGate 가 classify() 로 채움 (호출자 신뢰 X)
   readonly toolCallId: string;
+  readonly sessionId: string; // 계약 정합 (codex HIGH 정정)
 }
 
 export type ApprovalDecision =

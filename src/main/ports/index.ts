@@ -1,6 +1,6 @@
 // ports — F0 control-plane driven 인터페이스 (contract §B.2). domain 만 의존.
 import type { NaiaConfig, AgentView } from "../domain/config.js";
-import type { AdkPath, SetupMode } from "../domain/boot.js";
+import type { AdkPath, SetupMode, AdkDirState } from "../domain/boot.js";
 import type { SetRootResult, CanonicalRoot } from "../domain/workspace.js";
 import type { StartupMessage } from "../domain/startup.js";
 
@@ -45,7 +45,7 @@ export interface PanelInventoryPort {
 export interface AdkSetupPort {
   initSettings(adkPath: string): void; // mode 무관 단일 호출
   copyBundledAssets(adkPath: string): void; // asset:// scope 확장
-  inspectAdkDir(path: string): unknown; // new/recreate 선행
+  inspectAdkDir(path: string): AdkDirState; // new/recreate 선행 (결과 = app 이 clone/delete 결정)
   cloneAdk(path: string): void;
   deleteAdk(path: string): void;
 }
@@ -55,4 +55,4 @@ export interface CredentialStorePort {
   writeAgentKey(envKey: string, value: string): void; // OS keychain
 }
 
-export type { NaiaConfig, AgentView, AdkPath, SetupMode, SetRootResult, CanonicalRoot, StartupMessage };
+export type { NaiaConfig, AgentView, AdkPath, SetupMode, AdkDirState, SetRootResult, CanonicalRoot, StartupMessage };

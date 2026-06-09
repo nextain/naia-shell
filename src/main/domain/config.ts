@@ -23,3 +23,8 @@ export function forAgent(cfg: NaiaConfig): AgentView {
 export function hasNaiaKey(cfg: NaiaConfig | null): boolean {
   return !!cfg?.naiaKey;
 }
+
+/** 최소 base config (setup load 에서 파일 config 가 null 일 때, 계약 `cfg or base`). */
+export function baseConfig(): NaiaConfig {
+  return { agent: {}, secret: {}, ui: {} };
+}
