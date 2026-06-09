@@ -26,8 +26,8 @@
 ## B.1 domain/ (순수, import 0)
 | 값객체 | 규칙 |
 |---|---|
-| `ChatRequest` | `{requestId, clientId, sessionId?, provider:{id,model,host?,gatewayUrl?}, messages, systemPrompt?, enableTools?, enableThinking?, disabledSkills?}`. **provider *선택*(id/model/host)=포함(비밀 아님, baseline 재현 필수). secret(apiKey 등)만 `creds_update` 별채널**(F0 stripForAgent 정합). clientId=다중클라이언트 라우팅. |
-| `ChatChunk` | union: `text·thinking·toolUse·toolResult·approvalRequest·finish·error·audio·usage·logEntry·tokenWarning·panelToolCall·configUpdate`(실 AgentResponseChunk 전수). **transport-neutral**. `{requestId, clientId}` 로 소유권 식별. |
+| `ChatRequest` | `{requestId, clientId, sessionId?, provider:{id,model,host?(ollamaHost/vllmHost 매핑),gatewayUrl?(labGatewayUrl)}, messages, systemPrompt?, enableTools?, enableThinking?, disabledSkills?}`. **provider *선택*(id/model/host)=포함(비밀 아님, baseline 재현 필수). secret(apiKey 등)만 `creds_update` 별채널**(F0 stripForAgent 정합). clientId=다중클라이언트 라우팅. |
+| `ChatChunk` | **chat-turn 관련 subset**: `text·thinking·toolUse·toolResult·approvalRequest·finish·error·audio·usage·logEntry·tokenWarning`. **transport-neutral**, `{requestId,clientId}` 소유권. ⚠️ 비-chat chunk(`discord_message`=UC10·`panel_control/install`=UC9·`skill_list_response`=UC5·`gateway_approval_request`)는 transport 어댑터가 *해당 포트로 demux*(ChatChunk 아님). types.ts=SoT. |
 | `ChatTurn` | requestId 로 묶인 chunk 시퀀스 상태(streaming→finish/error). 순수 상태기계. |
 
 ## B.2 ports/ (driven+driving)
@@ -37,10 +37,11 @@ ChatRequestPayload / ChatChunkPayload = { ...의미 구조, wire-framing 누출 
 
 # AppPort = ChatPort + ToolPort *조립 facade* (재흡수 아님, canon)
 ChatPort:                                   # 대화 ingress (driving — shell이 호출)
-    startTurn(req: ChatRequest, onChunk): TurnHandle   # ⚠️ 원자적 — 구독 *후* 발신 보장(listen-then-send, 초기 chunk 유실 방지)
+    startTurn(req: ChatRequest, onChunk): TurnHandle   # ⚠️ 원자적 listen-then-send. **send 실패 시 onChunk(error) + 구독 해제**(baseline throw/cleanup 보존). (TurnHandle 동기 반환, 실패는 error chunk 로)
     cancel(handle: TurnHandle): void          # cancel_stream (실행 중 중단)
-    respondApproval(handle, toolCallId, decision): void  # approvalRequest chunk 응답 경로(F1 ApprovalPort 연계 — 없으면 tool turn 중단)
-TurnHandle = { requestId, clientId, unsubscribe }   # subscription ownership(다중 클라이언트 — 타 클라이언트 chunk 차단)
+    # approvalRequest chunk = ChatPort 가 *노출만*. 응답은 **ApprovalPort(F1, AppPort 밖 독립 control-plane)** 경유 — ChatPort 흡수 금지(canon, codex R2)
+TurnHandle = { requestId, clientId, unsubscribe }   # 핸들(위조 방지 = 아래 레지스트리가 권위, 핸들 단독 아님)
+  # ⚠️ ownership 레지스트리(ClientSessionPort/adapter): startTurn 시 requestId→clientId 등록 + **충돌 거부**(중복 requestId) + finish/cancel 시 해제. legacy agent_response 엔 clientId 없으므로 *shell측 어댑터가 requestId→clientId 매핑 보유*. cancel/approval 권한 = 레지스트리 소유주만(타 client 차단)
 ToolPort:                                    # 툴 interaction (독립, UC5) — 별 계약
 AgentTransportPort:                          # driven — agent(brain) 닿는 transport. *protocol DTO ↔ wire 번역은 이 어댑터*(app 아님, canon)
     send(payload): Promise<void>             # stdio now / gRPC later
@@ -61,15 +62,16 @@ ChatService:
 ## B.4 adapters/
 | 어댑터 | 포트 | 구현 |
 |---|---|---|
-| `StdioTransportAdapter` | AgentTransportPort | **ChatRequest↔wire JSON-line encode / AgentResponseChunk wire→ChatChunk decode**(번역은 여기). `send_to_agent_command`(stdin)+`agent_response`(stdout). protocol-bridge StdioFrame v1 envelope 호환. |
+| `StdioTransportAdapter` | AgentTransportPort | **ChatRequest↔wire JSON-line encode / AgentResponseChunk wire→ChatChunk decode**(번역은 여기). `send_to_agent_command`(stdin)+`agent_response`(stdout). ⚠️ **flat newline JSON 만**(agent 는 한 줄 곧바로 parseRequest). protocol-bridge StdioFrame v1=미사용 scaffold라 *보내지 않음*. gRPC=후속 어댑터(envelope 그때). |
 | `GrpcTransportAdapter` (future) | AgentTransportPort | gRPC 다중클라이언트 — 어댑터 교체만(protocol 불변) |
 | `TauriChatBridge` | ChatPort | shell ChatPanel ↔ ChatService 연결 |
 
 ## B.5 composition/ — `src/main/composition/` 단일 root, ChatPort+AppPort+AgentTransport(stdio) 주입.
 
 ## B.6 검증
-- **계약 테스트**: mock AgentTransport → ChatService 가 chunk(text/finish/error) 라우팅·ChatTurn 종결·provider/creds 미포함(누출). drift-gate.
+- **계약 테스트**: mock AgentTransport → ChatService 가 chunk(text/finish/error) 라우팅·ChatTurn 종결·**secret(apiKey 등) 미포함**(provider *선택*은 포함; secret만 creds_update). drift-gate.
 - **Old-Baseline 등가**: 옛 흐름(send→stream→finish) 행동 등가(old-auth). transport-neutral DTO 가 stdio/gRPC 무관.
+- **승인 turn**: approvalRequest chunk → **ApprovalPort(F1).respond** 로 응답(ChatPort 아님). cancel = ChatPort.cancel(chat-stream 중단; e-stop=SafetyPort 별도).
 - **라이브 trace**(루크 머신): 실제 채팅 1턴(입력→스트리밍 응답).
 
 ## B.7 다음
