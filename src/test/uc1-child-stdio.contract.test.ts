@@ -33,9 +33,13 @@ describe("makeChildStdioTransport (직접 agent stdin/stdout)", () => {
     expect("clientId" in chat).toBe(false);          // wire 미포함(baseline 등가)
     expect(cancel).toEqual({ type: "cancel_stream", requestId: "r1" }); // Tauri 와 달리 같은 stdin 채널
   });
-  it("send: write throw → rejection 전파(EPIPE 등)", async () => {
+  it("send: 동기 write throw → rejection 전파(EPIPE 등)", async () => {
     const io: LineIO = { writeLine: () => { throw new Error("EPIPE"); }, onLine: () => () => {} };
     await expect(makeChildStdioTransport(io).send(req)).rejects.toThrow("EPIPE");
+  });
+  it("send: *비동기* write reject(콜백 오류) → rejection 전파(거짓 성공 방지, SEV-1)", async () => {
+    const io: LineIO = { writeLine: () => Promise.reject(new Error("async EPIPE")), onLine: () => () => {} };
+    await expect(makeChildStdioTransport(io).send(req)).rejects.toThrow("async EPIPE");
   });
   it("onMessage: stdout 줄 → decodeAgentMessage → cb", () => {
     const { io, emit } = mockIo();

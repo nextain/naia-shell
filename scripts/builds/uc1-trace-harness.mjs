@@ -41,12 +41,15 @@ child.on("error", (e) => { streamBroken = streamBroken || e; });
 const rl = createInterface({ input: child.stdout });
 let lineCb = null;
 const io = {
-  writeLine: (line) => {
-    // 스트림 깨졌거나 쓸 수 없으면 throw → send() rejection 전파(거짓 성공 방지, SEV-1).
-    if (streamBroken) throw streamBroken;
-    if (!child.stdin.writable) throw new Error("agent stdin 쓰기 불가(종료/닫힘)");
-    child.stdin.write(line + "\n", (err) => { if (err) streamBroken = err; });
-  },
+  writeLine: (line) =>
+    // Promise 반환 — write 콜백(flush/오류)을 기다려 그 오류를 해당 send() 로 전파(거짓 성공 방지, SEV-1).
+    new Promise((resolve, reject) => {
+      if (streamBroken) return reject(streamBroken);
+      if (!child.stdin.writable) return reject(new Error("agent stdin 쓰기 불가(종료/닫힘)"));
+      child.stdin.write(line + "\n", (err) => {
+        if (err) { streamBroken = err; reject(err); } else resolve();
+      });
+    }),
   onLine: (cb) => { lineCb = cb; return () => { lineCb = null; }; },
 };
 rl.on("line", (l) => lineCb?.(l));

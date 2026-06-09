@@ -7,8 +7,12 @@ import { toAgentOutbound, decodeAgentMessage } from "./tauri/uc1.js";
 
 /** 줄단위 stdio 추상(테스트=mock, 실행=child_process stdin/stdout readline). */
 export interface LineIO {
-  /** agent stdin 으로 한 줄 쓰기(개행은 io 구현이 처리). 실패 시 throw → send rejection 전파. */
-  writeLine(line: string): void;
+  /**
+   * agent stdin 으로 한 줄 쓰기(개행은 io 구현이 처리).
+   * ⚠️ 비동기 가능 — 실 stdin.write 는 콜백으로 flush/오류를 알리므로, **write 결과를 기다려야**
+   *    그 오류가 해당 send() 로 전파됨(동기 반환 시 거짓 성공 위험, codex SEV-1). sync(void) 도 허용(mock).
+   */
+  writeLine(line: string): void | Promise<void>;
   /** agent stdout 한 줄 도착 구독. unsubscribe 반환. */
   onLine(cb: (line: string) => void): Unsub;
 }
@@ -20,8 +24,8 @@ export interface LineIO {
 export function makeChildStdioTransport(io: LineIO): AgentTransportPort {
   return {
     async send(out: DomainOutbound): Promise<void> {
-      // 동기 write throw(EPIPE 등) → async 가 rejection 으로 전파(send rejection 계약).
-      io.writeLine(JSON.stringify(toAgentOutbound(out)));
+      // ⚠️ write 결과를 await — 동기 throw·비동기 reject(콜백 오류) 모두 send rejection 으로 전파(거짓 성공 방지, SEV-1).
+      await io.writeLine(JSON.stringify(toAgentOutbound(out)));
     },
     onMessage(cb: (m: AgentMessage) => void): Unsub {
       return io.onLine((line) => cb(decodeAgentMessage(line)));
