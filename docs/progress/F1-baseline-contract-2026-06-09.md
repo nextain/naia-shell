@@ -26,24 +26,25 @@
 | 단계 | 소스 | 거동 |
 |---|---|---|
 | 요청 emit | `index.ts:233 waitForApproval()` | `approval_request` frame(stdout) + `pendingApprovals[toolCallId]` map, **timeout 120s** |
-| tier 분류 | `tool-tiers.ts:17 TOOL_TIERS`(T0 auto / T1 approval / T2 caution / 미매핑→T2) · `41 needsApproval()=tier>0` | 행위별 승인 필요 판정 |
-| auto-approve | `ChatPanel.tsx:1073` chunk handler — `isToolAllowed(tool)` 면 `sendApprovalResponse("once")` 자동 | 영구 grant 우회 |
+| tier 분류 | `tool-tiers.ts TOOL_TIERS`(T0 auto / T1·T2 approval / **T3 = blocked(승인 아님)** / 미매핑→T2) | ⚠️ T3=차단(`tool-bridge.ts:335-365`), 승인 tier 아님(R1 정정) |
+| auto-approve(영구) | `ChatPanel.tsx:1073` chunk handler — `isToolAllowed(tool)` 면 `sendApprovalResponse("once")` 자동 | 영구 grant 우회 |
+| auto-bypass(direct tool) | `index.ts:213-223·1014-1019` — `skill_voicewake`·`skill_tts`(preview)·`skill_config`(models) 등 명시 예외도 auto | R1 추가: 영구grant 외 direct 예외 다수 |
 | modal | `PermissionModal.tsx` (tier badge·args·버튼 allowOnce/allowAlways/reject) → `sendApprovalResponse(requestId,toolCallId,decision)` → `send_to_agent_command` | 사용자 결정 |
 | 응답 처리 | `index.ts:225 handleApprovalResponse()` resolve | once/always/reject |
 | 영구 grant | `config.ts:539 addAllowedTool()`→`allowedTools[]` · `534 isToolAllowed()` pre-check | always = 영구(단 D40: Phase5 always 거부 예정=fresh-per-tier) |
-| correlation | `requestId` + `toolCallId`(map key) + `sessionId`(optional, `approval-bridge.ts:35`) · `audit.rs:741` 로그 | **toolCallId 결속만 — context-identity digest 부분** |
-| 비-chat | `chat-service.ts:305 onApprovalRequest`(voice 자동 승인) · `ChatPanel.tsx:2030`(browser 패널 once 자동) | voice/browser auto |
+| correlation | `requestId` + `toolCallId`(map key) · `audit.rs:741` 로그 | **toolCallId 결속만**. ⚠️ `sessionId`(`approval-bridge.ts:35`)=**inert bridge 타입, live flow 미탑재**(R1 정정) |
+| 비-chat | `chat-service.ts:305 onApprovalRequest`(voice 자동) · `ChatPanel.tsx:2017-2031`(**voice direct-tool 전면 auto-approve**, R1 정정) | voice auto |
 
-> ⚠️ **GAP(FR-F1.4)**: 결속이 `requestId`+`toolCallId`(+optional sessionId)까지 — **context-identity digest**(session + canonical workspace root + active surface + 승인시점 config 버전 + client id)와 **행위 스코프(target·op·body·env) 결속**·**pre-exec drift block** 은 **미구현 = F1 선잠금 신설**.
+> ⚠️ **GAP(FR-F1.4)**: 결속이 `requestId`+`toolCallId`까지(sessionId 미탑재) — **context-identity digest**(session + canonical workspace root + active surface + 승인시점 config 버전 + client id)와 **행위 스코프(target·op·body·env) 결속**·**pre-exec drift block** 은 **미구현 = F1 선잠금 신설**.
 
 ## A.3 오류 분류 / disposition (F1)
 - 자기상태/관측 실패 = **contain + 정직 보고**(상위 planning/route/skill 오염 차단, FR-F1.3), 부팅 차단 X.
 - degradation = 정상 상태의 하나(오류 아님) — 단 **정직 표면화 필수**(오보 금지).
-- 승인 부재/거부/만료/중복/승인후 context 변경 = ApprovalPort 상태전이(§B), 실행 차단.
+- 승인 부재/거부 = baseline 처리(reject). ⚠️ **만료(expired)·중복(duplicate)은 baseline 미구현** — old 는 timeout→`reject` 로 붕괴(`index.ts:252-256`), duplicate 별도 분기 없이 `toolCallId` map key 의존(`index.ts:88-95`). 정식 상태전이는 **F1 신설**(§A.4).
 
 ## A.4 커버리지 manifest (F1)
 - **accepted**(이식): health/diagnostics/device 표면 · degradation 감지(connected:bool) · 승인 전체 흐름(요청·tier·modal·응답·영구grant·correlation toolCallId).
-- **new-requirement**(baseline 부분/부재 → F1 신설): **정직 degradation 보고**(key-presence vs connection-state 통합) · **context-identity digest 결속 + 행위스코프 + pre-exec drift block**(FR-F1.4) · **contamination 격리**(FR-F1.3).
+- **new-requirement**(baseline 부분/부재 → F1 신설): **정직 degradation 보고**(key-presence vs connection-state 통합) · **context-identity digest 결속 + 행위스코프 + pre-exec drift block**(FR-F1.4; baseline=toolCallId만, sessionId 미탑재) · **명시적 `expired`(만료) + `duplicate`(중복) 상태전이**(baseline=timeout→reject 붕괴, dup 미분기) · **contamination 격리**(FR-F1.3).
 - **deferred**: lease 전체(FR-F1.4 subset 만) · SafetyPort e-stop(F-후속) · always-grant 정책(D40 Phase5).
 - 미분류 = 0.
 
@@ -58,12 +59,12 @@
 | `SystemStatus` | 구성요소 상태 집계값(agent-liveness·gateway·provider). 순수 값. |
 | `DegradationSignal` | **`{configured: bool, reachable: bool}`** — *key-presence 와 connection-state 분리*. `degraded = configured && !reachable`(정직: 키 있어도 unreachable=degraded). **오보 금지의 핵심 규칙**(FR-F1.1). |
 | `DeviceStatus` | device 종류·가용성(audio/permission). 순수 값. |
-| `Tier` | `T0`(auto) \| `T1` \| `T2` \| `T3`. `needsApproval = tier > T0`. 미매핑→T2(보수적). |
+| `Tier` | `T0`(auto) \| `T1`·`T2`(approval) \| `T3`(**blocked/disallowed — 승인 불가, 차단**, R1 정정). `needsApproval = tier ∈ {T1,T2}`; `isBlocked = tier == T3`. 미매핑→T2(보수적). |
 | `ApprovalRequest` | `{tool, args, tier, toolCallId, sessionId}`. |
 | `ContextIdentityDigest` | **결정적 digest** = {session id + canonical workspace root(symlink/mount/대소문자 정규화 or 안정 id) + active surface/panel(headless=null 허용) + 승인시점 config 버전 + client id}. 순수 계산(FR-F1.4). |
 | `ActionScope` | `{target, op, body, env}` — 승인이 묶이는 구체 행위(FR-F1.4). |
 | `ApprovalBinding` | `{correlationId, digest: ContextIdentityDigest, scope: ActionScope}`. **drift 판정 규칙**: 실행 *전* 현재 digest/scope ≠ 승인시점 → `block`(재승인, side-effect 없음). |
-| `ApprovalDecision` | `once` \| `always`(D40: deferred 정책) \| `reject` \| `expired`(timeout). |
+| `ApprovalDecision` | `once` \| `always`(D40: deferred 정책) \| `reject` \| **`expired`(timeout — F1 신설; baseline 은 timeout→reject 붕괴)** \| **`duplicate`(F1 신설; baseline 미분기)**. |
 
 > domain 은 I/O·transport·storage 모름. canonicalize/도달성 probe 등 I/O 는 포트 뒤.
 
@@ -81,9 +82,9 @@ InteroceptivePort:                          # read-only 자기 관측 (FR-F1.1)
     devices(): DeviceStatus[]                # audio/permission
     degradations(): DegradationSignal[]      # ⚠️ configured&&!reachable 정직 산출(probe=adapter, 판정=domain)
 ApprovalPort:                               # 최소계약 선잠금 (FR-F1.2·1.4)
-    classify(tool, args): Tier               # tool-tiers 매핑(미매핑=T2)
+    classify(tool, args): Tier               # tool-tiers 매핑(T0 auto / T1·T2 approval / T3 blocked / 미매핑=T2)
     request(req: ApprovalRequest, binding: ApprovalBinding): ApprovalDecision
-                                             # 부재·거부·만료(timeout)·중복 상태전이. 결과에 binding 동봉
+                                             # 부재·거부·**expired(만료)·duplicate(중복) = F1 신설 상태**. 결과에 binding 동봉
     isPreGranted(tool): bool                 # 영구 grant pre-check(allowedTools). ⚠️ always 정책=D40 deferred
 PersistentGrantPort:                        # 영구 승인 저장(분리 — 정책 격리)
     isAllowed(tool): bool / add(tool): void  # config.allowedTools (D40 Phase5 거부 예정 = deferred 표기)
@@ -105,7 +106,8 @@ StatusReporter:
 ApprovalGate:
   gate(tool, args, ctx):
     tier = ApprovalPort.classify(tool, args)
-    if tier == T0 or PersistentGrantPort.isAllowed(tool): return Approved(once)   # auto
+    if tier == T3: return Blocked   # ⚠️ T3 = 차단(승인 불가, R1)
+    if tier == T0 or PersistentGrantPort.isAllowed(tool): return Approved(once)   # auto (+ direct-tool 예외 §A.2)
     binding = ApprovalBinding{ correlationId, digest=ContextIdentityDigest(ctx), scope=ActionScope(tool,args,ctx) }
     decision = ApprovalPort.request(req, binding)        # 거부·만료·중복 처리
     # ⚠️ 실행 *직전* drift 재검사(FR-F1.4): 현재 digest/scope ≠ binding → block(재승인, side-effect 없음)
