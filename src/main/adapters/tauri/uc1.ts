@@ -17,16 +17,18 @@ class NotWired extends Error {
 export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
   switch (out.kind) {
     case "chat":
+      // ⚠️ baseline wire 등가(outbound probe): clientId 는 *client-side 전용*(레지스트리) — wire 에 안 보냄(baseline 미포함, agent 무시).
+      // enableThinking 은 **top-level**(agent 가 req.enableThinking 읽어 providerConfig 에 주입 — provider 안에만 두면 agent top-level override 가 undefined 로 덮어씀).
       return {
         type: "chat_request",
         requestId: out.requestId,
-        clientId: out.clientId,
         ...(out.sessionId !== undefined ? { sessionId: out.sessionId } : {}),
         provider: { ...out.provider }, // verbatim(secret 없음)
         ...(out.gatewayUrl !== undefined ? { gatewayUrl: out.gatewayUrl } : {}),
         messages: out.messages,
         ...(out.systemPrompt !== undefined ? { systemPrompt: out.systemPrompt } : {}),
         ...(out.enableTools !== undefined ? { enableTools: out.enableTools } : {}),
+        ...(out.enableThinking !== undefined ? { enableThinking: out.enableThinking } : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),
       };
     case "cancel":

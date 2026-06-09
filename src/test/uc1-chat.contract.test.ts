@@ -111,6 +111,14 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
     expect(flat).not.toContain("apiKey");
     expect(flat).not.toContain("naiaKey");
   });
+  it("outbound 등가(baseline wire): enableThinking=top-level, clientId 미포함, routeViaGateway 생략", () => {
+    const out = toAgentOutbound(req({ enableThinking: true, clientId: "c1" })) as Record<string, unknown>;
+    expect(out["enableThinking"]).toBe(true);          // top-level(agent 가 req.enableThinking 읽음 — provider 안이면 무효화)
+    expect("clientId" in out).toBe(false);             // client-side 전용 — wire 미포함(baseline 등가, agent 무시)
+    expect("routeViaGateway" in out).toBe(false);      // agent intentionally-disabled — 생략
+    // provider 안엔 enableThinking 안 강제(top-level 이 권위)
+    expect(JSON.parse(JSON.stringify(out))).toHaveProperty("requestId", "r1");
+  });
   it("cancel/approval/creds 매핑 + creds 만 secret 운반", () => {
     expect(toAgentOutbound({ kind: "cancel", requestId: "r1", clientId: "c1" }))
       .toEqual({ type: "cancel_stream", requestId: "r1" });

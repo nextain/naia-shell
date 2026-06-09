@@ -21,6 +21,7 @@ export interface ChatSubmitInput {
   readonly gatewayUrl?: string;
   readonly systemPrompt?: string;
   readonly enableTools?: boolean;
+  readonly enableThinking?: boolean;
   readonly disabledSkills?: readonly string[];
 }
 
@@ -39,6 +40,7 @@ export class ChatBridge {
       ...(input.gatewayUrl !== undefined ? { gatewayUrl: input.gatewayUrl } : {}),
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(input.enableTools !== undefined ? { enableTools: input.enableTools } : {}),
+      ...(input.enableThinking !== undefined ? { enableThinking: input.enableThinking } : {}),
       ...(input.disabledSkills !== undefined ? { disabledSkills: input.disabledSkills } : {}),
     };
     return this.deps.chat.startTurn(req, render);
