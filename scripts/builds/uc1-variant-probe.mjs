@@ -10,22 +10,31 @@ import { fileURLToPath } from "node:url";
 import { CHAT_TURN_VARIANTS, NONCHAT_KNOWN_VARIANTS, classifyVariant } from "../../dist/main/domain/chat.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SHELL_TYPES = join(HERE, "../../../old-naia-os/shell/src/lib/types.ts");
+const SHELL = join(HERE, "../../../old-naia-os/shell/src");
 
-// AgentResponseChunk union 블록에서 type: "..." 전수 추출(소비자 권위 집합).
-const src = readFileSync(SHELL_TYPES, "utf8");
-const start = src.indexOf("export type AgentResponseChunk");
-if (start < 0) { console.error("AgentResponseChunk union 못 찾음:", SHELL_TYPES); process.exit(2); }
-const after = src.indexOf("\nexport ", start + 10);
-const block = src.slice(start, after < 0 ? undefined : after);
-const liveTypes = [...new Set([...block.matchAll(/type:\s*"([a-z_]+)"/g)].map((m) => m[1]))].sort();
+// agent_response 전체 소비자 surface = chat AgentResponseChunk union ∪ 타 리스너(BgmPlayer/PanelInstall) 분기 type.
+// (새 아키텍처: MessageRouter 단일구독이 *모든* agent_response 를 demux → 전부 분류돼야 함.)
+const types1 = (() => {
+  const src = readFileSync(join(SHELL, "lib/types.ts"), "utf8");
+  const start = src.indexOf("export type AgentResponseChunk");
+  if (start < 0) { console.error("AgentResponseChunk union 못 찾음"); process.exit(2); }
+  const after = src.indexOf("\nexport ", start + 10);
+  const block = src.slice(start, after < 0 ? undefined : after);
+  return [...block.matchAll(/type:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+})();
+const consumerFiles = ["components/BgmPlayer.tsx", "components/PanelInstallDialog.tsx"];
+const types2 = consumerFiles.flatMap((f) => {
+  let src = ""; try { src = readFileSync(join(SHELL, f), "utf8"); } catch { return []; }
+  return [...src.matchAll(/\.type === "([a-z_]+)"|case "([a-z_]+)"/g)].map((m) => m[1] || m[2]);
+});
+const liveTypes = [...new Set([...types1, ...types2])].sort();
 
 const known = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
 const missing = liveTypes.filter((t) => classifyVariant(t) === "unknown"); // shell 은 받는데 새 core 미분류 = drift
 const coreExtra = [...known].filter((t) => !liveTypes.includes(t)).sort();   // 새 core 에만(superset — 무해)
 
 const result = {
-  source: SHELL_TYPES.replace(/.*\/old-naia-os/, "old-naia-os"),
+  source: "old-naia-os/shell/src (AgentResponseChunk + BgmPlayer + PanelInstall 소비자)",
   liveConsumerTypes: liveTypes,
   newCoreKnown: [...known].sort(),
   missing_in_new_core: missing,          // ← 0 이어야 등가(아니면 drift)
