@@ -48,5 +48,8 @@
 | `builds/f0-graft-snippet.js` | (생성물, gitignore) 위 스크립트가 만드는 붙여넣기용 콘솔 스니펫. |
 | `builds/f0-boot-probe.mjs` | **headless 실디스크 부팅 검증** — Tauri 없이 `~/.naia/adk-path`+ADK config 읽어 컴파일된 새 core 의 부팅 결정 구동·비교(match). `node scripts/builds/f0-boot-probe.mjs`. |
 | `builds/launch-naia-os.sh` | 실제 naia-os(projects/naia-os) dev 앱 실행(기존 dev 정리 후). 띄운 뒤 F12 Console 에 graft 스니펫 → match 확인. `[--bg]`. |
+| `builds/uc1-graft-observe.sh` | UC1 수평 관측 스모크(Option A). 빌드+테스트+관측 스니펫 emit. 앱 무수정 — 새 core wire variant 분류가 라이브와 등가인지 1차 확인. |
+| `builds/uc1-graft-observe.mjs` | 위 스니펫 생성기 — `dist/main/domain/chat.js` 의 variant 세트 파생(드리프트 0). |
+| `builds/uc1-graft-snippet.js` | (생성물, gitignore) DevTools 붙여넣기용 `window.uc1` 관측 헬퍼(classify/observeConsole/report). |
 
 > **하위폴더 정책**: `cron/`(주기 배치)·`builds/`(빌드·graft)·`conform/`(전용 게이트)는 물리 폴더 허용(자기완결, 참조 안전). A~E 의 루트 평면 스크립트를 폴더로 옮기려면 — CLAUDE.md·`.agents/hooks/`·`src/test/*.mjs` 참조를 전부 갱신한 뒤에만(별도 작업).

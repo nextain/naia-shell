@@ -3,22 +3,11 @@
 //   비-chat known→PendingRouteSink(UC1 미배선) / Unknown·소유권없음→DiagnosticSink. 미지=error+log(silent drop 금지).
 // transport(wire)와 분리된 별 컴포넌트(중복전달·구독주체 모호 제거). app 은 demux/protocol 안 봄.
 import type { ChatChunk } from "../domain/chat.js";
+import { classifyVariant } from "../domain/chat.js";
 import type {
   AgentMessage, AgentTransportPort, ChatPort, ClientSessionPort,
   PendingRouteSink, DiagnosticSink, Unsub,
 } from "../ports/uc1.js";
-
-/** chat-turn variant(requestId 보유) — domain ChatChunk 로 매핑. 권위=agent index.ts 출력. */
-const CHAT_TURN_TYPES = new Set([
-  "text", "thinking", "tool_use", "tool_result", "approval_request",
-  "finish", "error", "usage", "log_entry", "token_warning",
-]);
-
-/** 비-chat known variant — 목적 semantic port 가 UC1 시점 미배선(UC9/UC5/voice). 보류. */
-const NONCHAT_KNOWN_TYPES = new Set([
-  "audio", "object", "panel_control", "panel_install_result",
-  "panel_tool_call", "ready", "skill_list_response", "embedding_progress",
-]);
 
 export interface RouterDeps {
   readonly transport: AgentTransportPort;
@@ -42,10 +31,11 @@ export class MessageRouter {
     this.unsub = null;
   }
 
-  /** 18 variant + Unknown 전부 분기 도착 = exhaustive 보장. */
+  /** 18 variant + Unknown 전부 분기 도착 = exhaustive 보장(분류 SoT=domain classifyVariant). */
   route(m: AgentMessage): void {
     const type = m.type;
-    if (CHAT_TURN_TYPES.has(type)) {
+    const lane = classifyVariant(type);
+    if (lane === "chat-turn") {
       const r = m as Record<string, unknown>;
       const requestId = typeof r["requestId"] === "string" ? (r["requestId"] as string) : undefined;
       if (!requestId) {
@@ -69,11 +59,11 @@ export class MessageRouter {
       this.deps.chat.deliverChunk(chunk, { requestId, clientId });
       return;
     }
-    if (NONCHAT_KNOWN_TYPES.has(type)) {
+    if (lane === "nonchat-known") {
       this.deps.pending.pending(m); // UC1 미배선 — 해당 UC 에서 실제 포트 배선
       return;
     }
-    // UnknownAgentMessage(18 외) — silent drop 금지
+    // unknown (18 외) — silent drop 금지
     this.deps.diagnostic.diagnose(m, `unknown variant: ${type}`);
   }
 }

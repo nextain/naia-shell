@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import {
   nextTurnState, isTerminalState, isTerminalChunk,
+  classifyVariant, outboundCommandOf, CHAT_TURN_VARIANTS, NONCHAT_KNOWN_VARIANTS,
   type ChatRequest, type ChatChunk, type DomainOutbound,
 } from "../main/domain/chat.js";
 import { ChatService } from "../main/app/chat/chat-service.js";
@@ -70,6 +71,27 @@ describe("domain 순수 규칙 (UC1 ChatTurn)", () => {
     expect(isTerminalChunk({ kind: "finish" })).toBe(true);
     expect(isTerminalChunk({ kind: "error", message: "e" })).toBe(true);
     expect(isTerminalChunk({ kind: "text", text: "a" })).toBe(false);
+  });
+});
+
+describe("wire variant 분류 SoT (router·관측 스니펫 공유)", () => {
+  it("classifyVariant: chat-turn / nonchat-known / unknown 망라", () => {
+    for (const t of CHAT_TURN_VARIANTS) expect(classifyVariant(t)).toBe("chat-turn");
+    for (const t of NONCHAT_KNOWN_VARIANTS) expect(classifyVariant(t)).toBe("nonchat-known");
+    expect(classifyVariant("discord_message")).toBe("unknown");
+    expect(classifyVariant("")).toBe("unknown");
+  });
+  it("18 variant 집합 = 10 chat-turn + 8 nonchat-known, 중복 없음", () => {
+    expect(CHAT_TURN_VARIANTS.length).toBe(10);
+    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(8);
+    const all = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
+    expect(all.size).toBe(18); // 겹침 없음
+  });
+  it("outboundCommandOf: cancel 만 별 command(cancel_stream), 나머지 send_to_agent_command", () => {
+    expect(outboundCommandOf("cancel")).toBe("cancel_stream");
+    expect(outboundCommandOf("chat")).toBe("send_to_agent_command");
+    expect(outboundCommandOf("approvalResponse")).toBe("send_to_agent_command");
+    expect(outboundCommandOf("credsUpdate")).toBe("send_to_agent_command");
   });
 });
 

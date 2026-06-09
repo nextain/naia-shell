@@ -114,3 +114,28 @@ export interface CredsUpdate {
 }
 
 export type DomainOutbound = ChatRequest | CancelTurn | ApprovalResponseIntent | CredsUpdate;
+
+// ── wire variant 분류 (단일 SoT — router·관측 스니펫 공유, 드리프트 방지) ──
+// 권위 = agent writeLine 출력(index.ts). chat-turn(requestId 보유)=ChatChunk / 비-chat known=타 포트(UC1 보류) / 그 외=Unknown.
+export const CHAT_TURN_VARIANTS = [
+  "text", "thinking", "tool_use", "tool_result", "approval_request",
+  "finish", "error", "usage", "log_entry", "token_warning",
+] as const;
+export const NONCHAT_KNOWN_VARIANTS = [
+  "audio", "object", "panel_control", "panel_install_result",
+  "panel_tool_call", "ready", "skill_list_response", "embedding_progress",
+] as const;
+
+export type VariantLane = "chat-turn" | "nonchat-known" | "unknown";
+
+/** wire 메시지 type → 처리 lane. exhaustive: chat-turn / nonchat-known / unknown. */
+export function classifyVariant(type: string): VariantLane {
+  if ((CHAT_TURN_VARIANTS as readonly string[]).includes(type)) return "chat-turn";
+  if ((NONCHAT_KNOWN_VARIANTS as readonly string[]).includes(type)) return "nonchat-known";
+  return "unknown";
+}
+
+/** DomainOutbound → shell→rust Tauri command (baseline 실측: cancel 만 별 command). */
+export function outboundCommandOf(kind: DomainOutbound["kind"]): "send_to_agent_command" | "cancel_stream" {
+  return kind === "cancel" ? "cancel_stream" : "send_to_agent_command";
+}
