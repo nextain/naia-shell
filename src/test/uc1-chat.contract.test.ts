@@ -220,4 +220,23 @@ describe("런타임 누수/예외 격리 (codex 코드리뷰 HIGH)", () => {
     expect(() => transport.emit({ type: "finish", requestId: "r1" })).not.toThrow();
     expect(sessions.ownerOf("r1")).toBeUndefined();
   });
+  it("재진입 ABA: terminal chunk 콜백이 unsubscribe+동일 id 재등록 → 옛 turn 의 무조건 release 가 새 turn 삭제 안 함(코드리뷰2 HIGH)", async () => {
+    const { transport, sessions, chat } = wire();
+    let h1: { unsubscribe: () => void } | null = null;
+    let reentered = false;
+    const r1 = chat.startTurn(req(), () => {
+      // 옛 turn 의 finish 콜백 *안에서* unsubscribe + 동일 requestId 로 새 turn 재등록(재진입).
+      if (reentered) return;
+      reentered = true;
+      h1?.unsubscribe();
+      chat.startTurn(req(), () => {}); // 새 turn (requestId r1, clientId c1)
+    });
+    h1 = r1.handle;
+    await r1.sent;
+    // 옛 turn 기준 terminal(finish) → safeOnChunk 재진입 후, 가드 없으면 releaseTurn(r1) 이 *새* turn 을 삭제.
+    transport.emit({ type: "finish", requestId: "r1" });
+    // 가드 덕에 새 turn 의 ownership·상태가 살아있어야 함.
+    expect(sessions.ownerOf("r1")).toBe("c1");
+    expect(chat.turnState("r1")).toBe("streaming"); // 새 turn 은 아직 진행(옛 finish 가 종료시키면 안 됨)
+  });
 });

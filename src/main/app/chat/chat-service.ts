@@ -36,8 +36,8 @@ export class ChatService implements ChatPort {
     const handle: TurnHandle = {
       requestId: req.requestId,
       clientId: req.clientId,
-      // unsubscribe = ownership 까지 해제(누수 방지). 단 *이 turn* 이 아직 현재일 때만(ABA 가드).
-      unsubscribe: () => { if (this.turns.get(req.requestId) === turn) this.releaseTurn(req.requestId); },
+      // unsubscribe = ownership 까지 해제(누수 방지). turn reference 가드(ABA — release 내부에서 검사).
+      unsubscribe: () => this.releaseTurn(req.requestId, turn),
     };
 
     // 구독 선행 → send(domain req). 변환은 adapter. sent=send 결과(reject 전파).
@@ -49,7 +49,7 @@ export class ChatService implements ChatPort {
           turn.state = "errored";
           this.safeOnChunk(turn, { kind: "error", message: errMessage(err) });
         }
-        this.releaseTurn(req.requestId);
+        this.releaseTurn(req.requestId, turn); // reference 가드(콜백 재진입 대비)
       }
       throw err; // 호출자 전파(baseline 등가)
     });
@@ -76,9 +76,11 @@ export class ChatService implements ChatPort {
     if (!turn) return; // 종료/미지 turn — silent (router 가 DiagnosticSink 책임)
     // ⚠️ onChunk(소비자 콜백) 예외가 상태전이·해제·라우터를 깨뜨리지 않게 격리(codex HIGH).
     this.safeOnChunk(turn, chunk);
+    // ⚠️ 재진입 가드: 콜백이 unsubscribe + 동일 requestId 재등록 했을 수 있음 → 같은 turn 일 때만 진행(codex 코드리뷰2 HIGH).
+    if (this.turns.get(owner.requestId) !== turn) return;
     turn.state = nextTurnState(turn.state, { type: "chunk", chunk });
     if (isTerminalState(turn.state)) {
-      this.releaseTurn(owner.requestId); // finish/error = terminal → ownership 해제(예외와 무관 보장)
+      this.releaseTurn(owner.requestId, turn); // finish/error = terminal → ownership 해제(reference 가드)
     }
   }
 
@@ -87,7 +89,9 @@ export class ChatService implements ChatPort {
     return this.turns.get(requestId)?.state;
   }
 
-  private releaseTurn(requestId: string): void {
+  /** ABA-안전 해제 — *그 turn* 이 여전히 현재일 때만(콜백 재진입·재등록 대비, codex 코드리뷰2). */
+  private releaseTurn(requestId: string, turn: Turn): void {
+    if (this.turns.get(requestId) !== turn) return;
     this.turns.delete(requestId);
     this.sessions.release(requestId);
   }
