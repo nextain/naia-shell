@@ -62,13 +62,14 @@ export class ChatService implements ChatPort {
   }
 
   async cancel(handle: TurnHandle): Promise<void> {
-    // 권한 인가 — 소유주 대조(타 client 차단).
+    const turn = this.turns.get(handle.requestId);
+    // ⚠️ 없음/종료(이미 release 됨) = *양성 no-op* — 완료된 turn cancel 은 오류 아님(코드리뷰5 HIGH).
+    //    (권한 검사를 앞에 두면 release 후 authorize 실패로 잘못된 "권한 없음" throw.)
+    if (!turn || isTerminalState(turn.state)) return;
+    // 살아있는 turn 에 한해 권한 인가 — 소유주 대조(타 client 차단).
     if (!this.sessions.authorize(handle.requestId, handle.clientId)) {
       throw new Error(`cancel 권한 없음(소유주 불일치): ${handle.requestId}`);
     }
-    const turn = this.turns.get(handle.requestId);
-    // ⚠️ 이미 종료/없는 turn = cancel 불필요(no-op) — 불필요한 cancel_stream 전송 방지(코드리뷰4 MED).
-    if (!turn || isTerminalState(turn.state)) return;
     turn.state = nextTurnState(turn.state, { type: "cancelRequested" }); // → cancelling(비종결)
     const out: CancelTurn = { kind: "cancel", requestId: handle.requestId, clientId: handle.clientId };
     // ⚠️ cancel_stream send reject 로는 해제 안 함(turn 라이브 가능 — 후속 finish/error 가 해제).

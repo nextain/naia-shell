@@ -157,11 +157,20 @@ describe("ChatService + MessageRouter 계약", () => {
     transport.emit({ type: "finish", requestId: "r1" });
     expect(sessions.ownerOf("r1")).toBeUndefined();
   });
-  it("cancel 권한: 타 client 차단", async () => {
+  it("cancel 권한: 타 client 차단(살아있는 turn)", async () => {
     const { chat } = wire();
     const { handle, sent } = chat.startTurn(req(), () => {});
     await sent;
     await expect(chat.cancel({ ...handle, clientId: "other" })).rejects.toThrow(/권한/);
+  });
+  it("완료된 turn cancel = 양성 no-op(권한오류 throw 안 함, 코드리뷰5 HIGH)", async () => {
+    const { transport, chat } = wire();
+    const { handle, sent } = chat.startTurn(req(), () => {});
+    await sent;
+    transport.emit({ type: "finish", requestId: "r1" }); // 종료+release
+    const before = transport.sent.length;
+    await expect(chat.cancel(handle)).resolves.toBeUndefined(); // throw 아님
+    expect(transport.sent.length).toBe(before); // cancel_stream 미전송
   });
 });
 
