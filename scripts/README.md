@@ -11,6 +11,7 @@
 | `ci-verify-charter.mjs` | 헌장 불변(charter immutability) CI 검증. |
 | `ci-verify-sdlc.mjs` | SDLC P01~P05 게이트 상태 CI 검증. |
 | `ci-verify-completion.mjs` | 완료 근거(completion evidence) 게이트 검증. |
+| `check-assembly-coverage.mjs` | 조립 매트릭스 전수 검사(미분류 0: user-scenarios의 모든 UC/S가 매트릭스에 분류됐나 + fit 게이트: 상태≥코드 행에 미평가 없나). AI 단축 사고 방지 결정론 강제. |
 | `verify-watch.sh` | 주기 검증 러너 — 구조·문서·미러 이탈 백그라운드 검출(`once` 1회). |
 
 ## B. 문서·용어·링크 (docs integrity)
