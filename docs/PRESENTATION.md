@@ -47,13 +47,14 @@
 
 ## 7. 현재 위치 — 정직하게
 
-- **계획 완료, 코드 이식 0.** (아직 실행 전 = old-naia-os 미구동, Old-Baseline 미측정.)
-- 계획은 *실행 전 뽑을 수 있는 최대치*에 도달 — 다음 두께는 문서가 아니라 **측정(F0)**에서.
+- **계획 완료 + F0 실행 착수.** F0 Old-Baseline = **코드레벨 CLOSED**(codex 코드 직독 14R, 2연속 NONE).
+- F0 부팅 커맨드 인벤토리 확정 — secret-strip 변환·config 조건부 전송·팬텀 커맨드 제외까지 코드 근거로 정밀화(눈으로 못 잡는 것을 코드대조가 잡음).
+- **아직 코드 이식 0**(baseline=계약 문서). 라이브 trace(timing·실 I/O)=루크 머신 구동 시. 다음 두께 = 첫 슬라이스 스캐폴드.
 
 ## 8. 다음 / 기여 포인트
 
-- **F0 실행**: old 구동 → Old-Baseline 측정 → 첫 슬라이스 이식.
-- 잔여 결정: botmadang keep/reject · G1(순서 승인).
+- **F0 슬라이스 스캐폴드**: baseline(계약) → new-naia-os `src/main` 헥사고날 골격(domain/ports/adapters/app) → 계약 테스트. 라이브 trace 게이트 후 행동 등가 선언.
+- 그 다음 F1(자기상태/진단) → F2(관측) → F3(조작).
 - 기여 가능 영역: (실행 시 채움 — vertical별 slice 이식, per-skill 검증 등).
 
 ---
