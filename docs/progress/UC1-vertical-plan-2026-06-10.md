@@ -29,6 +29,7 @@
 - **헤드리스 등가 게이트**: `uc1-variant-probe.mjs` — 앱 없이 frozen shell `AgentResponseChunk`(소비자 권위 17종)을 새 core 분류와 결정론 비교.
 - **🔎 발견(drift→수정)**: 새 core variant 세트(18)가 shell 이 실제 받는 `config_update`·`discord_message`·`gateway_approval_request` 3종을 **누락 → unknown 오분류**였음. NONCHAT_KNOWN 에 추가(비-chat, 해당 UC 배선까지 PendingRouteSink). **probe 재실행 = PASS**(missing 0). superset-only(token_warning·object·ready·embedding_progress = agent emit superset, 무해).
 - 의의: Option A 의 헤드리스 부분이 **라이브 paste 없이 실제 drift 1건을 잡음**(= f0-boot-probe 처럼). 라이브 paste 는 동적 추가 확인용.
+- **🔎 추가 정정(codex S1)**: `gateway_approval_request`(requestId 보유·ChatPanel chunk 처리=turn-bound 승인)를 nonchat 으로 오분류 → 보류 시 turn 끊김. **chat-turn 으로 이동**(approval_request 동급) + ChatChunk `gatewayApprovalRequest` kind 추가. 최종 분류 = 11 chat-turn + 19 nonchat-known(=30). audio 는 codex 미지적(UC1=텍스트라 voice UC 보류 의도 수용).
 
 ## 4. 검증 게이트 (P02 3-tier)
 1. **Old-Baseline 등가**: 라이브 wire(JSON-line) 캡처 ↔ adapter encode/decode 바이트 등가(drift-gate).

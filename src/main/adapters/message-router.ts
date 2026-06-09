@@ -91,6 +91,11 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
       return toolCallId === null || toolName === null || tier === null
         ? null : { kind: "approvalRequest", toolCallId, toolName, tier };
     }
+    case "gateway_approval_request": {
+      const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]);
+      return toolCallId === null || toolName === null
+        ? null : { kind: "gatewayApprovalRequest", toolCallId, toolName, args: r["args"] };
+    }
     case "usage": return { kind: "usage", raw: m };
     case "log_entry": {
       const level = reqStr(r["level"]); const message = reqStr(r["message"]);

@@ -80,10 +80,16 @@ describe("wire variant 분류 SoT (router·관측 스니펫 공유)", () => {
     for (const t of NONCHAT_KNOWN_VARIANTS) expect(classifyVariant(t)).toBe("nonchat-known");
     expect(classifyVariant("totally_made_up_type")).toBe("unknown");
     expect(classifyVariant("")).toBe("unknown");
+    // turn-bound 승인 = chat-turn(보류하면 turn 끊김, codex S1)
+    expect(classifyVariant("gateway_approval_request")).toBe("chat-turn");
+    expect(classifyVariant("approval_request")).toBe("chat-turn");
+    // 전역/타-surface = nonchat
+    expect(classifyVariant("config_update")).toBe("nonchat-known");
+    expect(classifyVariant("bgm_youtube_play")).toBe("nonchat-known");
   });
-  it("variant 집합 = 10 chat-turn + 20 nonchat-known(=30), 중복 없음", () => {
-    expect(CHAT_TURN_VARIANTS.length).toBe(10);
-    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(20);
+  it("variant 집합 = 11 chat-turn + 19 nonchat-known(=30), 중복 없음", () => {
+    expect(CHAT_TURN_VARIANTS.length).toBe(11);
+    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(19);
     const all = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
     expect(all.size).toBe(30); // 겹침 없음(10 chat + 20 nonchat)
   });

@@ -50,6 +50,7 @@ export type ChatChunk =
   | { readonly kind: "toolUse"; readonly toolCallId: string; readonly name: string; readonly args: unknown }
   | { readonly kind: "toolResult"; readonly toolCallId: string; readonly output: string }
   | { readonly kind: "approvalRequest"; readonly toolCallId: string; readonly toolName: string; readonly tier: string }
+  | { readonly kind: "gatewayApprovalRequest"; readonly toolCallId: string; readonly toolName: string; readonly args: unknown }
   | { readonly kind: "usage"; readonly raw: unknown }
   | { readonly kind: "logEntry"; readonly level: string; readonly message: string }
   | { readonly kind: "tokenWarning"; readonly raw: unknown }
@@ -120,6 +121,8 @@ export type DomainOutbound = ChatRequest | CancelTurn | ApprovalResponseIntent |
 export const CHAT_TURN_VARIANTS = [
   "text", "thinking", "tool_use", "tool_result", "approval_request",
   "finish", "error", "usage", "log_entry", "token_warning",
+  // turn-bound 승인(requestId 보유, turn 이 응답 대기 — approval_request 와 동급, ChatPanel chunk 처리). codex S1.
+  "gateway_approval_request",
 ] as const;
 export const NONCHAT_KNOWN_VARIANTS = [
   "audio", "object", "panel_control", "panel_install_result",
@@ -127,7 +130,6 @@ export const NONCHAT_KNOWN_VARIANTS = [
   // shell agent_response 소비자 surface 전체에서 발견(uc1-variant-probe drift) — 비-chat, 해당 UC 에서 배선:
   "config_update",            // 설정 동기화
   "discord_message",          // UC10 discord
-  "gateway_approval_request", // gateway 레벨 승인(chat approval_request 와 별개)
   // BgmPlayer 소비(미디어/BGM UC) — 새 아키텍처선 router 단일구독이라 이들도 통과(PendingRouteSink):
   "bgm_youtube_fav_add", "bgm_youtube_fav_remove", "bgm_youtube_next",
   "bgm_youtube_pause", "bgm_youtube_play", "bgm_youtube_prev",
