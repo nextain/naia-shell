@@ -70,12 +70,12 @@ ChatService (implements ChatPort: startTurn/cancel/deliverChunk):
 | `StdioTransportAdapter` | AgentTransportPort | **변환 전담**(canon): `domain outbound→AgentOutbound(protocol)→wire JSON-line encode` / `wire→AgentMessage(protocol) decode`(domain 변환은 router). chat-request·cancel_stream·approval-response·creds 전 outbound. demux·라우팅 안 함(=MessageRouter). `send_to_agent_command`(stdin)+`agent_response`(stdout). ⚠️ **flat newline JSON 만**(agent 는 한 줄 곧바로 parseRequest). protocol-bridge StdioFrame v1=미사용 scaffold라 *보내지 않음*. gRPC=후속 어댑터(envelope 그때, AgentTransportPort 교체만). |
 | `MessageRouter` | (AgentTransportPort.onMessage 단일 구독) | **demux 라우터**: AgentMessage(protocol) 전 variant switch → chat-turn(requestId)→**domain ChatChunk 변환 후 `ChatPort.deliverChunk`**(ports 계약, ChatService 구현=domain, 소유권 필수 — adapter→ports canon) / 비-chat known→해당 semantic port(ToolPort 등; UC1 미배선=PendingRouteSink log+보류) / UnknownAgentMessage·소유권 없음→**DiagnosticSink(error+log, 소유권 불요)** (STRUCTURE:215~221 canon, app 은 demux/protocol 안 봄). ⇒ 18 variant + Unknown 전부 분기 도착=exhaustive 보장. transport(wire)와 분리=단일 수신경로·중복전달 방지. |
 | `GrpcTransportAdapter` (future) | AgentTransportPort | gRPC 다중클라이언트 — 어댑터 교체만(protocol 불변) |
-| `TauriChatBridge` | (ChatPort *의존/호출* — 구현 아님) | shell ChatPanel→`ChatPort.startTurn/cancel` 호출하는 **driving adapter**. ChatPort 구현자=app 의 ChatService(startTurn/cancel/deliverChunk). Bridge 는 invoke/event↔ChatPort 호출 번역만. |
+| `TauriChatBridge` | (ChatPort *의존/호출* — 구현 아님) | **outbound 전용 driving adapter**: shell ChatPanel `invoke`→`ChatPort.startTurn/cancel` 호출 + startTurn `onChunk`→shell 렌더(event) 전달. ⚠️ **agent stdout(`agent_response`) 수신은 Bridge 아님** = StdioTransportAdapter+MessageRouter 단일 경로(중복 구독 금지, R15). ChatPort 구현자=app 의 ChatService. |
 
 ## B.5 composition/ — `src/main/composition/` 단일 root, ChatPort+AppPort+AgentTransport(stdio) 주입.
 
 ## B.6 검증
-- **계약 테스트**: mock AgentTransport → ChatService 가 chunk(text/finish/error) 라우팅·ChatTurn 종결·**secret(apiKey 등) 미포함**(provider *선택*은 포함; secret만 creds_update). drift-gate.
+- **계약 테스트**: mock AgentTransport.onMessage 방출 → **MessageRouter demux → ChatService.deliverChunk**(ChatService 는 onMessage 직접 구독 안 함, R15) → chunk(text/finish/error) 라우팅·ChatTurn 종결. + send 시 **secret(apiKey/naiaKey) 미포함**(provider 선택은 포함; secret만 creds_update). drift-gate.
 - **Old-Baseline 등가**: 옛 흐름(send→stream→finish) 행동 등가(old-auth). transport-neutral DTO 가 stdio/gRPC 무관.
 - **승인 turn**: approvalRequest chunk → **ApprovalPort(F1).respond** 로 응답(ChatPort 아님). cancel = ChatPort.cancel(chat-stream 중단; e-stop=SafetyPort 별도).
 - **라이브 trace**(루크 머신): 실제 채팅 1턴(입력→스트리밍 응답).
