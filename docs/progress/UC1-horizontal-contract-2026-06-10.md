@@ -33,20 +33,21 @@
 ## B.2 ports/ (driven+driving)
 ```
 # ports/protocol — transport-neutral DTO (직렬화/프레이밍은 transport 어댑터만)
-ChatRequestPayload / ChatChunkPayload = { ...의미 구조, wire-framing 누출 금지 }   # ⚠️ domain VO(B.1)와 별 레이어: app 이 domain→Payload 매핑, adapter 가 Payload↔wire. send/deliver 경계타입=Payload(domain 아님)
+ChatRequestPayload / ChatChunkPayload = { ...의미 구조, wire-framing 누출 금지 }   # ⚠️ domain VO(B.1)와 별 레이어: app 이 domain→Payload 매핑, adapter 가 Payload↔wire
+AgentOutbound = **shell→agent 송신 protocol DTO union**(ChatRequestPayload | CancelPayload(cancel_stream) | ApprovalResponsePayload | CredsUpdatePayload ...). ⚠️ transport 는 payload-agnostic — 전 outbound 가 같은 send 경로. AgentMessage(수신)과 대칭.
 AgentMessage = **raw 디코드 union (SoT here)**. variant 집합 권위 = agent writeLine 출력(`agent/index.ts`) — wire 실집합(superset). shell `lib/types.ts AgentResponseChunk`=소비측 부분뷰(≠SoT). 소유=ports/protocol, 스키마=index.ts 출력 미러. 미지 variant 허용(=error 라우팅 대상).
 
 # AppPort = ChatPort + ToolPort *조립 facade* (재흡수 아님, canon)
 ChatPort:                                   # 대화 ingress (driving — shell이 호출)
     startTurn(req, onChunk): { handle: TurnHandle, sent: Promise<void> }   # ⚠️ 원자적 listen-then-send. **sent Promise = send reject 호출자 전파(baseline 등가)**; 추가로 onChunk(error)+구독/레지스트리 해제. handle=취소/소유, sent=발신 결과.
-    cancel(handle: TurnHandle): Promise<void> # cancel_stream (실행 중 중단). 비동기 — cancel 전송 실패도 reject 전파(send 등가)
+    cancel(handle: TurnHandle): Promise<void> # cancel_stream (실행 중 중단) = `AgentTransportPort.send(CancelPayload)`. 비동기 — 전송 실패 reject 전파(send 등가)
     deliverChunk(chunk: ChatChunk): void      # ⚠️ 수신 sink (driving-in, **ports 계약**) — router(B.4)가 chat-turn chunk 를 여기로. app 의 ChatService 가 *구현*(adapter→ports canon, 구상 직접의존 금지). requestId→onChunk 라우팅은 ownership 레지스트리.
     # approvalRequest chunk = ChatPort 가 *노출만*. 응답은 **ApprovalPort(F1, AppPort 밖 독립 control-plane)** 경유 — ChatPort 흡수 금지(canon, codex R2)
 TurnHandle = { requestId, clientId, unsubscribe }   # (startTurn 은 {handle, sent:Promise} 반환)   # 핸들(위조 방지 = 아래 레지스트리가 권위, 핸들 단독 아님)
   # ⚠️ ownership 레지스트리(ClientSessionPort/adapter): startTurn 시 requestId→clientId 등록 + **충돌 거부**(중복 requestId) + **모든 terminal(finish·cancel·error·send실패)** 시 해제(미해제=requestId 영구 점유). *(client lease 만료=ClientSessionPort UC10a 범위, 본 UC1 turn-terminal 아님 — baseline 은 chat-turn timeout 없음)*. legacy agent_response 엔 clientId 없으므로 *shell측 어댑터가 requestId→clientId 매핑 보유*. cancel/approval 권한 = 레지스트리 소유주만(타 client 차단)
 ToolPort:                                    # 툴 interaction (독립, UC5) — 별 계약
 AgentTransportPort:                          # driven — *순수 transport*(wire 책임만). demux·라우팅 안 함.
-    send(payload: ChatRequestPayload): Promise<void>   # protocol DTO 받음(domain 아님). stdio now / gRPC later. **rejection = 호출자에 전파**(baseline 등가)
+    send(payload: AgentOutbound): Promise<void>        # ⚠️ 전 outbound DTO union(chat-request·cancel_stream·approval-response·creds 등) — payload-agnostic. stdio now / gRPC later. **rejection = 호출자에 전파**(baseline 등가). cancel/approval 전송도 이 경로.
     onMessage(cb): Unsub                      # ⚠️ cb 는 **raw `AgentMessage` union 전 variant**(R4). **단일 구독자=MessageRouter**(B.4) — 여러 곳 구독 금지(중복전달 방지)
 ClientSessionPort:                           # 다중 클라이언트 신원·owner·lease(UC10a). chunk 라우팅 = (clientId, requestId). UC1=단일 owner 등록(ID 충돌 방지)
 # MessageRouter (adapters/, AgentTransportPort.onMessage 단일 구독): AgentMessage demux → 각 semantic port(ChatPort.deliverChunk 등). transport(wire)와 분리된 별 컴포넌트(중복전달·구독주체 모호 제거)
