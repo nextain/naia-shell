@@ -24,3 +24,15 @@ export function wireControlPlaneTauri(): ControlPlaneBoot {
 export function wireControlPlane(ports: ControlPlanePorts): ControlPlaneBoot {
   return new ControlPlaneBoot(ports);
 }
+
+// ── F1 슬라이스 (자기상태/진단 + 승인) ──
+import { StatusReporter } from "../app/control/status.js";
+import { ApprovalGate } from "../app/control/approval.js";
+import { tauriInteroceptive, agentWireApproval, configGrant } from "../adapters/tauri/f1.js";
+
+export function wireStatusReporterTauri(): StatusReporter {
+  return new StatusReporter(tauriInteroceptive);
+}
+export function wireApprovalGateTauri(): ApprovalGate {
+  return new ApprovalGate({ approval: agentWireApproval, grant: configGrant });
+}
