@@ -42,20 +42,28 @@
 
 - 구조 v5: **적대 리뷰 ~20라운드** 수렴(codex·gemini).
 - 시나리오: **완전성 13라운드, 3연속 무발견** → 초안 46 → **S01~S71**. 코드 대조로 **60+ OpenClaw 스킬** 등 누락 19개 발굴.
-- 테스트맵/요구사항: 각 13R/8R, gemini 다수 연속 PASS.
-- → "눈으로 통과 못 시킬 양"을 AI 코드대조로 닫음.
+- 테스트맵/요구사항: 각 13R/8R.
+- F0 실행: **baseline 14R + 계약 14R, 각 2연속 NONE**. → "눈으로 통과 못 시킬 양"을 AI 코드대조로 닫음.
+
+## 6b. 실행이 입증한 것 — 코드근거 리뷰가 잡은 것 (핵심 데모)
+
+> 단일 AI가 자기 산출물을 자기가 통과시키면 "가짜 성공". **독립 AI(codex)가 *실제 코드를 직독*해 매 라운드 사실오류를 잡았다** — 이게 방법론의 증거.
+
+- **F0 baseline**: 팬텀 커맨드(`check_naia_settings`=실호출 0) 제외 · 누락 커맨드(`write_naia_path_cache`·`store_startup_message`·`send_to_agent_command`) 보강 · "workspace-root 오류=차단"→실제 **contain+fallback** 정정 · secret-strip 변환 누락 발견.
+- **F0 계약**: I/O를 domain서 추방 · app이 storage 직접 접근→포트 경유(app→ports) · setup config **merge가 아닌 reset/replace** · plain vs secrets read 분리(무키 경계) · **React 비동기 렌더-타이밍은 계약 비결속**으로 *바운드*(이식=결정적 부팅, race 복제가 목표 아님).
+- **공통 원리**: 적대 리뷰는 무한 하드닝 위험 → *경계를 명시*(deferred·언어중립·타이밍 비결속)해 **수렴**시킴.
 
 ## 7. 현재 위치 — 정직하게
 
-- **계획 완료 + F0 실행 착수.** F0 Old-Baseline = **코드레벨 CLOSED**(codex 코드 직독 14R, 2연속 NONE).
-- F0 부팅 커맨드 인벤토리 확정 — secret-strip 변환·config 조건부 전송·팬텀 커맨드 제외까지 코드 근거로 정밀화(눈으로 못 잡는 것을 코드대조가 잡음).
-- **아직 코드 이식 0**(baseline=계약 문서). 라이브 trace(timing·실 I/O)=루크 머신 구동 시. 다음 두께 = 첫 슬라이스 스캐폴드.
+- **F0 = CLOSED**(baseline+계약 둘 다 2연속 NONE). **F1 = 작성·R1 정정**(2클린 전). **F2·F3 = 초안**.
+- F1 = 자기상태/진단(정직 degradation: *키 저장됨 ≠ 실제 연결됨*) + 승인 결속. F2 = host-system 관측+drift. F3 = 승인먼저 mutate + reafference(commanded→ack→observed→mismatch) + 불확정 정직 abort.
+- **코드 이식은 0** — 전부 *계약 문서*. 정직하게: 지금 단계는 "측정+계약"이고, 코드/툴체인은 다음.
+- (현재 codex 사용량 한도로 F1~F3 일괄 리뷰 대기 중 — 외부 자원 제약, 리셋 후 재개.)
 
 ## 8. 다음 / 기여 포인트
 
-- **F0 슬라이스 스캐폴드**: baseline(계약) → new-naia-os `src/main` 헥사고날 골격(domain/ports/adapters/app) → 계약 테스트. 라이브 trace 게이트 후 행동 등가 선언.
-- 그 다음 F1(자기상태/진단) → F2(관측) → F3(조작).
-- 기여 가능 영역: (실행 시 채움 — vertical별 slice 이식, per-skill 검증 등).
+- F1~F3 codex 일괄 2클린 → **툴체인 결정** → `src/main` 헥사고날 스캐폴드 → 계약 테스트 → 라이브 trace(루크 머신) 후 행동 등가.
+- 기여 가능 영역: vertical별 slice 이식 · per-skill 검증 · sensory/app-surface tranche.
 
 ---
-> 갱신 로그: 06 실행 착수 시 §6·§7·§8 갱신.
+> 갱신 로그: F0 CLOSED·F1~F3 계약 단계 반영(§6·6b·7·8). 다음 갱신 = 일괄 리뷰 후 + 스캐폴드 착수 시.
