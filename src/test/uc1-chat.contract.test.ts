@@ -9,7 +9,7 @@ import {
 import { ChatService } from "../main/app/chat/chat-service.js";
 import { InMemoryClientSession } from "../main/app/chat/client-session.js";
 import { MessageRouter } from "../main/adapters/message-router.js";
-import { toAgentOutbound, decodeAgentMessage, encodeWire } from "../main/adapters/tauri/uc1.js";
+import { toAgentOutbound, decodeAgentMessage, encodeWire, makeLiveStdioTransport, type LiveTransportDeps } from "../main/adapters/tauri/uc1.js";
 import type {
   AgentMessage, AgentTransportPort, Unsub,
   PendingRouteSink, DiagnosticSink,
@@ -99,6 +99,57 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
     expect(decodeAgentMessage('{"type":"text","requestId":"r1","text":"hi"}').type).toBe("text");
     expect(decodeAgentMessage("not json").type).toBe("__malformed__");
     expect(decodeAgentMessage('{"text":"no type"}').type).toBe("__malformed__");
+  });
+});
+
+describe("라이브 StdioTransportAdapter (주입형, Tauri 경계 — 앱 무접촉)", () => {
+  function mockDeps() {
+    const calls: { cmd: string; args: Record<string, unknown> }[] = [];
+    let listener: ((payload: unknown) => void) | null = null;
+    let unlistened = false;
+    const deps: LiveTransportDeps = {
+      async invoke(cmd, args) { calls.push({ cmd, args }); return undefined; },
+      async listen(_event, cb) { listener = cb; return () => { unlistened = true; listener = null; }; },
+    };
+    return { deps, calls, emit: (p: unknown) => listener?.(p), wasUnlistened: () => unlistened, hasListener: () => listener !== null };
+  }
+  it("chat_request → send_to_agent_command({message: JSON})", async () => {
+    const { deps, calls } = mockDeps();
+    await makeLiveStdioTransport(deps).send(req());
+    expect(calls[0]?.cmd).toBe("send_to_agent_command");
+    const msg = JSON.parse(calls[0]!.args["message"] as string);
+    expect(msg.type).toBe("chat_request");
+    expect(msg.requestId).toBe("r1");
+  });
+  it("cancel → 별 command cancel_stream({requestId})", async () => {
+    const { deps, calls } = mockDeps();
+    await makeLiveStdioTransport(deps).send({ kind: "cancel", requestId: "r1", clientId: "c1" });
+    expect(calls[0]).toEqual({ cmd: "cancel_stream", args: { requestId: "r1" } });
+  });
+  it("approval_response → send_to_agent_command(stdin)", async () => {
+    const { deps, calls } = mockDeps();
+    await makeLiveStdioTransport(deps).send({ kind: "approvalResponse", requestId: "r1", clientId: "c1", toolCallId: "t", decision: "approve" });
+    expect(calls[0]?.cmd).toBe("send_to_agent_command");
+    expect(JSON.parse(calls[0]!.args["message"] as string).type).toBe("approval_response");
+  });
+  it("send rejection 전파(invoke throw)", async () => {
+    const deps: LiveTransportDeps = { invoke: async () => { throw new Error("invoke fail"); }, listen: async () => () => {} };
+    await expect(makeLiveStdioTransport(deps).send(req())).rejects.toThrow("invoke fail");
+  });
+  it("agent_response(JSON 문자열) → decodeAgentMessage → cb", async () => {
+    const { deps, emit } = mockDeps();
+    const got: AgentMessage[] = [];
+    makeLiveStdioTransport(deps).onMessage((m) => got.push(m));
+    await Promise.resolve(); // listen resolve 대기
+    emit('{"type":"text","requestId":"r1","text":"hi"}');
+    expect(got[0]?.type).toBe("text");
+  });
+  it("unsub 가 listen resolve 전 호출돼도 정리(경쟁 처리)", async () => {
+    const { deps, wasUnlistened } = mockDeps();
+    const unsub = makeLiveStdioTransport(deps).onMessage(() => {});
+    unsub(); // listen resolve 전 즉시 호출
+    await Promise.resolve(); await Promise.resolve();
+    expect(wasUnlistened()).toBe(true); // resolve 후 자동 unlisten
   });
 });
 

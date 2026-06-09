@@ -29,6 +29,19 @@
 2. **계약 테스트**: 이미 green(94/94).
 3. **통합 reafference**: 실제 1턴 trace(입력→스트리밍→finish) 관측.
 
+## 4.1 ✅ 라이브 배선 실제 결합 (baseline 실측 — 계약이 추상화했던 부분, 라이브가 표면화)
+shell→rust hop = **타입별 별도 Tauri command**(계약 §A "stdin JSON-line"은 rust→agent hop 얘기):
+| outbound | shell invoke command | 인자 |
+|---|---|---|
+| chat_request | `send_to_agent_command` | `{ message: JSON.stringify(payload) }` |
+| approval_response | `send_to_agent_command` | `{ message: JSON.stringify(payload) }` |
+| creds_update | `send_to_agent_command` | `{ message: ... }` (App.tsx:566) |
+| cancel | **`cancel_stream`** (별 command) | `{ requestId }` |
+| 수신 | `listen<string>("agent_response")` | payload = **JSON 문자열** → decodeAgentMessage |
+
+→ `makeLiveStdioTransport(LiveTransportDeps)` 구현 완료(주입형, F0 makeF0LiveAdapters 패턴). Tauri invoke/listen 을 shell-edge 가 주입 = 어댑터 로직 실제이되 앱 무접촉 mock 테스트(6건 green). `wireChatUC1({ live })` 로 라이브 주입.
+- ⚠️ **approval decision 불일치**: baseline = `once|always|reject`(3), 계약 DomainOutbound = `approve|reject`(2). UC1 기본 chat 은 승인 미발생이라 범위 밖 — **승인 배선 UC(UC5)에서 once/always/reject 로 정정** 필요.
+
 ## 5. 미해결/주의
 - StdioTransportAdapter 실 send/onMessage = `@tauri-apps/api` 필요(new-naia-os 는 현재 node TS — Tauri 의존 추가 or shell 편입 시점에).
 - requestId 고유성 불변식(§B.4.1) = 라이브에서도 baseline 이 보장(매 send UUID). 위반 시 레지스트리 충돌거부가 1차 방어.

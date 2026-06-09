@@ -55,7 +55,7 @@ export function decodeAgentMessage(line: string): AgentMessage {
   }
 }
 
-/** 라이브 stdio 어댑터 — send/onMessage 는 Tauri invoke/event 배선 대기. */
+/** 라이브 stdio 어댑터 — send/onMessage 는 Tauri invoke/event 배선 대기(주입형 makeLiveStdioTransport 사용 시 실동작). */
 export const stdioTransport: AgentTransportPort = {
   async send(out: DomainOutbound): Promise<void> {
     const _wire = encodeWire(toAgentOutbound(out)); // 변환은 준비됨; 전송 배선 대기
@@ -66,3 +66,46 @@ export const stdioTransport: AgentTransportPort = {
     throw new NotWired("listen('agent_response')");
   },
 };
+
+/**
+ * Tauri 경계 주입 — shell-edge 가 `@tauri-apps/api` invoke/listen 을 주입(F0 makeF0LiveAdapters 패턴).
+ * 이렇게 어댑터 로직은 실제이되 Tauri 런타임 없이 mock 으로 검증 가능(앱 무접촉).
+ */
+export interface LiveTransportDeps {
+  /** Tauri invoke. rejection 전파(baseline 등가). */
+  invoke(cmd: string, args: Record<string, unknown>): Promise<unknown>;
+  /** Tauri listen — unlisten 함수를 Promise 로 반환(비동기). payload = event.payload. */
+  listen(event: string, cb: (payload: unknown) => void): Promise<() => void>;
+}
+
+/**
+ * 라이브 StdioTransportAdapter. ⚠️ shell→rust hop = **타입별 별도 Tauri command**(baseline 실측):
+ *  - chat_request·approval_response·creds_update → `send_to_agent_command`({message: JSON})
+ *  - cancel_stream → `cancel_stream`({requestId})  (별 command)
+ *  - 수신 `agent_response` payload = JSON 문자열 → decodeAgentMessage.
+ */
+export function makeLiveStdioTransport(deps: LiveTransportDeps): AgentTransportPort {
+  return {
+    async send(out: DomainOutbound): Promise<void> {
+      const payload = toAgentOutbound(out);
+      if (payload.type === "cancel_stream") {
+        await deps.invoke("cancel_stream", { requestId: payload.requestId });
+        return;
+      }
+      // chat_request·approval_response·creds_update = stdin JSON-line(send_to_agent_command)
+      await deps.invoke("send_to_agent_command", { message: JSON.stringify(payload) });
+    },
+    onMessage(cb: (m: AgentMessage) => void): Unsub {
+      // listen 은 async — unsub 가 listen resolve 전에 호출될 경쟁 처리(즉시 dispose 플래그).
+      let unlisten: (() => void) | null = null;
+      let disposed = false;
+      void deps
+        .listen("agent_response", (payload) => {
+          const raw = typeof payload === "string" ? payload : JSON.stringify(payload);
+          cb(decodeAgentMessage(raw));
+        })
+        .then((u) => { if (disposed) u(); else unlisten = u; });
+      return () => { disposed = true; unlisten?.(); unlisten = null; };
+    },
+  };
+}
