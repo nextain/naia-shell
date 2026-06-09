@@ -15,7 +15,7 @@
 | **03** | 시나리오 P01 | 개발 기능 전수 enumerate(검증여부 무관) → S01~S71 + 그룹. **코드 대조로 60+ OpenClaw 스킬 등 누락 19개 발견** | 완전성 13R, **3연속 NONE** | [user-scenarios.md](./user-scenarios.md) | ✅ |
 | **04** | 테스트맵 P02 | 검증 3단(Old-Baseline golden trace→계약→통합 reafference) · fault disposition · 오류 2직교축 | 13R, gemini 7×PASS·codex 바운드 | [user-scenarios.md](./user-scenarios.md) (P02 섹션) | ✅ |
 | **05** | 요구사항 P03 | foundation tranche FR(F0~F3) + 횡단 NFR + 승인-행위 결속·provenance 인과체인 | 8R, gemini 6×PASS·codex 바운드 | [requirements.md](./requirements.md) | ✅ |
-| **06** | 실행 F0~ | Old-Baseline 측정(로컬·외부키X) → 슬라이스 이식(F0→F1→F2→F3) → P04 통합테스트 → P05 완료 | F0 baseline codex 14R·R13/R14 2연속 NONE | [F0-baseline](./progress/F0-baseline-2026-06-09.md) | ⏳ 진행(F0 baseline ✅ CLOSED·코드레벨, 라이브 trace=루크) |
+| **06** | 실행 F0~ | Old-Baseline 측정(로컬·외부키X) → 슬라이스 이식(F0→F1→F2→F3) → P04 통합테스트 → P05 완료 | F0 baseline codex 14R·R13/R14 2연속 NONE | F0 [baseline](./progress/F0-baseline-2026-06-09.md)·[contract](./progress/F0-contract-2026-06-09.md) | ⏳ 진행(F0 baseline ✅+contract ✅ 2클린, 다음=툴체인 결정→스캐폴드) |
 
 ## 왜 이 순서
 
@@ -28,4 +28,5 @@
 - foundation tranche 순서(F0→…) = **아이디어 수준 잠정**(우선 적어둔 것, 실행 시 재검토 — 못 박지 않음). G1 = 게이트 아님.
 - botmadang(S65) = **rejected**(이식 제외, 명확 결정).
 - **F0 Old-Baseline = 코드레벨 CLOSED**(2026-06-09, codex 14R 2연속 NONE). 부팅 커맨드 인벤토리 확정. 라이브 trace(timing·실 I/O)=루크 머신 구동 시.
-- **다음 = F0 슬라이스 스캐폴드**(new-naia-os `src/main` 에 control-plane/config 헥사고날 골격 이식 — baseline=계약). 행동 등가 선언은 라이브 trace 게이트 후.
+- **F0 포트 계약 = CLOSED**(2026-06-09, codex 14R 2연속 NONE). baseline→헥사고날 레이어 매핑 동결(domain VO·ports·app/control·adapters·composition).
+- **다음 = 툴체인 결정(루크, 헌장 F13)** → 코드 스캐폴드(`src/main/`). new-naia-os 엔 아직 package.json/tsconfig 없음 — 코드화 전 런타임/언어 결정 필요.
