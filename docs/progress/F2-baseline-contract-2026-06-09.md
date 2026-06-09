@@ -1,6 +1,6 @@
 # F2 — host-system read-only 관측 (baseline + 포트 계약, 2026-06-09)
 
-> 06 실행 4단계 = F2 슬라이스. **상태: 초안**(codex 리뷰 = 사용량 한도 리셋 후 일괄 — clean 미선언). **범위(FR-F2)**: host-system **read-only 관측**(파일·프로세스 상태 조회, 변경 X) — 권한 밖 경로 거부·미지원 환경 정직 보고 + **외부 간섭 drift 감지**(observed vs expected; expected 권위 우선 = 선언적 목표상태 > 마지막 승인 의도 > 직전 관측 스냅샷). UC7a / S33·S34(read). EnvironmentPort observe.
+> 06 실행 4단계 = F2 슬라이스. **상태: gemini 2연속 클린 (codex 풀 재독 최종게이트 리셋후 대기)**(codex 리뷰 = 사용량 한도 리셋 후 일괄 — clean 미선언). **범위(FR-F2)**: host-system **read-only 관측**(파일·프로세스 상태 조회, 변경 X) — 권한 밖 경로 거부·미지원 환경 정직 보고 + **외부 간섭 drift 감지**(observed vs expected; expected 권위 우선 = 선언적 목표상태 > 마지막 승인 의도 > 직전 관측 스냅샷). UC7a / S33·S34(read). EnvironmentPort observe.
 > 구성/규칙 = F1 문서와 동일(§A baseline + §B 계약; STRUCTURE.md 171~297 레이어; 언어/툴체인 미정; F2=control-plane 인접 환경 관측, 인지 0).
 > ⚠️ **sensory(audio/vision)는 F2 범위 밖**: capture(vision)·voice STT 등 SensoryPort = 외부키/voice 의존 → 후속 sensory tranche. F2 = host-system 환경 관측만.
 

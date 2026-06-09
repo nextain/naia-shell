@@ -1,5 +1,6 @@
 # F1 — 자기상태/진단 + 승인 최소계약 (baseline + 포트 계약, 2026-06-09)
 
+> **상태: gemini 2연속 클린** (codex 최종게이트 리셋후 대기).
 > 06 실행 3단계 = F1 슬라이스. **범위(FR-F1.1~1.4)**: ① InteroceptivePort = naia 자기상태 read-only 관측·**정직** 보고(system-status·diagnostics·device·degradation) ② ApprovalPort 최소계약 **선잠금**(F3 전 확정) + FR-F1.4 승인-세션 결속. UC11·UC14·UC13 / S09·S10·S11·S12·S44·S12a.
 > 구성 = §A Old-Baseline(코드 도출, 동결 입력) + §B 포트 계약(헥사고날 매핑). 레이어 규칙 = STRUCTURE.md 171~297(F0 계약과 동일: `adapters→ports→domain`·`app→ports`·protocol 중립·단일 composition).
 > ⚠️ 언어/툴체인 미확정(F0 §6과 동일) — 시그니처 언어중립. F1 = **control-plane**(인지 0; Interoception=시스템 내수용, 인지 아님).
