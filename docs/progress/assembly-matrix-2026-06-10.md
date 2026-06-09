@@ -27,7 +27,7 @@
 | H-client | `ClientSessionPort` | 다중 클라이언트 신원·lease·arbitration | △ | 보충 | scenario | pending(UC10a) |
 | H-safety | `SafetyPort` | e-stop·lease revoke·강등(reactive) | △ | 보충 | scenario | pending(UC13a) |
 | H-app | `AppPort`(=ChatPort+ToolPort *조립 facade*, 재흡수 아님) | facade | △ | 보충 | scenario | pending |
-| H-chat | `ChatPort` | 대화 ingress(독립) | △직접호출 | 보충 | scenario | pending(UC1) |
+| H-chat | `ChatPort` | 대화 ingress(독립) | O transport동작·**추상화 없음**(shell↔Tauri 직결) | 이식(흐름)+보충(추상화) | old-auth(흐름) | pending(UC1) |
 | H-tool | `ToolPort` | 툴 interaction(독립) | △직접호출 | 보충 | scenario | pending(UC5) |
 | H-sensory | `SensoryPort` | 감각(audio/vision/screen) | O(부분) | 이식+보충 | mixed | pending(UC2/61) |
 | H-intero | `InteroceptivePort` | 내수용(시스템 상태) | O | 이식 | old | **F1 계약+코드** |
@@ -37,7 +37,7 @@
 | H-proprio | `ProprioceptivePort` | 고유수용(자세·관절·self/body model) | △ | 보충 | scenario | pending(2단계·로봇) |
 | H-action | `ActionPort` | 행위(body 이동·조작·파지) | △ | 보충 | scenario | pending(2단계·로봇) |
 | H-cron | `CronPort` | temporal 작업 스케줄 | △(미빌드) | 보충 | scenario | pending(2단계) |
-| **H-agent** | **agent(brain)↔os 연결** | 위 포트들이 agent로 닿는 seam | **△ 제대로 연결된 적 없음** | **보충** | **scenario** | **pending(핵심 리스크)** |
+| **H-agent** | **agent(brain)↔os 연결** | stdio JSON-line(send_to_agent_command↔agent_response) | **기본 chat=O 동작(이식)**; 깊은 통합(memory/context)=보충 | 이식(chat I/O)+보충(deep) | old-auth(chat)/scenario(deep) | chat 동작·**ChatPort 추상화 없음** |
 
 > ⚠️ v1처럼 "protocol→AppPort 단일경로"로 좁히지 않음. AppPort=Chat/Tool 하나일 뿐, 나머지 포트는 독립(canon: Sensory·Interoceptive·**Proprioceptive**·Chat·Express·Environment·**Action**·Approval·ClientSession·Safety·Cron). 다중 클라이언트=H-client. (GLM 3차: Proprioceptive·Action·Cron 누락 정정.)
 
@@ -47,7 +47,7 @@
 
 | UC | 이식/보충 | 주 인지포트 | 권위 | slice/상태 |
 |---|---|---|---|---|
-| **UC1** 텍스트대화 | 이식+보충 | Chat→agent→Express | mixed | ↓ 상세 |
+| **UC1** 텍스트대화 | **이식**(채팅 동작)+보충(ChatPort 추상화) | Chat→agent→Express | old-auth(흐름) | ↓ 상세 |
 | UC2 음성대화 | 이식+보충 | Sensory→…→Express(avatar) | mixed(외부키) | pending(후속 tranche) |
 | UC3 기억대화 | **보충** | Chat+memory | scenario | pending(naia-memory 트랙) |
 | UC4 능동회상 | **보충** | memory+temporal | scenario | pending |
@@ -71,13 +71,16 @@
 | # | 조각(S) | old | 이식/보충 | 인지 포트 | fit | 권위 | 상태 |
 |---|---|---|---|---|---|---|---|
 | U1.1 | S13 채팅 입력 UI | O(shell) | 이식 | ChatPort(ingress) | 미평가 | old-auth | pending |
-| U1.2 | LLM 사고/추론 | △ agent 미연결 | **보충** | agent(brain) via H-app/H-agent | 미평가 | scenario-auth | pending(H-agent 의존) |
+| U1.2 | LLM 사고/추론 | **O 동작**(shell→stdio→agent→provider.chat 스트리밍) | 이식(흐름)+보충(ChatPort 추상화) | agent(brain) via H-chat/H-app | 미평가 | old-auth(흐름 동작) | pending |
 | U1.3a | 응답 *텍스트 표시* UI | O(shell) | 이식 | (shell 렌더) ← Express 출력 소비 | 미평가 | old-auth | pending |
 | U1.3b | 응답 *speech-intent* | △ | **보충** | ExpressionPort(embodiment-neutral) | 미평가 | scenario-auth | pending |
 | U1.4 | S62 @멘션 파일선택 | O(shell) | 이식 | ChatPort + EnvironmentPort observe | 미평가 | old-auth | pending |
 | U1.5 | S70 파일 deeplink (UC1/UC7 공유) | O(shell) | 이식 | ChatPort + EnvironmentPort **app-surface 행위**(패널 open/전환) | 미평가 | old-auth | pending |
 | U1.6a | S03 provider 설정 UI (UC12 공유) | O | 이식 | control-plane/config | 미평가 | old-auth | pending(F0 인접, 미측정) |
-| U1.6b | S03 provider→agent 연결/검증 | △ | **보충** | H-agent | 미평가 | scenario-auth | pending |
+| U1.6b | S03 provider→agent 연결/검증 | O 동작(creds_update·chat_request provider) | 이식 | control-plane→agent | 미평가 | old-auth | pending |
+
+
+> **UC1 grounding (2026-06-10, Explore 실코드):** 옛 앱 채팅 *동작함* — `ChatPanel→chat-service.sendChatMessage→invoke("send_to_agent_command")→stdio→agent index.ts handleChatRequest→provider.chat() 스트리밍→"agent_response" event→handleChunk`. transport=**stdio JSON-line**(gRPC 0). DTO=`protocol.ts` ChatRequest/AgentResponseChunk(이식 가능). **ChatPort/AppPort 추상화 없음**(shell↔transport 직결)=보충. 루크 "agent 미연결"=memory/깊은통합(UC3+)이지 *기본 chat 아님*. → **UC1 수평 = 동작하는 흐름을 ChatPort/protocol(transport-neutral)로 *재표현*(이식) + gRPC=어댑터 교체**. scenario-auth 아님(old 동작 기준).
 
 **UC1 착수**: 수평 H-proto·H-tx·H-app·**H-agent** 먼저(agent 연결 *제대로*) → U1.1→U1.2→U1.3a/b 재표현 엮기 → mismatch=표면화(우김 금지) → U1.4~U1.6.
 
