@@ -31,6 +31,11 @@
 - 의의: Option A 의 헤드리스 부분이 **라이브 paste 없이 실제 drift 1건을 잡음**(= f0-boot-probe 처럼). 라이브 paste 는 동적 추가 확인용.
 - **🔎 추가 정정(codex S1)**: `gateway_approval_request`(requestId 보유·ChatPanel chunk 처리=turn-bound 승인)를 nonchat 으로 오분류 → 보류 시 turn 끊김. **chat-turn 으로 이동**(approval_request 동급) + ChatChunk `gatewayApprovalRequest` kind 추가. 최종 분류 = 11 chat-turn + 19 nonchat-known(=30). audio 는 codex 미지적(UC1=텍스트라 voice UC 보류 의도 수용).
 
+## 3.2 ✅ Option C 진행(헤드리스 trace, 라이브 admin 무접촉)
+- `child-stdio` transport 어댑터(순수, LineIO 추상) — 직접 agent stdin/stdout(Tauri command 분리 없이 전부 writeLine, agent readline 이 type 분기). mock LineIO 테스트 4건.
+- `uc1-trace-harness.mjs` — 새 core(dist)를 **실 child_process stdio** 로 구동. fake agent(chat_request→text+usage+finish 에코)로 **1턴 end-to-end PASS**(송신→스트리밍→렌더 순서→finish 해제, exit 0). **mock 아닌 실 process/stdio 통합** 입증.
+- 실 frozen agent 로 전환 = `AGENT_CMD="node ../old-naia-os/agent/dist/index.js --stdio"`(단 agent dist 빌드=frozen 트리에 artifact + LLM provider 필요 → 루크 결정). Tauri GUI 대신 Node child_process라 라이브 admin 무접촉.
+
 ## 4. 검증 게이트 (P02 3-tier)
 1. **Old-Baseline 등가**: 라이브 wire(JSON-line) 캡처 ↔ adapter encode/decode 바이트 등가(drift-gate).
 2. **계약 테스트**: 이미 green(94/94).
