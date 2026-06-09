@@ -1,0 +1,16 @@
+{
+  "name": "new-naia-os",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "naia-os hexagonal transplant — F0 control-plane slice scaffold",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run src/test/*.test.ts",
+    "test:watch": "vitest src/test/*.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
