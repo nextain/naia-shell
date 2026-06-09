@@ -11,8 +11,8 @@
 | **FR-F1.1** | naia 가 **자기 상태 read-only 관측·정직 보고**(system-status·diagnostics·device·설정/연결 degradation) — 오보 금지 | UC11·S09·S10·S11·S44·S12a | InteroceptivePort 계약 + 정직성 |
 | **FR-F1.2** | **ApprovalPort 최소계약 선잠금**(승인부재·거부·만료·중복·승인후 컨텍스트변경) — F3 전 확정 | UC13·S12 | ApprovalPort 계약 + 상태전이 trace |
 | **FR-F1.3** | 자기상태/승인 실패가 **planning·route·skill 선택을 오염시키지 않음**(downstream contamination 차단) | (횡단) | 통합 contamination 테스트 |
-| **FR-F1.4** | **승인-세션 최소 결속**(request/session/context/correlation binding) — ClientSessionPort lease 전체는 DEFER 이나 *최소 binding subset 은 지금*(승인↔실행 묶음 전제) | UC13·UC10a(min) | binding 계약 |
-| **FR-F2** | host-system **read-only 관측**(파일·프로세스 상태 조회, 변경 X) — 권한 밖 경로 거부·미지원 환경 정직 보고. **외부 간섭 drift 감지**(observed vs expected state) | UC7a·S33/S34(read) | EnvironmentPort observe + negative + drift |
+| **FR-F1.4** | **승인-세션 최소 결속** — *필수*: `correlation id`(승인↔실행↔결과 동일) + 승인-실행 *동일 session·context*; *불변식*: 다른 session/context 의 승인으로 실행 불가. (lease 전체=DEFER, 이 subset 만 지금) | UC13·UC10a(min) | binding 계약 |
+| **FR-F2** | host-system **read-only 관측**(파일·프로세스 상태 조회, 변경 X) — 권한 밖 경로 거부·미지원 환경 정직 보고. **외부 간섭 drift 감지**(observed vs expected; **expected 권위 = 직전 관측 스냅샷(read drift) / 마지막 승인 의도(post-action) / 선언적 목표상태 중 명시**) | UC7a·S33/S34(read) | EnvironmentPort observe + negative + drift |
 | **FR-F3.1** | **승인 → host-system mutating**(파일 편집·명령 실행) — 승인 경로 *먼저*, 그 위에 변경 | UC13→UC7·S07·S12 | ApprovalPort+EnvironmentPort mutate |
 | **FR-F3.2** | mutating 결과 **reafference**(`commanded→acknowledged→observed→mismatch`) — 의도/실행/실제 분리 | UC7(reafference) | 통합 reafference 테스트 |
 | **FR-F3.3** | negative(exit-block): 승인거부·권한부족→차단; **mutation 불확정 상태 전체 처리** — timeout·interrupt/cancel·partial(side-effect unknown)·post-approval context drift·acknowledged-but-not-observed → 각 결과 미확정 정직 보고 + disposition(↓) | UC7 negative | negative + uncertain-state |
@@ -26,8 +26,8 @@
 | **NFR-determinism** | 계약 드리프트 = **0토큰 결정론 게이트**(conform-gate) + drift-gate. **trivial 정의(정규화 제외)** = timestamp·PID·랜덤·임시경로·실행순서 비결정성; 그 외 의미 상태/출력 차 = FAIL | conform-scan |
 | **NFR-substrate-agnostic** | 포트는 **embodiment/dimension/host-neutral**(뇌는 substrate 모름) — 의도/관측만 | brain/body/OS |
 | **NFR-efferent-async** | 출력 3축(Express/Action/Environment) = **async + interruption + reafference**, 동기 가정 하드코딩 금지 | efferent 계약 원칙 |
-| **NFR-provenance** | 모든 event 에 actor/client id + 귀속 body·env + execution correlation id(+ reafferent backlink). **인과 연속성**: 승인↔실행↔결과↔보고 원자 체인 + `commanded→ack→observed` causal continuity(이벤트는 찍혔는데 체인 끊김 = FAIL) | provenance 불변식 |
-| **NFR-error-model** | **canonical error model**: 2직교축(오류-유형×민감-도메인) + blocking/non-blocking + uncertainty(확정/미확정) + retryability + contamination projection — 포트 공통 | 오류 분류 |
+| **NFR-provenance** | 모든 event 에 actor/client id + 귀속 body·env + execution correlation id(+ reafferent backlink). **인과 연속성(조건부)**: *승인된 행위 event* 는 승인↔실행↔결과↔보고 원자 체인 + `commanded→ack→observed` 필수(체인 끊김=FAIL). *read-only/bootstrap(F0/F1/F2)* 비승인 event 는 actor+correlation 만(원자 체인 불요) | provenance 불변식 |
+| **NFR-error-model** | **canonical error model**: 2직교축(오류-유형×민감-도메인) + blocking/non-blocking + uncertainty + retryability + contamination projection — 포트 공통. **error surface 는 disposition(contain/degrade/block/abort) 필드 노출 필수**(P04 출력 계약 검증 가능) | 오류 분류·disposition |
 | **NFR-port-canon** | 포트별 **canonical shape + versioning + backward-compat + error-surface stability**(P04 계약검증 가능하게) | port canon |
 | **NFR-transparency** | 상태 보고에 **timestamp + latency(신선도)** — async efferent 와 맞물려 데이터 신선도 확인 | observability |
 | **NFR-baseline** | golden trace 행동 등가; **측정불가/깨짐 ≠ baseline → 격리/면제 목록**(자격: old 본래 부재 시만; 작동상실=regression) | P02 검증 |
