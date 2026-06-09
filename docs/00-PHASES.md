@@ -28,5 +28,8 @@
 - foundation tranche 순서(F0→…) = **아이디어 수준 잠정**(우선 적어둔 것, 실행 시 재검토 — 못 박지 않음). G1 = 게이트 아님.
 - botmadang(S65) = **rejected**(이식 제외, 명확 결정).
 - **F0 Old-Baseline = 코드레벨 CLOSED**(2026-06-09, codex 14R 2연속 NONE). 부팅 커맨드 인벤토리 확정. 라이브 trace(timing·실 I/O)=루크 머신 구동 시.
-- **F0 포트 계약 = CLOSED**(2026-06-09, codex 14R 2연속 NONE). baseline→헥사고날 레이어 매핑 동결(domain VO·ports·app/control·adapters·composition).
-- **다음 = 툴체인 결정(루크, 헌장 F13)** → 코드 스캐폴드(`src/main/`). new-naia-os 엔 아직 package.json/tsconfig 없음 — 코드화 전 런타임/언어 결정 필요.
+- **F0 포트 계약 = CLOSED**(2026-06-09, codex 14R 2연속 NONE). baseline→헥사고날 레이어 매핑 동결.
+- **루크 결정(2026-06-09)**: 툴체인/스캐폴드보다 **F1~F3 포트 계약 먼저**(설계 두텁게, 런타임 커밋 보류).
+- **F1**(자기상태/진단 InteroceptivePort + 승인 ApprovalPort, FR-F1.1~1.4) = baseline+계약 작성, **F1-R1 정정 커밋**(아직 2클린 전).
+- **F2**(host-system 관측 EnvironmentObservePort + drift, FR-F2) · **F3**(승인→mutate + reafference + 불확정, FR-F3.1~3.3) = **초안 커밋**(clean 미선언).
+- ⚠️ **codex 사용량 한도(리셋 ~22:47)** → F1-R2~·F2·F3 codex 2클린 리뷰 = **리셋 후 일괄**(루크 결정). 그 후 툴체인 결정 → `src/main` 스캐폴드.
