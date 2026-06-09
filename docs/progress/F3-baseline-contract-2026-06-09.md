@@ -55,7 +55,7 @@
 | 값객체 | 규칙 |
 |---|---|
 | `MutationCommand` | `{op: writeFile \| applyDiff \| execCommand \| ptyWrite, target, body}`. ActionScope(F1) 와 정합. **observed 출처 = op 종류별**(gemini R2 HIGH): writeFile/applyDiff → `target` 파일 재-read(F2 observe); execCommand/ptyWrite → **ack 의 exit code + 캡처 output**(별도 read 아님; `target`=명령 자체). 관측가능 side-effect 없는 명령 = reafference 가 ack(exit)까지만(mismatch 무의미). |
-| `Reafference` | `{commanded, acknowledged, observed, outcome}` 상태기계. **분류 규칙(gemini R2)**: ack 받음 + 관측 성공 → `match`(observed=expected) \| `mismatch`(observed≠expected); ack 받음 + **관측 자체 실패/무응답** → `ackNotObserved`(불확정, ≠mismatch); ack 없음 → terminal(정상 조기종료, NFR-provenance). |
+| `Reafference` | `{commanded, acknowledged, observed, outcome}` 상태기계. **분류 규칙(gemini R2)**: ack 받음 + 관측 성공 → `match`(observed=expected) \| `mismatch`(observed≠expected); ack 받음 + **관측 자체 실패/무응답** → `observationFailed`(→ UncertainState{ackNotObserved} 생성; mismatch 와 구분, R3); ack 없음 → terminal(정상 조기종료, NFR-provenance). |
 | `UncertainState` | `timeout \| partial(side-effect unknown) \| postExecDrift \| ackNotObserved`. → **abort + 미확정 정직 + disposition**(FR-F3.3). |
 | `CommandSafety` | blocked 패턴(T3) + sensitive 경로 + in-workspace 판정(순수 규칙; canonicalize I/O=어댑터). |
 | `Disposition` | `contain \| degrade \| block \| abort`(F0 fault matrix 재사용). |
@@ -89,8 +89,8 @@ MutationGate:                                   # FR-F3.1·3.2·3.3
     observed = (op∈{writeFile,applyDiff}) ? EnvironmentObservePort.<read>(command.target)
                                           : ack.exitAndOutput
     # 관측 자체가 실패/무응답이면 ackNotObserved (mismatch 와 구분, R2)
-    reaf = Reafference(commanded, ack, observed)   # → match | mismatch | ackNotObserved (domain 분류)
-    if reaf.outcome ∈ {mismatch, ackNotObserved} or uncertain(ack):
+    reaf = Reafference(commanded, ack, observed)   # outcome ∈ {match | mismatch | observationFailed} (domain 분류, R3)
+    if reaf.outcome ∈ {mismatch, observationFailed} or uncertain(ack):  # observationFailed → UncertainState{ackNotObserved}
         return abort + honest(UncertainState) + Disposition     # FR-F3.3 (rollback 가능 시만)
     return ReafferenceReport(reaf, timestamp, latency)
 ```
