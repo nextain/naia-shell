@@ -36,3 +36,15 @@ export function wireStatusReporterTauri(): StatusReporter {
 export function wireApprovalGateTauri(): ApprovalGate {
   return new ApprovalGate({ approval: agentWireApproval, grant: configGrant });
 }
+
+// ── F2 슬라이스 (host-system 관측 + drift) ──
+import { ObservationService, DriftDetector } from "../app/control/observe.js";
+import { tauriEnvObserve, expectedStateProvider } from "../adapters/tauri/f2.js";
+import type { DriftSignal } from "../domain/observe.js";
+
+export function wireObservationServiceTauri(now: () => number): ObservationService {
+  return new ObservationService(tauriEnvObserve, now);
+}
+export function wireDriftDetectorTauri(onDrift: (d: DriftSignal) => void): DriftDetector {
+  return new DriftDetector(tauriEnvObserve, expectedStateProvider, onDrift);
+}
