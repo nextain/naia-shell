@@ -28,10 +28,10 @@ describe("domain 순수 규칙 (F2)", () => {
 function mkEnv(over: { fileStatus?: string | null; denied?: boolean; changeFile?: string } = {}): EnvironmentObservePort & { fire?: (e: FileChangeEvent) => void } {
   let fire: ((e: FileChangeEvent) => void) | undefined;
   const env: EnvironmentObservePort & { fire?: (e: FileChangeEvent) => void } = {
-    listDir: (p) => (over.denied ? { denied: true, path: p } : ["a", "b"]),
-    readFile: (p) => (over.denied ? { denied: true, path: p } : "content"),
-    fileStatus: (p) => ({ key: p, value: over.fileStatus ?? null }),
-    sessions: () => [], processStatus: () => [], worktrees: () => [],
+    listDir: async (p) => (over.denied ? { denied: true, path: p } : ["a", "b"]),
+    readFile: async (p) => (over.denied ? { denied: true, path: p } : "content"),
+    fileStatus: async (p) => ({ key: p, value: over.fileStatus ?? null }),
+    sessions: async () => [], processStatus: async () => [], worktrees: async () => [],
     subscribeChanges: (cb) => { fire = cb; },
   };
   env.fire = (e) => fire?.(e);
@@ -39,14 +39,14 @@ function mkEnv(over: { fileStatus?: string | null; denied?: boolean; changeFile?
 }
 
 describe("ObservationService — 권한 거부 정직 + 신선도", () => {
-  it("권한 밖 → PermissionDenied 반환(throw 아님) + timestamp", () => {
+  it("권한 밖 → PermissionDenied 반환(throw 아님) + timestamp", async () => {
     const svc = new ObservationService(mkEnv({ denied: true }), () => 123);
-    const r = svc.readFile("/etc/x");
+    const r = await svc.readFile("/etc/x");
     expect(isDenied(r.result)).toBe(true);
     expect(r.timestamp).toBe(123);
   });
-  it("정상 read → 값 + 신선도", () => {
-    const r = new ObservationService(mkEnv(), () => 7).listDir("/w");
+  it("정상 read → 값 + 신선도", async () => {
+    const r = await new ObservationService(mkEnv(), () => 7).listDir("/w");
     expect(r.result).toEqual(["a", "b"]);
     expect(r.timestamp).toBe(7);
   });
@@ -54,24 +54,24 @@ describe("ObservationService — 권한 거부 정직 + 신선도", () => {
 
 describe("DriftDetector — 외부변경 vs expected(권위 우선)", () => {
   const provider = (g: string | null, a: string | null, s: string | null): ExpectedStateProviderPort => ({
-    goal: () => g, approvedIntent: () => a, lastSnapshot: () => s,
+    goal: async () => g, approvedIntent: async () => a, lastSnapshot: async () => s,
   });
-  it("observed≠goal → drift 보고", () => {
+  it("observed≠goal → drift 보고", async () => {
     const env = mkEnv({ fileStatus: "changed" });
     const drifts: string[] = [];
     const d = new DriftDetector(env, provider("orig", null, null), (x) => drifts.push(x.key));
-    const out = d.handleChange({ session: "s", file: "/f", timestamp: 1 });
+    const out = await d.handleChange({ session: "s", file: "/f", timestamp: 1 });
     expect(out?.expected.source).toBe("goal");
     expect(drifts).toEqual(["/f"]);
   });
-  it("observed=expected → drift 없음", () => {
+  it("observed=expected → drift 없음", async () => {
     const env = mkEnv({ fileStatus: "same" });
     const d = new DriftDetector(env, provider("same", null, null), () => {});
-    expect(d.handleChange({ session: "s", file: "/f", timestamp: 1 })).toBeNull();
+    expect(await d.handleChange({ session: "s", file: "/f", timestamp: 1 })).toBeNull();
   });
-  it("goal 없으면 lastSnapshot 권위 사용", () => {
+  it("goal 없으면 lastSnapshot 권위 사용", async () => {
     const env = mkEnv({ fileStatus: "now" });
     const d = new DriftDetector(env, provider(null, null, "before"), () => {});
-    expect(d.handleChange({ session: "s", file: "/f", timestamp: 1 })?.expected.source).toBe("lastSnapshot");
+    expect((await d.handleChange({ session: "s", file: "/f", timestamp: 1 }))?.expected.source).toBe("lastSnapshot");
   });
 });

@@ -35,8 +35,8 @@ export class ApprovalGate {
    * always → PersistentGrantPort.add (영구 grant 저장). reject/expired/duplicate → block.
    * FR-F1.3: 승인 실패는 격리 negative 결과(downstream 오염 금지).
    */
-  gate(input: GateInput): GateResult {
-    const tier = this.p.approval.classify(input.tool, input.args); // ⚠️ 호출자 tier 신뢰 X (codex HIGH)
+  async gate(input: GateInput): Promise<GateResult> {
+    const tier = await this.p.approval.classify(input.tool, input.args); // ⚠️ 호출자 tier 신뢰 X (codex HIGH)
     const binding: ApprovalBinding = {
       correlationId: input.correlationId,
       digest: contextDigest(input.context),
@@ -47,15 +47,15 @@ export class ApprovalGate {
 
     if (isBlocked(tier)) return block("tier-T3");
     if (isAutoBypass(input.tool, input.args)) return approve("auto-bypass");
-    if (tier === "T0" || this.p.grant.isAllowed(input.tool)) return approve("pre-grant");
+    if (tier === "T0" || (await this.p.grant.isAllowed(input.tool))) return approve("pre-grant");
     if (!needsApproval(tier)) return approve("pre-grant");
 
     const req: ApprovalRequest = {
       tool: input.tool, args: input.args, tier, toolCallId: input.toolCallId, sessionId: input.sessionId,
     };
-    const decision = this.p.approval.request(req, binding);
+    const decision = await this.p.approval.request(req, binding);
     if (decision === "always") {
-      this.p.grant.add(input.tool); // 영구 grant 저장 (codex MED). D40: 정책상 추후 거부 가능.
+      await this.p.grant.add(input.tool); // 영구 grant 저장 (codex MED). D40: 정책상 추후 거부 가능.
       return approve("user-once");
     }
     if (decision === "once") return approve("user-once");

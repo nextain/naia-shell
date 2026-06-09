@@ -1,5 +1,5 @@
 // app/control/ControlPlaneBoot — F0 (contract §B.3). 포트만 사용(adapter 직접 import 금지).
-// 인지 0. 순서 결속은 baseline 이 실제 결속한 것만(과결속=drift).
+// 인지 0. 순서 결속은 baseline 이 실제 결속한 것만. ⚠️ async — 포트가 async(런타임 정정).
 import type {
   ConfigPort, BootStatePort, AdkPathPort, WorkspacePort,
   StartupMessagePort, PanelInventoryPort, AdkSetupPort,
@@ -21,97 +21,95 @@ export interface ControlPlanePorts {
 export class ControlPlaneBoot {
   constructor(private readonly p: ControlPlanePorts) {}
 
-  /** §3-A boot() — 전역 부팅. 반환 = 게이트 결정(렌더 분기용). */
-  boot(): BootDecision {
+  /** §3-A boot() — 전역 부팅. 반환 = 게이트 결정. */
+  async boot(): Promise<BootDecision> {
     // 1. panel list — 게이트 이전, 항상, non-fatal contain
-    try { this.p.panels.listInstalled(); } catch { /* non-fatal */ }
+    try { await this.p.panels.listInstalled(); } catch { /* non-fatal */ }
 
     // 2. adk path
-    let adk = this.p.adkPath.get();
+    const adk = await this.p.adkPath.get();
 
     // 2b. persisted state normalization — config.workspaceRoot 권위적 (다음 평가용 persist)
-    const cfgRoot = this.p.bootState.loadLocalConfig()?.workspaceRoot;
+    const cfgRoot = (await this.p.bootState.loadLocalConfig())?.workspaceRoot;
     if (cfgRoot && (!adk.present || adk.path !== cfgRoot)) {
-      this.p.adkPath.set(cfgRoot);
+      await this.p.adkPath.set(cfgRoot);
     } else if (adk.present && !cfgRoot) {
-      this.p.bootState.setWorkspaceRoot(adk.path);
+      await this.p.bootState.setWorkspaceRoot(adk.path);
     }
 
     // 3. 게이트 전 file→local 병합 (adk 있을 때)
     if (adk.present) {
-      const config = this.p.config.read(adk.path);
-      if (config) this.p.bootState.mergeFromFile(config);
+      const config = await this.p.config.read(adk.path);
+      if (config) await this.p.bootState.mergeFromFile(config);
     }
 
     // 4. 결정 (둘 다 포트 경유)
-    const decision = decideBoot(adk.present, this.p.bootState.isOnboardingComplete());
+    const decision = decideBoot(adk.present, await this.p.bootState.isOnboardingComplete());
 
     // 5. SetupRequired → detectRoot 제시 후 게이트 종료 (initAuth 는 §D 독립)
     if (decision === "SetupRequired") {
-      this.p.adkPath.detectRoot();
+      await this.p.adkPath.detectRoot();
     }
     return decision;
   }
 
   /** §3-D initAuth() — 게이트와 독립한 mount effect. 고정 순서. */
-  initAuth(): void {
-    const config = this.p.bootState.loadLocalConfigWithSecrets();
+  async initAuth(): Promise<void> {
+    const config = await this.p.bootState.loadLocalConfigWithSecrets();
     const kinds = startupMessagesToSend(config !== null, hasNaiaKey(config));
     for (const kind of kinds) {
       const msg = { kind, body: {} };
-      this.p.startup.store(msg);
-      this.p.startup.send(msg);
+      await this.p.startup.store(msg);
+      await this.p.startup.send(msg);
     }
   }
 
-  /** §3-B 마운트 — setRoot(+성공시 startWatch). 활성화와 분리(codex MED). */
-  onWorkspacePanelMount(rawRoot: string): void {
-    const result = this.p.workspace.setRoot(rawRoot);
+  /** §3-B 마운트 — setRoot(+성공시 startWatch). 활성화와 분리. */
+  async onWorkspacePanelMount(rawRoot: string): Promise<void> {
+    const result = await this.p.workspace.setRoot(rawRoot);
     if (!result.ok) {
-      this.p.bootState.clearWorkspaceRoot(); // contain+fallback (block 아님)
+      await this.p.bootState.clearWorkspaceRoot(); // contain+fallback (block 아님)
     }
-    this.p.workspace.startWatch(); // 마운트 setRoot 후 (성공/fallback)
+    await this.p.workspace.startWatch();
   }
 
-  /** §3-B 활성화 — 인자 없는 startWatch 재호출만 (setRoot 안 함, codex MED). */
-  onWorkspacePanelActivate(): void {
-    this.p.workspace.startWatch();
+  /** §3-B 활성화 — 인자 없는 startWatch 재호출만. */
+  async onWorkspacePanelActivate(): Promise<void> {
+    await this.p.workspace.startWatch();
   }
 
-  onWorkspacePanelDeactivate(): void {
-    this.p.workspace.stopWatch();
+  async onWorkspacePanelDeactivate(): Promise<void> {
+    await this.p.workspace.stopWatch();
   }
 
   /** §3-C setup 완료 분기 — 모드별 reset/replace + 완료조건. */
-  onSetupConfirm(mode: SetupMode, path: string): void {
+  async onSetupConfirm(mode: SetupMode, path: string): Promise<void> {
     if (mode === "new" || mode === "recreate") {
-      const st = this.p.setup.inspectAdkDir(path); // 결과로 clone/delete 결정 (codex HIGH)
+      const st = await this.p.setup.inspectAdkDir(path);
       const action = adkPrepAction(mode, st);
-      if (action === "delete-then-clone") { this.p.setup.deleteAdk(path); this.p.setup.cloneAdk(path); }
-      else if (action === "clone") { this.p.setup.cloneAdk(path); }
+      if (action === "delete-then-clone") { await this.p.setup.deleteAdk(path); await this.p.setup.cloneAdk(path); }
+      else if (action === "clone") { await this.p.setup.cloneAdk(path); }
     }
-    this.p.setup.initSettings(path); // init_naia_settings (먼저)
-    this.p.setup.copyBundledAssets(path); // asset:// scope 확장
+    await this.p.setup.initSettings(path);
+    await this.p.setup.copyBundledAssets(path);
 
     if (mode === "load") {
-      const cfg = this.p.config.read(path);
-      this.p.bootState.replaceLocalConfig(cfg ?? baseConfig()); // 통째 교체(null=base, codex HIGH)
-      this.p.bootState.setWorkspaceRoot(path); // 선택 path 강제 보존
-      this.p.bootState.markOnboardingComplete(); // 무조건
+      const cfg = await this.p.config.read(path);
+      await this.p.bootState.replaceLocalConfig(cfg ?? baseConfig());
+      await this.p.bootState.setWorkspaceRoot(path);
+      await this.p.bootState.markOnboardingComplete();
     } else if (mode === "use-existing") {
-      this.p.bootState.resetLocalConfig();
-      const cfg = this.p.config.read(path);
+      await this.p.bootState.resetLocalConfig();
+      const cfg = await this.p.config.read(path);
       if (cfg) {
-        this.p.bootState.replaceLocalConfig(cfg);
-        this.p.bootState.setWorkspaceRoot(path);
-        this.p.bootState.markOnboardingComplete(); // cfg 있을 때만
+        await this.p.bootState.replaceLocalConfig(cfg);
+        await this.p.bootState.setWorkspaceRoot(path);
+        await this.p.bootState.markOnboardingComplete();
       }
-      // cfg null → 미완료(overlay 재진입)
     } else {
-      // new/recreate: workspaceRoot 만 — markOnboardingComplete 안 함 → overlay
-      this.p.bootState.resetLocalConfig();
-      this.p.bootState.setWorkspaceRoot(path);
+      await this.p.bootState.resetLocalConfig();
+      await this.p.bootState.setWorkspaceRoot(path);
     }
-    this.p.adkPath.set(path); // → 이후 boot() 재평가
+    await this.p.adkPath.set(path);
   }
 }

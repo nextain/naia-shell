@@ -55,14 +55,14 @@ describe("StatusReporter — 정직 보고 + contain", () => {
     throwOn?: "systemStatus" | "degradations";
   }): InteroceptivePort {
     return {
-      systemStatus: () => { if (opts.throwOn === "systemStatus") throw new Error("boom"); return { components: [{ name: "agent", healthy: opts.healthy ?? true }] }; },
-      diagnostics: () => [],
-      devices: () => [],
-      degradations: () => { if (opts.throwOn === "degradations") throw new Error("boom"); return opts.degradations ?? []; },
+      systemStatus: async () => { if (opts.throwOn === "systemStatus") throw new Error("boom"); return { components: [{ name: "agent", healthy: opts.healthy ?? true }] }; },
+      diagnostics: async () => [],
+      devices: async () => [],
+      degradations: async () => { if (opts.throwOn === "degradations") throw new Error("boom"); return opts.degradations ?? []; },
     };
   }
-  it("configured&&!reachable 만 degraded (key-presence 승격 금지)", () => {
-    const r = new StatusReporter(mkInteroceptive({ degradations: [
+  it("configured&&!reachable 만 degraded (key-presence 승격 금지)", async () => {
+    const r = await new StatusReporter(mkInteroceptive({ degradations: [
       { component: "llm", configured: true, reachable: false },
       { component: "discord", configured: true, reachable: true },
       { component: "unset", configured: false, reachable: false },
@@ -70,16 +70,16 @@ describe("StatusReporter — 정직 보고 + contain", () => {
     expect(r.degraded.map((d) => d.component)).toEqual(["llm"]);
     expect(r.allClear).toBe(false);
   });
-  it("degradation 0 + healthy → allClear", () => {
-    expect(new StatusReporter(mkInteroceptive({})).report().allClear).toBe(true);
+  it("degradation 0 + healthy → allClear", async () => {
+    expect((await new StatusReporter(mkInteroceptive({})).report()).allClear).toBe(true);
   });
-  it("component unhealthy → allClear=false (codex MED)", () => {
-    expect(new StatusReporter(mkInteroceptive({ healthy: false })).report().allClear).toBe(false);
+  it("component unhealthy → allClear=false (codex MED)", async () => {
+    expect((await new StatusReporter(mkInteroceptive({ healthy: false })).report()).allClear).toBe(false);
   });
-  it("포트 예외 contain — throw 안 하고 probeErrors 표면화 (codex MED)", () => {
+  it("포트 예외 contain — throw 안 하고 probeErrors 표면화 (codex MED)", async () => {
     const r = new StatusReporter(mkInteroceptive({ throwOn: "degradations" }));
-    expect(() => r.report()).not.toThrow();
-    const out = r.report();
+    await expect(r.report()).resolves.toBeDefined();
+    const out = await r.report();
     expect(out.probeErrors.length).toBeGreaterThan(0);
     expect(out.allClear).toBe(false);
   });
@@ -93,61 +93,60 @@ describe("ApprovalGate — classify 신뢰 X, 게이트-author binding (codex HI
   function mk(over: { classifyTier?: Tier; allowed?: boolean; decision?: ApprovalDecision }) {
     const log: string[] = [];
     const approval: ApprovalPort = {
-      classify: (t) => { log.push(`classify:${t}`); return over.classifyTier ?? "T2"; },
-      request: () => { log.push("request"); return over.decision ?? "reject"; },
+      classify: async (t) => { log.push(`classify:${t}`); return over.classifyTier ?? "T2"; },
+      request: async () => { log.push("request"); return over.decision ?? "reject"; },
     };
-    const grant: PersistentGrantPort = { isAllowed: () => over.allowed ?? false, add: (t) => log.push(`grant.add:${t}`) };
+    const grant: PersistentGrantPort = { isAllowed: async () => over.allowed ?? false, add: async (t) => { log.push(`grant.add:${t}`); } };
     return { gate: new ApprovalGate({ approval, grant }), log };
   }
-  it("classify() 항상 호출 — 호출자 tier 신뢰 안 함 (T0 위조 차단)", () => {
+  it("classify() 항상 호출 — 호출자 tier 신뢰 안 함 (T0 위조 차단)", async () => {
     const { gate, log } = mk({ classifyTier: "T2", decision: "once" });
-    // 호출자가 args 로 T0 위조 시도해도 classify 가 T2 반환 → request 거침
-    gate.gate(input({ tool: "execute_command" }));
+    await gate.gate(input({ tool: "execute_command" }));
     expect(log).toContain("classify:execute_command");
     expect(log).toContain("request");
   });
-  it("classify=T3 → blocked, request 호출 안 함", () => {
+  it("classify=T3 → blocked, request 호출 안 함", async () => {
     const { gate, log } = mk({ classifyTier: "T3" });
-    const r = gate.gate(input({ tool: "execute_command" }));
+    const r = await gate.gate(input({ tool: "execute_command" }));
     expect(r.outcome).toEqual({ kind: "blocked", reason: "tier-T3" });
     expect(log).not.toContain("request");
   });
-  it("auto-bypass(인자조건) → approved", () => {
+  it("auto-bypass(인자조건) → approved", async () => {
     const { gate } = mk({ classifyTier: "T1" });
-    expect(gate.gate(input({ tool: "skill_tts", args: { action: "preview" } })).outcome).toEqual({ kind: "approved", via: "auto-bypass" });
+    expect((await gate.gate(input({ tool: "skill_tts", args: { action: "preview" } }))).outcome).toEqual({ kind: "approved", via: "auto-bypass" });
   });
-  it("auto-bypass 인자 불충족 → 승인 경로 (request)", () => {
+  it("auto-bypass 인자 불충족 → 승인 경로 (request)", async () => {
     const { gate, log } = mk({ classifyTier: "T1", decision: "once" });
-    gate.gate(input({ tool: "skill_tts", args: { action: "speak" } }));
+    await gate.gate(input({ tool: "skill_tts", args: { action: "speak" } }));
     expect(log).toContain("request");
   });
-  it("pre-grant → request 없이 approved", () => {
+  it("pre-grant → request 없이 approved", async () => {
     const { gate, log } = mk({ classifyTier: "T1", allowed: true });
-    expect(gate.gate(input()).outcome).toEqual({ kind: "approved", via: "pre-grant" });
+    expect((await gate.gate(input())).outcome).toEqual({ kind: "approved", via: "pre-grant" });
     expect(log).not.toContain("request");
   });
-  it("once → approved", () => {
-    expect(mk({ classifyTier: "T1", decision: "once" }).gate.gate(input()).outcome).toEqual({ kind: "approved", via: "user-once" });
+  it("once → approved", async () => {
+    expect((await mk({ classifyTier: "T1", decision: "once" }).gate.gate(input())).outcome).toEqual({ kind: "approved", via: "user-once" });
   });
-  it("always → grant.add 호출 (영구 grant 저장, codex MED)", () => {
+  it("always → grant.add 호출 (영구 grant 저장, codex MED)", async () => {
     const { gate, log } = mk({ classifyTier: "T1", decision: "always" });
-    const r = gate.gate(input({ tool: "write_file" }));
+    const r = await gate.gate(input({ tool: "write_file" }));
     expect(r.outcome.kind).toBe("approved");
     expect(log).toContain("grant.add:write_file");
   });
-  it.each(["reject", "expired", "duplicate"] as ApprovalDecision[])("%s → blocked(denied)", (d) => {
-    expect(mk({ classifyTier: "T1", decision: d }).gate.gate(input()).outcome).toEqual({ kind: "blocked", reason: "denied" });
+  it.each(["reject", "expired", "duplicate"] as ApprovalDecision[])("%s → blocked(denied)", async (d) => {
+    expect((await mk({ classifyTier: "T1", decision: d }).gate.gate(input())).outcome).toEqual({ kind: "blocked", reason: "denied" });
   });
-  it("binding 은 게이트가 author (외부 위조 불가) — digest=context 기반", () => {
+  it("binding 은 게이트가 author (외부 위조 불가) — digest=context 기반", async () => {
     const { gate } = mk({ classifyTier: "T1", decision: "once" });
-    const r = gate.gate(input());
+    const r = await gate.gate(input());
     expect(r.binding.digest).toBe(contextDigest(ident));
     expect(r.binding.correlationId).toBe("corr1");
   });
 });
 
 describe("ApprovalGate.authorizeExecution — 필수 pre-exec drift (codex HIGH)", () => {
-  const gate = new ApprovalGate({ approval: { classify: () => "T1", request: () => "once" }, grant: { isAllowed: () => false, add: () => {} } });
+  const gate = new ApprovalGate({ approval: { classify: async () => "T1", request: async () => "once" }, grant: { isAllowed: async () => false, add: async () => {} } });
   const binding: ApprovalBinding = { correlationId: "x", digest: contextDigest(ident), scope: scope() };
   it("drift → blocked(drift)", () => {
     expect(gate.authorizeExecution(binding, { context: { ...ident, sessionId: "s2" }, scope: scope() })).toEqual({ kind: "blocked", reason: "drift" });
