@@ -45,5 +45,6 @@
 |---|---|
 | `builds/f0-graft-smoke.sh` | F0 부팅 결정 등가 스모크(P02 1단계 Old-Baseline drift-gate). 빌드+테스트+DevTools 스니펫 emit. |
 | `builds/f0-graft-snippet.js` | (생성물, gitignore) 위 스크립트가 만드는 붙여넣기용 콘솔 스니펫. |
+| `builds/f0-boot-probe.mjs` | **headless 실디스크 부팅 검증** — Tauri 없이 `~/.naia/adk-path`+ADK config 읽어 컴파일된 새 core 의 부팅 결정 구동·비교(match). `node scripts/builds/f0-boot-probe.mjs`. |
 
 > **하위폴더 정책**: `cron/`(주기 배치)·`builds/`(빌드·graft)·`conform/`(전용 게이트)는 물리 폴더 허용(자기완결, 참조 안전). A~E 의 루트 평면 스크립트를 폴더로 옮기려면 — CLAUDE.md·`.agents/hooks/`·`src/test/*.mjs` 참조를 전부 갱신한 뒤에만(별도 작업).
