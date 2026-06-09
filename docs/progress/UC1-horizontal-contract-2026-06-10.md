@@ -26,8 +26,8 @@
 ## B.1 domain/ (순수, import 0)
 | 값객체 | 규칙 |
 |---|---|
-| `ChatRequest` | `{requestId, clientId, sessionId?, provider:{id,model,host?}, gatewayUrl?(도구/enableTools 게이트웨이 — provider 와 별개), messages, systemPrompt?, enableTools?, enableThinking?, disabledSkills?}`. **provider *선택*(id/model/host)=포함(비밀 아님, baseline 재현 필수). secret(apiKey 등)만 `creds_update` 별채널**(F0 stripForAgent 정합). clientId=다중클라이언트 라우팅. **매핑(어댑터 검증)**: provider `id→provider`·`model→model`·`host→ollamaHost|vllmHost`(종류별); **최상위 `gatewayUrl`=도구 gateway 연결(enableTools 흐름)**, provider 의 `labGatewayUrl`(provider 선택용)과 *별개 canon*. 필수=`id,model`; 허용 외 거부(계약 테스트). |
-| `ChatChunk` | **chat-turn 관련 subset of `types.ts AgentResponseChunk`**(권위=코드, 추측 금지): 최소 `text·thinking·toolUse·toolResult·approvalRequest·finish·error` + 스트림 부수(usage·logEntry 등 types.ts 에 *실재하는* 것만). **transport-neutral**, `{requestId,clientId}` 소유권. payload canon=types.ts. ⚠️ **demux 규칙(exhaustive — 열거 아닌 클래스)**: transport 어댑터가 `types.ts AgentResponseChunk` *전 variant* 를 switch — chat-turn→ChatChunk / 비-chat(discord_message=UC10·panel_control·panel_install·panel_tool_call=UC9·skill_list_response=UC5·config_update·embedding_progress·ready·gateway_approval_request 등)→해당 포트 / **미지 타입=error+log, silent drop 금지**. variant 목록 권위=types.ts(코드). |
+| `ChatRequest` | `{requestId, clientId, sessionId?, provider:{id,model,host?,labGatewayUrl?}, gatewayUrl?(도구/enableTools 게이트웨이 — provider 와 별개), messages, systemPrompt?, enableTools?, enableThinking?, disabledSkills?}`. **provider *선택*(id/model/host)=포함(비밀 아님, baseline 재현 필수). secret(apiKey 등)만 `creds_update` 별채널**(F0 stripForAgent 정합). clientId=다중클라이언트 라우팅. **매핑(어댑터 검증)**: provider `id→provider`·`model→model`·`host→ollamaHost|vllmHost`(종류별); **최상위 `gatewayUrl`=도구 gateway 연결(enableTools 흐름)**, provider 슬롯 `labGatewayUrl`(provider 라우팅용, providers/types.ts 매핑)과 *별개 canon*. 필수=`id,model`; 허용 외 거부(계약 테스트). |
+| `ChatChunk` | **chat-turn 관련 subset (권위=agent writeLine 출력 index.ts; shell types.ts=부분뷰, 추측 금지): 최소 `text·thinking·toolUse·toolResult·approvalRequest·finish·error` + 스트림 부수(usage·logEntry 등 types.ts 에 *실재하는* 것만). **transport-neutral**, `{requestId,clientId}` 소유권. payload canon=agent 출력(index.ts) 기준. ⚠️ **demux 규칙(exhaustive — 열거 아닌 클래스)**: transport 어댑터가 `types.ts AgentResponseChunk` *전 variant* 를 switch — chat-turn→ChatChunk / 비-chat(discord_message=UC10·panel_control·panel_install·panel_tool_call=UC9·skill_list_response=UC5·config_update·embedding_progress·ready·gateway_approval_request 등)→해당 포트 / **미지 타입=error+log, silent drop 금지**. variant 권위 = **agent writeLine 출력(index.ts)** — 실제 wire 메시지 집합(superset). shell `types.ts AgentResponseChunk`=소비측 부분뷰. demux exhaustive = agent 출력 기준, 미지=error+log. |
 | `ChatTurn` | requestId 로 묶인 chunk 시퀀스 상태(streaming→finish/error). 순수 상태기계. |
 
 ## B.2 ports/ (driven+driving)
@@ -37,10 +37,10 @@ ChatRequestPayload / ChatChunkPayload = { ...의미 구조, wire-framing 누출 
 
 # AppPort = ChatPort + ToolPort *조립 facade* (재흡수 아님, canon)
 ChatPort:                                   # 대화 ingress (driving — shell이 호출)
-    startTurn(req: ChatRequest, onChunk): TurnHandle   # ⚠️ 원자적 listen-then-send. **send 실패 = (a) AgentTransportPort.send Promise reject 호출자 전파(baseline 등가) + (b) onChunk(error) + 구독/레지스트리 해제**. (관찰 계약 = baseline rejection 보존 + chunk 표면화 둘 다)
+    startTurn(req, onChunk): { handle: TurnHandle, sent: Promise<void> }   # ⚠️ 원자적 listen-then-send. **sent Promise = send reject 호출자 전파(baseline 등가)**; 추가로 onChunk(error)+구독/레지스트리 해제. handle=취소/소유, sent=발신 결과.
     cancel(handle: TurnHandle): void          # cancel_stream (실행 중 중단)
     # approvalRequest chunk = ChatPort 가 *노출만*. 응답은 **ApprovalPort(F1, AppPort 밖 독립 control-plane)** 경유 — ChatPort 흡수 금지(canon, codex R2)
-TurnHandle = { requestId, clientId, unsubscribe }   # 핸들(위조 방지 = 아래 레지스트리가 권위, 핸들 단독 아님)
+TurnHandle = { requestId, clientId, unsubscribe }   # (startTurn 은 {handle, sent:Promise} 반환)   # 핸들(위조 방지 = 아래 레지스트리가 권위, 핸들 단독 아님)
   # ⚠️ ownership 레지스트리(ClientSessionPort/adapter): startTurn 시 requestId→clientId 등록 + **충돌 거부**(중복 requestId) + **모든 terminal(finish·cancel·error·send실패·timeout)** 시 해제(미해제=requestId 영구 점유). legacy agent_response 엔 clientId 없으므로 *shell측 어댑터가 requestId→clientId 매핑 보유*. cancel/approval 권한 = 레지스트리 소유주만(타 client 차단)
 ToolPort:                                    # 툴 interaction (독립, UC5) — 별 계약
 AgentTransportPort:                          # driven — agent(brain) 닿는 transport. *protocol DTO ↔ wire 번역은 이 어댑터*(app 아님, canon)
@@ -62,7 +62,7 @@ ChatService:
 ## B.4 adapters/
 | 어댑터 | 포트 | 구현 |
 |---|---|---|
-| `StdioTransportAdapter` | AgentTransportPort | **ChatRequest↔wire JSON-line encode / AgentResponseChunk wire→ChatChunk decode**(번역은 여기). `send_to_agent_command`(stdin)+`agent_response`(stdout). ⚠️ **flat newline JSON 만**(agent 는 한 줄 곧바로 parseRequest). protocol-bridge StdioFrame v1=미사용 scaffold라 *보내지 않음*. gRPC=후속 어댑터(envelope 그때). |
+| `StdioTransportAdapter` | AgentTransportPort | **ChatRequest→wire JSON-line encode / wire→raw AgentMessage union decode**(ChatChunk 아님 — demux 가 그 위에서 분기, R5). 번역은 여기. `send_to_agent_command`(stdin)+`agent_response`(stdout). ⚠️ **flat newline JSON 만**(agent 는 한 줄 곧바로 parseRequest). protocol-bridge StdioFrame v1=미사용 scaffold라 *보내지 않음*. gRPC=후속 어댑터(envelope 그때). |
 | `GrpcTransportAdapter` (future) | AgentTransportPort | gRPC 다중클라이언트 — 어댑터 교체만(protocol 불변) |
 | `TauriChatBridge` | ChatPort | shell ChatPanel ↔ ChatService 연결 |
 
