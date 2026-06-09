@@ -108,7 +108,8 @@ export function makeLiveStdioTransport(deps: LiveTransportDeps): AgentTransportP
           cb(decodeAgentMessage(raw));
         })
         .then((u) => { if (disposed) u(); else unlisten = u; })
-        .catch((err) => { deps.onListenError?.(err); }); // ⚠️ listen rejection 처리(unhandled rejection 방지)
+        // ⚠️ listen rejection 처리(unhandled 방지). observer 가 throw 해도 catch 핸들러가 재-reject 하지 않게 격리.
+        .catch((err) => { try { deps.onListenError?.(err); } catch { /* observer 오류 무시 */ } });
       return () => { disposed = true; unlisten?.(); unlisten = null; };
     },
   };
