@@ -14,7 +14,8 @@
 | 세션/git 조회 | `workspace.rs:308 workspace_get_sessions()` | workspace 내 git repo 목록(dir·path·branch·status·last_change·recent_file) |
 | 디렉터리 목록 | `workspace.rs:891 workspace_list_dirs(parent)` | entries(name·path·is_dir, dotfile 제외) |
 | 파일 read | `workspace.rs:919 workspace_read_file`·`925 workspace_read_file_bytes`·`931 workspace_file_size` | 내용/바이트/크기 — **경로 workspace 경계 검증** |
-| 인덱스/스킬 | `723 load_project_index`(YAML)·`741 discover_skills`(SKILL.md)·`753 read_skill_content` | 메타 read(in-workspace 검증) |
+| 인덱스/스킬 | `723 workspace_load_project_index`(YAML)·`741 workspace_discover_skills`(SKILL.md)·`753 workspace_read_skill_content` | 메타 read(in-workspace 검증) |
+| 디렉터리 분류 | `workspace.rs:524 workspace_classify_dirs` | read-only 분류(project/worktree/reference/docs/other; `get_all_worktree_paths` 호출) |
 | 권한 검증 | `116 validate_in_workspace`(canonicalize + starts_with root) | 권한 밖 경로 거부(read) |
 
 ## A.2 파일 watch (외부 변경 감지)
@@ -25,7 +26,7 @@
 ## A.3 프로세스/시스템 read
 | 기능 | 소스 | 거동 |
 |---|---|---|
-| system-status | `agent/.../system-status.ts:13`(execute 진입; `os.*` 호출 17~35) | mem/cpu/os/uptime |
+| system-status | `agent/src/skills/built-in/system-status.ts:13`(execute 진입; `os.*` 17~35) | mem/cpu/os/uptime |
 | diagnostics proxy | `diagnostics-proxy.ts` getHealth/getUsageStatus/getUsageCost/getGatewayStatus/pollLogsTail(cursor) | RPC 상태/사용량/로그 tail |
 | git/worktree | `workspace.rs:213 get_branch`·`845 get_main_worktree`·`866 get_all_worktree_paths` | read-only git 조회 |
 | pty 프로세스 | `workspace.rs:612 workspace_get_pty_agents(pids)` | 프로세스 트리(sysinfo)서 AI agent(claude/opencode/codex/gemini) 자손 탐지 |
@@ -38,7 +39,7 @@
 - 미지원 환경(예: Linux 전용 device) = 정직 "미지원" 보고.
 
 ## A.6 커버리지 manifest (F2)
-- **accepted**(이식): workspace fs read(목록/내용/크기/세션/인덱스/스킬) · 권한 검증(in-workspace) · watch(외부변경 감지·event emit) · 프로세스/시스템 read(system-status·diagnostics·git·pty-agents) · pty read(output/exit).
+- **accepted**(이식): workspace fs read(목록/내용/크기/세션/인덱스/스킬/**분류 classify_dirs**) · 권한 검증(in-workspace) · watch(외부변경 감지·event emit) · 프로세스/시스템 read(system-status·diagnostics·git·pty-agents) · pty read(output/exit).
 - **new-requirement**(baseline 부분/부재 → F2 신설): **drift 감지**(observed vs expected + 권위 우선순위: 목표상태>승인의도>직전스냅샷; baseline=raw event만) · **미지원 환경 정직 보고 통합**(FR-F2).
 - **deferred(범위 밖)**: SensoryPort vision(`capture.rs capture_screen_region` PNG)·audio STT = sensory tranche(외부/voice 의존). browser app-surface(S26/27 ~50)=EnvironmentPort app-surface facet(별도 pass).
 - 미분류 = 0.
