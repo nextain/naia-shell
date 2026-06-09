@@ -80,5 +80,6 @@ ChatService (implements ChatPort: startTurn/cancel/deliverChunk):
 - **승인 turn**: approvalRequest chunk → **ApprovalPort(F1).respond** 로 응답(ChatPort 아님). cancel = ChatPort.cancel(chat-stream 중단; e-stop=SafetyPort 별도).
 - **라이브 trace**(루크 머신): 실제 채팅 1턴(입력→스트리밍 응답).
 
-## B.7 다음
-2클린 리뷰 → 코드 스캐폴드(`src/main` ChatPort/protocol/StdioTransportAdapter) → UC1 수직(U1.1~1.6) 엮기 → 라이브 trace.
+## B.7 상태 / 다음
+- **계약 2-clean 통과** (codex 적대 리뷰 R5~R19, 15라운드 — R18·R19 연속 NONE/PASS). 주요 수렴: transport(wire)/router(demux) 분리, domain↔protocol↔wire 변환=adapter(app=domain only), AgentOutbound 폐쇄 union·AgentMessage Known|Unknown, ChatPort 구현자=ChatService·TauriChatBridge=outbound 호출자, ownership 단일소유자=ClientSessionPort, ChatTurn 상태기계(정상/취소 양경로).
+- 다음: 코드 스캐폴드(`src/main` domain/chat·ports/uc1·app ChatService+MessageRouter·StdioTransportAdapter + 계약 테스트) → UC1 수직(U1.1~1.6) 엮기 → 라이브 trace.

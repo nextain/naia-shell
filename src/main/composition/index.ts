@@ -61,3 +61,26 @@ import { tauriMutate } from "../adapters/tauri/f3.js";
 export function wireMutationGateTauri(approvalGate: ApprovalGate): MutationGate {
   return new MutationGate({ approvalGate, mutate: tauriMutate, observe: tauriEnvObserve });
 }
+
+// ── UC1 수평 슬라이스 (ChatPort + transport + demux router) ──
+import { ChatService } from "../app/chat/chat-service.js";
+import { InMemoryClientSession } from "../app/chat/client-session.js";
+import { MessageRouter } from "../adapters/message-router.js";
+import { stdioTransport } from "../adapters/tauri/uc1.js";
+import type { PendingRouteSink, DiagnosticSink } from "../ports/uc1.js";
+
+/**
+ * UC1 대화 와이어링. transport(stdio)·sessions·router·sink 주입.
+ * router.start() 호출 = AgentTransportPort.onMessage 단일 구독 개시.
+ * sink 미주입 시 console 기본(라이브 trace 전까지). 실배선 = stdioTransport 가 NotWired(send/onMessage) 풀리면 동작.
+ */
+export function wireChatUC1(sinks?: { pending?: PendingRouteSink; diagnostic?: DiagnosticSink }): {
+  chat: ChatService; router: MessageRouter; sessions: InMemoryClientSession;
+} {
+  const sessions = new InMemoryClientSession();
+  const chat = new ChatService(stdioTransport, sessions);
+  const pending: PendingRouteSink = sinks?.pending ?? { pending: (m) => console.warn("[UC1 pending route]", m.type) };
+  const diagnostic: DiagnosticSink = sinks?.diagnostic ?? { diagnose: (m, reason) => console.error("[UC1 diagnostic]", m.type, reason) };
+  const router = new MessageRouter({ transport: stdioTransport, chat, sessions, pending, diagnostic });
+  return { chat, router, sessions };
+}
