@@ -16,9 +16,12 @@ export VITE_NAIA_NEW_CORE=1
 export NAIA_AGENT_STANDALONE=1
 export NAIA_AGENT_SCRIPT="$NEW_NAIA/new-naia-agent/scripts/builds/agent-stdio-entry.mjs"
 export AGENT_PROVIDER="$PROVIDER"
+# 셸 UI 가 보낸 model(naia-local 등)은 GLM 카탈로그에 없어 거부됨 → 유효 GLM 모델 강제.
+export GLM_MODEL="${GLM_MODEL:-glm-4.6}"
 
 echo "[B3] new core=on, agent=new-naia-agent, provider=$PROVIDER"
 echo "[B3] agent script: $NAIA_AGENT_SCRIPT"
+[ "$PROVIDER" = glm ] && echo "[B3] GLM_MODEL: $GLM_MODEL (UI 모델 무시·강제)"
 [ "$PROVIDER" = glm ] && { [ -n "${GLM_KEY:-}" ] && echo "[B3] GLM_KEY: set" || echo "[B3] ⚠ GLM_KEY 없음 — data-private/llm-keys/llm.env 확인 or AGENT_PROVIDER=ollama"; }
 [ "$PROVIDER" = ollama ] && echo "[B3] ⚠ ollama 사용 — GPU1 에 ollama serve(gemma4) 기동 필요(naia-omni 와 GPU 경합 주의)"
 
