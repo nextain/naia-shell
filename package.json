@@ -1,5 +1,5 @@
 {
-  "name": "new-naia-os",
+  "name": "@nextain/naia-os-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,5 +13,9 @@
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "exports": {
+    "./shell-compat": "./dist/main/adapters/shell-compat.js",
+    "./composition": "./dist/main/composition/index.js"
   }
 }

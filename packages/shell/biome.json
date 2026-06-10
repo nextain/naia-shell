@@ -1,0 +1,74 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.9.0/schema.json",
+	"organizeImports": {
+		"enabled": true
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 2
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double",
+			"semicolons": "always"
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"a11y": {
+				"useKeyWithClickEvents": "warn",
+				"useValidAriaRole": "warn",
+				"noSvgWithoutTitle": "warn",
+				"noLabelWithoutControl": "warn",
+				"useButtonType": "warn"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn"
+			},
+			"complexity": {
+				"noForEach": "warn"
+			},
+			"correctness": {
+				"useExhaustiveDependencies": "warn"
+			},
+			"style": {
+				"noNonNullAssertion": "warn"
+			}
+		}
+	},
+	"files": {
+		"ignore": [
+			"node_modules",
+			"dist",
+			"src-tauri/target",
+			"e2e/demo-output",
+			"test-results",
+			"src-tauri/gen",
+			".claude"
+		]
+	},
+	"overrides": [
+		{
+			"include": [
+				"e2e/**",
+				"e2e-tauri/**",
+				"src/__tests__/**",
+				"src/**/__tests__/**",
+				"scripts/**"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					},
+					"style": {
+						"noNonNullAssertion": "off"
+					}
+				}
+			}
+		}
+	]
+}

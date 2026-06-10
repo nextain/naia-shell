@@ -1,0 +1,24 @@
+{
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["nsis"],
+    "resources": {
+      "../../agent/dist": "agent/dist",
+      "../../agent/package.json": "agent/package.json",
+      "../../agent/node_modules": "agent/node_modules",
+      "resources/node.exe": "node.exe",
+      "resources/libvosk.dll": "libvosk.dll"
+    },
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["Korean", "English"],
+        "installMode": "currentUser",
+        "installerHooks": "nsis-hooks.nsh"
+      }
+    }
+  },
+  "build": {
+    "beforeBuildCommand": "cd ../agent && pnpm install --frozen-lockfile && pnpm run build && cd ../shell && pnpm build && python3 ../scripts/prune-nsis.py"
+  }
+}

@@ -1,0 +1,4 @@
+# new-naia-os 모노레포 — 코어(root: src/main, @nextain/naia-os-core)는 그대로,
+# packages/shell = old shell verbatim 편입(UI 보존) + chat-service 만 새 core 결선.
+packages:
+  - "packages/*"

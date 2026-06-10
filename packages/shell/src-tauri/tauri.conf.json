@@ -1,0 +1,96 @@
+{
+	"$schema": "https://raw.githubusercontent.com/nicollasricas/tauri-settings-schema/refs/heads/master/schemas/v2/tauri.conf.json",
+	"productName": "Naia",
+	"identifier": "com.naia.shell",
+	"build": {
+		"frontendDist": "../dist",
+		"devUrl": "http://localhost:1420",
+		"beforeDevCommand": "pnpm dev",
+		"beforeBuildCommand": "cd ../agent && pnpm install --frozen-lockfile && pnpm run build && cd ../shell && pnpm build"
+	},
+	"app": {
+		"withGlobalTauri": false,
+		"windows": [
+			{
+				"title": "Naia",
+				"width": 1366,
+				"height": 768,
+				"resizable": true,
+				"fullscreen": false,
+				"decorations": false,
+				"transparent": false,
+				"visible": false,
+				"backgroundColor": [6, 13, 20, 255]
+			}
+		],
+		"security": {
+			"assetProtocol": {
+				"enable": true,
+				"scope": {
+					"allow": [
+						"$RESOURCE/**",
+						"$APPDATA/**",
+						"$APPCONFIG/**",
+						"$APPLOCALDATA/**",
+						"$HOME/**",
+						"/tmp/naia-*/**",
+						"/var/home/*/naia-adk/**",
+						"/var/home/*/naia/**"
+					],
+					"requireLiteralLeadingDot": true
+				}
+			},
+			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https: ws: wss: http://localhost:18789 ws://localhost:18789 http://localhost:18791 http://127.0.0.1:18792 http://localhost:18792 https://naia.nextain.io wss://naia.nextain.io https://api.nextain.io wss://api.nextain.io https://naia-gateway-181404717065.asia-northeast3.run.app wss://naia-gateway-181404717065.asia-northeast3.run.app https://naia-gateway-dev-181404717065.asia-northeast3.run.app wss://naia-gateway-dev-181404717065.asia-northeast3.run.app https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://speech.googleapis.com https://api.x.ai https://api.anthropic.com https://api.openai.com wss://api.openai.com http://asset.localhost https://asset.localhost tauri://localhost blob: data:; img-src 'self' asset: http://asset.localhost https://asset.localhost tauri://localhost blob: data: https://i.ytimg.com https://*.ytimg.com; media-src 'self' asset: http://asset.localhost https://asset.localhost https://storage.googleapis.com blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-src http://asset.localhost https://asset.localhost https://www.youtube.com https://www.youtube-nocookie.com"
+		}
+	},
+	"bundle": {
+		"active": true,
+		"createUpdaterArtifacts": true,
+		"targets": ["deb", "rpm", "appimage"],
+		"resources": {
+			"../../agent/dist": "agent/dist",
+			"../../agent/package.json": "agent/package.json",
+			"../../agent/node_modules": "agent/node_modules"
+		},
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.ico",
+			"icons/icon.png"
+		],
+		"category": "Utility",
+		"shortDescription": "AI Avatar Desktop — Chat with Naia",
+		"longDescription": "Naia Shell is a desktop AI companion powered by LLM providers. Features an interactive VRM avatar (Naia), tool execution, and always-on daemon.",
+		"linux": {
+			"deb": {
+				"depends": [
+					"libwebkit2gtk-4.1-0",
+					"libgtk-3-0",
+					"pipewire-alsa",
+					"libasound2"
+				],
+				"desktopTemplate": null
+			},
+			"rpm": {
+				"depends": ["webkit2gtk4.1", "gtk3", "pipewire-alsa", "alsa-lib"]
+			},
+			"appimage": {
+				"bundleMediaFramework": false
+			}
+		}
+	},
+	"plugins": {
+		"deep-link": {
+			"desktop": {
+				"schemes": ["naia"]
+			}
+		},
+		"updater": {
+			"endpoints": [
+				"https://github.com/nextain/naia-os/releases/latest/download/latest.json"
+			],
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyMEYyM0RCNjgxMUUzNEMKUldSTTR4Rm8yeU1QOGpib1NhclN5MTVGZzdmUlEwRHZmYk9VdHcvNEJIVzV4T3Y5R3pSUEdPT0IK"
+		}
+	}
+}
