@@ -84,8 +84,9 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
       };
       const { handle, sent } = chat.startTurn(req, (c) => {
-        opts.onChunk(chatChunkToWire(opts.requestId, c));
-        if (c.kind === "finish" || c.kind === "error") handles.delete(opts.requestId); // ⚠️ terminal 시 handle 정리(누수 방지, R2)
+        // ⚠️ onChunk(shell 렌더) throw 해도 terminal handle 정리 보장(try/finally, R3)
+        try { opts.onChunk(chatChunkToWire(opts.requestId, c)); }
+        finally { if (c.kind === "finish" || c.kind === "error") handles.delete(opts.requestId); }
       });
       handles.set(opts.requestId, handle);
       try { await sent; } catch (e) { handles.delete(opts.requestId); throw e; } // send reject(agent 미도달)=정리 + old throw 호환
