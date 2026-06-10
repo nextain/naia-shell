@@ -20,6 +20,7 @@
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",
     "test:e2e:uc1": "playwright test e2e/uc1-new-core.spec.ts",
+    "test:e2e:newcore": "playwright test e2e/uc1-new-core.spec.ts e2e/uc1-new-core-variants.spec.ts e2e/uc-backlog-pending.spec.ts",
     "test:e2e:tauri": "wdio run e2e-tauri/wdio.conf.ts"
   },
   "dependencies": {
