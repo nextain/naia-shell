@@ -1,0 +1,11 @@
+# tauri dev 워처 제외 목록 (gitignore 문법).
+# OpenClaw 데몬이 ~/.openclaw/workspace/SOUL.md 를 틸드 미확장으로 src-tauri 안
+# literal `~/` 디렉터리에 기록 → SOUL.md 갱신마다 cargo 재빌드 → 무한 재스타트.
+# 데몬 런타임 산출물이므로 워처 감시 대상에서 빼 루프를 끊는다(코드/데몬 무수정).
+/~
+.openclaw/
+**/SOUL.md
+# 런타임/생성물 일반 제외
+*.db
+*.db-journal
+/gen
