@@ -8,10 +8,22 @@ import type { AgentResponseChunk, ProviderConfig } from "./types";
 // 미설정 시 기존 경로 그대로(voice/tts/gateway 등 보존) — 비파괴·지속가능.
 import { makeShellChatService } from "@nextain/naia-os-core/shell-compat";
 
-const NEW_CORE = import.meta.env?.VITE_NAIA_NEW_CORE === "1";
+// 빌드타임 env(prod/dev) OR 런타임 window 플래그(E2E 가 addInitScript 로 주입 — dev 서버
+// env 없이도 통합테스트가 새 경로를 강제·검증). 둘 다 없으면 기존 경로 그대로.
+const NEW_CORE =
+	import.meta.env?.VITE_NAIA_NEW_CORE === "1" ||
+	(typeof window !== "undefined" &&
+		(window as { __NAIA_NEW_CORE__?: boolean }).__NAIA_NEW_CORE__ === true);
 let _coreChat: ReturnType<typeof makeShellChatService> | null = null;
 function coreChat() {
-	if (!_coreChat) _coreChat = makeShellChatService({ live: { invoke, listen }, clientId: "shell" });
+	if (!_coreChat)
+		_coreChat = makeShellChatService({
+			// ⚠️ @tauri listen 은 콜백에 Event 객체({event,payload})를 준다. 새 core transport(LiveTransportDeps)
+			// 는 인자를 payload 로 간주 → 여기서 .payload 를 풀어 넘긴다(안 풀면 agent_response 가 unknown 으로
+			// 드롭돼 스트리밍이 영원히 ▌ 에 멈춤 — UC1 E2E 가 잡은 실 버그). invoke 는 시그니처 동일이라 그대로.
+			live: { invoke, listen: (event, cb) => listen(event, (e) => cb((e as { payload: unknown }).payload)) },
+			clientId: "shell",
+		});
 	return _coreChat;
 }
 
