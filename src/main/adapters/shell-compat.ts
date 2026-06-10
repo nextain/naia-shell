@@ -64,7 +64,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
     diagnostic: { diagnose: (m, why) => console.error("[shell-compat diag]", m.type, why) },
   });
   router.start(); // ⚠️ 즉시 구독(별도 start 불요 — 미구독 시 chunk 미전달 방지, R1)
-  const handles = new Map<string, TurnHandle>(); // requestId→handle(cancelChat by requestId, old API)
+  // ⚠️ handle Map 없음(누수 원천 제거, R4) — cancelChat 은 최소 handle{requestId,clientId} 재구성(ChatService.cancel 인가=레지스트리 requestId→clientId, unsubscribe 미사용).
 
   return {
     // ⚠️ old 와 동일: Promise<void> 반환, send 실패 시 throw(await 호출자 표면화, R1)
@@ -83,18 +83,13 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
         ...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
       };
-      const { handle, sent } = chat.startTurn(req, (c) => {
-        // ⚠️ onChunk(shell 렌더) throw 해도 terminal handle 정리 보장(try/finally, R3)
-        try { opts.onChunk(chatChunkToWire(opts.requestId, c)); }
-        finally { if (c.kind === "finish" || c.kind === "error") handles.delete(opts.requestId); }
-      });
-      handles.set(opts.requestId, handle);
-      try { await sent; } catch (e) { handles.delete(opts.requestId); throw e; } // send reject(agent 미도달)=정리 + old throw 호환
+      const { sent } = chat.startTurn(req, (c) => opts.onChunk(chatChunkToWire(opts.requestId, c)));
+      await sent; // send reject 시 throw(old await/throw 호환). 상태/레지스트리 해제는 ChatService 가(terminal/reject).
     },
-    // old cancelChat(requestId): handle 조회(없으면 최소 handle 로 — 권한=레지스트리 requestId→clientId 대조).
-    async cancelChat(requestId: string): Promise<void> {
-      const h = handles.get(requestId) ?? { requestId, clientId, unsubscribe: () => {} };
-      try { await chat.cancel(h); } finally { handles.delete(requestId); }
+    // old cancelChat(requestId): 최소 handle 재구성(권한=ChatService 가 레지스트리 requestId→clientId 대조; unsubscribe 미사용).
+    cancelChat(requestId: string): Promise<void> {
+      const handle: TurnHandle = { requestId, clientId, unsubscribe: () => {} };
+      return chat.cancel(handle);
     },
     sendCredsUpdate(payload: ShellCredsPayload): Promise<void> {
       const secret: { apiKey?: string; naiaKey?: string } = {};
