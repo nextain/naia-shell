@@ -83,9 +83,12 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
         ...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
       };
-      const { handle, sent } = chat.startTurn(req, (c) => opts.onChunk(chatChunkToWire(opts.requestId, c)));
+      const { handle, sent } = chat.startTurn(req, (c) => {
+        opts.onChunk(chatChunkToWire(opts.requestId, c));
+        if (c.kind === "finish" || c.kind === "error") handles.delete(opts.requestId); // ⚠️ terminal 시 handle 정리(누수 방지, R2)
+      });
       handles.set(opts.requestId, handle);
-      try { await sent; } finally { /* handle 은 cancel 위해 유지; turn 종결 시 ChatService 가 레지스트리 해제 */ }
+      try { await sent; } catch (e) { handles.delete(opts.requestId); throw e; } // send reject(agent 미도달)=정리 + old throw 호환
     },
     // old cancelChat(requestId): handle 조회(없으면 최소 handle 로 — 권한=레지스트리 requestId→clientId 대조).
     async cancelChat(requestId: string): Promise<void> {
