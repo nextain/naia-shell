@@ -8,12 +8,15 @@ import type { AgentResponseChunk, ProviderConfig } from "./types";
 // 미설정 시 기존 경로 그대로(voice/tts/gateway 등 보존) — 비파괴·지속가능.
 import { makeShellChatService } from "@nextain/naia-os-core/shell-compat";
 
-// 빌드타임 env(prod/dev) OR 런타임 window 플래그(E2E 가 addInitScript 로 주입 — dev 서버
-// env 없이도 통합테스트가 새 경로를 강제·검증). 둘 다 없으면 기존 경로 그대로.
-const NEW_CORE =
-	import.meta.env?.VITE_NAIA_NEW_CORE === "1" ||
-	(typeof window !== "undefined" &&
-		(window as { __NAIA_NEW_CORE__?: boolean }).__NAIA_NEW_CORE__ === true);
+// 빌드타임 env(prod/dev) OR 런타임 window 플래그(E2E 가 addInitScript 로 주입). ⚠️ *호출 시점*에
+// 평가(함수) — 모듈-const 스냅샷은 import 후 주입된 플래그를 놓침(codex 2-clean 지적). 둘 다 없으면 기존 경로.
+function isNewCore(): boolean {
+	return (
+		import.meta.env?.VITE_NAIA_NEW_CORE === "1" ||
+		(typeof window !== "undefined" &&
+			(window as { __NAIA_NEW_CORE__?: boolean }).__NAIA_NEW_CORE__ === true)
+	);
+}
 let _coreChat: ReturnType<typeof makeShellChatService> | null = null;
 function coreChat() {
 	if (!_coreChat)
@@ -158,7 +161,7 @@ const RESPONSE_TIMEOUT_MS = 120_000; // Safety: clean up listener if no finish/e
 
 export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 	// new-naia 코어 경유(UC1 텍스트). voice/tts/route 는 미지원(UC2 후속) — 기존 경로가 담당.
-	if (NEW_CORE) {
+	if (isNewCore()) {
 		return coreChat().sendChatMessage({
 			message: opts.message,
 			provider: opts.provider,
@@ -258,7 +261,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 }
 
 export async function cancelChat(requestId: string): Promise<void> {
-	if (NEW_CORE) { await coreChat().cancelChat(requestId).catch(() => {}); return; }
+	if (isNewCore()) { await coreChat().cancelChat(requestId).catch(() => {}); return; }
 	// cancel_stream 은 별 Tauri command — fire-and-forget swallow.
 	try {
 		await invoke("cancel_stream", { requestId });
