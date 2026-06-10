@@ -13,17 +13,6 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 const YT_BASE = "http://localhost:18791";
 
-// YouTube's IFrame embed validates the `origin` param against a real web origin.
-// On Linux/WebKitGTK the app origin is a custom scheme (e.g. `tauri://localhost`),
-// which YouTube rejects with a "video player configuration" error (153) — the
-// BGM player then shows a black/error frame. Windows uses `https://tauri.localhost`
-// so it slipped through there. Only pass `origin` when it's a real http(s) origin;
-// omitting it is allowed (postMessage commands already target "*").
-function ytOriginParam(): string {
-	const o = window.location.origin;
-	return /^https?:\/\//.test(o) ? `&origin=${encodeURIComponent(o)}` : "";
-}
-
 interface YtVideo {
 	id: string;
 	title: string;
@@ -349,14 +338,9 @@ export function BgmPlayer({ naia }: Props) {
 	// If the app was closed while YouTube was playing, resume automatically.
 	useEffect(() => {
 		const cfg = loadConfig();
-		if (!cfg?.bgmYoutubeVideoId || !cfg.bgmPlaying) return;
-		const embedUrl =
-			`https://www.youtube-nocookie.com/embed/${cfg.bgmYoutubeVideoId}` +
-			`?autoplay=1&enablejsapi=1` +
-			ytOriginParam();
-		setBackgroundVideoUrl(embedUrl);
-		setBackgroundMediaType("iframe");
-		setPlaying(true);
+		if (!cfg?.bgmYoutubeVideoId || !cfg.bgmPlaying || !currentYt) return;
+		// Resume via the direct-stream path (not the iframe embed — see handleYtSelect).
+		handleYtSelect(currentYt);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -395,12 +379,11 @@ export function BgmPlayer({ naia }: Props) {
 
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
-	function handleYtSelect(video: YtVideo) {
+	async function handleYtSelect(video: YtVideo) {
 		audioRef.current?.pause();
 		setCurrentYt(video);
 		lastYtRef.current = video;
 		setSource("youtube");
-		setPlaying(true);
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
@@ -409,41 +392,49 @@ export function BgmPlayer({ naia }: Props) {
 
 		if (!prevBgVideoRef.current && prevBgMediaRef.current === "") {
 			const { backgroundVideoUrl: curUrl, backgroundMediaType: curType } = useAvatarStore.getState();
-			if (curType !== "iframe") {
+			if (curType !== "iframe" && curType !== "video") {
 				prevBgVideoRef.current = curUrl;
 				prevBgMediaRef.current = curType;
 			}
 		}
-		const embedUrl =
-			`https://www.youtube-nocookie.com/embed/${video.id}` +
-			`?autoplay=1&enablejsapi=1` +
-			ytOriginParam();
-		setBackgroundVideoUrl(embedUrl);
-		setBackgroundMediaType("iframe");
-	}
 
-	function sendYtCmd(func: string) {
-		const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
-		iframe?.contentWindow?.postMessage(
-			JSON.stringify({ event: "command", func, args: [] }),
-			"*",
-		);
+		// Play via the local InnerTube server's direct stream URL (audio/webm =
+		// Opus/Vorbis), which WebKitGTK decodes natively. The youtube-nocookie
+		// iframe embed fails on WebKitGTK with "video player configuration error"
+		// (153) — it needs YouTube's full player. Direct stream is the pre-regression
+		// path (#262, regressed by the iframe switch in #303 / aa3fe947).
+		try {
+			const res = await fetch(`${YT_BASE}/yt/stream?id=${encodeURIComponent(video.id)}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = (await res.json()) as { url: string; videoUrl?: string };
+			const audio = audioRef.current;
+			if (audio) {
+				audio.src = data.url;
+				audio.volume = volumeRef.current;
+				audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+			}
+			// Optional video-only stream as background (best-effort; audio is primary).
+			if (data.videoUrl) {
+				setBackgroundVideoUrl(data.videoUrl);
+				setBackgroundMediaType("video");
+			}
+		} catch (err) {
+			Logger.warn("BgmPlayer", "yt stream failed", { error: String(err) });
+			setPlaying(false);
+		}
 	}
 
 	function togglePlay() {
 		if (source === "youtube") {
+			const audio = audioRef.current;
 			if (playing) {
-				sendYtCmd("pauseVideo");
+				audio?.pause();
 				setPlaying(false);
-			} else {
-				const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
-				if (!iframe && currentYt) {
-					// No iframe yet (e.g. restored from config) — reload the video
-					handleYtSelect(currentYt);
-				} else {
-					sendYtCmd("playVideo");
-					setPlaying(true);
-				}
+			} else if (audio?.src) {
+				audio.play().then(() => setPlaying(true)).catch(() => {});
+			} else if (currentYt) {
+				// No stream loaded yet (e.g. restored from config) — fetch & play
+				handleYtSelect(currentYt);
 			}
 			return;
 		}
