@@ -26,13 +26,12 @@ describe("makeShellChatService (drop-in seam)", () => {
   it("sendChatMessage: secret strip + send_to_agent_command + onChunk 가 wire 받음", async () => {
     const { live, invokes, emit } = mockTauri();
     const svc = makeShellChatService({ live, clientId: "shell" });
-    svc.start();
     const got: Record<string, unknown>[] = [];
-    const { sent } = svc.sendChatMessage({
+    await svc.sendChatMessage({
       message: "안녕", provider: { provider: "ollama", model: "gemma4", apiKey: "sk-secret" },
       history: [], onChunk: (c) => got.push(c), requestId: "r1", enableThinking: true,
     });
-    await sent; await Promise.resolve();
+    await Promise.resolve();
     // 송신: send_to_agent_command, secret 미포함, enableThinking top-level
     const msg = JSON.parse(invokes[0]!.args["message"] as string);
     expect(invokes[0]!.cmd).toBe("send_to_agent_command");
@@ -48,10 +47,15 @@ describe("makeShellChatService (drop-in seam)", () => {
   it("cancelChat: cancel_stream 송신", async () => {
     const { live, invokes } = mockTauri();
     const svc = makeShellChatService({ live });
-    svc.start();
-    const { handle, sent } = svc.sendChatMessage({ message: "x", provider: { provider: "o", model: "m" }, history: [], onChunk: () => {}, requestId: "r1" });
-    await sent;
-    await svc.cancelChat(handle);
+    await svc.sendChatMessage({ message: "x", provider: { provider: "o", model: "m" }, history: [], onChunk: () => {}, requestId: "r1" });
+    await svc.cancelChat("r1");
     expect(invokes.some((i) => i.cmd === "cancel_stream" && i.args["requestId"] === "r1")).toBe(true);
+  });
+  it("sendCredsUpdate: creds_update wire(secret 채널)", async () => {
+    const { live, invokes } = mockTauri();
+    const svc = makeShellChatService({ live });
+    await svc.sendCredsUpdate({ provider: "openai", apiKey: "sk-x" });
+    const msg = JSON.parse(invokes[0]!.args["message"] as string);
+    expect(msg.type).toBe("creds_update"); expect(msg.apiKey).toBe("sk-x");
   });
 });
