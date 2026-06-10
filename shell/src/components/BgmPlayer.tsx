@@ -13,6 +13,16 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 const YT_BASE = "http://localhost:18791";
 
+// YouTube's IFrame embed validates the `origin` param against a real web origin.
+// On Linux/WebKitGTK the app origin is a custom scheme (e.g. `tauri://localhost`),
+// which YouTube rejects with a "video player configuration" error (153) — the
+// BGM player then shows a black/error frame. Windows uses `https://tauri.localhost`
+// so it slipped through there. Only pass `origin` when it's a real http(s) origin;
+// omitting it is allowed (postMessage commands already target "*").
+function ytOriginParam(): string {
+	const o = window.location.origin;
+	return /^https?:\/\//.test(o) ? `&origin=${encodeURIComponent(o)}` : "";
+}
 
 interface YtVideo {
 	id: string;
@@ -343,7 +353,7 @@ export function BgmPlayer({ naia }: Props) {
 		const embedUrl =
 			`https://www.youtube-nocookie.com/embed/${cfg.bgmYoutubeVideoId}` +
 			`?autoplay=1&enablejsapi=1` +
-			`&origin=${encodeURIComponent(window.location.origin)}`;
+			ytOriginParam();
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 		setPlaying(true);
@@ -407,7 +417,7 @@ export function BgmPlayer({ naia }: Props) {
 		const embedUrl =
 			`https://www.youtube-nocookie.com/embed/${video.id}` +
 			`?autoplay=1&enablejsapi=1` +
-			`&origin=${encodeURIComponent(window.location.origin)}`;
+			ytOriginParam();
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 	}
