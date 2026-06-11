@@ -53,6 +53,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
   sendChatMessage(opts: ShellSendOptions): Promise<void>;
   cancelChat(requestId: string): Promise<void>;
   sendCredsUpdate(payload: ShellCredsPayload): Promise<void>;
+  sendApprovalResponse(requestId: string, toolCallId: string, decision: "approve" | "reject"): Promise<void>;
 } {
   const clientId = deps.clientId ?? "shell";
   const sessions = new InMemoryClientSession();
@@ -96,6 +97,10 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
       if (payload.apiKey !== undefined) secret.apiKey = payload.apiKey;
       if (payload.naiaKey !== undefined) secret.naiaKey = payload.naiaKey;
       return transport.send({ kind: "credsUpdate", provider: payload.provider, secret });
+    },
+    // UC13 — 승인 응답 송신(approval_response wire). decision=approve|reject(매핑은 shell chat-service). send reject 전파.
+    sendApprovalResponse(requestId: string, toolCallId: string, decision: "approve" | "reject"): Promise<void> {
+      return transport.send({ kind: "approvalResponse", requestId, clientId, toolCallId, decision });
     },
   };
 }

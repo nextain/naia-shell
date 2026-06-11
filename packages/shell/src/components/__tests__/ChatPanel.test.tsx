@@ -46,6 +46,7 @@ vi.mock("../../lib/chat-service", () => ({
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
 	fetchAgentSkills: vi.fn().mockResolvedValue([]),
 	requestTts: vi.fn().mockResolvedValue(undefined),
+	sendApprovalResponse: vi.fn().mockResolvedValue(undefined),
 	sendPanelToolResult: vi.fn().mockResolvedValue(undefined),
 }));
 

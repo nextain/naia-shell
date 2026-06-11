@@ -27,6 +27,7 @@ import {
 	directToolCall,
 	fetchAgentSkills,
 	requestTts,
+	sendApprovalResponse,
 	sendChatMessage,
 	sendPanelToolResult,
 } from "../lib/chat-service";
@@ -296,23 +297,7 @@ function playBase64Audio(base64: string): void {
 	);
 }
 
-function sendApprovalResponse(
-	requestId: string,
-	toolCallId: string,
-	decision: "once" | "always" | "reject",
-): void {
-	const message = JSON.stringify({
-		type: "approval_response",
-		requestId,
-		toolCallId,
-		decision,
-	});
-	invoke("send_to_agent_command", { message }).catch((err) => {
-		Logger.warn("ChatPanel", "Failed to send approval response", {
-			error: String(err),
-		});
-	});
-}
+// ⚠️ UC13: 로컬 sendApprovalResponse(직접 invoke) 제거 → chat-service 의 것 사용(NEW_CORE 분기 + once/always→approve 매핑 + fire-and-forget swallow). import 참조.
 
 /**
  * Pick a scenario-specific failure message from the last voice connection

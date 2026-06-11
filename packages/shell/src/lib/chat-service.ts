@@ -157,6 +157,31 @@ export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
 	await safeSendToAgent(request, "sendCredsUpdate");
 }
 
+/**
+ * UC13 — 승인 응답 송신. UI 결정(once|always|reject) → wire decision 매핑(once/always→approve).
+ * ⚠️ fire-and-forget 안전: 내부 swallow+log(old ChatPanel .catch 패리티) — 호출자에게 절대 reject 안 함.
+ * NEW_CORE → 새 core transport(approve|reject). else → old 경로 raw(once/always/reject, old agent 호환).
+ */
+export async function sendApprovalResponse(
+	requestId: string,
+	toolCallId: string,
+	uiDecision: "once" | "always" | "reject",
+): Promise<void> {
+	const mapped: "approve" | "reject" = uiDecision === "reject" ? "reject" : "approve";
+	try {
+		if (isNewCore()) {
+			await coreChat().sendApprovalResponse(requestId, toolCallId, mapped);
+			return;
+		}
+		await safeSendToAgent(
+			{ type: "approval_response", requestId, toolCallId, decision: uiDecision },
+			"sendApprovalResponse",
+		);
+	} catch (err) {
+		Logger.warn("ChatService", "sendApprovalResponse swallowed", { error: String(err) });
+	}
+}
+
 const RESPONSE_TIMEOUT_MS = 120_000; // Safety: clean up listener if no finish/error
 
 export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
