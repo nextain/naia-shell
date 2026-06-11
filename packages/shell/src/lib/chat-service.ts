@@ -10,7 +10,7 @@ import { makeShellChatService } from "@nextain/naia-os-core/shell-compat";
 
 // 빌드타임 env(prod/dev) OR 런타임 window 플래그(E2E 가 addInitScript 로 주입). ⚠️ *호출 시점*에
 // 평가(함수) — 모듈-const 스냅샷은 import 후 주입된 플래그를 놓침(codex 2-clean 지적). 둘 다 없으면 기존 경로.
-function isNewCore(): boolean {
+export function isNewCore(): boolean {
 	return (
 		import.meta.env?.VITE_NAIA_NEW_CORE === "1" ||
 		(typeof window !== "undefined" &&

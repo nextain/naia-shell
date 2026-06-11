@@ -26,6 +26,7 @@ import {
 	cancelChat,
 	directToolCall,
 	fetchAgentSkills,
+	isNewCore,
 	requestTts,
 	sendApprovalResponse,
 	sendChatMessage,
@@ -714,6 +715,7 @@ export function ChatPanel() {
 		// voice). Mirror it into the transcript too — otherwise the user's own
 		// line never appears on screen.
 		if (
+			!isNewCore() &&
 			voiceMode === "active" &&
 			!pipelineActiveRef.current &&
 			voiceSessionRef.current?.isConnected
@@ -750,7 +752,8 @@ export function ChatPanel() {
 		const store = useChatStore.getState();
 
 		const config = await loadConfigWithSecrets();
-		if (config?.provider === "nextain" && !config?.naiaKey) {
+		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
+		if (!isNewCore() && config?.provider === "nextain" && !config?.naiaKey) {
 			useChatStore
 				.getState()
 				.appendStreamChunk(
@@ -766,7 +769,11 @@ export function ChatPanel() {
 		// the mic for voice transition) and route this text turn through it via
 		// sendText. The user message was already added above; the realtime
 		// session streams the reply (response.text.delta → onOutputTranscript).
+		// ⚠️ 새 core(이식) 모드 = 텍스트 채팅을 검증된 엔진(os core → stdio agent → GLM)으로 직행.
+		// omni-voice(realtime WS)는 이 이식 슬라이스 밖이므로 새 core 시 우회(안 그러면 omni 모델 기본값이
+		// 텍스트를 음성 WS 로 보내 "WebSocket error" — UC1 UI 마감). 음성은 후속 UC2 슬라이스.
 		if (
+			!isNewCore() &&
 			config?.provider === "nextain" &&
 			config?.model &&
 			isOmniModel(config.provider, config.model) &&
@@ -778,7 +785,9 @@ export function ChatPanel() {
 			voiceSessionRef.current?.sendText(text);
 			return;
 		}
+		// 새 core 는 에이전트가 provider/key(GLM_KEY env) 를 쥐므로 UI 키 게이트 우회(없어도 전송).
 		if (
+			!isNewCore() &&
 			!isApiKeyOptional(config?.provider ?? "") &&
 			!config?.apiKey &&
 			!config?.naiaKey
@@ -788,6 +797,8 @@ export function ChatPanel() {
 			completeCurrentRequest(requestId);
 			return;
 		}
+		// config 없음 = 설정/온보딩 전 신규 유저. 새 core 라도 다운스트림(provider/model/tts)이 config 필드를
+		// 요구하므로 여기서 안전 종료(우회 시 null 참조). 신규 유저의 config 생성 = 온보딩/모델셋팅 슬라이스 범위.
 		if (!config) {
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
