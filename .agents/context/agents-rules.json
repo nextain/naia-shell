@@ -130,9 +130,9 @@
 			{
 				"id": "P04",
 				"name": "integration_test",
-				"description": "통합 테스트 파일 생성 또는 검증 스크립트 결과 첨부.",
-				"deliverable": "테스트 파일 경로 또는 검증 결과",
-				"gate": "테스트 없으면 PR 머지 금지"
+				"description": "통합 테스트 파일 생성 또는 검증 스크립트 결과 첨부. 검증 수단(누락·punt 금지 — '검증 불가'는 핑계): (a) 순수 로직 = vitest(`pnpm test`). (b) UI(컴포넌트/배선/라우팅) = 실 UI 자동구동 Playwright e2e(`e2e/`, `pnpm test:e2e`). (c) Rust(src-tauri) 또는 풀스택(UI→IPC→Rust→config/agent) = 실 Tauri 바이너리 e2e(`e2e-tauri/`, wdio+tauri-driver, 헤드리스 `xvfb-run pnpm test:e2e:tauri`; README=packages/shell/e2e-tauri/README.md, 헬퍼 configureSettings). **계획 단계(P01~P03)에서 Rust+UI 테스트를 명시 포함**한다(어느 수단으로 무엇을 검증할지). GUI/Rust 는 헤드리스로 검증 가능 — 수동 클릭/‘검증 불가’로 미루지 않는다.",
+				"deliverable": "테스트 파일 경로(vitest + Playwright e2e + 해당 시 e2e-tauri) 또는 검증 결과",
+				"gate": "테스트 없으면 PR 머지 금지 — UI/Rust 변경은 실 UI(Playwright) 또는 실 백엔드(e2e-tauri) 검증 포함 필수"
 			},
 			{
 				"id": "P05",
