@@ -769,11 +769,11 @@ export function ChatPanel() {
 		// the mic for voice transition) and route this text turn through it via
 		// sendText. The user message was already added above; the realtime
 		// session streams the reply (response.text.delta → onOutputTranscript).
-		// ⚠️ 새 core(이식) 모드 = 텍스트 채팅을 검증된 엔진(os core → stdio agent → GLM)으로 직행.
-		// omni-voice(realtime WS)는 이 이식 슬라이스 밖이므로 새 core 시 우회(안 그러면 omni 모델 기본값이
-		// 텍스트를 음성 WS 로 보내 "WebSocket error" — UC1 UI 마감). 음성은 후속 UC2 슬라이스.
+		// omni-voice(naia-*-omni-*) 모델은 항상 /v1/realtime WS 로 직행(음성 = 후속 UC2 경로) — 새 core 여부와 무관.
+		// 텍스트 채팅을 새 core(os core → stdio agent → GLM)로 보내려면 *텍스트 모델*을 선택해야 한다(= UC12
+		// 모델셋팅 슬라이스). 여기에 !isNewCore() 가드를 걸면 omni 모델 텍스트가 새 core 로 잘못 흘러
+		// uc1-new-core "omni → realtime 우회" 계약을 깬다(라이브 검증서 회귀로 적발, 2026-06-12).
 		if (
-			!isNewCore() &&
 			config?.provider === "nextain" &&
 			config?.model &&
 			isOmniModel(config.provider, config.model) &&
