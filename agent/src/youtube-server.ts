@@ -3,10 +3,81 @@
  * Exposes InnerTube-based search and stream URL endpoints for the shell BGM player.
  * The Innertube client is a lazy singleton shared with the youtube-bgm skill.
  */
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Innertube } from "youtubei.js";
 
 export const YT_SERVER_PORT = 18791;
+
+// ── yt-dlp stream extraction ──────────────────────────────────────────────────
+// YouTube gates InnerTube stream URLs behind a po_token (bot detection) — its
+// formats come back with no playable URL. yt-dlp extracts a direct URL reliably
+// (ANDROID_VR etc. clients) and is actively maintained against YouTube changes.
+// We prefer Opus/webm audio, which Flatpak WebKitGTK decodes natively (no
+// proprietary AAC/H.264 codecs). Bundled at /app/bin/yt-dlp in the Flatpak. (#262)
+
+function ytDlpPath(): string {
+	if (process.env.YTDLP_PATH) return process.env.YTDLP_PATH;
+	for (const p of ["/app/bin/yt-dlp", "/app/bin/yt-dlp_linux"]) {
+		if (existsSync(p)) return p;
+	}
+	return "yt-dlp";
+}
+
+interface YtAudioMeta {
+	url: string;
+	ext?: string;
+	title?: string;
+	duration?: number;
+}
+
+function ytDlpAudio(id: string): Promise<YtAudioMeta> {
+	return new Promise((resolve, reject) => {
+		const args = [
+			"-f",
+			"bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio",
+			"-j",
+			"--no-warnings",
+			"--no-playlist",
+			`https://www.youtube.com/watch?v=${id}`,
+		];
+		const child = spawn(ytDlpPath(), args, { stdio: ["ignore", "pipe", "pipe"] });
+		let out = "";
+		let err = "";
+		const timer = setTimeout(() => {
+			child.kill("SIGKILL");
+			reject(new Error("yt-dlp timeout"));
+		}, 25000);
+		child.stdout.on("data", (d) => {
+			out += d;
+		});
+		child.stderr.on("data", (d) => {
+			err += d;
+		});
+		child.on("error", (e) => {
+			clearTimeout(timer);
+			reject(e);
+		});
+		child.on("close", (code) => {
+			clearTimeout(timer);
+			if (code !== 0) {
+				reject(new Error(`yt-dlp exit ${code}: ${err.slice(0, 200)}`));
+				return;
+			}
+			try {
+				const j = JSON.parse(out) as { url?: string; ext?: string; title?: string; duration?: number };
+				if (!j.url) {
+					reject(new Error("yt-dlp: no url in output"));
+					return;
+				}
+				resolve({ url: j.url, ext: j.ext, title: j.title, duration: j.duration });
+			} catch (e) {
+				reject(new Error(`yt-dlp parse error: ${e}`));
+			}
+		});
+	});
+}
 
 // ── Innertube singleton ───────────────────────────────────────────────────────
 
@@ -85,70 +156,20 @@ async function handleStream(req: IncomingMessage, res: ServerResponse, params: U
 	const id = params.get("id")?.trim() ?? "";
 	if (!id || !YT_ID_RE.test(id)) { json(req, res, 400, { error: "invalid video id" }); return; }
 
-	const yt = await getInnertube();
-
-	// TV_EMBEDDED client ("TVHTML5_SIMPLY_EMBEDDED_PLAYER") bypasses PoToken requirement
-	// and returns direct stream URLs for most public videos.
-	// Falls back to WEB if TV_EMBEDDED has no audio formats.
-	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-	let info: any;
-	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-	let format: any;
-	let url: string | undefined;
-
-	for (const client of ["TV_EMBEDDED", "WEB"] as const) {
-		try {
-			info = await (yt as any).getBasicInfo(id, client);
-		} catch (e) {
-			process.stderr.write(`[youtube-server] getBasicInfo(${client}) error: ${e}\n`);
-			continue;
-		}
-		try {
-			// Prefer webm/Opus audio: Flatpak WebKitGTK ships no proprietary codecs
-			// (no AAC/H.264) but decodes Opus/Vorbis natively. Fall back to any format
-			// only if the video has no webm audio (rare). (#262)
-			try {
-				format = info.chooseFormat({ type: "audio", quality: "best", format: "webm" });
-			} catch {
-				format = info.chooseFormat({ type: "audio", quality: "best", format: "any" });
-			}
-		} catch (e) {
-			process.stderr.write(`[youtube-server] chooseFormat(${client}) error: ${e}\n`);
-			format = undefined;
-		}
-		if (!format) continue;
-
-		url = format.url;
-		if (!url && typeof format.decipher === "function") {
-			try { url = await format.decipher(yt.session?.player); } catch (e) {
-				process.stderr.write(`[youtube-server] decipher(${client}) error: ${e}\n`);
-			}
-		}
-		if (url) break;
-		process.stderr.write(`[youtube-server] no URL for client=${client}, trying next\n`);
-		format = undefined;
-	}
-
-	if (!format) { json(req, res, 404, { error: "no audio format found" }); return; }
-	if (!url) { json(req, res, 404, { error: "could not resolve stream URL" }); return; }
-
-	// Try to get a video-only stream URL for background display (low quality, optional)
-	let videoUrl: string | undefined;
+	// Resolve a direct Opus/webm audio URL via yt-dlp (see ytDlpAudio above) —
+	// InnerTube can no longer return playable stream URLs (po_token wall).
 	try {
-		// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
-		const videoFormat: any = info.chooseFormat({ type: "video", quality: "360p" });
-		if (videoFormat?.url) videoUrl = videoFormat.url;
-	} catch {
-		// video format is optional — audio-only is sufficient
+		const meta = await ytDlpAudio(id);
+		json(req, res, 200, {
+			url: meta.url,
+			mime: meta.ext === "m4a" || meta.ext === "mp4" ? "audio/mp4" : "audio/webm",
+			title: meta.title ?? "",
+			duration: meta.duration ?? 0,
+		});
+	} catch (e) {
+		process.stderr.write(`[youtube-server] yt-dlp(${id}) error: ${e}\n`);
+		json(req, res, 502, { error: "could not resolve stream URL" });
 	}
-
-	json(req, res, 200, {
-		url,
-		mime: format.mime_type ?? "audio/webm",
-		title: typeof info.basic_info?.title === "string" ? info.basic_info.title : "",
-		duration: info.basic_info?.duration ?? 0,
-		...(videoUrl ? { videoUrl } : {}),
-	});
 }
 
 // ── Server bootstrap ──────────────────────────────────────────────────────────

@@ -46,6 +46,11 @@ modules:
           - shell/node_modules
           - agent/node_modules
           - agent/dist
+      # yt-dlp standalone binary — YouTube BGM stream extraction (#262).
+      - type: file
+        url: https://github.com/yt-dlp/yt-dlp/releases/download/2026.06.09/yt-dlp_linux
+        sha256: bf8aac79b72287a6d2043074415132558b43743a8f9461a22b0141e90f16ce66
+        dest-filename: yt-dlp
     build-options:
       env:
         CARGO_HOME: /run/build/Naia-OS/cargo
@@ -71,6 +76,8 @@ modules:
       - install -Dm755 shell/src-tauri/resources/libvosk.so /app/lib/libvosk.so
       # Node.js runtime (for agent)
       - install -Dm755 /usr/lib/sdk/node22/bin/node /app/bin/node
+      # yt-dlp (YouTube BGM stream URLs — InnerTube is po_token-walled, #262)
+      - install -Dm755 yt-dlp /app/bin/yt-dlp
       # Agent bundle (dist + node_modules for runtime)
       - mkdir -p /app/lib/naia-os/agent
       - cp -rL agent/dist /app/lib/naia-os/agent/dist
