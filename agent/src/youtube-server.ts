@@ -61,6 +61,25 @@ function pickStreams(info: any): YtStreams {
 	};
 }
 
+// Resolved-stream cache. Stream URLs are signed + time-limited (~5-6h); cache
+// well under that so re-plays and hover-prefetched tracks start instantly. Also
+// dedupes concurrent requests for the same id (in-flight promise sharing). (#262)
+const STREAM_TTL_MS = 4 * 60 * 60 * 1000;
+const _streamCache = new Map<string, { at: number; p: Promise<YtStreams> }>();
+
+function cachedStreams(id: string): Promise<YtStreams> {
+	const hit = _streamCache.get(id);
+	if (hit && Date.now() - hit.at < STREAM_TTL_MS) return hit.p;
+	const p = ytDlpStreams(id);
+	_streamCache.set(id, { at: Date.now(), p });
+	// On failure, drop the entry so the next request retries instead of replaying
+	// the rejected promise.
+	p.catch(() => {
+		if (_streamCache.get(id)?.p === p) _streamCache.delete(id);
+	});
+	return p;
+}
+
 function ytDlpStreams(id: string): Promise<YtStreams> {
 	return new Promise((resolve, reject) => {
 		const args = ["-j", "--no-warnings", "--no-playlist", `https://www.youtube.com/watch?v=${id}`];
@@ -176,7 +195,7 @@ async function handleStream(req: IncomingMessage, res: ServerResponse, params: U
 	// Resolve a direct Opus/webm audio URL via yt-dlp (see ytDlpAudio above) —
 	// InnerTube can no longer return playable stream URLs (po_token wall).
 	try {
-		const s = await ytDlpStreams(id);
+		const s = await cachedStreams(id);
 		json(req, res, 200, {
 			url: s.audioUrl,
 			mime: "audio/webm",

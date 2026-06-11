@@ -380,6 +380,16 @@ export function BgmPlayer({ naia }: Props) {
 
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
+	// Warm the server-side stream cache on hover so clicking a track starts fast.
+	const prefetchedRef = useRef<Set<string>>(new Set());
+	function prefetchYt(id: string) {
+		if (!id || prefetchedRef.current.has(id)) return;
+		prefetchedRef.current.add(id);
+		fetch(`${YT_BASE}/yt/stream?id=${encodeURIComponent(id)}`).catch(() => {
+			prefetchedRef.current.delete(id);
+		});
+	}
+
 	async function handleYtSelect(video: YtVideo) {
 		audioRef.current?.pause();
 		setCurrentYt(video);
@@ -734,6 +744,7 @@ export function BgmPlayer({ naia }: Props) {
 											fav={isFav(v.id)}
 											onPlay={() => handleYtSelect(v)}
 											onFav={() => toggleFav(v)}
+											onHover={() => prefetchYt(v.id)}
 										/>
 									))}
 								</div>
@@ -753,6 +764,7 @@ export function BgmPlayer({ naia }: Props) {
 											fav={true}
 											onPlay={() => handleYtSelect(v)}
 											onFav={() => toggleFav(v)}
+											onHover={() => prefetchYt(v.id)}
 										/>
 									))}
 								</div>
@@ -835,13 +847,15 @@ interface RowProps {
 	fav: boolean;
 	onPlay: () => void;
 	onFav: () => void;
+	onHover?: () => void;
 }
 
-function YtTrackRow({ video, loading, playing, fav, onPlay, onFav }: RowProps) {
+function YtTrackRow({ video, loading, playing, fav, onPlay, onFav, onHover }: RowProps) {
 	return (
 		<div
 			className={`bgm-yt-row${playing ? " bgm-yt-row--playing" : ""}`}
 			onClick={onPlay}
+			onMouseEnter={onHover}
 			onKeyDown={(e) => e.key === "Enter" && onPlay()}
 			role="button"
 			tabIndex={0}
