@@ -27,6 +27,7 @@ import {
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
+	isNewCore,
 	sendAuthUpdate,
 	sendCredsUpdate,
 	sendNotifyConfig,
@@ -120,7 +121,9 @@ function applyTheme(theme: ThemeId) {
 function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 	const avatarLoaded = useAvatarStore((s) => s.isLoaded);
 	const [timedOut, setTimedOut] = useState(false);
-	const skipAvatarWait = showAdkSetup || showOnboarding;
+	// 새 core(이식) dev = 채팅 백엔드 검증이 목적, 아바타는 이 슬라이스 밖 → 아바타 로드 대기 안 함(즉시 ready).
+	// 아바타 자산 미배치·로드 행으로 스플래시가 안 풀리는 것 방지(유저 진입 UI 이식 전 임시).
+	const skipAvatarWait = showAdkSetup || showOnboarding || isNewCore();
 
 	useEffect(() => {
 		if (skipAvatarWait || avatarLoaded) return;
