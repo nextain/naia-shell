@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
+	buildNaiaConfigEnv,
 	clearAdkPath,
 	copyBundledAssets,
 	getAdkPath,
@@ -239,5 +240,34 @@ describe("copyBundledAssets", () => {
 		await expect(copyBundledAssets(WIN_ADK)).rejects.toThrow(
 			"Bundled assets directory not found",
 		);
+	});
+});
+
+// UC12: buildNaiaConfigEnv 가 naia-settings/config.json 에 쓰는 필드는 new-naia-agent
+// provider-resolver(resolveProviderSpec)가 읽는 필드와 **같은 계약**이어야 한다. 이 테스트가
+// OS-영속 측에서 그 필드명을 잠근다(에이전트 측 provider-resolver.test.ts 가 읽기 측을 잠금).
+describe("buildNaiaConfigEnv (UC12 — 에이전트 provider 선택 계약)", () => {
+	it("nextain → NAIA_MAIN_PROVIDER=naia + NAIA_ANYLLM_BASE_URL", () => {
+		const env = buildNaiaConfigEnv({ provider: "nextain", model: "naia-1", naiaGatewayUrl: "wss://gw" });
+		expect(env.NAIA_MAIN_PROVIDER).toBe("naia"); // resolver 가 nextain↔naia 정규화에 맞춤
+		expect(env.NAIA_MAIN_MODEL).toBe("naia-1");
+		expect(env.NAIA_ANYLLM_BASE_URL).toBe("wss://gw");
+	});
+
+	it("glm → NAIA_MAIN_PROVIDER=glm + NAIA_MAIN_MODEL", () => {
+		const env = buildNaiaConfigEnv({ provider: "glm", model: "glm-4.6" });
+		expect(env.NAIA_MAIN_PROVIDER).toBe("glm");
+		expect(env.NAIA_MAIN_MODEL).toBe("glm-4.6");
+	});
+
+	it("ollama → OPENAI_BASE_URL = host + /v1 (resolver ollama/openai-compat 입력)", () => {
+		const env = buildNaiaConfigEnv({ provider: "ollama", model: "gemma3:4b", ollamaHost: "http://localhost:11434" });
+		expect(env.NAIA_MAIN_PROVIDER).toBe("ollama");
+		expect(env.OPENAI_BASE_URL).toBe("http://localhost:11434/v1");
+	});
+
+	it("vllm → OPENAI_BASE_URL = host + /v1", () => {
+		const env = buildNaiaConfigEnv({ provider: "vllm", model: "qwen", vllmHost: "http://h:8000" });
+		expect(env.OPENAI_BASE_URL).toBe("http://h:8000/v1");
 	});
 });
