@@ -413,11 +413,9 @@ export function BgmPlayer({ naia }: Props) {
 				audio.volume = volumeRef.current;
 				audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
 			}
-			// Optional video-only stream as background (best-effort; audio is primary).
-			if (data.videoUrl) {
-				setBackgroundVideoUrl(data.videoUrl);
-				setBackgroundMediaType("video");
-			}
+			// No video background: YouTube's video streams are H.264, which Flatpak
+			// WebKitGTK can't decode (shows a broken frame). BGM is audio-only — keep
+			// the existing avatar/wallpaper background.
 		} catch (err) {
 			Logger.warn("BgmPlayer", "yt stream failed", { error: String(err) });
 			setPlaying(false);

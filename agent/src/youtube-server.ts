@@ -104,8 +104,14 @@ async function handleStream(req: IncomingMessage, res: ServerResponse, params: U
 			continue;
 		}
 		try {
-			// format:'any' avoids the default mp4-only filter (audio/webm would be excluded otherwise)
-			format = info.chooseFormat({ type: "audio", quality: "best", format: "any" });
+			// Prefer webm/Opus audio: Flatpak WebKitGTK ships no proprietary codecs
+			// (no AAC/H.264) but decodes Opus/Vorbis natively. Fall back to any format
+			// only if the video has no webm audio (rare). (#262)
+			try {
+				format = info.chooseFormat({ type: "audio", quality: "best", format: "webm" });
+			} catch {
+				format = info.chooseFormat({ type: "audio", quality: "best", format: "any" });
+			}
 		} catch (e) {
 			process.stderr.write(`[youtube-server] chooseFormat(${client}) error: ${e}\n`);
 			format = undefined;
