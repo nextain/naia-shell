@@ -140,6 +140,7 @@ export function BgmPlayer({ naia }: Props) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [searchResults, setSearchResults] = useState<YtVideo[]>([]);
 	const [searching, setSearching] = useState(false);
+	const [ytLoading, setYtLoading] = useState(false);
 	const [searchError, setSearchError] = useState<string | null>(null);
 	const [favs, setFavs] = useState<YtVideo[]>(loadFavs);
 	const [currentYt, setCurrentYt] = useState<YtVideo | null>(() => {
@@ -403,6 +404,7 @@ export function BgmPlayer({ naia }: Props) {
 		// iframe embed fails on WebKitGTK with "video player configuration error"
 		// (153) — it needs YouTube's full player. Direct stream is the pre-regression
 		// path (#262, regressed by the iframe switch in #303 / aa3fe947).
+		setYtLoading(true);
 		try {
 			const res = await fetch(`${YT_BASE}/yt/stream?id=${encodeURIComponent(video.id)}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -413,12 +415,18 @@ export function BgmPlayer({ naia }: Props) {
 				audio.volume = volumeRef.current;
 				audio.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
 			}
-			// No video background: YouTube's video streams are H.264, which Flatpak
-			// WebKitGTK can't decode (shows a broken frame). BGM is audio-only — keep
-			// the existing avatar/wallpaper background.
+			// Restore the YouTube visual: play the VP9/webm video-only stream as the
+			// background. WebKitGTK decodes VP9 natively (H.264 would show a broken
+			// frame). Capped at 480p server-side to keep bandwidth modest. (#262)
+			if (data.videoUrl) {
+				setBackgroundVideoUrl(data.videoUrl);
+				setBackgroundMediaType("video");
+			}
 		} catch (err) {
 			Logger.warn("BgmPlayer", "yt stream failed", { error: String(err) });
 			setPlaying(false);
+		} finally {
+			setYtLoading(false);
 		}
 	}
 
@@ -545,8 +553,9 @@ export function BgmPlayer({ naia }: Props) {
 
 	// ── Track name display ────────────────────────────────────────────────────
 
-	const trackLabel =
-		source === "youtube"
+	const trackLabel = ytLoading
+		? `⏳ ${currentYt?.title ?? t("bgm.defaultYouTubeTrack")}`
+		: source === "youtube"
 			? (currentYt?.title ?? t("bgm.defaultYouTubeTrack"))
 			: (localNames[localIndex] ?? t("bgm.localBgm"));
 

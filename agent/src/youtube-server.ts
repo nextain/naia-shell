@@ -25,23 +25,45 @@ function ytDlpPath(): string {
 	return "yt-dlp";
 }
 
-interface YtAudioMeta {
-	url: string;
-	ext?: string;
+interface YtStreams {
+	audioUrl: string;
+	videoUrl?: string;
 	title?: string;
 	duration?: number;
 }
 
-function ytDlpAudio(id: string): Promise<YtAudioMeta> {
+// biome-ignore lint/suspicious/noExplicitAny: yt-dlp JSON shape varies by version
+function pickStreams(info: any): YtStreams {
+	// biome-ignore lint/suspicious/noExplicitAny: format entries are loosely typed
+	const fmts: any[] = Array.isArray(info?.formats) ? info.formats : [];
+	// Opus/webm audio (WebKitGTK decodes Opus natively; no AAC codec in Flatpak).
+	const audios = fmts
+		.filter((f) => String(f?.acodec ?? "").startsWith("opus") && f?.ext === "webm" && f?.url)
+		.sort((a, b) => (b?.abr ?? 0) - (a?.abr ?? 0));
+	// VP9/webm video-only for the background, capped at 480p (ambiance — keep
+	// bandwidth modest; H.264 would not decode in Flatpak WebKitGTK).
+	const videos = fmts
+		.filter(
+			(f) =>
+				String(f?.vcodec ?? "").startsWith("vp9") &&
+				f?.ext === "webm" &&
+				f?.acodec === "none" &&
+				f?.url &&
+				(f?.height ?? 0) <= 480,
+		)
+		.sort((a, b) => (b?.height ?? 0) - (a?.height ?? 0));
+	if (!audios.length) throw new Error("no opus/webm audio format");
+	return {
+		audioUrl: audios[0].url,
+		videoUrl: videos[0]?.url,
+		title: typeof info?.title === "string" ? info.title : "",
+		duration: typeof info?.duration === "number" ? info.duration : 0,
+	};
+}
+
+function ytDlpStreams(id: string): Promise<YtStreams> {
 	return new Promise((resolve, reject) => {
-		const args = [
-			"-f",
-			"bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio",
-			"-j",
-			"--no-warnings",
-			"--no-playlist",
-			`https://www.youtube.com/watch?v=${id}`,
-		];
+		const args = ["-j", "--no-warnings", "--no-playlist", `https://www.youtube.com/watch?v=${id}`];
 		const child = spawn(ytDlpPath(), args, { stdio: ["ignore", "pipe", "pipe"] });
 		let out = "";
 		let err = "";
@@ -66,12 +88,7 @@ function ytDlpAudio(id: string): Promise<YtAudioMeta> {
 				return;
 			}
 			try {
-				const j = JSON.parse(out) as { url?: string; ext?: string; title?: string; duration?: number };
-				if (!j.url) {
-					reject(new Error("yt-dlp: no url in output"));
-					return;
-				}
-				resolve({ url: j.url, ext: j.ext, title: j.title, duration: j.duration });
+				resolve(pickStreams(JSON.parse(out)));
 			} catch (e) {
 				reject(new Error(`yt-dlp parse error: ${e}`));
 			}
@@ -159,12 +176,13 @@ async function handleStream(req: IncomingMessage, res: ServerResponse, params: U
 	// Resolve a direct Opus/webm audio URL via yt-dlp (see ytDlpAudio above) —
 	// InnerTube can no longer return playable stream URLs (po_token wall).
 	try {
-		const meta = await ytDlpAudio(id);
+		const s = await ytDlpStreams(id);
 		json(req, res, 200, {
-			url: meta.url,
-			mime: meta.ext === "m4a" || meta.ext === "mp4" ? "audio/mp4" : "audio/webm",
-			title: meta.title ?? "",
-			duration: meta.duration ?? 0,
+			url: s.audioUrl,
+			mime: "audio/webm",
+			title: s.title ?? "",
+			duration: s.duration ?? 0,
+			...(s.videoUrl ? { videoUrl: s.videoUrl } : {}),
 		});
 	} catch (e) {
 		process.stderr.write(`[youtube-server] yt-dlp(${id}) error: ${e}\n`);
