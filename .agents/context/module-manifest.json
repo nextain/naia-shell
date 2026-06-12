@@ -19,6 +19,7 @@
     "src/main/app/chat/chat-service.ts":     { "layer": "app", "uc": ["UC1"],  "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md" },
     "src/main/app/chat/client-session.ts":   { "layer": "app", "uc": ["UC1"],  "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md" },
     "src/main/app/control/approval.ts":      { "layer": "app", "uc": ["UC13"], "contract": "docs/progress/UC13-os-approval-2026-06-11.md" },
+    "src/main/app/control/onboarding.ts":    { "layer": "app", "uc": ["UC12"], "contract": "docs/progress/UC12-contract-2026-06-12.md" },
     "src/main/app/control/boot.ts":          { "layer": "app", "uc": ["F0"],   "contract": "docs/progress/F0-contract-2026-06-09.md" },
     "src/main/app/control/graft-smoke.ts":   { "layer": "app", "uc": ["F0"],   "contract": "docs/progress/F0-graft-2026-06-09.md" },
     "src/main/app/control/status.ts":        { "layer": "app", "uc": ["F0"],   "contract": "docs/progress/F0-contract-2026-06-09.md" },
