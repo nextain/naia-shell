@@ -246,6 +246,7 @@ function resolveAgentEnvKey(
 		case "anthropic": return "ANTHROPIC_API_KEY";
 		case "openai":    return "OPENAI_API_KEY";
 		case "glm":       return "GLM_API_KEY";
+		case "zai":       return "GLM_API_KEY"; // zai = z.ai/Zhipu GLM (config provider id) — agent 도 동일 매핑
 		default:          return null; // ollama, vllm, gemini, claude-code-cli — no persisted key
 	}
 }

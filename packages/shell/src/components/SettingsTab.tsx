@@ -9,6 +9,7 @@ import {
 	listNaiaAssets,
 	setAdkPath,
 	toLocalBlobUrl,
+	writeAgentKey,
 	writeNaiaConfig,
 } from "../lib/adk-store";
 import {
@@ -1985,6 +1986,10 @@ export function SettingsTab() {
 		// Also persist to naia-settings/config.json so ADK reload restores the same settings
 		void writeNaiaConfig(newConfig as unknown as Record<string, unknown>);
 		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
+		// 새 core: agent 가 읽는 OS 키체인에 키 기록(write_agent_key). 설정 저장 시 누락돼 있던 배선
+		// — OnboardingWizard 만 했고 SettingsTab 은 안 해서, 설정에서 넣은 키가 agent 에 안 닿아 401 났음(라이브 e2e 가 잡음).
+		if (resolvedApiKey) void writeAgentKey(newConfig.provider, "apiKey", resolvedApiKey);
+		if (naiaKey) void writeAgentKey(newConfig.provider, "naiaKey", naiaKey);
 		// Push webhook URLs + Discord defaults to the agent (#260). Replaces
 		// per-chat_request webhook field transmission with a one-shot config
 		// update so credentials don't appear in every stdio frame.
