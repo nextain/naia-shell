@@ -104,3 +104,16 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
     },
   };
 }
+
+// ── UC12 온보딩/설정 graft seam ──
+import { wireOnboardingLive } from "../composition/index.js";
+import type { LiveDeps } from "./tauri/live.js";
+import type { UC12LiveDeps } from "./tauri/uc12.js";
+import type { OnboardingController } from "../app/control/onboarding.js";
+
+/** old shell OnboardingWizard/SettingsTab 이 새 core 온보딩/설정을 경유하게 하는 seam.
+ *  shell 이 F0 LiveDeps(invoke/config/adk-store) + UC12 deps(invoke/openUrl/convertFileSrc/loginUrl) 주입 →
+ *  OnboardingFlowPort + SettingsPort 구현(OnboardingController) 반환. UC1 makeShellChatService 와 동일 seam 패턴. */
+export function makeShellOnboarding(deps: { f0: LiveDeps; uc12: UC12LiveDeps }): OnboardingController {
+  return wireOnboardingLive(deps.f0, deps.uc12);
+}
