@@ -3,7 +3,6 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeAgentKey, writeNaiaConfig } from "../lib/adk-store";
-import { syncToGateway } from "../lib/gateway-sync";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { sendAuthUpdate } from "../lib/chat-service";
 import { NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
@@ -407,31 +406,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		// Write naiaKey to OS keychain so standalone naia-agent can read it.
 		if (saved?.naiaKey) void writeAgentKey(saved.provider || "nextain", "naiaKey", saved.naiaKey);
 		if (saved?.apiKey) void writeAgentKey(saved.provider || "anthropic", "apiKey", saved.apiKey);
-		// Sync memory AI settings to memory-config.json via gateway config.
-		if (saved) {
-			void syncToGateway(
-				saved.provider ?? "nextain",
-				saved.model ?? "",
-				saved.apiKey || undefined,
-				saved.persona,
-				saved.agentName,
-				saved.userName,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				saved.naiaKey || undefined,
-				undefined,
-				{
-					memoryEmbeddingProvider: saved.memoryEmbeddingProvider,
-					memoryLlmProvider: saved.memoryLlmProvider,
-				},
-			);
-		}
+		// (gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config 영속=naia-settings,
+		//  naiaKey/apiKey=키체인(위 writeAgentKey). memory 설정 연결=다른 세션 재설계.)
 		addMessage({
 			role: "assistant",
 			content: stepChat(

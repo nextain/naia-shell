@@ -53,10 +53,7 @@ vi.mock("../../lib/chat-service", () => ({
 	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../lib/gateway-sync", () => ({
-	restartGateway: vi.fn().mockResolvedValue(undefined),
-	syncToGateway: vi.fn().mockResolvedValue(undefined),
-}));
+// (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
 
 import { SettingsTab } from "../SettingsTab";
 

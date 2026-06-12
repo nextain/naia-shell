@@ -48,11 +48,6 @@ import {
 	importMemoryBackup,
 } from "../lib/db";
 import { resetGatewaySession } from "../lib/gateway-sessions";
-import {
-	type MemorySyncParams,
-	restartGateway,
-	syncToGateway,
-} from "../lib/gateway-sync";
 import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
@@ -70,11 +65,7 @@ import {
 	listLlmProviders,
 } from "../lib/llm";
 import { Logger } from "../lib/logger";
-import {
-	DEFAULT_PERSONA,
-	FORMALITY_LOCALES,
-	buildSystemPrompt,
-} from "../lib/persona";
+import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
 import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
@@ -1422,35 +1413,7 @@ export function SettingsTab() {
 				saveConfig(nextConfig);
 				void writeNaiaConfig(nextConfig as unknown as Record<string, unknown>);
 
-				// Sync to Gateway (no API key for Lab proxy)
-				const naiaFullPrompt = buildSystemPrompt(nextConfig.persona, {
-					agentName: nextConfig.agentName,
-					userName: nextConfig.userName,
-					honorific: nextConfig.honorific,
-					speechStyle: nextConfig.speechStyle,
-					locale: nextConfig.locale || getLocale(),
-					discordDefaultUserId: nextConfig.discordDefaultUserId,
-					discordDmChannelId: nextConfig.discordDmChannelId,
-				});
-				await syncToGateway(
-					"nextain",
-					nextModel,
-					undefined,
-					nextConfig.persona,
-					nextConfig.agentName,
-					nextConfig.userName,
-					naiaFullPrompt,
-					nextConfig.locale || getLocale(),
-					nextConfig.discordDmChannelId,
-					nextConfig.discordDefaultUserId,
-					undefined,
-					undefined,
-					undefined,
-					undefined,
-					nextNaiaKey,
-					nextConfig.ollamaHost,
-				);
-				await restartGateway();
+				// (gateway sync 제거됨 2026-06-12 — gateway.json 은 아무도 안 읽는 죽은 경로. config 영속=naia-settings, naiaKey=키체인.)
 
 				// Sync linked channels (e.g. Discord) after login
 				// Re-check Discord bot status after sync + gateway restart
@@ -1608,24 +1571,7 @@ export function SettingsTab() {
 			const cfg = loadConfig();
 			if (!cfg) return;
 			if (naiaKey && naiaUserId) pushConfigToLab(naiaKey, naiaUserId, cfg);
-			// Also sync TTS settings to Gateway config
-			syncToGateway(
-				cfg.provider,
-				cfg.model,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				naiaKey || undefined,
-			);
+			// (gateway TTS sync 제거됨 2026-06-12 — 죽은 gateway.json 경로)
 		}, 2000);
 	}
 
@@ -1834,8 +1780,8 @@ export function SettingsTab() {
 		invoke("reset_window_state").catch(() => {});
 		if (resetClearHistory) {
 			useChatStore.getState().newConversation();
-			resetGatewaySession().catch(() => {});
-			invoke("reset_gateway_data").catch(() => {});
+			resetGatewaySession().catch(() => {}); // agent skill_sessions(실 도구) — gateway 아님, 유지
+			// (reset_gateway_data 제거됨 2026-06-12 — 죽은 gateway 데이터)
 		}
 		setLocale("ko");
 		document.documentElement.setAttribute("data-theme", "midnight");
@@ -2072,49 +2018,7 @@ export function SettingsTab() {
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);
 
-		// Sync provider/model + full system prompt to Gateway config
-		const fullPrompt = buildSystemPrompt(newConfig.persona, {
-			agentName: newConfig.agentName,
-			userName: newConfig.userName,
-			honorific: newConfig.honorific,
-			speechStyle: newConfig.speechStyle,
-			locale: newConfig.locale || getLocale(),
-			discordDefaultUserId: newConfig.discordDefaultUserId,
-			discordDmChannelId: newConfig.discordDmChannelId,
-		});
-		const memorySyncParams: MemorySyncParams = {
-			memoryAdapter: newConfig.memoryAdapter,
-			memoryEmbeddingProvider: newConfig.memoryEmbeddingProvider,
-			memoryOfflineModel: newConfig.memoryOfflineModel,
-			memoryEmbeddingBaseUrl: newConfig.memoryEmbeddingBaseUrl,
-			memoryEmbeddingApiKey: newConfig.memoryEmbeddingApiKey,
-			memoryEmbeddingModel: newConfig.memoryEmbeddingModel,
-			qdrantUrl: newConfig.qdrantUrl,
-			qdrantApiKey: newConfig.qdrantApiKey,
-			memoryLlmProvider: newConfig.memoryLlmProvider,
-			memoryLlmBaseUrl: newConfig.memoryLlmBaseUrl,
-			memoryLlmApiKey: newConfig.memoryLlmApiKey,
-			memoryLlmModel: newConfig.memoryLlmModel,
-		};
-		syncToGateway(
-			newConfig.provider,
-			newConfig.model,
-			resolvedApiKey,
-			newConfig.persona,
-			newConfig.agentName,
-			newConfig.userName,
-			fullPrompt,
-			newConfig.locale || getLocale(),
-			newConfig.discordDmChannelId,
-			newConfig.discordDefaultUserId,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			naiaKey || undefined,
-			newConfig.ollamaHost || undefined,
-			memorySyncParams,
-		).then(() => restartGateway());
+		// (gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config 영속=naia-settings, memory 설정=다른 세션 재설계.)
 
 		// Auto-sync to Lab if connected
 		if (naiaKey && naiaUserId) {
@@ -4112,29 +4016,7 @@ export function SettingsTab() {
 																discordDefaultTarget: undefined,
 															});
 														}
-														// Sync cleared Discord config to Gateway
-														const updated = loadConfig();
-														if (updated) {
-															await syncToGateway(
-																updated.provider || "gemini",
-																updated.model || getDefaultLlmModel("gemini"),
-																updated.apiKey,
-																updated.persona,
-																updated.agentName,
-																updated.userName,
-																undefined,
-																updated.locale,
-																undefined, // discordDmChannelId cleared
-																undefined, // discordDefaultUserId cleared
-																updated.ttsProvider,
-																updated.ttsVoice,
-																undefined,
-																undefined,
-																undefined, // naiaKey cleared
-																updated.ollamaHost,
-															);
-															await restartGateway();
-														}
+														// (gateway sync 제거됨 2026-06-12 — 죽은 gateway.json. discord 해제 시 config 는 saveConfig 로 영속.)
 													}}
 												>
 													{t("settings.labDisconnect")}

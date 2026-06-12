@@ -2,10 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { loadConfig, saveConfig } from "./config";
 import { openDmChannel } from "./discord-api";
-import { restartGateway, syncToGateway } from "./gateway-sync";
-import { getLocale } from "./i18n";
 import { Logger } from "./logger";
-import { buildSystemPrompt } from "./persona";
 
 const LINKED_CHANNELS_API =
 	"https://naia.nextain.io/api/gateway/linked-channels";
@@ -128,12 +125,10 @@ export async function syncLinkedChannels(): Promise<void> {
 			current.discordDefaultTarget || `user:${discordUserId}`,
 	});
 
-	// Always discover/refresh DM channel ID via Bot API
-	let dmChannelId = current.discordDmChannelId;
+	// Always discover/refresh DM channel ID via Bot API → naia config 에 영속(gateway 없음).
 	try {
 		const freshChannelId = await openDmChannel(discordUserId);
 		if (freshChannelId) {
-			dmChannelId = freshChannelId;
 			const updated = loadConfig();
 			if (updated) {
 				saveConfig({ ...updated, discordDmChannelId: freshChannelId });
@@ -149,61 +144,6 @@ export async function syncLinkedChannels(): Promise<void> {
 		});
 	}
 
-	// Sync to gateway.json + restart so Gateway picks up the channel ID
-	if (dmChannelId) {
-		await syncGatewayChannels(discordUserId, dmChannelId);
-	}
-}
-
-/**
- * Sync discord channel IDs to gateway.json and restart Gateway.
- * This ensures the persistent config includes the DM channel ID
- * so it survives Gateway restarts.
- */
-async function syncGatewayChannels(
-	discordUserId: string,
-	dmChannelId: string,
-): Promise<void> {
-	try {
-		const config = loadConfig();
-		if (!config) return;
-
-		const fullPrompt = buildSystemPrompt(config.persona, {
-			agentName: config.agentName,
-			userName: config.userName,
-			honorific: config.honorific,
-			speechStyle: config.speechStyle,
-			locale: config.locale || getLocale(),
-			discordDefaultUserId: discordUserId,
-			discordDmChannelId: dmChannelId,
-		});
-
-		await syncToGateway(
-			config.provider ?? "gemini",
-			config.model ?? "",
-			config.apiKey,
-			config.persona,
-			config.agentName,
-			config.userName,
-			fullPrompt,
-			config.locale || getLocale(),
-			dmChannelId,
-			discordUserId,
-			config.ttsProvider,
-			config.ttsVoice,
-			config.ttsEnabled ? "always" : "off",
-			undefined,
-			config.naiaKey,
-			config.ollamaHost,
-		);
-		await restartGateway();
-		Logger.info("channel-sync", "Gateway config updated with channel IDs", {
-			discordUserId,
-			dmChannelId,
-		});
-	} catch (err) {
-		Logger.warn("channel-sync", "Failed to sync channels to Gateway", {
-			error: String(err),
-		});
-	}
+	// (gateway.json sync 제거됨 2026-06-12 — gateway 없음(#201). discord 채널 ID 는 위 saveConfig 로 naia config 에 영속.
+	//  discord 메시징 자체 = 미이식 미래 UC(새 agent discord skill). config 만 보존, 죽은 gateway 동기 제거.)
 }

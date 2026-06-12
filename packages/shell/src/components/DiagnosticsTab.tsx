@@ -338,16 +338,8 @@ export function DiagnosticsTab() {
 		setHealthState("checking");
 		setGatewayStatus(null);
 		retryCountRef.current = 0;
-		try {
-			await invoke("restart_gateway");
-			// Give gateway 2s to start then re-check
-			setTimeout(() => checkHealth(), 2000);
-		} catch (err) {
-			Logger.warn("DiagnosticsTab", "restart_gateway failed", {
-				error: String(err),
-			});
-			checkHealth();
-		}
+		// (restart_gateway 제거됨 2026-06-12 — gateway 없음. agent 재시작은 restart_agent 별도. 여기선 health 재점검만.)
+		setTimeout(() => checkHealth(), 500);
 	}, [checkHealth]);
 
 	const handleTabChange = useCallback((tab: LogTab) => {

@@ -6,21 +6,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn(),
 }));
 
-// Mock gateway-sync (fire-and-forget calls)
-vi.mock("../gateway-sync", () => ({
-	syncToGateway: vi.fn().mockResolvedValue(undefined),
-	restartGateway: vi.fn().mockResolvedValue(undefined),
-}));
-
-// Mock persona
-vi.mock("../persona", () => ({
-	buildSystemPrompt: vi.fn().mockReturnValue("mock-system-prompt"),
-}));
+// (gateway-sync/persona mock 제거됨 2026-06-12 — channel-sync 가 죽은 gateway 동기 제거, discord 설정은 config 에 영속.)
 
 import { invoke } from "@tauri-apps/api/core";
 import { syncLinkedChannels } from "../channel-sync";
 import { loadConfig } from "../config";
-import { restartGateway, syncToGateway } from "../gateway-sync";
 
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
 
@@ -177,43 +167,7 @@ describe("syncLinkedChannels", () => {
 		fetchSpy.mockRestore();
 	});
 
-	it("calls syncToGateway with DM channel ID and restarts gateway", async () => {
-		seedConfig();
-		const discordUserId = "865850174651498506";
-		const dmChannelId = "1234567890123456789";
-
-		const fetchSpy = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(
-				mockLinkedChannelsResponse([
-					{ type: "discord", userId: discordUserId },
-				]),
-			);
-
-		await syncLinkedChannels();
-
-		expect(syncToGateway).toHaveBeenCalledWith(
-			"gemini",
-			"gemini-2.5-flash",
-			"test-key",
-			"friendly",
-			"Naia",
-			"Tester",
-			"mock-system-prompt",
-			expect.any(String), // locale
-			dmChannelId,
-			discordUserId,
-			undefined, // ttsProvider
-			undefined, // ttsVoice
-			"off", // ttsAuto (ttsEnabled unset → "off")
-			undefined, // ttsMode
-			"gw-test-lab-key",
-			undefined, // ollamaHost (not set in seedConfig)
-		);
-		expect(restartGateway).toHaveBeenCalled();
-
-		fetchSpy.mockRestore();
-	});
+	// (gateway sync 테스트 제거됨 2026-06-12 — gateway 없음. discord 채널 ID 의 config 영속은 위 "discordDmChannelId" 테스트가 커버.)
 
 	it("sends correct headers to linked-channels BFF", async () => {
 		seedConfig({ naiaKey: "gw-my-key", naiaUserId: "uid-123" });

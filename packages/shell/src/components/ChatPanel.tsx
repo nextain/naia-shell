@@ -52,7 +52,6 @@ import {
 	getGatewayHistory,
 	resetGatewaySession,
 } from "../lib/gateway-sessions";
-import { restartGateway, syncToGateway } from "../lib/gateway-sync";
 import { getLocale, t } from "../lib/i18n";
 import {
 	getDefaultLlmModel,
@@ -464,9 +463,8 @@ export function ChatPanel() {
 
 			const config = loadConfig();
 			if (!config?.discordSessionMigrated) {
-				// One-time migration: restart Gateway to pick up session.dmScope,
-				// then reset the contaminated main session (Discord DMs mixed in).
-				await restartGateway();
+				// One-time migration: reset the contaminated main session (Discord DMs mixed in).
+				// (restartGateway 제거됨 2026-06-12 — gateway 없음(#201). resetGatewaySession=agent skill_sessions 유지.)
 				await resetGatewaySession("agent:main:main");
 				if (config) {
 					saveConfig({ ...config, discordSessionMigrated: true });
@@ -498,28 +496,7 @@ export function ChatPanel() {
 			discoverAndPersistDiscordDmChannel().catch(() => {});
 		}
 
-		// Startup sync: ensure Gateway has latest config
-		const cfg = loadConfig();
-		if (cfg) {
-			syncToGateway(
-				cfg.provider,
-				cfg.model,
-				cfg.apiKey,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				cfg.ollamaHost,
-			).catch(() => {});
-		}
+		// (startup gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config=naia-settings.)
 
 		// Start Discord relay polling (if Discord is linked)
 		startDiscordRelay().catch((err) => {
