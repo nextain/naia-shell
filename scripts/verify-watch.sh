@@ -72,6 +72,14 @@ run_checks() {
     printf '%s\n' "$qres" | grep -E '처분 대기|만료·아카이브' | sed 's/^/[quarantine] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
   fi
 
+  # 5) 파일단위 계약 앵커 — src/main 의 모든 .ts 가 module-manifest 에 등록됐나(미계약 코드 검출).
+  #    드리프트 핵심: 기존 dir 에 추가된 신규 미계약 파일(루트 구조검사가 못 잡는 클래스)을 잡는다.
+  if [ -f "$SCRIPT_DIR/check-file-anchors.mjs" ]; then
+    local fares
+    fares="$(CI_PROJECT_ROOT="$ROOT_DIR" node "$SCRIPT_DIR/check-file-anchors.mjs" 2>&1)" || true
+    printf '%s\n' "$fares" | grep -E '✗' | sed 's/^[[:space:]]*✗[[:space:]]*/[file-anchor] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
+  fi
+
   # 주의: ci-verify-* 는 여기 넣지 않는다 — 그것들은 **커밋 시점** 게이트(변경파일 인자 +
   #   ci-verify-completion 은 커밋 메시지를 stdin 으로 읽음)라 상태-drift 검출용이 아니고,
   #   인자 없이 부르면 stdin 대기로 블록된다. 커밋/CI 시점에 제대로 된 인자로 돈다(B4 ②).
