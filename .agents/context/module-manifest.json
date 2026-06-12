@@ -33,6 +33,7 @@
     "src/main/adapters/tauri/live.ts":       { "layer": "adapters", "uc": ["UC1"], "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md" },
     "src/main/adapters/tauri/index.ts":      { "layer": "adapters", "uc": ["F0"],  "contract": "docs/progress/F0-contract-2026-06-09.md" },
     "src/main/adapters/tauri/config-map.ts": { "layer": "adapters", "uc": ["F0"],  "contract": "docs/progress/F0-contract-2026-06-09.md" },
+    "src/main/adapters/tauri/uc12.ts":       { "layer": "adapters", "uc": ["UC12"], "contract": "docs/progress/UC12-contract-2026-06-12.md" },
     "src/main/adapters/tauri/f1.ts":         { "layer": "adapters", "uc": ["F1"],  "contract": "docs/progress/F1-baseline-contract-2026-06-09.md" },
     "src/main/adapters/tauri/f2.ts":         { "layer": "adapters", "uc": ["F2"],  "contract": "docs/progress/F2-baseline-contract-2026-06-09.md" },
     "src/main/adapters/tauri/f3.ts":         { "layer": "adapters", "uc": ["F3"],  "contract": "docs/progress/F3-baseline-contract-2026-06-09.md" },

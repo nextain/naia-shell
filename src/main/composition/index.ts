@@ -106,3 +106,28 @@ function defaultRequestId(): string {
   __reqSeq += 1;
   return `req-${Date.now()}-${__reqSeq}-${Math.random().toString(36).slice(2, 7)}`;
 }
+
+// ── UC12 슬라이스 (온보딩/설정) — 기존 F0 live 어댑터 + UC12 live 어댑터 조립 ──
+import { OnboardingController } from "../app/control/onboarding.js";
+import { makeUC12LiveAdapters, type UC12LiveDeps } from "../adapters/tauri/uc12.js";
+
+/** shell 이 old 함수(F0 LiveDeps) + UC12 deps 주입 → OnboardingController 실배선.
+ *  config/bootState/adkPath = F0 live 재사용, assets/gateway/oauth = UC12 live, creds = write_agent_key invoke. */
+export function wireOnboardingLive(f0: LiveDeps, uc12: UC12LiveDeps): OnboardingController {
+  const base = makeF0LiveAdapters(f0);
+  const u = makeUC12LiveAdapters(uc12);
+  return new OnboardingController({
+    assets: u.assets,
+    oauth: u.oauth,
+    gateway: u.gateway,
+    config: base.config,
+    bootState: base.bootState,
+    adkPath: base.adkPath,
+    creds: {
+      async writeAgentKey(envKey, value) {
+        const p = f0.getAdkPath();
+        if (p) await uc12.invoke("write_agent_key", { adkPath: p, envKey, value });
+      },
+    },
+  });
+}
