@@ -96,6 +96,12 @@ run_checks() {
     printf '%s\n' "$cires" | grep -E '❌' | sed 's/^\[compile-integrity\][[:space:]]*❌[[:space:]]*/[compile-integrity] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
   fi
 
+  # 8) 게이트 활성 — core.hooksPath 풀리면 pre-commit 무결성 게이트 비활성(로컬설정이라 fragile, os 가 한번 풀린 전례).
+  #    풀림=RED → setup-git-hooks.sh 재실행 안내. "계속 깨끗 유지"의 자가-감시.
+  if [ "$(git -C "$ROOT_DIR" config core.hooksPath 2>/dev/null)" != "scripts/git-hooks" ]; then
+    echo "[hooks-gate] core.hooksPath 미설정 — pre-commit 무결성 게이트 비활성. 'bash scripts/setup-git-hooks.sh' 재실행." >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
+  fi
+
   # 주의: ci-verify-* 는 여기 넣지 않는다 — 그것들은 **커밋 시점** 게이트(변경파일 인자 +
   #   ci-verify-completion 은 커밋 메시지를 stdin 으로 읽음)라 상태-drift 검출용이 아니고,
   #   인자 없이 부르면 stdin 대기로 블록된다. 커밋/CI 시점에 제대로 된 인자로 돈다(B4 ②).
