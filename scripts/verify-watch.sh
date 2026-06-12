@@ -88,6 +88,14 @@ run_checks() {
     printf '%s\n' "$bcres" | grep -E '❌' | sed 's/^\[build-contract\][[:space:]]*❌[[:space:]]*/[build-contract] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
   fi
 
+  # 7) 컴파일 무결성 — 코어+셸 src tsc(테스트-타입 노이즈 제외). 깨진 상태(예: 삭제된 파일 import =
+  #    5d1078b 사고) 를 주기 검출. "항상 깨끗한 상태 유지"(Luke) — 어떤 검출기도 tsc 를 안 돌려 미감지였던 갭.
+  if [ -f "$SCRIPT_DIR/check-compile-integrity.mjs" ]; then
+    local cires
+    cires="$(node "$SCRIPT_DIR/check-compile-integrity.mjs" 2>&1)" || true
+    printf '%s\n' "$cires" | grep -E '❌' | sed 's/^\[compile-integrity\][[:space:]]*❌[[:space:]]*/[compile-integrity] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
+  fi
+
   # 주의: ci-verify-* 는 여기 넣지 않는다 — 그것들은 **커밋 시점** 게이트(변경파일 인자 +
   #   ci-verify-completion 은 커밋 메시지를 stdin 으로 읽음)라 상태-drift 검출용이 아니고,
   #   인자 없이 부르면 stdin 대기로 블록된다. 커밋/CI 시점에 제대로 된 인자로 돈다(B4 ②).

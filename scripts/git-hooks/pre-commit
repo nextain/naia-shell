@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# pre-commit 무결성 게이트 (Luke 2026-06-12: "항상 깨끗한 상태 유지").
+# 5d1078b 사고(git add 가 fatal → 호출처 수정 7파일 미staging → 삭제된 파일 import 하는 깨진 HEAD) 재발 차단.
+#
+# 활성화: git config core.hooksPath scripts/git-hooks   (clone 당 1회, scripts/setup-git-hooks.sh)
+# 검사: ① 미스테이지 source 변경 차단(부분/불완전 커밋) ② 컴파일 무결성(코어+셸 src tsc).
+# bypass(긴급): git commit --no-verify  (가급적 금지 — 깨진 상태 유입)
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# ── ① 미스테이지 source 변경 = 부분 커밋 위험(5d1078b 모드) ──
+# tracked .ts/.tsx/.rs 의 unstaged 변경이 있으면 차단(완전 staging 강제 = 커밋물=작업트리 보장).
+unstaged="$(git diff --name-only -- '*.ts' '*.tsx' '*.rs' 2>/dev/null || true)"
+if [ -n "$unstaged" ]; then
+  echo "❌ pre-commit 차단: 미스테이지 source 변경 존재(불완전 커밋 위험 = 5d1078b 모드)."
+  echo "   완전히 stage 하거나 stash 후 커밋하세요:"
+  printf '   - %s\n' $unstaged
+  exit 1
+fi
+
+# ── ② 컴파일 무결성(코어+셸 src tsc, 테스트-타입 노이즈 제외) ──
+if [ -f scripts/check-compile-integrity.mjs ]; then
+  if ! node scripts/check-compile-integrity.mjs; then
+    echo "❌ pre-commit 차단: 컴파일 무결성 위반(깨진 상태). 위 에러 해소 후 커밋."
+    exit 1
+  fi
+fi
+
+echo "✅ pre-commit: 무결성 통과(완전 staging + src 컴파일)."
