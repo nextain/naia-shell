@@ -80,6 +80,14 @@ run_checks() {
     printf '%s\n' "$fares" | grep -E '✗' | sed 's/^[[:space:]]*✗[[:space:]]*/[file-anchor] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
   fi
 
+  # 6) 빌드/dev 툴링 계약 — package.json tauri* + tauri.conf beforeDev/BuildCommand 의 경로가 dangling 인가,
+  #    미등록 빌드 스크립트가 추가됐나(잘못 이식된 빌드 툴링 검출). active=RED, 크로스플랫폼=deferred.
+  if [ -f "$SCRIPT_DIR/check-build-contract.mjs" ]; then
+    local bcres
+    bcres="$(node "$SCRIPT_DIR/check-build-contract.mjs" 2>&1)" || true
+    printf '%s\n' "$bcres" | grep -E '❌' | sed 's/^\[build-contract\][[:space:]]*❌[[:space:]]*/[build-contract] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
+  fi
+
   # 주의: ci-verify-* 는 여기 넣지 않는다 — 그것들은 **커밋 시점** 게이트(변경파일 인자 +
   #   ci-verify-completion 은 커밋 메시지를 stdin 으로 읽음)라 상태-drift 검출용이 아니고,
   #   인자 없이 부르면 stdin 대기로 블록된다. 커밋/CI 시점에 제대로 된 인자로 돈다(B4 ②).

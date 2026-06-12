@@ -1,0 +1,24 @@
+{
+  "$comment": "new-naia-os 빌드/dev 툴링 계약 등록부. scripts/check-build-contract.mjs 가 강제. 모든 빌드 진입점(package.json tauri* 스크립트 + tauri.conf*.json beforeDev/BuildCommand)은 여기 등록돼야 하고(미등록=RED), status=active 진입점이 참조하는 경로는 전부 실제 존재해야 한다(dangling=RED). status=deferred=Tranche B(크로스플랫폼) 미이식 — dangling 허용하되 'deferred'로 보고(거짓 GREEN 아님).",
+  "base_dir": "packages/shell",
+  "required_files": [
+    "packages/shell/scripts/dev-setup.mjs",
+    "packages/shell/scripts/tauri-with-mode.mjs"
+  ],
+  "entrypoints": {
+    "pkg:tauri": { "status": "active", "tranche": "A", "note": "tauri CLI 패스스루(경로참조 없음)" },
+    "pkg:tauri:dev": { "status": "active", "tranche": "A" },
+    "pkg:tauri:prod": { "status": "active", "tranche": "A" },
+    "pkg:tauri:dev:clean": { "status": "active", "tranche": "A" },
+    "pkg:dev": { "status": "active", "tranche": "A", "note": "vite" },
+    "pkg:build": { "status": "active", "tranche": "A", "note": "tsc -b && vite build" },
+    "pkg:tauri:build:local": { "status": "deferred", "tranche": "B", "reason": "크로스플랫폼 번들 — beforeBuildCommand ../agent dangling, 실 빌드 실측 필요" },
+    "pkg:tauri:build:windows:local": { "status": "deferred", "tranche": "B", "reason": "prune-nsis.py 미이식 + 임베디드 agent(../agent) 레이아웃 → 분리 repo 재작업 필요" },
+    "conf:tauri.conf.json:beforeDevCommand": { "status": "active", "tranche": "A", "note": "pnpm dev(vite)" },
+    "conf:tauri.conf.json:beforeBuildCommand": { "status": "deferred", "tranche": "B", "reason": "tauri build 전용 — cd ../agent dangling(분리 repo 재배선 Tranche B)" },
+    "conf:tauri.conf.local.json:beforeBuildCommand": { "status": "deferred", "tranche": "B", "reason": "로컬 번들 — ../agent + prune-nsis dangling" },
+    "conf:tauri.conf.windows.json:beforeBuildCommand": { "status": "active", "tranche": "B", "note": "empty(경로참조 없음)" },
+    "conf:tauri.conf.flatpak.json:beforeDevCommand": { "status": "active", "tranche": "B", "note": "empty" },
+    "conf:tauri.conf.flatpak.json:beforeBuildCommand": { "status": "active", "tranche": "B", "note": "empty" }
+  }
+}
