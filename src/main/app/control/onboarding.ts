@@ -16,7 +16,6 @@ import type {
   ConfigPatch,
   ConfigPort,
   CredentialStorePort,
-  GatewaySyncPort,
   OAuthPort,
   OnboardingFlowPort,
   SettingsPort,
@@ -25,7 +24,6 @@ import type {
 interface Deps {
   readonly assets: AssetInventoryPort;
   readonly oauth: OAuthPort;
-  readonly gateway: GatewaySyncPort;
   readonly config: ConfigPort;
   readonly bootState: BootStatePort;
   readonly creds: CredentialStorePort;
@@ -58,9 +56,8 @@ export class OnboardingController implements OnboardingFlowPort, SettingsPort {
   async onNaiaAuthCallback(payload: { naiaKey: string }): Promise<OnboardingState> {
     if (this.state.naiaLoginDone) return this.state; // idempotent (R2-5)
     this.state = applyNaiaLogin(this.state, payload.naiaKey);
-    const envKey = resolveAgentEnvKey("nextain", "naiaKey"); // → NAIA_ANYLLM_API_KEY
+    const envKey = resolveAgentEnvKey("nextain", "naiaKey"); // → NAIA_ANYLLM_API_KEY (agent 가 env 로 읽음 = naiaKey 의 실 전달 경로)
     if (envKey) await this.p.creds.writeAgentKey(envKey, payload.naiaKey);
-    await this.p.gateway.authUpdate(payload.naiaKey); // 즉시 1회 (완료와 무관, R6)
     return this.state;
   }
 
@@ -83,7 +80,7 @@ export class OnboardingController implements OnboardingFlowPort, SettingsPort {
     await this.persist(merged);
   }
 
-  /** 공통 영속(R3/R9/R10): 로컬=secret strip, agent-file=forAgent, secret→키체인(도메인 envKey 매핑), gateway sync. */
+  /** 공통 영속(R3/R9/R10): 로컬=secret strip, agent-file=forAgent, secret→키체인(도메인 envKey 매핑). */
   private async persist(cfg: NaiaConfig): Promise<void> {
     const adk = await this.p.adkPath.get();
     await this.p.bootState.replaceLocalConfig(stripSecret(cfg)); // 로컬엔 secret 미포함
@@ -98,6 +95,5 @@ export class OnboardingController implements OnboardingFlowPort, SettingsPort {
       const envKey = resolveAgentEnvKey(provider, "naiaKey");
       if (envKey) await this.p.creds.writeAgentKey(envKey, cfg.naiaKey);
     }
-    await this.p.gateway.sync(cfg); // 1회
   }
 }

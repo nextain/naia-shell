@@ -119,7 +119,6 @@ export function wireOnboardingLive(f0: LiveDeps, uc12: UC12LiveDeps): Onboarding
   return new OnboardingController({
     assets: u.assets,
     oauth: u.oauth,
-    gateway: u.gateway,
     config: base.config,
     bootState: base.bootState,
     adkPath: base.adkPath,

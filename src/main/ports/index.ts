@@ -70,11 +70,9 @@ export interface AssetInventoryPort {
   list(adkPath: string, kind: "vrm-files" | "background"): Promise<readonly AssetRef[]>;
 }
 
-/** 게이트웨이 동기 (driven): authUpdate=callback 시 1회, sync=완료 시 1회. */
-export interface GatewaySyncPort {
-  authUpdate(naiaKey: string): Promise<void>;
-  sync(config: NaiaConfig): Promise<void>;
-}
+// ⚠️ GatewaySyncPort 제거됨(2026-06-12): gateway(openclaw)는 #201에서 제거 — gateway.json 을 읽는 곳이 없음(순수 군더더기).
+//    config 영속 = ConfigPort(naia-settings) + CredentialStorePort(키체인). naiaKey = onNaiaAuthCallback 이 키체인에 기록(agent env).
+//    cf docs/progress/cleanup-agent-coupling-2026-06-12.md
 
 /** naia OAuth — launch 만 driven (callback 수신=OnboardingFlowPort.onNaiaAuthCallback driving, R15). */
 export interface OAuthPort {

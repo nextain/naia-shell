@@ -11,8 +11,6 @@ function makeFakes(initialLocal: NaiaConfig | null = null) {
     replaceLocalConfig: [] as NaiaConfig[],
     configWrite: [] as { adkPath: string; agentView: unknown }[],
     writeAgentKey: [] as { envKey: string; value: string }[],
-    authUpdate: [] as string[],
-    sync: [] as NaiaConfig[],
     markComplete: 0,
     oauthLaunch: 0,
     assetList: [] as { adkPath: string; kind: string }[],
@@ -21,7 +19,6 @@ function makeFakes(initialLocal: NaiaConfig | null = null) {
   const deps = {
     assets: { list: async (adkPath: string, kind: "vrm-files" | "background") => { calls.assetList.push({ adkPath, kind }); return [{ url: "u", label: "l", path: "/p/x.vrm", type: "image" as const }]; } },
     oauth: { launch: async () => { calls.oauthLaunch++; } },
-    gateway: { authUpdate: async (k: string) => { calls.authUpdate.push(k); }, sync: async (c: NaiaConfig) => { calls.sync.push(c); } },
     config: { read: async () => local, write: async (adkPath: string, agentView: unknown) => { calls.configWrite.push({ adkPath, agentView }); } },
     bootState: {
       mergeFromFile: async () => {}, isOnboardingComplete: async () => false,
@@ -38,7 +35,7 @@ function makeFakes(initialLocal: NaiaConfig | null = null) {
 }
 
 describe("UC12 app — OnboardingController (contract §B.3)", () => {
-  it("complete() → 영속 순서: replaceLocalConfig(secret strip) + config.write(forAgent) + secret→키체인 + markComplete + gateway.sync", async () => {
+  it("complete() → 영속 순서: replaceLocalConfig(secret strip) + config.write(forAgent) + secret→키체인 + markComplete", async () => {
     const { ctrl, calls } = makeFakes();
     await ctrl.submit({ step: "welcome" });
     await ctrl.submit({ step: "agentName", agentName: "나이아" });
@@ -56,15 +53,14 @@ describe("UC12 app — OnboardingController (contract §B.3)", () => {
     // secret → 키체인(glm→GLM_API_KEY)
     expect(calls.writeAgentKey).toContainEqual({ envKey: "GLM_API_KEY", value: "K" });
     expect(calls.markComplete).toBe(1);
-    expect(calls.sync.length).toBe(1);
   });
 
-  it("onNaiaAuthCallback → naiaKey 키체인(NAIA_ANYLLM_API_KEY) + authUpdate 1회; idempotent", async () => {
+  it("onNaiaAuthCallback → naiaKey 키체인(NAIA_ANYLLM_API_KEY, agent env 경로) 1회; idempotent", async () => {
     const { ctrl, calls } = makeFakes();
     await ctrl.onNaiaAuthCallback({ naiaKey: "NK" });
     await ctrl.onNaiaAuthCallback({ naiaKey: "NK2" }); // 중복 = no-op
     expect(calls.writeAgentKey).toContainEqual({ envKey: "NAIA_ANYLLM_API_KEY", value: "NK" });
-    expect(calls.authUpdate).toEqual(["NK"]); // 1회만
+    expect(calls.writeAgentKey.filter((w) => w.envKey === "NAIA_ANYLLM_API_KEY")).toHaveLength(1); // 1회만(idempotent)
     expect(ctrl.current().naiaLoginDone).toBe(true);
   });
 
@@ -81,20 +77,20 @@ describe("UC12 app — OnboardingController (contract §B.3)", () => {
     expect(calls.oauthLaunch).toBe(1);
   });
 
-  it("update(providerChanged) → 구 secret 미보존(R12-1)", async () => {
+  it("update(providerChanged) → 구 secret 미보존(R12-1): 신 키만 키체인, 구 GLM 키 미기록", async () => {
     const { ctrl, calls } = makeFakes({ agent: { provider: "glm" }, ui: {}, secret: { apiKey: "OLD" } });
     await ctrl.update({ agent: { provider: "openai" }, secret: { apiKey: "NEW" }, providerChanged: true });
-    // 영속된 cfg(gateway.sync)에 구 apiKey 없음, 신 키만
-    const synced = calls.sync[0];
-    expect((synced.secret as Record<string, unknown>).apiKey).toBe("NEW");
+    // secret 은 영속물(replaceLocalConfig/configWrite)에서 strip → 실 관측 = 키체인. 신 키만, 구 GLM 키 없음.
     expect(calls.writeAgentKey).toContainEqual({ envKey: "OPENAI_API_KEY", value: "NEW" });
+    expect(calls.writeAgentKey.find((w) => w.envKey === "GLM_API_KEY")).toBeUndefined();
   });
 
-  it("update(키 외 변경) → 기존 apiKey 보존(R6 — secret 포함 base 병합)", async () => {
+  it("update(키 외 변경) → 기존 apiKey 보존(R6) + ui 영속(secret-strip 로컬에 ui 유지)", async () => {
     const { ctrl, calls } = makeFakes({ agent: { provider: "glm" }, ui: {}, secret: { apiKey: "KEEP" } });
     await ctrl.update({ ui: { theme: "dark" } });
-    const synced = calls.sync[0];
-    expect((synced.secret as Record<string, unknown>).apiKey).toBe("KEEP"); // 보존
-    expect((synced.ui as Record<string, unknown>).theme).toBe("dark");
+    // apiKey 보존 = 키체인에 KEEP 재기록(secret-포함 base 병합). ui = secret-strip 로컬에 유지(stripSecret 은 ui 보존).
+    expect(calls.writeAgentKey).toContainEqual({ envKey: "GLM_API_KEY", value: "KEEP" });
+    const local = calls.replaceLocalConfig[calls.replaceLocalConfig.length - 1];
+    expect((local.ui as Record<string, unknown>).theme).toBe("dark");
   });
 });
