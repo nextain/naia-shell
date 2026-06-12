@@ -2,6 +2,7 @@
   "_doc": "파일단위 계약 앵커 (드리프트 자동차단). src/main 의 모든 .ts 는 여기 {layer,uc,contract} 와 함께 등록돼야 한다. 미등록 = 미계약 코드 = RED (scripts/check-file-anchors.mjs). 계약 먼저, 코드 나중. layer ∈ {domain,ports,app,adapters,composition}. ⚠️ naia-memory 연결/gRPC 파일은 다른 세션 소유 — 등장 시 owner:\"memory-session\" 으로 표기하고 이 세션서 짓지 말 것.",
   "files": {
     "src/main/domain/chat.ts":               { "layer": "domain", "uc": ["UC1"],  "contract": "docs/progress/UC1-horizontal-contract-2026-06-10.md" },
+    "src/main/domain/onboarding.ts":         { "layer": "domain", "uc": ["UC12"], "contract": "docs/progress/UC12-contract-2026-06-12.md" },
     "src/main/domain/approval.ts":           { "layer": "domain", "uc": ["UC13"], "contract": "docs/progress/UC13-os-approval-2026-06-11.md" },
     "src/main/domain/boot.ts":               { "layer": "domain", "uc": ["F0"],   "contract": "docs/progress/F0-contract-2026-06-09.md" },
     "src/main/domain/startup.ts":            { "layer": "domain", "uc": ["F0"],   "contract": "docs/progress/F0-contract-2026-06-09.md" },

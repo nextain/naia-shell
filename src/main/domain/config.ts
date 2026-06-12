@@ -28,3 +28,20 @@ export function hasNaiaKey(cfg: NaiaConfig | null): boolean {
 export function baseConfig(): NaiaConfig {
   return { agent: {}, secret: {}, ui: {} };
 }
+
+/** UC12: 로컬 영속용 secret 제거 투영(secret:{} + top-level naiaKey 제거). secret 은 CredentialStore 전담(R4/R6/R8). 순수. */
+export function stripSecret(cfg: NaiaConfig): NaiaConfig {
+  const { naiaKey: _naiaKey, ...rest } = cfg;
+  return { ...rest, secret: {} };
+}
+
+/** UC12: provider+keyField → 키체인 envKey (도메인 소유, R10). 키 없는 provider(gemini=naia-cloud·ollama/vllm=open·claude-code-cli)=null → writeAgentKey skip. */
+export function resolveAgentEnvKey(provider: string, keyField: "apiKey" | "naiaKey"): string | null {
+  if (keyField === "naiaKey") return "NAIA_ANYLLM_API_KEY";
+  switch (provider) {
+    case "anthropic": return "ANTHROPIC_API_KEY";
+    case "openai": return "OPENAI_API_KEY";
+    case "glm": return "GLM_API_KEY";
+    default: return null; // ollama·vllm·gemini·claude-code-cli·nextain — 직접 키 없음
+  }
+}
