@@ -4,6 +4,7 @@ import type { NaiaConfig, AgentView } from "../domain/config.js";
 import type { AdkPath, SetupMode, AdkDirState } from "../domain/boot.js";
 import type { SetRootResult, CanonicalRoot } from "../domain/workspace.js";
 import type { StartupMessage } from "../domain/startup.js";
+import type { OnboardingState, StepInput } from "../domain/onboarding.js";
 
 export interface ConfigPort {
   read(adkPath: string): Promise<NaiaConfig | null>; // read_naia_config (invoke)
@@ -56,4 +57,52 @@ export interface CredentialStorePort {
   writeAgentKey(envKey: string, value: string): Promise<void>;
 }
 
-export type { NaiaConfig, AgentView, AdkPath, SetupMode, AdkDirState, SetRootResult, CanonicalRoot, StartupMessage };
+// ── UC12 (온보딩/설정) — control-plane config 확장 (contract §B.2) ──
+export interface AssetRef {
+  readonly url: string; // asset:// 또는 blob URL
+  readonly label: string;
+  readonly path: string; // 절대 경로
+  readonly type: "image" | "video";
+}
+
+/** 온보딩 자산(VRM/배경) 목록 = {adkPath}/naia-settings/{kind}. driven. */
+export interface AssetInventoryPort {
+  list(adkPath: string, kind: "vrm-files" | "background"): Promise<readonly AssetRef[]>;
+}
+
+/** 게이트웨이 동기 (driven): authUpdate=callback 시 1회, sync=완료 시 1회. */
+export interface GatewaySyncPort {
+  authUpdate(naiaKey: string): Promise<void>;
+  sync(config: NaiaConfig): Promise<void>;
+}
+
+/** naia OAuth — launch 만 driven (callback 수신=OnboardingFlowPort.onNaiaAuthCallback driving, R15). */
+export interface OAuthPort {
+  launch(): Promise<void>;
+}
+
+/** 온보딩 8단계 flow (driving — UI 호출). asset/oauth 노출로 UI 가 driven 직접호출 안 함(R14). */
+export interface OnboardingFlowPort {
+  current(): OnboardingState;
+  submit(input: StepInput): Promise<OnboardingState>; // input.step = 현재 단계(discriminated)
+  assets(kind: "vrm-files" | "background"): Promise<readonly AssetRef[]>;
+  startNaiaAuth(): Promise<void>;
+  onNaiaAuthCallback(payload: { naiaKey: string }): Promise<OnboardingState>; // R15: payload=resolved naiaKey
+  complete(): Promise<void>;
+}
+
+/** 설정 편집 patch (categorized 부분 — S02/S03). */
+export interface ConfigPatch {
+  readonly agent?: Readonly<Record<string, unknown>>;
+  readonly ui?: Readonly<Record<string, unknown>>;
+  readonly secret?: Readonly<Record<string, unknown>>;
+  readonly naiaKey?: string;
+  readonly providerChanged?: boolean; // provider 전환 시 구 secret 리셋 신호(R12-1)
+}
+
+/** 완료 후 설정 편집 (driving). */
+export interface SettingsPort {
+  update(patch: ConfigPatch): Promise<void>;
+}
+
+export type { NaiaConfig, AgentView, AdkPath, SetupMode, AdkDirState, SetRootResult, CanonicalRoot, StartupMessage, OnboardingState, StepInput };
