@@ -30,8 +30,8 @@ export function chatChunkToWire(requestId: string, c: ChatChunk): Record<string,
     case "text": return { type: "text", requestId, text: c.text };
     case "thinking": return { type: "thinking", requestId, text: c.text };
     case "toolUse": return { type: "tool_use", requestId, toolCallId: c.toolCallId, toolName: c.name, args: c.args };
-    case "toolResult": return { type: "tool_result", requestId, toolCallId: c.toolCallId, output: c.output };
-    case "approvalRequest": return { type: "approval_request", requestId, toolCallId: c.toolCallId, toolName: c.toolName, tier: c.tier };
+    case "toolResult": return { type: "tool_result", requestId, toolCallId: c.toolCallId, toolName: c.toolName, output: c.output, success: c.success };
+    case "approvalRequest": return { type: "approval_request", requestId, toolCallId: c.toolCallId, toolName: c.toolName, tier: c.tier, args: c.args, description: c.description };
     case "gatewayApprovalRequest": return { type: "gateway_approval_request", requestId, toolCallId: c.toolCallId, toolName: c.toolName, args: c.args };
     // ⚠️ raw 를 *먼저* 펼치고 type/requestId 로 덮음(raw 가 type/requestId 오염 못 하게, R1 MED)
     case "usage": return { ...(c.raw && typeof c.raw === "object" ? c.raw as object : {}), type: "usage", requestId };

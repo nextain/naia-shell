@@ -50,8 +50,8 @@ export type ChatChunk =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "thinking"; readonly text: string }
   | { readonly kind: "toolUse"; readonly toolCallId: string; readonly name: string; readonly args: unknown }
-  | { readonly kind: "toolResult"; readonly toolCallId: string; readonly output: string }
-  | { readonly kind: "approvalRequest"; readonly toolCallId: string; readonly toolName: string; readonly tier: string }
+  | { readonly kind: "toolResult"; readonly toolCallId: string; readonly toolName: string; readonly output: string; readonly success: boolean }
+  | { readonly kind: "approvalRequest"; readonly toolCallId: string; readonly toolName: string; readonly tier: string; readonly args: unknown; readonly description: string }
   | { readonly kind: "gatewayApprovalRequest"; readonly toolCallId: string; readonly toolName: string; readonly args: unknown }
   | { readonly kind: "usage"; readonly raw: unknown }
   | { readonly kind: "logEntry"; readonly level: string; readonly message: string }

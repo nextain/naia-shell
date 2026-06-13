@@ -1,0 +1,19 @@
+{
+  "uc": "UC1/V1 (텍스트 대화) — 레퍼런스 파이프라인",
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "tier": "T2 (provider/creds + transport)",
+  "method": "open-loop 2 reviewers (security/correctness + parity/orthogonality), ground-truth=old chat-service.ts + agent index.ts/protocol + canon",
+  "context": "Luke-verified happy path(대화 잘됨), codex-부분만 리뷰 → 전체 2-AI",
+  "verdict": "ISSUES → live-impacting HIGH 2건 수정",
+  "findings": [
+    {"id":"UC1-1","sev":"HIGH(정확성)","status":"FIXED","file":"domain/chat.ts + message-router + shell-compat","issue":"tool_result 가 success+toolName 유실(domain ChatChunk.toolResult={toolCallId,output}). live ChatPanel.updateStreamingToolResult(toolCallId, chunk.success, output) → chunk.success=undefined = 도구 성공/실패 UI 상태 유실.","fix":"ChatChunk.toolResult 에 toolName+success 추가, toChatChunk/chatChunkToWire 매핑. lock 테스트."},
+    {"id":"UC1-2","sev":"HIGH(보안)","status":"FIXED","file":"domain/chat.ts + message-router + shell-compat","issue":"approval_request 가 args+description 유실. live ChatPanel 승인 다이얼로그가 args/description 표시 못 함 → 사용자가 인자 안 보고 승인(blind approval). gatewayApprovalRequest 는 args 보존(불일치 smell).","fix":"ChatChunk.approvalRequest 에 args+description 추가, 매핑. lock 테스트(보안)."},
+    {"id":"UC1-3(A)","sev":"HIGH(landmine)","status":"DEFERRED(latent)","file":"adapters/tauri/uc1.ts credsUpdate + shell-compat sendCredsUpdate + test","issue":"core creds_update wire shape 틀림 — agent handleCredsUpdate 는 req.keys{[provider]:apiKey} 읽고 naiaKey 는 auth_update 별도. core 는 {type:creds_update, provider, apiKey} = keys map 없음 → 그래프트 시 silent no-op(키 미전달). 단 live shell 은 old shape 우회(core 미사용) → 현재 무사. ⚠️ 테스트가 wrong shape 인증=closed-loop.","fix":"creds seam 그래프트 시: keys map + naiaKey→auth_update split + 테스트를 agent parseRequest 계약에 맞춤. (지금 live 안전, 미graft.)"},
+    {"id":"UC1-4(B)","sev":"MEDIUM","status":"DEFERRED","file":"app/chat/chat-service.ts","issue":"old 120s response 안전 timeout 누락 → 비종료 turn 이 turns Map+레지스트리 leak + UI ▌ 안 풀림. 계약은 chat-turn timeout=UC10a 범위.","fix":"per-turn timeout(error chunk 주입) 재도입 또는 UC10a 로 명시 — 후속."},
+    {"id":"UC1-5","sev":"MEDIUM","status":"NOTED","file":"message-router log_entry","issue":"log_entry 가 chat-turn 분류(requestId 필수)인데 gateway-origin log_entry 는 requestId 없음 → DiagnosticSink 로 'malformed' 오분류(정상 로그를 결함으로). UC1 chat-only 라 bounded.","fix":"log_entry requestId 없으면 gateway lane(비결함)으로, 또는 UC scope 명시."},
+    {"id":"UC1-6","sev":"LOW(clarity)","status":"NOTED","file":"adapters/tauri/uc1.ts naming + canon","issue":"core uc1.ts 가 'stdio'(JSON-line) 어댑터 — 리뷰어가 canon(transport=gRPC)과 모순으로 봄. 실제: core ports/uc1.ts 는 transport-neutral(wire-framing 은 adapter 한정), 실 gRPC 는 packages/shell/src-tauri(Rust tonic) 계층. = 명명/문서 clarity 이슈(직교 유지, 구조 drift 아님). canon 의 gRPC=Rust↔agent 경계.","fix":"core 어댑터 명명/주석 clarify(JSON-line protocol, 실 transport=주입 deps=Rust gRPC)."}
+  ],
+  "clean":"chat-path secret strip(apiKey/naiaKey 는 creds_update 채널만, ProviderSelect 무secret)·requestId 상관(cross-wire 0)·cancel owner-auth(old 보다 강함)·error/finish 해제·domain/chat.ts 순수·ports transport-neutral = PASS.",
+  "result":"live-impacting HIGH 2건(tool_result success/toolName, approval args/description=blind approval 방지) 수정+lock 테스트. creds landmine/timeout/log/naming=latent·deferred 문서화. tsc/anchors/190 test green. ★ Luke-verified happy path 에서도 도구결과/승인 페이로드 유실(2-AI 적발)."
+}

@@ -84,12 +84,15 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
     }
     case "tool_result": {
       const toolCallId = reqStr(r["toolCallId"]); const output = reqStr(r["output"]);
-      return toolCallId === null || output === null ? null : { kind: "toolResult", toolCallId, output };
+      // UC1 리뷰 fix: toolName/success 보존(live ChatPanel 이 chunk.success 읽음 — 유실 시 undefined).
+      return toolCallId === null || output === null ? null
+        : { kind: "toolResult", toolCallId, toolName: reqStr(r["toolName"]) ?? "", output, success: r["success"] === true };
     }
     case "approval_request": {
       const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]); const tier = reqStr(r["tier"]);
+      // UC1 리뷰 fix(보안): args/description 보존(승인 다이얼로그가 인자 보여야 — blind approval 방지).
       return toolCallId === null || toolName === null || tier === null
-        ? null : { kind: "approvalRequest", toolCallId, toolName, tier };
+        ? null : { kind: "approvalRequest", toolCallId, toolName, tier, args: r["args"], description: reqStr(r["description"]) ?? "" };
     }
     case "gateway_approval_request": {
       const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]);

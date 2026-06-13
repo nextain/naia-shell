@@ -42,7 +42,7 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) 이식** | **✓ 2-AI R1, FR-F1.1 fix, BLOCKER0** | gRPC Diagnostics RPC(신규계약)+UC13 잔여 | **os-local 이식+리뷰 완료, 나머지 신규계약 스펙** |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓+**delta** | **writeFile+ptyWrite live, execCommand fail-closed** | **✓ 2-AI R1 BLOCKER2(arg-casing+보안)→수정** | execCommand 신규보안계약+UC13 잔여 | **안전분 이식+리뷰, exec 신규계약** |
-| V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증** | codex부분 | **실앱 대화 OK(루크확인)** | 거의완료 |
+| V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증 + 필드보존 fix** | **✓ 2-AI 전체 R1 HIGH2(도구결과/승인 페이로드 유실)→수정** | **실앱 대화 OK(루크확인)** | **이식+리뷰 완료** |
 | V2 | 음성(UC2) | **계약+§C분해** | **도메인+ports+os-local 어댑터(Expression/Sensory) 이식** | **✓ 2-AI: BLOCKER0(startup-lazy CLEAN)** | external(VoiceProvider/gRPC Voice RPC)+루크머신 live | **os-local 이식+리뷰 완료, external 신규계약** |
 | S-row | skills 60+/browser/channels/bgm | 측정 | ✗ | ✗ | — | 미착수 |
 | UC7a/7 | 시스템 관측/조작 | = F2/F3 | ✓(F2/F3) | ✓ | 루크머신 | **F2/F3 로 완료** |
