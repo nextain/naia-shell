@@ -1,0 +1,28 @@
+{
+  "uc": "F0",
+  "slice": "boot/control-plane live 어댑터 makeF0LiveAdapters (config/adkPath/workspace/startup/setup)",
+  "tier": "T2",
+  "tier_reason": "config 영속·secret 분류·adk 셋업(파괴적 clone/delete) → 경로/인증 인접",
+  "method": "open-loop adversarial 2 reviewers, ground-truth=old-naia-os(adk-store.ts/config.ts/App.tsx/AdkSetupScreen.tsx + Rust lib.rs)",
+  "round": 1,
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "verdict": "ISSUES (round1) → RESOLVED (round2 CLEAN)",
+  "resolution": {
+    "round2": "포커스 확인 리뷰 VERDICT CLEAN. 전 round1 finding FIXED+faithful 검증: F0-1 BLOCKER(4-state AdkDirState+adkPrepAction old충실+needs-decision throw, blind clone 경로 제거) / F0-2(config-map UI 43·SECRET 10 = old stripForAgent byte-identical 프로그램검증) / F0-3(setRoot canonical) / F0-4(error console surface) / F0-6(cache normalize) / F0-7(detectRoot catch). 신규버그 0. 반증테스트(has_other_files+has_settings 둘다 throw+no clone) 진짜 검증. tsc/156test exit0.",
+    "deferred": "F0-5(SECRET/UI 세트를 old 와 자동 대조하는 conformance 게이트) = 후속(현재 수동 검증 byte-identical). new_exists UI prompt 흐름 = 실행 shell graft 시 UI 작업.",
+    "contract_deltas": "신규 계약(domain/boot.ts): AdkDirState={status:4-state}, AdkPrepAction+needs-decision, AdkDirNeedsDecisionError."
+  },
+  "scope_round0": "PASS — gRPC os↔agent 미접촉, naia-memory 미접촉, domain 순수, ports substrate-agnostic, @tauri-apps 미import.",
+  "findings": [
+    {"id":"F0-1","sev":"BLOCKER","file":"src/main/adapters/tauri/live.ts inspectAdkDir","issue":"Rust inspect_adk_dir 는 bare String('missing'|'empty'|'has_settings'|'has_other_files') 반환(lib.rs:3321, old AdkSetupScreen.tsx:197 invoke<string>)인데 어댑터가 {exists,isAdk} 로 캐스팅 → 항상 {false,false}. boot.ts adkPrepAction: new=항상 'clone'(비어있지 않은 dir 에 clone_naia_adk→'Directory is not empty' Err, #325 회귀), recreate=항상 'clone'(delete 스킵). 계약테스트 f0-control-plane.contract.test.ts:59 가 객체 mock 으로 위장(closed-loop false success).","fix":"inspectAdkDir 가 string status 반환받아 매핑 + AdkDirState/adkPrepAction 을 4-state(old AdkSetupScreen new_exists 분기: has_settings/has_other_files=비어있음 아님→prompt/적절행동) 로 신규 계약. delete-then-clone(recreate) 복원."},
+    {"id":"F0-2","sev":"MAJOR","file":"src/main/adapters/tauri/config-map.ts:12-21 UI_ONLY_CONFIG_KEYS","issue":"old stripForAgent(adk-store.ts:115-137) 대비 6키 누락: naiaUserId·locale·discordSessionMigrated·lastProcessedDiscordMessageId·gatewayTtsAuto·gatewayTtsMode → agent 버킷 분류 → write_naia_config 로 config.json 유출(Rust 미stripping). naiaUserId=식별정보. 주석 'verbatim 이관' 거짓.","fix":"누락 6키 UI_ONLY 에 추가(gatewayTts* 는 gateway 제거로 의도적 드롭이면 명시). SECRET 세트는 10/10 parity OK."},
+    {"id":"F0-3","sev":"MAJOR","file":"src/main/adapters/tauri/live.ts:44 workspace.setRoot","issue":"성공 시 {kind:'canonical-root', path: rawPath} 반환 — Rust workspace_set_root(workspace.rs:510-520)의 dunce::canonicalize 반환값 폐기. domain CanonicalRoot.path='이미 정규화' 불변 위반(raw=symlink/trailing slash/case 미해소). 현재 boot.ts:69 가 success 시 result.root 무시라 피해 contained 이나 값객체가 거짓.","fix":"Rust 반환 canonical 문자열을 root.path 로."},
+    {"id":"F0-4","sev":"MEDIUM","file":"src/main/app/control/boot.ts:68-74 + live.ts:44","issue":"setRoot 실패 {ok:false,error} 를 caller 가 로그/표면화 없이 clearWorkspaceRoot+startWatch 로 침묵 강등(디버깅용이성). 다른 어댑터는 throw 전파(관찰가능)라 일관성도 깨짐.","fix":"result.error 를 DiagnosticSink/console.error 로 표면화."},
+    {"id":"F0-5","sev":"MEDIUM","file":"config-map.ts","issue":"필드 분류(SECRET/UI)=보안정책이 어댑터에 old ground truth 앵커 없이 → 이미 드리프트(F0-2). F2 와 동종 문제.","fix":"check-canon-conformance 등에 SECRET/UI 세트를 old adk-store.ts 와 대조하는 conformance 추가."},
+    {"id":"F0-6","sev":"MINOR","file":"live.ts:40 adkPath.set","issue":"old setAdkPath 는 trailing slash strip 후 path-cache 기록(adk-store.ts:13-18)인데 어댑터는 write_naia_path_cache 에 raw path → localStorage(normalized) 와 cache(raw) 드리프트.","fix":"normalized 값으로 write_naia_path_cache."},
+    {"id":"F0-7","sev":"MINOR","file":"live.ts:41 detectRoot + boot.ts:51","issue":"old workspace_detect_adk_root 는 미발견 시 reject(AdkSetupScreen.tsx:59 .catch(()=>null)). 새 detectRoot 미catch → boot() 로 rejection 탈출 가능. 계약테스트는 null mock 이라 미검출.","fix":"detectRoot 에서 catch→null."}
+  ],
+  "next": "remediation: BLOCKER F0-1(신규 계약 — inspectAdkDir string status + adkPrepAction 4-state) + MAJOR F0-2/F0-3 + MEDIUM F0-4 → 반증테스트(특히 string status·delete-then-clone) → 2-AI round2 → 커밋.",
+  "lesson": "F0 live 어댑터도 직전 세션 리뷰 0 → 계약테스트 mock 이 Rust 반환형(string)을 객체로 위조해 BLOCKER 은폐. open-loop+old-ground-truth 가 잡음. = F2 와 동일 패턴 재확인."
+}

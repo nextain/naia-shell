@@ -27,7 +27,7 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 ### UC 상태표 (tranche/vertical, user-scenarios.md SoT)
 | 단위 | 범위 | 계약 | 이식(코드) | 2-AI 리뷰 | 라이브 graft/e2e | 상태 |
 |---|---|:--:|:--:|:--:|:--:|---|
-| F0 | 부팅 workspace init | ✓67/67 | live어댑터 작성 | ✗ | 루크머신 대기 | scaffold+live |
+| F0 | 부팅 workspace init | ✓+**delta** | **live+신규계약 수정** | **✓ 2-AI R1 ISSUES(BLOCKER)→R2 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F1 | 자기상태+승인 | ✓ | stub | ✗ | — | 계약만 |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓ | stub | ✗ | — | 계약만 |

@@ -4,7 +4,7 @@ import type {
   ConfigPort, BootStatePort, AdkPathPort, WorkspacePort,
   StartupMessagePort, PanelInventoryPort, AdkSetupPort,
 } from "../../ports/index.js";
-import { decideBoot, adkPrepAction, type BootDecision, type SetupMode } from "../../domain/boot.js";
+import { decideBoot, adkPrepAction, AdkDirNeedsDecisionError, type BootDecision, type SetupMode } from "../../domain/boot.js";
 import { hasNaiaKey, baseConfig } from "../../domain/config.js";
 import { startupMessagesToSend } from "../../domain/startup.js";
 
@@ -68,7 +68,9 @@ export class ControlPlaneBoot {
   async onWorkspacePanelMount(rawRoot: string): Promise<void> {
     const result = await this.p.workspace.setRoot(rawRoot);
     if (!result.ok) {
-      await this.p.bootState.clearWorkspaceRoot(); // contain+fallback (block 아님)
+      // F0-4: 실패를 침묵 강등하지 않고 표면화(디버깅 용이성) — contain+fallback 은 유지(block 아님)
+      console.error(`[boot] workspace.setRoot 실패(root-less watch 로 강등): ${result.error}`);
+      await this.p.bootState.clearWorkspaceRoot();
     }
     await this.p.workspace.startWatch();
   }
@@ -87,6 +89,8 @@ export class ControlPlaneBoot {
     if (mode === "new" || mode === "recreate") {
       const st = await this.p.setup.inspectAdkDir(path);
       const action = adkPrepAction(mode, st);
+      // needs-decision = 비어있지 않은 dir 에 blind clone 금지(#325) → 정직 표면화(UI 가 선택 prompt)
+      if (action === "needs-decision") throw new AdkDirNeedsDecisionError(path, st.status);
       if (action === "delete-then-clone") { await this.p.setup.deleteAdk(path); await this.p.setup.cloneAdk(path); }
       else if (action === "clone") { await this.p.setup.cloneAdk(path); }
     }

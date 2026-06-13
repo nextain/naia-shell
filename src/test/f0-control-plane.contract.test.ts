@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { ControlPlaneBoot, type ControlPlanePorts } from "../main/app/control/boot.js";
 import { forAgent } from "../main/domain/config.js";
-import { decideBoot } from "../main/domain/boot.js";
+import { decideBoot, AdkDirNeedsDecisionError, type AdkDirStatus } from "../main/domain/boot.js";
 import { startupMessagesToSend } from "../main/domain/startup.js";
 import type { NaiaConfig } from "../main/ports/index.js";
 
@@ -14,8 +14,7 @@ function mkPorts(over: {
   fileConfig?: NaiaConfig | null;
   setRootOk?: boolean;
   panelThrows?: boolean;
-  adkDirExists?: boolean;
-  adkDirIsAdk?: boolean;
+  adkDirStatus?: AdkDirStatus;
 } = {}) {
   const calls: string[] = [];
   const rec = (s: string) => calls.push(s);
@@ -56,7 +55,7 @@ function mkPorts(over: {
     setup: {
       initSettings: async (a) => { rec(`initSettings:${a}`); },
       copyBundledAssets: async (a) => { rec(`copyBundledAssets:${a}`); },
-      inspectAdkDir: async (p) => { rec(`inspectAdkDir:${p}`); return { exists: over.adkDirExists ?? false, isAdk: over.adkDirIsAdk ?? false }; },
+      inspectAdkDir: async (p) => { rec(`inspectAdkDir:${p}`); return { status: over.adkDirStatus ?? "missing" }; },
       cloneAdk: async (p) => { rec(`cloneAdk:${p}`); },
       deleteAdk: async (p) => { rec(`deleteAdk:${p}`); },
     },
@@ -165,14 +164,25 @@ describe("setup 분기 — 모드별 완료조건 (C-R5/R6)", () => {
 });
 
 describe("setup clone/delete + workspace mount/activate (codex HIGH/MED)", () => {
-  it("new + dir 없음 → cloneAdk 호출", async () => {
-    const { ports, calls } = mkPorts({ adkDirExists: false });
+  it("new + dir missing/empty → cloneAdk 호출", async () => {
+    const { ports, calls } = mkPorts({ adkDirStatus: "empty" });
     await new ControlPlaneBoot(ports).onSetupConfirm("new", "/p");
     expect(calls).toContain("cloneAdk:/p");
     expect(calls).not.toContain("deleteAdk:/p");
   });
-  it("recreate + dir 존재 → deleteAdk 후 cloneAdk", async () => {
-    const { ports, calls } = mkPorts({ adkDirExists: true });
+  it("★ new + has_other_files(비어있지 않음) → needs-decision throw, blind clone 금지(#325, F0-1)", async () => {
+    const { ports, calls } = mkPorts({ adkDirStatus: "has_other_files" });
+    await expect(new ControlPlaneBoot(ports).onSetupConfirm("new", "/p")).rejects.toBeInstanceOf(AdkDirNeedsDecisionError);
+    expect(calls).not.toContain("cloneAdk:/p");   // 에러나는 blind clone 안 함
+    expect(calls).not.toContain("initSettings:/p");
+  });
+  it("★ new + has_settings(기존 ADK) → needs-decision throw(자동결정 안 함)", async () => {
+    const { ports, calls } = mkPorts({ adkDirStatus: "has_settings" });
+    await expect(new ControlPlaneBoot(ports).onSetupConfirm("new", "/p")).rejects.toBeInstanceOf(AdkDirNeedsDecisionError);
+    expect(calls).not.toContain("cloneAdk:/p");
+  });
+  it("recreate → 항상 deleteAdk 후 cloneAdk (status 무관, old 충실)", async () => {
+    const { ports, calls } = mkPorts({ adkDirStatus: "has_settings" });
     await new ControlPlaneBoot(ports).onSetupConfirm("recreate", "/p");
     expect(calls.indexOf("deleteAdk:/p")).toBeGreaterThanOrEqual(0);
     expect(calls.indexOf("deleteAdk:/p")).toBeLessThan(calls.indexOf("cloneAdk:/p"));

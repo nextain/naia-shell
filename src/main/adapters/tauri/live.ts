@@ -3,6 +3,7 @@
 import type { ControlPlanePorts } from "../../app/control/boot.js";
 import { toNaiaConfig } from "./config-map.js";
 import type { NaiaConfig } from "../../ports/index.js";
+import type { AdkDirStatus } from "../../domain/boot.js";
 
 /** graft 시 old-naia-os 가 주입하는 실제 함수들. */
 export interface LiveDeps {
@@ -37,11 +38,11 @@ export function makeF0LiveAdapters(d: LiveDeps): ControlPlanePorts {
     },
     adkPath: {
       async get() { const p = d.getAdkPath(); return p ? { present: true, path: p } : { present: false }; },
-      async set(path) { d.setAdkPath(path); await d.invoke("write_naia_path_cache", { adkPath: path }); },
-      async detectRoot() { const p = (await d.invoke("workspace_detect_adk_root")) as string | null; return p ? { present: true, path: p } : null; },
+      async set(path) { const normalized = path.replace(/[/\\]+$/, ""); d.setAdkPath(normalized); await d.invoke("write_naia_path_cache", { adkPath: normalized }); }, // F0-6: cache 도 normalized
+      async detectRoot() { try { const p = (await d.invoke("workspace_detect_adk_root")) as string | null; return p ? { present: true, path: p } : null; } catch { return null; } }, // F0-7: 미발견 reject→null
     },
     workspace: {
-      async setRoot(rawPath) { try { await d.invoke("workspace_set_root", { root: rawPath }); return { ok: true, root: { kind: "canonical-root", path: rawPath } }; } catch (e) { return { ok: false, error: String(e) }; } },
+      async setRoot(rawPath) { try { const canonical = String(await d.invoke("workspace_set_root", { root: rawPath })); return { ok: true, root: { kind: "canonical-root", path: canonical } }; } catch (e) { return { ok: false, error: String(e) }; } }, // F0-3: Rust canonicalize 반환값 사용(raw 라벨 금지)
       async startWatch() { await d.invoke("workspace_start_watch"); },
       async stopWatch() { await d.invoke("workspace_stop_watch"); },
     },
@@ -55,7 +56,11 @@ export function makeF0LiveAdapters(d: LiveDeps): ControlPlanePorts {
     setup: {
       async initSettings(adkPath) { await d.invoke("init_naia_settings", { adkPath }); },
       async copyBundledAssets(adkPath) { await d.invoke("copy_bundled_assets", { adkPath }); },
-      async inspectAdkDir(path) { const r = (await d.invoke("inspect_adk_dir", { adkPath: path })) as { exists?: boolean; isAdk?: boolean }; return { exists: !!r?.exists, isAdk: !!r?.isAdk }; },
+      async inspectAdkDir(path) { // F0-1: Rust inspect_adk_dir 는 bare string 반환 — 4-state 그대로 매핑(이전 {exists,isAdk} 캐스팅=BLOCKER)
+        const s = String(await d.invoke("inspect_adk_dir", { adkPath: path }));
+        const status: AdkDirStatus = (s === "empty" || s === "has_settings" || s === "has_other_files") ? s : "missing";
+        return { status };
+      },
       async cloneAdk(path) { await d.invoke("clone_naia_adk", { adkPath: path }); },
       async deleteAdk(path) { await d.invoke("delete_naia_adk", { adkPath: path }); },
     },
