@@ -50,7 +50,7 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | 단위 | 범위 | 계약 | 이식(코드) | 2-AI 리뷰 | 라이브 graft/e2e | 상태 |
 |---|---|:--:|:--:|:--:|:--:|---|
 | F0 | 부팅 workspace init | ✓+**delta** | **live+신규계약 수정** | **✓ 2-AI R1 ISSUES(BLOCKER)→R2 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
-| F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) 이식** | **✓ 2-AI R1, FR-F1.1 fix, BLOCKER0** | gRPC Diagnostics RPC(신규계약)+UC13 잔여 | **os-local 이식+리뷰 완료, 나머지 신규계약 스펙** |
+| F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) + gRPC Diagnostics RPC agent측** | **✓ 2-AI R1 fix + Diagnostics provider** | Diagnostics Rust os-client=루크 | **os-local + rich-health agent측 완료, Rust client만 잔여** |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓+**delta** | **writeFile+ptyWrite live, execCommand fail-closed** | **✓ 2-AI R1 BLOCKER2(arg-casing+보안)→수정** | execCommand 신규보안계약+UC13 잔여 | **안전분 이식+리뷰, exec 신규계약** |
 | V1=UC1 | 텍스트 대화 | ✓ | **필드보존 fix os+agent+proto end-to-end** | **✓ 2-AI HIGH2 수정(cross-repo 완성)** | 실앱 대화 OK(루크) / Rust 포워딩 잔여 | **이식+리뷰 완료, os Rust agent_event_to_ui_json 포워딩만 잔여(Luke)** |
