@@ -267,6 +267,20 @@
         "UC2"
       ],
       "contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
+    },
+    "src/main/ports/v2.ts": {
+      "layer": "ports",
+      "uc": [
+        "UC2"
+      ],
+      "contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
+    },
+    "src/main/adapters/tauri/v2.ts": {
+      "layer": "adapters",
+      "uc": [
+        "UC2"
+      ],
+      "contract": "docs/progress/V2-baseline-contract-2026-06-13.md"
     }
   }
 }

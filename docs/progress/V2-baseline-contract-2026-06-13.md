@@ -67,6 +67,10 @@ VoiceProviderPort (라이브 realtime — external):
 ## §D. 리뷰 표준 (UC2 적용)
 T2(외부연결+장치). open-loop 2-AI(정본=old voice 소스). 집중: getUserMedia lazy(startup 무블록), 정직 상태(cold-start 오보 금지), 음색클론 프라이버시(naia local=컨테이너 직송 무과금), provider 키 누출.
 
+## §C-bis. 이식 슬라이스 범위 (2026-06-13 리뷰 정합)
+- **이식 완료(이번 슬라이스)**: domain/voice.ts(VoiceConnectionStatus) + ports/v2.ts(Sensory/Expression/VoiceProvider) + adapters/tauri/v2.ts(makeV2Expression: play/clearAudio/synthesize/express; makeV2Sensory: startMicCapture[getUserMedia lazy]/transcribe). 2-AI 리뷰: BLOCKER 0(startup-block 불변 = type-only import + lazy device, 검증), 정직(Unsupported)·parity·직교 PASS.
+- **deferred(다음 슬라이스, 계약엔 있으나 이번 미구현 — 정직 표기)**: `ExpressionPort.stop()`, `SensoryPort.sttModels()/download/delete`(S49 STT 모델관리), `outputDevices()`(S50 — F1 list_audio_output_devices 재사용). + VoiceProviderPort 라이브(external).
+
 ## §E. 다음 (V2 개발)
 1. 이 계약 2-AI 리뷰(scope/parity) → 2. os-local 어댑터 이식(AudioPlayer 먼저=HW 의존 적음) + drift-gate → 3. 2-AI 리뷰 → 4. 커밋. external(gRPC Voice RPC + providers) = 신규계약 별도 + 루크머신.
 > ⚠️ MicCapture getUserMedia 는 F2 startup-block(navigator.mediaDevices stall) 재발 위험 — 기동 미접촉, 음성 활성 시에만 lazy. UC2 이식 시 GstIntRange 장치회피/timeout-bound.

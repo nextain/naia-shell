@@ -13,5 +13,14 @@
     "external (providers WS/STT/TTS/gRPC Voice RPC)": "신규계약 + 루크머신 baseline (live voice/GPU/키)."
   },
   "next": "os-local 어댑터 이식(AudioPlayer 먼저=HW의존 적음) + V2 ports(SensoryPort/ExpressionPort/VoiceProviderPort) + 2-AI(T2) → external gRPC Voice RPC 신규계약(별도, agent gRPC surface) → 루크머신 live(mic→STT→chat→TTS→speaker).",
-  "luke_machine_gate": "실제 음성 왕복 + 음색클론 = voice/GPU/provider 키 필요(이 env 불가). os-local 어댑터는 주입 mock 으로 parity 검증, live 는 루크 머신."
+  "luke_machine_gate": "실제 음성 왕복 + 음색클론 = voice/GPU/provider 키 필요(이 env 불가). os-local 어댑터는 주입 mock 으로 parity 검증, live 는 루크 머신.",
+  "os_local_adapter_review": {
+    "verdict": "ISSUES→addressed (BLOCKER 0)",
+    "key": "startup-block 불변(type-only import+lazy device)=CLEAN. 정직(Unsupported)·parity·직교 PASS.",
+    "fixed": [
+      "생성-시-device-미접촉 직접 테스트 추가",
+      "계약 §C-bis: stop()/sttModels(S49)/outputDevices(S50)/VoiceProvider live = deferred 정직 표기"
+    ],
+    "deferred": "external(VoiceProvider WS/STT/TTS/gRPC Voice RPC)=신규계약+루크머신 live."
+  }
 }

@@ -43,7 +43,7 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓+**delta** | **writeFile+ptyWrite live, execCommand fail-closed** | **✓ 2-AI R1 BLOCKER2(arg-casing+보안)→수정** | execCommand 신규보안계약+UC13 잔여 | **안전분 이식+리뷰, exec 신규계약** |
 | V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증** | codex부분 | **실앱 대화 OK(루크확인)** | 거의완료 |
-| V2 | 음성(UC2) | **계약+§C분해** | **순수도메인(VoiceConnectionStatus) 이식, os-local 어댑터 next** | T1 도메인=테스트검증, T2(어댑터) next | 루크머신 voice baseline | **계약+도메인 완료, os-local 어댑터 진행중** |
+| V2 | 음성(UC2) | **계약+§C분해** | **도메인+ports+os-local 어댑터(Expression/Sensory) 이식** | **✓ 2-AI: BLOCKER0(startup-lazy CLEAN)** | external(VoiceProvider/gRPC Voice RPC)+루크머신 live | **os-local 이식+리뷰 완료, external 신규계약** |
 | S-row | skills 60+/browser/channels/bgm | 측정 | ✗ | ✗ | — | 미착수 |
 | UC5/6/7/8/12/13 | (user-scenarios 참조) | 부분 | UC12=온보딩 live | ✗ | — | 부분 |
 > UC3(기억)=다른 세션 소유(naia-memory), off-scope. 검출기 RED 6파일=그 세션 것.
