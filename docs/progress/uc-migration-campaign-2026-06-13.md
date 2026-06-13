@@ -12,7 +12,9 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 **순서 (루크 선택)**: ① 재무장 → ② F2 재검증 → ③ UC 유저여정순.
 
 ### 현재 위치 (CURRENT POSITION)
-- **Phase ①(재무장) 진행 중.** 라이브 워처 재가동됨(os PID 60152·agent 60304). ⚠️ **이 머신(Bazzite)엔 crontab 없음+crond inactive → cron 영속 불가** = 자동검출이 죽어있던 근본 이유. 재부팅 생존 = **SessionStart 훅 self-heal**로 가야(미구현).
+- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(R1 checkpoint·R2 dispatcher, mutation-probe 통과, 커밋 5f7c547) / **F2 ✓**(이식+신규계약+2-AI 3R CLEAN, 커밋 d5f896d) / **F0 ✓**(이식+신규계약+2-AI R1 BLOCKER→R2 CLEAN, 커밋 dd2684b). **다음 = F1(자기상태+승인) 착수** → 이후 F3 → V2 → S-row. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
+- **★ 자율 진행 중(루크: "물어보지말고 끝까지·멈추지마"). 압축 후 재개 시: 이 CAMPAIGN ANCHOR 재독 → UC 상태표의 첫 미완 UC 부터 동일 프로세스.**
+- **Phase ①(재무장) — 완료.** 라이브 워처 재가동됨(os PID 60152·agent 60304). ⚠️ **이 머신(Bazzite)엔 crontab 없음+crond inactive → cron 영속 불가** = 자동검출이 죽어있던 근본 이유. 재부팅 생존 = **SessionStart 훅 self-heal**로 가야(미구현).
 - enforcement 갭(RCA, 전부 관측): (G1) new-naia 게이트(sdlc/file-anchor/completion/conform)가 **alpha-adk 루트 세션에 미로드**(2단계 nested, 자체 settings 만) → 미발화. (G2) 루트 훅 체인에 SDLC/티어/2-AI 게이트 0. (G3) 티어/2-AI 가 게이트로 인코딩 안 됨(문서/메모리에만). (G4) 라이브 자동검출 죽음(crond 없음).
 - **F2 상태 = ✅ 이식+리뷰 완료**(코드/계약): `75ef48a`(초기) → 2-AI R1 ISSUES(BLOCKER2+MAJOR4) → **신규 계약(ports/f2.ts + §C delta)으로 수정** → R2(전부 fixed+MEDIUM1 NI-1) → 수정 → R3 CLEAN. `.agents/reviews/r-f2-2026-06-13.json` 참조. tsc/anchors/assembly/compile/**154 test** green. **남은 = 루크 머신 라이브 graft + e2e(실행 shell 이 wireObservationServiceLive 호출, watch→drift/pty 런타임).** ★ 교훈: open-loop 2-AI 가 closed-loop 11-green 이 놓친 BLOCKER 적발 = 재무장+리뷰표준 가치 실증.
 
@@ -23,6 +25,14 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 - [x] R4 self-검증 = mutation-probe 통과(위 R2).
 
 > **재무장 결론**: G1(서브게이트 미발화)·G4(cron 죽음) 닫힘 + 검증. G2/G3(T2→2-AI 강제 게이트)는 R3로 남음 — 그동안은 *리뷰 표준을 수동 준수*(앵커 재독 + UC마다 2-AI). 라이브 per-action 강제(dispatcher)는 가동.
+
+### F1 착수 scouting (다음 = 여기서 이어감)
+F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPort. **T2(승인=보안민감)**. 소스 분산 — 이식 시 주의:
+- **InteroceptivePort**: systemStatus=`skill_system_status`/old DiagnosticsTab, diagnostics=`skill_diagnostics`(action:status/gateway_status)+로그 tail, devices=`lib.rs:2104 list_audio_output_devices`(PipeWire, Linux), degradations=probe(adapter)+isDegraded(domain).
+- **PersistentGrantPort**: old `config.ts:534 isToolAllowed`/`539 addAllowedTool`(allowedTools[] in config) — 기계적, F0 config 패턴 재사용.
+- **ApprovalPort.classify**: tier 매핑 = **agent측 tool-tiers TOOL_TIERS**(T0 auto/T1·T2 approval/T3 blocked/미매핑→T2). new domain/approval.ts 에 Tier/needsApproval/isBlocked 이미 있음 — classify 는 도메인 tier-table(순수) 가능성(어댑터 아님) 확인 필요.
+- **ApprovalPort.request**: ⚠️ 승인 live-flow = **gRPC chat turn 과 얽힘**(agent 가 approval_request AgentEvent emit → shell sendApprovalResponse→send_to_agent_command, old index.ts:233 waitForApproval+pendingApprovals 120s timeout). UC13(os approval) 와 교차 — request 의 live 배선은 F3/UC13 chat-approval 흐름에서. F1 은 **계약 최소 선잠금 + interoceptive/grant/classify 이식**으로 범위.
+- 레시피: Old-Baseline→(신규)계약→이식→drift-gate→2-AI(open-loop, 정본 ground truth)→커밋. 리뷰 산출물 `.agents/reviews/r-f1-2026-06-13.json`.
 
 ### UC 상태표 (tranche/vertical, user-scenarios.md SoT)
 | 단위 | 범위 | 계약 | 이식(코드) | 2-AI 리뷰 | 라이브 graft/e2e | 상태 |
