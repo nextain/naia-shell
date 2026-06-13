@@ -450,6 +450,34 @@ export function ChatPanel() {
 	const pendingApproval = useChatStore((s) => s.pendingApproval);
 	const messageQueue = useChatStore((s) => s.messageQueue);
 
+	// E2E 통짜 검증(VITE_NAIA_E2E_AUTOCHAT=1): wdio 없이 앱 내부서 채팅을 구동해 실 webview→Rust gRPC 클라→
+	// agent→z.ai→UI 렌더 전 경로를 관통. 응답+토큰을 naia-debug.log 로 기록(헤드리스 통짜 검증, 환경 SIGUSR1=wdio 회피).
+	useEffect(() => {
+		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
+		const t = setTimeout(() => {
+			Logger.info("ChatPanel", "[E2E-AUTOCHAT] send 안녕");
+			void handleSend("안녕");
+		}, 5000); // config 로딩 + agent gRPC connect 여유
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+	useEffect(() => {
+		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
+		// 진단 robust: cost 유무 무관, assistant 메시지가 생기면 기록(응답 안 옴 vs 로거 놓침 구분). streaming/에러도.
+		const last = messages[messages.length - 1];
+		if (last && last.role === "assistant") {
+			Logger.info("ChatPanel", "[E2E-AUTOCHAT] response", {
+				text: last.content.slice(0, 120),
+				tokens: last.cost ? (last.cost.inputTokens ?? 0) + (last.cost.outputTokens ?? 0) : "no-cost",
+				hasError: /\[오류\]|provider error|grpc/.test(last.content),
+			});
+		}
+	}, [messages]);
+	useEffect(() => {
+		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
+		if (streamingContent) Logger.info("ChatPanel", "[E2E-AUTOCHAT] streaming", { len: streamingContent.length });
+	}, [streamingContent]);
+
 	const setEmotion = useAvatarStore((s) => s.setEmotion);
 
 	// Load previous session from Gateway (SoT)

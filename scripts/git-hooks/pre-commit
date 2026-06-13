@@ -27,4 +27,12 @@ if [ -f scripts/check-compile-integrity.mjs ]; then
   fi
 fi
 
-echo "✅ pre-commit: 무결성 통과(완전 staging + src 컴파일)."
+# ── ③ 로깅 표준 강제(shell src 에 console.* 등 표준 외 로깅 금지 — docs/logging.md · 계약 F-LOG-3) ──
+if [ -f packages/shell/scripts/check-logging.mjs ]; then
+  if ! node packages/shell/scripts/check-logging.mjs; then
+    echo "❌ pre-commit 차단: 표준 외 로깅. Logger.debug/info/warn/error 로 교정 후 커밋."
+    exit 1
+  fi
+fi
+
+echo "✅ pre-commit: 무결성 통과(완전 staging + src 컴파일 + 로깅 표준)."

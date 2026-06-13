@@ -80,6 +80,13 @@ run_checks() {
     printf '%s\n' "$fares" | grep -E '✗' | sed 's/^[[:space:]]*✗[[:space:]]*/[file-anchor] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
   fi
 
+  # 로깅 표준 강제 — shell src 에 console.*(표준 외 로깅) 있나(docs/logging.md · 계약 F-LOG-3).
+  if [ -f "$ROOT_DIR/packages/shell/scripts/check-logging.mjs" ]; then
+    local lgres
+    lgres="$(node "$ROOT_DIR/packages/shell/scripts/check-logging.mjs" 2>&1)" || true
+    printf '%s\n' "$lgres" | grep -E '✗' | sed 's/^[[:space:]]*✗[[:space:]]*/[check-logging] /' >>"$WORK_DIR/.vw_tmp" 2>/dev/null || true
+  fi
+
   # 6) 빌드/dev 툴링 계약 — package.json tauri* + tauri.conf beforeDev/BuildCommand 의 경로가 dangling 인가,
   #    미등록 빌드 스크립트가 추가됐나(잘못 이식된 빌드 툴링 검출). active=RED, 크로스플랫폼=deferred.
   if [ -f "$SCRIPT_DIR/check-build-contract.mjs" ]; then

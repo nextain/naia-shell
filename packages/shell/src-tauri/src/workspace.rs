@@ -401,10 +401,18 @@ pub fn workspace_start_watch(
     app: AppHandle,
     watcher_state: tauri::State<'_, SharedWatcherState>,
 ) -> Result<(), String> {
+    // P1 진입·구간 타이밍 로깅(debug=log_verbose) — 90초 행 규명용(docs/logging.md).
+    let t0 = std::time::Instant::now();
+    crate::log_verbose("[workspace] start_watch enter");
     let root = canonical_workspace_root()?;
     let mut state = watcher_state.lock().unwrap();
+    crate::log_verbose(&format!(
+        "[workspace] start_watch lock acquired ms={}",
+        t0.elapsed().as_millis()
+    ));
 
     if state.watcher.is_some() {
+        crate::log_verbose("[workspace] start_watch already watching — noop");
         return Ok(());
     }
 
@@ -477,9 +485,19 @@ pub fn workspace_start_watch(
     .map_err(|e| e.to_string())?;
 
     let mut w = watcher;
-    for path in collect_workspace_git_dirs(&root) {
+    let dirs = collect_workspace_git_dirs(&root);
+    crate::log_verbose(&format!(
+        "[workspace] start_watch collected {} git dirs ms={}",
+        dirs.len(),
+        t0.elapsed().as_millis()
+    ));
+    for path in dirs {
         let _ = w.watch(&path, RecursiveMode::Recursive);
     }
+    crate::log_verbose(&format!(
+        "[workspace] start_watch watched ms={}",
+        t0.elapsed().as_millis()
+    ));
 
     state.watcher = Some(w);
     Ok(())
@@ -508,6 +526,9 @@ pub fn workspace_stop_watch(
 
 #[tauri::command]
 pub fn workspace_set_root(root: String) -> Result<String, String> {
+    // P1 진입·종료 로깅(debug=log_verbose) — 90초 등 타이밍 규명용(docs/logging.md).
+    let t0 = std::time::Instant::now();
+    crate::log_verbose(&format!("[workspace] set_root enter root={root}"));
     let p = PathBuf::from(&root);
     if !p.is_dir() {
         return Err(format!("Workspace root is not a directory: {root}"));
@@ -517,6 +538,10 @@ pub fn workspace_set_root(root: String) -> Result<String, String> {
     let canonical_str = canonical.to_string_lossy().to_string();
     let m = WORKSPACE_ROOT_OVERRIDE.get_or_init(|| Mutex::new(WORKSPACE_ROOT.to_string()));
     *m.lock().unwrap() = canonical_str.clone();
+    crate::log_verbose(&format!(
+        "[workspace] set_root exit canonical={canonical_str} ms={}",
+        t0.elapsed().as_millis()
+    ));
     Ok(canonical_str)
 }
 

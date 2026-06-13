@@ -780,10 +780,15 @@ export function App() {
 					)}
 					{naiaVisible && (
 						<>
-							{/* Full-screen avatar canvas — renders behind all UI panels */}
-							<div className="avatar-canvas-layer">
-								<AvatarCanvas />
-							</div>
+							{/* Full-screen avatar canvas — renders behind all UI panels.
+							    e2e 헤드리스(cage)서 연속 WebGL 렌더 루프가 webview JS 스레드를 기아시켜 IPC/WebDriver
+							    가 90초 stall/drop 되는 문제 → VITE_NAIA_E2E_NO_AVATAR=1 일 때 렌더 생략(아바타는 chat
+							    UC 와 무관, 실 디스플레이 검증서만 필요). 일반 빌드/런타임엔 영향 없음. */}
+							{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
+								<div className="avatar-canvas-layer">
+									<AvatarCanvas />
+								</div>
+							)}
 							<div className="naia-overlay">
 								{/* AI + avatar controls — top of avatar column, independent */}
 								<AiControlBar />

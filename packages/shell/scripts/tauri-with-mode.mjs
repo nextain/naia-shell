@@ -32,7 +32,18 @@ const env = { ...process.env };
 env.VITE_NAIA_NEW_CORE = env.VITE_NAIA_NEW_CORE ?? "1";
 env.NAIA_AGENT_STANDALONE = env.NAIA_AGENT_STANDALONE ?? "1";
 env.NAIA_AGENT_SCRIPT = env.NAIA_AGENT_SCRIPT ?? resolve(AGENT, "scripts/builds/agent-stdio-entry.mjs");
-if (platform() === "linux") env.GDK_BACKEND = "x11";
+// Linux GTK 백엔드: 옛 naia-os 는 x11 무조건 강제(WebKitGTK XReparentWindow embedding).
+// 그러나 XWayland 없는 순수 Wayland 세션(KDE Plasma 등, DISPLAY 비어있음)에선 x11 백엔드가
+// 붙을 X 가 없어 GTK init 패닉(2026-06-13 실측: 루크 KDE Wayland tauri:dev 기동 불가).
+// → X 가 실제로 있을 때만 x11, 아니면 wayland. 호출자 명시값(GDK_BACKEND)은 보존.
+if (platform() === "linux") {
+	const hasX = !!(env.DISPLAY && env.DISPLAY.trim());
+	env.GDK_BACKEND = env.GDK_BACKEND ?? (hasX ? "x11" : "wayland");
+	// Wayland 백엔드 = WebKitGTK DMABUF 렌더 버그(빈 화면) 회피.
+	if (env.GDK_BACKEND === "wayland") {
+		env.WEBKIT_DISABLE_DMABUF_RENDERER = env.WEBKIT_DISABLE_DMABUF_RENDERER ?? "1";
+	}
+}
 
 // ── prod: dev-gateway 변수 강제 제거 ──
 if (mode === "prod") {

@@ -16,6 +16,9 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# naia_agent.proto → Rust gRPC client 코드젠(정본 transport=gRPC). protoc 는 vendored(시스템 설치 불요).
+tonic-build = "0.12"
+protoc-bin-vendored = "3"
 
 [dependencies]
 tauri = { version = "2", features = ["image-png", "unstable", "protocol-asset"] }
@@ -23,8 +26,12 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "stream"] }
-tokio = { version = "1", features = ["sync", "macros", "rt", "time"] }
+tokio = { version = "1", features = ["sync", "macros", "rt", "rt-multi-thread", "net", "time"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+# os↔agent 단일 transport = gRPC(정본). naia_agent.proto tonic 클라이언트. hyper 1.x 를 reqwest 0.12 와 공유.
+tonic = "0.12"
+prost = "0.13"
+tokio-stream = "0.1"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 futures-util = "0.3"
 base64 = "0.22"

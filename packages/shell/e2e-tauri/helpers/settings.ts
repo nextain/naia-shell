@@ -1,18 +1,22 @@
 import { S } from "./selectors.js";
 
 /**
- * Retry-safe browser.refresh() — WebKitGTK may throw UND_ERR_HEADERS_TIMEOUT.
+ * Retry-safe reload. ⚠️ browser.refresh()(WebDriver POST /refresh)는 헤드리스(cage/WebKitWebDriver)
+ * 환경에서 page-load 완료 응답을 못 받아 "aborted due to timeout"으로 세션을 끊는 간헐 버그가 있다.
+ * → JS `location.reload()`로 우회: 네비게이션만 트리거하고 즉시 반환, 준비는 appRoot 존재로 판정.
+ * (Xvfb 에선 browser.refresh()가 안정적이었으나 cage/Wayland 헤드리스에선 불안정.)
  */
 export async function safeRefresh(maxAttempts = 3): Promise<void> {
 	for (let attempt = 0; attempt < maxAttempts; attempt++) {
 		try {
-			await browser.refresh();
+			await browser.execute(() => { window.location.reload(); }).catch(() => {});
+			await browser.pause(800); // reload 네비게이션 시작 여유
+			const appRoot = await $(S.appRoot);
+			await appRoot.waitForExist({ timeout: 30_000 });
 			return;
 		} catch {
 			if (attempt === maxAttempts - 1)
-				throw new Error(
-					`browser.refresh() failed after ${maxAttempts} attempts`,
-				);
+				throw new Error(`safeRefresh(location.reload) failed after ${maxAttempts} attempts`);
 			await browser.pause(2_000);
 		}
 	}

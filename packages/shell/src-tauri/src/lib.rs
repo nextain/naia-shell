@@ -1,3 +1,4 @@
+mod agent_grpc;
 mod audit;
 mod browser;
 mod browser_webview;
@@ -251,10 +252,18 @@ use webkit2gtk::glib::object::ObjectExt;
 #[cfg(target_os = "linux")]
 use webkit2gtk::PermissionRequestExt;
 
-// agent-core process handle
+// agent-core process handle — 정본 transport=gRPC. child=프로세스 lifecycle, tx=메시지를 dispatcher task(gRPC 클라 소유)로.
 struct AgentProcess {
     child: Child,
-    stdin: std::process::ChildStdin,
+    tx: tokio::sync::mpsc::UnboundedSender<String>,
+}
+
+// ⚠️ Rust 는 Child drop 시 프로세스를 죽이지 않음 → restart 로 *guard 교체 시 옛 agent 가 orphan(gRPC 서버 잔류).
+// Drop 에서 명시 kill 로 orphan 방지(codex 리뷰 #1). 종료/replace 양쪽 커버.
+impl Drop for AgentProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
 }
 
 // Naia Gateway + Node Host process handle
@@ -1068,101 +1077,153 @@ fn spawn_agent_core(
         .spawn()
         .map_err(|e| format!("Failed to spawn agent-core: {}", e))?;
 
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to get agent stdin".to_string())?;
+    // gRPC: stdin 은 데이터 채널 아님(child 가 보유, 미사용). stdout = GRPC_LISTENING 핸드셰이크 + 로그.
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| "Failed to get agent stdout".to_string())?;
 
-    // Stdout reader thread: forward JSON lines as Tauri events + audit log
-    let handle = app_handle.clone();
-    let audit_db_clone = audit_db.clone();
+    // ── gRPC(정본 transport): stdout 의 `GRPC_LISTENING <addr>` 핸드셰이크 1줄만 읽고 나머지는 로그 ──
+    // 데이터(요청/응답)는 gRPC. agent_response 이벤트는 dispatcher 의 Chat stream task 가 재구성해 emit.
+    let (addr_tx, addr_rx) = std::sync::mpsc::channel::<String>();
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            match line {
-                Ok(json_line) => {
-                    let trimmed = json_line.trim();
-                    if trimmed.is_empty() || !trimmed.starts_with('{') {
-                        continue;
-                    }
-                    // Audit log: parse and record before emitting
-                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                        audit::maybe_log_event(&audit_db_clone, &parsed);
-                        if debug_e2e_enabled() {
-                            let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                            match t {
-                                "tool_use" => {
-                                    let n = parsed
-                                        .get("toolName")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    log_both(&format!(
-                                        "[E2E-DEBUG] agent_response tool_use tool={}",
-                                        n
-                                    ));
-                                }
-                                "tool_result" => {
-                                    let n = parsed
-                                        .get("toolName")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    let s = parsed
-                                        .get("success")
-                                        .and_then(|v| v.as_bool())
-                                        .unwrap_or(false);
-                                    let out = parsed
-                                        .get("output")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .chars()
-                                        .take(120)
-                                        .collect::<String>();
-                                    log_both(&format!(
-                                        "[E2E-DEBUG] agent_response tool_result tool={} success={} output_head={}",
-                                        n, s, out
-                                    ));
-                                }
-                                "error" => {
-                                    let m = parsed
-                                        .get("message")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
-                                    log_both(&format!(
-                                        "[E2E-DEBUG] agent_response error msg={}",
-                                        m
-                                    ));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    // Intercept memory backup responses — dispatch to waiting Tauri command
-                    // (parsed only available inside the if let Ok block above, so we re-parse here)
-                    let handled_as_backup = serde_json::from_str::<serde_json::Value>(trimmed)
-                        .map(|v| memory::dispatch_backup_response(&v))
-                        .unwrap_or(false);
-                    if handled_as_backup {
-                        continue;
-                    }
-                    // Forward raw JSON to frontend
-                    if let Err(e) = handle.emit("agent_response", trimmed) {
-                        log_verbose(&format!("[Naia] Failed to emit agent_response: {}", e));
-                    }
-                }
-                Err(e) => {
-                    log_verbose(&format!("[Naia] Error reading agent stdout: {}", e));
-                    break;
+        let mut sent = false;
+        for line in reader.lines().map_while(Result::ok) {
+            if !sent {
+                if let Some(rest) = line.strip_prefix("GRPC_LISTENING ") {
+                    let _ = addr_tx.send(rest.trim().to_string());
+                    sent = true;
+                    continue;
                 }
             }
+            log_verbose(&format!("[agent] {}", line));
         }
         log_verbose("[Naia] agent-core stdout reader ended");
     });
 
-    Ok(AgentProcess { child, stdin })
+    // gRPC listening addr 수신(timeout) — 기동 핸드셰이크. 실패 = 기동 실패.
+    let addr = addr_rx
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .map_err(|_| "agent gRPC addr handshake timeout".to_string())?;
+    log_both(&format!("[Naia] agent-core gRPC @{}", addr));
+
+    // adk_path (SetWorkspace 용) — env(NAIA_ADK_PATH) 와 동일 출처(~/.naia/adk-path).
+    let adk_path = dirs::home_dir()
+        .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    // 메시지 채널: send_to_agent(sync) → dispatcher task(async, gRPC 클라 소유). nested runtime 회피.
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    tauri::async_runtime::spawn(agent_dispatcher(
+        addr,
+        adk_path,
+        rx,
+        app_handle.clone(),
+        audit_db.clone(),
+    ));
+
+    Ok(AgentProcess { child, tx })
+}
+
+/// gRPC dispatcher — connect → SetWorkspace(naia-adk 로딩) → 메시지 루프.
+/// chat=Chat stream task(AgentEvent→UI JSON emit + audit + memory backup dispatch, 구 stdout reader 대체),
+/// creds/cancel/approval=unary. send_to_agent(sync) 가 mpsc 로 메시지를 흘린다.
+async fn agent_dispatcher(
+    addr: String,
+    adk_path: String,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    app: AppHandle,
+    audit_db: audit::AuditDb,
+) {
+    let mut client = match agent_grpc::AgentGrpc::connect(format!("http://{}", addr)).await {
+        Ok(c) => c,
+        Err(e) => {
+            log_both(&format!("[Naia] agent gRPC connect 실패: {}", e));
+            return;
+        }
+    };
+    match client.set_workspace(adk_path).await {
+        Ok(r) => log_both(&format!("[Naia] SetWorkspace → loaded={} {}/{}", r.loaded, r.provider, r.model)),
+        Err(e) => log_both(&format!("[Naia] SetWorkspace 실패: {}", e)),
+    }
+    while let Some(msg) = rx.recv().await {
+        let v: serde_json::Value = match serde_json::from_str(&msg) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
+            "chat_request" => {
+                let req = agent_grpc::json_to_chat_request(&v);
+                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let mut c = client.clone();
+                let app2 = app.clone();
+                let app_err = app.clone(); // emit closure 가 app2 를 move → 에러 경로용 별도 clone
+                let db2 = audit_db.clone();
+                tauri::async_runtime::spawn(async move {
+                    let emit = move |json: String| {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
+                            audit::maybe_log_event(&db2, &parsed);
+                            if memory::dispatch_backup_response(&parsed) {
+                                return;
+                            }
+                        }
+                        let _ = app2.emit("agent_response", &json);
+                    };
+                    if let Err(e) = c.chat(req, emit).await {
+                        let err = serde_json::json!({"type":"error","requestId":request_id,"message":format!("grpc chat: {}", e)}).to_string();
+                        let _ = app_err.emit("agent_response", &err);
+                    }
+                });
+            }
+            "creds_update" => {
+                let provider = v.get("provider").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let api_key = v.get("apiKey").and_then(|x| x.as_str()).map(|s| s.to_string());
+                let naia_key = v.get("naiaKey").and_then(|x| x.as_str()).map(|s| s.to_string());
+                let _ = client.update_creds(provider, api_key, naia_key).await;
+            }
+            "cancel_stream" => {
+                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let _ = client.cancel(rid).await;
+            }
+            "approval_response" => {
+                let approve = v.get("decision").and_then(|x| x.as_str()) == Some("approve");
+                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let tcid = v.get("toolCallId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let _ = client.approval_response(rid, tcid, approve).await;
+            }
+            "tool_request" => {
+                // 셸 directToolCall(기동 시 skill_voicewake/skill_config/skill_sessions 등) — new-core 미지원이나
+                // 반드시 즉시 error 응답해야 셸이 120s 행에 빠지지 않는다(드롭 금지, 구 stdio 동작 복원).
+                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let rid_err = rid.clone();
+                let tool = v.get("toolName").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let mut c = client.clone();
+                let app2 = app.clone();
+                let app_err = app.clone();
+                let db2 = audit_db.clone();
+                tauri::async_runtime::spawn(async move {
+                    let emit = move |json: String| {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
+                            audit::maybe_log_event(&db2, &parsed);
+                            if memory::dispatch_backup_response(&parsed) {
+                                return;
+                            }
+                        }
+                        let _ = app2.emit("agent_response", &json);
+                    };
+                    // transport 에러 시 즉시 error 응답 — 안 그러면 셸 directToolCall 이 타임아웃까지 행(codex #5).
+                    if let Err(e) = c.tool_request(rid_err.clone(), tool, emit).await {
+                        let err = serde_json::json!({"type":"error","requestId":rid_err,"message":format!("grpc tool_request: {}", e)}).to_string();
+                        let _ = app_err.emit("agent_response", &err);
+                    }
+                });
+            }
+            _ => {}
+        }
+    }
+    log_verbose("[Naia] agent dispatcher ended");
 }
 
 /// Spawn the standalone YouTube BGM HTTP server (port 18791) — #335.
@@ -1446,23 +1507,17 @@ fn send_to_agent(
             Err(e) => log_verbose(&format!("[Naia] Failed to check agent status: {}", e)),
         }
 
-        // Write to stdin
-        match writeln!(process.stdin, "{}", message) {
-            Ok(_) => {
-                process
-                    .stdin
-                    .flush()
-                    .map_err(|e| format!("Flush error: {}", e))?;
-                Ok(())
-            }
+        // gRPC: 메시지를 dispatcher task 로 전달(비차단 mpsc). send 실패 = dispatcher/agent 종료 → restart.
+        match process.tx.send(message.to_string()) {
+            Ok(_) => Ok(()),
             Err(e) => {
-                log_both(&format!("[Naia] Write to agent failed: {}", e));
+                log_both(&format!("[Naia] agent tx send 실패: {}", e));
                 *guard = None;
                 drop(guard);
                 if let Some(handle) = app_handle {
                     restart_agent(state, handle, message, audit_db)
                 } else {
-                    Err(format!("Write failed: {}", e))
+                    Err(format!("Send failed: {}", e))
                 }
             }
         }
@@ -1725,17 +1780,12 @@ fn replay_startup_messages_to_agent(state: &AppState) {
         }
         guard.clone()
     };
-    let mut agent_guard = lock_or_recover(&state.agent, "state.agent(replay_startup)");
-    if let Some(ref mut process) = *agent_guard {
+    let agent_guard = lock_or_recover(&state.agent, "state.agent(replay_startup)");
+    if let Some(ref process) = *agent_guard {
         for msg in &messages {
-            match writeln!(process.stdin, "{}", msg) {
-                Ok(_) => {
-                    let _ = process.stdin.flush();
-                }
-                Err(e) => {
-                    log_both(&format!("[Naia] startup message replay failed: {}", e));
-                    break;
-                }
+            if let Err(e) = process.tx.send(msg.clone()) {
+                log_both(&format!("[Naia] startup message replay failed: {}", e));
+                break;
             }
         }
         log_verbose(&format!(

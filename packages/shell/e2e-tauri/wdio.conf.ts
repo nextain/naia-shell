@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { execSync, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -160,6 +160,14 @@ export const config = {
 	capabilities: [
 		{
 			maxInstances: 1,
+			// ★ WebKitWebDriver(webkit2gtk 2.52.3)는 wdio 9 가 W3C 세션에 자동 활성하는 BiDi 프로토콜을
+			//   제대로 지원 안 해, 응답이 깨진 JSON 으로 와 `Could not parse response body`(JSON.parse 실패)로
+			//   모든 execute/세션이 깨진다 → classic WebDriver 만 쓰도록 강제(BiDi 비활성). e2e-tauri 핵심 fix.
+			"wdio:enforceWebDriverClassic": true,
+			// 헤드리스(cage/WebKitWebDriver)에서 browser.refresh()/url() 의 page-load 대기가
+			// 완료 응답을 못 받아 "aborted due to timeout" 으로 세션이 끊기는 문제 → 'eager' 로
+			// DOMContentLoaded 까지만 대기(전체 load 이벤트 대기 안 함). 준비 판정은 명시적 waitUntil 이 담당.
+			pageLoadStrategy: "eager",
 			"tauri:options": {
 				application: TAURI_BINARY,
 			},
