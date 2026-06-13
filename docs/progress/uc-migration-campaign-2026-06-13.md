@@ -16,11 +16,11 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 **agent(new-naia-agent)**: UC5(도구루프+skills) ✓ / provider-provenance ✓ — 이식+2-AI 리뷰+fix+커밋.
 **리뷰 성과**: BLOCKER/HIGH ~9건(F0 adk-inspect+PII, F2 error분류, F3 arg-casing+exec보안, UC13 승인A→행위B, UC12 stale-credential, UC1 도구결과/승인 페이로드, +MEDIUM 다수) — **전부 closed-loop 테스트(green)가 놓친 것을 재무장한 open-loop 2-AI가 적발**. = 루크 thesis 완전 실증. 안전 불가분은 전부 fail-closed+신규계약(애드혹 0).
 
-**남은 것 = 자율-리뷰 불가 범주** (전 transplanted 코드는 리뷰 완료):
-1. **external skill 미이식**: UC6(browser CDP)·UC8(BGM youtube)·S-row 일부 = 외부서비스 통합 → 루크머신/외부 필요.
-2. **신규 gRPC 계약**: Voice RPC(V2 음성 양방향)·Diagnostics RPC(F1 health) = agent gRPC surface 추가(os+agent 양쪽 작업).
-3. **UC3 메모리**: 다른 세션 소유(off-scope, canon RED 6파일).
-4. **전 UC live-graft + e2e**: 실행 shell 이 wire*Live 호출 + 실 음성/승인/도구 왕복 = 루크 머신.
+**남은 것 = 루크-머신 runtime/external 범주** (전 transplanted 코드는 이식+2-AI리뷰+컴파일검증 완료):
+1. **external skill runtime**: UC6(browser CDP)·UC8(BGM youtube WS)·V2 voice provider WS(gemini-live/openai-realtime/naia-omni) = 외부서비스/키/서버 → 루크머신 runtime.
+2. ~~신규 gRPC Voice RPC~~ **= 오개념(2026-06-14 Old-Baseline 확인)**: voice 는 os→provider WS **직결**(V2 계약 line 31-32/52-53), os→agent gRPC 경유 아님 → Voice RPC 만들면 Old-Baseline 위반 드리프트. 실제 external = provider WS(루크머신). **Diagnostics RPC(F1) = 완료**(agent handler+provider+proto + os Rust client cargo-check green, 2026-06-14).
+3. **UC3 메모리**: 다른 세션 소유(off-scope, canon out_of_scope UC-memory/UC3/UC4 6파일).
+4. **전 UC live-graft + e2e**: 실행 shell(packages/shell/src)이 chat(UC1) 외엔 wire*Live 미호출 — 자체 src/lib/* old 경로 구동, new-core 이식분 dormant. graft = 작동 old 경로→new 경로 교체 = **runtime 검증 필수(컴파일 green≠작동, [[feedback_handoff_verified_runnable_state]])** = 루크머신 게이트. **→ 최종 산출물 = UC별 사용자 테스트 문서(graft+runtime 검증 절차 포함)로 루크에 핸드오프.**
 
 ### 현재 위치 (CURRENT POSITION)
 - **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **F3 ✓**(writeFile+ptyWrite live, execCommand 보안 fail-closed+신규계약, 2-AI BLOCKER2 수정). **V2 계약 drafted**(V2-baseline-contract-2026-06-13: SensoryPort/ExpressionPort/VoiceProviderPort, os-local[AudioPlayer/MicCapture⚠️lazy/STT모델/avatar]+external[gRPC Voice RPC 신규계약+providers WS=루크머신] 분해). **[agent-side 진입]** UC5(agent 도구루프+skills) ✓(5cdb7c6, 2-AI BLOCKER0+MEDIUM fix). **다음(잔여) = agent UC6/8(browser/bgm external) · S-row skills · UC-provider-provenance 리뷰 · gRPC Voice/Diagnostics RPC 신규계약 · 전 UC 루크머신 live-graft.** (구버전 줄: V2 os-local 이식(AudioPlayer/VoiceConnectionStatus 도메인=HW無 가능) + 계약 2-AI 리뷰** → S-row → UC5~13. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
@@ -50,10 +50,10 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | 단위 | 범위 | 계약 | 이식(코드) | 2-AI 리뷰 | 라이브 graft/e2e | 상태 |
 |---|---|:--:|:--:|:--:|:--:|---|
 | F0 | 부팅 workspace init | ✓+**delta** | **live+신규계약 수정** | **✓ 2-AI R1 ISSUES(BLOCKER)→R2 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
-| F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) + gRPC Diagnostics RPC agent측** | **✓ 2-AI R1 fix + Diagnostics provider** | Diagnostics Rust os-client=루크 | **os-local + rich-health agent측 완료, Rust client만 잔여** |
+| F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) + Diagnostics RPC agent+proto+os Rust client** | **✓ 2-AI R1 fix + Diagnostics provider** | InteroceptivePort.diagnostics rich-payload 매핑+실호출=루크 | **✅ Diagnostics RPC end-to-end 완료(agent→proto→os Rust client cargo green 2026-06-14), runtime 매핑만 루크** |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓+**delta** | **writeFile+ptyWrite live, execCommand fail-closed** | **✓ 2-AI R1 BLOCKER2(arg-casing+보안)→수정** | execCommand 신규보안계약+UC13 잔여 | **안전분 이식+리뷰, exec 신규계약** |
-| V1=UC1 | 텍스트 대화 | ✓ | **필드보존 fix os+agent+proto end-to-end** | **✓ 2-AI HIGH2 수정(cross-repo 완성)** | 실앱 대화 OK(루크) / Rust 포워딩 잔여 | **이식+리뷰 완료, os Rust agent_event_to_ui_json 포워딩만 잔여(Luke)** |
+| V1=UC1 | 텍스트 대화 | ✓ | **필드보존 fix os+agent+proto + os Rust forwarding end-to-end** | **✓ 2-AI HIGH2 수정(cross-repo 완성)** | 실앱 대화 OK(루크 — chat 은 실 셸 graft됨) | **✅ end-to-end 완료(agent→proto→os Rust forward[success/desc]→chat-service→PermissionModal, cargo green 2026-06-14)** |
 | V2 | 음성(UC2) | **계약+§C분해** | **도메인+ports+os-local 어댑터(Expression/Sensory) 이식** | **✓ 2-AI: BLOCKER0(startup-lazy CLEAN)** | external(VoiceProvider/gRPC Voice RPC)+루크머신 live | **os-local 이식+리뷰 완료, external 신규계약** |
 | S-row(agent skills) | github/mcp/obsidian/weather/memo(UC5)·bgm(UC8)·browser(UC6)·notify·cron | ✓ | **agent-local ToolExecutor 이식(injected 외부dep)** | self-review(패턴 규약) | 실 외부서비스=루크 | **clean agent skills 이식 완료(9개)** |
 | S-row(잔여) | sessions/skill-manager/config/device/channels/agents/approvals/naia-discord·voicewake·welcome | **placement 판정 완료** | **미이식(정당)** | — | — | **DEPRECATED(openclaw gateway #201 제거→死, 이식=drift). panel=os-side. botmadang=잠재(저우선). skill-placement-decision 참조** |
