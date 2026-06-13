@@ -62,6 +62,11 @@ export class OnboardingController implements OnboardingFlowPort, SettingsPort {
   }
 
   async complete(): Promise<void> {
+    // 가드(UC12 리뷰): provider 또는 naia 로그인 없이 complete 금지(건너뜀 0 — empty draft 로 onboardingComplete 방지).
+    const provider = (this.state.draft.agent as Record<string, unknown>).provider;
+    if (!provider && !this.state.naiaLoginDone) {
+      throw new Error("온보딩 미완료: provider 또는 naia 로그인 없이 complete 불가");
+    }
     await this.persist(completeOnboarding(this.state.draft));
     await this.p.bootState.markOnboardingComplete();
   }
@@ -78,6 +83,14 @@ export class OnboardingController implements OnboardingFlowPort, SettingsPort {
       ...(patch.naiaKey !== undefined ? { naiaKey: patch.naiaKey } : {}),
     };
     await this.persist(merged);
+    // R12-1(UC13/F0 패턴, #329 방지): provider 전환 시 구 provider 의 키체인 envKey clear — stale 키 잔존→Unauthorized 차단.
+    if (patch.providerChanged) {
+      const oldProvider = String((base.agent as Record<string, unknown>).provider ?? "");
+      const newProvider = String((merged.agent as Record<string, unknown>).provider ?? "");
+      const oldEnvKey = resolveAgentEnvKey(oldProvider, "apiKey");
+      const newEnvKey = resolveAgentEnvKey(newProvider, "apiKey");
+      if (oldEnvKey && oldEnvKey !== newEnvKey) await this.p.creds.writeAgentKey(oldEnvKey, ""); // 구 키 비움
+    }
   }
 
   /** 공통 영속(R3/R9/R10): 로컬=secret strip, agent-file=forAgent, secret→키체인(도메인 envKey 매핑). */

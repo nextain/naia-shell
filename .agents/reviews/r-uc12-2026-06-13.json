@@ -1,0 +1,19 @@
+{
+  "uc": "UC12 (온보딩/설정)",
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "tier": "T2 (API키/naiaKey/OAuth = 보안)",
+  "method": "open-loop 2 reviewers (security/secrets + parity/scope), ground-truth=old(OnboardingWizard/SettingsTab/config.ts/adk-store.ts)+UC12 계약",
+  "context": "prior-session os-local core(onboarding.ts/uc12.ts) — 첫 2-AI 리뷰",
+  "verdict": "ISSUES → BLOCKER+가드 수정, dead-code 정직 정정",
+  "findings": [
+    {"id":"UC12-1","sev":"BLOCKER(보안)","status":"FIXED","file":"app/control/onboarding.ts update()","issue":"provider 전환 시 구 provider 키체인 envKey 미clear(R12-1 절반만 구현 — secret 버킷만 리셋, 키체인 stale 잔존). glm→openai 전환 후 GLM_API_KEY 키체인에 live = agent 가 읽어 #329 stale-key Unauthorized. 테스트도 '구 키 미기록'만 검증(false-green).","fix":"providerChanged 시 oldEnvKey=resolveAgentEnvKey(oldProvider) clear(writeAgentKey(old,'')) if ≠ newEnvKey. 테스트=구 키 clear 검증."},
+    {"id":"UC12-2","sev":"HIGH(정직성)","status":"정정","file":"packages/shell OnboardingWizard/SettingsTab","issue":"★ UC12 core(OnboardingController)가 dead code — 실 shell 미graft. 새 OnboardingWizard/SettingsTab=old 파일 그대로(syncToGateway만 삭제), 여전히 old saveConfig/writeAgentKey 직접호출, 컨트롤러/포트 우회. grep makeShellOnboarding in packages/shell/src=0. = 'UC12 온보딩 live' 주장(prior+내 트래커) 틀림. (UC1 은 grafted, UC12 는 아님.)","fix":"트래커 정정: UC12=core 빌드+리뷰 완료, 실 shell graft 미완(live=old). graft+e2e-tauri=루크머신 게이트."},
+    {"id":"UC12-3","sev":"MEDIUM","status":"FIXED","file":"app/control/onboarding.ts complete()","issue":"complete() 무가드 — step 무관 호출 가능 → provider 없이 onboardingComplete=true(empty draft). 건너뜀 0 위반.","fix":"complete() 가드: provider 또는 naiaLoginDone 없으면 throw. 반증 테스트."},
+    {"id":"UC12-4","sev":"MAJOR","status":"DEFERRED","file":"onboarding.ts persist()","issue":"persist 가 secret 10키 중 apiKey/naiaKey 만 영속 → googleApiKey/tts키/gatewayToken/memory키/qdrant 등 유실(silent, agent 기능 깨짐). old 는 전부 saveSecretKey. 계약은 apiKey/naiaKey 로 scope.","fix":"creds 포트 다중키 영속(신규계약) — 계약 scope 확장 후. 후속."},
+    {"id":"UC12-5","sev":"MAJOR","status":"DEFERRED(graft)","file":"adapters/tauri/uc12.ts oauth + composition","issue":"OAuth state(CSRF) 토큰이 UC12 seam 에 없음 — loginUrl 정적, per-launch state 생성 부재. Rust 는 state 검증하나 loginUrl 이 state 포함하는지는 graft 책임. graft 시 state-less URL = CSRF 무력 위험.","fix":"UC12LiveDeps.generateLoginUrl()(per-launch state) 로 — graft 시. 현재 latent(미graft)."},
+    {"id":"UC12-6","sev":"MEDIUM","status":"NOTED","file":"ports/index.ts GatewaySync 제거","issue":"GatewaySyncPort 제거(#201 openclaw gateway dead path)는 타당하나 계약 미갱신 → 계약/코드 불일치.","fix":"UC12 계약에 #201 제거 사유 기록."}
+  ],
+  "clean":"domain/onboarding.ts 순수, adapter @tauri 미import(주입), ports substrate-agnostic, resolveAgentEnvKey/stripSecret old 충실(glm→GLM_API_KEY, nextain apiKey→null), 평문키 로컬/agent 버킷 누출 0(stripSecret/forAgent), #329 same-env collision 구조적 방지. = core 품질 양호, 단 미graft.",
+  "result":"BLOCKER(stale-credential clear)+MEDIUM(complete 가드) 수정+테스트(188 green). dead-code(미graft)=트래커 정직 정정. MAJOR(dropped secrets/OAuth state)+gateway 계약=문서화 deferred. ★ prior-session 코드의 보안 BLOCKER+dead-code 를 open-loop 2-AI 가 적발."
+}

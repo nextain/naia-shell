@@ -47,7 +47,8 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | S-row | skills 60+/browser/channels/bgm | 측정 | ✗ | ✗ | — | 미착수 |
 | UC7a/7 | 시스템 관측/조작 | = F2/F3 | ✓(F2/F3) | ✓ | 루크머신 | **F2/F3 로 완료** |
 | UC13 | 승인 게이트 | ✓(F1-baseline) | **승인-결속 fix(prior 코드)** | **✓ 2-AI R1 BLOCKER(승인A→행위B)→수정** | gRPC chat-approval+루크머신 | **os-local 이식+리뷰 완료, live=agent flow** |
-| UC5/6/8/12 | skill/browser/bgm/온보딩 | 부분 | UC12=온보딩 live | UC12 리뷰 next | external/루크머신 | 부분 |
+| UC12 | 온보딩/설정 | ✓ | **core 이식+stale키/complete 가드 fix** | **✓ 2-AI R1 BLOCKER(stale키)→수정** | ⚠️**실 shell 미graft(live=old)**+루크머신 | **core 빌드+리뷰 완료, graft 미완(정직 정정)** |
+| UC5/6/8 | skill/browser/bgm | 부분 | ✗(external) | ✗ | external/루크머신 | 미착수(agent skill) |
 > UC3(기억)=다른 세션 소유(naia-memory), off-scope. 검출기 RED 6파일=그 세션 것.
 
 ---

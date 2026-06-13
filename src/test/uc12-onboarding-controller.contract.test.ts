@@ -77,12 +77,17 @@ describe("UC12 app — OnboardingController (contract §B.3)", () => {
     expect(calls.oauthLaunch).toBe(1);
   });
 
-  it("update(providerChanged) → 구 secret 미보존(R12-1): 신 키만 키체인, 구 GLM 키 미기록", async () => {
+  it("★ complete() 가드: provider/naia 없이 complete → throw(건너뜀 0, empty draft 완료 방지)", async () => {
+    const { ctrl } = makeFakes({ agent: {}, ui: {}, secret: {} });
+    await expect(ctrl.complete()).rejects.toThrow(); // provider 없음 + naiaLoginDone 아님 → 거부
+  });
+
+  it("★ update(providerChanged) → 신 키 기록 + 구 provider 키체인 키 clear(R12-1, #329 stale 키 방지)", async () => {
     const { ctrl, calls } = makeFakes({ agent: { provider: "glm" }, ui: {}, secret: { apiKey: "OLD" } });
     await ctrl.update({ agent: { provider: "openai" }, secret: { apiKey: "NEW" }, providerChanged: true });
-    // secret 은 영속물(replaceLocalConfig/configWrite)에서 strip → 실 관측 = 키체인. 신 키만, 구 GLM 키 없음.
     expect(calls.writeAgentKey).toContainEqual({ envKey: "OPENAI_API_KEY", value: "NEW" });
-    expect(calls.writeAgentKey.find((w) => w.envKey === "GLM_API_KEY")).toBeUndefined();
+    // ★ 구 GLM 키는 빈값으로 *clear*(stale 키 잔존→agent Unauthorized 차단, UC12 리뷰 BLOCKER fix)
+    expect(calls.writeAgentKey).toContainEqual({ envKey: "GLM_API_KEY", value: "" });
   });
 
   it("update(키 외 변경) → 기존 apiKey 보존(R6) + ui 영속(secret-strip 로컬에 ui 유지)", async () => {
