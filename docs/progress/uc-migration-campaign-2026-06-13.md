@@ -12,7 +12,8 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 **순서 (루크 선택)**: ① 재무장 → ② F2 재검증 → ③ UC 유저여정순.
 
 ### 현재 위치 (CURRENT POSITION)
-- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(R1 checkpoint·R2 dispatcher, mutation-probe 통과, 커밋 5f7c547) / **F2 ✓**(이식+신규계약+2-AI 3R CLEAN, 커밋 d5f896d) / **F0 ✓**(이식+신규계약+2-AI R1 BLOCKER→R2 CLEAN, 커밋 dd2684b). **다음 = F1(자기상태+승인) 착수** → 이후 F3 → V2 → S-row. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
+- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **다음 = F3(조작/mutate+승인+reafference)** → V2 → S-row → UC5/6/7/8/12/13 facet. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
+  - **F3 scouting**: mutate=host 파일 write/edit + exec(pty_execute_sync 등) = **고위험 mutating(T2)**. MutationGate(app/control/mutate.ts) 이미 존재(승인먼저→mutate→observe(F2)→reafference→불확정 abort). 승인 의존=F1 ApprovalPort(선잠금, UC13 라이브). F3 이식=makeF3LiveAdapters(mutate 어댑터→old write/exec 명령). 리뷰: 경로격리·승인우회·reafference 정직성 집중.
 - **★ 자율 진행 중(루크: "물어보지말고 끝까지·멈추지마"). 압축 후 재개 시: 이 CAMPAIGN ANCHOR 재독 → UC 상태표의 첫 미완 UC 부터 동일 프로세스.**
 - **Phase ①(재무장) — 완료.** 라이브 워처 재가동됨(os PID 60152·agent 60304). ⚠️ **이 머신(Bazzite)엔 crontab 없음+crond inactive → cron 영속 불가** = 자동검출이 죽어있던 근본 이유. 재부팅 생존 = **SessionStart 훅 self-heal**로 가야(미구현).
 - enforcement 갭(RCA, 전부 관측): (G1) new-naia 게이트(sdlc/file-anchor/completion/conform)가 **alpha-adk 루트 세션에 미로드**(2단계 nested, 자체 settings 만) → 미발화. (G2) 루트 훅 체인에 SDLC/티어/2-AI 게이트 0. (G3) 티어/2-AI 가 게이트로 인코딩 안 됨(문서/메모리에만). (G4) 라이브 자동검출 죽음(crond 없음).
