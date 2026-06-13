@@ -39,7 +39,10 @@ export function wireApprovalGateTauri(): ApprovalGate {
 
 // ── F2 슬라이스 (host-system 관측 + drift) ──
 import { ObservationService, DriftDetector } from "../app/control/observe.js";
-import { tauriEnvObserve, expectedStateProvider } from "../adapters/tauri/f2.js";
+import {
+  tauriEnvObserve, expectedStateProvider,
+  makeF2EnvObserve, makeF2ExpectedState, type F2LiveDeps,
+} from "../adapters/tauri/f2.js";
 import type { DriftSignal } from "../domain/observe.js";
 
 export function wireObservationServiceTauri(now: () => number): ObservationService {
@@ -47,6 +50,14 @@ export function wireObservationServiceTauri(now: () => number): ObservationServi
 }
 export function wireDriftDetectorTauri(onDrift: (d: DriftSignal) => void): DriftDetector {
   return new DriftDetector(tauriEnvObserve, expectedStateProvider, onDrift);
+}
+
+// F2 실배선 (graft: old invoke/listen 주입) — F0 live(wireControlPlaneLive)와 동일 패턴.
+export function wireObservationServiceLive(deps: F2LiveDeps, now: () => number): ObservationService {
+  return new ObservationService(makeF2EnvObserve(deps), now);
+}
+export function wireDriftDetectorLive(deps: F2LiveDeps, onDrift: (d: DriftSignal) => void): DriftDetector {
+  return new DriftDetector(makeF2EnvObserve(deps), makeF2ExpectedState(deps), onDrift);
 }
 
 // ── F0 실배선 (graft: old 함수 주입) ──
