@@ -1,0 +1,23 @@
+{
+  "uc": "F3",
+  "slice": "host mutation (workspace 조작): MutationGate(승인먼저→mutate→observe(F2)→reafference→불확정 abort) + makeF3LiveMutate(op 라우팅).",
+  "tier": "T2",
+  "tier_reason": "최고위험 — 파일 write + arbitrary command exec",
+  "method": "open-loop adversarial 2 reviewers (parity + mutation-safety/security), ground-truth=old(workspace.rs/pty.rs/Terminal.tsx)+canon",
+  "round": 1,
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "verdict": "ISSUES → BLOCKER 수정 완료",
+  "scope_round0": "PASS — domain/mutate.ts 순수, ports substrate-agnostic, @tauri-apps 미import. 승인-먼저 순서 확인(MutationGate: isBlockedCommand→approvalGate→drift→mutate; mutate 전 게이트 우회 경로 없음, integration-reafference 입증). approval=fail-closed stub(UC13 전).",
+  "findings": [
+    {"id":"F3-1","sev":"BLOCKER","status":"FIXED","file":"adapters/tauri/f3.ts ptyWrite","issue":"pty_write 를 {ptyId} 로 호출 — old(Terminal.tsx:204)+Rust(pty.rs:170)는 {pty_id}. Tauri 미변환(rename_all 없음)→런타임 미바인딩 실패. 테스트도 같은 오형상 encode(closed-loop). writeFile{path,content}·pty_execute_sync{dir,command} 는 old 정합 확인.","fix":"{pty_id, data} + 테스트 수정."},
+    {"id":"F3-2(B-1)","sev":"BLOCKER(보안)","status":"FIXED(fail-closed)","file":"adapters/tauri/f3.ts execCommand + domain/mutate.ts isBlockedCommand","issue":"execCommand→pty_execute_sync 가 bash -lc 를 Rust allowlist 없이 실행(old pty_create ALLOWED_SHELLS 는 pty_execute_sync 미적용). 유일 게이트 isBlockedCommand 정규식 blocklist 우회 가능(rm -rf /*, fork bomb, doas, curl|bash -s, python rmtree). = 'blocked-command 강제' 무력 = arbitrary exec 구멍.","fix":"execCommand **fail-closed throw**(우회가능 blocklist 만으로 arbitrary exec 라이브 금지). 신규 보안 계약 전까지 차단."},
+    {"id":"F3-3","sev":"WARNING","status":"MOOT","file":"f3.ts execCommand dir","issue":"dir 기본 '.' 은 Rust pty_execute_sync 가 비절대 거부 → 항상 에러.","fix":"execCommand fail-closed 로 moot. 신규계약에 MutationCommand.cwd(절대) 포함."},
+    {"id":"F3-4(I-1)","sev":"MEDIUM","status":"DEFERRED(UC13)","file":"app/control/mutate.ts:45 + approval.ts:69","issue":"drift 체크가 atomic 경로(exec 인자 생략)서 inert — 라이브 caller 가 fresh exec context 안 주면 FR-F1.4 무효.","fix":"UC13 라이브 approval 배선 시 fresh exec 샘플 전달 확인."},
+    {"id":"F3-5(I-2)","sev":"LOW","status":"INHERITED","file":"old workspace.rs:125 validate_write_path","issue":"ancestor canonicalize 후 raw suffix join → in-workspace symlink escape(TOCTOU). 이식이 도입한 것 아님(old 속성).","fix":"old Rust 경계 강화(후속, agent/Rust)."},
+    {"id":"F3-6(I-4)","sev":"MEDIUM","status":"NOTED","file":"F3 계약 외부앵커","issue":"리뷰어가 gRPC canon 에서 F3 계약 못 찾음(거기엔 없음). 단 F3-baseline-contract-2026-06-09.md 에 §A/§B 존재(외부). blocklist 약점이 co-located 테스트로 안 잡힘은 타당 — 보안모델(allowlist+T3)을 계약에 명시 필요.","fix":"F3 계약에 신규 보안계약(allowlist+T3+cwd) 스펙 추가."}
+  ],
+  "deferred_new_contract": "execCommand 라이브 = 신규 보안 계약 3건 충족 후: (1) Rust 경계 allowlist/capability(blocklist 아님) (2) per-command T3 승인(라이브 approval=UC13) (3) MutationCommand.cwd 절대경로 필드. 그 전까지 fail-closed. = arbitrary exec 가짜안전 금지(GOAL 보안).",
+  "result": "writeFile(경로검증)+ptyWrite(snake fix) live 이식+리뷰. execCommand fail-closed(신규 보안계약 스펙). applyDiff=agent tool 정직거부. BLOCKER 2 수정. tsc/anchors/assembly/compile/172 test green.",
+  "lesson": "고위험 mutating 에서 리뷰가 (1) arg-casing 런타임 BLOCKER(closed-loop 테스트가 위장) (2) ★보안 BLOCKER(우회가능 blocklist 가 유일 게이트=arbitrary exec) 적발. 보안 불가→fail-closed+신규계약(가짜안전 금지). 'blocked-command 강제'는 blocklist 아닌 allowlist 여야."
+}

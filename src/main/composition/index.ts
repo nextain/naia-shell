@@ -77,9 +77,15 @@ export function wireControlPlaneLive(deps: LiveDeps): ControlPlaneBoot {
 
 // ── F3 슬라이스 (승인먼저 mutate + reafference) ──
 import { MutationGate } from "../app/control/mutate.js";
-import { tauriMutate } from "../adapters/tauri/f3.js";
+import { tauriMutate, makeF3LiveMutate } from "../adapters/tauri/f3.js";
 export function wireMutationGateTauri(approvalGate: ApprovalGate): MutationGate {
   return new MutationGate({ approvalGate, mutate: tauriMutate, observe: tauriEnvObserve });
+}
+
+// F3 실배선(graft): 승인먼저(approvalGate)→mutate(live)→observe(live F2 reafference). ⚠️ 고위험 mutating.
+// approvalGate 는 caller 가 조립(F1 wireApprovalGateLive — approval=UC13 라이브 전 잠금 stub=fail-closed).
+export function wireMutationGateLive(deps: F2LiveDeps, approvalGate: ApprovalGate): MutationGate {
+  return new MutationGate({ approvalGate, mutate: makeF3LiveMutate(deps), observe: makeF2EnvObserve(deps) });
 }
 
 // ── UC1 수평 슬라이스 (ChatPort + transport + demux router) ──

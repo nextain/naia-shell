@@ -12,7 +12,7 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 **순서 (루크 선택)**: ① 재무장 → ② F2 재검증 → ③ UC 유저여정순.
 
 ### 현재 위치 (CURRENT POSITION)
-- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **다음 = F3(조작/mutate+승인+reafference)** → V2 → S-row → UC5/6/7/8/12/13 facet. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
+- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **F3 ✓**(writeFile+ptyWrite live, execCommand 보안 fail-closed+신규계약, 2-AI BLOCKER2 수정). **다음 = V2(음성)** → S-row → UC5/6/7/8/12/13 facet. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
   - **F3 scouting**: mutate=host 파일 write/edit + exec(pty_execute_sync 등) = **고위험 mutating(T2)**. MutationGate(app/control/mutate.ts) 이미 존재(승인먼저→mutate→observe(F2)→reafference→불확정 abort). 승인 의존=F1 ApprovalPort(선잠금, UC13 라이브). F3 이식=makeF3LiveAdapters(mutate 어댑터→old write/exec 명령). 리뷰: 경로격리·승인우회·reafference 정직성 집중.
 - **★ 자율 진행 중(루크: "물어보지말고 끝까지·멈추지마"). 압축 후 재개 시: 이 CAMPAIGN ANCHOR 재독 → UC 상태표의 첫 미완 UC 부터 동일 프로세스.**
 - **Phase ①(재무장) — 완료.** 라이브 워처 재가동됨(os PID 60152·agent 60304). ⚠️ **이 머신(Bazzite)엔 crontab 없음+crond inactive → cron 영속 불가** = 자동검출이 죽어있던 근본 이유. 재부팅 생존 = **SessionStart 훅 self-heal**로 가야(미구현).
@@ -41,7 +41,7 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | F0 | 부팅 workspace init | ✓+**delta** | **live+신규계약 수정** | **✓ 2-AI R1 ISSUES(BLOCKER)→R2 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) 이식** | **✓ 2-AI R1, FR-F1.1 fix, BLOCKER0** | gRPC Diagnostics RPC(신규계약)+UC13 잔여 | **os-local 이식+리뷰 완료, 나머지 신규계약 스펙** |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
-| F3 | workspace 조작+승인 | ✓ | stub | ✗ | — | 계약만 |
+| F3 | workspace 조작+승인 | ✓+**delta** | **writeFile+ptyWrite live, execCommand fail-closed** | **✓ 2-AI R1 BLOCKER2(arg-casing+보안)→수정** | execCommand 신규보안계약+UC13 잔여 | **안전분 이식+리뷰, exec 신규계약** |
 | V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증** | codex부분 | **실앱 대화 OK(루크확인)** | 거의완료 |
 | V2 | 음성 | △ | ✗ | ✗ | 루크머신 voice baseline | 미착수 |
 | S-row | skills 60+/browser/channels/bgm | 측정 | ✗ | ✗ | — | 미착수 |
