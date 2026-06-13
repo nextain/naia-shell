@@ -12,7 +12,7 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 **순서 (루크 선택)**: ① 재무장 → ② F2 재검증 → ③ UC 유저여정순.
 
 ### 현재 위치 (CURRENT POSITION)
-- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **F3 ✓**(writeFile+ptyWrite live, execCommand 보안 fail-closed+신규계약, 2-AI BLOCKER2 수정). **V2 계약 drafted**(V2-baseline-contract-2026-06-13: SensoryPort/ExpressionPort/VoiceProviderPort, os-local[AudioPlayer/MicCapture⚠️lazy/STT모델/avatar]+external[gRPC Voice RPC 신규계약+providers WS=루크머신] 분해). **다음 = V2 os-local 이식(AudioPlayer/VoiceConnectionStatus 도메인=HW無 가능) + 계약 2-AI 리뷰** → S-row → UC5~13. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
+- **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **F3 ✓**(writeFile+ptyWrite live, execCommand 보안 fail-closed+신규계약, 2-AI BLOCKER2 수정). **V2 계약 drafted**(V2-baseline-contract-2026-06-13: SensoryPort/ExpressionPort/VoiceProviderPort, os-local[AudioPlayer/MicCapture⚠️lazy/STT모델/avatar]+external[gRPC Voice RPC 신규계약+providers WS=루크머신] 분해). **[agent-side 진입]** UC5(agent 도구루프+skills) ✓(5cdb7c6, 2-AI BLOCKER0+MEDIUM fix). **다음(잔여) = agent UC6/8(browser/bgm external) · S-row skills · UC-provider-provenance 리뷰 · gRPC Voice/Diagnostics RPC 신규계약 · 전 UC 루크머신 live-graft.** (구버전 줄: V2 os-local 이식(AudioPlayer/VoiceConnectionStatus 도메인=HW無 가능) + 계약 2-AI 리뷰** → S-row → UC5~13. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
   - **F3 scouting**: mutate=host 파일 write/edit + exec(pty_execute_sync 등) = **고위험 mutating(T2)**. MutationGate(app/control/mutate.ts) 이미 존재(승인먼저→mutate→observe(F2)→reafference→불확정 abort). 승인 의존=F1 ApprovalPort(선잠금, UC13 라이브). F3 이식=makeF3LiveAdapters(mutate 어댑터→old write/exec 명령). 리뷰: 경로격리·승인우회·reafference 정직성 집중.
 - **★ 자율 진행 중(루크: "물어보지말고 끝까지·멈추지마"). 압축 후 재개 시: 이 CAMPAIGN ANCHOR 재독 → UC 상태표의 첫 미완 UC 부터 동일 프로세스.**
 - **Phase ①(재무장) — 완료.** 라이브 워처 재가동됨(os PID 60152·agent 60304). ⚠️ **이 머신(Bazzite)엔 crontab 없음+crond inactive → cron 영속 불가** = 자동검출이 죽어있던 근본 이유. 재부팅 생존 = **SessionStart 훅 self-heal**로 가야(미구현).
@@ -48,7 +48,8 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | UC7a/7 | 시스템 관측/조작 | = F2/F3 | ✓(F2/F3) | ✓ | 루크머신 | **F2/F3 로 완료** |
 | UC13 | 승인 게이트 | ✓(F1-baseline) | **승인-결속 fix(prior 코드)** | **✓ 2-AI R1 BLOCKER(승인A→행위B)→수정** | gRPC chat-approval+루크머신 | **os-local 이식+리뷰 완료, live=agent flow** |
 | UC12 | 온보딩/설정 | ✓ | **core 이식+stale키/complete 가드 fix** | **✓ 2-AI R1 BLOCKER(stale키)→수정** | ⚠️**실 shell 미graft(live=old)**+루크머신 | **core 빌드+리뷰 완료, graft 미완(정직 정정)** |
-| UC5/6/8 | skill/browser/bgm | 부분 | ✗(external) | ✗ | external/루크머신 | 미착수(agent skill) |
+| UC5 | 도구루프/skills (**agent**) | ✓ | **이식+enableTools/timeout/composite fix** | **✓ 2-AI R1 BLOCKER0, MEDIUM 수정** | 루크머신 live | **agent 이식+리뷰 완료** |
+| UC6/8 | browser/bgm (agent skill) | 부분 | ✗(external) | ✗ | external/루크머신 | 미착수(agent external skill) |
 > UC3(기억)=다른 세션 소유(naia-memory), off-scope. 검출기 RED 6파일=그 세션 것.
 
 ---
