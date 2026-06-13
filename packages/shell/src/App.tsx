@@ -342,12 +342,13 @@ export function App() {
 
 		if (needsOnboarding) setShowOnboarding(true);
 
-		navigator.mediaDevices
-			?.getUserMedia({ audio: true })
-			.then((stream) => {
-				for (const track of stream.getTracks()) track.stop();
-			})
-			.catch(() => {});
+		// ⚠️ 기동 시 마이크 권한 pre-warm 제거(2026-06-13): WebKitGTK 에서 getUserMedia({audio:true}) 가 특정
+		// 오디오 장치(USB Audio IEC958)를 GStreamer 로 열 때 GstIntRange 버그로 web process 스레드를 ~90초
+		// 동기 stall 시켜 *전체 기동을 90초 지연*시킨다(실측: unblock 시점에 "Audio devices enumerated" 동시 발생,
+		// 모든 invoke 응답이 묶여 한꺼번에 풀림). `.then().catch()` 라도 getUserMedia 의 동기 device-open 이
+		// web process 를 막는다. voice/STT(UC2)는 아직 이식 전이라 pre-warm 은 현재 가치 0. 마이크 권한은
+		// 실제 voice 사용 시점(getUserMedia in mic-stream/api-stt)에 요청한다. UC2 이식 시 GstIntRange 장치
+		// 회피(장치 선택/GStreamer 설정)와 함께 pre-warm 재도입 여부 재검토.
 	}, [showAdkSetup]);
 
 	useEffect(() => {

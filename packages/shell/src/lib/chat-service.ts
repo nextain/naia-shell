@@ -403,6 +403,15 @@ export async function directToolCall(opts: {
 }): Promise<{ success: boolean; output: string }> {
 	const { toolName, args, requestId, gatewayUrl } = opts;
 
+	// new-core 는 standalone tool_request 를 미지원한다 — 도구는 chat 도구루프(chat_request)로만 실행(UC5).
+	// agent 가 어차피 즉시 "미지원" error 를 주지만, 기동 시 여러 directToolCall(skill_sessions·fetch-models·
+	// skill_voicewake)이 gRPC 왕복·직렬 대기하며 기동을 ~90초 막는 문제(2026-06-13 실측: agent ingress 는
+	// 즉시인데 응답 왕복이 묶임)가 있어, 셸에서 즉시 fail-fast 한다. 호출자(gateway-sessions·SettingsTab 등)는
+	// 이 실패를 이미 우아하게 catch→warn 으로 처리. old-core 경로에선 종전대로 agent 로 전송.
+	if (isNewCore()) {
+		return { success: false, output: "new-core: standalone tool 미지원(chat 도구루프 사용)" };
+	}
+
 	const request = {
 		type: "tool_request",
 		requestId,

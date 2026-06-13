@@ -573,6 +573,11 @@ export function SettingsTab() {
 	);
 	const pushModal = usePanelStore((s) => s.pushModal);
 	const popModal = usePanelStore((s) => s.popModal);
+	// 설정 패널이 실제로 열렸는지 — 오디오 장치 enumerate(navigator.mediaDevices)를 *기동 시*(SettingsTab 은
+	// keepAlive 로 항상 마운트)가 아니라 사용자가 설정을 열 때만 실행하기 위함. getUserMedia/enumerateDevices 는
+	// WebKitGTK + 일부 오디오 장치(USB Audio IEC958)에서 GstIntRange 버그로 web process 를 ~90초 동기 stall
+	// 시켜 *전체 기동을 90초 막는다*(2026-06-13 실측·격리 확정). 설정 미개방 시 미디어 미접촉 = 기동 즉시.
+	const isSettingsActive = usePanelStore((s) => s.activePanel === "settings");
 	const storeTtsEnabled = usePanelStore((s) => s.ttsEnabled);
 	const setStoreTtsEnabled = usePanelStore((s) => s.setTtsEnabled);
 	const [savedVrmModel, setSavedVrmModel] = useState(
@@ -1054,8 +1059,9 @@ export function SettingsTab() {
 		});
 	}, [sttProvider, vllmSttHost]);
 
-	// Enumerate audio input/output devices
+	// Enumerate audio input/output devices — ⚠️ 설정 패널이 열렸을 때만(기동 90초 stall 회피, 위 isSettingsActive 주석).
 	useEffect(() => {
+		if (!isSettingsActive) return;
 		if (!navigator.mediaDevices?.enumerateDevices) return;
 
 		// Output devices: WebKitGTK does not expose audiooutput via enumerateDevices().
@@ -1111,7 +1117,7 @@ export function SettingsTab() {
 		navigator.mediaDevices.addEventListener("devicechange", enumerate);
 		return () =>
 			navigator.mediaDevices.removeEventListener("devicechange", enumerate);
-	}, []);
+	}, [isSettingsActive]);
 
 	async function startMicTest() {
 		if (micTestActive) return;
