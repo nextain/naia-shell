@@ -1,0 +1,31 @@
+{
+  "uc": "F2",
+  "slice": "host-system read-only workspace 관측 live 어댑터 (makeF2EnvObserve/makeF2ExpectedState/makePtyReader)",
+  "tier": "T2",
+  "tier_reason": "경로 권한 경계(path-isolation) 포함 → 2-AI 2-clean 필수",
+  "method": "open-loop adversarial, 2 independent reviewers, ground-truth = old-naia-os 소스 + canon (내 계약 아님)",
+  "round": 1,
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "commit_reviewed": "75ef48a",
+  "verdict": "ISSUES",
+  "reviewers": {
+    "A_parity_correctness": "VERDICT: ISSUES",
+    "B_scope_orthogonality_security": "VERDICT: ISSUES (scope Round0 PASS: gRPC 미접촉·naia-memory 미접촉·헥사고날 purity·inject-not-import 준수)"
+  },
+  "scope_round0": "PASS — F2 는 os 내부 축(gRPC os↔agent 미접촉), naia-memory 미접촉, domain 순수, @tauri-apps 미import(주입). 직교 단일축 확인.",
+  "findings": [
+    {"id": "F2-1", "sev": "BLOCKER", "file": "src/main/adapters/tauri/f2.ts:58-74", "issue": "무조건 catch 가 Access-denied/NotFound/IO-error/transport-error 를 한 신호로 뭉갬. fileStatus 는 거부를 value:null(=domain NotFound)로 매핑 → listDir/readFile(→PermissionDenied)와 불일치. old validate_in_workspace 는 'Access denied' vs 'Path inaccessible' 구분 유지. 계약 §A.5 '정직 분류' 위반 + 보안신호(denied) 은폐.", "fix": "에러 문자열 검사: 'outside workspace root'→PermissionDenied / canonicalize·ENOENT→NotFound / 그외→ObservationError(정직). fileStatus denied≠null."},
+    {"id": "F2-2", "sev": "BLOCKER", "file": "src/main/domain/observe.ts:45-48", "issue": "isWithinWorkspace 가 (a) old Rust 컴포넌트단위 starts_with 를 문자열 prefix 로 재구현(비등가, /ws-evil 경계회피 취약·trailing-slash 가정 깨짐) (b) DEAD CODE — live 어댑터가 한 번도 호출 안 함(테스트만). live 경계는 전적으로 주입 Rust validate_in_workspace + 위 over-broad catch 에 의존. 테스트만 green 인 가짜 보안 커버리지.", "fix": "결정: (1) 삭제(경계=주입 Rust SoT, 계약 §B.1 에 명시) 또는 (2) 컴포넌트단위로 고쳐 defense-in-depth 로 실제 배선(canonicalize 주입). 테스트만 되는 미사용 보안함수 금지."},
+    {"id": "F2-3", "sev": "MAJOR", "file": "src/main/adapters/tauri/f2.ts:113-118 + ports/f2.ts PtyReadPort", "issue": "리스너 누수: void d.listen 으로 unlisten 폐기, teardown 경로 없음. old(Terminal.tsx pendingUnlistens)는 정리. 포트가 onOutput/onExit/subscribeChanges 를 void 로 반환 = 누수 내장(재구독마다 누적).", "fix": "포트 변경(계약 delta): 구독 메서드가 unsubscribe 반환. 어댑터가 unlisten 전달. → 2-clean 재리뷰 필요."},
+    {"id": "F2-4", "sev": "MAJOR", "file": "src/main/adapters/tauri/f2.ts:115-117 + ports/f2.ts", "issue": "pty onExit 가 0 조작: old 는 pty:exit:{id} 에 () (null) emit = exit code 없음. 어댑터 Number(null??0)=0 → 없는 '성공(0)' 코드 발명. 포트 onExit(c:number) 자체가 exit-code 채널을 발명(old 미존재). 소비자가 code===0 분기 시 항상 성공 오판.", "fix": "포트 재설계(계약 delta): exit 를 코드 없는 신호로(onExit():void 또는 code optional). 0 조작 제거."},
+    {"id": "F2-5", "sev": "MAJOR", "file": "src/main/adapters/tauri/f2.ts:87-89", "issue": "worktrees()==sessions() 바이트 동일(둘 다 workspace_get_sessions raw 반환). 계약 §B.2 는 WorktreeInfo 투영 요구. get_main_worktree/get_all_worktree_paths 가 #[tauri::command] 아님을 발견하고 어댑터에서 무단 재소싱 = 계약급 결정이 리뷰 없이.", "fix": "SessionInfo→WorktreeInfo {path:origin_path??path, branch} 투영 OR old 에 #[tauri::command] 래퍼. 계약 §B.2/§B.4 갱신 후 재리뷰."},
+    {"id": "F2-6a", "sev": "MINOR", "file": "src/main/adapters/tauri/f2.ts:111", "issue": "pty id 규약 유실: old pty_id=format!('pty-{pid}'), 이벤트 pty:output:pty-{pid}. makePtyReader(ptyId) 가 bare ${ptyId} 구독, prefix 미강제. processStatus 는 raw pid 반환 → 순진 배선 시 pty:output:1234(≠ old pty:output:pty-1234) 무음 실패.", "fix": "pty-{pid} 규약 문서화/강제, processStatus pid↔pty_id 정합."},
+    {"id": "F2-6b", "sev": "MINOR", "file": "src/main/adapters/tauri/f2.ts:79-84", "issue": "processStatus 가 계약의 다중소스(system-status+diagnostics+pty_agents)를 pty_agents 단일로 narrowing. 무근거는 아니나(서브셋) 어댑터에서 무단 축소.", "fix": "계약에 narrowing 기록(system-status/diagnostics 는 F1 으로)."},
+    {"id": "F2-6c", "sev": "MINOR", "file": "src/main/adapters/tauri/f2.ts:58-62", "issue": "listDir 가 DirEntry→path 만 매핑, is_dir/name/trailing-slash 유실. 'file-search 등가' 주석 거짓(old 는 dir 에 trailing / + IGNORE_DIRS + is_dir 유지).", "fix": "주석 정정 또는 정보 보존(소비자 요구 확인)."},
+    {"id": "F2-7", "sev": "MAJOR", "file": "src/test/f2-live-adapter.test.ts", "issue": "parity 테스트가 parity 미증명(가짜 green): onExit 는 numeric payload 만 테스트(null 미테스트) / fileStatus 는 ENOENT 만(Access-denied 미테스트) / unlisten 단언 없음 / worktrees 는 명령명만 / listDir is_dir 미테스트. 실제 Tauri 에러문자열 형상 미검증.", "fix": "각 결함에 반증 테스트 추가."},
+    {"id": "PROCESS", "sev": "MAJOR", "issue": "리뷰 전 커밋(75ef48a) = recipe step5(2-AI)→step6(commit) 순서 위반. 이 재리뷰가 그 갭을 닫는 중. R3 게이트(T2 커밋 차단) 미구현이 이를 허용.", "fix": "remediation 후 2-clean → 그 다음 정합 커밋. R3 게이트로 영구 방지."}
+  ],
+  "next": "remediation: F2-1·F2-2(BLOCKER) + F2-3·F2-4·F2-5(포트/계약 delta — 계약 먼저 갱신 후) 수정 → 반증 테스트 → 2-AI round 2(2-clean=NONE 2연속) → 정합 커밋. 포트 변경이 들어가므로 계약(ports/f2.ts·F2-baseline-contract) 먼저 갱신.",
+  "lesson": "내 closed-loop 단위테스트(11 green)는 'parity 증명'으로 착각됐으나 open-loop 2-AI 가 BLOCKER 2건 포함 다수 적발. = 닫힌루프 가짜성공 실증. 루크가 옳음."
+}
