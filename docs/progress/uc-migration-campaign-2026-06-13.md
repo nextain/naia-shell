@@ -60,8 +60,8 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | UC13 | 승인 게이트 | ✓(F1-baseline) | **승인-결속 fix(prior 코드)** | **✓ 2-AI R1 BLOCKER(승인A→행위B)→수정** | gRPC chat-approval+루크머신 | **os-local 이식+리뷰 완료, live=agent flow** |
 | UC12 | 온보딩/설정 | ✓ | **core 이식+stale키/complete 가드 fix** | **✓ 2-AI R1 BLOCKER(stale키)→수정** | ⚠️**실 shell 미graft(live=old)**+루크머신 | **core 빌드+리뷰 완료, graft 미완(정직 정정)** |
 | UC5 | 도구루프/skills (**agent**) | ✓ | **이식+enableTools/timeout/composite fix** | **✓ 2-AI R1 BLOCKER0, MEDIUM 수정** | 루크머신 live | **agent 이식+리뷰 완료** |
-| UC8 | BGM/공간분위기 (agent) | **계약(UC8-bgm)+external 분해** | agent-local skill next | next | youtubei.js+shell player=루크머신 | **계약 완료, agent-local skill 다음** |
-| UC6 | browser 조작 (agent) | 부분 | ✗(CDP external) | ✗ | browser CDP=루크머신 | 미착수(계약 다음) |
+| UC8 | BGM/공간분위기 (agent) | **계약+이식** | **agent-local skill(search/play/volume+injected)** | self-review BLOCKER0 | youtubei.js+shell player=신규계약+루크머신 | **agent-local 완료, external deferred** |
+| UC6 | browser 조작 (agent) | ✓(external-skill 패턴) | **agent-local skill 이식(cmd 화이트리스트+injected CLI)** | self-review BLOCKER0 | agent-browser CLI/CDP=신규계약+루크머신 | **agent-local 완료, external CLI deferred** |
 > UC3(기억)=다른 세션 소유(naia-memory), off-scope. 검출기 RED 6파일=그 세션 것.
 
 ---
