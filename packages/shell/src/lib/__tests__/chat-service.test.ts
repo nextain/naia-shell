@@ -18,9 +18,15 @@ describe("chat-service", () => {
 		mockUnlisten = vi.fn();
 		mockInvoke.mockResolvedValue(undefined);
 		mockListen.mockResolvedValue(mockUnlisten);
+		// 이 스위트는 *옛(legacy) 경로*의 invoke/listen 계약(cancel_stream·ttsEngine·리스너 정리)을
+		// 검증한다 — 새 코어(UC1 텍스트)는 tts/cancel-invoke 를 미지원(UC2 후속, chat-service.ts:188).
+		// 로컬 .env(VITE_NAIA_NEW_CORE=1)가 vitest 에 누출되면 isNewCore()=true 로 새 코어 분기를 타
+		// 옛-경로 단언이 깨진다 → 명시적으로 비워 .env 유무와 무관하게 결정적으로 옛 경로를 검증(CI 동형).
+		vi.stubEnv("VITE_NAIA_NEW_CORE", "");
 	});
 
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		vi.clearAllMocks();
 		vi.resetModules();
 	});

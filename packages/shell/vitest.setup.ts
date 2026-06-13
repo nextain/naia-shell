@@ -1,12 +1,18 @@
 /**
  * Register @testing-library/jest-dom matchers (toBeInTheDocument, etc.) on
- * vitest's expect. The `/vitest` subpath is required — the bare
- * `@testing-library/jest-dom` import extends jest's expect, not vitest's
- * chai-based expect, so matchers surface as "Invalid Chai property". The shell
- * was transplanted verbatim from a jest-based repo (B0), which is why the
- * per-file bare imports never registered here.
+ * vitest's expect.
+ *
+ * ⚠️ `import "@testing-library/jest-dom/vitest"` is NOT used: this repo has TWO
+ * vitest versions installed (2.1.9 + 4.1.8), so jest-dom/vitest's internal
+ * `import {expect} from "vitest"` extends a DIFFERENT expect instance than the
+ * test runner uses → matchers surface as "Invalid Chai property". Instead we
+ * import `expect` from vitest HERE (resolved against the runner's instance that
+ * loads this setup) and extend it with the pure matcher objects. Robust to the
+ * duplicate-install until the vitest versions are deduped.
  */
-import "@testing-library/jest-dom/vitest";
+import { expect } from "vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
+expect.extend(matchers);
 
 /**
  * Vitest setup — fix Node >= 22 native localStorage conflict with jsdom.
