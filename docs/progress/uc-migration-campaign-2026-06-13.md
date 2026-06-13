@@ -11,6 +11,17 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 **리뷰 표준**: Round0 scope/canon(open-loop, 정본=ground truth) → 티어(T2=경로격리/외부연결/승인/인증=2-AI 2-clean, 그외 T1 빠른모델 1패스) → 적대적 REFUTE → Execute-to-Judge → 산출물 `.agents/reviews/r-<uc>.json`. 상세 = [[project_new_naia_goal_and_method_anchor]].
 **순서 (루크 선택)**: ① 재무장 → ② F2 재검증 → ③ UC 유저여정순.
 
+### 종합 현황 (2026-06-14, session ec74cc29) — 전 이식-코드베이스 2-AI 리뷰 스윕 완료
+**os(new-naia-os)**: 재무장 ✓ / F0 ✓ / F1 ✓ / F2 ✓ / F3 ✓ / V1·UC1 ✓ / V2(os-local) ✓ / UC12 ✓ / UC13 ✓ — 전부 이식+2-AI open-loop 리뷰+fix+커밋.
+**agent(new-naia-agent)**: UC5(도구루프+skills) ✓ / provider-provenance ✓ — 이식+2-AI 리뷰+fix+커밋.
+**리뷰 성과**: BLOCKER/HIGH ~9건(F0 adk-inspect+PII, F2 error분류, F3 arg-casing+exec보안, UC13 승인A→행위B, UC12 stale-credential, UC1 도구결과/승인 페이로드, +MEDIUM 다수) — **전부 closed-loop 테스트(green)가 놓친 것을 재무장한 open-loop 2-AI가 적발**. = 루크 thesis 완전 실증. 안전 불가분은 전부 fail-closed+신규계약(애드혹 0).
+
+**남은 것 = 자율-리뷰 불가 범주** (전 transplanted 코드는 리뷰 완료):
+1. **external skill 미이식**: UC6(browser CDP)·UC8(BGM youtube)·S-row 일부 = 외부서비스 통합 → 루크머신/외부 필요.
+2. **신규 gRPC 계약**: Voice RPC(V2 음성 양방향)·Diagnostics RPC(F1 health) = agent gRPC surface 추가(os+agent 양쪽 작업).
+3. **UC3 메모리**: 다른 세션 소유(off-scope, canon RED 6파일).
+4. **전 UC live-graft + e2e**: 실행 shell 이 wire*Live 호출 + 실 음성/승인/도구 왕복 = 루크 머신.
+
 ### 현재 위치 (CURRENT POSITION)
 - **2026-06-13 진행(session ec74cc29)**: 재무장 ✓(5f7c547) / **F2 ✓**(d5f896d, 2-AI 3R CLEAN) / **F0 ✓**(dd2684b, R1 BLOCKER→R2 CLEAN) / **F1 ✓**(fd99b46, os-local 이식+FR-F1.1 fix+BLOCKER0, gRPC Diagnostics RPC 잔여=신규계약). **F3 ✓**(writeFile+ptyWrite live, execCommand 보안 fail-closed+신규계약, 2-AI BLOCKER2 수정). **V2 계약 drafted**(V2-baseline-contract-2026-06-13: SensoryPort/ExpressionPort/VoiceProviderPort, os-local[AudioPlayer/MicCapture⚠️lazy/STT모델/avatar]+external[gRPC Voice RPC 신규계약+providers WS=루크머신] 분해). **[agent-side 진입]** UC5(agent 도구루프+skills) ✓(5cdb7c6, 2-AI BLOCKER0+MEDIUM fix). **다음(잔여) = agent UC6/8(browser/bgm external) · S-row skills · UC-provider-provenance 리뷰 · gRPC Voice/Diagnostics RPC 신규계약 · 전 UC 루크머신 live-graft.** (구버전 줄: V2 os-local 이식(AudioPlayer/VoiceConnectionStatus 도메인=HW無 가능) + 계약 2-AI 리뷰** → S-row → UC5~13. 각 UC = [Old-Baseline→(신규)계약→이식→drift-gate→2-AI 리뷰(open-loop, 정본 ground truth)→커밋]. 리뷰 산출물 `.agents/reviews/r-<uc>-2026-06-13.json`.
   - **F3 scouting**: mutate=host 파일 write/edit + exec(pty_execute_sync 등) = **고위험 mutating(T2)**. MutationGate(app/control/mutate.ts) 이미 존재(승인먼저→mutate→observe(F2)→reafference→불확정 abort). 승인 의존=F1 ApprovalPort(선잠금, UC13 라이브). F3 이식=makeF3LiveAdapters(mutate 어댑터→old write/exec 명령). 리뷰: 경로격리·승인우회·reafference 정직성 집중.
