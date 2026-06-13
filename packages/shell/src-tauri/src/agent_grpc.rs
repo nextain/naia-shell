@@ -94,6 +94,11 @@ impl AgentGrpc {
         Ok(self.client.reload_settings(pb::ReloadSettingsRequest {}).await?.into_inner())
     }
 
+    /// F1 rich-health(신규계약 Diagnostics RPC): agent version/uptime/components. os InteroceptivePort rich payload.
+    pub async fn diagnostics(&mut self) -> Result<pb::DiagnosticsResult, tonic::Status> {
+        Ok(self.client.diagnostics(pb::DiagnosticsRequest {}).await?.into_inner())
+    }
+
     /// Chat server-stream → 각 AgentEvent 를 UI JSON 으로 emit(현 reader loop 의 agent_response 와 동일 형태).
     pub async fn chat<F: FnMut(String)>(&mut self, req: ChatRequest, mut emit: F) -> Result<(), tonic::Status> {
         let mut stream = self.client.chat(req).await?.into_inner();
