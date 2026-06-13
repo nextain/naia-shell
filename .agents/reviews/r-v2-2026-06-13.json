@@ -1,0 +1,17 @@
+{
+  "uc": "V2 (음성, UC2)",
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "status": "IN-PROGRESS (계약 + 순수도메인 증분)",
+  "done_this_increment": [
+    "§A Old-Baseline + §B 포트계약 + §C os-local/external 분해 (V2-baseline-contract-2026-06-13.md). 커밋 9d80a00.",
+    "순수 도메인 domain/voice.ts = VoiceConnectionStatus 상태머신(connecting/cold-start/active/sold-out/error/closed). manifest 앵커(계약먼저 강제 통과). 5 test."
+  ],
+  "tier": {
+    "voice domain (state machine)": "T1 (순수 로직, I/O 0) — 테스트로 검증(open 만 active=정직 오보금지, cold-start backoff 한도, terminal). 별도 2-AI 불요(pure).",
+    "os-local adapters (AudioPlayer/MicCapture/STT모델/avatar)": "T2 (장치/getUserMedia) — 이식 시 2-AI open-loop (집중: getUserMedia lazy=F2 startup 무블록, 정직 상태).",
+    "external (providers WS/STT/TTS/gRPC Voice RPC)": "신규계약 + 루크머신 baseline (live voice/GPU/키)."
+  },
+  "next": "os-local 어댑터 이식(AudioPlayer 먼저=HW의존 적음) + V2 ports(SensoryPort/ExpressionPort/VoiceProviderPort) + 2-AI(T2) → external gRPC Voice RPC 신규계약(별도, agent gRPC surface) → 루크머신 live(mic→STT→chat→TTS→speaker).",
+  "luke_machine_gate": "실제 음성 왕복 + 음색클론 = voice/GPU/provider 키 필요(이 env 불가). os-local 어댑터는 주입 mock 으로 parity 검증, live 는 루크 머신."
+}
