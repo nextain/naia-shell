@@ -16,6 +16,22 @@ vi.mock("@tauri-apps/api/event", () => ({
 	}),
 }));
 
+// App 마운트 effect(secure-store via migrate*/loadConfig)가 @tauri-apps/plugin-store `load` 를 호출한다.
+// 그 내부가 Tauri core invoke 를 부르는데 jsdom 엔 __TAURI_INTERNALS__ 가 없어 *unhandled rejection*
+// (secure-store.ts:16 getStore→Store.load) 4건 → 케이스는 통과해도 vitest 'Errors' → exit 1.
+// ⚠️ @tauri-apps/api/core 를 mock 해도 plugin-store 가 내부에서(다른 pnpm 물리경로) core 를 import 해 안 잡힌다.
+// secure-store 가 직접 import 하는 경계 = plugin-store 의 load → 여기에 stub Store 를 줘 차단.
+vi.mock("@tauri-apps/plugin-store", () => ({
+	load: vi.fn(() =>
+		Promise.resolve({
+			get: vi.fn(() => Promise.resolve(null)),
+			set: vi.fn(() => Promise.resolve()),
+			delete: vi.fn(() => Promise.resolve()),
+			save: vi.fn(() => Promise.resolve()),
+		}),
+	),
+}));
+
 vi.mock("../components/OnboardingWizard", () => ({
 	OnboardingWizard: ({ onComplete }: { onComplete: () => void }) => (
 		<button type="button" onClick={onComplete}>

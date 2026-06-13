@@ -66,9 +66,24 @@
 3. **R0/R-WIRE0 CI** — 사상 위반 PR 자동 RED(컨텍스트가 *말*로 끝나지 않고 강제로 뒷받침).
 4. 이 문서 = 현 위치+로드맵 SoT, 보강 완료 시 갱신.
 
+## D2. 보강 적용 결과 (2026-06-13)
+
+| ID | 적용 | 검증 |
+|---|---|---|
+| 사전 | vitest GREEN — os jest-dom(이중설치→명시 expect.extend, 84), chat-service .env 결정화(3), agent gRPC 회귀 재작성(1), **app-discord-auth unhandled-rejection(plugin-store mock, 재검증서 발견)** | **EXIT 0 검증**: os shell `pnpm -C packages/shell test`=826 pass/0 errors/exit0, os core=142/exit0, agent=232/exit0. (초기 "0 fail" 은 케이스만 봐 'Errors 4'+exit1 누락 → 재검증이 잡음) |
+| **R0** | `code-gates` CI job 양 repo 추가 — vitest(core+shell/agent) + compile-integrity(tsc) + logging + file-anchor + assembly(os) + wire probe(os) | 넣은 검출 전부 로컬 green 검증. YAML 유효. ⚠️ GitHub Actions 실행은 미검증(node22/pnpm10 추론) |
+| **R-WIRE0** | 라이브 wire 자동회귀 — (a) 재작성 통합테스트(gRPC server-stream, echo provider=무시크릿)가 agent vitest(CI)에 (b) wire probe(union 정합) os CI 에 | CI 자동실행. **잔여(B-WIRE)**: cross-repo proto 해시 일치 = 공유 패키지/서브모듈 결정 필요 follow-up |
+| **ARCHITECTURE** | `docs/ARCHITECTURE.md` 신설(os=사상 SoT+§6 UC 레시피, agent=brain). 헌장 doc-registry 기등재 슬롯 충족(AGENTS 본문 미변경=churn 회피) | terminology PASS, doc-graph 등재 |
+| **R3** | UC 추가 레시피 = ARCHITECTURE.md §6(os) 10단계 체크리스트 + agent §6 | 새 dev/AI 추론 불요 슬롯-채우기 |
+| R1(conform-gate 이식)·R4·R-LOG-B/C/D·R-SEC | 미적용(P1/P2 follow-up) | — |
+
+**판정 갱신**: B0(검출망 CI 미연결)=R0로 **닫힘**(green 위). 온보딩 컨텍스트(B4)=ARCHITECTURE/R3로 **닫힘**. 남은 핵심=B-WIRE cross-repo proto 해시(공유-proto 결정 대기). → 오픈소스 독립/fork 기여자 PR 이 이제 코드·계약·타입·계층·파일계약 드리프트에서 자동 RED.
+
 ## E. 적대적 교차리뷰 기록 (2-clean 목표)
 - **라운드1**(general-purpose): ISSUES(7) — B0 CI미연결 놓침 등 → v2 반영.
 - **라운드2**(독립 general-purpose): ISSUES(6, material 2) — I-1 file-anchor 실재 누락, I-2 TS union 손중복+R0 라이브wire 미보장; nitpick: 포트수 과소·pre-commit 과소·build.rs silent-skip → **직접 검증 후 v3 반영**(B1 재서술, B-WIRE 확장, R-WIRE0 신설, A/B0b/포트 정밀화).
 - **라운드3**(독립 confirm): **CLEAN (material 0)** — nitpick 3(build.rs 라인·agent file-anchor 대칭·gRPC 기본값) 반영. = clean #1.
 - **라운드4**(독립 confirm): **CLEAN (material 0)** — 6개 핵심사실 repo 재대조 일치. nitpick(repo prefix·ARCHITECTURE.md 부재) 반영. = clean #2.
-- **✅ 2-clean 달성** (라운드3+4 독립 연속 clean). 평가·우선순위·온보딩이 WHY 두 축(자동강제·컨텍스트 재현성)에 정합 확인.
+- **✅ 평가 2-clean 달성** (라운드3+4 독립 연속 clean).
+- **보강 재검증 라운드A** (독립): ISSUES(2 material) — ① `pnpm -C packages/shell test` 가 app-discord-auth unhandled-rejection 4건으로 **exit 1**(내가 케이스 카운트만 보고 "0 fail" 오판 = false-success) ② code-gates CI/ARCHITECTURE **미커밋**(repo history 부재). → 수정: ① plugin-store mock 으로 exit 0 ② 이 커밋에 code-gates+ARCHITECTURE+테스트픽스 포함. agent wire 통합테스트·probe·ARCHITECTURE 정확성은 CLEAN 확인.
+- **보강 재검증 라운드B**(커밋 후 독립 confirm): _대기_ — clean 이면 보강 2-clean.

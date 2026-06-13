@@ -63,3 +63,35 @@ jobs:
             echo "── M4 검사 커밋 $sha"
             git log -1 --format=%B "$sha" | node scripts/ci-verify-completion.mjs "${FILES[@]}" || exit 1
           done
+
+  # 코드 게이트(R0) — 검출자산 전부를 CI 자동실행에 연결한다. 기존 verify 는 구조/헌장/SDLC 메타만
+  # 봤고, vitest 계약·통합·tsc·로깅·assembly·file-anchor·wire probe 는 로컬 hook/cron 에만 있어 fork/웹
+  # PR 의 코드·계약·타입·계층 드리프트가 자동검출 0 이었다(structure-soundness-review B0). 여기서 닫는다.
+  code-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: compile integrity (core + shell tsc)
+        run: node scripts/check-compile-integrity.mjs
+      - name: logging standard (Logger 강제, console.* 금지)
+        run: node packages/shell/scripts/check-logging.mjs
+      - name: file anchors (src/main 파일단위 계약)
+        run: node scripts/check-file-anchors.mjs
+      - name: assembly coverage (S/UC 전수분류)
+        run: node scripts/check-assembly-coverage.mjs
+      - name: wire probes (os outbound ⊆ agent accept / agent output ⊆ os classify)
+        run: |
+          node scripts/builds/uc1-outbound-probe.mjs
+          node scripts/builds/uc1-variant-probe.mjs
+      - name: core tests (vitest)
+        run: pnpm test
+      - name: shell tests (vitest — unit/contract/integration)
+        run: pnpm -C packages/shell test
