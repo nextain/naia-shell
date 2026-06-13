@@ -4,8 +4,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeAgentKey, writeNaiaConfig } from "../lib/adk-store";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
-import { sendAuthUpdate } from "../lib/chat-service";
-import { NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
+import { isNewCore, sendAuthUpdate } from "../lib/chat-service";
+import { type AppConfig, NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
+import { completeOnboardingNewCore } from "../lib/onboarding-core";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
@@ -368,7 +369,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
 			: personaBase;
 
-		saveConfig({
+		const completedFlat: Record<string, unknown> = {
 			...base,
 			provider: auth ? "nextain" : base.provider,
 			model: auth ? base.model || "gemini-2.5-flash" : base.model,
@@ -393,21 +394,30 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			...(snapshot.memoryLlmProvider !== "none"
 				? { memoryLlmProvider: snapshot.memoryLlmProvider }
 				: {}),
-		});
+		};
+		saveConfig(completedFlat as unknown as AppConfig);
 
 		setAvatarModelPath(vrmPath);
+		return completedFlat;
 	}
 
 	function handleComplete() {
-		saveCompletedConfig(naiaAuthPayload ?? undefined);
-		// G-01: sync to naia-settings/config.json so standalone agent picks up the onboarding result.
-		const saved = loadConfig();
-		if (saved) void writeNaiaConfig({ ...(saved as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(saved) });
-		// Write naiaKey to OS keychain so standalone naia-agent can read it.
-		if (saved?.naiaKey) void writeAgentKey(saved.provider || "nextain", "naiaKey", saved.naiaKey);
-		if (saved?.apiKey) void writeAgentKey(saved.provider || "anthropic", "apiKey", saved.apiKey);
-		// (gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config 영속=naia-settings,
-		//  naiaKey/apiKey=키체인(위 writeAgentKey). memory 설정 연결=다른 세션 재설계.)
+		const completedFlat = saveCompletedConfig(naiaAuthPayload ?? undefined);
+		// UC12 graft (isNewCore): 새 core OnboardingController.completeWith(§D 신규계약)가
+		// categorize(secret/ui/agent) + persist(secret=키체인 전담, stale-credential fix) + markComplete.
+		// 미설정(기본)=기존 writeNaiaConfig/writeAgentKey 경로 보존(비파괴). UC1 chat-service graft 와 동일.
+		if (isNewCore()) {
+			void completeOnboardingNewCore(completedFlat);
+		} else {
+			// G-01: sync to naia-settings/config.json so standalone agent picks up the onboarding result.
+			const saved = loadConfig();
+			if (saved) void writeNaiaConfig({ ...(saved as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(saved) });
+			// Write naiaKey to OS keychain so standalone naia-agent can read it.
+			if (saved?.naiaKey) void writeAgentKey(saved.provider || "nextain", "naiaKey", saved.naiaKey);
+			if (saved?.apiKey) void writeAgentKey(saved.provider || "anthropic", "apiKey", saved.apiKey);
+			// (gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config 영속=naia-settings,
+			//  naiaKey/apiKey=키체인(위 writeAgentKey). memory 설정 연결=다른 세션 재설계.)
+		}
 		addMessage({
 			role: "assistant",
 			content: stepChat(

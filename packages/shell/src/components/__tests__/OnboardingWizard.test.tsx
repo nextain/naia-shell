@@ -35,6 +35,10 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
+	isNewCore: () => false, // 기본 old 경로(비파괴 graft) — new-core graft 검증은 onboarding-core.test.ts
+}));
+vi.mock("../../lib/onboarding-core", () => ({
+	completeOnboardingNewCore: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock getLocale to return "ko" so Korean strings are used

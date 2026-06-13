@@ -117,3 +117,7 @@ import type { OnboardingController } from "../app/control/onboarding.js";
 export function makeShellOnboarding(deps: { f0: LiveDeps; uc12: UC12LiveDeps }): OnboardingController {
   return wireOnboardingLive(deps.f0, deps.uc12);
 }
+
+// 셸 graft 가 flat(old localStorage 형태) config 를 NaiaConfig 로 categorize 할 때 동일 변환기(F0 어댑터와 공유) 사용.
+// re-export 로 셸이 core 내부 경로를 모르게 한다(직교).
+export { toNaiaConfig } from "./tauri/config-map.js";
