@@ -270,6 +270,21 @@ export async function writeAgentKey(
 	});
 }
 
+/**
+ * provider 의 키(apiKey/naiaKey)가 *저장돼 있는지*만 확인한다(값은 안 가져옴 — 비밀을 webview 로 되읽지
+ * 않는다). 근거 = naia-settings/credentials 매니페스트. Settings 가 입력란을 `*****`(저장됨)로 마스킹하는 데 사용.
+ */
+export async function agentKeyExists(
+	provider: string,
+	keyField: "apiKey" | "naiaKey",
+): Promise<boolean> {
+	const adkPath = getAdkPath();
+	if (!adkPath) return false;
+	const envKey = resolveAgentEnvKey(provider, keyField);
+	if (!envKey) return false;
+	return invoke<boolean>("agent_key_exists", { adkPath, envKey }).catch(() => false);
+}
+
 export async function readNaiaConfig(): Promise<Record<
 	string,
 	unknown

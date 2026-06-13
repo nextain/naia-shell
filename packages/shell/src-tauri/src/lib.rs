@@ -2701,6 +2701,30 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     Ok(())
 }
 
+/// 저장된 키 *존재 여부*만 보고한다(값은 절대 반환 안 함 — 비밀을 webview 로 되읽지 않는다, 보안).
+/// 근거 = write_agent_key 가 유지하는 비밀-아닌 매니페스트 `{adk}/naia-settings/credentials` = {keys:[env_key…]}.
+/// 셸 Settings 가 키 입력란을 `*****`(저장됨)로 마스킹 표기하는 데 사용.
+#[tauri::command]
+fn agent_key_exists(adk_path: String, env_key: String) -> Result<bool, String> {
+    if adk_path.is_empty() || env_key.is_empty() {
+        return Ok(false);
+    }
+    let creds_path = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join("credentials");
+    let keys: Vec<String> = std::fs::read_to_string(&creds_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("keys").and_then(|k| k.as_array()).cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(keys.contains(&env_key))
+}
+
 /// Check whether `{adk_path}/naia-settings/` already exists.
 #[tauri::command]
 async fn check_naia_settings(adk_path: String) -> bool {
@@ -3146,6 +3170,7 @@ pub fn run() {
             read_naia_config,
             write_naia_config,
             write_agent_key,
+            agent_key_exists,
             check_naia_settings,
             inspect_adk_dir,
             init_naia_settings,

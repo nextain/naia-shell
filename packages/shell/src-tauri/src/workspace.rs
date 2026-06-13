@@ -60,6 +60,8 @@ pub struct SkillMeta {
 
 pub struct WatcherState {
     pub watcher: Option<RecommendedWatcher>,
+    /// start_watch 이 백그라운드에서 watcher 구축 중이거나 완료됐는지(동기 가드 — 비동기 시작의 중복 spawn 방지).
+    pub watch_started: bool,
     /// Maps directory path -> last change timestamp (seconds since epoch)
     pub last_change: Arc<Mutex<HashMap<String, u64>>>,
     /// Maps directory path -> most recently changed file (relative path)
@@ -74,6 +76,7 @@ impl WatcherState {
     pub fn new() -> Self {
         Self {
             watcher: None,
+            watch_started: false,
             last_change: Arc::new(Mutex::new(HashMap::new())),
             recent_files: Arc::new(Mutex::new(HashMap::new())),
             branch_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -401,28 +404,37 @@ pub fn workspace_start_watch(
     app: AppHandle,
     watcher_state: tauri::State<'_, SharedWatcherState>,
 ) -> Result<(), String> {
-    // P1 진입·구간 타이밍 로깅(debug=log_verbose) — 90초 행 규명용(docs/logging.md).
-    let t0 = std::time::Instant::now();
     crate::log_verbose("[workspace] start_watch enter");
     let root = canonical_workspace_root()?;
-    let mut state = watcher_state.lock().unwrap();
-    crate::log_verbose(&format!(
-        "[workspace] start_watch lock acquired ms={}",
-        t0.elapsed().as_millis()
-    ));
-
-    if state.watcher.is_some() {
-        crate::log_verbose("[workspace] start_watch already watching — noop");
-        return Ok(());
+    // ⚠️ 비동기(루크 #1): 옛 구현은 collect_workspace_git_dirs(트리 walk) + 재귀 watch 등록(naia-adk 처럼
+    // node_modules/.git 많은 큰 트리는 inotify 등록이 수백 ms~수십초)을 *invoke 안에서 동기로* 해 셸 기동을
+    // 180s 까지 블록했다. → 무거운 작업을 백그라운드 스레드로 옮기고 invoke 는 즉시 리턴. watch 가 활성화될
+    // 때까지 짧은 공백이 있으나 UI/대화는 막히지 않는다.
+    // 동기 가드(락 짧게): 이미 watching 이거나 시작 중이면 noop — 비동기 시작이라 중복 호출의 double-spawn 차단.
+    {
+        let mut state = watcher_state.lock().unwrap();
+        if state.watcher.is_some() || state.watch_started {
+            crate::log_verbose("[workspace] start_watch already watching/in-progress — noop");
+            return Ok(());
+        }
+        state.watch_started = true;
     }
-
-    let last_change_clone = state.last_change.clone();
-    let recent_files_clone = state.recent_files.clone();
-    let branch_cache_clone = state.branch_cache.clone();
+    let ws: SharedWatcherState = watcher_state.inner().clone();
     let app_clone = app.clone();
+    std::thread::spawn(move || {
+        let t0 = std::time::Instant::now();
+        // 콜백이 쓰는 공유 맵(Arc clone) — 락 짧게 잡고 클론만.
+        let (last_change_clone, recent_files_clone, branch_cache_clone) = {
+            let state = ws.lock().unwrap();
+            (
+                state.last_change.clone(),
+                state.recent_files.clone(),
+                state.branch_cache.clone(),
+            )
+        };
 
-    let watcher = RecommendedWatcher::new(
-        move |result: notify::Result<Event>| {
+        let watcher = RecommendedWatcher::new(
+            move |result: notify::Result<Event>| {
             if let Ok(event) = result {
                 let is_content_change =
                     matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
@@ -480,26 +492,32 @@ pub fn workspace_start_watch(
                 }
             }
         },
-        Config::default(),
-    )
-    .map_err(|e| e.to_string())?;
-
-    let mut w = watcher;
-    let dirs = collect_workspace_git_dirs(&root);
-    crate::log_verbose(&format!(
-        "[workspace] start_watch collected {} git dirs ms={}",
-        dirs.len(),
-        t0.elapsed().as_millis()
-    ));
-    for path in dirs {
-        let _ = w.watch(&path, RecursiveMode::Recursive);
-    }
-    crate::log_verbose(&format!(
-        "[workspace] start_watch watched ms={}",
-        t0.elapsed().as_millis()
-    ));
-
-    state.watcher = Some(w);
+            Config::default(),
+        );
+        let mut w = match watcher {
+            Ok(w) => w,
+            Err(e) => {
+                crate::log_verbose(&format!("[workspace] start_watch watcher 생성 실패: {e}"));
+                ws.lock().unwrap().watch_started = false; // 실패 — 재시도 허용
+                return;
+            }
+        };
+        let dirs = collect_workspace_git_dirs(&root);
+        crate::log_verbose(&format!(
+            "[workspace] start_watch collected {} git dirs ms={}",
+            dirs.len(),
+            t0.elapsed().as_millis()
+        ));
+        for path in dirs {
+            let _ = w.watch(&path, RecursiveMode::Recursive);
+        }
+        crate::log_verbose(&format!(
+            "[workspace] start_watch watched ms={}",
+            t0.elapsed().as_millis()
+        ));
+        // watcher 는 드롭되면 watch 가 중단되므로 state 에 보관(watch_started 는 true 유지).
+        ws.lock().unwrap().watcher = Some(w);
+    });
     Ok(())
 }
 
@@ -510,6 +528,7 @@ pub fn workspace_stop_watch(
     let (last_change_arc, recent_files_arc, branch_cache_arc, origin_path_cache_arc) = {
         let mut state = watcher_state.lock().unwrap();
         state.watcher = None;
+        state.watch_started = false; // 재시작(start_watch 재spawn) 허용
         (
             state.last_change.clone(),
             state.recent_files.clone(),

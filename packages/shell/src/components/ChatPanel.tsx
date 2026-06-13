@@ -1012,18 +1012,19 @@ export function ChatPanel() {
 			return;
 		}
 
-		if (
-			chunk.type === "text" ||
-			chunk.type === "finish" ||
-			chunk.type === "usage"
-		) {
+		// text 청크는 스트리밍마다 와서 INFO 로 찍으면 응답 1회에 수십~수백 줄 홍수(루크 #2) → debug 로(평상시
+		// 게이트). finish/usage 는 턴당 1회뿐(=예외)이라 info 유지. 턴 집계는 finish 시 별도(아래).
+		if (chunk.type === "text") {
+			Logger.debug("ChatPanel", "handleChunk text", {
+				textLen: chunk.text.length,
+				pipelineActive: pipelineActiveRef.current,
+				hasChunker: !!sentenceChunkerRef.current,
+			});
+		} else if (chunk.type === "finish" || chunk.type === "usage") {
 			Logger.info("ChatPanel", "handleChunk", {
 				type: chunk.type,
 				pipelineActive: pipelineActiveRef.current,
 				hasChunker: !!sentenceChunkerRef.current,
-				...(chunk.type === "text"
-					? { textLen: chunk.text.length, textPreview: chunk.text.slice(0, 60) }
-					: {}),
 			});
 		}
 

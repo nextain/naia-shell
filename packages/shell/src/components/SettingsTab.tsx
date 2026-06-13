@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+	agentKeyExists,
 	clearAdkPath,
 	getAdkPath,
 	listNaiaAssets,
@@ -593,6 +594,10 @@ export function SettingsTab() {
 		modelValid ? savedModel : getDefaultLlmModel(initProvider),
 	);
 	const [apiKey, setApiKey] = useState(existing?.apiKey ?? "");
+	// config.json 은 비밀을 strip(키는 키체인/credentials 매니페스트)하므로 existing.apiKey 는 항상 "".
+	// provider 에 저장된 키가 있으면 입력란을 `*****`(저장됨)로 마스킹 표기(값은 안 읽음 — agentKeyExists 는
+	// credentials 매니페스트의 존재여부만). 빈 입력으로 저장 시 기존 키 보존(아래 resolvedApiKey 로직).
+	const [hasStoredApiKey, setHasStoredApiKey] = useState(false);
 	const [locale, setLocaleState] = useState<Locale>(
 		existing?.locale ?? getLocale(),
 	);
@@ -648,6 +653,16 @@ export function SettingsTab() {
 	useEffect(() => {
 		setTtsEnabled(storeTtsEnabled);
 	}, [storeTtsEnabled]);
+	// provider 별 저장된 apiKey 존재여부 조회 → 입력란 마스킹(루크 #3: 키가 연결돼 있으면 ***** 표기).
+	useEffect(() => {
+		let cancelled = false;
+		agentKeyExists(provider, "apiKey").then((exists) => {
+			if (!cancelled) setHasStoredApiKey(exists);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [provider]);
 	const [persona, setPersona] = useState(existing?.persona ?? DEFAULT_PERSONA);
 	const [userName, setUserName] = useState(existing?.userName ?? "");
 	const [agentName, setAgentName] = useState(existing?.agentName ?? "");
@@ -2444,7 +2459,11 @@ export function SettingsTab() {
 										setApiKey(e.target.value);
 										setError("");
 									}}
-									placeholder="sk-..."
+									placeholder={
+										hasStoredApiKey
+											? "•••••••• (저장됨 — 변경하려면 입력)"
+											: "sk-..."
+									}
 								/>
 								{provider === "zai" && (
 									<div className="settings-hint">
