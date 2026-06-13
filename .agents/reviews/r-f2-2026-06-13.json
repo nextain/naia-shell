@@ -8,7 +8,15 @@
   "date": "2026-06-13",
   "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
   "commit_reviewed": "75ef48a",
-  "verdict": "ISSUES",
+  "verdict": "ISSUES (round1) → RESOLVED",
+  "resolution": {
+    "round2": "양 리뷰어: round1 BLOCKER2+MAJOR4 전부 FIXED 확인. 신규 NI-1(MEDIUM: DriftDetector.start 가 Unsubscribe 폐기→누수 한층 위 재발) + MINOR(classifyError message-coupling, fileStatus reason-drop[by-design], 타입가드 구조적).",
+    "round2_fixes": "NI-1 = DriftDetector unsub 보관+stop()+재start 자동해제(+테스트). classifyError = 객체 .message 탐지 하드닝. 타입가드 계약주석. fileStatus reason-drop = 의도(drift contain) 수용.",
+    "round3": "포커스 확인 리뷰(deltas) = VERDICT CLEAN. 누수 fix 검증·classifyError 실denial 분류 보존+crash-safe·주석 정확·신규버그 0.",
+    "accepted_minors": ["fileStatus 비거부 reason→value:null(의도 drift contain)", "integration denied-branch는 unit이 커버", ".mjs 가드스크립트 vitest exit1=pre-existing 비F2(npm test=14파일 .test.ts exit0)"],
+    "final": "BLOCKER/MAJOR/MEDIUM 전부 해소+테스트. T2 2-AI 다라운드(R1 2명+R2 2명+R3 1명) 수렴 CLEAN. tsc/anchors/assembly/compile/154test green.",
+    "contract_deltas": "신규 계약(ports/f2.ts + F2-baseline-contract §C): ObservationFailure 분리·DirEntryInfo·WorktreeInfo·Unsubscribe·exit무코드·isWithinWorkspace 삭제."
+  },
   "reviewers": {
     "A_parity_correctness": "VERDICT: ISSUES",
     "B_scope_orthogonality_security": "VERDICT: ISSUES (scope Round0 PASS: gRPC 미접촉·naia-memory 미접촉·헥사고날 purity·inject-not-import 준수)"

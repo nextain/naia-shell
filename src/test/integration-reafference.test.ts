@@ -7,7 +7,7 @@ import type { ActionScope, ContextIdentity, ApprovalDecision, Tier } from "../ma
 import type { MutationCommand, Ack } from "../main/domain/mutate.js";
 import type { ApprovalPort, PersistentGrantPort } from "../main/ports/f1.js";
 import type { EnvironmentMutatePort } from "../main/ports/f3.js";
-import type { EnvironmentObservePort, FileChangeEvent, ReadResult } from "../main/ports/f2.js";
+import type { EnvironmentObservePort, FileChangeEvent } from "../main/ports/f2.js";
 import type { ObservedState } from "../main/domain/observe.js";
 
 const ident: ContextIdentity = { sessionId: "s1", canonicalRoot: "/w", activeSurface: "panel", configVersion: "v1", clientId: "c1" };
@@ -37,10 +37,10 @@ function rig(over: {
   };
   const observe: EnvironmentObservePort = {
     fileStatus: async (p): Promise<ObservedState> => { log.push("observe"); if (over.observeThrows) throw new Error("observe boom"); return { key: p, value: over.observedValue ?? null }; },
-    listDir: async (): Promise<ReadResult<readonly string[]>> => [],
-    readFile: async (): Promise<ReadResult<string>> => "",
+    listDir: async () => [],
+    readFile: async () => "",
     sessions: async () => [], processStatus: async () => [], worktrees: async () => [],
-    subscribeChanges: (_cb: (e: FileChangeEvent) => void) => {},
+    subscribeChanges: (_cb: (e: FileChangeEvent) => void) => () => {},
   };
   return { gate: new MutationGate({ approvalGate, mutate, observe }), log };
 }

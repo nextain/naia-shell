@@ -6,15 +6,15 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 ---
 ## ★ CAMPAIGN ANCHOR (매 턴·압축후 제일 먼저 재독 — 위치/목적 잊지 않기)
 
-**최종 목표 (루크 2026-06-13 "그게 최종 목표야")**: 모든 UC를 old→new 이식 + UC마다 리뷰 → 전부 끝나면 각 UC **사용자 테스트 문서** 작성 → 루크가 그 문서로 전부 검토.
-**불변식 (절대)**: gRPC(os→agent→naia-adk) · UC(세로)×port(가로) 직교 · 표준 방법(Old-Baseline→계약먼저→이식(수정❌)→drift-gate→2-AI 리뷰→커밋) · 검출기 green.
+**공식 GOAL (루크 2026-06-13 "Goal set", 권위·완료기준)**: os+agent 표준 프로세스로 — ① gRPC 기반 연결 ② UC 기반 직교 이식 ③ **장기 안드로이드/로봇 위한 카테고리 추상화 기반**(substrate-agnostic 포트, OS/Tauri 비종속) ④ 표준대로 개발 확인 ⑤ 개발후 테스트+크로스리뷰로 **보안·디버깅용이성·내부기준** 확인 ⑥ **불가 시 신규 계약으로 흔들리지 않게**(애드혹 우회❌) ⑦ **모든 UC 가 이 방법. 전부 개발됐을 때만 완료.** → 전부 끝나면 UC별 사용자 테스트 문서 → 루크 검토.
+**불변식 (절대)**: gRPC(os→agent→naia-adk) · UC(세로)×port(가로) 직교 · substrate-agnostic(안드로이드 대비) · 표준 방법(Old-Baseline→계약먼저→이식(수정❌)→drift-gate→2-AI 리뷰→커밋) · 검출기 green · 진행 "물어보지말고 끝까지·멈추지마"(자율 순차, 위치/목적 앵커 재독).
 **리뷰 표준**: Round0 scope/canon(open-loop, 정본=ground truth) → 티어(T2=경로격리/외부연결/승인/인증=2-AI 2-clean, 그외 T1 빠른모델 1패스) → 적대적 REFUTE → Execute-to-Judge → 산출물 `.agents/reviews/r-<uc>.json`. 상세 = [[project_new_naia_goal_and_method_anchor]].
 **순서 (루크 선택)**: ① 재무장 → ② F2 재검증 → ③ UC 유저여정순.
 
 ### 현재 위치 (CURRENT POSITION)
 - **Phase ①(재무장) 진행 중.** 라이브 워처 재가동됨(os PID 60152·agent 60304). ⚠️ **이 머신(Bazzite)엔 crontab 없음+crond inactive → cron 영속 불가** = 자동검출이 죽어있던 근본 이유. 재부팅 생존 = **SessionStart 훅 self-heal**로 가야(미구현).
 - enforcement 갭(RCA, 전부 관측): (G1) new-naia 게이트(sdlc/file-anchor/completion/conform)가 **alpha-adk 루트 세션에 미로드**(2단계 nested, 자체 settings 만) → 미발화. (G2) 루트 훅 체인에 SDLC/티어/2-AI 게이트 0. (G3) 티어/2-AI 가 게이트로 인코딩 안 됨(문서/메모리에만). (G4) 라이브 자동검출 죽음(crond 없음).
-- **F2 상태**: 코드 이식+11test 커밋(`75ef48a`) → **2-AI open-loop 리뷰 round1 = ISSUES**(`.agents/reviews/r-f2-2026-06-13.json`). BLOCKER 2(F2-1 error 분류 뭉갬, F2-2 isWithinWorkspace 죽은코드+비등가) + MAJOR 4(F2-3 리스너누수, F2-4 pty onExit 0조작, F2-5 worktrees==sessions, F2-7 테스트 가짜green). **여러 건 포트/계약급 결정을 내 루프서 = '계약먼저' 위반 실증.** → **remediation 필요**(포트 delta 포함 → 계약먼저 갱신 → 수정 → 반증테스트 → 2-AI round2 2-clean → 정합 커밋). ★ open-loop 2-AI 가 closed-loop 11-green 이 놓친 BLOCKER 적발 = 재무장+리뷰표준의 가치 실증.
+- **F2 상태 = ✅ 이식+리뷰 완료**(코드/계약): `75ef48a`(초기) → 2-AI R1 ISSUES(BLOCKER2+MAJOR4) → **신규 계약(ports/f2.ts + §C delta)으로 수정** → R2(전부 fixed+MEDIUM1 NI-1) → 수정 → R3 CLEAN. `.agents/reviews/r-f2-2026-06-13.json` 참조. tsc/anchors/assembly/compile/**154 test** green. **남은 = 루크 머신 라이브 graft + e2e(실행 shell 이 wireObservationServiceLive 호출, watch→drift/pty 런타임).** ★ 교훈: open-loop 2-AI 가 closed-loop 11-green 이 놓친 BLOCKER 적발 = 재무장+리뷰표준 가치 실증.
 
 ### 재무장 TODO (Phase ①)
 - [x] **R1 SessionStart drift-checkpoint 훅** (`naia-watcher-selfheal.js`): 세션마다 `verify-watch once` 동기 실행(데몬 고집 X — 이 env 백그라운드 reap). cron 불가 머신 대체. → G4. baseline 승인(기존 os2/agent10 = doc-orphan + 메모리 off-scope, 내 것 아님)로 이후 NEW delta만.
@@ -29,7 +29,7 @@ prior_sessions: [67a0313b-2578-4da2-9a52-53c26128656f]
 |---|---|:--:|:--:|:--:|:--:|---|
 | F0 | 부팅 workspace init | ✓67/67 | live어댑터 작성 | ✗ | 루크머신 대기 | scaffold+live |
 | F1 | 자기상태+승인 | ✓ | stub | ✗ | — | 계약만 |
-| F2 | workspace 관측(read-only) | ✓ | **live 작성+parity test** | **✗ 재검증대상** | — | 이식-미검증 |
+| F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓ | stub | ✗ | — | 계약만 |
 | V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증** | codex부분 | **실앱 대화 OK(루크확인)** | 거의완료 |
 | V2 | 음성 | △ | ✗ | ✗ | 루크머신 voice baseline | 미착수 |

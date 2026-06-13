@@ -113,3 +113,19 @@ DriftDetector:                                   # FR-F2 신설
 
 ## B.7 다음
 F2 초안 → (codex 리셋 후) 2클린 리뷰 → F3 → 툴체인 결정 → 스캐폴드.
+
+---
+
+# §C. 계약 delta (2026-06-13, 이식 중 2-AI open-loop 리뷰 반영 — r-f2-2026-06-13.json)
+
+이식 시 §B 포트가 Old-Baseline·보안·디버깅용이성 기준에 부족함이 적발돼 **신규 계약으로 박음**(애드혹 우회 금지, GOAL ⑥). ports/f2.ts SoT.
+
+- **C-1 (F2-1) 실패 분류 분리**: `ReadResult<T> = T | PermissionDenied | ObservationFailure`. 거부(경계 밖=보안신호)와 그외 실패(NotFound/IO/transport)를 구분 — 거부를 실패/NotFound 로 뭉개 보안신호 은폐 금지. `fileStatus(): ObservedState | PermissionDenied` (거부≠value:null). `isDenied`/`isFailure`/`isOk` 가드.
+- **C-2 (F2-6c) `listDir → DirEntryInfo[]`** `{name,path,isDir}` — dir/file 구분 보존(old DirEntry parity). 이전 `string[]` 는 정보 손실.
+- **C-3 (F2-5) `worktrees → WorktreeInfo[]`** `{path,branch,originPath}` = old SessionInfo 투영. sessions() 와 구분되는 facet(이전엔 byte-identical 이었음). (get_main_worktree/all_worktree_paths 가 #[tauri::command] 아님 → SessionInfo 경유는 유지, 단 투영.)
+- **C-4 (F2-3) 구독 누수 방지**: `subscribeChanges`·`PtyReadPort.onOutput/onExit` → `Unsubscribe` 반환. 등록측이 보관·해제(old 는 pendingUnlistens 정리, 신 어댑터는 해제 폐기 = 누수였음).
+- **C-5 (F2-4) pty exit 코드 제거**: `onExit(cb: () => void)` — old 는 `pty:exit:{id}` 에 unit() emit(코드 없음). 이전 `Number(payload??0)=0` 은 없는 성공코드 발명 → 제거. ptyId 규약 = old `format!("pty-{pid}")`(예 "pty-1234"), raw pid 아님(F2-6a).
+- **C-6 (F2-2) 경로 권한 경계 = driven adapter(주입 Rust validate_in_workspace) SoT**: 도메인 `isWithinWorkspace` 삭제(문자열 prefix 라 old 컴포넌트단위 starts_with 와 비등가 + live 미사용 죽은코드). old 도 경계를 Rust 에 위임. 도메인측 defense-in-depth 필요 시 canonicalize 주입+컴포넌트비교로 별도 계약.
+- **C-7 (F2-6b) processStatus = new-requirement** 명시(old 무인자 프로세스 read 없음, lastSnapshot 처럼 baseline 부재). pty_agents{pids} 단일 소스(system-status/diagnostics 는 F1).
+- **검증**: f2-live-adapter.test.ts(12, 반증 테스트 포함: 거부≠NotFound·onExit 무코드·unsubscribe·worktree 투영·isDir) + f2-observe.contract.test.ts(7) + integration-reafference(9). tsc/anchors/assembly/compile/153 green.
+- **상태**: 2-AI round1=ISSUES(BLOCKER2+MAJOR4) → 위 delta 로 수정 → **round2 재검증(2-clean) 대기**.

@@ -3,6 +3,7 @@
 import { ApprovalGate, type GateInput } from "./approval.js";
 import type { ContextIdentity, ActionScope } from "../../domain/approval.js";
 import type { EnvironmentMutatePort } from "../../ports/f3.js";
+import { isDenied } from "../../ports/f2.js";
 import type { EnvironmentObservePort } from "../../ports/f2.js";
 import {
   isBlockedCommand, isFileOp, classifyReafference, uncertainFromOutcome,
@@ -57,8 +58,11 @@ export class MutationGate {
     let observed: string | null = null;
     let observeFailed = false;
     if (isFileOp(cmd.op)) {
-      try { observed = (await this.p.observe.fileStatus(cmd.target)).value; }
-      catch { observeFailed = true; }
+      try {
+        const st = await this.p.observe.fileStatus(cmd.target);
+        if (isDenied(st)) observeFailed = true; // 거부=관측 불가 → 불확정(contain, FR-F3.3)
+        else observed = st.value;
+      } catch { observeFailed = true; }
     } else {
       observed = ack.output ?? null;
     }

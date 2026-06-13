@@ -41,8 +41,8 @@ export function detectDrift(observed: ObservedState, expected: ExpectedState | n
   return { key: observed.key, observed: observed.value, expected };
 }
 
-/** 경로 권한: path ∈ canonical workspace root (순수 prefix 규칙; canonicalize=adapter). */
-export function isWithinWorkspace(canonicalRoot: string, canonicalPath: string): boolean {
-  const root = canonicalRoot.endsWith("/") ? canonicalRoot : canonicalRoot + "/";
-  return canonicalPath === canonicalRoot || canonicalPath.startsWith(root);
-}
+// ⚠️ 경로 권한 경계(workspace root 포함 판정)는 **driven adapter(주입 Rust validate_in_workspace)가 SoT** 다.
+//    old-naia-os 도 경계를 Rust(canonicalize + 컴포넌트단위 starts_with)에 위임했음 — JS 도메인에 재구현하지 않는다.
+//    (이전 isWithinWorkspace 는 문자열 prefix 라 컴포넌트단위와 비등가 + live 어댑터 미사용 죽은코드 → 삭제, F2-2.)
+//    어댑터는 거부를 PermissionDenied 로 정직 분류(보안신호 은폐 금지). 도메인측 defense-in-depth 가 필요하면
+//    canonicalize 주입 + 컴포넌트단위 비교로 *별도 계약*에서 추가(애드혹 금지).
