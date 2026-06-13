@@ -63,7 +63,7 @@ export interface ApprovalBinding {
 export function isPreExecDrift(bound: ApprovalBinding, now: { digest: string; scope: ActionScope }): boolean {
   return bound.digest !== now.digest || !sameScope(bound.scope, now.scope);
 }
-function sameScope(a: ActionScope, b: ActionScope): boolean {
+export function sameScope(a: ActionScope, b: ActionScope): boolean {
   return a.target === b.target && a.op === b.op && a.body === b.body && a.env === b.env;
 }
 

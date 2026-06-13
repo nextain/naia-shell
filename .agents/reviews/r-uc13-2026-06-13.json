@@ -1,0 +1,17 @@
+{
+  "uc": "UC13 (승인 게이트) / F1 ApprovalPort os-local",
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "tier": "T2 (보안 핵심 — 위험행위 승인 경계)",
+  "method": "open-loop adversarial 2 reviewers (security/correctness + parity/scope), ground-truth=old(tool-tiers/waitForApproval/PermissionModal)+F1-baseline 계약",
+  "context": "prior-session os-local 코드(domain/approval.ts, app/control/approval.ts, MutationGate) — 이 캠페인 첫 2-AI 리뷰",
+  "verdict": "ISSUES → BLOCKER+LOW 수정 완료",
+  "findings": [
+    {"id":"UC13-1","sev":"BLOCKER(보안)","status":"FIXED","file":"app/control/mutate.ts MutationGate.execute","issue":"승인 binding scope 가 caller-supplied(gateInput.scope)이고 실제 MutationCommand 에 결속 안 됨. drift 체크도 binding.scope vs exec.scope(둘 다 caller)만 비교, cmd 미검증 → 승인A(/w/f)로 행위B(/w/OTHER) 인가(binding-replay/wrong-target bypass). FR-F1.4 행위스코프 결속 위반. (isBlockedCommand+Rust workspace 경계가 blast radius 제한하나 workspace 내 wrong-target 인가 가능.)","fix":"actionScopeOf(cmd) 도출 → sameScope(binding.scope, cmdScope) 검증, 불일치=blocked 'scope-mismatch'(승인 전 차단). 반증 테스트(승인A→행위B 차단)."},
+    {"id":"UC13-2","sev":"LOW","status":"FIXED","file":"domain/mutate.ts isUnsafePath","issue":"old validatePath 의 null-byte + `..` traversal 검사 미복원(isBlockedCommand 는 sensitive 경로만). writeFile 은 Rust validate_in_workspace 가 커버하나 도메인 self-contained 방어 부재.","fix":"isUnsafePath(null-byte + `..` 세그먼트) 추가 + MutationGate file-op step1b 차단. defense-in-depth."},
+    {"id":"UC13-3","sev":"LOW","status":"NOTED","file":"ports/f1.ts","issue":"F1 §B.2 ApprovalPort.isPreGranted 를 PersistentGrantPort.isAllowed 로 통합(isPreGranted 생략). 리뷰어: 더 깨끗(단일 grant 권위), 단 계약 텍스트와 차이.","fix":"계약 §B.2 에 통합 기록(코드 변경 불요 — 더 나은 설계)."}
+  ],
+  "clean": "Reviewer B: domain/app 순수·substrate-agnostic·fail-closed(reject/expired/duplicate→block)·tier fail-safe(미매핑→T2, T3 우선 차단)·auto-bypass 타이트(voicewake/tts-preview/config-models, byte-faithful) 전부 PASS. always=영구grant(old-os live 충실, D40 후속).",
+  "deferred": "approval.request 라이브 = gRPC chat-approval(agent emits approval_request → shell responds) = UC13 chat-flow, agent gRPC surface + 루크머신. expired/duplicate 는 계약-present 이나 live emitter(stub) 부재 = e2e 미검증(선잠금 슬라이스).",
+  "result": "BLOCKER(승인-결속) + LOW(경로방어) 수정+반증테스트. tsc/anchors/assembly/compile/187 test green. ★ 보안 BLOCKER(승인A→행위B) = prior-session 코드, open-loop 2-AI 가 적발(F0/F3 패턴 재확인)."
+}

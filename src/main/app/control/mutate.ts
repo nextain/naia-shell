@@ -1,17 +1,18 @@
 // app/control/MutationGate — F3 (contract §B.3). 포트만 사용. 인지 0.
 // 승인 먼저(F1) → host-system mutate(F3) → observed(F2) → reafference → 불확정 abort.
 import { ApprovalGate, type GateInput } from "./approval.js";
+import { sameScope } from "../../domain/approval.js";
 import type { ContextIdentity, ActionScope } from "../../domain/approval.js";
 import type { EnvironmentMutatePort } from "../../ports/f3.js";
 import { isDenied } from "../../ports/f2.js";
 import type { EnvironmentObservePort } from "../../ports/f2.js";
 import {
-  isBlockedCommand, isFileOp, classifyReafference, uncertainFromOutcome,
+  isBlockedCommand, isFileOp, isUnsafePath, classifyReafference, uncertainFromOutcome, actionScopeOf,
   type MutationCommand, type Reafference, type UncertainState, type Disposition,
 } from "../../domain/mutate.js";
 
 export type MutationResult =
-  | { readonly kind: "blocked"; readonly reason: "unsafe" | "tier-T3" | "denied" | "drift" }
+  | { readonly kind: "blocked"; readonly reason: "unsafe" | "tier-T3" | "denied" | "drift" | "scope-mismatch" }
   | { readonly kind: "done"; readonly reafference: Reafference }
   | { readonly kind: "aborted"; readonly reafference: Reafference; readonly uncertain: UncertainState; readonly disposition: Disposition };
 
@@ -35,13 +36,20 @@ export class MutationGate {
   ): Promise<MutationResult> {
     // 1. CommandSafety (T3 blocked·sensitive) — 미실행
     if (isBlockedCommand(`${cmd.target} ${cmd.body}`)) return { kind: "blocked", reason: "unsafe" };
+    // 1b. file-op 경로 안전(null-byte + `..` traversal, old validatePath 복원 = defense-in-depth)
+    if (isFileOp(cmd.op) && isUnsafePath(cmd.target)) return { kind: "blocked", reason: "unsafe" };
 
     // 2. 승인 *먼저* (F1)
     const gated = await this.p.approvalGate.gate(gateInput);
     if (gated.outcome.kind === "blocked") {
       return { kind: "blocked", reason: gated.outcome.reason === "tier-T3" ? "tier-T3" : "denied" };
     }
-    // 2b. 실행 직전 drift (FR-F1.4) — 실행-시점 context 로 검사(승인↔실행 사이 변화 감지). 필수.
+    // 2b. ★ 승인-결속 검증 (UC13 BLOCKER fix): 승인된 binding scope 가 *실제 실행할 cmd* 와 일치해야.
+    //    호출자 supplied scope 신뢰 금지 — 승인A 로 행위B 인가(binding-replay/wrong-target) 차단(FR-F1.4 행위스코프 결속).
+    const cmdScope = actionScopeOf(cmd, gated.binding.scope.env);
+    if (!sameScope(gated.binding.scope, cmdScope)) return { kind: "blocked", reason: "scope-mismatch" };
+
+    // 2c. 실행 직전 drift (FR-F1.4) — 실행-시점 context 로 검사(승인↔실행 사이 변화 감지). 필수.
     const at = exec ?? { context: gateInput.context, scope: gateInput.scope };
     const auth = this.p.approvalGate.authorizeExecution(gated.binding, at);
     if (auth.kind === "blocked") return { kind: "blocked", reason: "drift" };

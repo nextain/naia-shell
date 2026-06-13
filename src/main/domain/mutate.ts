@@ -1,4 +1,5 @@
 // domain/mutate — F3 (contract §B.1). 순수. canonicalize/RPC/spawn I/O 는 포트 뒤.
+import type { ActionScope } from "./approval.js";
 
 export type MutateOp = "writeFile" | "applyDiff" | "execCommand" | "ptyWrite";
 
@@ -6,6 +7,19 @@ export interface MutationCommand {
   readonly op: MutateOp;
   readonly target: string; // file path 또는 명령
   readonly body: string; // content/diff/args
+}
+
+/** 승인 결속용: 실제 실행할 cmd 에서 ActionScope 도출(F1 §B.3 ActionScope=행위 결속).
+ *  ⚠️ 승인은 *이 cmd* 에 묶여야 함 — 호출자 supplied scope 신뢰 금지(승인A→행위B 방지, UC13 BLOCKER fix). */
+export function actionScopeOf(cmd: MutationCommand, env: string): ActionScope {
+  return { target: cmd.target, op: cmd.op, body: cmd.body, env };
+}
+
+/** file-op 경로 안전(old validatePath 복원, defense-in-depth): null-byte + `..` traversal 거부.
+ *  (writeFile 은 Rust validate_in_workspace 가 경계검증하나, 도메인 self-contained 방어 = 보안 GOAL.) */
+export function isUnsafePath(path: string): boolean {
+  if (path.includes("\0")) return true; // null-byte 주입
+  return path.split(/[/\\]/).includes(".."); // 디렉터리 traversal 세그먼트
 }
 
 export interface Ack {

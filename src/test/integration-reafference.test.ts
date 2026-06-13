@@ -11,7 +11,8 @@ import type { EnvironmentObservePort, FileChangeEvent } from "../main/ports/f2.j
 import type { ObservedState } from "../main/domain/observe.js";
 
 const ident: ContextIdentity = { sessionId: "s1", canonicalRoot: "/w", activeSurface: "panel", configVersion: "v1", clientId: "c1" };
-const scope = (o: Partial<ActionScope> = {}): ActionScope => ({ target: "/w/f", op: "write", body: "v", env: "host", ...o });
+// ⚠️ 승인 scope 는 *실제 cmd* 에 결속돼야 함(UC13 fix): op 는 MutateOp 어휘(writeFile), target/body=cmd 일치.
+const scope = (o: Partial<ActionScope> = {}): ActionScope => ({ target: "/w/f", op: "writeFile", body: "v", env: "host", ...o });
 const gi = (o: Partial<GateInput> = {}): GateInput => ({
   tool: "write_file", args: {}, toolCallId: "tc1", sessionId: "s1", context: ident, scope: scope(), correlationId: "c", ...o,
 });
@@ -103,8 +104,26 @@ describe("통합 reafference (P02 3단계) — 인지흐름 관통", () => {
 
   it("exec: observed=ack.output (file 재read 아님)", async () => {
     const { gate, log } = rig({ decision: "once", ackOutput: "done" });
-    const r = await gate.execute({ op: "execCommand", target: "echo", body: "echo done" }, gi({ tool: "execute_command" }), "done");
+    // 승인 scope 가 exec cmd 에 결속(target/op/body 일치)돼야 통과
+    const r = await gate.execute({ op: "execCommand", target: "echo", body: "echo done" },
+      gi({ tool: "execute_command", scope: scope({ target: "echo", op: "execCommand", body: "echo done" }) }), "done");
     expect(r.kind).toBe("done");
     expect(log).not.toContain("observe"); // exec 는 observe.fileStatus 안 부름
+  });
+
+  it("★ 승인-결속(UC13 fix): 승인 scope ≠ 실제 cmd → scope-mismatch 차단(승인A→행위B 금지)", async () => {
+    const { gate, log } = rig({ decision: "once" });
+    // 승인은 /w/f writeFile "v" 에 대해 났는데, 실제 cmd 는 다른 파일 /w/OTHER 를 씀
+    const r = await gate.execute({ op: "writeFile", target: "/w/OTHER", body: "evil" }, gi(), "v");
+    expect(r).toMatchObject({ kind: "blocked", reason: "scope-mismatch" });
+    expect(log).not.toContain("mutate:writeFile"); // 행위 실행 안 됨
+  });
+
+  it("file-op 경로 안전(defense-in-depth): `..` traversal → blocked unsafe(승인 전 차단)", async () => {
+    const { gate, log } = rig({ decision: "once" });
+    const r = await gate.execute({ op: "writeFile", target: "/w/../etc/passwd", body: "x" },
+      gi({ scope: scope({ target: "/w/../etc/passwd" }) }), "x");
+    expect(r).toMatchObject({ kind: "blocked", reason: "unsafe" });
+    expect(log).not.toContain("mutate:writeFile");
   });
 });

@@ -45,7 +45,9 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증** | codex부분 | **실앱 대화 OK(루크확인)** | 거의완료 |
 | V2 | 음성(UC2) | **계약+§C분해** | **도메인+ports+os-local 어댑터(Expression/Sensory) 이식** | **✓ 2-AI: BLOCKER0(startup-lazy CLEAN)** | external(VoiceProvider/gRPC Voice RPC)+루크머신 live | **os-local 이식+리뷰 완료, external 신규계약** |
 | S-row | skills 60+/browser/channels/bgm | 측정 | ✗ | ✗ | — | 미착수 |
-| UC5/6/7/8/12/13 | (user-scenarios 참조) | 부분 | UC12=온보딩 live | ✗ | — | 부분 |
+| UC7a/7 | 시스템 관측/조작 | = F2/F3 | ✓(F2/F3) | ✓ | 루크머신 | **F2/F3 로 완료** |
+| UC13 | 승인 게이트 | ✓(F1-baseline) | **승인-결속 fix(prior 코드)** | **✓ 2-AI R1 BLOCKER(승인A→행위B)→수정** | gRPC chat-approval+루크머신 | **os-local 이식+리뷰 완료, live=agent flow** |
+| UC5/6/8/12 | skill/browser/bgm/온보딩 | 부분 | UC12=온보딩 live | UC12 리뷰 next | external/루크머신 | 부분 |
 > UC3(기억)=다른 세션 소유(naia-memory), off-scope. 검출기 RED 6파일=그 세션 것.
 
 ---
