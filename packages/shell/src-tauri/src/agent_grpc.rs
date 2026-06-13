@@ -21,8 +21,8 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
         Some(Event::Text(t)) => json!({"type":"text","requestId":rid,"text":t.text}),
         Some(Event::Thinking(t)) => json!({"type":"thinking","requestId":rid,"text":t.text}),
         Some(Event::ToolUse(t)) => json!({"type":"tool_use","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}),
-        Some(Event::ToolResult(t)) => json!({"type":"tool_result","requestId":rid,"toolCallId":t.tool_call_id,"output":t.output}),
-        Some(Event::ApprovalRequest(t)) => json!({"type":"approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"tier":t.tier}),
+        Some(Event::ToolResult(t)) => json!({"type":"tool_result","requestId":rid,"toolCallId":t.tool_call_id,"output":t.output,"toolName":t.tool_name,"success":t.success}),
+        Some(Event::ApprovalRequest(t)) => json!({"type":"approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"tier":t.tier,"args":parse(&t.args_json),"description":t.description}),
         Some(Event::GatewayApprovalRequest(t)) => json!({"type":"gateway_approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}),
         Some(Event::Usage(u)) => {
             let mut o = json!({"type":"usage","requestId":rid,"inputTokens":u.input_tokens,"outputTokens":u.output_tokens});
