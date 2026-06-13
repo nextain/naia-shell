@@ -71,6 +71,14 @@ export class OnboardingController implements OnboardingFlowPort, SettingsPort {
     await this.p.bootState.markOnboardingComplete();
   }
 
+  /** §D 신규계약(2026-06-14): 외부에서 빌드한 완성 config 로 온보딩 완료(셸-graft seam).
+   *  complete() 는 내부 draft(submit 구동)에서 persist 하나, 실 셸 OnboardingWizard 는 자체 snapshot 으로
+   *  외부 config 를 빌드 → 이 메서드로 동일 persist 경로(+markComplete) 재사용. 부작용 = complete() 와 동일. */
+  async completeWith(cfg: NaiaConfig): Promise<void> {
+    await this.persist(cfg);
+    await this.p.bootState.markOnboardingComplete();
+  }
+
   /** S02/S03 설정 편집 — base(secret 포함 read) per-category 병합 → 동일 영속. */
   async update(patch: ConfigPatch): Promise<void> {
     const base = (await this.p.bootState.loadLocalConfigWithSecrets()) ?? baseConfig();

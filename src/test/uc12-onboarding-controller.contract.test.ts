@@ -55,6 +55,30 @@ describe("UC12 app — OnboardingController (contract §B.3)", () => {
     expect(calls.markComplete).toBe(1);
   });
 
+  it("§D completeWith(외부 config) → submit 구동 없이 동일 persist(secret strip + 키체인 apiKey/naiaKey + markComplete)", async () => {
+    const { ctrl, calls } = makeFakes();
+    // 셸 OnboardingWizard 가 자체 snapshot 으로 빌드한 완성 config(submit 미구동 = draft 빈 상태)
+    const external: NaiaConfig = {
+      agent: { provider: "openai", model: "gpt-4o", agentName: "나이아", persona: "p" },
+      secret: { apiKey: "SK" },
+      ui: { vrmModel: "/v.vrm" },
+      naiaKey: "NK",
+      workspaceRoot: "/adk",
+      onboardingComplete: true,
+    };
+    await ctrl.completeWith(external);
+    // 로컬엔 secret/naiaKey 미포함(키체인 전담, UC12 stale-credential fix 불변)
+    expect(calls.replaceLocalConfig[0].secret).toEqual({});
+    expect(calls.replaceLocalConfig[0].naiaKey).toBeUndefined();
+    // agent-file write(forAgent = agent 만)
+    expect(calls.configWrite[0].adkPath).toBe("/adk");
+    expect(calls.configWrite[0].agentView).toEqual({ agent: external.agent });
+    // secret → 키체인: openai→OPENAI_API_KEY + naiaKey→NAIA_ANYLLM_API_KEY
+    expect(calls.writeAgentKey).toContainEqual({ envKey: "OPENAI_API_KEY", value: "SK" });
+    expect(calls.writeAgentKey).toContainEqual({ envKey: "NAIA_ANYLLM_API_KEY", value: "NK" });
+    expect(calls.markComplete).toBe(1);
+  });
+
   it("onNaiaAuthCallback → naiaKey 키체인(NAIA_ANYLLM_API_KEY, agent env 경로) 1회; idempotent", async () => {
     const { ctrl, calls } = makeFakes();
     await ctrl.onNaiaAuthCallback({ naiaKey: "NK" });
