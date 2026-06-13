@@ -79,6 +79,15 @@
 
 **판정 갱신**: B0(검출망 CI 미연결)=R0로 **닫힘**(green 위). 온보딩 컨텍스트(B4)=ARCHITECTURE/R3로 **닫힘**. 남은 핵심=B-WIRE cross-repo proto 해시(공유-proto 결정 대기). → 오픈소스 독립/fork 기여자 PR 이 이제 코드·계약·타입·계층·파일계약 드리프트에서 자동 RED.
 
+## D3. 기동 지연 후속 진단 (2026-06-13 — 부분해결/미해결)
+
+루크 #1 "로딩 너무 오래(180s)" 추적 결과(정직):
+- ✅ **watch 비동기화는 작동** — Rust 로그 `start_watch collected 0 git dirs ms=0`, `watched ms=0`. 옛 180s watch 블록 제거됨.
+- ❌ **그러나 체감 기동 지연(~90초)은 별개 원인이라 미해결**: 프론트 `workspace_set_root ok {ms:90072}`인데 **Rust set_root 핸들러는 ms=0** → 명령 로직 아니라 **invoke 응답이 90s 지연 = webview JS 스레드가 90s 통째 freeze**(그 구간 JS 로그 0줄). 끝나는 시점에 `[browser_wv] child webview created`(+180s) + AvatarCanvas VRM 로드.
+- **틀린 가설 2개(정직 기록)**: (1) `.env`가 원인 — 아님(GTK가 진짜). (2) 소프트웨어 GL 아바타 — `WEBKIT_DISABLE_DMABUF_RENDERER=1` 제거(하드웨어 GL) 시 **오히려 더 느렸음** → GL 모드가 원인 아님. DMABUF off 유지.
+- **남은 후보(미검증)**: ① browser child webview 생성이 기동 시 main/IPC 블록 → 지연 로드(panel 열 때 생성)로 회피? ② WebKit GStreamer 미디어 init(`GstIntRange` assertion 경고 버스트) ③ 세션 내 누적 stray 프로세스(BGM 18791/orphan agent/webkit) → **재부팅으로 청소 후 재측정 권장**.
+- 다음 세션 작업: 재부팅 클린 상태에서 기동 타임라인 재관측(logs-first) → 90s 블록의 실제 점유자 격리(추측 금지) → 지연 로드/lazy webview 등 수정.
+
 ## E. 적대적 교차리뷰 기록 (2-clean 목표)
 - **라운드1**(general-purpose): ISSUES(7) — B0 CI미연결 놓침 등 → v2 반영.
 - **라운드2**(독립 general-purpose): ISSUES(6, material 2) — I-1 file-anchor 실재 누락, I-2 TS union 손중복+R0 라이브wire 미보장; nitpick: 포트수 과소·pre-commit 과소·build.rs silent-skip → **직접 검증 후 v3 반영**(B1 재서술, B-WIRE 확장, R-WIRE0 신설, A/B0b/포트 정밀화).

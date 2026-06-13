@@ -39,10 +39,12 @@ env.NAIA_AGENT_SCRIPT = env.NAIA_AGENT_SCRIPT ?? resolve(AGENT, "scripts/builds/
 if (platform() === "linux") {
 	const hasX = !!(env.DISPLAY && env.DISPLAY.trim());
 	env.GDK_BACKEND = env.GDK_BACKEND ?? (hasX ? "x11" : "wayland");
-	// Wayland 백엔드 = WebKitGTK DMABUF 렌더 버그(빈 화면) 회피.
-	if (env.GDK_BACKEND === "wayland") {
-		env.WEBKIT_DISABLE_DMABUF_RENDERER = env.WEBKIT_DISABLE_DMABUF_RENDERER ?? "1";
-	}
+	// Wayland 백엔드: WebKitGTK DMABUF 렌더 버그(빈 화면) 회피로 소프트웨어 렌더 강제.
+	// (2026-06-13: 이걸 떼고 하드웨어 GL 로 시도했더니 루크 환경에서 *오히려 더 느렸음* → 기동 지연의 원인은
+	// GL 모드가 아니었다. 따라서 DMABUF off 유지가 그나마 나음. 기동 ~90초 지연(webview JS 스레드 블록 — set_root/
+	// start_watch invoke 응답 지연, Rust 핸들러는 ms=0)은 *별개 미해결 이슈*: 후보 = browser child webview 생성/
+	// WebKit GStreamer 미디어 init(GstIntRange 경고)/세션 누적 stray 프로세스. docs/progress 참조.)
+	env.WEBKIT_DISABLE_DMABUF_RENDERER = env.WEBKIT_DISABLE_DMABUF_RENDERER ?? "1";
 }
 
 // ── prod: dev-gateway 변수 강제 제거 ──
