@@ -23,7 +23,8 @@ export class StatusReporter {
     let degraded: DegradationSignal[] = [];
     try { degraded = (await this.interoceptive.degradations()).filter(isDegraded); } catch (e) { probeErrors.push(`degradations: ${String(e)}`); }
 
-    const componentsHealthy = system ? system.components.every((c) => c.healthy) : false;
+    // ⚠️ 빈 components = "모름"(unknown), healthy 아님 — [].every()=true 의 false-healthy 오보 차단(FR-F1.1, F1 리뷰).
+    const componentsHealthy = system !== null && system.components.length > 0 && system.components.every((c) => c.healthy);
     const allClear = degraded.length === 0 && probeErrors.length === 0 && componentsHealthy;
     return { system, degraded, probeErrors, allClear };
   }

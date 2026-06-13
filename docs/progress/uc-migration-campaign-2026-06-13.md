@@ -38,7 +38,7 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | 단위 | 범위 | 계약 | 이식(코드) | 2-AI 리뷰 | 라이브 graft/e2e | 상태 |
 |---|---|:--:|:--:|:--:|:--:|---|
 | F0 | 부팅 workspace init | ✓+**delta** | **live+신규계약 수정** | **✓ 2-AI R1 ISSUES(BLOCKER)→R2 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
-| F1 | 자기상태+승인 | ✓ | stub | ✗ | — | 계약만 |
+| F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) 이식** | **✓ 2-AI R1, FR-F1.1 fix, BLOCKER0** | gRPC Diagnostics RPC(신규계약)+UC13 잔여 | **os-local 이식+리뷰 완료, 나머지 신규계약 스펙** |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓ | stub | ✗ | — | 계약만 |
 | V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증** | codex부분 | **실앱 대화 OK(루크확인)** | 거의완료 |

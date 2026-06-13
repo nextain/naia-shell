@@ -28,13 +28,22 @@ export function wireControlPlane(ports: ControlPlanePorts): ControlPlaneBoot {
 // ── F1 슬라이스 (자기상태/진단 + 승인) ──
 import { StatusReporter } from "../app/control/status.js";
 import { ApprovalGate } from "../app/control/approval.js";
-import { tauriInteroceptive, agentWireApproval, configGrant } from "../adapters/tauri/f1.js";
+import { tauriInteroceptive, agentWireApproval, configGrant, makeF1LiveAdapters, type F1LiveDeps } from "../adapters/tauri/f1.js";
 
 export function wireStatusReporterTauri(): StatusReporter {
   return new StatusReporter(tauriInteroceptive);
 }
 export function wireApprovalGateTauri(): ApprovalGate {
   return new ApprovalGate({ approval: agentWireApproval, grant: configGrant });
+}
+
+// F1 실배선(graft): 자기상태(devices/agent-health) + 영구 grant. ⚠️ approval.request 라이브 = UC13/F3 gRPC chat-approval.
+export function wireStatusReporterLive(deps: F1LiveDeps): StatusReporter {
+  return new StatusReporter(makeF1LiveAdapters(deps).interoceptive);
+}
+export function wireApprovalGateLive(deps: F1LiveDeps): ApprovalGate {
+  // grant=live(config), approval=locked 계약 stub(UC13 에서 gRPC chat-approval 로 라이브). F1 = 선잠금.
+  return new ApprovalGate({ approval: agentWireApproval, grant: makeF1LiveAdapters(deps).grant });
 }
 
 // ── F2 슬라이스 (host-system 관측 + drift) ──

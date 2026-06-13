@@ -1,0 +1,22 @@
+{
+  "uc": "F1",
+  "slice": "자기상태(InteroceptivePort: devices/systemStatus/diagnostics/degradations) + 영구 grant(PersistentGrantPort). ApprovalPort=최소계약 선잠금.",
+  "tier": "T2",
+  "tier_reason": "승인/grant(보안) + 자기상태 오보금지(FR-F1.1)",
+  "method": "open-loop adversarial 2 reviewers (parity/honesty + scope/contract/security), ground-truth=old(DiagnosticsTab/config.ts/lib.rs)+canon",
+  "round": 1,
+  "date": "2026-06-13",
+  "session_id": "ec74cc29-3347-4f6e-b29a-237ea29f301e",
+  "verdict": "ISSUES → 핵심 수정 완료 (BLOCKER 없음)",
+  "scope_round0": "PASS — domain 순수, ports substrate-agnostic, @tauri-apps 미import, gRPC/naia-memory 미접촉. 보안 fail-closed(approval 잠금 stub=throw, silently allow 안 함, MutationGate 전파 abort).",
+  "findings": [
+    {"id":"F1-1","sev":"LOW(FR-F1.1)","status":"FIXED","file":"app/control/status.ts:26","issue":"빈(unknown) system.components → [].every()=true → allClear=true = '모름'을 'healthy'로 오보(FR-F1.1 위반 edge). 어댑터는 정직(빈=모름) 이나 도메인 StatusReporter 가 healthy 로 승격.","fix":"componentsHealthy = system!==null && components.length>0 && every(healthy). 빈=not-clear. +테스트(미주입→allClear false / healthy→true)."},
+    {"id":"F1-2","sev":"MEDIUM","status":"FIXED(주석)","file":"adapters/tauri/f1.ts deferral 주석","issue":"deferral 근거 부정확 — old gateway_health(lib.rs:2179)는 RPC 아니라 os-local child.try_wait() liveness. systemStatus/degradations 는 agentReachable 주입으로 *지금* 배선 가능. 신규 gRPC Diagnostics RPC 는 rich payload(version/uptime/methods)만 필요.","fix":"주석 정정: systemStatus 지금 배선가능(agentReachable=child-alive||grpc-ready), RPC 는 rich gateway payload + gateway diagnostics 만. os-local 로그 tail 도 후속 이식 가능."},
+    {"id":"F1-3","sev":"LOW","status":"ACCEPTED(track)","file":"f1.ts devices","issue":"device id(node.name 선택키) 드롭 — read-only F1(S11 status) 에선 정합, UC7 device-selection 이식 시 필요.","fix":"UC7 에서 selection 키 복원(추적)."},
+    {"id":"F1-4","sev":"LOW","status":"ACCEPTED","file":"f1.ts devices / degradation.ts","issue":"kind: x.label 네이밍 smell(kind 필드에 label). old kind='audiooutput'. 표시엔 무해.","fix":"후속 DeviceStatus {label} 분리 고려."},
+    {"id":"F1-5","sev":"INFO","status":"PINNED(test)","file":"composition wireApprovalGateLive","issue":"half-wired gate(grant live, approval throwing-stub). 현재 production 미조립, fail-closed. UC13 전 footgun.","fix":"fail-closed 불변 테스트(approval.request throw) 추가."}
+  ],
+  "deferred_new_contract": "F1 full = gRPC **Diagnostics RPC**(agent→os: gateway version/uptime/methods/health) = 신규 계약(GOAL ⑥, agent gRPC surface 추가 — Chat/SetWorkspace 처럼). + os-local 로그 tail(read_local_binary) 후속. + ApprovalPort.request 라이브 = UC13/F3 gRPC chat-approval. = F1 '선잠금 + os-local 이식분' 완료, 나머지 신규계약 스펙 박음.",
+  "result": "이식(devices+grant live, systemStatus/degradation os-local 정직) + FR-F1.1 fix + 신규계약 스펙. tsc/anchors/assembly/compile/167 test green. BLOCKER 0.",
+  "lesson": "리뷰가 도메인 레이어 false-healthy([].every())를 잡음(어댑터는 정직했으나 StatusReporter 가 승격). + deferral 근거를 old-ground-truth 로 정정(추측 RPC 필요→실은 os-local 가능)."
+}
