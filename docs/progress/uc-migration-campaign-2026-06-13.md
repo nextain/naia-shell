@@ -53,7 +53,7 @@ F1 = InteroceptivePort(자기상태) + ApprovalPort(승인) + PersistentGrantPor
 | F1 | 자기상태+승인 | ✓+**delta** | **live(devices+grant+os-local health) 이식** | **✓ 2-AI R1, FR-F1.1 fix, BLOCKER0** | gRPC Diagnostics RPC(신규계약)+UC13 잔여 | **os-local 이식+리뷰 완료, 나머지 신규계약 스펙** |
 | F2 | workspace 관측(read-only) | ✓+**delta(§C)** | **live+신규계약 수정** | **✓ 2-AI 3R 수렴 CLEAN** | 루크머신 대기 | **이식+리뷰 완료** |
 | F3 | workspace 조작+승인 | ✓+**delta** | **writeFile+ptyWrite live, execCommand fail-closed** | **✓ 2-AI R1 BLOCKER2(arg-casing+보안)→수정** | execCommand 신규보안계약+UC13 잔여 | **안전분 이식+리뷰, exec 신규계약** |
-| V1=UC1 | 텍스트 대화 | ✓ | **gRPC 관통 실증 + 필드보존 fix** | **✓ 2-AI 전체 R1 HIGH2(도구결과/승인 페이로드 유실)→수정** | **실앱 대화 OK(루크확인)** | **이식+리뷰 완료** |
+| V1=UC1 | 텍스트 대화 | ✓ | **필드보존 fix os+agent+proto end-to-end** | **✓ 2-AI HIGH2 수정(cross-repo 완성)** | 실앱 대화 OK(루크) / Rust 포워딩 잔여 | **이식+리뷰 완료, os Rust agent_event_to_ui_json 포워딩만 잔여(Luke)** |
 | V2 | 음성(UC2) | **계약+§C분해** | **도메인+ports+os-local 어댑터(Expression/Sensory) 이식** | **✓ 2-AI: BLOCKER0(startup-lazy CLEAN)** | external(VoiceProvider/gRPC Voice RPC)+루크머신 live | **os-local 이식+리뷰 완료, external 신규계약** |
 | S-row(agent skills) | github/mcp/obsidian/weather/memo(UC5)·bgm(UC8)·browser(UC6)·notify·cron | ✓ | **agent-local ToolExecutor 이식(injected 외부dep)** | self-review(패턴 규약) | 실 외부서비스=루크 | **clean agent skills 이식 완료(9개)** |
 | S-row(잔여) | sessions/skill-manager/config/device/channels/agents/approvals/naia-discord·voicewake·welcome | **placement 판정 완료** | **미이식(정당)** | — | — | **DEPRECATED(openclaw gateway #201 제거→死, 이식=drift). panel=os-side. botmadang=잠재(저우선). skill-placement-decision 참조** |
