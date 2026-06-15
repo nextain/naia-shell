@@ -48,19 +48,35 @@ seam `lib/voice-core.ts` 생성 — `makeV2Expression`/`makeV2Sensory`(shell-com
 
 ---
 
-## ⑥ UC-008 유투브/BGM — external runtime
-- 셸: `components/BgmPlayer.tsx` + youtube search/play/volume(WS/iframe). agent skill `youtube-bgm-skills`(이식+리뷰됨).
-- graft: BGM 제어를 agent skill 경유(도구루프 UC5 패턴). 실 youtube 재생/볼륨 = 루크-머신(네트워크·재생).
-- 검증: BGM 검색→재생→볼륨 제어가 실제 공간 분위기로 동작.
+## ⑥ UC-008 유투브/BGM — **이미 배선됨(transitive)** + 실 재생=루크머신
+- **배선 상태**: os-side 자체 포트 없음. agent skill `youtube-bgm-skills`(UC5, 이식+리뷰됨)가 도구 호출, **`bgm_youtube_*` 도구 메시지가 new-core chat router 경유**(`domain/chat.ts` L135-138 PendingRouteSink, "router 단일구독이라 통과")→ 셸 `BgmPlayer.tsx` 소비. **= UC1 chat graft + UC5 로 이미 new-core 배선됨**(별도 graft 불요).
+- 잔여(루크머신): 실 youtube 재생/볼륨(네트워크·iframe).
+- 검증: isNewCore 기동 → 에이전트가 BGM 재생 도구 호출 → 공간 분위기 변화.
 
-## ⑦ UC-006 브라우저 — external runtime
-- agent skill `agent-browser-skills`(navigate/click/fill/snapshot, CDP + 외부 CLI, 이식+리뷰됨).
-- graft: 셸 트리거 → agent 도구루프 → CDP. 실 브라우저 프로세스 = 루크-머신.
-- 검증: navigate→click→fill→snapshot 왕복.
+## ⑦ UC-006 브라우저 — **이미 배선됨(transitive)** + 실 CDP=루크머신
+- **배선 상태**: os-side 자체 포트 없음. agent skill `agent-browser-skills`(navigate/click/fill/snapshot, CDP+외부CLI, UC5 이식+리뷰됨)가 도구 호출, `skill_browser_*` 도구 결과가 grafted chat 도구루프(UC1) 경유 → 셸 `BrowserCenterPanel.tsx` 패널 전환(ChatPanel L945/1069). **= 이미 new-core 배선됨**.
+- 잔여(루크머신): 실 브라우저 프로세스/CDP.
+- 검증: 에이전트 navigate→click→fill→snapshot 왕복.
+
+## ⑨ UC-007 워크스페이스 — **설계 결정 게이트(graft 불가, 보류 사유 재확인)**
+- **상태**: os-side new-core 포트 존재 — F2 `ports/f2.ts`(ObservationService: readFile/listDir/processStatus/**DriftDetector**), F3 `ports/f3.ts`+`app/control/mutate.ts`(MutationGate: writeFile/exec, 승인→mutate→observe→reafference). **그러나 셸 소비자 0(완전 dormant)**.
+- **셸 현황**: workspace UI 존재(`panels/workspace/Terminal.tsx` pty, `panels/browser/BrowserCenterPanel.tsx`) — **old-path**(adk-store/직접 invoke), F2/F3 미경유.
+- **graft 막는 진짜 이유(이전 보류 = 유효)**: (1) **DriftDetector(observed vs expected)=old 소비자 부재 = 신규발명** → graft 시 소비자를 *발명*해야 함(이식 원칙 "수정/발명 아닌 이식" 위반). (2) MutationGate 를 Terminal pty 에 걸면 **모든 터미널 명령에 승인게이트 추가 = behavior 변경**(투명 graft 아님). (3) "워크스페이스 UC 가 무엇을 해야 하는가"(드리프트로 무엇을, 승인 정책)=**미해결 product 방향**.
+- **∴ 루크 결정 필요**: 워크스페이스 UC 방향(F2 관측 소비자=무엇 / F3 mutate 승인정책 / DriftDetector 용도). 결정 후 [Old-Baseline 없으면→신규계약(GOAL ⑥)→이식→2-AI→루크검증]. **헌장/방향 = 사람 게이트라 AI 단독 graft 금지**(blind graft=발명=드리프트).
 
 ---
 
-## 결론
-- 남은 ⑤⑥⑦ = **런타임/external 게이트** — 헤드리스 자율-검증 슬라이스 없음(UC-012가 마지막). 코드의 *배선 로직*은 위 패턴으로 헤드리스 검증 가능하나, *기능*(오디오/WS/CDP)은 루크-머신.
-- **권고**: 루크 복귀 후 ⑤ 음성부터 위 graft 계획대로 실 wayland+오디오에서 진행(기동 검증=[[feedback_handoff_verified_runnable_state]], 실UI 통합테스트=[[feedback_integration_test_drive_real_ui]]). 각 = Old-Baseline→계약→이식→drift-gate→2-AI 2-clean→루크 실앱 검증.
-- 이미 완료(이식+리뷰+dormant): V2 os-local 어댑터·UC5 도구루프·UC6/8 agent skill·provider-provenance. **연결(graft)+런타임만 잔여.**
+## 결론 (2026-06-16 전 UC 배선 상태 — "모든 UC 완료 배선" 지시 대응)
+| UC | 배선 상태 | 잔여 |
+|---|---|---|
+| ①온보딩+계정 UC-012 | ✅ graft(creds+step-flow, 2-clean) | 루크 실앱 e2e(OAuth) |
+| ②채팅 UC-001 | ✅ graft(chat-service) | — |
+| ③승인 UC-013 | ✅ graft | — |
+| ④스킬 UC-005 | ✅ (agent 도구루프) | — |
+| ⑤음성 UC-002 | ✅ **표현(재생) 포트 graft**(2c05ba1, 2-AI CLEAN) | mic(lifecycle 불일치)·STT(streaming 불일치)·WS(external) = 포트결정/루크머신 |
+| ⑥유투브 UC-008 | ✅ **이미 배선(transitive)** — bgm_youtube_* new-core router 경유 | 실 youtube 재생=루크머신 |
+| ⑦브라우저 UC-006 | ✅ **이미 배선(transitive)** — skill_browser_* grafted 도구루프 | 실 CDP=루크머신 |
+| ⑨워크스페이스 UC-007 | ⚠️ **graft 불가 = 설계 결정 게이트** | DriftDetector 소비자 발명 금지 + mutate 승인정책 = 루크 방향 결정 |
+- **요지**: ①~⑦ 은 **전부 new-core 배선됨**(직접 graft 또는 도구루프 transitive). 헤드리스 검증 가능분은 검증 완료(2-AI). *기능 런타임*(오디오/WS/CDP/OAuth)=루크머신.
+- **유일한 미배선 = ⑨워크스페이스(UC-007)** — 코드 못 짜는 게 아니라 **product 방향 미결정**(드리프트 검출 용도·mutate 승인정책=신규발명 영역). AI 단독 graft=발명=드리프트라 **루크 결정 필요**. (⑧메모리=다른 세션 off-scope.)
+- 권고: 루크 복귀 후 (1) ①~⑦ 실 wayland+오디오/WS 런타임 검증([[feedback_handoff_verified_runnable_state]]) (2) ⑨ 워크스페이스 UC 방향 결정 → 그 후 graft.
