@@ -121,3 +121,6 @@ export function makeShellOnboarding(deps: { f0: LiveDeps; uc12: UC12LiveDeps }):
 // 셸 graft 가 flat(old localStorage 형태) config 를 NaiaConfig 로 categorize 할 때 동일 변환기(F0 어댑터와 공유) 사용.
 // re-export 로 셸이 core 내부 경로를 모르게 한다(직교).
 export { toNaiaConfig } from "./tauri/config-map.js";
+
+// step-flow graft(step2): 셸이 단계 전이를 ctrl.submit 으로 구동할 때 쓰는 입력 타입(type-only, 런타임 결합 0).
+export type { StepInput } from "../domain/onboarding.js";

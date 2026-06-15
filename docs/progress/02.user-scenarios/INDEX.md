@@ -14,7 +14,7 @@
 
 | ID | 영역 | 누가 → 무엇을 → 왜 | 유도 REQ | 상태 | TEST-S |
 |---|---|---|---|---|---|
-| UC-012 | ①온보딩+계정 | 사용자가 온보딩에서 provider·나이아계정·키를 설정하고 완료 → 에이전트가 그 설정으로 동작 (구 UC12/UC12-min). **2026-06-16: 계정/creds/키 런타임 push(sendCredsUpdate/sendAuthUpdate) graft 완료(2-clean). 잔여=wizard step-flow graft** | REQ-001, REQ-007 | In-progress | TEST-S-012 |
+| UC-012 | ①온보딩+계정 | 사용자가 온보딩에서 provider·나이아계정·키를 설정하고 완료 → 에이전트가 그 설정으로 동작 (구 UC12/UC12-min). **2026-06-16: 계정/creds/키 런타임 push graft(2-clean) + step2 wizard step-flow(assets·submit·게이트·auth-callback) core 경유 graft(3R 2-clean). 잔여=루크머신 실앱 e2e(newCore 플래그+OAuth)** | REQ-001, REQ-007 | In-progress | TEST-S-012 |
 | UC-001 | ②채팅 | 사용자가 텍스트로 대화 → 에이전트가 gRPC(os→agent) 경유 응답(도구·thinking·멀티턴·취소) (구 UC1) | REQ-006 | Done | TEST-S-001 |
 | UC-013 | ③승인 | 사용자가 위험 행위(도구실행 등)를 승인/거부 → 승인된 것만 실행 (구 UC13) | REQ-003 | Done | TEST-S-013 |
 | UC-005 | ④스킬 | 에이전트가 도구/스킬(time·weather·memo·github·obsidian·mcp)을 실행 (구 UC5) | REQ-009 | In-progress | TEST-S-005 |

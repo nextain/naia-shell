@@ -6,7 +6,11 @@ import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlob
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { isNewCore, sendAuthUpdate } from "../lib/chat-service";
 import { type AppConfig, NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
-import { completeOnboardingNewCore } from "../lib/onboarding-core";
+import {
+	makeOnboardingSession,
+	type OnboardingSession,
+	type StepInput,
+} from "../lib/onboarding-core";
 import { getLocale, t } from "../lib/i18n";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
@@ -141,6 +145,55 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const latestRef = useRef<OnboardingSnapshot | null>(null);
 
+	// UC12 step-flow graft(step2): isNewCore 일 때 assets/단계 전이/auth 를 core 컨트롤러 경유(mirror).
+	// React=nav 권위(back/skip 견고), core=forward mirror(draft 누적·순서 불변식·provider-naia 게이트).
+	// 영속은 completeWith(snapshot, step1) 유지. 미설정=old 경로 비파괴.
+	const newCore = isNewCore();
+	const sessionRef = useRef<OnboardingSession | null>(null);
+	function core(): OnboardingSession | null {
+		if (!newCore) return null;
+		if (!sessionRef.current) sessionRef.current = makeOnboardingSession();
+		return sessionRef.current;
+	}
+	// 현재 React state → core StepInput(전진 mirror용; core draft 는 persist 에 안 쓰임 = 값은 상태일관성/게이트용).
+	function buildStepInput(s: Step): StepInput {
+		switch (s) {
+			case "welcome":
+				return { step: "welcome" };
+			case "agentName":
+				return { step: "agentName", agentName: agentName.trim() || "나이아" };
+			case "userName":
+				return {
+					step: "userName",
+					userName: userName.trim(),
+					honorific: honorific.trim() || undefined,
+				};
+			case "speechStyle":
+				return {
+					step: "speechStyle",
+					speechStyle,
+					extraPersona: extraPersona.trim() || undefined,
+				};
+			case "character":
+				return { step: "character", vrmModel: selectedVrm || undefined };
+			case "background": {
+				const bgPath = backgrounds.find((b) => b.url === selectedBg)?.path;
+				return { step: "background", background: bgPath };
+			}
+			case "provider":
+				return {
+					step: "provider",
+					// naiaLoginDone → nextain(게이트는 onNaiaAuthCallback 가 해제); 아니면 저장 provider 또는 nextain 기본.
+					provider: naiaLoginDone
+						? "nextain"
+						: (loadConfig()?.provider ?? "nextain"),
+					...(apiKeyMode && apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+				};
+			case "complete":
+				return { step: "complete" };
+		}
+	}
+
 	const stepIndex = STEPS.indexOf(step);
 	const didMount = useRef(false);
 	const transitioning = useRef(false);
@@ -162,13 +215,19 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		};
 	});
 
-	// Load VRM list from naia-settings
+	// Load VRM list from naia-settings (newCore: core 가 LISTING 소유 → path 만 사용)
 	useEffect(() => {
-		listNaiaAssets("vrm-files").then((paths) => {
-			const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
-			setNaiaVrms(vrms);
-			if (vrms.length > 0) setSelectedVrm((prev) => prev || vrms[0]);
-		});
+		const c = core();
+		const load = c
+			? c.assets("vrm-files").then((refs) => refs.map((r) => r.path))
+			: listNaiaAssets("vrm-files");
+		load
+			.then((paths) => {
+				const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
+				setNaiaVrms(vrms);
+				if (vrms.length > 0) setSelectedVrm((prev) => prev || vrms[0]);
+			})
+			.catch(() => {});
 	}, []);
 
 	// Reset background on mount
@@ -180,9 +239,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 	}, [setBackgroundMediaType, setBackgroundVideoUrl]);
 
-	// Load backgrounds from naia-settings
+	// Load backgrounds from naia-settings (newCore: core LISTING → path; 셸은 path 에서 blob/asset URL 재유도)
 	useEffect(() => {
-		listNaiaAssets("background")
+		const c = core();
+		const load = c
+			? c.assets("background").then((refs) => refs.map((r) => r.path))
+			: listNaiaAssets("background");
+		load
 			.then(async (paths) => {
 				const bgs: BgOption[] = await Promise.all(
 					paths.map(async (p) => {
@@ -246,6 +309,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				})
 					.catch(() => {})
 					.then(() => sendAuthUpdate(event.payload.naiaKey).catch(() => {}));
+				// core mirror(비파괴 추가): naiaLoginDone=게이트 해제 + NAIA_ANYLLM_API_KEY 키체인
+				// (idempotent, completeWith 와 동값). 기존 sendAuthUpdate(런타임 push)·store_startup_message 유지 = 보완.
+				void core()?.onNaiaAuthCallback(event.payload.naiaKey).catch(() => {});
 				// Advance to complete step after Naia login
 				setStep("complete");
 			},
@@ -260,6 +326,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		if (transitioning.current) return;
 		const next = STEPS[stepIndex + 1];
 		if (!next) return;
+		// core forward mirror(비차단): 떠나는 현재 step 의 input 을 컨트롤러에 제출(draft·순서·게이트 행사).
+		// 게이트 차단/step-mismatch 시 no-op — UI nav 는 막지 않음(persist=snapshot 무영향).
+		void core()
+			?.submit(buildStepInput(step))
+			.catch(() => {});
 		transitioning.current = true;
 		setStep(next);
 		setTimeout(() => {
@@ -406,8 +477,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		// UC12 graft (isNewCore): 새 core OnboardingController.completeWith(§D 신규계약)가
 		// categorize(secret/ui/agent) + persist(secret=키체인 전담, stale-credential fix) + markComplete.
 		// 미설정(기본)=기존 writeNaiaConfig/writeAgentKey 경로 보존(비파괴). UC1 chat-service graft 와 동일.
-		if (isNewCore()) {
-			void completeOnboardingNewCore(completedFlat);
+		if (newCore) {
+			void core()?.completeWith(completedFlat);
 		} else {
 			// G-01: sync to naia-settings/config.json so standalone agent picks up the onboarding result.
 			const saved = loadConfig();

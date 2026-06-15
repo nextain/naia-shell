@@ -1,0 +1,19 @@
+{
+  "uc": "UC12 step-flow graft (step2) — assets + submit 를 core 경유",
+  "date": "2026-06-16",
+  "session_id": "(재기동 세션)",
+  "tier": "T2 (naiaKey/OAuth callback 인접 = 보안)",
+  "method": "open-loop 3 rounds × 2 reviewers (auth-creds / parity / boundary-lifecycle), ground-truth=계약 delta(graft-uc12-stepflow)+선행 creds graft(graft-uc12-naia-account)+Old-Baseline(OnboardingWizard)+core 계약. mutation-probe 2회(테스트 진정성 독립 확인).",
+  "context": "UC12-2(r-uc12-2026-06-13: 'core dead code, 실 shell 미graft, graft+e2e-tauri=루크머신 게이트')가 지목한 live-graft 의 step-flow 부분(assets+submit). step1(creds/auth 런타임 push)에 이어짐.",
+  "scope": "flow(단계전이·assets·provider-naia 게이트)=core 경유. persist=completeWith(snapshot, step1) 유지. OAuth 시작 URL 빌드=셸 handleNaiaLogin 유지(core oauth.launch 스텁 미사용 → UC12-5 CSRF 위험 회피). React=nav 권위, core=forward mirror(advance=forward-only 계약).",
+  "verdict": "CLEAN (R3 2 reviewers 모두 CLEAN, 2-clean 달성)",
+  "rounds": [
+    {"round":1,"result":"ISSUES","findings":"auth-creds=LOW only(creds 비회귀·secret 무누출·idempotency·old-path 비파괴 검증). parity=MEDIUM(불변식 'desync+completeWith=snapshot' 회귀-앵커 테스트 부재)+LOW(core r.url 죽은계산).","action":"MEDIUM 닫음=onboarding-core.test.ts 에 게이트차단+completeWith=snapshot(draft 미사용) 앵커 테스트 추가."},
+    {"round":2,"result":"ISSUES","findings":"boundary-lifecycle=CLEAN(라이프사이클/envKey/parity 전부 반증실패, LOW=CoreAssetRef.type union). full-recheck=MEDIUM(newCore 컴포넌트 배선 자동테스트 0 — 컴포넌트 테스트가 isNewCore=false stub)+LOW(stale-dist false-green: seam 테스트가 gitignored dist 검증)+LOW(apiKeyMode+nextain 게이트, 계약명시 무해). mutation-probe로 R1 앵커 테스트 진정성 확인.","action":"newCore 컴포넌트 테스트 추가(OnboardingWizard.newcore.test.tsx: assets/submit mirror/onNaiaAuthCallback/completeWith 배선 검증). CoreAssetRef.type→image|video. pnpm build 후 fresh 검증."},
+    {"round":3,"result":"CLEAN","findings":"양 리뷰어(수정검증+sweep / auth-parity) 모두 CLEAN. mutation-probe 4건(배선 줄 삭제→RED) + 게이트/idempotent 가드 제거→RED 로 신규 테스트 진정성 독립 확인. 2 LOW(apiKeyMode provider값·4-sink naiaKey)는 전부 결함아님으로 반증(persist=snapshot, 동일 value idempotent).","action":"없음. 2-clean."}
+  ],
+  "clean": "creds graft(step1) 비회귀=auth callback core mirror 는 추가(보완)이지 대체 아님(store_startup_message+sendAuthUpdate 유지). secret 무누출(completeWith→persist stripSecret/forAgent 유지). OAuth 시작 셸-side 유지로 UC12-5 CSRF state 위험 회피. old 경로(!isNewCore) core()=null no-op 비파괴. asset URL parity byte-identical(셸 path 재유도, core r.url 미사용). submit best-effort 비차단(UI nav/skip 무영향). advance forward-only 계약 → React nav 권위, desync 무해(persist=snapshot, 게이트 step-독립).",
+  "tests": "셸 onboarding 3파일 18 passed/1 skipped + core 계약(controller/domain) 20 passed + 전체 셸 840 passed/13 skipped, exit 0. compile-integrity PASS, verify-watch delta 0.",
+  "deferred_luke_machine_gate": "실앱 newCore e2e-tauri = 루크머신 게이트(프로젝트 기존 framing UC12-2). 이유: (1) e2e-tauri 하네스에 newCore 플래그(VITE_NAIA_NEW_CORE) 미배선 — 현 스펙은 old 경로 검증 (2) naia OAuth 경로=실 브라우저+callback 필요(헤드리스 불가) (3) rust 빌드. 핸드오프 = docs/progress/99.dev-comm/graft-uc12-stepflow-2026-06-16.md + 사용자 테스트 절차.",
+  "result": "step-flow graft(assets+submit through core) 이식+3R 2-AI(2-clean, mutation-verified)+컴파일/드리프트 green. UC12-2 가 지목한 live-graft 진행(step2). 잔여=루크머신 실앱 e2e(newCore 플래그+OAuth)."
+}

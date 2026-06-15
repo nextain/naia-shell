@@ -28,7 +28,7 @@ vi.mock("../adk-store", () => ({
 	setAdkPath: vi.fn(),
 }));
 
-import { completeOnboardingNewCore } from "../onboarding-core";
+import { completeOnboardingNewCore, makeOnboardingSession } from "../onboarding-core";
 
 describe("UC12 graft seam — completeOnboardingNewCore (실 core 경유)", () => {
 	beforeEach(() => {
@@ -69,5 +69,100 @@ describe("UC12 graft seam — completeOnboardingNewCore (실 core 경유)", () =
 		}
 		// markOnboardingComplete → onboardingComplete=true 영속
 		expect(localStore?.onboardingComplete).toBe(true);
+	});
+});
+
+// step-flow graft(step2) — session 이 실 core OnboardingController 를 경유해 assets/단계전이/게이트/auth 를 구동.
+describe("UC12 step-flow graft seam — makeOnboardingSession (실 core 경유)", () => {
+	beforeEach(() => {
+		mockInvoke.mockReset();
+		mockInvoke.mockResolvedValue(undefined);
+		mockSaveConfig.mockClear();
+		localStore = null;
+	});
+
+	it("assets(kind) → invoke list_naia_assets(adkPath, subdir) + AssetRef(path/type 재유도)", async () => {
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "list_naia_assets") return Promise.resolve(["a.vrm", "bg.mp4"]);
+			return Promise.resolve(undefined);
+		});
+		const s = makeOnboardingSession();
+		const refs = await s.assets("vrm-files");
+		const call = mockInvoke.mock.calls.find((c) => c[0] === "list_naia_assets");
+		expect(call?.[1]).toEqual({ adkPath: "/adk", subdir: "vrm-files" });
+		expect(refs.map((r) => r.path)).toContain("/adk/naia-settings/vrm-files/a.vrm");
+		// 영상 확장자 → type=video(셸 blob 회피 분기 근거)
+		expect(refs.find((r) => r.path.endsWith("bg.mp4"))?.type).toBe("video");
+	});
+
+	/** welcome→provider 까지 전진(공통). */
+	async function toProvider(s: ReturnType<typeof makeOnboardingSession>) {
+		await s.submit({ step: "welcome" });
+		await s.submit({ step: "agentName", agentName: "나이아" });
+		await s.submit({ step: "userName", userName: "루크" });
+		await s.submit({ step: "speechStyle", speechStyle: "casual" });
+		await s.submit({ step: "character", vrmModel: "/v.vrm" });
+		return s.submit({ step: "background", background: "space" });
+	}
+
+	it("submit 전진 = 순서 불변식 누적 → provider 도달", async () => {
+		const s = makeOnboardingSession();
+		expect(s.currentStep()).toBe("welcome");
+		const at = await toProvider(s);
+		expect(at.step).toBe("provider");
+	});
+
+	it("★ provider-naia 게이트: 미로그인 nextain submit = 전이 차단(step 유지)", async () => {
+		const s = makeOnboardingSession();
+		await toProvider(s);
+		const blocked = await s.submit({ step: "provider", provider: "nextain" });
+		expect(blocked.step).toBe("provider"); // 게이트 차단
+	});
+
+	it("★ onNaiaAuthCallback → NAIA_ANYLLM_API_KEY 키체인 1회(idempotent) + 게이트 해제 → provider submit = complete", async () => {
+		const s = makeOnboardingSession();
+		await toProvider(s);
+		await s.onNaiaAuthCallback("NK");
+		await s.onNaiaAuthCallback("NK2"); // 중복 = no-op
+		const keyCalls = mockInvoke.mock.calls.filter(
+			(c) => c[0] === "write_agent_key" && (c[1] as { envKey: string }).envKey === "NAIA_ANYLLM_API_KEY",
+		);
+		expect(keyCalls).toHaveLength(1); // idempotent
+		expect((keyCalls[0][1] as { value: string }).value).toBe("NK");
+		// 게이트 해제 후 nextain submit → complete 전이
+		const done = await s.submit({ step: "provider", provider: "nextain" });
+		expect(done.step).toBe("complete");
+	});
+
+	it("비-naia provider(apiKey 직결) submit = 게이트 무관 전이(provider→complete)", async () => {
+		const s = makeOnboardingSession();
+		await toProvider(s);
+		const done = await s.submit({ step: "provider", provider: "glm", apiKey: "K" });
+		expect(done.step).toBe("complete");
+	});
+
+	// ★ 불변식 앵커(R1 리뷰 MEDIUM): 게이트 차단으로 core 가 provider 에 멈춘 상태에서도
+	// completeWith 는 core draft 가 아닌 **셸 snapshot** 으로 영속해야 한다(persist=snapshot, draft 미사용).
+	// 누가 completeWith 를 draft-병합형으로 바꾸면 이 테스트가 RED.
+	it("★ 게이트 차단(미로그인 nextain) 상태 + completeWith = core draft 아닌 셸 snapshot 영속", async () => {
+		const s = makeOnboardingSession();
+		await toProvider(s); // draft 누적(agentName='나이아' 등)
+		const blocked = await s.submit({ step: "provider", provider: "nextain" }); // 게이트 차단 → draft.provider=nextain, step 유지
+		expect(blocked.step).toBe("provider");
+		// 전혀 다른 값의 셸 snapshot 으로 완료
+		await s.completeWith({
+			provider: "glm",
+			model: "glm-4.6",
+			agentName: "스냅샷이름",
+			apiKey: "K",
+			workspaceRoot: "/adk",
+			onboardingComplete: true,
+		});
+		const cfgWrite = mockInvoke.mock.calls.find((c) => c[0] === "write_naia_config");
+		const json = String((cfgWrite?.[1] as { json: string }).json);
+		expect(json).toContain("glm"); // snapshot provider 반영
+		expect(json).toContain("스냅샷이름"); // snapshot agentName 반영
+		expect(json).not.toContain("나이아"); // core draft agentName 미반영(draft 미사용 입증)
+		expect(json).not.toContain("nextain"); // core draft provider 미반영
 	});
 });

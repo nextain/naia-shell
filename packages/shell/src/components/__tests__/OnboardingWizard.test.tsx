@@ -39,6 +39,14 @@ vi.mock("../../lib/chat-service", () => ({
 }));
 vi.mock("../../lib/onboarding-core", () => ({
 	completeOnboardingNewCore: vi.fn().mockResolvedValue(undefined),
+	// isNewCore=false 라 core() 는 null → makeOnboardingSession 미호출. 안전상 stub 제공.
+	makeOnboardingSession: vi.fn(() => ({
+		assets: vi.fn().mockResolvedValue([]),
+		submit: vi.fn().mockResolvedValue({ step: "welcome" }),
+		onNaiaAuthCallback: vi.fn().mockResolvedValue({ step: "provider" }),
+		currentStep: () => "welcome",
+		completeWith: vi.fn().mockResolvedValue(undefined),
+	})),
 }));
 
 // Mock getLocale to return "ko" so Korean strings are used
