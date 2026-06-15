@@ -124,3 +124,11 @@ export { toNaiaConfig } from "./tauri/config-map.js";
 
 // step-flow graft(step2): 셸이 단계 전이를 ctrl.submit 으로 구동할 때 쓰는 입력 타입(type-only, 런타임 결합 0).
 export type { StepInput } from "../domain/onboarding.js";
+
+// ── UC2(V2 음성) os-local graft seam ──
+// 셸 voice-core 가 makeV2Expression(표현 포트=재생/avatar)을 셸 audio-player 주입으로 wire(live=재생 한정).
+// makeV2Sensory 도 re-export 하나 현재 test-only/dormant(mic graft 보류 — createMicStream 의 create-then-start
+// +try/catch 가 SensoryPort.startMicCapture 의 create+start+swallow 와 lifecycle 불일치, STT=streaming vs
+// one-shot 불일치 → 포트설계 결정/루크-머신 잔여).
+export { makeV2Expression, makeV2Sensory } from "./tauri/v2.js";
+export type { V2LiveDeps } from "./tauri/v2.js";

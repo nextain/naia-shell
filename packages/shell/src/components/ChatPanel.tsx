@@ -21,6 +21,7 @@ import {
 	onAiInterferenceEvent,
 } from "../lib/ai-interference";
 import { type AudioPlayer, createAudioPlayer } from "../lib/audio-player";
+import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import {
 	cancelChat,
@@ -1944,12 +1945,16 @@ export function ChatPanel() {
 				getContext: () => usePanelStore.getState().activePanelContext,
 			});
 
-			// Create audio player
-			const player = createAudioPlayer({
+			// Create audio player — UC2(V2) graft: isNewCore 시 새 core ExpressionPort(play/clearAudio) 경유.
+			// drop-in(AudioPlayer-shape), 호출처(.enqueue/.clear/.destroy/.isPlaying) 무변경. old 경로 비파괴.
+			const playerOpts = {
 				sampleRate: 24000,
 				onPlaybackStart: () => useAvatarStore.getState().setSpeaking(true),
 				onPlaybackEnd: () => useAvatarStore.getState().setSpeaking(false),
-			});
+			};
+			const player = isNewCore()
+				? makeCoreAudioPlayer(playerOpts)
+				: createAudioPlayer(playerOpts);
 			audioPlayerRef.current = player;
 
 			// Wire session events — accumulate incremental transcript chunks

@@ -1,0 +1,18 @@
+{
+  "uc": "UC-002 (음성/V2) — os-local 표현(재생) ExpressionPort graft",
+  "date": "2026-06-16",
+  "session_id": "(재기동 세션)",
+  "tier": "T2 (외부연결/장치 인접 — 단 본 graft=os-local 재생, WS/키 미접촉)",
+  "method": "open-loop 2 reviewers (regression/shape-compat + scope-honesty/parity), ground-truth=V2-baseline-contract + tauri/v2.ts + old audio-player. mutation-probe(dist play no-op→RED).",
+  "scope": "ChatPanel 의 voice 출력 PCM 재생을 isNewCore 시 new-core V2 ExpressionPort(play/clearAudio) 경유(makeCoreAudioPlayer drop-in, AudioPlayer-shape). mic(SensoryPort lifecycle 불일치)·STT(streaming vs one-shot 불일치)·WS provider(external)=미graft(정직 명시, 포트설계 결정/루크머신 잔여).",
+  "verdict": "CLEAN (R1 양 리뷰어 CLEAN, mutation-verified)",
+  "findings": [
+    {"id":"V2G-1","sev":"LOW","status":"FIXED","file":"voice-core.test.ts:49","issue":"vi.fn((o)=>...) 미사용 파라미터 TS6133(shell noUnusedParameters). compile-integrity 제외 클래스나 신규 파일 타입에러.","fix":"(o)→() 제거. 테스트 여전히 toHaveBeenCalledWith(opts) 통과."},
+    {"id":"V2G-2","sev":"LOW","status":"FIXED","file":"shell-compat.ts:130","issue":"주석 '표현 재생 한정'인데 makeV2Sensory 도 re-export(test-only/dormant). 주석-코드 불일치.","fix":"주석에 makeV2Sensory=test-only/dormant + mic lifecycle/STT streaming 불일치 사유 명시."},
+    {"id":"V2G-3","sev":"LOW","status":"NOTED(benign)","file":"tauri/v2.ts:35","issue":"clearAudio() before first play() = V2 lazy player null → no-op vs old clear() 무조건 실행(Logger+onPlaybackEnd). 단 live onInterrupted(ChatPanel) 는 onAudio→enqueue 후 발화라 player non-null → 도달 불가. 가청 거동 동일.","fix":"불요(benign+unreachable). voice-core 주석이 scope 명시."}
+  ],
+  "clean": "old 경로(!isNewCore) createAudioPlayer 직접 = byte-identical 비파괴. shape 완전호환(enqueue/clear/destroy/isPlaying — ChatPanel L1964/2010/2069/2228/2290 무변경 동작). enqueue→ExpressionPort.play→주입 player.enqueue 동일순서, lazy ensure 가 주입 player 반환(이중생성 0), onPlaybackStart/End/sampleRate 보존. isPlaying=live getter(echo-gate L2228 + 200ms drain margin 보존). UNUSED_MIC stub unreachable(makeV2Expression 가 createMicStream 미참조). mutation-probe(dist play no-op)→테스트 RED=진정성.",
+  "tests": "voice-core 4 passed + 전체 셸 844 passed/13 skipped, exit 0. core tsc 0, compile-integrity PASS, verify-watch delta 0, voice-core TS에러 0.",
+  "deferred_luke_machine": "실 오디오 출력/AEC/avatar lip-sync 라이브 = 루크머신. mic/STT graft = 포트설계 결정 후(lifecycle 브리지/streaming-transcribe 계약). WS provider 라이브(gemini-live/openai-realtime/naia-omni)=external 신규계약. 절차=remaining-uc-runtime-graft-handoff-2026-06-16.md.",
+  "result": "UC-002 os-local 표현(재생) 포트 = live 셸에 배선(non-dormant)+2-AI CLEAN+mutation-verified. mic/STT/WS=정직 명시 잔여."
+}
