@@ -21,7 +21,7 @@ scripts/check-traceability.mjs 가 이 표를 파싱한다. (ID 형식 = REQ-###
 | REQ-004 | 관측 | host-system **read-only 관측**(파일·프로세스, 변경X) + 외부간섭 drift 감지(observed vs expected) (구 FR-F2) | In-progress | UC-007 | SPEC-004 | TEST-S-007 |
 | REQ-005 | 조작 | **승인→host-system mutating**(편집·실행) + reafference(commanded→ack→observed) + negative(거부·불확정 abort) (구 FR-F3) | In-progress | UC-007 | SPEC-005 | TEST-S-007 |
 | REQ-006 | 대화 | **gRPC os→agent 텍스트 대화**(도구호출·thinking·멀티턴·취소·provider 출처) | Done | UC-001 | SPEC-006 | TEST-S-001 |
-| REQ-007 | 온보딩/계정 | **온보딩 + 나이아 계정**: provider·naia계정·API키 설정 + OAuth 로그인 + 완료 영속(secret=키체인 전담) | In-progress | UC-012 | SPEC-007 | TEST-S-012 |
+| REQ-007 | 온보딩/계정 | **온보딩 + 나이아 계정**: provider·naia계정·API키 설정 + OAuth 로그인 + 완료 영속(secret=키체인 전담). 2026-06-16 creds/auth 런타임 push graft+2-clean(keychain merge/빈=unset 신규계약); OAuth launch=셸측(substrate). 잔여=wizard step-flow | In-progress | UC-012 | SPEC-007 | TEST-S-012 |
 | REQ-008 | 음성 | **음성 대화**(STT 입력·TTS/avatar 표현, provider WS 직결) | Draft | UC-002 | SPEC-008 | TEST-S-002 |
 | REQ-009 | 도구/스킬 | 에이전트 **도구루프 + skills**(time/weather/memo/github/obsidian/mcp 등, agent-local) | In-progress | UC-005 | SPEC-006 | TEST-S-005 |
 | REQ-010 | 브라우저 | 에이전트 **브라우저 조작**(navigate/click/fill/snapshot, agent-local + 외부 CLI) | Draft | UC-006 | SPEC-006 | TEST-S-006 |

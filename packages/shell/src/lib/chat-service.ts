@@ -147,6 +147,21 @@ export interface CredsPayload {
  * unset when the user removes a key from settings).
  */
 export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
+	// new-core graft: 셸 keys-map({[provider]:apiKey})을 core 의 구조화 객체(ShellCredsPayload{provider,apiKey})로
+	// 매핑해 creds_update(structured) 채널로 전송. ttsKeys/gatewayToken 은 새 아키텍처서 agent 미소비
+	// (TTS=os→provider WS 직결 / gateway=naiaKey 경유) → 의도적 미전송(Old-Baseline 드리프트 아님, 새 agent 실수요 충실).
+	if (isNewCore()) {
+		// 셸 keys-map({[provider]:apiKey}) → core 구조화 creds_update(provider+apiKey) 채널.
+		// 빈 apiKey 도 그대로 전송 = old-baseline 의 "빈=명시 unset" 시맨틱 보존(agent keychain overlay 가
+		// merge + 빈=권위적 unset 으로 처리, 키체인 fallback 차단). ttsKeys/gatewayToken 은 새 agent 미소비
+		// (TTS=os→provider WS 직결 / gateway=naiaKey 경유)라 미전송. provider 키는 셸 keyMap 키 그대로
+		// (nextain apiKey 는 항상 "" 라 emit 안 됨 — App.tsx; naia 계정 키는 sendAuthUpdate 경유).
+		for (const [provider, apiKey] of Object.entries(payload.keys)) {
+			if (!provider) continue;
+			await coreChat().sendCredsUpdate({ provider, apiKey }).catch(() => {});
+		}
+		return;
+	}
 	const request: Record<string, unknown> = {
 		type: "creds_update",
 		keys: payload.keys,
@@ -642,6 +657,13 @@ export async function sendPanelToolResult(
 
 /** Send naiaKey to the agent (backend). Call on login and on app init if key exists. */
 export async function sendAuthUpdate(naiaKey: string): Promise<void> {
+	// new-core graft: old auth_update 채널은 새 agent 미지원(protocol=creds_update만) → naia 계정 키를
+	// creds_update(structured, provider=nextain[any-llm gateway]·naiaKey secret) 채널로 routing.
+	// 새 agent protocol = {provider, apiKey, naiaKey} 라 naiaKey 가 그대로 키체인/resolver 로 적재됨(Old-Baseline 등가).
+	if (isNewCore()) {
+		await coreChat().sendCredsUpdate({ provider: "nextain", naiaKey }).catch(() => {});
+		return;
+	}
 	await safeSendToAgent({ type: "auth_update", naiaKey }, "sendAuthUpdate");
 }
 

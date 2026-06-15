@@ -371,6 +371,68 @@ describe("chat-service", () => {
 		expect("gatewayToken" in parsed).toBe(false);
 	});
 
+	// new-core graft (UC-012 온보딩 나이아 계정 — creds/auth 런타임 push).
+	// 셸 keys-map → core 구조화 객체(provider+apiKey/naiaKey) creds_update 채널로 routing.
+	// drift-gate: 새 agent 가 소비하는 {provider,apiKey,naiaKey} 만 전송, ttsKeys/gatewayToken(미소비)은 드롭.
+	describe("new-core graft — creds/auth → 구조화 creds_update", () => {
+		beforeEach(() => {
+			vi.stubEnv("VITE_NAIA_NEW_CORE", "1");
+		});
+
+		it("sendCredsUpdate: keys-map → {provider,apiKey} 객체, ttsKeys/gatewayToken 드롭(새 agent 미소비)", async () => {
+			const { sendCredsUpdate } = await import("../chat-service");
+			await sendCredsUpdate({
+				keys: { openai: "sk-openai" },
+				ttsKeys: { google: "AIzaTTS" },
+				gatewayToken: "gw-token",
+			});
+			const credsCall = mockInvoke.mock.calls.find(
+				(c) =>
+					c[0] === "send_to_agent_command" &&
+					String((c[1] as { message?: string })?.message).includes("creds_update"),
+			);
+			expect(credsCall).toBeTruthy();
+			const parsed = JSON.parse((credsCall![1] as { message: string }).message);
+			expect(parsed.type).toBe("creds_update");
+			expect(parsed.provider).toBe("openai");
+			expect(parsed.apiKey).toBe("sk-openai");
+			// 새 아키텍처 미소비(TTS=os측·gateway=naiaKey경유) → 전송 안 함(드리프트 아님)
+			expect("ttsKeys" in parsed).toBe(false);
+			expect("gatewayToken" in parsed).toBe(false);
+			expect("keys" in parsed).toBe(false);
+		});
+
+		it("빈 apiKey 도 전송 = 명시 unset(agent keychain 이 빈=권위적 unset 으로 옛키 차단)", async () => {
+			const { sendCredsUpdate } = await import("../chat-service");
+			await sendCredsUpdate({ keys: { openai: "" } });
+			const credsCall = mockInvoke.mock.calls.find(
+				(c) =>
+					c[0] === "send_to_agent_command" &&
+					String((c[1] as { message?: string })?.message).includes("creds_update"),
+			);
+			expect(credsCall).toBeTruthy(); // 빈 키도 전송(old-baseline unset 시맨틱)
+			const parsed = JSON.parse((credsCall![1] as { message: string }).message);
+			expect(parsed.provider).toBe("openai");
+			expect(parsed.apiKey).toBe("");
+		});
+
+		it("sendAuthUpdate: naiaKey → creds_update(provider=nextain, naiaKey) — old auth_update 채널 대체", async () => {
+			const { sendAuthUpdate } = await import("../chat-service");
+			await sendAuthUpdate("naia-key-xyz");
+			const credsCall = mockInvoke.mock.calls.find(
+				(c) =>
+					c[0] === "send_to_agent_command" &&
+					String((c[1] as { message?: string })?.message).includes("creds_update"),
+			);
+			expect(credsCall).toBeTruthy();
+			const parsed = JSON.parse((credsCall![1] as { message: string }).message);
+			expect(parsed.type).toBe("creds_update");
+			expect(parsed.provider).toBe("nextain");
+			expect(parsed.naiaKey).toBe("naia-key-xyz");
+			expect("auth_update").not.toBe(parsed.type);
+		});
+	});
+
 	// W2 — naia-agent 의존성 제외 (사용자 명시 2026-05-29)
 	// stdio invoke 가 throw 해도 fire-and-forget 함수들은 main flow 안 깸.
 	// sendChatMessage 만 caller (= ChatPanel) "naia 계정 chat 사용 불가" UI 표시

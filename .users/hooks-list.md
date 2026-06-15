@@ -8,6 +8,9 @@
 |------|------|------|
 | charter-guard | `.agents/hooks/charter-guard.js` | Charter Guard (PreToolUse on Edit\|Write) — 헌장·hook·설정 파일의 AI 단독 수정 차단. |
 | completion-evidence-guard | `.agents/hooks/completion-evidence-guard.js` | M4 — Completion Evidence Guard (PreToolUse on Bash). 판정은 공통 코어(checkCompletion)에 위임. |
+| conform-gate | `.agents/hooks/conform-gate.js` | conform-gate — PostToolUse on Edit\|Write. |
+| file-anchor-guard | `.agents/hooks/file-anchor-guard.js` | file-anchor-guard — PreToolUse on Write\|Edit. 파일단위 계약 앵커 강제(라이브). |
+| mirror-sync | `.agents/hooks/mirror-sync.js` | mirror-sync — PostToolUse on Edit\|Write. |
 | quarantine-notice | `.agents/hooks/quarantine-notice.js` | Quarantine Notice (SessionStart) — 보류 격리 자산 중 **만료·아카이브되어 사용자 처분을 기다리는** |
 | sdlc-gate-guard | `.agents/hooks/sdlc-gate-guard.js` | M2 — SDLC Gate Guard (PreToolUse on Edit\|Write). 판정은 공통 코어(checkSdlc)에 위임. |
 | structure-guard | `.agents/hooks/structure-guard.js` | M3 — Structure Guard (PreToolUse on Write\|Edit). 판정은 공통 코어(checkStructure)에 위임. |
