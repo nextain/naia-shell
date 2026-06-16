@@ -309,4 +309,12 @@ export async function writeNaiaConfig(
 		adkPath,
 		json: JSON.stringify(stripForAgent(config), null, 2),
 	});
+	// 설정 변경(특히 provider/model)을 에이전트에 즉시 반영 — naia-settings 재로딩 후 활성 provider swap(정본 R1-2:
+	// "라이브 변경 = OS 가 naia-settings 갱신 후 ReloadSettings 재호출"). gRPC=설정 기반(대화는 메시지만)이라
+	// 이 트리거가 없으면 에이전트는 기동 시 config 에 고정돼 UI 모델 전환이 안 먹는다(=실측 회귀). 에이전트 미가동 시 swallow.
+	try {
+		await invoke("send_to_agent_command", { message: JSON.stringify({ type: "reload_settings" }) });
+	} catch {
+		/* 에이전트 미연결(온보딩/기동 전) — 다음 기동 시 SetWorkspace 가 로딩 */
+	}
 }

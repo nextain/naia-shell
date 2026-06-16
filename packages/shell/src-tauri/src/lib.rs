@@ -1144,7 +1144,7 @@ async fn agent_dispatcher(
             return;
         }
     };
-    match client.set_workspace(adk_path).await {
+    match client.set_workspace(adk_path.clone()).await {
         Ok(r) => log_both(&format!("[Naia] SetWorkspace → loaded={} {}/{}", r.loaded, r.provider, r.model)),
         Err(e) => log_both(&format!("[Naia] SetWorkspace 실패: {}", e)),
     }
@@ -1192,6 +1192,15 @@ async fn agent_dispatcher(
                 let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 let tcid = v.get("toolCallId").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 let _ = client.approval_response(rid, tcid, approve).await;
+            }
+            "reload_settings" | "set_workspace" => {
+                // 사용자가 naia-os 설정에서 모델/프로바이더 교체 → writeNaiaConfig(config.json 기록) 직후 트리거.
+                // 에이전트가 naia-settings 재로딩 후 활성 config 를 swap(정본 R1-2: "startup-only 금지", 멱등).
+                // 재기동 없이 모델 전환이 실제 반영되게 하는 결선(=사용자 "모델 안 바뀜" 회귀 차단).
+                match client.set_workspace(adk_path.clone()).await {
+                    Ok(r) => log_both(&format!("[Naia] ReloadSettings → loaded={} {}/{}", r.loaded, r.provider, r.model)),
+                    Err(e) => log_verbose(&format!("[Naia] ReloadSettings 실패: {}", e)),
+                }
             }
             "tool_request" => {
                 // 셸 directToolCall(기동 시 skill_voicewake/skill_config/skill_sessions 등) — new-core 미지원이나
@@ -1255,17 +1264,20 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             .unwrap_or_else(|_| "node".to_string())
     });
 
-    // BGM entry script — embedded agent/src/bgm-server-bin.ts.
-    // Always uses the embedded agent (not the standalone naia-agent submodule)
-    // because youtube-server.ts lives only in naia-os/agent/ — #335's root cause.
+    // BGM entry script — 환경 사이드카 `@naia/bgm-sidecar` (packages/bgm-sidecar).
+    // 환경(environment) 레이어 표준(docs/brain-body-environment.md): youtube 추출 서버는 셸(substrate)이
+    // 소유하는 독립 사이드카다. 과거엔 구 monorepo 의 naia-os/agent/src/ 에 있었으나(=#335 split 누락 원인),
+    // 셸 워크스페이스 패키지로 이전. 빌드 산출물(dist/*.js) = plain node(tsx 불요). legacy agent 경로는 fallback.
     let script_path = std::env::var("NAIA_BGM_SCRIPT").unwrap_or_else(|_| {
         let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
 
         // Dev: prefer source tree
         if !is_flatpak {
             let candidates = [
-                "../../agent/src/bgm-server-bin.ts", // from src-tauri/
-                "../agent/src/bgm-server-bin.ts",    // from shell/
+                "../../bgm-sidecar/dist/bgm-server-bin.js", // shell sidecar (from src-tauri/) — 환경 표준
+                "../bgm-sidecar/dist/bgm-server-bin.js",    // shell sidecar (from shell/)
+                "../../agent/src/bgm-server-bin.ts",        // legacy embedded agent (from src-tauri/)
+                "../agent/src/bgm-server-bin.ts",           // legacy (from shell/)
             ];
             for rel in &candidates {
                 let dev_path = std::env::current_dir()
