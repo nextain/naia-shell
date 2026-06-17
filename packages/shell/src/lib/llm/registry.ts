@@ -15,9 +15,19 @@ export function getLlmProvider(id: string): LlmProviderMeta | undefined {
 	return providers.get(id);
 }
 
-/** List all registered LLM providers in registration order. */
+// UI display order (user-defined 2026-06-18): local/own-stack first, then by usage.
+// Providers not listed here fall to the end (stable, in registration order).
+const PROVIDER_DISPLAY_ORDER = [
+	"nextain", "ollama", "vllm", "claude-code-cli", "zai", "openai", "gemini", "xai",
+];
+
+/** List all registered LLM providers in the user-defined display order. */
 export function listLlmProviders(): LlmProviderMeta[] {
-	return Array.from(providers.values());
+	const rank = (id: string) => {
+		const i = PROVIDER_DISPLAY_ORDER.indexOf(id);
+		return i < 0 ? PROVIDER_DISPLAY_ORDER.length : i;
+	};
+	return Array.from(providers.values()).sort((a, b) => rank(a.id) - rank(b.id));
 }
 
 /** Get model metadata. */
