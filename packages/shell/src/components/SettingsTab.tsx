@@ -1544,7 +1544,19 @@ export function SettingsTab() {
 		if (id === "nextain" && !naiaKey) {
 			setError("Naia 계정 로그인이 필요합니다. 먼저 Naia에 로그인하세요.");
 			startLabLogin();
+			return; // login first; naia_auth_complete persists once the key arrives
 		}
+		// UC-MODEL-SELECT contract: persist the provider/model switch so the gRPC
+		// agent reloads with it (prev. only Save persisted → stale provider/model).
+		const provSel = applyModelSelectionToConfig(
+			loadConfig() as Record<string, unknown> | null,
+			id,
+			id !== "ollama"
+				? getDefaultLlmModel(id)
+				: ((loadConfig()?.model as string | undefined) ?? ""),
+		);
+		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
+		void writeNaiaConfig(provSel);
 	}
 
 	function handleLocaleChange(id: Locale) {
