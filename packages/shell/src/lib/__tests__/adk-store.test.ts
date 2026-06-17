@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
+	applyModelSelectionToConfig,
 	clearAdkPath,
 	copyBundledAssets,
 	getAdkPath,
@@ -27,6 +28,41 @@ import {
 	toAssetUrl,
 	writeNaiaConfig,
 } from "../adk-store";
+
+// ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
+// Regression guard for 2026-06-17: UI model selection MUST become the agent's
+// persisted config (model field + NAIA_MAIN_MODEL env). The bug was a stale omni
+// model surviving a chat-model selection because the selection never persisted.
+describe("applyModelSelectionToConfig (UI selection → persisted agent config)", () => {
+	it("overrides a stale omni model with the freshly-selected chat model", () => {
+		const stale = {
+			provider: "nextain",
+			model: "gemini-2.5-flash-live",
+			naiaKey: "naia-x",
+			NAIA_MAIN_MODEL: "gemini-2.5-flash-live",
+		};
+		const out = applyModelSelectionToConfig(stale, "nextain", "gemini-3.1-flash-lite");
+		expect(out.model).toBe("gemini-3.1-flash-lite");
+		expect(out.NAIA_MAIN_MODEL).toBe("gemini-3.1-flash-lite");
+		expect(out.NAIA_MAIN_PROVIDER).toBe("naia"); // nextain → "naia" env
+	});
+	it("carries a provider switch through to NAIA_MAIN_PROVIDER/MODEL", () => {
+		const out = applyModelSelectionToConfig(
+			{ provider: "nextain", model: "gemini-3.1-flash-lite" },
+			"zai",
+			"glm-5.1",
+		);
+		expect(out.provider).toBe("zai");
+		expect(out.model).toBe("glm-5.1");
+		expect(out.NAIA_MAIN_MODEL).toBe("glm-5.1");
+		expect(out.NAIA_MAIN_PROVIDER).toBe("zai");
+	});
+	it("handles a null current config", () => {
+		const out = applyModelSelectionToConfig(null, "nextain", "gemini-3.1-flash-lite");
+		expect(out.model).toBe("gemini-3.1-flash-lite");
+		expect(out.NAIA_MAIN_MODEL).toBe("gemini-3.1-flash-lite");
+	});
+});
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

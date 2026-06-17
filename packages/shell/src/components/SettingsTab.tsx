@@ -11,6 +11,7 @@ import {
 	setAdkPath,
 	toLocalBlobUrl,
 	writeAgentKey,
+	applyModelSelectionToConfig,
 	writeNaiaConfig,
 } from "../lib/adk-store";
 import {
@@ -1549,6 +1550,8 @@ export function SettingsTab() {
 	function handleLocaleChange(id: Locale) {
 		setLocaleState(id);
 		setLocale(id);
+		// 활성 음성 세션(naia-omni)에 새 인식 언어를 즉시 핀(재연결 없음). ChatPanel 이 수신.
+		window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: id }));
 	}
 
 	function handleThemeChange(id: ThemeId) {
@@ -2524,6 +2527,19 @@ export function SettingsTab() {
 							onChange={(e) => {
 								if (e.target.value === "__custom__") return;
 								setModel(e.target.value);
+									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
+									// agent loads THIS model. Previously only Save persisted → a stale model
+									// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
+									// Skip while a nextain login is pending (naia_auth_complete persists then).
+									if (!(provider === "nextain" && !naiaKey)) {
+										const nextSel = applyModelSelectionToConfig(
+											loadConfig() as Record<string, unknown> | null,
+											provider,
+											e.target.value,
+										);
+										saveConfig(nextSel as unknown as Parameters<typeof saveConfig>[0]);
+										void writeNaiaConfig(nextSel);
+									}
 								// When switching to an omni model, set default voice if not already set
 								const newMeta = providerModels.find(
 									(m) => m.id === e.target.value,

@@ -300,6 +300,29 @@ export async function readNaiaConfig(): Promise<Record<
 	}
 }
 
+/**
+ * Cross-seam contract (UC-MODEL-SELECT): a provider/model SELECTION in the UI must
+ * become the agent's persisted config — both the `model` field (read by the gRPC
+ * agent on ReloadSettings/SetWorkspace) AND the NAIA_MAIN_MODEL env (stdio fallback).
+ *
+ * Pure on purpose: the production bug (2026-06-17) was that the model dropdown +
+ * handleProviderChange only called setModel/setProvider (React state) and never
+ * persisted, so the agent kept loading a stale model (e.g. an omni
+ * `gemini-2.5-flash-live` left over from a prior voice session) while the UI showed
+ * the newly-picked `gemini-3.1-flash-lite`. No test exercised the UI→config seam
+ * (every e2e injected config via writeConfig), so it shipped silently. This function
+ * is the contract anchor: given the current config + a selection, it returns the exact
+ * config that must be persisted. Callers persist it via saveConfig + writeNaiaConfig.
+ */
+export function applyModelSelectionToConfig(
+	current: Record<string, unknown> | null,
+	provider: string,
+	model: string,
+): Record<string, unknown> {
+	const next: Record<string, unknown> = { ...(current ?? {}), provider, model };
+	return { ...next, ...buildNaiaConfigEnv(next as Parameters<typeof buildNaiaConfigEnv>[0]) };
+}
+
 export async function writeNaiaConfig(
 	config: Record<string, unknown>,
 ): Promise<void> {
