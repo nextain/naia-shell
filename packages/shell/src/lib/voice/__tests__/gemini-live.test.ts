@@ -95,6 +95,45 @@ describe("GeminiLive", () => {
 			expect(setupMsg.setup.apiKey).toBe("Bearer test-key");
 			expect(setupMsg.setup.voice).toBe("Kore");
 			expect(setupMsg.setup.model).toBe("gemini-live-2.5-flash-native-audio");
+			// BCP-47 정규화(localeToSttLanguage): config.locale 미지정 → default "ko" → "ko-KR".
+			expect(setupMsg.setup.languageCode).toBe("ko-KR");
+		});
+
+		it("gateway setup: locale 'ko' → BCP-47 languageCode 'ko-KR'", async () => {
+			const session = createGeminiLiveSession();
+			const config: GeminiLiveConfig = {
+				provider: "gemini-live",
+				gatewayUrl: "https://gateway.example.com",
+				naiaKey: "test-key",
+				voice: "Kore",
+				locale: "ko",
+			};
+			const promise = session.connect(config);
+			setTimeout(() => {
+				lastWs.onopen?.();
+				lastWs.onmessage?.({ data: JSON.stringify({ setupComplete: true }) });
+			}, 0);
+			await promise;
+			const setupMsg = JSON.parse(lastWs.send.mock.calls[0][0]);
+			expect(setupMsg.setup.languageCode).toBe("ko-KR");
+		});
+
+		it("gateway setup: locale 'ko-KR' idempotent → 'ko-KR'", async () => {
+			const session = createGeminiLiveSession();
+			const config: GeminiLiveConfig = {
+				provider: "gemini-live",
+				gatewayUrl: "https://gateway.example.com",
+				naiaKey: "test-key",
+				locale: "ko-KR",
+			};
+			const promise = session.connect(config);
+			setTimeout(() => {
+				lastWs.onopen?.();
+				lastWs.onmessage?.({ data: JSON.stringify({ setupComplete: true }) });
+			}, 0);
+			await promise;
+			const setupMsg = JSON.parse(lastWs.send.mock.calls[0][0]);
+			expect(setupMsg.setup.languageCode).toBe("ko-KR");
 		});
 
 		it("is connected after setupComplete", async () => {
@@ -126,6 +165,10 @@ describe("GeminiLive", () => {
 				setupMsg.setup.generationConfig.speechConfig.voiceConfig
 					.prebuiltVoiceConfig.voiceName,
 			).toBe("Puck");
+			// BCP-47 정규화(localeToSttLanguage): config.locale 미지정 → default "ko" → "ko-KR".
+			expect(
+				setupMsg.setup.generationConfig.speechConfig.languageCode,
+			).toBe("ko-KR");
 		});
 	});
 

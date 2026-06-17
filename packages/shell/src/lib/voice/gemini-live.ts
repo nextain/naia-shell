@@ -6,6 +6,7 @@
  * - Direct mode: connect to Gemini API directly (user's googleApiKey)
  */
 import { Logger } from "../logger";
+import { localeToSttLanguage } from "../config";
 import type {
 	GeminiLiveConfig,
 	LiveProviderConfig,
@@ -85,7 +86,9 @@ export function createGeminiLiveSession(): VoiceSession {
 
 					if (isDirect) {
 						// Direct mode: Gemini API native setup format
-						const langCode = gemini.locale ?? "ko-KR";
+						// BCP-47 정규화: 앱 locale("ko" 등)을 Gemini Live 가 받는 BCP-47("ko-KR")로 변환.
+						// localeToSttLanguage 는 idempotent — 이미 "ko-KR" 이어도 그대로 반환(slice(0,2) 폴백).
+						const langCode = localeToSttLanguage(gemini.locale ?? "ko");
 						ws?.send(
 							JSON.stringify({
 								setup: {
@@ -125,7 +128,7 @@ export function createGeminiLiveSession(): VoiceSession {
 								setup: {
 									apiKey: `Bearer ${gemini.naiaKey}`,
 									voice: gemini.voice ?? "Kore",
-									languageCode: gemini.locale ?? "ko-KR",
+									languageCode: localeToSttLanguage(gemini.locale ?? "ko"),
 									systemInstruction: gemini.systemInstruction,
 									tools: gemini.tools,
 									model,
