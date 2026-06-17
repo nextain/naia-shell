@@ -247,7 +247,9 @@ function resolveAgentEnvKey(
 		case "openai":    return "OPENAI_API_KEY";
 		case "glm":       return "GLM_API_KEY";
 		case "zai":       return "GLM_API_KEY"; // zai = z.ai/Zhipu GLM (config provider id) — agent 도 동일 매핑
-		default:          return null; // ollama, vllm, gemini, claude-code-cli — no persisted key
+		case "gemini":    return "GEMINI_API_KEY"; // direct Google AI Studio key (≠ nextain/Vertex). agent keychain-secret-store 거울
+		case "xai":       return "XAI_API_KEY"; // grok. agent keychain-secret-store 거울 — 이게 빠져 키가 안 써져 401 났음
+		default:          return null; // ollama, vllm, claude-code-cli — no persisted key (local / SDK 인증)
 	}
 }
 

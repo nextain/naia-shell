@@ -636,11 +636,21 @@ export function ChatPanel() {
 			const b64 = (e as CustomEvent<string | null>).detail ?? null;
 			voiceSessionRef.current?.setRefAudio?.(b64);
 		};
+		// Mid-session language switch: Settings dispatches "naia:locale-change" when
+		// the UI language changes. If a voice session is live, pin the new STT
+		// recognition language now (no reconnect). Otherwise no-op; the next connect
+		// reads the language from getLocale() in the session config.
+		const onLocale = (e: Event) => {
+			const loc = (e as CustomEvent<string | null>).detail ?? null;
+			voiceSessionRef.current?.setLanguage?.(loc);
+		};
 		window.addEventListener("naia:voice-ref-url", onUrl);
 		window.addEventListener("naia:voice-ref-audio", onB64);
+		window.addEventListener("naia:locale-change", onLocale);
 		return () => {
 			window.removeEventListener("naia:voice-ref-url", onUrl);
 			window.removeEventListener("naia:voice-ref-audio", onB64);
+			window.removeEventListener("naia:locale-change", onLocale);
 		};
 	}, []);
 
@@ -721,7 +731,6 @@ export function ChatPanel() {
 		// voice). Mirror it into the transcript too — otherwise the user's own
 		// line never appears on screen.
 		if (
-			!isNewCore() &&
 			voiceMode === "active" &&
 			!pipelineActiveRef.current &&
 			voiceSessionRef.current?.isConnected
@@ -782,8 +791,7 @@ export function ChatPanel() {
 		if (
 			config?.provider === "nextain" &&
 			config?.model &&
-			isOmniModel(config.provider, config.model) &&
-			config.model.startsWith("naia-")
+			isOmniModel(config.provider, config.model)
 		) {
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
