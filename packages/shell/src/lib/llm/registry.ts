@@ -285,7 +285,7 @@ registerLlmProvider({
 	requiresApiKey: false,
 	defaultModel: "claude-sonnet-4-6",
 	models: [
-		{ id: "claude-opus-4-6", label: "Claude Opus 4.6", capabilities: ["llm"] },
+		{ id: "claude-opus-4-8", label: "Claude Opus 4.8", capabilities: ["llm"] },
 		{
 			id: "claude-sonnet-4-6",
 			label: "Claude Sonnet 4.6",
@@ -305,8 +305,24 @@ registerLlmProvider({
 	description: "Google Gemini API — requires Google API key.",
 	descKey: "provider.apiKeyRequired",
 	requiresApiKey: true,
-	defaultModel: "gemini-2.5-flash",
+	defaultModel: "gemini-3.5-flash",
 	models: [
+		{
+			id: "gemini-3.5-flash",
+			label: "Gemini 3.5 Flash",
+			capabilities: ["llm"],
+		},
+		{
+			id: "gemini-3.1-flash-lite",
+			label: "Gemini 3.1 Flash Lite",
+			capabilities: ["llm"],
+		},
+		{
+			id: "gemini-3.1-pro-preview",
+			label: "Gemini 3.1 Pro Preview",
+			capabilities: ["llm"],
+			pricing: [2.0, 12.0],
+		},
 		{
 			id: "gemini-3-flash-preview",
 			label: "Gemini 3 Flash Preview",
@@ -341,8 +357,10 @@ registerLlmProvider({
 	description: "OpenAI GPT models — requires OpenAI API key.",
 	descKey: "provider.apiKeyRequired",
 	requiresApiKey: true,
-	defaultModel: "gpt-5.2",
+	defaultModel: "gpt-5.5",
 	models: [
+		{ id: "gpt-5.5", label: "GPT-5.5", capabilities: ["llm"] },
+		{ id: "gpt-5.4", label: "GPT-5.4", capabilities: ["llm"] },
 		{ id: "gpt-5.2", label: "GPT-5.2", capabilities: ["llm"] },
 		{ id: "gpt-5.1", label: "GPT-5.1", capabilities: ["llm"] },
 		{ id: "gpt-4.1", label: "GPT-4.1", capabilities: ["llm"] },
@@ -374,8 +392,8 @@ registerLlmProvider({
 	defaultModel: "claude-sonnet-4-6",
 	models: [
 		{
-			id: "claude-opus-4-6",
-			label: "Claude Opus 4.6",
+			id: "claude-opus-4-8",
+			label: "Claude Opus 4.8",
 			capabilities: ["llm"],
 			pricing: [15.0, 75.0],
 		},
@@ -402,6 +420,7 @@ registerLlmProvider({
 	requiresApiKey: true,
 	defaultModel: "grok-3-mini",
 	models: [
+		{ id: "grok-4.3", label: "Grok 4.3", capabilities: ["llm"] },
 		{ id: "grok-4", label: "Grok 4", capabilities: ["llm"] },
 		{ id: "grok-4.1-fast", label: "Grok 4.1 Fast", capabilities: ["llm"] },
 		{
@@ -426,6 +445,7 @@ registerLlmProvider({
 	requiresApiKey: true,
 	defaultModel: "glm-5.1",
 	models: [
+		{ id: "glm-5.2", label: "GLM 5.2", capabilities: ["llm"] },
 		{ id: "glm-5.1", label: "GLM 5.1", capabilities: ["llm"] },
 		{ id: "glm-5-turbo", label: "GLM 5 Turbo", capabilities: ["llm"] },
 		{ id: "glm-4.7", label: "GLM 4.7", capabilities: ["llm"] },
