@@ -1,0 +1,16 @@
+{
+  "name": "@naia/bgm-sidecar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "환경 사이드카 — YouTube BGM HTTP 서버(포트 18791). 셸(substrate) 소유, agent(뇌) 독립. SoT=docs/brain-body-environment.md (환경=독립 사이드카).",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "youtubei.js": "^17.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

@@ -11,7 +11,8 @@
 |---|---|
 | **뇌 (brain) = agent** | 모든 인지·결정·기억·스킬·LLM·표현 의도. substrate(육체)를 모름. |
 | **육체 (body) = shell 의 일부** | 감각기(sensor)+효과기(effector) **뿐**, 인지 0. 데스크톱↔로봇 교체(swap). |
-| **환경 (environment)** | body 밖 세계 — 공간(배경·BGM·3D)·앱 surface·시스템(host). shell 이 렌더/호스트하나 body 아님. |
+| **환경 (environment)** | body 밖 세계 — 공간(배경·BGM·3D)·앱 surface(브라우저·터미널·workspace)·시스템(host). shell 이 렌더/호스트하나 body 아님. **도구도 대부분 환경**(에이전트의 기관이 아니라 작업 대상 세계). |
+| **사이드카 (sidecar)** | 환경의 실현 형태 — shell(substrate)이 소유하는 독립 서비스로, 뇌(agent)와 무관히 동작·생존. Rust in-process(터미널·파일) 또는 별도 프로세스(youtube·브라우저 CDP, 외부 런타임 필요 시). 코드·deps 는 셸 쪽, 뇌는 intent 만. SoT=`brain-body-environment.md`. |
 | **신경계 = semantic ports** | 뇌↔육체↔환경 경계. 구심(afferent)·원심(efferent). transport-shaped 금지. |
 | **naia = OS** | agent=커널/데몬, gRPC=다중 클라이언트 시스템 인터페이스(shell 백엔드 아님). body·app·peripheral 이 client. |
 | **substrate-agnostic** | 뇌가 입력/표현/환경 substrate(2D·3D·로봇·물리)를 모름 → 의도/관측만 다룸. |

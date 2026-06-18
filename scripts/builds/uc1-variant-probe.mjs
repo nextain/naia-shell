@@ -4,13 +4,19 @@
 // 새 core 의 variant 분류(dist classifyVariant SoT)가 *전부 커버*하는지 결정론 비교.
 // = f0-boot-probe 가 f0-graft 의 헤드리스 버전인 것과 동일(라이브 paste 없이 drift 검출).
 // 읽기 전용. 사용: node scripts/builds/uc1-variant-probe.mjs
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHAT_TURN_VARIANTS, NONCHAT_KNOWN_VARIANTS, classifyVariant } from "../../dist/main/domain/chat.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SHELL = join(HERE, "../../../old-naia-os/shell/src");
+// Old-Baseline 위치: OLD_NAIA_OS env 우선 → 형제 ../../../old-naia-os. 부재 시 하드크래시 아닌 SKIP(등가게이트 미검증 명시).
+const OLD_ROOT = process.env.OLD_NAIA_OS ? resolve(process.env.OLD_NAIA_OS) : join(HERE, "../../../old-naia-os");
+const SHELL = join(OLD_ROOT, "shell/src");
+if (!existsSync(join(SHELL, "lib/types.ts"))) {
+  console.log(`[UC1-VARIANT-PROBE] SKIP — Old-Baseline 부재(${SHELL}). 수신 등가게이트 미검증. 실행하려면 OLD_NAIA_OS=<old-naia-os 경로> 설정 또는 형제 디렉터리 체크아웃.`);
+  process.exit(0);
+}
 
 // agent_response 전체 소비자 surface = chat AgentResponseChunk union ∪ 타 리스너(BgmPlayer/PanelInstall) 분기 type.
 // (새 아키텍처: MessageRouter 단일구독이 *모든* agent_response 를 demux → 전부 분류돼야 함.)

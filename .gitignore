@@ -56,3 +56,5 @@ packages/*/node_modules
 packages/*/dist
 packages/shell/src-tauri/target
 packages/shell/src-tauri/gen
+# 번들 바이너리 리소스(vosk dll, node.exe 등 ~140MB) — 빌드 시 복사, 추적 제외
+packages/shell/src-tauri/resources/

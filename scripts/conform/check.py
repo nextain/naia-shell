@@ -25,6 +25,13 @@ import os
 import re
 import sys
 
+# Windows 콘솔(cp949)에서 비-ASCII(em-dash 등) 출력 시 UnicodeEncodeError 크래시 회피.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 import oracle  # noqa: E402

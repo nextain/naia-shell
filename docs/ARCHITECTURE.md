@@ -30,6 +30,12 @@ naia-adk (settings 저장소 = SoT). 키는 OS 키체인(평문 금지)
 
 ## 3. 인지 계층 (뇌 중심 — 안드로이드까지)
 
+> **상위 레이어 모델 = 뇌·몸·환경** (SoT: `docs/brain-body-environment.md`).
+> **뇌(agent)** = 인지/의도 · **몸(셸 네이티브)** = 에이전트의 감각·표현 기관(아바타·음성 I/O) ·
+> **환경(셸 소유 독립 서비스/사이드카)** = 에이전트가 작업하는 세계(브라우저·터미널·workspace·**BGM**).
+> **도구·BGM 은 몸이 아니라 환경**이며, 뇌에서 분리된 독립 서비스(뇌 죽어도 생존, 뇌는 intent 만)다.
+> 환경 런타임을 agent 트리에 두면 substrate-agnostic 위반(아래 §3 본문은 그중 *뇌* 내부 계층).
+
 agent 는 기능(채팅·도구·기억)이 아니라 **계층**으로 구조화한다:
 - **입력층(ingress)** — `ports/uc1.ts AgentIngressPort` (transport-neutral 수신).
 - **처리** — `app/chat-turn-handler.ts` (recall→컨텍스트 주입→provider→save).
@@ -85,5 +91,5 @@ agent 는 기능(채팅·도구·기억)이 아니라 **계층**으로 구조화
 > 셸(UI) 측: `packages/shell/src/components/` + `chat-service.ts`(새 코어 경유는 `isNewCore()` 게이트). voice/tts/route 는 아직 옛 경로(UC2 후속).
 
 ## 7. 정본 문서
-- `docs/user-scenarios.md`(UC SoT) · `docs/requirements.md`(FR/NFR) · `docs/project-structure.md`(구조) · `docs/logging.md` · `docs/progress/structure-soundness-review-2026-06-13.md`(현 위치+로드맵).
+- `docs/brain-body-environment.md`(뇌·몸·환경 레이어 표준 — 환경=독립 사이드카) · `docs/user-scenarios.md`(UC SoT) · `docs/requirements.md`(FR/NFR) · `docs/project-structure.md`(구조) · `docs/logging.md` · `docs/progress/structure-soundness-review-2026-06-13.md`(현 위치+로드맵).
 - 사상 갱신은 이 문서 + (헌장) AGENTS.md 동시.

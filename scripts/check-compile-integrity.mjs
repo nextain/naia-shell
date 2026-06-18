@@ -6,9 +6,13 @@
  * 호출처 import 제거를 누락 → HEAD 가 삭제된 파일을 import = tsc 에러인데 어떤 검출기도 tsc 를 안 돌려 미감지)
  * 를 막는다. pre-commit + cron(verify-watch) 공용.
  *
- * 검사: ① 코어(new-naia-os 루트) tsc  ② 셸(packages/shell) tsc — **비-테스트 src 에러만**(기존 jest-dom
- * toBeInTheDocument 등 테스트-타입 노이즈는 무결성과 무관 → 제외).  exit 1 = src 컴파일 깨짐(RED).
+ * 검사: ① 코어(new-naia-os 루트) tsc **(emit — dist 생성)**  ② 셸(packages/shell) tsc — **비-테스트 src
+ * 에러만**(기존 jest-dom toBeInTheDocument 등 테스트-타입 노이즈는 무결성과 무관 → 제외).  exit 1 = src 컴파일 깨짐(RED).
  * (--rust 시 src-tauri cargo check 추가 — 느려서 cron/opt-in.)
+ *
+ * ★ 코어는 emit(--noEmit 아님): 셸이 `@nextain/naia-os-core/shell-compat`=`./dist/main/...`(exports map)을
+ *   resolve 하려면 코어 dist 가 먼저 생성돼야 한다. clean checkout(CI)에서 코어를 빌드 안 하면 셸 tsc 가
+ *   TS2307(모듈 못 찾음)로 깨졌었다(build-order 버그). 코어 emit 으로 dist 보장 = 셸 resolve + wire-probe(dist import) 동시 충족.
  */
 import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -18,9 +22,9 @@ const OS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const wantRust = process.argv.includes("--rust");
 const errors = [];
 
-function tsc(cwd, label) {
+function tsc(cwd, label, emit = false) {
 	try {
-		execSync("npx tsc --noEmit -p tsconfig.json", { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+		execSync(`npx tsc ${emit ? "" : "--noEmit"} -p tsconfig.json`, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 		return [];
 	} catch (e) {
 		// tsc 출력(stdout)에서 error TS 라인 — 테스트 파일 제외(무결성=src).
@@ -31,7 +35,7 @@ function tsc(cwd, label) {
 	}
 }
 
-errors.push(...tsc(OS_ROOT, "core(new-naia-os)"));
+errors.push(...tsc(OS_ROOT, "core(new-naia-os)", true)); // emit → dist 생성(셸 shell-compat resolve + wire-probe import 전제)
 errors.push(...tsc(resolve(OS_ROOT, "packages/shell"), "shell(packages/shell)"));
 
 if (wantRust) {

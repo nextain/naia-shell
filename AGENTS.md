@@ -96,6 +96,7 @@ npx tsc -p tsconfig.json && (cd packages/shell && pnpm test)  # 깨어짐
 | `docs/user-scenarios.md` | 사용자 시나리오 + 테스트 커버리지 맵 |
 | `docs/glossary.md` | 도메인 용어사전 |
 | `docs/ARCHITECTURE.md` | 시스템 아키텍처 |
+| `docs/brain-body-environment.md` | 뇌·몸·환경 레이어 표준 (환경=독립 사이드카 기준) |
 
 > 추가 시: 위 표에 먼저 등록 → `docs/project-structure.md` Doc Registry 업데이트.
 

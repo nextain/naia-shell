@@ -88,6 +88,7 @@
 | `user-scenarios.md` | 사용자 시나리오 + 테스트 커버리지 맵 |
 | `glossary.md` | 도메인 용어사전 |
 | `ARCHITECTURE.md` | 시스템 아키텍처 |
+| `brain-body-environment.md` | 뇌·몸·환경 레이어 표준 (환경=독립 사이드카 기준) |
 
 ---
 

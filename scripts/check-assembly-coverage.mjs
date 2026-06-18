@@ -3,7 +3,7 @@
 // AI "한 축만 생각" 방지 = 기계 강제. (codex·gemini·GLM 교차 반영)
 import { readFileSync } from "node:fs";
 const src = readFileSync("docs/user-scenarios.md", "utf8");
-const mtx = readFileSync("docs/progress/assembly-matrix-2026-06-10.md", "utf8");
+const mtx = readFileSync("docs/progress/99.dev-comm/assembly-matrix-2026-06-10.md", "utf8"); // V모델 이전 시 99.dev-comm/ 로 이동
 const lines = mtx.split("\n");
 
 const sInv = [...new Set([...src.matchAll(/^\|\s*\*{0,2}(S\d+b?)\b/gm)].map((m) => m[1]))]; // bold(**S71**) 포함
