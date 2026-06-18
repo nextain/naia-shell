@@ -361,8 +361,6 @@ registerLlmProvider({
 	models: [
 		{ id: "gpt-5.5", label: "GPT-5.5", capabilities: ["llm"] },
 		{ id: "gpt-5.4", label: "GPT-5.4", capabilities: ["llm"] },
-		{ id: "gpt-5.2", label: "GPT-5.2", capabilities: ["llm"] },
-		{ id: "gpt-5.1", label: "GPT-5.1", capabilities: ["llm"] },
 		{ id: "gpt-4.1", label: "GPT-4.1", capabilities: ["llm"] },
 		{ id: "gpt-4.1-mini", label: "GPT-4.1 Mini", capabilities: ["llm"] },
 		{ id: "o4-mini", label: "o4 Mini", capabilities: ["llm"] },
