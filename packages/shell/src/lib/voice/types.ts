@@ -299,6 +299,15 @@ export interface VoiceSession {
 	 * Optional; `null` keeps the current voice.
 	 */
 	setRefAudio?: (b64: string | null) => void;
+	/**
+	 * Pin the STT recognition language mid-session (ISO-639-1, e.g. "ko"). Sends a
+	 * `session.update` with `input_audio_transcription.language` so a language
+	 * change takes effect WITHOUT a reconnect (mirrors `setRefAudioUrl`). Optional;
+	 * only naia-omni implements it. The cascade defaults to auto-detect when unset
+	 * (manual §realtime); `setup.locale` is swallowed by the gateway, so
+	 * `session.update` is the only effective pin path. `null` keeps the current language.
+	 */
+	setLanguage?: (locale: string | null) => void;
 	disconnect: () => void;
 	readonly isConnected: boolean;
 

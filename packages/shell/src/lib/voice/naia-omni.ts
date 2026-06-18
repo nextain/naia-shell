@@ -262,6 +262,17 @@ export function createNaiaOmniSession(): VoiceSession {
 								output_audio_format: "pcm16",
 								instructions: cfg?.systemInstruction ?? "",
 								turn_detection: { type: "server_vad" },
+								// 인식 언어 핀: cascade 기본=자동감지(글로벌) → 한국어를 타 언어로
+								// 오인식하는 문제(매뉴얼 §realtime). UI 언어(cfg.locale)를 ISO-639-1 로
+								// 명시한다. setup.locale 은 게이트웨이가 삼켜(live.py) cascade 에 안 닿으므로
+								// session.update 의 input_audio_transcription.language 가 유일한 유효 핀 경로다.
+								...(cfg?.locale
+									? {
+											input_audio_transcription: {
+												language: cfg.locale.slice(0, 2),
+											},
+										}
+									: {}),
 								// Forward skills as OpenAI-style function tools so the cascade
 								// registers them (tools_registry) and the LLM can actually emit
 								// tool calls. Without this the server's registry stays empty and
@@ -532,6 +543,24 @@ export function createNaiaOmniSession(): VoiceSession {
 					error: String(err),
 				});
 			}
+		},
+
+		setLanguage(locale: string | null) {
+			// 인식 언어 핀: 처음 연결 시 초기 session.update 로 보내고, 세션 활성 중
+			// 언어를 바꾸면 재연결 없이 즉시 갱신한다(setRefAudioUrl 패턴, 매뉴얼 §realtime).
+			// cascade 기본=자동감지라 한국어 오인식을 막으려면 명시 핀이 필요하고, setup.locale 은
+			// 게이트웨이가 삼켜 무력이므로 session.update 가 유일한 핀 경로다. ISO-639-1.
+			if (cfg) cfg.locale = locale ?? undefined;
+			if (!ws || !connected || !locale) return;
+			ws.send(
+				JSON.stringify({
+					type: "session.update",
+					model: cfg?.model ?? DEFAULT_MODEL,
+					session: {
+						input_audio_transcription: { language: locale.slice(0, 2) },
+					},
+				}),
+			);
 		},
 
 		sendToolResponse(callId: string, result: unknown) {
