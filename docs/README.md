@@ -1,30 +1,46 @@
 # 문서 색인 (docs)
 
-이 디렉터리의 진입점(허브). 모든 큐레이트 문서는 여기서 도달 가능해야 한다
-(문서 고립 방지 — `scripts/check-doc-graph.mjs` 가 강제). 루트 `AGENTS.md`(=CLAUDE/GEMINI/OPENCODE/CODEX)
-가 프로젝트 진입점이고, 이 파일은 `docs/` 내부 색인이다.
+이 디렉터리는 Naia OS의 설계·구조 문서를 모아 둔 곳입니다. 이 파일은 그 **목차**이고,
+모든 문서는 이 색인에서 링크로 찾아갈 수 있어야 합니다(연결이 끊긴 문서가 없는지 `scripts/check-doc-graph.mjs`가 자동으로 검사합니다).
 
-## 표준·구조
+> 프로젝트 전체의 진입점은 저장소 루트의 `AGENTS.md`(= `CLAUDE.md` / `GEMINI.md` / `OPENCODE.md` / `CODEX.md`)입니다.
+> 처음 기여하신다면 먼저 [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md)를 읽어 보세요. 이 색인은 그다음, 설계를 더 깊이 들여다볼 때 보는 문서입니다.
 
-- [00 — 페이즈 인덱스 (진행 순서 SoT, 발표용)](./00-PHASES.md) — 이 순서로 이렇게 구성했다(00 작업장→05 요구사항→06 실행)
-- [발표 자료 (슬라이드 골자, 진행하며 갱신)](./PRESENTATION.md) — ## = 슬라이드 1장
+> 여기 있는 문서들은 활발히 개발 중인 프로젝트의 **작업용 설계 문서**입니다. 정밀한 용어가 많아 입문자에게는 다소 어려울 수 있습니다.
+> 각 문서 첫머리에 "무엇을 다루는 문서인지"를 적어 두었으니, 필요한 것부터 골라 읽으시면 됩니다.
 
-- [이식 구조 (1단계 뼈대) v5](./STRUCTURE.md) — 뇌/육체/OS·인지흐름 재그룹핑·포트 canon·이식 메커니즘 (naia-os 이식 SoT)
-- [사용자 시나리오 (2단계 P01)](./user-scenarios.md) — UC 카탈로그·인지흐름 관통·vertical 후보 (G1 대기)
-- [워드사전 (2단계)](./glossary.md) — 도메인 용어 통일 (뇌/육체/환경·faculty·포트·이식)
-- [요구사항 (2단계 P03)](./requirements.md) — foundation tranche FR/NFR (P04 통합테스트 대상)
-- [프로젝트 구조 표준](./project-structure.md) — F12/F13 루트 화이트리스트, 디렉터리 규약
-- [위협 모델](./threat-model.md) — 보안 경계, 시크릿 격리(T3), 추적 금지 경로
-- [LLM 역할 분담](./llm-roles.md) — 작은(라이트) 모델 ↔ 큰 모델 분담, 단일 CLI 어댑터, 검출 계층
-- [합격 기준](./acceptance-criteria.md) — 계약 구체화 + 검증이 게이트를 대체(게이트키퍼 제거). 완료증거 등급(강/약/없음)
+## 먼저 읽을 것 (큰 그림)
+
+- [아키텍처 — 사상 + 새 기능 추가 레시피](./ARCHITECTURE.md) — os → agent → adk가 어떻게 맞물리는지. 새 개발자/AI의 온보딩 진입 문서.
+- [뇌·몸·환경 레이어 표준](./brain-body-environment.md) — "무엇이 어디에 살아야 하는가"의 기준(뇌=결정, 몸=감각·표현, 환경=작업 세계).
+- [용어사전](./glossary.md) — 이 프로젝트에서 쓰는 도메인 용어 통일.
+
+## 설계·구조
+
+- [이식 구조 (1단계 뼈대)](./STRUCTURE.md) — naia-template-project를 어떻게 헥사고날(hexagonal, 포트·어댑터) 구조로 옮겼는지(이식 정본=SoT, Source of Truth).
+- [프로젝트 구조 표준](./project-structure.md) — 루트에 둘 수 있는 디렉터리·파일의 허용 목록(화이트리스트, 규칙 번호 F12·F13)과 디렉터리 규약.
+- [사용자 시나리오](./user-scenarios.md) — UC(Use Case) 카탈로그와 테스트 커버리지 맵.
+- [요구사항](./requirements.md) — 기능 요구사항(FR)·비기능 요구사항(NFR).
+- [합격 기준](./acceptance-criteria.md) — "무엇을 충족해야 완료인지"를 검증으로 못 박는 기준.
+- [위협 모델](./threat-model.md) — 보안 경계, 비밀 정보 격리, 추적 금지 경로.
+
+## 개발 규약
+
+- [LLM 역할 분담](./llm-roles.md) — 작은(라이트) 모델과 큰 모델의 역할 나눔, 단일 CLI 어댑터, 검출 계층.
+- [로깅 규약](./logging.md) — 어디에 무엇을 로그로 남길지, 디버깅 시 먼저 볼 로그.
+
+## 진행 순서·발표
+
+- [페이즈 인덱스](./00-PHASES.md) — 작업을 어떤 순서로 진행했는지(진행 순서의 정본=SoT).
+- [발표 자료](./PRESENTATION.md) — 슬라이드 골자(`##` 하나가 슬라이드 한 장).
 
 ## 작업 기록 (progress/)
 
-`docs/progress/` 는 **append-only 작업 기록(ledger)** — 날짜별 진행·검토 메모.
-연대기라 상호 링크 의무가 없다(`check-doc-graph --exempt progress` 로 고립 검사 면제).
+[`docs/progress/`](./progress/)는 날짜별 진행·검토 메모를 쌓아 두는 기록(ledger)입니다.
+시간순 기록이라 서로 링크할 의무가 없고, 고립 문서 검사에서도 제외됩니다(`check-doc-graph --exempt progress`).
 
 ## 주기 검증
 
-구조·문서·미러 이탈은 결정론 스크립트가 검출한다. 마이그레이션 완료 후
-`scripts/verify-watch.sh start`(또는 `cron`)로 백그라운드 주기 검증 — 검출·보고만 자동, 수정은 사람/큰 모델 게이트.
-자세히: [LLM 역할 분담](./llm-roles.md) 의 "디텍트 계층".
+구조·문서·미러의 이탈은 사람이 매번 확인하는 대신 결정론적 스크립트가 검출합니다.
+마이그레이션이 끝난 뒤 `scripts/verify-watch.sh start`(또는 `cron` — 정해진 시간마다 자동 실행하는 예약 작업)로 백그라운드 주기 검증을 돌릴 수 있습니다 — 검출·보고만 자동이고, 실제 수정은 사람 또는 큰 모델의 판단을 거칩니다.
+자세한 내용은 [LLM 역할 분담](./llm-roles.md)의 "검출 계층"을 참고하세요.

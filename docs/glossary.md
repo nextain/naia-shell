@@ -1,67 +1,65 @@
-# 워드사전 (glossary) — 2단계 산출물 (초안)
+# 용어사전 (Glossary)
 
-`[Phase 02]`
-
-> 추적: 1단계 `STRUCTURE.md` v5 · 2단계 P01. **상태: 초안 — G1 대기.** 용어 통일 = 드리프트 방지.
-> 신조어 금지(평이한 용어 + 학술/약자는 "한국어 (원문)" 1회) — 루트 terminology 정합.
+> 이 프로젝트에서 쓰는 핵심 용어를 한곳에 모아 뜻을 통일한 문서입니다. 같은 말을 사람마다 다르게 쓰면 설계가 어긋나기 쉬워, 그것을 막기 위한 기준점입니다.
+> 표기 원칙: 새로 지어낸 말(신조어)은 쓰지 않고, 평이한 한국어를 우선하며, 학술 용어나 약자는 "한국어 (원문)" 형태로 한 번만 병기합니다(루트 terminology 규칙과 동일).
 
 ## 최상위 (조직 원리)
 
 | 용어 | 정의 |
 |---|---|
-| **뇌 (brain) = agent** | 모든 인지·결정·기억·스킬·LLM·표현 의도. substrate(육체)를 모름. |
-| **육체 (body) = shell 의 일부** | 감각기(sensor)+효과기(effector) **뿐**, 인지 0. 데스크톱↔로봇 교체(swap). |
-| **환경 (environment)** | body 밖 세계 — 공간(배경·BGM·3D)·앱 surface(브라우저·터미널·workspace)·시스템(host). shell 이 렌더/호스트하나 body 아님. **도구도 대부분 환경**(에이전트의 기관이 아니라 작업 대상 세계). |
-| **사이드카 (sidecar)** | 환경의 실현 형태 — shell(substrate)이 소유하는 독립 서비스로, 뇌(agent)와 무관히 동작·생존. Rust in-process(터미널·파일) 또는 별도 프로세스(youtube·브라우저 CDP, 외부 런타임 필요 시). 코드·deps 는 셸 쪽, 뇌는 intent 만. SoT=`brain-body-environment.md`. |
-| **신경계 = semantic ports** | 뇌↔육체↔환경 경계. 구심(afferent)·원심(efferent). transport-shaped 금지. |
-| **naia = OS** | agent=커널/데몬, gRPC=다중 클라이언트 시스템 인터페이스(shell 백엔드 아님). body·app·peripheral 이 client. |
-| **substrate-agnostic** | 뇌가 입력/표현/환경 substrate(2D·3D·로봇·물리)를 모름 → 의도/관측만 다룸. |
+| **뇌 (brain) = agent** | 모든 인지·결정·기억·스킬·LLM·표현 의도. 자신이 어떤 실행 기반(substrate)에 올라가 있는지는 모른다. |
+| **몸 (body) = shell 의 일부** | 감각기(sensor)+효과기(effector) **뿐**, 인지 0. 데스크톱↔로봇으로 갈아끼운다(swap). |
+| **환경 (environment)** | 몸 밖 세계 — 공간(배경·BGM·3D)·앱 화면(브라우저·터미널·workspace)·시스템(host). 셸(shell)이 그려 주거나 띄워 주지만 몸(body)은 아니다. **도구도 대부분 환경**(에이전트의 기관이 아니라 작업 대상 세계). |
+| **사이드카 (sidecar)** | 환경의 실현 형태 — 셸(실행 기반)이 소유하는 독립 서비스로, 뇌(agent)와 무관하게 동작·생존한다. Rust 같은 프로세스 안(in-process, 터미널·파일) 또는 별도 프로세스(youtube·브라우저 CDP 등 외부 런타임 필요 시). 코드·의존성은 셸 쪽에 두고, 뇌는 의도(intent)만 보낸다. SoT=`brain-body-environment.md`. |
+| **신경계 = 의미 포트(semantic ports)** | 뇌↔몸↔환경의 경계. 들어오는 신호(구심, afferent)·나가는 신호(원심, efferent). 특정 전송 방식에 종속된 형태(transport-shaped)로 만들지 않는다. |
+| **naia = OS** | agent=커널/데몬, gRPC=여러 클라이언트가 붙는 시스템 인터페이스(셸 전용 백엔드가 아님). 몸·앱·주변장치(peripheral)가 클라이언트다. |
+| **실행 기반 무관 (substrate-agnostic)** | 뇌가 입력/표현/환경의 실행 기반(2D·3D·로봇·물리)을 모른 채, 의도와 관측만 다룬다. |
 
 ## 인지 흐름 (faculty)
 
 | 용어 | 정의 |
 |---|---|
-| **감각 (sensation)** | 외수용 raw 신호(audio·vision·screen). `SensoryPort`. ≠ 정서. |
-| **내수용 (interoception)** | 내부 생리/시스템 상태(배터리·부하·열). `InteroceptivePort`. affect 기반. |
-| **고유수용 (proprioception)** | 자세·관절·균형. `ProprioceptivePort`. self/body model·frame. |
-| **지각 (perception)** | 감각 해석(STT·화면이해·타인 감정 인식). |
-| **경험 (experience)** | perception+자기행동+맥락+시간 융합 → episodic. **episode assembler**(memory 에 episodic append, working-mem/session 비소유). |
-| **정서 (affect)** | naia *자신*의 느낌(core affect: valence/arousal). 횡단 서비스. ≠ 감각, ≠ 타인감정 인식(지각). |
-| **주의 (attention)** | salience 게이트/필터(감각 폭주 우선순위). 횡단 서비스. |
-| **작업기억 / 장기기억** | conversation(현 맥락) / memory(naia-memory, episodic·semantic). |
-| **동기 (motivation)** | 욕구·항상성·가치 — always-on 자율성 근거(왜 지속 우선). 신설 예약. |
-| **자기·신체 모델 (self/body-affordance)** | "이 몸이 뭘 할 수 있나"(body-swap 전제). 신설 예약. |
-| **학습·적응 (learning)** | memory↔skill 사이 습관·선호·개인화 갱신. 신설 예약. |
-| **메타인지 (metacognition)** | 드리프트 게이트(자기조절). control-plane. |
+| **감각 (sensation)** | 바깥에서 들어오는 날(raw) 신호(audio·vision·screen). `SensoryPort`. 정서와는 다르다. |
+| **내수용 (interoception)** | 내부 생리/시스템 상태(배터리·부하·열). `InteroceptivePort`. 정서(affect)의 바탕. |
+| **고유수용 (proprioception)** | 자세·관절·균형. `ProprioceptivePort`. 자기 몸 모델·기준 좌표. |
+| **지각 (perception)** | 감각의 해석(STT·화면 이해·타인의 감정 인식). |
+| **경험 (experience)** | 지각+자기 행동+맥락+시간을 융합해 일화(episodic)로 만든다. **일화 조립기(episode assembler)**가 기억(memory)에 일화를 덧붙인다(작업기억·세션은 소유하지 않음). |
+| **정서 (affect)** | naia *자신*의 느낌(핵심 정서: 쾌-불쾌/각성도). 여러 기능을 가로지르는 횡단 서비스. 감각도, 타인 감정 인식(지각)도 아니다. |
+| **주의 (attention)** | 중요도(salience)로 거르는 게이트/필터(감각이 폭주할 때 우선순위 부여). 횡단 서비스. |
+| **작업기억 / 장기기억** | 현재 대화 맥락(conversation) / 장기 기억(naia-memory, 일화·의미 기억). |
+| **동기 (motivation)** | 욕구·항상성·가치 — 늘 켜져 있는 자율성의 근거(왜 계속 우선하는가). 현재 설계의 확장 지점 — 개념만 정의하고 구현은 아직. |
+| **자기·신체 모델 (self/body-affordance)** | "이 몸으로 무엇을 할 수 있나"(몸 교체를 전제). 현재 설계의 확장 지점 — 개념만 정의하고 구현은 아직. |
+| **학습·적응 (learning)** | 기억과 스킬 사이에서 습관·선호·개인화를 갱신. 현재 설계의 확장 지점 — 개념만 정의하고 구현은 아직. |
+| **메타인지 (metacognition)** | 드리프트(설계 이탈)를 막는 자기 조절 게이트. 제어 평면(control-plane). |
 
-## 출력 3축 (efferent)
-
-| 용어 | 정의 |
-|---|---|
-| **표현 (express)** | 의미를 *드러냄*(발화·감정·제스처 의도). `ExpressionPort`, embodiment-neutral. avatar=express. |
-| **행위 (act)** | *body를 움직임*(이동·조작·파지). `ActionPort`. robot=act. |
-| **환경 변경** | *body 밖 세계를 바꿈*(app/system/space). `EnvironmentPort`. |
-| **reafference** | `commanded→acknowledged→observed→mismatch` — 의도/실행/실제 분리(agency·오류학습). |
-| **efference copy** | 행동 의도 사본 → 결과 피드백을 experience 가 "내가 한 것"으로 묶음. |
-
-## 포트 canon
+## 출력 3축 (efferent, 나가는 신호)
 
 | 용어 | 정의 |
 |---|---|
-| **AppPort** | `ChatPort`+`ToolPort` 조립 facade(대화·툴 interaction 전용). 다른 포트 재흡수 금지. |
-| **ChatPort** | 대화 상호작용(텍스트+voice-realtime turn-taking). raw 오디오 아님. |
-| **protocol** | transport-neutral wire DTO(직렬화는 transport adapter 만). |
-| **ClientSessionPort** | (control-plane) client 신원·capability negotiation·subscription + body/env lease·arbitration owner. |
-| **SafetyPort** | (control-plane) safety envelope·e-stop·lease revoke 정책/권한 발동. (즉시 실행=reactive path.) |
+| **표현 (express)** | 의미를 *드러냄*(발화·감정·제스처 의도). `ExpressionPort`, 몸 형태와 무관(embodiment-neutral). 아바타=표현. |
+| **행위 (act)** | *몸을 움직임*(이동·조작·잡기). `ActionPort`. 로봇=행위. |
+| **환경 변경** | *몸 밖 세계를 바꿈*(앱/시스템/공간). `EnvironmentPort`. |
+| **reafference (재구심)** | `명령→확인→관측→불일치` 흐름 — 의도/실행/실제를 분리해 행위 주체감(agency)과 오류 학습의 근거로 삼는다. |
+| **efference copy (원심 사본)** | 행동 의도의 사본을 남겨, 돌아온 결과 피드백을 경험이 "내가 한 것"으로 묶는다. |
+
+## 포트 canon (정본 포트)
+
+| 용어 | 정의 |
+|---|---|
+| **AppPort** | `ChatPort`+`ToolPort`를 묶은 조립 facade(대화·도구 상호작용 전용). 다른 포트를 다시 흡수하지 않는다. |
+| **ChatPort** | 대화 상호작용(텍스트+음성 실시간 턴 주고받기). 날 오디오 신호는 아니다. |
+| **protocol** | 전송 방식과 무관한(transport-neutral) wire 데이터 형식(직렬화는 전송 어댑터만 담당). |
+| **ClientSessionPort** | (제어 평면) 클라이언트 신원·기능 협상(capability negotiation)·구독 + 몸/환경 점유권(lease)·중재(arbitration) 소유. |
+| **SafetyPort** | (제어 평면) 안전 범위·비상정지(e-stop)·점유 회수(lease revoke) 정책/권한 발동. (즉시 실행은 반응 경로.) |
 
 ## 이식·거버넌스
 
 | 용어 | 정의 |
 |---|---|
-| **이식(transplant) vs 변형** | frozen old → cleanse-scan → 게이트 통과분만 clean new 에 담기(deny-by-default). in-place 변형 ❌. |
-| **커버리지 manifest** | 출처 인벤토리 전수 `accepted/deferred/rejected`(미분류 0 강제 = false-success 차단). |
-| **두 VIEW** | 이식 단위=기능 슬라이스(출처 추적) ≠ 인지 렌즈(검증·갭탐지). |
-| **provenance / execution-id** | 모든 event 에 actor/client id + 귀속 body·env; efferent correlation + reafferent backlink. |
-| **goal governance** | goal 생성·덮어쓰기 권한 `request/propose/authorize/veto`(control-plane governance lane). |
+| **이식(transplant) vs 변형** | 얼린 옛 코드 → 정밀 검사(cleanse-scan) → 게이트를 통과한 것만 깨끗한 새 코드에 담는다(기본 거부, deny-by-default). 제자리에서 고쳐 쓰는 변형은 하지 않는다. |
+| **커버리지 manifest** | 출처 인벤토리를 전수로 `accepted/deferred/rejected`로 분류(미분류 0 강제 = 가짜 성공 차단). |
+| **두 가지 관점(VIEW)** | 이식 단위=기능 조각(출처 추적) ≠ 인지 렌즈(검증·빠진 곳 탐지). |
+| **provenance / execution-id (출처/실행 식별자)** | 모든 이벤트에 행위자(actor)/클라이언트 id + 귀속된 몸·환경을 기록 — 나가는 신호의 상관(correlation)과 돌아오는 신호의 역추적(backlink) 근거. |
+| **goal governance (목표 거버넌스)** | 목표 생성·덮어쓰기 권한을 `요청/제안/승인/거부`로 나눈다(제어 평면 거버넌스 레인). |
 
-> 미정·신설 항목의 정식 계약 = step-2 진행 중 채움. G1 에서 누락 용어·정의 충돌 검토.
+> 아직 정의가 확정되지 않았거나 도입 예정인 항목의 정식 계약은 설계가 진행되며 채워집니다. 빠진 용어나 정의 충돌은 발견 시 보완합니다.
