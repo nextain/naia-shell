@@ -17,6 +17,7 @@
 | `about-docs/` | **이 표준 repo 자체**에 대한 메타 문서 (설명·검증 ledger·실험). payload 아님 — project-create/migration 이 복제 제외 |
 | `benchmark/` | 성능·정확도·자율성 벤치마크 |
 | `bin/` | CLI 진입점 |
+| `data-private/` | 비밀·개인정보 (키·토큰·음성·얼굴 등) — gitignored, Git 추적 제외 (RBAC T3) |
 | `docs/` | 정규 설계 문서 (이 표에 등록된 것만, 하위: `progress/` 이슈별 진행 산출물) |
 | `examples/` | 실행 가능한 예제 |
 | `node_modules/` | 의존성 (gitignored, 자동 생성) |
@@ -83,7 +84,6 @@
 | 파일 | 역할 |
 |------|------|
 | `project-structure.md` | 이 파일 — 구조 명세 |
-| `lessons.md` | 교훈 — 규칙이 존재하는 이유 |
 | `requirements.md` | 기능/비기능 요구사항 |
 | `user-scenarios.md` | 사용자 시나리오 + 테스트 커버리지 맵 |
 | `glossary.md` | 도메인 용어사전 |
