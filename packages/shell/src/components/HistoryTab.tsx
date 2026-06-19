@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import {
-	type GatewaySession,
-	deleteGatewaySession,
-	getGatewayHistory,
-	listGatewaySessions,
-} from "../lib/gateway-sessions";
+	type ConversationSession,
+	deleteConversation,
+	getConversationHistory,
+	listConversations,
+} from "../lib/conversation-store";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { useChatStore } from "../stores/chat";
@@ -35,7 +35,7 @@ export function HistoryTab({
 	onLoadSession: () => void;
 	onLoadDiscordSession?: () => void;
 }) {
-	const [sessions, setSessions] = useState<GatewaySession[]>([]);
+	const [sessions, setSessions] = useState<ConversationSession[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const currentSessionId = useChatStore((s) => s.sessionId);
@@ -48,7 +48,7 @@ export function HistoryTab({
 		setIsLoading(true);
 		setLoadError(null);
 		try {
-			const result = await listGatewaySessions(50);
+			const result = await listConversations();
 			setSessions(result);
 		} catch (err) {
 			Logger.warn("HistoryTab", "Failed to load sessions", {
@@ -68,7 +68,7 @@ export function HistoryTab({
 
 		if (key === currentSessionId) return;
 		try {
-			const messages = await getGatewayHistory(key);
+			const messages = await getConversationHistory(key);
 			const store = useChatStore.getState();
 			store.newConversation();
 			store.setSessionId(key);
@@ -84,7 +84,7 @@ export function HistoryTab({
 	async function handleDeleteSession(key: string) {
 		if (!window.confirm(t("history.deleteConfirm"))) return;
 		try {
-			await deleteGatewaySession(key);
+			await deleteConversation(key);
 			setSessions((prev) => prev.filter((s) => s.key !== key));
 			if (key === currentSessionId) {
 				useChatStore.getState().newConversation();

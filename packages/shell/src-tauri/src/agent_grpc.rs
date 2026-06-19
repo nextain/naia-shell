@@ -60,6 +60,7 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
         .unwrap_or_default();
     ChatRequest {
         request_id: s("requestId").unwrap_or_default(),
+        session_id: s("sessionId"),
         messages,
         system_prompt: s("systemPrompt"),
         enable_tools: v.get("enableTools").and_then(|x| x.as_bool()),

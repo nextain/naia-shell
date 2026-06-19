@@ -2581,6 +2581,242 @@ async fn write_naia_config(adk_path: String, json: String) -> Result<(), String>
     std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
 }
 
+// ── 대화 transcript read(FR-CONV.3) ─────────────────────────────────────────────
+// `{adk_path}/conversations/` = agent(전두엽)가 append 하는 verbatim 대화록(런타임 데이터). **content 단일 writer = agent**;
+// shell 은 read + delete(세션 lifecycle 관리, UI 삭제버튼)만 — content append/수정 안 함. agent 부재/죽음에도 파일 직접
+// read(E1, brain-body-environment). 죽은 게이트웨이 directToolCall 대체. (delete-중-active-append race = 세션 재생성 wart,
+// Phase1 허용: 최악도 삭제 세션이 그 턴만 갖고 재등장, 손상 아님.)
+
+fn conversations_dir(adk_path: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(adk_path).join("conversations")
+}
+
+/// sessionId → 안전 파일명 베이스(traversal·경로 인젝션 차단; agent conversation-log sessionFileName 과 동형).
+/// 영숫자/`_`/`-` 외 치환, 선행 `_`/`.` 제거, 128 cap. 빈/비정상 = "default".
+/// ⚠️ 한계: 전부 비-ASCII(순수 한글 등) sessionId 는 치환 후 빈 → "default" 합류. 실 client localSessionId 는
+///    ASCII(`chat-<ts>-<rand>`, stores/chat.ts)라 미발생. 비-ASCII 다중 client 도입 시 hash 폴백 필요(Phase2).
+fn safe_session_base(session_id: &str) -> String {
+    let mapped: String = session_id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    let base: String = mapped
+        .trim_start_matches(|c| c == '_' || c == '.')
+        .chars()
+        .take(128)
+        .collect();
+    if base.is_empty() { "default".to_string() } else { base }
+}
+
+/// 세션 transcript 파일 크기 상한(병리적 파일이 list/read 시 IPC·메모리를 폭주시키는 것 차단; 적대적 리뷰 MED).
+/// text 대화록 현실 상한(수천 턴 ≈ 수 MB) 훨씬 위. writer=신뢰 agent 라 위협은 낮으나 방어심층(read_local_binary 와 동형).
+const MAX_CONV_BYTES: u64 = 16 * 1024 * 1024;
+
+/// List conversation sessions in `{adk_path}/conversations/`.
+/// Returns JSON `{"sessions":[{key,label,messageCount,createdAt,updatedAt}]}` (updatedAt desc). Read-only(FR-CONV.3).
+#[tauri::command]
+async fn list_conversations(adk_path: String) -> Result<String, String> {
+    let dir = conversations_dir(&adk_path);
+    if !dir.is_dir() {
+        return Ok("{\"sessions\":[]}".to_string());
+    }
+    let mut sessions: Vec<serde_json::Value> = vec![];
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let stem = match path.file_stem().and_then(|s| s.to_str()) {
+                Some(s) => s.to_string(),
+                None => continue,
+            };
+            // 병리적 크기 파일 = 전체 파싱 skip(메모리 폭주 차단, 적대적 리뷰 MED). mtime degraded 엔트리로 노출(숨기지 않음).
+            if entry.metadata().map(|m| m.len() > MAX_CONV_BYTES).unwrap_or(false) {
+                let updated = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                sessions.push(serde_json::json!({
+                    "key": stem, "label": "", "messageCount": 0, "createdAt": updated, "updatedAt": updated,
+                }));
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+            if lines.is_empty() {
+                continue;
+            }
+            let parse_ts = |line: &str| -> u64 {
+                serde_json::from_str::<serde_json::Value>(line)
+                    .ok()
+                    .and_then(|v| v.get("timestamp").and_then(serde_json::Value::as_u64))
+                    .unwrap_or(0)
+            };
+            let created = parse_ts(lines[0]);
+            let updated = parse_ts(lines[lines.len() - 1]).max(created);
+            let label = lines
+                .iter()
+                .find_map(|l| {
+                    let v = serde_json::from_str::<serde_json::Value>(l).ok()?;
+                    if v.get("role").and_then(|r| r.as_str()) == Some("user") {
+                        Some(
+                            v.get("content")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("")
+                                .chars()
+                                .take(40)
+                                .collect::<String>(),
+                        )
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+            sessions.push(serde_json::json!({
+                "key": stem,
+                "label": label,
+                "messageCount": lines.len(),
+                "createdAt": created,
+                "updatedAt": updated,
+            }));
+        }
+    }
+    sessions.sort_by(|a, b| {
+        b.get("updatedAt").and_then(serde_json::Value::as_u64).unwrap_or(0)
+            .cmp(&a.get("updatedAt").and_then(serde_json::Value::as_u64).unwrap_or(0))
+    });
+    Ok(serde_json::json!({ "sessions": sessions }).to_string())
+}
+
+/// Read a conversation's raw JSONL (`{adk_path}/conversations/{session}.jsonl`). Empty string if absent. Read-only(FR-CONV.3).
+#[tauri::command]
+async fn read_conversation(adk_path: String, session_id: String) -> Result<String, String> {
+    let file = conversations_dir(&adk_path).join(format!("{}.jsonl", safe_session_base(&session_id)));
+    if !file.exists() {
+        return Ok(String::new());
+    }
+    // 병리적 크기 IPC payload 차단(적대적 리뷰 MED) — read_local_binary 의 MAX_BYTES 가드와 동형.
+    if let Ok(meta) = std::fs::metadata(&file) {
+        if meta.len() > MAX_CONV_BYTES {
+            return Err(format!("transcript too large: {} bytes (max {})", meta.len(), MAX_CONV_BYTES));
+        }
+    }
+    std::fs::read_to_string(&file).map_err(|e| e.to_string())
+}
+
+/// Delete a conversation session file. session_id sanitized(traversal 차단).
+#[tauri::command]
+async fn delete_conversation(adk_path: String, session_id: String) -> Result<(), String> {
+    let file = conversations_dir(&adk_path).join(format!("{}.jsonl", safe_session_base(&session_id)));
+    if file.exists() {
+        std::fs::remove_file(&file).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod conversation_path_tests {
+    use super::safe_session_base;
+    // 보안 경계(traversal/delete) Rust 단위 커버 — agent sessionFileName contract 와 cross-port 동치(적대적 리뷰 MED).
+    #[test]
+    fn traversal_neutralized() {
+        assert_eq!(safe_session_base("../../etc/passwd"), "etc_passwd");
+        assert_eq!(safe_session_base("..\\..\\windows"), "windows");
+        assert_eq!(safe_session_base("/etc/passwd"), "etc_passwd");
+        assert_eq!(safe_session_base("a/b\\c"), "a_b_c");
+    }
+    #[test]
+    fn empty_and_abnormal_to_default() {
+        assert_eq!(safe_session_base(""), "default");
+        assert_eq!(safe_session_base("___"), "default");
+        assert_eq!(safe_session_base(".."), "default");
+    }
+    #[test]
+    fn normal_preserved_and_capped() {
+        assert_eq!(safe_session_base("chat-123_abc"), "chat-123_abc");
+        assert_eq!(safe_session_base(&"x".repeat(500)).chars().count(), 128);
+    }
+}
+
+#[cfg(test)]
+mod conversation_io_tests {
+    // 실 파일시스템 통합 — list/read/delete_conversation 을 agent-format jsonl 실파일에 대해 실행(FR-CONV.3/4).
+    use super::{delete_conversation, list_conversations, read_conversation};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temp_adk(tag: &str) -> PathBuf {
+        let mut d = std::env::temp_dir();
+        d.push(format!("naia-conv-it-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("conversations")).unwrap();
+        d
+    }
+    fn write_jsonl(adk: &PathBuf, name: &str, lines: &[&str]) {
+        fs::write(adk.join("conversations").join(name), format!("{}\n", lines.join("\n"))).unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_read_delete_roundtrip() {
+        let adk = temp_adk("rd");
+        // agent conversation-log-store 와 동일 포맷(user/assistant + timestamp)
+        write_jsonl(&adk, "chat-1.jsonl", &[
+            r#"{"role":"user","content":"안녕","timestamp":1000}"#,
+            r#"{"role":"assistant","content":"반가워요","timestamp":1001}"#,
+        ]);
+        write_jsonl(&adk, "chat-2.jsonl", &[
+            r#"{"role":"user","content":"날씨","timestamp":2000}"#,
+            r#"{"role":"assistant","content":"맑음","timestamp":2001}"#,
+        ]);
+        let adk_s = adk.to_str().unwrap().to_string();
+
+        // list: 2 세션, updatedAt desc(chat-2 먼저), label=첫 user content, messageCount=2
+        let v: serde_json::Value = serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
+        let sessions = v["sessions"].as_array().unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0]["key"], "chat-2");
+        assert_eq!(sessions[0]["label"], "날씨");
+        assert_eq!(sessions[0]["messageCount"], 2);
+
+        // read: raw jsonl 그대로
+        let raw = read_conversation(adk_s.clone(), "chat-1".into()).await.unwrap();
+        assert!(raw.contains("안녕") && raw.contains("반가워요"));
+
+        // read traversal: sanitize → conversations 밖 접근 불가(부재 = 빈문자열)
+        assert_eq!(read_conversation(adk_s.clone(), "../../naia-settings/config".into()).await.unwrap(), "");
+
+        // delete: chat-1 → list 1개
+        delete_conversation(adk_s.clone(), "chat-1".into()).await.unwrap();
+        assert!(!adk.join("conversations").join("chat-1.jsonl").exists());
+        let after: serde_json::Value = serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
+        assert_eq!(after["sessions"].as_array().unwrap().len(), 1);
+
+        // delete traversal: conversations 밖 파일을 절대 안 지움(보안 핵심)
+        fs::write(adk.join("outside.txt"), "secret").unwrap();
+        let _ = delete_conversation(adk_s.clone(), "../outside".into()).await;
+        assert!(adk.join("outside.txt").exists(), "traversal delete 가 conversations 밖 파일을 지우면 안 됨");
+
+        let _ = fs::remove_dir_all(&adk);
+    }
+
+    #[tokio::test]
+    async fn empty_and_missing() {
+        let adk = temp_adk("empty");
+        let adk_s = adk.to_str().unwrap().to_string();
+        assert_eq!(list_conversations(adk_s.clone()).await.unwrap(), "{\"sessions\":[]}");
+        assert_eq!(read_conversation(adk_s.clone(), "nope".into()).await.unwrap(), "");
+        assert!(delete_conversation(adk_s.clone(), "nope".into()).await.is_ok());
+        let _ = fs::remove_dir_all(&adk);
+    }
+}
+
 /// Write an API key to naia-agent's OS keychain storage.
 ///
 /// Mirrors naia-agent's `keychainSet()` so the standalone agent can read back
@@ -3192,6 +3428,10 @@ pub fn run() {
             clone_naia_adk,
             write_naia_asset,
             copy_bundled_assets,
+            // 대화 transcript read-only(FR-CONV.3) — agent write / shell read(E1 agent 독립)
+            list_conversations,
+            read_conversation,
+            delete_conversation,
             // Login Chrome (standalone auth window, not embedded)
             browser::browser_open_login,
             browser::browser_chrome_testing_ready,

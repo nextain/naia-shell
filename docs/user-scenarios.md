@@ -48,7 +48,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | S02 | 설정 config / settings 패널 | UC12 | control-plane·config | 측정 |
 | S03 | provider 설정(anthropic·openai·gemini·ollama·xai·zai·claude-code-cli·lab-proxy 각각) — **계정+비용 얽힘(복잡)** | UC12·UC1 | providers·control-plane | 측정(복잡) |
 | S04 | naia 계정 / api key 설정 | UC12 | control-plane(entitlement·naia-token) | 측정 |
-| S05 | sessions 관리 | UC12 | session(control-plane) | 측정 |
+| S05 | sessions 관리 — **대화 transcript 영속/로드**(S05a write·S05b read, ↓note) | UC12·UC1 | session(control-plane)·ConversationLogPort·EnvironmentPort(storage) | ⚠️ **현 게이트웨이 directToolCall = new-core 死 → 재구현**(2026-06-18 transcript 트랙) |
 | S06 | agents 관리 | UC12 | control-plane·skill | 측정 |
 | S07 | skill-manager(스킬 설치·관리) | UC12·skill | skill | 측정 |
 | S08 | notify-config(알림 설정) | UC12 | control-plane | 측정 |
@@ -118,6 +118,12 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 > **S71 default-skills 전 목록 (~60+, OpenClaw 출처 — 누락 0, per-skill 검증)**: 1password·blogwatcher·blucli·bluebubbles·camsnap·clawhub·coding-agent·eightctl·food-order(json-only)·gemini·gh-issues·gifgrep·gog·goplaces·healthcheck·himalaya·mcporter·nano-banana-pro·nano-pdf·openai-image-gen·openai-whisper·openai-whisper-api·openhue·oracle·ordercli·sag·session-logs·sherpa-onnx-tts·skill-creator·songsee·sonoscli·summarize·tmux·video-frames·wacli·xurl. **darwin-only**: apple-notes·apple-reminders·bear-notes·imsg·model-usage·peekaboo·things-mac. (이식 단위 = default-skills preload/loader + 번들; 동작은 per-skill Old-Baseline 측정.)
 > **분포/OS 레벨 (P01 앱 시나리오 범위 *밖* — 별도 배포 트랙, 완전성 기록용, 완전성R8)**: S68 Naia OS ISO 설치(라이브 USB→HD) · S69 persistent USB writer/update/status(naia-usb). = recipes/installer/os 패키징 레이어, 헥사고날 이식 슬라이스(agent+core+shell 앱) 밖. (앱 표면 자체는 R8=NONE.)
 > 누락 0 목표. **검증 열 = 측정/루크 확인으로만**(추측 ✅ 금지). 우선 확인: S18(잔재✓)·S36(깨짐✓)·S41/43(미배선✓)·S42·S48·S52·S56.
+
+> **S05 대화 transcript 영속/로드 (2026-06-18 transcript 트랙, V1-선행)**: 현 S05 = 죽은 게이트웨이 directToolCall(new-core fail-fast)에 의존 → verbatim 대화록 영속/로드 재구현.
+> - **S05a WRITE(전두엽=agent)**: agent 가 각 turn 을 `{adkPath}/conversations/{sessionId}.jsonl` append(`ConversationLogPort`). 인지흐름 = 사고→표현 후 *경험 외재화/기록*. sessionId 배선(proto+domain+codec). (Phase2: 음성 turn = agent 경유 동일 기록.)
+> - **S05b READ(shell, agent 독립 E1)**: HistoryTab 이 Rust IPC 로 conversations 직접 list/read/delete(**write 없음**). 죽은 directToolCall 대체.
+> - **S05c 관계(비구현)**: transcript = UC3/S41 memory recall 원재료 + 멀티모달 잠재기억 substrate(`audioRef` 예약).
+> - **검증(P02)**: agent write 계약(`conversation-log.contract.test.ts`: jsonl append·sessionId 격리·no-throw·CRLF) / shell read 계약(`conversation-store.test.ts`: 경계 가드·agent-down 빈목록) / 통합(`conversation-persistence.integration.test.ts`: 대화→재시작→복원 golden) + Playwright e2e(HistoryTab 복원)·e2e-tauri(Rust IPC adkPath 경계).
 
 ### 왜 전수인가 — fault isolation (루크 2026-06-09)
 

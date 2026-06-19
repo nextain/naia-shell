@@ -9,16 +9,15 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useChatStore } from "../../stores/chat";
 
-// Mock gateway-sessions module
-const mockListGatewaySessions = vi.fn();
-const mockGetGatewayHistory = vi.fn();
-const mockDeleteGatewaySession = vi.fn();
+// Mock conversation-store module (로컬 transcript read — 죽은 gateway-sessions directToolCall 대체, FR-CONV.4)
+const mockListConversations = vi.fn();
+const mockGetConversationHistory = vi.fn();
+const mockDeleteConversation = vi.fn();
 
-vi.mock("../../lib/gateway-sessions", () => ({
-	listGatewaySessions: (...args: unknown[]) => mockListGatewaySessions(...args),
-	getGatewayHistory: (...args: unknown[]) => mockGetGatewayHistory(...args),
-	deleteGatewaySession: (...args: unknown[]) =>
-		mockDeleteGatewaySession(...args),
+vi.mock("../../lib/conversation-store", () => ({
+	listConversations: (...args: unknown[]) => mockListConversations(...args),
+	getConversationHistory: (...args: unknown[]) => mockGetConversationHistory(...args),
+	deleteConversation: (...args: unknown[]) => mockDeleteConversation(...args),
 }));
 
 // Import after mocks
@@ -30,16 +29,16 @@ describe("HistoryTab", () => {
 
 	afterEach(() => {
 		cleanup();
-		mockListGatewaySessions.mockReset();
-		mockGetGatewayHistory.mockReset();
-		mockDeleteGatewaySession.mockReset();
+		mockListConversations.mockReset();
+		mockGetConversationHistory.mockReset();
+		mockDeleteConversation.mockReset();
 		onLoadSession.mockReset();
 		onLoadDiscordSession.mockReset();
 		useChatStore.setState(useChatStore.getInitialState());
 	});
 
 	it("shows empty state when no sessions", async () => {
-		mockListGatewaySessions.mockResolvedValue([]);
+		mockListConversations.mockResolvedValue([]);
 		render(<HistoryTab onLoadSession={onLoadSession} />);
 		await waitFor(() => {
 			expect(screen.getByText(/대화 기록이 없|No conversation/)).toBeDefined();
@@ -47,7 +46,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("shows error state when agent is unreachable", async () => {
-		mockListGatewaySessions.mockRejectedValue(new Error("agent-unreachable"));
+		mockListConversations.mockRejectedValue(new Error("agent-unreachable"));
 		render(<HistoryTab onLoadSession={onLoadSession} />);
 		await waitFor(() => {
 			expect(screen.getByText(/에이전트에 연결할 수 없|Cannot connect/)).toBeDefined();
@@ -57,7 +56,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("retries loading when retry button is clicked", async () => {
-		mockListGatewaySessions
+		mockListConversations
 			.mockRejectedValueOnce(new Error("agent-unreachable"))
 			.mockResolvedValueOnce([
 				{
@@ -81,7 +80,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("renders session list", async () => {
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "agent:main:main",
 				label: "Test Session",
@@ -99,7 +98,7 @@ describe("HistoryTab", () => {
 
 	it("marks current session", async () => {
 		useChatStore.setState({ sessionId: "agent:main:main" });
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "agent:main:main",
 				label: "Current",
@@ -117,7 +116,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("loads regular session on click", async () => {
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "agent:main:abc",
 				label: "Regular Chat",
@@ -126,7 +125,7 @@ describe("HistoryTab", () => {
 				updatedAt: Date.now(),
 			},
 		]);
-		mockGetGatewayHistory.mockResolvedValue([
+		mockGetConversationHistory.mockResolvedValue([
 			{
 				id: "gw-1",
 				role: "user",
@@ -157,7 +156,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("routes discord session click to onLoadDiscordSession", async () => {
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "discord:channel:123",
 				label: "Discord Chat",
@@ -186,7 +185,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("shows discord badge on discord sessions (legacy key)", async () => {
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "discord:dm:456",
 				label: "Discord DM",
@@ -211,7 +210,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("shows discord badge on per-channel-peer sessions", async () => {
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "agent:main:discord:direct:865850174651498506",
 				label: "Discord DM (per-channel-peer)",
@@ -236,7 +235,7 @@ describe("HistoryTab", () => {
 	});
 
 	it("routes per-channel-peer discord session click to onLoadDiscordSession", async () => {
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "agent:main:discord:direct:865850174651498506",
 				label: "Discord DM",
@@ -266,7 +265,7 @@ describe("HistoryTab", () => {
 
 	it("deletes session on confirm", async () => {
 		vi.spyOn(window, "confirm").mockReturnValue(true);
-		mockListGatewaySessions.mockResolvedValue([
+		mockListConversations.mockResolvedValue([
 			{
 				key: "agent:main:old",
 				label: "To Delete",
@@ -275,7 +274,7 @@ describe("HistoryTab", () => {
 				updatedAt: Date.now(),
 			},
 		]);
-		mockDeleteGatewaySession.mockResolvedValue(true);
+		mockDeleteConversation.mockResolvedValue(true);
 
 		const { container } = render(<HistoryTab onLoadSession={onLoadSession} />);
 		await waitFor(() => {
@@ -287,7 +286,7 @@ describe("HistoryTab", () => {
 		fireEvent.click(deleteBtn!);
 
 		await waitFor(() => {
-			expect(mockDeleteGatewaySession).toHaveBeenCalledWith("agent:main:old");
+			expect(mockDeleteConversation).toHaveBeenCalledWith("agent:main:old");
 		});
 	});
 });
