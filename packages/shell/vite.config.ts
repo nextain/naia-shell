@@ -18,6 +18,11 @@ export default defineConfig(async () => ({
 			"src-tauri/target/**",
 		],
 		setupFiles: ["./vitest.setup.ts"],
+		// Run test files sequentially. Several panel suites time out or leak shared
+		// state when many files run in parallel under load (they pass individually
+		// and with --no-file-parallelism); sequential keeps the suite green.
+		fileParallelism: false,
+		testTimeout: 15000,
 	},
 	clearScreen: false,
 	server: {
