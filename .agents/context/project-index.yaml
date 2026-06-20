@@ -33,7 +33,7 @@ on_demand_loading:
     - file: docs/ARCHITECTURE.md
       topics: [아키텍처, 패키지맵, 의존성]
   active_issues:
-    - file: .agents/progress/
+    - file: docs/progress/
       topics: [이슈, 진행중, SDLC]
   quarantine:
     - file: quarantine/MANIFEST.json

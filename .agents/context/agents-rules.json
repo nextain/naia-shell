@@ -216,7 +216,7 @@
     {
       "id": "F-LOG-3",
       "rule": "non_standard_logging",
-      "description": "shell src 에 console.* 직접 사용(표준 외 로깅) 금지. 표준=Logger(src/lib/logger.ts) Logger.debug/info/warn/error. scripts/check-logging.mjs 가 RED 강제(pre-commit+verify-watch). 발견 시 표준으로 교정.",
+      "description": "shell src 에 console.* 직접 사용(표준 외 로깅) 금지. 표준=Logger(src/lib/logger.ts) Logger.debug/info/warn/error. packages/shell/scripts/check-logging.mjs 가 RED 강제(pre-commit+verify-watch). 발견 시 표준으로 교정.",
       "status": "ACTIVE"
     }
   ],

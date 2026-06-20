@@ -5,7 +5,7 @@
   "refs": {
     "project_structure": "docs/project-structure.md",
     "agents_rules": ".agents/context/agents-rules.json",
-    "issue_docs_dir": ".agents/progress/",
+    "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
 
@@ -49,7 +49,7 @@
     ],
     "new_issue": [
       "1. current_work 필드 업데이트",
-      "2. .agents/progress/issue-{N}-{slug}.md 신규 생성",
+      "2. docs/progress/issue-{N}-{slug}.md 신규 생성",
       "3. sdlc_gates 전체 status → pending으로 리셋",
       "4. resource_registry.violations 초기화"
     ]

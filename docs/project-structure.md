@@ -51,6 +51,7 @@
 | `README.md` | 이 repo 소개 (복제 제외) |
 | `README.template.md` | 새 프로젝트가 받는 README skeleton (create/migration 이 README.md 로 사용) |
 | `CHANGELOG.md` | 변경 이력 |
+| `review-pass.yaml` | 크로스리뷰 리뷰어 패널 project-local override (정본 SoT = naia-settings/review.json) |
 
 > 새 파일 추가 시: `agents-rules.json` F13 → 이 표 → 사용자 승인 순서 필수.
 

@@ -325,12 +325,12 @@ export function App() {
 		}
 		// UC-ADK-PATH contract: the agent reads the ADK root from ~/.naia/adk-path
 		// (Rust, set only by setAdkPath→write_naia_path_cache), while the shell saves
-		// config to getAdkPath() (localStorage). These are SEPARATE sources and diverged
-		// (2026-06-18: ~/.naia/adk-path=D:\alpha-adk while the shell saved to
-		// C:\Users\LukeYang\naia-adk → the agent loaded a stale config and UI model
-		// selections never reached it). The branch above only re-syncs when workspaceRoot
-		// (localStorage) differs from adkPath (localStorage) — it never touches the agent's
-		// file. Force-resync the agent's path file to the shell's ADK on every boot so the
+		// config to getAdkPath() (localStorage). These are SEPARATE sources and can
+		// diverge (the agent's path file pointing at a different root than the shell's
+		// saved config → the agent loads a stale config and UI model selections never
+		// reach it). The branch above only re-syncs when workspaceRoot (localStorage)
+		// differs from adkPath (localStorage) — it never touches the agent's file.
+		// Force-resync the agent's path file to the shell's ADK on every boot so the
 		// save-path and the load-path can never silently diverge.
 		const effectiveAdk = getAdkPath();
 		if (effectiveAdk) setAdkPath(effectiveAdk);

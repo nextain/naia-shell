@@ -37,7 +37,7 @@
     - 파일: docs/ARCHITECTURE.md
       주제: [시스템 아키텍처, 패키지 구성, 의존성]
   진행_중인_이슈:
-    - 파일: .agents/progress/
+    - 파일: docs/progress/
       주제: [이슈, 진행 현황, SDLC 단계]
   격리_보관소:
     - 파일: quarantine/MANIFEST.json

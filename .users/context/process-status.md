@@ -15,7 +15,7 @@
 |------|------|
 | 프로젝트 구조 | `docs/project-structure.md` |
 | 규칙 SoT | `.agents/context/agents-rules.json` |
-| 이슈 문서 폴더 | `.agents/progress/` |
+| 이슈 문서 폴더 | `docs/progress/` |
 | 스크립트 레지스트리 | `scripts/README.md` |
 
 ---
@@ -113,6 +113,6 @@
 ### 새로운 이슈 시작 시
 
 1. `current_work` 필드를 업데이트한다
-2. `.agents/progress/issue-{번호}-{이름}.md` 신규 문서를 생성한다
+2. `docs/progress/issue-{번호}-{이름}.md` 신규 문서를 생성한다
 3. `sdlc_gates` 모든 단계의 상태를 `pending`으로 리셋한다
 4. `resource_registry.violations` 배열을 초기화한다
