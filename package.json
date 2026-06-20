@@ -6,9 +6,9 @@
   "description": "naia-os hexagonal transplant — F0 control-plane slice scaffold",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run src/test/*.test.ts",
-    "test:watch": "vitest src/test/*.test.ts",
-    "test:report": "vitest run src/test/*.test.ts --reporter=verbose"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:report": "vitest run --reporter=verbose"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
