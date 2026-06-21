@@ -538,4 +538,41 @@ test.describe("Memory Settings UI", () => {
 		expect(saved?.memoryEmbeddingProvider).toBe("vllm");
 		expect(saved?.memoryEmbeddingBaseUrl).toBe("http://localhost:11434");
 	});
+
+	test("모델 탭 — main 요약/small/embedding 3 컴포넌트 + embedding device 저장", async ({
+		page,
+	}) => {
+		await page.goto("/");
+		await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
+		await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
+		// "모델"(Models) 서브탭으로 이동. ⚠️ AI 탭 라벨이 "AI 모델"이라 /모델/ 부분매칭은 2개 → ^앵커 정확매칭.
+		await page.getByRole("button", { name: /^(모델|Models)$/ }).click();
+
+		// 3 컴포넌트의 small LLM / embedding 라디오 그룹이 보인다(main LLM 은 요약+이동 버튼).
+		await expect(
+			page.locator('input[name="models-small-llm"][value="naia"]'),
+		).toBeVisible({ timeout: 8_000 });
+		await expect(
+			page.locator('input[name="models-embedding"][value="offline"]'),
+		).toBeVisible();
+
+		// embedding offline → device gpu → 저장 → config.json 반영(통합 탭에서도 동일 계약).
+		await page
+			.locator('input[name="models-embedding"][value="offline"]')
+			.click();
+		await page
+			.locator('input[name="models-embedding-device"][value="gpu"]')
+			.click();
+		await page.locator(".settings-save-btn").first().click();
+		await page.waitForFunction(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig !== null,
+			{},
+			{ timeout: 5_000 },
+		);
+		const w = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig,
+		);
+		expect(w?.memoryEmbeddingProvider).toBe("offline");
+		expect(w?.memoryEmbeddingDevice).toBe("gpu");
+	});
 });

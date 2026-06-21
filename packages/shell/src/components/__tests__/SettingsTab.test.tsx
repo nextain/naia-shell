@@ -61,12 +61,15 @@ import { SettingsTab } from "../SettingsTab";
 // structure split into general | ai | skills | memory | info. Provider+API key,
 // STT/TTS and the model list moved to the "ai" tab; memory to "memory";
 // log viewer + danger zone to "info". Tests navigate via this helper.
+// 탭 순서: general | ai | models | skills | memory | info. "models"(통합 AI 모델 탭, 3-컴포넌트)
+// 가 ai 와 skills 사이에 추가되며 skills/memory/info 인덱스가 +1 시프트됨.
 const SETTINGS_TAB_INDEX = {
 	general: 0,
 	ai: 1,
-	skills: 2,
-	memory: 3,
-	info: 4,
+	models: 2,
+	skills: 3,
+	memory: 4,
+	info: 5,
 } as const;
 function gotoSettingsTab(name: keyof typeof SETTINGS_TAB_INDEX) {
 	const btns = document.querySelectorAll(".settings-tab-btn");
@@ -351,14 +354,14 @@ describe("SettingsTab — memory tab (#298)", () => {
 		vi.clearAllMocks();
 	});
 
-	it("renders settings tab bar with five tab buttons", () => {
+	it("renders settings tab bar with six tab buttons", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		const tabBar = document.querySelector(".settings-tab-bar");
 		expect(tabBar).toBeTruthy();
-		// #313 rewrite: general | ai | skills | memory | info
+		// general | ai | models | skills | memory | info (models 통합 탭 추가)
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		expect(tabBtns.length).toBe(5);
+		expect(tabBtns.length).toBe(6);
 	});
 
 	it("first tab button is active by default", () => {

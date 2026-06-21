@@ -557,8 +557,10 @@ function DeviceSelect({
 
 export function SettingsTab() {
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
-		"general" | "ai" | "skills" | "memory" | "info"
+		"general" | "ai" | "models" | "skills" | "memory" | "info"
 	>("general");
+	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
+	// 기존 provider·memoryLlm·memoryEmbedding state 에서 파생 표시 + 변경 시 해당 state 갱신(재사용, 중복 state 없음).
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
 		"idle" | "checking" | "healthy" | "unhealthy"
 	>("idle");
@@ -2113,6 +2115,13 @@ export function SettingsTab() {
 				</button>
 				<button
 					type="button"
+					className={`settings-tab-btn${activeSettingsTab === "models" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("models")}
+				>
+					{t("settings.tabModels")}
+				</button>
+				<button
+					type="button"
 					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("skills")}
 				>
@@ -3272,6 +3281,144 @@ export function SettingsTab() {
 									: undefined
 							}
 						>
+							{saved ? t("settings.saved") : t("settings.save")}
+						</button>
+					</div>
+				</>
+			)}
+			{activeSettingsTab === "models" && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.modelsSection")}</span>
+					</div>
+
+					{/* ── Main LLM (대화) — 상세는 AI 탭, 여기선 요약 + 이동 ── */}
+					<div className="settings-field">
+						<label>{t("settings.modelsMainLlm")}</label>
+						<div className="settings-hint">{t("settings.modelsMainLlmHint")}</div>
+						<div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+							<span style={{ fontWeight: 600 }}>{provider} / {model || "—"}</span>
+							<button type="button" onClick={() => setActiveSettingsTab("ai")}>
+								{t("settings.modelsEditInAi")}
+							</button>
+						</div>
+					</div>
+
+					{/* ── Small LLM (요약·사실추출) ── */}
+					<div className="settings-field">
+						<label>{t("settings.modelsSmallLlm")}</label>
+						<div className="settings-hint">{t("settings.modelsSmallLlmHint")}</div>
+						<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+							{(
+								[
+									["none", t("settings.memoryLlmNone")],
+									["naia", t("settings.memoryLlmNaia")],
+									["vllm", t("settings.memoryLlmVllm")],
+									["ollama", t("settings.memoryLlmOllama")],
+								] as const
+							).map(([val, label]) => (
+								<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+									<input
+										type="radio"
+										name="models-small-llm"
+										value={val}
+										checked={memoryLlmProvider === val}
+										onChange={() => setMemoryLlmProvider(val)}
+									/>
+									{label}
+								</label>
+							))}
+						</div>
+						{(memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama") && (
+							<div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+								<input
+									type="text"
+									value={memoryLlmBaseUrl}
+									onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
+									placeholder="http://localhost:8000"
+								/>
+								<input
+									type="text"
+									value={memoryLlmModel}
+									onChange={(e) => setMemoryLlmModel(e.target.value)}
+									placeholder={t("settings.model")}
+								/>
+							</div>
+						)}
+					</div>
+
+					{/* ── Embedding (의미검색) ── */}
+					<div className="settings-field">
+						<label>{t("settings.modelsEmbedding")}</label>
+						<div className="settings-hint">{t("settings.modelsEmbeddingHint")}</div>
+						<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+							{(
+								[
+									["none", t("settings.memoryEmbeddingNone")],
+									["offline", t("settings.memoryEmbeddingOffline")],
+									["vllm", t("settings.memoryEmbeddingVllm")],
+									["ollama", t("settings.memoryEmbeddingOllama")],
+									["naia", t("settings.memoryEmbeddingNaia")],
+								] as const
+							).map(([val, label]) => (
+								<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+									<input
+										type="radio"
+										name="models-embedding"
+										value={val}
+										checked={memoryEmbeddingProvider === val}
+										onChange={() => setMemoryEmbeddingProvider(val)}
+									/>
+									{label}
+								</label>
+							))}
+						</div>
+						{memoryEmbeddingProvider === "offline" && (
+							<div style={{ marginTop: "8px" }}>
+								<label>{t("settings.memoryEmbeddingDevice")}</label>
+								<div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
+									{(
+										[
+											["cpu", t("settings.memoryEmbeddingDeviceCpu")],
+											["gpu", t("settings.memoryEmbeddingDeviceGpu")],
+											["auto", t("settings.memoryEmbeddingDeviceAuto")],
+										] as const
+									).map(([val, label]) => (
+										<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+											<input
+												type="radio"
+												name="models-embedding-device"
+												value={val}
+												checked={memoryEmbeddingDevice === val}
+												onChange={() => setMemoryEmbeddingDevice(val)}
+											/>
+											{label}
+										</label>
+									))}
+								</div>
+								<div className="settings-hint">{t("settings.memoryEmbeddingDeviceHint")}</div>
+							</div>
+						)}
+						{(memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama") && (
+							<div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+								<input
+									type="text"
+									value={memoryEmbeddingBaseUrl}
+									onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
+									placeholder="http://localhost:11434"
+								/>
+								<input
+									type="text"
+									value={memoryEmbeddingModel}
+									onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
+									placeholder={t("settings.model")}
+								/>
+							</div>
+						)}
+					</div>
+
+					<div className="settings-actions">
+						<button type="button" className="settings-save-btn" onClick={handleSave}>
 							{saved ? t("settings.saved") : t("settings.save")}
 						</button>
 					</div>
