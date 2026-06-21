@@ -1,0 +1,15 @@
+name: oss-readiness
+# 공개 OSS 품질 게이트 — 내용기반 시크릿/PII/개인경로/내부URL 스캔(하드게이트>0 시 CI 실패).
+# 자동·결정론(의미판단 아님). 누가 키/PII/개인경로를 다시 넣으면 push/PR 에서 차단.
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: OSS-readiness hard gate (secrets/PII/paths/leaks)
+        run: node scripts/oss-readiness.mjs .
