@@ -55,6 +55,7 @@ function buildMockScript(overrides = "") {
 		lastExportPassword: null,
 		lastDeletedFactId: null,
 		writtenConfig: null,
+		agentKeysWritten: {},
 	};
 
 	var MOCK_FACTS = [
@@ -123,6 +124,11 @@ function buildMockScript(overrides = "") {
 		// ⚠️ sync_gateway_config 는 2026-06-12 제거된 죽은 IPC(Rust 미구현 phantom). 호출되지 않아야 정상 —
 		// 무해 stub 만 두고, 실 계약 검증은 write_naia_config 로 한다.
 		if (cmd === "sync_gateway_config") return;
+		// #18: 메모리 비밀(embed/qdrant/llm apiKey) 키체인 쓰기 — account(envKey)별 기록(계약 검증).
+		if (cmd === "write_agent_key") {
+			if (args && args.envKey) window.__MEMORY_SETTINGS_E2E__.agentKeysWritten[args.envKey] = args.value;
+			return;
+		}
 
 		// Standard stubs
 		if (cmd === "sync_openclaw_config") return;
@@ -577,5 +583,39 @@ test.describe("Memory Settings UI", () => {
 		);
 		expect(w?.memoryEmbeddingProvider).toBe("offline");
 		expect(w?.memoryEmbeddingDevice).toBe("gpu");
+	});
+
+	test("#18 메모리 임베딩 apiKey → OS 키체인 account(NAIA_MEMORY_EMBED_API_KEY) 기록", async ({
+		page,
+	}) => {
+		await gotoModels(page);
+		// vllm 임베딩 선택 → apiKey(placeholder sk-...) 입력 → 저장 → 키체인 쓰기 계약.
+		await page
+			.locator('input[name="memory-embedding"][value="vllm"]')
+			.click();
+		await page
+			.locator('input[placeholder*="localhost:11434"]')
+			.fill("http://localhost:11434");
+		await page
+			.locator('input[type="password"][placeholder="sk-..."]')
+			.fill("emb-secret-123");
+		await page
+			.locator('input[placeholder*="text-embedding-ada-002"]')
+			.fill("nomic-embed-text");
+		await page.locator(".settings-save-btn").first().click();
+
+		await page.waitForFunction(
+			() =>
+				(window as any).__MEMORY_SETTINGS_E2E__?.agentKeysWritten?.[
+					"NAIA_MEMORY_EMBED_API_KEY"
+				] != null,
+			{},
+			{ timeout: 5_000 },
+		);
+		const keys = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.agentKeysWritten,
+		);
+		// 비밀은 키체인 account 로(config.json 엔 strip). agent loadMemoryConfig 가 같은 account 로 읽는다(계약).
+		expect(keys?.["NAIA_MEMORY_EMBED_API_KEY"]).toBe("emb-secret-123");
 	});
 });

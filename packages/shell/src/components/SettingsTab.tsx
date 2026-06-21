@@ -11,6 +11,7 @@ import {
 	setAdkPath,
 	toLocalBlobUrl,
 	writeAgentKey,
+	writeAgentSecret,
 	applyModelSelectionToConfig,
 	writeNaiaConfig,
 } from "../lib/adk-store";
@@ -2033,6 +2034,14 @@ export function SettingsTab() {
 		// — OnboardingWizard 만 했고 SettingsTab 은 안 해서, 설정에서 넣은 키가 agent 에 안 닿아 401 났음(라이브 e2e 가 잡음).
 		if (resolvedApiKey) void writeAgentKey(newConfig.provider, "apiKey", resolvedApiKey);
 		if (naiaKey) void writeAgentKey(newConfig.provider, "naiaKey", naiaKey);
+		// #18: 메모리 비밀(embed/qdrant/llm apiKey)도 OS 키체인에 기록 — config.json 에선 strip 되므로
+		// agent loadMemoryConfig 가 키체인 account(NAIA_MEMORY_*_API_KEY)로 읽는다(provider 무관 → writeAgentSecret).
+		if (newConfig.memoryEmbeddingApiKey)
+			void writeAgentSecret("NAIA_MEMORY_EMBED_API_KEY", newConfig.memoryEmbeddingApiKey);
+		if (newConfig.qdrantApiKey)
+			void writeAgentSecret("NAIA_MEMORY_QDRANT_API_KEY", newConfig.qdrantApiKey);
+		if (newConfig.memoryLlmApiKey)
+			void writeAgentSecret("NAIA_MEMORY_LLM_API_KEY", newConfig.memoryLlmApiKey);
 		// Push webhook URLs + Discord defaults to the agent (#260). Replaces
 		// per-chat_request webhook field transmission with a one-shot config
 		// update so credentials don't appear in every stdio frame.

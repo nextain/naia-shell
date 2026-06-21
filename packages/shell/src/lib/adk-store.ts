@@ -273,6 +273,23 @@ export async function writeAgentKey(
 }
 
 /**
+ * Write a non-provider-scoped secret to the agent's OS keychain under an explicit
+ * account name (envKey). 메모리 비밀(embed/qdrant/llm apiKey)처럼 provider 매핑이 없는
+ * 시크릿용 — config.json 에서 strip 되므로 agent 가 키체인 account(NAIA_MEMORY_*_API_KEY)로 읽는다.
+ * envKey 는 alphanumeric + underscore 만(Rust write_agent_key 검증). 빈 값/adk 없음 = no-op.
+ */
+export async function writeAgentSecret(
+	envKey: string,
+	value: string,
+): Promise<void> {
+	const adkPath = getAdkPath();
+	if (!adkPath || !value) return;
+	await invoke("write_agent_key", { adkPath, envKey, value }).catch(() => {
+		// Non-fatal — env fallback / next save retries.
+	});
+}
+
+/**
  * provider 의 키(apiKey/naiaKey)가 *저장돼 있는지*만 확인한다(값은 안 가져옴 — 비밀을 webview 로 되읽지
  * 않는다). 근거 = naia-settings/credentials 매니페스트. Settings 가 입력란을 `*****`(저장됨)로 마스킹하는 데 사용.
  */
