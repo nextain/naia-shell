@@ -68,6 +68,7 @@
       "CODEX.md",
       ".gitignore",
       ".gitmodules",
+      ".env.example",
       "LICENSE",
       "package.json",
       "pnpm-workspace.yaml",

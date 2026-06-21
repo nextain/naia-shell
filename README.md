@@ -82,7 +82,7 @@ naia-os 가 다른 데스크톱 앱과 다른 점은 이 3층 분리다 (SoT: `d
 ## 아키텍처 한눈에
 
 - **셸** = Tauri(Rust) + 프론트엔드(`packages/shell`). 네이티브 창·IPC·표현.
-- **코어** = 헥사고날 TypeScript(`src/main`: domain/app/ports/adapters). agent 와 같은 사상.
+- **코어** = 헥사고날 TypeScript(`src/main`: domain/app/ports/adapters/composition). agent 와 같은 사상.
 - **사이드카** = 환경 독립 서비스(`packages/bgm-sidecar`).
 - 전체 사상(직교 2축·인지 계층·새 UC 레시피)의 **온보딩 SoT** = [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -91,15 +91,17 @@ naia-os 가 다른 데스크톱 앱과 다른 점은 이 3층 분리다 (SoT: `d
 ## 빠른 시작
 
 ```bash
-pnpm install                       # 의존성 설치
-pnpm test                          # 코어 단위·계약 테스트 (vitest)
+pnpm install                       # 의존성 설치 (루트)
 
-# 데스크톱 셸 실행 (Tauri)
+# 루트 — 코어 단위·계약 테스트
+pnpm test                          # vitest run (src/test — 순수 로직·UC 계약)
+
+# 데스크톱 셸 실행 (Tauri) — packages/shell 패키지
+pnpm -C packages/shell run tauri:dev   # 개발 모드 실행 (agent 자동 spawn)
+
+# 검증 (P04 — GUI/Rust 도 헤드리스로). test:e2e / test:e2e:tauri 는 packages/shell 에만 존재:
 cd packages/shell
-pnpm run tauri:dev                 # 개발 모드 실행 (agent 자동 spawn)
-
-# 검증 (P04 — GUI/Rust 도 헤드리스로)
-pnpm test                          # vitest (순수 로직)
+pnpm test                          # vitest (셸 단위)
 pnpm test:e2e                      # Playwright e2e (실 UI, Tauri IPC mock)
 xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+tauri-driver)
 ```
@@ -136,7 +138,7 @@ naia-os/
 │   └── context/    #   agents-rules.json(규칙 SoT) · process-status.json(진행)
 ├── .users/         # .agents/ 의 사람용 마크다운 mirror
 ├── src/
-│   ├── main/       # 코어 — domain / app / ports / adapters
+│   ├── main/       # 코어 — domain / app / ports / adapters / composition
 │   └── test/       # 코어 테스트
 ├── packages/
 │   ├── shell/      # Tauri 데스크톱 셸 (UI·아바타·음성 I/O·e2e)

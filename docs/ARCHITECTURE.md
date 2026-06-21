@@ -36,25 +36,45 @@ naia-adk (settings 저장소 = SoT). 키는 OS 키체인(평문 금지)
 > **도구·BGM 은 몸이 아니라 환경**이며, 뇌에서 분리된 독립 서비스(뇌 죽어도 생존, 뇌는 intent 만)다.
 > 환경 런타임을 agent 트리에 두면 substrate-agnostic 위반(아래 §3 본문은 그중 *뇌* 내부 계층).
 
-agent 는 기능(채팅·도구·기억)이 아니라 **계층**으로 구조화한다:
-- **입력층(ingress)** — `ports/uc1.ts AgentIngressPort` (transport-neutral 수신).
-- **처리** — `app/chat-turn-handler.ts` (recall→컨텍스트 주입→provider→save).
-- **출력층(egress)** — `AgentEgressPort` (text/usage/finish emit).
+agent 는 기능(채팅·도구·기억)이 아니라 **계층**으로 구조화한다 (경로는 모두 **agent 레포** `../new-naia-agent`):
+- **입력층(ingress)** — agent `ports/uc1.ts` `AgentIngressPort` (transport-neutral 수신).
+- **처리** — agent `app/chat-turn-handler.ts` (recall→컨텍스트 주입→provider→save).
+- **출력층(egress)** — agent `AgentEgressPort` (text/usage/finish emit).
 - **표현층** — *아직 분화 전*(현재 단일 텍스트 모달이라 출력≈표현). 다중 모달(음성/아바타/로봇 몸체)이 하나의 표현 의도를 소비하게 될 때 egress 에서 분화한다(UC2 착수 시). → **표현 egress 포트 자리 예약**.
 
 입력/출력이 transport-neutral 포트라, 안드로이드 임베디드로 갈아껴도 도메인·처리는 불변이다.
 
-## 4. 헥사고날 레이어 (agent)
+## 4. 헥사고날 레이어
 
-| 레이어 | 책임 | 예 |
+os 와 agent 는 **같은 헥사고날 사상**을 공유한다(domain↛adapters). 단 코드 위치·예시는 레포마다 다르다.
+
+### 4-a. 이 레포(os) 의 코어 — `src/main/`
+
+셸의 control-plane/대화 코어가 사는 곳(`@nextain/naia-os-core`). 실제 디렉토리:
+
+| 레이어 | 책임 | 이 레포의 예 (`src/main/`) |
 |---|---|---|
-| `domain/` | 순수 로직, I/O 0 | chat.ts(계약 union), memory.ts, provider-route.ts |
-| `app/` | use-case 오케스트레이션 | chat-turn-handler.ts |
-| `ports/` | 경계 인터페이스 | uc1.ts(Ingress/Egress/Provider/…), memory.ts |
-| `adapters/` | 포트 구현(I/O 소유) | grpc/, naia-memory.ts, naia-settings-store.ts, providers |
-| `composition/` | 와이어링 | index.ts |
+| `domain/` | 순수 로직, I/O 0 | `domain/chat.ts`(UC1 값객체) · `domain/config.ts` · `domain/boot.ts` · `domain/onboarding.ts` · `domain/voice.ts` |
+| `app/` | use-case 오케스트레이션 | `app/control/`(boot·status·approval·observe·mutate) · `app/chat/`(chat-service·client-session) |
+| `ports/` | 경계 인터페이스 | `ports/index.ts`(ConfigPort·BootStatePort·OnboardingFlowPort…) · `ports/uc1.ts`(ChatPort·AgentTransportPort·AgentMessage union) |
+| `adapters/` | 포트 구현(I/O 소유) | `adapters/tauri/`(invoke 바인딩) · `adapters/chat-bridge.ts` · `adapters/child-stdio.ts` · `adapters/message-router.ts` |
+| `composition/` | 와이어링 | `composition/index.ts`(`wireControlPlaneTauri()` 등 주입은 이 1곳) |
 
-도메인은 어댑터를 모른다. 새 외부 의존은 **어댑터**로, 경계는 **포트**로.
+> 셸 UI(React) = `packages/shell/` (별도 패키지, Tauri 프론트엔드). 코어는 위 `src/main/`.
+
+### 4-b. agent peer — `../new-naia-agent` (참고)
+
+뇌(agent)도 같은 레이어 구조를 따른다. **아래는 이 레포가 아니라 agent 레포**의 예시다(os↔agent 가 같은 사상임을 보이기 위한 peer 설명):
+
+| 레이어 | agent 레포의 예 |
+|---|---|
+| `domain/` | chat.ts(계약 union) · memory.ts · provider-route.ts |
+| `app/` | chat-turn-handler.ts (recall→provider→save) |
+| `ports/` | uc1.ts(Ingress/Egress/Provider/…) · memory.ts |
+| `adapters/` | grpc/ · naia-memory.ts · naia-settings-store.ts · providers |
+| `composition/` | index.ts |
+
+도메인은 어댑터를 모른다(양 레포 공통). 새 외부 의존은 **어댑터**로, 경계는 **포트**로.
 
 ## 5. 흔들림 방지 = 자동 강제 (드리프트 검출)
 
@@ -65,7 +85,7 @@ agent 는 기능(채팅·도구·기억)이 아니라 **계층**으로 구조화
 | **file-anchor** | `src/main/*` 파일이 `module-manifest.json` 에 {layer,uc,contract} 등록됐나 | PreToolUse 훅 + `check-file-anchors.mjs`(CI) |
 | **assembly-coverage** | 모든 S/UC 가 user-scenarios 에 전수분류(미분류 0) | `check-assembly-coverage.mjs`(CI) |
 | **compile-integrity** | core+shell+agent tsc 무결 | `check-compile-integrity.mjs`(CI) |
-| **logging** | Logger/DiagnosticLog 강제, console.* 금지 | `check-logging.mjs`(CI) |
+| **logging** | Logger 강제, console.* 금지 (shell src) | `packages/shell/scripts/check-logging.mjs`(pre-commit + verify-watch) |
 | **wire probe** | os outbound ⊆ agent accept / agent output ⊆ os classify | `scripts/builds/uc1-*-probe.mjs`(CI) |
 | **vitest** | UC 계약·통합 테스트 | CI `code-gates` job |
 | **self-trust** | 구조/헌장/SDLC 메타 | CI `verify` job |
@@ -88,8 +108,8 @@ agent 는 기능(채팅·도구·기억)이 아니라 **계층**으로 구조화
 9. **테스트(P04)** — UC-X 계약 테스트(`src/test/uc-x*.contract.test.ts`) + 필요 시 통합. 실 UI/Rust 변경은 Playwright/e2e-tauri 포함.
 10. **검증** — `pnpm test` + 위 게이트 전부 green. 그 다음 커밋.
 
-> 셸(UI) 측: `packages/shell/src/components/` + `chat-service.ts`(새 코어 경유는 `isNewCore()` 게이트). voice/tts/route 는 아직 옛 경로(UC2 후속).
+> 셸(UI) 측: `packages/shell/src/components/`(컴포넌트) + `packages/shell/src/lib/chat-service.ts`(새 코어 경유는 `isNewCore()` 게이트). voice/tts/route 는 아직 옛 경로(UC2 후속).
 
 ## 7. 정본 문서
-- `docs/brain-body-environment.md`(뇌·몸·환경 레이어 표준 — 환경=독립 사이드카) · `docs/user-scenarios.md`(UC SoT) · `docs/requirements.md`(FR/NFR) · `docs/project-structure.md`(구조) · `docs/logging.md` · `docs/progress/structure-soundness-review-2026-06-13.md`(현 위치+로드맵).
+- `docs/brain-body-environment.md`(뇌·몸·환경 레이어 표준 — 환경=독립 사이드카) · `docs/user-scenarios.md`(UC SoT) · `docs/requirements.md`(FR/NFR) · `docs/project-structure.md`(구조) · `docs/logging.md` · `docs/progress/99.dev-comm/structure-soundness-review-2026-06-13.md`(현 위치+로드맵).
 - 사상 갱신은 이 문서 + (헌장) AGENTS.md 동시.
