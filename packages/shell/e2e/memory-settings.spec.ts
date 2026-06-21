@@ -262,6 +262,38 @@ test.describe("Memory Settings UI", () => {
 		).toBeVisible();
 	});
 
+	test("offline embedding shows compute device(cpu/gpu/auto) + saves to config", async ({
+		page,
+	}) => {
+		await gotoSettings(page);
+		await page
+			.locator('input[name="memory-embedding"][value="offline"]')
+			.click();
+
+		// naia-embedded 컴퓨트 device 라디오(offline 전용)가 나타난다.
+		for (const d of ["cpu", "gpu", "auto"]) {
+			await expect(
+				page.locator(`input[name="memory-embedding-device"][value="${d}"]`),
+			).toBeVisible();
+		}
+
+		// gpu 선택 → 저장 → config.json(write_naia_config)에 memoryEmbeddingDevice=gpu 실린다.
+		await page
+			.locator('input[name="memory-embedding-device"][value="gpu"]')
+			.click();
+		await page.locator(".settings-save-btn").first().click();
+		await page.waitForFunction(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig !== null,
+			{},
+			{ timeout: 5_000 },
+		);
+		const written = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig,
+		);
+		expect(written?.memoryEmbeddingProvider).toBe("offline");
+		expect(written?.memoryEmbeddingDevice).toBe("gpu");
+	});
+
 	test("vllm/ollama embedding shows base URL, key, and model fields", async ({
 		page,
 	}) => {

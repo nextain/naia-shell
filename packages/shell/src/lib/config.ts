@@ -196,6 +196,8 @@ export interface AppConfig {
 	memoryEmbeddingProvider?: "none" | "offline" | "vllm" | "ollama" | "naia";
 	/** Offline embedding model (used when memoryEmbeddingProvider = 'offline'). */
 	memoryOfflineModel?: "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
+	/** naia-embedded 컴퓨트 device (memoryEmbeddingProvider = 'offline'). cpu=강제CPU / gpu=가용시GPU(없으면 CPU 폴백) / auto=자동. */
+	memoryEmbeddingDevice?: "cpu" | "gpu" | "auto";
 	/** Base URL for vLLM/Ollama embedding endpoint. */
 	memoryEmbeddingBaseUrl?: string;
 	/** API key for embedding endpoint (vLLM/Ollama). */

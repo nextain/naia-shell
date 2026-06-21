@@ -761,6 +761,9 @@ export function SettingsTab() {
 	const [memoryOfflineModel, setMemoryOfflineModel] = useState<
 		"all-MiniLM-L6-v2" | "all-mpnet-base-v2"
 	>(existing?.memoryOfflineModel ?? "all-MiniLM-L6-v2");
+	const [memoryEmbeddingDevice, setMemoryEmbeddingDevice] = useState<
+		"cpu" | "gpu" | "auto"
+	>(existing?.memoryEmbeddingDevice ?? "cpu");
 	const [memoryEmbeddingBaseUrl, setMemoryEmbeddingBaseUrl] = useState(
 		existing?.memoryEmbeddingBaseUrl ?? "",
 	);
@@ -1986,6 +1989,8 @@ export function SettingsTab() {
 			memoryEmbeddingProvider,
 			memoryOfflineModel:
 				memoryEmbeddingProvider === "offline" ? memoryOfflineModel : undefined,
+			memoryEmbeddingDevice:
+				memoryEmbeddingProvider === "offline" ? memoryEmbeddingDevice : undefined,
 			memoryEmbeddingBaseUrl:
 				memoryEmbeddingProvider === "vllm" ||
 				memoryEmbeddingProvider === "ollama"
@@ -3411,6 +3416,49 @@ export function SettingsTab() {
 										</label>
 									))}
 								</div>
+							</div>
+						)}
+
+						{/* naia-embedded 컴퓨트 device (offline 전용): cpu/gpu/auto */}
+						{memoryEmbeddingProvider === "offline" && (
+							<div className="settings-field">
+								<label>{t("settings.memoryEmbeddingDevice")}</label>
+								<div
+									style={{
+										display: "flex",
+										flexDirection: "column",
+										gap: "8px",
+									}}
+								>
+									{(
+										[
+											["cpu", t("settings.memoryEmbeddingDeviceCpu")],
+											["gpu", t("settings.memoryEmbeddingDeviceGpu")],
+											["auto", t("settings.memoryEmbeddingDeviceAuto")],
+										] as const
+									).map(([val, label]) => (
+										<label
+											key={val}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+											}}
+										>
+											<input
+												type="radio"
+												name="memory-embedding-device"
+												value={val}
+												checked={memoryEmbeddingDevice === val}
+												onChange={() => setMemoryEmbeddingDevice(val)}
+											/>
+											{label}
+										</label>
+									))}
+								</div>
+								<span className="settings-hint">
+									{t("settings.memoryEmbeddingDeviceHint")}
+								</span>
 							</div>
 						)}
 
