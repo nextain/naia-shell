@@ -3275,11 +3275,7 @@ export function SettingsTab() {
 			{activeSettingsTab === "skills" && <SkillsTab />}
 			{activeSettingsTab === "memory" && (
 				<>
-					{/* Coming soon banner */}
-					<div className="settings-coming-soon-banner">
-						<span>⏳ {t("settings.comingSoon")}</span>
-					</div>
-					<div style={{ opacity: 0.5, pointerEvents: "none" }}>
+					<div>
 						<div className="settings-section-divider">
 							<span>{t("settings.memorySection")}</span>
 						</div>
@@ -3542,20 +3538,17 @@ export function SettingsTab() {
 						)}
 
 						{/* Backup section — 구현 검증 전까지 비활성. */}
-						<div className="settings-field" style={{ opacity: 0.45 }}>
+						<div className="settings-field">
 							<label>{t("settings.memoryBackup")}</label>
 							<input
 								type="password"
 								value={backupPassword}
 								onChange={(e) => setBackupPassword(e.target.value)}
 								placeholder={t("settings.memoryBackupPassword")}
-								disabled
 							/>
 							<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
 								<button
 									type="button"
-									disabled
-									title="검증 중 — 아직 사용할 수 없습니다"
 									onClick={async () => {
 										setBackupStatus("exporting");
 										setBackupError("");
@@ -3585,8 +3578,6 @@ export function SettingsTab() {
 								</button>
 								<button
 									type="button"
-									disabled
-									title="검증 중 — 아직 사용할 수 없습니다"
 									onClick={async () => {
 										const pw = backupPassword;
 										const fileInput = document.createElement("input");
@@ -3618,9 +3609,6 @@ export function SettingsTab() {
 										: t("settings.memoryBackupImport")}
 								</button>
 							</div>
-							<span className="settings-hint">
-								{t("settings.memoryBackupComingSoon")}
-							</span>
 							{backupStatus === "done" && (
 								<span
 									className="settings-hint"
@@ -3694,6 +3682,13 @@ export function SettingsTab() {
 								))}
 							</div>
 						)}
+					</div>
+					{/* 메모리 설정 저장 — 다른 탭과 동일하게 handleSave 로 saveConfig(localStorage) +
+					    writeNaiaConfig(naia-settings/config.json = agent 가 읽는 싱크)에 반영. */}
+					<div className="settings-actions">
+						<button type="button" className="settings-save-btn" onClick={handleSave}>
+							{saved ? t("settings.saved") : t("settings.save")}
+						</button>
 					</div>
 				</>
 			)}

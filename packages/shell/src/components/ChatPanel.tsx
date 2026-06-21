@@ -367,6 +367,8 @@ function phaseToMode(
 
 export function ChatPanel() {
 	const [input, setInput] = useState("");
+	// UC-compaction: agent 가 예산 압박으로 이전 대화를 요약했을 때 표시할 알림(흡수된 메시지 수). null=숨김.
+	const [compactionNotice, setCompactionNotice] = useState<number | null>(null);
 	const [activeTab, setActiveTab] = useState<TabId>("chat");
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
@@ -1193,6 +1195,10 @@ export function ChatPanel() {
 					message: chunk.message,
 					timestamp: chunk.timestamp,
 				});
+				break;
+			case "compacted":
+				// UC-compaction: 예산 압박 요약 발생 → 사용자 알림.
+				setCompactionNotice(chunk.droppedCount);
 				break;
 			case "discord_message":
 				// Discord DM messages are shown in the dedicated Channels tab.
@@ -2590,6 +2596,12 @@ export function ChatPanel() {
 					/>
 				)}
 
+				{compactionNotice !== null && activeTab === "chat" && (
+					<div className="chat-compaction-notice" data-testid="compaction-notice">
+						<span>🗜 {t("chat.summarized")}{compactionNotice > 0 ? ` (${compactionNotice})` : ""}</span>
+						<button type="button" aria-label="dismiss" onClick={() => setCompactionNotice(null)}>×</button>
+					</div>
+				)}
 				{/* Messages (chat tab) */}
 				<div
 					className="chat-messages"

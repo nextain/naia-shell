@@ -105,6 +105,7 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
       return level === null || message === null ? null : { kind: "logEntry", level, message };
     }
     case "token_warning": return { kind: "tokenWarning", raw: m };
+    case "compacted": { const dc = r["droppedCount"]; return { kind: "compacted", droppedCount: typeof dc === "number" ? dc : 0 }; }
     case "finish": return { kind: "finish" };
     case "error": { const message = reqStr(r["message"]); return message === null ? null : { kind: "error", message }; }
     default: return null; // CHAT_TURN_TYPES 에 있으나 매핑 없음 = 손상

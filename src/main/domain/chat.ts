@@ -56,6 +56,7 @@ export type ChatChunk =
   | { readonly kind: "usage"; readonly raw: unknown }
   | { readonly kind: "logEntry"; readonly level: string; readonly message: string }
   | { readonly kind: "tokenWarning"; readonly raw: unknown }
+  | { readonly kind: "compacted"; readonly droppedCount: number } // UC-compaction: agent 가 예산 압박 시 head 요약 발생 알림(UI 표시용)
   | { readonly kind: "finish" }
   | { readonly kind: "error"; readonly message: string };
 
@@ -125,6 +126,8 @@ export const CHAT_TURN_VARIANTS = [
   "finish", "error", "usage", "log_entry", "token_warning",
   // turn-bound 승인(requestId 보유, turn 이 응답 대기 — approval_request 와 동급, ChatPanel chunk 처리). codex S1.
   "gateway_approval_request",
+  // UC-compaction(FR-COMPACT): 예산 압박 요약 발생 알림(requestId 보유, 비-terminal chat-turn 이벤트 — ChatPanel 배너).
+  "compacted",
 ] as const;
 export const NONCHAT_KNOWN_VARIANTS = [
   "audio", "object", "panel_control", "panel_install_result",

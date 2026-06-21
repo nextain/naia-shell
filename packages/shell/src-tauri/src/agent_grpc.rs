@@ -38,6 +38,7 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
         Some(Event::TokenWarning(t)) => json!({"type":"token_warning","requestId":rid,"raw":parse(&t.raw_json)}),
         Some(Event::Finish(_)) => json!({"type":"finish","requestId":rid}),
         Some(Event::Error(e)) => json!({"type":"error","requestId":rid,"message":e.message}),
+        Some(Event::Compacted(c)) => json!({"type":"compacted","requestId":rid,"droppedCount":c.dropped_count}), // UC-compaction(FR-COMPACT)
         None => json!({"type":"error","requestId":rid,"message":"empty AgentEvent"}),
     }
 }

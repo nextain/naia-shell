@@ -54,7 +54,7 @@ function buildMockScript(overrides = "") {
 		deletedFacts: 0,
 		lastExportPassword: null,
 		lastDeletedFactId: null,
-		syncGatewayParams: null,
+		writtenConfig: null,
 	};
 
 	var MOCK_FACTS = [
@@ -114,10 +114,15 @@ function buildMockScript(overrides = "") {
 			return;
 		}
 
-		if (cmd === "sync_gateway_config") {
-			window.__MEMORY_SETTINGS_E2E__.syncGatewayParams = args && args.params ? args.params : args;
+		// 실 영속 경로: handleSave → writeNaiaConfig → write_naia_config(stripForAgent 적용 JSON).
+		// agent 가 읽는 config.json 싱크. 비밀키(*ApiKey)만 strip, 비밀 아닌 메모리 필드는 그대로 실린다.
+		if (cmd === "write_naia_config") {
+			try { window.__MEMORY_SETTINGS_E2E__.writtenConfig = JSON.parse(args.json); } catch (e) {}
 			return;
 		}
+		// ⚠️ sync_gateway_config 는 2026-06-12 제거된 죽은 IPC(Rust 미구현 phantom). 호출되지 않아야 정상 —
+		// 무해 stub 만 두고, 실 계약 검증은 write_naia_config 로 한다.
+		if (cmd === "sync_gateway_config") return;
 
 		// Standard stubs
 		if (cmd === "sync_openclaw_config") return;
@@ -142,21 +147,22 @@ function buildMockScript(overrides = "") {
 `;
 }
 
-/** Navigate to SettingsTab and wait for the memory section to be visible. */
+/** Navigate to SettingsTab → Memory sub-tab, wait for memory content. */
 async function gotoSettings(page: import("@playwright/test").Page) {
 	await page.goto("/");
 	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
 
-	// Open settings — use first() to avoid strict-mode violation if multiple matches
-	await page
-		.getByRole("button", { name: /settings|설정/i })
-		.first()
-		.click();
+	// 설정 버튼(로케일 ko="설정" / en="Settings"). ⚠️ /설정/i 부분매칭은 "재설정 (앱 재시작)"(RefAudioSection)
+	// 도 매칭하므로 ^앵커 정확매칭으로 그 오매칭을 회피한다.
+	await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
 
-	// Wait for memory section heading
-	await expect(page.getByText(/기억|Memory/i).first()).toBeVisible({
-		timeout: 8_000,
-	});
+	// SettingsTab 내 Memory 서브탭으로 이동 — adapter/embedding/facts/backup 은 이 탭에서만 렌더된다.
+	await page.locator(".settings-tab-btn", { hasText: /기억|Memory/i }).click();
+
+	// 메모리 콘텐츠(활성화된 adapter 라디오)가 보이면 도착.
+	await expect(
+		page.locator('input[name="memory-adapter"][value="local"]'),
+	).toBeVisible({ timeout: 8_000 });
 }
 
 test.describe("Memory Settings UI", () => {
@@ -398,7 +404,7 @@ test.describe("Memory Settings UI", () => {
 		expect(result.lastExportPassword).toBe("test-password");
 	});
 
-	test("save calls sync_gateway_config with memory fields", async ({
+	test("save persists memory fields to config.json (write_naia_config)", async ({
 		page,
 	}) => {
 		await gotoSettings(page);
@@ -423,27 +429,25 @@ test.describe("Memory Settings UI", () => {
 		// Save
 		await page.locator(".settings-save-btn").first().click();
 
-		// Wait for sync_gateway_config IPC to be called
+		// 실 영속 경로 검증: write_naia_config(config.json — agent 가 읽는 싱크)에 메모리 필드가 실린다.
 		await page.waitForFunction(
-			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig !== null,
 			{},
 			{ timeout: 5_000 },
 		);
 
-		const syncParams = await page.evaluate(
-			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams,
+		const written = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig,
 		);
 
-		expect(syncParams?.memory_adapter).toBe("qdrant");
-		expect(syncParams?.qdrant_url).toBe("http://localhost:6333");
-		expect(syncParams?.memory_embedding_provider).toBe("vllm");
-		expect(syncParams?.memory_embedding_base_url).toBe(
-			"http://localhost:11434",
-		);
-		expect(syncParams?.memory_embedding_model).toBe("nomic-embed-text");
+		expect(written?.memoryAdapter).toBe("qdrant");
+		expect(written?.qdrantUrl).toBe("http://localhost:6333");
+		expect(written?.memoryEmbeddingProvider).toBe("vllm");
+		expect(written?.memoryEmbeddingBaseUrl).toBe("http://localhost:11434");
+		expect(written?.memoryEmbeddingModel).toBe("nomic-embed-text");
 	});
 
-	test("save calls sync_gateway_config with local adapter and no embedding (defaults)", async ({
+	test("save persists local adapter and no embedding (defaults) to config.json", async ({
 		page,
 	}) => {
 		await gotoSettings(page);
@@ -453,20 +457,20 @@ test.describe("Memory Settings UI", () => {
 		await page.locator(".settings-save-btn").first().click();
 
 		await page.waitForFunction(
-			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams !== null,
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig !== null,
 			{},
 			{ timeout: 5_000 },
 		);
 
-		const syncParams = await page.evaluate(
-			() => (window as any).__MEMORY_SETTINGS_E2E__?.syncGatewayParams,
+		const written = await page.evaluate(
+			() => (window as any).__MEMORY_SETTINGS_E2E__?.writtenConfig,
 		);
 
-		// local adapter with no embedding should be synced
-		expect(syncParams?.memory_adapter).toBe("local");
-		expect(syncParams?.memory_embedding_provider).toBe("none");
-		// qdrant fields should be null/absent
-		expect(syncParams?.qdrant_url == null).toBe(true);
+		// local adapter with no embedding should be persisted
+		expect(written?.memoryAdapter).toBe("local");
+		expect(written?.memoryEmbeddingProvider).toBe("none");
+		// qdrant fields should be null/absent (stripForAgent + undefined 직렬화 생략)
+		expect(written?.qdrantUrl == null).toBe(true);
 	});
 
 	test("save persists memory fields to localStorage", async ({ page }) => {

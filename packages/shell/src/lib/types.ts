@@ -146,6 +146,11 @@ export type AgentResponseChunk =
 			timestamp: string;
 	  }
 	| {
+			type: "compacted";
+			requestId: string;
+			droppedCount: number;
+	  }
+	| {
 			type: "discord_message";
 			requestId: string;
 			from: string;
