@@ -16,7 +16,7 @@ import {
  *   Panel is activated via ModeBar tab click.
  */
 
-const FAKE_ROOT = "/var/home/luke/dev";
+const FAKE_ROOT = "/home/user/dev";
 
 /** Fake session data returned by workspace_get_sessions */
 const FAKE_SESSIONS = [
@@ -286,7 +286,7 @@ test.describe("Workspace Panel E2E", () => {
 				}),
 			);
 			// Set ADK path so isAdkInitialized() returns true (avoids AdkSetupScreen)
-			localStorage.setItem("naia-adk-path", "/var/home/luke/dev");
+			localStorage.setItem("naia-adk-path", "/home/user/dev");
 			// Clear any saved classification so Phase 4 triggers first-run
 			localStorage.removeItem("workspace-classified-dirs");
 		});
@@ -632,7 +632,7 @@ test.describe("Workspace Panel E2E", () => {
 		// Emit a file-changed event to trigger refresh
 		await page.evaluate(() => {
 			window.__NAIA_E2E__.emitEvent("workspace:file-changed", {
-				session: "/var/home/luke/dev/naia-os-issue-79",
+				session: "/home/user/dev/naia-os-issue-79",
 				file: "shell/src/App.tsx",
 				timestamp: Math.floor(Date.now() / 1000),
 			});
@@ -671,7 +671,7 @@ test.describe("WG: Worktree grouping", () => {
 				}),
 			);
 			// Set ADK path so isAdkInitialized() returns true (avoids AdkSetupScreen)
-			localStorage.setItem("naia-adk-path", "/var/home/luke/dev");
+			localStorage.setItem("naia-adk-path", "/home/user/dev");
 			// Ensure clean classification state (same as main describe beforeEach)
 			localStorage.removeItem("workspace-classified-dirs");
 		});

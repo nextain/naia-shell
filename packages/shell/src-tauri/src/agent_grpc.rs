@@ -156,13 +156,15 @@ mod live_tests {
         if std::env::var("RUN_LIVE_RUST_GRPC").as_deref() != Ok("1") {
             return;
         }
-        let entry = "/var/home/luke/alpha-adk/projects/new-naia/new-naia-agent/scripts/builds/agent-stdio-entry.mjs";
+        // Maintainer-supplied path to the agent stdio entry (no personal default).
+        let entry = std::env::var("NAIA_AGENT_ENTRY")
+            .expect("set NAIA_AGENT_ENTRY to the agent-stdio-entry.mjs path for this live test");
         // agent stderr(DEBUG ingress) → 안정 파일($HOME). cargo test stdout 미포착·/tmp 소실 회피.
         let dbg_path = format!("{}/rust-grpc-agent-stderr.log", std::env::var("HOME").unwrap_or_default());
         let dbg_file = std::fs::File::create(&dbg_path).expect("dbg file");
         let mut child = Command::new("node")
             .arg(entry)
-            .env("NAIA_ADK_PATH", "/home/luke/naia-adk")
+            .env("NAIA_ADK_PATH", std::env::var("NAIA_ADK_PATH").unwrap_or_default())
             .env("NAIA_AGENT_SKILLS", "off")
             .env("NAIA_AGENT_MEMORY", "off")
             .env("NAIA_AGENT_DEBUG", "1")
@@ -183,7 +185,7 @@ mod live_tests {
         }
         assert!(!addr.is_empty(), "GRPC_LISTENING addr");
         let mut client = AgentGrpc::connect(format!("http://{}", addr)).await.expect("connect");
-        let sw = client.set_workspace("/home/luke/naia-adk".into()).await.expect("set_workspace");
+        let sw = client.set_workspace(std::env::var("NAIA_ADK_PATH").unwrap_or_default()).await.expect("set_workspace");
         eprintln!("[RUST-GRPC-TEST] SetWorkspace loaded={} {}/{}", sw.loaded, sw.provider, sw.model);
         let req = json_to_chat_request(&serde_json::json!({
             "requestId": "rust-t1",

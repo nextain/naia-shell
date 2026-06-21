@@ -94,12 +94,33 @@ pub fn new_shared_watcher() -> SharedWatcherState {
 
 // --- Constants ---------------------------------------------------------------
 
-#[cfg(unix)]
-const WORKSPACE_ROOT: &str = "/var/home/luke/dev";
-#[cfg(windows)]
-const WORKSPACE_ROOT: &str = "";
-
 static WORKSPACE_ROOT_OVERRIDE: OnceLock<Mutex<String>> = OnceLock::new();
+
+// Default workspace root when no override has been set by the UI/config.
+// Portable: NAIA_WORKSPACE_ROOT env overrides; otherwise $HOME/dev (Unix) or
+// %USERPROFILE%\dev (Windows). The user normally sets the real root via the
+// `set_root` command, so this is only the first-run fallback.
+fn default_workspace_root() -> String {
+    if let Ok(v) = std::env::var("NAIA_WORKSPACE_ROOT") {
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    #[cfg(unix)]
+    {
+        match std::env::var("HOME") {
+            Ok(h) if !h.is_empty() => format!("{h}/dev"),
+            _ => String::new(),
+        }
+    }
+    #[cfg(windows)]
+    {
+        match std::env::var("USERPROFILE") {
+            Ok(h) if !h.is_empty() => format!("{h}\\dev"),
+            _ => String::new(),
+        }
+    }
+}
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -107,7 +128,7 @@ fn get_workspace_root() -> String {
     if let Some(m) = WORKSPACE_ROOT_OVERRIDE.get() {
         m.lock().unwrap().clone()
     } else {
-        WORKSPACE_ROOT.to_string()
+        default_workspace_root()
     }
 }
 
@@ -555,7 +576,7 @@ pub fn workspace_set_root(root: String) -> Result<String, String> {
     let canonical =
         dunce::canonicalize(&p).map_err(|e| format!("Workspace root inaccessible: {e}"))?;
     let canonical_str = canonical.to_string_lossy().to_string();
-    let m = WORKSPACE_ROOT_OVERRIDE.get_or_init(|| Mutex::new(WORKSPACE_ROOT.to_string()));
+    let m = WORKSPACE_ROOT_OVERRIDE.get_or_init(|| Mutex::new(default_workspace_root()));
     *m.lock().unwrap() = canonical_str.clone();
     crate::log_verbose(&format!(
         "[workspace] set_root exit canonical={canonical_str} ms={}",

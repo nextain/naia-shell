@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "naia-os hexagonal transplant — F0 control-plane slice scaffold",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

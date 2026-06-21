@@ -89,11 +89,11 @@ afterEach(() => {
 describe("ChatPanel — file deep-links", () => {
 	it("renders an absolute .ts file path as a clickable button", () => {
 		setAssistantMessage(
-			"수정한 파일은 /var/home/luke/dev/naia-os/shell/src/App.tsx 입니다.",
+			"수정한 파일은 /home/user/dev/naia-os/shell/src/App.tsx 입니다.",
 		);
 		render(<ChatPanel />);
 		const btn = screen.getByRole("button", {
-			name: "/var/home/luke/dev/naia-os/shell/src/App.tsx",
+			name: "/home/user/dev/naia-os/shell/src/App.tsx",
 		});
 		expect(btn).toBeInTheDocument();
 	});
@@ -150,7 +150,7 @@ describe("ChatPanel — file deep-links", () => {
 	});
 
 	it("does NOT render deeplinks for paths in code blocks", () => {
-		setAssistantMessage("```\n/var/home/luke/dev/App.tsx\n```");
+		setAssistantMessage("```\n/home/user/dev/App.tsx\n```");
 		render(<ChatPanel />);
 		// Path inside code block — code component, not p component — no button
 		expect(

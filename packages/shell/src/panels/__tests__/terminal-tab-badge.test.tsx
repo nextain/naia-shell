@@ -55,7 +55,7 @@ function TabLabel({ tab }: { tab: TerminalTab }) {
 
 describe("TerminalTab badge rendering", () => {
 	it("shows no badges when issueId and agent are undefined", () => {
-		const tab: TerminalTab = { pty_id: "p1", dir: "/home/dev/naia-os", pid: 100 };
+		const tab: TerminalTab = { pty_id: "p1", dir: "/home/user/naia-os", pid: 100 };
 		render(<TabLabel tab={tab} />);
 
 		expect(screen.queryByText(/^#\d+$/)).toBeNull();
@@ -65,7 +65,7 @@ describe("TerminalTab badge rendering", () => {
 	it("shows #issueId badge when issueId is set", () => {
 		const tab: TerminalTab = {
 			pty_id: "p1",
-			dir: "/home/dev/naia-os",
+			dir: "/home/user/naia-os",
 			pid: 100,
 			issueId: 278,
 		};
@@ -79,7 +79,7 @@ describe("TerminalTab badge rendering", () => {
 	it("shows agent badge when agent is set", () => {
 		const tab: TerminalTab = {
 			pty_id: "p1",
-			dir: "/home/dev/naia-os",
+			dir: "/home/user/naia-os",
 			pid: 100,
 			agent: "claude" as AgentType,
 		};
@@ -93,7 +93,7 @@ describe("TerminalTab badge rendering", () => {
 	it("shows both badges when issueId and agent are set", () => {
 		const tab: TerminalTab = {
 			pty_id: "p1",
-			dir: "/home/dev/naia-os",
+			dir: "/home/user/naia-os",
 			pid: 100,
 			issueId: 278,
 			agent: "opencode" as AgentType,
@@ -108,7 +108,7 @@ describe("TerminalTab badge rendering", () => {
 	it("shows issueId 0 as badge (falsy number edge case)", () => {
 		const tab: TerminalTab = {
 			pty_id: "p1",
-			dir: "/home/dev/repo",
+			dir: "/home/user/repo",
 			pid: 100,
 			issueId: 0,
 		};
@@ -126,7 +126,7 @@ describe("TerminalTab badge rendering", () => {
 	it("uses dir basename for label (windows path)", () => {
 		const tab: TerminalTab = {
 			pty_id: "p1",
-			dir: "C:\\Users\\dev\\naia-os",
+			dir: "C:\\work\\naia-os",
 			pid: 1,
 		};
 		render(<TabLabel tab={tab} />);

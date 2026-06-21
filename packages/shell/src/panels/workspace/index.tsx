@@ -21,7 +21,7 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 				path: {
 					type: "string",
 					description:
-						"열 파일의 절대 경로 (e.g. /var/home/luke/dev/naia-os/shell/src/App.tsx)",
+						"열 파일의 절대 경로 (e.g. /path/to/workspace/naia-os/shell/src/App.tsx)",
 				},
 			},
 			required: ["path"],
@@ -91,7 +91,7 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 				dir: {
 					type: "string",
 					description:
-						"터미널을 열 디렉토리 절대 경로 (e.g. /var/home/luke/dev/naia-os)",
+						"터미널을 열 디렉토리 절대 경로 (e.g. /path/to/workspace/naia-os)",
 				},
 			},
 			required: ["dir"],
@@ -133,7 +133,7 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 				dir: {
 					type: "string",
 					description:
-						"명령을 실행할 디렉토리. 절대 경로(e.g. /var/home/luke/dev/naia-os) 또는 skill_workspace_get_sessions 반환값의 sessions[].dir 식별자(폴더 이름, e.g. 'naia-os')를 받는다. 식별자는 해당 세션의 절대 경로로 자동 해석된다. 생략 시 워크스페이스 루트.",
+						"명령을 실행할 디렉토리. 절대 경로(e.g. /path/to/workspace/naia-os) 또는 skill_workspace_get_sessions 반환값의 sessions[].dir 식별자(폴더 이름, e.g. 'naia-os')를 받는다. 식별자는 해당 세션의 절대 경로로 자동 해석된다. 생략 시 워크스페이스 루트.",
 				},
 				timeout_secs: {
 					type: "number",

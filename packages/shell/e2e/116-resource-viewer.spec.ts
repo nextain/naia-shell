@@ -16,7 +16,7 @@ import {
  *   Agent responses are injected via simulated agent_response events.
  */
 
-const FAKE_ROOT = "/var/home/luke/dev";
+const FAKE_ROOT = "/home/user/dev";
 
 const FAKE_CSV =
 	"name,score,city\nAlice,95,Seoul\nBob,80,Busan\nCharlie,70,Incheon";
@@ -139,7 +139,7 @@ const TAURI_MOCK_SCRIPT = `
 			var rid = req.requestId;
 			var lastMsg = req.messages[req.messages.length - 1];
 			var text = (lastMsg.content || "").toLowerCase().indexOf("deeplink") !== -1
-				? "수정한 파일: /var/home/luke/dev/naia-os/shell/src/App.tsx 입니다."
+				? "수정한 파일: /home/user/dev/naia-os/shell/src/App.tsx 입니다."
 				: "안녕하세요!";
 			setTimeout(function() {
 				emitEvent("agent_response", JSON.stringify({ type: "text", requestId: rid, text: text }));

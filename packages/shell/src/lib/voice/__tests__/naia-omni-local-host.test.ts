@@ -86,15 +86,15 @@ describe("naia-omni Naia Local host policy (no OS-layer block)", () => {
 
 	it("connects to a Tailscale MagicDNS host over ws://", async () => {
 		await expect(
-			connectOk(local("ws://pc-bazzite.tail4f7a25.ts.net:8892")),
+			connectOk(local("ws://magicdns.example.ts.net:8892")),
 		).resolves.toBeUndefined();
 	});
 
 	it("connects to an arbitrary remote host over plaintext ws:// (not blocked — user's responsibility)", async () => {
 		await expect(
-			connectOk(local("ws://192.168.1.50:8892")),
+			connectOk(local("ws://203.0.113.50:8892")),
 		).resolves.toBeUndefined();
-		expect(lastWs?.url).toBe("ws://192.168.1.50:8892/v1/realtime");
+		expect(lastWs?.url).toBe("ws://203.0.113.50:8892/v1/realtime");
 	});
 
 	it("connects over wss://", async () => {
@@ -105,9 +105,9 @@ describe("naia-omni Naia Local host policy (no OS-layer block)", () => {
 
 	it("strips embedded credentials from the URL before connecting", async () => {
 		await expect(
-			connectOk(local("ws://user:pass@10.0.0.5:8892")),
+			connectOk(local("ws://user:pass@203.0.113.5:8892")),
 		).resolves.toBeUndefined();
-		expect(lastWs?.url).toBe("ws://10.0.0.5:8892/v1/realtime");
+		expect(lastWs?.url).toBe("ws://203.0.113.5:8892/v1/realtime");
 	});
 
 	it("rejects a malformed / unsupported URL scheme (input validation)", async () => {

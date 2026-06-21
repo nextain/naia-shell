@@ -66,8 +66,8 @@ describe("applyModelSelectionToConfig (UI selection → persisted agent config)"
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const WIN_ADK = "D:\\Users\\luke\\naia-adk";
-const UNIX_ADK = "/home/luke/naia-adk";
+const WIN_ADK = "C:\\work\\naia-adk";
+const UNIX_ADK = "/home/user/naia-adk";
 
 beforeEach(() => {
 	localStorage.clear();
@@ -96,12 +96,12 @@ describe("getAdkPath", () => {
 	});
 
 	it("strips trailing backslash on Windows path", () => {
-		setAdkPath("D:\\Users\\luke\\naia-adk\\");
+		setAdkPath("C:\\work\\naia-adk\\");
 		expect(getAdkPath()).toBe(WIN_ADK);
 	});
 
 	it("strips trailing slash on Unix path", () => {
-		setAdkPath("/home/luke/naia-adk/");
+		setAdkPath("/home/user/naia-adk/");
 		expect(getAdkPath()).toBe(UNIX_ADK);
 	});
 });
@@ -131,7 +131,7 @@ describe("clearAdkPath", () => {
 describe("toAssetUrl", () => {
 	it("converts a Windows absolute path to an asset:// URL", () => {
 		const url = toAssetUrl(
-			"D:\\Users\\luke\\naia-adk\\naia-settings\\background\\bg.png",
+			"C:\\work\\naia-adk\\naia-settings\\background\\bg.png",
 		);
 		expect(url).toContain("asset://");
 		expect(url).toContain("bg.png");
@@ -139,7 +139,7 @@ describe("toAssetUrl", () => {
 
 	it("converts a Unix absolute path to an asset:// URL", () => {
 		const url = toAssetUrl(
-			"/home/luke/naia-adk/naia-settings/vrm-files/naia.vrm",
+			"/home/user/naia-adk/naia-settings/vrm-files/naia.vrm",
 		);
 		expect(url).toContain("asset://");
 		expect(url).toContain("naia.vrm");

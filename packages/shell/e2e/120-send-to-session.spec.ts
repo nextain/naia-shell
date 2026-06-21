@@ -17,7 +17,7 @@ import {
  * Prerequisites: pnpm tauri dev (Vite serves at localhost:1420)
  */
 
-const FAKE_ROOT = "/var/home/luke/dev";
+const FAKE_ROOT = "/home/user/dev";
 const FAKE_DIR = `${FAKE_ROOT}/naia-os`;
 const SEND_TEXT = "ls -la\n";
 
@@ -218,7 +218,7 @@ test.describe("skill_workspace_send_to_session E2E — #120", () => {
 				JSON.stringify([
 					{
 						name: "naia-os",
-						path: "/var/home/luke/dev/naia-os",
+						path: "/home/user/dev/naia-os",
 						category: "project",
 					},
 				]),

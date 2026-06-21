@@ -850,7 +850,7 @@ async function captureMainApp(page: Page, dir: string, locale: string) {
 
 // ---- Workspace / Browser Panel mock data ----
 
-const FAKE_ROOT = "/var/home/luke/dev";
+const FAKE_ROOT = "/home/user/dev";
 
 const FAKE_WS_SESSIONS = [
 	{

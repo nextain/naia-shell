@@ -28,7 +28,7 @@ beforeAll(() => {
 function loadEnvKeys(): Record<string, string> {
 	const candidates = [
 		resolve(__dirname, "../../../../.env"),
-		"/var/home/luke/dev/naia-os/shell/.env",
+		"/home/user/dev/naia-os/shell/.env",
 	];
 	for (const p of candidates) {
 		if (!existsSync(p)) continue;

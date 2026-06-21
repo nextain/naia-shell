@@ -341,7 +341,7 @@ describe("WorkspaceCenterPanel", () => {
 		// "Invalid working directory". The handler must resolve it to the session path.
 		const { invoke } = await import("@tauri-apps/api/core");
 		const testSessions: SessionInfo[] = [
-			{ dir: "naia-os", path: "/var/home/luke/dev/naia-os", status: "active" },
+			{ dir: "naia-os", path: "/home/user/dev/naia-os", status: "active" },
 		];
 		const { IssuesPanel } = await import("../workspace/IssuesPanel");
 		vi.mocked(IssuesPanel).mockImplementationOnce(({ onSessionsUpdate }) => {
@@ -376,7 +376,7 @@ describe("WorkspaceCenterPanel", () => {
 			.mock.calls.find((c) => c[0] === "pty_execute_sync");
 		expect(ptyCall).toBeDefined();
 		expect(ptyCall?.[1]).toMatchObject({
-			dir: "/var/home/luke/dev/naia-os",
+			dir: "/home/user/dev/naia-os",
 			command: "ls -F",
 		});
 	});
@@ -627,7 +627,7 @@ describe("WorkspaceCenterPanel", () => {
 
 		// Open a file via tool
 		const result = await bridge.callTool("skill_workspace_open_file", {
-			path: "/var/home/luke/dev/naia-os/AGENTS.md",
+			path: "/home/user/dev/naia-os/AGENTS.md",
 		});
 		expect(result).toContain("Opened");
 		expect(result).toContain("AGENTS.md");
@@ -869,7 +869,7 @@ describe("SessionCard", () => {
 			<SessionCard
 				session={{
 					dir: "naia-os-issue-79",
-					path: "/var/home/luke/dev/naia-os-issue-79",
+					path: "/home/user/dev/naia-os-issue-79",
 					status: "active",
 					branch: "issue-79-qwen3-asr",
 					progress: { issue: "#79", phase: "build" },
@@ -891,7 +891,7 @@ describe("SessionCard", () => {
 			<SessionCard
 				session={{
 					dir: "naia.nextain.io",
-					path: "/var/home/luke/dev/naia.nextain.io",
+					path: "/home/user/dev/naia.nextain.io",
 					status: "idle",
 					branch: "main",
 					progress: { issue: "#8", phase: "e2e" },
@@ -912,7 +912,7 @@ describe("SessionCard", () => {
 			<SessionCard
 				session={{
 					dir: "vllm",
-					path: "/var/home/luke/dev/vllm",
+					path: "/home/user/dev/vllm",
 					status: "stopped",
 				}}
 				onClick={() => {}}
@@ -930,7 +930,7 @@ describe("SessionCard", () => {
 			<SessionCard
 				session={{
 					dir: "naia-os-issue-79",
-					path: "/var/home/luke/dev/naia-os-issue-79",
+					path: "/home/user/dev/naia-os-issue-79",
 					status: "active",
 					progress: { issue: "#79", phase: "build" },
 				}}
@@ -950,7 +950,7 @@ describe("SessionCard", () => {
 			<SessionCard
 				session={{
 					dir: "naia-os",
-					path: "/var/home/luke/dev/naia-os",
+					path: "/home/user/dev/naia-os",
 					status: "active",
 				}}
 				onClick={onClick}
@@ -985,7 +985,7 @@ describe("Editor", () => {
 
 		const { Editor } = await import("../workspace/Editor");
 
-		render(<Editor filePath="/var/home/luke/dev/naia-os/AGENTS.md" />);
+		render(<Editor filePath="/home/user/dev/naia-os/AGENTS.md" />);
 
 		expect(screen.getByText("AGENTS.md")).toBeDefined();
 	});
@@ -998,7 +998,7 @@ describe("Editor", () => {
 
 		render(
 			<Editor
-				filePath="/var/home/luke/dev/naia-os/AGENTS.md"
+				filePath="/home/user/dev/naia-os/AGENTS.md"
 				badge="#79 · Build"
 			/>,
 		);
@@ -1013,7 +1013,7 @@ describe("Editor", () => {
 		const { Editor } = await import("../workspace/Editor");
 
 		render(
-			<Editor filePath="/var/home/luke/dev/naia-os/docs/design/workspace-panel.ko.md" />,
+			<Editor filePath="/home/user/dev/naia-os/docs/design/workspace-panel.ko.md" />,
 		);
 
 		// Markdown files start in preview mode → "편집" button is shown to switch back
@@ -1028,7 +1028,7 @@ describe("Editor", () => {
 
 		render(
 			<Editor
-				filePath="/var/home/luke/dev/ref-cline/README.md"
+				filePath="/home/user/dev/ref-cline/README.md"
 				readOnly={true}
 			/>,
 		);

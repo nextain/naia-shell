@@ -58,3 +58,18 @@ packages/shell/src-tauri/target
 packages/shell/src-tauri/gen
 # 번들 바이너리 리소스(vosk dll, node.exe 등 ~140MB) — 빌드 시 복사, 추적 제외
 packages/shell/src-tauri/resources/
+
+# 메인테이너 내부 운영물 — OSS 산출물 아님(개인 머신 경로/사이드카 레포·자격증명 의존).
+# 데모 미디어 생성기 + 라이브 진단 하네스 + 수동 게이트웨이 스크립트는 공개 배포 제외.
+packages/shell/e2e/demo-tts.ts
+packages/shell/e2e/test-agent-tool.mjs
+packages/shell/e2e/test-gateway-tools.mjs
+packages/shell/e2e/uc-provider-provenance-live.spec.ts
+packages/shell/e2e-tauri/specs/71-local-avatar-file.spec.ts
+packages/shell/scripts/generate-lab-manual-images.mjs
+
+# 로컬 게이트웨이 토큰 박힌 수동 헬퍼(CI 미참조) — OSS readiness
+packages/shell/e2e/mini-node-host.mjs
+
+# playwright 자동생성 산출물
+packages/shell/test-results/
