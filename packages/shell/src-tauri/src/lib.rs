@@ -966,18 +966,26 @@ fn spawn_agent_core(
             }
         }
 
-        // Production: bundled agent via Tauri resources
+        // Production: bundled agent via Tauri resources.
+        // 실 엔트리 = agent/scripts/builds/agent-stdio-entry.mjs (dev 와 동일 진입점 — gRPC 서버를 띄우고
+        // stdout 으로 GRPC_LISTENING 핸드셰이크를 보낸다). 엔트리는 ../../dist/main/** + node_modules 를 쓴다.
+        // (구 레이아웃의 agent/dist/index.js 는 레거시 폴백으로만 유지 — 현 agent tsc 는 dist/main/... 를 출력.)
         if let Ok(resource_dir) = app_handle.path().resource_dir() {
-            let bundled = resource_dir.join("agent/dist/index.js");
-            if bundled.exists() {
-                // dunce::canonicalize strips the \\?\ extended-length prefix that
-                // Tauri's resource_dir() produces on Windows — Node.js rejects \\?\ paths.
-                let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
-                log_verbose(&format!(
-                    "[Naia] Found bundled agent at: {}",
-                    normalized.display()
-                ));
-                return normalized.to_string_lossy().to_string();
+            for rel in [
+                "agent/scripts/builds/agent-stdio-entry.mjs",
+                "agent/dist/index.js",
+            ] {
+                let bundled = resource_dir.join(rel);
+                if bundled.exists() {
+                    // dunce::canonicalize strips the \\?\ extended-length prefix that
+                    // Tauri's resource_dir() produces on Windows — Node.js rejects \\?\ paths.
+                    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
+                    log_verbose(&format!(
+                        "[Naia] Found bundled agent at: {}",
+                        normalized.display()
+                    ));
+                    return normalized.to_string_lossy().to_string();
+                }
             }
         }
 

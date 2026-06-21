@@ -90,23 +90,39 @@ naia-os 가 다른 데스크톱 앱과 다른 점은 이 3층 분리다 (SoT: `d
 
 ## 빠른 시작
 
+> ⚠️ naia-os(몸)는 실행·빌드 시 형제 폴더의 **naia-agent(뇌)** 를 자동으로 빌드해 spawn 한다.
+> 따라서 두 저장소를 **같은 부모 폴더 아래 나란히(형제 디렉토리)** 내려받아야 한다.
+> agent 만 없으면 `tauri:dev`·`tauri:build` 가 바로 실패한다.
+
 ```bash
+# 1) 두 저장소를 형제로 clone (디렉토리 이름을 바꾸지 말 것 — 경로가 고정돼 있다)
+git clone https://github.com/nextain/new-naia-os.git
+git clone https://github.com/nextain/new-naia-agent.git
+#  부모폴더/
+#  ├── new-naia-os/      ← 아래 명령은 여기서 실행
+#  └── new-naia-agent/   ← tauri:dev/build 가 자동으로 빌드·spawn
+
+cd new-naia-os
 pnpm install                       # 의존성 설치 (루트)
 
-# 루트 — 코어 단위·계약 테스트
+# 2) 코어 단위·계약 테스트 (루트)
 pnpm test                          # vitest run (src/test — 순수 로직·UC 계약)
 
-# 데스크톱 셸 실행 (Tauri) — packages/shell 패키지
-pnpm -C packages/shell run tauri:dev   # 개발 모드 실행 (agent 자동 spawn)
+# 3) 데스크톱 셸 실행 (Tauri) — agent 를 자동 빌드·spawn 한다
+pnpm -C packages/shell run tauri:dev
 
-# 검증 (P04 — GUI/Rust 도 헤드리스로). test:e2e / test:e2e:tauri 는 packages/shell 에만 존재:
+# 4) 배포본(인스톨러) 빌드
+pnpm -C packages/shell run tauri:build:windows:local   # Windows → NSIS + MSI (target/release/bundle/)
+pnpm -C packages/shell run tauri build                  # Linux   → deb / rpm / appimage (기본 conf)
+
+# 5) 검증 (P04 — GUI/Rust 도 헤드리스로). test:e2e / test:e2e:tauri 는 packages/shell 에만 존재:
 cd packages/shell
 pnpm test                          # vitest (셸 단위)
 pnpm test:e2e                      # Playwright e2e (실 UI, Tauri IPC mock)
-xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+tauri-driver)
+xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+tauri-driver, Linux)
 ```
 
-> **사전 요건**: Rust(rustup) · WebView2(Windows)/webkit2gtk(Linux) · C++ 빌드 도구.
+> **사전 요건**: Node 22+ · pnpm · Rust(rustup) · WebView2(Windows)/webkit2gtk(Linux) · C++ 빌드 도구.
 > OS별 셋업은 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) 참조.
 
 ---

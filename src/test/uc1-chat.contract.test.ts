@@ -87,11 +87,11 @@ describe("wire variant 분류 SoT (router·관측 스니펫 공유)", () => {
     expect(classifyVariant("config_update")).toBe("nonchat-known");
     expect(classifyVariant("bgm_youtube_play")).toBe("nonchat-known");
   });
-  it("variant 집합 = 11 chat-turn + 19 nonchat-known(=30), 중복 없음", () => {
-    expect(CHAT_TURN_VARIANTS.length).toBe(11);
+  it("variant 집합 = 12 chat-turn + 19 nonchat-known(=31), 중복 없음", () => {
+    expect(CHAT_TURN_VARIANTS.length).toBe(12); // +compacted(FR-COMPACT, requestId 보유 비-terminal chat-turn)
     expect(NONCHAT_KNOWN_VARIANTS.length).toBe(19);
     const all = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
-    expect(all.size).toBe(30); // 겹침 없음(10 chat + 20 nonchat)
+    expect(all.size).toBe(31); // 겹침 없음(12 chat + 19 nonchat)
   });
   it("outboundCommandOf: cancel 만 별 command(cancel_stream), 나머지 send_to_agent_command", () => {
     expect(outboundCommandOf("cancel")).toBe("cancel_stream");

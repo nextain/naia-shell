@@ -6,7 +6,7 @@
 		"frontendDist": "../dist",
 		"devUrl": "http://localhost:1420",
 		"beforeDevCommand": "pnpm dev",
-		"beforeBuildCommand": "cd ../agent && pnpm install --frozen-lockfile && pnpm run build && cd ../shell && pnpm build"
+		"beforeBuildCommand": "node scripts/stage-agent.mjs && pnpm build"
 	},
 	"app": {
 		"withGlobalTauri": false,
