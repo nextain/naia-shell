@@ -156,12 +156,24 @@ async function gotoSettings(page: import("@playwright/test").Page) {
 	// 도 매칭하므로 ^앵커 정확매칭으로 그 오매칭을 회피한다.
 	await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
 
-	// SettingsTab 내 Memory 서브탭으로 이동 — adapter/embedding/facts/backup 은 이 탭에서만 렌더된다.
+	// SettingsTab 내 Memory 서브탭 — 저장소(adapter)/facts/backup. embedding·small-LLM 은 "모델" 탭으로 이전됨.
 	await page.locator(".settings-tab-btn", { hasText: /기억|Memory/i }).click();
 
 	// 메모리 콘텐츠(활성화된 adapter 라디오)가 보이면 도착.
 	await expect(
 		page.locator('input[name="memory-adapter"][value="local"]'),
+	).toBeVisible({ timeout: 8_000 });
+}
+
+/** Navigate to SettingsTab → "모델"(Models) 탭. embedding/small-LLM 은 전면 재구성으로 이 탭에서 렌더된다.
+ *  ⚠️ AI 탭 라벨이 "AI 모델"이라 /모델/ 부분매칭은 2개 → ^앵커 정확매칭. */
+async function gotoModels(page: import("@playwright/test").Page) {
+	await page.goto("/");
+	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
+	await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
+	await page.getByRole("button", { name: /^(모델|Models)$/ }).click();
+	await expect(
+		page.locator('input[name="memory-embedding"][value="none"]'),
 	).toBeVisible({ timeout: 8_000 });
 }
 
@@ -189,36 +201,27 @@ test.describe("Memory Settings UI", () => {
 		);
 	});
 
-	test("memory section renders adapter and embedding options", async ({
-		page,
-	}) => {
+	test("memory tab renders adapter options (storage)", async ({ page }) => {
 		await gotoSettings(page);
 
-		// Adapter radio buttons
+		// Adapter radio buttons — 저장소(local/qdrant)는 메모리 탭에 남는다(embedding 은 모델 탭으로 이전).
 		await expect(
 			page.locator('input[name="memory-adapter"][value="local"]'),
 		).toBeVisible();
 		await expect(
 			page.locator('input[name="memory-adapter"][value="qdrant"]'),
 		).toBeVisible();
+	});
 
-		// Embedding radio buttons — current options are: none, offline, vllm, ollama, naia
-		// (openai-compat was removed in favor of dedicated vllm/ollama radios)
-		await expect(
-			page.locator('input[name="memory-embedding"][value="none"]'),
-		).toBeVisible();
-		await expect(
-			page.locator('input[name="memory-embedding"][value="offline"]'),
-		).toBeVisible();
-		await expect(
-			page.locator('input[name="memory-embedding"][value="vllm"]'),
-		).toBeVisible();
-		await expect(
-			page.locator('input[name="memory-embedding"][value="ollama"]'),
-		).toBeVisible();
-		await expect(
-			page.locator('input[name="memory-embedding"][value="naia"]'),
-		).toBeVisible();
+	test("모델 탭 renders embedding options (none/offline/vllm/ollama/naia)", async ({
+		page,
+	}) => {
+		await gotoModels(page);
+		for (const v of ["none", "offline", "vllm", "ollama", "naia"]) {
+			await expect(
+				page.locator(`input[name="memory-embedding"][value="${v}"]`),
+			).toBeVisible();
+		}
 	});
 
 	test("Qdrant adapter shows URL and API key fields when selected", async ({
@@ -242,7 +245,7 @@ test.describe("Memory Settings UI", () => {
 	test("offline embedding shows model selection when selected", async ({
 		page,
 	}) => {
-		await gotoSettings(page);
+		await gotoModels(page);
 
 		// Select offline embedding
 		await page
@@ -265,7 +268,7 @@ test.describe("Memory Settings UI", () => {
 	test("offline embedding shows compute device(cpu/gpu/auto) + saves to config", async ({
 		page,
 	}) => {
-		await gotoSettings(page);
+		await gotoModels(page);
 		await page
 			.locator('input[name="memory-embedding"][value="offline"]')
 			.click();
@@ -299,7 +302,7 @@ test.describe("Memory Settings UI", () => {
 	}) => {
 		// openai-compat radio was replaced with separate vllm + ollama radios that
 		// share the same field layout (base URL / API key / model).
-		await gotoSettings(page);
+		await gotoModels(page);
 
 		await page
 			.locator('input[name="memory-embedding"][value="vllm"]')
@@ -319,7 +322,7 @@ test.describe("Memory Settings UI", () => {
 	test("naia embedding shows Naia account required hint when not logged in", async ({
 		page,
 	}) => {
-		await gotoSettings(page);
+		await gotoModels(page);
 
 		await page.locator('input[name="memory-embedding"][value="naia"]').click();
 
@@ -441,13 +444,14 @@ test.describe("Memory Settings UI", () => {
 	}) => {
 		await gotoSettings(page);
 
-		// Select Qdrant adapter
+		// 저장소(adapter)는 메모리 탭. Qdrant 선택.
 		await page.locator('input[name="memory-adapter"][value="qdrant"]').click();
 		await page
 			.locator('input[placeholder*="6333"]')
 			.fill("http://localhost:6333");
 
-		// Select vllm embedding (openai-compat-style endpoint)
+		// embedding 은 모델 탭으로 이전 — 공유 state 이므로 모델 탭에서 vllm 설정 후 저장하면 adapter 와 함께 영속.
+		await page.getByRole("button", { name: /^(모델|Models)$/ }).click();
 		await page
 			.locator('input[name="memory-embedding"][value="vllm"]')
 			.click();
@@ -458,7 +462,7 @@ test.describe("Memory Settings UI", () => {
 			.locator('input[placeholder*="text-embedding-ada-002"]')
 			.fill("nomic-embed-text");
 
-		// Save
+		// Save (모델 탭 save 버튼)
 		await page.locator(".settings-save-btn").first().click();
 
 		// 실 영속 경로 검증: write_naia_config(config.json — agent 가 읽는 싱크)에 메모리 필드가 실린다.
@@ -508,15 +512,14 @@ test.describe("Memory Settings UI", () => {
 	test("save persists memory fields to localStorage", async ({ page }) => {
 		await gotoSettings(page);
 
-		// Select Qdrant adapter
+		// 저장소 Qdrant(메모리 탭) + URL
 		await page.locator('input[name="memory-adapter"][value="qdrant"]').click();
-
-		// Fill Qdrant URL
 		await page
 			.locator('input[placeholder*="6333"]')
 			.fill("http://localhost:6333");
 
-		// Select vllm embedding (openai-compat-style endpoint)
+		// embedding vllm(모델 탭, 공유 state) → 저장 시 adapter 와 함께 localStorage 영속
+		await page.getByRole("button", { name: /^(모델|Models)$/ }).click();
 		await page
 			.locator('input[name="memory-embedding"][value="vllm"]')
 			.click();
@@ -524,7 +527,7 @@ test.describe("Memory Settings UI", () => {
 			.locator('input[placeholder*="localhost:11434"]')
 			.fill("http://localhost:11434");
 
-		// Save
+		// Save (모델 탭 save 버튼)
 		await page.locator(".settings-save-btn").first().click();
 
 		// Read back from localStorage
@@ -550,18 +553,18 @@ test.describe("Memory Settings UI", () => {
 
 		// 3 컴포넌트의 small LLM / embedding 라디오 그룹이 보인다(main LLM 은 요약+이동 버튼).
 		await expect(
-			page.locator('input[name="models-small-llm"][value="naia"]'),
+			page.locator('input[name="memory-llm"][value="naia"]'),
 		).toBeVisible({ timeout: 8_000 });
 		await expect(
-			page.locator('input[name="models-embedding"][value="offline"]'),
+			page.locator('input[name="memory-embedding"][value="offline"]'),
 		).toBeVisible();
 
 		// embedding offline → device gpu → 저장 → config.json 반영(통합 탭에서도 동일 계약).
 		await page
-			.locator('input[name="models-embedding"][value="offline"]')
+			.locator('input[name="memory-embedding"][value="offline"]')
 			.click();
 		await page
-			.locator('input[name="models-embedding-device"][value="gpu"]')
+			.locator('input[name="memory-embedding-device"][value="gpu"]')
 			.click();
 		await page.locator(".settings-save-btn").first().click();
 		await page.waitForFunction(

@@ -3320,7 +3320,7 @@ export function SettingsTab() {
 								<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
 									<input
 										type="radio"
-										name="models-small-llm"
+										name="memory-llm"
 										value={val}
 										checked={memoryLlmProvider === val}
 										onChange={() => setMemoryLlmProvider(val)}
@@ -3336,6 +3336,12 @@ export function SettingsTab() {
 									value={memoryLlmBaseUrl}
 									onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
 									placeholder="http://localhost:8000"
+								/>
+								<input
+									type="password"
+									value={memoryLlmApiKey}
+									onChange={(e) => setMemoryLlmApiKey(e.target.value)}
+									placeholder={t("settings.apiKey")}
 								/>
 								<input
 									type="text"
@@ -3364,7 +3370,7 @@ export function SettingsTab() {
 								<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
 									<input
 										type="radio"
-										name="models-embedding"
+										name="memory-embedding"
 										value={val}
 										checked={memoryEmbeddingProvider === val}
 										onChange={() => setMemoryEmbeddingProvider(val)}
@@ -3375,6 +3381,26 @@ export function SettingsTab() {
 						</div>
 						{memoryEmbeddingProvider === "offline" && (
 							<div style={{ marginTop: "8px" }}>
+								<label>{t("settings.memoryOfflineModelSelect")}</label>
+								<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px", marginBottom: "8px" }}>
+									{(
+										[
+											["all-MiniLM-L6-v2", t("settings.memoryOfflineModelLight")],
+											["all-mpnet-base-v2", t("settings.memoryOfflineModelAccurate")],
+										] as const
+									).map(([val, label]) => (
+										<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+											<input
+												type="radio"
+												name="memory-offline-model"
+												value={val}
+												checked={memoryOfflineModel === val}
+												onChange={() => setMemoryOfflineModel(val)}
+											/>
+											{label}
+										</label>
+									))}
+								</div>
 								<label>{t("settings.memoryEmbeddingDevice")}</label>
 								<div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
 									{(
@@ -3387,7 +3413,7 @@ export function SettingsTab() {
 										<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
 											<input
 												type="radio"
-												name="models-embedding-device"
+												name="memory-embedding-device"
 												value={val}
 												checked={memoryEmbeddingDevice === val}
 												onChange={() => setMemoryEmbeddingDevice(val)}
@@ -3408,11 +3434,23 @@ export function SettingsTab() {
 									placeholder="http://localhost:11434"
 								/>
 								<input
+									type="password"
+									value={memoryEmbeddingApiKey}
+									onChange={(e) => setMemoryEmbeddingApiKey(e.target.value)}
+									placeholder="sk-..."
+								/>
+								<input
 									type="text"
 									value={memoryEmbeddingModel}
 									onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
-									placeholder={t("settings.model")}
+									placeholder="text-embedding-ada-002"
 								/>
+							</div>
+						)}
+						{/* naia 임베딩: 계정 미연결 시 안내(parity) */}
+						{memoryEmbeddingProvider === "naia" && !naiaKey && (
+							<div className="settings-field">
+								<span className="settings-hint">⚠ {t("settings.memoryNaiaRequired")}</span>
 							</div>
 						)}
 					</div>
@@ -3485,251 +3523,6 @@ export function SettingsTab() {
 									/>
 								</div>
 							</>
-						)}
-
-						{/* Embedding provider */}
-						<div className="settings-field">
-							<label>{t("settings.memoryEmbedding")}</label>
-							<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-								{(
-									[
-										["none", t("settings.memoryEmbeddingNone")],
-										["offline", t("settings.memoryEmbeddingOffline")],
-										["vllm", t("settings.memoryEmbeddingVllm")],
-										["ollama", t("settings.memoryEmbeddingOllama")],
-										["naia", t("settings.memoryEmbeddingNaia")],
-									] as const
-								).map(([val, label]) => (
-									<label
-										key={val}
-										style={{
-											display: "flex",
-											alignItems: "center",
-											gap: "6px",
-										}}
-									>
-										<input
-											type="radio"
-											name="memory-embedding"
-											value={val}
-											checked={memoryEmbeddingProvider === val}
-											onChange={() => setMemoryEmbeddingProvider(val)}
-										/>
-										{label}
-									</label>
-								))}
-							</div>
-						</div>
-
-						{/* Offline model selection */}
-						{memoryEmbeddingProvider === "offline" && (
-							<div className="settings-field">
-								<label>{t("settings.memoryOfflineModelSelect")}</label>
-								<div
-									style={{
-										display: "flex",
-										flexDirection: "column",
-										gap: "8px",
-									}}
-								>
-									{(
-										[
-											[
-												"all-MiniLM-L6-v2",
-												t("settings.memoryOfflineModelLight"),
-											],
-											[
-												"all-mpnet-base-v2",
-												t("settings.memoryOfflineModelAccurate"),
-											],
-										] as const
-									).map(([val, label]) => (
-										<label
-											key={val}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "6px",
-											}}
-										>
-											<input
-												type="radio"
-												name="memory-offline-model"
-												value={val}
-												checked={memoryOfflineModel === val}
-												onChange={() => setMemoryOfflineModel(val)}
-											/>
-											{label}
-										</label>
-									))}
-								</div>
-							</div>
-						)}
-
-						{/* naia-embedded 컴퓨트 device (offline 전용): cpu/gpu/auto */}
-						{memoryEmbeddingProvider === "offline" && (
-							<div className="settings-field">
-								<label>{t("settings.memoryEmbeddingDevice")}</label>
-								<div
-									style={{
-										display: "flex",
-										flexDirection: "column",
-										gap: "8px",
-									}}
-								>
-									{(
-										[
-											["cpu", t("settings.memoryEmbeddingDeviceCpu")],
-											["gpu", t("settings.memoryEmbeddingDeviceGpu")],
-											["auto", t("settings.memoryEmbeddingDeviceAuto")],
-										] as const
-									).map(([val, label]) => (
-										<label
-											key={val}
-											style={{
-												display: "flex",
-												alignItems: "center",
-												gap: "6px",
-											}}
-										>
-											<input
-												type="radio"
-												name="memory-embedding-device"
-												value={val}
-												checked={memoryEmbeddingDevice === val}
-												onChange={() => setMemoryEmbeddingDevice(val)}
-											/>
-											{label}
-										</label>
-									))}
-								</div>
-								<span className="settings-hint">
-									{t("settings.memoryEmbeddingDeviceHint")}
-								</span>
-							</div>
-						)}
-
-						{/* vLLM/Ollama embedding fields */}
-						{(memoryEmbeddingProvider === "vllm" ||
-							memoryEmbeddingProvider === "ollama") && (
-							<>
-								<div className="settings-field">
-									<label>{t("settings.memoryEmbeddingBaseUrl")}</label>
-									<input
-										type="text"
-										value={memoryEmbeddingBaseUrl}
-										onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
-										placeholder="http://localhost:11434"
-									/>
-								</div>
-								<div className="settings-field">
-									<label>{t("settings.memoryEmbeddingApiKey")}</label>
-									<input
-										type="password"
-										value={memoryEmbeddingApiKey}
-										onChange={(e) => setMemoryEmbeddingApiKey(e.target.value)}
-										placeholder="sk-..."
-									/>
-								</div>
-								<div className="settings-field">
-									<label>{t("settings.memoryEmbeddingModel")}</label>
-									<input
-										type="text"
-										value={memoryEmbeddingModel}
-										onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
-										placeholder="text-embedding-ada-002"
-									/>
-								</div>
-							</>
-						)}
-
-						{/* Naia embedding: show connection status */}
-						{memoryEmbeddingProvider === "naia" && (
-							<div className="settings-field">
-								<span className="settings-hint">
-									{naiaKey
-										? `✓ ${t("settings.memoryNaiaConnected")}`
-										: `⚠ ${t("settings.memoryNaiaRequired")}`}
-								</span>
-							</div>
-						)}
-
-						{/* LLM for memory fact extraction */}
-						<div className="settings-field">
-							<label>{t("settings.memoryLlm")}</label>
-							<div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-								{(
-									[
-										["none", t("settings.memoryLlmNone")],
-										["vllm", t("settings.memoryLlmVllm")],
-										["ollama", t("settings.memoryLlmOllama")],
-										["naia", t("settings.memoryLlmNaia")],
-									] as const
-								).map(([val, label]) => (
-									<label
-										key={val}
-										style={{
-											display: "flex",
-											alignItems: "center",
-											gap: "6px",
-										}}
-									>
-										<input
-											type="radio"
-											name="memory-llm"
-											value={val}
-											checked={memoryLlmProvider === val}
-											onChange={() => setMemoryLlmProvider(val)}
-										/>
-										{label}
-									</label>
-								))}
-							</div>
-						</div>
-
-						{/* vLLM/Ollama LLM fields */}
-						{(memoryLlmProvider === "vllm" ||
-							memoryLlmProvider === "ollama") && (
-							<>
-								<div className="settings-field">
-									<label>{t("settings.memoryLlmBaseUrl")}</label>
-									<input
-										type="text"
-										value={memoryLlmBaseUrl}
-										onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
-										placeholder="http://localhost:8000"
-									/>
-								</div>
-								<div className="settings-field">
-									<label>{t("settings.memoryLlmApiKey")}</label>
-									<input
-										type="password"
-										value={memoryLlmApiKey}
-										onChange={(e) => setMemoryLlmApiKey(e.target.value)}
-										placeholder="sk-..."
-									/>
-								</div>
-								<div className="settings-field">
-									<label>{t("settings.memoryLlmModel")}</label>
-									<input
-										type="text"
-										value={memoryLlmModel}
-										onChange={(e) => setMemoryLlmModel(e.target.value)}
-										placeholder="minicpm-4.5-omni"
-									/>
-								</div>
-							</>
-						)}
-
-						{/* Naia LLM: show connection status */}
-						{memoryLlmProvider === "naia" && (
-							<div className="settings-field">
-								<span className="settings-hint">
-									{naiaKey
-										? `✓ ${t("settings.memoryNaiaConnected")}`
-										: `⚠ ${t("settings.memoryNaiaRequired")}`}
-								</span>
-							</div>
 						)}
 
 						{/* Backup section — 구현 검증 전까지 비활성. */}
