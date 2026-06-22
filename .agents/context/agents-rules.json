@@ -49,6 +49,7 @@
       "node_modules",
       "packages",
       "quarantine",
+      "releases",
       "scripts",
       "src"
     ],
@@ -79,6 +80,7 @@
       "README.md",
       "README.template.md",
       "CHANGELOG.md",
+      "CHANGELOG.ko.md",
       "review-pass.yaml"
     ],
     "note": "목록 수정 = 헌장 수정 → 사용자 승인 필수 | README.md = 이 repo 소개(복제 제외) / README.template.md = 새 프로젝트가 받는 skeleton(create·migration 이 README.md 로 사용) | review-pass.yaml = 크로스리뷰 리뷰어 패널 project-local override (정본 SoT = naia-settings/review.json)",
