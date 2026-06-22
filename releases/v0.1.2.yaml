@@ -1,0 +1,110 @@
+version: "0.1.2"
+date: "2026-03-10"
+summary:
+  en: "In-app auto-update, voice provider refactoring, skill/voice bug fixes, CI quality gates, and OS improvements"
+  ko: "인앱 자동 업데이트, 음성 프로바이더 리팩토링, 스킬/음성 버그 수정, CI 품질 게이트 및 OS 개선"
+changes:
+  # ── App Update (Issue #30) ──
+  - type: feat
+    scope: shell
+    issue: 30
+    description:
+      en: "In-app update checker with banner notification and Settings version footer"
+      ko: "배너 알림 및 설정 버전 푸터가 포함된 인앱 업데이트 체커"
+  - type: feat
+    scope: ci
+    issue: 30
+    description:
+      en: "Tauri updater signing, latest.json generation, and itch.io butler push"
+      ko: "Tauri 업데이터 서명, latest.json 생성 및 itch.io butler 자동 배포"
+  - type: feat
+    scope: web
+    issue: 30
+    description:
+      en: "Changelog section on naia.nextain.io download page from releases/*.yaml"
+      ko: "releases/*.yaml 기반 naia.nextain.io 다운로드 페이지 changelog 섹션"
+  # ── Voice (Issue #22, #24, #25) ──
+  # Note: #22 = echo fix, #24 = STT removal, #25 = live provider pattern
+  - type: feat
+    scope: voice
+    issue: 25
+    description:
+      en: "Abstract live conversation into provider pattern (Gemini Live, OpenAI Realtime)"
+      ko: "라이브 대화를 프로바이더 패턴으로 추상화 (Gemini Live, OpenAI Realtime)"
+  - type: fix
+    scope: shell
+    issue: 22
+    description:
+      en: "Suppress echo in voice conversation and add VRM gender-based voice defaults"
+      ko: "음성 대화 에코 억제 및 VRM 성별 기반 음성 기본값 추가"
+  - type: refactor
+    scope: shell
+    issue: 24
+    description:
+      en: "Remove dead STT code and legacy SettingsModal"
+      ko: "미사용 STT 코드 및 레거시 SettingsModal 제거"
+  # ── Skills (Issue #26) ──
+  - type: fix
+    scope: agent
+    issue: 26
+    description:
+      en: "Fix AI failing to discover custom skills in non-English locales"
+      ko: "비영어 환경에서 커스텀 스킬 탐색 실패 수정"
+  - type: fix
+    scope: skills
+    issue: 26
+    description:
+      en: "Fix skill install feedback, event leak, i18n, and sync 20 built-in skills"
+      ko: "스킬 설치 피드백, 이벤트 릭, i18n 수정 및 20개 빌트인 스킬 동기화"
+  # ── Agent (Issue #27, #39) ──
+  - type: refactor
+    scope: agent
+    issue: 27
+    description:
+      en: "Deduplicate system prompt pipeline"
+      ko: "시스템 프롬프트 파이프라인 중복 제거"
+  - type: feat
+    scope: agent
+    issue: 39
+    description:
+      en: "Configurable Ollama host"
+      ko: "Ollama 호스트 설정 지원"
+  # ── Shell (Issue #40, #41) ──
+  - type: feat
+    scope: shell
+    issue: 40
+    description:
+      en: "Dual-origin memory sync between Shell and OpenClaw"
+      ko: "Shell-OpenClaw 간 양방향 메모리 동기화"
+  - type: fix
+    scope: shell
+    issue: 41
+    description:
+      en: "Make AI response language follow locale setting"
+      ko: "AI 응답 언어가 로케일 설정을 따르도록 수정"
+  # ── CI/CD (Issue #12) ──
+  - type: feat
+    scope: ci
+    issue: 12
+    description:
+      en: "CI quality gates (lint, typecheck, build-test) with Biome enforcement"
+      ko: "CI 품질 게이트 (lint, typecheck, build-test) 및 Biome 적용"
+  - type: feat
+    scope: ci
+    issue: 12
+    description:
+      en: "Chain pipeline: Release → Build OS → Generate ISO, weekly auto-rebuild"
+      ko: "파이프라인 체인: Release → Build OS → Generate ISO, 주간 자동 리빌드"
+  # ── OS/Installer (Issue #42, #43) ──
+  - type: fix
+    scope: installer
+    issue: 42
+    description:
+      en: "Restore DNS triple fallback, CJK font fix, Plymouth two-step module"
+      ko: "DNS 삼중 fallback 복원, CJK 폰트 수정, Plymouth two-step 모듈"
+  - type: fix
+    scope: branding
+    issue: 43
+    description:
+      en: "Add taskbar pins, wallpaper, lock screen for installed system"
+      ko: "설치된 시스템에 태스크바 핀, 배경화면, 잠금화면 추가"

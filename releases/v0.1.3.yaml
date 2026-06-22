@@ -1,0 +1,115 @@
+version: "0.1.3"
+date: "2026-03-23"
+summary:
+  en: "Workspace panel, browser panel, PTY terminal, provider registries, and installer improvements"
+  ko: "워크스페이스 패널, 브라우저 패널, PTY 터미널, 프로바이더 레지스트리, 인스톨러 개선"
+changes:
+  # ── Workspace Panel (Issue #99, #116, #119, #121) ──
+  - type: feat
+    scope: shell
+    issue: 99
+    description:
+      en: "Workspace panel — session dashboard, file explorer, and code editor"
+      ko: "워크스페이스 패널 — 세션 대시보드, 파일 탐색기, 코드 에디터"
+  - type: feat
+    scope: workspace
+    issue: 119
+    description:
+      en: "PTY terminal tabs with xterm.js in workspace panel"
+      ko: "워크스페이스 패널에 xterm.js 기반 PTY 터미널 탭"
+  - type: feat
+    scope: workspace
+    issue: 116
+    description:
+      en: "Image, CSV, and log file viewer with chat deeplinks"
+      ko: "이미지·CSV·로그 파일 뷰어 및 채팅 딥링크"
+  - type: feat
+    scope: workspace
+    issue: 121
+    description:
+      en: "Git worktree grouping in session dashboard"
+      ko: "세션 대시보드 git 워크트리 그룹핑"
+  # ── Browser Panel (Issue #95, #102, #122) ──
+  - type: feat
+    scope: shell
+    issue: 95
+    description:
+      en: "Browser panel — Chrome X11 embed, CDP tools, voice tools, and theme support"
+      ko: "브라우저 패널 — Chrome X11 임베드, CDP 툴, 음성 툴, 테마 지원"
+  - type: fix
+    scope: browser
+    issue: 102
+    description:
+      en: "Browser panel keepAlive, modal timing, and toolbar overflow fixes"
+      ko: "브라우저 패널 keepAlive, 모달 타이밍, 툴바 오버플로우 수정"
+  - type: feat
+    scope: panels
+    issue: 122
+    description:
+      en: "Iframe bridge and NaiaContextBridge expansion for panel communication"
+      ko: "패널 통신을 위한 iframe 브릿지 및 NaiaContextBridge 확장"
+  # ── Panel System (Issue #89, #118) ──
+  - type: feat
+    scope: shell
+    issue: 89
+    description:
+      en: "Dynamic iframe rendering for installed panels"
+      ko: "설치된 패널 동적 iframe 렌더링"
+  - type: feat
+    scope: shell
+    issue: 118
+    description:
+      en: "Panel API — programmatic interface via panelRegistry"
+      ko: "Panel API — panelRegistry를 통한 프로그래매틱 인터페이스"
+  # ── Voice / STT / TTS (Issue #51, #79, #81) ──
+  - type: feat
+    scope: shell
+    issue: 51
+    description:
+      en: "STT/TTS provider registry with Web Speech API and Browser TTS support"
+      ko: "STT/TTS 프로바이더 레지스트리 (Web Speech API, Browser TTS 지원)"
+  - type: feat
+    scope: shell
+    issue: 79
+    description:
+      en: "vLLM STT/TTS providers + STT model selector + audio device settings"
+      ko: "vLLM STT/TTS 프로바이더 + STT 모델 선택기 + 오디오 장치 설정"
+  - type: feat
+    scope: shell
+    issue: 81
+    description:
+      en: "Audio input/output device selection with custom dropdown and mic test"
+      ko: "커스텀 드롭다운 및 마이크 테스트를 포함한 오디오 입출력 장치 선택"
+  # ── BGM Player (Issue #309, #310) ──
+  - type: feat
+    scope: shell
+    issue: 309
+    description:
+      en: "BGM icon beat animation — bounce+rotate+glow when playing, hover lift"
+      ko: "BGM 아이콘 비트 애니메이션 — 재생 중 바운스+회전+글로우, 호버 리프트"
+  - type: feat
+    scope: shell
+    issue: 310
+    description:
+      en: "BGM panel scaleY unfold animation and AI control bar glass backdrop"
+      ko: "BGM 패널 scaleY 펼침 애니메이션 및 AI 컨트롤바 글래스 배경 패널"
+  # ── i18n (Issue #312) ──
+  - type: feat
+    scope: i18n
+    issue: 312
+    description:
+      en: "BgmPlayer and AiControlBar i18n — 29 keys added across 14 locales"
+      ko: "BgmPlayer·AiControlBar i18n — 14개 언어 29개 키 추가"
+  # ── Config (Issue #303) ──
+  - type: fix
+    scope: config
+    issue: 303
+    description:
+      en: "Load naia-settings/config.json into localStorage on startup (file-first merge)"
+      ko: "앱 시작 시 naia-settings/config.json을 localStorage로 병합 (파일 우선)"
+  # ── OS / Installer ──
+  - type: fix
+    scope: installer
+    description:
+      en: "GRUB boot: add insmod iso9660 to fix USB boot menu not appearing"
+      ko: "GRUB 부팅: USB 부팅 메뉴 미표시 수정 (insmod iso9660 추가)"

@@ -1,0 +1,204 @@
+version: "0.1.4"
+date: "2026-05-22"
+summary:
+  en: "Naia Alpha — first public release. AI OS desktop app with workspace, browser panel, voice AI, memory system, and 14-language support. Windows installer available."
+  ko: "Naia 알파 — 첫 공개 릴리즈. 워크스페이스, 브라우저 패널, 음성 AI, 메모리 시스템, 14개 언어 지원을 갖춘 AI OS 데스크탑 앱. Windows 인스톨러 제공."
+changes:
+  # ── Workspace & Productivity ──
+  - type: feat
+    scope: shell
+    issue: 99
+    description:
+      en: "Workspace panel — session dashboard, file explorer, and code editor"
+      ko: "워크스페이스 패널 — 세션 대시보드, 파일 탐색기, 코드 에디터"
+  - type: feat
+    scope: workspace
+    issue: 119
+    description:
+      en: "PTY terminal tabs with xterm.js — run CLI agents like Codex or Claude Code inside Naia"
+      ko: "xterm.js 기반 PTY 터미널 탭 — Codex, Claude Code 등 CLI 에이전트를 Naia 내부에서 실행"
+  - type: feat
+    scope: workspace
+    issue: 116
+    description:
+      en: "Image, CSV, log file viewer and HWP/HWPX viewer via sidecar"
+      ko: "이미지·CSV·로그 파일 뷰어 및 HWP/HWPX 사이드카 뷰어"
+  - type: feat
+    scope: workspace
+    issue: 227
+    description:
+      en: "Naia ADK integration — skill discovery, skill launcher, session templates, workspace discovery"
+      ko: "Naia ADK 통합 — 스킬 탐색, 스킬 런처, 세션 템플릿, 워크스페이스 탐색"
+  - type: feat
+    scope: shell
+    issue: 194
+    description:
+      en: "Editor reload, copy path, input history, and file navigation"
+      ko: "에디터 새로고침, 경로 복사, 입력 히스토리, 파일 내비게이션"
+  # ── Browser Panel ──
+  - type: feat
+    scope: shell
+    issue: 95
+    description:
+      en: "Browser panel — Chrome/WebView2 embed with CDP tools, voice tools, and theme support"
+      ko: "브라우저 패널 — Chrome/WebView2 임베드, CDP 툴, 음성 툴, 테마 지원"
+  - type: feat
+    scope: browser
+    issue: 263
+    description:
+      en: "Browser bookmarks, shortcuts, AI toggle, and fullscreen avatar layer"
+      ko: "브라우저 북마크, 바로가기, AI 토글, 전체화면 아바타 레이어"
+  - type: feat
+    scope: panels
+    issue: 89
+    description:
+      en: "Dynamic iframe rendering and panel API for extensible app system"
+      ko: "확장 가능한 앱 시스템을 위한 동적 iframe 렌더링 및 패널 API"
+  # ── Voice AI ──
+  - type: feat
+    scope: voice
+    issue: 216
+    description:
+      en: "MiniCPM-o 4.5 vLLM-omni integration — real-time voice conversation with audio reference (voice cloning)"
+      ko: "MiniCPM-o 4.5 vLLM-omni 연동 — 오디오 레퍼런스(음성 클로닝) 기반 실시간 음성 대화"
+  - type: feat
+    scope: voice
+    issue: 219
+    description:
+      en: "OpenAI Realtime API protocol support — multi-turn flow stability and session management"
+      ko: "OpenAI Realtime API 프로토콜 지원 — 멀티턴 대화 안정성 및 세션 관리"
+  - type: feat
+    scope: shell
+    issue: 51
+    description:
+      en: "STT/TTS provider registry — Web Speech API, Browser TTS, vLLM, and audio device selection"
+      ko: "STT/TTS 프로바이더 레지스트리 — Web Speech API, Browser TTS, vLLM, 오디오 장치 선택"
+  # ── Memory System ──
+  - type: feat
+    scope: agent
+    issue: 145
+    description:
+      en: "Alpha Memory System v1 — 4-store architecture with Ebbinghaus decay, Hebbian association, and consolidation"
+      ko: "Alpha Memory System v1 — 에빙하우스 망각, 헵 연관, 통합 파이프라인을 갖춘 4스토어 아키텍처"
+  - type: feat
+    scope: agent
+    issue: 173
+    description:
+      en: "Knowledge Graph — entity-relationship graph with TF-IDF indexing and Louvain community detection"
+      ko: "지식 그래프 — TF-IDF 인덱싱, Louvain 커뮤니티 감지를 갖춘 개체-관계 그래프"
+  - type: feat
+    scope: agent
+    issue: 211
+    description:
+      en: "AES-256-GCM encrypted memory backup with PBKDF2-SHA256 key derivation"
+      ko: "PBKDF2-SHA256 키 유도를 사용한 AES-256-GCM 암호화 메모리 백업"
+  - type: feat
+    scope: agent
+    issue: 189
+    description:
+      en: "Multi-embedding support — Solar, Qwen3, BGE-M3, Gemini — with benchmark framework"
+      ko: "다중 임베딩 지원 — Solar, Qwen3, BGE-M3, Gemini — 벤치마크 프레임워크 포함"
+  - type: refactor
+    scope: agent
+    description:
+      en: "Hardened SQLite memory engine v6 — async worker-thread isolation for UI responsiveness"
+      ko: "하드닝된 SQLite 메모리 엔진 v6 — UI 반응성을 위한 비동기 워커 스레드 격리"
+  # ── Agent & Skills ──
+  - type: feat
+    scope: agent
+    issue: 273
+    description:
+      en: "21 built-in skills from @naia-adk/skills-builtin — weather, browser, workspace tools and more"
+      ko: "@naia-adk/skills-builtin의 21개 내장 스킬 — 날씨, 브라우저, 워크스페이스 도구 등"
+  - type: feat
+    scope: agent
+    issue: 274
+    description:
+      en: "Agent-browser skill and welcome onboarding skill"
+      ko: "에이전트 브라우저 스킬 및 웰컴 온보딩 스킬"
+  - type: feat
+    scope: agent
+    issue: 200
+    description:
+      en: "MCP skill bridge — Model Context Protocol client/server integration"
+      ko: "MCP 스킬 브릿지 — Model Context Protocol 클라이언트/서버 통합"
+  - type: feat
+    scope: agent
+    issue: 183
+    description:
+      en: "Tool safety metadata — concurrency and destructive declarations for safe tool execution"
+      ko: "툴 안전 메타데이터 — 안전한 툴 실행을 위한 동시성 및 파괴적 선언"
+  - type: feat
+    scope: agent
+    issue: 185
+    description:
+      en: "Token budget warning — pre-flight context overflow prevention"
+      ko: "토큰 예산 경고 — 사전 컨텍스트 오버플로우 방지"
+  - type: feat
+    scope: agent
+    issue: 195
+    description:
+      en: "@ mention inline file/folder autocomplete in chat"
+      ko: "채팅에서 @ 멘션 인라인 파일/폴더 자동완성"
+  # ── Auth ──
+  - type: feat
+    scope: auth
+    issue: 197
+    description:
+      en: "Embedded browser login with Chrome/WebView2 — OAuth flow inside Naia window"
+      ko: "Chrome/WebView2 기반 임베디드 브라우저 로그인 — Naia 창 내 OAuth 인증"
+  - type: feat
+    scope: auth
+    issue: 233
+    description:
+      en: "Deep link authentication fallback for Windows desktop app"
+      ko: "Windows 데스크탑 앱을 위한 딥링크 인증 폴백"
+  # ── Shell & UI ──
+  - type: feat
+    scope: shell
+    issue: 303
+    description:
+      en: "BGM player — YouTube Music integration with categories, search, and AI voice commands"
+      ko: "BGM 플레이어 — 카테고리, 검색, AI 음성 명령을 갖춘 YouTube Music 연동"
+  - type: feat
+    scope: shell
+    issue: 241
+    description:
+      en: "Windows IME support — Korean 한/영 toggle and diagnostics panel"
+      ko: "Windows IME 지원 — 한/영 전환 및 진단 패널"
+  - type: feat
+    scope: i18n
+    issue: 312
+    description:
+      en: "14-language UI support — Korean, English, Japanese, Chinese, French, German, Russian, Spanish, Arabic, Hindi, Bengali, Portuguese, Indonesian, Vietnamese"
+      ko: "14개 언어 UI 지원 — 한국어, 영어, 일본어, 중국어, 프랑스어, 독일어, 러시아어, 스페인어, 아랍어, 힌디어, 벵골어, 포르투갈어, 인도네시아어, 베트남어"
+  - type: feat
+    scope: shell
+    issue: 253
+    description:
+      en: "Fullscreen avatar layer with VRM model loading and camera controls"
+      ko: "VRM 모델 로딩 및 카메라 컨트롤을 갖춘 전체화면 아바타 레이어"
+  # ── Distribution & CI ──
+  - type: feat
+    scope: dist
+    issue: 262
+    description:
+      en: "Naia OS persistent USB — ISO integration with partitioned personal storage"
+      ko: "Naia OS 퍼시스턴트 USB — 파티셔닝된 개인 저장 공간을 갖춘 ISO 통합"
+  - type: fix
+    scope: shell
+    description:
+      en: "Windows installer bundles all required DLLs (Vosk, MSVC runtime, MinGW) — fixes launch crash"
+      ko: "Windows 인스톨러 필수 DLL 번들링 (Vosk, MSVC 런타임, MinGW) — 실행 크래시 수정"
+  - type: ci
+    scope: release
+    description:
+      en: "CI hardening — explicit DLL download, installer content verification, smoke test before release"
+      ko: "CI 강화 — DLL 명시적 다운로드, 인스톨러 내용 검증, 릴리즈 전 smoke test"
+  # ── Runtime Consolidation ──
+  - type: refactor
+    scope: agent
+    issue: 201
+    description:
+      en: "Consolidated AI runtime — unified gateway architecture with Naia Agent as default"
+      ko: "AI 런타임 통합 — Naia Agent를 기본으로 하는 통합 게이트웨이 아키텍처"
