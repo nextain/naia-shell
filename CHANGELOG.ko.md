@@ -3,11 +3,41 @@
 Naia OS의 주요 변경 사항을 기록합니다.
 원본 데이터: [`releases/v*.yaml`](releases/)
 
+> 이 저장소는 2026-06 post-OpenClaw 아키텍처 재작성으로 새로 시작했습니다. 재작성 이전(구 아키텍처)의 전체 소스와 상세 커밋 이력은 [`backup/main-2026-06-22`](https://github.com/nextain/naia-os/tree/backup/main-2026-06-22) 브랜치에 보존돼 있습니다.
+
 [English](CHANGELOG.md)
 
 ---
 
-## Unreleased
+## v0.1.5 (2026-06-05)
+
+RTX 3090 PC에서 목소리 복제와 실시간 대화, 스킬까지 가능한 똑똑한 AI — Naia-0.9-Omni-24g 출시. 음성 대화 중 도구 실행, 녹음·미리듣기를 갖춘 음성 복제 UI 재설계, 자연스러운 끼어들기, 30개국어, 네이티브 Ollama 로컬 AI, MS Store·Steam 배포.
+
+음성 (naia-omni):
+
+- **feat(voice)**: naia-0.9-omni-24g가 음성 대화 중 도구를 실행 — 말로 시키면 파일 생성·검색·스킬 실행까지 실제로 수행 (대화만 하지 않음) ([#352](https://github.com/nextain/naia-os/issues/352))
+- **feat(voice)**: 레퍼런스 음성(음성 복제) 설정 재설계 — 카드 UI, 앱 내 녹음, 즉시 미리듣기 ([#349](https://github.com/nextain/naia-os/issues/349))
+- **feat(voice)**: 음성 답변의 운율 태그를 아바타 표정·채팅 이모지로 매핑 — 말하는 동안 아바타가 반응 ([#350](https://github.com/nextain/naia-os/issues/350))
+- **feat(voice)**: Gemini Live 음성 경험 — 컨텍스트 브릿지, 끼어들기(말하는 도중 중단), 텍스트·음성 동등, 음성 패널 도구 ([#313](https://github.com/nextain/naia-os/issues/313))
+- **feat(voice)**: Naia Local 레퍼런스 음성 — 직접 ref-audio 지정, 기본 음성 선택, 세션 중 음성 전환
+- **fix(voice)**: 실시간 음성 안정화 — 서버 VAD passthrough, 자막(transcript) 처리, 콜드스타트 소켓 경쟁, 레퍼런스 음성 인증 수정 ([#219](https://github.com/nextain/naia-os/issues/219))
+
+로컬 AI:
+
+- **feat(agent)**: 네이티브 Ollama 프로바이더 — 추론, 도구 호출, num_ctx 처리로 완전 로컬 LLM 지원 ([#357](https://github.com/nextain/naia-os/issues/357))
+
+배포:
+
+- **feat(dist)**: MS Store(Win32) 및 Steam 포터블 배포 — 조건부 코드 서명 지원 ([#314](https://github.com/nextain/naia-os/issues/314))
+
+셸 & UX:
+
+- **feat(shell)**: 확장형 패널 시스템 스펙·문서·예제 + zip 탭 게이트 ([#358](https://github.com/nextain/naia-os/issues/358))
+- **feat(launch)**: 실행 시 YouTube BGM 배경 fallback — AI 연결 전에도 음악이 이어짐
+
+인증:
+
+- **feat(auth)**: Rust localhost HTTP 콜백 서버 — 데스크탑 OAuth·딥링크 로그인 안정성 향상 ([#341](https://github.com/nextain/naia-os/issues/341))
 
 적대적 리뷰 배치 — 5건 P0-critical 보안 + 1건 P0-UX + 1건 P1 gateway 라우팅, 후속 아키텍처 문서 정비.
 
@@ -24,6 +54,8 @@ Naia OS의 주요 변경 사항을 기록합니다.
 
 버그:
 
+- **fix(shell)**: 0.1.5 런치 버그픽스 — 시작, 설정, 프로바이더 라우팅 보정 ([#342](https://github.com/nextain/naia-os/issues/342))
+- **fix(env)**: dev/prod 게이트웨이 환경 분리 — `tauri:dev`·`tauri:prod`가 올바른 게이트웨이로 연결 ([#333](https://github.com/nextain/naia-os/issues/333))
 - **fix(agent/shell)**: Naia gateway 가 Vertex AI gemini-3.x 접근 권한 없음 — picker 에서 제거, fallback fix, 0-byte SSE 에러 정확화, 저장된 config 자동 마이그레이션 ([#248](https://github.com/nextain/naia-os/issues/248))
 - **fix(shell)**: startup white flash + onboarding splash deadlock 해소 ([#254](https://github.com/nextain/naia-os/issues/254))
 

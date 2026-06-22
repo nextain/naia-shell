@@ -3,11 +3,41 @@
 All notable changes to Naia OS are documented here.
 Source data: [`releases/v*.yaml`](releases/)
 
+> This repository was restarted with the post-OpenClaw architecture rewrite in 2026-06. The full pre-rewrite source and detailed commit history are preserved on the [`backup/main-2026-06-22`](https://github.com/nextain/naia-os/tree/backup/main-2026-06-22) branch.
+
 [한국어 (Korean)](CHANGELOG.ko.md)
 
 ---
 
-## Unreleased
+## v0.1.5 (2026-06-05)
+
+Naia-0.9-Omni-24g is here — a smart AI that clones your voice, talks in real time, and runs skills, all on a single RTX 3090 PC. Voice tool execution, a redesigned voice-cloning UI with record & preview, natural barge-in, 30-language support, native Ollama local AI, and MS Store & Steam distribution.
+
+Voice (naia-omni):
+
+- **feat(voice)**: naia-0.9-omni-24g runs tools during voice conversation — ask by voice and it actually creates files, searches, and runs skills, not just talks ([#352](https://github.com/nextain/naia-os/issues/352))
+- **feat(voice)**: Redesigned reference-audio (voice cloning) settings — card UI with in-app recording and instant preview ([#349](https://github.com/nextain/naia-os/issues/349))
+- **feat(voice)**: Prosody tags from voice replies map to avatar expressions and chat emoji — the avatar reacts as Naia speaks ([#350](https://github.com/nextain/naia-os/issues/350))
+- **feat(voice)**: Gemini Live voice UX — context bridge, barge-in (interrupt mid-speech), text/voice parity, and voice panel tools ([#313](https://github.com/nextain/naia-os/issues/313))
+- **feat(voice)**: Reference voice for Naia Local — direct ref-audio, default voice selection, and mid-session voice switching
+- **fix(voice)**: Real-time voice stability — server-VAD passthrough, transcript handling, cold-start socket races, and reference-audio auth fixes ([#219](https://github.com/nextain/naia-os/issues/219))
+
+Local AI:
+
+- **feat(agent)**: Native Ollama provider — reasoning, tool calls, and num_ctx handling for fully local LLMs ([#357](https://github.com/nextain/naia-os/issues/357))
+
+Distribution:
+
+- **feat(dist)**: MS Store (Win32 listing) and Steam portable distribution with conditional code signing ([#314](https://github.com/nextain/naia-os/issues/314))
+
+Shell & UX:
+
+- **feat(shell)**: Panel spec, docs, and examples for the extensible panel system, plus a zip-tab gate ([#358](https://github.com/nextain/naia-os/issues/358))
+- **feat(launch)**: YouTube BGM background fallback on launch — music keeps playing even before AI connects
+
+Auth:
+
+- **feat(auth)**: Rust localhost HTTP callback server — more reliable desktop OAuth/deep-link sign-in ([#341](https://github.com/nextain/naia-os/issues/341))
 
 Adversarial-review batch — 5 P0-critical security fixes + 1 P0-UX + 1 P1 gateway routing, plus follow-up architectural docs.
 
@@ -24,6 +54,8 @@ Security hardening (2026-05-12):
 
 Bugs:
 
+- **fix(shell)**: 0.1.5 launch bugfixes — startup, config, and provider routing corrections ([#342](https://github.com/nextain/naia-os/issues/342))
+- **fix(env)**: Separate dev/prod gateway environments — `tauri:dev` and `tauri:prod` target the right gateway ([#333](https://github.com/nextain/naia-os/issues/333))
 - **fix(agent/shell)**: Naia gateway lacks Vertex AI access to gemini-3.x — drop from picker, fix `gemini-3.1-flash-live-preview` fallback, accurate 0-byte SSE error, auto-migrate saved configs ([#248](https://github.com/nextain/naia-os/issues/248))
 - **fix(shell)**: startup white flash + onboarding splash deadlock ([#254](https://github.com/nextain/naia-os/issues/254))
 
