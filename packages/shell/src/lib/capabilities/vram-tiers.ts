@@ -6,21 +6,18 @@
  * measured in naia-model-infra#19 (Ditto trt 2.6 GB, VoxCPM2 6.7 GB, cascade =
  * CPU); the tier thresholds are the user's draft in naia-omni-windows-manager#2.
  *
- * STATUS — data + selection logic only; NOT yet wired into the settings UI.
- * `deriveSettingsSlots` (slots.ts) is currently fed only the gateway model
- * manifest, not tier output. The intended integration is:
- *   1. detect GPU VRAM (native — unimplemented; the webview can't read VRAM,
- *      needs a Tauri/Rust command), then
- *   2. fold `tierProvidedCapabilities(selectVramTier(vramGb))` into the
- *      `effectiveCapabilities` passed to `deriveSettingsSlots`
- *      (SettingsTab.tsx, near the capabilitySlots computation).
- * Both steps are follow-ups; this module is the testable foundation only.
+ * STATUS — wired into the settings UI (opt-in, default off). SettingsTab
+ * detects GPU VRAM (`detectGpuVramGb` → Rust `detect_gpu_vram`), and when the
+ * user enables a local GPU profile, folds `tierProvidedCapabilities(
+ * resolveActiveTier(...))` into the `effectiveCapabilities` passed to
+ * `deriveSettingsSlots` — so the local tier hides the external slots it covers.
  *
  * BOUNDARIES (do not violate):
- * - Consumer/UI view only. The canonical tier/deploy *serving-supply* manifest
- *   (which models/engines to fetch) lives in naia-model-infra; the actual
- *   fetch/launch loader lives in naia-omni-windows-manager and is gated on real
- *   4070 RTF measurement. Neither is implemented here.
+ * - Consumer/UI view only — declares *which capabilities a tier could serve*,
+ *   not how. The canonical tier/deploy *serving-supply* manifest (which
+ *   models/engines to fetch) lives in naia-model-infra; the actual fetch/launch
+ *   loader lives in naia-omni-windows-manager and is gated on real 4070 RTF
+ *   measurement. Neither the loader nor local serving is implemented here.
  * - Hard rule F1 (windows-manager): real-time (RTF<1) is a measured gate per
  *   GPU — NEVER claimed here. `realtime` is always "measurement-gated"; this
  *   module asserts only what *fits* in VRAM by footprint, not that it runs in
@@ -125,11 +122,9 @@ export function resolveActiveTier(
 }
 
 /**
- * Capabilities a tier serves locally — the intended (not-yet-wired) input to
- * #365's `deriveSettingsSlots`. Once VRAM detection exists, folding these into
- * a model's effective capabilities would let the UI drop the external slots a
- * local tier already covers. Currently this is the consumer entry point with no
- * production caller (see module STATUS).
+ * Capabilities a tier serves locally — the input SettingsTab folds into a
+ * model's effective capabilities (#365 `deriveSettingsSlots`) when a local GPU
+ * profile is active, so the UI drops the external slots the local tier covers.
  */
 export function tierProvidedCapabilities(tier: VramTier): ModelCapability[] {
 	return [...tier.localCapabilities];

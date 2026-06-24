@@ -1075,12 +1075,17 @@ export function SettingsTab() {
 			fetchNaiaPricing(LAB_GATEWAY_URL),
 			fetchNaiaModelCapabilities(LAB_GATEWAY_URL),
 		]).then(([liveModels, capMap]) => {
-			if (liveModels) {
-				setDynamicModels((prev) => ({
-					...prev,
-					nextain: applyCapabilityOverrides(liveModels, capMap),
-				}));
-			}
+			// Apply gateway capabilities even if pricing failed (the two are
+			// independent): override the priced live models, or fall back to the
+			// existing static nextain models when pricing is unavailable.
+			if (!liveModels && !capMap) return;
+			setDynamicModels((prev) => ({
+				...prev,
+				nextain: applyCapabilityOverrides(
+					liveModels ?? prev.nextain ?? [],
+					capMap,
+				),
+			}));
 		});
 	}, [provider]);
 

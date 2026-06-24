@@ -421,6 +421,13 @@ export function ChatPanel() {
 	const audioQueueRef = useRef<AudioQueue | null>(null);
 	const sentenceChunkerRef = useRef<SentenceChunker | null>(null);
 	const activeTtsRequestsRef = useRef<Set<string>>(new Set());
+	// Per-sentence AbortControllers so interrupt/cleanup actually cancels the
+	// in-flight TTS fetch/WS (and stops billing for superseded paid TTS) — #363
+	// cross-review HIGH.
+	const ttsAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+	// Once edge TTS fails mid-turn, route the rest of the turn straight to
+	// browser TTS so queued edge audio and browser fallback don't overlap.
+	const edgeFallbackActiveRef = useRef(false);
 	const pipelineVoiceConfigRef = useRef<{
 		voice?: string;
 		ttsProvider?: string;
@@ -692,6 +699,10 @@ export function ChatPanel() {
 		audioQueueRef.current?.clear();
 		sentenceChunkerRef.current?.clear();
 		activeTtsRequestsRef.current.clear();
+		// Cancel in-flight TTS fetch/WS so a barge-in stops paid synthesis (#363).
+		for (const ac of ttsAbortControllersRef.current.values()) ac.abort();
+		ttsAbortControllersRef.current.clear();
+		edgeFallbackActiveRef.current = false;
 		if (typeof window !== "undefined" && "speechSynthesis" in window) {
 			try {
 				window.speechSynthesis.cancel();
@@ -1331,7 +1342,7 @@ export function ChatPanel() {
 		});
 	}
 
-	/** Send a sentence to TTS via Agent and enqueue the resulting audio. */
+	/** Synthesize one sentence shell-side (#363) and enqueue/play the audio. */
 	function sendSentenceToTts(sentence: string): void {
 		// Strip emotion tags and emoji before TTS
 		const clean = sentence
@@ -1345,47 +1356,61 @@ export function ChatPanel() {
 		const seq = audioQueueRef.current?.reserveSeq() ?? 0;
 		activeTtsRequestsRef.current.add(reqId);
 		const voiceCfg = pipelineVoiceConfigRef.current;
+		const ttsProviderForCost = voiceCfg?.ttsProvider ?? "edge";
+		const ttsVoiceForCost = voiceCfg?.voice;
 		Logger.info("ChatPanel", "Sending TTS request", {
 			reqId,
 			seq,
 			sentence: clean.slice(0, 50),
-			provider: voiceCfg?.ttsProvider,
+			provider: ttsProviderForCost,
 		});
-		const ttsProviderForCost = voiceCfg?.ttsProvider ?? "edge";
-		const ttsVoiceForCost = voiceCfg?.voice;
 
-		// Browser TTS — synthesize directly in browser, skip agent pipeline
-		const ttsMeta = getTtsProviderMeta(ttsProviderForCost);
-		if (ttsMeta?.isClientSide) {
+		// Speak via the browser's built-in speechSynthesis (free, client-side).
+		// Manages the avatar speaking state + clears the request on end/error.
+		const speakViaBrowser = (): void => {
 			if (typeof window !== "undefined" && "speechSynthesis" in window) {
 				const utter = new SpeechSynthesisUtterance(clean);
 				utter.lang =
 					voiceCfg?.voice || document.documentElement.lang || "ko-KR";
-				utter.onstart = () => {
-					useAvatarStore.getState().setSpeaking(true);
-				};
+				utter.onstart = () => useAvatarStore.getState().setSpeaking(true);
 				utter.onend = () => {
 					useAvatarStore.getState().setSpeaking(false);
 					activeTtsRequestsRef.current.delete(reqId);
 				};
+				// onerror too, else a failure after onstart leaves the avatar stuck
+				// in the speaking state (#363 review).
 				utter.onerror = () => {
+					useAvatarStore.getState().setSpeaking(false);
 					activeTtsRequestsRef.current.delete(reqId);
 				};
 				window.speechSynthesis.speak(utter);
-				Logger.info("ChatPanel", "Browser TTS speak", {
-					text: clean.slice(0, 50),
-				});
 			} else {
 				Logger.warn("ChatPanel", "Browser TTS not available");
 				activeTtsRequestsRef.current.delete(reqId);
 			}
+		};
+
+		// Browser provider → client-side speechSynthesis (skip shell synthesis).
+		const ttsMeta = getTtsProviderMeta(ttsProviderForCost);
+		if (ttsMeta?.isClientSide) {
+			speakViaBrowser();
+			return;
+		}
+
+		// edge already failed earlier this turn → go straight to browser so queued
+		// edge audio and browser fallback don't overlap (cross-review MED).
+		if (ttsProviderForCost === "edge" && edgeFallbackActiveRef.current) {
+			audioQueueRef.current?.skipOrdered(seq);
+			speakViaBrowser();
 			return;
 		}
 
 		// Shell-direct synthesis (#363): the new-core agent has no TTS, so every
 		// non-browser provider is synthesized here (gateway / direct API / edge WS)
-		// instead of via the dropped `tts_request` IPC. Browser TTS already
-		// returned above (isClientSide).
+		// instead of via the dropped `tts_request` IPC. The AbortController lets
+		// interrupt/cleanup cancel the in-flight fetch/WS (and stop paid TTS).
+		const abort = new AbortController();
+		ttsAbortControllersRef.current.set(reqId, abort);
 		synthesizeTts({
 			text: clean,
 			voice: voiceCfg?.voice,
@@ -1394,24 +1419,17 @@ export function ChatPanel() {
 			naiaKey: voiceCfg?.naiaKey,
 			gatewayUrl: voiceCfg?.gatewayUrl,
 			vllmHost: voiceCfg?.vllmHost,
+			signal: abort.signal,
 		})
 			.then(({ audioBase64, costUsd }) => {
-				Logger.info("ChatPanel", "TTS audio received", {
-					reqId,
-					seq,
-					size: audioBase64.length,
-					costUsd,
-				});
-				// Drop stale audio from a superseded turn. interruptTts() clears
-				// activeTtsRequestsRef on a new turn / new conversation, so a
-				// late-arriving response whose reqId is no longer active must NOT
-				// be enqueued — clear() reset the sequence counter, so an old
-				// seq=0 chunk would otherwise replay as the new turn's first audio.
-				if (activeTtsRequestsRef.current.has(reqId)) {
-					audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
-				}
+				// Drop stale audio AND skip billing for a superseded/aborted turn:
+				// interruptTts() cleared activeTtsRequestsRef and reset the AudioQueue
+				// sequence, so a late response must NOT enqueue (would replay as the
+				// new turn's first audio) nor record cost.
+				if (!activeTtsRequestsRef.current.has(reqId)) return;
 				activeTtsRequestsRef.current.delete(reqId);
-				// Track TTS cost: use server cost for Naia Cloud, estimate for others.
+				audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
+				// Track TTS cost: server cost for Naia Cloud, estimate for others.
 				// Naia account (nextain): apply 10% service markup on top of base cost.
 				const NAIA_TTS_MARKUP = 1.1;
 				const isNaiaTts = ttsProviderForCost === "nextain";
@@ -1438,39 +1456,32 @@ export function ChatPanel() {
 				}
 			})
 			.catch((err) => {
-				const stillActive = activeTtsRequestsRef.current.has(reqId);
-				activeTtsRequestsRef.current.delete(reqId);
-				// Superseded turn — interruptTts() already reset the queue; leave it.
-				if (!stillActive) return;
+				// Superseded / aborted turn (interrupt cleared the set) — don't fall
+				// back or bill; the queue was already reset.
+				if (!activeTtsRequestsRef.current.has(reqId)) return;
 				// Release the reserved ordered slot so later sentences don't stall
 				// behind this seq (enqueueOrdered waits for contiguous sequence nums).
 				audioQueueRef.current?.skipOrdered(seq);
 				// edge is the free, no-key default — fall back to browser TTS so the
-				// default voice never goes silent if the Edge WS is unreachable.
-				if (
-					ttsProviderForCost === "edge" &&
-					typeof window !== "undefined" &&
-					"speechSynthesis" in window
-				) {
+				// default voice never goes silent. Mark the turn so the rest skips
+				// edge too (avoids queue/browser overlap).
+				if (ttsProviderForCost === "edge") {
+					edgeFallbackActiveRef.current = true;
 					Logger.warn("ChatPanel", "edge TTS failed — browser TTS fallback", {
 						error: String(err),
 					});
-					const utter = new SpeechSynthesisUtterance(clean);
-					utter.lang =
-						voiceCfg?.voice || document.documentElement.lang || "ko-KR";
-					utter.onstart = () => useAvatarStore.getState().setSpeaking(true);
-					utter.onend = () => useAvatarStore.getState().setSpeaking(false);
-					// Without onerror, a browser-TTS failure after onstart would leave
-					// the avatar stuck in the speaking state (#363 review #6).
-					utter.onerror = () => useAvatarStore.getState().setSpeaking(false);
-					window.speechSynthesis.speak(utter);
+					speakViaBrowser();
 					return;
 				}
+				activeTtsRequestsRef.current.delete(reqId);
 				Logger.warn("ChatPanel", "TTS synthesis failed", {
 					reqId,
 					provider: ttsProviderForCost,
 					error: String(err),
 				});
+			})
+			.finally(() => {
+				ttsAbortControllersRef.current.delete(reqId);
 			});
 	}
 
@@ -1483,6 +1494,9 @@ export function ChatPanel() {
 		sentenceChunkerRef.current = null;
 		pipelineVoiceConfigRef.current = null;
 		activeTtsRequestsRef.current.clear();
+		for (const ac of ttsAbortControllersRef.current.values()) ac.abort();
+		ttsAbortControllersRef.current.clear();
+		edgeFallbackActiveRef.current = false;
 		// Stop Vosk STT
 		for (const fn of sttCleanupRef.current) fn();
 		sttCleanupRef.current = [];
