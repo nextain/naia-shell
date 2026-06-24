@@ -1,0 +1,139 @@
+{
+  "issue": "#292",
+  "title": "Multi-platform build & deploy process — @nextain/naia-agent + @nextain/naia-memory npm publish",
+  "project": "naia-os",
+  "current_phase": "blocked_on_user",
+  "gate_approvals": {
+    "understand": "2026-05-16 — multi-platform build breaks due to file: refs in agent/package.json",
+    "scope": "2026-05-16 — naia-memory, naia-agent (aggregated), naia-os/agent, Flatpak manifest",
+    "plan": "2026-05-16 — user approved: 2 public packages + offline-first + npm update later"
+  },
+  "decisions": [
+    {
+      "decision": "Two public npm packages only: @nextain/naia-agent (aggregated) + @nextain/naia-memory",
+      "rationale": "naia-agent sub-packages are internal; naia-adk is boilerplate that belongs inside naia-agent",
+      "date": "2026-05-16"
+    },
+    {
+      "decision": "Offline-first distribution: naia-os ships with both packages pre-bundled as vendor tarballs",
+      "rationale": "On-premises environments have no internet; offline-first is correct default",
+      "date": "2026-05-16"
+    },
+    {
+      "decision": "npm update support added later as Phase B",
+      "rationale": "Online update is additive; validate offline path first",
+      "date": "2026-05-16"
+    },
+    {
+      "decision": "@nextain/naia-memory vendored as file:./vendor/nextain-naia-memory-0.1.4.tgz (NOT npm registry ref)",
+      "rationale": "Package not yet published to npm (pending OTP); vendor tarball works in all environments",
+      "date": "2026-05-16"
+    }
+  ],
+  "rejected_alternatives": [
+    {
+      "approach": "Publish 15 individual packages (agent-types, agent-protocol, etc.)",
+      "reason": "Too granular — internal interfaces have no public value",
+      "date": "2026-05-16"
+    },
+    {
+      "approach": "Reference naia-memory from npm registry in naia-os/agent before publishing",
+      "reason": "Package not yet published — would break pnpm install immediately",
+      "date": "2026-05-16"
+    },
+    {
+      "approach": "esbuild bundle only (no npm publish)",
+      "reason": "Doesn't enable independent updates later",
+      "date": "2026-05-16"
+    }
+  ],
+  "constraints_discovered": [
+    {
+      "constraint": "naia-memory had 12 TypeScript errors (types/better-sqlite3 missing, calculateStrength arity, KGEdge.lastStrengthened, etc.) — all fixed",
+      "scope": "naia-memory",
+      "date": "2026-05-16"
+    },
+    {
+      "constraint": "npm publish requires 2FA OTP — user must run: cd projects/naia-memory && npm publish --otp=<code> AND cd projects/naia-agent/packages/naia-agent && npm publish --access public --otp=<code>",
+      "scope": "naia-memory + naia-agent",
+      "date": "2026-05-16"
+    },
+    {
+      "constraint": "node-sources-agent.json for Flatpak offline build requires Linux + flatpak-node-generator Python tool — not generatable on Windows",
+      "scope": "flatpak",
+      "date": "2026-05-16"
+    },
+    {
+      "constraint": "@naia-adk/skills-builtin has workspace:* dep on @naia-adk/skill-spec — must be resolved via pnpm.overrides in both naia-agent root and naia-os/agent",
+      "scope": "naia-agent + naia-os/agent",
+      "date": "2026-05-16"
+    },
+    {
+      "constraint": "WorkspaceEscapeError defined independently in both agent-types and agent-runtime — aggregated naia-agent package must explicit re-export to resolve ambiguity",
+      "scope": "naia-agent",
+      "date": "2026-05-16"
+    }
+  ],
+  "phases": {
+    "1_naia_memory": {
+      "status": "done_pending_publish",
+      "tasks": [
+        "✅ add @types/better-sqlite3 devDependency",
+        "✅ fix sqlite.ts type errors (calculateStrength arity, KGEdge.coOccurrences, rowToEpisode fields)",
+        "✅ fix llm-fact-extractor.ts + test-quick-compare.ts maxEmotion field",
+        "✅ fix types.ts epochAnchor missing from semantic.search context",
+        "✅ pnpm build clean",
+        "✅ pnpm pack → agent/vendor/nextain-naia-memory-0.1.4.tgz",
+        "⏳ npm publish @nextain/naia-memory@0.1.4 — BLOCKED: OTP required (user action)"
+      ]
+    },
+    "2_naia_agent_bundle": {
+      "status": "done_pending_publish",
+      "tasks": [
+        "✅ create packages/naia-agent/ aggregated bundle (package.json, src/index.ts, src/skills.ts, tsconfig.json)",
+        "✅ vendor tarballs (naia-adk-skill-spec-0.1.0.tgz, naia-adk-skills-builtin-0.0.1.tgz) in naia-agent/vendor/",
+        "✅ add pnpm.overrides to naia-agent root package.json for @naia-adk/skill-spec",
+        "✅ fix WorkspaceEscapeError export ambiguity in src/index.ts",
+        "✅ fix coding-tool.test.ts non-null assertions",
+        "✅ pnpm install + tsc -b clean",
+        "⏳ npm publish @nextain/naia-agent@0.1.0 — BLOCKED: OTP required (user action)"
+      ]
+    },
+    "3_naia_os_agent": {
+      "status": "done",
+      "tasks": [
+        "✅ @naia-adk/skills-builtin → file:./vendor/naia-adk-skills-builtin-0.0.1.tgz",
+        "✅ @nextain/naia-memory → file:./vendor/nextain-naia-memory-0.1.4.tgz",
+        "✅ pnpm.overrides for @naia-adk/skill-spec",
+        "✅ pnpm install (resolved all deps)",
+        "✅ tsc --noEmit (0 errors)",
+        "✅ pnpm test (1204/1407 pass; 15 failures pre-existing: TTS network, custom skills dir, timeout)"
+      ]
+    },
+    "4_flatpak_offline": {
+      "status": "partial",
+      "tasks": [
+        "✅ naia-memory + naia-adk vendor tarballs resolve offline within Flatpak sandbox",
+        "⏳ node-sources-agent.json — BLOCKED: requires Linux + flatpak-node-generator (Windows environment)",
+        "⏳ remove --share=network from manifest — BLOCKED: other npm deps still need network",
+        "NOTE: Flatpak build works now with --share=network (existing); full offline only needed for Flathub submission"
+      ]
+    },
+    "5_context_update": {
+      "status": "done",
+      "tasks": [
+        "✅ distribution.yaml updated with npm_packages section + vendor_pattern",
+        "⏳ .users/ context mirror update"
+      ]
+    }
+  },
+  "blockers": [
+    "npm OTP: user must provide 2FA code to publish @nextain/naia-memory@0.1.4 and @nextain/naia-agent@0.1.0",
+    "Flatpak node-sources JSON: requires Linux environment with flatpak-node-generator"
+  ],
+  "surprises": [
+    "@naia-adk/skills-builtin has workspace:* dep — can't use file: refs without overrides",
+    "WorkspaceEscapeError defined in both agent-types (sub-agent.ts) and agent-runtime (path-normalize.ts) — duplicate symbols"
+  ],
+  "updated_at": "2026-05-16T17:10:00Z"
+}

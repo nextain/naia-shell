@@ -38,6 +38,7 @@ export function chatChunkToWire(requestId: string, c: ChatChunk): Record<string,
     case "logEntry": return { type: "log_entry", requestId, level: c.level, message: c.message };
     case "tokenWarning": return { ...(c.raw && typeof c.raw === "object" ? c.raw as object : {}), type: "token_warning", requestId };
     case "compacted": return { type: "compacted", requestId, droppedCount: c.droppedCount };
+    case "panelToolCall": return { type: "panel_tool_call", requestId, toolCallId: c.toolCallId, toolName: c.toolName, args: c.args }; // UC-PANEL FR-PANEL-2 → ChatPanel handleChunk
     case "finish": return { type: "finish", requestId };
     case "error": return { type: "error", requestId, message: c.message };
   }

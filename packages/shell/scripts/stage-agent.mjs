@@ -28,13 +28,13 @@ import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const SHELL = process.cwd(); // packages/shell
-const AGENT = resolve(SHELL, "../../../new-naia-agent"); // 형제 repo (dev-setup.mjs 와 동일 가정)
+const AGENT = resolve(SHELL, "../../../naia-agent"); // 형제 repo (dev-setup.mjs 와 동일 가정)
 const STAGE = resolve(SHELL, "src-tauri/agent");
 
 if (!existsSync(AGENT)) {
 	console.error(
 		`[stage-agent] ❌ agent repo 없음: ${AGENT}\n` +
-			`  → new-naia-os 와 new-naia-agent 를 같은 부모 폴더 아래 형제로 clone 했는지 확인하세요.`,
+			`  → naia-os 와 naia-agent 를 같은 부모 폴더 아래 형제로 clone 했는지 확인하세요.`,
 	);
 	process.exit(1);
 }
@@ -53,7 +53,7 @@ try {
 	if (!hadWs) writeFileSync(wsFile, "packages:\n  - '.'\n");
 	if (existsSync(STAGE)) rmSync(STAGE, { recursive: true, force: true });
 	run(
-		`pnpm --filter=new-naia-agent --config.node-linker=hoisted deploy --prod --legacy "${STAGE}"`,
+		`pnpm --filter=@nextain/naia-agent --config.node-linker=hoisted deploy --prod --legacy "${STAGE}"`,
 		AGENT,
 	);
 } finally {

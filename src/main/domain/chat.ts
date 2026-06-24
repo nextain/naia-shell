@@ -57,6 +57,7 @@ export type ChatChunk =
   | { readonly kind: "logEntry"; readonly level: string; readonly message: string }
   | { readonly kind: "tokenWarning"; readonly raw: unknown }
   | { readonly kind: "compacted"; readonly droppedCount: number } // UC-compaction: agent 가 예산 압박 시 head 요약 발생 알림(UI 표시용)
+  | { readonly kind: "panelToolCall"; readonly toolCallId: string; readonly toolName: string; readonly args: unknown } // UC-PANEL FR-PANEL-2: 환경 도구 위임(requestId 보유, 비-terminal chat-turn 이벤트 — ChatPanel 이 실행 후 panel_tool_result 회신)
   | { readonly kind: "finish" }
   | { readonly kind: "error"; readonly message: string };
 
@@ -128,10 +129,12 @@ export const CHAT_TURN_VARIANTS = [
   "gateway_approval_request",
   // UC-compaction(FR-COMPACT): 예산 압박 요약 발생 알림(requestId 보유, 비-terminal chat-turn 이벤트 — ChatPanel 배너).
   "compacted",
+  // UC-PANEL FR-PANEL-2: 환경 도구 위임(requestId 보유, 비-terminal — chat onChunk 로 흘러 ChatPanel 이 실행→panel_tool_result 회신).
+  "panel_tool_call",
 ] as const;
 export const NONCHAT_KNOWN_VARIANTS = [
   "audio", "object", "panel_control", "panel_install_result",
-  "panel_tool_call", "ready", "skill_list_response", "embedding_progress",
+  "ready", "skill_list_response", "embedding_progress",
   // shell agent_response 소비자 surface 전체에서 발견(uc1-variant-probe drift) — 비-chat, 해당 UC 에서 배선:
   "config_update",            // 설정 동기화
   "discord_message",          // UC10 discord

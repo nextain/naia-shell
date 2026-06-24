@@ -18,15 +18,18 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import {
 	applyModelSelectionToConfig,
+	applyWorkspaceConfigToLocal,
 	clearAdkPath,
 	copyBundledAssets,
 	getAdkPath,
 	isAdkInitialized,
 	listNaiaAssets,
 	readNaiaConfig,
+	readNaiaUiConfig,
 	setAdkPath,
 	toAssetUrl,
 	writeNaiaConfig,
+	writeNaiaUiConfig,
 } from "../adk-store";
 
 // ── UC-MODEL-SELECT cross-seam contract ─────────────────────────────────────────
@@ -254,6 +257,105 @@ describe("writeNaiaConfig", () => {
 			adkPath: WIN_ADK,
 			json: JSON.stringify({ provider: "openai", model: "gpt-4o" }, null, 2),
 		});
+	});
+});
+
+// ── ui-config 분리(FR-WS.2) + 워크스페이스 전환 복원(FR-WS.1/.3) ─────────────────
+
+describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () => {
+	it("does nothing when adk path not set", async () => {
+		await writeNaiaUiConfig({ vrmModel: "a.vrm" });
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("writes only UI identity keys, dropping provider/secret/non-identity keys", async () => {
+		setAdkPath(WIN_ADK);
+		await writeNaiaUiConfig({
+			provider: "openai",
+			naiaKey: "secret",
+			theme: "ocean", // UI 이지만 정체성 키 아님 → 제외
+			vrmModel: "a.vrm",
+			backgroundImage: "bg.png",
+			bgmTrack: "song.mp3",
+			customVrms: ["a.vrm"],
+		});
+		expect(mockInvoke).toHaveBeenCalledWith("write_naia_ui_config", {
+			adkPath: WIN_ADK,
+			json: JSON.stringify(
+				{
+					vrmModel: "a.vrm",
+					backgroundImage: "bg.png",
+					bgmTrack: "song.mp3",
+					customVrms: ["a.vrm"],
+				},
+				null,
+				2,
+			),
+		});
+	});
+});
+
+describe("readNaiaUiConfig", () => {
+	it("returns null when adk path not set", async () => {
+		expect(await readNaiaUiConfig()).toBeNull();
+	});
+
+	it("parses ui-config JSON", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockResolvedValue(JSON.stringify({ vrmModel: "b.vrm" }));
+		expect((await readNaiaUiConfig())?.vrmModel).toBe("b.vrm");
+	});
+});
+
+describe("writeNaiaConfig also persists ui-config (FR-WS.2)", () => {
+	it("calls both write_naia_config (stripped) and write_naia_ui_config (UI identity)", async () => {
+		setAdkPath(WIN_ADK);
+		await writeNaiaConfig({
+			provider: "openai",
+			model: "gpt-4o",
+			vrmModel: "a.vrm",
+			theme: "ocean",
+		});
+		// config.json: UI keys stripped (vrmModel/theme gone — stripForAgent)
+		expect(mockInvoke).toHaveBeenCalledWith("write_naia_config", {
+			adkPath: WIN_ADK,
+			json: JSON.stringify({ provider: "openai", model: "gpt-4o" }, null, 2),
+		});
+		// ui-config.json: only UI identity keys (vrmModel; theme is not an identity key)
+		expect(mockInvoke).toHaveBeenCalledWith("write_naia_ui_config", {
+			adkPath: WIN_ADK,
+			json: JSON.stringify({ vrmModel: "a.vrm" }, null, 2),
+		});
+	});
+});
+
+describe("applyWorkspaceConfigToLocal (전환 복원 FR-WS.1/.3)", () => {
+	it("merges config.json + ui-config.json into localStorage naia-config", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "read_naia_config")
+				return JSON.stringify({ persona: "P", provider: "nextain", model: "m" });
+			if (cmd === "read_naia_ui_config")
+				return JSON.stringify({ vrmModel: "ws.vrm", backgroundImage: "ws.png" });
+			return undefined;
+		});
+		await applyWorkspaceConfigToLocal();
+		const stored = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(stored.persona).toBe("P"); // config.json 복원
+		expect(stored.model).toBe("m");
+		expect(stored.vrmModel).toBe("ws.vrm"); // ui-config.json 복원
+		expect(stored.backgroundImage).toBe("ws.png");
+		expect(stored.workspaceRoot).toBe(WIN_ADK);
+		expect(stored.onboardingComplete).toBe(true);
+	});
+
+	it("survives missing files — identity keys absent (bundle fallback)", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockResolvedValue(""); // both reads empty
+		await applyWorkspaceConfigToLocal();
+		const stored = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(stored.vrmModel).toBeUndefined();
+		expect(stored.workspaceRoot).toBe(WIN_ADK);
 	});
 });
 

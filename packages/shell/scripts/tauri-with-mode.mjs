@@ -6,7 +6,7 @@
  * 추가 책임(new-naia-os 는 항상 새 코어 + 분리 에이전트이므로):
  *   - VITE_NAIA_NEW_CORE=1        (셸 채팅을 이식 코어 경유)
  *   - NAIA_AGENT_STANDALONE=1     (Rust 가 임베디드 대신 외부 에이전트 스폰)
- *   - NAIA_AGENT_SCRIPT=../new-naia-agent/scripts/builds/agent-stdio-entry.mjs
+ *   - NAIA_AGENT_SCRIPT=../naia-agent/scripts/builds/agent-stdio-entry.mjs
  *   - GDK_BACKEND=x11 (Linux — WebKitGTK XReparentWindow embedding)
  * 그 위에 .env.{mode} 의 VITE_* 를 주입(URL 등은 .env 파일에만, 여기 하드코딩 없음).
  * 호출자(run-new-core-dev.sh 등)가 이미 설정한 값은 보존(?? 기본값).
@@ -24,7 +24,7 @@ const mode = process.argv[2] === "prod" ? "prod" : "dev";
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
-const AGENT = resolve(OS_ROOT, "..", "new-naia-agent");
+const AGENT = resolve(OS_ROOT, "..", "naia-agent");
 
 const env = { ...process.env };
 

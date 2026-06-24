@@ -3,7 +3,7 @@
  * new-naia dev-setup — `tauri dev` 전에 실행.
  *
  * 옛 old-naia-os/scripts/dev-setup.mjs 의 새-구조 이식판. 핵심 차이:
- *  - 에이전트가 **분리 repo** (`../new-naia-agent`) → 옛 임베디드 `../agent` + `../../naia-agent` submodule 로직 제거(obsolete).
+ *  - 에이전트가 **분리 repo** (`../naia-agent`) → 옛 임베디드 `../agent` + `../../naia-agent` submodule 로직 제거(obsolete).
  *  - 코어(`new-naia-os` 루트, 헥사고날 src/main)와 에이전트를 각각 tsc 빌드.
  *  - new-naia-os 는 항상 새 코어 → VITE_NAIA_NEW_CORE / NAIA_AGENT_SCRIPT 주입은 tauri-with-mode.mjs(env 레이어)가 담당.
  *
@@ -21,7 +21,8 @@ const isWin = platform() === "win32";
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os (코어)
-const AGENT = resolve(OS_ROOT, "..", "new-naia-agent"); // 분리 repo
+const AGENT = resolve(OS_ROOT, "..", "naia-agent"); // 분리 repo
+const BGM = resolve(SHELL, "..", "bgm-sidecar"); // 환경 사이드카(YouTube BGM) — dist 없으면 lib.rs 가 옛 ../agent 로 폴백
 
 // ─── 1. stale 프로세스 정리 ──────────────────────────────────────────────────
 // ⚠️ pkill -f 금지(컨테이너/무관 프로세스 오살). 정확 프로세스명(-x) + 포트 1420(vite)만.
@@ -36,6 +37,19 @@ function killStale() {
 		if (!isWin) {
 			const pid = execSync("lsof -ti:1420 2>/dev/null || true", { encoding: "utf8" }).trim();
 			if (pid) execSync(`kill -9 ${pid.split(/\s+/).join(" ")}`, { stdio: "ignore" });
+		} else {
+			// Windows: vite(1420)=node 라 naia-shell.exe kill 로는 안 잡힘 → 좀비 vite 가 포트 점유 시
+			// 다음 dev 가 "Port 1420 is already in use" 로 죽는다. netstat 로 LISTENING PID 만 정밀 정리.
+			const out = execSync("netstat -ano -p tcp", { encoding: "utf8" });
+			const pids = new Set();
+			for (const line of out.split("\n")) {
+				if (/:1420\s/.test(line) && /LISTENING/i.test(line)) {
+					const cols = line.trim().split(/\s+/);
+					const pid = cols[cols.length - 1];
+					if (pid && pid !== "0") pids.add(pid);
+				}
+			}
+			for (const pid of pids) execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: "ignore" });
 		}
 	} catch {
 		/* 포트 free — 정상 */
@@ -73,5 +87,6 @@ function cleanRustCache() {
 if (cleanMode) cleanRustCache();
 killStale();
 tscBuild(OS_ROOT, "core(new-naia-os)");
-tscBuild(AGENT, "new-naia-agent");
+tscBuild(AGENT, "naia-agent");
+tscBuild(BGM, "bgm-sidecar"); // dist/bgm-server-bin.js → lib.rs 1순위 후보 적중(BGM health 복구)
 console.log("[dev-setup] 완료 — tauri-with-mode 로 env 주입 후 tauri dev 진입.");

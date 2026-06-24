@@ -2,9 +2,9 @@ fn main() {
     tauri_build::build();
 
     // ── os↔agent gRPC 클라이언트 코드젠 (정본 transport=gRPC) ──────────────────────
-    // naia_agent.proto SoT = sibling repo new-naia-agent. protoc = vendored(시스템 설치 불요).
+    // naia_agent.proto SoT = sibling repo naia-agent. protoc = vendored(시스템 설치 불요).
     // os = client only(build_server=false). 생성 코드는 OUT_DIR → agent_grpc 모듈이 include_proto!.
-    let proto_dir = "../../../../new-naia-agent/src/main/adapters/grpc";
+    let proto_dir = "../../../../naia-agent/src/main/adapters/grpc";
     let proto = format!("{proto_dir}/naia_agent.proto");
     if std::path::Path::new(&proto).exists() {
         std::env::set_var(

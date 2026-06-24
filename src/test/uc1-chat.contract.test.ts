@@ -87,11 +87,11 @@ describe("wire variant 분류 SoT (router·관측 스니펫 공유)", () => {
     expect(classifyVariant("config_update")).toBe("nonchat-known");
     expect(classifyVariant("bgm_youtube_play")).toBe("nonchat-known");
   });
-  it("variant 집합 = 12 chat-turn + 19 nonchat-known(=31), 중복 없음", () => {
-    expect(CHAT_TURN_VARIANTS.length).toBe(12); // +compacted(FR-COMPACT, requestId 보유 비-terminal chat-turn)
-    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(19);
+  it("variant 집합 = 13 chat-turn + 18 nonchat-known(=31), 중복 없음", () => {
+    expect(CHAT_TURN_VARIANTS.length).toBe(13); // +compacted(FR-COMPACT) +panel_tool_call(UC-PANEL FR-PANEL-2: requestId 보유 비-terminal chat-turn → ChatPanel 위임 실행)
+    expect(NONCHAT_KNOWN_VARIANTS.length).toBe(18); // panel_tool_call 을 chat-turn 으로 이동(no-op pending drop 제거)
     const all = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
-    expect(all.size).toBe(31); // 겹침 없음(12 chat + 19 nonchat)
+    expect(all.size).toBe(31); // 겹침 없음(13 chat + 18 nonchat)
   });
   it("outboundCommandOf: cancel 만 별 command(cancel_stream), 나머지 send_to_agent_command", () => {
     expect(outboundCommandOf("cancel")).toBe("cancel_stream");

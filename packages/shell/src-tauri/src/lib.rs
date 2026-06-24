@@ -1237,6 +1237,58 @@ async fn agent_dispatcher(
                     }
                 });
             }
+            // ── UC-PANEL FR-PANEL: 환경 panel skill(BGM·브라우저·workspace) 셸→agent 배선(현 `_=>{}` drop 제거) ──
+            "panel_skills" => {
+                // FR-PANEL-1 등록: wire tools → pb::ToolSpec(parameters→JSON 문자열, tier→Option<i32>).
+                let panel_id = v.get("panelId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let tools: Vec<agent_grpc::pb::ToolSpec> = v.get("tools").and_then(|t| t.as_array()).map(|arr| {
+                    arr.iter().map(|t| agent_grpc::pb::ToolSpec {
+                        name: t.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        description: t.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        parameters_json: t.get("parameters").map(|p| p.to_string()).unwrap_or_else(|| "{}".to_string()),
+                        tier: t.get("tier").and_then(|x| x.as_i64()).map(|n| n as i32),
+                    }).collect()
+                }).unwrap_or_default();
+                let mut c = client.clone();
+                tauri::async_runtime::spawn(async move { let _ = c.register_panel_skills(panel_id, tools).await; });
+            }
+            "panel_skills_clear" => {
+                let panel_id = v.get("panelId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let mut c = client.clone();
+                tauri::async_runtime::spawn(async move { let _ = c.clear_panel_skills(panel_id).await; });
+            }
+            "skill_list" => {
+                // ListSkills → skill_list_response(셸 fetchAgentSkills 기대 형태). parameters_json → parameters 파싱.
+                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let mut c = client.clone();
+                let app2 = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    match c.list_skills().await {
+                        Ok(list) => {
+                            let tools: Vec<serde_json::Value> = list.tools.iter().map(|t| serde_json::json!({
+                                "name": t.name, "description": t.description,
+                                "parameters": serde_json::from_str::<serde_json::Value>(&t.parameters_json).unwrap_or_else(|_| serde_json::json!({})),
+                            })).collect();
+                            let _ = app2.emit("agent_response", &serde_json::json!({"type":"skill_list_response","requestId":rid,"tools":tools}).to_string());
+                        }
+                        Err(e) => { let _ = app2.emit("agent_response", &serde_json::json!({"type":"error","requestId":rid,"message":format!("grpc list_skills: {}", e)}).to_string()); }
+                    }
+                });
+            }
+            "panel_tool_result" => {
+                // FR-PANEL-3 결과 주입: 셸 panel 실행 결과 → agent chat 루프 pending resolve.
+                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let tcid = v.get("toolCallId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let output = v.get("result").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let success = v.get("success").and_then(|x| x.as_bool()).unwrap_or(false);
+                let mut c = client.clone();
+                tauri::async_runtime::spawn(async move { let _ = c.panel_tool_result(rid, tcid, output, success).await; });
+            }
+            "panel_install" => {
+                // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — PanelInstallDialog 무한 로딩 방지 위해
+                //   즉시 미지원 응답(셸 dialog 는 독립 raw listener 라 router 우회 직접 수신). 기능화는 별도 이슈.
+                let _ = app.emit("agent_response", &serde_json::json!({"type":"panel_install_result","success":false,"error":"패널 설치는 현재 미지원(new-core 스코프 밖)"}).to_string());
+            }
             _ => {}
         }
     }
@@ -2589,6 +2641,27 @@ async fn write_naia_config(adk_path: String, json: String) -> Result<(), String>
     std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
 }
 
+/// Read `{adk_path}/naia-settings/ui-config.json` (워크스페이스별 UI 정체성 — VRM/배경/BGM).
+/// agent 미소비(env 오염 방지) — 셸 전용. config.json(agent 소비)과 분리(FR-WS.2). 없으면 빈 문자열.
+#[tauri::command]
+async fn read_naia_ui_config(adk_path: String) -> Result<String, String> {
+    let path = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join("ui-config.json");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+/// Write `{adk_path}/naia-settings/ui-config.json` (셸 전용 — agent 미소비).
+#[tauri::command]
+async fn write_naia_ui_config(adk_path: String, json: String) -> Result<(), String> {
+    let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("ui-config.json"), json).map_err(|e| e.to_string())
+}
+
 // ── 대화 transcript read(FR-CONV.3) ─────────────────────────────────────────────
 // `{adk_path}/conversations/` = agent(전두엽)가 append 하는 verbatim 대화록(런타임 데이터). **content 단일 writer = agent**;
 // shell 은 read + delete(세션 lifecycle 관리, UI 삭제버튼)만 — content append/수정 안 함. agent 부재/죽음에도 파일 직접
@@ -3425,6 +3498,8 @@ pub fn run() {
             list_naia_assets,
             read_naia_config,
             write_naia_config,
+            read_naia_ui_config,
+            write_naia_ui_config,
             write_agent_key,
             agent_key_exists,
             check_naia_settings,

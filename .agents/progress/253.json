@@ -1,0 +1,85 @@
+{
+  "issue": "#253",
+  "title": "feat(shell): complete layout redesign — background full-screen + avatar overlay + semi-transparent panels",
+  "project": "naia-os",
+  "current_phase": "verify",
+  "gate_approvals": {
+    "understand": "2026-05-09",
+    "scope": "2026-05-09",
+    "plan": "2026-05-09",
+    "build": "2026-05-09"
+  },
+  "completed": [
+    "naia-panel (in-flow flex) → naia-overlay (position: fixed, left:0, top:32px, bottom:0, width:--naia-width)",
+    "naia-resize-handle → position: fixed, left: var(--naia-width)",
+    "--naia-width CSS var moved from app-layout to app-root for inheritance by fixed children",
+    "app-layout: width:100% removed (was causing overflow with margin-left), z-index/position cleaned up",
+    "naia-avatar-area: flex:1, fills overlay height",
+    "naia-chat-toggle: 18px slide button between avatar and chat",
+    "naia-chat-wrapper: glassmorphism dark glass (rgba 0.80, blur 24px), slide-down animation on toggle",
+    "content-panel: enhanced glassmorphism game-window (rgba 0.72, blur 20px, cyan border, box-shadow)",
+    "right-content: padding 4px for gap between panel and window edge",
+    "ChatPanel tabs: removed progress, skills, agents, diagnostics (→ tracked in #245 for settings panel)",
+    "Onboarding branch: simplified to full-screen OnboardingWizard (removed keepAlive panels render during onboarding)",
+    "Camera defaults: (0,0.9,-2.0) / target(0,0.75,0) for full-body framing",
+    "All naia-panel references updated: CSS, media rules, comments",
+    "SplashScreen: position:fixed z:9999 — unaffected by layout changes",
+    "TypeScript: clean. Tests: 484/488 (4 pre-existing skips)",
+    "Post-build cleanup: keepAlivePanels useState→useMemo, WinResizeDir type moved to module scope",
+    "useAppReady: timer no longer fires on ADK/onboarding paths (deps=[showAdkSetup,showOnboarding])",
+    "Comments: issue number references (#253, #254) removed from code",
+    "Background layer: always rendered as base (z:0), outside all branch conditionals",
+    "Background image support: isVideoFile/isImageFile helpers, background-space.webp as default fallback",
+    "GPU acceleration: will-change:transform + translateZ(0) on video element",
+    "ADK setup screen: complete rewrite with 3 modes (new/load/login)",
+    "AdkSetupScreen: i18n applied — all strings via t() with adk.setup.* keys (23 keys, 14 locales)",
+    "i18n.ts: added adk.setup.* translation block (23 keys × 14 locales)",
+    "Bug fix: onboarding never showed after ADK setup — isOnboardingComplete() now checked in onComplete callback",
+    "Splash flow fix: showSplash=true reset after ADK/onboarding completes → VRM load is covered",
+    "Dev reset: ?reset URL param in main.tsx clears localStorage (DEV only)",
+    "WebView2 localStorage clear: Default\\Local Storage deleted for fresh-start testing",
+    "OnboardingWizard: complete rewrite — 6-step flow (agentName/userName/speechStyle/character/background/provider)",
+    "OnboardingWizard: pre-scripted Korean chat reactions injected via useChatStore.addMessage() at each step",
+    "OnboardingWizard: real-time background + character preview via setBackgroundVideoUrl/setAvatarModelPath",
+    "OnboardingWizard: conditional provider step (skipped when naia-remote-key already set)",
+    "OnboardingWizard: provider step — Naia OAuth OR manual API key OR skip (나중에 설정)",
+    "OnboardingWizard: TypeScript clean — fixed sendAuthUpdate import, selectedVrm→vrmModel, base config default",
+    "i18n.ts: added onboard.lab.connected (14 locales)",
+    "global.css: added full onboarding-panel + onboarding-progress + onboarding-step__* CSS (glassmorphism)"
+  ],
+  "pending": [
+    "#245: Settings panel — move Skills/Agents/Diagnostics/Settings tabs to center panel",
+    "#255: BGM widget — move to top-left fixed position (currently inside naia-overlay top)",
+    "Phase 4: resize handles persistence, config save for chat panel visibility",
+    "Verify: ADK setup → splash → VRM load → onboarding-in-panel → main layout flow"
+  ],
+  "decisions": [
+    {
+      "decision": "naia-overlay stays in DOM as position:fixed sibling of app-layout; app-layout uses margin-left for offset",
+      "rationale": "Cleaner than making right-area fixed too; existing resize handle pointer math unchanged since it uses clientX delta",
+      "date": "2026-05-09"
+    },
+    {
+      "decision": "Onboarding branch simplified to just OnboardingWizard (full-screen); removed keepAlive panels during onboarding",
+      "rationale": "keepAlivePanels mounting during onboarding caused unnecessary startup work (browser panel, workspace IPC); onboarding is short-lived",
+      "date": "2026-05-09"
+    },
+    {
+      "decision": "Chat toggle keeps layout space (translateY only, not height animation) for Phase 1",
+      "rationale": "Height animation expensive; avatar area doesn't grow when chat hides, but visual slide effect is clear enough for Phase 1",
+      "date": "2026-05-09"
+    },
+    {
+      "decision": "Splash resets to true after ADK/onboarding completes (before main app render)",
+      "rationale": "ADK setup is a quick popup; the heavy load (VRM, layout) happens after. Splash must cover that transition. isOnboardingComplete() checked: if onboarding follows, splash is NOT reset (onboarding is also fast/ready); only reset when transitioning to main app.",
+      "date": "2026-05-09"
+    },
+    {
+      "decision": "ADK setup keeps 3-option screen (new/load/login) as correct first-run UX",
+      "rationale": "Confirmed by user — initialization screen is correct for first-run. Layout shows after this gate, not before.",
+      "date": "2026-05-09"
+    }
+  ],
+  "session_id": "d6f73855-2d95-4a49-b85f-240e59e4b875",
+  "updated_at": "2026-05-09T14:30:00Z"
+}

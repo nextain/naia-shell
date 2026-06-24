@@ -106,6 +106,10 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
     }
     case "token_warning": return { kind: "tokenWarning", raw: m };
     case "compacted": { const dc = r["droppedCount"]; return { kind: "compacted", droppedCount: typeof dc === "number" ? dc : 0 }; }
+    case "panel_tool_call": { // UC-PANEL FR-PANEL-2: 환경 도구 위임 → chat onChunk → ChatPanel 실행
+      const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]);
+      return toolCallId === null || toolName === null ? null : { kind: "panelToolCall", toolCallId, toolName, args: r["args"] };
+    }
     case "finish": return { kind: "finish" };
     case "error": { const message = reqStr(r["message"]); return message === null ? null : { kind: "error", message }; }
     default: return null; // CHAT_TURN_TYPES 에 있으나 매핑 없음 = 손상

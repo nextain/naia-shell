@@ -1,0 +1,78 @@
+{
+	"topic": "ADK setup robustness + LLM connection + e2e env audit (single-session, multi-issue)",
+	"project": "naia-os + naia-agent (cross-repo)",
+	"started_at": "2026-05-26",
+	"updated_at": "2026-05-27 (Phase G close — #329 root cause identified, 401 resolved, L059 documented)",
+	"current_phase": "shipped + verified (LLM connection 401 RESOLVED via secure-store apiKey cleanup; agent receives correct dev gw key, tool_result frames flowing). e2e 04 spec FAIL persists for unrelated reason (LLM calls skill_sessions/skill_config instead of skill_time — separate prompt/tool-routing issue, not session scope). #329 split-brain root cause identified as adk-store.ts:255-263 collision (apiKey+naiaKey → same env) — needs follow-up shell fix.",
+	"issues_registered": [
+		{ "id": "#324", "title": "per-step status UI + zip byte progress", "status": "shipped — naia-os ab391758, manual verification pending" },
+		{ "id": "#325", "title": "Directory is not empty → new_exists branch", "status": "shipped — naia-os 7707b964, manual verification pending" },
+		{ "id": "#326", "title": "config_update NAIA_ADK_PATH propagation", "status": "shipped — naia-agent 7745e0a" },
+		{ "id": "#327", "title": "disable unverified features (naia account ADK + memory backup)", "status": "shipped — naia-os 328d3c81, manual verification pending" },
+		{ "id": "#328", "title": "playwright E2E for ADK setup", "status": "spec landed (naia-os 0e7a5960) but S1 still fails — webview cycle debugging needed in separate session" },
+		{ "id": "#329", "title": "unify gateway URL env var (shell VITE_* vs agent NAIA_GATEWAY_URL)", "status": "filed + diagnostic comment added (issuecomment-4543335868) — real failure case documented" },
+		{ "id": "#330", "title": "rename CAFE_* env vars to NAIA_*", "status": "partial — CAFE_NAIA_KEY → NAIA_API_KEY done in shell + 3 e2e files (#330 commits 0e7a5960). 5 other CAFE_* vars (CAFE_GATEWAY_TOKEN, CAFE_E2E_API_KEY, CAFE_E2E_JUDGE_MODEL, CAFE_DEBUG_E2E) deferred to dedicated PR" },
+		{ "id": "#331", "title": "prod gateway 500 SQLAlchemy DetachedInstanceError (cross-ref to backend repo)", "status": "open — dev gateway uses different backend code path (no 500), so #331 only blocks prod-flavored e2e; #329 fix is the real precondition for e2e verification" }
+	],
+	"phases_completed": [
+		"A: 5 issues registered (#324-#328) via gh CLI",
+		"B: inspect_adk_dir Rust command + dirState UI branching (has_settings vs has_other_files)",
+		"C: NAIA_ADK_PATH / NAIA_SETTINGS_DIR explicit process.env assignment in naia-agent config_update handler",
+		"D: e2e-tauri/specs/24-adk-setup-flow.spec.ts drafted (Tauri 2 invoke + mock + mocha timeout 5min + splash dismiss helper) + selectors.ts extended",
+		"E: e2e env audit — 3 follow-up issues filed (#329 gateway env unify, #330 CAFE→NAIA rename, #331 backend cross-ref), .env.sample fully rewritten",
+		"F: 5-commit precision split (hunk-level), CAFE_NAIA_KEY → NAIA_API_KEY rename, root submodule pointer bump, all pushed (naia-os ab97905a..0e7a5960, naia-agent d85a892..7745e0a, alpha-adk 9cab884..15cc0d2)",
+		"G: #329 minimal hotfix (agent 6cc41a1: force-apply NAIA_ANYLLM_BASE_URL/API_KEY in config_update + cachedLlm invalidate) + root submodule bump (alpha-adk cb8fe36). e2e 04 401 root cause traced through codex+gemini cross-review to apiKey field collision in shell adk-store.ts. Verified fix: removing apiKey from Tauri secure-keys.dat resolves 401. L059 lesson documented."
+	],
+	"commits_landed": {
+		"naia-os": [
+			{ "hash": "ab391758", "title": "feat(shell/adk-setup): per-step status UI + zip download byte progress (#324)" },
+			{ "hash": "7707b964", "title": "fix(shell/adk-setup): branch on new_exists when directory has other files (#325)" },
+			{ "hash": "328d3c81", "title": "chore(shell): disable unverified features — naia account ADK + memory backup (#327)" },
+			{ "hash": "0e7a5960", "title": "chore(shell/e2e): ADK setup spec + .env.sample rewrite + rename CAFE_NAIA_KEY (#328)" }
+		],
+		"naia-agent": [
+			{ "hash": "7745e0a", "title": "fix(stdio): propagate NAIA_ADK_PATH via config_update IPC" }
+		],
+		"alpha-adk-root": [
+			{ "hash": "15cc0d2", "title": "chore(root): bump naia-os + naia-agent — ADK setup robustness + IPC propagation (#324-#328)" }
+		]
+	},
+	"e2e_verification_results": {
+		"01-app-launch": "PASSED (2 tests, infrastructure baseline)",
+		"04-skill-time": "FAILED — Lab proxy 401 'Unauthorized'. Root cause: shell omits gatewayUrl from chat_request → agent falls back to prod hardcoded URL (lab-proxy.ts:47) → dev key invalid on prod. = #329 split-brain실제 발현. Documented in #329 issuecomment-4543335868",
+		"24-adk-setup-flow S1": "FAILED — webview 'no such window: target window already closed' during ADK switch lifecycle. wdio session debugging needed (#328 stays open)",
+		"24-adk-setup-flow S2": "FAILED — depends on S1 path",
+		"24-adk-setup-flow S3": "SKIPPED — gated on API_KEY"
+	},
+	"decisions": [
+		{ "decision": "5 엄격분리 commit (hunk-level Edit for mixed files)", "rationale": "Each commit owns a single GitHub issue → easier review, revert, bisect. AdkSetupScreen.tsx 11+4+1 hunks split via working-tree-reset → patch-apply → Edit", "date": "2026-05-26" },
+		{ "decision": "CAFE_NAIA_KEY → NAIA_API_KEY rename bundled into C5 (#328 e2e commit) rather than separate #330 commit", "rationale": "Single-variable rename touched only e2e files which are all in C5 scope; full #330 (5 other vars) still deferred", "date": "2026-05-26" },
+		{ "decision": "dev gateway URL (https://naia-gateway-dev-181404717065...run.app) treated as not-secret, prod key (gw-R7Ffk2...) kept commented out in personal .env", "rationale": "URL is just a Cloud Run endpoint; .env is gitignored so prod key never enters repo", "date": "2026-05-26" },
+		{ "decision": "Keep check_naia_settings alongside new inspect_adk_dir", "rationale": "Surgical change; other callers may rely on boolean check_naia_settings semantics", "date": "2026-05-26" },
+		{ "decision": "ENV_OVERRIDE_KEYS limited to NAIA_ADK_PATH + NAIA_SETTINGS_DIR", "rationale": "Only settings-dir-determining vars trigger chicken-and-egg; other keys flow correctly via readNaiaSettings on new dir", "date": "2026-05-26" },
+		{ "decision": "Mock clone via env flag (NAIA_E2E_MOCK_CLONE) rather than separate test command", "rationale": "Single command surface; mock activated only in e2e context; production code path unchanged", "date": "2026-05-26" },
+		{ "decision": "Defer full CAFE→NAIA rename (5 remaining vars) to its own PR (#330)", "rationale": "Mechanical multi-file rename should not be conflated with bug fixes", "date": "2026-05-26" },
+		{ "decision": "Push directly to main (no feature branch)", "rationale": "User explicit choice this session; future commits may revisit feature-branch+PR model per CLAUDE.md convention", "date": "2026-05-26" }
+	],
+	"constraints_discovered": [
+		{ "constraint": "env-loader.ts is first-match-wins (never overwrites process.env)", "scope": "naia-agent runtime", "date": "2026-05-26" },
+		{ "constraint": "shell uses VITE_NAIA_GATEWAY_URL / VITE_NAIA_DEV_GATEWAY_URL (build-time) vs agent uses NAIA_GATEWAY_URL (runtime); shell omits gatewayUrl from chat_request → agent prod hardcoded fallback", "scope": "Real failure mode of #329 split-brain", "date": "2026-05-26" },
+		{ "constraint": "TranslationKey was not exported from i18n.ts — fixed", "scope": "shell", "date": "2026-05-26" },
+		{ "constraint": "Tauri 2 webview exposes __TAURI_INTERNALS__.invoke regardless of withGlobalTauri; __TAURI__.core.invoke requires withGlobalTauri=true", "scope": "e2e specs needing direct Tauri invoke from JS execute", "date": "2026-05-26" },
+		{ "constraint": "Mocha (wdio framework) uses 'after' not 'afterAll'; default test timeout 60s insufficient for ADK clone flows", "scope": "e2e specs", "date": "2026-05-26" },
+		{ "constraint": "wdio webview session is lost when Tauri app cycles through ADK switch — root cause unknown, blocks spec 24 S1", "scope": "e2e infra, requires deeper investigation (#328)", "date": "2026-05-26" },
+		{ "constraint": "agent has 4 separate hardcoded prod gateway URLs (lab-proxy.ts:47, lab-proxy-live.ts:55, registry.ts:246, bin/naia-agent.ts:2397)", "scope": "#329 fix must cover all 4 — single env override (NAIA_GATEWAY_URL) is cleanest", "date": "2026-05-26" },
+		{ "constraint": "alpha-adk root has 'projects/' in .gitignore but submodules registered via .gitmodules; submodule pointer bumps need 'git add -f projects/<name>'", "scope": "root commit workflow", "date": "2026-05-26" }
+	],
+	"blockers": [
+		"Manual UI verification pending — user must launch shell and confirm #324/#325/#327 flows visually",
+		"e2e 04 full verification blocked on #329 fix (agent prod hardcoded fallback) — separate work, not on critical path",
+		"spec 24 webview cycle issue — deeper wdio debugging deferred (#328 stays open)"
+	],
+	"next_actions_user_decides": [
+		"Manual UI verification — #324 status line, #325 new_exists branching, #327 disabled cards",
+		"Triage #329/#330/#331 priority (#329 must precede full e2e 04 verification)",
+		"Schedule #328 webview cycle debugging session (wdio session lifecycle during Tauri ADK switch)",
+		"Decide whether to follow feature-branch+PR workflow for future commits (current session used direct main push)"
+	]
+}

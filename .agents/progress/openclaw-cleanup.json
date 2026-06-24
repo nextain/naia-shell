@@ -1,0 +1,67 @@
+{
+  "issue": "#openclaw-cleanup",
+  "title": "Remove all openclaw references from naia-os codebase",
+  "project": "naia-os",
+  "current_phase": "build",
+  "session_id": "8109e8c9-c8bc-4b86-babf-9b3d7c934e0a",
+  "related_issues": {
+    "236": "FIXED - Login Chrome position + OS decorations (commit: 065c270b)",
+    "237": "FIXED - overlay_enforce_pos drift check / focus flickering (commit: dddaadf7)",
+    "238": "FIXED - gemini-3.1-pro-preview empty SSE → defaultModel=gemini-2.5-pro (commit: c89095c9)",
+    "239": "OPEN - naia-agent standalone CLI + shell 연동 + settings UI + browser/tab tools"
+  },
+  "completed_in_session": [
+    "agent/src/gateway/path-resolver.ts — ~.naia/openclaw/openclaw.json 폴백 제거 (코드 수정, 미커밋)",
+    "AGENTS.md, CLAUDE.md, GEMINI.md — 게이트웨이 커맨드 업데이트 (미커밋)",
+    "agent/assets/default-skills/*/SKILL.md — 44개 파일 metadata openclaw 블록 제거 (미커밋)",
+    "agent/assets/default-skills/ 7개 파일 — ~/.openclaw/ 경로 → ~/.naia/ 치환",
+    "agent/assets/default-skills/1password/SKILL.md — OPENCLAW_TMUX_SOCKET_DIR → NAIA_TMUX_SOCKET_DIR",
+    "agent/assets/default-skills/voice-call/SKILL.md — openclaw CLI 명령 → pending 노트",
+    "agent/assets/default-skills/healthcheck/SKILL.md — OpenClaw → Naia 전체 치환",
+    "agent/assets/default-skills/canvas/SKILL.md — openclaw → naia 치환",
+    "agent/assets/default-skills/coding-agent/SKILL.md — openclaw → naia 치환"
+  ],
+  "still_remaining": {
+    "context_docs": [
+      ".agents/context/*.yaml (약 10개 파일) — OpenClaw/openclaw 참조",
+      ".users/context/*.md (약 10개 파일) — OpenClaw/openclaw 참조",
+      "architecture.yaml, brand.yaml, channels-discord.yaml, contributing.yaml",
+      "distribution.yaml, gateway-sync.yaml, harness.yaml, phase3-plan.yaml",
+      "plan.yaml, project-index.yaml, skill-naia-discord.yaml"
+    ],
+    "code_files_needing_check": [
+      "agent/scripts/generate-skill-manifests.ts — openclaw 참조 확인 필요",
+      "agent/src/gateway/__tests__/path-resolver.test.ts — openclaw 폴백 테스트 제거 필요",
+      "agent/dist/ 파일들 — 컴파일 후 자동 재생성됨 (직접 수정 불필요)",
+      "CHANGELOG.md, CHANGELOG.ko.md — 역사적 기록, 유지"
+    ],
+    "config_files": [
+      "config/defaults/openclaw-bootstrap.json — 리네임 or 내용 확인 필요"
+    ],
+    "test_files": [
+      "agent/src/gateway/__tests__/path-resolver.test.ts — openclaw.json 폴백 테스트 케이스 제거"
+    ]
+  },
+  "next_session_start_command": "grep -r openclaw d:/alpha-adk/projects/naia-os --include='*.ts' --include='*.yaml' --include='*.md' --include='*.json' --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=target 2>/dev/null | grep -v CHANGELOG",
+  "issue_239_scope": {
+    "title": "arch(shell-agent): naia-agent as standalone CLI + shell settings UI + browser/tab tools",
+    "description": "naia-agent는 독립 CLI(standalone)이면서 shell CLI로도 이용 가능. naia-shell에서 naia-agent 설정 전부 관리 가능해야 함. shell에서 브라우저 및 전용 탭 도구 사용 가능하게 확장.",
+    "sub_tasks": [
+      "naia-agent standalone CLI 구현 (bin 엔트리포인트)",
+      "naia-shell SettingsTab에서 naia-agent 설정 관리 UI",
+      "naia-agent → shell 브라우저 패널 제어 도구 노출",
+      "naia-agent → shell 탭(PTY, 워크스페이스 등) 제어 도구"
+    ]
+  },
+  "commits_in_session": [
+    "c89095c9 fix(lab-proxy): change nextain defaultModel to gemini-2.5-pro (#238)",
+    "dddaadf7 fix(browser): skip overlay SetWindowPos when Chrome has not drifted (#237)",
+    "065c270b fix(browser): center login Chrome over Naia window; fix misleading comment (#236)"
+  ],
+  "uncommitted_changes": [
+    "agent/src/gateway/path-resolver.ts",
+    "AGENTS.md, CLAUDE.md, GEMINI.md",
+    "agent/assets/default-skills/ (약 50개 파일)"
+  ],
+  "updated_at": "2026-05-06T00:00:00Z"
+}

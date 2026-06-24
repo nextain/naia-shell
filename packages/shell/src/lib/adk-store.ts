@@ -342,6 +342,78 @@ export function applyModelSelectionToConfig(
 	return { ...next, ...buildNaiaConfigEnv(next as Parameters<typeof buildNaiaConfigEnv>[0]) };
 }
 
+// ── 워크스페이스별 UI 정체성(VRM/배경/BGM) — ui-config.json (agent 미소비, env 오염 방지) ──────────
+// config.json 은 agent 가 읽어 stripForAgent 로 UI키가 제거됨 → UI 설정이 전역 localStorage 에만 살아
+// 워크스페이스 전환 시 복원되지 않았다(S72 버그). 이 키들을 워크스페이스별 ui-config.json 에 분리 저장/복원(FR-WS.2).
+const UI_IDENTITY_KEYS = [
+	"vrmModel",
+	"backgroundImage",
+	"backgroundVideo",
+	"bgmTrack",
+	"customVrms",
+	"customBgs",
+] as const;
+
+function extractUiConfig(
+	config: Record<string, unknown>,
+): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const k of UI_IDENTITY_KEYS) {
+		if (config[k] !== undefined) out[k] = config[k];
+	}
+	return out;
+}
+
+/** UI 정체성 키만 `{adkPath}/naia-settings/ui-config.json` 에 저장(FR-WS.2). 비치명. */
+export async function writeNaiaUiConfig(
+	config: Record<string, unknown>,
+): Promise<void> {
+	const adkPath = getAdkPath();
+	if (!adkPath) return;
+	await invoke("write_naia_ui_config", {
+		adkPath,
+		json: JSON.stringify(extractUiConfig(config), null, 2),
+	}).catch(() => {
+		/* 비치명 — 다음 저장 시 재시도 */
+	});
+}
+
+/** ui-config.json 읽기(워크스페이스 전환 복원용). 없으면 null. */
+export async function readNaiaUiConfig(): Promise<Record<
+	string,
+	unknown
+> | null> {
+	const adkPath = getAdkPath();
+	if (!adkPath) return null;
+	try {
+		const json = await invoke<string>("read_naia_ui_config", { adkPath });
+		if (!json) return null;
+		return JSON.parse(json) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 워크스페이스 전환 시 그 워크스페이스의 설정을 localStorage `naia-config` 로 복원(FR-WS.1/.3).
+ * config.json(persona·이름·말투·locale·provider/model 등 agent 소비분) + ui-config.json(VRM/배경/BGM)
+ * 을 병합. AdkSetupScreen handleLoadConfirm 과 동형(전환 경로의 비대칭 해소). reload 직전에 호출한다.
+ * 누락 키는 자연히 빠져 호출측(avatar store 등)의 번들 기본값 폴백으로 떨어진다(FR-WS.3).
+ */
+export async function applyWorkspaceConfigToLocal(): Promise<void> {
+	const adkPath = getAdkPath();
+	if (!adkPath) return;
+	const fileConfig = (await readNaiaConfig()) ?? {};
+	const uiConfig = (await readNaiaUiConfig()) ?? {};
+	const merged = {
+		...fileConfig,
+		...uiConfig,
+		onboardingComplete: true,
+		workspaceRoot: adkPath,
+	};
+	localStorage.setItem("naia-config", JSON.stringify(merged));
+}
+
 export async function writeNaiaConfig(
 	config: Record<string, unknown>,
 ): Promise<void> {
@@ -351,6 +423,8 @@ export async function writeNaiaConfig(
 		adkPath,
 		json: JSON.stringify(stripForAgent(config), null, 2),
 	});
+	// UI 정체성(VRM/배경/BGM)은 agent 가 안 읽으므로 별도 ui-config.json 에 — 워크스페이스 전환 복원용(FR-WS.2).
+	await writeNaiaUiConfig(config);
 	// 설정 변경(특히 provider/model)을 에이전트에 즉시 반영 — naia-settings 재로딩 후 활성 provider swap(정본 R1-2:
 	// "라이브 변경 = OS 가 naia-settings 갱신 후 ReloadSettings 재호출"). gRPC=설정 기반(대화는 메시지만)이라
 	// 이 트리거가 없으면 에이전트는 기동 시 config 에 고정돼 UI 모델 전환이 안 먹는다(=실측 회귀). 에이전트 미가동 시 swallow.

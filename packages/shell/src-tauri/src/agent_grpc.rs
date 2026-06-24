@@ -1,4 +1,4 @@
-// gRPC client — naia_agent.proto(new-naia-agent SoT) 에서 build.rs(tonic-build)가 생성.
+// gRPC client — naia_agent.proto(naia-agent SoT) 에서 build.rs(tonic-build)가 생성.
 // 정본 os↔agent transport = gRPC. stdio 파이프 교체. AgentEvent → UI agent_response JSON(encodeEmit 동형) 재구성.
 #![allow(dead_code)]
 
@@ -39,6 +39,7 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
         Some(Event::Finish(_)) => json!({"type":"finish","requestId":rid}),
         Some(Event::Error(e)) => json!({"type":"error","requestId":rid,"message":e.message}),
         Some(Event::Compacted(c)) => json!({"type":"compacted","requestId":rid,"droppedCount":c.dropped_count}), // UC-compaction(FR-COMPACT)
+        Some(Event::PanelToolCall(t)) => json!({"type":"panel_tool_call","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}), // UC-PANEL FR-PANEL-2: 환경 도구 위임 → 셸 실행
         None => json!({"type":"error","requestId":rid,"message":"empty AgentEvent"}),
     }
 }
@@ -139,6 +140,26 @@ impl AgentGrpc {
         self.client
             .approval_response(ApprovalResponseRequest { request_id, tool_call_id, decision: decision as i32 })
             .await?;
+        Ok(())
+    }
+
+    // UC-PANEL FR-PANEL: 환경 panel skill RPC 클라이언트(셸→agent). agent_dispatcher 가 wire JSON 을 이리로 라우팅.
+    pub async fn register_panel_skills(&mut self, panel_id: String, tools: Vec<pb::ToolSpec>) -> Result<(), tonic::Status> {
+        self.client.register_panel_skills(pb::PanelSkills { panel_id, tools }).await?;
+        Ok(())
+    }
+
+    pub async fn clear_panel_skills(&mut self, panel_id: String) -> Result<(), tonic::Status> {
+        self.client.clear_panel_skills(pb::PanelId { panel_id }).await?;
+        Ok(())
+    }
+
+    pub async fn list_skills(&mut self) -> Result<pb::SkillList, tonic::Status> {
+        Ok(self.client.list_skills(pb::ListSkillsRequest {}).await?.into_inner())
+    }
+
+    pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool) -> Result<(), tonic::Status> {
+        self.client.panel_tool_result(pb::PanelToolResultMsg { request_id, tool_call_id, output, success }).await?;
         Ok(())
     }
 }

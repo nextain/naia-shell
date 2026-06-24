@@ -13,6 +13,7 @@ import {
 	writeAgentKey,
 	writeAgentSecret,
 	applyModelSelectionToConfig,
+	applyWorkspaceConfigToLocal,
 	writeNaiaConfig,
 } from "../lib/adk-store";
 import {
@@ -2216,6 +2217,8 @@ export function SettingsTab() {
 										invoke("workspace_set_root", { root: selected }).catch(
 											() => {},
 										);
+										// 전환 = 새 워크스페이스의 config.json + ui-config.json 복원(FR-WS.1) — AdkSetupScreen 과 동형.
+										await applyWorkspaceConfigToLocal();
 										window.location.reload();
 									}
 								}}
@@ -2229,7 +2232,7 @@ export function SettingsTab() {
 									background: "var(--accent-color, #5b8cf5)",
 									color: "#fff",
 								}}
-								onClick={() => {
+								onClick={async () => {
 									const trimmed = workspaceRoot.trim();
 									const cfg = loadConfig();
 									if (!cfg) return;
@@ -2242,6 +2245,8 @@ export function SettingsTab() {
 										invoke("workspace_set_root", {
 											root: trimmed,
 										}).catch(() => {});
+										// 전환 = 새 워크스페이스 설정 복원(FR-WS.1).
+										await applyWorkspaceConfigToLocal();
 									} else {
 										clearAdkPath();
 									}

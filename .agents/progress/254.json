@@ -1,0 +1,30 @@
+{
+  "issue": "#254",
+  "title": "fix(shell): startup white flash + readiness-gated splash screen",
+  "project": "naia-os",
+  "current_phase": "build",
+  "gate_approvals": {},
+  "decisions": [
+    {
+      "decision": "visible:false in config + getCurrentWindow().show() in App.tsx first useEffect",
+      "rationale": "Simpler than Rust WebviewWindowBuilder approach; window stays hidden until React renders splash (dark), then shows with no white flash",
+      "date": "2026-05-09"
+    },
+    {
+      "decision": "useAppReady(showAdkSetup, showOnboarding) hook using avatarStore.isLoaded",
+      "rationale": "Reads from Zustand store — no prop changes needed to AvatarCanvas, AdkSetupScreen, OnboardingWizard. ADK/onboarding paths signal ready immediately (synchronous render), normal path waits for VRM load or 5s timeout",
+      "date": "2026-05-09"
+    }
+  ],
+  "rejected_alternatives": [
+    {
+      "approach": "Rust WebviewWindowBuilder.with_background_color() to set dark bg before WebView2 init",
+      "reason": "Requires moving window creation from config to Rust code (larger refactor). The visible:false approach achieves same goal with minimal change",
+      "date": "2026-05-09"
+    }
+  ],
+  "constraints_discovered": [],
+  "surprises": [],
+  "blockers": [],
+  "updated_at": "2026-05-09T10:30Z"
+}
