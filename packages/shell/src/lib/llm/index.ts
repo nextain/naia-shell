@@ -8,6 +8,8 @@ export {
 	isApiKeyOptional,
 	getStaticModelsRecord,
 	fetchNaiaPricing,
+	fetchNaiaModelCapabilities,
+	applyCapabilityOverrides,
 	fetchOllamaModels,
 	fetchVllmModels,
 	formatModelLabel,

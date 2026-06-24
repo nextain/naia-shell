@@ -312,62 +312,13 @@ export async function cancelChat(requestId: string): Promise<void> {
 	}
 }
 
-/** Pipeline TTS: synthesize a single sentence → returns MP3 base64 via callback */
-export async function requestTts(opts: {
-	text: string;
-	voice?: string;
-	ttsProvider?: "edge" | "google" | "openai" | "elevenlabs" | "nextain";
-	ttsApiKey?: string;
-	requestId: string;
-	onAudio: (mp3Base64: string, costUsd?: number) => void;
-}): Promise<void> {
-	const { text, voice, ttsProvider, ttsApiKey, requestId, onAudio } = opts;
-
-	const request = {
-		type: "tts_request",
-		requestId,
-		text,
-		...(voice && { voice }),
-		...(ttsProvider && { ttsProvider }),
-		...(ttsApiKey && { ttsApiKey }),
-	};
-
-	const unlisten = await listen<string>("agent_response", (event) => {
-		try {
-			const raw =
-				typeof event.payload === "string"
-					? event.payload
-					: JSON.stringify(event.payload);
-			const chunk = JSON.parse(raw) as {
-				type: string;
-				requestId: string;
-				data?: string;
-				costUsd?: number;
-			};
-			if (chunk.requestId !== requestId) return;
-
-			if (chunk.type === "audio" && chunk.data) {
-				onAudio(chunk.data, chunk.costUsd);
-			}
-			if (chunk.type === "finish" || chunk.type === "error") {
-				clearTimeout(timeoutId);
-				unlisten();
-			}
-		} catch {
-			// Ignore malformed events
-		}
-	});
-
-	const timeoutId = setTimeout(() => {
-		unlisten();
-	}, 30_000);
-
-	const sent = await safeSendToAgent(request, "requestTts");
-	if (!sent) {
-		clearTimeout(timeoutId);
-		unlisten();
-	}
-}
+/**
+ * Pipeline / preview TTS is synthesized **shell-side** via
+ * `lib/tts/synthesize.ts` (#363) — the new-core agent has no TTS backend, so
+ * the old `requestTts` IPC (`tts_request` message) was dropped by the Rust
+ * `agent_dispatcher` and every cloud voice went silent. The agent is no longer
+ * in the TTS path.
+ */
 
 /** Direct tool call — bypasses LLM, no token cost */
 export async function directToolCall(opts: {

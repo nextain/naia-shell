@@ -45,7 +45,6 @@ vi.mock("../../lib/chat-service", () => ({
 	cancelChat: vi.fn().mockResolvedValue(undefined),
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
 	fetchAgentSkills: vi.fn().mockResolvedValue([]),
-	requestTts: vi.fn().mockResolvedValue(undefined),
 	sendApprovalResponse: vi.fn().mockResolvedValue(undefined),
 	sendPanelToolResult: vi.fn().mockResolvedValue(undefined),
 	// 슬라이스1(isNewCore 도입) 이후 ChatPanel 이 호출 — mock 누락 시 throw 로 8건 RED 였음.

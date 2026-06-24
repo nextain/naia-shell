@@ -238,36 +238,6 @@ describe("chat-service", () => {
 		});
 	});
 
-	it("requestTts does NOT include naiaKey in tts_request payload", async () => {
-		const { requestTts } = await import("../chat-service");
-
-		mockListen.mockImplementation(
-			async (_event: string, handler: (event: { payload: string }) => void) => {
-				setTimeout(() => {
-					handler({
-						payload: JSON.stringify({
-							type: "finish",
-							requestId: "req-tts-no-key",
-						}),
-					});
-				}, 10);
-				return mockUnlisten;
-			},
-		);
-
-		await requestTts({
-			text: "Hello",
-			voice: "ko-KR-Neural2-A",
-			ttsProvider: "edge",
-			requestId: "req-tts-no-key",
-			onAudio: vi.fn(),
-		});
-
-		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
-		expect(parsed.type).toBe("tts_request");
-		expect(parsed.naiaKey).toBeUndefined();
-	});
-
 	it("does NOT forward webhook URLs in chat_request (#260)", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 
@@ -488,24 +458,6 @@ describe("chat-service", () => {
 			await expect(fetchAgentSkills()).rejects.toThrow(
 				/naia-agent unavailable/,
 			);
-			expect(mockUnlisten).toHaveBeenCalled();
-		});
-
-		it("requestTts naia-agent 없으면 silent resolve + listener cleanup (onAudio never called)", async () => {
-			mockInvoke.mockRejectedValue(new Error("agent-core died"));
-			const onAudio = vi.fn();
-			const { requestTts } = await import("../chat-service");
-
-			await expect(
-				requestTts({
-					text: "hello",
-					ttsProvider: "edge",
-					requestId: "req-tts-1",
-					onAudio,
-				}),
-			).resolves.toBeUndefined();
-
-			expect(onAudio).not.toHaveBeenCalled();
 			expect(mockUnlisten).toHaveBeenCalled();
 		});
 

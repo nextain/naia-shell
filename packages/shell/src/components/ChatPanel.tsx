@@ -28,7 +28,6 @@ import {
 	directToolCall,
 	fetchAgentSkills,
 	isNewCore,
-	requestTts,
 	sendApprovalResponse,
 	sendChatMessage,
 	sendPanelToolResult,
@@ -38,6 +37,7 @@ import {
 	DEFAULT_VLLM_HOST,
 	DEFAULT_VOICE_REF_URL,
 	LAB_GATEWAY_URL,
+	type TtsProviderId,
 	addAllowedTool,
 	getNaiaInstanceId,
 	isToolAllowed,
@@ -72,6 +72,7 @@ import {
 } from "../lib/stt";
 import { getTtsProviderMeta } from "../lib/tts";
 import { estimateSttCost, estimateTtsCost } from "../lib/tts/cost";
+import { synthesizeTts } from "../lib/tts/synthesize";
 import type {
 	AgentResponseChunk,
 	AuditEvent,
@@ -424,6 +425,12 @@ export function ChatPanel() {
 		voice?: string;
 		ttsProvider?: string;
 		ttsApiKey?: string;
+		/** nextain provider: gateway credit key. */
+		naiaKey?: string;
+		/** nextain provider: gateway base URL. */
+		gatewayUrl?: string;
+		/** vllm provider: local OpenAI-compatible host. */
+		vllmHost?: string;
 	} | null>(null);
 	const sttCleanupRef = useRef<(() => void)[]>([]);
 	const sttDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -864,6 +871,11 @@ export function ChatPanel() {
 							: config.ttsProvider === "elevenlabs"
 								? config.elevenlabsApiKey
 								: undefined,
+				// nextain (gateway credit) + vllm (local) need their own creds —
+				// without naiaKey the gateway TTS path was silent (#363).
+				naiaKey: config.naiaKey,
+				gatewayUrl: LAB_GATEWAY_URL,
+				vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 			};
 		}
 
@@ -1370,23 +1382,24 @@ export function ChatPanel() {
 			return;
 		}
 
-		requestTts({
+		// Shell-direct synthesis (#363): the new-core agent has no TTS, so every
+		// non-browser provider is synthesized here (gateway / direct API / edge WS)
+		// instead of via the dropped `tts_request` IPC. Browser TTS already
+		// returned above (isClientSide).
+		synthesizeTts({
 			text: clean,
 			voice: voiceCfg?.voice,
-			ttsProvider: voiceCfg?.ttsProvider as
-				| "edge"
-				| "google"
-				| "openai"
-				| "elevenlabs"
-				| "nextain"
-				| undefined,
-			ttsApiKey: voiceCfg?.ttsApiKey,
-			requestId: reqId,
-			onAudio: (mp3Base64, costUsd) => {
+			provider: ttsProviderForCost as TtsProviderId,
+			apiKey: voiceCfg?.ttsApiKey,
+			naiaKey: voiceCfg?.naiaKey,
+			gatewayUrl: voiceCfg?.gatewayUrl,
+			vllmHost: voiceCfg?.vllmHost,
+		})
+			.then(({ audioBase64, costUsd }) => {
 				Logger.info("ChatPanel", "TTS audio received", {
 					reqId,
 					seq,
-					size: mp3Base64.length,
+					size: audioBase64.length,
 					costUsd,
 				});
 				// Drop stale audio from a superseded turn. interruptTts() clears
@@ -1395,7 +1408,7 @@ export function ChatPanel() {
 				// be enqueued — clear() reset the sequence counter, so an old
 				// seq=0 chunk would otherwise replay as the new turn's first audio.
 				if (activeTtsRequestsRef.current.has(reqId)) {
-					audioQueueRef.current?.enqueueOrdered(seq, mp3Base64);
+					audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
 				}
 				activeTtsRequestsRef.current.delete(reqId);
 				// Track TTS cost: use server cost for Naia Cloud, estimate for others.
@@ -1423,8 +1436,42 @@ export function ChatPanel() {
 							: `tts:${ttsProviderForCost}`,
 					});
 				}
-			},
-		});
+			})
+			.catch((err) => {
+				const stillActive = activeTtsRequestsRef.current.has(reqId);
+				activeTtsRequestsRef.current.delete(reqId);
+				// Superseded turn — interruptTts() already reset the queue; leave it.
+				if (!stillActive) return;
+				// Release the reserved ordered slot so later sentences don't stall
+				// behind this seq (enqueueOrdered waits for contiguous sequence nums).
+				audioQueueRef.current?.skipOrdered(seq);
+				// edge is the free, no-key default — fall back to browser TTS so the
+				// default voice never goes silent if the Edge WS is unreachable.
+				if (
+					ttsProviderForCost === "edge" &&
+					typeof window !== "undefined" &&
+					"speechSynthesis" in window
+				) {
+					Logger.warn("ChatPanel", "edge TTS failed — browser TTS fallback", {
+						error: String(err),
+					});
+					const utter = new SpeechSynthesisUtterance(clean);
+					utter.lang =
+						voiceCfg?.voice || document.documentElement.lang || "ko-KR";
+					utter.onstart = () => useAvatarStore.getState().setSpeaking(true);
+					utter.onend = () => useAvatarStore.getState().setSpeaking(false);
+					// Without onerror, a browser-TTS failure after onstart would leave
+					// the avatar stuck in the speaking state (#363 review #6).
+					utter.onerror = () => useAvatarStore.getState().setSpeaking(false);
+					window.speechSynthesis.speak(utter);
+					return;
+				}
+				Logger.warn("ChatPanel", "TTS synthesis failed", {
+					reqId,
+					provider: ttsProviderForCost,
+					error: String(err),
+				});
+			});
 	}
 
 	/** Clean up pipeline voice resources. */
@@ -1555,7 +1602,10 @@ export function ChatPanel() {
 				sentenceChunkerRef.current = new SentenceChunker();
 				pipelineActiveRef.current = true;
 				pipelineVoiceConfigRef.current = {
-					voice: config.ttsVoice || config.voice,
+					voice:
+						config.ttsProvider === "nextain"
+							? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
+							: config.ttsVoice || config.voice,
 					ttsProvider: config.ttsProvider || "edge",
 					ttsApiKey:
 						config.ttsProvider === "google"
@@ -1565,6 +1615,10 @@ export function ChatPanel() {
 								: config.ttsProvider === "elevenlabs"
 									? config.elevenlabsApiKey
 									: undefined,
+					// nextain (gateway credit) + vllm (local) creds — #363.
+					naiaKey: config.naiaKey,
+					gatewayUrl: LAB_GATEWAY_URL,
+					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
 				};
 
 				// Start STT engine — route to Tauri plugin (offline) or API-based

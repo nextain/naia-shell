@@ -11,7 +11,13 @@
  *   "stt"   — speech-to-text component (may coexist with other caps)
  *   "tts"   — text-to-speech component
  *   "vlm"   — vision-language (image understanding)
+ *   "image" — image generation
+ *   "video" — video generation
+ *   "avatar"— talking-avatar rendering
  *   "world" — world model (future)
+ *
+ * Keep in sync with the gateway catalog vocabulary
+ * (project-any-llm any_llm/gateway/model_catalog.py CAPABILITIES).
  */
 export type ModelCapability =
 	| "llm"
@@ -20,7 +26,24 @@ export type ModelCapability =
 	| "stt"
 	| "tts"
 	| "vlm"
+	| "image"
+	| "video"
+	| "avatar"
 	| "world";
+
+/** Runtime list of all capability tags (for validation / iteration). */
+export const MODEL_CAPABILITY_VALUES: readonly ModelCapability[] = [
+	"llm",
+	"omni",
+	"asr",
+	"stt",
+	"tts",
+	"vlm",
+	"image",
+	"video",
+	"avatar",
+	"world",
+];
 
 // === Provider ===
 

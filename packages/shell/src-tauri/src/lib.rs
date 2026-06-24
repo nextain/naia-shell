@@ -2176,6 +2176,41 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
+/// Detect the primary GPU's total VRAM in GB via `nvidia-smi` (NVIDIA only).
+///
+/// Returns a whole-GB number (marketed VRAM is whole GB; nvidia-smi reports
+/// MiB, e.g. an RTX 4070 12 GB = ~12282 MiB ≈ 11.99 GiB → rounds to 12) or null
+/// when nvidia-smi is absent / non-NVIDIA / unparseable — the settings UI then
+/// falls back to manual tier selection (#2 / FR-VRAM.1).
+///
+/// NOTE: this reports *capacity only*. Real-time (RTF<1) on a given GPU is a
+/// measured gate (windows-manager F1) and is NOT inferred here.
+#[tauri::command]
+async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
+    let output = tokio::task::spawn_blocking(|| {
+        std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+            .output()
+    })
+    .await
+    .map_err(|e| format!("task error: {e}"))?;
+
+    // Absent nvidia-smi / non-NVIDIA host → null (not an error).
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return Ok(serde_json::Value::Null),
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    // First line = primary GPU's total memory in MiB.
+    let mib = text.lines().next().and_then(|l| l.trim().parse::<f64>().ok());
+
+    Ok(match mib {
+        Some(m) if m > 0.0 => serde_json::json!((m / 1024.0).round()),
+        _ => serde_json::Value::Null,
+    })
+}
+
 /// Check if Naia Gateway is reachable on localhost
 /// Re-enable Korean/CJK IME for the WebView2 child HWND.
 /// Called from the frontend when a text input gains focus so the 한/영 toggle
@@ -3482,6 +3517,7 @@ pub fn run() {
             memory_import_backup,
             validate_api_key,
             list_audio_output_devices,
+            detect_gpu_vram,
             generate_oauth_state,
             read_local_binary,
             write_temp_text,

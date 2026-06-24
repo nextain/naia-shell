@@ -5,6 +5,7 @@ import {
 	getSecretKey,
 	saveSecretKey,
 } from "./secure-store";
+import type { VramTierId } from "./capabilities/vram-tiers";
 import type { ProviderId } from "./types";
 // LiveProviderId kept for migration only — will be removed after migration period
 import type { LiveProviderId } from "./voice/types";
@@ -150,6 +151,13 @@ export interface AppConfig {
 	vllmHost?: string;
 	/** vLLM endpoint for STT/ASR (e.g. Qwen3-ASR). */
 	vllmSttHost?: string;
+	/**
+	 * Local GPU profile (#2 / FR-VRAM.2). "off" (default) = no effect; "auto" =
+	 * use the tier detected from GPU VRAM; an explicit tier id forces it. When
+	 * active, the tier's local capabilities fold into the model's effective
+	 * capabilities (hides external slots the local tier covers).
+	 */
+	localGpuTier?: VramTierId | "auto" | "off";
 	/** vLLM endpoint for TTS (e.g. Kokoro). */
 	vllmTtsHost?: string;
 	/** Selected ASR model ID on the vLLM STT server. */

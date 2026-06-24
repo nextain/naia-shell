@@ -1,4 +1,4 @@
-import type { ModelCapability } from "../types.js";
+import { MODEL_CAPABILITY_VALUES, type ModelCapability } from "../types.js";
 import type { LlmModelMeta, LlmProviderMeta, LlmVoiceMeta } from "./types";
 
 const NAIA_PRICE_MARKUP = 1.1;
@@ -168,6 +168,60 @@ export async function fetchNaiaPricing(
 	} catch {
 		return null;
 	}
+}
+
+const _CAP_SET: ReadonlySet<string> = new Set(MODEL_CAPABILITY_VALUES);
+
+function _isModelCapability(value: string): value is ModelCapability {
+	return _CAP_SET.has(value);
+}
+
+/**
+ * Fetch the gateway capability catalog (#365): `GET /v1/models`.
+ *
+ * The gateway is the SoT for model capabilities; this lets a newly-declared
+ * capability reach the UI without a client release. Returns a map of bare model
+ * id → capabilities, or null on failure (caller keeps the static fallback).
+ */
+export async function fetchNaiaModelCapabilities(
+	gatewayHttpUrl: string,
+): Promise<Map<string, ModelCapability[]> | null> {
+	try {
+		const resp = await fetch(`${gatewayHttpUrl}/v1/models`, {
+			signal: AbortSignal.timeout(5000),
+		});
+		if (!resp.ok) return null;
+		const entries = (await resp.json()) as {
+			model_key: string;
+			capabilities: string[];
+		}[];
+		const map = new Map<string, ModelCapability[]>();
+		for (const entry of entries) {
+			const bareKey = entry.model_key.includes(":")
+				? (entry.model_key.split(":").pop() ?? entry.model_key)
+				: entry.model_key;
+			map.set(bareKey, (entry.capabilities ?? []).filter(_isModelCapability));
+		}
+		return map;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Apply gateway-declared capabilities onto a model list (gateway = SoT).
+ * Models the gateway doesn't mention keep their static capabilities (fallback).
+ * Returns cloned models so registry state stays immutable.
+ */
+export function applyCapabilityOverrides(
+	models: LlmModelMeta[],
+	capMap: Map<string, ModelCapability[]> | null,
+): LlmModelMeta[] {
+	if (!capMap) return models;
+	return models.map((model) => {
+		const caps = capMap.get(model.id);
+		return caps && caps.length > 0 ? { ...model, capabilities: caps } : model;
+	});
 }
 
 /** Format model label with pricing and capability hints. */

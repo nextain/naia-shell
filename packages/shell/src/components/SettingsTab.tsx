@@ -58,6 +58,8 @@ import { parseLabCredits } from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
 import {
 	type LlmModelMeta,
+	applyCapabilityOverrides,
+	fetchNaiaModelCapabilities,
 	fetchNaiaPricing,
 	fetchOllamaModels,
 	fetchVllmModels,
@@ -69,12 +71,20 @@ import {
 	isOmniModel,
 	listLlmProviders,
 } from "../lib/llm";
+import { deriveSettingsSlots } from "../lib/capabilities/slots";
+import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import {
+	VRAM_TIERS,
+	resolveActiveTier,
+	tierProvidedCapabilities,
+} from "../lib/capabilities/vram-tiers";
 import { Logger } from "../lib/logger";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
 import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
-import type { ProviderId } from "../lib/types";
+import { synthesizeTts } from "../lib/tts/synthesize";
+import type { ModelCapability, ProviderId } from "../lib/types";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
@@ -652,6 +662,15 @@ export function SettingsTab() {
 	const [sttModel, setSttModel] = useState(existing?.sttModel ?? "");
 	const [sttModels, setSttModels] = useState<SttModelInfo[]>([]);
 	const [sttDownloading, setSttDownloading] = useState<string | null>(null);
+	// #2 / FR-VRAM: local GPU profile. "off" default = no slot change (safe).
+	const [localGpuTier, setLocalGpuTier] = useState<
+		"off" | "auto" | "external-llm-6g" | "avatar-voice-12g" | "full-local-24g"
+	>(existing?.localGpuTier ?? "off");
+	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
+	// Detect GPU VRAM once on mount (#2 / FR-VRAM.1); null when unavailable.
+	useEffect(() => {
+		detectGpuVramGb().then(setDetectedVramGb);
+	}, []);
 	const [sttDownloadProgress, setSttDownloadProgress] = useState(0);
 
 	const [ttsEnabled, setTtsEnabled] = useState(existing?.ttsEnabled ?? false);
@@ -1050,9 +1069,17 @@ export function SettingsTab() {
 	// matches what the gateway actually charges.
 	useEffect(() => {
 		if (provider !== "nextain") return;
-		fetchNaiaPricing(LAB_GATEWAY_URL).then((liveModels) => {
+		// Pricing (DB SoT) + capability catalog (#365: gateway SoT for caps).
+		// If the catalog fetch fails, models keep their static capabilities.
+		Promise.all([
+			fetchNaiaPricing(LAB_GATEWAY_URL),
+			fetchNaiaModelCapabilities(LAB_GATEWAY_URL),
+		]).then(([liveModels, capMap]) => {
 			if (liveModels) {
-				setDynamicModels((prev) => ({ ...prev, nextain: liveModels }));
+				setDynamicModels((prev) => ({
+					...prev,
+					nextain: applyCapabilityOverrides(liveModels, capMap),
+				}));
 			}
 		});
 	}, [provider]);
@@ -1668,113 +1695,55 @@ export function SettingsTab() {
 		setError("");
 		setIsPreviewing(true);
 		try {
-			let base64 = "";
 			const modelMeta = (dynamicModels[provider] ?? []).find(
 				(m) => m.id === model,
 			);
 			const isOmni = modelMeta?.capabilities.includes("omni") ?? false;
 
-			if (isOmni && (provider === "nextain" || provider === "gemini")) {
-				// Gemini voice preview via Chirp 3 HD
-				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
-				const fullVoice = `ko-KR-Chirp3-HD-${voiceName}`;
-				const previewText = getPreviewText();
+			// Resolve the effective TTS provider / voice / credentials, then
+			// synthesize shell-side (#363). The agent's skill_tts was never a real
+			// synthesizer, so preview routes through the same path as live voice.
+			let synthProvider: TtsProviderId;
+			let synthVoice: string | undefined;
+			let synthApiKey: string | undefined;
 
-				if (naiaKey) {
-					const resp = await fetch(`${LAB_GATEWAY_URL}/v1/audio/speech`, {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-							"X-AnyLLM-Key": `Bearer ${naiaKey}`,
-						},
-						body: JSON.stringify({
-							input: previewText,
-							voice: fullVoice,
-							audio_encoding: "MP3",
-						}),
-					});
-					if (!resp.ok) {
-						const body = await resp.text().catch(() => "");
-						throw new Error(
-							`미리듣기 실패 (${resp.status}): ${body.slice(0, 200)}`,
-						);
-					}
-					const data = (await resp.json()) as { audio_content?: string };
-					base64 = data.audio_content ?? "";
-				} else {
-					setError("미리듣기를 사용하려면 Naia 로그인이 필요합니다.");
-					return;
-				}
+			if (isOmni && (provider === "nextain" || provider === "gemini")) {
+				// Omni avatar voice → Naia Cloud (gateway Chirp 3 HD).
+				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
+				synthProvider = "nextain";
+				synthVoice = `ko-KR-Chirp3-HD-${voiceName}`;
 			} else if (isOmni && provider === "openai") {
-				// OpenAI TTS preview via agent skill_tts
-				const previewVoice = voice || "alloy";
-				const previewText = getPreviewText(previewVoice);
-				const previewArgs: Record<string, unknown> = {
-					action: "preview",
-					provider: "openai",
-					text: previewText,
-					voice: previewVoice,
-					apiKey:
-						openaiRealtimeApiKey.trim() ||
-						existing?.openaiTtsApiKey ||
-						undefined,
-				};
-				const result = await directToolCall({
-					toolName: "skill_tts",
-					args: previewArgs,
-					requestId: `tts-preview-${Date.now()}`,
-				});
-				if (!result.success || !result.output) {
-					throw new Error(
-						"OpenAI 미리듣기에 실패했습니다. API Key를 확인하세요.",
-					);
-				}
-				const parsedOai = JSON.parse(result.output) as { audio?: string };
-				if (!parsedOai.audio) {
-					throw new Error("TTS 오디오 데이터를 수신하지 못했습니다.");
-				}
-				base64 = parsedOai.audio;
+				synthProvider = "openai";
+				synthVoice = voice || "alloy";
+				synthApiKey =
+					openaiRealtimeApiKey.trim() || existing?.openaiTtsApiKey || undefined;
 			} else {
-				// TTS preview via agent skill_tts — use selected ttsProvider
-				const previewText = getPreviewText(ttsVoice);
-				const selectedProvider = ttsProvider || "edge";
-				const previewArgs: Record<string, unknown> = {
-					action: "preview",
-					provider: selectedProvider,
-					text: previewText,
-					voice: ttsVoice,
-				};
-				// Pass API key for providers that need it
-				if (selectedProvider === "openai" && gatewayTtsApiKey) {
-					previewArgs.apiKey = gatewayTtsApiKey;
-				} else if (selectedProvider === "elevenlabs" && gatewayTtsApiKey) {
-					previewArgs.apiKey = gatewayTtsApiKey;
-				} else if (selectedProvider === "google" && gatewayTtsApiKey) {
-					previewArgs.apiKey = gatewayTtsApiKey;
+				synthProvider = (ttsProvider || "edge") as TtsProviderId;
+				synthVoice = ttsVoice;
+				if (
+					synthProvider === "google" ||
+					synthProvider === "openai" ||
+					synthProvider === "elevenlabs"
+				) {
+					synthApiKey = gatewayTtsApiKey || undefined;
 				}
-				if (selectedProvider === "nextain" && naiaKey) {
-					previewArgs.naiaKey = naiaKey;
-				}
-				const result = await directToolCall({
-					toolName: "skill_tts",
-					args: previewArgs,
-					requestId: `tts-preview-${Date.now()}`,
-				});
-				if (!result.success || !result.output) {
-					const providerName =
-						listTtsProviderMetas().find((p) => p.id === selectedProvider)
-							?.name ?? selectedProvider;
-					throw new Error(
-						`${providerName} 미리듣기에 실패했습니다.${selectedProvider !== "edge" ? " API Key를 확인하세요." : ""}`,
-					);
-				}
-				const parsed = JSON.parse(result.output) as { audio?: string };
-				if (!parsed.audio) {
-					throw new Error("TTS 오디오 데이터를 수신하지 못했습니다.");
-				}
-				base64 = parsed.audio;
 			}
-			const audio = new Audio(`data:audio/mp3;base64,${base64}`);
+
+			if (synthProvider === "nextain" && !naiaKey) {
+				setError("미리듣기를 사용하려면 Naia 로그인이 필요합니다.");
+				return;
+			}
+
+			const { audioBase64 } = await synthesizeTts({
+				text: getPreviewText(synthVoice),
+				voice: synthVoice,
+				provider: synthProvider,
+				apiKey: synthApiKey,
+				naiaKey: naiaKey || undefined,
+				gatewayUrl: LAB_GATEWAY_URL,
+				vllmHost: existing?.vllmHost,
+			});
+			const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
 			await audio.play();
 		} catch (err) {
 			setError(
@@ -1943,6 +1912,7 @@ export function SettingsTab() {
 			backgroundVideo: backgroundVideoFilename || undefined,
 			sttProvider: sttProvider || undefined,
 			sttModel: sttModel || undefined,
+			localGpuTier: localGpuTier !== "off" ? localGpuTier : undefined,
 			ttsEnabled,
 			ttsVoice,
 			ttsProvider,
@@ -2094,6 +2064,27 @@ export function SettingsTab() {
 		(selectedModelMeta?.capabilities.includes("asr") ?? false) ||
 		(provider === "vllm" &&
 			(modelIdLower.includes("asr") || modelIdLower.includes("whisper")));
+	// #365 capability-driven slots: derive which external voice slots to show
+	// from the model's declared capabilities (gateway SoT) instead of scattered
+	// omni/asr booleans. Fold the vllm ASR runtime pattern into the capability
+	// set so the manifest is the single source for slot gating (omni → voice
+	// in+out covered, section hidden; ASR → STT covered, TTS external; text-only
+	// → both external). Extensible to image/video/avatar supplements.
+	const baseCapabilities: ModelCapability[] =
+		isSelectedAsr && !(selectedModelMeta?.capabilities.includes("asr") ?? false)
+			? [...(selectedModelMeta?.capabilities ?? []), "asr"]
+			: (selectedModelMeta?.capabilities ?? []);
+	// #2 / FR-VRAM.2: when a local GPU tier is active (opt-in; "off" by default →
+	// empty → no change), its locally-served capabilities fold in so
+	// deriveSettingsSlots hides the external slots the local tier covers.
+	const activeLocalTier = resolveActiveTier(localGpuTier, detectedVramGb);
+	const localTierCapabilities = activeLocalTier
+		? tierProvidedCapabilities(activeLocalTier)
+		: [];
+	const effectiveCapabilities: ModelCapability[] = Array.from(
+		new Set([...baseCapabilities, ...localTierCapabilities]),
+	);
+	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
 	const omniVoices = selectedModelMeta?.voices;
 	// Ref-audio (voice clone) only applies to naia-omni sessions — naia-* omni
 	// models or a local vllm-omni server. Gemini Live is omni too but has no
@@ -2622,6 +2613,39 @@ export function SettingsTab() {
 						</div>
 					</div>
 
+					{/* Local GPU profile (#2 / FR-VRAM): detect VRAM → pick a local
+					    tier; opt-in folds the tier's capabilities into the slots
+					    below (hides external slots the local tier covers). Default
+					    "off" = no change. Local serving runs via the separate
+					    windows-manager runtime; real-time (RTF) is a measured gate. */}
+					<div className="settings-field">
+						<label htmlFor="local-gpu-tier">로컬 GPU 프로파일</label>
+						<select
+							id="local-gpu-tier"
+							value={localGpuTier}
+							onChange={(e) =>
+								setLocalGpuTier(e.target.value as typeof localGpuTier)
+							}
+						>
+							<option value="off">사용 안 함</option>
+							<option value="auto">
+								{detectedVramGb != null
+									? `자동 (감지: 약 ${detectedVramGb} GB)`
+									: "자동 (VRAM 미감지 — 수동 선택)"}
+							</option>
+							{VRAM_TIERS.map((tier) => (
+								<option key={tier.id} value={tier.id}>
+									{tier.label}
+								</option>
+							))}
+						</select>
+						<div className="settings-hint">
+							{activeLocalTier
+								? `로컬 제공 능력: ${tierProvidedCapabilities(activeLocalTier).join(", ")} · 실시간(RTF)은 측정 게이트(미보장), 로컬 실행은 windows-manager 런타임 필요`
+								: "GPU VRAM 으로 로컬 아바타·음성 tier 를 선택합니다. 로컬 실행 런타임은 별도(windows-manager)이며 실시간 여부는 측정으로 결정됩니다."}
+						</div>
+					</div>
+
 					{/* Omni model voice selection */}
 					{isSelectedOmni && omniVoices && omniVoices.length > 0 && (
 						<div className="settings-field">
@@ -2731,8 +2755,10 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{/* Voice settings — only for LLM models (omni models have built-in STT/TTS) */}
-					{!isSelectedOmni && (
+					{/* Voice settings — shown only when the model needs an external
+					    STT and/or TTS slot (#365). omni models cover voice in+out,
+					    so the section stays hidden. */}
+					{capabilitySlots.showVoiceSection && (
 						<>
 							<div className="settings-section-divider">
 								<span>{t("settings.voiceSection")}</span>
@@ -2749,8 +2775,10 @@ export function SettingsTab() {
 								/>
 							</div>
 
-							{!isSelectedAsr && (
+							{capabilitySlots.needsExternalStt && (
 								<>
+									{/* STT slot — hidden when the model already covers voice
+									    input (omni / ASR), shown otherwise (#365). */}
 									{/* Voice status summary */}
 									<div
 										className="settings-field"

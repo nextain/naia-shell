@@ -134,6 +134,18 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 
 혼자 개발 → **다 작동한다는 보장 없음.** 목표는 "전부 검증"이 아니라 **구조적 이식으로 고장을 가두는 것**: 각 기능이 자기 slice/port 경계에 들어가면, 깨진 기능(Discord·cron·memory recall…)이 *그 슬라이스에 격리*되어 다른 영역으로 안 번진다. 전수 enumerate = 각 기능에 구조적 슬롯을 줘 *고장 전파 차단* + UC11 자기상태가 *어디가 깨졌는지 표면화*. (검증은 그 위에서 점진.)
 
+## 셸 feature 시나리오 (V-tranche 외 · 사용자 우선순위 — 2026-06)
+
+foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나리오는 **계약(단위) + 통합(셸 vitest)** 으로 검증, 라이브 네트워크/하드웨어 왕복은 검증 천장(실 앱·GPU) 명시.
+
+| 시나리오 | 사용자 경험 | 인지/레이어 | 검증(P02) |
+|---|---|---|---|
+| **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(edge/google/nextain/openai/elevenlabs). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **S-CAP** (#365) | 모델을 고르면 그 모델 **능력에 맞춰 설정이 전개**(omni→STT/TTS 슬롯 숨김, 텍스트→노출). gateway 가 능력 선언 | 제어면(설정) — capability manifest 도출 | `test_models.py`·`capability-fetch.test.ts`·`slots.test.ts`. ⚠️ 라이브 /v1/models=게이트웨이 배포 |
+| **S-VRAM** (#2) | 내 GPU VRAM 을 감지해 **로컬에서 돌릴 수 있는 tier**(아바타·음성)를 보여주고 선택. opt-in 시 외부 슬롯 대신 로컬 | 제어면(설정) — VRAM→capability 브리지 | `vram-tiers.test.ts`. ⚠️ 실 VRAM 감지=실 GPU, 로컬 serving=windows-manager 로더(DEFER) |
+
+> 격리 라벨: S-VRAM 의 로컬 serving/auto-download = `unimplemented`(loader 4070 RTF 게이트, model-infra#19). S-TTS/S-CAP 라이브 왕복 = 측정 천장(실 앱), 코드 결함 격리 아님.
+
 ## Test Coverage Map (P02)
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):

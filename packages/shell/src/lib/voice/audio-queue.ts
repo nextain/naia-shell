@@ -21,9 +21,11 @@ export class AudioQueue {
 	private playing = false;
 	private callbacks: AudioQueueCallbacks;
 
-	// Ordered enqueue: buffer out-of-order items until their turn
+	// Ordered enqueue: buffer out-of-order items until their turn.
+	// A `null` value marks a reserved slot whose synthesis failed / fell back —
+	// it advances the cursor without playing, so later seqs don't stall.
 	private nextExpectedSeq = 0;
-	private pendingOrdered: Map<number, string> = new Map();
+	private pendingOrdered: Map<number, string | null> = new Map();
 
 	constructor(callbacks: AudioQueueCallbacks = {}) {
 		this.callbacks = callbacks;
@@ -54,6 +56,16 @@ export class AudioQueue {
 		this.flushOrdered();
 	}
 
+	/**
+	 * Release a reserved sequence slot without audio (synthesis failed or fell
+	 * back to a non-queued path, e.g. browser TTS). Without this, the contiguous
+	 * flush cursor would stall forever waiting for the missing seq.
+	 */
+	skipOrdered(seq: number): void {
+		this.pendingOrdered.set(seq, null);
+		this.flushOrdered();
+	}
+
 	/** Reset sequence counter (call when starting a new response). */
 	resetSeq(): void {
 		this.nextExpectedSeq = 0;
@@ -65,10 +77,11 @@ export class AudioQueue {
 
 	private flushOrdered(): void {
 		while (this.pendingOrdered.has(this.flushCursor)) {
-			const mp3 = this.pendingOrdered.get(this.flushCursor)!;
+			const mp3 = this.pendingOrdered.get(this.flushCursor);
 			this.pendingOrdered.delete(this.flushCursor);
 			this.flushCursor++;
-			this.enqueue(mp3);
+			// null = skipped slot (failed/fell-back synthesis); advance only.
+			if (mp3) this.enqueue(mp3);
 		}
 	}
 
