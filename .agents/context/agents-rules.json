@@ -147,6 +147,18 @@
       }
     ]
   },
+  "verification_discipline": {
+    "_severity": "HARD — 위반 시 '검증했다/그린' 주장 자체가 무효",
+    "principle": "AI 가 테스트할 수 있는 모든 기능·출력·동작은 AI 가 직접 검증한다. 개발자(사용자)에게 테스트를 절대 넘기지 않는다 — '직접 클릭해보라', '에러 메시지를 읽어달라', '동작 확인 부탁'은 금지. 사용자 몫은 오직 AI 가 인지 불가능한 주관적 디자인·미감뿐. 유효 블로커는 (1) 실행 권한 부족 (2) 인지 불가 디자인 — 그 외 '검증 불가/GUI 몫'은 핑계다.",
+    "rules": [
+      "R1 실제 경로 검증: '검증/그린'은 사용자-대면 실제 경로를 돌려야 성립. 범위 한정(예: 한 패키지 tsc만, mock만)으로 통과시키고 '다 통과'라 말하지 않는다. mock 이 가린 런타임 실패(CORS·WS 핸드셰이크·권한)는 실-네트워크/실-모듈로 잡는다.",
+      "R2 환경 없으면 구축: 어떤 코드 경로를 기존 하네스로 못 돌리면 하네스를 만든다(punt 금지). 검증된 기법 — Playwright(chromium ≈ Windows WebView2)에서 실 소스 모듈 직접 import(`await import('/src/lib/.../x.ts')`)로 실 네트워크/합성 실행 · 읽기전용 전역(speechSynthesis 등)은 `Object.defineProperty` 로 교체 · `page.route` 로 네트워크 mock/관찰 · 실-네트워크 프로브로 런타임 실패 원인 확정 · 실 Rust/webview 는 e2e-tauri(wdio).",
+      "R3 워크스페이스 전체 typecheck: tsc 는 건드린 패키지뿐 아니라 전 패키지(shell + core + agent + 모든 sidecar)를 덮어야 한다. 한 패키지 'tsc 0' ≠ 워크스페이스 그린. dev-setup 이 sidecar tsc 에러를 비치명 처리해도, 검증 단계에선 전 패키지를 직접 typecheck 한다.",
+      "R4 재검증: 발견·수정은 '실제 테스트 통과'로 재확인한다. 코드만 고치고 '됐다'라고 단정하지 않는다(거짓 그린 금지).",
+      "R5 출력·기능 전수: 텍스트·음성(TTS/STT)·아바타·슬롯 전개·라우팅·설정 영속 등 사용자가 보고 듣는 모든 출력은 헤드리스로 검증 대상. '소리 나는지'는 speechSynthesis/Audio mock 으로 호출·폴백을 단언(실 음원 바이트는 천장이나 배선·폴백은 검증)."
+    ],
+    "incident": "2026-06-25: TTS 무음/미리듣기 실패를 사용자에게 'provider/에러 알려달라'고 떠넘김 → 잘못. Playwright 로 실 edge-tts WS(실패)·nextain(키없음)·google(도달)을 직접 재현해 근본원인(edge WS 는 브라우저 핸드셰이크 거부=원천불가) 확정·수정·검증. + shell-한정 tsc 가 bgm-sidecar 17 에러를 놓침(R3 위반)."
+  },
   "mandatory_reads": {
     "description": "모든 세션 시작 시 순서대로 읽어야 하는 파일.",
     "files": [

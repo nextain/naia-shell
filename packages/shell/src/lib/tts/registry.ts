@@ -89,8 +89,11 @@ registerTtsProviderMeta({
 registerTtsProviderMeta({
 	id: "edge",
 	name: "Microsoft Edge TTS",
-	description:
-		"Free, no API key needed. Good quality voices for 14+ languages.",
+	// In-app this plays the OS/browser built-in voice: the MS edge-tts service
+	// needs a WebSocket handshake the in-app webview can't perform (it can't set
+	// the required headers/Origin). True MS neural voices need a local sidecar
+	// (tracked follow-up). Kept as a free, key-less option.
+	description: "Free, no API key. Plays the system voice in-app.",
 	requiresApiKey: false,
 	isFree: true,
 	pricing: "Free",

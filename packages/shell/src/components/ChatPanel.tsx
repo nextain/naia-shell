@@ -425,9 +425,6 @@ export function ChatPanel() {
 	// in-flight TTS fetch/WS (and stops billing for superseded paid TTS) — #363
 	// cross-review HIGH.
 	const ttsAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
-	// Once edge TTS fails mid-turn, route the rest of the turn straight to
-	// browser TTS so queued edge audio and browser fallback don't overlap.
-	const edgeFallbackActiveRef = useRef(false);
 	const pipelineVoiceConfigRef = useRef<{
 		voice?: string;
 		ttsProvider?: string;
@@ -702,7 +699,6 @@ export function ChatPanel() {
 		// Cancel in-flight TTS fetch/WS so a barge-in stops paid synthesis (#363).
 		for (const ac of ttsAbortControllersRef.current.values()) ac.abort();
 		ttsAbortControllersRef.current.clear();
-		edgeFallbackActiveRef.current = false;
 		if (typeof window !== "undefined" && "speechSynthesis" in window) {
 			try {
 				window.speechSynthesis.cancel();
@@ -1397,9 +1393,13 @@ export function ChatPanel() {
 			return;
 		}
 
-		// edge already failed earlier this turn → go straight to browser so queued
-		// edge audio and browser fallback don't overlap (cross-review MED).
-		if (ttsProviderForCost === "edge" && edgeFallbackActiveRef.current) {
+		// Edge TTS cannot run browser-direct: MS bing rejects the WS handshake
+		// because the browser WebSocket API can't set the headers/Origin it
+		// requires (verified — opaque onerror, no audio, in Chromium too). Route
+		// edge to the browser's built-in speechSynthesis (keyless, works in the
+		// webview). Real MS neural voices would need a Node/Rust sidecar that can
+		// set the handshake headers (tracked follow-up).
+		if (ttsProviderForCost === "edge") {
 			audioQueueRef.current?.skipOrdered(seq);
 			speakViaBrowser();
 			return;
@@ -1462,23 +1462,15 @@ export function ChatPanel() {
 				// Release the reserved ordered slot so later sentences don't stall
 				// behind this seq (enqueueOrdered waits for contiguous sequence nums).
 				audioQueueRef.current?.skipOrdered(seq);
-				// edge is the free, no-key default — fall back to browser TTS so the
-				// default voice never goes silent. Mark the turn so the rest skips
-				// edge too (avoids queue/browser overlap).
-				if (ttsProviderForCost === "edge") {
-					edgeFallbackActiveRef.current = true;
-					Logger.warn("ChatPanel", "edge TTS failed — browser TTS fallback", {
-						error: String(err),
-					});
-					speakViaBrowser();
-					return;
-				}
-				activeTtsRequestsRef.current.delete(reqId);
-				Logger.warn("ChatPanel", "TTS synthesis failed", {
+				// Cloud synthesis failed (missing key/login, network, quota). Fall
+				// back to the browser's built-in TTS so the voice is never silently
+				// dropped — better a basic voice than nothing.
+				Logger.warn("ChatPanel", "TTS synthesis failed — browser TTS fallback", {
 					reqId,
 					provider: ttsProviderForCost,
 					error: String(err),
 				});
+				speakViaBrowser();
 			})
 			.finally(() => {
 				ttsAbortControllersRef.current.delete(reqId);
@@ -1496,7 +1488,6 @@ export function ChatPanel() {
 		activeTtsRequestsRef.current.clear();
 		for (const ac of ttsAbortControllersRef.current.values()) ac.abort();
 		ttsAbortControllersRef.current.clear();
-		edgeFallbackActiveRef.current = false;
 		// Stop Vosk STT
 		for (const fn of sttCleanupRef.current) fn();
 		sttCleanupRef.current = [];
