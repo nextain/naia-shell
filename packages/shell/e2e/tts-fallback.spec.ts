@@ -100,15 +100,33 @@ async function sendAndWait(page: Page) {
 async function speakCount(page: Page): Promise<number> {
 	return page.evaluate(() => (window as any).__TTS_E2E__.speakCount);
 }
+async function audioPlayedCount(page: Page): Promise<number> {
+	return page.evaluate(() => (window as any).__TTS_E2E__.audioPlayed);
+}
 
 test.describe("TTS keyless fallback (chat path always speaks)", () => {
-	test("edge → browser speechSynthesis, no cloud fetch attempted", async ({
+	test("edge → bgm sidecar /edge-tts (real neural path) → audio plays", async ({
 		page,
 	}) => {
-		const fetches = await setup(page, "edge");
+		await setup(page, "edge");
+		// Sidecar reachable → returns MP3 bytes → AudioQueue plays them.
+		await page.route("**/edge-tts**", (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: "audio/mpeg",
+				body: Buffer.from([0xff, 0xf3, 0x64, 0xc4, 0x00, 0x01, 0x02]),
+			}),
+		);
 		await sendAndWait(page);
-		expect(await speakCount(page)).toBeGreaterThan(0); // spoke via browser
-		expect(fetches()).toBe(0); // edge never hits the dead cloud path
+		expect(await audioPlayedCount(page)).toBeGreaterThan(0);
+	});
+
+	test("edge → browser fallback when the sidecar is down", async ({ page }) => {
+		await setup(page, "edge");
+		await page.route("**/edge-tts**", (route) => route.abort());
+		await sendAndWait(page);
+		// sidecar fetch fails → universal browser fallback speaks (never silent).
+		expect(await speakCount(page)).toBeGreaterThan(0);
 	});
 
 	test("nextain without naiaKey → browser fallback (never silent)", async ({

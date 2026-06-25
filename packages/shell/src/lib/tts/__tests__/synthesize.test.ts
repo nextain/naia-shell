@@ -248,6 +248,38 @@ describe("synthesizeTts — vllm", () => {
 	});
 });
 
+describe("synthesizeTts — edge (bgm sidecar)", () => {
+	it("fetches the sidecar /edge-tts with a resolved edge voice", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(bytesResponse(new Uint8Array([1, 2, 3])));
+		vi.stubGlobal("fetch", fetchMock);
+		const res = await synthesizeTts({
+			text: "안녕",
+			voice: "ko-KR-Neural2-A", // a Google voice → resolved to an edge voice
+			provider: "edge",
+		});
+		expect(atob(res.audioBase64)).toBe(String.fromCharCode(1, 2, 3));
+		const url = String(fetchMock.mock.calls[0][0]);
+		expect(url).toContain("http://localhost:18791/edge-tts");
+		expect(url).toContain("voice=ko-KR-SunHiNeural"); // Neural2-A → edge default
+	});
+
+	it("surfaces a sidecar error (e.g. not running)", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: false,
+				status: 503,
+				text: async () => "",
+			} as unknown as Response),
+		);
+		await expect(
+			synthesizeTts({ text: "x", provider: "edge" }),
+		).rejects.toThrow(/사이드카/);
+	});
+});
+
 describe("synthesizeTts — unsupported", () => {
 	it("rejects an unknown provider", async () => {
 		await expect(

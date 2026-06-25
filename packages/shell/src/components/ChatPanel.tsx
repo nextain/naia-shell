@@ -1393,18 +1393,6 @@ export function ChatPanel() {
 			return;
 		}
 
-		// Edge TTS cannot run browser-direct: MS bing rejects the WS handshake
-		// because the browser WebSocket API can't set the headers/Origin it
-		// requires (verified — opaque onerror, no audio, in Chromium too). Route
-		// edge to the browser's built-in speechSynthesis (keyless, works in the
-		// webview). Real MS neural voices would need a Node/Rust sidecar that can
-		// set the handshake headers (tracked follow-up).
-		if (ttsProviderForCost === "edge") {
-			audioQueueRef.current?.skipOrdered(seq);
-			speakViaBrowser();
-			return;
-		}
-
 		// Shell-direct synthesis (#363): the new-core agent has no TTS, so every
 		// non-browser provider is synthesized here (gateway / direct API / edge WS)
 		// instead of via the dropped `tts_request` IPC. The AbortController lets

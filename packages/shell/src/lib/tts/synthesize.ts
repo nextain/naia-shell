@@ -21,7 +21,12 @@
  */
 
 import type { TtsProviderId } from "../config";
-import { synthesizeEdgeTts } from "./edge-tts";
+import { resolveEdgeVoice } from "./edge-tts";
+
+// Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
+// webview can't do the MS WebSocket handshake (it can't set the required
+// headers/Origin → 400). The shell fetches the sidecar's /edge-tts (#363).
+const EDGE_TTS_SIDECAR_URL = "http://localhost:18791/edge-tts";
 
 export interface SynthesizeOpts {
 	/** Text to speak (emotion tags / emoji already stripped by caller). */
@@ -234,6 +239,21 @@ async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
+/** edge → bgm/media sidecar (node msedge-tts → real MS neural voices, keyless). */
+async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
+	const voice = resolveEdgeVoice(opts.voice, deriveLanguageCode(opts.voice));
+	const resp = await fetch(
+		`${EDGE_TTS_SIDECAR_URL}?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent(opts.text)}`,
+		{ signal: opts.signal },
+	);
+	if (!resp.ok) {
+		throw new Error(
+			`Edge TTS 사이드카 실패 (${resp.status}): ${await errorDetail(resp)}`,
+		);
+	}
+	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
+}
+
 /**
  * Synthesize one utterance shell-side and return its audio as base64.
  * Throws on any failure (network, auth, unsupported provider) — the caller
@@ -254,13 +274,7 @@ export async function synthesizeTts(
 		case "vllm":
 			return synthVllm(opts);
 		case "edge":
-			return {
-				audioBase64: await synthesizeEdgeTts({
-					text: opts.text,
-					voice: opts.voice,
-					signal: opts.signal,
-				}),
-			};
+			return synthEdge(opts);
 		default:
 			throw new Error(`지원하지 않는 TTS provider: ${opts.provider}`);
 	}

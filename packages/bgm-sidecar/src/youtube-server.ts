@@ -4,9 +4,11 @@
  * 레이어 = 환경 사이드카(SoT: docs/brain-body-environment.md). agent 독립.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import { Innertube } from "youtubei.js";
 
-export const YT_SERVER_PORT = 18791;
+// Fixed default 18791 (shell hardcodes it); NAIA_BGM_PORT overrides for tests.
+export const YT_SERVER_PORT = Number(process.env.NAIA_BGM_PORT) || 18791;
 
 // ── Innertube singleton ───────────────────────────────────────────────────────
 
@@ -147,6 +149,50 @@ async function handleStream(req: IncomingMessage, res: ServerResponse, params: U
 
 // ── Server bootstrap ──────────────────────────────────────────────────────────
 
+// ── Edge TTS (#363) ─────────────────────────────────────────────────────────
+// Microsoft Edge neural voices, keyless. MUST run here (node), not in the shell
+// webview: the browser WebSocket API can't set the headers/Origin MS requires,
+// so the in-app webview gets a 400/handshake reject. Node (msedge-tts → `ws`
+// with headers) succeeds. Returns raw MP3 bytes to the shell synthesize path.
+
+/** Edge neural voice id (e.g. ko-KR-SunHiNeural); fall back to a Korean voice. */
+function edgeVoice(v: string | null): string {
+	return v && /Neural$/.test(v) ? v : "ko-KR-SunHiNeural";
+}
+
+async function handleEdgeTts(
+	req: IncomingMessage,
+	res: ServerResponse,
+	params: URLSearchParams,
+): Promise<void> {
+	const text = (params.get("text") ?? "").slice(0, 5000);
+	if (!text.trim()) {
+		json(req, res, 400, { error: "text required" });
+		return;
+	}
+	const tts = new MsEdgeTTS();
+	await tts.setMetadata(
+		edgeVoice(params.get("voice")),
+		OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3,
+	);
+	const { audioStream } = tts.toStream(text);
+	const chunks: Buffer[] = [];
+	await new Promise<void>((resolve, reject) => {
+		audioStream.on("data", (c: Buffer) => chunks.push(Buffer.from(c)));
+		audioStream.on("end", () => resolve());
+		audioStream.on("error", reject);
+	});
+	const origin = String(req.headers.origin ?? "");
+	res.setHeader(
+		"Access-Control-Allow-Origin",
+		ALLOWED_ORIGINS.has(origin) ? origin : "tauri://localhost",
+	);
+	res.setHeader("Vary", "Origin");
+	res.setHeader("Content-Type", "audio/mpeg");
+	res.writeHead(200);
+	res.end(Buffer.concat(chunks));
+}
+
 export function startYoutubeServer(): void {
 	// Pre-warm Innertube in the background
 	getInnertube().catch(() => {});
@@ -165,6 +211,8 @@ export function startYoutubeServer(): void {
 				await handleSearch(req, res, url.searchParams);
 			} else if (url.pathname === "/yt/stream") {
 				await handleStream(req, res, url.searchParams);
+			} else if (url.pathname === "/edge-tts") {
+				await handleEdgeTts(req, res, url.searchParams);
 			} else if (url.pathname === "/health") {
 				// Readiness probe — used by Rust spawn_youtube_bgm_server (#335)
 				// to confirm the server is actually listening (catches EADDRINUSE

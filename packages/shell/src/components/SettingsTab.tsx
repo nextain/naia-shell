@@ -1739,21 +1739,6 @@ export function SettingsTab() {
 				return;
 			}
 
-			// Edge can't synthesize browser-direct (MS WS rejects the browser
-			// handshake — verified). Preview via the browser's built-in voice,
-			// matching how the live edge path now behaves.
-			if (synthProvider === "edge") {
-				if (typeof window !== "undefined" && "speechSynthesis" in window) {
-					const utter = new SpeechSynthesisUtterance(getPreviewText(synthVoice));
-					utter.lang = document.documentElement.lang || "ko-KR";
-					window.speechSynthesis.cancel();
-					window.speechSynthesis.speak(utter);
-				} else {
-					setError("이 환경에서는 음성 미리듣기를 지원하지 않습니다.");
-				}
-				return;
-			}
-
 			const { audioBase64 } = await synthesizeTts({
 				text: getPreviewText(synthVoice),
 				voice: synthVoice,

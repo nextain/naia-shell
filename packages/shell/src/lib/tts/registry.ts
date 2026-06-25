@@ -89,14 +89,23 @@ registerTtsProviderMeta({
 registerTtsProviderMeta({
 	id: "edge",
 	name: "Microsoft Edge TTS",
-	// In-app this plays the OS/browser built-in voice: the MS edge-tts service
-	// needs a WebSocket handshake the in-app webview can't perform (it can't set
-	// the required headers/Origin). True MS neural voices need a local sidecar
-	// (tracked follow-up). Kept as a free, key-less option.
-	description: "Free, no API key. Plays the system voice in-app.",
+	// Real MS neural voices, keyless — synthesized in the bgm/media sidecar
+	// (node msedge-tts), since the in-app webview can't do the MS WS handshake
+	// (can't set the required headers/Origin). Shell → sidecar /edge-tts (#363).
+	description:
+		"Free, no API key. Neural voices for 14+ languages (via local sidecar).",
 	requiresApiKey: false,
 	isFree: true,
 	pricing: "Free",
+	voices: [
+		{ id: "ko-KR-SunHiNeural", label: "SunHi (여성)", gender: "female" },
+		{ id: "ko-KR-InJoonNeural", label: "InJoon (남성)", gender: "male" },
+		{ id: "ko-KR-HyunsuMultilingualNeural", label: "Hyunsu (남성, 다국어)", gender: "male" },
+		{ id: "en-US-AriaNeural", label: "Aria (영어, 여성)", gender: "female" },
+		{ id: "en-US-GuyNeural", label: "Guy (영어, 남성)", gender: "male" },
+		{ id: "ja-JP-NanamiNeural", label: "Nanami (일본어, 여성)", gender: "female" },
+		{ id: "zh-CN-XiaoxiaoNeural", label: "Xiaoxiao (중국어, 여성)", gender: "female" },
+	],
 });
 
 registerTtsProviderMeta({

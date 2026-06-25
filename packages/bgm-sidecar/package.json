@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "msedge-tts": "^2.0.6",
     "youtubei.js": "^17.0.1"
   },
   "devDependencies": {
