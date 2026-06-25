@@ -173,26 +173,10 @@ const PIPELINE_VOICE_MOCK = `
 		if (cmd === "send_to_agent_command") {
 			var request = JSON.parse(args.message);
 
-			// TTS request → return fake audio
-			if (request.type === "tts_request") {
-				window.__NAIA_E2E__.ttsRequests.push({
-					text: request.text,
-					voice: request.voice,
-					provider: request.ttsProvider,
-				});
-				var ttsReqId = request.requestId;
-				// Simulate TTS delay then return fake MP3 base64
-				setTimeout(function() {
-					emitEvent("agent_response", JSON.stringify({
-						type: "audio", requestId: ttsReqId,
-						data: "SUQzBAAAAAAAI1RTU0UAAAA" // fake base64
-					}));
-					setTimeout(function() {
-						emitEvent("agent_response", JSON.stringify({ type: "finish", requestId: ttsReqId }));
-					}, 50);
-				}, 100);
-				return;
-			}
+			// TTS is now shell-direct (#363): the shell fetches the gateway
+			// /v1/audio/speech directly (no tts_request IPC). The spec mocks that
+			// fetch via page.route and verifies playback through AudioQueue
+			// (window.Audio → __NAIA_E2E__.audioPlayed).
 
 			// Chat request → stream text response
 			if (request.type === "chat_request") {
@@ -308,16 +292,22 @@ async function injectSttResult(
 	);
 }
 
-/** Get the count of TTS requests that were sent to the mock agent. */
-async function getTtsRequestCount(page: Page): Promise<number> {
-	return page.evaluate(() => (window as any).__NAIA_E2E__.ttsRequests.length);
+/**
+ * TTS synth requests captured from the shell-direct gateway fetch (#363).
+ * P2 replaced the `tts_request` IPC (agent had no TTS → silent) with a direct
+ * `fetch` to the gateway `/v1/audio/speech`; beforeEach routes that fetch and
+ * records each request body here. Reset per test (fullyParallel: false).
+ */
+let synthRequests: Array<{ input?: string; voice?: string }> = [];
+
+/** Count of shell-direct TTS synth requests. */
+function getTtsRequestCount(): number {
+	return synthRequests.length;
 }
 
-/** Get TTS request texts. */
-async function getTtsTexts(page: Page): Promise<string[]> {
-	return page.evaluate(() =>
-		(window as any).__NAIA_E2E__.ttsRequests.map((r: any) => r.text),
-	);
+/** Texts sent for synthesis (sentence-level). */
+function getTtsTexts(): string[] {
+	return synthRequests.map((r) => r.input ?? "");
 }
 
 /** Get count of mock audio playback calls. */
@@ -328,6 +318,30 @@ async function getAudioPlayCount(page: Page): Promise<number> {
 /** Check if mock STT is in listening mode. */
 async function isSttListening(page: Page): Promise<boolean> {
 	return page.evaluate(() => (window as any).__NAIA_E2E__.sttListening);
+}
+
+/**
+ * Route the shell-direct gateway TTS fetch (#363) to a deterministic fake and
+ * record request bodies. Must be set before navigation. Resets synthRequests.
+ */
+async function routeTtsSynth(page: Page): Promise<void> {
+	synthRequests = [];
+	await page.route("**/v1/audio/speech", async (route) => {
+		try {
+			synthRequests.push(route.request().postDataJSON() as { input?: string });
+		} catch {
+			synthRequests.push({});
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			// ID3-tagged fake base64 (not WAV "UklGR") → AudioQueue plays as mp3.
+			body: JSON.stringify({
+				audio_content: "SUQzBAAAAAAAI1RTU0UAAAA",
+				cost_usd: 0.001,
+			}),
+		});
+	});
 }
 
 test.describe("Pipeline Voice E2E", () => {
@@ -349,12 +363,14 @@ test.describe("Pipeline Voice E2E", () => {
 				sttProvider: "vosk",
 				sttModel: "vosk-model-small-ko-0.22",
 				ttsEnabled: true,
-				ttsProvider: "edge",
+				ttsProvider: "nextain",
+				naiaKey: API_KEY,
 				locale: "ko",
 				onboardingComplete: true,
 			}),
 		);
 
+		await routeTtsSynth(page);
 		await page.goto("/");
 		await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
 	});
@@ -445,7 +461,7 @@ test.describe("Pipeline Voice E2E", () => {
 		await expect(assistantMsg.last()).toContainText("날씨", { timeout: 5_000 });
 
 		// TTS requests should have been made (sentence-level)
-		const ttsCount = await getTtsRequestCount(page);
+		const ttsCount = getTtsRequestCount();
 		expect(ttsCount).toBeGreaterThan(0);
 
 		// Audio should have been played
@@ -518,7 +534,7 @@ test.describe("Pipeline Voice E2E", () => {
 		await expect(page.locator(".cursor-blink")).toBeHidden({ timeout: 15_000 });
 
 		// Check TTS request texts — should be sentence-level chunks
-		const ttsTexts = await getTtsTexts(page);
+		const ttsTexts = getTtsTexts();
 		expect(ttsTexts.length).toBeGreaterThan(0);
 
 		// Each TTS text should be a reasonable sentence length
@@ -549,7 +565,7 @@ test.describe("Pipeline Voice E2E", () => {
 		// After TTS unification (52225fc5), chat TTS is active when ttsEnabled: true.
 		// Wait for async TTS request to be dispatched, then verify.
 		await page.waitForTimeout(1000);
-		const ttsCount = await getTtsRequestCount(page);
+		const ttsCount = getTtsRequestCount();
 		expect(ttsCount).toBeGreaterThan(0);
 	});
 });
@@ -573,12 +589,14 @@ test.describe("Whisper Engine E2E", () => {
 				sttProvider: "whisper",
 				sttModel: "whisper-medium",
 				ttsEnabled: true,
-				ttsProvider: "edge",
+				ttsProvider: "nextain",
+				naiaKey: API_KEY,
 				locale: "ko",
 				onboardingComplete: true,
 			}),
 		);
 
+		await routeTtsSynth(page);
 		await page.goto("/");
 		await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
 	});
@@ -621,7 +639,7 @@ test.describe("Whisper Engine E2E", () => {
 		);
 		await expect(assistantMsg.last()).toContainText("날씨", { timeout: 5_000 });
 
-		const ttsCount = await getTtsRequestCount(page);
+		const ttsCount = getTtsRequestCount();
 		expect(ttsCount).toBeGreaterThan(0);
 	});
 });
