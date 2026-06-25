@@ -21,6 +21,9 @@ importers:
         specifier: ^17.0.1
         version: 17.0.1
     devDependencies:
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -1862,6 +1865,9 @@ packages:
 
   '@types/node@20.19.42':
     resolution: {integrity: sha512-5L7SUaFC1RyDraj2yRhyBzHTobyXHmohD100CChNtyPyleoq37Mqab5Gn8XEKI04dfN/oqPdpHk38MgcQWHbZg==}
+
+  '@types/node@22.20.0':
+    resolution: {integrity: sha512-QWlFW2wf3nTjC13/DqRnBpR4ZO36VJH/JVBkA/vcnmbTBNQIlnObqyqZE1tUR7+Ni23Lda8R1BxMfbXRpCUx5g==}
 
   '@types/node@25.9.2':
     resolution: {integrity: sha512-G05zqtJhcDLb8uslf5EjCxXg9G1KQxiV8OS0R26IC//Eoyitzqe8z37I7cqvnZlrlSfgocQRfSn/AHBZJJFyGw==}
@@ -5386,7 +5392,7 @@ snapshots:
 
   '@jest/pattern@30.4.0':
     dependencies:
-      '@types/node': 20.19.42
+      '@types/node': 25.9.2
       jest-regex-util: 30.4.0
 
   '@jest/schemas@30.4.1':
@@ -5399,7 +5405,7 @@ snapshots:
       '@jest/schemas': 30.4.1
       '@types/istanbul-lib-coverage': 2.0.6
       '@types/istanbul-reports': 3.0.4
-      '@types/node': 20.19.42
+      '@types/node': 25.9.2
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
@@ -6033,6 +6039,10 @@ snapshots:
   '@types/ms@2.1.0': {}
 
   '@types/node@20.19.42':
+    dependencies:
+      undici-types: 6.21.0
+
+  '@types/node@22.20.0':
     dependencies:
       undici-types: 6.21.0
 
@@ -7630,7 +7640,7 @@ snapshots:
   jest-mock@30.4.1:
     dependencies:
       '@jest/types': 30.4.1
-      '@types/node': 20.19.42
+      '@types/node': 25.9.2
       jest-util: 30.4.1
 
   jest-regex-util@30.4.0: {}
@@ -7638,7 +7648,7 @@ snapshots:
   jest-util@30.4.1:
     dependencies:
       '@jest/types': 30.4.1
-      '@types/node': 20.19.42
+      '@types/node': 25.9.2
       chalk: 4.1.2
       ci-info: 4.4.0
       graceful-fs: 4.2.11
