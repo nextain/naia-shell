@@ -170,7 +170,11 @@ naia-os/
 
 ## 라이선스
 
-Apache License 2.0 — [`LICENSE`](LICENSE) 참조.
+- **소스 코드**: Apache License 2.0 — [`LICENSE`](LICENSE).
+- **AI 컨텍스트**(`.agents/`·`.users/`·`AGENTS.md`): CC-BY-SA 4.0 — [`CONTEXT-LICENSE`](CONTEXT-LICENSE).
+
+**왜 듀얼 라이선스인가?** 소스 코드는 Apache 2.0 으로 자유롭게 수정·상용 가능하지만, AI 컨텍스트 파일(프로젝트 철학·기여 구조·AI 에이전트 협업 원칙)은 CC-BY-SA 4.0 입니다. 포크 시 컨텍스트 변경분도 **동일 라이선스로 공유(ShareAlike)**하고 원작자(Nextain)를 명시해야 합니다 — 업스트림 생태계(오픈소스 기여 구조 + AI 협업 원칙)가 모든 포크에 전파되도록 보호하기 위함입니다. 상세 = [`CONTEXT-LICENSE`](CONTEXT-LICENSE).
+
 기여 가이드·행동강령·보안정책은 [`.github/`](.github/) 참조.
 
 ## 링크

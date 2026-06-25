@@ -1,0 +1,50 @@
+# AI Context License
+
+## Scope
+
+This license applies to all files in the following directories and files:
+
+- `.agents/` — AI agent context (YAML, JSON)
+- `.users/` — Human documentation (Markdown)
+- `AGENTS.md` — AI agent entry point
+
+## License
+
+These files are licensed under the **Creative Commons Attribution-ShareAlike 4.0 International (CC-BY-SA 4.0)**.
+
+Full text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+## What This Means for Forks
+
+### You CAN:
+- Fork and modify the context files
+- Add your own context documents
+- Translate into other languages
+- Use commercially
+
+### You MUST:
+- **Attribution** — Credit "Nextain" (https://github.com/nextain) as the original author
+- **ShareAlike** — Distribute your modified context files under the same CC-BY-SA 4.0 license
+- **Preserve the license** — Keep this CONTEXT-LICENSE file (or equivalent) in your fork
+
+### What This Protects:
+
+The CC-BY-SA 4.0 license ensures that the following principles propagate through all forks:
+
+1. **Open Source Contribution Structure** — The dual-directory architecture (`.agents/` for AI, `.users/` for humans) and the mirroring rules that keep them in sync
+2. **AI Agent Collaboration Principles** — How AI agents should read, understand, and contribute to the project (defined in `AGENTS.md` and `.agents/context/contributing.yaml`)
+3. **Community Attribution Chain** — Every fork must credit upstream, creating a traceable chain of attribution back to the original project
+
+### Why This Matters:
+
+In the age of vibe coding, AI context files are a new kind of open source infrastructure. They define how AI agents interact with a project — the rules, the philosophy, the contribution guidelines. If these can be taken and relicensed under proprietary terms, the upstream community loses its voice in how the project evolves.
+
+CC-BY-SA 4.0 prevents this. Any fork must share its context improvements under the same terms, ensuring the entire ecosystem benefits.
+
+## Source Code License
+
+The source code (everything NOT in `.agents/`, `.users/`, or `AGENTS.md`) is licensed under Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+## Copyright
+
+Copyright 2026 Nextain (https://about.nextain.io)
