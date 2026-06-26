@@ -212,7 +212,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 | UC | 기반 subsystem | 의존성 | 기준선 상태(실측 전 추정) |
 |---|---|---|---|
 | UC1 텍스트 | llm provider | 외부 키(LLM API/gateway) | 키 유효 시 작동 추정 — **실측 필요** |
-| UC2 음성 | voice cascade(omni/VoxCPM2)·아바타 | gateway realtime·키·GPU | 라이브 데모 이력 있으나 **현 작동 실측 필요**(키/서버 의존) |
+| UC2 음성 | voice cascade(omni)·아바타 | gateway realtime·키·GPU | 라이브 데모 이력 있으나 **현 작동 실측 필요**(키/서버 의존) |
 | UC3 기억 | naia-memory | — | ⛔ **old에 미배선**(scrubber만) — 기준선 자체 없음 → deferred |
 | UC4 능동회상 | naia-memory+동기(신설)+temporal | — | ⛔ 미배선+신설 → deferred |
 | UC5 도구 | weather·time·github·web | 일부 외부 키 | 혼재 — 개별 실측 |
