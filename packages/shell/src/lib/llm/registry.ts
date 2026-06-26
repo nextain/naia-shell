@@ -170,6 +170,53 @@ export async function fetchNaiaPricing(
 	}
 }
 
+/** One model in the gateway's full catalog (all providers), derived from `GET /v1/pricing`. */
+export interface GatewayCatalogModel {
+	/** Bare model id (provider prefix stripped, e.g. `gpt-4o`). */
+	id: string;
+	/** Provider prefix from `model_key` (e.g. `openai`, `anthropic`, `zai`). */
+	provider: string;
+	/** Display name if the source supplies one (`/v1/pricing` does not → id used). */
+	name?: string;
+	price?: { input?: number; output?: number };
+}
+
+/**
+ * Fetch the gateway's **full multi-provider model catalog** via `GET /v1/pricing`
+ * (E1 셸-직결, 구 `directToolCall(skill_config,models)` 대체 — 신코어 tool_request 미지원).
+ *
+ * The gateway is the SoT for "어떤 provider 의 어떤 모델이 가용한가 + 가격". `model_key` 는
+ * `<provider>:<id>` 형식 — prefix 를 provider 로, suffix 를 bare id 로 분해. nextain(vertexai)
+ * 가격은 `fetchNaiaPricing` 가 별도로 다루므로(중복 회피) 호출부가 grouping 시 dedup 한다.
+ * 실패 = null(호출부는 static 폴백 유지).
+ */
+export async function fetchGatewayModelCatalog(
+	gatewayHttpUrl: string,
+): Promise<GatewayCatalogModel[] | null> {
+	try {
+		const resp = await fetch(`${gatewayHttpUrl}/v1/pricing`, {
+			signal: AbortSignal.timeout(5000),
+		});
+		if (!resp.ok) return null;
+		const entries: GatewayPricingEntry[] = await resp.json();
+		return entries.map((e) => {
+			const sep = e.model_key.indexOf(":");
+			const provider = sep > 0 ? e.model_key.slice(0, sep) : "";
+			const id = sep > 0 ? e.model_key.slice(sep + 1) : e.model_key;
+			return {
+				id,
+				provider,
+				price: {
+					input: e.input_price_per_million,
+					output: e.output_price_per_million,
+				},
+			};
+		});
+	} catch {
+		return null;
+	}
+}
+
 const _CAP_SET: ReadonlySet<string> = new Set(MODEL_CAPABILITY_VALUES);
 
 function _isModelCapability(value: string): value is ModelCapability {

@@ -59,6 +59,7 @@ import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
 import {
 	type LlmModelMeta,
 	applyCapabilityOverrides,
+	fetchGatewayModelCatalog,
 	fetchNaiaModelCapabilities,
 	fetchNaiaPricing,
 	fetchOllamaModels,
@@ -916,63 +917,12 @@ export function SettingsTab() {
 			return resolveProvider(matched[1]);
 		};
 
-		const extractModels = (
-			parsed: unknown,
-		): Array<{
-			id: string;
-			name?: string;
-			provider?: string;
-			price?: { input?: number; output?: number };
-		}> => {
-			if (Array.isArray(parsed)) return parsed as any[];
-
-			if (parsed && typeof parsed === "object") {
-				const root = parsed as Record<string, unknown>;
-
-				if (Array.isArray(root.models)) {
-					return root.models as any[];
-				}
-
-				if (root.data && typeof root.data === "object") {
-					const data = root.data as Record<string, unknown>;
-					if (Array.isArray(data.models)) {
-						return data.models as any[];
-					}
-				}
-
-				if (root.providers && typeof root.providers === "object") {
-					const providers = root.providers as Record<string, unknown>;
-					const out: any[] = [];
-					for (const [providerName, value] of Object.entries(providers)) {
-						if (!Array.isArray(value)) continue;
-						for (const item of value) {
-							if (typeof item === "string") {
-								out.push({ id: item, provider: providerName, name: item });
-							} else if (item && typeof item === "object") {
-								out.push({ provider: providerName, ...(item as object) });
-							}
-						}
-					}
-					return out;
-				}
-			}
-
-			return [];
-		};
-
 		async function fetchModels() {
 			try {
-				const res = await directToolCall({
-					toolName: "skill_config",
-					args: { action: "models" },
-					requestId: `fetch-models-${Date.now()}`,
-				});
-
-				if (res.success && res.output) {
-					const parsed = JSON.parse(res.output);
-					const models = extractModels(parsed);
-					if (models.length === 0) return;
-
+				// E1 셸-직결: 게이트웨이 `/v1/pricing` 전체 카탈로그(구 skill_config directToolCall 대체 — 신코어
+				// tool_request 미지원. nextain(vertexai) 가격은 별도 fetchNaiaPricing 가 다룸 → 아래 dedup 로 중복 회피).
+				const models = await fetchGatewayModelCatalog(LAB_GATEWAY_URL);
+				if (models && models.length > 0) {
 					const grouped = Object.fromEntries(
 						Object.entries(getStaticModelsRecord()).map(([k, v]) => [
 							k,

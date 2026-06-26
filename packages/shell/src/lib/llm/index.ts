@@ -9,6 +9,7 @@ export {
 	getStaticModelsRecord,
 	fetchNaiaPricing,
 	fetchNaiaModelCapabilities,
+	fetchGatewayModelCatalog,
 	applyCapabilityOverrides,
 	fetchOllamaModels,
 	fetchVllmModels,

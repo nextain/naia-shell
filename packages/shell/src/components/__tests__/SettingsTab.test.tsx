@@ -45,7 +45,6 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 	openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { directToolCall } from "../../lib/chat-service";
 vi.mock("../../lib/chat-service", () => ({
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
 	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
@@ -85,45 +84,50 @@ describe("SettingsTab", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("renders dynamic models with pricing info", async () => {
+	// config(models) 정상화: 구 skill_config directToolCall → 게이트웨이 `GET /v1/pricing` 셸-직결(E1).
+	const stubPricingFetch = (entries: unknown[]) =>
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) =>
+				String(url).includes("/v1/pricing")
+					? { ok: true, json: async () => entries }
+					: { ok: false, json: async () => [] },
+			),
+		);
+
+	it("renders gateway catalog models with pricing (/v1/pricing 셸-직결)", async () => {
 		mockInvoke.mockResolvedValue([]);
-		(directToolCall as any).mockResolvedValueOnce({
-			success: true,
-			output: JSON.stringify({
-				models: [
-					{
-						id: "test-model-1",
-						name: "Test Model",
-						provider: "gemini",
-						price: { input: 1.5, output: 2.5 },
-					},
-				],
-			}),
-		});
+		stubPricingFetch([
+			{
+				model_key: "gemini:test-model-1",
+				input_price_per_million: 1.5,
+				output_price_per_million: 2.5,
+				cached_price_per_million: null,
+			},
+		]);
 		render(<SettingsTab />);
 		gotoSettingsTab("ai");
 
 		await vi.waitFor(() => {
-			expect(screen.getByText("Test Model ($1.5 / $2.5)")).toBeDefined();
+			expect(screen.getByText("test-model-1 ($1.5 / $2.5)")).toBeDefined();
 		});
 	});
 
-	it("accepts gateway model payload as plain array", async () => {
+	it("parses gateway model_key provider prefix (<provider>:<id>)", async () => {
 		mockInvoke.mockResolvedValue([]);
-		(directToolCall as any).mockResolvedValueOnce({
-			success: true,
-			output: JSON.stringify([
-				{
-					id: "gemini/gemini-ultra-test",
-					name: "Gemini Ultra Test",
-				},
-			]),
-		});
+		stubPricingFetch([
+			{
+				model_key: "gemini:gemini-ultra-test",
+				input_price_per_million: 0,
+				output_price_per_million: 0,
+				cached_price_per_million: null,
+			},
+		]);
 		render(<SettingsTab />);
 		gotoSettingsTab("ai");
 
 		await vi.waitFor(() => {
-			expect(screen.getByText("Gemini Ultra Test")).toBeDefined();
+			expect(screen.getByText(/gemini-ultra-test/)).toBeDefined();
 		});
 	});
 
