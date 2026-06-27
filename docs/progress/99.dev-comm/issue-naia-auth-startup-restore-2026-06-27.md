@@ -2,6 +2,19 @@
 
 Date: 2026-06-27
 Status: implemented
+Fix commit: `553edd79`
+
+## Scope Clarification
+
+This fix targets the case where an already logged-in user had to re-login after
+app startup before credits and chat worked. The re-login path itself was not the
+broken path; it worked because it refreshed auth after the secure store had
+finished loading. After this fix, startup restore should make that manual
+re-login workaround unnecessary.
+
+Out of scope: failures inside the interactive login flow itself, such as browser
+auth monitor failures, missing `naia_auth_complete` emission from the Rust side,
+or gateway/deep-link login errors.
 
 ## Symptom
 
