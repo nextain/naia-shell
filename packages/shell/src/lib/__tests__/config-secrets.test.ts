@@ -101,4 +101,31 @@ describe("loadConfigWithSecrets", () => {
 		await loadConfigWithSecrets();
 		expect(mockStore.set).not.toHaveBeenCalledWith("naiaKey", "same-key");
 	});
+
+	it("keeps localStorage config usable when secure store read fails", async () => {
+		saveConfig({
+			provider: "nextain",
+			model: "gemini-2.5-flash",
+			apiKey: "",
+			naiaKey: "local-fallback-key",
+		});
+		mockStore.get.mockRejectedValue(new Error("store not ready"));
+
+		const config = await loadConfigWithSecrets();
+		expect(config?.naiaKey).toBe("local-fallback-key");
+	});
+
+	it("does not throw when secure store write-back fails", async () => {
+		saveConfig({
+			provider: "nextain",
+			model: "gemini-2.5-flash",
+			apiKey: "",
+			naiaKey: "write-back-key",
+		});
+		mockStore.get.mockResolvedValue(null);
+		mockStore.set.mockRejectedValue(new Error("write failed"));
+
+		const config = await loadConfigWithSecrets();
+		expect(config?.naiaKey).toBe("write-back-key");
+	});
 });

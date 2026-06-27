@@ -89,7 +89,14 @@ function LabBalanceSection() {
 	const [error, setError] = useState(false);
 
 	const fetchBalance = useCallback(async () => {
-		const naiaKey = await getNaiaKeySecure();
+		let naiaKey: string | undefined;
+		try {
+			naiaKey = await getNaiaKeySecure();
+		} catch (err) {
+			Logger.warn("CostDashboard", "Naia key restore failed", {
+				error: String(err),
+			});
+		}
 		if (!naiaKey) {
 			setLoading(false);
 			return;
@@ -130,12 +137,17 @@ function LabBalanceSection() {
 	}, [fetchBalance]);
 
 	useEffect(() => {
-		const unlisten = listen("naia_auth_complete", () => {
+		const handleAuthReady = () => {
 			balanceCache = null;
 			setLoading(true);
 			fetchBalance();
+		};
+		window.addEventListener("naia_auth_ready", handleAuthReady);
+		const unlisten = listen("naia_auth_complete", () => {
+			handleAuthReady();
 		});
 		return () => {
+			window.removeEventListener("naia_auth_ready", handleAuthReady);
 			unlisten.then((fn) => fn());
 		};
 	}, [fetchBalance]);
@@ -186,14 +198,21 @@ export function CostDashboard({
 	const [showLabBalance, setShowLabBalance] = useState(false);
 
 	useEffect(() => {
-		hasNaiaKeySecure().then(setShowLabBalance);
+		hasNaiaKeySecure().then(setShowLabBalance).catch(() => {
+			setShowLabBalance(false);
+		});
 	}, []);
 
 	useEffect(() => {
-		const unlisten = listen("naia_auth_complete", () => {
+		const handleAuthReady = () => {
 			setShowLabBalance(true);
+		};
+		window.addEventListener("naia_auth_ready", handleAuthReady);
+		const unlisten = listen("naia_auth_complete", () => {
+			handleAuthReady();
 		});
 		return () => {
+			window.removeEventListener("naia_auth_ready", handleAuthReady);
 			unlisten.then((fn) => fn());
 		};
 	}, []);

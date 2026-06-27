@@ -1,6 +1,6 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../lib/types";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
@@ -17,10 +17,27 @@ vi.mock("../../lib/config", () => ({
 	hasNaiaKeySecure: vi.fn().mockResolvedValue(false),
 }));
 
+import { getNaiaKeySecure, hasNaiaKeySecure } from "../../lib/config";
 import { CostDashboard, groupCosts } from "../CostDashboard";
 
 describe("CostDashboard", () => {
-	afterEach(cleanup);
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(getNaiaKeySecure).mockResolvedValue(undefined);
+		vi.mocked(hasNaiaKeySecure).mockResolvedValue(false);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve({ balance: 1_250_000 }),
+			}),
+		);
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
 
 	const messagesWithCost: ChatMessage[] = [
 		{
@@ -95,5 +112,25 @@ describe("CostDashboard", () => {
 		];
 		const groups = groupCosts(noCost);
 		expect(groups).toHaveLength(0);
+	});
+
+	it("fetches Lab balance when startup auth restore is announced", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-startup-key");
+
+		render(<CostDashboard messages={[]} />);
+		await waitFor(() => {
+			expect(hasNaiaKeySecure).toHaveBeenCalled();
+		});
+		window.dispatchEvent(new CustomEvent("naia_auth_ready"));
+
+		await waitFor(() => {
+			expect(fetch).toHaveBeenCalledWith(
+				"https://example.test/v1/profile/balance",
+				{ headers: { "X-AnyLLM-Key": "Bearer gw-startup-key" } },
+			);
+		});
+		await waitFor(() => {
+			expect(screen.getByText(/12\.50/)).toBeDefined();
+		});
 	});
 });

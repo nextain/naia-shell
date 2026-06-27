@@ -68,6 +68,18 @@ const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
 const NAIA_WIDTH_MAX = 1200;
 
+let startupAuthReadyNotified = false;
+
+function notifyNaiaAuthReady(source: "startup" | "auth-complete"): void {
+	if (source === "startup") {
+		if (startupAuthReadyNotified) return;
+		startupAuthReadyNotified = true;
+	}
+	window.dispatchEvent(
+		new CustomEvent("naia_auth_ready", { detail: { source } }),
+	);
+}
+
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
 
@@ -416,13 +428,20 @@ export function App() {
 		// is the auth_update in OnboardingWizard's naia_auth_complete handler, but if
 		// that send was dropped (timing / agent not yet ready), this catches it.
 		// On normal app start this runs in parallel with initAuth() — harmless duplicate.
-		void loadConfigWithSecrets().then((cfg) => {
-			if (!cfg?.naiaKey) return;
-			invoke("store_startup_message", {
-				message: JSON.stringify({ type: "auth_update", naiaKey: cfg.naiaKey }),
-			}).catch(() => {});
-			sendAuthUpdate(cfg.naiaKey).catch(() => {});
-		});
+		void loadConfigWithSecrets()
+			.then((cfg) => {
+				if (!cfg?.naiaKey) return;
+				invoke("store_startup_message", {
+					message: JSON.stringify({ type: "auth_update", naiaKey: cfg.naiaKey }),
+				}).catch(() => {});
+				sendAuthUpdate(cfg.naiaKey).catch(() => {});
+				notifyNaiaAuthReady("startup");
+			})
+			.catch((err) => {
+				Logger.warn("App", "startup auth restore failed", {
+					error: String(err),
+				});
+			});
 		let active = true;
 		checkForUpdate()
 			.then((info) => {
@@ -512,6 +531,7 @@ export function App() {
 					})
 						.catch(() => {})
 						.then(() => sendAuthUpdate(key).catch(() => {}));
+					notifyNaiaAuthReady("auth-complete");
 				}
 				void syncLinkedChannels();
 			},
@@ -548,7 +568,15 @@ export function App() {
 		let active = true; // unmount guard: prevents stale invocations after cleanup
 
 		async function initAuth() {
-			const cfg = await loadConfigWithSecrets();
+			let cfg: Awaited<ReturnType<typeof loadConfigWithSecrets>>;
+			try {
+				cfg = await loadConfigWithSecrets();
+			} catch (err) {
+				Logger.warn("App", "initAuth config restore failed", {
+					error: String(err),
+				});
+				return;
+			}
 			if (!cfg || !active) return;
 
 			// auth_update: cache first, then send
@@ -558,6 +586,7 @@ export function App() {
 					message: JSON.stringify({ type: "auth_update", naiaKey }),
 				}).catch(() => {});
 				if (active) await sendAuthUpdate(naiaKey).catch(() => {});
+				if (active) notifyNaiaAuthReady("startup");
 			}
 
 			if (!active) return;

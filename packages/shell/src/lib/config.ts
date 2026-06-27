@@ -1,3 +1,4 @@
+import type { VramTierId } from "./capabilities/vram-tiers";
 import type { Locale } from "./i18n";
 import {
 	SECRET_KEYS,
@@ -5,7 +6,6 @@ import {
 	getSecretKey,
 	saveSecretKey,
 } from "./secure-store";
-import type { VramTierId } from "./capabilities/vram-tiers";
 import type { ProviderId } from "./types";
 // LiveProviderId kept for migration only — will be removed after migration period
 import type { LiveProviderId } from "./voice/types";
@@ -302,18 +302,35 @@ export function resolveConfiguredGatewayUrl(
 /**
  * Load full config: localStorage fields + secrets from secure store.
  */
+async function getSecretKeySafe(key: string): Promise<string | null> {
+	try {
+		return await getSecretKey(key);
+	} catch {
+		return null;
+	}
+}
+
+async function saveSecretKeySafe(key: string, value: string): Promise<void> {
+	try {
+		await saveSecretKey(key, value);
+	} catch {
+		// localStorage fallback remains usable; startup auth will retry secure store
+		// on the next load instead of blocking the whole config restore path.
+	}
+}
+
 export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 	const config = loadConfig();
 	if (!config) return null;
 
 	for (const key of SECRET_KEYS) {
 		const localVal = (config as any)[key];
-		const secureVal = await getSecretKey(key);
+		const secureVal = await getSecretKeySafe(key);
 		if (localVal) {
 			// localStorage has a fresh value (e.g. just saved by login handler)
 			// Sync to secure store if different
 			if (localVal !== secureVal) {
-				await saveSecretKey(key, localVal);
+				await saveSecretKeySafe(key, localVal);
 			}
 		} else if (secureVal) {
 			// Only use secure store when localStorage doesn't have the value
@@ -380,14 +397,14 @@ export async function migrateSecretsToSecureStore(): Promise<void> {
  * Async version: check secure store first, then localStorage.
  */
 export async function hasApiKeySecure(): Promise<boolean> {
-	const apiKey = await getSecretKey("apiKey");
-	const naiaKey = await getSecretKey("naiaKey");
+	const apiKey = await getSecretKeySafe("apiKey");
+	const naiaKey = await getSecretKeySafe("naiaKey");
 	if (apiKey || naiaKey) return true;
 	return hasApiKey();
 }
 
 export async function getNaiaKeySecure(): Promise<string | undefined> {
-	const secureVal = await getSecretKey("naiaKey");
+	const secureVal = await getSecretKeySafe("naiaKey");
 	if (secureVal) return secureVal;
 	return getNaiaKey();
 }

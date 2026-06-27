@@ -7,15 +7,33 @@
 import { load } from "@tauri-apps/plugin-store";
 
 const STORE_FILE = "secure-keys.dat";
+const STORE_LOAD_RETRIES = 3;
+const STORE_RETRY_DELAY_MS = 150;
 
 let storePromise: ReturnType<typeof load> | null = null;
 
-function getStore() {
-	if (!storePromise) {
-		// Type cast to bypass strict property checks on StoreOptions since we only care about autoSave
-		storePromise = load(STORE_FILE, { autoSave: true } as any);
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getStore() {
+	for (let attempt = 0; attempt < STORE_LOAD_RETRIES; attempt++) {
+		try {
+			if (!storePromise) {
+				// Type cast to bypass strict property checks on StoreOptions since we only care about autoSave
+				storePromise = load(
+					STORE_FILE,
+					{ autoSave: true } as Parameters<typeof load>[1],
+				);
+			}
+			return await storePromise;
+		} catch (err) {
+			storePromise = null;
+			if (attempt === STORE_LOAD_RETRIES - 1) throw err;
+			await delay(STORE_RETRY_DELAY_MS * (attempt + 1));
+		}
 	}
-	return storePromise;
+	throw new Error("secure store unavailable");
 }
 
 export async function saveSecretKey(
