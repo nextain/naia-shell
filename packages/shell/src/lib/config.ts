@@ -153,9 +153,10 @@ export interface AppConfig {
 	vllmSttHost?: string;
 	/**
 	 * Local GPU profile (#2 / FR-VRAM.2). "off" (default) = no effect; "auto" =
-	 * use the tier detected from GPU VRAM; an explicit tier id forces it. When
-	 * active, the tier's local capabilities fold into the model's effective
-	 * capabilities (hides external slots the local tier covers).
+	 * use the tier detected from GPU VRAM; an explicit tier id forces it.
+	 * Additive only — surfaces which local services a tier COULD serve as a
+	 * budget candidate. Must NOT hide external STT/TTS slots until a runtime
+	 * manager (windows-manager) reports actual readiness (F1, measurement-gated).
 	 */
 	localGpuTier?: VramTierId | "auto" | "off";
 	/** vLLM endpoint for TTS (e.g. Kokoro). */

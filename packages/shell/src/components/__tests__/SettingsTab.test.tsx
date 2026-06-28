@@ -196,7 +196,7 @@ describe("SettingsTab", () => {
 
 		// STT provider selector is in the voice section of the AI tab
 		const sttSelect = screen
-			.getByText(/Vosk/)
+			.getAllByText(/Naia Voice/)[0]
 			?.closest("select") as HTMLSelectElement;
 		expect(sttSelect).toBeDefined();
 		// Default is empty (no provider set) — vosk is an available option
