@@ -7,6 +7,7 @@ import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { isNewCore, sendAuthUpdate } from "../lib/chat-service";
 import { type AppConfig, NAIA_WEB_BASE_URL, loadConfig, saveConfigSecure } from "../lib/config";
 import { getDefaultLlmModel } from "../lib/llm";
+import { applyNaiaSlotDefaults, NAIA_SLOT_DEFAULTS } from "../lib/slots/model";
 import {
 	makeOnboardingSession,
 	type OnboardingSession,
@@ -308,10 +309,11 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const onCompleteRef = useRef(onComplete);
 	onCompleteRef.current = onComplete;
 
-	// When Naia login completes, auto-select "naia" for memory AI providers.
+	// When Naia login completes: 게이트 해제. sub-LLM = naia(Gemini flash-lite 경로),
+	// embedding = CPU offline(R2-1). 6슬롯 전체 기본값은 saveCompletedConfig 의 applyNaiaSlotDefaults 가 일괄 적용.
 	useEffect(() => {
 		if (naiaLoginDone) {
-			setMemoryEmbeddingProvider("naia");
+			setMemoryEmbeddingProvider("offline");
 			setMemoryLlmProvider("naia");
 		}
 	}, [naiaLoginDone]);
@@ -450,7 +452,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		const isByo = !!snapshot.apiKey.trim() && !snapshot.naiaLoginDone && !auth;
 		const base = loadConfig() ?? {
 			provider: isByo ? "gemini" : "nextain",
-			model: isByo ? getDefaultLlmModel("gemini") : "gemini-2.5-flash",
+			model: isByo ? getDefaultLlmModel("gemini") : NAIA_SLOT_DEFAULTS.main.model,
 			apiKey: "",
 		};
 		const vrmPath = snapshot.selectedVrm || DEFAULT_AVATAR_MODEL;
@@ -471,10 +473,13 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			? `${personaBase}\n\n${snapshot.extraPersona.trim()}`
 			: personaBase;
 
+		// auth(naia 로그인) 시: 6슬롯 Gemini 기본값은 applyNaiaSlotDefaults 가 아래서 일괄 적용.
+		// 따라서 auth 시에는 스냅샣 memory provider 를 주입하지 않고(비파괴 기본값 적용이 채움),
+		// BYO 시에만 사용자 선택값을 유지한다.
 		const completedFlat: Record<string, unknown> = {
 			...base,
 			provider: auth ? "nextain" : base.provider,
-			model: auth ? base.model || "gemini-2.5-flash" : base.model,
+			model: auth ? base.model || NAIA_SLOT_DEFAULTS.main.model : base.model,
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,
@@ -491,17 +496,21 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			workspaceRoot: getAdkPath() || base.workspaceRoot || undefined,
 			onboardingComplete: true,
 			...(recommendedVramTier ? { localGpuTier: recommendedVramTier.id } : {}),
-			...(snapshot.memoryEmbeddingProvider !== "none"
+			...(!auth && snapshot.memoryEmbeddingProvider !== "none"
 				? { memoryEmbeddingProvider: snapshot.memoryEmbeddingProvider }
 				: {}),
-			...(snapshot.memoryLlmProvider !== "none"
+			...(!auth && snapshot.memoryLlmProvider !== "none"
 				? { memoryLlmProvider: snapshot.memoryLlmProvider }
 				: {}),
 		};
-		await saveConfigSecure(completedFlat as unknown as AppConfig);
+		// FR-SLOT.3 / R2-1: naia 게이트 통과 시 미설정 슬롯에 Gemini 기본값 자동 적용(비파괴).
+		const finalConfig: AppConfig = auth
+			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig)
+			: (completedFlat as unknown as AppConfig);
+		await saveConfigSecure(finalConfig);
 
 		setAvatarModelPath(vrmPath);
-		return completedFlat;
+		return finalConfig as unknown as Record<string, unknown>;
 	}
 
 	async function handleComplete() {

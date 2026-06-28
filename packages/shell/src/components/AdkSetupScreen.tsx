@@ -11,6 +11,7 @@ import {
 	setAdkPath,
 } from "../lib/adk-store";
 import { NAIA_WEB_BASE_URL } from "../lib/config";
+import { applyNaiaSlotDefaults, NAIA_SLOT_DEFAULTS } from "../lib/slots/model";
 import { getLocale, t, type TranslationKey } from "../lib/i18n";
 
 interface AdkSetupScreenProps {
@@ -149,17 +150,23 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 				const existing = JSON.parse(
 					localStorage.getItem("naia-config") ?? "{}",
 				);
+				// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용(비파괴).
+				// §9 #5: stale hardcode gemini-2.5-flash → NAIA_SLOT_DEFAULTS.main.model(gemini-3.5-flash).
+				const loginConfig = applyNaiaSlotDefaults({
+					provider: "nextain",
+					model: NAIA_SLOT_DEFAULTS.main.model,
+					apiKey: "",
+					...(existing as Record<string, unknown>),
+					naiaKey: event.payload.naiaKey,
+					naiaUserId: event.payload.naiaUserId,
+					onboardingComplete: true,
+				} as import("../lib/config").AppConfig);
 				localStorage.setItem(
 					"naia-config",
-					JSON.stringify(preserveWorkspaceRoot({
-						provider: "nextain",
-						model: "gemini-2.5-flash",
-						apiKey: "",
-						...existing,
-						naiaKey: event.payload.naiaKey,
-						naiaUserId: event.payload.naiaUserId,
-						onboardingComplete: true,
-					}, adkPath)),
+					JSON.stringify(preserveWorkspaceRoot(
+						loginConfig as unknown as Record<string, unknown>,
+						adkPath,
+					)),
 				);
 				// Cache naiaKey for crash-restart replay before calling onComplete.
 				invoke("store_startup_message", {

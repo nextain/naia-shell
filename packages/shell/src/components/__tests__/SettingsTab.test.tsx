@@ -378,12 +378,13 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(tabBtns.length).toBe(7);
 	});
 
-	it("renders Profile & Engine entrypoint without moving canonical controls", async () => {
+	it("renders S-SLOT gate + 3 groups (Brain/Voice/Avatar) without moving canonical controls", async () => {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
 				provider: "nextain",
-				model: "gemini-2.5-flash",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
 				localGpuTier: "auto",
 			}),
 		);
@@ -394,47 +395,38 @@ describe("SettingsTab — memory tab (#298)", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("engine");
 
-		expect(screen.getAllByText("Profile & Engine").length).toBeGreaterThan(0);
-		expect(
-			document.querySelector("[data-testid='engine-profile-summary']"),
-		).toBeTruthy();
-		expect(
-			document.querySelector("[data-testid='engine-core-summary']"),
-		).toBeTruthy();
-		expect(document.querySelector("[data-testid='engine-profile-naia']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='engine-profile-byo']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='engine-profile-local']")).toBeTruthy();
-		expect(
-			document.querySelector("[data-testid='engine-gpu-summary']"),
-		).toBeTruthy();
-		expect(
-			document.querySelector("[data-testid='engine-capability-summary']"),
-		).toBeTruthy();
-		await vi.waitFor(() => {
-			expect(screen.getByText(/Detected VRAM: 6 GB/)).toBeDefined();
-		});
-		expect(
-			screen.getByText(/6GB: external LLM \+ local voice candidate/),
-		).toBeDefined();
-		expect(screen.getByText(/Local capabilities: tts/)).toBeDefined();
-		expect(screen.getByText("Voice output needs external TTS")).toBeDefined();
+		// FR-SLOT.1: gate section — naiaKey present → Naia account mode.
+		expect(document.querySelector("[data-testid='slot-gate']")).toBeTruthy();
+		expect(screen.getByTestId("slot-gate-mode").textContent).toContain(
+			"Naia account",
+		);
+		expect(screen.getByTestId("slot-apply-defaults")).toBeTruthy();
+		// FR-SLOT.2: 3 groups + 6 slots.
+		expect(document.querySelector("[data-testid='slot-groups']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-group-brain']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-group-voice']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-group-avatar']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-main']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-sub']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-embedding']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-stt']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-tts']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='slot-avatar']")).toBeTruthy();
+		// R1-7: 3-profile residue removed.
+		expect(document.querySelector("[data-testid='engine-profile-summary']")).toBeNull();
+		expect(document.querySelector("[data-testid='engine-profile-naia']")).toBeNull();
+		expect(document.querySelector("[data-testid='engine-profile-byo']")).toBeNull();
+		expect(document.querySelector("[data-testid='engine-profile-local']")).toBeNull();
+		// Kept summaries (core/gpu/capability) still present.
+		expect(document.querySelector("[data-testid='engine-core-summary']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='engine-gpu-summary']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='engine-capability-summary']")).toBeTruthy();
+		// Canonical controls remain on ai tab, not engine.
 		expect(document.getElementById("provider-select")).toBeNull();
 		expect(document.getElementById("model-select")).toBeNull();
-		expect(document.getElementById("local-gpu-tier")).toBeNull();
-
 		gotoSettingsTab("ai");
 		expect(document.getElementById("provider-select")).toBeTruthy();
 		expect(document.getElementById("model-select")).toBeTruthy();
-		const localGpuTier = document.getElementById(
-			"local-gpu-tier",
-		) as HTMLSelectElement | null;
-		expect(localGpuTier).toBeTruthy();
-		expect(screen.getByLabelText("Local GPU profile")).toBe(localGpuTier);
-		expect(
-			Array.from(localGpuTier!.options).some((option) =>
-				option.textContent?.includes("local voice candidate"),
-			),
-		).toBe(true);
 	});
 
 	it("first tab button is active by default", () => {
@@ -452,68 +444,38 @@ describe("SettingsTab — memory tab (#298)", () => {
 		);
 	});
 
-	it("profile cards persist provider, memory routing, and GPU budget atomically", async () => {
+	it("apply Gemini defaults fills unset slots non-destructively (FR-SLOT.3)", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+			}),
+		);
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("engine");
 
-		fireEvent.click(screen.getByTestId("engine-profile-local"));
-		let saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.provider).toBe("ollama");
-		expect(saved.memoryLlmProvider).toBe("ollama");
-		expect(saved.memoryEmbeddingProvider).toBe("ollama");
-		expect(saved.localGpuTier).toBe("auto");
+		// 게이트 = naia → "Gemini 기본값 적용" 버튼. 클릭 시 미설정 슬롯에 기본값(R2-1, §9 #5).
+		fireEvent.click(screen.getByTestId("slot-apply-defaults"));
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		// 이미 설정한 main 보존(비파괴).
+		expect(saved.provider).toBe("nextain");
+		expect(saved.model).toBe("gemini-3.5-flash");
+		// 미설정 슬롯 = Gemini 기본값.
+		expect(saved.memoryLlmProvider).toBe("naia");
+		expect(saved.memoryLlmModel).toBe("gemini-3.1-flash-lite");
+		expect(saved.memoryEmbeddingProvider).toBe("offline");
+		expect(saved.memoryOfflineModel).toBe("all-MiniLM-L6-v2");
+		expect(saved.ttsProvider).toBe("nextain");
 		await vi.waitFor(() => {
 			expect(mockInvoke).toHaveBeenCalledWith(
 				"write_naia_config",
-				expect.objectContaining({
-					adkPath: "D:\\alpha-adk",
-					json: expect.stringContaining('"provider": "ollama"'),
-				}),
+				expect.objectContaining({ adkPath: "D:\\alpha-adk" }),
 			);
 		});
-		const writeCall = mockInvoke.mock.calls.find(
-			(call) => call[0] === "write_naia_config",
-		);
-		expect(writeCall).toBeTruthy();
-		const written = JSON.parse((writeCall![1] as { json: string }).json);
-		expect(written.memoryLlmProvider).toBe("ollama");
-		expect(written.memoryEmbeddingProvider).toBe("ollama");
-		expect(written.localGpuTier).toBe("auto");
-		gotoSettingsTab("ai");
-		expect((document.getElementById("provider-select") as HTMLSelectElement).value).toBe(
-			"ollama",
-		);
-		expect((document.getElementById("local-gpu-tier") as HTMLSelectElement).value).toBe(
-			"auto",
-		);
-
-		gotoSettingsTab("models");
-		expect(
-			(document.querySelector(
-				'input[name="memory-llm"][value="ollama"]',
-			) as HTMLInputElement).checked,
-		).toBe(true);
-		expect(
-			(document.querySelector(
-				'input[name="memory-embedding"][value="ollama"]',
-			) as HTMLInputElement).checked,
-		).toBe(true);
-
-		gotoSettingsTab("engine");
-		fireEvent.click(screen.getByTestId("engine-profile-byo"));
-		saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.provider).toBe("gemini");
-		expect(saved.memoryLlmProvider).toBeUndefined();
-		expect(saved.memoryEmbeddingProvider).toBeUndefined();
-		expect(saved.localGpuTier).toBeUndefined();
-		gotoSettingsTab("ai");
-		expect((document.getElementById("provider-select") as HTMLSelectElement).value).toBe(
-			"gemini",
-		);
-		expect((document.getElementById("local-gpu-tier") as HTMLSelectElement).value).toBe(
-			"off",
-		);
 	});
 
 	it("memory section is NOT visible on settings tab by default", () => {

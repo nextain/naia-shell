@@ -53,7 +53,7 @@ import {
 	importMemoryBackup,
 } from "../lib/db";
 import { resetGatewaySession } from "../lib/gateway-sessions";
-import { type Locale, getLocale, setLocale, t } from "../lib/i18n";
+import { type Locale, getLocale, setLocale, t, type TranslationKey } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
 import {
@@ -80,6 +80,14 @@ import {
 	tierProvidedCapabilities,
 	type VramTierId,
 } from "../lib/capabilities/vram-tiers";
+import {
+	applyNaiaSlotDefaults,
+	deriveGate,
+	readSlots,
+	SLOT_GROUPS,
+	type GateMode,
+	type SlotId,
+} from "../lib/slots/model";
 import { Logger } from "../lib/logger";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
@@ -117,7 +125,9 @@ function buildNaiaLoginConfig(
 		locale: getLocale(),
 	};
 
-	return {
+	// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용.
+	// applyNaiaSlotDefaults 는 비파괴(사용자가 이미 설정한 슬롯은 보존). §9 #5 모델 문자열 SoT.
+	const withNaiaKey: AppConfig = {
 		...base,
 		provider: "nextain",
 		model: nextModel,
@@ -126,6 +136,7 @@ function buildNaiaLoginConfig(
 		naiaUserId: nextNaiaUserId || undefined,
 		voice: base.voice ?? getDefaultVoiceForAvatar(base.vrmModel),
 	};
+	return applyNaiaSlotDefaults(withNaiaKey);
 }
 const BG_VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 const BG_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif"]);
@@ -2048,86 +2059,58 @@ export function SettingsTab() {
 	const activeTierCapabilities = activeLocalTier
 		? localTierCapabilities.join(", ")
 		: t("settings.engineLocalOff");
-	const engineProfileMode =
-		provider === "nextain"
-			? "naia"
-			: provider === "ollama" || provider === "vllm"
-				? "local"
-				: "byo";
-	function handleEngineProfileSelect(mode: "naia" | "byo" | "local") {
-		if (mode === "naia") {
-			if (!naiaKey) {
-				setError(t("settings.naiaLoginRequiredFirst"));
-				startLabLogin();
-				return;
-			}
-			const nextModel = provider === "nextain" && model ? model : "gemini-2.5-flash";
-			const nextTier = localGpuTier === "off" ? "auto" : localGpuTier;
-			setProvider("nextain");
-			setModel(nextModel);
-			setMemoryLlmProvider("naia");
-			setMemoryEmbeddingProvider("naia");
-			setLocalGpuTier(nextTier);
-			const nextConfig = {
-				...applyModelSelectionToConfig(
-					loadConfig() as Record<string, unknown> | null,
-					"nextain",
-					nextModel,
-				),
-				memoryLlmProvider: "naia",
-				memoryEmbeddingProvider: "naia",
-				localGpuTier: nextTier,
-			};
-			saveConfig(nextConfig as unknown as Parameters<typeof saveConfig>[0]);
-			void writeNaiaConfig(nextConfig);
+	// S-SLOT 게이트(FR-SLOT.1) — naiaKey 존재 = naia(크레딧 접근), 부재 = byo.
+	// GPU·localGpuTier 무관(R1-3). "Naia"는 provider 아닌 접근 유형.
+	const gateMode: GateMode = deriveGate(!!naiaKey);
+	const slotSnapshot = readSlots(loadConfig() ?? ({} as AppConfig));
+
+	const SLOT_LABEL_KEYS: Record<SlotId, string> = {
+		main: "settings.slot.slotMain",
+		sub: "settings.slot.slotSub",
+		embedding: "settings.slot.slotEmbedding",
+		stt: "settings.slot.slotStt",
+		tts: "settings.slot.slotTts",
+		avatar: "settings.slot.slotAvatar",
+	};
+	function slotValueDisplay(id: SlotId): string {
+		switch (id) {
+			case "main":
+				return `${slotSnapshot.main.provider || "—"} / ${slotSnapshot.main.model || model || "—"}`;
+			case "sub":
+				return slotSnapshot.sub.provider && slotSnapshot.sub.provider !== "none"
+					? `${slotSnapshot.sub.provider}${slotSnapshot.sub.model ? ` / ${slotSnapshot.sub.model}` : ""}`
+					: t("settings.slot.notSet");
+			case "embedding":
+				return slotSnapshot.embedding.provider &&
+					slotSnapshot.embedding.provider !== "none"
+					? `${slotSnapshot.embedding.provider}${slotSnapshot.embedding.model ? ` / ${slotSnapshot.embedding.model}` : ""}`
+					: t("settings.slot.notSet");
+			case "stt":
+				return slotSnapshot.stt.provider ? String(slotSnapshot.stt.provider) : t("settings.slot.notSet");
+			case "tts":
+				return slotSnapshot.tts.provider ? String(slotSnapshot.tts.provider) : t("settings.slot.notSet");
+			case "avatar":
+				return slotSnapshot.avatar.model || slotSnapshot.avatar.provider || t("settings.slot.notSet");
+		}
+	}
+
+	// FR-SLOT.3 / R2-1: naia 게이트에서 "Gemini 기본값 적용" — 미설정 슬롯에 비파괴 적용.
+	function handleApplyNaiaDefaults() {
+		if (!naiaKey) {
+			setError(t("settings.naiaLoginRequiredFirst"));
+			startLabLogin();
 			return;
 		}
-		if (mode === "local") {
-			const nextProvider = provider === "vllm" ? "vllm" : "ollama";
-			const nextModel =
-				nextProvider === "ollama" && provider === "ollama" && model
-					? model
-					: getDefaultLlmModel(nextProvider);
-			const nextTier = localGpuTier === "off" ? "auto" : localGpuTier;
-			setProvider(nextProvider);
-			setModel(nextModel);
-			setMemoryLlmProvider("ollama");
-			setMemoryEmbeddingProvider("ollama");
-			setLocalGpuTier(nextTier);
-			const nextConfig = {
-				...applyModelSelectionToConfig(
-					loadConfig() as Record<string, unknown> | null,
-					nextProvider,
-					nextModel,
-				),
-				memoryLlmProvider: "ollama",
-				memoryEmbeddingProvider: "ollama",
-				localGpuTier: nextTier,
-			};
-			saveConfig(nextConfig as unknown as Parameters<typeof saveConfig>[0]);
-			void writeNaiaConfig(nextConfig);
-			return;
-		}
-		const nextProvider = provider === "nextain" || provider === "ollama" || provider === "vllm" ? "gemini" : provider;
-		const nextModel =
-			nextProvider !== provider || !model ? getDefaultLlmModel(nextProvider) : model;
-		setProvider(nextProvider);
-		setModel(nextModel);
-		setMemoryLlmProvider("none");
-		setMemoryEmbeddingProvider("none");
-		setLocalGpuTier("off");
-		const nextConfig = {
-			...applyModelSelectionToConfig(
-				loadConfig() as Record<string, unknown> | null,
-				nextProvider,
-				nextModel,
-			),
-			memoryLlmProvider: undefined,
-			memoryEmbeddingProvider: undefined,
-			localGpuTier: undefined,
-		};
-		saveConfig(nextConfig as unknown as Parameters<typeof saveConfig>[0]);
-		void writeNaiaConfig(nextConfig);
+		const current = loadConfig();
+		if (!current) return;
+		const next = applyNaiaSlotDefaults(current);
+		saveConfig(next);
+		void writeNaiaConfig(next as unknown as Record<string, unknown>);
+		setProvider(next.provider);
+		setModel(next.model);
+		if (next.memoryLlmProvider) setMemoryLlmProvider(next.memoryLlmProvider);
+		if (next.memoryEmbeddingProvider)
+			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
 	}
 	const detectedVramLabel =
 		detectedVramGb != null
@@ -2542,69 +2525,118 @@ export function SettingsTab() {
 						<span>{t("settings.engineSection")}</span>
 					</div>
 
-					<div className="settings-field" data-testid="engine-profile-summary">
-						<label>{t("settings.engineProfile")}</label>
-						<div className="settings-hint">{t("settings.engineProfileHint")}</div>
+					<div className="settings-field" data-testid="slot-gate">
+						<label>{t("settings.slot.gate")}</label>
+						<div className="settings-hint">{t("settings.slot.gateHint")}</div>
+						<div
+							style={{
+								display: "flex",
+								gap: 8,
+								marginTop: 8,
+								flexWrap: "wrap",
+								alignItems: "center",
+							}}
+						>
+							<strong data-testid="slot-gate-mode">
+								{gateMode === "naia"
+									? t("settings.slot.gateNaia")
+									: t("settings.slot.gateByo")}
+							</strong>
+							{gateMode === "naia" ? (
+								<button
+									type="button"
+									data-testid="slot-apply-defaults"
+									className="voice-preview-btn"
+									onClick={handleApplyNaiaDefaults}
+								>
+									{t("settings.slot.applyDefaults")}
+								</button>
+							) : (
+								<button
+									type="button"
+									data-testid="slot-login-naia"
+									className="voice-preview-btn"
+									onClick={startLabLogin}
+								>
+									{t("settings.slot.loginNaia")}
+								</button>
+							)}
+						</div>
+					</div>
+
+					<div className="settings-field" data-testid="slot-groups">
+						<label>{t("settings.slot.groups")}</label>
+						<div className="settings-hint">{t("settings.slot.groupsHint")}</div>
 						<div
 							style={{
 								display: "grid",
-								gap: 8,
-								gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+								gap: 12,
 								marginTop: 8,
 							}}
 						>
-							{(
-								[
-									[
-										"naia",
-										t("settings.engineNaiaProfile"),
-										t("settings.engineProfileNaiaHint"),
-									],
-									[
-										"byo",
-										t("settings.engineByoProfile"),
-										t("settings.engineProfileByoHint"),
-									],
-									[
-										"local",
-										t("settings.engineLocalRuntimeProfile"),
-										t("settings.engineProfileLocalHint"),
-									],
-								] as const
-							).map(([mode, label, hint]) => (
-								<button
-									key={mode}
-									type="button"
-									data-testid={`engine-profile-${mode}`}
-									className="voice-preview-btn"
-									aria-pressed={engineProfileMode === mode}
-									onClick={() => handleEngineProfileSelect(mode)}
+							{SLOT_GROUPS.map((group) => (
+								<div
+									key={group.id}
+									data-testid={`slot-group-${group.id}`}
 									style={{
-										alignItems: "flex-start",
-										display: "flex",
-										flexDirection: "column",
-										gap: 4,
-										minHeight: 92,
-										textAlign: "left",
-										whiteSpace: "normal",
+										border: "1px solid var(--border-color, #ccc)",
+										borderRadius: 8,
+										padding: 10,
 									}}
 								>
-									<strong>{label}</strong>
-									<span>{hint}</span>
-								</button>
+									<strong>{t(group.labelKey as TranslationKey)}</strong>
+									<div style={{ display: "grid", gap: 4, marginTop: 6 }}>
+										{group.slots.map((sid) => (
+											<div
+												key={sid}
+												data-testid={`slot-${sid}`}
+												style={{ display: "flex", justifyContent: "space-between", gap: 8 }}
+											>
+												<span>{t(SLOT_LABEL_KEYS[sid] as TranslationKey)}</span>
+												<span>{slotValueDisplay(sid)}</span>
+											</div>
+										))}
+									</div>
+									<div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+										{group.id === "brain" && (
+											<>
+												<button
+													type="button"
+													data-testid={`slot-edit-main`}
+													onClick={() => setActiveSettingsTab("ai")}
+												>
+													{t("settings.slot.editMain")}
+												</button>
+												<button
+													type="button"
+													data-testid={`slot-edit-models`}
+													onClick={() => setActiveSettingsTab("models")}
+												>
+													{t("settings.slot.editModels")}
+												</button>
+											</>
+										)}
+										{group.id === "voice" && (
+											<button
+												type="button"
+												data-testid={`slot-edit-voice`}
+												onClick={() => setActiveSettingsTab("general")}
+											>
+												{t("settings.slot.editVoice")}
+											</button>
+										)}
+										{group.id === "avatar" && (
+											<button
+												type="button"
+												data-testid={`slot-edit-avatar`}
+												onClick={() => setActiveSettingsTab("ai")}
+											>
+												{t("settings.slot.editAvatar")}
+											</button>
+										)}
+									</div>
+								</div>
 							))}
-						</div>
-						<div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
-							<strong>
-								{engineProfileMode === "naia"
-									? t("settings.engineNaiaProfile")
-									: engineProfileMode === "local"
-										? t("settings.engineLocalRuntimeProfile")
-										: t("settings.engineByoProfile")}
-							</strong>
-							<span>
-								{providerLabel} / {selectedModelMeta?.label ?? model}
-							</span>
 						</div>
 					</div>
 

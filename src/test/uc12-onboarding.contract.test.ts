@@ -63,16 +63,17 @@ describe("UC12 domain — 온보딩 8단계 상태기계 (contract §B.1)", () =
     expect(s.draft.secret.apiKey).toBe("k"); // apiKey = secret
   });
 
-  it("naia 로그인 후 provider 전이 가능 + memory provider 자동 naia", () => {
-    let s: OnboardingState = { step: "provider", draft: { agent: {}, ui: {}, secret: {} }, naiaLoginDone: false };
-    s = applyNaiaLogin(s, "nk");
-    expect(s.naiaLoginDone).toBe(true);
-    expect(s.draft.naiaKey).toBe("nk");
-    expect(s.draft.agent.memoryEmbeddingProvider).toBe("naia");
-    expect(s.draft.agent.memoryLlmProvider).toBe("naia");
-    s = advance(s, { step: "provider", provider: "nextain" });
-    expect(s.step).toBe("complete"); // 이제 전이
-  });
+	it("naia 로그인 후 provider 전이 가능 + memory provider 자동 적용(R2-1: embed=offline, sub=naia)", () => {
+		let s: OnboardingState = { step: "provider", draft: { agent: {}, ui: {}, secret: {} }, naiaLoginDone: false };
+		s = applyNaiaLogin(s, "nk");
+		expect(s.naiaLoginDone).toBe(true);
+		expect(s.draft.naiaKey).toBe("nk");
+		expect(s.draft.agent.memoryEmbeddingProvider).toBe("offline");
+		expect(s.draft.agent.memoryOfflineModel).toBe("all-MiniLM-L6-v2");
+		expect(s.draft.agent.memoryLlmProvider).toBe("naia");
+		s = advance(s, { step: "provider", provider: "nextain" });
+		expect(s.step).toBe("complete"); // 이제 전이
+	});
 
   it("applyNaiaLogin idempotent (이미 done → 무변화, R2-5)", () => {
     const base: OnboardingState = { step: "provider", draft: { agent: {}, ui: {}, secret: {} }, naiaLoginDone: true };

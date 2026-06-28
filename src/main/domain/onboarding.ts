@@ -102,15 +102,25 @@ export function advance(state: OnboardingState, input: StepInput): OnboardingSta
   return { step: nextStep, draft, naiaLoginDone: state.naiaLoginDone };
 }
 
-/** naia OAuth callback 도메인 반영(순수): naiaKey + naiaLoginDone + memory provider 자동 naia(값). idempotent(이미 done 이면 무변화, R2-5). */
+/** naia OAuth callback 도메인 반영(순수): naiaKey + naiaLoginDone + memory provider 자동 적용(R2-1).
+ * sub-LLM = naia(Gemini flash-lite 경로), embedding = CPU offline(all-MiniLM-L6-v2). idempotent(이미 done 이면 무변화, R2-5). */
 export function applyNaiaLogin(state: OnboardingState, naiaKey: string): OnboardingState {
-  if (state.naiaLoginDone) return state;
-  const d = state.draft;
-  return {
-    ...state,
-    naiaLoginDone: true,
-    draft: { ...d, naiaKey, agent: { ...d.agent, memoryEmbeddingProvider: "naia", memoryLlmProvider: "naia" } },
-  };
+	if (state.naiaLoginDone) return state;
+	const d = state.draft;
+	return {
+		...state,
+		naiaLoginDone: true,
+		draft: {
+			...d,
+			naiaKey,
+			agent: {
+				...d.agent,
+				memoryEmbeddingProvider: "offline",
+				memoryOfflineModel: "all-MiniLM-L6-v2",
+				memoryLlmProvider: "naia",
+			},
+		},
+	};
 }
 
 /** 완료 시 NaiaConfig 산출(순수): categorized draft + onboardingComplete=true. (영속은 app.) */
