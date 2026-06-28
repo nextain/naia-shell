@@ -1,22 +1,21 @@
 /**
- * VRAM-tier → capability data + selection (naia-omni-windows-manager#2, P4).
+ * VRAM-tier → capability data + selection (local GPU profile).
  *
- * Maps a detected GPU VRAM to which local capabilities (#365 ModelCapability) a
- * tier can serve, as a *footprint-fit* projection built from the component VRAM
- * measured in naia-model-infra#19 (Ditto trt 2.6 GB, VoxCPM2 6.7 GB, cascade =
- * CPU); the tier thresholds are the user's draft in naia-omni-windows-manager#2.
+ * Maps a detected GPU VRAM to which local capabilities a
+ * tier can serve, as a *footprint-fit* projection built from private
+ * footprint measurements; the tier thresholds come from a private deployment
+ * draft.
  *
  * STATUS — wired into the settings UI (opt-in, default off). SettingsTab
- * detects GPU VRAM (`detectGpuVramGb` → Rust `detect_gpu_vram`), and when the
- * user enables a local GPU profile, folds `tierProvidedCapabilities(
- * resolveActiveTier(...))` into the `effectiveCapabilities` passed to
- * `deriveSettingsSlots` — so the local tier hides the external slots it covers.
+ * detects GPU VRAM (`detectGpuVramGb` → Rust `detect_gpu_vram`) and shows
+ * which local services are budget candidates. It must not hide external slots
+ * until a runtime manager reports actual readiness.
  *
  * BOUNDARIES (do not violate):
  * - Consumer/UI view only — declares *which capabilities a tier could serve*,
  *   not how. The canonical tier/deploy *serving-supply* manifest (which
- *   models/engines to fetch) lives in naia-model-infra; the actual fetch/launch
- *   loader lives in naia-omni-windows-manager and is gated on real 4070 RTF
+ *   models/engines to fetch) lives in private infra notes; the actual fetch/launch
+ *   loader lives in naia-omni-windows-manager and is gated on real device RTF
  *   measurement. Neither the loader nor local serving is implemented here.
  * - Hard rule F1 (windows-manager): real-time (RTF<1) is a measured gate per
  *   GPU — NEVER claimed here. `realtime` is always "measurement-gated"; this
@@ -39,11 +38,11 @@ export interface VramTier {
 	/** Whether the LLM runs locally ("own") or via an external provider. */
 	llm: "external" | "own";
 	/**
-	 * Local capabilities the tier can serve by VRAM footprint (#365 bridge).
+	 * Local capabilities the tier can serve by VRAM footprint.
 	 * NOT a real-time guarantee — see F1.
 	 */
 	localCapabilities: ModelCapability[];
-	/** Approx summed VRAM of the local components (model-infra#19 measured). */
+	/** Approx summed VRAM of the local components (private measured). */
 	approxLocalVramGb: number;
 	/** Real-time (RTF<1) is a measured gate per GPU — never asserted (F1). */
 	realtime: "measurement-gated";
@@ -51,7 +50,7 @@ export interface VramTier {
 }
 
 /**
- * Tiers — user draft (naia-omni-windows-manager#2) × measured footprints (#19).
+ * Tiers — user draft (private deployment draft) × private measured footprints.
  * Ordered ascending by minVramGb.
  */
 export const VRAM_TIERS: readonly VramTier[] = [
@@ -60,7 +59,7 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		label: "6GB — 외부 LLM + 음성/아바타 (제한)",
 		minVramGb: 6,
 		llm: "external",
-		// 6GB is constrained. The user draft offers a 택1 (avatar via Ditto 2.6G,
+		// 6GB is constrained. The user draft offers a 택1 (avatar,
 		// OR stt, OR voice-only). Modelled conservatively as voice-only here —
 		// `localCapabilities` represents ONE concrete option, not the full 택1
 		// set; an avatar-instead choice would be resolved by the loader and is
@@ -68,7 +67,7 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		localCapabilities: ["tts"],
 		approxLocalVramGb: 6,
 		realtime: "measurement-gated",
-		note: "LLM 외부(claude-code/codex/glm). VoxCPM2 6.7G>6G → 0.5B/양자화 필요(미측정). 모델링=voice-only 1택; avatar(Ditto)·stt 대안은 로더가 택1(이 capability 리스트엔 미반영).",
+		note: "LLM 외부(claude-code/codex/glm). local TTS model may exceed this tier; smaller/quantized model needed(미측정). 모델링=voice-only 1택; avatar·stt 대안은 로더가 택1(이 capability 리스트엔 미반영).",
 	},
 	{
 		id: "avatar-voice-12g",
@@ -76,9 +75,9 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		minVramGb: 12,
 		llm: "external",
 		localCapabilities: ["tts", "avatar"],
-		approxLocalVramGb: 9.4,
+		approxLocalVramGb: 10,
 		realtime: "measurement-gated",
-		note: "Ditto(2.6G)+VoxCPM2(6.7G)=~9.4G, RTX 4070 12G fits(헤드룸 ~2G). RTF<1 = 측정 게이트(#19).",
+		note: "Avatar+voice model footprint fits this tier. RTF<1 = 측정 게이트.",
 	},
 	{
 		id: "full-local-24g",
@@ -86,7 +85,7 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		minVramGb: 24,
 		llm: "own",
 		localCapabilities: ["llm", "tts", "avatar"],
-		approxLocalVramGb: 9.4, // + local LLM (model-dependent, not summed here)
+		approxLocalVramGb: 10, // + local LLM (model-dependent, not summed here)
 		realtime: "measurement-gated",
 		note: "아바타+음성 + 로컬 LLM. LLM VRAM은 모델 의존(미산정).",
 	},
@@ -122,9 +121,8 @@ export function resolveActiveTier(
 }
 
 /**
- * Capabilities a tier serves locally — the input SettingsTab folds into a
- * model's effective capabilities (#365 `deriveSettingsSlots`) when a local GPU
- * profile is active, so the UI drops the external slots the local tier covers.
+ * Capabilities a tier could serve locally by VRAM footprint. This is a budget
+ * candidate list, not a readiness signal.
  */
 export function tierProvidedCapabilities(tier: VramTier): ModelCapability[] {
 	return [...tier.localCapabilities];

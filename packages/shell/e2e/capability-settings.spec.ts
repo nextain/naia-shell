@@ -84,8 +84,8 @@ async function gotoModelSettings(page: Page, opts: SetupOpts = {}): Promise<void
 	await page.goto("/");
 	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
 	await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
-	// model-select lives in the "AI 모델" (AI Model) sub-tab, not "모델" (Models).
-	await page.getByRole("button", { name: /^(AI 모델|AI Model)$/ }).click();
+	// model-select lives in the main/voice tab; use stable tab ids instead of copy.
+	await page.locator('[data-settings-tab="ai"]').click();
 	await expect(page.locator("#model-select")).toBeVisible({ timeout: 10_000 });
 }
 
@@ -146,10 +146,47 @@ test.describe("VRAM tier local profile (#2)", () => {
 		const tierSelect = page.locator("#local-gpu-tier");
 		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
 		await expect(tierSelect.locator('option[value="auto"]')).toContainText(
-			/미감지|수동/,
+			/VRAM not detected|manual|\uBBF8\uAC10\uC9C0|\uC218\uB3D9/,
 			{ timeout: 5_000 },
 		);
 		// Default = off (no behaviour change).
 		await expect(tierSelect).toHaveValue("off");
+	});
+
+	test("Profile & Engine selects profile and canonical controls remain on AI tab", async ({
+		page,
+	}) => {
+		await gotoModelSettings(page, { vramGb: 6, model: "gemini-3.5-flash" });
+
+		await page.locator('[data-settings-tab="engine"]').click();
+		await expect(page.locator('[data-testid="engine-profile-summary"]')).toBeVisible({
+			timeout: 5_000,
+		});
+		await expect(page.locator('[data-testid="engine-core-summary"]')).toBeVisible();
+		await expect(page.locator('[data-testid="engine-gpu-summary"]')).toBeVisible();
+		await expect(page.locator('[data-testid="engine-capability-summary"]')).toBeVisible();
+		await expect(page.locator('[data-testid="engine-profile-naia"]')).toBeVisible();
+		await expect(page.locator('[data-testid="engine-profile-byo"]')).toBeVisible();
+		await expect(page.locator('[data-testid="engine-profile-local"]')).toBeVisible();
+		await expect(page.locator("#provider-select")).toHaveCount(0);
+		await expect(page.locator("#model-select")).toHaveCount(0);
+		await expect(page.locator("#local-gpu-tier")).toHaveCount(0);
+
+		await page.locator('[data-testid="engine-profile-local"]').click();
+
+		await page.locator('[data-settings-tab="ai"]').click();
+		await expect(page.locator("#provider-select")).toBeVisible({ timeout: 5_000 });
+		await expect(page.locator("#provider-select")).toHaveValue("ollama");
+		await expect(page.locator("#model-select")).toBeVisible();
+		await expect(page.locator("#local-gpu-tier")).toBeVisible();
+		await expect(page.locator("#local-gpu-tier")).toHaveValue("auto");
+		// The GPU tier is a budget candidate only. It must not hide external voice
+		// settings until the runtime manager reports actual local readiness.
+		await expect(page.locator("#tts-toggle")).toBeVisible();
+		await expect(
+			page
+				.locator("#local-gpu-tier option")
+				.filter({ hasText: /local voice candidate|\uB85C\uCEEC \uC74C\uC131 \uD6C4\uBCF4/ }),
+		).toHaveCount(1);
 	});
 });

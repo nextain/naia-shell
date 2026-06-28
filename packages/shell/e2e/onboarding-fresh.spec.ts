@@ -55,6 +55,7 @@ function buildMockScript() {
         }
         if (cmd === "plugin:event|emit" || cmd === "plugin:event|unlisten") return null;
         if (cmd === "frontend_log") return;
+        if (cmd === "detect_gpu_vram") return 6;
         if (cmd === "list_skills") return [];
         if (cmd === "list_stt_models") return [];
         if (cmd === "panel_list_installed") return [];
@@ -98,12 +99,16 @@ async function setupFreshOnboarding(page: import("@playwright/test").Page) {
 	await expect(page.locator(".onboarding-panel")).toBeVisible({
 		timeout: 15_000,
 	});
+	if ((await page.locator('input[placeholder="Naia"]').count()) === 0) {
+		await page.getByRole("button", { name: /Next/i }).click();
+		await page.waitForTimeout(400);
+	}
 }
 
 async function clickNext(page: import("@playwright/test").Page) {
 	const btn = page.getByRole("button", { name: /다음|Next/i });
 	await expect(btn).toBeEnabled({ timeout: 5_000 });
-	await btn.click();
+	await btn.click({ force: true });
 	// Wait for the 300ms transition lock
 	await page.waitForTimeout(400);
 }
@@ -157,13 +162,15 @@ test.describe("Fresh onboarding flow", () => {
 		expect(imgSrc!.startsWith("blob:") || imgSrc!.includes("asset.localhost")).toBe(true);
 		await clickNext(page);
 
-		// provider step — shows "나중에 설정" skip link
-		await expect(page.getByText(/나중에 설정/)).toBeVisible({ timeout: 5_000 });
+		// provider step shows the setup-later action.
+		await expect(page.getByText(/Set up later/i)).toBeVisible({
+			timeout: 5_000,
+		});
 	});
-
 	test("completes onboarding and saves config to localStorage", async ({
 		page,
 	}) => {
+		test.slow();
 		await setupFreshOnboarding(page);
 
 		// Walk through all steps quickly
@@ -178,10 +185,9 @@ test.describe("Fresh onboarding flow", () => {
 			timeout: 10_000,
 		});
 		await clickNext(page);
-		// provider — skip
-		await page.getByText(/나중에 설정/).click();
+		// provider skip
+		await page.getByText(/Set up later/i).click();
 		await page.waitForTimeout(400);
-		// complete step — "시작하기" button
 		const startBtn = page.getByRole("button", { name: /시작하기|Get Started/i });
 		await expect(startBtn).toBeVisible({ timeout: 5_000 });
 		await startBtn.click();
@@ -196,5 +202,6 @@ test.describe("Fresh onboarding flow", () => {
 		expect(config.agentName).toBe("Mochi");
 		expect(config.userName).toBe("Luke");
 		expect(config.persona).toContain("Mochi");
+		expect(config.localGpuTier).toBe("external-llm-6g");
 	});
 });

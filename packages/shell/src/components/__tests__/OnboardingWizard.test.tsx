@@ -11,6 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const eventListeners = vi.hoisted(
 	() => new Map<string, (event: { payload: any }) => void>(),
 );
+const secureStore = vi.hoisted(() => ({
+	get: vi.fn().mockResolvedValue(null),
+	set: vi.fn().mockResolvedValue(undefined),
+	delete: vi.fn().mockResolvedValue(undefined),
+}));
 
 // Mock Tauri invoke
 vi.mock("@tauri-apps/api/core", () => ({
@@ -31,6 +36,10 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
 	open: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@tauri-apps/plugin-store", () => ({
+	load: vi.fn().mockResolvedValue(secureStore),
 }));
 
 vi.mock("../../lib/chat-service", () => ({
@@ -80,6 +89,9 @@ describe("OnboardingWizard", () => {
 		vi.useRealTimers();
 		cleanup();
 		onComplete.mockReset();
+		secureStore.get.mockClear();
+		secureStore.set.mockClear();
+		secureStore.delete.mockClear();
 		eventListeners.clear();
 		localStorage.removeItem("naia-config");
 		localStorage.removeItem("naia-adk-path");
@@ -91,6 +103,31 @@ describe("OnboardingWizard", () => {
 		act(() => {
 			vi.advanceTimersByTime(400);
 		});
+	}
+
+	function clickNextByClass() {
+		const buttons = screen.getAllByRole("button");
+		const next = buttons.find((button) =>
+			button.className.includes("onboarding-step__next-btn"),
+		);
+		expect(next).toBeDefined();
+		fireEvent.click(next!);
+		flush();
+	}
+
+	function advanceFromAgentNameToProvider() {
+		fireEvent.change(screen.getByPlaceholderText("Naia"), {
+			target: { value: "Mochi" },
+		});
+		clickNextByClass();
+
+		fireEvent.change(screen.getByPlaceholderText("Luke"), {
+			target: { value: "Luke" },
+		});
+		clickNextByClass();
+		clickNextByClass();
+		clickNextByClass();
+		clickNextByClass();
 	}
 
 	/**
@@ -153,8 +190,70 @@ describe("OnboardingWizard", () => {
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
-		// provider step — shows the skip link "나중에 설정"
-		expect(screen.getByText(/나중에 설정/)).toBeDefined();
+		// provider step — shows the skip link
+		expect(screen.getByText(/Set up later/)).toBeDefined();
+	});
+
+	it("shows VRAM recommendation on the provider step", async () => {
+		const { invoke } = await import("@tauri-apps/api/core");
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(6);
+			return Promise.resolve(true);
+		});
+
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		advanceFromAgentNameToProvider();
+
+		expect(screen.getByText(/Detected VRAM: 6 GB/)).toBeDefined();
+		expect(
+			screen.getByText(/6GB: external LLM \+ local voice candidate/),
+		).toBeDefined();
+		expect(
+			screen.getByText(/does not download or launch local models/),
+		).toBeDefined();
+	});
+
+	it("uses a direct provider and stores the entered BYO API key securely on clean install", async () => {
+		const { invoke } = await import("@tauri-apps/api/core");
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(6);
+			return Promise.resolve(true);
+		});
+
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+		});
+		advanceFromAgentNameToProvider();
+
+		fireEvent.click(screen.getByRole("button", { name: /직접 설정|Direct setup/ }));
+		fireEvent.change(screen.getByPlaceholderText("sk-... / gw-..."), {
+			target: { value: "byo-test-key" },
+		});
+		clickNextByClass();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /시작하기|Get Started/ }),
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		act(() => {
+			vi.advanceTimersByTime(1300);
+		});
+
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.provider).toBe("gemini");
+		expect(config.model).toBe("gemini-3.5-flash");
+		expect(config.apiKey).toBeUndefined();
+		expect(config.naiaKey).toBeUndefined();
+		expect(config.onboardingComplete).toBe(true);
+		expect(config.localGpuTier).toBe("external-llm-6g");
+		expect(secureStore.set).toHaveBeenCalledWith("apiKey", "byo-test-key");
 	});
 
 	it("Next button is always enabled (agentName is optional)", () => {
@@ -172,7 +271,7 @@ describe("OnboardingWizard", () => {
 		expect(screen.getByPlaceholderText("Luke")).toBeDefined();
 	});
 
-	it("complete step calls onComplete and saves config", () => {
+	it("complete step calls onComplete and saves config", async () => {
 		renderAtAgentName();
 
 		// agentName
@@ -201,15 +300,17 @@ describe("OnboardingWizard", () => {
 		fireEvent.click(screen.getByRole("button", { name: /다음|Next/ }));
 		flush();
 
-		// provider → skip via "나중에 설정"
-		fireEvent.click(screen.getByText(/나중에 설정/));
+		// provider → skip via "Set up later"
+		fireEvent.click(screen.getByText(/Set up later/));
 		flush();
 
 		// complete → click "시작하기"
 		fireEvent.click(
 			screen.getByRole("button", { name: /시작하기|Get Started/ }),
 		);
-		flush();
+		await act(async () => {
+			await Promise.resolve();
+		});
 
 		// Wait for the 1200ms onComplete setTimeout
 		act(() => {
@@ -225,7 +326,7 @@ describe("OnboardingWizard", () => {
 		expect(config.persona).toContain("Mochi");
 	});
 
-	it("completes onboarding immediately after Naia login succeeds", () => {
+	it("completes onboarding immediately after Naia login succeeds", async () => {
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk\\projects\\naia-adk");
 		renderAtAgentName();
 
@@ -272,7 +373,9 @@ describe("OnboardingWizard", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: /시작하기|Get Started/ }),
 		);
-		flush();
+		await act(async () => {
+			await Promise.resolve();
+		});
 		act(() => {
 			vi.advanceTimersByTime(1300);
 		});
@@ -281,11 +384,12 @@ describe("OnboardingWizard", () => {
 
 		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(config.onboardingComplete).toBe(true);
-		expect(config.naiaKey).toBe("gw-test-key");
+		expect(config.naiaKey).toBeUndefined();
 		expect(config.naiaUserId).toBe("user-1");
 		expect(config.userName).toBe("Luke");
 		expect(config.agentName).toBe("Mochi");
 		expect(config.workspaceRoot).toBe("D:\\alpha-adk\\projects\\naia-adk");
+		expect(secureStore.set).toHaveBeenCalledWith("naiaKey", "gw-test-key");
 	});
 
 	// #341 옵션 B (W1) — naia 로그인 OAuth URL 빌더 검증

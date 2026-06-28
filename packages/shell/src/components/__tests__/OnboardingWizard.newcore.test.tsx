@@ -18,6 +18,11 @@ const session = vi.hoisted(() => ({
 	currentStep: vi.fn(() => "welcome"),
 	completeWith: vi.fn().mockResolvedValue(undefined),
 }));
+const secureStore = vi.hoisted(() => ({
+	get: vi.fn().mockResolvedValue(null),
+	set: vi.fn().mockResolvedValue(undefined),
+	delete: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(true),
@@ -33,6 +38,9 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 	openUrl: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn().mockResolvedValue(null) }));
+vi.mock("@tauri-apps/plugin-store", () => ({
+	load: vi.fn().mockResolvedValue(secureStore),
+}));
 
 // ★ newCore=true
 vi.mock("../../lib/chat-service", () => ({
@@ -73,6 +81,9 @@ describe("OnboardingWizard — newCore 배선(step-flow graft step2)", () => {
 		vi.useRealTimers();
 		cleanup();
 		onComplete.mockReset();
+		secureStore.get.mockClear();
+		secureStore.set.mockClear();
+		secureStore.delete.mockClear();
 		eventListeners.clear();
 		localStorage.clear();
 	});
@@ -117,7 +128,7 @@ describe("OnboardingWizard — newCore 배선(step-flow graft step2)", () => {
 		expect(session.onNaiaAuthCallback).toHaveBeenCalledWith("gw-key");
 	});
 
-	it("complete → core.completeWith(snapshot) 으로 영속", () => {
+	it("complete → core.completeWith(snapshot) 으로 영속", async () => {
 		render(<OnboardingWizard onComplete={onComplete} />);
 		// welcome → ... → background (Next 6회)
 		for (let i = 0; i < 6; i++) {
@@ -125,11 +136,13 @@ describe("OnboardingWizard — newCore 배선(step-flow graft step2)", () => {
 			flush();
 		}
 		// provider → skip "나중에 설정"
-		fireEvent.click(screen.getByText(/나중에 설정/));
+		fireEvent.click(screen.getByText(/나중에 설정|Set up later/));
 		flush();
-		// complete → 시작하기
+		// complete → 시작하기 (handleComplete is async after saveConfigSecure — flush promise chain)
 		fireEvent.click(screen.getByRole("button", { name: /시작하기|Get Started/ }));
-		flush();
+		await act(async () => {
+			await Promise.resolve();
+		});
 		expect(session.completeWith).toHaveBeenCalledTimes(1);
 		const arg = session.completeWith.mock.calls[0][0] as Record<string, unknown>;
 		expect(arg.onboardingComplete).toBe(true);

@@ -78,6 +78,7 @@ import {
 	VRAM_TIERS,
 	resolveActiveTier,
 	tierProvidedCapabilities,
+	type VramTierId,
 } from "../lib/capabilities/vram-tiers";
 import { Logger } from "../lib/logger";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
@@ -95,6 +96,10 @@ import { RefAudioSection } from "./RefAudioSection";
 import { SkillsTab } from "./SkillsTab";
 
 const LLM_PROVIDERS = listLlmProviders();
+
+function vramTierLabelKey(id: VramTierId) {
+	return `settings.vramTier.${id}` as const;
+}
 
 function buildNaiaLoginConfig(
 	current: AppConfig | null,
@@ -570,8 +575,8 @@ function DeviceSelect({
 
 export function SettingsTab() {
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
-		"general" | "ai" | "models" | "skills" | "memory" | "info"
-	>("general");
+		"general" | "engine" | "ai" | "models" | "skills" | "memory" | "info"
+	>("engine");
 	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
 	// 기존 provider·memoryLlm·memoryEmbedding state 에서 파생 표시 + 변경 시 해당 state 갱신(재사용, 중복 state 없음).
 	const [agentHealthStatus, setAgentHealthStatus] = useState<
@@ -1531,7 +1536,7 @@ export function SettingsTab() {
 		}
 		setError("");
 		if (id === "nextain" && !naiaKey) {
-			setError("Naia 계정 로그인이 필요합니다. 먼저 Naia에 로그인하세요.");
+			setError(t("settings.naiaLoginRequiredFirst"));
 			startLabLogin();
 			return; // login first; naia_auth_complete persists once the key arrives
 		}
@@ -1685,7 +1690,7 @@ export function SettingsTab() {
 			}
 
 			if (synthProvider === "nextain" && !naiaKey) {
-				setError("미리듣기를 사용하려면 Naia 로그인이 필요합니다.");
+				setError(t("settings.ttsPreviewLoginRequired"));
 				return;
 			}
 
@@ -1702,7 +1707,7 @@ export function SettingsTab() {
 			await audio.play();
 		} catch (err) {
 			setError(
-				`TTS 미리듣기 실패: ${err instanceof Error ? err.message : String(err)}`,
+				`${t("settings.ttsPreviewFailed")}: ${err instanceof Error ? err.message : String(err)}`,
 			);
 		} finally {
 			setIsPreviewing(false);
@@ -1834,7 +1839,7 @@ export function SettingsTab() {
 		const resolvedApiKey = apiKey.trim() || existing?.apiKey || "";
 		const isNextainProvider = provider === "nextain";
 		if (isNextainProvider && !naiaKey) {
-			setError("Naia 계정 로그인이 필요합니다. Naia 계정 연결 후 저장하세요.");
+			setError(t("settings.naiaLoginRequiredBeforeSave"));
 			return;
 		}
 		if (
@@ -2029,18 +2034,119 @@ export function SettingsTab() {
 		isSelectedAsr && !(selectedModelMeta?.capabilities.includes("asr") ?? false)
 			? [...(selectedModelMeta?.capabilities ?? []), "asr"]
 			: (selectedModelMeta?.capabilities ?? []);
-	// #2 / FR-VRAM.2: when a local GPU tier is active (opt-in; "off" by default →
-	// empty → no change), its locally-served capabilities fold in so
-	// deriveSettingsSlots hides the external slots the local tier covers.
+	// #2 / FR-VRAM.2: local GPU tier is a budget/candidate signal only. It must
+	// not hide external STT/TTS slots until a runtime manager reports actual
+	// readiness; otherwise the UI would imply local services are already running.
 	const activeLocalTier = resolveActiveTier(localGpuTier, detectedVramGb);
 	const localTierCapabilities = activeLocalTier
 		? tierProvidedCapabilities(activeLocalTier)
 		: [];
-	const effectiveCapabilities: ModelCapability[] = Array.from(
-		new Set([...baseCapabilities, ...localTierCapabilities]),
-	);
+	const effectiveCapabilities: ModelCapability[] = baseCapabilities;
 	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
 	const omniVoices = selectedModelMeta?.voices;
+	const providerLabel = getLlmProvider(provider)?.name ?? provider;
+	const activeTierCapabilities = activeLocalTier
+		? localTierCapabilities.join(", ")
+		: t("settings.engineLocalOff");
+	const engineProfileMode =
+		provider === "nextain"
+			? "naia"
+			: provider === "ollama" || provider === "vllm"
+				? "local"
+				: "byo";
+	function handleEngineProfileSelect(mode: "naia" | "byo" | "local") {
+		if (mode === "naia") {
+			if (!naiaKey) {
+				setError(t("settings.naiaLoginRequiredFirst"));
+				startLabLogin();
+				return;
+			}
+			const nextModel = provider === "nextain" && model ? model : "gemini-2.5-flash";
+			const nextTier = localGpuTier === "off" ? "auto" : localGpuTier;
+			setProvider("nextain");
+			setModel(nextModel);
+			setMemoryLlmProvider("naia");
+			setMemoryEmbeddingProvider("naia");
+			setLocalGpuTier(nextTier);
+			const nextConfig = {
+				...applyModelSelectionToConfig(
+					loadConfig() as Record<string, unknown> | null,
+					"nextain",
+					nextModel,
+				),
+				memoryLlmProvider: "naia",
+				memoryEmbeddingProvider: "naia",
+				localGpuTier: nextTier,
+			};
+			saveConfig(nextConfig as unknown as Parameters<typeof saveConfig>[0]);
+			void writeNaiaConfig(nextConfig);
+			return;
+		}
+		if (mode === "local") {
+			const nextProvider = provider === "vllm" ? "vllm" : "ollama";
+			const nextModel =
+				nextProvider === "ollama" && provider === "ollama" && model
+					? model
+					: getDefaultLlmModel(nextProvider);
+			const nextTier = localGpuTier === "off" ? "auto" : localGpuTier;
+			setProvider(nextProvider);
+			setModel(nextModel);
+			setMemoryLlmProvider("ollama");
+			setMemoryEmbeddingProvider("ollama");
+			setLocalGpuTier(nextTier);
+			const nextConfig = {
+				...applyModelSelectionToConfig(
+					loadConfig() as Record<string, unknown> | null,
+					nextProvider,
+					nextModel,
+				),
+				memoryLlmProvider: "ollama",
+				memoryEmbeddingProvider: "ollama",
+				localGpuTier: nextTier,
+			};
+			saveConfig(nextConfig as unknown as Parameters<typeof saveConfig>[0]);
+			void writeNaiaConfig(nextConfig);
+			return;
+		}
+		const nextProvider = provider === "nextain" || provider === "ollama" || provider === "vllm" ? "gemini" : provider;
+		const nextModel =
+			nextProvider !== provider || !model ? getDefaultLlmModel(nextProvider) : model;
+		setProvider(nextProvider);
+		setModel(nextModel);
+		setMemoryLlmProvider("none");
+		setMemoryEmbeddingProvider("none");
+		setLocalGpuTier("off");
+		const nextConfig = {
+			...applyModelSelectionToConfig(
+				loadConfig() as Record<string, unknown> | null,
+				nextProvider,
+				nextModel,
+			),
+			memoryLlmProvider: undefined,
+			memoryEmbeddingProvider: undefined,
+			localGpuTier: undefined,
+		};
+		saveConfig(nextConfig as unknown as Parameters<typeof saveConfig>[0]);
+		void writeNaiaConfig(nextConfig);
+	}
+	const detectedVramLabel =
+		detectedVramGb != null
+			? t("settings.engineDetectedVram").replace(
+					"{vram}",
+					String(detectedVramGb),
+				)
+			: t("settings.engineDetectedUnknown");
+	const capabilityStatus = [
+		capabilitySlots.coversVoiceInput
+			? t("settings.engineVoiceInputCovered")
+			: t("settings.engineVoiceInputExternal"),
+		capabilitySlots.coversVoiceOutput
+			? t("settings.engineVoiceOutputCovered")
+			: t("settings.engineVoiceOutputExternal"),
+		capabilitySlots.coversVision
+			? t("settings.engineVisionCovered")
+			: t("settings.engineVisionExternal"),
+	];
 	// Ref-audio (voice clone) only applies to naia-omni sessions — naia-* omni
 	// models or a local vllm-omni server. Gemini Live is omni too but has no
 	// voice-clone surface, so mounting RefAudioSection there just 404s on
@@ -2057,13 +2163,15 @@ export function SettingsTab() {
 			<div className="settings-tab-bar">
 				<button
 					type="button"
-					className={`settings-tab-btn${activeSettingsTab === "general" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("general")}
+					data-settings-tab="engine"
+					className={`settings-tab-btn${activeSettingsTab === "engine" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("engine")}
 				>
-					{t("settings.tabGeneral")}
+					{t("settings.tabEngine")}
 				</button>
 				<button
 					type="button"
+					data-settings-tab="ai"
 					className={`settings-tab-btn${activeSettingsTab === "ai" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("ai")}
 				>
@@ -2071,6 +2179,7 @@ export function SettingsTab() {
 				</button>
 				<button
 					type="button"
+					data-settings-tab="models"
 					className={`settings-tab-btn${activeSettingsTab === "models" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("models")}
 				>
@@ -2078,6 +2187,15 @@ export function SettingsTab() {
 				</button>
 				<button
 					type="button"
+					data-settings-tab="general"
+					className={`settings-tab-btn${activeSettingsTab === "general" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("general")}
+				>
+					{t("settings.tabGeneral")}
+				</button>
+				<button
+					type="button"
+					data-settings-tab="skills"
 					className={`settings-tab-btn${activeSettingsTab === "skills" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("skills")}
 				>
@@ -2085,6 +2203,7 @@ export function SettingsTab() {
 				</button>
 				<button
 					type="button"
+					data-settings-tab="memory"
 					className={`settings-tab-btn${activeSettingsTab === "memory" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("memory")}
 				>
@@ -2092,6 +2211,7 @@ export function SettingsTab() {
 				</button>
 				<button
 					type="button"
+					data-settings-tab="info"
 					className={`settings-tab-btn${activeSettingsTab === "info" ? " settings-tab-btn--active" : ""}`}
 					onClick={() => setActiveSettingsTab("info")}
 				>
@@ -2416,6 +2536,151 @@ export function SettingsTab() {
 					</div>
 				</>
 			)}
+			{activeSettingsTab === "engine" && (
+				<>
+					<div className="settings-section-divider">
+						<span>{t("settings.engineSection")}</span>
+					</div>
+
+					<div className="settings-field" data-testid="engine-profile-summary">
+						<label>{t("settings.engineProfile")}</label>
+						<div className="settings-hint">{t("settings.engineProfileHint")}</div>
+						<div
+							style={{
+								display: "grid",
+								gap: 8,
+								gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+								marginTop: 8,
+							}}
+						>
+							{(
+								[
+									[
+										"naia",
+										t("settings.engineNaiaProfile"),
+										t("settings.engineProfileNaiaHint"),
+									],
+									[
+										"byo",
+										t("settings.engineByoProfile"),
+										t("settings.engineProfileByoHint"),
+									],
+									[
+										"local",
+										t("settings.engineLocalRuntimeProfile"),
+										t("settings.engineProfileLocalHint"),
+									],
+								] as const
+							).map(([mode, label, hint]) => (
+								<button
+									key={mode}
+									type="button"
+									data-testid={`engine-profile-${mode}`}
+									className="voice-preview-btn"
+									aria-pressed={engineProfileMode === mode}
+									onClick={() => handleEngineProfileSelect(mode)}
+									style={{
+										alignItems: "flex-start",
+										display: "flex",
+										flexDirection: "column",
+										gap: 4,
+										minHeight: 92,
+										textAlign: "left",
+										whiteSpace: "normal",
+									}}
+								>
+									<strong>{label}</strong>
+									<span>{hint}</span>
+								</button>
+							))}
+						</div>
+						<div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+							<strong>
+								{engineProfileMode === "naia"
+									? t("settings.engineNaiaProfile")
+									: engineProfileMode === "local"
+										? t("settings.engineLocalRuntimeProfile")
+										: t("settings.engineByoProfile")}
+							</strong>
+							<span>
+								{providerLabel} / {selectedModelMeta?.label ?? model}
+							</span>
+						</div>
+					</div>
+
+					<div className="settings-field" data-testid="engine-core-summary">
+						<label>{t("settings.engineCore")}</label>
+						<div className="settings-hint">{t("settings.engineCoreHint")}</div>
+						<div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+							<div>
+								<strong>{t("settings.engineMainLlm")}</strong>:{" "}
+								{providerLabel} / {selectedModelMeta?.label ?? model}
+							</div>
+							<div>
+								<strong>{t("settings.engineSubLlm")}</strong>:{" "}
+								{memoryLlmProvider === "none"
+									? t("settings.engineNotConfigured")
+									: `${memoryLlmProvider}${memoryLlmModel ? ` / ${memoryLlmModel}` : ""}`}
+							</div>
+							<div>
+								<strong>{t("settings.engineEmbedding")}</strong>:{" "}
+								{memoryEmbeddingProvider === "none"
+									? t("settings.engineNotConfigured")
+									: `${memoryEmbeddingProvider}${memoryEmbeddingModel ? ` / ${memoryEmbeddingModel}` : ""}`}
+							</div>
+						</div>
+						<div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+							<button type="button" onClick={() => setActiveSettingsTab("ai")}>
+								{t("settings.engineEditMain")}
+							</button>
+							<button type="button" onClick={() => setActiveSettingsTab("models")}>
+								{t("settings.engineEditModels")}
+							</button>
+						</div>
+					</div>
+
+					<div className="settings-field" data-testid="engine-gpu-summary">
+						<label>{t("settings.engineGpuBudget")}</label>
+						<div className="settings-hint">{t("settings.engineGpuHint")}</div>
+						<div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+							<span>{detectedVramLabel}</span>
+							<span>
+								{t("settings.engineGpuProfile")}:{" "}
+								{activeLocalTier
+									? t(vramTierLabelKey(activeLocalTier.id))
+									: t("settings.engineLocalOff")}
+							</span>
+							<span>
+								{t("settings.engineLocalCapabilities")}: {activeTierCapabilities}
+							</span>
+							<span>{t("settings.engineRuntimeBoundary")}</span>
+						</div>
+						<button
+							type="button"
+							style={{ marginTop: 10 }}
+							onClick={() => setActiveSettingsTab("ai")}
+						>
+							{t("settings.engineEditGpu")}
+						</button>
+					</div>
+
+					<div className="settings-field" data-testid="engine-capability-summary">
+						<label>{t("settings.engineCapabilities")}</label>
+						<div className="settings-hint">{t("settings.engineCapabilitiesHint")}</div>
+						<ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+							{capabilityStatus.map((item) => (
+								<li key={item}>{item}</li>
+							))}
+							<li>
+								{t("settings.engineSupplements")}:{" "}
+								{capabilitySlots.supplements.length > 0
+									? capabilitySlots.supplements.join(", ")
+									: t("settings.engineNone")}
+							</li>
+						</ul>
+					</div>
+				</>
+			)}
 			{activeSettingsTab === "ai" && (
 				<>
 					<div className="settings-section-divider">
@@ -2574,7 +2839,7 @@ export function SettingsTab() {
 					    "off" = no change. Local serving runs via the separate
 					    windows-manager runtime; real-time (RTF) is a measured gate. */}
 					<div className="settings-field">
-						<label htmlFor="local-gpu-tier">로컬 GPU 프로파일</label>
+						<label htmlFor="local-gpu-tier">{t("settings.localGpuProfile")}</label>
 						<select
 							id="local-gpu-tier"
 							value={localGpuTier}
@@ -2582,22 +2847,28 @@ export function SettingsTab() {
 								setLocalGpuTier(e.target.value as typeof localGpuTier)
 							}
 						>
-							<option value="off">사용 안 함</option>
+							<option value="off">{t("settings.engineLocalOff")}</option>
 							<option value="auto">
 								{detectedVramGb != null
-									? `자동 (감지: 약 ${detectedVramGb} GB)`
-									: "자동 (VRAM 미감지 — 수동 선택)"}
+									? t("settings.localGpuAutoDetected").replace(
+											"{vram}",
+											String(detectedVramGb),
+										)
+									: t("settings.localGpuAutoUnknown")}
 							</option>
 							{VRAM_TIERS.map((tier) => (
 								<option key={tier.id} value={tier.id}>
-									{tier.label}
+									{t(vramTierLabelKey(tier.id))}
 								</option>
 							))}
 						</select>
 						<div className="settings-hint">
 							{activeLocalTier
-								? `로컬 제공 능력: ${tierProvidedCapabilities(activeLocalTier).join(", ")} · 실시간(RTF)은 측정 게이트(미보장), 로컬 실행은 windows-manager 런타임 필요`
-								: "GPU VRAM 으로 로컬 아바타·음성 tier 를 선택합니다. 로컬 실행 런타임은 별도(windows-manager)이며 실시간 여부는 측정으로 결정됩니다."}
+								? t("settings.localGpuActiveHint").replace(
+										"{capabilities}",
+										tierProvidedCapabilities(activeLocalTier).join(", "),
+									)
+								: t("settings.localGpuHint")}
 						</div>
 					</div>
 
@@ -3287,18 +3558,6 @@ export function SettingsTab() {
 				<>
 					<div className="settings-section-divider">
 						<span>{t("settings.modelsSection")}</span>
-					</div>
-
-					{/* ── Main LLM (대화) — 상세는 AI 탭, 여기선 요약 + 이동 ── */}
-					<div className="settings-field">
-						<label>{t("settings.modelsMainLlm")}</label>
-						<div className="settings-hint">{t("settings.modelsMainLlmHint")}</div>
-						<div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
-							<span style={{ fontWeight: 600 }}>{provider} / {model || "—"}</span>
-							<button type="button" onClick={() => setActiveSettingsTab("ai")}>
-								{t("settings.modelsEditInAi")}
-							</button>
-						</div>
 					</div>
 
 					{/* ── Small LLM (요약·사실추출) ── */}

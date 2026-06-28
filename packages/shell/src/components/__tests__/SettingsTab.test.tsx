@@ -64,15 +64,19 @@ import { SettingsTab } from "../SettingsTab";
 // 가 ai 와 skills 사이에 추가되며 skills/memory/info 인덱스가 +1 시프트됨.
 const SETTINGS_TAB_INDEX = {
 	general: 0,
-	ai: 1,
-	models: 2,
-	skills: 3,
-	memory: 4,
-	info: 5,
+	engine: 1,
+	ai: 2,
+	models: 3,
+	skills: 4,
+	memory: 5,
+	info: 6,
 } as const;
 function gotoSettingsTab(name: keyof typeof SETTINGS_TAB_INDEX) {
-	const btns = document.querySelectorAll(".settings-tab-btn");
-	fireEvent.click(btns[SETTINGS_TAB_INDEX[name]] as HTMLButtonElement);
+	const btn = document.querySelector(
+		`[data-settings-tab="${name}"]`,
+	) as HTMLButtonElement | null;
+	expect(btn).toBeTruthy();
+	fireEvent.click(btn!);
 }
 
 describe("SettingsTab", () => {
@@ -217,6 +221,7 @@ describe("SettingsTab", () => {
 		// No adkPath set → listNaiaAssets returns [] without calling invoke
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		// Empty state message is shown in the vrm-list
 		expect(screen.getByText(/vrm-files|VRM 파일을 추가/i)).toBeDefined();
 	});
@@ -230,6 +235,7 @@ describe("SettingsTab", () => {
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 
 		await vi.waitFor(() => {
 			// VRM items rendered with alt text matching filenames (minus .vrm)
@@ -241,6 +247,7 @@ describe("SettingsTab", () => {
 	it("renders background image picker with 없음(기본) option", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		// The "clear" button is always present (hardcoded Korean, exact text)
 		expect(screen.getByRole("button", { name: "없음 (기본)" })).toBeDefined();
 	});
@@ -248,6 +255,7 @@ describe("SettingsTab", () => {
 	it("renders VRM custom file button", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		expect(screen.getByText(/커스텀|Custom/i)).toBeDefined();
 	});
 
@@ -259,6 +267,7 @@ describe("SettingsTab", () => {
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 
 		const vrmBtn = await screen.findByAltText("03-OL_Woman");
 		// Click the parent button
@@ -334,6 +343,7 @@ describe("SettingsTab", () => {
 	it("renders theme picker", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		expect(screen.getByTitle("Light")).toBeDefined();
 		expect(screen.getByTitle("Dark")).toBeDefined();
 	});
@@ -365,7 +375,66 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(tabBar).toBeTruthy();
 		// general | ai | models | skills | memory | info (models 통합 탭 추가)
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		expect(tabBtns.length).toBe(6);
+		expect(tabBtns.length).toBe(7);
+	});
+
+	it("renders Profile & Engine entrypoint without moving canonical controls", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-2.5-flash",
+				localGpuTier: "auto",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(6);
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("engine");
+
+		expect(screen.getAllByText("Profile & Engine").length).toBeGreaterThan(0);
+		expect(
+			document.querySelector("[data-testid='engine-profile-summary']"),
+		).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='engine-core-summary']"),
+		).toBeTruthy();
+		expect(document.querySelector("[data-testid='engine-profile-naia']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='engine-profile-byo']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='engine-profile-local']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='engine-gpu-summary']"),
+		).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='engine-capability-summary']"),
+		).toBeTruthy();
+		await vi.waitFor(() => {
+			expect(screen.getByText(/Detected VRAM: 6 GB/)).toBeDefined();
+		});
+		expect(
+			screen.getByText(/6GB: external LLM \+ local voice candidate/),
+		).toBeDefined();
+		expect(screen.getByText(/Local capabilities: tts/)).toBeDefined();
+		expect(screen.getByText("Voice output needs external TTS")).toBeDefined();
+		expect(document.getElementById("provider-select")).toBeNull();
+		expect(document.getElementById("model-select")).toBeNull();
+		expect(document.getElementById("local-gpu-tier")).toBeNull();
+
+		gotoSettingsTab("ai");
+		expect(document.getElementById("provider-select")).toBeTruthy();
+		expect(document.getElementById("model-select")).toBeTruthy();
+		const localGpuTier = document.getElementById(
+			"local-gpu-tier",
+		) as HTMLSelectElement | null;
+		expect(localGpuTier).toBeTruthy();
+		expect(screen.getByLabelText("Local GPU profile")).toBe(localGpuTier);
+		expect(
+			Array.from(localGpuTier!.options).some((option) =>
+				option.textContent?.includes("local voice candidate"),
+			),
+		).toBe(true);
 	});
 
 	it("first tab button is active by default", () => {
@@ -373,13 +442,77 @@ describe("SettingsTab — memory tab (#298)", () => {
 		render(<SettingsTab />);
 		const activeBtn = document.querySelector(".settings-tab-btn--active");
 		expect(activeBtn).toBeTruthy();
-		// The active tab is the first one (settings)
+		// Profile & Engine is the entrypoint.
 		const allBtns = document.querySelectorAll(".settings-tab-btn");
 		expect(allBtns[0]?.classList.contains("settings-tab-btn--active")).toBe(
 			true,
 		);
 		expect(allBtns[1]?.classList.contains("settings-tab-btn--active")).toBe(
 			false,
+		);
+	});
+
+	it("profile cards persist provider, memory routing, and GPU budget atomically", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+
+		fireEvent.click(screen.getByTestId("engine-profile-local"));
+		let saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.provider).toBe("ollama");
+		expect(saved.memoryLlmProvider).toBe("ollama");
+		expect(saved.memoryEmbeddingProvider).toBe("ollama");
+		expect(saved.localGpuTier).toBe("auto");
+		await vi.waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"write_naia_config",
+				expect.objectContaining({
+					adkPath: "D:\\alpha-adk",
+					json: expect.stringContaining('"provider": "ollama"'),
+				}),
+			);
+		});
+		const writeCall = mockInvoke.mock.calls.find(
+			(call) => call[0] === "write_naia_config",
+		);
+		expect(writeCall).toBeTruthy();
+		const written = JSON.parse((writeCall![1] as { json: string }).json);
+		expect(written.memoryLlmProvider).toBe("ollama");
+		expect(written.memoryEmbeddingProvider).toBe("ollama");
+		expect(written.localGpuTier).toBe("auto");
+		gotoSettingsTab("ai");
+		expect((document.getElementById("provider-select") as HTMLSelectElement).value).toBe(
+			"ollama",
+		);
+		expect((document.getElementById("local-gpu-tier") as HTMLSelectElement).value).toBe(
+			"auto",
+		);
+
+		gotoSettingsTab("models");
+		expect(
+			(document.querySelector(
+				'input[name="memory-llm"][value="ollama"]',
+			) as HTMLInputElement).checked,
+		).toBe(true);
+		expect(
+			(document.querySelector(
+				'input[name="memory-embedding"][value="ollama"]',
+			) as HTMLInputElement).checked,
+		).toBe(true);
+
+		gotoSettingsTab("engine");
+		fireEvent.click(screen.getByTestId("engine-profile-byo"));
+		saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.provider).toBe("gemini");
+		expect(saved.memoryLlmProvider).toBeUndefined();
+		expect(saved.memoryEmbeddingProvider).toBeUndefined();
+		expect(saved.localGpuTier).toBeUndefined();
+		gotoSettingsTab("ai");
+		expect((document.getElementById("provider-select") as HTMLSelectElement).value).toBe(
+			"gemini",
+		);
+		expect((document.getElementById("local-gpu-tier") as HTMLSelectElement).value).toBe(
+			"off",
 		);
 	});
 
@@ -403,12 +536,11 @@ describe("SettingsTab — memory tab (#298)", () => {
 		render(<SettingsTab />);
 		// Click the memory tab button (index 3 in the 5-tab bar)
 		gotoSettingsTab("memory");
-		const tabBtns = document.querySelectorAll(".settings-tab-btn");
 		// The memory tab button is now active
 		expect(
-			tabBtns[SETTINGS_TAB_INDEX.memory]?.classList.contains(
-				"settings-tab-btn--active",
-			),
+			document
+				.querySelector('[data-settings-tab="memory"]')
+				?.classList.contains("settings-tab-btn--active"),
 		).toBe(true);
 		// Memory section divider should now appear
 		const dividerTexts = Array.from(
@@ -463,6 +595,7 @@ describe("SettingsTab — agent health check (#296)", () => {
 	it("renders agent health section with check button", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		expect(
 			document.querySelector("[data-testid='agent-health-section']"),
 		).toBeTruthy();
@@ -474,6 +607,7 @@ describe("SettingsTab — agent health check (#296)", () => {
 	it("shows idle status initially", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		const statusEl = document.querySelector(
 			"[data-testid='agent-health-status']",
 		) as HTMLElement;
@@ -485,6 +619,7 @@ describe("SettingsTab — agent health check (#296)", () => {
 	it("clicking check button calls gateway_health invoke", async () => {
 		mockInvoke.mockResolvedValue(true);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		const btn = document.querySelector(
 			"[data-testid='agent-health-check-btn']",
 		) as HTMLButtonElement;
@@ -504,6 +639,7 @@ describe("SettingsTab — agent health check (#296)", () => {
 			return [];
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		const btn = document.querySelector(
 			"[data-testid='agent-health-check-btn']",
 		) as HTMLButtonElement;
@@ -525,6 +661,7 @@ describe("SettingsTab — agent health check (#296)", () => {
 			return [];
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		const btn = document.querySelector(
 			"[data-testid='agent-health-check-btn']",
 		) as HTMLButtonElement;
@@ -543,13 +680,13 @@ describe("SettingsTab — agent health check (#296)", () => {
 	it("agent-health-section is on the settings tab (not memory tab)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		// By default on settings tab — health section should be visible
 		expect(
 			document.querySelector("[data-testid='agent-health-section']"),
 		).toBeTruthy();
 		// Switch to memory tab — health section should disappear
-		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		fireEvent.click(tabBtns[1]!);
+		gotoSettingsTab("memory");
 		expect(
 			document.querySelector("[data-testid='agent-health-section']"),
 		).toBeNull();
@@ -561,6 +698,7 @@ describe("SettingsTab — agent health check (#296)", () => {
 			return [];
 		});
 		render(<SettingsTab />);
+		gotoSettingsTab("general");
 		const btn = document.querySelector(
 			"[data-testid='agent-health-check-btn']",
 		) as HTMLButtonElement;

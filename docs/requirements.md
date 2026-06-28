@@ -67,13 +67,13 @@
 
 ## 기능 요구사항 (FR) — VRAM tier 로컬 프로파일 (#2, 셸측 슬라이스 — 2026-06-25)
 
-> 범위: naia-omni-windows-manager#2 의 **naia-os UI측만**. 로더(fetch/launch)·auto-download = 4070 RTF 하드웨어 게이트(model-infra#19)=DEFER. 정본 tier manifest = model-infra(이 repo 아님). **hard rule F1: 측정 RTF 없이 realtime 단정 금지.** 트랙: `naia-vram-tier-capability-bridge-2026-06-25.md`.
+> 범위: private deployment draft 의 **naia-os UI측만**. 로더(fetch/launch)·auto-download = device RTF hardware gate=DEFER. 정본 tier manifest = private tier manifest (outside this repo). **hard rule F1: 측정 RTF 없이 realtime 단정 금지.** 트랙: `naia-vram-tier-capability-bridge-2026-06-25.md`.
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
 | **FR-VRAM.1** | GPU VRAM 감지(Rust `detect_gpu_vram`, nvidia-smi) → 설정 UI 가 tier(6/12/24G+) 표시·수동 override. 감지 실패=null→수동 선택 | S-VRAM·UC12 | gpu 파싱 단위 · `vram-tiers.test.ts` |
 | **FR-VRAM.2** | `selectVramTier(vramGb)`+`tierProvidedCapabilities` → **opt-in 시** effectiveCapabilities 에 fold(deriveSettingsSlots 반영, 로컬 tier 가 커버하는 외부 슬롯 숨김). **기본 off=무변경**(안전 기본값) | S-VRAM | `vram-tiers.test.ts` |
-| **FR-VRAM.3** | footprint = model-infra#19 측정(영상 아바타 모델 2.6G + TTS 모델 6.7G). 각 tier `realtime: measurement-gated`(F1) — RTF 단정 0. 로컬 serving/auto-download = DEFER(loader 게이트) | — | F1 가드 테스트 / DEFER |
+| **FR-VRAM.3** | footprint = private footprint measurement(avatar + TTS models). 각 tier `realtime: measurement-gated`(F1) — RTF 단정 0. 로컬 serving/auto-download = DEFER(loader 게이트) | — | F1 가드 테스트 / DEFER |
 
 > NFR: NFR-isolation(VRAM 미감지·tier off 시 무회귀) · F1(measurement-gated, RTF 단정 금지).
 

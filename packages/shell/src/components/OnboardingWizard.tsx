@@ -5,13 +5,19 @@ import { useEffect, useRef, useState } from "react";
 import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeAgentKey, writeNaiaConfig } from "../lib/adk-store";
 import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
 import { isNewCore, sendAuthUpdate } from "../lib/chat-service";
-import { type AppConfig, NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
+import { type AppConfig, NAIA_WEB_BASE_URL, loadConfig, saveConfigSecure } from "../lib/config";
+import { getDefaultLlmModel } from "../lib/llm";
 import {
 	makeOnboardingSession,
 	type OnboardingSession,
 	type StepInput,
 } from "../lib/onboarding-core";
 import { getLocale, t } from "../lib/i18n";
+import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import {
+	type VramTierId,
+	selectVramTier,
+} from "../lib/capabilities/vram-tiers";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 
@@ -35,6 +41,10 @@ const STEPS_WITHOUT_NAIA: Step[] = [
 	"provider",
 	"complete",
 ];
+
+function vramTierLabelKey(id: VramTierId) {
+	return `settings.vramTier.${id}` as const;
+}
 
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "ogg", "avi"]);
 function isVideo(url: string) {
@@ -133,6 +143,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [apiKeyMode, setApiKeyMode] = useState(false);
 	const [naiaLoginWaiting, setNaiaLoginWaiting] = useState(false);
 	const [naiaLoginDone, setNaiaLoginDone] = useState(hasNaiaKey);
+	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
 	// Auth payload from OAuth — held until wizard completes
 	const [naiaAuthPayload, setNaiaAuthPayload] = useState<NaiaAuthPayload | null>(null);
 	// memoryAI step state — default to "naia" when Naia key already present
@@ -144,6 +155,25 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	>(hasNaiaKey ? "naia" : "none");
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const latestRef = useRef<OnboardingSnapshot | null>(null);
+	const recommendedVramTier =
+		detectedVramGb != null ? selectVramTier(detectedVramGb) : null;
+	const onboardingGpuSummary =
+		detectedVramGb != null
+			? t("onboard.connect.vramDetected").replace(
+					"{vram}",
+					String(detectedVramGb),
+				)
+			: t("onboard.connect.vramUnknown");
+	const onboardingGpuRecommendation = recommendedVramTier
+		? t("onboard.connect.vramTier").replace(
+				"{tier}",
+				t(vramTierLabelKey(recommendedVramTier.id)),
+			)
+		: t("onboard.connect.vramCloud");
+
+	useEffect(() => {
+		detectGpuVramGb().then(setDetectedVramGb);
+	}, []);
 
 	// UC12 step-flow graft(step2): isNewCore 일 때 assets/단계 전이/auth 를 core 컨트롤러 경유(mirror).
 	// React=nav 권위(back/skip 견고), core=forward mirror(draft 누적·순서 불변식·provider-naia 게이트).
@@ -400,7 +430,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		}
 	}
 
-	function saveCompletedConfig(
+	async function saveCompletedConfig(
 		auth?: NaiaAuthPayload,
 		snapshot: OnboardingSnapshot = {
 			agentName,
@@ -417,9 +447,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			memoryLlmProvider,
 		},
 	) {
+		const isByo = !!snapshot.apiKey.trim() && !snapshot.naiaLoginDone && !auth;
 		const base = loadConfig() ?? {
-			provider: "nextain",
-			model: "gemini-2.5-flash",
+			provider: isByo ? "gemini" : "nextain",
+			model: isByo ? getDefaultLlmModel("gemini") : "gemini-2.5-flash",
 			apiKey: "",
 		};
 		const vrmPath = snapshot.selectedVrm || DEFAULT_AVATAR_MODEL;
@@ -459,6 +490,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				: {}),
 			workspaceRoot: getAdkPath() || base.workspaceRoot || undefined,
 			onboardingComplete: true,
+			...(recommendedVramTier ? { localGpuTier: recommendedVramTier.id } : {}),
 			...(snapshot.memoryEmbeddingProvider !== "none"
 				? { memoryEmbeddingProvider: snapshot.memoryEmbeddingProvider }
 				: {}),
@@ -466,14 +498,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				? { memoryLlmProvider: snapshot.memoryLlmProvider }
 				: {}),
 		};
-		saveConfig(completedFlat as unknown as AppConfig);
+		await saveConfigSecure(completedFlat as unknown as AppConfig);
 
 		setAvatarModelPath(vrmPath);
 		return completedFlat;
 	}
 
-	function handleComplete() {
-		const completedFlat = saveCompletedConfig(naiaAuthPayload ?? undefined);
+	async function handleComplete() {
+		const completedFlat = await saveCompletedConfig(naiaAuthPayload ?? undefined);
 		// UC12 graft (isNewCore): 새 core OnboardingController.completeWith(§D 신규계약)가
 		// categorize(secret/ui/agent) + persist(secret=키체인 전담, stale-credential fix) + markComplete.
 		// 미설정(기본)=기존 writeNaiaConfig/writeAgentKey 경로 보존(비파괴). UC1 chat-service graft 와 동일.
@@ -484,8 +516,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			const saved = loadConfig();
 			if (saved) void writeNaiaConfig({ ...(saved as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(saved) });
 			// Write naiaKey to OS keychain so standalone naia-agent can read it.
-			if (saved?.naiaKey) void writeAgentKey(saved.provider || "nextain", "naiaKey", saved.naiaKey);
-			if (saved?.apiKey) void writeAgentKey(saved.provider || "anthropic", "apiKey", saved.apiKey);
+			if (typeof completedFlat.naiaKey === "string") void writeAgentKey(String(completedFlat.provider || "nextain"), "naiaKey", completedFlat.naiaKey);
+			if (typeof completedFlat.apiKey === "string") void writeAgentKey(String(completedFlat.provider || "anthropic"), "apiKey", completedFlat.apiKey);
 			// (gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config 영속=naia-settings,
 			//  naiaKey/apiKey=키체인(위 writeAgentKey). memory 설정 연결=다른 세션 재설계.)
 		}
@@ -736,11 +768,30 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 				{step === "provider" && (
 					<>
-						<h2 className="onboarding-step__title">{t("onboard.lab.title")}</h2>
+						<h2 className="onboarding-step__title">
+							{t("onboard.connect.title")}
+						</h2>
+						<p className="onboarding-step__hint">
+							{t("onboard.connect.description")}
+						</p>
+						<div className="onboarding-step__provider-done">
+							<span className="onboarding-step__provider-check">
+								{t("onboard.connect.gpuBadge")}
+							</span>
+							<p>
+								{onboardingGpuSummary}
+								<br />
+								{onboardingGpuRecommendation}
+								<br />
+								{t("onboard.connect.runtimeBoundary")}
+							</p>
+						</div>
 						{naiaLoginDone ? (
 							<>
 								<div className="onboarding-step__provider-done">
-									<span className="onboarding-step__provider-check">✓</span>
+									<span className="onboarding-step__provider-check">
+										{t("onboard.connect.okBadge")}
+									</span>
 									<p>{t("onboard.lab.connected")}</p>
 								</div>
 								<button
@@ -749,19 +800,19 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									onClick={goNext}
 									style={{ marginTop: 16 }}
 								>
-									다음 →
+									{t("onboard.next")}
 								</button>
 							</>
-					) : apiKeyMode ? (
+						) : apiKeyMode ? (
 							<>
 								<p className="onboarding-step__hint">
-									API 키를 입력하세요. 나중에 설정에서 변경할 수 있어요.
+									{t("onboard.connect.byoHint")}
 								</p>
 								<input
 									className="onboarding-step__input"
 									value={apiKey}
 									onChange={(e) => setApiKey(e.target.value)}
-									placeholder="sk-... / gw-..."
+									placeholder={t("onboard.connect.apiKeyPlaceholder")}
 									autoFocus
 								/>
 								<button
@@ -769,28 +820,43 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 									className="onboarding-step__link"
 									onClick={() => setApiKeyMode(false)}
 								>
-									← Naia 로그인으로 돌아가기
+									{t("onboard.connect.backToNaia")}
 								</button>
 							</>
 						) : (
 							<>
-								<button
-									type="button"
-									className="onboarding-step__naia-btn"
-									onClick={handleNaiaLogin}
-									disabled={naiaLoginWaiting}
+								<div
+									style={{
+										display: "grid",
+										gridTemplateColumns: "1fr 1fr",
+										gap: 12,
+										marginTop: 16,
+									}}
 								>
-									{naiaLoginWaiting
-										? t("onboard.lab.waiting")
-										: t("onboard.lab.login")}
-								</button>
-								<p className="onboarding-step__hint" style={{ whiteSpace: "pre-line" }}>{t("onboard.lab.naiaHint")}</p>
+									<button
+										type="button"
+										className="onboarding-step__naia-btn"
+										onClick={handleNaiaLogin}
+										disabled={naiaLoginWaiting}
+									>
+										{naiaLoginWaiting
+											? t("onboard.lab.waiting")
+											: t("onboard.connect.naiaPath")}
+									</button>
+									<button
+										type="button"
+										className="onboarding-step__link"
+										onClick={() => setApiKeyMode(true)}
+									>
+										{t("onboard.connect.byoPath")}
+									</button>
+								</div>
 								<button
 									className="onboarding-step__link onboarding-step__link--muted"
 									type="button"
 									onClick={goNext}
 								>
-									나중에 설정 →
+									{t("onboard.connect.setupLater")}
 								</button>
 							</>
 						)}
