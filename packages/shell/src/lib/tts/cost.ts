@@ -17,6 +17,8 @@ const GOOGLE_TIER_PRICING: Record<string, number> = {
 /** Flat-rate providers ($/char). */
 const FLAT_RATE_PER_CHAR: Record<string, number> = {
 	edge: 0,
+	vllm: 0, // local GPU, free
+	"naia-local-voice": 0, // local GPU (VoxCPM2), free
 	openai: 15 / 1_000_000, // $15/1M chars (tts-1)
 	elevenlabs: 0.3 / 1_000, // $0.30/1K chars
 };

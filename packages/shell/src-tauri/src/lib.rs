@@ -2632,7 +2632,7 @@ async fn gemini_live_disconnect(state: tauri::State<'_, AppState>) -> Result<(),
 /// Only whitelisted subdirs are allowed.
 #[tauri::command]
 async fn list_naia_assets(adk_path: String, subdir: String) -> Result<Vec<String>, String> {
-    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics"];
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "nva-files"];
     if !ALLOWED.contains(&subdir.as_str()) {
         return Err(format!("Invalid subdir: {subdir}"));
     }
@@ -2642,18 +2642,174 @@ async fn list_naia_assets(adk_path: String, subdir: String) -> Result<Vec<String
     if !dir.is_dir() {
         return Ok(vec![]);
     }
-    let mut files = vec![];
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_file() {
+    // nva-files: list directories (.nva bundles); others: list files.
+    let want_dir = subdir == "nva-files";
+    let mut entries = vec![];
+    if let Ok(dir_entries) = std::fs::read_dir(&dir) {
+        for entry in dir_entries.flatten() {
+            if entry.path().is_dir() == want_dir {
                 if let Some(name) = entry.file_name().to_str() {
-                    files.push(name.to_string());
+                    entries.push(name.to_string());
                 }
             }
         }
     }
-    files.sort();
-    Ok(files)
+    entries.sort();
+    Ok(entries)
+}
+
+/// Resolve a unique destination path inside `dir`. If `name.ext` exists,
+/// appends `_1`, `_2`, etc.
+fn unique_dest(dir: &std::path::Path, name: &str, ext: &str) -> std::path::PathBuf {
+    // `name` already includes the extension for files (e.g. "foo.vrm");
+    // ext is only used for building the counter-suffixed fallback name.
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let stem = if ext.is_empty() {
+        name.to_string()
+    } else {
+        name.trim_end_matches(format!(".{ext}").as_str())
+            .to_string()
+    };
+    let mut i = 1;
+    loop {
+        let c = if ext.is_empty() {
+            dir.join(format!("{stem}_{i}"))
+        } else {
+            dir.join(format!("{stem}_{i}.{ext}"))
+        };
+        if !c.exists() {
+            return c;
+        }
+        i += 1;
+    }
+}
+
+/// Recursively copy a directory tree.
+fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<String, String> {
+    std::fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    if let Ok(entries) = std::fs::read_dir(src) {
+        for entry in entries.flatten() {
+            let src_path = entry.path();
+            let dest_path = dest.join(entry.file_name());
+            // Skip symlinks to prevent infinite loops / escaping the copy root.
+            if src_path.is_symlink() {
+                continue;
+            }
+            if src_path.is_dir() {
+                copy_dir_recursive(&src_path, &dest_path)?;
+            } else {
+                std::fs::copy(&src_path, &dest_path).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(dest
+        .to_str()
+        .ok_or_else(|| "Invalid destination path".to_string())?
+        .to_string())
+}
+
+/// Copy a file into `{adk_path}/naia-settings/{subdir}/`. Used by the avatar /
+/// background file-import UI (#12). Only whitelisted subdirs + file extensions.
+#[tauri::command]
+async fn import_naia_asset(
+    adk_path: String,
+    subdir: String,
+    source_path: String,
+) -> Result<String, String> {
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "nva-files"];
+    if !ALLOWED.contains(&subdir.as_str()) {
+        return Err(format!("Invalid subdir: {subdir}"));
+    }
+    let src = std::path::PathBuf::from(&source_path);
+
+    // nva-files: directory copy (.nva bundle = directory with manifest.json + clips/)
+    if subdir == "nva-files" {
+        if !src.is_dir() {
+            return Err("Source must be a directory for nva-files".to_string());
+        }
+        let dirname = src
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| "Invalid source directory name".to_string())?
+            .to_string();
+        let dest_dir = std::path::PathBuf::from(&adk_path)
+            .join("naia-settings")
+            .join(&subdir);
+        std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+        let dest = unique_dest(&dest_dir, &dirname, "");
+        copy_dir_recursive(&src, &dest)?;
+        return Ok(dest
+            .to_str()
+            .ok_or_else(|| "Invalid destination path".to_string())?
+            .to_string());
+    }
+
+    let filename = src
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid source filename".to_string())?
+        .to_string();
+
+    // Extension whitelist (prevent arbitrary file drop).
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    let allowed_exts: &[&str] = match subdir.as_str() {
+        "vrm-files" => &["vrm"],
+        "background" => &["png", "jpg", "jpeg", "webp", "gif", "bmp"],
+        "bgm-musics" => &["mp3", "wav", "ogg", "flac", "m4a"],
+        _ => return Err(format!("Invalid subdir: {subdir}")),
+    };
+    if !allowed_exts.contains(&ext.as_str()) {
+        return Err(format!("File type '.{ext}' not allowed for {subdir}"));
+    }
+
+    let dir = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join(&subdir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = unique_dest(&dir, &filename, &ext);
+
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(dest
+        .to_str()
+        .ok_or_else(|| "Invalid destination path".to_string())?
+        .to_string())
+}
+
+/// Delete a file from `{adk_path}/naia-settings/{subdir}/{filename}` (#13).
+/// Refuses path traversal (filename must not contain separators).
+#[tauri::command]
+async fn delete_naia_asset(
+    adk_path: String,
+    subdir: String,
+    filename: String,
+) -> Result<(), String> {
+    const ALLOWED: &[&str] = &["vrm-files", "background", "bgm-musics", "nva-files"];
+    if !ALLOWED.contains(&subdir.as_str()) {
+        return Err(format!("Invalid subdir: {subdir}"));
+    }
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Err("Invalid filename".to_string());
+    }
+    let path = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join(&subdir)
+        .join(&filename);
+    if !path.exists() {
+        return Err("File not found".to_string());
+    }
+    // nva-files: remove directory; others: remove file.
+    if subdir == "nva-files" {
+        std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())
+    }
 }
 
 /// Read `{adk_path}/naia-settings/config.json`. Returns empty string if not found.
@@ -3532,6 +3688,8 @@ pub fn run() {
             gemini_live_disconnect,
             // naia-settings asset commands
             list_naia_assets,
+            import_naia_asset,
+            delete_naia_asset,
             read_naia_config,
             write_naia_config,
             read_naia_ui_config,
@@ -3579,6 +3737,7 @@ pub fn run() {
             panel::panel_remove_installed,
             panel::panel_read_file,
             panel::panel_run_shell,
+            panel::panel_install,
             workspace::workspace_list_dirs,
             workspace::workspace_read_file,
             workspace::workspace_read_file_bytes,

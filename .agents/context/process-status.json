@@ -15,9 +15,9 @@
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
     "started": "2026-06-08T00:00:00Z",
-    "last_updated": "2026-06-29T00:00:00Z",
+    "last_updated": "2026-06-29T19:05:00Z",
     "status": "in_progress",
-    "note": "F0~F3 계약(codex/gemini/GLM 교차리뷰 수렴) + 코드 스캐폴드(async, src/main). 계약+통합 테스트 67/67. 실제 부팅(graft)=루크 머신 대기. | 2026-06-18 선행 feature(사용자 우선순위, foundation tranche와 병행): 대화 transcript 영속/로드 — S05a write=agent ConversationLogPort / S05b read=shell Rust IPC(E1 agent 독립). FR-CONV.1~5(requirements.md). 음성 turn→agent·멀티모달 잠재기억=Phase2+(DEFER). 진행 트랙=alpha-adk .agents/progress/new-naia-conversation-history-persistence-2026-06-18.md. | 2026-06-24 병행 feature(셸, 사용자 우선순위): 워크스페이스 전환 설정 복원 — S72/FR-WS.1~3. 전환 핸들러가 config.json+ui-config.json 복원(현 버그=전환이 ADK포인터만 변경해 페르소나/VRM 안 바뀜, AdkSetupScreen 과 비대칭). 트랙=.agents/progress/naia-os-agent-wiring-rename-fix-2026-06-24.md. | 2026-06-29 병행 feature(셸, #gate-slots): S-SLOT 게이트+6 클라우드 슬롯 설정 모델 — FR-SLOT.1~5. P04(계약 `lib/slots/model.ts`+`settings-slots.contract.test.ts` 23/23 → 구현 1.1/1.2a/1.3/1.5 → Playwright E2E 3/3)→P05 Done. 클라우드 슬롯측 완료. 3-profile 잔재 제거(R1-7), §9 #5 모델문자열 해결. DEFER=1.2b/1.4(wm)·Phase 6. 트랙=alpha-adk .agents/progress/naia-model-slots-architecture-2026-06-28.md. (주: 본 이슈=transplant의 P04 integration-reafferance 는 라이브 trace 대기로 유지 — slots feature 는 별도 V모델 사이클.)"
+    "note": "F0~F3 계약+스캐폴드(async, src/main). 계약+통합 테스트 67/67. | 2026-06-29 세션2+3: S-SLOT FR-SLOT.4 설정 탭 9개 재구성 완료 (#1~#13 전체 구현). profile/brain/voice/avatar/persona/memory/knowledge/skills/general. tsc 클린, test 35/35, cargo check 통과. 커밋 미수행(8개 파일). 트랙=alpha-adk .agents/progress/naia-os-settings-tab-restructure-2026-06-29.md §7."
   },
 
   "sdlc_gates": {

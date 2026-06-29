@@ -72,8 +72,8 @@ async function openSlotSettings(page: Page, opts: SetupOpts = {}): Promise<void>
 	await page.goto("/");
 	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 15_000 });
 	await page.getByRole("button", { name: /^(Settings|설정)$/ }).click();
-	// S-SLOT 게이트+그룹 = engine 탭(Profile & Engine 엔트리포인트).
-	await page.locator('[data-settings-tab="engine"]').click();
+	// S-SLOT 게이트+그룹 = profile 탭(프로파일 엔트리포인트).
+	await page.locator('[data-settings-tab="profile"]').click();
 }
 
 test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {

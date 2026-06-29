@@ -56,20 +56,20 @@ vi.mock("../../lib/chat-service", () => ({
 
 import { SettingsTab } from "../SettingsTab";
 
-// SettingsTab was rewritten into a 5-tab layout (#313): the old flat / 2-tab
-// structure split into general | ai | skills | memory | info. Provider+API key,
-// STT/TTS and the model list moved to the "ai" tab; memory to "memory";
-// log viewer + danger zone to "info". Tests navigate via this helper.
-// 탭 순서: general | ai | models | skills | memory | info. "models"(통합 AI 모델 탭, 3-컴포넌트)
-// 가 ai 와 skills 사이에 추가되며 skills/memory/info 인덱스가 +1 시프트됨.
+// SettingsTab 9-tab restructure (#FR-SLOT.4, 2026-06-29):
+// profile | brain | voice | avatar | persona | memory | knowledge | skills | general
+// engine→profile, ai→brain, models→memory(병합), info→general(흡수).
+// voice/avatar/persona/knowledge = 신규(Phase1 placeholder). Tests navigate via this helper.
 const SETTINGS_TAB_INDEX = {
-	general: 0,
-	engine: 1,
-	ai: 2,
-	models: 3,
-	skills: 4,
+	profile: 0,
+	brain: 1,
+	voice: 2,
+	avatar: 3,
+	persona: 4,
 	memory: 5,
-	info: 6,
+	knowledge: 6,
+	skills: 7,
+	general: 8,
 } as const;
 function gotoSettingsTab(name: keyof typeof SETTINGS_TAB_INDEX) {
 	const btn = document.querySelector(
@@ -110,7 +110,7 @@ describe("SettingsTab", () => {
 			},
 		]);
 		render(<SettingsTab />);
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 
 		await vi.waitFor(() => {
 			expect(screen.getByText("test-model-1 ($1.5 / $2.5)")).toBeDefined();
@@ -128,7 +128,7 @@ describe("SettingsTab", () => {
 			},
 		]);
 		render(<SettingsTab />);
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 
 		await vi.waitFor(() => {
 			expect(screen.getByText(/gemini-ultra-test/)).toBeDefined();
@@ -138,7 +138,7 @@ describe("SettingsTab", () => {
 	it("renders provider select and API key input", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 		const providerSelect = document.getElementById("provider-select");
 		expect(providerSelect).toBeDefined();
 		expect(screen.getByLabelText(/^API/i)).toBeDefined();
@@ -147,7 +147,7 @@ describe("SettingsTab", () => {
 	it("hides API key input for Naia (nextain) provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 		const providerSelect = document.getElementById(
 			"provider-select",
 		) as HTMLSelectElement;
@@ -192,11 +192,11 @@ describe("SettingsTab", () => {
 	it("shows STT provider selector with vosk option", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("ai");
+		gotoSettingsTab("voice");
 
-		// STT provider selector is in the voice section of the AI tab
-		const sttSelect = screen
-			.getAllByText(/Naia Voice/)[0]
+		// STT provider selector is in the voice tab
+		const sttSelect = document
+			.querySelector('select option[value="vosk"]')
 			?.closest("select") as HTMLSelectElement;
 		expect(sttSelect).toBeDefined();
 		// Default is empty (no provider set) — vosk is an available option
@@ -206,7 +206,7 @@ describe("SettingsTab", () => {
 	it("hides API key input for Claude Code CLI provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 		const providerSelect = document.getElementById(
 			"provider-select",
 		) as HTMLSelectElement;
@@ -221,8 +221,8 @@ describe("SettingsTab", () => {
 		// No adkPath set → listNaiaAssets returns [] without calling invoke
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("general");
 		// Empty state message is shown in the vrm-list
+		gotoSettingsTab("avatar");
 		expect(screen.getByText(/vrm-files|VRM 파일을 추가/i)).toBeDefined();
 	});
 
@@ -235,7 +235,7 @@ describe("SettingsTab", () => {
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
-		gotoSettingsTab("general");
+		gotoSettingsTab("avatar");
 
 		await vi.waitFor(() => {
 			// VRM items rendered with alt text matching filenames (minus .vrm)
@@ -247,16 +247,16 @@ describe("SettingsTab", () => {
 	it("renders background image picker with 없음(기본) option", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
+		// Background is now a dropdown in general tab (under theme, #10)
 		gotoSettingsTab("general");
-		// The "clear" button is always present (hardcoded Korean, exact text)
-		expect(screen.getByRole("button", { name: "없음 (기본)" })).toBeDefined();
+		expect(screen.getByText(/없음 \(기본\)|None \(Default\)/i)).toBeDefined();
 	});
 
-	it("renders VRM custom file button", () => {
+	it("renders VRM import file button", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("general");
-		expect(screen.getByText(/커스텀|Custom/i)).toBeDefined();
+		gotoSettingsTab("avatar");
+		expect(screen.getByText(/파일 추가|Add file/i)).toBeDefined();
 	});
 
 	it("selects VRM item from naia-settings and marks as active", async () => {
@@ -267,7 +267,7 @@ describe("SettingsTab", () => {
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
-		gotoSettingsTab("general");
+		gotoSettingsTab("avatar");
 
 		const vrmBtn = await screen.findByAltText("03-OL_Woman");
 		// Click the parent button
@@ -313,6 +313,10 @@ describe("SettingsTab", () => {
 
 	it("saves config with VRM model from naia-settings", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-3.5-flash" }),
+		);
 		mockInvoke.mockImplementation((cmd: string) => {
 			if (cmd === "list_naia_assets")
 				return Promise.resolve(["03-OL_Woman.vrm"]);
@@ -320,24 +324,14 @@ describe("SettingsTab", () => {
 		});
 		render(<SettingsTab />);
 
-		// Set API key (AI tab); state persists across tab switches
-		gotoSettingsTab("ai");
-		const apiInput = screen.getByLabelText(/^API/i);
-		fireEvent.change(apiInput, { target: { value: "test-key" } });
-
-		// VRM picker lives on the general tab — switch back, then select it
-		gotoSettingsTab("general");
+		// VRM picker lives on the avatar tab — select VRM (auto-applies via handleVrmSelect)
+		gotoSettingsTab("avatar");
 		const vrmImg = await screen.findByAltText("03-OL_Woman");
 		fireEvent.click(vrmImg.closest("button")!);
 
-		// Save via the settings-save-btn (button with "Apply" or "적용" text)
-		const saveBtn = document.querySelector(".settings-save-btn") as HTMLElement;
-		fireEvent.click(saveBtn);
-
-		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.apiKey).toBe("test-key");
-		// vrmModel is the full naia-settings path
-		expect(saved.vrmModel).toContain("03-OL_Woman.vrm");
+		// VRM auto-applied — verify immediately without Save
+		const savedVrm = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(savedVrm.vrmModel).toContain("03-OL_Woman.vrm");
 	});
 
 	it("renders theme picker", () => {
@@ -352,7 +346,7 @@ describe("SettingsTab", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		// Provider/API key + the save error banner live on the AI tab.
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 		const saveBtn = document.querySelector(".settings-save-btn") as HTMLElement;
 		fireEvent.click(saveBtn);
 		expect(screen.getByText(/입력해주세요|enter.*api/i)).toBeDefined();
@@ -373,9 +367,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		render(<SettingsTab />);
 		const tabBar = document.querySelector(".settings-tab-bar");
 		expect(tabBar).toBeTruthy();
-		// general | ai | models | skills | memory | info (models 통합 탭 추가)
+		// 9-tab restructure: profile|brain|voice|avatar|persona|memory|knowledge|skills|general
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		expect(tabBtns.length).toBe(7);
+		expect(tabBtns.length).toBe(9);
 	});
 
 	it("renders S-SLOT gate + 3 groups (Brain/Voice/Avatar) without moving canonical controls", async () => {
@@ -393,7 +387,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
-		gotoSettingsTab("engine");
+		gotoSettingsTab("profile");
 
 		// FR-SLOT.1: gate section — naiaKey present → Naia account mode.
 		expect(document.querySelector("[data-testid='slot-gate']")).toBeTruthy();
@@ -424,7 +418,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 		// Canonical controls remain on ai tab, not engine.
 		expect(document.getElementById("provider-select")).toBeNull();
 		expect(document.getElementById("model-select")).toBeNull();
-		gotoSettingsTab("ai");
+		gotoSettingsTab("brain");
 		expect(document.getElementById("provider-select")).toBeTruthy();
 		expect(document.getElementById("model-select")).toBeTruthy();
 	});
@@ -456,7 +450,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 		);
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
-		gotoSettingsTab("engine");
+		gotoSettingsTab("profile");
 
 		// 게이트 = naia → "Gemini 기본값 적용" 버튼. 클릭 시 미설정 슬롯에 기본값(R2-1, §9 #5).
 		fireEvent.click(screen.getByTestId("slot-apply-defaults"));
@@ -518,7 +512,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		// #313 rewrite: the danger zone moved to the info tab.
-		gotoSettingsTab("info");
+		gotoSettingsTab("general");
 		expect(document.querySelector(".settings-danger-zone")).toBeTruthy();
 		// Switch to memory tab — danger zone hidden
 		gotoSettingsTab("memory");
@@ -529,9 +523,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		// Info tab → memory tab → back to info tab (danger zone lives on info).
-		gotoSettingsTab("info");
+		gotoSettingsTab("general");
 		gotoSettingsTab("memory");
-		gotoSettingsTab("info");
+		gotoSettingsTab("general");
 		// Danger zone back
 		expect(document.querySelector(".settings-danger-zone")).toBeTruthy();
 		// Memory section divider gone
@@ -699,7 +693,7 @@ describe("SettingsTab — log viewer (#297)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		// #313 rewrite: the log viewer moved to the info tab.
-		gotoSettingsTab("info");
+		gotoSettingsTab("general");
 		expect(
 			document.querySelector("[data-testid='log-viewer-btn']"),
 		).toBeTruthy();
@@ -709,7 +703,7 @@ describe("SettingsTab — log viewer (#297)", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		// Info tab: visible
-		gotoSettingsTab("info");
+		gotoSettingsTab("general");
 		expect(
 			document.querySelector("[data-testid='log-viewer-btn']"),
 		).toBeTruthy();
@@ -727,7 +721,7 @@ describe("SettingsTab — log viewer (#297)", () => {
 		mockOpenPath.mockResolvedValue(undefined);
 
 		render(<SettingsTab />);
-		gotoSettingsTab("info");
+		gotoSettingsTab("general");
 		const btn = document.querySelector(
 			"[data-testid='log-viewer-btn']",
 		) as HTMLButtonElement;

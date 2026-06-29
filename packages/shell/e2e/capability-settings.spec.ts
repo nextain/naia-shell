@@ -84,8 +84,8 @@ async function gotoModelSettings(page: Page, opts: SetupOpts = {}): Promise<void
 	await page.goto("/");
 	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10_000 });
 	await page.getByRole("button", { name: /^(설정|Settings)$/ }).click();
-	// model-select lives in the main/voice tab; use stable tab ids instead of copy.
-	await page.locator('[data-settings-tab="ai"]').click();
+	// model-select lives in the brain tab; use stable tab ids instead of copy.
+	await page.locator('[data-settings-tab="brain"]').click();
 	await expect(page.locator("#model-select")).toBeVisible({ timeout: 10_000 });
 }
 
@@ -153,12 +153,12 @@ test.describe("VRAM tier local profile (#2)", () => {
 		await expect(tierSelect).toHaveValue("off");
 	});
 
-	test("Profile & Engine selects profile and canonical controls remain on AI tab", async ({
+	test("Profile tab selects profile and canonical controls remain on Brain tab", async ({
 		page,
 	}) => {
 		await gotoModelSettings(page, { vramGb: 6, model: "gemini-3.5-flash" });
 
-		await page.locator('[data-settings-tab="engine"]').click();
+		await page.locator('[data-settings-tab="profile"]').click();
 		await expect(page.locator('[data-testid="engine-profile-summary"]')).toBeVisible({
 			timeout: 5_000,
 		});
@@ -174,7 +174,7 @@ test.describe("VRAM tier local profile (#2)", () => {
 
 		await page.locator('[data-testid="engine-profile-local"]').click();
 
-		await page.locator('[data-settings-tab="ai"]').click();
+		await page.locator('[data-settings-tab="brain"]').click();
 		await expect(page.locator("#provider-select")).toBeVisible({ timeout: 5_000 });
 		await expect(page.locator("#provider-select")).toHaveValue("ollama");
 		await expect(page.locator("#model-select")).toBeVisible();

@@ -78,7 +78,8 @@ export type TtsProviderId =
 	| "openai"
 	| "elevenlabs"
 	| "nextain"
-	| "vllm";
+	| "vllm"
+	| "naia-local-voice";
 
 export type PanelPosition = "left" | "right" | "bottom";
 
@@ -90,6 +91,8 @@ export interface AppConfig {
 	theme?: ThemeId;
 	backgroundImage?: string;
 	vrmModel?: string;
+	avatarProvider?: "vrm" | "naia-video-avatar";
+	nvaModel?: string;
 	customVrms?: string[];
 	customBgs?: string[];
 	sttProvider?: SttProviderId;

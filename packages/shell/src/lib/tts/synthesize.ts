@@ -272,6 +272,7 @@ export async function synthesizeTts(
 		case "elevenlabs":
 			return synthElevenlabs(opts);
 		case "vllm":
+		case "naia-local-voice":
 			return synthVllm(opts);
 		case "edge":
 			return synthEdge(opts);

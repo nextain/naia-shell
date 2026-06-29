@@ -206,3 +206,16 @@ registerTtsProviderMeta({
 	pricing: "Free (local)",
 	isLocal: true,
 });
+
+// ── Naia Local Voice (VoxCPM2 GPU TTS) ──
+
+registerTtsProviderMeta({
+	id: "naia-local-voice",
+	name: "Naia Local Voice (GPU)",
+	description:
+		"Local VoxCPM2 voice synthesis on GPU. Supports voice cloning (음성 참조 / 내 목소리 만들기).",
+	requiresApiKey: false,
+	isFree: true,
+	pricing: "Free (local GPU)",
+	isLocal: true,
+});
