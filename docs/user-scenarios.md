@@ -271,13 +271,13 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 - Foundation tranche 순서 F0→…→V2 = **아이디어 수준 잠정**(루크: 우선 적어둔 것, 실행 시 재검토 — 못 박은 결정 아님). G1 = 게이트로 두지 않음.
 - botmadang(S65) = **rejected**(이식 제외, 명확 결정).
 
-## 셸 feature 시나리오 — 지식 근거→원문 (K2, kb-compiler 통합 — 2026-06-30)
+## 셸 feature 시나리오 — 지식 근거→원문 + 그래프 (K2·K3, kb-compiler 통합 — 2026-06-30)
 
-도구·환경 tranche(UC5 도구·UC6 브라우저·UC7 워크스페이스)의 셸측 슬라이스. 사용자가 워크스페이스 지식을 물으면, 에이전트가 `skill_knowledge_ask`/`search`(naia-agent **UC-KNOWLEDGE**, kb-compiler backend — 별 레포 live)로 **근거 있는 답변**을 내고, 셸이 그 tool-result(JSON)를 **답변 + 출처 칩**으로 렌더한다. 출처 칩 클릭 시 **근거→원문**: URL=브라우저 패널(UC6), 워크스페이스 파일=파일뷰어(UC7)로 원문이 열린다. 근거 없으면 **기권**(칩 없음, 지어내지 않음).
+도구·환경 tranche(UC5 도구·UC6 브라우저·UC7 워크스페이스)의 셸측 슬라이스. 사용자가 워크스페이스 지식을 물으면, 에이전트가 `skill_knowledge_ask`/`search`(naia-agent **UC-KNOWLEDGE**, kb-compiler backend — 별 레포 live)로 **근거 있는 답변**을 내고, 셸이 그 tool-result(JSON)를 **답변 + 출처 칩**으로 렌더한다(K2). 출처 칩 클릭 시 **근거→원문**: URL=브라우저 패널(UC6), 워크스페이스 파일=파일뷰어(UC7)로 원문이 열린다. 근거 없으면 **기권**(칩 없음). 또한 `skill_knowledge_graph` 결과는 셸이 **2D/3D 캔버스 그래프**(엔티티·관계·군집색·degree 크기, 2D↔3D 토글)로 시각화한다(K3).
 
-- **인지흐름**: (사고)지식 질의 → (표현)근거 답변+출처 → (행위)칩 클릭→원문 패널 전환. 백엔드 배선·계약 = naia-agent(별 레포), 셸 렌더·dispatch = 본 feature(기존 브라우저/워크스페이스 패널 api 재사용, 신규 사이드카 0).
-- **검증(P02)**: requirements.md **FR-KB-OS.1~3** 매핑 — `knowledge-result.test.ts`(파싱·분류 단위)·`knowledge-tool-result.test.tsx`(RTL 렌더+칩 dispatch)·`e2e/chat-tools.spec.ts` "지식 도구(K2)"(Playwright 실 UI: 답변+칩+칩클릭→브라우저 패널). 셸 vitest 977 GREEN·tsc0.
-- 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`. 지식 그래프 2D/3D 패널·설정 지식 탭(관리) = post-MVP(K3/K4 DEFER).
+- **인지흐름**: (사고)지식 질의 → (표현)근거 답변+출처·지식 그래프 → (행위)칩 클릭→원문 패널 전환. 백엔드 배선·계약 = naia-agent(별 레포), 셸 렌더·dispatch·뷰어 = 본 feature(기존 브라우저/워크스페이스 패널 api 재사용·그래프 의존성 0 캔버스, 신규 사이드카 0).
+- **검증(P02)**: requirements.md **FR-KB-OS.1~4** 매핑 — `knowledge-result.test.ts`(파싱·분류·그래프 파싱 단위)·`knowledge-tool-result.test.tsx`(RTL 렌더+칩 dispatch)·`e2e/chat-tools.spec.ts` "지식 도구(K2)"·"지식 그래프(K3)"(Playwright 실 UI: 답변+칩+칩클릭→브라우저 패널 / 그래프 캔버스 렌더+2D/3D 토글). tsc0.
+- 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`. 설정 지식 탭(관리 compile/gap)·전용 그래프 패널 = post-MVP(K4 DEFER).
 
 ## 해소·DEFER (재논 금지)
 - ~~UC7 포트 축~~ = 해소(R1): UC7 = `EnvironmentPort`(host-system). `ActionPort`=body movement(별개).

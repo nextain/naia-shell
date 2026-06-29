@@ -4,6 +4,9 @@ import {
 	classifySourceUri,
 	toFilePath,
 	isKnowledgeTool,
+	parseKnowledgeGraph,
+	isKnowledgeGraphTool,
+	communityColor,
 } from "../lib/knowledge-result";
 
 describe("knowledge-result — parseKnowledgeResult (지식 tool-result JSON 파싱)", () => {
@@ -60,5 +63,37 @@ describe("knowledge-result — 출처 분류(근거→원문 라우팅)", () => 
 	it("toFilePath: file:// 접두 제거", () => {
 		expect(toFilePath("file:///ws/doc.md")).toBe("/ws/doc.md");
 		expect(toFilePath("/ws/doc.md")).toBe("/ws/doc.md");
+	});
+});
+
+describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", () => {
+	it("정상 그래프 파싱(nodes/edges/communityCount)", () => {
+		const out = JSON.stringify({
+			nodes: [{ id: "a", label: "전입신고", type: "Service", deg: 1, community: 0 }],
+			edges: [{ from: "a", to: "b", type: "handled_by", weight: 2 }],
+			communityCount: 1,
+		});
+		const g = parseKnowledgeGraph("skill_knowledge_graph", out);
+		expect(g).not.toBeNull();
+		expect(g?.nodes[0].label).toBe("전입신고");
+		expect(g?.edges[0].weight).toBe(2);
+		expect(g?.communityCount).toBe(1);
+	});
+
+	it("비그래프 도구/잘못된 JSON/형태불일치 → null", () => {
+		expect(parseKnowledgeGraph("skill_knowledge_ask", "{}")).toBeNull();
+		expect(parseKnowledgeGraph("skill_knowledge_graph", "not json")).toBeNull();
+		expect(parseKnowledgeGraph("skill_knowledge_graph", JSON.stringify({ nodes: "x" }))).toBeNull();
+	});
+
+	it("isKnowledgeGraphTool", () => {
+		expect(isKnowledgeGraphTool("skill_knowledge_graph")).toBe(true);
+		expect(isKnowledgeGraphTool("skill_knowledge_ask")).toBe(false);
+	});
+
+	it("communityColor: 결정론·순환(음수/초과 안전)", () => {
+		expect(communityColor(0)).toBe(communityColor(0));
+		expect(typeof communityColor(99)).toBe("string");
+		expect(typeof communityColor(-3)).toBe("string");
 	});
 });

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
 import type { ToolCall } from "../lib/types";
-import { isKnowledgeTool, parseKnowledgeResult } from "../lib/knowledge-result";
+import { isKnowledgeTool, isKnowledgeGraphTool, parseKnowledgeResult, parseKnowledgeGraph } from "../lib/knowledge-result";
 import { KnowledgeToolResult } from "./KnowledgeToolResult";
+import { KnowledgeGraphView } from "./KnowledgeGraphView";
 
 const TOOL_NAME_KEYS: Record<string, string> = {
 	execute_command: "tool.execute_command",
@@ -48,6 +49,18 @@ export function ToolActivity({ tool }: Props) {
 			return (
 				<div className={`tool-activity tool-${tool.status} tool-knowledge`} data-tool-name={tool.toolName}>
 					<KnowledgeToolResult data={parsed} />
+				</div>
+			);
+		}
+	}
+
+	// 지식 그래프(skill_knowledge_graph) = 2D/3D 캔버스 뷰어(K3). 파싱 실패 시 기본 렌더로 폴백.
+	if (isKnowledgeGraphTool(tool.toolName) && tool.status === "success") {
+		const g = parseKnowledgeGraph(tool.toolName, tool.output);
+		if (g) {
+			return (
+				<div className={`tool-activity tool-${tool.status} tool-knowledge-graph`} data-tool-name={tool.toolName}>
+					<KnowledgeGraphView graph={g} />
 				</div>
 			);
 		}

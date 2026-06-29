@@ -94,6 +94,7 @@ const TAURI_MOCK_SCRIPT = `
 
 	function matchScenario(userMessage) {
 		var msg = (userMessage || "").toLowerCase();
+		if (msg.indexOf("그래프") !== -1) return "knowledge_graph";
 		if (msg.indexOf("지식") !== -1) return "knowledge";
 		if (msg.indexOf("ls") !== -1 && msg.indexOf("디렉토리") !== -1) return "execute_command";
 		if (msg.indexOf("써줘") !== -1 || msg.indexOf("write") !== -1) return "write_file";
@@ -134,6 +135,11 @@ const TAURI_MOCK_SCRIPT = `
 					{ query: "전입신고 필요서류" },
 					JSON.stringify({ abstained: false, answer: "전입신고 필요서류는 신분증입니다.", sources: [{ title: "전입신고 안내", sourceUris: ["https://gov.kr/jeonipsingo"] }] }),
 					"근거와 함께 답변했어요.");
+			case "knowledge_graph":
+				return buildToolResponse(requestId, "skill_knowledge_graph",
+					{},
+					JSON.stringify({ nodes: [{ id: "a", label: "전입신고", type: "Service", deg: 2, community: 0 }, { id: "b", label: "주민센터", type: "Department", deg: 1, community: 0 }, { id: "c", label: "신분증", type: "Document", deg: 1, community: 0 }], edges: [{ from: "a", to: "b", type: "handled_by", weight: 1 }, { from: "a", to: "c", type: "requires_document", weight: 2 }], communityCount: 1 }),
+					"지식 그래프입니다.");
 			default:
 				return buildTextResponse(requestId, "안녕하세요! 무엇을 도와드릴까요?");
 		}
@@ -334,6 +340,20 @@ test.describe("Chat + Tool E2E", () => {
 		// 근거→원문: URL 칩 클릭 → 브라우저 패널로 전환
 		await chip.click();
 		await expect(page.locator(".browser-panel")).toBeVisible({ timeout: 5_000 });
+	});
+
+	test("지식 그래프(K3): skill_knowledge_graph — 2D/3D 캔버스 뷰어 렌더 + 모드 토글", async ({ page }) => {
+		await sendMessage(page, "지식 그래프 보여줘");
+
+		const graph = page.locator('[data-testid="knowledge-graph"]');
+		await expect(graph).toBeVisible({ timeout: 5_000 });
+		await expect(graph.locator("canvas.knowledge-graph-canvas")).toBeVisible();
+		await expect(graph).toHaveAttribute("data-mode", "2d");
+		await expect(graph.locator(".knowledge-graph-meta")).toContainText("노드 3");
+
+		// 2D↔3D 토글
+		await graph.locator(".knowledge-graph-mode").click();
+		await expect(graph).toHaveAttribute("data-mode", "3d");
 	});
 });
 

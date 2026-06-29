@@ -80,3 +80,56 @@ export function classifySourceUri(uri: string): SourceKind {
 export function toFilePath(uri: string): string {
 	return uri.replace(/^file:\/\//i, "");
 }
+
+// ── K3: 지식 그래프 데이터(skill_knowledge_graph tool-result) 파싱 — 2D/3D 뷰어 입력 ──
+export interface KnowledgeGraphNode { id: string; label: string; type: string; deg: number; community: number; }
+export interface KnowledgeGraphEdge { from: string; to: string; type: string; weight: number; }
+export interface KnowledgeGraph { nodes: KnowledgeGraphNode[]; edges: KnowledgeGraphEdge[]; communityCount: number; }
+
+export function isKnowledgeGraphTool(toolName: string): boolean {
+	return toolName === "skill_knowledge_graph";
+}
+
+/** skill_knowledge_graph tool-result(JSON) → 그래프 데이터. 형태 불일치/파싱실패 = null(기본 렌더 폴백). */
+export function parseKnowledgeGraph(toolName: string, output: string | undefined): KnowledgeGraph | null {
+	if (!output || !isKnowledgeGraphTool(toolName)) return null;
+	let raw: unknown;
+	try {
+		raw = JSON.parse(output);
+	} catch {
+		return null;
+	}
+	if (!isObj(raw) || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) return null;
+	const nodes: KnowledgeGraphNode[] = [];
+	for (const n of raw.nodes) {
+		if (!isObj(n) || typeof n.id !== "string" || typeof n.label !== "string") return null;
+		nodes.push({
+			id: n.id,
+			label: n.label,
+			type: typeof n.type === "string" ? n.type : "",
+			deg: typeof n.deg === "number" ? n.deg : 0,
+			community: typeof n.community === "number" ? n.community : 0,
+		});
+	}
+	const edges: KnowledgeGraphEdge[] = [];
+	for (const e of raw.edges) {
+		if (!isObj(e) || typeof e.from !== "string" || typeof e.to !== "string") return null;
+		edges.push({
+			from: e.from,
+			to: e.to,
+			type: typeof e.type === "string" ? e.type : "",
+			weight: typeof e.weight === "number" ? e.weight : 1,
+		});
+	}
+	return { nodes, edges, communityCount: typeof raw.communityCount === "number" ? raw.communityCount : 0 };
+}
+
+// 군집 색 팔레트(examples/cms graph-common.js 동일 — 어두운 배경 대비 밝은 톤).
+export const COMMUNITY_PALETTE = [
+	"#4c8bf5", "#3fb950", "#a371f7", "#f778ba", "#e5984d", "#56d4dd", "#f5d44c", "#ff6b6b",
+	"#9b8cff", "#4dd4ac", "#d98cff", "#ff9f5a", "#73c2ff", "#bce04f", "#ff7eb6", "#7ee0d0",
+];
+export function communityColor(i: number): string {
+	const n = COMMUNITY_PALETTE.length;
+	return COMMUNITY_PALETTE[((i % n) + n) % n];
+}
