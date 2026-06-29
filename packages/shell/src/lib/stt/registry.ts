@@ -45,7 +45,7 @@ registerSttProvider({
 
 registerSttProvider({
 	id: "vosk",
-	name: "Naia Voice (Lite)",
+	name: "Vosk",
 	description:
 		"Offline speech recognition. Small models (~40-80MB), real-time streaming.",
 	engineType: "tauri",
@@ -70,9 +70,9 @@ registerSttProvider({
 
 registerSttProvider({
 	id: "whisper",
-	name: "Naia Voice (High-precision)",
+	name: "Whisper",
 	description:
-		"Local high-accuracy speech recognition, batch inference every 2s.",
+		"Local high-accuracy speech recognition (faster-whisper), batch inference every 2s.",
 	engineType: "tauri",
 	engine: "whisper",
 	isOffline: true,
