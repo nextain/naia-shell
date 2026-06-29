@@ -94,6 +94,7 @@ const TAURI_MOCK_SCRIPT = `
 
 	function matchScenario(userMessage) {
 		var msg = (userMessage || "").toLowerCase();
+		if (msg.indexOf("지식") !== -1) return "knowledge";
 		if (msg.indexOf("ls") !== -1 && msg.indexOf("디렉토리") !== -1) return "execute_command";
 		if (msg.indexOf("써줘") !== -1 || msg.indexOf("write") !== -1) return "write_file";
 		if (msg.indexOf("읽어줘") !== -1 || msg.indexOf("read") !== -1) return "read_file";
@@ -128,6 +129,11 @@ const TAURI_MOCK_SCRIPT = `
 				return buildThinkingResponse(requestId,
 					"이 문제에 대해 깊이 생각해보겠습니다...",
 					"생각을 정리해봤어! 답변이야.");
+			case "knowledge":
+				return buildToolResponse(requestId, "skill_knowledge_ask",
+					{ query: "전입신고 필요서류" },
+					JSON.stringify({ abstained: false, answer: "전입신고 필요서류는 신분증입니다.", sources: [{ title: "전입신고 안내", sourceUris: ["https://gov.kr/jeonipsingo"] }] }),
+					"근거와 함께 답변했어요.");
 			default:
 				return buildTextResponse(requestId, "안녕하세요! 무엇을 도와드릴까요?");
 		}
@@ -312,6 +318,22 @@ test.describe("Chat + Tool E2E", () => {
 
 		const toolActivity = page.locator(".tool-activity");
 		await expect(toolActivity.first()).toBeVisible({ timeout: 5_000 });
+	});
+
+	test("지식 도구(K2): skill_knowledge_ask — 답변+출처 칩 렌더 + 칩 클릭→브라우저 패널(근거→원문)", async ({ page }) => {
+		await sendMessage(page, "지식에서 전입신고 필요서류 알려줘");
+
+		// K2 렌더: 답변 + 출처 칩(sourceUris 보존)
+		const answer = page.locator(".knowledge-answer");
+		await expect(answer.first()).toContainText("신분증", { timeout: 5_000 });
+		const chip = page.locator(".knowledge-source-chip").first();
+		await expect(chip).toBeVisible();
+		await expect(chip).toHaveAttribute("data-source-kind", "url");
+		await expect(chip).toContainText("전입신고 안내");
+
+		// 근거→원문: URL 칩 클릭 → 브라우저 패널로 전환
+		await chip.click();
+		await expect(page.locator(".browser-panel")).toBeVisible({ timeout: 5_000 });
 	});
 });
 

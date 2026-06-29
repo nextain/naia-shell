@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { t } from "../lib/i18n";
 import type { ToolCall } from "../lib/types";
+import { isKnowledgeTool, parseKnowledgeResult } from "../lib/knowledge-result";
+import { KnowledgeToolResult } from "./KnowledgeToolResult";
 
 const TOOL_NAME_KEYS: Record<string, string> = {
 	execute_command: "tool.execute_command",
@@ -38,6 +40,18 @@ export function ToolActivity({ tool }: Props) {
 
 	const label = getToolLabel(tool.toolName);
 	const icon = STATUS_ICON[tool.status];
+
+	// 지식 도구(skill_knowledge_ask/search) = 답변 + 출처 칩 렌더(K2). 파싱 실패 시 기본 렌더로 폴백.
+	if (isKnowledgeTool(tool.toolName) && tool.status === "success") {
+		const parsed = parseKnowledgeResult(tool.toolName, tool.output);
+		if (parsed) {
+			return (
+				<div className={`tool-activity tool-${tool.status} tool-knowledge`} data-tool-name={tool.toolName}>
+					<KnowledgeToolResult data={parsed} />
+				</div>
+			);
+		}
+	}
 
 	return (
 		<div
