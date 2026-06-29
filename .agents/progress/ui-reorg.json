@@ -1,0 +1,28 @@
+{
+  "issue": "#ui-reorg",
+  "title": "UI 재구성 — 홈 몰입 VN 대화 + 워크스페이스 4단 관제탑",
+  "project": "naia-os",
+  "current_phase": "sync_verify",
+  "session_id": "6edc9772-c6c1-439e-80c0-3b8d8486308d",
+  "branch": "feat/ui-workspace-chat-reorg",
+  "sot": ".agents/progress/naia-os-workspace-chat-reorg-2026-06-29.md (alpha-adk root)",
+  "phases_done": {
+    "build": "App.tsx / ChatPanel.tsx / WorkspaceCenterPanel.tsx / Terminal.tsx / DocTabBar.tsx(신규) / global.css",
+    "review": "적대적 코드리뷰(서브에이전트) — 핵심 불변 안전 확인 + 실버그 3건 적발·수정(워크스페이스 레일 사라짐 · 인쇄 회귀 · 홈 VN 박스 우측 클릭불가)",
+    "e2e_test": "vitest 961 pass · Playwright e2e 91+120 18/18(무회귀) · 119 신규 T6~T11 6/6",
+    "post_test_review": "119 T4/T5 = 베이스에서도 실패하는 선재 터미널-생성 플래키 확인(회귀 아님)",
+    "sync": "docs/user-scenarios.md(S-VN/S-WS4/S-DOC/S-ASK) + docs/requirements.md(FR-UI.1~6) 기재",
+    "sync_verify": "check-doc-graph 통과(43 docs · 고립·절대경로·깨진링크 없음)"
+  },
+  "verification": {
+    "tsc": "0",
+    "vitest": "961 pass / 1 fail(SettingsTab 'Naia Voice' 라벨 = 베이스 선재 · 병행 설정탭 작업이 수정중 · 본 변경 무관)",
+    "e2e": "91+120 18/18 · 119 T6~T11 pass"
+  },
+  "remaining": [
+    "process-status.json 게이트 갱신(헌장 — 사용자 명시 승인 필요)",
+    "push(공개 레포 — 사용자 승인 필요)",
+    "실 앱 미감 확인(pnpm run tauri:dev · HMR desync 시 앱+vite 재시작)"
+  ],
+  "updated_at": "2026-06-29T00:00:00Z"
+}

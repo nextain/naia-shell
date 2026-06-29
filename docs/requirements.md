@@ -93,6 +93,23 @@
 
 > NFR: NFR-isolation(슬롯 변경이 타 슬롯·부팅 안 깸) · NFR-deny-default(게이트 미설정 시 안전 기본값). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)·STT 완전통합(Phase 6) = wm/별도 슬라이스 DEFER.
 
+## 기능 요구사항 (FR) — UI 재구성: 홈 몰입대화 + 워크스페이스 4단 관제탑 (#ui-reorg, 셸 feature — 2026-06-29)
+
+> 범위: naia-os 셸 UI(`App.tsx`·`ChatPanel.tsx`·`WorkspaceCenterPanel.tsx`·`Terminal.tsx`·`global.css` + 신규 `DocTabBar.tsx`). 사용자 실사용 피드백: "naia와 대화가 집중 안 됨 / 코딩 쓰기엔 좁음 / 터미널 여럿 + 문서 대량인데 작업문서 찾기 어려움". 트랙: alpha-adk `.agents/progress/naia-os-workspace-chat-reorg-2026-06-29.md`. 워크트리 `feat/ui-workspace-chat-reorg`.
+>
+> **상태: P04 GREEN (P05 대기 — process-status.json 갱신은 헌장이라 사용자 승인 후)** — tsc 0 · vitest 961 pass(1 fail=SettingsTab "Naia Voice" 선재, 무관) · e2e 91+120 18/18(무회귀) · e2e 119 신규 T6-T10 pass. 베이스 선재 플래키(T4/T5 터미널-생성 레이스)는 본 변경 무관(베이스 동일 실패 확인).
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-UI.1** | UI 모드는 **단일 신호**(`usePanelStore.activePanel` 파생 `data-ui-mode`). 새 모드 SoT 신설 금지 — `null`=home(VN)·`workspace`=4단·기타=panel(floating) | S-VN·S-WS4 | `119` T6/T7(data-ui-mode + variant) |
+| **FR-UI.2** | ChatPanel은 **단일 인스턴스를 CSS로 재배치**(variant=vn/rail/floating). 모드 전환·레일 접기에도 **언마운트 금지**(voice/STT/TTS 세션 연속성). 마운트 조건은 activePanel과 분리 | S-VN·S-WS4 | `119` T8(레일 접기 시 `.chat-panel` attached 유지) |
+| **FR-UI.3** | 워크스페이스 = 4단 `[대화창 레일 \| 워크트리 \| 문서뷰어(상)+터미널(하) \| 서브에이전트]`. 대화 레일 접기(persist)·중앙 상하 비율 자유 리사이즈·터미널 탭/그리드 토글 | S-WS4 | `119` T7/T8/T9 + 91 18/18 무회귀 |
+| **FR-UI.4** | 문서뷰어 **탭바**로 다수 문서 유지·전환(`openDocs`). 서브에이전트 클릭 시 최근문서 탭 surface. "editor" 가짜 탭 제거(에디터=상시 상단 zone) | S-DOC | `119` T10(세션→탭 surface) + 91 S3/S6 |
+| **FR-UI.5** | 터미널 파일경로 **기본 클릭=문서 열기(불변)** / **Alt+클릭=AI 질의**(naia:ask-ai). 문서 탭 ✦=AI 질의. 기존 `onFileSelect` 동작 회귀 0 | S-ASK | `Terminal.tsx` activate Alt 분기 + `naia:ask-ai` 수신(ChatPanel 기존) |
+| **FR-UI.6** | 대화 레일 접힘 상태 **localStorage 영속**(`naia-ws-rail-collapsed`) | S-WS4 | `119` T8(토글 왕복) |
+
+> NFR: NFR-isolation(레이아웃 변경이 음성/세션·기존 워크스페이스 기능 안 깸 — 91+120 18/18 입증) · 토큰-only(테마 9종 호환, 하드코딩 색 금지) · 디자인 일관(`.ws-pane`/글래스 chrome). ⚠️ 미감(VN 톤·색감)=사용자 인지 몫(실 앱 확인).
+
 ## 비기능 요구사항 (NFR) — 횡단(전 tranche)
 
 | ID | 요구사항 | 근거(1단계 구조) |
