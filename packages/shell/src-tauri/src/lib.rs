@@ -2238,6 +2238,25 @@ fn resolve_cascade_loader_dir(app: &tauri::AppHandle, adk_path: &str) -> String 
         .into_owned()
 }
 
+/// cascade-stderr.log 의 마지막 몇 줄(loader 실패 사유 — venv 미설치 등)을 읽어 UI 에 전달.
+fn read_cascade_stderr_tail() -> String {
+    let path = log_dir().join("cascade-stderr.log");
+    match std::fs::read_to_string(&path) {
+        Ok(c) => c
+            .lines()
+            .rev()
+            .take(6)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string(),
+        Err(_) => String::new(),
+    }
+}
+
 /// 로컬 cascade loader supervisor 를 사이드카로 spawn. stdout `CASCADE_READY {json}`
 /// 핸드셰이크로 준비완료 판정(모델 로드가 길어 timeout 넉넉히). 이 프로세스를 kill 하면
 /// loader 가 VoxCPM2 등 자식 서비스를 teardown 한다(원격 금지·로컬 임베딩).
@@ -2317,10 +2336,48 @@ fn spawn_cascade(
         log_verbose("[Naia] cascade loader stdout reader ended");
     });
 
-    // 모델 로드(VoxCPM2 ~77s 등) 고려 — 넉넉한 타임아웃. 실패 = 기동 실패(자식은 Drop 이 kill).
-    let ready = ready_rx
-        .recv_timeout(std::time::Duration::from_secs(180))
-        .map_err(|_| "cascade readiness handshake timeout (CASCADE_READY 미수신)".to_string())?;
+    // CASCADE_READY 핸드셰이크 — 단, loader 가 조기 종료(venv/모델 부재·plan 0서비스 등)하면
+    // 180s 기다리지 않고 **즉시** stderr 꼬리를 읽어 명확히 실패한다(나쁜 UX 회피).
+    // 정상 기동(모델 로드 ~77s)은 최대 180s 까지 대기.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+    let ready = loop {
+        match ready_rx.recv_timeout(std::time::Duration::from_millis(400)) {
+            Ok(r) => break r,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                // stdout reader 종료 = loader 프로세스 exit(ready 미수신).
+                let _ = child.try_wait();
+                let tail = read_cascade_stderr_tail();
+                return Err(format!(
+                    "로컬 음성 엔진을 시작하지 못했습니다(loader 종료).{}",
+                    if tail.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n{}", tail)
+                    }
+                ));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if let Ok(Some(status)) = child.try_wait() {
+                    let tail = read_cascade_stderr_tail();
+                    return Err(format!(
+                        "로컬 음성 엔진을 시작하지 못했습니다(loader 종료 code={:?}).{}",
+                        status.code(),
+                        if tail.is_empty() {
+                            String::new()
+                        } else {
+                            format!("\n{}", tail)
+                        }
+                    ));
+                }
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    return Err(
+                        "cascade readiness handshake timeout (CASCADE_READY 미수신)".to_string(),
+                    );
+                }
+            }
+        }
+    };
 
     write_pid_file("cascade", child.id());
     log_both(&format!("[Naia] local cascade ready: {}", ready));
