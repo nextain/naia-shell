@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	agentKeyExists,
 	clearAdkPath,
@@ -23,7 +23,6 @@ import {
 } from "../lib/avatar-presets";
 import { syncLinkedChannels } from "../lib/channel-sync";
 import {
-	directToolCall,
 	sendAuthUpdate,
 	sendCredsUpdate,
 	sendNotifyConfig,
@@ -42,7 +41,6 @@ import {
 	clearAllowedTools,
 	loadConfig,
 	loadConfigWithSecrets,
-	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
 import {
@@ -81,6 +79,11 @@ import {
 	type VramTierId,
 } from "../lib/capabilities/vram-tiers";
 import {
+	isRecommendedLocalValue,
+	slotRecommendation,
+	tierRecommendedSlots,
+} from "../lib/capabilities/tier-slots";
+import {
 	applyNaiaSlotDefaults,
 	deriveGate,
 	readSlots,
@@ -101,6 +104,7 @@ import { useChatStore } from "../stores/chat";
 import { usePanelStore } from "../stores/panel";
 import { clearSavedCamera } from "./AvatarCanvas";
 import { RefAudioSection } from "./RefAudioSection";
+import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import { SkillsTab } from "./SkillsTab";
 
 const LLM_PROVIDERS = listLlmProviders();
@@ -272,18 +276,6 @@ function getNaiaWebBaseUrl() {
 	return NAIA_WEB_BASE_URL;
 }
 
-interface DeviceNode {
-	nodeId: string;
-	displayName?: string;
-	platform?: string;
-}
-
-interface PairReq {
-	requestId: string;
-	nodeId: string;
-	status: string;
-}
-
 function normalizeLocalPath(path: string): string {
 	if (!path.startsWith("file://")) return path;
 	try {
@@ -291,168 +283,6 @@ function normalizeLocalPath(path: string): string {
 	} catch {
 		return path.replace(/^file:\/\//, "");
 	}
-}
-
-function DevicePairingSection() {
-	const [nodes, setNodes] = useState<DeviceNode[]>([]);
-	const [pairRequests, setPairRequests] = useState<PairReq[]>([]);
-	const [loading, setLoading] = useState(false);
-
-	const fetchDevices = useCallback(async () => {
-		const config = loadConfig();
-		const gatewayUrl = resolveConfiguredGatewayUrl(config);
-		if (!gatewayUrl) return;
-		setLoading(true);
-		try {
-			const [nodesRes, pairRes] = await Promise.all([
-				directToolCall({
-					toolName: "skill_device",
-					args: { action: "node_list" },
-					requestId: `dev-nodes-${Date.now()}`,
-					gatewayUrl,
-				}),
-				directToolCall({
-					toolName: "skill_device",
-					args: { action: "pair_list" },
-					requestId: `dev-pairs-${Date.now()}`,
-					gatewayUrl,
-				}),
-			]);
-
-			if (nodesRes.success && nodesRes.output) {
-				const parsed = JSON.parse(nodesRes.output);
-				setNodes(parsed.nodes || []);
-			}
-			if (pairRes.success && pairRes.output) {
-				const parsed = JSON.parse(pairRes.output);
-				setPairRequests(parsed.requests || []);
-			}
-		} catch (err) {
-			Logger.warn("DevicePairing", "Failed to fetch devices", {
-				error: String(err),
-			});
-		} finally {
-			setLoading(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		fetchDevices();
-	}, [fetchDevices]);
-
-	const handlePairAction = useCallback(
-		async (requestId: string, action: "approve" | "reject") => {
-			const config = loadConfig();
-			const gatewayUrl = resolveConfiguredGatewayUrl(config);
-			if (!gatewayUrl) return;
-			try {
-				await directToolCall({
-					toolName: "skill_device",
-					args: { action: `pair_${action}`, requestId },
-					requestId: `dev-${action}-${Date.now()}`,
-					gatewayUrl,
-				});
-				fetchDevices();
-			} catch (err) {
-				Logger.warn("DevicePairing", `Failed to ${action}`, {
-					error: String(err),
-				});
-			}
-		},
-		[fetchDevices],
-	);
-
-	return (
-		<>
-			<div className="settings-section-divider">
-				<span>{t("settings.deviceSection")}</span>
-			</div>
-			<div className="settings-field">
-				<span className="settings-hint">{t("settings.deviceHint")}</span>
-			</div>
-
-			{loading ? (
-				<div className="settings-field">
-					<span className="settings-hint">{t("settings.deviceLoading")}</span>
-				</div>
-			) : (
-				<>
-					{/* Paired nodes */}
-					{nodes.length === 0 ? (
-						<div className="settings-field">
-							<span className="settings-hint">{t("settings.deviceEmpty")}</span>
-						</div>
-					) : (
-						<div className="device-nodes-list">
-							{nodes.map((node) => (
-								<div key={node.nodeId} className="device-node-card">
-									<span className="device-node-name">
-										{node.displayName || node.nodeId}
-									</span>
-									{node.platform && (
-										<span className="device-node-platform">
-											{node.platform}
-										</span>
-									)}
-								</div>
-							))}
-						</div>
-					)}
-
-					{/* Pair requests */}
-					{pairRequests.length > 0 && (
-						<>
-							<div className="settings-field">
-								<label>{t("settings.devicePairRequests")}</label>
-							</div>
-							<div className="device-pair-requests">
-								{pairRequests.map((req) => (
-									<div key={req.requestId} className="device-pair-card">
-										<span className="device-pair-node">{req.nodeId}</span>
-										<span className="device-pair-status">
-											{req.status === "pending"
-												? t("settings.devicePending")
-												: req.status}
-										</span>
-										{req.status === "pending" && (
-											<div className="device-pair-actions">
-												<button
-													type="button"
-													className="device-pair-approve"
-													onClick={() =>
-														handlePairAction(req.requestId, "approve")
-													}
-												>
-													{t("settings.deviceApprove")}
-												</button>
-												<button
-													type="button"
-													className="device-pair-reject"
-													onClick={() =>
-														handlePairAction(req.requestId, "reject")
-													}
-												>
-													{t("settings.deviceReject")}
-												</button>
-											</div>
-										)}
-									</div>
-								))}
-							</div>
-						</>
-					)}
-
-					{pairRequests.length === 0 && nodes.length > 0 && (
-						<div className="settings-field">
-							<span className="settings-hint">
-								{t("settings.deviceNoPairRequests")}
-							</span>
-						</div>
-					)}
-				</>
-			)}
-		</>
-	);
 }
 
 const THEMES: { id: ThemeId; label: string; preview: string }[] = [
@@ -776,8 +606,8 @@ export function SettingsTab() {
 	const [micTestActive, setMicTestActive] = useState(false);
 	const [micTestLevel, setMicTestLevel] = useState(0);
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
-	const [gatewayUrl, setGatewayUrl] = useState(existing?.gatewayUrl ?? "");
-	const [gatewayToken, setGatewayToken] = useState(
+	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
+	const [gatewayToken] = useState(
 		existing?.gatewayToken ?? "",
 	);
 	const [discordDefaultUserId, setDiscordDefaultUserId] = useState(
@@ -1310,11 +1140,7 @@ export function SettingsTab() {
 		return "";
 	});
 
-	// Voice wake state
-	const [voiceWakeTriggers, setVoiceWakeTriggers] = useState<string[]>([]);
-	const [voiceWakeInput, setVoiceWakeInput] = useState("");
-	const [voiceWakeLoading, setVoiceWakeLoading] = useState(false);
-	const [voiceWakeSaved, setVoiceWakeSaved] = useState(false);
+	// Voice wake state removed (UI + handlers deleted)
 	// Discord integration — unverified, hidden until stabilized
 	// const [discordBotConnected, setDiscordBotConnected] = useState(false);
 	// const [discordBotLoading, setDiscordBotLoading] = useState(false);
@@ -1325,33 +1151,8 @@ export function SettingsTab() {
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
-	const fetchVoiceWake = useCallback(async () => {
-		setVoiceWakeLoading(true);
-		try {
-			const result = await directToolCall({
-				toolName: "skill_voicewake",
-				args: { action: "get" },
-				requestId: `vw-get-${Date.now()}`,
-			});
-			if (result.success && result.output) {
-				const data = JSON.parse(result.output);
-				setVoiceWakeTriggers(data.triggers || []);
-			}
-		} catch (err) {
-			Logger.warn("SettingsTab", "Failed to load voice wake triggers", {
-				error: String(err),
-			});
-		} finally {
-			setVoiceWakeLoading(false);
-		}
-	}, []);
-
 	// Discord integration — unverified, hidden until stabilized
 	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
-
-	useEffect(() => {
-		fetchVoiceWake();
-	}, [fetchVoiceWake]);
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -1536,28 +1337,27 @@ export function SettingsTab() {
 	) {
 		const adkPath = getAdkPath();
 		if (!adkPath) return;
-		const selected =
-			subdir === "nva-files"
-				? await open({ multiple: false, directory: true })
-				: await open({
-						multiple: false,
-						filters:
-							subdir === "vrm-files"
-								? [{ name: "VRM", extensions: ["vrm"] }]
-								: [
-										{
-											name: "Image",
-											extensions: [
-												"png",
-												"jpg",
-												"jpeg",
-												"webp",
-												"gif",
-												"bmp",
-											],
-										},
+		const selected = await open({
+			multiple: false,
+			filters:
+				subdir === "vrm-files"
+					? [{ name: "VRM", extensions: ["vrm"] }]
+					: subdir === "nva-files"
+						? [{ name: "NVA", extensions: ["nva"] }]
+						: [
+								{
+									name: "Image",
+									extensions: [
+										"png",
+										"jpg",
+										"jpeg",
+										"webp",
+										"gif",
+										"bmp",
 									],
-					});
+								},
+							],
+		});
 		if (!selected || typeof selected !== "string") return;
 		try {
 			await invoke("import_naia_asset", {
@@ -1815,34 +1615,6 @@ export function SettingsTab() {
 			);
 		} finally {
 			setIsPreviewing(false);
-		}
-	}
-
-	function handleVoiceWakeAdd() {
-		const trimmed = voiceWakeInput.trim();
-		if (trimmed && !voiceWakeTriggers.includes(trimmed)) {
-			setVoiceWakeTriggers((prev) => [...prev, trimmed]);
-			setVoiceWakeInput("");
-		}
-	}
-
-	function handleVoiceWakeRemove(trigger: string) {
-		setVoiceWakeTriggers((prev) => prev.filter((item) => item !== trigger));
-	}
-
-	async function handleVoiceWakeSave() {
-		try {
-			await directToolCall({
-				toolName: "skill_voicewake",
-				args: { action: "set", triggers: voiceWakeTriggers },
-				requestId: `vw-set-${Date.now()}`,
-			});
-			setVoiceWakeSaved(true);
-			setTimeout(() => setVoiceWakeSaved(false), 2000);
-		} catch (err) {
-			Logger.warn("SettingsTab", "Failed to save voice wake triggers", {
-				error: String(err),
-			});
 		}
 	}
 
@@ -2146,6 +1918,9 @@ export function SettingsTab() {
 	const localTierCapabilities = activeLocalTier
 		? tierProvidedCapabilities(activeLocalTier)
 		: [];
+	// FR-VRAM.4: tier 가 VRAM 예산 내에서 로컬 추천할 슬롯(숨김 아님 — 추천만).
+	// 설정 슬롯 셀렉터 배지·슬롯 개요·GPU 프로파일 요약이 동일 소스를 소비.
+	const tierRecs = tierRecommendedSlots(activeLocalTier);
 	const effectiveCapabilities: ModelCapability[] = baseCapabilities;
 	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
 	const omniVoices = selectedModelMeta?.voices;
@@ -2536,8 +2311,21 @@ export function SettingsTab() {
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
 							<option value="naia-video-avatar">
 								{t("settings.avatarProviderVideo")}
+								{isRecommendedLocalValue(
+									activeLocalTier,
+									"avatar",
+									"naia-video-avatar",
+								)
+									? ` · ${t("settings.tierRecommendBadge")}`
+									: ""}
 							</option>
 						</select>
+						{slotRecommendation(activeLocalTier, "avatar") && (
+							<div className="settings-hint" data-testid="avatar-tier-hint">
+								{t("settings.tierRecommendSummary")}: naia-video-avatar (
+								{t("settings.tierRecommendLocalTag")})
+							</div>
+						)}
 					</div>
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}
@@ -2760,11 +2548,11 @@ export function SettingsTab() {
 								alignItems: "center",
 							}}
 						>
-							<strong data-testid="slot-gate-mode">
-								{gateMode === "naia"
-									? t("settings.slot.gateNaia")
-									: t("settings.slot.gateByo")}
-							</strong>
+						<span data-testid="slot-gate-mode">
+							{gateMode === "naia"
+								? t("settings.slot.gateNaia")
+								: t("settings.slot.gateByo")}
+						</span>
 							{gateMode === "naia" ? (
 								<button
 									type="button"
@@ -2924,22 +2712,31 @@ export function SettingsTab() {
 								<div
 									key={group.id}
 									data-testid={`slot-group-${group.id}`}
-									style={{
-										border: "1px solid var(--border-color, #ccc)",
-										borderRadius: 8,
-										padding: 10,
-									}}
+									className="settings-card"
 								>
-									<strong>{t(group.labelKey as TranslationKey)}</strong>
-									<div style={{ display: "grid", gap: 4, marginTop: 6 }}>
+									<span className="settings-card-title">{t(group.labelKey as TranslationKey)}</span>
+									<div className="settings-summary-grid">
 										{group.slots.map((sid) => (
 											<div
 												key={sid}
 												data-testid={`slot-${sid}`}
-												style={{ display: "flex", justifyContent: "space-between", gap: 8 }}
+												className="settings-summary-row"
 											>
-												<span>{t(SLOT_LABEL_KEYS[sid] as TranslationKey)}</span>
-												<span>{slotValueDisplay(sid)}</span>
+												<span className="settings-summary-key">{t(SLOT_LABEL_KEYS[sid] as TranslationKey)}</span>
+												<span className="settings-summary-value">
+													{slotValueDisplay(sid)}
+													{slotRecommendation(activeLocalTier, sid) && (
+														<>
+															{" "}
+															<span
+																className="slot-recommend-badge"
+																data-testid={`slot-rec-${sid}`}
+															>
+																{t("settings.tierRecommendBadge")}
+															</span>
+														</>
+													)}
+												</span>
 											</div>
 										))}
 									</div>
@@ -2948,6 +2745,7 @@ export function SettingsTab() {
 										<>
 											<button
 												type="button"
+												className="voice-preview-btn"
 												data-testid={`slot-edit-main`}
 												onClick={() => setActiveSettingsTab("brain")}
 											>
@@ -2955,6 +2753,7 @@ export function SettingsTab() {
 											</button>
 											<button
 												type="button"
+												className="voice-preview-btn"
 												data-testid={`slot-edit-models`}
 												onClick={() => setActiveSettingsTab("memory")}
 											>
@@ -2965,6 +2764,7 @@ export function SettingsTab() {
 									{group.id === "voice" && (
 										<button
 											type="button"
+											className="voice-preview-btn"
 											data-testid={`slot-edit-voice`}
 											onClick={() => setActiveSettingsTab("voice")}
 										>
@@ -2974,6 +2774,7 @@ export function SettingsTab() {
 									{group.id === "avatar" && (
 										<button
 											type="button"
+											className="voice-preview-btn"
 											data-testid={`slot-edit-avatar`}
 											onClick={() => setActiveSettingsTab("avatar")}
 										>
@@ -2989,22 +2790,28 @@ export function SettingsTab() {
 					<div className="settings-field" data-testid="engine-core-summary">
 						<label>{t("settings.engineCore")}</label>
 						<div className="settings-hint">{t("settings.engineCoreHint")}</div>
-						<div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-							<div>
-								<strong>{t("settings.engineMainLlm")}</strong>:{" "}
-								{providerLabel} / {selectedModelMeta?.label ?? model}
+						<div className="settings-summary-grid">
+							<div className="settings-summary-row">
+								<span className="settings-summary-key">{t("settings.engineMainLlm")}</span>
+								<span className="settings-summary-value">
+									{providerLabel} / {selectedModelMeta?.label ?? model}
+								</span>
 							</div>
-							<div>
-								<strong>{t("settings.engineSubLlm")}</strong>:{" "}
-								{memoryLlmProvider === "none"
-									? t("settings.engineNotConfigured")
-									: `${memoryLlmProvider}${memoryLlmModel ? ` / ${memoryLlmModel}` : ""}`}
+							<div className="settings-summary-row">
+								<span className="settings-summary-key">{t("settings.engineSubLlm")}</span>
+								<span className="settings-summary-value">
+									{memoryLlmProvider === "none"
+										? t("settings.engineNotConfigured")
+										: `${memoryLlmProvider}${memoryLlmModel ? ` / ${memoryLlmModel}` : ""}`}
+								</span>
 							</div>
-							<div>
-								<strong>{t("settings.engineEmbedding")}</strong>:{" "}
-								{memoryEmbeddingProvider === "none"
-									? t("settings.engineNotConfigured")
-									: `${memoryEmbeddingProvider}${memoryEmbeddingModel ? ` / ${memoryEmbeddingModel}` : ""}`}
+							<div className="settings-summary-row">
+								<span className="settings-summary-key">{t("settings.engineEmbedding")}</span>
+								<span className="settings-summary-value">
+									{memoryEmbeddingProvider === "none"
+										? t("settings.engineNotConfigured")
+										: `${memoryEmbeddingProvider}${memoryEmbeddingModel ? ` / ${memoryEmbeddingModel}` : ""}`}
+								</span>
 							</div>
 						</div>
 						<div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -3020,7 +2827,7 @@ export function SettingsTab() {
 					<div className="settings-field" data-testid="engine-gpu-summary">
 						<label>{t("settings.engineGpuBudget")}</label>
 						<div className="settings-hint">{t("settings.engineGpuHint")}</div>
-						<div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+						<div className="settings-summary-grid">
 							<span>{detectedVramLabel}</span>
 							<span>
 								{t("settings.engineGpuProfile")}:{" "}
@@ -3045,7 +2852,7 @@ export function SettingsTab() {
 					<div className="settings-field" data-testid="engine-capability-summary">
 						<label>{t("settings.engineCapabilities")}</label>
 						<div className="settings-hint">{t("settings.engineCapabilitiesHint")}</div>
-						<ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+						<ul className="settings-summary-list">
 							{capabilityStatus.map((item) => (
 								<li key={item}>{item}</li>
 							))}
@@ -3100,6 +2907,43 @@ export function SettingsTab() {
 						</div>
 					</div>
 
+					{/* FR-VRAM.4: GPU 프로파일 활성 시 VRAM 예산 내 슬롯별 로컬 추천 요약.
+					    숨김 아님 — 사용자가 무엇을 로컬로 돌릴 수 있는지 보고 각 탭에서 확인. */}
+					{activeLocalTier && (
+						<div className="settings-field" data-testid="tier-recommendations">
+							<div className="settings-card">
+								<span className="settings-card-title">
+									{t("settings.tierRecommendSummary")}
+								</span>
+								{tierRecs.length > 0 ? (
+									<div className="settings-summary-grid">
+										{tierRecs.map((rec) => (
+											<div
+												key={rec.slot}
+												className="settings-summary-row"
+												data-testid={`tier-rec-${rec.slot}`}
+											>
+												<span className="settings-summary-key">
+													{t(SLOT_LABEL_KEYS[rec.slot] as TranslationKey)}
+												</span>
+												<span className="settings-summary-value">
+													{rec.localValue}{" "}
+													<span className="slot-recommend-badge">
+														{t("settings.tierRecommendLocalTag")}
+													</span>
+												</span>
+											</div>
+										))}
+									</div>
+								) : (
+									<div className="settings-hint">
+										{t("settings.tierRecommendNone")}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
 					<div className="settings-section-divider">
 						<span>{t("settings.aiSection")}</span>
 					</div>
@@ -3116,9 +2960,18 @@ export function SettingsTab() {
 							{LLM_PROVIDERS.map((p) => (
 								<option key={p.id} value={p.id} disabled={p.disabled}>
 									{p.name}
+									{isRecommendedLocalValue(activeLocalTier, "main", p.id)
+										? ` · ${t("settings.tierRecommendBadge")}`
+										: ""}
 								</option>
 							))}
 						</select>
+						{slotRecommendation(activeLocalTier, "main") && (
+							<div className="settings-hint" data-testid="main-tier-hint">
+								{t("settings.tierRecommendSummary")}: ollama (
+								{t("settings.tierRecommendLocalTag")})
+							</div>
+						)}
 					</div>
 
 					{/* API key — shown before model selector so user can enter key first */}
@@ -3360,6 +3213,34 @@ export function SettingsTab() {
 							</span>
 						</div>
 					)}
+
+					{/* LLM options: tools + thinking (moved from general tab) */}
+					<div className="settings-field settings-toggle-row">
+						<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
+						<input
+							id="tools-toggle"
+							type="checkbox"
+							checked={enableTools}
+							onChange={(e) => {
+								setEnableTools(e.target.checked);
+								persistConfig({ enableTools: e.target.checked });
+							}}
+						/>
+					</div>
+					<div className="settings-field settings-toggle-row">
+						<label htmlFor="thinking-toggle">
+							{t("settings.enableThinking")}
+						</label>
+						<input
+							id="thinking-toggle"
+							type="checkbox"
+							checked={enableThinking}
+							onChange={(e) => {
+								setEnableThinking(e.target.checked);
+								persistConfig({ enableThinking: e.target.checked });
+							}}
+						/>
+					</div>
 
 					{/* #11: 보조두뇌 (sub-LLM = memoryLlm) — 요약·사실추출용 */}
 					<div className="settings-section-divider">
@@ -3723,9 +3604,18 @@ export function SettingsTab() {
 											{p.requiresNaiaKey && !naiaKey
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
+											{isRecommendedLocalValue(activeLocalTier, "tts", p.id)
+												? ` · ${t("settings.tierRecommendBadge")}`
+												: ""}
 										</option>
 									))}
 								</select>
+								{slotRecommendation(activeLocalTier, "tts") && (
+									<div className="settings-hint" data-testid="tts-tier-hint">
+										{t("settings.tierRecommendSummary")}: naia-local-voice (
+										{t("settings.tierRecommendLocalTag")})
+									</div>
+								)}
 							</div>
 							{/* Naia Cloud TTS — backend engine selector */}
 							{ttsProvider === "nextain" && naiaKey && (
@@ -3809,7 +3699,7 @@ export function SettingsTab() {
 								<div className="settings-field">
 									<label>
 										{ttsProvider === "naia-local-voice"
-											? "VoxCPM2 Host"
+											? "Local Voice Host"
 											: "vLLM TTS Host"}
 									</label>
 									<input
@@ -3823,11 +3713,15 @@ export function SettingsTab() {
 													vllmTtsHost: e.target.value,
 												});
 										}}
-										placeholder={DEFAULT_VLLM_HOST}
+										placeholder={
+											ttsProvider === "naia-local-voice"
+												? "http://localhost:22600"
+												: DEFAULT_VLLM_HOST
+										}
 									/>
 									<div className="settings-hint">
 										{ttsProvider === "naia-local-voice"
-											? "Free (local GPU) — VoxCPM2 voice cloning server"
+											? t("settings.localVoiceEngineHint")
 											: "Free (local) — e.g. Kokoro"}
 									</div>
 								</div>
@@ -4011,7 +3905,7 @@ export function SettingsTab() {
 		{activeSettingsTab === "memory" && (
 				<>
 					<div className="settings-section-divider">
-						<span>{t("settings.memoryModelsSection")}</span>
+						<span>{t("settings.modelsEmbedding")}</span>
 					</div>
 
 					{/* ── Embedding (의미검색) ── */}
@@ -4134,21 +4028,7 @@ export function SettingsTab() {
 					</div>
 				</>
 			)}
-			{activeSettingsTab === "knowledge" && (
-				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.tabKnowledge")}</span>
-					</div>
-					<div className="settings-field">
-						<div className="settings-hint">
-							{t("settings.kbcompilerPlaceholder")}
-						</div>
-						<div className="settings-hint" style={{ marginTop: 8 }}>
-							<strong>{t("settings.kbcompilerComingSoon")}</strong>
-						</div>
-					</div>
-				</>
-			)}
+			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
 			{activeSettingsTab === "skills" && <SkillsTab />}
 			{activeSettingsTab === "memory" && (
 				<>
@@ -4372,64 +4252,6 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "general" && (
 				<>
-					<div className="settings-section-divider">
-						<span>{t("settings.toolsSection")}</span>
-					</div>
-
-					<div className="settings-field settings-toggle-row">
-						<label htmlFor="tools-toggle">{t("settings.enableTools")}</label>
-						<input
-							id="tools-toggle"
-							type="checkbox"
-							checked={enableTools}
-							onChange={(e) => {
-								setEnableTools(e.target.checked);
-								persistConfig({ enableTools: e.target.checked });
-							}}
-						/>
-					</div>
-
-					<div className="settings-field settings-toggle-row">
-						<label htmlFor="thinking-toggle">
-							{t("settings.enableThinking")}
-						</label>
-						<input
-							id="thinking-toggle"
-							type="checkbox"
-							checked={enableThinking}
-							onChange={(e) => {
-								setEnableThinking(e.target.checked);
-								persistConfig({ enableThinking: e.target.checked });
-							}}
-						/>
-					</div>
-
-					<div className="settings-field">
-						<label htmlFor="gateway-url-input">
-							{t("settings.gatewayUrl")}
-						</label>
-						<input
-							id="gateway-url-input"
-							type="text"
-							value={gatewayUrl}
-							onChange={(e) => setGatewayUrl(e.target.value)}
-							onBlur={(e) => persistConfig({ gatewayUrl: e.target.value })}
-							placeholder={DEFAULT_GATEWAY_URL}
-						/>
-					</div>
-
-					<div className="settings-field">
-						<label htmlFor="gateway-token-input">
-							{t("settings.gatewayToken")}
-						</label>
-						<input
-							id="gateway-token-input"
-							type="password"
-							value={gatewayToken}
-							onChange={(e) => setGatewayToken(e.target.value)}
-						/>
-					</div>
-
 					{/* Agent health check (#296) */}
 					<div className="settings-field" data-testid="agent-health-section">
 						<label>{t("settings.agentHealth")}</label>
@@ -4478,8 +4300,6 @@ export function SettingsTab() {
 						</div>
 					</div>
 
-					{/* Discord ID / target — managed via Channels tab & OAuth deep link */}
-
 					{allowedToolsCount > 0 && (
 						<div className="settings-field">
 							<label>
@@ -4497,156 +4317,6 @@ export function SettingsTab() {
 							</button>
 						</div>
 					)}
-
-					{enableTools && (
-						<>
-							<div className="settings-section-divider">
-								<span>{t("settings.channelsSection")}</span>
-							</div>
-
-							{/* Discord channel card — unverified, hidden until stabilized
-					<div className="channel-card channel-card--full" data-testid="discord-settings-card">
-						<span className="settings-hint" style={{ display: "block", marginBottom: 8 }}>{t("settings.channelsHint")}</span>
-						<div className="channel-card-header">
-							<span className="channel-name">Discord</span>
-							<span
-								className={`channel-status-badge ${discordBotConnected ? "connected" : "disconnected"}`}
-								data-testid="channel-status"
-							>
-								{discordBotConnected
-									? t("channels.connected")
-									: discordBotLoading
-										? "..."
-										: t("channels.disconnected")}
-							</span>
-						</div>
-						<div className="settings-field" style={{ marginBottom: 6 }}>
-							<div style={{ display: "flex", gap: 8 }}>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={handleDiscordBotConnect}
-									disabled={discordBotLoading}
-								>
-									{discordBotLoading
-										? t("settings.discordBotConnecting")
-										: discordBotConnected
-											? t("settings.discordBotReconnect")
-											: t("settings.discordBotConnect")}
-								</button>
-								<button
-									type="button"
-									className="voice-preview-btn"
-									onClick={() => fetchDiscordBotStatus()}
-									disabled={discordBotLoading}
-								>
-									{t("settings.discordCheckStatus")}
-								</button>
-							</div>
-						</div>
-						<div className="settings-field">
-							<label htmlFor="discord-user-id">Discord User ID</label>
-							<input
-								id="discord-user-id"
-								type="text"
-								value={discordDefaultUserId}
-								onChange={(e) => setDiscordDefaultUserId(e.target.value)}
-								placeholder={t("settings.discordUserIdPlaceholder")}
-							/>
-						</div>
-						<div className="settings-field">
-							<label htmlFor="discord-dm-channel-id">
-								Discord DM Channel ID
-							</label>
-							<input
-								id="discord-dm-channel-id"
-								type="text"
-								value={discordDmChannelId}
-								onChange={(e) => setDiscordDmChannelId(e.target.value)}
-								placeholder={t("settings.discordDmChannelIdPlaceholder")}
-							/>
-						</div>
-					</div>
-				*/}
-
-							<div className="settings-section-divider">
-								<span>{t("settings.voiceConversation")}</span>
-							</div>
-							<div className="settings-field">
-								<span className="settings-hint">
-									{t("settings.voiceWakeHint")}
-								</span>
-							</div>
-							{voiceWakeLoading ? (
-								<div className="settings-field">
-									<span className="settings-hint">
-										{t("settings.voiceWakeLoading")}
-									</span>
-								</div>
-							) : (
-								<>
-									<div className="settings-field">
-										<label>{t("settings.voiceWakeTriggers")}</label>
-										<div
-											className="voice-wake-triggers"
-											data-testid="voice-wake-triggers"
-										>
-											{voiceWakeTriggers.map((trigger) => (
-												<span key={trigger} className="voice-wake-tag">
-													{trigger}
-													<button
-														type="button"
-														className="voice-wake-tag-remove"
-														onClick={() => handleVoiceWakeRemove(trigger)}
-													>
-														×
-													</button>
-												</span>
-											))}
-										</div>
-									</div>
-									<div className="settings-field voice-wake-add-row">
-										<input
-											type="text"
-											data-testid="voice-wake-input"
-											value={voiceWakeInput}
-											onChange={(e) => setVoiceWakeInput(e.target.value)}
-											placeholder={t("settings.voiceWakePlaceholder")}
-											onKeyDown={(e) => {
-												if (e.key === "Enter") handleVoiceWakeAdd();
-											}}
-										/>
-										<button type="button" onClick={handleVoiceWakeAdd}>
-											{t("settings.voiceWakeAdd")}
-										</button>
-									</div>
-									<div className="settings-field">
-										<button
-											type="button"
-											className="voice-preview-btn"
-											data-testid="voice-wake-save"
-											onClick={handleVoiceWakeSave}
-										>
-											{voiceWakeSaved
-												? t("settings.voiceWakeSaved")
-												: t("settings.voiceWakeSave")}
-										</button>
-									</div>
-								</>
-							)}
-						</>
-					)}
-
-					{enableTools && <DevicePairingSection />}
-					<div className="settings-actions">
-						<button
-							type="button"
-							className="settings-save-btn"
-							onClick={handleSave}
-						>
-							{saved ? t("settings.saved") : t("settings.save")}
-						</button>
-					</div>
 				</>
 			)}
 			{activeSettingsTab === "general" && (
@@ -4661,8 +4331,6 @@ export function SettingsTab() {
 							{(
 								[
 									"naia.log",
-									"gateway.log",
-									"node-host.log",
 									"llm-debug.log",
 								] as const
 							).map((file) => (

@@ -213,9 +213,14 @@ registerTtsProviderMeta({
 	id: "naia-local-voice",
 	name: "Naia Local Voice (GPU)",
 	description:
-		"Local VoxCPM2 voice synthesis on GPU. Supports voice cloning (음성 참조 / 내 목소리 만들기).",
+		"Local GPU voice synthesis. Supports voice cloning (음성 참조 / 내 목소리 만들기).",
 	requiresApiKey: false,
 	isFree: true,
 	pricing: "Free (local GPU)",
 	isLocal: true,
+	// The local voice engine is voice-cloning based (ref audio → "내 목소리
+	// 만들기"); the picker needs at least one entry so selecting it sets a concrete
+	// `ttsVoice` instead of leaving a stale cloud voice id. The base voice is
+	// used until the user supplies a reference clip (RefAudioSection).
+	voices: [{ id: "default", label: "기본 음색 (default)" }],
 });

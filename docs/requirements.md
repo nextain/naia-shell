@@ -74,8 +74,9 @@
 | **FR-VRAM.1** | GPU VRAM 감지(Rust `detect_gpu_vram`, nvidia-smi) → 설정 UI 가 tier(6/12/24G+) 표시·수동 override. 감지 실패=null→수동 선택 | S-VRAM·UC12 | gpu 파싱 단위 · `vram-tiers.test.ts` |
 | **FR-VRAM.2** | `selectVramTier(vramGb)`+`tierProvidedCapabilities` → **opt-in 시** effectiveCapabilities 에 fold(deriveSettingsSlots 반영, 로컬 tier 가 커버하는 외부 슬롯 숨김). **기본 off=무변경**(안전 기본값) | S-VRAM | `vram-tiers.test.ts` |
 | **FR-VRAM.3** | footprint = private footprint measurement(avatar + TTS models). 각 tier `realtime: measurement-gated`(F1) — RTF 단정 0. 로컬 serving/auto-download = DEFER(loader 게이트) | — | F1 가드 테스트 / DEFER |
+| **FR-VRAM.4** | **VRAM 예산 내 슬롯별 로컬 추천(숨김 아님)**. `tierRecommendedSlots(tier)`(tier capability llm/tts/avatar → 슬롯 main/tts/avatar 로컬 추천값) → ① 설정 두뇌 탭 GPU 프로파일 아래 추천 요약 ② 각 슬롯 셀렉터(main/tts/avatar) 추천 옵션 배지 ③ 프로파일 탭 슬롯 개요 배지 ④ 온보딩 provider step 추천 표시. **외부 슬롯 숨김 안 함(FR-VRAM.2 fold 채택 안 함)** — F1: 런타임 매니저 readiness 보고 전 숨김 금지. tier=null(off/미달)=추천 0(클라우드 유지) | S-VRAM·UC12 | `tier-slots.test.ts`(6/6: 8G→tts만, 12G→tts+avatar, 24G→+main, null→0) |
 
-> NFR: NFR-isolation(VRAM 미감지·tier off 시 무회귀) · F1(measurement-gated, RTF 단정 금지).
+> NFR: NFR-isolation(VRAM 미감지·tier off 시 무회귀) · F1(measurement-gated, RTF 단정 금지). FR-VRAM.4 는 추천(표시)만 — 슬롯 자동변경·숨김 없음(사용자 선택·확인 보존).
 
 ## 기능 요구사항 (FR) — S-SLOT 게이트+6슬롯 설정 모델 (#gate-slots, 셸 feature — 2026-06-28)
 
@@ -93,6 +94,19 @@
 
 > NFR: NFR-isolation(슬롯 변경이 타 슬롯·부팅 안 깸) · NFR-deny-default(게이트 미설정 시 안전 기본값). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)·STT 완전통합(Phase 6) = wm/별도 슬라이스 DEFER.
 
+## 기능 요구사항 (FR) — 프로파일 UX 일관화 + 로컬 음성 정직화 (실사용 피드백, 셸 feature — 2026-06-30)
+
+> 범위: naia-os 설정 **프로파일 탭 디자인 일관화** + **naia-local-voice(로컬 음성) 정직화** (Round 1, naia-os 단독). 실제 로컬 cascade 기동(lifecycle 임베딩) = **DEFER(Round 2 — naia-omni-windows-manager 정식 로더 #1 M5 의존)**. 트랙: `.agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md`.
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-PROF.1** | 프로파일 탭 **타이포/카드 일관화**. 클래스 없는 `<strong>`(밝은 `--cream` bold 튐) 제거 → 공통 토큰(`.settings-card`/`.settings-card-title`/`.settings-summary-{grid,row,key,value}`). 인라인 style 카드 박스 → 공통 클래스 | S-PROF | `SettingsTab.test.tsx`(35/35 무회귀) · 시각(HMR) |
+| **FR-VOICE.1** | naia-local-voice 합성이 **로컬 음성 호스트(`vllmTtsHost`)** 사용 — LLM용 `vllmHost`(localhost:8000) 오용 버그 수정. `SynthesizeOpts.vllmTtsHost` 신설 + ChatPanel 2개 빌드부 + 합성 호출 배선 | S-VOICE | `SettingsTab.test.tsx` · tsc |
+| **FR-VOICE.2** | **silent free 폴백 제거(정직화)**. naia-local-voice/vllm 합성 실패 시 브라우저 무료 TTS로 위장 금지 → 1회 명확 알림(`chat.localVoiceUnavailable`) + 무음. 클라우드 provider 는 기존 free 폴백 유지 | S-VOICE | `ChatPanel` 경로 · tsc |
+| **FR-VOICE.3** | naia-local-voice **voice picker 채움**(registry voices=기본 음색 1) — 선택 시 stale 클라우드 voice id 잔존 방지. 설정 힌트=로컬 엔진 실행 필요(`settings.localVoiceEngineHint`) + 로컬 음성 포트(22600) placeholder | S-VOICE | registry · tsc |
+
+> NFR: NFR-honesty(미가용을 free 음성으로 위장 금지) · F1(measurement-gated). ⚠️ **DEFER Round 2**: 로컬 cascade lifecycle 임베딩(naia-os Rust sidecar 기동/헬스체크) + windows-manager 정식 로더(#1 M5). 8GB 기기 적합성=미측정(소형/양자화 음성 모델 탐색 별도).
+
 ## 기능 요구사항 (FR) — 지식 근거→원문 칩 + 그래프 뷰어 (kb-compiler 통합 K2·K3, 셸 feature — 2026-06-30)
 
 > 범위: naia-agent 지식 풀 도구(`skill_knowledge_ask`/`search`) tool-result(JSON)를 셸이 **답변 + 출처 칩**으로 렌더하고, 칩 클릭 시 **근거→원문**(URL=브라우저 패널 navigate / 파일=워크스페이스 openFile)으로 연다. 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K2). 백엔드(에이전트↔kb-compiler 배선·계약) = naia-agent UC-KNOWLEDGE(별 레포, live).
@@ -106,7 +120,23 @@
 | **FR-KB-OS.3** | 근거→원문 — 칩 클릭: URL=브라우저 패널 `navigate`+activate / 파일=워크스페이스 `openFile`(file:// 제거)+패널 전환. 기존 panel api 재사용(신규 패널 불요) | UC-KNOWLEDGE | `knowledge-tool-result.test.tsx`·`e2e/chat-tools.spec.ts`(지식 도구 K2) |
 | **FR-KB-OS.4** (K3) | 지식 그래프 2D/3D 시각화 — `ToolActivity` 가 `skill_knowledge_graph` tool-result(nodes/edges+deg+군집) 분기 → `KnowledgeGraphView`(캔버스 force, 군집색·degree 크기, **2D↔3D 토글**, 원근+자동회전). 의존성 0(엔진 examples/cms 포팅). 파싱 실패=폴백 | UC-KNOWLEDGE(graph) | `knowledge-result.test.ts`(parseKnowledgeGraph)·`e2e/chat-tools.spec.ts`(지식 그래프 K3 — 캔버스 렌더+2D/3D 토글 실 UI) |
 
-> NFR: NFR-isolation(지식 렌더 분기가 기존 도구 렌더 무회귀 — 파싱 실패 시 폴백)·NFR-reuse(브라우저/워크스페이스 패널 api 재사용·그래프 의존성 0 캔버스). 설정 지식 탭(관리 compile/gap/goldQA)·전용 그래프 패널(on-demand fetch) = post-MVP(K4 DEFER).
+> NFR: NFR-isolation(지식 렌더 분기가 기존 도구 렌더 무회귀 — 파싱 실패 시 폴백)·NFR-reuse(브라우저/워크스페이스 패널 api 재사용·그래프 의존성 0 캔버스). 전용 그래프 패널(on-demand fetch) = post-MVP. 설정 지식 탭(관리 compile/소스) = 아래 K4.
+
+## 기능 요구사항 (FR) — 지식 소스 관리 설정 탭 (kb-compiler 통합 K4, 셸 — 2026-06-30)
+
+> 범위: 설정>지식 탭이 **"준비 중" placeholder 를 대체**해, 사용자가 **지식 소스(다중 폴더)·스코프**를 관리하고 **컴파일**을 트리거하는 관리면. 설정 정본 = `naia-settings/knowledge.json`(**셸만 쓰기, AI 에이전트 읽기전용** — config-write 도구 없음 = 신뢰경계 자가확장 차단). 컴파일 실행(폴더→kb.json)·답변(읽기)은 **naia-agent**(별 레포 — `CompileKnowledge` RPC·`openWorkspaceKnowledge`). 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K4).
+>
+> **상태: 진행 중 (P03→P04, 2026-06-30)** — 검증: `knowledge-config.test.ts`(config CRUD·kb 통계 파싱 단위)·`KnowledgeSettingsTab.test.tsx`(RTL 폴더 add/remove·상태 렌더)·`e2e/settings-knowledge.spec.ts`(Playwright 실 UI: 설정 지식 탭 폴더 추가/제거/상태). 컴파일 트리거(FR-KB-OS.8)는 에이전트 `CompileKnowledge` 배선에 의존.
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-KB-OS.5** | 소스 폴더 레지스트리 — 다중 폴더 추가(폴더 선택 다이얼로그)/제거/목록. 정규화 dedup. `naia-settings/knowledge.json`(`{version,scope,sources[{path,label}]}`) 영속 — `read/write_naia_knowledge_config` Rust 커맨드(**셸 전용 write**) | UC-KB-MANAGE | `knowledge-config.test.ts`·`KnowledgeSettingsTab.test.tsx` |
+| **FR-KB-OS.6** | 지식 스코프 표시 — 현 스코프(프로젝트, 기본 `default`) 표기. kb 정본 = `knowledge/<scope>/kb.json`(naia-adk) | UC-KB-MANAGE | `knowledge-config.test.ts` |
+| **FR-KB-OS.7** | 컴파일 상태 — `read_naia_knowledge_kb({adkPath,scope})` 로 kb.json envelope(`{version,kb}`) 통계(카드·엔티티·관계·accepted) 표시, 부재 = "미컴파일" | UC-KB-MANAGE | `knowledge-config.test.ts`(parseKbStats)·RTL |
+| **FR-KB-OS.8** | 컴파일 트리거 — "지금 컴파일" → `compile_knowledge({adkPath})` → 에이전트 `CompileKnowledge`(sources→compile→kb.json) → 완료 후 상태 재조회. 실패 = 정직 표기(throw 차단·UI 무붕괴) | UC-KB-MANAGE | `KnowledgeSettingsTab.test.tsx`·`e2e/settings-knowledge.spec.ts` |
+| **FR-KB-OS.9**(보안) | 설정 불가침 — `knowledge.json` 은 **셸 UI 만 기록**. 에이전트엔 config-write 도구 없음·파일 도구도 `naia-settings/` 쓰기 거부(별 레포 K-SEC). UI 입력은 AI 미경유(직접 `invoke`) | UC-KB-MANAGE | (계약: config-write 도구 부재) |
+
+> NFR: NFR-config-ownership(설정=사람/셸 소유, 에이전트 읽기전용 — FR-KB-OS.9)·NFR-isolation(컴파일 실패가 관리 UI 무붕괴)·NFR-reuse(`naia-settings` asset 커맨드·폴더 다이얼로그 기존 패턴 재사용).
 
 ## 비기능 요구사항 (NFR) — 횡단(전 tranche)
 

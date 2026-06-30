@@ -29,9 +29,9 @@
 | **이슈 문서** | `docs/progress/` (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md |
 | **GitHub 이슈** | 없음 |
 | **시작일** | 2026-06-08 |
-| **마지막 갱신** | 2026-06-10 00:12 UTC |
+| **마지막 갱신** | 2026-06-30 12:00 UTC |
 | **상태** | 진행 중 |
-| **참고** | F0~F3 계약서 (Codex/Gemini/GLM 교차검토 수렴) + 코드 스캐폴드(비동기, src/main). 계약 및 통합 테스트 67/67 통과. 실제 부팅(grafting) = Luke 머신 대기 중 |
+| **참고** | 2026-06-30 Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 폐루프 + 로컬 음성 정직화 (FR-VRAM.4·FR-PROF.1·FR-VOICE.1~3). 신규 lib/capabilities/tier-slots.ts. 적대리뷰 2벤더 PASS+수정. tsc0·셸 vitest 1008 GREEN. Round2(로컬 cascade 임베딩)=DEFER. 트랙=alpha-adk .agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md. ⚠️ 본 미러는 자동생성(M13)이며 이전 K2/K3 등 drift 존재 — 자동 동기화 필요. \| (이전) F0~F3 계약서 + 스캐폴드, 통합 테스트 67/67. |
 
 ---
 

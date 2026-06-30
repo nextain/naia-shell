@@ -77,6 +77,7 @@ import type {
 	AgentResponseChunk,
 	AuditEvent,
 	AuditFilter,
+	EnvironmentSegment,
 	ProviderId,
 } from "../lib/types";
 import { AudioQueue } from "../lib/voice/audio-queue";
@@ -226,7 +227,14 @@ const mdComponents: Components = {
 
 /** Build MemoryContext for system prompt injection.
  *  Note: User facts are now handled by Agent MemorySystem (sessionRecall).
- *  Shell only provides persona/locale/panel context. */
+ *  Shell only provides persona/locale/panel context.
+ *
+ *  S4: this is now used ONLY by the **voice (Live) and Discord** paths, which do
+ *  NOT route through the naia-agent core (Gemini Live / OpenAI Realtime / naia-omni
+ *  build their own systemInstruction). The gRPC text-chat path no longer bakes a
+ *  systemPrompt — the core assembles persona/locale/honorific/speechStyle from
+ *  config.json itself, and the shell sends only `environmentSegments` (see
+ *  `buildEnvironmentSegments`). */
 async function buildMemoryContext(): Promise<MemoryContext> {
 	const ctx: MemoryContext = {};
 	try {
@@ -253,6 +261,44 @@ async function buildMemoryContext(): Promise<MemoryContext> {
 		});
 	}
 	return ctx;
+}
+
+/**
+ * S4 — environment-only segments for the gRPC text-chat path. The shell stops
+ * baking persona/locale/honorific/speechStyle/userName into a raw systemPrompt
+ * (the core owns those, read from config.json). It sends ONLY its environment-
+ * specific context:
+ *   - `avatarEmotion`: the desktop shell always renders an avatar, so the core
+ *     should emit its standard emotion-tag instructions (the wording lives in the
+ *     core now; the shell only signals the capability).
+ *   - `panel`: live UI panel context (bgm favorites, browser url, …) as isolated
+ *     reference data.
+ *   - `responseStyle`: voice-pipeline turns ask for brief spoken answers. The core
+ *     owns the brevity wording and appends it AFTER persona, so voice replies stay
+ *     in-persona (Alpha) yet short. `"normal"` (text chat) emits nothing.
+ * Always returns at least the avatar segment (the desktop shell always has an
+ * avatar), so the core merges environment context onto persona+workspace.
+ */
+function buildEnvironmentSegments(
+	memoryCtx: MemoryContext,
+	responseStyle: "brief" | "normal" = "normal",
+): EnvironmentSegment[] {
+	const segs: EnvironmentSegment[] = [{ kind: "avatarEmotion" }];
+	if (memoryCtx.panelContexts?.length) {
+		segs.push({
+			kind: "panel",
+			entries: memoryCtx.panelContexts.map((pc) => ({
+				type: pc.type,
+				data: pc.data,
+			})),
+		});
+	}
+	// 음성 파이프라인(STT→채팅→TTS)은 brief — 코어가 간결성 지시를 persona 뒤에 append(persona 안 덮음).
+	// normal(텍스트 채팅)은 무영향(코어가 블록 미생성).
+	if (responseStyle === "brief") {
+		segs.push({ kind: "responseStyle", style: "brief" });
+	}
+	return segs;
 }
 
 // Keep reference to prevent garbage collection during playback
@@ -425,6 +471,10 @@ export function ChatPanel() {
 	// in-flight TTS fetch/WS (and stops billing for superseded paid TTS) — #363
 	// cross-review HIGH.
 	const ttsAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+	// One-time "local voice unavailable" notice per pipeline session — so a local
+	// engine that isn't running surfaces a clear message once instead of either
+	// spamming per sentence or silently masquerading as the browser free voice.
+	const localVoiceUnavailableNoticedRef = useRef<boolean>(false);
 	const pipelineVoiceConfigRef = useRef<{
 		voice?: string;
 		ttsProvider?: string;
@@ -435,6 +485,8 @@ export function ChatPanel() {
 		gatewayUrl?: string;
 		/** vllm provider: local OpenAI-compatible host. */
 		vllmHost?: string;
+		/** naia-local-voice provider: local cascade / VoxCPM2 voice host. */
+		vllmTtsHost?: string;
 	} | null>(null);
 	const sttCleanupRef = useRef<(() => void)[]>([]);
 	const sttDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -715,6 +767,10 @@ export function ChatPanel() {
 		const store = useChatStore.getState();
 		// Stop any TTS still reading the previous conversation.
 		interruptTts();
+		// Re-arm the local-voice-unavailable notice per conversation (chat mode has
+		// no pipeline-start reset) so it surfaces once per conversation, not once
+		// per app session — parity with the pipeline path's reset.
+		localVoiceUnavailableNoticedRef.current = false;
 		store.newConversation();
 
 		// Reset Gateway session and set local session ID
@@ -883,6 +939,7 @@ export function ChatPanel() {
 				naiaKey: config.naiaKey,
 				gatewayUrl: LAB_GATEWAY_URL,
 				vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
+				vllmTtsHost: config.vllmTtsHost,
 			};
 		}
 
@@ -935,10 +992,22 @@ export function ChatPanel() {
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),
 				requestId,
 				sessionId: useChatStore.getState().localSessionId,
-				// TTS handled by Shell — don't send TTS params to agent
-				systemPrompt: pipelineActiveRef.current
-					? `You are in a voice conversation. Keep responses brief and conversational (2-3 sentences max). Speak naturally as if talking to a friend.${config.enableTools ? "\nWhen the user asks you to perform an action that requires a tool, call the tool immediately in the same response. Include a short acknowledgement sentence before your tool call so the user hears feedback while the tool executes. After the tool completes, summarize the result in 1-2 sentences." : ""}\n\n${buildSystemPrompt(config.persona, memoryCtx)}`
-					: buildSystemPrompt(config.persona, memoryCtx),
+				// TTS handled by Shell — don't send TTS params to agent.
+				// S4 (두벌 제거 + 음성 persona 회귀 닫기): the shell no longer bakes persona/
+				// locale/honorific/speechStyle into a raw systemPrompt — the core assembles
+				// those from config.json itself. The shell sends ONLY its environment-specific
+				// context via `environmentSegments`. The voice-pipeline turn (STT→chat→TTS)
+				// goes through the core too, so it must NOT send a raw systemPrompt override
+				// (that would replace the whole core assembly and drop the Alpha persona from
+				// spoken replies). Instead it adds a `responseStyle: "brief"` segment — the
+				// core owns the brevity wording and appends it AFTER persona+workspace, so the
+				// avatar speaks as Alpha *and* keeps voice answers short. The proactive
+				// tool-narration capability is carried structurally by `enableTools`
+				// (passed below); the voice path no longer needs a free-text directive.
+				environmentSegments: buildEnvironmentSegments(
+					memoryCtx,
+					pipelineActiveRef.current ? "brief" : "normal",
+				),
 				enableTools: config.enableTools,
 				enableThinking: config.enableThinking,
 				gatewayUrl,
@@ -1407,6 +1476,7 @@ export function ChatPanel() {
 			naiaKey: voiceCfg?.naiaKey,
 			gatewayUrl: voiceCfg?.gatewayUrl,
 			vllmHost: voiceCfg?.vllmHost,
+			vllmTtsHost: voiceCfg?.vllmTtsHost,
 			signal: abort.signal,
 		})
 			.then(({ audioBase64, costUsd }) => {
@@ -1450,6 +1520,31 @@ export function ChatPanel() {
 				// Release the reserved ordered slot so later sentences don't stall
 				// behind this seq (enqueueOrdered waits for contiguous sequence nums).
 				audioQueueRef.current?.skipOrdered(seq);
+				// LOCAL voice engines (naia-local-voice / vllm): the user explicitly
+				// chose a local engine. Do NOT substitute the browser's free TTS —
+				// that masquerade is exactly the "free voice" surprise the user
+				// flagged. Surface a clear one-time notice and stay silent; the local
+				// voice engine must be running and reachable at vllmTtsHost (Round-2
+				// embedding). Cloud providers keep the free fallback below.
+				const isLocalVoiceProvider =
+					ttsProviderForCost === "naia-local-voice" ||
+					ttsProviderForCost === "vllm";
+				if (isLocalVoiceProvider) {
+					Logger.warn(
+						"ChatPanel",
+						"Local voice engine unavailable — no free fallback",
+						{ reqId, provider: ttsProviderForCost, error: String(err) },
+					);
+					if (!localVoiceUnavailableNoticedRef.current) {
+						localVoiceUnavailableNoticedRef.current = true;
+						useChatStore.getState().addMessage({
+							role: "assistant",
+							content: t("chat.localVoiceUnavailable"),
+						});
+					}
+					activeTtsRequestsRef.current.delete(reqId);
+					return;
+				}
 				// Cloud synthesis failed (missing key/login, network, quota). Fall
 				// back to the browser's built-in TTS so the voice is never silently
 				// dropped — better a basic voice than nothing.
@@ -1594,6 +1689,8 @@ export function ChatPanel() {
 				audioQueueRef.current = queue;
 				sentenceChunkerRef.current = new SentenceChunker();
 				pipelineActiveRef.current = true;
+				// Re-arm the local-voice-unavailable notice for this new session.
+				localVoiceUnavailableNoticedRef.current = false;
 				pipelineVoiceConfigRef.current = {
 					voice:
 						config.ttsProvider === "nextain"
@@ -1612,6 +1709,7 @@ export function ChatPanel() {
 					naiaKey: config.naiaKey,
 					gatewayUrl: LAB_GATEWAY_URL,
 					vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
+					vllmTtsHost: config.vllmTtsHost,
 				};
 
 				// Start STT engine — route to Tauri plugin (offline) or API-based

@@ -248,6 +248,47 @@ describe("synthesizeTts — vllm", () => {
 	});
 });
 
+describe("synthesizeTts — naia-local-voice (FR-VOICE.1)", () => {
+	it("uses vllmTtsHost (the LOCAL voice host), NOT the LLM vllmHost", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(bytesResponse(new Uint8Array([5])));
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({
+			text: "안녕",
+			provider: "naia-local-voice",
+			vllmHost: "http://localhost:8000", // LLM host — must be ignored
+			vllmTtsHost: "http://localhost:22600/",
+		});
+		// Regression: the bug routed naia-local-voice to vllmHost (LLM, :8000)
+		// → backend absent → silent free fallback. Must hit the voice host.
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			"http://localhost:22600/v1/audio/speech",
+		);
+	});
+
+	it("falls back to vllmHost only when vllmTtsHost is unset", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(bytesResponse(new Uint8Array([6])));
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({
+			text: "x",
+			provider: "naia-local-voice",
+			vllmHost: "http://localhost:9000",
+		});
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			"http://localhost:9000/v1/audio/speech",
+		);
+	});
+
+	it("throws a local-voice-specific error when no host is set (no silent fallback)", async () => {
+		await expect(
+			synthesizeTts({ text: "x", provider: "naia-local-voice" }),
+		).rejects.toThrow(/로컬 음성 호스트/);
+	});
+});
+
 describe("synthesizeTts — edge (bgm sidecar)", () => {
 	it("fetches the sidecar /edge-tts with a resolved edge voice", async () => {
 		const fetchMock = vi

@@ -13,12 +13,14 @@ import {
 	type OnboardingSession,
 	type StepInput,
 } from "../lib/onboarding-core";
-import { getLocale, t } from "../lib/i18n";
+import { getLocale, t, type TranslationKey } from "../lib/i18n";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import {
 	type VramTierId,
 	selectVramTier,
 } from "../lib/capabilities/vram-tiers";
+import { tierRecommendedSlots } from "../lib/capabilities/tier-slots";
+import type { SlotId } from "../lib/slots/model";
 import { useAvatarStore } from "../stores/avatar";
 import { useChatStore } from "../stores/chat";
 
@@ -171,6 +173,16 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				t(vramTierLabelKey(recommendedVramTier.id)),
 			)
 		: t("onboard.connect.vramCloud");
+	// FR-VRAM.4: 감지된 VRAM 예산 내 로컬 추천 슬롯(읽기 — 실제 토글은 설정 탭).
+	const onboardingTierRecs = tierRecommendedSlots(recommendedVramTier);
+	const ONBOARD_SLOT_LABEL: Record<SlotId, TranslationKey> = {
+		main: "settings.slot.slotMain",
+		sub: "settings.slot.slotSub",
+		embedding: "settings.slot.slotEmbedding",
+		stt: "settings.slot.slotStt",
+		tts: "settings.slot.slotTts",
+		avatar: "settings.slot.slotAvatar",
+	};
 
 	useEffect(() => {
 		detectGpuVramGb().then(setDetectedVramGb);
@@ -794,6 +806,22 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								<br />
 								{t("onboard.connect.runtimeBoundary")}
 							</p>
+							{onboardingTierRecs.length > 0 && (
+								<div
+									className="onboarding-step__hint"
+									data-testid="onboard-tier-recs"
+									style={{ marginTop: 8 }}
+								>
+									{t("settings.tierRecommendSummary")}:{" "}
+									{onboardingTierRecs
+										.map(
+											(rec) =>
+												`${t(ONBOARD_SLOT_LABEL[rec.slot])} → ${rec.localValue}`,
+										)
+										.join(", ")}{" "}
+									({t("settings.tierRecommendLocalTag")})
+								</div>
+							)}
 						</div>
 						{naiaLoginDone ? (
 							<>

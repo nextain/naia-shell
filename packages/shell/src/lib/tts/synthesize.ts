@@ -40,8 +40,15 @@ export interface SynthesizeOpts {
 	naiaKey?: string;
 	/** Gateway base URL, no trailing slash (nextain provider). */
 	gatewayUrl?: string;
-	/** Local vLLM base URL (vllm provider). */
+	/** Local vLLM base URL (vllm provider — LLM-style OpenAI host). */
 	vllmHost?: string;
+	/**
+	 * Local voice engine host (naia-local-voice provider) — distinct from
+	 * `vllmHost` (which is the LLM host). When unset for naia-local-voice,
+	 * synthesis falls back to `vllmHost` then fails honestly (no silent
+	 * free-voice substitution — see ChatPanel catch).
+	 */
+	vllmTtsHost?: string;
 	/** Abort signal for cancellation / interrupt. */
 	signal?: AbortSignal;
 }
@@ -216,11 +223,23 @@ async function synthElevenlabs(opts: SynthesizeOpts): Promise<SynthesizeResult> 
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
-/** vllm → local OpenAI-compatible `/v1/audio/speech` (returns raw bytes). */
+/** vllm / naia-local-voice → local OpenAI-compatible `/v1/audio/speech`.
+ * naia-local-voice uses the dedicated local voice host (`vllmTtsHost`), NOT the
+ * LLM host. Falls back to `vllmHost` only if the voice host is unset, then
+ * throws — the caller (ChatPanel) surfaces a clear "local voice unavailable"
+ * notice instead of faking a free voice. */
 async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
-	const base = opts.vllmHost?.replace(/\/$/, "");
+	const host =
+		opts.provider === "naia-local-voice"
+			? (opts.vllmTtsHost ?? opts.vllmHost)
+			: opts.vllmHost;
+	const base = host?.replace(/\/$/, "");
 	if (!base) {
-		throw new Error("vLLM 호스트가 설정되지 않았습니다.");
+		throw new Error(
+			opts.provider === "naia-local-voice"
+				? "로컬 음성 호스트(naia-local-voice)가 설정되지 않았습니다."
+				: "vLLM 호스트가 설정되지 않았습니다.",
+		);
 	}
 	const resp = await fetch(`${base}/v1/audio/speech`, {
 		method: "POST",

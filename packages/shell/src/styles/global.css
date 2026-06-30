@@ -496,7 +496,7 @@ body,
    Top-level mode switcher: Browsing / Issues / Coding / Gaming
    Controls what appears in content-panel + meta-panel.
 ────────────────────────────────────────────────────────────────────────────── */
-.mode-bar {
+.app-bar {
 	display: flex;
 	align-items: center;
 	height: 40px;
@@ -510,7 +510,7 @@ body,
 }
 
 /* Scrollable tab strip — fills all available space */
-.mode-bar-tabs {
+.app-bar-tabs {
 	display: flex;
 	align-items: center;
 	flex: 1;
@@ -521,19 +521,19 @@ body,
 	height: 100%;
 }
 
-.mode-bar-tabs::-webkit-scrollbar {
+.app-bar-tabs::-webkit-scrollbar {
 	display: none;
 }
 
 /* Tab wrapper: auto width so tabs group at the left */
-.mode-bar-tab-wrapper {
+.app-bar-tab-wrapper {
 	display: flex;
 	align-items: center;
 	flex: none;
 	height: 100%;
 }
 
-.mode-bar-tab {
+.app-bar-tab {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -550,27 +550,27 @@ body,
 	transition: background 0.1s, color 0.1s;
 }
 
-.mode-bar-tab:hover {
+.app-bar-tab:hover {
 	background: var(--hover-bg);
 	color: var(--cream);
 }
 
-.mode-bar-tab--active {
+.app-bar-tab--active {
 	background: var(--accent-bg);
 	color: var(--accent);
 	font-weight: 500;
 }
 
-.mode-bar-tab--shortcut {
+.app-bar-tab--shortcut {
 	color: var(--accent);
 }
 
-.mode-bar-tab-icon {
+.app-bar-tab-icon {
 	font-size: 14px;
 	flex-shrink: 0;
 }
 
-.mode-bar-tab-icon--initial {
+.app-bar-tab-icon--initial {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -583,7 +583,7 @@ body,
 	color: var(--accent);
 }
 
-.mode-bar-tab-icon--svg {
+.app-bar-tab-icon--svg {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -591,12 +591,12 @@ body,
 	height: 16px;
 }
 
-.mode-bar-tab-icon--svg svg {
+.app-bar-tab-icon--svg svg {
 	width: 16px;
 	height: 16px;
 }
 
-.mode-bar-tab-favicon {
+.app-bar-tab-favicon {
 	width: 18px;
 	height: 18px;
 	border-radius: 4px;
@@ -606,14 +606,14 @@ body,
 	padding: 1px;
 }
 
-.mode-bar-tab-name {
+.app-bar-tab-name {
 	font-size: 13px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.mode-bar-add {
+.app-bar-add {
 	flex-shrink: 0;
 	display: flex;
 	align-items: center;
@@ -629,12 +629,12 @@ body,
 	line-height: 1;
 }
 
-.mode-bar-add:hover {
+.app-bar-add:hover {
 	background: var(--hover-bg);
 	color: var(--cream);
 }
 
-.mode-bar-settings {
+.app-bar-settings {
 	flex-shrink: 0;
 	display: flex;
 	align-items: center;
@@ -648,18 +648,18 @@ body,
 	border-radius: 8px;
 }
 
-.mode-bar-settings:hover {
+.app-bar-settings:hover {
 	background: var(--hover-bg);
 	color: var(--cream);
 }
 
-.mode-bar-settings--active {
+.app-bar-settings--active {
 	color: var(--accent, var(--wood));
 	background: var(--accent-bg);
 }
 
 /* Edit mode button */
-.mode-bar-edit {
+.app-bar-edit {
 	flex-shrink: 0;
 	display: flex;
 	align-items: center;
@@ -675,17 +675,17 @@ body,
 	line-height: 1;
 }
 
-.mode-bar-edit:hover {
+.app-bar-edit:hover {
 	background: var(--hover-bg);
 	color: var(--cream);
 }
 
-.mode-bar-edit--active {
+.app-bar-edit--active {
 	color: var(--accent, #7ca0ff);
 	background: var(--accent-bg);
 }
 
-.mode-bar-ctx-menu {
+.app-bar-ctx-menu {
 	position: fixed;
 	z-index: 10000;
 	min-width: 160px;
@@ -698,7 +698,7 @@ body,
 	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-.mode-bar-ctx-menu__item {
+.app-bar-ctx-menu__item {
 	display: block;
 	width: 100%;
 	padding: 7px 14px;
@@ -711,17 +711,17 @@ body,
 	white-space: nowrap;
 }
 
-.mode-bar-ctx-menu__item:hover {
+.app-bar-ctx-menu__item:hover {
 	background: rgba(100, 160, 255, 0.12);
 	color: #fff;
 }
 
-.mode-bar-ctx-menu__item--danger:hover {
+.app-bar-ctx-menu__item--danger:hover {
 	background: rgba(239, 68, 68, 0.18);
 	color: #fca5a5;
 }
 
-.mode-bar-url-dialog-overlay {
+.app-bar-url-dialog-overlay {
 	position: fixed;
 	inset: 0;
 	z-index: 10000;
@@ -733,7 +733,7 @@ body,
 	-webkit-backdrop-filter: blur(4px);
 }
 
-.mode-bar-url-dialog {
+.app-bar-url-dialog {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -745,7 +745,7 @@ body,
 	box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
 }
 
-.mode-bar-url-dialog__input {
+.app-bar-url-dialog__input {
 	padding: 8px 12px;
 	border: 1px solid rgba(100, 160, 255, 0.25);
 	border-radius: 6px;
@@ -755,17 +755,17 @@ body,
 	outline: none;
 }
 
-.mode-bar-url-dialog__input:focus {
+.app-bar-url-dialog__input:focus {
 	border-color: var(--accent, rgba(100, 160, 255, 0.5));
 }
 
-.mode-bar-url-dialog__btns {
+.app-bar-url-dialog__btns {
 	display: flex;
 	justify-content: flex-end;
 	gap: 8px;
 }
 
-.mode-bar-url-dialog__btn {
+.app-bar-url-dialog__btn {
 	padding: 6px 16px;
 	border: 1px solid rgba(100, 160, 255, 0.2);
 	border-radius: 6px;
@@ -775,22 +775,22 @@ body,
 	cursor: pointer;
 }
 
-.mode-bar-url-dialog__btn:hover {
+.app-bar-url-dialog__btn:hover {
 	background: rgba(100, 160, 255, 0.1);
 	color: #fff;
 }
 
-.mode-bar-url-dialog__btn--primary {
+.app-bar-url-dialog__btn--primary {
 	background: rgba(100, 160, 255, 0.2);
 	border-color: rgba(100, 160, 255, 0.35);
 	color: #fff;
 }
 
-.mode-bar-url-dialog__btn--primary:hover {
+.app-bar-url-dialog__btn--primary:hover {
 	background: rgba(100, 160, 255, 0.3);
 }
 
-.mode-bar-url-dialog__section {
+.app-bar-url-dialog__section {
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -804,33 +804,33 @@ body,
 	text-align: left;
 }
 
-.mode-bar-url-dialog__section:hover {
+.app-bar-url-dialog__section:hover {
 	background: rgba(100, 160, 255, 0.1);
 	border-color: rgba(100, 160, 255, 0.3);
 }
 
-.mode-bar-url-dialog__section-icon {
+.app-bar-url-dialog__section-icon {
 	font-size: 24px;
 	flex-shrink: 0;
 }
 
-.mode-bar-url-dialog__section-text {
+.app-bar-url-dialog__section-text {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 }
 
-.mode-bar-url-dialog__section-text strong {
+.app-bar-url-dialog__section-text strong {
 	font-size: 13px;
 	color: #e2e8f0;
 }
 
-.mode-bar-url-dialog__section-text span {
+.app-bar-url-dialog__section-text span {
 	font-size: 11px;
 	color: rgba(226, 232, 240, 0.5);
 }
 
-.mode-bar-tab-remove {
+.app-bar-tab-remove {
 	display: none;
 	align-items: center;
 	justify-content: center;
@@ -848,17 +848,17 @@ body,
 	flex-shrink: 0;
 }
 
-.mode-bar-tab-wrapper:hover .mode-bar-tab-remove {
+.app-bar-tab-wrapper:hover .app-bar-tab-remove {
 	display: flex;
 }
 
-.mode-bar-tab-remove:hover {
+.app-bar-tab-remove:hover {
 	background: var(--espresso-medium);
 	color: var(--cream);
 }
 
 /* Shortcut remove button — always visible in edit mode */
-.mode-bar-tab-remove--shortcut {
+.app-bar-tab-remove--shortcut {
 	display: flex;
 	color: var(--cream-dim);
 	background: rgba(0,0,0,0.5);
@@ -866,13 +866,13 @@ body,
 }
 
 /* Drag-over state */
-.mode-bar-tab-wrapper--drag-over {
+.app-bar-tab-wrapper--drag-over {
 	outline: 2px solid var(--accent, #7ca0ff);
 	border-radius: 8px;
 }
 
 /* Edit mode tab — pulsing border to signal clickable for icon edit */
-.mode-bar-tab--edit {
+.app-bar-tab--edit {
 	outline: 1px dashed rgba(124, 160, 255, 0.5);
 }
 
@@ -2338,6 +2338,141 @@ body.resizing-row {
 	color: var(--cream-dim);
 	margin-top: 4px;
 	opacity: 0.7;
+}
+
+/* ── 프로파일 탭 요약 카드 (slot-groups / engine-*-summary 공통 토큰) ──
+   인라인 style + 클래스 없는 <strong>(밝은 --cream bold 튐)을 일관된
+   타이포 스케일로 통일한다: 카드 제목 11px/latte, 키 12px/dim, 값 12px/cream. */
+.settings-card {
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 10px 12px;
+	background: var(--bg-surface-2);
+}
+.settings-card + .settings-card {
+	margin-top: 10px;
+}
+.settings-card-title {
+	display: block;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--latte);
+	text-transform: uppercase;
+	letter-spacing: 0.4px;
+}
+.settings-summary-grid {
+	display: grid;
+	gap: 6px;
+	margin-top: 8px;
+}
+.settings-summary-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--cream);
+}
+.settings-summary-key {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--cream-dim);
+	white-space: nowrap;
+}
+.settings-summary-value {
+	font-size: 12px;
+	color: var(--cream);
+	text-align: right;
+	word-break: break-word;
+}
+.settings-summary-list {
+	margin: 8px 0 0;
+	padding-left: 20px;
+	font-size: 12px;
+	color: var(--cream);
+}
+.settings-summary-list li {
+	margin: 2px 0;
+}
+/* VRAM 예산 내 로컬 추천 배지 (FR-VRAM.4) */
+.slot-recommend-badge {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 1.4;
+	padding: 0 6px;
+	border-radius: 999px;
+	color: var(--sage);
+	border: 1px solid var(--sage);
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+/* ── 지식 소스 관리 설정 탭 (KnowledgeSettingsTab, FR-KB-OS.5~8) ── */
+.knowledge-scope {
+	font-size: 12px;
+	color: var(--cream, #e8e0d0);
+	font-family: var(--mono, monospace);
+}
+.knowledge-source-list {
+	list-style: none;
+	margin: 4px 0 8px;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.knowledge-source-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+	border-radius: 6px;
+	font-size: 11px;
+}
+.knowledge-source-label {
+	font-weight: 600;
+	color: var(--cream, #e8e0d0);
+	white-space: nowrap;
+}
+.knowledge-source-path {
+	flex: 1;
+	color: var(--cream-dim);
+	opacity: 0.7;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: var(--mono, monospace);
+	font-size: 10px;
+}
+.knowledge-source-remove,
+.knowledge-add-folder,
+.knowledge-compile {
+	background: transparent;
+	border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
+	border-radius: 6px;
+	color: var(--cream, #e8e0d0);
+	padding: 4px 10px;
+	font-size: 11px;
+	cursor: pointer;
+}
+.knowledge-source-remove:hover,
+.knowledge-add-folder:hover,
+.knowledge-compile:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.08);
+}
+.knowledge-compile:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+.knowledge-status {
+	font-size: 12px;
+	color: var(--cream, #e8e0d0);
+}
+.knowledge-compile-error {
+	color: var(--error, #e08a8a);
+	opacity: 1;
 }
 
 .settings-embedding-progress {
@@ -5677,15 +5812,15 @@ body.resizing-row {
 	margin: 0 2px;
 }
 
-/* BGM + controls right-side group in ModeBar */
-.mode-bar-right-controls {
+/* BGM + controls right-side group in AppBar */
+.app-bar-right-controls {
 	display: flex;
 	align-items: center;
 	gap: 3px;
 	flex-shrink: 0;
 }
 
-.mode-bar-ctrl-sep {
+.app-bar-ctrl-sep {
 	width: 1px;
 	height: 18px;
 	background: rgba(255, 255, 255, 0.1);
@@ -9309,7 +9444,7 @@ body.resizing-col * {
 	/* ── Hide all UI chrome ──────────────────────────────────────────── */
 	body > *:not(#root),
 	.titlebar,
-	.mode-bar,
+	.app-bar,
 	.chat-panel,
 	.sidebar,
 	.naia-overlay,
