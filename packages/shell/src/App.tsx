@@ -7,7 +7,7 @@ import { AiControlBar } from "./components/AiControlBar";
 import { AvatarCanvas } from "./components/AvatarCanvas";
 import { ChatPanel } from "./components/ChatPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { ModeBar } from "./components/ModeBar";
+import { AppBar } from "./components/AppBar";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { PanelInstallDialog } from "./components/PanelInstallDialog";
 import { SplashScreen } from "./components/SplashScreen";
@@ -164,6 +164,25 @@ export function App() {
 	const [chatHeight, setChatHeight] = useState(() =>
 		Math.round(window.innerHeight * 0.4),
 	);
+	// Workspace conversation-rail collapse (reclaims horizontal space for the
+	// work area). Collapse hides the rail via CSS width:0 — ChatPanel stays
+	// MOUNTED so an in-flight voice/STT session survives. Persisted (FR-UI.6).
+	const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+		try {
+			return localStorage.getItem("naia-ws-rail-collapsed") === "1";
+		} catch {
+			return false;
+		}
+	});
+	const toggleRailCollapsed = useCallback(() => {
+		setRailCollapsed((v) => {
+			const next = !v;
+			try {
+				localStorage.setItem("naia-ws-rail-collapsed", next ? "1" : "0");
+			} catch {}
+			return next;
+		});
+	}, []);
 	const chatDragRef = useRef<{
 		startY: number;
 		startH: number;
@@ -206,11 +225,8 @@ export function App() {
 	const appReady = useAppReady(showAdkSetup, showOnboarding);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
-	const {
-		activePanel,
-		toggleAiInterferenceEnabled,
-		setTtsEnabled,
-	} = usePanelStore();
+	const { activePanel, toggleAiInterferenceEnabled, setTtsEnabled } =
+		usePanelStore();
 
 	// Initialise ttsEnabled from persisted config on mount
 	useEffect(() => {
@@ -293,7 +309,8 @@ export function App() {
 		listNaiaAssets("background").then(async (paths) => {
 			if (paths.length === 0) return;
 			const config = loadConfig();
-			const saved = (config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
+			const saved =
+				(config?.backgroundVideo as string | undefined) ?? DEFAULT_BG_VIDEO;
 			const match = paths.find((p) => p.endsWith(saved));
 			if (match) {
 				setBackgroundMediaType(getBackgroundMediaType(match));
@@ -382,10 +399,11 @@ export function App() {
 			if (debounceTimer) clearTimeout(debounceTimer);
 			debounceTimer = setTimeout(() => {
 				const cfg = loadConfig();
-				if (cfg) void writeNaiaConfig({
-					...(cfg as unknown as Record<string, unknown>),
-					...buildNaiaConfigEnv(cfg),
-				});
+				if (cfg)
+					void writeNaiaConfig({
+						...(cfg as unknown as Record<string, unknown>),
+						...buildNaiaConfigEnv(cfg),
+					});
 			}, 800);
 		};
 
@@ -416,7 +434,11 @@ export function App() {
 			if (debounceTimer) {
 				clearTimeout(debounceTimer);
 				const cfg = loadConfig();
-				if (cfg) void writeNaiaConfig({ ...(cfg as unknown as Record<string, unknown>), ...buildNaiaConfigEnv(cfg) });
+				if (cfg)
+					void writeNaiaConfig({
+						...(cfg as unknown as Record<string, unknown>),
+						...buildNaiaConfigEnv(cfg),
+					});
 			}
 		};
 	}, []);
@@ -432,7 +454,10 @@ export function App() {
 			.then((cfg) => {
 				if (!cfg?.naiaKey) return;
 				invoke("store_startup_message", {
-					message: JSON.stringify({ type: "auth_update", naiaKey: cfg.naiaKey }),
+					message: JSON.stringify({
+						type: "auth_update",
+						naiaKey: cfg.naiaKey,
+					}),
 				}).catch(() => {});
 				sendAuthUpdate(cfg.naiaKey).catch(() => {});
 				notifyNaiaAuthReady("startup");
@@ -614,12 +639,10 @@ export function App() {
 			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
 			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
 			// G-11: map naia-os provider → naia-agent creds_update keyMap
-			const credsProvider = cfg.provider === "nextain" ? "naia-anyllm" : cfg.provider;
+			const credsProvider =
+				cfg.provider === "nextain" ? "naia-anyllm" : cfg.provider;
 			const credsPayload = {
-				keys:
-					cfg.apiKey && cfg.provider
-						? { [credsProvider]: cfg.apiKey }
-						: {},
+				keys: cfg.apiKey && cfg.provider ? { [credsProvider]: cfg.apiKey } : {},
 				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
 				...(cfg.gatewayToken !== undefined && {
 					gatewayToken: cfg.gatewayToken,
@@ -701,6 +724,26 @@ export function App() {
 		: null;
 	const CenterComponent = activePanelDescriptor?.center ?? null;
 
+	// ── UI mode (single signal — derived from activePanel, no separate SoT) ──
+	// home    = no panel active → immersive VN conversation over the avatar
+	// workspace = workspace panel → 4-zone mission-control (chat rail + worktree
+	//             + document viewer/terminal + sub-agent list)
+	// panel   = any other panel (browser, settings, …) → chat as floating dock
+	// The same single ChatPanel instance is repositioned by CSS keyed off
+	// data-ui-mode — it is NEVER unmounted across modes (voice/STT/TTS session
+	// continuity). `variant` only changes the chat UI density, not its logic.
+	const uiMode = showOnboarding
+		? "onboarding"
+		: showAdkSetup
+			? "setup"
+			: activePanel === null
+				? "home"
+				: activePanel === "workspace"
+					? "workspace"
+					: "panel";
+	const chatVariant: "vn" | "rail" | "floating" =
+		uiMode === "home" ? "vn" : uiMode === "workspace" ? "rail" : "floating";
+
 	const keepAlivePanels = useMemo(
 		() =>
 			panelRegistry.list().filter((p) => p.builtIn && p.keepAlive !== false),
@@ -712,7 +755,17 @@ export function App() {
 	return (
 		<div
 			className="app-root"
-			style={{ "--naia-width": showOnboarding ? `${window.innerWidth}px` : `${naiaWidth}px` } as React.CSSProperties}
+			data-ui-mode={uiMode}
+			data-rail-collapsed={
+				uiMode === "workspace" && railCollapsed ? "true" : "false"
+			}
+			style={
+				{
+					"--naia-width": showOnboarding
+						? `${window.innerWidth}px`
+						: `${naiaWidth}px`,
+				} as React.CSSProperties
+			}
 		>
 			{/* ①-a Default background — always base layer (#36 fix).
 			    YouTube BGM iframe 이 autoplay 안 되거나 로딩 실패해도 깨진 X 박스
@@ -737,8 +790,8 @@ export function App() {
 					style={{ zIndex: 1 }}
 				/>
 			) : backgroundVideoUrl &&
-			(backgroundMediaType === "video" ||
-				(!backgroundMediaType && isVideoFile(backgroundVideoUrl))) ? (
+				(backgroundMediaType === "video" ||
+					(!backgroundMediaType && isVideoFile(backgroundVideoUrl))) ? (
 				<video
 					key={backgroundVideoUrl}
 					className="app-bg-video"
@@ -870,10 +923,14 @@ export function App() {
 									</button>
 									<div
 										className={`naia-chat-wrapper${chatVisible ? "" : " naia-chat-wrapper--hidden"}`}
-										style={chatVisible ? { height: chatHeight } : undefined}
+										style={
+											chatVisible && chatVariant !== "rail"
+												? { height: chatHeight }
+												: undefined
+										}
 									>
 										<ErrorBoundary scope="ChatPanel">
-											<ChatPanel />
+											<ChatPanel variant={chatVariant} />
 										</ErrorBoundary>
 									</div>
 								</div>
@@ -881,18 +938,38 @@ export function App() {
 						</>
 					)}
 
+					{/* Workspace conversation-rail collapse toggle. Collapsing keeps the
+					    ChatPanel mounted (CSS width:0) so voice/STT survives. */}
+					{uiMode === "workspace" && naiaVisible && !showOnboarding && (
+						<button
+							type="button"
+							className={`ws-rail-toggle${railCollapsed ? " ws-rail-toggle--collapsed" : ""}`}
+							onClick={toggleRailCollapsed}
+							title={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}
+							aria-label={railCollapsed ? "대화 레일 펼치기" : "대화 레일 접기"}
+						>
+							{railCollapsed ? "💬" : "‹"}
+						</button>
+					)}
+
 					<div
 						className="app-layout"
 						style={
 							{
-								left: showOnboarding ? 0 : naiaVisible ? naiaWidth : 0,
+								left: showOnboarding
+									? 0
+									: !naiaVisible
+										? 0
+										: uiMode === "workspace" && railCollapsed
+											? 0
+											: naiaWidth,
 							} as React.CSSProperties
 						}
 					>
 						<div className="right-area">
 							{!showSplash && !showOnboarding && (
 								<>
-									<ModeBar onAddMode={() => setShowPanelInstall(true)} />
+									<AppBar onAddMode={() => setShowPanelInstall(true)} />
 									{showPanelInstall && (
 										<PanelInstallDialog
 											onClose={() => setShowPanelInstall(false)}
@@ -906,7 +983,10 @@ export function App() {
 								{showOnboarding ? (
 									<OnboardingWizard
 										onComplete={() => {
-											Logger.info("App", "Onboarding complete — mounting main app panels");
+											Logger.info(
+												"App",
+												"Onboarding complete — mounting main app panels",
+											);
 											setShowOnboarding(false);
 										}}
 									/>

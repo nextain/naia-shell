@@ -88,7 +88,7 @@ vi.mock("../../stores/panel", () => ({
 }));
 
 import { act } from "@testing-library/react";
-import { ModeBar } from "../ModeBar";
+import { AppBar } from "../AppBar";
 
 const SHORTCUT = {
 	title: "Google",
@@ -99,52 +99,52 @@ const SHORTCUT = {
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
-describe("ModeBar — add dialog", () => {
+describe("AppBar — add dialog", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
 	});
 
 	it("renders + button", () => {
-		render(<ModeBar />);
-		expect(screen.getByTitle("modebar.addItem")).toBeDefined();
+		render(<AppBar />);
+		expect(screen.getByTitle("appbar.addItem")).toBeDefined();
 	});
 
 	it("opens add-url dialog when + clicked", () => {
-		render(<ModeBar />);
-		fireEvent.click(screen.getByTitle("modebar.addItem"));
-		expect(screen.getByText("modebar.addShortcut")).toBeDefined();
-		expect(screen.getByText("modebar.addPanel")).toBeDefined();
+		render(<AppBar />);
+		fireEvent.click(screen.getByTitle("appbar.addItem"));
+		expect(screen.getByText("appbar.addShortcut")).toBeDefined();
+		expect(screen.getByText("appbar.addPanel")).toBeDefined();
 	});
 
 	it("calls pushModal when add dialog opens", () => {
-		render(<ModeBar />);
-		fireEvent.click(screen.getByTitle("modebar.addItem"));
+		render(<AppBar />);
+		fireEvent.click(screen.getByTitle("appbar.addItem"));
 		expect(mockPushModal).toHaveBeenCalledTimes(1);
 	});
 
 	it("calls popModal when overlay is clicked (dialog closes)", () => {
-		render(<ModeBar />);
-		fireEvent.click(screen.getByTitle("modebar.addItem"));
+		render(<AppBar />);
+		fireEvent.click(screen.getByTitle("appbar.addItem"));
 		// click overlay (dialog backdrop)
-		const overlay = document.querySelector(".mode-bar-url-dialog-overlay")!;
+		const overlay = document.querySelector(".app-bar-url-dialog-overlay")!;
 		fireEvent.click(overlay);
 		expect(mockPopModal).toHaveBeenCalledTimes(1);
 	});
 
 	it("opens URL input dialog when 링크 추가 section clicked", () => {
-		render(<ModeBar />);
-		fireEvent.click(screen.getByTitle("modebar.addItem"));
-		fireEvent.click(screen.getByText("modebar.addShortcut").closest("button")!);
-		expect(screen.getByPlaceholderText("modebar.enterUrl")).toBeDefined();
+		render(<AppBar />);
+		fireEvent.click(screen.getByTitle("appbar.addItem"));
+		fireEvent.click(screen.getByText("appbar.addShortcut").closest("button")!);
+		expect(screen.getByPlaceholderText("appbar.enterUrl")).toBeDefined();
 	});
 
 	it("pushModal stays at 1 during addUrlDialog→urlInputDialog transition", () => {
-		render(<ModeBar />);
-		fireEvent.click(screen.getByTitle("modebar.addItem"));
+		render(<AppBar />);
+		fireEvent.click(screen.getByTitle("appbar.addItem"));
 		// pushModal called once when isAnyDialogOpen first becomes true
 		expect(mockPushModal).toHaveBeenCalledTimes(1);
-		fireEvent.click(screen.getByText("modebar.addShortcut").closest("button")!);
+		fireEvent.click(screen.getByText("appbar.addShortcut").closest("button")!);
 		// isAnyDialogOpen stays true during transition — effect does NOT re-run,
 		// so pushModal is NOT called again (single-boolean optimization prevents
 		// browser_wv_show/hide flash between dialogs)
@@ -154,7 +154,7 @@ describe("ModeBar — add dialog", () => {
 
 // ── Edit mode (#295) ─────────────────────────────────────────────────────────
 
-describe("ModeBar — edit mode (#295)", () => {
+describe("AppBar — edit mode (#295)", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
@@ -162,35 +162,35 @@ describe("ModeBar — edit mode (#295)", () => {
 
 	it("edit button hidden when no shortcuts", async () => {
 		mockLoadBrowserShortcuts.mockResolvedValue([]);
-		render(<ModeBar />);
+		render(<AppBar />);
 		// Wait for shortcuts to load (async)
 		await act(async () => {});
-		expect(document.querySelector(".mode-bar-edit")).toBeNull();
+		expect(document.querySelector(".app-bar-edit")).toBeNull();
 	});
 
 	it("edit button appears when shortcuts exist", async () => {
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
-		render(<ModeBar />);
+		render(<AppBar />);
 		await act(async () => {});
-		expect(document.querySelector(".mode-bar-edit")).toBeDefined();
+		expect(document.querySelector(".app-bar-edit")).toBeDefined();
 	});
 
-	it("clicking edit button toggles mode-bar-edit--active class", async () => {
+	it("clicking edit button toggles app-bar-edit--active class", async () => {
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
-		render(<ModeBar />);
+		render(<AppBar />);
 		await act(async () => {});
-		const btn = document.querySelector(".mode-bar-edit") as HTMLButtonElement;
-		expect(btn.classList.contains("mode-bar-edit--active")).toBe(false);
+		const btn = document.querySelector(".app-bar-edit") as HTMLButtonElement;
+		expect(btn.classList.contains("app-bar-edit--active")).toBe(false);
 		fireEvent.click(btn);
-		expect(btn.classList.contains("mode-bar-edit--active")).toBe(true);
+		expect(btn.classList.contains("app-bar-edit--active")).toBe(true);
 	});
 
 	it("in edit mode, ✕ delete button appears on each shortcut", async () => {
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
-		render(<ModeBar />);
+		render(<AppBar />);
 		await act(async () => {});
 		// Enter edit mode
-		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		fireEvent.click(document.querySelector(".app-bar-edit")!);
 		// ✕ button should appear
 		expect(screen.getByTitle("바로가기 삭제")).toBeDefined();
 	});
@@ -199,21 +199,21 @@ describe("ModeBar — edit mode (#295)", () => {
 		const updated: (typeof SHORTCUT)[] = [];
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
 		mockRemoveBrowserShortcut.mockResolvedValue(updated);
-		render(<ModeBar />);
+		render(<AppBar />);
 		await act(async () => {});
-		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		fireEvent.click(document.querySelector(".app-bar-edit")!);
 		fireEvent.click(screen.getByTitle("바로가기 삭제"));
 		expect(mockRemoveBrowserShortcut).toHaveBeenCalledWith(SHORTCUT.url);
 	});
 
 	it("clicking shortcut in edit mode opens icon editor dialog", async () => {
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
-		render(<ModeBar />);
+		render(<AppBar />);
 		await act(async () => {});
-		fireEvent.click(document.querySelector(".mode-bar-edit")!);
+		fireEvent.click(document.querySelector(".app-bar-edit")!);
 		// In edit mode, clicking shortcut opens icon editor (not browser navigation)
 		const shortcutBtn = document.querySelector(
-			".mode-bar-tab--edit",
+			".app-bar-tab--edit",
 		) as HTMLButtonElement;
 		fireEvent.click(shortcutBtn);
 		// Icon editor input should appear
@@ -226,10 +226,10 @@ describe("ModeBar — edit mode (#295)", () => {
 		const afterUpdate = [{ ...SHORTCUT, iconUrl: "🎯" }];
 		mockLoadBrowserShortcuts.mockResolvedValue([SHORTCUT]);
 		mockUpdateBrowserShortcutIcon.mockResolvedValue(afterUpdate);
-		render(<ModeBar />);
+		render(<AppBar />);
 		await act(async () => {});
-		fireEvent.click(document.querySelector(".mode-bar-edit")!);
-		fireEvent.click(document.querySelector(".mode-bar-tab--edit")!);
+		fireEvent.click(document.querySelector(".app-bar-edit")!);
+		fireEvent.click(document.querySelector(".app-bar-tab--edit")!);
 		// Type new icon
 		const input = screen.getByPlaceholderText(
 			"이모지 또는 이미지 URL (비우면 기본값)",

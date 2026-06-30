@@ -259,9 +259,10 @@ test.describe("PTY Terminal E2E — #119", () => {
 			timeout: 5_000,
 		});
 
-		// "에디터" tab should exist
-		const editorTab = page.locator('.workspace-panel__tab:has-text("에디터")');
-		await expect(editorTab).toBeVisible();
+		// Terminal view toggle (tabs ⇄ grid) lives in the terminal tab bar
+		await expect(
+			page.locator(".workspace-panel__term-viewtoggle"),
+		).toBeVisible();
 
 		// Terminal tab with dir name should exist
 		const terminalTab = page.locator(
@@ -284,8 +285,9 @@ test.describe("PTY Terminal E2E — #119", () => {
 		await expect(activeTab).toContainText("naia-os");
 	});
 
-	// T4: Click editor tab → editor becomes active
-	test("T4: 에디터 탭 클릭 시 에디터 탭이 활성화됨", async ({ page }) => {
+	// T4: Document viewer stays visible alongside the terminal (split layout —
+	// the editor is now a permanent top zone, not a tab competing with terminals)
+	test("T4: 터미널이 열려도 문서뷰어가 항상 함께 표시됨", async ({ page }) => {
 		await openWorkspacePanel(page);
 		await sendMessage(page, "터미널 열어줘");
 
@@ -293,16 +295,19 @@ test.describe("PTY Terminal E2E — #119", () => {
 			timeout: 5_000,
 		});
 
-		// Click editor tab
-		await page.locator('.workspace-panel__tab:has-text("에디터")').click();
-
-		// Editor tab should now be active
-		const activeTab = page.locator(".workspace-panel__tab--active");
-		await expect(activeTab).toContainText("에디터");
+		// Both zones coexist: the document viewer (top) and the terminal (bottom).
+		await expect(page.locator(".workspace-panel__doc-zone")).toBeVisible();
+		await expect(page.locator(".workspace-panel__term-zone")).toBeVisible();
+		await expect(page.locator(".workspace-panel__editor-slot")).not.toHaveCSS(
+			"opacity",
+			"0",
+		);
 	});
 
-	// T5: Click × button → terminal tab removed
-	test("T5: × 버튼 클릭 시 터미널 탭 제거, 에디터로 복귀", async ({ page }) => {
+	// T5: Click × button → terminal tab removed, terminal zone empties
+	test("T5: × 버튼 클릭 시 터미널 탭 제거, 빈 터미널 영역", async ({
+		page,
+	}) => {
 		await openWorkspacePanel(page);
 		await sendMessage(page, "터미널 열어줘");
 
@@ -318,10 +323,97 @@ test.describe("PTY Terminal E2E — #119", () => {
 			timeout: 3_000,
 		});
 
-		// Editor slot should be active (opacity not hidden — activeTab fell back to "editor")
+		// Document viewer stays visible (it is a permanent zone, not a fallback tab)
 		await expect(page.locator(".workspace-panel__editor-slot")).not.toHaveCSS(
 			"opacity",
 			"0",
 		);
+		// Terminal zone shows its empty state
+		await expect(page.locator(".workspace-panel__term-empty")).toBeVisible();
+	});
+
+	// ── UI reorg layout: home VN · workspace rail · center split · doc tabs ──
+
+	// T6: Home screen uses the immersive visual-novel chat variant
+	test("T6: 홈 화면은 VN 몰입 대화 variant", async ({ page }) => {
+		// beforeEach lands on home (no panel active)
+		await expect(page.locator('.app-root[data-ui-mode="home"]')).toBeAttached();
+		await expect(page.locator(".chat-panel--vn")).toBeVisible();
+	});
+
+	// T7: Opening the workspace switches the chat to the left-rail variant
+	test("T7: 워크스페이스 진입 시 대화창이 좌측 레일 variant", async ({
+		page,
+	}) => {
+		await openWorkspacePanel(page);
+		await expect(
+			page.locator('.app-root[data-ui-mode="workspace"]'),
+		).toBeAttached();
+		await expect(page.locator(".chat-panel--rail")).toBeVisible();
+	});
+
+	// T8: The conversation rail can be collapsed and re-expanded (ChatPanel stays
+	// mounted — verified by the rail toggle not unmounting .chat-panel)
+	test("T8: 대화 레일 접기/펼치기 토글", async ({ page }) => {
+		await openWorkspacePanel(page);
+		const toggle = page.locator(".ws-rail-toggle");
+		await expect(toggle).toBeVisible();
+		await expect(
+			page.locator('.app-root[data-rail-collapsed="false"]'),
+		).toBeAttached();
+		await toggle.click();
+		await expect(
+			page.locator('.app-root[data-rail-collapsed="true"]'),
+		).toBeAttached();
+		// ChatPanel is still mounted while collapsed (single-instance invariant)
+		await expect(page.locator(".chat-panel")).toBeAttached();
+		await toggle.click();
+		await expect(
+			page.locator('.app-root[data-rail-collapsed="false"]'),
+		).toBeAttached();
+	});
+
+	// T9: The center is split into a document viewer (top) + terminal (bottom)
+	test("T9: 중앙은 문서뷰어(상)+터미널(하) 분할", async ({ page }) => {
+		await openWorkspacePanel(page);
+		await expect(page.locator(".workspace-panel__doc-zone")).toBeVisible();
+		await expect(page.locator(".workspace-panel__term-zone")).toBeVisible();
+		// Document tab bar is present (empty until a document is opened)
+		await expect(page.locator(".doc-tab-bar")).toBeVisible();
+	});
+
+	// T10: Clicking a sub-agent (session) surfaces its recent file as a doc tab
+	test("T10: 서브에이전트 클릭 시 최근 문서가 탭으로 surface", async ({
+		page,
+	}) => {
+		await openWorkspacePanel(page);
+		const card = page.locator(".workspace-session-card").first();
+		await expect(card).toBeVisible({ timeout: 8_000 });
+		await card.click();
+		// recent_file "shell/src/App.tsx" → a document tab labeled "App.tsx"
+		await expect(page.locator(".doc-tab", { hasText: "App.tsx" })).toBeVisible({
+			timeout: 5_000,
+		});
+	});
+
+	// T11: A chat hidden in home mode must not leave the workspace rail collapsed
+	// to 0 height (the height toggle is display:none in workspace). Regression for
+	// the chatVisible × --hidden interaction.
+	test("T11: 홈에서 채팅 숨겨도 워크스페이스 레일은 보임", async ({ page }) => {
+		// Wait for the splash to clear so it doesn't intercept the toggle click
+		await page
+			.locator(".splash-screen")
+			.waitFor({ state: "detached", timeout: 15_000 })
+			.catch(() => {});
+		// Hide the chat in home (the toggle exists here, not in workspace)
+		await page.locator(".naia-chat-toggle").click();
+		await expect(page.locator(".naia-chat-wrapper--hidden")).toBeAttached();
+		// Switch to workspace — the rail must stay visible (not height:0)
+		await openWorkspacePanel(page);
+		const wrapper = page.locator(".naia-chat-wrapper");
+		await expect(wrapper).toBeVisible();
+		const box = await wrapper.boundingBox();
+		expect(box?.height ?? 0).toBeGreaterThan(40);
+		await expect(page.locator(".chat-panel--rail")).toBeVisible();
 	});
 });

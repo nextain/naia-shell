@@ -1356,6 +1356,166 @@ body.resizing-col .naia-work-rail::before {
 	background: transparent;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI MODE LAYOUTS
+   The SAME single ChatPanel instance is repositioned by CSS keyed off
+   data-ui-mode on .app-root (derived from activePanel in App.tsx). It is never
+   unmounted across modes — only its container geometry + variant class change.
+     home      → immersive visual-novel dialogue box centered over the avatar
+     workspace → full-height left rail inside the 4-zone mission-control
+     panel     → legacy bottom-left floating dock (default; unchanged)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── HOME · visual-novel immersive conversation ─────────────────────────── */
+/* Overlay spans full width so the dialogue box can center wide. pointer-events
+   stays none (children re-enable auto), so empty space passes clicks through to
+   the avatar's OrbitControls. */
+.app-root[data-ui-mode="home"] .naia-overlay {
+	width: 100%;
+	right: 0;
+}
+
+/* No right-side panel in home → the work-rail resize handle is meaningless */
+.app-root[data-ui-mode="home"] .naia-work-rail {
+	display: none;
+}
+
+/* The wide centered VN box overlaps the (empty) panel area, which lives in
+   app-layout above it (z-index 5). Let clicks pass through app-layout so the VN
+   box's right half (input, send, toggle) stays interactive — but keep AppBar
+   (the only interactive chrome there in home) clickable. */
+.app-root[data-ui-mode="home"] .app-layout {
+	pointer-events: none;
+}
+.app-root[data-ui-mode="home"] .app-bar {
+	pointer-events: auto;
+}
+
+/* Centered, wide VN dialogue dock anchored at the bottom */
+.app-root[data-ui-mode="home"] .naia-chat-area {
+	left: 50%;
+	transform: translateX(-50%);
+	width: min(1100px, 78vw);
+	bottom: 16px;
+}
+
+/* VN dialogue box — fully rounded, stronger glass, deeper shadow */
+.app-root[data-ui-mode="home"] .naia-chat-wrapper {
+	border-radius: 18px;
+	border: 1px solid var(--glass-border, rgba(100, 160, 255, 0.22));
+	box-shadow: 0 8px 48px rgba(0, 0, 0, 0.6),
+		inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* VN variant chat surface: no tab chrome (focused talk), larger readable text */
+.chat-panel--vn .chat-tabs {
+	display: none;
+}
+
+.chat-panel--vn .chat-header {
+	border-bottom: none;
+	padding: 8px 16px 0;
+	justify-content: flex-end;
+}
+
+.chat-panel--vn .chat-messages {
+	padding: 14px 24px;
+	gap: 12px;
+	font-size: 14.5px;
+}
+
+.chat-panel--vn .chat-message.assistant .message-content {
+	font-size: 14.5px;
+	line-height: 1.7;
+}
+
+.chat-panel--vn .chat-input-bar {
+	padding: 10px 18px 16px;
+}
+
+/* ── WORKSPACE · conversation rail (zone 1 of the 4-zone mission-control) ──── */
+/* AiControlBar (avatar camera controls) is hidden — the avatar is occluded by
+   the work panel in this mode. */
+.app-root[data-ui-mode="workspace"] .ai-control-bar {
+	display: none;
+}
+
+/* The legacy bottom drag/show toggle is replaced by the rail collapse button */
+.app-root[data-ui-mode="workspace"] .naia-chat-toggle {
+	display: none;
+}
+
+/* Rail fills the full overlay height (top→bottom), pinned left */
+.app-root[data-ui-mode="workspace"] .naia-chat-area {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	width: var(--naia-width);
+	transform: none;
+}
+
+/* Wrapper fills the rail (inline height is not applied for the rail variant);
+   square corners + right divider to read as a panel column */
+.app-root[data-ui-mode="workspace"] .naia-chat-wrapper {
+	flex: 1;
+	height: auto;
+	border-radius: 0;
+	border-top: none;
+	border-right: 1px solid var(--glass-border, rgba(100, 160, 255, 0.18));
+}
+
+/* In workspace the rail's visibility = railCollapsed (width), NOT the legacy
+   height toggle. Neutralize .naia-chat-wrapper--hidden so a chat that was hidden
+   in home/panel mode doesn't leave the rail collapsed to 0 height with no
+   in-workspace control to restore it (the height toggle is display:none here). */
+.app-root[data-ui-mode="workspace"] .naia-chat-wrapper--hidden {
+	height: auto !important;
+	opacity: 1;
+	pointer-events: auto;
+	border-top-color: transparent;
+	box-shadow: none;
+}
+
+/* Collapsed rail: hide the column (ChatPanel stays mounted) + drop the drag rail */
+.app-root[data-ui-mode="workspace"][data-rail-collapsed="true"] .naia-overlay {
+	width: 0;
+}
+.app-root[data-ui-mode="workspace"][data-rail-collapsed="true"] .naia-work-rail {
+	display: none;
+}
+
+/* Rail collapse / expand floating toggle (sits at the rail boundary) */
+.ws-rail-toggle {
+	position: fixed;
+	top: 40px;
+	left: calc(var(--naia-width) - 13px);
+	z-index: 9;
+	width: 22px;
+	height: 30px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	font-size: 13px;
+	line-height: 1;
+	color: var(--text-secondary, rgba(226, 232, 240, 0.8));
+	background: var(--bg-surface-2, rgba(8, 14, 28, 0.88));
+	border: 1px solid var(--border-color, rgba(100, 160, 255, 0.2));
+	border-radius: 6px;
+	cursor: pointer;
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+	transition: left 0.2s ease, background 0.15s, color 0.15s;
+}
+.ws-rail-toggle:hover {
+	color: var(--text-primary, #fff);
+	border-color: var(--accent, rgba(147, 197, 253, 0.5));
+}
+.ws-rail-toggle--collapsed {
+	left: 4px;
+}
+
 /* Panel Switcher (legacy — kept for reference) */
 .panel-switcher {
 	display: flex;
@@ -8154,6 +8314,140 @@ body.resizing-col * {
 	min-height: 0;
 }
 
+/* ── Center vertical split: document viewer (top) + terminal (bottom) ─────── */
+.workspace-panel__doc-zone,
+.workspace-panel__term-zone {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	min-height: 0;
+}
+
+.workspace-panel__doc-body,
+.workspace-panel__term-body {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+
+/* Tab mode: show only the focused terminal (cells are stacked absolute). */
+.workspace-panel__terminal-area:not(.workspace-panel__terminal-area--grid)
+	.workspace-panel__terminal-cell:not(.workspace-panel__terminal-cell--focused) {
+	display: none;
+}
+
+/* Terminal view toggle (tabs ⇄ grid) — lives in the terminal tab bar */
+.workspace-panel__term-viewtoggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 30px;
+	border: none;
+	border-right: 1px solid var(--border-color, #333);
+	background: var(--surface, #242424);
+	color: var(--text-secondary, #888);
+	font-size: 12px;
+	cursor: pointer;
+}
+.workspace-panel__term-viewtoggle:hover:not(:disabled) {
+	background: var(--surface-hover, #2e2e2e);
+	color: var(--text-primary, #e0e0e0);
+}
+.workspace-panel__term-viewtoggle:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+/* Empty terminal zone (no sessions running) */
+.workspace-panel__term-empty {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	padding: 16px;
+	text-align: center;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--text-secondary, #888);
+}
+
+/* ── Document tab bar (open documents) ───────────────────────────────────── */
+.doc-tab-bar {
+	display: flex;
+	flex-direction: row;
+	align-items: stretch;
+	flex-shrink: 0;
+	background: var(--surface, #242424);
+	border-bottom: 1px solid var(--border-color, #333);
+	overflow-x: auto;
+	overflow-y: hidden;
+	min-height: 28px;
+}
+.doc-tab-bar__empty {
+	display: flex;
+	align-items: center;
+	padding: 0 12px;
+	font-size: 11px;
+	color: var(--text-secondary, #888);
+	opacity: 0.7;
+}
+.doc-tab {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px 4px 12px;
+	font-size: 12px;
+	color: var(--text-secondary, #888);
+	cursor: pointer;
+	white-space: nowrap;
+	flex-shrink: 0;
+	border-right: 1px solid var(--border-color, #333);
+	user-select: none;
+}
+.doc-tab:hover {
+	background: var(--surface-hover, #2e2e2e);
+	color: var(--text-primary, #e0e0e0);
+}
+.doc-tab--active {
+	color: var(--text-primary, #e0e0e0);
+	background: var(--bg-base, #1a1a1a);
+	border-bottom: 2px solid var(--accent, #7ca0ff);
+}
+.doc-tab__label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 160px;
+}
+.doc-tab__ask,
+.doc-tab__close {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border: none;
+	background: transparent;
+	color: var(--text-secondary, #888);
+	font-size: 12px;
+	line-height: 1;
+	cursor: pointer;
+	border-radius: 3px;
+	opacity: 0.6;
+}
+.doc-tab__ask:hover,
+.doc-tab__close:hover {
+	opacity: 1;
+	background: rgba(255, 255, 255, 0.1);
+	color: var(--text-primary, #e0e0e0);
+}
+.doc-tab__ask:hover {
+	color: var(--accent, #7ca0ff);
+}
+
 /* Right: Session sidebar (vertical card list) */
 .workspace-panel__sessions {
 	min-width: 120px;
@@ -9455,7 +9749,10 @@ body.resizing-col * {
 	.workspace-panel__tree,
 	.workspace-panel__sessions,
 	.workspace-panel__resize-handle,
+	.workspace-panel__row-resize-handle,
 	.workspace-panel__tab-bar,
+	.workspace-panel__term-zone,
+	.doc-tab-bar,
 	.workspace-editor__header,
 	.quick-open-overlay {
 		display: none !important;
@@ -9479,7 +9776,8 @@ body.resizing-col * {
 	.content-panel__slot--active,
 	.workspace-panel,
 	.workspace-panel__center,
-	.workspace-panel__center-content,
+	.workspace-panel__doc-zone,
+	.workspace-panel__doc-body,
 	.workspace-panel__editor-slot,
 	.workspace-editor,
 	.workspace-editor__body--split {

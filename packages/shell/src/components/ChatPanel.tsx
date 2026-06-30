@@ -412,7 +412,19 @@ function phaseToMode(
 	}
 }
 
-export function ChatPanel() {
+/**
+ * Visual variant of the chat surface. The component is a SINGLE instance
+ * repositioned across UI modes via CSS (never remounted — preserves the live
+ * voice/STT/TTS session). `variant` only changes UI density/chrome:
+ *   - "floating": legacy bottom-left dock over the avatar (any non-home panel)
+ *   - "vn":       immersive visual-novel dialogue box (home screen)
+ *   - "rail":     full-height left rail inside the workspace mission-control
+ */
+export type ChatVariant = "vn" | "rail" | "floating";
+
+export function ChatPanel({
+	variant = "floating",
+}: { variant?: ChatVariant } = {}) {
 	const [input, setInput] = useState("");
 	// UC-compaction: agent 가 예산 압박으로 이전 대화를 요약했을 때 표시할 알림(흡수된 메시지 수). null=숨김.
 	const [compactionNotice, setCompactionNotice] = useState<number | null>(null);
@@ -534,14 +546,19 @@ export function ChatPanel() {
 		if (last && last.role === "assistant") {
 			Logger.info("ChatPanel", "[E2E-AUTOCHAT] response", {
 				text: last.content.slice(0, 120),
-				tokens: last.cost ? (last.cost.inputTokens ?? 0) + (last.cost.outputTokens ?? 0) : "no-cost",
+				tokens: last.cost
+					? (last.cost.inputTokens ?? 0) + (last.cost.outputTokens ?? 0)
+					: "no-cost",
 				hasError: /\[오류\]|provider error|grpc/.test(last.content),
 			});
 		}
 	}, [messages]);
 	useEffect(() => {
 		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
-		if (streamingContent) Logger.info("ChatPanel", "[E2E-AUTOCHAT] streaming", { len: streamingContent.length });
+		if (streamingContent)
+			Logger.info("ChatPanel", "[E2E-AUTOCHAT] streaming", {
+				len: streamingContent.length,
+			});
 	}, [streamingContent]);
 
 	const setEmotion = useAvatarStore((s) => s.setEmotion);
@@ -607,6 +624,14 @@ export function ChatPanel() {
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
 	}, [messages, streamingContent]);
+
+	// VN (home) is a focused conversation surface with no tab navigation. If we
+	// enter VN while a non-chat tab was active (e.g. user left it on History in a
+	// panel, then closed the panel), snap back to chat so the input stays visible.
+	// Pure UI guard — touches no voice/session state.
+	useEffect(() => {
+		if (variant === "vn" && activeTab !== "chat") setActiveTab("chat");
+	}, [variant, activeTab]);
 
 	function isChatRequestActive(): boolean {
 		return (
@@ -1551,11 +1576,15 @@ export function ChatPanel() {
 				// Cloud synthesis failed (missing key/login, network, quota). Fall
 				// back to the browser's built-in TTS so the voice is never silently
 				// dropped — better a basic voice than nothing.
-				Logger.warn("ChatPanel", "TTS synthesis failed — browser TTS fallback", {
-					reqId,
-					provider: ttsProviderForCost,
-					error: String(err),
-				});
+				Logger.warn(
+					"ChatPanel",
+					"TTS synthesis failed — browser TTS fallback",
+					{
+						reqId,
+						provider: ttsProviderForCost,
+						error: String(err),
+					},
+				);
 				speakViaBrowser();
 			})
 			.finally(() => {
@@ -2376,32 +2405,32 @@ export function ChatPanel() {
 			// OverconstrainedError) must NOT tear down the session, so catch it here
 			// instead of letting it reach the outer catch that disconnects everything.
 			try {
-			const mic = await createMicStream({
-				onChunk: (pcmBase64) => {
-					// Barge-in: stream the mic continuously so the server VAD can
-					// detect the user interrupting Naia mid-utterance → fires
-					// `interrupted` → onInterrupted clears the audio player.
-					//
-					// Echo gate, declared per-provider via session.audioInput.
-					// On weak-AEC paths (WebKitGTK) gateWhilePlaying drops
-					// sub-threshold chunks while Naia speaks so AEC-residual echo
-					// doesn't self-trigger the server VAD (#216,
-					// SPEECH_RMS_THRESHOLD=200). Real user speech still passes; the
-					// short-circuit skips the RMS decode when the gate is off.
-					if (
-						session.audioInput.gateWhilePlaying &&
-						audioPlayerRef.current?.isPlaying &&
-						rmsFromBase64Pcm(pcmBase64) < SPEECH_RMS_THRESHOLD
-					) {
-						return;
-					}
-					session.sendAudio(pcmBase64);
-				},
-				sampleRate: session.audioInput.sampleRate,
-				autoGainControl: session.audioInput.autoGainControl,
-			});
-			micStreamRef.current = mic;
-			mic.start();
+				const mic = await createMicStream({
+					onChunk: (pcmBase64) => {
+						// Barge-in: stream the mic continuously so the server VAD can
+						// detect the user interrupting Naia mid-utterance → fires
+						// `interrupted` → onInterrupted clears the audio player.
+						//
+						// Echo gate, declared per-provider via session.audioInput.
+						// On weak-AEC paths (WebKitGTK) gateWhilePlaying drops
+						// sub-threshold chunks while Naia speaks so AEC-residual echo
+						// doesn't self-trigger the server VAD (#216,
+						// SPEECH_RMS_THRESHOLD=200). Real user speech still passes; the
+						// short-circuit skips the RMS decode when the gate is off.
+						if (
+							session.audioInput.gateWhilePlaying &&
+							audioPlayerRef.current?.isPlaying &&
+							rmsFromBase64Pcm(pcmBase64) < SPEECH_RMS_THRESHOLD
+						) {
+							return;
+						}
+						session.sendAudio(pcmBase64);
+					},
+					sampleRate: session.audioInput.sampleRate,
+					autoGainControl: session.audioInput.autoGainControl,
+				});
+				micStreamRef.current = mic;
+				mic.start();
 			} catch (micErr) {
 				// No usable microphone → keep the session alive for typed input +
 				// voice output (web-demo parity). Do not rethrow / disconnect.
@@ -2635,7 +2664,7 @@ export function ChatPanel() {
 
 	return (
 		<>
-			<div className="chat-panel">
+			<div className={`chat-panel chat-panel--${variant}`}>
 				{/* Header with tabs */}
 				<div className="chat-header">
 					<div className="chat-tabs">
@@ -2748,9 +2777,21 @@ export function ChatPanel() {
 				)}
 
 				{compactionNotice !== null && activeTab === "chat" && (
-					<div className="chat-compaction-notice" data-testid="compaction-notice">
-						<span>🗜 {t("chat.summarized")}{compactionNotice > 0 ? ` (${compactionNotice})` : ""}</span>
-						<button type="button" aria-label="dismiss" onClick={() => setCompactionNotice(null)}>×</button>
+					<div
+						className="chat-compaction-notice"
+						data-testid="compaction-notice"
+					>
+						<span>
+							🗜 {t("chat.summarized")}
+							{compactionNotice > 0 ? ` (${compactionNotice})` : ""}
+						</span>
+						<button
+							type="button"
+							aria-label="dismiss"
+							onClick={() => setCompactionNotice(null)}
+						>
+							×
+						</button>
 					</div>
 				)}
 				{/* Messages (chat tab) */}

@@ -13,7 +13,7 @@ import {
  * Test approach:
  *   Playwright opens localhost:1420 in a regular browser.
  *   Tauri IPC is mocked via addInitScript to return fake workspace data.
- *   Panel is activated via ModeBar tab click.
+ *   Panel is activated via AppBar tab click.
  */
 
 const FAKE_ROOT = "/home/user/dev";
@@ -255,9 +255,9 @@ const TAURI_MOCK_SCRIPT = `
 })();
 `;
 
-/** Navigate to the workspace panel via ModeBar */
+/** Navigate to the workspace panel via AppBar */
 async function openWorkspacePanel(page: Page): Promise<void> {
-	// Click the workspace tab in ModeBar — target the button element specifically
+	// Click the workspace tab in AppBar — target the button element specifically
 	const tab = page.locator('button[data-panel-id="workspace"]');
 	await expect(tab).toBeVisible({ timeout: 10_000 });
 	await tab.click();
@@ -297,7 +297,7 @@ test.describe("Workspace Panel E2E", () => {
 
 	// ── S1: Panel loads with FileTree + SessionDashboard ──────────────────
 
-	test("S1-a: 워크스페이스 패널 탭이 ModeBar에 표시됨", async ({ page }) => {
+	test("S1-a: 워크스페이스 패널 탭이 AppBar에 표시됨", async ({ page }) => {
 		const tab = page.locator('button[data-panel-id="workspace"]');
 		await expect(tab).toBeVisible({ timeout: 10_000 });
 	});
@@ -550,7 +550,7 @@ test.describe("Workspace Panel E2E", () => {
 			timeout: 5_000,
 		});
 
-		// Switch to avatar panel (first tab in ModeBar, or any other panel)
+		// Switch to avatar panel (first tab in AppBar, or any other panel)
 		const avatarTab = page.locator('[data-panel-id="avatar"]');
 		if (await avatarTab.isVisible()) {
 			await avatarTab.click();

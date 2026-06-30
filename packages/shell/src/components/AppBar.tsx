@@ -18,13 +18,13 @@ import { panelRegistry } from "../lib/panel-registry";
 import { usePanelStore } from "../stores/panel";
 import { BgmPlayer } from "./BgmPlayer";
 
-// BGM player lives in the always-on mode-bar (not a switchable panel), so it
+// BGM player lives in the always-on app-bar (not a switchable panel), so it
 // needs its own persistent bridge to push BGM context (favorites, current
 // track) into Naia's system prompt. Without a bridge the push is dead code
 // (`if (!naia) return` in BgmPlayer) and the AI never sees favoritesList.
 const bgmBridge = getBridgeForPanel("bgm");
 
-interface ModeBarProps {
+interface AppBarProps {
 	onAddMode?: () => void;
 }
 
@@ -34,7 +34,7 @@ function extractInitial(shortcut: BrowserLink): string {
 	return m ? m[1].toUpperCase() : "?";
 }
 
-export function ModeBar({ onAddMode }: ModeBarProps) {
+export function AppBar({ onAddMode }: AppBarProps) {
 	const {
 		activePanel,
 		setActivePanel,
@@ -93,7 +93,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 					if (alive) setBrowserShortcuts(items);
 				})
 				.catch((err) => {
-					Logger.warn("ModeBar", "Failed to load browser shortcuts", {
+					Logger.warn("AppBar", "Failed to load browser shortcuts", {
 						error: String(err),
 					});
 				});
@@ -112,7 +112,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 	) {
 		e.stopPropagation();
 		const descriptor = panelRegistry.get(panelId);
-		Logger.info("ModeBar", `Removing panel: ${panelId}`, {
+		Logger.info("AppBar", `Removing panel: ${panelId}`, {
 			source: descriptor?.source,
 		});
 
@@ -136,7 +136,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			setActivePanel(null);
 		}
 
-		Logger.debug("ModeBar", `Panel removed: ${panelId}`);
+		Logger.debug("AppBar", `Panel removed: ${panelId}`);
 	}
 
 	function openBrowserShortcut(url: string) {
@@ -155,7 +155,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 		removeBrowserShortcut(ctxMenu.shortcutUrl)
 			.then(setBrowserShortcuts)
 			.catch((err) => {
-				Logger.warn("ModeBar", "Failed to remove browser shortcut", {
+				Logger.warn("AppBar", "Failed to remove browser shortcut", {
 					url: ctxMenu.shortcutUrl,
 					error: String(err),
 				});
@@ -278,7 +278,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 				const result = await addBrowserShortcut(url, url);
 				setBrowserShortcuts(result);
 			} catch (err) {
-				Logger.warn("ModeBar", "Failed to add shortcut", {
+				Logger.warn("AppBar", "Failed to add shortcut", {
 					error: String(err),
 				});
 			}
@@ -288,29 +288,29 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 	}
 
 	return (
-		<div className="mode-bar">
+		<div className="app-bar">
 			<div
-				className="mode-bar-tabs"
+				className="app-bar-tabs"
 				onContextMenu={handleTabBarContextMenu}
 			>
 				{/* 바탕화면 — no panel active */}
 				<button
 					type="button"
-					className={`mode-bar-tab${activePanel === null ? " mode-bar-tab--active" : ""}`}
+					className={`app-bar-tab${activePanel === null ? " app-bar-tab--active" : ""}`}
 					onClick={() => setActivePanel(null)}
 					title="바탕화면"
 				>
-					<span className="mode-bar-tab-icon">🖥️</span>
+					<span className="app-bar-tab-icon">🖥️</span>
 				</button>
 				{modes.map((mode) => (
 					<div
 						key={mode.id}
-						className="mode-bar-tab-wrapper"
+						className="app-bar-tab-wrapper"
 						data-panel-id={mode.id}
 					>
 						<button
 							type="button"
-							className={`mode-bar-tab${activePanel === mode.id ? " mode-bar-tab--active" : ""}`}
+							className={`app-bar-tab${activePanel === mode.id ? " app-bar-tab--active" : ""}`}
 							data-panel-id={mode.id}
 							title={mode.names?.[getLocale()] ?? mode.name}
 							onClick={() =>
@@ -319,18 +319,18 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 						>
 							{mode.iconSvg ? (
 								<span
-									className="mode-bar-tab-icon mode-bar-tab-icon--svg"
+									className="app-bar-tab-icon app-bar-tab-icon--svg"
 									// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted panel SVG
 									dangerouslySetInnerHTML={{ __html: mode.iconSvg }}
 								/>
 							) : mode.icon ? (
-								<span className="mode-bar-tab-icon">{mode.icon}</span>
+								<span className="app-bar-tab-icon">{mode.icon}</span>
 							) : null}
 						</button>
 						{!mode.builtIn && (
 							<button
 								type="button"
-								className="mode-bar-tab-remove"
+								className="app-bar-tab-remove"
 								title={`Remove ${mode.name}`}
 								onClick={(e) => handleRemovePanel(e, mode.id)}
 							>
@@ -342,7 +342,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 				{browserShortcuts.map((shortcut) => (
 					<div
 						key={shortcut.url}
-						className={`mode-bar-tab-wrapper${dragOverUrl === shortcut.url ? " mode-bar-tab-wrapper--drag-over" : ""}`}
+						className={`app-bar-tab-wrapper${dragOverUrl === shortcut.url ? " app-bar-tab-wrapper--drag-over" : ""}`}
 						data-browser-shortcut={shortcut.url}
 						draggable={editMode}
 						onDragStart={editMode ? () => handleDragStart(shortcut.url) : undefined}
@@ -352,7 +352,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 					>
 						<button
 							type="button"
-							className={`mode-bar-tab mode-bar-tab--shortcut${editMode ? " mode-bar-tab--edit" : ""}`}
+							className={`app-bar-tab app-bar-tab--shortcut${editMode ? " app-bar-tab--edit" : ""}`}
 							title={editMode ? `아이콘 변경: ${shortcut.title || shortcut.url}` : (shortcut.title || shortcut.url)}
 							onClick={() => {
 								if (editMode) { openIconEditor(shortcut); } else { openBrowserShortcut(shortcut.url); }
@@ -360,7 +360,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 						>
 							{shortcut.iconUrl ? (
 								<img
-									className="mode-bar-tab-favicon"
+									className="app-bar-tab-favicon"
 									src={shortcut.iconUrl}
 									alt=""
 									onError={(e) => {
@@ -369,14 +369,14 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 										img.replaceWith(
 											Object.assign(document.createElement("span"), {
 												className:
-													"mode-bar-tab-icon mode-bar-tab-icon--initial",
+													"app-bar-tab-icon app-bar-tab-icon--initial",
 												textContent: fallback,
 											}),
 										);
 									}}
 								/>
 							) : (
-								<span className="mode-bar-tab-icon mode-bar-tab-icon--initial">
+								<span className="app-bar-tab-icon app-bar-tab-icon--initial">
 									{extractInitial(shortcut)}
 								</span>
 							)}
@@ -384,7 +384,7 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 						{editMode && (
 							<button
 								type="button"
-								className="mode-bar-tab-remove mode-bar-tab-remove--shortcut"
+								className="app-bar-tab-remove app-bar-tab-remove--shortcut"
 								title="바로가기 삭제"
 								onClick={(e) => {
 									e.stopPropagation();
@@ -402,64 +402,64 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			{ctxMenu && (
 				<div
 					ref={ctxMenuRef}
-					className="mode-bar-ctx-menu"
+					className="app-bar-ctx-menu"
 					style={{ left: ctxMenu.x, top: ctxMenu.y }}
 				>
 					{ctxMenu.shortcutUrl && (
 						<button
 							type="button"
-							className="mode-bar-ctx-menu__item mode-bar-ctx-menu__item--danger"
+							className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
 							onClick={handleCtxRemoveShortcut}
 						>
-							{t("modebar.removeShortcut")}
+							{t("appbar.removeShortcut")}
 						</button>
 					)}
 					{ctxMenu.panelId && (
 						<button
 							type="button"
-							className="mode-bar-ctx-menu__item mode-bar-ctx-menu__item--danger"
+							className="app-bar-ctx-menu__item app-bar-ctx-menu__item--danger"
 							onClick={handleCtxRemovePanel}
 						>
-							{t("modebar.removePanel")}
+							{t("appbar.removePanel")}
 						</button>
 					)}
 				</div>
 			)}
 			{addUrlDialog && createPortal(
 				<div
-					className="mode-bar-url-dialog-overlay"
+					className="app-bar-url-dialog-overlay"
 					onClick={() => setAddUrlDialog(false)}
 				>
 					<div
-						className="mode-bar-url-dialog"
+						className="app-bar-url-dialog"
 						onClick={(e) => e.stopPropagation()}
 					>
 						<button
 							type="button"
-							className="mode-bar-url-dialog__section"
+							className="app-bar-url-dialog__section"
 							onClick={() => {
 								setAddUrlDialog(false);
 								setUrlInputDialog(true);
 							}}
 						>
-							<span className="mode-bar-url-dialog__section-icon">🌐</span>
-							<div className="mode-bar-url-dialog__section-text">
-								<strong>{t("modebar.addShortcut")}</strong>
-								<span>{t("modebar.addShortcutDesc")}</span>
+							<span className="app-bar-url-dialog__section-icon">🌐</span>
+							<div className="app-bar-url-dialog__section-text">
+								<strong>{t("appbar.addShortcut")}</strong>
+								<span>{t("appbar.addShortcutDesc")}</span>
 							</div>
 						</button>
 						<button
 							type="button"
-							className="mode-bar-url-dialog__section"
+							className="app-bar-url-dialog__section"
 							onClick={() => {
 								setAddUrlDialog(false);
 								onAddMode?.();
 							}}
 						>
-							<span className="mode-bar-url-dialog__section-icon">📱</span>
-							<div className="mode-bar-url-dialog__section-text">
-								<strong>{t("modebar.addPanel")}</strong>
-								<span>{t("modebar.addPanelDesc")}</span>
+							<span className="app-bar-url-dialog__section-icon">📱</span>
+							<div className="app-bar-url-dialog__section-text">
+								<strong>{t("appbar.addPanel")}</strong>
+								<span>{t("appbar.addPanelDesc")}</span>
 							</div>
 						</button>
 					</div>
@@ -468,11 +468,11 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			)}
 			{urlInputDialog && createPortal(
 				<div
-					className="mode-bar-url-dialog-overlay"
+					className="app-bar-url-dialog-overlay"
 					onClick={() => setUrlInputDialog(false)}
 				>
 					<form
-						className="mode-bar-url-dialog"
+						className="app-bar-url-dialog"
 						onClick={(e) => e.stopPropagation()}
 						onSubmit={(e) => {
 							e.preventDefault();
@@ -481,23 +481,23 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 					>
 						<input
 							type="text"
-							className="mode-bar-url-dialog__input"
+							className="app-bar-url-dialog__input"
 							value={addUrlInput}
 							onChange={(e) => setAddUrlInput(e.target.value)}
-							placeholder={t("modebar.enterUrl")}
+							placeholder={t("appbar.enterUrl")}
 							autoFocus
 						/>
-						<div className="mode-bar-url-dialog__btns">
+						<div className="app-bar-url-dialog__btns">
 							<button
 								type="button"
-								className="mode-bar-url-dialog__btn"
+								className="app-bar-url-dialog__btn"
 								onClick={() => setUrlInputDialog(false)}
 							>
 								{t("settings.cancel")}
 							</button>
 							<button
 								type="submit"
-								className="mode-bar-url-dialog__btn mode-bar-url-dialog__btn--primary"
+								className="app-bar-url-dialog__btn app-bar-url-dialog__btn--primary"
 							>
 								{t("settings.save")}
 							</button>
@@ -508,16 +508,16 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			)}
 			<button
 				type="button"
-				className="mode-bar-add"
+				className="app-bar-add"
 				onClick={() => setAddUrlDialog(true)}
-				title={t("modebar.addItem")}
+				title={t("appbar.addItem")}
 			>
 				+
 			</button>
 			{browserShortcuts.length > 0 && (
 				<button
 					type="button"
-					className={`mode-bar-edit${editMode ? " mode-bar-edit--active" : ""}`}
+					className={`app-bar-edit${editMode ? " app-bar-edit--active" : ""}`}
 					onClick={() => { setEditMode((v) => !v); setIconEditing(null); }}
 					title={editMode ? "편집 완료" : "바로가기 편집"}
 				>
@@ -526,36 +526,36 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 			)}
 			{iconEditing && createPortal(
 				<div
-					className="mode-bar-url-dialog-overlay"
+					className="app-bar-url-dialog-overlay"
 					onClick={() => setIconEditing(null)}
 				>
 					<form
-						className="mode-bar-url-dialog"
+						className="app-bar-url-dialog"
 						onClick={(e) => e.stopPropagation()}
 						onSubmit={(e) => { e.preventDefault(); void handleIconSave(); }}
 					>
-						<div className="mode-bar-url-dialog__section-text" style={{ padding: "0 0 8px" }}>
+						<div className="app-bar-url-dialog__section-text" style={{ padding: "0 0 8px" }}>
 							<strong>{iconEditing.title || iconEditing.url}</strong>
 						</div>
 						<input
 							type="text"
-							className="mode-bar-url-dialog__input"
+							className="app-bar-url-dialog__input"
 							value={iconInput}
 							onChange={(e) => setIconInput(e.target.value)}
 							placeholder="이모지 또는 이미지 URL (비우면 기본값)"
 							autoFocus
 						/>
-						<div className="mode-bar-url-dialog__btns">
+						<div className="app-bar-url-dialog__btns">
 							<button
 								type="button"
-								className="mode-bar-url-dialog__btn"
+								className="app-bar-url-dialog__btn"
 								onClick={() => setIconEditing(null)}
 							>
 								{t("settings.cancel")}
 							</button>
 							<button
 								type="submit"
-								className="mode-bar-url-dialog__btn mode-bar-url-dialog__btn--primary"
+								className="app-bar-url-dialog__btn app-bar-url-dialog__btn--primary"
 							>
 								{t("settings.save")}
 							</button>
@@ -563,11 +563,11 @@ export function ModeBar({ onAddMode }: ModeBarProps) {
 					</form>
 				</div>
 			, document.body)}
-			{/* ── BGM (right side of mode-bar) ─── */}
+			{/* ── BGM (right side of app-bar) ─── */}
 			<BgmPlayer naia={bgmBridge} />
 			<button
 				type="button"
-				className={`mode-bar-settings${activePanel === "settings" ? " mode-bar-settings--active" : ""}`}
+				className={`app-bar-settings${activePanel === "settings" ? " app-bar-settings--active" : ""}`}
 				onClick={() =>
 					setActivePanel(activePanel === "settings" ? null : "settings")
 				}

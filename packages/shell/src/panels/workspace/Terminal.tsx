@@ -12,6 +12,9 @@ interface TerminalProps {
 	workingDir?: string;
 	onExit: (pty_id: string) => void;
 	onFileSelect?: (path: string) => void;
+	/** Alt+click on a file path in terminal output → ask the conversation rail
+	    about that file (instead of opening it in the document viewer). */
+	onAskAi?: (path: string) => void;
 }
 
 const FILE_PATH_RE =
@@ -92,6 +95,7 @@ export function Terminal({
 	workingDir,
 	onExit,
 	onFileSelect,
+	onAskAi,
 }: TerminalProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const termRef = useRef<XTerminal | null>(null);
@@ -102,6 +106,8 @@ export function Terminal({
 	onExitRef.current = onExit;
 	const onFileSelectRef = useRef(onFileSelect);
 	onFileSelectRef.current = onFileSelect;
+	const onAskAiRef = useRef(onAskAi);
+	onAskAiRef.current = onAskAi;
 	const workingDirRef = useRef(workingDir);
 	workingDirRef.current = workingDir;
 
@@ -124,7 +130,7 @@ export function Terminal({
 		termRef.current = term;
 		fitRef.current = fit;
 
-		if (onFileSelect) {
+		if (onFileSelect || onAskAi) {
 			term.registerLinkProvider({
 				provideLinks(lineNum, callback) {
 					const line = term.buffer.active.getLine(lineNum - 1);
@@ -159,9 +165,16 @@ export function Terminal({
 								end: { x: endCol, y: lineNum },
 							},
 							text: match[0],
-							activate(_e, linkText) {
+							activate(e, linkText) {
 								const path = resolveFilePath(linkText, workingDirRef.current);
-								if (path) onFileSelectRef.current?.(path);
+								if (!path) return;
+								// Alt+click → ask the conversation rail about this file;
+								// plain click → open it in the document viewer.
+								if (e.altKey && onAskAiRef.current) {
+									onAskAiRef.current(path);
+								} else {
+									onFileSelectRef.current?.(path);
+								}
 							},
 							leave() {},
 							hover() {},
