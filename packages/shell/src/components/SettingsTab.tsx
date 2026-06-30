@@ -2845,12 +2845,20 @@ export function SettingsTab() {
 							</div>
 						</div>
 						<div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-						<button type="button" onClick={() => setActiveSettingsTab("brain")}>
-							{t("settings.engineEditMain")}
-						</button>
-						<button type="button" onClick={() => setActiveSettingsTab("memory")}>
-							{t("settings.engineEditModels")}
-						</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => setActiveSettingsTab("brain")}
+							>
+								{t("settings.engineEditMain")}
+							</button>
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={() => setActiveSettingsTab("memory")}
+							>
+								{t("settings.engineEditModels")}
+							</button>
 						</div>
 					</div>
 
@@ -2870,13 +2878,14 @@ export function SettingsTab() {
 							</span>
 							<span>{t("settings.engineRuntimeBoundary")}</span>
 						</div>
-					<button
-						type="button"
-						style={{ marginTop: 10 }}
-						onClick={() => setActiveSettingsTab("brain")}
-					>
-						{t("settings.engineEditGpu")}
-					</button>
+						<button
+							type="button"
+							className="voice-preview-btn"
+							style={{ marginTop: 10 }}
+							onClick={() => setActiveSettingsTab("brain")}
+						>
+							{t("settings.engineEditGpu")}
+						</button>
 					</div>
 
 					<div className="settings-field" data-testid="engine-capability-summary">
