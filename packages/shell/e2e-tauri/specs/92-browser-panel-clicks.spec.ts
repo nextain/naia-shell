@@ -93,7 +93,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Activate workspace so browser slot is inactive.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="workspace"]',
+				'.app-bar-tab[data-panel-id="workspace"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -115,7 +115,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Activate workspace so browser slot is inactive.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="workspace"]',
+				'.app-bar-tab[data-panel-id="workspace"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -166,7 +166,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Activate the browser panel.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="browser"]',
+				'.app-bar-tab[data-panel-id="browser"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -213,7 +213,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Activate browser first.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="browser"]',
+				'.app-bar-tab[data-panel-id="browser"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -222,7 +222,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Then switch to workspace.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="workspace"]',
+				'.app-bar-tab[data-panel-id="workspace"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -258,7 +258,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Activate workspace.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="workspace"]',
+				'.app-bar-tab[data-panel-id="workspace"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -319,7 +319,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Start from workspace.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="workspace"]',
+				'.app-bar-tab[data-panel-id="workspace"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});
@@ -328,7 +328,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Click browser tab.
 		const clicked = await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="browser"]',
+				'.app-bar-tab[data-panel-id="browser"]',
 			) as HTMLButtonElement | null;
 			if (btn) {
 				btn.click();
@@ -354,7 +354,7 @@ describe("92 — Browser Panel: Click Blocking Regression", () => {
 		// Activate browser panel to trigger initWebview if not yet run.
 		await browser.execute(() => {
 			const btn = document.querySelector(
-				'.mode-bar-tab[data-panel-id="browser"]',
+				'.app-bar-tab[data-panel-id="browser"]',
 			) as HTMLButtonElement | null;
 			if (btn) btn.click();
 		});

@@ -60,8 +60,8 @@ test("debug: settings lab login IPC trace", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 15000 });
 
-	// Open settings via the ModeBar settings button (.mode-bar-settings)
-	const gearBtn = page.locator(".mode-bar-settings");
+	// Open settings via the AppBar settings button (.app-bar-settings)
+	const gearBtn = page.locator(".app-bar-settings");
 	await gearBtn.click();
 	await page.waitForTimeout(800);
 	await page.screenshot({ path: "_results_/s1-settings-open.png" });

@@ -119,6 +119,29 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
     // provider 안엔 enableThinking 안 강제(top-level 이 권위)
     expect(JSON.parse(JSON.stringify(out))).toHaveProperty("requestId", "r1");
   });
+  it("S4: environmentSegments 운반(아바타 감정·패널) + 미지정 시 필드 부재", () => {
+    // 송신 시: 셸 환경고유 세그먼트가 chat_request wire 에 그대로 실린다(Rust json_to_chat_request → proto environment_segments_json).
+    const withSegs = toAgentOutbound(req({
+      environmentSegments: [
+        { kind: "avatarEmotion" },
+        { kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+      ],
+    })) as Record<string, unknown>;
+    expect(withSegs["environmentSegments"]).toEqual([
+      { kind: "avatarEmotion" },
+      { kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+    ]);
+    // 미지정 = 필드 부재(무회귀 — persona/locale 등은 코어가 config.json 조립).
+    expect("environmentSegments" in (toAgentOutbound(req()) as Record<string, unknown>)).toBe(false);
+    // responseStyle(음성 파이프라인=brief) 도 그대로 운반 — 음성 STT→채팅이 raw systemPrompt 로 persona 를 덮지 않게.
+    const withStyle = toAgentOutbound(req({
+      environmentSegments: [{ kind: "avatarEmotion" }, { kind: "responseStyle", style: "brief" }],
+    })) as Record<string, unknown>;
+    expect(withStyle["environmentSegments"]).toEqual([
+      { kind: "avatarEmotion" },
+      { kind: "responseStyle", style: "brief" },
+    ]);
+  });
   it("cancel/approval/creds 매핑 + creds 만 secret 운반", () => {
     expect(toAgentOutbound({ kind: "cancel", requestId: "r1", clientId: "c1" }))
       .toEqual({ type: "cancel_stream", requestId: "r1" });

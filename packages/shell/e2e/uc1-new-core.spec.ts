@@ -132,7 +132,14 @@ test.describe("UC1 — 텍스트 모델 → 새 core 경유", () => {
 		const outbound = await page.evaluate(() => (window as unknown as { __E2E_OUTBOUND__: Array<Record<string, unknown>> }).__E2E_OUTBOUND__);
 		const chatReqs = outbound.filter((o) => o.type === "chat_request");
 		expect(chatReqs.length).toBeGreaterThan(0);
-		expect(Array.isArray(chatReqs[chatReqs.length - 1].messages)).toBe(true);
+		const last = chatReqs[chatReqs.length - 1];
+		expect(Array.isArray(last.messages)).toBe(true);
+		// S4 (두벌 제거): 텍스트 채팅 경로는 raw systemPrompt 를 굽지 않고 environmentSegments 만 보낸다.
+		// 코어가 persona/locale/honorific 을 config.json 에서 스스로 조립 → 셸은 환경고유 컨텍스트(아바타 감정)만 운반.
+		expect(last.systemPrompt).toBeUndefined();
+		const segs = last.environmentSegments as Array<{ kind: string }> | undefined;
+		expect(Array.isArray(segs)).toBe(true);
+		expect(segs?.some((s) => s.kind === "avatarEmotion")).toBe(true);
 	});
 });
 

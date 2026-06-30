@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdkSetupScreen } from "./components/AdkSetupScreen";
 import { AiControlBar } from "./components/AiControlBar";
 import { AvatarCanvas } from "./components/AvatarCanvas";
+import { VideoAvatarCanvas } from "./components/VideoAvatarCanvas";
 import { ChatPanel } from "./components/ChatPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppBar } from "./components/AppBar";
@@ -19,6 +20,7 @@ import {
 	isAdkInitialized,
 	listNaiaAssets,
 	readNaiaConfig,
+	readNaiaUiConfig,
 	setAdkPath,
 	toLocalBlobUrl,
 	buildNaiaConfigEnv,
@@ -202,6 +204,21 @@ export function App() {
 	const setBackgroundMediaType = useAvatarStore(
 		(s) => s.setBackgroundMediaType,
 	);
+	const [avatarProvider, setAvatarProvider] = useState<
+		"vrm" | "naia-video-avatar"
+	>(() => loadConfig()?.avatarProvider ?? "vrm");
+	const [nvaModel, setNvaModel] = useState(() => loadConfig()?.nvaModel ?? "");
+
+	useEffect(() => {
+		function syncAvatarConfig() {
+			const cfg = loadConfig();
+			setAvatarProvider(cfg?.avatarProvider ?? "vrm");
+			setNvaModel(cfg?.nvaModel ?? "");
+		}
+		window.addEventListener("naia-config-changed", syncAvatarConfig);
+		return () =>
+			window.removeEventListener("naia-config-changed", syncAvatarConfig);
+	}, []);
 
 	// Window starts hidden (visible:false in tauri.conf.json) to prevent white flash.
 	// Show it on first render — splash screen's dark background is already painted.
@@ -319,17 +336,18 @@ export function App() {
 		});
 	}, [showAdkSetup, setBackgroundMediaType, setBackgroundVideoUrl]);
 
-	// Load naia-settings/config.json on startup and merge into localStorage.
-	// File is authoritative (persists across browser profile wipes / new installs).
+	// Load naia-settings config on startup and merge into localStorage.
+	// ui-config.json must still apply when config.json is absent or malformed.
 	useEffect(() => {
 		if (showAdkSetup) return;
-		readNaiaConfig().then((fileConfig) => {
-			if (!fileConfig) return;
-			const local = loadConfig();
-			// File wins — merge file over local so user settings survive reinstalls.
-			const merged = local ? { ...local, ...fileConfig } : fileConfig;
-			saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
-		});
+		Promise.all([readNaiaConfig(), readNaiaUiConfig()]).then(
+			([fileConfig, uiConfig]) => {
+				if (!fileConfig && !uiConfig) return;
+				const local = loadConfig();
+				const merged = { ...(local ?? {}), ...(fileConfig ?? {}), ...(uiConfig ?? {}) };
+				saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
+			},
+		);
 	}, [showAdkSetup]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
@@ -880,7 +898,11 @@ export function App() {
 							    UC 와 무관, 실 디스플레이 검증서만 필요). 일반 빌드/런타임엔 영향 없음. */}
 							{!import.meta.env.VITE_NAIA_E2E_NO_AVATAR && (
 								<div className="avatar-canvas-layer">
-									<AvatarCanvas />
+									{avatarProvider === "naia-video-avatar" ? (
+										<VideoAvatarCanvas nvaModel={nvaModel} />
+									) : (
+										<AvatarCanvas />
+									)}
 								</div>
 							)}
 							<div className="naia-overlay">

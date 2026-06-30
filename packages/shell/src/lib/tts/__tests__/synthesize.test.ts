@@ -266,8 +266,33 @@ describe("synthesizeTts — naia-local-voice (VoxCPM2 /tts 어댑터)", () => {
 		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body.text).toBe("안녕");
-		// f32 PCM → 16-bit WAV(RIFF) 변환 확인
-		expect(atob(res.audioBase64).startsWith("RIFF")).toBe(true);
+		// f32 PCM → 16-bit WAV 변환을 헤더 필드 + 샘플 왕복값까지 검증.
+		const wav = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
+		const view = new DataView(wav.buffer);
+		expect(String.fromCharCode(...wav.subarray(0, 4))).toBe("RIFF");
+		expect(String.fromCharCode(...wav.subarray(8, 12))).toBe("WAVE");
+		expect(view.getUint16(22, true)).toBe(1); // mono
+		expect(view.getUint32(24, true)).toBe(48000); // sample rate
+		expect(view.getUint32(28, true)).toBe(96000); // byte rate = sr*2
+		expect(view.getUint16(34, true)).toBe(16); // bits/sample
+		expect(view.getUint32(40, true)).toBe(4); // data size = 2 samples * 2 bytes
+		// 0.5 → 16383, -0.5 → -16384 (비대칭 풀스케일 매핑)
+		expect(view.getInt16(44, true)).toBe(16383);
+		expect(view.getInt16(46, true)).toBe(-16384);
+	});
+
+	it("defaults sample_rate to 48000 when the service omits it", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(jsonResponse({ audio_b64: PCM_B64 })),
+		);
+		const res = await synthesizeTts({
+			text: "x",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:22600",
+		});
+		const wav = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
+		expect(new DataView(wav.buffer).getUint32(24, true)).toBe(48000);
 	});
 
 	it("uses vllmTtsHost, never the LLM vllmHost", async () => {

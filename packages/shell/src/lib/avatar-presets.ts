@@ -4,11 +4,26 @@ export interface AvatarPreset {
 	gender: AvatarGender;
 }
 
-export const DEFAULT_AVATAR_MODEL = "/avatars/03-OL_Woman.vrm";
+export const DEFAULT_AVATAR_MODEL = "/avatars/Naia.vrm";
 
 export type AvatarGender = "female" | "male";
 
 export const AVATAR_PRESETS: AvatarPreset[] = [
+	{
+		filename: "Naia.vrm",
+		label: "Naia",
+		gender: "female",
+	},
+	{
+		filename: "Naia-Base.vrm",
+		label: "Naia Base",
+		gender: "female",
+	},
+	{
+		filename: "Naia-Hair.vrm",
+		label: "Naia Hair",
+		gender: "female",
+	},
 	{
 		filename: "01-Sendagaya-Shino-uniform.vrm",
 		label: "Shino",

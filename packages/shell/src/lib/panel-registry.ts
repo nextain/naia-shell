@@ -218,7 +218,7 @@ export type PanelApi = Record<string, (...args: any[]) => unknown>;
 export interface PanelDescriptor {
 	/** Unique identifier, e.g. "avatar", "browser", "issues" */
 	id: string;
-	/** Human-readable name shown in ModeBar */
+	/** Human-readable name shown in AppBar */
 	name: string;
 	/** Localized names (locale → label). Falls back to `name` if locale not found. */
 	names?: Record<string, string>;
@@ -244,7 +244,7 @@ export interface PanelDescriptor {
 	/**
 	 * "installed" — loaded from ~/.naia/panels/ at runtime.
 	 * Omit or "code" for panels bundled in the shell's source.
-	 * ModeBar uses this to decide whether to also delete from disk on remove.
+	 * AppBar uses this to decide whether to also delete from disk on remove.
 	 */
 	source?: "installed" | "code";
 	/** Center component — owns the entire right area layout. */

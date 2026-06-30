@@ -995,7 +995,7 @@ const FAKE_FILE_CONTENTS: Record<string, string> = {
 import { TitleBar } from "./components/TitleBar";
 import { ChatPanel } from "./components/ChatPanel";
 import { AvatarCanvas } from "./components/AvatarCanvas";
-import { ModeBar } from "./components/ModeBar";
+import { AppBar } from "./components/AppBar";
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -1012,7 +1012,7 @@ export default function App() {
         <AvatarCanvas />
         <ChatPanel />
       </div>
-      <ModeBar />
+      <AppBar />
       <div className="right-content" />
     </div>
   );

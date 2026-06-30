@@ -12,7 +12,7 @@ const SHOT = "/tmp/panel-system-screenshots";
 async function clickPanelTab(panelId: string): Promise<boolean> {
 	return browser.execute((id: string) => {
 		const btn = document.querySelector(
-			`.mode-bar-tab[data-panel-id="${id}"]`,
+			`.app-bar-tab[data-panel-id="${id}"]`,
 		) as HTMLButtonElement | null;
 		if (btn) {
 			btn.click();
@@ -26,10 +26,10 @@ async function clickPanelTab(panelId: string): Promise<boolean> {
 async function clickPanelRemove(panelId: string): Promise<boolean> {
 	return browser.execute((id: string) => {
 		const wrapper = document.querySelector(
-			`.mode-bar-tab-wrapper[data-panel-id="${id}"]`,
+			`.app-bar-tab-wrapper[data-panel-id="${id}"]`,
 		);
 		const btn = wrapper?.querySelector(
-			".mode-bar-tab-remove",
+			".app-bar-tab-remove",
 		) as HTMLButtonElement | null;
 		if (btn) {
 			btn.click();
@@ -39,7 +39,7 @@ async function clickPanelRemove(panelId: string): Promise<boolean> {
 	}, panelId);
 }
 
-describe("90 — Panel System (ModeBar + sample-note AI interaction)", () => {
+describe("90 — Panel System (AppBar + sample-note AI interaction)", () => {
 	before(async () => {
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForEnabled({ timeout: 15_000 });
@@ -47,30 +47,30 @@ describe("90 — Panel System (ModeBar + sample-note AI interaction)", () => {
 		await browser.pause(500);
 	});
 
-	it("01 — ModeBar is visible", async () => {
+	it("01 — AppBar is visible", async () => {
 		const modeBar = await $(S.modeBar);
 		await modeBar.waitForDisplayed({ timeout: 10_000 });
-		await browser.saveScreenshot(`${SHOT}/01-modebar.png`);
+		await browser.saveScreenshot(`${SHOT}/01-appbar.png`);
 	});
 
-	it("02 — built-in panels appear in ModeBar (browser, workspace)", async () => {
+	it("02 — built-in panels appear in AppBar (browser, workspace)", async () => {
 		const panelIds = await browser.execute(() => {
 			return Array.from(
-				document.querySelectorAll(".mode-bar-tab[data-panel-id]"),
+				document.querySelectorAll(".app-bar-tab[data-panel-id]"),
 			).map((el) => el.getAttribute("data-panel-id") ?? "");
 		});
 		expect(panelIds).toContain("browser");
 		expect(panelIds).toContain("workspace");
 	});
 
-	it("03 — sample-note panel appears in ModeBar", async () => {
+	it("03 — sample-note panel appears in AppBar", async () => {
 		const panelIds = await browser.execute(() => {
 			return Array.from(
-				document.querySelectorAll(".mode-bar-tab[data-panel-id]"),
+				document.querySelectorAll(".app-bar-tab[data-panel-id]"),
 			).map((el) => el.getAttribute("data-panel-id") ?? "");
 		});
 		expect(panelIds).toContain("sample-note");
-		await browser.saveScreenshot(`${SHOT}/03-sample-note-in-modebar.png`);
+		await browser.saveScreenshot(`${SHOT}/03-sample-note-in-appbar.png`);
 	});
 
 	it("04 — clicking sample-note tab opens SampleNotePanel", async () => {
@@ -129,9 +129,9 @@ describe("90 — Panel System (ModeBar + sample-note AI interaction)", () => {
 		const builtInHasRemove = await browser.execute(() => {
 			for (const panelId of ["browser", "workspace"]) {
 				const wrapper = document.querySelector(
-					`.mode-bar-tab-wrapper[data-panel-id="${panelId}"]`,
+					`.app-bar-tab-wrapper[data-panel-id="${panelId}"]`,
 				);
-				if (wrapper?.querySelector(".mode-bar-tab-remove")) return true;
+				if (wrapper?.querySelector(".app-bar-tab-remove")) return true;
 			}
 			return false;
 		});
@@ -141,16 +141,16 @@ describe("90 — Panel System (ModeBar + sample-note AI interaction)", () => {
 	it("09 — sample-note has a remove button", async () => {
 		const hasRemove = await browser.execute(() => {
 			const wrapper = document.querySelector(
-				`.mode-bar-tab-wrapper[data-panel-id="sample-note"]`,
+				`.app-bar-tab-wrapper[data-panel-id="sample-note"]`,
 			);
-			return !!wrapper?.querySelector(".mode-bar-tab-remove");
+			return !!wrapper?.querySelector(".app-bar-tab-remove");
 		});
 		expect(hasRemove).toBe(true);
 	});
 
-	it("10 — removing sample-note tab removes it from ModeBar", async () => {
+	it("10 — removing sample-note tab removes it from AppBar", async () => {
 		const tabsBefore = await browser.execute(() => {
-			return document.querySelectorAll(".mode-bar-tab[data-panel-id]").length;
+			return document.querySelectorAll(".app-bar-tab[data-panel-id]").length;
 		});
 
 		const removed = await clickPanelRemove("sample-note");
@@ -159,13 +159,13 @@ describe("90 — Panel System (ModeBar + sample-note AI interaction)", () => {
 		await browser.pause(500);
 
 		const tabsAfter = await browser.execute(() => {
-			return document.querySelectorAll(".mode-bar-tab[data-panel-id]").length;
+			return document.querySelectorAll(".app-bar-tab[data-panel-id]").length;
 		});
 		expect(tabsAfter).toBe(tabsBefore - 1);
 
 		const stillPresent = await browser.execute(() => {
 			return !!document.querySelector(
-				`.mode-bar-tab[data-panel-id="sample-note"]`,
+				`.app-bar-tab[data-panel-id="sample-note"]`,
 			);
 		});
 		expect(stillPresent).toBe(false);

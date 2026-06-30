@@ -142,13 +142,13 @@ export const S = {
 	agentFileTextarea: ".agent-file-textarea",
 	agentFileSaveBtn: ".agent-file-save-btn",
 
-	// ModeBar (panel tabs)
-	modeBar: ".mode-bar",
-	modeBarTab: ".mode-bar-tab",
-	modeBarTabActive: ".mode-bar-tab--active",
-	modeBarTabWrapper: ".mode-bar-tab-wrapper",
-	modeBarTabRemove: ".mode-bar-tab-remove",
-	modeBarAdd: ".mode-bar-add",
+	// AppBar (panel tabs)
+	modeBar: ".app-bar",
+	modeBarTab: ".app-bar-tab",
+	modeBarTabActive: ".app-bar-tab--active",
+	modeBarTabWrapper: ".app-bar-tab-wrapper",
+	modeBarTabRemove: ".app-bar-tab-remove",
+	modeBarAdd: ".app-bar-add",
 
 	// SampleNotePanel
 	sampleNotePanel: ".sample-note-panel",

@@ -230,6 +230,99 @@ describe("chat-service", () => {
 		expect(parsed.provider?.naiaKey).toBeUndefined();
 	});
 
+	it("S4: carries environmentSegments and omits systemPrompt when only segments are sent", async () => {
+		const { sendChatMessage } = await import("../chat-service");
+
+		mockListen.mockImplementation(
+			async (_event: string, handler: (event: { payload: string }) => void) => {
+				setTimeout(() => {
+					handler({ payload: JSON.stringify({ type: "finish", requestId: "req-seg" }) });
+				}, 10);
+				return mockUnlisten;
+			},
+		);
+
+		await sendChatMessage({
+			message: "test",
+			provider: { provider: "gemini", model: "gemini-3-flash", apiKey: "k" },
+			history: [],
+			onChunk: vi.fn(),
+			requestId: "req-seg",
+			environmentSegments: [
+				{ kind: "avatarEmotion" },
+				{ kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+			],
+		});
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		// 두벌 제거: persona 를 굽지 않으므로 systemPrompt 미전송, 환경 세그먼트만 운반.
+		expect(parsed.systemPrompt).toBeUndefined();
+		expect(parsed.environmentSegments).toEqual([
+			{ kind: "avatarEmotion" },
+			{ kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+		]);
+	});
+
+	it("S4: voice pipeline carries responseStyle:brief segment, NOT a raw systemPrompt override", async () => {
+		// 음성 persona 회귀 닫기: 음성 STT→채팅 경로는 더는 raw systemPrompt(brevity)로 persona 를 덮지 않고
+		// responseStyle:brief 세그먼트로 보낸다(코어가 persona+간결성 둘 다 조립).
+		const { sendChatMessage } = await import("../chat-service");
+
+		mockListen.mockImplementation(
+			async (_event: string, handler: (event: { payload: string }) => void) => {
+				setTimeout(() => {
+					handler({ payload: JSON.stringify({ type: "finish", requestId: "req-voice" }) });
+				}, 10);
+				return mockUnlisten;
+			},
+		);
+
+		await sendChatMessage({
+			message: "test",
+			provider: { provider: "gemini", model: "gemini-3-flash", apiKey: "k" },
+			history: [],
+			onChunk: vi.fn(),
+			requestId: "req-voice",
+			environmentSegments: [
+				{ kind: "avatarEmotion" },
+				{ kind: "responseStyle", style: "brief" },
+			],
+		});
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		// persona 를 덮지 않으므로 systemPrompt 미전송 — 간결성은 구조화 세그먼트로만.
+		expect(parsed.systemPrompt).toBeUndefined();
+		expect(parsed.environmentSegments).toEqual([
+			{ kind: "avatarEmotion" },
+			{ kind: "responseStyle", style: "brief" },
+		]);
+	});
+
+	it("S4: empty environmentSegments array is omitted from payload", async () => {
+		const { sendChatMessage } = await import("../chat-service");
+
+		mockListen.mockImplementation(
+			async (_event: string, handler: (event: { payload: string }) => void) => {
+				setTimeout(() => {
+					handler({ payload: JSON.stringify({ type: "finish", requestId: "req-seg-empty" }) });
+				}, 10);
+				return mockUnlisten;
+			},
+		);
+
+		await sendChatMessage({
+			message: "test",
+			provider: { provider: "gemini", model: "gemini-3-flash", apiKey: "k" },
+			history: [],
+			onChunk: vi.fn(),
+			requestId: "req-seg-empty",
+			environmentSegments: [],
+		});
+
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.environmentSegments).toBeUndefined();
+	});
+
 	it("sendAuthUpdate sends auth_update message to agent", async () => {
 		const { sendAuthUpdate } = await import("../chat-service");
 		await sendAuthUpdate("gw-test-key");

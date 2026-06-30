@@ -65,6 +65,12 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
         session_id: s("sessionId"),
         messages,
         system_prompt: s("systemPrompt"),
+        // S4 — 셸이 보낸 구조화 environmentSegments(array) → proto JSON 문자열(args_json 동형, 무손실).
+        // 코어가 화이트리스트 디코드(avatarEmotion|panel). 부재/비배열 = None(필드 omit, 무회귀).
+        environment_segments_json: v
+            .get("environmentSegments")
+            .filter(|x| x.is_array())
+            .map(|x| x.to_string()),
         enable_tools: v.get("enableTools").and_then(|x| x.as_bool()),
         enable_thinking: v.get("enableThinking").and_then(|x| x.as_bool()),
         gateway_url: s("gatewayUrl"),
@@ -167,6 +173,53 @@ impl AgentGrpc {
     pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool) -> Result<(), tonic::Status> {
         self.client.panel_tool_result(pb::PanelToolResultMsg { request_id, tool_call_id, output, success }).await?;
         Ok(())
+    }
+}
+
+// S4 — json_to_chat_request 의 environment_segments_json 직렬화 단위 테스트(결정론, gRPC 불요).
+#[cfg(test)]
+mod transcode_tests {
+    use super::*;
+
+    #[test]
+    fn environment_segments_array_serialized_to_json_string() {
+        let v = serde_json::json!({
+            "requestId": "r1",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "environmentSegments": [
+                { "kind": "avatarEmotion" },
+                { "kind": "panel", "entries": [{ "type": "bgm", "data": { "track": "lofi" } }] }
+            ]
+        });
+        let req = json_to_chat_request(&v);
+        let json = req.environment_segments_json.expect("environment_segments_json present");
+        // 코어가 다시 파싱해 화이트리스트 디코드 — 무손실 array 운반.
+        let parsed: Value = serde_json::from_str(&json).expect("valid json");
+        assert!(parsed.is_array());
+        assert_eq!(parsed[0]["kind"], "avatarEmotion");
+        assert_eq!(parsed[1]["kind"], "panel");
+        assert_eq!(parsed[1]["entries"][0]["type"], "bgm");
+        // systemPrompt 미전송(두벌 제거) → None.
+        assert!(req.system_prompt.is_none());
+    }
+
+    #[test]
+    fn missing_environment_segments_is_none() {
+        let v = serde_json::json!({ "requestId": "r1", "messages": [] });
+        assert!(json_to_chat_request(&v).environment_segments_json.is_none());
+    }
+
+    #[test]
+    fn non_array_environment_segments_is_none() {
+        let v = serde_json::json!({ "requestId": "r1", "messages": [], "environmentSegments": "nope" });
+        assert!(json_to_chat_request(&v).environment_segments_json.is_none());
+    }
+
+    #[test]
+    fn explicit_system_prompt_override_preserved() {
+        // voice-pipeline / discord 의 명시 override 경로(코어가 honor) — 무회귀.
+        let v = serde_json::json!({ "requestId": "r1", "messages": [], "systemPrompt": "OVERRIDE" });
+        assert_eq!(json_to_chat_request(&v).system_prompt.as_deref(), Some("OVERRIDE"));
     }
 }
 

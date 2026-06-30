@@ -21,6 +21,11 @@ pub struct PanelManifest {
     pub icon_svg: Option<String>,
     pub names: Option<std::collections::HashMap<String, String>>,
     pub version: Option<String>,
+    /// Tools the panel exposes to Naia. Declared statically in panel.json so the
+    /// Shell can register proxy stubs with the Agent; actual execution is routed
+    /// to the panel iframe via postMessage (GenericInstalledPanel).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<PanelToolSpec>>,
     /// Absolute path to index.html if present — used for iframe rendering
     #[serde(
         rename = "htmlEntry",
@@ -28,6 +33,26 @@ pub struct PanelManifest {
         skip_serializing_if = "Option::is_none"
     )]
     pub html_entry: Option<String>,
+}
+
+/// A tool an installed panel exposes to Naia.
+/// Mirrors the shell `NaiaTool` shape — forwarded verbatim to the Agent.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PanelToolSpec {
+    /// Unique skill name with `skill_` prefix, e.g. "skill_memo_read".
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// JSON Schema for parameters (arbitrary JSON object).
+    #[serde(default)]
+    pub parameters: serde_json::Value,
+    /// Permission tier (0=auto, 1=notify, 2=confirm). Defaults to 1.
+    #[serde(default = "default_tool_tier")]
+    pub tier: u8,
+}
+
+fn default_tool_tier() -> u8 {
+    1
 }
 
 /// List installed panels by scanning ~/.naia/panels/
@@ -214,32 +239,244 @@ pub fn panel_run_shell(cmd: String, args: Vec<String>) -> Result<PanelShellResul
     })
 }
 
-/// Remove an installed panel directory from ~/.naia/panels/{panelId}/
+/// Remove an installed panel by its panel id.
+///
+/// Scans `~/.naia/panels/*/panel.json` and removes every directory whose
+/// manifest `id` matches — this is robust to the directory name differing from
+/// the id (e.g. a repo cloned as `naia-memo-panel` but whose panel.json
+/// declares `id: "memo"`). Mirrors the legacy agent `actionRemove` logic.
 #[tauri::command]
 pub fn panel_remove_installed(panel_id: String) -> Result<(), String> {
-    // Validate: no path traversal
     if panel_id.contains('/') || panel_id.contains('\\') || panel_id.contains("..") {
         return Err(format!("Invalid panel id: {}", panel_id));
     }
 
     let home = home_dir();
     let home_path = dunce::canonicalize(&home).map_err(|_| "Access denied".to_string())?;
+    let panels_root = std::path::PathBuf::from(&home).join(".naia").join("panels");
 
-    let panel_dir = std::path::PathBuf::from(&home)
-        .join(".naia/panels")
-        .join(&panel_id);
-
-    if !panel_dir.exists() {
-        return Ok(()); // already gone
+    if !panels_root.is_dir() {
+        return Ok(()); // nothing installed
     }
 
-    // Canonicalize to resolve symlinks — prevents deleting directories outside HOME
-    // (mirrors panel_read_file's boundary check)
-    let canonical = dunce::canonicalize(&panel_dir).map_err(|_| "Access denied".to_string())?;
-    if !canonical.starts_with(&home_path) {
-        return Err("Access denied".to_string());
+    #[derive(Deserialize)]
+    struct ManifestLite {
+        id: Option<String>,
     }
 
-    std::fs::remove_dir_all(&canonical)
-        .map_err(|e| format!("Failed to remove panel {}: {}", panel_id, e))
+    for entry in std::fs::read_dir(&panels_root)
+        .map_err(|e| format!("Failed to read panels dir: {}", e))?
+    {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        // Skip in-flight install temp dirs.
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".~install-")
+        {
+            continue;
+        }
+
+        let dir = entry.path();
+        let manifest_path = dir.join("panel.json");
+        if !manifest_path.exists() {
+            continue;
+        }
+
+        let id = std::fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|d| serde_json::from_str::<ManifestLite>(&d).ok())
+            .and_then(|m| m.id);
+        if id.as_deref() != Some(panel_id.as_str()) {
+            continue;
+        }
+
+        // Canonicalize to defeat symlinks — never delete outside HOME.
+        let canonical =
+            dunce::canonicalize(&dir).map_err(|_| "Access denied".to_string())?;
+        if !canonical.starts_with(&home_path) {
+            return Err("Access denied".to_string());
+        }
+        std::fs::remove_dir_all(&canonical)
+            .map_err(|e| format!("Failed to remove panel {}: {}", panel_id, e))?;
+        // Keep scanning — removes every dir bound to this id (dedupe).
+    }
+
+    Ok(())
+}
+
+/// Result of a successful panel install.
+#[derive(Debug, Serialize)]
+pub struct PanelInstallResult {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
+/// Derive a panel directory name from a Git URL.
+/// Strips query/hash, trailing slash and ".git", then takes the last path segment.
+fn derive_panel_name(source: &str) -> String {
+    let s = source.trim();
+    // strip query/hash
+    let s = s.split(['?', '#']).next().unwrap_or(s);
+    // strip trailing slash(es)
+    let s = s.trim_end_matches('/');
+    // strip .git suffix
+    let s = s.trim_end_matches(".git");
+    // take last path segment (after last '/' or ':')
+    let seg = s.rsplit(['/', ':']).next().unwrap_or(s);
+    seg.to_string()
+}
+
+/// Install a panel from a Git URL into `~/.naia/panels/{panel-id}/`.
+///
+/// Ported from the legacy agent skill `agent/src/skills/built-in/panel.ts`
+/// (#89, with #257 HTTPS-only hardening) into a shell-side Tauri command —
+/// panel install is a filesystem operation, not an AI task, so it belongs in
+/// the shell rather than being routed through the agent.
+///
+/// The directory name is the panel **id** (read from the cloned `panel.json`),
+/// NOT the repo name. This keeps `panel_remove_installed` (which matches by id)
+/// consistent: dir name == id == canonical identifier.
+///
+/// Security:
+/// - HTTPS-only (#257): rejects `http://`, `git@`, `file://`, `data:`, bare paths.
+/// - The panel id (untrusted, from panel.json) is sanitized before becoming a
+///   path segment, so the destination cannot escape `~/.naia/panels/`.
+/// - `git` is invoked with an arg vector (no shell).
+/// - On any failure the temp clone is removed.
+#[tauri::command]
+pub fn panel_install(source: String) -> Result<PanelInstallResult, String> {
+    let source = source.trim();
+
+    // #257: HTTPS-only.
+    if !source.starts_with("https://") {
+        return Err(format!(
+            "지원하지 않는 소스입니다. HTTPS Git URL만 설치할 수 있습니다\n(예: https://github.com/org/panel.git).\n받은 소스: {}",
+            source
+        ));
+    }
+
+    let derived = derive_panel_name(source);
+    // The derived name is only used for the temp dir; still sanity-check it.
+    let derived_ok = !derived.is_empty()
+        && derived
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    if !derived_ok {
+        return Err(format!("유효하지 않은 저장소 이름이 도출되었습니다: {:?}", derived));
+    }
+
+    let home = home_dir();
+    let home_path =
+        dunce::canonicalize(&home).unwrap_or_else(|_| std::path::PathBuf::from(&home));
+    let panels_root = std::path::PathBuf::from(&home).join(".naia").join("panels");
+    std::fs::create_dir_all(&panels_root)
+        .map_err(|e| format!("앱 디렉토리 생성 실패: {}", e))?;
+
+    // Temp clone target *inside* panels_root (same volume → rename is atomic).
+    // Leading-dot prefix keeps it out of the installed-panel list while cloning.
+    let tmp = panels_root.join(format!(".~install-{}", derived));
+    if tmp.exists() {
+        let _ = std::fs::remove_dir_all(&tmp); // clear stale partial clone
+    }
+
+    // Clone via arg vector — no shell, no shell injection. --depth 1 for speed.
+    let output = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", source, &tmp.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("git 실행 실패 (git이 설치되어 있는지 확인): {}", e))?;
+
+    if !output.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!(
+            "git clone 실패: {}",
+            if stderr.is_empty() {
+                "알 수 없는 오류".to_string()
+            } else {
+                stderr
+            }
+        ));
+    }
+
+    // Verify panel.json manifest exists.
+    let manifest_path = tmp.join("panel.json");
+    if !manifest_path.exists() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(
+            "설치된 앱에 panel.json 매니페스트가 없습니다 — 임시 디렉토리를 제거했습니다."
+                .to_string(),
+        );
+    }
+
+    // Read id (the canonical panel id → becomes the directory name).
+    #[derive(Deserialize)]
+    struct ManifestLite {
+        id: Option<String>,
+        name: Option<String>,
+    }
+    let (id, display_name) = std::fs::read_to_string(&manifest_path)
+        .ok()
+        .and_then(|data| serde_json::from_str::<ManifestLite>(&data).ok())
+        .map(|m| {
+            (
+                m.id.unwrap_or_else(|| derived.clone()),
+                m.name.unwrap_or_else(|| derived.clone()),
+            )
+        })
+        .unwrap_or_else(|| (derived.clone(), derived.clone()));
+
+    // The id becomes a path segment — sanitize strictly.
+    let id_safe = !id.is_empty()
+        && !id.contains('/')
+        && !id.contains('\\')
+        && !id.contains("..")
+        && !id.contains('\0')
+        && !id.chars().any(char::is_control)
+        && id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    if !id_safe {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!(
+            "panel.json의 id가 유효하지 않아 설치할 수 없습니다 (영문/숫자/-/_ 만 허용): {:?}",
+            id
+        ));
+    }
+
+    // Final destination keyed by id.
+    let dest = panels_root.join(&id);
+    if dest.exists() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!(
+            "앱 \"{}\" 이(가) 이미 설치되어 있습니다: {}\n먼저 제거한 뒤 다시 설치하세요.",
+            id,
+            dest.display()
+        ));
+    }
+
+    // Move temp → final (same volume, so rename is O(1) and atomic).
+    std::fs::rename(&tmp, &dest).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp);
+        format!("설치 마무리 실패 (rename): {}", e)
+    })?;
+
+    // Home boundary sanity check (defense in depth).
+    if let Ok(canonical_dest) = dunce::canonicalize(&dest) {
+        if !canonical_dest.starts_with(&home_path) {
+            let _ = std::fs::remove_dir_all(&canonical_dest);
+            return Err("Access denied".to_string());
+        }
+    }
+
+    Ok(PanelInstallResult {
+        id,
+        name: display_name,
+        path: dest.to_string_lossy().into_owned(),
+    })
 }

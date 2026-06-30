@@ -3,6 +3,7 @@ import { createGenericInstalledPanel } from "../panels/generic-installed/Generic
 import { usePanelStore } from "../stores/panel";
 import { Logger } from "./logger";
 import { panelRegistry } from "./panel-registry";
+import type { NaiaTool } from "./panel-registry";
 
 interface InstalledPanelManifest {
 	id: string;
@@ -13,13 +14,15 @@ interface InstalledPanelManifest {
 	iconSvg?: string;
 	names?: Record<string, string>;
 	version?: string;
+	/** Tools the panel exposes to Naia (declared in panel.json). */
+	tools?: NaiaTool[];
 	/** Absolute path to index.html if present */
 	htmlEntry?: string;
 }
 
 /**
  * Read manifests from ~/.naia/panels/ via Tauri command and register each
- * as a GenericInstalledPanel. Bumps panelListVersion so ModeBar re-renders.
+ * as a GenericInstalledPanel. Bumps panelListVersion so AppBar re-renders.
  *
  * Skips panels already registered (e.g. built-ins or re-loaded after restart).
  */
@@ -53,8 +56,9 @@ export async function loadInstalledPanels(): Promise<void> {
 			icon: manifest.icon,
 			iconSvg: manifest.iconSvg,
 			htmlEntry: manifest.htmlEntry,
+			tools: manifest.tools,
 			source: "installed",
-			center: createGenericInstalledPanel(manifest.htmlEntry),
+			center: createGenericInstalledPanel(manifest.htmlEntry, manifest.tools),
 		});
 
 		Logger.info("PanelLoader", `Registered installed panel: ${manifest.id}`);
@@ -65,8 +69,8 @@ export async function loadInstalledPanels(): Promise<void> {
 
 /**
  * Delete an installed panel from disk (Tauri command) and unregister it.
- * If disk deletion fails, still unregisters from memory so ModeBar updates.
- * Bumps panelListVersion so ModeBar re-renders.
+ * If disk deletion fails, still unregisters from memory so AppBar updates.
+ * Bumps panelListVersion so AppBar re-renders.
  */
 export async function removeInstalledPanel(panelId: string): Promise<void> {
 	Logger.info("PanelLoader", `Removing installed panel: ${panelId}`);

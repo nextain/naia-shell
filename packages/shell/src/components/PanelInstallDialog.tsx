@@ -1,6 +1,5 @@
-import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
-import { sendPanelInstall } from "../lib/chat-service";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import { Logger } from "../lib/logger";
 import { loadInstalledPanels } from "../lib/panel-loader";
 import { usePanelStore } from "../stores/panel";
@@ -16,12 +15,17 @@ interface InstallResult {
 	message: string;
 }
 
+interface PanelInstallResult {
+	id: string;
+	name: string;
+	path: string;
+}
+
 export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 	const [mode, setMode] = useState<Mode>("git");
 	const [gitUrl, setGitUrl] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [result, setResult] = useState<InstallResult | null>(null);
-	const successRef = useRef(false);
 	const pushModal = usePanelStore((s) => s.pushModal);
 	const popModal = usePanelStore((s) => s.popModal);
 
@@ -31,56 +35,6 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 		return () => popModal();
 	}, [pushModal, popModal]);
 
-	// Listen for panel_install_result and panel_control reload from agent
-	useEffect(() => {
-		let unlistenFn: (() => void) | null = null;
-
-		const setup = async () => {
-			const unlisten = await listen<string>("agent_response", (event) => {
-				try {
-					const raw =
-						typeof event.payload === "string"
-							? event.payload
-							: JSON.stringify(event.payload);
-					const chunk = JSON.parse(raw) as {
-						type: string;
-						[k: string]: unknown;
-					};
-
-					if (chunk.type === "panel_install_result") {
-						const success = chunk.success as boolean;
-						const message = success
-							? (chunk.output as string)
-							: ((chunk.error as string | undefined) ??
-								(chunk.output as string));
-						setResult({ success, message });
-						setLoading(false);
-						successRef.current = success;
-					} else if (
-						chunk.type === "panel_control" &&
-						chunk.action === "reload" &&
-						successRef.current
-					) {
-						// Reload triggered by successful install — refresh panel list then close
-						loadInstalledPanels()
-							.catch(() => {})
-							.finally(() => {
-								onClose();
-							});
-					}
-				} catch {
-					// Ignore parse errors
-				}
-			});
-			unlistenFn = unlisten;
-		};
-
-		setup().catch(() => {});
-		return () => {
-			unlistenFn?.();
-		};
-	}, [onClose]);
-
 	async function handleInstall() {
 		// Zip install is gated (#359) — only Git URL is wired today.
 		if (mode !== "git") return;
@@ -89,16 +43,24 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 
 		setLoading(true);
 		setResult(null);
-		successRef.current = false;
-		Logger.info(
-			"PanelInstallDialog",
-			`Installing panel from ${mode}: ${source}`,
-		);
+		Logger.info("PanelInstallDialog", `Installing panel from ${mode}: ${source}`);
 		try {
-			await sendPanelInstall(source);
+			// Direct shell-side install (HTTPS-only git clone). Ported from the
+			// legacy agent skill (#89 / #257) into a Tauri command — install is a
+			// filesystem operation, not an AI task.
+			const res = await invoke<PanelInstallResult>("panel_install", { source });
+			setResult({
+				success: true,
+				message: `설치 완료: ${res.name} (${res.id}) → ${res.path}`,
+			});
+			// Refresh the installed-panel list so the new tab appears, then close.
+			await loadInstalledPanels().catch(() => {});
+			await new Promise((r) => setTimeout(r, 650));
+			onClose();
 		} catch (err) {
-			setLoading(false);
 			setResult({ success: false, message: String(err) });
+		} finally {
+			setLoading(false);
 		}
 	}
 
@@ -114,7 +76,7 @@ export function PanelInstallDialog({ onClose }: PanelInstallDialogProps) {
 				onKeyDown={() => {}}
 			>
 				<div className="panel-install-header">
-					<span className="panel-install-title">패널 추가</span>
+					<span className="panel-install-title">앱 추가</span>
 					<button
 						type="button"
 						className="panel-install-close"

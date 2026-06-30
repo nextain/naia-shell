@@ -26,6 +26,20 @@ export interface ChatMessage {
   readonly name?: string;
 }
 
+/**
+ * S4 — 환경고유 컨텍스트 세그먼트(naia-os 클라가 코어에 전달). 코어(naia-agent)가 persona+workspace 뒤에 머지.
+ * raw systemPrompt 를 굽는 두벌을 제거: persona/locale/honorific/speechStyle/userName 은 코어가 config.json 에서
+ * 스스로 조립하므로 셸이 안 보낸다. 셸 고유 = 아바타 감정 태그(avatarEmotion) + 패널 컨텍스트(panel) +
+ * 응답 스타일 힌트(responseStyle, 음성 파이프라인=brief)뿐.
+ * 폐쇄 union — 코어가 화이트리스트(avatarEmotion|panel|responseStyle) 외 드롭. 자유 system-prompt 텍스트 금지(권한 모델 C2).
+ * ⚠️ responseStyle: 음성 STT→채팅 경로가 raw systemPrompt(brevity)로 persona 를 덮던 회귀를 닫는다 — 간결성만
+ *    구조화로 보내고 persona 조립은 코어가 보존(어디서든 알파). 문구는 코어 소유(클라는 style enum 만).
+ */
+export type EnvironmentSegment =
+  | { readonly kind: "avatarEmotion" }
+  | { readonly kind: "panel"; readonly entries: readonly { readonly type: string; readonly data: unknown }[] }
+  | { readonly kind: "responseStyle"; readonly style: "brief" | "normal" };
+
 /** UC1 대화 요청 (domain). clientId=다중클라이언트 라우팅. gatewayUrl=도구 gateway(provider.labGatewayUrl 과 별개). */
 export interface ChatRequest {
   readonly kind: "chat";
@@ -35,7 +49,10 @@ export interface ChatRequest {
   readonly provider: ProviderSelect;
   readonly gatewayUrl?: string;
   readonly messages: readonly ChatMessage[];
+  /** S4 종착: 명시 override 만(--system 등). 일반 채팅은 안 보냄 — 코어가 persona+workspace+environmentSegments 조립. */
   readonly systemPrompt?: string;
+  /** S4 — 셸 환경고유 컨텍스트(아바타 감정·패널). 코어가 머지. systemPrompt 미전송 시 이게 환경 정보 운반 경로. */
+  readonly environmentSegments?: readonly EnvironmentSegment[];
   readonly enableTools?: boolean;
   /** ⚠️ **top-level**(agent 가 req.enableThinking 를 읽어 providerConfig 에 주입 — provider 안에만 두면 무효화). */
   readonly enableThinking?: boolean;

@@ -27,6 +27,7 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         ...(out.gatewayUrl !== undefined ? { gatewayUrl: out.gatewayUrl } : {}),
         messages: out.messages,
         ...(out.systemPrompt !== undefined ? { systemPrompt: out.systemPrompt } : {}),
+        ...(out.environmentSegments !== undefined ? { environmentSegments: out.environmentSegments } : {}), // S4 — 코어가 머지(Rust json_to_chat_request → proto environment_segments_json)
         ...(out.enableTools !== undefined ? { enableTools: out.enableTools } : {}),
         ...(out.enableThinking !== undefined ? { enableThinking: out.enableThinking } : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),

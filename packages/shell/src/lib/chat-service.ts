@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Logger } from "./logger";
 import type { NaiaTool } from "./panel-registry";
-import type { AgentResponseChunk, ProviderConfig } from "./types";
+import type { AgentResponseChunk, EnvironmentSegment, ProviderConfig } from "./types";
 // ── new-naia 이식 코어 결선 (UC1 텍스트 대화) ──
 // VITE_NAIA_NEW_CORE=1 일 때 sendChatMessage/cancelChat 가 새 core(hexagonal os core)를 경유.
 // 미설정 시 기존 경로 그대로(voice/tts/gateway 등 보존) — 비파괴·지속가능.
@@ -73,7 +73,13 @@ interface SendChatOptions {
 	ttsVoice?: string;
 	ttsEngine?: "auto" | "gateway" | "google";
 	ttsProvider?: "google" | "edge" | "openai" | "elevenlabs" | "nextain";
+	/**
+	 * S4 — 명시 systemPrompt override(예: voice-pipeline 의 brevity 지시). 일반 채팅은 **안 보냄**:
+	 * 코어가 persona+workspace+environmentSegments 를 스스로 조립한다(naia-os buildSystemPrompt 두벌 제거).
+	 */
 	systemPrompt?: string;
+	/** S4 — 셸 환경고유 세그먼트(아바타 감정·패널). 코어가 머지. persona/locale 등은 코어가 config.json 에서 조립(안 보냄). */
+	environmentSegments?: EnvironmentSegment[];
 	enableTools?: boolean;
 	/** Enable thinking/reasoning output from models that support it. */
 	enableThinking?: boolean;
@@ -210,6 +216,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			requestId: opts.requestId,
 			...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
 			...(opts.systemPrompt !== undefined ? { systemPrompt: opts.systemPrompt } : {}),
+			...(opts.environmentSegments !== undefined ? { environmentSegments: opts.environmentSegments } : {}),
 			...(opts.enableTools !== undefined ? { enableTools: opts.enableTools } : {}),
 			...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
 			...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
@@ -227,6 +234,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		ttsEngine,
 		ttsProvider,
 		systemPrompt,
+		environmentSegments,
 		enableTools,
 		enableThinking,
 		gatewayUrl,
@@ -247,6 +255,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		...(ttsEngine && { ttsEngine }),
 		...(ttsProvider && { ttsProvider }),
 		...(systemPrompt && { systemPrompt }),
+		...(environmentSegments && environmentSegments.length > 0 && { environmentSegments }),
 		...(enableTools != null && { enableTools }),
 		...(enableThinking != null && { enableThinking }),
 		...(gatewayUrl && { gatewayUrl }),

@@ -8,7 +8,7 @@ function requestBrowserVisibilitySync() {
 
 /**
  * Context types that persist across panel switches. These belong to always-on
- * UI (the mode-bar BGM player) rather than a switchable panel, so they must NOT
+ * UI (the app-bar BGM player) rather than a switchable panel, so they must NOT
  * be cleared when the active panel changes, and they live in a separate keyed
  * bucket so a transient panel push can never overwrite them. See
  * `selectPromptPanelContexts` for how they are merged into the system prompt.
@@ -34,7 +34,7 @@ interface PanelState {
 	setActivePanelContext: (ctx: PanelContext | null) => void;
 	/**
 	 * Incremented whenever panels are installed or removed at runtime.
-	 * ModeBar and other consumers subscribe to rebuild their panel list.
+	 * AppBar and other consumers subscribe to rebuild their panel list.
 	 */
 	panelListVersion: number;
 	bumpPanelListVersion: () => void;

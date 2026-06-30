@@ -9,7 +9,7 @@ import type { PanelCenterProps } from "../../lib/panel-registry";
  *   - skill_note_read  → returns current note content
  *   - skill_note_write → updates note content
  *
- * This panel is NOT built-in, so it can be deleted from ModeBar.
+ * This panel is NOT built-in, so it can be deleted from AppBar.
  * Install path: ~/.naia/panels/sample-note/ (Phase 4)
  */
 export function SampleNoteCenterPanel({ naia }: PanelCenterProps) {

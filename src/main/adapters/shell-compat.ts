@@ -2,7 +2,7 @@
 // old shell `lib/chat-service.ts` 의 sendChatMessage/cancelChat/sendCredsUpdate 와 *시그니처 호환* drop-in 을
 // 새 core(ChatBridge + makeLiveStdioTransport + MessageRouter) 위에 제공 → shell 은 import 1줄 교체.
 // ⚠️ old onChunk 는 wire `AgentResponseChunk` 를 기대 → 새 core domain ChatChunk 를 wire 로 역매핑(chatChunkToWire).
-import type { ChatChunk, ProviderSelect, ChatMessage } from "../domain/chat.js";
+import type { ChatChunk, ProviderSelect, ChatMessage, EnvironmentSegment } from "../domain/chat.js";
 import type { TurnHandle } from "../ports/uc1.js";
 import { makeLiveStdioTransport, type LiveTransportDeps } from "./tauri/uc1.js";
 import { ChatService } from "../app/chat/chat-service.js";
@@ -18,6 +18,8 @@ export interface ShellSendOptions {
   requestId: string;
   sessionId?: string;
   systemPrompt?: string;
+  /** S4 — 셸 환경고유 세그먼트(아바타 감정·패널). 코어가 persona+workspace 뒤 머지. */
+  environmentSegments?: readonly EnvironmentSegment[];
   enableTools?: boolean;
   enableThinking?: boolean;
   gatewayUrl?: string;
@@ -81,6 +83,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         messages: [...opts.history, { role: "user" as const, content: opts.message }],
         ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
         ...(opts.systemPrompt !== undefined ? { systemPrompt: opts.systemPrompt } : {}),
+        ...(opts.environmentSegments !== undefined ? { environmentSegments: opts.environmentSegments } : {}),
         ...(opts.enableTools !== undefined ? { enableTools: opts.enableTools } : {}),
         ...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),

@@ -116,7 +116,7 @@ const SECRET_CONFIG_KEYS = new Set([
 // flattenConfig() from polluting process.env with THEME, PANEL_POSITION, BGM_TRACK, etc.
 const UI_ONLY_CONFIG_KEYS = new Set([
 	// Appearance
-	"theme", "backgroundImage", "backgroundVideo", "vrmModel", "customVrms", "customBgs",
+	"theme", "backgroundImage", "backgroundVideo", "vrmModel", "avatarProvider", "nvaModel", "customVrms", "customBgs",
 	// STT/TTS UI features
 	"sttProvider", "sttModel", "naiaCloudSttBackend",
 	"ttsEnabled", "ttsVoice", "ttsProvider", "naiaCloudTtsBackend", "ttsEngine",
@@ -349,6 +349,8 @@ export function applyModelSelectionToConfig(
 // 워크스페이스 전환 시 복원되지 않았다(S72 버그). 이 키들을 워크스페이스별 ui-config.json 에 분리 저장/복원(FR-WS.2).
 const UI_IDENTITY_KEYS = [
 	"vrmModel",
+	"avatarProvider",
+	"nvaModel",
 	"backgroundImage",
 	"backgroundVideo",
 	"bgmTrack",

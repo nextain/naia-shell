@@ -270,7 +270,9 @@ function base64ToBytes(b64: string): Uint8Array {
 	return bytes;
 }
 
-/** f32 PCM 샘플(mono) → 16-bit PCM WAV(ArrayBuffer). 브라우저 decodeAudioData 가 재생. */
+/** f32 PCM 샘플(mono) → 16-bit PCM WAV(ArrayBuffer). AudioQueue 가 base64 의 RIFF
+ * 매직을 스니핑해 audio/wav data-URI 로 재생(합성 결과는 playBase64Audio 의 mp3 하드코딩
+ * 경로가 아니라 enqueueOrdered→AudioQueue 경로). */
 function f32PcmToWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
 	const n = samples.length;
 	const buffer = new ArrayBuffer(44 + n * 2);
