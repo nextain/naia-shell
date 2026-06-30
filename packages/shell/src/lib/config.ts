@@ -634,6 +634,8 @@ export const NAIA_WEB_BASE_URL =
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";
+// 로컬 음성(naia-local-voice = VoxCPM2): 임베딩된 cascade loader 가 이 포트에 띄움 → 합성도 기본 이 주소.
+export const DEFAULT_LOCAL_VOICE_HOST = "http://localhost:22600";
 
 const INSTANCE_ID_KEY = "naia-os-instance-id";
 

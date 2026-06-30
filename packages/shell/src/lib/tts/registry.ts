@@ -218,9 +218,8 @@ registerTtsProviderMeta({
 	isFree: true,
 	pricing: "Free (local GPU)",
 	isLocal: true,
-	// The local voice engine is voice-cloning based (ref audio → "내 목소리
-	// 만들기"); the picker needs at least one entry so selecting it sets a concrete
-	// `ttsVoice` instead of leaving a stale cloud voice id. The base voice is
-	// used until the user supplies a reference clip (RefAudioSection).
-	voices: [{ id: "default", label: "기본 음색 (default)" }],
+	// 고정 voice 목록 없음(의도) — 로컬 음성은 **ref-audio 클로닝**(음성 참조 / 내 목소리
+	// 만들기 = RefAudioSection)으로 음색을 정한다. 그래서 클라우드 TTS용 일반 voice 드롭다운
+	// ("기본음색 + 미리듣기")을 띄우지 않는다. ttsVoice 는 SettingsTab 이 "default" 로 설정
+	// (synthVllm 이 voice 미지정 시 "default" 사용 — VoxCPM2 가 ref audio 로 음색 결정).
 });

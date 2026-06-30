@@ -2293,9 +2293,12 @@ fn spawn_cascade(
 
     let stderr_stdio = {
         let log_path = log_dir().join("cascade-stderr.log");
+        // truncate(append 아님) — 매 기동마다 새 로그. read_cascade_stderr_tail 이
+        // 이전 실행의 stale 줄(예: 옛 "0 서비스")을 같이 보여주지 않게.
         std::fs::OpenOptions::new()
             .create(true)
-            .append(true)
+            .write(true)
+            .truncate(true)
             .open(&log_path)
             .ok()
             .map(Stdio::from)

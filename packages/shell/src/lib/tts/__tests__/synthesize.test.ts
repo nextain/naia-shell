@@ -282,10 +282,16 @@ describe("synthesizeTts — naia-local-voice (FR-VOICE.1)", () => {
 		);
 	});
 
-	it("throws a local-voice-specific error when no host is set (no silent fallback)", async () => {
-		await expect(
-			synthesizeTts({ text: "x", provider: "naia-local-voice" }),
-		).rejects.toThrow(/로컬 음성 호스트/);
+	it("defaults to the embedded cascade port (localhost:22600) when no host is set", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(bytesResponse(new Uint8Array([7])));
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({ text: "x", provider: "naia-local-voice" });
+		// 임베딩 cascade(VoxCPM2)가 22600에 뜨므로 host 미설정 시 거기로 합성.
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			"http://localhost:22600/v1/audio/speech",
+		);
 	});
 });
 

@@ -20,7 +20,7 @@
  * and never reaches here.
  */
 
-import type { TtsProviderId } from "../config";
+import { DEFAULT_LOCAL_VOICE_HOST, type TtsProviderId } from "../config";
 import { resolveEdgeVoice } from "./edge-tts";
 
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
@@ -231,7 +231,7 @@ async function synthElevenlabs(opts: SynthesizeOpts): Promise<SynthesizeResult> 
 async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	const host =
 		opts.provider === "naia-local-voice"
-			? (opts.vllmTtsHost ?? opts.vllmHost)
+			? (opts.vllmTtsHost || opts.vllmHost || DEFAULT_LOCAL_VOICE_HOST)
 			: opts.vllmHost;
 	const base = host?.replace(/\/$/, "");
 	if (!base) {

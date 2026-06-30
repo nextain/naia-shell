@@ -31,6 +31,7 @@ import {
 import {
 	type AppConfig,
 	DEFAULT_GATEWAY_URL,
+	DEFAULT_LOCAL_VOICE_HOST,
 	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_OLLAMA_HOST,
 	DEFAULT_VLLM_HOST,
@@ -595,6 +596,15 @@ export function SettingsTab() {
 	useEffect(() => {
 		invoke<boolean>("cascade_status").then(setCascadeRunning).catch(() => {});
 	}, []);
+	// naia-local-voice 선택 상태에서 Local Voice Host 가 비어있으면 기본값(localhost:22600)
+	// 으로 채운다 — 임베딩 cascade(VoxCPM2)가 그 포트에 뜨므로 합성이 자동으로 로컬을 가리킴.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: ttsProvider 전환 시에만 보정
+	useEffect(() => {
+		if (ttsProvider === "naia-local-voice" && !vllmTtsHost) {
+			setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
+			persistConfig({ vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST });
+		}
+	}, [ttsProvider]);
 	const handleToggleCascade = async () => {
 		setCascadeBusy(true);
 		setCascadeMsg("");
@@ -3558,6 +3568,12 @@ export function SettingsTab() {
 										else if (next === "google")
 											setGatewayTtsApiKey(existing?.googleApiKey ?? "");
 										else setGatewayTtsApiKey("");
+										// naia-local-voice: 임베딩 cascade(VoxCPM2)는 localhost:22600에
+										// 뜸 → host 비어있으면 기본값 채움(합성이 자동으로 로컬 가리킴).
+										if (next === "naia-local-voice" && !vllmTtsHost) {
+											setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
+											persistConfig({ vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST });
+										}
 										// Reset voice to provider default
 										const meta = listTtsProviderMetas().find(
 											(p) => p.id === next,
@@ -3567,6 +3583,10 @@ export function SettingsTab() {
 										} else if (next === "edge") {
 											// Edge voice will be selected from gateway/hardcoded list
 											persistTtsVoice("");
+										} else if (next === "naia-local-voice" || next === "vllm") {
+											// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
+											// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
+											persistTtsVoice("default");
 										}
 										// Fetch dynamic voices — use saved key or current input
 										const savedKey =
