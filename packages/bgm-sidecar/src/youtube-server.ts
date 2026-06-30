@@ -68,8 +68,12 @@ async function handleSearch(req: IncomingMessage, res: ServerResponse, params: U
 	if (!q) { json(req, res, 400, { error: "q required" }); return; }
 	const max = Math.min(Number(params.get("max") ?? "12"), 20);
 
+	// BGM 음악 검색은 playlist/믹스 결과를 선호(요즘 음악이 플레이리스트로 많이 올라옴)
+	// → 쿼리에 "playlist" 태그 부가. 이미 들어있으면 중복 안 함.
+	const searchQuery = /\bplaylist\b/i.test(q) ? q : `${q} playlist`;
+
 	const yt = await getInnertube();
-	const search = await yt.search(q, { type: "video" });
+	const search = await yt.search(searchQuery, { type: "video" });
 
 	// biome-ignore lint/suspicious/noExplicitAny: youtubei.js types vary by version
 	const results = (search.videos ?? []).slice(0, max).map((v: any) => ({
