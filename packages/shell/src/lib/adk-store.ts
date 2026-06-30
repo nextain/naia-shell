@@ -450,7 +450,10 @@ export async function writeNaiaConfig(
 	await writeNaiaUiConfig(config);
 	// R2.2a: 로컬 cascade 구동 결정용 slots-manifest.json 동기화(windows-manager loader 가 read).
 	// 비밀 0(buildSlotsManifest 가 provider/model 만 직렬화). 항상 config 와 동기.
-	await writeSlotsManifest(config as unknown as AppConfig).catch(() => {});
+	// 실패는 config 저장을 막지 않되(부가 산출물) 영구 stale 추적 위해 로깅.
+	await writeSlotsManifest(config as unknown as AppConfig).catch((e) => {
+		console.warn("[adk-store] slots-manifest write failed", e);
+	});
 	// 설정 변경(특히 provider/model)을 에이전트에 즉시 반영 — naia-settings 재로딩 후 활성 provider swap(정본 R1-2:
 	// "라이브 변경 = OS 가 naia-settings 갱신 후 ReloadSettings 재호출"). gRPC=설정 기반(대화는 메시지만)이라
 	// 이 트리거가 없으면 에이전트는 기동 시 config 에 고정돼 UI 모델 전환이 안 먹는다(=실측 회귀). 에이전트 미가동 시 swallow.

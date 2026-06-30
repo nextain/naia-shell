@@ -267,18 +267,19 @@ describe("synthesizeTts — naia-local-voice (FR-VOICE.1)", () => {
 		);
 	});
 
-	it("falls back to vllmHost only when vllmTtsHost is unset", async () => {
+	it("never falls back to the LLM vllmHost — uses the voice default instead", async () => {
 		const fetchMock = vi
 			.fn()
 			.mockResolvedValue(bytesResponse(new Uint8Array([6])));
 		vi.stubGlobal("fetch", fetchMock);
+		// vllmHost(LLM:9000) 주어져도 voice host 미설정이면 LLM 으로 가지 않고 기본 :22600.
 		await synthesizeTts({
 			text: "x",
 			provider: "naia-local-voice",
 			vllmHost: "http://localhost:9000",
 		});
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:9000/v1/audio/speech",
+			"http://localhost:22600/v1/audio/speech",
 		);
 	});
 

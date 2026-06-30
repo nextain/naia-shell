@@ -295,6 +295,9 @@ struct CascadeProcess {
 impl Drop for CascadeProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        // kill()은 시그널만 — wait()로 reap 해야 Unix(Bazzite)에서 좀비(<defunct>)가 안 남음.
+        // stop_cascade/WindowEvent 도 take()→Drop 경유라 이 한 곳이 전 경로를 커버.
+        let _ = self.child.wait();
     }
 }
 
@@ -2194,7 +2197,9 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
-/// 로컬 cascade VRAM(GB, total) 동기 감지 — start_cascade 가 loader `--gpu` 로 넘김.
+/// 로컬 cascade VRAM(GB) 동기 감지 — start_cascade 가 loader `--gpu` 로 넘김.
+/// **primary GPU(nvidia-smi 첫 줄)만** 본다 — 멀티 GPU 합산 안 함(단일 모델은 GPU 간
+/// 분산 불가, TP 는 별도). 즉 3090×2 면 48 이 아닌 24(per-GPU 예산이 맞음).
 /// detect_gpu_vram(async, capacity-only)과 동일 nvidia-smi, 블로킹 컨텍스트용.
 fn detect_vram_gb_blocking() -> Option<f64> {
     let output = std::process::Command::new("nvidia-smi")
@@ -2285,7 +2290,7 @@ fn spawn_cascade(
         .arg("--adk-root")
         .arg(adk_path)
         .current_dir(loader_dir);
-    // VRAM total 을 알면 명시 — loader 의 보수적 85% 자동추정 대신 total 사용
+    // 감지된 primary GPU VRAM 을 명시 — loader 의 보수적 85% 자동추정 대신 실값 사용
     // (8GB 음성 단독 6.9G 적합 보장). 미감지면 loader 가 자체 추정.
     if let Some(v) = vram_gb {
         cmd.arg("--gpu").arg(format!("{}", v));

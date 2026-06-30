@@ -42,8 +42,19 @@ cpSync(SRC, DEST, {
 	filter: (s) => !s.includes("__pycache__"),
 });
 
-// 스테이징 검증 — `python -m loader launch` 가 import 하는 핵심 모듈 실재.
-for (const p of ["__init__.py", "cli.py", "launcher.py", "service_plan.py"]) {
+// 스테이징 검증 — `python -m loader` 진입(__main__) + __init__ 이 re-export 하는 전이
+// 모듈이 하나라도 빠지면 런타임 ImportError 가 나므로 빌드를 빨갛게 만든다.
+for (const p of [
+	"__main__.py", // python -m loader 의 실제 진입점
+	"__init__.py",
+	"cli.py",
+	"launcher.py",
+	"service_plan.py",
+	"capabilities.py",
+	"vram_budget.py",
+	"manifest.py",
+	"paths.py",
+]) {
 	if (!existsSync(resolve(DEST, p))) {
 		console.error(`[stage-cascade-loader] ❌ 스테이징 검증 실패 — 누락: ${p}`);
 		process.exit(1);

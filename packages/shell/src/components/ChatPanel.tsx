@@ -924,7 +924,10 @@ export function ChatPanel() {
 				voice:
 					config.ttsProvider === "nextain"
 						? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
-						: config.ttsVoice,
+						: config.ttsProvider === "naia-local-voice" ||
+								config.ttsProvider === "vllm"
+							? "default" // 로컬 음성=ref-audio 클로닝, stale 클라우드 voice id 차단
+							: config.ttsVoice,
 				ttsProvider: config.ttsProvider || "edge",
 				ttsApiKey:
 					config.ttsProvider === "google"
@@ -1695,7 +1698,10 @@ export function ChatPanel() {
 					voice:
 						config.ttsProvider === "nextain"
 							? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
-							: config.ttsVoice || config.voice,
+							: config.ttsProvider === "naia-local-voice" ||
+									config.ttsProvider === "vllm"
+								? "default" // 로컬 음성=ref-audio 클로닝, stale 클라우드 voice id 차단
+								: config.ttsVoice || config.voice,
 					ttsProvider: config.ttsProvider || "edge",
 					ttsApiKey:
 						config.ttsProvider === "google"

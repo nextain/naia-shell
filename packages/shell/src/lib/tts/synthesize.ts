@@ -229,9 +229,11 @@ async function synthElevenlabs(opts: SynthesizeOpts): Promise<SynthesizeResult> 
  * throws — the caller (ChatPanel) surfaces a clear "local voice unavailable"
  * notice instead of faking a free voice. */
 async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
+	// naia-local-voice: 로컬 음성 host(vllmTtsHost) 또는 임베딩 cascade 기본 포트(:22600).
+	// LLM용 vllmHost(:8000)로는 절대 폴백 안 함(엉뚱한 LLM 엔드포인트 합성 방지).
 	const host =
 		opts.provider === "naia-local-voice"
-			? (opts.vllmTtsHost || opts.vllmHost || DEFAULT_LOCAL_VOICE_HOST)
+			? opts.vllmTtsHost || DEFAULT_LOCAL_VOICE_HOST
 			: opts.vllmHost;
 	const base = host?.replace(/\/$/, "");
 	if (!base) {
