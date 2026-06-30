@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { LAB_GATEWAY_URL } from "./config";
+import { type AppConfig, LAB_GATEWAY_URL } from "./config";
+import { buildSlotsManifest, serializeSlotsManifest } from "./slots/manifest";
 
 const ADK_PATH_KEY = "naia-adk-path";
 
@@ -415,6 +416,27 @@ export async function applyWorkspaceConfigToLocal(): Promise<void> {
 	localStorage.setItem("naia-config", JSON.stringify(merged));
 }
 
+/**
+ * R2.2a: AppConfig → slots-manifest.json write(`{adk}/naia-settings/`).
+ * windows-manager loader 가 read 해 어느 로컬 서비스(VoxCPM2 등)를 띄울지 결정(Phase 2 계약).
+ * 비밀(naiaKey/apiKey) 미포함 — buildSlotsManifest 가 provider/model/localUrl 만 직렬화.
+ */
+export async function writeSlotsManifest(
+	config: AppConfig,
+	detectedVramGb?: number,
+): Promise<void> {
+	const adkPath = getAdkPath();
+	if (!adkPath) return;
+	const manifest = buildSlotsManifest(config, {
+		detectedVramGb,
+		now: () => new Date().toISOString(),
+	});
+	await invoke("write_slots_manifest", {
+		adkPath,
+		json: serializeSlotsManifest(manifest),
+	});
+}
+
 export async function writeNaiaConfig(
 	config: Record<string, unknown>,
 ): Promise<void> {
@@ -426,6 +448,9 @@ export async function writeNaiaConfig(
 	});
 	// UI 정체성(VRM/배경/BGM)은 agent 가 안 읽으므로 별도 ui-config.json 에 — 워크스페이스 전환 복원용(FR-WS.2).
 	await writeNaiaUiConfig(config);
+	// R2.2a: 로컬 cascade 구동 결정용 slots-manifest.json 동기화(windows-manager loader 가 read).
+	// 비밀 0(buildSlotsManifest 가 provider/model 만 직렬화). 항상 config 와 동기.
+	await writeSlotsManifest(config as unknown as AppConfig).catch(() => {});
 	// 설정 변경(특히 provider/model)을 에이전트에 즉시 반영 — naia-settings 재로딩 후 활성 provider swap(정본 R1-2:
 	// "라이브 변경 = OS 가 naia-settings 갱신 후 ReloadSettings 재호출"). gRPC=설정 기반(대화는 메시지만)이라
 	// 이 트리거가 없으면 에이전트는 기동 시 config 에 고정돼 UI 모델 전환이 안 먹는다(=실측 회귀). 에이전트 미가동 시 swallow.

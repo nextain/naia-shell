@@ -283,9 +283,25 @@ struct BgmServerProcess {
     child: Child,
 }
 
+// Local cascade supervisor (R2.2b) — naia-os가 windows-manager loader(`python -m loader
+// launch`)를 1개 사이드카로 구동한다. loader 가 VoxCPM2 등 실제 서비스를 spawn·감독하고,
+// 이 프로세스를 kill 하면 loader 가 자식들을 teardown 한다(원격 금지·로컬 임베딩).
+// Rust 는 Child drop 시 죽이지 않으므로 Drop 에서 명시 kill(AgentProcess 동형, orphan 방지).
+struct CascadeProcess {
+    child: Child,
+    /// stdout `CASCADE_READY {json}` 페이로드(facade_port + services). UI 상태표시용.
+    ready: String,
+}
+impl Drop for CascadeProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
+}
+
 struct AppState {
     agent: Mutex<Option<AgentProcess>>,
     bgm_server: Mutex<Option<BgmServerProcess>>,
+    cascade: Mutex<Option<CascadeProcess>>,
     gateway: Mutex<Option<GatewayProcess>>,
     health_monitor_shutdown: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     /// Random state token for OAuth deep link CSRF protection.
@@ -1289,7 +1305,7 @@ async fn agent_dispatcher(
             "panel_install" => {
                 // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — PanelInstallDialog 무한 로딩 방지 위해
                 //   즉시 미지원 응답(셸 dialog 는 독립 raw listener 라 router 우회 직접 수신). 기능화는 별도 이슈.
-                let _ = app.emit("agent_response", &serde_json::json!({"type":"panel_install_result","success":false,"error":"패널 설치는 현재 미지원(new-core 스코프 밖)"}).to_string());
+                let _ = app.emit("agent_response", &serde_json::json!({"type":"panel_install_result","success":false,"error":"앱 설치는 현재 미지원(new-core 스코프 밖)"}).to_string());
             }
             _ => {}
         }
@@ -2178,6 +2194,183 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
+/// 로컬 cascade VRAM(GB, total) 동기 감지 — start_cascade 가 loader `--gpu` 로 넘김.
+/// detect_gpu_vram(async, capacity-only)과 동일 nvidia-smi, 블로킹 컨텍스트용.
+fn detect_vram_gb_blocking() -> Option<f64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mib = text.lines().next()?.trim().parse::<f64>().ok()?;
+    if mib > 0.0 {
+        Some((mib / 1024.0).round())
+    } else {
+        None
+    }
+}
+
+/// windows-manager loader 디렉터리 해석(`python -m loader` importable). env override 우선.
+fn cascade_loader_dir(adk_path: &str) -> String {
+    std::env::var("NAIA_CASCADE_LOADER_DIR").unwrap_or_else(|_| {
+        std::path::PathBuf::from(adk_path)
+            .join("projects")
+            .join("naia-omni-windows-manager")
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+
+/// 로컬 cascade loader supervisor 를 사이드카로 spawn. stdout `CASCADE_READY {json}`
+/// 핸드셰이크로 준비완료 판정(모델 로드가 길어 timeout 넉넉히). 이 프로세스를 kill 하면
+/// loader 가 VoxCPM2 등 자식 서비스를 teardown 한다(원격 금지·로컬 임베딩).
+fn spawn_cascade(adk_path: &str, vram_gb: Option<f64>) -> Result<CascadeProcess, String> {
+    let loader_dir = cascade_loader_dir(adk_path);
+    let python = std::env::var("NAIA_CASCADE_PYTHON").unwrap_or_else(|_| {
+        if cfg!(windows) {
+            "python".to_string()
+        } else {
+            "python3".to_string()
+        }
+    });
+    let manifest = std::path::PathBuf::from(adk_path)
+        .join("naia-settings")
+        .join("slots-manifest.json");
+
+    let mut cmd = Command::new(&python);
+    cmd.arg("-m")
+        .arg("loader")
+        .arg("launch")
+        .arg("--manifest")
+        .arg(manifest.to_string_lossy().as_ref())
+        .arg("--adk-root")
+        .arg(adk_path)
+        .current_dir(&loader_dir);
+    // VRAM total 을 알면 명시 — loader 의 보수적 85% 자동추정 대신 total 사용
+    // (8GB 음성 단독 6.9G 적합 보장). 미감지면 loader 가 자체 추정.
+    if let Some(v) = vram_gb {
+        cmd.arg("--gpu").arg(format!("{}", v));
+    }
+
+    let stderr_stdio = {
+        let log_path = log_dir().join("cascade-stderr.log");
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .ok()
+            .map(Stdio::from)
+            .unwrap_or_else(Stdio::inherit)
+    };
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(stderr_stdio);
+    #[cfg(windows)]
+    platform::hide_console(&mut cmd);
+
+    log_both(&format!(
+        "[Naia] Starting local cascade: {} -m loader launch (cwd={})",
+        python, loader_dir
+    ));
+    let mut child = cmd.spawn().map_err(|e| {
+        format!("Failed to spawn cascade loader: {} (loader_dir={})", e, loader_dir)
+    })?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to get cascade stdout".to_string())?;
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel::<String>();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut sent = false;
+        for line in reader.lines().map_while(Result::ok) {
+            if !sent {
+                if let Some(rest) = line.strip_prefix("CASCADE_READY ") {
+                    let _ = ready_tx.send(rest.trim().to_string());
+                    sent = true;
+                    continue;
+                }
+            }
+            log_verbose(&format!("[cascade] {}", line));
+        }
+        log_verbose("[Naia] cascade loader stdout reader ended");
+    });
+
+    // 모델 로드(VoxCPM2 ~77s 등) 고려 — 넉넉한 타임아웃. 실패 = 기동 실패(자식은 Drop 이 kill).
+    let ready = ready_rx
+        .recv_timeout(std::time::Duration::from_secs(180))
+        .map_err(|_| "cascade readiness handshake timeout (CASCADE_READY 미수신)".to_string())?;
+
+    write_pid_file("cascade", child.id());
+    log_both(&format!("[Naia] local cascade ready: {}", ready));
+    Ok(CascadeProcess { child, ready })
+}
+
+/// R2.2b: 설정에서 "로컬 음성/cascade 시작". manifest(R2.2a 가 write) + 감지 VRAM(total)으로
+/// loader supervisor 를 띄운다. 이미 가동 중이면 기존 ready 반환(멱등).
+#[tauri::command]
+async fn start_cascade(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    {
+        let mut guard = lock_or_recover(&state.cascade, "cascade");
+        if let Some(c) = guard.as_mut() {
+            if matches!(c.child.try_wait(), Ok(None)) {
+                return Ok(c.ready.clone());
+            }
+            let _ = guard.take(); // 죽어있으면 정리 후 재기동
+        }
+    }
+    let adk_path = dirs::home_dir()
+        .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "adk path not set (naia-settings 워크스페이스 미설정)".to_string())?;
+
+    let proc = tokio::task::spawn_blocking(move || {
+        let vram = detect_vram_gb_blocking();
+        spawn_cascade(&adk_path, vram)
+    })
+    .await
+    .map_err(|e| format!("task error: {e}"))??;
+
+    let ready = proc.ready.clone();
+    *lock_or_recover(&state.cascade, "cascade") = Some(proc);
+    Ok(ready)
+}
+
+/// R2.2b: 로컬 cascade 중지(supervisor kill → loader 가 자식 서비스 teardown).
+#[tauri::command]
+async fn stop_cascade(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    if let Some(mut c) = lock_or_recover(&state.cascade, "cascade").take() {
+        log_verbose("[Naia] Terminating local cascade...");
+        let _ = c.child.kill();
+    }
+    remove_pid_file("cascade");
+    Ok(())
+}
+
+/// R2.2b: 로컬 cascade 가동 상태(설정 토글 표시용).
+#[tauri::command]
+async fn cascade_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let mut guard = lock_or_recover(&state.cascade, "cascade");
+    Ok(match guard.as_mut() {
+        Some(c) => matches!(c.child.try_wait(), Ok(None)),
+        None => false,
+    })
+}
+
+/// R2.2a: slots-manifest.json write(`{adk}/naia-settings/slots-manifest.json`).
+/// naia-os 가 write, windows-manager loader 가 read(Phase 2 계약). 비밀 0(빌더가 strip).
+#[tauri::command]
+async fn write_slots_manifest(adk_path: String, json: String) -> Result<(), String> {
+    let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("slots-manifest.json"), json).map_err(|e| e.to_string())
+}
+
 /// Detect the primary GPU's total VRAM in GB via `nvidia-smi` (NVIDIA only).
 ///
 /// Returns a whole-GB number (marketed VRAM is whole GB; nvidia-smi reports
@@ -2689,22 +2882,32 @@ fn unique_dest(dir: &std::path::Path, name: &str, ext: &str) -> std::path::PathB
     }
 }
 
-/// Recursively copy a directory tree.
-fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<String, String> {
+/// Extract a .nva ZIP archive to `dest` directory.
+fn extract_nva_zip(
+    src: &std::path::Path,
+    dest: &std::path::Path,
+) -> Result<String, String> {
+    let file = std::fs::File::open(src).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(dest).map_err(|e| e.to_string())?;
-    if let Ok(entries) = std::fs::read_dir(src) {
-        for entry in entries.flatten() {
-            let src_path = entry.path();
-            let dest_path = dest.join(entry.file_name());
-            // Skip symlinks to prevent infinite loops / escaping the copy root.
-            if src_path.is_symlink() {
-                continue;
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        // Path traversal guard
+        if name.contains("..") {
+            continue;
+        }
+        let out_path = dest.join(&name);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out_path).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
-            if src_path.is_dir() {
-                copy_dir_recursive(&src_path, &dest_path)?;
-            } else {
-                std::fs::copy(&src_path, &dest_path).map_err(|e| e.to_string())?;
-            }
+            let mut out_file = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+            std::io::copy(&mut entry, &mut out_file).map_err(|e| e.to_string())?;
         }
     }
     Ok(dest
@@ -2727,22 +2930,22 @@ async fn import_naia_asset(
     }
     let src = std::path::PathBuf::from(&source_path);
 
-    // nva-files: directory copy (.nva bundle = directory with manifest.json + clips/)
+    // nva-files: .nva is a ZIP archive (manifest.json + clips/). Extract it.
     if subdir == "nva-files" {
-        if !src.is_dir() {
-            return Err("Source must be a directory for nva-files".to_string());
+        if !src.is_file() {
+            return Err("Source must be a .nva file for nva-files".to_string());
         }
-        let dirname = src
-            .file_name()
+        let stem = src
+            .file_stem()
             .and_then(|n| n.to_str())
-            .ok_or_else(|| "Invalid source directory name".to_string())?
+            .ok_or_else(|| "Invalid source filename".to_string())?
             .to_string();
         let dest_dir = std::path::PathBuf::from(&adk_path)
             .join("naia-settings")
             .join(&subdir);
         std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
-        let dest = unique_dest(&dest_dir, &dirname, "");
-        copy_dir_recursive(&src, &dest)?;
+        let dest = unique_dest(&dest_dir, &stem, "");
+        extract_nva_zip(&src, &dest)?;
         return Ok(dest
             .to_str()
             .ok_or_else(|| "Invalid destination path".to_string())?
@@ -3714,6 +3917,7 @@ pub fn run() {
     builder.manage(AppState {
             agent: Mutex::new(None),
             bgm_server: Mutex::new(None),
+            cascade: Mutex::new(None),
             gateway: Mutex::new(None),
             health_monitor_shutdown: Mutex::new(None),
             oauth_state: Arc::new(Mutex::new(None)),
@@ -4181,6 +4385,16 @@ pub fn run() {
                         }
                     }
                     remove_pid_file("bgm-server");
+
+                    // Kill local cascade supervisor (R2.2b) — loader teardowns its
+                    // children. Drop also kills, but take()+kill here is explicit.
+                    if let Ok(mut guard) = state.cascade.lock() {
+                        if let Some(mut process) = guard.take() {
+                            log_verbose("[Naia] Terminating local cascade...");
+                            let _ = process.child.kill();
+                        }
+                    }
+                    remove_pid_file("cascade");
 
                     // Kill Node Host + Gateway (only if we spawned)
                     let gateway_lock = state.gateway.lock();

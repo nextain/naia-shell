@@ -15,6 +15,7 @@ import {
 	applyModelSelectionToConfig,
 	applyWorkspaceConfigToLocal,
 	writeNaiaConfig,
+	writeSlotsManifest,
 } from "../lib/adk-store";
 import {
 	DEFAULT_AVATAR_MODEL,
@@ -587,6 +588,35 @@ export function SettingsTab() {
 	const [vllmConnected, setVllmConnected] = useState(false);
 	const [vllmSttHost, setVllmSttHost] = useState(existing?.vllmSttHost ?? "");
 	const [vllmTtsHost, setVllmTtsHost] = useState(existing?.vllmTtsHost ?? "");
+	// R2.2b: 로컬 cascade(naia-local-voice) lifecycle 토글 상태.
+	const [cascadeRunning, setCascadeRunning] = useState(false);
+	const [cascadeBusy, setCascadeBusy] = useState(false);
+	const [cascadeMsg, setCascadeMsg] = useState("");
+	useEffect(() => {
+		invoke<boolean>("cascade_status").then(setCascadeRunning).catch(() => {});
+	}, []);
+	const handleToggleCascade = async () => {
+		setCascadeBusy(true);
+		setCascadeMsg("");
+		try {
+			if (cascadeRunning) {
+				await invoke("stop_cascade");
+				setCascadeRunning(false);
+				setCascadeMsg(t("settings.cascadeStopped"));
+			} else {
+				// 기동 직전 manifest 동기화(설정 변경이 반영된 최신 상태로 launch).
+				const cfg = loadConfig();
+				if (cfg) await writeSlotsManifest(cfg);
+				await invoke<string>("start_cascade");
+				setCascadeRunning(true);
+				setCascadeMsg(t("settings.cascadeStarted"));
+			}
+		} catch (e) {
+			setCascadeMsg(`${t("settings.cascadeError")}: ${String(e)}`);
+		} finally {
+			setCascadeBusy(false);
+		}
+	};
 
 	const [vllmSttModels, setVllmSttModels] = useState<
 		import("../lib/llm/types").LlmModelMeta[]
@@ -3694,6 +3724,30 @@ export function SettingsTab() {
 								}
 								return null;
 							})()}
+							{/* R2.2b: 로컬 cascade lifecycle 토글 — naia-os가 windows-manager
+							    loader를 사이드카로 기동/중지(원격 아님). */}
+							{ttsProvider === "naia-local-voice" && (
+								<div className="settings-field" data-testid="cascade-toggle">
+									<button
+										type="button"
+										className="voice-preview-btn"
+										onClick={handleToggleCascade}
+										disabled={cascadeBusy}
+									>
+										{cascadeBusy
+											? t("settings.cascadeBusy")
+											: cascadeRunning
+												? t("settings.cascadeStop")
+												: t("settings.cascadeStart")}
+									</button>
+									{cascadeMsg && (
+										<div className="settings-hint" data-testid="cascade-msg">
+											{cascadeMsg}
+										</div>
+									)}
+								</div>
+							)}
+
 							{/* vLLM TTS: host URL input */}
 							{(ttsProvider === "vllm" || ttsProvider === "naia-local-voice") && (
 								<div className="settings-field">
