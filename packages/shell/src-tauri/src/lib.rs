@@ -256,6 +256,8 @@ use webkit2gtk::PermissionRequestExt;
 struct AgentProcess {
     child: Child,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
+    /// agent-core gRPC listening addr — 결과 반환형 unary 커맨드(예: compile_knowledge)가 별도 클라로 connect.
+    grpc_addr: String,
 }
 
 // ⚠️ Rust 는 Child drop 시 프로세스를 죽이지 않음 → restart 로 *guard 교체 시 옛 agent 가 orphan(gRPC 서버 잔류).
@@ -1125,14 +1127,14 @@ fn spawn_agent_core(
     // 메시지 채널: send_to_agent(sync) → dispatcher task(async, gRPC 클라 소유). nested runtime 회피.
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     tauri::async_runtime::spawn(agent_dispatcher(
-        addr,
+        addr.clone(),
         adk_path,
         rx,
         app_handle.clone(),
         audit_db.clone(),
     ));
 
-    Ok(AgentProcess { child, tx })
+    Ok(AgentProcess { child, tx, grpc_addr: addr })
 }
 
 /// gRPC dispatcher — connect → SetWorkspace(naia-adk 로딩) → 메시지 루프.
@@ -2853,6 +2855,76 @@ async fn write_naia_ui_config(adk_path: String, json: String) -> Result<(), Stri
     std::fs::write(dir.join("ui-config.json"), json).map_err(|e| e.to_string())
 }
 
+/// Read `{adk_path}/naia-settings/knowledge.json` (지식 소스/스코프 설정 — 셸 전용, agent 읽기전용).
+/// 설정 불가침(FR-KB-OS.9): 사람이 UI 로만 변경, agent 는 config-write 도구가 없어 못 바꾼다. 없으면 빈 문자열.
+#[tauri::command]
+async fn read_naia_knowledge_config(adk_path: String) -> Result<String, String> {
+    let path = std::path::PathBuf::from(&adk_path)
+        .join("naia-settings")
+        .join("knowledge.json");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+/// Write `{adk_path}/naia-settings/knowledge.json` (셸 전용 — 사람이 설정 UI 로만 변경, FR-KB-OS.5/9).
+#[tauri::command]
+async fn write_naia_knowledge_config(adk_path: String, json: String) -> Result<(), String> {
+    let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("knowledge.json"), json).map_err(|e| e.to_string())
+}
+
+/// Read compiled KB at `{adk_path}/knowledge/{scope}/kb.json` (컴파일 산출 — 통계 표시용, FR-KB-OS.7).
+/// scope 는 path-traversal 차단(구분자·`..` 금지). 없으면 빈 문자열(= 미컴파일).
+#[tauri::command]
+async fn read_naia_knowledge_kb(adk_path: String, scope: String) -> Result<String, String> {
+    if scope.is_empty() || scope.contains('/') || scope.contains('\\') || scope.contains("..") {
+        return Err("invalid scope".to_string());
+    }
+    let path = std::path::PathBuf::from(&adk_path)
+        .join("knowledge")
+        .join(&scope)
+        .join("kb.json");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+/// UC-KNOWLEDGE-COMPILE(FR-KB-OS.8): 설정 지식 탭 "지금 컴파일" → agent `CompileKnowledge` RPC.
+/// spawn 시 보관한 agent gRPC addr 로 별도 unary 클라 connect → 에이전트가 naia-settings/knowledge.json
+/// 의 등록 폴더 → kb-compiler compile → knowledge/<scope>/kb.json. agent 미가용 = Err(UI 가 정직 표기).
+#[tauri::command]
+async fn compile_knowledge(
+    adk_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    // gRPC addr 추출 — std Mutex 가드는 await 횡단 금지(블록서 해제 후 await).
+    let addr = {
+        let guard = state.agent.lock().map_err(|_| "agent lock".to_string())?;
+        guard.as_ref().map(|a| a.grpc_addr.clone())
+    };
+    let addr = addr.ok_or_else(|| "agent unavailable".to_string())?;
+    let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
+        .await
+        .map_err(|e| format!("agent connect 실패: {}", e))?;
+    let r = client
+        .compile_knowledge(adk_path)
+        .await
+        .map_err(|e| format!("compile 실패: {}", e))?;
+    Ok(serde_json::json!({
+        "ok": r.ok,
+        "scope": r.scope,
+        "sourceCount": r.source_count,
+        "cardCount": r.card_count,
+        "entityCount": r.entity_count,
+        "relationCount": r.relation_count,
+        "error": r.error,
+    }))
+}
+
 // ── 대화 transcript read(FR-CONV.3) ─────────────────────────────────────────────
 // `{adk_path}/conversations/` = agent(전두엽)가 append 하는 verbatim 대화록(런타임 데이터). **content 단일 writer = agent**;
 // shell 은 read + delete(세션 lifecycle 관리, UI 삭제버튼)만 — content append/수정 안 함. agent 부재/죽음에도 파일 직접
@@ -3692,8 +3764,16 @@ pub fn run() {
             delete_naia_asset,
             read_naia_config,
             write_naia_config,
+            write_slots_manifest,
+            start_cascade,
+            stop_cascade,
+            cascade_status,
             read_naia_ui_config,
             write_naia_ui_config,
+            read_naia_knowledge_config,
+            write_naia_knowledge_config,
+            read_naia_knowledge_kb,
+            compile_knowledge,
             write_agent_key,
             agent_key_exists,
             check_naia_settings,

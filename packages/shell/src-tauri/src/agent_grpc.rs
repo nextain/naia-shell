@@ -97,6 +97,12 @@ impl AgentGrpc {
         Ok(self.client.reload_settings(pb::ReloadSettingsRequest {}).await?.into_inner())
     }
 
+    /// UC-KNOWLEDGE-COMPILE(FR-KB-5): 설정 지식 탭 "지금 컴파일" → 등록 소스 폴더 → kb.json.
+    /// naia-agent 가 naia-settings/knowledge.json 을 읽어 kb-compiler compile. 통계 반환(no-throw RPC).
+    pub async fn compile_knowledge(&mut self, adk_path: String) -> Result<pb::CompileKnowledgeResult, tonic::Status> {
+        Ok(self.client.compile_knowledge(pb::CompileKnowledgeRequest { adk_path }).await?.into_inner())
+    }
+
     /// F1 rich-health(신규계약 Diagnostics RPC): agent version/uptime/components. os InteroceptivePort rich payload.
     pub async fn diagnostics(&mut self) -> Result<pb::DiagnosticsResult, tonic::Status> {
         Ok(self.client.diagnostics(pb::DiagnosticsRequest {}).await?.into_inner())
