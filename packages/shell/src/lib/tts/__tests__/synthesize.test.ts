@@ -248,51 +248,59 @@ describe("synthesizeTts — vllm", () => {
 	});
 });
 
-describe("synthesizeTts — naia-local-voice (FR-VOICE.1)", () => {
-	it("uses vllmTtsHost (the LOCAL voice host), NOT the LLM vllmHost", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(bytesResponse(new Uint8Array([5])));
+describe("synthesizeTts — naia-local-voice (VoxCPM2 /tts 어댑터)", () => {
+	// f32 PCM 샘플 → base64 (서비스가 audio_b64 로 반환하는 형식).
+	const f32 = new Float32Array([0.5, -0.5]);
+	const PCM_B64 = btoa(String.fromCharCode(...new Uint8Array(f32.buffer)));
+	const ttsResponse = () =>
+		jsonResponse({ audio_b64: PCM_B64, sample_rate: 48000 });
+
+	it("POSTs to {host}/tts (NOT /v1/audio/speech) and returns a WAV", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(ttsResponse());
 		vi.stubGlobal("fetch", fetchMock);
-		await synthesizeTts({
+		const res = await synthesizeTts({
 			text: "안녕",
 			provider: "naia-local-voice",
-			vllmHost: "http://localhost:8000", // LLM host — must be ignored
 			vllmTtsHost: "http://localhost:22600/",
 		});
-		// Regression: the bug routed naia-local-voice to vllmHost (LLM, :8000)
-		// → backend absent → silent free fallback. Must hit the voice host.
-		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
-		);
+		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+		expect(body.text).toBe("안녕");
+		// f32 PCM → 16-bit WAV(RIFF) 변환 확인
+		expect(atob(res.audioBase64).startsWith("RIFF")).toBe(true);
 	});
 
-	it("never falls back to the LLM vllmHost — uses the voice default instead", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(bytesResponse(new Uint8Array([6])));
+	it("uses vllmTtsHost, never the LLM vllmHost", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(ttsResponse());
 		vi.stubGlobal("fetch", fetchMock);
-		// vllmHost(LLM:9000) 주어져도 voice host 미설정이면 LLM 으로 가지 않고 기본 :22600.
 		await synthesizeTts({
 			text: "x",
 			provider: "naia-local-voice",
-			vllmHost: "http://localhost:9000",
+			vllmHost: "http://localhost:8000", // LLM — 무시
+			vllmTtsHost: "http://localhost:22600",
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
-		);
+		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
 	});
 
-	it("defaults to the embedded cascade port (localhost:22600) when no host is set", async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(bytesResponse(new Uint8Array([7])));
+	it("defaults to :22600 when no voice host (and never the LLM vllmHost)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(ttsResponse());
 		vi.stubGlobal("fetch", fetchMock);
-		await synthesizeTts({ text: "x", provider: "naia-local-voice" });
-		// 임베딩 cascade(VoxCPM2)가 22600에 뜨므로 host 미설정 시 거기로 합성.
-		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
+		await synthesizeTts({
+			text: "x",
+			provider: "naia-local-voice",
+			vllmHost: "http://localhost:9000", // LLM — 폴백 안 함
+		});
+		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
+	});
+
+	it("throws on service error (5xx / no audio_b64)", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(jsonResponse({ error: "OOM" }, false, 500)),
 		);
+		await expect(
+			synthesizeTts({ text: "x", provider: "naia-local-voice" }),
+		).rejects.toThrow(/로컬 음성 합성 실패/);
 	});
 });
 

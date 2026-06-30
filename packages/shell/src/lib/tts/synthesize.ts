@@ -223,25 +223,12 @@ async function synthElevenlabs(opts: SynthesizeOpts): Promise<SynthesizeResult> 
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
-/** vllm / naia-local-voice → local OpenAI-compatible `/v1/audio/speech`.
- * naia-local-voice uses the dedicated local voice host (`vllmTtsHost`), NOT the
- * LLM host. Falls back to `vllmHost` only if the voice host is unset, then
- * throws — the caller (ChatPanel) surfaces a clear "local voice unavailable"
- * notice instead of faking a free voice. */
+/** vllm → local OpenAI-compatible `/v1/audio/speech`. (naia-local-voice 는 VoxCPM2
+ * 자체 프로토콜 `/tts` 라 synthNaiaLocalVoice 가 따로 처리.) */
 async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
-	// naia-local-voice: 로컬 음성 host(vllmTtsHost) 또는 임베딩 cascade 기본 포트(:22600).
-	// LLM용 vllmHost(:8000)로는 절대 폴백 안 함(엉뚱한 LLM 엔드포인트 합성 방지).
-	const host =
-		opts.provider === "naia-local-voice"
-			? opts.vllmTtsHost || DEFAULT_LOCAL_VOICE_HOST
-			: opts.vllmHost;
-	const base = host?.replace(/\/$/, "");
+	const base = opts.vllmHost?.replace(/\/$/, "");
 	if (!base) {
-		throw new Error(
-			opts.provider === "naia-local-voice"
-				? "로컬 음성 호스트(naia-local-voice)가 설정되지 않았습니다."
-				: "vLLM 호스트가 설정되지 않았습니다.",
-		);
+		throw new Error("vLLM 호스트가 설정되지 않았습니다.");
 	}
 	const resp = await fetch(`${base}/v1/audio/speech`, {
 		method: "POST",
@@ -275,6 +262,78 @@ async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
+/** base64 → bytes (arrayBufferToBase64 의 역). */
+function base64ToBytes(b64: string): Uint8Array {
+	const binary = atob(b64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+	return bytes;
+}
+
+/** f32 PCM 샘플(mono) → 16-bit PCM WAV(ArrayBuffer). 브라우저 decodeAudioData 가 재생. */
+function f32PcmToWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
+	const n = samples.length;
+	const buffer = new ArrayBuffer(44 + n * 2);
+	const view = new DataView(buffer);
+	const writeStr = (off: number, s: string) => {
+		for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+	};
+	writeStr(0, "RIFF");
+	view.setUint32(4, 36 + n * 2, true);
+	writeStr(8, "WAVE");
+	writeStr(12, "fmt ");
+	view.setUint32(16, 16, true); // fmt chunk size
+	view.setUint16(20, 1, true); // PCM
+	view.setUint16(22, 1, true); // mono
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true); // byte rate
+	view.setUint16(32, 2, true); // block align
+	view.setUint16(34, 16, true); // bits/sample
+	writeStr(36, "data");
+	view.setUint32(40, n * 2, true);
+	let off = 44;
+	for (let i = 0; i < n; i++) {
+		const s = Math.max(-1, Math.min(1, samples[i]));
+		view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+		off += 2;
+	}
+	return buffer;
+}
+
+/**
+ * naia-local-voice → 로컬 VoxCPM2 `/tts`. naia-os 의 OpenAI `/v1/audio/speech` 와 다른
+ * 계약(POST /tts {text} → {audio_b64: f32 PCM base64, sample_rate})이라 전용 어댑터로
+ * 호출하고 f32 PCM → WAV 로 변환해 재생 가능한 audioBase64 반환. host=vllmTtsHost||:22600.
+ */
+async function synthNaiaLocalVoice(
+	opts: SynthesizeOpts,
+): Promise<SynthesizeResult> {
+	const base = (opts.vllmTtsHost || DEFAULT_LOCAL_VOICE_HOST).replace(/\/$/, "");
+	const resp = await fetch(`${base}/tts`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ text: opts.text, normalize: true }),
+		signal: opts.signal,
+	});
+	if (!resp.ok) {
+		throw new Error(
+			`로컬 음성 합성 실패 (${resp.status}): ${await errorDetail(resp)}`,
+		);
+	}
+	const data = (await resp.json()) as {
+		audio_b64?: string;
+		sample_rate?: number;
+		error?: string;
+	};
+	if (!data.audio_b64) {
+		throw new Error(`로컬 음성 합성 실패: ${data.error ?? "audio_b64 없음"}`);
+	}
+	const pcm = base64ToBytes(data.audio_b64);
+	const f32 = new Float32Array(pcm.buffer, 0, Math.floor(pcm.byteLength / 4));
+	const wav = f32PcmToWav(f32, data.sample_rate ?? 48000);
+	return { audioBase64: arrayBufferToBase64(wav) };
+}
+
 /**
  * Synthesize one utterance shell-side and return its audio as base64.
  * Throws on any failure (network, auth, unsupported provider) — the caller
@@ -293,8 +352,9 @@ export async function synthesizeTts(
 		case "elevenlabs":
 			return synthElevenlabs(opts);
 		case "vllm":
-		case "naia-local-voice":
 			return synthVllm(opts);
+		case "naia-local-voice":
+			return synthNaiaLocalVoice(opts);
 		case "edge":
 			return synthEdge(opts);
 		default:
