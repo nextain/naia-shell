@@ -181,8 +181,8 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 		);
 	});
 
-	// ── K4: 컴파일된 kb(엔티티 있음) → 설정 탭에 2D/3D 지식 그래프 렌더 ──
-	it("컴파일된 kb(엔티티 있음) → 지식 그래프 렌더", async () => {
+	// ── K4: 컴파일된 kb(엔티티 있음) → '그래프 보기' 버튼 → 오버레이(평소엔 부하 0) ──
+	it("컴파일된 kb(엔티티 있음) → '그래프 보기' 버튼 + 클릭 시 오버레이 열림", async () => {
 		mockInvoke.mockImplementation(async (cmd: string) => {
 			if (cmd === "read_naia_knowledge_config")
 				return JSON.stringify({
@@ -206,15 +206,26 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 		});
 		render(<KnowledgeSettingsTab />);
 		await waitFor(() =>
-			expect(screen.getByTestId("knowledge-graph")).toBeTruthy(),
+			expect(screen.getByTestId("knowledge-graph-open")).toBeTruthy(),
+		);
+		// 평소엔 오버레이 미마운트(렌더 안 함 = 부하 0)
+		expect(screen.queryByTestId("knowledge-graph-overlay")).toBeNull();
+		fireEvent.click(screen.getByTestId("knowledge-graph-open"));
+		await waitFor(() =>
+			expect(screen.getByTestId("knowledge-graph-overlay")).toBeTruthy(),
+		);
+		// 닫기 → 오버레이 unmount(복귀)
+		fireEvent.click(screen.getByTestId("knowledge-graph-close"));
+		await waitFor(() =>
+			expect(screen.queryByTestId("knowledge-graph-overlay")).toBeNull(),
 		);
 	});
 
-	it("미컴파일(kb 부재) → 그래프 섹션 없음", async () => {
+	it("미컴파일(kb 부재) → 그래프 버튼 없음", async () => {
 		render(<KnowledgeSettingsTab />); // 기본 mock: read_naia_knowledge_kb=""
 		await waitFor(() =>
 			expect(screen.getByTestId("knowledge-scope").textContent).toBe("default"),
 		);
-		expect(screen.queryByTestId("knowledge-graph")).toBeNull();
+		expect(screen.queryByTestId("knowledge-graph-open")).toBeNull();
 	});
 });

@@ -190,8 +190,11 @@ function detectCommunities(
 	return { comm, count: sorted.length };
 }
 
+/** 그래프 노드 상한 — 초과 시 degree 상위만 유지(force 시뮬 O(N²)·UI 프리즈 방지). */
+export const MAX_GRAPH_NODES = 600;
+
 /** kb.json envelope(`{version,kb:{entities,relations}}`) → 2D/3D 뷰어 입력 그래프.
- *  부재/깨짐/노드0 = null(그래프 섹션 미표시). 댕글링 관계(미존재 엔티티) 제외. */
+ *  부재/깨짐/노드0 = null(그래프 섹션 미표시). 댕글링 관계(미존재 엔티티) 제외. 노드 상한 = MAX_GRAPH_NODES. */
 export function graphFromKbJson(
 	json: string | null | undefined,
 ): KnowledgeGraph | null {
@@ -238,11 +241,103 @@ export function graphFromKbJson(
 		});
 	}
 
-	const { comm, count } = detectCommunities(base, edges);
-	const nodes: KnowledgeGraphNode[] = base.map((n) => ({
+	// 거대 그래프 가드: 노드 상한 초과 시 **degree 상위** N 만 유지(force 시뮬 O(N²)·UI 프리즈 방지).
+	//   id 사전순 tie-break 으로 결정론. 잘린 그래프는 핵심(고연결) 노드 위주.
+	let keptBase = base;
+	let keptEdges = edges;
+	if (base.length > MAX_GRAPH_NODES) {
+		const ranked = [...base].sort(
+			(a, b) =>
+				(deg.get(b.id) ?? 0) - (deg.get(a.id) ?? 0) ||
+				(a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+		);
+		keptBase = ranked.slice(0, MAX_GRAPH_NODES);
+		const keep = new Set(keptBase.map((n) => n.id));
+		keptEdges = edges.filter((e) => keep.has(e.from) && keep.has(e.to));
+	}
+
+	const { comm, count } = detectCommunities(keptBase, keptEdges);
+	const nodes: KnowledgeGraphNode[] = keptBase.map((n) => ({
 		...n,
 		deg: deg.get(n.id) ?? 0,
 		community: comm.get(n.id) ?? 0,
 	}));
-	return { nodes, edges, communityCount: count };
+	return { nodes, edges: keptEdges, communityCount: count };
+}
+
+/** kb.json(envelope) → 엔티티 id별 **출처 문서 URI**(노드 클릭 시 "근거→원문" 용).
+ *  Topic 엔티티 = 카드(섹션) → 카드 title 매칭으로 sourceUris 직접. Concept 등 = `mentions`/`references`
+ *  관계로 출처 전파(출처 있는 from → to, 다단계). 부재/깨짐 = 빈 객체. */
+export function entitySourcesFromKbJson(
+	json: string | null | undefined,
+): Record<string, string[]> {
+	if (!json || !json.trim()) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(json);
+	} catch {
+		return {};
+	}
+	const kb = (parsed as { kb?: unknown } | null)?.kb as
+		| {
+				cards?: { title?: unknown; sourceUris?: unknown }[];
+				entities?: { id?: unknown; name?: unknown }[];
+				relations?: { from?: unknown; to?: unknown; type?: unknown }[];
+		  }
+		| undefined;
+	if (!kb || !Array.isArray(kb.entities)) return {};
+
+	// 1) 카드 title → 출처 집합
+	const byTitle = new Map<string, Set<string>>();
+	if (Array.isArray(kb.cards)) {
+		for (const c of kb.cards) {
+			if (!c || typeof c.title !== "string") continue;
+			const uris = Array.isArray(c.sourceUris)
+				? c.sourceUris.filter((u): u is string => typeof u === "string")
+				: [];
+			if (!uris.length) continue;
+			const set = byTitle.get(c.title) ?? new Set<string>();
+			for (const u of uris) set.add(u);
+			byTitle.set(c.title, set);
+		}
+	}
+	// 2) 엔티티(name = 카드 title) 직접 매핑
+	const src = new Map<string, Set<string>>();
+	for (const e of kb.entities) {
+		if (!e || typeof e.id !== "string") continue;
+		const s = typeof e.name === "string" ? byTitle.get(e.name) : undefined;
+		if (s?.size) src.set(e.id, new Set(s));
+	}
+	// 3) 관계 전파(출처 있는 from → to) — **mentions/references 관계만**(의미상 출처 상속; co_occurs 등
+	//    무관 관계 제외 = 틀린 근거 방지). **fixpoint**(변화 없을 때까지)로 깊은 체인·배열순서 무관·결정론.
+	//    라운드 상한 = 노드 수+1(체인 길이 ≤ 노드 수라 수렴 보장, 무한루프 차단).
+	if (Array.isArray(kb.relations)) {
+		// 라운드 = 체인 깊이 ≤ 노드 수, 상한 64(현실 체인은 1~2홉 — 거대 입력 O(N·E) 방어).
+		const maxRounds = Math.min(kb.entities.length + 1, 64);
+		for (let round = 0; round < maxRounds; round++) {
+			let changed = false;
+			for (const r of kb.relations) {
+				if (!r || typeof r.from !== "string" || typeof r.to !== "string") continue;
+				if (r.type !== "mentions" && r.type !== "references") continue; // 출처 상속 관계만
+				const fromS = src.get(r.from);
+				if (!fromS?.size) continue;
+				let toS = src.get(r.to);
+				if (!toS) {
+					toS = new Set<string>();
+					src.set(r.to, toS);
+				}
+				for (const u of fromS) {
+					if (!toS.has(u)) {
+						toS.add(u);
+						changed = true;
+					}
+				}
+			}
+			if (!changed) break;
+		}
+	}
+	// 프로토타입 안전: id 가 `__proto__`/`constructor` 여도 own-property 로 기록(소실·오염 방지).
+	const out: Record<string, string[]> = Object.create(null);
+	for (const [id, set] of src) out[id] = [...set];
+	return out;
 }

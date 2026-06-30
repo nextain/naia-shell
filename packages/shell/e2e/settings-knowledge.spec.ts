@@ -172,6 +172,7 @@ test.describe("설정 지식 탭 관리 (K4)", () => {
 	test("폴더 추가 → 컴파일 → compile_knowledge 호출 + 상태(통계) 갱신", async ({
 		page,
 	}) => {
+		test.setTimeout(120_000); // 무거운 테스트(컴파일+오버레이+캔버스 애니메이션) — 60s 디폴트 근접 플래키 방지
 		await gotoKnowledge(page);
 		await page.getByTestId("knowledge-add-folder").click();
 		await expect(
@@ -200,14 +201,21 @@ test.describe("설정 지식 탭 관리 (K4)", () => {
 			"엔티티 3",
 		);
 
-		// 컴파일 후 = 설정 탭에 2D/3D 지식 그래프 렌더(엔티티·관계 시각화).
-		await expect(page.getByTestId("knowledge-graph")).toBeVisible();
+		// 컴파일 후 = '그래프 보기' 버튼(평소엔 오버레이 미렌더 = 부하 0).
+		await expect(page.getByTestId("knowledge-graph-open")).toBeVisible();
+		await expect(page.getByTestId("knowledge-graph-overlay")).toHaveCount(0);
+		// 버튼 → 작업영역 채우는 오버레이로 그래프 열림.
+		await page.getByTestId("knowledge-graph-open").click();
+		await expect(page.getByTestId("knowledge-graph-overlay")).toBeVisible();
 		await expect(page.locator(".knowledge-graph-canvas")).toBeVisible();
-		// 2D↔3D 토글 동작.
+		// 2D↔3D 토글.
 		await page.locator(".knowledge-graph-mode").click();
 		await expect(page.getByTestId("knowledge-graph")).toHaveAttribute(
 			"data-mode",
 			"3d",
 		);
+		// 닫기 → 오버레이 복귀(unmount).
+		await page.getByTestId("knowledge-graph-close").click();
+		await expect(page.getByTestId("knowledge-graph-overlay")).toHaveCount(0);
 	});
 });
