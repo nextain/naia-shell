@@ -1954,7 +1954,6 @@ export function SettingsTab() {
 	const effectiveCapabilities: ModelCapability[] = baseCapabilities;
 	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
 	const omniVoices = selectedModelMeta?.voices;
-	const providerLabel = getLlmProvider(provider)?.name ?? provider;
 	const activeTierCapabilities = activeLocalTier
 		? localTierCapabilities.join(", ")
 		: t("settings.engineLocalOff");
@@ -2817,50 +2816,8 @@ export function SettingsTab() {
 						</div>
 					</div>
 
-					<div className="settings-field" data-testid="engine-core-summary">
-						<label>{t("settings.engineCore")}</label>
-						<div className="settings-hint">{t("settings.engineCoreHint")}</div>
-						<div className="settings-summary-grid">
-							<div className="settings-summary-row">
-								<span className="settings-summary-key">{t("settings.engineMainLlm")}</span>
-								<span className="settings-summary-value">
-									{providerLabel} / {selectedModelMeta?.label ?? model}
-								</span>
-							</div>
-							<div className="settings-summary-row">
-								<span className="settings-summary-key">{t("settings.engineSubLlm")}</span>
-								<span className="settings-summary-value">
-									{memoryLlmProvider === "none"
-										? t("settings.engineNotConfigured")
-										: `${memoryLlmProvider}${memoryLlmModel ? ` / ${memoryLlmModel}` : ""}`}
-								</span>
-							</div>
-							<div className="settings-summary-row">
-								<span className="settings-summary-key">{t("settings.engineEmbedding")}</span>
-								<span className="settings-summary-value">
-									{memoryEmbeddingProvider === "none"
-										? t("settings.engineNotConfigured")
-										: `${memoryEmbeddingProvider}${memoryEmbeddingModel ? ` / ${memoryEmbeddingModel}` : ""}`}
-								</span>
-							</div>
-						</div>
-						<div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() => setActiveSettingsTab("brain")}
-							>
-								{t("settings.engineEditMain")}
-							</button>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() => setActiveSettingsTab("memory")}
-							>
-								{t("settings.engineEditModels")}
-							</button>
-						</div>
-					</div>
+					{/* engine-core-summary 제거(2026-06-30): slot-groups 두뇌 그룹과 100% 중복
+					    (동일 Main/Sub/Embedding + 동일 brain/memory 편집 네비). 중복 카드 정리. */}
 
 					<div className="settings-field" data-testid="engine-gpu-summary">
 						<label>{t("settings.engineGpuBudget")}</label>

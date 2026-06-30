@@ -162,7 +162,8 @@ test.describe("VRAM tier local profile (#2)", () => {
 		await expect(page.locator('[data-testid="engine-profile-summary"]')).toBeVisible({
 			timeout: 5_000,
 		});
-		await expect(page.locator('[data-testid="engine-core-summary"]')).toBeVisible();
+		// engine-core-summary 제거(2026-06-30, slot-groups 중복) → 부재 확인.
+		await expect(page.locator('[data-testid="engine-core-summary"]')).toHaveCount(0);
 		await expect(page.locator('[data-testid="engine-gpu-summary"]')).toBeVisible();
 		await expect(page.locator('[data-testid="engine-capability-summary"]')).toBeVisible();
 		await expect(page.locator('[data-testid="engine-profile-naia"]')).toBeVisible();

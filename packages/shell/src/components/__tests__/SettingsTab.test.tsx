@@ -411,8 +411,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(document.querySelector("[data-testid='engine-profile-naia']")).toBeNull();
 		expect(document.querySelector("[data-testid='engine-profile-byo']")).toBeNull();
 		expect(document.querySelector("[data-testid='engine-profile-local']")).toBeNull();
-		// Kept summaries (core/gpu/capability) still present.
-		expect(document.querySelector("[data-testid='engine-core-summary']")).toBeTruthy();
+		// engine-core-summary 제거(2026-06-30): slot-groups 두뇌 그룹과 100% 중복.
+		// gpu/capability 요약은 유지(고유 정보).
+		expect(document.querySelector("[data-testid='engine-core-summary']")).toBeNull();
 		expect(document.querySelector("[data-testid='engine-gpu-summary']")).toBeTruthy();
 		expect(document.querySelector("[data-testid='engine-capability-summary']")).toBeTruthy();
 		// Canonical controls remain on ai tab, not engine.
