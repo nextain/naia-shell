@@ -25,6 +25,7 @@ const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
 const AGENT = resolve(OS_ROOT, "..", "naia-agent");
+const WINDOWS_MANAGER = resolve(OS_ROOT, "..", "naia-omni-windows-manager");
 
 const env = { ...process.env };
 
@@ -32,6 +33,9 @@ const env = { ...process.env };
 env.VITE_NAIA_NEW_CORE = env.VITE_NAIA_NEW_CORE ?? "1";
 env.NAIA_AGENT_STANDALONE = env.NAIA_AGENT_STANDALONE ?? "1";
 env.NAIA_AGENT_SCRIPT = env.NAIA_AGENT_SCRIPT ?? resolve(AGENT, "scripts/builds/agent-stdio-entry.mjs");
+// ── 로컬 cascade loader (dev): 소스 sibling repo(loader/ 포함 dir) 를 가리킨다.
+// 패키지 빌드는 stage-cascade-loader.mjs 가 src-tauri/cascade-loader 로 동봉(resource_dir 해석).
+env.NAIA_CASCADE_LOADER_DIR = env.NAIA_CASCADE_LOADER_DIR ?? WINDOWS_MANAGER;
 // Linux GTK 백엔드: 옛 naia-os 는 x11 무조건 강제(WebKitGTK XReparentWindow embedding).
 // 그러나 XWayland 없는 순수 Wayland 세션(KDE Plasma 등, DISPLAY 비어있음)에선 x11 백엔드가
 // 붙을 X 가 없어 GTK init 패닉(2026-06-13 실측: 루크 KDE Wayland tauri:dev 기동 불가).

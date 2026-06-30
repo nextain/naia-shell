@@ -2213,22 +2213,39 @@ fn detect_vram_gb_blocking() -> Option<f64> {
     }
 }
 
-/// windows-manager loader 디렉터리 해석(`python -m loader` importable). env override 우선.
-fn cascade_loader_dir(adk_path: &str) -> String {
-    std::env::var("NAIA_CASCADE_LOADER_DIR").unwrap_or_else(|_| {
-        std::path::PathBuf::from(adk_path)
-            .join("projects")
-            .join("naia-omni-windows-manager")
-            .to_string_lossy()
-            .into_owned()
-    })
+/// windows-manager loader 디렉터리 해석(`loader/` 를 담은, `python -m loader` 가능한 dir).
+/// **임베딩**: 패키지 앱은 번들된 loader(resource_dir/cascade-loader)를 쓴다 — 외부 adk
+/// 체크아웃에 의존하지 않는다(stage-cascade-loader.mjs 가 빌드시 동봉, agent 패턴 동형).
+/// 우선순위: NAIA_CASCADE_LOADER_DIR(dev env) > resource_dir/cascade-loader(번들) > adk 폴백.
+fn resolve_cascade_loader_dir(app: &tauri::AppHandle, adk_path: &str) -> String {
+    if let Ok(d) = std::env::var("NAIA_CASCADE_LOADER_DIR") {
+        if !d.trim().is_empty() {
+            return d;
+        }
+    }
+    if let Ok(res) = app.path().resource_dir() {
+        let bundled = res.join("cascade-loader");
+        if bundled.join("loader").exists() {
+            let n = dunce::canonicalize(&bundled).unwrap_or(bundled);
+            return n.to_string_lossy().to_string();
+        }
+    }
+    // dev 폴백(번들 미존재 + env 미설정): sibling 체크아웃.
+    std::path::PathBuf::from(adk_path)
+        .join("projects")
+        .join("naia-omni-windows-manager")
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// 로컬 cascade loader supervisor 를 사이드카로 spawn. stdout `CASCADE_READY {json}`
 /// 핸드셰이크로 준비완료 판정(모델 로드가 길어 timeout 넉넉히). 이 프로세스를 kill 하면
 /// loader 가 VoxCPM2 등 자식 서비스를 teardown 한다(원격 금지·로컬 임베딩).
-fn spawn_cascade(adk_path: &str, vram_gb: Option<f64>) -> Result<CascadeProcess, String> {
-    let loader_dir = cascade_loader_dir(adk_path);
+fn spawn_cascade(
+    loader_dir: &str,
+    adk_path: &str,
+    vram_gb: Option<f64>,
+) -> Result<CascadeProcess, String> {
     let python = std::env::var("NAIA_CASCADE_PYTHON").unwrap_or_else(|_| {
         if cfg!(windows) {
             "python".to_string()
@@ -2248,7 +2265,7 @@ fn spawn_cascade(adk_path: &str, vram_gb: Option<f64>) -> Result<CascadeProcess,
         .arg(manifest.to_string_lossy().as_ref())
         .arg("--adk-root")
         .arg(adk_path)
-        .current_dir(&loader_dir);
+        .current_dir(loader_dir);
     // VRAM total 을 알면 명시 — loader 의 보수적 85% 자동추정 대신 total 사용
     // (8GB 음성 단독 6.9G 적합 보장). 미감지면 loader 가 자체 추정.
     if let Some(v) = vram_gb {
@@ -2313,7 +2330,10 @@ fn spawn_cascade(adk_path: &str, vram_gb: Option<f64>) -> Result<CascadeProcess,
 /// R2.2b: 설정에서 "로컬 음성/cascade 시작". manifest(R2.2a 가 write) + 감지 VRAM(total)으로
 /// loader supervisor 를 띄운다. 이미 가동 중이면 기존 ready 반환(멱등).
 #[tauri::command]
-async fn start_cascade(state: tauri::State<'_, AppState>) -> Result<String, String> {
+async fn start_cascade(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
     {
         let mut guard = lock_or_recover(&state.cascade, "cascade");
         if let Some(c) = guard.as_mut() {
@@ -2328,10 +2348,12 @@ async fn start_cascade(state: tauri::State<'_, AppState>) -> Result<String, Stri
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "adk path not set (naia-settings 워크스페이스 미설정)".to_string())?;
+    // 임베딩: 번들된 loader(resource_dir) 우선 — 외부 adk 체크아웃 미의존.
+    let loader_dir = resolve_cascade_loader_dir(&app, &adk_path);
 
     let proc = tokio::task::spawn_blocking(move || {
         let vram = detect_vram_gb_blocking();
-        spawn_cascade(&adk_path, vram)
+        spawn_cascade(&loader_dir, &adk_path, vram)
     })
     .await
     .map_err(|e| format!("task error: {e}"))??;
