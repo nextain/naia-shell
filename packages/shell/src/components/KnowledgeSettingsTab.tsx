@@ -14,7 +14,9 @@ import {
 	serializeKnowledgeConfig,
 	sourceLabel,
 } from "../lib/knowledge-config";
+import { graphFromKbJson, type KnowledgeGraph } from "../lib/knowledge-result";
 import { Logger } from "../lib/logger";
+import { KnowledgeGraphView } from "./KnowledgeGraphView";
 
 /** 설정>지식 탭 — 지식 소스(다중 폴더)·스코프 관리 + 컴파일 트리거 (FR-KB-OS.5~9, UC-KB-MANAGE).
  *  설정 정본 = naia-settings/knowledge.json(셸 전용 write). 컴파일/답변 지능 = naia-agent(별 레포). */
@@ -23,6 +25,7 @@ export function KnowledgeSettingsTab() {
 		emptyKnowledgeConfig(),
 	);
 	const [stats, setStats] = useState<KnowledgeKbStats | null>(null);
+	const [graph, setGraph] = useState<KnowledgeGraph | null>(null);
 	const [compiling, setCompiling] = useState(false);
 	const [error, setError] = useState("");
 
@@ -35,11 +38,13 @@ export function KnowledgeSettingsTab() {
 				scope,
 			});
 			setStats(parseKbStats(raw));
+			setGraph(graphFromKbJson(raw)); // 컴파일된 kb.json → 2D/3D 그래프 데이터
 		} catch (err) {
 			Logger.warn("KnowledgeSettings", "Failed to read kb stats", {
 				error: String(err),
 			});
 			setStats(null);
+			setGraph(null);
 		}
 	}, []);
 
@@ -232,6 +237,15 @@ export function KnowledgeSettingsTab() {
 					</div>
 				)}
 			</div>
+
+			{/* 지식 그래프 2D/3D — 컴파일된 kb.json 의 엔티티·관계 시각화(군집색·degree 크기·3D 회전).
+			    뷰어 툴바가 노드·관계·군집 수를 표시하므로 별도 라벨 키 불요(i18n.ts 병행편집 회피). */}
+			{graph && graph.nodes.length > 0 && (
+				<div className="settings-field">
+					<label>{t("settings.tabKnowledge")}</label>
+					<KnowledgeGraphView graph={graph} width={520} height={360} />
+				</div>
+			)}
 		</div>
 	);
 }

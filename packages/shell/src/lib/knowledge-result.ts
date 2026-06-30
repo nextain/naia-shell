@@ -133,3 +133,116 @@ export function communityColor(i: number): string {
 	const n = COMMUNITY_PALETTE.length;
 	return COMMUNITY_PALETTE[((i % n) + n) % n];
 }
+
+// ── K4: 설정 지식 탭 — 컴파일된 kb.json(envelope)에서 직접 그래프 데이터 생성.
+//    셸은 kb-compiler 를 직접 호출 못 하므로 엔진 toGraphData(core/graph.ts)를 **의존성0으로 포팅**.
+//    채팅 경로(parseKnowledgeGraph, 에이전트가 toGraphData 호출)와 동일 KnowledgeGraph 산출(동형).
+
+/** 라벨 전파 군집 탐지(의존성0·결정론 — id 순서 고정 + 동률 시 작은 라벨 우선). 엔진 graph.ts 포팅. */
+function detectCommunities(
+	nodes: readonly { id: string }[],
+	edges: readonly { from: string; to: string; weight: number }[],
+	iters = 14,
+): { comm: Map<string, number>; count: number } {
+	const adj = new Map<string, [string, number][]>(nodes.map((n) => [n.id, []]));
+	for (const e of edges) {
+		if (!adj.has(e.from) || !adj.has(e.to)) continue;
+		const w = e.weight || 1;
+		(adj.get(e.from) as [string, number][]).push([e.to, w]);
+		(adj.get(e.to) as [string, number][]).push([e.from, w]);
+	}
+	const order = nodes.map((n) => n.id);
+	const label = new Map<string, string>(order.map((id) => [id, id]));
+	for (let it = 0; it < iters; it++) {
+		let changed = false;
+		for (const id of order) {
+			const nb = adj.get(id) as [string, number][];
+			if (!nb.length) continue;
+			const cnt = new Map<string, number>();
+			for (const [to, w] of nb) {
+				const l = label.get(to) as string;
+				cnt.set(l, (cnt.get(l) ?? 0) + w);
+			}
+			let best = label.get(id) as string;
+			let bv = -1;
+			for (const [l, v] of cnt) {
+				if (v > bv || (v === bv && l < best)) {
+					bv = v;
+					best = l;
+				}
+			}
+			if (best !== label.get(id)) {
+				label.set(id, best);
+				changed = true;
+			}
+		}
+		if (!changed) break;
+	}
+	const groups = new Map<string, string[]>();
+	for (const id of order) {
+		const l = label.get(id) as string;
+		if (!groups.has(l)) groups.set(l, []);
+		(groups.get(l) as string[]).push(id);
+	}
+	const sorted = [...groups.values()].sort((a, b) => b.length - a.length);
+	const comm = new Map<string, number>();
+	sorted.forEach((ids, i) => ids.forEach((id) => comm.set(id, i)));
+	return { comm, count: sorted.length };
+}
+
+/** kb.json envelope(`{version,kb:{entities,relations}}`) → 2D/3D 뷰어 입력 그래프.
+ *  부재/깨짐/노드0 = null(그래프 섹션 미표시). 댕글링 관계(미존재 엔티티) 제외. */
+export function graphFromKbJson(
+	json: string | null | undefined,
+): KnowledgeGraph | null {
+	if (!json || !json.trim()) return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(json);
+	} catch {
+		return null;
+	}
+	const kb = (parsed as { kb?: unknown } | null)?.kb as
+		| {
+				entities?: { id?: unknown; name?: unknown; type?: unknown }[];
+				relations?: { from?: unknown; to?: unknown; type?: unknown; weight?: unknown }[];
+		  }
+		| undefined;
+	if (!kb || !Array.isArray(kb.entities) || !Array.isArray(kb.relations)) return null;
+
+	const deg = new Map<string, number>();
+	const base: { id: string; label: string; type: string; deg: number }[] = [];
+	for (const e of kb.entities) {
+		if (!e || typeof e.id !== "string") continue;
+		deg.set(e.id, 0);
+		base.push({
+			id: e.id,
+			label: typeof e.name === "string" ? e.name : e.id,
+			type: typeof e.type === "string" ? e.type : "",
+			deg: 0,
+		});
+	}
+	if (!base.length) return null;
+
+	const edges: KnowledgeGraphEdge[] = [];
+	for (const r of kb.relations) {
+		if (!r || typeof r.from !== "string" || typeof r.to !== "string") continue;
+		if (!deg.has(r.from) || !deg.has(r.to)) continue; // 양끝 엔티티 실재해야 엣지
+		deg.set(r.from, (deg.get(r.from) ?? 0) + 1);
+		deg.set(r.to, (deg.get(r.to) ?? 0) + 1);
+		edges.push({
+			from: r.from,
+			to: r.to,
+			type: typeof r.type === "string" ? r.type : "",
+			weight: typeof r.weight === "number" ? r.weight : 1,
+		});
+	}
+
+	const { comm, count } = detectCommunities(base, edges);
+	const nodes: KnowledgeGraphNode[] = base.map((n) => ({
+		...n,
+		deg: deg.get(n.id) ?? 0,
+		community: comm.get(n.id) ?? 0,
+	}));
+	return { nodes, edges, communityCount: count };
+}

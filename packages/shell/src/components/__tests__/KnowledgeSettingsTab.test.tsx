@@ -180,4 +180,41 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 			expect(screen.getByTestId("knowledge-compile-error")).toBeTruthy(),
 		);
 	});
+
+	// ── K4: 컴파일된 kb(엔티티 있음) → 설정 탭에 2D/3D 지식 그래프 렌더 ──
+	it("컴파일된 kb(엔티티 있음) → 지식 그래프 렌더", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "read_naia_knowledge_config")
+				return JSON.stringify({
+					version: 1,
+					scope: "default",
+					sources: [{ path: "/docs/gov" }],
+				});
+			if (cmd === "read_naia_knowledge_kb")
+				return JSON.stringify({
+					version: 1,
+					kb: {
+						cards: [{ id: "c1", status: "accepted" }],
+						entities: [
+							{ id: "e1", name: "전입신고", type: "Topic" },
+							{ id: "e2", name: "신분증", type: "Concept" },
+						],
+						relations: [{ from: "e1", to: "e2", type: "mentions" }],
+					},
+				});
+			return undefined;
+		});
+		render(<KnowledgeSettingsTab />);
+		await waitFor(() =>
+			expect(screen.getByTestId("knowledge-graph")).toBeTruthy(),
+		);
+	});
+
+	it("미컴파일(kb 부재) → 그래프 섹션 없음", async () => {
+		render(<KnowledgeSettingsTab />); // 기본 mock: read_naia_knowledge_kb=""
+		await waitFor(() =>
+			expect(screen.getByTestId("knowledge-scope").textContent).toBe("default"),
+		);
+		expect(screen.queryByTestId("knowledge-graph")).toBeNull();
+	});
 });

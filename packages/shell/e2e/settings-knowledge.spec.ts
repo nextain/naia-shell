@@ -199,5 +199,15 @@ test.describe("설정 지식 탭 관리 (K4)", () => {
 		await expect(page.getByTestId("knowledge-status")).toContainText(
 			"엔티티 3",
 		);
+
+		// 컴파일 후 = 설정 탭에 2D/3D 지식 그래프 렌더(엔티티·관계 시각화).
+		await expect(page.getByTestId("knowledge-graph")).toBeVisible();
+		await expect(page.locator(".knowledge-graph-canvas")).toBeVisible();
+		// 2D↔3D 토글 동작.
+		await page.locator(".knowledge-graph-mode").click();
+		await expect(page.getByTestId("knowledge-graph")).toHaveAttribute(
+			"data-mode",
+			"3d",
+		);
 	});
 });

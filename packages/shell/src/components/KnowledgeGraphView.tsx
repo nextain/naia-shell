@@ -13,12 +13,19 @@ interface Sim {
 	fx: number; fy: number; fz: number;
 }
 
-const W = 380;
-const H = 300;
-
-export function KnowledgeGraphView({ graph }: { graph: KnowledgeGraph }) {
+export function KnowledgeGraphView({
+	graph,
+	width = 380,
+	height = 300,
+}: {
+	graph: KnowledgeGraph;
+	width?: number;
+	height?: number;
+}) {
 	const [mode, setMode] = useState<"2d" | "3d">("2d");
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const W = width;
+	const H = height;
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
@@ -83,9 +90,17 @@ export function KnowledgeGraphView({ graph }: { graph: KnowledgeGraph }) {
 		};
 
 		const draw = () => {
-			ctx.fillStyle = "#0d1117"; ctx.fillRect(0, 0, W, H);
+			// 간지: 어두운 라디얼 배경(중앙이 살짝 밝아 깊이감)
+			const bg = ctx.createRadialGradient(W / 2, H / 2, 10, W / 2, H / 2, Math.max(W, H) * 0.7);
+			bg.addColorStop(0, "#141b27");
+			bg.addColorStop(1, "#0a0e16");
+			ctx.fillStyle = bg;
+			ctx.fillRect(0, 0, W, H);
 			if (mode === "3d") yaw += 0.004;
-			ctx.strokeStyle = "rgba(120,130,150,0.35)"; ctx.lineWidth = 1;
+			// 엣지 — 은은한 발광 라인
+			ctx.shadowBlur = 0;
+			ctx.strokeStyle = "rgba(120,150,200,0.28)";
+			ctx.lineWidth = 1;
 			for (const e of edges) {
 				const a = proj(sims[idx.get(e.from) as number]);
 				const b = proj(sims[idx.get(e.to) as number]);
@@ -94,11 +109,19 @@ export function KnowledgeGraphView({ graph }: { graph: KnowledgeGraph }) {
 			for (const s of sims) {
 				const p = proj(s);
 				const r = (4 + Math.min(8, s.deg * 1.5)) * p.scale;
-				ctx.fillStyle = communityColor(s.community);
+				const col = communityColor(s.community);
+				// 간지: 군집색 글로우(degree 클수록 강하게)
+				ctx.shadowColor = col;
+				ctx.shadowBlur = (8 + Math.min(10, s.deg * 2)) * p.scale;
+				ctx.fillStyle = col;
 				ctx.beginPath(); ctx.arc(p.px, p.py, Math.max(1.5, r), 0, Math.PI * 2); ctx.fill();
+				// 코어 하이라이트(작은 밝은 점)
+				ctx.shadowBlur = 0;
+				ctx.fillStyle = "rgba(255,255,255,0.65)";
+				ctx.beginPath(); ctx.arc(p.px - r * 0.3, p.py - r * 0.3, Math.max(0.6, r * 0.28), 0, Math.PI * 2); ctx.fill();
 				if (N <= 24 || s.deg >= 2) {
-					ctx.fillStyle = "rgba(220,225,235,0.85)"; ctx.font = "10px sans-serif";
-					ctx.fillText(s.label.slice(0, 12), p.px + r + 2, p.py + 3);
+					ctx.fillStyle = "rgba(225,230,240,0.9)"; ctx.font = "10px sans-serif";
+					ctx.fillText(s.label.slice(0, 12), p.px + r + 3, p.py + 3);
 				}
 			}
 		};
@@ -112,23 +135,70 @@ export function KnowledgeGraphView({ graph }: { graph: KnowledgeGraph }) {
 		};
 		tick();
 		return () => { if (raf) cancelAnimationFrame(raf); };
-	}, [graph, mode]);
+	}, [graph, mode, W, H]);
 
 	return (
-		<div className="knowledge-graph-view" data-testid="knowledge-graph" data-mode={mode}>
-			<div className="knowledge-graph-toolbar">
-				<span className="knowledge-graph-meta">
-					노드 {graph.nodes.length} · 관계 {graph.edges.length} · 군집 {graph.communityCount}
+		<div
+			className="knowledge-graph-view"
+			data-testid="knowledge-graph"
+			data-mode={mode}
+			style={{
+				borderRadius: 12,
+				padding: 8,
+				background:
+					"radial-gradient(120% 120% at 50% 0%, rgba(76,139,245,0.10), rgba(10,14,22,0.6))",
+				border: "1px solid rgba(120,150,200,0.22)",
+				boxShadow:
+					"0 0 0 1px rgba(0,0,0,0.3) inset, 0 8px 28px -12px rgba(76,139,245,0.45)",
+			}}
+		>
+			<div
+				className="knowledge-graph-toolbar"
+				style={{
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "space-between",
+					marginBottom: 6,
+					gap: 8,
+				}}
+			>
+				<span
+					className="knowledge-graph-meta"
+					style={{ fontSize: 11, color: "var(--cream-dim, #aab)", letterSpacing: "0.02em" }}
+				>
+					● 노드 {graph.nodes.length} · 관계 {graph.edges.length} · 군집{" "}
+					{graph.communityCount}
 				</span>
 				<button
 					type="button"
 					className="knowledge-graph-mode"
 					onClick={() => setMode((m) => (m === "2d" ? "3d" : "2d"))}
+					style={{
+						fontSize: 11,
+						padding: "3px 10px",
+						borderRadius: 999,
+						border: "1px solid rgba(120,150,200,0.35)",
+						background: "rgba(76,139,245,0.12)",
+						color: "var(--cream, #e8e0d0)",
+						cursor: "pointer",
+					}}
 				>
-					{mode === "2d" ? "3D 보기" : "2D 보기"}
+					{mode === "2d" ? "🌐 3D 보기" : "▦ 2D 보기"}
 				</button>
 			</div>
-			<canvas ref={canvasRef} width={W} height={H} className="knowledge-graph-canvas" />
+			<canvas
+				ref={canvasRef}
+				width={W}
+				height={H}
+				className="knowledge-graph-canvas"
+				style={{
+					width: "100%",
+					height: "auto",
+					borderRadius: 8,
+					display: "block",
+					background: "#0a0e16",
+				}}
+			/>
 		</div>
 	);
 }

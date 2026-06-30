@@ -7,6 +7,7 @@ import {
 	parseKnowledgeGraph,
 	isKnowledgeGraphTool,
 	communityColor,
+	graphFromKbJson,
 } from "../lib/knowledge-result";
 
 describe("knowledge-result — parseKnowledgeResult (지식 tool-result JSON 파싱)", () => {
@@ -95,5 +96,50 @@ describe("knowledge-result — parseKnowledgeGraph (K3 그래프 데이터)", ()
 		expect(communityColor(0)).toBe(communityColor(0));
 		expect(typeof communityColor(99)).toBe("string");
 		expect(typeof communityColor(-3)).toBe("string");
+	});
+
+	// ── K4: kb.json → 그래프(설정 지식 탭 직접 렌더용, 엔진 toGraphData 포팅) ──
+	describe("graphFromKbJson (kb.json envelope → 2D/3D 그래프 데이터)", () => {
+		const kbJson = (kb: unknown) => JSON.stringify({ version: 1, kb });
+
+		it("빈/깨짐/비-envelope/엔티티0 → null", () => {
+			expect(graphFromKbJson("")).toBeNull();
+			expect(graphFromKbJson("{bad")).toBeNull();
+			expect(graphFromKbJson(JSON.stringify({ version: 1 }))).toBeNull();
+			expect(graphFromKbJson(kbJson({ entities: [], relations: [] }))).toBeNull();
+		});
+
+		it("엔티티·관계 → nodes/edges + degree + 군집", () => {
+			const g = graphFromKbJson(
+				kbJson({
+					entities: [
+						{ id: "e1", name: "전입신고", type: "Topic" },
+						{ id: "e2", name: "신분증", type: "Concept" },
+						{ id: "e3", name: "외딴섬", type: "Concept" },
+					],
+					relations: [{ from: "e1", type: "mentions", to: "e2", weight: 2 }],
+				}),
+			);
+			expect(g).not.toBeNull();
+			if (!g) return;
+			expect(g.nodes.map((n) => n.label).sort()).toEqual(["신분증", "외딴섬", "전입신고"]);
+			expect(g.edges).toHaveLength(1);
+			// degree: e1·e2=1, e3=0
+			const deg = Object.fromEntries(g.nodes.map((n) => [n.id, n.deg]));
+			expect(deg.e1).toBe(1);
+			expect(deg.e2).toBe(1);
+			expect(deg.e3).toBe(0);
+			expect(g.communityCount).toBeGreaterThanOrEqual(1);
+		});
+
+		it("댕글링 관계(미존재 엔티티) 제외", () => {
+			const g = graphFromKbJson(
+				kbJson({
+					entities: [{ id: "e1", name: "A" }],
+					relations: [{ from: "e1", to: "ghost", type: "x" }],
+				}),
+			);
+			expect(g?.edges).toHaveLength(0); // ghost 미존재 → 엣지 제외
+		});
 	});
 });
