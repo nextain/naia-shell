@@ -177,7 +177,7 @@ const translations = {
 		vi: "chủ đề",
 	},
 	"settings.panelPosition": {
-		ko: "패널 위치",
+		ko: "앱 위치",
 		en: "Panel Position",
 		ja: "パネル位置",
 		zh: "面板位置",
@@ -7373,7 +7373,7 @@ const translations = {
 		vi: "hoặc nhập khóa API theo cách thủ công",
 	},
 	"onboard.lab.browser.hint": {
-		ko: "오른쪽 브라우저 패널에서 Naia 로그인을 완료해주세요.",
+		ko: "오른쪽 브라우저 앱에서 Naia 로그인을 완료해주세요.",
 		en: "Please complete your Naia login in the browser panel on the right.",
 		ja: "右側のブラウザパネルでNaiaログインを完了してください。",
 		zh: "请在右侧浏览器面板中完成 Naia 登录。",
@@ -10442,7 +10442,7 @@ const translations = {
 		id: "Tambah pintasan halaman web ke bilah aplikasi",
 		vi: "Thêm lối tắt trang web vào thanh ứng dụng",
 	},
-	"appbar.addPanel": {
+	"appbar.addApp": {
 		ko: "앱 추가",
 		en: "Add App",
 		ja: "アプリを追加",
@@ -10458,7 +10458,7 @@ const translations = {
 		id: "Tambah aplikasi",
 		vi: "Thêm ứng dụng",
 	},
-	"appbar.addPanelDesc": {
+	"appbar.addAppDesc": {
 		ko: "새로운 앱을 설치합니다",
 		en: "Install a new app",
 		ja: "新しいアプリをインストールします",
@@ -10572,7 +10572,7 @@ const translations = {
 		vi: "BGM cục bộ",
 	},
 	"bgm.panelToggleTitle": {
-		ko: "BGM 패널 열기/닫기",
+		ko: "BGM 앱 열기/닫기",
 		en: "Open/Close BGM panel",
 		ja: "BGMパネルを開く/閉じる",
 		zh: "打开/关闭BGM面板",

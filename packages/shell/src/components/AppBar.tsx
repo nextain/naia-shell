@@ -458,8 +458,8 @@ export function AppBar({ onAddMode }: AppBarProps) {
 						>
 							<span className="app-bar-url-dialog__section-icon">📱</span>
 							<div className="app-bar-url-dialog__section-text">
-								<strong>{t("appbar.addPanel")}</strong>
-								<span>{t("appbar.addPanelDesc")}</span>
+								<strong>{t("appbar.addApp")}</strong>
+								<span>{t("appbar.addAppDesc")}</span>
 							</div>
 						</button>
 					</div>

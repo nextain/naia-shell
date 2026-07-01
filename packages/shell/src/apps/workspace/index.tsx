@@ -62,7 +62,7 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 	{
 		name: "skill_workspace_focus_session",
 		description:
-			"워크스페이스 패널을 활성화하고 지정한 세션 카드로 스크롤·하이라이트한다. 3초 후 하이라이트 자동 해제. open_recent_file: true이면 세션의 마지막 작업 파일도 에디터에 연다.",
+			"워크스페이스 앱을 활성화하고 지정한 세션 카드로 스크롤·하이라이트한다. 3초 후 하이라이트 자동 해제. open_recent_file: true이면 세션의 마지막 작업 파일도 에디터에 연다.",
 		parameters: {
 			type: "object",
 			properties: {
@@ -84,7 +84,7 @@ export const WORKSPACE_TOOLS: NaiaTool[] = [
 	{
 		name: "skill_workspace_new_session",
 		description:
-			"지정한 디렉토리에 새 PTY 터미널 세션을 시작한다. 워크스페이스 패널이 활성화되고 새 터미널 탭이 열린다. 같은 dir의 터미널이 이미 열려 있으면 해당 탭으로 전환만 한다. 반환값: 'Started: {dir}, pid: {pid}' 또는 'Already open: {dir}, pid: {pid}'",
+			"지정한 디렉토리에 새 PTY 터미널 세션을 시작한다. 워크스페이스 앱이 활성화되고 새 터미널 탭이 열린다. 같은 dir의 터미널이 이미 열려 있으면 해당 탭으로 전환만 한다. 반환값: 'Started: {dir}, pid: {pid}' 또는 'Already open: {dir}, pid: {pid}'",
 		parameters: {
 			type: "object",
 			properties: {

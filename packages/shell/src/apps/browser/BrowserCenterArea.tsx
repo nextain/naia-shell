@@ -492,7 +492,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 	useEffect(() => {
 		const p = toolPermsRef;
 		const denied = (label: string) =>
-			`'${label}' 도구가 비활성화되어 있습니다. 패널 하단 AI 도구 설정에서 켜주세요.`;
+			`'${label}' 도구가 비활성화되어 있습니다. 앱 하단 AI 도구 설정에서 켜주세요.`;
 
 		const readPageTextAfterNavigate = async () => {
 			await sleep(NAVIGATE_READ_DELAY_MS);

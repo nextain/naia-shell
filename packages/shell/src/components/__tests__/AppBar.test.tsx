@@ -120,7 +120,7 @@ describe("AppBar — add dialog", () => {
 		render(<AppBar />);
 		fireEvent.click(screen.getByTitle("appbar.addItem"));
 		expect(screen.getByText("appbar.addShortcut")).toBeDefined();
-		expect(screen.getByText("appbar.addPanel")).toBeDefined();
+		expect(screen.getByText("appbar.addApp")).toBeDefined();
 	});
 
 	it("calls pushModal when add dialog opens", () => {
