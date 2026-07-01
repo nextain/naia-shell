@@ -1282,6 +1282,43 @@ body.resizing-col .naia-work-rail::before {
 	color: rgba(255, 255, 255, 0.85);
 }
 
+/* 3-way 레이아웃 스위치 — 드래그 토글 우측 상단(챗 영역 기준 absolute).
+   workspace 모드에서 드래그 토글은 숨지만(아래) 이 스위치는 유지돼 어느 모드서도 전환 가능. */
+.naia-chat-modes {
+	position: absolute;
+	top: 0;
+	right: 4px;
+	z-index: 4;
+	display: flex;
+	gap: 2px;
+	pointer-events: auto;
+}
+.naia-chat-mode {
+	width: 20px;
+	height: 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	background: rgba(8, 14, 28, 0.5);
+	border: 1px solid rgba(100, 160, 255, 0.15);
+	border-radius: 4px;
+	color: rgba(255, 255, 255, 0.35);
+	font-size: 10px;
+	line-height: 1;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.naia-chat-mode:hover {
+	background: rgba(100, 160, 255, 0.12);
+	color: rgba(255, 255, 255, 0.85);
+}
+.naia-chat-mode--active {
+	background: rgba(100, 160, 255, 0.22);
+	color: rgba(255, 255, 255, 0.95);
+	border-color: rgba(100, 160, 255, 0.4);
+}
+
 /* Chat window — overlays avatar, fixed height set via inline style, collapses to hide */
 .naia-chat-wrapper {
 	flex: none;

@@ -166,6 +166,26 @@ export function App() {
 	const [chatHeight, setChatHeight] = useState(() =>
 		Math.round(window.innerHeight * 0.4),
 	);
+	// 챗 레이아웃 3-way 수동 override — 드래그 토글 옆 스위치가 설정. null = activeApp 자동 파생.
+	// "app"=좌하단 도크(기본) / "workspace"=왼쪽 레일 / "home"=가운데 VN. 영속(localStorage).
+	const [chatModeOverride, setChatModeOverride] = useState<
+		"home" | "workspace" | "app" | null
+	>(() => {
+		try {
+			const v = localStorage.getItem("naia-chat-mode-v1");
+			return v === "home" || v === "workspace" || v === "app" ? v : null;
+		} catch {
+			return null;
+		}
+	});
+	const setChatMode = (m: "home" | "workspace" | "app") => {
+		setChatModeOverride((cur) => (cur === m ? cur : m));
+		try {
+			localStorage.setItem("naia-chat-mode-v1", m);
+		} catch {
+			/* best-effort */
+		}
+	};
 	// Workspace conversation-rail collapse (reclaims horizontal space for the
 	// work area). Collapse hides the rail via CSS width:0 — ChatPanel stays
 	// MOUNTED so an in-flight voice/STT session survives. Persisted (FR-UI.6).
@@ -750,15 +770,18 @@ export function App() {
 	// The same single ChatPanel instance is repositioned by CSS keyed off
 	// data-ui-mode — it is NEVER unmounted across modes (voice/STT/TTS session
 	// continuity). `variant` only changes the chat UI density, not its logic.
+	// 자동 파생(activeApp 기반). 사용자가 3-way 스위치로 override 하면 그 값을 우선.
+	const derivedUiMode =
+		activeApp === null
+			? "home"
+			: activeApp === "workspace"
+				? "workspace"
+				: "app";
 	const uiMode = showOnboarding
 		? "onboarding"
 		: showAdkSetup
 			? "setup"
-			: activeApp === null
-				? "home"
-				: activeApp === "workspace"
-					? "workspace"
-					: "app";
+			: (chatModeOverride ?? derivedUiMode);
 	const chatVariant: "vn" | "rail" | "floating" =
 		uiMode === "home" ? "vn" : uiMode === "workspace" ? "rail" : "floating";
 
@@ -943,6 +966,40 @@ export function App() {
 									>
 										{chatVisible ? "▼" : "▲"}
 									</button>
+									{/* 3-way 레이아웃 스위치 — 드래그 토글 우측. 하단도크 / 왼쪽레일 / 가운데. */}
+									<div
+										className="naia-chat-modes"
+										role="group"
+										aria-label="대화창 레이아웃"
+									>
+										<button
+											type="button"
+											className={`naia-chat-mode${uiMode === "app" ? " naia-chat-mode--active" : ""}`}
+											title="하단 도크"
+											aria-pressed={uiMode === "app"}
+											onClick={() => setChatMode("app")}
+										>
+											▖
+										</button>
+										<button
+											type="button"
+											className={`naia-chat-mode${uiMode === "workspace" ? " naia-chat-mode--active" : ""}`}
+											title="왼쪽 채움"
+											aria-pressed={uiMode === "workspace"}
+											onClick={() => setChatMode("workspace")}
+										>
+											▌
+										</button>
+										<button
+											type="button"
+											className={`naia-chat-mode${uiMode === "home" ? " naia-chat-mode--active" : ""}`}
+											title="가운데"
+											aria-pressed={uiMode === "home"}
+											onClick={() => setChatMode("home")}
+										>
+											▭
+										</button>
+									</div>
 									<div
 										className={`naia-chat-wrapper${chatVisible ? "" : " naia-chat-wrapper--hidden"}`}
 										style={
