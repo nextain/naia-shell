@@ -2,7 +2,7 @@
  * Barge-in energy gate — shared SoT from omni development (#216).
  *
  * Extracted from naia-omni.ts so the gate survives that provider's passthrough
- * refactor (no client-side VAD/buffering remains there). ChatPanel applies this
+ * refactor (no client-side VAD/buffering remains there). ChatArea applies this
  * gate while the AI is speaking — on weak-AEC platforms (WebKitGTK) it stops
  * AEC-residual echo from self-triggering the server VAD into an interrupt loop.
  * Gemini Live and naia-omni share this one threshold.

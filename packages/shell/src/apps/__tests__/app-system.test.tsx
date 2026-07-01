@@ -103,11 +103,11 @@ describe("Panel Registry", () => {
 	});
 
 	it("registers a panel and lists it", () => {
-		const FakeCenterPanel = () => <div />;
+		const FakeCenterArea = () => <div />;
 		appRegistry.register({
 			id: "test-panel",
 			name: "Test Panel",
-			center: FakeCenterPanel,
+			center: FakeCenterArea,
 		});
 
 		const found = appRegistry.list().find((p) => p.id === "test-panel");
@@ -116,11 +116,11 @@ describe("Panel Registry", () => {
 	});
 
 	it("unregisters a panel and removes it from list", () => {
-		const FakeCenterPanel = () => <div />;
+		const FakeCenterArea = () => <div />;
 		appRegistry.register({
 			id: "test-panel-2",
 			name: "Test Panel 2",
-			center: FakeCenterPanel,
+			center: FakeCenterArea,
 		});
 
 		appRegistry.unregister("test-panel-2");
@@ -129,12 +129,12 @@ describe("Panel Registry", () => {
 	});
 
 	it("builtIn flag is preserved on registered panel", () => {
-		const FakeCenterPanel = () => <div />;
+		const FakeCenterArea = () => <div />;
 		appRegistry.register({
 			id: "builtin-panel",
 			name: "Built-in",
 			builtIn: true,
-			center: FakeCenterPanel,
+			center: FakeCenterArea,
 		});
 
 		const found = appRegistry.list().find((p) => p.id === "builtin-panel");
@@ -143,11 +143,11 @@ describe("Panel Registry", () => {
 	});
 
 	it("non-builtIn panel has no builtIn flag", () => {
-		const FakeCenterPanel = () => <div />;
+		const FakeCenterArea = () => <div />;
 		appRegistry.register({
 			id: "installed-panel",
 			name: "Installed",
-			center: FakeCenterPanel,
+			center: FakeCenterArea,
 		});
 
 		const found = appRegistry.list().find((p) => p.id === "installed-panel");
@@ -159,13 +159,13 @@ describe("Panel Registry", () => {
 // ─── Tests: Panel Registry API (updateApi / getApi) ──────────────────────────
 
 describe("Panel Registry — API", () => {
-	const FakeCenterPanel = () => <div />;
+	const FakeCenterArea = () => <div />;
 
 	beforeEach(() => {
 		appRegistry.register({
 			id: "api-test-panel",
 			name: "API Test",
-			center: FakeCenterPanel,
+			center: FakeCenterArea,
 		});
 	});
 
@@ -210,12 +210,12 @@ describe("SampleNote Panel — tool interaction", () => {
 	});
 
 	it("registers skill_note_read and skill_note_write on mount", async () => {
-		const { SampleNoteCenterPanel } = await import(
-			"../sample-note/SampleNoteCenterPanel"
+		const { SampleNoteCenterArea } = await import(
+			"../sample-note/SampleNoteCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<SampleNoteCenterPanel naia={bridge} />);
+		render(<SampleNoteCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_note_read")).toBe(true);
@@ -224,12 +224,12 @@ describe("SampleNote Panel — tool interaction", () => {
 	});
 
 	it("skill_note_read returns empty placeholder by default", async () => {
-		const { SampleNoteCenterPanel } = await import(
-			"../sample-note/SampleNoteCenterPanel"
+		const { SampleNoteCenterArea } = await import(
+			"../sample-note/SampleNoteCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<SampleNoteCenterPanel naia={bridge} />);
+		render(<SampleNoteCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_note_read")).toBe(true);
@@ -240,12 +240,12 @@ describe("SampleNote Panel — tool interaction", () => {
 	});
 
 	it("skill_note_write updates note content", async () => {
-		const { SampleNoteCenterPanel } = await import(
-			"../sample-note/SampleNoteCenterPanel"
+		const { SampleNoteCenterArea } = await import(
+			"../sample-note/SampleNoteCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<SampleNoteCenterPanel naia={bridge} />);
+		render(<SampleNoteCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_note_write")).toBe(true);
@@ -262,12 +262,12 @@ describe("SampleNote Panel — tool interaction", () => {
 	});
 
 	it("skill_note_write pushes context to bridge", async () => {
-		const { SampleNoteCenterPanel } = await import(
-			"../sample-note/SampleNoteCenterPanel"
+		const { SampleNoteCenterArea } = await import(
+			"../sample-note/SampleNoteCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<SampleNoteCenterPanel naia={bridge} />);
+		render(<SampleNoteCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_note_write")).toBe(true);
@@ -284,12 +284,12 @@ describe("SampleNote Panel — tool interaction", () => {
 	});
 
 	it("textarea edit also updates content and pushes context", async () => {
-		const { SampleNoteCenterPanel } = await import(
-			"../sample-note/SampleNoteCenterPanel"
+		const { SampleNoteCenterArea } = await import(
+			"../sample-note/SampleNoteCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<SampleNoteCenterPanel naia={bridge} />);
+		render(<SampleNoteCenterArea naia={bridge} />);
 
 		const textarea = screen.getByRole("textbox");
 		fireEvent.change(textarea, { target: { value: "Typed by user" } });

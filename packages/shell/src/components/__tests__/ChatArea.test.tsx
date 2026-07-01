@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentResponseChunk } from "../../lib/types";
 import { useAvatarStore } from "../../stores/avatar";
 import { useChatStore } from "../../stores/chat";
-import { ChatPanel } from "../ChatPanel";
+import { ChatArea } from "../ChatArea";
 
 vi.mock("@tauri-apps/plugin-store", () => {
 	const store = {
@@ -47,7 +47,7 @@ vi.mock("../../lib/chat-service", () => ({
 	fetchAgentSkills: vi.fn().mockResolvedValue([]),
 	sendApprovalResponse: vi.fn().mockResolvedValue(undefined),
 	sendPanelToolResult: vi.fn().mockResolvedValue(undefined),
-	// 슬라이스1(isNewCore 도입) 이후 ChatPanel 이 호출 — mock 누락 시 throw 로 8건 RED 였음.
+	// 슬라이스1(isNewCore 도입) 이후 ChatArea 이 호출 — mock 누락 시 throw 로 8건 RED 였음.
 	// 기본 false = 비-새-core(기존 sendChatMessage 경로) — 이 테스트들의 원래 가정 유지.
 	isNewCore: vi.fn(() => false),
 }));
@@ -82,7 +82,7 @@ vi.stubGlobal(
 	},
 );
 
-describe("ChatPanel", () => {
+describe("ChatArea", () => {
 	afterEach(() => {
 		cleanup();
 		capturedOnChunk = null;
@@ -94,7 +94,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("renders input field and buttons", () => {
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
@@ -109,7 +109,7 @@ describe("ChatPanel", () => {
 				model: "gemini-2.5-flash",
 			}),
 		);
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		// Send button is the last button in the input bar
 		const buttons = screen.getAllByRole("button");
 		const sendBtn = buttons.find((b) => b.textContent === "↑")!;
@@ -120,7 +120,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("sends message on Enter", async () => {
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 		fireEvent.change(input, { target: { value: "안녕" } });
 		fireEvent.keyDown(input, { key: "Enter" });
@@ -137,7 +137,7 @@ describe("ChatPanel", () => {
 
 	it("displays session cost header", () => {
 		useChatStore.setState({ totalSessionCost: 0.005 });
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		expect(screen.getByText(/\$0\.005/)).toBeDefined();
 	});
 
@@ -146,7 +146,7 @@ describe("ChatPanel", () => {
 			isStreaming: true,
 			streamingContent: "응답 중...",
 		});
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		expect(screen.getByText(/응답 중/)).toBeDefined();
 	});
 
@@ -161,7 +161,7 @@ describe("ChatPanel", () => {
 			}),
 		);
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 		fireEvent.change(input, { target: { value: "파일 읽어줘" } });
 		fireEvent.keyDown(input, { key: "Enter" });
@@ -197,7 +197,7 @@ describe("ChatPanel", () => {
 			}),
 		);
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 		fireEvent.change(input, { target: { value: "파일 읽어줘" } });
 		fireEvent.keyDown(input, { key: "Enter" });
@@ -250,7 +250,7 @@ describe("ChatPanel", () => {
 			],
 		});
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		// Should render the tool activity label
 		expect(screen.getByText(/파일 읽기|Read File/)).toBeDefined();
 	});
@@ -265,7 +265,7 @@ describe("ChatPanel", () => {
 			}),
 		);
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 		fireEvent.change(input, { target: { value: "npm test 실행해" } });
 		fireEvent.keyDown(input, { key: "Enter" });
@@ -303,7 +303,7 @@ describe("ChatPanel", () => {
 		const { sendChatMessage } = await import("../../lib/chat-service");
 		vi.mocked(sendChatMessage).mockClear();
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 
 		fireEvent.change(input, { target: { value: "첫번째" } });
@@ -339,7 +339,7 @@ describe("ChatPanel", () => {
 			}),
 		);
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 		fireEvent.change(input, { target: { value: "npm test 실행해" } });
 		fireEvent.keyDown(input, { key: "Enter" });
@@ -379,7 +379,7 @@ describe("ChatPanel", () => {
 			},
 		});
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		expect(
 			screen.getByText(/도구 실행 승인|Tool Execution Approval/),
 		).toBeDefined();
@@ -396,7 +396,7 @@ describe("ChatPanel", () => {
 			}),
 		);
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);
 		fireEvent.change(input, { target: { value: "안녕" } });
 		fireEvent.keyDown(input, { key: "Enter" });
@@ -443,7 +443,7 @@ describe("ChatPanel", () => {
 			},
 		]);
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		await new Promise((r) => setTimeout(r, 100));
 
 		const state = useChatStore.getState();
@@ -456,7 +456,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("renders new conversation button", () => {
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const btn = screen.getByTitle(/새 대화|New Chat/);
 		expect(btn).toBeDefined();
 		expect(btn.textContent).toBe("+");
@@ -476,7 +476,7 @@ describe("ChatPanel", () => {
 			],
 		});
 
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const btn = screen.getByTitle(/새 대화|New Chat/);
 		fireEvent.click(btn);
 
@@ -488,7 +488,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("recalls previous input with ArrowUp", async () => {
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(
 			/메시지|message/i,
 		) as HTMLTextAreaElement;
@@ -518,7 +518,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("navigates history with ArrowUp/ArrowDown and restores draft", async () => {
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(
 			/메시지|message/i,
 		) as HTMLTextAreaElement;
@@ -564,7 +564,7 @@ describe("ChatPanel", () => {
 	});
 
 	it("ArrowDown does nothing when not browsing history", () => {
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(
 			/메시지|message/i,
 		) as HTMLTextAreaElement;

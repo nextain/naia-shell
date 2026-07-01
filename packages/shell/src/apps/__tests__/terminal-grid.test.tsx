@@ -2,7 +2,7 @@
 /**
  * Phase 2 tests: Terminal Grid
  *
- * Verifies that WorkspaceCenterPanel:
+ * Verifies that WorkspaceCenterArea:
  *  1. Uses tab mode (single terminal visible) when 0–1 terminal is open
  *  2. Switches to grid mode automatically when 2+ terminals are open
  *  3. Grid cell headers show issueId / dir / agent badges
@@ -80,8 +80,8 @@ vi.mock("../workspace/Terminal", () => ({
 	)),
 }));
 
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
@@ -177,11 +177,11 @@ describe("Terminal Grid — Phase 2", () => {
 	});
 
 	it("tab mode: only one terminal visible when a single terminal is open", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 
@@ -202,11 +202,11 @@ describe("Terminal Grid — Phase 2", () => {
 	});
 
 	it("grid mode activates automatically when 2nd terminal is opened", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() =>
@@ -237,11 +237,11 @@ describe("Terminal Grid — Phase 2", () => {
 	});
 
 	it("grid cell headers show dir basename", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await openTerminal(bridge, "/tmp/beta");
@@ -264,11 +264,11 @@ describe("Terminal Grid — Phase 2", () => {
 	});
 
 	it("grid drops back to tab mode when terminal count falls to 1", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const ptyBeta = await openTerminal(bridge, "/tmp/beta");
@@ -298,11 +298,11 @@ describe("Terminal Grid — Phase 2", () => {
 	});
 
 	it("closing focused terminal falls back to next terminal, not editor", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyAlpha = await openTerminal(bridge, "/tmp/alpha");
 		await openTerminal(bridge, "/tmp/beta");

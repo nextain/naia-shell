@@ -7,11 +7,11 @@ import {
 } from "../../lib/browser-prefs";
 import { Logger } from "../../lib/logger";
 
-interface BrowserMetaPanelProps {
+interface BrowserMetaAreaProps {
 	onNavigate: (url: string) => void;
 }
 
-export function BrowserMetaPanel({ onNavigate }: BrowserMetaPanelProps) {
+export function BrowserMetaArea({ onNavigate }: BrowserMetaAreaProps) {
 	const [bookmarks, setBookmarks] = useState<BrowserLink[]>([]);
 
 	useEffect(() => {
@@ -22,7 +22,7 @@ export function BrowserMetaPanel({ onNavigate }: BrowserMetaPanelProps) {
 					if (alive) setBookmarks(items);
 				})
 				.catch((err) => {
-					Logger.warn("BrowserMetaPanel", "failed to load bookmarks", {
+					Logger.warn("BrowserMetaArea", "failed to load bookmarks", {
 						error: String(err),
 					});
 				});
@@ -39,7 +39,7 @@ export function BrowserMetaPanel({ onNavigate }: BrowserMetaPanelProps) {
 		removeBrowserBookmark(url)
 			.then(setBookmarks)
 			.catch((err) => {
-				Logger.warn("BrowserMetaPanel", "failed to remove bookmark", {
+				Logger.warn("BrowserMetaArea", "failed to remove bookmark", {
 					error: String(err),
 				});
 			});

@@ -2,7 +2,7 @@
 /**
  * Phase 4 tests: Issue → Terminal link
  *
- * Verifies that WorkspaceCenterPanel:
+ * Verifies that WorkspaceCenterArea:
  *  1. Focuses the matching terminal when an issue with a known issueId is clicked
  *  2. Still pushes Naia context when clicking an issue (with or without a terminal)
  *  3. Does NOT change the active tab when the clicked issue has no matching terminal
@@ -72,11 +72,11 @@ vi.mock("../workspace/Terminal", () => ({
 	)),
 }));
 
-// IssuesPanel mock — exposes onIssueClick so tests can fire it directly
+// IssuesArea mock — exposes onIssueClick so tests can fire it directly
 let capturedOnIssueClick: ((issue: unknown) => void) | undefined;
 
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 			onIssueClick,
@@ -189,11 +189,11 @@ describe("Issue → Terminal link — Phase 4", () => {
 		// Terminal for /tmp/alpha is on branch issue-42 → issueId=42
 		setupInvoke({ "/tmp/alpha": "issue-42", "/tmp/beta": "issue-99" });
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const betaPtyId = await openTerminal(bridge, "/tmp/beta");
@@ -225,11 +225,11 @@ describe("Issue → Terminal link — Phase 4", () => {
 	it("always pushes Naia context when an issue is clicked", async () => {
 		setupInvoke({ "/tmp/alpha": "issue-42" });
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() =>
@@ -249,11 +249,11 @@ describe("Issue → Terminal link — Phase 4", () => {
 	it("does NOT switch tabs when clicked issue has no matching terminal", async () => {
 		setupInvoke({ "/tmp/alpha": "issue-42" });
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() =>
@@ -281,11 +281,11 @@ describe("Issue → Terminal link — Phase 4", () => {
 			"/tmp/feat-30": "issue-30",
 		});
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/feat-10");
 		await openTerminal(bridge, "/tmp/feat-20");
@@ -312,11 +312,11 @@ describe("Issue → Terminal link — Phase 4", () => {
 	it("still pushes context even when no matching terminal exists", async () => {
 		setupInvoke();
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		// No terminals open at all
 		await waitFor(() => expect(capturedOnIssueClick).toBeDefined());

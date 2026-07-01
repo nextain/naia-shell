@@ -180,7 +180,7 @@ export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
 
 /**
  * UC13 — 승인 응답 송신. UI 결정(once|always|reject) → wire decision 매핑(once/always→approve).
- * ⚠️ fire-and-forget 안전: 내부 swallow+log(old ChatPanel .catch 패리티) — 호출자에게 절대 reject 안 함.
+ * ⚠️ fire-and-forget 안전: 내부 swallow+log(old ChatArea .catch 패리티) — 호출자에게 절대 reject 안 함.
  * NEW_CORE → 새 core transport(approve|reject). else → old 경로 raw(once/always/reject, old agent 호환).
  */
 export async function sendApprovalResponse(
@@ -292,7 +292,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		onChunk({ type: "error", requestId, message: "Agent response timeout" });
 	}, RESPONSE_TIMEOUT_MS);
 
-	// sendChatMessage 는 caller (= ChatPanel) 가 "naia 계정 chat 사용 불가"
+	// sendChatMessage 는 caller (= ChatArea) 가 "naia 계정 chat 사용 불가"
 	// UI 안내 하도록 fail 시 throw 유지 — safeSendToAgent 사용 X. Logger.warn
 	// 은 helper 가 처리하지 않고 caller 의 catch 가 surface.
 	try {

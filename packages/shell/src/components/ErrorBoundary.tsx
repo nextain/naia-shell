@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Logger } from "../lib/logger";
 
 interface ErrorBoundaryProps {
-	/** Identifier for logging — e.g. "Panel(workspace)" or "ChatPanel". */
+	/** Identifier for logging — e.g. "Panel(workspace)" or "ChatArea". */
 	scope: string;
 	children: ReactNode;
 	/** Optional custom fallback UI. Default: empty `<div>` so siblings keep mounting. */

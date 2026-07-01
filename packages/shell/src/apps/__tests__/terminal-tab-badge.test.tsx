@@ -10,7 +10,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentType, TerminalTab } from "../workspace/WorkspaceCenterPanel";
+import type { AgentType, TerminalTab } from "../workspace/WorkspaceCenterArea";
 
 afterEach(cleanup);
 
@@ -35,7 +35,7 @@ vi.mock("../../lib/config", () => ({
 	saveConfig: vi.fn(),
 }));
 
-// ─── Minimal tab badge component (mirrors WorkspaceCenterPanel tab rendering) ──
+// ─── Minimal tab badge component (mirrors WorkspaceCenterArea tab rendering) ──
 
 function TabLabel({ tab }: { tab: TerminalTab }) {
 	return (

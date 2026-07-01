@@ -46,7 +46,7 @@ export interface SynthesizeOpts {
 	 * Local voice engine host (naia-local-voice provider) — distinct from
 	 * `vllmHost` (which is the LLM host). When unset for naia-local-voice,
 	 * synthesis falls back to `vllmHost` then fails honestly (no silent
-	 * free-voice substitution — see ChatPanel catch).
+	 * free-voice substitution — see ChatArea catch).
 	 */
 	vllmTtsHost?: string;
 	/** Abort signal for cancellation / interrupt. */

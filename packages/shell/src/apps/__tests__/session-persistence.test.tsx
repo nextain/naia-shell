@@ -2,7 +2,7 @@
 /**
  * Phase 3 tests: Session Persistence
  *
- * Verifies that WorkspaceCenterPanel:
+ * Verifies that WorkspaceCenterArea:
  *  1. Saves terminal dirs to localStorage when terminals change
  *  2. Restores terminals from localStorage after workspace is ready
  *  3. Restores the previously active terminal as activeTab
@@ -72,8 +72,8 @@ vi.mock("../workspace/Terminal", () => ({
 		<div data-testid={`terminal-${pty_id}`} />
 	)),
 }));
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
@@ -180,11 +180,11 @@ describe("Session Persistence — Phase 3", () => {
 	});
 
 	it("saves terminal dirs to localStorage when a terminal is opened", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() =>
@@ -201,11 +201,11 @@ describe("Session Persistence — Phase 3", () => {
 	});
 
 	it("saves activeDir when switching between terminals", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await openTerminal(bridge, "/tmp/beta");
@@ -227,11 +227,11 @@ describe("Session Persistence — Phase 3", () => {
 	it("restores terminals from localStorage after workspace is ready", async () => {
 		saveSession(["/tmp/alpha", "/tmp/beta"]);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		// Both terminals must appear without any manual tool call
 		await waitFor(() =>
@@ -245,11 +245,11 @@ describe("Session Persistence — Phase 3", () => {
 	it("restores the previously active terminal as the focused tab", async () => {
 		saveSession(["/tmp/alpha", "/tmp/beta"], "/tmp/beta");
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() =>
 			expect(screen.getByTestId("terminal-pty-beta-2")).toBeInTheDocument(),
@@ -265,11 +265,11 @@ describe("Session Persistence — Phase 3", () => {
 		saveSession(["/tmp/gone", "/tmp/alpha"]);
 		setupInvoke({ failDirs: ["/tmp/gone"] });
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		// /tmp/alpha should still be restored despite /tmp/gone failing
 		await waitFor(() =>
@@ -282,11 +282,11 @@ describe("Session Persistence — Phase 3", () => {
 	it("does not save an empty session before restore runs", async () => {
 		saveSession(["/tmp/alpha"]);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		// Immediately after mount (before restore completes), the saved session
 		// must NOT have been overwritten with an empty dirs array
@@ -305,11 +305,11 @@ describe("Session Persistence — Phase 3", () => {
 	});
 
 	it("removes a terminal dir from saved session when terminal is closed", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await openTerminal(bridge, "/tmp/beta");

@@ -18,9 +18,9 @@ import { DocTabBar } from "./DocTabBar";
 import { Editor, type EditorHandle } from "./Editor";
 import { FileTree } from "./FileTree";
 import { QuickOpen } from "./QuickOpen";
-import type { GithubIssue } from "./IssuesPanel";
+import type { GithubIssue } from "./IssuesArea";
 import { parseIssueIdFromBranch } from "../../lib/issue-branch";
-import { IssuesPanel } from "./IssuesPanel";
+import { IssuesArea } from "./IssuesArea";
 import type { SessionInfo } from "./SessionCard";
 import { SkillLauncher } from "./SkillLauncher";
 import { Terminal } from "./Terminal";
@@ -213,7 +213,7 @@ function getRepoRecentFile(repoRoot: string): string | undefined {
 	return loadRepoRecent()[repoRoot];
 }
 
-export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
+export function WorkspaceCenterArea({ naia }: AppCenterProps) {
 	// Resolved workspace root — separate from the naia-settings resource directory.
 	const [activeWorkspaceRoot, setActiveWorkspaceRoot] = useState(() => {
 		const cfg = loadConfig();
@@ -429,19 +429,19 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 	// ── Auto-detect naia-adk root on mount ─────────────────────────────────
 	useEffect(() => {
 		if (activeWorkspaceRoot) {
-			Logger.info("WorkspaceCenterPanel", "Mount: workspace root already set", {
+			Logger.info("WorkspaceCenterArea", "Mount: workspace root already set", {
 				root: activeWorkspaceRoot,
 			});
 			return;
 		}
 		Logger.info(
-			"WorkspaceCenterPanel",
+			"WorkspaceCenterArea",
 			"Mount: no workspace root — starting auto-detect",
 		);
 		let cancelled = false;
 		(async () => {
 			const detected = await detectAdkRoot();
-			Logger.info("WorkspaceCenterPanel", "Auto-detect result", {
+			Logger.info("WorkspaceCenterArea", "Auto-detect result", {
 				detected: detected ?? "null",
 			});
 			if (cancelled || !detected) return;
@@ -461,35 +461,35 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 			setWorkspaceReady(true);
 			return;
 		}
-		Logger.info("WorkspaceCenterPanel", "workspace_set_root start", {
+		Logger.info("WorkspaceCenterArea", "workspace_set_root start", {
 			root: activeWorkspaceRoot,
 		});
 		const _t0 = Date.now();
 		invoke<string>("workspace_set_root", { root: activeWorkspaceRoot })
 			.then((canonical) => {
-				Logger.info("WorkspaceCenterPanel", "workspace_set_root ok", {
+				Logger.info("WorkspaceCenterArea", "workspace_set_root ok", {
 					canonical,
 					ms: Date.now() - _t0,
 				});
 				setResolvedRoot(canonical);
 				// Restart file watcher on new root (watcher may have started before root was set)
-				Logger.info("WorkspaceCenterPanel", "workspace_start_watch start");
+				Logger.info("WorkspaceCenterArea", "workspace_start_watch start");
 				invoke("workspace_start_watch")
 					.then(() =>
-						Logger.info("WorkspaceCenterPanel", "workspace_start_watch ok", {
+						Logger.info("WorkspaceCenterArea", "workspace_start_watch ok", {
 							ms: Date.now() - _t0,
 						}),
 					)
 					.catch((e: unknown) =>
 						Logger.warn(
-							"WorkspaceCenterPanel",
+							"WorkspaceCenterArea",
 							"workspace_start_watch failed",
 							{ error: String(e) },
 						),
 					);
 			})
 			.catch((e) => {
-				Logger.warn("WorkspaceCenterPanel", "workspace_set_root failed", {
+				Logger.warn("WorkspaceCenterArea", "workspace_set_root failed", {
 					error: String(e),
 				});
 				setResolvedRoot(WORKSPACE_ROOT);
@@ -674,13 +674,13 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 		if (!classifyPending) return;
 		// Run classification and push recommendation via Naia context
 		Logger.info(
-			"WorkspaceCenterPanel",
+			"WorkspaceCenterArea",
 			"workspace_classify_dirs start (first-launch)",
 		);
 		const _tc0 = Date.now();
 		invoke<ClassifiedDir[]>("workspace_classify_dirs")
 			.then((dirs) => {
-				Logger.info("WorkspaceCenterPanel", "workspace_classify_dirs ok", {
+				Logger.info("WorkspaceCenterArea", "workspace_classify_dirs ok", {
 					count: dirs.length,
 					ms: Date.now() - _tc0,
 				});
@@ -693,13 +693,13 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 					},
 				});
 				Logger.info(
-					"WorkspaceCenterPanel",
+					"WorkspaceCenterArea",
 					"Classification recommendation pushed",
 					{ count: dirs.length },
 				);
 			})
 			.catch((e) => {
-				Logger.warn("WorkspaceCenterPanel", "Classification failed", {
+				Logger.warn("WorkspaceCenterArea", "Classification failed", {
 					error: String(e),
 				});
 			})
@@ -739,7 +739,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 							},
 						},
 					});
-					Logger.warn("WorkspaceCenterPanel", "Error session detected", {
+					Logger.warn("WorkspaceCenterArea", "Error session detected", {
 						dir: s.dir,
 					});
 				}
@@ -776,7 +776,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 			if (match) {
 				setActiveTab(match.pty_id);
 				useAppStore.getState().setActiveApp("workspace");
-				Logger.info("WorkspaceCenterPanel", "Issue click -> terminal focused", {
+				Logger.info("WorkspaceCenterArea", "Issue click -> terminal focused", {
 					number: issue.number,
 					pty_id: match.pty_id,
 				});
@@ -793,7 +793,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 					},
 				},
 			});
-			Logger.info("WorkspaceCenterPanel", "Issue selected", {
+			Logger.info("WorkspaceCenterArea", "Issue selected", {
 				number: issue.number,
 			});
 		},
@@ -832,7 +832,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 								},
 							},
 						});
-						Logger.info("WorkspaceCenterPanel", "Idle session alert", {
+						Logger.info("WorkspaceCenterArea", "Idle session alert", {
 							dir: session.dir,
 							idleSec,
 						});
@@ -871,7 +871,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 	// ── Session card click → open recent file ─────────────────────────────
 	const handleSessionClick = useCallback(
 		async (session: SessionInfo) => {
-			Logger.info("WorkspaceCenterPanel", "Session card clicked", {
+			Logger.info("WorkspaceCenterArea", "Session card clicked", {
 				dir: session.dir,
 			});
 
@@ -1050,7 +1050,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 			},
 			focusSession: (dir: string) => {
 				if (!sessionsRef.current.some((s) => s.dir === dir)) {
-					Logger.warn("WorkspaceCenterPanel", "focusSession: dir not found", {
+					Logger.warn("WorkspaceCenterArea", "focusSession: dir not found", {
 						dir,
 					});
 					return;
@@ -1220,7 +1220,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 		// spawn creates two PTYs for the same dir. Keeping the dir blocked on kill failure
 		// would be worse UX (permanent lockout until app restart).
 		invoke("pty_kill", { pty_id }).catch((e) => {
-			Logger.warn("WorkspaceCenterPanel", "pty_kill failed", {
+			Logger.warn("WorkspaceCenterArea", "pty_kill failed", {
 				error: String(e),
 			});
 		});
@@ -1293,7 +1293,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 			);
 			setActiveTab((prev) => (prev === pty_id ? result.pty_id : prev));
 		} catch (e) {
-			Logger.warn("WorkspaceCenterPanel", "restart terminal failed", {
+			Logger.warn("WorkspaceCenterArea", "restart terminal failed", {
 				error: String(e),
 			});
 		}
@@ -1890,7 +1890,7 @@ export function WorkspaceCenterPanel({ naia }: AppCenterProps) {
 				style={{ width: `${sessionsWidth}px` }}
 			>
 				{workspaceReady && (
-					<IssuesPanel
+					<IssuesArea
 						onSessionClick={handleSessionClick}
 						onSessionsUpdate={handleSessionsUpdate}
 						highlightedDir={highlightedSessionDir ?? undefined}

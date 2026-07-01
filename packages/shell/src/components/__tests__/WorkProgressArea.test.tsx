@@ -3,14 +3,14 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditEvent, AuditStats } from "../../lib/types";
 import { useProgressStore } from "../../stores/progress";
-import { WorkProgressPanel } from "../WorkProgressPanel";
+import { WorkProgressArea } from "../WorkProgressArea";
 
 // Mock @tauri-apps/api/core
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn(),
 }));
 
-describe("WorkProgressPanel", () => {
+describe("WorkProgressArea", () => {
 	afterEach(() => {
 		cleanup();
 		useProgressStore.setState(useProgressStore.getInitialState());
@@ -45,32 +45,32 @@ describe("WorkProgressPanel", () => {
 
 	it("shows loading state", () => {
 		useProgressStore.setState({ isLoading: true });
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		expect(container.querySelector(".work-progress-loading")).not.toBeNull();
 	});
 
 	it("shows empty state when no events", () => {
 		useProgressStore.setState({ events: [], stats: null, isLoading: false });
-		render(<WorkProgressPanel />);
+		render(<WorkProgressArea />);
 		expect(screen.getByText(/기록이 없습니다|No events/)).toBeDefined();
 	});
 
 	it("renders stats cards when stats are present", () => {
 		useProgressStore.setState({ stats: sampleStats, isLoading: false });
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		const statCards = container.querySelectorAll(".work-progress-stat");
 		expect(statCards.length).toBe(4);
 	});
 
 	it("displays total events count in stats", () => {
 		useProgressStore.setState({ stats: sampleStats, isLoading: false });
-		render(<WorkProgressPanel />);
+		render(<WorkProgressArea />);
 		expect(screen.getByText("42")).toBeDefined();
 	});
 
 	it("displays total cost in stats", () => {
 		useProgressStore.setState({ stats: sampleStats, isLoading: false });
-		render(<WorkProgressPanel />);
+		render(<WorkProgressArea />);
 		expect(screen.getByText("$0.053")).toBeDefined();
 	});
 
@@ -80,7 +80,7 @@ describe("WorkProgressPanel", () => {
 			stats: sampleStats,
 			isLoading: false,
 		});
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		const events = container.querySelectorAll(".work-progress-event");
 		expect(events.length).toBe(1);
 	});
@@ -91,7 +91,7 @@ describe("WorkProgressPanel", () => {
 			stats: sampleStats,
 			isLoading: false,
 		});
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		const icon = container.querySelector(".event-type-icon");
 		expect(icon?.textContent).toContain("T");
 	});
@@ -108,14 +108,14 @@ describe("WorkProgressPanel", () => {
 			stats: sampleStats,
 			isLoading: false,
 		});
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		const icon = container.querySelector(".event-type-icon");
 		expect(icon?.textContent).toContain("E");
 	});
 
 	it("has a refresh button", () => {
 		useProgressStore.setState({ stats: sampleStats, isLoading: false });
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		const btn = container.querySelector(".work-progress-refresh-btn");
 		expect(btn).not.toBeNull();
 	});
@@ -126,7 +126,7 @@ describe("WorkProgressPanel", () => {
 			stats: sampleStats,
 			isLoading: false,
 		});
-		const { container } = render(<WorkProgressPanel />);
+		const { container } = render(<WorkProgressArea />);
 		const eventEl = container.querySelector(".work-progress-event-header");
 		expect(eventEl).not.toBeNull();
 

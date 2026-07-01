@@ -2,7 +2,7 @@
 /**
  * Step 5 tests: process-name → agent auto-detection polling
  *
- * Tests that WorkspaceCenterPanel:
+ * Tests that WorkspaceCenterArea:
  *  1. Calls workspace_get_pty_agents (batch) every 5s with all open terminal PIDs
  *  2. Updates terminal.agent when the detected agent changes
  *  3. Clears terminal.agent when detection returns no entry for that pid
@@ -93,8 +93,8 @@ vi.mock("../workspace/Terminal", () => ({
 	)),
 }));
 
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
@@ -214,11 +214,11 @@ describe("agent polling — workspace_get_pty_agents (batch)", () => {
 	it("calls workspace_get_pty_agents with all open terminal PIDs every 5s", async () => {
 		setupDefaultInvoke({ ptcPid: 1111 });
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge);
 
@@ -239,11 +239,11 @@ describe("agent polling — workspace_get_pty_agents (batch)", () => {
 	it("updates terminal.agent when batch result contains the pid", async () => {
 		setupDefaultInvoke({ agentMap: { 2222: "claude" }, ptcPid: 2222 });
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge);
 		await waitFor(() => expect(screen.getAllByText("test-dir")[0]).toBeInTheDocument());
@@ -272,11 +272,11 @@ describe("agent polling — workspace_get_pty_agents (batch)", () => {
 			return [];
 		});
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/test-dir");
 		await waitFor(() => expect(screen.getAllByText("test-dir")[0]).toBeInTheDocument());
@@ -297,11 +297,11 @@ describe("agent polling — workspace_get_pty_agents (batch)", () => {
 			ptcPid: 4444,
 		});
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge);
 		await waitFor(() => expect(screen.getAllByText("test-dir")[0]).toBeInTheDocument());
@@ -324,11 +324,11 @@ describe("agent polling — workspace_get_pty_agents (batch)", () => {
 			mockInvoke.mockClear();
 			setupDefaultInvoke({ agentMap: { 5000: agent }, ptcPid: 5000 });
 
-			const { WorkspaceCenterPanel } = await import(
-				"../workspace/WorkspaceCenterPanel"
+			const { WorkspaceCenterArea } = await import(
+				"../workspace/WorkspaceCenterArea"
 			);
 			const bridge = new MockBridge();
-			const { unmount } = render(<WorkspaceCenterPanel naia={bridge} />);
+			const { unmount } = render(<WorkspaceCenterArea naia={bridge} />);
 
 			await openTerminal(bridge);
 			await waitFor(() => expect(screen.getAllByText("test-dir")[0]).toBeInTheDocument());
@@ -355,11 +355,11 @@ describe("agent polling — workspace_get_pty_agents (batch)", () => {
 			return [];
 		});
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge);
 		await waitFor(() => expect(screen.getAllByText("test-dir")[0]).toBeInTheDocument());

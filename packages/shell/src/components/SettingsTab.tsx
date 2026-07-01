@@ -1510,7 +1510,7 @@ export function SettingsTab() {
 	function handleLocaleChange(id: Locale) {
 		setLocaleState(id);
 		setLocale(id);
-		// 활성 음성 세션(naia-omni)에 새 인식 언어를 즉시 핀(재연결 없음). ChatPanel 이 수신.
+		// 활성 음성 세션(naia-omni)에 새 인식 언어를 즉시 핀(재연결 없음). ChatArea 이 수신.
 		window.dispatchEvent(new CustomEvent("naia:locale-change", { detail: id }));
 	}
 

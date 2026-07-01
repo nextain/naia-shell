@@ -8,7 +8,7 @@
  * the `openai-realtime.ts` provider for maximum performance and low latency.
  * `sendAudio` is a pure passthrough — no client-side buffering, silence
  * timer, or manual commit. The server's silero VAD auto-commits and responds
- * on end-of-speech. The AI-speaking echo gate lives in ChatPanel
+ * on end-of-speech. The AI-speaking echo gate lives in ChatArea
  * (`audioInput.gateWhilePlaying`), not here.
  *
  * Protocol (/v1/realtime):
@@ -405,7 +405,7 @@ export function createNaiaOmniSession(): VoiceSession {
 						// Only surface a session-level disconnect when a LIVE session
 						// dropped. Pre-connect closes (cold-start retries, auth/credit
 						// rejects) are driven by connect()'s promise rejection →
-						// ChatPanel's catch; firing onDisconnect here too would tear
+						// ChatArea's catch; firing onDisconnect here too would tear
 						// down the UI mid-cold-start. Carry the close reason so a
 						// mid-call superseded/credits drop isn't a silent disconnect.
 						if (wasConnected) {
@@ -479,7 +479,7 @@ export function createNaiaOmniSession(): VoiceSession {
 			// client-side buffering, silence timer, or manual commit. Mirrors
 			// openai-realtime.ts and the web demo for low latency. Barge-in is
 			// server-side via input_audio_buffer.speech_started (see
-			// handleMessage); the AI-speaking echo gate lives in ChatPanel
+			// handleMessage); the AI-speaking echo gate lives in ChatArea
 			// (audioInput.gateWhilePlaying).
 			try {
 				ws.send(
@@ -675,7 +675,7 @@ export function createNaiaOmniSession(): VoiceSession {
 
 			case "response.function_call_arguments.done": {
 				// Server emits this per tool call, then a
-				// response.done{requires_action}. Surface to onToolCall; ChatPanel
+				// response.done{requires_action}. Surface to onToolCall; ChatArea
 				// runs the skill and calls sendToolResponse with the result.
 				const callId = msg.call_id as string | undefined;
 				const name = msg.name as string | undefined;
@@ -699,7 +699,7 @@ export function createNaiaOmniSession(): VoiceSession {
 			case "emotion.updated": {
 				// Server prosody/emotion tag update (manual §5): one event per
 				// bracketed tag in the reply. `state` = tag name (e.g. "happy").
-				// Forward raw — ChatPanel maps it to an avatar EmotionName
+				// Forward raw — ChatArea maps it to an avatar EmotionName
 				// (unknown tags are ignored, expression unchanged).
 				const state = msg.state as string | undefined;
 				if (state) session.onEmotion?.(state);

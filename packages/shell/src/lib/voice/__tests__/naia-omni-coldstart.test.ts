@@ -3,7 +3,7 @@
  *
  * naia-0.9-omni-24g runs on RunPod on-demand, so connect() is not instant: the
  * gateway answers pod-starting while the Pod warms up. The session emits
- * `onStatusChange` (connecting / cold-start / sold-out / error) so ChatPanel can
+ * `onStatusChange` (connecting / cold-start / sold-out / error) so ChatArea can
  * render the scenario and offer a cancel that releases the warming Pod
  * (abandonPod) instead of a frozen "connecting" spinner. These tests cover the
  * status emissions, close-code classification (4001 auth / 4003 credits), and

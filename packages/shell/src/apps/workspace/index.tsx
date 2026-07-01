@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { appRegistry } from "../../lib/app-registry";
 import type { NaiaTool } from "../../lib/app-registry";
-import { WorkspaceCenterPanel } from "./WorkspaceCenterPanel";
+import { WorkspaceCenterArea } from "./WorkspaceCenterArea";
 
 export const WORKSPACE_TOOLS: NaiaTool[] = [
 	{
@@ -189,7 +189,7 @@ appRegistry.register({
 	icon: "💻",
 	builtIn: true,
 	source: "code",
-	center: WorkspaceCenterPanel,
+	center: WorkspaceCenterArea,
 	keepAlive: true, // PTY terminals must not unmount on tab switch
 	tools: WORKSPACE_TOOLS,
 	onActivate: startWorkspaceWatcher,

@@ -45,14 +45,14 @@ const MAX_DURATION_S = 30;
 
 /**
  * Persist the active voice-reference preset URL into AppConfig so the realtime
- * voice session (ChatPanel) sends it directly as `ref_audio_url` — the
+ * voice session (ChatArea) sends it directly as `ref_audio_url` — the
  * deterministic source the web demo uses. Pass null on upload/remove so an
  * uploaded voice (injected server-side from GCS) is not shadowed by a preset.
  */
 function setConfigVoiceRefUrl(url: string | null): void {
 	const c = loadConfig();
 	if (c) saveConfig({ ...c, voiceRefUrl: url ?? undefined });
-	// Notify a live voice session (ChatPanel) to switch the cloned voice now,
+	// Notify a live voice session (ChatArea) to switch the cloned voice now,
 	// without a reconnect (web-demo parity). No-op if no session is active.
 	window.dispatchEvent(new CustomEvent("naia:voice-ref-url", { detail: url }));
 }

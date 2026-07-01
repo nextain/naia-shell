@@ -1,12 +1,12 @@
 import { appRegistry } from "../../lib/app-registry";
-import { SampleNoteCenterPanel } from "./SampleNoteCenterPanel";
+import { SampleNoteCenterArea } from "./SampleNoteCenterArea";
 
 appRegistry.register({
 	id: "sample-note",
 	name: "Sample Note",
 	names: { ko: "샘플 메모", en: "Sample Note" },
 	icon: "📝",
-	center: SampleNoteCenterPanel,
+	center: SampleNoteCenterArea,
 	tools: [
 		{
 			name: "skill_note_read",

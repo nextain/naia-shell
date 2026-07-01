@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Step 2 tests: IssuesPanel component
+ * Step 2 tests: IssuesArea component
  *
  * Covers:
  *  - Loading state
@@ -21,7 +21,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GithubIssue } from "../workspace/IssuesPanel";
+import type { GithubIssue } from "../workspace/IssuesArea";
 
 afterEach(() => {
 	cleanup();
@@ -93,13 +93,13 @@ function makeFailResult(output: string, exit_code = 1) {
 
 // Dynamic import so mocks are set up first
 async function renderPanel(props = {}) {
-	const { IssuesPanel } = await import("../workspace/IssuesPanel");
+	const { IssuesArea } = await import("../workspace/IssuesArea");
 	const onIssueClick = vi.fn();
 	const onSessionClick = vi.fn();
 	const onSessionsUpdate = vi.fn();
 
 	const result = render(
-		<IssuesPanel
+		<IssuesArea
 			workspaceRoot="/tmp/test"
 			onSessionClick={onSessionClick}
 			onSessionsUpdate={onSessionsUpdate}
@@ -112,7 +112,7 @@ async function renderPanel(props = {}) {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe("IssuesPanel", () => {
+describe("IssuesArea", () => {
 	beforeEach(() => {
 		mockInvoke.mockReset();
 		// Default: sessions returns empty
@@ -337,9 +337,9 @@ describe("IssuesPanel", () => {
 				return [];
 			});
 
-			const { IssuesPanel } = await import("../workspace/IssuesPanel");
+			const { IssuesArea } = await import("../workspace/IssuesArea");
 			const { rerender } = render(
-				<IssuesPanel
+				<IssuesArea
 					workspaceRoot="D:\\alpha-adk"
 					onSessionClick={vi.fn()}
 					onSessionsUpdate={vi.fn()}
@@ -355,7 +355,7 @@ describe("IssuesPanel", () => {
 
 			// Simulate path normalization: same logical path, different string repr
 			rerender(
-				<IssuesPanel
+				<IssuesArea
 					workspaceRoot="D:/alpha-adk"
 					onSessionClick={vi.fn()}
 					onSessionsUpdate={vi.fn()}
@@ -365,7 +365,7 @@ describe("IssuesPanel", () => {
 
 			// Rerender again with the same normalised value — must NOT trigger another fetch
 			rerender(
-				<IssuesPanel
+				<IssuesArea
 					workspaceRoot="D:/alpha-adk"
 					onSessionClick={vi.fn()}
 					onSessionsUpdate={vi.fn()}
@@ -411,7 +411,7 @@ describe("IssuesPanel", () => {
 	});
 
 	// ── #294: vertical divider handle ────────────────────────────────────────
-	describe("#294 — IssuesPanel vertical divider (issues ↕ sessions)", () => {
+	describe("#294 — IssuesArea vertical divider (issues ↕ sessions)", () => {
 		it("renders workspace-panel__row-resize-handle element", async () => {
 			mockInvoke.mockImplementation(async (cmd: string) => {
 				if (cmd === "pty_execute_sync") return makeSuccessResult([]);

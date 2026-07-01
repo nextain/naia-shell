@@ -44,8 +44,8 @@ vi.mock("../components/AvatarCanvas", () => ({
 	AvatarCanvas: () => <div>avatar</div>,
 }));
 
-vi.mock("../components/ChatPanel", () => ({
-	ChatPanel: () => <div>chat</div>,
+vi.mock("../components/ChatArea", () => ({
+	ChatArea: () => <div>chat</div>,
 }));
 
 vi.mock("../components/TitleBar", () => ({

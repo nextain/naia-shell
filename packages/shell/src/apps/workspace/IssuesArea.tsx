@@ -19,7 +19,7 @@ export interface GithubIssue {
 
 type FetchState = "loading" | "ok" | "no-gh" | "error";
 
-interface IssuesPanelProps {
+interface IssuesAreaProps {
 	/** Called when a session card is clicked (open recent file) */
 	onSessionClick: (session: SessionInfo) => void;
 	/** Exposes current session list to parent for Naia context push */
@@ -81,13 +81,13 @@ function relativeTime(iso: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function IssuesPanel({
+export function IssuesArea({
 	onSessionClick,
 	onSessionsUpdate,
 	highlightedDir,
 	workspaceRoot = WORKSPACE_ROOT,
 	onIssueClick,
-}: IssuesPanelProps) {
+}: IssuesAreaProps) {
 	const [issues, setIssues] = useState<GithubIssue[]>([]);
 	const [fetchState, setFetchState] = useState<FetchState>("loading");
 	const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
@@ -172,7 +172,7 @@ export function IssuesPanel({
 					} else {
 						setFetchState("error");
 					}
-					Logger.warn("IssuesPanel", "gh issue list failed", {
+					Logger.warn("IssuesArea", "gh issue list failed", {
 						exit_code: result.exit_code,
 						output: result.output.slice(0, 200),
 					});
@@ -183,7 +183,7 @@ export function IssuesPanel({
 				saveCache(parsed);
 				setIssues(parsed);
 				setFetchState("ok");
-				Logger.info("IssuesPanel", "Issues loaded", { count: parsed.length });
+				Logger.info("IssuesArea", "Issues loaded", { count: parsed.length });
 			} catch (e) {
 				if (id !== fetchIdRef.current) return;
 				const msg = String(e).toLowerCase();
@@ -197,7 +197,7 @@ export function IssuesPanel({
 				} else {
 					setFetchState("error");
 				}
-				Logger.warn("IssuesPanel", "fetchIssues error", { error: String(e) });
+				Logger.warn("IssuesArea", "fetchIssues error", { error: String(e) });
 			}
 		},
 		[], // stable — reads workspaceRoot via ref, never recreated on prop change
@@ -351,7 +351,7 @@ export function IssuesPanel({
 }
 
 // ─── Inline session list (reuses SessionCard, replaces SessionDashboard) ──────
-// Keeps SessionDashboard's data-fetch logic but rendered inside IssuesPanel.
+// Keeps SessionDashboard's data-fetch logic but rendered inside IssuesArea.
 
 interface SessionDashboardInlineProps {
 	onSessionClick: (session: SessionInfo) => void;

@@ -2,7 +2,7 @@
 /**
  * Phase 5 tests: Terminal exit notification + restart
  *
- * Verifies WorkspaceCenterPanel:
+ * Verifies WorkspaceCenterArea:
  *  1. Shows restart button when terminal process exits (not removed from DOM)
  *  2. Dead overlay appears instead of Terminal component after exit
  *  3. Clicking restart creates a new PTY in the same dir
@@ -91,8 +91,8 @@ vi.mock("../workspace/Terminal", () => ({
 	),
 }));
 
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
@@ -188,9 +188,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("shows dead overlay (not Terminal) after process exits", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -205,9 +205,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("shows restart button in dead overlay", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -220,9 +220,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("tab stays visible after exit (not removed)", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -234,9 +234,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("restart button creates new PTY in the same dir", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -258,9 +258,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("restarted terminal replaces the exited one in-place", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -283,9 +283,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("close button removes the exited terminal", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -311,9 +311,9 @@ describe("Terminal exit notification — Phase 5", () => {
 	});
 
 	it("blocks duplicate open while exited tab is visible", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());

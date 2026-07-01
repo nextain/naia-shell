@@ -12,7 +12,7 @@ import { appRegistry } from "../../lib/app-registry";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { useTabSkills } from "../../lib/tab-skills";
 import { useAppStore } from "../../stores/app";
-import { BrowserMetaPanel } from "./BrowserMetaPanel";
+import { BrowserMetaArea } from "./BrowserMetaArea";
 
 // ─── Panel API ───────────────────────────────────────────────────────────────
 
@@ -181,7 +181,7 @@ function sleep(ms: number): Promise<void> {
 let _browserWvCreating = false;
 let _browserWvCreated = false;
 
-export function BrowserCenterPanel({ naia }: AppCenterProps) {
+export function BrowserCenterArea({ naia }: AppCenterProps) {
 	const [status, setStatus] = useState<PanelStatus>("launching");
 	const [error, setError] = useState("");
 	// viewport div is always rendered so getBoundingClientRect is available
@@ -311,14 +311,14 @@ export function BrowserCenterPanel({ naia }: AppCenterProps) {
 			if (useAppStore.getState().activeApp !== "browser") {
 				invoke("browser_wv_hide").catch(() => {});
 			}
-			Logger.info("BrowserCenterPanel", "Browser webview created");
+			Logger.info("BrowserCenterArea", "Browser webview created");
 			setStatus("ready");
 			await refreshPageInfo();
 			syncBrowserBounds();
 		} catch (e) {
 			_browserWvCreating = false;
 			_browserWvCreated = false;
-			Logger.error("BrowserCenterPanel", "webview create failed", {
+			Logger.error("BrowserCenterArea", "webview create failed", {
 				error: String(e),
 			});
 			setError(String(e));
@@ -508,7 +508,7 @@ export function BrowserCenterPanel({ naia }: AppCenterProps) {
 			if (!p.current.navigate) return denied("탐색");
 			const url = String(args.url ?? "");
 			if (!url) return "Error: url required";
-			Logger.info("BrowserPanel", "skill_browser_navigate invoked", {
+			Logger.info("BrowserArea", "skill_browser_navigate invoked", {
 				url,
 				status,
 			});
@@ -516,16 +516,16 @@ export function BrowserCenterPanel({ naia }: AppCenterProps) {
 				await invoke("browser_wv_navigate", { url });
 				if (!p.current.getText) {
 					await refreshPageInfo();
-					Logger.info("BrowserPanel", "browser_wv_navigate ok", { url });
+					Logger.info("BrowserArea", "browser_wv_navigate ok", { url });
 					return `Navigated to ${url}\nPage text not read: ${denied("읽기")}`;
 				}
-				Logger.info("BrowserPanel", "browser_wv_navigate ok", { url });
+				Logger.info("BrowserArea", "browser_wv_navigate ok", { url });
 				let readResult: { text: string; truncated: boolean };
 				try {
 					readResult = await readPageTextAfterNavigate();
 				} catch (readError) {
 					Logger.warn(
-						"BrowserPanel",
+						"BrowserArea",
 						"browser_wv_get_text after navigate failed",
 						{
 							url,
@@ -543,7 +543,7 @@ export function BrowserCenterPanel({ naia }: AppCenterProps) {
 					: "visible body";
 				return `Navigated to ${url}\nPage text (${suffix}):\n${text}`;
 			} catch (e) {
-				Logger.warn("BrowserPanel", "browser_wv_navigate failed", {
+				Logger.warn("BrowserArea", "browser_wv_navigate failed", {
 					url,
 					error: String(e),
 				});
@@ -757,7 +757,7 @@ return {
 				iconUrl: meta.iconUrl?.trim() || fallbackIconUrl,
 			};
 		} catch (err) {
-			Logger.warn("BrowserCenterPanel", "page metadata read failed", {
+			Logger.warn("BrowserCenterArea", "page metadata read failed", {
 				error: String(err),
 			});
 			return {
@@ -774,12 +774,12 @@ return {
 		try {
 			await addBrowserBookmark(pageTitle(), url);
 			setBookmarksOpen(true);
-			Logger.info("BrowserCenterPanel", "bookmark added", {
+			Logger.info("BrowserCenterArea", "bookmark added", {
 				url,
 				title: pageTitle(),
 			});
 		} catch (err) {
-			Logger.warn("BrowserCenterPanel", "bookmark save failed", {
+			Logger.warn("BrowserCenterArea", "bookmark save failed", {
 				url,
 				error: String(err),
 			});
@@ -792,12 +792,12 @@ return {
 		const meta = await readPageMetadata();
 		try {
 			await addBrowserShortcut(meta.title, meta.url, meta.iconUrl);
-			Logger.info("BrowserCenterPanel", "shortcut added", {
+			Logger.info("BrowserCenterArea", "shortcut added", {
 				url: meta.url,
 				title: meta.title,
 			});
 		} catch (err) {
-			Logger.warn("BrowserCenterPanel", "shortcut save failed", {
+			Logger.warn("BrowserCenterArea", "shortcut save failed", {
 				url,
 				error: String(err),
 			});
@@ -811,7 +811,7 @@ return {
 	useEffect(() => {
 		if (status !== "ready") return;
 		if (bookmarksOpen) {
-			Logger.debug("BrowserCenterPanel", "bookmark drawer opened");
+			Logger.debug("BrowserCenterArea", "bookmark drawer opened");
 		}
 		syncBrowserBounds();
 	}, [bookmarksOpen, status, syncBrowserBounds]);
@@ -927,7 +927,7 @@ return {
 
 				{bookmarksOpen && (
 					<div className="browser-panel__bookmark-drawer">
-						<BrowserMetaPanel
+						<BrowserMetaArea
 							onNavigate={(url) => {
 								handleNavigate(url);
 								setBookmarksOpen(false);

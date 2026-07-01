@@ -498,7 +498,7 @@ describe("chat-service", () => {
 
 	// W2 — naia-agent 의존성 제외 (사용자 명시 2026-05-29)
 	// stdio invoke 가 throw 해도 fire-and-forget 함수들은 main flow 안 깸.
-	// sendChatMessage 만 caller (= ChatPanel) "naia 계정 chat 사용 불가" UI 표시
+	// sendChatMessage 만 caller (= ChatArea) "naia 계정 chat 사용 불가" UI 표시
 	// 가능하도록 throw 유지.
 	describe("W2 — naia-agent unavailable swallow", () => {
 		it("sendAuthUpdate naia-agent 없어도 throw 안 함", async () => {

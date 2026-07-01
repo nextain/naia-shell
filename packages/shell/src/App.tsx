@@ -6,7 +6,7 @@ import { AdkSetupScreen } from "./components/AdkSetupScreen";
 import { AiControlBar } from "./components/AiControlBar";
 import { AvatarCanvas } from "./components/AvatarCanvas";
 import { VideoAvatarCanvas } from "./components/VideoAvatarCanvas";
-import { ChatPanel } from "./components/ChatPanel";
+import { ChatArea } from "./components/ChatArea";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppBar } from "./components/AppBar";
 import { OnboardingWizard } from "./components/OnboardingWizard";
@@ -187,7 +187,7 @@ export function App() {
 		}
 	};
 	// Workspace conversation-rail collapse (reclaims horizontal space for the
-	// work area). Collapse hides the rail via CSS width:0 — ChatPanel stays
+	// work area). Collapse hides the rail via CSS width:0 — ChatArea stays
 	// MOUNTED so an in-flight voice/STT session survives. Persisted (FR-UI.6).
 	const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
 		try {
@@ -371,7 +371,7 @@ export function App() {
 	}, [showAdkSetup]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
-	// Same pattern as BrowserCenterPanel auto-allowing browser tools on mount.
+	// Same pattern as BrowserCenterArea auto-allowing browser tools on mount.
 	useEffect(() => {
 		addAllowedTool("skill_panel");
 		addAllowedTool("skill_youtube_bgm");
@@ -767,7 +767,7 @@ export function App() {
 	// workspace = workspace panel → 4-zone mission-control (chat rail + worktree
 	//             + document viewer/terminal + sub-agent list)
 	// panel   = any other panel (browser, settings, …) → chat as floating dock
-	// The same single ChatPanel instance is repositioned by CSS keyed off
+	// The same single ChatArea instance is repositioned by CSS keyed off
 	// data-ui-mode — it is NEVER unmounted across modes (voice/STT/TTS session
 	// continuity). `variant` only changes the chat UI density, not its logic.
 	// 자동 파생(activeApp 기반). 사용자가 3-way 스위치로 override 하면 그 값을 우선.
@@ -1008,8 +1008,8 @@ export function App() {
 												: undefined
 										}
 									>
-										<ErrorBoundary scope="ChatPanel">
-											<ChatPanel variant={chatVariant} />
+										<ErrorBoundary scope="ChatArea">
+											<ChatArea variant={chatVariant} />
 										</ErrorBoundary>
 									</div>
 								</div>
@@ -1018,7 +1018,7 @@ export function App() {
 					)}
 
 					{/* Workspace conversation-rail collapse toggle. Collapsing keeps the
-					    ChatPanel mounted (CSS width:0) so voice/STT survives. */}
+					    ChatArea mounted (CSS width:0) so voice/STT survives. */}
 					{uiMode === "workspace" && naiaVisible && !showOnboarding && (
 						<button
 							type="button"

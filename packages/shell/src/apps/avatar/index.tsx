@@ -5,7 +5,7 @@ import {
 	appRegistry,
 } from "../../lib/app-registry";
 
-function AvatarCenterPanel(_props: AppCenterProps) {
+function AvatarCenterArea(_props: AppCenterProps) {
 	return <AvatarCanvas />;
 }
 
@@ -20,6 +20,6 @@ appRegistry.register({
 	id: "avatar",
 	name: "Naia",
 	icon: "✦",
-	center: AvatarCenterPanel,
+	center: AvatarCenterArea,
 	getContext,
 });

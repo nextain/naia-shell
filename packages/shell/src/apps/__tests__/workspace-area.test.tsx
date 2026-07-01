@@ -108,10 +108,10 @@ vi.mock("../workspace/Terminal", () => ({
 	)),
 }));
 
-// ─── Mock IssuesPanel — removes dependency on IssuesPanel/SessionDashboard internals ─
+// ─── Mock IssuesArea — removes dependency on IssuesArea/SessionDashboard internals ─
 
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
@@ -182,33 +182,33 @@ class MockBridge implements NaiaContextBridge {
 	}
 }
 
-// ─── Tests: WorkspaceCenterPanel ──────────────────────────────────────────────
+// ─── Tests: WorkspaceCenterArea ──────────────────────────────────────────────
 
-describe("WorkspaceCenterPanel", () => {
+describe("WorkspaceCenterArea", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
 	});
 
 	it("renders left FileTree and right area", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		// Tree header should be visible
 		expect(screen.getByText("탐색기")).toBeDefined();
 	});
 
 	it("registers skill_workspace_get_sessions handler on mount", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_workspace_get_sessions")).toBe(true);
@@ -216,12 +216,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("registers skill_workspace_open_file handler on mount", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_workspace_open_file")).toBe(true);
@@ -229,12 +229,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("registers skill_workspace_classify_dirs handler on mount", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_workspace_classify_dirs")).toBe(true);
@@ -242,12 +242,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_get_sessions returns JSON session list", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_get_sessions")).toBe(true),
@@ -270,13 +270,13 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_get_sessions counts sessions by status correctly", async () => {
-		// Override IssuesPanel mock to inject known session data directly,
-		// eliminating any dependency on IssuesPanel/SessionDashboard internals or invoke timing.
-		// Safety: WorkspaceCenterPanel renders IssuesPanel unconditionally (no
+		// Override IssuesArea mock to inject known session data directly,
+		// eliminating any dependency on IssuesArea/SessionDashboard internals or invoke timing.
+		// Safety: WorkspaceCenterArea renders IssuesArea unconditionally (no
 		// conditional rendering), so it is never unmounted/remounted during this test.
 		// handleSessionsUpdate = useCallback([naia]) provides a stable onSessionsUpdate
 		// reference — the default mock's effect cannot re-fire and overwrite sessionsRef.
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		const testSessions: SessionInfo[] = [
 			{
 				dir: "naia-os",
@@ -289,7 +289,7 @@ describe("WorkspaceCenterPanel", () => {
 			{ dir: "test", path: "/dev/test", status: "stopped" },
 			{ dir: "broken", path: "/dev/broken", status: "error" },
 		];
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -298,12 +298,12 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_get_sessions")).toBe(true),
@@ -343,19 +343,19 @@ describe("WorkspaceCenterPanel", () => {
 		const testSessions: SessionInfo[] = [
 			{ dir: "naia-os", path: "/home/user/dev/naia-os", status: "active" },
 		];
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
-		vi.mocked(IssuesPanel).mockImplementationOnce(({ onSessionsUpdate }) => {
+		const { IssuesArea } = await import("../workspace/IssuesArea");
+		vi.mocked(IssuesArea).mockImplementationOnce(({ onSessionsUpdate }) => {
 			useEffect(() => {
 				onSessionsUpdate?.(testSessions);
 			}, [onSessionsUpdate]);
 			return null as unknown as React.ReactElement;
 		});
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_execute")).toBe(true),
@@ -384,11 +384,11 @@ describe("WorkspaceCenterPanel", () => {
 	it("Panel API: getApi returns WorkspaceAppApi after mount, undefined after unmount", async () => {
 		// Ensure workspace panel is registered in the registry (normally done by index.tsx)
 		await import("../workspace/index");
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		const { unmount } = render(<WorkspaceCenterPanel naia={bridge} />);
+		const { unmount } = render(<WorkspaceCenterArea naia={bridge} />);
 
 		// After mount the API should be registered
 		await waitFor(() =>
@@ -406,12 +406,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("registers skill_workspace_focus_session handler on mount", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true);
@@ -419,12 +419,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_focus_session returns error when dir is missing", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true),
 		);
@@ -435,12 +435,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_focus_session returns error when session not found", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true),
 		);
@@ -452,12 +452,12 @@ describe("WorkspaceCenterPanel", () => {
 		expect(result).toContain("nonexistent");
 	});
 
-	it("skill_workspace_focus_session returns Focused and passes highlightedDir to IssuesPanel", async () => {
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+	it("skill_workspace_focus_session returns Focused and passes highlightedDir to IssuesArea", async () => {
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		const testSessions: SessionInfo[] = [
 			{ dir: "naia-os", path: "/dev/naia-os", status: "active" },
 		];
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -466,12 +466,12 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true),
 		);
@@ -483,16 +483,16 @@ describe("WorkspaceCenterPanel", () => {
 			expect(result).toBe("Focused: naia-os");
 		});
 
-		// Verify highlightedDir was propagated to IssuesPanel
+		// Verify highlightedDir was propagated to IssuesArea
 		await waitFor(() => {
-			const calls = vi.mocked(IssuesPanel).mock.calls;
+			const calls = vi.mocked(IssuesArea).mock.calls;
 			const lastProps = calls[calls.length - 1]?.[0];
 			expect(lastProps?.highlightedDir).toBe("naia-os");
 		});
 	});
 
 	it("skill_workspace_focus_session with open_recent_file opens the correct path", async () => {
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		const testSessions: SessionInfo[] = [
 			{
 				dir: "naia-os",
@@ -502,7 +502,7 @@ describe("WorkspaceCenterPanel", () => {
 				progress: { issue: "#117", phase: "build" },
 			},
 		];
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -511,12 +511,12 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true),
 		);
@@ -534,7 +534,7 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_focus_session ignores non-boolean open_recent_file (trust boundary)", async () => {
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		const testSessions: SessionInfo[] = [
 			{
 				dir: "naia-os",
@@ -543,7 +543,7 @@ describe("WorkspaceCenterPanel", () => {
 				recent_file: "shell/src/App.tsx",
 			},
 		];
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -552,12 +552,12 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true),
 		);
@@ -575,7 +575,7 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_focus_session clears badge when open_recent_file=true but no recent_file", async () => {
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		// Session with NO recent_file
 		const testSessions: SessionInfo[] = [
 			{
@@ -584,7 +584,7 @@ describe("WorkspaceCenterPanel", () => {
 				status: "active",
 			},
 		];
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					onSessionsUpdate?.(testSessions);
@@ -593,12 +593,12 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_focus_session")).toBe(true),
 		);
@@ -614,12 +614,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_open_file updates editor filepath", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_open_file")).toBe(true),
@@ -634,13 +634,13 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("pushes errorAlert context when a session has status=error (once per session)", async () => {
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		const errorSession: SessionInfo = {
 			dir: "broken",
 			path: "/dev/broken",
 			status: "error",
 		};
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					// Fire twice with same data — should push errorAlert only once
@@ -651,11 +651,11 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			const errorAlerts = bridge.contexts.filter(
@@ -675,12 +675,12 @@ describe("WorkspaceCenterPanel", () => {
 	// ── skill_workspace_send_to_session ──────────────────────────────────────
 
 	it("registers skill_workspace_send_to_session handler on mount", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => {
 			expect(bridge.hasHandler("skill_workspace_send_to_session")).toBe(true);
@@ -688,12 +688,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_send_to_session returns error when dir or text is missing", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_send_to_session")).toBe(true),
 		);
@@ -716,12 +716,12 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("skill_workspace_send_to_session returns error when no PTY session found", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_send_to_session")).toBe(true),
 		);
@@ -749,12 +749,12 @@ describe("WorkspaceCenterPanel", () => {
 			return [];
 		});
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
 
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 		await waitFor(() =>
 			expect(bridge.hasHandler("skill_workspace_new_session")).toBe(true),
 		);
@@ -804,9 +804,9 @@ describe("WorkspaceCenterPanel", () => {
 	});
 
 	it("re-arms errorAlert after session recovers to idle/active", async () => {
-		const { IssuesPanel } = await import("../workspace/IssuesPanel");
+		const { IssuesArea } = await import("../workspace/IssuesArea");
 		let emit: ((sessions: SessionInfo[]) => void) | undefined;
-		vi.mocked(IssuesPanel).mockImplementationOnce(
+		vi.mocked(IssuesArea).mockImplementationOnce(
 			({ onSessionsUpdate }) => {
 				useEffect(() => {
 					emit = onSessionsUpdate ?? undefined;
@@ -815,11 +815,11 @@ describe("WorkspaceCenterPanel", () => {
 			},
 		);
 
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => emit !== undefined);
 
@@ -1098,20 +1098,20 @@ describe("Workspace panel registry", () => {
 	});
 });
 
-// ── #294: WorkspaceCenterPanel left sidebar divider (FileTree ↕ SkillLauncher) ──
+// ── #294: WorkspaceCenterArea left sidebar divider (FileTree ↕ SkillLauncher) ──
 
-describe("#294 — WorkspaceCenterPanel left sidebar divider (FileTree ↕ SkillLauncher)", () => {
+describe("#294 — WorkspaceCenterArea left sidebar divider (FileTree ↕ SkillLauncher)", () => {
 	afterEach(() => {
 		cleanup();
 		vi.clearAllMocks();
 	});
 
 	it("renders workspace-panel__row-resize-handle in the left sidebar", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => screen.getByText("탐색기"));
 
@@ -1120,11 +1120,11 @@ describe("#294 — WorkspaceCenterPanel left sidebar divider (FileTree ↕ Skill
 	});
 
 	it("pointerdown on left sidebar divider adds resizing-row class to body", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => screen.getByText("탐색기"));
 
@@ -1142,11 +1142,11 @@ describe("#294 — WorkspaceCenterPanel left sidebar divider (FileTree ↕ Skill
 	});
 
 	it("pointermove after pointerdown on left sidebar divider changes skillsHeight", async () => {
-		const { WorkspaceCenterPanel } = await import(
-			"../workspace/WorkspaceCenterPanel"
+		const { WorkspaceCenterArea } = await import(
+			"../workspace/WorkspaceCenterArea"
 		);
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => screen.getByText("탐색기"));
 

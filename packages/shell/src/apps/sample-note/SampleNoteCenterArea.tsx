@@ -3,7 +3,7 @@ import { Logger } from "../../lib/logger";
 import type { AppCenterProps } from "../../lib/app-registry";
 
 /**
- * SampleNoteCenterPanel — minimal installable panel demonstrating AI interaction.
+ * SampleNoteCenterArea — minimal installable panel demonstrating AI interaction.
  *
  * Exposes two skills to Naia:
  *   - skill_note_read  → returns current note content
@@ -12,7 +12,7 @@ import type { AppCenterProps } from "../../lib/app-registry";
  * This panel is NOT built-in, so it can be deleted from AppBar.
  * Install path: ~/.naia/apps/sample-note/ (Phase 4)
  */
-export function SampleNoteCenterPanel({ naia }: AppCenterProps) {
+export function SampleNoteCenterArea({ naia }: AppCenterProps) {
 	const [content, setContent] = useState("");
 	// Ref so tool handlers always access latest content without stale closure
 	const contentRef = useRef(content);

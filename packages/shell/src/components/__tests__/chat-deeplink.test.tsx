@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { useChatStore } from "../../stores/chat";
 import { useAppStore } from "../../stores/app";
-import { ChatPanel } from "../ChatPanel";
+import { ChatArea } from "../ChatArea";
 
 // ─── Module mocks ──────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ vi.stubGlobal(
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-	// isReadyToChat() reads localStorage — set an API key so ChatPanel defaults
+	// isReadyToChat() reads localStorage — set an API key so ChatArea defaults
 	// to the "chat" tab (otherwise it defaults to "settings" and messages are hidden)
 	localStorage.setItem(
 		"naia-config",
@@ -86,12 +86,12 @@ afterEach(() => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe("ChatPanel — file deep-links", () => {
+describe("ChatArea — file deep-links", () => {
 	it("renders an absolute .ts file path as a clickable button", () => {
 		setAssistantMessage(
 			"수정한 파일은 /home/user/dev/naia-os/shell/src/App.tsx 입니다.",
 		);
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const btn = screen.getByRole("button", {
 			name: "/home/user/dev/naia-os/shell/src/App.tsx",
 		});
@@ -100,7 +100,7 @@ describe("ChatPanel — file deep-links", () => {
 
 	it("renders an absolute .png path as a deeplink button", () => {
 		setAssistantMessage("스크린샷: /tmp/screenshot.png 확인해보세요.");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		expect(
 			screen.getByRole("button", { name: "/tmp/screenshot.png" }),
 		).toBeInTheDocument();
@@ -114,7 +114,7 @@ describe("ChatPanel — file deep-links", () => {
 		} as never);
 
 		setAssistantMessage("파일: /dev/project/data.csv 을 확인하세요.");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 
 		const btn = screen.getByRole("button", { name: "/dev/project/data.csv" });
 		fireEvent.click(btn);
@@ -129,7 +129,7 @@ describe("ChatPanel — file deep-links", () => {
 		} as never);
 
 		setAssistantMessage("결과: /tmp/output.json");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 
 		fireEvent.click(screen.getByRole("button", { name: "/tmp/output.json" }));
 
@@ -138,7 +138,7 @@ describe("ChatPanel — file deep-links", () => {
 
 	it("does NOT render a deeplink for a relative path without leading slash", () => {
 		setAssistantMessage("파일명: shell/src/App.tsx 참고.");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		// No button for full relative path
 		expect(
 			screen.queryByRole("button", { name: "shell/src/App.tsx" }),
@@ -151,7 +151,7 @@ describe("ChatPanel — file deep-links", () => {
 
 	it("does NOT render deeplinks for paths in code blocks", () => {
 		setAssistantMessage("```\n/home/user/dev/App.tsx\n```");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		// Path inside code block — code component, not p component — no button
 		expect(
 			screen.queryByRole("button", { name: /App\.tsx/ }),
@@ -160,7 +160,7 @@ describe("ChatPanel — file deep-links", () => {
 
 	it("renders plain text segments unchanged alongside deeplink", () => {
 		setAssistantMessage("앞 텍스트 /tmp/result.csv 뒤 텍스트");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		const btn = screen.getByRole("button", { name: "/tmp/result.csv" });
 		expect(btn).toBeInTheDocument();
 		// Plain text segments are text nodes (not elements) inside the <p> —
@@ -172,7 +172,7 @@ describe("ChatPanel — file deep-links", () => {
 
 	it("renders multiple deeplinks in one message", () => {
 		setAssistantMessage("파일 /tmp/a.ts 와 /tmp/b.rs 를 수정했습니다.");
-		render(<ChatPanel />);
+		render(<ChatArea />);
 		expect(
 			screen.getByRole("button", { name: "/tmp/a.ts" }),
 		).toBeInTheDocument();

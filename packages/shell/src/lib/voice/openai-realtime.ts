@@ -20,7 +20,7 @@ export function createOpenAIRealtimeSession(): VoiceSession {
 	let connected = false;
 
 	const session: VoiceSession = {
-		// Unchanged from prior behavior (ChatPanel previously hardcoded these):
+		// Unchanged from prior behavior (ChatArea previously hardcoded these):
 		// 16kHz capture, AGC on, echo gate on while AI speaks.
 		audioInput: {
 			sampleRate: 16000,

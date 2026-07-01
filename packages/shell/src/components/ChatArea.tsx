@@ -115,7 +115,7 @@ import { HistoryTab } from "./HistoryTab";
 import { PermissionModal } from "./PermissionModal";
 import { SkillsTab } from "./SkillsTab";
 import { ToolActivity } from "./ToolActivity";
-import { WorkProgressPanel } from "./WorkProgressPanel";
+import { WorkProgressArea } from "./WorkProgressArea";
 
 type TabId =
 	| "chat"
@@ -257,7 +257,7 @@ async function buildMemoryContext(): Promise<MemoryContext> {
 			ctx.panelContexts = panelCtxList;
 		}
 	} catch (err) {
-		Logger.warn("ChatPanel", "Failed to build memory context", {
+		Logger.warn("ChatArea", "Failed to build memory context", {
 			error: String(err),
 		});
 	}
@@ -307,7 +307,7 @@ let currentAudio: HTMLAudioElement | null = null;
 
 /** Play base64 MP3 via HTML Audio element (reliable in webkit2gtk). */
 function playBase64Audio(base64: string): void {
-	Logger.info("ChatPanel", "Audio chunk received", {
+	Logger.info("ChatArea", "Audio chunk received", {
 		length: base64.length,
 	});
 	const avatarStore = useAvatarStore.getState();
@@ -323,21 +323,21 @@ function playBase64Audio(base64: string): void {
 	const audio = new Audio(`data:audio/mp3;base64,${base64}`);
 	currentAudio = audio; // prevent GC
 	audio.onended = () => {
-		Logger.info("ChatPanel", "Audio playback ended");
+		Logger.info("ChatArea", "Audio playback ended");
 		currentAudio = null;
 		avatarStore.setSpeaking(false);
 	};
 	audio.onerror = (e) => {
-		Logger.warn("ChatPanel", "Audio playback error", {
+		Logger.warn("ChatArea", "Audio playback error", {
 			error: String(e),
 		});
 		currentAudio = null;
 		avatarStore.setSpeaking(false);
 	};
 	audio.play().then(
-		() => Logger.info("ChatPanel", "Audio play() started"),
+		() => Logger.info("ChatArea", "Audio play() started"),
 		(err) => {
-			Logger.warn("ChatPanel", "Audio play() rejected", {
+			Logger.warn("ChatArea", "Audio play() rejected", {
 				error: String(err),
 			});
 			currentAudio = null;
@@ -423,7 +423,7 @@ function phaseToMode(
  */
 export type ChatVariant = "vn" | "rail" | "floating";
 
-export function ChatPanel({
+export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
 	const [input, setInput] = useState("");
@@ -534,7 +534,7 @@ export function ChatPanel({
 	useEffect(() => {
 		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
 		const t = setTimeout(() => {
-			Logger.info("ChatPanel", "[E2E-AUTOCHAT] send 안녕");
+			Logger.info("ChatArea", "[E2E-AUTOCHAT] send 안녕");
 			void handleSend("안녕");
 		}, 5000); // config 로딩 + agent gRPC connect 여유
 		return () => clearTimeout(t);
@@ -545,7 +545,7 @@ export function ChatPanel({
 		// 진단 robust: cost 유무 무관, assistant 메시지가 생기면 기록(응답 안 옴 vs 로거 놓침 구분). streaming/에러도.
 		const last = messages[messages.length - 1];
 		if (last && last.role === "assistant") {
-			Logger.info("ChatPanel", "[E2E-AUTOCHAT] response", {
+			Logger.info("ChatArea", "[E2E-AUTOCHAT] response", {
 				text: last.content.slice(0, 120),
 				tokens: last.cost
 					? (last.cost.inputTokens ?? 0) + (last.cost.outputTokens ?? 0)
@@ -557,7 +557,7 @@ export function ChatPanel({
 	useEffect(() => {
 		if (import.meta.env.VITE_NAIA_E2E_AUTOCHAT !== "1") return;
 		if (streamingContent)
-			Logger.info("ChatPanel", "[E2E-AUTOCHAT] streaming", {
+			Logger.info("ChatArea", "[E2E-AUTOCHAT] streaming", {
 				len: streamingContent.length,
 			});
 	}, [streamingContent]);
@@ -582,14 +582,14 @@ export function ChatPanel({
 					saveConfig({ ...config, discordSessionMigrated: true });
 				}
 				Logger.info(
-					"ChatPanel",
+					"ChatArea",
 					"One-time reset: cleared Discord-contaminated main session",
 				);
 			} else {
 				const messages = await getGatewayHistory("agent:main:main");
 				if (messages.length > 0) {
 					store.setMessages(messages);
-					Logger.info("ChatPanel", "Session loaded from Gateway", {
+					Logger.info("ChatArea", "Session loaded from Gateway", {
 						messageCount: messages.length,
 					});
 				}
@@ -597,7 +597,7 @@ export function ChatPanel({
 		};
 
 		loadSession().catch((err) => {
-			Logger.warn("ChatPanel", "Failed to load session", {
+			Logger.warn("ChatArea", "Failed to load session", {
 				error: String(err),
 			});
 		});
@@ -612,7 +612,7 @@ export function ChatPanel({
 
 		// Start Discord relay polling (if Discord is linked)
 		startDiscordRelay().catch((err) => {
-			Logger.warn("ChatPanel", "Failed to start Discord relay", {
+			Logger.warn("ChatArea", "Failed to start Discord relay", {
 				error: String(err),
 			});
 		});
@@ -671,7 +671,7 @@ export function ChatPanel({
 		const reqId = currentRequestId.current;
 		if (reqId) {
 			cancelChat(reqId).catch((err) => {
-				Logger.warn("ChatPanel", "Failed to cancel stream", {
+				Logger.warn("ChatArea", "Failed to cancel stream", {
 					error: String(err),
 				});
 			});
@@ -692,7 +692,7 @@ export function ChatPanel({
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, []);
 
-	// Receive "Ask AI" requests from NaiaMetaPanel (Skills, Channels tabs)
+	// Receive "Ask AI" requests from NaiaMetaArea (Skills, Channels tabs)
 	useEffect(() => {
 		const handler = (e: Event) => {
 			const message = (e as CustomEvent<string>).detail;
@@ -805,9 +805,9 @@ export function ChatPanel({
 		try {
 			await resetGatewaySession();
 			useChatStore.getState().setSessionId("agent:main:main");
-			Logger.info("ChatPanel", "New conversation started via Gateway");
+			Logger.info("ChatArea", "New conversation started via Gateway");
 		} catch (err) {
-			Logger.warn("ChatPanel", "Failed to reset Gateway session", {
+			Logger.warn("ChatArea", "Failed to reset Gateway session", {
 				error: String(err),
 			});
 		}
@@ -975,7 +975,7 @@ export function ChatPanel({
 		}
 
 		const memoryCtx = await buildMemoryContext();
-		Logger.info("ChatPanel", "handleSend → sendChatMessage", {
+		Logger.info("ChatArea", "handleSend → sendChatMessage", {
 			pipelineActive: pipelineActiveRef.current,
 			chatTtsEnabled,
 			hasChunker: !!sentenceChunkerRef.current,
@@ -997,7 +997,7 @@ export function ChatPanel({
 			(modelIsValid ? savedModel : getDefaultLlmModel(activeProvider)) ||
 			"gemini-2.5-flash";
 		if (!modelIsValid) {
-			Logger.warn("ChatPanel", "Model not valid for provider — using default", {
+			Logger.warn("ChatArea", "Model not valid for provider — using default", {
 				provider: activeProvider,
 				savedModel,
 				resolvedModel,
@@ -1086,27 +1086,27 @@ export function ChatPanel({
 		// panel that isn't currently active, bring it forward before running.
 		if (ownerPanel && useAppStore.getState().activeApp !== ownerPanel.id) {
 			useAppStore.getState().setActiveApp(ownerPanel.id);
-			Logger.info("ChatPanel", "panel auto-switch for tool", {
+			Logger.info("ChatArea", "panel auto-switch for tool", {
 				tool: req.toolName,
 				app: ownerPanel.id,
 			});
 		}
 		const bridge = ownerPanel ? getBridgeForPanel(ownerPanel.id) : activeBridge;
-		Logger.info("ChatPanel", "panel_tool_call dispatch", {
+		Logger.info("ChatArea", "panel_tool_call dispatch", {
 			tool: req.toolName,
 			owner: ownerPanel?.id ?? "(none→activeBridge)",
 		});
 		bridge
 			.callTool(req.toolName, req.args)
 			.then((result) => {
-				Logger.info("ChatPanel", "panel_tool_call result", {
+				Logger.info("ChatArea", "panel_tool_call result", {
 					tool: req.toolName,
 					result: result.slice(0, 120),
 				});
 				return sendPanelToolResult(req.requestId, req.toolCallId, result, true);
 			})
 			.catch((err) => {
-				Logger.warn("ChatPanel", "panel_tool_call error", {
+				Logger.warn("ChatArea", "panel_tool_call error", {
 					tool: req.toolName,
 					error: String(err),
 				});
@@ -1134,7 +1134,7 @@ export function ChatPanel({
 		const store = useChatStore.getState();
 
 		if ("requestId" in chunk && chunk.requestId !== currentRequestId.current) {
-			Logger.info("ChatPanel", "Ignoring chunk for inactive request", {
+			Logger.info("ChatArea", "Ignoring chunk for inactive request", {
 				type: chunk.type,
 				requestId: chunk.requestId,
 				activeRequestId: currentRequestId.current,
@@ -1145,13 +1145,13 @@ export function ChatPanel({
 		// text 청크는 스트리밍마다 와서 INFO 로 찍으면 응답 1회에 수십~수백 줄 홍수(루크 #2) → debug 로(평상시
 		// 게이트). finish/usage 는 턴당 1회뿐(=예외)이라 info 유지. 턴 집계는 finish 시 별도(아래).
 		if (chunk.type === "text") {
-			Logger.debug("ChatPanel", "handleChunk text", {
+			Logger.debug("ChatArea", "handleChunk text", {
 				textLen: chunk.text.length,
 				pipelineActive: pipelineActiveRef.current,
 				hasChunker: !!sentenceChunkerRef.current,
 			});
 		} else if (chunk.type === "finish" || chunk.type === "usage") {
-			Logger.info("ChatPanel", "handleChunk", {
+			Logger.info("ChatArea", "handleChunk", {
 				type: chunk.type,
 				pipelineActive: pipelineActiveRef.current,
 				hasChunker: !!sentenceChunkerRef.current,
@@ -1171,7 +1171,7 @@ export function ChatPanel({
 				if (sentenceChunkerRef.current) {
 					const sentences = sentenceChunkerRef.current.feed(chunk.text);
 					if (sentences.length > 0) {
-						Logger.info("ChatPanel", "SentenceChunker produced sentences", {
+						Logger.info("ChatArea", "SentenceChunker produced sentences", {
 							count: sentences.length,
 							sentences,
 						});
@@ -1253,7 +1253,7 @@ export function ChatPanel({
 				if (sentenceChunkerRef.current) {
 					const remaining = sentenceChunkerRef.current.flush();
 					if (remaining) {
-						Logger.info("ChatPanel", "SentenceChunker flush on finish", {
+						Logger.info("ChatArea", "SentenceChunker flush on finish", {
 							remaining: remaining.slice(0, 60),
 						});
 						sendSentenceToTts(remaining);
@@ -1275,7 +1275,7 @@ export function ChatPanel({
 					// Ignore built-in skill toggles from chat/tool output.
 					if (BUILTIN_SKILLS.has(chunk.skillName)) {
 						Logger.info(
-							"ChatPanel",
+							"ChatArea",
 							"Ignored config_update for built-in skill",
 							{
 								skillName: chunk.skillName,
@@ -1324,14 +1324,14 @@ export function ChatPanel({
 				// Ignore them here to keep the main chat clean.
 				break;
 			case "error":
-				Logger.warn("ChatPanel", "Agent error chunk", {
+				Logger.warn("ChatArea", "Agent error chunk", {
 					message: chunk.message,
 				});
 				// Pipeline voice: flush remaining text to TTS before finishing
 				if (pipelineActiveRef.current && sentenceChunkerRef.current) {
 					const remaining = sentenceChunkerRef.current.flush();
 					if (remaining) {
-						Logger.info("ChatPanel", "Pipeline voice flush on error", {
+						Logger.info("ChatArea", "Pipeline voice flush on error", {
 							remainingLen: remaining.length,
 						});
 						sendSentenceToTts(remaining);
@@ -1463,7 +1463,7 @@ export function ChatPanel({
 		const voiceCfg = pipelineVoiceConfigRef.current;
 		const ttsProviderForCost = voiceCfg?.ttsProvider ?? "edge";
 		const ttsVoiceForCost = voiceCfg?.voice;
-		Logger.info("ChatPanel", "Sending TTS request", {
+		Logger.info("ChatArea", "Sending TTS request", {
 			reqId,
 			seq,
 			sentence: clean.slice(0, 50),
@@ -1490,7 +1490,7 @@ export function ChatPanel({
 				};
 				window.speechSynthesis.speak(utter);
 			} else {
-				Logger.warn("ChatPanel", "Browser TTS not available");
+				Logger.warn("ChatArea", "Browser TTS not available");
 				activeTtsRequestsRef.current.delete(reqId);
 			}
 		};
@@ -1571,7 +1571,7 @@ export function ChatPanel({
 					ttsProviderForCost === "vllm";
 				if (isLocalVoiceProvider) {
 					Logger.warn(
-						"ChatPanel",
+						"ChatArea",
 						"Local voice engine unavailable — no free fallback",
 						{ reqId, provider: ttsProviderForCost, error: String(err) },
 					);
@@ -1589,7 +1589,7 @@ export function ChatPanel({
 				// back to the browser's built-in TTS so the voice is never silently
 				// dropped — better a basic voice than nothing.
 				Logger.warn(
-					"ChatPanel",
+					"ChatArea",
 					"TTS synthesis failed — browser TTS fallback",
 					{
 						reqId,
@@ -1635,7 +1635,7 @@ export function ChatPanel({
 	async function handleVoiceToggle() {
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
-			Logger.info("ChatPanel", "Barge-in via button: stopping TTS");
+			Logger.info("ChatArea", "Barge-in via button: stopping TTS");
 			audioQueueRef.current?.clear();
 			ttsPlayingRef.current = false;
 			setTtsPlaying(false);
@@ -1782,7 +1782,7 @@ export function ChatPanel({
 							.trim();
 						if (!filtered) return;
 						const cleanResult = { ...result, transcript: filtered };
-						Logger.info("ChatPanel", "STT result", {
+						Logger.info("ChatArea", "STT result", {
 							transcript: cleanResult.transcript,
 							isFinal: cleanResult.isFinal,
 							confidence: cleanResult.confidence,
@@ -1794,7 +1794,7 @@ export function ChatPanel({
 							Date.now() < ttsCooldownUntilRef.current
 						) {
 							Logger.info(
-								"ChatPanel",
+								"ChatArea",
 								"STT result suppressed (TTS playing/cooldown)",
 							);
 							return;
@@ -1816,7 +1816,7 @@ export function ChatPanel({
 								if (text && pipelineActiveRef.current) {
 									if (useChatStore.getState().isStreaming) {
 										Logger.info(
-											"ChatPanel",
+											"ChatArea",
 											"Skipping duplicate send (already streaming)",
 											{ text },
 										);
@@ -1838,7 +1838,7 @@ export function ChatPanel({
 									? config.elevenlabsApiKey
 									: "";
 						if (!apiKey && !isAsrModel) {
-							Logger.warn("ChatPanel", "API STT requires API key", {
+							Logger.warn("ChatArea", "API STT requires API key", {
 								provider: sttEngine,
 							});
 							setSttState("idle");
@@ -1883,7 +1883,7 @@ export function ChatPanel({
 						sttCleanupRef.current.push(cleanupResult);
 						if (session.onError) {
 							const cleanupError = session.onError((err) => {
-								Logger.warn("ChatPanel", "API STT error", {
+								Logger.warn("ChatArea", "API STT error", {
 									code: err.code,
 									message: err.message,
 								});
@@ -1921,7 +1921,7 @@ export function ChatPanel({
 						sttCleanupRef.current.push(cleanupResult);
 						if (session.onError) {
 							const cleanupError = session.onError((err) => {
-								Logger.warn("ChatPanel", "Web Speech STT error", {
+								Logger.warn("ChatArea", "Web Speech STT error", {
 									code: err.code,
 									message: err.message,
 								});
@@ -1945,7 +1945,7 @@ export function ChatPanel({
 						sttCleanupRef.current.push(resultCleanup);
 
 						const unlistenState = await sttOnStateChange((event) => {
-							Logger.info("ChatPanel", "STT state change", {
+							Logger.info("ChatArea", "STT state change", {
 								state: event.state,
 							});
 							if (event.state === "listening") setSttState("listening");
@@ -1957,7 +1957,7 @@ export function ChatPanel({
 						sttCleanupRef.current.push(stateCleanup);
 
 						const unlistenError = await sttOnError((err) => {
-							Logger.warn("ChatPanel", "STT error", {
+							Logger.warn("ChatArea", "STT error", {
 								code: err.code,
 								message: err.message,
 							});
@@ -1968,7 +1968,7 @@ export function ChatPanel({
 								: () => unlistenError.unregister();
 						sttCleanupRef.current.push(errorCleanup);
 
-						Logger.info("ChatPanel", "Starting STT", {
+						Logger.info("ChatArea", "Starting STT", {
 							engine: sttEngine,
 							model: config.sttModel,
 							language: sttLang,
@@ -1981,12 +1981,12 @@ export function ChatPanel({
 							interimResults: true,
 						} as Record<string, unknown> & Parameters<typeof sttStart>[0]);
 					}
-					Logger.info("ChatPanel", "STT started successfully", {
+					Logger.info("ChatArea", "STT started successfully", {
 						engine: sttEngine,
 						apiMode: isApiBased,
 					});
 				} catch (sttErr) {
-					Logger.warn("ChatPanel", "STT start failed", {
+					Logger.warn("ChatArea", "STT start failed", {
 						error: String(sttErr),
 					});
 					setSttState("idle");
@@ -1997,7 +1997,7 @@ export function ChatPanel({
 					return;
 				}
 
-				Logger.info("ChatPanel", "Pipeline voice mode started", {
+				Logger.info("ChatArea", "Pipeline voice mode started", {
 					provider: config.provider,
 					model: config.model,
 					ttsProvider: config.ttsProvider || "edge",
@@ -2010,7 +2010,7 @@ export function ChatPanel({
 				setVoiceStatus({ phase: "active" });
 				lastVoiceStatusRef.current = { phase: "active" };
 				// Voice mode notification — not sent to agent, not read by TTS
-				Logger.info("ChatPanel", "Voice mode started notification displayed");
+				Logger.info("ChatArea", "Voice mode started notification displayed");
 				return;
 			}
 
@@ -2032,7 +2032,7 @@ export function ChatPanel({
 									? ("naia" as const)
 									: ("gemini-live" as const);
 
-			Logger.info("ChatPanel", "Voice config", {
+			Logger.info("ChatArea", "Voice config", {
 				provider: config.provider,
 				model: config.model,
 				liveProvider,
@@ -2043,7 +2043,7 @@ export function ChatPanel({
 
 			// Validate credentials per provider
 			if (liveProvider === "naia" && !naiaKey) {
-				Logger.warn("ChatPanel", "Naia OS voice requires Naia key");
+				Logger.warn("ChatArea", "Naia OS voice requires Naia key");
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: t("chat.voiceNeedLabKey"),
@@ -2052,7 +2052,7 @@ export function ChatPanel({
 				return;
 			}
 			if (liveProvider === "gemini-live" && !naiaKey && !config.googleApiKey) {
-				Logger.warn("ChatPanel", "Gemini Live requires Google API key");
+				Logger.warn("ChatArea", "Gemini Live requires Google API key");
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: "Gemini Live를 사용하려면 Google API Key를 입력하세요.",
@@ -2063,7 +2063,7 @@ export function ChatPanel({
 			if (liveProvider === "openai-realtime") {
 				const openaiKey = config.openaiRealtimeApiKey ?? config.apiKey;
 				if (!openaiKey) {
-					Logger.warn("ChatPanel", "OpenAI Realtime requires API key");
+					Logger.warn("ChatArea", "OpenAI Realtime requires API key");
 					useChatStore.getState().addMessage({
 						role: "assistant",
 						content: "OpenAI Realtime을 사용하려면 API Key를 입력하세요.",
@@ -2106,7 +2106,7 @@ export function ChatPanel({
 					(s) => !disabledSkills.has(s.name) && s.name !== "skill_panel",
 				);
 			} catch (err) {
-				Logger.warn("ChatPanel", "Failed to fetch agent skills for voice", {
+				Logger.warn("ChatArea", "Failed to fetch agent skills for voice", {
 					error: String(err),
 				});
 			}
@@ -2254,7 +2254,7 @@ export function ChatPanel({
 				}
 			};
 			session.onError = (err) => {
-				Logger.warn("ChatPanel", "Voice session error", { error: err.message });
+				Logger.warn("ChatArea", "Voice session error", { error: err.message });
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: `${t("chat.voiceError")}: ${err.message}`,
@@ -2316,7 +2316,7 @@ export function ChatPanel({
 				const isLocalContainer = config.model === "naia-local";
 				// Naia Local needs the login key — the container validates entitlement.
 				if (isLocalContainer && !naiaKey) {
-					Logger.warn("ChatPanel", "Naia Local requires login (Naia key)");
+					Logger.warn("ChatArea", "Naia Local requires login (Naia key)");
 					useChatStore.getState().addMessage({
 						role: "assistant",
 						content: t("chat.voiceNeedLabKey"),
@@ -2354,7 +2354,7 @@ export function ChatPanel({
 					: useGw || isLocalContainer
 						? config.voiceRefUrl || DEFAULT_VOICE_REF_URL
 						: undefined;
-				Logger.info("ChatPanel", "naia-omni ref audio resolved", {
+				Logger.info("ChatArea", "naia-omni ref audio resolved", {
 					hasRefAudioUrl: !!naiaRefAudioUrl,
 					hasRefAudioB64: !!localRefB64,
 				});
@@ -2447,7 +2447,7 @@ export function ChatPanel({
 				// No usable microphone → keep the session alive for typed input +
 				// voice output (web-demo parity). Do not rethrow / disconnect.
 				Logger.warn(
-					"ChatPanel",
+					"ChatArea",
 					"mic unavailable — voice session continues text-only",
 					{ error: String(micErr) },
 				);
@@ -2461,7 +2461,7 @@ export function ChatPanel({
 				// Naia Local runs on the user's OWN GPU (direct, no cloud pod) → free.
 				localContainer: config.model === "naia-local",
 			};
-			Logger.info("ChatPanel", "Voice conversation started", {
+			Logger.info("ChatArea", "Voice conversation started", {
 				provider: liveProvider,
 			});
 		} catch (err) {
@@ -2469,7 +2469,7 @@ export function ChatPanel({
 				voiceCancelledRef.current ||
 				(err instanceof Error && err.name === "AbortError");
 			const errStr = String(err);
-			Logger.warn("ChatPanel", "Voice connection failed", {
+			Logger.warn("ChatArea", "Voice connection failed", {
 				error: errStr,
 				cancelled,
 			});
@@ -2527,7 +2527,7 @@ export function ChatPanel({
 					s.setStats(statsResult as Parameters<typeof s.setStats>[0]);
 				})
 				.catch((err) => {
-					Logger.warn("ChatPanel", "Failed to load progress data", {
+					Logger.warn("ChatArea", "Failed to load progress data", {
 						error: String(err),
 					});
 				})
@@ -2742,7 +2742,7 @@ export function ChatPanel({
 				</div>
 
 				{/* Progress tab */}
-				{activeTab === "progress" && <WorkProgressPanel />}
+				{activeTab === "progress" && <WorkProgressArea />}
 
 				{/* Skills tab */}
 				{activeTab === "skills" && (

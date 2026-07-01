@@ -3,7 +3,7 @@ import { AgentsTab } from "./AgentsTab";
 import { DiagnosticsTab } from "./DiagnosticsTab";
 import { SettingsTab } from "./SettingsTab";
 import { SkillsTab } from "./SkillsTab";
-import { WorkProgressPanel } from "./WorkProgressPanel";
+import { WorkProgressArea } from "./WorkProgressArea";
 
 type MetaTabId =
 	| "progress"
@@ -22,12 +22,12 @@ const TABS: { id: MetaTabId; icon: string; label: string }[] = [
 	{ id: "settings", icon: "⚙️", label: "Settings" },
 ];
 
-/** Dispatch message to ChatPanel's input via custom event */
+/** Dispatch message to ChatArea's input via custom event */
 function askAI(message: string) {
 	window.dispatchEvent(new CustomEvent("naia:ask-ai", { detail: message }));
 }
 
-export function NaiaMetaPanel() {
+export function NaiaMetaArea() {
 	const [activeTab, setActiveTab] = useState<MetaTabId>("progress");
 
 	return (
@@ -46,7 +46,7 @@ export function NaiaMetaPanel() {
 				))}
 			</div>
 			<div className="naia-meta-panel__body">
-				{activeTab === "progress" && <WorkProgressPanel />}
+				{activeTab === "progress" && <WorkProgressArea />}
 				{activeTab === "skills" && <SkillsTab onAskAI={askAI} />}
 		{activeTab === "channels" && (
 			<div style={{ padding: "16px", color: "var(--cream-dim)", fontSize: 13 }}>

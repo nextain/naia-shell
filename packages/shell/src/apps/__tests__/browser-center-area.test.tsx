@@ -9,12 +9,12 @@ import type {
 	ToolHandler,
 } from "../../lib/app-registry";
 import {
-	BrowserCenterPanel,
+	BrowserCenterArea,
 	NAVIGATE_READ_DELAY_MS,
 	NAVIGATE_TEXT_TIMEOUT_MS,
 	browserTextExcerpt,
 	decodeBrowserEvalString,
-} from "../browser/BrowserCenterPanel";
+} from "../browser/BrowserCenterArea";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const listenMock = vi.hoisted(() => vi.fn());
@@ -101,7 +101,7 @@ class MockBridge implements NaiaContextBridge {
 	}
 }
 
-describe("BrowserCenterPanel text helpers", () => {
+describe("BrowserCenterArea text helpers", () => {
 	it("decodes browser eval JSON string results", () => {
 		expect(decodeBrowserEvalString(JSON.stringify("AI news\nbody"))).toBe(
 			"AI news\nbody",
@@ -120,7 +120,7 @@ describe("BrowserCenterPanel text helpers", () => {
 	});
 });
 
-describe("BrowserCenterPanel AI browser tools", () => {
+describe("BrowserCenterArea AI browser tools", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		localStorage.clear();
@@ -152,7 +152,7 @@ describe("BrowserCenterPanel AI browser tools", () => {
 
 	it("returns visible page text after browser navigation", async () => {
 		const bridge = new MockBridge();
-		render(<BrowserCenterPanel naia={bridge} />);
+		render(<BrowserCenterArea naia={bridge} />);
 
 		expect(bridge.hasHandler("skill_browser_navigate")).toBe(true);
 
@@ -190,7 +190,7 @@ describe("BrowserCenterPanel AI browser tools", () => {
 			return undefined;
 		});
 		const bridge = new MockBridge();
-		render(<BrowserCenterPanel naia={bridge} />);
+		render(<BrowserCenterArea naia={bridge} />);
 
 		const resultPromise = bridge.callTool("skill_browser_navigate", {
 			url: "https://news.naver.com",

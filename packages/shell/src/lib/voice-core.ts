@@ -24,7 +24,7 @@ const UNUSED_MIC: V2LiveDeps["createMicStream"] = async () => {
 /**
  * AudioPlayer-shape 래퍼 — enqueue/clear 를 새 core V2 ExpressionPort(play/clearAudio) 경유로 라우팅.
  * destroy/isPlaying 은 포트 추상화 밖(lifecycle/state) → 내부 player 직결. onPlaybackStart/End 등 opts 보존.
- * 셸 ChatPanel 의 createAudioPlayer 호출 지점을 isNewCore 시 이걸로 교체 = drop-in(호출처 무변경).
+ * 셸 ChatArea 의 createAudioPlayer 호출 지점을 isNewCore 시 이걸로 교체 = drop-in(호출처 무변경).
  * @param _createPlayer 테스트 주입용(기본=실 createAudioPlayer).
  */
 export function makeCoreAudioPlayer(

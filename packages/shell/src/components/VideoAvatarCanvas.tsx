@@ -73,7 +73,7 @@ const VIDEO_BASE_STYLE = {
 /**
  * NVA 비디오 아바타 — 두 모드:
  *  - cascade: cascadeRuntimeUrl 도달 시 cascade 런타임(Ditto)의 /idle 루프 + 발화 시 립싱크 스트림.
- *             렌더러를 store 에 등록 → ChatPanel 이 발화를 renderer.speak 로 흘려보냄(입 움직임).
+ *             렌더러를 store 에 등록 → ChatArea 이 발화를 renderer.speak 로 흘려보냄(입 움직임).
  *  - static : 폴백. 로컬 번들의 idle 클립 loop + CSS 마스크(입 안 움직임). cascade 미설정/미도달 시.
  * SoT: .agents/progress/naia-os-cascade-talking-avatar-2026-07-01.md
  */

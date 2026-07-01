@@ -2,7 +2,7 @@
 /**
  * Phase 6 tests: Grid cell resize (2-terminal split)
  *
- * Verifies WorkspaceCenterPanel:
+ * Verifies WorkspaceCenterArea:
  *  1. Resize handle NOT present with 0 or 1 terminal
  *  2. Resize handle appears when exactly 2 terminals are open
  *  3. Resize handle NOT present with 3+ terminals (normal auto-grid)
@@ -74,8 +74,8 @@ vi.mock("../workspace/Terminal", () => ({
 		<div data-testid={`terminal-${pty_id}`} />
 	)),
 }));
-vi.mock("../workspace/IssuesPanel", () => ({
-	IssuesPanel: vi.fn(
+vi.mock("../workspace/IssuesArea", () => ({
+	IssuesArea: vi.fn(
 		({
 			onSessionsUpdate,
 		}: {
@@ -173,18 +173,18 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("no resize handle with 0 terminals", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await waitFor(() => expect(bridge.hasHandler("skill_workspace_new_session")).toBe(true));
 		expect(getResizeHandle()).toBeNull();
 	});
 
 	it("no resize handle with 1 terminal (tab mode)", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		const ptyId = await openTerminal(bridge, "/tmp/alpha");
 		await waitFor(() => expect(screen.getByTestId(`terminal-${ptyId}`)).toBeInTheDocument());
@@ -193,9 +193,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("resize handle appears with exactly 2 terminals", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const pty2 = await openTerminal(bridge, "/tmp/beta");
@@ -205,9 +205,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("terminal area gets --resizable class with 2 terminals", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const pty2 = await openTerminal(bridge, "/tmp/beta");
@@ -219,9 +219,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("no resize handle with 3 terminals (auto-grid, no drag)", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		await openTerminal(bridge, "/tmp/beta");
@@ -234,9 +234,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("terminal area has inline gridTemplateColumns with 2 terminals", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const pty2 = await openTerminal(bridge, "/tmp/beta");
@@ -249,9 +249,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("removes body.resizing-col on pointercancel (no stuck cursor)", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const pty2 = await openTerminal(bridge, "/tmp/beta");
@@ -275,9 +275,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("adds body.resizing-col on pointerdown and removes it on pointerup", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const pty2 = await openTerminal(bridge, "/tmp/beta");
@@ -302,9 +302,9 @@ describe("Grid cell resize — Phase 6", () => {
 	});
 
 	it("gridSplit updates (style changes) after drag", async () => {
-		const { WorkspaceCenterPanel } = await import("../workspace/WorkspaceCenterPanel");
+		const { WorkspaceCenterArea } = await import("../workspace/WorkspaceCenterArea");
 		const bridge = new MockBridge();
-		render(<WorkspaceCenterPanel naia={bridge} />);
+		render(<WorkspaceCenterArea naia={bridge} />);
 
 		await openTerminal(bridge, "/tmp/alpha");
 		const pty2 = await openTerminal(bridge, "/tmp/beta");

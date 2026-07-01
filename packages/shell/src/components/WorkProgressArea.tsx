@@ -32,7 +32,7 @@ function formatCost(cost: number): string {
 	return `$${cost.toFixed(3)}`;
 }
 
-export function WorkProgressPanel() {
+export function WorkProgressArea() {
 	const events = useProgressStore((s) => s.events);
 	const stats = useProgressStore((s) => s.stats);
 	const isLoading = useProgressStore((s) => s.isLoading);
@@ -59,7 +59,7 @@ export function WorkProgressPanel() {
 				s.setStats(statsResult as Parameters<typeof s.setStats>[0]);
 			})
 			.catch((err) => {
-				Logger.warn("WorkProgressPanel", "Failed to load audit data", {
+				Logger.warn("WorkProgressArea", "Failed to load audit data", {
 					error: String(err),
 				});
 			})

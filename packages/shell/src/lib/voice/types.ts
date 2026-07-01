@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Unified Live Voice Conversation types.
  *
  * All native Live API providers (Gemini Live, OpenAI Realtime, etc.)
@@ -161,7 +161,7 @@ export type LiveProviderConfig =
 // ?? Audio input requirements (per-provider, read by the shared mic layer) ??
 
 /**
- * Per-provider microphone capture requirements. The shared UI (ChatPanel)
+ * Per-provider microphone capture requirements. The shared UI (ChatArea)
  * reads these off the session instead of branching on provider id, so the
  * mic-stream config and the AI-speaking echo gate stay declarative and each
  * provider owns its own wire contract.
@@ -221,14 +221,14 @@ export interface VoiceCloseInfo {
 
 /**
  * Connection lifecycle status. The single source of truth for voice UI state ??
- * ChatPanel derives the voice button mode from the current phase (no parallel
+ * ChatArea derives the voice button mode from the current phase (no parallel
  * `voiceMode`). Phases mirror naia.nextain.io's `ConnectionState` so desktop and
  * web stay semantically aligned.
  *
  *  - `idle`        ??no session (initial / fully torn down)
  *  - `connecting`  ??WebSocket opening, no cold-start signal yet
  *  - `cold-start`  ??server returned pod-starting; retrying with backoff
- *  - `active`      ??session live. Set by ChatPanel once mic setup succeeds, NOT
+ *  - `active`      ??session live. Set by ChatArea once mic setup succeeds, NOT
  *                    by the provider ??active is UI-readiness, not just connected.
  *  - `sold-out`    ??capacity exhausted, no Pod available (terminal, pre-active)
  *  - `error`       ??terminal pre-active failure, classified for a message
@@ -236,8 +236,8 @@ export interface VoiceCloseInfo {
  *                    close reason so superseded/credits/auth can be surfaced)
  *
  * Providers emit only the pre-active phases via `onStatusChange`
- * (connecting / cold-start / sold-out / error). `active` is owned by ChatPanel;
- * `closed` is derived by ChatPanel from `onDisconnect(info)` so teardown and the
+ * (connecting / cold-start / sold-out / error). `active` is owned by ChatArea;
+ * `closed` is derived by ChatArea from `onDisconnect(info)` so teardown and the
  * terminal transition stay atomic (no re-enable-against-stale-refs race).
  */
 export type VoiceConnectionStatus =
@@ -271,7 +271,7 @@ export type VoiceConnectionStatus =
 export interface VoiceSession {
 	/**
 	 * Microphone capture + echo-gate requirements for this provider. Read by
-	 * ChatPanel when it creates the shared mic stream (provider-agnostic UI).
+	 * ChatArea when it creates the shared mic stream (provider-agnostic UI).
 	 */
 	readonly audioInput: AudioInputConfig;
 	connect: (config: LiveProviderConfig) => Promise<void>;
@@ -330,7 +330,7 @@ export interface VoiceSession {
 	onError: ((error: Error) => void) | null;
 	/**
 	 * A LIVE session dropped. `info` carries the close code + classified reason
-	 * (superseded / credits / auth / normal) so ChatPanel can surface the right
+	 * (superseded / credits / auth / normal) so ChatArea can surface the right
 	 * message and do teardown atomically. Absent `info` (or pre-`info` callers) =
 	 * an unspecified disconnect. Pre-session failures reject `connect()` instead.
 	 */
@@ -339,7 +339,7 @@ export interface VoiceSession {
 	 * Pre-active connection lifecycle updates (cold-start aware). Optional ??only
 	 * providers with a non-instant connect (naia-omni RunPod on-demand) emit
 	 * "connecting" / "cold-start" / "sold-out" / "error". Never carries "active"
-	 * (ChatPanel owns that, mic-gated) or "closed" (flows via onDisconnect).
+	 * (ChatArea owns that, mic-gated) or "closed" (flows via onDisconnect).
 	 */
 	onStatusChange?: ((status: VoiceConnectionStatus) => void) | null;
 }

@@ -1,6 +1,6 @@
 import { appRegistry } from "../../lib/app-registry";
 import { TAB_SKILL_DESCRIPTORS } from "../../lib/tab-skills";
-import { BrowserCenterPanel } from "./BrowserCenterPanel";
+import { BrowserCenterArea } from "./BrowserCenterArea";
 
 appRegistry.register({
 	id: "browser",
@@ -9,7 +9,7 @@ appRegistry.register({
 	icon: "🌐",
 	builtIn: true,
 	keepAlive: true, // visibility controlled by browser_wv_hide/show on panel switch
-	center: BrowserCenterPanel,
+	center: BrowserCenterArea,
 	tools: [
 		// ── Navigation ──────────────────────────────────────────────────────
 		{

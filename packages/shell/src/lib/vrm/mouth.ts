@@ -20,7 +20,7 @@ const CAP = 0.7;
 
 /**
  * Simulated lip sync controller.
- * Audio playback is handled by ChatPanel (HTML Audio element).
+ * Audio playback is handled by ChatArea (HTML Audio element).
  * This controller drives VRM mouth blendshapes when isSpeaking is true,
  * using a randomized vowel pattern to simulate speech.
  */

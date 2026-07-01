@@ -17,7 +17,7 @@
  *
  * Strict scope:
  *   - This module owns NO state about the live session lifecycle. The caller
- *     (ChatPanel) attaches the bridge after `voiceSessionRef.current = session`
+ *     (ChatArea) attaches the bridge after `voiceSessionRef.current = session`
  *     and detaches on disconnect. We do not introspect `session.isConnected`
  *     here — that is the provider's job inside `sendContextUpdate`.
  *   - We do not retain a queue. If a provider drops the update (paused, not
@@ -58,7 +58,7 @@ export interface AppContextBridgeOptions {
 	 * Replay the last-known context immediately on attach.
 	 *
 	 * Default `false` — only forward NEW changes after attach. This matches
-	 * the L2 frozen-tools rationale: at session open, ChatPanel already passes
+	 * the L2 frozen-tools rationale: at session open, ChatArea already passes
 	 * the current `activeAppContext` into `buildMemoryContext()` →
 	 * `systemInstruction`, so an on-mount replay would just duplicate that.
 	 * Set to `true` only if a future code path bypasses the system-prompt

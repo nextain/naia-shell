@@ -1,7 +1,7 @@
 import { SettingsTab } from "../../components/SettingsTab";
 import { appRegistry } from "../../lib/app-registry";
 
-function SettingsCenterPanel() {
+function SettingsCenterArea() {
 	return (
 		<div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 			<SettingsTab />
@@ -16,5 +16,5 @@ appRegistry.register({
 	icon: "⚙️",
 	builtIn: true,
 	keepAlive: true, // SettingsTab must stay mounted during browser-panel login to keep naia_auth_complete listener alive
-	center: SettingsCenterPanel,
+	center: SettingsCenterArea,
 });
