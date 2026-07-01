@@ -34,21 +34,21 @@ vi.mock("../../lib/config", () => ({
 	saveConfig: vi.fn(),
 }));
 
-vi.mock("../../lib/panel-loader", () => ({
-	removeInstalledPanel: vi.fn().mockResolvedValue(undefined),
+vi.mock("../../lib/app-loader", () => ({
+	removeInstalledApp: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../lib/panel-registry", () => ({
-	panelRegistry: {
+vi.mock("../../lib/app-registry", () => ({
+	appRegistry: {
 		list: vi.fn().mockReturnValue([]),
 		get: vi.fn().mockReturnValue(undefined),
 		getApi: vi.fn().mockReturnValue(undefined),
 		unregister: vi.fn(),
 	},
 	// Stub bridge: active-bridge.ts constructs one at module load. Keep it a
-	// no-op so the registry stays fully isolated from stores/panel (the real
-	// pushContext dynamic-imports the store). (#313 added ActivePanelBridge.)
-	ActivePanelBridge: class {
+	// no-op so the registry stays fully isolated from stores/app (the real
+	// pushContext dynamic-imports the store). (#313 added ActiveAppBridge.)
+	ActiveAppBridge: class {
 		pushContext = vi.fn();
 		onToolCall = vi.fn().mockReturnValue(() => {});
 		callTool = vi.fn().mockResolvedValue("ok");
