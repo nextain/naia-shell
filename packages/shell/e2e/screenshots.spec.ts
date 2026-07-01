@@ -1019,7 +1019,7 @@ export default function App() {
 }`,
 	"AGENTS.md": `# Naia OS
 
-Bazzite-based AI OS — desktop AI companion.
+Bazzite-based visual agent — desktop AI companion.
 
 ## Project Structure
 

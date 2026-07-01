@@ -11,7 +11,7 @@ Standard: AAIF / agents.md (https://agents.md/)
 
 # naia-os
 
-Bazzite 기반 배포형 AI OS — naia-template-project clean rebuild (헥사고날 이식)
+Bazzite 기반 배포형 비주얼 에이전트(visual agent) — naia-template-project clean rebuild (헥사고날 이식). 내부 구조는 AI OS(agent=커널) 은유
 
 ---
 

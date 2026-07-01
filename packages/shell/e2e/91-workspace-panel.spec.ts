@@ -138,7 +138,7 @@ const FAKE_CLASSIFIED = [
 
 const FAKE_AGENTS_MD = `# Naia OS
 
-Bazzite-based AI OS.
+Bazzite-based visual agent (AI OS internally).
 
 ## Project Structure
 

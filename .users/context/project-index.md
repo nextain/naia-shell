@@ -6,7 +6,7 @@
 버전: "0.1.0"
 갱신일: "2026-06-08"
 설명: |
-  바자이트(Bazzite) 기반의 배포형 인공지능 운영체제(AI OS) — 나이아(naia) 템플릿 프로젝트를 헥사고날 아키텍처(Hexagonal Architecture)로 다시 구축.
+  바자이트(Bazzite) 기반의 배포형 비주얼 에이전트(visual agent) — 나이아(naia) 템플릿 프로젝트를 헥사고날 아키텍처(Hexagonal Architecture)로 다시 구축. 내부 구조는 인공지능 운영체제(AI OS, agent=커널) 은유.
 
 # 세션 시작 시 반드시 읽는 파일 (순서 중요)
 필수_읽기_항목:
