@@ -17,6 +17,7 @@ import {
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { randFloat } from "three/src/math/MathUtils.js";
 import { getAdkPath } from "../lib/adk-store";
+import { getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
 import {
 	clipFromVRMAnimation,
@@ -24,6 +25,7 @@ import {
 	reAnchorRootPositionTrack,
 } from "../lib/vrm/animation";
 import { loadVrm, loadVrmFromArrayBuffer } from "../lib/vrm/core";
+import { applyRelaxedFists } from "../lib/vrm/hand-pose";
 import {
 	buildExpressionResolver,
 	createEmotionController,
@@ -32,18 +34,9 @@ import { randomSaccadeInterval } from "../lib/vrm/eye-motions";
 import { createMouthController } from "../lib/vrm/mouth";
 import { useAvatarStore } from "../stores/avatar";
 
-// Module-level camera action bridge — lets App.tsx quick-toggles drive the
-// camera without prop-drilling or store changes.
-type CameraActions = {
-	rotate: (dx: number, dy: number) => void;
-	pan: (dx: number, dy: number) => void;
-	reset: () => void;
-	save: () => void;
-};
-const _cameraActions: CameraActions = { rotate: () => {}, pan: () => {}, reset: () => {}, save: () => {} };
-export function getCameraActions(): CameraActions {
-	return _cameraActions;
-}
+// 카메라 액션 브리지는 lib/avatar/camera-actions 로 분리(VRM·NVA 공용). 아래에서는
+// getCameraActions() 로 얻은 싱글턴 필드를 직접 교체해 VRM three.js 카메라를 등록한다.
+const _cameraActions = getCameraActions();
 
 const LOOK_AT_TARGET = { x: 0, y: 0, z: -1 };
 
@@ -398,6 +391,8 @@ export function AvatarCanvas() {
 			}
 
 			if (vrm) {
+				// idle 손이 펼쳐져 어색 → 살짝 주먹(humanoid.update 직전, 정규화 본 override).
+				applyRelaxedFists(vrm);
 				vrm.humanoid?.update();
 				updateBlink(vrm, delta, animState, blinkExprName);
 				updateSaccade(vrm, delta, animState);

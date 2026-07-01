@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { usePanelStore } from "../../stores/panel";
-import { loadInstalledPanels, removeInstalledPanel } from "../panel-loader";
-import { panelRegistry } from "../panel-registry";
+import { useAppStore } from "../../stores/app";
+import { loadInstalledApps, removeInstalledApp } from "../app-loader";
+import { appRegistry } from "../app-registry";
 
 // Mock Tauri invoke
 const mockInvoke = vi.fn();
@@ -21,48 +21,48 @@ vi.mock("../logger", () => ({
 const FakeCenterPanel = () => null;
 
 describe("panel-loader", () => {
-	let panelsSnapshot: ReturnType<typeof panelRegistry.list>;
+	let appsSnapshot: ReturnType<typeof appRegistry.list>;
 
 	beforeEach(() => {
-		panelsSnapshot = panelRegistry.list();
+		appsSnapshot = appRegistry.list();
 		mockInvoke.mockReset();
 	});
 
 	afterEach(() => {
 		// Remove any panels added during the test
-		for (const p of panelRegistry.list()) {
-			if (!panelsSnapshot.find((o) => o.id === p.id)) {
-				panelRegistry.unregister(p.id);
+		for (const p of appRegistry.list()) {
+			if (!appsSnapshot.find((o) => o.id === p.id)) {
+				appRegistry.unregister(p.id);
 			}
 		}
 		vi.clearAllMocks();
 	});
 
-	describe("loadInstalledPanels", () => {
-		it("registers panels returned by panel_list_installed", async () => {
+	describe("loadInstalledApps", () => {
+		it("registers panels returned by app_list_installed", async () => {
 			mockInvoke.mockResolvedValue([
 				{ id: "test-panel", name: "Test Panel", icon: "🧪" },
 			]);
 
-			await loadInstalledPanels();
+			await loadInstalledApps();
 
-			const panel = panelRegistry.get("test-panel");
+			const panel = appRegistry.get("test-panel");
 			expect(panel).toBeDefined();
 			expect(panel?.name).toBe("Test Panel");
 			expect(panel?.source).toBe("installed");
 		});
 
-		it("bumps panelListVersion after loading", async () => {
+		it("bumps appListVersion after loading", async () => {
 			mockInvoke.mockResolvedValue([{ id: "bump-test", name: "Bump Test" }]);
-			const before = usePanelStore.getState().panelListVersion;
+			const before = useAppStore.getState().appListVersion;
 
-			await loadInstalledPanels();
+			await loadInstalledApps();
 
-			expect(usePanelStore.getState().panelListVersion).toBeGreaterThan(before);
+			expect(useAppStore.getState().appListVersion).toBeGreaterThan(before);
 		});
 
 		it("does not overwrite already-registered panels", async () => {
-			panelRegistry.register({
+			appRegistry.register({
 				id: "existing-panel",
 				name: "Original",
 				builtIn: true,
@@ -72,9 +72,9 @@ describe("panel-loader", () => {
 				{ id: "existing-panel", name: "Overwrite Attempt" },
 			]);
 
-			await loadInstalledPanels();
+			await loadInstalledApps();
 
-			const panel = panelRegistry.get("existing-panel");
+			const panel = appRegistry.get("existing-panel");
 			expect(panel?.name).toBe("Original");
 			expect(panel?.builtIn).toBe(true);
 		});
@@ -82,7 +82,7 @@ describe("panel-loader", () => {
 		it("handles invoke failure gracefully (no crash)", async () => {
 			mockInvoke.mockRejectedValue(new Error("disk error"));
 
-			await expect(loadInstalledPanels()).resolves.not.toThrow();
+			await expect(loadInstalledApps()).resolves.not.toThrow();
 		});
 
 		it("registers multiple panels", async () => {
@@ -91,16 +91,16 @@ describe("panel-loader", () => {
 				{ id: "panel-b", name: "Panel B" },
 			]);
 
-			await loadInstalledPanels();
+			await loadInstalledApps();
 
-			expect(panelRegistry.get("panel-a")).toBeDefined();
-			expect(panelRegistry.get("panel-b")).toBeDefined();
+			expect(appRegistry.get("panel-a")).toBeDefined();
+			expect(appRegistry.get("panel-b")).toBeDefined();
 		});
 	});
 
-	describe("removeInstalledPanel", () => {
-		it("calls panel_remove_installed Tauri command", async () => {
-			panelRegistry.register({
+	describe("removeInstalledApp", () => {
+		it("calls app_remove_installed Tauri command", async () => {
+			appRegistry.register({
 				id: "to-remove",
 				name: "To Remove",
 				source: "installed",
@@ -108,15 +108,15 @@ describe("panel-loader", () => {
 			});
 			mockInvoke.mockResolvedValue(undefined);
 
-			await removeInstalledPanel("to-remove");
+			await removeInstalledApp("to-remove");
 
-			expect(mockInvoke).toHaveBeenCalledWith("panel_remove_installed", {
-				panelId: "to-remove",
+			expect(mockInvoke).toHaveBeenCalledWith("app_remove_installed", {
+				appId: "to-remove",
 			});
 		});
 
 		it("unregisters panel from registry", async () => {
-			panelRegistry.register({
+			appRegistry.register({
 				id: "to-remove-2",
 				name: "To Remove 2",
 				source: "installed",
@@ -124,28 +124,28 @@ describe("panel-loader", () => {
 			});
 			mockInvoke.mockResolvedValue(undefined);
 
-			await removeInstalledPanel("to-remove-2");
+			await removeInstalledApp("to-remove-2");
 
-			expect(panelRegistry.get("to-remove-2")).toBeUndefined();
+			expect(appRegistry.get("to-remove-2")).toBeUndefined();
 		});
 
-		it("bumps panelListVersion after remove", async () => {
-			panelRegistry.register({
+		it("bumps appListVersion after remove", async () => {
+			appRegistry.register({
 				id: "to-remove-3",
 				name: "To Remove 3",
 				source: "installed",
 				center: FakeCenterPanel,
 			});
 			mockInvoke.mockResolvedValue(undefined);
-			const before = usePanelStore.getState().panelListVersion;
+			const before = useAppStore.getState().appListVersion;
 
-			await removeInstalledPanel("to-remove-3");
+			await removeInstalledApp("to-remove-3");
 
-			expect(usePanelStore.getState().panelListVersion).toBeGreaterThan(before);
+			expect(useAppStore.getState().appListVersion).toBeGreaterThan(before);
 		});
 
 		it("still unregisters even if Tauri command fails", async () => {
-			panelRegistry.register({
+			appRegistry.register({
 				id: "to-remove-4",
 				name: "To Remove 4",
 				source: "installed",
@@ -153,9 +153,9 @@ describe("panel-loader", () => {
 			});
 			mockInvoke.mockRejectedValue(new Error("file not found"));
 
-			await removeInstalledPanel("to-remove-4");
+			await removeInstalledApp("to-remove-4");
 
-			expect(panelRegistry.get("to-remove-4")).toBeUndefined();
+			expect(appRegistry.get("to-remove-4")).toBeUndefined();
 		});
 	});
 });

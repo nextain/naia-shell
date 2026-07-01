@@ -129,7 +129,7 @@ export interface MemoryContext {
 	/**
 	 * Panel contexts pushed via NaiaContextBridge — the active (switchable)
 	 * panel plus any persistent contexts (e.g. bgm favorites). One block is
-	 * rendered per entry. Assembled by `selectPromptPanelContexts`.
+	 * rendered per entry. Assembled by `selectPromptAppContexts`.
 	 */
 	panelContexts?: { type: string; data: Record<string, unknown> }[];
 }

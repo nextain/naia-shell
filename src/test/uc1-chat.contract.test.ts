@@ -124,12 +124,12 @@ describe("adapter 변환 (domain↔protocol↔wire, canon)", () => {
     const withSegs = toAgentOutbound(req({
       environmentSegments: [
         { kind: "avatarEmotion" },
-        { kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+        { kind: "app", entries: [{ type: "bgm", data: { track: "lofi" } }] },
       ],
     })) as Record<string, unknown>;
     expect(withSegs["environmentSegments"]).toEqual([
       { kind: "avatarEmotion" },
-      { kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+      { kind: "app", entries: [{ type: "bgm", data: { track: "lofi" } }] },
     ]);
     // 미지정 = 필드 부재(무회귀 — persona/locale 등은 코어가 config.json 조립).
     expect("environmentSegments" in (toAgentOutbound(req()) as Record<string, unknown>)).toBe(false);

@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { loadConfig, saveConfig } from "../lib/config";
 import { t } from "../lib/i18n";
-import { usePanelStore } from "../stores/panel";
-import { getCameraActions } from "./AvatarCanvas";
+import { getCameraActions } from "../lib/avatar/camera-actions";
+import { useAppStore } from "../stores/app";
 
 /**
  * AiControlBar — fixed overlay on the avatar area (top-left of naia column).
@@ -15,7 +15,7 @@ export function AiControlBar() {
 		toggleAiInterferenceEnabled,
 		ttsEnabled,
 		toggleTtsEnabled,
-	} = usePanelStore();
+	} = useAppStore();
 
 	const [joystickActive, setJoystickActive] = useState(false);
 	const joystickActiveRef = useRef(false);

@@ -93,6 +93,13 @@ export interface AppConfig {
 	vrmModel?: string;
 	avatarProvider?: "vrm" | "naia-video-avatar";
 	nvaModel?: string;
+	/**
+	 * NVA 토킹 아바타용 cascade 런타임(output_cascade façade) URL.
+	 * 비면 정적 idle 루프만(입 안 움직임). 설정 시 발화를 이 런타임에 보내 립싱크 스트림을 받는다.
+	 * 예: http://127.0.0.1:8910(로컬 임베드) 또는 http://100.91.187.24:8910(원격 GPU PC).
+	 * SoT: .agents/progress/naia-os-cascade-talking-avatar-2026-07-01.md
+	 */
+	cascadeRuntimeUrl?: string;
 	customVrms?: string[];
 	customBgs?: string[];
 	sttProvider?: SttProviderId;
@@ -162,6 +169,12 @@ export interface AppConfig {
 	 * manager (windows-manager) reports actual readiness (F1, measurement-gated).
 	 */
 	localGpuTier?: VramTierId | "auto" | "off";
+	/**
+	 * 배타 VRAM 티어(8G: 아바타 XOR 음성)에서 로컬로 무엇을 돌릴지 집중 선택.
+	 * "avatar" = Ditto 립싱크 로컬(음성=클라우드) / "voice" = VoxCPM2 로컬(아바타=정적).
+	 * 둘 다 들어가는 티어(12G+)에서는 무시. 미지정 → 기본 "voice"(wm 8g 기본과 동형).
+	 */
+	localAvatarVoiceFocus?: import("./capabilities/vram-tiers").AvatarVoiceFocus;
 	/** vLLM endpoint for TTS (e.g. Kokoro). */
 	vllmTtsHost?: string;
 	/** Selected ASR model ID on the vLLM STT server. */

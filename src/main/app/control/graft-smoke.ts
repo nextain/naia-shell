@@ -19,7 +19,7 @@ export interface GraftSmokeResult {
  */
 export async function graftBootDecisionSmoke(d: LiveDeps): Promise<GraftSmokeResult> {
   // panel list 는 게이트 이전 호출이지만 비파괴 read 라 스모크에 포함(non-fatal)
-  try { await d.invoke("panel_list_installed"); } catch { /* non-fatal */ }
+  try { await d.invoke("app_list_installed"); } catch { /* non-fatal */ }
 
   const adkPath = d.getAdkPath();
   const adkPresent = adkPath !== null && adkPath !== "";

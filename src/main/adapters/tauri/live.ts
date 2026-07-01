@@ -51,7 +51,7 @@ export function makeF0LiveAdapters(d: LiveDeps): ControlPlanePorts {
       async send(msg) { await d.invoke("send_to_agent_command", { message: JSON.stringify(msg) }); },
     },
     panels: {
-      async listInstalled() { return (await d.invoke("panel_list_installed")) as readonly unknown[]; },
+      async listInstalled() { return (await d.invoke("app_list_installed")) as readonly unknown[]; },
     },
     setup: {
       async initSettings(adkPath) { await d.invoke("init_naia_settings", { adkPath }); },

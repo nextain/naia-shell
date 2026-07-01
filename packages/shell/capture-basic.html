@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Basic Three Capture</title>
+		<style>
+			html,
+			body {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+				overflow: hidden;
+				background: #eaf4f6;
+			}
+
+			canvas {
+				display: block;
+			}
+		</style>
+	</head>
+	<body>
+		<script type="module">
+			import * as THREE from "three";
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color(0xeaf4f6);
+			const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
+			camera.position.set(0, 0, 4);
+			camera.lookAt(0, 0, 0);
+
+			const renderer = new THREE.WebGLRenderer({
+				antialias: true,
+				alpha: false,
+				preserveDrawingBuffer: true,
+				powerPreference: "low-power",
+			});
+			renderer.setPixelRatio(1);
+			renderer.setSize(512, 512);
+			renderer.setClearColor(0xeaf4f6, 1);
+			document.body.appendChild(renderer.domElement);
+			renderer.domElement.addEventListener("webglcontextlost", (event) => {
+				event.preventDefault();
+				window.__CONTEXT_LOST = true;
+			});
+
+			scene.add(new THREE.HemisphereLight(0xffffff, 0x99ddff, 2.0));
+			const mesh = new THREE.Mesh(
+				new THREE.SphereGeometry(1, 48, 24),
+				new THREE.MeshStandardMaterial({
+					color: 0x9ff6ff,
+					roughness: 0.25,
+					metalness: 0.0,
+				}),
+			);
+			scene.add(mesh);
+
+			requestAnimationFrame(() => {
+				renderer.render(scene, camera);
+				window.__CAPTURE_DATA_URL = renderer.domElement.toDataURL("image/png");
+				window.__RENDERED = true;
+			});
+		</script>
+	</body>
+</html>

@@ -25,6 +25,7 @@ export type ModelCapability =
 	| "asr"
 	| "stt"
 	| "tts"
+	| "embedding"
 	| "vlm"
 	| "image"
 	| "video"
@@ -38,6 +39,7 @@ export const MODEL_CAPABILITY_VALUES: readonly ModelCapability[] = [
 	"asr",
 	"stt",
 	"tts",
+	"embedding",
 	"vlm",
 	"image",
 	"video",
@@ -104,7 +106,7 @@ export interface ChatMessage {
  */
 export type EnvironmentSegment =
 	| { kind: "avatarEmotion" }
-	| { kind: "panel"; entries: { type: string; data: unknown }[] }
+	| { kind: "app"; entries: { type: string; data: unknown }[] }
 	| { kind: "responseStyle"; style: "brief" | "normal" };
 
 export interface AgentRequest {
@@ -208,11 +210,11 @@ export type AgentResponseChunk =
 			type: "panel_control";
 			requestId: string;
 			action: "switch" | "reload";
-			panelId?: string;
+			appId?: string;
 	  }
 	| {
-			/** Agent → Shell: result of a panel_install request. */
-			type: "panel_install_result";
+			/** Agent → Shell: result of a app_install request. */
+			type: "app_install_result";
 			success: boolean;
 			output: string;
 			error?: string;

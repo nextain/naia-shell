@@ -41,7 +41,7 @@ export interface StartupMessagePort {
 }
 
 export interface PanelInventoryPort {
-  listInstalled(): Promise<readonly unknown[]>; // panel_list_installed
+  listInstalled(): Promise<readonly unknown[]>; // app_list_installed
 }
 
 export interface AdkSetupPort {

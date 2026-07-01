@@ -45,7 +45,7 @@ export const tauriStartup: StartupMessagePort = {
 };
 
 export const tauriPanels: PanelInventoryPort = {
-  async listInstalled(): Promise<readonly unknown[]> { throw new NotWired("panel_list_installed"); },
+  async listInstalled(): Promise<readonly unknown[]> { throw new NotWired("app_list_installed"); },
 };
 
 export const tauriSetup: AdkSetupPort = {

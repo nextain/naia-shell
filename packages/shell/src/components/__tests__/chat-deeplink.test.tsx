@@ -2,9 +2,9 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { panelRegistry } from "../../lib/panel-registry";
+import { appRegistry } from "../../lib/app-registry";
 import { useChatStore } from "../../stores/chat";
-import { usePanelStore } from "../../stores/panel";
+import { useAppStore } from "../../stores/app";
 import { ChatPanel } from "../ChatPanel";
 
 // ─── Module mocks ──────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ afterEach(() => {
 	vi.clearAllMocks();
 	localStorage.removeItem("naia-config");
 	useChatStore.setState(useChatStore.getInitialState());
-	usePanelStore.setState(usePanelStore.getInitialState());
+	useAppStore.setState(useAppStore.getInitialState());
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -106,9 +106,9 @@ describe("ChatPanel — file deep-links", () => {
 		).toBeInTheDocument();
 	});
 
-	it("clicking deeplink calls panelRegistry.getApi openFile with the path", () => {
+	it("clicking deeplink calls appRegistry.getApi openFile with the path", () => {
 		const mockOpenFile = vi.fn();
-		vi.spyOn(panelRegistry, "getApi").mockReturnValue({
+		vi.spyOn(appRegistry, "getApi").mockReturnValue({
 			openFile: mockOpenFile,
 			focusSession: vi.fn(),
 		} as never);
@@ -123,7 +123,7 @@ describe("ChatPanel — file deep-links", () => {
 	});
 
 	it("clicking deeplink activates the workspace panel", () => {
-		vi.spyOn(panelRegistry, "getApi").mockReturnValue({
+		vi.spyOn(appRegistry, "getApi").mockReturnValue({
 			openFile: vi.fn(),
 			focusSession: vi.fn(),
 		} as never);
@@ -133,7 +133,7 @@ describe("ChatPanel — file deep-links", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "/tmp/output.json" }));
 
-		expect(usePanelStore.getState().activePanel).toBe("workspace");
+		expect(useAppStore.getState().activeApp).toBe("workspace");
 	});
 
 	it("does NOT render a deeplink for a relative path without leading slash", () => {

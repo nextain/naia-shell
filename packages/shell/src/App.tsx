@@ -10,7 +10,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AppBar } from "./components/AppBar";
 import { OnboardingWizard } from "./components/OnboardingWizard";
-import { PanelInstallDialog } from "./components/PanelInstallDialog";
+import { AppInstallDialog } from "./components/AppInstallDialog";
 import { SplashScreen } from "./components/SplashScreen";
 import { TitleBar } from "./components/TitleBar";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -50,9 +50,9 @@ import {
 import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { Logger } from "./lib/logger";
-import { loadInstalledPanels } from "./lib/panel-loader";
+import { loadInstalledApps } from "./lib/app-loader";
 import { shouldMigrateNextainModel } from "./lib/llm/registry";
-import { panelRegistry } from "./lib/panel-registry";
+import { appRegistry } from "./lib/app-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
 import {
 	type Announcement,
@@ -60,11 +60,11 @@ import {
 } from "./lib/announcements";
 import { AnnouncementBanner } from "./components/AnnouncementBanner";
 import { useAvatarStore } from "./stores/avatar";
-import "./panels/browser/index"; // register browser panel
-import "./panels/workspace/index"; // register workspace panel
-import "./panels/settings/index"; // register settings panel
+import "./apps/browser/index"; // register browser panel
+import "./apps/workspace/index"; // register workspace panel
+import "./apps/settings/index"; // register settings panel
 // sample-note panel removed — will be replaced by a proper memo app later
-import { usePanelStore } from "./stores/panel";
+import { useAppStore } from "./stores/app";
 
 const NAIA_WIDTH_DEFAULT = 320;
 const NAIA_WIDTH_MIN = 120;
@@ -242,8 +242,8 @@ export function App() {
 	const appReady = useAppReady(showAdkSetup, showOnboarding);
 	const onSplashDone = useCallback(() => setShowSplash(false), []);
 
-	const { activePanel, toggleAiInterferenceEnabled, setTtsEnabled } =
-		usePanelStore();
+	const { activeApp, toggleAiInterferenceEnabled, setTtsEnabled } =
+		useAppStore();
 
 	// Initialise ttsEnabled from persisted config on mount
 	useEffect(() => {
@@ -252,38 +252,38 @@ export function App() {
 	}, [setTtsEnabled]);
 
 	// Sync panel tools with agent on panel switch, and call lifecycle hooks
-	const prevPanelRef = useRef<string | null>(null);
+	const prevAppRef = useRef<string | null>(null);
 	useEffect(() => {
-		const prev = prevPanelRef.current;
-		prevPanelRef.current = activePanel;
+		const prev = prevAppRef.current;
+		prevAppRef.current = activeApp;
 
-		if (prev && prev !== activePanel) {
+		if (prev && prev !== activeApp) {
 			// keepAlive panels stay mounted — don't clear their skills so the
 			// LLM can still call them (e.g. skill_browser_navigate from Chat).
-			const prevDescriptor = panelRegistry.get(prev);
+			const prevDescriptor = appRegistry.get(prev);
 			if (!prevDescriptor?.keepAlive) {
 				sendPanelSkillsClear(prev).catch(() => {});
 			}
 			prevDescriptor?.onDeactivate?.();
 		}
-		if (activePanel) {
-			const descriptor = panelRegistry.get(activePanel);
+		if (activeApp) {
+			const descriptor = appRegistry.get(activeApp);
 			descriptor?.onActivate?.();
 			if (descriptor?.tools && descriptor.tools.length > 0) {
-				sendPanelSkills(activePanel, descriptor.tools).catch(() => {});
+				sendPanelSkills(activeApp, descriptor.tools).catch(() => {});
 			}
 		}
-	}, [activePanel]);
+	}, [activeApp]);
 
 	useEffect(() => {
-		if (!activePanel) return;
+		if (!activeApp) return;
 		emitAiInterferenceEvent({
-			source: "panel",
+			source: "app",
 			action: "activated",
-			panelId: activePanel,
-			summary: `${activePanel} panel activated`,
+			appId: activeApp,
+			summary: `${activeApp} panel activated`,
 		});
-	}, [activePanel]);
+	}, [activeApp]);
 
 	useEffect(() => {
 		const stopIframeBridge = startIframeBridge();
@@ -294,7 +294,7 @@ export function App() {
 	// call them regardless of which panel is currently active (e.g. asking Naia
 	// to open a website while on the Chat panel).
 	useEffect(() => {
-		const all = panelRegistry.list();
+		const all = appRegistry.list();
 		for (const descriptor of all) {
 			if (
 				descriptor.keepAlive &&
@@ -304,13 +304,13 @@ export function App() {
 				sendPanelSkills(descriptor.id, descriptor.tools)
 					.then(() => {
 						Logger.info("App", "startup panel skills registered", {
-							panel: descriptor.id,
+							app: descriptor.id,
 							tools: descriptor.tools?.map((t) => t.name),
 						});
 					})
 					.catch((err) => {
 						Logger.warn("App", "startup panel skills failed", {
-							panel: descriptor.id,
+							app: descriptor.id,
 							error: String(err),
 						});
 					});
@@ -361,7 +361,7 @@ export function App() {
 		void migrateLabKeyToNaiaKey();
 		migrateSpeechStyleValues();
 		migrateLiveProviderToUnifiedModel();
-		loadInstalledPanels().catch(() => {});
+		loadInstalledApps().catch(() => {});
 
 		const config = loadConfig();
 		const adkPath = getAdkPath();
@@ -385,7 +385,7 @@ export function App() {
 		// Suppress build-time panels the user has explicitly deleted
 		if (config?.deletedPanels?.length) {
 			for (const id of config.deletedPanels) {
-				panelRegistry.unregister(id);
+				appRegistry.unregister(id);
 			}
 		}
 		if (config?.panelVisible === false) setNaiaVisible(false);
@@ -737,12 +737,12 @@ export function App() {
 		</>
 	);
 
-	const activePanelDescriptor = activePanel
-		? panelRegistry.get(activePanel)
+	const activeAppDescriptor = activeApp
+		? appRegistry.get(activeApp)
 		: null;
-	const CenterComponent = activePanelDescriptor?.center ?? null;
+	const CenterComponent = activeAppDescriptor?.center ?? null;
 
-	// ── UI mode (single signal — derived from activePanel, no separate SoT) ──
+	// ── UI mode (single signal — derived from activeApp, no separate SoT) ──
 	// home    = no panel active → immersive VN conversation over the avatar
 	// workspace = workspace panel → 4-zone mission-control (chat rail + worktree
 	//             + document viewer/terminal + sub-agent list)
@@ -754,17 +754,17 @@ export function App() {
 		? "onboarding"
 		: showAdkSetup
 			? "setup"
-			: activePanel === null
+			: activeApp === null
 				? "home"
-				: activePanel === "workspace"
+				: activeApp === "workspace"
 					? "workspace"
-					: "panel";
+					: "app";
 	const chatVariant: "vn" | "rail" | "floating" =
 		uiMode === "home" ? "vn" : uiMode === "workspace" ? "rail" : "floating";
 
 	const keepAlivePanels = useMemo(
 		() =>
-			panelRegistry.list().filter((p) => p.builtIn && p.keepAlive !== false),
+			appRegistry.list().filter((p) => p.builtIn && p.keepAlive !== false),
 		[],
 	);
 
@@ -993,7 +993,7 @@ export function App() {
 								<>
 									<AppBar onAddMode={() => setShowPanelInstall(true)} />
 									{showPanelInstall && (
-										<PanelInstallDialog
+										<AppInstallDialog
 											onClose={() => setShowPanelInstall(false)}
 										/>
 									)}
@@ -1014,14 +1014,14 @@ export function App() {
 									/>
 								) : (
 									<div
-										className={`content-panel${!activePanel ? " content-panel--hidden" : ""}`}
+										className={`content-panel${!activeApp ? " content-panel--hidden" : ""}`}
 									>
 										{keepAlivePanels.map((panel) => {
 											const PanelCenter = panel.center;
 											return (
 												<div
 													key={panel.id}
-													className={`content-panel__slot${activePanel === panel.id ? " content-panel__slot--active" : ""}`}
+													className={`content-panel__slot${activeApp === panel.id ? " content-panel__slot--active" : ""}`}
 												>
 													<ErrorBoundary scope={`Panel(${panel.id})`}>
 														<PanelCenter naia={getBridgeForPanel(panel.id)} />
@@ -1029,13 +1029,13 @@ export function App() {
 												</div>
 											);
 										})}
-										{activePanel &&
-											!keepAlivePanels.some((p) => p.id === activePanel) && (
+										{activeApp &&
+											!keepAlivePanels.some((p) => p.id === activeApp) && (
 												<div className="content-panel__slot content-panel__slot--active">
-													<ErrorBoundary scope={`Panel(${activePanel})`}>
+													<ErrorBoundary scope={`Panel(${activeApp})`}>
 														{CenterComponent ? (
 															<CenterComponent
-																naia={getBridgeForPanel(activePanel)}
+																naia={getBridgeForPanel(activeApp)}
 															/>
 														) : (
 															<div className="content-panel__home" />

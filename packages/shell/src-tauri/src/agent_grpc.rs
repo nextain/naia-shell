@@ -188,7 +188,7 @@ mod transcode_tests {
             "messages": [{ "role": "user", "content": "hi" }],
             "environmentSegments": [
                 { "kind": "avatarEmotion" },
-                { "kind": "panel", "entries": [{ "type": "bgm", "data": { "track": "lofi" } }] }
+                { "kind": "app", "entries": [{ "type": "bgm", "data": { "track": "lofi" } }] }
             ]
         });
         let req = json_to_chat_request(&v);
@@ -197,7 +197,7 @@ mod transcode_tests {
         let parsed: Value = serde_json::from_str(&json).expect("valid json");
         assert!(parsed.is_array());
         assert_eq!(parsed[0]["kind"], "avatarEmotion");
-        assert_eq!(parsed[1]["kind"], "panel");
+        assert_eq!(parsed[1]["kind"], "app");
         assert_eq!(parsed[1]["entries"][0]["type"], "bgm");
         // systemPrompt 미전송(두벌 제거) → None.
         assert!(req.system_prompt.is_none());

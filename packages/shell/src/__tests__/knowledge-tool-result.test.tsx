@@ -5,16 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const navigate = vi.fn();
 const activatePanel = vi.fn();
 const openFile = vi.fn();
-const setActivePanel = vi.fn();
+const setActiveApp = vi.fn();
 
-vi.mock("../lib/panel-registry", () => ({
-	panelRegistry: {
+vi.mock("../lib/app-registry", () => ({
+	appRegistry: {
 		getApi: (id: string) =>
 			id === "browser" ? { navigate, activatePanel } : id === "workspace" ? { openFile } : undefined,
 	},
 }));
-vi.mock("../stores/panel", () => ({
-	usePanelStore: { getState: () => ({ setActivePanel }) },
+vi.mock("../stores/app", () => ({
+	useAppStore: { getState: () => ({ setActiveApp }) },
 }));
 
 import { KnowledgeToolResult } from "../components/KnowledgeToolResult";
@@ -31,7 +31,7 @@ describe("KnowledgeToolResult (K2 — 답변 + 출처 칩 + 근거→원문 disp
 		fireEvent.click(screen.getByText("전입신고"));
 		expect(navigate).toHaveBeenCalledWith("https://gov.kr/x");
 		expect(activatePanel).toHaveBeenCalled();
-		expect(setActivePanel).toHaveBeenCalledWith("browser");
+		expect(setActiveApp).toHaveBeenCalledWith("browser");
 		expect(openFile).not.toHaveBeenCalled();
 	});
 
@@ -40,7 +40,7 @@ describe("KnowledgeToolResult (K2 — 답변 + 출처 칩 + 근거→원문 disp
 		render(<KnowledgeToolResult data={data} />);
 		fireEvent.click(screen.getByText("문서"));
 		expect(openFile).toHaveBeenCalledWith("/ws/doc.md");
-		expect(setActivePanel).toHaveBeenCalledWith("workspace");
+		expect(setActiveApp).toHaveBeenCalledWith("workspace");
 		expect(navigate).not.toHaveBeenCalled();
 	});
 

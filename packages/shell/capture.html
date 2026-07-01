@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>VRM Capture</title>
+		<style>
+			html,
+			body {
+				width: 100%;
+				height: 100%;
+				margin: 0;
+				overflow: hidden;
+				background: #ffffff;
+			}
+
+			canvas {
+				display: block;
+			}
+		</style>
+	</head>
+	<body>
+		<script type="module">
+			import * as THREE from "three";
+			import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+			import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+
+			const params = new URLSearchParams(window.location.search);
+			const vrmUrl = params.get("vrm");
+			const expression = params.get("expression") || "neutral";
+
+			if (!vrmUrl) {
+				window.__RENDER_ERROR = "missing vrm query parameter";
+				throw new Error(window.__RENDER_ERROR);
+			}
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color(0xeaf4f6);
+
+			const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+			camera.position.set(0, 1.35, 5.2);
+			camera.lookAt(0, 1.35, 0);
+
+			const renderer = new THREE.WebGLRenderer({
+				antialias: true,
+				alpha: false,
+				preserveDrawingBuffer: true,
+			});
+			renderer.setSize(768, 768);
+			renderer.setPixelRatio(1);
+			renderer.setClearColor(0xeaf4f6, 1);
+			renderer.outputColorSpace = THREE.SRGBColorSpace;
+			document.body.appendChild(renderer.domElement);
+			renderer.domElement.addEventListener("webglcontextlost", (event) => {
+				event.preventDefault();
+				window.__CONTEXT_LOST = true;
+			});
+
+			const hemi = new THREE.HemisphereLight(0xffffff, 0x99ddff, 2.2);
+			scene.add(hemi);
+			const key = new THREE.DirectionalLight(0xffffff, 2.4);
+			key.position.set(2, 4, 4);
+			scene.add(key);
+			const rim = new THREE.DirectionalLight(0x00e8ff, 1.4);
+			rim.position.set(-3, 2, 2);
+			scene.add(rim);
+
+			const loader = new GLTFLoader();
+			loader.register((parser) => new VRMLoaderPlugin(parser));
+
+			loader.load(
+				vrmUrl,
+				(gltf) => {
+					const vrm = gltf.userData.vrm;
+					if (!vrm) {
+						window.__RENDER_ERROR = "VRM object missing";
+						return;
+					}
+					VRMUtils.rotateVRM0(vrm);
+					scene.add(vrm.scene);
+					vrm.scene.updateMatrixWorld(true);
+					const box = new THREE.Box3().setFromObject(vrm.scene);
+					const size = new THREE.Vector3();
+					const center = new THREE.Vector3();
+					box.getSize(size);
+					box.getCenter(center);
+					const maxAxis = Math.max(size.x, size.y, size.z) || 1;
+					const scale = 2.6 / maxAxis;
+					console.log("vrm bounds", {
+						size: size.toArray(),
+						center: center.toArray(),
+						scale,
+					});
+					window.__BOUNDS = {
+						size: size.toArray(),
+						center: center.toArray(),
+						scale,
+					};
+					vrm.scene.rotation.y = Math.PI;
+					vrm.scene.scale.setScalar(scale);
+					vrm.scene.position.set(
+						-center.x * scale,
+						1.35 - center.y * scale,
+						-center.z * scale,
+					);
+					vrm.scene.updateMatrixWorld(true);
+					const fittedBox = new THREE.Box3().setFromObject(vrm.scene);
+					const fittedSize = new THREE.Vector3();
+					const fittedCenter = new THREE.Vector3();
+					fittedBox.getSize(fittedSize);
+					fittedBox.getCenter(fittedCenter);
+					const fittedMax = Math.max(fittedSize.x, fittedSize.y, fittedSize.z) || 1;
+					const distance =
+						fittedMax / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) +
+						1.4;
+					camera.position.set(fittedCenter.x, fittedCenter.y, fittedCenter.z + distance);
+					camera.lookAt(fittedCenter);
+					camera.updateProjectionMatrix();
+					window.__FITTED_BOUNDS = {
+						size: fittedSize.toArray(),
+						center: fittedCenter.toArray(),
+						distance,
+					};
+					vrm.expressionManager?.setValue(expression, 1);
+					vrm.expressionManager?.update();
+					vrm.update(0);
+					const renderLater = (remainingFrames) => {
+						renderer.render(scene, camera);
+						if (remainingFrames > 0) {
+							requestAnimationFrame(() => renderLater(remainingFrames - 1));
+							return;
+						}
+						window.__CAPTURE_DATA_URL = renderer.domElement.toDataURL("image/png");
+						window.__RENDERED = true;
+					};
+					renderLater(8);
+				},
+				undefined,
+				(error) => {
+					window.__RENDER_ERROR = error?.message || String(error);
+				},
+			);
+		</script>
+	</body>
+</html>

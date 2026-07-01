@@ -5,15 +5,15 @@
  * and routes them to the appropriate Shell service:
  *   - logBehavior / queryBehavior → behavior-log.ts (IndexedDB)
  *   - getSecret / setSecret       → secure-store.ts (Tauri Store plugin)
- *   - readFile                    → Tauri invoke("panel_read_file")
- *   - runShell                    → Tauri invoke("panel_run_shell")
+ *   - readFile                    → Tauri invoke("app_read_file")
+ *   - runShell                    → Tauri invoke("app_run_shell")
  *
  * Call startIframeBridge() once from App.tsx. Returns a cleanup function.
  *
  * Security:
  *   - Only messages from http://asset.localhost are processed.
- *   - getSecret/setSecret keys are namespaced per source panel: `panel:{panelId}:{key}`
- *   - panel_read_file and panel_run_shell enforce restrictions on the Rust side.
+ *   - getSecret/setSecret keys are namespaced per source app: `app:{appId}:{key}`
+ *   - app_read_file and app_run_shell enforce restrictions on the Rust side.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -38,12 +38,12 @@ interface ShellResult {
 }
 
 /**
- * Derive a stable panelId from the iframe's src URL.
- * e.g. "http://asset.localhost/home/user/.naia/panels/my-panel/index.html"
+ * Derive a stable appId from the iframe's src URL.
+ * e.g. "http://asset.localhost/home/user/.naia/apps/my-panel/index.html"
  *      → "my-panel"
  */
-function panelIdFromSource(source: MessageEventSource | null): string {
-	// We derive panelId from the frame's location via the referrer in the message.
+function appIdFromSource(source: MessageEventSource | null): string {
+	// We derive appId from the frame's location via the referrer in the message.
 	// Since we cannot read the iframe's src directly from the event, we use a
 	// best-effort approach: look up the iframe element whose src origin matches.
 	if (!source) return "__unknown__";
@@ -70,12 +70,12 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 		);
 	};
 
-	const panelId = panelIdFromSource(event.source);
+	const appId = appIdFromSource(event.source);
 
-	// Reject all privileged operations when panel identity is unresolvable.
+	// Reject all privileged operations when app identity is unresolvable.
 	// Prevents namespace collision, cross-panel data leakage, and unattributed
 	// file/shell access.
-	if (panelId === "__unknown__") {
+	if (appId === "__unknown__") {
 		respond(undefined, "Panel identity could not be resolved — access denied");
 		return;
 	}
@@ -84,7 +84,7 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 		switch (msg.type) {
 			case "naia-bridge:logBehavior": {
 				await logBehavior(
-					panelId,
+					appId,
 					msg.event as string,
 					msg.data as Record<string, unknown> | undefined,
 				);
@@ -94,7 +94,7 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 			case "naia-bridge:queryBehavior": {
 				// Scope queries to the requesting panel's own logs
 				const filter = (msg.filter as BehaviorFilter | undefined) ?? {};
-				filter.panelId = panelId;
+				filter.appId = appId;
 				const entries = await queryBehavior(filter);
 				respond(entries);
 				break;
@@ -105,7 +105,7 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 					respond(undefined, "key must be a non-empty string");
 					break;
 				}
-				const value = await getSecretKey(`panel:${panelId}:${key}`);
+				const value = await getSecretKey(`app:${appId}:${key}`);
 				respond(value);
 				break;
 			}
@@ -120,7 +120,7 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 					respond(undefined, "value must be a string");
 					break;
 				}
-				await saveSecretKey(`panel:${panelId}:${key}`, value);
+				await saveSecretKey(`app:${appId}:${key}`, value);
 				respond();
 				break;
 			}
@@ -130,7 +130,7 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 					respond(undefined, "path must be a non-empty string");
 					break;
 				}
-				const content = await invoke<string>("panel_read_file", { path });
+				const content = await invoke<string>("app_read_file", { path });
 				respond(content);
 				break;
 			}
@@ -140,7 +140,7 @@ async function handleMessage(event: MessageEvent): Promise<void> {
 					respond(undefined, "cmd must be a non-empty string");
 					break;
 				}
-				const result = await invoke<ShellResult>("panel_run_shell", {
+				const result = await invoke<ShellResult>("app_run_shell", {
 					cmd,
 					args: (msg.args as string[] | undefined) ?? [],
 				});

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
 	VRAM_TIERS,
 	resolveActiveTier,
+	resolveLocalCapabilities,
 	selectVramTier,
+	tierFitsBoth,
 	tierProvidedCapabilities,
 } from "../vram-tiers";
 
@@ -12,9 +14,14 @@ describe("selectVramTier", () => {
 		expect(selectVramTier(0)).toBeNull();
 	});
 
-	it("picks the 6G tier between 6 and 12", () => {
+	it("picks the 6G tier between 6 and 8", () => {
 		expect(selectVramTier(6)?.id).toBe("external-llm-6g");
-		expect(selectVramTier(8)?.id).toBe("external-llm-6g");
+		expect(selectVramTier(7)?.id).toBe("external-llm-6g");
+	});
+
+	it("picks the 8G exclusive tier between 8 and 12", () => {
+		expect(selectVramTier(8)?.id).toBe("avatar-or-voice-8g");
+		expect(selectVramTier(11)?.id).toBe("avatar-or-voice-8g");
 	});
 
 	it("picks the richest eligible tier", () => {
@@ -22,6 +29,40 @@ describe("selectVramTier", () => {
 		expect(selectVramTier(16)?.id).toBe("avatar-voice-12g");
 		expect(selectVramTier(24)?.id).toBe("full-local-24g");
 		expect(selectVramTier(48)?.id).toBe("full-local-24g");
+	});
+});
+
+describe("avatar/voice focus (exclusive 8G tier)", () => {
+	const tier8 = selectVramTier(8)!;
+
+	it("8G tier is exclusive with both avatar+voice as candidates", () => {
+		expect(tier8.exclusiveLocal).toBe(true);
+		expect(tier8.localCapabilities).toEqual(["tts", "avatar"]);
+		expect(tierFitsBoth(tier8)).toBe(false);
+	});
+
+	it("focus=avatar → only avatar runs locally (voice → cloud)", () => {
+		expect(resolveLocalCapabilities(tier8, "avatar")).toEqual(["avatar"]);
+	});
+
+	it("focus=voice → only local voice (avatar → static)", () => {
+		expect(resolveLocalCapabilities(tier8, "voice")).toEqual(["tts"]);
+	});
+
+	it("focus undefined → defaults to voice (parity with wm 8g default)", () => {
+		expect(resolveLocalCapabilities(tier8, undefined)).toEqual(["tts"]);
+	});
+
+	it("12G+ fits both → focus ignored, both run together", () => {
+		const tier12 = selectVramTier(12)!;
+		expect(tierFitsBoth(tier12)).toBe(true);
+		expect(resolveLocalCapabilities(tier12, "avatar")).toEqual(["tts", "avatar"]);
+		expect(resolveLocalCapabilities(tier12, "voice")).toEqual(["tts", "avatar"]);
+	});
+
+	it("null tier → no local capabilities", () => {
+		expect(resolveLocalCapabilities(null, "avatar")).toEqual([]);
+		expect(tierFitsBoth(null)).toBe(false);
 	});
 });
 

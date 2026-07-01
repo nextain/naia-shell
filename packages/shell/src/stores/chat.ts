@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+﻿import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { Logger } from "../lib/logger";
 import type {
@@ -7,7 +7,7 @@ import type {
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
-import { usePanelStore } from "./panel";
+import { useAppStore } from "./app";
 
 function requestBrowserVisibilitySync() {
 	window.dispatchEvent(new Event("naia-browser-visibility-sync"));
@@ -113,7 +113,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 					return { messages: updated };
 				}
 			}
-			// No existing message — add new one
+			// No existing message ??add new one
 			return {
 				messages: [
 					...s.messages,
@@ -183,7 +183,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		} = get();
 		if (!isStreaming) return;
 		// If approval was pending and browser is active, re-show WebView2 (mirrors clearPendingApproval)
-		if (pendingApproval && usePanelStore.getState().activePanel === "browser") {
+		if (pendingApproval && useAppStore.getState().activeApp === "browser") {
 			requestBrowserVisibilitySync();
 		}
 		const toolCalls =
@@ -215,7 +215,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 			for (let i = messages.length - 1; i >= 0; i--) {
 				if (messages[i].role === "assistant") {
 					const prev = messages[i].cost;
-					// Accumulate cost — don't overwrite previous entries
+					// Accumulate cost ??don't overwrite previous entries
 					messages[i] = {
 						...messages[i],
 						cost: prev
@@ -263,18 +263,18 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	setProvider: (provider) => set({ provider }),
 
 	setPendingApproval: (approval) => {
-		// browser panel 활성 중이면 WebView2를 React render 이전에 hide — 모달이 WebView2에 가려지는 것 방지
-		if (usePanelStore.getState().activePanel === "browser") {
+		// browser panel ?쒖꽦 以묒씠硫?WebView2瑜?React render ?댁쟾??hide ??紐⑤떖??WebView2??媛?ㅼ???寃?諛⑹?
+		if (useAppStore.getState().activeApp === "browser") {
 			invoke("browser_wv_hide").catch(() => {});
 		}
 		set({ pendingApproval: approval });
 	},
 
 	clearPendingApproval: () => {
-		// browser panel 활성 중이고 실제 approval이 있었을 때만 show — setPendingApproval의 hide와 대칭
+		// browser panel ?쒖꽦 以묒씠怨??ㅼ젣 approval???덉뿀???뚮쭔 show ??setPendingApproval??hide? ?移?
 		if (
 			get().pendingApproval &&
-			usePanelStore.getState().activePanel === "browser"
+			useAppStore.getState().activeApp === "browser"
 		) {
 			requestBrowserVisibilitySync();
 		}
@@ -285,7 +285,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 		// If approval was pending and browser is active, re-show WebView2 before clearing
 		if (
 			get().pendingApproval &&
-			usePanelStore.getState().activePanel === "browser"
+			useAppStore.getState().activeApp === "browser"
 		) {
 			requestBrowserVisibilitySync();
 		}

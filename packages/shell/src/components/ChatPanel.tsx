@@ -63,7 +63,7 @@ import {
 } from "../lib/llm";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
-import { panelRegistry } from "../lib/panel-registry";
+import { appRegistry } from "../lib/app-registry";
 import { type MemoryContext, buildSystemPrompt } from "../lib/persona";
 import {
 	createApiSttSession,
@@ -83,12 +83,12 @@ import type {
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
 	LIVE_PROVIDER_COST_HINTS,
-	type PanelContextBridge,
+	type AppContextBridge,
 	SPEECH_RMS_THRESHOLD,
 	type VoiceCloseReason,
 	type VoiceConnectionStatus,
 	type VoiceSession,
-	attachPanelContextBridge,
+	attachAppContextBridge,
 	createVoiceSession,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
@@ -96,9 +96,10 @@ import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
 import { useAvatarStore } from "../stores/avatar";
+import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
-import { selectPromptPanelContexts, usePanelStore } from "../stores/panel";
+import { selectPromptAppContexts, useAppStore } from "../stores/app";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
 import { AgentsTab } from "./AgentsTab";
@@ -187,8 +188,8 @@ const FILE_PATH_RE =
 	/(?<![/\w])(\/[\w\-\.\/]+\.(?:png|jpe?g|gif|webp|csv|json|log|pdf|tsx|ts|jsx|js|rs|py|md|yaml|yml|sh|toml)(?![.\w]))/;
 
 function openFileInWorkspace(path: string): void {
-	panelRegistry.getApi("workspace")?.openFile(path);
-	usePanelStore.getState().setActivePanel("workspace");
+	appRegistry.getApi("workspace")?.openFile(path);
+	useAppStore.getState().setActiveApp("workspace");
 }
 
 /** Split a text string on file paths and return an array of strings / buttons. */
@@ -251,7 +252,7 @@ async function buildMemoryContext(): Promise<MemoryContext> {
 		// Persistent contexts survive panel switches so background music state is
 		// always available — fixes the AI hallucinating favorites when another
 		// panel was active.
-		const panelCtxList = selectPromptPanelContexts(usePanelStore.getState());
+		const panelCtxList = selectPromptAppContexts(useAppStore.getState());
 		if (panelCtxList.length > 0) {
 			ctx.panelContexts = panelCtxList;
 		}
@@ -286,7 +287,7 @@ function buildEnvironmentSegments(
 	const segs: EnvironmentSegment[] = [{ kind: "avatarEmotion" }];
 	if (memoryCtx.panelContexts?.length) {
 		segs.push({
-			kind: "panel",
+			kind: "app",
 			entries: memoryCtx.panelContexts.map((pc) => ({
 				type: pc.type,
 				data: pc.data,
@@ -451,7 +452,7 @@ export function ChatPanel({
 	const voiceSessionRef = useRef<VoiceSession | null>(null);
 	// #313 L3 — mid-session panel context bridge handle (detached in every
 	// voice cleanup path).
-	const panelContextBridgeRef = useRef<PanelContextBridge | null>(null);
+	const panelContextBridgeRef = useRef<AppContextBridge | null>(null);
 	const micStreamRef = useRef<MicStream | null>(null);
 	const audioPlayerRef = useRef<AudioPlayer | null>(null);
 	const voiceStartRef = useRef<{
@@ -783,6 +784,8 @@ export function ChatPanel({
 				// best-effort — some webviews throw if no utterance is active
 			}
 		}
+		// cascade 토킹 아바타 활성 시 발화 스트림도 중단(barge-in) — 오버레이 즉시 종료.
+		useCascadeAvatarStore.getState().renderer?.interrupt();
 		ttsPlayingRef.current = false;
 		setTtsPlaying(false);
 		useAvatarStore.getState().setSpeaking(false);
@@ -1076,16 +1079,16 @@ export function ChatPanel({
 		toolName: string;
 		args: Record<string, unknown>;
 	}) {
-		const ownerPanel = panelRegistry
+		const ownerPanel = appRegistry
 			.list()
 			.find((p) => p.tools?.some((t) => t.name === req.toolName));
 		// Tool-level auto panel switch (user request): if the tool belongs to a
 		// panel that isn't currently active, bring it forward before running.
-		if (ownerPanel && usePanelStore.getState().activePanel !== ownerPanel.id) {
-			usePanelStore.getState().setActivePanel(ownerPanel.id);
+		if (ownerPanel && useAppStore.getState().activeApp !== ownerPanel.id) {
+			useAppStore.getState().setActiveApp(ownerPanel.id);
 			Logger.info("ChatPanel", "panel auto-switch for tool", {
 				tool: req.toolName,
-				panel: ownerPanel.id,
+				app: ownerPanel.id,
 			});
 		}
 		const bridge = ownerPanel ? getBridgeForPanel(ownerPanel.id) : activeBridge;
@@ -1116,13 +1119,13 @@ export function ChatPanel({
 			});
 	}
 
-	function dispatchPanelControl(req: { action: string; panelId?: string }) {
-		const { setActivePanel } = usePanelStore.getState();
-		if (req.action === "switch" && req.panelId) {
-			setActivePanel(req.panelId);
+	function dispatchPanelControl(req: { action: string; appId?: string }) {
+		const { setActiveApp } = useAppStore.getState();
+		if (req.action === "switch" && req.appId) {
+			setActiveApp(req.appId);
 		} else if (req.action === "reload") {
-			import("../lib/panel-loader").then(({ loadInstalledPanels }) => {
-				loadInstalledPanels().catch(() => {});
+			import("../lib/app-loader").then(({ loadInstalledApps }) => {
+				loadInstalledApps().catch(() => {});
 			});
 		}
 	}
@@ -1225,12 +1228,12 @@ export function ChatPanel({
 			case "panel_control": {
 				dispatchPanelControl({
 					action: chunk.action,
-					panelId: chunk.panelId,
+					appId: chunk.appId,
 				});
 				break;
 			}
-			case "panel_install_result": {
-				// Handled by PanelInstallDialog's direct listener — no-op here
+			case "app_install_result": {
+				// Handled by AppInstallDialog's direct listener — no-op here
 				break;
 			}
 			case "usage": {
@@ -1443,6 +1446,15 @@ export function ChatPanel({
 			.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, "")
 			.trim();
 		if (!clean) return;
+
+		// cascade 토킹 아바타 활성 시: 발화를 cascade 런타임에 위임(립싱크 + 내장 TTS 음성).
+		// 로컬 TTS 는 스킵 — cascade 가 음성을 소유(talking 비디오의 오디오 트랙)하므로 이중 음성 방지.
+		// (음성 상태는 렌더러 onTalking → setSpeaking 으로 동기화.)
+		const cascadeAvatar = useCascadeAvatarStore.getState().renderer;
+		if (cascadeAvatar) {
+			void cascadeAvatar.speak(clean);
+			return;
+		}
 
 		const reqId = generateRequestId();
 		// Reserve sequence number BEFORE async request to guarantee order
@@ -2065,9 +2077,9 @@ export function ChatPanel({
 			const systemPrompt = buildSystemPrompt(config.persona, memoryCtx);
 
 			// Collect active panel tools to pass to the voice session
-			const activePanelId = usePanelStore.getState().activePanel;
-			const panelTools = activePanelId
-				? (panelRegistry.get(activePanelId)?.tools ?? [])
+			const activeAppId = useAppStore.getState().activeApp;
+			const panelTools = activeAppId
+				? (appRegistry.get(activeAppId)?.tools ?? [])
 				: [];
 			const panelToolDefs = panelTools.map((tool) => ({
 				name: tool.name,
@@ -2134,9 +2146,9 @@ export function ChatPanel({
 			// URL hops), and forwards to `session.sendContextUpdate()` — a silent
 			// no-op for providers without a mid-session inject surface
 			// (vllm-omni, naia-omni). Detached in every cleanup path below.
-			panelContextBridgeRef.current = attachPanelContextBridge(session, {
-				subscribe: (listener) => usePanelStore.subscribe(listener),
-				getContext: () => usePanelStore.getState().activePanelContext,
+			panelContextBridgeRef.current = attachAppContextBridge(session, {
+				subscribe: (listener) => useAppStore.subscribe(listener),
+				getContext: () => useAppStore.getState().activeAppContext,
 			});
 
 			// Create audio player — UC2(V2) graft: isNewCore 시 새 core ExpressionPort(play/clearAudio) 경유.
@@ -3029,7 +3041,7 @@ export function ChatPanel({
 								className="onboarding-next-btn"
 								onClick={() => {
 									setShowNoAuthModal(false);
-									usePanelStore.getState().setActivePanel("settings");
+									useAppStore.getState().setActiveApp("settings");
 									window.dispatchEvent(
 										new CustomEvent("naia-open-settings", {
 											detail: { tab: "ai" },

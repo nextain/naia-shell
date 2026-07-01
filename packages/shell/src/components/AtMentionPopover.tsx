@@ -14,7 +14,7 @@ import {
 } from "react";
 import { loadConfig } from "../lib/config";
 import { collectFiles, fuzzyMatch, getFileIcon } from "../lib/file-search";
-import { panelRegistry } from "../lib/panel-registry";
+import { appRegistry } from "../lib/app-registry";
 
 /** Max items visible in the dropdown */
 const MAX_VISIBLE = 8;
@@ -45,7 +45,7 @@ export interface AtMentionHandle {
 
 /** Check whether the workspace panel is registered (files are available). */
 export function isWorkspaceAvailable(): boolean {
-	return panelRegistry.get("workspace") !== undefined;
+	return appRegistry.get("workspace") !== undefined;
 }
 
 /** Resolve the workspace root from config. */

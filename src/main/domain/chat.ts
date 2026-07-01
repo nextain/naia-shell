@@ -37,7 +37,7 @@ export interface ChatMessage {
  */
 export type EnvironmentSegment =
   | { readonly kind: "avatarEmotion" }
-  | { readonly kind: "panel"; readonly entries: readonly { readonly type: string; readonly data: unknown }[] }
+  | { readonly kind: "app"; readonly entries: readonly { readonly type: string; readonly data: unknown }[] }
   | { readonly kind: "responseStyle"; readonly style: "brief" | "normal" };
 
 /** UC1 대화 요청 (domain). clientId=다중클라이언트 라우팅. gatewayUrl=도구 gateway(provider.labGatewayUrl 과 별개). */
@@ -150,7 +150,7 @@ export const CHAT_TURN_VARIANTS = [
   "panel_tool_call",
 ] as const;
 export const NONCHAT_KNOWN_VARIANTS = [
-  "audio", "object", "panel_control", "panel_install_result",
+  "audio", "object", "panel_control", "app_install_result",
   "ready", "skill_list_response", "embedding_progress",
   // shell agent_response 소비자 surface 전체에서 발견(uc1-variant-probe drift) — 비-chat, 해당 UC 에서 배선:
   "config_update",            // 설정 동기화

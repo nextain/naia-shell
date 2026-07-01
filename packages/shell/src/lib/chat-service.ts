@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Logger } from "./logger";
-import type { NaiaTool } from "./panel-registry";
+import type { NaiaTool } from "./app-registry";
 import type { AgentResponseChunk, EnvironmentSegment, ProviderConfig } from "./types";
 // ── new-naia 이식 코어 결선 (UC1 텍스트 대화) ──
 // VITE_NAIA_NEW_CORE=1 일 때 sendChatMessage/cancelChat 가 새 core(hexagonal os core)를 경유.
@@ -373,7 +373,7 @@ export async function directToolCall(opts: {
 	onPanelControl?: (req: {
 		requestId: string;
 		action: string;
-		panelId?: string;
+		appId?: string;
 	}) => void;
 }): Promise<{ success: boolean; output: string }> {
 	const { toolName, args, requestId, gatewayUrl } = opts;
@@ -460,12 +460,12 @@ export async function directToolCall(opts: {
 				const pc = chunk as unknown as {
 					requestId: string;
 					action: string;
-					panelId?: string;
+					appId?: string;
 				};
 				opts.onPanelControl?.({
 					requestId: pc.requestId,
 					action: pc.action,
-					panelId: pc.panelId,
+					appId: pc.appId,
 				});
 			} else if (chunk.type === "finish") {
 				clearTimeout(timeoutId);
@@ -562,13 +562,13 @@ export async function fetchAgentSkills(): Promise<
 
 /** Send panel skill descriptors to the agent (on panel activate) */
 export async function sendPanelSkills(
-	panelId: string,
+	appId: string,
 	tools: NaiaTool[],
 ): Promise<void> {
 	await safeSendToAgent(
 		{
 			type: "panel_skills",
-			panelId,
+			appId,
 			tools: tools.map((t) => ({
 				name: t.name,
 				description: t.description,
@@ -581,9 +581,9 @@ export async function sendPanelSkills(
 }
 
 /** Tell the agent to remove panel's proxy skills (on panel deactivate) */
-export async function sendPanelSkillsClear(panelId: string): Promise<void> {
+export async function sendPanelSkillsClear(appId: string): Promise<void> {
 	await safeSendToAgent(
-		{ type: "panel_skills_clear", panelId },
+		{ type: "panel_skills_clear", appId },
 		"sendPanelSkillsClear",
 	);
 }
@@ -591,7 +591,7 @@ export async function sendPanelSkillsClear(panelId: string): Promise<void> {
 /** Install a panel from a git URL or local zip file path (delegated to agent) */
 export async function sendPanelInstall(source: string): Promise<void> {
 	await safeSendToAgent(
-		{ type: "panel_install", source },
+		{ type: "app_install", source },
 		"sendPanelInstall",
 	);
 }

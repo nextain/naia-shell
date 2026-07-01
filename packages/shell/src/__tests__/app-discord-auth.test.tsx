@@ -53,17 +53,17 @@ vi.mock("../components/TitleBar", () => ({
 }));
 
 // Mock panel system to prevent built-in panels from loading Tauri APIs
-vi.mock("../lib/panel-loader", () => ({
-	loadInstalledPanels: vi.fn().mockResolvedValue(undefined),
+vi.mock("../lib/app-loader", () => ({
+	loadInstalledApps: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../lib/panel-registry", () => ({
-	panelRegistry: {
+vi.mock("../lib/app-registry", () => ({
+	appRegistry: {
 		list: vi.fn().mockReturnValue([]),
 		get: vi.fn().mockReturnValue(null),
 		register: vi.fn(),
 		unregister: vi.fn(),
 	},
-	ActivePanelBridge: class {
+	ActiveAppBridge: class {
 		pushContext = vi.fn();
 		onToolCall = vi.fn().mockReturnValue(() => {});
 		callTool = vi.fn().mockResolvedValue("");

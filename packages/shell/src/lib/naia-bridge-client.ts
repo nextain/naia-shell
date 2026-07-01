@@ -14,14 +14,14 @@
 
 export interface BehaviorEntry {
 	id?: number;
-	panelId: string;
+	appId: string;
 	event: string;
 	data?: Record<string, unknown>;
 	createdAt: string;
 }
 
 export interface BehaviorFilter {
-	panelId?: string;
+	appId?: string;
 	event?: string;
 	since?: string;
 	limit?: number;
@@ -148,7 +148,7 @@ export class NaiaBridgeClient {
 
 	/**
 	 * Get a secret value by key.
-	 * Keys are namespaced per panel: `panel:{panelId}:{key}`.
+	 * Keys are namespaced per app: `app:{appId}:{key}`.
 	 */
 	getSecret(key: string): Promise<string | null> {
 		return this.send({ type: "naia-bridge:getSecret", id: this.nextId(), key });
@@ -156,7 +156,7 @@ export class NaiaBridgeClient {
 
 	/**
 	 * Set a secret value by key.
-	 * Keys are namespaced per panel: `panel:{panelId}:{key}`.
+	 * Keys are namespaced per app: `app:{appId}:{key}`.
 	 */
 	setSecret(key: string, value: string): Promise<void> {
 		return this.send({

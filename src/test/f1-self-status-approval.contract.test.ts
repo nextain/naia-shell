@@ -10,7 +10,7 @@ import {
 import type { InteroceptivePort, ApprovalPort, PersistentGrantPort } from "../main/ports/f1.js";
 
 const scope = (o: Partial<ActionScope> = {}): ActionScope => ({ target: "/f", op: "write", body: "x", env: "host", ...o });
-const ident: ContextIdentity = { sessionId: "s1", canonicalRoot: "/w", activeSurface: "panel", configVersion: "v1", clientId: "c1" };
+const ident: ContextIdentity = { sessionId: "s1", canonicalRoot: "/w", activeSurface: "app", configVersion: "v1", clientId: "c1" };
 
 describe("domain 순수 규칙 (F1)", () => {
   it("isDegraded: 키 있어도 unreachable = degraded (오보 금지)", () => {

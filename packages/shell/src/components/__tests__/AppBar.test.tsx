@@ -73,19 +73,25 @@ vi.mock("../../lib/logger", () => ({
 const mockPushModal = vi.fn();
 const mockPopModal = vi.fn();
 
-vi.mock("../../stores/panel", () => ({
-	usePanelStore: vi.fn((selector?: (s: any) => any) => {
-		const state = {
-			activePanel: null,
-			setActivePanel: vi.fn(),
-			panelListVersion: 0,
-			bumpPanelListVersion: vi.fn(),
-			pushModal: mockPushModal,
-			popModal: mockPopModal,
-		};
+vi.mock("../../stores/app", () => {
+	// state 는 lazy 생성(호출 시점) — 팩토리는 hoist 되어 module-level mock 보다 먼저 실행되므로.
+	const getState = () => ({
+		activeApp: null,
+		setActiveApp: vi.fn(),
+		setActiveAppContext: vi.fn(),
+		appListVersion: 0,
+		bumpAppListVersion: vi.fn(),
+		pushModal: mockPushModal,
+		popModal: mockPopModal,
+	});
+	// zustand 정적 getState 도 제공 — active-bridge 의 동적 import 가 useAppStore.getState() 호출.
+	const useAppStore: any = vi.fn((selector?: (s: any) => any) => {
+		const state = getState();
 		return selector ? selector(state) : state;
-	}),
-}));
+	});
+	useAppStore.getState = getState;
+	return { useAppStore };
+});
 
 import { act } from "@testing-library/react";
 import { AppBar } from "../AppBar";

@@ -18,7 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import type { RefObject } from "react";
 import { addAllowedTool } from "./config";
-import type { NaiaContextBridge, NaiaTool } from "./panel-registry";
+import type { NaiaContextBridge, NaiaTool } from "./app-registry";
 
 // ─── Descriptors (static, sent to Agent) ─────────────────────────────────────
 

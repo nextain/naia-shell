@@ -16,14 +16,14 @@ const PURGE_DAYS = 30;
 
 export interface BehaviorEntry {
 	id?: number;
-	panelId: string;
+	appId: string;
 	event: string;
 	data?: Record<string, unknown>;
 	createdAt: string; // ISO 8601
 }
 
 export interface BehaviorFilter {
-	panelId?: string;
+	appId?: string;
 	event?: string;
 	/** ISO 8601 — only entries at or after this timestamp */
 	since?: string;
@@ -45,7 +45,7 @@ function openDB(): Promise<IDBDatabase> {
 					keyPath: "id",
 					autoIncrement: true,
 				});
-				store.createIndex("panelId", "panelId", { unique: false });
+				store.createIndex("appId", "appId", { unique: false });
 				store.createIndex("event", "event", { unique: false });
 				store.createIndex("createdAt", "createdAt", { unique: false });
 			}
@@ -88,7 +88,7 @@ function purgeOldEntries(db: IDBDatabase): Promise<void> {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function logBehavior(
-	panelId: string,
+	appId: string,
 	event: string,
 	data?: Record<string, unknown>,
 ): Promise<void> {
@@ -96,7 +96,7 @@ export async function logBehavior(
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE, "readwrite");
 		tx.objectStore(STORE).add({
-			panelId,
+			appId,
 			event,
 			data,
 			createdAt: new Date().toISOString(),
@@ -119,11 +119,11 @@ export async function queryBehavior(
 				? filter.limit
 				: Number.MAX_SAFE_INTEGER;
 
-		// Use panelId index when available — avoids full scan
-		const cursorReq: IDBRequest<IDBCursorWithValue | null> = filter?.panelId
+		// Use appId index when available — avoids full scan
+		const cursorReq: IDBRequest<IDBCursorWithValue | null> = filter?.appId
 			? store
-					.index("panelId")
-					.openCursor(IDBKeyRange.only(filter.panelId), "prev")
+					.index("appId")
+					.openCursor(IDBKeyRange.only(filter.appId), "prev")
 			: store.openCursor(null, "prev");
 
 		cursorReq.onsuccess = () => {

@@ -1,12 +1,12 @@
-import { usePanelStore } from "../stores/panel";
+import { useAppStore } from "../stores/app";
 import { Logger } from "./logger";
 
 export interface AiInterferenceEvent {
-	source: "browser" | "panel" | "workspace" | "system" | "bgm";
+	source: "browser" | "app" | "workspace" | "system" | "bgm";
 	action: string;
 	title?: string;
 	url?: string;
-	panelId?: string | null;
+	appId?: string | null;
 	summary?: string;
 }
 
@@ -18,12 +18,12 @@ function eventKey(event: AiInterferenceEvent): string {
 	return [
 		event.source,
 		event.action,
-		event.url ?? event.panelId ?? event.summary ?? "",
+		event.url ?? event.appId ?? event.summary ?? "",
 	].join("|");
 }
 
 export function emitAiInterferenceEvent(event: AiInterferenceEvent): void {
-	if (!usePanelStore.getState().aiInterferenceEnabled) return;
+	if (!useAppStore.getState().aiInterferenceEnabled) return;
 	const key = eventKey(event);
 	const now = Date.now();
 	const last = lastSentAt.get(key) ?? 0;
@@ -33,7 +33,7 @@ export function emitAiInterferenceEvent(event: AiInterferenceEvent): void {
 		source: event.source,
 		action: event.action,
 		url: event.url,
-		panelId: event.panelId,
+		appId: event.appId,
 	});
 	window.dispatchEvent(
 		new CustomEvent<AiInterferenceEvent>(EVENT_NAME, { detail: event }),
@@ -56,7 +56,7 @@ export function formatAiInterferencePrompt(event: AiInterferenceEvent): string {
 		`source: ${event.source}`,
 		`action: ${event.action}`,
 	];
-	if (event.panelId) lines.push(`panel: ${event.panelId}`);
+	if (event.appId) lines.push(`app: ${event.appId}`);
 	if (event.title) lines.push(`title: ${event.title}`);
 	if (event.url) lines.push(`url: ${event.url}`);
 	if (event.summary) lines.push(`summary: ${event.summary}`);

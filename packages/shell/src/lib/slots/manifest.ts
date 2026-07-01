@@ -22,7 +22,15 @@ export interface SlotsManifest {
 	version: typeof SLOTS_MANIFEST_VERSION;
 	gate: { naiaAccount: boolean; mode: GateMode };
 	slots: ManifestSlots;
-	gpu: { detectedVramGb?: number; tier?: string };
+	gpu: {
+		detectedVramGb?: number;
+		tier?: string;
+		/**
+		 * 배타 VRAM 티어(8G)에서 로컬 집중 — wm 이 avatar_only vs tts_only 프로파일을
+		 * 고를 근거. 아바타+음성 동시 불가한 티어에서만 의미. 미지정 → wm 기본(tts_only).
+		 */
+		localFocus?: "avatar" | "voice";
+	};
 	/** 빌드 일시(디버그·추적). ISO 문자열. */
 	builtAt?: string;
 }
@@ -59,6 +67,9 @@ export function buildSlotsManifest(
 		gpu: {
 			...(opts.detectedVramGb !== undefined ? { detectedVramGb: opts.detectedVramGb } : {}),
 			...(config.localGpuTier ? { tier: config.localGpuTier } : {}),
+			...(config.localAvatarVoiceFocus
+				? { localFocus: config.localAvatarVoiceFocus }
+				: {}),
 		},
 		...(opts.now ? { builtAt: opts.now() } : {}),
 	};

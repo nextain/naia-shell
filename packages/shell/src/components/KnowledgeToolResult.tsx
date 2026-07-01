@@ -1,6 +1,6 @@
 // KnowledgeToolResult — 지식 도구(skill_knowledge_ask/search) 결과를 답변 + 출처 칩으로 렌더(K2).
 // 칩 클릭 = "근거→원문": URL 이면 브라우저 패널 navigate, 워크스페이스 경로면 파일뷰어 openFile(+패널 전환).
-// 파싱은 lib/knowledge-result(순수), dispatch 는 panelRegistry api(browser/workspace) 재사용.
+// 파싱은 lib/knowledge-result(순수), dispatch 는 appRegistry api(browser/workspace) 재사용.
 import { classifySourceUri, type ParsedKnowledge } from "../lib/knowledge-result";
 // 출처 열기(근거→원문) = 공용 헬퍼(KnowledgeGraphOverlay 와 중복 제거 + 민감경로 가드).
 import { openKnowledgeSource } from "../lib/knowledge-source-open";

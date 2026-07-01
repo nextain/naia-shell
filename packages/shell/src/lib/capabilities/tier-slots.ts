@@ -16,7 +16,11 @@
 
 import type { ModelCapability } from "../types";
 import type { SlotId } from "../slots/model";
-import type { VramTier } from "./vram-tiers";
+import {
+	type AvatarVoiceFocus,
+	type VramTier,
+	resolveLocalCapabilities,
+} from "./vram-tiers";
 
 export interface SlotRecommendation {
 	/** 추천이 걸리는 6슬롯 중 하나. */
@@ -44,13 +48,16 @@ const CAP_TO_SLOT: Partial<
 /**
  * 활성 tier 가 VRAM 예산 내에서 로컬 추천할 슬롯 목록. tier 가 null(로컬 off /
  * VRAM 미달)이면 빈 배열 → 추천 없음(클라우드 기본 유지).
+ *
+ * 배타 티어(8G: 아바타 XOR 음성)에서는 `focus` 로 고른 하나만 추천된다 — GPU
+ * 프로파일 선택이 곧 슬롯 추천으로 이어지도록(resolveLocalCapabilities 경유).
  */
 export function tierRecommendedSlots(
 	tier: VramTier | null,
+	focus?: AvatarVoiceFocus,
 ): SlotRecommendation[] {
-	if (!tier) return [];
 	const recs: SlotRecommendation[] = [];
-	for (const cap of tier.localCapabilities) {
+	for (const cap of resolveLocalCapabilities(tier, focus)) {
 		const m = CAP_TO_SLOT[cap];
 		if (m) {
 			recs.push({ slot: m.slot, capability: cap, localValue: m.localValue });
@@ -63,8 +70,9 @@ export function tierRecommendedSlots(
 export function slotRecommendation(
 	tier: VramTier | null,
 	slot: SlotId,
+	focus?: AvatarVoiceFocus,
 ): SlotRecommendation | null {
-	return tierRecommendedSlots(tier).find((r) => r.slot === slot) ?? null;
+	return tierRecommendedSlots(tier, focus).find((r) => r.slot === slot) ?? null;
 }
 
 /** 주어진 wire 값이 이 슬롯·tier 의 로컬 추천값과 일치하는가(배지 표시용). */
@@ -72,7 +80,8 @@ export function isRecommendedLocalValue(
 	tier: VramTier | null,
 	slot: SlotId,
 	value: string | undefined,
+	focus?: AvatarVoiceFocus,
 ): boolean {
-	const rec = slotRecommendation(tier, slot);
+	const rec = slotRecommendation(tier, slot, focus);
 	return !!rec && !!value && rec.localValue === value;
 }

@@ -12,10 +12,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 const navigate = vi.fn();
 const activatePanel = vi.fn();
 const openFile = vi.fn();
-const setActivePanel = vi.fn();
+const setActiveApp = vi.fn();
 
-vi.mock("../../lib/panel-registry", () => ({
-	panelRegistry: {
+vi.mock("../../lib/app-registry", () => ({
+	appRegistry: {
 		getApi: (id: string) =>
 			id === "browser"
 				? { navigate, activatePanel }
@@ -24,8 +24,8 @@ vi.mock("../../lib/panel-registry", () => ({
 					: undefined,
 	},
 }));
-vi.mock("../../stores/panel", () => ({
-	usePanelStore: { getState: () => ({ setActivePanel }) },
+vi.mock("../../stores/app", () => ({
+	useAppStore: { getState: () => ({ setActiveApp }) },
 }));
 
 import { KnowledgeGraphOverlay } from "../KnowledgeGraphOverlay";
@@ -112,7 +112,7 @@ describe("KnowledgeGraphOverlay (작업영역 오버레이 + 노드→출처→�
 		expect(screen.getByTestId("knowledge-graph-detail")).toBeTruthy();
 		fireEvent.click(screen.getByTestId("knowledge-graph-source"));
 		expect(openFile).toHaveBeenCalledWith("/ws/a.md");
-		expect(setActivePanel).toHaveBeenCalledWith("workspace");
+		expect(setActiveApp).toHaveBeenCalledWith("workspace");
 		expect(onClose).toHaveBeenCalled(); // 원문 보이게 닫힘
 	});
 

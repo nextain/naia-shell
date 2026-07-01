@@ -6,7 +6,7 @@ import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import { loadConfig, saveConfig } from "../lib/config";
 import { Logger } from "../lib/logger";
-import type { NaiaContextBridge } from "../lib/panel-registry";
+import type { NaiaContextBridge } from "../lib/app-registry";
 import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────

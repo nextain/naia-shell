@@ -1359,7 +1359,7 @@ body.resizing-col .naia-work-rail::before {
 /* ═══════════════════════════════════════════════════════════════════════════
    UI MODE LAYOUTS
    The SAME single ChatPanel instance is repositioned by CSS keyed off
-   data-ui-mode on .app-root (derived from activePanel in App.tsx). It is never
+   data-ui-mode on .app-root (derived from activeApp in App.tsx). It is never
    unmounted across modes — only its container geometry + variant class change.
      home      → immersive visual-novel dialogue box centered over the avatar
      workspace → full-height left rail inside the 4-zone mission-control
@@ -5681,7 +5681,7 @@ body.resizing-row {
 }
 
 /* Enter animation — unfolds downward from top */
-.bgm-yt-panel:not(.bgm-yt-panel--hidden) {
+.bgm-yt-app:not(.bgm-yt-panel--hidden) {
 	animation: bgm-panel-enter 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 

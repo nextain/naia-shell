@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unified Live Voice Conversation types.
  *
  * All native Live API providers (Gemini Live, OpenAI Realtime, etc.)
@@ -8,7 +8,7 @@
  * mic-stream.ts and audio-player.ts are provider-agnostic and reused as-is.
  */
 
-// ── Provider ID ──
+// ?? Provider ID ??
 
 export type LiveProviderId =
 	| "naia"
@@ -27,7 +27,7 @@ export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	"edge-tts": "Edge (TTS Only)",
 };
 
-// ── Provider Cost Hints (approximate per-minute voice conversation cost) ──
+// ?? Provider Cost Hints (approximate per-minute voice conversation cost) ??
 
 export const LIVE_PROVIDER_COST_HINTS: Record<
 	LiveProviderId,
@@ -38,17 +38,17 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
 	"naia-omni": {
 		cost: "~$0.33/hr",
-		note: "Naia credits — hourly session (local: free)",
+		note: "Naia credits ??hourly session (local: free)",
 	},
 	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
 
-// ── Provider Voice Options ──
+// ?? Provider Voice Options ??
 // Voice options are now defined in config.ts (OPENAI_REALTIME_VOICES, GEMINI_LIVE_VOICES)
 // and re-exported from voice/index.ts for backward compatibility.
 
-// ── Tool Declaration (shared across providers) ──
+// ?? Tool Declaration (shared across providers) ??
 
 export interface ToolDeclaration {
 	name: string;
@@ -56,18 +56,18 @@ export interface ToolDeclaration {
 	parameters?: Record<string, unknown>;
 }
 
-// ── Panel Context Update (#313 L3 — mid-session panel context bridge) ──
+// ?? App Context Update (#313 L3 ??mid-session app context bridge) ??
 
-// `PanelContextUpdate` is a structurally narrow subset of `PanelContext` from
-// `panel-registry.ts` — duplicated here to keep `voice/*` free of UI imports.
-export interface PanelContextUpdate {
-	/** Panel type identifier (e.g. "browser", "workspace"). */
+// `AppContextUpdate` is a structurally narrow subset of `AppContext` from
+// `app-registry.ts` ??duplicated here to keep `voice/*` free of UI imports.
+export interface AppContextUpdate {
+	/** App type identifier (e.g. "browser", "workspace"). */
 	type: string;
-	/** Arbitrary JSON payload describing the new panel state. */
+	/** Arbitrary JSON payload describing the new app state. */
 	data: Record<string, unknown>;
 }
 
-// ── Provider Config ──
+// ?? Provider Config ??
 
 interface LiveProviderConfigBase {
 	voice?: string;
@@ -105,13 +105,13 @@ export interface NaiaOmniConfig extends LiveProviderConfigBase {
 	gatewayUrl?: string;
 	/** API key for gateway auth (gw-... format). Required when gatewayUrl is set. */
 	naiaKey?: string;
-	/** Naia OS instance ID (user_id:install_uuid). Used for Pod routing (CONTRACT §1.2). */
+	/** Naia OS instance ID (user_id:install_uuid). Used for Pod routing (CONTRACT 짠1.2). */
 	instanceId?: string;
 	/**
 	 * Naia Local mode: connect direct to a user-run container (serverUrl, no
 	 * gatewayUrl) AND send the subscriber key in the first `setup` frame so the
 	 * container validates entitlement (backend "user"). ONLY set true for the
-	 * `naia-local` model — gates the key-bearing `setup` so `naiaKey` never leaks
+	 * `naia-local` model ??gates the key-bearing `setup` so `naiaKey` never leaks
 	 * to an arbitrary direct server (e.g. a third-party vLLM). (cross-review BLOCKING)
 	 */
 	localContainer?: boolean;
@@ -158,7 +158,7 @@ export type LiveProviderConfig =
 	| NaiaOmniConfig
 	| VllmOmniConfig;
 
-// ── Audio input requirements (per-provider, read by the shared mic layer) ──
+// ?? Audio input requirements (per-provider, read by the shared mic layer) ??
 
 /**
  * Per-provider microphone capture requirements. The shared UI (ChatPanel)
@@ -190,20 +190,20 @@ export interface AudioInputConfig {
 	gateWhilePlaying: boolean;
 }
 
-// ── Voice connection status (cold-start aware) ──
+// ?? Voice connection status (cold-start aware) ??
 
 /**
  * Why a voice connection ended, mapped 1:1 from the gateway WS application close
  * code. Single source of truth = `closeCodeReason` in naia-omni.ts, which mirrors
  * naia.nextain.io's `naia-omni-client.closeReason` so desktop and web agree on
  * the wire semantics.
- *  - `auth`        — 4001, credential rejected / session expired
- *  - `credits`     — 4003, insufficient credits
- *  - `superseded`  — 4002, same account took over on another device (last-wins)
- *  - `consent`     — 4409, same account already has a live session and the
- *                    backend wants a replace/add decision (SoT §4)
- *  - `normal`      — clean close (1000) or user-initiated stop
- *  - `unknown`     — any other / abnormal code
+ *  - `auth`        ??4001, credential rejected / session expired
+ *  - `credits`     ??4003, insufficient credits
+ *  - `superseded`  ??4002, same account took over on another device (last-wins)
+ *  - `consent`     ??4409, same account already has a live session and the
+ *                    backend wants a replace/add decision (SoT 짠4)
+ *  - `normal`      ??clean close (1000) or user-initiated stop
+ *  - `unknown`     ??any other / abnormal code
  */
 export type VoiceCloseReason =
 	| "auth"
@@ -220,19 +220,19 @@ export interface VoiceCloseInfo {
 }
 
 /**
- * Connection lifecycle status. The single source of truth for voice UI state —
+ * Connection lifecycle status. The single source of truth for voice UI state ??
  * ChatPanel derives the voice button mode from the current phase (no parallel
  * `voiceMode`). Phases mirror naia.nextain.io's `ConnectionState` so desktop and
  * web stay semantically aligned.
  *
- *  - `idle`        — no session (initial / fully torn down)
- *  - `connecting`  — WebSocket opening, no cold-start signal yet
- *  - `cold-start`  — server returned pod-starting; retrying with backoff
- *  - `active`      — session live. Set by ChatPanel once mic setup succeeds, NOT
- *                    by the provider — active is UI-readiness, not just connected.
- *  - `sold-out`    — capacity exhausted, no Pod available (terminal, pre-active)
- *  - `error`       — terminal pre-active failure, classified for a message
- *  - `closed`      — a previously-active session dropped mid-call (carries the
+ *  - `idle`        ??no session (initial / fully torn down)
+ *  - `connecting`  ??WebSocket opening, no cold-start signal yet
+ *  - `cold-start`  ??server returned pod-starting; retrying with backoff
+ *  - `active`      ??session live. Set by ChatPanel once mic setup succeeds, NOT
+ *                    by the provider ??active is UI-readiness, not just connected.
+ *  - `sold-out`    ??capacity exhausted, no Pod available (terminal, pre-active)
+ *  - `error`       ??terminal pre-active failure, classified for a message
+ *  - `closed`      ??a previously-active session dropped mid-call (carries the
  *                    close reason so superseded/credits/auth can be surfaced)
  *
  * Providers emit only the pre-active phases via `onStatusChange`
@@ -247,7 +247,7 @@ export type VoiceConnectionStatus =
 			phase: "cold-start";
 			elapsedSeconds: number;
 			attempt: number;
-			// SoT §4 session.preparing/queued hints (optional — gateway may omit).
+			// SoT 짠4 session.preparing/queued hints (optional ??gateway may omit).
 			etaSeconds?: number;
 			queuePosition?: number;
 	  }
@@ -266,7 +266,7 @@ export type VoiceConnectionStatus =
 	  }
 	| { phase: "closed"; code?: number; reason: VoiceCloseReason };
 
-// ── Voice Session (provider-agnostic interface) ──
+// ?? Voice Session (provider-agnostic interface) ??
 
 export interface VoiceSession {
 	/**
@@ -279,22 +279,22 @@ export interface VoiceSession {
 	sendText: (text: string) => void;
 	sendToolResponse: (callId: string, result: unknown) => void;
 	/**
-	 * Inject a mid-session panel-context delta (#313 L3). Optional — providers
+	 * Inject a mid-session panel-context delta (#313 L3). Optional ??providers
 	 * without a mid-session inject surface (vllm-omni, naia-omni) simply omit
 	 * it, and the panel-context bridge degrades to the next-turn system prompt.
 	 */
-	sendContextUpdate?: (ctx: PanelContextUpdate) => void;
+	sendContextUpdate?: (ctx: AppContextUpdate) => void;
 	/**
 	 * Switch the reference (cloned) voice mid-session. Sends a `session.update`
 	 * with the new `ref_audio_url` so the change takes effect WITHOUT a reconnect
-	 * (web-demo parity — `naia-omni-client.setRefAudioUrl`). Optional; providers
+	 * (web-demo parity ??`naia-omni-client.setRefAudioUrl`). Optional; providers
 	 * without realtime ref switching omit it. `null` keeps the current voice.
 	 */
 	setRefAudioUrl?: (url: string | null) => void;
 	/**
 	 * Switch the reference voice mid-session using an embedded base64 WAV
 	 * (`session.update.session.ref_audio`). Used by Naia Local for a
-	 * recorded/uploaded voice that is NOT on a public URL — the clip is sent
+	 * recorded/uploaded voice that is NOT on a public URL ??the clip is sent
 	 * straight to the user's own container (no gateway, no credit charge).
 	 * Optional; `null` keeps the current voice.
 	 */
@@ -304,7 +304,7 @@ export interface VoiceSession {
 	 * `session.update` with `input_audio_transcription.language` so a language
 	 * change takes effect WITHOUT a reconnect (mirrors `setRefAudioUrl`). Optional;
 	 * only naia-omni implements it. The cascade defaults to auto-detect when unset
-	 * (manual §realtime); `setup.locale` is swallowed by the gateway, so
+	 * (manual 짠realtime); `setup.locale` is swallowed by the gateway, so
 	 * `session.update` is the only effective pin path. `null` keeps the current language.
 	 */
 	setLanguage?: (locale: string | null) => void;
@@ -321,9 +321,9 @@ export interface VoiceSession {
 	onTurnEnd: (() => void) | null;
 	onInterrupted: (() => void) | null;
 	/**
-	 * Server emotion tag update (naia-omni `emotion.updated`, manual §5). `state`
+	 * Server emotion tag update (naia-omni `emotion.updated`, manual 짠5). `state`
 	 * is the tag name (e.g. "happy"); the UI maps it to an avatar expression.
-	 * Optional — only naia-omni emits it; other providers omit it (their avatar
+	 * Optional ??only naia-omni emits it; other providers omit it (their avatar
 	 * expression is driven from the streamed transcript tag instead).
 	 */
 	onEmotion?: ((state: string) => void) | null;
@@ -336,7 +336,7 @@ export interface VoiceSession {
 	 */
 	onDisconnect: ((info?: VoiceCloseInfo) => void) | null;
 	/**
-	 * Pre-active connection lifecycle updates (cold-start aware). Optional — only
+	 * Pre-active connection lifecycle updates (cold-start aware). Optional ??only
 	 * providers with a non-instant connect (naia-omni RunPod on-demand) emit
 	 * "connecting" / "cold-start" / "sold-out" / "error". Never carries "active"
 	 * (ChatPanel owns that, mic-gated) or "closed" (flows via onDisconnect).
@@ -344,6 +344,6 @@ export interface VoiceSession {
 	onStatusChange?: ((status: VoiceConnectionStatus) => void) | null;
 }
 
-// ── Factory signature ──
+// ?? Factory signature ??
 
 export type VoiceSessionFactory = (config: LiveProviderConfig) => VoiceSession;

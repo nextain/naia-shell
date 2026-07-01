@@ -11,15 +11,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	attachPanelContextBridge,
-	type PanelContextSource,
-} from "../panel-context-bridge";
-import type { PanelContextUpdate, VoiceSession } from "../types";
+	attachAppContextBridge,
+	type AppContextSource,
+} from "../app-context-bridge";
+import type { AppContextUpdate, VoiceSession } from "../types";
 
-function makeSource(initial: PanelContextUpdate | null = null) {
-	let ctx: PanelContextUpdate | null = initial;
+function makeSource(initial: AppContextUpdate | null = null) {
+	let ctx: AppContextUpdate | null = initial;
 	const listeners = new Set<() => void>();
-	const source: PanelContextSource = {
+	const source: AppContextSource = {
 		subscribe(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
@@ -28,7 +28,7 @@ function makeSource(initial: PanelContextUpdate | null = null) {
 	};
 	return {
 		source,
-		set(next: PanelContextUpdate | null) {
+		set(next: AppContextUpdate | null) {
 			ctx = next;
 			for (const l of listeners) l();
 		},
@@ -73,12 +73,12 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-describe("attachPanelContextBridge (#313 L3)", () => {
+describe("attachAppContextBridge (#313 L3)", () => {
 	it("dispatches a single update after the debounce window", () => {
 		const session = makeSession({ withSendContextUpdate: true });
 		const { source, set } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -102,7 +102,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 		const session = makeSession({ withSendContextUpdate: true });
 		const { source, set } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -126,7 +126,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 		const session = makeSession({ withSendContextUpdate: true });
 		const { source, set, listenerCount } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -143,7 +143,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 		const session = makeSession({ withSendContextUpdate: false });
 		const { source, set } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -162,7 +162,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 			data: { url: "x" },
 		});
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -178,7 +178,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 		const session = makeSession({ withSendContextUpdate: true });
 		const { source, set } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -203,7 +203,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 		const session = makeSession({ withSendContextUpdate: true });
 		const { source, set } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 
@@ -226,7 +226,7 @@ describe("attachPanelContextBridge (#313 L3)", () => {
 		});
 		const { source, set } = makeSource();
 
-		const bridge = attachPanelContextBridge(session, source, {
+		const bridge = attachAppContextBridge(session, source, {
 			debounceMs: 500,
 		});
 

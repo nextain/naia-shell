@@ -1,9 +1,9 @@
 // knowledge-source-open — 지식 출처 1건 열기(근거→원문). URL=브라우저 navigate / 파일=워크스페이스 openFile.
 // KnowledgeToolResult(칩)·KnowledgeGraphOverlay(노드 출처) 공용(중복 제거). 파일 분기에 **민감경로 가드**
 // (탬퍼된/오염 kb.json 의 sourceUris 로 키·인증서·시크릿을 열어버리는 것 차단 — 방어, 일반 .md/.txt 는 통과).
-import { usePanelStore } from "../stores/panel";
+import { useAppStore } from "../stores/app";
 import { classifySourceUri, toFilePath } from "./knowledge-result";
-import { panelRegistry } from "./panel-registry";
+import { appRegistry } from "./app-registry";
 
 // 민감/위험 파일(키·인증서·env·ssh) — 출처 클릭으로 열지 않는다. 에이전트 fs-sandbox denylist 와 같은 취지(셸측).
 const SENSITIVE_SOURCE: readonly RegExp[] = [
@@ -28,14 +28,14 @@ export function isSafeSourcePath(path: string): boolean {
  *  URL 은 classifySourceUri 가 http(s) 만 url 로 보므로 javascript:/data: 는 url 로 안 감(파일 분기→가드). */
 export function openKnowledgeSource(uri: string): void {
 	if (classifySourceUri(uri) === "url") {
-		const api = panelRegistry.getApi("browser");
+		const api = appRegistry.getApi("browser");
 		api?.navigate(uri);
 		api?.activatePanel?.();
-		usePanelStore.getState().setActivePanel("browser");
+		useAppStore.getState().setActiveApp("browser");
 		return;
 	}
 	const path = toFilePath(uri);
 	if (!isSafeSourcePath(path)) return; // 민감/위험 = 무시(silent, 클릭으로 시크릿 노출 차단)
-	panelRegistry.getApi("workspace")?.openFile(path);
-	usePanelStore.getState().setActivePanel("workspace");
+	appRegistry.getApi("workspace")?.openFile(path);
+	useAppStore.getState().setActiveApp("workspace");
 }

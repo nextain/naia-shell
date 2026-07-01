@@ -250,7 +250,7 @@ describe("chat-service", () => {
 			requestId: "req-seg",
 			environmentSegments: [
 				{ kind: "avatarEmotion" },
-				{ kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+				{ kind: "app", entries: [{ type: "bgm", data: { track: "lofi" } }] },
 			],
 		});
 
@@ -259,7 +259,7 @@ describe("chat-service", () => {
 		expect(parsed.systemPrompt).toBeUndefined();
 		expect(parsed.environmentSegments).toEqual([
 			{ kind: "avatarEmotion" },
-			{ kind: "panel", entries: [{ type: "bgm", data: { track: "lofi" } }] },
+			{ kind: "app", entries: [{ type: "bgm", data: { track: "lofi" } }] },
 		]);
 	});
 

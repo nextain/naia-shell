@@ -130,7 +130,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 		vi.resetModules();
 	});
 
-	it("blocks getSecret when panelId is __unknown__", async () => {
+	it("blocks getSecret when appId is __unknown__", async () => {
 		const { getSecretKey } = await import("../secure-store");
 		// No iframe in DOM → __unknown__
 		const res = await sendBridgeMessage({
@@ -142,7 +142,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 		expect(res.error).toContain("Panel identity could not be resolved");
 	});
 
-	it("blocks setSecret when panelId is __unknown__", async () => {
+	it("blocks setSecret when appId is __unknown__", async () => {
 		const { saveSecretKey } = await import("../secure-store");
 		const res = await sendBridgeMessage({
 			type: "naia-bridge:setSecret",
@@ -154,7 +154,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 		expect(res.error).toContain("Panel identity could not be resolved");
 	});
 
-	it("blocks queryBehavior when panelId is __unknown__", async () => {
+	it("blocks queryBehavior when appId is __unknown__", async () => {
 		const { queryBehavior } = await import("../behavior-log");
 		const res = await sendBridgeMessage({
 			type: "naia-bridge:queryBehavior",
@@ -164,7 +164,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 		expect(res.error).toContain("Panel identity could not be resolved");
 	});
 
-	it("blocks logBehavior when panelId is __unknown__", async () => {
+	it("blocks logBehavior when appId is __unknown__", async () => {
 		const { logBehavior } = await import("../behavior-log");
 		const res = await sendBridgeMessage({
 			type: "naia-bridge:logBehavior",
@@ -175,7 +175,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 		expect(res.error).toContain("Panel identity could not be resolved");
 	});
 
-	it("blocks readFile when panelId is __unknown__", async () => {
+	it("blocks readFile when appId is __unknown__", async () => {
 		const { invoke } = await import("@tauri-apps/api/core");
 		const res = await sendBridgeMessage({
 			type: "naia-bridge:readFile",
@@ -186,7 +186,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 		expect(res.error).toContain("Panel identity could not be resolved");
 	});
 
-	it("blocks runShell when panelId is __unknown__", async () => {
+	it("blocks runShell when appId is __unknown__", async () => {
 		const { invoke } = await import("@tauri-apps/api/core");
 		const res = await sendBridgeMessage({
 			type: "naia-bridge:runShell",
@@ -199,7 +199,7 @@ describe("iframe-bridge __unknown__ panel blocking", () => {
 	});
 });
 
-// ─── Tests: input validation (with known panelId) ────────────────────────────
+// ─── Tests: input validation (with known appId) ────────────────────────────
 
 describe("iframe-bridge input validation", () => {
 	let stopBridge: () => void;
@@ -207,10 +207,10 @@ describe("iframe-bridge input validation", () => {
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
-		// Register a fake iframe so panelIdFromSource resolves a panelId
+		// Register a fake iframe so appIdFromSource resolves a appId
 		iframe = document.createElement("iframe");
 		iframe.src =
-			"http://asset.localhost/home/user/.naia/panels/my-panel/index.html";
+			"http://asset.localhost/home/user/.naia/apps/my-panel/index.html";
 		document.body.appendChild(iframe);
 
 		const { startIframeBridge } = await import("../iframe-bridge");
@@ -260,28 +260,28 @@ describe("iframe-bridge input validation", () => {
 	});
 });
 
-// ─── Tests: panelId regex ────────────────────────────────────────────────────
+// ─── Tests: appId regex ────────────────────────────────────────────────────
 
-describe("panelIdFromSource regex", () => {
+describe("appIdFromSource regex", () => {
 	const re = /\/([^/]+)\/index\.html(?:[?#].*)?$/;
 
-	it("extracts panelId from clean path", () => {
+	it("extracts appId from clean path", () => {
 		expect(
-			"http://asset.localhost/.naia/panels/my-panel/index.html".match(re)?.[1],
+			"http://asset.localhost/.naia/apps/my-panel/index.html".match(re)?.[1],
 		).toBe("my-panel");
 	});
 
-	it("extracts panelId with query string", () => {
+	it("extracts appId with query string", () => {
 		expect(
-			"http://asset.localhost/.naia/panels/my-panel/index.html?v=2".match(
+			"http://asset.localhost/.naia/apps/my-panel/index.html?v=2".match(
 				re,
 			)?.[1],
 		).toBe("my-panel");
 	});
 
-	it("extracts panelId with hash", () => {
+	it("extracts appId with hash", () => {
 		expect(
-			"http://asset.localhost/.naia/panels/my-panel/index.html#section".match(
+			"http://asset.localhost/.naia/apps/my-panel/index.html#section".match(
 				re,
 			)?.[1],
 		).toBe("my-panel");
@@ -289,7 +289,7 @@ describe("panelIdFromSource regex", () => {
 
 	it("returns null for path without index.html", () => {
 		expect(
-			"http://asset.localhost/.naia/panels/my-panel/".match(re),
+			"http://asset.localhost/.naia/apps/my-panel/".match(re),
 		).toBeNull();
 	});
 });

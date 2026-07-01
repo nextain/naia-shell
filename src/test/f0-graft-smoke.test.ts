@@ -27,7 +27,7 @@ describe("graft 부팅 결정 등가 (P02 1단계: Old-Baseline drift-gate)", ()
     expect(r.newDecision).toBe("OnboardingOverlay");
     expect(r.match).toBe(true);
   });
-  it("panel_list_installed 실패해도 non-fatal (결정 계산됨)", async () => {
+  it("app_list_installed 실패해도 non-fatal (결정 계산됨)", async () => {
     const d = { ...deps({ adkPath: "/w", onboarding: true }), invoke: async () => { throw new Error("boom"); } };
     await expect(graftBootDecisionSmoke(d)).resolves.toMatchObject({ newDecision: "Main" });
   });

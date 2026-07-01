@@ -15,8 +15,8 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 		);
 	});
 
-	it("8GB(external-llm-6g) → tts 슬롯만 로컬 추천(naia-local-voice), llm/avatar 없음", () => {
-		const tier = selectVramTier(8);
+	it("6GB(external-llm-6g) → tts 슬롯만 로컬 추천, llm/avatar 없음", () => {
+		const tier = selectVramTier(6);
 		expect(tier?.id).toBe("external-llm-6g");
 		const recs = tierRecommendedSlots(tier);
 		expect(recs).toHaveLength(1);
@@ -25,8 +25,29 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 			capability: "tts",
 			localValue: "naia-local-voice",
 		});
-		expect(slotRecommendation(tier, "main")).toBeNull();
-		expect(slotRecommendation(tier, "avatar")).toBeNull();
+	});
+
+	it("8GB(배타) → focus 로 아바타 XOR 음성 하나만 추천", () => {
+		const tier = selectVramTier(8);
+		expect(tier?.id).toBe("avatar-or-voice-8g");
+		// focus=voice(기본) → tts 슬롯만
+		expect(tierRecommendedSlots(tier, "voice").map((r) => r.slot)).toEqual([
+			"tts",
+		]);
+		expect(slotRecommendation(tier, "avatar", "voice")).toBeNull();
+		expect(
+			isRecommendedLocalValue(tier, "tts", "naia-local-voice", "voice"),
+		).toBe(true);
+		// focus=avatar → avatar 슬롯만
+		expect(tierRecommendedSlots(tier, "avatar").map((r) => r.slot)).toEqual([
+			"avatar",
+		]);
+		expect(slotRecommendation(tier, "tts", "avatar")).toBeNull();
+		expect(
+			isRecommendedLocalValue(tier, "avatar", "naia-video-avatar", "avatar"),
+		).toBe(true);
+		// 두 focus 어느 쪽도 main(llm)은 추천 안 함
+		expect(slotRecommendation(tier, "main", "avatar")).toBeNull();
 	});
 
 	it("12GB(avatar-voice-12g) → tts + avatar 로컬 추천", () => {

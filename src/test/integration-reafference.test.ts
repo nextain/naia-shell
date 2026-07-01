@@ -10,7 +10,7 @@ import type { EnvironmentMutatePort } from "../main/ports/f3.js";
 import type { EnvironmentObservePort, FileChangeEvent } from "../main/ports/f2.js";
 import type { ObservedState } from "../main/domain/observe.js";
 
-const ident: ContextIdentity = { sessionId: "s1", canonicalRoot: "/w", activeSurface: "panel", configVersion: "v1", clientId: "c1" };
+const ident: ContextIdentity = { sessionId: "s1", canonicalRoot: "/w", activeSurface: "app", configVersion: "v1", clientId: "c1" };
 // ⚠️ 승인 scope 는 *실제 cmd* 에 결속돼야 함(UC13 fix): op 는 MutateOp 어휘(writeFile), target/body=cmd 일치.
 const scope = (o: Partial<ActionScope> = {}): ActionScope => ({ target: "/w/f", op: "writeFile", body: "v", env: "host", ...o });
 const gi = (o: Partial<GateInput> = {}): GateInput => ({

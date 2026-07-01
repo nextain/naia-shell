@@ -24,12 +24,12 @@ import { createVllmOmniSession } from "./vllm-omni";
 
 // #313 L3 — mid-session panel context bridge.
 export {
-	attachPanelContextBridge,
+	attachAppContextBridge,
 	DEFAULT_DEBOUNCE_MS as PANEL_CONTEXT_BRIDGE_DEBOUNCE_MS,
-	type PanelContextBridge,
-	type PanelContextBridgeOptions,
-	type PanelContextSource,
-} from "./panel-context-bridge";
+	type AppContextBridge,
+	type AppContextBridgeOptions,
+	type AppContextSource,
+} from "./app-context-bridge";
 
 export {
 	type LiveProviderId,
@@ -45,7 +45,7 @@ export type {
 	OpenAIRealtimeConfig,
 	VllmOmniConfig,
 	ToolDeclaration,
-	PanelContextUpdate,
+	AppContextUpdate,
 	VoiceCloseReason,
 	VoiceCloseInfo,
 } from "./types";

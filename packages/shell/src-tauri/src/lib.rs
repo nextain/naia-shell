@@ -5,7 +5,7 @@ mod browser_webview;
 mod capture;
 mod gemini_live;
 mod memory;
-mod panel;
+mod app;
 mod platform;
 mod pty;
 mod stt_models;
@@ -1261,7 +1261,7 @@ async fn agent_dispatcher(
             // ── UC-PANEL FR-PANEL: 환경 panel skill(BGM·브라우저·workspace) 셸→agent 배선(현 `_=>{}` drop 제거) ──
             "panel_skills" => {
                 // FR-PANEL-1 등록: wire tools → pb::ToolSpec(parameters→JSON 문자열, tier→Option<i32>).
-                let panel_id = v.get("panelId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let panel_id = v.get("appId").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 let tools: Vec<agent_grpc::pb::ToolSpec> = v.get("tools").and_then(|t| t.as_array()).map(|arr| {
                     arr.iter().map(|t| agent_grpc::pb::ToolSpec {
                         name: t.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
@@ -1274,7 +1274,7 @@ async fn agent_dispatcher(
                 tauri::async_runtime::spawn(async move { let _ = c.register_panel_skills(panel_id, tools).await; });
             }
             "panel_skills_clear" => {
-                let panel_id = v.get("panelId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let panel_id = v.get("appId").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 let mut c = client.clone();
                 tauri::async_runtime::spawn(async move { let _ = c.clear_panel_skills(panel_id).await; });
             }
@@ -1305,10 +1305,10 @@ async fn agent_dispatcher(
                 let mut c = client.clone();
                 tauri::async_runtime::spawn(async move { let _ = c.panel_tool_result(rid, tcid, output, success).await; });
             }
-            "panel_install" => {
-                // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — PanelInstallDialog 무한 로딩 방지 위해
+            "app_install" => {
+                // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — AppInstallDialog 무한 로딩 방지 위해
                 //   즉시 미지원 응답(셸 dialog 는 독립 raw listener 라 router 우회 직접 수신). 기능화는 별도 이슈.
-                let _ = app.emit("agent_response", &serde_json::json!({"type":"panel_install_result","success":false,"error":"앱 설치는 현재 미지원(new-core 스코프 밖)"}).to_string());
+                let _ = app.emit("agent_response", &serde_json::json!({"type":"app_install_result","success":false,"error":"앱 설치는 현재 미지원(new-core 스코프 밖)"}).to_string());
             }
             _ => {}
         }
@@ -4104,11 +4104,11 @@ pub fn run() {
             browser_webview::browser_wv_eval,
             // Common tab skills
             capture::capture_screen_region,
-            panel::panel_list_installed,
-            panel::panel_remove_installed,
-            panel::panel_read_file,
-            panel::panel_run_shell,
-            panel::panel_install,
+            app::app_list_installed,
+            app::app_remove_installed,
+            app::app_read_file,
+            app::app_run_shell,
+            app::app_install,
             workspace::workspace_list_dirs,
             workspace::workspace_read_file,
             workspace::workspace_read_file_bytes,

@@ -10,7 +10,7 @@ import { localeToSttLanguage } from "../config";
 import type {
 	GeminiLiveConfig,
 	LiveProviderConfig,
-	PanelContextUpdate,
+	AppContextUpdate,
 	VoiceSession,
 } from "./types";
 
@@ -247,7 +247,7 @@ export function createGeminiLiveSession(): VoiceSession {
 		// minimal so rapid URL hops (debounced upstream at 500ms) do not fill
 		// the WS with bloated JSON. Drops silently when WS is not connected so
 		// the bridge can fire-and-forget without paused/closed checks.
-		sendContextUpdate(ctx: PanelContextUpdate) {
+		sendContextUpdate(ctx: AppContextUpdate) {
 			if (!ws || !connected) return;
 			if (!ctx || typeof ctx !== "object" || !ctx.type) return;
 			let serialized: string;

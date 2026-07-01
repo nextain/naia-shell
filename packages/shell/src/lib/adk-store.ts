@@ -116,7 +116,7 @@ const SECRET_CONFIG_KEYS = new Set([
 // flattenConfig() from polluting process.env with THEME, PANEL_POSITION, BGM_TRACK, etc.
 const UI_ONLY_CONFIG_KEYS = new Set([
 	// Appearance
-	"theme", "backgroundImage", "backgroundVideo", "vrmModel", "avatarProvider", "nvaModel", "customVrms", "customBgs",
+	"theme", "backgroundImage", "backgroundVideo", "vrmModel", "avatarProvider", "nvaModel", "cascadeRuntimeUrl", "customVrms", "customBgs",
 	// STT/TTS UI features
 	"sttProvider", "sttModel", "naiaCloudSttBackend",
 	"ttsEnabled", "ttsVoice", "ttsProvider", "naiaCloudTtsBackend", "ttsEngine",
@@ -351,6 +351,7 @@ const UI_IDENTITY_KEYS = [
 	"vrmModel",
 	"avatarProvider",
 	"nvaModel",
+	"cascadeRuntimeUrl",
 	"backgroundImage",
 	"backgroundVideo",
 	"bgmTrack",
