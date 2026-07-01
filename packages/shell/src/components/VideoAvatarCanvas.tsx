@@ -10,7 +10,7 @@ import {
 	probeCascadeHealth,
 } from "../lib/avatar/cascade-renderer";
 import { loadConfig } from "../lib/config";
-import { parseNvaManifest, resolveNvaAssetPath } from "../lib/nva";
+import { defaultClipOf, parseNvaManifest, resolveNvaAssetPath } from "../lib/nva";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -167,7 +167,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					allowedBase: adkPath,
 				});
 				const manifest = parseNvaManifest(decodeBase64Utf8(b64));
-				const clip = manifest.clips[manifest.defaultClip];
+				const clip = defaultClipOf(manifest);
 				localVideoUrl = await toLocalBlobUrl(
 					resolveNvaAssetPath(bundleDir, clip.video),
 				);
