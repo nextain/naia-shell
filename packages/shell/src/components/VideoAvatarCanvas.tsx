@@ -23,7 +23,12 @@ interface VideoAvatarCanvasProps {
 	nvaModel?: string;
 }
 
-type Mode = "loading" | "cascade" | "unavailable" | "error";
+// loading=기동/연결 중, cascade=립싱크 라이브, standby=로컬 적용됐으나 백엔드 미기동(대기),
+// unavailable=로컬 프로파일 없음/원격 미도달, error=치명 오류.
+type Mode = "loading" | "cascade" | "standby" | "unavailable" | "error";
+
+// standby(대기중)에서 백엔드가 뜨는지 재확인하는 폴링 주기(ms). 재기동은 안 하고 상태만 본다.
+const RETRY_POLL_MS = 4000;
 
 // 사용자 이동(pan) 오프셋 영속 — VRM 카메라 저장과 대칭. px 단위, 리셋으로 0.
 const NVA_PAN_KEY = "naia-nva-pan-v1";
@@ -120,6 +125,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 
 	useEffect(() => {
 		let disposed = false;
+		let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 		async function load() {
 			setMode("loading");
@@ -138,9 +144,24 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			const sep = adkPath.includes("\\") ? "\\" : "/";
 			const bundleDir = `${adkPath}${sep}naia-settings${sep}nva-files${sep}${bundleName}`;
 
+			// 로컬 아바타 프로파일이 적용됐는가 = 로컬 GPU 프로파일이 "avatar" capability 를 실제 제공.
+			// SettingsTab 의 cascadeAvatarPossible 과 **동일 로직**(capability 기반). 이 값으로 미연결 시
+			// "로컬 모델 대기중"(R7) vs "미연결"을 구분하고, 자동기동/폴링 복구 여부를 결정한다.
+			const cfg = loadConfig();
+			let canLocalCascade = false;
+			if (cfg?.naiaKey && cfg.localGpuTier && cfg.localGpuTier !== "off") {
+				const vram = await detectGpuVramGb();
+				if (disposed) return;
+				const tier = resolveActiveTier(cfg.localGpuTier, vram);
+				canLocalCascade = resolveLocalCapabilities(
+					tier,
+					cfg.localAvatarVoiceFocus,
+				).includes("avatar");
+			}
+
 			// (A) cascade 토킹 모드 — 로컬 spawn facade(우선) 또는 설정 cascadeRuntimeUrl + /health 도달 시
 			const cascadeUrl =
-				localFacadeUrl?.trim() || loadConfig()?.cascadeRuntimeUrl?.trim();
+				localFacadeUrl?.trim() || cfg?.cascadeRuntimeUrl?.trim();
 			if (cascadeUrl) {
 				const ok = await probeCascadeHealth(cascadeUrl);
 				if (disposed) return;
@@ -163,27 +184,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				}
 			}
 
-			// (B) cascade 미연결 — 로컬 프로파일이 있으면 cascade 를 자동 기동한다.
+			// (B) cascade 미연결 — 로컬 프로파일이 있으면 cascade 를 자동 기동(1회)한다.
 			// ★사용자 요구: 비디오 아바타는 cascade(Ditto 립싱크)에 연결됐을 때만 노출한다.
 			//   미연결 시 정적 idle 클립을 "사진처럼" 세워두지 않는다(불투명 UX 제거).
-			//   cascade 는 음성 프로바이더가 아니라 비디오 아바타 + 로컬 GPU 프로파일에 묶인다.
-			const cfg = loadConfig();
-			// cascade 자동기동 가능 여부 = 로컬 GPU 프로파일이 "avatar" capability 를 실제 제공할 때만.
-			// SettingsTab 의 cascadeAvatarPossible 과 **동일 로직**(capability 기반) — 게이트 불일치로
-			// "선택은 됐는데 영원히 미연결"/"voice 프로파일인데 아바타 기동" 같은 어긋남을 막는다.
-			// (8G 배타에서 focus=voice/미지정 → resolveLocalCapabilities=["tts"] → avatar 없음 → false.)
-			let canLocalCascade = false;
-			if (cfg?.naiaKey && cfg.localGpuTier && cfg.localGpuTier !== "off") {
-				const vram = await detectGpuVramGb();
-				if (disposed) return;
-				const tier = resolveActiveTier(cfg.localGpuTier, vram);
-				canLocalCascade = resolveLocalCapabilities(
-					tier,
-					cfg.localAvatarVoiceFocus,
-				).includes("avatar");
-			}
-			if (!autoStartAttemptedRef.current && canLocalCascade) {
+			if (canLocalCascade && !autoStartAttemptedRef.current) {
 				autoStartAttemptedRef.current = true;
+				setMode("loading");
 				try {
 					if (cfg) await writeSlotsManifest(cfg);
 					const ready = await invoke<string>("start_cascade");
@@ -199,15 +205,45 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					setError(`cascade-start-failed: ${String(e)}`);
 				}
 			}
-			// cascade 미연결(로컬 프로파일 없음/기동 실패/원격 미도달) → 아바타 노출 안 함.
+
+			// (C) 미연결 확정. 로컬 아바타 프로파일이면 "로컬 모델 대기중"(R7) + 폴링 복구(R8):
+			//     백엔드가 (느리게/외부에서/재기동으로) 정상적으로 뜨면 자동 인지해 연결한다.
+			//     재기동은 안 하고(비용/VRAM), cascade_status 로 "실행 중"을 감지하면 start_cascade 가
+			//     캐시된 ready 를 반환 → facade URL 확보 → setLocalFacadeUrl → effect 재실행 → (A).
 			if (disposed) return;
-			setMode("unavailable");
-			setLoaded(false);
+			if (canLocalCascade) {
+				setMode("standby");
+				setLoaded(false);
+				const poll = async () => {
+					if (disposed) return;
+					try {
+						const running = await invoke<boolean>("cascade_status");
+						if (!disposed && running) {
+							const ready = await invoke<string>("start_cascade"); // 실행 중이면 캐시 ready
+							if (disposed) return;
+							const url = localFacadeUrlFromReady(ready);
+							if (url) {
+								useCascadeAvatarStore.getState().setLocalFacadeUrl(url);
+								return; // → effect 재실행 → (A) 연결
+							}
+						}
+					} catch {
+						/* 폴링 실패 비치명 — 다음 주기 재시도 */
+					}
+					if (!disposed) retryTimer = setTimeout(poll, RETRY_POLL_MS);
+				};
+				retryTimer = setTimeout(poll, RETRY_POLL_MS);
+			} else {
+				// 로컬 프로파일 없음/원격 미도달 → 아바타 노출 안 함.
+				setMode("unavailable");
+				setLoaded(false);
+			}
 		}
 
 		void load();
 		return () => {
 			disposed = true;
+			if (retryTimer) clearTimeout(retryTimer);
 		};
 	}, [nvaModel, setLoaded, localFacadeUrl]);
 
@@ -278,9 +314,11 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				>
 					{mode === "loading"
 						? "로컬 아바타(cascade) 연결 중…"
-						: mode === "error"
-							? `아바타 연결 실패${error ? ` — ${error}` : ""}`
-							: "로컬 아바타 미연결 — 프로파일 탭에서 로컬 GPU 프로파일 + Naia 로그인을 확인하세요."}
+						: mode === "standby"
+							? "로컬 모델 대기중… (기동되면 자동으로 표시됩니다)"
+							: mode === "error"
+								? `아바타 연결 실패${error ? ` — ${error}` : ""}`
+								: "로컬 아바타 미연결 — 프로파일 탭에서 로컬 GPU 프로파일 + Naia 로그인을 확인하세요."}
 				</div>
 			)}
 		</div>

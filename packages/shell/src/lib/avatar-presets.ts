@@ -6,6 +6,12 @@ export interface AvatarPreset {
 
 export const DEFAULT_AVATAR_MODEL = "/avatars/Naia.vrm";
 
+/**
+ * 비디오 아바타(NVA) 기본 번들 이름(bare name). 비디오 아바타를 켰는데 nvaModel 이
+ * 비어 있으면 이 값으로 채운다. 지금은 alpha-real-video, 추후 전용 기본 아바타로 교체 예정.
+ */
+export const DEFAULT_NVA_MODEL = "alpha-real-video";
+
 export type AvatarGender = "female" | "male";
 
 export const AVATAR_PRESETS: AvatarPreset[] = [

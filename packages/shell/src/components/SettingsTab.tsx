@@ -19,6 +19,7 @@ import {
 } from "../lib/adk-store";
 import {
 	DEFAULT_AVATAR_MODEL,
+	DEFAULT_NVA_MODEL,
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
@@ -1805,7 +1806,7 @@ export function SettingsTab() {
 			avatarProvider,
 			nvaModel:
 				avatarProvider === "naia-video-avatar"
-					? nvaModel || undefined
+					? nvaModel || DEFAULT_NVA_MODEL // R6: 미지정이면 기본 번들
 					: undefined,
 			cascadeRuntimeUrl:
 				avatarProvider === "naia-video-avatar"
@@ -2060,12 +2061,19 @@ export function SettingsTab() {
 				return slotSnapshot.tts.provider
 					? String(slotSnapshot.tts.provider)
 					: t("settings.slot.notSet");
-			case "avatar":
-				return (
-					slotSnapshot.avatar.model ||
-					slotSnapshot.avatar.provider ||
-					t("settings.slot.notSet")
-				);
+			case "avatar": {
+				// 슬롯 = 현재 상태(실제 시각 아바타). readSlots 의 avatar 는 레거시 liveProvider
+				// (마이그레이션이 비움)를 읽어 항상 "미설정"으로 뜨므로, 여기선 실 config 상태
+				// (avatarProvider + nvaModel/vrmModel)를 직접 표시한다. 경로가 저장돼도 basename 만.
+				const bare = (v: string) => v.split(/[/\\]/).filter(Boolean).pop() ?? v;
+				if (avatarProvider === "naia-video-avatar") {
+					return `${t("settings.avatarProviderVideo")}${nvaModel ? ` / ${bare(nvaModel)}` : ""}`;
+				}
+				if (avatarProvider === "vrm") {
+					return `${t("settings.avatarProviderVrm")}${vrmModel ? ` / ${bare(vrmModel)}` : ""}`;
+				}
+				return t("settings.slot.notSet");
+			}
 		}
 	}
 
@@ -2416,7 +2424,18 @@ export function SettingsTab() {
 								if (next === "naia-video-avatar" && !cascadeAvatarPossible)
 									return;
 								setAvatarProvider(next);
-								persistConfig({ avatarProvider: next });
+								// R6: 비디오 아바타인데 NVA 미지정이면 기본 번들로 채운다(빈 상태 방지).
+								const nextNva =
+									next === "naia-video-avatar" && !nvaModel
+										? DEFAULT_NVA_MODEL
+										: nvaModel;
+								if (nextNva !== nvaModel) setNvaModel(nextNva);
+								persistConfig({
+									avatarProvider: next,
+									...(next === "naia-video-avatar"
+										? { nvaModel: nextNva }
+										: {}),
+								});
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
@@ -2874,23 +2893,10 @@ export function SettingsTab() {
 												<span className="settings-summary-key">
 													{t(SLOT_LABEL_KEYS[sid] as TranslationKey)}
 												</span>
+												{/* 슬롯 값 = 현재 상태만. 티어 추천은 아래 전용 '추천' 블록에서만
+												    표시(사용자 요구: "슬롯은 현재 상태를 보여줘야해" — 상태/추천 분리). */}
 												<span className="settings-summary-value">
 													{slotValueDisplay(sid)}
-													{slotRecommendation(
-														activeLocalTier,
-														sid,
-														localAvatarVoiceFocus,
-													) && (
-														<>
-															{" "}
-															<span
-																className="slot-recommend-badge"
-																data-testid={`slot-rec-${sid}`}
-															>
-																{t("settings.tierRecommendBadge")}
-															</span>
-														</>
-													)}
 												</span>
 											</div>
 										))}
