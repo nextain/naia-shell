@@ -655,6 +655,119 @@ export function SettingsTab() {
 		}
 	};
 
+	// R4/R5: 로컬 프로파일(GPU 티어/포커스) 선택 → 관련 슬롯을 로컬로 스테이징 + 백엔드 warm(대기).
+	// 스테이징이라 config 는 "적용"(handleSave) 전까지 안 바뀐다(앱 그대로). warm 은 스테이징
+	// config 로 slots-manifest 를 써서 백엔드를 미리 띄운다 → 적용 시 즉시 아바타 연결.
+	const warmedProfileRef = useRef<string>("");
+
+	// R5: 티어 capability 로 로컬 슬롯을 스테이징(setState). 반환 = warm manifest 에 쓸 값.
+	const stageLocalSlots = (
+		tier: typeof localGpuTier,
+		focus: AvatarVoiceFocus,
+	): {
+		avatar: "vrm" | "naia-video-avatar";
+		nva: string;
+		tts: TtsProviderId;
+	} => {
+		const caps = resolveLocalCapabilities(
+			resolveActiveTier(tier, detectedVramGb),
+			focus,
+		);
+		let nextAvatar = avatarProvider;
+		let nextNva = nvaModel;
+		let nextTts = ttsProvider;
+		if (caps.includes("avatar")) {
+			nextAvatar = "naia-video-avatar";
+			setAvatarProvider("naia-video-avatar");
+			if (!nvaModel) {
+				nextNva = DEFAULT_NVA_MODEL;
+				setNvaModel(DEFAULT_NVA_MODEL);
+			}
+		}
+		if (caps.includes("tts")) {
+			nextTts = "naia-local-voice";
+			setTtsProvider("naia-local-voice");
+			if (!vllmTtsHost) setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
+		}
+		return { avatar: nextAvatar, nva: nextNva, tts: nextTts };
+	};
+
+	// R4: 스테이징 config 로 백엔드 warm(기동·대기). 티어/포커스 변경 시 재기동(manifest 반영).
+	const warmLocalProfile = async (
+		tier: typeof localGpuTier,
+		focus: AvatarVoiceFocus,
+		staged: {
+			avatar: "vrm" | "naia-video-avatar";
+			nva: string;
+			tts: TtsProviderId;
+		},
+	) => {
+		if (!naiaKey || tier === "off") {
+			// 로컬 해제 → 백엔드 정지
+			if (cascadeRunning) {
+				try {
+					await invoke("stop_cascade");
+				} catch {
+					/* 정지 실패 비치명 */
+				}
+				setCascadeRunning(false);
+				useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
+			}
+			warmedProfileRef.current = "";
+			setCascadeMsg("");
+			return;
+		}
+		const key = `${tier}|${focus}`;
+		if (warmedProfileRef.current === key && cascadeRunning) return; // 이미 이 프로파일로 warm됨
+		setCascadeBusy(true);
+		setCascadeMsg(t("settings.cascadeBusy"));
+		try {
+			if (cascadeRunning) {
+				// 프로파일 바뀜 → manifest 반영 위해 재기동
+				try {
+					await invoke("stop_cascade");
+				} catch {
+					/* 무시 */
+				}
+			}
+			const cfg = {
+				...(loadConfig() ?? {}),
+				localGpuTier: tier,
+				localAvatarVoiceFocus: focus,
+				avatarProvider: staged.avatar,
+				nvaModel: staged.nva || undefined,
+				ttsProvider: staged.tts,
+			} as AppConfig;
+			await writeSlotsManifest(cfg);
+			const ready = await invoke<string>("start_cascade");
+			useCascadeAvatarStore
+				.getState()
+				.setLocalFacadeUrl(localFacadeUrlFromReady(ready));
+			setCascadeRunning(true);
+			warmedProfileRef.current = key;
+			setCascadeMsg(t("settings.cascadeStarted"));
+		} catch (e) {
+			setCascadeMsg(`${t("settings.cascadeError")}: ${String(e)}`);
+		} finally {
+			setCascadeBusy(false);
+		}
+	};
+
+	const handleSelectLocalTier = (tier: typeof localGpuTier) => {
+		setLocalGpuTier(tier); // 스테이징(persist 안 함 — 적용에서 커밋)
+		const staged =
+			tier === "off"
+				? { avatar: avatarProvider, nva: nvaModel, tts: ttsProvider }
+				: stageLocalSlots(tier, localAvatarVoiceFocus);
+		void warmLocalProfile(tier, localAvatarVoiceFocus, staged);
+	};
+
+	const handleSelectFocus = (focus: AvatarVoiceFocus) => {
+		setLocalAvatarVoiceFocus(focus); // 스테이징
+		const staged = stageLocalSlots(localGpuTier, focus);
+		void warmLocalProfile(localGpuTier, focus, staged);
+	};
+
 	const [vllmSttModels, setVllmSttModels] = useState<
 		import("../lib/llm/types").LlmModelMeta[]
 	>([]);
@@ -2030,7 +2143,10 @@ export function SettingsTab() {
 	// S-SLOT 게이트(FR-SLOT.1) — naiaKey 존재 = naia(크레딧 접근), 부재 = byo.
 	// GPU·localGpuTier 무관(R1-3). "Naia"는 provider 아닌 접근 유형.
 	const gateMode: GateMode = deriveGate(!!naiaKey);
-	const slotSnapshot = readSlots(loadConfig() ?? ({} as AppConfig));
+	// 슬롯 오버뷰 = **적용(applied) 상태**(라이브). 피커/셀렉터는 스테이징(React state)이고
+	// "적용"(handleSave)이 스테이징→적용으로 커밋한다. 그래서 요약은 loadConfig() 을 읽는다.
+	const appliedCfg = loadConfig();
+	const slotSnapshot = readSlots(appliedCfg ?? ({} as AppConfig));
 
 	const SLOT_LABEL_KEYS: Record<SlotId, string> = {
 		main: "settings.slot.slotMain",
@@ -2062,15 +2178,16 @@ export function SettingsTab() {
 					? String(slotSnapshot.tts.provider)
 					: t("settings.slot.notSet");
 			case "avatar": {
-				// 슬롯 = 현재 상태(실제 시각 아바타). readSlots 의 avatar 는 레거시 liveProvider
-				// (마이그레이션이 비움)를 읽어 항상 "미설정"으로 뜨므로, 여기선 실 config 상태
-				// (avatarProvider + nvaModel/vrmModel)를 직접 표시한다. 경로가 저장돼도 basename 만.
+				// 슬롯 = 적용된(라이브) 시각 아바타. readSlots 의 avatar 는 레거시 liveProvider
+				// (마이그레이션이 비움)를 읽어 항상 "미설정"으로 뜨므로, 여기선 적용된 config
+				// (appliedCfg.avatarProvider + nvaModel/vrmModel)를 직접 표시한다. 경로면 basename 만.
 				const bare = (v: string) => v.split(/[/\\]/).filter(Boolean).pop() ?? v;
-				if (avatarProvider === "naia-video-avatar") {
-					return `${t("settings.avatarProviderVideo")}${nvaModel ? ` / ${bare(nvaModel)}` : ""}`;
+				const ap = appliedCfg?.avatarProvider;
+				if (ap === "naia-video-avatar") {
+					return `${t("settings.avatarProviderVideo")}${appliedCfg?.nvaModel ? ` / ${bare(appliedCfg.nvaModel)}` : ""}`;
 				}
-				if (avatarProvider === "vrm") {
-					return `${t("settings.avatarProviderVrm")}${vrmModel ? ` / ${bare(vrmModel)}` : ""}`;
+				if (ap === "vrm") {
+					return `${t("settings.avatarProviderVrm")}${appliedCfg?.vrmModel ? ` / ${bare(appliedCfg.vrmModel)}` : ""}`;
 				}
 				return t("settings.slot.notSet");
 			}
@@ -2423,19 +2540,11 @@ export function SettingsTab() {
 								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
 								if (next === "naia-video-avatar" && !cascadeAvatarPossible)
 									return;
+								// R3: 스테이징만(즉시 persist 안 함) — "적용"에서 커밋.
 								setAvatarProvider(next);
 								// R6: 비디오 아바타인데 NVA 미지정이면 기본 번들로 채운다(빈 상태 방지).
-								const nextNva =
-									next === "naia-video-avatar" && !nvaModel
-										? DEFAULT_NVA_MODEL
-										: nvaModel;
-								if (nextNva !== nvaModel) setNvaModel(nextNva);
-								persistConfig({
-									avatarProvider: next,
-									...(next === "naia-video-avatar"
-										? { nvaModel: nextNva }
-										: {}),
-								});
+								if (next === "naia-video-avatar" && !nvaModel)
+									setNvaModel(DEFAULT_NVA_MODEL);
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
@@ -2570,8 +2679,8 @@ export function SettingsTab() {
 										type="button"
 										className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
 										onClick={() => {
+											// R3: 스테이징만 — "적용"에서 커밋.
 											setNvaModel(name);
-											persistConfig({ nvaModel: name });
 										}}
 									>
 										{name}
@@ -2988,9 +3097,9 @@ export function SettingsTab() {
 							value={localGpuTier}
 							disabled={!naiaKey}
 							onChange={(e) => {
-								const v = e.target.value as typeof localGpuTier;
-								setLocalGpuTier(v);
-								persistConfig({ localGpuTier: v });
+								// R3/R4/R5: 선택 = 스테이징(즉시 persist 안 함) + 로컬 슬롯 스테이징 +
+								// 백엔드 warm(대기). "적용"(저장)에서 실제 앱에 커밋.
+								handleSelectLocalTier(e.target.value as typeof localGpuTier);
 							}}
 						>
 							<option value="off">{t("settings.engineLocalOff")}</option>
@@ -3018,6 +3127,18 @@ export function SettingsTab() {
 										)
 									: t("settings.localGpuHint")}
 						</div>
+						{/* R4: 로컬 프로파일 선택 시 백엔드 warm(대기) 상태. */}
+						{naiaKey &&
+							localGpuTier !== "off" &&
+							(cascadeBusy || cascadeMsg) && (
+								<div className="settings-hint" data-testid="local-warm-status">
+									{cascadeBusy
+										? `⏳ ${t("settings.cascadeBusy")}`
+										: cascadeRunning
+											? `✓ ${t("settings.cascadeStarted")}`
+											: cascadeMsg}
+								</div>
+							)}
 					</div>
 
 					{/* 배타 티어(8G: 아바타 XOR 음성) 로컬 집중 택1. FR-3: 로그인 필요. */}
@@ -3030,11 +3151,8 @@ export function SettingsTab() {
 								id="local-av-focus"
 								value={localAvatarVoiceFocus}
 								onChange={(e) => {
-									const v = e.target.value as AvatarVoiceFocus;
-									setLocalAvatarVoiceFocus(v);
-									persistConfig({
-										localAvatarVoiceFocus: v !== "voice" ? v : undefined,
-									});
+									// R3/R4/R5: 포커스 변경 = 스테이징 + 로컬 슬롯 재스테이징 + 재warm.
+									handleSelectFocus(e.target.value as AvatarVoiceFocus);
 								}}
 							>
 								<option value="avatar">{t("settings.localFocusAvatar")}</option>
