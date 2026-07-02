@@ -159,9 +159,29 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				).includes("avatar");
 			}
 
-			// (A) cascade 토킹 모드 — 로컬 spawn facade(우선) 또는 설정 cascadeRuntimeUrl + /health 도달 시
-			const cascadeUrl =
-				localFacadeUrl?.trim() || cfg?.cascadeRuntimeUrl?.trim();
+			// (A) cascade 토킹 모드 — 로컬 spawn facade(우선) 또는 설정 cascadeRuntimeUrl + /health 도달 시.
+			// ★알려진 URL 이 없어도 이미 떠 있는 cascade(warm/이전 세션/설정 탭 기동)가 있으면 그 facade
+			//   URL 을 확보한다(self-heal): localFacadeUrl store 는 인메모리라 앱 재시작으로 비고,
+			//   canLocalCascade(loadConfig.naiaKey 의존) 판정과 무관하게 백엔드가 살아있으면 연결되게 한다.
+			//   start_cascade 는 실행 중이면 캐시 ready 반환(재spawn 아님) → facade_port 확보.
+			let cascadeUrl = localFacadeUrl?.trim() || cfg?.cascadeRuntimeUrl?.trim();
+			if (!cascadeUrl) {
+				try {
+					if (await invoke<boolean>("cascade_status")) {
+						if (disposed) return;
+						const url = localFacadeUrlFromReady(
+							await invoke<string>("start_cascade"),
+						);
+						if (url) {
+							cascadeUrl = url;
+							useCascadeAvatarStore.getState().setLocalFacadeUrl(url);
+						}
+					}
+				} catch {
+					/* status/ready 확인 실패 비치명 — 아래 자동기동/대기 경로로 진행 */
+				}
+				if (disposed) return;
+			}
 			if (cascadeUrl) {
 				const ok = await probeCascadeHealth(cascadeUrl);
 				if (disposed) return;
