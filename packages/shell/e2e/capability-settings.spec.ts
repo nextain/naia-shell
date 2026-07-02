@@ -49,21 +49,29 @@ interface SetupOpts {
 	model?: string;
 	/** Gateway /v1/models override entries (capability SoT). */
 	catalog?: Array<{ model_key: string; capabilities: string[] }>;
+	/** FR-3: when false, seed a logged-out (no naiaKey / BYO) config. */
+	loggedIn?: boolean;
+	/** Override ttsEnabled (FR-6 lip-sync note). Defaults to true. */
+	ttsEnabled?: boolean;
 }
 
-async function gotoModelSettings(page: Page, opts: SetupOpts = {}): Promise<void> {
+async function gotoModelSettings(
+	page: Page,
+	opts: SetupOpts = {},
+): Promise<void> {
+	const loggedIn = opts.loggedIn !== false;
 	await page.addInitScript(buildMock(opts.vramGb ?? null));
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 	await page.addInitScript({ content: SEED_ADK_PATH });
 	await page.addInitScript(
 		(configJson: string) => localStorage.setItem("naia-config", configJson),
 		JSON.stringify({
-			provider: "nextain",
+			provider: loggedIn ? "nextain" : "gemini",
 			model: opts.model ?? "gemini-3.5-flash",
-			naiaKey: API_KEY,
+			...(loggedIn ? { naiaKey: API_KEY } : {}),
 			enableTools: false,
-			ttsEnabled: true,
-			ttsProvider: "nextain",
+			ttsEnabled: opts.ttsEnabled ?? true,
+			ttsProvider: loggedIn ? "nextain" : "edge",
 			locale: "ko",
 			onboardingComplete: true,
 		}),
@@ -90,43 +98,83 @@ async function gotoModelSettings(page: Page, opts: SetupOpts = {}): Promise<void
 }
 
 test.describe("Capability-driven settings (#365)", () => {
-	test("text model → voice section shown; omni model → hidden", async ({
+	test("STT section always available; omni model shows an 'optional' hint", async ({
 		page,
 	}) => {
+		// 사용자 결정 2026-07-02: omni 내장 모델이어도 외부/로컬 STT를 옵션으로 열어둔다
+		// (로컬 Whisper 등이 무료 STT 대비 정확도·프라이버시 이점). capability는 이제
+		// STT를 '숨김'이 아니라 omni일 때 '선택' 안내로만 반영.
 		await gotoModelSettings(page, { model: "gemini-3.5-flash" });
 
-		// gemini-3.5-flash = ["llm"] → needs external STT/TTS → voice section shown.
+		// text model → STT section shown, no "optional" hint (external STT needed).
+		await page.locator('[data-settings-tab="voice"]').click();
 		await expect(page.locator("#tts-toggle")).toBeVisible({ timeout: 5_000 });
+		await expect(
+			page.locator('[data-testid="stt-provider-section"]'),
+		).toBeVisible({ timeout: 5_000 });
+		await expect(
+			page.locator('[data-testid="stt-omni-optional-hint"]'),
+		).toHaveCount(0);
+		// text model needs external STT → status ladder ("STT setup required") shows.
+		await expect(
+			page.locator('[data-testid="voice-status-summary"]'),
+		).toBeVisible();
 
-		// Switch to an omni model (built-in voice I/O) → voice section hides.
+		// omni model → STT section STILL shown (option) + "optional" hint appears.
+		await page.locator('[data-settings-tab="brain"]').click();
 		await page.locator("#model-select").selectOption("gemini-2.5-flash-live");
-		await expect(page.locator("#tts-toggle")).toBeHidden({ timeout: 5_000 });
+		await page.locator('[data-settings-tab="voice"]').click();
+		await expect(
+			page.locator('[data-testid="stt-provider-section"]'),
+		).toBeVisible({ timeout: 5_000 });
+		await expect(
+			page.locator('[data-testid="stt-omni-optional-hint"]'),
+		).toBeVisible();
+		// H1 regression guard: omni + no STT picked → the "STT setup required" status
+		// ladder must NOT show (it would contradict the "optional" hint above).
+		await expect(
+			page.locator('[data-testid="voice-status-summary"]'),
+		).toHaveCount(0);
 
-		// Back to a text model → shown again (driven purely by capabilities).
+		// Back to a text model → hint disappears again (driven by capabilities).
+		await page.locator('[data-settings-tab="brain"]').click();
 		await page.locator("#model-select").selectOption("gemini-3.5-flash");
-		await expect(page.locator("#tts-toggle")).toBeVisible({ timeout: 5_000 });
+		await page.locator('[data-settings-tab="voice"]').click();
+		await expect(
+			page.locator('[data-testid="stt-omni-optional-hint"]'),
+		).toHaveCount(0);
 	});
 
 	test("gateway /v1/models capability overrides static (gateway = SoT)", async ({
 		page,
 	}) => {
-		// Statically gemini-3.5-flash is ["llm"] (voice section shown). The gateway
-		// declares it omni → the UI must follow and hide the voice section.
+		// Statically gemini-3.5-flash is ["llm"] (no hint). The gateway declares it
+		// omni → the UI must follow: STT stays available but shows the 'optional' hint.
 		await gotoModelSettings(page, {
 			model: "gemini-3.5-flash",
-			catalog: [{ model_key: "gemini-3.5-flash", capabilities: ["llm", "omni"] }],
+			catalog: [
+				{ model_key: "gemini-3.5-flash", capabilities: ["llm", "omni"] },
+			],
 		});
 
-		await expect(page.locator("#tts-toggle")).toBeHidden({ timeout: 6_000 });
+		await page.locator('[data-settings-tab="voice"]').click();
+		await expect(
+			page.locator('[data-testid="stt-provider-section"]'),
+		).toBeVisible({ timeout: 5_000 });
+		await expect(
+			page.locator('[data-testid="stt-omni-optional-hint"]'),
+		).toBeVisible();
 	});
 });
 
-test.describe("VRAM tier local profile (#2)", () => {
-	test("detected VRAM surfaces the local GPU tier selector", async ({
+test.describe("VRAM tier local profile (#2, FR-1/FR-3)", () => {
+	test("detected VRAM surfaces the local GPU tier selector on the Profile tab", async ({
 		page,
 	}) => {
 		await gotoModelSettings(page, { vramGb: 24, model: "gemini-3.5-flash" });
 
+		// FR-1: the local GPU profile editor lives on the Profile tab, not Brain.
+		await page.locator('[data-settings-tab="profile"]').click();
 		const tierSelect = page.locator("#local-gpu-tier");
 		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
 		// The "auto" option reflects the detected capacity.
@@ -134,8 +182,8 @@ test.describe("VRAM tier local profile (#2)", () => {
 			"24",
 			{ timeout: 5_000 },
 		);
-		// off + auto + 3 tiers (6/12/24G).
-		await expect(tierSelect.locator("option")).toHaveCount(5);
+		// off + auto + 4 tiers (6/8/12/24G).
+		await expect(tierSelect.locator("option")).toHaveCount(6);
 	});
 
 	test("no GPU detected → manual-selection hint, default off", async ({
@@ -143,51 +191,142 @@ test.describe("VRAM tier local profile (#2)", () => {
 	}) => {
 		await gotoModelSettings(page, { vramGb: null, model: "gemini-3.5-flash" });
 
+		await page.locator('[data-settings-tab="profile"]').click();
 		const tierSelect = page.locator("#local-gpu-tier");
 		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
 		await expect(tierSelect.locator('option[value="auto"]')).toContainText(
-			/VRAM not detected|manual|\uBBF8\uAC10\uC9C0|\uC218\uB3D9/,
+			/VRAM not detected|manual|미감지|수동/,
 			{ timeout: 5_000 },
 		);
 		// Default = off (no behaviour change).
 		await expect(tierSelect).toHaveValue("off");
 	});
 
-	test("Profile tab selects profile and canonical controls remain on Brain tab", async ({
+	test("FR-1: Profile tab hosts the local GPU profile; canonical model controls stay on Brain", async ({
 		page,
 	}) => {
 		await gotoModelSettings(page, { vramGb: 6, model: "gemini-3.5-flash" });
 
 		await page.locator('[data-settings-tab="profile"]').click();
-		await expect(page.locator('[data-testid="engine-profile-summary"]')).toBeVisible({
-			timeout: 5_000,
-		});
 		// engine-core-summary 제거(2026-06-30, slot-groups 중복) → 부재 확인.
-		await expect(page.locator('[data-testid="engine-core-summary"]')).toHaveCount(0);
-		await expect(page.locator('[data-testid="engine-gpu-summary"]')).toBeVisible();
-		await expect(page.locator('[data-testid="engine-capability-summary"]')).toBeVisible();
-		await expect(page.locator('[data-testid="engine-profile-naia"]')).toBeVisible();
-		await expect(page.locator('[data-testid="engine-profile-byo"]')).toBeVisible();
-		await expect(page.locator('[data-testid="engine-profile-local"]')).toBeVisible();
+		await expect(
+			page.locator('[data-testid="engine-core-summary"]'),
+		).toHaveCount(0);
+		await expect(
+			page.locator('[data-testid="engine-gpu-summary"]'),
+		).toBeVisible();
+		await expect(
+			page.locator('[data-testid="engine-capability-summary"]'),
+		).toBeVisible();
+		// FR-1: local GPU tier editor is on the Profile tab.
+		await expect(page.locator("#local-gpu-tier")).toBeVisible();
+		// Canonical model pickers stay on the Brain tab.
 		await expect(page.locator("#provider-select")).toHaveCount(0);
 		await expect(page.locator("#model-select")).toHaveCount(0);
-		await expect(page.locator("#local-gpu-tier")).toHaveCount(0);
-
-		await page.locator('[data-testid="engine-profile-local"]').click();
 
 		await page.locator('[data-settings-tab="brain"]').click();
-		await expect(page.locator("#provider-select")).toBeVisible({ timeout: 5_000 });
-		await expect(page.locator("#provider-select")).toHaveValue("ollama");
+		await expect(page.locator("#provider-select")).toBeVisible({
+			timeout: 5_000,
+		});
 		await expect(page.locator("#model-select")).toBeVisible();
-		await expect(page.locator("#local-gpu-tier")).toBeVisible();
-		await expect(page.locator("#local-gpu-tier")).toHaveValue("auto");
-		// The GPU tier is a budget candidate only. It must not hide external voice
-		// settings until the runtime manager reports actual local readiness.
-		await expect(page.locator("#tts-toggle")).toBeVisible();
+		// FR-1: the GPU tier editor moved away from Brain.
+		await expect(page.locator("#local-gpu-tier")).toHaveCount(0);
+	});
+
+	test("FR-3: local GPU profile is gated behind Naia login", async ({
+		page,
+	}) => {
+		// Logged out → the tier selector is disabled and a login hint shows.
+		await gotoModelSettings(page, {
+			vramGb: 24,
+			model: "gemini-3.5-flash",
+			loggedIn: false,
+		});
+		await page.locator('[data-settings-tab="profile"]').click();
+		const tierSelect = page.locator("#local-gpu-tier");
+		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
+		await expect(tierSelect).toBeDisabled();
 		await expect(
-			page
-				.locator("#local-gpu-tier option")
-				.filter({ hasText: /local voice candidate|\uB85C\uCEEC \uC74C\uC131 \uD6C4\uBCF4/ }),
-		).toHaveCount(1);
+			page.locator('[data-testid="local-profile-hint"]'),
+		).toContainText(/Naia/i);
+	});
+
+	test("FR-3: logged in → local GPU profile is enabled", async ({ page }) => {
+		await gotoModelSettings(page, { vramGb: 24, model: "gemini-3.5-flash" });
+		await page.locator('[data-settings-tab="profile"]').click();
+		const tierSelect = page.locator("#local-gpu-tier");
+		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
+		await expect(tierSelect).toBeEnabled();
+	});
+
+	test("FR-5: 8G exclusive tier exposes the avatar/voice focus selector", async ({
+		page,
+	}) => {
+		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
+		await page.locator('[data-settings-tab="profile"]').click();
+		// Pick the 8G exclusive tier → focus (avatar XOR voice) selector appears.
+		await page.locator("#local-gpu-tier").selectOption("avatar-or-voice-8g");
+		await expect(
+			page.locator('[data-testid="local-focus-select"]'),
+		).toBeVisible({ timeout: 5_000 });
+		const focus = page.locator("#local-av-focus");
+		await expect(focus.locator("option")).toHaveCount(2);
+	});
+});
+
+test.describe("FR-6: NVA lip-sync note (avatar tab)", () => {
+	test("TTS off → warning note referencing TTS", async ({ page }) => {
+		await gotoModelSettings(page, {
+			vramGb: 24,
+			model: "gemini-3.5-flash",
+			ttsEnabled: false,
+		});
+		// 비디오 아바타(cascade)는 로컬 프로파일이 avatar 를 제공할 때만 선택 가능 →
+		// 먼저 프로파일 탭에서 티어를 고른다(24G auto = avatar+voice 동시 가능).
+		await page.locator('[data-settings-tab="profile"]').click();
+		await page.locator("#local-gpu-tier").selectOption("auto");
+		await page.locator('[data-settings-tab="avatar"]').click();
+		// Select the video avatar so the .nva picker (and note) renders.
+		await page
+			.locator('select:has(option[value="naia-video-avatar"])')
+			.selectOption("naia-video-avatar");
+		const note = page.locator('[data-testid="nva-lipsync-note"]');
+		await expect(note).toBeVisible({ timeout: 5_000 });
+		await expect(note).toContainText(/TTS/);
+	});
+});
+
+test.describe("FR-7: video avatar gated by cascade capability", () => {
+	test("no avatar-capable local profile → video-avatar option disabled", async ({
+		page,
+	}) => {
+		// 6G tier = tts-only(아바타 미제공) → cascade 불가 → "비디오 아바타" 선택 불가.
+		// (사용자 요구: cascade 띄우는 게 가능한 경우만 선택 가능.)
+		await gotoModelSettings(page, { vramGb: 6, model: "gemini-3.5-flash" });
+		await page.locator('[data-settings-tab="profile"]').click();
+		await page.locator("#local-gpu-tier").selectOption("auto"); // 6G → ["tts"]
+		await page.locator('[data-settings-tab="avatar"]').click();
+		await expect(
+			page.locator('option[value="naia-video-avatar"]'),
+		).toBeDisabled();
+		// 선택 불가 안내(hint)도 노출.
+		await expect(
+			page.locator('[data-testid="avatar-cascade-required"]'),
+		).toBeVisible({ timeout: 5_000 });
+	});
+
+	test("logged out → video-avatar option disabled (FR-3 cross-check)", async ({
+		page,
+	}) => {
+		// 로그아웃이면 로컬 프로파일 자체가 비활성(activeLocalTier=null) → 아바타 불가.
+		await gotoModelSettings(page, {
+			vramGb: 24,
+			model: "gemini-3.5-flash",
+			loggedIn: false,
+		});
+		await page.locator('[data-settings-tab="avatar"]').click();
+		await expect(
+			page.locator('option[value="naia-video-avatar"]'),
+		).toBeDisabled();
 	});
 });

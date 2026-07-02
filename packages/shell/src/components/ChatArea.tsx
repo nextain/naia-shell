@@ -483,7 +483,9 @@ export function ChatArea({
 	// Per-sentence AbortControllers so interrupt/cleanup actually cancels the
 	// in-flight TTS fetch/WS (and stops billing for superseded paid TTS) — #363
 	// cross-review HIGH.
-	const ttsAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+	const ttsAbortControllersRef = useRef<Map<string, AbortController>>(
+		new Map(),
+	);
 	// One-time "local voice unavailable" notice per pipeline session — so a local
 	// engine that isn't running surfaces a clear message once instead of either
 	// spamming per sentence or silently masquerading as the browser free voice.
@@ -951,7 +953,8 @@ export function ChatArea({
 			pipelineVoiceConfigRef.current = {
 				voice:
 					config.ttsProvider === "nextain"
-						? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
+						? config.ttsVoice ||
+							`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
 						: config.ttsProvider === "naia-local-voice" ||
 								config.ttsProvider === "vllm"
 							? "default" // 로컬 음성=ref-audio 클로닝, stale 클라우드 voice id 차단
@@ -1447,14 +1450,11 @@ export function ChatArea({
 			.trim();
 		if (!clean) return;
 
-		// cascade 토킹 아바타 활성 시: 발화를 cascade 런타임에 위임(립싱크 + 내장 TTS 음성).
-		// 로컬 TTS 는 스킵 — cascade 가 음성을 소유(talking 비디오의 오디오 트랙)하므로 이중 음성 방지.
-		// (음성 상태는 렌더러 onTalking → setSpeaking 으로 동기화.)
+		// cascade 토킹 아바타 활성 시: 셸이 합성한 TTS 오디오를 cascade /stream 으로 보내 Ditto
+		// 립싱크를 구동한다(8GB avatar-only facade 엔 TTS 가 없어 텍스트 /stream_text 는 무음).
+		// nextain = LINEAR16(PCM 24k) 로 받아 speakAudio; 브라우저/미합성 provider 는 아래에서
+		// facade 내장 TTS(/stream_text) 로 폴백. (라우팅은 합성 결과가 나온 뒤 아래에서 수행.)
 		const cascadeAvatar = useCascadeAvatarStore.getState().renderer;
-		if (cascadeAvatar) {
-			void cascadeAvatar.speak(clean);
-			return;
-		}
 
 		const reqId = generateRequestId();
 		// Reserve sequence number BEFORE async request to guarantee order
@@ -1462,6 +1462,8 @@ export function ChatArea({
 		activeTtsRequestsRef.current.add(reqId);
 		const voiceCfg = pipelineVoiceConfigRef.current;
 		const ttsProviderForCost = voiceCfg?.ttsProvider ?? "edge";
+		// 아바타 립싱크에 PCM 을 흘릴 수 있는 경로(nextain=LINEAR16). 그 외 provider 는 facade 폴백.
+		const avatarPcm = !!cascadeAvatar && ttsProviderForCost === "nextain";
 		const ttsVoiceForCost = voiceCfg?.voice;
 		Logger.info("ChatArea", "Sending TTS request", {
 			reqId,
@@ -1498,7 +1500,9 @@ export function ChatArea({
 		// Browser provider → client-side speechSynthesis (skip shell synthesis).
 		const ttsMeta = getTtsProviderMeta(ttsProviderForCost);
 		if (ttsMeta?.isClientSide) {
-			speakViaBrowser();
+			// 브라우저 TTS 는 버퍼가 없음 → 아바타면 facade 텍스트 경로, 아니면 브라우저 발화.
+			if (cascadeAvatar) void cascadeAvatar.speak(clean);
+			else speakViaBrowser();
 			return;
 		}
 
@@ -1511,6 +1515,7 @@ export function ChatArea({
 		synthesizeTts({
 			text: clean,
 			voice: voiceCfg?.voice,
+			encoding: avatarPcm ? "LINEAR16" : undefined,
 			provider: ttsProviderForCost as TtsProviderId,
 			apiKey: voiceCfg?.ttsApiKey,
 			naiaKey: voiceCfg?.naiaKey,
@@ -1526,7 +1531,15 @@ export function ChatArea({
 				// new turn's first audio) nor record cost.
 				if (!activeTtsRequestsRef.current.has(reqId)) return;
 				activeTtsRequestsRef.current.delete(reqId);
-				audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
+				if (avatarPcm) {
+					// 클라우드 TTS PCM(24k) → cascade /stream → Ditto 립싱크(오디오+영상 mux).
+					void cascadeAvatar?.speakAudio(audioBase64, 24000);
+				} else if (cascadeAvatar) {
+					// nextain 외 아바타: facade 내장 TTS 경로(best-effort, full cascade 전제).
+					void cascadeAvatar.speak(clean);
+				} else {
+					audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
+				}
 				// Track TTS cost: server cost for Naia Cloud, estimate for others.
 				// Naia account (nextain): apply 10% service markup on top of base cost.
 				const NAIA_TTS_MARKUP = 1.1;
@@ -1588,15 +1601,11 @@ export function ChatArea({
 				// Cloud synthesis failed (missing key/login, network, quota). Fall
 				// back to the browser's built-in TTS so the voice is never silently
 				// dropped — better a basic voice than nothing.
-				Logger.warn(
-					"ChatArea",
-					"TTS synthesis failed — browser TTS fallback",
-					{
-						reqId,
-						provider: ttsProviderForCost,
-						error: String(err),
-					},
-				);
+				Logger.warn("ChatArea", "TTS synthesis failed — browser TTS fallback", {
+					reqId,
+					provider: ttsProviderForCost,
+					error: String(err),
+				});
 				speakViaBrowser();
 			})
 			.finally(() => {
@@ -1738,7 +1747,8 @@ export function ChatArea({
 				pipelineVoiceConfigRef.current = {
 					voice:
 						config.ttsProvider === "nextain"
-							? `ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
+							? config.ttsVoice ||
+								`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
 							: config.ttsProvider === "naia-local-voice" ||
 									config.ttsProvider === "vllm"
 								? "default" // 로컬 음성=ref-audio 클로닝, stale 클라우드 voice id 차단

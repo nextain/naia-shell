@@ -33,6 +33,9 @@ export interface SynthesizeOpts {
 	text: string;
 	/** Provider-specific voice id. May be undefined → provider default. */
 	voice?: string;
+	/** 오디오 인코딩(nextain). 기본 MP3(재생용). 아바타 립싱크는 LINEAR16(PCM 24k)로
+	 *  받아 cascade /stream 에 그대로 흘림(Ditto 구동). */
+	encoding?: "MP3" | "LINEAR16";
 	provider: TtsProviderId;
 	/** Direct-provider API key (google / openai / elevenlabs). */
 	apiKey?: string;
@@ -112,12 +115,14 @@ async function synthNextain(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 			input: opts.text,
 			// Gateway defaults bare names (no "-") to ko-KR-Neural2-A.
 			voice: opts.voice || "ko-KR-Neural2-A",
-			audio_encoding: "MP3",
+			audio_encoding: opts.encoding || "MP3",
 		}),
 		signal: opts.signal,
 	});
 	if (!resp.ok) {
-		throw new Error(`Naia TTS 실패 (${resp.status}): ${await errorDetail(resp)}`);
+		throw new Error(
+			`Naia TTS 실패 (${resp.status}): ${await errorDetail(resp)}`,
+		);
 	}
 	const data = (await resp.json()) as {
 		audio_content?: string;
@@ -193,7 +198,9 @@ async function synthOpenai(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 }
 
 /** elevenlabs → `/v1/text-to-speech/{voiceId}` (returns raw MP3 bytes). */
-async function synthElevenlabs(opts: SynthesizeOpts): Promise<SynthesizeResult> {
+async function synthElevenlabs(
+	opts: SynthesizeOpts,
+): Promise<SynthesizeResult> {
 	if (!opts.apiKey) {
 		throw new Error("ElevenLabs API 키가 필요합니다.");
 	}
@@ -242,7 +249,9 @@ async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 		signal: opts.signal,
 	});
 	if (!resp.ok) {
-		throw new Error(`vLLM TTS 실패 (${resp.status}): ${await errorDetail(resp)}`);
+		throw new Error(
+			`vLLM TTS 실패 (${resp.status}): ${await errorDetail(resp)}`,
+		);
 	}
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
@@ -310,7 +319,10 @@ function f32PcmToWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
 async function synthNaiaLocalVoice(
 	opts: SynthesizeOpts,
 ): Promise<SynthesizeResult> {
-	const base = (opts.vllmTtsHost || DEFAULT_LOCAL_VOICE_HOST).replace(/\/$/, "");
+	const base = (opts.vllmTtsHost || DEFAULT_LOCAL_VOICE_HOST).replace(
+		/\/$/,
+		"",
+	);
 	const resp = await fetch(`${base}/tts`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

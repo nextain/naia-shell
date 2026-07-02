@@ -1,16 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAdkPath, toLocalBlobUrl } from "../lib/adk-store";
+import { getAdkPath, writeSlotsManifest } from "../lib/adk-store";
 import {
 	clearCameraActions,
 	registerCameraActions,
 } from "../lib/avatar/camera-actions";
 import {
 	CascadeAvatarRenderer,
+	localFacadeUrlFromReady,
 	probeCascadeHealth,
 } from "../lib/avatar/cascade-renderer";
+import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import {
+	resolveActiveTier,
+	resolveLocalCapabilities,
+} from "../lib/capabilities/vram-tiers";
 import { loadConfig } from "../lib/config";
-import { defaultClipOf, parseNvaManifest, resolveNvaAssetPath } from "../lib/nva";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
@@ -18,12 +23,7 @@ interface VideoAvatarCanvasProps {
 	nvaModel?: string;
 }
 
-function decodeBase64Utf8(b64: string): string {
-	const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-	return new TextDecoder().decode(bytes);
-}
-
-type Mode = "loading" | "cascade" | "static" | "error";
+type Mode = "loading" | "cascade" | "unavailable" | "error";
 
 // 사용자 이동(pan) 오프셋 영속 — VRM 카메라 저장과 대칭. px 단위, 리셋으로 0.
 const NVA_PAN_KEY = "naia-nva-pan-v1";
@@ -71,23 +71,25 @@ const VIDEO_BASE_STYLE = {
 };
 
 /**
- * NVA 비디오 아바타 — 두 모드:
- *  - cascade: cascadeRuntimeUrl 도달 시 cascade 런타임(Ditto)의 /idle 루프 + 발화 시 립싱크 스트림.
- *             렌더러를 store 에 등록 → ChatArea 이 발화를 renderer.speak 로 흘려보냄(입 움직임).
- *  - static : 폴백. 로컬 번들의 idle 클립 loop + CSS 마스크(입 안 움직임). cascade 미설정/미도달 시.
- * SoT: .agents/progress/naia-os-cascade-talking-avatar-2026-07-01.md
+ * NVA 비디오 아바타 — cascade(Ditto 립싱크) 연결 시에만 노출.
+ *  - cascade: 로컬 spawn facade(우선) 또는 원격 cascadeRuntimeUrl 도달 시 /idle 루프 + 발화 시
+ *             립싱크 스트림. 렌더러를 store 에 등록 → ChatArea 이 발화 오디오를 흘려보냄(입 움직임).
+ *  - 자동기동: 로컬 GPU 프로파일(아바타)+로그인이면 마운트 시 start_cascade 를 자동 호출.
+ *  - 미연결: ★정적 idle 폴백을 만들지 않는다(사용자 요구: cascade 미적용 시 아바타 노출 X).
+ *           상태만 은은하게 표면화("연결 중"/"미연결")한다.
+ * SoT: .agents/progress/naia-shell-local-serving-wiring-diagnosis-2026-07-02.md
  */
 export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const setLoaded = useAvatarStore((s) => s.setLoaded);
 	// 로컬 spawn 된 cascade facade URL(있으면 원격 config 보다 우선). 변경 시 재프로브.
 	const localFacadeUrl = useCascadeAvatarStore((s) => s.localFacadeUrl);
 	const [mode, setMode] = useState<Mode>("loading");
-	const [videoUrl, setVideoUrl] = useState("");
-	const [maskUrl, setMaskUrl] = useState("");
 	const [error, setError] = useState("");
 	// cascade 비디오 콜백 ref 가 렌더러를 만들 때 쓰는 설정(메인 effect 가 결정).
 	const cascadeCfgRef = useRef<{ url: string; name: string } | null>(null);
 	const rendererRef = useRef<CascadeAvatarRenderer | null>(null);
+	// cascade 자동기동 1회 가드(재기동 루프 방지). nvaModel 변경 시 리셋.
+	const autoStartAttemptedRef = useRef(false);
 	// 사용자 이동(pan) 오프셋 — AiControlBar 의 ✥ 컨트롤러가 이 값을 누적한다.
 	const [pan, setPan] = useState<NvaPan>(loadNvaPan);
 	const panRef = useRef(pan);
@@ -99,8 +101,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	useEffect(() => {
 		registerCameraActions({
 			rotate: () => {},
-			pan: (dx, dy) =>
-				setPan((p) => ({ x: p.x + dx, y: p.y + dy })),
+			pan: (dx, dy) => setPan((p) => ({ x: p.x + dx, y: p.y + dy })),
 			reset: () => {
 				setPan({ x: 0, y: 0 });
 				clearNvaPan();
@@ -110,17 +111,20 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 		return () => clearCameraActions();
 	}, []);
 
+	// nvaModel(캐릭터) 변경 시 cascade 자동기동 가드 리셋 → 새 아바타에 대해 재시도 허용.
+	// (localFacadeUrl 변경으로 인한 effect 재실행 때는 리셋 안 됨 → 재기동 루프 방지.)
+	// biome-ignore lint/correctness/useExhaustiveDependencies: nvaModel 변경 시에만 리셋
+	useEffect(() => {
+		autoStartAttemptedRef.current = false;
+	}, [nvaModel]);
+
 	useEffect(() => {
 		let disposed = false;
-		let localVideoUrl = "";
-		let localMaskUrl = "";
 
 		async function load() {
 			setMode("loading");
 			setLoaded(false);
 			setError("");
-			setVideoUrl("");
-			setMaskUrl("");
 			const adkPath = getAdkPath();
 			if (!adkPath || !nvaModel) {
 				setError("missing-nva-model");
@@ -159,41 +163,51 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				}
 			}
 
-			// (B) 정적 폴백 — 로컬 blob idle 루프 (입 안 움직임)
-			const manifestPath = `${bundleDir}${sep}manifest.json`;
-			try {
-				const b64 = await invoke<string>("read_local_binary", {
-					path: manifestPath,
-					allowedBase: adkPath,
-				});
-				const manifest = parseNvaManifest(decodeBase64Utf8(b64));
-				const clip = defaultClipOf(manifest);
-				localVideoUrl = await toLocalBlobUrl(
-					resolveNvaAssetPath(bundleDir, clip.video),
-				);
-				if (clip.mask) {
-					localMaskUrl = await toLocalBlobUrl(
-						resolveNvaAssetPath(bundleDir, clip.mask),
-					);
-				}
+			// (B) cascade 미연결 — 로컬 프로파일이 있으면 cascade 를 자동 기동한다.
+			// ★사용자 요구: 비디오 아바타는 cascade(Ditto 립싱크)에 연결됐을 때만 노출한다.
+			//   미연결 시 정적 idle 클립을 "사진처럼" 세워두지 않는다(불투명 UX 제거).
+			//   cascade 는 음성 프로바이더가 아니라 비디오 아바타 + 로컬 GPU 프로파일에 묶인다.
+			const cfg = loadConfig();
+			// cascade 자동기동 가능 여부 = 로컬 GPU 프로파일이 "avatar" capability 를 실제 제공할 때만.
+			// SettingsTab 의 cascadeAvatarPossible 과 **동일 로직**(capability 기반) — 게이트 불일치로
+			// "선택은 됐는데 영원히 미연결"/"voice 프로파일인데 아바타 기동" 같은 어긋남을 막는다.
+			// (8G 배타에서 focus=voice/미지정 → resolveLocalCapabilities=["tts"] → avatar 없음 → false.)
+			let canLocalCascade = false;
+			if (cfg?.naiaKey && cfg.localGpuTier && cfg.localGpuTier !== "off") {
+				const vram = await detectGpuVramGb();
 				if (disposed) return;
-				setVideoUrl(localVideoUrl);
-				setMaskUrl(localMaskUrl);
-				setMode("static");
-				setLoaded(true);
-			} catch (err) {
-				if (disposed) return;
-				setError(String(err));
-				setMode("error");
-				setLoaded(false);
+				const tier = resolveActiveTier(cfg.localGpuTier, vram);
+				canLocalCascade = resolveLocalCapabilities(
+					tier,
+					cfg.localAvatarVoiceFocus,
+				).includes("avatar");
 			}
+			if (!autoStartAttemptedRef.current && canLocalCascade) {
+				autoStartAttemptedRef.current = true;
+				try {
+					if (cfg) await writeSlotsManifest(cfg);
+					const ready = await invoke<string>("start_cascade");
+					if (disposed) return;
+					const localUrl = localFacadeUrlFromReady(ready);
+					if (localUrl) {
+						// facade URL 설정 → 이 effect 재실행 → (A) cascade 모드로 연결(립싱크).
+						useCascadeAvatarStore.getState().setLocalFacadeUrl(localUrl);
+						return;
+					}
+				} catch (e) {
+					if (disposed) return;
+					setError(`cascade-start-failed: ${String(e)}`);
+				}
+			}
+			// cascade 미연결(로컬 프로파일 없음/기동 실패/원격 미도달) → 아바타 노출 안 함.
+			if (disposed) return;
+			setMode("unavailable");
+			setLoaded(false);
 		}
 
 		void load();
 		return () => {
 			disposed = true;
-			if (localVideoUrl.startsWith("blob:")) URL.revokeObjectURL(localVideoUrl);
-			if (localMaskUrl.startsWith("blob:")) URL.revokeObjectURL(localMaskUrl);
 		};
 	}, [nvaModel, setLoaded, localFacadeUrl]);
 
@@ -227,7 +241,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			data-video-avatar
 			data-nva-model={nvaModel ?? ""}
 			data-video-avatar-mode={mode}
-			data-video-avatar-loaded={mode === "cascade" || videoUrl ? "true" : "false"}
+			data-video-avatar-loaded={mode === "cascade" ? "true" : "false"}
 			data-video-avatar-error={error}
 			style={{
 				position: "relative",
@@ -249,27 +263,25 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					style={{ ...VIDEO_BASE_STYLE, transform: videoTransform(pan) }}
 				/>
 			) : (
-				videoUrl && (
-					<video
-						src={videoUrl}
-						autoPlay
-						loop
-						muted
-						playsInline
-						style={{
-							...VIDEO_BASE_STYLE,
-							transform: videoTransform(pan),
-							WebkitMaskImage: maskUrl ? `url("${maskUrl}")` : undefined,
-							maskImage: maskUrl ? `url("${maskUrl}")` : undefined,
-							WebkitMaskSize: "contain",
-							maskSize: "contain",
-							WebkitMaskRepeat: "no-repeat",
-							maskRepeat: "no-repeat",
-							WebkitMaskPosition: "center",
-							maskPosition: "center",
-						}}
-					/>
-				)
+				// ★cascade 미연결 → 캐릭터(비디오)를 노출하지 않는다(정적 사진 폴백 제거).
+				//   상태만 은은하게 표면화(멀뚱히 선 "사진"으로 오해되지 않도록).
+				<div
+					data-video-avatar-status={mode}
+					style={{
+						fontSize: "0.85em",
+						opacity: 0.5,
+						textAlign: "center",
+						padding: "1em",
+						lineHeight: 1.6,
+						pointerEvents: "none",
+					}}
+				>
+					{mode === "loading"
+						? "로컬 아바타(cascade) 연결 중…"
+						: mode === "error"
+							? `아바타 연결 실패${error ? ` — ${error}` : ""}`
+							: "로컬 아바타 미연결 — 프로파일 탭에서 로컬 GPU 프로파일 + Naia 로그인을 확인하세요."}
+				</div>
 			)}
 		</div>
 	);

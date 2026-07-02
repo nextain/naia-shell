@@ -10,13 +10,14 @@
  *   - gs:// 경로 제거 — cascade 가 `/load_nva` 로 이미 로드한 캐릭터를 쓴다(필요 시 `nvaName` query).
  *   - runtimeUrl = 로컬 임베드 cascade facade(예 http://127.0.0.1:8910) 또는 원격 GPU PC URL.
  *   - CODEC 설정 가능(facade 가 mp4/webm 중 무엇을 주는지에 따름).
- *   - `probeHealth()` 정적 헬퍼 — VideoAvatarCanvas 가 cascade 도달 가능 여부로 모드(cascade/정적폴백) 결정.
+ *   - `probeHealth()` 정적 헬퍼 — VideoAvatarCanvas 가 cascade 도달 가능 여부로 모드(cascade/미연결) 결정.
  *
  * SoT: .agents/progress/naia-os-cascade-talking-avatar-2026-07-01.md
  */
 
 /** TalkingKiosk 기본 코덱(H.264 Constrained Baseline + AAC). 알파가 필요하면 webm 코덱으로 override. */
-export const DEFAULT_CASCADE_CODEC = 'video/mp4; codecs="avc1.42E01F, mp4a.40.2"';
+export const DEFAULT_CASCADE_CODEC =
+	'video/mp4; codecs="avc1.42E01F, mp4a.40.2"';
 
 /** 발화 종료 대기 상한(서버 행 방지). RTF~0.95 라 통상 수 초. */
 const ENDED_WAIT_CAP_MS = 300_000;
@@ -36,7 +37,7 @@ export interface CascadeRendererConfig {
 /**
  * `start_cascade` 의 CASCADE_READY 페이로드(JSON 문자열)에서 **로컬** facade URL 유도.
  * 아바타(ditto) 서비스가 실제로 떠 있을 때만 URL 반환 — 립싱크 가능한 경우에만 로컬 배선.
- * (focus=voice 로 avatar 서비스가 없으면 null → VideoAvatarCanvas 는 정적/원격 폴백.)
+ * (focus=voice 로 avatar 서비스가 없으면 null → VideoAvatarCanvas 는 "미연결"로 표시, 아바타 노출 안 함.)
  * 파싱 실패 / facade_port 부재 / avatar 서비스 부재 → null(안전).
  * 페이로드 계약: windows-manager `loader/launcher.py` supervise() = `{facade_port, services:[{kind}]}`.
  */
@@ -49,8 +50,7 @@ export function localFacadeUrlFromReady(ready: string): string | null {
 		const port = p.facade_port;
 		if (typeof port !== "number" || !Number.isFinite(port)) return null;
 		const hasAvatar =
-			Array.isArray(p.services) &&
-			p.services.some((s) => s?.kind === "avatar");
+			Array.isArray(p.services) && p.services.some((s) => s?.kind === "avatar");
 		if (!hasAvatar) return null;
 		return `http://127.0.0.1:${port}`;
 	} catch {
@@ -81,6 +81,34 @@ export function pcm16ToWav(pcm: Uint8Array, sampleRate: number): Uint8Array {
 	v.setUint32(40, n, true);
 	new Uint8Array(buf, 44).set(pcm);
 	return new Uint8Array(buf);
+}
+
+/**
+ * 외부 TTS 오디오(base64) → /stream 에 보낼 WAV bytes.
+ *  - RIFF/WAVE 컨테이너면 그대로(게이트웨이 LINEAR16 = Google TTS 는 WAV 로 반환).
+ *  - raw PCM16(헤더 없음)이면 sampleRate 로 WAV 컨테이너를 씌움.
+ * trt /stream 은 librosa.load(sr=16000) 로 WAV 헤더의 원 샘플레이트를 읽어 16k 로 리샘플하므로,
+ * 이미 WAV 인 것을 다시 감싸면(이중 WAV) librosa 가 헤더를 PCM 으로 오독 → 노이즈. 그래서 감지 필요.
+ */
+export function ttsAudioToWav(
+	audioBase64: string,
+	sampleRate: number,
+): Uint8Array {
+	const bin = atob(audioBase64);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	// "RIFF"(0x52494646) + offset8 "WAVE"(0x57415645) → 이미 WAV 컨테이너.
+	const isWav =
+		bytes.length >= 12 &&
+		bytes[0] === 0x52 &&
+		bytes[1] === 0x49 &&
+		bytes[2] === 0x46 &&
+		bytes[3] === 0x46 &&
+		bytes[8] === 0x57 &&
+		bytes[9] === 0x41 &&
+		bytes[10] === 0x56 &&
+		bytes[11] === 0x45;
+	return isWav ? bytes : pcm16ToWav(bytes, sampleRate);
 }
 
 /** cascade 도달 가능 여부 — `GET {url}/health`. VideoAvatarCanvas 의 모드 결정에 쓴다. */
@@ -233,9 +261,13 @@ export class CascadeAvatarRenderer {
 		try {
 			await new Promise<void>((res, rej) => {
 				ms.addEventListener("sourceopen", () => res(), { once: true });
-				ms.addEventListener("sourceclose", () => rej(new Error("sourceclose")), {
-					once: true,
-				});
+				ms.addEventListener(
+					"sourceclose",
+					() => rej(new Error("sourceclose")),
+					{
+						once: true,
+					},
+				);
 			});
 			if (my !== this.gen || this.disposed) return;
 
@@ -361,13 +393,13 @@ export class CascadeAvatarRenderer {
 		}
 	}
 
-	/** 외부 TTS PCM(base64, 기본 24kHz 16bit mono) 주입 → WAV → /stream 립싱크. */
-	async speakAudio(pcmBase64: string, sampleRate = 24000): Promise<void> {
-		if (!pcmBase64 || this.disposed) return;
-		const bin = atob(pcmBase64);
-		const pcm = new Uint8Array(bin.length);
-		for (let i = 0; i < bin.length; i++) pcm[i] = bin.charCodeAt(i);
-		return this.speak("(audio)", pcm16ToWav(pcm, sampleRate));
+	/**
+	 * 외부 TTS 오디오(base64) 주입 → /stream 립싱크. WAV 컨테이너면 그대로, raw PCM16 이면
+	 * sampleRate 로 감싼다(ttsAudioToWav — 이중 WAV 방지). 게이트웨이 LINEAR16 = Google TTS WAV.
+	 */
+	async speakAudio(audioBase64: string, sampleRate = 24000): Promise<void> {
+		if (!audioBase64 || this.disposed) return;
+		return this.speak("(audio)", ttsAudioToWav(audioBase64, sampleRate));
 	}
 
 	/** 현재 발화 즉시 중단(barge-in). */

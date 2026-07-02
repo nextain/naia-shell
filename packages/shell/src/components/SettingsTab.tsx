@@ -53,7 +53,13 @@ import {
 	importMemoryBackup,
 } from "../lib/db";
 import { resetGatewaySession } from "../lib/gateway-sessions";
-import { type Locale, getLocale, setLocale, t, type TranslationKey } from "../lib/i18n";
+import {
+	type Locale,
+	getLocale,
+	setLocale,
+	t,
+	type TranslationKey,
+} from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
 import {
@@ -605,7 +611,9 @@ export function SettingsTab() {
 	const [cascadeBusy, setCascadeBusy] = useState(false);
 	const [cascadeMsg, setCascadeMsg] = useState("");
 	useEffect(() => {
-		invoke<boolean>("cascade_status").then(setCascadeRunning).catch(() => {});
+		invoke<boolean>("cascade_status")
+			.then(setCascadeRunning)
+			.catch(() => {});
 	}, []);
 	// naia-local-voice 선택 상태에서 Local Voice Host 가 비어있으면 기본값(localhost:22600)
 	// 으로 채운다 — 임베딩 cascade(VoxCPM2)가 그 포트에 뜨므로 합성이 자동으로 로컬을 가리킴.
@@ -665,9 +673,7 @@ export function SettingsTab() {
 	const [micTestLevel, setMicTestLevel] = useState(0);
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
 	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
-	const [gatewayToken] = useState(
-		existing?.gatewayToken ?? "",
-	);
+	const [gatewayToken] = useState(existing?.gatewayToken ?? "");
 	const [discordDefaultUserId, setDiscordDefaultUserId] = useState(
 		existing?.discordDefaultUserId ?? "",
 	);
@@ -1405,14 +1411,7 @@ export function SettingsTab() {
 						: [
 								{
 									name: "Image",
-									extensions: [
-										"png",
-										"jpg",
-										"jpeg",
-										"webp",
-										"gif",
-										"bmp",
-									],
+									extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
 								},
 							],
 		});
@@ -1445,8 +1444,11 @@ export function SettingsTab() {
 	) {
 		const adkPath = getAdkPath();
 		if (!adkPath) return;
+		// 레거시로 nvaModel 등이 절대경로면 delete_naia_asset 이 경로(\\,/) 를 거부해 삭제 실패 →
+		// basename 만 취해 견고화. 신규 선택은 bare 이름이라 무영향.
+		const bare = filename.split(/[/\\]/).filter(Boolean).pop() ?? filename;
 		try {
-			await invoke("delete_naia_asset", { adkPath, subdir, filename });
+			await invoke("delete_naia_asset", { adkPath, subdir, filename: bare });
 			const paths = await listNaiaAssets(subdir);
 			if (subdir === "vrm-files") {
 				setNaiaVrms(paths.filter((p) => p.toLowerCase().endsWith(".vrm")));
@@ -1801,7 +1803,10 @@ export function SettingsTab() {
 			theme,
 			vrmModel: vrmModel !== defaultVrm ? vrmModel : undefined,
 			avatarProvider,
-			nvaModel: avatarProvider === "naia-video-avatar" ? nvaModel || undefined : undefined,
+			nvaModel:
+				avatarProvider === "naia-video-avatar"
+					? nvaModel || undefined
+					: undefined,
 			cascadeRuntimeUrl:
 				avatarProvider === "naia-video-avatar"
 					? cascadeRuntimeUrl.trim() || undefined
@@ -1867,7 +1872,9 @@ export function SettingsTab() {
 			memoryOfflineModel:
 				memoryEmbeddingProvider === "offline" ? memoryOfflineModel : undefined,
 			memoryEmbeddingDevice:
-				memoryEmbeddingProvider === "offline" ? memoryEmbeddingDevice : undefined,
+				memoryEmbeddingProvider === "offline"
+					? memoryEmbeddingDevice
+					: undefined,
 			memoryEmbeddingBaseUrl:
 				memoryEmbeddingProvider === "vllm" ||
 				memoryEmbeddingProvider === "ollama"
@@ -1906,16 +1913,26 @@ export function SettingsTab() {
 		if (naiaKey) void saveSecretKey("naiaKey", naiaKey);
 		// 새 core: agent 가 읽는 OS 키체인에 키 기록(write_agent_key). 설정 저장 시 누락돼 있던 배선
 		// — OnboardingWizard 만 했고 SettingsTab 은 안 해서, 설정에서 넣은 키가 agent 에 안 닿아 401 났음(라이브 e2e 가 잡음).
-		if (resolvedApiKey) void writeAgentKey(newConfig.provider, "apiKey", resolvedApiKey);
+		if (resolvedApiKey)
+			void writeAgentKey(newConfig.provider, "apiKey", resolvedApiKey);
 		if (naiaKey) void writeAgentKey(newConfig.provider, "naiaKey", naiaKey);
 		// #18: 메모리 비밀(embed/qdrant/llm apiKey)도 OS 키체인에 기록 — config.json 에선 strip 되므로
 		// agent loadMemoryConfig 가 키체인 account(NAIA_MEMORY_*_API_KEY)로 읽는다(provider 무관 → writeAgentSecret).
 		if (newConfig.memoryEmbeddingApiKey)
-			void writeAgentSecret("NAIA_MEMORY_EMBED_API_KEY", newConfig.memoryEmbeddingApiKey);
+			void writeAgentSecret(
+				"NAIA_MEMORY_EMBED_API_KEY",
+				newConfig.memoryEmbeddingApiKey,
+			);
 		if (newConfig.qdrantApiKey)
-			void writeAgentSecret("NAIA_MEMORY_QDRANT_API_KEY", newConfig.qdrantApiKey);
+			void writeAgentSecret(
+				"NAIA_MEMORY_QDRANT_API_KEY",
+				newConfig.qdrantApiKey,
+			);
 		if (newConfig.memoryLlmApiKey)
-			void writeAgentSecret("NAIA_MEMORY_LLM_API_KEY", newConfig.memoryLlmApiKey);
+			void writeAgentSecret(
+				"NAIA_MEMORY_LLM_API_KEY",
+				newConfig.memoryLlmApiKey,
+			);
 		// Push webhook URLs + Discord defaults to the agent (#260). Replaces
 		// per-chat_request webhook field transmission with a one-shot config
 		// update so credentials don't appear in every stdio frame.
@@ -1979,13 +1996,26 @@ export function SettingsTab() {
 	// #2 / FR-VRAM.2: local GPU tier is a budget/candidate signal only. It must
 	// not hide external STT/TTS slots until a runtime manager reports actual
 	// readiness; otherwise the UI would imply local services are already running.
-	const activeLocalTier = resolveActiveTier(localGpuTier, detectedVramGb);
+	// FR-3(2026-07-02): 로그인 안 되어 있으면 로컬 프로파일은 비활성으로 취급한다.
+	// 위젯 disabled 만으로는 부족 — 로그아웃 후에도 config 의 localGpuTier 가 남아
+	// activeLocalTier 가 truthy 가 되면 요약/추천 배지가 로컬을 반영해 게이트가 샌다.
+	// 설정값(config)은 남겨 재로그인 시 복원되지만, 파생 활성상태는 로그인에 종속시킨다.
+	const activeLocalTier = naiaKey
+		? resolveActiveTier(localGpuTier, detectedVramGb)
+		: null;
 	// 배타 티어면 focus 로 실제 로컬 capability 를 해소(아바타 XOR 음성). 비배타면 전부.
-	const tierExclusive = !!activeLocalTier?.exclusiveLocal && !tierFitsBoth(activeLocalTier);
+	const tierExclusive =
+		!!activeLocalTier?.exclusiveLocal && !tierFitsBoth(activeLocalTier);
 	const localTierCapabilities = resolveLocalCapabilities(
 		activeLocalTier,
 		localAvatarVoiceFocus,
 	);
+	// 비디오 아바타(cascade Ditto)를 띄울 수 있는가 = 로컬 GPU 프로파일이 "avatar" capability 를
+	// **실제로** 제공할 때만(capability 기반 — exclusive/focus 휴리스틱 아님). resolveLocalCapabilities
+	// 가 모든 케이스를 해소: 로그아웃(activeLocalTier=null)→[]→false(FR-3), 6G(tts만)→false,
+	// 8G 배타는 focus=avatar 일 때만 true, 12G+ 는 true. 이 값으로 아바타 유형 피커의
+	// "비디오 아바타" 선택을 게이트한다(가능할 때만 선택). VideoAvatarCanvas 자동기동과 동일 로직.
+	const cascadeAvatarPossible = localTierCapabilities.includes("avatar");
 	// FR-VRAM.4: tier 가 VRAM 예산 내에서 로컬 추천할 슬롯(숨김 아님 — 추천만).
 	// 설정 슬롯 셀렉터 배지·슬롯 개요·GPU 프로파일 요약이 동일 소스를 소비.
 	// 배타 티어는 focus 로 고른 슬롯만 추천.
@@ -2023,11 +2053,19 @@ export function SettingsTab() {
 					? `${slotSnapshot.embedding.provider}${slotSnapshot.embedding.model ? ` / ${slotSnapshot.embedding.model}` : ""}`
 					: t("settings.slot.notSet");
 			case "stt":
-				return slotSnapshot.stt.provider ? String(slotSnapshot.stt.provider) : t("settings.slot.notSet");
+				return slotSnapshot.stt.provider
+					? String(slotSnapshot.stt.provider)
+					: t("settings.slot.notSet");
 			case "tts":
-				return slotSnapshot.tts.provider ? String(slotSnapshot.tts.provider) : t("settings.slot.notSet");
+				return slotSnapshot.tts.provider
+					? String(slotSnapshot.tts.provider)
+					: t("settings.slot.notSet");
 			case "avatar":
-				return slotSnapshot.avatar.model || slotSnapshot.avatar.provider || t("settings.slot.notSet");
+				return (
+					slotSnapshot.avatar.model ||
+					slotSnapshot.avatar.provider ||
+					t("settings.slot.notSet")
+				);
 		}
 	}
 
@@ -2073,7 +2111,8 @@ export function SettingsTab() {
 	// voice-clone surface, so mounting RefAudioSection there just 404s on
 	// GET /v1/ref-audio. Gate the section on this.
 	const supportsRefAudio =
-		(isSelectedOmni && (modelIdLower.startsWith("naia-") || provider === "vllm")) ||
+		(isSelectedOmni &&
+			(modelIdLower.startsWith("naia-") || provider === "vllm")) ||
 		ttsProvider === "naia-local-voice";
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
@@ -2234,19 +2273,20 @@ export function SettingsTab() {
 							>
 								{t("settings.assetImport")}
 							</button>
-							{activeBgPath && (() => {
-								const fn = activeBgPath.split(/[/\\]/).pop();
-								return fn ? (
-									<button
-										type="button"
-										className="voice-preview-btn"
-										style={{ color: "var(--error-color, #f44)" }}
-										onClick={() => handleDeleteAsset("background", fn)}
-									>
-										{t("settings.assetDelete")}
-									</button>
-								) : null;
-							})()}
+							{activeBgPath &&
+								(() => {
+									const fn = activeBgPath.split(/[/\\]/).pop();
+									return fn ? (
+										<button
+											type="button"
+											className="voice-preview-btn"
+											style={{ color: "var(--error-color, #f44)" }}
+											onClick={() => handleDeleteAsset("background", fn)}
+										>
+											{t("settings.assetDelete")}
+										</button>
+									) : null;
+								})()}
 						</div>
 					</div>
 
@@ -2365,31 +2405,51 @@ export function SettingsTab() {
 						<span>{t("settings.avatarSection")}</span>
 					</div>
 
-					{/* #6: Avatar type selector */}
+					{/* #6: Avatar type selector — 비디오 아바타는 cascade(Ditto) 기동 가능 시에만 선택 가능. */}
 					<div className="settings-field">
 						<label>{t("settings.avatarProvider")}</label>
 						<select
 							value={avatarProvider}
 							onChange={(e) => {
 								const next = e.target.value as "vrm" | "naia-video-avatar";
+								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
+								if (next === "naia-video-avatar" && !cascadeAvatarPossible)
+									return;
 								setAvatarProvider(next);
 								persistConfig({ avatarProvider: next });
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
-							<option value="naia-video-avatar">
+							<option
+								value="naia-video-avatar"
+								disabled={!cascadeAvatarPossible}
+							>
 								{t("settings.avatarProviderVideo")}
-								{isRecommendedLocalValue(
-									activeLocalTier,
-									"avatar",
-									"naia-video-avatar",
-									localAvatarVoiceFocus,
-								)
-									? ` · ${t("settings.tierRecommendBadge")}`
-									: ""}
+								{!cascadeAvatarPossible
+									? ` (${t("settings.avatarVideoNeedsCascade")})`
+									: isRecommendedLocalValue(
+												activeLocalTier,
+												"avatar",
+												"naia-video-avatar",
+												localAvatarVoiceFocus,
+											)
+										? ` · ${t("settings.tierRecommendBadge")}`
+										: ""}
 							</option>
 						</select>
-						{slotRecommendation(activeLocalTier, "avatar", localAvatarVoiceFocus) && (
+						{!cascadeAvatarPossible && (
+							<div
+								className="settings-hint"
+								data-testid="avatar-cascade-required"
+							>
+								{t("settings.avatarVideoCascadeHint")}
+							</div>
+						)}
+						{slotRecommendation(
+							activeLocalTier,
+							"avatar",
+							localAvatarVoiceFocus,
+						) && (
 							<div className="settings-hint" data-testid="avatar-tier-hint">
 								{t("settings.tierRecommendSummary")}: naia-video-avatar (
 								{t("settings.tierRecommendLocalTag")})
@@ -2399,142 +2459,143 @@ export function SettingsTab() {
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}
 					{avatarProvider === "vrm" && (
-					<div className="settings-field">
-						<label>{t("settings.vrmModel")}</label>
-						<div className="vrm-list">
-							{naiaVrms.length === 0 && (
-								<span className="vrm-list-empty">
-									naia-settings/vrm-files/ 에 VRM 파일을 추가하세요
-								</span>
-							)}
-							{naiaVrms.map((path) => {
-								const filename = path.split(/[/\\]/).pop() ?? path;
-								const label = filename.replace(/\.vrm$/i, "");
-								const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
-								return (
-									<button
-										key={path}
-										type="button"
-										className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
-										onClick={() => handleVrmSelect(path)}
-									>
-										<img
-											src={thumb}
-											className="vrm-list-item__thumb"
-											alt={label}
-											onError={(e) => {
-												(e.currentTarget as HTMLImageElement).style.display =
-													"none";
-											}}
-										/>
-										{label}
-									</button>
-								);
-							})}
-							{customVrms.map((path) => {
-								const label = (path.split(/[/\\]/).pop() ?? path).replace(
-									/\.vrm$/i,
-									"",
-								);
-								return (
-									<button
-										key={path}
-										type="button"
-										className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
-										onClick={() => handleVrmSelect(path)}
-									>
-										{label}
-									</button>
-								);
-							})}
+						<div className="settings-field">
+							<label>{t("settings.vrmModel")}</label>
+							<div className="vrm-list">
+								{naiaVrms.length === 0 && (
+									<span className="vrm-list-empty">
+										naia-settings/vrm-files/ 에 VRM 파일을 추가하세요
+									</span>
+								)}
+								{naiaVrms.map((path) => {
+									const filename = path.split(/[/\\]/).pop() ?? path;
+									const label = filename.replace(/\.vrm$/i, "");
+									const thumb = `/avatars/${filename.replace(/\.vrm$/i, ".webp")}`;
+									return (
+										<button
+											key={path}
+											type="button"
+											className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+											onClick={() => handleVrmSelect(path)}
+										>
+											<img
+												src={thumb}
+												className="vrm-list-item__thumb"
+												alt={label}
+												onError={(e) => {
+													(e.currentTarget as HTMLImageElement).style.display =
+														"none";
+												}}
+											/>
+											{label}
+										</button>
+									);
+								})}
+								{customVrms.map((path) => {
+									const label = (path.split(/[/\\]/).pop() ?? path).replace(
+										/\.vrm$/i,
+										"",
+									);
+									return (
+										<button
+											key={path}
+											type="button"
+											className={`vrm-list-item${vrmModel === path ? " vrm-list-item--active" : ""}`}
+											onClick={() => handleVrmSelect(path)}
+										>
+											{label}
+										</button>
+									);
+								})}
+							</div>
+							{/* #12/#13: 파일 추가 + 삭제 */}
+							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+								<button
+									type="button"
+									className="voice-preview-btn"
+									onClick={() => handleImportAsset("vrm-files")}
+								>
+									{t("settings.assetImport")}
+								</button>
+								{vrmModel &&
+									(() => {
+										const fn = vrmModel.split(/[/\\]/).pop();
+										return fn ? (
+											<button
+												type="button"
+												className="voice-preview-btn"
+												style={{ color: "var(--error-color, #f44)" }}
+												onClick={() => handleDeleteAsset("vrm-files", fn)}
+											>
+												{t("settings.assetDelete")}
+											</button>
+										) : null;
+									})()}
+							</div>
 						</div>
-						{/* #12/#13: 파일 추가 + 삭제 */}
-						<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() => handleImportAsset("vrm-files")}
-							>
-								{t("settings.assetImport")}
-							</button>
-							{vrmModel && (() => {
-								const fn = vrmModel.split(/[/\\]/).pop();
-								return fn ? (
-									<button
-										type="button"
-										className="voice-preview-btn"
-										style={{ color: "var(--error-color, #f44)" }}
-										onClick={() => handleDeleteAsset("vrm-files", fn)}
-									>
-										{t("settings.assetDelete")}
-									</button>
-								) : null;
-							})()}
-						</div>
-					</div>
 					)}
 
 					{/* .nva picker — shown when avatarProvider === "naia-video-avatar" */}
 					{avatarProvider === "naia-video-avatar" && (
-					<div className="settings-field">
-						<label>{t("settings.avatarProviderVideo")}</label>
-						<div className="vrm-list">
-							{naiaNvas.length === 0 && (
-								<span className="vrm-list-empty">
-									{t("settings.nvaEmpty")}
-								</span>
-							)}
-							{naiaNvas.map((name) => (
-								<button
-									key={name}
-									type="button"
-									className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
-									onClick={() => {
-										setNvaModel(name);
-										persistConfig({ nvaModel: name });
-									}}
-								>
-									{name}
-								</button>
-							))}
-						</div>
-						<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={() => handleImportAsset("nva-files")}
-							>
-								{t("settings.folderImport")}
-							</button>
-							{nvaModel && (
+						<div className="settings-field">
+							<label>{t("settings.avatarProviderVideo")}</label>
+							<div className="vrm-list">
+								{naiaNvas.length === 0 && (
+									<span className="vrm-list-empty">
+										{t("settings.nvaEmpty")}
+									</span>
+								)}
+								{naiaNvas.map((name) => (
+									<button
+										key={name}
+										type="button"
+										className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
+										onClick={() => {
+											setNvaModel(name);
+											persistConfig({ nvaModel: name });
+										}}
+									>
+										{name}
+									</button>
+								))}
+							</div>
+							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
 								<button
 									type="button"
 									className="voice-preview-btn"
-									style={{ color: "var(--error-color, #f44)" }}
-									onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+									onClick={() => handleImportAsset("nva-files")}
 								>
-									{t("settings.assetDelete")}
+									{t("settings.folderImport")}
 								</button>
-							)}
-						</div>
-						{/* 토킹(립싱크) 런타임 URL — 설정 시 발화할 때 입이 움직인다(원격 GPU cascade). 비우면 정적 재생. */}
-						<div style={{ marginTop: 12 }}>
-							<label>{t("settings.cascadeUrlLabel")}</label>
-							<input
-								type="text"
-								value={cascadeRuntimeUrl}
-								placeholder="http://100.91.187.24:8910"
-								onChange={(e) => setCascadeRuntimeUrl(e.target.value)}
-								onBlur={() =>
-									persistConfig({
-										cascadeRuntimeUrl:
-											cascadeRuntimeUrl.trim() || undefined,
-									})
+								{nvaModel && (
+									<button
+										type="button"
+										className="voice-preview-btn"
+										style={{ color: "var(--error-color, #f44)" }}
+										onClick={() => handleDeleteAsset("nva-files", nvaModel)}
+									>
+										{t("settings.assetDelete")}
+									</button>
+								)}
+							</div>
+							{/* FR-6(2026-07-01): 립싱크는 TTS 음성이 있을 때만. TTS 꺼짐 → 정적. */}
+							<div
+								className="settings-hint"
+								data-testid="nva-lipsync-note"
+								style={
+									!ttsEnabled
+										? { color: "var(--error-color, #f44)" }
+										: undefined
 								}
-							/>
-							<div className="settings-hint">{t("settings.cascadeUrlHint")}</div>
+							>
+								{!ttsEnabled
+									? t("settings.nvaLipSyncWarnNoTts")
+									: t("settings.nvaLipSyncNote")}
+							</div>
+							{/* FR-2(2026-07-01): "토킹 런타임 URL"(원격 cascade)은 아바타 탭에서 제거.
+						    원격 cascade 연결은 프로파일 탭(서빙 프로파일)으로 이관 예정 — 아바타 탭은
+						    아바타 종류/NVA 만. cascadeRuntimeUrl config/state 는 유지(프로파일서 재사용). */}
 						</div>
-					</div>
 					)}
 				</>
 			)}
@@ -2634,11 +2695,11 @@ export function SettingsTab() {
 								alignItems: "center",
 							}}
 						>
-						<span data-testid="slot-gate-mode">
-							{gateMode === "naia"
-								? t("settings.slot.gateNaia")
-								: t("settings.slot.gateByo")}
-						</span>
+							<span data-testid="slot-gate-mode">
+								{gateMode === "naia"
+									? t("settings.slot.gateNaia")
+									: t("settings.slot.gateByo")}
+							</span>
 							{gateMode === "naia" ? (
 								<button
 									type="button"
@@ -2700,9 +2761,9 @@ export function SettingsTab() {
 										type="button"
 										className="voice-preview-btn"
 										onClick={() =>
-											openUrl(
-												`${getNaiaWebBaseUrl()}/${locale}/billing`,
-											).catch(() => {})
+											openUrl(`${getNaiaWebBaseUrl()}/${locale}/billing`).catch(
+												() => {},
+											)
 										}
 									>
 										{t("cost.labCharge")}
@@ -2800,7 +2861,9 @@ export function SettingsTab() {
 									data-testid={`slot-group-${group.id}`}
 									className="settings-card"
 								>
-									<span className="settings-card-title">{t(group.labelKey as TranslationKey)}</span>
+									<span className="settings-card-title">
+										{t(group.labelKey as TranslationKey)}
+									</span>
 									<div className="settings-summary-grid">
 										{group.slots.map((sid) => (
 											<div
@@ -2808,10 +2871,16 @@ export function SettingsTab() {
 												data-testid={`slot-${sid}`}
 												className="settings-summary-row"
 											>
-												<span className="settings-summary-key">{t(SLOT_LABEL_KEYS[sid] as TranslationKey)}</span>
+												<span className="settings-summary-key">
+													{t(SLOT_LABEL_KEYS[sid] as TranslationKey)}
+												</span>
 												<span className="settings-summary-value">
 													{slotValueDisplay(sid)}
-													{slotRecommendation(activeLocalTier, sid, localAvatarVoiceFocus) && (
+													{slotRecommendation(
+														activeLocalTier,
+														sid,
+														localAvatarVoiceFocus,
+													) && (
 														<>
 															{" "}
 															<span
@@ -2826,47 +2895,54 @@ export function SettingsTab() {
 											</div>
 										))}
 									</div>
-									<div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-									{group.id === "brain" && (
-										<>
+									<div
+										style={{
+											display: "flex",
+											gap: 8,
+											marginTop: 8,
+											flexWrap: "wrap",
+										}}
+									>
+										{group.id === "brain" && (
+											<>
+												<button
+													type="button"
+													className="voice-preview-btn"
+													data-testid={`slot-edit-main`}
+													onClick={() => setActiveSettingsTab("brain")}
+												>
+													{t("settings.slot.editMain")}
+												</button>
+												<button
+													type="button"
+													className="voice-preview-btn"
+													data-testid={`slot-edit-models`}
+													onClick={() => setActiveSettingsTab("memory")}
+												>
+													{t("settings.slot.editModels")}
+												</button>
+											</>
+										)}
+										{group.id === "voice" && (
 											<button
 												type="button"
 												className="voice-preview-btn"
-												data-testid={`slot-edit-main`}
-												onClick={() => setActiveSettingsTab("brain")}
+												data-testid={`slot-edit-voice`}
+												onClick={() => setActiveSettingsTab("voice")}
 											>
-												{t("settings.slot.editMain")}
+												{t("settings.slot.editVoice")}
 											</button>
+										)}
+										{group.id === "avatar" && (
 											<button
 												type="button"
 												className="voice-preview-btn"
-												data-testid={`slot-edit-models`}
-												onClick={() => setActiveSettingsTab("memory")}
+												data-testid={`slot-edit-avatar`}
+												onClick={() => setActiveSettingsTab("avatar")}
 											>
-												{t("settings.slot.editModels")}
+												{t("settings.slot.editAvatar")}
 											</button>
-										</>
-									)}
-									{group.id === "voice" && (
-										<button
-											type="button"
-											className="voice-preview-btn"
-											data-testid={`slot-edit-voice`}
-											onClick={() => setActiveSettingsTab("voice")}
-										>
-											{t("settings.slot.editVoice")}
-										</button>
-									)}
-									{group.id === "avatar" && (
-										<button
-											type="button"
-											className="voice-preview-btn"
-											data-testid={`slot-edit-avatar`}
-											onClick={() => setActiveSettingsTab("avatar")}
-										>
-											{t("settings.slot.editAvatar")}
-										</button>
-									)}
+										)}
 									</div>
 								</div>
 							))}
@@ -2888,52 +2964,28 @@ export function SettingsTab() {
 									: t("settings.engineLocalOff")}
 							</span>
 							<span>
-								{t("settings.engineLocalCapabilities")}: {activeTierCapabilities}
+								{t("settings.engineLocalCapabilities")}:{" "}
+								{activeTierCapabilities}
 							</span>
 							<span>{t("settings.engineRuntimeBoundary")}</span>
 						</div>
-						<button
-							type="button"
-							className="voice-preview-btn"
-							style={{ marginTop: 10 }}
-							onClick={() => setActiveSettingsTab("brain")}
-						>
-							{t("settings.engineEditGpu")}
-						</button>
 					</div>
 
-					<div className="settings-field" data-testid="engine-capability-summary">
-						<label>{t("settings.engineCapabilities")}</label>
-						<div className="settings-hint">{t("settings.engineCapabilitiesHint")}</div>
-						<ul className="settings-summary-list">
-							{capabilityStatus.map((item) => (
-								<li key={item}>{item}</li>
-							))}
-							<li>
-								{t("settings.engineSupplements")}:{" "}
-								{capabilitySlots.supplements.length > 0
-									? capabilitySlots.supplements.join(", ")
-									: t("settings.engineNone")}
-							</li>
-						</ul>
-					</div>
-				</>
-			)}
-			{activeSettingsTab === "brain" && (
-				<>
-					{/* #3: GPU profile at top of brain tab (슬롯 아키텍처 상위→하위).
-					    FR-VRAM: detect VRAM → pick a local tier; opt-in folds the
-					    tier's capabilities into the slots below. Default "off". */}
+					{/* FR-1(2026-07-01): GPU 프로파일 편집을 두뇌 → 프로파일 탭으로 이관.
+					    "이 기기가 어떻게 서빙하나(로컬 GPU / 원격 cascade)"는 프로파일 개념. */}
 					<div className="settings-field">
-						<label htmlFor="local-gpu-tier">{t("settings.localGpuProfile")}</label>
+						<label htmlFor="local-gpu-tier">
+							{t("settings.localGpuProfile")}
+						</label>
 						<select
 							id="local-gpu-tier"
 							value={localGpuTier}
-						onChange={(e) => {
-							const v = e.target.value as typeof localGpuTier;
-							setLocalGpuTier(v);
-							persistConfig({ localGpuTier: v });
-						}}
+							disabled={!naiaKey}
+							onChange={(e) => {
+								const v = e.target.value as typeof localGpuTier;
+								setLocalGpuTier(v);
+								persistConfig({ localGpuTier: v });
+							}}
 						>
 							<option value="off">{t("settings.engineLocalOff")}</option>
 							<option value="auto">
@@ -2950,19 +3002,20 @@ export function SettingsTab() {
 								</option>
 							))}
 						</select>
-						<div className="settings-hint">
-							{activeLocalTier
-								? t("settings.localGpuActiveHint").replace(
-										"{capabilities}",
-										tierProvidedCapabilities(activeLocalTier).join(", "),
-									)
-								: t("settings.localGpuHint")}
+						<div className="settings-hint" data-testid="local-profile-hint">
+							{!naiaKey
+								? t("settings.localProfileLoginRequired")
+								: activeLocalTier
+									? t("settings.localGpuActiveHint").replace(
+											"{capabilities}",
+											tierProvidedCapabilities(activeLocalTier).join(", "),
+										)
+									: t("settings.localGpuHint")}
 						</div>
 					</div>
 
-					{/* 배타 티어(8G: 아바타 XOR 음성) — 로컬로 무엇을 돌릴지 집중 선택.
-					    아바타(2.6G)+음성(6.9G)=9.5G>8G 라 동시 불가 → GPU 프로파일이 택1. */}
-					{tierExclusive && (
+					{/* 배타 티어(8G: 아바타 XOR 음성) 로컬 집중 택1. FR-3: 로그인 필요. */}
+					{naiaKey && tierExclusive && (
 						<div className="settings-field" data-testid="local-focus-select">
 							<label htmlFor="local-av-focus">
 								{t("settings.localFocusLabel")}
@@ -2989,9 +3042,8 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{/* FR-VRAM.4: GPU 프로파일 활성 시 VRAM 예산 내 슬롯별 로컬 추천 요약.
-					    숨김 아님 — 사용자가 무엇을 로컬로 돌릴 수 있는지 보고 각 탭에서 확인. */}
-					{activeLocalTier && (
+					{/* GPU 프로파일 활성 시 VRAM 예산 내 슬롯별 로컬 추천. FR-3: 로그인 필요. */}
+					{naiaKey && activeLocalTier && (
 						<div className="settings-field" data-testid="tier-recommendations">
 							<div className="settings-card">
 								<span className="settings-card-title">
@@ -3026,6 +3078,30 @@ export function SettingsTab() {
 						</div>
 					)}
 
+					<div
+						className="settings-field"
+						data-testid="engine-capability-summary"
+					>
+						<label>{t("settings.engineCapabilities")}</label>
+						<div className="settings-hint">
+							{t("settings.engineCapabilitiesHint")}
+						</div>
+						<ul className="settings-summary-list">
+							{capabilityStatus.map((item) => (
+								<li key={item}>{item}</li>
+							))}
+							<li>
+								{t("settings.engineSupplements")}:{" "}
+								{capabilitySlots.supplements.length > 0
+									? capabilitySlots.supplements.join(", ")
+									: t("settings.engineNone")}
+							</li>
+						</ul>
+					</div>
+				</>
+			)}
+			{activeSettingsTab === "brain" && (
+				<>
 					<div className="settings-section-divider">
 						<span>{t("settings.aiSection")}</span>
 					</div>
@@ -3042,13 +3118,22 @@ export function SettingsTab() {
 							{LLM_PROVIDERS.map((p) => (
 								<option key={p.id} value={p.id} disabled={p.disabled}>
 									{p.name}
-									{isRecommendedLocalValue(activeLocalTier, "main", p.id, localAvatarVoiceFocus)
+									{isRecommendedLocalValue(
+										activeLocalTier,
+										"main",
+										p.id,
+										localAvatarVoiceFocus,
+									)
 										? ` · ${t("settings.tierRecommendBadge")}`
 										: ""}
 								</option>
 							))}
 						</select>
-						{slotRecommendation(activeLocalTier, "main", localAvatarVoiceFocus) && (
+						{slotRecommendation(
+							activeLocalTier,
+							"main",
+							localAvatarVoiceFocus,
+						) && (
 							<div className="settings-hint" data-testid="main-tier-hint">
 								{t("settings.tierRecommendSummary")}: ollama (
 								{t("settings.tierRecommendLocalTag")})
@@ -3132,19 +3217,21 @@ export function SettingsTab() {
 							onChange={(e) => {
 								if (e.target.value === "__custom__") return;
 								setModel(e.target.value);
-									// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
-									// agent loads THIS model. Previously only Save persisted → a stale model
-									// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
-									// Skip while a nextain login is pending (naia_auth_complete persists then).
-									if (!(provider === "nextain" && !naiaKey)) {
-										const nextSel = applyModelSelectionToConfig(
-											loadConfig() as Record<string, unknown> | null,
-											provider,
-											e.target.value,
-										);
-										saveConfig(nextSel as unknown as Parameters<typeof saveConfig>[0]);
-										void writeNaiaConfig(nextSel);
-									}
+								// UC-MODEL-SELECT contract: persist the selection immediately so the gRPC
+								// agent loads THIS model. Previously only Save persisted → a stale model
+								// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
+								// Skip while a nextain login is pending (naia_auth_complete persists then).
+								if (!(provider === "nextain" && !naiaKey)) {
+									const nextSel = applyModelSelectionToConfig(
+										loadConfig() as Record<string, unknown> | null,
+										provider,
+										e.target.value,
+									);
+									saveConfig(
+										nextSel as unknown as Parameters<typeof saveConfig>[0],
+									);
+									void writeNaiaConfig(nextSel);
+								}
 								// When switching to an omni model, set default voice if not already set
 								const newMeta = providerModels.find(
 									(m) => m.id === e.target.value,
@@ -3330,8 +3417,17 @@ export function SettingsTab() {
 					</div>
 					<div className="settings-field">
 						<label>{t("settings.modelsSmallLlm")}</label>
-						<div className="settings-hint">{t("settings.modelsSmallLlmHint")}</div>
-						<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+						<div className="settings-hint">
+							{t("settings.modelsSmallLlmHint")}
+						</div>
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								gap: "8px",
+								marginTop: "4px",
+							}}
+						>
 							{(
 								[
 									["none", t("settings.memoryLlmNone")],
@@ -3340,7 +3436,10 @@ export function SettingsTab() {
 									["ollama", t("settings.memoryLlmOllama")],
 								] as const
 							).map(([val, label]) => (
-								<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+								<label
+									key={val}
+									style={{ display: "flex", alignItems: "center", gap: "6px" }}
+								>
 									<input
 										type="radio"
 										name="memory-llm"
@@ -3355,13 +3454,23 @@ export function SettingsTab() {
 								</label>
 							))}
 						</div>
-						{(memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama") && (
-							<div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+						{(memoryLlmProvider === "vllm" ||
+							memoryLlmProvider === "ollama") && (
+							<div
+								style={{
+									marginTop: "8px",
+									display: "flex",
+									flexDirection: "column",
+									gap: "6px",
+								}}
+							>
 								<input
 									type="text"
 									value={memoryLlmBaseUrl}
 									onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
-									onBlur={(e) => persistConfig({ memoryLlmBaseUrl: e.target.value })}
+									onBlur={(e) =>
+										persistConfig({ memoryLlmBaseUrl: e.target.value })
+									}
 									placeholder="http://localhost:8000"
 								/>
 								<input
@@ -3374,7 +3483,9 @@ export function SettingsTab() {
 									type="text"
 									value={memoryLlmModel}
 									onChange={(e) => setMemoryLlmModel(e.target.value)}
-									onBlur={(e) => persistConfig({ memoryLlmModel: e.target.value })}
+									onBlur={(e) =>
+										persistConfig({ memoryLlmModel: e.target.value })
+									}
 									placeholder={t("settings.model")}
 								/>
 							</div>
@@ -3399,293 +3510,84 @@ export function SettingsTab() {
 						<span>{t("settings.voiceSection")}</span>
 					</div>
 
-							{/* TTS enable — top of voice section for visibility */}
-							<div className="settings-field settings-toggle-row">
-								<label htmlFor="tts-toggle">{t("settings.ttsEnabled")}</label>
-								<input
-									id="tts-toggle"
-									type="checkbox"
-									checked={ttsEnabled}
-									onChange={(e) => {
-									setTtsEnabled(e.target.checked);
-									persistConfig({ ttsEnabled: e.target.checked });
-								}}
-								/>
-							</div>
+					{/* TTS enable — top of voice section for visibility */}
+					<div className="settings-field settings-toggle-row">
+						<label htmlFor="tts-toggle">{t("settings.ttsEnabled")}</label>
+						<input
+							id="tts-toggle"
+							type="checkbox"
+							checked={ttsEnabled}
+							onChange={(e) => {
+								setTtsEnabled(e.target.checked);
+								persistConfig({ ttsEnabled: e.target.checked });
+							}}
+						/>
+					</div>
 
-							{capabilitySlots.needsExternalStt && (
-								<>
-									{/* STT slot — hidden when the model already covers voice
-									    input (omni / ASR), shown otherwise (#365). */}
-									{/* Voice status summary */}
-									<div
-										className="settings-field"
-										style={{
-											fontSize: "0.85em",
-											opacity: 0.8,
-											lineHeight: 1.6,
-										}}
-									>
-										{!sttProvider && (
-											<div>{t("settings.voiceStatusSttNeeded")}</div>
-										)}
-										{sttProvider && !sttModel && (
-											<div>{t("settings.voiceStatusModelNeeded")}</div>
-										)}
-										{sttProvider && sttModel && !ttsEnabled && (
-											<div>{t("settings.voiceStatusTtsOff")}</div>
-										)}
-										{sttProvider && sttModel && ttsEnabled && (
-											<div style={{ color: "var(--success-color, #4caf50)" }}>
-												{t("settings.voiceStatusReady")}
-											</div>
-										)}
-									</div>
-
-									{/* STT Provider */}
-									<div className="settings-field">
-										<label>{t("settings.sttProvider")}</label>
-										<select
-											value={sttProvider}
-										onChange={(e) => {
-											const next = e.target.value as SttProviderId;
-											setSttProvider(next);
-											setSttModel("");
-											persistConfig({ sttProvider: next, sttModel: "" });
-										}}
-										>
-											<option value="">{t("settings.sttNone")}</option>
-											{listSttProviders().map((p) => (
-												<option
-													key={p.id}
-													value={p.id}
-													disabled={p.requiresNaiaKey && !naiaKey}
-												>
-													{p.name}
-													{p.pricing ? ` - ${p.pricing}` : ""}
-													{p.requiresNaiaKey && !naiaKey
-														? ` (${t("settings.ttsNaiaRequired")})`
-														: ""}
-												</option>
-											))}
-										</select>
-									</div>
-									{/* Naia Cloud STT — backend engine selector */}
-									{sttProvider === "nextain" && naiaKey && (
-										<div className="settings-field">
-											<label>{t("settings.naiaCloudBackend")}</label>
-											<select
-												value={
-													existing?.naiaCloudSttBackend ?? "google-cloud-stt"
-												}
-												onChange={(e) => {
-													if (existing)
-														saveConfig({
-															...existing,
-															naiaCloudSttBackend: e.target.value,
-														});
-												}}
-											>
-												<option value="google-cloud-stt">
-													Google Cloud STT
-												</option>
-											</select>
-										</div>
-									)}
-									{/* STT API key — shown for API-based providers */}
-									{(() => {
-										const sttMeta = listSttProviders().find(
-											(p) => p.id === sttProvider,
-										);
-										if (sttMeta?.requiresNaiaKey && !naiaKey) {
-											return (
-												<div className="settings-field">
-													<span className="settings-hint">
-														{t("settings.ttsNaiaRequired")}
-													</span>
-												</div>
-											);
-										}
-										if (sttMeta?.requiresApiKey) {
-											const currentKey =
-												sttMeta.apiKeyConfigField === "googleApiKey"
-													? (existing?.googleApiKey ?? "")
-													: sttMeta.apiKeyConfigField === "elevenlabsApiKey"
-														? (existing?.elevenlabsApiKey ?? "")
-														: "";
-											return (
-												<div className="settings-field">
-													<label htmlFor="stt-api-key">
-														{t("settings.sttApiKey")}
-													</label>
-													<input
-														id="stt-api-key"
-														type="password"
-														defaultValue={currentKey}
-														onChange={(e) => {
-															if (
-																sttMeta.apiKeyConfigField === "googleApiKey"
-															) {
-																setGatewayTtsApiKey(e.target.value);
-															}
-														}}
-														placeholder={`${sttMeta.name} API Key`}
-													/>
-												</div>
-											);
-										}
-										return null;
-									})()}
-
-									{/* STT Model — current selection + manage button (offline engines only) */}
-									{/* vLLM ASR: endpoint URL + ASR model picker */}
-									{sttProvider === "vllm" && (
-										<>
-											<div className="settings-field">
-												<label>vLLM STT Host</label>
-												<input
-													type="text"
-													value={vllmSttHost}
-													onChange={(e) => {
-														setVllmSttHost(e.target.value);
-														if (existing)
-															saveConfig({
-																...existing,
-																vllmSttHost: e.target.value,
-															});
-													}}
-													placeholder={DEFAULT_VLLM_HOST}
-												/>
-											</div>
-											{(() => {
-												const asrModels = vllmSttModels;
-												if (asrModels.length === 0)
-													return (
-														<div className="settings-field">
-															<span className="settings-hint">
-																ASR 모델 불러오는 중... (Host URL 확인)
-															</span>
-														</div>
-													);
-												return (
-													<div className="settings-field">
-														<label>ASR 모델</label>
-														<select
-															value={existing?.vllmSttModel ?? ""}
-															onChange={(e) => {
-																if (existing)
-																	saveConfig({
-																		...existing,
-																		vllmSttModel: e.target.value,
-																	});
-															}}
-														>
-															{asrModels.map((m) => (
-																<option key={m.id} value={m.id}>
-																	{m.label} 🎤
-																</option>
-															))}
-														</select>
-													</div>
-												);
-											})()}
-										</>
-									)}
-
-									{(sttProvider === "vosk" || sttProvider === "whisper") && (
-										<div className="settings-field">
-											<label>{t("settings.sttCurrentModel")}</label>
-											<div
-												style={{
-													display: "flex",
-													alignItems: "center",
-													gap: "8px",
-												}}
-											>
-												<span style={{ fontSize: "0.9em" }}>
-													{sttModel
-														? (sttModels.find((m) => m.modelId === sttModel)
-																?.modelName ?? sttModel)
-														: "—"}
-												</span>
-												<button
-													type="button"
-													className="onboarding-next-btn"
-													style={{ fontSize: "0.8em", padding: "4px 12px" }}
-													onClick={() => setSttModelModalOpen(true)}
-												>
-													{t("settings.sttManageModels")}
-												</button>
-											</div>
-										</div>
-									)}
-								</>
+					{/* STT — 항상 노출(사용자 결정 2026-07-02): omni 내장 모델이어도 외부/로컬
+							    STT를 옵션으로 열어둔다. 로컬 Whisper 등이 무료 STT 대비 정확도·프라이버시
+							    이점(free 대비 우위). capability(needsExternalStt)는 이제 '숨김'이 아니라
+							    omni일 때 '선택' 안내로만 반영. */}
+					{
+						<>
+							{/* omni 등 음성 내장 모델일 때: STT는 '선택'임을 안내(숨기지 않음). */}
+							{!capabilitySlots.needsExternalStt && (
+								<div
+									className="settings-field"
+									data-testid="stt-omni-optional-hint"
+								>
+									<span className="settings-hint">
+										{t("settings.sttOmniOptionalHint")}
+									</span>
+								</div>
 							)}
-
-							{/* TTS Provider selector */}
-							<div className="settings-field">
-								<label htmlFor="tts-provider-select">
-									{t("settings.ttsProvider")}
-								</label>
-								<select
-									id="tts-provider-select"
-									data-testid="gateway-tts-provider"
-									value={ttsProvider}
-									onChange={(e) => {
-										const next = e.target.value as TtsProviderId;
-										setTtsProvider(next);
-										setDynamicTtsVoices([]);
-										persistConfig({ ttsProvider: next });
-										// Load API key for the selected provider
-										if (next === "openai")
-											setGatewayTtsApiKey(existing?.openaiTtsApiKey ?? "");
-										else if (next === "elevenlabs")
-											setGatewayTtsApiKey(existing?.elevenlabsApiKey ?? "");
-										else if (next === "google")
-											setGatewayTtsApiKey(existing?.googleApiKey ?? "");
-										else setGatewayTtsApiKey("");
-										// naia-local-voice: 임베딩 cascade(VoxCPM2)는 localhost:22600에
-										// 뜸 → host 비어있으면 기본값 채움(합성이 자동으로 로컬 가리킴).
-										if (next === "naia-local-voice" && !vllmTtsHost) {
-											setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
-											persistConfig({ vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST });
-										}
-										// Reset voice to provider default
-										const meta = listTtsProviderMetas().find(
-											(p) => p.id === next,
-										);
-										if (meta?.voices?.[0]) {
-											persistTtsVoice(meta.voices[0].id);
-										} else if (next === "edge") {
-											// Edge voice will be selected from gateway/hardcoded list
-											persistTtsVoice("");
-										} else if (next === "naia-local-voice" || next === "vllm") {
-											// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
-											// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
-											persistTtsVoice("default");
-										}
-										// Fetch dynamic voices — use saved key or current input
-										const savedKey =
-											next === "openai"
-												? (existing?.openaiTtsApiKey ?? "")
-												: next === "elevenlabs"
-													? (existing?.elevenlabsApiKey ?? "")
-													: next === "google"
-														? (existing?.googleApiKey ?? "")
-														: "";
-										const effectiveKey = savedKey || gatewayTtsApiKey;
-										if (meta?.fetchVoices && effectiveKey) {
-											meta.fetchVoices(effectiveKey).then((voices) => {
-												if (voices && voices.length > 0) {
-													setDynamicTtsVoices(voices);
-													if (voices[0] && !meta.voices?.length)
-														persistTtsVoice(voices[0].id);
-												}
-											});
-										}
+							{/* Voice status summary — 외부 STT가 실제 필요한(텍스트 모델) 경우에만 설정
+									    진행 사다리를 표시. omni는 STT가 '선택'이라(위 안내로 충분) sttProvider
+									    기본값("nextain")과 무관하게 숨김 — "STT 설정 필요"가 '선택' 안내와 모순 방지. */}
+							{capabilitySlots.needsExternalStt && (
+								<div
+									className="settings-field"
+									data-testid="voice-status-summary"
+									style={{
+										fontSize: "0.85em",
+										opacity: 0.8,
+										lineHeight: 1.6,
 									}}
 								>
-									{listTtsProviderMetas().map((p) => (
+									{!sttProvider && (
+										<div>{t("settings.voiceStatusSttNeeded")}</div>
+									)}
+									{sttProvider && !sttModel && (
+										<div>{t("settings.voiceStatusModelNeeded")}</div>
+									)}
+									{sttProvider && sttModel && !ttsEnabled && (
+										<div>{t("settings.voiceStatusTtsOff")}</div>
+									)}
+									{sttProvider && sttModel && ttsEnabled && (
+										<div style={{ color: "var(--success-color, #4caf50)" }}>
+											{t("settings.voiceStatusReady")}
+										</div>
+									)}
+								</div>
+							)}
+
+							{/* STT Provider */}
+							<div
+								className="settings-field"
+								data-testid="stt-provider-section"
+							>
+								<label>{t("settings.sttProvider")}</label>
+								<select
+									value={sttProvider}
+									onChange={(e) => {
+										const next = e.target.value as SttProviderId;
+										setSttProvider(next);
+										setSttModel("");
+										persistConfig({ sttProvider: next, sttModel: "" });
+									}}
+								>
+									<option value="">{t("settings.sttNone")}</option>
+									{listSttProviders().map((p) => (
 										<option
 											key={p.id}
 											value={p.id}
@@ -3696,86 +3598,34 @@ export function SettingsTab() {
 											{p.requiresNaiaKey && !naiaKey
 												? ` (${t("settings.ttsNaiaRequired")})`
 												: ""}
-											{isRecommendedLocalValue(activeLocalTier, "tts", p.id, localAvatarVoiceFocus)
-												? ` · ${t("settings.tierRecommendBadge")}`
-												: ""}
 										</option>
 									))}
 								</select>
-								{slotRecommendation(activeLocalTier, "tts", localAvatarVoiceFocus) && (
-									<div className="settings-hint" data-testid="tts-tier-hint">
-										{t("settings.tierRecommendSummary")}: naia-local-voice (
-										{t("settings.tierRecommendLocalTag")})
-									</div>
-								)}
 							</div>
-							{/* Naia Cloud TTS — backend engine selector */}
-							{ttsProvider === "nextain" && naiaKey && (
+							{/* Naia Cloud STT — backend engine selector */}
+							{sttProvider === "nextain" && naiaKey && (
 								<div className="settings-field">
 									<label>{t("settings.naiaCloudBackend")}</label>
 									<select
-										value={existing?.naiaCloudTtsBackend ?? "google-chirp3-hd"}
+										value={existing?.naiaCloudSttBackend ?? "google-cloud-stt"}
 										onChange={(e) => {
 											if (existing)
 												saveConfig({
 													...existing,
-													naiaCloudTtsBackend: e.target.value,
+													naiaCloudSttBackend: e.target.value,
 												});
 										}}
 									>
-										<option value="google-chirp3-hd">Google Chirp 3 HD</option>
+										<option value="google-cloud-stt">Google Cloud STT</option>
 									</select>
 								</div>
 							)}
-							{/* TTS API key input — shown when provider requires it */}
+							{/* STT API key — shown for API-based providers */}
 							{(() => {
-								const providerMeta = listTtsProviderMetas().find(
-									(p) => p.id === ttsProvider,
+								const sttMeta = listSttProviders().find(
+									(p) => p.id === sttProvider,
 								);
-								if (providerMeta?.requiresApiKey) {
-									return (
-										<div className="settings-field">
-											<label htmlFor="tts-api-key">
-												{t("settings.ttsApiKey")}
-											</label>
-											<input
-												id="tts-api-key"
-												type="password"
-												value={gatewayTtsApiKey}
-												onChange={(e) => {
-													const val = e.target.value;
-													setGatewayTtsApiKey(val);
-													const meta = listTtsProviderMetas().find(
-														(p) => p.id === ttsProvider,
-													);
-													if (meta?.fetchVoices && val.length > 10) {
-														meta.fetchVoices(val).then((voices) => {
-															if (voices && voices.length > 0)
-																setDynamicTtsVoices(voices);
-														});
-													}
-												}}
-												onPaste={(e) => {
-													// Handle paste — onChange may not fire in WebKitGTK
-													setTimeout(() => {
-														const val = (e.target as HTMLInputElement).value;
-														if (val.length > 10) {
-															const meta = listTtsProviderMetas().find(
-																(p) => p.id === ttsProvider,
-															);
-															meta?.fetchVoices?.(val).then((voices) => {
-																if (voices && voices.length > 0)
-																	setDynamicTtsVoices(voices);
-															});
-														}
-													}, 100);
-												}}
-												placeholder={`${providerMeta.name} API Key`}
-											/>
-										</div>
-									);
-								}
-								if (providerMeta?.requiresNaiaKey && !naiaKey) {
+								if (sttMeta?.requiresNaiaKey && !naiaKey) {
 									return (
 										<div className="settings-field">
 											<span className="settings-hint">
@@ -3784,144 +3634,425 @@ export function SettingsTab() {
 										</div>
 									);
 								}
-								return null;
-							})()}
-							{/* R2.2b: 로컬 cascade lifecycle 토글 — naia-os가 windows-manager
-							    loader를 사이드카로 기동/중지(원격 아님). */}
-							{ttsProvider === "naia-local-voice" && (
-								<div className="settings-field" data-testid="cascade-toggle">
-									<button
-										type="button"
-										className="voice-preview-btn"
-										onClick={handleToggleCascade}
-										disabled={cascadeBusy}
-									>
-										{cascadeBusy
-											? t("settings.cascadeBusy")
-											: cascadeRunning
-												? t("settings.cascadeStop")
-												: t("settings.cascadeStart")}
-									</button>
-									{cascadeMsg && (
-										<div className="settings-hint" data-testid="cascade-msg">
-											{cascadeMsg}
-										</div>
-									)}
-								</div>
-							)}
-
-							{/* vLLM TTS: host URL input */}
-							{(ttsProvider === "vllm" || ttsProvider === "naia-local-voice") && (
-								<div className="settings-field">
-									<label>
-										{ttsProvider === "naia-local-voice"
-											? "Local Voice Host"
-											: "vLLM TTS Host"}
-									</label>
-									<input
-										type="text"
-										value={vllmTtsHost}
-										onChange={(e) => {
-											setVllmTtsHost(e.target.value);
-											if (existing)
-												saveConfig({
-													...existing,
-													vllmTtsHost: e.target.value,
-												});
-										}}
-										placeholder={
-											ttsProvider === "naia-local-voice"
-												? "http://localhost:22600"
-												: DEFAULT_VLLM_HOST
-										}
-									/>
-									<div className="settings-hint">
-										{ttsProvider === "naia-local-voice"
-											? t("settings.localVoiceEngineHint")
-											: "Free (local) — e.g. Kokoro"}
-									</div>
-								</div>
-							)}
-
-							{/* TTS Voice picker — dynamic based on provider */}
-							{(() => {
-								const providerMeta = listTtsProviderMetas().find(
-									(p) => p.id === ttsProvider,
-								);
-								// Edge: use locale-based hardcoded voice list
-								if (ttsProvider === "edge") {
-									const voices = getEdgeVoicesForLocale(locale);
-									return voices.length > 0 ? (
-										<div className="settings-field">
-											<label htmlFor="tts-voice-select">
-												{t("settings.ttsVoice")}
-											</label>
-											<div className="voice-picker">
-												<select
-													id="tts-voice-select"
-													data-testid="gateway-tts-voice"
-													value={ttsVoice}
-													onChange={(e) => persistTtsVoice(e.target.value)}
-												>
-													{voices.map((v) => (
-														<option key={v} value={v}>
-															{v}
-														</option>
-													))}
-												</select>
-												<button
-													type="button"
-													className="voice-preview-btn"
-													onClick={handleVoicePreview}
-													disabled={isPreviewing}
-												>
-													{isPreviewing
-														? t("settings.voicePreviewing")
-														: t("settings.voicePreview")}
-												</button>
-											</div>
-										</div>
-									) : null;
-								}
-								// Other providers: use dynamic voices (if fetched) or static registry voices
-								const voiceList =
-									dynamicTtsVoices.length > 0
-										? dynamicTtsVoices
-										: (providerMeta?.voices ?? []);
-								if (voiceList.length > 0) {
+								if (sttMeta?.requiresApiKey) {
+									const currentKey =
+										sttMeta.apiKeyConfigField === "googleApiKey"
+											? (existing?.googleApiKey ?? "")
+											: sttMeta.apiKeyConfigField === "elevenlabsApiKey"
+												? (existing?.elevenlabsApiKey ?? "")
+												: "";
 									return (
 										<div className="settings-field">
-											<label htmlFor="tts-voice-select">
-												{t("settings.ttsVoice")}
+											<label htmlFor="stt-api-key">
+												{t("settings.sttApiKey")}
 											</label>
-											<div className="voice-picker">
-												<select
-													id="tts-voice-select"
-													value={ttsVoice}
-													onChange={(e) => persistTtsVoice(e.target.value)}
-												>
-													{voiceList.map((v) => (
-														<option key={v.id} value={v.id}>
-															{v.label}
-														</option>
-													))}
-												</select>
-												<button
-													type="button"
-													className="voice-preview-btn"
-													onClick={handleVoicePreview}
-													disabled={isPreviewing}
-												>
-													{isPreviewing
-														? t("settings.voicePreviewing")
-														: t("settings.voicePreview")}
-												</button>
-											</div>
+											<input
+												id="stt-api-key"
+												type="password"
+												defaultValue={currentKey}
+												onChange={(e) => {
+													if (sttMeta.apiKeyConfigField === "googleApiKey") {
+														setGatewayTtsApiKey(e.target.value);
+													}
+												}}
+												placeholder={`${sttMeta.name} API Key`}
+											/>
 										</div>
 									);
 								}
 								return null;
 							})()}
+
+							{/* STT Model — current selection + manage button (offline engines only) */}
+							{/* vLLM ASR: endpoint URL + ASR model picker */}
+							{sttProvider === "vllm" && (
+								<>
+									<div className="settings-field">
+										<label>vLLM STT Host</label>
+										<input
+											type="text"
+											value={vllmSttHost}
+											onChange={(e) => {
+												setVllmSttHost(e.target.value);
+												if (existing)
+													saveConfig({
+														...existing,
+														vllmSttHost: e.target.value,
+													});
+											}}
+											placeholder={DEFAULT_VLLM_HOST}
+										/>
+									</div>
+									{(() => {
+										const asrModels = vllmSttModels;
+										if (asrModels.length === 0)
+											return (
+												<div className="settings-field">
+													<span className="settings-hint">
+														ASR 모델 불러오는 중... (Host URL 확인)
+													</span>
+												</div>
+											);
+										return (
+											<div className="settings-field">
+												<label>ASR 모델</label>
+												<select
+													value={existing?.vllmSttModel ?? ""}
+													onChange={(e) => {
+														if (existing)
+															saveConfig({
+																...existing,
+																vllmSttModel: e.target.value,
+															});
+													}}
+												>
+													{asrModels.map((m) => (
+														<option key={m.id} value={m.id}>
+															{m.label} 🎤
+														</option>
+													))}
+												</select>
+											</div>
+										);
+									})()}
+								</>
+							)}
+
+							{(sttProvider === "vosk" || sttProvider === "whisper") && (
+								<div className="settings-field">
+									<label>{t("settings.sttCurrentModel")}</label>
+									<div
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: "8px",
+										}}
+									>
+										<span style={{ fontSize: "0.9em" }}>
+											{sttModel
+												? (sttModels.find((m) => m.modelId === sttModel)
+														?.modelName ?? sttModel)
+												: "—"}
+										</span>
+										<button
+											type="button"
+											className="onboarding-next-btn"
+											style={{ fontSize: "0.8em", padding: "4px 12px" }}
+											onClick={() => setSttModelModalOpen(true)}
+										>
+											{t("settings.sttManageModels")}
+										</button>
+									</div>
+								</div>
+							)}
+						</>
+					}
+
+					{/* TTS Provider selector */}
+					<div className="settings-field">
+						<label htmlFor="tts-provider-select">
+							{t("settings.ttsProvider")}
+						</label>
+						<select
+							id="tts-provider-select"
+							data-testid="gateway-tts-provider"
+							value={ttsProvider}
+							onChange={(e) => {
+								const next = e.target.value as TtsProviderId;
+								setTtsProvider(next);
+								setDynamicTtsVoices([]);
+								persistConfig({ ttsProvider: next });
+								// Load API key for the selected provider
+								if (next === "openai")
+									setGatewayTtsApiKey(existing?.openaiTtsApiKey ?? "");
+								else if (next === "elevenlabs")
+									setGatewayTtsApiKey(existing?.elevenlabsApiKey ?? "");
+								else if (next === "google")
+									setGatewayTtsApiKey(existing?.googleApiKey ?? "");
+								else setGatewayTtsApiKey("");
+								// naia-local-voice: 임베딩 cascade(VoxCPM2)는 localhost:22600에
+								// 뜸 → host 비어있으면 기본값 채움(합성이 자동으로 로컬 가리킴).
+								if (next === "naia-local-voice" && !vllmTtsHost) {
+									setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
+									persistConfig({ vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST });
+								}
+								// Reset voice to provider default
+								const meta = listTtsProviderMetas().find((p) => p.id === next);
+								if (meta?.voices?.[0]) {
+									persistTtsVoice(meta.voices[0].id);
+								} else if (next === "edge") {
+									// Edge voice will be selected from gateway/hardcoded list
+									persistTtsVoice("");
+								} else if (next === "naia-local-voice" || next === "vllm") {
+									// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
+									// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
+									persistTtsVoice("default");
+								}
+								// Fetch dynamic voices — use saved key or current input
+								const savedKey =
+									next === "openai"
+										? (existing?.openaiTtsApiKey ?? "")
+										: next === "elevenlabs"
+											? (existing?.elevenlabsApiKey ?? "")
+											: next === "google"
+												? (existing?.googleApiKey ?? "")
+												: "";
+								const effectiveKey = savedKey || gatewayTtsApiKey;
+								if (meta?.fetchVoices && effectiveKey) {
+									meta.fetchVoices(effectiveKey).then((voices) => {
+										if (voices && voices.length > 0) {
+											setDynamicTtsVoices(voices);
+											if (voices[0] && !meta.voices?.length)
+												persistTtsVoice(voices[0].id);
+										}
+									});
+								}
+							}}
+						>
+							{listTtsProviderMetas().map((p) => (
+								<option
+									key={p.id}
+									value={p.id}
+									disabled={p.requiresNaiaKey && !naiaKey}
+								>
+									{p.name}
+									{p.pricing ? ` - ${p.pricing}` : ""}
+									{p.requiresNaiaKey && !naiaKey
+										? ` (${t("settings.ttsNaiaRequired")})`
+										: ""}
+									{isRecommendedLocalValue(
+										activeLocalTier,
+										"tts",
+										p.id,
+										localAvatarVoiceFocus,
+									)
+										? ` · ${t("settings.tierRecommendBadge")}`
+										: ""}
+								</option>
+							))}
+						</select>
+						{slotRecommendation(
+							activeLocalTier,
+							"tts",
+							localAvatarVoiceFocus,
+						) && (
+							<div className="settings-hint" data-testid="tts-tier-hint">
+								{t("settings.tierRecommendSummary")}: naia-local-voice (
+								{t("settings.tierRecommendLocalTag")})
+							</div>
+						)}
+					</div>
+					{/* Naia Cloud TTS — backend engine selector */}
+					{ttsProvider === "nextain" && naiaKey && (
+						<div className="settings-field">
+							<label>{t("settings.naiaCloudBackend")}</label>
+							<select
+								value={existing?.naiaCloudTtsBackend ?? "google-chirp3-hd"}
+								onChange={(e) => {
+									if (existing)
+										saveConfig({
+											...existing,
+											naiaCloudTtsBackend: e.target.value,
+										});
+								}}
+							>
+								<option value="google-chirp3-hd">Google Chirp 3 HD</option>
+							</select>
+						</div>
+					)}
+					{/* TTS API key input — shown when provider requires it */}
+					{(() => {
+						const providerMeta = listTtsProviderMetas().find(
+							(p) => p.id === ttsProvider,
+						);
+						if (providerMeta?.requiresApiKey) {
+							return (
+								<div className="settings-field">
+									<label htmlFor="tts-api-key">{t("settings.ttsApiKey")}</label>
+									<input
+										id="tts-api-key"
+										type="password"
+										value={gatewayTtsApiKey}
+										onChange={(e) => {
+											const val = e.target.value;
+											setGatewayTtsApiKey(val);
+											const meta = listTtsProviderMetas().find(
+												(p) => p.id === ttsProvider,
+											);
+											if (meta?.fetchVoices && val.length > 10) {
+												meta.fetchVoices(val).then((voices) => {
+													if (voices && voices.length > 0)
+														setDynamicTtsVoices(voices);
+												});
+											}
+										}}
+										onPaste={(e) => {
+											// Handle paste — onChange may not fire in WebKitGTK
+											setTimeout(() => {
+												const val = (e.target as HTMLInputElement).value;
+												if (val.length > 10) {
+													const meta = listTtsProviderMetas().find(
+														(p) => p.id === ttsProvider,
+													);
+													meta?.fetchVoices?.(val).then((voices) => {
+														if (voices && voices.length > 0)
+															setDynamicTtsVoices(voices);
+													});
+												}
+											}, 100);
+										}}
+										placeholder={`${providerMeta.name} API Key`}
+									/>
+								</div>
+							);
+						}
+						if (providerMeta?.requiresNaiaKey && !naiaKey) {
+							return (
+								<div className="settings-field">
+									<span className="settings-hint">
+										{t("settings.ttsNaiaRequired")}
+									</span>
+								</div>
+							);
+						}
+						return null;
+					})()}
+					{/* R2.2b: 로컬 cascade lifecycle 토글 — naia-os가 windows-manager
+							    loader를 사이드카로 기동/중지(원격 아님). */}
+					{ttsProvider === "naia-local-voice" && (
+						<div className="settings-field" data-testid="cascade-toggle">
+							<button
+								type="button"
+								className="voice-preview-btn"
+								onClick={handleToggleCascade}
+								disabled={cascadeBusy}
+							>
+								{cascadeBusy
+									? t("settings.cascadeBusy")
+									: cascadeRunning
+										? t("settings.cascadeStop")
+										: t("settings.cascadeStart")}
+							</button>
+							{cascadeMsg && (
+								<div className="settings-hint" data-testid="cascade-msg">
+									{cascadeMsg}
+								</div>
+							)}
+						</div>
+					)}
+
+					{/* vLLM TTS: host URL input */}
+					{(ttsProvider === "vllm" || ttsProvider === "naia-local-voice") && (
+						<div className="settings-field">
+							<label>
+								{ttsProvider === "naia-local-voice"
+									? "Local Voice Host"
+									: "vLLM TTS Host"}
+							</label>
+							<input
+								type="text"
+								value={vllmTtsHost}
+								onChange={(e) => {
+									setVllmTtsHost(e.target.value);
+									if (existing)
+										saveConfig({
+											...existing,
+											vllmTtsHost: e.target.value,
+										});
+								}}
+								placeholder={
+									ttsProvider === "naia-local-voice"
+										? "http://localhost:22600"
+										: DEFAULT_VLLM_HOST
+								}
+							/>
+							<div className="settings-hint">
+								{ttsProvider === "naia-local-voice"
+									? t("settings.localVoiceEngineHint")
+									: "Free (local) — e.g. Kokoro"}
+							</div>
+						</div>
+					)}
+
+					{/* TTS Voice picker — dynamic based on provider */}
+					{(() => {
+						const providerMeta = listTtsProviderMetas().find(
+							(p) => p.id === ttsProvider,
+						);
+						// Edge: use locale-based hardcoded voice list
+						if (ttsProvider === "edge") {
+							const voices = getEdgeVoicesForLocale(locale);
+							return voices.length > 0 ? (
+								<div className="settings-field">
+									<label htmlFor="tts-voice-select">
+										{t("settings.ttsVoice")}
+									</label>
+									<div className="voice-picker">
+										<select
+											id="tts-voice-select"
+											data-testid="gateway-tts-voice"
+											value={ttsVoice}
+											onChange={(e) => persistTtsVoice(e.target.value)}
+										>
+											{voices.map((v) => (
+												<option key={v} value={v}>
+													{v}
+												</option>
+											))}
+										</select>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											onClick={handleVoicePreview}
+											disabled={isPreviewing}
+										>
+											{isPreviewing
+												? t("settings.voicePreviewing")
+												: t("settings.voicePreview")}
+										</button>
+									</div>
+								</div>
+							) : null;
+						}
+						// Other providers: use dynamic voices (if fetched) or static registry voices
+						const voiceList =
+							dynamicTtsVoices.length > 0
+								? dynamicTtsVoices
+								: (providerMeta?.voices ?? []);
+						if (voiceList.length > 0) {
+							return (
+								<div className="settings-field">
+									<label htmlFor="tts-voice-select">
+										{t("settings.ttsVoice")}
+									</label>
+									<div className="voice-picker">
+										<select
+											id="tts-voice-select"
+											value={ttsVoice}
+											onChange={(e) => persistTtsVoice(e.target.value)}
+										>
+											{voiceList.map((v) => (
+												<option key={v.id} value={v.id}>
+													{v.label}
+												</option>
+											))}
+										</select>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											onClick={handleVoicePreview}
+											disabled={isPreviewing}
+										>
+											{isPreviewing
+												? t("settings.voicePreviewing")
+												: t("settings.voicePreview")}
+										</button>
+									</div>
+								</div>
+							);
+						}
+						return null;
+					})()}
 
 					{/* Voice Reference (naia-anyllm #31, plan §7) — naia-omni only */}
 					{supportsRefAudio && <RefAudioSection />}
@@ -4018,7 +4149,7 @@ export function SettingsTab() {
 					</div>
 				</>
 			)}
-		{activeSettingsTab === "memory" && (
+			{activeSettingsTab === "memory" && (
 				<>
 					<div className="settings-section-divider">
 						<span>{t("settings.modelsEmbedding")}</span>
@@ -4027,8 +4158,17 @@ export function SettingsTab() {
 					{/* ── Embedding (의미검색) ── */}
 					<div className="settings-field">
 						<label>{t("settings.modelsEmbedding")}</label>
-						<div className="settings-hint">{t("settings.modelsEmbeddingHint")}</div>
-						<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+						<div className="settings-hint">
+							{t("settings.modelsEmbeddingHint")}
+						</div>
+						<div
+							style={{
+								display: "flex",
+								flexDirection: "column",
+								gap: "8px",
+								marginTop: "4px",
+							}}
+						>
 							{(
 								[
 									["none", t("settings.memoryEmbeddingNone")],
@@ -4038,7 +4178,10 @@ export function SettingsTab() {
 									["naia", t("settings.memoryEmbeddingNaia")],
 								] as const
 							).map(([val, label]) => (
-								<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+								<label
+									key={val}
+									style={{ display: "flex", alignItems: "center", gap: "6px" }}
+								>
 									<input
 										type="radio"
 										name="memory-embedding"
@@ -4056,23 +4199,44 @@ export function SettingsTab() {
 						{memoryEmbeddingProvider === "offline" && (
 							<div style={{ marginTop: "8px" }}>
 								<label>{t("settings.memoryOfflineModelSelect")}</label>
-								<div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px", marginBottom: "8px" }}>
+								<div
+									style={{
+										display: "flex",
+										flexDirection: "column",
+										gap: "8px",
+										marginTop: "4px",
+										marginBottom: "8px",
+									}}
+								>
 									{(
 										[
-											["all-MiniLM-L6-v2", t("settings.memoryOfflineModelLight")],
-											["all-mpnet-base-v2", t("settings.memoryOfflineModelAccurate")],
+											[
+												"all-MiniLM-L6-v2",
+												t("settings.memoryOfflineModelLight"),
+											],
+											[
+												"all-mpnet-base-v2",
+												t("settings.memoryOfflineModelAccurate"),
+											],
 										] as const
 									).map(([val, label]) => (
-										<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+										<label
+											key={val}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+											}}
+										>
 											<input
 												type="radio"
 												name="memory-offline-model"
 												value={val}
 												checked={memoryOfflineModel === val}
 												onChange={() => {
-												setMemoryOfflineModel(val);
-												persistConfig({ memoryOfflineModel: val });
-											}}
+													setMemoryOfflineModel(val);
+													persistConfig({ memoryOfflineModel: val });
+												}}
 											/>
 											{label}
 										</label>
@@ -4087,31 +4251,50 @@ export function SettingsTab() {
 											["auto", t("settings.memoryEmbeddingDeviceAuto")],
 										] as const
 									).map(([val, label]) => (
-										<label key={val} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+										<label
+											key={val}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: "6px",
+											}}
+										>
 											<input
 												type="radio"
 												name="memory-embedding-device"
 												value={val}
 												checked={memoryEmbeddingDevice === val}
 												onChange={() => {
-												setMemoryEmbeddingDevice(val);
-												persistConfig({ memoryEmbeddingDevice: val });
-											}}
+													setMemoryEmbeddingDevice(val);
+													persistConfig({ memoryEmbeddingDevice: val });
+												}}
 											/>
 											{label}
 										</label>
 									))}
 								</div>
-								<div className="settings-hint">{t("settings.memoryEmbeddingDeviceHint")}</div>
+								<div className="settings-hint">
+									{t("settings.memoryEmbeddingDeviceHint")}
+								</div>
 							</div>
 						)}
-						{(memoryEmbeddingProvider === "vllm" || memoryEmbeddingProvider === "ollama") && (
-							<div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+						{(memoryEmbeddingProvider === "vllm" ||
+							memoryEmbeddingProvider === "ollama") && (
+							<div
+								style={{
+									marginTop: "8px",
+									display: "flex",
+									flexDirection: "column",
+									gap: "6px",
+								}}
+							>
 								<input
 									type="text"
 									value={memoryEmbeddingBaseUrl}
 									onChange={(e) => setMemoryEmbeddingBaseUrl(e.target.value)}
-									onBlur={(e) => persistConfig({ memoryEmbeddingBaseUrl: e.target.value })}
+									onBlur={(e) =>
+										persistConfig({ memoryEmbeddingBaseUrl: e.target.value })
+									}
 									placeholder="http://localhost:11434"
 								/>
 								<input
@@ -4124,7 +4307,9 @@ export function SettingsTab() {
 									type="text"
 									value={memoryEmbeddingModel}
 									onChange={(e) => setMemoryEmbeddingModel(e.target.value)}
-									onBlur={(e) => persistConfig({ memoryEmbeddingModel: e.target.value })}
+									onBlur={(e) =>
+										persistConfig({ memoryEmbeddingModel: e.target.value })
+									}
 									placeholder="text-embedding-ada-002"
 								/>
 							</div>
@@ -4132,13 +4317,19 @@ export function SettingsTab() {
 						{/* naia 임베딩: 계정 미연결 시 안내(parity) */}
 						{memoryEmbeddingProvider === "naia" && !naiaKey && (
 							<div className="settings-field">
-								<span className="settings-hint">⚠ {t("settings.memoryNaiaRequired")}</span>
+								<span className="settings-hint">
+									⚠ {t("settings.memoryNaiaRequired")}
+								</span>
 							</div>
 						)}
 					</div>
 
 					<div className="settings-actions">
-						<button type="button" className="settings-save-btn" onClick={handleSave}>
+						<button
+							type="button"
+							className="settings-save-btn"
+							onClick={handleSave}
+						>
 							{saved ? t("settings.saved") : t("settings.save")}
 						</button>
 					</div>
@@ -4360,7 +4551,11 @@ export function SettingsTab() {
 					</div>
 					{/* qdrantApiKey needs Save (keychain write) */}
 					<div className="settings-actions">
-						<button type="button" className="settings-save-btn" onClick={handleSave}>
+						<button
+							type="button"
+							className="settings-save-btn"
+							onClick={handleSave}
+						>
 							{saved ? t("settings.saved") : t("settings.save")}
 						</button>
 					</div>
@@ -4444,12 +4639,7 @@ export function SettingsTab() {
 							className="lab-actions-row"
 							style={{ flexWrap: "wrap", gap: "6px" }}
 						>
-							{(
-								[
-									"naia.log",
-									"llm-debug.log",
-								] as const
-							).map((file) => (
+							{(["naia.log", "llm-debug.log"] as const).map((file) => (
 								<button
 									key={file}
 									type="button"
@@ -4534,7 +4724,6 @@ export function SettingsTab() {
 						)}
 					</div>
 
-
 					<VersionFooter />
 
 					<AboutSection />
@@ -4543,188 +4732,183 @@ export function SettingsTab() {
 
 			{/* STT Model Manager Modal — root-level (triggered from brain tab) */}
 			{sttModelModalOpen && (
-						<div
-							className="panel-modal-overlay"
-							onClick={() => setSttModelModalOpen(false)}
-						>
-							<div
-								className="sync-dialog-card"
-								style={{
-									maxWidth: "520px",
-									maxHeight: "85vh",
-									overflow: "auto",
-								}}
-								onClick={(e) => e.stopPropagation()}
-							>
-								<h3>{t("settings.sttModelManagerTitle")}</h3>
-								{sttModels
-									.filter((m) => m.engine === sttProvider)
-									.map((m) => (
+				<div
+					className="panel-modal-overlay"
+					onClick={() => setSttModelModalOpen(false)}
+				>
+					<div
+						className="sync-dialog-card"
+						style={{
+							maxWidth: "520px",
+							maxHeight: "85vh",
+							overflow: "auto",
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3>{t("settings.sttModelManagerTitle")}</h3>
+						{sttModels
+							.filter((m) => m.engine === sttProvider)
+							.map((m) => (
+								<div
+									key={m.modelId}
+									className="stt-model-row"
+									style={{
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "space-between",
+										gap: "8px",
+										padding: "5px 0",
+										borderBottom: "1px solid var(--border-color, #333)",
+									}}
+								>
+									<div style={{ flex: 1, minWidth: 0 }}>
 										<div
-											key={m.modelId}
-											className="stt-model-row"
 											style={{
 												display: "flex",
 												alignItems: "center",
-												justifyContent: "space-between",
-												gap: "8px",
-												padding: "5px 0",
-												borderBottom: "1px solid var(--border-color, #333)",
+												gap: "6px",
 											}}
 										>
-											<div style={{ flex: 1, minWidth: 0 }}>
-												<div
+											<input
+												type="radio"
+												name="stt-model-modal"
+												value={m.modelId}
+												checked={sttModel === m.modelId}
+												disabled={!m.downloaded || !m.ready}
+												onChange={() => setSttModel(m.modelId)}
+											/>
+											<strong style={{ fontSize: "0.9em" }}>
+												{m.modelName}
+											</strong>
+											{m.downloaded && (
+												<span
 													style={{
-														display: "flex",
-														alignItems: "center",
-														gap: "6px",
-													}}
-												>
-													<input
-														type="radio"
-														name="stt-model-modal"
-														value={m.modelId}
-														checked={sttModel === m.modelId}
-														disabled={!m.downloaded || !m.ready}
-														onChange={() => setSttModel(m.modelId)}
-													/>
-													<strong style={{ fontSize: "0.9em" }}>
-														{m.modelName}
-													</strong>
-													{m.downloaded && (
-														<span
-															style={{
-																color: "var(--success-color, #4caf50)",
-																fontSize: "0.75em",
-															}}
-														>
-															✓
-														</span>
-													)}
-												</div>
-												<div
-													style={{
+														color: "var(--success-color, #4caf50)",
 														fontSize: "0.75em",
-														opacity: 0.7,
-														marginLeft: "22px",
 													}}
 												>
-													{m.language === "multilingual"
-														? t("settings.sttLangMultilingual")
-														: m.language}{" "}
-													· {m.sizeMb}MB
-													{m.wer && m.wer !== "—" ? ` · WER ${m.wer}` : ""}
-													{m.description &&
-														` · ${
-															(
-																{
-																	"Fast, low quality. Not recommended for Korean.":
-																		t("settings.sttDescWhisperTiny"),
-																	"Similar quality to Vosk small.": t(
-																		"settings.sttDescWhisperBase",
-																	),
-																	"Noticeable improvement over Vosk.": t(
-																		"settings.sttDescWhisperSmall",
-																	),
-																	"Recommended. Good accuracy for Korean.": t(
-																		"settings.sttDescWhisperMedium",
-																	),
-																	"Best quality. Large download.": t(
-																		"settings.sttDescWhisperLarge",
-																	),
-																} as Record<string, string>
-															)[m.description] || m.description
-														}`}
-												</div>
-											</div>
-											<div
-												style={{ flexShrink: 0, display: "flex", gap: "4px" }}
-											>
-												{!m.downloaded &&
-													m.ready &&
-													sttDownloading !== m.modelId && (
-														<button
-															type="button"
-															style={{
-																fontSize: "0.8em",
-																padding: "2px 8px",
-																cursor: "pointer",
-															}}
-															onClick={() => handleSttModelDownload(m.modelId)}
-														>
-															{t("settings.sttModelDownload")}
-														</button>
-													)}
-												{!m.downloaded && !m.ready && (
-													<span style={{ fontSize: "0.75em", opacity: 0.5 }}>
-														{t("settings.sttModelNotReady")}
-													</span>
-												)}
-												{sttDownloading === m.modelId && (
-													<span style={{ fontSize: "0.8em" }}>
-														{sttDownloadProgress}%
-													</span>
-												)}
-												{m.downloaded && (
-													<button
-														type="button"
-														style={{
-															fontSize: "0.8em",
-															padding: "2px 8px",
-															cursor: "pointer",
-															color: "var(--error-color, #f44)",
-														}}
-														onClick={() => handleSttModelDelete(m.modelId)}
-													>
-														{t("settings.sttModelDelete")}
-													</button>
-												)}
-											</div>
+													✓
+												</span>
+											)}
 										</div>
-									))}
-								<div
-									className="sync-dialog-actions"
-									style={{ marginTop: "12px" }}
-								>
-									<button
-										type="button"
-										className="onboarding-next-btn"
-										onClick={() => setSttModelModalOpen(false)}
-									>
-										OK
-									</button>
+										<div
+											style={{
+												fontSize: "0.75em",
+												opacity: 0.7,
+												marginLeft: "22px",
+											}}
+										>
+											{m.language === "multilingual"
+												? t("settings.sttLangMultilingual")
+												: m.language}{" "}
+											· {m.sizeMb}MB
+											{m.wer && m.wer !== "—" ? ` · WER ${m.wer}` : ""}
+											{m.description &&
+												` · ${
+													(
+														{
+															"Fast, low quality. Not recommended for Korean.":
+																t("settings.sttDescWhisperTiny"),
+															"Similar quality to Vosk small.": t(
+																"settings.sttDescWhisperBase",
+															),
+															"Noticeable improvement over Vosk.": t(
+																"settings.sttDescWhisperSmall",
+															),
+															"Recommended. Good accuracy for Korean.": t(
+																"settings.sttDescWhisperMedium",
+															),
+															"Best quality. Large download.": t(
+																"settings.sttDescWhisperLarge",
+															),
+														} as Record<string, string>
+													)[m.description] || m.description
+												}`}
+										</div>
+									</div>
+									<div style={{ flexShrink: 0, display: "flex", gap: "4px" }}>
+										{!m.downloaded &&
+											m.ready &&
+											sttDownloading !== m.modelId && (
+												<button
+													type="button"
+													style={{
+														fontSize: "0.8em",
+														padding: "2px 8px",
+														cursor: "pointer",
+													}}
+													onClick={() => handleSttModelDownload(m.modelId)}
+												>
+													{t("settings.sttModelDownload")}
+												</button>
+											)}
+										{!m.downloaded && !m.ready && (
+											<span style={{ fontSize: "0.75em", opacity: 0.5 }}>
+												{t("settings.sttModelNotReady")}
+											</span>
+										)}
+										{sttDownloading === m.modelId && (
+											<span style={{ fontSize: "0.8em" }}>
+												{sttDownloadProgress}%
+											</span>
+										)}
+										{m.downloaded && (
+											<button
+												type="button"
+												style={{
+													fontSize: "0.8em",
+													padding: "2px 8px",
+													cursor: "pointer",
+													color: "var(--error-color, #f44)",
+												}}
+												onClick={() => handleSttModelDelete(m.modelId)}
+											>
+												{t("settings.sttModelDelete")}
+											</button>
+										)}
+									</div>
 								</div>
-							</div>
-						</div>
-					)}
-
-					{syncDialogOpen && (
-						<div className="sync-dialog-overlay">
-							<div className="sync-dialog-card">
-								<h3>{t("settings.labSyncDialog.title")}</h3>
-								<p>{t("settings.labSyncDialog.message")}</p>
-								<div className="sync-dialog-actions">
-									<button
-										type="button"
-										className="onboarding-next-btn"
-										onClick={handleSyncDialogApply}
-									>
-										{t("settings.labSyncDialog.useOnline")}
-									</button>
-									<button
-										type="button"
-										className="onboarding-back-btn"
-										onClick={() => {
-											setSyncDialogOpen(false);
-											setSyncDialogOnlineConfig(null);
-										}}
-									>
-									{t("settings.labSyncDialog.keepLocal")}
-								</button>
-							</div>
+							))}
+						<div className="sync-dialog-actions" style={{ marginTop: "12px" }}>
+							<button
+								type="button"
+								className="onboarding-next-btn"
+								onClick={() => setSttModelModalOpen(false)}
+							>
+								OK
+							</button>
 						</div>
 					</div>
-					)}
+				</div>
+			)}
+
+			{syncDialogOpen && (
+				<div className="sync-dialog-overlay">
+					<div className="sync-dialog-card">
+						<h3>{t("settings.labSyncDialog.title")}</h3>
+						<p>{t("settings.labSyncDialog.message")}</p>
+						<div className="sync-dialog-actions">
+							<button
+								type="button"
+								className="onboarding-next-btn"
+								onClick={handleSyncDialogApply}
+							>
+								{t("settings.labSyncDialog.useOnline")}
+							</button>
+							<button
+								type="button"
+								className="onboarding-back-btn"
+								onClick={() => {
+									setSyncDialogOpen(false);
+									setSyncDialogOnlineConfig(null);
+								}}
+							>
+								{t("settings.labSyncDialog.keepLocal")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
