@@ -5,6 +5,8 @@ import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import {
 	agentKeyExists,
+	applyModelSelectionToConfig,
+	applyWorkspaceConfigToLocal,
 	clearAdkPath,
 	getAdkPath,
 	listNaiaAssets,
@@ -12,8 +14,6 @@ import {
 	toLocalBlobUrl,
 	writeAgentKey,
 	writeAgentSecret,
-	applyModelSelectionToConfig,
-	applyWorkspaceConfigToLocal,
 	writeNaiaConfig,
 	writeSlotsManifest,
 } from "../lib/adk-store";
@@ -23,6 +23,23 @@ import {
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
+import { localFacadeUrlFromReady } from "../lib/avatar/cascade-renderer";
+import { detectGpuVramGb } from "../lib/capabilities/gpu";
+import { deriveSettingsSlots } from "../lib/capabilities/slots";
+import {
+	isRecommendedLocalValue,
+	slotRecommendation,
+	tierRecommendedSlots,
+} from "../lib/capabilities/tier-slots";
+import {
+	type AvatarVoiceFocus,
+	VRAM_TIERS,
+	type VramTierId,
+	resolveActiveTier,
+	resolveLocalCapabilities,
+	tierFitsBoth,
+	tierProvidedCapabilities,
+} from "../lib/capabilities/vram-tiers";
 import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	sendAuthUpdate,
@@ -56,10 +73,10 @@ import {
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import {
 	type Locale,
+	type TranslationKey,
 	getLocale,
 	setLocale,
 	t,
-	type TranslationKey,
 } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
@@ -79,46 +96,29 @@ import {
 	isOmniModel,
 	listLlmProviders,
 } from "../lib/llm";
-import { deriveSettingsSlots } from "../lib/capabilities/slots";
-import { detectGpuVramGb } from "../lib/capabilities/gpu";
-import {
-	type AvatarVoiceFocus,
-	VRAM_TIERS,
-	resolveActiveTier,
-	resolveLocalCapabilities,
-	tierFitsBoth,
-	tierProvidedCapabilities,
-	type VramTierId,
-} from "../lib/capabilities/vram-tiers";
-import {
-	isRecommendedLocalValue,
-	slotRecommendation,
-	tierRecommendedSlots,
-} from "../lib/capabilities/tier-slots";
-import { localFacadeUrlFromReady } from "../lib/avatar/cascade-renderer";
-import { useCascadeAvatarStore } from "../stores/cascade-avatar";
-import {
-	applyNaiaSlotDefaults,
-	deriveGate,
-	readSlots,
-	SLOT_GROUPS,
-	type GateMode,
-	type SlotId,
-} from "../lib/slots/model";
 import { Logger } from "../lib/logger";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
+import {
+	type GateMode,
+	SLOT_GROUPS,
+	type SlotId,
+	applyNaiaSlotDefaults,
+	deriveGate,
+	readSlots,
+} from "../lib/slots/model";
 import { listSttProviders } from "../lib/stt/registry";
 import { listTtsProviderMetas } from "../lib/tts/registry";
 import { synthesizeTts } from "../lib/tts/synthesize";
 import type { ModelCapability, ProviderId } from "../lib/types";
 import { type UpdateInfo, checkForUpdate } from "../lib/updater";
-import { useAvatarStore } from "../stores/avatar";
-import { useChatStore } from "../stores/chat";
 import { useAppStore } from "../stores/app";
+import { useAvatarStore } from "../stores/avatar";
+import { useCascadeAvatarStore } from "../stores/cascade-avatar";
+import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
-import { RefAudioSection } from "./RefAudioSection";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
+import { RefAudioSection } from "./RefAudioSection";
 import { SkillsTab } from "./SkillsTab";
 
 const LLM_PROVIDERS = listLlmProviders();
@@ -3157,11 +3157,14 @@ export function SettingsTab() {
 							>
 								<option value="avatar">{t("settings.localFocusAvatar")}</option>
 								<option value="voice">{t("settings.localFocusVoice")}</option>
+								<option value="both">{t("settings.localFocusBoth")}</option>
 							</select>
 							<div className="settings-hint">
 								{localAvatarVoiceFocus === "avatar"
 									? t("settings.localFocusAvatarHint")
-									: t("settings.localFocusVoiceHint")}
+									: localAvatarVoiceFocus === "both"
+										? t("settings.localFocusBothHint")
+										: t("settings.localFocusVoiceHint")}
 							</div>
 						</div>
 					)}

@@ -53,11 +53,22 @@ describe("avatar/voice focus (exclusive 8G tier)", () => {
 		expect(resolveLocalCapabilities(tier8, undefined)).toEqual(["tts"]);
 	});
 
+	it("focus=both → audio+video run together locally (8G int8 6.07G)", () => {
+		// ★8G 오디오+비디오: VoxCPM2 int8(3.47)+Ditto(2.6)=6.07 ≤ 8 → 둘 다 로컬(마스크 video 립싱크).
+		expect(resolveLocalCapabilities(tier8, "both")).toEqual(["tts", "avatar"]);
+	});
+
 	it("12G+ fits both → focus ignored, both run together", () => {
 		const tier12 = selectVramTier(12)!;
 		expect(tierFitsBoth(tier12)).toBe(true);
-		expect(resolveLocalCapabilities(tier12, "avatar")).toEqual(["tts", "avatar"]);
-		expect(resolveLocalCapabilities(tier12, "voice")).toEqual(["tts", "avatar"]);
+		expect(resolveLocalCapabilities(tier12, "avatar")).toEqual([
+			"tts",
+			"avatar",
+		]);
+		expect(resolveLocalCapabilities(tier12, "voice")).toEqual([
+			"tts",
+			"avatar",
+		]);
 	});
 
 	it("null tier → no local capabilities", () => {

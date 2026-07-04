@@ -38,11 +38,11 @@ export type VramTierId =
  * - "voice"  → VoxCPM2 음성 로컬(아바타는 립싱크 없이 정적 NVA/VRM).
  * 둘 다 들어가는 티어(12G+)에서는 무시된다.
  */
-export type AvatarVoiceFocus = "avatar" | "voice";
+export type AvatarVoiceFocus = "avatar" | "voice" | "both";
 
 /** capability → VRAM footprint(GB). windows-manager capabilities.py 실측과 동형(SoT는 wm). */
 const CAPABILITY_VRAM_COST_GB: Partial<Record<ModelCapability, number>> = {
-	tts: 6.9, // VoxCPM2 로컬 음성(실측).
+	tts: 3.47, // VoxCPM2 int8 weight-only(8G 로컬 음성 정본, RTX 5060 실측 2026-07-04). wm tts_voxcpm2_int8 와 동형.
 	avatar: 2.6, // Ditto TRT 립싱크(실측).
 	llm: 5.0, // 로컬 메인 LLM(모델 의존, 추정).
 	embedding: 0.5,
@@ -96,17 +96,18 @@ export const VRAM_TIERS: readonly VramTier[] = [
 	},
 	{
 		id: "avatar-or-voice-8g",
-		label: "8GB — 아바타 또는 음성 (택1)",
+		label: "8GB — 아바타 · 음성 · 둘다(오디오+비디오)",
 		minVramGb: 8,
 		llm: "external",
-		// 8GB 는 아바타(2.6G)+음성(6.9G)=9.5G > 8G 라 **동시 불가**. 둘 다 후보이되
-		// GPU 프로파일의 focus 로 하나를 로컬 구동(나머지는 클라우드/정적). windows-manager
-		// TIER_DEFAULT_PROFILE["8g"] = tts_only "또는 avatar_only" 와 동형.
+		// 8GB: 아바타(2.6G) + 음성 VoxCPM2 int8(3.47G) = 6.07G ≤ 8G → **오디오+비디오 동시 가능**
+		// (RTX 5060/4060 실측, VRAM 6.6/8.2G). focus 로 택: "avatar"(립싱크만·음성 클라우드) /
+		// "voice"(음성만·정적 아바타) / "both"(둘 다 로컬, 마스크 video 립싱크 = 이 캐스케이드 정본 경로).
+		// windows-manager kiosk_8g(tts_voxcpm2_int8 3.47 + avatar 2.6) 와 동형.
 		localCapabilities: ["tts", "avatar"],
-		exclusiveLocal: true,
-		approxLocalVramGb: 6.9, // focus 에 따라 ≤ 6.9G(voice) 또는 2.6G(avatar).
+		exclusiveLocal: true, // focus-gated (avatar/voice/both) — "both" 는 int8 6.07G 로 동시.
+		approxLocalVramGb: 6.07, // both=6.07G(int8) / voice=3.47G / avatar=2.6G.
 		realtime: "measurement-gated",
-		note: "8GB: 아바타(2.6G) 또는 음성(6.9G) 택1 — 동시 9.5G>8G 불가. LLM 외부. GPU 프로파일에서 집중 선택.",
+		note: "8GB: 아바타(2.6G)+음성 int8(3.47G)=6.07G. focus=both 면 오디오+비디오 동시. LLM 외부.",
 	},
 	{
 		id: "avatar-voice-12g",
@@ -172,9 +173,9 @@ const DEFAULT_FOCUS: AvatarVoiceFocus = "voice";
 /**
  * 배타 티어에서 focus 를 실제 로컬 capability 로 해소한다.
  * - 비배타 티어 → 후보 전부 동시 구동(focus 무시).
- * - 배타 티어  → focus="avatar" 면 ["avatar"], "voice" 면 ["tts"] (후보 중 택1).
- *   focus 미지정 → DEFAULT_FOCUS("voice", wm 8g 기본과 동형).
- * 후보에 없는 focus(예: avatar 후보 없는 티어)는 무시하고 다른 후보로 폴백.
+ * - 배타 티어  → focus="avatar" 면 ["avatar"], "voice" 면 ["tts"], **"both" 면 둘 다**(오디오+비디오
+ *   동시, 예: 8G --no-denoiser 7.9G). focus 미지정 → DEFAULT_FOCUS("voice", wm 8g 기본과 동형).
+ * 후보에 없는 focus 는 무시하고 다른 후보로 폴백.
  */
 export function resolveLocalCapabilities(
 	tier: VramTier | null,
@@ -182,10 +183,20 @@ export function resolveLocalCapabilities(
 ): ModelCapability[] {
 	if (!tier) return [];
 	if (!tier.exclusiveLocal) return [...tier.localCapabilities];
-	const want: ModelCapability = (focus ?? DEFAULT_FOCUS) === "avatar" ? "avatar" : "tts";
+	const f = focus ?? DEFAULT_FOCUS;
+	if (f === "both") {
+		// 오디오+비디오 동시 — 후보 중 음성+아바타 둘 다 로컬 구동.
+		const both = tier.localCapabilities.filter(
+			(c) => c === "avatar" || c === "tts",
+		);
+		if (both.length) return both;
+	}
+	const want: ModelCapability = f === "avatar" ? "avatar" : "tts";
 	if (tier.localCapabilities.includes(want)) return [want];
 	// focus 후보가 이 티어에 없으면 남은 후보 중 아바타/음성 우선으로 하나.
-	const fallback = tier.localCapabilities.find((c) => c === "avatar" || c === "tts");
+	const fallback = tier.localCapabilities.find(
+		(c) => c === "avatar" || c === "tts",
+	);
 	return fallback ? [fallback] : [];
 }
 
