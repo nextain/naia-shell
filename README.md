@@ -1,9 +1,9 @@
-# naia-os
+# naia-shell
 
 **Naia Visual Agent의 비주얼 셸 코드베이스. 사용자가 보고 말을 거는 데스크톱 앱이며, naia-os 배포판의 핵심 사용자 표면이다.** Tauri/Rust 네이티브 셸이
 대화 UI·음성·아바타를 그리고, 뒤에서 "뇌"(naia-agent)를 띄워 gRPC 로 대화한다. 이 레포의 앱 코어는 헥사고날 아키텍처로 재구축되어 있고, 배포판 계층은 Bazzite/titanoboa 기반으로 가져간다.
 
-> **이름 정리**: 이 저장소 이름은 현재 `naia-os`이지만, 코드의 주 역할은 사용자가 직접 만나는 **비주얼 셸(`naia-shell`)** 입니다. `naia-os`라는 이름은 장기적으로 Bazzite/titanoboa 기반 커스텀 배포판/ISO 계층을 가리키는 이름으로 좁혀 쓰는 편이 더 정확합니다. 제품 카테고리는 **Naia Visual Agent**입니다.
+> **이름 정리**: 이 저장소가 `naia-shell`이고, 사용자가 직접 만나는 **비주얼 셸(앱)** 코드가 여기 있습니다. `naia-os`는 이제 이 셸을 부팅 가능한 형태로 묶는 Bazzite/titanoboa 기반 **배포판/ISO** 계층을 가리킵니다. 두 이름이 헷갈리지 않게, 코드는 `naia-shell`, 배포판은 `naia-os`로 나눠 씁니다. 제품 카테고리는 **Naia Visual Agent**입니다.
 
 ---
 
@@ -59,7 +59,7 @@ naia-shell은 Naia Visual Agent 스택의 **표현/셸 계층**이다.
 - **naia-memory** — 장기기억. agent 가 recall/save 로 연동.
 - **naia-adk** — 설정이 사는 워크스페이스. agent 가 기동 시 로딩.
 
-**결합 방식 = 인터페이스, 런타임 의존 아님.** os↔agent 는 gRPC wire 계약
+**결합 방식 = 인터페이스, 런타임 의존 아님.** shell↔agent 는 gRPC wire 계약
 (`AgentOutbound`/`AgentMessage` 폐쇄 union)으로만 맞물린다. transport 는 포트라
 stdio↔gRPC 교체가 도메인을 건드리지 않는다.
 
@@ -94,17 +94,17 @@ naia-shell이 다른 데스크톱 앱과 다른 점은 이 3층 분리다 (SoT: 
 
 > ⚠️ naia-shell은 실행·빌드 시 형제 폴더의 **naia-agent(뇌)** 를 자동으로 빌드해 spawn 한다.
 > 따라서 두 저장소를 **같은 부모 폴더 아래 나란히(형제 디렉토리)** 내려받아야 한다.
-> agent 만 없으면 `tauri:dev`·`tauri:build` 가 바로 실패한다.
+> agent 만 없으면 `tauri:dev`·`tauri build`(빌드) 가 바로 실패한다.
 
 ```bash
 # 1) 두 저장소를 형제로 clone (디렉토리 이름을 바꾸지 말 것 — 경로가 고정돼 있다)
-git clone https://github.com/nextain/naia-os.git
+git clone https://github.com/nextain/naia-shell.git
 git clone https://github.com/nextain/naia-agent.git
 #  부모폴더/
-#  ├── naia-os/          ← 아래 명령은 여기서 실행
-#  └── naia-agent/      ← tauri:dev/build 가 자동으로 빌드·spawn
+#  ├── naia-shell/       ← 아래 명령은 여기서 실행
+#  └── naia-agent/      ← tauri:dev / tauri build 가 자동으로 빌드·spawn
 
-cd naia-os
+cd naia-shell
 pnpm install                       # 의존성 설치 (루트)
 
 # 2) 코어 단위·계약 테스트 (루트)
@@ -150,7 +150,7 @@ xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+taur
 ## 프로젝트 구조
 
 ```
-naia-os/
+naia-shell/
 ├── AGENTS.md / CLAUDE.md / GEMINI.md / OPENCODE.md / CODEX.md   # AI 진입점(헌장) — AGENTS.md 가 SoT, 나머지는 자동 mirror
 ├── .agents/        # AI 컨텍스트(규칙·상태·훅) — 사람이 편집
 │   └── context/    #   agents-rules.json(규칙 SoT) · process-status.json(진행)
