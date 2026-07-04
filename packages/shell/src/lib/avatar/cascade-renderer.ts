@@ -203,7 +203,13 @@ export class CascadeAvatarRenderer {
 		this.active = hostVideo;
 	}
 
-	/** 텍스트 발화 — audioWav 미지정 시 cascade 내장 TTS(/stream_text), 지정 시 /stream(wav). */
+	/** 텍스트 발화 — audioWav 미지정 시 cascade 내장 TTS(/stream_text), 지정 시 /stream(wav).
+	 *  응답 Content-Type 로 렌더 방식 결정:
+	 *   - video/webm(완전 파일, composite 마스크 video/알파) → Blob → `<video>.src` (전체 수신 후 재생).
+	 *   - video/mp4(fragmented) → MSE 이중버퍼(첫 청크부터 저지연 재생).
+	 *  ★composite 알파 webm 은 스트리밍 시 duration/cues 부재로 `<video>`가 비디오 트랙을 못 넘김
+	 *   (오디오만·화면정지) → 서버가 **완전한 webm 파일**로 출력하고 클라는 Blob 으로 받아야 한다
+	 *   (avatar_ditto_composite.py 의 "완전한 webm 파일로 출력" 주석과 대칭). */
 	async speak(text: string, audioWav?: Uint8Array): Promise<void> {
 		const t = text.trim();
 		if ((!t && !audioWav) || this.disposed || !this.buf) return;
@@ -211,6 +217,86 @@ export class CascadeAvatarRenderer {
 		this.runTeardown();
 		const back = this.buf;
 
+		try {
+			const res = audioWav
+				? await fetch(this.streamUrl("/stream"), {
+						method: "POST",
+						headers: { "Content-Type": "application/octet-stream" },
+						body: audioWav as BodyInit,
+					})
+				: await fetch(this.streamUrl("/stream_text"), {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ text: t }),
+					});
+			if (my !== this.gen || this.disposed) return;
+			if (!res.ok || !res.body) throw new Error(`cascade stream ${res.status}`);
+			const ctype = (res.headers.get("content-type") || "").toLowerCase();
+			if (ctype.includes("webm")) {
+				await this.renderWebmFile(res, back, my);
+			} else {
+				await this.renderMseStream(res, back, my);
+			}
+		} catch (e) {
+			if (my === this.gen) {
+				console.warn(
+					"[cascade-avatar] speak 실패 — 이 발화 드롭:",
+					e instanceof Error ? e.message : e,
+				);
+			}
+		} finally {
+			// ★현 세대만 자기 정리를 한다. 발화가 새 speak/interrupt/stop 으로 대체되면 gen 이 올라가고,
+			//   그 대체자가 자기 시작 시 runTeardown 으로 **이 세대의** cleanup 을 이미 실행한다. 여기서
+			//   또 runTeardown 하면 this.teardown 이 가리키는 **더 새로운 세대**의 cleanup 을 잘못 실행해
+			//   현재 발화의 objectURL 을 revoke 하고 swap/ended 리스너를 떼어버린다(정체성 가드 상실 회귀).
+			if (my === this.gen) {
+				this.onTalking?.(false);
+				try {
+					back.style.opacity = "0";
+					back.muted = true;
+				} catch {
+					/* noop */
+				}
+				this.active = this.host;
+				this.runTeardown();
+			}
+		}
+	}
+
+	/** 발화 종료 대기 — `ended` 이벤트 또는 폴링(back.ended)·상한(ENDED_WAIT_CAP_MS). endedFn 등록 콜백으로
+	 *  호출측 cleanup 이 리스너를 제거하게 한다. barge-in(gen 변경) 시 즉시 resolve. */
+	private waitEnded(
+		back: HTMLVideoElement,
+		my: number,
+		registerEndedFn: (fn: () => void) => void,
+	): Promise<void> {
+		return new Promise<void>((res2) => {
+			if (my !== this.gen) return res2();
+			let settled = false;
+			const fin = () => {
+				if (settled) return;
+				settled = true;
+				clearInterval(iv);
+				clearTimeout(to);
+				res2();
+			};
+			registerEndedFn(fin);
+			back.addEventListener("ended", fin, { once: true });
+			const iv = setInterval(() => {
+				if (my !== this.gen || this.disposed || back.ended) fin();
+			}, 1000);
+			const to = setTimeout(fin, ENDED_WAIT_CAP_MS);
+		});
+	}
+
+	/** fragmented mp4 스트림 → MSE 이중버퍼. 첫 청크부터 재생, swap 시 host 위로 노출. */
+	private async renderMseStream(
+		res: Response,
+		back: HTMLVideoElement,
+		my: number,
+	): Promise<void> {
+		const body = res.body;
+		if (!body) return;
 		const ms = new MediaSource();
 		const url = URL.createObjectURL(ms);
 		back.src = url;
@@ -258,139 +344,146 @@ export class CascadeAvatarRenderer {
 		};
 		this.teardown = cleanup;
 
-		try {
-			await new Promise<void>((res, rej) => {
-				ms.addEventListener("sourceopen", () => res(), { once: true });
-				ms.addEventListener(
-					"sourceclose",
-					() => rej(new Error("sourceclose")),
-					{
-						once: true,
-					},
-				);
-			});
-			if (my !== this.gen || this.disposed) return;
+		await new Promise<void>((resolve, reject) => {
+			ms.addEventListener("sourceopen", () => resolve(), { once: true });
+			ms.addEventListener(
+				"sourceclose",
+				() => reject(new Error("sourceclose")),
+				{
+					once: true,
+				},
+			);
+		});
+		if (my !== this.gen || this.disposed) return;
 
-			sb = ms.addSourceBuffer(this.codec);
-			const queue: Uint8Array[] = [];
-			let ended = false;
-			let swapped = false;
-			let playStarted = false;
-			const maybePlay = () => {
-				if (playStarted || this.disposed || my !== this.gen || !sb) return;
+		sb = ms.addSourceBuffer(this.codec);
+		const queue: Uint8Array[] = [];
+		let ended = false;
+		let swapped = false;
+		let playStarted = false;
+		const maybePlay = () => {
+			if (playStarted || this.disposed || my !== this.gen || !sb) return;
+			try {
+				if (
+					sb.buffered.length &&
+					sb.buffered.end(sb.buffered.length - 1) >= PREBUFFER_S
+				) {
+					playStarted = true;
+					void back.play().catch(() => undefined);
+				}
+			} catch {
+				/* noop */
+			}
+		};
+		const pump = () => {
+			maybePlay();
+			if (!sb || sb.updating || my !== this.gen) return;
+			if (queue.length) {
 				try {
-					if (
-						sb.buffered.length &&
-						sb.buffered.end(sb.buffered.length - 1) >= PREBUFFER_S
-					) {
-						playStarted = true;
-						void back.play().catch(() => undefined);
-					}
+					sb.appendBuffer(queue.shift()! as BufferSource);
 				} catch {
-					/* noop */
+					/* SourceBuffer 닫힘/제거 경합 — 무시 */
 				}
-			};
-			const pump = () => {
-				maybePlay();
-				if (!sb || sb.updating || my !== this.gen) return;
-				if (queue.length) {
-					try {
-						sb.appendBuffer(queue.shift()! as BufferSource);
-					} catch {
-						/* SourceBuffer 닫힘/제거 경합 — 무시 */
-					}
-				} else if (ended && ms.readyState === "open") {
-					try {
-						ms.endOfStream();
-					} catch {
-						/* already closed */
-					}
-				}
-			};
-			pumpFn = pump;
-			sb.addEventListener("updateend", pump);
-
-			const swap = () => {
-				if (swapped || my !== this.gen) return;
-				swapped = true;
-				this.onTalking?.(true);
-				back.style.opacity = "1";
-				back.muted = false;
-				this.active = back;
-			};
-			swapFn = swap;
-			back.addEventListener("playing", swap, { once: true });
-
-			const res = audioWav
-				? await fetch(this.streamUrl("/stream"), {
-						method: "POST",
-						headers: { "Content-Type": "application/octet-stream" },
-						body: audioWav as BodyInit,
-					})
-				: await fetch(this.streamUrl("/stream_text"), {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ text: t }),
-					});
-			if (!res.ok || !res.body) throw new Error(`cascade stream ${res.status}`);
-			reader = res.body.getReader();
-			if (my !== this.gen || this.disposed) return;
-			let first = true;
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				if (my !== this.gen || this.disposed) return;
-				if (value) {
-					first = false;
-					queue.push(value);
-					pump();
-				}
-			}
-			ended = true;
-			pump();
-			if (!first && !playStarted) {
-				playStarted = true;
-				void back.play().catch(() => undefined);
-			}
-			if (first) return; // 빈 스트림 — 즉시 종료(고착 회피)
-			await new Promise<void>((res2) => {
-				if (my !== this.gen) return res2();
-				let settled = false;
-				const fin = () => {
-					if (settled) return;
-					settled = true;
-					clearInterval(iv);
-					clearTimeout(to);
-					res2();
-				};
-				endedFn = fin;
-				back.addEventListener("ended", fin, { once: true });
-				const iv = setInterval(() => {
-					if (my !== this.gen || this.disposed || back.ended) fin();
-				}, 1000);
-				const to = setTimeout(fin, ENDED_WAIT_CAP_MS);
-			});
-		} catch (e) {
-			if (my === this.gen) {
-				console.warn(
-					"[cascade-avatar] speak 실패 — 이 발화 드롭:",
-					e instanceof Error ? e.message : e,
-				);
-			}
-		} finally {
-			if (my === this.gen) {
-				this.onTalking?.(false);
+			} else if (ended && ms.readyState === "open") {
 				try {
-					back.style.opacity = "0";
-					back.muted = true;
+					ms.endOfStream();
 				} catch {
-					/* noop */
+					/* already closed */
 				}
-				this.active = this.host;
 			}
-			if (this.teardown === cleanup) this.teardown = null;
-			cleanup();
+		};
+		pumpFn = pump;
+		sb.addEventListener("updateend", pump);
+
+		const swap = () => {
+			if (swapped || my !== this.gen) return;
+			swapped = true;
+			this.onTalking?.(true);
+			back.style.opacity = "1";
+			back.muted = false;
+			this.active = back;
+		};
+		swapFn = swap;
+		back.addEventListener("playing", swap, { once: true });
+
+		reader = body.getReader();
+		let first = true;
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (my !== this.gen || this.disposed) return;
+			if (value) {
+				first = false;
+				queue.push(value);
+				pump();
+			}
 		}
+		ended = true;
+		pump();
+		if (!first && !playStarted) {
+			playStarted = true;
+			void back.play().catch(() => undefined);
+		}
+		if (first) return; // 빈 스트림 — 즉시 종료(고착 회피)
+		await this.waitEnded(back, my, (fn) => {
+			endedFn = fn;
+		});
+	}
+
+	/** 완전한 VP9 알파 webm 파일(composite 마스크 video) → Blob → `<video>.src`.
+	 *  전체 수신 후 재생(스트리밍 webm 은 브라우저가 비디오 트랙을 못 넘김). webm 에 오디오(opus)
+	 *  포함 → swap 시 unmute 로 발화 음성 재생. */
+	private async renderWebmFile(
+		res: Response,
+		back: HTMLVideoElement,
+		my: number,
+	): Promise<void> {
+		const blob = await res.blob();
+		if (my !== this.gen || this.disposed || blob.size === 0) return;
+		const url = URL.createObjectURL(blob);
+
+		let swapFn: (() => void) | null = null;
+		let endedFn: (() => void) | null = null;
+		let cleaned = false;
+		const cleanup = () => {
+			if (cleaned) return;
+			cleaned = true;
+			try {
+				if (swapFn) back.removeEventListener("playing", swapFn);
+			} catch {
+				/* noop */
+			}
+			try {
+				if (endedFn) back.removeEventListener("ended", endedFn);
+			} catch {
+				/* noop */
+			}
+			try {
+				URL.revokeObjectURL(url);
+			} catch {
+				/* noop */
+			}
+		};
+		this.teardown = cleanup;
+
+		const swap = () => {
+			if (my !== this.gen) return;
+			this.onTalking?.(true);
+			back.style.opacity = "1";
+			back.muted = false; // webm 에 오디오(opus) 포함 → 발화 음성 재생
+			this.active = back;
+		};
+		swapFn = swap;
+		back.addEventListener("playing", swap, { once: true });
+
+		back.loop = false;
+		back.src = url;
+		void back.play().catch(() => undefined);
+		if (my !== this.gen || this.disposed) return;
+
+		await this.waitEnded(back, my, (fn) => {
+			endedFn = fn;
+		});
 	}
 
 	/**
@@ -422,6 +515,8 @@ export class CascadeAvatarRenderer {
 		this.disposed = true;
 		this.gen++;
 		this.runTeardown();
+		// 발화 중 정지(언마운트 등)면 setSpeaking(true) 가 전역 스토어에 남지 않도록 해제(interrupt 와 대칭).
+		this.onTalking?.(false);
 		try {
 			this.active?.pause();
 			this.host?.pause();

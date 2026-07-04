@@ -9,7 +9,9 @@ import {
 
 describe("CascadeAvatarRenderer.streamUrl", () => {
 	it("절대 URL base + path 결합", () => {
-		const r = new CascadeAvatarRenderer({ runtimeUrl: "http://127.0.0.1:8910" });
+		const r = new CascadeAvatarRenderer({
+			runtimeUrl: "http://127.0.0.1:8910",
+		});
 		expect(r.streamUrl("/idle")).toBe("http://127.0.0.1:8910/idle");
 		expect(r.streamUrl("/stream_text")).toBe(
 			"http://127.0.0.1:8910/stream_text",
@@ -115,6 +117,97 @@ describe("probeCascadeHealth", () => {
 		await expect(
 			probeCascadeHealth("http://gpu:8910", 2000, fetchImpl as never),
 		).resolves.toBe(false);
+	});
+});
+
+describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp4=MSE)", () => {
+	function makeHost(): HTMLVideoElement {
+		const container = document.createElement("div");
+		const host = document.createElement("video");
+		container.appendChild(host);
+		document.body.appendChild(container);
+		return host;
+	}
+	function mockRes(contentType: string, blob: () => Promise<Blob>) {
+		return {
+			ok: true,
+			body: {
+				getReader: () => ({
+					read: async () => ({ done: true, value: undefined }),
+				}),
+			},
+			headers: {
+				get: (k: string) =>
+					k.toLowerCase() === "content-type" ? contentType : null,
+			},
+			blob,
+		};
+	}
+	// jsdom 은 미디어 재생/MediaSource/URL.createObjectURL 미구현 → 최소 스텁.
+	// play() 는 즉시 'ended' 를 쏴 waitEnded 를 해소(테스트 고착 방지).
+	function withStubs<T>(msImpl: unknown, run: () => Promise<T>): Promise<T> {
+		const orig = {
+			create: URL.createObjectURL,
+			revoke: URL.revokeObjectURL,
+			play: HTMLMediaElement.prototype.play,
+			ms: (globalThis as unknown as { MediaSource: unknown }).MediaSource,
+			fetch: globalThis.fetch,
+		};
+		URL.createObjectURL = vi.fn(() => "blob:mock");
+		URL.revokeObjectURL = vi.fn();
+		HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+			setTimeout(() => this.dispatchEvent(new Event("ended")), 0);
+			return Promise.resolve();
+		} as never;
+		(globalThis as unknown as { MediaSource: unknown }).MediaSource = msImpl;
+		return run().finally(() => {
+			URL.createObjectURL = orig.create;
+			URL.revokeObjectURL = orig.revoke;
+			HTMLMediaElement.prototype.play = orig.play;
+			(globalThis as unknown as { MediaSource: unknown }).MediaSource = orig.ms;
+			globalThis.fetch = orig.fetch;
+		});
+	}
+
+	it("video/webm 응답 → Blob 경로(res.blob 호출, MediaSource 미생성)", async () => {
+		const msSpy = vi.fn();
+		await withStubs(msSpy, async () => {
+			const blobSpy = vi.fn(
+				async () =>
+					new Blob([new Uint8Array([1, 2, 3])], { type: "video/webm" }),
+			);
+			globalThis.fetch = vi.fn(async () =>
+				mockRes("video/webm", blobSpy),
+			) as never;
+			const host = makeHost();
+			const r = new CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+			await r.speak("안녕");
+			expect(blobSpy).toHaveBeenCalledTimes(1); // 마스크 video = 완전 파일 Blob 소비
+			expect(msSpy).not.toHaveBeenCalled(); // MSE 안 씀
+		});
+	});
+
+	it("video/mp4 응답 → MSE 경로(MediaSource 생성 시도, res.blob 미호출)", async () => {
+		const msSpy = vi.fn();
+		await withStubs(msSpy, async () => {
+			const blobSpy = vi.fn(
+				async () => new Blob([new Uint8Array([1])], { type: "video/mp4" }),
+			);
+			globalThis.fetch = vi.fn(async () =>
+				mockRes("video/mp4", blobSpy),
+			) as never;
+			const host = makeHost();
+			const r = new CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+			await r.speak("안녕"); // MSE 스텁이 불완전해 내부 throw → speak 가 catch(발화 드롭). 분기 선택만 검증.
+			expect(msSpy).toHaveBeenCalled(); // MSE 경로 진입
+			expect(blobSpy).not.toHaveBeenCalled(); // Blob 경로 아님
+		});
 	});
 });
 
