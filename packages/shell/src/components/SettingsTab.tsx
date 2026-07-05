@@ -496,7 +496,7 @@ export function SettingsTab() {
 		"vrm" | "naia-video-avatar"
 	>(existing?.avatarProvider ?? "vrm");
 	const [nvaModel, setNvaModel] = useState(existing?.nvaModel ?? "");
-	const [cascadeRuntimeUrl, setCascadeRuntimeUrl] = useState(
+	const [cascadeRuntimeUrl] = useState(
 		existing?.cascadeRuntimeUrl ?? "",
 	);
 	const [activeBgPath, setActiveBgPath] = useState<string>("");

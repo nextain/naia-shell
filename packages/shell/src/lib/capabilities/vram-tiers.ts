@@ -174,7 +174,7 @@ const DEFAULT_FOCUS: AvatarVoiceFocus = "voice";
  * 배타 티어에서 focus 를 실제 로컬 capability 로 해소한다.
  * - 비배타 티어 → 후보 전부 동시 구동(focus 무시).
  * - 배타 티어  → focus="avatar" 면 ["avatar"], "voice" 면 ["tts"], **"both" 면 둘 다**(오디오+비디오
- *   동시, 예: 8G --no-denoiser 7.9G). focus 미지정 → DEFAULT_FOCUS("voice", wm 8g 기본과 동형).
+ *   동시, 예: 8G int8 6.07G). focus 미지정 → DEFAULT_FOCUS("voice", wm 8g 기본과 동형).
  * 후보에 없는 focus 는 무시하고 다른 후보로 폴백.
  */
 export function resolveLocalCapabilities(

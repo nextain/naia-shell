@@ -1,9 +1,15 @@
+import type { AvatarVoiceFocus } from "../capabilities/vram-tiers";
 // slots-manifest — Phase 2 계약(§5.2.1/2.2): naia-os 가 write 하고 windows-manager 가 read 하는
 // 로컬 런타임 구동 결정 매니페스트. AppConfig(평면) → 직렬화 가능 매니페스트(구조화).
 // wm 은 이 매니페스트로 어느 로컬 서비스(avatar/tts/sub-llm/embed)를 띄울지 결정(Phase 4.1).
 // SoT: alpha-adk .agents/progress/naia-model-slots-architecture-2026-06-28.md §3.4·§5.2.
 import type { AppConfig } from "../config";
-import { deriveGate, readSlots, type GateMode, type SlotSnapshot } from "./model";
+import {
+	type GateMode,
+	type SlotSnapshot,
+	deriveGate,
+	readSlots,
+} from "./model";
 
 export const SLOTS_MANIFEST_VERSION = 1 as const;
 
@@ -29,7 +35,7 @@ export interface SlotsManifest {
 		 * 배타 VRAM 티어(8G)에서 로컬 집중 — wm 이 avatar_only vs tts_only 프로파일을
 		 * 고를 근거. 아바타+음성 동시 불가한 티어에서만 의미. 미지정 → wm 기본(tts_only).
 		 */
-		localFocus?: "avatar" | "voice";
+		localFocus?: AvatarVoiceFocus;
 	};
 	/** 빌드 일시(디버그·추적). ISO 문자열. */
 	builtAt?: string;
@@ -65,7 +71,9 @@ export function buildSlotsManifest(
 			},
 		},
 		gpu: {
-			...(opts.detectedVramGb !== undefined ? { detectedVramGb: opts.detectedVramGb } : {}),
+			...(opts.detectedVramGb !== undefined
+				? { detectedVramGb: opts.detectedVramGb }
+				: {}),
 			...(config.localGpuTier ? { tier: config.localGpuTier } : {}),
 			...(config.localAvatarVoiceFocus
 				? { localFocus: config.localAvatarVoiceFocus }
