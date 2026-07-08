@@ -7,6 +7,8 @@
 
 ## 1. 큰 그림 — os → agent → adk (수평/lateral)
 
+> **이름 정리**: 아래 다이어그램의 `os`(=`new-naia-os`) = 이 레포의 **naia-shell 비주얼 셸 코드베이스**(이식 당시 디렉토리·패키지 식별자라 라벨은 그대로 둔다). `naia-os` 는 이제 이 셸을 부팅 이미지로 묶는 Bazzite/titanoboa **배포판 계층**을 가리키는 별개 관심사다.
+
 ```
 new-naia-os (Tauri/Rust 셸 = UI/표현)
    │  ① 셸이 agent 를 외부 프로세스로 spawn → "GRPC_LISTENING <addr>" 핸드셰이크

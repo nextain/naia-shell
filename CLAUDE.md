@@ -9,9 +9,9 @@ preferentially) get the same Single Source of Truth as AGENTS.md.
 Standard: AAIF / agents.md (https://agents.md/)
 -->
 
-# naia-os
+# naia-shell
 
-Bazzite 기반 배포형 비주얼 에이전트(visual agent) — naia-template-project clean rebuild (헥사고날 이식). 내부 구조는 AI OS(agent=커널) 은유
+비주얼 에이전트(visual agent)의 데스크톱 셸 코드베이스 — naia-template-project clean rebuild (헥사고날 이식). 내부 구조는 AI OS(agent=커널) 은유. (`naia-os` = 이 셸을 부팅 이미지로 묶는 Bazzite/titanoboa 배포판 계층 — 별개 관심사)
 
 ---
 
@@ -21,8 +21,9 @@ Bazzite 기반 배포형 비주얼 에이전트(visual agent) — naia-template-
 이 `AGENTS.md` 는 프로젝트 소개가 아니라 **AI 도구가 코드를 건드릴 때 지키는 프로세스 규칙(SoT)**이다 —
 필수 읽기 · 구조 규칙(F12/F13) · SDLC 게이트(P01~P05) · 헌장 불변. 그래서 곧장 규칙으로 시작한다.
 
-> **한 줄 멘탈모델**: naia-os = 사용자가 보는 **데스크톱 셸**. 뇌(naia-agent)를 spawn 해 gRPC 로
-> 대화하고, 응답을 텍스트·음성·아바타로 표현한다. 전체 그림 = README 의 "생태계에서의 위치".
+> **한 줄 멘탈모델**: naia-shell = 사용자가 보는 **데스크톱 셸 코드베이스**. 뇌(naia-agent)를 spawn 해 gRPC 로
+> 대화하고, 응답을 텍스트·음성·아바타로 표현한다. (`naia-os` = 이 셸을 부팅 이미지로 묶는 Bazzite/titanoboa 배포판 계층 = 별개 관심사.)
+> 전체 그림 = README 의 "생태계에서의 위치".
 
 순서: **README**(무엇/왜/어떻게 실행) → **이 파일**(작업 규칙) → `docs/ARCHITECTURE.md`(사상·UC 레시피).
 

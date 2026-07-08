@@ -67,7 +67,7 @@
 
 ## 기능 요구사항 (FR) — VRAM tier 로컬 프로파일 (#2, 셸측 슬라이스 — 2026-06-25)
 
-> 범위: private deployment draft 의 **naia-os UI측만**. 로더(fetch/launch)·auto-download = device RTF hardware gate=DEFER. 정본 tier manifest = private tier manifest (outside this repo). **hard rule F1: 측정 RTF 없이 realtime 단정 금지.** 트랙: `naia-vram-tier-capability-bridge-2026-06-25.md`.
+> 범위: private deployment draft 의 **naia-shell UI측만**. 로더(fetch/launch)·auto-download = device RTF hardware gate=DEFER. 정본 tier manifest = private tier manifest (outside this repo). **hard rule F1: 측정 RTF 없이 realtime 단정 금지.** 트랙: `naia-vram-tier-capability-bridge-2026-06-25.md`.
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
@@ -80,7 +80,7 @@
 
 ## 기능 요구사항 (FR) — S-SLOT 게이트+6슬롯 설정 모델 (#gate-slots, 셸 feature — 2026-06-28)
 
-> 범위: naia-os 설정/온보딩 **클라우드 슬롯**측. 구 engine/ai/models/memory 분산을 게이트+6슬롯으로 통합("설정 헷갈림" 해소). **Naia는 provider가 아니라 접근 유형(게이트)** — 이전 naia/byo/local 3프로파일 전제 오류 폐기. 트랙: `.agents/progress/naia-model-slots-architecture-2026-06-28.md`(2-clean 수렴). 로컬 런타임(cascade·통합 VRAM)은 **DEFER**(wm 언블록 후 · Phase 1.2b/1.4).
+> 범위: naia-shell 설정/온보딩 **클라우드 슬롯**측. 구 engine/ai/models/memory 분산을 게이트+6슬롯으로 통합("설정 헷갈림" 해소). **Naia는 provider가 아니라 접근 유형(게이트)** — 이전 naia/byo/local 3프로파일 전제 오류 폐기. 트랙: `.agents/progress/naia-model-slots-architecture-2026-06-28.md`(2-clean 수렴). 로컬 런타임(cascade·통합 VRAM)은 **DEFER**(wm 언블록 후 · Phase 1.2b/1.4).
 >
 > **상태: Done (P04→P05, 2026-06-29)** — 클라우드 슬롯측 구현 완료. 검증: `settings-slots.contract.test.ts`(23/23 GREEN), `SettingsTab.test.tsx`(S-SLOT 2건), `e2e/settings-slots.spec.ts`(Playwright 3/3 — 게이트·3그룹·Gemini 기본값 적용 실 UI). 구현: 1.1 슬롯 모델(`lib/slots/model.ts`)·1.2a 게이트+3그룹 UI(3-profile 잔재 제거 R1-7)·1.3 Gemini 기본값(`applyNaiaSlotDefaults`, §9 #5 해결 gemini-3.5-flash/3.1-flash-lite)·1.5 온보딩 게이트→슬롯 순서. DEFER: 1.2b(로컬 설정 영역)·1.4(통합 VRAM)·Phase 6(STT 완전통합) — wm/별도 슬라이스.
 
@@ -96,7 +96,7 @@
 
 ## 기능 요구사항 (FR) — 프로파일 UX 일관화 + 로컬 음성 정직화 (실사용 피드백, 셸 feature — 2026-06-30)
 
-> 범위: naia-os 설정 **프로파일 탭 디자인 일관화** + **naia-local-voice(로컬 음성) 정직화** (Round 1, naia-os 단독). 실제 로컬 cascade 기동(lifecycle 임베딩) = **DEFER(Round 2 — naia-omni-windows-manager 정식 로더 #1 M5 의존)**. 트랙: `.agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md`.
+> 범위: naia-shell 설정 **프로파일 탭 디자인 일관화** + **naia-local-voice(로컬 음성) 정직화** (Round 1, naia-shell 단독). 실제 로컬 cascade 기동(lifecycle 임베딩) = **DEFER(Round 2 — naia-omni-windows-manager 정식 로더 #1 M5 의존)**. 트랙: `.agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md`.
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
@@ -105,20 +105,20 @@
 | **FR-VOICE.2** | **silent free 폴백 제거(정직화)**. naia-local-voice/vllm 합성 실패 시 브라우저 무료 TTS로 위장 금지 → 1회 명확 알림(`chat.localVoiceUnavailable`) + 무음. 클라우드 provider 는 기존 free 폴백 유지 | S-VOICE | `ChatPanel` 경로 · tsc |
 | **FR-VOICE.3** | naia-local-voice **voice picker 채움**(registry voices=기본 음색 1) — 선택 시 stale 클라우드 voice id 잔존 방지. 설정 힌트=로컬 엔진 실행 필요(`settings.localVoiceEngineHint`) + 로컬 음성 포트(22600) placeholder | S-VOICE | registry · tsc |
 
-> NFR: NFR-honesty(미가용을 free 음성으로 위장 금지) · F1(measurement-gated). ⚠️ **DEFER Round 2**: 로컬 cascade lifecycle 임베딩(naia-os Rust sidecar 기동/헬스체크) + windows-manager 정식 로더(#1 M5). 8GB 기기 적합성=미측정(소형/양자화 음성 모델 탐색 별도).
+> NFR: NFR-honesty(미가용을 free 음성으로 위장 금지) · F1(measurement-gated). ⚠️ **DEFER Round 2**: 로컬 cascade lifecycle 임베딩(naia-shell Rust sidecar 기동/헬스체크) + windows-manager 정식 로더(#1 M5). 8GB 기기 적합성=미측정(소형/양자화 음성 모델 탐색 별도).
 
 ## 기능 요구사항 (FR) — 로컬 cascade 임베딩 (Round 2, 멀티레포 — 2026-06-30)
 
-> 범위: naia-os가 windows-manager loader를 **로컬 사이드카로 기동/감독/종료**(원격 금지). 계약: naia-os가 slots-manifest.json write → loader가 read + VRAM 예산 판정 → 서비스(VoxCPM2 등) spawn·supervise → stdout `CASCADE_READY {json}`. 트랙: `.agents/progress/naia-os-local-cascade-embedding-round2-2026-06-30.md`. R2.1=windows-manager(1756f4b), R2.2=naia-os(본 커밋).
+> 범위: naia-shell 이 windows-manager loader를 **로컬 사이드카로 기동/감독/종료**(원격 금지). 계약: naia-shell 이 slots-manifest.json write → loader가 read + VRAM 예산 판정 → 서비스(VoxCPM2 등) spawn·supervise → stdout `CASCADE_READY {json}`. 트랙: `.agents/progress/naia-os-local-cascade-embedding-round2-2026-06-30.md`. R2.1=windows-manager(1756f4b), R2.2=naia-shell(본 커밋).
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
-| **FR-CASCADE.1** | windows-manager loader `launch` = plan→실제 서비스 spawn + 블로킹 슈퍼바이저(readiness 후 stdout `CASCADE_READY {json}`, 자식 사망/kill 시 teardown) + `plan --json`(naia-os 소비) | S-CASCADE | windows-manager `tests/test_launcher.py`(9건) |
-| **FR-CASCADE.2** | naia-os가 설정 저장 시 `{adk}/naia-settings/slots-manifest.json` write(`buildSlotsManifest`, 비밀 0). Rust `write_slots_manifest` + adk-store `writeSlotsManifest`(writeNaiaConfig 동기) | S-CASCADE | `slots/manifest` 단위 · tsc |
-| **FR-CASCADE.3** | naia-os Rust가 loader supervisor를 사이드카로 관리: `start_cascade`(detect VRAM total→`--gpu`, manifest 경유 launch, `CASCADE_READY` 핸드셰이크)·`stop_cascade`·`cascade_status`. CascadeProcess(Drop kill)+WindowEvent cleanup+PID. agent/BGM 패턴 복제 | S-CASCADE·UC12 | cargo check · 설정 토글 UI(`cascade-toggle`) |
+| **FR-CASCADE.1** | windows-manager loader `launch` = plan→실제 서비스 spawn + 블로킹 슈퍼바이저(readiness 후 stdout `CASCADE_READY {json}`, 자식 사망/kill 시 teardown) + `plan --json`(naia-shell 소비) | S-CASCADE | windows-manager `tests/test_launcher.py`(9건) |
+| **FR-CASCADE.2** | naia-shell 이 설정 저장 시 `{adk}/naia-settings/slots-manifest.json` write(`buildSlotsManifest`, 비밀 0). Rust `write_slots_manifest` + adk-store `writeSlotsManifest`(writeNaiaConfig 동기) | S-CASCADE | `slots/manifest` 단위 · tsc |
+| **FR-CASCADE.3** | naia-shell Rust가 loader supervisor를 사이드카로 관리: `start_cascade`(detect VRAM total→`--gpu`, manifest 경유 launch, `CASCADE_READY` 핸드셰이크)·`stop_cascade`·`cascade_status`. CascadeProcess(Drop kill)+WindowEvent cleanup+PID. agent/BGM 패턴 복제 | S-CASCADE·UC12 | cargo check · 설정 토글 UI(`cascade-toggle`) |
 | **FR-CASCADE.4** | 설정 음성 탭에 로컬 음성 엔진 시작/중지 토글(naia-local-voice 선택 시). 기동 직전 manifest 동기화 | S-CASCADE | `SettingsTab` · tsc |
 
-> NFR: F1(RTF measurement-gated — VRAM 적합≠실시간 보장) · 원격 금지(로컬 사이드카만). ⚠️ **DEFER R2.3**: 8GB 음성 단독 실기동(모델/venv 설치 전제) RTF 실측 + 소형/양자화 필요성 판정. Windows 강제종료 고아 하드닝(job object / PID 기반 stale-kill)=후속. 검증: cargo check 0·tsc 0·windows-manager pytest 31·naia-os SettingsTab+slots 66.
+> NFR: F1(RTF measurement-gated — VRAM 적합≠실시간 보장) · 원격 금지(로컬 사이드카만). ⚠️ **DEFER R2.3**: 8GB 음성 단독 실기동(모델/venv 설치 전제) RTF 실측 + 소형/양자화 필요성 판정. Windows 강제종료 고아 하드닝(job object / PID 기반 stale-kill)=후속. 검증: cargo check 0·tsc 0·windows-manager pytest 31·naia-shell SettingsTab+slots 66.
 
 ## 기능 요구사항 (FR) — 지식 근거→원문 칩 + 그래프 뷰어 (kb-compiler 통합 K2·K3, 셸 feature — 2026-06-30)
 
@@ -153,7 +153,7 @@
 
 ## 기능 요구사항 (FR) — UI 재구성: 홈 몰입대화 + 워크스페이스 4단 관제탑 (#ui-reorg, 셸 feature — 2026-06-29)
 
-> 범위: naia-os 셸 UI(`App.tsx`·`ChatPanel.tsx`·`WorkspaceCenterPanel.tsx`·`Terminal.tsx`·`global.css` + 신규 `DocTabBar.tsx`). 사용자 실사용 피드백: "naia와 대화가 집중 안 됨 / 코딩 쓰기엔 좁음 / 터미널 여럿 + 문서 대량인데 작업문서 찾기 어려움". 트랙: alpha-adk `.agents/progress/naia-os-workspace-chat-reorg-2026-06-29.md`. 워크트리 `feat/ui-workspace-chat-reorg`.
+> 범위: naia-shell 셸 UI(`App.tsx`·`ChatPanel.tsx`·`WorkspaceCenterPanel.tsx`·`Terminal.tsx`·`global.css` + 신규 `DocTabBar.tsx`). 사용자 실사용 피드백: "naia와 대화가 집중 안 됨 / 코딩 쓰기엔 좁음 / 터미널 여럿 + 문서 대량인데 작업문서 찾기 어려움". 트랙: alpha-adk `.agents/progress/naia-os-workspace-chat-reorg-2026-06-29.md`. 워크트리 `feat/ui-workspace-chat-reorg`.
 >
 > **상태: P04 GREEN (P05 대기 — process-status.json 갱신은 헌장이라 사용자 승인 후)** — tsc 0 · vitest 961 pass(1 fail=SettingsTab "Naia Voice" 선재, 무관) · e2e 91+120 18/18(무회귀) · e2e 119 신규 T6-T10 pass. 베이스 선재 플래키(T4/T5 터미널-생성 레이스)는 본 변경 무관(베이스 동일 실패 확인).
 

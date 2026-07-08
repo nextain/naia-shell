@@ -10,12 +10,12 @@
   },
 
   "current_work": {
-    "issue": "naia-os-transplant",
-    "title": "naia-os 헥사고날 이식 — foundation tranche F0~F3 (control-plane/자기상태/관측/조작)",
+    "issue": "naia-shell-transplant",
+    "title": "naia-shell 헥사고날 이식 — foundation tranche F0~F3 (control-plane/자기상태/관측/조작) [repo=naia-shell; naia-os=배포판 계층 별개]",
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
     "started": "2026-06-08T00:00:00Z",
-    "last_updated": "2026-06-30T14:00:00Z",
+    "last_updated": "2026-07-09T00:00:00Z",
     "status": "in_progress",
     "note": "2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포): FR-CASCADE.1~4. R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b, pytest 31). R2.2=naia-os: slots-manifest write(Rust write_slots_manifest+adk-store writeSlotsManifest)+Rust start/stop/cascade_status+spawn_cascade(CASCADE_READY 핸드셰이크)+CascadeProcess(Drop/WindowEvent/PID)+설정 토글 UI+i18n6. cargo0·tsc0·SettingsTab+slots66. 원격금지 로컬 사이드카. 8GB 음성단독 6.9G 적합(RTF=R2.3 DEFER). 트랙=alpha-adk .agents/progress/naia-os-local-cascade-embedding-round2-2026-06-30.md. | 2026-06-30 Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 폐루프 + 로컬 음성 정직화. FR-VRAM.4(tier→슬롯 로컬 추천 배지, 숨김 아님)·FR-PROF.1(프로파일 탭 토큰 일관화)·FR-VOICE.1~3(naia-local-voice→vllmTtsHost 라우팅·silent free 폴백 제거→명확 미가용 알림·voice picker 채움). 신규 lib/capabilities/tier-slots.ts(+test 6/6). 적대리뷰 2벤더 PASS(blocker 0)+수정(채팅모드 알림 재무장·engine-capability-summary 토큰화·공개레포 내부명칭 중립화). 검증 tsc0·셸 vitest 1008 GREEN·영향테스트 72/73. 트랙=alpha-adk .agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md. Round2(로컬 cascade lifecycle 임베딩+wm #1 M5)=DEFER. | F0~F3 계약+스캐폴드(async, src/main). 계약+통합 테스트 67/67. | 2026-06-29 세션2+3: S-SLOT FR-SLOT.4 설정 탭 9개 재구성 완료 (#1~#13 전체 구현). profile/brain/voice/avatar/persona/memory/knowledge/skills/general. tsc 클린, test 35/35, cargo check 통과. 커밋 미수행(8개 파일). 트랙=alpha-adk .agents/progress/naia-os-settings-tab-restructure-2026-06-29.md §7. | 2026-06-30: K2 지식 근거→원문 칩(kb-compiler 통합 셸측). ToolActivity 지식 도구(skill_knowledge_ask/search) 분기 → KnowledgeToolResult(답변+sourceUris 칩); 칩클릭 근거→원문(URL=브라우저 navigate / 파일=워크스페이스 openFile, 기존 패널 api 재사용). 게이트 FR-KB-OS.1~3 + 셸 feature 시나리오. 검증: knowledge-result.test.ts(파싱)·knowledge-tool-result.test.tsx(RTL 렌더+dispatch)·e2e/chat-tools.spec.ts 지식도구 K2(Playwright 실 UI 답변+칩+칩클릭→브라우저 패널). 셸 vitest 977 GREEN·tsc0·구조게이트(enforce-root·file-anchors·assembly) PASS. 백엔드=naia-agent UC-KNOWLEDGE(live). 트랙=alpha-adk .agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md(K2). | 2026-06-30: K3 지식 그래프 2D/3D 뷰어. ToolActivity skill_knowledge_graph 분기 → KnowledgeGraphView(캔버스 force, 군집색·degree 크기, 2D↔3D 토글·원근+자동회전, 의존성0 엔진 examples/cms 포팅). 데이터=kb-compiler toGraphData(2ecb342)+naia-agent skill_knowledge_graph(b7e3b8c). 게이트 FR-KB-OS.4. 검증: knowledge-result.test.ts parseKnowledgeGraph + e2e/chat-tools.spec.ts 지식그래프 K3(Playwright 실 UI: 캔버스 렌더+노드3+2D/3D 토글 통과). tsc0."
   },

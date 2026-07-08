@@ -24,14 +24,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| **이슈 코드** | `naia-os-transplant` |
-| **제목** | naia-os 헥사고날 이식 — 기초 단계(F0~F3): 제어평면·자기상태·관측·조작 |
+| **이슈 코드** | `naia-shell-transplant` |
+| **제목** | naia-shell 헥사고날 이식 — 기초 단계(F0~F3): 제어평면·자기상태·관측·조작 [repo=naia-shell; naia-os=배포판 계층 별개] |
 | **이슈 문서** | `docs/progress/` (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md |
 | **GitHub 이슈** | 없음 |
 | **시작일** | 2026-06-08 |
-| **마지막 갱신** | 2026-06-30 14:00 UTC |
+| **마지막 갱신** | 2026-07-09 00:00 UTC |
 | **상태** | 진행 중 |
-| **참고** | 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포, FR-CASCADE.1~4): R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b). R2.2=naia-os slots-manifest write + Rust start/stop/cascade_status + CascadeProcess + 설정 토글 UI. 원격금지 로컬 사이드카. cargo0·tsc0·SettingsTab+slots66. 8GB 음성단독 적합(RTF=R2.3 DEFER). \| Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 + 로컬 음성 정직화(FR-VRAM.4·FR-PROF.1·FR-VOICE, naia-os 13cef2c5, 적대리뷰 PASS, vitest 1008). ⚠️ 본 미러는 자동생성(M13)이며 이전 K2/K3 drift 존재 — 자동 동기화 필요. \| (이전) F0~F3 계약 + 스캐폴드, 통합 67/67. |
+| **참고** | 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포, FR-CASCADE.1~4): R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b). R2.2=naia-shell slots-manifest write + Rust start/stop/cascade_status + CascadeProcess + 설정 토글 UI. 원격금지 로컬 사이드카. cargo0·tsc0·SettingsTab+slots66. 8GB 음성단독 적합(RTF=R2.3 DEFER). \| Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 + 로컬 음성 정직화(FR-VRAM.4·FR-PROF.1·FR-VOICE, naia-shell 13cef2c5, 적대리뷰 PASS, vitest 1008). ⚠️ 본 미러는 자동생성(M13)이며 이전 K2/K3 drift 존재 — 자동 동기화 필요. \| (이전) F0~F3 계약 + 스캐폴드, 통합 67/67. |
 
 ---
 
