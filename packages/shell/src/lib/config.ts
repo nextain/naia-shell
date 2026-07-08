@@ -170,11 +170,16 @@ export interface AppConfig {
 	 */
 	localGpuTier?: VramTierId | "auto" | "off";
 	/**
-	 * 배타 VRAM 티어(8G: 아바타 XOR 음성)에서 로컬로 무엇을 돌릴지 집중 선택.
-	 * "avatar" = Ditto 립싱크 로컬(음성=클라우드) / "voice" = VoxCPM2 로컬(아바타=정적).
-	 * 둘 다 들어가는 티어(12G+)에서는 무시. 미지정 → 기본 "voice"(wm 8g 기본과 동형).
+	 * 8G 배타 티어 로컬 집중 (정본, 2026-07-08): "llm" | "avatar" | "both".
+	 * "llm" = 브레인만 로컬(추론·기억 프라이버시) / "avatar" = Ditto 립싱크 로컬 / "both" = 둘 다.
+	 * 음성은 8G 에선 항상 클라우드. 12G+ 에서는 무시. 미지정 → 기본 "llm".
 	 */
-	localAvatarVoiceFocus?: import("./capabilities/vram-tiers").AvatarVoiceFocus;
+	local8gFocus?: import("./capabilities/vram-tiers").Local8gFocus;
+	/**
+	 * @deprecated local8gFocus 로 대체(2026-07-08). 읽기 전용 legacy alias — 구 축(avatar/voice/both)
+	 * 저장값 마이그레이션용. 로드 시 normalizeLocal8gFocus 로 변환, 새 쓰기는 local8gFocus 에.
+	 */
+	localAvatarVoiceFocus?: import("./capabilities/vram-tiers").Local8gFocus;
 	/** vLLM endpoint for TTS (e.g. Kokoro). */
 	vllmTtsHost?: string;
 	/** Selected ASR model ID on the vLLM STT server. */

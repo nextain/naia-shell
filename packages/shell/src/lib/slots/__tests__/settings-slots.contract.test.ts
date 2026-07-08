@@ -38,7 +38,7 @@ describe("S-SLOT · FR-SLOT.1 게이트 파생 (binary, naiaKey, GPU 무관)", (
 			} as AppConfig),
 		).toBe("naia");
 		expect(
-			deriveGateFromConfig({ localGpuTier: "full-local-24g" } as AppConfig),
+			deriveGateFromConfig({ localGpuTier: "full-realtime-24g" } as AppConfig),
 		).toBe("byo");
 	});
 

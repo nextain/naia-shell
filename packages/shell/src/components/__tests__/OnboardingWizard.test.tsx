@@ -210,7 +210,7 @@ describe("OnboardingWizard", () => {
 
 		expect(screen.getByText(/Detected VRAM: 6 GB/)).toBeDefined();
 		expect(
-			screen.getByText(/6GB: external LLM \+ local voice candidate/),
+			screen.getByText(/6GB: video avatar/),
 		).toBeDefined();
 		expect(
 			screen.getByText(/does not download or launch local models/),
@@ -252,7 +252,7 @@ describe("OnboardingWizard", () => {
 		expect(config.apiKey).toBeUndefined();
 		expect(config.naiaKey).toBeUndefined();
 		expect(config.onboardingComplete).toBe(true);
-		expect(config.localGpuTier).toBe("external-llm-6g");
+		expect(config.localGpuTier).toBe("avatar-6g");
 		expect(secureStore.set).toHaveBeenCalledWith("apiKey", "byo-test-key");
 	});
 

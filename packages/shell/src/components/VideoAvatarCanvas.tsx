@@ -155,7 +155,7 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				const tier = resolveActiveTier(cfg.localGpuTier, vram);
 				canLocalCascade = resolveLocalCapabilities(
 					tier,
-					cfg.localAvatarVoiceFocus,
+					cfg.local8gFocus ?? cfg.localAvatarVoiceFocus,
 				).includes("avatar");
 			}
 

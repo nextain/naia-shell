@@ -202,6 +202,6 @@ test.describe("Fresh onboarding flow", () => {
 		expect(config.agentName).toBe("Mochi");
 		expect(config.userName).toBe("Luke");
 		expect(config.persona).toContain("Mochi");
-		expect(config.localGpuTier).toBe("external-llm-6g");
+		expect(config.localGpuTier).toBe("avatar-6g");
 	});
 });

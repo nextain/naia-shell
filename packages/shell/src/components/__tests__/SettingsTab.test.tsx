@@ -412,9 +412,11 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(document.querySelector("[data-testid='engine-profile-byo']")).toBeNull();
 		expect(document.querySelector("[data-testid='engine-profile-local']")).toBeNull();
 		// engine-core-summary 제거(2026-06-30): slot-groups 두뇌 그룹과 100% 중복.
-		// gpu/capability 요약은 유지(고유 정보).
+		// engine-gpu-summary·tier-recommendations 제거(2026-07-07): GPU 프로파일 드롭다운 +
+		// 로컬 집중 + 슬롯 개요와 중복 → 자리 절약. capability 요약만 고유 정보로 유지.
 		expect(document.querySelector("[data-testid='engine-core-summary']")).toBeNull();
-		expect(document.querySelector("[data-testid='engine-gpu-summary']")).toBeTruthy();
+		expect(document.querySelector("[data-testid='engine-gpu-summary']")).toBeNull();
+		expect(document.querySelector("[data-testid='tier-recommendations']")).toBeNull();
 		expect(document.querySelector("[data-testid='engine-capability-summary']")).toBeTruthy();
 		// Canonical controls remain on ai tab, not engine.
 		expect(document.getElementById("provider-select")).toBeNull();

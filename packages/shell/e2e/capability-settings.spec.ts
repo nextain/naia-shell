@@ -259,18 +259,18 @@ test.describe("VRAM tier local profile (#2, FR-1/FR-3)", () => {
 		await expect(tierSelect).toBeEnabled();
 	});
 
-	test("FR-5: 8G exclusive tier exposes the avatar/voice focus selector", async ({
+	test("FR-5: 8G exclusive tier exposes the llm/avatar/both focus selector", async ({
 		page,
 	}) => {
+		// 8G 배타 티어(2026-07-08 3모드) → focus 셀렉터 노출, 옵션 = llm | avatar | both.
 		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
 		await page.locator('[data-settings-tab="profile"]').click();
-		// Pick the 8G exclusive tier → focus (avatar XOR voice) selector appears.
-		await page.locator("#local-gpu-tier").selectOption("avatar-or-voice-8g");
+		await page.locator("#local-gpu-tier").selectOption("local-llm-avatar-8g");
 		await expect(
 			page.locator('[data-testid="local-focus-select"]'),
 		).toBeVisible({ timeout: 5_000 });
 		const focus = page.locator("#local-av-focus");
-		await expect(focus.locator("option")).toHaveCount(2);
+		await expect(focus.locator("option")).toHaveCount(3);
 	});
 });
 
@@ -300,11 +300,11 @@ test.describe("FR-7: video avatar gated by cascade capability", () => {
 	test("no avatar-capable local profile → video-avatar option disabled", async ({
 		page,
 	}) => {
-		// 6G tier = tts-only(아바타 미제공) → cascade 불가 → "비디오 아바타" 선택 불가.
-		// (사용자 요구: cascade 띄우는 게 가능한 경우만 선택 가능.)
-		await gotoModelSettings(page, { vramGb: 6, model: "gemini-3.5-flash" });
+		// 2026-07-08 단조 티어에선 6G+ 모두 avatar 를 로컬 제공. avatar 미제공 케이스는
+		// 최저 티어(6G) 미만 = 로컬 프로파일 null 뿐 → vramGb=4 로 cascade 불가를 만든다.
+		await gotoModelSettings(page, { vramGb: 4, model: "gemini-3.5-flash" });
 		await page.locator('[data-settings-tab="profile"]').click();
-		await page.locator("#local-gpu-tier").selectOption("auto"); // 6G → ["tts"]
+		await page.locator("#local-gpu-tier").selectOption("auto"); // 4G → null(로컬 off)
 		await page.locator('[data-settings-tab="avatar"]').click();
 		await expect(
 			page.locator('option[value="naia-video-avatar"]'),

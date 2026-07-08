@@ -1,4 +1,4 @@
-import type { AvatarVoiceFocus } from "../capabilities/vram-tiers";
+import type { Local8gFocus } from "../capabilities/vram-tiers";
 // slots-manifest — Phase 2 계약(§5.2.1/2.2): naia-os 가 write 하고 windows-manager 가 read 하는
 // 로컬 런타임 구동 결정 매니페스트. AppConfig(평면) → 직렬화 가능 매니페스트(구조화).
 // wm 은 이 매니페스트로 어느 로컬 서비스(avatar/tts/sub-llm/embed)를 띄울지 결정(Phase 4.1).
@@ -32,10 +32,13 @@ export interface SlotsManifest {
 		detectedVramGb?: number;
 		tier?: string;
 		/**
-		 * 배타 VRAM 티어(8G)에서 로컬 집중 — wm 이 avatar_only vs tts_only 프로파일을
-		 * 고를 근거. 아바타+음성 동시 불가한 티어에서만 의미. 미지정 → wm 기본(tts_only).
+		 * 배타 VRAM 티어(8G)에서 로컬 집중(2026-07-08: llm | avatar | both) — wm 이
+		 * llm_only vs avatar_only vs 둘다 프로파일을 고를 근거. 음성은 8G 에선 항상 클라우드.
+		 * 미지정 → 기본 "llm"(브레인 로컬).
+		 * ⚠️ Phase 4 게이트: wm capabilities.py 는 아직 구 축(avatar_only/tts_only) 해석 —
+		 *   llm/avatar/both 해석은 미구현. 이 셸↔wm 계약 skew 를 **배포 전 Phase 4 에서** 닫을 것.
 		 */
-		localFocus?: AvatarVoiceFocus;
+		localFocus?: Local8gFocus;
 	};
 	/** 빌드 일시(디버그·추적). ISO 문자열. */
 	builtAt?: string;
@@ -75,8 +78,12 @@ export function buildSlotsManifest(
 				? { detectedVramGb: opts.detectedVramGb }
 				: {}),
 			...(config.localGpuTier ? { tier: config.localGpuTier } : {}),
-			...(config.localAvatarVoiceFocus
-				? { localFocus: config.localAvatarVoiceFocus }
+			// 정본 local8gFocus ?? 구 localAvatarVoiceFocus(legacy).
+			...((config.local8gFocus ?? config.localAvatarVoiceFocus)
+				? {
+						localFocus:
+							config.local8gFocus ?? config.localAvatarVoiceFocus,
+					}
 				: {}),
 		},
 		...(opts.now ? { builtAt: opts.now() } : {}),

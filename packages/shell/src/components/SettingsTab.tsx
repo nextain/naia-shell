@@ -29,12 +29,14 @@ import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
 	isRecommendedLocalValue,
 	slotRecommendation,
-	tierRecommendedSlots,
 } from "../lib/capabilities/tier-slots";
 import {
-	type AvatarVoiceFocus,
+	type Local8gFocus,
 	VRAM_TIERS,
 	type VramTierId,
+	fitLocalCapabilitiesToVram,
+	normalizeLocal8gFocus,
+	normalizeTierSetting,
 	resolveActiveTier,
 	resolveLocalCapabilities,
 	tierFitsBoth,
@@ -538,11 +540,16 @@ export function SettingsTab() {
 	const [sttDownloading, setSttDownloading] = useState<string | null>(null);
 	// #2 / FR-VRAM: local GPU profile. "off" default = no slot change (safe).
 	const [localGpuTier, setLocalGpuTier] = useState<VramTierId | "auto" | "off">(
-		existing?.localGpuTier ?? "off",
+		// 저장된 구 티어 id 를 신 id 로 정규화(select 옵션 매칭 보장, 2026-07-08 리네임).
+		normalizeTierSetting(existing?.localGpuTier),
 	);
-	// 배타 티어(8G: 아바타 XOR 음성)에서 로컬 집중 선택. 기본 "voice"(wm 8g 기본과 동형).
-	const [localAvatarVoiceFocus, setLocalAvatarVoiceFocus] =
-		useState<AvatarVoiceFocus>(existing?.localAvatarVoiceFocus ?? "voice");
+	// 배타 티어(8G) 로컬 집중 (정본 local8gFocus, llm | avatar | both). 기본 "llm"(브레인 로컬 = 프라이버시).
+	const [local8gFocus, setLocal8gFocus] = useState<Local8gFocus>(
+		// 정본 local8gFocus ?? 구 localAvatarVoiceFocus(legacy) → normalizeLocal8gFocus 로 검증·마이그레이션.
+		normalizeLocal8gFocus(
+			existing?.local8gFocus ?? existing?.localAvatarVoiceFocus,
+		),
+	);
 	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
 	// Detect GPU VRAM once on mount (#2 / FR-VRAM.1); null when unavailable.
 	useEffect(() => {
@@ -616,6 +623,44 @@ export function SettingsTab() {
 			.then(setCascadeRunning)
 			.catch(() => {});
 	}, []);
+	// 슬롯 오버뷰 실시간 상태 — facade /health({ok,tts,avatar,tts_enabled,avatar_enabled})를
+	// 폴링해 로컬 음성/아바타 슬롯이 실제로 도는지 표시. 좀비(facade 는 떴으나 tts_enabled=false 로
+	// 붙은 상태)를 가시화한다. localFacadeUrl 없으면(로컬 cascade 미가동) 상태 = null.
+	const [cascadeHealth, setCascadeHealth] = useState<{
+		ok: boolean;
+		tts: boolean;
+		avatar: boolean;
+		tts_enabled: boolean;
+		avatar_enabled: boolean;
+	} | null>(null);
+	const localFacadeUrl = useCascadeAvatarStore((s) => s.localFacadeUrl);
+	useEffect(() => {
+		if (!localFacadeUrl) {
+			setCascadeHealth(null);
+			return;
+		}
+		let alive = true;
+		const poll = async () => {
+			try {
+				const ctrl = new AbortController();
+				const to = setTimeout(() => ctrl.abort(), 2500);
+				const res = await fetch(`${localFacadeUrl}/health`, {
+					signal: ctrl.signal,
+				});
+				clearTimeout(to);
+				const h = await res.json();
+				if (alive) setCascadeHealth(h);
+			} catch {
+				if (alive) setCascadeHealth(null);
+			}
+		};
+		void poll();
+		const iv = setInterval(poll, 4000);
+		return () => {
+			alive = false;
+			clearInterval(iv);
+		};
+	}, [localFacadeUrl]);
 	// naia-local-voice 선택 상태에서 Local Voice Host 가 비어있으면 기본값(localhost:22600)
 	// 으로 채운다 — 임베딩 cascade(VoxCPM2)가 그 포트에 뜨므로 합성이 자동으로 로컬을 가리킴.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: ttsProvider 전환 시에만 보정
@@ -663,7 +708,7 @@ export function SettingsTab() {
 	// R5: 티어 capability 로 로컬 슬롯을 스테이징(setState). 반환 = warm manifest 에 쓸 값.
 	const stageLocalSlots = (
 		tier: typeof localGpuTier,
-		focus: AvatarVoiceFocus,
+		focus: Local8gFocus,
 	): {
 		avatar: "vrm" | "naia-video-avatar";
 		nva: string;
@@ -695,7 +740,7 @@ export function SettingsTab() {
 	// R4: 스테이징 config 로 백엔드 warm(기동·대기). 티어/포커스 변경 시 재기동(manifest 반영).
 	const warmLocalProfile = async (
 		tier: typeof localGpuTier,
-		focus: AvatarVoiceFocus,
+		focus: Local8gFocus,
 		staged: {
 			avatar: "vrm" | "naia-video-avatar";
 			nva: string;
@@ -733,7 +778,7 @@ export function SettingsTab() {
 			const cfg = {
 				...(loadConfig() ?? {}),
 				localGpuTier: tier,
-				localAvatarVoiceFocus: focus,
+				local8gFocus: focus,
 				avatarProvider: staged.avatar,
 				nvaModel: staged.nva || undefined,
 				ttsProvider: staged.tts,
@@ -754,18 +799,41 @@ export function SettingsTab() {
 	};
 
 	const handleSelectLocalTier = (tier: typeof localGpuTier) => {
-		setLocalGpuTier(tier); // 스테이징(persist 안 함 — 적용에서 커밋)
+		setLocalGpuTier(tier);
 		const staged =
 			tier === "off"
 				? { avatar: avatarProvider, nva: nvaModel, tts: ttsProvider }
-				: stageLocalSlots(tier, localAvatarVoiceFocus);
-		void warmLocalProfile(tier, localAvatarVoiceFocus, staged);
+				: stageLocalSlots(tier, local8gFocus);
+		void warmLocalProfile(tier, local8gFocus, staged);
+		// #auto-apply: GPU 프로파일 선택도 적용 버튼 없이 즉시 config 반영. staged 슬롯까지 영속해야
+		// 앱 재시작·cascade 재기동 시 slots-manifest 가 로컬 음성/아바타를 담는다(focus 즉시적용과 동형).
+		persistConfig({
+			localGpuTier: tier !== "off" ? tier : undefined,
+			// focus(llm/avatar/both) 명시 저장 → manifest.localFocus → wm 가 로컬 llm/avatar 선택.
+			local8gFocus,
+			avatarProvider: staged.avatar,
+			nvaModel: staged.nva || undefined,
+			ttsProvider: staged.tts,
+			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
+		});
 	};
 
-	const handleSelectFocus = (focus: AvatarVoiceFocus) => {
-		setLocalAvatarVoiceFocus(focus); // 스테이징
+	const handleSelectFocus = (focus: Local8gFocus) => {
+		setLocal8gFocus(focus);
 		const staged = stageLocalSlots(localGpuTier, focus);
 		void warmLocalProfile(localGpuTier, focus, staged);
+		// #auto-apply: 적용 버튼 없이 즉시 config 반영. staged 슬롯(아바타/NVA)까지 영속해야
+		// 앱 재시작·cascade 재기동 시 slots-manifest 가 로컬 아바타를 담는다(focus 즉시적용과 동형).
+		persistConfig({
+			// 8G focus(llm/avatar/both) 명시 저장 → slots-manifest.localFocus → wm 가 로컬 서비스 선택.
+			// (음성은 8G 에선 항상 클라우드 — 구 int8-voice 스왑 로직은 12G+ 로컬 음성에서만 의미.)
+			local8gFocus: focus,
+			avatarProvider: staged.avatar,
+			nvaModel: staged.nva || undefined,
+			ttsProvider: staged.tts,
+			// 로컬 음성(both/voice)을 켜면 립싱크를 위해 TTS on.
+			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
+		});
 	};
 
 	const [vllmSttModels, setVllmSttModels] = useState<
@@ -1932,9 +2000,8 @@ export function SettingsTab() {
 			sttProvider: sttProvider || undefined,
 			sttModel: sttModel || undefined,
 			localGpuTier: localGpuTier !== "off" ? localGpuTier : undefined,
-			// 배타 티어 focus 는 기본값("voice")이 아닐 때만 저장(설정 최소화).
-			localAvatarVoiceFocus:
-				localAvatarVoiceFocus !== "voice" ? localAvatarVoiceFocus : undefined,
+			// 8G focus(llm/avatar/both) 항상 저장 → slots-manifest.localFocus → wm 로컬 서비스 선택.
+			local8gFocus: local8gFocus || undefined,
 			ttsEnabled,
 			ttsVoice,
 			ttsProvider,
@@ -2117,29 +2184,29 @@ export function SettingsTab() {
 	const activeLocalTier = naiaKey
 		? resolveActiveTier(localGpuTier, detectedVramGb)
 		: null;
-	// 배타 티어면 focus 로 실제 로컬 capability 를 해소(아바타 XOR 음성). 비배타면 전부.
+	// 배타 티어(8G)면 focus 로 실제 로컬 capability 를 해소(llm | avatar | both). 비배타면 전부.
 	const tierExclusive =
 		!!activeLocalTier?.exclusiveLocal && !tierFitsBoth(activeLocalTier);
-	const localTierCapabilities = resolveLocalCapabilities(
-		activeLocalTier,
-		localAvatarVoiceFocus,
+	// VRAM 프리플라이트 (codex OOM 폴백) — free 부족 시 로컬 LLM 을 클라우드로 강등(아바타 보존).
+	// detectedVramGb=총 VRAM → margin 1.5G 로 디스플레이 WDDM reserve/KV cache 흡수한 free 근사.
+	const localVramFit = fitLocalCapabilitiesToVram(
+		resolveLocalCapabilities(activeLocalTier, local8gFocus),
+		detectedVramGb,
+		1.5,
 	);
+	const localTierCapabilities = localVramFit.caps;
+	// free VRAM 부족으로 로컬 LLM 이 클라우드로 강등됐는지 — 프라이버시 정직 위해 UI 경고 표시.
+	const localLlmFallbackToCloud = localVramFit.llmFallbackToCloud;
 	// 비디오 아바타(cascade Ditto)를 띄울 수 있는가 = 로컬 GPU 프로파일이 "avatar" capability 를
 	// **실제로** 제공할 때만(capability 기반 — exclusive/focus 휴리스틱 아님). resolveLocalCapabilities
-	// 가 모든 케이스를 해소: 로그아웃(activeLocalTier=null)→[]→false(FR-3), 6G(tts만)→false,
-	// 8G 배타는 focus=avatar 일 때만 true, 12G+ 는 true. 이 값으로 아바타 유형 피커의
+	// 가 모든 케이스를 해소: 로그아웃(activeLocalTier=null)→[]→false(FR-3), 6G(avatar)→true,
+	// 8G 배타는 focus=avatar|both 일 때 true·llm 일 때 false, 12G+ 는 true. 이 값으로 아바타 유형 피커의
 	// "비디오 아바타" 선택을 게이트한다(가능할 때만 선택). VideoAvatarCanvas 자동기동과 동일 로직.
 	const cascadeAvatarPossible = localTierCapabilities.includes("avatar");
 	// FR-VRAM.4: tier 가 VRAM 예산 내에서 로컬 추천할 슬롯(숨김 아님 — 추천만).
-	// 설정 슬롯 셀렉터 배지·슬롯 개요·GPU 프로파일 요약이 동일 소스를 소비.
-	// 배타 티어는 focus 로 고른 슬롯만 추천.
-	const tierRecs = tierRecommendedSlots(activeLocalTier, localAvatarVoiceFocus);
 	const effectiveCapabilities: ModelCapability[] = baseCapabilities;
 	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
 	const omniVoices = selectedModelMeta?.voices;
-	const activeTierCapabilities = activeLocalTier
-		? localTierCapabilities.join(", ")
-		: t("settings.engineLocalOff");
 	// S-SLOT 게이트(FR-SLOT.1) — naiaKey 존재 = naia(크레딧 접근), 부재 = byo.
 	// GPU·localGpuTier 무관(R1-3). "Naia"는 provider 아닌 접근 유형.
 	const gateMode: GateMode = deriveGate(!!naiaKey);
@@ -2156,6 +2223,25 @@ export function SettingsTab() {
 		tts: "settings.slot.slotTts",
 		avatar: "settings.slot.slotAvatar",
 	};
+	// 로컬 서비스 슬롯(음성/아바타)의 실시간 상태 — facade health 로 판정.
+	// null = 로컬 서비스 아님(cloud/미해당) → 배지 없음. "running" = 백엔드 응답,
+	// "starting" = 로컬로 선택됐으나 facade 미가동/미응답(기동 중 또는 좀비로 안 붙음).
+	function slotLiveStatus(id: SlotId): "running" | "starting" | null {
+		if (id === "tts") {
+			if (slotSnapshot.tts.provider !== "naia-local-voice") return null;
+			return cascadeHealth?.tts_enabled && cascadeHealth.tts
+				? "running"
+				: "starting";
+		}
+		if (id === "avatar") {
+			if (appliedCfg?.avatarProvider !== "naia-video-avatar") return null;
+			return cascadeHealth?.avatar_enabled && cascadeHealth.avatar
+				? "running"
+				: "starting";
+		}
+		return null;
+	}
+
 	function slotValueDisplay(id: SlotId): string {
 		switch (id) {
 			case "main":
@@ -2212,13 +2298,6 @@ export function SettingsTab() {
 		if (next.memoryEmbeddingProvider)
 			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
 	}
-	const detectedVramLabel =
-		detectedVramGb != null
-			? t("settings.engineDetectedVram").replace(
-					"{vram}",
-					String(detectedVramGb),
-				)
-			: t("settings.engineDetectedUnknown");
 	const capabilityStatus = [
 		capabilitySlots.coversVoiceInput
 			? t("settings.engineVoiceInputCovered")
@@ -2540,11 +2619,20 @@ export function SettingsTab() {
 								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
 								if (next === "naia-video-avatar" && !cascadeAvatarPossible)
 									return;
-								// R3: 스테이징만(즉시 persist 안 함) — "적용"에서 커밋.
 								setAvatarProvider(next);
 								// R6: 비디오 아바타인데 NVA 미지정이면 기본 번들로 채운다(빈 상태 방지).
+								const nextNva =
+									next === "naia-video-avatar"
+										? nvaModel || DEFAULT_NVA_MODEL
+										: nvaModel;
 								if (next === "naia-video-avatar" && !nvaModel)
 									setNvaModel(DEFAULT_NVA_MODEL);
+								// #auto-apply: 적용 버튼 없이 즉시 반영(saveConfig → naia-config-changed → App).
+								persistConfig({
+									avatarProvider: next,
+									nvaModel:
+										next === "naia-video-avatar" ? nextNva : undefined,
+								});
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
@@ -2559,7 +2647,7 @@ export function SettingsTab() {
 												activeLocalTier,
 												"avatar",
 												"naia-video-avatar",
-												localAvatarVoiceFocus,
+												local8gFocus,
 											)
 										? ` · ${t("settings.tierRecommendBadge")}`
 										: ""}
@@ -2576,7 +2664,7 @@ export function SettingsTab() {
 						{slotRecommendation(
 							activeLocalTier,
 							"avatar",
-							localAvatarVoiceFocus,
+							local8gFocus,
 						) && (
 							<div className="settings-hint" data-testid="avatar-tier-hint">
 								{t("settings.tierRecommendSummary")}: naia-video-avatar (
@@ -2679,8 +2767,12 @@ export function SettingsTab() {
 										type="button"
 										className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
 										onClick={() => {
-											// R3: 스테이징만 — "적용"에서 커밋.
 											setNvaModel(name);
+											// #auto-apply: 즉시 반영. bare 이름 저장(절대경로 금지 — 뷰어가 경로 결합).
+											persistConfig({
+												avatarProvider: "naia-video-avatar",
+												nvaModel: name,
+											});
 										}}
 									>
 										{name}
@@ -3006,6 +3098,27 @@ export function SettingsTab() {
 												    표시(사용자 요구: "슬롯은 현재 상태를 보여줘야해" — 상태/추천 분리). */}
 												<span className="settings-summary-value">
 													{slotValueDisplay(sid)}
+													{(() => {
+														const st = slotLiveStatus(sid);
+														if (!st) return null;
+														return (
+															<span
+																data-testid={`slot-status-${sid}`}
+																style={{
+																	marginLeft: 6,
+																	fontSize: "0.85em",
+																	color:
+																		st === "running"
+																			? "var(--success-color, #3fb950)"
+																			: "var(--warning-color, #d29922)",
+																}}
+															>
+																{st === "running"
+																	? `● ${t("settings.slotStatusRunning")}`
+																	: `◌ ${t("settings.slotStatusStarting")}`}
+															</span>
+														);
+													})()}
 												</span>
 											</div>
 										))}
@@ -3067,24 +3180,6 @@ export function SettingsTab() {
 					{/* engine-core-summary 제거(2026-06-30): slot-groups 두뇌 그룹과 100% 중복
 					    (동일 Main/Sub/Embedding + 동일 brain/memory 편집 네비). 중복 카드 정리. */}
 
-					<div className="settings-field" data-testid="engine-gpu-summary">
-						<label>{t("settings.engineGpuBudget")}</label>
-						<div className="settings-hint">{t("settings.engineGpuHint")}</div>
-						<div className="settings-summary-grid">
-							<span>{detectedVramLabel}</span>
-							<span>
-								{t("settings.engineGpuProfile")}:{" "}
-								{activeLocalTier
-									? t(vramTierLabelKey(activeLocalTier.id))
-									: t("settings.engineLocalOff")}
-							</span>
-							<span>
-								{t("settings.engineLocalCapabilities")}:{" "}
-								{activeTierCapabilities}
-							</span>
-							<span>{t("settings.engineRuntimeBoundary")}</span>
-						</div>
-					</div>
 
 					{/* FR-1(2026-07-01): GPU 프로파일 편집을 두뇌 → 프로파일 탭으로 이관.
 					    "이 기기가 어떻게 서빙하나(로컬 GPU / 원격 cascade)"는 프로파일 개념. */}
@@ -3141,7 +3236,7 @@ export function SettingsTab() {
 							)}
 					</div>
 
-					{/* 배타 티어(8G: 아바타 XOR 음성) 로컬 집중 택1. FR-3: 로그인 필요. */}
+					{/* 배타 티어(8G: 로컬 LLM · 아바타 · 둘다) 로컬 집중 택1. 음성=클라우드. FR-3: 로그인 필요. */}
 					{naiaKey && tierExclusive && (
 						<div className="settings-field" data-testid="local-focus-select">
 							<label htmlFor="local-av-focus">
@@ -3149,61 +3244,31 @@ export function SettingsTab() {
 							</label>
 							<select
 								id="local-av-focus"
-								value={localAvatarVoiceFocus}
+								value={local8gFocus}
 								onChange={(e) => {
 									// R3/R4/R5: 포커스 변경 = 스테이징 + 로컬 슬롯 재스테이징 + 재warm.
-									handleSelectFocus(e.target.value as AvatarVoiceFocus);
+									handleSelectFocus(e.target.value as Local8gFocus);
 								}}
 							>
+								<option value="llm">{t("settings.localFocusLlm")}</option>
 								<option value="avatar">{t("settings.localFocusAvatar")}</option>
-								<option value="voice">{t("settings.localFocusVoice")}</option>
 								<option value="both">{t("settings.localFocusBoth")}</option>
 							</select>
 							<div className="settings-hint">
-								{localAvatarVoiceFocus === "avatar"
+								{local8gFocus === "avatar"
 									? t("settings.localFocusAvatarHint")
-									: localAvatarVoiceFocus === "both"
+									: local8gFocus === "both"
 										? t("settings.localFocusBothHint")
-										: t("settings.localFocusVoiceHint")}
+										: t("settings.localFocusLlmHint")}
 							</div>
+							{localLlmFallbackToCloud && (
+								<div className="settings-hint" data-testid="local-llm-vram-fallback">
+									⚠️ {t("settings.localLlmVramFallback")}
+								</div>
+							)}
 						</div>
 					)}
 
-					{/* GPU 프로파일 활성 시 VRAM 예산 내 슬롯별 로컬 추천. FR-3: 로그인 필요. */}
-					{naiaKey && activeLocalTier && (
-						<div className="settings-field" data-testid="tier-recommendations">
-							<div className="settings-card">
-								<span className="settings-card-title">
-									{t("settings.tierRecommendSummary")}
-								</span>
-								{tierRecs.length > 0 ? (
-									<div className="settings-summary-grid">
-										{tierRecs.map((rec) => (
-											<div
-												key={rec.slot}
-												className="settings-summary-row"
-												data-testid={`tier-rec-${rec.slot}`}
-											>
-												<span className="settings-summary-key">
-													{t(SLOT_LABEL_KEYS[rec.slot] as TranslationKey)}
-												</span>
-												<span className="settings-summary-value">
-													{rec.localValue}{" "}
-													<span className="slot-recommend-badge">
-														{t("settings.tierRecommendLocalTag")}
-													</span>
-												</span>
-											</div>
-										))}
-									</div>
-								) : (
-									<div className="settings-hint">
-										{t("settings.tierRecommendNone")}
-									</div>
-								)}
-							</div>
-						</div>
-					)}
 
 					<div
 						className="settings-field"
@@ -3249,7 +3314,7 @@ export function SettingsTab() {
 										activeLocalTier,
 										"main",
 										p.id,
-										localAvatarVoiceFocus,
+										local8gFocus,
 									)
 										? ` · ${t("settings.tierRecommendBadge")}`
 										: ""}
@@ -3259,7 +3324,7 @@ export function SettingsTab() {
 						{slotRecommendation(
 							activeLocalTier,
 							"main",
-							localAvatarVoiceFocus,
+							local8gFocus,
 						) && (
 							<div className="settings-hint" data-testid="main-tier-hint">
 								{t("settings.tierRecommendSummary")}: ollama (
@@ -3951,7 +4016,7 @@ export function SettingsTab() {
 										activeLocalTier,
 										"tts",
 										p.id,
-										localAvatarVoiceFocus,
+										local8gFocus,
 									)
 										? ` · ${t("settings.tierRecommendBadge")}`
 										: ""}
@@ -3961,7 +4026,7 @@ export function SettingsTab() {
 						{slotRecommendation(
 							activeLocalTier,
 							"tts",
-							localAvatarVoiceFocus,
+							local8gFocus,
 						) && (
 							<div className="settings-hint" data-testid="tts-tier-hint">
 								{t("settings.tierRecommendSummary")}: naia-local-voice (
