@@ -6,6 +6,7 @@ import {
 	hasApiKey,
 	isToolAllowed,
 	loadConfig,
+	normalizeCascadeUrl,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
 	saveConfig,
@@ -166,5 +167,28 @@ describe("allowedTools", () => {
 	it("clearAllowedTools works when no config", () => {
 		clearAllowedTools(); // no throw
 		expect(isToolAllowed("write_file")).toBe(false);
+	});
+});
+
+describe("normalizeCascadeUrl (remote cascade URL 검증·정규화)", () => {
+	it("빈 값 → url undefined(로컬 auto), error 없음", () => {
+		expect(normalizeCascadeUrl("")).toEqual({ url: undefined });
+		expect(normalizeCascadeUrl("   ")).toEqual({ url: undefined });
+	});
+	it("http/https 유효 → trailing slash 정규화", () => {
+		expect(normalizeCascadeUrl("http://100.1.2.3:8910")).toEqual({
+			url: "http://100.1.2.3:8910",
+		});
+		expect(normalizeCascadeUrl("https://x.ts.net:8910/")).toEqual({
+			url: "https://x.ts.net:8910",
+		});
+	});
+	it("스킴 위반(ws/ftp) → error scheme", () => {
+		expect(normalizeCascadeUrl("ws://x:8910").error).toBe("scheme");
+		expect(normalizeCascadeUrl("ftp://x").error).toBe("scheme");
+	});
+	it("파싱 불가 → error invalid", () => {
+		expect(normalizeCascadeUrl("not a url").error).toBe("invalid");
+		expect(normalizeCascadeUrl("100.1.2.3:8910").error).toBe("invalid");
 	});
 });

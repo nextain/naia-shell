@@ -250,6 +250,29 @@ export interface AppConfig {
 
 // ── Sync API (localStorage only, backwards compatible) ──
 
+/**
+ * 원격 cascade URL 검증·정규화 (고급 T3 경로).
+ * 빈 값 → {url: undefined}(로컬 auto). http/https 만 허용, 파싱 실패/스킴 위반 → error.
+ * trailing slash 정규화. 도달성(health)까지는 검증 안 함(후속).
+ */
+export function normalizeCascadeUrl(raw: string): {
+	url?: string;
+	error?: "invalid" | "scheme";
+} {
+	const v = (raw ?? "").trim();
+	if (!v) return { url: undefined };
+	let u: URL;
+	try {
+		u = new URL(v);
+	} catch {
+		return { error: "invalid" };
+	}
+	if (u.protocol !== "http:" && u.protocol !== "https:") {
+		return { error: "scheme" };
+	}
+	return { url: v.replace(/\/+$/, "") };
+}
+
 export function loadConfig(): AppConfig | null {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);

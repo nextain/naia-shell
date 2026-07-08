@@ -63,6 +63,7 @@ import {
 	clearAllowedTools,
 	loadConfig,
 	loadConfigWithSecrets,
+	normalizeCascadeUrl,
 	saveConfig,
 } from "../lib/config";
 import {
@@ -498,9 +499,12 @@ export function SettingsTab() {
 		"vrm" | "naia-video-avatar"
 	>(existing?.avatarProvider ?? "vrm");
 	const [nvaModel, setNvaModel] = useState(existing?.nvaModel ?? "");
-	const [cascadeRuntimeUrl] = useState(
+	const [cascadeRuntimeUrl, setCascadeRuntimeUrl] = useState(
 		existing?.cascadeRuntimeUrl ?? "",
 	);
+	const [cascadeUrlError, setCascadeUrlError] = useState<
+		"" | "invalid" | "scheme"
+	>("");
 	const [activeBgPath, setActiveBgPath] = useState<string>("");
 	const [backgroundVideoFilename, setBackgroundVideoFilename] = useState<
 		string | undefined
@@ -3270,6 +3274,58 @@ export function SettingsTab() {
 					)}
 
 
+					{/* cascade 소스 = T3 원격(고급/직접운영). 소비자 기본 표면 아님 → 접힌 <details> 격리
+					    (codex 리뷰). 비우면 T1 로컬 auto-spawn(기본). T2 Nextain 관리형 stage 준비 전
+					    임시 고급 경로. localFacadeUrl(로컬) 우선이라 로컬 티어 켜져 있으면 원격 무시. */}
+					{naiaKey && (
+						<details
+							className="settings-advanced"
+							data-testid="cascade-source"
+						>
+							<summary>{t("settings.cascadeSourceAdvanced")}</summary>
+							<div className="settings-field">
+								<label htmlFor="cascade-runtime-url">
+									{t("settings.cascadeRuntimeUrlLabel")}
+								</label>
+								<input
+									id="cascade-runtime-url"
+									type="text"
+									className="settings-input"
+									value={cascadeRuntimeUrl}
+									placeholder="http://100.x.x.x:8910"
+									onChange={(e) => {
+										setCascadeRuntimeUrl(e.target.value);
+										if (cascadeUrlError) setCascadeUrlError("");
+									}}
+									onBlur={(e) => {
+										// 검증 후에만 저장 — 잘못된 URL 조용히 저장 금지(codex).
+										const { url, error } = normalizeCascadeUrl(e.target.value);
+										if (error) {
+											setCascadeUrlError(error);
+											return;
+										}
+										setCascadeUrlError("");
+										if (url && url !== e.target.value) setCascadeRuntimeUrl(url);
+										persistConfig({ cascadeRuntimeUrl: url });
+									}}
+								/>
+								{cascadeUrlError && (
+									<div
+										className="settings-hint settings-hint-error"
+										data-testid="cascade-url-error"
+									>
+										⚠️ {t("settings.cascadeUrlError")}
+									</div>
+								)}
+								<div className="settings-hint">
+									{t("settings.cascadeRuntimeUrlHint")}
+								</div>
+								<div className="settings-hint">
+									⚠️ {t("settings.cascadeRuntimeUrlEgress")}
+								</div>
+							</div>
+						</details>
+					)}
 					<div
 						className="settings-field"
 						data-testid="engine-capability-summary"

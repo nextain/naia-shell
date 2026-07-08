@@ -330,3 +330,49 @@ test.describe("FR-7: video avatar gated by cascade capability", () => {
 		).toBeDisabled();
 	});
 });
+
+test.describe("FR-8: cascade source (remote URL, advanced)", () => {
+	test("고급 섹션 열고 유효 URL 입력 → 저장(정규화)", async ({ page }) => {
+		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
+		await page.locator('[data-settings-tab="profile"]').click();
+		// 접힌 <details> 격리 — summary 클릭해서 연다.
+		await page.locator('[data-testid="cascade-source"] summary').click();
+		const input = page.locator("#cascade-runtime-url");
+		await input.fill("http://100.1.2.3:8910/");
+		await input.blur();
+		const config = await page.evaluate(() =>
+			JSON.parse(localStorage.getItem("naia-config") || "{}"),
+		);
+		expect(config.cascadeRuntimeUrl).toBe("http://100.1.2.3:8910"); // trailing slash 정규화
+	});
+
+	test("잘못된 URL → 에러 표시 + 저장 안 됨", async ({ page }) => {
+		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
+		await page.locator('[data-settings-tab="profile"]').click();
+		await page.locator('[data-testid="cascade-source"] summary').click();
+		const input = page.locator("#cascade-runtime-url");
+		await input.fill("ws://bad:8910");
+		await input.blur();
+		await expect(
+			page.locator('[data-testid="cascade-url-error"]'),
+		).toBeVisible({ timeout: 5_000 });
+		const config = await page.evaluate(() =>
+			JSON.parse(localStorage.getItem("naia-config") || "{}"),
+		);
+		expect(config.cascadeRuntimeUrl).toBeUndefined();
+	});
+
+	test("logged out → cascade source 미노출 (naiaKey 게이트)", async ({
+		page,
+	}) => {
+		await gotoModelSettings(page, {
+			vramGb: 8,
+			model: "gemini-3.5-flash",
+			loggedIn: false,
+		});
+		await page.locator('[data-settings-tab="profile"]').click();
+		await expect(
+			page.locator('[data-testid="cascade-source"]'),
+		).toHaveCount(0);
+	});
+});
