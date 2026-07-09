@@ -4339,6 +4339,9 @@ pub fn run() {
             // Clean up orphan processes from previous sessions
             platform::cleanup_orphan_processes();
             platform::kill_stale_gateway();
+            // ★cascade 고아(uvicorn facade 손자, PID 미추적) 정리 — 8910 EADDRINUSE 방지(R2.2b).
+            // dev 반복 기동 시 이전 세션의 cascade 가 안 죽고 남아 다음 start_cascade 를 막는다.
+            platform::kill_stale_cascade();
 
             // Spawn Gateway first (Agent connects to it via WebSocket)
             let (gateway_running, gateway_managed) = match spawn_gateway() {

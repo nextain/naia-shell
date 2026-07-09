@@ -40,9 +40,29 @@ pub(crate) fn kill_stale_gateway() {
     let _ = cmd.output();
 }
 
+/// Kill stale cascade (output_cascade uvicorn + loader) from a previous session.
+///
+/// The cascade loader is PID-tracked (cleanup_orphan_processes "cascade"), but the
+/// facade uvicorn it spawns is a *grandchild* whose PID is NOT recorded. On Windows
+/// force-kill (taskkill / crash / dev timeout), the loader dies but the uvicorn
+/// survives → orphaned on port 8910 → next start hits EADDRINUSE → cascade tears down
+/// → avatar never shows (R2.2b). Match by command-line like kill_stale_gateway.
+pub(crate) fn kill_stale_cascade() {
+    let mut cmd = Command::new("powershell");
+    cmd.args([
+        "-NoProfile", "-NonInteractive", "-Command",
+        // output_cascade facade (uvicorn ...output_cascade.app:app) + loader (python -m loader launch).
+        "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*output_cascade.app:app*' -or $_.CommandLine -like '*loader*launch*' -or $_.CommandLine -like '*trt_native_stream_server*' -or $_.CommandLine -like '*voxcpm2_service*' } | ForEach-Object { $_.Terminate() }",
+    ]);
+    hide_console(&mut cmd);
+    let _ = cmd.output();
+}
+
 /// Clean up orphan processes from a previous session (Windows: TerminateProcess).
 pub(crate) fn cleanup_orphan_processes() {
-    for component in &["gateway", "node-host", "bgm-server"] {
+    // ★"cascade" 포함 — loader PID 를 추적. 단 uvicorn 손자(facade)는 PID 미기록이라
+    // kill_stale_cascade() 가 커맨드라인 매칭으로 잡는다(R2.2b, 8910 고아 → EADDRINUSE 방지).
+    for component in &["gateway", "node-host", "bgm-server", "cascade"] {
         if let Some(pid) = crate::read_pid_file(component) {
             if is_pid_alive(pid) {
                 crate::log_verbose(&format!(

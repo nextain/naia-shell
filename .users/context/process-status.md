@@ -29,9 +29,9 @@
 | **이슈 문서** | `docs/progress/` (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md |
 | **GitHub 이슈** | 없음 |
 | **시작일** | 2026-06-08 |
-| **마지막 갱신** | 2026-07-09 00:00 UTC |
+| **마지막 갱신** | 2026-07-10 00:00 UTC |
 | **상태** | 진행 중 |
-| **참고** | 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포, FR-CASCADE.1~4): R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b). R2.2=naia-shell slots-manifest write + Rust start/stop/cascade_status + CascadeProcess + 설정 토글 UI. 원격금지 로컬 사이드카. cargo0·tsc0·SettingsTab+slots66. 8GB 음성단독 적합(RTF=R2.3 DEFER). \| Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 + 로컬 음성 정직화(FR-VRAM.4·FR-PROF.1·FR-VOICE, naia-shell 13cef2c5, 적대리뷰 PASS, vitest 1008). ⚠️ 본 미러는 자동생성(M13)이며 이전 K2/K3 drift 존재 — 자동 동기화 필요. \| (이전) F0~F3 계약 + 스캐폴드, 통합 67/67. |
+| **참고** | 2026-07-10 검증·경화(8G 아바타 근본수정 확인): opencode GLM 5.2 이식분 리뷰+실측. 아바타 스폰=gpu.tier(EXCLUSIVE_8G_TIERS)+localFocus 구동(wm: avatar=provider 무형) → buildSlotsManifest 가 localGpuTier auto→해석된 tier id 로 기록해야 wm 이 avatar_ditto_trt 스폰(미해소=미표시). adk-store=vram 자동감지. Rust kill_stale_cascade(8910 고아 EADDRINUSE 방지). GLM 잔여 TSC break 수정 + vite.config test.exclude src-tauri/** 추가(스테이징 agent 620테스트 오염 제거). tsc0·셸 vitest 1096 GREEN·cargo0·Playwright 전 스펙 격리 GREEN(full 병렬 40실패=8G 부하 flakiness, 회귀 아님). \| 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포, FR-CASCADE.1~4): R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b). R2.2=naia-shell slots-manifest write + Rust start/stop/cascade_status + CascadeProcess + 설정 토글 UI. 원격금지 로컬 사이드카. cargo0·tsc0·SettingsTab+slots66. 8GB 음성단독 적합(RTF=R2.3 DEFER). \| Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 + 로컬 음성 정직화(FR-VRAM.4·FR-PROF.1·FR-VOICE, naia-shell 13cef2c5, 적대리뷰 PASS, vitest 1008). ⚠️ 본 미러는 자동생성(M13)이며 이전 K2/K3 drift 존재 — 자동 동기화 필요. \| (이전) F0~F3 계약 + 스캐폴드, 통합 67/67. |
 
 ---
 

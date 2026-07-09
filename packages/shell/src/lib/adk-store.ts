@@ -430,8 +430,20 @@ export async function writeSlotsManifest(
 ): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
+	// ★tier 해석(buildSlotsManifest 가 "auto" → 해석된 id 로)에 VRAM 이 필요.
+	// 호출처가 vram 을 안 넘기면 자체 감지(detect_gpu_vram IPC) — 모든 write 경로가
+	// manifest 에 해석된 tier 를 기록하도록 보장(loader 가 avatar_ditto_trt 를 선택).
+	let vram = detectedVramGb;
+	if (vram === undefined) {
+		try {
+			const { detectGpuVramGb } = await import("./capabilities/gpu");
+			vram = (await detectGpuVramGb()) ?? undefined;
+		} catch {
+			/* IPC 미가용(온보딩 전 등) — tier 미해석, loader 가 --gpu 로 폴백 */
+		}
+	}
 	const manifest = buildSlotsManifest(config, {
-		detectedVramGb,
+		detectedVramGb: vram,
 		now: () => new Date().toISOString(),
 	});
 	await invoke("write_slots_manifest", {

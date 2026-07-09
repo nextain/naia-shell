@@ -26,10 +26,27 @@ const BGM = resolve(SHELL, "..", "bgm-sidecar"); // 환경 사이드카(YouTube 
 
 // ─── 1. stale 프로세스 정리 ──────────────────────────────────────────────────
 // ⚠️ pkill -f 금지(컨테이너/무관 프로세스 오살). 정확 프로세스명(-x) + 포트 1420(vite)만.
+// ★8910(cascade facade uvicorn) 추가 — Windows 강제종료 시 loader 는 죽어도 uvicorn 손자가
+//   살아남아(port 점유) 다음 start_cascade 가 EADDRINUSE 로 죽는다(R2.2b). dev 반복 기동 필수 정리.
 function killStale() {
 	try {
 		if (isWin) execSync("taskkill /F /IM naia-shell.exe 2>nul", { stdio: "ignore" });
 		else execSync("pkill -9 -x naia-shell 2>/dev/null || true", { stdio: "ignore", shell: "/bin/bash" });
+	} catch {
+		/* 미실행 — 정상 */
+	}
+	// cascade 고아(uvicorn output_cascade / loader / trt / voxcpm2) — PID 미추적 손자 정리.
+	try {
+		if (isWin) {
+			execSync(
+				'powershell -NoProfile -NonInteractive -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*output_cascade.app:app*\' -or $_.CommandLine -like \'*loader*launch*\' -or $_.CommandLine -like \'*trt_native_stream_server*\' -or $_.CommandLine -like \'*voxcpm2_service*\' } | ForEach-Object { $_.Terminate() }"',
+				{ stdio: "ignore" },
+			);
+		} else {
+			for (const pat of ["output_cascade.app:app", "loader.*launch", "trt_native_stream_server", "voxcpm2_service"]) {
+				execSync(`pkill -f '${pat}' 2>/dev/null || true`, { stdio: "ignore", shell: "/bin/bash" });
+			}
+		}
 	} catch {
 		/* 미실행 — 정상 */
 	}

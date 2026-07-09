@@ -32,7 +32,7 @@ pub(crate) fn kill_pid(pid: u32) {
 }
 
 pub(crate) fn cleanup_orphan_processes() {
-    for component in &["gateway", "node-host", "bgm-server"] {
+    for component in &["gateway", "node-host", "bgm-server", "cascade"] {
         if let Some(pid) = crate::read_pid_file(component) {
             let signed_pid = match i32::try_from(pid) {
                 Ok(p) if p > 0 => p,
@@ -75,6 +75,19 @@ pub(crate) fn kill_stale_gateway() {
         .arg("-f")
         .arg("naia.*gateway")
         .output();
+}
+
+/// Kill stale cascade (output_cascade uvicorn + loader + trt/voxcpm2 children) — Unix.
+/// PID-tracked loader 는 cleanup_orphan_processes 가 잡고, 여긴 손자(facade uvicorn 등)를 커맨드 매칭(R2.2b).
+pub(crate) fn kill_stale_cascade() {
+    for pat in &[
+        "output_cascade.app:app",
+        "loader.*launch",
+        "trt_native_stream_server",
+        "voxcpm2_service",
+    ] {
+        let _ = Command::new("pkill").arg("-f").arg(*pat).output();
+    }
 }
 
 /// Find Node.js via Unix version managers (nvm).

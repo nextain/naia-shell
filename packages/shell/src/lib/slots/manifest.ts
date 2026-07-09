@@ -4,6 +4,7 @@ import type { Local8gFocus } from "../capabilities/vram-tiers";
 // wm 은 이 매니페스트로 어느 로컬 서비스(avatar/tts/sub-llm/embed)를 띄울지 결정(Phase 4.1).
 // SoT: alpha-adk .agents/progress/naia-model-slots-architecture-2026-06-28.md §3.4·§5.2.
 import type { AppConfig } from "../config";
+import { normalizeTierId, resolveActiveTier } from "../capabilities/vram-tiers";
 import {
 	type GateMode,
 	type SlotSnapshot,
@@ -77,7 +78,18 @@ export function buildSlotsManifest(
 			...(opts.detectedVramGb !== undefined
 				? { detectedVramGb: opts.detectedVramGb }
 				: {}),
-			...(config.localGpuTier ? { tier: config.localGpuTier } : {}),
+			// ★tier 해석: config.localGpuTier 가 "auto" 면 wm 이 해석 못한다
+			// (manifest.py EXCLUSIVE_8G_TIERS 가 해석된 id 만 매칭). 검출 VRAM 으로
+			// resolveActiveTier → normalizeTierId 로 **해석된 tier id** 를 쓴다.
+			// 미검출/비활성(off) → 생략. 명시 id 는 정규화(구 id 호환) 후 기록.
+			...(() => {
+				const resolved = resolveActiveTier(
+					config.localGpuTier,
+					opts.detectedVramGb ?? null,
+				);
+				const tierId = resolved ? normalizeTierId(resolved.id) : null;
+				return tierId ? { tier: tierId } : {};
+			})(),
 			// 정본 local8gFocus ?? 구 localAvatarVoiceFocus(legacy).
 			...((config.local8gFocus ?? config.localAvatarVoiceFocus)
 				? {
