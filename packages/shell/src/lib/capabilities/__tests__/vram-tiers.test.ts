@@ -121,6 +121,17 @@ describe("fitLocalCapabilitiesToVram (VRAM preflight → cloud LLM fallback)", (
 		expect(r.requiredGb).toBeCloseTo(6.6, 5);
 	});
 
+	it("8G both at PRODUCTION margin(1.5) → LLM falls back (fidelity, 적대리뷰 2026-07-09)", () => {
+		// ★ SettingsTab 은 margin 1.5 로 호출(프리플라이트 실호출 경로). 실 8GB 카드에서
+		//   both(llm 4.0 + avatar 2.6 = 6.6) > budget(8 - 1.5 = 6.5) → **LLM 클라우드 강등**.
+		//   즉 8G "둘 다 로컬" 선택해도 실측 numbers 상 **아바타만 로컬 + LLM 클라우드**가 된다.
+		//   (위 margin=1.0 케이스는 순수 함수 검증용. 이 케이스가 프로덕션 실동작 fidelity.)
+		//   실 fit 여부는 measurement-gated(F1) — cost 추정치가 바뀌면 이 경계도 바뀜.
+		const r = fitLocalCapabilitiesToVram(["llm", "avatar"], 8, 1.5);
+		expect(r.llmFallbackToCloud).toBe(true);
+		expect(r.caps).toEqual(["avatar"]);
+	});
+
 	it("tight VRAM → drop LLM to cloud, keep avatar", () => {
 		// 6.6 > (6 - 1) = 5 → llm 강등
 		const r = fitLocalCapabilitiesToVram(["llm", "avatar"], 6, 1.0);

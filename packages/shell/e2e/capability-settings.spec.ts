@@ -101,6 +101,12 @@ test.describe("Capability-driven settings (#365)", () => {
 	test("STT section always available; omni model shows an 'optional' hint", async ({
 		page,
 	}) => {
+		// 이 스펙에서 가장 무거운 케이스(탭 6전환 + 모델 3재선택). 적대리뷰 실측: 격리에서도
+		// ~50-70s(부하 무관 본질적 느림) — SettingsTab(5000+줄)의 렌더 thrash(탭 클릭당 재렌더
+		// 수초, 렌더 본문 loadConfig() 등)로 60s 기본 한도 초과. test.slow()(=180s)로 안정화.
+		// ⚠️ 근본원인은 성능(별도 트래킹 대상) — 이 완충은 실행시간 문제이지 correctness 아님
+		//    (caps 유도는 순수 함수 deriveSettingsSlots, race 없음 — 적대리뷰 확인됨).
+		test.slow();
 		// 사용자 결정 2026-07-02: omni 내장 모델이어도 외부/로컬 STT를 옵션으로 열어둔다
 		// (로컬 Whisper 등이 무료 STT 대비 정확도·프라이버시 이점). capability는 이제
 		// STT를 '숨김'이 아니라 omni일 때 '선택' 안내로만 반영.
@@ -208,13 +214,14 @@ test.describe("VRAM tier local profile (#2, FR-1/FR-3)", () => {
 		await gotoModelSettings(page, { vramGb: 6, model: "gemini-3.5-flash" });
 
 		await page.locator('[data-settings-tab="profile"]').click();
-		// engine-core-summary 제거(2026-06-30, slot-groups 중복) → 부재 확인.
+		// engine-core-summary 제거(2026-06-30, slot-groups 중복) + engine-gpu-summary
+		// 제거(a8fe9517, 8G 재티어링: GPU 정보를 tier 셀렉터+local-profile-hint 로 통합) → 부재 확인.
 		await expect(
 			page.locator('[data-testid="engine-core-summary"]'),
 		).toHaveCount(0);
 		await expect(
 			page.locator('[data-testid="engine-gpu-summary"]'),
-		).toBeVisible();
+		).toHaveCount(0);
 		await expect(
 			page.locator('[data-testid="engine-capability-summary"]'),
 		).toBeVisible();

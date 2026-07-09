@@ -120,6 +120,20 @@
 
 > NFR: F1(RTF measurement-gated — VRAM 적합≠실시간 보장) · 원격 금지(로컬 사이드카만). ⚠️ **DEFER R2.3**: 8GB 음성 단독 실기동(모델/venv 설치 전제) RTF 실측 + 소형/양자화 필요성 판정. Windows 강제종료 고아 하드닝(job object / PID 기반 stale-kill)=후속. 검증: cargo check 0·tsc 0·windows-manager pytest 31·naia-shell SettingsTab+slots 66.
 
+## 기능 요구사항 (FR) — 8G 로컬 GPU 재티어링(3모드) + 원격 cascade 연결 (2026-07-08, 셸 feature)
+
+> 범위: 8GB GPU 는 로컬 LLM·비디오 아바타·음성을 동시 구동 불가(VRAM 예산 초과) → **배타 3모드 택1**(llm | avatar | both). 음성(VoxCPM2)은 8G 에선 항상 클라우드(로컬 음성 없음). cascade 소스를 로컬 auto-spawn(T1) 외에 **원격 URL(T3, 직접운영)** 로도 지정 가능(고급). 축 SoT = alpha-adk `.agents/progress/naia-video-avatar-voice-architecture-sot-2026-07-08.md`. 구 avatar/voice 6G/8G 축 폐기. **테스트의 로컬 라벨 FR-5/6/7/8 = 아래 FR-VRAM.5/6·FR-CASCADE.5/6/7** 로 매핑(spec ↔ 요구사항 정합).
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-VRAM.5** (spec FR-5) | 8G 배타 티어(`local-llm-avatar-8g`) = **llm/avatar/both 3모드 focus 택1**. `resolveLocalCapabilities` 배타 해소(llm→[llm]·avatar→[avatar]·both→[llm,avatar]), 음성=항상 클라우드(tts 로컬 제거). 구 "voice" focus→"avatar" 마이그레이션. 기본=llm(프라이버시). 비배타 12G+ 는 focus 무시(슬롯 그대로) | S-VRAM8G·UC12 | `vram-tiers.test.ts`·wm `test_manifest.py`(focus 배타·비8G 무시·voice→avatar)·`capability-settings.spec.ts`(FR-5 focus 셀렉터 3옵션) |
+| **FR-VRAM.6** | **VRAM 프리플라이트 폴백** — `fitLocalCapabilitiesToVram(caps, freeVramGb, margin)` 이 free VRAM 부족 시 로컬 LLM→클라우드 강등(`llmFallbackToCloud`) + UI 정직 경고(`local-llm-vram-fallback`). 프라이버시 위장 금지(강등을 로컬로 표기 안 함) | S-VRAM8G | `vram-tiers.test.ts`(fit 폴백)·`capability-settings.spec.ts`(fallback 배지) |
+| **FR-CASCADE.5** (spec FR-6) | 비디오 아바타 립싱크 노트 — 아바타 탭에서 naia-video-avatar 선택 + TTS off 시 경고(`nva-lipsync-note`, 립싱크엔 TTS 필요). 8G avatar 모드=음성 클라우드라 TTS 필수 안내 | S-AVATAR8G | `capability-settings.spec.ts`(FR-6) |
+| **FR-CASCADE.6** (spec FR-7) | 비디오 아바타는 **cascade capability(로컬 avatar 제공 or 로그인) 게이트** — 로컬 프로파일이 avatar 미제공(저티어/off) 또는 로그아웃 시 video-avatar 옵션 비활성 + 안내(`avatar-cascade-required`) | S-AVATAR8G·UC12 | `capability-settings.spec.ts`(FR-7 게이트·로그아웃 교차) |
+| **FR-CASCADE.7** (spec FR-8) | **원격 cascade 소스(T3, 고급)** — `cascadeRuntimeUrl`(http/https만, `normalizeCascadeUrl` 검증·정규화·trailing slash 제거) 로 원격 파사드 지정. 접힌 `<details>` 격리(소비자 기본 표면 아님)·naiaKey 게이트·egress 경고. 로컬 auto-spawn(T1) 우선(localFacadeUrl 있으면 원격 무시). WSL 안 cascade 는 이 T3 URL 경로로 연결(셸이 WSL 부트스트랩 안 함) | S-CASCADE-T3·UC12 | `config.test.ts`(normalizeCascadeUrl 4케이스)·`capability-settings.spec.ts`(FR-8 URL 검증·게이트) |
+
+> NFR: **NFR-voiceprint(불변)** — naia 가 VoxCPM2 를 쓸 때 **음성지문(ref voiceprint) 필수**(무지문 합성 금지). 8G 는 로컬 음성 없음(클라우드)이라 무지문 옵션 불요. 계약 = naia-omni-cascade `cascade-contract-governance.md` §5.5 + `tts_voxcpm2.py`(`require_voiceprint=True`). · NFR-honesty(VRAM 강등 위장 금지) · F1(RTF 단정 금지 — 8G 아바타 실시간=미측정, 사용자 실기 검증). ⚠️ **정리 대상(DEFER)**: in-shell WSL cascade 부트스트랩(`WslSetupScreen`+`setup_wsl`)=구 gateway-in-WSL 아키텍처 죽은 레거시(orphan 컴포넌트·`generate_handler!` 미등록·Rust 백엔드=macos 스텁뿐) → 삭제 결정 대기.
+
 ## 기능 요구사항 (FR) — 지식 근거→원문 칩 + 그래프 뷰어 (kb-compiler 통합 K2·K3, 셸 feature — 2026-06-30)
 
 > 범위: naia-agent 지식 풀 도구(`skill_knowledge_ask`/`search`) tool-result(JSON)를 셸이 **답변 + 출처 칩**으로 렌더하고, 칩 클릭 시 **근거→원문**(URL=브라우저 패널 navigate / 파일=워크스페이스 openFile)으로 연다. 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K2). 백엔드(에이전트↔kb-compiler 배선·계약) = naia-agent UC-KNOWLEDGE(별 레포, live).
