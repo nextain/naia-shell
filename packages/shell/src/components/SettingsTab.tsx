@@ -288,7 +288,7 @@ const LOCALES: { id: Locale; label: string }[] = [
 ];
 
 function getNaiaWebBaseUrl() {
-	// dev (tauri:dev) → localhost:3001, prod (tauri:prod) → naia.nextain.io.
+	// dev (tauri:dev) → localhost:3001, prod (tauri:prod) → www.naia.land.
 	// Same VITE_NAIA_USE_DEV_GATEWAY flag as the gateway (see config.ts).
 	return NAIA_WEB_BASE_URL;
 }
@@ -1350,7 +1350,7 @@ export function SettingsTab() {
 			);
 			const params = new URLSearchParams({
 				redirect: "desktop",
-				// naia.nextain.io buildLoginRedirect requires BOTH redirect=desktop
+				// www.naia.land buildLoginRedirect requires BOTH redirect=desktop
 				// AND app=naia-os (2026-05-28 security gate) — without `app` it
 				// redirects to /dashboard and the desktop callback never fires.
 				app: "naia-os",

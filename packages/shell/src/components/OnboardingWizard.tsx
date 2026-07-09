@@ -423,7 +423,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			);
 			const params = new URLSearchParams({
 				redirect: "desktop",
-				// naia.nextain.io buildLoginRedirect requires BOTH redirect=desktop
+				// www.naia.land buildLoginRedirect requires BOTH redirect=desktop
 				// AND app=naia-os (2026-05-28 security gate) — without `app` it
 				// redirects to /dashboard and the desktop callback never fires.
 				app: "naia-os",
@@ -611,7 +611,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								className="onboarding-welcome__github-btn"
 								onClick={() =>
 									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-										openUrl("https://naia.nextain.io/donation"),
+										openUrl("https://www.naia.land/donation"),
 									)
 								}
 							>

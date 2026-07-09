@@ -178,7 +178,7 @@ describe("syncLinkedChannels", () => {
 		await syncLinkedChannels();
 
 		expect(fetchSpy).toHaveBeenCalledWith(
-			"https://naia.nextain.io/api/gateway/linked-channels",
+			"https://www.naia.land/api/gateway/linked-channels",
 			{
 				headers: {
 					"X-Desktop-Key": "gw-my-key",

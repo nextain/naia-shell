@@ -439,7 +439,7 @@ describe("OnboardingWizard", () => {
 				.calls[0][0] as string;
 
 			// 검증: redirect_uri 명시 + state CSRF + redirect=desktop + source=desktop
-			expect(calledUrl).toContain("naia.nextain.io");
+			expect(calledUrl).toContain("www.naia.land");
 			expect(calledUrl).toContain("/login?");
 			expect(calledUrl).toContain(
 				"redirect_uri=http%3A%2F%2F127.0.0.1%3A18792%2Fauth%2Fcallback",

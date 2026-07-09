@@ -668,10 +668,12 @@ export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
 
 // Naia web app base (login portal / dashboard / manual). Set per environment in
 // .env.{dev,prod} via VITE_NAIA_WEB_BASE_URL (loaded by scripts/tauri-with-mode.mjs):
-// `tauri:dev` → http://localhost:3001, `tauri:prod` → https://naia.nextain.io.
+// `tauri:dev` → http://localhost:3001, `tauri:prod` → https://www.naia.land.
+// (도메인 이전 2026-07: naia.nextain.io → www.naia.land. 둘 다 307/200 라이브이나
+//  www.naia.land 가 정본. 컴포넌트는 이 상수를 쓸 것 — 직접 하드코딩 금지.)
 export const NAIA_WEB_BASE_URL =
 	(import.meta.env.VITE_NAIA_WEB_BASE_URL as string) ||
-	"https://naia.nextain.io";
+	"https://www.naia.land";
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";

@@ -5,8 +5,8 @@ import { openDmChannel } from "./discord-api";
 import { Logger } from "./logger";
 
 const LINKED_CHANNELS_API =
-	"https://naia.nextain.io/api/gateway/linked-channels";
-const DISCORD_BOT_TOKEN_API = "https://naia.nextain.io/api/discord/bot-token";
+	"https://www.naia.land/api/gateway/linked-channels";
+const DISCORD_BOT_TOKEN_API = "https://www.naia.land/api/discord/bot-token";
 
 interface LinkedChannel {
 	type: string;
@@ -18,7 +18,7 @@ interface LinkedChannelsResponse {
 }
 
 /**
- * Fetch the Discord bot token from naia.nextain.io and save it to naia-discord.json.
+ * Fetch the Discord bot token from www.naia.land and save it to naia-discord.json.
  * Called after Lab auth succeeds. Fails silently if the endpoint is unavailable.
  */
 async function fetchAndRestoreDiscordBotToken(naiaKey: string): Promise<void> {
@@ -48,7 +48,7 @@ async function fetchAndRestoreDiscordBotToken(naiaKey: string): Promise<void> {
 }
 
 /**
- * Fetch linked messaging channels from naia.nextain.io BFF.
+ * Fetch linked messaging channels from www.naia.land BFF.
  * Uses desktop key + user id for authentication.
  */
 async function fetchLinkedChannels(

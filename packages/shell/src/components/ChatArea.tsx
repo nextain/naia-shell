@@ -396,7 +396,7 @@ function voiceCloseMessage(reason: VoiceCloseReason): string | null {
 
 /**
  * Derive the voice button mode from the connection status — the single source of
- * truth. No parallel voiceMode state. Mirrors naia.nextain.io deriving its badge
+ * truth. No parallel voiceMode state. Mirrors www.naia.land deriving its badge
  * straight from ConnectionState.
  */
 function phaseToMode(

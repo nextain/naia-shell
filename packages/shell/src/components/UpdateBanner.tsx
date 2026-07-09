@@ -24,7 +24,7 @@ export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
 
 	const handleViewDetails = () => {
 		const locale = getLocale();
-		openUrl(`https://naia.nextain.io/${locale}/download`).catch(() => {});
+		openUrl(`https://www.naia.land/${locale}/download`).catch(() => {});
 	};
 
 	if (installing) {

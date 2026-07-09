@@ -176,7 +176,7 @@ function LabBalanceSection() {
 				type="button"
 				className="lab-charge-btn"
 				onClick={() =>
-					openUrl(`https://naia.nextain.io/${getLocale()}/billing`).catch(
+					openUrl(`https://www.naia.land/${getLocale()}/billing`).catch(
 						() => {},
 					)
 				}

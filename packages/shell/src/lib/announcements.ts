@@ -1,6 +1,6 @@
 import { Logger } from "./logger";
 
-const ANNOUNCEMENTS_URL = "https://naia.nextain.io/api/announcements";
+const ANNOUNCEMENTS_URL = "https://www.naia.land/api/announcements";
 const STORAGE_KEY = "naia_read_announcements";
 const FETCH_TIMEOUT_MS = 8000;
 

@@ -2,7 +2,7 @@ import type { AppConfig } from "./config";
 import { normalizeSpeechStyle } from "./config";
 import { Logger } from "./logger";
 
-const LAB_API_BASE = "https://naia.nextain.io/api/gateway/config";
+const LAB_API_BASE = "https://www.naia.land/api/gateway/config";
 
 /** Fields synced to/from Lab — excludes secrets (apiKey, gatewayToken, etc.) and local paths */
 export const LAB_SYNC_FIELDS = [
