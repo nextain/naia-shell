@@ -138,4 +138,190 @@ test.describe("NVA 마스크 video 실렌더 (real Chromium, VP9 알파 webm →
 		// swap 시 onTalking(true) 전달(발화 시작 동기화).
 		expect(result.events).toContain(true);
 	});
+
+	/**
+	 * ★2026-07-10 라이브 립싱크 폭주 근본수정 — real Chromium E2E.
+	 * 여러 문장(TTS 청크)이 거의 동시에 speak 를 호출해도(=ChatArea 의 fire-and-forget) 실제
+	 * 렌더러가 /stream 을 **직렬**(항상 1건 in-flight)로 보내고 3건 모두 렌더하는지 실 브라우저로 검증.
+	 * 예전엔 각 speak 가 gen++ 로 이전을 supersede + 백엔드에 동시 폭주 → facade 20s 타임아웃으로
+	 * 렌더 실패(립싱크·발화음성 둘 다 드롭). 큐 직렬화로 해소.
+	 */
+	test("동시 speak 는 직렬화된다 (real Chromium: /stream in-flight 1건, 3건 모두 렌더)", async ({
+		page,
+	}) => {
+		await page.addInitScript(TAURI_NOOP);
+		let inFlight = 0;
+		let maxInFlight = 0;
+		let streamCount = 0;
+		await page.route(/127\.0\.0\.1:8910\//, async (route) => {
+			const req = route.request();
+			if (req.method() === "OPTIONS") {
+				return route.fulfill({ status: 204, headers: CORS });
+			}
+			const url = req.url();
+			if (url.includes("/stream") && req.method() === "POST") {
+				streamCount++;
+				inFlight++;
+				maxInFlight = Math.max(maxInFlight, inFlight);
+				await new Promise((r) => setTimeout(r, 150)); // 렌더 시간 모사
+				inFlight--;
+				return route.fulfill({
+					status: 200,
+					contentType: "video/webm",
+					headers: CORS,
+					body: WEBM,
+				});
+			}
+			if (url.includes("/idle")) {
+				return route.fulfill({
+					status: 200,
+					contentType: "video/webm",
+					headers: CORS,
+					body: WEBM,
+				});
+			}
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: CORS,
+				body: JSON.stringify({ ok: true }),
+			});
+		});
+
+		await page.goto("/");
+
+		const result = await page.evaluate(async () => {
+			const container = document.createElement("div");
+			const host = document.createElement("video");
+			host.playsInline = true;
+			host.muted = true;
+			container.appendChild(host);
+			document.body.appendChild(container);
+
+			const mod = await import("/src/lib/avatar/cascade-renderer.ts");
+			const r = new mod.CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+
+			// ChatArea 의 fire-and-forget(void speakAudio) 을 재현 — 3문장 동시 발화(await 안 함).
+			const ps = [
+				r.speak("첫 번째 문장입니다"),
+				r.speak("두 번째 문장입니다"),
+				r.speak("세 번째 문장입니다"),
+			];
+			await Promise.all(ps);
+
+			const buf = Array.from(container.querySelectorAll("video")).find(
+				(v) => v !== host,
+			);
+			return { bufSrc: (buf?.src ?? "").slice(0, 5) };
+		});
+
+		// ★핵심: 동시 호출이어도 /stream 은 한 번에 1건만(직렬) — 큐 적체·facade 타임아웃 소멸.
+		expect(maxInFlight).toBe(1);
+		// 3문장 모두 렌더됨(supersede 로 드롭되지 않음).
+		expect(streamCount).toBe(3);
+		// 실제 webm Blob 경로로 디코드(마지막 발화 src 확인).
+		expect(result.bufSrc).toBe("blob:");
+	});
+
+	/**
+	 * ★2026-07-10 립싱크 "화면 표시" 검증 — 사용자: 음성은 들리는데 립싱크 영상이 안 보인다.
+	 * swap 이 opacity=1 + muted=false 를 동시에 설정하므로 논리상 소리나면 보여야 함. 실제 재생 중
+	 * buf <video> 의 computed opacity 가 1 에 도달하는지(=화면에 노출) + 스크린샷으로 실측한다.
+	 */
+	test("립싱크 webm 이 실제로 화면에 표시된다(재생 중 opacity→1 + 스크린샷)", async ({
+		page,
+	}) => {
+		await page.addInitScript(TAURI_NOOP);
+		await page.route(/127\.0\.0\.1:8910\//, async (route) => {
+			const req = route.request();
+			if (req.method() === "OPTIONS") {
+				return route.fulfill({ status: 204, headers: CORS });
+			}
+			const url = req.url();
+			if (url.includes("/idle") || url.includes("/stream")) {
+				return route.fulfill({
+					status: 200,
+					contentType: "video/webm",
+					headers: CORS,
+					body: WEBM,
+				});
+			}
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: CORS,
+				body: JSON.stringify({ ok: true }),
+			});
+		});
+
+		await page.goto("/");
+
+		await page.evaluate(async () => {
+			const w = window as unknown as {
+				__samples: Array<{ t: number; op: string; vw: number; active: boolean }>;
+				__stop: () => void;
+			};
+			const container = document.createElement("div");
+			container.id = "avatar-box";
+			container.style.cssText =
+				"position:fixed;top:0;left:0;width:320px;height:320px;background:#2b2b2b;z-index:99999";
+			const host = document.createElement("video");
+			host.playsInline = true;
+			host.muted = true;
+			host.style.cssText = "width:100%;height:100%;object-fit:contain";
+			container.appendChild(host);
+			document.body.appendChild(container);
+
+			const mod = await import("/src/lib/avatar/cascade-renderer.ts");
+			const r = new mod.CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+
+			w.__samples = [];
+			const iv = setInterval(() => {
+				const buf = Array.from(container.querySelectorAll("video")).find(
+					(v) => v !== host,
+				) as HTMLVideoElement | undefined;
+				if (buf)
+					w.__samples.push({
+						t: buf.currentTime,
+						op: getComputedStyle(buf).opacity,
+						vw: buf.videoWidth,
+						active: buf.style.opacity === "1",
+					});
+			}, 40);
+			w.__stop = () => clearInterval(iv);
+
+			void r.speak("립싱크 화면 표시 테스트입니다"); // fire (await 안 함)
+		});
+
+		// 재생 중 스크린샷(fixture webm 0.5s → 300~500ms 사이가 재생 구간)
+		await page.waitForTimeout(450);
+		await page.screenshot({ path: "D:/alpha-adk/tmp/lipsync-display.png" });
+		await page.waitForTimeout(1000);
+
+		const samples = await page.evaluate(() => {
+			const w = window as unknown as {
+				__samples: Array<{ t: number; op: string; vw: number; active: boolean }>;
+				__stop: () => void;
+			};
+			w.__stop();
+			return w.__samples;
+		});
+
+		const maxOp = Math.max(...samples.map((s) => Number.parseFloat(s.op)), 0);
+		const maxVw = Math.max(...samples.map((s) => s.vw), 0);
+		const played = samples.some((s) => s.t > 0);
+		// 진단 로그(실패 시 원인 파악)
+		console.log(
+			`[립싱크표시] maxOpacity=${maxOp} maxVideoWidth=${maxVw} played=${played} samples=${samples.length}`,
+		);
+		expect(maxVw).toBeGreaterThan(0); // 비디오 트랙 디코드됨
+		expect(played).toBe(true); // 실제 재생됨(currentTime 진행)
+		expect(maxOp).toBeGreaterThan(0.9); // ★화면에 노출됨(swap 으로 opacity→1)
+	});
 });

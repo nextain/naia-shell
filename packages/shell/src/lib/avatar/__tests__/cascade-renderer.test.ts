@@ -209,6 +209,60 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 			expect(blobSpy).not.toHaveBeenCalled(); // Blob 경로 아님
 		});
 	});
+
+	// ★2026-07-10 라이브 립싱크 폭주 근본수정 회귀가드: 여러 문장(TTS 청크)이 거의 동시에
+	//   speak 를 호출해도 /stream 은 항상 1건만 in-flight(직렬) + 3건 모두 처리(supersede 드롭
+	//   없음). 예전엔 각 speak 가 gen++ 로 이전을 취소 + 백엔드에 동시 요청 폭주 → facade 20s
+	//   타임아웃으로 렌더 실패(립싱크·발화음성 둘 다 드롭). 큐 직렬화로 해소.
+	it("동시 speak 호출은 직렬화된다(/stream in-flight 항상 1건, 3건 모두 처리)", async () => {
+		await withStubs(vi.fn(), async () => {
+			let inFlight = 0;
+			let maxInFlight = 0;
+			const blob = async () =>
+				new Blob([new Uint8Array([1])], { type: "video/webm" });
+			globalThis.fetch = vi.fn(async () => {
+				inFlight++;
+				maxInFlight = Math.max(maxInFlight, inFlight);
+				await new Promise((r) => setTimeout(r, 5)); // 렌더 시간 모사
+				inFlight--;
+				return mockRes("video/webm", blob);
+			}) as never;
+			const host = makeHost();
+			const r = new CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+			// ChatArea 의 fire-and-forget(void speakAudio) 을 재현 — 3문장 동시 발화
+			const ps = [r.speak("문장1"), r.speak("문장2"), r.speak("문장3")];
+			await Promise.all(ps);
+			expect(maxInFlight).toBe(1); // 동시 렌더 없음 = 큐 적체·타임아웃 소멸
+			expect(
+				globalThis.fetch as ReturnType<typeof vi.fn>,
+			).toHaveBeenCalledTimes(3); // 3건 모두 렌더(supersede 드롭 없음)
+		});
+	});
+
+	it("interrupt 는 대기 중인 발화 큐를 비운다(barge-in)", async () => {
+		await withStubs(vi.fn(), async () => {
+			let started = 0;
+			const blob = async () =>
+				new Blob([new Uint8Array([1])], { type: "video/webm" });
+			globalThis.fetch = vi.fn(async () => {
+				started++;
+				await new Promise((r) => setTimeout(r, 5));
+				return mockRes("video/webm", blob);
+			}) as never;
+			const host = makeHost();
+			const r = new CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+			const ps = [r.speak("A"), r.speak("B"), r.speak("C")];
+			r.interrupt(); // 즉시 barge-in — 대기 B/C 취소, 대기자 resolve
+			await Promise.all(ps); // 취소된 발화도 hang 없이 resolve
+			expect(started).toBeLessThanOrEqual(1); // 첫 발화만 시작됐거나(경합) 0건
+		});
+	});
 });
 
 describe("localFacadeUrlFromReady", () => {

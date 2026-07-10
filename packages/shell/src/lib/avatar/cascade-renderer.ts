@@ -144,6 +144,16 @@ export class CascadeAvatarRenderer {
 	private gen = 0; // 발화 세대 — barge-in/중복 무효화
 	private disposed = false;
 	private teardown: (() => void) | null = null;
+	// ★2026-07-10 립싱크 직렬 큐(라이브 발화 폭주 근본수정): 여러 문장(TTS 청크)이 거의 동시에
+	//   speak 를 호출해도 **하나씩 순서대로** 렌더/재생한다. 예전엔 각 speak 가 gen++ 로 이전을
+	//   supersede → 서로 취소 + 백엔드(cascade facade)에 동시 /stream 폭주 → 단일 GPU 큐 적체 →
+	//   facade 20s read 타임아웃으로 렌더 실패 → 립싱크·발화음성(webm mux) 둘 다 드롭.
+	private speakQueue: Array<{
+		text: string;
+		audioWav?: Uint8Array;
+		resolve: () => void;
+	}> = [];
+	private draining = false;
 
 	constructor(
 		private readonly cfg: CascadeRendererConfig,
@@ -203,14 +213,47 @@ export class CascadeAvatarRenderer {
 		this.active = hostVideo;
 	}
 
-	/** 텍스트 발화 — audioWav 미지정 시 cascade 내장 TTS(/stream_text), 지정 시 /stream(wav).
-	 *  응답 Content-Type 로 렌더 방식 결정:
+	/** 발화 요청 — **직렬 큐**에 넣어 하나씩 순서대로 렌더/재생한다(동시 폭주 방지). 여러 문장의
+	 *  TTS 청크가 거의 동시에 speakAudio→speak 를 호출해도, 각 발화는 앞 발화가 끝난 뒤 시작한다.
+	 *  interrupt()/stop() 이 대기 큐를 비운다(barge-in). 실제 렌더/재생은 speakNow. */
+	async speak(text: string, audioWav?: Uint8Array): Promise<void> {
+		const t = text.trim();
+		if ((!t && !audioWav) || this.disposed || !this.buf) return;
+		await new Promise<void>((resolve) => {
+			this.speakQueue.push({ text, audioWav, resolve });
+			void this.drainSpeakQueue();
+		});
+	}
+
+	/** 큐를 하나씩 순차 처리(재진입 방지). 한 발화가 끝나야 다음이 시작 → 백엔드에 /stream 이
+	 *  항상 1건만 in-flight → 큐 적체·타임아웃 소멸. disposed/큐비움 시 종료. */
+	private async drainSpeakQueue(): Promise<void> {
+		if (this.draining) return;
+		this.draining = true;
+		try {
+			while (this.speakQueue.length && !this.disposed) {
+				const item = this.speakQueue.shift()!;
+				try {
+					await this.speakNow(item.text, item.audioWav);
+				} finally {
+					item.resolve();
+				}
+			}
+		} finally {
+			this.draining = false;
+			// drain 도중 새로 들어온 항목이 있으면 이어서 처리(경합 방지).
+			if (this.speakQueue.length && !this.disposed) void this.drainSpeakQueue();
+		}
+	}
+
+	/** 텍스트 발화(직렬 큐 drainSpeakQueue 가 호출) — audioWav 미지정 시 cascade 내장 TTS(/stream_text),
+	 *  지정 시 /stream(wav). 응답 Content-Type 로 렌더 방식 결정:
 	 *   - video/webm(완전 파일, composite 마스크 video/알파) → Blob → `<video>.src` (전체 수신 후 재생).
 	 *   - video/mp4(fragmented) → MSE 이중버퍼(첫 청크부터 저지연 재생).
 	 *  ★composite 알파 webm 은 스트리밍 시 duration/cues 부재로 `<video>`가 비디오 트랙을 못 넘김
 	 *   (오디오만·화면정지) → 서버가 **완전한 webm 파일**로 출력하고 클라는 Blob 으로 받아야 한다
 	 *   (avatar_ditto_composite.py 의 "완전한 webm 파일로 출력" 주석과 대칭). */
-	async speak(text: string, audioWav?: Uint8Array): Promise<void> {
+	private async speakNow(text: string, audioWav?: Uint8Array): Promise<void> {
 		const t = text.trim();
 		if ((!t && !audioWav) || this.disposed || !this.buf) return;
 		const my = ++this.gen;
@@ -495,8 +538,16 @@ export class CascadeAvatarRenderer {
 		return this.speak("(audio)", ttsAudioToWav(audioBase64, sampleRate));
 	}
 
-	/** 현재 발화 즉시 중단(barge-in). */
+	/** 대기 큐 비우기 — 각 대기자를 조용히 resolve(await 행 방지). interrupt/stop 공용. */
+	private clearSpeakQueue(): void {
+		const pending = this.speakQueue;
+		this.speakQueue = [];
+		for (const p of pending) p.resolve();
+	}
+
+	/** 현재 발화 즉시 중단(barge-in). 대기 중인 큐도 모두 취소한다. */
 	interrupt(): void {
+		this.clearSpeakQueue();
 		this.gen++;
 		this.runTeardown();
 		try {
@@ -512,6 +563,7 @@ export class CascadeAvatarRenderer {
 	}
 
 	stop(): void {
+		this.clearSpeakQueue();
 		this.disposed = true;
 		this.gen++;
 		this.runTeardown();
