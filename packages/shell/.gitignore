@@ -2,3 +2,6 @@
 .env.e2e
 .env.dev
 .env.prod
+
+# e2e-tauri 네이티브 드라이버(머신·WebView2 버전 종속 대용량 바이너리 — 로컬 셋업, 커밋 제외)
+e2e-tauri/.drivers/
