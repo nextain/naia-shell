@@ -1532,8 +1532,13 @@ export function ChatArea({
 				if (!activeTtsRequestsRef.current.has(reqId)) return;
 				activeTtsRequestsRef.current.delete(reqId);
 				if (avatarPcm) {
-					// 클라우드 TTS PCM(24k) → cascade /stream → Ditto 립싱크(오디오+영상 mux).
-					void cascadeAvatar?.speakAudio(audioBase64, 24000);
+					// ★audio-first(2026-07-10): 발화음성을 렌더와 분리해 AudioQueue 로 **즉시 실시간
+					//   재생**(seq 순서 보장) → "음성이 한참 후에 온다" 해소. 립싱크 영상은 muted 로
+					//   따라붙어(이중오디오 방지) 화면만 담당. webm mux 오디오는 ffmpeg audio-EOF-hold 로
+					//   스트리밍 불가 = 오디오 분리가 스트리밍의 필수 전제(스트리밍 재생 작업 1단계).
+					//   (게이트웨이 LINEAR16 = WAV → AudioQueue 가 RIFF 감지해 재생.)
+					audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
+					void cascadeAvatar?.speakAudio(audioBase64, 24000, { muted: true });
 				} else if (cascadeAvatar) {
 					// nextain 외 아바타: facade 내장 TTS 경로(best-effort, full cascade 전제).
 					void cascadeAvatar.speak(clean);

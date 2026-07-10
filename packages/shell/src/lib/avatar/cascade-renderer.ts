@@ -151,6 +151,7 @@ export class CascadeAvatarRenderer {
 	private speakQueue: Array<{
 		text: string;
 		audioWav?: Uint8Array;
+		muted?: boolean;
 		resolve: () => void;
 	}> = [];
 	private draining = false;
@@ -216,11 +217,15 @@ export class CascadeAvatarRenderer {
 	/** 발화 요청 — **직렬 큐**에 넣어 하나씩 순서대로 렌더/재생한다(동시 폭주 방지). 여러 문장의
 	 *  TTS 청크가 거의 동시에 speakAudio→speak 를 호출해도, 각 발화는 앞 발화가 끝난 뒤 시작한다.
 	 *  interrupt()/stop() 이 대기 큐를 비운다(barge-in). 실제 렌더/재생은 speakNow. */
-	async speak(text: string, audioWav?: Uint8Array): Promise<void> {
+	async speak(
+		text: string,
+		audioWav?: Uint8Array,
+		opts?: { muted?: boolean },
+	): Promise<void> {
 		const t = text.trim();
 		if ((!t && !audioWav) || this.disposed || !this.buf) return;
 		await new Promise<void>((resolve) => {
-			this.speakQueue.push({ text, audioWav, resolve });
+			this.speakQueue.push({ text, audioWav, muted: opts?.muted, resolve });
 			void this.drainSpeakQueue();
 		});
 	}
@@ -234,7 +239,7 @@ export class CascadeAvatarRenderer {
 			while (this.speakQueue.length && !this.disposed) {
 				const item = this.speakQueue.shift()!;
 				try {
-					await this.speakNow(item.text, item.audioWav);
+					await this.speakNow(item.text, item.audioWav, item.muted);
 				} finally {
 					item.resolve();
 				}
@@ -253,7 +258,11 @@ export class CascadeAvatarRenderer {
 	 *  ★composite 알파 webm 은 스트리밍 시 duration/cues 부재로 `<video>`가 비디오 트랙을 못 넘김
 	 *   (오디오만·화면정지) → 서버가 **완전한 webm 파일**로 출력하고 클라는 Blob 으로 받아야 한다
 	 *   (avatar_ditto_composite.py 의 "완전한 webm 파일로 출력" 주석과 대칭). */
-	private async speakNow(text: string, audioWav?: Uint8Array): Promise<void> {
+	private async speakNow(
+		text: string,
+		audioWav?: Uint8Array,
+		muted = false,
+	): Promise<void> {
 		const t = text.trim();
 		if ((!t && !audioWav) || this.disposed || !this.buf) return;
 		const my = ++this.gen;
@@ -276,9 +285,9 @@ export class CascadeAvatarRenderer {
 			if (!res.ok || !res.body) throw new Error(`cascade stream ${res.status}`);
 			const ctype = (res.headers.get("content-type") || "").toLowerCase();
 			if (ctype.includes("webm")) {
-				await this.renderWebmFile(res, back, my);
+				await this.renderWebmFile(res, back, my, muted);
 			} else {
-				await this.renderMseStream(res, back, my);
+				await this.renderMseStream(res, back, my, muted);
 			}
 		} catch (e) {
 			if (my === this.gen) {
@@ -337,6 +346,7 @@ export class CascadeAvatarRenderer {
 		res: Response,
 		back: HTMLVideoElement,
 		my: number,
+		muted = false,
 	): Promise<void> {
 		const body = res.body;
 		if (!body) return;
@@ -443,7 +453,8 @@ export class CascadeAvatarRenderer {
 			swapped = true;
 			this.onTalking?.(true);
 			back.style.opacity = "1";
-			back.muted = false;
+			// ★audio-first: muted 면 발화음성을 외부(AudioQueue)가 즉시 재생 → 이중오디오 방지로 unmute 안 함.
+			if (!muted) back.muted = false;
 			this.active = back;
 		};
 		swapFn = swap;
@@ -480,6 +491,7 @@ export class CascadeAvatarRenderer {
 		res: Response,
 		back: HTMLVideoElement,
 		my: number,
+		muted = false,
 	): Promise<void> {
 		const blob = await res.blob();
 		if (my !== this.gen || this.disposed || blob.size === 0) return;
@@ -513,7 +525,9 @@ export class CascadeAvatarRenderer {
 			if (my !== this.gen) return;
 			this.onTalking?.(true);
 			back.style.opacity = "1";
-			back.muted = false; // webm 에 오디오(opus) 포함 → 발화 음성 재생
+			// webm 에 오디오(opus) 포함 → 기본은 unmute 로 발화음성 재생. 단 ★audio-first(muted)면
+			// 발화음성을 외부(AudioQueue)가 즉시 재생하므로 이중오디오 방지로 muted 유지(비디오만).
+			if (!muted) back.muted = false;
 			this.active = back;
 		};
 		swapFn = swap;
@@ -533,9 +547,13 @@ export class CascadeAvatarRenderer {
 	 * 외부 TTS 오디오(base64) 주입 → /stream 립싱크. WAV 컨테이너면 그대로, raw PCM16 이면
 	 * sampleRate 로 감싼다(ttsAudioToWav — 이중 WAV 방지). 게이트웨이 LINEAR16 = Google TTS WAV.
 	 */
-	async speakAudio(audioBase64: string, sampleRate = 24000): Promise<void> {
+	async speakAudio(
+		audioBase64: string,
+		sampleRate = 24000,
+		opts?: { muted?: boolean },
+	): Promise<void> {
 		if (!audioBase64 || this.disposed) return;
-		return this.speak("(audio)", ttsAudioToWav(audioBase64, sampleRate));
+		return this.speak("(audio)", ttsAudioToWav(audioBase64, sampleRate), opts);
 	}
 
 	/** 대기 큐 비우기 — 각 대기자를 조용히 resolve(await 행 방지). interrupt/stop 공용. */

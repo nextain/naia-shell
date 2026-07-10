@@ -324,4 +324,78 @@ test.describe("NVA 마스크 video 실렌더 (real Chromium, VP9 알파 webm →
 		expect(played).toBe(true); // 실제 재생됨(currentTime 진행)
 		expect(maxOp).toBeGreaterThan(0.9); // ★화면에 노출됨(swap 으로 opacity→1)
 	});
+
+	/**
+	 * ★2026-07-10 audio-first(스트리밍 재생 1단계): speakAudio(..., {muted:true}) 는 립싱크 영상은
+	 * 화면에 띄우되(opacity→1) 비디오의 오디오는 unmute 하지 않는다 — 발화음성은 외부(AudioQueue)가
+	 * 즉시 재생하므로 이중오디오 방지. real Chromium 으로 muted 유지 + opacity 노출을 함께 검증.
+	 */
+	test("audio-first: muted 발화는 영상만 표시하고 unmute 하지 않는다", async ({
+		page,
+	}) => {
+		await page.addInitScript(TAURI_NOOP);
+		await page.route(/127\.0\.0\.1:8910\//, async (route) => {
+			const req = route.request();
+			if (req.method() === "OPTIONS")
+				return route.fulfill({ status: 204, headers: CORS });
+			const url = req.url();
+			if (url.includes("/idle") || url.includes("/stream")) {
+				return route.fulfill({
+					status: 200,
+					contentType: "video/webm",
+					headers: CORS,
+					body: WEBM,
+				});
+			}
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: CORS,
+				body: JSON.stringify({ ok: true }),
+			});
+		});
+		await page.goto("/");
+
+		const result = await page.evaluate(async () => {
+			const container = document.createElement("div");
+			const host = document.createElement("video");
+			host.playsInline = true;
+			host.muted = true;
+			container.appendChild(host);
+			document.body.appendChild(container);
+			const mod = await import("/src/lib/avatar/cascade-renderer.ts");
+			const r = new mod.CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+
+			const samples: Array<{ op: string; muted: boolean; t: number }> = [];
+			const iv = setInterval(() => {
+				const buf = Array.from(container.querySelectorAll("video")).find(
+					(v) => v !== host,
+				) as HTMLVideoElement | undefined;
+				if (buf)
+					samples.push({
+						op: getComputedStyle(buf).opacity,
+						muted: buf.muted,
+						t: buf.currentTime,
+					});
+			}, 40);
+			// btoa 로 더미 base64(WAV 헤더 불요 — /stream 라우트가 webm 반환). muted:true.
+			void r.speakAudio(btoa("dummy-audio-payload"), 24000, { muted: true });
+			await new Promise((res) => setTimeout(res, 900));
+			clearInterval(iv);
+			// 화면 노출된(opacity 1) 순간의 muted 상태를 본다.
+			const shown = samples.filter((s) => Number.parseFloat(s.op) > 0.9);
+			return {
+				maxOp: Math.max(...samples.map((s) => Number.parseFloat(s.op)), 0),
+				shownCount: shown.length,
+				anyUnmutedWhileShown: shown.some((s) => s.muted === false),
+			};
+		});
+
+		expect(result.maxOp).toBeGreaterThan(0.9); // 영상은 화면에 노출됨(립싱크 보임)
+		expect(result.shownCount).toBeGreaterThan(0);
+		expect(result.anyUnmutedWhileShown).toBe(false); // ★muted 유지 — 비디오 오디오 재생 안 함
+	});
 });
