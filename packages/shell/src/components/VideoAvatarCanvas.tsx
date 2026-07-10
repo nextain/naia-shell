@@ -333,12 +333,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					}}
 				>
 					{mode === "loading"
-						? "로컬 아바타(cascade) 연결 중…"
+						? "비디오 아바타 불러오는 중…"
 						: mode === "standby"
-							? "로컬 모델 대기중… (기동되면 자동으로 표시됩니다)"
+							? "비디오 아바타 준비 중… (잠시 후 표시됩니다)"
 							: mode === "error"
-								? `아바타 연결 실패${error ? ` — ${error}` : ""}`
-								: "로컬 아바타 미연결 — 프로파일 탭에서 로컬 GPU 프로파일 + Naia 로그인을 확인하세요."}
+								? `비디오 아바타 연결 실패${error ? ` — ${error}` : ""}`
+								: "비디오 아바타 미연결 — 설정에서 로컬 GPU 프로파일과 로그인을 확인하세요."}
 				</div>
 			)}
 		</div>
