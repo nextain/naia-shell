@@ -193,11 +193,21 @@ export class CascadeAvatarRenderer {
 		const b = document.createElement("video");
 		b.playsInline = true;
 		b.muted = true;
+		// ★2026-07-11 발화 오버레이(buf)를 idle(host)과 **정확히 겹치게**. 예전엔 buf=absolute 100%×100%
+		//   라 host(VIDEO_BASE_STYLE=maxWidth min(100%,56vh)/maxHeight 92% 로 중앙 축소)보다 크게 떠서
+		//   발화 영상이 다른 위치/크기(가운데 크게)로 나왔다(사용자 보고 — audio-first 로 발화가 이제
+		//   화면에 떠서 원래 있던 버그가 드러남). host 의 크기제약(maxWidth/maxHeight)·objectFit 을
+		//   **그대로 복사**하고 width/height=auto(→ 같은 비디오 = 같은 박스), **절대 중앙정렬**로 겹친다.
+		//   pan(host transform)은 중앙정렬 뒤에 이어붙여 동일 위치. inline 복사라 반응형 유지.
+		//   (grid-area 방식은 host 를 다음 행으로 밀어내 세로 어긋남 → absolute 중앙정렬로 회귀.)
+		const _hcs = getComputedStyle(hostVideo);
 		b.style.cssText =
-			"position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;transition:opacity .18s ease;pointer-events:none;z-index:0";
-		b.style.objectFit = getComputedStyle(hostVideo).objectFit || "contain";
-		b.style.background =
-			getComputedStyle(hostVideo).backgroundColor || "transparent";
+			"position:absolute;top:50%;left:50%;width:auto;height:auto;opacity:0;transition:opacity .18s ease;pointer-events:none;z-index:1";
+		b.style.maxWidth = hostVideo.style.maxWidth || "100%";
+		b.style.maxHeight = hostVideo.style.maxHeight || "100%";
+		b.style.objectFit = hostVideo.style.objectFit || _hcs.objectFit || "contain";
+		b.style.transform = `translate(-50%,-50%) ${hostVideo.style.transform || ""}`.trim();
+		b.style.background = _hcs.backgroundColor || "transparent";
 		const parent = hostVideo.parentElement;
 		if (parent) {
 			if (getComputedStyle(parent).position === "static")

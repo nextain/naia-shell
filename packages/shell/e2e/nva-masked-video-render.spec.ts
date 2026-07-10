@@ -398,4 +398,103 @@ test.describe("NVA 마스크 video 실렌더 (real Chromium, VP9 알파 webm →
 		expect(result.shownCount).toBeGreaterThan(0);
 		expect(result.anyUnmutedWhileShown).toBe(false); // ★muted 유지 — 비디오 오디오 재생 안 함
 	});
+
+	/**
+	 * ★2026-07-11 발화 오버레이 정렬 — 앱 그리드 레이아웃(VideoAvatarCanvas=display:grid;
+	 * place-items:center + host VIDEO_BASE_STYLE maxWidth min(100%,56vh)/maxHeight 92%)을 재현해,
+	 * buf(발화)가 host(idle)와 **동일한 화면 rect** 로 겹치는지 검증. 예전엔 buf=absolute 100%×100%
+	 * 라 host 보다 크게 가운데 떠서 어긋났다(사용자: "말하는 이미지가 가운데 다른 위치").
+	 */
+	test("발화 오버레이(buf)가 idle(host)과 같은 위치·크기로 겹친다 (앱 그리드)", async ({
+		page,
+	}) => {
+		await page.addInitScript(TAURI_NOOP);
+		await page.route(/127\.0\.0\.1:8910\//, async (route) => {
+			const req = route.request();
+			if (req.method() === "OPTIONS")
+				return route.fulfill({ status: 204, headers: CORS });
+			const url = req.url();
+			if (url.includes("/idle") || url.includes("/stream")) {
+				return route.fulfill({
+					status: 200,
+					contentType: "video/webm",
+					headers: CORS,
+					body: WEBM,
+				});
+			}
+			return route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				headers: CORS,
+				body: JSON.stringify({ ok: true }),
+			});
+		});
+		await page.goto("/");
+
+		const result = await page.evaluate(async () => {
+			// 앱과 동일: 그리드 컨테이너 + host VIDEO_BASE_STYLE.
+			const container = document.createElement("div");
+			container.style.cssText =
+				"position:fixed;top:0;left:0;width:480px;height:640px;display:grid;place-items:center;background:#222";
+			const host = document.createElement("video");
+			host.playsInline = true;
+			host.muted = true;
+			host.style.maxWidth = "min(100%, 56vh)";
+			host.style.maxHeight = "92%";
+			host.style.objectFit = "contain";
+			container.appendChild(host);
+			document.body.appendChild(container);
+
+			const mod = await import("/src/lib/avatar/cascade-renderer.ts");
+			const r = new mod.CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+
+			// idle(host) 디코드 대기 → rect 확정.
+			await new Promise((res) => {
+				const iv = setInterval(() => {
+					if (host.videoWidth > 0) {
+						clearInterval(iv);
+						res(undefined);
+					}
+				}, 40);
+				setTimeout(() => {
+					clearInterval(iv);
+					res(undefined);
+				}, 5000);
+			});
+
+			void r.speakAudio(btoa("x"), 24000, { muted: true });
+			// buf 가 표시될 때(opacity 1) rect 비교.
+			let best: { dl: number; dt: number; dw: number; dh: number } | null = null;
+			const buf = Array.from(container.querySelectorAll("video")).find(
+				(v) => v !== host,
+			) as HTMLVideoElement | undefined;
+			for (let i = 0; i < 30; i++) {
+				await new Promise((res) => setTimeout(res, 40));
+				if (!buf || getComputedStyle(buf).opacity !== "1") continue;
+				const h = host.getBoundingClientRect();
+				const bb = buf.getBoundingClientRect();
+				const cand = {
+					dl: Math.abs(h.left - bb.left),
+					dt: Math.abs(h.top - bb.top),
+					dw: Math.abs(h.width - bb.width),
+					dh: Math.abs(h.height - bb.height),
+				};
+				if (!best || cand.dl + cand.dt + cand.dw + cand.dh < best.dl + best.dt + best.dw + best.dh)
+					best = cand;
+			}
+			return { best, hostW: host.getBoundingClientRect().width };
+		});
+
+		expect(result.hostW).toBeGreaterThan(0);
+		expect(result.best).not.toBeNull();
+		// host 와 buf 의 위치·크기 차이가 3px 이내 = 정확히 겹침(예전엔 크게 어긋남).
+		const b = result.best as { dl: number; dt: number; dw: number; dh: number };
+		expect(b.dl).toBeLessThan(3);
+		expect(b.dt).toBeLessThan(3);
+		expect(b.dw).toBeLessThan(3);
+		expect(b.dh).toBeLessThan(3);
+	});
 });
