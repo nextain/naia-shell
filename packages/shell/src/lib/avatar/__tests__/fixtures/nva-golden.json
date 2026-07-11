@@ -1,5 +1,5 @@
 {
-  "_note": "정본 nva-core.js 생성 골든. 정본 변경 시 재생성(gen-nva-golden.mjs). vendor nva-core.ts 대조.",
+  "_note": "정본 nva-core.js(vendored canonical/nva-core.reference.mjs) 생성 골든. 정본 변경 시 재복사+재생성. vendor nva-core.ts 대조.",
   "fixtures": {
     "naia": {
       "nva_version": "0.2",

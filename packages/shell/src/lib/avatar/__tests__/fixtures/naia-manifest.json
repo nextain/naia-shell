@@ -1,0 +1,87 @@
+{
+  "nva_version": "0.2",
+  "meta": {
+    "name": "Naia (기본 캐릭터)",
+    "tagline": "Naia — The Liquid Cat",
+    "author": "nextain",
+    "owner": "nextain",
+    "license": "CC-BY-4.0 — Naia mascot © Nextain (naia-video-avatar 동봉 기본 자산)",
+    "created": "2026-07-02",
+    "description": "너의 AI, 액체 탄소로 이루어진 디지털 고양이 Naia. 로직 따라 투명하게 흘러다니다가 필요하면 다이아몬드처럼 단단해져 지켜준다.",
+    "persona": {
+      "type": "Rational Optimist (논리적 낙천주의자)",
+      "species": "네 컴퓨터에서 태어나 함께 자라는 디지털 생명체",
+      "role": "너와 디지털 세상 사이를 물처럼 잇는 살아있는 통로",
+      "value": "네 데이터는 밖으로 안 나가 — 로컬에서 내가 지킨다 (프라이버시)",
+      "home": "클라우드 없이 네 컴퓨터 안에 산다",
+      "traits": [
+        "지적 자신감(틀리면 솔직히 인정)",
+        "고양이 여유",
+        "투명한 솔직함 — 몸이 투명한 건 숨길 게 없어서",
+        "외형·성격 너에게 맞춰 바뀜"
+      ]
+    },
+    "note": "구조(v0.2 단일상태): 시작=idle(loop, 말하기 베이스) + 동작 N개(gesture, LLM 트리거). 포즈/전환/시나리오는 다음 버전(멀티 idle 상태). 3개 소스 영상 각각 크롭→RVM 매팅→알파 VP9(yuva420p)+원본 오디오(opus). 몸 유리룩=베이크(배경만 컷아웃). face_bbox=근사치(에디터 조정 가능)."
+  },
+  "canvas": {
+    "width": 406,
+    "height": 720,
+    "fps": 25
+  },
+  "background": {
+    "type": "transparent"
+  },
+  "animations": {
+    "idle": {
+      "clip": "clips/sijak.webm",
+      "loop": true,
+      "can_talk": false,
+      "face_bbox": [
+        0.34,
+        0.34,
+        0.3
+      ],
+      "label": "대기",
+      "description": "평상시 대기 상태 (기본 루프)"
+    },
+    "speak": {
+      "clip": "clips/speak_body.webm",
+      "loop": true,
+      "can_talk": true,
+      "face_bbox": [
+        0.1,
+        0.1,
+        0.8,
+        0.4
+      ],
+      "label": "말하기",
+      "description": "사용자에게 말할 때 — 헤드토킹 발화 (기본 말하기 루프)",
+      "head_image": "clips/speak_head.png",
+      "head_time": 1.27,
+      "head_chroma": "#00ff00"
+    },
+    "gesture-1": {
+      "clip": "clips/water_drop.webm",
+      "loop": false,
+      "can_talk": false,
+      "label": "물방울",
+      "description": "잠깐의 장난기·여유·환기를 표현할 때 (물방울을 만들며)"
+    },
+    "gesture-2": {
+      "clip": "clips/heart.webm",
+      "loop": false,
+      "can_talk": false,
+      "label": "하트",
+      "description": "애정·기쁨·감사·축하를 표현할 때 (하트를 만들고 춤)"
+    }
+  },
+  "expressions": {
+    "_note": "LLM 은 각 animation 의 label+description 을 읽고 동작을 고른다. 이 맵은 하위호환(감정→키).",
+    "neutral": "idle",
+    "speaking": "speak",
+    "playful": "gesture-1",
+    "thinking": "gesture-1",
+    "joy": "gesture-2",
+    "affection": "gesture-2"
+  }
+}
