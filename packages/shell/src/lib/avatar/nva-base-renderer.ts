@@ -31,8 +31,10 @@ export class NvaBaseRenderer {
 	private raf = 0;
 	private running = false;
 	private framesDrawn = 0;
+	private playToken = 0; // play() 재진입 가드(경쟁하는 로드 중 stale resolve 무시)
 	private _drawRect: DrawRect = { dx: 0, dy: 0, dw: 0, dh: 0 };
 	private onFrameHook?: (rect: DrawRect, video: HTMLVideoElement) => void;
+	private onEndedHook?: () => void;
 
 	constructor(private readonly canvas: HTMLCanvasElement) {
 		const ctx = canvas.getContext("2d", { alpha: true });
@@ -45,12 +47,20 @@ export class NvaBaseRenderer {
 		this.video = v;
 	}
 
+	// once(loop:false) 클립 종료 통지. 마지막 프레임은 render 루프가 계속 hold(정지 프레임 유지) → P4
+	// 상태머신이 onEnded 를 받아 idle 로 전환할 때까지 화면 공백 0. (loop=true 면 ended 자체가 안 남.)
+	private readonly onVideoEnded = () => {
+		this.onEndedHook?.();
+	};
+
 	/**
 	 * base 클립 재생 시작(첫 프레임 디코드까지 대기 후 resolve). loop=idle/talk, once=gesture.
-	 * 이미 루프가 돌고 있으면 src 만 교체(렌더 루프는 유지).
+	 * 이미 루프가 돌고 있으면 src 만 교체(렌더 루프는 유지). 경쟁 호출은 playToken 으로 stale 무시.
 	 */
 	async play(src: string, opts: { loop?: boolean } = {}): Promise<void> {
+		const token = ++this.playToken;
 		this.video.loop = opts.loop ?? true;
+		this.video.removeEventListener("ended", this.onVideoEnded); // 이전 클립 종료 리스너 해제
 		this.video.src = src;
 		await new Promise<void>((resolve, reject) => {
 			const done = () => {
@@ -68,6 +78,9 @@ export class NvaBaseRenderer {
 			this.video.addEventListener("loadeddata", done, { once: true });
 			this.video.addEventListener("error", fail, { once: true });
 		});
+		if (token !== this.playToken) return; // 더 최신 play() 가 시작됨 — stale 무시
+		if (!this.video.loop)
+			this.video.addEventListener("ended", this.onVideoEnded);
 		await this.video.play().catch(() => undefined);
 		this.start();
 	}
@@ -75,6 +88,11 @@ export class NvaBaseRenderer {
 	/** 매 프레임 base draw 직후 호출되는 훅(P2 head 오버레이 합성 지점). */
 	setOnFrame(cb: (rect: DrawRect, video: HTMLVideoElement) => void): void {
 		this.onFrameHook = cb;
+	}
+
+	/** once(loop:false) 클립이 끝까지 재생됐을 때 1회 호출(P4 상태머신 idle 복귀 훅). */
+	setOnEnded(cb: () => void): void {
+		this.onEndedHook = cb;
 	}
 
 	get drawRect(): DrawRect {
@@ -94,12 +112,14 @@ export class NvaBaseRenderer {
 		};
 	}
 
-	/** contain-fit: 종횡비 유지하며 canvas 안에 맞춤(letterbox/pillarbox). */
+	/** contain-fit: 종횡비 유지하며 canvas 안에 맞춤(letterbox/pillarbox). 0 크기/미로드 = 빈 rect. */
 	private computeRect(): DrawRect {
 		const cw = this.canvas.width;
 		const ch = this.canvas.height;
-		const vw = this.video.videoWidth || cw;
-		const vh = this.video.videoHeight || ch;
+		const vw = this.video.videoWidth;
+		const vh = this.video.videoHeight;
+		if (vw <= 0 || vh <= 0 || cw <= 0 || ch <= 0)
+			return { dx: 0, dy: 0, dw: 0, dh: 0 };
 		const scale = Math.min(cw / vw, ch / vh);
 		const dw = vw * scale;
 		const dh = vh * scale;
@@ -113,22 +133,29 @@ export class NvaBaseRenderer {
 			if (!this.running) return;
 			if (this.video.readyState >= 2) {
 				const r = this.computeRect();
-				this._drawRect = r;
-				this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); // 투명 유지
-				this.ctx.drawImage(this.video, r.dx, r.dy, r.dw, r.dh); // 알파 보존
-				this.framesDrawn += 1;
-				this.onFrameHook?.(r, this.video);
+				if (r.dw > 0 && r.dh > 0) {
+					this._drawRect = r;
+					this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); // 투명 유지
+					this.ctx.drawImage(this.video, r.dx, r.dy, r.dw, r.dh); // 알파 보존
+					this.framesDrawn += 1;
+					try {
+						this.onFrameHook?.(r, this.video);
+					} catch {
+						/* 훅 예외가 렌더 루프를 죽이지 않게 격리 */
+					}
+				}
 			}
 			this.raf = requestAnimationFrame(draw);
 		};
 		this.raf = requestAnimationFrame(draw);
 	}
 
-	/** 렌더 정지 + 비디오 일시정지(리소스 정리). */
+	/** 렌더 정지 + 비디오 일시정지 + 종료 리스너 해제(리소스 정리). */
 	stop(): void {
 		this.running = false;
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
+		this.video.removeEventListener("ended", this.onVideoEnded);
 		this.video.pause();
 	}
 }

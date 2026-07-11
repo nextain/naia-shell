@@ -66,4 +66,56 @@ test.describe("NVA P1 — base 렌더러(canvas 픽셀)", () => {
 		// 모서리 여백 = 투명 보존(clearRect + 클립 알파 0).
 		expect(result.corner[3], `corner=${result.corner}`).toBeLessThan(40);
 	});
+
+	test("once(gesture) 클립 종료 시 onEnded 통지 + 마지막 프레임 hold", async ({
+		page,
+	}) => {
+		await page.addInitScript(TAURI_NOOP);
+		await page.goto("/");
+
+		const b64 = CLIP.toString("base64");
+		const result = await page.evaluate(async (data: string) => {
+			const { NvaBaseRenderer } = await import(
+				"/src/lib/avatar/nva-base-renderer.ts"
+			);
+			const bin = atob(data);
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			const url = URL.createObjectURL(
+				new Blob([bytes], { type: "video/webm" }),
+			);
+
+			const canvas = document.createElement("canvas");
+			canvas.width = 200;
+			canvas.height = 200;
+			document.body.appendChild(canvas);
+
+			const renderer = new NvaBaseRenderer(canvas);
+			let ended = 0;
+			renderer.setOnEnded(() => {
+				ended += 1;
+			});
+			await renderer.play(url, { loop: false }); // gesture=once
+			// 클립 1s + 여유. 종료(ended) 발생 대기.
+			await new Promise((r) => setTimeout(r, 1600));
+
+			const framesAtEnd = renderer.state().framesDrawn;
+			const ctx = canvas.getContext("2d", { alpha: true });
+			// 종료 후에도 마지막 프레임 hold(중앙 콘텐츠 유지).
+			const center = ctx
+				? Array.from(ctx.getImageData(100, 100, 1, 1).data)
+				: [];
+			renderer.stop();
+			URL.revokeObjectURL(url);
+			return { ended, framesAtEnd, center };
+		}, b64);
+
+		expect(result.ended, "onEnded 1회 통지").toBe(1); // once 종료 통지
+		expect(result.framesAtEnd).toBeGreaterThan(0);
+		// 종료 후에도 마지막 프레임이 그려져 있음(hold — 공백/블랙 아님).
+		expect(result.center[0], `held center=${result.center}`).toBeGreaterThan(
+			150,
+		);
+		expect(result.center[3]).toBeGreaterThan(200);
+	});
 });
