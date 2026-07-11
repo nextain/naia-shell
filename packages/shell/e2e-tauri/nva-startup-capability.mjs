@@ -97,19 +97,29 @@ async function main() {
 	app.stdout.on("data", onData);
 	app.stderr.on("data", onData);
 
+	// 라인 스코프 추출: `[NvaCapability]` 를 포함한 완성 라인에서 첫 `{`~마지막 `}` 를 JSON.parse.
+	// (정규식 greedy 매칭보다 강건 — 로그가 섞여도 라인 경계로 격리, 부분 라인은 parse 실패→다음 폴링 대기.)
+	function extractCaps(text) {
+		for (const line of text.split(/\r?\n/)) {
+			const tag = line.indexOf("[NvaCapability]");
+			if (tag < 0) continue;
+			const s = line.indexOf("{", tag);
+			const e = line.lastIndexOf("}");
+			if (s < 0 || e <= s) continue;
+			try {
+				return JSON.parse(line.slice(s, e + 1));
+			} catch {
+				/* 아직 부분 라인 — 다음 폴링 */
+			}
+		}
+		return null;
+	}
+
 	const deadline = Date.now() + BOOT_TIMEOUT_MS;
 	let caps = null;
 	while (Date.now() < deadline) {
-		// [NvaCapability] ... 능력 프로브 {"rvfc":true,...,"reasons":"-"}  (JSON = 단일 레벨, 중첩 없음)
-		const m = buf.match(/\[NvaCapability\][^{]*(\{[^{}]*\})/);
-		if (m) {
-			try {
-				caps = JSON.parse(m[1]);
-				break;
-			} catch {
-				/* 부분 라인 — 계속 대기 */
-			}
-		}
+		caps = extractCaps(buf);
+		if (caps) break;
 		await sleep(500);
 	}
 
