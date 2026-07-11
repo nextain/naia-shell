@@ -24,6 +24,7 @@
     "test:e2e:nva-p0": "playwright test e2e/nva-p0-sync-capability.spec.ts",
     "test:e2e:tauri": "wdio run e2e-tauri/wdio.conf.ts",
     "test:e2e:tauri:nva": "wdio run e2e-tauri/wdio.conf.ts --spec e2e-tauri/specs/13-nva-capability.spec.ts",
+    "test:e2e:tauri:nva-startup": "node e2e-tauri/nva-startup-capability.mjs",
     "gen:nva-golden": "node scripts/gen-nva-golden.mjs"
   },
   "dependencies": {
