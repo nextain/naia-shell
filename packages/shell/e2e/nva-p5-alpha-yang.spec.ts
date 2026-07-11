@@ -28,9 +28,10 @@ const FIX = HAS_BUNDLE
 			idle: bundleB64("clips/idle.webm"),
 			speak: bundleB64("clips/speak.webm"),
 			head: fixB64("head-green-100.mp4"),
+			speakPng: bundleB64("clips/speak.png"), // 저작한 head_image(Ditto 소스 얼굴 크롭)
 			manifest: JSON.parse(readFileSync(join(BUNDLE, "manifest.json"), "utf8")),
 		}
-	: { idle: "", speak: "", head: "", manifest: {} };
+	: { idle: "", speak: "", head: "", speakPng: "", manifest: {} };
 const TAURI_NOOP = `window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
 window.__TAURI_INTERNALS__.invoke = window.__TAURI_INTERNALS__.invoke || (async () => undefined);`;
 
@@ -123,5 +124,81 @@ test.describe("NVA P5 — alpha-yang.nva 통합(실 저작본)", () => {
 		// endSpeak: idle 복귀.
 		expect(r.s2.state).toBe("idle");
 		expect(r.s2.body[3]).toBeGreaterThan(120);
+	});
+
+	test("저작한 speak.png(head_image): 유효한 얼굴 크롭 + face_bbox 종횡비 정합", async ({
+		page,
+	}) => {
+		test.skip(!HAS_BUNDLE, "alpha-yang 번들 없음 — 워크스페이스 전용");
+		test.setTimeout(45_000);
+		await page.addInitScript(TAURI_NOOP);
+		await page.goto("/");
+
+		const r = await page.evaluate(
+			async ({
+				pngB64,
+				bbox,
+				canvasW,
+				canvasH,
+			}: {
+				pngB64: string;
+				bbox: number[];
+				canvasW: number;
+				canvasH: number;
+			}) => {
+				const bin = atob(pngB64);
+				const u = new Uint8Array(bin.length);
+				for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+				const url = URL.createObjectURL(new Blob([u], { type: "image/png" }));
+				const img = new Image();
+				await new Promise((res, rej) => {
+					img.onload = res;
+					img.onerror = rej;
+					img.src = url;
+				});
+				const w = img.naturalWidth;
+				const h = img.naturalHeight;
+				const canvas = document.createElement("canvas");
+				canvas.width = w;
+				canvas.height = h;
+				const ctx = canvas.getContext("2d", { alpha: true });
+				if (!ctx) throw new Error("no ctx");
+				ctx.drawImage(img, 0, 0);
+				// 얼굴 중앙부(코/볼) 스킨톤 표본 — 크롭이 실제 얼굴을 담았는지.
+				const cx = Math.floor(w * 0.5);
+				const cy = Math.floor(h * 0.55);
+				const center = Array.from(ctx.getImageData(cx, cy, 1, 1).data);
+				// 불투명(콘텐츠 존재) 픽셀 비율 — 크롭이 대부분 투명(빈 크롭)이 아님.
+				const data = ctx.getImageData(0, 0, w, h).data;
+				let opaque = 0;
+				for (let i = 3; i < data.length; i += 4) if (data[i] > 40) opaque++;
+				const opaqueFrac = opaque / (w * h);
+				URL.revokeObjectURL(url);
+				// face_bbox 픽셀 종횡비 = (w*canvasW)/(h*canvasH) — 정규화 w,h 는 서로 다른 축 기준이므로 canvas 스케일 반영.
+				const bboxAspect = (bbox[2] * canvasW) / (bbox[3] * canvasH);
+				return { w, h, center, opaqueFrac, cropAspect: w / h, bboxAspect };
+			},
+			{
+				pngB64: FIX.speakPng,
+				bbox: FIX.manifest.animations.speak.face_bbox,
+				canvasW: FIX.manifest.canvas.width,
+				canvasH: FIX.manifest.canvas.height,
+			},
+		);
+
+		// biome-ignore lint/suspicious/noConsole: 진단
+		console.log(
+			`[speak.png] ${r.w}x${r.h} center=${r.center} opaqueFrac=${r.opaqueFrac.toFixed(2)} cropAspect=${r.cropAspect.toFixed(2)} bboxAspect=${r.bboxAspect.toFixed(2)}`,
+		);
+		// 유효 크기(빈 이미지 아님).
+		expect(r.w).toBeGreaterThan(40);
+		expect(r.h).toBeGreaterThan(40);
+		// 얼굴 콘텐츠: 대부분 불투명(빈 크롭 아님) + 중앙 스킨톤(밝고 R≥G≥B 경향, 불투명).
+		expect(r.opaqueFrac, `opaqueFrac=${r.opaqueFrac}`).toBeGreaterThan(0.5);
+		expect(r.center[3], `center=${r.center}`).toBeGreaterThan(150); // 불투명 얼굴
+		expect(r.center[0]).toBeGreaterThan(120); // 스킨 밝기
+		expect(r.center[0]).toBeGreaterThanOrEqual(r.center[2] - 10); // R ≳ B(스킨)
+		// 크롭 종횡비가 face_bbox 종횡비와 근사(저작이 face_bbox 기준으로 잘림).
+		expect(Math.abs(r.cropAspect - r.bboxAspect)).toBeLessThan(0.15);
 	});
 });
