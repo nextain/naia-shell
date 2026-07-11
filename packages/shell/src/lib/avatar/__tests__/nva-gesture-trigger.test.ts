@@ -72,6 +72,18 @@ describe("parseGestureTriggers — LLM 마커 → gesture key", () => {
 		expect(r.gestures.map((g) => g.key)).toEqual(["gesture-1", "gesture-2"]);
 		expect(r.cleanText).toBe("A B C");
 	});
+	it("악성 입력 방어: 마커 수 상한(16)", () => {
+		const many = Array.from({ length: 30 }, () => "[[g:하트]]").join(" ");
+		const r = parseGestureTriggers(many, M);
+		expect(r.gestures.length).toBe(16); // 상한까지만 트리거
+		expect(r.cleanText.includes("[[")).toBe(false); // 마커는 전부 제거
+	});
+	it("악성 입력 방어: 마커 값 길이 상한(64) 초과=미해석", () => {
+		const long = `[[gesture:${"x".repeat(100)}]]`;
+		const r = parseGestureTriggers(long, M);
+		expect(r.gestures).toEqual([]);
+		expect(r.cleanText).toBe("");
+	});
 	it("빈/무마커 텍스트", () => {
 		expect(parseGestureTriggers("그냥 인사", M)).toEqual({
 			cleanText: "그냥 인사",

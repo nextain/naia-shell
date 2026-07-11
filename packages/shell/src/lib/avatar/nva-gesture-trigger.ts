@@ -22,6 +22,9 @@ export interface GestureParseResult {
 
 // [[gesture:X]] / [[g:X]] — X 는 `]` `[` 제외 1글자 이상. 대소문자 무시.
 const MARKER = /\[\[\s*(?:gesture|g)\s*:\s*([^[\]]+?)\s*\]\]/gi;
+// 악성/실수 입력 방어: 트리거할 gesture 수 상한 + 마커 값 길이 상한(초과분은 트리거 안 함, 텍스트에선 제거).
+const MAX_GESTURES = 16;
+const MAX_VALUE_LEN = 64;
 
 /** gesture-kind 애니의 key/label/intent/triggers 를 소문자 인덱스 → 마커 값 해석용. */
 function buildLookup(m: NvaManifest): Map<string, string> {
@@ -52,10 +55,13 @@ export function parseGestureTriggers(
 	const gestures: ParsedGesture[] = [];
 	const cleanText = (text || "")
 		.replace(MARKER, (_full: string, raw: string) => {
-			const val = String(raw).trim().toLowerCase();
-			const key = lookup.get(val);
-			if (key) gestures.push({ key, matched: String(raw).trim() });
-			return ""; // 해석 성공/실패 무관 — 마커는 표시 텍스트에서 제거
+			const rawStr = String(raw).trim();
+			// 길이/개수 상한 안에서만 해석(초과=미해석). 마커는 어느 경우든 표시 텍스트에서 제거.
+			if (rawStr.length <= MAX_VALUE_LEN && gestures.length < MAX_GESTURES) {
+				const key = lookup.get(rawStr.toLowerCase());
+				if (key) gestures.push({ key, matched: rawStr });
+			}
+			return "";
 		})
 		.replace(/[ \t]{2,}/g, " ") // 마커 제거로 생긴 연속 공백 축약
 		.replace(/ +(\n|$)/g, "$1") // 줄끝/문장끝 잉여 공백 제거
