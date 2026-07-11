@@ -83,7 +83,11 @@ export class NvaSyncDriver {
 			} else {
 				this.video.playbackRate = 1; // 오디오 미시작 = 보정 보류
 			}
-			onFrame?.(meta);
+			try {
+				onFrame?.(meta);
+			} catch {
+				/* 훅 예외가 rVFC 제어 루프를 죽이지 않게 격리 */
+			}
 			this.handle = rvfc.call(this.video, cb);
 		};
 		this.handle = rvfc.call(this.video, cb);
