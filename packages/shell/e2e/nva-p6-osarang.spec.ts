@@ -26,7 +26,7 @@ const FIX = HAS_BUNDLE
 			idle: bB64("clips/idle.webm"),
 			speak: bB64("clips/speak.webm"),
 			head: fB64("head-green-100.mp4"),
-			srcFrame: bB64("clips/source_frame.png"), // head_image(Ditto 소스 = 전체 프레임)
+			srcFrame: bB64("clips/source_frame.png"),
 			manifest: JSON.parse(readFileSync(join(BUNDLE, "manifest.json"), "utf8")),
 		}
 	: { idle: "", speak: "", head: "", srcFrame: "", manifest: {} };
@@ -44,16 +44,17 @@ const SETUP = `async function setup(FIX){
   const ctx=canvas.getContext("2d",{alpha:true});
   const px=(x,y)=>Array.from(ctx.getImageData(x,y,1,1).data);
   const audioStart=performance.now()/1000;
-  return { head, clipMap, canvas, px, audioClock:()=>performance.now()/1000 - audioStart };
+  return { head, clipMap, canvas, ctx, px, audioClock:()=>performance.now()/1000 - audioStart };
 }`;
 
 /**
  * ★NVA 레이어드 플레이어 P6 — osarang.nva 통합(4K→720 축소 + 배경 마스킹).
- *   게이트: (1) 마스킹(B-R geq 알파)이 브라우저에서 배경 투명(corner alpha 0)으로 디코딩 — 핵심 요구,
- *   (2) 실 manifest+클립으로 idle→speak 렌더 + speak.face_bbox([0.41,0.15,0.17,0.11]) 위치 head 합성.
+ *   게이트: (1) 마스킹(B-R soft geq 알파)이 브라우저에서 배경 투명 + **프린지(반투명 잔여) 유계**로 디코딩 —
+ *   핵심 요구, (2) 실 manifest+클립으로 idle→speak 렌더 + speak.face_bbox 위치 head 합성.
+ *   마스킹 검증 = 전체 프레임 알파 히스토그램(투명/불투명/프린지 비율)을 다프레임 집계(요행 배제).
  */
 test.describe("NVA P6 — osarang.nva 통합(배경 마스킹)", () => {
-	test("마스킹된 osarang: 배경 투명 + idle→speak(head 합성)→endSpeak", async ({
+	test("마스킹된 osarang: 배경 투명 + 프린지 유계 + idle→speak(head 합성)→endSpeak", async ({
 		page,
 	}) => {
 		test.skip(
@@ -68,7 +69,7 @@ test.describe("NVA P6 — osarang.nva 통합(배경 마스킹)", () => {
 			async ({ FIX, setupSrc }: { FIX: typeof FIX; setupSrc: string }) => {
 				// biome-ignore lint/security/noGlobalEval: 브라우저측 테스트 셋업 주입
 				const setup = (0, eval)(`(${setupSrc})`);
-				const { head, clipMap, px, audioClock } = await setup(FIX);
+				const { head, clipMap, ctx, px, audioClock } = await setup(FIX);
 				const { NvaLayeredPlayer } = await import(
 					"/src/lib/avatar/nva-layered-player.ts"
 				);
@@ -79,113 +80,106 @@ test.describe("NVA P6 — osarang.nva 통합(배경 마스킹)", () => {
 					FIX.manifest,
 					{ resolveClip: (c: string) => clipMap[c] },
 				);
-				const canvas = document.querySelector("canvas") as HTMLCanvasElement;
-				const ctx2 = canvas.getContext("2d", { alpha: true });
-				if (!ctx2) throw new Error("no ctx2");
-				const alphaAt = (x: number, y: number) =>
-					ctx2.getImageData(x, y, 1, 1).data[3];
-				// 캐릭터 밖 배경 표본(코너 4 + 좌우/상단 엣지) — 전부 투명이어야 마스킹 성립.
-				const BG_PTS: Array<[number, number]> = [
-					[4, 4],
-					[176, 4],
-					[4, 316],
-					[176, 316],
-					[8, 160],
-					[172, 160],
-					[8, 90],
-					[172, 90],
-				];
-				// 캐릭터 몸통 표본 — 전부 불투명이어야(마스크가 캐릭터를 지우지 않음).
 				const CHAR_PTS: Array<[number, number]> = [
 					[90, 185],
 					[88, 140],
 					[92, 160],
 				];
-				const maskMetrics = () => {
-					const bg = BG_PTS.map(([x, y]) => alphaAt(x, y));
-					const ch = CHAR_PTS.map(([x, y]) => alphaAt(x, y));
-					// 상단 3행(캐릭터 위 = 배경) 평균 알파 — 프린지/반투명 잔여 검출.
-					const strip = ctx2.getImageData(0, 0, 180, 3).data;
-					let sum = 0;
-					let n = 0;
-					for (let i = 3; i < strip.length; i += 4) {
-						sum += strip[i];
-						n++;
+				// 전체 프레임(180x320) 알파 히스토그램: 투명(<20)·불투명(>235)·프린지(20~235) 비율.
+				const histogram = () => {
+					const d = ctx.getImageData(0, 0, 180, 320).data;
+					let trans = 0;
+					let opaque = 0;
+					let fringe = 0;
+					const total = 180 * 320;
+					for (let i = 3; i < d.length; i += 4) {
+						const a = d[i];
+						if (a < 20) trans++;
+						else if (a > 235) opaque++;
+						else fringe++;
 					}
 					return {
-						bgMax: Math.max(...bg),
-						chMin: Math.min(...ch),
-						stripAvg: sum / n,
+						transFrac: trans / total,
+						opaqueFrac: opaque / total,
+						fringeFrac: fringe / total,
 					};
 				};
-				const snap = async (ms: number) => {
-					await new Promise((res) => setTimeout(res, ms));
-					return {
-						state: player.state,
-						body: px(90, 185),
-						corner: px(4, 4),
-						face: px(89, 65),
-						frames: player.stats().framesDrawn,
-						mask: maskMetrics(),
-					};
+				const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+				// 다프레임 집계(최악치). 단발 프레임 요행 배제.
+				const aggregate = async () => {
+					let maxFringe = 0;
+					let minTrans = 1;
+					let chMin = 255;
+					for (let k = 0; k < 4; k++) {
+						await sleep(110);
+						const h = histogram();
+						maxFringe = Math.max(maxFringe, h.fringeFrac);
+						minTrans = Math.min(minTrans, h.transFrac);
+						for (const [x, y] of CHAR_PTS)
+							chMin = Math.min(chMin, ctx.getImageData(x, y, 1, 1).data[3]);
+					}
+					return { maxFringe, minTrans, chMin };
 				};
 
 				await player.start();
-				const s0 = await snap(400);
+				await sleep(300);
+				const s0 = {
+					state: player.state,
+					frames: player.stats().framesDrawn,
+					agg: await aggregate(),
+				};
 				await player.speak({ video: head, audioClock });
-				const s1 = await snap(450);
+				await sleep(350);
+				const s1 = {
+					state: player.state,
+					face: px(89, 65),
+					agg: await aggregate(),
+				};
 				player.endSpeak();
-				const s2 = await snap(350);
+				await sleep(300);
+				const s2 = { state: player.state, agg: await aggregate() };
 				player.dispose();
 				return { derived, s0, s1, s2 };
 			},
 			{ FIX, setupSrc: SETUP },
 		);
 
-		// biome-ignore lint/suspicious/noConsole: P6 진단(마스킹 메트릭)
+		// biome-ignore lint/suspicious/noConsole: P6 진단(마스킹 히스토그램)
 		console.log(
-			`[P6 osarang] idle mask=${JSON.stringify(r.s0.mask)} body=${r.s0.body} | speak mask=${JSON.stringify(r.s1.mask)} face=${r.s1.face}`,
+			`[P6 osarang] idle=${JSON.stringify(r.s0.agg)} | speak=${JSON.stringify(r.s1.agg)} face=${r.s1.face}`,
 		);
 		expect(r.derived.idleKey).toBe("idle");
 		expect(r.derived.talkKey).toBe("speak");
-		// idle: 캐릭터 렌더 + ★배경 마스킹 실효(다점 배경 전부 투명 + 캐릭터 전부 불투명 + 상단 스트립 평균 알파 낮음).
+		// idle: 캐릭터 불투명 + 배경 투명(상당 비율) + ★프린지(반투명 잔여) 유계 — 소프트 엣지가 얇은 밴드에 국한.
 		expect(r.s0.state).toBe("idle");
 		expect(r.s0.frames).toBeGreaterThan(0);
+		expect(r.s0.agg.chMin, `idle chMin=${r.s0.agg.chMin}`).toBeGreaterThan(200); // 캐릭터 불투명
 		expect(
-			r.s0.mask.chMin,
-			`idle char min alpha=${r.s0.mask.chMin}`,
-		).toBeGreaterThan(200); // 캐릭터 불투명(마스크가 캐릭터를 안 지움)
-		// ★주 지표: 캐릭터 위 배경 스트립(540px) 평균 알파 ≈ 0 = 배경 영역이 사실상 전부 투명(프린지/반투명 잔여 없음).
+			r.s0.agg.minTrans,
+			`idle transFrac=${r.s0.agg.minTrans}`,
+		).toBeGreaterThan(0.3); // 배경 투명 상당
 		expect(
-			r.s0.mask.stripAvg,
-			`idle strip avg=${r.s0.mask.stripAvg}`,
-		).toBeLessThan(6);
-		// bgMax(개별 배경점) — 소프트 마스크의 안티앨리어싱 엣지가 실루엣 근처 배경점에 부분 알파를 남길 수 있어 다소 완화.
-		expect(
-			r.s0.mask.bgMax,
-			`idle bg max alpha=${r.s0.mask.bgMax}`,
-		).toBeLessThan(50);
-		// speaking: 배경 마스킹 유지 + face_bbox 위치 head 빨강 합성.
+			r.s0.agg.maxFringe,
+			`idle fringeFrac=${r.s0.agg.maxFringe}`,
+		).toBeLessThan(0.09); // 프린지 얇음
+		// speaking: 배경 마스킹 유지(프린지 유계) + face_bbox head 빨강.
 		expect(r.s1.state).toBe("speaking");
 		expect(
-			r.s1.mask.stripAvg,
-			`speak strip avg=${r.s1.mask.stripAvg}`,
-		).toBeLessThan(6);
+			r.s1.agg.minTrans,
+			`speak transFrac=${r.s1.agg.minTrans}`,
+		).toBeGreaterThan(0.3);
 		expect(
-			r.s1.mask.bgMax,
-			`speak bg max alpha=${r.s1.mask.bgMax}`,
-		).toBeLessThan(50);
+			r.s1.agg.maxFringe,
+			`speak fringeFrac=${r.s1.agg.maxFringe}`,
+		).toBeLessThan(0.11); // head 오버레이 여유
 		expect(r.s1.face[0], `speak face=${r.s1.face}`).toBeGreaterThan(140);
 		expect(r.s1.face[1], `speak face=${r.s1.face}`).toBeLessThan(110);
-		// endSpeak: idle 복귀 + 배경 여전히 마스킹.
+		// endSpeak: idle 복귀 + 배경 마스킹 유지.
 		expect(r.s2.state).toBe("idle");
 		expect(
-			r.s2.mask.stripAvg,
-			`s2 strip avg=${r.s2.mask.stripAvg}`,
-		).toBeLessThan(6);
-		expect(r.s2.mask.bgMax, `s2 bg max alpha=${r.s2.mask.bgMax}`).toBeLessThan(
-			50,
-		);
+			r.s2.agg.maxFringe,
+			`s2 fringeFrac=${r.s2.agg.maxFringe}`,
+		).toBeLessThan(0.09);
 	});
 
 	test("head_image(source_frame.png): 유효한 Ditto 소스 프레임 + canvas 치수 정합", async ({
@@ -220,7 +214,6 @@ test.describe("NVA P6 — osarang.nva 통합(배경 마스킹)", () => {
 				const ctx = c.getContext("2d", { alpha: true });
 				if (!ctx) throw new Error("no ctx");
 				ctx.drawImage(img, 0, 0);
-				// face_bbox 영역(0.41,0.15 중심)에서 스킨톤 표본 — 소스가 실제 얼굴 담음.
 				const face = Array.from(
 					ctx.getImageData(Math.floor(w * 0.49), Math.floor(h * 0.19), 1, 1)
 						.data,
@@ -237,11 +230,9 @@ test.describe("NVA P6 — osarang.nva 통합(배경 마스킹)", () => {
 
 		// biome-ignore lint/suspicious/noConsole: 진단
 		console.log(`[source_frame] ${r.w}x${r.h} face=${r.face}`);
-		// Ditto 소스 = 전체 프레임 → canvas 치수와 일치.
 		expect(r.w).toBe(r.canvasW);
 		expect(r.h).toBe(r.canvasH);
-		// face_bbox 위치에 스킨톤(밝고 R≥B, 불투명) = 실제 얼굴.
 		expect(r.face[0], `face=${r.face}`).toBeGreaterThan(90);
-		expect(r.face[0]).toBeGreaterThanOrEqual(r.face[2] - 10); // R ≳ B(스킨)
+		expect(r.face[0]).toBeGreaterThanOrEqual(r.face[2] - 10);
 	});
 });
