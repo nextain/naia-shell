@@ -133,7 +133,9 @@ export class NvaLayeredPlayer {
 		this.clearGestureListener();
 		this.teardownHead();
 		if (this.idleKey)
-			void this.swapTo(this.idleKey, { loop: true }, this.epoch);
+			void this.swapTo(this.idleKey, { loop: true }, this.epoch).catch(
+				() => undefined, // 로드 실패 = 현재 프레임 hold(unhandled rejection 방지)
+			);
 		this._state = "idle";
 	}
 
@@ -157,7 +159,10 @@ export class NvaLayeredPlayer {
 			this.gestureCleanup = null;
 			if (myEpoch !== this.epoch) return; // 그새 다른 전환 — 복귀 안 함
 			const back = this.returnKey ?? this.idleKey;
-			if (back) void this.swapTo(back, { loop: true }, ++this.epoch);
+			if (back)
+				void this.swapTo(back, { loop: true }, ++this.epoch).catch(
+					() => undefined,
+				);
 			this._state = this.head ? "speaking" : "idle";
 		};
 		gestureVideo.addEventListener("ended", onEnded);
