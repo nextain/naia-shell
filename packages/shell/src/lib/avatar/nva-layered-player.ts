@@ -63,6 +63,8 @@ export class NvaLayeredPlayer {
 	private epoch = 0; // 전환 race 가드(비동기 로드가 뒤늦게 반영되는 것 차단)
 	private framesDrawn = 0;
 	private returnKey: string | null = null; // gesture 종료 후 복귀할 base 키
+	private abortLoad: (() => void) | null = null; // 진행 중 back 로드 취소(동시 전환 충돌 방지)
+	private gestureCleanup: (() => void) | null = null; // gesture ended 리스너 해제(front 캡처)
 
 	constructor(
 		canvas: HTMLCanvasElement,
@@ -116,6 +118,7 @@ export class NvaLayeredPlayer {
 		if (!this.talkKey)
 			throw new Error("manifest 에 talk(can_talk) 애니가 없음");
 		const myEpoch = ++this.epoch; // 이전 전환 무효화
+		this.clearGestureListener();
 		this.teardownHead();
 		this.head = head;
 		await this.swapTo(this.talkKey, { loop: true }, myEpoch);
@@ -127,6 +130,7 @@ export class NvaLayeredPlayer {
 	/** 발화 종료 / barge-in → idle 복귀. */
 	endSpeak(): void {
 		this.epoch++;
+		this.clearGestureListener();
 		this.teardownHead();
 		if (this.idleKey)
 			void this.swapTo(this.idleKey, { loop: true }, this.epoch);
@@ -141,19 +145,30 @@ export class NvaLayeredPlayer {
 		const anim = this.manifest.animations?.[key];
 		if (!anim) throw new Error(`gesture 애니 없음: ${key}`);
 		const myEpoch = ++this.epoch;
+		this.clearGestureListener(); // 이전 gesture 리스너 해제
 		this.returnKey = this._state === "speaking" ? this.talkKey : this.idleKey;
 		await this.swapTo(key, { loop: false }, myEpoch);
 		if (myEpoch !== this.epoch) return;
 		this._state = "gesturing";
-		// gesture 종료 → 복귀. ended 는 front 비디오에서.
+		// gesture 종료 → 복귀. ended 리스너는 **현재 front 를 캡처**(이후 front 가 바뀌어도 올바른 요소서 해제).
+		const gestureVideo = this.front;
 		const onEnded = () => {
-			this.front.removeEventListener("ended", onEnded);
-			if (myEpoch !== this.epoch) return; // 그새 다른 전환
+			gestureVideo.removeEventListener("ended", onEnded);
+			this.gestureCleanup = null;
+			if (myEpoch !== this.epoch) return; // 그새 다른 전환 — 복귀 안 함
 			const back = this.returnKey ?? this.idleKey;
 			if (back) void this.swapTo(back, { loop: true }, ++this.epoch);
 			this._state = this.head ? "speaking" : "idle";
 		};
-		this.front.addEventListener("ended", onEnded);
+		gestureVideo.addEventListener("ended", onEnded);
+		this.gestureCleanup = () =>
+			gestureVideo.removeEventListener("ended", onEnded);
+	}
+
+	/** 대기 중 gesture ended 리스너 해제(캡처한 요소서). 전환/정지 시 호출. */
+	private clearGestureListener(): void {
+		this.gestureCleanup?.();
+		this.gestureCleanup = null;
 	}
 
 	/** 전체 정지 + 리소스 해제. */
@@ -162,6 +177,8 @@ export class NvaLayeredPlayer {
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
 		this.epoch++;
+		this.abortLoad?.(); // 진행 중 back 로드 취소
+		this.clearGestureListener();
 		this.teardownHead();
 		this.front.pause();
 		this.back.pause();
@@ -175,7 +192,11 @@ export class NvaLayeredPlayer {
 
 	// ── 내부 ────────────────────────────────────────────────────────────────
 
-	/** 더블버퍼 교체: back 에 새 클립 로드 → 첫 프레임 준비되면 front/back swap(교체 순간까지 old front 유지=공백0). */
+	/**
+	 * 더블버퍼 교체: back 에 새 클립 로드 → 첫 프레임 준비되면 front/back swap(교체 순간까지 old front 유지=공백0).
+	 * 공유 back 을 두 전환이 동시에 건드리는 것을 막기 위해, 새 swapTo 는 진행 중이던 로드를 먼저 **취소**
+	 * (abortLoad — 리스너 해제 + 대기 promise 를 superseded 로 resolve)한 뒤 시작한다. 그래서 항상 단일 로드만 유효.
+	 */
 	private async swapTo(
 		key: string,
 		opts: { loop: boolean },
@@ -184,30 +205,55 @@ export class NvaLayeredPlayer {
 		const anim = this.manifest.animations?.[key];
 		if (!anim?.clip) throw new Error(`clip 없는 애니: ${key}`);
 		const url = this.opts.resolveClip(anim.clip);
+		// 이전 진행 중 로드가 있으면 취소(그 promise 는 superseded 로 unblock).
+		this.abortLoad?.();
 		const back = this.back;
 		back.loop = opts.loop;
-		back.src = url;
-		await new Promise<void>((resolve, reject) => {
+
+		const loaded = await new Promise<"ok" | "aborted" | "error">((resolve) => {
 			const done = () => {
 				cleanup();
-				resolve();
+				resolve("ok");
 			};
 			const fail = () => {
 				cleanup();
-				if (myEpoch !== this.epoch) resolve();
-				// superseded=에러 아님
-				else reject(new Error(`base 클립 로드 실패: ${key}`));
+				resolve("error");
 			};
 			const cleanup = () => {
 				back.removeEventListener("loadeddata", done);
 				back.removeEventListener("error", fail);
+				if (this.abortLoad === abort) this.abortLoad = null;
 			};
+			const abort = () => {
+				cleanup();
+				resolve("aborted");
+			};
+			this.abortLoad = abort;
+			back.src = url;
 			back.addEventListener("loadeddata", done, { once: true });
 			back.addEventListener("error", fail, { once: true });
 		});
-		if (myEpoch !== this.epoch) return; // stale 전환 폐기(old front 유지)
+
+		if (loaded === "aborted" || myEpoch !== this.epoch) {
+			// superseded — back 로드 중단(고아 디코딩 방지), old front 유지. swap 안 함.
+			try {
+				back.pause();
+			} catch {
+				/* noop */
+			}
+			return;
+		}
+		if (loaded === "error") throw new Error(`base 클립 로드 실패: ${key}`);
+
 		await back.play().catch(() => undefined);
-		if (myEpoch !== this.epoch) return;
+		if (myEpoch !== this.epoch) {
+			try {
+				back.pause();
+			} catch {
+				/* noop */
+			}
+			return;
+		}
 		// swap: back 이 새 front. old front 는 back 이 되어 다음 프리로드에 재사용(정지).
 		const oldFront = this.front;
 		this.front = back;
