@@ -118,4 +118,43 @@ test.describe("NVA P1 — base 렌더러(canvas 픽셀)", () => {
 		);
 		expect(result.center[3]).toBeGreaterThan(200);
 	});
+
+	test("play() 로드 중 stop() 하면 렌더 루프 미가동 (race 차단)", async ({
+		page,
+	}) => {
+		await page.addInitScript(TAURI_NOOP);
+		await page.goto("/");
+
+		const b64 = CLIP.toString("base64");
+		const result = await page.evaluate(async (data: string) => {
+			const { NvaBaseRenderer } = await import(
+				"/src/lib/avatar/nva-base-renderer.ts"
+			);
+			const bin = atob(data);
+			const bytes = new Uint8Array(bin.length);
+			for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+			const url = URL.createObjectURL(
+				new Blob([bytes], { type: "video/webm" }),
+			);
+
+			const canvas = document.createElement("canvas");
+			canvas.width = 200;
+			canvas.height = 200;
+			document.body.appendChild(canvas);
+
+			const renderer = new NvaBaseRenderer(canvas);
+			const p = renderer.play(url, { loop: true });
+			renderer.stop(); // ★ 로드 완료 전 정지 → playToken 무효화, start() 금지
+			await p; // superseded → resolve(에러 아님)
+			await new Promise((r) => setTimeout(r, 400)); // 혹시 start() 됐다면 프레임이 쌓일 시간
+
+			const st = renderer.state();
+			URL.revokeObjectURL(url);
+			return { running: st.running, framesDrawn: st.framesDrawn };
+		}, b64);
+
+		// stop() 이 이겼으므로 렌더 루프는 가동되지 않는다(running=false, 프레임 미증가).
+		expect(result.running, "stop 후 미가동").toBe(false);
+		expect(result.framesDrawn, "start() 미실행").toBe(0);
+	});
 });

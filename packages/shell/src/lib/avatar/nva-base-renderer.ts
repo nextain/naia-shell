@@ -80,10 +80,12 @@ export class NvaBaseRenderer {
 			this.video.addEventListener("loadeddata", done, { once: true });
 			this.video.addEventListener("error", fail, { once: true });
 		});
-		if (token !== this.playToken) return; // 더 최신 play() 가 시작됨 — stale 무시
+		if (token !== this.playToken) return; // loadeddata 대기 후 재확인(stale play/stop 무시)
 		if (!this.video.loop)
 			this.video.addEventListener("ended", this.onVideoEnded);
 		await this.video.play().catch(() => undefined);
+		// ★ play() 도 async 중단점 — 그 사이 stop()/신규 play() 있었으면 start() 금지(race 완전 차단).
+		if (token !== this.playToken) return;
 		this.start();
 	}
 
