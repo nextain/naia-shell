@@ -92,7 +92,8 @@ export class NvaHeadOverlay {
 		const keyed = this.key.process(head, hw, hh);
 		let rect = faceBboxToRect(bbox, drawRect, tuning);
 
-		const s = tuning.smoothing ?? 0;
+		const rawS = tuning.smoothing ?? 0;
+		const s = Number.isFinite(rawS) ? Math.min(0.99, Math.max(0, rawS)) : 0; // clamp [0,0.99]
 		if (s > 0 && this.smoothed) {
 			const t = 1 - s;
 			rect = {

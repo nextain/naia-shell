@@ -43,6 +43,10 @@ void main() {
   fragColor = vec4(rgb, c.a * a); // 스트레이트 알파
 }`;
 
+/** 파라미터 clamp(NaN/음수/과대 방어). */
+const clampNum = (v: number, lo: number, hi: number) =>
+	Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo;
+
 function hexToRgb01(hex: string): [number, number, number] {
 	const h = (hex || "#00ff00").replace("#", "");
 	return [
@@ -74,6 +78,7 @@ export class NvaChromakeyGL {
 	private readonly gl: WebGL2RenderingContext;
 	private readonly program: WebGLProgram;
 	private readonly tex: WebGLTexture;
+	private readonly vbo: WebGLBuffer | null;
 	private readonly uKey: WebGLUniformLocation | null;
 	private readonly uThresh: WebGLUniformLocation | null;
 	private readonly uSmooth: WebGLUniformLocation | null;
@@ -86,9 +91,9 @@ export class NvaChromakeyGL {
 
 	constructor(opts: ChromakeyOpts = {}) {
 		this.key = hexToRgb01(opts.keyColor ?? "#00ff00");
-		this.threshold = opts.threshold ?? 0.3;
-		this.smoothness = opts.smoothness ?? 0.12;
-		this.despill = opts.despill ?? 0.4;
+		this.threshold = clampNum(opts.threshold ?? 0.3, 0, 2); // RGB 거리 max=√3≈1.73
+		this.smoothness = clampNum(opts.smoothness ?? 0.12, 0, 2);
+		this.despill = clampNum(opts.despill ?? 0.4, 0, 1);
 
 		const canvas = document.createElement("canvas");
 		canvas.width = 2;
@@ -121,6 +126,7 @@ export class NvaChromakeyGL {
 
 		// 풀스크린 쿼드.
 		const buf = gl.createBuffer();
+		this.vbo = buf;
 		gl.bindBuffer(gl.ARRAY_BUFFER, buf);
 		gl.bufferData(
 			gl.ARRAY_BUFFER,
@@ -148,12 +154,12 @@ export class NvaChromakeyGL {
 		this.uDespill = gl.getUniformLocation(program, "u_despill");
 	}
 
-	/** 키 파라미터 런타임 조정(정합/키잉 튜닝). */
+	/** 키 파라미터 런타임 조정(정합/키잉 튜닝). clamp 적용. */
 	setParams(p: ChromakeyOpts): void {
 		if (p.keyColor) this.key = hexToRgb01(p.keyColor);
-		if (p.threshold != null) this.threshold = p.threshold;
-		if (p.smoothness != null) this.smoothness = p.smoothness;
-		if (p.despill != null) this.despill = p.despill;
+		if (p.threshold != null) this.threshold = clampNum(p.threshold, 0, 2);
+		if (p.smoothness != null) this.smoothness = clampNum(p.smoothness, 0, 2);
+		if (p.despill != null) this.despill = clampNum(p.despill, 0, 1);
 	}
 
 	/**
@@ -167,6 +173,8 @@ export class NvaChromakeyGL {
 	): HTMLCanvasElement {
 		if (this.disposed) throw new Error("dispose 된 chromakey 사용");
 		const gl = this.gl;
+		// WebGL 컨텍스트 유실(GPU 리셋/탭 백그라운드) 시 크래시 대신 마지막 canvas 반환(호출부는 fallback 처리).
+		if (gl.isContextLost()) return this.canvas;
 		const w = Math.max(1, Math.floor(width));
 		const h = Math.max(1, Math.floor(height));
 		if (this.canvas.width !== w || this.canvas.height !== h) {
@@ -197,6 +205,7 @@ export class NvaChromakeyGL {
 		this.disposed = true;
 		const gl = this.gl;
 		gl.deleteTexture(this.tex);
+		gl.deleteBuffer(this.vbo);
 		gl.deleteProgram(this.program);
 		gl.getExtension("WEBGL_lose_context")?.loseContext();
 	}
