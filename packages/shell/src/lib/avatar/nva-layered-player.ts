@@ -226,6 +226,13 @@ export class NvaLayeredPlayer {
 			};
 			const abort = () => {
 				cleanup();
+				// 실제 로드 취소(고아 디코딩 제거) — 리스너 이미 해제됐으니 emptied/abort 이벤트 무해.
+				try {
+					back.removeAttribute("src");
+					back.load();
+				} catch {
+					/* noop */
+				}
 				resolve("aborted");
 			};
 			this.abortLoad = abort;
@@ -234,24 +241,18 @@ export class NvaLayeredPlayer {
 			back.addEventListener("error", fail, { once: true });
 		});
 
-		if (loaded === "aborted" || myEpoch !== this.epoch) {
-			// superseded — back 로드 중단(고아 디코딩 방지), old front 유지. swap 안 함.
-			try {
-				back.pause();
-			} catch {
-				/* noop */
-			}
+		// aborted = abort() 가 이미 취소·정리 완료(공유 상태 건드리지 않음).
+		if (loaded === "aborted") return;
+		if (loaded === "error") throw new Error(`base 클립 로드 실패: ${key}`);
+		// stale(그새 다른 전환이 swap 완료). back 이 여전히 inactive 버퍼일 때만 pause(front 오정지 방지).
+		if (myEpoch !== this.epoch) {
+			this.pauseIfBack(back);
 			return;
 		}
-		if (loaded === "error") throw new Error(`base 클립 로드 실패: ${key}`);
 
 		await back.play().catch(() => undefined);
 		if (myEpoch !== this.epoch) {
-			try {
-				back.pause();
-			} catch {
-				/* noop */
-			}
+			this.pauseIfBack(back);
 			return;
 		}
 		// swap: back 이 새 front. old front 는 back 이 되어 다음 프리로드에 재사용(정지).
@@ -259,6 +260,17 @@ export class NvaLayeredPlayer {
 		this.front = back;
 		this.back = oldFront;
 		oldFront.pause();
+	}
+
+	/** 주어진 비디오가 **아직 inactive back 버퍼일 때만** pause(그새 swap 되어 front 가 됐으면 건드리지 않음). */
+	private pauseIfBack(v: HTMLVideoElement): void {
+		if (v === this.back) {
+			try {
+				v.pause();
+			} catch {
+				/* noop */
+			}
+		}
 	}
 
 	private setupHead(head: HeadSource): void {
