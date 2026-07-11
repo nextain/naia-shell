@@ -69,7 +69,9 @@ export class NvaBaseRenderer {
 			};
 			const fail = () => {
 				cleanup();
-				reject(new Error(`base 클립 로드 실패: ${src}`));
+				// 더 최신 play()/stop() 이 토큰을 올렸으면 이 로드는 superseded — 에러 아님(resolve).
+				if (token !== this.playToken) resolve();
+				else reject(new Error(`base 클립 로드 실패: ${src}`));
 			};
 			const cleanup = () => {
 				this.video.removeEventListener("loadeddata", done);
@@ -150,8 +152,9 @@ export class NvaBaseRenderer {
 		this.raf = requestAnimationFrame(draw);
 	}
 
-	/** 렌더 정지 + 비디오 일시정지 + 종료 리스너 해제(리소스 정리). */
+	/** 렌더 정지 + 비디오 일시정지 + 종료 리스너 해제(리소스 정리). 진행 중 play() 도 무효화. */
 	stop(): void {
+		this.playToken += 1; // 로드 대기 중인 play() 가 뒤늦게 start() 하지 않게 무효화
 		this.running = false;
 		if (this.raf) cancelAnimationFrame(this.raf);
 		this.raf = 0;
