@@ -1,6 +1,7 @@
 {
   "schema_version": "1.0",
   "description": "프로세스 현황 SoT. 세션 시작/종료 시 반드시 업데이트. 구조명세·이슈·리소스를 유기적으로 링크.",
+  "context_last_updated": "2026-07-13T10:05:03Z",
 
   "refs": {
     "project_structure": "docs/project-structure.md",
@@ -19,6 +20,45 @@
     "status": "in_progress",
     "note": "2026-07-10 검증·경화(8G 아바타 근본수정 확인): opencode GLM 5.2 이식분 리뷰+실측. 근본진단 확인 = 아바타 스폰은 gpu.tier(EXCLUSIVE_8G_TIERS)+localFocus 구동(wm manifest.py: avatar=provider 무형, 슬롯 아님) → 요지=buildSlotsManifest 가 localGpuTier auto 를 **해석된 tier id**(resolveActiveTier→normalizeTierId)로 기록해야 wm 이 avatar_ditto_trt 를 띄움(미해소 시 캐릭터 미표시). adk-store.writeSlotsManifest = vram 미전달 시 detectGpuVramGb 자동감지. dev-setup+Rust(lib.rs/linux/macos/windows) = cascade 8910 고아(uvicorn 손자) 정리 kill_stale_cascade(EADDRINUSE 방지, R2.2b). GLM 잔여 TSC break(계약테스트 레거시 tier id 캐스트) 수정. vite.config test.exclude 에 src-tauri/** 추가(스테이징 agent 620 테스트 스코프 오염 제거). 검증 tsc0·셸 vitest 101파일/1096 GREEN·cargo check0·Playwright 전 스펙 격리(--workers=1) GREEN(workspace-panel 17/17·capability+slots 17/17; full 병렬 40실패=8G 부하 flakiness, 회귀 아님). | 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포): FR-CASCADE.1~4. R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b, pytest 31). R2.2=naia-os: slots-manifest write(Rust write_slots_manifest+adk-store writeSlotsManifest)+Rust start/stop/cascade_status+spawn_cascade(CASCADE_READY 핸드셰이크)+CascadeProcess(Drop/WindowEvent/PID)+설정 토글 UI+i18n6. cargo0·tsc0·SettingsTab+slots66. 원격금지 로컬 사이드카. 8GB 음성단독 6.9G 적합(RTF=R2.3 DEFER). 트랙=alpha-adk .agents/progress/naia-os-local-cascade-embedding-round2-2026-06-30.md. | 2026-06-30 Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 폐루프 + 로컬 음성 정직화. FR-VRAM.4(tier→슬롯 로컬 추천 배지, 숨김 아님)·FR-PROF.1(프로파일 탭 토큰 일관화)·FR-VOICE.1~3(naia-local-voice→vllmTtsHost 라우팅·silent free 폴백 제거→명확 미가용 알림·voice picker 채움). 신규 lib/capabilities/tier-slots.ts(+test 6/6). 적대리뷰 2벤더 PASS(blocker 0)+수정(채팅모드 알림 재무장·engine-capability-summary 토큰화·공개레포 내부명칭 중립화). 검증 tsc0·셸 vitest 1008 GREEN·영향테스트 72/73. 트랙=alpha-adk .agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md. Round2(로컬 cascade lifecycle 임베딩+wm #1 M5)=DEFER. | F0~F3 계약+스캐폴드(async, src/main). 계약+통합 테스트 67/67. | 2026-06-29 세션2+3: S-SLOT FR-SLOT.4 설정 탭 9개 재구성 완료 (#1~#13 전체 구현). profile/brain/voice/avatar/persona/memory/knowledge/skills/general. tsc 클린, test 35/35, cargo check 통과. 커밋 미수행(8개 파일). 트랙=alpha-adk .agents/progress/naia-os-settings-tab-restructure-2026-06-29.md §7. | 2026-06-30: K2 지식 근거→원문 칩(kb-compiler 통합 셸측). ToolActivity 지식 도구(skill_knowledge_ask/search) 분기 → KnowledgeToolResult(답변+sourceUris 칩); 칩클릭 근거→원문(URL=브라우저 navigate / 파일=워크스페이스 openFile, 기존 패널 api 재사용). 게이트 FR-KB-OS.1~3 + 셸 feature 시나리오. 검증: knowledge-result.test.ts(파싱)·knowledge-tool-result.test.tsx(RTL 렌더+dispatch)·e2e/chat-tools.spec.ts 지식도구 K2(Playwright 실 UI 답변+칩+칩클릭→브라우저 패널). 셸 vitest 977 GREEN·tsc0·구조게이트(enforce-root·file-anchors·assembly) PASS. 백엔드=naia-agent UC-KNOWLEDGE(live). 트랙=alpha-adk .agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md(K2). | 2026-06-30: K3 지식 그래프 2D/3D 뷰어. ToolActivity skill_knowledge_graph 분기 → KnowledgeGraphView(캔버스 force, 군집색·degree 크기, 2D↔3D 토글·원근+자동회전, 의존성0 엔진 examples/cms 포팅). 데이터=kb-compiler toGraphData(2ecb342)+naia-agent skill_knowledge_graph(b7e3b8c). 게이트 FR-KB-OS.4. 검증: knowledge-result.test.ts parseKnowledgeGraph + e2e/chat-tools.spec.ts 지식그래프 K3(Playwright 실 UI: 캔버스 렌더+노드3+2D/3D 토글 통과). tsc0."
   },
+
+  "queued_work": [
+    {
+      "issue": "nva-3090-talking-head-decision",
+      "title": "RTX 3090 NVA 상태 기반 talking-head 결정 실험",
+      "github_issue": "https://github.com/nextain/naia-shell/issues/376",
+      "umbrella_issue": "https://github.com/nextain/naia-shell/issues/366",
+      "private_execution_issue": "https://github.com/nextain/naia-omni-cascade/issues/24",
+      "private_backend_preflight_issue": "https://github.com/nextain/naia-omni-cascade/issues/25",
+      "status": "handoff_ready",
+      "execution_host": "RTX 3090 24GB PC",
+      "requested_on": "2026-07-13",
+      "start_scope": [
+        "Private backend preflight #25: 재현 기준선·자산·container smoke 고정",
+        "CAS-FT-001 #12: fixture·측정·protocol 테스트 RED",
+        "CAS-FE-001 #11: 재사용 harness·측정기 구현 및 GREEN",
+        "CAS-FT-004 #19: hard quality fixture 테스트 RED",
+        "CAS-FE-004 #18: quality analyzer 구현 및 GREEN",
+        "사용자 protocol 승인",
+        "CAS-SPIKE-001 #13: RTX 3090 결정 실험"
+      ],
+      "stop_condition": "CAS-SPIKE-001 증거와 판정표를 만든 뒤 production 계약을 확정하지 말고 사용자 결정을 요청",
+      "nva_editor_baseline": {
+        "repository": "nextain/naia-video-avatar",
+        "branch": "feat/nva-editor-baseline",
+        "commit": "3a3c9aa7103b8da0bc3a667b720ecd9d57fbbe87"
+      },
+      "private_backend_status": "maintainer-only handoff에서 기준선·자산·명령·증거 위치를 검증한 뒤 실행",
+      "plan_review": "독립 적대 리뷰 2회 연속 CLEAN",
+      "held_scope": [
+        "발음별 sil/a/i/u/e/o clip 제품화",
+        "N² 상태 전이 영상",
+        "interpolation",
+        "production NVA loader와 body/head 합성 확정",
+        "naia.land Vertex/Gemini/credit/export 구현",
+        "Shell #367~#374 통합"
+      ]
+    }
+  ],
 
   "sdlc_gates": {
     "P01": { "status": "done", "name": "user_scenarios", "deliverable": "docs/user-scenarios.md (UC1-14, S01~S71)", "ref": "완전성 13R 3연속 NONE" },

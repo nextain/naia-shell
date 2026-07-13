@@ -1,9 +1,11 @@
-<!-- src-sha: e56009c568ab9da4 -->
+<!-- src-sha: ca7340883704add4 -->
 <!-- 자동 번역 미러 (M13-mirror). 원본: .agents/context/process-status.json -->
 
 # 프로세스 현황 (SoT — Single Source of Truth)
 
 **버전**: 1.0
+
+**컨텍스트 마지막 갱신**: 2026-07-13 10:05 UTC
 
 **목적**: 프로세스 현황 기록의 정본(SoT). 세션 시작·종료 시 반드시 업데이트하고, 구조 명세·이슈·리소스를 유기적으로 연결.
 
@@ -32,6 +34,27 @@
 | **마지막 갱신** | 2026-07-10 00:00 UTC |
 | **상태** | 진행 중 |
 | **참고** | 2026-07-10 검증·경화(8G 아바타 근본수정 확인): opencode GLM 5.2 이식분 리뷰+실측. 아바타 스폰=gpu.tier(EXCLUSIVE_8G_TIERS)+localFocus 구동(wm: avatar=provider 무형) → buildSlotsManifest 가 localGpuTier auto→해석된 tier id 로 기록해야 wm 이 avatar_ditto_trt 스폰(미해소=미표시). adk-store=vram 자동감지. Rust kill_stale_cascade(8910 고아 EADDRINUSE 방지). GLM 잔여 TSC break 수정 + vite.config test.exclude src-tauri/** 추가(스테이징 agent 620테스트 오염 제거). tsc0·셸 vitest 1096 GREEN·cargo0·Playwright 전 스펙 격리 GREEN(full 병렬 40실패=8G 부하 flakiness, 회귀 아님). \| 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포, FR-CASCADE.1~4): R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b). R2.2=naia-shell slots-manifest write + Rust start/stop/cascade_status + CascadeProcess + 설정 토글 UI. 원격금지 로컬 사이드카. cargo0·tsc0·SettingsTab+slots66. 8GB 음성단독 적합(RTF=R2.3 DEFER). \| Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 + 로컬 음성 정직화(FR-VRAM.4·FR-PROF.1·FR-VOICE, naia-shell 13cef2c5, 적대리뷰 PASS, vitest 1008). ⚠️ 본 미러는 자동생성(M13)이며 이전 K2/K3 drift 존재 — 자동 동기화 필요. \| (이전) F0~F3 계약 + 스캐폴드, 통합 67/67. |
+
+---
+
+## 대기 중인 작업: RTX 3090 NVA talking-head 결정 실험
+
+| 항목 | 내용 |
+|------|------|
+| **상태** | 핸드오프 준비 완료 (`handoff_ready`) |
+| **실행 호스트** | RTX 3090 24GB PC |
+| **공개 진행 이슈** | [naia-shell #376](https://github.com/nextain/naia-shell/issues/376) |
+| **비공개 실행 이슈** | [Cascade private handoff #24](https://github.com/nextain/naia-omni-cascade/issues/24) — maintainer access 필요 |
+| **비공개 backend preflight** | [Cascade #25](https://github.com/nextain/naia-omni-cascade/issues/25) — 재현 기준선·자산·container smoke 선행 |
+| **상위 이슈** | [naia-shell #366](https://github.com/nextain/naia-shell/issues/366) |
+| **실행 순서** | private #25 preflight → Cascade #12 RED → #11 GREEN → #19 RED → #18 GREEN → 사용자 protocol 승인 → #13 실험 |
+| **NVA 편집기 기준선** | `nextain/naia-video-avatar` `feat/nva-editor-baseline` @ `3a3c9aa7103b8da0bc3a667b720ecd9d57fbbe87` |
+| **비공개 backend** | 기준선·자산·실행 명령·증거 위치는 private handoff에서 검증하며 공개 컨텍스트에 복제하지 않음 |
+| **계획 검토** | 독립 적대 리뷰 2회 연속 CLEAN |
+| **중단 지점** | #13 증거·판정표 생성 후 production 계약을 확정하지 않고 사용자 결정 요청 |
+| **보류 범위** | 발음별 clip, N² 전이, interpolation, production loader/합성 확정, Vertex/Gemini/credit/export, Shell #367~#374 |
+
+이 작업은 기존 `naia-shell-transplant` 현재 작업을 대체하지 않는다. 3090 PC의 별도 세션이 공개 #376에서 상태를 확인하고 private #24를 실행하며, Shell 통합은 NVA/Cascade/naia.land 계약이 승인된 뒤 마지막에 진행한다.
 
 ---
 
