@@ -169,10 +169,10 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 		});
 	});
 
-	it("NAIA_SLOT_DEFAULTS embedding = CPU offline / all-MiniLM-L6-v2 (R2-1)", () => {
+	it("NAIA_SLOT_DEFAULTS embedding = CPU offline / multilingual-e5-large (한국어 우선, 2026-07-15)", () => {
 		expect(NAIA_SLOT_DEFAULTS.embedding).toEqual({
 			provider: "offline",
-			model: "all-MiniLM-L6-v2",
+			model: "multilingual-e5-large",
 		});
 	});
 
@@ -193,7 +193,8 @@ describe("S-SLOT · FR-SLOT.3 naia 계정 Gemini 기본값 자동 적용 (R2-1, 
 		expect(filled.memoryLlmProvider).toBe("naia");
 		expect(filled.memoryLlmModel).toBe("gemini-3.1-flash-lite");
 		expect(filled.memoryEmbeddingProvider).toBe("offline");
-		expect(filled.memoryOfflineModel).toBe("all-MiniLM-L6-v2");
+		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
+		expect(filled.memoryOfflineModel).toBe("multilingual-e5-large");
 		expect(filled.sttProvider).toBe(NAIA_SLOT_DEFAULTS.stt.provider);
 		expect(filled.ttsProvider).toBe("nextain");
 	});
@@ -234,5 +235,60 @@ describe("S-SLOT · 슬롯 ID·그룹 불변식", () => {
 			const owners = SLOT_GROUPS.filter((g) => g.slots.includes(id));
 			expect(owners).toHaveLength(1);
 		}
+	});
+});
+
+describe("S-EMBKO · FR-SLOT.6 한글 오프라인 임베딩 모델 노출 (2026-07-15)", () => {
+	it("offline embedding 슬롯이 다국어(한국어) 모델 multilingual-e5-large 를 수용 — write→read roundtrip", () => {
+		const base: AppConfig = {
+			memoryEmbeddingProvider: "offline",
+			memoryOfflineModel: "all-mpnet-base-v2",
+		} as AppConfig;
+		// 영어 전용 → 다국어(한국어) 모델로 교체
+		const after = writeSlot(base, "embedding", {
+			provider: "offline",
+			model: "multilingual-e5-large",
+		});
+		expect(after.memoryOfflineModel).toBe("multilingual-e5-large");
+		// readSlots 는 provider=offline 일 때 memoryOfflineModel 을 반환(비-offline 경로 memoryEmbeddingModel 아님)
+		expect(readSlots(after).embedding).toEqual({
+			provider: "offline",
+			model: "multilingual-e5-large",
+		});
+	});
+
+	it("multilingual 모델 교체는 embedding 슬롯만 변경 — 타 슬롯·device 불변 (독립성)", () => {
+		// writeSlot(embedding) 계약: offline 모델은 provider="offline" 을 value 에 함께
+		// 전달해야 memoryOfflineModel 로 라우팅됨(model.ts:156 — model만 주면 비-offline
+		// 필드 memoryEmbeddingModel 로 감). UI/설정 경로는 provider 를 항상 동반한다.
+		const base: AppConfig = {
+			provider: "ollama",
+			model: "llama3",
+			memoryEmbeddingProvider: "offline",
+			memoryOfflineModel: "all-MiniLM-L6-v2",
+			memoryEmbeddingDevice: "cpu",
+		} as AppConfig;
+		const after = writeSlot(base, "embedding", {
+			provider: "offline",
+			model: "multilingual-e5-large",
+		});
+		expect(after.memoryEmbeddingProvider).toBe("offline"); // offline=CPU 경로 유지
+		expect(after.memoryEmbeddingDevice).toBe("cpu"); // device 불변(별도 필드)
+		expect(after.memoryOfflineModel).toBe("multilingual-e5-large");
+		expect(after.provider).toBe("ollama"); // main 슬롯 불변(독립성)
+		expect(after.model).toBe("llama3");
+	});
+
+	it("경량 다국어 모델 paraphrase-multilingual-MiniLM-L12-v2 도 offline 슬롯에 수용", () => {
+		const after = writeSlot({} as AppConfig, "embedding", {
+			provider: "offline",
+			model: "paraphrase-multilingual-MiniLM-L12-v2",
+		});
+		expect(after.memoryEmbeddingProvider).toBe("offline");
+		expect(after.memoryOfflineModel).toBe("paraphrase-multilingual-MiniLM-L12-v2");
+		expect(readSlots(after).embedding).toEqual({
+			provider: "offline",
+			model: "paraphrase-multilingual-MiniLM-L12-v2",
+		});
 	});
 });

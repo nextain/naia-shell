@@ -465,7 +465,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.memoryLlmProvider).toBe("naia");
 		expect(saved.memoryLlmModel).toBe("gemini-3.1-flash-lite");
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
-		expect(saved.memoryOfflineModel).toBe("all-MiniLM-L6-v2");
+		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
+		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
 		expect(saved.ttsProvider).toBe("nextain");
 		await vi.waitFor(() => {
 			expect(mockInvoke).toHaveBeenCalledWith(

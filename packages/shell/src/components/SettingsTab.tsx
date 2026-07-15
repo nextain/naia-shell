@@ -889,8 +889,13 @@ export function SettingsTab() {
 		"none" | "offline" | "vllm" | "ollama" | "naia"
 	>(existing?.memoryEmbeddingProvider ?? "none");
 	const [memoryOfflineModel, setMemoryOfflineModel] = useState<
-		"all-MiniLM-L6-v2" | "all-mpnet-base-v2"
-	>(existing?.memoryOfflineModel ?? "all-MiniLM-L6-v2");
+		| "all-MiniLM-L6-v2"
+		| "all-mpnet-base-v2"
+		| "multilingual-e5-large"
+		| "paraphrase-multilingual-MiniLM-L12-v2"
+		// 기본값 = 다국어(한국어) e5 — 한국어 우선 정책(2026-07-15 루크 승인 "e5 추가 + 기본값으로").
+		// 영어 전용 MiniLM/mpnet 은 한국어 회상 품질이 낮아 기본이 될 수 없다(피커에 [영어 전용] 표기).
+	>(existing?.memoryOfflineModel ?? "multilingual-e5-large");
 	const [memoryEmbeddingDevice, setMemoryEmbeddingDevice] = useState<
 		"cpu" | "gpu" | "auto"
 	>(existing?.memoryEmbeddingDevice ?? "cpu");
@@ -4465,6 +4470,14 @@ export function SettingsTab() {
 											[
 												"all-mpnet-base-v2",
 												t("settings.memoryOfflineModelAccurate"),
+											],
+											[
+												"multilingual-e5-large",
+												t("settings.memoryOfflineModelMultilingual"),
+											],
+											[
+												"paraphrase-multilingual-MiniLM-L12-v2",
+												t("settings.memoryOfflineModelMultilingualLite"),
 											],
 										] as const
 									).map(([val, label]) => (

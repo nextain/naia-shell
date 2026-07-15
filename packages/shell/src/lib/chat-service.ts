@@ -629,7 +629,11 @@ export async function sendAuthUpdate(naiaKey: string): Promise<void> {
 
 /** Request the agent to pre-download an offline embedding model. */
 export async function sendEmbeddingPrefetch(
-	model: "all-MiniLM-L6-v2" | "all-mpnet-base-v2",
+	model:
+		| "all-MiniLM-L6-v2"
+		| "all-mpnet-base-v2"
+		| "multilingual-e5-large"
+		| "paraphrase-multilingual-MiniLM-L12-v2",
 ): Promise<void> {
 	await safeSendToAgent(
 		{ type: "embedding_prefetch", model },

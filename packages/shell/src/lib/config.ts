@@ -224,8 +224,14 @@ export interface AppConfig {
 	memoryAdapter?: "local" | "qdrant";
 	/** Embedding provider for semantic search. Defaults to 'none' (keyword search). */
 	memoryEmbeddingProvider?: "none" | "offline" | "vllm" | "ollama" | "naia";
-	/** Offline embedding model (used when memoryEmbeddingProvider = 'offline'). */
-	memoryOfflineModel?: "all-MiniLM-L6-v2" | "all-mpnet-base-v2";
+	/** Offline embedding model (used when memoryEmbeddingProvider = 'offline').
+	 *  다국어(한국어): multilingual-e5-large(1024d, 고정확) · paraphrase-multilingual-MiniLM-L12-v2(384d, 경량·빠름).
+	 *  영어 전용: all-MiniLM-L6-v2 · all-mpnet-base-v2 (한국어 회상 품질 낮음). */
+	memoryOfflineModel?:
+		| "all-MiniLM-L6-v2"
+		| "all-mpnet-base-v2"
+		| "multilingual-e5-large"
+		| "paraphrase-multilingual-MiniLM-L12-v2";
 	/** naia-embedded 컴퓨트 device (memoryEmbeddingProvider = 'offline'). cpu=강제CPU / gpu=가용시GPU(없으면 CPU 폴백) / auto=자동. */
 	memoryEmbeddingDevice?: "cpu" | "gpu" | "auto";
 	/** Base URL for vLLM/Ollama embedding endpoint. */

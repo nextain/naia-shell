@@ -194,7 +194,9 @@ export type NaiaDefaultSlots = Pick<
 export const NAIA_SLOT_DEFAULTS: NaiaDefaultSlots = {
 	main: { provider: "nextain", model: "gemini-3.5-flash" },
 	sub: { provider: "naia", model: "gemini-3.1-flash-lite" },
-	embedding: { provider: "offline", model: "all-MiniLM-L6-v2" },
+	// 기본 임베딩 = 다국어 e5 (한국어 우선 정책, 2026-07-15 루크 승인 "e5 추가 + 기본값으로").
+	// 영어 전용 MiniLM(80MB)보다 무겁지만(~1.1GB, CPU 동작) 한국어 회상 품질이 기준.
+	embedding: { provider: "offline", model: "multilingual-e5-large" },
 	// R2-1 "STT = free(Naia Voice offline)". vosk/whisper 둘 다 오프라인 무료,
 	// wire 값 보존(R1-2 — 라벨만 Naia Voice). Lite 를 기본으로 선택.
 	stt: { provider: "vosk" },
