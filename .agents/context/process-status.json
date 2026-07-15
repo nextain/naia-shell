@@ -15,15 +15,16 @@
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
     "started": "2026-06-08T00:00:00Z",
-    "last_updated": "2026-07-15T04:10:00Z",
+    "last_updated": "2026-07-16T00:20:00+09:00",
     "status": "in_progress",
+    "bgm_skill_wiring": "2026-07-16 FR-BGM.1 (S-BGM-SKILL, 시연 크리티컬 — 루크 freeze 해제 승인): skill_youtube_bgm 패널 도구 배선. 신규 lib/bgm-skill.ts(descriptor+executeBgmSkill, deps 주입) + App.tsx 부팅 sendPanelSkills('bgm-widget') + ChatArea dispatchPanelToolCall BGM 분기(appRegistry 앞) → 위젯이 이미 듣는 bgm_youtube_* 이벤트 발사(BgmPlayer·agent 무변경). 검증: bgm-skill.test.ts 10/10 · 전체 vitest 1182 pass/0 fail · tsc(신규분 0오류) · enforce-root+assembly PASS. 음성/립싱크(FR-VOICE.5) 경로 무접촉. 잔여=부스 리허설 수동('음악 틀어줘'). 배경: 스킬 전멸 회귀의 근본원인은 naia-agent ollama provider tools 미구현(FR-PROV-6 로 별도 수정·리뷰 PASS·dist 재빌드) — BGM 은 그 조사에서 발견된 별개 이식 갭(구 monolith 내장 스킬이 new-core 에 미이식).",
     "demo_checkpoint": {
       "verified_at": "2026-07-15T23:26:24+09:00",
       "configuration": "Ollama local LLM + remote NVA full cascade at https://pc-bazzite.tail4f7a25.ts.net:9449 (VoxCPM2 + avatar)",
       "verified_result": "Real Tauri Shell produced audible speech with synchronized avatar lip movement; no online LLM or cloud TTS was used in the verified run.",
       "routing_fact": "When an explicit NVA Host is configured, ChatArea sends text to that host's /stream_text and returns before shell-side vllmTtsHost synthesis. The configured :8910 voice host is therefore not used by this verified remote-NVA utterance path.",
       "owner_confirmation": "The RTX 3090 operator confirmed that the combined VoxCPM2 voice and avatar cascade may use :9449 as its single endpoint.",
-      "demo_freeze": "Preserve the working Ollama + :9449 path for the 2026-07-16 demo. Before the demo, change only background masking/alpha and reject the change if audio or lip-sync regresses.",
+      "demo_freeze": "LIFTED 2026-07-16 00:10 by Luke (explicit: '데모 프리즈 해제해') — BGM 스킬 배선(skill_youtube_bgm 패널 도구) 진행 승인. 단 원 취지 유지: Ollama + :9449 음성/립싱크 경로는 계속 보존하고, 회귀 시 변경 거부. (구 freeze: masking/alpha 만 변경 허용)",
       "next_after_mask": "Add NVA characters through the server-side character/bundle contract; do not send Windows-local bundle paths to the remote host.",
       "external_voice_issue": "Voice/character voice selection changes not taking effect are owned by the RTX 3090 :9449 cascade server, not by Shell. Preserve the current Shell routing for the demo and resolve voice selection on the server side.",
       "known_runtime_issue": "Selecting Local Profile None does not currently prove teardown of previously started local services: the user observed GPU VRAM remaining at about 11.2 GB. This is unresolved; the expected acceptance condition is that profile-owned services are stopped and VRAM drops while the existing tauri:dev process remains untouched."

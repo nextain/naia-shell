@@ -32,6 +32,7 @@ import {
 	sendChatMessage,
 	sendPanelToolResult,
 } from "../lib/chat-service";
+import { SKILL_YOUTUBE_BGM, executeBgmSkill } from "../lib/bgm-skill";
 import {
 	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_VLLM_HOST,
@@ -1118,6 +1119,26 @@ export function ChatArea({
 		toolName: string;
 		args: Record<string, unknown>;
 	}) {
+		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
+		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
+		// bgm_youtube_* 이벤트를 발사(위젯 무변경). 음성 경로도 이 dispatch 공유.
+		if (req.toolName === SKILL_YOUTUBE_BGM.name) {
+			executeBgmSkill(req.args)
+				.then((result) => {
+					Logger.info("ChatArea", "bgm skill result", { result });
+					return sendPanelToolResult(req.requestId, req.toolCallId, result, true);
+				})
+				.catch((err) => {
+					Logger.warn("ChatArea", "bgm skill error", { error: String(err) });
+					return sendPanelToolResult(
+						req.requestId,
+						req.toolCallId,
+						String(err),
+						false,
+					);
+				});
+			return;
+		}
 		const ownerPanel = appRegistry
 			.list()
 			.find((p) => p.tools?.some((t) => t.name === req.toolName));

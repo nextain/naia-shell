@@ -27,6 +27,7 @@ import {
 	writeNaiaConfig,
 } from "./lib/adk-store";
 import { emitAiInterferenceEvent } from "./lib/ai-interference";
+import { BGM_PANEL_ID, SKILL_YOUTUBE_BGM } from "./lib/bgm-skill";
 import { syncLinkedChannels } from "./lib/channel-sync";
 import {
 	isNewCore,
@@ -319,6 +320,17 @@ export function App() {
 	// call them regardless of which panel is currently active (e.g. asking Naia
 	// to open a website while on the Chat panel).
 	useEffect(() => {
+		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 descriptor.tools 경로가
+		// 없다 — 전용 등록. 실행은 ChatArea dispatchPanelToolCall 의 BGM 분기.
+		sendPanelSkills(BGM_PANEL_ID, [SKILL_YOUTUBE_BGM])
+			.then(() =>
+				Logger.info("App", "startup bgm skill registered", {
+					tool: SKILL_YOUTUBE_BGM.name,
+				}),
+			)
+			.catch((err) =>
+				Logger.warn("App", "startup bgm skill failed", { error: String(err) }),
+			);
 		const all = appRegistry.list();
 		for (const descriptor of all) {
 			if (
