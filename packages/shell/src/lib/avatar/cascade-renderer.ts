@@ -188,6 +188,26 @@ export class CascadeAvatarRenderer {
 		t?.();
 	}
 
+	/** 활성 레퍼런스 음색 설정 — cascade `PUT /voice` 계약(2026-07-16 3자 합의: NVA/캐릭터 전환과
+	 *  독립된 런타임 음성). refUrl = 셸 설정 voiceRefUrl(GCS 프리셋 URL 등) — 서버가 URL 을
+	 *  다운로드/해석해 활성 음성으로 잡고, 이후 /stream_text 발화가 이 음색으로 나온다.
+	 *  미지정이면 아무것도 보내지 않아 서버 기본(naia 팔레트 default)이 유지된다.
+	 *  best-effort: 실패해도 발화는 서버의 기존 활성 음성으로 계속된다(음색 어긋남 > 무음). */
+	async setVoice(refUrl: string | null | undefined): Promise<boolean> {
+		const url = refUrl?.trim();
+		if (!url) return false;
+		try {
+			const res = await fetch(this.streamUrl("/voice"), {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ audio_path: url }),
+			});
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
 	private async loadIdle(hostVideo: HTMLVideoElement): Promise<void> {
 		try {
 			const res = await fetch(this.streamUrl("/idle"));

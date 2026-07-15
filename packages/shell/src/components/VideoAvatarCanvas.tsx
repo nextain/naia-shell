@@ -310,6 +310,9 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			);
 			rendererRef.current = r;
 			r.start(el);
+			// PUT /voice 계약: 셸에 설정된 레퍼런스 음색을 연결 시점에 서버 활성 음성으로 민다
+			// (없으면 서버 기본 = naia 팔레트 유지). NVA 전환과 독립 — 캐릭터가 음색을 못 덮는다.
+			void r.setVoice(loadConfig()?.voiceRefUrl);
 			setRenderer(r);
 		} else {
 			rendererRef.current?.stop();

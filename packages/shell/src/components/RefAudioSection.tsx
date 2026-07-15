@@ -38,6 +38,7 @@ import {
 	type RefRecording,
 	startRefRecording,
 } from "../lib/voice/ref-recorder";
+import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 
 const TAG = "RefAudioSection";
 const MIN_DURATION_S = 5;
@@ -55,6 +56,10 @@ function setConfigVoiceRefUrl(url: string | null): void {
 	// Notify a live voice session (ChatArea) to switch the cloned voice now,
 	// without a reconnect (web-demo parity). No-op if no session is active.
 	window.dispatchEvent(new CustomEvent("naia:voice-ref-url", { detail: url }));
+	// cascade(NVA) 경로에도 즉시 반영 — PUT /voice 계약(2026-07-16 합의). 프리셋 URL 일 때만
+	// 민다(업로드/제거 = null 은 게이트웨이 주입 경로라 cascade 로 보낼 URL 이 없음 — 서버 활성
+	// 음성 유지). 렌더러 미연결이면 no-op — 연결 시점(VideoAvatarCanvas)이 다시 민다.
+	if (url) void useCascadeAvatarStore.getState().renderer?.setVoice(url);
 }
 
 const STRINGS = {

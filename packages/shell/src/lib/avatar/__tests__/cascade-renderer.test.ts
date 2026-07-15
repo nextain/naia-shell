@@ -39,6 +39,53 @@ describe("CascadeAvatarRenderer.streamUrl", () => {
 	});
 });
 
+describe("CascadeAvatarRenderer.setVoice — PUT /voice 계약 (NVA 전환과 독립된 활성 음성)", () => {
+	it("레퍼런스 URL 을 PUT /voice {audio_path} 로 민다", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+		vi.stubGlobal("fetch", fetchMock);
+		try {
+			const r = new CascadeAvatarRenderer({ runtimeUrl: "http://gpu:9449" });
+			const ok = await r.setVoice(
+				"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-male-05.wav",
+			);
+			expect(ok).toBe(true);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const [url, init] = fetchMock.mock.calls[0];
+			expect(url).toBe("http://gpu:9449/voice");
+			expect(init.method).toBe("PUT");
+			expect(JSON.parse(init.body)).toEqual({
+				audio_path:
+					"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-male-05.wav",
+			});
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("URL 미지정(null/공백) = 서버 활성 음성 유지 — 요청을 보내지 않는다", async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		try {
+			const r = new CascadeAvatarRenderer({ runtimeUrl: "http://gpu:9449" });
+			expect(await r.setVoice(null)).toBe(false);
+			expect(await r.setVoice("  ")).toBe(false);
+			expect(fetchMock).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("네트워크/서버 실패 = false (발화는 기존 활성 음성으로 계속 — 무음보다 안전)", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+		try {
+			const r = new CascadeAvatarRenderer({ runtimeUrl: "http://gpu:9449" });
+			expect(await r.setVoice("https://x/ref.wav")).toBe(false);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+});
+
 describe("pcm16ToWav", () => {
 	it("44바이트 WAV 헤더 + 데이터 길이", () => {
 		const pcm = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
