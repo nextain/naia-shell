@@ -259,6 +259,38 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/파일 추가|Add file/i)).toBeDefined();
 	});
 
+	it("stages video avatar through the local cascade default when no avatar tier is active", () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				localGpuTier: "auto",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(4);
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("avatar");
+
+		const option = document.querySelector(
+			'option[value="naia-video-avatar"]',
+		) as HTMLOptionElement;
+		expect(option.disabled).toBe(false);
+		fireEvent.change(option.parentElement as HTMLSelectElement, {
+			target: { value: "naia-video-avatar" },
+		});
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.avatarProvider).toBe("naia-video-avatar");
+		expect(saved.nvaModel).toBeTruthy();
+		expect(saved.cascadeRuntimeUrl).toBe("http://localhost:8910");
+		expect(saved.local8gFocus).toBe("avatar");
+	});
+
 	it("selects VRM item from naia-settings and marks as active", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		mockInvoke.mockImplementation((cmd: string) => {
@@ -370,6 +402,47 @@ describe("SettingsTab — memory tab (#298)", () => {
 		// 9-tab restructure: profile|brain|voice|avatar|persona|memory|knowledge|skills|general
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
 		expect(tabBtns.length).toBe(9);
+	});
+
+	it("GPU 프로파일 = 자동 설정 — local-llm-voice-16g 선택 시 두뇌·음성·호스트가 로컬로 전환 (2026-07-15)", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "nextain",
+				// localhost raw /tts 잔재 — 로컬 티어 선택이 로컬 façade 기본(:8910)으로 교정해야 한다.
+				vllmTtsHost: "http://localhost:8892",
+				// 아바타 티어를 거쳐온 잔재 — LLM+음성 티어(아바타 비포함)는 VRM 으로 복원해야 한다.
+				avatarProvider: "naia-video-avatar",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+
+		await vi.waitFor(() => {
+			expect(document.getElementById("local-gpu-tier")).toBeTruthy();
+		});
+		fireEvent.change(document.getElementById("local-gpu-tier") as HTMLElement, {
+			target: { value: "local-llm-voice-16g" },
+		});
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		// 두뇌: 프로파일이 로컬 LLM 을 포함 → ollama + compact 기본(DNA3.0-4B)으로 자동 전환.
+		expect(saved.provider).toBe("ollama");
+		expect(saved.model).toBe("hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M");
+		// 음성: 로컬 음성으로 자동 전환 + 원격 호스트 잔재를 로컬 façade 기본으로 교정.
+		expect(saved.ttsProvider).toBe("naia-local-voice");
+		expect(saved.ttsEnabled).toBe(true);
+		expect(saved.vllmTtsHost).toBe("http://localhost:8910");
+		expect(saved.localGpuTier).toBe("local-llm-voice-16g");
+		// 아바타: 이 티어는 Ditto 비포함 → VRM 으로 복원 (nva 잔재 버그 수정, 2026-07-15).
+		expect(saved.avatarProvider).toBe("vrm");
 	});
 
 	it("renders S-SLOT gate + 3 groups (Brain/Voice/Avatar) without moving canonical controls", async () => {

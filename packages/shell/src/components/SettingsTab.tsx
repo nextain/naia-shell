@@ -51,6 +51,7 @@ import {
 import {
 	type AppConfig,
 	DEFAULT_GATEWAY_URL,
+	DEFAULT_LOCAL_LLM_MODEL,
 	DEFAULT_LOCAL_VOICE_HOST,
 	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_OLLAMA_HOST,
@@ -638,8 +639,17 @@ export function SettingsTab() {
 		avatar_enabled: boolean;
 	} | null>(null);
 	const localFacadeUrl = useCascadeAvatarStore((s) => s.localFacadeUrl);
+	// 상태 칩 프로브 대상: 셸이 스폰한 facade(인메모리) → 설정 cascadeRuntimeUrl → 로컬 음성
+	// host(= :8910 facade). localFacadeUrl 만 보면 **외부(수동/스크립트)로 띄운 facade 는
+	// 살아 있어도 칩이 영원히 "대기 중"**이 된다 (2026-07-15 루크 실증 — VideoAvatarCanvas
+	// 의 cascadeUrl 폴백과 동형으로 정렬).
+	const cascadeProbeUrl =
+		localFacadeUrl?.trim() ||
+		loadConfig()?.cascadeRuntimeUrl?.trim() ||
+		(ttsProvider === "naia-local-voice" ? vllmTtsHost?.trim() : "") ||
+		null;
 	useEffect(() => {
-		if (!localFacadeUrl) {
+		if (!cascadeProbeUrl) {
 			setCascadeHealth(null);
 			return;
 		}
@@ -648,9 +658,10 @@ export function SettingsTab() {
 			try {
 				const ctrl = new AbortController();
 				const to = setTimeout(() => ctrl.abort(), 2500);
-				const res = await fetch(`${localFacadeUrl}/health`, {
-					signal: ctrl.signal,
-				});
+				const res = await fetch(
+					`${cascadeProbeUrl.replace(/\/$/, "")}/health`,
+					{ signal: ctrl.signal },
+				);
 				clearTimeout(to);
 				const h = await res.json();
 				if (alive) setCascadeHealth(h);
@@ -664,9 +675,9 @@ export function SettingsTab() {
 			alive = false;
 			clearInterval(iv);
 		};
-	}, [localFacadeUrl]);
-	// naia-local-voice 선택 상태에서 Local Voice Host 가 비어있으면 기본값(localhost:22600)
-	// 으로 채운다 — 임베딩 cascade(VoxCPM2)가 그 포트에 뜨므로 합성이 자동으로 로컬을 가리킴.
+	}, [cascadeProbeUrl]);
+	// naia-local-voice 선택 상태에서 Local Voice Host 가 비어있으면 기본값(:8910 로컬 façade —
+	// OpenAI 표면 /v1/audio/speech 서빙)으로 채운다. 구 :22600 은 raw /tts 라 이 표면이 없다.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: ttsProvider 전환 시에만 보정
 	useEffect(() => {
 		if (ttsProvider === "naia-local-voice" && !vllmTtsHost) {
@@ -717,6 +728,9 @@ export function SettingsTab() {
 		avatar: "vrm" | "naia-video-avatar";
 		nva: string;
 		tts: TtsProviderId;
+		ttsHost: string;
+		mainProvider: ProviderId;
+		mainModel: string;
 	} => {
 		const caps = resolveLocalCapabilities(
 			resolveActiveTier(tier, detectedVramGb),
@@ -725,6 +739,17 @@ export function SettingsTab() {
 		let nextAvatar = avatarProvider;
 		let nextNva = nvaModel;
 		let nextTts = ttsProvider;
+		let nextTtsHost = vllmTtsHost;
+		let nextMainProvider = provider;
+		let nextMainModel = model;
+		// 프로파일 = 자동 설정(2026-07-15 루크): llm capability 티어를 고르면 두뇌도 로컬로
+		// 자동 전환. 이미 ollama 면 사용자가 고른 모델 보존, 아니면 compact 기본(DNA3.0-4B)으로.
+		if (caps.includes("llm") && provider !== "ollama") {
+			nextMainProvider = "ollama";
+			nextMainModel = DEFAULT_LOCAL_LLM_MODEL;
+			setProvider("ollama");
+			setModel(DEFAULT_LOCAL_LLM_MODEL);
+		}
 		if (caps.includes("avatar")) {
 			nextAvatar = "naia-video-avatar";
 			setAvatarProvider("naia-video-avatar");
@@ -732,13 +757,35 @@ export function SettingsTab() {
 				nextNva = DEFAULT_NVA_MODEL;
 				setNvaModel(DEFAULT_NVA_MODEL);
 			}
+		} else if (caps.includes("llm") || caps.includes("tts")) {
+			// 로컬 프로파일인데 avatar capability 가 없으면(예: 16GB LLM+음성) 아바타 = VRM.
+			// 버그 수정(2026-07-15 루크): 이전에 아바타 티어를 거쳐오면 naia-video-avatar 가
+			// 심긴 채 남아 — 티어를 바꿔도 안 돌아왔다. 프로파일 = 자동 설정이므로 여기서 복원.
+			nextAvatar = "vrm";
+			setAvatarProvider("vrm");
 		}
 		if (caps.includes("tts")) {
 			nextTts = "naia-local-voice";
 			setTtsProvider("naia-local-voice");
-			if (!vllmTtsHost) setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
+			// 프로파일 = 자동 설정하되 **원격 호스트는 보존**(2026-07-15 리뷰): 로컬 프로파일이
+			// 원격 GPU(Tailscale, 예: http://pc-*.ts.net:8910)로 음성을 쓰는 문서화된 워크플로를
+			// 프로파일 클릭이 로컬로 초기화하면 안 된다. 교체 대상 = 빈 값 + **localhost/127.0.0.1
+			// 변형만**(잘못된 :8892 잔재를 잡으면서 원격은 살림). 앞의 "무조건 덮어쓰기"는 원격
+			// 사용자의 호스트를 매 프로파일 조작마다 지웠다.
+			const isLocalHostUrl = /^(https?:\/\/)?(localhost|127\.0\.0\.1)([:/]|$)/i;
+			if (!vllmTtsHost || isLocalHostUrl.test(vllmTtsHost)) {
+				nextTtsHost = DEFAULT_LOCAL_VOICE_HOST;
+				setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
+			}
 		}
-		return { avatar: nextAvatar, nva: nextNva, tts: nextTts };
+		return {
+			avatar: nextAvatar,
+			nva: nextNva,
+			tts: nextTts,
+			ttsHost: nextTtsHost,
+			mainProvider: nextMainProvider,
+			mainModel: nextMainModel,
+		};
 	};
 
 	// R4: 스테이징 config 로 백엔드 warm(기동·대기). 티어/포커스 변경 시 재기동(manifest 반영).
@@ -806,7 +853,14 @@ export function SettingsTab() {
 		setLocalGpuTier(tier);
 		const staged =
 			tier === "off"
-				? { avatar: avatarProvider, nva: nvaModel, tts: ttsProvider }
+				? {
+						avatar: avatarProvider,
+						nva: nvaModel,
+						tts: ttsProvider,
+						ttsHost: vllmTtsHost,
+						mainProvider: provider,
+						mainModel: model,
+					}
 				: stageLocalSlots(tier, local8gFocus);
 		void warmLocalProfile(tier, local8gFocus, staged);
 		// #auto-apply: GPU 프로파일 선택도 적용 버튼 없이 즉시 config 반영. staged 슬롯까지 영속해야
@@ -818,6 +872,11 @@ export function SettingsTab() {
 			avatarProvider: staged.avatar,
 			nvaModel: staged.nva || undefined,
 			ttsProvider: staged.tts,
+			// 로컬 음성 티어면 host 도 교정된 값을 영속(localhost raw /tts 잔재만 :8910 으로 보정).
+			vllmTtsHost: staged.ttsHost || undefined,
+			// 프로파일 = 자동 설정: 두뇌(main)도 스테이징 값으로 영속 (2026-07-15 루크).
+			provider: staged.mainProvider,
+			model: staged.mainModel,
 			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
 		});
 	};
@@ -835,6 +894,9 @@ export function SettingsTab() {
 			avatarProvider: staged.avatar,
 			nvaModel: staged.nva || undefined,
 			ttsProvider: staged.tts,
+			vllmTtsHost: staged.ttsHost || undefined,
+			provider: staged.mainProvider,
+			model: staged.mainModel,
 			// 로컬 음성(both/voice)을 켜면 립싱크를 위해 TTS on.
 			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
 		});
@@ -1676,6 +1738,16 @@ export function SettingsTab() {
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 	}
 
+	function persistVideoAvatarSelection(nextNva?: string) {
+		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
+		setAvatarProvider("naia-video-avatar");
+		setNvaModel(selectedNva);
+		persistConfig({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: selectedNva,
+		});
+	}
+
 	function handleProviderChange(id: ProviderId) {
 		setProvider(id);
 		if (id !== "ollama") {
@@ -2211,7 +2283,12 @@ export function SettingsTab() {
 	// 가 모든 케이스를 해소: 로그아웃(activeLocalTier=null)→[]→false(FR-3), 6G(avatar)→true,
 	// 8G 배타는 focus=avatar|both 일 때 true·llm 일 때 false, 12G+ 는 true. 이 값으로 아바타 유형 피커의
 	// "비디오 아바타" 선택을 게이트한다(가능할 때만 선택). VideoAvatarCanvas 자동기동과 동일 로직.
-	const cascadeAvatarPossible = localTierCapabilities.includes("avatar");
+	// 로그인 사용자는 NVA를 선택한 뒤 같은 아바타 설정에서 원격 Host URL을 지정할 수 있다.
+	// 선택 자체가 로컬 TRT capability나 local8gFocus를 만들어내지는 않는다.
+	const cascadeAvatarPossible =
+		localTierCapabilities.includes("avatar") ||
+		!!normalizeCascadeUrl(cascadeRuntimeUrl).url ||
+		!!naiaKey;
 	// FR-VRAM.4: tier 가 VRAM 예산 내에서 로컬 추천할 슬롯(숨김 아님 — 추천만).
 	const effectiveCapabilities: ModelCapability[] = baseCapabilities;
 	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
@@ -2637,11 +2714,14 @@ export function SettingsTab() {
 								if (next === "naia-video-avatar" && !nvaModel)
 									setNvaModel(DEFAULT_NVA_MODEL);
 								// #auto-apply: 적용 버튼 없이 즉시 반영(saveConfig → naia-config-changed → App).
-								persistConfig({
-									avatarProvider: next,
-									nvaModel:
-										next === "naia-video-avatar" ? nextNva : undefined,
-								});
+								if (next === "naia-video-avatar") {
+									persistVideoAvatarSelection(nextNva);
+								} else {
+									persistConfig({
+										avatarProvider: next,
+										nvaModel: undefined,
+									});
+								}
 							}}
 						>
 							<option value="vrm">{t("settings.avatarProviderVrm")}</option>
@@ -2776,12 +2856,8 @@ export function SettingsTab() {
 										type="button"
 										className={`vrm-list-item${nvaModel === name ? " vrm-list-item--active" : ""}`}
 										onClick={() => {
-											setNvaModel(name);
+											persistVideoAvatarSelection(name);
 											// #auto-apply: 즉시 반영. bare 이름 저장(절대경로 금지 — 뷰어가 경로 결합).
-											persistConfig({
-												avatarProvider: "naia-video-avatar",
-												nvaModel: name,
-											});
 										}}
 									>
 										{name}
@@ -2808,6 +2884,44 @@ export function SettingsTab() {
 								)}
 							</div>
 							{/* FR-6(2026-07-01): 립싱크는 TTS 음성이 있을 때만. TTS 꺼짐 → 정적. */}
+							<label htmlFor="cascade-runtime-url">
+								{t("settings.cascadeRuntimeUrlLabel")}
+							</label>
+							<input
+								id="cascade-runtime-url"
+								type="text"
+								className="settings-input"
+								value={cascadeRuntimeUrl}
+								placeholder="https://gpu-host.example:9449"
+								onChange={(e) => {
+									setCascadeRuntimeUrl(e.target.value);
+									if (cascadeUrlError) setCascadeUrlError("");
+								}}
+								onBlur={(e) => {
+									const { url, error } = normalizeCascadeUrl(e.target.value);
+									if (error) {
+										setCascadeUrlError(error);
+										return;
+									}
+									setCascadeUrlError("");
+									setCascadeRuntimeUrl(url ?? "");
+									persistConfig({ cascadeRuntimeUrl: url });
+								}}
+							/>
+							{cascadeUrlError && (
+								<div
+									className="settings-hint settings-hint-error"
+									data-testid="cascade-url-error"
+								>
+									{t("settings.cascadeUrlError")}
+								</div>
+							)}
+							<div className="settings-hint">
+								{t("settings.cascadeRuntimeUrlHint")}
+							</div>
+							<div className="settings-hint">
+								{t("settings.cascadeRuntimeUrlEgress")}
+							</div>
 							<div
 								className="settings-hint"
 								data-testid="nva-lipsync-note"
@@ -3207,15 +3321,12 @@ export function SettingsTab() {
 							}}
 						>
 							<option value="off">{t("settings.engineLocalOff")}</option>
-							<option value="auto">
-								{detectedVramGb != null
-									? t("settings.localGpuAutoDetected").replace(
-											"{vram}",
-											String(detectedVramGb),
-										)
-									: t("settings.localGpuAutoUnknown")}
-							</option>
-							{VRAM_TIERS.map((tier) => (
+							{/* "자동" 옵션 제거(2026-07-15 루크 "자동 없애던지"): auto 가 숨긴 미검증
+							    티어(NVA 아바타 포함)를 골라 프로파일 의도를 배반했다. 명시 선택만 제공.
+							    저장된 구 "auto" 값은 하위호환 해석(resolveActiveTier)만 유지. */}
+							{VRAM_TIERS.filter((tier) => !tier.hidden).map((tier) => (
+								// hidden = 실기 미검증 티어 비노출 (2026-07-15 루크 — 잘못 골라 무음/포화 방지).
+								// 저장된 hidden 티어 id 는 로직·하위호환 유지(선택지만 안 보임).
 								<option key={tier.id} value={tier.id}>
 									{t(vramTierLabelKey(tier.id))}
 								</option>
@@ -4023,8 +4134,8 @@ export function SettingsTab() {
 								else if (next === "google")
 									setGatewayTtsApiKey(existing?.googleApiKey ?? "");
 								else setGatewayTtsApiKey("");
-								// naia-local-voice: 임베딩 cascade(VoxCPM2)는 localhost:22600에
-								// 뜸 → host 비어있으면 기본값 채움(합성이 자동으로 로컬 가리킴).
+								// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
+								// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
 								if (next === "naia-local-voice" && !vllmTtsHost) {
 									setVllmTtsHost(DEFAULT_LOCAL_VOICE_HOST);
 									persistConfig({ vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST });
@@ -4215,7 +4326,7 @@ export function SettingsTab() {
 								}}
 								placeholder={
 									ttsProvider === "naia-local-voice"
-										? "http://localhost:22600"
+										? DEFAULT_LOCAL_VOICE_HOST
 										: DEFAULT_VLLM_HOST
 								}
 							/>

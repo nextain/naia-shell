@@ -304,7 +304,7 @@ test.describe("FR-6: NVA lip-sync note (avatar tab)", () => {
 });
 
 test.describe("FR-7: video avatar gated by cascade capability", () => {
-	test("no avatar-capable local profile → video-avatar option disabled", async ({
+	test("logged-in shell can stage video avatar without an avatar local profile", async ({
 		page,
 	}) => {
 		// 2026-07-08 단조 티어에선 6G+ 모두 avatar 를 로컬 제공. avatar 미제공 케이스는
@@ -315,11 +315,7 @@ test.describe("FR-7: video avatar gated by cascade capability", () => {
 		await page.locator('[data-settings-tab="avatar"]').click();
 		await expect(
 			page.locator('option[value="naia-video-avatar"]'),
-		).toBeDisabled();
-		// 선택 불가 안내(hint)도 노출.
-		await expect(
-			page.locator('[data-testid="avatar-cascade-required"]'),
-		).toBeVisible({ timeout: 5_000 });
+		).toBeEnabled();
 	});
 
 	test("logged out → video-avatar option disabled (FR-3 cross-check)", async ({

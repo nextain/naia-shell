@@ -268,30 +268,67 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 
-	it("writes only UI identity keys, dropping provider/secret/non-identity keys", async () => {
+	// FR-CONFIG-SOT.4 — ui-config.json 은 UI_ONLY 전체를 저장한다(세션/휘발 상태만 제외).
+	//   이전 계약은 UI_IDENTITY 9개만 저장 → theme·vllmTtsHost 등이 어느 파일에도 SoT 가 없어 부팅 리셋.
+	it("writes ALL UI settings (not just identity), dropping provider/secret keys", async () => {
 		setAdkPath(WIN_ADK);
 		await writeNaiaUiConfig({
-			provider: "openai",
-			naiaKey: "secret",
-			theme: "ocean", // UI 이지만 정체성 키 아님 → 제외
-			vrmModel: "a.vrm",
-			backgroundImage: "bg.png",
-			bgmTrack: "song.mp3",
-			customVrms: ["a.vrm"],
+			provider: "openai", // agent 키(config.json) → 제외
+			naiaKey: "secret", // 시크릿 → 제외
+			vrmModel: "a.vrm", // UI 정체성 → 저장
+			theme: "ocean", // UI 설정 → 이제 저장됨(이전엔 제외됐다)
+			vllmTtsHost: "http://localhost:22600", // 로컬 보이스 호스트 → 저장(회귀 대상)
+			panelPosition: "left", // 패널 레이아웃 → 저장
+			bgmVolume: 0.5, // BGM 볼륨 → 저장
+			locale: "ko", // 로케일 → 저장
 		});
-		expect(mockInvoke).toHaveBeenCalledWith("write_naia_ui_config", {
-			adkPath: WIN_ADK,
-			json: JSON.stringify(
-				{
-					vrmModel: "a.vrm",
-					backgroundImage: "bg.png",
-					bgmTrack: "song.mp3",
-					customVrms: ["a.vrm"],
-				},
-				null,
-				2,
-			),
+		const [, arg] = mockInvoke.mock.calls.find(
+			([name]) => name === "write_naia_ui_config",
+		)!;
+		const written = JSON.parse((arg as { json: string }).json);
+		// 저장돼야 할 UI 설정 (회귀 방지 핵심)
+		expect(written.vrmModel).toBe("a.vrm");
+		expect(written.theme).toBe("ocean");
+		expect(written.vllmTtsHost).toBe("http://localhost:22600");
+		expect(written.panelPosition).toBe("left");
+		expect(written.bgmVolume).toBe(0.5);
+		expect(written.locale).toBe("ko");
+		// agent 키·시크릿은 ui-config 에 안 들어간다
+		expect(written).not.toHaveProperty("provider");
+		expect(written).not.toHaveProperty("naiaKey");
+	});
+
+	it("does NOT persist volatile session state (discord/bgmPlaying)", async () => {
+		setAdkPath(WIN_ADK);
+		await writeNaiaUiConfig({
+			theme: "ocean",
+			discordSessionMigrated: true, // 세션 상태 → 제외
+			lastProcessedDiscordMessageId: "123", // 세션 상태 → 제외
+			bgmPlaying: true, // 휘발 재생상태 → 제외
 		});
+		const [, arg] = mockInvoke.mock.calls.find(
+			([name]) => name === "write_naia_ui_config",
+		)!;
+		const written = JSON.parse((arg as { json: string }).json);
+		expect(written.theme).toBe("ocean");
+		expect(written).not.toHaveProperty("discordSessionMigrated");
+		expect(written).not.toHaveProperty("lastProcessedDiscordMessageId");
+		expect(written).not.toHaveProperty("bgmPlaying");
+	});
+
+	// 회귀 방지 — 로컬 보이스 호스트가 write→read 왕복에서 살아남는가 (루크 발견 버그).
+	it("round-trips vllmTtsHost through ui-config (regression: local voice host reset)", async () => {
+		setAdkPath(WIN_ADK);
+		await writeNaiaUiConfig({ vllmTtsHost: "http://192.168.0.9:22600" });
+		const [, arg] = mockInvoke.mock.calls.find(
+			([name]) => name === "write_naia_ui_config",
+		)!;
+		const written = (arg as { json: string }).json;
+		// 그 JSON 을 read 가 그대로 파싱해 돌려준다.
+		mockInvoke.mockResolvedValue(written);
+		expect((await readNaiaUiConfig())?.vllmTtsHost).toBe(
+			"http://192.168.0.9:22600",
+		);
 	});
 });
 
@@ -308,24 +345,32 @@ describe("readNaiaUiConfig", () => {
 });
 
 describe("writeNaiaConfig also persists ui-config (FR-WS.2)", () => {
-	it("calls both write_naia_config (stripped) and write_naia_ui_config (UI identity)", async () => {
+	it("calls both write_naia_config (stripped) and write_naia_ui_config (ALL UI settings)", async () => {
 		setAdkPath(WIN_ADK);
 		await writeNaiaConfig({
 			provider: "openai",
 			model: "gpt-4o",
 			vrmModel: "a.vrm",
 			theme: "ocean",
+			vllmTtsHost: "http://localhost:22600",
 		});
-		// config.json: UI keys stripped (vrmModel/theme gone — stripForAgent)
+		// config.json: UI keys stripped (vrmModel/theme/vllmTtsHost gone — stripForAgent)
 		expect(mockInvoke).toHaveBeenCalledWith("write_naia_config", {
 			adkPath: WIN_ADK,
 			json: JSON.stringify({ provider: "openai", model: "gpt-4o" }, null, 2),
 		});
-		// ui-config.json: only UI identity keys (vrmModel; theme is not an identity key)
-		expect(mockInvoke).toHaveBeenCalledWith("write_naia_ui_config", {
-			adkPath: WIN_ADK,
-			json: JSON.stringify({ vrmModel: "a.vrm" }, null, 2),
-		});
+		// ui-config.json: ALL UI settings (FR-CONFIG-SOT.4 — theme·vllmTtsHost 도 저장,
+		//   이전엔 UI_IDENTITY 9개만 저장해 이들이 어느 파일에도 SoT 가 없었다).
+		const [, arg] = mockInvoke.mock.calls.find(
+			([name]) => name === "write_naia_ui_config",
+		)!;
+		const written = JSON.parse((arg as { json: string }).json);
+		expect(written.vrmModel).toBe("a.vrm");
+		expect(written.theme).toBe("ocean");
+		expect(written.vllmTtsHost).toBe("http://localhost:22600");
+		// agent 키는 ui-config 에 안 들어간다
+		expect(written).not.toHaveProperty("provider");
+		expect(written).not.toHaveProperty("model");
 	});
 });
 

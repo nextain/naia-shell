@@ -197,7 +197,7 @@ describe("OnboardingWizard", () => {
 	it("shows VRAM recommendation on the provider step", async () => {
 		const { invoke } = await import("@tauri-apps/api/core");
 		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
-			if (cmd === "detect_gpu_vram") return Promise.resolve(6);
+			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
 			return Promise.resolve(true);
 		});
 
@@ -208,9 +208,10 @@ describe("OnboardingWizard", () => {
 
 		advanceFromAgentNameToProvider();
 
-		expect(screen.getByText(/Detected VRAM: 6 GB/)).toBeDefined();
+		expect(screen.getByText(/Detected VRAM: 16 GB/)).toBeDefined();
 		expect(
-			screen.getByText(/6GB: video avatar/),
+			// 새 계약(2026-07-15): 추천 = 검증 티어만 → 16GB LLM+음성
+			screen.getByText(/16GB: local LLM \+ voice/),
 		).toBeDefined();
 		expect(
 			screen.getByText(/does not download or launch local models/),
@@ -220,7 +221,7 @@ describe("OnboardingWizard", () => {
 	it("uses a direct provider and stores the entered BYO API key securely on clean install", async () => {
 		const { invoke } = await import("@tauri-apps/api/core");
 		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
-			if (cmd === "detect_gpu_vram") return Promise.resolve(6);
+			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
 			return Promise.resolve(true);
 		});
 
@@ -252,7 +253,7 @@ describe("OnboardingWizard", () => {
 		expect(config.apiKey).toBeUndefined();
 		expect(config.naiaKey).toBeUndefined();
 		expect(config.onboardingComplete).toBe(true);
-		expect(config.localGpuTier).toBe("avatar-6g");
+		expect(config.localGpuTier).toBe("local-llm-voice-16g"); // 검증 티어만 추천(2026-07-15)
 		expect(secureStore.set).toHaveBeenCalledWith("apiKey", "byo-test-key");
 	});
 

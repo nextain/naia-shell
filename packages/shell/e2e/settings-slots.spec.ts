@@ -140,10 +140,65 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		expect(saved.memoryLlmProvider).toBe("naia");
 		expect(saved.memoryLlmModel).toBe("gemini-3.1-flash-lite");
 		expect(saved.memoryEmbeddingProvider).toBe("offline");
-		expect(saved.memoryOfflineModel).toBe("all-MiniLM-L6-v2");
+		// 한국어 우선: 기본 오프라인 임베딩 = 다국어 e5 (2026-07-15 승인)
+		expect(saved.memoryOfflineModel).toBe("multilingual-e5-large");
 		expect(saved.ttsProvider).toBe("nextain");
 
 		// UI 도 연동 — sub 슬롯 표시가 업데이트됨.
 		await expect(page.locator('[data-testid="slot-sub"]')).toContainText(/naia/i);
+	});
+
+	test("GPU 프로파일 = 자동 설정: 16GB LLM+음성 선택 → 두뇌·음성·호스트·아바타 전환 (2026-07-15, 시연 로컬 장면)", async ({
+		page,
+	}) => {
+		await openSlotSettings(page, {
+			vramGb: 16,
+			config: {
+				naiaKey: "nk",
+				// 이전 상태 잔재 3종 — 프로파일 선택이 전부 교정해야 한다 (2026-07-15 실사고 재현):
+				ttsProvider: "nextain", // 클라우드 음성
+				vllmTtsHost: "http://localhost:8892", // ★로컬 형식이지만 틀린 포트 — 그대로 살아남던 실사고
+				avatarProvider: "naia-video-avatar", // 아바타 티어 잔재 (VRM 복원 대상)
+			},
+		});
+
+		const tierSelect = page.locator("#local-gpu-tier");
+		await expect(tierSelect).toBeVisible();
+
+		// 피커 정리(2026-07-15 루크): 미검증 티어 비노출 + "자동" 제거 — 선택지 = 끄기 + 16GB 뿐.
+		const optionValues = await tierSelect
+			.locator("option")
+			.evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+		expect(optionValues).toContain("local-llm-voice-16g");
+		expect(optionValues).not.toContain("auto"); // 자동이 미검증 티어(NVA)를 고르던 사고로 제거
+		for (const hiddenId of [
+			"avatar-6g",
+			"local-llm-avatar-8g",
+			"local-voice-12g",
+			"full-realtime-24g",
+		]) {
+			expect(optionValues).not.toContain(hiddenId);
+		}
+
+		await tierSelect.selectOption("local-llm-voice-16g");
+
+		// 영속 검증 — 프로파일 한 번으로 로컬 풀 구성 완성.
+		const saved = await page.evaluate(() => {
+			const raw = localStorage.getItem("naia-config") ?? "{}";
+			return JSON.parse(raw) as Record<string, unknown>;
+		});
+		expect(saved.localGpuTier).toBe("local-llm-voice-16g");
+		expect(saved.provider).toBe("ollama"); // 두뇌 → 로컬
+		expect(saved.model).toBe("hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M"); // compact 기본
+		expect(saved.ttsProvider).toBe("naia-local-voice"); // 음성 → 로컬
+		expect(saved.ttsEnabled).toBe(true);
+		expect(saved.vllmTtsHost).toBe("http://localhost:8910"); // 원격 잔재 → 로컬 façade 교정
+		expect(saved.avatarProvider).toBe("vrm"); // nva 잔재 → VRM 복원
+
+		// UI 반영 — 슬롯 표시가 로컬 구성으로 갱신.
+		await expect(page.locator('[data-testid="slot-main"]')).toContainText(/ollama/i);
+		await expect(page.locator('[data-testid="slot-tts"]')).toContainText(
+			/naia-local-voice/i,
+		);
 	});
 });

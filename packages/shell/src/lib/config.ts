@@ -306,6 +306,41 @@ export function saveConfig(config: AppConfig): void {
 	}
 }
 
+/**
+ * 부팅 병합 (UC-CONFIG-SOT / FR-CONFIG-SOT.1) — **파일이 SoT, localStorage 는 캐시**.
+ *
+ * localStorage 의 역할은 오직 `naia-adk-path`(부트스트랩 포인터) 뿐이다(루크 원칙 2026-07-15).
+ * `naia-config` 는 파일에서 하이드레이트되는 렌더 캐시이므로, 부팅 시 **파일 값이 절대적으로 이긴다**.
+ *
+ * ⚠️ 이전 버그: `App.tsx` 부팅 병합만 유일하게 `{ ...local, ...file, ...ui }` 로 **local 을 base** 로 써서,
+ *   config.json 이 persona 키를 안 담으면 스테일 localStorage persona(알파)가 살아남아 파일을 덮었다.
+ *   워크스페이스 전환(`applyWorkspaceConfigToLocal`)은 이미 파일만 base 였다 — 이 함수로 부팅도 동형화한다.
+ *
+ * @param local  현재 localStorage(`naia-config`) — **base 로 쓰지 않는다**. 부트스트랩 키만 폴백 제공.
+ * @param file   `naia-settings/config.json`(agent 소비: persona·이름·말투·locale·provider·model). SoT.
+ * @param ui     `naia-settings/ui-config.json`(VRM·배경·BGM). SoT.
+ * @returns 병합 결과, 또는 파일이 둘 다 없으면 `null`(캐시 wipe 방지 — 호출자가 기존 캐시 유지).
+ */
+export function mergeBootConfig(
+	local: Record<string, unknown> | null,
+	file: Record<string, unknown> | null,
+	ui: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+	// 파일이 둘 다 없으면 하이드레이트할 근거가 없다 → null (호출자가 기존 캐시 유지, wipe 금지).
+	if (!file && !ui) return null;
+
+	// 부트스트랩 키: 파일이 아니라 로컬(디바이스)에 정당하게 사는 값. 파일에 없으면 로컬에서 폴백.
+	//   - workspaceRoot: 어느 ADK 를 볼지(adkPath 미러). 파일이 이걸 안 담을 수 있다.
+	//   - onboardingComplete: 온보딩 재실행 방지 플래그. 파일에 있으면 파일 우선.
+	const bootstrap: Record<string, unknown> = {};
+	for (const k of ["workspaceRoot", "onboardingComplete"]) {
+		if (local && local[k] !== undefined) bootstrap[k] = local[k];
+	}
+
+	// 파일이 절대 우선. local 은 base 로 쓰지 않는다(스테일 persona/model/이름 leak 차단).
+	return { ...bootstrap, ...(file ?? {}), ...(ui ?? {}) };
+}
+
 export function hasApiKey(): boolean {
 	const config = loadConfig();
 	return !!config?.apiKey || !!config?.naiaKey;
@@ -682,9 +717,17 @@ export const NAIA_WEB_BASE_URL =
 	"https://www.naia.land";
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
+// 로컬 GPU 프로파일(llm capability) 선택 시 두뇌 자동 기본값 — wm `llm_main_compact` 와 동형
+// (dnotitia DNA3.0-4B, mradermacher GGUF Q4 변환 — 출처 정직 표기. ~3.2G@16k 실측).
+// compact 를 기본으로 두는 이유: 로컬 음성(fp16 ~6.1G)·아바타(2.6G)와 16GB 동거 안전선
+// (9B 6.3G 는 포화 → 스래싱 실측 148s). 사용자가 이미 ollama 면 선택 모델을 보존한다.
+export const DEFAULT_LOCAL_LLM_MODEL = "hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";
-// 로컬 음성(naia-local-voice = VoxCPM2): 임베딩된 cascade loader 가 이 포트에 띄움 → 합성도 기본 이 주소.
-export const DEFAULT_LOCAL_VOICE_HOST = "http://localhost:22600";
+// 로컬 음성(naia-local-voice = VoxCPM2) 기본 호스트 = **로컬 cascade façade(:8910)**.
+// 셸 소비자는 OpenAI 정본 표면 /v1/audio/speech 만 쓰는데(3자 합의 2026-07-15), raw
+// VoxCPM2 서비스(:22600)는 그 표면이 없다 — façade 가 voice→ref 해석까지 얹어 서빙한다.
+// (구 값 :22600 은 raw /tts 시대 잔재 — UI 에서 로컬 음성만 고르면 아무것도 안 나오던 원인.)
+export const DEFAULT_LOCAL_VOICE_HOST = "http://localhost:8910";
 
 const INSTANCE_ID_KEY = "naia-os-instance-id";
 

@@ -39,6 +39,24 @@
 | **FR-WS.2** | UI 정체성 설정(vrmModel·backgroundImage·backgroundVideo·bgmTrack·customVrms·customBgs)을 워크스페이스별 `{adkPath}/naia-settings/ui-config.json` 에 저장(write)·복원(read). agent config.json 은 `stripForAgent` 유지 — UI키는 ui-config.json 으로만(env 오염 방지) | S72b | ui-config 분리 계약 |
 | **FR-WS.3** | 전환 후 avatar store(VRM/배경)·테마·persona 가 복원값 재적용(reload 경유). 누락 키 = 번들 기본 폴백(크래시 금지) | S72a | 복원 폴백 계약 |
 
+## 기능 요구사항 (FR) — localStorage SoT: adkPath 뿐, 설정 SoT = naia-settings/ (UC-CONFIG-SOT, 2026-07-15 루크 원칙)
+
+**원칙**: localStorage 는 오직 `naia-adk-path`(부트스트랩 포인터)만 **권위**로 갖는다. 사용자 설정
+(persona·이름·말투·locale·모델·VRM·배경)의 SoT 는 `naia-settings/config.json`·`ui-config.json`.
+localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 렌더 캐시**(107곳 동기 `loadConfig()` 리더용, 권위 없음).
+
+| ID | 요구사항 | UC | 검증 |
+|----|----------|-----|------|
+| **FR-CONFIG-SOT.1** | 부팅 시 `naia-config` 는 **파일에서 하이드레이트**된다 — 병합에서 `...local` base 제거 → `{ ...(fileConfig ?? {}), ...(uiConfig ?? {}) }`(파일 절대 우선, `applyWorkspaceConfigToLocal` 와 동형). 부트스트랩 키(`workspaceRoot`/adkPath·`onboardingComplete`)만 명시 보존. `if(!fileConfig && !uiConfig)` = 캐시 wipe 방지. 순수함수 `mergeBootConfig` 로 추출(테스트 가능) | S-CONFIG-SOT-1 | 부팅 병합 계약(스테일 persona 를 파일이 덮는가) |
+| **FR-CONFIG-SOT.2** | `syncConfigToFile()`(localStorage→config.json 되쓰기)은 **하이드레이션 완료 후에만** 실행. 하이드레이션 전 스테일 localStorage 를 파일에 되쓰지 않는다(800ms 디바운스 레이스 차단). stale-URL 대비 sync 는 하이드레이트 후 재실행 | S-CONFIG-SOT-2 | 되쓰기 게이트 계약(하이드레이션 전 write 없음) |
+| **FR-CONFIG-SOT.3** | 무회귀 — `writeNaiaConfig`·`stripForAgent`·키체인·107곳 동기 `loadConfig()` 리더 **무변경**. 캐시의 권위만 박탈 | S-CONFIG-SOT-3 | 기존 adk-store/config 테스트 무회귀 |
+| **FR-CONFIG-SOT.4** | **UI 설정 SoT 완성** — `extractUiConfig`(ui-config.json write) 가 `UI_IDENTITY_KEYS`(9개) 대신 **`UI_ONLY_CONFIG_KEYS` 전체**를 뽑는다. "config.json 에서 strip 하는 UI 키 = ui-config.json 에 쓰는 키" 가 일치해야, 파일 SoT 없는 키(vllmTtsHost·theme·panelPosition·bgmVolume·ttsProvider·liveProvider 등)가 부팅 시 리셋되지 않는다. read/병합은 이미 통짜(`{...file, ...ui}`)라 대칭 자동. ⚠️ FR-CONFIG-SOT.1 도입 시 드러난 회귀(로컬 보이스 호스트 `vllmTtsHost` 미저장)의 근본 수정 | S-CONFIG-SOT-4 | ui-config 왕복 계약(UI_ONLY 전체 write→read 라운드트립) |
+
+### NFR
+- **동기 렌더 제약**: localStorage 캐시는 유지한다(rip-out 불가 — 107곳 sync 리더가 React 렌더/이벤트/store init 에서 await 불가). 캐시는 read-through, 권위는 파일.
+- **비대칭 해소**: 부팅 병합과 워크스페이스 전환(`applyWorkspaceConfigToLocal`)이 **동일 패턴**(파일만 base)이어야 한다. 부팅만 `...local` 을 쓰던 것이 유일 버그원.
+- **레이스 안전**: 하이드레이션(IPC 2회 await)과 디바운스 sync(800ms) 간 순서를 플래그로 강제 — "먼저 끝난 쪽이 이긴다"에 의존 금지.
+
 > NFR: NFR-isolation(복원 실패가 전환 자체 안 깸) · NFR-deny-default(ui-config.json 도 adkPath 경계 가드 = 기존 Rust read/write_naia_config 패턴 재사용).
 
 ## 기능 요구사항 (FR) — 파이프라인 TTS 셸 직접 (#363, 셸 feature — 2026-06-25)
@@ -105,8 +123,25 @@
 | **FR-VOICE.1** | naia-local-voice 합성이 **로컬 음성 호스트(`vllmTtsHost`)** 사용 — LLM용 `vllmHost`(localhost:8000) 오용 버그 수정. `SynthesizeOpts.vllmTtsHost` 신설 + ChatPanel 2개 빌드부 + 합성 호출 배선 | S-VOICE | `SettingsTab.test.tsx` · tsc |
 | **FR-VOICE.2** | **silent free 폴백 제거(정직화)**. naia-local-voice/vllm 합성 실패 시 브라우저 무료 TTS로 위장 금지 → 1회 명확 알림(`chat.localVoiceUnavailable`) + 무음. 클라우드 provider 는 기존 free 폴백 유지 | S-VOICE | `ChatPanel` 경로 · tsc |
 | **FR-VOICE.3** | naia-local-voice **voice picker 채움**(registry voices=기본 음색 1) — 선택 시 stale 클라우드 voice id 잔존 방지. 설정 힌트=로컬 엔진 실행 필요(`settings.localVoiceEngineHint`) + 로컬 음성 포트(22600) placeholder | S-VOICE | registry · tsc |
+| **FR-VOICE.4** | naia-local-voice `/tts` 합성이 **웹뷰 CORS 로 차단되지 않도록** Tauri 런타임에선 Rust 프록시(`local_voice_synthesize`, reqwest, CORS 면제)로 우회. VoxCPM2(stdlib http, ACAO 없음) 대상 웹뷰 `fetch(POST application/json)`가 preflight 501+ACAO 부재로 실패하던 버그 수정(2026-07-15 실측). 비-Tauri(브라우저/vitest)는 직접 fetch 유지 → 계약 무회귀. 대응 서버측 근본수정 = cascade `voxcpm2_service.py` CORS 헤더(별도, kiosk-4070 배포). ⚠️ **stale(2026-07-15 표면 전환)**: naia-local-voice 가 raw `/tts` → OpenAI `/v1/audio/speech`(3자 합의 정본 표면)로 이동, omni 서버는 CORS 허용(`ACAO:*` 실측) → Rust 프록시 코드 제거됨. 이 행은 이력 보존용 | S-VOICE | (대체: FR-VOICE.5) |
+| **FR-VOICE.5** | **원격 omni 음성 + 로컬 Ditto 아바타(8g avatar-only) 립싱크 배선** (2026-07-16 부스 토폴로지, 루크 지시 "nva 플레이어 + ditto trt 를 naia-shell 에 이식"). ① naia-local-voice 합성 = OpenAI 표면 `/v1/audio/speech`(음색은 서버가 voice→ref 해석, `voice` 미지정 시 `naia-default` — 무지문 랜덤 음색 금지) → WAV 무변환 패스스루. ② `streamsAvatarPcm(provider)` 게이트(순수함수, synthesize.ts): nextain·naia-local-voice = **셸 합성 오디오를 cascade `/stream` 으로 직결**(AudioQueue 즉시재생 + speakAudio muted 립싱크). 구 "naia-local-voice 추가 금지" 경고는 raw `/tts`(음색 상태 우회) 전제였고 표면 전환으로 사유 소멸 — 8g avatar-only 파사드(자체 TTS 없음)에선 `/stream_text` 폴백이 무음이라 PCM 직결이 유일한 립싱크 경로. ③ 실패 시 FR-VOICE.2 유지(알림+무음, 위장 폴백 금지) | S-VOICE-AVATAR | `synthesize.test.ts`(신 표면 계약 5건 + `streamsAvatarPcm` 게이트 3건) · tsc |
 
 > NFR: NFR-honesty(미가용을 free 음성으로 위장 금지) · F1(measurement-gated). ⚠️ **DEFER Round 2**: 로컬 cascade lifecycle 임베딩(naia-shell Rust sidecar 기동/헬스체크) + windows-manager 정식 로더(#1 M5). 8GB 기기 적합성=미측정(소형/양자화 음성 모델 탐색 별도).
+
+## 기능 요구사항 (FR) — 16GB 로컬 프로파일 자동설정 + 음색/에코 배선 (2026-07-15, 코스포 시연 로컬 장면)
+
+> 배경: 루크 지시로 "GPU 프로파일 선택 하나로 두뇌·음성·아바타가 자동 설정"되는 시연 로컬 장면
+> (9B 로컬 LLM + VoxCPM2 int8 로컬 음성 + VRM). FR-VRAM.4("추천만, 자동변경·숨김 없음")를
+> **본 FR 이 개정**한다 — 루크가 명시적으로 자동 적용을 요구했으므로 추천→자동적용으로 전환.
+
+| ID | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|----------|-----------|------|
+| **FR-VRAM.5** | **검증-티어 전용 프로파일 + 자동설정** (FR-VRAM.4 개정). ① `hidden` 티어는 피커 비노출 **+ `selectVramTier`(auto) 제외** — 미검증 티어 자동선택이 NVA 아바타를 몰래 심던 사고 차단. 현재 검증 티어 = `local-llm-voice-16g`(3080 Ti 16G 실측). **트레이드오프(명시)**: <16GB VRAM 은 auto 로 로컬 프로파일 미수령(클라우드) — 프리릴리스 허용, 검증 시 hidden 해제로 편입. ② 프로파일 선택 = **자동설정**(stageLocalSlots): 두뇌(로컬 LLM capability → provider=ollama + compact 기본 `DNA3.0-4B`), 음성(tts capability → naia-local-voice + host), 아바타(avatar capability 없으면 → VRM 복원). ③ 저장값·구 id 하위호환(normalizeTierId) 유지 | S-VRAM-AUTO | `vram-tiers.test.ts`(hidden auto 제외·데이터 계약) · `SettingsTab.test.tsx`(프로파일 클릭 자동설정) · `slots-manifest.contract.test.ts` · e2e `settings-slots.spec.ts`(16G 프로파일 → 두뇌·음성·호스트·아바타 전환) |
+| **FR-VOICE.6** | **로컬 음성 정본 호스트 = :8910 façade**. `DEFAULT_LOCAL_VOICE_HOST` = `http://localhost:8910`(OpenAI 표면 `/v1/audio/speech` 서빙 cascade façade). 구 `:22600`(raw `/tts`)은 이 표면이 없어 기본이 될 수 없다 — placeholder·힌트·주석 모두 :8910 으로 정정. 프로파일 자동설정은 **빈 값·localhost/127.0.0.1 변형만** 이 기본으로 교체(원격 GPU Tailscale 호스트는 보존 — 문서화된 원격 cascade 워크플로 파괴 금지) | S-VOICE-AUTO | `synthesize.test.ts`(:8910 기본 호스트) · `SettingsTab` 자동설정(원격 호스트 보존) |
+| **FR-VOICE.7** | **프리셋 음색 façade 팔레트 id 전달**. naia-local-voice 의 `voice` = 사용자 음성 참조(`voiceRefUrl`)의 basename(쿼리/프래그먼트 제거 후 `.wav` 파일명 → façade `/ref/voices` 팔레트 id). 팔레트 밖 값(녹음/업로드·비-wav)은 `naia-default` 폴백(서버가 모르는 id 를 200+랜덤 음색으로 받으므로). **vllm provider 는 제외** — 범용 OpenAI 서버라 팔레트 id 를 모름, `"default"` 유지. 두 합성 경로(파이프라인·Live)가 단일 `resolveTtsVoiceId(config)` 공유 → 분기 드리프트 방지 | S-VOICE-PRESET | `ChatArea` 음색 해석(프리셋→id·쿼리스트링·vllm 분리) |
+| **FR-ECHO.1** | **자기발화(에코) 방어 2단**. ① 재생 중 마이크(STT 세션) 정지 + 종료 0.8초 후 재개 — 재개 대기 타이머는 다음 문장 재생 시작 시 취소(문장 간 큐 드레인으로 마이크가 발화 중 재개통되던 누수 차단). ② 최근 TTS 문장과 유사도(문자 bigram Dice ≥ 0.6 또는 ≥8자 부분일치)면 STT 결과 스킵 — **짧은 정상 답변("좋아/네/그래")은 절대 스킵 금지**(bigram 폴백 정확일치, 부분일치 길이-게이트) | S-ECHO | `echo-text-filter.test.ts`(동일·부분·짧은답변·정상질문 8건) |
+
+> NFR: FR-VRAM.5 <16GB 트레이드오프는 프리릴리스 한정. FR-ECHO.1 은 web-speech 지연배달 특성 대응(1차 마이크정지가 주 방어, 2차 텍스트필터는 누수 폴백). ⚠️ **후속(비블로킹)**: 부팅 병합(mergeBootConfig)이 localStorage-only 키(naiaKey 시크릿·discord 커서·세션 플래그)를 보존하지 않는 회귀 — 데모 실사용 정상 확인이나 재로그인/중복응답 가능성, 부팅 흐름 변경은 별도 안전작업으로 분리.
 
 ## 기능 요구사항 (FR) — 로컬 cascade 임베딩 (Round 2, 멀티레포 — 2026-06-30)
 

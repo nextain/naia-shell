@@ -345,25 +345,29 @@ export function applyModelSelectionToConfig(
 }
 
 // ── 워크스페이스별 UI 정체성(VRM/배경/BGM) — ui-config.json (agent 미소비, env 오염 방지) ──────────
-// config.json 은 agent 가 읽어 stripForAgent 로 UI키가 제거됨 → UI 설정이 전역 localStorage 에만 살아
-// 워크스페이스 전환 시 복원되지 않았다(S72 버그). 이 키들을 워크스페이스별 ui-config.json 에 분리 저장/복원(FR-WS.2).
-const UI_IDENTITY_KEYS = [
-	"vrmModel",
-	"avatarProvider",
-	"nvaModel",
-	"cascadeRuntimeUrl",
-	"backgroundImage",
-	"backgroundVideo",
-	"bgmTrack",
-	"customVrms",
-	"customBgs",
-] as const;
+// config.json 은 agent 가 읽어 stripForAgent 로 UI키가 제거됨 → UI 설정이 전역 localStorage 에만 살았다.
+// "localStorage = adkPath 뿐" (UC-CONFIG-SOT / FR-CONFIG-SOT.4) 를 지키려면 **config.json 에서 strip 하는
+// UI 키 = ui-config.json 에 저장하는 키** 가 일치해야 한다 — 안 그러면 어느 파일에도 SoT 가 없는 키
+// (vllmTtsHost·theme·panelPosition 등)가 부팅 시 기본값으로 리셋된다(로컬 보이스 호스트 저장 안 됨 회귀).
+// 따라서 ui-config.json 에는 `UI_ONLY_CONFIG_KEYS` 전체를 저장하되, **영속 부적절한 세션/휘발 상태만 제외**한다.
+const UI_SESSION_ONLY_KEYS = new Set<string>([
+	// Per-session Discord state — 워크스페이스 정체성 아님, 세션마다 갱신.
+	"discordSessionMigrated",
+	"lastProcessedDiscordMessageId",
+	// 미디어 재생 중 여부 — 휘발 UI 상태(다음 실행에 이어서 재생하지 않는다).
+	"bgmPlaying",
+]);
+
+/** ui-config.json 에 저장할 UI 키 = UI_ONLY 전체 − 세션/휘발 상태. */
+const UI_PERSIST_KEYS: readonly string[] = [...UI_ONLY_CONFIG_KEYS].filter(
+	(k) => !UI_SESSION_ONLY_KEYS.has(k),
+);
 
 function extractUiConfig(
 	config: Record<string, unknown>,
 ): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
-	for (const k of UI_IDENTITY_KEYS) {
+	for (const k of UI_PERSIST_KEYS) {
 		if (config[k] !== undefined) out[k] = config[k];
 	}
 	return out;

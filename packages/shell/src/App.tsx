@@ -46,6 +46,7 @@ import {
 	migrateLiveProviderToUnifiedModel,
 	migrateSpeechStyleValues,
 	saveConfig,
+	mergeBootConfig,
 } from "./lib/config";
 import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
@@ -216,6 +217,10 @@ export function App() {
 		currentW: number;
 		moved: boolean;
 	} | null>(null);
+	// UC-CONFIG-SOT / FR-CONFIG-SOT.2 — gates the debounced config→file writeback
+	// until localStorage has been hydrated FROM naia-settings files, so the stale
+	// pre-hydration cache can never be written back into config.json.
+	const configHydratedRef = useRef(false);
 	const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
 	const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 	const backgroundVideoUrl = useAvatarStore((s) => s.backgroundVideoUrl);
@@ -356,16 +361,33 @@ export function App() {
 		});
 	}, [showAdkSetup, setBackgroundMediaType, setBackgroundVideoUrl]);
 
-	// Load naia-settings config on startup and merge into localStorage.
-	// ui-config.json must still apply when config.json is absent or malformed.
+	// Hydrate localStorage FROM naia-settings files on startup — files are SoT,
+	// localStorage is a render cache (UC-CONFIG-SOT / FR-CONFIG-SOT.1).
+	// The only authoritative localStorage key is "naia-adk-path"; "naia-config"
+	// is derived from the files here. `mergeBootConfig` drops the `...local` base
+	// that previously let a stale persona (알파) overwrite config.json.
+	// `configHydratedRef` gates the debounced file writeback below so it cannot
+	// push the stale pre-hydration cache back into config.json (FR-CONFIG-SOT.2).
 	useEffect(() => {
-		if (showAdkSetup) return;
+		if (showAdkSetup) {
+			// AdkSetup owns its own hydration; treat as hydrated so sync isn't blocked forever.
+			configHydratedRef.current = true;
+			return;
+		}
 		Promise.all([readNaiaConfig(), readNaiaUiConfig()]).then(
 			([fileConfig, uiConfig]) => {
-				if (!fileConfig && !uiConfig) return;
-				const local = loadConfig();
-				const merged = { ...(local ?? {}), ...(fileConfig ?? {}), ...(uiConfig ?? {}) };
-				saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
+				const merged = mergeBootConfig(
+					loadConfig() as unknown as Record<string, unknown> | null,
+					fileConfig ?? null,
+					uiConfig ?? null,
+				);
+				// null = files absent → keep existing cache (no wipe). Still hydrated.
+				if (merged)
+					saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
+				configHydratedRef.current = true;
+				// Re-run the gateway-mode sync now that the file value is in cache
+				// (the immediate sync on mount was gated off until this point).
+				window.dispatchEvent(new CustomEvent("naia-config-changed"));
 			},
 		);
 	}, [showAdkSetup]);
@@ -436,6 +458,10 @@ export function App() {
 		const syncConfigToFile = () => {
 			if (debounceTimer) clearTimeout(debounceTimer);
 			debounceTimer = setTimeout(() => {
+				// FR-CONFIG-SOT.2 — never write the cache back to config.json before
+				// it has been hydrated from the files. Otherwise the stale pre-boot
+				// localStorage (e.g. a leftover 알파 persona) overwrites the SoT.
+				if (!configHydratedRef.current) return;
 				const cfg = loadConfig();
 				if (cfg)
 					void writeNaiaConfig({
@@ -469,10 +495,12 @@ export function App() {
 			window.removeEventListener("naia-config-changed", handleConfigChanged);
 			window.removeEventListener("storage", updateTitle);
 			// G-10: flush pending debounced write immediately on unmount / app close.
+			// Still gated on hydration (FR-CONFIG-SOT.2) — a flush before hydration
+			// would persist the stale cache to config.json.
 			if (debounceTimer) {
 				clearTimeout(debounceTimer);
 				const cfg = loadConfig();
-				if (cfg)
+				if (cfg && configHydratedRef.current)
 					void writeNaiaConfig({
 						...(cfg as unknown as Record<string, unknown>),
 						...buildNaiaConfigEnv(cfg),

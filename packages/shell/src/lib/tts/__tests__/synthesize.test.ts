@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	arrayBufferToBase64,
 	deriveLanguageCode,
+	streamsAvatarPcm,
 	synthesizeTts,
 } from "../synthesize";
 
@@ -248,55 +249,85 @@ describe("synthesizeTts — vllm", () => {
 	});
 });
 
-describe("synthesizeTts — naia-local-voice (VoxCPM2 /tts 어댑터)", () => {
-	// f32 PCM 샘플 → base64 (서비스가 audio_b64 로 반환하는 형식).
-	const f32 = new Float32Array([0.5, -0.5]);
-	const PCM_B64 = btoa(String.fromCharCode(...new Uint8Array(f32.buffer)));
-	const ttsResponse = () =>
-		jsonResponse({ audio_b64: PCM_B64, sample_rate: 48000 });
+describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표면)", () => {
+	// 서버가 audio/wav(RIFF) bytes 를 그대로 반환한다 (2026-07-15 3자 합의:
+	// raw /tts 직결은 음색 상태 우회 → 소비자는 OpenAI 표면만 쓴다).
+	const WAV_BYTES = new Uint8Array([
+		0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
+	]); // "RIFF....WAVE" 헤더 선두
+	const wavResponse = () => ({
+		ok: true,
+		status: 200,
+		arrayBuffer: async () => WAV_BYTES.buffer.slice(0),
+		json: async () => ({}),
+		text: async () => "",
+	});
 
-	it("POSTs to {host}/tts (NOT /v1/audio/speech) and returns a WAV", async () => {
-		const fetchMock = vi.fn().mockResolvedValue(ttsResponse());
+	it("POSTs to {host}/v1/audio/speech (NOT raw /tts) and passes the WAV through", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
 		vi.stubGlobal("fetch", fetchMock);
 		const res = await synthesizeTts({
 			text: "안녕",
 			provider: "naia-local-voice",
 			vllmTtsHost: "http://localhost:22600/",
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
-		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-		expect(body.text).toBe("안녕");
-		// f32 PCM → 16-bit WAV 변환을 헤더 필드 + 샘플 왕복값까지 검증.
-		const wav = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
-		const view = new DataView(wav.buffer);
-		expect(String.fromCharCode(...wav.subarray(0, 4))).toBe("RIFF");
-		expect(String.fromCharCode(...wav.subarray(8, 12))).toBe("WAVE");
-		expect(view.getUint16(22, true)).toBe(1); // mono
-		expect(view.getUint32(24, true)).toBe(48000); // sample rate
-		expect(view.getUint32(28, true)).toBe(96000); // byte rate = sr*2
-		expect(view.getUint16(34, true)).toBe(16); // bits/sample
-		expect(view.getUint32(40, true)).toBe(4); // data size = 2 samples * 2 bytes
-		// 0.5 → 16383, -0.5 → -16384 (비대칭 풀스케일 매핑)
-		expect(view.getInt16(44, true)).toBe(16383);
-		expect(view.getInt16(46, true)).toBe(-16384);
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			"http://localhost:22600/v1/audio/speech",
+		);
+		const init = fetchMock.mock.calls[0][1];
+		// 로컬/사설 컨테이너 인증: Bearer 임의값 (공식 매뉴얼)
+		expect(init.headers.Authorization).toBe("Bearer naia");
+		const body = JSON.parse(init.body as string);
+		expect(body.input).toBe("안녕");
+		expect(body.model).toBe("voxcpm2");
+		expect(body.response_format).toBe("wav");
+		// WAV bytes 무변환 패스스루 (AudioQueue/ttsAudioToWav 가 RIFF 네이티브 감지)
+		const out = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
+		expect(String.fromCharCode(...out.subarray(0, 4))).toBe("RIFF");
+		expect(String.fromCharCode(...out.subarray(8, 12))).toBe("WAVE");
+		expect(out.length).toBe(WAV_BYTES.length);
 	});
 
-	it("defaults sample_rate to 48000 when the service omits it", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue(jsonResponse({ audio_b64: PCM_B64 })),
-		);
-		const res = await synthesizeTts({
+	it("voice 미지정 시 naia-default (무지문 랜덤 음색 금지 — 서버가 ref 로 해석)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({
 			text: "x",
 			provider: "naia-local-voice",
 			vllmTtsHost: "http://localhost:22600",
 		});
-		const wav = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
-		expect(new DataView(wav.buffer).getUint32(24, true)).toBe(48000);
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+		expect(body.voice).toBe("naia-default");
+	});
+
+	it("UI placeholder voice='default' 도 naia-default 로 정규화 (2026-07-15 실측: 서버는 모르는 id 를 400 없이 받아 문장마다 랜덤 음색 생성)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({
+			text: "x",
+			provider: "naia-local-voice",
+			voice: "default", // SettingsTab 이 naia-local-voice 에 넣는 placeholder
+			vllmTtsHost: "http://localhost:22600",
+		});
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+		expect(body.voice).toBe("naia-default");
+	});
+
+	it("실제 음색 id 는 그대로 전달 (정규화는 placeholder/빈값만)", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({
+			text: "x",
+			provider: "naia-local-voice",
+			voice: "my-cloned-voice",
+			vllmTtsHost: "http://localhost:22600",
+		});
+		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+		expect(body.voice).toBe("my-cloned-voice");
 	});
 
 	it("uses vllmTtsHost, never the LLM vllmHost", async () => {
-		const fetchMock = vi.fn().mockResolvedValue(ttsResponse());
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
 		vi.stubGlobal("fetch", fetchMock);
 		await synthesizeTts({
 			text: "x",
@@ -304,21 +335,27 @@ describe("synthesizeTts — naia-local-voice (VoxCPM2 /tts 어댑터)", () => {
 			vllmHost: "http://localhost:8000", // LLM — 무시
 			vllmTtsHost: "http://localhost:22600",
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			"http://localhost:22600/v1/audio/speech",
+		);
 	});
 
-	it("defaults to :22600 when no voice host (and never the LLM vllmHost)", async () => {
-		const fetchMock = vi.fn().mockResolvedValue(ttsResponse());
+	it("defaults to :8910(로컬 façade — 정본 표면 보유) when no voice host (never the LLM vllmHost)", async () => {
+		// raw VoxCPM2(:22600)는 /v1/audio/speech 가 없다 — UI 에서 로컬 음성만 고르면
+		// 기본값이 정본 표면을 서빙하는 로컬 cascade façade 로 가야 한다 (2026-07-15).
+		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
 		vi.stubGlobal("fetch", fetchMock);
 		await synthesizeTts({
 			text: "x",
 			provider: "naia-local-voice",
 			vllmHost: "http://localhost:9000", // LLM — 폴백 안 함
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:22600/tts");
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			"http://localhost:8910/v1/audio/speech",
+		);
 	});
 
-	it("throws on service error (5xx / no audio_b64)", async () => {
+	it("throws on service error (5xx)", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue(jsonResponse({ error: "OOM" }, false, 500)),
@@ -326,6 +363,22 @@ describe("synthesizeTts — naia-local-voice (VoxCPM2 /tts 어댑터)", () => {
 		await expect(
 			synthesizeTts({ text: "x", provider: "naia-local-voice" }),
 		).rejects.toThrow(/로컬 음성 합성 실패/);
+	});
+});
+
+describe("streamsAvatarPcm — 아바타 립싱크 PCM 직결 게이트 (FR-VOICE.5)", () => {
+	it("nextain(게이트웨이 LINEAR16=WAV) → true", () => {
+		expect(streamsAvatarPcm("nextain")).toBe(true);
+	});
+	it("naia-local-voice(/v1/audio/speech WAV, 음색=서버 해석) → true", () => {
+		// 8g avatar-only 파사드는 자체 TTS 가 없어 /stream_text 는 무음 —
+		// 셸 합성 WAV 를 /stream 으로 흘리는 것이 유일한 립싱크 경로.
+		expect(streamsAvatarPcm("naia-local-voice")).toBe(true);
+	});
+	it("합성 결과가 오디오 버퍼가 아닌 provider(edge/브라우저) → false (facade 폴백)", () => {
+		expect(streamsAvatarPcm("edge")).toBe(false);
+		expect(streamsAvatarPcm("browser")).toBe(false);
+		expect(streamsAvatarPcm("google")).toBe(false);
 	});
 });
 

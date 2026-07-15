@@ -271,50 +271,16 @@ async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
-/** base64 → bytes (arrayBufferToBase64 의 역). */
-function base64ToBytes(b64: string): Uint8Array {
-	const binary = atob(b64);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-	return bytes;
-}
-
-/** f32 PCM 샘플(mono) → 16-bit PCM WAV(ArrayBuffer). AudioQueue 가 base64 의 RIFF
- * 매직을 스니핑해 audio/wav data-URI 로 재생(합성 결과는 playBase64Audio 의 mp3 하드코딩
- * 경로가 아니라 enqueueOrdered→AudioQueue 경로). */
-function f32PcmToWav(samples: Float32Array, sampleRate: number): ArrayBuffer {
-	const n = samples.length;
-	const buffer = new ArrayBuffer(44 + n * 2);
-	const view = new DataView(buffer);
-	const writeStr = (off: number, s: string) => {
-		for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
-	};
-	writeStr(0, "RIFF");
-	view.setUint32(4, 36 + n * 2, true);
-	writeStr(8, "WAVE");
-	writeStr(12, "fmt ");
-	view.setUint32(16, 16, true); // fmt chunk size
-	view.setUint16(20, 1, true); // PCM
-	view.setUint16(22, 1, true); // mono
-	view.setUint32(24, sampleRate, true);
-	view.setUint32(28, sampleRate * 2, true); // byte rate
-	view.setUint16(32, 2, true); // block align
-	view.setUint16(34, 16, true); // bits/sample
-	writeStr(36, "data");
-	view.setUint32(40, n * 2, true);
-	let off = 44;
-	for (let i = 0; i < n; i++) {
-		const s = Math.max(-1, Math.min(1, samples[i]));
-		view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-		off += 2;
-	}
-	return buffer;
-}
+// (구 raw /tts 어댑터의 base64ToBytes · f32PcmToWav 변환기는 /v1/audio/speech 표면
+//  전환으로 제거 — 서버가 RIFF WAV 를 직접 반환하므로 클라 변환이 없다.)
 
 /**
- * naia-local-voice → 로컬 VoxCPM2 `/tts`. naia-os 의 OpenAI `/v1/audio/speech` 와 다른
- * 계약(POST /tts {text} → {audio_b64: f32 PCM base64, sample_rate})이라 전용 어댑터로
- * 호출하고 f32 PCM → WAV 로 변환해 재생 가능한 audioBase64 반환. host=vllmTtsHost||:22600.
+ * naia-local-voice → **OpenAI 호환 `/v1/audio/speech`** (정본 API 표면 — naia-omni-cascade
+ * openai_wrapper / naia_realtime_server 가 서빙, 음색(voice)은 서버가 ref 로 해석).
+ * ⚠ raw `/tts`(VoxCPM2 내부 backend adapter 전용)로 직결하지 말 것 — 2026-07-15 3자 합의:
+ *   그 결합(2921d759)은 경계 위반이었고 음색 상태를 우회해 무지문 랜덤 음색이 됐다.
+ *   소비자(셸/에이전트)는 이 OpenAI 표면만 쓴다. host=vllmTtsHost||:8910(로컬 façade —
+ *   raw :22600 은 이 표면이 없어 기본값이 될 수 없다).
  */
 async function synthNaiaLocalVoice(
 	opts: SynthesizeOpts,
@@ -323,10 +289,24 @@ async function synthNaiaLocalVoice(
 		/\/$/,
 		"",
 	);
-	const resp = await fetch(`${base}/tts`, {
+	const resp = await fetch(`${base}/v1/audio/speech`, {
 		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ text: opts.text, normalize: true }),
+		headers: {
+			"Content-Type": "application/json",
+			// 공식 매뉴얼(naia.land/ko/manual/naia-model-dev): 로컬 인증 불요, 원격은 Bearer 임의값.
+			Authorization: "Bearer naia",
+		},
+		body: JSON.stringify({
+			model: "voxcpm2",
+			input: opts.text,
+			// "default" = SettingsTab 의 UI placeholder(registry 주석) — 서버 음색 레지스트리엔
+			// 없는 id 다. 서버는 모르는 voice 를 400 없이 받아 **무지문 랜덤 음색**으로 떨어지므로
+			// (2026-07-15 실측: nonexistent id 도 200), placeholder/빈값은 서버 등록 음색
+			// "naia-default" 로 정규화한다. 문장마다 다른 목소리가 나오던 직접 원인.
+			voice:
+				!opts.voice || opts.voice === "default" ? "naia-default" : opts.voice,
+			response_format: "wav",
+		}),
 		signal: opts.signal,
 	});
 	if (!resp.ok) {
@@ -334,18 +314,21 @@ async function synthNaiaLocalVoice(
 			`로컬 음성 합성 실패 (${resp.status}): ${await errorDetail(resp)}`,
 		);
 	}
-	const data = (await resp.json()) as {
-		audio_b64?: string;
-		sample_rate?: number;
-		error?: string;
-	};
-	if (!data.audio_b64) {
-		throw new Error(`로컬 음성 합성 실패: ${data.error ?? "audio_b64 없음"}`);
-	}
-	const pcm = base64ToBytes(data.audio_b64);
-	const f32 = new Float32Array(pcm.buffer, 0, Math.floor(pcm.byteLength / 4));
-	const wav = f32PcmToWav(f32, data.sample_rate ?? 48000);
-	return { audioBase64: arrayBufferToBase64(wav) };
+	// audio/wav(RIFF) bytes — AudioQueue/ttsAudioToWav 가 RIFF 를 네이티브 감지.
+	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
+}
+
+/**
+ * 아바타 립싱크에 셸 합성 오디오(WAV/PCM)를 직접 흘릴 수 있는 provider 인가 (FR-VOICE.5).
+ *  - nextain: 게이트웨이 LINEAR16(WAV) — 기존.
+ *  - naia-local-voice: OpenAI 표면 `/v1/audio/speech` 가 WAV 반환, **음색은 합성 시점에
+ *    서버가 해석**(voice→ref). 파사드 음색 상태를 우회하지 않으므로 PCM 직결이 안전하고,
+ *    8g avatar-only 파사드(자체 TTS 없음)에선 /stream_text 가 무음이라 이것이 유일한
+ *    립싱크 경로다. (구 raw /tts 직결의 "무지문 랜덤 음색" 금지 사유는 표면 전환으로 소멸.)
+ * false = facade 내장 TTS(/stream_text) 폴백(full cascade 전제) 또는 브라우저 발화.
+ */
+export function streamsAvatarPcm(provider: string): boolean {
+	return provider === "nextain" || provider === "naia-local-voice";
 }
 
 /**

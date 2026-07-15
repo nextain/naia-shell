@@ -34,15 +34,18 @@ import type { ModelCapability } from "../types";
 export type VramTierId =
 	| "avatar-6g"
 	| "local-llm-avatar-8g"
+	| "local-llm-voice-16g"
 	| "local-voice-12g"
 	| "full-realtime-24g";
 
-/** 저장된 config 하위호환 — 구 티어 id → 신 id (2026-07-08 리네임). */
+/** 저장된 config 하위호환 — 구 티어 id → 신 id (2026-07-08 리네임 + 2026-07-15). */
 const LEGACY_TIER_ALIAS: Record<string, VramTierId> = {
 	"external-llm-6g": "avatar-6g",
 	"avatar-or-voice-8g": "local-llm-avatar-8g",
 	"avatar-voice-12g": "local-voice-12g",
 	"full-local-24g": "full-realtime-24g",
+	// 2026-07-15: LLM+음성 티어를 8g → 16g 로 정직화 (fp16 음성 6.1G 기준 — int8 미검증).
+	"local-llm-voice-8g": "local-llm-voice-16g",
 };
 
 /**
@@ -83,6 +86,15 @@ export interface VramTier {
 	 * avatar/voice focus 로 하나를 골라야 한다. 없으면(=false/미지정) 전부 동시 구동.
 	 */
 	exclusiveLocal?: boolean;
+	/**
+	 * 미검증 티어 = 피커 비노출 **+ auto 산출 제외**(2026-07-15 루크: "미검증 숨김 / 자동 없애던지").
+	 * 실기 검증 안 된 티어는 (1) 피커에 안 뜨고 (2) selectVramTier(auto)가 안 고른다 — 잘못 골라
+	 * 무음/VRAM 포화/미검증 아바타 자동주입이 나던 사고 차단(실증). **트레이드오프(문서화)**: 검증
+	 * 티어가 하나(16G)뿐이라 <16GB VRAM 은 auto 로 로컬 프로파일을 못 받고 클라우드로 남는다 —
+	 * 프리릴리스 단계라 허용, 티어가 검증되면 hidden 을 풀어 auto 대상에 편입. 저장값·구 id 하위호환
+	 * (normalizeTierId)·명시 선택은 유지(숨김은 auto+피커에만 작용).
+	 */
+	hidden?: boolean;
 	/** Approx summed VRAM of the local components (private measured). */
 	approxLocalVramGb: number;
 	/** Real-time (RTF<1) is a measured gate per GPU — never asserted (F1). */
@@ -98,12 +110,14 @@ export interface VramTier {
 export const VRAM_TIERS: readonly VramTier[] = [
 	{
 		id: "avatar-6g",
-		label: "6GB — 비디오 아바타 (LLM·음성 클라우드)",
+		// 라벨 원칙: "로컬로 도는 것"을 앞에 명시 (2026-07-15 루크: 구 라벨이 무엇이 로컬인지 모호했음)
+		label: "6GB — 로컬은 비디오 아바타만 (LLM·음성 = 클라우드)",
 		minVramGb: 6,
 		llm: "external",
 		// 6GB: 로컬 LLM(≥5G)+아바타(2.6G)=7.6G > 6G → 로컬 LLM 불가. 아바타만 로컬, 브레인·음성 클라우드.
 		localCapabilities: ["avatar"],
 		approxLocalVramGb: 2.6,
+		hidden: true, // 실기 미검증(2026-07-15) — 피커 비노출, 검증 후 해제
 		realtime: "measurement-gated",
 		note: "6GB: 로컬 아바타(Ditto 2.6G)만. LLM·STT·TTS = 클라우드. 로컬 LLM은 8GB부터.",
 	},
@@ -118,6 +132,7 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		localCapabilities: ["llm", "avatar"],
 		exclusiveLocal: true, // focus = llm | avatar | both (음성 없음).
 		approxLocalVramGb: 6.0, // both = compact LLM(DNA3.0-4B Q4 ~3.4G) + avatar 2.6G.
+		hidden: true, // 실기 미검증(2026-07-15) — 피커 비노출, 검증 후 해제
 		realtime: "measurement-gated",
 		// ⚠️ both 는 tight — 런타임 프리플라이트(fitLocalCapabilitiesToVram)가 free VRAM 부족 시 llm 을
 		// 클라우드로 강등(아바타 보존). compact 모델 강제(DNA3.0-4B Q4 등) + context cap 필요.
@@ -132,8 +147,25 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		// 음성은 batch(VoxCPM2 RTF>1). 실시간 아님 — 실시간은 24G/ggml 게이트.
 		localCapabilities: ["llm", "avatar", "tts"],
 		approxLocalVramGb: 11.1,
+		hidden: true, // 실기 미검증(2026-07-15) — 피커 비노출, 검증 후 해제
 		realtime: "measurement-gated",
 		note: "12GB(4070+): LLM+아바타+음성 전부 로컬. 음성 batch(composed, RTF>1). 실시간 배지는 24G/ggml 측정 후.",
+	},
+	{
+		id: "local-llm-voice-16g",
+		label: "16GB — 로컬 LLM + 음성",
+		minVramGb: 16,
+		llm: "own",
+		// LLM+음성 로컬, Ditto 아바타 제외(아바타 = 셸 VRM 렌더 or 클라우드) — 2026-07-15 루크 지시
+		// "VoxCPM2 + LLM 프로파일". **16GB 정직화**(루크: "8GB 프로파일인데 16GB 가 부족하다면 모순"):
+		// int8 음성(3.47G)은 Windows 미검증이라 실제 도는 건 fp16(~6.1G) → compact LLM(3.4~4)과
+		// 합쳐 ~10G + 데스크톱/버퍼 = 16GB 가 정직한 하한. int8 검증되면 8GB 변형을 다시 연다.
+		// auto: 검증된 티어는 이것뿐이므로 16GB+ auto = 이 티어 (hidden 티어는 auto 제외 —
+		// 2026-07-15 루크 실증: auto 가 숨긴 12g 를 골라 NVA 를 심었음). 3080 Ti 16G 시연 정본.
+		localCapabilities: ["llm", "tts"],
+		approxLocalVramGb: 10.0, // fp16 음성 6.1 + compact LLM ~3.9 (int8 검증 전 정직 산술)
+		realtime: "measurement-gated",
+		note: "로컬 LLM(compact) + 로컬 음성(VoxCPM2 fp16). Ditto 아바타 없음 — 아바타는 VRM(셸 렌더, GPU 미미) 또는 클라우드. 음성 표면 = 로컬 cascade façade /v1/audio/speech. 실기 검증: 3080 Ti 16G (2026-07-15).",
 	},
 	{
 		id: "full-realtime-24g",
@@ -142,6 +174,7 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		llm: "own",
 		localCapabilities: ["llm", "avatar", "tts"],
 		approxLocalVramGb: 12, // fp16 여유. + 로컬 LLM(모델 의존, 미합산).
+		hidden: true, // 실기 미검증(2026-07-15) — 피커 비노출, 검증 후 해제
 		realtime: "measurement-gated",
 		note: "24G+: 완전 로컬. 실시간(RTF<1) = ggml/VoxCPM.cpp 트랙, 측정 통과 시에만 realtime 배지(F1).",
 	},
@@ -154,6 +187,9 @@ export const VRAM_TIERS: readonly VramTier[] = [
 export function selectVramTier(vramGb: number): VramTier | null {
 	let chosen: VramTier | null = null;
 	for (const tier of VRAM_TIERS) {
+		// hidden(미검증) 티어는 auto 에서도 제외 (2026-07-15 루크 실증: 16GB auto 가 숨긴
+		// 12g 티어를 골라 NVA 아바타를 심었다). 자동 = **검증된 티어만** 고른다 — 피커와 동일 기준.
+		if (tier.hidden) continue;
 		if (vramGb >= tier.minVramGb) chosen = tier;
 	}
 	return chosen;

@@ -37,6 +37,7 @@ import {
 	DEFAULT_VLLM_HOST,
 	DEFAULT_VOICE_REF_URL,
 	LAB_GATEWAY_URL,
+	type AppConfig,
 	type TtsProviderId,
 	addAllowedTool,
 	getNaiaInstanceId,
@@ -72,7 +73,8 @@ import {
 } from "../lib/stt";
 import { getTtsProviderMeta } from "../lib/tts";
 import { estimateSttCost, estimateTtsCost } from "../lib/tts/cost";
-import { synthesizeTts } from "../lib/tts/synthesize";
+import { streamsAvatarPcm, synthesizeTts } from "../lib/tts/synthesize";
+import { isLikelySelfEcho } from "../lib/voice/echo-gate";
 import type {
 	AgentResponseChunk,
 	AuditEvent,
@@ -225,6 +227,42 @@ const mdComponents: Components = {
 		return <p {...props}>{processed}</p>;
 	},
 };
+
+/** 로컬 음성(naia-local-voice) 음색 id — 사용자 음성 참조(voiceRefUrl, RefAudioSection
+ *  프리셋)의 **파일명**이 façade `/ref/voices` 팔레트 id 와 일치하므로 basename 을 그대로
+ *  전달한다. (2026-07-15 루크 실증: 하드코딩 "default" 가 프리셋 선택을 façade 에 전달하지
+ *  않아 음색이 팔레트 기본으로 고정되던 버그 — 남성 음색을 골라도 여성으로 나옴.)
+ *  비팔레트 형식(녹음/업로드 data·로컬경로)은 façade 가 400 fail-closed 라 기본 음색 폴백. */
+function naiaLocalVoiceId(voiceRefUrl?: string): string {
+	if (!voiceRefUrl) return "naia-default";
+	// 쿼리/프래그먼트 제거 후 basename — GCS 서명 URL(...wav?X-Goog-...) 이나 프리셋
+	// sampleUrl 의 쿼리스트링 때문에 정규식이 빗나가 프리셋이 무시되던 것 방지(2026-07-15 리뷰).
+	const noQuery = voiceRefUrl.split(/[?#]/)[0];
+	const base = noQuery.split(/[/\\]/).pop()?.trim() ?? "";
+	// façade 팔레트 id = .wav 파일명. 팔레트 밖 값(녹음/업로드 data·경로)은 서버가 모르는
+	// id 를 200+랜덤음색으로 받으므로(측정), 안전한 기본 음색으로 폴백한다.
+	return /^[\w.-]+\.wav$/i.test(base) ? base : "naia-default";
+}
+
+/** TTS provider 별 voice id 해석 (단일 SoT — 파이프라인·Live 두 경로가 공유해 분기 드리프트
+ *  방지, 2026-07-15 리뷰). nextain=클라우드 voice / **naia-local-voice=façade 팔레트 id**(프리셋
+ *  파일명) / **vllm=사용자 임의 OpenAI-호환 서버라 "default" 그대로**(팔레트 id 를 모름 — 이걸
+ *  섞으면 vllm 이 400/무음) / 그 외=config.ttsVoice. */
+function resolveTtsVoiceId(config: AppConfig): string | undefined {
+	if (config.ttsProvider === "nextain") {
+		return (
+			config.ttsVoice ||
+			`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
+		);
+	}
+	if (config.ttsProvider === "naia-local-voice") {
+		return naiaLocalVoiceId(config.voiceRefUrl);
+	}
+	if (config.ttsProvider === "vllm") {
+		return "default"; // 범용 OpenAI-호환 서버 — 팔레트 id 주입 금지.
+	}
+	return config.ttsVoice;
+}
 
 /** Build MemoryContext for system prompt injection.
  *  Note: User facts are now handled by Agent MemorySystem (sessionRecall).
@@ -508,6 +546,11 @@ export function ChatArea({
 	const sttBufferRef = useRef("");
 	const ttsPlayingRef = useRef(false);
 	const ttsCooldownUntilRef = useRef(0);
+	// 자기발화(에코) 방어 (2026-07-15 루크): ① 재생 중 마이크 정지(캡처 차단 — 1차)
+	// ② 최근 TTS 문장과의 유사도 스킵(web-speech 지연 배달 누수 — 2차, echo-gate.ts).
+	const sttPauseRef = useRef<(() => void) | null>(null);
+	const sttResumeRef = useRef<(() => void) | null>(null);
+	const recentTtsTextsRef = useRef<string[]>([]);
 	/** Timer for focus-after-tab-switch; cleared on unmount to prevent stale focus */
 	const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	/** Timer for pipeline STT cooldown transition; cleared in cleanupPipeline */
@@ -951,14 +994,7 @@ export function ChatArea({
 			sentenceChunkerRef.current = new SentenceChunker();
 			// Always refresh voice config from latest settings
 			pipelineVoiceConfigRef.current = {
-				voice:
-					config.ttsProvider === "nextain"
-						? config.ttsVoice ||
-							`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
-						: config.ttsProvider === "naia-local-voice" ||
-								config.ttsProvider === "vllm"
-							? "default" // 로컬 음성=ref-audio 클로닝, stale 클라우드 voice id 차단
-							: config.ttsVoice,
+				voice: resolveTtsVoiceId(config),
 				ttsProvider: config.ttsProvider || "edge",
 				ttsApiKey:
 					config.ttsProvider === "google"
@@ -1456,14 +1492,22 @@ export function ChatArea({
 		// facade 내장 TTS(/stream_text) 로 폴백. (라우팅은 합성 결과가 나온 뒤 아래에서 수행.)
 		const cascadeAvatar = useCascadeAvatarStore.getState().renderer;
 
+		// 자기발화 텍스트 필터용 — 이 턴에 말한 문장을 기록 (최근 6문장 링버퍼).
+		recentTtsTextsRef.current.push(clean);
+		if (recentTtsTextsRef.current.length > 6) recentTtsTextsRef.current.shift();
+
 		const reqId = generateRequestId();
 		// Reserve sequence number BEFORE async request to guarantee order
 		const seq = audioQueueRef.current?.reserveSeq() ?? 0;
 		activeTtsRequestsRef.current.add(reqId);
 		const voiceCfg = pipelineVoiceConfigRef.current;
 		const ttsProviderForCost = voiceCfg?.ttsProvider ?? "edge";
-		// 아바타 립싱크에 PCM 을 흘릴 수 있는 경로(nextain=LINEAR16). 그 외 provider 는 facade 폴백.
-		const avatarPcm = !!cascadeAvatar && ttsProviderForCost === "nextain";
+		// 아바타 립싱크에 합성 오디오(WAV/PCM)를 직접 흘릴 수 있는 provider 인가 (FR-VOICE.5).
+		// naia-local-voice 포함(2026-07-15 개정): 구 "추가 금지" 경고는 raw /tts 직결(음색 상태
+		// 우회 → 무지문 랜덤 음색) 전제였는데, synthesize.ts 가 OpenAI 표면 /v1/audio/speech 로
+		// 전환되며 음색이 **합성 시점에 서버에서 해석**되어 사유가 소멸했다. 오히려 8g avatar-only
+		// 파사드(자체 TTS 없음)에선 /stream_text 폴백이 무음이라 PCM 직결이 유일한 립싱크 경로.
+		const avatarPcm = !!cascadeAvatar && streamsAvatarPcm(ttsProviderForCost);
 		const ttsVoiceForCost = voiceCfg?.voice;
 		Logger.info("ChatArea", "Sending TTS request", {
 			reqId,
@@ -1621,6 +1665,10 @@ export function ChatArea({
 	/** Clean up pipeline voice resources. */
 	function cleanupPipeline(): void {
 		pipelineActiveRef.current = false;
+		// 자기발화 방어 훅/기록 해제 (세션 밖 재개 방지 + 다음 세션 오탐 방지).
+		sttPauseRef.current = null;
+		sttResumeRef.current = null;
+		recentTtsTextsRef.current = [];
 		audioQueueRef.current?.destroy();
 		audioQueueRef.current = null;
 		sentenceChunkerRef.current?.clear();
@@ -1726,6 +1774,23 @@ export function ChatArea({
 						useAvatarStore.getState().setSpeaking(true);
 						ttsPlayingRef.current = true;
 						setTtsPlaying(true);
+						// ★재개 타이머 취소(2026-07-15 리뷰): 문장별 합성 지연으로 큐가 잠깐 비면
+						// onPlaybackEnd 가 800ms 재개 타이머를 건다. 다음 문장이 그 전에 도착해
+						// 재생을 시작해도 타이머는 살아 있어 재생 중 마이크를 재개통 → 자기발화 누수.
+						// 재생이 (다시) 시작되면 대기 중 재개를 반드시 취소한다.
+						if (sttCooldownTimerRef.current) {
+							clearTimeout(sttCooldownTimerRef.current);
+							sttCooldownTimerRef.current = null;
+						}
+						// ★자기발화 1차 방어(2026-07-15 루크 "발화 때 마이크 죽이기"):
+						// 재생 중엔 마이크(인식 세션)를 정지해 캡처 자체를 차단한다. 결과-도착 게이트
+						// (ttsPlayingRef)만으로는 web-speech 연속 인식이 재생 중 캡처한 오디오를
+						// 게이트 해제 후 늦게 배달하는 누수를 못 막는다(실증). barge-in 은 버튼식이라 안전.
+						try {
+							sttPauseRef.current?.();
+						} catch {
+							/* 마이크 정지 실패 = 비치명 (2차 텍스트 필터가 방어) */
+						}
 					},
 					onPlaybackEnd: () => {
 						useAvatarStore.getState().setSpeaking(false);
@@ -1741,6 +1806,14 @@ export function ChatArea({
 						sttCooldownTimerRef.current = setTimeout(() => {
 							setSttState("listening");
 							sttCooldownTimerRef.current = null;
+							// 쿨다운 종료 후 마이크 재개 (세션이 살아있을 때만).
+							if (pipelineActiveRef.current) {
+								try {
+									sttResumeRef.current?.();
+								} catch {
+									/* 재개 실패 = 다음 발화 토글로 복구 가능 */
+								}
+							}
 						}, 800);
 					},
 				});
@@ -1750,14 +1823,7 @@ export function ChatArea({
 				// Re-arm the local-voice-unavailable notice for this new session.
 				localVoiceUnavailableNoticedRef.current = false;
 				pipelineVoiceConfigRef.current = {
-					voice:
-						config.ttsProvider === "nextain"
-							? config.ttsVoice ||
-								`ko-KR-Chirp3-HD-${config.voice ?? getDefaultVoiceForAvatar(config.vrmModel)}`
-							: config.ttsProvider === "naia-local-voice" ||
-									config.ttsProvider === "vllm"
-								? "default" // 로컬 음성=ref-audio 클로닝, stale 클라우드 voice id 차단
-								: config.ttsVoice || config.voice,
+					voice: resolveTtsVoiceId(config) ?? config.voice,
 					ttsProvider: config.ttsProvider || "edge",
 					ttsApiKey:
 						config.ttsProvider === "google"
@@ -1812,6 +1878,22 @@ export function ChatArea({
 								"ChatArea",
 								"STT result suppressed (TTS playing/cooldown)",
 							);
+							return;
+						}
+
+						// 자기발화 2차 방어(2026-07-15 루크 "일정 이상 유사도면 스킵"):
+						// 최근 나이아 TTS 문장과 유사하면 에코로 보고 버린다 — 재생 중 캡처분이
+						// 게이트 해제 후 늦게 배달되는 web-speech 누수를 텍스트로 차단.
+						if (
+							cleanResult.isFinal &&
+							isLikelySelfEcho(
+								cleanResult.transcript,
+								recentTtsTextsRef.current,
+							)
+						) {
+							Logger.info("ChatArea", "STT result skipped (self-echo)", {
+								transcript: cleanResult.transcript.slice(0, 40),
+							});
 							return;
 						}
 
@@ -1927,6 +2009,9 @@ export function ChatArea({
 							sttCleanupRef.current.push(cleanupCost);
 						}
 						sttCleanupRef.current.push(() => session.stop());
+						// 자기발화 방어: 재생 중 마이크 정지/재개 훅 (API STT 경로).
+						sttPauseRef.current = () => void session.stop();
+						sttResumeRef.current = () => void session.start();
 						await session.start();
 						setSttState("listening");
 					} else if (isWebBased) {
@@ -1944,6 +2029,10 @@ export function ChatArea({
 							sttCleanupRef.current.push(cleanupError);
 						}
 						sttCleanupRef.current.push(() => session.stop());
+						// 자기발화 방어: 재생 중 마이크 정지/재개 훅 (세션은 stop→start 재사용 가능 —
+						// stop 이 recognition 을 비우고 start 가 재구성한다).
+						sttPauseRef.current = () => void session.stop();
+						sttResumeRef.current = () => void session.start();
 						await session.start();
 						setSttState("listening");
 					} else {
@@ -1988,13 +2077,18 @@ export function ChatArea({
 							model: config.sttModel,
 							language: sttLang,
 						});
-						await sttStart({
+						const sttStartParams = {
 							engine: sttEngine,
 							modelId: config.sttModel,
 							language: sttLang,
 							continuous: true,
 							interimResults: true,
-						} as Record<string, unknown> & Parameters<typeof sttStart>[0]);
+						} as Record<string, unknown> & Parameters<typeof sttStart>[0];
+						// 자기발화 방어: 재생 중 마이크 정지/재개 훅 (플러그인 STT 경로).
+						sttPauseRef.current = () => void sttStop().catch(() => {});
+						sttResumeRef.current = () =>
+							void sttStart(sttStartParams).catch(() => {});
+						await sttStart(sttStartParams);
 					}
 					Logger.info("ChatArea", "STT started successfully", {
 						engine: sttEngine,

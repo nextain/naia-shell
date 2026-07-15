@@ -19,34 +19,44 @@ describe("selectVramTier (2026-07-08 monotonic tiers)", () => {
 		expect(selectVramTier(0)).toBeNull();
 	});
 
-	it("picks the 6G avatar-only tier between 6 and 8", () => {
-		expect(selectVramTier(6)?.id).toBe("avatar-6g");
-		expect(selectVramTier(7)?.id).toBe("avatar-6g");
+	// 2026-07-15 재계약: auto/추천은 **검증된(hidden 아님) 티어만** 고른다 — 미검증 티어를
+	// 자동으로 고르면 프로파일 의도를 배반(실증: 16GB auto 가 숨긴 12g 를 골라 NVA 를 심음).
+	it("hidden(미검증) 티어는 auto 에서 제외 — 16G 미만은 검증 티어가 없어 null", () => {
+		expect(selectVramTier(6)).toBeNull();
+		expect(selectVramTier(8)).toBeNull();
+		expect(selectVramTier(12)).toBeNull();
 	});
 
-	it("picks the 8G local-LLM+avatar tier between 8 and 12", () => {
-		expect(selectVramTier(8)?.id).toBe("local-llm-avatar-8g");
-		expect(selectVramTier(11)?.id).toBe("local-llm-avatar-8g");
+	it("16GB+ auto = local-llm-voice-16g (유일한 검증 티어, 3080 Ti 실측 2026-07-15)", () => {
+		expect(selectVramTier(16)?.id).toBe("local-llm-voice-16g");
+		expect(selectVramTier(24)?.id).toBe("local-llm-voice-16g");
+		expect(selectVramTier(48)?.id).toBe("local-llm-voice-16g");
 	});
 
-	it("picks the richest eligible tier", () => {
-		expect(selectVramTier(12)?.id).toBe("local-voice-12g");
-		expect(selectVramTier(16)?.id).toBe("local-voice-12g");
-		expect(selectVramTier(24)?.id).toBe("full-realtime-24g");
-		expect(selectVramTier(48)?.id).toBe("full-realtime-24g");
+	it("local-llm-voice-16g: LLM+음성 티어 데이터 계약", () => {
+		// 아바타 GPU 를 음성에 양보하는 가지(branch) 티어: VRM/클라우드 아바타 + 로컬 LLM+TTS.
+		const t = VRAM_TIERS.find((x) => x.id === "local-llm-voice-16g");
+		expect(t).toBeDefined();
+		expect(t?.localCapabilities).toEqual(["llm", "tts"]);
+		expect(t?.llm).toBe("own");
+		expect(t?.exclusiveLocal).toBeFalsy(); // 동시 구동 (실측 11.4G/16.4G)
+		expect(t?.hidden).toBeFalsy(); // 유일한 노출(검증) 티어
 	});
 });
 
-describe("monotonic local capabilities (avatar → +llm → +voice)", () => {
+describe("monotonic local capabilities (avatar → +llm → +voice) — 데이터 계약(auto 무관)", () => {
+	// hidden 티어도 데이터/하위호환 로직은 유지된다 — 조회는 find (auto 는 못 고름).
+	const byId = (id: string) => VRAM_TIERS.find((x) => x.id === id)!;
+
 	it("6G: avatar local only; LLM + voice = cloud", () => {
-		const t = selectVramTier(6)!;
+		const t = byId("avatar-6g");
 		expect(t.llm).toBe("external");
 		expect(t.localCapabilities).toEqual(["avatar"]);
 		expect(tierFitsBoth(t)).toBe(false);
 	});
 
 	it("8G: exclusive tier — llm + avatar candidates; voice = cloud (no tts)", () => {
-		const t = selectVramTier(8)!;
+		const t = byId("local-llm-avatar-8g");
 		expect(t.llm).toBe("own"); // ★ brain privacy — LLM can run locally on 8G
 		expect(t.exclusiveLocal).toBe(true); // 3-mode focus: llm / avatar / both
 		expect(t.localCapabilities).toEqual(["llm", "avatar"]);
@@ -55,20 +65,20 @@ describe("monotonic local capabilities (avatar → +llm → +voice)", () => {
 	});
 
 	it("12G (4070+): adds local voice → LLM + avatar + tts", () => {
-		const t = selectVramTier(12)!;
+		const t = byId("local-voice-12g");
 		expect(t.llm).toBe("own");
 		expect(t.localCapabilities).toEqual(["llm", "avatar", "tts"]);
 		expect(tierFitsBoth(t)).toBe(true);
 	});
 
 	it("24G: full local (same caps as 12G; realtime is the added axis)", () => {
-		const t = selectVramTier(24)!;
+		const t = byId("full-realtime-24g");
 		expect(t.llm).toBe("own");
 		expect(t.localCapabilities).toEqual(["llm", "avatar", "tts"]);
 	});
 
 	it("8G focus resolves exclusively — llm / avatar / both", () => {
-		const t8 = selectVramTier(8)!;
+		const t8 = byId("local-llm-avatar-8g");
 		expect(resolveLocalCapabilities(t8, "llm")).toEqual(["llm"]);
 		expect(resolveLocalCapabilities(t8, "avatar")).toEqual(["avatar"]);
 		expect(resolveLocalCapabilities(t8, "both")).toEqual(["llm", "avatar"]);
@@ -77,7 +87,7 @@ describe("monotonic local capabilities (avatar → +llm → +voice)", () => {
 	});
 
 	it("non-exclusive tiers (12G+) ignore focus → all caps", () => {
-		const t12 = selectVramTier(12)!;
+		const t12 = byId("local-voice-12g");
 		expect(resolveLocalCapabilities(t12, "llm")).toEqual([
 			"llm",
 			"avatar",
@@ -154,14 +164,16 @@ describe("fitLocalCapabilitiesToVram (VRAM preflight → cloud LLM fallback)", (
 });
 
 describe("tier capability bridge", () => {
+	const byId = (id: string) => VRAM_TIERS.find((x) => x.id === id)!;
+
 	it("8G tier owns the LLM locally (brain privacy)", () => {
-		const t = selectVramTier(8)!;
+		const t = byId("local-llm-avatar-8g");
 		expect(t.llm).toBe("own");
 		expect(tierProvidedCapabilities(t)).toContain("llm");
 	});
 
 	it("12G tier serves avatar + voice locally too", () => {
-		const t = selectVramTier(12)!;
+		const t = byId("local-voice-12g");
 		expect(tierProvidedCapabilities(t)).toEqual(["llm", "avatar", "tts"]);
 	});
 });
@@ -172,9 +184,11 @@ describe("resolveActiveTier (config setting × detected VRAM)", () => {
 		expect(resolveActiveTier(undefined, 24)).toBeNull();
 	});
 
-	it("auto → tier from detected VRAM, null when undetected", () => {
-		expect(resolveActiveTier("auto", 12)?.id).toBe("local-voice-12g");
-		expect(resolveActiveTier("auto", 4)).toBeNull(); // below lowest tier
+	it("auto(저장된 구 값) → 검증 티어만 해석: 16G+ = local-llm-voice-16g, 미만 = null", () => {
+		// UI 에서 auto 옵션은 제거됨(2026-07-15) — 저장돼 있던 auto 값의 하위호환 해석만 유지.
+		expect(resolveActiveTier("auto", 16)?.id).toBe("local-llm-voice-16g");
+		expect(resolveActiveTier("auto", 12)).toBeNull(); // 검증 티어 없음(hidden 제외)
+		expect(resolveActiveTier("auto", 4)).toBeNull();
 		expect(resolveActiveTier("auto", null)).toBeNull(); // VRAM unknown
 	});
 

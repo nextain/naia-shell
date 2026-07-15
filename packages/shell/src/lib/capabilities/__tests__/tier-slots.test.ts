@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VRAM_TIERS, selectVramTier } from "../vram-tiers";
+import { VRAM_TIERS } from "../vram-tiers";
 import {
 	isRecommendedLocalValue,
 	slotRecommendation,
@@ -16,7 +16,7 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 	});
 
 	it("6GB(avatar-6g) → avatar 슬롯만 로컬 추천, llm/tts 없음", () => {
-		const tier = selectVramTier(6);
+		const tier = VRAM_TIERS.find((x) => x.id === "avatar-6g") ?? null;
 		expect(tier?.id).toBe("avatar-6g");
 		const recs = tierRecommendedSlots(tier);
 		expect(recs).toHaveLength(1);
@@ -28,7 +28,7 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 	});
 
 	it("8GB(local-llm-avatar-8g) 배타 → focus 로 main(llm)/avatar/둘다 추천, tts 없음", () => {
-		const tier = selectVramTier(8);
+		const tier = VRAM_TIERS.find((x) => x.id === "local-llm-avatar-8g") ?? null;
 		expect(tier?.id).toBe("local-llm-avatar-8g");
 		// 기본(미지정) → llm(브레인 로컬 = 프라이버시-우선) → main 만
 		expect(tierRecommendedSlots(tier).map((r) => r.slot)).toEqual(["main"]);
@@ -52,7 +52,7 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 	});
 
 	it("12GB(local-voice-12g) → main + tts + avatar 로컬 추천", () => {
-		const tier = selectVramTier(12);
+		const tier = VRAM_TIERS.find((x) => x.id === "local-voice-12g") ?? null;
 		expect(tier?.id).toBe("local-voice-12g");
 		const slots = tierRecommendedSlots(tier).map((r) => r.slot);
 		expect(slots).toContain("main");
@@ -65,7 +65,7 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 	});
 
 	it("24GB(full-realtime-24g) → main(llm) + tts + avatar 모두 로컬 추천", () => {
-		const tier = selectVramTier(24);
+		const tier = VRAM_TIERS.find((x) => x.id === "full-realtime-24g") ?? null;
 		expect(tier?.id).toBe("full-realtime-24g");
 		const slots = tierRecommendedSlots(tier).map((r) => r.slot);
 		expect(slots).toContain("main");
@@ -75,7 +75,7 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 	});
 
 	it("추천값 불일치 시 배지 false (예: tts=edge 선택)", () => {
-		const tier = selectVramTier(12);
+		const tier = VRAM_TIERS.find((x) => x.id === "local-voice-12g") ?? null;
 		expect(isRecommendedLocalValue(tier, "tts", "edge")).toBe(false);
 		expect(isRecommendedLocalValue(tier, "tts", undefined)).toBe(false);
 	});
