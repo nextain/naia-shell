@@ -111,6 +111,57 @@ export function ttsAudioToWav(
 	return isWav ? bytes : pcm16ToWav(bytes, sampleRate);
 }
 
+/** NVA 플레이어(에디터 compose)와 동일한 크로마 키잉 — key 색과의 색거리² < 90² 픽셀을 투명화.
+ *  (naia-video-avatar editor.html: `if(dr*dr+dg*dg+db*db<90*90) d[i+3]=0` 이식 — 상수 동일.) */
+export function chromaKeyImage(
+	d: Uint8ClampedArray,
+	r: number,
+	g: number,
+	b: number,
+): void {
+	for (let i = 0; i < d.length; i += 4) {
+		const dr = d[i] - r;
+		const dg = d[i + 1] - g;
+		const db = d[i + 2] - b;
+		if (dr * dr + dg * dg + db * db < 8100) d[i + 3] = 0;
+	}
+}
+
+/** 프레임 배경(키) 색 추출 — 4모서리(2px 안쪽) 평균. NVA 계약상 캐릭터는 캔버스 중앙,
+ *  배경은 단색 flatten 이므로 모서리 = 배경색. 모서리가 이미 투명(서버 알파 webm)이면
+ *  null = 키잉 불요. 모서리 4점의 색이 서로 크게 다르면(배경이 단색이 아님 — 실사 등)
+ *  null = 키잉하면 안 되는 소스. */
+export function sampleCornerKey(
+	d: Uint8ClampedArray,
+	w: number,
+	h: number,
+): [number, number, number] | null {
+	if (w < 8 || h < 8) return null;
+	const px = (x: number, y: number) => (y * w + x) * 4;
+	const pts = [px(2, 2), px(w - 3, 2), px(2, h - 3), px(w - 3, h - 3)];
+	let r = 0;
+	let g = 0;
+	let b = 0;
+	let a = 0;
+	for (const p of pts) {
+		r += d[p];
+		g += d[p + 1];
+		b += d[p + 2];
+		a += d[p + 3];
+	}
+	if (a / 4 < 250) return null; // 소스가 이미 알파 채널 보유 — 이중 키잉 금지
+	r = Math.round(r / 4);
+	g = Math.round(g / 4);
+	b = Math.round(b / 4);
+	for (const p of pts) {
+		const dr = d[p] - r;
+		const dg = d[p + 1] - g;
+		const db = d[p + 2] - b;
+		if (dr * dr + dg * dg + db * db > 8100) return null; // 모서리 불일치 = 단색 배경 아님
+	}
+	return [r, g, b];
+}
+
 /** cascade 도달 가능 여부 — `GET {url}/health`. VideoAvatarCanvas 의 모드 결정에 쓴다. */
 export async function probeCascadeHealth(
 	runtimeUrl: string,
@@ -145,6 +196,15 @@ export class CascadeAvatarRenderer {
 	private disposed = false;
 	private teardown: (() => void) | null = null;
 	private idleObjectUrl: string | null = null;
+	// ── 마스크(배경 제거) 캔버스 — NVA 플레이어(에디터 compose 루프) 이식 ──
+	// NVA 계약은 투명 배경 캐릭터(manifest background=transparent)인데, cascade 불투명(mp4)
+	// 출력은 배경이 단색으로 flatten 돼 온다. 플레이어(셸)가 프레임을 캔버스에 그리며 모서리
+	// 샘플색(=flatten 배경색)과의 색거리<90 픽셀을 투명화한다. 서버가 알파 webm 을 주면
+	// (모서리 알파<250) 키잉 없이 알파 보존 그대로 — 이중 처리 없음.
+	private mask: HTMLCanvasElement | null = null;
+	private maskOff: HTMLCanvasElement | null = null;
+	private maskRaf = 0;
+	private maskLastTs = 0;
 	// ★2026-07-10 립싱크 직렬 큐(라이브 발화 폭주 근본수정): 여러 문장(TTS 청크)이 거의 동시에
 	//   speak 를 호출해도 **하나씩 순서대로** 렌더/재생한다. 예전엔 각 speak 가 gen++ 로 이전을
 	//   supersede → 서로 취소 + 백엔드(cascade facade)에 동시 /stream 폭주 → 단일 GPU 큐 적체 →
@@ -189,18 +249,23 @@ export class CascadeAvatarRenderer {
 	}
 
 	/** 활성 레퍼런스 음색 설정 — cascade `PUT /voice` 계약(2026-07-16 3자 합의: NVA/캐릭터 전환과
-	 *  독립된 런타임 음성). refUrl = 셸 설정 voiceRefUrl(GCS 프리셋 URL 등) — 서버가 URL 을
-	 *  다운로드/해석해 활성 음성으로 잡고, 이후 /stream_text 발화가 이 음색으로 나온다.
-	 *  미지정이면 아무것도 보내지 않아 서버 기본(naia 팔레트 default)이 유지된다.
-	 *  best-effort: 실패해도 발화는 서버의 기존 활성 음성으로 계속된다(음색 어긋남 > 무음). */
+	 *  독립된 런타임 음성). ⚠️ 외부(GCS 등) URL 을 **그대로 보내지 않는다** — 서버가 외부 파일을
+	 *  다운로드해 레퍼런스로 쓰면 샘플레이트 불일치로 합성이 깨진 실증(2026-07-16 새벽, 시연 서버
+	 *  무음 사고). cascade 는 같은 프리셋들의 48kHz 로컬 미러 팔레트(`GET /ref/voices` →
+	 *  `/ref/audio/<name>`)를 가지므로, **파일명만 뽑아 팔레트 URL 로 변환**해 보낸다.
+	 *  팔레트에 없는 이름 = 서버 400 fail-closed(기존 활성 음성 유지) → false.
+	 *  미지정이면 아무것도 보내지 않아 서버 기본(naia 팔레트 default)이 유지된다. */
 	async setVoice(refUrl: string | null | undefined): Promise<boolean> {
-		const url = refUrl?.trim();
-		if (!url) return false;
+		const raw = refUrl?.trim();
+		if (!raw) return false;
+		const name = raw.split(/[/\\]/).pop()?.split("?")[0] ?? "";
+		if (!/\.(wav|mp3|flac|ogg)$/i.test(name)) return false;
+		const base = this.cfg.runtimeUrl.replace(/\/$/, "");
 		try {
 			const res = await fetch(this.streamUrl("/voice"), {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ audio_path: url }),
+				body: JSON.stringify({ audio_path: `${base}/ref/audio/${name}` }),
 			});
 			return res.ok;
 		} catch {
@@ -258,7 +323,63 @@ export class CascadeAvatarRenderer {
 		hostVideo.muted = true;
 		void this.loadIdle(hostVideo);
 		this.active = hostVideo;
+
+		// 마스크 캔버스 — buf 와 같은 박스/정렬로 videos 위(z-index 2)에 얹고, 원본 videos 는
+		// visibility 로 숨긴다(재생/디코딩은 계속 — 캔버스가 매 프레임 여기서 읽어 그린다).
+		// 오디오는 video 요소에서 그대로 나온다(visibility 는 음소거와 무관).
+		const cvs = document.createElement("canvas");
+		cvs.style.cssText =
+			"position:absolute;top:50%;left:50%;width:auto;height:auto;pointer-events:none;z-index:2";
+		cvs.style.maxWidth = hostVideo.style.maxWidth || "100%";
+		cvs.style.maxHeight = hostVideo.style.maxHeight || "100%";
+		cvs.style.transform = `translate(-50%,-50%) ${hostVideo.style.transform || ""}`.trim();
+		if (parent) parent.appendChild(cvs);
+		this.mask = cvs;
+		this.maskOff = document.createElement("canvas");
+		hostVideo.style.visibility = "hidden";
+		b.style.visibility = "hidden";
+		this.maskRaf = requestAnimationFrame(this.drawMask);
 	}
+
+	/** 마스크 렌더 루프 — 활성 비디오(idle host 또는 발화 buf) 프레임을 키잉해 캔버스에 그린다.
+	 *  25fps 클립이므로 ~30ms 로 스로틀(불필요한 getImageData 절약). */
+	private drawMask = (ts = 0): void => {
+		if (this.disposed || !this.mask || !this.maskOff) return;
+		if (ts - this.maskLastTs >= 30) {
+			this.maskLastTs = ts;
+			const v = this.active;
+			if (v && v.readyState >= 2 && v.videoWidth > 0) {
+				const w = v.videoWidth;
+				const h = v.videoHeight;
+				const off = this.maskOff;
+				const cvs = this.mask;
+				if (off.width !== w || off.height !== h) {
+					off.width = w;
+					off.height = h;
+					cvs.width = w;
+					cvs.height = h;
+				}
+				const octx = off.getContext("2d", { willReadFrequently: true });
+				const ctx = cvs.getContext("2d");
+				if (octx && ctx) {
+					octx.clearRect(0, 0, w, h);
+					octx.drawImage(v, 0, 0, w, h);
+					try {
+						const img = octx.getImageData(0, 0, w, h);
+						const key = sampleCornerKey(img.data, w, h);
+						if (key) chromaKeyImage(img.data, key[0], key[1], key[2]);
+						ctx.clearRect(0, 0, w, h);
+						ctx.putImageData(img, 0, 0);
+					} catch {
+						// getImageData 실패(taint 등) — 키잉 포기, 원본 프레임 그대로 노출
+						ctx.clearRect(0, 0, w, h);
+						ctx.drawImage(v, 0, 0, w, h);
+					}
+				}
+			}
+		}
+		this.maskRaf = requestAnimationFrame(this.drawMask);
+	};
 
 	/** 발화 요청 — **직렬 큐**에 넣어 하나씩 순서대로 렌더/재생한다(동시 폭주 방지). 여러 문장의
 	 *  TTS 청크가 거의 동시에 speakAudio→speak 를 호출해도, 각 발화는 앞 발화가 끝난 뒤 시작한다.
@@ -669,5 +790,10 @@ export class CascadeAvatarRenderer {
 			this.idleObjectUrl = null;
 		}
 		this.buf = null;
+		if (this.maskRaf) cancelAnimationFrame(this.maskRaf);
+		this.maskRaf = 0;
+		this.mask?.remove();
+		this.mask = null;
+		this.maskOff = null;
 	}
 }

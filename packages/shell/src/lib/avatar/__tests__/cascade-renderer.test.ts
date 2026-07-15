@@ -2,9 +2,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	CascadeAvatarRenderer,
+	chromaKeyImage,
 	localFacadeUrlFromReady,
 	pcm16ToWav,
 	probeCascadeHealth,
+	sampleCornerKey,
 } from "../cascade-renderer";
 
 describe("CascadeAvatarRenderer.streamUrl", () => {
@@ -40,13 +42,15 @@ describe("CascadeAvatarRenderer.streamUrl", () => {
 });
 
 describe("CascadeAvatarRenderer.setVoice — PUT /voice 계약 (NVA 전환과 독립된 활성 음성)", () => {
-	it("레퍼런스 URL 을 PUT /voice {audio_path} 로 민다", async () => {
+	it("외부(GCS) 프리셋 URL 을 **그대로 보내지 않고** 파일명으로 팔레트 URL 로 변환해 민다", async () => {
+		// 외부 URL 을 서버가 다운로드해 쓰면 샘플레이트 불일치로 합성이 깨진다
+		// (2026-07-16 새벽 시연 서버 무음 사고 실증) — 팔레트(/ref/audio) 미러가 정본.
 		const fetchMock = vi.fn().mockResolvedValue({ ok: true });
 		vi.stubGlobal("fetch", fetchMock);
 		try {
 			const r = new CascadeAvatarRenderer({ runtimeUrl: "http://gpu:9449" });
 			const ok = await r.setVoice(
-				"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-male-05.wav",
+				"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-female-01.wav?x=1",
 			);
 			expect(ok).toBe(true);
 			expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -54,35 +58,73 @@ describe("CascadeAvatarRenderer.setVoice — PUT /voice 계약 (NVA 전환과 �
 			expect(url).toBe("http://gpu:9449/voice");
 			expect(init.method).toBe("PUT");
 			expect(JSON.parse(init.body)).toEqual({
-				audio_path:
-					"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-male-05.wav",
+				audio_path: "http://gpu:9449/ref/audio/cc0-ko-female-01.wav",
 			});
 		} finally {
 			vi.unstubAllGlobals();
 		}
 	});
 
-	it("URL 미지정(null/공백) = 서버 활성 음성 유지 — 요청을 보내지 않는다", async () => {
+	it("URL 미지정(null/공백)·오디오 파일명 아님 = 요청을 보내지 않는다(서버 활성 음성 유지)", async () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		try {
 			const r = new CascadeAvatarRenderer({ runtimeUrl: "http://gpu:9449" });
 			expect(await r.setVoice(null)).toBe(false);
 			expect(await r.setVoice("  ")).toBe(false);
+			expect(await r.setVoice("https://x/not-audio")).toBe(false);
 			expect(fetchMock).not.toHaveBeenCalled();
 		} finally {
 			vi.unstubAllGlobals();
 		}
 	});
 
-	it("네트워크/서버 실패 = false (발화는 기존 활성 음성으로 계속 — 무음보다 안전)", async () => {
-		vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
+	it("네트워크/서버 실패(팔레트 밖 이름 400 포함) = false — fail-closed, 기존 활성 음성 유지", async () => {
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
 		try {
 			const r = new CascadeAvatarRenderer({ runtimeUrl: "http://gpu:9449" });
-			expect(await r.setVoice("https://x/ref.wav")).toBe(false);
+			expect(await r.setVoice("https://x/unknown-voice.wav")).toBe(false);
 		} finally {
 			vi.unstubAllGlobals();
 		}
+	});
+});
+
+describe("마스크 키잉 헬퍼 — NVA 플레이어(에디터 compose) 이식", () => {
+	// 4×4 프레임 헬퍼: 단색 배경 위 중앙 2×2 캐릭터 픽셀.
+	const frame = (bg: [number, number, number, number], fg: [number, number, number, number]) => {
+		const d = new Uint8ClampedArray(4 * 4 * 4);
+		for (let i = 0; i < 16; i++) d.set(bg, i * 4);
+		for (const i of [5, 6, 9, 10]) d.set(fg, i * 4);
+		return d;
+	};
+
+	it("sampleCornerKey: 불투명 단색 모서리 → 배경색 반환", () => {
+		const d = frame([255, 242, 214, 255], [0, 200, 255, 255]); // 크림 bg + cyan 캐릭터
+		// 4×4 는 최소 크기(w,h≥8) 미달 — 8×8 로 확장 검증
+		const big = new Uint8ClampedArray(8 * 8 * 4);
+		for (let i = 0; i < 64; i++) big.set([255, 242, 214, 255], i * 4);
+		expect(sampleCornerKey(big, 8, 8)).toEqual([255, 242, 214]);
+		expect(sampleCornerKey(d, 4, 4)).toBeNull(); // 너무 작은 프레임 = 키잉 안 함
+	});
+
+	it("sampleCornerKey: 모서리가 투명(서버 알파 webm) → null (이중 키잉 금지)", () => {
+		const big = new Uint8ClampedArray(8 * 8 * 4); // 전부 0 = 투명
+		expect(sampleCornerKey(big, 8, 8)).toBeNull();
+	});
+
+	it("sampleCornerKey: 모서리 색 불일치(단색 배경 아님) → null (실사 등 키잉 금지)", () => {
+		const big = new Uint8ClampedArray(8 * 8 * 4);
+		for (let i = 0; i < 64; i++) big.set([255, 242, 214, 255], i * 4);
+		big.set([0, 0, 0, 255], (2 * 8 + 2) * 4); // 좌상 모서리만 검정
+		expect(sampleCornerKey(big, 8, 8)).toBeNull();
+	});
+
+	it("chromaKeyImage: 색거리<90 픽셀만 투명화, 캐릭터 픽셀 보존 (에디터 상수 동일)", () => {
+		const d = frame([255, 242, 214, 255], [0, 200, 255, 255]);
+		chromaKeyImage(d, 255, 242, 214);
+		expect(d[3]).toBe(0); // 배경(0,0) 투명
+		expect(d[(5 * 4) + 3]).toBe(255); // 캐릭터(1,1) 보존
 	});
 });
 
