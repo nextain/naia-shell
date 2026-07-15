@@ -111,19 +111,40 @@ export function ttsAudioToWav(
 	return isWav ? bytes : pcm16ToWav(bytes, sampleRate);
 }
 
-/** NVA 플레이어(에디터 compose)와 동일한 크로마 키잉 — key 색과의 색거리² < 90² 픽셀을 투명화.
- *  (naia-video-avatar editor.html: `if(dr*dr+dg*dg+db*db<90*90) d[i+3]=0` 이식 — 상수 동일.) */
+/** 크로마 키잉 — NVA 플레이어(에디터 compose)의 색거리 키잉 이식 + 유리룩 보정.
+ *  에디터 원본은 순수 크로마(초록) 배경 전제라 거리<90 일괄 투명화지만, 셸이 받는 프레임은
+ *  **flatten 배경**이고 나이아 몸이 유리(반투명) 룩 = 배경과 색이 가까워 90 이면 몸까지 빠진다
+ *  (2026-07-16 실기 "알파 과함"). 그래서 이중 임계:
+ *   - 색거리 ≤ hard(기본 24) = 순수 배경 → 완전 투명 (h264 압축 노이즈 흡수 여유)
+ *   - hard~soft(기본 56)     = 배경 근접(유리 가장자리) → 거리 비례 페더(반투명)
+ *   - 그 밖                  = 캐릭터 → 보존 */
 export function chromaKeyImage(
 	d: Uint8ClampedArray,
 	r: number,
 	g: number,
 	b: number,
+	// ⚠️ 기본값 초보수(2026-07-16 실기 2차): 나이아 몸=유리(반투명 베이크)라 배경과 색이 섞여
+	// 있어 임계를 조금만 키워도 몸이 통째로 뚫린다("다 뚫려보여"). 색거리 키잉은 flatten 배경의
+	// 근사 제거까지만 담당하고, **진짜 마스크는 서버 알파(VP9 yuva420p) 채널이 정본** — 알파가
+	// 오면 sampleCornerKey 가 null 을 반환해 이 함수 자체가 호출되지 않는다.
+	hard = 12,
+	soft = 20,
 ): void {
+	const h2 = hard * hard;
+	const s2 = soft * soft;
+	const span = soft - hard;
 	for (let i = 0; i < d.length; i += 4) {
 		const dr = d[i] - r;
 		const dg = d[i + 1] - g;
 		const db = d[i + 2] - b;
-		if (dr * dr + dg * dg + db * db < 8100) d[i + 3] = 0;
+		const q = dr * dr + dg * dg + db * db;
+		if (q <= h2) {
+			d[i + 3] = 0;
+		} else if (q < s2) {
+			const t = (Math.sqrt(q) - hard) / span;
+			const a = Math.round(t * 255);
+			if (a < d[i + 3]) d[i + 3] = a;
+		}
 	}
 }
 
@@ -136,9 +157,19 @@ export function sampleCornerKey(
 	w: number,
 	h: number,
 ): [number, number, number] | null {
-	if (w < 8 || h < 8) return null;
+	if (w < 32 || h < 32) return null;
 	const px = (x: number, y: number) => (y * w + x) * 4;
-	const pts = [px(2, 2), px(w - 3, 2), px(2, h - 3), px(w - 3, h - 3)];
+	// ⚠️ 인셋 = 변의 2%(최소 4px). 최외곽 2~3px 에서 뽑으면 h264 프레임 경계의 어두운
+	// 테두리 아티팩트를 배경색으로 오인한다 — 2026-07-16 실측(Jina idle): 배경(254,240,213)
+	// 균일한데 (2,2)=(239,225,199) → 키가 26 거리로 어긋나 97.8% 보존(배경 불투명).
+	const ix = Math.max(4, Math.round(w * 0.02));
+	const iy = Math.max(4, Math.round(h * 0.02));
+	const pts = [
+		px(ix, iy),
+		px(w - 1 - ix, iy),
+		px(ix, h - 1 - iy),
+		px(w - 1 - ix, h - 1 - iy),
+	];
 	let r = 0;
 	let g = 0;
 	let b = 0;
@@ -185,6 +216,42 @@ export async function probeCascadeHealth(
 		return false;
 	} finally {
 		clearTimeout(to);
+	}
+}
+
+/** 원격 cascade 의 활성 캐릭터 전환 — 셸 피커의 번들 폴더명(minho 등)을 서버 등록
+ *  bundle_id(manifest meta.name, 예 "Minho" / "Naia (기본 캐릭터)")로 해석해
+ *  `POST /use_character/{bundle_id}`. NVA 에디터와 동일 계약 — 이 호출이 없으면 셸에서
+ *  아바타를 바꿔도 서버가 이전 캐릭터를 계속 내보낸다(2026-07-16 실기: jina/minho 무반응).
+ *  음성은 분리 계약(PUT /voice)이라 캐릭터를 전환해도 음색은 안 바뀐다.
+ *  매칭: bundle_id 정확일치 → bundle_id 접두일치 → name 접두일치 (대소문자 무시).
+ *  실패/미등록 = false (서버 활성 캐릭터 유지 — fail-soft). */
+export async function useCascadeCharacter(
+	runtimeUrl: string,
+	bundleName: string,
+): Promise<boolean> {
+	const base = runtimeUrl.replace(/\/$/, "");
+	const want = bundleName.trim().toLowerCase();
+	if (!want) return false;
+	try {
+		const res = await fetch(`${base}/characters`);
+		if (!res.ok) return false;
+		const list = (await res.json()) as Array<{
+			bundle_id?: string;
+			name?: string;
+		}>;
+		const hit =
+			list.find((b) => (b.bundle_id ?? "").toLowerCase() === want) ??
+			list.find((b) => (b.bundle_id ?? "").toLowerCase().startsWith(want)) ??
+			list.find((b) => (b.name ?? "").toLowerCase().startsWith(want));
+		if (!hit?.bundle_id) return false;
+		const put = await fetch(
+			`${base}/use_character/${encodeURIComponent(hit.bundle_id)}`,
+			{ method: "POST" },
+		);
+		return put.ok;
+	} catch {
+		return false;
 	}
 }
 
@@ -370,6 +437,16 @@ export class CascadeAvatarRenderer {
 						if (key) chromaKeyImage(img.data, key[0], key[1], key[2]);
 						ctx.clearRect(0, 0, w, h);
 						ctx.putImageData(img, 0, 0);
+						if (key) {
+							// h264 프레임 최외곽의 어두운 경계 아티팩트(실측 2~3px, 키 색과 거리>soft
+							// 라 키잉이 못 지움)를 링으로 제거 — NVA 프레이밍상 캐릭터가 최외곽에
+							// 닿지 않으므로 안전. 키잉이 켜진(불투명 flatten) 프레임에만 적용.
+							const RING = 3;
+							ctx.clearRect(0, 0, w, RING);
+							ctx.clearRect(0, h - RING, w, RING);
+							ctx.clearRect(0, 0, RING, h);
+							ctx.clearRect(w - RING, 0, RING, h);
+						}
 					} catch {
 						// getImageData 실패(taint 등) — 키잉 포기, 원본 프레임 그대로 노출
 						ctx.clearRect(0, 0, w, h);
