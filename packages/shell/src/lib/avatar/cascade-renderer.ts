@@ -438,10 +438,11 @@ export class CascadeAvatarRenderer {
 						ctx.clearRect(0, 0, w, h);
 						ctx.putImageData(img, 0, 0);
 						if (key) {
-							// h264 프레임 최외곽의 어두운 경계 아티팩트(실측 2~3px, 키 색과 거리>soft
-							// 라 키잉이 못 지움)를 링으로 제거 — NVA 프레이밍상 캐릭터가 최외곽에
-							// 닿지 않으므로 안전. 키잉이 켜진(불투명 flatten) 프레임에만 적용.
-							const RING = 3;
+							// h264 프레임 최외곽의 어두운 경계 아티팩트(실측: 좌우 6px 밴드 —
+							// keyed 잔존 col 0~5·714~719, Minho/Jina idle)를 링으로 제거.
+							// NVA 프레이밍상 캐릭터가 최외곽 8px 에 닿지 않으므로 안전.
+							// 키잉이 켜진(불투명 flatten) 프레임에만 적용.
+							const RING = 8;
 							ctx.clearRect(0, 0, w, RING);
 							ctx.clearRect(0, h - RING, w, RING);
 							ctx.clearRect(0, 0, RING, h);
