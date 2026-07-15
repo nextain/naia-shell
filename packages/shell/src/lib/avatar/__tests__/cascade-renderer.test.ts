@@ -156,7 +156,10 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 		URL.createObjectURL = vi.fn(() => "blob:mock");
 		URL.revokeObjectURL = vi.fn();
 		HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-			setTimeout(() => this.dispatchEvent(new Event("ended")), 0);
+			setTimeout(() => {
+				this.dispatchEvent(new Event("playing"));
+				this.dispatchEvent(new Event("ended"));
+			}, 0);
 			return Promise.resolve();
 		} as never;
 		(globalThis as unknown as { MediaSource: unknown }).MediaSource = msImpl;
@@ -176,8 +179,13 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 				async () =>
 					new Blob([new Uint8Array([1, 2, 3])], { type: "video/webm" }),
 			);
-			globalThis.fetch = vi.fn(async () =>
-				mockRes("video/webm", blobSpy),
+			globalThis.fetch = vi.fn(async (input: RequestInfo | URL) =>
+				String(input).includes("/idle")
+					? mockRes(
+							"video/mp4",
+							async () => new Blob([new Uint8Array([9])], { type: "video/mp4" }),
+						)
+					: mockRes("video/webm", blobSpy),
 			) as never;
 			const host = makeHost();
 			const r = new CascadeAvatarRenderer({
@@ -190,14 +198,59 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 		});
 	});
 
+	it("releases split-mode audio once when avatar playback starts", async () => {
+		await withStubs(vi.fn(), async () => {
+			const blob = async () =>
+				new Blob([new Uint8Array([1])], { type: "video/webm" });
+			globalThis.fetch = vi.fn(async () => mockRes("video/webm", blob)) as never;
+			const host = makeHost();
+			const onPlaybackReady = vi.fn();
+			const r = new CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+			await r.speak("hello", undefined, { muted: true, onPlaybackReady });
+			expect(onPlaybackReady).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("releases split-mode audio once when avatar rendering fails", async () => {
+		await withStubs(vi.fn(), async () => {
+			globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+				if (String(input).includes("/idle")) {
+					return mockRes("video/mp4", async () => new Blob([new Uint8Array([1])]));
+				}
+				return {
+					ok: false,
+					status: 503,
+					body: {},
+					headers: { get: () => "video/mp4" },
+				};
+			}) as never;
+			const host = makeHost();
+			const onPlaybackReady = vi.fn();
+			const r = new CascadeAvatarRenderer({
+				runtimeUrl: "http://127.0.0.1:8910",
+			});
+			r.start(host);
+			await r.speak("hello", undefined, { muted: true, onPlaybackReady });
+			expect(onPlaybackReady).toHaveBeenCalledTimes(1);
+		});
+	});
+
 	it("video/mp4 응답 → MSE 경로(MediaSource 생성 시도, res.blob 미호출)", async () => {
 		const msSpy = vi.fn();
 		await withStubs(msSpy, async () => {
 			const blobSpy = vi.fn(
 				async () => new Blob([new Uint8Array([1])], { type: "video/mp4" }),
 			);
-			globalThis.fetch = vi.fn(async () =>
-				mockRes("video/mp4", blobSpy),
+			globalThis.fetch = vi.fn(async (input: RequestInfo | URL) =>
+				String(input).includes("/idle")
+					? mockRes(
+							"video/mp4",
+							async () => new Blob([new Uint8Array([9])], { type: "video/mp4" }),
+						)
+					: mockRes("video/mp4", blobSpy),
 			) as never;
 			const host = makeHost();
 			const r = new CascadeAvatarRenderer({
@@ -220,7 +273,10 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 			let maxInFlight = 0;
 			const blob = async () =>
 				new Blob([new Uint8Array([1])], { type: "video/webm" });
-			globalThis.fetch = vi.fn(async () => {
+			globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+				if (String(input).includes("/idle")) {
+					return mockRes("video/mp4", blob);
+				}
 				inFlight++;
 				maxInFlight = Math.max(maxInFlight, inFlight);
 				await new Promise((r) => setTimeout(r, 5)); // 렌더 시간 모사
@@ -238,7 +294,7 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 			expect(maxInFlight).toBe(1); // 동시 렌더 없음 = 큐 적체·타임아웃 소멸
 			expect(
 				globalThis.fetch as ReturnType<typeof vi.fn>,
-			).toHaveBeenCalledTimes(3); // 3건 모두 렌더(supersede 드롭 없음)
+			).toHaveBeenCalledTimes(4); // idle 1건 + 발화 3건
 		});
 	});
 
@@ -247,7 +303,10 @@ describe("CascadeAvatarRenderer.speak — Content-Type 라우팅 (webm=Blob / mp
 			let started = 0;
 			const blob = async () =>
 				new Blob([new Uint8Array([1])], { type: "video/webm" });
-			globalThis.fetch = vi.fn(async () => {
+			globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+				if (String(input).includes("/idle")) {
+					return mockRes("video/mp4", blob);
+				}
 				started++;
 				await new Promise((r) => setTimeout(r, 5));
 				return mockRes("video/webm", blob);

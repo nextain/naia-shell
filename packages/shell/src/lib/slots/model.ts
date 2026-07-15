@@ -68,7 +68,14 @@ export const SLOT_FIELD_MAP: Record<SlotId, readonly string[]> = {
 	],
 	stt: ["sttProvider", "sttModel"],
 	tts: ["ttsProvider", "ttsVoice"],
-	avatar: ["liveProvider", "liveModel", "voiceRefUrl", "naiaLocalUrl"],
+	avatar: [
+		"avatarProvider",
+		"nvaModel",
+		"liveProvider",
+		"liveModel",
+		"voiceRefUrl",
+		"naiaLocalUrl",
+	],
 };
 
 // ── 슬롯 값 스냅샷 ──
@@ -93,6 +100,7 @@ export interface SlotSnapshot {
 
 /** AppConfig → 6슬롯 스냅샷 읽기(순수). */
 export function readSlots(config: AppConfig): SlotSnapshot {
+	const isNvaAvatar = config.avatarProvider === "naia-video-avatar";
 	return {
 		main: { provider: config.provider, model: config.model },
 		sub: {
@@ -115,8 +123,8 @@ export function readSlots(config: AppConfig): SlotSnapshot {
 			voice: config.ttsVoice,
 		},
 		avatar: {
-			provider: config.liveProvider,
-			model: config.liveModel,
+			provider: isNvaAvatar ? config.avatarProvider : config.liveProvider,
+			model: isNvaAvatar ? config.nvaModel : config.liveModel,
 			voiceRefUrl: config.voiceRefUrl,
 		},
 	};

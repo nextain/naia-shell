@@ -83,6 +83,27 @@ describe("slots-manifest · 빌드(AppConfig → 매니페스트)", () => {
 		);
 		expect(m.gpu.tier).toBe("local-llm-avatar-8g");
 	});
+
+	it("writes NVA avatar + avatar focus so windows-manager can select Ditto TRT", () => {
+		const m = buildSlotsManifest(
+			{
+				...naiaConfig,
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "naia.nva",
+				localGpuTier: "local-llm-avatar-8g",
+				local8gFocus: "avatar",
+			} as AppConfig,
+			{ detectedVramGb: 8 },
+		);
+		expect(m.slots.avatar).toMatchObject({
+			provider: "naia-video-avatar",
+			model: "naia.nva",
+		});
+		expect(m.gpu).toMatchObject({
+			tier: "local-llm-avatar-8g",
+			localFocus: "avatar",
+		});
+	});
 });
 
 describe("slots-manifest · 파스/검증(fail-closed)", () => {

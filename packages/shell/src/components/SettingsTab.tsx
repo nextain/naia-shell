@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	agentKeyExists,
 	applyModelSelectionToConfig,
@@ -562,14 +562,21 @@ export function SettingsTab() {
 	}, []);
 	const [sttDownloadProgress, setSttDownloadProgress] = useState(0);
 
-	const [ttsEnabled, setTtsEnabled] = useState(existing?.ttsEnabled ?? false);
-	// Keep panel store in sync so QuickToggles button reflects settings changes
+	const [ttsEnabled, setTtsEnabledState] = useState(
+		existing?.ttsEnabled ?? false,
+	);
+	// One setter owns both surfaces. The previous pair of opposing effects could
+	// leave Settings off while the persisted profile and voice runtime were on.
+	const setTtsEnabled = useCallback(
+		(enabled: boolean) => {
+			setTtsEnabledState(enabled);
+			setStoreTtsEnabled(enabled);
+		},
+		[setStoreTtsEnabled],
+	);
+	// Quick toggle remains an input into the Settings state.
 	useEffect(() => {
-		setStoreTtsEnabled(ttsEnabled);
-	}, [ttsEnabled, setStoreTtsEnabled]);
-	// Sync back from store so QuickToggles TTS button changes are reflected here
-	useEffect(() => {
-		setTtsEnabled(storeTtsEnabled);
+		setTtsEnabledState(storeTtsEnabled);
 	}, [storeTtsEnabled]);
 	// provider 별 저장된 apiKey 존재여부 조회 → 입력란 마스킹(루크 #3: 키가 연결돼 있으면 ***** 표기).
 	useEffect(() => {
@@ -767,6 +774,7 @@ export function SettingsTab() {
 		if (caps.includes("tts")) {
 			nextTts = "naia-local-voice";
 			setTtsProvider("naia-local-voice");
+			setTtsEnabled(true);
 			// 프로파일 = 자동 설정하되 **원격 호스트는 보존**(2026-07-15 리뷰): 로컬 프로파일이
 			// 원격 GPU(Tailscale, 예: http://pc-*.ts.net:8910)로 음성을 쓰는 문서화된 워크플로를
 			// 프로파일 클릭이 로컬로 초기화하면 안 된다. 교체 대상 = 빈 값 + **localhost/127.0.0.1
@@ -2699,6 +2707,7 @@ export function SettingsTab() {
 					<div className="settings-field">
 						<label>{t("settings.avatarProvider")}</label>
 						<select
+							id="avatar-provider"
 							value={avatarProvider}
 							onChange={(e) => {
 								const next = e.target.value as "vrm" | "naia-video-avatar";
@@ -2935,9 +2944,6 @@ export function SettingsTab() {
 									? t("settings.nvaLipSyncWarnNoTts")
 									: t("settings.nvaLipSyncNote")}
 							</div>
-							{/* FR-2(2026-07-01): "토킹 런타임 URL"(원격 cascade)은 아바타 탭에서 제거.
-						    원격 cascade 연결은 프로파일 탭(서빙 프로파일)으로 이관 예정 — 아바타 탭은
-						    아바타 종류/NVA 만. cascadeRuntimeUrl config/state 는 유지(프로파일서 재사용). */}
 						</div>
 					)}
 				</>
@@ -3387,60 +3393,6 @@ export function SettingsTab() {
 								</div>
 							)}
 						</div>
-					)}
-
-
-					{/* cascade 소스 = T3 원격(고급/직접운영). 소비자 기본 표면 아님 → 접힌 <details> 격리
-					    (codex 리뷰). 비우면 T1 로컬 auto-spawn(기본). T2 Nextain 관리형 stage 준비 전
-					    임시 고급 경로. localFacadeUrl(로컬) 우선이라 로컬 티어 켜져 있으면 원격 무시. */}
-					{naiaKey && (
-						<details
-							className="settings-advanced"
-							data-testid="cascade-source"
-						>
-							<summary>{t("settings.cascadeSourceAdvanced")}</summary>
-							<div className="settings-field">
-								<label htmlFor="cascade-runtime-url">
-									{t("settings.cascadeRuntimeUrlLabel")}
-								</label>
-								<input
-									id="cascade-runtime-url"
-									type="text"
-									className="settings-input"
-									value={cascadeRuntimeUrl}
-									placeholder="http://100.x.x.x:8910"
-									onChange={(e) => {
-										setCascadeRuntimeUrl(e.target.value);
-										if (cascadeUrlError) setCascadeUrlError("");
-									}}
-									onBlur={(e) => {
-										// 검증 후에만 저장 — 잘못된 URL 조용히 저장 금지(codex).
-										const { url, error } = normalizeCascadeUrl(e.target.value);
-										if (error) {
-											setCascadeUrlError(error);
-											return;
-										}
-										setCascadeUrlError("");
-										if (url && url !== e.target.value) setCascadeRuntimeUrl(url);
-										persistConfig({ cascadeRuntimeUrl: url });
-									}}
-								/>
-								{cascadeUrlError && (
-									<div
-										className="settings-hint settings-hint-error"
-										data-testid="cascade-url-error"
-									>
-										⚠️ {t("settings.cascadeUrlError")}
-									</div>
-								)}
-								<div className="settings-hint">
-									{t("settings.cascadeRuntimeUrlHint")}
-								</div>
-								<div className="settings-hint">
-									⚠️ {t("settings.cascadeRuntimeUrlEgress")}
-								</div>
-							</div>
-						</details>
 					)}
 					<div
 						className="settings-field"

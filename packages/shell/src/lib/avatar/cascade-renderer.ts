@@ -144,6 +144,7 @@ export class CascadeAvatarRenderer {
 	private gen = 0; // 발화 세대 — barge-in/중복 무효화
 	private disposed = false;
 	private teardown: (() => void) | null = null;
+	private idleObjectUrl: string | null = null;
 	// ★2026-07-10 립싱크 직렬 큐(라이브 발화 폭주 근본수정): 여러 문장(TTS 청크)이 거의 동시에
 	//   speak 를 호출해도 **하나씩 순서대로** 렌더/재생한다. 예전엔 각 speak 가 gen++ 로 이전을
 	//   supersede → 서로 취소 + 백엔드(cascade facade)에 동시 /stream 폭주 → 단일 GPU 큐 적체 →
@@ -152,6 +153,7 @@ export class CascadeAvatarRenderer {
 		text: string;
 		audioWav?: Uint8Array;
 		muted?: boolean;
+		onPlaybackReady?: () => void;
 		resolve: () => void;
 	}> = [];
 	private draining = false;
@@ -186,6 +188,21 @@ export class CascadeAvatarRenderer {
 		t?.();
 	}
 
+	private async loadIdle(hostVideo: HTMLVideoElement): Promise<void> {
+		try {
+			const res = await fetch(this.streamUrl("/idle"));
+			if (!res.ok) return;
+			const blob = await res.blob();
+			if (this.disposed || blob.size === 0 || this.host !== hostVideo) return;
+			if (this.idleObjectUrl) URL.revokeObjectURL(this.idleObjectUrl);
+			this.idleObjectUrl = URL.createObjectURL(blob);
+			hostVideo.src = this.idleObjectUrl;
+			void hostVideo.play().catch(() => undefined);
+		} catch {
+			/* Health remains authoritative; the canvas keeps its reconnect state. */
+		}
+	}
+
 	/** host 비디오에 idle 루프를 걸고, 그 위에 발화용 오버레이 buf 를 만든다. */
 	start(hostVideo: HTMLVideoElement): void {
 		this.host = hostVideo;
@@ -195,7 +212,7 @@ export class CascadeAvatarRenderer {
 		b.muted = true;
 		// ★2026-07-11 발화 오버레이(buf)를 idle(host)과 **정확히 겹치게**. 예전엔 buf=absolute 100%×100%
 		//   라 host(VIDEO_BASE_STYLE=maxWidth min(100%,56vh)/maxHeight 92% 로 중앙 축소)보다 크게 떠서
-		//   발화 영상이 다른 위치/크기(가운데 크게)로 나왔다(사용자 보고 — audio-first 로 발화가 이제
+		//   발화 영상이 다른 위치/크기(가운데 크게)로 나왔다(사용자 보고 — 발화 overlay가 이제
 		//   화면에 떠서 원래 있던 버그가 드러남). host 의 크기제약(maxWidth/maxHeight)·objectFit 을
 		//   **그대로 복사**하고 width/height=auto(→ 같은 비디오 = 같은 박스), **절대 중앙정렬**로 겹친다.
 		//   pan(host transform)은 중앙정렬 뒤에 이어붙여 동일 위치. inline 복사라 반응형 유지.
@@ -219,8 +236,7 @@ export class CascadeAvatarRenderer {
 		hostVideo.style.opacity = "1";
 		hostVideo.loop = true;
 		hostVideo.muted = true;
-		hostVideo.src = this.streamUrl("/idle");
-		void hostVideo.play().catch(() => undefined);
+		void this.loadIdle(hostVideo);
 		this.active = hostVideo;
 	}
 
@@ -230,12 +246,18 @@ export class CascadeAvatarRenderer {
 	async speak(
 		text: string,
 		audioWav?: Uint8Array,
-		opts?: { muted?: boolean },
+		opts?: { muted?: boolean; onPlaybackReady?: () => void },
 	): Promise<void> {
 		const t = text.trim();
 		if ((!t && !audioWav) || this.disposed || !this.buf) return;
 		await new Promise<void>((resolve) => {
-			this.speakQueue.push({ text, audioWav, muted: opts?.muted, resolve });
+			this.speakQueue.push({
+				text,
+				audioWav,
+				muted: opts?.muted,
+				onPlaybackReady: opts?.onPlaybackReady,
+				resolve,
+			});
 			void this.drainSpeakQueue();
 		});
 	}
@@ -249,7 +271,12 @@ export class CascadeAvatarRenderer {
 			while (this.speakQueue.length && !this.disposed) {
 				const item = this.speakQueue.shift()!;
 				try {
-					await this.speakNow(item.text, item.audioWav, item.muted);
+					await this.speakNow(
+						item.text,
+						item.audioWav,
+						item.muted,
+						item.onPlaybackReady,
+					);
 				} finally {
 					item.resolve();
 				}
@@ -272,10 +299,17 @@ export class CascadeAvatarRenderer {
 		text: string,
 		audioWav?: Uint8Array,
 		muted = false,
+		onPlaybackReady?: () => void,
 	): Promise<void> {
 		const t = text.trim();
 		if ((!t && !audioWav) || this.disposed || !this.buf) return;
 		const my = ++this.gen;
+		let playbackReadySignaled = false;
+		const signalPlaybackReady = () => {
+			if (playbackReadySignaled) return;
+			playbackReadySignaled = true;
+			onPlaybackReady?.();
+		};
 		this.runTeardown();
 		const back = this.buf;
 
@@ -295,9 +329,9 @@ export class CascadeAvatarRenderer {
 			if (!res.ok || !res.body) throw new Error(`cascade stream ${res.status}`);
 			const ctype = (res.headers.get("content-type") || "").toLowerCase();
 			if (ctype.includes("webm")) {
-				await this.renderWebmFile(res, back, my, muted);
+				await this.renderWebmFile(res, back, my, muted, signalPlaybackReady);
 			} else {
-				await this.renderMseStream(res, back, my, muted);
+				await this.renderMseStream(res, back, my, muted, signalPlaybackReady);
 			}
 		} catch (e) {
 			if (my === this.gen) {
@@ -307,6 +341,8 @@ export class CascadeAvatarRenderer {
 				);
 			}
 		} finally {
+			// Never swallow speech when rendering fails or returns an empty stream.
+			signalPlaybackReady();
 			// ★현 세대만 자기 정리를 한다. 발화가 새 speak/interrupt/stop 으로 대체되면 gen 이 올라가고,
 			//   그 대체자가 자기 시작 시 runTeardown 으로 **이 세대의** cleanup 을 이미 실행한다. 여기서
 			//   또 runTeardown 하면 this.teardown 이 가리키는 **더 새로운 세대**의 cleanup 을 잘못 실행해
@@ -357,6 +393,7 @@ export class CascadeAvatarRenderer {
 		back: HTMLVideoElement,
 		my: number,
 		muted = false,
+		onPlaybackReady?: () => void,
 	): Promise<void> {
 		const body = res.body;
 		if (!body) return;
@@ -463,7 +500,8 @@ export class CascadeAvatarRenderer {
 			swapped = true;
 			this.onTalking?.(true);
 			back.style.opacity = "1";
-			// ★audio-first: muted 면 발화음성을 외부(AudioQueue)가 즉시 재생 → 이중오디오 방지로 unmute 안 함.
+			onPlaybackReady?.();
+			// Split mode keeps the stream muted; the first frame releases local audio.
 			if (!muted) back.muted = false;
 			this.active = back;
 		};
@@ -502,6 +540,7 @@ export class CascadeAvatarRenderer {
 		back: HTMLVideoElement,
 		my: number,
 		muted = false,
+		onPlaybackReady?: () => void,
 	): Promise<void> {
 		const blob = await res.blob();
 		if (my !== this.gen || this.disposed || blob.size === 0) return;
@@ -535,8 +574,8 @@ export class CascadeAvatarRenderer {
 			if (my !== this.gen) return;
 			this.onTalking?.(true);
 			back.style.opacity = "1";
-			// webm 에 오디오(opus) 포함 → 기본은 unmute 로 발화음성 재생. 단 ★audio-first(muted)면
-			// 발화음성을 외부(AudioQueue)가 즉시 재생하므로 이중오디오 방지로 muted 유지(비디오만).
+			onPlaybackReady?.();
+			// A WebM may contain Opus. Split mode stays muted because local audio is released here.
 			if (!muted) back.muted = false;
 			this.active = back;
 		};
@@ -560,7 +599,7 @@ export class CascadeAvatarRenderer {
 	async speakAudio(
 		audioBase64: string,
 		sampleRate = 24000,
-		opts?: { muted?: boolean },
+		opts?: { muted?: boolean; onPlaybackReady?: () => void },
 	): Promise<void> {
 		if (!audioBase64 || this.disposed) return;
 		return this.speak("(audio)", ttsAudioToWav(audioBase64, sampleRate), opts);
@@ -604,6 +643,10 @@ export class CascadeAvatarRenderer {
 			this.buf?.remove();
 		} catch {
 			/* noop */
+		}
+		if (this.idleObjectUrl) {
+			URL.revokeObjectURL(this.idleObjectUrl);
+			this.idleObjectUrl = null;
 		}
 		this.buf = null;
 	}

@@ -259,7 +259,7 @@ describe("SettingsTab", () => {
 		expect(screen.getByText(/파일 추가|Add file/i)).toBeDefined();
 	});
 
-	it("stages video avatar through the local cascade default when no avatar tier is active", () => {
+	it("preserves the configured NVA Host without forcing a local TRT profile", () => {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -267,6 +267,7 @@ describe("SettingsTab", () => {
 				model: "gemini-3.5-flash",
 				naiaKey: "nk",
 				localGpuTier: "auto",
+				cascadeRuntimeUrl: "https://pc-bazzite.tail4f7a25.ts.net:9449",
 			}),
 		);
 		mockInvoke.mockImplementation((cmd: string) => {
@@ -287,8 +288,10 @@ describe("SettingsTab", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.avatarProvider).toBe("naia-video-avatar");
 		expect(saved.nvaModel).toBeTruthy();
-		expect(saved.cascadeRuntimeUrl).toBe("http://localhost:8910");
-		expect(saved.local8gFocus).toBe("avatar");
+		expect(saved.cascadeRuntimeUrl).toBe(
+			"https://pc-bazzite.tail4f7a25.ts.net:9449",
+		);
+		expect(saved.local8gFocus).toBeUndefined();
 	});
 
 	it("selects VRM item from naia-settings and marks as active", async () => {

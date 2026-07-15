@@ -30,6 +30,15 @@ type Mode = "loading" | "cascade" | "standby" | "unavailable" | "error";
 // standby(대기중)에서 백엔드가 뜨는지 재확인하는 폴링 주기(ms). 재기동은 안 하고 상태만 본다.
 const RETRY_POLL_MS = 4000;
 
+function isLoopbackRuntime(url: string): boolean {
+	try {
+		const host = new URL(url).hostname;
+		return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+	} catch {
+		return false;
+	}
+}
+
 // 사용자 이동(pan) 오프셋 영속 — VRM 카메라 저장과 대칭. px 단위, 리셋으로 0.
 const NVA_PAN_KEY = "naia-nva-pan-v1";
 interface NvaPan {
@@ -77,7 +86,7 @@ const VIDEO_BASE_STYLE = {
 
 /**
  * NVA 비디오 아바타 — cascade(Ditto 립싱크) 연결 시에만 노출.
- *  - cascade: 로컬 spawn facade(우선) 또는 원격 cascadeRuntimeUrl 도달 시 /idle 루프 + 발화 시
+ *  - cascade: 명시한 원격 cascadeRuntimeUrl 또는 로컬 spawn facade 도달 시 /idle 루프 + 발화 시
  *             립싱크 스트림. 렌더러를 store 에 등록 → ChatArea 이 발화 오디오를 흘려보냄(입 움직임).
  *  - 자동기동: 로컬 GPU 프로파일(아바타)+로그인이면 마운트 시 start_cascade 를 자동 호출.
  *  - 미연결: ★정적 idle 폴백을 만들지 않는다(사용자 요구: cascade 미적용 시 아바타 노출 X).
@@ -86,7 +95,7 @@ const VIDEO_BASE_STYLE = {
  */
 export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const setLoaded = useAvatarStore((s) => s.setLoaded);
-	// 로컬 spawn 된 cascade facade URL(있으면 원격 config 보다 우선). 변경 시 재프로브.
+	// 로컬 spawn 된 cascade facade URL. 명시한 원격 NVA Host가 있으면 그 설정이 우선한다.
 	const localFacadeUrl = useCascadeAvatarStore((s) => s.localFacadeUrl);
 	const [mode, setMode] = useState<Mode>("loading");
 	const [error, setError] = useState("");
@@ -159,12 +168,16 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				).includes("avatar");
 			}
 
-			// (A) cascade 토킹 모드 — 로컬 spawn facade(우선) 또는 설정 cascadeRuntimeUrl + /health 도달 시.
+			// (A) cascade 토킹 모드 — 명시한 원격 NVA Host 또는 로컬 spawn facade가 /health에 도달할 때.
 			// ★알려진 URL 이 없어도 이미 떠 있는 cascade(warm/이전 세션/설정 탭 기동)가 있으면 그 facade
 			//   URL 을 확보한다(self-heal): localFacadeUrl store 는 인메모리라 앱 재시작으로 비고,
 			//   canLocalCascade(loadConfig.naiaKey 의존) 판정과 무관하게 백엔드가 살아있으면 연결되게 한다.
 			//   start_cascade 는 실행 중이면 캐시 ready 반환(재spawn 아님) → facade_port 확보.
-			let cascadeUrl = localFacadeUrl?.trim() || cfg?.cascadeRuntimeUrl?.trim();
+			const configuredCascadeUrl = cfg?.cascadeRuntimeUrl?.trim();
+			// An explicitly configured NVA Host is a user routing decision. It must
+			// win over a local profile facade and must never trigger local Ditto as
+			// an implicit fallback when the remote health check is transiently down.
+			let cascadeUrl = configuredCascadeUrl || localFacadeUrl?.trim();
 			if (!cascadeUrl) {
 				try {
 					if (await invoke<boolean>("cascade_status")) {
@@ -186,6 +199,14 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				const ok = await probeCascadeHealth(cascadeUrl);
 				if (disposed) return;
 				if (ok) {
+					// /load_nva.dir is a server-local path contract. A remote 3090 already
+					// has its active NVA; never send it a Windows bundleDir.
+					if (!isLoopbackRuntime(cascadeUrl)) {
+						cascadeCfgRef.current = { url: cascadeUrl, name: "" };
+						setMode("cascade");
+						setLoaded(true);
+						return;
+					}
 					// 로컬 임베드 cascade 면 번들 디렉토리로 캐릭터 등록(원격이면 경로 부재로 실패 → 무시).
 					try {
 						await fetch(`${cascadeUrl.replace(/\/$/, "")}/load_nva`, {
@@ -202,6 +223,11 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					setLoaded(true);
 					return;
 				}
+			}
+			if (configuredCascadeUrl) {
+				setMode("unavailable");
+				setLoaded(false);
+				return;
 			}
 
 			// (B) cascade 미연결 — 로컬 프로파일이 있으면 cascade 를 자동 기동(1회)한다.

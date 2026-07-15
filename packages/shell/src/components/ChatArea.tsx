@@ -1491,6 +1491,13 @@ export function ChatArea({
 		// nextain = LINEAR16(PCM 24k) 로 받아 speakAudio; 브라우저/미합성 provider 는 아래에서
 		// facade 내장 TTS(/stream_text) 로 폴백. (라우팅은 합성 결과가 나온 뒤 아래에서 수행.)
 		const cascadeAvatar = useCascadeAvatarStore.getState().renderer;
+		const configuredCascadeUrl = loadConfig()?.cascadeRuntimeUrl?.trim();
+		if (cascadeAvatar && configuredCascadeUrl) {
+			// An explicit NVA Host owns TTS and avatar rendering. This keeps the proven
+			// remote cascade independent from a failed or stale local voice facade.
+			void cascadeAvatar.speak(clean);
+			return;
+		}
 
 		// 자기발화 텍스트 필터용 — 이 턴에 말한 문장을 기록 (최근 6문장 링버퍼).
 		recentTtsTextsRef.current.push(clean);
@@ -1576,11 +1583,8 @@ export function ChatArea({
 				if (!activeTtsRequestsRef.current.has(reqId)) return;
 				activeTtsRequestsRef.current.delete(reqId);
 				if (avatarPcm) {
-					// ★audio-first(2026-07-10): 발화음성을 렌더와 분리해 AudioQueue 로 **즉시 실시간
-					//   재생**(seq 순서 보장) → "음성이 한참 후에 온다" 해소. 립싱크 영상은 muted 로
-					//   따라붙어(이중오디오 방지) 화면만 담당. webm mux 오디오는 ffmpeg audio-EOF-hold 로
-					//   스트리밍 불가 = 오디오 분리가 스트리밍의 필수 전제(스트리밍 재생 작업 1단계).
-					//   (게이트웨이 LINEAR16 = WAV → AudioQueue 가 RIFF 감지해 재생.)
+					// Keep voice playback independent from remote rendering. The remote video
+					// follows muted, so a media event or render failure can never cause silence.
 					audioQueueRef.current?.enqueueOrdered(seq, audioBase64);
 					void cascadeAvatar?.speakAudio(audioBase64, 24000, { muted: true });
 				} else if (cascadeAvatar) {

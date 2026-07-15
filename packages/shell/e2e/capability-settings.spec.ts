@@ -334,12 +334,11 @@ test.describe("FR-7: video avatar gated by cascade capability", () => {
 	});
 });
 
-test.describe("FR-8: cascade source (remote URL, advanced)", () => {
-	test("고급 섹션 열고 유효 URL 입력 → 저장(정규화)", async ({ page }) => {
+test.describe("FR-8: NVA Host URL", () => {
+	test("NVA 선택 후 유효 Host URL 입력 → 저장(정규화)", async ({ page }) => {
 		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
-		await page.locator('[data-settings-tab="profile"]').click();
-		// 접힌 <details> 격리 — summary 클릭해서 연다.
-		await page.locator('[data-testid="cascade-source"] summary').click();
+		await page.locator('[data-settings-tab="avatar"]').click();
+		await page.locator("#avatar-provider").selectOption("naia-video-avatar");
 		const input = page.locator("#cascade-runtime-url");
 		await input.fill("http://100.1.2.3:8910/");
 		await input.blur();
@@ -351,8 +350,8 @@ test.describe("FR-8: cascade source (remote URL, advanced)", () => {
 
 	test("잘못된 URL → 에러 표시 + 저장 안 됨", async ({ page }) => {
 		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
-		await page.locator('[data-settings-tab="profile"]').click();
-		await page.locator('[data-testid="cascade-source"] summary').click();
+		await page.locator('[data-settings-tab="avatar"]').click();
+		await page.locator("#avatar-provider").selectOption("naia-video-avatar");
 		const input = page.locator("#cascade-runtime-url");
 		await input.fill("ws://bad:8910");
 		await input.blur();
@@ -365,7 +364,7 @@ test.describe("FR-8: cascade source (remote URL, advanced)", () => {
 		expect(config.cascadeRuntimeUrl).toBeUndefined();
 	});
 
-	test("logged out → cascade source 미노출 (naiaKey 게이트)", async ({
+	test("logged out → NVA Host 미노출 (naiaKey 게이트)", async ({
 		page,
 	}) => {
 		await gotoModelSettings(page, {
@@ -373,9 +372,7 @@ test.describe("FR-8: cascade source (remote URL, advanced)", () => {
 			model: "gemini-3.5-flash",
 			loggedIn: false,
 		});
-		await page.locator('[data-settings-tab="profile"]').click();
-		await expect(
-			page.locator('[data-testid="cascade-source"]'),
-		).toHaveCount(0);
+		await page.locator('[data-settings-tab="avatar"]').click();
+		await expect(page.locator("#cascade-runtime-url")).toHaveCount(0);
 	});
 });
