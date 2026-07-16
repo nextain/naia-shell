@@ -382,8 +382,12 @@ export function App() {
 	// push the stale pre-hydration cache back into config.json (FR-CONFIG-SOT.2).
 	useEffect(() => {
 		if (showAdkSetup) {
-			// AdkSetup owns its own hydration; treat as hydrated so sync isn't blocked forever.
-			configHydratedRef.current = true;
+			// (하이드레이션은 부팅/이 effect 재실행 시에만 돈다 — 파일을 외부에서 고쳤으면 리로드 필요.)
+			// AdkSetup 화면 동안은 게이트를 **닫아둔다**. 이전에 여기서 hydrated=true 로
+			// 마킹해 mount-time syncConfigToFile(아래 boot-sync)이 800ms 뒤 스테일
+			// localStorage persona 를 config.json 에 되썼다(2026-07-16 시연장 실측 —
+			// persona 21,187자 → 5,953자 클로버). 설정 완료로 showAdkSetup 이 false 가
+			// 되면 이 effect 가 재실행돼 파일→캐시 하이드레이션 후 게이트를 연다.
 			return;
 		}
 		Promise.all([readNaiaConfig(), readNaiaUiConfig()]).then(

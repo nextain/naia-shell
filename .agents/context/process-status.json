@@ -15,8 +15,9 @@
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",
     "github_issue": null,
     "started": "2026-06-08T00:00:00Z",
-    "last_updated": "2026-07-16T00:20:00+09:00",
+    "last_updated": "2026-07-16T10:15:00+09:00",
     "status": "in_progress",
+    "config_sot_clobber_fix": "2026-07-16 FR-CONFIG-SOT.5 (시연장 실측 클로버 — persona 21,187자→5,953자 4회 재발): App.tsx AdkSetup 분기가 하이드레이션 없이 configHydratedRef=true 선마킹 → mount-time syncConfigToFile 이 스테일 캐시를 config.json 에 되씀. 픽스 = 게이트 닫힘 유지(설정 완료 → effect 재실행 → 하이드레이션 후 개방). 검증 = 신규 e2e/config-sot-boot.spec.ts(Playwright 실 UI 3계약: 하이드레이션 파일우선·부팅 후 무클로버·읽기지연 경쟁) 3/3 + config vitest 63/63 + tsc 0. 운영 수칙(코드 밖) = config.json 외부 수정은 셸 종료 후(떠 있는 셸 캐시가 되씀 — unload flush 가 새 부팅 읽기보다 선행하는 자기영속). 잔여(후속) = 에이전트 재스폰 시 패널 스킬 재등록 누락(자격증명만 재푸시), ollamaNumCtx 셸→에이전트 배선. 트랙 = alpha-adk .agents/progress/naia-demo-knowledge-persona-clobber-2026-07-16.md.",
     "bgm_skill_wiring": "2026-07-16 FR-BGM.1 (S-BGM-SKILL, 시연 크리티컬 — 루크 freeze 해제 승인): skill_youtube_bgm 패널 도구 배선. 신규 lib/bgm-skill.ts(descriptor+executeBgmSkill, deps 주입) + App.tsx 부팅 sendPanelSkills('bgm-widget') + ChatArea dispatchPanelToolCall BGM 분기(appRegistry 앞) → 위젯이 이미 듣는 bgm_youtube_* 이벤트 발사(BgmPlayer·agent 무변경). 검증: bgm-skill.test.ts 10/10 · 전체 vitest 1182 pass/0 fail · tsc(신규분 0오류) · enforce-root+assembly PASS. 음성/립싱크(FR-VOICE.5) 경로 무접촉. 잔여=부스 리허설 수동('음악 틀어줘'). 배경: 스킬 전멸 회귀의 근본원인은 naia-agent ollama provider tools 미구현(FR-PROV-6 로 별도 수정·리뷰 PASS·dist 재빌드) — BGM 은 그 조사에서 발견된 별개 이식 갭(구 monolith 내장 스킬이 new-core 에 미이식).",
     "demo_checkpoint": {
       "verified_at": "2026-07-15T23:26:24+09:00",

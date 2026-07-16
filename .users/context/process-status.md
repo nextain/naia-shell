@@ -34,9 +34,17 @@
 
 **시작**: 2026-06-08
 
-**마지막 업데이트**: 2026-07-15 04:10 UTC
+**마지막 업데이트**: 2026-07-16 10:15 KST
 
 **상태**: 진행 중 (in_progress)
+
+### 2026-07-16 config SoT 클로버 픽스 (FR-CONFIG-SOT.5)
+
+- **시연장 실측**: persona 21,187자 → 5,953자 클로버 4회 재발. App.tsx AdkSetup 분기가 하이드레이션 없이 게이트를 선개방(`configHydratedRef=true`) → mount-time `syncConfigToFile` 이 스테일 localStorage 를 config.json 에 되씀.
+- **픽스**: 설정 화면 동안 게이트 닫힘 유지 — 설정 완료 후 하이드레이션 effect 재실행 시에만 개방.
+- **검증**: 신규 `e2e/config-sot-boot.spec.ts` (Playwright 실 UI 3계약) 3/3 + config vitest 63/63 + tsc 0.
+- **운영 수칙**: config.json 을 외부에서 수정할 땐 셸 종료 후 (떠 있는 셸의 unload flush 가 새 부팅 읽기보다 선행 — 캐시 오염 자기영속).
+- **후속**: 에이전트 재스폰 시 패널 스킬 재등록 누락 / ollamaNumCtx 셸→에이전트 배선. 트랙 = alpha-adk `.agents/progress/naia-demo-knowledge-persona-clobber-2026-07-16.md`.
 
 ### 2026-07-16 시연 체크포인트
 
