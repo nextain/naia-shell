@@ -255,6 +255,26 @@ export async function useCascadeCharacter(
 	}
 }
 
+/** 원격 cascade 에 선택 캐릭터가 활성화되도록 **보장**한다:
+ *  ① `useCascadeCharacter` 로 전환 시도 → 성공이면 끝.
+ *  ② 서버 미등록(예: 재부팅으로 /tmp 업로드분 소실)이라 실패하면 `uploader` 로 로컬 번들을
+ *     서버에 업로드(`POST /upload_nva`, 에디터 casUpload 계약)한 뒤 **한 번 더** 전환 시도.
+ *  uploader 는 Tauri invoke("upload_nva_bundle") 주입 — 이 함수 자체는 Tauri 비의존(테스트 가능).
+ *  반환 = 최종 전환 성공 여부. 업로드가 throw 하면 false(서버 활성 캐릭터 유지, fail-soft). */
+export async function ensureRemoteCharacter(
+	runtimeUrl: string,
+	bundleName: string,
+	uploader: () => Promise<void>,
+): Promise<boolean> {
+	if (await useCascadeCharacter(runtimeUrl, bundleName)) return true;
+	try {
+		await uploader();
+	} catch {
+		return false;
+	}
+	return useCascadeCharacter(runtimeUrl, bundleName);
+}
+
 export class CascadeAvatarRenderer {
 	private host: HTMLVideoElement | null = null;
 	private buf: HTMLVideoElement | null = null;

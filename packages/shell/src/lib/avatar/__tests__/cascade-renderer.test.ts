@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	CascadeAvatarRenderer,
+	ensureRemoteCharacter,
 	chromaKeyImage,
 	localFacadeUrlFromReady,
 	pcm16ToWav,
@@ -521,5 +522,71 @@ describe("localFacadeUrlFromReady", () => {
 	it("JSON 파싱 실패 → null(안전)", () => {
 		expect(localFacadeUrlFromReady("not json")).toBeNull();
 		expect(localFacadeUrlFromReady("")).toBeNull();
+	});
+});
+
+describe("ensureRemoteCharacter — 미등록 시 업로드 후 재전환 (재부팅 /tmp 소실 대응)", () => {
+	const ONLY_NAIA = [{ bundle_id: "Naia (기본 캐릭터)", name: "Naia (기본 캐릭터)" }];
+	const WITH_JINA = [
+		{ bundle_id: "Naia (기본 캐릭터)", name: "Naia (기본 캐릭터)" },
+		{ bundle_id: "Jina", name: "Jina" },
+	];
+
+	it("이미 등록됨 → 업로더 호출 안 함(전환만)", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, json: async () => WITH_JINA })
+			.mockResolvedValueOnce({ ok: true });
+		vi.stubGlobal("fetch", fetchMock);
+		const uploader = vi.fn(async () => {});
+		try {
+			expect(
+				await ensureRemoteCharacter("http://gpu:9449", "jina", uploader),
+			).toBe(true);
+			expect(uploader).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("미등록 → 업로드 후 재전환 성공 (서버가 등록분을 갖게 됨)", async () => {
+		// 1차 /characters(naia만)=미등록 → 업로드 → 2차 /characters(jina 포함)+POST use_character.
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, json: async () => ONLY_NAIA })
+			.mockResolvedValueOnce({ ok: true, json: async () => WITH_JINA })
+			.mockResolvedValueOnce({ ok: true });
+		vi.stubGlobal("fetch", fetchMock);
+		const uploader = vi.fn(async () => {});
+		try {
+			expect(
+				await ensureRemoteCharacter("http://gpu:9449", "jina", uploader),
+			).toBe(true);
+			expect(uploader).toHaveBeenCalledTimes(1);
+			expect(fetchMock.mock.calls[2][0]).toBe(
+				"http://gpu:9449/use_character/Jina",
+			);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("업로드 실패(throw) → false, 재전환 시도 안 함 (fail-soft)", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, json: async () => ONLY_NAIA });
+		vi.stubGlobal("fetch", fetchMock);
+		const uploader = vi.fn(async () => {
+			throw new Error("upload_nva HTTP 500");
+		});
+		try {
+			expect(
+				await ensureRemoteCharacter("http://gpu:9449", "jina", uploader),
+			).toBe(false);
+			expect(uploader).toHaveBeenCalledTimes(1);
+			expect(fetchMock).toHaveBeenCalledTimes(1); // 1차 /characters 만
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

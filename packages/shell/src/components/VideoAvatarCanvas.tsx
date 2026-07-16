@@ -7,6 +7,7 @@ import {
 } from "../lib/avatar/camera-actions";
 import {
 	CascadeAvatarRenderer,
+	ensureRemoteCharacter,
 	localFacadeUrlFromReady,
 	probeCascadeHealth,
 } from "../lib/avatar/cascade-renderer";
@@ -202,6 +203,17 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					// /load_nva.dir is a server-local path contract. A remote 3090 already
 					// has its active NVA; never send it a Windows bundleDir.
 					if (!isLoopbackRuntime(cascadeUrl)) {
+						// 피커 선택을 원격 활성 캐릭터로 반영: /use_character 로 전환하고,
+						// 서버 미등록(예: 재부팅으로 /tmp 업로드분 소실)이면 로컬 번들을 자동
+						// 업로드(Rust upload_nva_bundle = 슬래시 엔트리 zip, 백슬래시 버그 원천봉쇄)
+						// 후 재전환. 실패 = 서버 활성 캐릭터 유지(fail-soft, 비치명).
+						await ensureRemoteCharacter(cascadeUrl, bundleName, () =>
+							invoke<string>("upload_nva_bundle", {
+								runtimeUrl: cascadeUrl,
+								bundleDir,
+							}).then(() => undefined),
+						);
+						if (disposed) return;
 						cascadeCfgRef.current = { url: cascadeUrl, name: "" };
 						setMode("cascade");
 						setLoaded(true);

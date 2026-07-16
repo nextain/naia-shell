@@ -2435,6 +2435,9 @@ async fn stop_cascade(state: tauri::State<'_, AppState>) -> Result<(), String> {
         log_verbose("[Naia] Terminating local cascade...");
         let _ = c.child.kill();
     }
+    // Child::kill force-terminates the Python supervisor on Windows, so its
+    // finally block cannot reliably release GPU-owning grandchildren.
+    platform::kill_stale_cascade();
     remove_pid_file("cascade");
     Ok(())
 }
@@ -3000,6 +3003,120 @@ fn extract_nva_zip(
     Ok(dest
         .to_str()
         .ok_or_else(|| "Invalid destination path".to_string())?
+        .to_string())
+}
+
+/// Recursively collect `(forward-slash relative name, absolute path)` for every file
+/// under `root`, relative to `base`. Separators are normalized to `/` so the produced
+/// ZIP is portable: the cascade server (Linux python `zipfile`) reconstructs the
+/// `clips/` folder correctly. Backslash entries (PowerShell `Compress-Archive`) flatten
+/// on Linux and drop `clips/*` → a silent 0-byte idle. Matches the nva editor
+/// `buildNvaZip()` / cascade `/upload_nva` contract.
+fn collect_bundle_files(
+    root: &std::path::Path,
+    base: &std::path::Path,
+    out: &mut Vec<(String, std::path::PathBuf)>,
+) -> Result<(), String> {
+    for entry in std::fs::read_dir(root).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_bundle_files(&path, base, out)?;
+        } else if path.is_file() {
+            let rel = path
+                .strip_prefix(base)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .replace('\\', "/");
+            out.push((rel, path));
+        }
+    }
+    Ok(())
+}
+
+/// Zip a local NVA bundle directory in memory (forward-slash entries) and POST it to the
+/// remote cascade `POST /upload_nva` (`Content-Type: application/zip`). Mirrors the nva
+/// editor `casUpload()` so the shell auto-registers a locally-selected character on a
+/// remote server that doesn't have it — e.g. after a server reboot wipes the `/tmp`
+/// extract, the shell re-uploads on the next select. Returns the server-assigned
+/// `bundle_id`.
+#[tauri::command]
+async fn upload_nva_bundle(runtime_url: String, bundle_dir: String) -> Result<String, String> {
+    use std::io::Write as _;
+
+    let dir = std::path::PathBuf::from(&bundle_dir);
+    if !dir.is_dir() {
+        return Err(format!("Bundle dir not found: {bundle_dir}"));
+    }
+    // Guard: only zip real NVA bundles (must live under naia-settings/nva-files/).
+    if !bundle_dir
+        .replace('\\', "/")
+        .contains("naia-settings/nva-files/")
+    {
+        return Err("Refusing to zip: not an nva-files bundle path".to_string());
+    }
+
+    // Collect files with forward-slash relative names.
+    let mut files: Vec<(String, std::path::PathBuf)> = vec![];
+    collect_bundle_files(&dir, &dir, &mut files)?;
+    if files.is_empty() {
+        return Err("Bundle dir is empty".to_string());
+    }
+    if !files.iter().any(|(n, _)| n == "manifest.json") {
+        return Err("Bundle missing manifest.json".to_string());
+    }
+
+    // Build the ZIP in memory. Stored (no deflate): webm/png are already compressed, so
+    // deflate barely helps, and Stored avoids any compression feature-gate risk.
+    let mut cursor = std::io::Cursor::new(Vec::<u8>::new());
+    {
+        let mut zw = zip::ZipWriter::new(&mut cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, path) in &files {
+            let bytes = std::fs::read(path).map_err(|e| format!("read {name}: {e}"))?;
+            zw.start_file(name.as_str(), opts).map_err(|e| e.to_string())?;
+            zw.write_all(&bytes).map_err(|e| e.to_string())?;
+        }
+        zw.finish().map_err(|e| e.to_string())?;
+    }
+    let zip_bytes = cursor.into_inner();
+
+    // POST to {runtime_url}/upload_nva. Tailnet (.ts.net) certs are real Let's Encrypt,
+    // so rustls trusts them without any danger-accept override.
+    let base = runtime_url.trim_end_matches('/');
+    let url = format!("{base}/upload_nva");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+    let res = client
+        .post(&url)
+        .header("Content-Type", "application/zip")
+        .body(zip_bytes)
+        .send()
+        .await
+        .map_err(|e| format!("upload_nva request failed: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("upload_nva HTTP {}: {text}", status.as_u16()));
+    }
+    // Parse { ok, bundle_id, detail? }.
+    let json: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("upload_nva bad JSON: {e} ({text})"))?;
+    if json.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        let detail = json
+            .get("detail")
+            .or_else(|| json.get("error"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown error");
+        return Err(format!("upload_nva rejected: {detail}"));
+    }
+    Ok(json
+        .get("bundle_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
         .to_string())
 }
 
@@ -4051,6 +4168,7 @@ pub fn run() {
             gemini_live_disconnect,
             // naia-settings asset commands
             list_naia_assets,
+            upload_nva_bundle,
             import_naia_asset,
             delete_naia_asset,
             read_naia_config,
