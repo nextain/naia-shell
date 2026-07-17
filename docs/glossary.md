@@ -75,7 +75,10 @@
 | **vosk** | 오프라인 음성 인식(STT) 라이브러리. linux/windows 전용 native dll/so 로 동봉되며 mac 은 스텁(stub) 대체. |
 | **xvfb** | 가상 화면 X 서버(X virtual framebuffer). 모니터 없는 CI 리눅스에서 GUI 앱을 띄워 검증할 때 사용. |
 | **vswhere** | Visual Studio 설치 위치 조회 도구(MS 공식). MSVC 재배포 dll 의 원본 경로를 찾는 데 사용. |
-| **bsdtar** | Windows 10 1803+ 에 기본 탑재된 `tar` 구현(BSD 계열). 압축 해제에 별도 설치 없이 사용. |
+| **bsdtar** | Windows 10 1803+ 에 기본 탑재된 `tar` 구현(BSD 계열). 압축 해제에 별도 설치 없이 사용하며 zip 도 읽는다. |
+| **JSON 병합 패치 (JSON Merge Patch, RFC 7386)** | tauri 가 `--config` 오버레이를 base conf 에 적용하는 방식. 객체는 키 단위로 재귀 병합하지만 **배열·비객체 값은 통째로 대체**되고, `null` 은 값 설정이 아니라 **키 삭제**를 뜻한다. |
+| **`links` 키 (cargo)** | 크레이트가 특정 네이티브 라이브러리를 대표한다고 선언하는 `Cargo.toml` 필드. cargo 는 이 키를 가진 의존의 빌드 스크립트를 그것을 쓰는 쪽 빌드 스크립트보다 **먼저** 실행하므로, 빌드 산출물 생성 순서를 보증하는 수단이 된다. |
+| **변이 탐침 (mutation probe)** | 게이트가 실제로 실패할 수 있는지 확인하려고 대상을 일부러 망가뜨려 red 를 확인하는 검사 — "항상 통과하는 검증"을 걸러낸다. |
 | **황금 기준 테스트 (golden test)** | 생성 결과물을 미리 승인한 기대 형상과 통째로 비교하는 테스트 — conf 생성 검증에 사용. |
 | **매달린 참조 (dangling reference)** | 가리키는 대상이 존재하지 않는 참조 — 예: gitignore 된 생성 파일 경로를 커밋된 명령 문자열이 가리키는 경우. |
 

@@ -43,7 +43,12 @@
 - **배경**: Windows 설치 파일 검증 요청 → 조사 결과 설치 파일 0건 + clean checkout 재현 불가 (`node.exe`·MSVC 재배포 3종 = conf 선언만 있고 놓는 코드 부재, Windows 빌드가 `stage-cascade-loader` 누락한 채 딥머지 잔재로 우연 통과).
 - **확정 설계 (루크 승인)**: 플랫폼 매트릭스(`src-tauri/platform-matrix.json`) = 유일 SoT → 단일 스크립트 `stage-runtime.mjs` 가 리소스 프로비저닝 + `tauri.conf.generated.json` 생성. Node 22 를 3 OS 모두 번들. WSL 불요 불변(NFR-noWSL). CI 3 OS 매트릭스(ubuntu 는 deb 설치 + PATH 에서 node 제거 + xvfb 기동 스모크). mac 완료선 = CI 빌드 성공(미서명 정직 표기).
 - **P01~P03 산출물**: `docs/user-scenarios.md` S-INSTALL 행 + `docs/requirements.md` FR-INSTALL 섹션 + `docs/glossary.md` 배포·설치 용어. 적대 리뷰 1회차 16건(BLOCKER: `createUpdaterArtifacts=false` 매트릭스 이주 등) + 2회차 12건(BLOCKER: vosk dll 4종(libvosk+MinGW 3종) 이주, `--config` 머지 시맨틱스 — base 훅 `pnpm build` 축소, node arch 맵, ubuntu 스모크 판정 기준 등) + 3회차 9건(BLOCKER: vosk 하드검사 순서모순 제거 — build.rs 가 번들 전 생성이라 안전, `--config` 리터럴 dangling 회피 — stage-runtime 이 tauri build 직접 spawn, agent 리소스 매핑 소유 결정) + 4회차 7건(BLOCKER: R3 의 "agent 4종 base 이주" 결정을 tauri-build 실소스로 반증 — `copy_resources` 는 `tauri dev`·`cargo check` 포함 무조건 실행이라 gitignored 스테이징 산출물을 base 에 두면 dev 즉사 → 매트릭스 3 OS 공통 그룹→생성 conf 소유로 개정, 분담 규칙 = 커밋 자산=base / 스테이징 산출·OS 델타·조건부=생성 conf. MINOR 6건 중 5건 반영: NAIA_MINIMAL 스모크 전제·nsis-hooks 귀속 교정·S-INSTALL 검증열 보강·glossary 6용어·매트릭스 초기값 출처) 반영.
-- **게이트 규칙**: 각 phase 종료 시 적대적 리뷰 2회 연속 클린(루크 명시). 현재 R1~R4 모두 NOT CLEAN → 반영 완료, **R5 부터 재개(클린 카운트 0)**. 잔여 MINOR 1건 = `sdlc_gates` 구조화 필드에 #377 게이트 병기.
+- **게이트 규칙**: 각 phase 종료 시 적대적 리뷰 2회 연속 클린(루크 명시). R1~R5 모두 NOT CLEAN → 반영 완료, **R6 부터 재개(클린 카운트 0)**. R4 잔여 MINOR 1건(`sdlc_gates` 구조화 필드에 #377 게이트 병기) = 2026-07-17 해소 — 아래 "병행 트랙: #377" 표.
+- **적대 리뷰 5회차 (2026-07-17, 3렌즈 병렬 — tauri 실소스 대조 / 설계 정합·검증축 / 실현가능성·정직성)**: NOT CLEAN 7건 (MAJOR 2 + MINOR 5) 전부 반영.
+  - **MAJOR ① 우분투 스모크가 번들 node 를 증명하지 못했다**: "PATH 에서 node 제거" 는 폴백을 못 막는다 — unix 폴백이 PATH 와 무관하게 사용자 홈 아래 `.nvm/versions/node` 를 직접 디렉토리 스캔한다(`lib.rs` 실측). 현 GitHub 러너가 통과하는 건 이미지가 우연히 비어 있어서일 뿐이라, 판정력을 외부 이미지에 위탁하는 셈이었다. 게다가 번들 node 가 최우선이라 PATH 제거는 정상 경로에 아무 영향이 없다. → 판정을 **"마커 출현 AND 실제 사용된 node 경로가 설치본 resource_dir 하위"** 2조건으로 교체하고, FR-INSTALL.3 에 `[Naia] node = <경로>` 로그 1줄을 신설했으며, 번들 node 를 일부러 지운 실행이 red 가 되는지 확인하는 변이 탐침(mutation probe)을 추가했다. 관측 대상이 "떴는가" 에서 **"무엇으로 떴는가"** 로 바뀌었다.
+  - **MAJOR ② flatpak targets 이관 철회**: 이관하면 매트릭스 linux 행과 같은 사실이 **수기 파일에 두 번째 집**을 얻는데, 그 사본은 생성물이 아니라 어떤 검증 축에도 안 걸린다 — #377 이 근본원인으로 지목한 드리프트를 새로 만드는 것. repo 내 소비자도 0 건(실측)이라 보전할 것도 없었다. → `linux.json` 과 **동일한 외부 소비자 확인 규율**을 적용한 뒤, 소비자가 없으면 무변경(부활 시 매트릭스 flatpak 행).
+  - **MINOR 5건**: 아이콘은 배열이라 머지가 병합이 아니라 **통째 대체**(RFC 7386) — mac 행은 전체 배열을 emit 하며 이는 겹침 금지의 명시적 예외 / vosk 빌드 순서의 진짜 보증자는 "번들러 수집 전" 이 아니라 **`links` 키** — 근거를 교정하고 `links` 실존을 게이트로 승격 / 단위 테스트 경로 확정(`scripts/__tests__/` — `src-tauri/**` 는 `vite.config.ts` 의 `test.exclude` 로 **영구 미수집**, 프로브로 실측 확인) / 추출 도구를 아카이브 포맷과 분리해 **3 OS 모두 OS 기본 `tar`** 로 명시 / mac 산출물이 **arm64 전용**(`macos-latest` = arm64 러너, Intel 몫 없음)임을 정직 표기.
+  - **리뷰어 충돌 판정**: 렌즈 A 는 nvm 폴백이 스모크를 마스킹한다고 봤고 렌즈 C 는 러너 이미지 실측으로 반증했다. `lib.rs` 폴백 체인을 직접 읽어 판정 — 메커니즘은 A 가 맞고 현재 안 걸리는 건 C 가 맞다. 결론은 "지금은 우연히 통과하나 판정 근거가 외부에 있다" 이므로 A 의 교정을 채택했다.
 - **핸드오프 (2026-07-17)**: P0 잔여(R5·R6 리뷰)~P1·P2·P5 는 **리눅스 머신에서 진행**(루크 지시). **P3 Windows 실측만 Windows PC 필요**(남겨둠). 리눅스 머신 = 시연 서버 — 상태 변경 실측(패키지 설치 등) 금지 유지, Linux 설치 스모크는 CI ubuntu job 담당.
 - **트랙**: alpha-adk `.agents/progress/naia-shell-crossplatform-installer-2026-07-17.md` · GitHub #377.
 
@@ -141,6 +146,18 @@
 | **P03** | 완료 | 요구사항 (requirements) | `docs/requirements.md` (FR-F0~F3, NFR) | 8회 |
 | **P04** | 진행 중 | 통합 테스트 (integration_test) | `src/test/integration-reafference.test.ts` (인지흐름 관통 + negative + contamination) + `scripts/builds/f0-graft-smoke.sh` (Old-Baseline drift-gate 하네스) | 통합 67/67 통과; 라이브 trace (로컬 머신 graft) 대기 |
 | **P05** | 보류 중 | 요구사항 완료 (requirements_complete) | — | 라이브 trace 등가 확인 + 후속 슬라이스 후 |
+
+위 표의 상태·산출물은 **기본 트랙**(`current_work.issue` = naia-shell-transplant, F0~F3) 소유다. 병행 트랙은 아래에 따로 적는다 — 같은 사실을 두 곳에 적지 않기 위해 기본 트랙 상태를 여기에 복사하지 않는다.
+
+### 병행 트랙: #377 크로스플랫폼 설치 파일 (installer_crossplatform_377)
+
+| 게이트 | 상태 | 산출물 (Deliverable) | 참조 |
+|--------|------|---------------------|------|
+| **P01** | 진행 중 | `docs/user-scenarios.md` — 셸 feature 시나리오 표의 S-INSTALL 행 (#377, 2026-07-17) | 산출물 작성 완료 (후속 게이트 진행 가능). P0 종료 조건 = 적대 리뷰 2연속 클린 (루크 명시) — R1~R4 전부 NOT CLEAN 반영 완료, 클린 카운트 0, R5 부터 재개 |
+| **P02** | 진행 중 | `docs/user-scenarios.md` — S-INSTALL 행의 검증 열 (`platform-matrix.test.ts` 단위 + `check-build-contract` 계약 + Windows 설치 실측 + ubuntu deb 설치·PATH node 제거·xvfb 기동 스모크 + 산출물 검증 스크립트/부정 케이스) | P01 과 동일 — P0 종료 = R5·R6 2연속 클린 대기 |
+| **P03** | 진행 중 | `docs/requirements.md` — FR-INSTALL.1~6 + NFR-noWSL (불변) · NFR-honesty | P01 과 동일. R4 개정 반영: agent 리소스 4종 = 매트릭스 3 OS 공통 그룹 → 생성 conf 소유 (base 금지 — tauri-build `copy_resources` 가 dev/cargo check 포함 무조건 실행) |
+| **P04** | 보류 중 | — | P1~P4 구현 후 — `platform-matrix.test.ts` golden + e2e-tauri (`TAURI_BINARY` 설치본) + CI 3 OS `build-installers.yml`. P3 Windows 실측은 Windows 머신 필요 |
+| **P05** | 보류 중 | — | P5 (검증 스크립트 + README + manifest 정리 + 이슈 보고) 후 FR-INSTALL.1~6 상태 → Done |
 
 ---
 
