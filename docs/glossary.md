@@ -62,4 +62,21 @@
 | **provenance / execution-id (출처/실행 식별자)** | 모든 이벤트에 행위자(actor)/클라이언트 id + 귀속된 몸·환경을 기록 — 나가는 신호의 상관(correlation)과 돌아오는 신호의 역추적(backlink) 근거. |
 | **goal governance (목표 거버넌스)** | 목표 생성·덮어쓰기 권한을 `요청/제안/승인/거부`로 나눈다(제어 평면 거버넌스 레인). |
 
+## 배포·설치 (#377)
+
+| 용어 | 정의 |
+|---|---|
+| **NSIS** | Windows 설치기 제작 도구(Nullsoft Scriptable Install System). tauri 가 `.exe` 설치기를 만들 때 사용 — 사용자 권한(currentUser) 설치 가능. |
+| **MSI** | Windows 표준 설치 패키지(Microsoft Installer). tauri 는 WiX 로 생성 — 기계 단위(perMachine) 설치라 관리자 승격 필요. |
+| **MSVC 재배포 (Visual C++ Redistributable)** | MSVC 로 빌드된 실행 파일이 쓰는 C/C++ 런타임 dll 묶음(`vcruntime140.dll` 등). Windows 기본 탑재가 아니라 설치기에 동봉하거나 별도 설치 필요. |
+| **POSIX 셸** | Unix 계열 명령 셸(bash/sh 등)과 그 문법. NFR-noWSL 은 빌드·설치·런타임이 이것에 의존하지 않음을 뜻한다. |
+| **SHA256** | 파일 무결성 검증용 해시 함수(다운로드 산출물이 기대한 그 파일인지 확인). |
+| **플랫폼 매트릭스 (platform matrix)** | OS(win32/linux/darwin)별 빌드 타깃·동봉 리소스·설치자 설정을 담는 데이터 1곳(`src-tauri/platform-matrix.json`) — 플랫폼 차이의 유일 SoT, conf 는 여기서 생성된다. |
+| **vosk** | 오프라인 음성 인식(STT) 라이브러리. linux/windows 전용 native dll/so 로 동봉되며 mac 은 스텁(stub) 대체. |
+| **xvfb** | 가상 화면 X 서버(X virtual framebuffer). 모니터 없는 CI 리눅스에서 GUI 앱을 띄워 검증할 때 사용. |
+| **vswhere** | Visual Studio 설치 위치 조회 도구(MS 공식). MSVC 재배포 dll 의 원본 경로를 찾는 데 사용. |
+| **bsdtar** | Windows 10 1803+ 에 기본 탑재된 `tar` 구현(BSD 계열). 압축 해제에 별도 설치 없이 사용. |
+| **황금 기준 테스트 (golden test)** | 생성 결과물을 미리 승인한 기대 형상과 통째로 비교하는 테스트 — conf 생성 검증에 사용. |
+| **매달린 참조 (dangling reference)** | 가리키는 대상이 존재하지 않는 참조 — 예: gitignore 된 생성 파일 경로를 커밋된 명령 문자열이 가리키는 경우. |
+
 > 아직 정의가 확정되지 않았거나 도입 예정인 항목의 정식 계약은 설계가 진행되며 채워집니다. 빠진 용어나 정의 충돌은 발견 시 보완합니다.
