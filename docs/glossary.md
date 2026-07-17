@@ -71,7 +71,7 @@
 | **MSVC 재배포 (Visual C++ Redistributable)** | MSVC 로 빌드된 실행 파일이 쓰는 C/C++ 런타임 dll 묶음(`vcruntime140.dll` 등). Windows 기본 탑재가 아니라 설치기에 동봉하거나 별도 설치 필요. |
 | **POSIX 셸** | Unix 계열 명령 셸(bash/sh 등)과 그 문법. NFR-noWSL 은 빌드·설치·런타임이 이것에 의존하지 않음을 뜻한다. |
 | **SHA256** | 파일 무결성 검증용 해시 함수(다운로드 산출물이 기대한 그 파일인지 확인). |
-| **플랫폼 매트릭스 (platform matrix)** | OS(win32/linux/darwin)별 빌드 타깃·동봉 리소스·설치자 설정을 담는 데이터 1곳(`src-tauri/platform-matrix.json`) — 플랫폼 차이의 유일 SoT, conf 는 여기서 생성된다. |
+| **플랫폼 매트릭스 (platform matrix)** | OS(win32/linux/darwin)별 빌드 타깃·동봉 리소스·설치자 설정·기대 산출물을 담는 데이터 1곳(`src-tauri/platform-matrix.json`) — 플랫폼 차이의 유일 SoT, conf 는 여기서 생성된다. |
 | **vosk** | 오프라인 음성 인식(STT) 라이브러리. linux/windows 전용 native dll/so 로 동봉되며 mac 은 스텁(stub) 대체. |
 | **xvfb** | 가상 화면 X 서버(X virtual framebuffer). 모니터 없는 CI 리눅스에서 GUI 앱을 띄워 검증할 때 사용. |
 | **vswhere** | Visual Studio 설치 위치 조회 도구(MS 공식). MSVC 재배포 dll 의 원본 경로를 찾는 데 사용. |
