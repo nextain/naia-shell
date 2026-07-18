@@ -17,7 +17,7 @@ use tonic::transport::Channel;
 pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
     let rid = ev.request_id.clone();
     let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap_or(Value::Null);
-    match &ev.event {
+    let mut out = match &ev.event {
         Some(Event::Text(t)) => json!({"type":"text","requestId":rid,"text":t.text}),
         Some(Event::Thinking(t)) => json!({"type":"thinking","requestId":rid,"text":t.text}),
         Some(Event::ToolUse(t)) => json!({"type":"tool_use","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}),
@@ -41,7 +41,14 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
         Some(Event::Compacted(c)) => json!({"type":"compacted","requestId":rid,"droppedCount":c.dropped_count}), // UC-compaction(FR-COMPACT)
         Some(Event::PanelToolCall(t)) => json!({"type":"panel_tool_call","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}), // UC-PANEL FR-PANEL-2: 환경 도구 위임 → 셸 실행
         None => json!({"type":"error","requestId":rid,"message":"empty AgentEvent"}),
+    };
+    if let Some(activity_id) = &ev.activity_id {
+        out["activityId"] = json!(activity_id);
     }
+    if let Some(profile_generation) = ev.profile_generation {
+        out["profileGeneration"] = json!(profile_generation);
+    }
+    out
 }
 
 /// 셸이 만든 wire JSON({type:"chat_request",requestId,messages,...}) → proto ChatRequest. provider 제거(정본).
@@ -79,6 +86,14 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
             .and_then(|x| x.as_array())
             .map(|a| a.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
             .unwrap_or_default(),
+        activity_resume: v.get("activityResume").and_then(|r| {
+            Some(pb::ActivityResume {
+                activity_id: r.get("activityId")?.as_str()?.to_string(),
+                profile_generation: r.get("profileGeneration")?.as_i64()?,
+                yield_generation: r.get("yieldGeneration")?.as_i64()?,
+                resume_token: r.get("resumeToken")?.as_str()?.to_string(),
+            })
+        }),
     }
 }
 
@@ -138,8 +153,8 @@ impl AgentGrpc {
         Ok(())
     }
 
-    pub async fn cancel(&mut self, request_id: String) -> Result<(), tonic::Status> {
-        self.client.cancel(CancelRequest { request_id }).await?;
+    pub async fn cancel(&mut self, request_id: String, activity_id: Option<String>) -> Result<(), tonic::Status> {
+        self.client.cancel(CancelRequest { request_id, activity_id }).await?;
         Ok(())
     }
 
@@ -170,9 +185,47 @@ impl AgentGrpc {
         Ok(self.client.list_skills(pb::ListSkillsRequest {}).await?.into_inner())
     }
 
-    pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool) -> Result<(), tonic::Status> {
-        self.client.panel_tool_result(pb::PanelToolResultMsg { request_id, tool_call_id, output, success }).await?;
+    pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool, activity_id: Option<String>) -> Result<(), tonic::Status> {
+        self.client.panel_tool_result(pb::PanelToolResultMsg { request_id, tool_call_id, output, success, activity_id }).await?;
         Ok(())
+    }
+
+    pub async fn configure_speech_profile(&mut self, req: pb::ConfigureSpeechProfileRequest) -> Result<bool, tonic::Status> {
+        Ok(self.client.configure_speech_profile(req).await?.into_inner().ok)
+    }
+
+    pub async fn subscribe_speech_activities<F: FnMut(String)>(&mut self, session_id: String, mut emit: F) -> Result<(), tonic::Status> {
+        let mut stream = self.client
+            .subscribe_speech_activities(pb::SpeechActivitySubscription { session_id })
+            .await?
+            .into_inner();
+        while let Some(ev) = stream.message().await? {
+            emit(agent_event_to_ui_json(&ev).to_string());
+        }
+        Ok(())
+    }
+
+    pub async fn yield_speech_activity(&mut self, session_id: String, activity_id: String) -> Result<pb::YieldSpeechActivityResult, tonic::Status> {
+        Ok(self.client
+            .yield_speech_activity(pb::YieldSpeechActivityRequest { session_id, activity_id })
+            .await?
+            .into_inner())
+    }
+
+    pub async fn stop_speech_activity(&mut self, session_id: String, activity_id: Option<String>) -> Result<bool, tonic::Status> {
+        Ok(self.client
+            .stop_speech_activity(pb::StopSpeechActivityRequest { session_id, activity_id })
+            .await?
+            .into_inner()
+            .ok)
+    }
+
+    pub async fn control_speech_activity(&mut self, session_id: String, activity_id: Option<String>, action: String) -> Result<bool, tonic::Status> {
+        Ok(self.client
+            .control_speech_activity(pb::ControlSpeechActivityRequest { session_id, activity_id, action })
+            .await?
+            .into_inner()
+            .ok)
     }
 }
 

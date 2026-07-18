@@ -32,6 +32,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC10a 다중 클라이언트 점유 충돌** (신규) | Discord·로컬 UI 동시 명령 → owner·lease·handoff·revoke | (control-plane 중재) | ClientSessionPort(lease/arbitration) |
 | **UC12a 설정 검증** (UC11/14 **facet, 독립 UC 아님** — F1 흡수) | "키 저장됨"이 아니라 *provider/계정 연결 상태를 자기상태에서 관측* | 내수용 → 진단 | InteroceptivePort·system-status |
 | **UC14 graceful degradation** (신규) ★ | **현 설정된 것의 degradation 감지·보고**(read-only) — F1=미설정·시스템 이상, *UC12 후 자동 확장*=외부 인증/키 깨짐(Discord). *대체(fallback)=후속 tranche*(행위라 밖) | 내수용(실패 감지)→지각→표현(정직 보고) | InteroceptivePort·ExpressionPort |
+| **UC15 자유·연속 발화 전달** | agent가 사용자 요청 또는 내부 trigger로 여러 발화를 이어 보내면 셸이 session stream을 구독해 기존 채팅·TTS·취소 경로로 표현 | 사고(agent activity) → gRPC stream → 표현(text/TTS/avatar) → 끼어들기 | Agent gRPC client·ExpressionPort·SafetyPort(cancel) |
 
 ★ = naia 차별점(기억·경험·능동) — *기반 성숙 후* 별도 트랙(아래 순서 SoT).
 
@@ -326,3 +327,34 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 - OS-core(UC10a·UC13a) = P01 시나리오 **포함 확정**, 구현 DEFER(F3 후).
 - step-2 계약 backlog(goal-governance 소유자·포트 시그니처 등) = DEFER(step-2 계약 단계).
 - notify/memo(non-memory) 독립 UC 여부 = **Old-Baseline 측정 시 확인**(DEFER).
+
+## UC15 — 자유·연속 발화 session stream (#82 cross-repo)
+
+naia-agent가 사용자 요청의 기존 `Chat` stream에서 연속 발화를 보내거나, idle/cron 같은 외부 정책으로
+사용자 입력 없이 자유 발화를 시작한다. 셸은 agent 연결 뒤 현재 대화 session의
+`SubscribeSpeechActivities` 장기 stream을 정확히 하나 구독하고, 받은 `AgentEvent.request_id`를 기존
+`agent_response` JSON으로 변환해 기존 텍스트·TTS·아바타 표현 경로에 그대로 넣는다.
+
+- 요청 기반 연속 발화는 기존 `Chat` stream을 그대로 소비해 셸 상태 기계를 추가하지 않는다.
+- 자유 발화 event도 기존 `agent_response`와 동일한 폐쇄 union이라 별도 UI 이벤트 형식을 만들지 않는다.
+- session 구독 해제·agent 재시작은 보이지 않는 활동을 계속하지 않도록 server의 cancelled 정지로 이어진다.
+- 사용자가 받은 requestId+activityId로 self-init activity cancel을 보내면 provider/발화 사이 대기가
+  함께 취소된다. requestGeneration은 requested Chat에만 사용한다. activityId 관측 전과 session 전체
+  명시 정지는 `StopSpeechActivity`가 담당한다.
+- unsolicited activity는 ordinary Chat의 currentRequestId 필터와 별도로 수용한다. 사용자 입력은
+  TTS를 먼저 중단하고 `YieldSpeechActivity`가 반환한 resumeToken/profileGeneration을 Chat에 실어
+  즉시 보내며 queue 뒤에 가두지 않는다. quiet/stop은 terminal Stop을 쓴다. 이전 activityId 또는
+  profileGeneration의 늦은 text/audio는 재생하지 않는다.
+- 중복 session 구독은 만들지 않고, dispatcher 종료 시 모든 구독 task를 종료한다. 반복·시간·기억 상태는
+  agent 소유이며 셸은 복제하지 않는다.
+
+P02 검증:
+
+- Rust 단위/계약: `agent_grpc.rs`의 activity event 변환, subscribe/stop 요청, 같은 session 중복 구독 방지.
+- 실 백엔드: `agent_grpc.rs` live test 또는 e2e-tauri에서 agent spawn → session subscribe → self-init
+  text/usage/finish → 기존 `agent_response`, requestId cancel/stop, disconnect 정리를 검증.
+- 프론트 계약: ChatArea에서 unsolicited activity 표시/TTS, `interruptTts → yield/stop → Chat` 순서,
+  stale audio/text 폐기를 검증한다. e2e-tauri에서 개인 DJ BGM play/stop과 전시 질문 barge-in을 검증한다.
+
+Test Coverage Map: UC15 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
+`packages/shell/e2e-tauri` activity stream full-stack, 기존 `src/main/adapters/tauri/uc1`·ChatArea cancel 회귀.

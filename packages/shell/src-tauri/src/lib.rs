@@ -1177,6 +1177,43 @@ async fn agent_dispatcher(
         Ok(r) => log_both(&format!("[Naia] SetWorkspace → loaded={} {}/{}", r.loaded, r.provider, r.model)),
         Err(e) => log_both(&format!("[Naia] SetWorkspace 실패: {}", e)),
     }
+    // Proactive speech is a session-level server stream, independent from an
+    // ordinary chat request. Keep one subscription alive for the shell's main
+    // session so activity events can arrive while the input box is idle.
+    let (activity_shutdown_tx, mut activity_shutdown_rx) = tokio::sync::watch::channel(false);
+    {
+        let mut activity_client = client.clone();
+        let activity_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let emit_app = activity_app.clone();
+                let emit = move |json: String| {
+                    let _ = emit_app.emit("agent_response", &json);
+                };
+                let result = tokio::select! {
+                    result = activity_client.subscribe_speech_activities(
+                        "agent:main:main".to_string(),
+                        emit,
+                    ) => result,
+                    _ = activity_shutdown_rx.changed() => break,
+                };
+                let err = serde_json::json!({
+                    "type": "speech_activity_subscription_error",
+                    "message": match result {
+                        Ok(()) => "grpc speech activity subscription ended".to_string(),
+                        Err(e) => format!("grpc speech activity subscription: {}", e),
+                    },
+                    "retrying": true,
+                })
+                .to_string();
+                let _ = activity_app.emit("agent_response", &err);
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {},
+                    _ = activity_shutdown_rx.changed() => break,
+                }
+            }
+        });
+    }
     while let Some(msg) = rx.recv().await {
         let v: serde_json::Value = match serde_json::from_str(&msg) {
             Ok(v) => v,
@@ -1214,7 +1251,158 @@ async fn agent_dispatcher(
             }
             "cancel_stream" => {
                 let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let _ = client.cancel(rid).await;
+                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
+                let _ = client.cancel(rid, activity_id).await;
+            }
+            "configure_speech_profile" => {
+                use agent_grpc::pb::configure_speech_profile_request::Profile;
+
+                let session_id = v
+                    .get("sessionId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("agent:main:main")
+                    .to_string();
+                let profile_name = v.get("profile").and_then(|x| x.as_str()).unwrap_or("disabled");
+                let bounded = |key: &str, default: i64, min: i64, max: i64| {
+                    v.get(key)
+                        .and_then(|x| x.as_i64())
+                        .unwrap_or(default)
+                        .clamp(min, max)
+                };
+                let profile = match profile_name {
+                    "personal_radio_dj" => Profile::PersonalRadioDj(
+                        agent_grpc::pb::PersonalRadioDjProfile {
+                            idle_ms: bounded("idleMs", 120_000, 5_000, 86_400_000),
+                            dj_interval_ms: bounded("djIntervalMs", 900_000, 30_000, 86_400_000),
+                            timezone: v
+                                .get("timezone")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("Asia/Seoul")
+                                .to_string(),
+                            bgm_auto_play_opt_in: v
+                                .get("bgmAutoPlayOptIn")
+                                .and_then(|x| x.as_bool())
+                                .unwrap_or(false),
+                            weather_latitude: v.get("weatherLatitude").and_then(|x| x.as_f64()),
+                            weather_longitude: v.get("weatherLongitude").and_then(|x| x.as_f64()),
+                            weather_consented: v
+                                .get("weatherConsented")
+                                .and_then(|x| x.as_bool())
+                                .unwrap_or(false),
+                        },
+                    ),
+                    "exhibition_intro" => Profile::ExhibitionIntro(
+                        agent_grpc::pb::ExhibitionIntroProfile {
+                            knowledge_scope: v
+                                .get("knowledgeScope")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("exhibition")
+                                .to_string(),
+                            idle_ms: bounded("idleMs", 15_000, 1_000, 3_600_000),
+                            intro_interval_ms: bounded("introIntervalMs", 20_000, 2_000, 3_600_000),
+                        },
+                    ),
+                    _ => Profile::Disabled(agent_grpc::pb::DisabledSpeechProfile {}),
+                };
+                let request = agent_grpc::pb::ConfigureSpeechProfileRequest {
+                    session_id,
+                    profile: Some(profile),
+                };
+                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let result = client.configure_speech_profile(request).await;
+                let payload = match result {
+                    Ok(ok) => serde_json::json!({
+                        "type": "speech_profile_configured",
+                        "requestId": request_id,
+                        "ok": ok,
+                        "profile": profile_name,
+                    }),
+                    Err(e) => serde_json::json!({
+                        "type": "error",
+                        "requestId": request_id,
+                        "message": format!("grpc configure speech profile: {}", e),
+                    }),
+                };
+                let _ = app.emit("agent_response", &payload.to_string());
+            }
+            "yield_speech_activity" => {
+                let session_id = v
+                    .get("sessionId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("agent:main:main")
+                    .to_string();
+                let activity_id = v.get("activityId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let payload = match client.yield_speech_activity(session_id, activity_id.clone()).await {
+                    Ok(result) => serde_json::json!({
+                        "type": "speech_activity_yielded",
+                        "requestId": request_id,
+                        "activityId": activity_id,
+                        "ok": result.ok,
+                        "resumeToken": result.resume_token,
+                        "profileGeneration": result.profile_generation,
+                        "yieldGeneration": result.yield_generation,
+                    }),
+                    Err(e) => serde_json::json!({
+                        "type": "error",
+                        "requestId": request_id,
+                        "activityId": activity_id,
+                        "message": format!("grpc yield speech activity: {}", e),
+                    }),
+                };
+                let _ = app.emit("agent_response", &payload.to_string());
+            }
+            "stop_speech_activity" => {
+                let session_id = v
+                    .get("sessionId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("agent:main:main")
+                    .to_string();
+                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
+                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let result = client.stop_speech_activity(session_id, activity_id.clone()).await;
+                let payload = match result {
+                    Ok(ok) => serde_json::json!({
+                        "type": "speech_activity_stopped",
+                        "requestId": request_id,
+                        "activityId": activity_id,
+                        "ok": ok,
+                    }),
+                    Err(e) => serde_json::json!({
+                        "type": "error",
+                        "requestId": request_id,
+                        "activityId": activity_id,
+                        "message": format!("grpc stop speech activity: {}", e),
+                    }),
+                };
+                let _ = app.emit("agent_response", &payload.to_string());
+            }
+            "control_speech_activity" => {
+                let session_id = v
+                    .get("sessionId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("agent:main:main")
+                    .to_string();
+                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
+                let action = v.get("action").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let result = client.control_speech_activity(session_id, activity_id.clone(), action.clone()).await;
+                let payload = match result {
+                    Ok(ok) => serde_json::json!({
+                        "type": "speech_activity_controlled",
+                        "requestId": request_id,
+                        "activityId": activity_id,
+                        "action": action,
+                        "ok": ok,
+                    }),
+                    Err(e) => serde_json::json!({
+                        "type": "error",
+                        "requestId": request_id,
+                        "activityId": activity_id,
+                        "message": format!("grpc control speech activity: {}", e),
+                    }),
+                };
+                let _ = app.emit("agent_response", &payload.to_string());
             }
             "approval_response" => {
                 let approve = v.get("decision").and_then(|x| x.as_str()) == Some("approve");
@@ -1302,8 +1490,9 @@ async fn agent_dispatcher(
                 let tcid = v.get("toolCallId").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 let output = v.get("result").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 let success = v.get("success").and_then(|x| x.as_bool()).unwrap_or(false);
+                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
                 let mut c = client.clone();
-                tauri::async_runtime::spawn(async move { let _ = c.panel_tool_result(rid, tcid, output, success).await; });
+                tauri::async_runtime::spawn(async move { let _ = c.panel_tool_result(rid, tcid, output, success, activity_id).await; });
             }
             "app_install" => {
                 // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — AppInstallDialog 무한 로딩 방지 위해
@@ -1313,6 +1502,7 @@ async fn agent_dispatcher(
             _ => {}
         }
     }
+    let _ = activity_shutdown_tx.send(true);
     log_verbose("[Naia] agent dispatcher ended");
 }
 
