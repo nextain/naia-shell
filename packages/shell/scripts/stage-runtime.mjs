@@ -204,11 +204,20 @@ PAYLOAD="$0.payload.gz"
 CACHE_BASE="\${XDG_CACHE_HOME:-\${HOME:?HOME is required}/.cache}"
 CACHE_DIR="$CACHE_BASE/naia/embedded-cli"
 TARGET="$CACHE_DIR/claude-${digest}"
-if [ ! -x "$TARGET" ]; then
+ACTUAL=""
+if [ -x "$TARGET" ]; then
+  ACTUAL="$("$NODE" -e 'const fs=require("node:fs"),c=require("node:crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$TARGET" 2>/dev/null || true)"
+fi
+if [ "$ACTUAL" != "${digest}" ]; then
   mkdir -p "$CACHE_DIR"
   TMP="$TARGET.$$"
   trap 'rm -f "$TMP"' EXIT HUP INT TERM
   "$NODE" -e 'const fs=require("node:fs"),z=require("node:zlib");fs.writeFileSync(process.argv[2],z.gunzipSync(fs.readFileSync(process.argv[1])),{mode:0o700})' "$PAYLOAD" "$TMP"
+  TEMP_ACTUAL="$("$NODE" -e 'const fs=require("node:fs"),c=require("node:crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$TMP")"
+  if [ "$TEMP_ACTUAL" != "${digest}" ]; then
+    echo "naia: embedded Claude payload checksum mismatch" >&2
+    exit 1
+  fi
   mv -f "$TMP" "$TARGET"
   trap - EXIT HUP INT TERM
 fi
