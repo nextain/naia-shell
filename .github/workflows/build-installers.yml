@@ -1,0 +1,369 @@
+name: build installers
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            platform: win32
+          - os: ubuntu-24.04
+            platform: linux
+          - os: macos-15
+            platform: darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Clone required public runtime sources
+        run: |
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin 8afe8d30a69822b7e7acf48da0e0cd0390a4eb67
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../../naia-kb-compiler
+          git -C ../../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../../naia-kb-compiler fetch --depth 1 origin f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
+          git -C ../../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../../naia-memory
+          git -C ../../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../../naia-memory fetch --depth 1 origin b88f3f0f8eef5cc66e61925774f03be157153efb
+          git -C ../../naia-memory checkout --detach FETCH_HEAD
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.34.5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.1"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.97.0"
+
+      - name: Install Linux build and smoke dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+             libasound2-dev libssl-dev libxdo-dev libudev-dev \
+             pipewire-alsa xvfb rpm
+
+      - name: Assert macOS runner architecture
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          test "$(uname -m)" = "arm64" || {
+            echo "::error::macOS installer contract currently supports the CI arm64 completion line only"
+            exit 1
+          }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build installer bundle from platform matrix
+        run: pnpm -C packages/shell run tauri:build:bundle
+
+      - name: Archive complete macOS app bundle
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APP_PATHS=()
+          while IFS= read -r path; do APP_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/macos" -maxdepth 1 -type d -name '*.app' -print
+          )
+          test "${#APP_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one macOS app bundle, found ${#APP_PATHS[@]}"
+            exit 1
+          }
+          APP_PATH="${APP_PATHS[0]}"
+          APP_NAME="$(basename "$APP_PATH")"
+          tar -C "$BUNDLE_DIR/macos" -czf "$BUNDLE_DIR/macos/${APP_NAME}.tar.gz" "$APP_NAME"
+
+      - name: Archive executable Linux AppImage
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APPIMAGE_PATHS=()
+          while IFS= read -r path; do APPIMAGE_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print
+          )
+          test "${#APPIMAGE_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one Linux AppImage, found ${#APPIMAGE_PATHS[@]}"
+            exit 1
+          }
+          APPIMAGE_PATH="${APPIMAGE_PATHS[0]}"
+          test -x "$APPIMAGE_PATH" || {
+            echo "::error::Linux AppImage is not executable: $APPIMAGE_PATH"
+            exit 1
+          }
+          APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
+          tar -C "$BUNDLE_DIR/appimage" -czf "$BUNDLE_DIR/appimage/${APPIMAGE_NAME}.tar.gz" "$APPIMAGE_NAME"
+
+      - name: Verify installer artifacts
+        run: node packages/shell/scripts/verify-artifacts.mjs
+
+      - name: Validate MSI structure
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem packages/shell/src-tauri/target/release/bundle/msi/*.msi)
+          if ($msi.Count -ne 1) {
+            throw "Expected exactly one MSI, found $($msi.Count)"
+          }
+          $target = Join-Path $env:RUNNER_TEMP "naia-msi-admin"
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          $process = Start-Process -FilePath "msiexec.exe" `
+            -ArgumentList "/a `"$($msi[0].FullName)`" /qn TARGETDIR=`"$target`"" `
+            -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "MSI administrative extraction failed with exit code $($process.ExitCode)"
+          }
+          $shellBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "naia-shell.exe")
+          $nodeBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "node.exe")
+          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1) {
+            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count)"
+          }
+
+      - name: Validate Linux package structures
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          RPM="$(find "$BUNDLE_DIR/rpm" -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          APPIMAGE_TAR="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage.tar.gz' -print -quit)"
+          test -n "$RPM" && rpm -K --nosignature "$RPM"
+          test -n "$APPIMAGE_TAR" && tar -tzf "$APPIMAGE_TAR" >/dev/null
+          EXTRACTED="$(mktemp -d)"
+          trap 'rm -rf "$EXTRACTED"' EXIT
+          tar -xzf "$APPIMAGE_TAR" -C "$EXTRACTED"
+          EXTRACTED_APPIMAGE="$(find "$EXTRACTED" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$EXTRACTED_APPIMAGE" && test -x "$EXTRACTED_APPIMAGE"
+          (
+            cd "$EXTRACTED"
+            "$EXTRACTED_APPIMAGE" --appimage-extract >/dev/null
+          )
+          test -x "$EXTRACTED/squashfs-root/AppRun"
+          find "$EXTRACTED/squashfs-root" -type f -name 'naia-shell' -perm -111 -print -quit | grep -q .
+          find "$EXTRACTED/squashfs-root" -type f -name 'node' -perm -111 -print -quit | grep -q .
+
+      - name: Validate macOS package structures
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          DMG="$(find "$BUNDLE_DIR/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          APP_TAR="$(find "$BUNDLE_DIR/macos" -maxdepth 1 -type f -name '*.app.tar.gz' -print -quit)"
+          test -n "$DMG" && hdiutil verify "$DMG"
+          test -n "$APP_TAR" && tar -tzf "$APP_TAR" >/dev/null
+          EXTRACTED="$(mktemp -d)"
+          MOUNT="$(mktemp -d)"
+          MOUNTED=0
+          cleanup() {
+            if [ "$MOUNTED" -eq 1 ]; then hdiutil detach "$MOUNT" >/dev/null; fi
+            rm -rf "$EXTRACTED" "$MOUNT"
+          }
+          trap cleanup EXIT
+          validate_app() {
+            local ROOT="$1"
+            local APPS=("$ROOT"/*.app)
+            test "${#APPS[@]}" -eq 1 && test -d "${APPS[0]}"
+            local APP="${APPS[0]}"
+            local INFO="$APP/Contents/Info.plist"
+            plutil -lint "$INFO"
+            local EXECUTABLE
+            EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
+            test -n "$EXECUTABLE" && test -x "$APP/Contents/MacOS/$EXECUTABLE"
+            test -x "$APP/Contents/Resources/node"
+          }
+          tar -xzf "$APP_TAR" -C "$EXTRACTED"
+          validate_app "$EXTRACTED"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$DMG" >/dev/null
+          MOUNTED=1
+          validate_app "$MOUNT"
+
+      - name: Install NSIS and prove bundled Node at runtime
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem `
+            packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer not found"
+          }
+          $process = Start-Process -FilePath $installer.FullName `
+            -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "NSIS silent install failed with exit code $($process.ExitCode)"
+          }
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $binary = Join-Path $resourceDir "naia-shell.exe"
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "Installed naia-shell.exe not found: $binary"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $resourceDir "node.exe") -PathType Leaf)) {
+            throw "Installed bundled node.exe not found: $resourceDir"
+          }
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $resourceDir --timeout-ms 120000
+
+      - name: Prepare and verify Steam portable depot
+        id: steam
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $uninstaller = Join-Path $resourceDir "uninstall.exe"
+          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+            throw "NSIS uninstaller not found before Steam depot preparation"
+          }
+          $bundleDir = Resolve-Path "packages/shell/src-tauri/target/release/bundle"
+          $steamDepot = node packages/shell/scripts/prepare-steam-depot.mjs `
+            --source $resourceDir --bundle-dir $bundleDir `
+            --github-output $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) {
+            throw "Steam depot preparation failed with exit code $LASTEXITCODE"
+          }
+          $steamDepot = $steamDepot.Trim()
+          $contract = (Get-Content packages/shell/src-tauri/platform-matrix.json -Raw |
+            ConvertFrom-Json).os.win32.steamDepot
+          $binary = Join-Path $steamDepot $contract.entrypoint
+
+          $uninstall = Start-Process -FilePath $uninstaller `
+            -ArgumentList "/S" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "NSIS silent uninstall failed with exit code $($uninstall.ExitCode)"
+          }
+          for ($attempt = 0; $attempt -lt 20 -and
+              (Test-Path -LiteralPath $resourceDir); $attempt++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path -LiteralPath $resourceDir) {
+            throw "NSIS install location remains after silent uninstall"
+          }
+          $uninstallKey = Get-ChildItem `
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" `
+            -ErrorAction SilentlyContinue |
+            Get-ItemProperty |
+            Where-Object DisplayName -eq "Naia"
+          if ($uninstallKey) {
+            throw "NSIS uninstall registry entry remains after silent uninstall"
+          }
+
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $steamDepot --timeout-ms 120000
+          if ($LASTEXITCODE -ne 0) {
+            throw "Steam portable smoke failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Install deb and prove bundled Node at runtime
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          DEB="$(find packages/shell/src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)"
+          test -n "$DEB"
+          DEB="$(realpath "$DEB")"
+          test -f "$DEB"
+          sudo apt-get install -y "$DEB"
+          BIN="$(command -v naia-shell)"
+          PRODUCT_NAME="$(node -p "JSON.parse(require('node:fs').readFileSync('packages/shell/src-tauri/tauri.conf.json', 'utf8')).productName")"
+          test -n "$PRODUCT_NAME"
+          RESOURCE_DIR="/usr/lib/$PRODUCT_NAME"
+          test -x "$BIN"
+          test -x "$RESOURCE_DIR/node"
+
+          WRAPPED_CLAUDE="$RESOURCE_DIR/agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
+          WRAPPED_PAYLOAD="$WRAPPED_CLAUDE.payload.gz"
+          WRAPPER_CACHE="$RUNNER_TEMP/naia-wrapper-cache"
+          test -x "$WRAPPED_CLAUDE"
+
+          # Two simultaneous first launches must both succeed and converge on one valid cache entry.
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_1=$!
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_2=$!
+          wait "$WRAPPER_PID_1"
+          wait "$WRAPPER_PID_2"
+          RESTORED_CLAUDE="$(find "$WRAPPER_CACHE/naia/embedded-cli" -name 'claude-*' -type f -perm -u+x -print -quit)"
+          test -n "$RESTORED_CLAUDE" || {
+            echo "::error::wrapped Claude executable was not restored into the user cache"
+            exit 1
+          }
+
+          # An executable-but-corrupt cache entry must be detected and repaired.
+          printf 'corrupt cache' > "$RESTORED_CLAUDE"
+          chmod 700 "$RESTORED_CLAUDE"
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version
+
+          # A valid gzip containing the wrong executable must fail before publication.
+          cp "$WRAPPED_PAYLOAD" "$RUNNER_TEMP/claude.payload.original.gz"
+          node -e 'const fs=require("node:fs"),z=require("node:zlib");fs.writeFileSync(process.argv[1],z.gzipSync(Buffer.from("#!/bin/sh\nexit 0\n")))' "$RUNNER_TEMP/claude.payload.tampered.gz"
+          sudo cp "$RUNNER_TEMP/claude.payload.tampered.gz" "$WRAPPED_PAYLOAD"
+          rm -f "$RESTORED_CLAUDE"
+          set +e
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version
+          TAMPER_STATUS=$?
+          set -e
+          sudo cp "$RUNNER_TEMP/claude.payload.original.gz" "$WRAPPED_PAYLOAD"
+          test "$TAMPER_STATUS" -ne 0 || {
+            echo "::error::tampered wrapped payload unexpectedly executed"
+            exit 1
+          }
+          echo "wrapped payload tamper probe: expected RED confirmed"
+
+          sudo mv "$RESOURCE_DIR/node" "$RESOURCE_DIR/node.mutation-disabled"
+          set +e
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+          MUTATION_STATUS=$?
+          set -e
+          sudo mv "$RESOURCE_DIR/node.mutation-disabled" "$RESOURCE_DIR/node"
+          test "$MUTATION_STATUS" -ne 0 || {
+            echo "::error::mutation probe unexpectedly passed without bundled Node"
+            exit 1
+          }
+          echo "mutation probe: expected RED confirmed"
+
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+
+      - name: Upload installer outputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe
+            packages/shell/src-tauri/target/release/bundle/msi/*.msi
+            packages/shell/src-tauri/target/release/bundle/deb/*.deb
+            packages/shell/src-tauri/target/release/bundle/rpm/*.rpm
+            packages/shell/src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz
+            packages/shell/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
+            packages/shell/src-tauri/target/release/bundle/artifacts.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Steam portable depot
+        if: matrix.platform == 'win32'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-steam-win32-${{ github.sha }}
+          path: ${{ steps.steam.outputs.depot }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14

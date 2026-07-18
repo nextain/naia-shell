@@ -3,6 +3,7 @@
 use super::{PlatformHandle, PlatformWindowManager, WindowRect};
 use std::path::PathBuf;
 use std::process::Command;
+use tauri::Manager;
 
 /// Check if a process with the given PID is still running (Windows: OpenProcess + GetExitCodeProcess).
 pub(crate) fn is_pid_alive(pid: u32) -> bool {
@@ -25,6 +26,14 @@ pub(crate) fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
     cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+/// Find the Node.js runtime staged beside the installed application resources.
+pub(crate) fn find_bundled_node(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    let candidate = app_handle.path().resource_dir().ok()?.join("node.exe");
+    candidate
+        .exists()
+        .then(|| dunce::canonicalize(&candidate).unwrap_or(candidate))
 }
 
 /// Kill any stale gateway process from a previous session (Windows: wmic command-line match).

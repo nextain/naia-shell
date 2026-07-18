@@ -674,6 +674,32 @@ fn node_major_version<P: AsRef<std::ffi::OsStr>>(node_path: P) -> Option<u32> {
         .and_then(|s| s.parse().ok())
 }
 
+fn absolute_executable_path(path: std::path::PathBuf) -> std::path::PathBuf {
+    if let Ok(canonical) = dunce::canonicalize(&path) {
+        return canonical;
+    }
+    if path.is_absolute() || path.components().count() != 1 {
+        return path;
+    }
+
+    let mut names = vec![path.clone()];
+    if cfg!(windows) && path.extension().is_none() {
+        names.push(path.with_extension("exe"));
+        names.push(path.with_extension("cmd"));
+    }
+    if let Some(search_path) = std::env::var_os("PATH") {
+        for directory in std::env::split_paths(&search_path) {
+            for name in &names {
+                let candidate = directory.join(name);
+                if candidate.is_file() {
+                    return dunce::canonicalize(&candidate).unwrap_or(candidate);
+                }
+            }
+        }
+    }
+    path
+}
+
 /// Find Node.js binary (system path first, then nvm fallback)
 fn find_node_binary() -> Result<std::path::PathBuf, String> {
     // Flatpak bundled node (Linux only)
@@ -689,7 +715,7 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
     let node_cmd = if cfg!(windows) { "node.exe" } else { "node" };
     if let Some(major) = node_major_version(node_cmd) {
         if major >= 22 {
-            return Ok(std::path::PathBuf::from(node_cmd));
+            return Ok(absolute_executable_path(std::path::PathBuf::from(node_cmd)));
         }
     }
 
@@ -765,6 +791,41 @@ fn find_node_binary() -> Result<std::path::PathBuf, String> {
     }
 
     Err("Node.js 22+ not found (checked system PATH and nvm/fnm)".to_string())
+}
+
+/// Resolve the Node.js binary used by a child process.
+///
+/// Explicit environment overrides remain highest priority. Installed builds then
+/// use the runtime staged in Tauri's resource directory, while development builds
+/// retain the existing system/nvm/fnm fallback chain.
+fn select_node_binary<F, G>(
+    env_override: Option<std::ffi::OsString>,
+    find_bundled: F,
+    find_system: G,
+) -> std::path::PathBuf
+where
+    F: FnOnce() -> Option<std::path::PathBuf>,
+    G: FnOnce() -> Result<std::path::PathBuf, String>,
+{
+    if let Some(path) = env_override {
+        return absolute_executable_path(std::path::PathBuf::from(path));
+    }
+    if let Some(path) = find_bundled() {
+        return path;
+    }
+    find_system().unwrap_or_else(|_| {
+        std::path::PathBuf::from(if cfg!(windows) { "node.exe" } else { "node" })
+    })
+}
+
+fn resolve_spawn_node(app_handle: &AppHandle, env_name: &str) -> String {
+    select_node_binary(
+        std::env::var_os(env_name),
+        || platform::find_bundled_node(app_handle),
+        find_node_binary,
+    )
+    .to_string_lossy()
+    .to_string()
 }
 
 /// Check if Naia Gateway is already running (blocking, for setup use)
@@ -853,22 +914,8 @@ fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
 ) -> Result<AgentProcess, String> {
-    let agent_path = std::env::var("NAIA_AGENT_PATH").unwrap_or_else(|_| {
-        // On Windows, check bundled node.exe in resource_dir first
-        #[cfg(windows)]
-        {
-            if let Ok(res_dir) = app_handle.path().resource_dir() {
-                let bundled = res_dir.join("node.exe");
-                if bundled.exists() {
-                    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
-                    return normalized.to_string_lossy().to_string();
-                }
-            }
-        }
-        find_node_binary()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "node".to_string())
-    });
+    let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
+    log_both(&format!("[Naia] node = {}", agent_path));
 
     // In dev: tsx for TypeScript direct execution; in prod: compiled JS from bundle
     let agent_script = std::env::var("NAIA_AGENT_SCRIPT").unwrap_or_else(|_| {
@@ -1519,21 +1566,8 @@ async fn agent_dispatcher(
 ///  - kill() called on Tauri WindowEvent::Destroyed (no orphan process)
 fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, String> {
     // Node binary — same resolution chain as spawn_agent_core
-    let node_path = std::env::var("NAIA_BGM_NODE_PATH").unwrap_or_else(|_| {
-        #[cfg(windows)]
-        {
-            if let Ok(res_dir) = app_handle.path().resource_dir() {
-                let bundled = res_dir.join("node.exe");
-                if bundled.exists() {
-                    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
-                    return normalized.to_string_lossy().to_string();
-                }
-            }
-        }
-        find_node_binary()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "node".to_string())
-    });
+    let node_path = resolve_spawn_node(app_handle, "NAIA_BGM_NODE_PATH");
+    log_both(&format!("[Naia] node = {}", node_path));
 
     // BGM entry script — 환경 사이드카 `@naia/bgm-sidecar` (packages/bgm-sidecar).
     // 환경(environment) 레이어 표준(docs/brain-body-environment.md): youtube 추출 서버는 셸(substrate)이
@@ -1568,7 +1602,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
         // Prod: bundled via Tauri resources (esbuild output, if added later)
         if let Ok(resource_dir) = app_handle.path().resource_dir() {
             let bundled = resource_dir
-                .join("agent")
+                .join("bgm-sidecar")
                 .join("dist")
                 .join("bgm-server-bin.js");
             if bundled.exists() {
@@ -1640,6 +1674,15 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr_stdio);
+    let health_nonce = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to create BGM health nonce: {e}"))?
+            .as_nanos()
+    );
+    cmd.env("NAIA_BGM_HEALTH_NONCE", &health_nonce);
 
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
@@ -1664,13 +1707,15 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     // can't see (server.on("error") in youtube-server.ts logs but doesn't exit).
     // Non-fatal: BGM is optional; we only log a warning on timeout so users
     // see a recovery hint in ~/.naia/logs/naia.log.
-    if !probe_bgm_server_ready(std::time::Duration::from_secs(3)) {
+    if !probe_bgm_server_ready(std::time::Duration::from_secs(3), &health_nonce) {
         log_both(
             "[Naia] WARN BGM server did not respond on http://127.0.0.1:18791/health within 3s",
         );
         log_both(
             "[Naia] WARN BGM player may show connection-refused; restart the app or kill any stray Node process bound to 18791",
         );
+    } else {
+        log_both("[Naia] BGM server ready @ http://127.0.0.1:18791/health");
     }
 
     Ok(BgmServerProcess { child })
@@ -1679,7 +1724,12 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
 /// Poll `http://127.0.0.1:18791/health` every 100 ms for up to `timeout`.
 /// Returns `true` as soon as a 2xx response arrives; `false` on timeout.
 /// Used by `spawn_youtube_bgm_server` to detect EADDRINUSE / startup failure.
-fn probe_bgm_server_ready(timeout: std::time::Duration) -> bool {
+fn bgm_health_matches(body: &serde_json::Value, expected_nonce: &str) -> bool {
+    body.get("ok").and_then(|value| value.as_bool()) == Some(true)
+        && body.get("nonce").and_then(|value| value.as_str()) == Some(expected_nonce)
+}
+
+fn probe_bgm_server_ready(timeout: std::time::Duration, expected_nonce: &str) -> bool {
     let url = "http://127.0.0.1:18791/health";
     let deadline = std::time::Instant::now() + timeout;
     let interval = std::time::Duration::from_millis(100);
@@ -1689,7 +1739,13 @@ fn probe_bgm_server_ready(timeout: std::time::Duration) -> bool {
             .timeout(std::time::Duration::from_millis(200))
             .build();
         if let Ok(resp) = agent.get(url).call() {
-            if resp.status() >= 200 && resp.status() < 300 {
+            if resp.status() >= 200
+                && resp.status() < 300
+                && resp
+                    .into_json::<serde_json::Value>()
+                    .map(|body| bgm_health_matches(&body, expected_nonce))
+                    .unwrap_or(false)
+            {
                 return true;
             }
         }
@@ -4952,9 +5008,41 @@ mod tests {
         let result = find_node_binary();
         // Either Ok (node found) or Err (not found) — both are valid
         match result {
-            Ok(path) => assert!(!path.as_os_str().is_empty()),
+            Ok(path) => assert!(
+                path.is_absolute(),
+                "successful Node resolution must be observable as an absolute path: {}",
+                path.display()
+            ),
             Err(e) => assert!(e.contains("Node.js")),
         }
+    }
+
+    #[test]
+    fn select_node_binary_prefers_environment_override() {
+        let selected = select_node_binary(
+            Some(std::ffi::OsString::from("C:\\custom\\node.exe")),
+            || panic!("bundled lookup must not run after an explicit override"),
+            || panic!("system lookup must not run after an explicit override"),
+        );
+        assert_eq!(selected, std::path::PathBuf::from("C:\\custom\\node.exe"));
+    }
+
+    #[test]
+    fn select_node_binary_prefers_bundle_over_system() {
+        let bundled = std::path::PathBuf::from("/installed/resources/node");
+        let selected = select_node_binary(
+            None,
+            || Some(bundled.clone()),
+            || panic!("system lookup must not run when bundled Node exists"),
+        );
+        assert_eq!(selected, bundled);
+    }
+
+    #[test]
+    fn select_node_binary_preserves_system_fallback() {
+        let system = std::path::PathBuf::from("/usr/local/bin/node");
+        let selected = select_node_binary(None, || None, || Ok(system.clone()));
+        assert_eq!(selected, system);
     }
 
     #[test]
@@ -4965,9 +5053,31 @@ mod tests {
     }
 
     #[test]
+    fn bgm_health_requires_current_launch_nonce() {
+        let current = serde_json::json!({ "ok": true, "nonce": "current" });
+        let stale = serde_json::json!({ "ok": true, "nonce": "stale" });
+        let legacy = serde_json::json!({ "ok": true });
+        assert!(bgm_health_matches(&current, "current"));
+        assert!(!bgm_health_matches(&stale, "current"));
+        assert!(!bgm_health_matches(&legacy, "current"));
+    }
+
+    #[test]
     fn gateway_process_we_spawned_flag() {
+        let spawn_success = || {
+            #[cfg(windows)]
+            let mut command = {
+                let mut command = Command::new("cmd");
+                command.args(["/C", "exit", "0"]);
+                command
+            };
+            #[cfg(not(windows))]
+            let mut command = Command::new("true");
+            command.spawn().unwrap()
+        };
+
         // Verify the struct has the expected fields
-        let child = Command::new("true").spawn().unwrap();
+        let child = spawn_success();
         let process = GatewayProcess {
             child,
             node_host: None,
@@ -4976,8 +5086,8 @@ mod tests {
         assert!(!process.we_spawned);
         assert!(process.node_host.is_none());
 
-        let child2 = Command::new("true").spawn().unwrap();
-        let nh = Command::new("true").spawn().unwrap();
+        let child2 = spawn_success();
+        let nh = spawn_success();
         let process2 = GatewayProcess {
             child: child2,
             node_host: Some(nh),

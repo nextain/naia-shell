@@ -137,9 +137,12 @@ pub(crate) fn npm_command() -> &'static str {
     "npm"
 }
 
-/// Find bundled node binary (macOS: not bundled yet).
-pub(crate) fn find_bundled_node(_app_handle: &tauri::AppHandle) -> Option<PathBuf> {
-    None
+/// Find the Node.js runtime staged beside the installed application resources.
+pub(crate) fn find_bundled_node(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    let candidate = app_handle.path().resource_dir().ok()?.join("node");
+    candidate
+        .exists()
+        .then(|| dunce::canonicalize(&candidate).unwrap_or(candidate))
 }
 
 /// Get platform tier info.

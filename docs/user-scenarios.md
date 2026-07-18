@@ -358,3 +358,13 @@ P02 검증:
 
 Test Coverage Map: UC15 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
 `packages/shell/e2e-tauri` activity stream full-stack, 기존 `src/main/adapters/tauri/uc1`·ChatArea cancel 회귀.
+
+## S-STEAM — Windows Steam 배포 준비 (#314)
+
+- **사용자 목표**: Steam에서 Naia를 설치하고 `naia-shell.exe`를 직접 실행한다.
+- **배포 계약**: Windows 설치 완료 트리에서 NSIS 전용 `uninstall.exe`를 제외한 포터블 디포를 만들고,
+  번들 Node·agent·BGM sidecar를 포함한다.
+- **독립 실행 증명**: CI는 디포 복사 후 NSIS 기본 설치 위치를 제거한 상태에서 실제 셸을 기동해
+  agent handshake와 번들 Node 사용을 확인한다.
+- **무결성**: 업로드 디포에는 모든 파일의 상대 경로와 SHA256을 담은 `steam-files.sha256`이 포함된다.
+- **범위 경계**: Steamworks App ID·depot ID·계정 비밀·스토어 심사 제출은 저장소 밖 운영 단계이며 #314에서 추적한다.

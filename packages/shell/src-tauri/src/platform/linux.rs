@@ -3,6 +3,7 @@
 use super::{PlatformHandle, PlatformWindowManager, WindowRect};
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use tauri::Manager;
 
 /// Check if a process with the given PID is still running (Unix: kill(pid, 0)).
 pub(crate) fn is_pid_alive(pid: u32) -> bool {
@@ -137,9 +138,12 @@ pub(crate) fn npm_command() -> &'static str {
     "npm"
 }
 
-/// Find bundled node binary (Linux: not applicable).
-pub(crate) fn find_bundled_node(_app_handle: &tauri::AppHandle) -> Option<PathBuf> {
-    None
+/// Find the Node.js runtime staged beside the installed application resources.
+pub(crate) fn find_bundled_node(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    let candidate = app_handle.path().resource_dir().ok()?.join("node");
+    candidate
+        .exists()
+        .then(|| dunce::canonicalize(&candidate).unwrap_or(candidate))
 }
 
 /// Platform-specific gateway spawn (Linux: use default flow).

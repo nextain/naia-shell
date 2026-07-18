@@ -60,8 +60,12 @@ packages/shell/src-tauri/gen
 packages/shell/src-tauri/resources/
 # 배포 번들용 agent 스테이징(stage-agent.mjs 가 prod-hoisted deploy) — 빌드 산출물, 추적 제외
 packages/shell/src-tauri/agent/
+# 배포 번들용 BGM sidecar 스테이징(prod-hoisted deploy) — 빌드 산출물, 추적 제외
+packages/shell/src-tauri/bgm-sidecar/
 # 배포 번들용 cascade loader 스테이징(stage-cascade-loader.mjs 가 windows-manager loader 동봉) — 빌드 산출물, 추적 제외
 packages/shell/src-tauri/cascade-loader/
+# stage-runtime.mjs 가 platform-matrix.json 에서 생성하는 conf 오버레이 (#377 FR-INSTALL.2) — 생성물, 추적 제외
+packages/shell/src-tauri/tauri.conf.generated.json
 
 # 메인테이너 내부 운영물 — OSS 산출물 아님(개인 머신 경로/사이드카 레포·자격증명 의존).
 # 데모 미디어 생성기 + 라이브 진단 하네스 + 수동 게이트웨이 스크립트는 공개 배포 제외.

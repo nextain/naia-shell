@@ -94,6 +94,9 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
                 resume_token: r.get("resumeToken")?.as_str()?.to_string(),
             })
         }),
+        // Keep clean-runner builds source-compatible when naia-agent grows
+        // another optional transport field before the shell wires it.
+        ..Default::default()
     }
 }
 
@@ -154,7 +157,13 @@ impl AgentGrpc {
     }
 
     pub async fn cancel(&mut self, request_id: String, activity_id: Option<String>) -> Result<(), tonic::Status> {
-        self.client.cancel(CancelRequest { request_id, activity_id }).await?;
+        self.client
+            .cancel(CancelRequest {
+                request_id,
+                activity_id,
+                ..Default::default()
+            })
+            .await?;
         Ok(())
     }
 
@@ -186,7 +195,16 @@ impl AgentGrpc {
     }
 
     pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool, activity_id: Option<String>) -> Result<(), tonic::Status> {
-        self.client.panel_tool_result(pb::PanelToolResultMsg { request_id, tool_call_id, output, success, activity_id }).await?;
+        self.client
+            .panel_tool_result(pb::PanelToolResultMsg {
+                request_id,
+                tool_call_id,
+                output,
+                success,
+                activity_id,
+                ..Default::default()
+            })
+            .await?;
         Ok(())
     }
 

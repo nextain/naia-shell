@@ -30,11 +30,22 @@ import { resolve } from "node:path";
 const SHELL = process.cwd(); // packages/shell
 const AGENT = resolve(SHELL, "../../../naia-agent"); // 형제 repo (dev-setup.mjs 와 동일 가정)
 const STAGE = resolve(SHELL, "src-tauri/agent");
+const AGENT_LOCAL_DEPENDENCIES = [
+	{
+		name: "@naia/kb-compiler",
+		path: resolve(AGENT, "../../naia-kb-compiler"),
+		output: "dist/index.js",
+	},
+	{
+		name: "@nextain/naia-memory",
+		path: resolve(AGENT, "../../naia-memory"),
+		output: "dist/memory/index.js",
+	},
+];
 
 if (!existsSync(AGENT)) {
 	console.error(
-		`[stage-agent] ❌ agent repo 없음: ${AGENT}\n` +
-			`  → naia-os 와 naia-agent 를 같은 부모 폴더 아래 형제로 clone 했는지 확인하세요.`,
+		`[stage-agent] ❌ agent repo 없음: ${AGENT}\n  → naia-os 와 naia-agent 를 같은 부모 폴더 아래 형제로 clone 했는지 확인하세요.`,
 	);
 	process.exit(1);
 }
@@ -42,6 +53,24 @@ if (!existsSync(AGENT)) {
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: "inherit" });
 
 console.log(`[stage-agent] agent = ${AGENT}`);
+for (const dependency of AGENT_LOCAL_DEPENDENCIES) {
+	if (!existsSync(resolve(dependency.path, "package.json"))) {
+		console.error(
+			`[stage-agent] required local dependency missing: ${dependency.name} (${dependency.path})`,
+		);
+		process.exit(1);
+	}
+	console.log(`[stage-agent] dependency build: ${dependency.name}`);
+	run("pnpm install --frozen-lockfile", dependency.path);
+	run("pnpm run build", dependency.path);
+	if (!existsSync(resolve(dependency.path, dependency.output))) {
+		console.error(
+			`[stage-agent] dependency output missing: ${dependency.name}/${dependency.output}`,
+		);
+		process.exit(1);
+	}
+}
+
 console.log("[stage-agent] ① agent install + build");
 run("pnpm install --frozen-lockfile", AGENT);
 run("pnpm run build", AGENT);
@@ -65,10 +94,21 @@ const dist = resolve(AGENT, "dist");
 // 실 엔트리(scripts/builds/agent-stdio-entry.mjs)가 import 하는 빌드 출력 = dist/main/**.
 // agent tsc 는 rootDir=src · outDir=dist → dist/main/...(dist/index.js 아님).
 if (!existsSync(resolve(dist, "main/composition/index.js"))) {
-	console.error(`[stage-agent] ❌ agent dist/main 빌드 산출 없음(build 실패?): ${dist}`);
+	console.error(
+		`[stage-agent] ❌ agent dist/main 빌드 산출 없음(build 실패?): ${dist}`,
+	);
 	process.exit(1);
 }
 cpSync(dist, resolve(STAGE, "dist"), { recursive: true });
+
+// TypeScript does not copy non-code assets. grpc-server.js resolves the proto
+// beside its compiled module first, so the deploy stage must place it there.
+const grpcProto = resolve(AGENT, "src/main/adapters/grpc/naia_agent.proto");
+const stagedGrpcProto = resolve(
+	STAGE,
+	"dist/main/adapters/grpc/naia_agent.proto",
+);
+cpSync(grpcProto, stagedGrpcProto);
 
 // 스테이징 검증 — 번들 resource(agent/{scripts,dist,node_modules,package.json})가 참조하는
 // 실 엔트리·deps 가 전부 실재해야. production 엔트리 = scripts/builds/agent-stdio-entry.mjs
@@ -76,8 +116,10 @@ cpSync(dist, resolve(STAGE, "dist"), { recursive: true });
 for (const p of [
 	"scripts/builds/agent-stdio-entry.mjs",
 	"dist/main/composition/index.js",
+	"dist/main/adapters/grpc/naia_agent.proto",
 	"package.json",
 	"node_modules/@grpc/grpc-js",
+	"node_modules/@naia/kb-compiler",
 	"node_modules/@nextain/naia-memory",
 ]) {
 	if (!existsSync(resolve(STAGE, p))) {
