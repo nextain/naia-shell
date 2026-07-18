@@ -125,8 +125,10 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "MSI administrative extraction failed with exit code $($process.ExitCode)"
           }
-          if (-not (Get-ChildItem -LiteralPath $target -Recurse -File)) {
-            throw "MSI administrative extraction produced no files"
+          $shellBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "naia-shell.exe")
+          $nodeBinary = @(Get-ChildItem -LiteralPath $target -Recurse -File -Filter "node.exe")
+          if ($shellBinary.Count -ne 1 -or $nodeBinary.Count -ne 1) {
+            throw "MSI payload incomplete: naia-shell.exe=$($shellBinary.Count), node.exe=$($nodeBinary.Count)"
           }
 
       - name: Validate Linux package structures
@@ -143,6 +145,13 @@ jobs:
           tar -xzf "$APPIMAGE_TAR" -C "$EXTRACTED"
           EXTRACTED_APPIMAGE="$(find "$EXTRACTED" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
           test -n "$EXTRACTED_APPIMAGE" && test -x "$EXTRACTED_APPIMAGE"
+          (
+            cd "$EXTRACTED"
+            "$EXTRACTED_APPIMAGE" --appimage-extract >/dev/null
+          )
+          test -x "$EXTRACTED/squashfs-root/AppRun"
+          find "$EXTRACTED/squashfs-root" -type f -name 'naia-shell' -perm -111 -print -quit | grep -q .
+          find "$EXTRACTED/squashfs-root" -type f -name 'node' -perm -111 -print -quit | grep -q .
 
       - name: Validate macOS package structures
         if: matrix.platform == 'darwin'
@@ -154,10 +163,30 @@ jobs:
           test -n "$DMG" && hdiutil verify "$DMG"
           test -n "$APP_TAR" && tar -tzf "$APP_TAR" >/dev/null
           EXTRACTED="$(mktemp -d)"
-          trap 'rm -rf "$EXTRACTED"' EXIT
+          MOUNT="$(mktemp -d)"
+          MOUNTED=0
+          cleanup() {
+            if [ "$MOUNTED" -eq 1 ]; then hdiutil detach "$MOUNT" >/dev/null; fi
+            rm -rf "$EXTRACTED" "$MOUNT"
+          }
+          trap cleanup EXIT
+          validate_app() {
+            local ROOT="$1"
+            local APPS=("$ROOT"/*.app)
+            test "${#APPS[@]}" -eq 1 && test -d "${APPS[0]}"
+            local APP="${APPS[0]}"
+            local INFO="$APP/Contents/Info.plist"
+            plutil -lint "$INFO"
+            local EXECUTABLE
+            EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO")"
+            test -n "$EXECUTABLE" && test -x "$APP/Contents/MacOS/$EXECUTABLE"
+            test -x "$APP/Contents/Resources/node"
+          }
           tar -xzf "$APP_TAR" -C "$EXTRACTED"
-          find "$EXTRACTED" -path '*.app/Contents/Info.plist' -type f -print -quit | grep -q .
-          find "$EXTRACTED" -path '*.app/Contents/MacOS/*' -type f -perm -111 -print -quit | grep -q .
+          validate_app "$EXTRACTED"
+          hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT" "$DMG" >/dev/null
+          MOUNTED=1
+          validate_app "$MOUNT"
 
       - name: Install NSIS and prove bundled Node at runtime
         if: matrix.platform == 'win32'

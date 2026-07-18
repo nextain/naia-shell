@@ -222,11 +222,16 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 			/- name: Upload installer outputs\r?\n\s+if: always\(\)/,
 		);
 		expect(workflow).toContain("Validate MSI structure");
-		expect(workflow).toContain("MSI administrative extraction produced no files");
+		expect(workflow).toContain("MSI payload incomplete");
 		expect(workflow).toContain("Validate Linux package structures");
 		expect(workflow).toContain('rpm -K --nosignature "$RPM"');
+		expect(workflow).toContain('"$EXTRACTED_APPIMAGE" --appimage-extract');
+		expect(workflow).toContain('test -x "$EXTRACTED/squashfs-root/AppRun"');
 		expect(workflow).toContain("Validate macOS package structures");
 		expect(workflow).toContain('hdiutil verify "$DMG"');
+		expect(workflow).toContain("plutil -lint");
+		expect(workflow).toContain("Print :CFBundleExecutable");
+		expect(workflow).toContain("hdiutil attach -readonly -nobrowse");
 	});
 });
 
