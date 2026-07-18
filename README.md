@@ -92,19 +92,27 @@ naia-shell이 다른 데스크톱 앱과 다른 점은 이 3층 분리다 (SoT: 
 
 ## 빠른 시작
 
-> ⚠️ naia-shell은 실행·빌드 시 형제 폴더의 **naia-agent(뇌)** 를 자동으로 빌드해 spawn 한다.
-> 따라서 두 저장소를 **같은 부모 폴더 아래 나란히(형제 디렉토리)** 내려받아야 한다.
-> agent 만 없으면 `tauri:dev`·`tauri build`(빌드) 가 바로 실패한다.
+> ⚠️ naia-shell은 실행·빌드 시 `projects/` 안의 **naia-agent(뇌)** 를 자동으로 빌드해 spawn 한다.
+> 배포본은 agent의 로컬 production 의존성인 `naia-kb-compiler`·`naia-memory`도 워크스페이스
+> 루트에서 먼저 빌드한다. 아래 정규 레이아웃과 이름을 유지해야 한다.
 
 ```bash
-# 1) 두 저장소를 형제로 clone (디렉토리 이름을 바꾸지 말 것 — 경로가 고정돼 있다)
+# 1) 정규 워크스페이스 레이아웃으로 clone (디렉토리 이름을 바꾸지 말 것)
+mkdir projects
+cd projects
 git clone https://github.com/nextain/naia-shell.git
 git clone https://github.com/nextain/naia-agent.git
-#  부모폴더/
-#  ├── naia-shell/       ← 아래 명령은 여기서 실행
-#  └── naia-agent/      ← tauri:dev / tauri build 가 자동으로 빌드·spawn
+cd ..
+git clone https://github.com/nextain/naia-kb-compiler.git
+git clone https://github.com/nextain/naia-memory.git
+#  워크스페이스/
+#  ├── projects/
+#  │   ├── naia-shell/  ← 아래 명령은 여기서 실행
+#  │   └── naia-agent/  ← 자동 빌드·spawn
+#  ├── naia-kb-compiler/
+#  └── naia-memory/
 
-cd naia-shell
+cd projects/naia-shell
 pnpm install                       # 의존성 설치 (루트)
 
 # 2) 코어 단위·계약 테스트 (루트)
