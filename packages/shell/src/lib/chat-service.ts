@@ -86,6 +86,7 @@ interface SendChatOptions {
 	gatewayUrl?: string;
 	disabledSkills?: string[];
 	routeViaGateway?: boolean;
+	activityResume?: SpeechActivityResume;
 	// Credentials (provider.apiKey, ttsApiKey, gatewayToken) and webhook
 	// URLs are intentionally NOT carried on per-request. They flow ONCE
 	// via sendCredsUpdate / sendNotifyConfig at startup + on settings save,
@@ -221,6 +222,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
 			...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
 			...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
+			...(opts.activityResume !== undefined ? { activityResume: opts.activityResume } : {}),
 		});
 	}
 	const {
@@ -240,6 +242,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		gatewayUrl,
 		disabledSkills,
 		routeViaGateway,
+		activityResume,
 	} = opts;
 
 	// Sanitize provider — strip credential fields. They flow via creds_update.
@@ -261,6 +264,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		...(gatewayUrl && { gatewayUrl }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
 		...(routeViaGateway != null && { routeViaGateway }),
+		...(activityResume && { activityResume }),
 		// Credentials + webhook URLs intentionally NOT included. They flow via
 		// sendCredsUpdate (#260 follow-up) and sendNotifyConfig (#260) and live
 		// in agent module-scope caches / process.env.
@@ -307,6 +311,129 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		});
 		throw err;
 	}
+}
+
+export interface SpeechActivityResume {
+	sessionId: string;
+	activityId: string;
+	profileGeneration: number;
+	yieldGeneration: number;
+	resumeToken: string;
+}
+
+export async function configureSpeechProfile(input: {
+	profile: "disabled" | "personal_radio_dj" | "exhibition_intro";
+	sessionId?: string;
+	idleMs?: number;
+	djIntervalMs?: number;
+	introIntervalMs?: number;
+	timezone?: string;
+	bgmAutoPlayOptIn?: boolean;
+	weatherLatitude?: number;
+	weatherLongitude?: number;
+	weatherConsented?: boolean;
+	knowledgeScope?: string;
+}): Promise<boolean> {
+	return safeSendToAgent(
+		{
+			type: "configure_speech_profile",
+			requestId: generateControlRequestId(),
+			sessionId: input.sessionId ?? "agent:main:main",
+			...input,
+		},
+		"configureSpeechProfile",
+	);
+}
+
+export async function yieldSpeechActivity(
+	activityId: string,
+	sessionId = "agent:main:main",
+): Promise<SpeechActivityResume | undefined> {
+	const requestId = generateControlRequestId();
+	return new Promise(async (resolve) => {
+		let settled = false;
+		const finish = (value?: SpeechActivityResume) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			unlisten?.();
+			resolve(value);
+		};
+		let unlisten: (() => void) | undefined;
+		const timeout = setTimeout(() => finish(), 5_000);
+		unlisten = await listen<string>("agent_response", (event) => {
+			try {
+				const raw = typeof event.payload === "string" ? event.payload : JSON.stringify(event.payload);
+				const result = JSON.parse(raw) as Record<string, unknown>;
+				if (result.requestId !== requestId) return;
+				if (result.type !== "speech_activity_yielded" || result.ok !== true) {
+					finish();
+					return;
+				}
+				finish({
+					sessionId,
+					activityId: String(result.activityId),
+					profileGeneration: Number(result.profileGeneration),
+					yieldGeneration: Number(result.yieldGeneration),
+					resumeToken: String(result.resumeToken),
+				});
+			} catch {
+				// unrelated/malformed event
+			}
+		});
+		const sent = await safeSendToAgent(
+			{ type: "yield_speech_activity", requestId, sessionId, activityId },
+			"yieldSpeechActivity",
+		);
+		if (!sent) finish();
+	});
+}
+
+export async function stopSpeechActivity(
+	activityId?: string,
+	sessionId = "agent:main:main",
+): Promise<boolean> {
+	return safeSendToAgent(
+		{
+			type: "stop_speech_activity",
+			requestId: generateControlRequestId(),
+			sessionId,
+			...(activityId ? { activityId } : {}),
+		},
+		"stopSpeechActivity",
+	);
+}
+
+export type SpeechActivityControl =
+	| "music_only"
+	| "talk_less"
+	| "talk_more"
+	| "change_vibe"
+	| "next"
+	| "quiet"
+	| "resume"
+	| "restart"
+	| "stop";
+
+export async function controlSpeechActivity(
+	action: SpeechActivityControl,
+	activityId?: string,
+	sessionId = "agent:main:main",
+): Promise<boolean> {
+	return safeSendToAgent(
+		{
+			type: "control_speech_activity",
+			requestId: generateControlRequestId(),
+			sessionId,
+			action,
+			...(activityId ? { activityId } : {}),
+		},
+		"controlSpeechActivity",
+	);
+}
+
+function generateControlRequestId(): string {
+	return `speech-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export async function cancelChat(requestId: string): Promise<void> {
@@ -602,6 +729,7 @@ export async function sendPanelToolResult(
 	toolCallId: string,
 	result: string,
 	success: boolean,
+	activityId?: string,
 ): Promise<void> {
 	await safeSendToAgent(
 		{
@@ -610,6 +738,7 @@ export async function sendPanelToolResult(
 			toolCallId,
 			result,
 			success,
+			...(activityId ? { activityId } : {}),
 		},
 		"sendPanelToolResult",
 	);

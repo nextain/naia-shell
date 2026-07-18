@@ -53,7 +53,12 @@ describe("executeBgmSkill", () => {
 				thumbnail: "http://t/1.jpg",
 			},
 		]);
-		expect(out).toBe("재생: Lofi Beats");
+		expect(JSON.parse(out)).toEqual({
+			ok: true,
+			action: "play",
+			videoId: "v1",
+			title: "Lofi Beats",
+		});
 	});
 
 	it("play+videoId → 검색 없이 직접 재생", async () => {
@@ -66,7 +71,12 @@ describe("executeBgmSkill", () => {
 		expect(emitted).toEqual([
 			{ type: "bgm_youtube_play", videoId: "abc123", title: "직접곡" },
 		]);
-		expect(out).toBe("재생: 직접곡");
+		expect(JSON.parse(out)).toEqual({
+			ok: true,
+			action: "play",
+			videoId: "abc123",
+			title: "직접곡",
+		});
 	});
 
 	it("play — query·videoId 둘 다 없음 → throw", async () => {
@@ -76,10 +86,15 @@ describe("executeBgmSkill", () => {
 		);
 	});
 
-	it("play — 검색 결과 0 → '검색 결과 없음' (emit 안 함)", async () => {
+	it("play — 검색 결과 0 → 구조화 실패 (emit 안 함)", async () => {
 		const { deps, emitted } = mkDeps([]);
 		const out = await executeBgmSkill({ action: "play", query: "없는곡" }, deps);
-		expect(out).toContain("검색 결과 없음");
+		expect(JSON.parse(out)).toEqual({
+			ok: false,
+			action: "play",
+			reason: "no_search_results",
+			query: "없는곡",
+		});
 		expect(emitted).toEqual([]);
 	});
 
@@ -96,17 +111,11 @@ describe("executeBgmSkill", () => {
 	});
 
 	it("stop/pause/resume/next/prev → 위젯 리스너 타입 1:1 이벤트", async () => {
-		for (const [action, label] of [
-			["stop", "정지"],
-			["pause", "일시정지"],
-			["resume", "재개"],
-			["next", "다음 곡"],
-			["prev", "이전 곡"],
-		] as const) {
+		for (const action of ["stop", "pause", "resume", "next", "prev"] as const) {
 			const { deps, emitted } = mkDeps();
 			const out = await executeBgmSkill({ action }, deps);
 			expect(emitted).toEqual([{ type: `bgm_youtube_${action}` }]);
-			expect(out).toBe(label);
+			expect(JSON.parse(out)).toEqual({ ok: true, action });
 		}
 	});
 
@@ -114,7 +123,7 @@ describe("executeBgmSkill", () => {
 		const { deps, emitted } = mkDeps();
 		const out = await executeBgmSkill({ action: "volume", volume: 0.3 }, deps);
 		expect(emitted).toEqual([{ type: "bgm_youtube_volume", volume: 0.3 }]);
-		expect(out).toBe("볼륨 0.3");
+		expect(JSON.parse(out)).toEqual({ ok: true, action: "volume", volume: 0.3 });
 	});
 
 	it("unknown/누락 action → throw", async () => {

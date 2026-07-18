@@ -2,7 +2,7 @@
 // old shell `lib/chat-service.ts` 의 sendChatMessage/cancelChat/sendCredsUpdate 와 *시그니처 호환* drop-in 을
 // 새 core(ChatBridge + makeLiveStdioTransport + MessageRouter) 위에 제공 → shell 은 import 1줄 교체.
 // ⚠️ old onChunk 는 wire `AgentResponseChunk` 를 기대 → 새 core domain ChatChunk 를 wire 로 역매핑(chatChunkToWire).
-import type { ChatChunk, ProviderSelect, ChatMessage, EnvironmentSegment } from "../domain/chat.js";
+import type { ChatChunk, ProviderSelect, ChatMessage, EnvironmentSegment, ChatRequest } from "../domain/chat.js";
 import type { TurnHandle } from "../ports/uc1.js";
 import { makeLiveStdioTransport, type LiveTransportDeps } from "./tauri/uc1.js";
 import { ChatService } from "../app/chat/chat-service.js";
@@ -24,6 +24,7 @@ export interface ShellSendOptions {
   enableThinking?: boolean;
   gatewayUrl?: string;
   disabledSkills?: readonly string[];
+  activityResume?: ChatRequest["activityResume"];
 }
 
 /** domain ChatChunk → wire AgentResponseChunk(old onChunk 기대형). os router toChatChunk 의 역. requestId 결속. */
@@ -88,6 +89,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
         ...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
+        ...(opts.activityResume !== undefined ? { activityResume: opts.activityResume } : {}),
       };
       const { sent } = chat.startTurn(req, (c) => opts.onChunk(chatChunkToWire(opts.requestId, c)));
       await sent; // send reject 시 throw(old await/throw 호환). 상태/레지스트리 해제는 ChatService 가(terminal/reject).
