@@ -335,3 +335,13 @@ session subscribe/start/terminal/disconnect와 requestId, 시크릿 없음).
 - botmadang(S65) = keep/reject 결정 후.
 
 > 각 FR/NFR = P04(통합 테스트) 검증 대상. FR-F0~F3 착수 = Old-Baseline 측정(로컬·외부키X) 후 계약·테스트 구체화.
+
+## Steam Windows launch-readiness requirements (#314)
+
+| ID | Requirement | Scenario | Verification |
+|---|---|---|---|
+| **FR-STEAM.1** | `platform-matrix.json`의 `steamDepot`이 진입 파일, 필수/제외 파일, 디포 경로, SHA256 manifest 이름의 유일한 계약이다. | S-STEAM | `platform-matrix.test.ts` |
+| **FR-STEAM.2** | Steam 디포는 NSIS 설치 위치가 없는 상태에서 실제 `naia-shell.exe`를 기동하고 agent handshake와 번들 Node 사용을 증명해야 한다. | S-STEAM | `build-installers.yml` Windows smoke |
+| **FR-STEAM.3** | 디포 업로드물은 `uninstall.exe`를 포함하지 않고 모든 포함 파일의 SHA256 상대경로 manifest를 포함해야 한다. | S-STEAM | workflow contract test + uploaded artifact |
+
+Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #314 운영 범위이며, 이 저장소의 비밀값으로 하드코딩하지 않는다.

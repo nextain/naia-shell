@@ -138,6 +138,25 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(matrix.os.darwin.vosk).toBeNull();
 	});
 
+	it("vosk native archives are pinned by filename and SHA256 in the matrix SoT", () => {
+		for (const os of ["win32", "linux"]) {
+			expect(matrix.os[os].vosk.archive.file).toMatch(/^vosk-.+-0\.3\.45\.zip$/);
+			expect(matrix.os[os].vosk.archive.sha256).toMatch(/^[0-9a-f]{64}$/);
+		}
+		expect(matrix.os.win32.vosk.archive.sha256).not.toBe(
+			matrix.os.linux.vosk.archive.sha256,
+		);
+		const buildScript = readFileSync(
+			resolve(SHELL, "src-tauri/plugins/tauri-plugin-stt/build.rs"),
+			"utf8",
+		);
+		expect(buildScript).toContain('["vosk"]["archive"]');
+		expect(buildScript).toContain("Vosk archive SHA256 mismatch");
+		expect(buildScript.indexOf("SHA256 mismatch")).toBeLessThan(
+			buildScript.indexOf("ZipArchive::new"),
+		);
+	});
+
 	it("win 설치자 설정 실존 (삭제된 conf 스냅샷 이주분)", () => {
 		const inst = matrix.os.win32.installer;
 		expect(inst.publisher).toBe("Nextain Inc.");
@@ -581,7 +600,24 @@ describe("installer workflow integration contracts", () => {
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {
 		expect(workflow).toContain("Prepare and verify Steam portable depot");
 		expect(workflow).toContain('Where-Object Name -ne "uninstall.exe"');
+		expect(workflow).toContain("steam-files.sha256");
+		expect(workflow).toContain("Move-Item -LiteralPath $resourceDir");
+		expect(workflow).toContain(
+			"NSIS install location still exists before Steam portable smoke",
+		);
 		expect(workflow).toContain("--resource-dir $steamDepot");
 		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
+		expect(matrix.os.win32.steamDepot).toEqual({
+			path: "steam/windows",
+			entrypoint: "naia-shell.exe",
+			requiredFiles: [
+				"naia-shell.exe",
+				"node.exe",
+				"agent/package.json",
+				"bgm-sidecar/package.json",
+			],
+			excludedFiles: ["uninstall.exe"],
+			manifest: "steam-files.sha256",
+		});
 	});
 });

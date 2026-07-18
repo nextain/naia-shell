@@ -67,6 +67,10 @@
 			"wrappedStaticExecutables": [],
 			"vosk": {
 				"$comment": "dll 4종 전부 — libvosk 가 MinGW 트리오에 load-time 의존, 누락 = 기동 실패. 생성 주체 = tauri-plugin-stt build.rs(setup_vosk), stage-runtime 은 프로비저닝·검사하지 않음(순서 보증 = 플러그인 Cargo.toml links 키).",
+				"archive": {
+					"file": "vosk-win64-0.3.45.zip",
+					"sha256": "f1dcc9cca460630f81ea8f71794f69c80bed6556d2a4e6237b5785e1d2dff34b"
+				},
 				"files": [
 					"libvosk.dll",
 					"libgcc_s_seh-1.dll",
@@ -96,7 +100,14 @@
 			"artifacts": [
 				{ "glob": "nsis/*-setup.exe", "minBytes": 237516523 },
 				{ "glob": "msi/*.msi", "minBytes": 297402764 }
-			]
+			],
+			"steamDepot": {
+				"path": "steam/windows",
+				"entrypoint": "naia-shell.exe",
+				"requiredFiles": ["naia-shell.exe", "node.exe", "agent/package.json", "bgm-sidecar/package.json"],
+				"excludedFiles": ["uninstall.exe"],
+				"manifest": "steam-files.sha256"
+			}
 		},
 		"linux": {
 			"targets": ["appimage", "deb", "rpm"],
@@ -107,6 +118,10 @@
 				"agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
 			],
 			"vosk": {
+				"archive": {
+					"file": "vosk-linux-x86_64-0.3.45.zip",
+					"sha256": "bbdc8ed85c43979f6443142889770ea95cbfbc56cffb5c5dcd73afa875c5fbb2"
+				},
 				"files": ["libvosk.so"]
 			},
 			"msvcRedist": null,
