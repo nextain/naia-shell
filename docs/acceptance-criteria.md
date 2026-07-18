@@ -6,6 +6,20 @@
 이 문서는 자율 작업에서 **"완료선언 ≠ 완료"** 를 구조적으로 막는 방법론이다.
 2026-05-30 alpha-n-naia-144 실험(placeholder glyph 가 "17/17 통과"로 넘어간 드리프트)에서 도출.
 
+## UC15 선제 발화 증거 경계
+
+| 흐름 | 계약/통합 | 실제 Tauri | 제품/현장 |
+|---|:---:|:---:|:---:|
+| profile 저장·복원 | ✅ | ✅ | 미검증 |
+| DJ 실제 YouTube BGM·첫 결과·stop | ✅ | ✅ | 미검증 |
+| 전시 greeting·stop | ✅ | ✅ | 미검증 |
+| DJ 멘트2·모든 제어·live 끼어들기 | ✅ | 미검증 | 미검증 |
+| 전시 질문 중단→답변→resume·stale audio 폐기 | ✅ | 미검증 | 미검증 |
+| audible proactive TTS·장시간 품질 | seam 계약 | 미검증 | 미검증 |
+
+`71-proactive-speech-profiles.spec.ts`는 TTS를 끄고 실행한다. 따라서 이 표의 실제 Tauri 열보다 넓은
+완료 주장을 하지 않는다. 남은 제품 acceptance는 `nextain/naia-agent#84`에서 추적한다.
+
 ## 1. 동기 (실측된 드리프트)
 
 한 프로젝트가 한글 폰트를 "구현 완료, 17/17 테스트 통과"로 인도했다. 그러나:
