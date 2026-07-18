@@ -57,6 +57,12 @@ export interface ChatRequest {
   /** ⚠️ **top-level**(agent 가 req.enableThinking 를 읽어 providerConfig 에 주입 — provider 안에만 두면 무효화). */
   readonly enableThinking?: boolean;
   readonly disabledSkills?: readonly string[];
+  readonly activityResume?: {
+    readonly activityId: string;
+    readonly profileGeneration: number;
+    readonly yieldGeneration: number;
+    readonly resumeToken: string;
+  };
 }
 
 /**

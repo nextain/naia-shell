@@ -31,6 +31,7 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         ...(out.enableTools !== undefined ? { enableTools: out.enableTools } : {}),
         ...(out.enableThinking !== undefined ? { enableThinking: out.enableThinking } : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),
+        ...(out.activityResume !== undefined ? { activityResume: out.activityResume } : {}),
       };
     case "cancel":
       return { type: "cancel_stream", requestId: out.requestId };

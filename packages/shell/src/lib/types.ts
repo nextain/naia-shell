@@ -139,6 +139,7 @@ export type AgentResponseChunk =
 			toolCallId: string;
 			toolName: string;
 			args: Record<string, unknown>;
+			activityId?: string;
 	  }
 	| {
 			type: "tool_result";
@@ -177,6 +178,7 @@ export type AgentResponseChunk =
 			toolCallId: string;
 			toolName: string;
 			args: Record<string, unknown>;
+			activityId?: string;
 	  }
 	| {
 			type: "log_entry";
@@ -204,6 +206,7 @@ export type AgentResponseChunk =
 			toolCallId: string;
 			toolName: string;
 			args: Record<string, unknown>;
+			activityId?: string;
 	  }
 	| {
 			/** Agent → Shell: panel management action (switch, reload). */
