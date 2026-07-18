@@ -22,6 +22,7 @@
 | TEST-F-006 | SPEC-006 | UC1 chat/bridge/shell-compat/chunk-fields/child-stdio/trace 계약·통합 | `src/test/uc1-chat.contract.test.ts`, `uc1-bridge.contract.test.ts`, `uc1-shell-compat.contract.test.ts`, `uc1-chunk-fields.test.ts`, `uc1-child-stdio.contract.test.ts`, `uc1-trace.integration.test.ts` | Pass |
 | TEST-F-007 | SPEC-007 | UC12 OnboardingController 계약(stale키 strip·completeWith·complete 가드) | `src/test/uc12-onboarding-controller.contract.test.ts`, `uc12-onboarding.contract.test.ts` | Pass |
 | TEST-F-008 | SPEC-008 | V2 voice 도메인(startup-lazy) + live-adapter(parity) | `src/test/v2-voice-domain.test.ts`, `v2-live-adapter.test.ts` | Pass |
+| TEST-F-009 | SPEC-009 | parser·session/profile generation·yield/control/stop은 계약 테스트. 실제 Tauri는 DJ BGM/첫 text와 전시 greeting, stop만; TTS·live barge-in은 미검증 | `packages/shell/src/lib/__tests__/speech-profile-commands.test.ts`, `packages/shell/e2e-tauri/specs/71-proactive-speech-profiles.spec.ts` | Partial |
 
 ## 비고
 - Pass = `npx vitest run src/test` 191 cases pass(2026-06-15). `.mjs` 가드 파일 17개는 vitest `process.exit` 아티팩트로 파일레벨 RED 처럼 보이나 케이스 전부 통과(`feedback_test_exit_code_not_pass_count`).

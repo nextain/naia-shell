@@ -26,6 +26,7 @@ scripts/check-traceability.mjs 가 이 표를 파싱한다. (ID 형식 = REQ-###
 | REQ-009 | 도구/스킬 | 에이전트 **도구루프 + skills**(time/weather/memo/github/obsidian/mcp 등, agent-local) | In-progress | UC-005 | SPEC-006 | TEST-S-005 |
 | REQ-010 | 브라우저 | 에이전트 **브라우저 조작**(navigate/click/fill/snapshot, agent-local + 외부 CLI) | Draft | UC-006 | SPEC-006 | TEST-S-006 |
 | REQ-011 | 유투브/BGM | **공간 분위기 BGM**(youtube search/play/volume, agent-local + shell player) | Draft | UC-008 | SPEC-006 | TEST-S-008 |
+| REQ-012 | 선제 발화 profile | 개인 라디오 DJ·전시 소개 activity를 gRPC로 구독해 기존 텍스트/TTS/BGM에 표현하고 yield/control/stop 전달. native 증적은 시작/BGM 또는 greeting/stop까지 | Partial | UC-015 | SPEC-009 | TEST-S-015 |
 
 ## 비기능 요구사항 (NFR → REQ, 횡단 — TEST-S 직결)
 
