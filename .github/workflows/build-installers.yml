@@ -105,11 +105,43 @@ jobs:
           node packages/shell/scripts/verify-installed-smoke.mjs `
             --binary $binary --resource-dir $resourceDir --timeout-ms 120000
 
+      - name: Prepare and verify Steam portable depot
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $steamDepot = "packages/shell/src-tauri/target/release/bundle/steam/windows"
+          Remove-Item -LiteralPath $steamDepot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $steamDepot -Force | Out-Null
+          Get-ChildItem -LiteralPath $resourceDir -Force |
+            Where-Object Name -ne "uninstall.exe" |
+            Copy-Item -Destination $steamDepot -Recurse -Force
+
+          $binary = Join-Path $steamDepot "naia-shell.exe"
+          foreach ($required in @(
+            $binary,
+            (Join-Path $steamDepot "node.exe"),
+            (Join-Path $steamDepot "agent/package.json"),
+            (Join-Path $steamDepot "bgm-sidecar/package.json")
+          )) {
+            if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+              throw "Steam portable depot is missing required file: $required"
+            }
+          }
+          if (Test-Path -LiteralPath (Join-Path $steamDepot "uninstall.exe")) {
+            throw "Steam portable depot must not contain the NSIS uninstaller"
+          }
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $steamDepot --timeout-ms 120000
+
       - name: Install deb and prove bundled Node at runtime
         if: matrix.platform == 'linux'
         shell: bash
         run: |
           DEB="$(find packages/shell/src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)"
+          test -n "$DEB"
+          DEB="$(realpath "$DEB")"
+          test -f "$DEB"
           sudo apt-get install -y "$DEB"
           BIN="$(command -v naia-shell)"
           RESOURCE_DIR="/usr/lib/naia-shell"
@@ -185,5 +217,14 @@ jobs:
             packages/shell/src-tauri/target/release/bundle/macos/*.app/Contents/MacOS/*
             packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
             packages/shell/src-tauri/target/release/bundle/artifacts.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Steam portable depot
+        if: matrix.platform == 'win32'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-steam-win32-${{ github.sha }}
+          path: packages/shell/src-tauri/target/release/bundle/steam/windows
           if-no-files-found: error
           retention-days: 14

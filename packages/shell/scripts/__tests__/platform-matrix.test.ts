@@ -31,6 +31,7 @@ import {
 } from "../stage-runtime.mjs";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const REPO_ROOT = resolve(SHELL, "../..");
 const readJson = (p: string) =>
 	JSON.parse(readFileSync(resolve(SHELL, p), "utf8"));
 
@@ -562,5 +563,25 @@ describe("clean-checkout build order", () => {
 		expect(preserveNativeRuntime).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(preserveNativeRuntime);
+	});
+});
+
+describe("installer workflow integration contracts", () => {
+	const workflow = readFileSync(
+		resolve(REPO_ROOT, ".github/workflows/build-installers.yml"),
+		"utf8",
+	);
+
+	it("installs the generated deb by absolute path", () => {
+		expect(workflow).toContain('DEB="$(realpath "$DEB")"');
+		expect(workflow).toContain('test -f "$DEB"');
+		expect(workflow).toContain('sudo apt-get install -y "$DEB"');
+	});
+
+	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {
+		expect(workflow).toContain("Prepare and verify Steam portable depot");
+		expect(workflow).toContain('Where-Object Name -ne "uninstall.exe"');
+		expect(workflow).toContain("--resource-dir $steamDepot");
+		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
 	});
 });
