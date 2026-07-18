@@ -221,7 +221,10 @@ export function startYoutubeServer(): void {
 				// Readiness probe — used by Rust spawn_youtube_bgm_server (#335)
 				// to confirm the server is actually listening (catches EADDRINUSE
 				// or other startup failures that the spawn handle can't see).
-				json(req, res, 200, { ok: true });
+				json(req, res, 200, {
+					ok: true,
+					nonce: process.env.NAIA_BGM_HEALTH_NONCE ?? null,
+				});
 			} else {
 				json(req, res, 404, { error: "not found" });
 			}

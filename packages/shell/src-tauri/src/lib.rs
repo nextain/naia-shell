@@ -1674,6 +1674,15 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr_stdio);
+    let health_nonce = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("Failed to create BGM health nonce: {e}"))?
+            .as_nanos()
+    );
+    cmd.env("NAIA_BGM_HEALTH_NONCE", &health_nonce);
 
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
@@ -1698,7 +1707,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     // can't see (server.on("error") in youtube-server.ts logs but doesn't exit).
     // Non-fatal: BGM is optional; we only log a warning on timeout so users
     // see a recovery hint in ~/.naia/logs/naia.log.
-    if !probe_bgm_server_ready(std::time::Duration::from_secs(3)) {
+    if !probe_bgm_server_ready(std::time::Duration::from_secs(3), &health_nonce) {
         log_both(
             "[Naia] WARN BGM server did not respond on http://127.0.0.1:18791/health within 3s",
         );
@@ -1715,7 +1724,12 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
 /// Poll `http://127.0.0.1:18791/health` every 100 ms for up to `timeout`.
 /// Returns `true` as soon as a 2xx response arrives; `false` on timeout.
 /// Used by `spawn_youtube_bgm_server` to detect EADDRINUSE / startup failure.
-fn probe_bgm_server_ready(timeout: std::time::Duration) -> bool {
+fn bgm_health_matches(body: &serde_json::Value, expected_nonce: &str) -> bool {
+    body.get("ok").and_then(|value| value.as_bool()) == Some(true)
+        && body.get("nonce").and_then(|value| value.as_str()) == Some(expected_nonce)
+}
+
+fn probe_bgm_server_ready(timeout: std::time::Duration, expected_nonce: &str) -> bool {
     let url = "http://127.0.0.1:18791/health";
     let deadline = std::time::Instant::now() + timeout;
     let interval = std::time::Duration::from_millis(100);
@@ -1725,7 +1739,13 @@ fn probe_bgm_server_ready(timeout: std::time::Duration) -> bool {
             .timeout(std::time::Duration::from_millis(200))
             .build();
         if let Ok(resp) = agent.get(url).call() {
-            if resp.status() >= 200 && resp.status() < 300 {
+            if resp.status() >= 200
+                && resp.status() < 300
+                && resp
+                    .into_json::<serde_json::Value>()
+                    .map(|body| bgm_health_matches(&body, expected_nonce))
+                    .unwrap_or(false)
+            {
                 return true;
             }
         }
@@ -5030,6 +5050,16 @@ mod tests {
         // Should return a bool without panicking, regardless of gateway state
         let _healthy = check_gateway_health_sync();
         // Result is environment-dependent: true if gateway running, false if not
+    }
+
+    #[test]
+    fn bgm_health_requires_current_launch_nonce() {
+        let current = serde_json::json!({ "ok": true, "nonce": "current" });
+        let stale = serde_json::json!({ "ok": true, "nonce": "stale" });
+        let legacy = serde_json::json!({ "ok": true });
+        assert!(bgm_health_matches(&current, "current"));
+        assert!(!bgm_health_matches(&stale, "current"));
+        assert!(!bgm_health_matches(&legacy, "current"));
     }
 
     #[test]
