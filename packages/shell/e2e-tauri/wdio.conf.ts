@@ -42,10 +42,9 @@ const IS_WINDOWS = process.platform === "win32";
 const EXE = IS_WINDOWS ? ".exe" : "";
 
 const SHELL_DIR = resolve(import.meta.dirname, "..");
-const TAURI_BINARY = resolve(
-	SHELL_DIR,
-	`src-tauri/target/debug/naia-shell${EXE}`,
-);
+const TAURI_BINARY = process.env.TAURI_BINARY
+	? resolve(process.env.TAURI_BINARY)
+	: resolve(SHELL_DIR, `src-tauri/target/debug/naia-shell${EXE}`);
 const TAURI_DRIVER = resolve(homedir(), `.cargo/bin/tauri-driver${EXE}`);
 const NATIVE_DRIVER = IS_WINDOWS
 	? resolve(SHELL_DIR, "e2e-tauri/.drivers/msedgedriver.exe")

@@ -1,0 +1,110 @@
+name: build installers
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone required public naia-agent sibling
+        shell: bash
+        run: git clone --depth 1 https://github.com/nextain/naia-agent.git ../naia-agent
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.1"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build and smoke dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libasound2-dev libssl-dev libxdo-dev libudev-dev \
+            pipewire-alsa xvfb
+
+      - name: Assert macOS runner architecture
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          test "$(uname -m)" = "arm64" || {
+            echo "::error::macOS installer contract currently supports the CI arm64 completion line only"
+            exit 1
+          }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build installer bundle from platform matrix
+        run: pnpm -C packages/shell run tauri:build:bundle
+
+      - name: Record artifact sizes for threshold calibration
+        shell: bash
+        run: |
+          find packages/shell/src-tauri/target/release/bundle -type f \
+            -exec sh -c 'wc -c < "$1" | tr -d "\n"; printf "  %s\n" "$1"' _ {} \; \
+            | tee packages/shell/src-tauri/target/release/bundle/artifact-sizes.txt
+
+      - name: Verify installer artifacts
+        run: node packages/shell/scripts/verify-artifacts.mjs
+
+      - name: Install deb and prove bundled Node at runtime
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          DEB="$(find packages/shell/src-tauri/target/release/bundle/deb -name '*.deb' -print -quit)"
+          sudo apt-get install -y "$DEB"
+          BIN="$(command -v naia-shell)"
+          RESOURCE_DIR="/usr/lib/naia-shell"
+          test -x "$BIN"
+          test -x "$RESOURCE_DIR/node"
+
+          sudo mv "$RESOURCE_DIR/node" "$RESOURCE_DIR/node.mutation-disabled"
+          set +e
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+          MUTATION_STATUS=$?
+          set -e
+          sudo mv "$RESOURCE_DIR/node.mutation-disabled" "$RESOURCE_DIR/node"
+          test "$MUTATION_STATUS" -ne 0 || {
+            echo "::error::mutation probe unexpectedly passed without bundled Node"
+            exit 1
+          }
+          echo "mutation probe: expected RED confirmed"
+
+          xvfb-run -a node packages/shell/scripts/verify-installed-smoke.mjs \
+            --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
+
+      - name: Upload installer outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: naia-shell-${{ matrix.platform }}-${{ github.sha }}
+          path: packages/shell/src-tauri/target/release/bundle/
+          if-no-files-found: error
+          retention-days: 14

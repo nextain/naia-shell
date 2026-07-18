@@ -6,7 +6,7 @@
 		"frontendDist": "../dist",
 		"devUrl": "http://localhost:1420",
 		"beforeDevCommand": "pnpm dev",
-		"beforeBuildCommand": "node scripts/stage-agent.mjs && node scripts/stage-cascade-loader.mjs && pnpm build"
+		"beforeBuildCommand": "pnpm build"
 	},
 	"app": {
 		"withGlobalTauri": false,
@@ -45,11 +45,6 @@
 	},
 	"bundle": {
 		"active": true,
-		"createUpdaterArtifacts": true,
-		"targets": ["deb", "rpm", "appimage"],
-		"resources": {
-			"cascade-loader/loader": "cascade-loader/loader"
-		},
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
@@ -59,24 +54,7 @@
 		],
 		"category": "Utility",
 		"shortDescription": "AI Avatar Desktop — Chat with Naia",
-		"longDescription": "Naia Shell is a desktop AI companion powered by LLM providers. Features an interactive VRM avatar (Naia), tool execution, and always-on daemon.",
-		"linux": {
-			"deb": {
-				"depends": [
-					"libwebkit2gtk-4.1-0",
-					"libgtk-3-0",
-					"pipewire-alsa",
-					"libasound2"
-				],
-				"desktopTemplate": null
-			},
-			"rpm": {
-				"depends": ["webkit2gtk4.1", "gtk3", "pipewire-alsa", "alsa-lib"]
-			},
-			"appimage": {
-				"bundleMediaFramework": false
-			}
-		}
+		"longDescription": "Naia Shell is a desktop AI companion powered by LLM providers. Features an interactive VRM avatar (Naia), tool execution, and always-on daemon."
 	},
 	"plugins": {
 		"deep-link": {

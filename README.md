@@ -113,9 +113,16 @@ pnpm test                          # vitest run (src/test — 순수 로직·UC 
 # 3) 데스크톱 셸 실행 (Tauri) — agent 를 자동 빌드·spawn 한다
 pnpm -C packages/shell run tauri:dev
 
-# 4) 배포본(인스톨러) 빌드
-pnpm -C packages/shell run tauri:build:windows:local   # Windows → NSIS + MSI (target/release/bundle/)
-pnpm -C packages/shell run tauri build                  # Linux   → deb / rpm / appimage (기본 conf)
+# 4) 배포본(인스톨러) 빌드 — 3 OS 공통 진입점 1개 (#377)
+#    platform-matrix.json(SoT)에서 OS 를 자동 감지: node 런타임 다운로드+SHA256, (win) MSVC 재배포,
+#    agent 스테이징, conf 생성 후 tauri build 까지 수행. 산출 = packages/shell/src-tauri/target/release/bundle/
+#    (win → NSIS+MSI · linux → deb/rpm/appimage · mac → app/dmg)
+#    ⚠️ 순수 `tauri build`(기본 conf)로는 빌드하지 말 것 — base conf 는 중립화되어
+#    agent/node 리소스가 빠진 설치본이 나온다.
+pnpm -C packages/shell run tauri:build:bundle
+
+# 산출물 크기 하한 + SHA256 검증(결과는 bundle/artifacts.sha256)
+node packages/shell/scripts/verify-artifacts.mjs
 
 # 5) 검증 (P04 — GUI/Rust 도 헤드리스로). test:e2e / test:e2e:tauri 는 packages/shell 에만 존재:
 cd packages/shell
@@ -123,6 +130,13 @@ pnpm test                          # vitest (셸 단위)
 pnpm test:e2e                      # Playwright e2e (실 UI, Tauri IPC mock)
 xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+tauri-driver, Linux)
 ```
+
+설치자 CI는 [build-installers.yml](.github/workflows/build-installers.yml)이 Windows·Ubuntu·macOS에서
+같은 매트릭스 진입점을 실행한다. Ubuntu는 deb 설치 후 agent 핸드셰이크와 번들 Node 실제 사용을
+확인하고, 번들 Node를 제거한 부정 실행이 실패하는지도 검증한다.
+
+> 현재 산출물은 코드 서명·macOS 공증·updater 서명 범위 밖이다. macOS CI 산출물은 Apple Silicon
+> 전용이며 미공증이므로 Finder의 “열기”로 명시 승인해야 한다. Intel Mac 설치자는 후속 범위다.
 
 > **사전 요건**: Node 22+ · pnpm · Rust(rustup) · WebView2(Windows)/webkit2gtk(Linux) · C++ 빌드 도구.
 > OS별 셋업은 [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) 참조.
