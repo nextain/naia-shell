@@ -403,7 +403,7 @@ describe("conf 생성 golden (FR-INSTALL.2)", () => {
 
 	it("linux: targets/resources/depends 기대 형상 (base 쪽 depends 채택 — pipewire-alsa 포함)", () => {
 		const conf = generateConf(matrix, "linux", { cascadeLoaderPresent: false });
-		expect(conf.bundle.targets).toEqual(["deb", "rpm", "appimage"]);
+		expect(conf.bundle.targets).toEqual(["appimage", "deb", "rpm"]);
 		expect(conf.bundle.createUpdaterArtifacts).toBe(false); // 3 OS 대칭 — win 만 단언하면 변이 잠복(P1-R1)
 		expect(conf.bundle.resources["resources/node"]).toBe("node");
 		expect(conf.bundle.resources["resources/libvosk.so"]).toBe("libvosk.so");
@@ -508,11 +508,16 @@ describe("clean-checkout build order", () => {
 			"utf8",
 		);
 		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT)');
+		const preserveNativeRuntime = source.indexOf(
+			'process.env.NO_STRIP = "1"',
+		);
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
 		);
 
 		expect(coreBuild).toBeGreaterThan(-1);
+		expect(preserveNativeRuntime).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(coreBuild);
+		expect(tauriBuild).toBeGreaterThan(preserveNativeRuntime);
 	});
 });

@@ -435,6 +435,11 @@ async function main() {
 	run("pnpm build", REPO_ROOT);
 
 	console.log("[stage-runtime] ⑥ tauri build");
+	// AppImage의 linuxdeploy가 번들 안의 Node 및 다중 아키텍처 네이티브 모듈까지
+	// strip하려 들면 제3자 런타임이 변형되거나 외부 아키텍처 ELF에서 실패한다.
+	// 설치 계약은 검증된 런타임 원본을 동봉하는 것이므로 모든 플랫폼에서 보존한다
+	// (NO_STRIP을 소비하는 도구는 linuxdeploy뿐이다).
+	process.env.NO_STRIP = "1";
 	run(
 		"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json",
 		SHELL,
