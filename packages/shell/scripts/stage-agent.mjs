@@ -30,6 +30,18 @@ import { resolve } from "node:path";
 const SHELL = process.cwd(); // packages/shell
 const AGENT = resolve(SHELL, "../../../naia-agent"); // 형제 repo (dev-setup.mjs 와 동일 가정)
 const STAGE = resolve(SHELL, "src-tauri/agent");
+const AGENT_LOCAL_DEPENDENCIES = [
+	{
+		name: "@naia/kb-compiler",
+		path: resolve(AGENT, "../../naia-kb-compiler"),
+		output: "dist/index.js",
+	},
+	{
+		name: "@nextain/naia-memory",
+		path: resolve(AGENT, "../../naia-memory"),
+		output: "dist/memory/index.js",
+	},
+];
 
 if (!existsSync(AGENT)) {
 	console.error(
@@ -41,6 +53,24 @@ if (!existsSync(AGENT)) {
 const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: "inherit" });
 
 console.log(`[stage-agent] agent = ${AGENT}`);
+for (const dependency of AGENT_LOCAL_DEPENDENCIES) {
+	if (!existsSync(resolve(dependency.path, "package.json"))) {
+		console.error(
+			`[stage-agent] required local dependency missing: ${dependency.name} (${dependency.path})`,
+		);
+		process.exit(1);
+	}
+	console.log(`[stage-agent] dependency build: ${dependency.name}`);
+	run("pnpm install --frozen-lockfile", dependency.path);
+	run("pnpm run build", dependency.path);
+	if (!existsSync(resolve(dependency.path, dependency.output))) {
+		console.error(
+			`[stage-agent] dependency output missing: ${dependency.name}/${dependency.output}`,
+		);
+		process.exit(1);
+	}
+}
+
 console.log("[stage-agent] ① agent install + build");
 run("pnpm install --frozen-lockfile", AGENT);
 run("pnpm run build", AGENT);
@@ -89,6 +119,7 @@ for (const p of [
 	"dist/main/adapters/grpc/naia_agent.proto",
 	"package.json",
 	"node_modules/@grpc/grpc-js",
+	"node_modules/@naia/kb-compiler",
 	"node_modules/@nextain/naia-memory",
 ]) {
 	if (!existsSync(resolve(STAGE, p))) {
