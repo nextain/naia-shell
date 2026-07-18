@@ -64,6 +64,7 @@
 			"bundleArchs": ["x64"],
 			"$bundleArchComment": "Vosk 0.3.45 산출물이 win64 + /MACHINE:X64 고정 — arm64 전체 번들은 명확 차단. Node arm64 아카이브 메타데이터는 유지.",
 			"nodeBinary": "node.exe",
+			"wrappedStaticExecutables": [],
 			"vosk": {
 				"$comment": "dll 4종 전부 — libvosk 가 MinGW 트리오에 load-time 의존, 누락 = 기동 실패. 생성 주체 = tauri-plugin-stt build.rs(setup_vosk), stage-runtime 은 프로비저닝·검사하지 않음(순서 보증 = 플러그인 Cargo.toml links 키).",
 				"files": [
@@ -102,6 +103,9 @@
 			"bundleArchs": ["x64"],
 			"$bundleArchComment": "Vosk 0.3.45 산출물이 linux-x86_64 고정 — arm64 전체 번들은 명확 차단. Node arm64 아카이브 메타데이터는 유지.",
 			"nodeBinary": "node",
+			"wrappedStaticExecutables": [
+				"agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
+			],
 			"vosk": {
 				"files": ["libvosk.so"]
 			},
@@ -136,6 +140,7 @@
 			"bundleArchs": ["x64", "arm64"],
 			"$bundleArchComment": "macOS는 STT stub이라 Vosk 네이티브 제약 없음. CI 완료선은 arm64.",
 			"nodeBinary": "node",
+			"wrappedStaticExecutables": [],
 			"vosk": null,
 			"msvcRedist": null,
 			"icon": [
