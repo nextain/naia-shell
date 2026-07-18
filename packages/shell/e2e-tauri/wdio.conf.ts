@@ -61,7 +61,7 @@ let viteServer: ChildProcess;
 
 /**
  * Kill processes by image name.
- * Linux: `pkill [-9] -f <name>` (matches against full command line).
+ * Linux: `pkill [-9] -x <name>` (matches the executable name exactly).
  * Windows: `taskkill /F /IM <name>.exe` (matches against image name only).
  *
  * Always swallows errors — "no such process" is the common case.
@@ -73,7 +73,10 @@ function killByName(name: string, force = false): void {
 			execSync(`taskkill /F /IM ${exe}`, { stdio: "ignore" });
 		} else {
 			const flag = force ? "-9 " : "";
-			execSync(`pkill ${flag}-f ${name} 2>/dev/null || true`, {
+			// Never use `-f` here. Every WDIO worker command line contains the
+			// repository path `.../naia-shell/...`, so broad matching kills the
+			// Node worker itself before it can report a test result.
+			execSync(`pkill ${flag}-x ${name} 2>/dev/null || true`, {
 				stdio: "ignore",
 			});
 		}
