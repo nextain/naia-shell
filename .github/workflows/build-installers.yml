@@ -111,6 +111,10 @@ jobs:
         shell: pwsh
         run: |
           $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $uninstaller = Join-Path $resourceDir "uninstall.exe"
+          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+            throw "NSIS uninstaller not found before Steam depot preparation"
+          }
           $bundleDir = Resolve-Path "packages/shell/src-tauri/target/release/bundle"
           $steamDepot = node packages/shell/scripts/prepare-steam-depot.mjs `
             --source $resourceDir --bundle-dir $bundleDir `
@@ -123,22 +127,31 @@ jobs:
             ConvertFrom-Json).os.win32.steamDepot
           $binary = Join-Path $steamDepot $contract.entrypoint
 
-          # Remove the installer-created default location before the portable proof.
-          # This prevents the copied executable from passing by reading NSIS machine state.
-          $quarantine = Join-Path $env:RUNNER_TEMP "naia-nsis-install"
-          Remove-Item -LiteralPath $quarantine -Recurse -Force -ErrorAction SilentlyContinue
-          Move-Item -LiteralPath $resourceDir -Destination $quarantine
-          if (Test-Path -LiteralPath $resourceDir) {
-            throw "NSIS install location still exists before Steam portable smoke"
+          $uninstall = Start-Process -FilePath $uninstaller `
+            -ArgumentList "/S" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) {
+            throw "NSIS silent uninstall failed with exit code $($uninstall.ExitCode)"
           }
-          try {
-            node packages/shell/scripts/verify-installed-smoke.mjs `
-              --binary $binary --resource-dir $steamDepot --timeout-ms 120000
-            if ($LASTEXITCODE -ne 0) {
-              throw "Steam portable smoke failed with exit code $LASTEXITCODE"
-            }
-          } finally {
-            Remove-Item -LiteralPath $quarantine -Recurse -Force -ErrorAction SilentlyContinue
+          for ($attempt = 0; $attempt -lt 20 -and
+              (Test-Path -LiteralPath $resourceDir); $attempt++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path -LiteralPath $resourceDir) {
+            throw "NSIS install location remains after silent uninstall"
+          }
+          $uninstallKey = Get-ChildItem `
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" `
+            -ErrorAction SilentlyContinue |
+            Get-ItemProperty |
+            Where-Object DisplayName -eq "Naia"
+          if ($uninstallKey) {
+            throw "NSIS uninstall registry entry remains after silent uninstall"
+          }
+
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $steamDepot --timeout-ms 120000
+          if ($LASTEXITCODE -ne 0) {
+            throw "Steam portable smoke failed with exit code $LASTEXITCODE"
           }
 
       - name: Install deb and prove bundled Node at runtime

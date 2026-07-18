@@ -606,10 +606,11 @@ describe("installer workflow integration contracts", () => {
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {
 		expect(workflow).toContain("Prepare and verify Steam portable depot");
 		expect(workflow).toContain("prepare-steam-depot.mjs");
-		expect(workflow).toContain("Move-Item -LiteralPath $resourceDir");
 		expect(workflow).toContain(
-			"NSIS install location still exists before Steam portable smoke",
+			"NSIS install location remains after silent uninstall",
 		);
+		expect(workflow).toContain("NSIS uninstall registry entry remains");
+		expect(workflow).toContain('-ArgumentList "/S" -Wait -PassThru');
 		expect(workflow).toContain("--resource-dir $steamDepot");
 		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
 		expect(workflow).toContain("steps.steam.outputs.depot");
