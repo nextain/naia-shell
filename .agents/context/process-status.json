@@ -53,12 +53,12 @@
     },
     "P04": { "status": "in_progress", "name": "integration_test", "deliverable": "src/test/integration-reafference.test.ts (인지흐름 관통+negative+contamination) + scripts/builds/f0-graft-smoke.sh (Old-Baseline drift-gate harness)", "ref": "통합 67/67 통과; 라이브 trace(루크 머신 graft) 대기",
       "tracks": {
-        "installer_crossplatform_377": { "status": "in_progress", "deliverable": null, "ref": "P1 착수 2026-07-17. P1~P4 구현 후 — platform-matrix.test.ts golden + e2e-tauri(TAURI_BINARY 설치본) + CI 3 OS build-installers.yml. P3 Windows 실측은 Windows 머신 필요" }
+        "installer_crossplatform_377": { "status": "done", "deliverable": "platform-matrix.test.ts + verify-artifacts.mjs + verify-installed-smoke.mjs + build-installers.yml 3 OS", "ref": "DONE 2026-07-19 — PR #379 merge 7ba15dc9. Exact 검증 head de0e9e25, installer CI 29658918546 Windows/Linux/macOS GREEN, Windows NSIS 실제 설치·실행·제거 후 Steam depot 독립 기동, Linux deb 설치·mutation/tamper probe, 적대 리뷰 2회 연속 CLEAN" }
       }
     },
     "P05": { "status": "pending", "name": "requirements_complete", "deliverable": null, "ref": "라이브 trace 등가 확인 + 후속 슬라이스 후",
       "tracks": {
-        "installer_crossplatform_377": { "status": "pending", "deliverable": null, "ref": "P5 (검증 스크립트 + README + manifest 정리 + 이슈 보고) 후 FR-INSTALL.1~6 상태 → Done" }
+        "installer_crossplatform_377": { "status": "done", "deliverable": "README + platform matrix/manifest + artifact SHA report + GitHub #377 final report", "ref": "DONE 2026-07-19 — FR-INSTALL.1~6, FR-STEAM.1~3, NFR-noWSL 충족. #377 closed; Steamworks 운영 단계는 #314에 이관" }
       }
     }
   },

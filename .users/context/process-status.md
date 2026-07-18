@@ -170,8 +170,8 @@
 | **P01** | 완료 | `docs/user-scenarios.md` — 셸 feature 시나리오 표의 S-INSTALL 행 (#377, 2026-07-17) | **완료 2026-07-17** — 적대 리뷰 R1~R8 (8라운드, 실측 근거 결함 전부 반영). P0 종료 조건이 "리뷰 2연속 클린" 에서 **"구현이 검증"** 으로 조정됨 (루크 승인 2026-07-17, AI 임의 변경 아님) |
 | **P02** | 완료 | `docs/user-scenarios.md` — S-INSTALL 행의 검증 열 (`scripts/__tests__/platform-matrix.test.ts` 단위 + `check-build-contract` 계약 + Windows 설치 실측(2조건: 핸드셰이크 AND node 줄 최소 2줄 AND 전부 `$INSTDIR` 하위) + ubuntu deb 설치·xvfb 기동 스모크(마커 AND node 줄 최소 2줄 AND 전부 resource_dir 하위 + 변이 탐침) — 양쪽 모두 판정 범위 = 마지막 `=== Session started ===` 포함 줄 이후(`naia.log` 는 누적 파일), 술어 = 앵커가 아닌 **포함** 매칭(파일 줄은 `[unix_secs] [Naia] …` 형식) + 산출물 검증 스크립트/부정 케이스) | **완료 2026-07-17** — P01 과 동일 (게이트 기준 조정, 루크 승인) |
 | **P03** | 완료 | `docs/requirements.md` — FR-INSTALL.1~6 + NFR-noWSL (불변) · NFR-honesty | P01 과 동일. R4 개정 반영: agent 리소스 4종 = 매트릭스 3 OS 공통 그룹 → 생성 conf 소유 (base 금지 — tauri-build `copy_resources` 가 dev/cargo check 포함 무조건 실행) |
-| **P04** | 보류 중 | — | P1~P4 구현 후 — `platform-matrix.test.ts` golden + e2e-tauri (`TAURI_BINARY` 설치본) + CI 3 OS `build-installers.yml`. P3 Windows 실측은 Windows 머신 필요 |
-| **P05** | 보류 중 | — | P5 (검증 스크립트 + README + manifest 정리 + 이슈 보고) 후 FR-INSTALL.1~6 상태 → Done |
+| **P04** | 완료 | `platform-matrix.test.ts` + `verify-artifacts.mjs` + `verify-installed-smoke.mjs` + 3 OS `build-installers.yml` | **완료 2026-07-19** — PR #379 merge `7ba15dc9`; exact 검증 head `de0e9e25`; installer CI 29658918546 Windows/Linux/macOS GREEN; Windows NSIS 실제 설치·실행·제거 후 Steam depot 독립 기동; Linux deb 설치·mutation/tamper probe; 적대 리뷰 2회 연속 CLEAN |
+| **P05** | 완료 | README + platform matrix/manifest + artifact SHA report + GitHub #377 final report | **완료 2026-07-19** — FR-INSTALL.1~6, FR-STEAM.1~3, NFR-noWSL 충족. #377 종료; Steamworks 운영 단계는 #314에 이관 |
 
 ---
 
