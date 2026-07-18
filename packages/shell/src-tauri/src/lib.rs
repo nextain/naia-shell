@@ -1705,6 +1705,8 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
         log_both(
             "[Naia] WARN BGM player may show connection-refused; restart the app or kill any stray Node process bound to 18791",
         );
+    } else {
+        log_both("[Naia] BGM server ready @ http://127.0.0.1:18791/health");
     }
 
     Ok(BgmServerProcess { child })

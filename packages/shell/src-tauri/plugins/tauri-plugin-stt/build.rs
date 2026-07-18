@@ -7,9 +7,6 @@ const COMMANDS: &[&str] = &[
     "request_permission",
 ];
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-mod vosk_cache_policy;
-
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)
         .android_path("android")
@@ -78,99 +75,86 @@ fn setup_vosk() {
     );
 
     let lib_path = vosk_dir.join(lib_name);
-    let cache_marker = vosk_dir.join(".archive.sha256");
-    let cache_is_verified =
-        vosk_cache_policy::cache_is_verified(&vosk_dir, &runtime_files, expected_sha256);
+    let archive_path = out_dir.join(&archive_name);
+    let url = format!(
+        "https://github.com/alphacep/vosk-api/releases/download/v{vosk_version}/{archive_name}"
+    );
 
-    if !cache_is_verified {
-        if vosk_dir.exists() {
-            std::fs::remove_dir_all(&vosk_dir).expect("Failed to invalidate unverified Vosk cache");
-        }
-        std::fs::create_dir_all(&vosk_dir).unwrap();
-
-        let url = format!(
-            "https://github.com/alphacep/vosk-api/releases/download/v{vosk_version}/{archive_name}"
-        );
-        eprintln!("cargo:warning=Downloading libvosk from {url}");
-
-        let archive_path = out_dir.join(&archive_name);
-
-        // Download using curl (available on all platforms)
+    let cached_archive_is_verified = std::fs::read(&archive_path)
+        .map(|bytes| format!("{:x}", Sha256::digest(bytes)) == expected_sha256)
+        .unwrap_or(false);
+    if !cached_archive_is_verified {
+        let _ = std::fs::remove_file(&archive_path);
+        eprintln!("cargo:warning=Downloading verified libvosk archive from {url}");
         let status = std::process::Command::new("curl")
             .args(["-L", "-o"])
             .arg(&archive_path)
             .arg(&url)
             .status()
             .expect("Failed to run curl. Please install curl.");
-
         if !status.success() {
             panic!("Failed to download libvosk from {url}");
         }
+    }
 
-        let actual_sha256 = format!(
-            "{:x}",
-            Sha256::digest(
-                std::fs::read(&archive_path).expect("Failed to read downloaded Vosk archive")
-            )
-        );
-        if actual_sha256 != expected_sha256 {
-            let _ = std::fs::remove_file(&archive_path);
-            panic!("Vosk archive SHA256 mismatch: expected {expected_sha256}, got {actual_sha256}");
-        }
+    let actual_sha256 = format!(
+        "{:x}",
+        Sha256::digest(
+            std::fs::read(&archive_path).expect("Failed to read downloaded Vosk archive")
+        )
+    );
+    if actual_sha256 != expected_sha256 {
+        let _ = std::fs::remove_file(&archive_path);
+        panic!("Vosk archive SHA256 mismatch: expected {expected_sha256}, got {actual_sha256}");
+    }
 
-        // Extract library files from the zip
-        let file = std::fs::File::open(&archive_path).unwrap();
-        let mut archive = zip::ZipArchive::new(file).unwrap();
+    // Never trust extracted cache contents: rebuild them from the revalidated archive.
+    if vosk_dir.exists() {
+        std::fs::remove_dir_all(&vosk_dir).expect("Failed to clear extracted Vosk directory");
+    }
+    std::fs::create_dir_all(&vosk_dir).unwrap();
+    let file = std::fs::File::open(&archive_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
 
-        // On Windows, extract .dll, .lib, and runtime dependencies
-        // On Linux/macOS, extract just the shared library
-        #[cfg(target_os = "windows")]
-        let extract_suffixes: &[&str] = &[".dll", ".lib"];
-        #[cfg(not(target_os = "windows"))]
-        let extract_suffixes: &[&str] = &[lib_name];
+    #[cfg(target_os = "windows")]
+    let extract_suffixes: &[&str] = &[".dll", ".lib"];
+    #[cfg(not(target_os = "windows"))]
+    let extract_suffixes: &[&str] = &[lib_name];
 
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i).unwrap();
-            let name = entry.name().to_string();
-
-            let should_extract = if cfg!(target_os = "windows") {
-                extract_suffixes.iter().any(|s| name.ends_with(s))
-            } else {
-                name.ends_with(lib_name)
-            };
-
-            if should_extract {
-                let file_name = name.rsplit('/').next().unwrap_or(&name);
-                let dest = vosk_dir.join(file_name);
-                let mut out_file = std::fs::File::create(&dest).unwrap();
-                std::io::copy(&mut entry, &mut out_file).unwrap();
-
-                // Set executable permission on Unix
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
-                        .unwrap();
-                }
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).unwrap();
+        let name = entry.name().to_string();
+        let should_extract = if cfg!(target_os = "windows") {
+            extract_suffixes.iter().any(|suffix| name.ends_with(suffix))
+        } else {
+            name.ends_with(lib_name)
+        };
+        if should_extract {
+            let file_name = name.rsplit('/').next().unwrap_or(&name);
+            let dest = vosk_dir.join(file_name);
+            let mut out_file = std::fs::File::create(&dest).unwrap();
+            std::io::copy(&mut entry, &mut out_file).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755)).unwrap();
             }
         }
-
-        // Clean up archive
-        let _ = std::fs::remove_file(&archive_path);
-
-        if !lib_path.exists() {
-            panic!("Failed to extract {lib_name} from archive");
-        }
-        for runtime_file in &runtime_files {
-            assert!(
-                vosk_dir.join(runtime_file).is_file(),
-                "Vosk archive is missing contracted runtime file: {runtime_file}"
-            );
-        }
-        std::fs::write(&cache_marker, format!("{expected_sha256}\n"))
-            .expect("Failed to write verified Vosk cache marker");
-        eprintln!("cargo:warning=libvosk downloaded to {}", lib_path.display());
     }
+
+    if !lib_path.exists() {
+        panic!("Failed to extract {lib_name} from archive");
+    }
+    for runtime_file in &runtime_files {
+        assert!(
+            vosk_dir.join(runtime_file).is_file(),
+            "Vosk archive is missing contracted runtime file: {runtime_file}"
+        );
+    }
+    eprintln!(
+        "cargo:warning=Verified libvosk extracted to {}",
+        lib_path.display()
+    );
 
     // On Windows, generate .lib import library if only .dll was extracted (vosk zip has no .lib)
     #[cfg(target_os = "windows")]

@@ -8,6 +8,7 @@ const LOG_PATH = resolve(homedir(), ".naia", "logs", "naia.log");
 const SESSION_MARKER = "[Naia] === Session started ===";
 const HANDSHAKE_MARKER = "[Naia] agent-core gRPC @";
 const NODE_MARKER = "[Naia] node = ";
+const BGM_READY_MARKER = "[Naia] BGM server ready @";
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -31,6 +32,7 @@ export function inspectInstalledSession(
 
 	const session = lines.slice(sessionStart + 1);
 	const handshake = session.some((line) => line.includes(HANDSHAKE_MARKER));
+	const bgmReady = session.some((line) => line.includes(BGM_READY_MARKER));
 	const nodePaths = session
 		.filter((line) => line.includes(NODE_MARKER))
 		.map((line) =>
@@ -47,6 +49,8 @@ export function inspectInstalledSession(
 
 	if (!handshake)
 		return { ok: false, reason: "agent-core gRPC handshake 없음" };
+	if (!bgmReady)
+		return { ok: false, reason: "BGM sidecar readiness 없음" };
 	if (nodePaths.length < 2) {
 		return {
 			ok: false,

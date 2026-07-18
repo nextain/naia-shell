@@ -18,13 +18,17 @@ describe("installed smoke session predicate (FR-INSTALL.4·5)", () => {
 			`[102] [Naia] node = ${BUNDLED_NODE}`,
 			`[103] [Naia] node = ${BUNDLED_NODE}`,
 			"[104] [Naia] agent-core gRPC @ 127.0.0.1:12345",
+			"[105] [Naia] BGM server ready @ http://127.0.0.1:18791/health",
 		]);
 		expect(inspectInstalledSession(log, RESOURCE_DIR).ok).toBe(true);
 	});
 
 	it("node 줄 0개는 공허참이 아니라 red", () => {
 		const result = inspectInstalledSession(
-			session(["[104] [Naia] agent-core gRPC @ 127.0.0.1:12345"]),
+			session([
+				"[104] [Naia] agent-core gRPC @ 127.0.0.1:12345",
+				"[105] [Naia] BGM server ready @ http://127.0.0.1:18791/health",
+			]),
 			RESOURCE_DIR,
 		);
 		expect(result.ok).toBe(false);
@@ -36,6 +40,7 @@ describe("installed smoke session predicate (FR-INSTALL.4·5)", () => {
 			`[102] [Naia] node = ${BUNDLED_NODE}`,
 			`[103] [Naia] node = ${BUNDLED_NODE}`,
 			"[104] [Naia] agent-core gRPC @ 127.0.0.1:12345",
+			"[105] [Naia] BGM server ready @ http://127.0.0.1:18791/health",
 		]);
 		expect(inspectInstalledSession(log, RESOURCE_DIR, 1)).toMatchObject({
 			ok: false,
@@ -49,10 +54,26 @@ describe("installed smoke session predicate (FR-INSTALL.4·5)", () => {
 				`[102] [Naia] node = ${BUNDLED_NODE}`,
 				`[103] [Naia] node = ${OUTSIDE_NODE}`,
 				"[104] [Naia] agent-core gRPC @ 127.0.0.1:12345",
+				"[105] [Naia] BGM server ready @ http://127.0.0.1:18791/health",
 			]),
 			RESOURCE_DIR,
 		);
 		expect(result.ok).toBe(false);
 		expect(result.reason).toMatch(/번들 밖/);
+	});
+
+	it("BGM sidecar가 ready가 아니면 red", () => {
+		const result = inspectInstalledSession(
+			session([
+				`[102] [Naia] node = ${BUNDLED_NODE}`,
+				`[103] [Naia] node = ${BUNDLED_NODE}`,
+				"[104] [Naia] agent-core gRPC @ 127.0.0.1:12345",
+			]),
+			RESOURCE_DIR,
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reason: expect.stringMatching(/BGM sidecar readiness/),
+		});
 	});
 });

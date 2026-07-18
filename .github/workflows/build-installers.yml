@@ -53,14 +53,6 @@ jobs:
         with:
           toolchain: "1.97.0"
 
-      - name: Verify Vosk cache invalidation policy
-        shell: bash
-        run: |
-          rustc --test \
-            packages/shell/src-tauri/plugins/tauri-plugin-stt/vosk_cache_policy.rs \
-            -o "$RUNNER_TEMP/vosk-cache-policy-test"
-          "$RUNNER_TEMP/vosk-cache-policy-test"
-
       - name: Install Linux build and smoke dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -242,4 +234,5 @@ jobs:
           name: naia-shell-steam-win32-${{ github.sha }}
           path: ${{ steps.steam.outputs.depot }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
