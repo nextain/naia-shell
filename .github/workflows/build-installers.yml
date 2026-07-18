@@ -27,7 +27,10 @@ jobs:
 
       - name: Clone required public naia-agent sibling
         shell: bash
-        run: git clone --depth 1 https://github.com/nextain/naia-agent.git ../naia-agent
+        run: |
+          git clone --depth 1 https://github.com/nextain/naia-agent.git ../naia-agent
+          git clone --depth 1 https://github.com/nextain/naia-kb-compiler.git ../../naia-kb-compiler
+          git clone --depth 1 https://github.com/nextain/naia-memory.git ../../naia-memory
 
       - uses: pnpm/action-setup@v4
         with:

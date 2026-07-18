@@ -480,3 +480,23 @@ describe("vosk 빌드 순서 불변식 (FR-INSTALL.2 — links 키 게이트)", 
 		expect(cargo).toMatch(/^links\s*=\s*"tauri-plugin-stt"/m);
 	});
 });
+
+describe("agent production staging", () => {
+	it("builds local runtime dependencies before building the agent", () => {
+		const source = readFileSync(
+			resolve(SHELL, "scripts/stage-agent.mjs"),
+			"utf8",
+		);
+		const dependencyLoop = source.indexOf(
+			"for (const dependency of AGENT_LOCAL_DEPENDENCIES)",
+		);
+		const agentBuild = source.indexOf('run("pnpm run build", AGENT)');
+
+		expect(source).toContain('name: "@naia/kb-compiler"');
+		expect(source).toContain('name: "@nextain/naia-memory"');
+		expect(dependencyLoop).toBeGreaterThan(-1);
+		expect(agentBuild).toBeGreaterThan(dependencyLoop);
+		expect(source).toContain("dependency output missing");
+		expect(source).toContain('"node_modules/@naia/kb-compiler"');
+	});
+});
