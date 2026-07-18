@@ -92,8 +92,8 @@ export function clampVolume(v: unknown): number {
 }
 
 /**
- * skill_youtube_bgm 실행. 성공 = 결과 문자열(LLM 이 그대로 발화 가능한 한국어),
- * 실패 = throw(호출자 dispatchPanelToolCall 이 catch → sendPanelToolResult(false)).
+ * skill_youtube_bgm 실행. 에이전트가 추측으로 성공을 판정하지 않도록
+ * 모든 정상 실행 결과는 구조화 JSON으로 반환한다.
  */
 export async function executeBgmSkill(
 	args: Record<string, unknown>,
@@ -113,14 +113,16 @@ export async function executeBgmSkill(
 		if (typeof videoId === "string" && videoId.trim()) {
 			const title = typeof args.title === "string" ? args.title : "";
 			await deps.emitBgm({ type: "bgm_youtube_play", videoId, title });
-			return `재생: ${title || videoId}`;
+			return JSON.stringify({ ok: true, action: act, videoId, title });
 		}
 		const query = args.query;
 		if (typeof query !== "string" || !query.trim()) {
 			throw new Error("play 에는 query(검색어) 또는 videoId 가 필요합니다");
 		}
 		const results = await deps.search(query);
-		if (results.length === 0) return `'${query}' 검색 결과 없음`;
+		if (results.length === 0) {
+			return JSON.stringify({ ok: false, action: act, reason: "no_search_results", query });
+		}
 		const top = results[0];
 		await deps.emitBgm({
 			type: "bgm_youtube_play",
@@ -128,24 +130,17 @@ export async function executeBgmSkill(
 			title: top.title,
 			...(top.thumbnail ? { thumbnail: top.thumbnail } : {}),
 		});
-		return `재생: ${top.title}`;
+		return JSON.stringify({ ok: true, action: act, videoId: top.id, title: top.title });
 	}
 
 	if (act === "volume") {
 		const v = clampVolume(args.volume);
 		await deps.emitBgm({ type: "bgm_youtube_volume", volume: v });
-		return `볼륨 ${v}`;
+		return JSON.stringify({ ok: true, action: act, volume: v });
 	}
 
 	// stop / pause / resume / next / prev — 위젯 리스너 타입 1:1
 	const eventType = `bgm_youtube_${act}`;
 	await deps.emitBgm({ type: eventType });
-	const label: Record<Exclude<BgmAction, "play" | "volume">, string> = {
-		stop: "정지",
-		pause: "일시정지",
-		resume: "재개",
-		next: "다음 곡",
-		prev: "이전 곡",
-	};
-	return label[act as Exclude<BgmAction, "play" | "volume">];
+	return JSON.stringify({ ok: true, action: act });
 }

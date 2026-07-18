@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
 	type ReactNode,
 	useCallback,
@@ -25,14 +26,27 @@ import { makeCoreAudioPlayer } from "../lib/voice-core";
 import { getDefaultVoiceForAvatar } from "../lib/avatar-presets";
 import {
 	cancelChat,
+	configureSpeechProfile,
+	controlSpeechActivity,
 	directToolCall,
 	fetchAgentSkills,
 	isNewCore,
 	sendApprovalResponse,
 	sendChatMessage,
 	sendPanelToolResult,
+	yieldSpeechActivity,
+	type SpeechActivityResume,
 } from "../lib/chat-service";
 import { SKILL_YOUTUBE_BGM, executeBgmSkill } from "../lib/bgm-skill";
+import {
+	activateMicUnlessSpeechActivityOwnsVoice,
+	canSpeakProactiveText,
+	parseSpeechProfileCommand,
+	resolveSpeechProfileSession,
+	shouldAbortLiveConnectForSpeechActivity,
+	shouldBlockDirectLiveForSpeechActivity,
+	shouldQueueBeforeSpeechYield,
+} from "../lib/speech-profile-commands";
 import {
 	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_VLLM_HOST,
@@ -487,6 +501,10 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
+	const activeSpeechActivityRef = useRef<{
+		activityId: string;
+		profileGeneration: number;
+	} | null>(null);
 	const queuedSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const voiceSessionRef = useRef<VoiceSession | null>(null);
 	// #313 L3 — mid-session panel context bridge handle (detached in every
@@ -837,6 +855,147 @@ export function ChatArea({
 		useAvatarStore.getState().setSpeaking(false);
 	}
 
+	function initializeSpeechTts(config: AppConfig): void {
+		if (!audioQueueRef.current) {
+			audioQueueRef.current = new AudioQueue({
+				outputDeviceId: config.ttsOutputDeviceId || undefined,
+				onPlaybackStart: () => {
+					useAvatarStore.getState().setSpeaking(true);
+					ttsPlayingRef.current = true;
+					setTtsPlaying(true);
+				},
+				onPlaybackEnd: () => {
+					useAvatarStore.getState().setSpeaking(false);
+					ttsPlayingRef.current = false;
+					setTtsPlaying(false);
+				},
+			});
+		}
+		sentenceChunkerRef.current = new SentenceChunker();
+		pipelineVoiceConfigRef.current = {
+			voice: resolveTtsVoiceId(config),
+			ttsProvider: config.ttsProvider || "edge",
+			ttsApiKey:
+				config.ttsProvider === "google"
+					? config.googleApiKey || config.apiKey
+					: config.ttsProvider === "openai"
+						? config.openaiTtsApiKey
+						: config.ttsProvider === "elevenlabs"
+							? config.elevenlabsApiKey
+							: undefined,
+			naiaKey: config.naiaKey,
+			gatewayUrl: LAB_GATEWAY_URL,
+			vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
+			vllmTtsHost: config.vllmTtsHost,
+		};
+	}
+
+	// Configure the explicitly persisted opt-in profile and consume its
+	// request-independent activity stream. Ordinary chat listeners deliberately
+	// ignore these events because their requestId is not the active turn.
+	useEffect(() => {
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		void loadConfigWithSecrets().then((config) => {
+			if (!config || disposed) return;
+			void configureSpeechProfile({
+				profile: config.proactiveSpeechProfile ?? "disabled",
+				idleMs: config.proactiveSpeechIdleMs,
+				djIntervalMs: config.proactiveSpeechIntervalMs,
+				introIntervalMs: config.proactiveSpeechIntervalMs,
+				timezone: config.proactiveSpeechTimezone,
+				bgmAutoPlayOptIn: config.proactiveSpeechBgmAutoPlay,
+				weatherConsented: config.proactiveSpeechWeatherConsented,
+				weatherLatitude: config.proactiveSpeechWeatherLatitude,
+				weatherLongitude: config.proactiveSpeechWeatherLongitude,
+				knowledgeScope: config.proactiveSpeechKnowledgeScope,
+			});
+		});
+		void listen<string>("agent_response", (event) => {
+			let chunk: Record<string, unknown>;
+			try {
+				const raw = typeof event.payload === "string" ? event.payload : JSON.stringify(event.payload);
+				chunk = JSON.parse(raw) as Record<string, unknown>;
+			} catch {
+				return;
+			}
+			if (typeof chunk.activityId !== "string") return;
+			if (!["panel_tool_call", "text", "finish", "error"].includes(String(chunk.type))) {
+				return;
+			}
+			const activityId = chunk.activityId;
+			const profileGeneration = Number(chunk.profileGeneration ?? 0);
+			const active = activeSpeechActivityRef.current;
+			if (
+				active
+				&& active.activityId === activityId
+				&& profileGeneration < active.profileGeneration
+			) return;
+			activeSpeechActivityRef.current = { activityId, profileGeneration };
+			// A direct Live/omni model would answer visitor audio outside the
+			// exhibition KB/privacy path. Proactive profiles therefore own the
+			// voice lane; pipeline STT remains available for grounded questions.
+			if (!pipelineActiveRef.current && voiceSessionRef.current) {
+				voiceCancelledRef.current = true;
+				audioPlayerRef.current?.clear();
+				micStreamRef.current?.stop();
+				voiceSessionRef.current.disconnect();
+			}
+
+			if (
+				chunk.type === "panel_tool_call"
+				&& typeof chunk.requestId === "string"
+				&& typeof chunk.toolCallId === "string"
+				&& typeof chunk.toolName === "string"
+			) {
+				dispatchPanelToolCall({
+					requestId: chunk.requestId,
+					toolCallId: chunk.toolCallId,
+					toolName: chunk.toolName,
+					args: (chunk.args as Record<string, unknown>) ?? {},
+					activityId,
+				});
+				return;
+			}
+			if (chunk.type === "text" && typeof chunk.text === "string" && chunk.text.trim()) {
+				// DJ keeps its activity alive when a normal chat cannot yield it.
+				// Never let proactive text reset/share the ordinary chat TTS lane.
+				if (currentRequestId.current) return;
+				const text = chunk.text.trim();
+					useChatStore.getState().addMessage({ role: "assistant", content: text });
+					void loadConfigWithSecrets().then((config) => {
+						if (!config) return;
+						if (!canSpeakProactiveText({
+						currentRequestId: currentRequestId.current,
+						activeActivityId: activeSpeechActivityRef.current?.activityId,
+						eventActivityId: activityId,
+							ttsEnabled: config.ttsEnabled === true,
+					})) return;
+					initializeSpeechTts(config);
+					const chunker = sentenceChunkerRef.current;
+					if (!chunker) return;
+					const sentences = chunker.feed(text);
+					const remaining = chunker.flush();
+					for (const sentence of sentences) sendSentenceToTts(sentence);
+					if (remaining) sendSentenceToTts(remaining);
+				});
+				return;
+			}
+			if (chunk.type === "finish" || chunk.type === "error") {
+				if (activeSpeechActivityRef.current?.activityId === activityId) {
+					activeSpeechActivityRef.current = null;
+				}
+			}
+		}).then((off) => {
+			if (disposed) off();
+			else unlisten = off;
+		});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, []);
+
 	async function handleNewConversation() {
 		const store = useChatStore.getState();
 		// Stop any TTS still reading the previous conversation.
@@ -862,6 +1021,7 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
 		const hist = inputHistoryRef.current;
@@ -872,12 +1032,34 @@ export function ChatArea({
 		historyIndexRef.current = -1;
 		historyDraftRef.current = "";
 
+		// Preserve the user text, not a single-use yield token, while another
+		// ordinary turn owns the stream. The queued retry will yield when it can
+		// immediately send the profile-bound question.
+		if (shouldQueueBeforeSpeechYield(isChatRequestActive())) {
+			useChatStore.getState().enqueueMessage(text);
+			setInput("");
+			return;
+		}
+
+		let activityResume: SpeechActivityResume | undefined;
+		const speechActivity = activeSpeechActivityRef.current;
+		if (speechActivity) {
+			// This runs before both Live text and ordinary chat routing. A
+			// successful exhibition binding must never be handed to the Live LLM.
+			interruptTts();
+			activityResume = await yieldSpeechActivity(speechActivity.activityId);
+			if (activeSpeechActivityRef.current?.activityId === speechActivity.activityId) {
+				activeSpeechActivityRef.current = null;
+			}
+		}
+
 		// Omni voice mode: send text via the open Live session so a typed
 		// message gets the SAME treatment as spoken input (Naia answers in
 		// voice). Mirror it into the transcript too — otherwise the user's own
 		// line never appears on screen.
 		if (
 			voiceMode === "active" &&
+			!activityResume &&
 			!pipelineActiveRef.current &&
 			voiceSessionRef.current?.isConnected
 		) {
@@ -888,15 +1070,6 @@ export function ChatArea({
 		}
 		// Pipeline voice mode: send via normal chat path (TTS handled by handleChunk)
 		// Falls through to the normal sendChatMessage flow below
-
-		// If a response is active, queue instead of racing another request into the
-		// shared streaming buffer. Some callers keep an old React closure, so check
-		// the ref/store directly instead of relying only on the hook value.
-		if (isChatRequestActive()) {
-			useChatStore.getState().enqueueMessage(text);
-			setInput("");
-			return;
-		}
 
 		const requestId = generateRequestId();
 		currentRequestId.current = requestId;
@@ -977,41 +1150,7 @@ export function ChatArea({
 
 		// Initialize/update SentenceChunker + AudioQueue for chat TTS
 		if (chatTtsEnabled) {
-			if (!audioQueueRef.current) {
-				audioQueueRef.current = new AudioQueue({
-					outputDeviceId: config.ttsOutputDeviceId || undefined,
-					onPlaybackStart: () => {
-						useAvatarStore.getState().setSpeaking(true);
-						ttsPlayingRef.current = true;
-						setTtsPlaying(true);
-					},
-					onPlaybackEnd: () => {
-						useAvatarStore.getState().setSpeaking(false);
-						ttsPlayingRef.current = false;
-						setTtsPlaying(false);
-					},
-				});
-			}
-			sentenceChunkerRef.current = new SentenceChunker();
-			// Always refresh voice config from latest settings
-			pipelineVoiceConfigRef.current = {
-				voice: resolveTtsVoiceId(config),
-				ttsProvider: config.ttsProvider || "edge",
-				ttsApiKey:
-					config.ttsProvider === "google"
-						? config.googleApiKey || config.apiKey
-						: config.ttsProvider === "openai"
-							? config.openaiTtsApiKey
-							: config.ttsProvider === "elevenlabs"
-								? config.elevenlabsApiKey
-								: undefined,
-				// nextain (gateway credit) + vllm (local) need their own creds —
-				// without naiaKey the gateway TTS path was silent (#363).
-				naiaKey: config.naiaKey,
-				gatewayUrl: LAB_GATEWAY_URL,
-				vllmHost: config.vllmHost ?? DEFAULT_VLLM_HOST,
-				vllmTtsHost: config.vllmTtsHost,
-			};
+			initializeSpeechTts(config);
 		}
 
 		const memoryCtx = await buildMemoryContext();
@@ -1062,7 +1201,14 @@ export function ChatArea({
 				history: history.slice(0, -1),
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),
 				requestId,
-				sessionId: useChatStore.getState().localSessionId,
+				// A validated exhibition resume is bound to the proactive profile
+				// session, not the conversation's rotating local transcript ID.
+				// Sending the latter would miss handleProfileChat and leak the
+				// question into ordinary memory/transcript persistence.
+				sessionId: resolveSpeechProfileSession(
+					useChatStore.getState().localSessionId,
+					activityResume,
+				),
 				// TTS handled by Shell — don't send TTS params to agent.
 				// S4 (두벌 제거 + 음성 persona 회귀 닫기): the shell no longer bakes persona/
 				// locale/honorific/speechStyle into a raw systemPrompt — the core assembles
@@ -1091,6 +1237,7 @@ export function ChatArea({
 					(config.chatRouting ?? "auto") !== "direct"
 						? true
 						: undefined,
+				activityResume,
 				// Webhook URLs + Discord defaults are pushed via sendNotifyConfig at
 				// app startup / settings save (#260). Not transmitted per-chat.
 			});
@@ -1109,6 +1256,59 @@ export function ChatArea({
 		}
 	}
 
+	async function handleSpeechProfilePhrase(text: string): Promise<boolean> {
+		const command = parseSpeechProfileCommand(text);
+		if (!command) return false;
+		if (command.kind === "configure") {
+			const { profile } = command;
+			const config = await loadConfig();
+			if (config) {
+				saveConfig({
+					...config,
+					proactiveSpeechProfile: profile,
+					...(profile !== "disabled" && config.proactiveSpeechIdleMs == null
+						? { proactiveSpeechIdleMs: profile === "personal_radio_dj" ? 5_000 : 1_000 }
+						: {}),
+					...(profile === "personal_radio_dj"
+						? { proactiveSpeechBgmAutoPlay: true }
+						: {}),
+				});
+			}
+			interruptTts();
+			activeSpeechActivityRef.current = null;
+			await configureSpeechProfile({
+				profile,
+				idleMs:
+					config?.proactiveSpeechIdleMs
+					?? (profile === "personal_radio_dj" ? 5_000 : 1_000),
+				djIntervalMs: config?.proactiveSpeechIntervalMs,
+				introIntervalMs: config?.proactiveSpeechIntervalMs,
+				timezone: config?.proactiveSpeechTimezone,
+				bgmAutoPlayOptIn:
+					profile === "personal_radio_dj"
+						? true
+						: config?.proactiveSpeechBgmAutoPlay,
+				weatherConsented: config?.proactiveSpeechWeatherConsented,
+				weatherLatitude: config?.proactiveSpeechWeatherLatitude,
+				weatherLongitude: config?.proactiveSpeechWeatherLongitude,
+				knowledgeScope: config?.proactiveSpeechKnowledgeScope,
+			});
+			setInput("");
+			useChatStore.getState().addMessage({ role: "user", content: text });
+			return true;
+		}
+
+		const activity = activeSpeechActivityRef.current;
+		if (!activity) return false;
+		const { action } = command;
+		interruptTts();
+		await controlSpeechActivity(action, activity.activityId);
+		if (action === "stop") activeSpeechActivityRef.current = null;
+		setInput("");
+		useChatStore.getState().addMessage({ role: "user", content: text });
+		return true;
+	}
+
 	// Shared panel-tool dispatch — used by both the streaming-chat handleChunk
 	// path AND the voice directToolCall path (so voice can run panel tools like
 	// skill_browser_*). Auto-switches to the owning panel first (tool-level), so
@@ -1118,6 +1318,7 @@ export function ChatArea({
 		toolCallId: string;
 		toolName: string;
 		args: Record<string, unknown>;
+		activityId?: string;
 	}) {
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
 		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
@@ -1126,7 +1327,7 @@ export function ChatArea({
 			executeBgmSkill(req.args)
 				.then((result) => {
 					Logger.info("ChatArea", "bgm skill result", { result });
-					return sendPanelToolResult(req.requestId, req.toolCallId, result, true);
+					return sendPanelToolResult(req.requestId, req.toolCallId, result, true, req.activityId);
 				})
 				.catch((err) => {
 					Logger.warn("ChatArea", "bgm skill error", { error: String(err) });
@@ -1135,6 +1336,7 @@ export function ChatArea({
 						req.toolCallId,
 						String(err),
 						false,
+						req.activityId,
 					);
 				});
 			return;
@@ -1163,7 +1365,7 @@ export function ChatArea({
 					tool: req.toolName,
 					result: result.slice(0, 120),
 				});
-				return sendPanelToolResult(req.requestId, req.toolCallId, result, true);
+				return sendPanelToolResult(req.requestId, req.toolCallId, result, true, req.activityId);
 			})
 			.catch((err) => {
 				Logger.warn("ChatArea", "panel_tool_call error", {
@@ -1175,6 +1377,7 @@ export function ChatArea({
 					req.toolCallId,
 					String(err),
 					false,
+					req.activityId,
 				);
 			});
 	}
@@ -1282,6 +1485,7 @@ export function ChatArea({
 					toolCallId: chunk.toolCallId,
 					toolName: chunk.toolName,
 					args: chunk.args,
+					activityId: chunk.activityId,
 				});
 				break;
 			}
@@ -1765,6 +1969,16 @@ export function ChatArea({
 			const naiaKey = config?.naiaKey;
 			const modelMeta = getLlmModel(config.provider, config.model);
 			const isOmni = isOmniModel(config.provider, config.model ?? "");
+			if (shouldBlockDirectLiveForSpeechActivity(
+				activeSpeechActivityRef.current != null,
+				isOmni,
+			)) {
+				// Direct Live audio cannot carry the single-use exhibition
+				// activityResume binding. Do not allow an ungrounded parallel lane.
+				setVoiceStatus({ phase: "idle" });
+				lastVoiceStatusRef.current = { phase: "idle" };
+				return;
+			}
 			// ASR mode: STT provider is vllm, or LLM model has "asr" capability,
 			// or vllm non-omni model (naia-omni /v1/realtime WebSocket handles ASR)
 			const isAsrModel =
@@ -2267,6 +2481,16 @@ export function ChatArea({
 				useProxy: useDirectMode,
 			});
 			voiceSessionRef.current = session;
+			const abortIfSpeechActivityOwnsVoice = () => {
+				if (!shouldAbortLiveConnectForSpeechActivity(
+					activeSpeechActivityRef.current != null,
+				)) return;
+				voiceCancelledRef.current = true;
+				session.disconnect();
+				const error = new Error("speech activity owns the grounded voice lane");
+				error.name = "AbortError";
+				throw error;
+			};
 
 			// Cold-start-aware status → banner. naia-omni emits connecting /
 			// cold-start(elapsed) / sold-out / error; other providers leave it unset.
@@ -2428,6 +2652,7 @@ export function ChatArea({
 			};
 
 			// Build provider-specific config and connect
+			abortIfSpeechActivityOwnsVoice();
 			const selectedVoice =
 				config.voice ?? getDefaultVoiceForAvatar(config.vrmModel);
 			if (liveProvider === "vllm-omni") {
@@ -2544,6 +2769,9 @@ export function ChatArea({
 					tools: voiceTools.length ? voiceTools : undefined,
 				});
 			}
+			// The activity may have started while session.connect() awaited a
+			// provider/cold start. Recheck before any microphone can start.
+			abortIfSpeechActivityOwnsVoice();
 
 			// Create mic stream — tolerate a missing/erroring mic. The omni session
 			// is already connected and can still answer TYPED text (+ voice output),
@@ -2575,9 +2803,20 @@ export function ChatArea({
 					sampleRate: session.audioInput.sampleRate,
 					autoGainControl: session.audioInput.autoGainControl,
 				});
+				if (!activateMicUnlessSpeechActivityOwnsVoice(
+					mic,
+					activeSpeechActivityRef.current != null,
+					voiceCancelledRef.current,
+				)) {
+					const error = new Error("speech activity owns the grounded voice lane");
+					error.name = "AbortError";
+					throw error;
+				}
 				micStreamRef.current = mic;
-				mic.start();
 			} catch (micErr) {
+				if (micErr instanceof Error && micErr.name === "AbortError") {
+					throw micErr;
+				}
 				// No usable microphone → keep the session alive for typed input +
 				// voice output (web-demo parity). Do not rethrow / disconnect.
 				Logger.warn(

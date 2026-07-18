@@ -47,6 +47,10 @@ vi.mock("../../lib/chat-service", () => ({
 	fetchAgentSkills: vi.fn().mockResolvedValue([]),
 	sendApprovalResponse: vi.fn().mockResolvedValue(undefined),
 	sendPanelToolResult: vi.fn().mockResolvedValue(undefined),
+	configureSpeechProfile: vi.fn().mockResolvedValue(undefined),
+	yieldSpeechActivity: vi.fn().mockResolvedValue(undefined),
+	controlSpeechActivity: vi.fn().mockResolvedValue(undefined),
+	stopSpeechActivity: vi.fn().mockResolvedValue(undefined),
 	// 슬라이스1(isNewCore 도입) 이후 ChatArea 이 호출 — mock 누락 시 throw 로 8건 RED 였음.
 	// 기본 false = 비-새-core(기존 sendChatMessage 경로) — 이 테스트들의 원래 가정 유지.
 	isNewCore: vi.fn(() => false),

@@ -218,6 +218,16 @@ export interface AppConfig {
 	bgmVolume?: number;
 	/** Whether BGM was playing when the app was closed. */
 	bgmPlaying?: boolean;
+	/** Opt-in proactive speech mode. Disabled unless explicitly persisted. */
+	proactiveSpeechProfile?: "disabled" | "personal_radio_dj" | "exhibition_intro";
+	proactiveSpeechIdleMs?: number;
+	proactiveSpeechIntervalMs?: number;
+	proactiveSpeechTimezone?: string;
+	proactiveSpeechBgmAutoPlay?: boolean;
+	proactiveSpeechWeatherConsented?: boolean;
+	proactiveSpeechWeatherLatitude?: number;
+	proactiveSpeechWeatherLongitude?: number;
+	proactiveSpeechKnowledgeScope?: string;
 
 	// ── Memory settings ──
 	/** Memory adapter backend. Defaults to 'local' (JSON file). */
