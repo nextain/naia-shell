@@ -162,7 +162,7 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(matrix.os.linux.icon).toBeUndefined();
 	});
 
-	it("3 OS 행마다 artifacts 실존 + glob 형식 + minBytes = 양수 또는 null", () => {
+	it("3 OS 행마다 artifacts 실존 + glob 형식 + minBytes = 실측 기반 양수", () => {
 		for (const os of OSES) {
 			const arts = matrix.os[os].artifacts;
 			expect(Array.isArray(arts) && arts.length > 0).toBe(true);
@@ -170,10 +170,7 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 				expect(typeof a.glob).toBe("string");
 				expect(a.glob).toContain("/");
 				expect(a.glob).toContain("*"); // 리터럴 파일명 금지 — 버전은 Cargo.toml 유래(글롭 필수)
-				expect(
-					a.minBytes === null ||
-						(typeof a.minBytes === "number" && a.minBytes > 0),
-				).toBe(true);
+				expect(typeof a.minBytes === "number" && a.minBytes > 0).toBe(true);
 			}
 		}
 	});
@@ -380,6 +377,12 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 			const wrapper = readFileSync(target, "utf8");
 			expect(wrapper).toContain('NODE="$SCRIPT_DIR/../../../../node"');
 			expect(wrapper).toContain(`claude-${result.digest}`);
+			expect(wrapper).toContain('createHash("sha256")');
+			expect(wrapper).toContain(`if [ "$ACTUAL" != "${result.digest}" ]; then`);
+			expect(wrapper).toContain(
+				`if [ "$TEMP_ACTUAL" != "${result.digest}" ]; then`,
+			);
+			expect(wrapper).toContain("embedded Claude payload checksum mismatch");
 			expect(wrapper).toContain('exec "$TARGET" "$@"');
 			expect(chmodCalls).toEqual([
 				[result.payload, 0o644],

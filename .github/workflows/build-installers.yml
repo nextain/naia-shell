@@ -13,35 +13,45 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2025
             platform: win32
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux
-          - os: macos-latest
+          - os: macos-15
             platform: darwin
     runs-on: ${{ matrix.os }}
     timeout-minutes: 150
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Clone required public runtime sources
-        shell: bash
         run: |
-          git clone --depth 1 https://github.com/nextain/naia-agent.git ../naia-agent
-          git clone --depth 1 https://github.com/nextain/naia-kb-compiler.git ../../naia-kb-compiler
-          git clone --depth 1 https://github.com/nextain/naia-memory.git ../../naia-memory
+          git init ../naia-agent
+          git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
+          git -C ../naia-agent fetch --depth 1 origin 8afe8d30a69822b7e7acf48da0e0cd0390a4eb67
+          git -C ../naia-agent checkout --detach FETCH_HEAD
+          git init ../../naia-kb-compiler
+          git -C ../../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
+          git -C ../../naia-kb-compiler fetch --depth 1 origin f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
+          git -C ../../naia-kb-compiler checkout --detach FETCH_HEAD
+          git init ../../naia-memory
+          git -C ../../naia-memory remote add origin https://github.com/nextain/naia-memory.git
+          git -C ../../naia-memory fetch --depth 1 origin b88f3f0f8eef5cc66e61925774f03be157153efb
+          git -C ../../naia-memory checkout --detach FETCH_HEAD
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22.23.1"
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: "1.97.0"
 
       - name: Install Linux build and smoke dependencies
         if: matrix.platform == 'linux'
@@ -66,23 +76,34 @@ jobs:
       - name: Build installer bundle from platform matrix
         run: pnpm -C packages/shell run tauri:build:bundle
 
-      - name: Record artifact sizes for threshold calibration
-        shell: bash
-        run: |
-          find packages/shell/src-tauri/target/release/bundle -type f \( \
-            -path '*/nsis/*-setup.exe' -o \
-            -path '*/msi/*.msi' -o \
-            -path '*/deb/*.deb' -o \
-            -path '*/rpm/*.rpm' -o \
-            -path '*/appimage/*.AppImage' -o \
-            -path '*/macos/*.app/Contents/MacOS/*' -o \
-            -path '*/dmg/*.dmg' \
-          \) \
-            -exec sh -c 'wc -c < "$1" | tr -d "\n"; printf "  %s\n" "$1"' _ {} \; \
-            | tee packages/shell/src-tauri/target/release/bundle/artifact-sizes.txt
-
       - name: Verify installer artifacts
         run: node packages/shell/scripts/verify-artifacts.mjs
+
+      - name: Install NSIS and prove bundled Node at runtime
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem `
+            packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer not found"
+          }
+          $process = Start-Process -FilePath $installer.FullName `
+            -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "NSIS silent install failed with exit code $($process.ExitCode)"
+          }
+          $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
+          $binary = Join-Path $resourceDir "naia-shell.exe"
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "Installed naia-shell.exe not found: $binary"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $resourceDir "node.exe") -PathType Leaf)) {
+            throw "Installed bundled node.exe not found: $resourceDir"
+          }
+          node packages/shell/scripts/verify-installed-smoke.mjs `
+            --binary $binary --resource-dir $resourceDir --timeout-ms 120000
 
       - name: Install deb and prove bundled Node at runtime
         if: matrix.platform == 'linux'
@@ -94,6 +115,45 @@ jobs:
           RESOURCE_DIR="/usr/lib/naia-shell"
           test -x "$BIN"
           test -x "$RESOURCE_DIR/node"
+
+          WRAPPED_CLAUDE="$RESOURCE_DIR/agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude"
+          WRAPPED_PAYLOAD="$WRAPPED_CLAUDE.payload.gz"
+          WRAPPER_CACHE="$RUNNER_TEMP/naia-wrapper-cache"
+          test -x "$WRAPPED_CLAUDE"
+
+          # Two simultaneous first launches must both succeed and converge on one valid cache entry.
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_1=$!
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version &
+          WRAPPER_PID_2=$!
+          wait "$WRAPPER_PID_1"
+          wait "$WRAPPER_PID_2"
+          RESTORED_CLAUDE="$(find "$WRAPPER_CACHE/naia/embedded-cli" -name 'claude-*' -type f -perm -u+x -print -quit)"
+          test -n "$RESTORED_CLAUDE" || {
+            echo "::error::wrapped Claude executable was not restored into the user cache"
+            exit 1
+          }
+
+          # An executable-but-corrupt cache entry must be detected and repaired.
+          printf 'corrupt cache' > "$RESTORED_CLAUDE"
+          chmod 700 "$RESTORED_CLAUDE"
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version
+
+          # A valid gzip containing the wrong executable must fail before publication.
+          cp "$WRAPPED_PAYLOAD" "$RUNNER_TEMP/claude.payload.original.gz"
+          node -e 'const fs=require("node:fs"),z=require("node:zlib");fs.writeFileSync(process.argv[1],z.gzipSync(Buffer.from("#!/bin/sh\nexit 0\n")))' "$RUNNER_TEMP/claude.payload.tampered.gz"
+          sudo cp "$RUNNER_TEMP/claude.payload.tampered.gz" "$WRAPPED_PAYLOAD"
+          rm -f "$RESTORED_CLAUDE"
+          set +e
+          XDG_CACHE_HOME="$WRAPPER_CACHE" "$WRAPPED_CLAUDE" --version
+          TAMPER_STATUS=$?
+          set -e
+          sudo cp "$RUNNER_TEMP/claude.payload.original.gz" "$WRAPPED_PAYLOAD"
+          test "$TAMPER_STATUS" -ne 0 || {
+            echo "::error::tampered wrapped payload unexpectedly executed"
+            exit 1
+          }
+          echo "wrapped payload tamper probe: expected RED confirmed"
 
           sudo mv "$RESOURCE_DIR/node" "$RESOURCE_DIR/node.mutation-disabled"
           set +e
@@ -113,7 +173,7 @@ jobs:
 
       - name: Upload installer outputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: naia-shell-${{ matrix.platform }}-${{ github.sha }}
           path: |
@@ -124,7 +184,6 @@ jobs:
             packages/shell/src-tauri/target/release/bundle/appimage/*.AppImage
             packages/shell/src-tauri/target/release/bundle/macos/*.app/Contents/MacOS/*
             packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
-            packages/shell/src-tauri/target/release/bundle/artifact-sizes.txt
             packages/shell/src-tauri/target/release/bundle/artifacts.sha256
           if-no-files-found: error
           retention-days: 14
