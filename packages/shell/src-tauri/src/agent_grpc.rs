@@ -79,6 +79,10 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
             .and_then(|x| x.as_array())
             .map(|a| a.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
             .unwrap_or_default(),
+        // naia-agent may add optional transport fields before the shell consumes them.
+        // Prost defaults keep a clean-runner build source-compatible until the
+        // corresponding shell feature is wired deliberately.
+        ..Default::default()
     }
 }
 
@@ -139,7 +143,12 @@ impl AgentGrpc {
     }
 
     pub async fn cancel(&mut self, request_id: String) -> Result<(), tonic::Status> {
-        self.client.cancel(CancelRequest { request_id }).await?;
+        self.client
+            .cancel(CancelRequest {
+                request_id,
+                ..Default::default()
+            })
+            .await?;
         Ok(())
     }
 
@@ -171,7 +180,15 @@ impl AgentGrpc {
     }
 
     pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool) -> Result<(), tonic::Status> {
-        self.client.panel_tool_result(pb::PanelToolResultMsg { request_id, tool_call_id, output, success }).await?;
+        self.client
+            .panel_tool_result(pb::PanelToolResultMsg {
+                request_id,
+                tool_call_id,
+                output,
+                success,
+                ..Default::default()
+            })
+            .await?;
         Ok(())
     }
 }

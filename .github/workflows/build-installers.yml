@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone required public naia-agent sibling
+      - name: Clone required public runtime sources
         shell: bash
         run: |
           git clone --depth 1 https://github.com/nextain/naia-agent.git ../naia-agent

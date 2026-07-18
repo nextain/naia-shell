@@ -12,7 +12,8 @@
  *      stage-cascade-loader.mjs(부재 = skip + 명시 로그 — optional 판단은 여기 소유)
  *   ④ tauri.conf.generated.json 생성(gitignored, `build` 키 자체 부재 — conf 생성은 순수 함수
  *      generateConf 로 분리, vitest golden 이 네트워크 없이 검증)
- *   ⑤ `tauri build --config` 직접 spawn(--config 경로를 package.json 커맨드 문자열에 넣지
+ *   ⑤ clean checkout 에서 workspace core 를 먼저 빌드해 셸의 workspace 의존성을 준비
+ *   ⑥ `tauri build --config` 직접 spawn(--config 경로를 package.json 커맨드 문자열에 넣지
  *      않는다 — check-build-contract 가 경로 실존을 강제하는데 생성물은 gitignore 라 dangling)
  *
  * vosk 는 프로비저닝·검사 대상 아님 — 생성 주체 = tauri-plugin-stt build.rs(setup_vosk),
