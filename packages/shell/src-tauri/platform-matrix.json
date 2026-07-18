@@ -98,7 +98,7 @@
 			]
 		},
 		"linux": {
-			"targets": ["deb", "rpm", "appimage"],
+			"targets": ["appimage", "deb", "rpm"],
 			"bundleArchs": ["x64"],
 			"$bundleArchComment": "Vosk 0.3.45 산출물이 linux-x86_64 고정 — arm64 전체 번들은 명확 차단. Node arm64 아카이브 메타데이터는 유지.",
 			"nodeBinary": "node",
