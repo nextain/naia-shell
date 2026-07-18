@@ -436,7 +436,7 @@ async function main() {
 
 	console.log("[stage-runtime] ⑥ tauri build");
 	run(
-		"pnpm exec tauri build --config src-tauri/tauri.conf.generated.json",
+		"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json",
 		SHELL,
 	);
 }

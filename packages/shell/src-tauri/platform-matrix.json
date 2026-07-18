@@ -126,8 +126,8 @@
 				}
 			},
 			"artifacts": [
-				{ "glob": "deb/*.deb", "minBytes": null },
-				{ "glob": "rpm/*.rpm", "minBytes": null },
+				{ "glob": "deb/*.deb", "minBytes": 208510201 },
+				{ "glob": "rpm/*.rpm", "minBytes": 208557768 },
 				{ "glob": "appimage/*.AppImage", "minBytes": null }
 			]
 		},
@@ -148,8 +148,8 @@
 			],
 			"installer": {},
 			"artifacts": [
-				{ "glob": "macos/*.app/Contents/MacOS/*", "minBytes": null },
-				{ "glob": "dmg/*.dmg", "minBytes": null }
+				{ "glob": "macos/*.app/Contents/MacOS/*", "minBytes": 56588976 },
+				{ "glob": "dmg/*.dmg", "minBytes": 193604050 }
 			]
 		}
 	}

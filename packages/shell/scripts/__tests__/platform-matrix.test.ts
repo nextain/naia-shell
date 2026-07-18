@@ -509,7 +509,7 @@ describe("clean-checkout build order", () => {
 		);
 		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT)');
 		const tauriBuild = source.indexOf(
-			'"pnpm exec tauri build --config src-tauri/tauri.conf.generated.json"',
+			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
 		);
 
 		expect(coreBuild).toBeGreaterThan(-1);
