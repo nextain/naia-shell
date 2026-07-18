@@ -155,7 +155,7 @@
 			"artifacts": [
 				{ "glob": "deb/*.deb", "minBytes": 208510201 },
 				{ "glob": "rpm/*.rpm", "minBytes": 208557768 },
-				{ "glob": "appimage/*.AppImage", "minBytes": 225756412 }
+				{ "glob": "appimage/*.AppImage.tar.gz", "minBytes": 150000000 }
 			]
 		},
 		"darwin": {

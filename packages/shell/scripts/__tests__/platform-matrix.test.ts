@@ -207,6 +207,21 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(globs.some((g: string) => g.endsWith(".app"))).toBe(false);
 		expect(globs).toContain("macos/*.app.tar.gz");
 	});
+
+	it("linux AppImage는 실행권한 보존 tar.gz 로 배포한다", () => {
+		const globs = matrix.os.linux.artifacts.map(
+			(a: { glob: string }) => a.glob,
+		);
+		expect(globs).toContain("appimage/*.AppImage.tar.gz");
+		const workflow = readFileSync(
+			resolve(REPO_ROOT, ".github/workflows/build-installers.yml"),
+			"utf8",
+		);
+		expect(workflow).toContain('test -x "$APPIMAGE_PATH"');
+		expect(workflow).not.toMatch(
+			/- name: Upload installer outputs\r?\n\s+if: always\(\)/,
+		);
+	});
 });
 
 describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", () => {

@@ -89,6 +89,23 @@ jobs:
           APP_NAME="$(basename "$APP_PATH")"
           tar -C "$BUNDLE_DIR/macos" -czf "$BUNDLE_DIR/macos/${APP_NAME}.tar.gz" "$APP_NAME"
 
+      - name: Archive executable Linux AppImage
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
+          APPIMAGE_PATH="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          test -n "$APPIMAGE_PATH" || {
+            echo "::error::Linux AppImage not found"
+            exit 1
+          }
+          test -x "$APPIMAGE_PATH" || {
+            echo "::error::Linux AppImage is not executable: $APPIMAGE_PATH"
+            exit 1
+          }
+          APPIMAGE_NAME="$(basename "$APPIMAGE_PATH")"
+          tar -C "$BUNDLE_DIR/appimage" -czf "$BUNDLE_DIR/appimage/${APPIMAGE_NAME}.tar.gz" "$APPIMAGE_NAME"
+
       - name: Verify installer artifacts
         run: node packages/shell/scripts/verify-artifacts.mjs
 
@@ -239,7 +256,6 @@ jobs:
             --binary "$BIN" --resource-dir "$RESOURCE_DIR" --timeout-ms 120000
 
       - name: Upload installer outputs
-        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: naia-shell-${{ matrix.platform }}-${{ github.sha }}
@@ -248,7 +264,7 @@ jobs:
             packages/shell/src-tauri/target/release/bundle/msi/*.msi
             packages/shell/src-tauri/target/release/bundle/deb/*.deb
             packages/shell/src-tauri/target/release/bundle/rpm/*.rpm
-            packages/shell/src-tauri/target/release/bundle/appimage/*.AppImage
+            packages/shell/src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz
             packages/shell/src-tauri/target/release/bundle/macos/*.app.tar.gz
             packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
             packages/shell/src-tauri/target/release/bundle/artifacts.sha256
