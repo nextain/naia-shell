@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * stage-runtime — 크로스플랫폼 설치 빌드의 유일 진입점 (#377 FR-INSTALL.2).
  *
