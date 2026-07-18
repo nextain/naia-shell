@@ -104,7 +104,15 @@
 			"steamDepot": {
 				"path": "steam/windows",
 				"entrypoint": "naia-shell.exe",
-				"requiredFiles": ["naia-shell.exe", "node.exe", "agent/package.json", "bgm-sidecar/package.json"],
+				"requiredFiles": [
+					"naia-shell.exe",
+					"node.exe",
+					"agent/package.json",
+					"bgm-sidecar/package.json",
+					"bgm-sidecar/dist/bgm-server-bin.js",
+					"bgm-sidecar/dist/youtube-server.js",
+					"bgm-sidecar/node_modules/youtubei.js/package.json"
+				],
 				"excludedFiles": ["uninstall.exe"],
 				"manifest": "steam-files.sha256"
 			}

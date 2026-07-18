@@ -154,7 +154,7 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		);
 		expect(buildScript).toContain('["vosk"]["archive"]');
 		expect(buildScript).toContain("Vosk archive SHA256 mismatch");
-		expect(buildScript).toContain("cache_is_verified");
+		expect(buildScript).toContain("cached_archive_is_verified");
 		expect(buildScript).toContain("remove_dir_all(&vosk_dir)");
 		expect(buildScript.indexOf("SHA256 mismatch")).toBeLessThan(
 			buildScript.indexOf("ZipArchive::new"),
@@ -619,6 +619,9 @@ describe("installer workflow integration contracts", () => {
 				"node.exe",
 				"agent/package.json",
 				"bgm-sidecar/package.json",
+				"bgm-sidecar/dist/bgm-server-bin.js",
+				"bgm-sidecar/dist/youtube-server.js",
+				"bgm-sidecar/node_modules/youtubei.js/package.json",
 			],
 			excludedFiles: ["uninstall.exe"],
 			manifest: "steam-files.sha256",
