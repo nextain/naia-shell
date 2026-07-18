@@ -494,6 +494,11 @@ async function main() {
 	// 설치 계약은 검증된 런타임 원본을 동봉하는 것이므로 모든 플랫폼에서 보존한다
 	// (NO_STRIP을 소비하는 도구는 linuxdeploy뿐이다).
 	process.env.NO_STRIP = "1";
+	// 이전 로컬 빌드의 stale 포맷이 같은 glob으로 업로드되는 것을 구조적으로 차단한다.
+	rmSync(resolve(SHELL, "src-tauri", "target", "release", "bundle"), {
+		recursive: true,
+		force: true,
+	});
 	run(
 		"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json",
 		SHELL,

@@ -221,6 +221,12 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(workflow).not.toMatch(
 			/- name: Upload installer outputs\r?\n\s+if: always\(\)/,
 		);
+		expect(workflow).toContain("Validate MSI structure");
+		expect(workflow).toContain("MSI administrative extraction produced no files");
+		expect(workflow).toContain("Validate Linux package structures");
+		expect(workflow).toContain('rpm -K --nosignature "$RPM"');
+		expect(workflow).toContain("Validate macOS package structures");
+		expect(workflow).toContain('hdiutil verify "$DMG"');
 	});
 });
 
@@ -598,11 +604,16 @@ describe("clean-checkout build order", () => {
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
 		);
+		const clearBundle = source.indexOf(
+			'rmSync(resolve(SHELL, "src-tauri", "target", "release", "bundle")',
+		);
 
 		expect(coreBuild).toBeGreaterThan(-1);
 		expect(preserveNativeRuntime).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(preserveNativeRuntime);
+		expect(clearBundle).toBeGreaterThan(preserveNativeRuntime);
+		expect(tauriBuild).toBeGreaterThan(clearBundle);
 	});
 });
 

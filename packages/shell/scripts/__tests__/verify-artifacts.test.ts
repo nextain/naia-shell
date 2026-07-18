@@ -38,6 +38,19 @@ describe("verifyArtifacts (FR-INSTALL.6)", () => {
 		).toThrow(/minBytes 미확정/);
 	});
 
+	it("같은 계약 glob에 stale 산출물이 함께 있으면 red", () => {
+		const bundleDir = fixture();
+		mkdirSync(resolve(bundleDir, "msi"));
+		writeFileSync(resolve(bundleDir, "msi", "current.msi"), "current");
+		writeFileSync(resolve(bundleDir, "msi", "stale.msi"), "stale");
+		expect(() =>
+			verifyArtifacts({
+				bundleDir,
+				artifacts: [{ glob: "msi/*.msi", minBytes: 1 }],
+			}),
+		).toThrow(/산출물 중복.*2개/);
+	});
+
 	it("과소 파일은 red, 임계 이상 파일은 SHA와 크기를 반환", () => {
 		const bundleDir = fixture();
 		mkdirSync(resolve(bundleDir, "nsis"));

@@ -46,6 +46,11 @@ export function verifyArtifacts({ bundleDir, artifacts }) {
 				`[verify-artifacts] 산출물 없음: ${artifact.glob} (bundle=${bundleDir})`,
 			);
 		}
+		if (matches.length !== 1) {
+			throw new Error(
+				`[verify-artifacts] 산출물 중복: ${artifact.glob} = ${matches.length}개 (${matches.join(", ")})`,
+			);
+		}
 		for (const match of matches) {
 			const absolute = resolve(bundleDir, match);
 			const bytes = statSync(absolute).size;
