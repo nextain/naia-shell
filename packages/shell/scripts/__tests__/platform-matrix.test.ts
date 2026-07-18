@@ -200,12 +200,12 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		}
 	});
 
-	it("darwin artifacts 는 .app 번들 디렉토리가 아니라 내부 실행 파일을 가리킨다 (R7)", () => {
+	it("darwin artifacts 는 전체 .app 번들을 권한 보존 tar.gz 로 배포한다 (R7)", () => {
 		const globs = matrix.os.darwin.artifacts.map(
 			(a: { glob: string }) => a.glob,
 		);
 		expect(globs.some((g: string) => g.endsWith(".app"))).toBe(false);
-		expect(globs).toContain("macos/*.app/Contents/MacOS/*");
+		expect(globs).toContain("macos/*.app.tar.gz");
 	});
 });
 

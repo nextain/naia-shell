@@ -176,7 +176,7 @@
 			],
 			"installer": {},
 			"artifacts": [
-				{ "glob": "macos/*.app/Contents/MacOS/*", "minBytes": 56588976 },
+				{ "glob": "macos/*.app.tar.gz", "minBytes": 150000000 },
 				{ "glob": "dmg/*.dmg", "minBytes": 193604050 }
 			]
 		}
