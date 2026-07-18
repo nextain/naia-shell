@@ -15,8 +15,8 @@
  *   ⑥ `tauri build --config` 직접 spawn(--config 경로를 package.json 커맨드 문자열에 넣지
  *      않는다 — check-build-contract 가 경로 실존을 강제하는데 생성물은 gitignore 라 dangling)
  *
- * vosk 는 프로비저닝·검사 대상 아님 — 생성 주체 = tauri-plugin-stt build.rs(setup_vosk),
- * 순서 보증 = 플러그인 Cargo.toml 의 `links` 키(테스트가 실존 단언).
+ * Vosk 생성 주체는 tauri-plugin-stt build.rs(setup_vosk)다. 설치 진입점은 기존 생성 파일을
+ * 제거하고 플러그인만 cargo clean하여 build.rs의 아카이브 SHA 검증·재추출을 매번 강제한다.
  *
  * cwd 무관(자기 위치 기준). 진입 = `pnpm run tauri:build:bundle` = `node scripts/stage-runtime.mjs`.
  */
@@ -424,20 +424,28 @@ function readMatrix() {
 	}
 }
 
-/**
- * vosk 함정 경고(P1-R1 MAJOR-3): resources/ 를 지웠는데 cargo target/ 이 남으면 build script
- * 캐시 때문에 tauri-plugin-stt 의 setup_vosk 가 재실행되지 않아 vosk dll 이 영구 미재생성될
- * 수 있다. 하드 에러는 명세가 금지(clean checkout 첫 빌드를 깨뜨림) — 경고 + 처방만 낸다.
- */
-function warnVoskTrap(matrix, platform) {
+/** 증분 빌드에서도 기존 추출물을 신뢰하지 않도록 Vosk build script 재실행을 강제한다. */
+export function invalidateVoskBuildCache(
+	matrix,
+	platform,
+	{
+		resourcesDir = RESOURCES,
+		shellDir = SHELL,
+		runImpl = run,
+	} = {},
+) {
 	const files = matrix.os[platform]?.vosk?.files ?? [];
 	if (!files.length) return;
-	const missing = files.filter((f) => !existsSync(resolve(RESOURCES, f)));
-	if (missing.length && existsSync(resolve(SRC_TAURI, "target"))) {
-		console.warn(
-			`[stage-runtime] ⚠ vosk 리소스 누락 + cargo target/ 존재: ${missing.join(", ")}\n  cargo 는 build script 를 캐시하므로 재실행 없이는 이 파일들이 재생성되지 않을 수 있다.\n  빌드가 ResourcePathNotFound 로 실패하면: (cd src-tauri && cargo clean -p tauri-plugin-stt) 후 재실행.`,
-		);
+	for (const file of files) {
+		rmSync(resolve(resourcesDir, file), { force: true });
 	}
+	console.log(
+		`[stage-runtime] ③ Vosk ${files.length}개 생성 파일 제거 + 플러그인 build script 강제 재실행`,
+	);
+	runImpl(
+		"cargo clean --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt",
+		shellDir,
+	);
 }
 
 async function main() {
@@ -489,7 +497,7 @@ async function main() {
 		wrapStaticExecutableForBundle(SRC_TAURI, relativePath);
 	}
 
-	warnVoskTrap(matrix, platform);
+	invalidateVoskBuildCache(matrix, platform);
 
 	const conf = generateConf(matrix, platform, { cascadeLoaderPresent });
 	writeFileSync(GENERATED_CONF, `${JSON.stringify(conf, null, "\t")}\n`);

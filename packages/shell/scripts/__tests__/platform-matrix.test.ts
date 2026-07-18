@@ -25,6 +25,7 @@ import {
 	ensureNodeExecutable,
 	extractArchive,
 	generateConf,
+	invalidateVoskBuildCache,
 	prepareRuntime,
 	provisionNode,
 	selectNodeArchive,
@@ -571,6 +572,32 @@ describe("agent production staging", () => {
 });
 
 describe("clean-checkout build order", () => {
+	it("invalidates generated Vosk files and forces the plugin build script on every installer build", () => {
+		const resources = mkdtempSync(resolve(tmpdir(), "naia-vosk-incremental-"));
+		const calls: unknown[][] = [];
+		try {
+			for (const file of matrix.os.win32.vosk.files) {
+				writeFileSync(resolve(resources, file), "corrupt incremental cache");
+			}
+			invalidateVoskBuildCache(matrix, "win32", {
+				resourcesDir: resources,
+				shellDir: SHELL,
+				runImpl: (...args: unknown[]) => calls.push(args),
+			});
+			for (const file of matrix.os.win32.vosk.files) {
+				expect(existsSync(resolve(resources, file))).toBe(false);
+			}
+			expect(calls).toEqual([
+				[
+					"cargo clean --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt",
+					SHELL,
+				],
+			]);
+		} finally {
+			rmSync(resources, { recursive: true, force: true });
+		}
+	});
+
 	it("builds the workspace core before invoking the shell Tauri build", () => {
 		const source = readFileSync(
 			resolve(SHELL, "scripts/stage-runtime.mjs"),
