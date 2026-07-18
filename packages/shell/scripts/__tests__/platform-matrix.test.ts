@@ -500,3 +500,19 @@ describe("agent production staging", () => {
 		expect(source).toContain('"node_modules/@naia/kb-compiler"');
 	});
 });
+
+describe("clean-checkout build order", () => {
+	it("builds the workspace core before invoking the shell Tauri build", () => {
+		const source = readFileSync(
+			resolve(SHELL, "scripts/stage-runtime.mjs"),
+			"utf8",
+		);
+		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT)');
+		const tauriBuild = source.indexOf(
+			'"pnpm exec tauri build --config src-tauri/tauri.conf.generated.json"',
+		);
+
+		expect(coreBuild).toBeGreaterThan(-1);
+		expect(tauriBuild).toBeGreaterThan(coreBuild);
+	});
+});
