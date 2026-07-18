@@ -10,11 +10,13 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 // .mjs(JS) 모듈 — 타입 선언 없음. tsconfig include=["src"] 라 tsc 스코프 밖(vitest 만 수집).
 import {
@@ -25,6 +27,7 @@ import {
 	prepareRuntime,
 	provisionNode,
 	selectNodeArchive,
+	wrapStaticExecutableForBundle,
 } from "../stage-runtime.mjs";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -118,6 +121,14 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 				expect(matrix.node.archives[os]).toHaveProperty(arch);
 			}
 		}
+	});
+
+	it("linux 정적 SDK 실행 파일만 매트릭스에서 래핑 대상으로 지정", () => {
+		expect(matrix.os.win32.wrappedStaticExecutables).toEqual([]);
+		expect(matrix.os.darwin.wrappedStaticExecutables).toEqual([]);
+		expect(matrix.os.linux.wrappedStaticExecutables).toEqual([
+			"agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude",
+		]);
 	});
 
 	it("vosk: win = dll 4종 전부, linux = so 1종, darwin = null", () => {
@@ -351,6 +362,37 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 			],
 		]);
 	});
+
+	it("정적 ELF를 비-ELF gzip payload + 번들 Node 복원 래퍼로 변환", () => {
+		const root = mkdtempSync(resolve(tmpdir(), "naia-static-wrapper-"));
+		const relative =
+			"agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude";
+		const target = resolve(root, relative);
+		const original = Buffer.from([0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4]);
+		const chmodCalls: Array<[string, number]> = [];
+		try {
+			mkdirSync(dirname(target), { recursive: true });
+			writeFileSync(target, original, { mode: 0o755 });
+			const result = wrapStaticExecutableForBundle(root, relative, {
+				chmod: (path: string, mode: number) => chmodCalls.push([path, mode]),
+			});
+			expect(gunzipSync(readFileSync(result.payload))).toEqual(original);
+			const wrapper = readFileSync(target, "utf8");
+			expect(wrapper).toContain('NODE="$SCRIPT_DIR/../../../../node"');
+			expect(wrapper).toContain(`claude-${result.digest}`);
+			expect(wrapper).toContain('exec "$TARGET" "$@"');
+			expect(chmodCalls).toEqual([
+				[result.payload, 0o644],
+				[target, 0o755],
+			]);
+			if (process.platform !== "win32") {
+				expect(statSync(target).mode & 0o777).toBe(0o755);
+				expect(statSync(result.payload).mode & 0o777).toBe(0o644);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("selectNodeArchive (FR-INSTALL.1 — arch 오선택 구조 차단)", () => {
@@ -508,9 +550,7 @@ describe("clean-checkout build order", () => {
 			"utf8",
 		);
 		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT)');
-		const preserveNativeRuntime = source.indexOf(
-			'process.env.NO_STRIP = "1"',
-		);
+		const preserveNativeRuntime = source.indexOf('process.env.NO_STRIP = "1"');
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
 		);

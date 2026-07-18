@@ -35,6 +35,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { gzipSync } from "node:zlib";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), ".."); // packages/shell
 const REPO_ROOT = resolve(SHELL, "../..");
@@ -167,6 +168,55 @@ const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: "inherit" });
 
 function sha256Of(buf) {
 	return createHash("sha256").update(buf).digest("hex");
+}
+
+/**
+ * linuxdeploy는 AppDir/usr/lib 아래의 모든 ELF를 공유 라이브러리 후보로 재귀 스캔한다.
+ * Claude Agent SDK의 정적 Bun 실행 파일은 정상 실행 가능하지만 `ldd`가 1을 반환해 AppImage
+ * 조립을 중단시킨다. 매트릭스가 지정한 파일만 gzip payload로 바꾸고, 번들 Node를 사용하는
+ * POSIX 래퍼가 최초 호출 시 사용자 캐시에 원자적으로 복원한다.
+ */
+export function wrapStaticExecutableForBundle(
+	srcTauriDir,
+	relativePath,
+	dependencies = {},
+) {
+	const read = dependencies.read ?? readFileSync;
+	const write = dependencies.write ?? writeFileSync;
+	const chmod = dependencies.chmod ?? chmodSync;
+	const target = resolve(srcTauriDir, relativePath);
+	if (!existsSync(target)) {
+		throw new Error(
+			`[stage-runtime] 정적 실행 파일 래핑 대상 누락: ${relativePath}`,
+		);
+	}
+	const original = read(target);
+	const digest = sha256Of(original);
+	const payload = `${target}.payload.gz`;
+	write(payload, gzipSync(original), { mode: 0o644 });
+	chmod(payload, 0o644);
+	const wrapper = `#!/bin/sh
+set -eu
+umask 077
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+NODE="$SCRIPT_DIR/../../../../node"
+PAYLOAD="$0.payload.gz"
+CACHE_BASE="\${XDG_CACHE_HOME:-\${HOME:?HOME is required}/.cache}"
+CACHE_DIR="$CACHE_BASE/naia/embedded-cli"
+TARGET="$CACHE_DIR/claude-${digest}"
+if [ ! -x "$TARGET" ]; then
+  mkdir -p "$CACHE_DIR"
+  TMP="$TARGET.$$"
+  trap 'rm -f "$TMP"' EXIT HUP INT TERM
+  "$NODE" -e 'const fs=require("node:fs"),z=require("node:zlib");fs.writeFileSync(process.argv[2],z.gunzipSync(fs.readFileSync(process.argv[1])),{mode:0o700})' "$PAYLOAD" "$TMP"
+  mv -f "$TMP" "$TARGET"
+  trap - EXIT HUP INT TERM
+fi
+exec "$TARGET" "$@"
+`;
+	write(target, wrapper, { mode: 0o755 });
+	chmod(target, 0o755);
+	return { target, payload, digest };
 }
 
 /** node 런타임 다운로드 + SHA256 검증 + OS 기본 tar 추출 → resources/<nodeBinary>. (export = 실측 프로브·부정 테스트용) */
@@ -423,6 +473,11 @@ async function main() {
 		console.log(`[stage-runtime] ③ ${unit.key} 스테이징 (${policy})`);
 		run(`node ${unit.script}`, SHELL); // required + sibling 부재 = 스크립트 자신의 명확한 에러로 중단
 		if (unit.key === "cascadeLoader") cascadeLoaderPresent = true;
+	}
+
+	for (const relativePath of matrix.os[platform].wrappedStaticExecutables) {
+		console.log(`[stage-runtime] ③ 정적 실행 파일 래핑: ${relativePath}`);
+		wrapStaticExecutableForBundle(SRC_TAURI, relativePath);
 	}
 
 	warnVoskTrap(matrix, platform);
