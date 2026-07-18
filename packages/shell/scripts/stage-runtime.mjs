@@ -37,6 +37,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), ".."); // packages/shell
+const REPO_ROOT = resolve(SHELL, "../..");
 const SRC_TAURI = resolve(SHELL, "src-tauri");
 const MATRIX_PATH = resolve(SRC_TAURI, "platform-matrix.json");
 const RESOURCES = resolve(SRC_TAURI, "resources");
@@ -430,7 +431,10 @@ async function main() {
 	writeFileSync(GENERATED_CONF, `${JSON.stringify(conf, null, "\t")}\n`);
 	console.log(`[stage-runtime] ④ conf 생성 → ${GENERATED_CONF}`);
 
-	console.log("[stage-runtime] ⑤ tauri build");
+	console.log("[stage-runtime] ⑤ core build");
+	run("pnpm build", REPO_ROOT);
+
+	console.log("[stage-runtime] ⑥ tauri build");
 	run(
 		"pnpm exec tauri build --config src-tauri/tauri.conf.generated.json",
 		SHELL,
