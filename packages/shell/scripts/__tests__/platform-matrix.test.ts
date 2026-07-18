@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
  * scripts/__tests__/ 에 둔다. conf 생성은 stage-runtime.mjs 의 순수 함수를 import(재구현 금지).
  */
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -29,6 +30,7 @@ import {
 	selectNodeArchive,
 	wrapStaticExecutableForBundle,
 } from "../stage-runtime.mjs";
+import { prepareSteamDepot } from "../prepare-steam-depot.mjs";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(SHELL, "../..");
@@ -152,6 +154,8 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		);
 		expect(buildScript).toContain('["vosk"]["archive"]');
 		expect(buildScript).toContain("Vosk archive SHA256 mismatch");
+		expect(buildScript).toContain("cache_is_verified");
+		expect(buildScript).toContain("remove_dir_all(&vosk_dir)");
 		expect(buildScript.indexOf("SHA256 mismatch")).toBeLessThan(
 			buildScript.indexOf("ZipArchive::new"),
 		);
@@ -599,14 +603,14 @@ describe("installer workflow integration contracts", () => {
 
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {
 		expect(workflow).toContain("Prepare and verify Steam portable depot");
-		expect(workflow).toContain('Where-Object Name -ne "uninstall.exe"');
-		expect(workflow).toContain("steam-files.sha256");
+		expect(workflow).toContain("prepare-steam-depot.mjs");
 		expect(workflow).toContain("Move-Item -LiteralPath $resourceDir");
 		expect(workflow).toContain(
 			"NSIS install location still exists before Steam portable smoke",
 		);
 		expect(workflow).toContain("--resource-dir $steamDepot");
 		expect(workflow).toContain("naia-shell-steam-win32-${{ github.sha }}");
+		expect(workflow).toContain("steps.steam.outputs.depot");
 		expect(matrix.os.win32.steamDepot).toEqual({
 			path: "steam/windows",
 			entrypoint: "naia-shell.exe",
@@ -619,5 +623,35 @@ describe("installer workflow integration contracts", () => {
 			excludedFiles: ["uninstall.exe"],
 			manifest: "steam-files.sha256",
 		});
+	});
+
+	it("prepares the Steam depot from the matrix contract and writes a real hash manifest", () => {
+		const source = mkdtempSync(resolve(tmpdir(), "naia-steam-source-"));
+		const bundle = mkdtempSync(resolve(tmpdir(), "naia-steam-bundle-"));
+		try {
+			for (const file of matrix.os.win32.steamDepot.requiredFiles) {
+				const path = resolve(source, file);
+				mkdirSync(dirname(path), { recursive: true });
+				writeFileSync(path, `fixture:${file}`);
+			}
+			writeFileSync(resolve(source, "uninstall.exe"), "must be excluded");
+			const result = prepareSteamDepot({
+				sourceDir: source,
+				bundleDir: bundle,
+				contract: matrix.os.win32.steamDepot,
+			});
+			expect(result.depotDir).toBe(
+				resolve(bundle, matrix.os.win32.steamDepot.path),
+			);
+			expect(existsSync(resolve(result.depotDir, "uninstall.exe"))).toBe(false);
+			const manifest = readFileSync(result.manifestPath, "utf8");
+			for (const file of matrix.os.win32.steamDepot.requiredFiles) {
+				expect(manifest).toContain(file.replaceAll("\\", "/"));
+			}
+			expect(manifest).toMatch(/^[0-9a-f]{64}  /m);
+		} finally {
+			rmSync(source, { recursive: true, force: true });
+			rmSync(bundle, { recursive: true, force: true });
+		}
 	});
 });

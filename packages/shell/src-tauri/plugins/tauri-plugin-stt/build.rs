@@ -7,6 +7,9 @@ const COMMANDS: &[&str] = &[
     "request_permission",
 ];
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+mod vosk_cache_policy;
+
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)
         .android_path("android")
@@ -59,14 +62,30 @@ fn setup_vosk() {
     let expected_sha256 = vosk_contract["sha256"]
         .as_str()
         .expect("Missing Vosk archive SHA256 in platform matrix");
+    let runtime_files: Vec<&str> = matrix["os"][platform_key]["vosk"]["files"]
+        .as_array()
+        .expect("Missing Vosk runtime files in platform matrix")
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .expect("Vosk runtime filename must be a string")
+        })
+        .collect();
     assert_eq!(
         contracted_archive, archive_name,
         "Vosk archive filename disagrees with platform matrix"
     );
 
     let lib_path = vosk_dir.join(lib_name);
+    let cache_marker = vosk_dir.join(".archive.sha256");
+    let cache_is_verified =
+        vosk_cache_policy::cache_is_verified(&vosk_dir, &runtime_files, expected_sha256);
 
-    if !lib_path.exists() {
+    if !cache_is_verified {
+        if vosk_dir.exists() {
+            std::fs::remove_dir_all(&vosk_dir).expect("Failed to invalidate unverified Vosk cache");
+        }
         std::fs::create_dir_all(&vosk_dir).unwrap();
 
         let url = format!(
@@ -142,6 +161,14 @@ fn setup_vosk() {
         if !lib_path.exists() {
             panic!("Failed to extract {lib_name} from archive");
         }
+        for runtime_file in &runtime_files {
+            assert!(
+                vosk_dir.join(runtime_file).is_file(),
+                "Vosk archive is missing contracted runtime file: {runtime_file}"
+            );
+        }
+        std::fs::write(&cache_marker, format!("{expected_sha256}\n"))
+            .expect("Failed to write verified Vosk cache marker");
         eprintln!("cargo:warning=libvosk downloaded to {}", lib_path.display());
     }
 
@@ -200,22 +227,17 @@ fn setup_vosk() {
         let resources_dir = src_tauri_dir.join("resources");
         let _ = std::fs::create_dir_all(&resources_dir);
 
-        if let Ok(entries) = std::fs::read_dir(&vosk_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.ends_with(".dll") || name.ends_with(".so") || name.ends_with(".dylib") {
-                    // Always overwrite — ensures DLL stays in sync after version bumps
-                    let bin_dest = bin_dir.join(&name);
-                    if std::fs::copy(entry.path(), &bin_dest).is_ok() {
-                        eprintln!("cargo:warning=Copied {} to {}", name, bin_dest.display());
-                    }
+        for name in &runtime_files {
+            let source = vosk_dir.join(name);
+            let bin_dest = bin_dir.join(name);
+            std::fs::copy(&source, &bin_dest)
+                .unwrap_or_else(|e| panic!("Failed to copy {name} to {}: {e}", bin_dest.display()));
+            eprintln!("cargo:warning=Copied {} to {}", name, bin_dest.display());
 
-                    let res_dest = resources_dir.join(&name);
-                    if std::fs::copy(entry.path(), &res_dest).is_ok() {
-                        eprintln!("cargo:warning=Copied {} to resources/", name);
-                    }
-                }
-            }
+            let res_dest = resources_dir.join(name);
+            std::fs::copy(&source, &res_dest)
+                .unwrap_or_else(|e| panic!("Failed to copy {name} to {}: {e}", res_dest.display()));
+            eprintln!("cargo:warning=Copied {} to resources/", name);
         }
     }
 }
