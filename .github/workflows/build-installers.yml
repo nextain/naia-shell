@@ -151,7 +151,9 @@ jobs:
           test -f "$DEB"
           sudo apt-get install -y "$DEB"
           BIN="$(command -v naia-shell)"
-          RESOURCE_DIR="/usr/lib/naia-shell"
+          PRODUCT_NAME="$(node -p "JSON.parse(require('node:fs').readFileSync('packages/shell/src-tauri/tauri.conf.json', 'utf8')).productName")"
+          test -n "$PRODUCT_NAME"
+          RESOURCE_DIR="/usr/lib/$PRODUCT_NAME"
           test -x "$BIN"
           test -x "$RESOURCE_DIR/node"
 

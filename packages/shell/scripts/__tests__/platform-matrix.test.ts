@@ -599,6 +599,8 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain('DEB="$(realpath "$DEB")"');
 		expect(workflow).toContain('test -f "$DEB"');
 		expect(workflow).toContain('sudo apt-get install -y "$DEB"');
+		expect(workflow).toContain('RESOURCE_DIR="/usr/lib/$PRODUCT_NAME"');
+		expect(workflow).not.toContain('RESOURCE_DIR="/usr/lib/naia-shell"');
 	});
 
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {
