@@ -338,6 +338,13 @@ session subscribe/start/terminal/disconnect와 requestId, 시크릿 없음).
 
 ## Steam Windows launch-readiness requirements (#314)
 
+> **FR-INSTALL.2 정정(규범적, 2026-07-19):** 기존 장문 행 안의
+> “`build.rs` 다운로드 SHA 무검증은 후속 이슈” 문장은 폐기한다. Vosk Windows/Linux 아카이브의
+> 파일명·SHA256은 `platform-matrix.json`이 소유하며, `build.rs`는 압축 해제 전에 이를 검증한다.
+> 검증 마커가 없거나 기대 SHA와 다른 Cargo 캐시는 삭제 후 다시 내려받고, 매트릭스가 선언한
+> 런타임 파일만 번들에 복사한다. 검증은 `platform-matrix.test.ts`의 fresh fixture/캐시 무효화 계약과
+> 3 OS clean-run installer CI가 담당한다.
+
 | ID | Requirement | Scenario | Verification |
 |---|---|---|---|
 | **FR-STEAM.1** | `platform-matrix.json`의 `steamDepot`이 진입 파일, 필수/제외 파일, 디포 경로, SHA256 manifest 이름의 유일한 계약이다. | S-STEAM | `platform-matrix.test.ts` |

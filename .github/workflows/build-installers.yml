@@ -53,6 +53,14 @@ jobs:
         with:
           toolchain: "1.97.0"
 
+      - name: Verify Vosk cache invalidation policy
+        shell: bash
+        run: |
+          rustc --test \
+            packages/shell/src-tauri/plugins/tauri-plugin-stt/vosk_cache_policy.rs \
+            -o "$RUNNER_TEMP/vosk-cache-policy-test"
+          "$RUNNER_TEMP/vosk-cache-policy-test"
+
       - name: Install Linux build and smoke dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -106,45 +114,22 @@ jobs:
             --binary $binary --resource-dir $resourceDir --timeout-ms 120000
 
       - name: Prepare and verify Steam portable depot
+        id: steam
         if: matrix.platform == 'win32'
         shell: pwsh
         run: |
           $resourceDir = Join-Path $env:LOCALAPPDATA "Naia"
-          $steamDepot = "packages/shell/src-tauri/target/release/bundle/steam/windows"
-          Remove-Item -LiteralPath $steamDepot -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $steamDepot -Force | Out-Null
-          Get-ChildItem -LiteralPath $resourceDir -Force |
-            Where-Object Name -ne "uninstall.exe" |
-            Copy-Item -Destination $steamDepot -Recurse -Force
-
-          $binary = Join-Path $steamDepot "naia-shell.exe"
-          foreach ($required in @(
-            $binary,
-            (Join-Path $steamDepot "node.exe"),
-            (Join-Path $steamDepot "agent/package.json"),
-            (Join-Path $steamDepot "bgm-sidecar/package.json")
-          )) {
-            if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-              throw "Steam portable depot is missing required file: $required"
-            }
+          $bundleDir = Resolve-Path "packages/shell/src-tauri/target/release/bundle"
+          $steamDepot = node packages/shell/scripts/prepare-steam-depot.mjs `
+            --source $resourceDir --bundle-dir $bundleDir `
+            --github-output $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) {
+            throw "Steam depot preparation failed with exit code $LASTEXITCODE"
           }
-          if (Test-Path -LiteralPath (Join-Path $steamDepot "uninstall.exe")) {
-            throw "Steam portable depot must not contain the NSIS uninstaller"
-          }
-
-          $manifest = Join-Path $steamDepot "steam-files.sha256"
-          Get-ChildItem -LiteralPath $steamDepot -Recurse -File |
-            Where-Object FullName -ne $manifest |
-            Sort-Object FullName |
-            ForEach-Object {
-              $relative = [IO.Path]::GetRelativePath($steamDepot, $_.FullName).Replace("\", "/")
-              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$hash  $relative"
-            } | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
-          if (-not (Test-Path -LiteralPath $manifest -PathType Leaf) -or
-              (Get-Item -LiteralPath $manifest).Length -eq 0) {
-            throw "Steam portable depot manifest is missing or empty"
-          }
+          $steamDepot = $steamDepot.Trim()
+          $contract = (Get-Content packages/shell/src-tauri/platform-matrix.json -Raw |
+            ConvertFrom-Json).os.win32.steamDepot
+          $binary = Join-Path $steamDepot $contract.entrypoint
 
           # Remove the installer-created default location before the portable proof.
           # This prevents the copied executable from passing by reading NSIS machine state.
@@ -255,6 +240,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: naia-shell-steam-win32-${{ github.sha }}
-          path: packages/shell/src-tauri/target/release/bundle/steam/windows
+          path: ${{ steps.steam.outputs.depot }}
           if-no-files-found: error
           retention-days: 14
