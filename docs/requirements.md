@@ -338,6 +338,12 @@ session subscribe/start/terminal/disconnect와 requestId, 시크릿 없음).
 
 ## Steam Windows launch-readiness requirements (#314)
 
+> **FR-INSTALL.1 산출물 정정(규범적, 2026-07-19):** Linux AppImage와 macOS app은
+> 각각 raw `appimage/*.AppImage`, `macos/*.app` 산출물이 정확히 1개인지 archive 전에 검증한다.
+> 업로드·무결성 검증 대상은 실행 권한과 app bundle 구조를 보존하는
+> `appimage/*.AppImage.tar.gz`, `macos/*.app.tar.gz`이며, 기존 장문 행의 raw glob 표기보다
+> 이 계약이 우선한다. NSIS/MSI/deb/rpm/DMG 계약은 기존 표기를 유지한다.
+
 > **FR-INSTALL.2 정정(규범적, 2026-07-19):** 기존 장문 행 안의
 > “`build.rs` 다운로드 SHA 무검증은 후속 이슈” 문장은 폐기한다. Vosk Windows/Linux 아카이브의
 > 파일명·SHA256은 `platform-matrix.json`이 소유하며, `build.rs`는 압축 해제 전에 이를 검증한다.

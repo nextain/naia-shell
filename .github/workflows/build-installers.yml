@@ -81,11 +81,15 @@ jobs:
         shell: bash
         run: |
           BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
-          APP_PATH="$(find "$BUNDLE_DIR/macos" -maxdepth 1 -type d -name '*.app' -print -quit)"
-          test -n "$APP_PATH" || {
-            echo "::error::macOS app bundle not found"
+          APP_PATHS=()
+          while IFS= read -r path; do APP_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/macos" -maxdepth 1 -type d -name '*.app' -print
+          )
+          test "${#APP_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one macOS app bundle, found ${#APP_PATHS[@]}"
             exit 1
           }
+          APP_PATH="${APP_PATHS[0]}"
           APP_NAME="$(basename "$APP_PATH")"
           tar -C "$BUNDLE_DIR/macos" -czf "$BUNDLE_DIR/macos/${APP_NAME}.tar.gz" "$APP_NAME"
 
@@ -94,11 +98,15 @@ jobs:
         shell: bash
         run: |
           BUNDLE_DIR="packages/shell/src-tauri/target/release/bundle"
-          APPIMAGE_PATH="$(find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
-          test -n "$APPIMAGE_PATH" || {
-            echo "::error::Linux AppImage not found"
+          APPIMAGE_PATHS=()
+          while IFS= read -r path; do APPIMAGE_PATHS+=("$path"); done < <(
+            find "$BUNDLE_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print
+          )
+          test "${#APPIMAGE_PATHS[@]}" -eq 1 || {
+            echo "::error::Expected exactly one Linux AppImage, found ${#APPIMAGE_PATHS[@]}"
             exit 1
           }
+          APPIMAGE_PATH="${APPIMAGE_PATHS[0]}"
           test -x "$APPIMAGE_PATH" || {
             echo "::error::Linux AppImage is not executable: $APPIMAGE_PATH"
             exit 1

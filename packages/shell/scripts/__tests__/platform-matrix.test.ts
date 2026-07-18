@@ -218,6 +218,12 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 			"utf8",
 		);
 		expect(workflow).toContain('test -x "$APPIMAGE_PATH"');
+		expect(workflow).toContain(
+			"Expected exactly one Linux AppImage, found ${#APPIMAGE_PATHS[@]}",
+		);
+		expect(workflow).toContain(
+			"Expected exactly one macOS app bundle, found ${#APP_PATHS[@]}",
+		);
 		expect(workflow).not.toMatch(
 			/- name: Upload installer outputs\r?\n\s+if: always\(\)/,
 		);
