@@ -20,6 +20,7 @@ fn main() {
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 fn setup_vosk() {
+    use sha2::{Digest, Sha256};
     use std::path::PathBuf;
 
     let vosk_version = "0.3.45";
@@ -38,9 +39,29 @@ fn setup_vosk() {
         "libvosk.dylib",
     );
     #[cfg(target_os = "windows")]
-    let (archive_name, lib_name) = (
-        format!("vosk-win64-{vosk_version}.zip"),
-        "libvosk.dll",
+    let (archive_name, lib_name) = (format!("vosk-win64-{vosk_version}.zip"), "libvosk.dll");
+    #[cfg(target_os = "linux")]
+    let platform_key = "linux";
+    #[cfg(target_os = "windows")]
+    let platform_key = "win32";
+
+    let matrix_path = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("../../platform-matrix.json");
+    println!("cargo:rerun-if-changed={}", matrix_path.display());
+    let matrix: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&matrix_path).expect("Failed to read platform-matrix.json"),
+    )
+    .expect("Failed to parse platform-matrix.json");
+    let vosk_contract = &matrix["os"][platform_key]["vosk"]["archive"];
+    let contracted_archive = vosk_contract["file"]
+        .as_str()
+        .expect("Missing Vosk archive file in platform matrix");
+    let expected_sha256 = vosk_contract["sha256"]
+        .as_str()
+        .expect("Missing Vosk archive SHA256 in platform matrix");
+    assert_eq!(
+        contracted_archive, archive_name,
+        "Vosk archive filename disagrees with platform matrix"
     );
 
     let lib_path = vosk_dir.join(lib_name);
@@ -65,6 +86,17 @@ fn setup_vosk() {
 
         if !status.success() {
             panic!("Failed to download libvosk from {url}");
+        }
+
+        let actual_sha256 = format!(
+            "{:x}",
+            Sha256::digest(
+                std::fs::read(&archive_path).expect("Failed to read downloaded Vosk archive")
+            )
+        );
+        if actual_sha256 != expected_sha256 {
+            let _ = std::fs::remove_file(&archive_path);
+            panic!("Vosk archive SHA256 mismatch: expected {expected_sha256}, got {actual_sha256}");
         }
 
         // Extract library files from the zip
@@ -122,11 +154,20 @@ fn setup_vosk() {
             std::fs::write(&def_path, "LIBRARY libvosk\nEXPORTS\n    vosk_model_new\n    vosk_model_free\n    vosk_model_find_word\n    vosk_recognizer_new\n    vosk_recognizer_free\n    vosk_recognizer_accept_waveform\n    vosk_recognizer_accept_waveform_s\n    vosk_recognizer_result\n    vosk_recognizer_final_result\n    vosk_recognizer_partial_result\n    vosk_recognizer_set_spk_model\n    vosk_set_log_level\n    vosk_gpu_init\n    vosk_gpu_thread_init\n    vosk_recognizer_set_max_alternatives\n    vosk_recognizer_set_words\n    vosk_recognizer_set_partial_words\n    vosk_recognizer_set_nlsml\n    vosk_recognizer_reset\n    vosk_recognizer_new_spk\n    vosk_recognizer_new_grm\n    vosk_spk_model_new\n    vosk_spk_model_free\n    vosk_batch_model_new\n    vosk_batch_model_free\n    vosk_batch_model_wait\n    vosk_batch_recognizer_new\n    vosk_batch_recognizer_free\n    vosk_batch_recognizer_accept_waveform\n    vosk_batch_recognizer_finish_stream\n    vosk_batch_recognizer_front_result\n    vosk_batch_recognizer_pop\n    vosk_batch_recognizer_get_pending_chunks\n    vosk_batch_recognizer_set_nlsml\n")
                 .expect("Failed to write libvosk.def");
             let status = std::process::Command::new("lib.exe")
-                .args([&format!("/DEF:{}", def_path.display()), &format!("/OUT:{}", lib_file.display()), "/MACHINE:X64"])
+                .args([
+                    &format!("/DEF:{}", def_path.display()),
+                    &format!("/OUT:{}", lib_file.display()),
+                    "/MACHINE:X64",
+                ])
                 .status();
             if !status.map(|s| s.success()).unwrap_or(false) {
                 let _ = std::process::Command::new("dlltool")
-                    .args(["-d", &def_path.display().to_string(), "-l", &lib_file.display().to_string()])
+                    .args([
+                        "-d",
+                        &def_path.display().to_string(),
+                        "-l",
+                        &lib_file.display().to_string(),
+                    ])
                     .status();
             }
         }

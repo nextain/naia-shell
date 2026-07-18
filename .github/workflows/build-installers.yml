@@ -42,7 +42,7 @@ jobs:
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
-          version: 10
+          version: 10.34.5
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -131,8 +131,38 @@ jobs:
           if (Test-Path -LiteralPath (Join-Path $steamDepot "uninstall.exe")) {
             throw "Steam portable depot must not contain the NSIS uninstaller"
           }
-          node packages/shell/scripts/verify-installed-smoke.mjs `
-            --binary $binary --resource-dir $steamDepot --timeout-ms 120000
+
+          $manifest = Join-Path $steamDepot "steam-files.sha256"
+          Get-ChildItem -LiteralPath $steamDepot -Recurse -File |
+            Where-Object FullName -ne $manifest |
+            Sort-Object FullName |
+            ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath($steamDepot, $_.FullName).Replace("\", "/")
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $relative"
+            } | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
+          if (-not (Test-Path -LiteralPath $manifest -PathType Leaf) -or
+              (Get-Item -LiteralPath $manifest).Length -eq 0) {
+            throw "Steam portable depot manifest is missing or empty"
+          }
+
+          # Remove the installer-created default location before the portable proof.
+          # This prevents the copied executable from passing by reading NSIS machine state.
+          $quarantine = Join-Path $env:RUNNER_TEMP "naia-nsis-install"
+          Remove-Item -LiteralPath $quarantine -Recurse -Force -ErrorAction SilentlyContinue
+          Move-Item -LiteralPath $resourceDir -Destination $quarantine
+          if (Test-Path -LiteralPath $resourceDir) {
+            throw "NSIS install location still exists before Steam portable smoke"
+          }
+          try {
+            node packages/shell/scripts/verify-installed-smoke.mjs `
+              --binary $binary --resource-dir $steamDepot --timeout-ms 120000
+            if ($LASTEXITCODE -ne 0) {
+              throw "Steam portable smoke failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Remove-Item -LiteralPath $quarantine -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Install deb and prove bundled Node at runtime
         if: matrix.platform == 'linux'

@@ -37,3 +37,5 @@ whisper-rs = { git = "https://codeberg.org/tazz4843/whisper-rs.git", optional = 
 [build-dependencies]
 tauri-plugin = { version = "2.5.4", features = ["build"] }
 zip = "6.0.0"
+serde_json = "1.0"
+sha2 = "0.10"
