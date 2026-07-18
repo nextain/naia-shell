@@ -273,71 +273,40 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 		}
 	});
 
-	it("provisionNode cache hit 경로가 Unix 실행권한 복구 helper를 실제 호출", async () => {
+	it("provisionNode 는 바이너리와 인접 마커의 동시 변조도 신뢰하지 않는다", async () => {
 		const resourcesDir = mkdtempSync(resolve(tmpdir(), "naia-node-cache-"));
 		const archive = selectNodeArchive(matrix, "linux", "x64");
-		const node = Buffer.from("cached-node");
+		const node = Buffer.from("attacker-controlled-node");
 		const binarySha = createHash("sha256").update(node).digest("hex");
 		const calls: unknown[][] = [];
+		let fetches = 0;
 		try {
 			writeFileSync(resolve(resourcesDir, "node"), node);
 			writeFileSync(
 				resolve(resourcesDir, ".node-runtime"),
 				`${archive.version}-${archive.slug}-${archive.sha256}\n${binarySha}\n`,
 			);
-			await provisionNode(matrix, "linux", "x64", {
-				resourcesDir,
-				fetchImpl: async () => {
-					throw new Error("cache hit must not download");
-				},
-				ensureExecutableImpl: (...args: unknown[]) => calls.push(args),
-			});
-			expect(calls).toEqual([[resolve(resourcesDir, "node"), "linux"]]);
+			await expect(
+				provisionNode(matrix, "linux", "x64", {
+					resourcesDir,
+					fetchImpl: async () => {
+						fetches += 1;
+						return {
+							ok: true,
+							arrayBuffer: async () =>
+								Uint8Array.from([0xde, 0xad, 0xbe, 0xef]).buffer,
+						};
+					},
+					ensureExecutableImpl: (...args: unknown[]) => calls.push(args),
+				}),
+			).rejects.toThrow(/SHA256 불일치/);
+			expect(fetches).toBe(1);
+			expect(calls).toEqual([]);
+			expect(existsSync(resolve(resourcesDir, ".node-runtime"))).toBe(false);
 		} finally {
 			rmSync(resourcesDir, { recursive: true, force: true });
 		}
 	});
-
-	it.each([
-		["stale archive stamp", "stale-stamp", false],
-		["cached binary corruption", "current", true],
-	])(
-		"%s이면 cache를 거부하고 다시 다운로드",
-		async (_name, stampKind, corrupt) => {
-			const resourcesDir = mkdtempSync(resolve(tmpdir(), "naia-node-stale-"));
-			const archive = selectNodeArchive(matrix, "linux", "x64");
-			const original = Buffer.from("original-node");
-			const cachedSha = createHash("sha256").update(original).digest("hex");
-			const currentStamp = `${archive.version}-${archive.slug}-${archive.sha256}`;
-			let fetches = 0;
-			try {
-				writeFileSync(
-					resolve(resourcesDir, "node"),
-					corrupt ? "corrupted-node" : original,
-				);
-				writeFileSync(
-					resolve(resourcesDir, ".node-runtime"),
-					`${stampKind === "current" ? currentStamp : stampKind}\n${cachedSha}\n`,
-				);
-				await expect(
-					provisionNode(matrix, "linux", "x64", {
-						resourcesDir,
-						fetchImpl: async () => {
-							fetches += 1;
-							return {
-								ok: true,
-								arrayBuffer: async () =>
-									Uint8Array.from([0xde, 0xad, 0xbe, 0xef]).buffer,
-							};
-						},
-					}),
-				).rejects.toThrow(/SHA256 불일치/);
-				expect(fetches).toBe(1);
-			} finally {
-				rmSync(resourcesDir, { recursive: true, force: true });
-			}
-		},
-	);
 
 	it("provisionNode 다운로드 경로가 shell:false 추출 helper를 실제 호출", async () => {
 		const resourcesDir = mkdtempSync(resolve(tmpdir(), "naia-node-extract-"));
@@ -348,6 +317,8 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 			.digest("hex");
 		const calls: unknown[][] = [];
 		try {
+			writeFileSync(resolve(resourcesDir, "node.exe"), "poisoned-cache");
+			writeFileSync(resolve(resourcesDir, ".node-runtime"), "forged-marker");
 			await provisionNode(fixtureMatrix, "win32", "x64", {
 				resourcesDir,
 				fetchImpl: async () => ({
@@ -372,12 +343,16 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 			expect(calls).toHaveLength(1);
 			expect(calls[0][0]).toMatch(/[\\/]System32[\\/]tar\.exe$/i);
 			expect(calls[0][1]).toMatch(/node-v.*-win-x64\.zip$/);
+			expect(readFileSync(resolve(resourcesDir, "node.exe"), "utf8")).toBe(
+				"node-binary",
+			);
+			expect(existsSync(resolve(resourcesDir, ".node-runtime"))).toBe(false);
 		} finally {
 			rmSync(resourcesDir, { recursive: true, force: true });
 		}
 	});
 
-	it("Unix 캐시 hit 도 0o755 실행권한 복구, Windows 는 chmod 생략", () => {
+	it("Unix Node 실행권한은 0o755로 복구하고 Windows 는 chmod를 생략", () => {
 		const calls: unknown[][] = [];
 		const fakeChmod = (...args: unknown[]) => calls.push(args);
 		ensureNodeExecutable("/cache/node", "linux", fakeChmod);

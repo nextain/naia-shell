@@ -239,28 +239,11 @@ export async function provisionNode(matrix, platform, arch, dependencies = {}) {
 	const row = matrix.os[platform];
 	const target = resolve(resourcesDir, row.nodeBinary);
 	const marker = resolve(resourcesDir, ".node-runtime");
-	// stamp 에 아카이브 SHA 포함 — 매트릭스의 SHA 만 교정돼도 재프로비저닝(P1-R1: 무검증 재사용 차단)
-	const stamp = `${archive.version}-${archive.slug}-${archive.sha256}`;
-
-	if (existsSync(target) && existsSync(marker)) {
-		const [prevStamp, prevBinSha] = readFileSync(marker, "utf8")
-			.trim()
-			.split("\n");
-		// 마커 2행 = 복사된 바이너리 실물 해시 — 실물 훼손/교체도 재프로비저닝으로 자기 치유
-		if (
-			prevStamp === stamp &&
-			prevBinSha &&
-			sha256Of(readFileSync(target)) === prevBinSha
-		) {
-			ensureExecutableImpl(target, platform);
-			console.log(
-				`[stage-runtime] ① node ${archive.version}-${archive.slug} 이미 프로비저닝됨(실물 해시 일치) — skip`,
-			);
-			return;
-		}
-	}
 
 	mkdirSync(resourcesDir, { recursive: true });
+	// 캐시 옆 마커는 독립된 신뢰 근거가 아니므로 재사용하지 않는다. 설치자 빌드마다
+	// 매트릭스에 고정된 아카이브 SHA를 다시 검증하고 그 아카이브에서 재추출한다.
+	rmSync(marker, { force: true });
 	const tmp = resolve(resourcesDir, ".tmp-node");
 	rmSync(tmp, { recursive: true, force: true });
 	mkdirSync(tmp, { recursive: true });
@@ -303,7 +286,6 @@ export async function provisionNode(matrix, platform, arch, dependencies = {}) {
 		}
 		copyFileSync(binInArchive, target);
 		ensureExecutableImpl(target, platform);
-		writeFileSync(marker, `${stamp}\n${sha256Of(readFileSync(target))}\n`);
 		console.log(
 			`[stage-runtime] ① node ${archive.version}-${archive.slug} → ${target}`,
 		);
