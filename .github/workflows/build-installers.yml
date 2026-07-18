@@ -20,7 +20,7 @@ jobs:
           - os: macos-latest
             platform: darwin
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +69,15 @@ jobs:
       - name: Record artifact sizes for threshold calibration
         shell: bash
         run: |
-          find packages/shell/src-tauri/target/release/bundle -type f \
+          find packages/shell/src-tauri/target/release/bundle -type f \( \
+            -path '*/nsis/*-setup.exe' -o \
+            -path '*/msi/*.msi' -o \
+            -path '*/deb/*.deb' -o \
+            -path '*/rpm/*.rpm' -o \
+            -path '*/appimage/*.AppImage' -o \
+            -path '*/macos/*.app/Contents/MacOS/*' -o \
+            -path '*/dmg/*.dmg' \
+          \) \
             -exec sh -c 'wc -c < "$1" | tr -d "\n"; printf "  %s\n" "$1"' _ {} \; \
             | tee packages/shell/src-tauri/target/release/bundle/artifact-sizes.txt
 
@@ -108,6 +116,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: naia-shell-${{ matrix.platform }}-${{ github.sha }}
-          path: packages/shell/src-tauri/target/release/bundle/
+          path: |
+            packages/shell/src-tauri/target/release/bundle/nsis/*-setup.exe
+            packages/shell/src-tauri/target/release/bundle/msi/*.msi
+            packages/shell/src-tauri/target/release/bundle/deb/*.deb
+            packages/shell/src-tauri/target/release/bundle/rpm/*.rpm
+            packages/shell/src-tauri/target/release/bundle/appimage/*.AppImage
+            packages/shell/src-tauri/target/release/bundle/macos/*.app/Contents/MacOS/*
+            packages/shell/src-tauri/target/release/bundle/dmg/*.dmg
+            packages/shell/src-tauri/target/release/bundle/artifact-sizes.txt
+            packages/shell/src-tauri/target/release/bundle/artifacts.sha256
           if-no-files-found: error
           retention-days: 14
