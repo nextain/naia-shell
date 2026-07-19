@@ -6,7 +6,10 @@ import type { AgentResponseChunk, EnvironmentSegment, ProviderConfig } from "./t
 // ── new-naia 이식 코어 결선 (UC1 텍스트 대화) ──
 // VITE_NAIA_NEW_CORE=1 일 때 sendChatMessage/cancelChat 가 새 core(hexagonal os core)를 경유.
 // 미설정 시 기존 경로 그대로(voice/tts/gateway 등 보존) — 비파괴·지속가능.
-import { makeShellChatService } from "@nextain/naia-os-core/shell-compat";
+import {
+	makeShellChatService,
+	type ShellSendOptions,
+} from "@nextain/naia-os-core/shell-compat";
 
 // 빌드타임 env(prod/dev) OR 런타임 window 플래그(E2E 가 addInitScript 로 주입). ⚠️ *호출 시점*에
 // 평가(함수) — 모듈-const 스냅샷은 import 후 주입된 플래그를 놓침(codex 2-clean 지적). 둘 다 없으면 기존 경로.
@@ -64,6 +67,7 @@ async function safeSendToAgent(
 
 interface SendChatOptions {
 	message: string;
+	attachments?: ShellSendOptions["attachments"];
 	provider: ProviderConfig;
 	history: { role: "user" | "assistant"; content: string }[];
 	onChunk: (chunk: AgentResponseChunk) => void;
@@ -85,6 +89,10 @@ interface SendChatOptions {
 	enableThinking?: boolean;
 	gatewayUrl?: string;
 	disabledSkills?: string[];
+	channel?: ShellSendOptions["channel"];
+	grounding?: ShellSendOptions["grounding"];
+	providerSession?: ShellSendOptions["providerSession"];
+	processing?: ShellSendOptions["processing"];
 	routeViaGateway?: boolean;
 	activityResume?: SpeechActivityResume;
 	// Credentials (provider.apiKey, ttsApiKey, gatewayToken) and webhook
@@ -211,6 +219,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 	if (isNewCore()) {
 		return coreChat().sendChatMessage({
 			message: opts.message,
+			...(opts.attachments !== undefined ? { attachments: opts.attachments } : {}),
 			provider: opts.provider,
 			history: opts.history,
 			onChunk: opts.onChunk as (c: Record<string, unknown>) => void,
@@ -222,11 +231,16 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
 			...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
 			...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
+			...(opts.channel !== undefined ? { channel: opts.channel } : {}),
+			...(opts.grounding !== undefined ? { grounding: opts.grounding } : {}),
+			...(opts.providerSession !== undefined ? { providerSession: opts.providerSession } : {}),
+			...(opts.processing !== undefined ? { processing: opts.processing } : {}),
 			...(opts.activityResume !== undefined ? { activityResume: opts.activityResume } : {}),
 		});
 	}
 	const {
 		message,
+		attachments,
 		provider,
 		history,
 		onChunk,
@@ -241,6 +255,10 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		enableThinking,
 		gatewayUrl,
 		disabledSkills,
+		channel,
+		grounding,
+		providerSession,
+		processing,
 		routeViaGateway,
 		activityResume,
 	} = opts;
@@ -253,7 +271,11 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		requestId,
 		...(sessionId && { sessionId }),
 		provider: providerSafe,
-		messages: [...history, { role: "user", content: message }],
+		messages: [...history, {
+			role: "user",
+			content: message,
+			...(attachments !== undefined ? { attachments } : {}),
+		}],
 		...(ttsVoice && { ttsVoice }),
 		...(ttsEngine && { ttsEngine }),
 		...(ttsProvider && { ttsProvider }),
@@ -263,6 +285,10 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		...(enableThinking != null && { enableThinking }),
 		...(gatewayUrl && { gatewayUrl }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
+		...(channel !== undefined && { channel }),
+		...(grounding !== undefined && { grounding }),
+		...(providerSession !== undefined && { providerSession }),
+		...(processing !== undefined && { processing }),
 		...(routeViaGateway != null && { routeViaGateway }),
 		...(activityResume && { activityResume }),
 		// Credentials + webhook URLs intentionally NOT included. They flow via

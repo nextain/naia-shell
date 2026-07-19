@@ -87,11 +87,11 @@ describe("wire variant 분류 SoT (router·관측 스니펫 공유)", () => {
     expect(classifyVariant("config_update")).toBe("nonchat-known");
     expect(classifyVariant("bgm_youtube_play")).toBe("nonchat-known");
   });
-  it("variant 집합 = 13 chat-turn + 18 nonchat-known(=31), 중복 없음", () => {
-    expect(CHAT_TURN_VARIANTS.length).toBe(13); // +compacted(FR-COMPACT) +panel_tool_call(UC-PANEL FR-PANEL-2: requestId 보유 비-terminal chat-turn → ChatPanel 위임 실행)
+  it("variant 집합 = 17 chat-turn + 18 nonchat-known(=35), 중복 없음", () => {
+    expect(CHAT_TURN_VARIANTS.length).toBe(17); // +compacted +panel_tool_call + UC-WIRE-V1 4종
     expect(NONCHAT_KNOWN_VARIANTS.length).toBe(18); // panel_tool_call 을 chat-turn 으로 이동(no-op pending drop 제거)
     const all = new Set([...CHAT_TURN_VARIANTS, ...NONCHAT_KNOWN_VARIANTS]);
-    expect(all.size).toBe(31); // 겹침 없음(13 chat + 18 nonchat)
+    expect(all.size).toBe(35); // 겹침 없음(17 chat + 18 nonchat)
   });
   it("outboundCommandOf: cancel 만 별 command(cancel_stream), 나머지 send_to_agent_command", () => {
     expect(outboundCommandOf("cancel")).toBe("cancel_stream");

@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 # naia_agent.proto → Rust gRPC client 코드젠(정본 transport=gRPC). protoc 는 vendored(시스템 설치 불요).
 tonic-build = "0.12"
 protoc-bin-vendored = "3"
+sha2 = "0.10"
 
 [dependencies]
 tauri = { version = "2", features = ["image-png", "unstable", "protocol-asset"] }

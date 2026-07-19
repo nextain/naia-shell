@@ -14,6 +14,7 @@
  *
  * SoT: .agents/progress/naia-os-cascade-talking-avatar-2026-07-01.md
  */
+import { Logger } from "../logger";
 
 /** TalkingKiosk 기본 코덱(H.264 Constrained Baseline + AAC). 알파가 필요하면 webm 코덱으로 override. */
 export const DEFAULT_CASCADE_CODEC =
@@ -572,13 +573,12 @@ export class CascadeAvatarRenderer {
 			} else {
 				await this.renderMseStream(res, back, my, muted, signalPlaybackReady);
 			}
-		} catch (e) {
-			if (my === this.gen) {
-				console.warn(
-					"[cascade-avatar] speak 실패 — 이 발화 드롭:",
-					e instanceof Error ? e.message : e,
-				);
-			}
+			} catch (e) {
+				if (my === this.gen) {
+					Logger.warn("cascade-avatar", "speak 실패 — 이 발화 드롭", {
+						error: e instanceof Error ? e.message : String(e),
+					});
+				}
 		} finally {
 			// Never swallow speech when rendering fails or returns an empty stream.
 			signalPlaybackReady();

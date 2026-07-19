@@ -19,11 +19,45 @@ export interface ProviderSelect {
 /** secret 키 — 도메인이 보유하되 송신 채널만 creds_update 로 분리(F0 stripForAgent 정합). */
 export const SECRET_PROVIDER_KEYS = ["apiKey", "naiaKey"] as const;
 
+/** 검증된 로컬 자원 핸들만 운반한다. raw 경로·URL·base64·provider file id는 금지. */
+export interface AttachmentRef {
+  readonly id: string;
+  readonly kind: "image";
+  readonly mimeType: "image/png" | "image/jpeg" | "image/webp";
+  readonly sizeBytes: number;
+  readonly localRef: string;
+  readonly name?: string;
+}
+
 export interface ChatMessage {
   readonly role: "user" | "assistant" | "tool";
   readonly content: string;
   readonly toolCallId?: string;
   readonly name?: string;
+  readonly attachments?: readonly AttachmentRef[];
+}
+
+export type ChannelContext =
+  | { readonly kind: "shell" }
+  | {
+      readonly kind: "discord";
+      readonly bindingId: string;
+      readonly guildId: string;
+      readonly channelId: string;
+      readonly userId: string;
+    };
+
+export interface GroundingRequest {
+  readonly policy: "off" | "available" | "required";
+  readonly knowledgeScope: string;
+}
+
+export type ProviderSessionRequest =
+  | { readonly mode: "new" }
+  | { readonly mode: "resume"; readonly providerSessionRef: string };
+
+export interface ProcessingRequest {
+  readonly processingProfileRef: string;
 }
 
 /**
@@ -57,6 +91,10 @@ export interface ChatRequest {
   /** ⚠️ **top-level**(agent 가 req.enableThinking 를 읽어 providerConfig 에 주입 — provider 안에만 두면 무효화). */
   readonly enableThinking?: boolean;
   readonly disabledSkills?: readonly string[];
+  readonly channel?: ChannelContext;
+  readonly grounding?: GroundingRequest;
+  readonly providerSession?: ProviderSessionRequest;
+  readonly processing?: ProcessingRequest;
   readonly activityResume?: {
     readonly activityId: string;
     readonly profileGeneration: number;
@@ -81,8 +119,55 @@ export type ChatChunk =
   | { readonly kind: "tokenWarning"; readonly raw: unknown }
   | { readonly kind: "compacted"; readonly droppedCount: number } // UC-compaction: agent 가 예산 압박 시 head 요약 발생 알림(UI 표시용)
   | { readonly kind: "panelToolCall"; readonly toolCallId: string; readonly toolName: string; readonly args: unknown } // UC-PANEL FR-PANEL-2: 환경 도구 위임(requestId 보유, 비-terminal chat-turn 이벤트 — ChatPanel 이 실행 후 panel_tool_result 회신)
+  | {
+      readonly kind: "grounding";
+      readonly status: "grounded" | "no_evidence" | "uncompiled" | "unavailable";
+      readonly sources: readonly { readonly title: string; readonly sourceUris: readonly string[] }[];
+    }
+  | { readonly kind: "artifact"; readonly artifact: AttachmentRef }
+  | {
+      readonly kind: "providerSession";
+      readonly sessionId: string;
+      readonly providerSessionRef: string;
+      readonly state: "started" | "resumed" | "closed";
+    }
+  | {
+      readonly kind: "processingDisclosure";
+      readonly workload: "main_llm" | "sub_llm" | "memory_llm" | "embedding" | "network_tool";
+      readonly destination: "local_device" | "private_managed" | "external_cloud";
+      readonly decision: "allowed" | "blocked" | "confirmation_required";
+      readonly processingProfileRef: string;
+      readonly provider?: string;
+      readonly model?: string;
+    }
   | { readonly kind: "finish" }
-  | { readonly kind: "error"; readonly message: string };
+  | { readonly kind: "error"; readonly message: string; readonly code?: WireErrorCode };
+
+export type WireErrorCode =
+  | "PROVIDER_NOT_INSTALLED"
+  | "PROVIDER_LOGIN_REQUIRED"
+  | "PROVIDER_AUTH_EXPIRED"
+  | "PROVIDER_NETWORK"
+  | "DISCORD_TOKEN_MISSING"
+  | "DISCORD_INTENTS_MISSING"
+  | "DISCORD_NOT_INSTALLED"
+  | "DISCORD_PERMISSION_DENIED"
+  | "DISCORD_RATE_LIMITED"
+  | "ATTACHMENT_UNSUPPORTED_TYPE"
+  | "ATTACHMENT_TOO_LARGE"
+  | "ATTACHMENT_INVALID_REF"
+  | "KNOWLEDGE_UNCOMPILED"
+  | "KNOWLEDGE_UNAVAILABLE"
+  | "WIRE_INVALID_ARGUMENT"
+  | "WIRE_UNSUPPORTED_ENUM"
+  | "WIRE_SCOPE_FORBIDDEN"
+  | "PROVIDER_SESSION_MISMATCH"
+  | "PROVIDER_SESSION_EXPIRED"
+  | "PROVIDER_SESSION_CLOSED"
+  | "PROCESSING_PROFILE_REQUIRED"
+  | "PROCESSING_DESTINATION_UNKNOWN"
+  | "EXTERNAL_PROCESSING_FORBIDDEN"
+  | "EXTERNAL_PROCESSING_CONFIRMATION_REQUIRED";
 
 /** chat-turn chunk 의 소유권(라우팅 키). */
 export interface ChunkOwnership {
@@ -154,6 +239,9 @@ export const CHAT_TURN_VARIANTS = [
   "compacted",
   // UC-PANEL FR-PANEL-2: 환경 도구 위임(requestId 보유, 비-terminal — chat onChunk 로 흘러 ChatPanel 이 실행→panel_tool_result 회신).
   "panel_tool_call",
+  // UC-WIRE-V1: turn-bound evidence, generated artifact, provider-session handle.
+  "grounding", "artifact", "provider_session",
+  "processing_disclosure",
 ] as const;
 export const NONCHAT_KNOWN_VARIANTS = [
   "audio", "object", "panel_control", "app_install_result",

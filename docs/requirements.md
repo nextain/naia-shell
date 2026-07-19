@@ -336,6 +336,24 @@ session subscribe/start/terminal/disconnect와 requestId, 시크릿 없음).
 
 > 각 FR/NFR = P04(통합 테스트) 검증 대상. FR-F0~F3 착수 = Old-Baseline 측정(로컬·외부키X) 후 계약·테스트 구체화.
 
+## 기능 요구사항 — UC-WIRE-V1 공통 채팅 계약 (#384 / naia-agent #89)
+
+> 상태: Implemented. 계약 정본은 paired naia-agent의
+> `docs/progress/99.dev-comm/UC-WIRE-V1-contract-2026-07-19.md`이며,
+> Agent commit `364278f`와 이 Shell commit의 paired 검증 결과를 루트
+> `[CONTRACT FROZEN v1]` 표식에 기록한다.
+
+| ID | 셸 요구사항 | 검증 | 상태 |
+|---|---|---|:---:|
+| **FR-WIRE-SHELL-01** | 기존 텍스트 요청 형상을 유지하면서 attachment, channel, grounding, provider session, processing profile을 선택적으로 Agent 호출 경계까지 전달한다. | `src/test/uc-wire-v1.contract.test.ts`, `packages/shell/src/lib/__tests__/chat-service.test.ts` | Implemented |
+| **FR-WIRE-SHELL-02** | grounding, image artifact, provider-session lifecycle, processing disclosure와 안정 오류 code를 손실 없이 UI 소비 형상으로 변환한다. | `src/test/uc-wire-v1.contract.test.ts`, Rust `wire_v1_*` tests | Implemented |
+| **FR-WIRE-SHELL-03** | 표시 문구는 wire가 아니라 셸 i18n이 소유하며, 안정 오류 code 24종은 누락 없이 안전한 사용자 문구로 매핑한다. | `packages/shell/src/lib/__tests__/wire-errors.test.ts`, `chat-service.test.ts` | Implemented |
+| **FR-WIRE-SHELL-04** | Rust proto 소비는 명시한 paired Agent proto만 사용하고, 경로 누락·unknown/UNSPECIFIED enum·오래된 proto를 fail-closed한다. paired commit, proto SHA-256, dirty 상태를 빌드 증거에 남긴다. | `src/test/uc-wire-v1-paired-proto.contract.test.ts`, Rust `wire_v1_*` tests | Implemented |
+
+NFR: additive backward compatibility, secret/raw endpoint/raw evidence zero-transit,
+bounded input/output, paired-proto reproducibility, unknown enum fail-closed,
+stable-code-only wire, localized presentation.
+
 ## Steam Windows launch-readiness requirements (#314)
 
 > **FR-INSTALL.1 산출물 정정(규범적, 2026-07-19):** Linux AppImage와 macOS app은

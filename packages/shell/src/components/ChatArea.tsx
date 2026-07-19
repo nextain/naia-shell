@@ -70,6 +70,7 @@ import {
 	resetGatewaySession,
 } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
+import { wireErrorMessage } from "../lib/wire-errors";
 import {
 	getDefaultLlmModel,
 	getLlmModel,
@@ -1601,7 +1602,7 @@ export function ChatArea({
 						sendSentenceToTts(remaining);
 					}
 				}
-				store.appendStreamChunk(`\n[${t("chat.error")}] ${chunk.message}`);
+				store.appendStreamChunk(`\n[${t("chat.error")}] ${wireErrorMessage(chunk.code, chunk.message)}`);
 				store.finishStreaming();
 				setEmotion("neutral");
 				completeCurrentRequest(chunk.requestId);

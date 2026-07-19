@@ -31,6 +31,10 @@ export function toAgentOutbound(out: DomainOutbound): AgentOutbound {
         ...(out.enableTools !== undefined ? { enableTools: out.enableTools } : {}),
         ...(out.enableThinking !== undefined ? { enableThinking: out.enableThinking } : {}),
         ...(out.disabledSkills !== undefined ? { disabledSkills: out.disabledSkills } : {}),
+        ...(out.channel !== undefined ? { channel: out.channel } : {}),
+        ...(out.grounding !== undefined ? { grounding: out.grounding } : {}),
+        ...(out.providerSession !== undefined ? { providerSession: out.providerSession } : {}),
+        ...(out.processing !== undefined ? { processing: out.processing } : {}),
         ...(out.activityResume !== undefined ? { activityResume: out.activityResume } : {}),
       };
     case "cancel":

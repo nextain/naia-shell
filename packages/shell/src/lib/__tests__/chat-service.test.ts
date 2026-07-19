@@ -165,6 +165,54 @@ describe("chat-service", () => {
 		expect(parsed.enableTools).toBe(false);
 	});
 
+	it("UC-WIRE-V1 live API preserves image, channel, grounding, and provider session", async () => {
+		const { sendChatMessage } = await import("../chat-service");
+		await sendChatMessage({
+			message: "화면 설명",
+			attachments: [{ id: "a1", kind: "image", mimeType: "image/png", sizeBytes: 10, localRef: "img_1" }],
+			provider: { provider: "codex", model: "main", apiKey: "" },
+			history: [],
+			onChunk: vi.fn(),
+			requestId: "wire-r1",
+			sessionId: "s1",
+			channel: { kind: "shell" },
+			grounding: { policy: "required", knowledgeScope: "workshop" },
+			providerSession: { mode: "resume", providerSessionRef: "opaque-ref" },
+			processing: { processingProfileRef: "profile-local-cloud-001" },
+		});
+		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
+		expect(parsed.messages[0].attachments[0].localRef).toBe("img_1");
+		expect(parsed.channel).toEqual({ kind: "shell" });
+		expect(parsed.grounding).toEqual({ policy: "required", knowledgeScope: "workshop" });
+		expect(parsed.providerSession).toEqual({ mode: "resume", providerSessionRef: "opaque-ref" });
+		expect(parsed.processing).toEqual({ processingProfileRef: "profile-local-cloud-001" });
+	});
+
+	it("UC-WIRE-V1 new-core public API preserves the same rich fields", async () => {
+		vi.stubEnv("VITE_NAIA_NEW_CORE", "1");
+		const { sendChatMessage } = await import("../chat-service");
+		await sendChatMessage({
+			message: "화면 설명",
+			attachments: [{ id: "a1", kind: "image", mimeType: "image/png", sizeBytes: 10, localRef: "img_1" }],
+			provider: { provider: "codex", model: "main", apiKey: "" },
+			history: [],
+			onChunk: vi.fn(),
+			requestId: "wire-new-core",
+			sessionId: "s1",
+			channel: { kind: "shell" },
+			grounding: { policy: "required", knowledgeScope: "workshop" },
+			providerSession: { mode: "new" },
+			processing: { processingProfileRef: "profile-local-cloud-001" },
+		});
+		const call = mockInvoke.mock.calls.find(([command]) => command === "send_to_agent_command");
+		const parsed = JSON.parse(call?.[1].message);
+		expect(parsed.messages[0].attachments[0].localRef).toBe("img_1");
+		expect(parsed.channel).toEqual({ kind: "shell" });
+		expect(parsed.grounding).toEqual({ policy: "required", knowledgeScope: "workshop" });
+		expect(parsed.providerSession).toEqual({ mode: "new" });
+		expect(parsed.processing).toEqual({ processingProfileRef: "profile-local-cloud-001" });
+	});
+
 	it("includes ttsEngine in request when provided", async () => {
 		const { sendChatMessage } = await import("../chat-service");
 

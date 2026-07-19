@@ -37,9 +37,89 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
         Some(Event::LogEntry(l)) => json!({"type":"log_entry","requestId":rid,"level":l.level,"message":l.message}),
         Some(Event::TokenWarning(t)) => json!({"type":"token_warning","requestId":rid,"raw":parse(&t.raw_json)}),
         Some(Event::Finish(_)) => json!({"type":"finish","requestId":rid}),
-        Some(Event::Error(e)) => json!({"type":"error","requestId":rid,"message":e.message}),
+        Some(Event::Error(e)) => {
+            let mut value = json!({"type":"error","requestId":rid,"message":e.message});
+            if let Some(raw) = e.code {
+                match pb::WireErrorCode::try_from(raw) {
+                    Ok(code) if code != pb::WireErrorCode::Unspecified => {
+                        value["code"] = json!(code.as_str_name());
+                    }
+                    _ => {
+                        value["message"] = json!("Unsupported wire enum");
+                        value["code"] = json!("WIRE_UNSUPPORTED_ENUM");
+                    }
+                }
+            }
+            value
+        }
         Some(Event::Compacted(c)) => json!({"type":"compacted","requestId":rid,"droppedCount":c.dropped_count}), // UC-compaction(FR-COMPACT)
         Some(Event::PanelToolCall(t)) => json!({"type":"panel_tool_call","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}), // UC-PANEL FR-PANEL-2: 환경 도구 위임 → 셸 실행
+        Some(Event::Grounding(g)) => {
+            match pb::GroundingStatus::try_from(g.status) {
+                Ok(status) if status != pb::GroundingStatus::Unspecified => {
+                    let sources: Vec<Value> = g.sources.iter()
+                        .map(|s| json!({"title":s.title,"sourceUris":s.source_uris}))
+                        .collect();
+                    json!({
+                        "type":"grounding","requestId":rid,
+                        "status":status.as_str_name().to_ascii_lowercase(),"sources":sources
+                    })
+                }
+                _ => json!({
+                    "type":"error","requestId":rid,"message":"Unsupported wire enum",
+                    "code":"WIRE_UNSUPPORTED_ENUM"
+                }),
+            }
+        }
+        Some(Event::Artifact(a)) => {
+            let artifact = a.artifact.as_ref().map(|x| {
+                let mut value = json!({
+                    "id":x.id, "kind":x.kind, "mimeType":x.mime_type,
+                    "sizeBytes":x.size_bytes, "localRef":x.local_ref,
+                });
+                if let Some(name) = &x.name { value["name"] = json!(name); }
+                value
+            }).unwrap_or(Value::Null);
+            json!({"type":"artifact","requestId":rid,"artifact":artifact})
+        }
+        Some(Event::ProviderSession(s)) => {
+            match pb::ProviderSessionState::try_from(s.state) {
+                Ok(state) if state != pb::ProviderSessionState::Unspecified => json!({
+                    "type":"provider_session","requestId":rid,"sessionId":s.session_id,
+                    "providerSessionRef":s.provider_session_ref,
+                    "state":state.as_str_name().to_ascii_lowercase(),
+                }),
+                _ => json!({
+                    "type":"error","requestId":rid,"message":"Unsupported wire enum",
+                    "code":"WIRE_UNSUPPORTED_ENUM"
+                }),
+            }
+        }
+        Some(Event::ProcessingDisclosure(p)) => {
+            let workload = pb::ProcessingWorkload::try_from(p.workload).ok()
+                .filter(|value| *value != pb::ProcessingWorkload::Unspecified);
+            let destination = pb::ProcessingDestination::try_from(p.destination).ok()
+                .filter(|value| *value != pb::ProcessingDestination::Unspecified);
+            let decision = pb::ProcessingDecision::try_from(p.decision).ok()
+                .filter(|value| *value != pb::ProcessingDecision::Unspecified);
+            if workload.is_none() || destination.is_none() || decision.is_none() {
+                return json!({
+                    "type":"error","requestId":rid,"message":"Unsupported wire enum",
+                    "code":"WIRE_UNSUPPORTED_ENUM"
+                });
+            }
+            let mut value = json!({
+                "type":"processing_disclosure",
+                "requestId":rid,
+                "workload":workload.unwrap().as_str_name().to_ascii_lowercase(),
+                "destination":destination.unwrap().as_str_name().to_ascii_lowercase(),
+                "decision":decision.unwrap().as_str_name().to_ascii_lowercase(),
+                "processingProfileRef":p.processing_profile_ref,
+            });
+            if let Some(provider) = &p.provider { value["provider"] = json!(provider); }
+            if let Some(model) = &p.model { value["model"] = json!(model); }
+            value
+        }
         None => json!({"type":"error","requestId":rid,"message":"empty AgentEvent"}),
     };
     if let Some(activity_id) = &ev.activity_id {
@@ -63,6 +143,15 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
                     role: m.get("role").and_then(|x| x.as_str()).unwrap_or("user").to_string(),
                     content: m.get("content").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                     tool_call_id: m.get("toolCallId").and_then(|x| x.as_str()).map(|x| x.to_string()),
+                    attachments: m.get("attachments").and_then(|x| x.as_array()).map(|items| {
+                        items.iter().map(|a| pb::AttachmentRef {
+                            id: a.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            kind: a.get("kind").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            mime_type: a.get("mimeType").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            size_bytes: a.get("sizeBytes").and_then(|x| x.as_i64()).unwrap_or_default(),
+                            local_ref: a.get("localRef").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        }).collect()
+                    }).unwrap_or_default(),
                 })
                 .collect()
         })
@@ -93,6 +182,43 @@ pub fn json_to_chat_request(v: &Value) -> ChatRequest {
                 yield_generation: r.get("yieldGeneration")?.as_i64()?,
                 resume_token: r.get("resumeToken")?.as_str()?.to_string(),
             })
+        }),
+        channel: v.get("channel").and_then(|c| match c.get("kind").and_then(|x| x.as_str()) {
+            Some("shell") => Some(pb::ChannelContext {
+                channel: Some(pb::channel_context::Channel::Shell(pb::ShellChannel {})),
+            }),
+            Some("discord") => Some(pb::ChannelContext {
+                channel: Some(pb::channel_context::Channel::Discord(pb::DiscordChannel {
+                    binding_id: c.get("bindingId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                    guild_id: c.get("guildId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                    channel_id: c.get("channelId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                    user_id: c.get("userId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                })),
+            }),
+            _ => Some(pb::ChannelContext { channel: None }),
+        }),
+        grounding: v.get("grounding").map(|g| pb::GroundingRequest {
+            policy: match g.get("policy").and_then(|x| x.as_str()) {
+                Some("off") => pb::GroundingPolicy::Off as i32,
+                Some("available") => pb::GroundingPolicy::Available as i32,
+                Some("required") => pb::GroundingPolicy::Required as i32,
+                _ => pb::GroundingPolicy::Unspecified as i32,
+            },
+            knowledge_scope: g.get("knowledgeScope").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        }),
+        provider_session: v.get("providerSession").map(|p| pb::ProviderSessionRequest {
+            mode: match p.get("mode").and_then(|x| x.as_str()) {
+                Some("new") => pb::ProviderSessionMode::New as i32,
+                Some("resume") => pb::ProviderSessionMode::Resume as i32,
+                _ => pb::ProviderSessionMode::Unspecified as i32,
+            },
+            provider_session_ref: p.get("providerSessionRef").and_then(|x| x.as_str()).map(str::to_string),
+        }),
+        processing: v.get("processing").map(|p| pb::ProcessingRequest {
+            processing_profile_ref: p.get("processingProfileRef")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string(),
         }),
         // Keep clean-runner builds source-compatible when naia-agent grows
         // another optional transport field before the shell wires it.
@@ -251,6 +377,201 @@ impl AgentGrpc {
 #[cfg(test)]
 mod transcode_tests {
     use super::*;
+
+    #[test]
+    fn wire_v1_json_to_proto_preserves_nested_input() {
+        let v = serde_json::json!({
+            "requestId": "wire-r1",
+            "sessionId": "local-session-1",
+            "messages": [{
+                "role": "user",
+                "content": "이 화면을 설명해줘",
+                "attachments": [{
+                    "id": "att_01",
+                    "kind": "image",
+                    "mimeType": "image/png",
+                    "sizeBytes": 1024,
+                    "localRef": "img_01"
+                }]
+            }],
+            "channel": { "kind": "shell" },
+            "grounding": {
+                "policy": "available",
+                "knowledgeScope": "workshop"
+            },
+            "providerSession": { "mode": "new" }
+            ,"processing": {
+                "processingProfileRef": "profile-local-cloud-001",
+                "actualDestination": "local_device"
+            }
+        });
+
+        let req = json_to_chat_request(&v);
+        assert_eq!(req.messages[0].attachments.len(), 1);
+        assert_eq!(req.messages[0].attachments[0].local_ref, "img_01");
+        assert!(req.channel.is_some());
+        assert!(req.grounding.is_some());
+        assert!(req.provider_session.is_some());
+        assert_eq!(
+            req.processing.as_ref().unwrap().processing_profile_ref,
+            "profile-local-cloud-001"
+        );
+        assert_eq!(req.grounding.as_ref().unwrap().knowledge_scope, "workshop");
+        assert_eq!(req.provider_session.as_ref().unwrap().mode, pb::ProviderSessionMode::New as i32);
+    }
+
+    #[test]
+    fn wire_v1_proto_events_preserve_structured_output_and_error_code() {
+        let grounding = pb::AgentEvent {
+            request_id: "wire-r1".into(),
+            event: Some(Event::Grounding(pb::GroundingEvent {
+                status: pb::GroundingStatus::Grounded as i32,
+                sources: vec![pb::GroundingSource {
+                    title: "수업 안내".into(),
+                    source_uris: vec!["kb://workshop".into()],
+                }],
+            })),
+            ..Default::default()
+        };
+        let grounding_json = agent_event_to_ui_json(&grounding);
+        assert_eq!(grounding_json["type"], "grounding");
+        assert_eq!(grounding_json["status"], "grounded");
+        assert_eq!(grounding_json["sources"][0]["sourceUris"][0], "kb://workshop");
+
+        let artifact = pb::AgentEvent {
+            request_id: "wire-r1".into(),
+            event: Some(Event::Artifact(pb::ArtifactEvent {
+                artifact: Some(pb::ImageArtifact {
+                    id: "out_01".into(),
+                    kind: "image".into(),
+                    mime_type: "image/png".into(),
+                    size_bytes: 2048,
+                    local_ref: "img_out_01".into(),
+                    name: Some("preview.png".into()),
+                }),
+            })),
+            ..Default::default()
+        };
+        let artifact_json = agent_event_to_ui_json(&artifact);
+        assert_eq!(artifact_json["type"], "artifact");
+        assert_eq!(artifact_json["artifact"]["localRef"], "img_out_01");
+
+        let error = pb::AgentEvent {
+            request_id: "wire-r1".into(),
+            event: Some(Event::Error(pb::ErrorEvent {
+                message: "invalid request".into(),
+                code: Some(pb::WireErrorCode::AttachmentInvalidRef as i32),
+            })),
+            ..Default::default()
+        };
+        let error_json = agent_event_to_ui_json(&error);
+        assert_eq!(error_json["type"], "error");
+        assert_eq!(error_json["code"], "ATTACHMENT_INVALID_REF");
+
+        let provider_session = pb::AgentEvent {
+            request_id: "wire-r1".into(),
+            event: Some(Event::ProviderSession(pb::ProviderSessionEvent {
+                session_id: "local-session-1".into(),
+                provider_session_ref: "opaque-session-ref".into(),
+                state: pb::ProviderSessionState::Started as i32,
+            })),
+            ..Default::default()
+        };
+        let session_json = agent_event_to_ui_json(&provider_session);
+        assert_eq!(session_json["type"], "provider_session");
+        assert_eq!(session_json["sessionId"], "local-session-1");
+        assert_eq!(session_json["providerSessionRef"], "opaque-session-ref");
+        assert_eq!(session_json["state"], "started");
+
+        let processing = pb::AgentEvent {
+            request_id: "wire-r1".into(),
+            event: Some(Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
+                workload: pb::ProcessingWorkload::Embedding as i32,
+                destination: pb::ProcessingDestination::ExternalCloud as i32,
+                decision: pb::ProcessingDecision::Allowed as i32,
+                processing_profile_ref: "profile-local-cloud-001".into(),
+                provider: Some("openai".into()),
+                model: Some("text-embedding-3-small".into()),
+            })),
+            ..Default::default()
+        };
+        let processing_json = agent_event_to_ui_json(&processing);
+        assert_eq!(processing_json["type"], "processing_disclosure");
+        assert_eq!(processing_json["workload"], "embedding");
+        assert_eq!(processing_json["destination"], "external_cloud");
+        assert_eq!(processing_json["decision"], "allowed");
+        assert_eq!(
+            processing_json["processingProfileRef"],
+            "profile-local-cloud-001"
+        );
+    }
+
+    #[test]
+    fn wire_v1_discord_and_resume_context_are_not_flattened_or_renamed() {
+        let req = json_to_chat_request(&serde_json::json!({
+            "requestId": "wire-r2",
+            "sessionId": "local-session-2",
+            "messages": [{ "role": "user", "content": "질문" }],
+            "channel": {
+                "kind": "discord", "bindingId": "bind_1", "guildId": "1234567890123456",
+                "channelId": "2234567890123456", "userId": "3234567890123456"
+            },
+            "grounding": { "policy": "required", "knowledgeScope": "workshop" },
+            "providerSession": { "mode": "resume", "providerSessionRef": "opaque-session-ref" }
+        }));
+        let discord = match req.channel.unwrap().channel.unwrap() {
+            pb::channel_context::Channel::Discord(value) => value,
+            _ => panic!("discord channel expected"),
+        };
+        assert_eq!(discord.binding_id, "bind_1");
+        assert_eq!(discord.guild_id, "1234567890123456");
+        assert_eq!(req.grounding.unwrap().policy, pb::GroundingPolicy::Required as i32);
+        let session = req.provider_session.unwrap();
+        assert_eq!(session.mode, pb::ProviderSessionMode::Resume as i32);
+        assert_eq!(session.provider_session_ref.as_deref(), Some("opaque-session-ref"));
+    }
+
+    #[test]
+    fn wire_v1_unspecified_and_unknown_output_enums_fail_closed() {
+        for event in [
+            Event::Grounding(pb::GroundingEvent { status: 0, sources: vec![] }),
+            Event::Grounding(pb::GroundingEvent { status: 999, sources: vec![] }),
+            Event::ProviderSession(pb::ProviderSessionEvent {
+                session_id: "s1".into(), provider_session_ref: "ref".into(), state: 0,
+            }),
+            Event::ProviderSession(pb::ProviderSessionEvent {
+                session_id: "s1".into(), provider_session_ref: "ref".into(), state: 999,
+            }),
+            Event::Error(pb::ErrorEvent {
+                message: "unsafe detail".into(), code: Some(0),
+            }),
+            Event::Error(pb::ErrorEvent {
+                message: "unsafe detail".into(), code: Some(999),
+            }),
+            Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
+                workload: 0, destination: pb::ProcessingDestination::LocalDevice as i32,
+                decision: pb::ProcessingDecision::Allowed as i32,
+                processing_profile_ref: "profile".into(), provider: None, model: None,
+            }),
+            Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
+                workload: pb::ProcessingWorkload::Embedding as i32, destination: 999,
+                decision: pb::ProcessingDecision::Allowed as i32,
+                processing_profile_ref: "profile".into(), provider: None, model: None,
+            }),
+            Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
+                workload: pb::ProcessingWorkload::Embedding as i32,
+                destination: pb::ProcessingDestination::ExternalCloud as i32, decision: 0,
+                processing_profile_ref: "profile".into(), provider: None, model: None,
+            }),
+        ] {
+            let value = agent_event_to_ui_json(&pb::AgentEvent {
+                request_id: "wire-invalid".into(), event: Some(event), ..Default::default()
+            });
+            assert_eq!(value["type"], "error");
+            assert_eq!(value["code"], "WIRE_UNSUPPORTED_ENUM");
+            assert_ne!(value["message"], "unsafe detail");
+        }
+    }
 
     #[test]
     fn environment_segments_array_serialized_to_json_string() {

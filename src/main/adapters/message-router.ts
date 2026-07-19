@@ -2,7 +2,7 @@
 // AgentMessage(protocol) demux → chat-turn(requestId)→domain ChatChunk→ChatPort.deliverChunk /
 //   비-chat known→PendingRouteSink(UC1 미배선) / Unknown·소유권없음→DiagnosticSink. 미지=error+log(silent drop 금지).
 // transport(wire)와 분리된 별 컴포넌트(중복전달·구독주체 모호 제거). app 은 demux/protocol 안 봄.
-import type { ChatChunk } from "../domain/chat.js";
+import type { AttachmentRef, ChatChunk, WireErrorCode } from "../domain/chat.js";
 import { classifyVariant } from "../domain/chat.js";
 import type {
   AgentMessage, AgentTransportPort, ChatPort, ClientSessionPort,
@@ -110,8 +110,66 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
       const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]);
       return toolCallId === null || toolName === null ? null : { kind: "panelToolCall", toolCallId, toolName, args: r["args"] };
     }
+    case "grounding": {
+      const status = r["status"];
+      const rawSources = r["sources"];
+      if (!GROUNDING_STATUSES.has(status as ChatChunkGroundingStatus) || !Array.isArray(rawSources)) return null;
+      const sources = rawSources.map((source) => {
+        if (!isRecord(source) || reqStr(source["title"]) === null || !Array.isArray(source["sourceUris"])) return null;
+        const sourceUris = source["sourceUris"].filter((uri): uri is string => typeof uri === "string");
+        if (sourceUris.length !== source["sourceUris"].length) return null;
+        return { title: source["title"] as string, sourceUris };
+      });
+      return sources.some((source) => source === null)
+        ? null
+        : { kind: "grounding", status: status as ChatChunkGroundingStatus, sources: sources as { title: string; sourceUris: string[] }[] };
+    }
+    case "artifact": {
+      const artifact = r["artifact"];
+      if (!isRecord(artifact)) return null;
+      const id = reqStr(artifact["id"]);
+      const mimeType = reqStr(artifact["mimeType"]);
+      const localRef = reqStr(artifact["localRef"]);
+      const sizeBytes = artifact["sizeBytes"];
+      if (id === null || artifact["kind"] !== "image"
+        || !(IMAGE_MIME_TYPES as ReadonlySet<string>).has(mimeType ?? "") || localRef === null
+        || typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes)) return null;
+      const value: AttachmentRef = {
+        id, kind: "image", mimeType: mimeType as AttachmentRef["mimeType"], sizeBytes, localRef,
+        ...(typeof artifact["name"] === "string" ? { name: artifact["name"] } : {}),
+      };
+      return { kind: "artifact", artifact: value };
+    }
+    case "provider_session": {
+      const sessionId = reqStr(r["sessionId"]); const providerSessionRef = reqStr(r["providerSessionRef"]);
+      const state = r["state"];
+      return sessionId === null || providerSessionRef === null || !PROVIDER_SESSION_STATES.has(state as ProviderSessionState)
+        ? null : { kind: "providerSession", sessionId, providerSessionRef, state: state as ProviderSessionState };
+    }
+    case "processing_disclosure": {
+      const workload = r["workload"]; const destination = r["destination"]; const decision = r["decision"];
+      const processingProfileRef = reqStr(r["processingProfileRef"]);
+      if (!PROCESSING_WORKLOADS.has(workload as ProcessingWorkload)
+        || !PROCESSING_DESTINATIONS.has(destination as ProcessingDestination)
+        || !PROCESSING_DECISIONS.has(decision as ProcessingDecision)
+        || processingProfileRef === null) return null;
+      return {
+        kind: "processingDisclosure",
+        workload: workload as ProcessingWorkload,
+        destination: destination as ProcessingDestination,
+        decision: decision as ProcessingDecision,
+        processingProfileRef,
+        ...(typeof r["provider"] === "string" ? { provider: r["provider"] } : {}),
+        ...(typeof r["model"] === "string" ? { model: r["model"] } : {}),
+      };
+    }
     case "finish": return { kind: "finish" };
-    case "error": { const message = reqStr(r["message"]); return message === null ? null : { kind: "error", message }; }
+    case "error": {
+      const message = reqStr(r["message"]);
+      const code = r["code"];
+      if (message === null || (code !== undefined && !WIRE_ERROR_CODES.has(code as WireErrorCode))) return null;
+      return { kind: "error", message, ...(code !== undefined ? { code: code as WireErrorCode } : {}) };
+    }
     default: return null; // CHAT_TURN_TYPES 에 있으나 매핑 없음 = 손상
   }
 }
@@ -120,3 +178,31 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
 function reqStr(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+const WIRE_ERROR_CODES = new Set<WireErrorCode>([
+  "PROVIDER_NOT_INSTALLED", "PROVIDER_LOGIN_REQUIRED", "PROVIDER_AUTH_EXPIRED", "PROVIDER_NETWORK",
+  "DISCORD_TOKEN_MISSING", "DISCORD_INTENTS_MISSING", "DISCORD_NOT_INSTALLED",
+  "DISCORD_PERMISSION_DENIED", "DISCORD_RATE_LIMITED",
+  "ATTACHMENT_UNSUPPORTED_TYPE", "ATTACHMENT_TOO_LARGE", "ATTACHMENT_INVALID_REF",
+  "KNOWLEDGE_UNCOMPILED", "KNOWLEDGE_UNAVAILABLE", "WIRE_INVALID_ARGUMENT",
+  "WIRE_UNSUPPORTED_ENUM", "WIRE_SCOPE_FORBIDDEN", "PROVIDER_SESSION_MISMATCH",
+  "PROVIDER_SESSION_EXPIRED", "PROVIDER_SESSION_CLOSED",
+  "PROCESSING_PROFILE_REQUIRED", "PROCESSING_DESTINATION_UNKNOWN",
+  "EXTERNAL_PROCESSING_FORBIDDEN", "EXTERNAL_PROCESSING_CONFIRMATION_REQUIRED",
+]);
+type ChatChunkGroundingStatus = Extract<ChatChunk, { kind: "grounding" }>["status"];
+type ProviderSessionState = Extract<ChatChunk, { kind: "providerSession" }>["state"];
+const GROUNDING_STATUSES = new Set<ChatChunkGroundingStatus>(["grounded", "no_evidence", "uncompiled", "unavailable"]);
+const PROVIDER_SESSION_STATES = new Set<ProviderSessionState>(["started", "resumed", "closed"]);
+const IMAGE_MIME_TYPES = new Set<AttachmentRef["mimeType"]>(["image/png", "image/jpeg", "image/webp"]);
+type ProcessingDisclosure = Extract<ChatChunk, { kind: "processingDisclosure" }>;
+type ProcessingWorkload = ProcessingDisclosure["workload"];
+type ProcessingDestination = ProcessingDisclosure["destination"];
+type ProcessingDecision = ProcessingDisclosure["decision"];
+const PROCESSING_WORKLOADS = new Set<ProcessingWorkload>(["main_llm", "sub_llm", "memory_llm", "embedding", "network_tool"]);
+const PROCESSING_DESTINATIONS = new Set<ProcessingDestination>(["local_device", "private_managed", "external_cloud"]);
+const PROCESSING_DECISIONS = new Set<ProcessingDecision>(["allowed", "blocked", "confirmation_required"]);
