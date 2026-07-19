@@ -84,6 +84,7 @@ import {
 } from "../lib/i18n";
 import { parseLabCredits } from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
+import { unloadOllamaModel } from "../lib/local-profile-runtime";
 import {
 	type LlmModelMeta,
 	applyCapabilityOverrides,
@@ -807,16 +808,26 @@ export function SettingsTab() {
 		},
 	) => {
 		if (!naiaKey || tier === "off") {
-			// 로컬 해제 → 백엔드 정지
-			if (cascadeRunning) {
-				try {
-					await invoke("stop_cascade");
-				} catch {
-					/* 정지 실패 비치명 */
-				}
-				setCascadeRunning(false);
-				useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
+			const runtimeConfig = loadConfig();
+			const runtimeProvider = runtimeConfig?.provider ?? provider;
+			const runtimeModel = runtimeConfig?.model ?? model;
+			const runtimeOllamaHost = runtimeConfig?.ollamaHost ?? ollamaHost;
+			// Runtime state can lag behind the supervisor. Always request teardown,
+			// then evict the selected model without stopping the Ollama server.
+			try {
+				await invoke("stop_cascade");
+			} catch (error) {
+				Logger.warn("SettingsTab", "Local cascade teardown failed", { error });
 			}
+			if (runtimeProvider === "ollama") {
+				try {
+					await unloadOllamaModel(runtimeOllamaHost, runtimeModel);
+				} catch (error) {
+					Logger.warn("SettingsTab", "Ollama model unload failed", { error });
+				}
+			}
+			setCascadeRunning(false);
+			useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
 			warmedProfileRef.current = "";
 			setCascadeMsg("");
 			return;

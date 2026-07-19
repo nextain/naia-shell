@@ -448,6 +448,49 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.avatarProvider).toBe("vrm");
 	});
 
+	it("always tears down the local cascade and unloads Ollama when profile is None", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "demo-local-model",
+				ollamaHost: "http://localhost:11434",
+				naiaKey: "nk",
+				localGpuTier: "local-llm-voice-16g",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
+			if (cmd === "cascade_status") return Promise.resolve(false);
+			return Promise.resolve(undefined);
+		});
+		const fetchMock = vi.fn().mockImplementation(async (url: string) => ({
+			ok: true,
+			status: 200,
+			json: async () => (url.endsWith("/api/tags") ? { models: [] } : []),
+		}));
+		vi.stubGlobal("fetch", fetchMock);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		fireEvent.change(document.getElementById("local-gpu-tier") as HTMLElement, {
+			target: { value: "off" },
+		});
+
+		await vi.waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("stop_cascade");
+			expect(fetchMock).toHaveBeenCalledWith(
+				"http://localhost:11434/api/generate",
+				expect.objectContaining({
+					body: JSON.stringify({
+						model: "demo-local-model",
+						keep_alive: 0,
+					}),
+				}),
+			);
+		});
+	});
+
 	it("renders S-SLOT gate + 3 groups (Brain/Voice/Avatar) without moving canonical controls", async () => {
 		localStorage.setItem(
 			"naia-config",
