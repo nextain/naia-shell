@@ -448,6 +448,43 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.avatarProvider).toBe("vrm");
 	});
 
+	it("GPU profile 8GB laptop keeps LLM cloud and stages local voice + video avatar", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "nextain",
+				vllmTtsHost: "http://localhost:8892",
+				avatarProvider: "vrm",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+
+		await vi.waitFor(() => {
+			expect(document.getElementById("local-gpu-tier")).toBeTruthy();
+		});
+		fireEvent.change(document.getElementById("local-gpu-tier") as HTMLElement, {
+			target: { value: "laptop-4060-8g" },
+		});
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.localGpuTier).toBe("laptop-4060-8g");
+		expect(saved.provider).toBe("nextain");
+		expect(saved.model).toBe("gemini-3.5-flash");
+		expect(saved.ttsProvider).toBe("naia-local-voice");
+		expect(saved.ttsEnabled).toBe(true);
+		expect(saved.vllmTtsHost).toBe("http://localhost:8910");
+		expect(saved.avatarProvider).toBe("naia-video-avatar");
+		expect(saved.nvaModel).toBeTruthy();
+	});
+
 	it("renders S-SLOT gate + 3 groups (Brain/Voice/Avatar) without moving canonical controls", async () => {
 		localStorage.setItem(
 			"naia-config",
@@ -473,27 +510,51 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(screen.getByTestId("slot-apply-defaults")).toBeTruthy();
 		// FR-SLOT.2: 3 groups + 6 slots.
 		expect(document.querySelector("[data-testid='slot-groups']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='slot-group-brain']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='slot-group-voice']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='slot-group-avatar']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='slot-group-brain']"),
+		).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='slot-group-voice']"),
+		).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='slot-group-avatar']"),
+		).toBeTruthy();
 		expect(document.querySelector("[data-testid='slot-main']")).toBeTruthy();
 		expect(document.querySelector("[data-testid='slot-sub']")).toBeTruthy();
-		expect(document.querySelector("[data-testid='slot-embedding']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='slot-embedding']"),
+		).toBeTruthy();
 		expect(document.querySelector("[data-testid='slot-stt']")).toBeTruthy();
 		expect(document.querySelector("[data-testid='slot-tts']")).toBeTruthy();
 		expect(document.querySelector("[data-testid='slot-avatar']")).toBeTruthy();
 		// R1-7: 3-profile residue removed.
-		expect(document.querySelector("[data-testid='engine-profile-summary']")).toBeNull();
-		expect(document.querySelector("[data-testid='engine-profile-naia']")).toBeNull();
-		expect(document.querySelector("[data-testid='engine-profile-byo']")).toBeNull();
-		expect(document.querySelector("[data-testid='engine-profile-local']")).toBeNull();
+		expect(
+			document.querySelector("[data-testid='engine-profile-summary']"),
+		).toBeNull();
+		expect(
+			document.querySelector("[data-testid='engine-profile-naia']"),
+		).toBeNull();
+		expect(
+			document.querySelector("[data-testid='engine-profile-byo']"),
+		).toBeNull();
+		expect(
+			document.querySelector("[data-testid='engine-profile-local']"),
+		).toBeNull();
 		// engine-core-summary 제거(2026-06-30): slot-groups 두뇌 그룹과 100% 중복.
 		// engine-gpu-summary·tier-recommendations 제거(2026-07-07): GPU 프로파일 드롭다운 +
 		// 로컬 집중 + 슬롯 개요와 중복 → 자리 절약. capability 요약만 고유 정보로 유지.
-		expect(document.querySelector("[data-testid='engine-core-summary']")).toBeNull();
-		expect(document.querySelector("[data-testid='engine-gpu-summary']")).toBeNull();
-		expect(document.querySelector("[data-testid='tier-recommendations']")).toBeNull();
-		expect(document.querySelector("[data-testid='engine-capability-summary']")).toBeTruthy();
+		expect(
+			document.querySelector("[data-testid='engine-core-summary']"),
+		).toBeNull();
+		expect(
+			document.querySelector("[data-testid='engine-gpu-summary']"),
+		).toBeNull();
+		expect(
+			document.querySelector("[data-testid='tier-recommendations']"),
+		).toBeNull();
+		expect(
+			document.querySelector("[data-testid='engine-capability-summary']"),
+		).toBeTruthy();
 		// Canonical controls remain on ai tab, not engine.
 		expect(document.getElementById("provider-select")).toBeNull();
 		expect(document.getElementById("model-select")).toBeNull();

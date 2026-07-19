@@ -183,13 +183,14 @@ test.describe("VRAM tier local profile (#2, FR-1/FR-3)", () => {
 		await page.locator('[data-settings-tab="profile"]').click();
 		const tierSelect = page.locator("#local-gpu-tier");
 		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
-		// The "auto" option reflects the detected capacity.
-		await expect(tierSelect.locator('option[value="auto"]')).toContainText(
-			"24",
-			{ timeout: 5_000 },
-		);
-		// off + auto + 4 tiers (6/8/12/24G).
-		await expect(tierSelect.locator("option")).toHaveCount(6);
+		const optionValues = await tierSelect
+			.locator("option")
+			.evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+		expect(optionValues).toEqual([
+			"off",
+			"laptop-4060-8g",
+			"local-llm-voice-16g",
+		]);
 	});
 
 	test("no GPU detected → manual-selection hint, default off", async ({
@@ -200,10 +201,7 @@ test.describe("VRAM tier local profile (#2, FR-1/FR-3)", () => {
 		await page.locator('[data-settings-tab="profile"]').click();
 		const tierSelect = page.locator("#local-gpu-tier");
 		await expect(tierSelect).toBeVisible({ timeout: 5_000 });
-		await expect(tierSelect.locator('option[value="auto"]')).toContainText(
-			/VRAM not detected|manual|미감지|수동/,
-			{ timeout: 5_000 },
-		);
+		await expect(tierSelect.locator('option[value="auto"]')).toHaveCount(0);
 		// Default = off (no behaviour change).
 		await expect(tierSelect).toHaveValue("off");
 	});
@@ -266,18 +264,22 @@ test.describe("VRAM tier local profile (#2, FR-1/FR-3)", () => {
 		await expect(tierSelect).toBeEnabled();
 	});
 
-	test("FR-5: 8G exclusive tier exposes the llm/avatar/both focus selector", async ({
+	test("8GB laptop tier is visible and does not expose the legacy exclusive focus selector", async ({
 		page,
 	}) => {
-		// 8G 배타 티어(2026-07-08 3모드) → focus 셀렉터 노출, 옵션 = llm | avatar | both.
 		await gotoModelSettings(page, { vramGb: 8, model: "gemini-3.5-flash" });
 		await page.locator('[data-settings-tab="profile"]').click();
-		await page.locator("#local-gpu-tier").selectOption("local-llm-avatar-8g");
+		const tierSelect = page.locator("#local-gpu-tier");
+		await expect(
+			tierSelect.locator('option[value="laptop-4060-8g"]'),
+		).toHaveCount(1);
+		await expect(
+			tierSelect.locator('option[value="local-llm-avatar-8g"]'),
+		).toHaveCount(0);
+		await tierSelect.selectOption("laptop-4060-8g");
 		await expect(
 			page.locator('[data-testid="local-focus-select"]'),
-		).toBeVisible({ timeout: 5_000 });
-		const focus = page.locator("#local-av-focus");
-		await expect(focus.locator("option")).toHaveCount(3);
+		).toHaveCount(0);
 	});
 });
 
@@ -291,7 +293,6 @@ test.describe("FR-6: NVA lip-sync note (avatar tab)", () => {
 		// 비디오 아바타(cascade)는 로컬 프로파일이 avatar 를 제공할 때만 선택 가능 →
 		// 먼저 프로파일 탭에서 티어를 고른다(24G auto = avatar+voice 동시 가능).
 		await page.locator('[data-settings-tab="profile"]').click();
-		await page.locator("#local-gpu-tier").selectOption("auto");
 		await page.locator('[data-settings-tab="avatar"]').click();
 		// Select the video avatar so the .nva picker (and note) renders.
 		await page
@@ -311,7 +312,6 @@ test.describe("FR-7: video avatar gated by cascade capability", () => {
 		// 최저 티어(6G) 미만 = 로컬 프로파일 null 뿐 → vramGb=4 로 cascade 불가를 만든다.
 		await gotoModelSettings(page, { vramGb: 4, model: "gemini-3.5-flash" });
 		await page.locator('[data-settings-tab="profile"]').click();
-		await page.locator("#local-gpu-tier").selectOption("auto"); // 4G → null(로컬 off)
 		await page.locator('[data-settings-tab="avatar"]').click();
 		await expect(
 			page.locator('option[value="naia-video-avatar"]'),
@@ -355,18 +355,16 @@ test.describe("FR-8: NVA Host URL", () => {
 		const input = page.locator("#cascade-runtime-url");
 		await input.fill("ws://bad:8910");
 		await input.blur();
-		await expect(
-			page.locator('[data-testid="cascade-url-error"]'),
-		).toBeVisible({ timeout: 5_000 });
+		await expect(page.locator('[data-testid="cascade-url-error"]')).toBeVisible(
+			{ timeout: 5_000 },
+		);
 		const config = await page.evaluate(() =>
 			JSON.parse(localStorage.getItem("naia-config") || "{}"),
 		);
 		expect(config.cascadeRuntimeUrl).toBeUndefined();
 	});
 
-	test("logged out → NVA Host 미노출 (naiaKey 게이트)", async ({
-		page,
-	}) => {
+	test("logged out → NVA Host 미노출 (naiaKey 게이트)", async ({ page }) => {
 		await gotoModelSettings(page, {
 			vramGb: 8,
 			model: "gemini-3.5-flash",

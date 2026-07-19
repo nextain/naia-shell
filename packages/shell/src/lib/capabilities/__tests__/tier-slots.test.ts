@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { VRAM_TIERS } from "../vram-tiers";
 import {
 	isRecommendedLocalValue,
 	slotRecommendation,
 	tierRecommendedSlots,
 } from "../tier-slots";
+import { VRAM_TIERS } from "../vram-tiers";
 
 describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => {
 	it("tier=null(로컬 off/VRAM 미달) → 추천 없음", () => {
@@ -51,6 +51,18 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 		).toBe(true);
 	});
 
+	it("8GB laptop profile recommends local TTS + video avatar, not local LLM", () => {
+		const tier = VRAM_TIERS.find((x) => x.id === "laptop-4060-8g") ?? null;
+		expect(tier?.id).toBe("laptop-4060-8g");
+		const slots = tierRecommendedSlots(tier).map((r) => r.slot);
+		expect(slots).toEqual(["tts", "avatar"]);
+		expect(isRecommendedLocalValue(tier, "tts", "naia-local-voice")).toBe(true);
+		expect(isRecommendedLocalValue(tier, "avatar", "naia-video-avatar")).toBe(
+			true,
+		);
+		expect(isRecommendedLocalValue(tier, "main", "ollama")).toBe(false);
+	});
+
 	it("12GB(local-voice-12g) → main + tts + avatar 로컬 추천", () => {
 		const tier = VRAM_TIERS.find((x) => x.id === "local-voice-12g") ?? null;
 		expect(tier?.id).toBe("local-voice-12g");
@@ -81,14 +93,7 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 	});
 
 	it("모든 tier 의 추천 슬롯은 6슬롯 화이트리스트 내", () => {
-		const valid = new Set([
-			"main",
-			"sub",
-			"embedding",
-			"stt",
-			"tts",
-			"avatar",
-		]);
+		const valid = new Set(["main", "sub", "embedding", "stt", "tts", "avatar"]);
 		for (const tier of VRAM_TIERS) {
 			for (const rec of tierRecommendedSlots(tier)) {
 				expect(valid.has(rec.slot)).toBe(true);

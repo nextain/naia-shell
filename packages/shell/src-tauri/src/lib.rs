@@ -2508,6 +2508,24 @@ fn read_cascade_stderr_tail() -> String {
     }
 }
 
+fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(manifest).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let profile = parsed
+        .get("gpu")
+        .and_then(|gpu| gpu.get("loaderProfile"))
+        .and_then(serde_json::Value::as_str)?
+        .trim();
+    if profile.is_empty()
+        || !profile
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return None;
+    }
+    Some(profile.to_string())
+}
+
 /// 로컬 cascade loader supervisor 를 사이드카로 spawn. stdout `CASCADE_READY {json}`
 /// 핸드셰이크로 준비완료 판정(모델 로드가 길어 timeout 넉넉히). 이 프로세스를 kill 하면
 /// loader 가 VoxCPM2 등 자식 서비스를 teardown 한다(원격 금지·로컬 임베딩).
@@ -2526,6 +2544,7 @@ fn spawn_cascade(
     let manifest = std::path::PathBuf::from(adk_path)
         .join("naia-settings")
         .join("slots-manifest.json");
+    let loader_profile = read_cascade_loader_profile(&manifest);
 
     let mut cmd = Command::new(&python);
     cmd.arg("-m")
@@ -2536,6 +2555,9 @@ fn spawn_cascade(
         .arg("--adk-root")
         .arg(adk_path)
         .current_dir(loader_dir);
+    if let Some(profile) = &loader_profile {
+        cmd.arg("--profile").arg(profile);
+    }
     // 감지된 primary GPU VRAM 을 명시 — loader 의 보수적 85% 자동추정 대신 실값 사용
     // (8GB 음성 단독 6.9G 적합 보장). 미감지면 loader 가 자체 추정.
     if let Some(v) = vram_gb {
@@ -2562,8 +2584,10 @@ fn spawn_cascade(
     platform::hide_console(&mut cmd);
 
     log_both(&format!(
-        "[Naia] Starting local cascade: {} -m loader launch (cwd={})",
-        python, loader_dir
+        "[Naia] Starting local cascade: {} -m loader launch (cwd={}, profile={})",
+        python,
+        loader_dir,
+        loader_profile.as_deref().unwrap_or("manifest")
     ));
     let mut child = cmd.spawn().map_err(|e| {
         format!("Failed to spawn cascade loader: {} (loader_dir={})", e, loader_dir)
@@ -5050,6 +5074,31 @@ mod tests {
         // Should return a bool without panicking, regardless of gateway state
         let _healthy = check_gateway_health_sync();
         // Result is environment-dependent: true if gateway running, false if not
+    }
+
+    #[test]
+    fn read_cascade_loader_profile_reads_manifest_gpu_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("slots-manifest.json");
+        std::fs::write(
+            &manifest,
+            r#"{"gpu":{"loaderProfile":" laptop_4060_8g "}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_cascade_loader_profile(&manifest).as_deref(),
+            Some("laptop_4060_8g")
+        );
+    }
+
+    #[test]
+    fn read_cascade_loader_profile_rejects_invalid_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("slots-manifest.json");
+        std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":"laptop;rm"}}"#).unwrap();
+
+        assert_eq!(read_cascade_loader_profile(&manifest), None);
     }
 
     #[test]

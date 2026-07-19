@@ -34,6 +34,7 @@ import type { ModelCapability } from "../types";
 export type VramTierId =
 	| "avatar-6g"
 	| "local-llm-avatar-8g"
+	| "laptop-4060-8g"
 	| "local-llm-voice-16g"
 	| "local-voice-12g"
 	| "full-realtime-24g";
@@ -97,6 +98,8 @@ export interface VramTier {
 	hidden?: boolean;
 	/** Approx summed VRAM of the local components (private measured). */
 	approxLocalVramGb: number;
+	/** windows-manager `--profile` override for named loader profiles. */
+	loaderProfile?: string;
 	/** Real-time (RTF<1) is a measured gate per GPU — never asserted (F1). */
 	realtime: "measurement-gated";
 	note: string;
@@ -137,6 +140,18 @@ export const VRAM_TIERS: readonly VramTier[] = [
 		// ⚠️ both 는 tight — 런타임 프리플라이트(fitLocalCapabilitiesToVram)가 free VRAM 부족 시 llm 을
 		// 클라우드로 강등(아바타 보존). compact 모델 강제(DNA3.0-4B Q4 등) + context cap 필요.
 		note: "8GB 택1: 로컬 LLM(DNA3.0-4B Q4 등 compact) / 아바타 / 둘 다. 음성=클라우드. both 는 VRAM 부족 시 LLM 클라우드 폴백.",
+	},
+	{
+		id: "laptop-4060-8g",
+		label:
+			"8GB RTX 4060 laptop: local int8 voice + video avatar (LLM/STT cloud)",
+		minVramGb: 8,
+		llm: "external",
+		localCapabilities: ["tts", "avatar"],
+		approxLocalVramGb: 6.07,
+		loaderProfile: "laptop_4060_8g",
+		realtime: "measurement-gated",
+		note: "RTX 4060 Laptop 8GB + Ryzen 8845H/8645HS class: windows-manager laptop_4060_8g profile. Runs VoxCPM2 int8 TTS + Ditto avatar locally; LLM/STT stay external. Full local realtime voice is not claimed.",
 	},
 	{
 		id: "local-voice-12g",
@@ -329,11 +344,21 @@ export function fitLocalCapabilitiesToVram(
 ): VramFitResult {
 	const requiredGb = caps.reduce((s, c) => s + capabilityVramCostGb(c), 0);
 	if (availableVramGb == null) {
-		return { caps, llmFallbackToCloud: false, requiredGb, availableGb: Number.POSITIVE_INFINITY };
+		return {
+			caps,
+			llmFallbackToCloud: false,
+			requiredGb,
+			availableGb: Number.POSITIVE_INFINITY,
+		};
 	}
 	const budget = availableVramGb - marginGb;
 	if (requiredGb <= budget || !caps.includes("llm")) {
-		return { caps, llmFallbackToCloud: false, requiredGb, availableGb: availableVramGb };
+		return {
+			caps,
+			llmFallbackToCloud: false,
+			requiredGb,
+			availableGb: availableVramGb,
+		};
 	}
 	// 안 맞음 + llm 포함 → llm 을 클라우드로 강등(아바타 등 나머지 보존).
 	return {

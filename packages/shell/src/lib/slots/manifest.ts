@@ -1,10 +1,10 @@
 import type { Local8gFocus } from "../capabilities/vram-tiers";
+import { normalizeTierId, resolveActiveTier } from "../capabilities/vram-tiers";
 // slots-manifest — Phase 2 계약(§5.2.1/2.2): naia-os 가 write 하고 windows-manager 가 read 하는
 // 로컬 런타임 구동 결정 매니페스트. AppConfig(평면) → 직렬화 가능 매니페스트(구조화).
 // wm 은 이 매니페스트로 어느 로컬 서비스(avatar/tts/sub-llm/embed)를 띄울지 결정(Phase 4.1).
 // SoT: alpha-adk .agents/progress/naia-model-slots-architecture-2026-06-28.md §3.4·§5.2.
 import type { AppConfig } from "../config";
-import { normalizeTierId, resolveActiveTier } from "../capabilities/vram-tiers";
 import {
 	type GateMode,
 	type SlotSnapshot,
@@ -40,6 +40,7 @@ export interface SlotsManifest {
 		 *   llm/avatar/both 해석은 미구현. 이 셸↔wm 계약 skew 를 **배포 전 Phase 4 에서** 닫을 것.
 		 */
 		localFocus?: Local8gFocus;
+		loaderProfile?: string;
 	};
 	/** 빌드 일시(디버그·추적). ISO 문자열. */
 	builtAt?: string;
@@ -88,13 +89,19 @@ export function buildSlotsManifest(
 					opts.detectedVramGb ?? null,
 				);
 				const tierId = resolved ? normalizeTierId(resolved.id) : null;
-				return tierId ? { tier: tierId } : {};
+				return tierId
+					? {
+							tier: tierId,
+							...(resolved?.loaderProfile
+								? { loaderProfile: resolved.loaderProfile }
+								: {}),
+						}
+					: {};
 			})(),
 			// 정본 local8gFocus ?? 구 localAvatarVoiceFocus(legacy).
 			...((config.local8gFocus ?? config.localAvatarVoiceFocus)
 				? {
-						localFocus:
-							config.local8gFocus ?? config.localAvatarVoiceFocus,
+						localFocus: config.local8gFocus ?? config.localAvatarVoiceFocus,
 					}
 				: {}),
 		},

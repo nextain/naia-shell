@@ -47,7 +47,10 @@ interface SetupOpts {
 	config?: Record<string, unknown>;
 }
 
-async function openSlotSettings(page: Page, opts: SetupOpts = {}): Promise<void> {
+async function openSlotSettings(
+	page: Page,
+	opts: SetupOpts = {},
+): Promise<void> {
 	await page.addInitScript(buildMock(opts.vramGb ?? null));
 	await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
 	await page.addInitScript({ content: SEED_ADK_PATH });
@@ -90,30 +93,48 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		await expect(page.locator('[data-testid="slot-gate-mode"]')).toContainText(
 			/Naia account/i,
 		);
-		await expect(page.locator('[data-testid="slot-apply-defaults"]')).toBeVisible();
+		await expect(
+			page.locator('[data-testid="slot-apply-defaults"]'),
+		).toBeVisible();
 
 		// FR-SLOT.2: 3 groups + 6 slots.
 		await expect(page.locator('[data-testid="slot-groups"]')).toBeVisible();
-		await expect(page.locator('[data-testid="slot-group-brain"]')).toBeVisible();
-		await expect(page.locator('[data-testid="slot-group-voice"]')).toBeVisible();
-		await expect(page.locator('[data-testid="slot-group-avatar"]')).toBeVisible();
+		await expect(
+			page.locator('[data-testid="slot-group-brain"]'),
+		).toBeVisible();
+		await expect(
+			page.locator('[data-testid="slot-group-voice"]'),
+		).toBeVisible();
+		await expect(
+			page.locator('[data-testid="slot-group-avatar"]'),
+		).toBeVisible();
 		for (const sid of ["main", "sub", "embedding", "stt", "tts", "avatar"]) {
 			await expect(page.locator(`[data-testid="slot-${sid}"]`)).toBeVisible();
 		}
 
 		// R1-7: legacy 3-profile cards removed.
-		await expect(page.locator('[data-testid="engine-profile-summary"]')).toHaveCount(0);
-		await expect(page.locator('[data-testid="engine-profile-naia"]')).toHaveCount(0);
+		await expect(
+			page.locator('[data-testid="engine-profile-summary"]'),
+		).toHaveCount(0);
+		await expect(
+			page.locator('[data-testid="engine-profile-naia"]'),
+		).toHaveCount(0);
 	});
 
-	test("FR-SLOT.1: BYO gate when no naiaKey — login button shown", async ({ page }) => {
-		await openSlotSettings(page, { config: { provider: "gemini", naiaKey: undefined } });
+	test("FR-SLOT.1: BYO gate when no naiaKey — login button shown", async ({
+		page,
+	}) => {
+		await openSlotSettings(page, {
+			config: { provider: "gemini", naiaKey: undefined },
+		});
 
 		await expect(page.locator('[data-testid="slot-gate-mode"]')).toContainText(
 			/BYO|Bring your own/i,
 		);
 		await expect(page.locator('[data-testid="slot-login-naia"]')).toBeVisible();
-		await expect(page.locator('[data-testid="slot-apply-defaults"]')).toHaveCount(0);
+		await expect(
+			page.locator('[data-testid="slot-apply-defaults"]'),
+		).toHaveCount(0);
 	});
 
 	test("FR-SLOT.3: apply Gemini defaults fills unset slots (non-destructive, §9 #5)", async ({
@@ -145,7 +166,9 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		expect(saved.ttsProvider).toBe("nextain");
 
 		// UI 도 연동 — sub 슬롯 표시가 업데이트됨.
-		await expect(page.locator('[data-testid="slot-sub"]')).toContainText(/naia/i);
+		await expect(page.locator('[data-testid="slot-sub"]')).toContainText(
+			/naia/i,
+		);
 	});
 
 	test("GPU 프로파일 = 자동 설정: 16GB LLM+음성 선택 → 두뇌·음성·호스트·아바타 전환 (2026-07-15, 시연 로컬 장면)", async ({
@@ -169,6 +192,7 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		const optionValues = await tierSelect
 			.locator("option")
 			.evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+		expect(optionValues).toContain("laptop-4060-8g");
 		expect(optionValues).toContain("local-llm-voice-16g");
 		expect(optionValues).not.toContain("auto"); // 자동이 미검증 티어(NVA)를 고르던 사고로 제거
 		for (const hiddenId of [
@@ -196,9 +220,56 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		expect(saved.avatarProvider).toBe("vrm"); // nva 잔재 → VRM 복원
 
 		// UI 반영 — 슬롯 표시가 로컬 구성으로 갱신.
-		await expect(page.locator('[data-testid="slot-main"]')).toContainText(/ollama/i);
+		await expect(page.locator('[data-testid="slot-main"]')).toContainText(
+			/ollama/i,
+		);
 		await expect(page.locator('[data-testid="slot-tts"]')).toContainText(
 			/naia-local-voice/i,
+		);
+	});
+
+	test("GPU profile = 8GB laptop: selects local TTS + video avatar while keeping LLM cloud", async ({
+		page,
+	}) => {
+		await openSlotSettings(page, {
+			vramGb: 8,
+			config: {
+				naiaKey: "nk",
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				ttsProvider: "nextain",
+				vllmTtsHost: "http://localhost:8892",
+				avatarProvider: "vrm",
+			},
+		});
+
+		const tierSelect = page.locator("#local-gpu-tier");
+		await expect(tierSelect).toBeVisible();
+		await expect(
+			tierSelect.locator('option[value="laptop-4060-8g"]'),
+		).toHaveCount(1);
+		await tierSelect.selectOption("laptop-4060-8g");
+
+		const saved = await page.evaluate(() => {
+			const raw = localStorage.getItem("naia-config") ?? "{}";
+			return JSON.parse(raw) as Record<string, unknown>;
+		});
+		expect(saved.localGpuTier).toBe("laptop-4060-8g");
+		expect(saved.provider).toBe("nextain");
+		expect(saved.model).toBe("gemini-3.5-flash");
+		expect(saved.ttsProvider).toBe("naia-local-voice");
+		expect(saved.ttsEnabled).toBe(true);
+		expect(saved.vllmTtsHost).toBe("http://localhost:8910");
+		expect(saved.avatarProvider).toBe("naia-video-avatar");
+		expect(saved.nvaModel).toBeTruthy();
+		await expect(page.locator('[data-testid="slot-main"]')).toContainText(
+			/nextain/i,
+		);
+		await expect(page.locator('[data-testid="slot-tts"]')).toContainText(
+			/naia-local-voice/i,
+		);
+		await expect(page.locator('[data-testid="slot-avatar"]')).toContainText(
+			/video avatar/i,
 		);
 	});
 });

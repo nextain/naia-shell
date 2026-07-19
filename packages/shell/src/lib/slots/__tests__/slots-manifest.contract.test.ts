@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../../config";
 import {
+	SLOTS_MANIFEST_VERSION,
 	buildSlotsManifest,
 	parseSlotsManifest,
 	serializeSlotsManifest,
-	SLOTS_MANIFEST_VERSION,
 } from "../manifest";
 
 /**
@@ -34,9 +34,18 @@ describe("slots-manifest · 빌드(AppConfig → 매니페스트)", () => {
 
 	it("6 슬롯 값 포함(main/sub/embedding/stt/tts/avatar)", () => {
 		const m = buildSlotsManifest(naiaConfig);
-		expect(m.slots.main).toEqual({ provider: "nextain", model: "gemini-3.5-flash" });
-		expect(m.slots.sub).toEqual({ provider: "naia", model: "gemini-3.1-flash-lite" });
-		expect(m.slots.embedding).toEqual({ provider: "offline", model: "all-MiniLM-L6-v2" });
+		expect(m.slots.main).toEqual({
+			provider: "nextain",
+			model: "gemini-3.5-flash",
+		});
+		expect(m.slots.sub).toEqual({
+			provider: "naia",
+			model: "gemini-3.1-flash-lite",
+		});
+		expect(m.slots.embedding).toEqual({
+			provider: "offline",
+			model: "all-MiniLM-L6-v2",
+		});
 		expect(m.slots.stt).toEqual({ provider: "vosk" });
 		expect(m.slots.tts).toEqual({ provider: "nextain" });
 		expect(m.slots.avatar.localUrl).toBe("ws://127.0.0.1:8892");
@@ -51,7 +60,10 @@ describe("slots-manifest · 빌드(AppConfig → 매니페스트)", () => {
 	});
 
 	it("byo 게이트 = mode 'byo'(naiaKey 부재)", () => {
-		const m = buildSlotsManifest({ provider: "gemini", model: "gpt-4o" } as AppConfig);
+		const m = buildSlotsManifest({
+			provider: "gemini",
+			model: "gpt-4o",
+		} as AppConfig);
 		expect(m.gate).toEqual({ naiaAccount: false, mode: "byo" });
 	});
 
@@ -67,7 +79,10 @@ describe("slots-manifest · 빌드(AppConfig → 매니페스트)", () => {
 		// 구 계약(8GB→avatar-8g)은 미검증 티어 자동선택이 NVA 를 심는 실증 버그로 폐기 —
 		// auto 는 검증(hidden 아님) 티어만 해석한다.
 		const m = buildSlotsManifest(naiaConfig, { detectedVramGb: 8 });
-		expect(m.gpu.tier).toBeUndefined();
+		expect(m.gpu).toMatchObject({
+			tier: "laptop-4060-8g",
+			loaderProfile: "laptop_4060_8g",
+		});
 	});
 
 	it("★auto tier — VRAM 미검출 시 tier 생략(loader 가 --gpu 로 폴백)", () => {
@@ -78,10 +93,36 @@ describe("slots-manifest · 빌드(AppConfig → 매니페스트)", () => {
 	it("★명시 tier id 는 정규화(구 id 호환) 후 기록", () => {
 		const m = buildSlotsManifest(
 			// 레거시 저장값(구 티어 id)은 loadConfig 로만 들어옴 — 타입엔 없어 unknown 경유 캐스트.
-			{ ...naiaConfig, localGpuTier: "avatar-or-voice-8g" } as unknown as AppConfig,
+			{
+				...naiaConfig,
+				localGpuTier: "avatar-or-voice-8g",
+			} as unknown as AppConfig,
 			{ detectedVramGb: 8 },
 		);
 		expect(m.gpu.tier).toBe("local-llm-avatar-8g");
+	});
+
+	it("writes 4060 8GB laptop loader profile for windows-manager", () => {
+		const m = buildSlotsManifest(
+			{
+				...naiaConfig,
+				localGpuTier: "laptop-4060-8g",
+				ttsProvider: "naia-local-voice",
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "naia.nva",
+			} as AppConfig,
+			{ detectedVramGb: 8 },
+		);
+		expect(m.slots.tts).toEqual({ provider: "naia-local-voice" });
+		expect(m.slots.avatar).toMatchObject({
+			provider: "naia-video-avatar",
+			model: "naia.nva",
+		});
+		expect(m.gpu).toMatchObject({
+			detectedVramGb: 8,
+			tier: "laptop-4060-8g",
+			loaderProfile: "laptop_4060_8g",
+		});
 	});
 
 	it("writes NVA avatar + avatar focus so windows-manager can select Ditto TRT", () => {
