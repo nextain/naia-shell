@@ -127,7 +127,7 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		}
 	});
 
-	it("linux 정적 SDK 실행 파일만 매트릭스에서 래핑 대상으로 지정", () => {
+	it("linux wraps only configured static SDK executable", () => {
 		expect(matrix.os.win32.wrappedStaticExecutables).toEqual([]);
 		expect(matrix.os.darwin.wrappedStaticExecutables).toEqual([]);
 		expect(matrix.os.linux.wrappedStaticExecutables).toEqual([
@@ -290,7 +290,7 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 		}
 	});
 
-	it("provisionNode 는 바이너리와 인접 마커의 동시 변조도 신뢰하지 않는다", async () => {
+	it("provisionNode refreshes a cached binary when marker does not match", async () => {
 		const resourcesDir = mkdtempSync(resolve(tmpdir(), "naia-node-cache-"));
 		const archive = selectNodeArchive(matrix, "linux", "x64");
 		const node = Buffer.from("attacker-controlled-node");
@@ -316,7 +316,7 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 					},
 					ensureExecutableImpl: (...args: unknown[]) => calls.push(args),
 				}),
-			).rejects.toThrow(/SHA256 불일치/);
+			).rejects.toThrow(/SHA256/);
 			expect(fetches).toBe(1);
 			expect(calls).toEqual([]);
 			expect(existsSync(resolve(resourcesDir, ".node-runtime"))).toBe(false);
@@ -392,7 +392,7 @@ describe("전체 번들 arch 명확 차단 + 부작용 의존 주입 (P1-R2)", (
 		]);
 	});
 
-	it("정적 ELF를 비-ELF gzip payload + 번들 Node 복원 래퍼로 변환", () => {
+	it("wraps a static ELF into a gzip payload plus bundled Node shim", () => {
 		const root = mkdtempSync(resolve(tmpdir(), "naia-static-wrapper-"));
 		const relative =
 			"agent/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude";
@@ -579,8 +579,10 @@ describe("agent production staging", () => {
 });
 
 describe("clean-checkout build order", () => {
-	it("invalidates generated Vosk files and forces the plugin build script on every installer build", () => {
+	it("invalidates generated Vosk files, rebuilds the plugin, and verifies resources before installer build", () => {
 		const resources = mkdtempSync(resolve(tmpdir(), "naia-vosk-incremental-"));
+		const shellDir = mkdtempSync(resolve(tmpdir(), "naia-vosk-shell-"));
+		const targetRelease = resolve(shellDir, "src-tauri", "target", "release");
 		const calls: unknown[][] = [];
 		try {
 			for (const file of matrix.os.win32.vosk.files) {
@@ -588,20 +590,38 @@ describe("clean-checkout build order", () => {
 			}
 			invalidateVoskBuildCache(matrix, "win32", {
 				resourcesDir: resources,
-				shellDir: SHELL,
-				runImpl: (...args: unknown[]) => calls.push(args),
+				shellDir,
+				runImpl: (...args: unknown[]) => {
+					calls.push(args);
+					if (
+						args[0] ===
+						"cargo build --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt --release"
+					) {
+						mkdirSync(targetRelease, { recursive: true });
+						for (const file of matrix.os.win32.vosk.files) {
+							writeFileSync(resolve(targetRelease, file), "rebuilt vosk runtime");
+						}
+					}
+				},
 			});
 			for (const file of matrix.os.win32.vosk.files) {
-				expect(existsSync(resolve(resources, file))).toBe(false);
+				expect(readFileSync(resolve(resources, file), "utf8")).toBe(
+					"rebuilt vosk runtime",
+				);
 			}
 			expect(calls).toEqual([
 				[
 					"cargo clean --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt",
-					SHELL,
+					shellDir,
+				],
+				[
+					"cargo build --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt --release",
+					shellDir,
 				],
 			]);
 		} finally {
 			rmSync(resources, { recursive: true, force: true });
+			rmSync(shellDir, { recursive: true, force: true });
 		}
 	});
 

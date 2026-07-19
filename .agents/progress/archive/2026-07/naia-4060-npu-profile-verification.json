@@ -1,0 +1,54 @@
+{
+  "issue": "#4060-npu-profile",
+  "title": "RTX 4060 Laptop 8GB + Ryzen 8845H/8655H local NPU profile",
+  "project": "naia-shell",
+  "current_phase": "completed",
+  "updated_at": "2026-07-20T03:30:00+09:00",
+  "scope": [
+    "Implemented the 4060 8GB laptop profile as local DNA LLM on AMD XDNA/NPU budget plus local VoxCPM2 int8 TTS and Ditto TensorRT avatar on GPU.",
+    "Aligned naia-shell settings manifest generation with naia-omni-windows-manager loader planning.",
+    "Fixed manifest-based NVA directory resolution for shell-launched output cascade.",
+    "Rechecked Windows distribution build impact after the loader/profile changes."
+  ],
+  "coordination": {
+    "channel": ".agents/work/naia-4060-npu-coordination.md",
+    "status": "complete",
+    "notes": [
+      "Sequential verification was used after confirming no active git index locks in the relevant repos.",
+      "Other live Codex/opencode processes existed, but this work was completed under a local coordination lock."
+    ]
+  },
+  "verification": [
+    {
+      "target": "naia-omni-windows-manager",
+      "command": "python -m pytest tests/test_profiles_vram_fit.py tests/test_launcher.py tests/test_manifest.py tests/test_service_plan.py",
+      "result": "64 passed"
+    },
+    {
+      "target": "naia-shell",
+      "command": "targeted Vitest profile/deploy coverage",
+      "result": "127 passed"
+    },
+    {
+      "target": "naia-shell",
+      "command": "pnpm --dir packages/shell exec playwright test e2e/capability-settings.spec.ts e2e/nva-p0-sync-capability.spec.ts",
+      "result": "16 passed"
+    },
+    {
+      "target": "actual cascade smoke",
+      "command": "python -m loader launch --gpu 8 --manifest D:\\alpha-adk\\projects\\naia-adk\\naia-settings\\slots-manifest.json --quality low --adk-root D:\\alpha-adk\\projects\\naia-adk --ready-timeout 180",
+      "result": "health ok, TTS true, avatar true, output D:\\alpha-adk\\tmp\\naia-cascade-smoke-coord-20260720-031108.webm, duration 4.308s, size 1428123 bytes"
+    },
+    {
+      "target": "Windows distribution build",
+      "command": "pnpm Windows Tauri bundle path",
+      "result": "NSIS and MSI build completed; only WiX ICE warnings remained"
+    }
+  ],
+  "review_notes": [
+    "The profile no longer treats the 4060 8GB laptop path as cloud LLM/TTS. LLM is local by design, budgeted outside GPU VRAM as the AMD NPU route.",
+    "The Windows manager still does not install or benchmark the AMD NPU runtime itself; it preserves the GPU placement and service plan around that local NPU assumption.",
+    "naia-adk local settings and terminology changes were intentionally left out because they appear to be user-local workspace state.",
+    "No new verify-* skill was created because existing build, deployment, Playwright, and loader unit tests cover the changed behavior."
+  ]
+}

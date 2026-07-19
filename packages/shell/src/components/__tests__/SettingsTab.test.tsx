@@ -448,7 +448,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.avatarProvider).toBe("vrm");
 	});
 
-	it("GPU profile 8GB laptop keeps LLM cloud and stages local voice + video avatar", async () => {
+	it("GPU profile 8GB laptop stages local NPU LLM + local voice + video avatar", async () => {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -476,8 +476,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.localGpuTier).toBe("laptop-4060-8g");
-		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBe("gemini-3.5-flash");
+		expect(saved.provider).toBe("ollama");
+		expect(saved.model).toBe("hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M");
 		expect(saved.ttsProvider).toBe("naia-local-voice");
 		expect(saved.ttsEnabled).toBe(true);
 		expect(saved.vllmTtsHost).toBe("http://localhost:8910");

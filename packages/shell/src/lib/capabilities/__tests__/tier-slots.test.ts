@@ -51,16 +51,14 @@ describe("tier-slots — VRAM tier → 슬롯 로컬 추천 (FR-VRAM.4)", () => 
 		).toBe(true);
 	});
 
-	it("8GB laptop profile recommends local TTS + video avatar, not local LLM", () => {
+	it("8GB laptop profile recommends local NPU LLM + TTS + video avatar", () => {
 		const tier = VRAM_TIERS.find((x) => x.id === "laptop-4060-8g") ?? null;
 		expect(tier?.id).toBe("laptop-4060-8g");
 		const slots = tierRecommendedSlots(tier).map((r) => r.slot);
-		expect(slots).toEqual(["tts", "avatar"]);
+		expect(slots).toEqual(["main", "tts", "avatar"]);
+		expect(isRecommendedLocalValue(tier, "main", "ollama")).toBe(true);
 		expect(isRecommendedLocalValue(tier, "tts", "naia-local-voice")).toBe(true);
-		expect(isRecommendedLocalValue(tier, "avatar", "naia-video-avatar")).toBe(
-			true,
-		);
-		expect(isRecommendedLocalValue(tier, "main", "ollama")).toBe(false);
+		expect(isRecommendedLocalValue(tier, "avatar", "naia-video-avatar")).toBe(true);
 	});
 
 	it("12GB(local-voice-12g) → main + tts + avatar 로컬 추천", () => {

@@ -1,11 +1,11 @@
 mod agent_grpc;
+mod app;
 mod audit;
 mod browser;
 mod browser_webview;
 mod capture;
 mod gemini_live;
 mod memory;
-mod app;
 mod platform;
 mod pty;
 mod stt_models;
@@ -227,10 +227,7 @@ pub(crate) fn spawn_oauth_callback_server(
             // Reuse `process_deep_link_url` so the parameter parsing, state CSRF
             // verification, and event emit stay identical to the deep-link path.
             // The function only inspects scheme-agnostic parts (path + query).
-            let url_str = format!(
-                "http://127.0.0.1:{}{}",
-                OAUTH_CALLBACK_PORT, raw_url
-            );
+            let url_str = format!("http://127.0.0.1:{}{}", OAUTH_CALLBACK_PORT, raw_url);
             process_deep_link_url(&url_str, &app_handle, Some(&oauth_state), "http_callback");
 
             // Send a small HTML page that closes the tab and informs the user.
@@ -901,7 +898,6 @@ fn load_bootstrap_config() -> serde_json::Value {
     })
 }
 
-
 /// Gateway (openclaw) removed in #201 — naia-agent handles all tools directly via stdio.
 fn spawn_gateway() -> Result<GatewayProcess, String> {
     Err("Gateway removed: naia-agent handles all tools directly".to_string())
@@ -930,8 +926,9 @@ fn spawn_agent_core(
         //
         // No ping/pong: spawn is the handshake — process exits non-zero on fatal
         // init failure, which restart_agent() catches as process death.
-        let standalone_requested =
-            std::env::var("NAIA_AGENT_STANDALONE").map(|v| v == "1").unwrap_or(false);
+        let standalone_requested = std::env::var("NAIA_AGENT_STANDALONE")
+            .map(|v| v == "1")
+            .unwrap_or(false);
 
         // 1. Explicit path override — activates regardless of NAIA_AGENT_STANDALONE=1.
         //    NAIA_AGENT_STANDALONE_PATH alone is sufficient; setting it without the
@@ -943,7 +940,10 @@ fn spawn_agent_core(
                     "[Naia] Standalone agent (NAIA_AGENT_STANDALONE_PATH): {}",
                     p.display()
                 ));
-                return dunce::canonicalize(&p).unwrap_or(p).to_string_lossy().to_string();
+                return dunce::canonicalize(&p)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .to_string();
             }
         }
 
@@ -1134,8 +1134,7 @@ fn spawn_agent_core(
         if let Ok(adk_path_str) = std::fs::read_to_string(&adk_path_file) {
             let adk_path_str = adk_path_str.trim();
             if !adk_path_str.is_empty() {
-                let settings_dir = std::path::PathBuf::from(adk_path_str)
-                    .join("naia-settings");
+                let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
                 cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
                 cmd.env("NAIA_ADK_PATH", adk_path_str);
                 log_verbose(&format!(
@@ -1200,7 +1199,11 @@ fn spawn_agent_core(
         audit_db.clone(),
     ));
 
-    Ok(AgentProcess { child, tx, grpc_addr: addr })
+    Ok(AgentProcess {
+        child,
+        tx,
+        grpc_addr: addr,
+    })
 }
 
 /// gRPC dispatcher — connect → SetWorkspace(naia-adk 로딩) → 메시지 루프.
@@ -1221,7 +1224,10 @@ async fn agent_dispatcher(
         }
     };
     match client.set_workspace(adk_path.clone()).await {
-        Ok(r) => log_both(&format!("[Naia] SetWorkspace → loaded={} {}/{}", r.loaded, r.provider, r.model)),
+        Ok(r) => log_both(&format!(
+            "[Naia] SetWorkspace → loaded={} {}/{}",
+            r.loaded, r.provider, r.model
+        )),
         Err(e) => log_both(&format!("[Naia] SetWorkspace 실패: {}", e)),
     }
     // Proactive speech is a session-level server stream, independent from an
@@ -1269,7 +1275,11 @@ async fn agent_dispatcher(
         match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
             "chat_request" => {
                 let req = agent_grpc::json_to_chat_request(&v);
-                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let request_id = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let mut c = client.clone();
                 let app2 = app.clone();
                 let app_err = app.clone(); // emit closure 가 app2 를 move → 에러 경로용 별도 clone
@@ -1291,14 +1301,31 @@ async fn agent_dispatcher(
                 });
             }
             "creds_update" => {
-                let provider = v.get("provider").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let api_key = v.get("apiKey").and_then(|x| x.as_str()).map(|s| s.to_string());
-                let naia_key = v.get("naiaKey").and_then(|x| x.as_str()).map(|s| s.to_string());
+                let provider = v
+                    .get("provider")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let api_key = v
+                    .get("apiKey")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string());
+                let naia_key = v
+                    .get("naiaKey")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string());
                 let _ = client.update_creds(provider, api_key, naia_key).await;
             }
             "cancel_stream" => {
-                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
+                let rid = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let activity_id = v
+                    .get("activityId")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
                 let _ = client.cancel(rid, activity_id).await;
             }
             "configure_speech_profile" => {
@@ -1309,7 +1336,10 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("agent:main:main")
                     .to_string();
-                let profile_name = v.get("profile").and_then(|x| x.as_str()).unwrap_or("disabled");
+                let profile_name = v
+                    .get("profile")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("disabled");
                 let bounded = |key: &str, default: i64, min: i64, max: i64| {
                     v.get(key)
                         .and_then(|x| x.as_i64())
@@ -1317,8 +1347,8 @@ async fn agent_dispatcher(
                         .clamp(min, max)
                 };
                 let profile = match profile_name {
-                    "personal_radio_dj" => Profile::PersonalRadioDj(
-                        agent_grpc::pb::PersonalRadioDjProfile {
+                    "personal_radio_dj" => {
+                        Profile::PersonalRadioDj(agent_grpc::pb::PersonalRadioDjProfile {
                             idle_ms: bounded("idleMs", 120_000, 5_000, 86_400_000),
                             dj_interval_ms: bounded("djIntervalMs", 900_000, 30_000, 86_400_000),
                             timezone: v
@@ -1336,10 +1366,10 @@ async fn agent_dispatcher(
                                 .get("weatherConsented")
                                 .and_then(|x| x.as_bool())
                                 .unwrap_or(false),
-                        },
-                    ),
-                    "exhibition_intro" => Profile::ExhibitionIntro(
-                        agent_grpc::pb::ExhibitionIntroProfile {
+                        })
+                    }
+                    "exhibition_intro" => {
+                        Profile::ExhibitionIntro(agent_grpc::pb::ExhibitionIntroProfile {
                             knowledge_scope: v
                                 .get("knowledgeScope")
                                 .and_then(|x| x.as_str())
@@ -1347,15 +1377,19 @@ async fn agent_dispatcher(
                                 .to_string(),
                             idle_ms: bounded("idleMs", 15_000, 1_000, 3_600_000),
                             intro_interval_ms: bounded("introIntervalMs", 20_000, 2_000, 3_600_000),
-                        },
-                    ),
+                        })
+                    }
                     _ => Profile::Disabled(agent_grpc::pb::DisabledSpeechProfile {}),
                 };
                 let request = agent_grpc::pb::ConfigureSpeechProfileRequest {
                     session_id,
                     profile: Some(profile),
                 };
-                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let request_id = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let result = client.configure_speech_profile(request).await;
                 let payload = match result {
                     Ok(ok) => serde_json::json!({
@@ -1378,9 +1412,20 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("agent:main:main")
                     .to_string();
-                let activity_id = v.get("activityId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let payload = match client.yield_speech_activity(session_id, activity_id.clone()).await {
+                let activity_id = v
+                    .get("activityId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let request_id = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let payload = match client
+                    .yield_speech_activity(session_id, activity_id.clone())
+                    .await
+                {
                     Ok(result) => serde_json::json!({
                         "type": "speech_activity_yielded",
                         "requestId": request_id,
@@ -1405,9 +1450,18 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("agent:main:main")
                     .to_string();
-                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
-                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let result = client.stop_speech_activity(session_id, activity_id.clone()).await;
+                let activity_id = v
+                    .get("activityId")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+                let request_id = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let result = client
+                    .stop_speech_activity(session_id, activity_id.clone())
+                    .await;
                 let payload = match result {
                     Ok(ok) => serde_json::json!({
                         "type": "speech_activity_stopped",
@@ -1430,10 +1484,23 @@ async fn agent_dispatcher(
                     .and_then(|x| x.as_str())
                     .unwrap_or("agent:main:main")
                     .to_string();
-                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
-                let action = v.get("action").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let result = client.control_speech_activity(session_id, activity_id.clone(), action.clone()).await;
+                let activity_id = v
+                    .get("activityId")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+                let action = v
+                    .get("action")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let request_id = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let result = client
+                    .control_speech_activity(session_id, activity_id.clone(), action.clone())
+                    .await;
                 let payload = match result {
                     Ok(ok) => serde_json::json!({
                         "type": "speech_activity_controlled",
@@ -1453,8 +1520,16 @@ async fn agent_dispatcher(
             }
             "approval_response" => {
                 let approve = v.get("decision").and_then(|x| x.as_str()) == Some("approve");
-                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let tcid = v.get("toolCallId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let rid = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tcid = v
+                    .get("toolCallId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let _ = client.approval_response(rid, tcid, approve).await;
             }
             "reload_settings" | "set_workspace" => {
@@ -1462,16 +1537,27 @@ async fn agent_dispatcher(
                 // 에이전트가 naia-settings 재로딩 후 활성 config 를 swap(정본 R1-2: "startup-only 금지", 멱등).
                 // 재기동 없이 모델 전환이 실제 반영되게 하는 결선(=사용자 "모델 안 바뀜" 회귀 차단).
                 match client.set_workspace(adk_path.clone()).await {
-                    Ok(r) => log_both(&format!("[Naia] ReloadSettings → loaded={} {}/{}", r.loaded, r.provider, r.model)),
+                    Ok(r) => log_both(&format!(
+                        "[Naia] ReloadSettings → loaded={} {}/{}",
+                        r.loaded, r.provider, r.model
+                    )),
                     Err(e) => log_verbose(&format!("[Naia] ReloadSettings 실패: {}", e)),
                 }
             }
             "tool_request" => {
                 // 셸 directToolCall(기동 시 skill_voicewake/skill_config/skill_sessions 등) — new-core 미지원이나
                 // 반드시 즉시 error 응답해야 셸이 120s 행에 빠지지 않는다(드롭 금지, 구 stdio 동작 복원).
-                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let rid = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let rid_err = rid.clone();
-                let tool = v.get("toolName").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let tool = v
+                    .get("toolName")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let mut c = client.clone();
                 let app2 = app.clone();
                 let app_err = app.clone();
@@ -1496,26 +1582,59 @@ async fn agent_dispatcher(
             // ── UC-PANEL FR-PANEL: 환경 panel skill(BGM·브라우저·workspace) 셸→agent 배선(현 `_=>{}` drop 제거) ──
             "panel_skills" => {
                 // FR-PANEL-1 등록: wire tools → pb::ToolSpec(parameters→JSON 문자열, tier→Option<i32>).
-                let panel_id = v.get("appId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let tools: Vec<agent_grpc::pb::ToolSpec> = v.get("tools").and_then(|t| t.as_array()).map(|arr| {
-                    arr.iter().map(|t| agent_grpc::pb::ToolSpec {
-                        name: t.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        description: t.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        parameters_json: t.get("parameters").map(|p| p.to_string()).unwrap_or_else(|| "{}".to_string()),
-                        tier: t.get("tier").and_then(|x| x.as_i64()).map(|n| n as i32),
-                    }).collect()
-                }).unwrap_or_default();
+                let panel_id = v
+                    .get("appId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tools: Vec<agent_grpc::pb::ToolSpec> = v
+                    .get("tools")
+                    .and_then(|t| t.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .map(|t| agent_grpc::pb::ToolSpec {
+                                name: t
+                                    .get("name")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                description: t
+                                    .get("description")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                parameters_json: t
+                                    .get("parameters")
+                                    .map(|p| p.to_string())
+                                    .unwrap_or_else(|| "{}".to_string()),
+                                tier: t.get("tier").and_then(|x| x.as_i64()).map(|n| n as i32),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 let mut c = client.clone();
-                tauri::async_runtime::spawn(async move { let _ = c.register_panel_skills(panel_id, tools).await; });
+                tauri::async_runtime::spawn(async move {
+                    let _ = c.register_panel_skills(panel_id, tools).await;
+                });
             }
             "panel_skills_clear" => {
-                let panel_id = v.get("appId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let panel_id = v
+                    .get("appId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let mut c = client.clone();
-                tauri::async_runtime::spawn(async move { let _ = c.clear_panel_skills(panel_id).await; });
+                tauri::async_runtime::spawn(async move {
+                    let _ = c.clear_panel_skills(panel_id).await;
+                });
             }
             "skill_list" => {
                 // ListSkills → skill_list_response(셸 fetchAgentSkills 기대 형태). parameters_json → parameters 파싱.
-                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let rid = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let mut c = client.clone();
                 let app2 = app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -1527,19 +1646,40 @@ async fn agent_dispatcher(
                             })).collect();
                             let _ = app2.emit("agent_response", &serde_json::json!({"type":"skill_list_response","requestId":rid,"tools":tools}).to_string());
                         }
-                        Err(e) => { let _ = app2.emit("agent_response", &serde_json::json!({"type":"error","requestId":rid,"message":format!("grpc list_skills: {}", e)}).to_string()); }
+                        Err(e) => {
+                            let _ = app2.emit("agent_response", &serde_json::json!({"type":"error","requestId":rid,"message":format!("grpc list_skills: {}", e)}).to_string());
+                        }
                     }
                 });
             }
             "panel_tool_result" => {
                 // FR-PANEL-3 결과 주입: 셸 panel 실행 결과 → agent chat 루프 pending resolve.
-                let rid = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let tcid = v.get("toolCallId").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let output = v.get("result").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let rid = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tcid = v
+                    .get("toolCallId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let output = v
+                    .get("result")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let success = v.get("success").and_then(|x| x.as_bool()).unwrap_or(false);
-                let activity_id = v.get("activityId").and_then(|x| x.as_str()).map(str::to_string);
+                let activity_id = v
+                    .get("activityId")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
                 let mut c = client.clone();
-                tauri::async_runtime::spawn(async move { let _ = c.panel_tool_result(rid, tcid, output, success, activity_id).await; });
+                tauri::async_runtime::spawn(async move {
+                    let _ = c
+                        .panel_tool_result(rid, tcid, output, success, activity_id)
+                        .await;
+                });
             }
             "app_install" => {
                 // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — AppInstallDialog 무한 로딩 방지 위해
@@ -1581,8 +1721,8 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             let candidates = [
                 "../../bgm-sidecar/dist/bgm-server-bin.js", // shell sidecar (from src-tauri/) — 환경 표준
                 "../bgm-sidecar/dist/bgm-server-bin.js",    // shell sidecar (from shell/)
-                "../../agent/src/bgm-server-bin.ts",        // legacy embedded agent (from src-tauri/)
-                "../agent/src/bgm-server-bin.ts",           // legacy (from shell/)
+                "../../agent/src/bgm-server-bin.ts", // legacy embedded agent (from src-tauri/)
+                "../agent/src/bgm-server-bin.ts",    // legacy (from shell/)
             ];
             for rel in &candidates {
                 let dev_path = std::env::current_dir()
@@ -2161,7 +2301,11 @@ async fn store_startup_message(
     guard.retain(|existing| {
         serde_json::from_str::<serde_json::Value>(existing)
             .ok()
-            .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|t| t.to_string()))
+            .and_then(|v| {
+                v.get("type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t.to_string())
+            })
             .map(|t| t != msg_type)
             .unwrap_or(true)
     });
@@ -2464,6 +2608,28 @@ fn detect_vram_gb_blocking() -> Option<f64> {
     }
 }
 
+fn path_to_string(path: std::path::PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn infer_repos_adk_root(adk_path: &str) -> Option<String> {
+    let start = std::path::PathBuf::from(adk_path);
+    std::iter::once(start.as_path())
+        .chain(start.ancestors().skip(1))
+        .find(|candidate| {
+            candidate
+                .join("projects")
+                .join("naia-omni-windows-manager")
+                .join("loader")
+                .exists()
+        })
+        .map(|candidate| {
+            let normalized =
+                dunce::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
+            path_to_string(normalized)
+        })
+}
+
 /// windows-manager loader 디렉터리 해석(`loader/` 를 담은, `python -m loader` 가능한 dir).
 /// **임베딩**: 패키지 앱은 번들된 loader(resource_dir/cascade-loader)를 쓴다 — 외부 adk
 /// 체크아웃에 의존하지 않는다(stage-cascade-loader.mjs 가 빌드시 동봉, agent 패턴 동형).
@@ -2482,11 +2648,10 @@ fn resolve_cascade_loader_dir(app: &tauri::AppHandle, adk_path: &str) -> String 
         }
     }
     // dev 폴백(번들 미존재 + env 미설정): sibling 체크아웃.
-    std::path::PathBuf::from(adk_path)
-        .join("projects")
-        .join("naia-omni-windows-manager")
-        .to_string_lossy()
-        .into_owned()
+    let repos_adk = infer_repos_adk_root(adk_path)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(adk_path));
+    path_to_string(repos_adk.join("projects").join("naia-omni-windows-manager"))
 }
 
 /// cascade-stderr.log 의 마지막 몇 줄(loader 실패 사유 — venv 미설치 등)을 읽어 UI 에 전달.
@@ -2545,6 +2710,7 @@ fn spawn_cascade(
         .join("naia-settings")
         .join("slots-manifest.json");
     let loader_profile = read_cascade_loader_profile(&manifest);
+    let inferred_repos_adk = infer_repos_adk_root(adk_path);
 
     let mut cmd = Command::new(&python);
     cmd.arg("-m")
@@ -2555,6 +2721,11 @@ fn spawn_cascade(
         .arg("--adk-root")
         .arg(adk_path)
         .current_dir(loader_dir);
+    if std::env::var_os("NAIA_REPOS_ADK").is_none() {
+        if let Some(repos_adk) = &inferred_repos_adk {
+            cmd.env("NAIA_REPOS_ADK", repos_adk);
+        }
+    }
     if let Some(profile) = &loader_profile {
         cmd.arg("--profile").arg(profile);
     }
@@ -2584,13 +2755,21 @@ fn spawn_cascade(
     platform::hide_console(&mut cmd);
 
     log_both(&format!(
-        "[Naia] Starting local cascade: {} -m loader launch (cwd={}, profile={})",
+        "[Naia] Starting local cascade: {} -m loader launch (cwd={}, profile={}, repos_adk={})",
         python,
         loader_dir,
-        loader_profile.as_deref().unwrap_or("manifest")
+        loader_profile.as_deref().unwrap_or("manifest"),
+        std::env::var("NAIA_REPOS_ADK")
+            .ok()
+            .or(inferred_repos_adk)
+            .as_deref()
+            .unwrap_or("manifest")
     ));
     let mut child = cmd.spawn().map_err(|e| {
-        format!("Failed to spawn cascade loader: {} (loader_dir={})", e, loader_dir)
+        format!(
+            "Failed to spawn cascade loader: {} (loader_dir={})",
+            e, loader_dir
+        )
     })?;
 
     let stdout = child
@@ -2650,7 +2829,7 @@ fn spawn_cascade(
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     return Err(
-                        "cascade readiness handshake timeout (CASCADE_READY 미수신)".to_string(),
+                        "cascade readiness handshake timeout (CASCADE_READY 미수신)".to_string()
                     );
                 }
             }
@@ -2758,7 +2937,10 @@ async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
 
     let text = String::from_utf8_lossy(&output.stdout);
     // First line = primary GPU's total memory in MiB.
-    let mib = text.lines().next().and_then(|l| l.trim().parse::<f64>().ok());
+    let mib = text
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse::<f64>().ok());
 
     Ok(match mib {
         Some(m) if m > 0.0 => serde_json::json!((m / 1024.0).round()),
@@ -2825,9 +3007,10 @@ fn open_log_in_editor(path: String) -> Result<(), String> {
     let result = std::process::Command::new("open").arg(&path).spawn();
     #[cfg(target_os = "linux")]
     let result = std::process::Command::new("xdg-open").arg(&path).spawn();
-    result.map(|_| ()).map_err(|e| format!("Failed to open log file: {}", e))
+    result
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open log file: {}", e))
 }
-
 
 /// Generate a random state token for OAuth deep link CSRF protection.
 /// Frontend calls this before opening the OAuth URL and passes state as query param.
@@ -2855,7 +3038,6 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
-
 
 /// Read Discord bot token.
 /// Priority: Shell local config (naia-discord.json) → Gateway config (openclaw.json).
@@ -3135,8 +3317,6 @@ async fn fetch_linked_channels(naia_key: String, user_id: String) -> Result<Stri
         .map_err(|e| format!("Failed to read response: {}", e))
 }
 
-
-
 // ── Gemini Live WebSocket proxy commands ──
 // WebKitGTK cannot directly connect to wss://generativelanguage.googleapis.com
 // (silent hang). These commands proxy the WebSocket through Rust.
@@ -3243,17 +3423,12 @@ fn unique_dest(dir: &std::path::Path, name: &str, ext: &str) -> std::path::PathB
 }
 
 /// Extract a .nva ZIP archive to `dest` directory.
-fn extract_nva_zip(
-    src: &std::path::Path,
-    dest: &std::path::Path,
-) -> Result<String, String> {
+fn extract_nva_zip(src: &std::path::Path, dest: &std::path::Path) -> Result<String, String> {
     let file = std::fs::File::open(src).map_err(|e| e.to_string())?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(dest).map_err(|e| e.to_string())?;
     for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| e.to_string())?;
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         let name = entry.name().to_string();
         // Path traversal guard
         if name.contains("..") {
@@ -3345,7 +3520,8 @@ async fn upload_nva_bundle(runtime_url: String, bundle_dir: String) -> Result<St
             .compression_method(zip::CompressionMethod::Stored);
         for (name, path) in &files {
             let bytes = std::fs::read(path).map_err(|e| format!("read {name}: {e}"))?;
-            zw.start_file(name.as_str(), opts).map_err(|e| e.to_string())?;
+            zw.start_file(name.as_str(), opts)
+                .map_err(|e| e.to_string())?;
             zw.write_all(&bytes).map_err(|e| e.to_string())?;
         }
         zw.finish().map_err(|e| e.to_string())?;
@@ -3619,14 +3795,24 @@ fn conversations_dir(adk_path: &str) -> std::path::PathBuf {
 fn safe_session_base(session_id: &str) -> String {
     let mapped: String = session_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let base: String = mapped
         .trim_start_matches(|c| c == '_' || c == '.')
         .chars()
         .take(128)
         .collect();
-    if base.is_empty() { "default".to_string() } else { base }
+    if base.is_empty() {
+        "default".to_string()
+    } else {
+        base
+    }
 }
 
 /// 세션 transcript 파일 크기 상한(병리적 파일이 list/read 시 IPC·메모리를 폭주시키는 것 차단; 적대적 리뷰 MED).
@@ -3653,7 +3839,11 @@ async fn list_conversations(adk_path: String) -> Result<String, String> {
                 None => continue,
             };
             // 병리적 크기 파일 = 전체 파싱 skip(메모리 폭주 차단, 적대적 리뷰 MED). mtime degraded 엔트리로 노출(숨기지 않음).
-            if entry.metadata().map(|m| m.len() > MAX_CONV_BYTES).unwrap_or(false) {
+            if entry
+                .metadata()
+                .map(|m| m.len() > MAX_CONV_BYTES)
+                .unwrap_or(false)
+            {
                 let updated = entry
                     .metadata()
                     .ok()
@@ -3710,8 +3900,14 @@ async fn list_conversations(adk_path: String) -> Result<String, String> {
         }
     }
     sessions.sort_by(|a, b| {
-        b.get("updatedAt").and_then(serde_json::Value::as_u64).unwrap_or(0)
-            .cmp(&a.get("updatedAt").and_then(serde_json::Value::as_u64).unwrap_or(0))
+        b.get("updatedAt")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+            .cmp(
+                &a.get("updatedAt")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+            )
     });
     Ok(serde_json::json!({ "sessions": sessions }).to_string())
 }
@@ -3719,14 +3915,19 @@ async fn list_conversations(adk_path: String) -> Result<String, String> {
 /// Read a conversation's raw JSONL (`{adk_path}/conversations/{session}.jsonl`). Empty string if absent. Read-only(FR-CONV.3).
 #[tauri::command]
 async fn read_conversation(adk_path: String, session_id: String) -> Result<String, String> {
-    let file = conversations_dir(&adk_path).join(format!("{}.jsonl", safe_session_base(&session_id)));
+    let file =
+        conversations_dir(&adk_path).join(format!("{}.jsonl", safe_session_base(&session_id)));
     if !file.exists() {
         return Ok(String::new());
     }
     // 병리적 크기 IPC payload 차단(적대적 리뷰 MED) — read_local_binary 의 MAX_BYTES 가드와 동형.
     if let Ok(meta) = std::fs::metadata(&file) {
         if meta.len() > MAX_CONV_BYTES {
-            return Err(format!("transcript too large: {} bytes (max {})", meta.len(), MAX_CONV_BYTES));
+            return Err(format!(
+                "transcript too large: {} bytes (max {})",
+                meta.len(),
+                MAX_CONV_BYTES
+            ));
         }
     }
     std::fs::read_to_string(&file).map_err(|e| e.to_string())
@@ -3735,7 +3936,8 @@ async fn read_conversation(adk_path: String, session_id: String) -> Result<Strin
 /// Delete a conversation session file. session_id sanitized(traversal 차단).
 #[tauri::command]
 async fn delete_conversation(adk_path: String, session_id: String) -> Result<(), String> {
-    let file = conversations_dir(&adk_path).join(format!("{}.jsonl", safe_session_base(&session_id)));
+    let file =
+        conversations_dir(&adk_path).join(format!("{}.jsonl", safe_session_base(&session_id)));
     if file.exists() {
         std::fs::remove_file(&file).map_err(|e| e.to_string())?;
     }
@@ -3781,25 +3983,38 @@ mod conversation_io_tests {
         d
     }
     fn write_jsonl(adk: &PathBuf, name: &str, lines: &[&str]) {
-        fs::write(adk.join("conversations").join(name), format!("{}\n", lines.join("\n"))).unwrap();
+        fs::write(
+            adk.join("conversations").join(name),
+            format!("{}\n", lines.join("\n")),
+        )
+        .unwrap();
     }
 
     #[tokio::test]
     async fn list_read_delete_roundtrip() {
         let adk = temp_adk("rd");
         // agent conversation-log-store 와 동일 포맷(user/assistant + timestamp)
-        write_jsonl(&adk, "chat-1.jsonl", &[
-            r#"{"role":"user","content":"안녕","timestamp":1000}"#,
-            r#"{"role":"assistant","content":"반가워요","timestamp":1001}"#,
-        ]);
-        write_jsonl(&adk, "chat-2.jsonl", &[
-            r#"{"role":"user","content":"날씨","timestamp":2000}"#,
-            r#"{"role":"assistant","content":"맑음","timestamp":2001}"#,
-        ]);
+        write_jsonl(
+            &adk,
+            "chat-1.jsonl",
+            &[
+                r#"{"role":"user","content":"안녕","timestamp":1000}"#,
+                r#"{"role":"assistant","content":"반가워요","timestamp":1001}"#,
+            ],
+        );
+        write_jsonl(
+            &adk,
+            "chat-2.jsonl",
+            &[
+                r#"{"role":"user","content":"날씨","timestamp":2000}"#,
+                r#"{"role":"assistant","content":"맑음","timestamp":2001}"#,
+            ],
+        );
         let adk_s = adk.to_str().unwrap().to_string();
 
         // list: 2 세션, updatedAt desc(chat-2 먼저), label=첫 user content, messageCount=2
-        let v: serde_json::Value = serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
+        let v: serde_json::Value =
+            serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
         let sessions = v["sessions"].as_array().unwrap();
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0]["key"], "chat-2");
@@ -3807,22 +4022,35 @@ mod conversation_io_tests {
         assert_eq!(sessions[0]["messageCount"], 2);
 
         // read: raw jsonl 그대로
-        let raw = read_conversation(adk_s.clone(), "chat-1".into()).await.unwrap();
+        let raw = read_conversation(adk_s.clone(), "chat-1".into())
+            .await
+            .unwrap();
         assert!(raw.contains("안녕") && raw.contains("반가워요"));
 
         // read traversal: sanitize → conversations 밖 접근 불가(부재 = 빈문자열)
-        assert_eq!(read_conversation(adk_s.clone(), "../../naia-settings/config".into()).await.unwrap(), "");
+        assert_eq!(
+            read_conversation(adk_s.clone(), "../../naia-settings/config".into())
+                .await
+                .unwrap(),
+            ""
+        );
 
         // delete: chat-1 → list 1개
-        delete_conversation(adk_s.clone(), "chat-1".into()).await.unwrap();
+        delete_conversation(adk_s.clone(), "chat-1".into())
+            .await
+            .unwrap();
         assert!(!adk.join("conversations").join("chat-1.jsonl").exists());
-        let after: serde_json::Value = serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
+        let after: serde_json::Value =
+            serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
         assert_eq!(after["sessions"].as_array().unwrap().len(), 1);
 
         // delete traversal: conversations 밖 파일을 절대 안 지움(보안 핵심)
         fs::write(adk.join("outside.txt"), "secret").unwrap();
         let _ = delete_conversation(adk_s.clone(), "../outside".into()).await;
-        assert!(adk.join("outside.txt").exists(), "traversal delete 가 conversations 밖 파일을 지우면 안 됨");
+        assert!(
+            adk.join("outside.txt").exists(),
+            "traversal delete 가 conversations 밖 파일을 지우면 안 됨"
+        );
 
         let _ = fs::remove_dir_all(&adk);
     }
@@ -3831,9 +4059,19 @@ mod conversation_io_tests {
     async fn empty_and_missing() {
         let adk = temp_adk("empty");
         let adk_s = adk.to_str().unwrap().to_string();
-        assert_eq!(list_conversations(adk_s.clone()).await.unwrap(), "{\"sessions\":[]}");
-        assert_eq!(read_conversation(adk_s.clone(), "nope".into()).await.unwrap(), "");
-        assert!(delete_conversation(adk_s.clone(), "nope".into()).await.is_ok());
+        assert_eq!(
+            list_conversations(adk_s.clone()).await.unwrap(),
+            "{\"sessions\":[]}"
+        );
+        assert_eq!(
+            read_conversation(adk_s.clone(), "nope".into())
+                .await
+                .unwrap(),
+            ""
+        );
+        assert!(delete_conversation(adk_s.clone(), "nope".into())
+            .await
+            .is_ok());
         let _ = fs::remove_dir_all(&adk);
     }
 }
@@ -3858,7 +4096,10 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
         return Err("adk_path and env_key must not be empty".to_string());
     }
     // Basic safety: env_key must be alphanumeric + underscore only.
-    if !env_key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+    if !env_key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
         return Err(format!("invalid env_key: {env_key}"));
     }
 
@@ -3872,7 +4113,10 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
         // DPAPI (CurrentUser scope) via PowerShell — same script as naia-agent keychainSet.
         let out_file = keys_dir.join(format!("{env_key}.dpapi"));
         // Escape for PowerShell single-quoted string: ' → '' and \ → \\
-        let out_path = out_file.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
+        let out_path = out_file
+            .to_string_lossy()
+            .replace('\'', "''")
+            .replace('\\', "\\\\");
         let script = format!(
             "Add-Type -AssemblyName System.Security; \
              $v = [Console]::In.ReadLine(); \
@@ -3892,7 +4136,9 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
             .spawn()
             .map_err(|e| format!("powershell spawn failed: {e}"))?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(value.as_bytes()).map_err(|e| e.to_string())?;
+            stdin
+                .write_all(value.as_bytes())
+                .map_err(|e| e.to_string())?;
             drop(stdin);
         }
         let status = child.wait().map_err(|e| e.to_string())?;
@@ -3907,9 +4153,12 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
         let status = std::process::Command::new("security")
             .args([
                 "add-generic-password",
-                "-a", &env_key,
-                "-s", "naia-agent",
-                "-w", &value,
+                "-a",
+                &env_key,
+                "-s",
+                "naia-agent",
+                "-w",
+                &value,
                 "-U", // update if exists
             ])
             .stdout(std::process::Stdio::null())
@@ -3927,16 +4176,21 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
         let status = std::process::Command::new("secret-tool")
             .args([
                 "store",
-                "--label", &format!("naia-agent:{env_key}"),
-                "service", "naia-agent",
-                "account", &env_key,
+                "--label",
+                &format!("naia-agent:{env_key}"),
+                "service",
+                "naia-agent",
+                "account",
+                &env_key,
             ])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .and_then(|mut c| {
-                if let Some(mut s) = c.stdin.take() { let _ = s.write_all(value.as_bytes()); }
+                if let Some(mut s) = c.stdin.take() {
+                    let _ = s.write_all(value.as_bytes());
+                }
                 c.wait()
             })
             .map_err(|e| format!("secret-tool failed: {e}"))?;
@@ -3963,8 +4217,11 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
         let mut keys = existing;
         keys.push(env_key.clone());
         let manifest = serde_json::json!({ "keys": keys });
-        std::fs::write(&creds_path, serde_json::to_string_pretty(&manifest).unwrap() + "\n")
-            .map_err(|e| e.to_string())?;
+        std::fs::write(
+            &creds_path,
+            serde_json::to_string_pretty(&manifest).unwrap() + "\n",
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -4195,8 +4452,7 @@ async fn delete_naia_adk(
     // Brief wait for the OS to release file handles before deletion
     tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
 
-    std::fs::remove_dir_all(&adk)
-        .map_err(|e| format!("Failed to delete {adk_path}: {e}"))
+    std::fs::remove_dir_all(&adk).map_err(|e| format!("Failed to delete {adk_path}: {e}"))
 }
 
 /// Clone nextain/naia-adk (shallow) into adk_path.
@@ -4207,16 +4463,14 @@ async fn delete_naia_adk(
 ///   { phase: "zip_fallback" }                                  — git failed
 ///   { phase: "zip_progress", downloaded, total }               — bytes received
 #[tauri::command]
-async fn clone_naia_adk(
-    adk_path: String,
-    app_handle: AppHandle,
-) -> Result<(), String> {
+async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), String> {
     if adk_path.is_empty() {
         return Err("adk_path is empty".to_string());
     }
     let path = std::path::PathBuf::from(&adk_path);
     if path.is_dir() {
-        let non_empty = path.read_dir()
+        let non_empty = path
+            .read_dir()
             .map(|mut d| d.next().is_some())
             .unwrap_or(false);
         if non_empty {
@@ -4234,8 +4488,7 @@ async fn clone_naia_adk(
         .unwrap_or(false)
     {
         log_verbose("[clone_naia_adk] NAIA_E2E_MOCK_CLONE=1 — writing mock scaffold");
-        std::fs::create_dir_all(&path)
-            .map_err(|e| format!("mock create_dir_all: {e}"))?;
+        std::fs::create_dir_all(&path).map_err(|e| format!("mock create_dir_all: {e}"))?;
         std::fs::write(path.join("README.md"), "# E2E mock naia-adk\n")
             .map_err(|e| format!("mock write README: {e}"))?;
         return Ok(());
@@ -4243,7 +4496,13 @@ async fn clone_naia_adk(
 
     // Try git clone first.
     let mut cmd = std::process::Command::new("git");
-    cmd.args(["clone", "--depth", "1", "https://github.com/nextain/naia-adk", &adk_path]);
+    cmd.args([
+        "clone",
+        "--depth",
+        "1",
+        "https://github.com/nextain/naia-adk",
+        &adk_path,
+    ]);
     platform::hide_console(&mut cmd);
     match cmd.output() {
         Ok(output) if output.status.success() => return Ok(()),
@@ -4257,9 +4516,12 @@ async fn clone_naia_adk(
     }
 
     // Fallback: download zip from GitHub and extract — emit progress so UI is not silent.
-    let _ = app_handle.emit("adk_setup_progress", serde_json::json!({
-        "phase": "zip_fallback"
-    }));
+    let _ = app_handle.emit(
+        "adk_setup_progress",
+        serde_json::json!({
+            "phase": "zip_fallback"
+        }),
+    );
     naia_adk_download_zip(&adk_path, &app_handle).await
 }
 
@@ -4284,25 +4546,30 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
         downloaded += chunk.len() as u64;
         buf.extend_from_slice(&chunk);
         if last_emit.elapsed() >= std::time::Duration::from_millis(200) {
-            let _ = app_handle.emit("adk_setup_progress", serde_json::json!({
-                "phase": "zip_progress",
-                "downloaded": downloaded,
-                "total": total,
-            }));
+            let _ = app_handle.emit(
+                "adk_setup_progress",
+                serde_json::json!({
+                    "phase": "zip_progress",
+                    "downloaded": downloaded,
+                    "total": total,
+                }),
+            );
             last_emit = std::time::Instant::now();
         }
     }
     // Final progress emit so UI shows 100% before extraction starts.
-    let _ = app_handle.emit("adk_setup_progress", serde_json::json!({
-        "phase": "zip_progress",
-        "downloaded": downloaded,
-        "total": total,
-    }));
+    let _ = app_handle.emit(
+        "adk_setup_progress",
+        serde_json::json!({
+            "phase": "zip_progress",
+            "downloaded": downloaded,
+            "total": total,
+        }),
+    );
 
     // Extract — GitHub zips contain a single top-level "naia-adk-main/" folder.
     let cursor = std::io::Cursor::new(buf);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| format!("zip open failed: {e}"))?;
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("zip open failed: {e}"))?;
 
     let dst = std::path::PathBuf::from(adk_path);
     std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
@@ -4342,7 +4609,12 @@ pub fn run() {
 
     // Open debug log file — frontend logs are written here with flush so crashes are captured.
     let log_path = std::env::temp_dir().join("naia-debug.log");
-    match std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&log_path) {
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+    {
         Ok(f) => {
             DEBUG_LOG_FILE.get_or_init(|| Mutex::new(f));
             log::info!("[naia] debug log file: {}", log_path.display());
@@ -4367,12 +4639,7 @@ pub fn run() {
                 .map(|state| state.oauth_state.clone());
             for arg in args {
                 if arg.starts_with("naia://") {
-                    process_deep_link_url(
-                        &arg,
-                        app,
-                        oauth_state.as_ref(),
-                        "single-instance",
-                    );
+                    process_deep_link_url(&arg, app, oauth_state.as_ref(), "single-instance");
                 }
             }
         }))
@@ -5077,14 +5344,56 @@ mod tests {
     }
 
     #[test]
+    fn infer_repos_adk_root_finds_workspace_from_nested_naia_adk() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("alpha-adk");
+        let user_adk = workspace.join("projects").join("naia-adk");
+        let loader = workspace
+            .join("projects")
+            .join("naia-omni-windows-manager")
+            .join("loader");
+        std::fs::create_dir_all(&user_adk).unwrap();
+        std::fs::create_dir_all(&loader).unwrap();
+
+        let resolved = infer_repos_adk_root(user_adk.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            std::path::PathBuf::from(resolved),
+            dunce::canonicalize(&workspace).unwrap()
+        );
+    }
+
+    #[test]
+    fn infer_repos_adk_root_accepts_workspace_root_directly() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("alpha-adk");
+        let loader = workspace
+            .join("projects")
+            .join("naia-omni-windows-manager")
+            .join("loader");
+        std::fs::create_dir_all(&loader).unwrap();
+
+        let resolved = infer_repos_adk_root(workspace.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            std::path::PathBuf::from(resolved),
+            dunce::canonicalize(&workspace).unwrap()
+        );
+    }
+
+    #[test]
+    fn infer_repos_adk_root_returns_none_without_workspace_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let user_adk = dir.path().join("naia-adk");
+        std::fs::create_dir_all(&user_adk).unwrap();
+
+        assert_eq!(infer_repos_adk_root(user_adk.to_str().unwrap()), None);
+    }
+    #[test]
     fn read_cascade_loader_profile_reads_manifest_gpu_profile() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = dir.path().join("slots-manifest.json");
-        std::fs::write(
-            &manifest,
-            r#"{"gpu":{"loaderProfile":" laptop_4060_8g "}}"#,
-        )
-        .unwrap();
+        std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":" laptop_4060_8g "}}"#).unwrap();
 
         assert_eq!(
             read_cascade_loader_profile(&manifest).as_deref(),
@@ -5158,10 +5467,8 @@ mod tests {
     // 을 silently reject. 수정 = `is_deep_link_auth || is_http_callback` 형식.
     #[test]
     fn path_guard_accepts_http_callback() {
-        let url = url::Url::parse(
-            "http://127.0.0.1:18792/auth/callback?key=gw-abc&state=xyz",
-        )
-        .unwrap();
+        let url =
+            url::Url::parse("http://127.0.0.1:18792/auth/callback?key=gw-abc&state=xyz").unwrap();
         let is_deep_link_auth = url.host_str() == Some("auth");
         let is_http_callback = url.path().starts_with("/auth");
         assert!(

@@ -739,10 +739,8 @@ export function SettingsTab() {
 		mainProvider: ProviderId;
 		mainModel: string;
 	} => {
-		const caps = resolveLocalCapabilities(
-			resolveActiveTier(tier, detectedVramGb),
-			focus,
-		);
+		const resolvedTier = resolveActiveTier(tier, detectedVramGb);
+		const caps = resolveLocalCapabilities(resolvedTier, focus);
 		let nextAvatar = avatarProvider;
 		let nextNva = nvaModel;
 		let nextTts = ttsProvider;
@@ -804,6 +802,8 @@ export function SettingsTab() {
 			avatar: "vrm" | "naia-video-avatar";
 			nva: string;
 			tts: TtsProviderId;
+			mainProvider: ProviderId;
+			mainModel: string;
 		},
 	) => {
 		if (!naiaKey || tier === "off") {
@@ -841,6 +841,8 @@ export function SettingsTab() {
 				avatarProvider: staged.avatar,
 				nvaModel: staged.nva || undefined,
 				ttsProvider: staged.tts,
+				provider: staged.mainProvider,
+				model: staged.mainModel,
 			} as AppConfig;
 			await writeSlotsManifest(cfg);
 			const ready = await invoke<string>("start_cascade");
@@ -1415,6 +1417,12 @@ export function SettingsTab() {
 	const [labBalance, setLabBalance] = useState<number | null>(null);
 	const [labBalanceLoading, setLabBalanceLoading] = useState(false);
 	const [labBalanceError, setLabBalanceError] = useState(false);
+	const mountedRef = useRef(true);
+	useEffect(() => {
+		return () => {
+			mountedRef.current = false;
+		};
+	}, []);
 
 	const startLabLogin = async () => {
 		setLabWaiting(true);
@@ -1491,16 +1499,18 @@ export function SettingsTab() {
 
 	// Fetch Lab balance for a given key
 	function fetchLabBalance(key: string) {
+		if (!mountedRef.current) return Promise.resolve();
 		Logger.debug("SettingsTab", "fetchLabBalance called", {
 			keyPrefix: key.slice(0, 8),
 			keyLength: key.length,
 		});
 		setLabBalanceLoading(true);
 		setLabBalanceError(false);
-		fetch(`${LAB_GATEWAY_URL}/v1/profile/balance`, {
+		return fetch(`${LAB_GATEWAY_URL}/v1/profile/balance`, {
 			headers: { "X-AnyLLM-Key": `Bearer ${key}` },
 		})
 			.then((res) => {
+				if (!mountedRef.current) throw new Error("BALANCE_ABORTED");
 				if (res.status === 401) {
 					Logger.warn(
 						"SettingsTab",
@@ -1517,18 +1527,22 @@ export function SettingsTab() {
 				return res.json();
 			})
 			.then((data: unknown) => {
+				if (!mountedRef.current) return;
 				const credits = parseLabCredits(data);
 				setLabBalance(credits ?? 0);
 				setLabBalanceError(false);
 			})
 			.catch((err) => {
+				if (!mountedRef.current) return;
 				if (String(err).includes("BALANCE_UNAUTHORIZED")) return;
 				Logger.warn("SettingsTab", "Lab balance fetch failed", {
 					error: String(err),
 				});
 				setLabBalanceError(true);
 			})
-			.finally(() => setLabBalanceLoading(false));
+			.finally(() => {
+				if (mountedRef.current) setLabBalanceLoading(false);
+			});
 	}
 
 	// Fetch Lab balance when naiaKey is available
@@ -2282,6 +2296,7 @@ export function SettingsTab() {
 		resolveLocalCapabilities(activeLocalTier, local8gFocus),
 		detectedVramGb,
 		1.5,
+		activeLocalTier,
 	);
 	const localTierCapabilities = localVramFit.caps;
 	// free VRAM 부족으로 로컬 LLM 이 클라우드로 강등됐는지 — 프라이버시 정직 위해 UI 경고 표시.

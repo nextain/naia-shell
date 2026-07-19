@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	VRAM_TIERS,
+	capabilityVramCostGb,
 	type VramTierId,
 	fitLocalCapabilitiesToVram,
 	normalizeLocal8gFocus,
@@ -43,12 +44,14 @@ describe("selectVramTier (2026-07-08 monotonic tiers)", () => {
 		expect(t?.hidden).toBeFalsy(); // 유일한 노출(검증) 티어
 	});
 
-	it("laptop-4060-8g maps to the windows-manager loader profile", () => {
+	it("laptop-4060-8g maps to the windows-manager NPU loader profile", () => {
 		const t = VRAM_TIERS.find((x) => x.id === "laptop-4060-8g");
 		expect(t).toBeDefined();
-		expect(t?.llm).toBe("external");
-		expect(t?.localCapabilities).toEqual(["tts", "avatar"]);
+		expect(t?.llm).toBe("own");
+		expect(t?.localCapabilities).toEqual(["llm", "tts", "avatar"]);
 		expect(t?.approxLocalVramGb).toBeCloseTo(6.07, 2);
+		expect(capabilityVramCostGb("llm", t)).toBe(0);
+		expect(capabilityVramCostGb("tts", t)).toBeCloseTo(3.47, 2);
 		expect(t?.loaderProfile).toBe("laptop_4060_8g");
 		expect(t?.exclusiveLocal).toBeFalsy();
 		expect(t?.hidden).toBeFalsy();
@@ -75,12 +78,12 @@ describe("monotonic local capabilities (avatar → +llm → +voice) — 데이�
 		expect(tierFitsBoth(t)).toBe(false); // no local voice on 8G
 	});
 
-	it("8G laptop profile: local int8 voice + avatar, LLM/STT external", () => {
+	it("8G laptop profile: NPU LLM + local int8 voice + avatar", () => {
 		const t = byId("laptop-4060-8g");
-		expect(t.llm).toBe("external");
-		expect(t.localCapabilities).toEqual(["tts", "avatar"]);
+		expect(t.llm).toBe("own");
+		expect(t.localCapabilities).toEqual(["llm", "tts", "avatar"]);
 		expect(tierFitsBoth(t)).toBe(true);
-		expect(resolveLocalCapabilities(t, "llm")).toEqual(["tts", "avatar"]);
+		expect(resolveLocalCapabilities(t, "llm")).toEqual(["llm", "tts", "avatar"]);
 	});
 
 	it("12G (4070+): adds local voice → LLM + avatar + tts", () => {
@@ -150,15 +153,18 @@ describe("fitLocalCapabilitiesToVram (VRAM preflight → cloud LLM fallback)", (
 		expect(r.requiredGb).toBeCloseTo(6.6, 5);
 	});
 
-	it("8G both at PRODUCTION margin(1.5) → LLM falls back (fidelity, 적대리뷰 2026-07-09)", () => {
-		// ★ SettingsTab 은 margin 1.5 로 호출(프리플라이트 실호출 경로). 실 8GB 카드에서
-		//   both(llm 4.0 + avatar 2.6 = 6.6) > budget(8 - 1.5 = 6.5) → **LLM 클라우드 강등**.
-		//   즉 8G "둘 다 로컬" 선택해도 실측 numbers 상 **아바타만 로컬 + LLM 클라우드**가 된다.
-		//   (위 margin=1.0 케이스는 순수 함수 검증용. 이 케이스가 프로덕션 실동작 fidelity.)
-		//   실 fit 여부는 measurement-gated(F1) — cost 추정치가 바뀌면 이 경계도 바뀜.
+	it("8G both at PRODUCTION margin(1.5) without NPU override falls back to cloud LLM", () => {
 		const r = fitLocalCapabilitiesToVram(["llm", "avatar"], 8, 1.5);
 		expect(r.llmFallbackToCloud).toBe(true);
 		expect(r.caps).toEqual(["avatar"]);
+	});
+
+	it("4060 laptop NPU override keeps local LLM while GPU hosts TTS + avatar", () => {
+		const tier = VRAM_TIERS.find((x) => x.id === "laptop-4060-8g")!;
+		const r = fitLocalCapabilitiesToVram(["llm", "tts", "avatar"], 8, 1.5, tier);
+		expect(r.llmFallbackToCloud).toBe(false);
+		expect(r.caps).toEqual(["llm", "tts", "avatar"]);
+		expect(r.requiredGb).toBeCloseTo(6.07, 2);
 	});
 
 	it("tight VRAM → drop LLM to cloud, keep avatar", () => {

@@ -428,6 +428,24 @@ export function invalidateVoskBuildCache(
 		"cargo clean --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt",
 		shellDir,
 	);
+	runImpl(
+		"cargo build --manifest-path src-tauri/Cargo.toml -p tauri-plugin-stt --release",
+		shellDir,
+	);
+	let missing = files.filter((file) => !existsSync(resolve(resourcesDir, file)));
+	if (missing.length) {
+		const releaseDir = resolve(shellDir, "src-tauri", "target", "release");
+		for (const file of missing) {
+			const source = resolve(releaseDir, file);
+			if (existsSync(source)) copyFileSync(source, resolve(resourcesDir, file));
+		}
+		missing = files.filter((file) => !existsSync(resolve(resourcesDir, file)));
+	}
+	if (missing.length) {
+		throw new Error(
+			`[stage-runtime] Vosk runtime resources missing after tauri-plugin-stt rebuild: ${missing.join(", ")}`,
+		);
+	}
 }
 
 async function main() {

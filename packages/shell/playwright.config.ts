@@ -7,6 +7,8 @@ export default defineConfig({
 		timeout: 30_000,
 	},
 	fullyParallel: false,
+	// Media-clock sync probes are load-sensitive on this laptop; keep E2E deterministic.
+	workers: 1,
 	retries: 0,
 	use: {
 		baseURL: "http://localhost:1420",

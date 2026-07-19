@@ -96,8 +96,10 @@ export interface VramTier {
 	 * (normalizeTierId)·명시 선택은 유지(숨김은 auto+피커에만 작용).
 	 */
 	hidden?: boolean;
-	/** Approx summed VRAM of the local components (private measured). */
+	/** Approx summed VRAM of the local GPU components (private measured). */
 	approxLocalVramGb: number;
+	/** Per-tier GPU VRAM cost override. Used when a capability runs off-GPU (for example AMD XDNA NPU). */
+	capabilityCostGb?: Partial<Record<ModelCapability, number>>;
 	/** windows-manager `--profile` override for named loader profiles. */
 	loaderProfile?: string;
 	/** Real-time (RTF<1) is a measured gate per GPU — never asserted (F1). */
@@ -144,14 +146,15 @@ export const VRAM_TIERS: readonly VramTier[] = [
 	{
 		id: "laptop-4060-8g",
 		label:
-			"8GB RTX 4060 laptop: local int8 voice + video avatar (LLM/STT cloud)",
+			"8GB RTX 4060 laptop: local DNA LLM on AMD XDNA NPU + local int8 voice + video avatar",
 		minVramGb: 8,
-		llm: "external",
-		localCapabilities: ["tts", "avatar"],
+		llm: "own",
+		localCapabilities: ["llm", "tts", "avatar"],
 		approxLocalVramGb: 6.07,
+		capabilityCostGb: { llm: 0 },
 		loaderProfile: "laptop_4060_8g",
 		realtime: "measurement-gated",
-		note: "RTX 4060 Laptop 8GB + Ryzen 8845H/8645HS class: windows-manager laptop_4060_8g profile. Runs VoxCPM2 int8 TTS + Ditto avatar locally; LLM/STT stay external. Full local realtime voice is not claimed.",
+		note: "RTX 4060 Laptop 8GB + Ryzen 8845H/8655H/8845H class: laptop_4060_8g profile. Main LLM is routed to the local compact DNA model on AMD XDNA/NPU budget (0 GPU VRAM); GPU hosts VoxCPM2 int8 TTS + Ditto avatar. NPU acceleration still requires the local runtime to be installed and measured.",
 	},
 	{
 		id: "local-voice-12g",
@@ -313,9 +316,12 @@ export function tierFitsBoth(tier: VramTier | null): boolean {
 	return hasAvatar && hasVoice && !tier.exclusiveLocal;
 }
 
-/** capability footprint(GB) — 미등록이면 0. 예산 판정/표시용. */
-export function capabilityVramCostGb(cap: ModelCapability): number {
-	return CAPABILITY_VRAM_COST_GB[cap] ?? 0;
+/** capability footprint(GB). Tier overrides model off-GPU placement such as AMD XDNA/NPU. */
+export function capabilityVramCostGb(
+	cap: ModelCapability,
+	tier?: VramTier | null,
+): number {
+	return tier?.capabilityCostGb?.[cap] ?? CAPABILITY_VRAM_COST_GB[cap] ?? 0;
 }
 
 export interface VramFitResult {
@@ -341,8 +347,9 @@ export function fitLocalCapabilitiesToVram(
 	caps: ModelCapability[],
 	availableVramGb: number | null,
 	marginGb = 1.0,
+	tier?: VramTier | null,
 ): VramFitResult {
-	const requiredGb = caps.reduce((s, c) => s + capabilityVramCostGb(c), 0);
+	const requiredGb = caps.reduce((s, c) => s + capabilityVramCostGb(c, tier), 0);
 	if (availableVramGb == null) {
 		return {
 			caps,

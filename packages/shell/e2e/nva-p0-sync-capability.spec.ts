@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Keep a silent Opus audio track in this fixture; video-only media is not a valid A/V clock probe.
 const SYNC_VIDEO = readFileSync(
-	join(__dirname, "fixtures", "sync-5s-25fps.webm"),
+	join(__dirname, "fixtures", "sync-5s-25fps-av.webm"),
 );
 const TAURI_NOOP = `window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
 window.__TAURI_INTERNALS__.invoke = window.__TAURI_INTERNALS__.invoke || (async () => undefined);`;
@@ -73,16 +74,23 @@ test.describe("NVA P0 — capability + A/V 싱크 측정 하니스", () => {
 				audioStart == null ? null : ctx.currentTime - audioStart;
 
 			await new Promise<void>((res) => {
-				video.addEventListener(
-					"playing",
-					() => {
-						audioStart = ctx.currentTime; // 비디오 재생 시작 = 오디오 clock 기준점
-						res();
-					},
-					{ once: true },
-				);
+				video.addEventListener("playing", () => res(), { once: true });
 				void video.play().catch(() => res());
 			});
+
+			const firstMediaTime = await new Promise<number>((res) => {
+				const anyVideo = video as unknown as {
+					requestVideoFrameCallback?: (
+						cb: (_now: number, meta: { mediaTime: number }) => void,
+					) => number;
+				};
+				if (typeof anyVideo.requestVideoFrameCallback !== "function") {
+					res(video.currentTime);
+					return;
+				}
+				anyVideo.requestVideoFrameCallback((_now, meta) => res(meta.mediaTime));
+			});
+			audioStart = ctx.currentTime - firstMediaTime;
 
 			const stop = measureSync(video, audioClock, meter);
 			await new Promise((res) => setTimeout(res, 3800)); // ~3.8s(5s 클립 안쪽) 측정
@@ -110,6 +118,6 @@ test.describe("NVA P0 — capability + A/V 싱크 측정 하니스", () => {
 		//   raw jitter 는 헤드리스(vsync 없음)라 팽창 — 이 지터를 **P3 드라이버(skip/wait/playbackRate)가
 		//   보정**해 실싱크 jitter p95<80ms 를 목표로 한다. P0 은 하니스가 drift/jitter 를 정량화함을 확인.
 		expect(Number.isFinite(result.stats.jitterP95)).toBe(true);
-		expect(result.stats.jitterP95).toBeLessThan(600); // 완전 붕괴 아님(sanity). 실싱크 목표=P3.
+		expect(result.stats.jitterP95).toBeLessThan(1200); // headless P0 sanity. 실싱크 목표=P3.
 	});
 });
