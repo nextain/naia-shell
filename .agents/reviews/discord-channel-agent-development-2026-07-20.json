@@ -2,7 +2,8 @@
   "stage": "development",
   "protocol": "review-pass",
   "scope": "Discord P1-P4 across naia-shell and naia-agent isolated worktrees",
-  "paired_agent_commit": "1ebf846ad2410cf4e497f984d64f341b083653f7",
+  "paired_agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
+  "paired_shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
   "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa",
   "reviewers": [
     "opencode/deepseek-v4-flash-free",
@@ -23,12 +24,15 @@
     "Runtime status errors are generation-bound and cleared on recovery; settings and inbox watcher events are separated.",
     "Guild discovery paginates to the explicit product cap, reports truncation and per-guild degradation, and never treats incomplete discovery as authoritative permission loss.",
     "Persisted channel preference hydrates only once; later inbox events are coalesced and cannot revert an in-memory selection.",
-    "Empty binding saves fail closed and do not restore an unsafe prior manifest after restart failure."
+    "Empty binding saves fail closed and do not restore an unsafe prior manifest after restart failure.",
+    "Lifecycle epochs cancel and drain pre-active admission, authority refresh, Gateway connect/backoff, reply queues, rate-limit waits, disclosure, and inbox tasks before configure or stop returns.",
+    "Shell revokes runtime authority before process handoff, reaps old and failed children, and requires a fresh generation-matched ready lease before reporting restart success.",
+    "Binding snapshots carry the manifest generation atomically; UI reads fail closed on legacy, unsafe, zero, or mismatched generations, and native save uses an expected-generation compare-and-swap before discovery, write, or restart."
   ],
   "automated_evidence": {
-    "agent": "99 files passed, 3 skipped; 1204 tests passed, 9 skipped; TypeScript passed",
-    "shell_ui": "117 files passed, 2 skipped; 1290 tests passed, 13 skipped",
-    "shell_rust": "93 passed",
+    "agent": "99 files passed, 3 skipped; 1224 tests passed, 9 skipped; TypeScript passed",
+    "shell_ui": "117 files passed, 2 skipped; 1303 tests passed, 13 skipped",
+    "shell_rust": "102 passed",
     "wire_pair": "9 passed",
     "playwright": "3 passed",
     "shell_package_build": "passed",
@@ -40,7 +44,29 @@
   ],
   "clean_convergence": {
     "required_consecutive_clean": 2,
-    "rounds_after_last_edit": [],
-    "result": "PENDING"
+    "rounds_after_last_edit": [
+      {
+        "round": 1,
+        "reviewer": "codex/final-clean-a",
+        "agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
+        "shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
+        "verdict": "CLEAN"
+      },
+      {
+        "round": 2,
+        "reviewer": "codex/final-clean-c",
+        "agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
+        "shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
+        "verdict": "CLEAN"
+      },
+      {
+        "round": 3,
+        "reviewer": "codex/final-clean-b",
+        "agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
+        "shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
+        "verdict": "CLEAN"
+      }
+    ],
+    "result": "CLEAN"
   }
 }
