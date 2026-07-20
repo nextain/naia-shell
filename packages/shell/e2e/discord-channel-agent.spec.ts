@@ -161,7 +161,9 @@ test("Connections에서 권한 가능한 채널만 저장한다", async ({ page 
 	await expect(checkboxes).toHaveCount(2);
 	await expect(checkboxes.nth(1)).toBeDisabled();
 	await checkboxes.nth(0).check();
-	await panel.locator('input[type="text"]').fill("300, 301, 300");
+	await panel
+		.locator('input[type="text"]')
+		.fill("300000, 301000, 300000");
 	await panel.locator("select").selectOption("all");
 	const applyButton = panel.getByRole("button", { name: /Apply|적용/ });
 	await applyButton.focus();
@@ -198,7 +200,7 @@ test("Connections에서 권한 가능한 채널만 저장한다", async ({ page 
 				guildName: "Nextain",
 				channelId: "200",
 				channelName: "general",
-				allowedUserIds: ["300", "301"],
+				allowedUserIds: ["300000", "301000"],
 				processingProfileRef: "default",
 				participation: "all",
 			},
