@@ -28,5 +28,5 @@
 ## 비고
 - Pass = `npx vitest run src/test` 191 cases pass(2026-06-15). `.mjs` 가드 파일 17개는 vitest `process.exit` 아티팩트로 파일레벨 RED 처럼 보이나 케이스 전부 통과(`feedback_test_exit_code_not_pass_count`).
 - 셸 소비자 테스트(packages/shell/src/**/__tests__)는 셸 스위트(`pnpm test` 827 pass)에서 별도 — graft seam 통합(onboarding-core.test.ts)은 03(TEST-S-012)에 등재.
-- Discord 기능은 최종 고정 스냅샷에서 Shell UI 1304 pass/13 skip, Rust 121/121, Agent 1225 pass/9 skip, paired wire 9/9로 재검증했다(2026-07-21).
+- Discord 기능은 최종 고정 스냅샷에서 Shell UI 1304 pass/13 skip, Rust 123/123, Agent 1225 pass/9 skip, paired wire 9/9로 재검증했다(2026-07-21).
 - 유닛테스트 깊이: 마크다운은 TEST-F(통합/계약 의도)까지. 그 아래 개별 유닛은 코드(`src/test`), `@spec SPEC-###` 태그로 추적(후속: 태그 backfill).
