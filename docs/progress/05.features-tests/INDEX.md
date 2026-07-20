@@ -22,8 +22,11 @@
 | TEST-F-006 | SPEC-006 | UC1 chat/bridge/shell-compat/chunk-fields/child-stdio/trace 계약·통합 | `src/test/uc1-chat.contract.test.ts`, `uc1-bridge.contract.test.ts`, `uc1-shell-compat.contract.test.ts`, `uc1-chunk-fields.test.ts`, `uc1-child-stdio.contract.test.ts`, `uc1-trace.integration.test.ts` | Pass |
 | TEST-F-007 | SPEC-007 | UC12 OnboardingController 계약(stale키 strip·completeWith·complete 가드) | `src/test/uc12-onboarding-controller.contract.test.ts`, `uc12-onboarding.contract.test.ts` | Pass |
 | TEST-F-008 | SPEC-008 | V2 voice 도메인(startup-lazy) + live-adapter(parity) | `src/test/v2-voice-domain.test.ts`, `v2-live-adapter.test.ts` | Pass |
+| TEST-F-009 | SPEC-009 | 연결/채널 UI 상태·격리, CSP/IPC, native 자격증명·manifest generation/CAS·authority/revoke/child reap, Agent 쌍방 wire 계약 | `packages/shell/src/components/__tests__/ConnectionsSettingsTab.test.tsx`, `ChannelsTab.test.tsx`; `packages/shell/src/lib/__tests__/discord-api.test.ts`, `csp-no-discord.test.ts`; `packages/shell/src-tauri/src/lib.rs`; `src/test/uc-wire-v1-paired-proto.contract.test.ts` | Pass |
+| TEST-F-010 | SPEC-010 | Gateway·entry wiring·ingress policy·trusted state·messages·inbox·durable dedupe·runtime lifecycle 계약/통합 | `naia-agent:src/test/discord-gateway.contract.test.ts`, `discord-entry-wiring.contract.test.ts`, `discord-ingress-policy.contract.test.ts`, `discord-trusted-state.contract.test.ts`, `discord-messages.contract.test.ts`, `discord-inbox-store.contract.test.ts`, `discord-dedupe.contract.test.ts`, `discord-runtime.integration.test.ts` | Pass |
 
 ## 비고
 - Pass = `npx vitest run src/test` 191 cases pass(2026-06-15). `.mjs` 가드 파일 17개는 vitest `process.exit` 아티팩트로 파일레벨 RED 처럼 보이나 케이스 전부 통과(`feedback_test_exit_code_not_pass_count`).
 - 셸 소비자 테스트(packages/shell/src/**/__tests__)는 셸 스위트(`pnpm test` 827 pass)에서 별도 — graft seam 통합(onboarding-core.test.ts)은 03(TEST-S-012)에 등재.
+- Discord 기능은 최종 고정 스냅샷에서 Shell UI 1303 pass/13 skip, Rust 102/102, Agent 1224 pass/9 skip, paired wire 9/9로 재검증했다(2026-07-21).
 - 유닛테스트 깊이: 마크다운은 TEST-F(통합/계약 의도)까지. 그 아래 개별 유닛은 코드(`src/test`), `@spec SPEC-###` 태그로 추적(후속: 태그 backfill).
