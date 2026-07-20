@@ -18,7 +18,7 @@
 - Automated implementation complete; final adversarial clean convergence is in
   progress.
 - Paired Agent commit:
-  `c678815986e06e301a110b34c603a737d0bb63f7`
+  `1ebf846ad2410cf4e497f984d64f341b083653f7`
 - Paired proto SHA-256:
   `4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa`
 - Live Discord and real OS credential-store acceptance remain explicit

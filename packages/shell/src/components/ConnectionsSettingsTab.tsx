@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../lib/i18n";
 
 type ConnectionState =
@@ -64,7 +64,7 @@ interface BindingInput {
 	readonly participation: Participation;
 }
 
-const SNOWFLAKE = /^\d{1,128}$/;
+const SNOWFLAKE = /^\d{6,32}$/;
 
 function bindingIdFor(guildId: string, channelId: string): string {
 	return `discord_${guildId}_${channelId}`;
@@ -82,7 +82,12 @@ export function ConnectionsSettingsTab() {
 	const [bindingSnapshot, setBindingSnapshot] = useState<
 		readonly BindingInput[]
 	>([]);
-	const [errorCode, setErrorCode] = useState<string | null>(null);
+	const [runtimeErrorCode, setRuntimeErrorCode] = useState<string | null>(null);
+	const [discoveryErrorCode, setDiscoveryErrorCode] = useState<string | null>(
+		null,
+	);
+	const statusVersionRef = useRef(0);
+	const runtimeStatusRef = useRef<RuntimeStatus | null>(null);
 	const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 	const [participation, setParticipation] = useState<
 		Readonly<Record<string, Participation>>
@@ -92,6 +97,7 @@ export function ConnectionsSettingsTab() {
 	>({});
 	const [saved, setSaved] = useState(false);
 	const [saving, setSaving] = useState(false);
+	const errorCode = runtimeErrorCode ?? discoveryErrorCode;
 
 	const snapshotByBindingId = useMemo(
 		() =>
@@ -183,8 +189,10 @@ export function ConnectionsSettingsTab() {
 	}, []);
 
 	const refresh = useCallback(async () => {
+		const statusVersion = ++statusVersionRef.current;
 		setState("checking");
-		setErrorCode(null);
+		setRuntimeErrorCode(null);
+		setDiscoveryErrorCode(null);
 		setSaved(false);
 		try {
 			const [runtime, bindings] = await Promise.all([
@@ -192,6 +200,14 @@ export function ConnectionsSettingsTab() {
 				invoke<BindingInput[]>("discord_binding_snapshot"),
 			]);
 			restoreBindings(bindings);
+			const runtimeIsCurrent = statusVersionRef.current === statusVersion;
+			const latestRuntime = runtimeStatusRef.current;
+			const matchesLatestRuntime =
+				latestRuntime === null ||
+				(latestRuntime.tokenConfigured === runtime.tokenConfigured &&
+					latestRuntime.generation === runtime.generation);
+			if (!runtimeIsCurrent && !matchesLatestRuntime) return;
+			if (runtimeIsCurrent) runtimeStatusRef.current = runtime;
 			if (!runtime.tokenConfigured) {
 				setDiscovery(null);
 				setState("disconnected");
@@ -200,38 +216,56 @@ export function ConnectionsSettingsTab() {
 			const result = await invoke<DiscordDiscovery>(
 				"discord_discover_channels",
 			);
+			const currentRuntime = runtimeStatusRef.current;
+			if (
+				currentRuntime !== null &&
+				(currentRuntime.tokenConfigured !== runtime.tokenConfigured ||
+					currentRuntime.generation !== runtime.generation)
+			)
+				return;
 			setDiscovery(result);
-			setState(runtime.authoritative ? "connected" : "configured");
 			if (!result.messageContentIntent) {
-				setErrorCode(result.intentCode);
+				setDiscoveryErrorCode(result.intentCode);
 			} else if (
 				result.degradedGuildIds.length > 0 ||
 				result.discoveryTruncated
 			) {
-				setErrorCode("discord_discovery_incomplete");
-			} else if (runtime.code) {
-				setErrorCode(runtime.code);
+				setDiscoveryErrorCode("discord_discovery_incomplete");
+			} else {
+				setDiscoveryErrorCode(null);
+			}
+			if (statusVersionRef.current === statusVersion) {
+				setState(runtime.authoritative ? "connected" : "configured");
+				setRuntimeErrorCode(runtime.code ?? null);
 			}
 		} catch (error) {
+			if (statusVersionRef.current !== statusVersion) return;
 			setDiscovery(null);
 			setState("error");
-			setErrorCode(String(error));
+			setDiscoveryErrorCode(null);
+			setRuntimeErrorCode(String(error));
 		}
 	}, [restoreBindings]);
 
 	const refreshRuntimeStatus = useCallback(async () => {
+		const statusVersion = ++statusVersionRef.current;
 		try {
 			const runtime = await invoke<RuntimeStatus>("discord_connection_status");
+			if (statusVersionRef.current !== statusVersion) return;
+			runtimeStatusRef.current = runtime;
 			if (!runtime.tokenConfigured) {
+				setDiscovery(null);
+				setDiscoveryErrorCode(null);
 				setState("disconnected");
-				setErrorCode(null);
+				setRuntimeErrorCode(null);
 				return;
 			}
 			setState(runtime.authoritative ? "connected" : "configured");
-			setErrorCode(runtime.code ?? null);
+			setRuntimeErrorCode(runtime.code ?? null);
 		} catch (error) {
+			if (statusVersionRef.current !== statusVersion) return;
 			setState("error");
-			setErrorCode(String(error));
+			setRuntimeErrorCode(String(error));
 		}
 	}, []);
 
@@ -247,7 +281,7 @@ export function ConnectionsSettingsTab() {
 	}, [refresh, refreshRuntimeStatus]);
 
 	async function captureCredential() {
-		setErrorCode(null);
+		setRuntimeErrorCode(null);
 		setSaved(false);
 		try {
 			const result = await invoke<CredentialStatus>(
@@ -255,13 +289,13 @@ export function ConnectionsSettingsTab() {
 			);
 			if (!result.configured) {
 				setState("error");
-				setErrorCode(result.code);
+				setRuntimeErrorCode(result.code);
 				return;
 			}
 			await refresh();
 		} catch (error) {
 			setState("error");
-			setErrorCode(
+			setRuntimeErrorCode(
 				String(error).includes("capture_cancelled")
 					? "capture_cancelled"
 					: "native_prompt_unavailable",
@@ -270,13 +304,13 @@ export function ConnectionsSettingsTab() {
 	}
 
 	async function removeCredential() {
-		setErrorCode(null);
+		setRuntimeErrorCode(null);
 		setSaved(false);
 		try {
 			await invoke("discord_remove_bot_token");
 			await refresh();
 		} catch (error) {
-			setErrorCode(String(error));
+			setRuntimeErrorCode(String(error));
 		}
 	}
 
@@ -345,10 +379,9 @@ export function ConnectionsSettingsTab() {
 			await invoke<number>("discord_save_bindings", { bindings });
 			await refresh();
 			setSaved(true);
-			setErrorCode(null);
 		} catch (error) {
 			setSaved(false);
-			setErrorCode(String(error));
+			setRuntimeErrorCode(String(error));
 		} finally {
 			setSaving(false);
 		}

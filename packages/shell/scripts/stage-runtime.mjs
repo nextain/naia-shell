@@ -48,7 +48,7 @@ const CASCADE_LOADER_SIBLING = resolve(
 	SHELL,
 	"../../../naia-omni-windows-manager/loader",
 );
-const REQUIRED_AGENT_COMMIT = "c678815986e06e301a110b34c603a737d0bb63f7";
+const REQUIRED_AGENT_COMMIT = "1ebf846ad2410cf4e497f984d64f341b083653f7";
 const REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa";
 const STATIC_AGENT_CANDIDATES = [
 	resolve(REPO_ROOT, "..", "naia-agent"),

@@ -18,6 +18,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 	listen: (...args: unknown[]) => mockListen(...args),
 }));
 
+import { t } from "../../lib/i18n";
 import { ConnectionsSettingsTab } from "../ConnectionsSettingsTab";
 
 const discovery = {
@@ -110,7 +111,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 
 		fireEvent.click(screen.getByRole("checkbox", { name: /general/ }));
 		fireEvent.change(screen.getByRole("textbox"), {
-			target: { value: "400, 401" },
+			target: { value: "400000, 400001" },
 		});
 		fireEvent.change(screen.getByRole("combobox"), {
 			target: { value: "paused" },
@@ -126,7 +127,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 						guildName: "Nextain",
 						channelId: "300",
 						channelName: "general",
-						allowedUserIds: ["400", "401"],
+						allowedUserIds: ["400000", "400001"],
 						processingProfileRef: "default",
 						participation: "paused",
 					},
@@ -134,6 +135,36 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			}),
 		);
 		await waitFor(() => expect(screen.getByRole("status")).toBeDefined());
+	});
+
+	it("matches the native six-to-thirty-two digit user snowflake boundary", async () => {
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 1,
+					state: "ready",
+					authoritative: true,
+				});
+			if (command === "discord_discover_channels")
+				return Promise.resolve(discovery);
+			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			return Promise.resolve();
+		});
+		render(<ConnectionsSettingsTab />);
+		await screen.findByText("Nextain");
+
+		fireEvent.click(screen.getByRole("checkbox", { name: /general/ }));
+		const users = screen.getByRole("textbox");
+		const save = screen.getByRole("button", { name: /저장|Save|Apply/i });
+		fireEvent.change(users, { target: { value: "12345" } });
+		expect(save).toBeDisabled();
+		fireEvent.change(users, { target: { value: "123456" } });
+		expect(save).not.toBeDisabled();
+		fireEvent.change(users, {
+			target: { value: "123456789012345678901234567890123" },
+		});
+		expect(save).toBeDisabled();
 	});
 
 	it("restores saved values and preserves unavailable bindings without hiding them", async () => {
@@ -144,7 +175,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				guildName: "Nextain",
 				channelId: "300",
 				channelName: "general",
-				allowedUserIds: ["400", "401"],
+				allowedUserIds: ["400000", "400001"],
 				processingProfileRef: "default",
 				participation: "all",
 			},
@@ -154,7 +185,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				guildName: "Nextain",
 				channelId: "301",
 				channelName: "private",
-				allowedUserIds: ["402"],
+				allowedUserIds: ["400002"],
 				processingProfileRef: "default",
 				participation: "mentions",
 			},
@@ -164,7 +195,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				guildName: "Former server",
 				channelId: "901",
 				channelName: "archived",
-				allowedUserIds: ["403"],
+				allowedUserIds: ["400003"],
 				processingProfileRef: "default",
 				participation: "paused",
 			},
@@ -192,7 +223,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			screen.getByRole("checkbox", { name: /private/ }),
 		).not.toBeDisabled();
 		expect(screen.getByRole("checkbox", { name: /private/ })).toBeChecked();
-		expect(screen.getByDisplayValue("400, 401")).toBeDefined();
+		expect(screen.getByDisplayValue("400000, 400001")).toBeDefined();
 		expect(
 			screen.getByRole("combobox", { name: /Nextain.*general/ }),
 		).toHaveValue("all");
@@ -218,7 +249,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			guildName: "Former server",
 			channelId: "901",
 			channelName: "archived",
-			allowedUserIds: ["403"],
+			allowedUserIds: ["400003"],
 			processingProfileRef: "default",
 			participation: "paused",
 		};
@@ -283,6 +314,76 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 	});
 
+	it("does not clear a discovery warning when runtime status has no error", async () => {
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 1,
+					state: "ready",
+					authoritative: true,
+				});
+			if (command === "discord_discover_channels")
+				return Promise.resolve({
+					...discovery,
+					degradedGuildIds: ["900"],
+				});
+			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() =>
+			expect(screen.getByRole("alert").getAttribute("data-error-code")).toBe(
+				"discord_discovery_incomplete",
+			),
+		);
+		const listener = mockListen.mock.calls[0]?.[1] as (() => void) | undefined;
+		await act(async () => {
+			listener?.();
+		});
+		expect(screen.getByRole("alert").getAttribute("data-error-code")).toBe(
+			"discord_discovery_incomplete",
+		);
+	});
+
+	it("does not let an older discovery refresh overwrite newer runtime status", async () => {
+		let statusReads = 0;
+		let resolveDiscovery!: (value: typeof discovery) => void;
+		const pendingDiscovery = new Promise<typeof discovery>((resolve) => {
+			resolveDiscovery = resolve;
+		});
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status") {
+				statusReads += 1;
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 1,
+					state: statusReads === 1 ? "connecting" : "ready",
+					authoritative: statusReads > 1,
+				});
+			}
+			if (command === "discord_discover_channels") return pendingDiscovery;
+			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("discord_discover_channels"),
+		);
+		const listener = mockListen.mock.calls[0]?.[1] as (() => void) | undefined;
+		await act(async () => {
+			listener?.();
+		});
+		await screen.findByText(t("settings.connectionsConnected"));
+		await act(async () => {
+			resolveDiscovery(discovery);
+		});
+		expect(screen.getByText(t("settings.connectionsConnected"))).toBeDefined();
+		expect(screen.getByText("Nextain")).toBeDefined();
+	});
+
 	it("preserves bindings from a guild whose discovery is degraded", async () => {
 		const uncertain = {
 			bindingId: "discord_900_901",
@@ -290,7 +391,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			guildName: "Temporarily unavailable",
 			channelId: "901",
 			channelName: "operations",
-			allowedUserIds: ["403"],
+			allowedUserIds: ["400003"],
 			processingProfileRef: "default",
 			participation: "mentions",
 		};
@@ -334,7 +435,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			guildName: "Beyond product bound",
 			channelId: "901",
 			channelName: "operations",
-			allowedUserIds: ["403"],
+			allowedUserIds: ["400003"],
 			processingProfileRef: "default",
 			participation: "mentions",
 		};

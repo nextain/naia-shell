@@ -3770,19 +3770,7 @@ async fn discord_get_json<T: serde::de::DeserializeOwned>(
         }
         match status {
             200..=299 => {
-                if response
-                    .content_length()
-                    .is_some_and(|length| length > MAX_BODY_BYTES as u64)
-                {
-                    return Err("discord_response_too_large".to_string());
-                }
-                let bytes = response
-                    .bytes()
-                    .await
-                    .map_err(|_| "discord_response_invalid".to_string())?;
-                if bytes.len() > MAX_BODY_BYTES {
-                    return Err("discord_response_too_large".to_string());
-                }
+                let bytes = discord_read_bounded_body(response, MAX_BODY_BYTES).await?;
                 return serde_json::from_slice::<T>(&bytes)
                     .map_err(|_| "discord_response_invalid".to_string());
             }
@@ -3792,6 +3780,38 @@ async fn discord_get_json<T: serde::de::DeserializeOwned>(
         }
     }
     Err("discord_rate_limited".to_string())
+}
+
+async fn discord_read_bounded_body(
+    mut response: reqwest::Response,
+    max_body_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_body_bytes as u64)
+    {
+        return Err("discord_response_too_large".to_string());
+    }
+    let capped_len = max_body_bytes.saturating_add(1);
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or(0)
+            .min(capped_len),
+    );
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "discord_response_invalid".to_string())?
+    {
+        let remaining = capped_len.saturating_sub(body.len());
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        if body.len() > max_body_bytes {
+            return Err("discord_response_too_large".to_string());
+        }
+    }
+    Ok(body)
 }
 
 /// Discover only bounded public Discord metadata. The token remains in native
@@ -4643,19 +4663,7 @@ async fn discord_open_dm_channel(recipient_user_id: String) -> Result<String, St
         }
         match status {
             200..=299 => {
-                if response
-                    .content_length()
-                    .is_some_and(|length| length > 64 * 1024)
-                {
-                    return Err("discord_response_too_large".to_string());
-                }
-                let bytes = response
-                    .bytes()
-                    .await
-                    .map_err(|_| "discord_response_invalid".to_string())?;
-                if bytes.len() > 64 * 1024 {
-                    return Err("discord_response_too_large".to_string());
-                }
+                let bytes = discord_read_bounded_body(response, 64 * 1024).await?;
                 let value = serde_json::from_slice::<DiscordOpenDmResponse>(&bytes)
                     .map_err(|_| "discord_response_invalid".to_string())?;
                 if !is_valid_discord_snowflake(&value.id) {
@@ -6715,6 +6723,46 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unknown_length_response(body: Vec<u8>) -> (String, std::thread::JoinHandle<()>) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let address = server.server_addr().to_ip().unwrap();
+        let handle = std::thread::spawn(move || {
+            let request = server.recv().unwrap();
+            let response = tiny_http::Response::new(
+                tiny_http::StatusCode(200),
+                Vec::new(),
+                std::io::Cursor::new(body),
+                None,
+                None,
+            );
+            let _ = request.respond(response);
+        });
+        (format!("http://{address}"), handle)
+    }
+
+    #[tokio::test]
+    async fn discord_bounded_body_rejects_unknown_length_oversize() {
+        let (url, server) = unknown_length_response(vec![b'x'; 65]);
+        let response = reqwest::Client::new().get(url).send().await.unwrap();
+
+        let result = discord_read_bounded_body(response, 64).await;
+
+        assert_eq!(result.unwrap_err(), "discord_response_too_large");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn discord_bounded_body_accepts_unknown_length_at_limit() {
+        let expected = vec![b'x'; 64];
+        let (url, server) = unknown_length_response(expected.clone());
+        let response = reqwest::Client::new().get(url).send().await.unwrap();
+
+        let result = discord_read_bounded_body(response, 64).await.unwrap();
+
+        assert_eq!(result, expected);
+        server.join().unwrap();
+    }
 
     #[test]
     fn agent_chunk_deserializes() {
