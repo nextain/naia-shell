@@ -8,9 +8,9 @@ fn main() {
         env,
         path::{Path, PathBuf},
     };
-    const REQUIRED_AGENT_COMMIT: &str = "de844dfe0392d3174c12fcce5969e638ce997290";
+    const REQUIRED_AGENT_COMMIT: &str = "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5";
     const REQUIRED_PROTO_SHA256: &str =
-        "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92";
+        "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a";
     const REQUIRED_PROTO_MARKERS: &[&str] = &[
         "repeated AttachmentRef attachments = 4;",
         "message AttachmentRef",
@@ -22,6 +22,8 @@ fn main() {
         "ArtifactEvent artifact = 18;",
         "ProviderSessionEvent provider_session = 19;",
         "ProcessingDisclosureEvent processing_disclosure = 20;",
+        "rpc Shutdown(ShutdownRequest) returns (Ack);",
+        "message ShutdownRequest { string nonce = 1; }",
         "enum WireErrorCode",
         "ATTACHMENT_INVALID_REF",
     ];
@@ -230,7 +232,11 @@ fn main() {
         protoc_bin_vendored::protoc_bin_path().expect("vendored protoc path"),
     );
     tonic_build::configure()
-        .build_server(false)
+        // Keep the generated server surface available for the in-process
+        // transport contract tests. Production still only instantiates the
+        // client; unused server code is eliminated by the linker.
+        .build_server(true)
+        .generate_default_stubs(true)
         .compile_protos(&[proto.as_path()], &[proto_dir.as_path()])
         .expect("naia_agent.proto gRPC client codegen failed");
 

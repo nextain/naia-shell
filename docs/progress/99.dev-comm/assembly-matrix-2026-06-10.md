@@ -66,7 +66,7 @@
 | UC13 승인게이트 | 이식+보충 | ApprovalPort | mixed | **F1 계약+코드** |
 | UC13a 중단/e-stop | **보충** | SafetyPort | scenario | pending(H-safety) |
 | UC14 degradation | **보충** | InteroceptivePort→Express | scenario | **F1(정직 degradation 신설)** |
-| UC15 자유·연속 발화 전달 | 이식+보충 | Agent gRPC→ExpressionPort·SafetyPort | naia-agent #82 contract | **기술 slice 구현, native acceptance partial** |
+| UC17 자유·연속 발화 전달 | 이식+보충 | Agent gRPC→ExpressionPort·SafetyPort | naia-agent #82 contract | **기술 slice 구현, native acceptance partial** |
 
 ### UC1 상세 — 텍스트 대화 (Chat→사고→표현)
 | # | 조각(S) | old | 이식/보충 | 인지 포트 | fit | 권위 | 상태 |

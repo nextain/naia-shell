@@ -23,7 +23,10 @@
 | UC-006 | ⑦브라우저 | 에이전트가 브라우저를 조작(navigate/click/fill) (구 UC6) | REQ-010 | Draft | TEST-S-006 |
 | UC-011 | 자기상태 | naia 가 자기 상태(시스템/진단/장치)를 정직 보고 (구 UC11/UC14) | REQ-002 | In-progress | TEST-S-011 |
 | UC-007 | ⑨워크스페이스(제외) | 에이전트가 host-system 관측·조작(승인) (구 UC7/UC7a) — **현 스코프 제외**(DriftDetector/MutationGate=old 소비자 부재, 방향 미해결) | REQ-004, REQ-005 | Draft | TEST-S-007 |
-| UC-015 | 선제·연속 발화 | 개인 라디오 DJ와 회사 전시 소개가 무입력으로 시작하고 기존 표현 경로를 사용. 계약 흐름 구현, native는 시작/BGM 또는 greeting/stop 경계 | REQ-012 | Partial | TEST-S-015 |
+| UC-014 | Discord 연결 | 사용자가 토큰을 화면에 노출하지 않고 저장한 뒤 접근 가능한 서버/채널을 찾아 허용목록으로 저장 → 승인한 채널만 에이전트가 사용 | REQ-012 | Done | TEST-S-014 |
+| UC-015 | Discord Inbox | 사용자가 Channels에서 여러 Discord 채널의 읽지 않음·메시지 기록을 보고 좁은 화면에서도 목록↔대화를 이동 → 개인 채팅과 섞이지 않음 | REQ-012 | Done | TEST-S-014 |
+| UC-016 | Discord 실시간 대화 | 허용된 채널의 사용자가 메시지를 보내면 에이전트가 Gateway로 받아 응답하고 재연결·중복 이벤트에도 한 번만 처리 → 장기 실행 중 안전하게 대화 지속. 결정론적 자동화 완료, 실제 Discord 운영자 인수 대기 | REQ-012 | In-progress | TEST-S-015 |
+| UC-017 | 선제·연속 발화 | 개인 라디오 DJ와 회사 전시 소개가 무입력으로 시작하고 기존 표현 경로를 사용. 계약 흐름 구현, native는 시작/BGM 또는 greeting/stop 경계 | REQ-013 | Partial | TEST-S-016 |
 
 > **제외(루크 2026-06-15)**: ⑧메모리(구 UC3/UC4)=off-scope(naia-memory 다른 세션 소유, canon out_of_scope). ⑨워크스페이스(UC-007)=보류(신규발명 방향 결정 후).
 > 상세 granular(S01~71 — provider/voice/skills/channels 60+)·테스트 커버리지 맵 = `docs/user-scenarios.md`.

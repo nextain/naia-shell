@@ -1,0 +1,42 @@
+{
+  "stage": "test",
+  "protocol": "review-pass",
+  "scope": "Discord automated acceptance across naia-shell and naia-agent",
+  "shell_code_and_test_head": "c9239ad4e872e93cf7a867075f120f9fddf2ef01",
+  "agent_runtime_commit": "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5",
+  "agent_test_commit": "3f8cfb057cf9a5524c4cea7618a0d00e3e36e280",
+  "agent_trace_head": "dff1da88b0c889f34676fe93a378ca91869f8749",
+  "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
+  "automated_evidence": {
+    "shell_root": "24 files; 228 tests passed",
+    "shell_ui": "117 files passed, 2 skipped; 1304 tests passed, 13 skipped",
+    "shell_rust": "172 passed",
+    "shell_shutdown_lifecycle": "6 passed through fake tonic Agent, production dispatcher/lifecycle, and actual child Drop",
+    "paired_wire": "10 passed",
+    "shell_build": "passed",
+    "playwright": "3 passed on isolated port 14327",
+    "agent": "101 files passed, 3 skipped; 1247 tests passed, 9 skipped; build passed",
+    "agent_real_process_dedupe": "4 passed",
+    "traceability": "Shell and Agent dead-link 0, orphan 0"
+  },
+  "clean_convergence": {
+    "required_consecutive_clean": 2,
+    "rounds_after_last_edit": [
+      {
+        "round": 1,
+        "reviewer": "codex/final-clean-b",
+        "verdict": "CLEAN"
+      },
+      {
+        "round": 2,
+        "reviewer": "codex/final-clean-c",
+        "verdict": "CLEAN"
+      }
+    ],
+    "result": "CLEAN"
+  },
+  "external_acceptance_pending": [
+    "Live two-channel Discord receive/reply, RESUME/reconnect, dedupe replay, permission loss, and token rotate/revoke.",
+    "Real operating-system credential prompt and credential-store lifecycle."
+  ]
+}

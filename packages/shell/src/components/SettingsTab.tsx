@@ -128,6 +128,7 @@ import { clearSavedCamera } from "./AvatarCanvas";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import { RefAudioSection } from "./RefAudioSection";
 import { SkillsTab } from "./SkillsTab";
+import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 
 const LLM_PROVIDERS = listLlmProviders();
 
@@ -446,6 +447,7 @@ export function SettingsTab() {
 		| "memory"
 		| "knowledge"
 		| "skills"
+		| "connections"
 		| "general"
 	>("profile");
 	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
@@ -2540,6 +2542,14 @@ export function SettingsTab() {
 					onClick={() => setActiveSettingsTab("skills")}
 				>
 					{t("settings.tabSkills")}
+				</button>
+				<button
+					type="button"
+					data-settings-tab="connections"
+					className={`settings-tab-btn${activeSettingsTab === "connections" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("connections")}
+				>
+					{t("settings.tabConnections")}
 				</button>
 				<button
 					type="button"
@@ -4725,6 +4735,7 @@ export function SettingsTab() {
 			)}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
 			{activeSettingsTab === "skills" && <SkillsTab />}
+			{activeSettingsTab === "connections" && <ConnectionsSettingsTab />}
 			{activeSettingsTab === "memory" && (
 				<>
 					<div>

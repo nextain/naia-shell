@@ -48,13 +48,17 @@ const CASCADE_LOADER_SIBLING = resolve(
 	SHELL,
 	"../../../naia-omni-windows-manager/loader",
 );
-const REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290";
-const REQUIRED_PROTO_SHA256 = "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92";
-const AGENT_CANDIDATES = [
+const REQUIRED_AGENT_COMMIT = "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5";
+const REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a";
+const STATIC_AGENT_CANDIDATES = [
 	resolve(REPO_ROOT, "..", "naia-agent"),
 	resolve(REPO_ROOT, "..", "..", "naia-agent"),
 	resolve(REPO_ROOT, "..", "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
 	resolve(REPO_ROOT, "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
+];
+const AGENT_WORKTREE_ROOTS = [
+	resolve(REPO_ROOT, "..", "naia-agent-worktrees"),
+	resolve(REPO_ROOT, "..", "..", "naia-agent-worktrees"),
 ];
 
 function gitOutput(dir, args) {
@@ -88,16 +92,23 @@ function isPairedAgentCheckout(dir) {
 	return (
 		existsSync(resolve(dir, "scripts/builds/agent-stdio-entry.mjs")) &&
 		existsSync(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) &&
-		gitOutput(dir, ["rev-parse", "HEAD"]) === REQUIRED_AGENT_COMMIT &&
-		isCleanProto(dir) &&
-		isCleanAgentEntrypoint(dir) &&
-		isCleanCheckout(dir) &&
-		sha256File(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) === REQUIRED_PROTO_SHA256
+		gitOutput(dir, ["rev-parse", "HEAD"]) === REQUIRED_AGENT_COMMIT
 	);
 }
 
+function agentCandidates() {
+	const candidates = [...STATIC_AGENT_CANDIDATES];
+	for (const root of AGENT_WORKTREE_ROOTS) {
+		if (!existsSync(root)) continue;
+		for (const entry of readdirSync(root, { withFileTypes: true })) {
+			if (entry.isDirectory()) candidates.push(resolve(root, entry.name));
+		}
+	}
+	return [...new Set(candidates)];
+}
+
 function firstPairedAgentCheckout() {
-	for (const dir of AGENT_CANDIDATES) {
+	for (const dir of agentCandidates()) {
 		if (isPairedAgentCheckout(dir)) return dir;
 	}
 	return null;
@@ -144,6 +155,18 @@ function validateAgentEnvPair(agentScript, protoDir) {
 }
 
 function applyPairedAgentEnv(env) {
+	const explicitScript = env.NAIA_AGENT_SCRIPT;
+	const explicitProtoDir = env.NAIA_AGENT_PROTO_DIR;
+	if (explicitScript || explicitProtoDir) {
+		if (!explicitScript || !explicitProtoDir) {
+			throw new Error(
+				"[stage-runtime] NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must be provided together",
+			);
+		}
+		validateAgentEnvPair(explicitScript, explicitProtoDir);
+		return gitRootForPath(explicitScript, true);
+	}
+
 	const pairedAgent = firstPairedAgentCheckout();
 	if (!pairedAgent) {
 		throw new Error(
@@ -561,9 +584,9 @@ async function main() {
 	const platform = process.platform;
 	const arch = process.arch;
 	const matrix = readMatrix();
+	const pairedAgentRoot = applyPairedAgentEnv(process.env);
 
 	await prepareRuntime(matrix, platform, arch);
-	const pairedAgentRoot = applyPairedAgentEnv(process.env);
 
 	// ③ 스테이징 — 정책은 매트릭스 staging 필드가 소유(P1-R1: 하드코딩이면 매트릭스가 장식이 됨)
 	const stagingUnits = [

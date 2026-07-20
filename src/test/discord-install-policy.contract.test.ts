@@ -99,7 +99,11 @@ describe("Discord install policy", () => {
 		expect(TAURI_LIB_RS).not.toContain("naia-discord.json");
 		expect(TAURI_LIB_RS).not.toContain("openclaw.json");
 		expect(TAURI_LIB_RS).toContain("discord_bot_token_available");
-		expect(TAURI_LIB_RS).toContain("native secret storage is not wired");
+		expect(TAURI_LIB_RS).toContain("async fn discord_capture_bot_token(");
+		expect(TAURI_LIB_RS).toContain("capture_discord_token_native()");
+		expect(TAURI_LIB_RS).not.toMatch(
+			/async fn discord_capture_bot_token\([^)]*(?:token|secret)\s*:/s,
+		);
 	});
 
 	it("does not claim the hidden production wizard is implemented", () => {

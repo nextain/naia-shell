@@ -32,7 +32,7 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC10a 다중 클라이언트 점유 충돌** (신규) | Discord·로컬 UI 동시 명령 → owner·lease·handoff·revoke | (control-plane 중재) | ClientSessionPort(lease/arbitration) |
 | **UC12a 설정 검증** (UC11/14 **facet, 독립 UC 아님** — F1 흡수) | "키 저장됨"이 아니라 *provider/계정 연결 상태를 자기상태에서 관측* | 내수용 → 진단 | InteroceptivePort·system-status |
 | **UC14 graceful degradation** (신규) ★ | **현 설정된 것의 degradation 감지·보고**(read-only) — F1=미설정·시스템 이상, *UC12 후 자동 확장*=외부 인증/키 깨짐(Discord). *대체(fallback)=후속 tranche*(행위라 밖) | 내수용(실패 감지)→지각→표현(정직 보고) | InteroceptivePort·ExpressionPort |
-| **UC15 자유·연속 발화 전달** | agent가 사용자 요청 또는 내부 trigger로 여러 발화를 이어 보내면 셸이 session stream을 구독해 기존 채팅·TTS·취소 경로로 표현 | 사고(agent activity) → gRPC stream → 표현(text/TTS/avatar) → 끼어들기 | Agent gRPC client·ExpressionPort·SafetyPort(cancel) |
+| **UC17 자유·연속 발화 전달** | agent가 사용자 요청 또는 내부 trigger로 여러 발화를 이어 보내면 셸이 session stream을 구독해 기존 채팅·TTS·취소 경로로 표현 | 사고(agent activity) → gRPC stream → 표현(text/TTS/avatar) → 끼어들기 | Agent gRPC client·ExpressionPort·SafetyPort(cancel) |
 
 ★ = naia 차별점(기억·경험·능동) — *기반 성숙 후* 별도 트랙(아래 순서 SoT).
 
@@ -328,7 +328,7 @@ default-skills 60+ "각 1회 측정"=존재확인≠동작보장(공통 runtime/
 - step-2 계약 backlog(goal-governance 소유자·포트 시그니처 등) = DEFER(step-2 계약 단계).
 - notify/memo(non-memory) 독립 UC 여부 = **Old-Baseline 측정 시 확인**(DEFER).
 
-## UC15 — 자유·연속 발화 session stream (#82 cross-repo)
+## UC17 — 자유·연속 발화 session stream (#82 cross-repo)
 
 naia-agent가 사용자 요청의 기존 `Chat` stream에서 연속 발화를 보내거나, idle/cron 같은 외부 정책으로
 사용자 입력 없이 자유 발화를 시작한다. 셸은 agent 연결 뒤 현재 대화 session의
@@ -359,7 +359,7 @@ P02 검증:
   결과 text·stop, 전시 greeting·stop만 검증한다. 이 테스트는 TTS를 꺼 두므로 audible TTS, DJ 멘트2,
   전시 질문 barge-in→답변→resume, 모든 control, stale audio 폐기를 native로 증명하지 않는다.
 
-Test Coverage Map: UC15 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
+Test Coverage Map: UC17 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
 `packages/shell/e2e-tauri` 시작/표현 일부 full-stack, 기존 `src/main/adapters/tauri/uc1`·ChatArea cancel 회귀.
 
 ## UC-WIRE-V1 — 이미지·Discord·RAG·처리 공개 공통 채팅 경계 (#384 / naia-agent #89)

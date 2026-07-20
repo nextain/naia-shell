@@ -10,6 +10,156 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AgentProcessMarkerRead {
+    Match,
+    NoMatch,
+    Missing,
+    Inaccessible,
+}
+
+fn classify_agent_process_marker_read(
+    result: std::io::Result<Vec<u8>>,
+    marker: &str,
+) -> Result<AgentProcessMarkerRead, String> {
+    match result {
+        Ok(bytes)
+            if bytes
+                .split(|byte| *byte == 0)
+                .any(|arg| arg == marker.as_bytes()) =>
+        {
+            Ok(AgentProcessMarkerRead::Match)
+        }
+        Ok(_) => Ok(AgentProcessMarkerRead::NoMatch),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(AgentProcessMarkerRead::Missing)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Ok(AgentProcessMarkerRead::Inaccessible)
+        }
+        Err(_) => Err("agent_lease_identity_query_failed".to_string()),
+    }
+}
+
+fn agent_process_marker_with<R>(pid: u32, marker: &str, read: R) -> Result<Option<bool>, String>
+where
+    R: FnOnce(u32) -> std::io::Result<Vec<u8>>,
+{
+    match classify_agent_process_marker_read(read(pid), marker)? {
+        AgentProcessMarkerRead::Match => Ok(Some(true)),
+        AgentProcessMarkerRead::NoMatch => Ok(Some(false)),
+        AgentProcessMarkerRead::Missing => Ok(None),
+        // The known lease PID is an ownership boundary. Never treat an
+        // inaccessible identity as absent or allow PID reuse to pass silently.
+        AgentProcessMarkerRead::Inaccessible => {
+            Err("agent_lease_identity_query_failed".to_string())
+        }
+    }
+}
+
+pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool>, String> {
+    agent_process_marker_with(pid, marker, |pid| {
+        std::fs::read(format!("/proc/{pid}/cmdline"))
+    })
+}
+
+fn find_agent_process_by_marker_with<I, R>(
+    pids: I,
+    marker: &str,
+    mut read: R,
+) -> Result<bool, String>
+where
+    I: IntoIterator<Item = u32>,
+    R: FnMut(u32) -> std::io::Result<Vec<u8>>,
+{
+    for pid in pids {
+        match classify_agent_process_marker_read(read(pid), marker)? {
+            AgentProcessMarkerRead::Match => return Ok(true),
+            AgentProcessMarkerRead::NoMatch
+            | AgentProcessMarkerRead::Missing
+            | AgentProcessMarkerRead::Inaccessible => {}
+        }
+    }
+    Ok(false)
+}
+
+pub(crate) fn find_agent_process_by_marker(marker: &str) -> Result<bool, String> {
+    let entries =
+        std::fs::read_dir("/proc").map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+    let pids = entries
+        .map(|entry| {
+            entry
+                .map_err(|_| "agent_lease_identity_query_failed".to_string())
+                .map(|entry| {
+                    entry
+                        .file_name()
+                        .to_str()
+                        .and_then(|value| value.parse::<u32>().ok())
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten();
+    find_agent_process_by_marker_with(pids, marker, |pid| {
+        std::fs::read(format!("/proc/{pid}/cmdline"))
+    })
+}
+
+#[cfg(test)]
+mod agent_process_marker_tests {
+    use super::*;
+
+    #[test]
+    fn enumeration_skips_inaccessible_and_missing_unrelated_processes() {
+        let result = find_agent_process_by_marker_with([10, 11, 12], "--owned", |pid| match pid {
+            10 => Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "hidden",
+            )),
+            11 => Err(std::io::Error::new(std::io::ErrorKind::NotFound, "exited")),
+            _ => Ok(b"node\0--other\0".to_vec()),
+        });
+        assert_eq!(result, Ok(false));
+    }
+
+    #[test]
+    fn enumeration_finds_owned_marker_after_inaccessible_process() {
+        let result = find_agent_process_by_marker_with([10, 11], "--owned", |pid| {
+            if pid == 10 {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "hidden",
+                ))
+            } else {
+                Ok(b"node\0--owned\0".to_vec())
+            }
+        });
+        assert_eq!(result, Ok(true));
+    }
+
+    #[test]
+    fn known_owned_pid_remains_fail_closed_when_inaccessible() {
+        let result = agent_process_marker_with(10, "--owned", |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "hidden",
+            ))
+        });
+        assert_eq!(result, Err("agent_lease_identity_query_failed".to_string()));
+    }
+
+    #[test]
+    fn enumeration_propagates_unexpected_proc_errors() {
+        let result = find_agent_process_by_marker_with([10], "--owned", |_| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "broken",
+            ))
+        });
+        assert_eq!(result, Err("agent_lease_identity_query_failed".to_string()));
+    }
+}
+
 /// Spawn a no-op child process (Unix: /bin/true).
 pub(crate) fn dummy_child() -> Result<Child, String> {
     Command::new("true")

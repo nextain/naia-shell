@@ -63,7 +63,6 @@ import {
 	resolveConfiguredGatewayUrl,
 	saveConfig,
 } from "../lib/config";
-import { startDiscordRelay, stopDiscordRelay } from "../lib/discord-relay";
 import { remoteCascadeUrlFromConfig } from "../lib/avatar/cascade-renderer";
 import {
 	discoverAndPersistDiscordDmChannel,
@@ -165,6 +164,7 @@ import {
 	isWorkspaceAvailable,
 } from "./AtMentionPopover";
 import { CostDashboard } from "./CostDashboard";
+import { ChannelsTab } from "./ChannelsTab";
 import { DiagnosticsTab } from "./DiagnosticsTab";
 import { HistoryTab } from "./HistoryTab";
 import { PermissionModal } from "./PermissionModal";
@@ -504,6 +504,14 @@ function phaseToMode(
 	}
 }
 
+export function isDiscordConnectionIntent(text: string): boolean {
+	const normalized = text.trim().toLocaleLowerCase();
+	if (!/(discord|디스코드)/i.test(normalized)) return false;
+	return /(connect|connection|setup|configure|configuration|bot\s*token|연결|연동|설정|구성|봇\s*토큰|토큰\s*(입력|등록|설정))/i.test(
+		normalized,
+	);
+}
+
 /**
  * Visual variant of the chat surface. The component is a SINGLE instance
  * repositioned across UI modes via CSS (never remounted — preserves the live
@@ -524,6 +532,8 @@ export function ChatArea({
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
+	const [showDiscordConnectionGuide, setShowDiscordConnectionGuide] =
+		useState(false);
 	// Single source of truth for voice UI state (naia-omni RunPod on-demand +
 	// every other provider). Drives the status banner (cold-start / sold-out /
 	// credit failures) and the voice button — `voiceMode` is derived, not stored,
@@ -712,16 +722,6 @@ export function ChatArea({
 
 		// (startup gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config=naia-settings.)
 
-		// Start Discord relay polling (if Discord is linked)
-		startDiscordRelay().catch((err) => {
-			Logger.warn("ChatArea", "Failed to start Discord relay", {
-				error: String(err),
-			});
-		});
-
-		return () => {
-			stopDiscordRelay();
-		};
 	}, []);
 
 	useEffect(() => {
@@ -1059,6 +1059,15 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
+		if (isDiscordConnectionIntent(text)) {
+			setInput("");
+			useChatStore.getState().addMessage({
+				role: "assistant",
+				content: t("chat.discordConnectionSecretGuide"),
+			});
+			setShowDiscordConnectionGuide(true);
+			return;
+		}
 		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
@@ -3188,10 +3197,7 @@ export function ChatArea({
 
 				{/* Channels tab */}
 				{activeTab === "channels" && (
-					<div className="chat-tab-placeholder">
-						<span>🌐</span>
-						<p>{t("channels.maintenance")}</p>
-					</div>
+					<ChannelsTab />
 				)}
 
 				{/* History tab */}
@@ -3469,6 +3475,48 @@ export function ChatArea({
 								}}
 							>
 								{t("chat.noAuthConfirm")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+			{showDiscordConnectionGuide && (
+				<div className="sync-dialog-overlay">
+					<div
+						className="sync-dialog-card"
+						role="dialog"
+						aria-modal="true"
+						style={{ maxWidth: 420 }}
+					>
+						<p style={{ marginBottom: 8, lineHeight: 1.6 }}>
+							{t("chat.discordConnectionSecretGuide")}
+						</p>
+						<p style={{ marginBottom: 16, lineHeight: 1.6 }}>
+							{t("settings.connectionsSetupHelp")}
+						</p>
+						<div className="sync-dialog-actions">
+							<button
+								type="button"
+								className="onboarding-next-btn"
+								onClick={() => {
+									setShowDiscordConnectionGuide(false);
+									useAppStore.getState().setActiveApp("settings");
+									window.dispatchEvent(
+										new CustomEvent("naia-open-settings", {
+											detail: { tab: "connections" },
+										}),
+									);
+									window.setTimeout(() => {
+										document
+											.querySelector<HTMLButtonElement>(
+												'[data-settings-tab="connections"]',
+											)
+											?.click();
+									}, 0);
+								}}
+							>
+								{t("settings.tabConnections")} ·{" "}
+								{t("settings.connectionsDiscord")}
 							</button>
 						</div>
 					</div>

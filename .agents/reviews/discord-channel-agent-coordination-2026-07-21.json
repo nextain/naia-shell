@@ -1,0 +1,83 @@
+{
+  "scope": "Discord lane coordination with radio/continuous-speech and provider-role lanes",
+  "shared_channel": "/var/home/luke/alpha-adk/.agents/progress/xsession-coordination-discord-x-continuous-speech-2026-07-20.md",
+  "policy": {
+    "user_instruction": "continue autonomously without questions and create a communication channel",
+    "notice_mode": "BLOCKING notices plus shared-file lock and diff audit",
+    "acknowledgment": "No synchronous bilateral acknowledgment is claimed; no blocking response was posted before the announced edits."
+  },
+  "notices": [
+    {
+      "at": "2026-07-20 22:14 KST",
+      "paths": [
+        "naia-agent/scripts/builds/agent-stdio-entry.mjs",
+        "naia-shell/packages/shell/src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "at": "2026-07-20 22:21 KST",
+      "paths": [
+        "naia-shell/packages/shell/src/components/ChatArea.tsx"
+      ]
+    },
+    {
+      "at": "2026-07-20 22:53 KST",
+      "paths": [
+        "naia-agent/src/main/adapters/grpc/naia_agent.proto",
+        "naia-agent/src/main/adapters/grpc/grpc-codec.ts",
+        "naia-agent/src/main/adapters/protocol.ts",
+        "naia-agent/src/main/domain/chat.ts"
+      ]
+    },
+    {
+      "at": "2026-07-21 06:29 KST",
+      "paths": [
+        "naia-agent/src/main/adapters/grpc/naia_agent.proto",
+        "naia-agent/src/main/adapters/grpc/grpc-server.ts",
+        "naia-agent/src/main/adapters/discord-channel.ts",
+        "naia-agent/scripts/builds/agent-stdio-entry.mjs",
+        "naia-shell/packages/shell/src-tauri/src/agent_grpc.rs",
+        "naia-shell/packages/shell/src-tauri/src/lib.rs"
+      ],
+      "reason": "adversarial HIGH: forced restart bypassed Discord in-flight drain"
+    }
+  ],
+  "lock": {
+    "path": ".agents/work/xsession-locks/discord-radio-shared/owner.json",
+    "status": "released",
+    "release_record": "2026-07-21 02:46 KST"
+  },
+  "final_diff_audit": {
+    "shell_radio_lane": {
+      "branch": "issue-82-tauri-e2e",
+      "head": "847ba0afa9343673ddfa279dfa2e2bad04aded88",
+      "runtime_path_overlap": [],
+      "registry_overlap": [
+        "docs/progress/01.requirements/INDEX.md",
+        "docs/progress/02.user-scenarios/INDEX.md",
+        "docs/progress/03.uc-tests/INDEX.md",
+        "docs/progress/04.features/INDEX.md",
+        "docs/progress/05.features-tests/INDEX.md"
+      ]
+    },
+    "agent_radio_checkout": {
+      "head": "2b6bbaaee072ad67631266a2ce1a5a559be018ab",
+      "dirty_paths": "harness/CI files only",
+      "discord_or_radio_runtime_overlap": []
+    },
+    "result": "No radio profile/activity runtime file was modified by the Discord lane; registry conflicts require ordinary integration resolution."
+  },
+  "superseding_handoff": {
+    "agent_runtime": "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5",
+    "agent_test_evidence": "3f8cfb057cf9a5524c4cea7618a0d00e3e36e280",
+    "agent_v_model_evidence": "dff1da88b0c889f34676fe93a378ca91869f8749",
+    "shell_implementation_test": "c9239ad4e872e93cf7a867075f120f9fddf2ef01",
+    "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
+    "automated_evidence": {
+      "shell": "root 228/228; UI 1304 pass/13 skip; Rust 172/172; paired wire 10/10; Playwright 3/3; build PASS",
+      "agent": "1247 pass/9 skip; real-process dedupe 4/4; build PASS"
+    },
+    "radio_runtime_files_touched": false,
+    "live_acceptance": "Partial — credentialed Discord and real OS credential-store acceptance remain operator gates"
+  }
+}

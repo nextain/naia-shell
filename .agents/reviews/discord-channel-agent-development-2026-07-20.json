@@ -1,0 +1,36 @@
+{
+  "stage": "development",
+  "protocol": "review-pass",
+  "scope": "Discord connection settings, Channels inbox, Agent runtime, and graceful lifecycle",
+  "paired_shell_commit": "ac3dac0356ea74da4a861fff6e4ad9b8cce67fc6",
+  "paired_agent_runtime_commit": "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5",
+  "agent_test_head": "d9b65867b807fa5726fdb78bb531c3ffd91af628",
+  "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
+  "resolved_findings": [
+    "Authenticated shutdown uses an independent client/task; ambiguous ACK loss waits beyond the Agent watchdog before force/reap.",
+    "Security-tightening binding changes revoke authority before manifest publication; additive changes drain first and rollback remains fail-closed.",
+    "Linux process enumeration skips inaccessible unrelated PIDs while the owned lease PID remains fail-closed.",
+    "Accepted reservations survive hard-timeout restart as durable partial records; owner rotation fences stale generations.",
+    "PID/token lock ownership, startup-only dead-owner repair, latest-state merge, and exact predecessor CAS prevent stale overwrite and duplicate chunk claims."
+  ],
+  "clean_convergence": {
+    "required_consecutive_clean": 2,
+    "rounds_after_last_edit": [
+      {
+        "round": 1,
+        "reviewer": "codex/final-clean-b",
+        "verdict": "CLEAN"
+      },
+      {
+        "round": 2,
+        "reviewer": "codex/final-clean-c",
+        "verdict": "CLEAN"
+      }
+    ],
+    "result": "CLEAN"
+  },
+  "external_acceptance_pending": [
+    "Credentialed live Discord receive/reply, reconnect, permission-loss, and token rotation.",
+    "Real operating-system credential prompt and credential-store lifecycle."
+  ]
+}

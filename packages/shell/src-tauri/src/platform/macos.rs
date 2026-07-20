@@ -11,6 +11,40 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool>, String> {
+    let output = Command::new("ps")
+        .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+    if output.status.success() {
+        return Ok(Some(
+            String::from_utf8_lossy(&output.stdout)
+                .split_whitespace()
+                .any(|arg| arg == marker),
+        ));
+    }
+    if unsafe { libc::kill(pid as i32, 0) } != 0
+        && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+    {
+        Ok(None)
+    } else {
+        Err("agent_lease_identity_query_failed".to_string())
+    }
+}
+
+pub(crate) fn find_agent_process_by_marker(marker: &str) -> Result<bool, String> {
+    let output = Command::new("ps")
+        .args(["-ww", "-axo", "pid=,command="])
+        .output()
+        .map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+    if !output.status.success() {
+        return Err("agent_lease_identity_query_failed".to_string());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.split_whitespace().skip(1).any(|arg| arg == marker)))
+}
+
 /// Spawn a no-op child process (Unix: /usr/bin/true).
 pub(crate) fn dummy_child() -> Result<Child, String> {
     Command::new("true")

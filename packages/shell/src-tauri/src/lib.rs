@@ -252,16 +252,770 @@ use webkit2gtk::PermissionRequestExt;
 // agent-core process handle ???뺣낯 transport=gRPC. child=?꾨줈?몄뒪 lifecycle, tx=硫붿떆吏瑜?dispatcher task(gRPC ?대씪 ?뚯쑀)濡?
 struct AgentProcess {
     child: Child,
+    lease: Option<AgentChildLease>,
+    discord_cleanup: Option<DiscordSpawnCleanup>,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
+    shutdown_tx: tokio::sync::mpsc::UnboundedSender<AgentShutdownCommand>,
+    shutdown_nonce: zeroize::Zeroizing<String>,
+    termination_attempted: bool,
     /// agent-core gRPC listening addr ??寃곌낵 諛섑솚??unary 而ㅻ㎤???? compile_knowledge)媛 蹂꾨룄 ?대씪濡?connect.
     grpc_addr: String,
+}
+
+struct AgentShutdownCommand {
+    nonce: String,
+    result: std::sync::mpsc::SyncSender<AgentShutdownOutcome>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AgentShutdownOutcome {
+    Accepted,
+    Rejected,
+    Ambiguous,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct AgentChildLease {
+    version: u8,
+    pid: Option<u32>,
+    nonce: String,
+    marker: String,
+    started_at_ms: u64,
+    runtime: Option<std::path::PathBuf>,
+}
+
+struct AgentChildLeaseLock {
+    _file: std::fs::File,
+}
+
+fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
+        .join(".naia")
+        .join("agent-child-lease.json"))
+}
+
+fn agent_child_lease_lock_path() -> Result<std::path::PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
+        .join(".naia")
+        .join("agent-child-lease.lock"))
+}
+
+fn acquire_agent_child_lease_lock() -> Result<AgentChildLeaseLock, String> {
+    acquire_agent_child_lease_lock_at(&agent_child_lease_lock_path()?)
+}
+
+fn acquire_agent_child_lease_lock_at(
+    path: &std::path::Path,
+) -> Result<AgentChildLeaseLock, String> {
+    use fs2::FileExt;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "agent_lease_lock_failed".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|_| "agent_lease_lock_failed".to_string())?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|_| "agent_lease_lock_failed".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| "agent_lease_lock_failed".to_string())?;
+    }
+    file.lock_exclusive()
+        .map_err(|_| "agent_lease_lock_failed".to_string())?;
+    Ok(AgentChildLeaseLock { _file: file })
+}
+
+fn read_agent_child_lease_locked(
+    _lock: &AgentChildLeaseLock,
+) -> Result<Option<AgentChildLease>, String> {
+    let path = agent_child_lease_path()?;
+    let metadata = match std::fs::metadata(&path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("agent_lease_read_failed".to_string()),
+    };
+    if !metadata.is_file() || metadata.len() > 16 * 1024 {
+        return Err("agent_lease_invalid".to_string());
+    }
+    let bytes = std::fs::read(path).map_err(|_| "agent_lease_read_failed".to_string())?;
+    let lease = serde_json::from_slice::<AgentChildLease>(&bytes)
+        .map_err(|_| "agent_lease_invalid".to_string())?;
+    let nonce_valid = lease.nonce.len() == 32
+        && lease.nonce.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if lease.version != 1
+        || !nonce_valid
+        || lease.marker != format!("--naia-agent-child={}", lease.nonce)
+        || lease.pid == Some(0)
+    {
+        return Err("agent_lease_invalid".to_string());
+    }
+    Ok(Some(lease))
+}
+
+fn write_agent_child_lease_locked(
+    _lock: &AgentChildLeaseLock,
+    lease: &AgentChildLease,
+) -> Result<(), String> {
+    persist_agent_child_lease_with(lease, |path, bytes| {
+        write_owner_only_atomic(path, bytes)
+    })
+}
+
+fn persist_agent_child_lease_before<T, W, N>(
+    lease: &AgentChildLease,
+    write: W,
+    next: N,
+) -> Result<T, String>
+where
+    W: FnOnce(&AgentChildLease) -> Result<(), String>,
+    N: FnOnce() -> Result<T, String>,
+{
+    write(lease)?;
+    next()
+}
+
+fn persist_agent_child_lease_with<W>(
+    lease: &AgentChildLease,
+    write: W,
+) -> Result<(), String>
+where
+    W: FnOnce(&std::path::Path, &[u8]) -> Result<(), String>,
+{
+    let bytes = serde_json::to_vec(lease).map_err(|_| "agent_lease_invalid".to_string())?;
+    write(&agent_child_lease_path()?, &bytes)
+        .map_err(|_| "agent_lease_write_failed".to_string())
+}
+
+fn remove_matching_agent_child_lease_locked(
+    lock: &AgentChildLeaseLock,
+    lease: &AgentChildLease,
+) -> Result<bool, String> {
+    remove_matching_agent_child_lease_with(
+        lease,
+        || read_agent_child_lease_locked(lock),
+        || match std::fs::remove_file(agent_child_lease_path()?) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err("agent_lease_remove_failed".to_string()),
+        },
+    )
+}
+
+fn remove_matching_agent_child_lease_with<R, D>(
+    lease: &AgentChildLease,
+    read: R,
+    remove: D,
+) -> Result<bool, String>
+where
+    R: FnOnce() -> Result<Option<AgentChildLease>, String>,
+    D: FnOnce() -> Result<(), String>,
+{
+    if read()?.as_ref().map(|current| current.nonce.as_str()) != Some(lease.nonce.as_str()) {
+        return Ok(false);
+    }
+    remove()?;
+    Ok(true)
+}
+
+fn new_agent_child_lease(
+    runtime: Option<std::path::PathBuf>,
+) -> Result<AgentChildLease, String> {
+    let nonce = new_agent_nonce()?;
+    Ok(AgentChildLease {
+        version: 1,
+        pid: None,
+        marker: format!("--naia-agent-child={nonce}"),
+        nonce,
+        started_at_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+        runtime,
+    })
+}
+
+fn new_agent_nonce() -> Result<String, String> {
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|_| "agent_lease_rng_failed".to_string())?;
+    Ok(random.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn reconcile_agent_child_lease_locked(lock: &AgentChildLeaseLock) -> Result<(), String> {
+    let Some(lease) = read_agent_child_lease_locked(lock)? else {
+        return Ok(());
+    };
+    reconcile_agent_child_lease_with(
+        &lease,
+        |pid| platform::agent_process_marker(pid, &lease.marker),
+        || platform::find_agent_process_by_marker(&lease.marker),
+        || {
+            if let Some(runtime) = lease.runtime.as_deref() {
+                quarantine_discord_runtime_files(runtime)
+            } else {
+                Ok(())
+            }
+        },
+        || remove_matching_agent_child_lease_locked(lock, &lease).map(|_| ()),
+    )
+}
+
+fn reconcile_agent_child_lease_with<Q, E, C, D>(
+    lease: &AgentChildLease,
+    query: Q,
+    enumerate: E,
+    cleanup: C,
+    remove: D,
+) -> Result<(), String>
+where
+    Q: FnOnce(u32) -> Result<Option<bool>, String>,
+    E: FnOnce() -> Result<bool, String>,
+    C: FnOnce() -> Result<(), String>,
+    D: FnOnce() -> Result<(), String>,
+{
+    let live = match lease.pid {
+        Some(pid) => match query(pid)? {
+            Some(true) => true,
+            Some(false) | None => enumerate()?,
+        },
+        None => enumerate()?,
+    };
+    if live {
+        return Err("agent_lease_live_blocked".to_string());
+    }
+    cleanup()?;
+    remove()?;
+    Ok(())
+}
+
+/// Owns a freshly spawned child until every startup handshake has succeeded.
+/// Any early return after `Command::spawn` either confirms bounded termination
+/// or transfers the child and exact Discord runtime to a background reaper.
+struct SpawnedAgentChild {
+    child: Option<Child>,
+    lease: Option<AgentChildLease>,
+    discord_cleanup: Option<DiscordSpawnCleanup>,
+    pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+struct DiscordSpawnCleanup {
+    runtime: std::path::PathBuf,
+    quarantined: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[derive(Clone, Copy)]
+enum OwnedAgentCleanupMode {
+    Normal,
+    Quarantine,
+}
+
+#[derive(Default)]
+struct OwnedAgentCleanupOutcome {
+    superseded: bool,
+    runtime_confirmed: bool,
+    lease_removed: bool,
+}
+
+impl OwnedAgentCleanupOutcome {
+    fn complete(&self, child_reaped: bool) -> bool {
+        child_reaped && (self.superseded || (self.runtime_confirmed && self.lease_removed))
+    }
+}
+
+fn disarm_completed_spawned_lease(
+    lease: &mut Option<AgentChildLease>,
+    outcome: &OwnedAgentCleanupOutcome,
+    child_reaped: bool,
+) {
+    if outcome.complete(child_reaped) {
+        *lease = None;
+    }
+}
+
+fn require_owned_cleanup_complete(
+    outcome: &OwnedAgentCleanupOutcome,
+    child_reaped: bool,
+    error: &'static str,
+) -> Result<(), String> {
+    if outcome.complete(child_reaped) {
+        Ok(())
+    } else {
+        Err(error.to_string())
+    }
+}
+
+fn cleanup_owned_agent_child_locked(
+    lock: &AgentChildLeaseLock,
+    lease: &AgentChildLease,
+    child_reaped: bool,
+    cleanup: Option<&DiscordSpawnCleanup>,
+    mode: OwnedAgentCleanupMode,
+) -> OwnedAgentCleanupOutcome {
+    cleanup_owned_agent_child_with(
+        lease,
+        child_reaped,
+        cleanup.is_some(),
+        mode,
+        || read_agent_child_lease_locked(lock),
+        |lease| write_agent_child_lease_locked(lock, lease),
+        || platform::find_agent_process_by_marker(&lease.marker),
+        || {
+            if let Some(cleanup) = cleanup {
+                revoke_discord_runtime_files(&cleanup.runtime)
+            } else {
+                Ok(())
+            }
+        },
+        || {
+            if let Some(cleanup) = cleanup {
+                cleanup
+                    .quarantined
+                    .store(true, std::sync::atomic::Ordering::Release);
+                quarantine_discord_runtime_files(&cleanup.runtime)
+            } else {
+                Ok(())
+            }
+        },
+        || remove_matching_agent_child_lease_locked(lock, lease),
+    )
+}
+
+fn cleanup_owned_agent_child_with<R, W, E, V, Q, D>(
+    lease: &AgentChildLease,
+    child_reaped: bool,
+    runtime_cleanup_required: bool,
+    mode: OwnedAgentCleanupMode,
+    read: R,
+    restore: W,
+    enumerate: E,
+    revoke: V,
+    quarantine: Q,
+    remove: D,
+) -> OwnedAgentCleanupOutcome
+where
+    R: FnOnce() -> Result<Option<AgentChildLease>, String>,
+    W: FnOnce(&AgentChildLease) -> Result<(), String>,
+    E: FnOnce() -> Result<bool, String>,
+    V: FnOnce() -> Result<(), String>,
+    Q: FnOnce() -> Result<(), String>,
+    D: FnOnce() -> Result<bool, String>,
+{
+    let current = match read() {
+        Ok(value) => value,
+        Err(_) => return OwnedAgentCleanupOutcome::default(),
+    };
+    match current.as_ref() {
+        Some(value) if value.nonce != lease.nonce => {
+            return OwnedAgentCleanupOutcome {
+                superseded: true,
+                ..OwnedAgentCleanupOutcome::default()
+            };
+        }
+        Some(_) => {}
+        None if restore(lease).is_ok() => {}
+        None => return OwnedAgentCleanupOutcome::default(),
+    }
+    let fully_reaped = child_reaped && matches!(enumerate(), Ok(false));
+    let runtime_result = if !runtime_cleanup_required {
+        Ok(())
+    } else if fully_reaped && matches!(mode, OwnedAgentCleanupMode::Normal) {
+        revoke()
+    } else {
+        quarantine()
+    };
+    if runtime_result.is_err() {
+        return OwnedAgentCleanupOutcome::default();
+    }
+    let mut outcome = OwnedAgentCleanupOutcome {
+        runtime_confirmed: true,
+        ..OwnedAgentCleanupOutcome::default()
+    };
+    if fully_reaped {
+        outcome.lease_removed = remove().unwrap_or(false);
+    }
+    outcome
+}
+
+fn cleanup_owned_agent_child(
+    lease: &AgentChildLease,
+    child_reaped: bool,
+    cleanup: Option<&DiscordSpawnCleanup>,
+    mode: OwnedAgentCleanupMode,
+) -> OwnedAgentCleanupOutcome {
+    let Ok(lock) = acquire_agent_child_lease_lock() else {
+        return OwnedAgentCleanupOutcome::default();
+    };
+    cleanup_owned_agent_child_locked(&lock, lease, child_reaped, cleanup, mode)
+}
+
+impl SpawnedAgentChild {
+    fn new(
+        child: Child,
+        lease: AgentChildLease,
+        discord_cleanup: Option<DiscordSpawnCleanup>,
+        pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
+        Self {
+            child: Some(child),
+            lease: Some(lease),
+            discord_cleanup,
+            pending_reapers,
+        }
+    }
+
+    fn child_mut(&mut self) -> &mut Child {
+        self.child.as_mut().expect("spawned child must be present")
+    }
+
+    fn into_inner(mut self) -> (Child, AgentChildLease, Option<DiscordSpawnCleanup>) {
+        (
+            self.child.take().expect("spawned child must be present"),
+            self.lease.take().expect("spawned lease must be present"),
+            self.discord_cleanup.take(),
+        )
+    }
+
+    fn finish_explicit_cleanup(&mut self, child_reaped: bool) -> OwnedAgentCleanupOutcome {
+        let Some(lease) = self.lease.as_ref() else {
+            return OwnedAgentCleanupOutcome {
+                superseded: true,
+                ..OwnedAgentCleanupOutcome::default()
+            };
+        };
+        let outcome = cleanup_owned_agent_child(
+            lease,
+            child_reaped,
+            self.discord_cleanup.as_ref(),
+            OwnedAgentCleanupMode::Quarantine,
+        );
+        let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
+        let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_confirmed);
+        let child = self.child.take();
+        disarm_completed_spawned_lease(&mut self.lease, &outcome, child_reaped);
+        if self.lease.is_none() {
+            return outcome;
+        }
+        let lease = self.lease.take().expect("incomplete cleanup retains lease");
+        if child.is_some() || cleanup.is_some() {
+            spawn_background_discord_reaper(
+                child,
+                cleanup,
+                lease,
+                Arc::clone(&self.pending_reapers),
+            );
+        } else {
+            spawn_background_discord_reaper(
+                None,
+                cleanup,
+                lease,
+                Arc::clone(&self.pending_reapers),
+            );
+        }
+        outcome
+    }
+}
+
+impl Drop for SpawnedAgentChild {
+    fn drop(&mut self) {
+        let Some(lease) = self.lease.take() else {
+            return;
+        };
+        let outcome = cleanup_owned_agent_child(
+            &lease,
+            false,
+            self.discord_cleanup.as_ref(),
+            OwnedAgentCleanupMode::Quarantine,
+        );
+        let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
+        let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_confirmed);
+        if let Some(child) = self.child.take() {
+            spawn_background_discord_reaper(
+                Some(child),
+                cleanup,
+                lease,
+                Arc::clone(&self.pending_reapers),
+            );
+        } else if cleanup.is_some() {
+            spawn_background_discord_reaper(
+                None,
+                cleanup,
+                lease,
+                Arc::clone(&self.pending_reapers),
+            );
+        }
+    }
+}
+
+fn discord_cleanup_retry(
+    cleanup: Option<DiscordSpawnCleanup>,
+    runtime_quarantined: bool,
+) -> Option<DiscordSpawnCleanup> {
+    if runtime_quarantined {
+        None
+    } else {
+        cleanup
+    }
+}
+
+struct PendingDiscordReaper {
+    pending: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl PendingDiscordReaper {
+    fn begin(pending: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        pending.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        Self { pending }
+    }
+}
+
+impl Drop for PendingDiscordReaper {
+    fn drop(&mut self) {
+        self.pending
+            .fetch_sub(1, std::sync::atomic::Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+fn run_pending_discord_reaper<R, Q>(
+    pending: PendingDiscordReaper,
+    reap_child: R,
+    retry_cleanup: Q,
+) where
+    R: FnOnce(),
+    Q: FnOnce(),
+{
+    reap_child();
+    retry_cleanup();
+    drop(pending);
+}
+
+fn confirm_background_reap_with<W>(mut wait: W) -> bool
+where
+    W: FnMut() -> std::io::Result<()>,
+{
+    loop {
+        match wait() {
+            Ok(()) => return true,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return false,
+        }
+    }
+}
+
+fn reap_discord_child_in_background(child: &mut Child) -> bool {
+    let _ = child.kill();
+    confirm_background_reap_with(|| child.wait().map(|_| ()))
+}
+
+struct DiscordReaperOwnership {
+    child: Option<Child>,
+    cleanup: Option<DiscordSpawnCleanup>,
+    lease: AgentChildLease,
+    _pending: Option<PendingDiscordReaper>,
+}
+
+impl DiscordReaperOwnership {
+    fn retry_cleanup(&mut self, child_reaped: bool) -> bool {
+        let outcome = cleanup_owned_agent_child(
+            &self.lease,
+            child_reaped,
+            self.cleanup.as_ref(),
+            OwnedAgentCleanupMode::Quarantine,
+        );
+        if outcome.superseded || outcome.runtime_confirmed {
+            self.cleanup = None;
+        }
+        outcome.complete(child_reaped)
+    }
+}
+
+type DiscordReaperContainer = Arc<Mutex<Option<DiscordReaperOwnership>>>;
+type DiscordReaperTask = Box<dyn FnOnce() + Send + 'static>;
+
+fn finish_owned_discord_reaper<T>(
+    ownership: T,
+    confirmed: bool,
+    diagnostic: &'static str,
+) {
+    if confirmed {
+        drop(ownership);
+    } else {
+        log_both(&format!("[Naia] {diagnostic}"));
+        std::mem::forget(ownership);
+    }
+}
+
+fn take_discord_reaper_ownership(
+    container: &DiscordReaperContainer,
+) -> DiscordReaperOwnership {
+    lock_or_recover(container, "discord_reaper_ownership")
+        .take()
+        .expect("reaper ownership must be present")
+}
+
+fn run_background_discord_reaper(container: DiscordReaperContainer) {
+    let mut ownership = take_discord_reaper_ownership(&container);
+    let child_reaped = ownership
+        .child
+        .as_mut()
+        .map(reap_discord_child_in_background)
+        .unwrap_or(true);
+    if child_reaped {
+        ownership.child = None;
+    }
+    let cleanup_confirmed = ownership.retry_cleanup(child_reaped);
+    finish_owned_discord_reaper(
+        ownership,
+        child_reaped && cleanup_confirmed,
+        "discord_reaper_wait_or_cleanup_unconfirmed_pending",
+    );
+}
+
+fn spawn_discord_reaper_task_with<S>(
+    container: &DiscordReaperContainer,
+    spawn_task: S,
+) -> Result<(), String>
+where
+    S: FnOnce(DiscordReaperTask) -> Result<(), String>,
+{
+    let thread_container = Arc::clone(container);
+    spawn_task(Box::new(move || {
+        run_background_discord_reaper(thread_container);
+    }))
+}
+
+fn recover_failed_discord_reaper_handoff_with<T>(
+    container: DiscordReaperContainer,
+    terminate_child: T,
+) where
+    T: FnOnce(&mut Child) -> Result<(), String>,
+{
+    recover_failed_discord_reaper_handoff_and_cleanup_with(
+        container,
+        terminate_child,
+        |ownership, child_reaped| ownership.retry_cleanup(child_reaped),
+    )
+}
+
+fn recover_failed_discord_reaper_handoff_and_cleanup_with<T, C>(
+    container: DiscordReaperContainer,
+    terminate_child: T,
+    finish_cleanup: C,
+) where
+    T: FnOnce(&mut Child) -> Result<(), String>,
+    C: FnOnce(&mut DiscordReaperOwnership, bool) -> bool,
+{
+    let mut ownership = take_discord_reaper_ownership(&container);
+    let child_reaped = ownership
+        .child
+        .as_mut()
+        .map(terminate_child)
+        .transpose()
+        .is_ok();
+    if child_reaped {
+        ownership.child = None;
+    }
+    let cleanup_confirmed = finish_cleanup(&mut ownership, child_reaped);
+    finish_owned_discord_reaper(
+        ownership,
+        child_reaped && cleanup_confirmed,
+        "discord_reaper_thread_spawn_failed_pending",
+    );
+}
+
+fn spawn_background_discord_reaper(
+    child: Option<Child>,
+    cleanup: Option<DiscordSpawnCleanup>,
+    lease: AgentChildLease,
+    pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
+) {
+    let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
+        child,
+        cleanup,
+        lease,
+        _pending: Some(PendingDiscordReaper::begin(pending_reapers)),
+    })));
+    let spawn_result = spawn_discord_reaper_task_with(&container, |task| {
+        std::thread::Builder::new()
+            .name("naia-discord-reaper".to_string())
+            .spawn(move || task())
+            .map(|_| ())
+            .map_err(|_| "discord_reaper_thread_spawn_failed".to_string())
+    });
+    if spawn_result.is_err() {
+        log_both("[Naia] discord_reaper_thread_spawn_failed_fallback");
+        recover_failed_discord_reaper_handoff_with(container, |child| {
+            terminate_and_reap_discord_child(child)
+        });
+    }
 }
 
 // ?좑툘 Rust ??Child drop ???꾨줈?몄뒪瑜?二쎌씠吏 ?딆쓬 ??restart 濡?*guard 援먯껜 ????agent 媛 orphan(gRPC ?쒕쾭 ?붾쪟).
 // Drop ?먯꽌 紐낆떆 kill 濡?orphan 諛⑹?(codex 由щ럭 #1). 醫낅즺/replace ?묒そ 而ㅻ쾭.
 impl Drop for AgentProcess {
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        finish_agent_process_drop_with(
+            self,
+            self.termination_attempted,
+            |process| graceful_shutdown_and_reap_agent(process).is_ok(),
+            |process| terminate_and_reap_discord_child(&mut process.child).is_ok(),
+            |process, child_reaped| {
+                let _ = process.finish_owned_cleanup(child_reaped);
+            },
+        );
+    }
+}
+
+fn finish_agent_process_drop_with<T, G, F, C>(
+    target: &mut T,
+    termination_attempted: bool,
+    graceful: G,
+    force_and_reap: F,
+    cleanup_owned: C,
+) where
+    G: FnOnce(&mut T) -> bool,
+    F: FnOnce(&mut T) -> bool,
+    C: FnOnce(&mut T, bool),
+{
+    let child_reaped = if termination_attempted {
+        // An explicit lifecycle operation already spent the graceful
+        // deadline. Do not replay the authenticated drain on Drop, but
+        // retain the orphan-prevention guarantee with one bounded
+        // force-and-reap attempt.
+        force_and_reap(target)
+    } else {
+        graceful(target)
+    };
+    cleanup_owned(target, child_reaped);
+}
+
+impl AgentProcess {
+    fn finish_owned_cleanup(&mut self, child_reaped: bool) -> OwnedAgentCleanupOutcome {
+        let Some(lease) = self.lease.as_ref() else {
+            return OwnedAgentCleanupOutcome {
+                superseded: true,
+                ..OwnedAgentCleanupOutcome::default()
+            };
+        };
+        let outcome = cleanup_owned_agent_child(
+            lease,
+            child_reaped,
+            self.discord_cleanup.as_ref(),
+            OwnedAgentCleanupMode::Normal,
+        );
+        if outcome.superseded || outcome.runtime_confirmed {
+            self.discord_cleanup = None;
+        }
+        if outcome.complete(child_reaped) {
+            self.lease = None;
+        }
+        outcome
     }
 }
 
@@ -300,6 +1054,19 @@ impl Drop for CascadeProcess {
 
 struct AppState {
     agent: Mutex<Option<AgentProcess>>,
+    /// Serializes every agent spawn/publication with Discord repair and quarantine.
+    discord_lifecycle: Mutex<()>,
+    /// Process-local fail-closed latch. Only verified explicit repair clears it.
+    discord_quarantined: Arc<std::sync::atomic::AtomicBool>,
+    /// Blocks every spawn while an unconfirmed child is owned by a background reaper.
+    discord_pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
+    /// Serializes Discord credential and binding mutations across async Tauri commands.
+    /// A single operation owns manifest/key rollback and the corresponding agent restart.
+    discord_config_operation: tokio::sync::Mutex<()>,
+    /// Server-side cache of binding ids proven usable by the latest live
+    /// discovery. The WebView may narrow this set but can never broaden it.
+    discord_inbox_authorized_bindings:
+        tokio::sync::Mutex<Option<(u64, std::collections::BTreeSet<String>)>>,
     bgm_server: Mutex<Option<BgmServerProcess>>,
     cascade: Mutex<Option<CascadeProcess>>,
     gateway: Mutex<Option<GatewayProcess>>,
@@ -331,6 +1098,14 @@ fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> MutexGuard<'a, T> 
             poisoned.into_inner()
         }
     }
+}
+
+fn with_discord_lifecycle<T, F>(lifecycle: &Mutex<()>, operation: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let _guard = lock_or_recover(lifecycle, "state.discord_lifecycle");
+    operation()
 }
 
 fn is_valid_discord_snowflake(value: &str) -> bool {
@@ -1029,10 +1804,60 @@ fn resolve_paired_bundled_agent_script(app_handle: &AppHandle) -> Result<String,
 }
 
 /// Spawn the Node.js agent-core process with stdio pipes
+fn spawn_adk_path_snapshot_with<R>(read_cache: R) -> Option<String>
+where
+    R: FnOnce() -> Option<String>,
+{
+    read_cache()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn spawn_adk_path_snapshot() -> Option<String> {
+    spawn_adk_path_snapshot_with(|| {
+        dirs::home_dir()
+            .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
+    })
+}
+
+fn ensure_no_pending_discord_reaper(
+    pending_reapers: &std::sync::atomic::AtomicUsize,
+    _discord_repair_bypass: bool,
+) -> Result<(), String> {
+    if pending_reapers.load(std::sync::atomic::Ordering::Acquire) == 0 {
+        Ok(())
+    } else {
+        Err("discord_agent_reap_pending".to_string())
+    }
+}
+
+fn direct_agent_command(
+    agent_path: &str,
+    agent_script: &str,
+    tsx_direct: Option<(String, String)>,
+) -> Result<(String, Command), String> {
+    if agent_script.ends_with(".ts") {
+        let (node_bin, tsx_cli) =
+            tsx_direct.ok_or_else(|| "agent_direct_tsx_runner_required".to_string())?;
+        let mut command = Command::new(&node_bin);
+        command.arg(&tsx_cli).arg(agent_script).arg("--stdio");
+        Ok((format!("{} {}", node_bin, tsx_cli), command))
+    } else {
+        let mut command = Command::new(agent_path);
+        command.arg(agent_script).arg("--stdio");
+        Ok((agent_path.to_string(), command))
+    }
+}
+
 fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
+    discord_quarantined: &Arc<std::sync::atomic::AtomicBool>,
+    discord_pending_reapers: &Arc<std::sync::atomic::AtomicUsize>,
+    discord_repair_bypass: bool,
 ) -> Result<AgentProcess, String> {
+    use std::io::Write as _;
+
     let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
     log_both(&format!("[Naia] node = {}", agent_path));
 
@@ -1045,14 +1870,9 @@ fn spawn_agent_core(
         }
         Err(_) => resolve_paired_bundled_agent_script(app_handle)?,
     };
-
     let use_tsx = agent_script.ends_with(".ts");
-    // Preferred: invoke tsx via node directly (agent_dir/node_modules/.pnpm/tsx@*/.../cli.mjs).
-    // This avoids spawning `npx` or `npx.cmd` ??Windows' CreateProcess does not
-    // resolve .cmd shims, and batch files fail under CREATE_NO_WINDOW anyway.
-    //
-    // Fallback: `npx.cmd` (Windows) / `npx` (Unix) via platform::resolve_npx() ??
-    // only hit when tsx resolution fails (no node_modules, production build, etc.).
+    // TypeScript development runs only through a resolved node + tsx CLI pair.
+    // Wrapper commands cannot preserve direct child ownership across platforms.
     let agent_dir = std::path::Path::new(&agent_script)
         .parent()
         .and_then(|p| p.parent())
@@ -1066,20 +1886,23 @@ fn spawn_agent_core(
         None
     };
 
-    let (runner, mut cmd) = if let Some((node_bin, tsx_cli)) = tsx_direct {
-        let mut c = Command::new(&node_bin);
-        c.arg(&tsx_cli).arg(&agent_script).arg("--stdio");
-        (format!("{} {}", node_bin, tsx_cli), c)
-    } else if use_tsx {
-        let npx = std::env::var("NAIA_AGENT_RUNNER").unwrap_or_else(|_| platform::resolve_npx());
-        let mut c = Command::new(&npx);
-        c.arg("tsx").arg(&agent_script).arg("--stdio");
-        (npx, c)
-    } else {
-        let mut c = Command::new(&agent_path);
-        c.arg(&agent_script).arg("--stdio");
-        (agent_path.clone(), c)
-    };
+    let (runner, mut cmd) = direct_agent_command(&agent_path, &agent_script, tsx_direct)?;
+
+    ensure_no_pending_discord_reaper(discord_pending_reapers, discord_repair_bypass)?;
+    let lease_lock = acquire_agent_child_lease_lock()?;
+    reconcile_agent_child_lease_locked(&lease_lock)?;
+    let mut child_lease = new_agent_child_lease(None)?;
+    let shutdown_nonce = zeroize::Zeroizing::new(new_agent_nonce()?);
+    persist_agent_child_lease_before(
+        &child_lease,
+        |lease| write_agent_child_lease_locked(&lease_lock, lease),
+        || Ok(()),
+    )?;
+    cmd.arg(&child_lease.marker);
+    // Cross-platform graceful shutdown capability. This is independent from
+    // the Discord credential, is never logged, and the Agent deletes it from
+    // its environment before loading runtime modules.
+    cmd.env("NAIA_AGENT_SHUTDOWN_NONCE", shutdown_nonce.as_str());
 
     log_verbose(&format!(
         "[Naia] Starting agent-core: {} {}",
@@ -1101,37 +1924,195 @@ fn spawn_agent_core(
         .stdout(Stdio::piped())
         .stderr(stderr_stdio);
 
+    let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
+    let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
+    let spawn_adk_path = spawn_adk_path_snapshot();
+
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
-    // at runtime. Read from ~/.naia/adk-path written by write_naia_path_cache.
-    if let Some(home) = dirs::home_dir() {
-        let adk_path_file = home.join(".naia").join("adk-path");
-        if let Ok(adk_path_str) = std::fs::read_to_string(&adk_path_file) {
-            let adk_path_str = adk_path_str.trim();
-            if !adk_path_str.is_empty() {
-                let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
-                cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
-                cmd.env("NAIA_ADK_PATH", adk_path_str);
-                log_verbose(&format!(
-                    "[Naia] agent NAIA_ADK_PATH={} NAIA_SETTINGS_DIR={}",
-                    adk_path_str,
-                    settings_dir.display()
-                ));
+    // at runtime. The cache is captured exactly once so a concurrent path
+    // update cannot mix settings, Discord runtime, and dispatcher workspaces.
+    if let Some(adk_path_str) = spawn_adk_path.as_deref() {
+        let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
+        cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
+        cmd.env("NAIA_ADK_PATH", adk_path_str);
+        let bindings_path = settings_dir.join("discord-bindings.json");
+        let runtime_dir = settings_dir.join("discord-runtime");
+        if discord_runtime_activation_allowed(
+            discord_quarantined,
+            &runtime_dir,
+            discord_repair_bypass,
+        ) {
+            if let Ok(metadata) = std::fs::metadata(&bindings_path) {
+                if metadata.is_file() && metadata.len() <= 512 * 1024 {
+                    if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
+                        let generation =
+                            serde_json::from_str::<serde_json::Value>(&bindings_json)
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .get("generation")
+                                        .and_then(|item| item.as_u64())
+                                });
+                        if let Some(generation) = generation {
+                            if let Ok(token) = read_discord_bot_token() {
+                                if validate_discord_token(&token).is_ok() {
+                                    std::fs::create_dir_all(&runtime_dir).map_err(|_| {
+                                        "discord_runtime_dir_unavailable".to_string()
+                                    })?;
+                                    child_lease.runtime = Some(runtime_dir.clone());
+                                    let generation = generation.to_string();
+                                    let authority_path = runtime_dir.join("authority.json");
+                                    let authority = serde_json::json!({
+                                        "version": 1,
+                                        "generation": generation.clone(),
+                                    });
+                                    let authority_bytes = serde_json::to_vec(&authority)
+                                        .map_err(|_| {
+                                            "discord_authority_invalid".to_string()
+                                        })?;
+                                    persist_agent_child_lease_before(
+                                        &child_lease,
+                                        |lease| {
+                                            write_agent_child_lease_locked(&lease_lock, lease)
+                                        },
+                                        || {
+                                            issue_discord_runtime_authority(
+                                                discord_quarantined,
+                                                || {
+                                                    write_owner_only_atomic(
+                                                        &authority_path,
+                                                        &authority_bytes,
+                                                    )
+                                                },
+                                                || {
+                                                    quarantine_discord_runtime_files(&runtime_dir)
+                                                },
+                                            )
+                                        },
+                                    )?;
+                                    cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
+                                    cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
+                                    cmd.env("NAIA_DISCORD_GENERATION", &generation);
+                                    cmd.env(
+                                        "NAIA_DISCORD_STATUS_PATH",
+                                        runtime_dir.join("status.json"),
+                                    );
+                                    cmd.env(
+                                        "NAIA_DISCORD_AUTHORITY_PATH",
+                                        &authority_path,
+                                    );
+                                    cmd.env(
+                                        "NAIA_DISCORD_DEDUPE_PATH",
+                                        runtime_dir.join("dedupe.json"),
+                                    );
+                                    cmd.env(
+                                        "NAIA_DISCORD_INBOX_PATH",
+                                        runtime_dir.join("inbox.json"),
+                                    );
+                                    discord_runtime_cleanup = Some(runtime_dir.clone());
+                                    discord_token_frame = Some(token);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+        log_verbose(&format!(
+            "[Naia] agent NAIA_ADK_PATH={} NAIA_SETTINGS_DIR={}",
+            adk_path_str,
+            settings_dir.display()
+        ));
     }
 
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn agent-core: {}", e))?;
+    let discord_runtime_armed = discord_token_frame.is_some();
+    let discord_cleanup = discord_runtime_cleanup
+        .as_ref()
+        .map(|runtime| DiscordSpawnCleanup {
+            runtime: runtime.clone(),
+            quarantined: Arc::clone(discord_quarantined),
+        });
+    let child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let outcome = cleanup_owned_agent_child_locked(
+                &lease_lock,
+                &child_lease,
+                true,
+                discord_cleanup.as_ref(),
+                OwnedAgentCleanupMode::Quarantine,
+            );
+            let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
+            return finalize_discord_startup_failure(
+                format!("Failed to spawn agent-core: {error}"),
+                discord_runtime_armed && !outcome.superseded,
+                discord_quarantined,
+                true,
+                runtime_confirmed,
+                |_, _| {},
+            );
+        }
+    };
+    child_lease.pid = Some(child.id());
+    let mut spawned = SpawnedAgentChild::new(
+        child,
+        child_lease,
+        discord_cleanup,
+        Arc::clone(discord_pending_reapers),
+    );
+
+    let lease_update = write_agent_child_lease_locked(
+        &lease_lock,
+        spawned.lease.as_ref().expect("spawned lease must be present"),
+    );
+    drop(lease_lock);
+    if let Err(error) = lease_update {
+        return fail_spawned_discord_agent_startup(
+            error,
+            discord_runtime_armed,
+            discord_quarantined,
+            &mut spawned,
+        );
+    }
+
+    if let Some(frame) = discord_token_frame {
+        let Some(mut stdin) = spawned.child_mut().stdin.take() else {
+            return fail_spawned_discord_agent_startup(
+                "discord_token_pipe_unavailable".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                &mut spawned,
+            );
+        };
+        let write_result = stdin
+            .write_all(&frame)
+            .and_then(|_| stdin.flush());
+        drop(stdin);
+        if write_result.is_err() {
+            return fail_spawned_discord_agent_startup(
+                "discord_token_pipe_failed".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                &mut spawned,
+            );
+        }
+    }
 
     // gRPC: stdin ? ?곗씠??梨꾨꼸 ?꾨떂(child 媛 蹂댁쑀, 誘몄궗??. stdout = GRPC_LISTENING ?몃뱶?곗씠??+ 濡쒓렇.
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to get agent stdout".to_string())?;
+    let stdout = match spawned.child_mut().stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            return fail_spawned_discord_agent_startup(
+                "Failed to get agent stdout".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                &mut spawned,
+            );
+        }
+    };
 
     // ?? gRPC(?뺣낯 transport): stdout ??`GRPC_LISTENING <addr>` ?몃뱶?곗씠??1以꾨쭔 ?쎄퀬 ?섎㉧吏??濡쒓렇 ??
     // ?곗씠???붿껌/?묐떟)??gRPC. agent_response ?대깽?몃뒗 dispatcher ??Chat stream task 媛 ?ш뎄?깊빐 emit.
@@ -1153,19 +2134,27 @@ fn spawn_agent_core(
     });
 
     // gRPC listening addr ?섏떊(timeout) ??湲곕룞 ?몃뱶?곗씠?? ?ㅽ뙣 = 湲곕룞 ?ㅽ뙣.
-    let addr = addr_rx
-        .recv_timeout(std::time::Duration::from_secs(20))
-        .map_err(|_| "agent gRPC addr handshake timeout".to_string())?;
+    let addr = match addr_rx.recv_timeout(std::time::Duration::from_secs(20)) {
+        Ok(addr) => addr,
+        Err(_) => {
+            return fail_spawned_discord_agent_startup(
+                "agent gRPC addr handshake timeout".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                &mut spawned,
+            );
+        }
+    };
     log_both(&format!("[Naia] agent-core gRPC @{}", addr));
 
     // adk_path (SetWorkspace ?? ??env(NAIA_ADK_PATH) ? ?숈씪 異쒖쿂(~/.naia/adk-path).
-    let adk_path = dirs::home_dir()
-        .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
+    let adk_path = spawn_adk_path.unwrap_or_default();
 
     // 硫붿떆吏 梨꾨꼸: send_to_agent(sync) ??dispatcher task(async, gRPC ?대씪 ?뚯쑀). nested runtime ?뚰뵾.
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (shutdown_tx, shutdown_rx) =
+        tokio::sync::mpsc::unbounded_channel::<AgentShutdownCommand>();
+    tauri::async_runtime::spawn(agent_shutdown_dispatcher(addr.clone(), shutdown_rx));
     tauri::async_runtime::spawn(agent_dispatcher(
         addr.clone(),
         adk_path,
@@ -1174,11 +2163,65 @@ fn spawn_agent_core(
         audit_db.clone(),
     ));
 
+    let (child, lease, discord_cleanup) = spawned.into_inner();
     Ok(AgentProcess {
         child,
+        lease: Some(lease),
+        discord_cleanup,
         tx,
+        shutdown_tx,
+        shutdown_nonce,
+        termination_attempted: false,
         grpc_addr: addr,
     })
+}
+
+async fn agent_shutdown_dispatcher(
+    addr: String,
+    rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
+) {
+    agent_shutdown_dispatcher_with_timeout(addr, rx, AGENT_SHUTDOWN_RPC_TIMEOUT).await;
+}
+
+const AGENT_SHUTDOWN_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const AGENT_SHUTDOWN_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const AGENT_GRACEFUL_EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(35);
+const AGENT_FORCE_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+async fn agent_shutdown_dispatcher_with_timeout(
+    addr: String,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
+    rpc_timeout: std::time::Duration,
+) {
+    while let Some(AgentShutdownCommand { nonce, result }) = rx.recv().await {
+        let attempt = tokio::time::timeout(rpc_timeout, async {
+            match agent_grpc::AgentGrpc::connect(format!("http://{}", addr)).await {
+                Ok(mut client) => client
+                    .shutdown(nonce)
+                    .await
+                    .map_err(|status| Some(status.code())),
+                Err(_) => Err(None),
+            }
+        })
+        .await;
+        let outcome = match attempt {
+            Ok(result) => classify_agent_shutdown_rpc_result(result),
+            Err(_) => AgentShutdownOutcome::Ambiguous,
+        };
+        let _ = result.send(outcome);
+    }
+}
+
+fn classify_agent_shutdown_rpc_result(
+    result: Result<(), Option<tonic::Code>>,
+) -> AgentShutdownOutcome {
+    match result {
+        Ok(()) => AgentShutdownOutcome::Accepted,
+        Err(Some(tonic::Code::Unauthenticated | tonic::Code::PermissionDenied)) => {
+            AgentShutdownOutcome::Rejected
+        }
+        Err(_) => AgentShutdownOutcome::Ambiguous,
+    }
 }
 
 /// gRPC dispatcher ??connect ??SetWorkspace(naia-adk 濡쒕뵫) ??硫붿떆吏 猷⑦봽.
@@ -2030,18 +3073,609 @@ fn restart_agent(
             &empty_db
         }
     };
-    match spawn_agent_core(app_handle, db) {
-        Ok(process) => {
+    let restarted = with_discord_lifecycle(&state.discord_lifecycle, || {
+        let mut previous = {
             let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
-            *guard = Some(process);
-            log_both("[Naia] agent-core restarted");
-            drop(guard);
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            // Replay cached startup credentials so agent recovers auth state after crash.
-            replay_startup_messages_to_agent(state);
-            send_to_agent(state, message, None, audit_db)
+            guard.take()
+        };
+        if let Some(process) = previous.as_mut() {
+            if let Err(error) = graceful_shutdown_and_reap_agent(process) {
+                let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+                *guard = previous;
+                return Err(error);
+            }
+            let outcome = process.finish_owned_cleanup(true);
+            if let Err(error) =
+                require_owned_cleanup_complete(&outcome, true, "agent_owned_cleanup_incomplete")
+            {
+                drop(previous);
+                return Err(error);
+            }
         }
-        Err(e) => Err(format!("Restart failed: {}", e)),
+        drop(previous);
+        match spawn_agent_core(
+            app_handle,
+            db,
+            &state.discord_quarantined,
+            &state.discord_pending_reapers,
+            false,
+        ) {
+            Ok(process) => {
+                let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+                *guard = Some(process);
+                log_both("[Naia] agent-core restarted");
+                Ok(())
+            }
+            Err(e) => Err(format!("Restart failed: {}", e)),
+        }
+    });
+    restarted?;
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Replay cached startup credentials so agent recovers auth state after crash.
+    replay_startup_messages_to_agent(state);
+    send_to_agent(state, message, None, audit_db)
+}
+
+fn restart_agent_for_discord_config(
+    state: &AppState,
+    app_handle: &AppHandle,
+    audit_db: &audit::AuditDb,
+    expected_generation: Option<u64>,
+    revoke_mode: DiscordAuthorityRevokeMode,
+) -> Result<(), String> {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        run_discord_repair_activation(
+            &state.discord_quarantined,
+            || clear_discord_quarantine_marker(&discord_runtime_dir()?),
+            || {
+                restart_agent_for_discord_config_unmarked(
+                    state,
+                    app_handle,
+                    audit_db,
+                    expected_generation,
+                    revoke_mode,
+                )
+            },
+            || write_discord_quarantine_marker(&discord_runtime_dir()?),
+        )
+    })
+}
+
+fn restart_agent_for_discord_config_unmarked(
+    state: &AppState,
+    app_handle: &AppHandle,
+    audit_db: &audit::AuditDb,
+    expected_generation: Option<u64>,
+    revoke_mode: DiscordAuthorityRevokeMode,
+) -> Result<(), String> {
+    log_both("[Naia] Restarting agent-core for Discord configuration...");
+    // Security-tightening changes revoke before shutdown. Additive changes
+    // quiesce and drain the old generation before revocation so
+    // already-admitted messages reach a durable terminal state.
+    if matches!(revoke_mode, DiscordAuthorityRevokeMode::BeforeShutdown) {
+        revoke_discord_runtime_authority()?;
+    }
+    let mut previous = {
+        let mut guard =
+            lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+        guard.take()
+    };
+    if let Some(process) = previous.as_mut() {
+        if let Err(error) = graceful_shutdown_and_reap_agent(process) {
+            let mut guard =
+                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            *guard = previous;
+            return Err(error);
+        }
+        let outcome = process.finish_owned_cleanup(true);
+        if let Err(error) = require_owned_cleanup_complete(
+            &outcome,
+            true,
+            "discord_agent_owned_cleanup_incomplete",
+        ) {
+            let mut guard =
+                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            *guard = previous;
+            return Err(error);
+        }
+    }
+    drop(previous);
+    // Revoke only after ordinary graceful drain, and reassert after an
+    // emergency revoke because the old process may have raced the tombstone.
+    revoke_discord_runtime_authority()?;
+    match spawn_agent_core(
+        app_handle,
+        audit_db,
+        &state.discord_quarantined,
+        &state.discord_pending_reapers,
+        true,
+    ) {
+        Ok(process) => {
+            let mut guard =
+                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            *guard = Some(process);
+            drop(guard);
+            replay_startup_messages_to_agent(state);
+            if let Err(error) = wait_for_discord_runtime_ready(expected_generation) {
+                let mut failed = {
+                    let mut guard = lock_or_recover(
+                        &state.agent,
+                        "state.agent(restart_agent_for_discord_config)",
+                    );
+                    guard.take()
+                };
+                if let Some(process) = failed.as_mut() {
+                    if let Err(cleanup_error) =
+                        graceful_shutdown_and_reap_agent(process)
+                    {
+                        let mut guard = lock_or_recover(
+                            &state.agent,
+                            "state.agent(restart_agent_for_discord_config)",
+                        );
+                        *guard = failed;
+                        let _ = revoke_discord_runtime_authority();
+                        return Err(format!("{error}; {cleanup_error}"));
+                    }
+                    let outcome = process.finish_owned_cleanup(true);
+                    if require_owned_cleanup_complete(
+                        &outcome,
+                        true,
+                        "discord_agent_owned_cleanup_incomplete",
+                    )
+                    .is_err()
+                    {
+                        let mut guard = lock_or_recover(
+                            &state.agent,
+                            "state.agent(restart_agent_for_discord_config)",
+                        );
+                        *guard = failed;
+                        let _ = revoke_discord_runtime_authority();
+                        return Err("discord_agent_owned_cleanup_incomplete".to_string());
+                    }
+                }
+                drop(failed);
+                revoke_discord_runtime_authority()?;
+                return Err(error);
+            }
+            log_both("[Naia] agent-core restarted for Discord configuration");
+            Ok(())
+        }
+        Err(error) => {
+            revoke_discord_runtime_authority()?;
+            Err(format!("discord_agent_restart_failed: {error}"))
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DiscordAuthorityRevokeMode {
+    BeforeShutdown,
+    AfterDrain,
+}
+
+trait DiscordChildLifecycle {
+    fn request_termination(&mut self) -> std::io::Result<()>;
+    fn has_exited(&mut self) -> std::io::Result<bool>;
+}
+
+impl DiscordChildLifecycle for Child {
+    fn request_termination(&mut self) -> std::io::Result<()> {
+        self.kill()
+    }
+
+    fn has_exited(&mut self) -> std::io::Result<bool> {
+        self.try_wait().map(|status| status.is_some())
+    }
+}
+
+fn wait_for_discord_child_exit_with<C, N, S>(
+    child: &mut C,
+    timeout: std::time::Duration,
+    mut now: N,
+    mut sleep: S,
+) -> Result<bool, String>
+where
+    C: DiscordChildLifecycle,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    let started = now();
+    let poll = std::time::Duration::from_millis(10);
+    loop {
+        if child
+            .has_exited()
+            .map_err(|_| "discord_agent_reap_failed".to_string())?
+        {
+            return Ok(true);
+        }
+        let elapsed = now().saturating_sub(started);
+        if elapsed >= timeout {
+            return Ok(false);
+        }
+        sleep(poll.min(timeout.saturating_sub(elapsed)));
+    }
+}
+
+fn graceful_then_force_reap_with<C, G, N, S>(
+    child: &mut C,
+    request_graceful_shutdown: G,
+    graceful_timeout: std::time::Duration,
+    force_timeout: std::time::Duration,
+    mut now: N,
+    mut sleep: S,
+) -> Result<(), String>
+where
+    C: DiscordChildLifecycle,
+    G: FnOnce() -> Result<(), String>,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    if child
+        .has_exited()
+        .map_err(|_| "discord_agent_reap_failed".to_string())?
+    {
+        return Ok(());
+    }
+
+    if request_graceful_shutdown().is_ok()
+        && wait_for_discord_child_exit_with(
+            child,
+            graceful_timeout,
+            &mut now,
+            &mut sleep,
+        )?
+    {
+        return Ok(());
+    }
+
+    child
+        .request_termination()
+        .map_err(|_| "discord_agent_terminate_failed".to_string())?;
+    if wait_for_discord_child_exit_with(child, force_timeout, now, sleep)? {
+        Ok(())
+    } else {
+        Err("discord_agent_reap_timeout".to_string())
+    }
+}
+
+fn classify_agent_shutdown_ack(
+    result: Result<AgentShutdownOutcome, std::sync::mpsc::RecvTimeoutError>,
+) -> Result<(), String> {
+    match result {
+        Ok(AgentShutdownOutcome::Accepted | AgentShutdownOutcome::Ambiguous) => Ok(()),
+        Ok(AgentShutdownOutcome::Rejected) => {
+            Err("agent_graceful_shutdown_rejected".to_string())
+        }
+        // The request may already be accepted while only its ACK is delayed
+        // or lost. The caller must observe the child for the graceful deadline
+        // before escalating.
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(()),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("agent_graceful_shutdown_dispatch_failed".to_string())
+        }
+    }
+}
+
+fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), String> {
+    let dispatcher = process.shutdown_tx.clone();
+    let nonce = process.shutdown_nonce.to_string();
+    let started = std::time::Instant::now();
+    graceful_shutdown_and_reap_agent_with(
+        &mut process.child,
+        &mut process.termination_attempted,
+        dispatcher,
+        nonce,
+        move || started.elapsed(),
+        std::thread::sleep,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn graceful_shutdown_and_reap_agent_with<C, N, S>(
+    child: &mut C,
+    termination_attempted: &mut bool,
+    dispatcher: tokio::sync::mpsc::UnboundedSender<AgentShutdownCommand>,
+    nonce: String,
+    now: N,
+    sleep: S,
+) -> Result<(), String>
+where
+    C: DiscordChildLifecycle,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    *termination_attempted = true;
+    graceful_then_force_reap_with(
+        child,
+        move || {
+            let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+            dispatcher
+                .send(AgentShutdownCommand {
+                    nonce,
+                    result: result_tx,
+                })
+                .map_err(|_| "agent_graceful_shutdown_dispatch_failed".to_string())?;
+            classify_agent_shutdown_ack(result_rx.recv_timeout(AGENT_SHUTDOWN_ACK_TIMEOUT))
+        },
+        // Agent has a 30s watchdog around all drain/flush phases. Observe past
+        // that bound so Shell never kills a healthy cleanup one second early.
+        AGENT_GRACEFUL_EXIT_TIMEOUT,
+        AGENT_FORCE_REAP_TIMEOUT,
+        now,
+        sleep,
+    )
+}
+
+fn terminate_and_reap_discord_child(child: &mut Child) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    terminate_and_reap_discord_child_with(
+        child,
+        AGENT_FORCE_REAP_TIMEOUT,
+        move || started.elapsed(),
+        std::thread::sleep,
+    )
+}
+
+fn terminate_and_reap_discord_child_with<C, N, S>(
+    child: &mut C,
+    timeout: std::time::Duration,
+    mut now: N,
+    mut sleep: S,
+) -> Result<(), String>
+where
+    C: DiscordChildLifecycle,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    if child
+        .has_exited()
+        .map_err(|_| "discord_agent_reap_failed".to_string())?
+    {
+        return Ok(());
+    }
+    child
+        .request_termination()
+        .map_err(|_| "discord_agent_terminate_failed".to_string())?;
+    let started = now();
+    let poll = std::time::Duration::from_millis(10);
+    loop {
+        if child
+            .has_exited()
+            .map_err(|_| "discord_agent_reap_failed".to_string())?
+        {
+            return Ok(());
+        }
+        let elapsed = now().saturating_sub(started);
+        if elapsed >= timeout {
+            return Err("discord_agent_reap_timeout".to_string());
+        }
+        sleep(poll.min(timeout.saturating_sub(elapsed)));
+    }
+}
+
+fn revoke_discord_runtime_files(runtime: &std::path::Path) -> Result<(), String> {
+    let tombstone = serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        // Binding generations are numeric. This value can never authorize an
+        // old or future configured generation.
+        "generation": "revoked",
+    }))
+    .map_err(|_| "discord_authority_invalid".to_string())?;
+    let authority_result = write_owner_only_atomic(&runtime.join("authority.json"), &tombstone);
+    let status_result = match std::fs::remove_file(runtime.join("status.json")) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("discord_status_revoke_failed".to_string()),
+    };
+    authority_result.and(status_result)
+}
+
+fn discord_quarantine_marker_path(runtime: &std::path::Path) -> std::path::PathBuf {
+    runtime.join("quarantine.json")
+}
+
+fn write_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), String> {
+    let marker = serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        "state": "quarantined",
+    }))
+    .map_err(|_| "discord_quarantine_marker_invalid".to_string())?;
+    write_owner_only_atomic(&discord_quarantine_marker_path(runtime), &marker)
+        .map_err(|_| "discord_quarantine_marker_write_failed".to_string())
+}
+
+fn quarantine_discord_runtime_files(runtime: &std::path::Path) -> Result<(), String> {
+    let marker_result = write_discord_quarantine_marker(runtime);
+    let revoke_result = revoke_discord_runtime_files(runtime);
+    marker_result.and(revoke_result)
+}
+
+fn issue_discord_runtime_authority<W, Q>(
+    quarantined: &std::sync::atomic::AtomicBool,
+    write_authority: W,
+    quarantine_runtime: Q,
+) -> Result<(), String>
+where
+    W: FnOnce() -> Result<(), String>,
+    Q: FnOnce() -> Result<(), String>,
+{
+    if write_authority().is_ok() {
+        return Ok(());
+    }
+    quarantined.store(true, std::sync::atomic::Ordering::Release);
+    match quarantine_runtime() {
+        Ok(()) => Err("discord_authority_write_failed".to_string()),
+        Err(_) => Err("discord_authority_write_quarantine_uncertain".to_string()),
+    }
+}
+
+#[cfg(test)]
+fn fail_discord_agent_startup<T, K, Q>(
+    startup_error: String,
+    discord_runtime_armed: bool,
+    quarantined: &std::sync::atomic::AtomicBool,
+    terminate_child: K,
+    quarantine_runtime: Q,
+) -> Result<T, String>
+where
+    K: FnOnce() -> Result<(), String>,
+    Q: FnOnce() -> Result<(), String>,
+{
+    if discord_runtime_armed {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+    }
+    let terminate_result = terminate_child();
+    let quarantine_result = if discord_runtime_armed {
+        quarantine_runtime()
+    } else {
+        Ok(())
+    };
+    finalize_discord_startup_failure(
+        startup_error,
+        discord_runtime_armed,
+        quarantined,
+        terminate_result.is_ok(),
+        quarantine_result.is_ok(),
+        |_, _| {},
+    )
+}
+
+fn finalize_discord_startup_failure<T, F>(
+    startup_error: String,
+    discord_runtime_armed: bool,
+    quarantined: &std::sync::atomic::AtomicBool,
+    child_reaped: bool,
+    runtime_quarantined: bool,
+    finish_ownership: F,
+) -> Result<T, String>
+where
+    F: FnOnce(bool, bool),
+{
+    if discord_runtime_armed {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+    }
+    finish_ownership(child_reaped, runtime_quarantined);
+    if discord_runtime_armed && (!child_reaped || !runtime_quarantined) {
+        Err("discord_startup_quarantine_uncertain".to_string())
+    } else {
+        Err(startup_error)
+    }
+}
+
+fn fail_spawned_discord_agent_startup<T>(
+    startup_error: String,
+    discord_runtime_armed: bool,
+    quarantined: &std::sync::atomic::AtomicBool,
+    spawned: &mut SpawnedAgentChild,
+) -> Result<T, String> {
+    let terminate_result = terminate_and_reap_discord_child(spawned.child_mut());
+    let child_reaped = terminate_result.is_ok();
+    let outcome = spawned.finish_explicit_cleanup(child_reaped);
+    let runtime_quarantined = outcome.superseded || outcome.runtime_confirmed;
+    finalize_discord_startup_failure(
+        startup_error,
+        discord_runtime_armed && !outcome.superseded,
+        quarantined,
+        child_reaped,
+        runtime_quarantined,
+        |_, _| {},
+    )
+}
+
+fn clear_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(discord_quarantine_marker_path(runtime)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("discord_quarantine_marker_clear_failed".to_string()),
+    }
+}
+
+fn discord_runtime_activation_allowed(
+    quarantined: &std::sync::atomic::AtomicBool,
+    runtime: &std::path::Path,
+    repair_bypass: bool,
+) -> bool {
+    if repair_bypass {
+        return true;
+    }
+    if quarantined.load(std::sync::atomic::Ordering::Acquire) {
+        return false;
+    }
+    let marker_allows = discord_quarantine_marker_path(runtime)
+        .try_exists()
+        .map(|exists| !exists)
+        .unwrap_or(false);
+    if !marker_allows {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+    }
+    marker_allows
+}
+
+fn run_discord_repair_activation<C, A, M>(
+    quarantined: &std::sync::atomic::AtomicBool,
+    clear_marker: C,
+    activate: A,
+    restore_marker: M,
+) -> Result<(), String>
+where
+    C: FnOnce() -> Result<(), String>,
+    A: FnOnce() -> Result<(), String>,
+    M: FnOnce() -> Result<(), String>,
+{
+    if let Err(error) = clear_marker() {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+        return Err(error);
+    }
+    match activate() {
+        Ok(()) => {
+            quarantined.store(false, std::sync::atomic::Ordering::Release);
+            Ok(())
+        }
+        Err(error) => {
+            quarantined.store(true, std::sync::atomic::Ordering::Release);
+            match restore_marker() {
+                Ok(()) => Err(error),
+                Err(_) => Err("discord_activation_quarantine_uncertain".to_string()),
+            }
+        }
+    }
+}
+
+fn revoke_discord_runtime_authority() -> Result<(), String> {
+    revoke_discord_runtime_files(&discord_runtime_dir()?)
+}
+
+fn wait_for_discord_runtime_ready(expected_generation: Option<u64>) -> Result<(), String> {
+    let token_readable = expected_generation.is_none() || read_discord_bot_token().is_ok();
+    let Some(expected_generation) =
+        discord_runtime_token_prerequisite(expected_generation, token_readable)?
+    else {
+        return Ok(());
+    };
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let expected = expected_generation.to_string();
+    let runtime = settings.join("discord-runtime");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let status = read_bounded_json::<DiscordRuntimeStatusFile>(
+            &runtime.join("status.json"),
+            16 * 1024,
+        )?;
+        let authority = read_bounded_json::<DiscordRuntimeAuthorityFile>(
+            &runtime.join("authority.json"),
+            16 * 1024,
+        )?;
+        if discord_runtime_matches_generation(
+            &expected,
+            status.as_ref(),
+            authority.as_ref(),
+        ) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("discord_agent_ready_timeout".to_string());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -3023,79 +4657,1996 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Read Discord bot token.
-/// Raw token storage is intentionally unavailable until the native
-/// secret-backed Discord setup contract is wired. Legacy plaintext files are
-/// not accepted because the WebView writer path was removed in #388.
-async fn read_discord_bot_token() -> Result<String, String> {
-    Err("Discord bot token native secret storage is not wired".to_string())
+const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
+
+fn current_adk_path() -> Result<String, String> {
+    let path = dirs::home_dir()
+        .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
+        .ok_or_else(|| "adk_path_unavailable".to_string())?;
+    let path = path.trim();
+    if path.is_empty() {
+        Err("adk_path_unavailable".to_string())
+    } else {
+        Ok(path.to_string())
+    }
+}
+
+fn trim_secret_newline(value: &mut zeroize::Zeroizing<Vec<u8>>) {
+    while matches!(value.last(), Some(b'\n' | b'\r')) {
+        value.pop();
+    }
+}
+
+#[cfg(any(not(target_os = "windows"), test))]
+#[derive(Clone, Copy)]
+enum AgentSecretLookupPlatform {
+    #[cfg(any(target_os = "macos", test))]
+    MacOs,
+    #[cfg(any(not(any(target_os = "windows", target_os = "macos")), test))]
+    Linux,
+}
+
+#[cfg(any(not(target_os = "windows"), test))]
+fn classify_agent_secret_lookup(
+    platform: AgentSecretLookupPlatform,
+    success: bool,
+    _exit_code: Option<i32>,
+    _stderr: &[u8],
+) -> Result<(), String> {
+    if success {
+        return Ok(());
+    }
+    let absent = match platform {
+        #[cfg(any(target_os = "macos", test))]
+        AgentSecretLookupPlatform::MacOs => _exit_code == Some(44),
+        #[cfg(any(not(any(target_os = "windows", target_os = "macos")), test))]
+        AgentSecretLookupPlatform::Linux => _exit_code == Some(1) && _stderr.is_empty(),
+    };
+    if absent {
+        Err("token_not_found".to_string())
+    } else {
+        Err("keychain_unavailable".to_string())
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn classify_agent_secret_file_presence(
+    presence: std::io::Result<bool>,
+) -> Result<bool, String> {
+    presence.map_err(|_| "keychain_unavailable".to_string())
+}
+
+fn read_agent_secret(
+    adk_path: &str,
+    env_key: &str,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
+    #[cfg(not(target_os = "windows"))]
+    let _ = adk_path;
+    #[cfg(target_os = "windows")]
+    {
+        let file = std::path::PathBuf::from(adk_path)
+            .join("naia-settings")
+            .join(".keys")
+            .join(format!("{env_key}.dpapi"));
+        if !classify_agent_secret_file_presence(file.try_exists())? {
+            return Err("token_not_found".to_string());
+        }
+        let path = file.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
+        let script = format!(
+            "Add-Type -AssemblyName System.Security; $e=[IO.File]::ReadAllBytes('{path}'); \
+             $b=[Security.Cryptography.ProtectedData]::Unprotect($e,$null,\
+             [Security.Cryptography.DataProtectionScope]::CurrentUser); \
+             [Console]::Out.Write([Text.Encoding]::UTF8.GetString($b))"
+        );
+        let mut command = std::process::Command::new("powershell");
+        command.args(["-NonInteractive", "-Command", &script]);
+        platform::hide_console(&mut command);
+        let output = command.output().map_err(|_| "keychain_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("keychain_unavailable".to_string());
+        }
+        std::str::from_utf8(&output.stdout)
+            .map_err(|_| "keychain_value_invalid".to_string())?;
+        return Ok(zeroize::Zeroizing::new(output.stdout));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("security")
+            .args(["find-generic-password", "-a", env_key, "-s", "naia-agent", "-w"])
+            .output()
+            .map_err(|_| "keychain_unavailable".to_string())?;
+        classify_agent_secret_lookup(
+            AgentSecretLookupPlatform::MacOs,
+            output.status.success(),
+            output.status.code(),
+            &output.stderr,
+        )?;
+        let mut value = zeroize::Zeroizing::new(output.stdout);
+        trim_secret_newline(&mut value);
+        return Ok(value);
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let output = std::process::Command::new("secret-tool")
+            .args(["lookup", "service", "naia-agent", "account", env_key])
+            .output()
+            .map_err(|_| "keychain_unavailable".to_string())?;
+        classify_agent_secret_lookup(
+            AgentSecretLookupPlatform::Linux,
+            output.status.success(),
+            output.status.code(),
+            &output.stderr,
+        )?;
+        let mut value = zeroize::Zeroizing::new(output.stdout);
+        trim_secret_newline(&mut value);
+        Ok(value)
+    }
+}
+
+fn read_discord_bot_token() -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
+    read_agent_secret(&current_adk_path()?, DISCORD_TOKEN_KEY)
+}
+
+fn validate_discord_token(token: &[u8]) -> Result<(), String> {
+    if token.is_empty()
+        || token.len() > 512
+        || !token.iter().all(|byte| (b'!'..=b'~').contains(byte))
+    {
+        Err("token_invalid".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 #[tauri::command]
 async fn discord_bot_token_available() -> Result<bool, String> {
-    Ok(read_discord_bot_token().await.is_ok())
+    match read_discord_bot_token() {
+        Ok(token) => {
+            validate_discord_token(&token)?;
+            Ok(true)
+        }
+        Err(error) if error == "token_not_found" => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
-/// Proxy Discord REST API calls through Rust to bypass CORS.
-/// Returns the JSON response body as a string.
+#[derive(serde::Deserialize)]
+struct DiscordRuntimeStatusFile {
+    generation: String,
+    state: String,
+    code: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordRuntimeAuthorityFile {
+    generation: String,
+}
+
+fn discord_runtime_matches_generation(
+    expected: &str,
+    status: Option<&DiscordRuntimeStatusFile>,
+    authority: Option<&DiscordRuntimeAuthorityFile>,
+) -> bool {
+    status.is_some_and(|value| value.generation == expected && value.state == "ready")
+        && authority.is_some_and(|value| value.generation == expected)
+}
+
+fn discord_runtime_status_for_generation<'a>(
+    expected: Option<&str>,
+    status: Option<&'a DiscordRuntimeStatusFile>,
+) -> Option<&'a DiscordRuntimeStatusFile> {
+    status.filter(|status| expected.is_some_and(|value| status.generation == value))
+}
+
+fn discord_runtime_token_prerequisite(
+    expected_generation: Option<u64>,
+    token_readable: bool,
+) -> Result<Option<u64>, String> {
+    match (expected_generation, token_readable) {
+        (Some(generation), true) => Ok(Some(generation)),
+        (Some(_), false) => Err("discord_token_unavailable".to_string()),
+        (None, _) => Ok(None),
+    }
+}
+
+fn discord_runtime_is_authoritative(
+    token_configured: bool,
+    expected: Option<&str>,
+    status: Option<&DiscordRuntimeStatusFile>,
+    authority: Option<&DiscordRuntimeAuthorityFile>,
+) -> bool {
+    token_configured
+        && expected.is_some_and(|value| {
+            discord_runtime_matches_generation(value, status, authority)
+        })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordConnectionStatus {
+    token_configured: bool,
+    generation: Option<u64>,
+    state: String,
+    code: Option<String>,
+    authoritative: bool,
+}
+
 #[tauri::command]
-async fn discord_api(
-    endpoint: String,
-    method: String,
-    body: Option<String>,
-) -> Result<String, String> {
-    let token = read_discord_bot_token().await?;
-
-    // Validate endpoint to prevent path traversal / URL injection (CWE-94).
-    if endpoint.contains("..")
-        || endpoint.contains("//")
-        || endpoint.contains('@')
-        || endpoint.contains('\n')
-        || endpoint.contains('\r')
-    {
-        return Err("Invalid endpoint: suspicious characters".to_string());
-    }
-    // Must start with / and only contain safe URL chars
-    if !endpoint.starts_with('/') {
-        return Err("Invalid endpoint: must start with /".to_string());
-    }
-
-    let url = format!("https://discord.com/api/v10{}", endpoint);
-
-    let client = reqwest::Client::new();
-    let mut req = match method.to_uppercase().as_str() {
-        "POST" => client.post(&url),
-        "PUT" => client.put(&url),
-        "DELETE" => client.delete(&url),
-        "PATCH" => client.patch(&url),
-        _ => client.get(&url),
+async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> {
+    let token_configured = discord_bot_token_available().await?;
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
+    let generation = manifest.as_ref().map(|value| value.generation);
+    let runtime = settings.join("discord-runtime");
+    let status =
+        read_bounded_json::<DiscordRuntimeStatusFile>(&runtime.join("status.json"), 16 * 1024)?;
+    let authority = read_bounded_json::<DiscordRuntimeAuthorityFile>(
+        &runtime.join("authority.json"),
+        16 * 1024,
+    )?;
+    let expected = generation.map(|value| value.to_string());
+    let current_status =
+        discord_runtime_status_for_generation(expected.as_deref(), status.as_ref());
+    let authoritative = discord_runtime_is_authoritative(
+        token_configured,
+        expected.as_deref(),
+        status.as_ref(),
+        authority.as_ref(),
+    );
+    let state = if !token_configured {
+        "disconnected".to_string()
+    } else if authoritative {
+        "ready".to_string()
+    } else {
+        current_status
+            .map(|status| status.state.clone())
+            .unwrap_or_else(|| "configured".to_string())
     };
+    Ok(DiscordConnectionStatus {
+        token_configured,
+        generation,
+        state,
+        code: token_configured
+            .then(|| current_status.and_then(|value| value.code.clone()))
+            .flatten(),
+        authoritative,
+    })
+}
 
-    req = req
-        .header("Authorization", format!("Bot {}", token))
-        .header("Content-Type", "application/json");
+fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> {
+    #[cfg(target_os = "linux")]
+    let candidates: &[(&str, &[&str])] = &[
+        ("kdialog", &["--password", "Discord bot token"]),
+        ("zenity", &["--password", "--title=Discord bot token"]),
+    ];
+    #[cfg(target_os = "linux")]
+    {
+        for (program, args) in candidates {
+            if let Ok(output) = std::process::Command::new(program).args(*args).output() {
+                if output.status.success() {
+                    let mut bytes = zeroize::Zeroizing::new(output.stdout);
+                    trim_secret_newline(&mut bytes);
+                    validate_discord_token(&bytes)?;
+                    let value = String::from_utf8(std::mem::take(&mut *bytes))
+                        .map_err(|_| "token_invalid".to_string())?;
+                    return Ok(zeroize::Zeroizing::new(value));
+                }
+                return Err("capture_cancelled".to_string());
+            }
+        }
+        return Err("native_prompt_unavailable".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                "display dialog \"Discord bot token\" default answer \"\" with hidden answer buttons {\"Cancel\", \"Save\"} default button \"Save\"",
+                "-e",
+                "text returned of result",
+            ])
+            .output()
+            .map_err(|_| "native_prompt_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("capture_cancelled".to_string());
+        }
+        let mut bytes = zeroize::Zeroizing::new(output.stdout);
+        trim_secret_newline(&mut bytes);
+        validate_discord_token(&bytes)?;
+        return String::from_utf8(std::mem::take(&mut *bytes))
+            .map(zeroize::Zeroizing::new)
+            .map_err(|_| "token_invalid".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let script = "Add-Type -AssemblyName PresentationFramework; \
+          $w=New-Object Windows.Window; $w.Title='Discord bot token'; \
+          $w.Width=520; $w.Height=170; $w.WindowStartupLocation='CenterScreen'; \
+          $g=New-Object Windows.Controls.Grid; $g.Margin='16'; \
+          $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
+          $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
+          $p=New-Object Windows.Controls.PasswordBox; $p.Margin='0,0,0,12'; \
+          [Windows.Controls.Grid]::SetRow($p,0); $g.Children.Add($p) | Out-Null; \
+          $b=New-Object Windows.Controls.Button; $b.Content='Save'; $b.Width=90; \
+          $b.HorizontalAlignment='Right'; [Windows.Controls.Grid]::SetRow($b,1); \
+          $b.Add_Click({$w.DialogResult=$true; $w.Close()}); $g.Children.Add($b) | Out-Null; \
+          $w.Content=$g; $ok=$w.ShowDialog(); \
+          if($ok -ne $true){exit 2}; [Console]::Out.Write($p.Password)";
+        let mut command = std::process::Command::new("powershell");
+        command.args(["-NoProfile", "-Command", script]);
+        platform::hide_console(&mut command);
+        let output = command.output().map_err(|_| "native_prompt_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("capture_cancelled".to_string());
+        }
+        validate_discord_token(&output.stdout)?;
+        return String::from_utf8(output.stdout)
+            .map(zeroize::Zeroizing::new)
+            .map_err(|_| "token_invalid".to_string());
+    }
+}
 
-    if let Some(b) = body {
-        req = req.body(b);
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordCredentialStatus {
+    configured: bool,
+    code: &'static str,
+}
+
+#[derive(Debug)]
+enum DiscordRollbackFailure {
+    Restore,
+    Recovery,
+}
+
+fn discord_token_preimage() -> Result<Option<zeroize::Zeroizing<String>>, String> {
+    match read_discord_bot_token() {
+        Ok(value) => String::from_utf8(value.to_vec())
+            .map(zeroize::Zeroizing::new)
+            .map(Some)
+            .map_err(|_| "discord_credential_snapshot_failed".to_string()),
+        Err(error) if error == "token_not_found" => Ok(None),
+        Err(_) => Err("discord_credential_snapshot_failed".to_string()),
+    }
+}
+
+async fn rollback_discord_credential<W, WF, D, DF, R>(
+    previous: Option<zeroize::Zeroizing<String>>,
+    restore_previous: W,
+    remove_current: D,
+    recover_runtime: R,
+) -> Result<(), DiscordRollbackFailure>
+where
+    W: FnOnce(String) -> WF,
+    WF: std::future::Future<Output = Result<(), String>>,
+    D: FnOnce() -> DF,
+    DF: std::future::Future<Output = Result<(), String>>,
+    R: FnOnce() -> Result<(), String>,
+{
+    match previous {
+        Some(previous) => restore_previous(previous.to_string())
+            .await
+            .map_err(|_| DiscordRollbackFailure::Restore)?,
+        None => remove_current()
+            .await
+            .map_err(|_| DiscordRollbackFailure::Restore)?,
+    }
+    recover_runtime().map_err(|_| DiscordRollbackFailure::Recovery)
+}
+
+fn quarantine_discord_runtime(state: &AppState) -> Result<(), String> {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        quarantine_discord_runtime_locked(state)
+    })
+}
+
+fn quarantine_discord_runtime_locked(state: &AppState) -> Result<(), String> {
+    state
+        .discord_quarantined
+        .store(true, std::sync::atomic::Ordering::Release);
+    let marker_result =
+        discord_runtime_dir().and_then(|runtime| write_discord_quarantine_marker(&runtime));
+    let initial_revoke_result = revoke_discord_runtime_authority();
+    let mut process = {
+        let mut guard =
+            lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
+        guard.take()
+    };
+    let process_result = if let Some(process) = process.as_mut() {
+        graceful_shutdown_and_reap_agent(process).and_then(|_| {
+            let outcome = process.finish_owned_cleanup(true);
+            require_owned_cleanup_complete(
+                &outcome,
+                true,
+                "discord_agent_owned_cleanup_incomplete",
+            )
+        })
+    } else {
+        Ok(())
+    };
+    if process_result.is_err() {
+        let mut guard =
+            lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
+        *guard = process;
+    }
+    let final_revoke_result = revoke_discord_runtime_authority();
+    marker_result
+        .and(initial_revoke_result)
+        .and(process_result)
+        .and(final_revoke_result)
+}
+
+fn discord_credential_rollback_error(
+    failure: DiscordRollbackFailure,
+    quarantine_result: Result<(), String>,
+) -> String {
+    if quarantine_result.is_err() {
+        return "discord_credential_restart_failed_rollback_uncertain".to_string();
+    }
+    match failure {
+        DiscordRollbackFailure::Restore => {
+            "discord_credential_restart_failed_rollback_failed".to_string()
+        }
+        DiscordRollbackFailure::Recovery => {
+            "discord_credential_restart_failed_recovery_failed".to_string()
+        }
+    }
+}
+
+#[tauri::command]
+async fn discord_capture_bot_token(
+    state: tauri::State<'_, AppState>,
+    app_handle: AppHandle,
+    audit_state: tauri::State<'_, AuditState>,
+) -> Result<DiscordCredentialStatus, String> {
+    let _operation = state.discord_config_operation.lock().await;
+    let adk_path = current_adk_path()?;
+    let previous = discord_token_preimage()?;
+    let expected_generation =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
+    .map(|manifest| manifest.generation);
+    let token = capture_discord_token_native()?;
+    let mutation = write_agent_key(
+        adk_path.clone(),
+        DISCORD_TOKEN_KEY.to_string(),
+        token.to_string(),
+    )
+    .await;
+    let activation = mutation.and_then(|()| {
+        restart_agent_for_discord_config(
+            &state,
+            &app_handle,
+            &audit_state.db,
+            expected_generation,
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        )
+    });
+    if let Err(error) = activation {
+        let restore_path = adk_path.clone();
+        let remove_path = adk_path.clone();
+        let rollback = rollback_discord_credential(
+            previous,
+            move |previous| {
+                write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous)
+            },
+            move || async move { remove_agent_key(&remove_path, DISCORD_TOKEN_KEY).await },
+            || {
+                let expected_generation = read_discord_binding_manifest(
+                    &discord_settings_dir()?.join("discord-bindings.json"),
+                )?
+                .map(|manifest| manifest.generation);
+                restart_agent_for_discord_config(
+                    &state,
+                    &app_handle,
+                    &audit_state.db,
+                    expected_generation,
+                    DiscordAuthorityRevokeMode::BeforeShutdown,
+                )
+            },
+        )
+        .await;
+        if let Err(failure) = rollback {
+            return Err(discord_credential_rollback_error(
+                failure,
+                quarantine_discord_runtime(&state),
+            ));
+        }
+        return Err(error);
+    }
+    Ok(DiscordCredentialStatus {
+        configured: true,
+        code: "stored",
+    })
+}
+
+#[tauri::command]
+async fn discord_remove_bot_token(
+    state: tauri::State<'_, AppState>,
+    app_handle: AppHandle,
+    audit_state: tauri::State<'_, AuditState>,
+) -> Result<(), String> {
+    let _operation = state.discord_config_operation.lock().await;
+    let adk_path = current_adk_path()?;
+    let previous = discord_token_preimage()?
+        .ok_or_else(|| "token_not_found".to_string())?;
+    let expected_generation =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
+            .map(|manifest| manifest.generation);
+    let activation = remove_agent_key(&adk_path, DISCORD_TOKEN_KEY)
+        .await
+        .and_then(|()| {
+            restart_agent_for_discord_config(
+                &state,
+                &app_handle,
+                &audit_state.db,
+                None,
+                DiscordAuthorityRevokeMode::BeforeShutdown,
+            )
+        });
+    if let Err(error) = activation {
+        let restore_path = adk_path.clone();
+        let remove_path = adk_path.clone();
+        let rollback = rollback_discord_credential(
+            Some(previous),
+            move |previous| {
+                write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous)
+            },
+            move || async move { remove_agent_key(&remove_path, DISCORD_TOKEN_KEY).await },
+            || {
+                restart_agent_for_discord_config(
+                    &state,
+                    &app_handle,
+                    &audit_state.db,
+                    expected_generation,
+                    DiscordAuthorityRevokeMode::BeforeShutdown,
+                )
+            },
+        )
+        .await;
+        if let Err(failure) = rollback {
+            return Err(discord_credential_rollback_error(
+                failure,
+                quarantine_discord_runtime(&state),
+            ));
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
+const DISCORD_VIEW_CHANNEL: u64 = 1 << 10;
+const DISCORD_SEND_MESSAGES: u64 = 1 << 11;
+const DISCORD_READ_MESSAGE_HISTORY: u64 = 1 << 16;
+const DISCORD_ADMINISTRATOR: u64 = 1 << 3;
+const DISCORD_REQUIRED_PERMISSIONS: u64 =
+    DISCORD_VIEW_CHANNEL | DISCORD_SEND_MESSAGES | DISCORD_READ_MESSAGE_HISTORY;
+
+#[derive(serde::Deserialize)]
+struct DiscordApiUser {
+    id: String,
+    username: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiApplication {
+    #[serde(default)]
+    flags: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiGuild {
+    id: String,
+    name: String,
+    permissions: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiMember {
+    roles: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiMessageAuthor {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiMessage {
+    id: String,
+    content: String,
+    author: DiscordApiMessageAuthor,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiOverwrite {
+    id: String,
+    #[serde(rename = "type")]
+    kind: u8,
+    allow: String,
+    deny: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiChannel {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    kind: u8,
+    position: Option<i64>,
+    permission_overwrites: Option<Vec<DiscordApiOverwrite>>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordPermissionSummary {
+    view_channel: bool,
+    send_messages: bool,
+    read_message_history: bool,
+    usable: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordDiscoveredChannel {
+    id: String,
+    name: String,
+    kind: u8,
+    position: i64,
+    permissions: DiscordPermissionSummary,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordDiscoveredGuild {
+    id: String,
+    name: String,
+    channels: Vec<DiscordDiscoveredChannel>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordDiscovery {
+    bot_id: String,
+    bot_username: String,
+    message_content_intent: bool,
+    intent_code: &'static str,
+    guilds: Vec<DiscordDiscoveredGuild>,
+    degraded_guild_ids: Vec<String>,
+    discovery_truncated: bool,
+}
+
+const DISCORD_GATEWAY_MESSAGE_CONTENT: u64 = 1 << 18;
+const DISCORD_GATEWAY_MESSAGE_CONTENT_LIMITED: u64 = 1 << 19;
+const DISCORD_GUILD_DISCOVERY_PAGE_SIZE: usize = 100;
+const DISCORD_GUILD_DISCOVERY_LIMIT: usize = 200;
+
+fn parse_discord_permissions(value: &str) -> u64 {
+    value.parse::<u64>().unwrap_or(0)
+}
+
+fn apply_discord_overwrites(
+    guild_id: &str,
+    bot_id: &str,
+    role_ids: &[String],
+    base: u64,
+    overwrites: &[DiscordApiOverwrite],
+) -> u64 {
+    if base & DISCORD_ADMINISTRATOR != 0 {
+        return u64::MAX;
+    }
+    let mut result = base;
+    if let Some(everyone) = overwrites
+        .iter()
+        .find(|entry| entry.kind == 0 && entry.id == guild_id)
+    {
+        result &= !parse_discord_permissions(&everyone.deny);
+        result |= parse_discord_permissions(&everyone.allow);
+    }
+    let mut role_allow = 0;
+    let mut role_deny = 0;
+    for overwrite in overwrites
+        .iter()
+        .filter(|entry| entry.kind == 0 && role_ids.contains(&entry.id))
+    {
+        role_allow |= parse_discord_permissions(&overwrite.allow);
+        role_deny |= parse_discord_permissions(&overwrite.deny);
+    }
+    result &= !role_deny;
+    result |= role_allow;
+    if let Some(member) = overwrites
+        .iter()
+        .find(|entry| entry.kind == 1 && entry.id == bot_id)
+    {
+        result &= !parse_discord_permissions(&member.deny);
+        result |= parse_discord_permissions(&member.allow);
+    }
+    result
+}
+
+fn discord_permission_summary(value: u64) -> DiscordPermissionSummary {
+    let view_channel = value & DISCORD_VIEW_CHANNEL != 0;
+    let send_messages = value & DISCORD_SEND_MESSAGES != 0;
+    let read_message_history = value & DISCORD_READ_MESSAGE_HISTORY != 0;
+    DiscordPermissionSummary {
+        view_channel,
+        send_messages,
+        read_message_history,
+        usable: value & DISCORD_REQUIRED_PERMISSIONS == DISCORD_REQUIRED_PERMISSIONS,
+    }
+}
+
+fn discord_bot_member_endpoint(guild_id: &str, bot_id: &str) -> String {
+    format!("/guilds/{guild_id}/members/{bot_id}")
+}
+
+fn discord_guilds_endpoint(after: Option<&str>) -> String {
+    match after {
+        Some(after) => format!(
+            "/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}&after={after}"
+        ),
+        None => format!(
+            "/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}"
+        ),
+    }
+}
+
+fn discord_guild_discovery_truncated(total: usize, last_page_len: usize) -> bool {
+    total >= DISCORD_GUILD_DISCOVERY_LIMIT
+        && last_page_len == DISCORD_GUILD_DISCOVERY_PAGE_SIZE
+}
+
+fn discord_channel_history_endpoint(channel_id: &str) -> String {
+    format!("/channels/{channel_id}/messages?limit=50")
+}
+
+fn discord_snowflake_timestamp_ms(value: &str) -> Option<u64> {
+    let snowflake = value.parse::<u64>().ok()?;
+    Some((snowflake >> 22).saturating_add(1_420_070_400_000))
+}
+
+fn discord_http_client(token: &[u8]) -> Result<reqwest::Client, String> {
+    use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
+    let mut authorization = zeroize::Zeroizing::new(Vec::with_capacity(token.len() + 4));
+    authorization.extend_from_slice(b"Bot ");
+    authorization.extend_from_slice(token);
+    let mut value =
+        HeaderValue::from_bytes(&authorization).map_err(|_| "token_invalid".to_string())?;
+    value.set_sensitive(true);
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, value);
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| "discord_client_unavailable".to_string())
+}
+
+async fn discord_get_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    endpoint: &str,
+) -> Result<T, String> {
+    const MAX_BODY_BYTES: usize = 1024 * 1024;
+    static DISCORD_REST_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> =
+        std::sync::OnceLock::new();
+    let _request = DISCORD_REST_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    for attempt in 0..3 {
+        let response = client
+            .get(format!("https://discord.com/api/v10{endpoint}"))
+            .send()
+            .await
+            .map_err(|_| "discord_network_unavailable".to_string())?;
+        let status = response.status().as_u16();
+        if status == 429 {
+            if attempt == 2 {
+                return Err("discord_rate_limited".to_string());
+            }
+            let base_delay_ms = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|seconds| (seconds * 1000.0).ceil() as u64)
+                .unwrap_or(1000)
+                .clamp(100, 5000);
+            let jitter_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| u64::from(duration.subsec_nanos()) % 251)
+                .unwrap_or(0);
+            let delay_ms = base_delay_ms.saturating_add(jitter_ms).min(5250);
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            continue;
+        }
+        match status {
+            200..=299 => {
+                let bytes = discord_read_bounded_body(response, MAX_BODY_BYTES).await?;
+                return serde_json::from_slice::<T>(&bytes)
+                    .map_err(|_| "discord_response_invalid".to_string());
+            }
+            401 => return Err("discord_auth_failed".to_string()),
+            403 => return Err("discord_permission_denied".to_string()),
+            _ => return Err("discord_api_unavailable".to_string()),
+        }
+    }
+    Err("discord_rate_limited".to_string())
+}
+
+async fn discord_read_bounded_body(
+    mut response: reqwest::Response,
+    max_body_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_body_bytes as u64)
+    {
+        return Err("discord_response_too_large".to_string());
+    }
+    let capped_len = max_body_bytes.saturating_add(1);
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or(0)
+            .min(capped_len),
+    );
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "discord_response_invalid".to_string())?
+    {
+        let remaining = capped_len.saturating_sub(body.len());
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        if body.len() > max_body_bytes {
+            return Err("discord_response_too_large".to_string());
+        }
+    }
+    Ok(body)
+}
+
+/// Discover only bounded public Discord metadata. The token remains in native
+/// memory and is installed as a sensitive HTTP header; it never crosses IPC.
+#[tauri::command]
+async fn discord_discover_channels() -> Result<DiscordDiscovery, String> {
+    let token = read_discord_bot_token()?;
+    validate_discord_token(&token)?;
+    let client = discord_http_client(&token)?;
+    let bot = discord_get_json::<DiscordApiUser>(&client, "/users/@me").await?;
+    let application =
+        discord_get_json::<DiscordApiApplication>(&client, "/oauth2/applications/@me").await?;
+    let message_content_intent = application.flags & (DISCORD_GATEWAY_MESSAGE_CONTENT
+        | DISCORD_GATEWAY_MESSAGE_CONTENT_LIMITED)
+        != 0;
+    if !is_valid_discord_snowflake(&bot.id) {
+        return Err("discord_response_invalid".to_string());
+    }
+    let mut guilds = Vec::with_capacity(DISCORD_GUILD_DISCOVERY_LIMIT);
+    let mut after: Option<String> = None;
+    let mut discovery_truncated = false;
+    while guilds.len() < DISCORD_GUILD_DISCOVERY_LIMIT {
+        let mut page = discord_get_json::<Vec<DiscordApiGuild>>(
+            &client,
+            &discord_guilds_endpoint(after.as_deref()),
+        )
+        .await?;
+        if page.len() > DISCORD_GUILD_DISCOVERY_PAGE_SIZE {
+            return Err("discord_response_invalid".to_string());
+        }
+        if page.is_empty() {
+            break;
+        }
+        let page_len = page.len();
+        let next_after = page
+            .last()
+            .map(|guild| guild.id.clone())
+            .filter(|id| is_valid_discord_snowflake(id))
+            .ok_or_else(|| "discord_response_invalid".to_string())?;
+        let remaining = DISCORD_GUILD_DISCOVERY_LIMIT - guilds.len();
+        guilds.extend(page.drain(..page.len().min(remaining)));
+        discovery_truncated = discord_guild_discovery_truncated(guilds.len(), page_len);
+        if page_len < DISCORD_GUILD_DISCOVERY_PAGE_SIZE
+            || guilds.len() == DISCORD_GUILD_DISCOVERY_LIMIT
+        {
+            break;
+        }
+        after = Some(next_after);
+    }
+    let mut discovered = Vec::with_capacity(guilds.len());
+    let mut degraded_guild_ids = Vec::new();
+    for guild in guilds {
+        if !is_valid_discord_snowflake(&guild.id) {
+            return Err("discord_response_invalid".to_string());
+        }
+        let Ok(member) = discord_get_json::<DiscordApiMember>(
+            &client,
+            &discord_bot_member_endpoint(&guild.id, &bot.id),
+        )
+        .await
+        else {
+            degraded_guild_ids.push(guild.id);
+            continue;
+        };
+        let Ok(mut channels) = discord_get_json::<Vec<DiscordApiChannel>>(
+            &client,
+            &format!("/guilds/{}/channels", guild.id),
+        )
+        .await
+        else {
+            degraded_guild_ids.push(guild.id);
+            continue;
+        };
+        if channels.len() > 500 {
+            channels.truncate(500);
+        }
+        let base = parse_discord_permissions(&guild.permissions);
+        let mut channel_rows = channels
+            .into_iter()
+            .filter(|channel| {
+                (channel.kind == 0 || channel.kind == 5)
+                    && is_valid_discord_snowflake(&channel.id)
+            })
+            .map(|channel| {
+                let effective = apply_discord_overwrites(
+                    &guild.id,
+                    &bot.id,
+                    &member.roles,
+                    base,
+                    channel.permission_overwrites.as_deref().unwrap_or_default(),
+                );
+                DiscordDiscoveredChannel {
+                    id: channel.id,
+                    name: channel.name.chars().take(100).collect(),
+                    kind: channel.kind,
+                    position: channel.position.unwrap_or(0),
+                    permissions: discord_permission_summary(effective),
+                }
+            })
+            .filter(|channel| channel.permissions.view_channel)
+            .collect::<Vec<_>>();
+        channel_rows.sort_by_key(|channel| channel.position);
+        discovered.push(DiscordDiscoveredGuild {
+            id: guild.id,
+            name: guild.name.chars().take(100).collect(),
+            channels: channel_rows,
+        });
+    }
+    discovered.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(DiscordDiscovery {
+        bot_id: bot.id,
+        bot_username: bot.username.chars().take(100).collect(),
+        message_content_intent,
+        intent_code: if message_content_intent {
+            "message_content_enabled"
+        } else {
+            "message_content_disabled"
+        },
+        guilds: discovered,
+        degraded_guild_ids,
+        discovery_truncated,
+    })
+}
+
+async fn discord_usable_channel_keys(
+) -> Result<std::collections::BTreeSet<(String, String)>, String> {
+    let discovery = discord_discover_channels().await?;
+    if !discovery.message_content_intent {
+        return Err("discord_message_content_intent_missing".to_string());
+    }
+    if !discovery.degraded_guild_ids.is_empty() || discovery.discovery_truncated {
+        return Err("discord_discovery_incomplete".to_string());
+    }
+    Ok(discovery
+        .guilds
+        .into_iter()
+        .flat_map(|guild| {
+            guild.channels.into_iter().filter_map(move |channel| {
+                channel
+                    .permissions
+                    .usable
+                    .then_some((guild.id.clone(), channel.id))
+            })
+        })
+        .collect())
+}
+
+fn discord_binding_is_usable(
+    binding: &DiscordBindingInput,
+    usable: &std::collections::BTreeSet<(String, String)>,
+) -> bool {
+    usable.contains(&(binding.guild_id.clone(), binding.channel_id.clone()))
+}
+
+#[derive(Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DiscordBindingInput {
+    binding_id: String,
+    guild_id: String,
+    guild_name: Option<String>,
+    channel_id: String,
+    channel_name: Option<String>,
+    allowed_user_ids: Vec<String>,
+    processing_profile_ref: String,
+    participation: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DiscordBindingManifest {
+    version: u8,
+    generation: u64,
+    bindings: Vec<DiscordBindingInput>,
+    processing_profiles: std::collections::BTreeMap<String, String>,
+}
+
+fn discord_binding_update_revoke_mode(
+    previous: Option<&DiscordBindingManifest>,
+    next_bindings: &[DiscordBindingInput],
+    next_profiles: &std::collections::BTreeMap<String, String>,
+) -> DiscordAuthorityRevokeMode {
+    let Some(previous) = previous else {
+        return DiscordAuthorityRevokeMode::AfterDrain;
+    };
+    let next_by_id = next_bindings
+        .iter()
+        .map(|binding| (binding.binding_id.as_str(), binding))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let participation_rank = |value: &str| match value {
+        "paused" => Some(0u8),
+        "mentions" => Some(1u8),
+        "all" => Some(2u8),
+        _ => None,
+    };
+    let tightens = previous.bindings.iter().any(|old| {
+        let Some(new) = next_by_id.get(old.binding_id.as_str()) else {
+            return true;
+        };
+        if old.guild_id != new.guild_id
+            || old.channel_id != new.channel_id
+            || old.processing_profile_ref != new.processing_profile_ref
+            // Empty allowlists are invalid in the current schema. Treat any
+            // malformed/legacy occurrence as security-sensitive rather than
+            // guessing whether it once meant wildcard or deny-all.
+            || old.allowed_user_ids.is_empty()
+            || new.allowed_user_ids.is_empty()
+        {
+            return true;
+        }
+        let new_users = new
+            .allowed_user_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        if old
+            .allowed_user_ids
+            .iter()
+            .any(|user| !new_users.contains(user.as_str()))
+        {
+            return true;
+        }
+        let participation_tightened = match (
+            participation_rank(&old.participation),
+            participation_rank(&new.participation),
+        ) {
+            (Some(old), Some(new)) => new < old,
+            _ => true,
+        };
+        if participation_tightened {
+            return true;
+        }
+        previous
+            .processing_profiles
+            .get(&old.processing_profile_ref)
+            != next_profiles.get(&new.processing_profile_ref)
+    });
+    if tightens {
+        DiscordAuthorityRevokeMode::BeforeShutdown
+    } else {
+        DiscordAuthorityRevokeMode::AfterDrain
+    }
+}
+
+const DISCORD_MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordBindingSnapshot {
+    generation: Option<u64>,
+    bindings: Vec<DiscordBindingInput>,
+}
+
+fn discord_binding_snapshot_from_manifest(
+    manifest: Option<DiscordBindingManifest>,
+) -> DiscordBindingSnapshot {
+    match manifest {
+        Some(value) => DiscordBindingSnapshot {
+            generation: Some(value.generation),
+            bindings: value.bindings,
+        },
+        None => DiscordBindingSnapshot {
+            generation: None,
+            bindings: Vec::new(),
+        },
+    }
+}
+
+fn discord_binding_generation_matches(
+    current_generation: Option<u64>,
+    expected_generation: Option<u64>,
+) -> bool {
+    current_generation == expected_generation
+}
+
+async fn discord_binding_save_if_generation_matches<T, F, Fut>(
+    current_generation: Option<u64>,
+    expected_generation: Option<u64>,
+    operation: F,
+) -> Result<T, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    if !discord_binding_generation_matches(current_generation, expected_generation) {
+        return Err("discord_bindings_generation_conflict".to_string());
+    }
+    operation().await
+}
+
+fn discord_bindings_have_unique_identity(bindings: &[DiscordBindingInput]) -> bool {
+    let mut binding_ids = std::collections::BTreeSet::new();
+    let mut tuples = std::collections::BTreeSet::new();
+    bindings.iter().all(|binding| {
+        binding_ids.insert(binding.binding_id.as_str())
+            && tuples.insert((binding.guild_id.as_str(), binding.channel_id.as_str()))
+    })
+}
+
+fn read_discord_binding_manifest(
+    path: &std::path::Path,
+) -> Result<Option<DiscordBindingManifest>, String> {
+    let manifest = read_bounded_json::<DiscordBindingManifest>(path, 512 * 1024)?;
+    if manifest
+        .as_ref()
+        .is_some_and(|value| value.version != 1)
+    {
+        return Err("discord_bindings_upgrade_required".to_string());
+    }
+    if manifest
+        .as_ref()
+        .is_some_and(|value| {
+            value.generation == 0 || value.generation > DISCORD_MAX_SAFE_GENERATION
+        })
+    {
+        return Err("discord_bindings_generation_invalid".to_string());
+    }
+    if manifest
+        .as_ref()
+        .is_some_and(|value| !discord_bindings_have_unique_identity(&value.bindings))
+    {
+        return Err("discord_bindings_invalid".to_string());
+    }
+    Ok(manifest)
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordUiPreference {
+    version: u8,
+    last_binding_id: Option<String>,
+}
+
+fn discord_settings_dir() -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from(current_adk_path()?).join("naia-settings"))
+}
+
+#[tauri::command]
+async fn discord_binding_snapshot() -> Result<DiscordBindingSnapshot, String> {
+    let manifest =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?;
+    Ok(discord_binding_snapshot_from_manifest(manifest))
+}
+
+#[tauri::command]
+async fn discord_get_last_binding() -> Result<Option<String>, String> {
+    let settings = discord_settings_dir()?;
+    let preference = read_bounded_json::<DiscordUiPreference>(
+        &settings.join("discord-ui.json"),
+        16 * 1024,
+    )?;
+    let Some(binding_id) = preference.and_then(|value| value.last_binding_id) else {
+        return Ok(None);
+    };
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
+    let usable = discord_usable_channel_keys().await?;
+    Ok(manifest
+        .is_some_and(|value| {
+            value
+                .bindings
+                .iter()
+                .any(|binding| {
+                    binding.binding_id == binding_id && discord_binding_is_usable(binding, &usable)
+                })
+        })
+        .then_some(binding_id))
+}
+
+#[tauri::command]
+async fn discord_set_last_binding(
+    binding_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let _operation = state.discord_config_operation.lock().await;
+    let settings = discord_settings_dir()?;
+    if let Some(value) = binding_id.as_ref() {
+        if value.is_empty() || value.len() > 128 {
+            return Err("discord_binding_invalid".to_string());
+        }
+        let manifest =
+            read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+        let binding = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.binding_id == *value)
+            .ok_or_else(|| "discord_binding_not_allowed".to_string())?;
+        let usable = discord_usable_channel_keys().await?;
+        if !discord_binding_is_usable(binding, &usable) {
+            return Err("discord_binding_not_allowed".to_string());
+        }
+    }
+    let preference = DiscordUiPreference {
+        version: 1,
+        last_binding_id: binding_id,
+    };
+    let bytes = serde_json::to_vec(&preference)
+        .map_err(|_| "discord_preference_invalid".to_string())?;
+    write_owner_only_atomic(&settings.join("discord-ui.json"), &bytes)
+}
+
+fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "discord_config_path_invalid".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|_| "discord_config_write_failed".to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| "discord_config_write_failed".to_string())?;
+    }
+    file.write_all(bytes)
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    file.as_file()
+        .sync_all()
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    file.persist(path)
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| "discord_config_write_failed".to_string())?;
+    }
+    #[cfg(unix)]
+    sync_parent_directory_with(
+        || std::fs::File::open(parent),
+        |directory| directory.sync_all(),
+    )
+    .map_err(|_| "discord_config_write_failed".to_string())?;
+    #[cfg(not(unix))]
+    if let Ok(directory) = std::fs::File::open(parent) {
+        let _ = directory.sync_all();
+    }
+    Ok(())
+}
+
+fn activate_discord_binding_update<V, W, R>(
+    revoke_mode: DiscordAuthorityRevokeMode,
+    revoke_authority: V,
+    write_manifest: W,
+    restart_agent: R,
+) -> Result<(), String>
+where
+    V: FnOnce() -> Result<(), String>,
+    W: FnOnce() -> Result<(), String>,
+    R: FnOnce(DiscordAuthorityRevokeMode) -> Result<(), String>,
+{
+    // For a narrowing update the tombstone is the commit boundary: old
+    // authority is gone before the new manifest can become visible. If the
+    // write fails, callers restore the preimage and recover the old runtime;
+    // until that recovery completes the tombstone keeps the system fail-closed.
+    if matches!(revoke_mode, DiscordAuthorityRevokeMode::BeforeShutdown) {
+        revoke_authority()?;
+    }
+    write_manifest()?;
+    restart_agent(revoke_mode)
+}
+
+#[cfg(any(unix, test))]
+fn sync_parent_directory_with<T, O, S>(open_directory: O, sync_directory: S) -> std::io::Result<()>
+where
+    O: FnOnce() -> std::io::Result<T>,
+    S: FnOnce(&T) -> std::io::Result<()>,
+{
+    let directory = open_directory()?;
+    sync_directory(&directory)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DiscordFilePreimage {
+    Absent,
+    Present(Vec<u8>),
+}
+
+fn read_discord_file_preimage(path: &std::path::Path) -> Result<DiscordFilePreimage, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(DiscordFilePreimage::Present(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(DiscordFilePreimage::Absent)
+        }
+        Err(_) => Err("discord_bindings_snapshot_failed".to_string()),
+    }
+}
+
+fn rollback_discord_binding_file<W, D, R>(
+    preimage: DiscordFilePreimage,
+    restore_present: W,
+    restore_absent: D,
+    recover_runtime: R,
+) -> Result<(), DiscordRollbackFailure>
+where
+    W: FnOnce(Vec<u8>) -> Result<(), String>,
+    D: FnOnce() -> Result<(), String>,
+    R: FnOnce() -> Result<(), String>,
+{
+    match preimage {
+        DiscordFilePreimage::Present(bytes) => {
+            restore_present(bytes).map_err(|_| DiscordRollbackFailure::Restore)?
+        }
+        DiscordFilePreimage::Absent => {
+            restore_absent().map_err(|_| DiscordRollbackFailure::Restore)?
+        }
+    }
+    recover_runtime().map_err(|_| DiscordRollbackFailure::Recovery)
+}
+
+fn remove_discord_binding_manifest(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("discord_bindings_restore_failed".to_string()),
+    }
+}
+
+fn discord_binding_rollback_error(
+    failure: DiscordRollbackFailure,
+    quarantine_result: Result<(), String>,
+) -> String {
+    if quarantine_result.is_err() {
+        return "discord_bindings_restart_failed_rollback_uncertain".to_string();
+    }
+    match failure {
+        DiscordRollbackFailure::Restore => {
+            "discord_bindings_restart_failed_rollback_failed".to_string()
+        }
+        DiscordRollbackFailure::Recovery => {
+            "discord_bindings_restart_failed_recovery_failed".to_string()
+        }
+    }
+}
+
+fn finish_discord_clear_activation<Q>(
+    activation: Result<(), String>,
+    quarantine_runtime: Q,
+) -> Result<(), String>
+where
+    Q: FnOnce() -> Result<(), String>,
+{
+    match activation {
+        Ok(()) => Ok(()),
+        Err(_) => match quarantine_runtime() {
+            Ok(()) => Err("discord_bindings_clear_failed".to_string()),
+            Err(_) => Err("discord_bindings_clear_quarantine_uncertain".to_string()),
+        },
+    }
+}
+
+#[tauri::command]
+async fn discord_save_bindings(
+    bindings: Vec<DiscordBindingInput>,
+    expected_generation: Option<u64>,
+    state: tauri::State<'_, AppState>,
+    app_handle: AppHandle,
+    audit_state: tauri::State<'_, AuditState>,
+) -> Result<u64, String> {
+    let app_state = state.inner();
+    let _operation = state.discord_config_operation.lock().await;
+    if bindings.len() > 256 {
+        return Err("discord_bindings_invalid".to_string());
+    }
+    if !discord_bindings_have_unique_identity(&bindings) {
+        return Err("discord_bindings_invalid".to_string());
+    }
+    for binding in &bindings {
+        if binding.binding_id.is_empty()
+            || binding.binding_id.len() > 128
+            || !is_valid_discord_snowflake(&binding.guild_id)
+            || !is_valid_discord_snowflake(&binding.channel_id)
+            || binding
+                .guild_name
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.chars().count() > 100)
+            || binding
+                .channel_name
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.chars().count() > 100)
+            || binding.allowed_user_ids.is_empty()
+            || binding.allowed_user_ids.len() > 256
+            || !binding
+                .allowed_user_ids
+                .iter()
+                .all(|id| is_valid_discord_snowflake(id))
+            || binding.processing_profile_ref != "default"
+            || !matches!(
+                binding.participation.as_str(),
+                "mentions" | "all" | "paused"
+            )
+        {
+            return Err("discord_bindings_invalid".to_string());
+        }
+    }
+    let path = discord_settings_dir()?.join("discord-bindings.json");
+    let previous_manifest = read_discord_binding_manifest(&path)?;
+    let previous_generation = previous_manifest
+        .as_ref()
+        .map(|manifest| manifest.generation);
+    discord_binding_save_if_generation_matches(
+        previous_generation,
+        expected_generation,
+        || async move {
+            if !bindings.is_empty() {
+                let discovery = discord_discover_channels().await?;
+                if !discovery.message_content_intent {
+                    return Err("discord_message_content_intent_missing".to_string());
+                }
+                let usable = discovery
+                    .guilds
+                    .iter()
+                    .flat_map(|guild| {
+                        guild
+                            .channels
+                            .iter()
+                            .filter(|channel| channel.permissions.usable)
+                            .map(|channel| (guild.id.as_str(), channel.id.as_str()))
+                    })
+                    .collect::<std::collections::BTreeSet<_>>();
+                let preserved_stale = previous_manifest
+                    .as_ref()
+                    .map(|manifest| manifest.bindings.iter().collect::<Vec<_>>());
+                if bindings.iter().any(|binding| {
+                    !usable.contains(&(binding.guild_id.as_str(), binding.channel_id.as_str()))
+                        && !preserved_stale
+                            .as_ref()
+                            .is_some_and(|existing| existing.iter().any(|value| *value == binding))
+                }) {
+                    return Err("discord_binding_permission_denied".to_string());
+                }
+            }
+            let generation = next_discord_generation(previous_generation)?;
+            let clearing_all_bindings = bindings.is_empty();
+            let processing_profiles = std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]);
+            let revoke_mode = discord_binding_update_revoke_mode(
+                previous_manifest.as_ref(),
+                &bindings,
+                &processing_profiles,
+            );
+            let manifest = DiscordBindingManifest {
+                version: 1,
+                generation,
+                bindings,
+                processing_profiles,
+            };
+            let bytes = serde_json::to_vec_pretty(&manifest)
+                .map_err(|_| "discord_bindings_invalid".to_string())?;
+            if bytes.len() > 512 * 1024 {
+                return Err("discord_bindings_too_large".to_string());
+            }
+            let previous = read_discord_file_preimage(&path)?;
+            let activation = activate_discord_binding_update(
+                revoke_mode,
+                revoke_discord_runtime_authority,
+                || write_owner_only_atomic(&path, &bytes),
+                |mode| {
+                    restart_agent_for_discord_config(
+                        app_state,
+                        &app_handle,
+                        &audit_state.db,
+                        (!clearing_all_bindings).then_some(generation),
+                        mode,
+                    )
+                },
+            );
+            if clearing_all_bindings {
+                finish_discord_clear_activation(activation, || {
+                    quarantine_discord_runtime(app_state)
+                })?;
+                return Ok(generation);
+            }
+            if let Err(error) = activation {
+                let restore_path = path.clone();
+                let remove_path = path.clone();
+                let rollback = rollback_discord_binding_file(
+                    previous,
+                    move |bytes| write_owner_only_atomic(&restore_path, &bytes),
+                    move || remove_discord_binding_manifest(&remove_path),
+                    || {
+                        restart_agent_for_discord_config(
+                            app_state,
+                            &app_handle,
+                            &audit_state.db,
+                            previous_generation,
+                            DiscordAuthorityRevokeMode::BeforeShutdown,
+                        )
+                    },
+                );
+                if let Err(failure) = rollback {
+                    return Err(discord_binding_rollback_error(
+                        failure,
+                        quarantine_discord_runtime(app_state),
+                    ));
+                }
+                return Err(error);
+            }
+            Ok(generation)
+        }
+    )
+    .await
+}
+
+fn next_discord_generation(previous: Option<u64>) -> Result<u64, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "clock_unavailable".to_string())?
+        .as_millis() as u64;
+    let generation = match previous {
+        Some(value) => value
+            .checked_add(1)
+            .map(|minimum| now.max(minimum))
+            .ok_or_else(|| "discord_bindings_generation_invalid".to_string())?,
+        None => now,
+    };
+    if generation > DISCORD_MAX_SAFE_GENERATION {
+        return Err("discord_bindings_generation_invalid".to_string());
+    }
+    Ok(generation)
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordInboxRecordNative {
+    record_id: String,
+    direction: String,
+    binding_id: String,
+    guild_id: String,
+    channel_id: String,
+    source_message_id: String,
+    author_id: Option<String>,
+    content: String,
+    created_at: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordInboxDocumentNative {
+    version: u8,
+    generation: String,
+    channels: std::collections::BTreeMap<String, Vec<DiscordInboxRecordNative>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+struct DiscordInboxCursors {
+    version: u8,
+    #[serde(default)]
+    generation: String,
+    cursors: std::collections::BTreeMap<String, u64>,
+}
+
+fn update_discord_inbox_cursor(
+    mut cursors: DiscordInboxCursors,
+    generation: &str,
+    active_keys: &std::collections::BTreeSet<String>,
+    cursor_key: String,
+    created_at: u64,
+) -> Result<DiscordInboxCursors, String> {
+    if cursors.version != 1 || cursors.generation != generation {
+        cursors = DiscordInboxCursors {
+            version: 1,
+            generation: generation.to_string(),
+            cursors: std::collections::BTreeMap::new(),
+        };
+    }
+    cursors.version = 1;
+    cursors.generation = generation.to_string();
+    cursors.cursors.retain(|key, _| active_keys.contains(key));
+    let current = cursors.cursors.entry(cursor_key).or_insert(0);
+    *current = (*current).max(created_at);
+    if cursors.cursors.len() > 256 {
+        return Err("discord_cursor_invalid".to_string());
+    }
+    Ok(cursors)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordInboxChannelSnapshot {
+    binding_id: String,
+    guild_id: String,
+    guild_name: String,
+    channel_id: String,
+    channel_name: String,
+    participation: String,
+    records: Vec<DiscordInboxRecordNative>,
+    unread: usize,
+    last_activity: Option<u64>,
+}
+
+fn read_bounded_json<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    max_bytes: u64,
+) -> Result<Option<T>, String> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("discord_cache_read_failed".to_string()),
+    };
+    if !metadata.is_file() || metadata.len() > max_bytes {
+        return Err("discord_cache_invalid".to_string());
+    }
+    let bytes = std::fs::read(path).map_err(|_| "discord_cache_read_failed".to_string())?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| "discord_cache_invalid".to_string())
+}
+
+fn discord_runtime_dir() -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from(current_adk_path()?)
+        .join("naia-settings")
+        .join("discord-runtime"))
+}
+
+fn discord_binding_cache_key(binding: &DiscordBindingInput) -> String {
+    format!(
+        "{}:{}:{}",
+        binding.binding_id, binding.guild_id, binding.channel_id
+    )
+}
+
+fn read_discord_inbox_snapshot(
+    settings: &std::path::Path,
+    manifest: DiscordBindingManifest,
+    allowed_binding_ids: &std::collections::BTreeSet<String>,
+) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
+    let runtime = settings.join("discord-runtime");
+    let inbox =
+        read_bounded_json::<DiscordInboxDocumentNative>(&runtime.join("inbox.json"), 16 * 1024 * 1024)?
+            .unwrap_or(DiscordInboxDocumentNative {
+                version: 1,
+                generation: manifest.generation.to_string(),
+                channels: std::collections::BTreeMap::new(),
+            });
+    if inbox.version != 1 || inbox.generation != manifest.generation.to_string() {
+        return Err("discord_cache_generation_mismatch".to_string());
+    }
+    let mut cursors = read_bounded_json::<DiscordInboxCursors>(
+        &runtime.join("inbox-cursors.json"),
+        512 * 1024,
+    )?
+    .unwrap_or_default();
+    let generation = manifest.generation.to_string();
+    if cursors.version != 1 || cursors.generation != generation {
+        cursors = DiscordInboxCursors {
+            version: 1,
+            generation,
+            cursors: std::collections::BTreeMap::new(),
+        };
+    }
+    let mut result = Vec::with_capacity(manifest.bindings.len());
+    for binding in manifest
+        .bindings
+        .into_iter()
+        .filter(|binding| allowed_binding_ids.contains(&binding.binding_id))
+    {
+        let key = discord_binding_cache_key(&binding);
+        let mut records = inbox.channels.get(&key).cloned().unwrap_or_default();
+        records.sort_by_key(|record| record.created_at);
+        let cursor = cursors.cursors.get(&key).copied().unwrap_or(0);
+        let unread = records
+            .iter()
+            .filter(|record| record.direction == "incoming" && record.created_at > cursor)
+            .count();
+        result.push(DiscordInboxChannelSnapshot {
+            binding_id: binding.binding_id,
+            guild_id: binding.guild_id.clone(),
+            guild_name: binding.guild_name.unwrap_or(binding.guild_id),
+            channel_id: binding.channel_id.clone(),
+            channel_name: binding.channel_name.unwrap_or(binding.channel_id),
+            participation: binding.participation,
+            last_activity: records.last().map(|record| record.created_at),
+            records,
+            unread,
+        });
+    }
+    result.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+    Ok(result)
+}
+
+#[tauri::command]
+async fn discord_inbox_snapshot(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let usable = discord_usable_channel_keys().await?;
+    let allowed_binding_ids: std::collections::BTreeSet<String> = manifest
+        .bindings
+        .iter()
+        .filter(|binding| discord_binding_is_usable(binding, &usable))
+        .map(|binding| binding.binding_id.clone())
+        .collect();
+    *state.discord_inbox_authorized_bindings.lock().await =
+        Some((manifest.generation, allowed_binding_ids.clone()));
+    read_discord_inbox_snapshot(&settings, manifest, &allowed_binding_ids)
+}
+
+/// Reads only local runtime files for bindings already authorized by the most
+/// recent live snapshot. File watcher events must never trigger Discord REST
+/// discovery, especially during an outage or an atomic cursor/status write.
+#[tauri::command]
+async fn discord_inbox_snapshot_cached(
+    binding_ids: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
+    if binding_ids.len() > 256
+        || binding_ids
+            .iter()
+            .any(|binding_id| binding_id.is_empty() || binding_id.len() > 128)
+    {
+        return Err("discord_binding_invalid".to_string());
+    }
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let requested_binding_ids = binding_ids.into_iter().collect::<std::collections::BTreeSet<_>>();
+    let authorized = state.discord_inbox_authorized_bindings.lock().await;
+    let allowed_binding_ids = authorized
+        .as_ref()
+        .filter(|(generation, _)| *generation == manifest.generation)
+        .map(|(_, binding_ids)| {
+            binding_ids
+                .intersection(&requested_binding_ids)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    drop(authorized);
+    read_discord_inbox_snapshot(&settings, manifest, &allowed_binding_ids)
+}
+
+#[tauri::command]
+async fn discord_fetch_channel_history(
+    binding_id: String,
+) -> Result<Vec<DiscordInboxRecordNative>, String> {
+    if binding_id.is_empty() || binding_id.len() > 128 {
+        return Err("discord_binding_invalid".to_string());
+    }
+    let settings = discord_settings_dir()?;
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+    .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let binding = manifest
+        .bindings
+        .iter()
+        .find(|binding| binding.binding_id == binding_id)
+        .ok_or_else(|| "discord_binding_not_allowed".to_string())?;
+    let usable = discord_usable_channel_keys().await?;
+    if !discord_binding_is_usable(binding, &usable) {
+        return Err("discord_binding_not_allowed".to_string());
     }
 
-    let res = req
-        .send()
-        .await
-        .map_err(|e| format!("Discord API request failed: {}", e))?;
-    let status = res.status().as_u16();
-    let text = res
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    if status >= 400 {
-        // Use char boundary-safe truncation to avoid panic on multi-byte UTF-8
-        let truncated: String = text.chars().take(200).collect();
-        return Err(format!("Discord API error {}: {}", status, truncated));
+    let token = read_discord_bot_token()?;
+    validate_discord_token(&token)?;
+    let client = discord_http_client(&token)?;
+    let bot = discord_get_json::<DiscordApiUser>(&client, "/users/@me").await?;
+    let mut messages = discord_get_json::<Vec<DiscordApiMessage>>(
+        &client,
+        &discord_channel_history_endpoint(&binding.channel_id),
+    )
+    .await?;
+    if messages.len() > 50 {
+        messages.truncate(50);
     }
+    let mut records = messages
+        .into_iter()
+        .filter_map(|message| {
+            if !is_valid_discord_snowflake(&message.id)
+                || !is_valid_discord_snowflake(&message.author.id)
+            {
+                return None;
+            }
+            let created_at = discord_snowflake_timestamp_ms(&message.id)?;
+            Some(DiscordInboxRecordNative {
+                record_id: format!("history_{}", message.id),
+                direction: if message.author.id == bot.id {
+                    "outgoing".to_string()
+                } else {
+                    "incoming".to_string()
+                },
+                binding_id: binding.binding_id.clone(),
+                guild_id: binding.guild_id.clone(),
+                channel_id: binding.channel_id.clone(),
+                source_message_id: message.id,
+                author_id: Some(message.author.id),
+                content: message.content.chars().take(4_000).collect(),
+                created_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by_key(|record| record.created_at);
+    Ok(records)
+}
 
-    Ok(text)
+#[tauri::command]
+async fn discord_mark_inbox_read(
+    binding_id: String,
+    created_at: u64,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let _operation = state.discord_config_operation.lock().await;
+    if binding_id.is_empty() || binding_id.len() > 128 || created_at == 0 {
+        return Err("discord_cursor_invalid".to_string());
+    }
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+    .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let binding = manifest
+        .bindings
+        .iter()
+        .find(|binding| binding.binding_id == binding_id)
+        .ok_or_else(|| "discord_cursor_invalid".to_string())?;
+    let usable = discord_usable_channel_keys().await?;
+    if !discord_binding_is_usable(binding, &usable) {
+        return Err("discord_cursor_invalid".to_string());
+    }
+    let cursor_key = discord_binding_cache_key(binding);
+    let active_keys = manifest
+        .bindings
+        .iter()
+        .map(discord_binding_cache_key)
+        .collect::<std::collections::BTreeSet<_>>();
+    let generation = manifest.generation.to_string();
+    let runtime = discord_runtime_dir()?;
+    let path = runtime.join("inbox-cursors.json");
+    let cursors =
+        read_bounded_json::<DiscordInboxCursors>(&path, 512 * 1024)?.unwrap_or(DiscordInboxCursors {
+            version: 1,
+            generation: generation.clone(),
+            cursors: std::collections::BTreeMap::new(),
+        });
+    let cursors =
+        update_discord_inbox_cursor(cursors, &generation, &active_keys, cursor_key, created_at)?;
+    let bytes =
+        serde_json::to_vec(&cursors).map_err(|_| "discord_cursor_invalid".to_string())?;
+    write_owner_only_atomic(&path, &bytes)
+}
+
+fn start_discord_inbox_watcher(app: AppHandle) {
+    use notify::Watcher as _;
+    let Ok(runtime) = discord_runtime_dir() else {
+        return;
+    };
+    if std::fs::create_dir_all(&runtime).is_err() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let Ok(mut watcher) = notify::recommended_watcher(move |event| {
+            let _ = sender.send(event);
+        }) else {
+            return;
+        };
+        if watcher
+            .watch(&runtime, notify::RecursiveMode::NonRecursive)
+            .is_err()
+        {
+            return;
+        }
+        for event in receiver.into_iter().flatten() {
+            if event.paths.iter().any(|path| {
+                matches!(
+                    path.file_name().and_then(|name| name.to_str()),
+                    Some("inbox.json" | "inbox-cursors.json")
+                )
+            }) {
+                let _ = app.emit("discord_inbox_changed", ());
+            }
+            if event.paths.iter().any(|path| {
+                matches!(
+                    path.file_name().and_then(|name| name.to_str()),
+                    Some("status.json")
+                )
+            }) {
+                let _ = app.emit("discord_status_changed", ());
+            }
+        }
+    });
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordOpenDmResponse {
+    id: String,
+}
+
+/// Legacy account-link compatibility surface. It can only open a DM for one
+/// validated Discord user id; the WebView cannot choose routes, methods, or bodies.
+#[tauri::command]
+async fn discord_open_dm_channel(recipient_user_id: String) -> Result<String, String> {
+    if !is_valid_discord_snowflake(&recipient_user_id) {
+        return Err("discord_recipient_invalid".to_string());
+    }
+    let token = read_discord_bot_token()?;
+    validate_discord_token(&token)?;
+    let client = discord_http_client(&token)?;
+    for attempt in 0..3 {
+        let response = client
+            .post("https://discord.com/api/v10/users/@me/channels")
+            .json(&serde_json::json!({ "recipient_id": recipient_user_id }))
+            .send()
+            .await
+            .map_err(|_| "discord_network_unavailable".to_string())?;
+        let status = response.status().as_u16();
+        if status == 429 {
+            if attempt == 2 {
+                return Err("discord_rate_limited".to_string());
+            }
+            let delay_ms = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|seconds| (seconds * 1000.0).ceil() as u64)
+                .unwrap_or(1000)
+                .clamp(100, 5000);
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            continue;
+        }
+        match status {
+            200..=299 => {
+                let bytes = discord_read_bounded_body(response, 64 * 1024).await?;
+                let value = serde_json::from_slice::<DiscordOpenDmResponse>(&bytes)
+                    .map_err(|_| "discord_response_invalid".to_string())?;
+                if !is_valid_discord_snowflake(&value.id) {
+                    return Err("discord_response_invalid".to_string());
+                }
+                return Ok(value.id);
+            }
+            401 => return Err("discord_auth_failed".to_string()),
+            403 => return Err("discord_permission_denied".to_string()),
+            _ => return Err("discord_api_unavailable".to_string()),
+        }
+    }
+    Err("discord_rate_limited".to_string())
 }
 
 #[tauri::command]
@@ -3980,6 +7531,7 @@ mod conversation_io_tests {
 /// Also updates the credentials manifest at `{adk_path}/naia-settings/credentials`.
 #[tauri::command]
 async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Result<(), String> {
+    let value = zeroize::Zeroizing::new(value);
     #[cfg(not(target_os = "macos"))]
     use std::io::Write as _;
     use std::path::PathBuf;
@@ -4042,21 +7594,30 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     #[cfg(target_os = "macos")]
     {
         // macOS Keychain ??same service name as naia-agent ("naia-agent").
-        let status = std::process::Command::new("security")
+        let mut child = std::process::Command::new("security")
             .args([
                 "add-generic-password",
                 "-a",
                 &env_key,
                 "-s",
                 "naia-agent",
-                "-w",
-                &value,
                 "-U", // update if exists
+                "-w", // final flag prompts on stdin; never expose the token in argv
             ])
+            .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status()
+            .spawn()
             .map_err(|e| format!("security CLI failed: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(value.as_bytes())
+                .and_then(|_| stdin.write_all(b"\n"))
+                .map_err(|e| format!("security stdin failed: {e}"))?;
+        }
+        let status = child
+            .wait()
+            .map_err(|e| format!("security CLI wait failed: {e}"))?;
         if !status.success() {
             return Err(format!("macOS Keychain write failed (exit {status})"));
         }
@@ -4117,6 +7678,58 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     }
 
     Ok(())
+}
+
+async fn remove_agent_key(adk_path: &str, env_key: &str) -> Result<(), String> {
+    let settings_dir = std::path::PathBuf::from(adk_path).join("naia-settings");
+    #[cfg(target_os = "windows")]
+    {
+        let path = settings_dir.join(".keys").join(format!("{env_key}.dpapi"));
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("DPAPI delete failed: {error}")),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("security")
+            .args(["delete-generic-password", "-a", env_key, "-s", "naia-agent"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|error| format!("security CLI failed: {error}"))?;
+        if !status.success() {
+            return Err("macOS Keychain delete failed".to_string());
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let status = std::process::Command::new("secret-tool")
+            .args(["clear", "service", "naia-agent", "account", env_key])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|error| format!("secret-tool failed: {error}"))?;
+        if !status.success() {
+            return Err("Linux Secret Service delete failed".to_string());
+        }
+    }
+    let credentials = settings_dir.join("credentials");
+    let keys = std::fs::read_to_string(&credentials)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.get("keys").and_then(|keys| keys.as_array()).cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .filter(|key| key != env_key)
+        .collect::<Vec<_>>();
+    write_owner_only_atomic(
+        &credentials,
+        &(serde_json::to_vec_pretty(&serde_json::json!({ "keys": keys }))
+            .map_err(|_| "credentials_manifest_invalid".to_string())?),
+    )
 }
 
 /// ??λ맂 ??*議댁옱 ?щ?*留?蹂닿퀬?쒕떎(媛믪? ?덈? 諛섑솚 ??????鍮꾨???webview 濡??섏씫吏 ?딅뒗?? 蹂댁븞).
@@ -4207,16 +7820,21 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
 /// Called by setAdkPath() in adk-store.ts whenever the user sets or changes
 /// their workspace path.
 #[tauri::command]
-async fn write_naia_path_cache(adk_path: String) -> Result<(), String> {
-    if adk_path.is_empty() {
-        return Err("adk_path is empty".to_string());
-    }
-    let naia_dir = dirs::home_dir()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?
-        .join(".naia");
-    std::fs::create_dir_all(&naia_dir).map_err(|e| e.to_string())?;
-    std::fs::write(naia_dir.join("adk-path"), &adk_path).map_err(|e| e.to_string())?;
-    Ok(())
+async fn write_naia_path_cache(
+    adk_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        if adk_path.is_empty() {
+            return Err("adk_path is empty".to_string());
+        }
+        let naia_dir = dirs::home_dir()
+            .ok_or_else(|| "Cannot determine home directory".to_string())?
+            .join(".naia");
+        std::fs::create_dir_all(&naia_dir).map_err(|e| e.to_string())?;
+        std::fs::write(naia_dir.join("adk-path"), &adk_path).map_err(|e| e.to_string())?;
+        Ok(())
+    })
 }
 
 /// Copy bundled default assets (vrm-files, background, bgm-musics) from the app's
@@ -4325,7 +7943,13 @@ async fn delete_naia_adk(
     if let Ok(mut guard) = state.agent.lock() {
         if let Some(mut process) = guard.take() {
             log_verbose("[Naia] Terminating agent-core before adk delete...");
-            let _ = process.child.kill();
+            graceful_shutdown_and_reap_agent(&mut process)?;
+            let outcome = process.finish_owned_cleanup(true);
+            require_owned_cleanup_complete(
+                &outcome,
+                true,
+                "agent_owned_cleanup_incomplete",
+            )?;
         }
     }
     // Kill gateway + node host
@@ -4549,6 +8173,12 @@ pub fn run() {
 
     builder.manage(AppState {
             agent: Mutex::new(None),
+            discord_lifecycle: Mutex::new(()),
+            discord_quarantined: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            discord_pending_reapers: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            discord_config_operation: tokio::sync::Mutex::new(()),
+            discord_inbox_authorized_bindings:
+                tokio::sync::Mutex::new(None),
             bgm_server: Mutex::new(None),
             cascade: Mutex::new(None),
             gateway: Mutex::new(None),
@@ -4587,7 +8217,19 @@ pub fn run() {
             read_local_binary,
             write_temp_text,
             discord_bot_token_available,
-            discord_api,
+            discord_connection_status,
+            discord_capture_bot_token,
+            discord_remove_bot_token,
+            discord_discover_channels,
+            discord_binding_snapshot,
+            discord_save_bindings,
+            discord_get_last_binding,
+            discord_set_last_binding,
+            discord_inbox_snapshot,
+            discord_inbox_snapshot_cached,
+            discord_fetch_channel_history,
+            discord_mark_inbox_read,
+            discord_open_dm_channel,
             fetch_linked_channels,
             gemini_live_connect,
             gemini_live_send_audio,
@@ -4753,6 +8395,7 @@ pub fn run() {
             }
 
             platform::start_deep_link_file_watcher(app_handle.clone());
+            start_discord_inbox_watcher(app_handle.clone());
 
             // Set window icon explicitly (prevents default yellow WRY icon on Linux)
             if let Some(window) = app.get_webview_window("main") {
@@ -4931,11 +8574,20 @@ pub fn run() {
             }
 
             // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
-            match spawn_agent_core(&app_handle, &audit_db) {
-                Ok(process) => {
-                    let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
-                    *guard = Some(process);
-                    drop(guard);
+            let agent_spawn = with_discord_lifecycle(&state.discord_lifecycle, || {
+                let process = spawn_agent_core(
+                    &app_handle,
+                    &audit_db,
+                    &state.discord_quarantined,
+                    &state.discord_pending_reapers,
+                    false,
+                )?;
+                let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
+                *guard = Some(process);
+                Ok::<(), String>(())
+            });
+            match agent_spawn {
+                Ok(()) => {
                     log_both("[Naia] agent-core started");
                     // Emit running:true ??naia-agent is the tool backend after #201
                     let _ = app_handle.emit(
@@ -5008,7 +8660,7 @@ pub fn run() {
                     if let Ok(mut guard) = agent_lock {
                         if let Some(mut process) = guard.take() {
                             log_verbose("[Naia] Terminating agent-core...");
-                            let _ = process.child.kill();
+                            let _ = graceful_shutdown_and_reap_agent(&mut process);
                         }
                     }
 
@@ -5064,6 +8716,46 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unknown_length_response(body: Vec<u8>) -> (String, std::thread::JoinHandle<()>) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let address = server.server_addr().to_ip().unwrap();
+        let handle = std::thread::spawn(move || {
+            let request = server.recv().unwrap();
+            let response = tiny_http::Response::new(
+                tiny_http::StatusCode(200),
+                Vec::new(),
+                std::io::Cursor::new(body),
+                None,
+                None,
+            );
+            let _ = request.respond(response);
+        });
+        (format!("http://{address}"), handle)
+    }
+
+    #[tokio::test]
+    async fn discord_bounded_body_rejects_unknown_length_oversize() {
+        let (url, server) = unknown_length_response(vec![b'x'; 65]);
+        let response = reqwest::Client::new().get(url).send().await.unwrap();
+
+        let result = discord_read_bounded_body(response, 64).await;
+
+        assert_eq!(result.unwrap_err(), "discord_response_too_large");
+        server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn discord_bounded_body_accepts_unknown_length_at_limit() {
+        let expected = vec![b'x'; 64];
+        let (url, server) = unknown_length_response(expected.clone());
+        let response = reqwest::Client::new().get(url).send().await.unwrap();
+
+        let result = discord_read_bounded_body(response, 64).await.unwrap();
+
+        assert_eq!(result, expected);
+        server.join().unwrap();
+    }
 
     #[test]
     fn agent_chunk_deserializes() {
@@ -5399,4 +9091,2222 @@ mod tests {
             "Localhost paths outside /auth must be rejected (defense-in-depth)"
         );
     }
+
+    #[test]
+    fn discord_token_validation_is_bounded_and_printable() {
+        assert!(validate_discord_token(b"abc.DEF-123").is_ok());
+        assert_eq!(validate_discord_token(b""), Err("token_invalid".to_string()));
+        assert_eq!(
+            validate_discord_token(b"contains space"),
+            Err("token_invalid".to_string())
+        );
+        assert_eq!(
+            validate_discord_token(&vec![b'x'; 513]),
+            Err("token_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn agent_secret_lookup_classifies_absence_without_hiding_backend_errors() {
+        assert_eq!(classify_agent_secret_file_presence(Ok(false)), Ok(false));
+        assert_eq!(classify_agent_secret_file_presence(Ok(true)), Ok(true));
+        assert_eq!(
+            classify_agent_secret_file_presence(Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "metadata denied",
+            ))),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::MacOs,
+                false,
+                Some(44),
+                b"item not found",
+            ),
+            Err("token_not_found".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::MacOs,
+                false,
+                Some(36),
+                b"interaction not allowed",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                Some(1),
+                b"",
+            ),
+            Err("token_not_found".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                None,
+                b"",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                Some(2),
+                b"",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                Some(1),
+                b"secret service unavailable",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                true,
+                Some(0),
+                b"",
+            ),
+            Ok(())
+        );
+    }
+
+    struct DeferredDiscordChild {
+        terminate_calls: usize,
+        exit_checks: usize,
+        exit_after_checks: Option<usize>,
+    }
+
+    impl DiscordChildLifecycle for DeferredDiscordChild {
+        fn request_termination(&mut self) -> std::io::Result<()> {
+            self.terminate_calls += 1;
+            Ok(())
+        }
+
+        fn has_exited(&mut self) -> std::io::Result<bool> {
+            self.exit_checks += 1;
+            Ok(self
+                .exit_after_checks
+                .is_some_and(|required| self.exit_checks >= required))
+        }
+    }
+
+    #[test]
+    fn agent_restart_requests_graceful_shutdown_before_cleanup() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let graceful_calls = std::cell::Cell::new(0);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(4),
+        };
+
+        let result = graceful_then_force_reap_with(
+            &mut child,
+            || {
+                graceful_calls.set(graceful_calls.get() + 1);
+                Ok(())
+            },
+            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(graceful_calls.get(), 1);
+        assert_eq!(child.terminate_calls, 0);
+        assert_eq!(child.exit_checks, 4);
+    }
+
+    #[test]
+    fn agent_restart_forces_and_reaps_when_graceful_rpc_is_unavailable() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(3),
+        };
+
+        let result = graceful_then_force_reap_with(
+            &mut child,
+            || Err("rpc unavailable".to_string()),
+            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 1);
+        assert_eq!(child.exit_checks, 3);
+    }
+
+    #[test]
+    fn agent_restart_escalates_once_when_graceful_shutdown_hangs() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(8),
+        };
+
+        let result = graceful_then_force_reap_with(
+            &mut child,
+            || Ok(()),
+            std::time::Duration::from_millis(25),
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 1);
+        assert_eq!(child.exit_checks, 8);
+    }
+
+    #[test]
+    fn agent_restart_treats_lost_ack_as_uncertain_acceptance() {
+        assert_eq!(
+            classify_agent_shutdown_ack(Err(
+                std::sync::mpsc::RecvTimeoutError::Timeout
+            )),
+            Ok(())
+        );
+        assert_eq!(
+            classify_agent_shutdown_ack(Err(
+                std::sync::mpsc::RecvTimeoutError::Disconnected
+            )),
+            Err("agent_graceful_shutdown_dispatch_failed".to_string())
+        );
+        assert_eq!(
+            classify_agent_shutdown_ack(Ok(AgentShutdownOutcome::Ambiguous)),
+            Ok(())
+        );
+        assert_eq!(
+            classify_agent_shutdown_ack(Ok(AgentShutdownOutcome::Rejected)),
+            Err("agent_graceful_shutdown_rejected".to_string())
+        );
+        assert_eq!(
+            classify_agent_shutdown_rpc_result(Err(Some(tonic::Code::Unavailable))),
+            AgentShutdownOutcome::Ambiguous
+        );
+        assert_eq!(
+            classify_agent_shutdown_rpc_result(Err(Some(tonic::Code::Cancelled))),
+            AgentShutdownOutcome::Ambiguous
+        );
+        assert_eq!(
+            classify_agent_shutdown_rpc_result(Err(Some(tonic::Code::Unauthenticated))),
+            AgentShutdownOutcome::Rejected
+        );
+    }
+
+    #[test]
+    fn discord_restart_waits_until_deferred_child_is_reaped() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(4),
+        };
+
+        let result = terminate_and_reap_discord_child_with(
+            &mut child,
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 1);
+        assert_eq!(child.exit_checks, 4);
+        assert!(
+            clock.get() >= std::time::Duration::from_millis(20),
+            "restart must not continue before the deferred child reports exit"
+        );
+    }
+
+    #[test]
+    fn discord_restart_reaps_already_exited_child_without_terminating_again() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(1),
+        };
+
+        let result = terminate_and_reap_discord_child_with(
+            &mut child,
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 0);
+        assert_eq!(child.exit_checks, 1);
+        assert_eq!(clock.get(), std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn discord_restart_fails_closed_when_child_cannot_be_reaped() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: None,
+        };
+
+        let result = terminate_and_reap_discord_child_with(
+            &mut child,
+            std::time::Duration::from_millis(25),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Err("discord_agent_reap_timeout".to_string()));
+        assert_eq!(child.terminate_calls, 1);
+        assert!(child.exit_checks >= 3);
+    }
+
+    #[test]
+    fn discord_restart_revokes_authority_and_stale_status_before_spawn() {
+        let dir = tempfile::tempdir().unwrap();
+        let authority = dir.path().join("authority.json");
+        let status = dir.path().join("status.json");
+        std::fs::write(&authority, r#"{"version":1,"generation":"42"}"#).unwrap();
+        std::fs::write(
+            &status,
+            r#"{"version":1,"generation":"42","state":"ready"}"#,
+        )
+        .unwrap();
+
+        revoke_discord_runtime_files(dir.path()).unwrap();
+
+        let revoked: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&authority).unwrap()).unwrap();
+        assert_eq!(revoked["version"], 1);
+        assert_eq!(revoked["generation"], "revoked");
+        assert!(!status.exists(), "stale ready status must be removed");
+    }
+
+    fn test_discord_binding(
+        id: &str,
+        channel: &str,
+        users: &[&str],
+        participation: &str,
+    ) -> DiscordBindingInput {
+        DiscordBindingInput {
+            binding_id: id.to_string(),
+            guild_id: "100".to_string(),
+            guild_name: Some("Guild".to_string()),
+            channel_id: channel.to_string(),
+            channel_name: Some("channel".to_string()),
+            allowed_user_ids: users.iter().map(|value| (*value).to_string()).collect(),
+            processing_profile_ref: "default".to_string(),
+            participation: participation.to_string(),
+        }
+    }
+
+    fn test_discord_manifest(bindings: Vec<DiscordBindingInput>) -> DiscordBindingManifest {
+        DiscordBindingManifest {
+            version: 1,
+            generation: 42,
+            bindings,
+            processing_profiles: std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]),
+        }
+    }
+
+    fn test_discord_profiles() -> std::collections::BTreeMap<String, String> {
+        std::collections::BTreeMap::from([("default".to_string(), "local_only".to_string())])
+    }
+
+    #[test]
+    fn discord_binding_partial_removal_revokes_before_shutdown() {
+        let previous = test_discord_manifest(vec![
+            test_discord_binding("one", "200", &["300"], "mentions"),
+            test_discord_binding("two", "201", &["301"], "mentions"),
+        ]);
+        let next = vec![test_discord_binding("two", "201", &["301"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_user_removal_revokes_before_shutdown() {
+        let previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300", "301"],
+            "mentions",
+        )]);
+        let next = vec![test_discord_binding("one", "200", &["301"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_pause_revokes_before_shutdown() {
+        let previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        let next = vec![test_discord_binding("one", "200", &["300"], "paused")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_additive_update_drains_before_revoke() {
+        let previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        let next = vec![
+            test_discord_binding("one", "200", &["300", "301"], "all"),
+            test_discord_binding("two", "201", &["302"], "mentions"),
+        ];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::AfterDrain,
+        );
+    }
+
+    #[test]
+    fn discord_binding_profile_change_revokes_before_shutdown() {
+        let mut previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        previous
+            .processing_profiles
+            .insert("default".to_string(), "legacy_profile".to_string());
+        let next = vec![test_discord_binding("one", "200", &["300"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_invalid_empty_user_scopes_revoke_conservatively() {
+        let previous_empty =
+            test_discord_manifest(vec![test_discord_binding("one", "200", &[], "mentions")]);
+        let next_nonempty = vec![test_discord_binding("one", "200", &["300"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(
+                Some(&previous_empty),
+                &next_nonempty,
+                &test_discord_profiles(),
+            ),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+
+        let previous_nonempty = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        let next_empty = vec![test_discord_binding("one", "200", &[], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(
+                Some(&previous_nonempty),
+                &next_empty,
+                &test_discord_profiles(),
+            ),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_tightening_revokes_before_manifest_write_and_restart() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = activate_discord_binding_update(
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+            || {
+                events.borrow_mut().push("revoke");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("write");
+                Ok(())
+            },
+            |mode| {
+                assert_eq!(mode, DiscordAuthorityRevokeMode::BeforeShutdown);
+                events.borrow_mut().push("restart");
+                Ok(())
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(*events.borrow(), ["revoke", "write", "restart"]);
+    }
+
+    #[test]
+    fn discord_binding_write_failure_stays_revoked_until_rollback_recovery() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let activation = activate_discord_binding_update(
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+            || {
+                events.borrow_mut().push("revoke");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("write");
+                Err("write failed".to_string())
+            },
+            |_| panic!("restart must not run after a failed manifest write"),
+        );
+        assert_eq!(activation, Err("write failed".to_string()));
+
+        let rollback = rollback_discord_binding_file(
+            DiscordFilePreimage::Present(b"before".to_vec()),
+            |_| {
+                events.borrow_mut().push("restore");
+                Ok(())
+            },
+            || panic!("present preimage must not remove"),
+            || {
+                events.borrow_mut().push("recover");
+                Ok(())
+            },
+        );
+        assert!(rollback.is_ok());
+        assert_eq!(*events.borrow(), ["revoke", "write", "restore", "recover"]);
+    }
+
+    #[test]
+    fn discord_runtime_requires_matching_ready_status_and_authority() {
+        let ready = DiscordRuntimeStatusFile {
+            generation: "42".to_string(),
+            state: "ready".to_string(),
+            code: None,
+        };
+        let starting = DiscordRuntimeStatusFile {
+            generation: "42".to_string(),
+            state: "starting".to_string(),
+            code: None,
+        };
+        let authority = DiscordRuntimeAuthorityFile {
+            generation: "42".to_string(),
+        };
+        let stale_authority = DiscordRuntimeAuthorityFile {
+            generation: "41".to_string(),
+        };
+        assert!(discord_runtime_matches_generation(
+            "42",
+            Some(&ready),
+            Some(&authority),
+        ));
+        assert!(!discord_runtime_matches_generation(
+            "42",
+            Some(&starting),
+            Some(&authority),
+        ));
+        assert!(discord_runtime_is_authoritative(
+            true,
+            Some("42"),
+            Some(&ready),
+            Some(&authority),
+        ));
+        assert!(
+            !discord_runtime_is_authoritative(
+                false,
+                Some("42"),
+                Some(&ready),
+                Some(&authority),
+            ),
+            "a matching stale tuple cannot be authoritative without a token"
+        );
+        assert!(!discord_runtime_matches_generation(
+            "42",
+            Some(&ready),
+            Some(&stale_authority),
+        ));
+        assert!(!discord_runtime_matches_generation(
+            "42",
+            None,
+            Some(&authority),
+        ));
+        let stale = DiscordRuntimeStatusFile {
+            generation: "41".to_string(),
+            state: "failed".to_string(),
+            code: Some("stale_failure".to_string()),
+        };
+        assert!(
+            discord_runtime_status_for_generation(Some("42"), Some(&stale)).is_none(),
+            "a stale runtime generation must not surface its state or diagnostic code"
+        );
+        assert_eq!(
+            discord_runtime_status_for_generation(Some("42"), Some(&ready))
+                .map(|status| status.state.as_str()),
+            Some("ready")
+        );
+    }
+
+    #[test]
+    fn discord_expected_generation_fails_when_token_cannot_be_read() {
+        assert_eq!(
+            discord_runtime_token_prerequisite(Some(42), false),
+            Err("discord_token_unavailable".to_string())
+        );
+        assert_eq!(
+            discord_runtime_token_prerequisite(Some(42), true),
+            Ok(Some(42))
+        );
+        assert_eq!(discord_runtime_token_prerequisite(None, false), Ok(None));
+    }
+
+    #[test]
+    fn discord_generation_is_strictly_monotonic_even_with_same_clock_tick() {
+        let first = next_discord_generation(None).unwrap();
+        let second = next_discord_generation(Some(first)).unwrap();
+        assert!(second > first);
+
+        let future = first.saturating_add(10_000);
+        let after_future = next_discord_generation(Some(future)).unwrap();
+        assert_eq!(after_future, future + 1);
+        assert_eq!(
+            next_discord_generation(Some(DISCORD_MAX_SAFE_GENERATION)),
+            Err("discord_bindings_generation_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_binding_snapshot_serializes_generation_with_its_bindings() {
+        let snapshot = discord_binding_snapshot_from_manifest(Some(DiscordBindingManifest {
+            version: 1,
+            generation: 42,
+            bindings: vec![DiscordBindingInput {
+                binding_id: "binding_1".to_string(),
+                guild_id: "100".to_string(),
+                guild_name: Some("Guild".to_string()),
+                channel_id: "200".to_string(),
+                channel_name: Some("general".to_string()),
+                allowed_user_ids: vec!["300".to_string()],
+                processing_profile_ref: "default".to_string(),
+                participation: "mentions".to_string(),
+            }],
+            processing_profiles: std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]),
+        }));
+        let value = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(value["generation"], 42);
+        assert_eq!(value["bindings"][0]["bindingId"], "binding_1");
+
+        let empty = serde_json::to_value(discord_binding_snapshot_from_manifest(None)).unwrap();
+        assert!(empty["generation"].is_null());
+        assert_eq!(empty["bindings"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn discord_binding_generation_distinguishes_present_empty_from_absent() {
+        assert!(discord_binding_generation_matches(Some(42), Some(42)));
+        assert!(!discord_binding_generation_matches(Some(42), None));
+        assert!(discord_binding_generation_matches(None, None));
+        assert!(!discord_binding_generation_matches(None, Some(42)));
+    }
+
+    #[tokio::test]
+    async fn discord_binding_generation_conflict_runs_no_save_side_effects() {
+        async fn assert_conflict_is_side_effect_free(
+            path: &std::path::Path,
+            current_generation: Option<u64>,
+            expected_generation: Option<u64>,
+        ) {
+            let discovery_calls = std::cell::Cell::new(0);
+            let write_calls = std::cell::Cell::new(0);
+            let restart_calls = std::cell::Cell::new(0);
+            let before = std::fs::read(path).ok();
+
+            let result = discord_binding_save_if_generation_matches(
+                current_generation,
+                expected_generation,
+                || async {
+                    discovery_calls.set(discovery_calls.get() + 1);
+                    write_calls.set(write_calls.get() + 1);
+                    std::fs::write(path, b"mutated").unwrap();
+                    restart_calls.set(restart_calls.get() + 1);
+                    Ok(())
+                },
+            )
+            .await;
+
+            assert_eq!(
+                result,
+                Err("discord_bindings_generation_conflict".to_string())
+            );
+            assert_eq!(discovery_calls.get(), 0);
+            assert_eq!(write_calls.get(), 0);
+            assert_eq!(restart_calls.get(), 0);
+            assert_eq!(std::fs::read(path).ok(), before);
+        }
+
+        let present = tempfile::tempdir().unwrap();
+        let present_path = present.path().join("discord-bindings.json");
+        std::fs::write(
+            &present_path,
+            r#"{"version":1,"generation":42,"bindings":[],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert_conflict_is_side_effect_free(&present_path, Some(42), Some(41)).await;
+
+        let absent = tempfile::tempdir().unwrap();
+        let absent_path = absent.path().join("discord-bindings.json");
+        assert_conflict_is_side_effect_free(&absent_path, None, Some(42)).await;
+        assert!(!absent_path.exists());
+    }
+
+    #[test]
+    fn discord_binding_preimage_distinguishes_absence_from_read_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.json");
+        assert_eq!(
+            read_discord_file_preimage(&missing),
+            Ok(DiscordFilePreimage::Absent)
+        );
+
+        let present = dir.path().join("present.json");
+        std::fs::write(&present, b"before").unwrap();
+        assert_eq!(
+            read_discord_file_preimage(&present),
+            Ok(DiscordFilePreimage::Present(b"before".to_vec()))
+        );
+
+        assert_eq!(
+            read_discord_file_preimage(dir.path()),
+            Err("discord_bindings_snapshot_failed".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_binding_rollback_reports_restore_and_recovery_failures() {
+        let restore_calls = std::cell::Cell::new(0);
+        let recovery_calls = std::cell::Cell::new(0);
+        let restore_failed = rollback_discord_binding_file(
+            DiscordFilePreimage::Present(b"before".to_vec()),
+            |_| {
+                restore_calls.set(restore_calls.get() + 1);
+                Err("restore failed".to_string())
+            },
+            || panic!("present preimage must not remove"),
+            || {
+                recovery_calls.set(recovery_calls.get() + 1);
+                Ok(())
+            },
+        );
+        assert!(matches!(
+            restore_failed,
+            Err(DiscordRollbackFailure::Restore)
+        ));
+        assert_eq!(restore_calls.get(), 1);
+        assert_eq!(recovery_calls.get(), 0);
+
+        let removed = std::cell::Cell::new(0);
+        let recovery_failed = rollback_discord_binding_file(
+            DiscordFilePreimage::Absent,
+            |_| panic!("absent preimage must not write"),
+            || {
+                removed.set(removed.get() + 1);
+                Ok(())
+            },
+            || Err("restart failed".to_string()),
+        );
+        assert!(matches!(
+            recovery_failed,
+            Err(DiscordRollbackFailure::Recovery)
+        ));
+        assert_eq!(removed.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn discord_credential_rollback_covers_present_absent_and_recovery_failure() {
+        let restore_calls = std::cell::Cell::new(0);
+        let recovery_calls = std::cell::Cell::new(0);
+        let restore_failed = rollback_discord_credential(
+            Some(zeroize::Zeroizing::new("previous".to_string())),
+            |_| {
+                restore_calls.set(restore_calls.get() + 1);
+                async { Err("keyring restore failed".to_string()) }
+            },
+            || async { panic!("present credential must not remove") },
+            || {
+                recovery_calls.set(recovery_calls.get() + 1);
+                Ok(())
+            },
+        )
+        .await;
+        assert!(matches!(
+            restore_failed,
+            Err(DiscordRollbackFailure::Restore)
+        ));
+        assert_eq!(restore_calls.get(), 1);
+        assert_eq!(recovery_calls.get(), 0);
+
+        let remove_calls = std::cell::Cell::new(0);
+        let absent_failed = rollback_discord_credential(
+            None,
+            |_| async { panic!("absent credential must not restore") },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                async { Err("keyring remove failed".to_string()) }
+            },
+            || Ok(()),
+        )
+        .await;
+        assert!(matches!(
+            absent_failed,
+            Err(DiscordRollbackFailure::Restore)
+        ));
+        assert_eq!(remove_calls.get(), 1);
+
+        let restored_value = std::cell::RefCell::new(String::new());
+        let recovery_failed = rollback_discord_credential(
+            Some(zeroize::Zeroizing::new("previous".to_string())),
+            |value| {
+                *restored_value.borrow_mut() = value;
+                async { Ok(()) }
+            },
+            || async { Ok(()) },
+            || Err("recovery restart failed".to_string()),
+        )
+        .await;
+        assert!(matches!(
+            recovery_failed,
+            Err(DiscordRollbackFailure::Recovery)
+        ));
+        assert_eq!(restored_value.borrow().as_str(), "previous");
+    }
+
+    #[test]
+    fn discord_rollback_errors_are_stable_and_expose_quarantine_uncertainty() {
+        assert_eq!(
+            discord_binding_rollback_error(DiscordRollbackFailure::Restore, Ok(())),
+            "discord_bindings_restart_failed_rollback_failed"
+        );
+        assert_eq!(
+            discord_binding_rollback_error(DiscordRollbackFailure::Recovery, Ok(())),
+            "discord_bindings_restart_failed_recovery_failed"
+        );
+        assert_eq!(
+            discord_binding_rollback_error(
+                DiscordRollbackFailure::Restore,
+                Err("revoke failed".to_string())
+            ),
+            "discord_bindings_restart_failed_rollback_uncertain"
+        );
+        assert_eq!(
+            discord_credential_rollback_error(DiscordRollbackFailure::Restore, Ok(())),
+            "discord_credential_restart_failed_rollback_failed"
+        );
+        assert_eq!(
+            discord_credential_rollback_error(DiscordRollbackFailure::Recovery, Ok(())),
+            "discord_credential_restart_failed_recovery_failed"
+        );
+        assert_eq!(
+            discord_credential_rollback_error(
+                DiscordRollbackFailure::Recovery,
+                Err("reap failed".to_string())
+            ),
+            "discord_credential_restart_failed_rollback_uncertain"
+        );
+    }
+
+    #[test]
+    fn discord_clear_activation_failure_always_quarantines_and_classifies_uncertainty() {
+        let successful_quarantine_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            finish_discord_clear_activation(
+                Err("initial authority revoke failed".to_string()),
+                || {
+                    successful_quarantine_calls
+                        .set(successful_quarantine_calls.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("discord_bindings_clear_failed".to_string())
+        );
+        assert_eq!(successful_quarantine_calls.get(), 1);
+
+        let uncertain_quarantine_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            finish_discord_clear_activation(
+                Err("restart failed".to_string()),
+                || {
+                    uncertain_quarantine_calls
+                        .set(uncertain_quarantine_calls.get() + 1);
+                    Err("reap failed".to_string())
+                },
+            ),
+            Err("discord_bindings_clear_quarantine_uncertain".to_string())
+        );
+        assert_eq!(uncertain_quarantine_calls.get(), 1);
+
+        let success_quarantine_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            finish_discord_clear_activation(Ok(()), || {
+                success_quarantine_calls.set(success_quarantine_calls.get() + 1);
+                Ok(())
+            }),
+            Ok(())
+        );
+        assert_eq!(success_quarantine_calls.get(), 0);
+    }
+
+    #[test]
+    fn discord_quarantine_marker_blocks_later_spawn_until_explicit_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        assert!(discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            false,
+        ));
+
+        write_discord_quarantine_marker(dir.path()).unwrap();
+        assert!(!discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            false,
+        ));
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(discord_quarantine_marker_path(dir.path()))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+
+        clear_discord_quarantine_marker(dir.path()).unwrap();
+        assert!(!discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            false,
+        ));
+        assert!(discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            true,
+        ));
+    }
+
+    #[test]
+    fn discord_authority_partial_write_failure_latches_and_cleans_stale_status() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let authority_persisted = std::cell::Cell::new(false);
+        let stale_status_present = std::cell::Cell::new(true);
+        assert_eq!(
+            issue_discord_runtime_authority(
+                &quarantined,
+                || {
+                    authority_persisted.set(true);
+                    Err("parent fsync failed".to_string())
+                },
+                || {
+                    assert!(authority_persisted.get());
+                    stale_status_present.set(false);
+                    Ok(())
+                },
+            ),
+            Err("discord_authority_write_failed".to_string())
+        );
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+        assert!(!stale_status_present.get());
+
+        assert_eq!(
+            issue_discord_runtime_authority(
+                &quarantined,
+                || Err("write failed".to_string()),
+                || Err("tombstone durability failed".to_string()),
+            ),
+            Err("discord_authority_write_quarantine_uncertain".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_authority_revoke_removes_status_even_when_tombstone_write_fails() {
+        let runtime = tempfile::tempdir().unwrap();
+        std::fs::create_dir(runtime.path().join("authority.json")).unwrap();
+        std::fs::write(runtime.path().join("status.json"), b"stale ready").unwrap();
+        assert!(revoke_discord_runtime_files(runtime.path()).is_err());
+        assert!(!runtime.path().join("status.json").exists());
+    }
+
+    #[test]
+    fn discord_startup_failures_explicitly_quarantine_before_and_after_spawn() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let pre_spawn_cleanup_calls = std::cell::Cell::new(0);
+        let pre_spawn: Result<(), String> = fail_discord_agent_startup(
+            "command spawn failed".to_string(),
+            true,
+            &quarantined,
+            || Ok(()),
+            || {
+                pre_spawn_cleanup_calls.set(pre_spawn_cleanup_calls.get() + 1);
+                Ok(())
+            },
+        );
+        assert_eq!(pre_spawn, Err("command spawn failed".to_string()));
+        assert_eq!(pre_spawn_cleanup_calls.get(), 1);
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+
+        let terminate_calls = std::cell::Cell::new(0);
+        let post_spawn_cleanup_calls = std::cell::Cell::new(0);
+        let post_spawn: Result<(), String> = fail_discord_agent_startup(
+            "gRPC handshake failed".to_string(),
+            true,
+            &quarantined,
+            || {
+                terminate_calls.set(terminate_calls.get() + 1);
+                Err("reap failed".to_string())
+            },
+            || {
+                post_spawn_cleanup_calls.set(post_spawn_cleanup_calls.get() + 1);
+                Err("status cleanup failed".to_string())
+            },
+        );
+        assert_eq!(
+            post_spawn,
+            Err("discord_startup_quarantine_uncertain".to_string())
+        );
+        assert_eq!(terminate_calls.get(), 1);
+        assert_eq!(post_spawn_cleanup_calls.get(), 1);
+    }
+
+    #[test]
+    fn spawn_adk_path_snapshot_is_reused_across_cache_interleaving() {
+        let cache = std::cell::RefCell::new(Some(" /workspace/a ".to_string()));
+        let snapshot = spawn_adk_path_snapshot_with(|| cache.borrow().clone()).unwrap();
+        *cache.borrow_mut() = Some("/workspace/b".to_string());
+
+        let settings_path = std::path::PathBuf::from(&snapshot).join("naia-settings");
+        let discord_runtime = settings_path.join("discord-runtime");
+        let dispatcher_path = snapshot.clone();
+
+        assert_eq!(snapshot, "/workspace/a");
+        assert_eq!(
+            discord_runtime,
+            std::path::PathBuf::from("/workspace/a/naia-settings/discord-runtime")
+        );
+        assert_eq!(dispatcher_path, "/workspace/a");
+        assert_eq!(cache.borrow().as_deref(), Some("/workspace/b"));
+    }
+
+    #[test]
+    fn shutdown_capability_is_distinct_from_persisted_process_marker() {
+        let lease = new_agent_child_lease(None).unwrap();
+        let shutdown_nonce = new_agent_nonce().unwrap();
+        assert_eq!(lease.nonce.len(), 32);
+        assert_eq!(shutdown_nonce.len(), 32);
+        assert_ne!(shutdown_nonce, lease.nonce);
+        assert!(lease.marker.contains(&lease.nonce));
+        assert!(!lease.marker.contains(&shutdown_nonce));
+    }
+
+    #[test]
+    fn typescript_agent_requires_direct_node_runner_before_preintent() {
+        let lease_writes = std::cell::Cell::new(0);
+        let result = direct_agent_command("node", "/agent/entry.ts", None).and_then(|value| {
+            lease_writes.set(lease_writes.get() + 1);
+            Ok(value)
+        });
+        assert!(matches!(
+            result,
+            Err(error) if error == "agent_direct_tsx_runner_required"
+        ));
+        assert_eq!(lease_writes.get(), 0);
+    }
+
+    #[test]
+    fn typescript_agent_command_owns_direct_child_marker_without_wrapper() {
+        let marker = "--naia-agent-child=test-nonce";
+        let (_runner, mut command) = direct_agent_command(
+            "/runtime/node",
+            "/agent/entry.ts",
+            Some(("/runtime/node".to_string(), "/agent/tsx/cli.mjs".to_string())),
+        )
+        .unwrap();
+        command.arg(marker);
+
+        assert_eq!(command.get_program(), std::ffi::OsStr::new("/runtime/node"));
+        assert_eq!(
+            command
+                .get_args()
+                .map(|value| value.to_string_lossy().to_string())
+                .collect::<Vec<_>>(),
+            vec!["/agent/tsx/cli.mjs", "/agent/entry.ts", "--stdio", marker]
+        );
+        assert!(command
+            .get_args()
+            .all(|value| value != "npx" && value != "npx.cmd"));
+    }
+
+    #[test]
+    fn compiled_agent_command_runs_directly_with_configured_node() {
+        let (_runner, command) =
+            direct_agent_command("/runtime/node", "/agent/entry.js", None).unwrap();
+        assert_eq!(command.get_program(), std::ffi::OsStr::new("/runtime/node"));
+        assert_eq!(
+            command
+                .get_args()
+                .map(|value| value.to_string_lossy().to_string())
+                .collect::<Vec<_>>(),
+            vec!["/agent/entry.js", "--stdio"]
+        );
+    }
+
+    #[test]
+    fn path_cache_mutation_waits_for_spawn_lifecycle() {
+        let lifecycle = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let cache = std::sync::Arc::new(std::sync::Mutex::new("workspace-a".to_string()));
+        let (spawn_entered_tx, spawn_entered_rx) = std::sync::mpsc::channel();
+        let (release_spawn_tx, release_spawn_rx) = std::sync::mpsc::channel();
+        let spawn_lifecycle = lifecycle.clone();
+        let spawn = std::thread::spawn(move || {
+            with_discord_lifecycle(&spawn_lifecycle, || {
+                spawn_entered_tx.send(()).unwrap();
+                release_spawn_rx.recv().unwrap();
+            });
+        });
+        spawn_entered_rx.recv().unwrap();
+
+        let (write_done_tx, write_done_rx) = std::sync::mpsc::channel();
+        let write_lifecycle = lifecycle.clone();
+        let write_cache = cache.clone();
+        let writer = std::thread::spawn(move || {
+            with_discord_lifecycle(&write_lifecycle, || {
+                *write_cache.lock().unwrap() = "workspace-b".to_string();
+            });
+            write_done_tx.send(()).unwrap();
+        });
+        assert!(
+            write_done_rx
+                .recv_timeout(std::time::Duration::from_millis(20))
+                .is_err(),
+            "path cache mutation must not interleave with a spawn"
+        );
+        assert_eq!(cache.lock().unwrap().as_str(), "workspace-a");
+
+        release_spawn_tx.send(()).unwrap();
+        spawn.join().unwrap();
+        write_done_rx.recv().unwrap();
+        writer.join().unwrap();
+        assert_eq!(cache.lock().unwrap().as_str(), "workspace-b");
+    }
+
+    #[test]
+    fn discord_cleanup_timeout_transfers_ownership_without_double_cleanup() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let finish_calls = std::cell::Cell::new(0);
+        let handed_off = std::cell::Cell::new(None);
+        let result: Result<(), String> = finalize_discord_startup_failure(
+            "gRPC handshake failed".to_string(),
+            true,
+            &quarantined,
+            false,
+            true,
+            |child_reaped, runtime_quarantined| {
+                finish_calls.set(finish_calls.get() + 1);
+                handed_off.set(Some((child_reaped, runtime_quarantined)));
+            },
+        );
+
+        assert_eq!(
+            result,
+            Err("discord_startup_quarantine_uncertain".to_string())
+        );
+        assert_eq!(finish_calls.get(), 1);
+        assert_eq!(handed_off.get(), Some((false, true)));
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn discord_cleanup_success_disarms_drop_ownership_exactly_once() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let finish_calls = std::cell::Cell::new(0);
+        let result: Result<(), String> = finalize_discord_startup_failure(
+            "token pipe failed".to_string(),
+            true,
+            &quarantined,
+            true,
+            true,
+            |child_reaped, runtime_quarantined| {
+                finish_calls.set(finish_calls.get() + 1);
+                assert!(child_reaped);
+                assert!(runtime_quarantined);
+            },
+        );
+
+        assert_eq!(result, Err("token pipe failed".to_string()));
+        assert_eq!(finish_calls.get(), 1);
+    }
+
+    #[test]
+    fn completed_spawn_cleanup_disarms_lease_before_drop_can_restore() {
+        let mut lease = Some(test_agent_child_lease(42));
+        let outcome = OwnedAgentCleanupOutcome {
+            runtime_confirmed: true,
+            lease_removed: true,
+            ..OwnedAgentCleanupOutcome::default()
+        };
+        disarm_completed_spawned_lease(&mut lease, &outcome, true);
+
+        let restore_calls = std::cell::Cell::new(0);
+        if lease.take().is_some() {
+            restore_calls.set(restore_calls.get() + 1);
+        }
+        assert_eq!(restore_calls.get(), 0);
+    }
+
+    #[test]
+    fn pending_reaper_blocks_spawn_until_reap_and_cleanup_finish() {
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let phases = std::cell::RefCell::new(Vec::new());
+        let ownership = PendingDiscordReaper::begin(pending.clone());
+
+        assert_eq!(
+            ensure_no_pending_discord_reaper(&pending, false),
+            Err("discord_agent_reap_pending".to_string())
+        );
+        assert_eq!(
+            ensure_no_pending_discord_reaper(&pending, true),
+            Err("discord_agent_reap_pending".to_string()),
+            "explicit repair must not bypass an owned old child"
+        );
+        run_pending_discord_reaper(
+            ownership,
+            || {
+                assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+                phases.borrow_mut().push("reap");
+            },
+            || {
+                assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+                phases.borrow_mut().push("cleanup");
+            },
+        );
+
+        assert_eq!(phases.into_inner(), vec!["reap", "cleanup"]);
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert_eq!(ensure_no_pending_discord_reaper(&pending, false), Ok(()));
+        assert_eq!(ensure_no_pending_discord_reaper(&pending, true), Ok(()));
+    }
+
+    fn exited_reaper_test_child() -> Child {
+        #[cfg(windows)]
+        let mut child = Command::new("cmd")
+            .args(["/C", "exit", "0"])
+            .spawn()
+            .unwrap();
+        #[cfg(not(windows))]
+        let mut child = Command::new("true").spawn().unwrap();
+        child.wait().unwrap();
+        child
+    }
+
+    fn test_agent_child_lease(pid: u32) -> AgentChildLease {
+        AgentChildLease {
+            version: 1,
+            pid: Some(pid),
+            nonce: "test-nonce".to_string(),
+            marker: "--naia-agent-child=test-nonce".to_string(),
+            started_at_ms: 1,
+            runtime: None,
+        }
+    }
+
+    #[test]
+    fn restart_reconcile_blocks_alive_matching_agent() {
+        let lease = test_agent_child_lease(42);
+        let cleaned = std::cell::Cell::new(0);
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |pid| {
+                    assert_eq!(pid, 42);
+                    Ok(Some(true))
+                },
+                || panic!("pid lease must not enumerate"),
+                || {
+                    cleaned.set(cleaned.get() + 1);
+                    Ok(())
+                },
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("agent_lease_live_blocked".to_string())
+        );
+        assert_eq!((cleaned.get(), removed.get()), (0, 0));
+    }
+
+    #[test]
+    fn dead_or_pid_reuse_mismatch_is_cleaned_before_remove() {
+        let lease = test_agent_child_lease(42);
+        let phases = std::cell::RefCell::new(Vec::new());
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| Ok(Some(false)),
+                || Ok(false),
+                || {
+                    phases.borrow_mut().push("cleanup");
+                    Ok(())
+                },
+                || {
+                    phases.borrow_mut().push("remove");
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!(phases.into_inner(), vec!["cleanup", "remove"]);
+        assert_eq!(removed.get(), 1);
+    }
+
+    #[test]
+    fn wrapper_pid_gone_but_marker_descendant_alive_blocks_reconcile() {
+        let lease = test_agent_child_lease(42);
+        let cleaned = std::cell::Cell::new(0);
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| Ok(None),
+                || Ok(true),
+                || {
+                    cleaned.set(cleaned.get() + 1);
+                    Ok(())
+                },
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("agent_lease_live_blocked".to_string())
+        );
+        assert_eq!((cleaned.get(), removed.get()), (0, 0));
+    }
+
+    #[test]
+    fn preintent_crash_window_enumerates_marker_and_blocks_or_cleans() {
+        let mut lease = test_agent_child_lease(42);
+        lease.pid = None;
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| panic!("preintent must not query a pid"),
+                || Ok(true),
+                || panic!("live preintent must not clean runtime"),
+                || panic!("live preintent must not remove lease"),
+            ),
+            Err("agent_lease_live_blocked".to_string())
+        );
+
+        let phases = std::cell::RefCell::new(Vec::new());
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| panic!("preintent must not query a pid"),
+                || Ok(false),
+                || {
+                    phases.borrow_mut().push("cleanup");
+                    Ok(())
+                },
+                || {
+                    phases.borrow_mut().push("remove");
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!(phases.into_inner(), vec!["cleanup", "remove"]);
+    }
+
+    #[test]
+    fn durable_intent_and_runtime_update_always_precede_authority() {
+        let mut lease = test_agent_child_lease(42);
+        lease.pid = None;
+        let phases = std::cell::RefCell::new(Vec::new());
+        persist_agent_child_lease_before(
+            &lease,
+            |value| {
+                assert!(value.pid.is_none());
+                phases.borrow_mut().push("intent");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("continue");
+                Ok(())
+            },
+        )
+        .unwrap();
+        lease.runtime = Some(std::path::PathBuf::from("/exact/runtime"));
+        persist_agent_child_lease_before(
+            &lease,
+            |value| {
+                assert_eq!(value.runtime.as_deref(), Some(std::path::Path::new("/exact/runtime")));
+                phases.borrow_mut().push("runtime-intent");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("authority");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            phases.into_inner(),
+            vec!["intent", "continue", "runtime-intent", "authority"]
+        );
+    }
+
+    #[test]
+    fn intent_write_crash_point_never_reaches_authority() {
+        let lease = test_agent_child_lease(42);
+        let authority_calls = std::cell::Cell::new(0);
+        let result: Result<(), String> = persist_agent_child_lease_before(
+            &lease,
+            |_| Err("injected intent write failure".to_string()),
+            || {
+                authority_calls.set(authority_calls.get() + 1);
+                Ok(())
+            },
+        );
+        assert_eq!(result, Err("injected intent write failure".to_string()));
+        assert_eq!(authority_calls.get(), 0);
+    }
+
+    #[test]
+    fn lease_cas_prevents_old_cleanup_removing_new_nonce() {
+        let old = test_agent_child_lease(42);
+        let mut new = old.clone();
+        new.nonce = "new-nonce".to_string();
+        new.marker = "--naia-agent-child=new-nonce".to_string();
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            remove_matching_agent_child_lease_with(
+                &old,
+                || Ok(Some(new)),
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(false)
+        );
+        assert_eq!(removed.get(), 0);
+    }
+
+    #[test]
+    fn delayed_old_cleanup_never_touches_replacement_runtime_or_lease() {
+        let old = test_agent_child_lease(42);
+        let mut replacement = old.clone();
+        replacement.nonce = "replacement-nonce".to_string();
+        replacement.marker = "--naia-agent-child=replacement-nonce".to_string();
+        let runtime_calls = std::cell::Cell::new(0);
+        let remove_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &old,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(replacement)),
+            |_| panic!("superseded lease must not be restored"),
+            || panic!("superseded lease must not enumerate"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                Ok(true)
+            },
+        );
+        assert!(outcome.superseded);
+        assert!(outcome.complete(true));
+        assert_eq!(runtime_calls.get(), 0);
+        assert_eq!(remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn uncertain_termination_quarantines_owned_runtime_but_retains_lease() {
+        let lease = test_agent_child_lease(42);
+        let runtime_calls = std::cell::Cell::new(0);
+        let remove_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            false,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || panic!("unreaped child must not enumerate"),
+            || panic!("uncertain termination must not cleanly revoke"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                Ok(true)
+            },
+        );
+        assert!(!outcome.complete(false));
+        assert!(outcome.runtime_confirmed);
+        assert!(!outcome.lease_removed);
+        assert_eq!(runtime_calls.get(), 1);
+        assert_eq!(remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn wrapper_reaped_but_marker_descendant_alive_quarantines_and_retains_lease() {
+        let lease = test_agent_child_lease(42);
+        let runtime_calls = std::cell::Cell::new(0);
+        let remove_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || Ok(true),
+            || panic!("live descendant must not cleanly revoke"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                Ok(true)
+            },
+        );
+        assert!(!outcome.complete(true));
+        assert!(outcome.runtime_confirmed);
+        assert!(!outcome.lease_removed);
+        assert_eq!(runtime_calls.get(), 1);
+        assert_eq!(remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn missing_owned_lease_is_restored_before_quarantine_and_remove() {
+        let lease = test_agent_child_lease(42);
+        let phases = std::cell::RefCell::new(Vec::new());
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Quarantine,
+            || Ok(None),
+            |restored| {
+                assert_eq!(restored.nonce, lease.nonce);
+                phases.borrow_mut().push("restore");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("enumerate");
+                Ok(false)
+            },
+            || panic!("quarantine mode must not cleanly revoke"),
+            || {
+                phases.borrow_mut().push("quarantine");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("remove");
+                Ok(true)
+            },
+        );
+        assert!(!outcome.superseded);
+        assert!(outcome.complete(true));
+        assert_eq!(
+            phases.into_inner(),
+            vec!["restore", "enumerate", "quarantine", "remove"]
+        );
+    }
+
+    #[test]
+    fn normal_shutdown_revokes_runtime_without_quarantine_before_lease_remove() {
+        let lease = test_agent_child_lease(42);
+        let phases = std::cell::RefCell::new(Vec::new());
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || {
+                phases.borrow_mut().push("enumerate");
+                Ok(false)
+            },
+            || {
+                phases.borrow_mut().push("revoke");
+                Ok(())
+            },
+            || panic!("confirmed normal shutdown must not quarantine"),
+            || {
+                phases.borrow_mut().push("remove");
+                Ok(true)
+            },
+        );
+        assert!(outcome.complete(true));
+        assert_eq!(phases.into_inner(), vec!["enumerate", "revoke", "remove"]);
+    }
+
+    #[test]
+    fn discord_ready_timeout_retains_ownership_across_transient_lease_remove_failure() {
+        let ready_result: Result<(), String> =
+            Err("discord_runtime_ready_timeout".to_string());
+        assert!(ready_result.is_err());
+        let lease = test_agent_child_lease(42);
+        let mut retained_owner = Some(lease.clone());
+        let first = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            false,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || Ok(false),
+            || panic!("runtime cleanup is not required"),
+            || panic!("runtime cleanup is not required"),
+            || Ok(false),
+        );
+        let first_gate = require_owned_cleanup_complete(
+            &first,
+            true,
+            "discord_agent_owned_cleanup_incomplete",
+        );
+        if first_gate.is_ok() {
+            retained_owner = None;
+        }
+        assert_eq!(
+            first_gate,
+            Err("discord_agent_owned_cleanup_incomplete".to_string())
+        );
+        assert!(retained_owner.is_some());
+
+        let retry = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            false,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || Ok(false),
+            || panic!("runtime cleanup is not required"),
+            || panic!("runtime cleanup is not required"),
+            || Ok(true),
+        );
+        let retry_gate = require_owned_cleanup_complete(
+            &retry,
+            true,
+            "discord_agent_owned_cleanup_incomplete",
+        );
+        if retry_gate.is_ok() {
+            retained_owner = None;
+        }
+        assert_eq!(retry_gate, Ok(()));
+        assert!(retained_owner.is_none());
+    }
+
+    #[test]
+    fn failed_generic_replacement_cannot_leave_stale_discord_status() {
+        let runtime = tempfile::tempdir().unwrap();
+        std::fs::write(runtime.path().join("authority.json"), b"authority").unwrap();
+        std::fs::write(runtime.path().join("status.json"), b"status").unwrap();
+        let lease = test_agent_child_lease(42);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || Ok(false),
+            || revoke_discord_runtime_files(runtime.path()),
+            || panic!("confirmed normal restart must not quarantine"),
+            || Ok(true),
+        );
+        assert!(outcome.complete(true));
+
+        let replacement: Result<(), String> = Err("replacement failed".to_string());
+        assert!(replacement.is_err());
+        let authority: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(runtime.path().join("authority.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(authority["generation"], "revoked");
+        assert!(!runtime.path().join("status.json").exists());
+        assert!(!runtime.path().join("quarantine.json").exists());
+    }
+
+    #[test]
+    fn missing_owned_lease_restore_failure_is_incomplete_and_touches_no_runtime() {
+        let lease = test_agent_child_lease(42);
+        let runtime_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(None),
+            |_| Err("restore failed".to_string()),
+            || panic!("failed restore must not enumerate"),
+            || panic!("failed restore must not revoke"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || panic!("failed restore must not remove"),
+        );
+        assert!(!outcome.superseded);
+        assert!(!outcome.complete(true));
+        assert_eq!(runtime_calls.get(), 0);
+    }
+
+    #[test]
+    fn lease_write_failure_is_fail_closed() {
+        let lease = test_agent_child_lease(42);
+        assert_eq!(
+            persist_agent_child_lease_with(&lease, |_path, _bytes| {
+                Err("injected write failure".to_string())
+            }),
+            Err("agent_lease_write_failed".to_string())
+        );
+    }
+
+    #[test]
+    fn lease_file_lock_excludes_a_second_file_handle() {
+        use fs2::FileExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lease.lock");
+        let first = acquire_agent_child_lease_lock_at(&path).unwrap();
+        let second = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        assert!(second.try_lock_exclusive().is_err());
+        drop(first);
+        second.try_lock_exclusive().unwrap();
+        second.unlock().unwrap();
+    }
+
+    #[test]
+    fn lease_file_lock_acquisition_failure_is_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        let not_a_directory = dir.path().join("not-a-directory");
+        std::fs::write(&not_a_directory, b"file").unwrap();
+        assert!(matches!(
+            acquire_agent_child_lease_lock_at(&not_a_directory.join("lease.lock")),
+            Err(error) if error == "agent_lease_lock_failed"
+        ));
+    }
+
+    #[test]
+    fn lease_file_lock_child_probe() {
+        let Ok(path) = std::env::var("NAIA_TEST_LEASE_LOCK_PATH") else {
+            return;
+        };
+        let ready = std::env::var("NAIA_TEST_LEASE_LOCK_READY").unwrap();
+        let _lock = acquire_agent_child_lease_lock_at(std::path::Path::new(&path)).unwrap();
+        std::fs::write(ready, b"locked").unwrap();
+    }
+
+    #[test]
+    fn lease_file_lock_excludes_another_process_until_release() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lease.lock");
+        let ready = dir.path().join("child-ready");
+        let lock = acquire_agent_child_lease_lock_at(&path).unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::lease_file_lock_child_probe"])
+            .env("NAIA_TEST_LEASE_LOCK_PATH", &path)
+            .env("NAIA_TEST_LEASE_LOCK_READY", &ready)
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!ready.exists());
+        assert!(child.try_wait().unwrap().is_none());
+        drop(lock);
+        assert!(child.wait().unwrap().success());
+        assert!(ready.is_file());
+    }
+
+    #[test]
+    fn reaper_thread_spawn_failure_retains_unconfirmed_owner_and_pending_barrier() {
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
+            child: Some(exited_reaper_test_child()),
+            cleanup: None,
+            lease: test_agent_child_lease(u32::MAX),
+            _pending: Some(PendingDiscordReaper::begin(pending.clone())),
+        })));
+
+        let spawn_result = spawn_discord_reaper_task_with(&container, |_task| {
+            Err("injected_thread_spawn_failure".to_string())
+        });
+        assert_eq!(
+            spawn_result,
+            Err("injected_thread_spawn_failure".to_string())
+        );
+        recover_failed_discord_reaper_handoff_and_cleanup_with(
+            container,
+            |_child| Err("injected_reap_unconfirmed".to_string()),
+            |_ownership, child_reaped| child_reaped,
+        );
+
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+        assert_eq!(
+            ensure_no_pending_discord_reaper(&pending, true),
+            Err("discord_agent_reap_pending".to_string())
+        );
+    }
+
+    #[test]
+    fn reaper_thread_spawn_failure_releases_confirmed_fallback() {
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
+            child: Some(exited_reaper_test_child()),
+            cleanup: None,
+            lease: test_agent_child_lease(u32::MAX),
+            _pending: Some(PendingDiscordReaper::begin(pending.clone())),
+        })));
+
+        assert!(spawn_discord_reaper_task_with(&container, |_task| {
+            Err("injected_thread_spawn_failure".to_string())
+        })
+        .is_err());
+        recover_failed_discord_reaper_handoff_and_cleanup_with(
+            container,
+            |_child| Ok(()),
+            |_ownership, child_reaped| child_reaped,
+        );
+
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert_eq!(ensure_no_pending_discord_reaper(&pending, true), Ok(()));
+    }
+
+    #[test]
+    fn permanent_background_wait_error_retains_owner_and_pending() {
+        let wait_calls = std::cell::Cell::new(0);
+        let confirmed = confirm_background_reap_with(|| {
+            let call = wait_calls.get();
+            wait_calls.set(call + 1);
+            if call == 0 {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "injected interrupt",
+                ))
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "injected permanent wait failure",
+                ))
+            }
+        });
+        assert!(!confirmed);
+        assert_eq!(wait_calls.get(), 2);
+
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        finish_owned_discord_reaper(
+            PendingDiscordReaper::begin(pending.clone()),
+            confirmed,
+            "injected_permanent_wait_failure_pending",
+        );
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn successful_quarantine_strips_late_runtime_cleanup() {
+        let runtime = std::path::PathBuf::from("/exact/runtime");
+        let quarantined = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let cleanup = DiscordSpawnCleanup {
+            runtime: runtime.clone(),
+            quarantined,
+        };
+
+        assert!(discord_cleanup_retry(Some(cleanup), true).is_none());
+
+        let retry = discord_cleanup_retry(
+            Some(DiscordSpawnCleanup {
+                runtime: runtime.clone(),
+                quarantined: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            }),
+            false,
+        )
+        .expect("failed quarantine must retain exact cleanup");
+        assert_eq!(retry.runtime, runtime);
+    }
+
+    #[test]
+    fn discord_repair_activation_restores_marker_on_failure_and_uncertainty() {
+        let restore_calls = std::cell::Cell::new(0);
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        assert_eq!(
+            run_discord_repair_activation(
+                &quarantined,
+                || Ok(()),
+                || Err("activation failed".to_string()),
+                || {
+                    restore_calls.set(restore_calls.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("activation failed".to_string())
+        );
+        assert_eq!(restore_calls.get(), 1);
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+
+        let uncertain_restore_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_discord_repair_activation(
+                &quarantined,
+                || Ok(()),
+                || Err("activation failed".to_string()),
+                || {
+                    uncertain_restore_calls.set(uncertain_restore_calls.get() + 1);
+                    Err("marker write failed".to_string())
+                },
+            ),
+            Err("discord_activation_quarantine_uncertain".to_string())
+        );
+        assert_eq!(uncertain_restore_calls.get(), 1);
+
+        let success_restore_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_discord_repair_activation(
+                &quarantined,
+                || Ok(()),
+                || Ok(()),
+                || {
+                    success_restore_calls.set(success_restore_calls.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!(success_restore_calls.get(), 0);
+        assert!(!quarantined.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn discord_lifecycle_lock_blocks_normal_spawn_during_repair_or_quarantine() {
+        let lifecycle = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let quarantined = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runtime = tempfile::tempdir().unwrap().path().to_path_buf();
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        let quarantine_lifecycle = lifecycle.clone();
+        let quarantine_latch = quarantined.clone();
+        let quarantine = std::thread::spawn(move || {
+            with_discord_lifecycle(&quarantine_lifecycle, || {
+                quarantine_latch.store(true, std::sync::atomic::Ordering::Release);
+                locked_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+        });
+
+        locked_rx.recv().unwrap();
+        assert!(
+            lifecycle.try_lock().is_err(),
+            "normal spawn must not enter while quarantine owns the lifecycle"
+        );
+        release_tx.send(()).unwrap();
+        quarantine.join().unwrap();
+
+        let (repair_locked_tx, repair_locked_rx) = std::sync::mpsc::channel();
+        let (repair_release_tx, repair_release_rx) = std::sync::mpsc::channel();
+        let repair_lifecycle = lifecycle.clone();
+        let repair = std::thread::spawn(move || {
+            with_discord_lifecycle(&repair_lifecycle, || {
+                repair_locked_tx.send(()).unwrap();
+                repair_release_rx.recv().unwrap();
+            });
+        });
+        repair_locked_rx.recv().unwrap();
+        assert!(
+            lifecycle.try_lock().is_err(),
+            "normal spawn must not enter while explicit repair owns the lifecycle"
+        );
+        repair_release_tx.send(()).unwrap();
+        repair.join().unwrap();
+
+        with_discord_lifecycle(&lifecycle, || {
+            assert!(
+                !discord_runtime_activation_allowed(&quarantined, &runtime, false),
+                "normal spawn after quarantine may start Agent but must not arm Discord"
+            );
+            assert!(
+                discord_runtime_activation_allowed(&quarantined, &runtime, true),
+                "only explicit repair may bypass the fail-closed latch"
+            );
+        });
+    }
+
+    #[test]
+    fn parent_directory_persistence_errors_are_propagated() {
+        assert!(sync_parent_directory_with(
+            || Err::<(), _>(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "open")),
+            |_| Ok(()),
+        )
+        .is_err());
+        assert!(sync_parent_directory_with(
+            || Ok(()),
+            |_| Err(std::io::Error::new(std::io::ErrorKind::Other, "sync")),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn discord_binding_manifest_rejects_generation_outside_agent_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":0,"bindings":[],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_generation_invalid"
+        ));
+
+        std::fs::write(
+            &path,
+            format!(
+                r#"{{"version":1,"generation":{},"bindings":[],"processingProfiles":{{"default":"local_only"}}}}"#,
+                DISCORD_MAX_SAFE_GENERATION + 1
+            ),
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_generation_invalid"
+        ));
+    }
+
+    #[test]
+    fn discord_binding_manifest_rejects_unsupported_schema_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            r#"{"version":2,"generation":1,"bindings":[],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_upgrade_required"
+        ));
+    }
+
+    #[test]
+    fn discord_binding_manifest_rejects_unknown_fields_and_duplicate_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":1,"bindings":[],"processingProfiles":{"default":"local_only"},"unexpected":true}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_cache_invalid"
+        ));
+
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":1,"bindings":[{"bindingId":"same","guildId":"100","channelId":"200","allowedUserIds":["300"],"processingProfileRef":"default","participation":"mentions"},{"bindingId":"same","guildId":"101","channelId":"201","allowedUserIds":["301"],"processingProfileRef":"default","participation":"all"}],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_invalid"
+        ));
+
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":1,"bindings":[{"bindingId":"one","guildId":"100","channelId":"200","allowedUserIds":["300"],"processingProfileRef":"default","participation":"mentions","unexpected":true}],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_cache_invalid"
+        ));
+    }
+
+    #[test]
+    fn discord_cursor_updates_preserve_other_channels_and_monotonic_max() {
+        let active_keys =
+            std::collections::BTreeSet::from(["one".to_string(), "two".to_string()]);
+        let cursors = DiscordInboxCursors {
+            version: 1,
+            generation: "42".to_string(),
+            cursors: std::collections::BTreeMap::from([("two".to_string(), 7)]),
+        };
+        let cursors =
+            update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 10)
+                .unwrap();
+        let cursors =
+            update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 5)
+                .unwrap();
+        assert_eq!(cursors.cursors.get("one"), Some(&10));
+        assert_eq!(cursors.cursors.get("two"), Some(&7));
+    }
+
+    #[test]
+    fn discord_stale_binding_is_not_usable_for_preference_or_inbox() {
+        let binding = DiscordBindingInput {
+            binding_id: "binding_1".to_string(),
+            guild_id: "100".to_string(),
+            guild_name: Some("Guild".to_string()),
+            channel_id: "200".to_string(),
+            channel_name: Some("channel".to_string()),
+            allowed_user_ids: vec!["300".to_string()],
+            processing_profile_ref: "default".to_string(),
+            participation: "mentions".to_string(),
+        };
+        let mut usable = std::collections::BTreeSet::new();
+        assert!(!discord_binding_is_usable(&binding, &usable));
+        usable.insert(("100".to_string(), "200".to_string()));
+        assert!(discord_binding_is_usable(&binding, &usable));
+    }
+
+    #[test]
+    fn discord_bot_member_and_bounded_history_use_bot_endpoints() {
+        assert_eq!(
+            discord_bot_member_endpoint("100", "200"),
+            "/guilds/100/members/200"
+        );
+        assert_eq!(
+            discord_channel_history_endpoint("300"),
+            "/channels/300/messages?limit=50"
+        );
+        assert!(!discord_bot_member_endpoint("100", "200").contains("/users/@me/"));
+        assert_eq!(
+            discord_guilds_endpoint(None),
+            "/users/@me/guilds?limit=100"
+        );
+        assert_eq!(
+            discord_guilds_endpoint(Some("999")),
+            "/users/@me/guilds?limit=100&after=999"
+        );
+        assert_eq!(DISCORD_GUILD_DISCOVERY_LIMIT, 200);
+        assert!(discord_guild_discovery_truncated(200, 100));
+        assert!(!discord_guild_discovery_truncated(199, 100));
+        assert!(!discord_guild_discovery_truncated(200, 99));
+    }
+
+    #[test]
+    fn discord_snowflake_timestamp_is_bounded_and_deterministic() {
+        assert_eq!(
+            discord_snowflake_timestamp_ms("0"),
+            Some(1_420_070_400_000)
+        );
+        assert!(discord_snowflake_timestamp_ms("not-a-snowflake").is_none());
+    }
+
+    #[test]
+    fn discord_channel_overwrites_follow_discord_precedence() {
+        let base = DISCORD_VIEW_CHANNEL | DISCORD_READ_MESSAGE_HISTORY;
+        let overwrites = vec![
+            DiscordApiOverwrite {
+                id: "100".to_string(),
+                kind: 0,
+                allow: "0".to_string(),
+                deny: DISCORD_READ_MESSAGE_HISTORY.to_string(),
+            },
+            DiscordApiOverwrite {
+                id: "200".to_string(),
+                kind: 0,
+                allow: (DISCORD_SEND_MESSAGES | DISCORD_READ_MESSAGE_HISTORY).to_string(),
+                deny: "0".to_string(),
+            },
+            DiscordApiOverwrite {
+                id: "300".to_string(),
+                kind: 1,
+                allow: "0".to_string(),
+                deny: DISCORD_SEND_MESSAGES.to_string(),
+            },
+        ];
+        let effective = apply_discord_overwrites(
+            "100",
+            "300",
+            &["200".to_string()],
+            base,
+            &overwrites,
+        );
+        let summary = discord_permission_summary(effective);
+        assert!(summary.view_channel);
+        assert!(summary.read_message_history);
+        assert!(!summary.send_messages);
+        assert!(!summary.usable);
+    }
+
+    #[test]
+    fn discord_administrator_bypasses_channel_overwrites() {
+        let effective = apply_discord_overwrites(
+            "100",
+            "300",
+            &[],
+            DISCORD_ADMINISTRATOR,
+            &[DiscordApiOverwrite {
+                id: "100".to_string(),
+                kind: 0,
+                allow: "0".to_string(),
+                deny: u64::MAX.to_string(),
+            }],
+        );
+        assert!(discord_permission_summary(effective).usable);
+    }
 }
+
+#[cfg(test)]
+mod shutdown_lifecycle_tests;

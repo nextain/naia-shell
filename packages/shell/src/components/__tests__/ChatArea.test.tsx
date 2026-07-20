@@ -8,9 +8,10 @@ import {
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentResponseChunk } from "../../lib/types";
+import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 import { useChatStore } from "../../stores/chat";
-import { ChatArea } from "../ChatArea";
+import { ChatArea, isDiscordConnectionIntent } from "../ChatArea";
 
 vi.mock("@tauri-apps/plugin-store", () => {
 	const store = {
@@ -93,6 +94,7 @@ describe("ChatArea", () => {
 		mockInvoke.mockResolvedValue(undefined);
 		useChatStore.setState(useChatStore.getInitialState());
 		useAvatarStore.setState(useAvatarStore.getInitialState());
+		useAppStore.setState({ activeApp: null });
 	});
 
 	it("renders input field and buttons", () => {
@@ -100,6 +102,14 @@ describe("ChatArea", () => {
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("distinguishes Discord connection setup from ordinary Discord requests", () => {
+		expect(isDiscordConnectionIntent("디스코드 연결 설정해")).toBe(true);
+		expect(isDiscordConnectionIntent("Configure my Discord bot token")).toBe(
+			true,
+		);
+		expect(isDiscordConnectionIntent("Discord로 알림 보내줘")).toBe(false);
 	});
 
 	it("does not send empty message", () => {
@@ -118,6 +128,90 @@ describe("ChatArea", () => {
 		fireEvent.click(sendBtn);
 		// No messages should be added
 		expect(useChatStore.getState().messages).toHaveLength(0);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("keeps Discord connection secrets out of chat and opens Connections", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ discordSessionMigrated: true }),
+		);
+		const connectionTab = document.createElement("button");
+		connectionTab.dataset.settingsTab = "connections";
+		const clickConnectionTab = vi.fn();
+		connectionTab.addEventListener("click", clickConnectionTab);
+		document.body.append(connectionTab);
+		const opened = vi.fn();
+		window.addEventListener("naia-open-settings", opened);
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, {
+			target: { value: "Discord bot token secret-canary 연결 설정해" },
+		});
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		const action = await screen.findByRole("button", {
+			name: /연결.*Discord|Connections.*Discord/i,
+		});
+		expect(capturedRequests).toHaveLength(0);
+		expect(
+			useChatStore
+				.getState()
+				.messages.some((message) => message.content.includes("secret-canary")),
+		).toBe(false);
+		expect(
+			useChatStore
+				.getState()
+				.messages.some(
+					(message) =>
+						message.role === "assistant" &&
+						/(보안 입력창|secure prompt)/i.test(message.content),
+				),
+		).toBe(true);
+
+		fireEvent.click(action);
+		expect(useAppStore.getState().activeApp).toBe("settings");
+		expect(opened).toHaveBeenCalledWith(
+			expect.objectContaining({ detail: { tab: "connections" } }),
+		);
+		await waitFor(() => expect(clickConnectionTab).toHaveBeenCalled());
+
+		window.removeEventListener("naia-open-settings", opened);
+		connectionTab.remove();
+		localStorage.removeItem("naia-config");
+	});
+
+	it("ignores Discord message chunks in the private chat transcript and store", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "private baseline" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+
+		const before = useChatStore.getState();
+		capturedOnChunk?.({
+			type: "discord_message",
+			requestId: capturedRequests[0].requestId,
+			from: "discord_100_200",
+			content: "discord-only-canary",
+			timestamp: "2026-07-21T00:00:00.000Z",
+		});
+
+		const after = useChatStore.getState();
+		expect(after.messages).toEqual(before.messages);
+		expect(after.streamingContent).toBe(before.streamingContent);
+		expect(
+			screen.queryByText("discord-only-canary", { exact: false }),
+		).toBeNull();
 		localStorage.removeItem("naia-config");
 	});
 
