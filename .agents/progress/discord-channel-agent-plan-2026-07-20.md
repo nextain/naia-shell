@@ -16,16 +16,20 @@
 ## Execution status
 
 - Automated implementation and adversarial clean convergence are complete.
-- Paired Agent commit:
+- Paired Agent runtime commit:
   `cd6b76310eac73df2a90635fd1bedc9c42751b6d`
-- Reviewed Shell commit:
-  `2d2ba52e054265d4a022e99d58025b8c26db2ce7`
+- Agent test-evidence HEAD:
+  `be78b852ca9c6ba8e1bccbd795ac4e26e2864911`
+- Reviewed Shell implementation/test HEAD:
+  `c756a9c9feed4be38c7592a5e33f8c4d11ccc930`
 - Paired proto SHA-256:
   `4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa`
 - Live Discord and real OS credential-store acceptance remain explicit
   operator gates and are not represented as automated passes.
 - Three consecutive independent final reviews were CLEAN on the fixed Agent
-  and Shell snapshots above; the required two-clean convergence gate passed.
+  runtime and Shell code snapshots. After test-strengthening findings were
+  fixed, the TEST gate independently reconverged with two consecutive CLEAN
+  reviews on the Agent/Shell evidence HEADs above.
 
 ## Outcome
 
