@@ -1,0 +1,23 @@
+{
+  "title": "4060 8GB local cascade facade handoff",
+  "status": "handoff",
+  "updated_at": "2026-07-20",
+  "target": "Ryzen 8645H + RTX 4060 8GB standalone desktop",
+  "runtime_contract": {
+    "brain": "Ollama dna3:latest with num_gpu=0; CPU/NPU route reserves 4060 VRAM",
+    "voice_and_avatar": "bundled VoxCPM2 (:8901) and Ditto (:8902) behind the desktop facade (:8910)",
+    "duplex_mode": "half"
+  },
+  "resolved_wiring": [
+    "Existing Hugging Face-style Ollama model references are migrated to dna3:latest because /api/chat cannot resolve the former tag.",
+    "The shell uses only http://localhost:8910/tts for local voice; it must not call raw VoxCPM2 directly.",
+    "RefAudioSection preset names are sent as the selected voice ID, rather than being discarded before the facade request.",
+    "Naia account key persistence emits an auth-ready event and balance polling has an abortable timeout."
+  ],
+  "verification": [
+    "targeted shell Vitest: 110 assertions passed",
+    "pnpm exec tsc -b passed",
+    "real VoxCPM2 through a temporary facade returned RIFF WAV for ref_ko_485.wav"
+  ],
+  "remaining_acceptance": "Run the packaged standalone installer on the target hardware and confirm its managed :8910 facade produces both audible WAV and Ditto video. Do not ask for a new reference WAV: bundled RefAudioSection presets are the intended input."
+}

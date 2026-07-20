@@ -160,6 +160,8 @@ describe("SettingsTab", () => {
 
 	it("persists Naia auth callback even when no config exists yet", async () => {
 		mockInvoke.mockResolvedValue([]);
+		const authReady = vi.fn();
+		window.addEventListener("naia_auth_ready", authReady);
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
@@ -187,6 +189,8 @@ describe("SettingsTab", () => {
 		expect(saved.apiKey).toBe("");
 		expect(saved.naiaKey).toBe("gw-test-key");
 		expect(saved.naiaUserId).toBe("user-123");
+		expect(authReady).toHaveBeenCalledTimes(1);
+		window.removeEventListener("naia_auth_ready", authReady);
 	});
 
 	it("shows STT provider selector with vosk option", () => {
@@ -438,7 +442,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		// 두뇌: 프로파일이 로컬 LLM 을 포함 → ollama + compact 기본(DNA3.0-4B)으로 자동 전환.
 		expect(saved.provider).toBe("ollama");
-		expect(saved.model).toBe("hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M");
+		expect(saved.model).toBe("dna3:latest");
 		// 음성: 로컬 음성으로 자동 전환 + 원격 호스트 잔재를 로컬 façade 기본으로 교정.
 		expect(saved.ttsProvider).toBe("naia-local-voice");
 		expect(saved.ttsEnabled).toBe(true);
@@ -477,7 +481,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.localGpuTier).toBe("laptop-4060-8g");
 		expect(saved.provider).toBe("ollama");
-		expect(saved.model).toBe("hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M");
+		expect(saved.model).toBe("dna3:latest");
+		expect(saved.ollamaNumGpu).toBe(0);
 		expect(saved.ttsProvider).toBe("naia-local-voice");
 		expect(saved.ttsEnabled).toBe(true);
 		expect(saved.vllmTtsHost).toBe("http://localhost:8910");

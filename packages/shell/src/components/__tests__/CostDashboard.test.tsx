@@ -124,10 +124,12 @@ describe("CostDashboard", () => {
 		window.dispatchEvent(new CustomEvent("naia_auth_ready"));
 
 		await waitFor(() => {
-			expect(fetch).toHaveBeenCalledWith(
-				"https://example.test/v1/profile/balance",
-				{ headers: { "X-AnyLLM-Key": "Bearer gw-startup-key" } },
-			);
+			const [url, init] = vi.mocked(fetch).mock.calls.at(-1) ?? [];
+			expect(url).toBe("https://example.test/v1/profile/balance");
+			expect(init).toMatchObject({
+				headers: { "X-AnyLLM-Key": "Bearer gw-startup-key" },
+			});
+			expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
 		});
 		await waitFor(() => {
 			expect(screen.getByText(/12\.50/)).toBeDefined();

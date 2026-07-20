@@ -6,6 +6,7 @@ import {
 	hasApiKey,
 	isToolAllowed,
 	loadConfig,
+	migrateLegacyDna3OllamaModel,
 	normalizeCascadeUrl,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
@@ -46,6 +47,30 @@ describe("config", () => {
 		});
 
 		expect(loadConfig()?.enableTools).toBe(true);
+	});
+
+	it("migrates only the invalid legacy DNA3 Ollama reference", () => {
+		saveConfig({
+			provider: "ollama",
+			model: "hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M",
+			apiKey: "",
+		});
+		migrateLegacyDna3OllamaModel();
+		expect(loadConfig()?.model).toBe("dna3:latest");
+
+		saveConfig({
+			provider: "ollama",
+			model: "dna3:latest",
+			apiKey: "",
+			ttsProvider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8901/",
+		});
+		migrateLegacyDna3OllamaModel();
+		expect(loadConfig()?.vllmTtsHost).toBe("http://localhost:8910");
+
+		saveConfig({ provider: "ollama", model: "my-local-model", apiKey: "" });
+		migrateLegacyDna3OllamaModel();
+		expect(loadConfig()?.model).toBe("my-local-model");
 	});
 
 	it("hasApiKey returns false when not set", () => {

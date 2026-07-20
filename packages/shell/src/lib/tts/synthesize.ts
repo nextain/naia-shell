@@ -271,16 +271,15 @@ async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
-// (구 raw /tts 어댑터의 base64ToBytes · f32PcmToWav 변환기는 /v1/audio/speech 표면
-//  전환으로 제거 — 서버가 RIFF WAV 를 직접 반환하므로 클라 변환이 없다.)
+// Local VoxCPM2 returns a RIFF WAV directly, so no client-side PCM conversion
+// is needed before it is queued for playback or avatar lip sync.
 
 /**
- * naia-local-voice → **OpenAI 호환 `/v1/audio/speech`** (정본 API 표면 — naia-omni-cascade
- * openai_wrapper / naia_realtime_server 가 서빙, 음색(voice)은 서버가 ref 로 해석).
- * ⚠ raw `/tts`(VoxCPM2 내부 backend adapter 전용)로 직결하지 말 것 — 2026-07-15 3자 합의:
- *   그 결합(2921d759)은 경계 위반이었고 음색 상태를 우회해 무지문 랜덤 음색이 됐다.
- *   소비자(셸/에이전트)는 이 OpenAI 표면만 쓴다. host=vllmTtsHost||:8910(로컬 façade —
- *   raw :22600 은 이 표면이 없어 기본값이 될 수 없다).
+ * naia-local-voice → bundled VoxCPM2 `/tts` service. The 8GB cascade profile
+ * exposes the stable desktop endpoint on :8910. The raw VoxCPM2 service on
+ * :8901 is private. It accepts `{ text }` and returns RIFF WAV. Voice
+ * selection is server-owned through its configured reference sample; do not
+ * send OpenAI-only fields or a synthetic Bearer token to this endpoint.
  */
 async function synthNaiaLocalVoice(
 	opts: SynthesizeOpts,
@@ -289,23 +288,17 @@ async function synthNaiaLocalVoice(
 		/\/$/,
 		"",
 	);
-	const resp = await fetch(`${base}/v1/audio/speech`, {
+	const resp = await fetch(`${base}/tts`, {
 		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			// 공식 매뉴얼(naia.land/ko/manual/naia-model-dev): 로컬 인증 불요, 원격은 Bearer 임의값.
-			Authorization: "Bearer naia",
-		},
-		body: JSON.stringify({
-			model: "voxcpm2",
-			input: opts.text,
-			// "default" = SettingsTab 의 UI placeholder(registry 주석) — 서버 음색 레지스트리엔
-			// 없는 id 다. 서버는 모르는 voice 를 400 없이 받아 **무지문 랜덤 음색**으로 떨어지므로
-			// (2026-07-15 실측: nonexistent id 도 200), placeholder/빈값은 서버 등록 음색
-			// "naia-default" 로 정규화한다. 문장마다 다른 목소리가 나오던 직접 원인.
+		headers: { "Content-Type": "application/json" },
+	body: JSON.stringify({
+			text: opts.text,
+			// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
+			// it to this facade palette id; keep it intact all the way to :8910.
 			voice:
-				!opts.voice || opts.voice === "default" ? "naia-default" : opts.voice,
-			response_format: "wav",
+				!opts.voice || opts.voice === "default"
+					? "naia-default"
+					: opts.voice,
 		}),
 		signal: opts.signal,
 	});

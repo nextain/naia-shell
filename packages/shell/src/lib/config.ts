@@ -158,6 +158,9 @@ export interface AppConfig {
 	discordRelayUrl?: string;
 	lastProcessedDiscordMessageId?: string;
 	ollamaHost?: string;
+	/** Per-request Ollama GPU layers. `0` keeps the model on CPU/NPU so the
+	 * laptop 4060 profile reserves VRAM for Ditto and VoxCPM2. */
+	ollamaNumGpu?: number;
 	vllmHost?: string;
 	/** vLLM endpoint for STT/ASR (e.g. Qwen3-ASR). */
 	vllmSttHost?: string;
@@ -731,13 +734,44 @@ export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 // (dnotitia DNA3.0-4B, mradermacher GGUF Q4 변환 — 출처 정직 표기. ~3.2G@16k 실측).
 // compact 를 기본으로 두는 이유: 로컬 음성(fp16 ~6.1G)·아바타(2.6G)와 16GB 동거 안전선
 // (9B 6.3G 는 포화 → 스래싱 실측 148s). 사용자가 이미 ollama 면 선택 모델을 보존한다.
-export const DEFAULT_LOCAL_LLM_MODEL = "hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M";
+// This must be an installed Ollama tag. The 8GB laptop profile provisions
+// dna3:latest; a Hugging Face reference is not resolvable by /api/chat.
+export const DEFAULT_LOCAL_LLM_MODEL = "dna3:latest";
+const LEGACY_DNA3_OLLAMA_MODEL =
+	"hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M";
 export const DEFAULT_VLLM_HOST = "http://localhost:8000";
 // 로컬 음성(naia-local-voice = VoxCPM2) 기본 호스트 = **로컬 cascade façade(:8910)**.
 // 셸 소비자는 OpenAI 정본 표면 /v1/audio/speech 만 쓰는데(3자 합의 2026-07-15), raw
 // VoxCPM2 서비스(:22600)는 그 표면이 없다 — façade 가 voice→ref 해석까지 얹어 서빙한다.
 // (구 값 :22600 은 raw /tts 시대 잔재 — UI 에서 로컬 음성만 고르면 아무것도 안 나오던 원인.)
+// :8910 is the only desktop-facing endpoint. It owns `/tts` (WAV) and
+// `/stream` (Ditto rendering); the bundled VoxCPM2 service on :8901 remains
+// private behind this facade.
 export const DEFAULT_LOCAL_VOICE_HOST = "http://localhost:8910";
+
+/**
+ * The previous 4060 profile wrote a Hugging Face reference into Ollama's
+ * `model` field. Ollama cannot resolve that reference unless it was pulled
+ * under the exact same tag, so existing profiles failed with a 404 even when
+ * `dna3:latest` was installed. Keep explicit user-selected Ollama models.
+ */
+export function migrateLegacyDna3OllamaModel(): void {
+	const config = loadConfig();
+	if (!config) return;
+	const model =
+		config.provider === "ollama" &&
+		config.model === LEGACY_DNA3_OLLAMA_MODEL
+			? DEFAULT_LOCAL_LLM_MODEL
+			: config.model;
+	const vllmTtsHost =
+		config.ttsProvider === "naia-local-voice" &&
+		config.vllmTtsHost?.replace(/\/$/, "") === "http://localhost:8901"
+			? DEFAULT_LOCAL_VOICE_HOST
+			: config.vllmTtsHost;
+	if (model !== config.model || vllmTtsHost !== config.vllmTtsHost) {
+		saveConfig({ ...config, model, vllmTtsHost });
+	}
+}
 
 const INSTANCE_ID_KEY = "naia-os-instance-id";
 

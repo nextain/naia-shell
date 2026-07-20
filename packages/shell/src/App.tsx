@@ -44,6 +44,7 @@ import {
 	loadConfig,
 	loadConfigWithSecrets,
 	migrateLabKeyToNaiaKey,
+	migrateLegacyDna3OllamaModel,
 	migrateLiveProviderToUnifiedModel,
 	migrateSpeechStyleValues,
 	saveConfig,
@@ -418,6 +419,7 @@ export function App() {
 
 	useEffect(() => {
 		void migrateLabKeyToNaiaKey();
+		migrateLegacyDna3OllamaModel();
 		migrateSpeechStyleValues();
 		migrateLiveProviderToUnifiedModel();
 		loadInstalledApps().catch(() => {});

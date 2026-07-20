@@ -1234,6 +1234,8 @@ export function ChatArea({
 						activeProvider === "nextain" ? LAB_GATEWAY_URL : undefined,
 					ollamaHost:
 						activeProvider === "ollama" ? config.ollamaHost : undefined,
+					ollamaNumGpu:
+						activeProvider === "ollama" ? config.ollamaNumGpu : undefined,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
 				},
 				history: history.slice(0, -1),

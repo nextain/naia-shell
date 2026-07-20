@@ -58,6 +58,7 @@ export interface ProviderConfig {
 	apiKey: string;
 	naiaKey?: string;
 	ollamaHost?: string;
+	ollamaNumGpu?: number;
 	vllmHost?: string;
 	/** Override URL for lab-proxy (Naia gateway). Used to route to dev vs prod gateway. */
 	labGatewayUrl?: string;

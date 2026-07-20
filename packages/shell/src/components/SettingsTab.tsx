@@ -798,6 +798,10 @@ export function SettingsTab() {
 		};
 	};
 
+	const forceCpuNpuBrain = (tier: typeof localGpuTier) =>
+		resolveActiveTier(tier, detectedVramGb)?.loaderProfile ===
+		"laptop_4060_8g";
+
 	// R4: 스테이징 config 로 백엔드 warm(기동·대기). 티어/포커스 변경 시 재기동(manifest 반영).
 	const warmLocalProfile = async (
 		tier: typeof localGpuTier,
@@ -847,6 +851,10 @@ export function SettingsTab() {
 				ttsProvider: staged.tts,
 				provider: staged.mainProvider,
 				model: staged.mainModel,
+			ollamaNumGpu:
+				staged.mainProvider === "ollama" && forceCpuNpuBrain(tier)
+					? 0
+					: undefined,
 			} as AppConfig;
 			await writeSlotsManifest(cfg);
 			const ready = await invoke<string>("start_cascade");
@@ -891,6 +899,10 @@ export function SettingsTab() {
 			// 프로파일 = 자동 설정: 두뇌(main)도 스테이징 값으로 영속 (2026-07-15 루크).
 			provider: staged.mainProvider,
 			model: staged.mainModel,
+			ollamaNumGpu:
+				staged.mainProvider === "ollama" && forceCpuNpuBrain(tier)
+					? 0
+					: undefined,
 			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
 		});
 	};
@@ -911,6 +923,10 @@ export function SettingsTab() {
 			vllmTtsHost: staged.ttsHost || undefined,
 			provider: staged.mainProvider,
 			model: staged.mainModel,
+			ollamaNumGpu:
+				staged.mainProvider === "ollama" && forceCpuNpuBrain(localGpuTier)
+					? 0
+					: undefined,
 			// 로컬 음성(both/voice)을 켜면 립싱크를 위해 TTS on.
 			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
 		});
@@ -1584,6 +1600,14 @@ export function SettingsTab() {
 
 				// Persist to both secure store and localStorage
 				await saveSecretKey("naiaKey", nextNaiaKey);
+				// CostDashboard receives the Tauri callback concurrently. Notify it only
+				// after the secure store has the key, otherwise its first balance request
+				// races the login write and the balance stays hidden until a restart.
+				window.dispatchEvent(
+					new CustomEvent("naia_auth_ready", {
+						detail: { source: "auth-complete" },
+					}),
+				);
 				const current = loadConfig();
 				const nextConfig = buildNaiaLoginConfig(
 					current,
@@ -2154,6 +2178,10 @@ export function SettingsTab() {
 				provider === "ollama"
 					? ollamaHost.trim() || undefined
 					: existing?.ollamaHost,
+			ollamaNumGpu:
+				provider === "ollama" && forceCpuNpuBrain(localGpuTier)
+					? 0
+					: undefined,
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,

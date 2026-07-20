@@ -272,15 +272,13 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			vllmTtsHost: "http://localhost:22600/",
 		});
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
+			"http://localhost:22600/tts",
 		);
 		const init = fetchMock.mock.calls[0][1];
 		// 로컬/사설 컨테이너 인증: Bearer 임의값 (공식 매뉴얼)
-		expect(init.headers.Authorization).toBe("Bearer naia");
 		const body = JSON.parse(init.body as string);
-		expect(body.input).toBe("안녕");
-		expect(body.model).toBe("voxcpm2");
-		expect(body.response_format).toBe("wav");
+		expect(init.headers).toEqual({ "Content-Type": "application/json" });
+		expect(body).toEqual({ text: "안녕", voice: "naia-default" });
 		// WAV bytes 무변환 패스스루 (AudioQueue/ttsAudioToWav 가 RIFF 네이티브 감지)
 		const out = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
 		expect(String.fromCharCode(...out.subarray(0, 4))).toBe("RIFF");
@@ -297,7 +295,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			vllmTtsHost: "http://localhost:22600",
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-		expect(body.voice).toBe("naia-default");
+		expect(body).toEqual({ text: "x", voice: "naia-default" });
 	});
 
 	it("UI placeholder voice='default' 도 naia-default 로 정규화 (2026-07-15 실측: 서버는 모르는 id 를 400 없이 받아 문장마다 랜덤 음색 생성)", async () => {
@@ -310,7 +308,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			vllmTtsHost: "http://localhost:22600",
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-		expect(body.voice).toBe("naia-default");
+		expect(body).toEqual({ text: "x", voice: "naia-default" });
 	});
 
 	it("실제 음색 id 는 그대로 전달 (정규화는 placeholder/빈값만)", async () => {
@@ -323,7 +321,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			vllmTtsHost: "http://localhost:22600",
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-		expect(body.voice).toBe("my-cloned-voice");
+		expect(body).toEqual({ text: "x", voice: "my-cloned-voice" });
 	});
 
 	it("uses vllmTtsHost, never the LLM vllmHost", async () => {
@@ -336,7 +334,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			vllmTtsHost: "http://localhost:22600",
 		});
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
+			"http://localhost:22600/tts",
 		);
 	});
 
@@ -351,7 +349,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			vllmHost: "http://localhost:9000", // LLM — 폴백 안 함
 		});
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:8910/v1/audio/speech",
+			"http://localhost:8910/tts",
 		);
 	});
 

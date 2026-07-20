@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	LAB_GATEWAY_URL,
 	getNaiaKeySecure,
@@ -78,6 +78,7 @@ const GATEWAY_URL = LAB_GATEWAY_URL;
 // Simple cache to avoid re-fetching balance on every mount
 let balanceCache: { value: number; timestamp: number } | null = null;
 const BALANCE_CACHE_TTL = 30_000; // 30 seconds
+const BALANCE_FETCH_TIMEOUT_MS = 8_000;
 
 function LabBalanceSection() {
 	const [balance, setBalance] = useState<number | null>(
@@ -87,8 +88,10 @@ function LabBalanceSection() {
 	);
 	const [loading, setLoading] = useState(balance === null);
 	const [error, setError] = useState(false);
+	const activeRequest = useRef<AbortController | null>(null);
 
 	const fetchBalance = useCallback(async () => {
+		activeRequest.current?.abort();
 		let naiaKey: string | undefined;
 		try {
 			naiaKey = await getNaiaKeySecure();
@@ -101,27 +104,42 @@ function LabBalanceSection() {
 			setLoading(false);
 			return;
 		}
-		fetch(`${GATEWAY_URL}/v1/profile/balance`, {
-			headers: { "X-AnyLLM-Key": `Bearer ${naiaKey}` },
-		})
-			.then((res) => {
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				return res.json();
-			})
-			.then((data: unknown) => {
-				const val = parseLabCredits(data) ?? 0;
-				balanceCache = { value: val, timestamp: Date.now() };
-				setBalance(val);
-				setError(false);
-			})
-			.catch((err) => {
-				Logger.warn("CostDashboard", "Lab balance fetch failed", {
-					error: String(err),
-				});
-				setError(true);
-			})
-			.finally(() => setLoading(false));
+		const controller = new AbortController();
+		activeRequest.current = controller;
+		const timeout = window.setTimeout(
+			() => controller.abort(),
+			BALANCE_FETCH_TIMEOUT_MS,
+		);
+		try {
+			const res = await fetch(`${GATEWAY_URL}/v1/profile/balance`, {
+				headers: { "X-AnyLLM-Key": `Bearer ${naiaKey}` },
+				signal: controller.signal,
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const val = parseLabCredits(await res.json()) ?? 0;
+			balanceCache = { value: val, timestamp: Date.now() };
+			setBalance(val);
+			setError(false);
+		} catch (err) {
+			Logger.warn("CostDashboard", "Lab balance fetch failed", {
+				error: String(err),
+			});
+			setError(true);
+		} finally {
+			window.clearTimeout(timeout);
+			if (activeRequest.current === controller) {
+				activeRequest.current = null;
+				setLoading(false);
+			}
+		}
 	}, []);
+
+	useEffect(
+		() => () => {
+			activeRequest.current?.abort();
+		},
+		[],
+	);
 
 	useEffect(() => {
 		// Use cached value if fresh
