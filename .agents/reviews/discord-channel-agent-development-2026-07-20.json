@@ -1,72 +1,36 @@
 {
   "stage": "development",
   "protocol": "review-pass",
-  "scope": "Discord P1-P4 across naia-shell and naia-agent isolated worktrees",
-  "paired_agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
-  "paired_shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
-  "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa",
-  "reviewers": [
-    "opencode/deepseek-v4-flash-free",
-    "opencode/hy3-free",
-    "codex/adversarial-review-1",
-    "codex/adversarial-review-2",
-    "codex/adversarial-review-3"
-  ],
+  "scope": "Discord connection settings, Channels inbox, Agent runtime, and graceful lifecycle",
+  "paired_shell_commit": "ac3dac0356ea74da4a861fff6e4ad9b8cce67fc6",
+  "paired_agent_runtime_commit": "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5",
+  "agent_test_head": "d9b65867b807fa5726fdb78bb531c3ffd91af628",
+  "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
   "resolved_findings": [
-    "Composite binding/guild/channel cursor identity, generation pruning, monotonic cross-channel cursor RMW under a native mutex.",
-    "No token in argv, environment, WebView, manifest, diagnostics, or durable normal settings; one-shot secret pipe and native credential capture.",
-    "Discord channel turns bypass private shared memory, compaction, and personal conversation logs.",
-    "Crash recovery discards unfinished reservations, preserves replying cursors, and releases active reservations on stop.",
-    "Inbox reads are byte/count bounded; corrupt data is quarantined; watcher events use generation-bound server-authorized local-only snapshots.",
-    "Strict versioned manifests reject unknown fields, duplicate binding IDs, and duplicate guild/channel tuples.",
-    "Gateway discovery and full reply bodies are timeout/cancel/size bounded, opcode-1 heartbeats are answered, replies and global 429 waits are connection-serialized without permanent head-of-line blocking.",
-    "Same-session ingress is dispatched and committed in arrival order; pre-active admission slots enforce the global turn cap across asynchronous authorization; reply caps and chunks preserve Unicode code points.",
-    "Runtime status errors are generation-bound and cleared on recovery; settings and inbox watcher events are separated.",
-    "Guild discovery paginates to the explicit product cap, reports truncation and per-guild degradation, and never treats incomplete discovery as authoritative permission loss.",
-    "Persisted channel preference hydrates only once; later inbox events are coalesced and cannot revert an in-memory selection.",
-    "Empty binding saves fail closed and do not restore an unsafe prior manifest after restart failure.",
-    "Lifecycle epochs cancel and drain pre-active admission, authority refresh, Gateway connect/backoff, reply queues, rate-limit waits, disclosure, and inbox tasks before configure or stop returns.",
-    "Shell revokes runtime authority before process handoff, reaps old and failed children, and requires a fresh generation-matched ready lease before reporting restart success.",
-    "Binding snapshots carry the manifest generation atomically; UI reads fail closed on legacy, unsafe, zero, or mismatched generations, and native save uses an expected-generation compare-and-swap before discovery, write, or restart."
-  ],
-  "automated_evidence": {
-    "agent": "99 files passed, 3 skipped; 1224 tests passed, 9 skipped; TypeScript passed",
-    "shell_ui": "117 files passed, 2 skipped; 1303 tests passed, 13 skipped",
-    "shell_rust": "102 passed",
-    "wire_pair": "9 passed",
-    "playwright": "3 passed",
-    "shell_package_build": "passed",
-    "root_build": "known baseline TypeScript rootDir/import-extension failure in playwright-port-config.contract.test.ts; emitted core dist was used only for package verification and removed afterward"
-  },
-  "external_acceptance_pending": [
-    "Operator-backed live Discord bot reconnect, permission-loss, and reply acceptance.",
-    "Real operating-system credential capture, rotate, remove, and restart acceptance."
+    "Authenticated shutdown uses an independent client/task; ambiguous ACK loss waits beyond the Agent watchdog before force/reap.",
+    "Security-tightening binding changes revoke authority before manifest publication; additive changes drain first and rollback remains fail-closed.",
+    "Linux process enumeration skips inaccessible unrelated PIDs while the owned lease PID remains fail-closed.",
+    "Accepted reservations survive hard-timeout restart as durable partial records; owner rotation fences stale generations.",
+    "PID/token lock ownership, startup-only dead-owner repair, latest-state merge, and exact predecessor CAS prevent stale overwrite and duplicate chunk claims."
   ],
   "clean_convergence": {
     "required_consecutive_clean": 2,
     "rounds_after_last_edit": [
       {
         "round": 1,
-        "reviewer": "codex/final-clean-a",
-        "agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
-        "shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
+        "reviewer": "codex/final-clean-b",
         "verdict": "CLEAN"
       },
       {
         "round": 2,
         "reviewer": "codex/final-clean-c",
-        "agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
-        "shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
-        "verdict": "CLEAN"
-      },
-      {
-        "round": 3,
-        "reviewer": "codex/final-clean-b",
-        "agent_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
-        "shell_commit": "2d2ba52e054265d4a022e99d58025b8c26db2ce7",
         "verdict": "CLEAN"
       }
     ],
     "result": "CLEAN"
-  }
+  },
+  "external_acceptance_pending": [
+    "Credentialed live Discord receive/reply, reconnect, permission-loss, and token rotation.",
+    "Real operating-system credential prompt and credential-store lifecycle."
+  ]
 }

@@ -1,55 +1,42 @@
 {
   "stage": "test",
   "protocol": "review-pass",
-  "scope": "Discord automated acceptance evidence across naia-shell and naia-agent",
-  "paired_agent_runtime_commit": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
-  "agent_test_head": "be78b852ca9c6ba8e1bccbd795ac4e26e2864911",
-  "shell_head": "c756a9c9feed4be38c7592a5e33f8c4d11ccc930",
-  "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa",
-  "resolved_findings": [
-    "Replaced a structurally vacuous inbox assertion with two-channel Playwright coverage that returns to Chat and rejects every Discord fixture body from the private transcript.",
-    "Added a ChatArea unit test that injects a discord_message chunk and proves both private message state and streaming content remain unchanged.",
-    "Wrapped the production native binding-save transaction in a generation gate and proved present-empty and absent conflicts execute zero discovery, write, or restart effects while preserving file state.",
-    "Added overlapping provider turns on two bindings, completed them out of order, and proved reply routing plus follow-up history isolation.",
-    "Downgraded REQ-012 and UC-016 to In-progress and TEST-S-015 to Partial until the credentialed live acceptance matrix is executed."
-  ],
+  "scope": "Discord automated acceptance across naia-shell and naia-agent",
+  "shell_code_and_test_head": "c9239ad4e872e93cf7a867075f120f9fddf2ef01",
+  "agent_runtime_commit": "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5",
+  "agent_test_commit": "3f8cfb057cf9a5524c4cea7618a0d00e3e36e280",
+  "agent_trace_head": "dff1da88b0c889f34676fe93a378ca91869f8749",
+  "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
   "automated_evidence": {
-    "agent": "99 files passed, 3 skipped; 1225 tests passed, 9 skipped; TypeScript passed",
+    "shell_root": "24 files; 228 tests passed",
     "shell_ui": "117 files passed, 2 skipped; 1304 tests passed, 13 skipped",
-    "shell_rust": "103 passed",
-    "playwright": "3 passed on isolated port 14327",
+    "shell_rust": "172 passed",
+    "shell_shutdown_lifecycle": "6 passed through fake tonic Agent, production dispatcher/lifecycle, and actual child Drop",
+    "paired_wire": "10 passed",
     "shell_build": "passed",
-    "shell_traceability": "REQ 16, UC 12, TEST-S 14, SPEC 10, TEST-F 10; dead-link 0; orphan 0",
-    "verify_implementation": {
-      "conflict_markers": "PASS on both fixed worktrees",
-      "build": "PASS for Shell package and Agent TypeScript",
-      "i18n_and_hardcoded_strings": "PASS for changed Discord production files; repository-wide pre-existing strings are outside this change",
-      "alpha_discord": "PASS",
-      "onmam_deploy_boundary": "PASS"
-    }
+    "playwright": "3 passed on isolated port 14327",
+    "agent": "101 files passed, 3 skipped; 1247 tests passed, 9 skipped; build passed",
+    "agent_real_process_dedupe": "4 passed",
+    "traceability": "Shell and Agent dead-link 0, orphan 0"
   },
-  "external_acceptance_pending": [
-    "Live two-channel Discord receive/reply, RESUME/reconnect, dedupe replay, permission-loss/403, and token rotate/revoke.",
-    "Real operating-system credential prompt/store lifecycle."
-  ],
   "clean_convergence": {
     "required_consecutive_clean": 2,
     "rounds_after_last_edit": [
       {
         "round": 1,
-        "reviewer": "codex/final-clean-c",
-        "agent_head": "be78b852ca9c6ba8e1bccbd795ac4e26e2864911",
-        "shell_head": "c756a9c9feed4be38c7592a5e33f8c4d11ccc930",
+        "reviewer": "codex/final-clean-b",
         "verdict": "CLEAN"
       },
       {
         "round": 2,
-        "reviewer": "codex/final-clean-b",
-        "agent_head": "be78b852ca9c6ba8e1bccbd795ac4e26e2864911",
-        "shell_head": "c756a9c9feed4be38c7592a5e33f8c4d11ccc930",
+        "reviewer": "codex/final-clean-c",
         "verdict": "CLEAN"
       }
     ],
     "result": "CLEAN"
-  }
+  },
+  "external_acceptance_pending": [
+    "Live two-channel Discord receive/reply, RESUME/reconnect, dedupe replay, permission loss, and token rotate/revoke.",
+    "Real operating-system credential prompt and credential-store lifecycle."
+  ]
 }

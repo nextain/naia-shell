@@ -15,29 +15,25 @@
 
 ## Execution status
 
-- Automated implementation is complete; final stage convergence is reopened
-  after an adversarial review found that forced child termination bypassed
-  Discord in-flight drain. The new fixed snapshot must reconverge from zero.
+- Automated implementation and the DEVELOPMENT and TEST gates are complete.
+  Each gate reconverged with two consecutive CLEAN adversarial reviews after
+  the final edit.
 - Paired Agent runtime commit:
-  `5f6dd7dd0a71850de8e33a757eefe762ca8f96cc`
+  `8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5`
 - Agent test-evidence commit:
-  `cdd2e76b9ba88fe712068f2c1357714f6e0c2f63`
+  `3f8cfb057cf9a5524c4cea7618a0d00e3e36e280`
 - Agent V-model evidence HEAD:
-  `560157dd0e07f8d3b8d8c4988a65514572a628fb`
-- Shell strengthened-test commit:
-  `410d0b21947e14d19f616a37566ef5039df0ce3b`
-- Reviewed Shell production HEAD:
-  `410d0b21947e14d19f616a37566ef5039df0ce3b`
+  `dff1da88b0c889f34676fe93a378ca91869f8749`
+- Reviewed Shell implementation/test HEAD:
+  `c9239ad4e872e93cf7a867075f120f9fddf2ef01`
 - Paired proto SHA-256:
   `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
 - Live Discord and real OS credential-store acceptance remain explicit
   operator gates and are not represented as automated passes.
-- The original DEVELOPMENT gate had three consecutive CLEAN reviews before the
-  CAS hardening. After test-strengthening findings were fixed, the TEST gate
-  independently reconverged with two consecutive CLEAN reviews on the
-  Agent/Shell evidence HEADs above. DEVELOPMENT and INTEGRATION are explicitly
-  rerun on the final production/evidence snapshots. Current Shell native suite
-  is 153/153 and the paired wire suite is 9/9.
+- DEVELOPMENT and TEST independently reconverged with two consecutive CLEAN
+  reviews on the Agent/Shell evidence heads above. Current automated evidence:
+  Shell root 228/228, UI 1304 pass/13 skip, Rust 172/172, paired wire 10/10,
+  Discord Playwright 3/3; Agent 1247 pass/9 skip plus build and strict V-model.
 
 ## Outcome
 
