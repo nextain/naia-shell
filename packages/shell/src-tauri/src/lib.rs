@@ -262,11 +262,15 @@ struct AgentProcess {
 #[serde(deny_unknown_fields)]
 struct AgentChildLease {
     version: u8,
-    pid: u32,
+    pid: Option<u32>,
     nonce: String,
     marker: String,
     started_at_ms: u64,
     runtime: Option<std::path::PathBuf>,
+}
+
+struct AgentChildLeaseLock {
+    _file: std::fs::File,
 }
 
 fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
@@ -276,7 +280,45 @@ fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
         .join("agent-child-lease.json"))
 }
 
-fn read_agent_child_lease() -> Result<Option<AgentChildLease>, String> {
+fn agent_child_lease_lock_path() -> Result<std::path::PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
+        .join(".naia")
+        .join("agent-child-lease.lock"))
+}
+
+fn acquire_agent_child_lease_lock() -> Result<AgentChildLeaseLock, String> {
+    acquire_agent_child_lease_lock_at(&agent_child_lease_lock_path()?)
+}
+
+fn acquire_agent_child_lease_lock_at(
+    path: &std::path::Path,
+) -> Result<AgentChildLeaseLock, String> {
+    use fs2::FileExt;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "agent_lease_lock_failed".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|_| "agent_lease_lock_failed".to_string())?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|_| "agent_lease_lock_failed".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| "agent_lease_lock_failed".to_string())?;
+    }
+    file.lock_exclusive()
+        .map_err(|_| "agent_lease_lock_failed".to_string())?;
+    Ok(AgentChildLeaseLock { _file: file })
+}
+
+fn read_agent_child_lease_locked(
+    _lock: &AgentChildLeaseLock,
+) -> Result<Option<AgentChildLease>, String> {
     let path = agent_child_lease_path()?;
     let metadata = match std::fs::metadata(&path) {
         Ok(value) => value,
@@ -287,12 +329,24 @@ fn read_agent_child_lease() -> Result<Option<AgentChildLease>, String> {
         return Err("agent_lease_invalid".to_string());
     }
     let bytes = std::fs::read(path).map_err(|_| "agent_lease_read_failed".to_string())?;
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|_| "agent_lease_invalid".to_string())
+    let lease = serde_json::from_slice::<AgentChildLease>(&bytes)
+        .map_err(|_| "agent_lease_invalid".to_string())?;
+    let nonce_valid = lease.nonce.len() == 32
+        && lease.nonce.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if lease.version != 1
+        || !nonce_valid
+        || lease.marker != format!("--naia-agent-child={}", lease.nonce)
+        || lease.pid == Some(0)
+    {
+        return Err("agent_lease_invalid".to_string());
+    }
+    Ok(Some(lease))
 }
 
-fn write_agent_child_lease(lease: &AgentChildLease) -> Result<(), String> {
+fn write_agent_child_lease_locked(
+    _lock: &AgentChildLeaseLock,
+    lease: &AgentChildLease,
+) -> Result<(), String> {
     persist_agent_child_lease_with(lease, |path, bytes| {
         write_owner_only_atomic(path, bytes)
     })
@@ -311,9 +365,17 @@ where
 }
 
 fn remove_matching_agent_child_lease(lease: &AgentChildLease) -> Result<bool, String> {
+    let lock = acquire_agent_child_lease_lock()?;
+    remove_matching_agent_child_lease_locked(&lock, lease)
+}
+
+fn remove_matching_agent_child_lease_locked(
+    lock: &AgentChildLeaseLock,
+    lease: &AgentChildLease,
+) -> Result<bool, String> {
     remove_matching_agent_child_lease_with(
         lease,
-        read_agent_child_lease,
+        || read_agent_child_lease_locked(lock),
         || match std::fs::remove_file(agent_child_lease_path()?) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -331,7 +393,7 @@ where
     R: FnOnce() -> Result<Option<AgentChildLease>, String>,
     D: FnOnce() -> Result<(), String>,
 {
-    if read()?.as_ref() != Some(lease) {
+    if read()?.as_ref().map(|current| current.nonce.as_str()) != Some(lease.nonce.as_str()) {
         return Ok(false);
     }
     remove()?;
@@ -339,7 +401,6 @@ where
 }
 
 fn new_agent_child_lease(
-    pid: u32,
     runtime: Option<std::path::PathBuf>,
 ) -> Result<AgentChildLease, String> {
     let mut random = [0u8; 16];
@@ -347,7 +408,7 @@ fn new_agent_child_lease(
     let nonce = random.iter().map(|byte| format!("{byte:02x}")).collect();
     Ok(AgentChildLease {
         version: 1,
-        pid,
+        pid: None,
         marker: format!("--naia-agent-child={nonce}"),
         nonce,
         started_at_ms: std::time::SystemTime::now()
@@ -358,14 +419,14 @@ fn new_agent_child_lease(
     })
 }
 
-fn reconcile_agent_child_lease() -> Result<(), String> {
-    let Some(lease) = read_agent_child_lease()? else {
+fn reconcile_agent_child_lease_locked(lock: &AgentChildLeaseLock) -> Result<(), String> {
+    let Some(lease) = read_agent_child_lease_locked(lock)? else {
         return Ok(());
     };
     reconcile_agent_child_lease_with(
         &lease,
-        || platform::agent_process_marker(lease.pid, &lease.marker),
-        || platform::terminate_agent_pid(lease.pid),
+        |pid| platform::agent_process_marker(pid, &lease.marker),
+        || platform::find_agent_process_by_marker(&lease.marker),
         || {
             if let Some(runtime) = lease.runtime.as_deref() {
                 quarantine_discord_runtime_files(runtime)
@@ -373,45 +434,33 @@ fn reconcile_agent_child_lease() -> Result<(), String> {
                 Ok(())
             }
         },
-        || remove_matching_agent_child_lease(&lease).map(|_| ()),
+        || remove_matching_agent_child_lease_locked(lock, &lease).map(|_| ()),
     )
 }
 
-fn reconcile_agent_child_lease_with<Q, K, C, D>(
-    _lease: &AgentChildLease,
-    mut query: Q,
-    terminate: K,
+fn reconcile_agent_child_lease_with<Q, E, C, D>(
+    lease: &AgentChildLease,
+    query: Q,
+    enumerate: E,
     cleanup: C,
     remove: D,
 ) -> Result<(), String>
 where
-    Q: FnMut() -> Result<Option<bool>, String>,
-    K: FnOnce() -> Result<(), String>,
+    Q: FnOnce(u32) -> Result<Option<bool>, String>,
+    E: FnOnce() -> Result<bool, String>,
     C: FnOnce() -> Result<(), String>,
     D: FnOnce() -> Result<(), String>,
 {
-    match query()? {
-        None | Some(false) => {
-            remove()?;
-            Ok(())
-        }
-        Some(true) => {
-            terminate()?;
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            loop {
-                match query()? {
-                    None | Some(false) => break,
-                    Some(true) if std::time::Instant::now() < deadline => {
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                    Some(true) => return Err("agent_lease_death_unconfirmed".to_string()),
-                }
-            }
-            cleanup()?;
-            remove()?;
-            Ok(())
-        }
+    let live = match lease.pid {
+        Some(pid) => query(pid)? == Some(true),
+        None => enumerate()?,
+    };
+    if live {
+        return Err("agent_lease_live_blocked".to_string());
     }
+    cleanup()?;
+    remove()?;
+    Ok(())
 }
 
 /// Owns a freshly spawned child until every startup handshake has succeeded.
@@ -1532,6 +1581,13 @@ fn ensure_no_pending_discord_reaper(
     }
 }
 
+fn preintent_removal_allowed_after_spawn_failure<T>(failure: &Result<T, String>) -> bool {
+    !matches!(
+        failure,
+        Err(error) if error == "discord_startup_quarantine_uncertain"
+    )
+}
+
 fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
@@ -1542,7 +1598,8 @@ fn spawn_agent_core(
     use std::io::Write as _;
 
     ensure_no_pending_discord_reaper(discord_pending_reapers, discord_repair_bypass)?;
-    reconcile_agent_child_lease()?;
+    let lease_lock = acquire_agent_child_lease_lock()?;
+    reconcile_agent_child_lease_locked(&lease_lock)?;
 
     let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
     log_both(&format!("[Naia] node = {}", agent_path));
@@ -1705,7 +1762,8 @@ fn spawn_agent_core(
         ));
     }
 
-    let mut child_lease = new_agent_child_lease(0, discord_runtime_cleanup.clone())?;
+    let mut child_lease = new_agent_child_lease(discord_runtime_cleanup.clone())?;
+    write_agent_child_lease_locked(&lease_lock, &child_lease)?;
     cmd.arg(&child_lease.marker);
 
     #[cfg(windows)]
@@ -1714,7 +1772,7 @@ fn spawn_agent_core(
     let child = match cmd.spawn() {
         Ok(child) => child,
         Err(error) => {
-            return fail_discord_agent_startup(
+            let failure = fail_discord_agent_startup(
                 format!("Failed to spawn agent-core: {error}"),
                 discord_runtime_armed,
                 discord_quarantined,
@@ -1727,9 +1785,17 @@ fn spawn_agent_core(
                     )
                 },
             );
+            if preintent_removal_allowed_after_spawn_failure(&failure) {
+                if let Err(remove_error) =
+                    remove_matching_agent_child_lease_locked(&lease_lock, &child_lease)
+                {
+                    return Err(remove_error);
+                }
+            }
+            return failure;
         }
     };
-    child_lease.pid = child.id();
+    child_lease.pid = Some(child.id());
     let discord_cleanup = discord_runtime_cleanup
         .as_ref()
         .map(|runtime| DiscordSpawnCleanup {
@@ -1743,7 +1809,9 @@ fn spawn_agent_core(
         Arc::clone(discord_pending_reapers),
     );
 
-    if let Err(error) = write_agent_child_lease(&spawned.lease) {
+    let lease_update = write_agent_child_lease_locked(&lease_lock, &spawned.lease);
+    drop(lease_lock);
+    if let Err(error) = lease_update {
         return fail_spawned_discord_agent_startup(
             error,
             discord_runtime_armed,
@@ -2698,6 +2766,18 @@ fn restart_agent(
         }
     };
     let restarted = with_discord_lifecycle(&state.discord_lifecycle, || {
+        let mut previous = {
+            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+            guard.take()
+        };
+        if let Some(process) = previous.as_mut() {
+            if let Err(error) = terminate_and_reap_discord_child(&mut process.child) {
+                let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+                *guard = previous;
+                return Err(error);
+            }
+        }
+        drop(previous);
         match spawn_agent_core(
             app_handle,
             db,
@@ -9109,6 +9189,15 @@ mod tests {
     }
 
     #[test]
+    fn spawn_failure_retains_preintent_when_runtime_quarantine_is_uncertain() {
+        let uncertain: Result<(), String> =
+            Err("discord_startup_quarantine_uncertain".to_string());
+        let confirmed: Result<(), String> = Err("command spawn failed".to_string());
+        assert!(!preintent_removal_allowed_after_spawn_failure(&uncertain));
+        assert!(preintent_removal_allowed_after_spawn_failure(&confirmed));
+    }
+
+    #[test]
     fn spawn_adk_path_snapshot_is_reused_across_cache_interleaving() {
         let cache = std::cell::RefCell::new(Some(" /workspace/a ".to_string()));
         let snapshot = spawn_adk_path_snapshot_with(|| cache.borrow().clone()).unwrap();
@@ -9261,7 +9350,7 @@ mod tests {
     fn test_agent_child_lease(pid: u32) -> AgentChildLease {
         AgentChildLease {
             version: 1,
-            pid,
+            pid: Some(pid),
             nonce: "test-nonce".to_string(),
             marker: "--naia-agent-child=test-nonce".to_string(),
             started_at_ms: 1,
@@ -9270,22 +9359,18 @@ mod tests {
     }
 
     #[test]
-    fn restart_reconcile_terminates_only_alive_matching_agent() {
+    fn restart_reconcile_blocks_alive_matching_agent() {
         let lease = test_agent_child_lease(42);
-        let states = std::cell::RefCell::new(
-            std::collections::VecDeque::from([Some(true), None]),
-        );
-        let terminated = std::cell::Cell::new(0);
         let cleaned = std::cell::Cell::new(0);
         let removed = std::cell::Cell::new(0);
         assert_eq!(
             reconcile_agent_child_lease_with(
                 &lease,
-                || Ok(states.borrow_mut().pop_front().unwrap()),
-                || {
-                    terminated.set(terminated.get() + 1);
-                    Ok(())
+                |pid| {
+                    assert_eq!(pid, 42);
+                    Ok(Some(true))
                 },
+                || panic!("pid lease must not enumerate"),
                 || {
                     cleaned.set(cleaned.get() + 1);
                     Ok(())
@@ -9295,34 +9380,70 @@ mod tests {
                     Ok(())
                 },
             ),
-            Ok(())
+            Err("agent_lease_live_blocked".to_string())
         );
-        assert_eq!((terminated.get(), cleaned.get(), removed.get()), (1, 1, 1));
+        assert_eq!((cleaned.get(), removed.get()), (0, 0));
     }
 
     #[test]
-    fn pid_reuse_marker_mismatch_is_removed_without_kill() {
+    fn dead_or_pid_reuse_mismatch_is_cleaned_before_remove() {
         let lease = test_agent_child_lease(42);
-        let terminated = std::cell::Cell::new(0);
+        let phases = std::cell::RefCell::new(Vec::new());
         let removed = std::cell::Cell::new(0);
         assert_eq!(
             reconcile_agent_child_lease_with(
                 &lease,
-                || Ok(Some(false)),
+                |_| Ok(Some(false)),
+                || panic!("pid lease must not enumerate"),
                 || {
-                    terminated.set(terminated.get() + 1);
+                    phases.borrow_mut().push("cleanup");
                     Ok(())
                 },
-                || Ok(()),
                 || {
+                    phases.borrow_mut().push("remove");
                     removed.set(removed.get() + 1);
                     Ok(())
                 },
             ),
             Ok(())
         );
-        assert_eq!(terminated.get(), 0);
+        assert_eq!(phases.into_inner(), vec!["cleanup", "remove"]);
         assert_eq!(removed.get(), 1);
+    }
+
+    #[test]
+    fn preintent_crash_window_enumerates_marker_and_blocks_or_cleans() {
+        let mut lease = test_agent_child_lease(42);
+        lease.pid = None;
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| panic!("preintent must not query a pid"),
+                || Ok(true),
+                || panic!("live preintent must not clean runtime"),
+                || panic!("live preintent must not remove lease"),
+            ),
+            Err("agent_lease_live_blocked".to_string())
+        );
+
+        let phases = std::cell::RefCell::new(Vec::new());
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| panic!("preintent must not query a pid"),
+                || Ok(false),
+                || {
+                    phases.borrow_mut().push("cleanup");
+                    Ok(())
+                },
+                || {
+                    phases.borrow_mut().push("remove");
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!(phases.into_inner(), vec!["cleanup", "remove"]);
     }
 
     #[test]
@@ -9355,6 +9476,64 @@ mod tests {
             }),
             Err("agent_lease_write_failed".to_string())
         );
+    }
+
+    #[test]
+    fn lease_file_lock_excludes_a_second_file_handle() {
+        use fs2::FileExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lease.lock");
+        let first = acquire_agent_child_lease_lock_at(&path).unwrap();
+        let second = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        assert!(second.try_lock_exclusive().is_err());
+        drop(first);
+        second.try_lock_exclusive().unwrap();
+        second.unlock().unwrap();
+    }
+
+    #[test]
+    fn lease_file_lock_acquisition_failure_is_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        let not_a_directory = dir.path().join("not-a-directory");
+        std::fs::write(&not_a_directory, b"file").unwrap();
+        assert!(matches!(
+            acquire_agent_child_lease_lock_at(&not_a_directory.join("lease.lock")),
+            Err(error) if error == "agent_lease_lock_failed"
+        ));
+    }
+
+    #[test]
+    fn lease_file_lock_child_probe() {
+        let Ok(path) = std::env::var("NAIA_TEST_LEASE_LOCK_PATH") else {
+            return;
+        };
+        let ready = std::env::var("NAIA_TEST_LEASE_LOCK_READY").unwrap();
+        let _lock = acquire_agent_child_lease_lock_at(std::path::Path::new(&path)).unwrap();
+        std::fs::write(ready, b"locked").unwrap();
+    }
+
+    #[test]
+    fn lease_file_lock_excludes_another_process_until_release() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("lease.lock");
+        let ready = dir.path().join("child-ready");
+        let lock = acquire_agent_child_lease_lock_at(&path).unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "tests::lease_file_lock_child_probe"])
+            .env("NAIA_TEST_LEASE_LOCK_PATH", &path)
+            .env("NAIA_TEST_LEASE_LOCK_READY", &ready)
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!ready.exists());
+        assert!(child.try_wait().unwrap().is_none());
+        drop(lock);
+        assert!(child.wait().unwrap().success());
+        assert!(ready.is_file());
     }
 
     #[test]

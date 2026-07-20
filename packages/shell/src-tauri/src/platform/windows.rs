@@ -37,23 +37,33 @@ pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool
     let text = String::from_utf8_lossy(&output.stdout);
     if text.trim() == "__NOT_FOUND__" {
         Ok(None)
+    } else if text.trim().is_empty() {
+        Err("agent_lease_identity_query_failed".to_string())
     } else {
         Ok(Some(text.split_whitespace().any(|arg| arg == marker)))
     }
 }
 
-pub(crate) fn terminate_agent_pid(pid: u32) -> Result<(), String> {
-    let mut command = Command::new("taskkill");
-    command.args(["/PID", &pid.to_string(), "/T", "/F"]);
+pub(crate) fn find_agent_process_by_marker(marker: &str) -> Result<bool, String> {
+    let script = format!(
+        "Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {{ $null -ne $_.CommandLine -and (($_.CommandLine -split '\\s+') -contains '{marker}') }} | ForEach-Object {{ $_.ProcessId }}"
+    );
+    let mut command = Command::new("powershell");
+    command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
     hide_console(&mut command);
     let output = command
         .output()
-        .map_err(|_| "agent_lease_terminate_failed".to_string())?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err("agent_lease_terminate_failed".to_string())
+        .map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+    if !output.status.success() {
+        return Err("agent_lease_identity_query_failed".to_string());
     }
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        line.parse::<u32>()
+            .map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// Suppress the visible console window that GUI-spawned processes would otherwise show.

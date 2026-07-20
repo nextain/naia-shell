@@ -22,18 +22,21 @@ pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool
     }
 }
 
-pub(crate) fn terminate_agent_pid(pid: u32) -> Result<(), String> {
-    let pid = i32::try_from(pid).map_err(|_| "agent_lease_pid_invalid".to_string())?;
-    if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
-        Ok(())
-    } else {
-        let error = std::io::Error::last_os_error();
-        if error.raw_os_error() == Some(libc::ESRCH) {
-            Ok(())
-        } else {
-            Err("agent_lease_terminate_failed".to_string())
+pub(crate) fn find_agent_process_by_marker(marker: &str) -> Result<bool, String> {
+    let entries = std::fs::read_dir("/proc")
+        .map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+        let Some(pid) = entry.file_name().to_str().and_then(|value| value.parse::<u32>().ok()) else {
+            continue;
+        };
+        match agent_process_marker(pid, marker) {
+            Ok(Some(true)) => return Ok(true),
+            Ok(Some(false)) | Ok(None) => {}
+            Err(_) => return Err("agent_lease_identity_query_failed".to_string()),
         }
     }
+    Ok(false)
 }
 
 /// Spawn a no-op child process (Unix: /bin/true).
