@@ -384,6 +384,83 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		expect(screen.getByText("Nextain")).toBeDefined();
 	});
 
+	it("does not let an older binding snapshot overwrite a newer refresh", async () => {
+		const olderBinding = {
+			bindingId: "existing_general",
+			guildId: "200",
+			guildName: "Nextain",
+			channelId: "300",
+			channelName: "general",
+			allowedUserIds: ["666666"],
+			processingProfileRef: "default",
+			participation: "mentions",
+		};
+		const newerBinding = {
+			...olderBinding,
+			allowedUserIds: ["777777"],
+			participation: "all",
+		};
+		let bindingReads = 0;
+		let resolveOlder!: (value: (typeof olderBinding)[]) => void;
+		let resolveNewer!: (value: (typeof newerBinding)[]) => void;
+		const pendingOlder = new Promise<(typeof olderBinding)[]>((resolve) => {
+			resolveOlder = resolve;
+		});
+		const pendingNewer = new Promise<(typeof newerBinding)[]>((resolve) => {
+			resolveNewer = resolve;
+		});
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 1,
+					state: "ready",
+					authoritative: true,
+				});
+			if (command === "discord_discover_channels")
+				return Promise.resolve(discovery);
+			if (command === "discord_binding_snapshot") {
+				bindingReads += 1;
+				if (bindingReads === 1) return Promise.resolve([]);
+				if (bindingReads === 2) return pendingOlder;
+				if (bindingReads === 3) return pendingNewer;
+				return Promise.resolve([newerBinding]);
+			}
+			if (command === "discord_save_bindings") return Promise.resolve(127);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await screen.findByText("Nextain");
+		const refresh = screen.getByRole("button", {
+			name: t("settings.connectionsRefresh"),
+		});
+		fireEvent.click(refresh);
+		fireEvent.click(refresh);
+		await waitFor(() => expect(bindingReads).toBe(3));
+
+		await act(async () => {
+			resolveNewer([newerBinding]);
+		});
+		await screen.findByDisplayValue("777777");
+		expect(
+			screen.getByRole("combobox", { name: /Nextain.*general/ }),
+		).toHaveValue("all");
+
+		await act(async () => {
+			resolveOlder([olderBinding]);
+		});
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(screen.getByDisplayValue("777777")).toBeDefined();
+
+		fireEvent.click(screen.getByRole("button", { name: /저장|Save|Apply/i }));
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				bindings: [newerBinding],
+			}),
+		);
+	});
+
 	it("preserves bindings from a guild whose discovery is degraded", async () => {
 		const uncertain = {
 			bindingId: "discord_900_901",

@@ -86,6 +86,7 @@ export function ConnectionsSettingsTab() {
 	const [discoveryErrorCode, setDiscoveryErrorCode] = useState<string | null>(
 		null,
 	);
+	const refreshVersionRef = useRef(0);
 	const statusVersionRef = useRef(0);
 	const runtimeStatusRef = useRef<RuntimeStatus | null>(null);
 	const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -189,6 +190,7 @@ export function ConnectionsSettingsTab() {
 	}, []);
 
 	const refresh = useCallback(async () => {
+		const refreshVersion = ++refreshVersionRef.current;
 		const statusVersion = ++statusVersionRef.current;
 		setState("checking");
 		setRuntimeErrorCode(null);
@@ -199,7 +201,7 @@ export function ConnectionsSettingsTab() {
 				invoke<RuntimeStatus>("discord_connection_status"),
 				invoke<BindingInput[]>("discord_binding_snapshot"),
 			]);
-			restoreBindings(bindings);
+			if (refreshVersionRef.current !== refreshVersion) return;
 			const runtimeIsCurrent = statusVersionRef.current === statusVersion;
 			const latestRuntime = runtimeStatusRef.current;
 			const matchesLatestRuntime =
@@ -208,6 +210,7 @@ export function ConnectionsSettingsTab() {
 					latestRuntime.generation === runtime.generation);
 			if (!runtimeIsCurrent && !matchesLatestRuntime) return;
 			if (runtimeIsCurrent) runtimeStatusRef.current = runtime;
+			restoreBindings(bindings);
 			if (!runtime.tokenConfigured) {
 				setDiscovery(null);
 				setState("disconnected");
@@ -218,9 +221,10 @@ export function ConnectionsSettingsTab() {
 			);
 			const currentRuntime = runtimeStatusRef.current;
 			if (
-				currentRuntime !== null &&
-				(currentRuntime.tokenConfigured !== runtime.tokenConfigured ||
-					currentRuntime.generation !== runtime.generation)
+				refreshVersionRef.current !== refreshVersion ||
+				(currentRuntime !== null &&
+					(currentRuntime.tokenConfigured !== runtime.tokenConfigured ||
+						currentRuntime.generation !== runtime.generation))
 			)
 				return;
 			setDiscovery(result);
