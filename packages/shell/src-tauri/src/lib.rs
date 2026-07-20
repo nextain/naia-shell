@@ -257,11 +257,53 @@ struct AgentProcess {
     grpc_addr: String,
 }
 
+/// Owns a freshly spawned child until every startup handshake has succeeded.
+/// Any early return after `Command::spawn` must synchronously terminate and
+/// reap the process instead of leaving an untracked agent behind.
+struct SpawnedAgentChild {
+    child: Option<Child>,
+    revoke_discord_on_drop: bool,
+}
+
+impl SpawnedAgentChild {
+    fn new(child: Child, revoke_discord_on_drop: bool) -> Self {
+        Self {
+            child: Some(child),
+            revoke_discord_on_drop,
+        }
+    }
+
+    fn child_mut(&mut self) -> &mut Child {
+        self.child.as_mut().expect("spawned child must be present")
+    }
+
+    fn into_inner(mut self) -> Child {
+        self.revoke_discord_on_drop = false;
+        self.child.take().expect("spawned child must be present")
+    }
+}
+
+impl Drop for SpawnedAgentChild {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if self.revoke_discord_on_drop {
+            let _ = revoke_discord_runtime_authority();
+        }
+    }
+}
+
 // ?좑툘 Rust ??Child drop ???꾨줈?몄뒪瑜?二쎌씠吏 ?딆쓬 ??restart 濡?*guard 援먯껜 ????agent 媛 orphan(gRPC ?쒕쾭 ?붾쪟).
 // Drop ?먯꽌 紐낆떆 kill 濡?orphan 諛⑹?(codex 由щ럭 #1). 醫낅즺/replace ?묒そ 而ㅻ쾭.
 impl Drop for AgentProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        // `Child::kill` does not reap on Unix and process termination is not
+        // synchronously observable on every platform. Keep the generic fallback
+        // leak-free; Discord config restarts use the bounded checked path below.
+        let _ = self.child.wait();
     }
 }
 
@@ -1184,14 +1226,20 @@ fn spawn_agent_core(
 
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn agent-core: {}", e))?;
+    let discord_runtime_armed = discord_token_frame.is_some();
+    let child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            if discord_runtime_armed {
+                let _ = revoke_discord_runtime_authority();
+            }
+            return Err(format!("Failed to spawn agent-core: {error}"));
+        }
+    };
+    let mut spawned = SpawnedAgentChild::new(child, discord_runtime_armed);
 
     if let Some(frame) = discord_token_frame {
-        let Some(mut stdin) = child.stdin.take() else {
-            let _ = child.kill();
-            let _ = child.wait();
+        let Some(mut stdin) = spawned.child_mut().stdin.take() else {
             return Err("discord_token_pipe_unavailable".to_string());
         };
         let write_result = stdin
@@ -1199,14 +1247,13 @@ fn spawn_agent_core(
             .and_then(|_| stdin.flush());
         drop(stdin);
         if write_result.is_err() {
-            let _ = child.kill();
-            let _ = child.wait();
             return Err("discord_token_pipe_failed".to_string());
         }
     }
 
     // gRPC: stdin ? ?곗씠??梨꾨꼸 ?꾨떂(child 媛 蹂댁쑀, 誘몄궗??. stdout = GRPC_LISTENING ?몃뱶?곗씠??+ 濡쒓렇.
-    let stdout = child
+    let stdout = spawned
+        .child_mut()
         .stdout
         .take()
         .ok_or_else(|| "Failed to get agent stdout".to_string())?;
@@ -1253,7 +1300,7 @@ fn spawn_agent_core(
     ));
 
     Ok(AgentProcess {
-        child,
+        child: spawned.into_inner(),
         tx,
         grpc_addr: addr,
     })
@@ -2130,12 +2177,24 @@ fn restart_agent_for_discord_config(
     expected_generation: Option<u64>,
 ) -> Result<(), String> {
     log_both("[Naia] Restarting agent-core for Discord configuration...");
-    let previous = {
+    revoke_discord_runtime_authority()?;
+    let mut previous = {
         let mut guard =
             lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
         guard.take()
     };
+    if let Some(process) = previous.as_mut() {
+        if let Err(error) = terminate_and_reap_discord_child(&mut process.child) {
+            let mut guard =
+                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            *guard = previous;
+            return Err(error);
+        }
+    }
     drop(previous);
+    // The old process may have raced the first tombstone and rewritten status
+    // while it was terminating. Reassert revocation after it is fully reaped.
+    revoke_discord_runtime_authority()?;
     match spawn_agent_core(app_handle, audit_db) {
         Ok(process) => {
             let mut guard =
@@ -2143,12 +2202,121 @@ fn restart_agent_for_discord_config(
             *guard = Some(process);
             drop(guard);
             replay_startup_messages_to_agent(state);
-            wait_for_discord_runtime_ready(expected_generation)?;
+            if let Err(error) = wait_for_discord_runtime_ready(expected_generation) {
+                let mut failed = {
+                    let mut guard = lock_or_recover(
+                        &state.agent,
+                        "state.agent(restart_agent_for_discord_config)",
+                    );
+                    guard.take()
+                };
+                if let Some(process) = failed.as_mut() {
+                    if let Err(cleanup_error) =
+                        terminate_and_reap_discord_child(&mut process.child)
+                    {
+                        let mut guard = lock_or_recover(
+                            &state.agent,
+                            "state.agent(restart_agent_for_discord_config)",
+                        );
+                        *guard = failed;
+                        let _ = revoke_discord_runtime_authority();
+                        return Err(format!("{error}; {cleanup_error}"));
+                    }
+                }
+                drop(failed);
+                revoke_discord_runtime_authority()?;
+                return Err(error);
+            }
             log_both("[Naia] agent-core restarted for Discord configuration");
             Ok(())
         }
-        Err(error) => Err(format!("discord_agent_restart_failed: {error}")),
+        Err(error) => {
+            revoke_discord_runtime_authority()?;
+            Err(format!("discord_agent_restart_failed: {error}"))
+        }
     }
+}
+
+trait DiscordChildLifecycle {
+    fn request_termination(&mut self) -> std::io::Result<()>;
+    fn has_exited(&mut self) -> std::io::Result<bool>;
+}
+
+impl DiscordChildLifecycle for Child {
+    fn request_termination(&mut self) -> std::io::Result<()> {
+        self.kill()
+    }
+
+    fn has_exited(&mut self) -> std::io::Result<bool> {
+        self.try_wait().map(|status| status.is_some())
+    }
+}
+
+fn terminate_and_reap_discord_child(child: &mut Child) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    terminate_and_reap_discord_child_with(
+        child,
+        std::time::Duration::from_secs(5),
+        move || started.elapsed(),
+        std::thread::sleep,
+    )
+}
+
+fn terminate_and_reap_discord_child_with<C, N, S>(
+    child: &mut C,
+    timeout: std::time::Duration,
+    mut now: N,
+    mut sleep: S,
+) -> Result<(), String>
+where
+    C: DiscordChildLifecycle,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    if child
+        .has_exited()
+        .map_err(|_| "discord_agent_reap_failed".to_string())?
+    {
+        return Ok(());
+    }
+    child
+        .request_termination()
+        .map_err(|_| "discord_agent_terminate_failed".to_string())?;
+    let started = now();
+    let poll = std::time::Duration::from_millis(10);
+    loop {
+        if child
+            .has_exited()
+            .map_err(|_| "discord_agent_reap_failed".to_string())?
+        {
+            return Ok(());
+        }
+        let elapsed = now().saturating_sub(started);
+        if elapsed >= timeout {
+            return Err("discord_agent_reap_timeout".to_string());
+        }
+        sleep(poll.min(timeout.saturating_sub(elapsed)));
+    }
+}
+
+fn revoke_discord_runtime_files(runtime: &std::path::Path) -> Result<(), String> {
+    let tombstone = serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        // Binding generations are numeric. This value can never authorize an
+        // old or future configured generation.
+        "generation": "revoked",
+    }))
+    .map_err(|_| "discord_authority_invalid".to_string())?;
+    write_owner_only_atomic(&runtime.join("authority.json"), &tombstone)?;
+    match std::fs::remove_file(runtime.join("status.json")) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("discord_status_revoke_failed".to_string()),
+    }
+}
+
+fn revoke_discord_runtime_authority() -> Result<(), String> {
+    revoke_discord_runtime_files(&discord_runtime_dir()?)
 }
 
 fn wait_for_discord_runtime_ready(expected_generation: Option<u64>) -> Result<(), String> {
@@ -3310,6 +3478,18 @@ fn discord_runtime_token_prerequisite(
     }
 }
 
+fn discord_runtime_is_authoritative(
+    token_configured: bool,
+    expected: Option<&str>,
+    status: Option<&DiscordRuntimeStatusFile>,
+    authority: Option<&DiscordRuntimeAuthorityFile>,
+) -> bool {
+    token_configured
+        && expected.is_some_and(|value| {
+            discord_runtime_matches_generation(value, status, authority)
+        })
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DiscordConnectionStatus {
@@ -3337,9 +3517,12 @@ async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> 
     let expected = generation.map(|value| value.to_string());
     let current_status =
         discord_runtime_status_for_generation(expected.as_deref(), status.as_ref());
-    let authoritative = expected.as_ref().is_some_and(|value| {
-        discord_runtime_matches_generation(value, status.as_ref(), authority.as_ref())
-    });
+    let authoritative = discord_runtime_is_authoritative(
+        token_configured,
+        expected.as_deref(),
+        status.as_ref(),
+        authority.as_ref(),
+    );
     let state = if !token_configured {
         "disconnected".to_string()
     } else if authoritative {
@@ -3353,7 +3536,9 @@ async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> 
         token_configured,
         generation,
         state,
-        code: current_status.and_then(|value| value.code.clone()),
+        code: token_configured
+            .then(|| current_status.and_then(|value| value.code.clone()))
+            .flatten(),
         authoritative,
     })
 }
@@ -7113,6 +7298,115 @@ mod tests {
         );
     }
 
+    struct DeferredDiscordChild {
+        terminate_calls: usize,
+        exit_checks: usize,
+        exit_after_checks: Option<usize>,
+    }
+
+    impl DiscordChildLifecycle for DeferredDiscordChild {
+        fn request_termination(&mut self) -> std::io::Result<()> {
+            self.terminate_calls += 1;
+            Ok(())
+        }
+
+        fn has_exited(&mut self) -> std::io::Result<bool> {
+            self.exit_checks += 1;
+            Ok(self
+                .exit_after_checks
+                .is_some_and(|required| self.exit_checks >= required))
+        }
+    }
+
+    #[test]
+    fn discord_restart_waits_until_deferred_child_is_reaped() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(4),
+        };
+
+        let result = terminate_and_reap_discord_child_with(
+            &mut child,
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 1);
+        assert_eq!(child.exit_checks, 4);
+        assert!(
+            clock.get() >= std::time::Duration::from_millis(20),
+            "restart must not continue before the deferred child reports exit"
+        );
+    }
+
+    #[test]
+    fn discord_restart_reaps_already_exited_child_without_terminating_again() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(1),
+        };
+
+        let result = terminate_and_reap_discord_child_with(
+            &mut child,
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 0);
+        assert_eq!(child.exit_checks, 1);
+        assert_eq!(clock.get(), std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn discord_restart_fails_closed_when_child_cannot_be_reaped() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: None,
+        };
+
+        let result = terminate_and_reap_discord_child_with(
+            &mut child,
+            std::time::Duration::from_millis(25),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Err("discord_agent_reap_timeout".to_string()));
+        assert_eq!(child.terminate_calls, 1);
+        assert!(child.exit_checks >= 3);
+    }
+
+    #[test]
+    fn discord_restart_revokes_authority_and_stale_status_before_spawn() {
+        let dir = tempfile::tempdir().unwrap();
+        let authority = dir.path().join("authority.json");
+        let status = dir.path().join("status.json");
+        std::fs::write(&authority, r#"{"version":1,"generation":"42"}"#).unwrap();
+        std::fs::write(
+            &status,
+            r#"{"version":1,"generation":"42","state":"ready"}"#,
+        )
+        .unwrap();
+
+        revoke_discord_runtime_files(dir.path()).unwrap();
+
+        let revoked: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&authority).unwrap()).unwrap();
+        assert_eq!(revoked["version"], 1);
+        assert_eq!(revoked["generation"], "revoked");
+        assert!(!status.exists(), "stale ready status must be removed");
+    }
+
     #[test]
     fn discord_runtime_requires_matching_ready_status_and_authority() {
         let ready = DiscordRuntimeStatusFile {
@@ -7141,6 +7435,21 @@ mod tests {
             Some(&starting),
             Some(&authority),
         ));
+        assert!(discord_runtime_is_authoritative(
+            true,
+            Some("42"),
+            Some(&ready),
+            Some(&authority),
+        ));
+        assert!(
+            !discord_runtime_is_authoritative(
+                false,
+                Some("42"),
+                Some(&ready),
+                Some(&authority),
+            ),
+            "a matching stale tuple cannot be authoritative without a token"
+        );
         assert!(!discord_runtime_matches_generation(
             "42",
             Some(&ready),
