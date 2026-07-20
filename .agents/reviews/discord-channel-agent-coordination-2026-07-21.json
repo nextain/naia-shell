@@ -60,7 +60,7 @@
     "agent_test_evidence": "be78b852ca9c6ba8e1bccbd795ac4e26e2864911",
     "agent_v_model_evidence": "5f8ff165837594f5f5b100f8938ab109a293babc",
     "shell_strengthened_test": "c756a9c9feed4be38c7592a5e33f8c4d11ccc930",
-    "shell_production": "2261c2ffb6567b7925a5c29b0bef90c663ffb4a7",
+    "shell_production": "88e8e8ee3ec89c357da8840e328e28dc4a7ecb53",
     "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"
   }
 }
