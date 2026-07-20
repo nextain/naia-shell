@@ -393,3 +393,37 @@ P02 검증:
   agent handshake와 번들 Node 사용을 확인한다.
 - **무결성**: 업로드 디포에는 모든 파일의 상대 경로와 SHA256을 담은 `steam-files.sha256`이 포함된다.
 - **범위 경계**: Steamworks App ID·depot ID·계정 비밀·스토어 심사 제출은 저장소 밖 운영 단계이며 #314에서 추적한다.
+
+## UC-DISCORD — Discord 채널 에이전트 (신규 요구, 2026-07-20)
+
+### UC-DISCORD-1: 개인 봇 연결과 채널 활동 허용
+
+사용자는 나이아에게 Discord 연결 방법을 물어본다. 나이아는 사용자가 Discord에서 봇을 만들고 자신의 서버에 초대해야 함을 설명한 뒤 연결 설정으로 안내한다. 사용자는 보안 입력을 통해 봇을 연결하고, 나이아가 접근 가능한 채널 중 활동을 허용할 채널을 선택한다. 이후 나이아는 허용 채널에서만 다른 참여자와 대화한다.
+
+- 성공: 연결 상태와 허용 채널이 보이고, 봇은 허용 채널에서만 동작한다.
+- 실패: 토큰 오류, 봇 미초대, 권한 부족, 채널 삭제는 원인을 보여 주며 다른 채널에는 영향을 주지 않는다.
+- 안전: 토큰은 채팅·일반 설정·로그·agent 요청에 나타나지 않는다.
+
+### UC-DISCORD-2: 여러 채널을 지구본 대화함에서 읽기
+
+사용자의 봇이 여러 Discord 채널에 초대돼 있다. 사용자가 지구본 버튼을 누르면 최근 활동한 허용 채널의 대화가 먼저 열린다. 사용자는 목록으로 돌아가 다른 채널을 고르고, 그 채널의 대화와 읽지 않은 상태를 본다.
+
+- 좁은 화면: 목록과 대화를 동시에 강제로 넣지 않고, 목록 → 대화 → 뒤로 가기 흐름으로 전환한다.
+- 넓은 화면: 목록과 선택된 대화를 함께 보여 줄 수 있다.
+- 비어 있음: 허용 채널이 없으면 연결·권한 설정을 안내한다.
+
+### UC-DISCORD-3: 실시간 공동 대화
+
+가족 채널처럼 여러 사람이 있는 허용 Discord 채널에 새 메시지가 올라온다. 나이아는 지속 연결로 메시지를 받고, 해당 채널의 참여 규칙에 따라 같은 채널에 응답한다. 두 채널에서 동시에 대화해도 각 채널의 맥락과 응답은 서로 섞이지 않는다.
+
+- 성공: 새 메시지는 한 번만 처리되며 응답은 같은 채널에 표시된다.
+- 복구: 네트워크 단절 뒤 재연결해도 이미 처리한 메시지에 다시 응답하지 않는다.
+- 비활성: 허용되지 않았거나 일시 중지한 채널은 읽거나 응답하지 않는다.
+
+### Test Coverage Map
+
+| Scenario | Unit / contract | UI / integration | Real Discord E2E |
+|---|---|---|---|
+| UC-DISCORD-1 | credential boundary, allow-list, participation policy | Settings connection flow | bot invite, permissions, allowed-channel activation |
+| UC-DISCORD-2 | recency and selected-channel persistence | narrow/wide channel inbox navigation | multi-channel history visibility |
+| UC-DISCORD-3 | Gateway event deduplication, per-channel context, reconnect | live status and unread rendering | two-channel message/reply/reconnect flow |

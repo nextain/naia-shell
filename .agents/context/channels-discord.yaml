@@ -1,0 +1,37 @@
+# Discord channel agent context
+# Product requirements source: docs/requirements.md (FR-DISCORD.1~10)
+status: requirements_confirmed_implementation_pending
+updated: 2026-07-20
+
+product_intent:
+  summary: >
+    Naia acts as a participant in Discord channels explicitly allowed by the
+    bot owner. It is not a read-only DM viewer or a polling-based relay.
+  owner_flow:
+    - The owner creates a Discord bot and invites it to a server.
+    - Naia guides the owner through the connection in plain language.
+    - Bot credentials are entered only through a secure connection flow.
+    - The owner explicitly allows the channels where Naia may participate.
+
+shell_experience:
+  settings_section: "Profile, Brain, Voice, Avatar, Persona, Memory, Knowledge, Skills, Connections, General"
+  globe_button:
+    purpose: "Discord channel inbox"
+    default: "Open the most recently active allowed channel."
+    narrow_layout: "One pane at a time: channel list or selected conversation."
+    wide_layout: "A channel list and selected conversation may be visible together."
+
+runtime_contract:
+  incoming_messages: "Discord Gateway persistent connection; polling is not the primary path."
+  outgoing_messages: "Send replies to the originating Discord channel."
+  isolation: "Keep channel conversation state and delivery state isolated per channel."
+  authorization: "Deny by default unless both Discord permissions and the owner's channel allow-list permit activity."
+  recovery: "Reconnect safely and deduplicate messages after disconnect or restart."
+
+security:
+  credentials: "Never place bot tokens in chat, normal config files, prompts, transcripts, agent requests, or logs."
+  privacy: "Never mix Discord channel content with another Discord channel, Shell personal chat, or another service."
+
+legacy_state:
+  current_shell: "Single Discord DM view with REST polling; insufficient for this feature."
+  historical_context: "The old globe/Discord flow belonged to the OpenClaw-embedded era and was disconnected when OpenClaw was removed."
