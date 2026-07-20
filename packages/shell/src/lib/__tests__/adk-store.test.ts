@@ -258,6 +258,32 @@ describe("writeNaiaConfig", () => {
 			json: JSON.stringify({ provider: "openai", model: "gpt-4o" }, null, 2),
 		});
 	});
+
+	it("llmRoles는 opaque credentialRef만 보존하고 중첩 token/apiKey를 제거한다", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockResolvedValue(undefined);
+		await writeNaiaConfig({
+			provider: "codex",
+			model: "gpt-5.4",
+			llmRoles: {
+				main: {
+					provider: "codex",
+					model: "gpt-5.4",
+					credentialRef: "codex-login",
+					apiKey: "must-not-write",
+					token: "must-not-write",
+				},
+			},
+		});
+		const call = mockInvoke.mock.calls.find(([name]) => name === "write_naia_config");
+		const written = JSON.parse((call?.[1] as { json: string }).json);
+		expect(written.llmRoles.main).toEqual({
+			provider: "codex",
+			model: "gpt-5.4",
+			credentialRef: "codex-login",
+		});
+		expect(JSON.stringify(written)).not.toContain("must-not-write");
+	});
 });
 
 // ── ui-config 분리(FR-WS.2) + 워크스페이스 전환 복원(FR-WS.1/.3) ─────────────────

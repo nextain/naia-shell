@@ -83,10 +83,27 @@ export type TtsProviderId =
 
 export type PanelPosition = "left" | "right" | "bottom";
 
+export type LlmRoleId = "main" | "sub" | "memory";
+export interface LlmRoleConfig {
+	provider?: ProviderId;
+	model?: string;
+	baseUrl?: string;
+	/** OS keychain의 opaque 참조만 허용하며 실제 key/token은 넣지 않는다. */
+	credentialRef?: string;
+	inherit?: LlmRoleId;
+}
+
 export interface AppConfig {
 	provider: ProviderId;
 	model: string;
 	apiKey: string;
+	/** main/sub/memory 신규 정본. 전환 기간에는 legacy flat 필드와 dual-read/write한다. */
+	llmRoles?: Partial<Record<LlmRoleId, LlmRoleConfig>>;
+	subLlmProvider?: ProviderId;
+	subLlmModel?: string;
+	subLlmBaseUrl?: string;
+	subLlmCredentialRef?: string;
+	memoryLlmCredentialRef?: string;
 	locale?: Locale;
 	theme?: ThemeId;
 	backgroundImage?: string;
@@ -362,8 +379,9 @@ export function hasApiKey(): boolean {
 export function isReadyToChat(): boolean {
 	const config = loadConfig();
 	if (!config) return false;
-	// Import-free check: provider needs no key if it's claude-code-cli, ollama, or vllm
+	// Import-free check: local-login/local-engine providers need no API key.
 	const noKeyNeeded =
+		config.provider === "codex" ||
 		config.provider === "claude-code-cli" ||
 		config.provider === "ollama" ||
 		config.provider === "vllm";

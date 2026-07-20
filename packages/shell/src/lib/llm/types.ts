@@ -1,5 +1,7 @@
 import type { ModelCapability } from "../types.js";
 
+export type LlmRoleId = "main" | "sub" | "memory";
+
 /** Voice option for omni/tts models. */
 export interface LlmVoiceMeta {
 	id: string;
@@ -48,6 +50,8 @@ export interface LlmProviderMeta {
 	fetchModels?: (host: string) => Promise<LlmModelMeta[] | null>;
 	/** Whether this provider is disabled in UI. */
 	disabled?: boolean;
+	/** 지원 역할. 생략하면 main/sub/memory 모두 지원하는 일반 LLM provider로 본다. */
+	supportedRoles?: readonly LlmRoleId[];
 	/** i18n description key for onboarding UI (e.g. "provider.apiKeyRequired"). */
 	descKey?: string;
 }

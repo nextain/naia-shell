@@ -147,7 +147,23 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 function stripForAgent(config: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(config)) {
-		if (!SECRET_CONFIG_KEYS.has(k) && !UI_ONLY_CONFIG_KEYS.has(k)) out[k] = v;
+		if (SECRET_CONFIG_KEYS.has(k) || UI_ONLY_CONFIG_KEYS.has(k)) continue;
+		if (k === "llmRoles" && v && typeof v === "object" && !Array.isArray(v)) {
+			const roles: Record<string, unknown> = {};
+			for (const role of ["main", "sub", "memory"]) {
+				const raw = (v as Record<string, unknown>)[role];
+				if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+				const source = raw as Record<string, unknown>;
+				const clean: Record<string, string> = {};
+				for (const field of ["provider", "model", "baseUrl", "credentialRef", "inherit"]) {
+					if (typeof source[field] === "string" && source[field]) clean[field] = source[field] as string;
+				}
+				if (Object.keys(clean).length) roles[role] = clean;
+			}
+			out[k] = roles;
+			continue;
+		}
+		out[k] = v;
 	}
 	return out;
 }
@@ -257,7 +273,7 @@ function resolveAgentEnvKey(
 		case "zai":       return "GLM_API_KEY"; // zai = z.ai/Zhipu GLM (config provider id) — agent 도 동일 매핑
 		case "gemini":    return "GEMINI_API_KEY"; // direct Google AI Studio key (≠ nextain/Vertex). agent keychain-secret-store 거울
 		case "xai":       return "XAI_API_KEY"; // grok. agent keychain-secret-store 거울 — 이게 빠져 키가 안 써져 401 났음
-		default:          return null; // ollama, vllm, claude-code-cli — no persisted key (local / SDK 인증)
+		default:          return null; // ollama, vllm, claude-code-cli, codex — no persisted key (local / CLI 로그인)
 	}
 }
 

@@ -9,6 +9,7 @@ import {
 	isOmniModel,
 	listLlmProviders,
 	modelHasCapability,
+	providerSupportsRole,
 } from "../registry";
 
 describe("registry — provider registration", () => {
@@ -21,12 +22,30 @@ describe("registry — provider registration", () => {
 		expect(ids).toContain("xai");
 		expect(ids).toContain("zai");
 		expect(ids).toContain("claude-code-cli");
+		expect(ids).toContain("codex");
 		expect(ids).toContain("ollama");
 		expect(ids).toContain("vllm");
 	});
 
 	it("getLlmProvider returns undefined for unknown id", () => {
 		expect(getLlmProvider("unknown-xyz")).toBeUndefined();
+	});
+});
+
+describe("registry — Codex app-server provider", () => {
+	it("API key가 필요 없고 main 역할만 지원한다", () => {
+		const provider = getLlmProvider("codex");
+		expect(provider?.requiresApiKey).toBe(false);
+		expect(getDefaultLlmModel("codex")).toBe("gpt-5.4");
+		expect(providerSupportsRole("codex", "main")).toBe(true);
+		expect(providerSupportsRole("codex", "sub")).toBe(false);
+		expect(providerSupportsRole("codex", "memory")).toBe(false);
+	});
+
+	it("일반 provider는 공통 registry 기본값으로 세 역할을 지원한다", () => {
+		expect(providerSupportsRole("ollama", "main")).toBe(true);
+		expect(providerSupportsRole("ollama", "sub")).toBe(true);
+		expect(providerSupportsRole("ollama", "memory")).toBe(true);
 	});
 });
 

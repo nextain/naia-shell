@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Completion-evidence contract: a completion claim must cite a changed evidence file.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACMRD)
+CI_PROJECT_ROOT="$ROOT" node scripts/ci-verify-completion.mjs "${staged[@]}" <"$1"

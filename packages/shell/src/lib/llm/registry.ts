@@ -1,5 +1,5 @@
 import { MODEL_CAPABILITY_VALUES, type ModelCapability } from "../types.js";
-import type { LlmModelMeta, LlmProviderMeta, LlmVoiceMeta } from "./types";
+import type { LlmModelMeta, LlmProviderMeta, LlmRoleId, LlmVoiceMeta } from "./types";
 
 const NAIA_PRICE_MARKUP = 1.1;
 
@@ -18,7 +18,7 @@ export function getLlmProvider(id: string): LlmProviderMeta | undefined {
 // UI display order (user-defined 2026-06-18): local/own-stack first, then by usage.
 // Providers not listed here fall to the end (stable, in registration order).
 const PROVIDER_DISPLAY_ORDER = [
-	"nextain", "ollama", "vllm", "claude-code-cli", "zai", "openai", "gemini", "xai",
+	"nextain", "ollama", "vllm", "codex", "claude-code-cli", "zai", "openai", "gemini", "xai",
 ];
 
 /** List all registered LLM providers in the user-defined display order. */
@@ -92,6 +92,13 @@ export function isApiKeyOptional(providerId: string): boolean {
 	const p = providers.get(providerId);
 	if (!p) return false;
 	return !p.requiresApiKey && !p.requiresNaiaKey;
+}
+
+/** 역할별 별도 provider 배열을 만들지 않고 공통 registry capability로 판정한다. */
+export function providerSupportsRole(providerId: string, role: LlmRoleId): boolean {
+	const provider = providers.get(providerId);
+	if (!provider || provider.disabled) return false;
+	return provider.supportedRoles?.includes(role) ?? true;
 }
 
 /** Build initial models record from all registered providers. */
@@ -384,6 +391,7 @@ registerLlmProvider({
 	description: "Claude Code CLI — uses local Claude installation.",
 	descKey: "provider.claudeCodeCli.desc",
 	requiresApiKey: false,
+	supportedRoles: ["main"],
 	defaultModel: "claude-sonnet-4-6",
 	models: [
 		{ id: "claude-opus-4-8", label: "Claude Opus 4.8", capabilities: ["llm"] },
@@ -397,6 +405,19 @@ registerLlmProvider({
 			label: "Claude Haiku 4.5",
 			capabilities: ["llm"],
 		},
+	],
+});
+
+registerLlmProvider({
+	id: "codex",
+	name: "Codex",
+	description: "Codex app-server — uses your local Codex login.",
+	descKey: "provider.codex.desc",
+	requiresApiKey: false,
+	supportedRoles: ["main"],
+	defaultModel: "gpt-5.4",
+	models: [
+		{ id: "gpt-5.4", label: "GPT-5.4 (Codex)", capabilities: ["llm"] },
 	],
 });
 
