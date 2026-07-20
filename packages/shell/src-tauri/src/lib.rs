@@ -252,9 +252,166 @@ use webkit2gtk::PermissionRequestExt;
 // agent-core process handle ???뺣낯 transport=gRPC. child=?꾨줈?몄뒪 lifecycle, tx=硫붿떆吏瑜?dispatcher task(gRPC ?대씪 ?뚯쑀)濡?
 struct AgentProcess {
     child: Child,
+    lease: AgentChildLease,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
     /// agent-core gRPC listening addr ??寃곌낵 諛섑솚??unary 而ㅻ㎤???? compile_knowledge)媛 蹂꾨룄 ?대씪濡?connect.
     grpc_addr: String,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct AgentChildLease {
+    version: u8,
+    pid: u32,
+    nonce: String,
+    marker: String,
+    started_at_ms: u64,
+    runtime: Option<std::path::PathBuf>,
+}
+
+fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
+        .join(".naia")
+        .join("agent-child-lease.json"))
+}
+
+fn read_agent_child_lease() -> Result<Option<AgentChildLease>, String> {
+    let path = agent_child_lease_path()?;
+    let metadata = match std::fs::metadata(&path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("agent_lease_read_failed".to_string()),
+    };
+    if !metadata.is_file() || metadata.len() > 16 * 1024 {
+        return Err("agent_lease_invalid".to_string());
+    }
+    let bytes = std::fs::read(path).map_err(|_| "agent_lease_read_failed".to_string())?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| "agent_lease_invalid".to_string())
+}
+
+fn write_agent_child_lease(lease: &AgentChildLease) -> Result<(), String> {
+    persist_agent_child_lease_with(lease, |path, bytes| {
+        write_owner_only_atomic(path, bytes)
+    })
+}
+
+fn persist_agent_child_lease_with<W>(
+    lease: &AgentChildLease,
+    write: W,
+) -> Result<(), String>
+where
+    W: FnOnce(&std::path::Path, &[u8]) -> Result<(), String>,
+{
+    let bytes = serde_json::to_vec(lease).map_err(|_| "agent_lease_invalid".to_string())?;
+    write(&agent_child_lease_path()?, &bytes)
+        .map_err(|_| "agent_lease_write_failed".to_string())
+}
+
+fn remove_matching_agent_child_lease(lease: &AgentChildLease) -> Result<bool, String> {
+    remove_matching_agent_child_lease_with(
+        lease,
+        read_agent_child_lease,
+        || match std::fs::remove_file(agent_child_lease_path()?) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err("agent_lease_remove_failed".to_string()),
+        },
+    )
+}
+
+fn remove_matching_agent_child_lease_with<R, D>(
+    lease: &AgentChildLease,
+    read: R,
+    remove: D,
+) -> Result<bool, String>
+where
+    R: FnOnce() -> Result<Option<AgentChildLease>, String>,
+    D: FnOnce() -> Result<(), String>,
+{
+    if read()?.as_ref() != Some(lease) {
+        return Ok(false);
+    }
+    remove()?;
+    Ok(true)
+}
+
+fn new_agent_child_lease(
+    pid: u32,
+    runtime: Option<std::path::PathBuf>,
+) -> Result<AgentChildLease, String> {
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|_| "agent_lease_rng_failed".to_string())?;
+    let nonce = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(AgentChildLease {
+        version: 1,
+        pid,
+        marker: format!("--naia-agent-child={nonce}"),
+        nonce,
+        started_at_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+        runtime,
+    })
+}
+
+fn reconcile_agent_child_lease() -> Result<(), String> {
+    let Some(lease) = read_agent_child_lease()? else {
+        return Ok(());
+    };
+    reconcile_agent_child_lease_with(
+        &lease,
+        || platform::agent_process_marker(lease.pid, &lease.marker),
+        || platform::terminate_agent_pid(lease.pid),
+        || {
+            if let Some(runtime) = lease.runtime.as_deref() {
+                quarantine_discord_runtime_files(runtime)
+            } else {
+                Ok(())
+            }
+        },
+        || remove_matching_agent_child_lease(&lease).map(|_| ()),
+    )
+}
+
+fn reconcile_agent_child_lease_with<Q, K, C, D>(
+    _lease: &AgentChildLease,
+    mut query: Q,
+    terminate: K,
+    cleanup: C,
+    remove: D,
+) -> Result<(), String>
+where
+    Q: FnMut() -> Result<Option<bool>, String>,
+    K: FnOnce() -> Result<(), String>,
+    C: FnOnce() -> Result<(), String>,
+    D: FnOnce() -> Result<(), String>,
+{
+    match query()? {
+        None | Some(false) => {
+            remove()?;
+            Ok(())
+        }
+        Some(true) => {
+            terminate()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                match query()? {
+                    None | Some(false) => break,
+                    Some(true) if std::time::Instant::now() < deadline => {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Some(true) => return Err("agent_lease_death_unconfirmed".to_string()),
+                }
+            }
+            cleanup()?;
+            remove()?;
+            Ok(())
+        }
+    }
 }
 
 /// Owns a freshly spawned child until every startup handshake has succeeded.
@@ -262,6 +419,7 @@ struct AgentProcess {
 /// or transfers the child and exact Discord runtime to a background reaper.
 struct SpawnedAgentChild {
     child: Option<Child>,
+    lease: AgentChildLease,
     discord_cleanup: Option<DiscordSpawnCleanup>,
     pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -274,11 +432,13 @@ struct DiscordSpawnCleanup {
 impl SpawnedAgentChild {
     fn new(
         child: Child,
+        lease: AgentChildLease,
         discord_cleanup: Option<DiscordSpawnCleanup>,
         pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Self {
         Self {
             child: Some(child),
+            lease,
             discord_cleanup,
             pending_reapers,
         }
@@ -288,21 +448,34 @@ impl SpawnedAgentChild {
         self.child.as_mut().expect("spawned child must be present")
     }
 
-    fn into_inner(mut self) -> Child {
+    fn into_inner(mut self) -> (Child, AgentChildLease) {
         self.discord_cleanup = None;
-        self.child.take().expect("spawned child must be present")
+        (
+            self.child.take().expect("spawned child must be present"),
+            self.lease.clone(),
+        )
     }
 
     fn finish_explicit_cleanup(&mut self, child_reaped: bool, runtime_quarantined: bool) {
         let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_quarantined);
         let child = self.child.take();
-        if child_reaped && cleanup.is_none() {
+        let lease_removed = child_reaped
+            && remove_matching_agent_child_lease(&self.lease).is_ok();
+        if child_reaped && cleanup.is_none() && lease_removed {
             return;
         }
         if child.is_some() || cleanup.is_some() {
             spawn_background_discord_reaper(
                 child,
                 cleanup,
+                self.lease.clone(),
+                Arc::clone(&self.pending_reapers),
+            );
+        } else if !lease_removed {
+            spawn_background_discord_reaper(
+                None,
+                cleanup,
+                self.lease.clone(),
                 Arc::clone(&self.pending_reapers),
             );
         }
@@ -324,12 +497,14 @@ impl Drop for SpawnedAgentChild {
             spawn_background_discord_reaper(
                 Some(child),
                 cleanup,
+                self.lease.clone(),
                 Arc::clone(&self.pending_reapers),
             );
         } else if cleanup.is_some() {
             spawn_background_discord_reaper(
                 None,
                 cleanup,
+                self.lease.clone(),
                 Arc::clone(&self.pending_reapers),
             );
         }
@@ -400,23 +575,28 @@ fn reap_discord_child_in_background(child: &mut Child) -> bool {
 struct DiscordReaperOwnership {
     child: Option<Child>,
     cleanup: Option<DiscordSpawnCleanup>,
+    lease: AgentChildLease,
     _pending: Option<PendingDiscordReaper>,
 }
 
 impl DiscordReaperOwnership {
-    fn retry_cleanup(&mut self) -> bool {
-        let Some(cleanup) = self.cleanup.take() else {
-            return true;
-        };
-        cleanup
-            .quarantined
-            .store(true, std::sync::atomic::Ordering::Release);
-        if quarantine_discord_runtime_files(&cleanup.runtime).is_ok() {
-            true
+    fn retry_cleanup(&mut self, child_reaped: bool) -> bool {
+        let runtime_confirmed = if let Some(cleanup) = self.cleanup.take() {
+            cleanup
+                .quarantined
+                .store(true, std::sync::atomic::Ordering::Release);
+            if quarantine_discord_runtime_files(&cleanup.runtime).is_ok() {
+                true
+            } else {
+                self.cleanup = Some(cleanup);
+                false
+            }
         } else {
-            self.cleanup = Some(cleanup);
-            false
-        }
+            true
+        };
+        let lease_confirmed = child_reaped
+            && remove_matching_agent_child_lease(&self.lease).is_ok();
+        runtime_confirmed && lease_confirmed
     }
 }
 
@@ -454,7 +634,7 @@ fn run_background_discord_reaper(container: DiscordReaperContainer) {
     if child_reaped {
         ownership.child = None;
     }
-    let cleanup_confirmed = ownership.retry_cleanup();
+    let cleanup_confirmed = ownership.retry_cleanup(child_reaped);
     finish_owned_discord_reaper(
         ownership,
         child_reaped && cleanup_confirmed,
@@ -491,7 +671,7 @@ fn recover_failed_discord_reaper_handoff_with<T>(
     if child_reaped {
         ownership.child = None;
     }
-    let cleanup_confirmed = ownership.retry_cleanup();
+    let cleanup_confirmed = ownership.retry_cleanup(child_reaped);
     finish_owned_discord_reaper(
         ownership,
         child_reaped && cleanup_confirmed,
@@ -502,11 +682,13 @@ fn recover_failed_discord_reaper_handoff_with<T>(
 fn spawn_background_discord_reaper(
     child: Option<Child>,
     cleanup: Option<DiscordSpawnCleanup>,
+    lease: AgentChildLease,
     pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
 ) {
     let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
         child,
         cleanup,
+        lease,
         _pending: Some(PendingDiscordReaper::begin(pending_reapers)),
     })));
     let spawn_result = spawn_discord_reaper_task_with(&container, |task| {
@@ -532,7 +714,9 @@ impl Drop for AgentProcess {
         // `Child::kill` does not reap on Unix and process termination is not
         // synchronously observable on every platform. Keep the generic fallback
         // leak-free; Discord config restarts use the bounded checked path below.
-        let _ = self.child.wait();
+        if self.child.wait().is_ok() {
+            let _ = remove_matching_agent_child_lease(&self.lease);
+        }
     }
 }
 
@@ -1358,6 +1542,7 @@ fn spawn_agent_core(
     use std::io::Write as _;
 
     ensure_no_pending_discord_reaper(discord_pending_reapers, discord_repair_bypass)?;
+    reconcile_agent_child_lease()?;
 
     let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
     log_both(&format!("[Naia] node = {}", agent_path));
@@ -1520,6 +1705,9 @@ fn spawn_agent_core(
         ));
     }
 
+    let mut child_lease = new_agent_child_lease(0, discord_runtime_cleanup.clone())?;
+    cmd.arg(&child_lease.marker);
+
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
     let discord_runtime_armed = discord_token_frame.is_some();
@@ -1541,6 +1729,7 @@ fn spawn_agent_core(
             );
         }
     };
+    child_lease.pid = child.id();
     let discord_cleanup = discord_runtime_cleanup
         .as_ref()
         .map(|runtime| DiscordSpawnCleanup {
@@ -1549,9 +1738,20 @@ fn spawn_agent_core(
         });
     let mut spawned = SpawnedAgentChild::new(
         child,
+        child_lease,
         discord_cleanup,
         Arc::clone(discord_pending_reapers),
     );
+
+    if let Err(error) = write_agent_child_lease(&spawned.lease) {
+        return fail_spawned_discord_agent_startup(
+            error,
+            discord_runtime_armed,
+            discord_quarantined,
+            discord_runtime_cleanup.as_deref(),
+            &mut spawned,
+        );
+    }
 
     if let Some(frame) = discord_token_frame {
         let Some(mut stdin) = spawned.child_mut().stdin.take() else {
@@ -1639,8 +1839,10 @@ fn spawn_agent_core(
         audit_db.clone(),
     ));
 
+    let (child, lease) = spawned.into_inner();
     Ok(AgentProcess {
-        child: spawned.into_inner(),
+        child,
+        lease,
         tx,
         grpc_addr: addr,
     })
@@ -9056,12 +9258,112 @@ mod tests {
         child
     }
 
+    fn test_agent_child_lease(pid: u32) -> AgentChildLease {
+        AgentChildLease {
+            version: 1,
+            pid,
+            nonce: "test-nonce".to_string(),
+            marker: "--naia-agent-child=test-nonce".to_string(),
+            started_at_ms: 1,
+            runtime: None,
+        }
+    }
+
+    #[test]
+    fn restart_reconcile_terminates_only_alive_matching_agent() {
+        let lease = test_agent_child_lease(42);
+        let states = std::cell::RefCell::new(
+            std::collections::VecDeque::from([Some(true), None]),
+        );
+        let terminated = std::cell::Cell::new(0);
+        let cleaned = std::cell::Cell::new(0);
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                || Ok(states.borrow_mut().pop_front().unwrap()),
+                || {
+                    terminated.set(terminated.get() + 1);
+                    Ok(())
+                },
+                || {
+                    cleaned.set(cleaned.get() + 1);
+                    Ok(())
+                },
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!((terminated.get(), cleaned.get(), removed.get()), (1, 1, 1));
+    }
+
+    #[test]
+    fn pid_reuse_marker_mismatch_is_removed_without_kill() {
+        let lease = test_agent_child_lease(42);
+        let terminated = std::cell::Cell::new(0);
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                || Ok(Some(false)),
+                || {
+                    terminated.set(terminated.get() + 1);
+                    Ok(())
+                },
+                || Ok(()),
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!(terminated.get(), 0);
+        assert_eq!(removed.get(), 1);
+    }
+
+    #[test]
+    fn lease_cas_prevents_old_cleanup_removing_new_nonce() {
+        let old = test_agent_child_lease(42);
+        let mut new = old.clone();
+        new.nonce = "new-nonce".to_string();
+        new.marker = "--naia-agent-child=new-nonce".to_string();
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            remove_matching_agent_child_lease_with(
+                &old,
+                || Ok(Some(new)),
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(false)
+        );
+        assert_eq!(removed.get(), 0);
+    }
+
+    #[test]
+    fn lease_write_failure_is_fail_closed() {
+        let lease = test_agent_child_lease(42);
+        assert_eq!(
+            persist_agent_child_lease_with(&lease, |_path, _bytes| {
+                Err("injected write failure".to_string())
+            }),
+            Err("agent_lease_write_failed".to_string())
+        );
+    }
+
     #[test]
     fn reaper_thread_spawn_failure_retains_unconfirmed_owner_and_pending_barrier() {
         let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
             child: Some(exited_reaper_test_child()),
             cleanup: None,
+            lease: test_agent_child_lease(u32::MAX),
             _pending: Some(PendingDiscordReaper::begin(pending.clone())),
         })));
 
@@ -9089,6 +9391,7 @@ mod tests {
         let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
             child: Some(exited_reaper_test_child()),
             cleanup: None,
+            lease: test_agent_child_lease(u32::MAX),
             _pending: Some(PendingDiscordReaper::begin(pending.clone())),
         })));
 
@@ -9164,8 +9467,10 @@ mod tests {
             .args(["-c", "exec sleep 30"])
             .spawn()
             .unwrap();
+        let lease = test_agent_child_lease(child.id());
         let spawned = SpawnedAgentChild::new(
             child,
+            lease,
             Some(DiscordSpawnCleanup {
                 runtime: runtime.path().to_path_buf(),
                 quarantined: quarantined.clone(),

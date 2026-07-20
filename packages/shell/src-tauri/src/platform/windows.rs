@@ -21,6 +21,41 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     alive
 }
 
+pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool>, String> {
+    let script = format!(
+        "$p=Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\" -ErrorAction Stop; if($null -eq $p){{'__NOT_FOUND__'}}else{{$p.CommandLine}}"
+    );
+    let mut command = Command::new("powershell");
+    command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+    hide_console(&mut command);
+    let output = command
+        .output()
+        .map_err(|_| "agent_lease_identity_query_failed".to_string())?;
+    if !output.status.success() {
+        return Err("agent_lease_identity_query_failed".to_string());
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    if text.trim() == "__NOT_FOUND__" {
+        Ok(None)
+    } else {
+        Ok(Some(text.split_whitespace().any(|arg| arg == marker)))
+    }
+}
+
+pub(crate) fn terminate_agent_pid(pid: u32) -> Result<(), String> {
+    let mut command = Command::new("taskkill");
+    command.args(["/PID", &pid.to_string(), "/T", "/F"]);
+    hide_console(&mut command);
+    let output = command
+        .output()
+        .map_err(|_| "agent_lease_terminate_failed".to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("agent_lease_terminate_failed".to_string())
+    }
+}
+
 /// Suppress the visible console window that GUI-spawned processes would otherwise show.
 pub(crate) fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;

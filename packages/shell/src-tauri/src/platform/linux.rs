@@ -10,6 +10,32 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool>, String> {
+    match std::fs::read(format!("/proc/{pid}/cmdline")) {
+        Ok(bytes) => Ok(Some(
+            bytes
+                .split(|byte| *byte == 0)
+                .any(|arg| arg == marker.as_bytes()),
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err("agent_lease_identity_query_failed".to_string()),
+    }
+}
+
+pub(crate) fn terminate_agent_pid(pid: u32) -> Result<(), String> {
+    let pid = i32::try_from(pid).map_err(|_| "agent_lease_pid_invalid".to_string())?;
+    if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
+        Ok(())
+    } else {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err("agent_lease_terminate_failed".to_string())
+        }
+    }
+}
+
 /// Spawn a no-op child process (Unix: /bin/true).
 pub(crate) fn dummy_child() -> Result<Child, String> {
     Command::new("true")
