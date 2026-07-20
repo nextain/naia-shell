@@ -1,6 +1,6 @@
 # 조립 매트릭스 (assembly matrix) — 이식·보충·수직·수평 전수 추적 SoT (2026-06-10, v2)
 
-> **목적 = drift/드롭 방지 anchor.** v1이 "자리만" 적고 미분류 0을 거짓 주장(codex HIGH) → v2는 **UC1~14 + S01~71 전수 분류**(미분류 0 *기계 강제* via `scripts/check-assembly-coverage.mjs`). AI 판단 못 믿음 → 결정론 체크가 앵커([[project_drift_detection_anchor_thesis]]).
+> **목적 = drift/드롭 방지 anchor.** v1이 "자리만" 적고 미분류 0을 거짓 주장(codex HIGH) → v2는 **UC1~15 + S01~71 전수 분류**(미분류 0 *기계 강제* via `scripts/check-assembly-coverage.mjs`). AI 판단 못 믿음 → 결정론 체크가 앵커([[project_drift_detection_anchor_thesis]]).
 > 진실=사용자 시나리오(UC); 옛 동작은 *맞던 곳만* 참조.
 
 ## 축 (직교 — 둘 다)
@@ -43,7 +43,7 @@
 
 ---
 
-## 수직 UC 트랙 — UC1~14 전수 (분류; UC1 상세)
+## 수직 UC 트랙 — UC1~15 전수 (분류; UC1 상세)
 
 | UC | 이식/보충 | 주 인지포트 | 권위 | slice/상태 |
 |---|---|---|---|---|
@@ -66,6 +66,7 @@
 | UC13 승인게이트 | 이식+보충 | ApprovalPort | mixed | **F1 계약+코드** |
 | UC13a 중단/e-stop | **보충** | SafetyPort | scenario | pending(H-safety) |
 | UC14 degradation | **보충** | InteroceptivePort→Express | scenario | **F1(정직 degradation 신설)** |
+| UC15 자유·연속 발화 session stream | **보충** | AgentGrpcClient→ExpressionPort→SafetyPort | scenario | pending(#82 cross-repo) |
 
 ### UC1 상세 — 텍스트 대화 (Chat→사고→표현)
 | # | 조각(S) | old | 이식/보충 | 인지 포트 | fit | 권위 | 상태 |
