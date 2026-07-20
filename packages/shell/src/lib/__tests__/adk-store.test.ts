@@ -319,7 +319,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	// 회귀 방지 — 로컬 보이스 호스트가 write→read 왕복에서 살아남는가 (루크 발견 버그).
 	it("round-trips vllmTtsHost through ui-config (regression: local voice host reset)", async () => {
 		setAdkPath(WIN_ADK);
-		await writeNaiaUiConfig({ vllmTtsHost: "http://192.168.0.9:22600" });
+		await writeNaiaUiConfig({ vllmTtsHost: "http://tts.example.invalid:22600" });
 		const [, arg] = mockInvoke.mock.calls.find(
 			([name]) => name === "write_naia_ui_config",
 		)!;
@@ -327,7 +327,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		// 그 JSON 을 read 가 그대로 파싱해 돌려준다.
 		mockInvoke.mockResolvedValue(written);
 		expect((await readNaiaUiConfig())?.vllmTtsHost).toBe(
-			"http://192.168.0.9:22600",
+			"http://tts.example.invalid:22600",
 		);
 	});
 });

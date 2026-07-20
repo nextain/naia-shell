@@ -76,7 +76,7 @@
 
 ### 2026-07-16 시연 체크포인트
 
-- **검증 구성**: 로컬 Ollama LLM + 원격 NVA full cascade `https://pc-bazzite.tail4f7a25.ts.net:9449` (VoxCPM2 음성 + 아바타).
+- **검증 구성**: 로컬 Ollama LLM + 원격 NVA full cascade `https://cascade.example.invalid:9449` (VoxCPM2 음성 + 아바타).
 - **실기 결과**: 실제 Tauri Shell에서 음성과 입 모양 동기화가 정상이며, 해당 실행에서는 온라인 LLM과 클라우드 TTS를 사용하지 않았다.
 - **라우팅 사실**: NVA Host가 명시되면 Shell은 해당 호스트의 `/stream_text`를 호출하고 Shell 측 `vllmTtsHost` 합성 전에 반환한다. 따라서 이 원격 NVA 발화 경로에서는 설정된 `:8910` 음성 호스트를 사용하지 않는다.
 - **3090 운영 확인**: VoxCPM2 음성과 아바타를 합친 cascade는 `:9449` 단일 엔드포인트로 통일해도 된다고 확인받았다.

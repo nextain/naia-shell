@@ -1,3 +1,4 @@
+import { Logger } from "../logger";
 /**
  * CascadeAvatarRenderer — NVA 비디오 아바타의 "말하는 입"을 cascade 런타임에서 받아 그리는 렌더러.
  *
@@ -574,10 +575,9 @@ export class CascadeAvatarRenderer {
 			}
 		} catch (e) {
 			if (my === this.gen) {
-				console.warn(
-					"[cascade-avatar] speak 실패 — 이 발화 드롭:",
-					e instanceof Error ? e.message : e,
-				);
+				Logger.warn("cascade-avatar", "speak failed before playback", {
+					error: e instanceof Error ? e.message : String(e),
+				});
 			}
 		} finally {
 			// Never swallow speech when rendering fails or returns an empty stream.

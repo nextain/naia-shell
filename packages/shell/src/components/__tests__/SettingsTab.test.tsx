@@ -267,7 +267,7 @@ describe("SettingsTab", () => {
 				model: "gemini-3.5-flash",
 				naiaKey: "nk",
 				localGpuTier: "auto",
-				cascadeRuntimeUrl: "https://pc-bazzite.tail4f7a25.ts.net:9449",
+				cascadeRuntimeUrl: "https://cascade.example.invalid:9449",
 			}),
 		);
 		mockInvoke.mockImplementation((cmd: string) => {
@@ -289,7 +289,7 @@ describe("SettingsTab", () => {
 		expect(saved.avatarProvider).toBe("naia-video-avatar");
 		expect(saved.nvaModel).toBeTruthy();
 		expect(saved.cascadeRuntimeUrl).toBe(
-			"https://pc-bazzite.tail4f7a25.ts.net:9449",
+			"https://cascade.example.invalid:9449",
 		);
 		expect(saved.local8gFocus).toBeUndefined();
 	});
