@@ -2,7 +2,7 @@
   "stage": "development",
   "protocol": "review-pass",
   "scope": "Discord P1-P4 across naia-shell and naia-agent isolated worktrees",
-  "paired_agent_commit": "392bf27d0adf4ab9a64e95cfa59fce5b9499391f",
+  "paired_agent_commit": "c678815986e06e301a110b34c603a737d0bb63f7",
   "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa",
   "reviewers": [
     "opencode/deepseek-v4-flash-free",
@@ -18,7 +18,7 @@
     "Crash recovery discards unfinished reservations, preserves replying cursors, and releases active reservations on stop.",
     "Inbox reads are byte/count bounded; corrupt data is quarantined; watcher events use generation-bound server-authorized local-only snapshots.",
     "Strict versioned manifests reject unknown fields, duplicate binding IDs, and duplicate guild/channel tuples.",
-    "Gateway discovery is timeout/cancel aware, opcode-1 heartbeats are answered, replies and global 429 waits are connection-serialized.",
+    "Gateway discovery and reply POSTs are timeout/cancel aware, opcode-1 heartbeats are answered, replies and global 429 waits are connection-serialized without permanent head-of-line blocking.",
     "Same-session ingress is dispatched and committed in arrival order; reply caps and chunks preserve Unicode code points.",
     "Runtime status errors are generation-bound and cleared on recovery; settings and inbox watcher events are separated.",
     "Guild discovery paginates to the explicit product cap, reports truncation and per-guild degradation, and never treats incomplete discovery as authoritative permission loss.",
