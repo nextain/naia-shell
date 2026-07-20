@@ -352,6 +352,19 @@ fn write_agent_child_lease_locked(
     })
 }
 
+fn persist_agent_child_lease_before<T, W, N>(
+    lease: &AgentChildLease,
+    write: W,
+    next: N,
+) -> Result<T, String>
+where
+    W: FnOnce(&AgentChildLease) -> Result<(), String>,
+    N: FnOnce() -> Result<T, String>,
+{
+    write(lease)?;
+    next()
+}
+
 fn persist_agent_child_lease_with<W>(
     lease: &AgentChildLease,
     write: W,
@@ -478,6 +491,91 @@ struct DiscordSpawnCleanup {
     quarantined: Arc<std::sync::atomic::AtomicBool>,
 }
 
+#[derive(Default)]
+struct OwnedAgentCleanupOutcome {
+    superseded: bool,
+    runtime_confirmed: bool,
+    lease_removed: bool,
+}
+
+impl OwnedAgentCleanupOutcome {
+    fn complete(&self, child_reaped: bool) -> bool {
+        child_reaped && (self.superseded || (self.runtime_confirmed && self.lease_removed))
+    }
+}
+
+fn cleanup_owned_agent_child_locked(
+    lock: &AgentChildLeaseLock,
+    lease: &AgentChildLease,
+    child_reaped: bool,
+    cleanup: Option<&DiscordSpawnCleanup>,
+) -> OwnedAgentCleanupOutcome {
+    cleanup_owned_agent_child_with(
+        lease,
+        child_reaped,
+        cleanup.is_some(),
+        || read_agent_child_lease_locked(lock),
+        || {
+            if let Some(cleanup) = cleanup {
+                cleanup
+                    .quarantined
+                    .store(true, std::sync::atomic::Ordering::Release);
+                quarantine_discord_runtime_files(&cleanup.runtime)
+            } else {
+                Ok(())
+            }
+        },
+        || remove_matching_agent_child_lease_locked(lock, lease),
+    )
+}
+
+fn cleanup_owned_agent_child_with<R, Q, D>(
+    lease: &AgentChildLease,
+    child_reaped: bool,
+    runtime_cleanup_required: bool,
+    read: R,
+    quarantine: Q,
+    remove: D,
+) -> OwnedAgentCleanupOutcome
+where
+    R: FnOnce() -> Result<Option<AgentChildLease>, String>,
+    Q: FnOnce() -> Result<(), String>,
+    D: FnOnce() -> Result<bool, String>,
+{
+    let current = match read() {
+        Ok(value) => value,
+        Err(_) => return OwnedAgentCleanupOutcome::default(),
+    };
+    if current.as_ref().map(|value| value.nonce.as_str()) != Some(lease.nonce.as_str()) {
+        return OwnedAgentCleanupOutcome {
+            superseded: true,
+            ..OwnedAgentCleanupOutcome::default()
+        };
+    }
+    if runtime_cleanup_required && quarantine().is_err() {
+        return OwnedAgentCleanupOutcome::default();
+    }
+    let mut outcome = OwnedAgentCleanupOutcome {
+        runtime_confirmed: true,
+        ..OwnedAgentCleanupOutcome::default()
+    };
+    if child_reaped {
+        outcome.lease_removed = remove().unwrap_or(false);
+    }
+    outcome
+}
+
+fn cleanup_owned_agent_child(
+    lease: &AgentChildLease,
+    child_reaped: bool,
+    cleanup: Option<&DiscordSpawnCleanup>,
+) -> OwnedAgentCleanupOutcome {
+    let Ok(lock) = acquire_agent_child_lease_lock() else {
+        return OwnedAgentCleanupOutcome::default();
+    };
+    cleanup_owned_agent_child_locked(&lock, lease, child_reaped, cleanup)
+}
+
 impl SpawnedAgentChild {
     fn new(
         child: Child,
@@ -505,13 +603,17 @@ impl SpawnedAgentChild {
         )
     }
 
-    fn finish_explicit_cleanup(&mut self, child_reaped: bool, runtime_quarantined: bool) {
-        let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_quarantined);
+    fn finish_explicit_cleanup(&mut self, child_reaped: bool) -> OwnedAgentCleanupOutcome {
+        let outcome = cleanup_owned_agent_child(
+            &self.lease,
+            child_reaped,
+            self.discord_cleanup.as_ref(),
+        );
+        let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
+        let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_confirmed);
         let child = self.child.take();
-        let lease_removed = child_reaped
-            && remove_matching_agent_child_lease(&self.lease).is_ok();
-        if child_reaped && cleanup.is_none() && lease_removed {
-            return;
+        if outcome.complete(child_reaped) {
+            return outcome;
         }
         if child.is_some() || cleanup.is_some() {
             spawn_background_discord_reaper(
@@ -520,7 +622,7 @@ impl SpawnedAgentChild {
                 self.lease.clone(),
                 Arc::clone(&self.pending_reapers),
             );
-        } else if !lease_removed {
+        } else {
             spawn_background_discord_reaper(
                 None,
                 cleanup,
@@ -528,20 +630,15 @@ impl SpawnedAgentChild {
                 Arc::clone(&self.pending_reapers),
             );
         }
+        outcome
     }
 }
 
 impl Drop for SpawnedAgentChild {
     fn drop(&mut self) {
-        let mut cleanup = self.discord_cleanup.take();
-        let mut runtime_quarantined = true;
-        if let Some(cleanup) = cleanup.as_ref() {
-            cleanup
-                .quarantined
-                .store(true, std::sync::atomic::Ordering::Release);
-            runtime_quarantined = quarantine_discord_runtime_files(&cleanup.runtime).is_ok();
-        }
-        cleanup = discord_cleanup_retry(cleanup, runtime_quarantined);
+        let outcome = cleanup_owned_agent_child(&self.lease, false, self.discord_cleanup.as_ref());
+        let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
+        let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_confirmed);
         if let Some(child) = self.child.take() {
             spawn_background_discord_reaper(
                 Some(child),
@@ -630,22 +727,11 @@ struct DiscordReaperOwnership {
 
 impl DiscordReaperOwnership {
     fn retry_cleanup(&mut self, child_reaped: bool) -> bool {
-        let runtime_confirmed = if let Some(cleanup) = self.cleanup.take() {
-            cleanup
-                .quarantined
-                .store(true, std::sync::atomic::Ordering::Release);
-            if quarantine_discord_runtime_files(&cleanup.runtime).is_ok() {
-                true
-            } else {
-                self.cleanup = Some(cleanup);
-                false
-            }
-        } else {
-            true
-        };
-        let lease_confirmed = child_reaped
-            && remove_matching_agent_child_lease(&self.lease).is_ok();
-        runtime_confirmed && lease_confirmed
+        let outcome = cleanup_owned_agent_child(&self.lease, child_reaped, self.cleanup.as_ref());
+        if outcome.superseded || outcome.runtime_confirmed {
+            self.cleanup = None;
+        }
+        outcome.complete(child_reaped)
     }
 }
 
@@ -1581,13 +1667,6 @@ fn ensure_no_pending_discord_reaper(
     }
 }
 
-fn preintent_removal_allowed_after_spawn_failure<T>(failure: &Result<T, String>) -> bool {
-    !matches!(
-        failure,
-        Err(error) if error == "discord_startup_quarantine_uncertain"
-    )
-}
-
 fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
@@ -1600,6 +1679,12 @@ fn spawn_agent_core(
     ensure_no_pending_discord_reaper(discord_pending_reapers, discord_repair_bypass)?;
     let lease_lock = acquire_agent_child_lease_lock()?;
     reconcile_agent_child_lease_locked(&lease_lock)?;
+    let mut child_lease = new_agent_child_lease(None)?;
+    persist_agent_child_lease_before(
+        &child_lease,
+        |lease| write_agent_child_lease_locked(&lease_lock, lease),
+        || Ok(()),
+    )?;
 
     let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
     log_both(&format!("[Naia] node = {}", agent_path));
@@ -1613,7 +1698,6 @@ fn spawn_agent_core(
         }
         Err(_) => resolve_paired_bundled_agent_script(app_handle)?,
     };
-
     let use_tsx = agent_script.ends_with(".ts");
     // Preferred: invoke tsx via node directly (agent_dir/node_modules/.pnpm/tsx@*/.../cli.mjs).
     // This avoids spawning `npx` or `npx.cmd` ??Windows' CreateProcess does not
@@ -1648,6 +1732,7 @@ fn spawn_agent_core(
         c.arg(&agent_script).arg("--stdio");
         (agent_path.clone(), c)
     };
+    cmd.arg(&child_lease.marker);
 
     log_verbose(&format!(
         "[Naia] Starting agent-core: {} {}",
@@ -1705,6 +1790,7 @@ fn spawn_agent_core(
                                     std::fs::create_dir_all(&runtime_dir).map_err(|_| {
                                         "discord_runtime_dir_unavailable".to_string()
                                     })?;
+                                    child_lease.runtime = Some(runtime_dir.clone());
                                     let generation = generation.to_string();
                                     let authority_path = runtime_dir.join("authority.json");
                                     let authority = serde_json::json!({
@@ -1715,16 +1801,24 @@ fn spawn_agent_core(
                                         .map_err(|_| {
                                             "discord_authority_invalid".to_string()
                                         })?;
-                                    issue_discord_runtime_authority(
-                                        discord_quarantined,
-                                        || {
-                                            write_owner_only_atomic(
-                                                &authority_path,
-                                                &authority_bytes,
-                                            )
+                                    persist_agent_child_lease_before(
+                                        &child_lease,
+                                        |lease| {
+                                            write_agent_child_lease_locked(&lease_lock, lease)
                                         },
                                         || {
-                                            quarantine_discord_runtime_files(&runtime_dir)
+                                            issue_discord_runtime_authority(
+                                                discord_quarantined,
+                                                || {
+                                                    write_owner_only_atomic(
+                                                        &authority_path,
+                                                        &authority_bytes,
+                                                    )
+                                                },
+                                                || {
+                                                    quarantine_discord_runtime_files(&runtime_dir)
+                                                },
+                                            )
                                         },
                                     )?;
                                     cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
@@ -1762,46 +1856,36 @@ fn spawn_agent_core(
         ));
     }
 
-    let mut child_lease = new_agent_child_lease(discord_runtime_cleanup.clone())?;
-    write_agent_child_lease_locked(&lease_lock, &child_lease)?;
-    cmd.arg(&child_lease.marker);
-
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
     let discord_runtime_armed = discord_token_frame.is_some();
-    let child = match cmd.spawn() {
-        Ok(child) => child,
-        Err(error) => {
-            let failure = fail_discord_agent_startup(
-                format!("Failed to spawn agent-core: {error}"),
-                discord_runtime_armed,
-                discord_quarantined,
-                || Ok(()),
-                || {
-                    quarantine_discord_runtime_files(
-                        discord_runtime_cleanup
-                            .as_deref()
-                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
-                    )
-                },
-            );
-            if preintent_removal_allowed_after_spawn_failure(&failure) {
-                if let Err(remove_error) =
-                    remove_matching_agent_child_lease_locked(&lease_lock, &child_lease)
-                {
-                    return Err(remove_error);
-                }
-            }
-            return failure;
-        }
-    };
-    child_lease.pid = Some(child.id());
     let discord_cleanup = discord_runtime_cleanup
         .as_ref()
         .map(|runtime| DiscordSpawnCleanup {
             runtime: runtime.clone(),
             quarantined: Arc::clone(discord_quarantined),
         });
+    let child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let outcome = cleanup_owned_agent_child_locked(
+                &lease_lock,
+                &child_lease,
+                true,
+                discord_cleanup.as_ref(),
+            );
+            let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
+            return finalize_discord_startup_failure(
+                format!("Failed to spawn agent-core: {error}"),
+                discord_runtime_armed && !outcome.superseded,
+                discord_quarantined,
+                true,
+                runtime_confirmed,
+                |_, _| {},
+            );
+        }
+    };
+    child_lease.pid = Some(child.id());
     let mut spawned = SpawnedAgentChild::new(
         child,
         child_lease,
@@ -1816,7 +1900,6 @@ fn spawn_agent_core(
             error,
             discord_runtime_armed,
             discord_quarantined,
-            discord_runtime_cleanup.as_deref(),
             &mut spawned,
         );
     }
@@ -1827,7 +1910,6 @@ fn spawn_agent_core(
                 "discord_token_pipe_unavailable".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                discord_runtime_cleanup.as_deref(),
                 &mut spawned,
             );
         };
@@ -1840,7 +1922,6 @@ fn spawn_agent_core(
                 "discord_token_pipe_failed".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                discord_runtime_cleanup.as_deref(),
                 &mut spawned,
             );
         }
@@ -1854,7 +1935,6 @@ fn spawn_agent_core(
                 "Failed to get agent stdout".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                discord_runtime_cleanup.as_deref(),
                 &mut spawned,
             );
         }
@@ -1887,7 +1967,6 @@ fn spawn_agent_core(
                 "agent gRPC addr handshake timeout".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                discord_runtime_cleanup.as_deref(),
                 &mut spawned,
             );
         }
@@ -3015,6 +3094,7 @@ where
     }
 }
 
+#[cfg(test)]
 fn fail_discord_agent_startup<T, K, Q>(
     startup_error: String,
     discord_runtime_armed: bool,
@@ -3071,29 +3151,19 @@ fn fail_spawned_discord_agent_startup<T>(
     startup_error: String,
     discord_runtime_armed: bool,
     quarantined: &std::sync::atomic::AtomicBool,
-    runtime: Option<&std::path::Path>,
     spawned: &mut SpawnedAgentChild,
 ) -> Result<T, String> {
-    if discord_runtime_armed {
-        quarantined.store(true, std::sync::atomic::Ordering::Release);
-    }
     let terminate_result = terminate_and_reap_discord_child(spawned.child_mut());
-    let quarantine_result = if discord_runtime_armed {
-        runtime
-            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())
-            .and_then(quarantine_discord_runtime_files)
-    } else {
-        Ok(())
-    };
+    let child_reaped = terminate_result.is_ok();
+    let outcome = spawned.finish_explicit_cleanup(child_reaped);
+    let runtime_quarantined = outcome.superseded || outcome.runtime_confirmed;
     finalize_discord_startup_failure(
         startup_error,
-        discord_runtime_armed,
+        discord_runtime_armed && !outcome.superseded,
         quarantined,
-        terminate_result.is_ok(),
-        quarantine_result.is_ok(),
-        |child_reaped, runtime_quarantined| {
-            spawned.finish_explicit_cleanup(child_reaped, runtime_quarantined);
-        },
+        child_reaped,
+        runtime_quarantined,
+        |_, _| {},
     )
 }
 
@@ -9189,15 +9259,6 @@ mod tests {
     }
 
     #[test]
-    fn spawn_failure_retains_preintent_when_runtime_quarantine_is_uncertain() {
-        let uncertain: Result<(), String> =
-            Err("discord_startup_quarantine_uncertain".to_string());
-        let confirmed: Result<(), String> = Err("command spawn failed".to_string());
-        assert!(!preintent_removal_allowed_after_spawn_failure(&uncertain));
-        assert!(preintent_removal_allowed_after_spawn_failure(&confirmed));
-    }
-
-    #[test]
     fn spawn_adk_path_snapshot_is_reused_across_cache_interleaving() {
         let cache = std::cell::RefCell::new(Some(" /workspace/a ".to_string()));
         let snapshot = spawn_adk_path_snapshot_with(|| cache.borrow().clone()).unwrap();
@@ -9447,6 +9508,60 @@ mod tests {
     }
 
     #[test]
+    fn durable_intent_and_runtime_update_always_precede_authority() {
+        let mut lease = test_agent_child_lease(42);
+        lease.pid = None;
+        let phases = std::cell::RefCell::new(Vec::new());
+        persist_agent_child_lease_before(
+            &lease,
+            |value| {
+                assert!(value.pid.is_none());
+                phases.borrow_mut().push("intent");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("continue");
+                Ok(())
+            },
+        )
+        .unwrap();
+        lease.runtime = Some(std::path::PathBuf::from("/exact/runtime"));
+        persist_agent_child_lease_before(
+            &lease,
+            |value| {
+                assert_eq!(value.runtime.as_deref(), Some(std::path::Path::new("/exact/runtime")));
+                phases.borrow_mut().push("runtime-intent");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("authority");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            phases.into_inner(),
+            vec!["intent", "continue", "runtime-intent", "authority"]
+        );
+    }
+
+    #[test]
+    fn intent_write_crash_point_never_reaches_authority() {
+        let lease = test_agent_child_lease(42);
+        let authority_calls = std::cell::Cell::new(0);
+        let result: Result<(), String> = persist_agent_child_lease_before(
+            &lease,
+            |_| Err("injected intent write failure".to_string()),
+            || {
+                authority_calls.set(authority_calls.get() + 1);
+                Ok(())
+            },
+        );
+        assert_eq!(result, Err("injected intent write failure".to_string()));
+        assert_eq!(authority_calls.get(), 0);
+    }
+
+    #[test]
     fn lease_cas_prevents_old_cleanup_removing_new_nonce() {
         let old = test_agent_child_lease(42);
         let mut new = old.clone();
@@ -9465,6 +9580,60 @@ mod tests {
             Ok(false)
         );
         assert_eq!(removed.get(), 0);
+    }
+
+    #[test]
+    fn delayed_old_cleanup_never_touches_replacement_runtime_or_lease() {
+        let old = test_agent_child_lease(42);
+        let mut replacement = old.clone();
+        replacement.nonce = "replacement-nonce".to_string();
+        replacement.marker = "--naia-agent-child=replacement-nonce".to_string();
+        let runtime_calls = std::cell::Cell::new(0);
+        let remove_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &old,
+            true,
+            true,
+            || Ok(Some(replacement)),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                Ok(true)
+            },
+        );
+        assert!(outcome.superseded);
+        assert!(outcome.complete(true));
+        assert_eq!(runtime_calls.get(), 0);
+        assert_eq!(remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn uncertain_termination_quarantines_owned_runtime_but_retains_lease() {
+        let lease = test_agent_child_lease(42);
+        let runtime_calls = std::cell::Cell::new(0);
+        let remove_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            false,
+            true,
+            || Ok(Some(lease.clone())),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                Ok(true)
+            },
+        );
+        assert!(!outcome.complete(false));
+        assert!(outcome.runtime_confirmed);
+        assert!(!outcome.lease_removed);
+        assert_eq!(runtime_calls.get(), 1);
+        assert_eq!(remove_calls.get(), 0);
     }
 
     #[test]
@@ -9638,7 +9807,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn spawned_agent_drop_is_nonblocking_and_uses_exact_runtime() {
+    fn spawned_agent_drop_is_nonblocking_and_skips_unowned_runtime() {
         let runtime = tempfile::tempdir().unwrap();
         let quarantined = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -9664,9 +9833,9 @@ mod tests {
             started.elapsed() < std::time::Duration::from_secs(1),
             "Drop must transfer process ownership without waiting for reap"
         );
-        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
-        assert!(runtime.path().join("quarantine.json").is_file());
-        assert!(runtime.path().join("authority.json").is_file());
+        assert!(!quarantined.load(std::sync::atomic::Ordering::Acquire));
+        assert!(!runtime.path().join("quarantine.json").exists());
+        assert!(!runtime.path().join("authority.json").exists());
         assert!(
             pending.load(std::sync::atomic::Ordering::Acquire) <= 1,
             "Drop may finish reap immediately or retain exactly one pending owner"
