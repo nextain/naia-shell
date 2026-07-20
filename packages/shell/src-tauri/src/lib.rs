@@ -342,6 +342,10 @@ impl Drop for CascadeProcess {
 
 struct AppState {
     agent: Mutex<Option<AgentProcess>>,
+    /// Serializes every agent spawn/publication with Discord repair and quarantine.
+    discord_lifecycle: Mutex<()>,
+    /// Process-local fail-closed latch. Only verified explicit repair clears it.
+    discord_quarantined: std::sync::atomic::AtomicBool,
     /// Serializes Discord credential and binding mutations across async Tauri commands.
     /// A single operation owns manifest/key rollback and the corresponding agent restart.
     discord_config_operation: tokio::sync::Mutex<()>,
@@ -380,6 +384,14 @@ fn lock_or_recover<'a, T>(mutex: &'a Mutex<T>, name: &str) -> MutexGuard<'a, T> 
             poisoned.into_inner()
         }
     }
+}
+
+fn with_discord_lifecycle<T, F>(lifecycle: &Mutex<()>, operation: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    let _guard = lock_or_recover(lifecycle, "state.discord_lifecycle");
+    operation()
 }
 
 fn is_valid_discord_snowflake(value: &str) -> bool {
@@ -1081,6 +1093,8 @@ fn resolve_paired_bundled_agent_script(app_handle: &AppHandle) -> Result<String,
 fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
+    discord_quarantined: &std::sync::atomic::AtomicBool,
+    discord_repair_bypass: bool,
 ) -> Result<AgentProcess, String> {
     use std::io::Write as _;
 
@@ -1167,7 +1181,11 @@ fn spawn_agent_core(
                 cmd.env("NAIA_ADK_PATH", adk_path_str);
                 let bindings_path = settings_dir.join("discord-bindings.json");
                 let runtime_dir = settings_dir.join("discord-runtime");
-                if discord_runtime_activation_allowed(&runtime_dir) {
+                if discord_runtime_activation_allowed(
+                    discord_quarantined,
+                    &runtime_dir,
+                    discord_repair_bypass,
+                ) {
                     if let Ok(metadata) = std::fs::metadata(&bindings_path) {
                         if metadata.is_file() && metadata.len() <= 512 * 1024 {
                             if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
@@ -2164,19 +2182,22 @@ fn restart_agent(
             &empty_db
         }
     };
-    match spawn_agent_core(app_handle, db) {
-        Ok(process) => {
-            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
-            *guard = Some(process);
-            log_both("[Naia] agent-core restarted");
-            drop(guard);
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            // Replay cached startup credentials so agent recovers auth state after crash.
-            replay_startup_messages_to_agent(state);
-            send_to_agent(state, message, None, audit_db)
+    let restarted = with_discord_lifecycle(&state.discord_lifecycle, || {
+        match spawn_agent_core(app_handle, db, &state.discord_quarantined, false) {
+            Ok(process) => {
+                let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+                *guard = Some(process);
+                log_both("[Naia] agent-core restarted");
+                Ok(())
+            }
+            Err(e) => Err(format!("Restart failed: {}", e)),
         }
-        Err(e) => Err(format!("Restart failed: {}", e)),
-    }
+    });
+    restarted?;
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Replay cached startup credentials so agent recovers auth state after crash.
+    replay_startup_messages_to_agent(state);
+    send_to_agent(state, message, None, audit_db)
 }
 
 fn restart_agent_for_discord_config(
@@ -2185,18 +2206,21 @@ fn restart_agent_for_discord_config(
     audit_db: &audit::AuditDb,
     expected_generation: Option<u64>,
 ) -> Result<(), String> {
-    run_discord_repair_activation(
-        || clear_discord_quarantine_marker(&discord_runtime_dir()?),
-        || {
-            restart_agent_for_discord_config_unmarked(
-                state,
-                app_handle,
-                audit_db,
-                expected_generation,
-            )
-        },
-        || write_discord_quarantine_marker(&discord_runtime_dir()?),
-    )
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        run_discord_repair_activation(
+            &state.discord_quarantined,
+            || clear_discord_quarantine_marker(&discord_runtime_dir()?),
+            || {
+                restart_agent_for_discord_config_unmarked(
+                    state,
+                    app_handle,
+                    audit_db,
+                    expected_generation,
+                )
+            },
+            || write_discord_quarantine_marker(&discord_runtime_dir()?),
+        )
+    })
 }
 
 fn restart_agent_for_discord_config_unmarked(
@@ -2224,7 +2248,7 @@ fn restart_agent_for_discord_config_unmarked(
     // The old process may have raced the first tombstone and rewritten status
     // while it was terminating. Reassert revocation after it is fully reaped.
     revoke_discord_runtime_authority()?;
-    match spawn_agent_core(app_handle, audit_db) {
+    match spawn_agent_core(app_handle, audit_db, &state.discord_quarantined, true) {
         Ok(process) => {
             let mut guard =
                 lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
@@ -2366,14 +2390,29 @@ fn clear_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), Stri
     }
 }
 
-fn discord_runtime_activation_allowed(runtime: &std::path::Path) -> bool {
-    discord_quarantine_marker_path(runtime)
+fn discord_runtime_activation_allowed(
+    quarantined: &std::sync::atomic::AtomicBool,
+    runtime: &std::path::Path,
+    repair_bypass: bool,
+) -> bool {
+    if repair_bypass {
+        return true;
+    }
+    if quarantined.load(std::sync::atomic::Ordering::Acquire) {
+        return false;
+    }
+    let marker_allows = discord_quarantine_marker_path(runtime)
         .try_exists()
         .map(|exists| !exists)
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if !marker_allows {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+    }
+    marker_allows
 }
 
 fn run_discord_repair_activation<C, A, M>(
+    quarantined: &std::sync::atomic::AtomicBool,
     clear_marker: C,
     activate: A,
     restore_marker: M,
@@ -2383,13 +2422,22 @@ where
     A: FnOnce() -> Result<(), String>,
     M: FnOnce() -> Result<(), String>,
 {
-    clear_marker()?;
+    if let Err(error) = clear_marker() {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+        return Err(error);
+    }
     match activate() {
-        Ok(()) => Ok(()),
-        Err(error) => match restore_marker() {
-            Ok(()) => Err(error),
-            Err(_) => Err("discord_activation_quarantine_uncertain".to_string()),
-        },
+        Ok(()) => {
+            quarantined.store(false, std::sync::atomic::Ordering::Release);
+            Ok(())
+        }
+        Err(error) => {
+            quarantined.store(true, std::sync::atomic::Ordering::Release);
+            match restore_marker() {
+                Ok(()) => Err(error),
+                Err(_) => Err("discord_activation_quarantine_uncertain".to_string()),
+            }
+        }
     }
 }
 
@@ -3452,7 +3500,7 @@ fn classify_agent_secret_lookup(
         #[cfg(any(target_os = "macos", test))]
         AgentSecretLookupPlatform::MacOs => _exit_code == Some(44),
         #[cfg(any(not(any(target_os = "windows", target_os = "macos")), test))]
-        AgentSecretLookupPlatform::Linux => _stderr.is_empty(),
+        AgentSecretLookupPlatform::Linux => _exit_code == Some(1) && _stderr.is_empty(),
     };
     if absent {
         Err("token_not_found".to_string())
@@ -3788,6 +3836,15 @@ where
 }
 
 fn quarantine_discord_runtime(state: &AppState) -> Result<(), String> {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        quarantine_discord_runtime_locked(state)
+    })
+}
+
+fn quarantine_discord_runtime_locked(state: &AppState) -> Result<(), String> {
+    state
+        .discord_quarantined
+        .store(true, std::sync::atomic::Ordering::Release);
     let marker_result =
         discord_runtime_dir().and_then(|runtime| write_discord_quarantine_marker(&runtime));
     let initial_revoke_result = revoke_discord_runtime_authority();
@@ -4593,10 +4650,27 @@ fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), S
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
             .map_err(|_| "discord_config_write_failed".to_string())?;
     }
+    #[cfg(unix)]
+    sync_parent_directory_with(
+        || std::fs::File::open(parent),
+        |directory| directory.sync_all(),
+    )
+    .map_err(|_| "discord_config_write_failed".to_string())?;
+    #[cfg(not(unix))]
     if let Ok(directory) = std::fs::File::open(parent) {
         let _ = directory.sync_all();
     }
     Ok(())
+}
+
+#[cfg(any(unix, test))]
+fn sync_parent_directory_with<T, O, S>(open_directory: O, sync_directory: S) -> std::io::Result<()>
+where
+    O: FnOnce() -> std::io::Result<T>,
+    S: FnOnce(&T) -> std::io::Result<()>,
+{
+    let directory = open_directory()?;
+    sync_directory(&directory)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -4776,13 +4850,14 @@ async fn discord_save_bindings(
                 return Err("discord_bindings_too_large".to_string());
             }
             let previous = read_discord_file_preimage(&path)?;
-            write_owner_only_atomic(&path, &bytes)?;
-            let activation = restart_agent_for_discord_config(
-                app_state,
-                &app_handle,
-                &audit_state.db,
-                (!clearing_all_bindings).then_some(generation),
-            );
+            let activation = write_owner_only_atomic(&path, &bytes).and_then(|()| {
+                restart_agent_for_discord_config(
+                    app_state,
+                    &app_handle,
+                    &audit_state.db,
+                    (!clearing_all_bindings).then_some(generation),
+                )
+            });
             if clearing_all_bindings {
                 finish_discord_clear_activation(activation, || {
                     quarantine_discord_runtime(app_state)
@@ -6769,6 +6844,8 @@ pub fn run() {
 
     builder.manage(AppState {
             agent: Mutex::new(None),
+            discord_lifecycle: Mutex::new(()),
+            discord_quarantined: std::sync::atomic::AtomicBool::new(false),
             discord_config_operation: tokio::sync::Mutex::new(()),
             discord_inbox_authorized_bindings:
                 tokio::sync::Mutex::new(None),
@@ -7167,11 +7244,19 @@ pub fn run() {
             }
 
             // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
-            match spawn_agent_core(&app_handle, &audit_db) {
-                Ok(process) => {
-                    let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
-                    *guard = Some(process);
-                    drop(guard);
+            let agent_spawn = with_discord_lifecycle(&state.discord_lifecycle, || {
+                let process = spawn_agent_core(
+                    &app_handle,
+                    &audit_db,
+                    &state.discord_quarantined,
+                    false,
+                )?;
+                let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
+                *guard = Some(process);
+                Ok::<(), String>(())
+            });
+            match agent_spawn {
+                Ok(()) => {
                     log_both("[Naia] agent-core started");
                     // Emit running:true ??naia-agent is the tool backend after #201
                     let _ = app_handle.emit(
@@ -7732,6 +7817,24 @@ mod tests {
             classify_agent_secret_lookup(
                 AgentSecretLookupPlatform::Linux,
                 false,
+                None,
+                b"",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                Some(2),
+                b"",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
                 Some(1),
                 b"secret service unavailable",
             ),
@@ -8240,10 +8343,20 @@ mod tests {
     #[test]
     fn discord_quarantine_marker_blocks_later_spawn_until_explicit_repair() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(discord_runtime_activation_allowed(dir.path()));
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        assert!(discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            false,
+        ));
 
         write_discord_quarantine_marker(dir.path()).unwrap();
-        assert!(!discord_runtime_activation_allowed(dir.path()));
+        assert!(!discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            false,
+        ));
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -8258,14 +8371,25 @@ mod tests {
         }
 
         clear_discord_quarantine_marker(dir.path()).unwrap();
-        assert!(discord_runtime_activation_allowed(dir.path()));
+        assert!(!discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            false,
+        ));
+        assert!(discord_runtime_activation_allowed(
+            &quarantined,
+            dir.path(),
+            true,
+        ));
     }
 
     #[test]
     fn discord_repair_activation_restores_marker_on_failure_and_uncertainty() {
         let restore_calls = std::cell::Cell::new(0);
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
         assert_eq!(
             run_discord_repair_activation(
+                &quarantined,
                 || Ok(()),
                 || Err("activation failed".to_string()),
                 || {
@@ -8276,10 +8400,12 @@ mod tests {
             Err("activation failed".to_string())
         );
         assert_eq!(restore_calls.get(), 1);
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
 
         let uncertain_restore_calls = std::cell::Cell::new(0);
         assert_eq!(
             run_discord_repair_activation(
+                &quarantined,
                 || Ok(()),
                 || Err("activation failed".to_string()),
                 || {
@@ -8294,6 +8420,7 @@ mod tests {
         let success_restore_calls = std::cell::Cell::new(0);
         assert_eq!(
             run_discord_repair_activation(
+                &quarantined,
                 || Ok(()),
                 || Ok(()),
                 || {
@@ -8304,6 +8431,76 @@ mod tests {
             Ok(())
         );
         assert_eq!(success_restore_calls.get(), 0);
+        assert!(!quarantined.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn discord_lifecycle_lock_blocks_normal_spawn_during_repair_or_quarantine() {
+        let lifecycle = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let quarantined = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runtime = tempfile::tempdir().unwrap().path().to_path_buf();
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        let quarantine_lifecycle = lifecycle.clone();
+        let quarantine_latch = quarantined.clone();
+        let quarantine = std::thread::spawn(move || {
+            with_discord_lifecycle(&quarantine_lifecycle, || {
+                quarantine_latch.store(true, std::sync::atomic::Ordering::Release);
+                locked_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+            });
+        });
+
+        locked_rx.recv().unwrap();
+        assert!(
+            lifecycle.try_lock().is_err(),
+            "normal spawn must not enter while quarantine owns the lifecycle"
+        );
+        release_tx.send(()).unwrap();
+        quarantine.join().unwrap();
+
+        let (repair_locked_tx, repair_locked_rx) = std::sync::mpsc::channel();
+        let (repair_release_tx, repair_release_rx) = std::sync::mpsc::channel();
+        let repair_lifecycle = lifecycle.clone();
+        let repair = std::thread::spawn(move || {
+            with_discord_lifecycle(&repair_lifecycle, || {
+                repair_locked_tx.send(()).unwrap();
+                repair_release_rx.recv().unwrap();
+            });
+        });
+        repair_locked_rx.recv().unwrap();
+        assert!(
+            lifecycle.try_lock().is_err(),
+            "normal spawn must not enter while explicit repair owns the lifecycle"
+        );
+        repair_release_tx.send(()).unwrap();
+        repair.join().unwrap();
+
+        with_discord_lifecycle(&lifecycle, || {
+            assert!(
+                !discord_runtime_activation_allowed(&quarantined, &runtime, false),
+                "normal spawn after quarantine may start Agent but must not arm Discord"
+            );
+            assert!(
+                discord_runtime_activation_allowed(&quarantined, &runtime, true),
+                "only explicit repair may bypass the fail-closed latch"
+            );
+        });
+    }
+
+    #[test]
+    fn parent_directory_persistence_errors_are_propagated() {
+        assert!(sync_parent_directory_with(
+            || Err::<(), _>(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "open")),
+            |_| Ok(()),
+        )
+        .is_err());
+        assert!(sync_parent_directory_with(
+            || Ok(()),
+            |_| Err(std::io::Error::new(std::io::ErrorKind::Other, "sync")),
+        )
+        .is_err());
     }
 
     #[test]
