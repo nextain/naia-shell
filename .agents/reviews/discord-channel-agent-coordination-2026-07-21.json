@@ -71,8 +71,8 @@
     "agent_runtime": "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc",
     "agent_test_evidence": "cdd2e76b9ba88fe712068f2c1357714f6e0c2f63",
     "agent_v_model_evidence": "560157dd0e07f8d3b8d8c4988a65514572a628fb",
-    "shell_strengthened_test": "841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac",
-    "shell_production": "841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac",
+    "shell_strengthened_test": "410d0b21947e14d19f616a37566ef5039df0ce3b",
+    "shell_production": "410d0b21947e14d19f616a37566ef5039df0ce3b",
     "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"
   }
 }

@@ -25,9 +25,9 @@
 - Agent V-model evidence HEAD:
   `560157dd0e07f8d3b8d8c4988a65514572a628fb`
 - Shell strengthened-test commit:
-  `841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac`
+  `410d0b21947e14d19f616a37566ef5039df0ce3b`
 - Reviewed Shell production HEAD:
-  `841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac`
+  `410d0b21947e14d19f616a37566ef5039df0ce3b`
 - Paired proto SHA-256:
   `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
 - Live Discord and real OS credential-store acceptance remain explicit
@@ -37,7 +37,7 @@
   independently reconverged with two consecutive CLEAN reviews on the
   Agent/Shell evidence HEADs above. DEVELOPMENT and INTEGRATION are explicitly
   rerun on the final production/evidence snapshots. Current Shell native suite
-  is 152/152 and the paired wire suite is 9/9.
+  is 153/153 and the paired wire suite is 9/9.
 
 ## Outcome
 
