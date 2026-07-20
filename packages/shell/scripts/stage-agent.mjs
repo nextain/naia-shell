@@ -23,13 +23,90 @@
  *
  * cwd = packages/shell (package.json 스크립트/ tauri beforeBuildCommand 기준).
  */
-import { execSync } from "node:child_process";
-import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync, execSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const SHELL = process.cwd(); // packages/shell
-const AGENT = resolve(SHELL, "../../../naia-agent"); // 형제 repo (dev-setup.mjs 와 동일 가정)
 const STAGE = resolve(SHELL, "src-tauri/agent");
+const REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290";
+const REQUIRED_PROTO_SHA256 = "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92";
+
+function die(message) {
+	console.error(message);
+	process.exit(1);
+}
+
+function gitOutput(dir, args) {
+	try {
+		return execFileSync("git", ["-C", dir, ...args], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+	} catch {
+		return null;
+	}
+}
+
+function gitRootForPath(path, isFile) {
+	const dir = isFile ? dirname(resolve(path)) : resolve(path);
+	const root = gitOutput(dir, ["rev-parse", "--show-toplevel"]);
+	if (!root) die(`[stage-agent] path is not inside a git checkout: ${path}`);
+	return root.replaceAll("\\", "/");
+}
+
+function sha256File(path) {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function normalizePath(path) {
+	return resolve(path).replaceAll("\\", "/");
+}
+
+const AGENT_SCRIPT = process.env.NAIA_AGENT_SCRIPT;
+const AGENT_PROTO_DIR = process.env.NAIA_AGENT_PROTO_DIR;
+if (!AGENT_SCRIPT || !AGENT_PROTO_DIR) {
+	die("[stage-agent] NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR are required; run through stage-runtime paired gate");
+}
+const AGENT = gitRootForPath(AGENT_SCRIPT, true);
+const protoRoot = gitRootForPath(AGENT_PROTO_DIR, false);
+if (AGENT !== protoRoot) {
+	die(`[stage-agent] NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must come from the same checkout: ${AGENT} !== ${protoRoot}`);
+}
+if (normalizePath(AGENT_SCRIPT) !== normalizePath(resolve(AGENT, "scripts/builds/agent-stdio-entry.mjs"))) {
+	die(`[stage-agent] NAIA_AGENT_SCRIPT must be scripts/builds/agent-stdio-entry.mjs from paired checkout: ${AGENT_SCRIPT}`);
+}
+if (normalizePath(AGENT_PROTO_DIR) !== normalizePath(resolve(AGENT, "src/main/adapters/grpc"))) {
+	die(`[stage-agent] NAIA_AGENT_PROTO_DIR must be src/main/adapters/grpc from paired checkout: ${AGENT_PROTO_DIR}`);
+}
+if (gitOutput(AGENT, ["rev-parse", "HEAD"]) !== REQUIRED_AGENT_COMMIT) {
+	die(`[stage-agent] paired naia-agent checkout must be exactly ${REQUIRED_AGENT_COMMIT}: ${AGENT}`);
+}
+if (gitOutput(AGENT, ["status", "--porcelain", "--", "scripts/builds/agent-stdio-entry.mjs"]) !== "") {
+	die(`[stage-agent] paired naia-agent entrypoint must be clean: ${AGENT}`);
+}
+if (gitOutput(AGENT, ["status", "--porcelain", "--", "src/main/adapters/grpc/naia_agent.proto"]) !== "") {
+	die(`[stage-agent] paired naia-agent proto must be clean: ${AGENT}`);
+}
+if (gitOutput(AGENT, ["status", "--porcelain"]) !== "") {
+	die(`[stage-agent] paired naia-agent checkout must be clean: ${AGENT}`);
+}
+if (sha256File(resolve(AGENT_PROTO_DIR, "naia_agent.proto")) !== REQUIRED_PROTO_SHA256) {
+	die(`[stage-agent] paired naia-agent proto SHA256 must be ${REQUIRED_PROTO_SHA256}: ${AGENT_PROTO_DIR}`);
+}
+
+function assertPairedCheckoutStillClean(stage) {
+	if (gitOutput(AGENT, ["status", "--porcelain"]) !== "") {
+		die(`[stage-agent] paired naia-agent checkout became dirty after ${stage}: ${AGENT}`);
+	}
+	if (sha256File(resolve(AGENT_PROTO_DIR, "naia_agent.proto")) !== REQUIRED_PROTO_SHA256) {
+		die(`[stage-agent] paired naia-agent proto changed after ${stage}: ${AGENT_PROTO_DIR}`);
+	}
+	if (gitOutput(AGENT, ["rev-parse", "HEAD"]) !== REQUIRED_AGENT_COMMIT) {
+		die(`[stage-agent] paired naia-agent commit changed after ${stage}: ${AGENT}`);
+	}
+}
 const AGENT_LOCAL_DEPENDENCIES = [
 	{
 		name: "@naia/kb-compiler",
@@ -74,6 +151,7 @@ for (const dependency of AGENT_LOCAL_DEPENDENCIES) {
 console.log("[stage-agent] ① agent install + build");
 run("pnpm install --frozen-lockfile", AGENT);
 run("pnpm run build", AGENT);
+assertPairedCheckoutStillClean("agent install/build");
 
 console.log(`[stage-agent] ② deploy (prod, hoisted) → ${STAGE}`);
 const wsFile = resolve(AGENT, "pnpm-workspace.yaml");
@@ -88,6 +166,7 @@ try {
 } finally {
 	if (!hadWs && existsSync(wsFile)) rmSync(wsFile, { force: true });
 }
+assertPairedCheckoutStillClean("agent deploy");
 
 console.log("[stage-agent] ③ dist 복사 (deploy 는 dist gitignore 라 미포함)");
 const dist = resolve(AGENT, "dist");
@@ -109,6 +188,16 @@ const stagedGrpcProto = resolve(
 	"dist/main/adapters/grpc/naia_agent.proto",
 );
 cpSync(grpcProto, stagedGrpcProto);
+assertPairedCheckoutStillClean("dist/proto copy");
+
+const sourceEntrypoint = resolve(AGENT, "scripts/builds/agent-stdio-entry.mjs");
+const stagedEntrypoint = resolve(STAGE, "scripts/builds/agent-stdio-entry.mjs");
+if (sha256File(stagedGrpcProto) !== REQUIRED_PROTO_SHA256) {
+	die(`[stage-agent] staged proto SHA256 must be ${REQUIRED_PROTO_SHA256}: ${stagedGrpcProto}`);
+}
+if (sha256File(stagedEntrypoint) !== sha256File(sourceEntrypoint)) {
+	die(`[stage-agent] staged agent entrypoint hash does not match paired source: ${stagedEntrypoint}`);
+}
 
 // 스테이징 검증 — 번들 resource(agent/{scripts,dist,node_modules,package.json})가 참조하는
 // 실 엔트리·deps 가 전부 실재해야. production 엔트리 = scripts/builds/agent-stdio-entry.mjs

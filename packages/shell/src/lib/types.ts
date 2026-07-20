@@ -233,7 +233,35 @@ export type AgentResponseChunk =
 			}[];
 	  }
 	| { type: "finish"; requestId: string }
-	| { type: "error"; requestId: string; message: string };
+	| {
+			type: "grounding";
+			requestId: string;
+			status: "grounded" | "no_evidence" | "uncompiled" | "unavailable";
+			sources: { title: string; sourceUris: string[] }[];
+	  }
+	| {
+			type: "artifact";
+			requestId: string;
+			artifact: { id: string; kind: "image"; mimeType: string; sizeBytes: number; localRef: string; name?: string };
+	  }
+	| {
+			type: "provider_session";
+			requestId: string;
+			sessionId: string;
+			providerSessionRef: string;
+			state: "started" | "resumed" | "closed";
+	  }
+	| {
+			type: "processing_disclosure";
+			requestId: string;
+			workload: "main_llm" | "sub_llm" | "memory_llm" | "embedding" | "network_tool";
+			destination: "local_device" | "private_managed" | "external_cloud";
+			decision: "allowed" | "blocked" | "confirmation_required";
+			processingProfileRef: string;
+			provider?: string;
+			model?: string;
+	  }
+	| { type: "error"; requestId: string; message: string; code?: import("./wire-errors").WireErrorCode };
 
 // === Skill Manifest (from ~/.naia/skills/{name}/skill.json) ===
 

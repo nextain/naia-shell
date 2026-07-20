@@ -51,6 +51,47 @@ describe("makeShellChatService (drop-in seam)", () => {
     await svc.cancelChat("r1");
     expect(invokes.some((i) => i.cmd === "cancel_stream" && i.args["requestId"] === "r1")).toBe(true);
   });
+  it("UC-WIRE-V1 실제 shell seam이 attachment/channel/grounding/provider session을 보존", async () => {
+    const { live, invokes } = mockTauri();
+    const svc = makeShellChatService({ live });
+    await svc.sendChatMessage({
+      message: "화면 설명", provider: { provider: "codex", model: "main" },
+      history: [], onChunk: () => {}, requestId: "wire-r1", sessionId: "s1",
+      attachments: [{ id: "a1", kind: "image", mimeType: "image/png", sizeBytes: 10, localRef: "img_1" }],
+      channel: { kind: "shell" },
+      grounding: { policy: "required", knowledgeScope: "workshop" },
+      providerSession: { mode: "resume", providerSessionRef: "opaque-ref" },
+      processing: { processingProfileRef: "profile-local-cloud-001" },
+    });
+    const msg = JSON.parse(invokes[0]!.args["message"] as string);
+    expect(msg.messages[0].attachments[0].localRef).toBe("img_1");
+    expect(msg.channel).toEqual({ kind: "shell" });
+    expect(msg.grounding).toEqual({ policy: "required", knowledgeScope: "workshop" });
+    expect(msg.providerSession).toEqual({ mode: "resume", providerSessionRef: "opaque-ref" });
+    expect(msg.processing).toEqual({ processingProfileRef: "profile-local-cloud-001" });
+  });
+  it("UC-WIRE-V1 processing disclosure를 public onChunk wire 형상으로 보존", async () => {
+    const { live, emit } = mockTauri();
+    const svc = makeShellChatService({ live });
+    const got: Record<string, unknown>[] = [];
+    await svc.sendChatMessage({
+      message: "x", provider: { provider: "o", model: "m" }, history: [],
+      onChunk: (chunk) => got.push(chunk), requestId: "processing-r1",
+    });
+    await Promise.resolve();
+    emit(JSON.stringify({
+      type: "processing_disclosure", requestId: "processing-r1",
+      workload: "embedding", destination: "external_cloud", decision: "allowed",
+      processingProfileRef: "profile-local-cloud-001",
+      provider: "openai", model: "text-embedding-3-small",
+    }));
+    expect(got).toEqual([{
+      type: "processing_disclosure", requestId: "processing-r1",
+      workload: "embedding", destination: "external_cloud", decision: "allowed",
+      processingProfileRef: "profile-local-cloud-001",
+      provider: "openai", model: "text-embedding-3-small",
+    }]);
+  });
   it("sendCredsUpdate: creds_update wire(secret 채널)", async () => {
     const { live, invokes } = mockTauri();
     const svc = makeShellChatService({ live });

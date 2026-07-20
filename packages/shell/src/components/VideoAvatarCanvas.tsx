@@ -10,12 +10,9 @@ import {
 	ensureRemoteCharacter,
 	localFacadeUrlFromReady,
 	probeCascadeHealth,
+	remoteCascadeUrlFromConfig,
 } from "../lib/avatar/cascade-renderer";
-import { detectGpuVramGb } from "../lib/capabilities/gpu";
-import {
-	resolveActiveTier,
-	resolveLocalCapabilities,
-} from "../lib/capabilities/vram-tiers";
+import { hasExplicitLocalAvatarProfile } from "../lib/avatar/nva-gate";
 import { loadConfig } from "../lib/config";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
@@ -154,27 +151,16 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			const sep = adkPath.includes("\\") ? "\\" : "/";
 			const bundleDir = `${adkPath}${sep}naia-settings${sep}nva-files${sep}${bundleName}`;
 
-			// 로컬 아바타 프로파일이 적용됐는가 = 로컬 GPU 프로파일이 "avatar" capability 를 실제 제공.
-			// SettingsTab 의 cascadeAvatarPossible 과 **동일 로직**(capability 기반). 이 값으로 미연결 시
-			// "로컬 모델 대기중"(R7) vs "미연결"을 구분하고, 자동기동/폴링 복구 여부를 결정한다.
+			// Local cascade may start only from an explicit avatar-capable local profile.
+			// Legacy auto/off or stale remote config must not unlock local NVA after logout.
 			const cfg = loadConfig();
-			let canLocalCascade = false;
-			if (cfg?.naiaKey && cfg.localGpuTier && cfg.localGpuTier !== "off") {
-				const vram = await detectGpuVramGb();
-				if (disposed) return;
-				const tier = resolveActiveTier(cfg.localGpuTier, vram);
-				canLocalCascade = resolveLocalCapabilities(
-					tier,
-					cfg.local8gFocus ?? cfg.localAvatarVoiceFocus,
-				).includes("avatar");
-			}
+			const canLocalCascade = hasExplicitLocalAvatarProfile(cfg);
 
 			// (A) cascade 토킹 모드 — 명시한 원격 NVA Host 또는 로컬 spawn facade가 /health에 도달할 때.
 			// ★알려진 URL 이 없어도 이미 떠 있는 cascade(warm/이전 세션/설정 탭 기동)가 있으면 그 facade
 			//   URL 을 확보한다(self-heal): localFacadeUrl store 는 인메모리라 앱 재시작으로 비고,
-			//   canLocalCascade(loadConfig.naiaKey 의존) 판정과 무관하게 백엔드가 살아있으면 연결되게 한다.
 			//   start_cascade 는 실행 중이면 캐시 ready 반환(재spawn 아님) → facade_port 확보.
-			const configuredCascadeUrl = cfg?.cascadeRuntimeUrl?.trim();
+			const configuredCascadeUrl = remoteCascadeUrlFromConfig(cfg);
 			// An explicitly configured NVA Host is a user routing decision. It must
 			// win over a local profile facade and must never trigger local Ditto as
 			// an implicit fallback when the remote health check is transiently down.

@@ -83,11 +83,30 @@ describe("syncLinkedChannels", () => {
 
 		await syncLinkedChannels();
 
-		// 2 fetch calls: bot-token restore + linked-channels
-		expect(fetchSpy).toHaveBeenCalledTimes(2);
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
 		// No discord_api invoke should happen (Logger may call invoke for frontend_log)
 		expect(mockedInvoke).not.toHaveBeenCalledWith(
 			"discord_api",
+			expect.anything(),
+		);
+		fetchSpy.mockRestore();
+	});
+
+	it("does not fetch or write raw Discord bot tokens from the WebView", async () => {
+		seedConfig();
+		const fetchSpy = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(mockLinkedChannelsResponse([]));
+
+		await syncLinkedChannels();
+
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		expect(fetchSpy).toHaveBeenCalledWith(
+			"https://www.naia.land/api/gateway/linked-channels",
+			expect.anything(),
+		);
+		expect(mockedInvoke).not.toHaveBeenCalledWith(
+			"write_discord_bot_token",
 			expect.anything(),
 		);
 		fetchSpy.mockRestore();

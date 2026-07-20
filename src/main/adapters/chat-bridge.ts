@@ -23,6 +23,10 @@ export interface ChatSubmitInput {
   readonly enableTools?: boolean;
   readonly enableThinking?: boolean;
   readonly disabledSkills?: readonly string[];
+  readonly channel?: ChatRequest["channel"];
+  readonly grounding?: ChatRequest["grounding"];
+  readonly providerSession?: ChatRequest["providerSession"];
+  readonly processing?: ChatRequest["processing"];
 }
 
 export class ChatBridge {
@@ -42,6 +46,10 @@ export class ChatBridge {
       ...(input.enableTools !== undefined ? { enableTools: input.enableTools } : {}),
       ...(input.enableThinking !== undefined ? { enableThinking: input.enableThinking } : {}),
       ...(input.disabledSkills !== undefined ? { disabledSkills: input.disabledSkills } : {}),
+      ...(input.channel !== undefined ? { channel: input.channel } : {}),
+      ...(input.grounding !== undefined ? { grounding: input.grounding } : {}),
+      ...(input.providerSession !== undefined ? { providerSession: input.providerSession } : {}),
+      ...(input.processing !== undefined ? { processing: input.processing } : {}),
     };
     return this.deps.chat.startTurn(req, render);
   }

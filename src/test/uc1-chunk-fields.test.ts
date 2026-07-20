@@ -15,4 +15,28 @@ describe("UC1 chunk 필드 보존 (2-AI 리뷰 HIGH fix)", () => {
     });
     expect(w).toMatchObject({ type: "approval_request", toolName: "execute_command", tier: "T2", args: { command: "rm x" }, description: "파일 삭제" });
   });
+
+  it("UC-WIRE-V1 구조화 결과와 오류 코드를 wire 형상으로 보존한다", () => {
+    expect(chatChunkToWire("r1", {
+      kind: "grounding", status: "grounded",
+      sources: [{ title: "수업 안내", sourceUris: ["kb://workshop"] }],
+    })).toMatchObject({ type: "grounding", status: "grounded" });
+    expect(chatChunkToWire("r1", {
+      kind: "artifact",
+      artifact: { id: "a1", kind: "image", mimeType: "image/png", sizeBytes: 2, localRef: "img_1" },
+    })).toMatchObject({ type: "artifact", artifact: { localRef: "img_1" } });
+    expect(chatChunkToWire("r1", {
+      kind: "error", message: "invalid", code: "ATTACHMENT_INVALID_REF",
+    })).toMatchObject({ type: "error", code: "ATTACHMENT_INVALID_REF" });
+    expect(chatChunkToWire("r1", {
+      kind: "processingDisclosure", workload: "embedding", destination: "external_cloud",
+      decision: "allowed", processingProfileRef: "profile-local-cloud-001",
+      provider: "openai", model: "text-embedding-3-small",
+    })).toEqual({
+      type: "processing_disclosure", requestId: "r1", workload: "embedding",
+      destination: "external_cloud", decision: "allowed",
+      processingProfileRef: "profile-local-cloud-001",
+      provider: "openai", model: "text-embedding-3-small",
+    });
+  });
 });

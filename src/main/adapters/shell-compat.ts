@@ -12,6 +12,7 @@ import { MessageRouter } from "./message-router.js";
 /** old shell SendChatOptions 호환(필요 필드만; tts/webhook 은 후속 UC). */
 export interface ShellSendOptions {
   message: string;
+  attachments?: ChatMessage["attachments"];
   provider: ProviderSelect & { apiKey?: string; naiaKey?: string };
   history: readonly ChatMessage[];
   onChunk: (chunk: Record<string, unknown>) => void; // wire AgentResponseChunk
@@ -24,6 +25,10 @@ export interface ShellSendOptions {
   enableThinking?: boolean;
   gatewayUrl?: string;
   disabledSkills?: readonly string[];
+  channel?: ChatRequest["channel"];
+  grounding?: ChatRequest["grounding"];
+  providerSession?: ChatRequest["providerSession"];
+  processing?: ChatRequest["processing"];
   activityResume?: ChatRequest["activityResume"];
 }
 
@@ -42,8 +47,21 @@ export function chatChunkToWire(requestId: string, c: ChatChunk): Record<string,
     case "tokenWarning": return { ...(c.raw && typeof c.raw === "object" ? c.raw as object : {}), type: "token_warning", requestId };
     case "compacted": return { type: "compacted", requestId, droppedCount: c.droppedCount };
     case "panelToolCall": return { type: "panel_tool_call", requestId, toolCallId: c.toolCallId, toolName: c.toolName, args: c.args }; // UC-PANEL FR-PANEL-2 → ChatPanel handleChunk
+    case "grounding": return { type: "grounding", requestId, status: c.status, sources: c.sources };
+    case "artifact": return { type: "artifact", requestId, artifact: c.artifact };
+    case "providerSession": return {
+      type: "provider_session", requestId, sessionId: c.sessionId,
+      providerSessionRef: c.providerSessionRef, state: c.state,
+    };
+    case "processingDisclosure": return {
+      type: "processing_disclosure", requestId, workload: c.workload,
+      destination: c.destination, decision: c.decision,
+      processingProfileRef: c.processingProfileRef,
+      ...(c.provider !== undefined ? { provider: c.provider } : {}),
+      ...(c.model !== undefined ? { model: c.model } : {}),
+    };
     case "finish": return { type: "finish", requestId };
-    case "error": return { type: "error", requestId, message: c.message };
+    case "error": return { type: "error", requestId, message: c.message, ...(c.code !== undefined ? { code: c.code } : {}) };
   }
 }
 
@@ -81,7 +99,11 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         requestId: opts.requestId,
         clientId,
         provider: providerSafe,
-        messages: [...opts.history, { role: "user" as const, content: opts.message }],
+        messages: [...opts.history, {
+          role: "user" as const,
+          content: opts.message,
+          ...(opts.attachments !== undefined ? { attachments: opts.attachments } : {}),
+        }],
         ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
         ...(opts.systemPrompt !== undefined ? { systemPrompt: opts.systemPrompt } : {}),
         ...(opts.environmentSegments !== undefined ? { environmentSegments: opts.environmentSegments } : {}),
@@ -89,6 +111,10 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
         ...(opts.enableThinking !== undefined ? { enableThinking: opts.enableThinking } : {}),
         ...(opts.gatewayUrl !== undefined ? { gatewayUrl: opts.gatewayUrl } : {}),
         ...(opts.disabledSkills !== undefined ? { disabledSkills: opts.disabledSkills } : {}),
+        ...(opts.channel !== undefined ? { channel: opts.channel } : {}),
+        ...(opts.grounding !== undefined ? { grounding: opts.grounding } : {}),
+        ...(opts.providerSession !== undefined ? { providerSession: opts.providerSession } : {}),
+        ...(opts.processing !== undefined ? { processing: opts.processing } : {}),
         ...(opts.activityResume !== undefined ? { activityResume: opts.activityResume } : {}),
       };
       const { sent } = chat.startTurn(req, (c) => opts.onChunk(chatChunkToWire(opts.requestId, c)));

@@ -64,12 +64,14 @@ import {
 	saveConfig,
 } from "../lib/config";
 import { startDiscordRelay, stopDiscordRelay } from "../lib/discord-relay";
+import { remoteCascadeUrlFromConfig } from "../lib/avatar/cascade-renderer";
 import {
 	discoverAndPersistDiscordDmChannel,
 	getGatewayHistory,
 	resetGatewaySession,
 } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
+import { wireErrorMessage } from "../lib/wire-errors";
 import {
 	getDefaultLlmModel,
 	getLlmModel,
@@ -97,6 +99,42 @@ import type {
 	EnvironmentSegment,
 	ProviderId,
 } from "../lib/types";
+
+type StructuredAgentChunk = Extract<
+	AgentResponseChunk,
+	{
+		type:
+			| "grounding"
+			| "artifact"
+			| "provider_session"
+			| "processing_disclosure";
+	}
+>;
+
+function formatStructuredAgentChunk(chunk: StructuredAgentChunk): string {
+	switch (chunk.type) {
+		case "grounding": {
+			const sources = chunk.sources
+				.map((source) => {
+					const uris = source.sourceUris.join(", ");
+					return uris ? `${source.title} (${uris})` : source.title;
+				})
+				.join("; ");
+			return `\n\n[Grounding: ${chunk.status}]${sources ? ` ${sources}` : ""}`;
+		}
+		case "artifact": {
+			const name = chunk.artifact.name ?? chunk.artifact.id;
+			return `\n\n[Artifact: ${chunk.artifact.kind} ${name}] id=${chunk.artifact.id} localRef=${chunk.artifact.localRef} ${chunk.artifact.mimeType}, ${chunk.artifact.sizeBytes} bytes`;
+		}
+		case "provider_session":
+			return `\n\n[Provider session: ${chunk.state}] sessionId=${chunk.sessionId} providerSessionRef=${chunk.providerSessionRef}`;
+		case "processing_disclosure": {
+			const target = [chunk.provider, chunk.model].filter(Boolean).join("/");
+			return `\n\n[Processing: ${chunk.workload} -> ${chunk.destination}, ${chunk.decision}] processingProfileRef=${chunk.processingProfileRef}${target ? ` ${target}` : ""}`;
+		}
+	}
+}
+
 import { AudioQueue } from "../lib/voice/audio-queue";
 import {
 	LIVE_PROVIDER_COST_HINTS,
@@ -1583,6 +1621,12 @@ export function ChatArea({
 				// UC-compaction: 예산 압박 요약 발생 → 사용자 알림.
 				setCompactionNotice(chunk.droppedCount);
 				break;
+			case "grounding":
+			case "artifact":
+			case "provider_session":
+			case "processing_disclosure":
+				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
+				break;
 			case "discord_message":
 				// Discord DM messages are shown in the dedicated Channels tab.
 				// Ignore them here to keep the main chat clean.
@@ -1601,7 +1645,7 @@ export function ChatArea({
 						sendSentenceToTts(remaining);
 					}
 				}
-				store.appendStreamChunk(`\n[${t("chat.error")}] ${chunk.message}`);
+				store.appendStreamChunk(`\n[${t("chat.error")}] ${wireErrorMessage(chunk.code, chunk.message)}`);
 				store.finishStreaming();
 				setEmotion("neutral");
 				completeCurrentRequest(chunk.requestId);
@@ -1716,7 +1760,7 @@ export function ChatArea({
 		// nextain = LINEAR16(PCM 24k) 로 받아 speakAudio; 브라우저/미합성 provider 는 아래에서
 		// facade 내장 TTS(/stream_text) 로 폴백. (라우팅은 합성 결과가 나온 뒤 아래에서 수행.)
 		const cascadeAvatar = useCascadeAvatarStore.getState().renderer;
-		const configuredCascadeUrl = loadConfig()?.cascadeRuntimeUrl?.trim();
+		const configuredCascadeUrl = remoteCascadeUrlFromConfig(loadConfig());
 		if (cascadeAvatar && configuredCascadeUrl) {
 			// An explicit NVA Host owns TTS and avatar rendering. This keeps the proven
 			// remote cascade independent from a failed or stale local voice facade.

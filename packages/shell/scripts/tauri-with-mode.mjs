@@ -15,16 +15,80 @@
  * 라우팅(401)하지 못하게.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { platform } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const mode = process.argv[2] === "prod" ? "prod" : "dev";
 
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
-const AGENT = resolve(OS_ROOT, "..", "naia-agent");
+const REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290";
+const REQUIRED_PROTO_SHA256 = "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92";
+const AGENT_CANDIDATES = [
+	resolve(OS_ROOT, "..", "naia-agent"),
+	resolve(OS_ROOT, "..", "..", "naia-agent"),
+	resolve(OS_ROOT, "..", "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
+	resolve(OS_ROOT, "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
+];
+
+function gitOutput(dir, args) {
+	const r = spawnSync(
+		"git",
+		["-C", dir, ...args],
+		{ encoding: "utf8", shell: false },
+	);
+	if (r.status !== 0) return null;
+	return r.stdout.trim();
+}
+
+function hasRequiredAgentCommit(dir) {
+	return gitOutput(dir, ["rev-parse", "HEAD"]) === REQUIRED_AGENT_COMMIT;
+}
+
+function isCleanProto(dir) {
+	return gitOutput(dir, ["status", "--porcelain", "--", "src/main/adapters/grpc/naia_agent.proto"]) === "";
+}
+
+function isCleanAgentEntrypoint(dir) {
+	return gitOutput(dir, ["status", "--porcelain", "--", "scripts/builds/agent-stdio-entry.mjs"]) === "";
+}
+
+function isCleanCheckout(dir) {
+	return gitOutput(dir, ["status", "--porcelain"]) === "";
+}
+
+function sha256File(path) {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function isPairedAgentCheckout(dir) {
+	return (
+		existsSync(resolve(dir, "scripts/builds/agent-stdio-entry.mjs")) &&
+		existsSync(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) &&
+		hasRequiredAgentCommit(dir) &&
+		isCleanProto(dir) &&
+		isCleanAgentEntrypoint(dir) &&
+		isCleanCheckout(dir) &&
+		sha256File(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) === REQUIRED_PROTO_SHA256
+	);
+}
+
+function firstPairedAgentCheckout() {
+	for (const dir of AGENT_CANDIDATES) {
+		if (isPairedAgentCheckout(dir)) return dir;
+	}
+	return null;
+}
+
+const PAIRED_AGENT = firstPairedAgentCheckout();
+if (!PAIRED_AGENT) {
+	throw new Error(
+		`No paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT} with both agent-stdio-entry.mjs and naia_agent.proto`,
+	);
+}
 const WINDOWS_MANAGER = resolve(OS_ROOT, "..", "naia-omni-windows-manager");
 
 const env = { ...process.env };
@@ -32,7 +96,52 @@ const env = { ...process.env };
 // ── 새 코어 + 분리 에이전트 (new-naia-os 불변) ──
 env.VITE_NAIA_NEW_CORE = env.VITE_NAIA_NEW_CORE ?? "1";
 env.NAIA_AGENT_STANDALONE = env.NAIA_AGENT_STANDALONE ?? "1";
-env.NAIA_AGENT_SCRIPT = env.NAIA_AGENT_SCRIPT ?? resolve(AGENT, "scripts/builds/agent-stdio-entry.mjs");
+env.NAIA_AGENT_SCRIPT =
+	env.NAIA_AGENT_SCRIPT ?? resolve(PAIRED_AGENT, "scripts/builds/agent-stdio-entry.mjs");
+env.NAIA_AGENT_PROTO_DIR =
+	env.NAIA_AGENT_PROTO_DIR ?? resolve(PAIRED_AGENT, "src/main/adapters/grpc");
+
+function gitDirForPath(path) {
+	let dir = resolve(path);
+	if (existsSync(dir) && statSync(dir).isFile()) dir = dirname(dir);
+	const root = gitOutput(dir, ["rev-parse", "--show-toplevel"]);
+	if (!root) throw new Error(`Path is not inside a git checkout: ${path}`);
+	return root.replaceAll("\\", "/");
+}
+
+function validateAgentEnvPair(agentScript, protoDir) {
+	if (!existsSync(agentScript)) throw new Error(`NAIA_AGENT_SCRIPT not found: ${agentScript}`);
+	if (!existsSync(resolve(protoDir, "naia_agent.proto"))) {
+		throw new Error(`NAIA_AGENT_PROTO_DIR missing naia_agent.proto: ${protoDir}`);
+	}
+	const scriptRoot = gitDirForPath(agentScript);
+	const protoRoot = gitDirForPath(protoDir);
+	if (scriptRoot !== protoRoot) {
+		throw new Error(`NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must come from the same checkout: ${scriptRoot} !== ${protoRoot}`);
+	}
+	if (resolve(agentScript).replaceAll("\\", "/") !== resolve(scriptRoot, "scripts/builds/agent-stdio-entry.mjs").replaceAll("\\", "/")) {
+		throw new Error(`NAIA_AGENT_SCRIPT must be scripts/builds/agent-stdio-entry.mjs from the paired checkout: ${agentScript}`);
+	}
+	if (resolve(protoDir).replaceAll("\\", "/") !== resolve(scriptRoot, "src/main/adapters/grpc").replaceAll("\\", "/")) {
+		throw new Error(`NAIA_AGENT_PROTO_DIR must be src/main/adapters/grpc from the paired checkout: ${protoDir}`);
+	}
+	if (gitOutput(scriptRoot, ["rev-parse", "HEAD"]) !== REQUIRED_AGENT_COMMIT) {
+		throw new Error(`Paired naia-agent checkout must be exactly ${REQUIRED_AGENT_COMMIT}: ${scriptRoot}`);
+	}
+	if (!isCleanProto(scriptRoot)) {
+		throw new Error(`Paired naia-agent proto must be clean: ${scriptRoot}`);
+	}
+	if (!isCleanAgentEntrypoint(scriptRoot)) {
+		throw new Error(`Paired naia-agent entrypoint must be clean: ${scriptRoot}`);
+	}
+	if (!isCleanCheckout(scriptRoot)) {
+		throw new Error(`Paired naia-agent checkout must be clean: ${scriptRoot}`);
+	}
+	if (sha256File(resolve(protoDir, "naia_agent.proto")) !== REQUIRED_PROTO_SHA256) {
+		throw new Error(`Paired naia-agent proto SHA256 must be ${REQUIRED_PROTO_SHA256}: ${protoDir}`);
+	}
+}
+
 // ── 로컬 cascade loader (dev): 소스 sibling repo(loader/ 포함 dir) 를 가리킨다.
 // 패키지 빌드는 stage-cascade-loader.mjs 가 src-tauri/cascade-loader 로 동봉(resource_dir 해석).
 env.NAIA_CASCADE_LOADER_DIR = env.NAIA_CASCADE_LOADER_DIR ?? WINDOWS_MANAGER;
@@ -87,7 +196,8 @@ if (existsSync(envPath)) {
 	process.stdout.write(`[tauri-with-mode] ${mode.toUpperCase()} — .env.${mode} 없음; config 기본값 사용\n`);
 }
 
-process.stdout.write(`[tauri-with-mode] new core=${env.VITE_NAIA_NEW_CORE}, agent=${env.NAIA_AGENT_SCRIPT}\n`);
+validateAgentEnvPair(env.NAIA_AGENT_SCRIPT, env.NAIA_AGENT_PROTO_DIR);
+process.stdout.write(`[tauri-with-mode] new core=${env.VITE_NAIA_NEW_CORE}, agent=${env.NAIA_AGENT_SCRIPT}, proto=${env.NAIA_AGENT_PROTO_DIR}\n`);
 
 const r = spawnSync("pnpm", ["run", "tauri", "dev"], { env, stdio: "inherit", shell: true });
 process.exit(r.status ?? 1);

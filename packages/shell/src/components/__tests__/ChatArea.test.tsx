@@ -29,19 +29,17 @@ const capturedRequests: {
 	onChunk: (chunk: AgentResponseChunk) => void;
 }[] = [];
 vi.mock("../../lib/chat-service", () => ({
-	sendChatMessage: vi
-		.fn()
-		.mockImplementation(
-			(opts: {
-				message: string;
-				requestId: string;
-				onChunk: (chunk: AgentResponseChunk) => void;
-			}) => {
-				capturedOnChunk = opts.onChunk;
-				capturedRequests.push(opts);
-				return Promise.resolve();
-			},
-		),
+	sendChatMessage: vi.fn().mockImplementation(
+		(opts: {
+			message: string;
+			requestId: string;
+			onChunk: (chunk: AgentResponseChunk) => void;
+		}) => {
+			capturedOnChunk = opts.onChunk;
+			capturedRequests.push(opts);
+			return Promise.resolve();
+		},
+	),
 	cancelChat: vi.fn().mockResolvedValue(undefined),
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
 	fetchAgentSkills: vi.fn().mockResolvedValue([]),
@@ -229,6 +227,79 @@ describe("ChatArea", () => {
 		const { streamingToolCalls } = useChatStore.getState();
 		expect(streamingToolCalls[0].status).toBe("success");
 		expect(streamingToolCalls[0].output).toBe("file contents");
+
+		localStorage.removeItem("naia-config");
+	});
+
+	it("keeps UC-WIRE-V1 structured chunks visible in the chat stream", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/硫붿떆吏|message/i);
+		fireEvent.change(input, { target: { value: "wire check" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests.length).toBe(1));
+		const requestId = capturedRequests[0].requestId;
+		capturedOnChunk?.({
+			type: "grounding",
+			requestId,
+			status: "grounded",
+			sources: [{ title: "KB", sourceUris: ["kb://workshop"] }],
+		});
+		capturedOnChunk?.({
+			type: "artifact",
+			requestId,
+			artifact: {
+				id: "artifact-1",
+				kind: "image",
+				mimeType: "image/png",
+				sizeBytes: 2048,
+				localRef: "img_1",
+				name: "preview.png",
+			},
+		});
+		capturedOnChunk?.({
+			type: "provider_session",
+			requestId,
+			sessionId: "session-1",
+			providerSessionRef: "opaque-provider-ref",
+			state: "started",
+		});
+		capturedOnChunk?.({
+			type: "processing_disclosure",
+			requestId,
+			workload: "embedding",
+			destination: "external_cloud",
+			decision: "allowed",
+			processingProfileRef: "profile-local-cloud-001",
+			provider: "openai",
+			model: "gpt-4.1",
+		});
+		capturedOnChunk?.({ type: "finish", requestId });
+
+		await waitFor(() => {
+			const assistant = useChatStore
+				.getState()
+				.messages.find((msg) => msg.role === "assistant");
+			expect(assistant?.content).toContain("[Grounding: grounded] KB");
+			expect(assistant?.content).toContain("[Artifact: image preview.png]");
+			expect(assistant?.content).toContain("id=artifact-1");
+			expect(assistant?.content).toContain("localRef=img_1");
+			expect(assistant?.content).toContain(
+				"[Provider session: started] sessionId=session-1 providerSessionRef=opaque-provider-ref",
+			);
+			expect(assistant?.content).toContain(
+				"[Processing: embedding -> external_cloud, allowed] processingProfileRef=profile-local-cloud-001 openai/gpt-4.1",
+			);
+		});
 
 		localStorage.removeItem("naia-config");
 	});

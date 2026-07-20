@@ -44,6 +44,7 @@
 | `.gitmodules` | 서브모듈 설정 — _planned (현재 서브모듈 없음, 미존재. whitelist 예약)_ |
 | `.env.example` | 환경변수 예시 (시크릿 없는 샘플 — `.github/workflows/oss-readiness.yml` 체크리스트 항목) |
 | `LICENSE` | 라이선스 |
+| `CONTEXT-LICENSE` | AI 컨텍스트 라이선스 범위와 재사용 조건 |
 | `package.json` | 루트 workspace 패키지 설정 (`@nextain/naia-os-core`) |
 | `pnpm-workspace.yaml` | pnpm workspace 패키지 목록 |
 | `pnpm-lock.yaml` | pnpm 잠금 파일 |

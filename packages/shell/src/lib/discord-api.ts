@@ -1,7 +1,7 @@
 /**
  * Discord REST API client.
  * All HTTP calls go through Rust (`discord_api` command) to bypass CORS.
- * Bot token is read from Naia Gateway config on the Rust side.
+ * Bot tokens stay on the Rust side and never cross WebView IPC.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { Logger } from "./logger";
@@ -36,8 +36,7 @@ async function discordApi<T>(
 /** Check if bot token is available. */
 export async function isDiscordApiAvailable(): Promise<boolean> {
 	try {
-		await invoke<string>("read_discord_bot_token");
-		return true;
+		return await invoke<boolean>("discord_bot_token_available");
 	} catch {
 		return false;
 	}

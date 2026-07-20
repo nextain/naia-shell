@@ -56,6 +56,7 @@ import { loadInstalledApps } from "./lib/app-loader";
 import { shouldMigrateNextainModel } from "./lib/llm/registry";
 import { appRegistry } from "./lib/app-registry";
 import { type UpdateInfo, checkForUpdate } from "./lib/updater";
+import { effectiveAvatarProviderFromConfig } from "./lib/avatar/nva-gate";
 import {
 	type Announcement,
 	fetchUnreadAnnouncements,
@@ -232,13 +233,13 @@ export function App() {
 	);
 	const [avatarProvider, setAvatarProvider] = useState<
 		"vrm" | "naia-video-avatar"
-	>(() => loadConfig()?.avatarProvider ?? "vrm");
+	>(() => effectiveAvatarProviderFromConfig(loadConfig()));
 	const [nvaModel, setNvaModel] = useState(() => loadConfig()?.nvaModel ?? "");
 
 	useEffect(() => {
 		function syncAvatarConfig() {
 			const cfg = loadConfig();
-			setAvatarProvider(cfg?.avatarProvider ?? "vrm");
+			setAvatarProvider(effectiveAvatarProviderFromConfig(cfg));
 			setNvaModel(cfg?.nvaModel ?? "");
 		}
 		window.addEventListener("naia-config-changed", syncAvatarConfig);

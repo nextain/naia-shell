@@ -228,7 +228,7 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 		);
 	});
 
-	test("GPU profile = 8GB laptop: selects local TTS + video avatar while keeping LLM cloud", async ({
+	test("GPU profile = 8GB laptop: selects local NPU LLM + local TTS + video avatar", async ({
 		page,
 	}) => {
 		await openSlotSettings(page, {
@@ -255,15 +255,15 @@ test.describe("S-SLOT settings — gate + 6 cloud slots (#gate-slots)", () => {
 			return JSON.parse(raw) as Record<string, unknown>;
 		});
 		expect(saved.localGpuTier).toBe("laptop-4060-8g");
-		expect(saved.provider).toBe("nextain");
-		expect(saved.model).toBe("gemini-3.5-flash");
+		expect(saved.provider).toBe("ollama");
+		expect(saved.model).toBe("hf.co/mradermacher/DNA3.0-4B-GGUF:Q4_K_M");
 		expect(saved.ttsProvider).toBe("naia-local-voice");
 		expect(saved.ttsEnabled).toBe(true);
 		expect(saved.vllmTtsHost).toBe("http://localhost:8910");
 		expect(saved.avatarProvider).toBe("naia-video-avatar");
 		expect(saved.nvaModel).toBeTruthy();
 		await expect(page.locator('[data-testid="slot-main"]')).toContainText(
-			/nextain/i,
+			/ollama/i,
 		);
 		await expect(page.locator('[data-testid="slot-tts"]')).toContainText(
 			/naia-local-voice/i,

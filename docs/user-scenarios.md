@@ -359,6 +359,31 @@ P02 검증:
 Test Coverage Map: UC15 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
 `packages/shell/e2e-tauri` activity stream full-stack, 기존 `src/main/adapters/tauri/uc1`·ChatArea cancel 회귀.
 
+## UC-WIRE-V1 — 이미지·Discord·RAG·처리 공개 공통 채팅 경계 (#384 / naia-agent #89)
+
+셸 사용자는 기존 텍스트 대화를 그대로 사용하면서 필요할 때 안전한 이미지 참조,
+Discord 채널 결속, 지식 범위, provider session, 처리 profile을 함께 보낸다.
+셸은 원시 이미지 bytes, Discord token, provider thread id, endpoint 또는 지식
+원문을 wire에 넣지 않는다.
+
+- 구조화 입력은 public `chat-service`와 new-core/Tauri 경로가 같은 필드 이름과
+  선택성 규칙을 보존한다.
+- 구조화 출력은 grounding 출처, image artifact, provider-session lifecycle,
+  처리 위치 공개를 본문과 분리해 소비한다.
+- 오류는 안정 code로 분기하고 사용자 표시 문구는 셸 i18n에서 결정한다.
+- Rust는 `NAIA_AGENT_PROTO_DIR`로 지정한 paired Agent proto가 없거나 enum이
+  unknown/UNSPECIFIED이면 추정하지 않고 실패한다.
+- 계약 동결 전에는 Discord/RAG lane이 이 형상을 소비했다고 주장하지 않는다.
+
+P02 검증:
+
+- T-WIRE-01~05, 08~16, 18~23: core
+  `src/test/uc-wire-v1*.test.ts`, `uc1-*` 회귀 테스트.
+- T-WIRE-06, 17: paired proto Rust `agent_grpc::transcode_tests::wire_v1_*`,
+  `cargo check`, Shell TypeScript build.
+- T-WIRE-15: `packages/shell/src/lib/__tests__/wire-errors.test.ts`와
+  `chat-service.test.ts`의 안정 code/i18n/public callback 검증.
+
 ## S-STEAM — Windows Steam 배포 준비 (#314)
 
 - **사용자 목표**: Steam에서 Naia를 설치하고 `naia-shell.exe`를 직접 실행한다.

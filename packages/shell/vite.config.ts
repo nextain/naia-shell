@@ -1,7 +1,32 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const host = process.env.TAURI_DEV_HOST;
+function readPositiveIntegerEnv(
+	name: string,
+	fallback: number,
+	options: { max?: number } = {},
+): number {
+	const rawValue = process.env[name];
+	if (rawValue === undefined || rawValue === "") {
+		return fallback;
+	}
+
+	const value = Number(rawValue);
+	if (
+		!Number.isInteger(value) ||
+		value <= 0 ||
+		(options.max !== undefined && value > options.max)
+	) {
+		throw new Error(
+			`${name} must be a positive integer${options.max !== undefined ? ` <= ${options.max}` : ""}`,
+		);
+	}
+
+	return value;
+}
+
+const host = process.env.TAURI_DEV_HOST || process.env.PLAYWRIGHT_HOST;
+const port = readPositiveIntegerEnv("PLAYWRIGHT_PORT", 1420, { max: 65534 });
 
 export default defineConfig(async () => ({
 	plugins: [react()],
@@ -29,14 +54,14 @@ export default defineConfig(async () => ({
 	},
 	clearScreen: false,
 	server: {
-		port: 1420,
+		port,
 		strictPort: true,
 		host: host || false,
 		hmr: host
 			? {
 					protocol: "ws",
 					host,
-					port: 1421,
+					port: port + 1,
 				}
 			: undefined,
 		watch: {

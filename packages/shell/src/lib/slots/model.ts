@@ -4,6 +4,7 @@
 // SoT: .agents/progress/naia-model-slots-architecture-2026-06-28.md
 import type { AppConfig, SttProviderId, TtsProviderId } from "../config";
 import type { ProviderId } from "../types";
+import { effectiveAvatarProviderFromConfig } from "../avatar/nva-gate";
 
 // ── FR-SLOT.2: 6 슬롯 (순서 권위) ──
 export type SlotId = "main" | "sub" | "embedding" | "stt" | "tts" | "avatar";
@@ -100,7 +101,8 @@ export interface SlotSnapshot {
 
 /** AppConfig → 6슬롯 스냅샷 읽기(순수). */
 export function readSlots(config: AppConfig): SlotSnapshot {
-	const isNvaAvatar = config.avatarProvider === "naia-video-avatar";
+	const isNvaAvatar =
+		effectiveAvatarProviderFromConfig(config) === "naia-video-avatar";
 	return {
 		main: { provider: config.provider, model: config.model },
 		sub: {

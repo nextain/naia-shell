@@ -129,6 +129,26 @@ describe("S-SLOT · FR-SLOT.2 6슬롯 + 3그룹 구조 (각각 독립 설정)", 
 		expect(snap.stt).toEqual({ provider: "vosk" });
 		expect(snap.tts).toEqual({ provider: "nextain" });
 	});
+
+	it("readSlots gates stale logged-out NVA avatar config", () => {
+		const snap = readSlots({
+			provider: "nextain",
+			model: "gemini-3.5-flash",
+			apiKey: "",
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "remote-avatar.nva",
+			liveProvider: "edge-tts",
+			liveModel: "fallback.vrm",
+			localGpuTier: "auto",
+			naiaKey: "",
+		} as AppConfig);
+
+		expect(snap.avatar).toEqual({
+			provider: "edge-tts",
+			model: "fallback.vrm",
+			voiceRefUrl: undefined,
+		});
+	});
 });
 
 describe("S-SLOT · FR-SLOT.5 필드명 유지 (memoryLlmProvider, rename 아님)", () => {

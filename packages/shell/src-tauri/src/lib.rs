@@ -1,4 +1,4 @@
-mod agent_grpc;
+﻿mod agent_grpc;
 mod app;
 mod audit;
 mod browser;
@@ -34,10 +34,10 @@ fn is_valid_gateway_key(value: &str) -> bool {
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
 }
 
-/// OAuth callback HTTP server bind port (#341 옵션 B — Linux dev:tauri 의
-/// `naia://` scheme OS 미등록 우회). 운영 웹은 redirect_uri 로 이 endpoint 를
-/// 받아 redirect: `http://127.0.0.1:18792/auth/callback?key=...&state=...&user_id=...`.
-/// 동일 query 파라미터 셋이라 `process_deep_link_url` 의 검증 로직 그대로 활용.
+/// OAuth callback HTTP server bind port (#341 ?듭뀡 B ??Linux dev:tauri ??
+/// `naia://` scheme OS 誘몃벑濡??고쉶). ?댁쁺 ?뱀? redirect_uri 濡???endpoint 瑜?
+/// 諛쏆븘 redirect: `http://127.0.0.1:18792/auth/callback?key=...&state=...&user_id=...`.
+/// ?숈씪 query ?뚮씪誘명꽣 ?뗭씠??`process_deep_link_url` ??寃利?濡쒖쭅 洹몃?濡??쒖슜.
 pub(crate) const OAUTH_CALLBACK_PORT: u16 = 18792;
 pub(crate) const OAUTH_CALLBACK_PATH: &str = "/auth/callback";
 
@@ -60,12 +60,12 @@ pub(crate) fn process_deep_link_url(
         Err(_) => return,
     };
     // Accept both shapes:
-    //   1) Deep link: `naia://auth?...`  →  host_str() == "auth", path() == ""
+    //   1) Deep link: `naia://auth?...`  ?? host_str() == "auth", path() == ""
     //   2) HTTP callback: `http://127.0.0.1:18792/auth/callback?...`
-    //                                   →  host_str() == "127.0.0.1",
+    //                                   ?? host_str() == "127.0.0.1",
     //                                      path() starts with "/auth"
     // The old guard only matched (1) and silently rejected (2), which
-    // broke #341 옵션 B end-to-end. (Caught by Claude CLI W1.review P0.)
+    // broke #341 ?듭뀡 B end-to-end. (Caught by Claude CLI W1.review P0.)
     let is_deep_link_auth = parsed.host_str() == Some("auth");
     let is_http_callback = parsed.path().starts_with("/auth");
     if !is_deep_link_auth && !is_http_callback {
@@ -140,7 +140,7 @@ pub(crate) fn process_deep_link_url(
             let payload =
                 serde_json::json!({ "naiaKey": naia_key, "naiaUserId": validated_user_id });
             let _ = app_handle.emit("naia_auth_complete", payload);
-            log_both("[Naia] Naia auth complete — key received via deep link");
+            log_both("[Naia] Naia auth complete ??key received via deep link");
         } else {
             log_both("[Naia] Deep link rejected: invalid key format");
         }
@@ -179,23 +179,23 @@ pub(crate) fn process_deep_link_url(
             "discordTarget": normalized_target,
         });
         let _ = app_handle.emit("discord_auth_complete", payload);
-        log_both("[Naia] Discord auth complete — deep link payload received");
+        log_both("[Naia] Discord auth complete ??deep link payload received");
     }
 }
 
-/// Spawn the OAuth callback HTTP server (#341 옵션 B).
+/// Spawn the OAuth callback HTTP server (#341 ?듭뀡 B).
 ///
 /// Listens on `127.0.0.1:OAUTH_CALLBACK_PORT` for `GET /auth/callback?key=...`
 /// and emits the same `naia_auth_complete` Tauri event as the deep-link path.
 /// Designed for Linux dev:tauri where `naia://` URI scheme is not registered
-/// with the OS — release builds still use the deep-link path via Tauri plugin.
+/// with the OS ??release builds still use the deep-link path via Tauri plugin.
 ///
-/// **Lifecycle**: best-effort daemon thread. Tauri 종료 시 OS 가 listener
-/// 정리. 별도 shutdown signal X — Tauri 자체 종료가 충분.
+/// **Lifecycle**: best-effort daemon thread. Tauri 醫낅즺 ??OS 媛 listener
+/// ?뺣━. 蹂꾨룄 shutdown signal X ??Tauri ?먯껜 醫낅즺媛 異⑸텇.
 ///
-/// **Security**: 127.0.0.1 bind 만 (외부 인터페이스 X). Cross-site request
-/// 차단 = `Origin`/`Referer` 검증 없음 (브라우저가 GET / 발신, 어차피 CORS X).
-/// 검증은 `state` CSRF token (process_deep_link_url 내부) 으로 한다.
+/// **Security**: 127.0.0.1 bind 留?(?몃? ?명꽣?섏씠??X). Cross-site request
+/// 李⑤떒 = `Origin`/`Referer` 寃利??놁쓬 (釉뚮씪?곗?媛 GET / 諛쒖떊, ?댁감??CORS X).
+/// 寃利앹? `state` CSRF token (process_deep_link_url ?대?) ?쇰줈 ?쒕떎.
 pub(crate) fn spawn_oauth_callback_server(
     app_handle: AppHandle,
     oauth_state: Arc<Mutex<Option<String>>>,
@@ -217,7 +217,7 @@ pub(crate) fn spawn_oauth_callback_server(
 
     std::thread::spawn(move || {
         for request in server.incoming_requests() {
-            // Only accept GET on the dedicated path. Any other URL → 404.
+            // Only accept GET on the dedicated path. Any other URL ??404.
             let raw_url = request.url().to_string();
             if !raw_url.starts_with(OAUTH_CALLBACK_PATH) {
                 let _ = request.respond(Response::from_string("Not Found").with_status_code(404));
@@ -232,7 +232,7 @@ pub(crate) fn spawn_oauth_callback_server(
 
             // Send a small HTML page that closes the tab and informs the user.
             // The browser stays on this page until the user closes it manually.
-            let body = r#"<!doctype html><html><head><meta charset="utf-8"><title>naia 로그인 완료</title><style>body{font-family:system-ui;background:#0f1117;color:#e5e7eb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{background:#1a1d27;border:1px solid #2c303a;padding:32px 40px;border-radius:12px;text-align:center;max-width:420px}h1{margin:0 0 12px;font-size:20px;font-weight:600}p{margin:0;color:#9ca3af;line-height:1.6}</style></head><body><div class="card"><h1>naia 로그인 완료</h1><p>이 창은 닫아도 됩니다. naia 앱으로 돌아가주세요.</p></div><script>setTimeout(()=>window.close(),1500)</script></body></html>"#;
+            let body = r#"<!doctype html><html><head><meta charset="utf-8"><title>naia 濡쒓렇???꾨즺</title><style>body{font-family:system-ui;background:#0f1117;color:#e5e7eb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{background:#1a1d27;border:1px solid #2c303a;padding:32px 40px;border-radius:12px;text-align:center;max-width:420px}h1{margin:0 0 12px;font-size:20px;font-weight:600}p{margin:0;color:#9ca3af;line-height:1.6}</style></head><body><div class="card"><h1>naia 濡쒓렇???꾨즺</h1><p>??李쎌? ?レ븘???⑸땲?? naia ?깆쑝濡??뚯븘媛二쇱꽭??</p></div><script>setTimeout(()=>window.close(),1500)</script></body></html>"#;
             let response = Response::from_string(body).with_header(
                 Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..])
                     .expect("valid header"),
@@ -249,16 +249,16 @@ use webkit2gtk::glib::object::ObjectExt;
 #[cfg(target_os = "linux")]
 use webkit2gtk::PermissionRequestExt;
 
-// agent-core process handle — 정본 transport=gRPC. child=프로세스 lifecycle, tx=메시지를 dispatcher task(gRPC 클라 소유)로.
+// agent-core process handle ???뺣낯 transport=gRPC. child=?꾨줈?몄뒪 lifecycle, tx=硫붿떆吏瑜?dispatcher task(gRPC ?대씪 ?뚯쑀)濡?
 struct AgentProcess {
     child: Child,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
-    /// agent-core gRPC listening addr — 결과 반환형 unary 커맨드(예: compile_knowledge)가 별도 클라로 connect.
+    /// agent-core gRPC listening addr ??寃곌낵 諛섑솚??unary 而ㅻ㎤???? compile_knowledge)媛 蹂꾨룄 ?대씪濡?connect.
     grpc_addr: String,
 }
 
-// ⚠️ Rust 는 Child drop 시 프로세스를 죽이지 않음 → restart 로 *guard 교체 시 옛 agent 가 orphan(gRPC 서버 잔류).
-// Drop 에서 명시 kill 로 orphan 방지(codex 리뷰 #1). 종료/replace 양쪽 커버.
+// ?좑툘 Rust ??Child drop ???꾨줈?몄뒪瑜?二쎌씠吏 ?딆쓬 ??restart 濡?*guard 援먯껜 ????agent 媛 orphan(gRPC ?쒕쾭 ?붾쪟).
+// Drop ?먯꽌 紐낆떆 kill 濡?orphan 諛⑹?(codex 由щ럭 #1). 醫낅즺/replace ?묒そ 而ㅻ쾭.
 impl Drop for AgentProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -272,7 +272,7 @@ struct GatewayProcess {
     we_spawned: bool, // only kill on shutdown if we spawned it
 }
 
-// YouTube BGM sidecar HTTP server (port 18791) — #335
+// YouTube BGM sidecar HTTP server (port 18791) ??#335
 // Standalone Node process spawned because the standalone naia-agent submodule
 // (preferred over embedded agent/src/index.ts in spawn_agent_core lines 912-928)
 // does not contain startYoutubeServer(), so port 18791 was never bound.
@@ -280,20 +280,20 @@ struct BgmServerProcess {
     child: Child,
 }
 
-// Local cascade supervisor (R2.2b) — naia-os가 windows-manager loader(`python -m loader
-// launch`)를 1개 사이드카로 구동한다. loader 가 VoxCPM2 등 실제 서비스를 spawn·감독하고,
-// 이 프로세스를 kill 하면 loader 가 자식들을 teardown 한다(원격 금지·로컬 임베딩).
-// Rust 는 Child drop 시 죽이지 않으므로 Drop 에서 명시 kill(AgentProcess 동형, orphan 방지).
+// Local cascade supervisor (R2.2b) ??naia-os媛 windows-manager loader(`python -m loader
+// launch`)瑜?1媛??ъ씠?쒖뭅濡?援щ룞?쒕떎. loader 媛 VoxCPM2 ???ㅼ젣 ?쒕퉬?ㅻ? spawn쨌媛먮룆?섍퀬,
+// ???꾨줈?몄뒪瑜?kill ?섎㈃ loader 媛 ?먯떇?ㅼ쓣 teardown ?쒕떎(?먭꺽 湲덉?쨌濡쒖뺄 ?꾨쿋??.
+// Rust ??Child drop ??二쎌씠吏 ?딆쑝誘濡?Drop ?먯꽌 紐낆떆 kill(AgentProcess ?숉삎, orphan 諛⑹?).
 struct CascadeProcess {
     child: Child,
-    /// stdout `CASCADE_READY {json}` 페이로드(facade_port + services). UI 상태표시용.
+    /// stdout `CASCADE_READY {json}` ?섏씠濡쒕뱶(facade_port + services). UI ?곹깭?쒖떆??
     ready: String,
 }
 impl Drop for CascadeProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
-        // kill()은 시그널만 — wait()로 reap 해야 Unix(Bazzite)에서 좀비(<defunct>)가 안 남음.
-        // stop_cascade/WindowEvent 도 take()→Drop 경유라 이 한 곳이 전 경로를 커버.
+        // kill()? ?쒓렇?먮쭔 ??wait()濡?reap ?댁빞 Unix(Bazzite)?먯꽌 醫鍮?<defunct>)媛 ???⑥쓬.
+        // stop_cascade/WindowEvent ??take()?묭rop 寃쎌쑀??????怨녹씠 ??寃쎈줈瑜?而ㅻ쾭.
         let _ = self.child.wait();
     }
 }
@@ -308,9 +308,9 @@ struct AppState {
     oauth_state: Arc<Mutex<Option<String>>>,
     /// Active Gemini Live WebSocket proxy session.
     gemini_live: gemini_live::SharedHandle,
-    /// Last agent-core restart timestamp — debounce to prevent restart storms (#226).
+    /// Last agent-core restart timestamp ??debounce to prevent restart storms (#226).
     last_agent_restart: Mutex<Option<std::time::Instant>>,
-    /// Startup IPC messages (auth_update / notify_config / creds_update) — replayed
+    /// Startup IPC messages (auth_update / notify_config / creds_update) ??replayed
     /// to agent-core after every restart so credentials are never permanently lost.
     /// Deduplicated by type: latest message of each type wins.
     startup_messages: Mutex<Vec<String>>,
@@ -497,13 +497,13 @@ fn log_to_file(msg: &str) {
     }
 }
 
-/// Important messages — always stderr + file (visible to users in release)
+/// Important messages ??always stderr + file (visible to users in release)
 pub(crate) fn log_both(msg: &str) {
     eprintln!("{}", msg);
     log_to_file(msg);
 }
 
-/// Verbose/debug messages — file always, stderr only in debug builds
+/// Verbose/debug messages ??file always, stderr only in debug builds
 /// Use for progress updates, retries, and diagnostics that users don't need to see
 pub(crate) fn log_verbose(msg: &str) {
     if cfg!(debug_assertions) {
@@ -553,7 +553,7 @@ fn remove_pid_file(component: &str) {
 
 // Note: is_pid_alive, kill_pid, and cleanup_orphan_processes live in the
 // platform module so they can use native APIs (windows-sys / libc) instead of
-// spawning `tasklist`/`taskkill` — which would flash a console window in a GUI
+// spawning `tasklist`/`taskkill` ??which would flash a console window in a GUI
 // Tauri app and intermittently emit `ERROR_NO_DATA (0x800700e8)` on Windows.
 
 /// Start periodic Gateway health monitoring in a background thread.
@@ -652,7 +652,7 @@ fn start_gateway_health_monitor(app_handle: AppHandle) -> Arc<std::sync::atomic:
 /// Run `<node> -v` with a hidden console and return the parsed major version.
 ///
 /// On Windows GUI apps (no console), `Command::output()` without CREATE_NO_WINDOW
-/// triggers `ERROR_NO_DATA (0x800700e8)` — "The pipe is being closed" — because
+/// triggers `ERROR_NO_DATA (0x800700e8)` ??"The pipe is being closed" ??because
 /// Rust cannot attach the child's stdio to a non-existent console. `hide_console`
 /// sets `CREATE_NO_WINDOW` (no-op on Unix), which fixes the pipe setup.
 fn node_major_version<P: AsRef<std::ffi::OsStr>>(node_path: P) -> Option<u32> {
@@ -827,16 +827,16 @@ fn resolve_spawn_node(app_handle: &AppHandle, env_name: &str) -> String {
 
 /// Check if Naia Gateway is already running (blocking, for setup use)
 fn check_gateway_health_sync() -> bool {
-    // Gateway (openclaw) removed — naia-agent handles all tools directly.
+    // Gateway (openclaw) removed ??naia-agent handles all tools directly.
     false
 }
 
-// find_gateway_paths removed — openclaw gateway no longer used (#201)
+// find_gateway_paths removed ??openclaw gateway no longer used (#201)
 
 /// Load bootstrap config from bundled template file, with hardcoded fallback.
 /// Single source of truth: config/defaults/gateway-bootstrap.json
 fn load_bootstrap_config() -> serde_json::Value {
-    // Search: Flatpak bundle → dev-mode relative → hardcoded fallback
+    // Search: Flatpak bundle ??dev-mode relative ??hardcoded fallback
     let candidates = [
         "/app/lib/naia-os/gateway-bootstrap.json".to_string(),
         // Dev mode: relative to src-tauri/
@@ -898,12 +898,135 @@ fn load_bootstrap_config() -> serde_json::Value {
     })
 }
 
-/// Gateway (openclaw) removed in #201 — naia-agent handles all tools directly via stdio.
+/// Gateway (openclaw) removed in #201 ??naia-agent handles all tools directly via stdio.
 fn spawn_gateway() -> Result<GatewayProcess, String> {
     Err("Gateway removed: naia-agent handles all tools directly".to_string())
 }
 
-// openclaw spawn_node_host and legacy spawn body removed — see #201
+// openclaw spawn_node_host and legacy spawn body removed ??see #201
+
+fn normalize_paired_path(path: &std::path::Path) -> String {
+    dunce::canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn runtime_git_output(dir: &std::path::Path, args: &[&str]) -> Result<String, String> {
+    let dir_string = dir.to_string_lossy().to_string();
+    let output = std::process::Command::new("git")
+        .args(["-C", dir_string.as_str()])
+        .args(args)
+        .output()
+        .map_err(|e| format!("git invocation failed for {}: {e}", dir.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git {:?} failed for {}",
+            args,
+            dir.display()
+        ));
+    }
+    String::from_utf8(output.stdout)
+        .map(|value| value.trim().to_string())
+        .map_err(|e| format!("git output was not UTF-8: {e}"))
+}
+
+fn sha256_file_hex(path: &std::path::Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("failed to read {} for SHA256: {e}", path.display()))?;
+    Ok(format!("{:x}", Sha256::digest(&bytes)))
+}
+
+fn validate_runtime_agent_script_override(agent_script: &str) -> Result<(), String> {
+    let expected = option_env!("NAIA_AGENT_PAIRED_SCRIPT")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_SCRIPT build evidence missing".to_string())?
+        .replace('\\', "/");
+    let actual = normalize_paired_path(std::path::Path::new(agent_script));
+    if actual != expected {
+        return Err(format!(
+            "NAIA_AGENT_SCRIPT must match paired build script {expected}; got {actual}"
+        ));
+    }
+    let paired_root = option_env!("NAIA_AGENT_PAIRED_ROOT")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_ROOT build evidence missing".to_string())?;
+    let root_path = std::path::Path::new(paired_root);
+    let expected_commit = option_env!("NAIA_AGENT_REQUIRED_COMMIT")
+        .ok_or_else(|| "NAIA_AGENT_REQUIRED_COMMIT build evidence missing".to_string())?;
+    let actual_commit = runtime_git_output(root_path, &["rev-parse", "HEAD"])?;
+    if actual_commit != expected_commit {
+        return Err(format!(
+            "NAIA_AGENT_SCRIPT checkout commit must remain {expected_commit}; got {actual_commit}"
+        ));
+    }
+    let dirty = runtime_git_output(root_path, &["status", "--porcelain"])?;
+    if !dirty.is_empty() {
+        return Err("NAIA_AGENT_SCRIPT checkout must remain clean at runtime".to_string());
+    }
+    let expected_script_hash = option_env!("NAIA_AGENT_PAIRED_SCRIPT_SHA256")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_SCRIPT_SHA256 build evidence missing".to_string())?;
+    let actual_script_hash = sha256_file_hex(std::path::Path::new(agent_script))?;
+    if actual_script_hash != expected_script_hash {
+        return Err(format!(
+            "NAIA_AGENT_SCRIPT hash must remain {expected_script_hash}; got {actual_script_hash}"
+        ));
+    }
+    let expected_proto_hash = option_env!("NAIA_AGENT_PAIRED_PROTO_SHA256")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_PROTO_SHA256 build evidence missing".to_string())?;
+    let proto_path = root_path.join("src/main/adapters/grpc/naia_agent.proto");
+    let actual_proto_hash = sha256_file_hex(&proto_path)?;
+    if actual_proto_hash != expected_proto_hash {
+        return Err(format!(
+            "NAIA_AGENT_PROTO hash must remain {expected_proto_hash}; got {actual_proto_hash}"
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_paired_bundled_agent_script(app_handle: &AppHandle) -> Result<String, String> {
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("resource_dir unavailable for bundled paired agent: {e}"))?;
+    let bundled = resource_dir.join("agent/scripts/builds/agent-stdio-entry.mjs");
+    if !bundled.exists() {
+        return Err(format!(
+            "NAIA_AGENT_SCRIPT is required unless paired bundled agent exists at {}",
+            bundled.display()
+        ));
+    }
+    let expected_script_hash = option_env!("NAIA_AGENT_PAIRED_SCRIPT_SHA256")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_SCRIPT_SHA256 build evidence missing".to_string())?;
+    let actual_script_hash = sha256_file_hex(&bundled)?;
+    if actual_script_hash != expected_script_hash {
+        return Err(format!(
+            "bundled paired agent script hash must remain {expected_script_hash}; got {actual_script_hash}"
+        ));
+    }
+
+    let bundled_proto = resource_dir.join("agent/dist/main/adapters/grpc/naia_agent.proto");
+    if !bundled_proto.exists() {
+        return Err(format!(
+            "paired bundled agent proto is required at {}",
+            bundled_proto.display()
+        ));
+    }
+    let expected_proto_hash = option_env!("NAIA_AGENT_PAIRED_PROTO_SHA256")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_PROTO_SHA256 build evidence missing".to_string())?;
+    let actual_proto_hash = sha256_file_hex(&bundled_proto)?;
+    if actual_proto_hash != expected_proto_hash {
+        return Err(format!(
+            "bundled paired agent proto hash must remain {expected_proto_hash}; got {actual_proto_hash}"
+        ));
+    }
+
+    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
+    log_verbose(&format!(
+        "[Naia] Found paired bundled agent at: {}",
+        normalized.display()
+    ));
+    Ok(normalized.to_string_lossy().to_string())
+}
 
 /// Spawn the Node.js agent-core process with stdio pipes
 fn spawn_agent_core(
@@ -914,169 +1037,21 @@ fn spawn_agent_core(
     log_both(&format!("[Naia] node = {}", agent_path));
 
     // In dev: tsx for TypeScript direct execution; in prod: compiled JS from bundle
-    let agent_script = std::env::var("NAIA_AGENT_SCRIPT").unwrap_or_else(|_| {
-        // ── Standalone naia-agent detection ──────────────────────────────────
-        // Condition A: NAIA_AGENT_STANDALONE=1 env var (explicit opt-in)
-        // Condition B: resources/agent-standalone/dist/index.js present (auto)
-        //
-        // Deployment path:
-        //   build naia-agent → copy dist/ to Tauri external-bin or resources/
-        //   agent-standalone/ alongside the embedded agent/dist/.
-        //   Both share the same node binary and --stdio IPC protocol.
-        //
-        // No ping/pong: spawn is the handshake — process exits non-zero on fatal
-        // init failure, which restart_agent() catches as process death.
-        let standalone_requested = std::env::var("NAIA_AGENT_STANDALONE")
-            .map(|v| v == "1")
-            .unwrap_or(false);
-
-        // 1. Explicit path override — activates regardless of NAIA_AGENT_STANDALONE=1.
-        //    NAIA_AGENT_STANDALONE_PATH alone is sufficient; setting it without the
-        //    flag is intentional (e.g. ad-hoc testing of a custom build).
-        if let Ok(sa_path) = std::env::var("NAIA_AGENT_STANDALONE_PATH") {
-            let p = std::path::PathBuf::from(&sa_path);
-            if p.exists() {
-                log_both(&format!(
-                    "[Naia] Standalone agent (NAIA_AGENT_STANDALONE_PATH): {}",
-                    p.display()
-                ));
-                return dunce::canonicalize(&p)
-                    .unwrap_or(p)
-                    .to_string_lossy()
-                    .to_string();
-            }
+    let agent_script_env = std::env::var("NAIA_AGENT_SCRIPT");
+    let agent_script = match &agent_script_env {
+        Ok(value) => {
+            validate_runtime_agent_script_override(value)?;
+            value.clone()
         }
-
-        // 2. Bundled standalone in resource dir — auto-activates when present,
-        //    regardless of NAIA_AGENT_STANDALONE=1. Bundling agent-standalone/ into
-        //    Tauri resources IS the explicit deployment opt-in; the env flag is not
-        //    required. If this fires unexpectedly, check for stale build artifacts
-        //    in resources/agent-standalone/.
-        if let Ok(resource_dir) = app_handle.path().resource_dir() {
-            let sa_bundled = resource_dir
-                .join("agent-standalone")
-                .join("dist")
-                .join("index.js");
-            if sa_bundled.exists() {
-                let normalized = dunce::canonicalize(&sa_bundled).unwrap_or(sa_bundled);
-                log_both(&format!(
-                    "[Naia] Standalone agent (bundled, auto-activated): {} \
-                     — to force embedded agent, remove resources/agent-standalone/",
-                    normalized.display()
-                ));
-                return normalized.to_string_lossy().to_string();
-            }
-        }
-
-        // 3. Dev TypeScript source — requires NAIA_AGENT_STANDALONE=1. Avoids
-        //    accidentally switching to standalone in production without the bundle.
-        if standalone_requested {
-            let sa_dev_candidates = [
-                "../../../naia-agent/bin/naia-agent.ts", // from src-tauri/
-                "../../naia-agent/bin/naia-agent.ts",    // from shell/
-            ];
-            for rel in &sa_dev_candidates {
-                let dev_path = std::env::current_dir()
-                    .map(|d| d.join(rel))
-                    .unwrap_or_default();
-                if dev_path.exists() {
-                    let normalized = dunce::canonicalize(&dev_path).unwrap_or(dev_path);
-                    log_both(&format!(
-                        "[Naia] Standalone agent (dev): {}",
-                        normalized.display()
-                    ));
-                    return normalized.to_string_lossy().to_string();
-                }
-            }
-            log_both(
-                "[Naia] NAIA_AGENT_STANDALONE=1 set but no standalone agent found \
-                 — falling back to embedded agent",
-            );
-        }
-        // ─────────────────────────────────────────────────────────────────────
-
-        let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
-
-        // Flatpak: bundled agent FIRST (--filesystem=home can expose dev paths)
-        if is_flatpak {
-            let flatpak_path = std::path::PathBuf::from("/app/lib/naia-os/agent/dist/index.js");
-            if flatpak_path.exists() {
-                log_verbose(&format!(
-                    "[Naia] Found Flatpak agent at: {}",
-                    flatpak_path.display()
-                ));
-                return flatpak_path.to_string_lossy().to_string();
-            }
-        }
-
-        // Dev: tsx for TypeScript direct execution (NOT in Flatpak)
-        // Check dev source BEFORE bundled dist — bundled dist in target/debug/
-        // often has incomplete node_modules (pnpm hoisting issues)
-        if !is_flatpak {
-            let candidates = [
-                "../../agent/src/index.ts", // from src-tauri/
-                "../agent/src/index.ts",    // from shell/
-            ];
-            for rel in &candidates {
-                let dev_path = std::env::current_dir()
-                    .map(|d| d.join(rel))
-                    .unwrap_or_default();
-                if dev_path.exists() {
-                    log_verbose(&format!(
-                        "[Naia] Found dev agent at: {}",
-                        dev_path.display()
-                    ));
-                    return dunce::canonicalize(&dev_path)
-                        .unwrap_or(dev_path)
-                        .to_string_lossy()
-                        .to_string();
-                }
-            }
-        }
-
-        // Production: bundled agent via Tauri resources.
-        // 실 엔트리 = agent/scripts/builds/agent-stdio-entry.mjs (dev 와 동일 진입점 — gRPC 서버를 띄우고
-        // stdout 으로 GRPC_LISTENING 핸드셰이크를 보낸다). 엔트리는 ../../dist/main/** + node_modules 를 쓴다.
-        // (구 레이아웃의 agent/dist/index.js 는 레거시 폴백으로만 유지 — 현 agent tsc 는 dist/main/... 를 출력.)
-        if let Ok(resource_dir) = app_handle.path().resource_dir() {
-            for rel in [
-                "agent/scripts/builds/agent-stdio-entry.mjs",
-                "agent/dist/index.js",
-            ] {
-                let bundled = resource_dir.join(rel);
-                if bundled.exists() {
-                    // dunce::canonicalize strips the \\?\ extended-length prefix that
-                    // Tauri's resource_dir() produces on Windows — Node.js rejects \\?\ paths.
-                    let normalized = dunce::canonicalize(&bundled).unwrap_or(bundled);
-                    log_verbose(&format!(
-                        "[Naia] Found bundled agent at: {}",
-                        normalized.display()
-                    ));
-                    return normalized.to_string_lossy().to_string();
-                }
-            }
-        }
-
-        // Flatpak fallback (resource_dir didn't work)
-        let flatpak_path = std::path::PathBuf::from("/app/lib/naia-os/agent/dist/index.js");
-        if flatpak_path.exists() {
-            log_verbose(&format!(
-                "[Naia] Found Flatpak agent at: {}",
-                flatpak_path.display()
-            ));
-            return flatpak_path.to_string_lossy().to_string();
-        }
-        // Fallback: relative path (legacy)
-        "../agent/dist/index.js".to_string()
-    });
+        Err(_) => resolve_paired_bundled_agent_script(app_handle)?,
+    };
 
     let use_tsx = agent_script.ends_with(".ts");
-
     // Preferred: invoke tsx via node directly (agent_dir/node_modules/.pnpm/tsx@*/.../cli.mjs).
-    // This avoids spawning `npx` or `npx.cmd` — Windows' CreateProcess does not
+    // This avoids spawning `npx` or `npx.cmd` ??Windows' CreateProcess does not
     // resolve .cmd shims, and batch files fail under CREATE_NO_WINDOW anyway.
     //
-    // Fallback: `npx.cmd` (Windows) / `npx` (Unix) via platform::resolve_npx() —
+    // Fallback: `npx.cmd` (Windows) / `npx` (Unix) via platform::resolve_npx() ??
     // only hit when tsx resolution fails (no node_modules, production build, etc.).
     let agent_dir = std::path::Path::new(&agent_script)
         .parent()
@@ -1152,14 +1127,14 @@ fn spawn_agent_core(
         .spawn()
         .map_err(|e| format!("Failed to spawn agent-core: {}", e))?;
 
-    // gRPC: stdin 은 데이터 채널 아님(child 가 보유, 미사용). stdout = GRPC_LISTENING 핸드셰이크 + 로그.
+    // gRPC: stdin ? ?곗씠??梨꾨꼸 ?꾨떂(child 媛 蹂댁쑀, 誘몄궗??. stdout = GRPC_LISTENING ?몃뱶?곗씠??+ 濡쒓렇.
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| "Failed to get agent stdout".to_string())?;
 
-    // ── gRPC(정본 transport): stdout 의 `GRPC_LISTENING <addr>` 핸드셰이크 1줄만 읽고 나머지는 로그 ──
-    // 데이터(요청/응답)는 gRPC. agent_response 이벤트는 dispatcher 의 Chat stream task 가 재구성해 emit.
+    // ?? gRPC(?뺣낯 transport): stdout ??`GRPC_LISTENING <addr>` ?몃뱶?곗씠??1以꾨쭔 ?쎄퀬 ?섎㉧吏??濡쒓렇 ??
+    // ?곗씠???붿껌/?묐떟)??gRPC. agent_response ?대깽?몃뒗 dispatcher ??Chat stream task 媛 ?ш뎄?깊빐 emit.
     let (addr_tx, addr_rx) = std::sync::mpsc::channel::<String>();
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
@@ -1177,19 +1152,19 @@ fn spawn_agent_core(
         log_verbose("[Naia] agent-core stdout reader ended");
     });
 
-    // gRPC listening addr 수신(timeout) — 기동 핸드셰이크. 실패 = 기동 실패.
+    // gRPC listening addr ?섏떊(timeout) ??湲곕룞 ?몃뱶?곗씠?? ?ㅽ뙣 = 湲곕룞 ?ㅽ뙣.
     let addr = addr_rx
         .recv_timeout(std::time::Duration::from_secs(20))
         .map_err(|_| "agent gRPC addr handshake timeout".to_string())?;
     log_both(&format!("[Naia] agent-core gRPC @{}", addr));
 
-    // adk_path (SetWorkspace 용) — env(NAIA_ADK_PATH) 와 동일 출처(~/.naia/adk-path).
+    // adk_path (SetWorkspace ?? ??env(NAIA_ADK_PATH) ? ?숈씪 異쒖쿂(~/.naia/adk-path).
     let adk_path = dirs::home_dir()
         .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
 
-    // 메시지 채널: send_to_agent(sync) → dispatcher task(async, gRPC 클라 소유). nested runtime 회피.
+    // 硫붿떆吏 梨꾨꼸: send_to_agent(sync) ??dispatcher task(async, gRPC ?대씪 ?뚯쑀). nested runtime ?뚰뵾.
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     tauri::async_runtime::spawn(agent_dispatcher(
         addr.clone(),
@@ -1206,9 +1181,9 @@ fn spawn_agent_core(
     })
 }
 
-/// gRPC dispatcher — connect → SetWorkspace(naia-adk 로딩) → 메시지 루프.
-/// chat=Chat stream task(AgentEvent→UI JSON emit + audit + memory backup dispatch, 구 stdout reader 대체),
-/// creds/cancel/approval=unary. send_to_agent(sync) 가 mpsc 로 메시지를 흘린다.
+/// gRPC dispatcher ??connect ??SetWorkspace(naia-adk 濡쒕뵫) ??硫붿떆吏 猷⑦봽.
+/// chat=Chat stream task(AgentEvent?뭊I JSON emit + audit + memory backup dispatch, 援?stdout reader ?泥?,
+/// creds/cancel/approval=unary. send_to_agent(sync) 媛 mpsc 濡?硫붿떆吏瑜??섎┛??
 async fn agent_dispatcher(
     addr: String,
     adk_path: String,
@@ -1219,16 +1194,16 @@ async fn agent_dispatcher(
     let mut client = match agent_grpc::AgentGrpc::connect(format!("http://{}", addr)).await {
         Ok(c) => c,
         Err(e) => {
-            log_both(&format!("[Naia] agent gRPC connect 실패: {}", e));
+            log_both(&format!("[Naia] agent gRPC connect ?ㅽ뙣: {}", e));
             return;
         }
     };
     match client.set_workspace(adk_path.clone()).await {
         Ok(r) => log_both(&format!(
-            "[Naia] SetWorkspace → loaded={} {}/{}",
+            "[Naia] SetWorkspace ??loaded={} {}/{}",
             r.loaded, r.provider, r.model
         )),
-        Err(e) => log_both(&format!("[Naia] SetWorkspace 실패: {}", e)),
+        Err(e) => log_both(&format!("[Naia] SetWorkspace ?ㅽ뙣: {}", e)),
     }
     // Proactive speech is a session-level server stream, independent from an
     // ordinary chat request. Keep one subscription alive for the shell's main
@@ -1274,15 +1249,24 @@ async fn agent_dispatcher(
         };
         match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
             "chat_request" => {
-                let req = agent_grpc::json_to_chat_request(&v);
-                let request_id = v
-                    .get("requestId")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string();
+                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let req = match agent_grpc::try_json_to_chat_request(&v) {
+                    Ok(req) => req,
+                    Err(e) => {
+                        let err = serde_json::json!({
+                            "type": "error",
+                            "requestId": request_id,
+                            "message": e.message,
+                            "code": e.code,
+                        })
+                        .to_string();
+                        let _ = app.emit("agent_response", &err);
+                        continue;
+                    }
+                };
                 let mut c = client.clone();
                 let app2 = app.clone();
-                let app_err = app.clone(); // emit closure 가 app2 를 move → 에러 경로용 별도 clone
+                let app_err = app.clone(); // emit closure 媛 app2 瑜?move ???먮윭 寃쎈줈??蹂꾨룄 clone
                 let db2 = audit_db.clone();
                 tauri::async_runtime::spawn(async move {
                     let emit = move |json: String| {
@@ -1533,20 +1517,20 @@ async fn agent_dispatcher(
                 let _ = client.approval_response(rid, tcid, approve).await;
             }
             "reload_settings" | "set_workspace" => {
-                // 사용자가 naia-os 설정에서 모델/프로바이더 교체 → writeNaiaConfig(config.json 기록) 직후 트리거.
-                // 에이전트가 naia-settings 재로딩 후 활성 config 를 swap(정본 R1-2: "startup-only 금지", 멱등).
-                // 재기동 없이 모델 전환이 실제 반영되게 하는 결선(=사용자 "모델 안 바뀜" 회귀 차단).
+                // ?ъ슜?먭? naia-os ?ㅼ젙?먯꽌 紐⑤뜽/?꾨줈諛붿씠??援먯껜 ??writeNaiaConfig(config.json 湲곕줉) 吏곹썑 ?몃━嫄?
+                // ?먯씠?꾪듃媛 naia-settings ?щ줈?????쒖꽦 config 瑜?swap(?뺣낯 R1-2: "startup-only 湲덉?", 硫깅벑).
+                // ?ш린???놁씠 紐⑤뜽 ?꾪솚???ㅼ젣 諛섏쁺?섍쾶 ?섎뒗 寃곗꽑(=?ъ슜??"紐⑤뜽 ??諛붾? ?뚭? 李⑤떒).
                 match client.set_workspace(adk_path.clone()).await {
                     Ok(r) => log_both(&format!(
-                        "[Naia] ReloadSettings → loaded={} {}/{}",
+                        "[Naia] ReloadSettings ??loaded={} {}/{}",
                         r.loaded, r.provider, r.model
                     )),
-                    Err(e) => log_verbose(&format!("[Naia] ReloadSettings 실패: {}", e)),
+                    Err(e) => log_verbose(&format!("[Naia] ReloadSettings ?ㅽ뙣: {}", e)),
                 }
             }
             "tool_request" => {
-                // 셸 directToolCall(기동 시 skill_voicewake/skill_config/skill_sessions 등) — new-core 미지원이나
-                // 반드시 즉시 error 응답해야 셸이 120s 행에 빠지지 않는다(드롭 금지, 구 stdio 동작 복원).
+                // ??directToolCall(湲곕룞 ??skill_voicewake/skill_config/skill_sessions ?? ??new-core 誘몄??먯씠??
+                // 諛섎뱶??利됱떆 error ?묐떟?댁빞 ?몄씠 120s ?됱뿉 鍮좎?吏 ?딅뒗???쒕∼ 湲덉?, 援?stdio ?숈옉 蹂듭썝).
                 let rid = v
                     .get("requestId")
                     .and_then(|x| x.as_str())
@@ -1572,16 +1556,16 @@ async fn agent_dispatcher(
                         }
                         let _ = app2.emit("agent_response", &json);
                     };
-                    // transport 에러 시 즉시 error 응답 — 안 그러면 셸 directToolCall 이 타임아웃까지 행(codex #5).
+                    // transport ?먮윭 ??利됱떆 error ?묐떟 ????洹몃윭硫???directToolCall ????꾩븘?껉퉴吏 ??codex #5).
                     if let Err(e) = c.tool_request(rid_err.clone(), tool, emit).await {
                         let err = serde_json::json!({"type":"error","requestId":rid_err,"message":format!("grpc tool_request: {}", e)}).to_string();
                         let _ = app_err.emit("agent_response", &err);
                     }
                 });
             }
-            // ── UC-PANEL FR-PANEL: 환경 panel skill(BGM·브라우저·workspace) 셸→agent 배선(현 `_=>{}` drop 제거) ──
+            // ?? UC-PANEL FR-PANEL: ?섍꼍 panel skill(BGM쨌釉뚮씪?곗?쨌workspace) ?멤넂agent 諛곗꽑(??`_=>{}` drop ?쒓굅) ??
             "panel_skills" => {
-                // FR-PANEL-1 등록: wire tools → pb::ToolSpec(parameters→JSON 문자열, tier→Option<i32>).
+                // FR-PANEL-1 ?깅줉: wire tools ??pb::ToolSpec(parameters?묳SON 臾몄옄?? tier?뭀ption<i32>).
                 let panel_id = v
                     .get("appId")
                     .and_then(|x| x.as_str())
@@ -1629,7 +1613,7 @@ async fn agent_dispatcher(
                 });
             }
             "skill_list" => {
-                // ListSkills → skill_list_response(셸 fetchAgentSkills 기대 형태). parameters_json → parameters 파싱.
+                // ListSkills ??skill_list_response(??fetchAgentSkills 湲곕? ?뺥깭). parameters_json ??parameters ?뚯떛.
                 let rid = v
                     .get("requestId")
                     .and_then(|x| x.as_str())
@@ -1653,7 +1637,7 @@ async fn agent_dispatcher(
                 });
             }
             "panel_tool_result" => {
-                // FR-PANEL-3 결과 주입: 셸 panel 실행 결과 → agent chat 루프 pending resolve.
+                // FR-PANEL-3 寃곌낵 二쇱엯: ??panel ?ㅽ뻾 寃곌낵 ??agent chat 猷⑦봽 pending resolve.
                 let rid = v
                     .get("requestId")
                     .and_then(|x| x.as_str())
@@ -1682,9 +1666,9 @@ async fn agent_dispatcher(
                 });
             }
             "app_install" => {
-                // M1: 패널 설치는 이번 UC-PANEL 스코프 밖(proto RPC 미정의) — AppInstallDialog 무한 로딩 방지 위해
-                //   즉시 미지원 응답(셸 dialog 는 독립 raw listener 라 router 우회 직접 수신). 기능화는 별도 이슈.
-                let _ = app.emit("agent_response", &serde_json::json!({"type":"app_install_result","success":false,"error":"앱 설치는 현재 미지원(new-core 스코프 밖)"}).to_string());
+                // M1: ?⑤꼸 ?ㅼ튂???대쾲 UC-PANEL ?ㅼ퐫??諛?proto RPC 誘몄젙?? ??AppInstallDialog 臾댄븳 濡쒕뵫 諛⑹? ?꾪빐
+                //   利됱떆 誘몄????묐떟(??dialog ???낅┰ raw listener ??router ?고쉶 吏곸젒 ?섏떊). 湲곕뒫?붾뒗 蹂꾨룄 ?댁뒋.
+                let _ = app.emit("agent_response", &serde_json::json!({"type":"app_install_result","success":false,"error":"???ㅼ튂???꾩옱 誘몄???new-core ?ㅼ퐫??諛?"}).to_string());
             }
             _ => {}
         }
@@ -1693,7 +1677,7 @@ async fn agent_dispatcher(
     log_verbose("[Naia] agent dispatcher ended");
 }
 
-/// Spawn the standalone YouTube BGM HTTP server (port 18791) — #335.
+/// Spawn the standalone YouTube BGM HTTP server (port 18791) ??#335.
 ///
 /// Mirrors `spawn_agent_core`'s tsx-direct resolution pattern (node + tsx
 /// cli.mjs from the agent's node_modules, npx fallback). Required because
@@ -1701,25 +1685,25 @@ async fn agent_dispatcher(
 /// embedded `agent/src/index.ts::startYoutubeServer()` never runs.
 ///
 /// Safety guarantees mirrored from `spawn_agent_core`:
-///  - stderr → ~/.naia/logs/bgm-server-stderr.log (crashes visible in GUI mode)
+///  - stderr ??~/.naia/logs/bgm-server-stderr.log (crashes visible in GUI mode)
 ///  - hide_console on Windows (no console flash in release builds)
 ///  - kill() called on Tauri WindowEvent::Destroyed (no orphan process)
 fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, String> {
-    // Node binary — same resolution chain as spawn_agent_core
+    // Node binary ??same resolution chain as spawn_agent_core
     let node_path = resolve_spawn_node(app_handle, "NAIA_BGM_NODE_PATH");
     log_both(&format!("[Naia] node = {}", node_path));
 
-    // BGM entry script — 환경 사이드카 `@naia/bgm-sidecar` (packages/bgm-sidecar).
-    // 환경(environment) 레이어 표준(docs/brain-body-environment.md): youtube 추출 서버는 셸(substrate)이
-    // 소유하는 독립 사이드카다. 과거엔 구 monorepo 의 naia-os/agent/src/ 에 있었으나(=#335 split 누락 원인),
-    // 셸 워크스페이스 패키지로 이전. 빌드 산출물(dist/*.js) = plain node(tsx 불요). legacy agent 경로는 fallback.
+    // BGM entry script ???섍꼍 ?ъ씠?쒖뭅 `@naia/bgm-sidecar` (packages/bgm-sidecar).
+    // ?섍꼍(environment) ?덉씠???쒖?(docs/brain-body-environment.md): youtube 異붿텧 ?쒕쾭????substrate)??
+    // ?뚯쑀?섎뒗 ?낅┰ ?ъ씠?쒖뭅?? 怨쇨굅??援?monorepo ??naia-os/agent/src/ ???덉뿀?쇰굹(=#335 split ?꾨씫 ?먯씤),
+    // ???뚰겕?ㅽ럹?댁뒪 ?⑦궎吏濡??댁쟾. 鍮뚮뱶 ?곗텧臾?dist/*.js) = plain node(tsx 遺덉슂). legacy agent 寃쎈줈??fallback.
     let script_path = std::env::var("NAIA_BGM_SCRIPT").unwrap_or_else(|_| {
         let is_flatpak = std::env::var("FLATPAK").map(|v| v == "1").unwrap_or(false);
 
         // Dev: prefer source tree
         if !is_flatpak {
             let candidates = [
-                "../../bgm-sidecar/dist/bgm-server-bin.js", // shell sidecar (from src-tauri/) — 환경 표준
+                "../../bgm-sidecar/dist/bgm-server-bin.js", // shell sidecar (from src-tauri/) ???섍꼍 ?쒖?
                 "../bgm-sidecar/dist/bgm-server-bin.js",    // shell sidecar (from shell/)
                 "../../agent/src/bgm-server-bin.ts", // legacy embedded agent (from src-tauri/)
                 "../agent/src/bgm-server-bin.ts",    // legacy (from shell/)
@@ -1798,7 +1782,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
         runner, script_path
     ));
 
-    // stderr → log file (same pattern as spawn_agent_core lines 1047-1056)
+    // stderr ??log file (same pattern as spawn_agent_core lines 1047-1056)
     let stderr_stdio = {
         let log_path = log_dir().join("bgm-server-stderr.log");
         std::fs::OpenOptions::new()
@@ -1842,7 +1826,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     // review finding 1). The on-exit handler calls remove_pid_file("bgm-server").
     write_pid_file("bgm-server", pid);
 
-    // Readiness probe — poll /health for up to 3s (#335 codex review finding
+    // Readiness probe ??poll /health for up to 3s (#335 codex review finding
     // 2). Catches EADDRINUSE and other startup failures that the spawn handle
     // can't see (server.on("error") in youtube-server.ts logs but doesn't exit).
     // Non-fatal: BGM is optional; we only log a warning on timeout so users
@@ -1939,7 +1923,7 @@ fn send_to_agent(
         }
     }
 
-    // Log approval_decision events (shell→agent direction)
+    // Log approval_decision events (shell?뭓gent direction)
     if let Some(db) = audit_db {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(message) {
             if parsed.get("type").and_then(|v| v.as_str()) == Some("approval_response") {
@@ -1986,11 +1970,11 @@ fn send_to_agent(
             Err(e) => log_verbose(&format!("[Naia] Failed to check agent status: {}", e)),
         }
 
-        // gRPC: 메시지를 dispatcher task 로 전달(비차단 mpsc). send 실패 = dispatcher/agent 종료 → restart.
+        // gRPC: 硫붿떆吏瑜?dispatcher task 濡??꾨떖(鍮꾩감??mpsc). send ?ㅽ뙣 = dispatcher/agent 醫낅즺 ??restart.
         match process.tx.send(message.to_string()) {
             Ok(_) => Ok(()),
             Err(e) => {
-                log_both(&format!("[Naia] agent tx send 실패: {}", e));
+                log_both(&format!("[Naia] agent tx send ?ㅽ뙣: {}", e));
                 *guard = None;
                 drop(guard);
                 if let Some(handle) = app_handle {
@@ -2028,7 +2012,7 @@ fn restart_agent(
                     "[Naia] agent-core restart debounced ({}ms cooldown remaining)",
                     wait_ms
                 ));
-                return Err("agent-core restart debounced — too many restarts".to_string());
+                return Err("agent-core restart debounced ??too many restarts".to_string());
             }
         }
         *last_restart = Some(std::time::Instant::now());
@@ -2211,7 +2195,7 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
 
 static DEBUG_LOG_FILE: OnceLock<Mutex<std::fs::File>> = OnceLock::new();
 
-/// Frontend log bridge — prints to Rust stderr AND debug log file (survives crashes).
+/// Frontend log bridge ??prints to Rust stderr AND debug log file (survives crashes).
 #[tauri::command]
 fn frontend_log(level: String, message: String) {
     match level.as_str() {
@@ -2228,7 +2212,7 @@ fn frontend_log(level: String, message: String) {
     }
 }
 
-// ── STT model management commands ──────────────────────────────────
+// ?? STT model management commands ??????????????????????????????????
 
 #[tauri::command]
 async fn list_stt_models(app: AppHandle) -> Vec<stt_models::SttModelInfo> {
@@ -2275,7 +2259,7 @@ fn replay_startup_messages_to_agent(state: &AppState) {
 }
 
 /// Cache a startup IPC message (auth_update / notify_config / creds_update) so it is
-/// replayed to agent-core after every restart — ensuring credentials are never lost on crash.
+/// replayed to agent-core after every restart ??ensuring credentials are never lost on crash.
 /// Deduplicates by message type: a newer message of the same type replaces the previous one.
 #[tauri::command]
 async fn store_startup_message(
@@ -2526,11 +2510,11 @@ async fn validate_api_key(provider: String, api_key: String) -> Result<bool, Str
 }
 
 /// List available PipeWire output sinks via `pw-dump` (JSON, no env-var setup needed).
-/// Filters to idle/running state only — suspended = disconnected HDMI port.
+/// Filters to idle/running state only ??suspended = disconnected HDMI port.
 /// Excludes virtual/loopback sinks.
 /// Fallback for WebKitGTK which does not enumerate audiooutput via enumerateDevices().
 ///
-/// Linux only — on Windows the WebView2 webview enumerates devices natively via
+/// Linux only ??on Windows the WebView2 webview enumerates devices natively via
 /// `navigator.mediaDevices.enumerateDevices()` so this command returns an empty list.
 #[tauri::command]
 async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
@@ -2587,10 +2571,10 @@ async fn list_audio_output_devices() -> Result<Vec<serde_json::Value>, String> {
     }
 }
 
-/// 로컬 cascade VRAM(GB) 동기 감지 — start_cascade 가 loader `--gpu` 로 넘김.
-/// **primary GPU(nvidia-smi 첫 줄)만** 본다 — 멀티 GPU 합산 안 함(단일 모델은 GPU 간
-/// 분산 불가, TP 는 별도). 즉 3090×2 면 48 이 아닌 24(per-GPU 예산이 맞음).
-/// detect_gpu_vram(async, capacity-only)과 동일 nvidia-smi, 블로킹 컨텍스트용.
+/// 濡쒖뺄 cascade VRAM(GB) ?숆린 媛먯? ??start_cascade 媛 loader `--gpu` 濡??섍?.
+/// **primary GPU(nvidia-smi 泥?以?留?* 蹂몃떎 ??硫??GPU ?⑹궛 ?????⑥씪 紐⑤뜽? GPU 媛?
+/// 遺꾩궛 遺덇?, TP ??蹂꾨룄). 利?3090횞2 硫?48 ???꾨땶 24(per-GPU ?덉궛??留욎쓬).
+/// detect_gpu_vram(async, capacity-only)怨??숈씪 nvidia-smi, 釉붾줈??而⑦뀓?ㅽ듃??
 fn detect_vram_gb_blocking() -> Option<f64> {
     let output = std::process::Command::new("nvidia-smi")
         .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
@@ -2630,10 +2614,10 @@ fn infer_repos_adk_root(adk_path: &str) -> Option<String> {
         })
 }
 
-/// windows-manager loader 디렉터리 해석(`loader/` 를 담은, `python -m loader` 가능한 dir).
-/// **임베딩**: 패키지 앱은 번들된 loader(resource_dir/cascade-loader)를 쓴다 — 외부 adk
-/// 체크아웃에 의존하지 않는다(stage-cascade-loader.mjs 가 빌드시 동봉, agent 패턴 동형).
-/// 우선순위: NAIA_CASCADE_LOADER_DIR(dev env) > resource_dir/cascade-loader(번들) > adk 폴백.
+/// windows-manager loader ?붾젆?곕━ ?댁꽍(`loader/` 瑜??댁?, `python -m loader` 媛?ν븳 dir).
+/// **?꾨쿋??*: ?⑦궎吏 ?깆? 踰덈뱾??loader(resource_dir/cascade-loader)瑜??대떎 ???몃? adk
+/// 泥댄겕?꾩썐???섏〈?섏? ?딅뒗??stage-cascade-loader.mjs 媛 鍮뚮뱶???숇큺, agent ?⑦꽩 ?숉삎).
+/// ?곗꽑?쒖쐞: NAIA_CASCADE_LOADER_DIR(dev env) > resource_dir/cascade-loader(踰덈뱾) > adk ?대갚.
 fn resolve_cascade_loader_dir(app: &tauri::AppHandle, adk_path: &str) -> String {
     if let Ok(d) = std::env::var("NAIA_CASCADE_LOADER_DIR") {
         if !d.trim().is_empty() {
@@ -2647,14 +2631,14 @@ fn resolve_cascade_loader_dir(app: &tauri::AppHandle, adk_path: &str) -> String 
             return n.to_string_lossy().to_string();
         }
     }
-    // dev 폴백(번들 미존재 + env 미설정): sibling 체크아웃.
+    // dev ?대갚(踰덈뱾 誘몄〈??+ env 誘몄꽕??: sibling 泥댄겕?꾩썐.
     let repos_adk = infer_repos_adk_root(adk_path)
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from(adk_path));
     path_to_string(repos_adk.join("projects").join("naia-omni-windows-manager"))
 }
 
-/// cascade-stderr.log 의 마지막 몇 줄(loader 실패 사유 — venv 미설치 등)을 읽어 UI 에 전달.
+/// cascade-stderr.log ??留덉?留?紐?以?loader ?ㅽ뙣 ?ъ쑀 ??venv 誘몄꽕移??????쎌뼱 UI ???꾨떖.
 fn read_cascade_stderr_tail() -> String {
     let path = log_dir().join("cascade-stderr.log");
     match std::fs::read_to_string(&path) {
@@ -2691,9 +2675,9 @@ fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
     Some(profile.to_string())
 }
 
-/// 로컬 cascade loader supervisor 를 사이드카로 spawn. stdout `CASCADE_READY {json}`
-/// 핸드셰이크로 준비완료 판정(모델 로드가 길어 timeout 넉넉히). 이 프로세스를 kill 하면
-/// loader 가 VoxCPM2 등 자식 서비스를 teardown 한다(원격 금지·로컬 임베딩).
+/// 濡쒖뺄 cascade loader supervisor 瑜??ъ씠?쒖뭅濡?spawn. stdout `CASCADE_READY {json}`
+/// ?몃뱶?곗씠?щ줈 以鍮꾩셿猷??먯젙(紐⑤뜽 濡쒕뱶媛 湲몄뼱 timeout ?됰꼮??. ???꾨줈?몄뒪瑜?kill ?섎㈃
+/// loader 媛 VoxCPM2 ???먯떇 ?쒕퉬?ㅻ? teardown ?쒕떎(?먭꺽 湲덉?쨌濡쒖뺄 ?꾨쿋??.
 fn spawn_cascade(
     loader_dir: &str,
     adk_path: &str,
@@ -2729,16 +2713,16 @@ fn spawn_cascade(
     if let Some(profile) = &loader_profile {
         cmd.arg("--profile").arg(profile);
     }
-    // 감지된 primary GPU VRAM 을 명시 — loader 의 보수적 85% 자동추정 대신 실값 사용
-    // (8GB 음성 단독 6.9G 적합 보장). 미감지면 loader 가 자체 추정.
+    // 媛먯???primary GPU VRAM ??紐낆떆 ??loader ??蹂댁닔??85% ?먮룞異붿젙 ????ㅺ컪 ?ъ슜
+    // (8GB ?뚯꽦 ?⑤룆 6.9G ?곹빀 蹂댁옣). 誘멸컧吏硫?loader 媛 ?먯껜 異붿젙.
     if let Some(v) = vram_gb {
         cmd.arg("--gpu").arg(format!("{}", v));
     }
 
     let stderr_stdio = {
         let log_path = log_dir().join("cascade-stderr.log");
-        // truncate(append 아님) — 매 기동마다 새 로그. read_cascade_stderr_tail 이
-        // 이전 실행의 stale 줄(예: 옛 "0 서비스")을 같이 보여주지 않게.
+        // truncate(append ?꾨떂) ??留?湲곕룞留덈떎 ??濡쒓렇. read_cascade_stderr_tail ??
+        // ?댁쟾 ?ㅽ뻾??stale 以??? ??"0 ?쒕퉬??)??媛숈씠 蹂댁뿬二쇱? ?딄쾶.
         std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -2793,19 +2777,19 @@ fn spawn_cascade(
         log_verbose("[Naia] cascade loader stdout reader ended");
     });
 
-    // CASCADE_READY 핸드셰이크 — 단, loader 가 조기 종료(venv/모델 부재·plan 0서비스 등)하면
-    // 180s 기다리지 않고 **즉시** stderr 꼬리를 읽어 명확히 실패한다(나쁜 UX 회피).
-    // 정상 기동(모델 로드 ~77s)은 최대 180s 까지 대기.
+    // CASCADE_READY ?몃뱶?곗씠?????? loader 媛 議곌린 醫낅즺(venv/紐⑤뜽 遺??톚lan 0?쒕퉬?????섎㈃
+    // 180s 湲곕떎由ъ? ?딄퀬 **利됱떆** stderr 瑗щ━瑜??쎌뼱 紐낇솗???ㅽ뙣?쒕떎(?섏걶 UX ?뚰뵾).
+    // ?뺤긽 湲곕룞(紐⑤뜽 濡쒕뱶 ~77s)? 理쒕? 180s 源뚯? ?湲?
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
     let ready = loop {
         match ready_rx.recv_timeout(std::time::Duration::from_millis(400)) {
             Ok(r) => break r,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                // stdout reader 종료 = loader 프로세스 exit(ready 미수신).
+                // stdout reader 醫낅즺 = loader ?꾨줈?몄뒪 exit(ready 誘몄닔??.
                 let _ = child.try_wait();
                 let tail = read_cascade_stderr_tail();
                 return Err(format!(
-                    "로컬 음성 엔진을 시작하지 못했습니다(loader 종료).{}",
+                    "濡쒖뺄 ?뚯꽦 ?붿쭊???쒖옉?섏? 紐삵뻽?듬땲??loader 醫낅즺).{}",
                     if tail.is_empty() {
                         String::new()
                     } else {
@@ -2817,7 +2801,7 @@ fn spawn_cascade(
                 if let Ok(Some(status)) = child.try_wait() {
                     let tail = read_cascade_stderr_tail();
                     return Err(format!(
-                        "로컬 음성 엔진을 시작하지 못했습니다(loader 종료 code={:?}).{}",
+                        "濡쒖뺄 ?뚯꽦 ?붿쭊???쒖옉?섏? 紐삵뻽?듬땲??loader 醫낅즺 code={:?}).{}",
                         status.code(),
                         if tail.is_empty() {
                             String::new()
@@ -2829,7 +2813,7 @@ fn spawn_cascade(
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     return Err(
-                        "cascade readiness handshake timeout (CASCADE_READY 미수신)".to_string()
+                        "cascade readiness handshake timeout (CASCADE_READY 誘몄닔??".to_string()
                     );
                 }
             }
@@ -2841,8 +2825,8 @@ fn spawn_cascade(
     Ok(CascadeProcess { child, ready })
 }
 
-/// R2.2b: 설정에서 "로컬 음성/cascade 시작". manifest(R2.2a 가 write) + 감지 VRAM(total)으로
-/// loader supervisor 를 띄운다. 이미 가동 중이면 기존 ready 반환(멱등).
+/// R2.2b: ?ㅼ젙?먯꽌 "濡쒖뺄 ?뚯꽦/cascade ?쒖옉". manifest(R2.2a 媛 write) + 媛먯? VRAM(total)?쇰줈
+/// loader supervisor 瑜??꾩슫?? ?대? 媛??以묒씠硫?湲곗〈 ready 諛섑솚(硫깅벑).
 #[tauri::command]
 async fn start_cascade(
     app: tauri::AppHandle,
@@ -2854,15 +2838,15 @@ async fn start_cascade(
             if matches!(c.child.try_wait(), Ok(None)) {
                 return Ok(c.ready.clone());
             }
-            let _ = guard.take(); // 죽어있으면 정리 후 재기동
+            let _ = guard.take(); // 二쎌뼱?덉쑝硫??뺣━ ???ш린??
         }
     }
     let adk_path = dirs::home_dir()
         .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| "adk path not set (naia-settings 워크스페이스 미설정)".to_string())?;
-    // 임베딩: 번들된 loader(resource_dir) 우선 — 외부 adk 체크아웃 미의존.
+        .ok_or_else(|| "adk path not set (naia-settings ?뚰겕?ㅽ럹?댁뒪 誘몄꽕??".to_string())?;
+    // ?꾨쿋?? 踰덈뱾??loader(resource_dir) ?곗꽑 ???몃? adk 泥댄겕?꾩썐 誘몄쓽議?
     let loader_dir = resolve_cascade_loader_dir(&app, &adk_path);
 
     let proc = tokio::task::spawn_blocking(move || {
@@ -2877,7 +2861,7 @@ async fn start_cascade(
     Ok(ready)
 }
 
-/// R2.2b: 로컬 cascade 중지(supervisor kill → loader 가 자식 서비스 teardown).
+/// R2.2b: 濡쒖뺄 cascade 以묒?(supervisor kill ??loader 媛 ?먯떇 ?쒕퉬??teardown).
 #[tauri::command]
 async fn stop_cascade(state: tauri::State<'_, AppState>) -> Result<(), String> {
     if let Some(mut c) = lock_or_recover(&state.cascade, "cascade").take() {
@@ -2891,7 +2875,7 @@ async fn stop_cascade(state: tauri::State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// R2.2b: 로컬 cascade 가동 상태(설정 토글 표시용).
+/// R2.2b: 濡쒖뺄 cascade 媛???곹깭(?ㅼ젙 ?좉? ?쒖떆??.
 #[tauri::command]
 async fn cascade_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let mut guard = lock_or_recover(&state.cascade, "cascade");
@@ -2902,7 +2886,7 @@ async fn cascade_status(state: tauri::State<'_, AppState>) -> Result<bool, Strin
 }
 
 /// R2.2a: slots-manifest.json write(`{adk}/naia-settings/slots-manifest.json`).
-/// naia-os 가 write, windows-manager loader 가 read(Phase 2 계약). 비밀 0(빌더가 strip).
+/// naia-os 媛 write, windows-manager loader 媛 read(Phase 2 怨꾩빟). 鍮꾨? 0(鍮뚮뜑媛 strip).
 #[tauri::command]
 async fn write_slots_manifest(adk_path: String, json: String) -> Result<(), String> {
     let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
@@ -2913,8 +2897,8 @@ async fn write_slots_manifest(adk_path: String, json: String) -> Result<(), Stri
 /// Detect the primary GPU's total VRAM in GB via `nvidia-smi` (NVIDIA only).
 ///
 /// Returns a whole-GB number (marketed VRAM is whole GB; nvidia-smi reports
-/// MiB, e.g. an RTX 4070 12 GB = ~12282 MiB ≈ 11.99 GiB → rounds to 12) or null
-/// when nvidia-smi is absent / non-NVIDIA / unparseable — the settings UI then
+/// MiB, e.g. an RTX 4070 12 GB = ~12282 MiB ??11.99 GiB ??rounds to 12) or null
+/// when nvidia-smi is absent / non-NVIDIA / unparseable ??the settings UI then
 /// falls back to manual tier selection (#2 / FR-VRAM.1).
 ///
 /// NOTE: this reports *capacity only*. Real-time (RTF<1) on a given GPU is a
@@ -2929,7 +2913,7 @@ async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
     .await
     .map_err(|e| format!("task error: {e}"))?;
 
-    // Absent nvidia-smi / non-NVIDIA host → null (not an error).
+    // Absent nvidia-smi / non-NVIDIA host ??null (not an error).
     let output = match output {
         Ok(o) if o.status.success() => o,
         _ => return Ok(serde_json::Value::Null),
@@ -2950,7 +2934,7 @@ async fn detect_gpu_vram() -> Result<serde_json::Value, String> {
 
 /// Check if Naia Gateway is reachable on localhost
 /// Re-enable Korean/CJK IME for the WebView2 child HWND.
-/// Called from the frontend when a text input gains focus so the 한/영 toggle
+/// Called from the frontend when a text input gains focus so the ????toggle
 /// works even if the initial startup call was too early.
 #[tauri::command]
 async fn enable_webview2_ime(_window: tauri::Window) -> Result<(), String> {
@@ -3040,108 +3024,16 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 }
 
 /// Read Discord bot token.
-/// Priority: Shell local config (naia-discord.json) → Gateway config (openclaw.json).
-/// This separates the primary path from Gateway dependency (#154).
-#[tauri::command]
+/// Raw token storage is intentionally unavailable until the native
+/// secret-backed Discord setup contract is wired. Legacy plaintext files are
+/// not accepted because the WebView writer path was removed in #388.
 async fn read_discord_bot_token() -> Result<String, String> {
-    let home = home_dir();
-
-    // 1. Shell local config (primary — no Gateway dependency)
-    let shell_candidates = {
-        let candidates = vec![
-            format!("{}/.local/share/com.naia.shell/naia-discord.json", home),
-            format!(
-                "{}/.var/app/io.nextain.naia/config/com.naia.shell/naia-discord.json",
-                home
-            ),
-        ];
-        #[cfg(windows)]
-        {
-            let mut candidates = candidates;
-            candidates.push(format!(
-                "{}\\AppData\\Roaming\\com.naia.shell\\naia-discord.json",
-                home
-            ));
-            candidates
-        }
-        #[cfg(not(windows))]
-        {
-            candidates
-        }
-    };
-    for path in &shell_candidates {
-        if let Ok(bytes) = std::fs::read(path) {
-            if let Ok(config) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                if let Some(token) = config.get("botToken").and_then(|t| t.as_str()) {
-                    if !token.is_empty() {
-                        return Ok(token.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Gateway config (fallback — backward compatibility)
-    let gateway_candidates = [
-        format!("{}/.naia/gateway.json", home),
-        format!("{}/.openclaw/openclaw.json", home), // legacy fallback
-    ];
-    for path in &gateway_candidates {
-        if let Ok(bytes) = std::fs::read(path) {
-            if let Ok(config) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                if let Some(token) = config
-                    .get("channels")
-                    .and_then(|c| c.get("discord"))
-                    .and_then(|d| d.get("token"))
-                    .and_then(|t| t.as_str())
-                {
-                    if !token.is_empty() {
-                        return Ok(token.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    Err("Discord bot token not found".to_string())
+    Err("Discord bot token native secret storage is not wired".to_string())
 }
 
-/// Write Discord bot token to Shell local config.
-/// Called after login sync to persist token independently of Gateway.
 #[tauri::command]
-async fn write_discord_bot_token(token: String) -> Result<(), String> {
-    let home = home_dir();
-    let config_dir = if cfg!(windows) {
-        format!("{}\\AppData\\Roaming\\com.naia.shell", home)
-    } else {
-        format!("{}/.local/share/com.naia.shell", home)
-    };
-    let config_path = std::path::PathBuf::from(&config_dir).join("naia-discord.json");
-    let config_path = config_path.to_string_lossy().to_string();
-
-    std::fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create dir {}: {}", config_dir, e))?;
-
-    // Read-merge-write to preserve existing fields
-    let mut content: serde_json::Value = if std::path::Path::new(&config_path).exists() {
-        let raw = std::fs::read_to_string(&config_path).unwrap_or_else(|_| "{}".to_string());
-        serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-    if !content.is_object() {
-        content = serde_json::json!({});
-    }
-    content
-        .as_object_mut()
-        .expect("content is always a JSON object")
-        .insert("botToken".to_string(), serde_json::Value::String(token));
-    let pretty =
-        serde_json::to_string_pretty(&content).map_err(|e| format!("JSON serialize: {}", e))?;
-    std::fs::write(&config_path, pretty.as_bytes())
-        .map_err(|e| format!("Failed to write {}: {}", config_path, e))?;
-
-    Ok(())
+async fn discord_bot_token_available() -> Result<bool, String> {
+    Ok(read_discord_bot_token().await.is_ok())
 }
 
 /// Proxy Discord REST API calls through Rust to bypass CORS.
@@ -3284,7 +3176,7 @@ async fn read_local_binary(path: String, allowed_base: Option<String>) -> Result
     }
 
     let bytes = std::fs::read(&file_path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
-    // Return base64 to avoid JSON number-array serialization (14 MB VRM → ~200 MB JS heap).
+    // Return base64 to avoid JSON number-array serialization (14 MB VRM ??~200 MB JS heap).
     use base64::Engine;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
@@ -3317,7 +3209,7 @@ async fn fetch_linked_channels(naia_key: String, user_id: String) -> Result<Stri
         .map_err(|e| format!("Failed to read response: {}", e))
 }
 
-// ── Gemini Live WebSocket proxy commands ──
+// ?? Gemini Live WebSocket proxy commands ??
 // WebKitGTK cannot directly connect to wss://generativelanguage.googleapis.com
 // (silent hang). These commands proxy the WebSocket through Rust.
 
@@ -3361,7 +3253,7 @@ async fn gemini_live_disconnect(state: tauri::State<'_, AppState>) -> Result<(),
     Ok(())
 }
 
-// ── naia-settings asset commands ─────────────────────────────────────────────
+// ?? naia-settings asset commands ?????????????????????????????????????????????
 
 /// List filenames inside `{adk_path}/naia-settings/{subdir}/`.
 /// Only whitelisted subdirs are allowed.
@@ -3455,7 +3347,7 @@ fn extract_nva_zip(src: &std::path::Path, dest: &std::path::Path) -> Result<Stri
 /// under `root`, relative to `base`. Separators are normalized to `/` so the produced
 /// ZIP is portable: the cascade server (Linux python `zipfile`) reconstructs the
 /// `clips/` folder correctly. Backslash entries (PowerShell `Compress-Archive`) flatten
-/// on Linux and drop `clips/*` → a silent 0-byte idle. Matches the nva editor
+/// on Linux and drop `clips/*` ??a silent 0-byte idle. Matches the nva editor
 /// `buildNvaZip()` / cascade `/upload_nva` contract.
 fn collect_bundle_files(
     root: &std::path::Path,
@@ -3482,7 +3374,7 @@ fn collect_bundle_files(
 /// Zip a local NVA bundle directory in memory (forward-slash entries) and POST it to the
 /// remote cascade `POST /upload_nva` (`Content-Type: application/zip`). Mirrors the nva
 /// editor `casUpload()` so the shell auto-registers a locally-selected character on a
-/// remote server that doesn't have it — e.g. after a server reboot wipes the `/tmp`
+/// remote server that doesn't have it ??e.g. after a server reboot wipes the `/tmp`
 /// extract, the shell re-uploads on the next select. Returns the server-assigned
 /// `bundle_id`.
 #[tauri::command]
@@ -3687,8 +3579,8 @@ async fn write_naia_config(adk_path: String, json: String) -> Result<(), String>
     std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
 }
 
-/// Read `{adk_path}/naia-settings/ui-config.json` (워크스페이스별 UI 정체성 — VRM/배경/BGM).
-/// agent 미소비(env 오염 방지) — 셸 전용. config.json(agent 소비)과 분리(FR-WS.2). 없으면 빈 문자열.
+/// Read `{adk_path}/naia-settings/ui-config.json` (?뚰겕?ㅽ럹?댁뒪蹂?UI ?뺤껜????VRM/諛곌꼍/BGM).
+/// agent 誘몄냼鍮?env ?ㅼ뿼 諛⑹?) ?????꾩슜. config.json(agent ?뚮퉬)怨?遺꾨━(FR-WS.2). ?놁쑝硫?鍮?臾몄옄??
 #[tauri::command]
 async fn read_naia_ui_config(adk_path: String) -> Result<String, String> {
     let path = std::path::PathBuf::from(&adk_path)
@@ -3700,7 +3592,7 @@ async fn read_naia_ui_config(adk_path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
-/// Write `{adk_path}/naia-settings/ui-config.json` (셸 전용 — agent 미소비).
+/// Write `{adk_path}/naia-settings/ui-config.json` (???꾩슜 ??agent 誘몄냼鍮?.
 #[tauri::command]
 async fn write_naia_ui_config(adk_path: String, json: String) -> Result<(), String> {
     let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
@@ -3708,8 +3600,8 @@ async fn write_naia_ui_config(adk_path: String, json: String) -> Result<(), Stri
     std::fs::write(dir.join("ui-config.json"), json).map_err(|e| e.to_string())
 }
 
-/// Read `{adk_path}/naia-settings/knowledge.json` (지식 소스/스코프 설정 — 셸 전용, agent 읽기전용).
-/// 설정 불가침(FR-KB-OS.9): 사람이 UI 로만 변경, agent 는 config-write 도구가 없어 못 바꾼다. 없으면 빈 문자열.
+/// Read `{adk_path}/naia-settings/knowledge.json` (吏???뚯뒪/?ㅼ퐫???ㅼ젙 ?????꾩슜, agent ?쎄린?꾩슜).
+/// ?ㅼ젙 遺덇?移?FR-KB-OS.9): ?щ엺??UI 濡쒕쭔 蹂寃? agent ??config-write ?꾧뎄媛 ?놁뼱 紐?諛붽씔?? ?놁쑝硫?鍮?臾몄옄??
 #[tauri::command]
 async fn read_naia_knowledge_config(adk_path: String) -> Result<String, String> {
     let path = std::path::PathBuf::from(&adk_path)
@@ -3721,7 +3613,7 @@ async fn read_naia_knowledge_config(adk_path: String) -> Result<String, String> 
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
-/// Write `{adk_path}/naia-settings/knowledge.json` (셸 전용 — 사람이 설정 UI 로만 변경, FR-KB-OS.5/9).
+/// Write `{adk_path}/naia-settings/knowledge.json` (???꾩슜 ???щ엺???ㅼ젙 UI 濡쒕쭔 蹂寃? FR-KB-OS.5/9).
 #[tauri::command]
 async fn write_naia_knowledge_config(adk_path: String, json: String) -> Result<(), String> {
     let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
@@ -3729,8 +3621,8 @@ async fn write_naia_knowledge_config(adk_path: String, json: String) -> Result<(
     std::fs::write(dir.join("knowledge.json"), json).map_err(|e| e.to_string())
 }
 
-/// Read compiled KB at `{adk_path}/knowledge/{scope}/kb.json` (컴파일 산출 — 통계 표시용, FR-KB-OS.7).
-/// scope 는 path-traversal 차단(구분자·`..` 금지). 없으면 빈 문자열(= 미컴파일).
+/// Read compiled KB at `{adk_path}/knowledge/{scope}/kb.json` (而댄뙆???곗텧 ???듦퀎 ?쒖떆?? FR-KB-OS.7).
+/// scope ??path-traversal 李⑤떒(援щ텇?먃?..` 湲덉?). ?놁쑝硫?鍮?臾몄옄??= 誘몄뺨?뚯씪).
 #[tauri::command]
 async fn read_naia_knowledge_kb(adk_path: String, scope: String) -> Result<String, String> {
     if scope.is_empty() || scope.contains('/') || scope.contains('\\') || scope.contains("..") {
@@ -3746,15 +3638,15 @@ async fn read_naia_knowledge_kb(adk_path: String, scope: String) -> Result<Strin
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
-/// UC-KNOWLEDGE-COMPILE(FR-KB-OS.8): 설정 지식 탭 "지금 컴파일" → agent `CompileKnowledge` RPC.
-/// spawn 시 보관한 agent gRPC addr 로 별도 unary 클라 connect → 에이전트가 naia-settings/knowledge.json
-/// 의 등록 폴더 → kb-compiler compile → knowledge/<scope>/kb.json. agent 미가용 = Err(UI 가 정직 표기).
+/// UC-KNOWLEDGE-COMPILE(FR-KB-OS.8): ?ㅼ젙 吏????"吏湲?而댄뙆?? ??agent `CompileKnowledge` RPC.
+/// spawn ??蹂닿???agent gRPC addr 濡?蹂꾨룄 unary ?대씪 connect ???먯씠?꾪듃媛 naia-settings/knowledge.json
+/// ???깅줉 ?대뜑 ??kb-compiler compile ??knowledge/<scope>/kb.json. agent 誘멸???= Err(UI 媛 ?뺤쭅 ?쒓린).
 #[tauri::command]
 async fn compile_knowledge(
     adk_path: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    // gRPC addr 추출 — std Mutex 가드는 await 횡단 금지(블록서 해제 후 await).
+    // gRPC addr 異붿텧 ??std Mutex 媛?쒕뒗 await ?〓떒 湲덉?(釉붾줉???댁젣 ??await).
     let addr = {
         let guard = state.agent.lock().map_err(|_| "agent lock".to_string())?;
         guard.as_ref().map(|a| a.grpc_addr.clone())
@@ -3762,11 +3654,11 @@ async fn compile_knowledge(
     let addr = addr.ok_or_else(|| "agent unavailable".to_string())?;
     let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
         .await
-        .map_err(|e| format!("agent connect 실패: {}", e))?;
+        .map_err(|e| format!("agent connect ?ㅽ뙣: {}", e))?;
     let r = client
         .compile_knowledge(adk_path)
         .await
-        .map_err(|e| format!("compile 실패: {}", e))?;
+        .map_err(|e| format!("compile ?ㅽ뙣: {}", e))?;
     Ok(serde_json::json!({
         "ok": r.ok,
         "scope": r.scope,
@@ -3778,20 +3670,20 @@ async fn compile_knowledge(
     }))
 }
 
-// ── 대화 transcript read(FR-CONV.3) ─────────────────────────────────────────────
-// `{adk_path}/conversations/` = agent(전두엽)가 append 하는 verbatim 대화록(런타임 데이터). **content 단일 writer = agent**;
-// shell 은 read + delete(세션 lifecycle 관리, UI 삭제버튼)만 — content append/수정 안 함. agent 부재/죽음에도 파일 직접
-// read(E1, brain-body-environment). 죽은 게이트웨이 directToolCall 대체. (delete-중-active-append race = 세션 재생성 wart,
-// Phase1 허용: 최악도 삭제 세션이 그 턴만 갖고 재등장, 손상 아님.)
+// ?? ???transcript read(FR-CONV.3) ?????????????????????????????????????????????
+// `{adk_path}/conversations/` = agent(?꾨몢??媛 append ?섎뒗 verbatim ??붾줉(?고????곗씠??. **content ?⑥씪 writer = agent**;
+// shell ? read + delete(?몄뀡 lifecycle 愿由? UI ??젣踰꾪듉)留???content append/?섏젙 ???? agent 遺??二쎌쓬?먮룄 ?뚯씪 吏곸젒
+// read(E1, brain-body-environment). 二쎌? 寃뚯씠?몄썾??directToolCall ?泥? (delete-以?active-append race = ?몄뀡 ?ъ깮??wart,
+// Phase1 ?덉슜: 理쒖븙????젣 ?몄뀡??洹??대쭔 媛뽮퀬 ?щ벑?? ?먯긽 ?꾨떂.)
 
 fn conversations_dir(adk_path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(adk_path).join("conversations")
 }
 
-/// sessionId → 안전 파일명 베이스(traversal·경로 인젝션 차단; agent conversation-log sessionFileName 과 동형).
-/// 영숫자/`_`/`-` 외 치환, 선행 `_`/`.` 제거, 128 cap. 빈/비정상 = "default".
-/// ⚠️ 한계: 전부 비-ASCII(순수 한글 등) sessionId 는 치환 후 빈 → "default" 합류. 실 client localSessionId 는
-///    ASCII(`chat-<ts>-<rand>`, stores/chat.ts)라 미발생. 비-ASCII 다중 client 도입 시 hash 폴백 필요(Phase2).
+/// sessionId ???덉쟾 ?뚯씪紐?踰좎씠??traversal쨌寃쎈줈 ?몄젥??李⑤떒; agent conversation-log sessionFileName 怨??숉삎).
+/// ?곸닽??`_`/`-` ??移섑솚, ?좏뻾 `_`/`.` ?쒓굅, 128 cap. 鍮?鍮꾩젙??= "default".
+/// ?좑툘 ?쒓퀎: ?꾨? 鍮?ASCII(?쒖닔 ?쒓? ?? sessionId ??移섑솚 ??鍮???"default" ?⑸쪟. ??client localSessionId ??
+///    ASCII(`chat-<ts>-<rand>`, stores/chat.ts)??誘몃컻?? 鍮?ASCII ?ㅼ쨷 client ?꾩엯 ??hash ?대갚 ?꾩슂(Phase2).
 fn safe_session_base(session_id: &str) -> String {
     let mapped: String = session_id
         .chars()
@@ -3815,8 +3707,8 @@ fn safe_session_base(session_id: &str) -> String {
     }
 }
 
-/// 세션 transcript 파일 크기 상한(병리적 파일이 list/read 시 IPC·메모리를 폭주시키는 것 차단; 적대적 리뷰 MED).
-/// text 대화록 현실 상한(수천 턴 ≈ 수 MB) 훨씬 위. writer=신뢰 agent 라 위협은 낮으나 방어심층(read_local_binary 와 동형).
+/// ?몄뀡 transcript ?뚯씪 ?ш린 ?곹븳(蹂묐━???뚯씪??list/read ??IPC쨌硫붾え由щ? ??＜?쒗궎??寃?李⑤떒; ?곷???由щ럭 MED).
+/// text ??붾줉 ?꾩떎 ?곹븳(?섏쿇 ??????MB) ?⑥뵮 ?? writer=?좊ː agent ???꾪삊? ??쑝??諛⑹뼱?ъ링(read_local_binary ? ?숉삎).
 const MAX_CONV_BYTES: u64 = 16 * 1024 * 1024;
 
 /// List conversation sessions in `{adk_path}/conversations/`.
@@ -3838,7 +3730,7 @@ async fn list_conversations(adk_path: String) -> Result<String, String> {
                 Some(s) => s.to_string(),
                 None => continue,
             };
-            // 병리적 크기 파일 = 전체 파싱 skip(메모리 폭주 차단, 적대적 리뷰 MED). mtime degraded 엔트리로 노출(숨기지 않음).
+            // 蹂묐━???ш린 ?뚯씪 = ?꾩껜 ?뚯떛 skip(硫붾え由???＜ 李⑤떒, ?곷???由щ럭 MED). mtime degraded ?뷀듃由щ줈 ?몄텧(?④린吏 ?딆쓬).
             if entry
                 .metadata()
                 .map(|m| m.len() > MAX_CONV_BYTES)
@@ -3920,7 +3812,7 @@ async fn read_conversation(adk_path: String, session_id: String) -> Result<Strin
     if !file.exists() {
         return Ok(String::new());
     }
-    // 병리적 크기 IPC payload 차단(적대적 리뷰 MED) — read_local_binary 의 MAX_BYTES 가드와 동형.
+    // 蹂묐━???ш린 IPC payload 李⑤떒(?곷???由щ럭 MED) ??read_local_binary ??MAX_BYTES 媛?쒖? ?숉삎.
     if let Ok(meta) = std::fs::metadata(&file) {
         if meta.len() > MAX_CONV_BYTES {
             return Err(format!(
@@ -3933,7 +3825,7 @@ async fn read_conversation(adk_path: String, session_id: String) -> Result<Strin
     std::fs::read_to_string(&file).map_err(|e| e.to_string())
 }
 
-/// Delete a conversation session file. session_id sanitized(traversal 차단).
+/// Delete a conversation session file. session_id sanitized(traversal 李⑤떒).
 #[tauri::command]
 async fn delete_conversation(adk_path: String, session_id: String) -> Result<(), String> {
     let file =
@@ -3947,7 +3839,7 @@ async fn delete_conversation(adk_path: String, session_id: String) -> Result<(),
 #[cfg(test)]
 mod conversation_path_tests {
     use super::safe_session_base;
-    // 보안 경계(traversal/delete) Rust 단위 커버 — agent sessionFileName contract 와 cross-port 동치(적대적 리뷰 MED).
+    // 蹂댁븞 寃쎄퀎(traversal/delete) Rust ?⑥쐞 而ㅻ쾭 ??agent sessionFileName contract ? cross-port ?숈튂(?곷???由щ럭 MED).
     #[test]
     fn traversal_neutralized() {
         assert_eq!(safe_session_base("../../etc/passwd"), "etc_passwd");
@@ -3970,7 +3862,7 @@ mod conversation_path_tests {
 
 #[cfg(test)]
 mod conversation_io_tests {
-    // 실 파일시스템 통합 — list/read/delete_conversation 을 agent-format jsonl 실파일에 대해 실행(FR-CONV.3/4).
+    // ???뚯씪?쒖뒪???듯빀 ??list/read/delete_conversation ??agent-format jsonl ?ㅽ뙆?쇱뿉 ????ㅽ뻾(FR-CONV.3/4).
     use super::{delete_conversation, list_conversations, read_conversation};
     use std::fs;
     use std::path::PathBuf;
@@ -3993,41 +3885,41 @@ mod conversation_io_tests {
     #[tokio::test]
     async fn list_read_delete_roundtrip() {
         let adk = temp_adk("rd");
-        // agent conversation-log-store 와 동일 포맷(user/assistant + timestamp)
+        // agent conversation-log-store ? ?숈씪 ?щ㎎(user/assistant + timestamp)
         write_jsonl(
             &adk,
             "chat-1.jsonl",
             &[
-                r#"{"role":"user","content":"안녕","timestamp":1000}"#,
-                r#"{"role":"assistant","content":"반가워요","timestamp":1001}"#,
+                r#"{"role":"user","content":"?덈뀞","timestamp":1000}"#,
+                r#"{"role":"assistant","content":"諛섍??뚯슂","timestamp":1001}"#,
             ],
         );
         write_jsonl(
             &adk,
             "chat-2.jsonl",
             &[
-                r#"{"role":"user","content":"날씨","timestamp":2000}"#,
-                r#"{"role":"assistant","content":"맑음","timestamp":2001}"#,
+                r#"{"role":"user","content":"?좎뵪","timestamp":2000}"#,
+                r#"{"role":"assistant","content":"留묒쓬","timestamp":2001}"#,
             ],
         );
         let adk_s = adk.to_str().unwrap().to_string();
 
-        // list: 2 세션, updatedAt desc(chat-2 먼저), label=첫 user content, messageCount=2
+        // list: 2 ?몄뀡, updatedAt desc(chat-2 癒쇱?), label=泥?user content, messageCount=2
         let v: serde_json::Value =
             serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
         let sessions = v["sessions"].as_array().unwrap();
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0]["key"], "chat-2");
-        assert_eq!(sessions[0]["label"], "날씨");
+        assert_eq!(sessions[0]["label"], "?좎뵪");
         assert_eq!(sessions[0]["messageCount"], 2);
 
-        // read: raw jsonl 그대로
+        // read: raw jsonl 洹몃?濡?
         let raw = read_conversation(adk_s.clone(), "chat-1".into())
             .await
             .unwrap();
-        assert!(raw.contains("안녕") && raw.contains("반가워요"));
+        assert!(raw.contains("?덈뀞") && raw.contains("諛섍??뚯슂"));
 
-        // read traversal: sanitize → conversations 밖 접근 불가(부재 = 빈문자열)
+        // read traversal: sanitize ??conversations 諛??묎렐 遺덇?(遺??= 鍮덈Ц?먯뿴)
         assert_eq!(
             read_conversation(adk_s.clone(), "../../naia-settings/config".into())
                 .await
@@ -4035,7 +3927,7 @@ mod conversation_io_tests {
             ""
         );
 
-        // delete: chat-1 → list 1개
+        // delete: chat-1 ??list 1媛?
         delete_conversation(adk_s.clone(), "chat-1".into())
             .await
             .unwrap();
@@ -4044,12 +3936,12 @@ mod conversation_io_tests {
             serde_json::from_str(&list_conversations(adk_s.clone()).await.unwrap()).unwrap();
         assert_eq!(after["sessions"].as_array().unwrap().len(), 1);
 
-        // delete traversal: conversations 밖 파일을 절대 안 지움(보안 핵심)
+        // delete traversal: conversations 諛??뚯씪???덈? ??吏?(蹂댁븞 ?듭떖)
         fs::write(adk.join("outside.txt"), "secret").unwrap();
         let _ = delete_conversation(adk_s.clone(), "../outside".into()).await;
         assert!(
             adk.join("outside.txt").exists(),
-            "traversal delete 가 conversations 밖 파일을 지우면 안 됨"
+            "traversal delete must not remove files outside conversations"
         );
 
         let _ = fs::remove_dir_all(&adk);
@@ -4079,7 +3971,7 @@ mod conversation_io_tests {
 /// Write an API key to naia-agent's OS keychain storage.
 ///
 /// Mirrors naia-agent's `keychainSet()` so the standalone agent can read back
-/// credentials that naia-os saved — without requiring a separate `naia-agent login` run.
+/// credentials that naia-os saved ??without requiring a separate `naia-agent login` run.
 ///
 /// Storage layout (same as naia-agent):
 ///   Windows : `{adk_path}/naia-settings/.keys/{env_key}.dpapi`  (DPAPI-encrypted)
@@ -4107,12 +3999,12 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     let keys_dir = settings_dir.join(".keys");
     std::fs::create_dir_all(&keys_dir).map_err(|e| e.to_string())?;
 
-    // ── Platform keychain write ──────────────────────────────────────────────
+    // ?? Platform keychain write ??????????????????????????????????????????????
     #[cfg(target_os = "windows")]
     {
-        // DPAPI (CurrentUser scope) via PowerShell — same script as naia-agent keychainSet.
+        // DPAPI (CurrentUser scope) via PowerShell ??same script as naia-agent keychainSet.
         let out_file = keys_dir.join(format!("{env_key}.dpapi"));
-        // Escape for PowerShell single-quoted string: ' → '' and \ → \\
+        // Escape for PowerShell single-quoted string: ' ??'' and \ ??\\
         let out_path = out_file
             .to_string_lossy()
             .replace('\'', "''")
@@ -4149,7 +4041,7 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
 
     #[cfg(target_os = "macos")]
     {
-        // macOS Keychain — same service name as naia-agent ("naia-agent").
+        // macOS Keychain ??same service name as naia-agent ("naia-agent").
         let status = std::process::Command::new("security")
             .args([
                 "add-generic-password",
@@ -4199,7 +4091,7 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
         }
     }
 
-    // ── Update credentials manifest ─────────────────────────────────────────
+    // ?? Update credentials manifest ?????????????????????????????????????????
     // Same format as naia-agent: { "keys": ["ENV_KEY_1", ...] }
     let creds_path = settings_dir.join("credentials");
     let existing: Vec<String> = std::fs::read_to_string(&creds_path)
@@ -4227,9 +4119,9 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     Ok(())
 }
 
-/// 저장된 키 *존재 여부*만 보고한다(값은 절대 반환 안 함 — 비밀을 webview 로 되읽지 않는다, 보안).
-/// 근거 = write_agent_key 가 유지하는 비밀-아닌 매니페스트 `{adk}/naia-settings/credentials` = {keys:[env_key…]}.
-/// 셸 Settings 가 키 입력란을 `*****`(저장됨)로 마스킹 표기하는 데 사용.
+/// ??λ맂 ??*議댁옱 ?щ?*留?蹂닿퀬?쒕떎(媛믪? ?덈? 諛섑솚 ??????鍮꾨???webview 濡??섏씫吏 ?딅뒗?? 蹂댁븞).
+/// 洹쇨굅 = write_agent_key 媛 ?좎??섎뒗 鍮꾨?-?꾨땶 留ㅻ땲?섏뒪??`{adk}/naia-settings/credentials` = {keys:[env_key??}.
+/// ??Settings 媛 ???낅젰???`*****`(??λ맖)濡?留덉뒪???쒓린?섎뒗 ???ъ슜.
 #[tauri::command]
 fn agent_key_exists(adk_path: String, env_key: String) -> Result<bool, String> {
     if adk_path.is_empty() || env_key.is_empty() {
@@ -4263,10 +4155,10 @@ async fn check_naia_settings(adk_path: String) -> bool {
 /// correctly (avoid the "Directory is not empty" raw error path).
 ///
 /// Returns one of:
-/// - `"missing"`         — path empty / does not exist / not a directory
-/// - `"has_settings"`    — `naia-settings/` subdir present (full ADK)
-/// - `"has_other_files"` — non-empty directory but no `naia-settings/`
-/// - `"empty"`           — directory exists and is empty (clone target)
+/// - `"missing"`         ??path empty / does not exist / not a directory
+/// - `"has_settings"`    ??`naia-settings/` subdir present (full ADK)
+/// - `"has_other_files"` ??non-empty directory but no `naia-settings/`
+/// - `"empty"`           ??directory exists and is empty (clone target)
 #[tauri::command]
 async fn inspect_adk_dir(adk_path: String) -> String {
     if adk_path.is_empty() {
@@ -4332,11 +4224,11 @@ async fn write_naia_path_cache(adk_path: String) -> Result<(), String> {
 #[tauri::command]
 async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> Result<(), String> {
     // Extend asset:// protocol scope to include this ADK path (#277).
-    // Static tauri.conf.json scope (`$HOME/**`, `/var/home/*/naia-adk/**`, …)
+    // Static tauri.conf.json scope (`$HOME/**`, `/var/home/*/naia-adk/**`, ??
     // covers default placements only. Users who put their ADK on
     // `/mnt/external/...`, `/opt/...`, `D:\...`, `/Volumes/...` would
     // otherwise fail to load VRM / BGM / background via asset:// URLs.
-    // This is the single chokepoint — every ADK setup path (new /
+    // This is the single chokepoint ??every ADK setup path (new /
     // use-existing / recreate / load) calls copy_bundled_assets after the
     // user picks the path. Idempotent: re-adding an already-allowed path
     // is a no-op inside Tauri's scope set.
@@ -4399,9 +4291,9 @@ async fn delete_naia_settings(adk_path: String) -> Result<(), String> {
 
 /// Delete the entire adk_path directory (full workspace wipe for "delete and reinstall").
 ///
-/// `state` 인자 추가 (cherry-pick 0e7a5960 후 body 가 state.agent / state.gateway
-/// lock 호출 — agent/gateway 가 adk_path 안 file handle 잡고 있어 Windows 에서
-/// remove_dir_all 실패 방지). Tauri 가 자동 inject 하므로 frontend 호출은 그대로.
+/// `state` ?몄옄 異붽? (cherry-pick 0e7a5960 ??body 媛 state.agent / state.gateway
+/// lock ?몄텧 ??agent/gateway 媛 adk_path ??file handle ?↔퀬 ?덉뼱 Windows ?먯꽌
+/// remove_dir_all ?ㅽ뙣 諛⑹?). Tauri 媛 ?먮룞 inject ?섎?濡?frontend ?몄텧? 洹몃?濡?
 #[tauri::command]
 async fn delete_naia_adk(
     state: tauri::State<'_, AppState>,
@@ -4418,13 +4310,13 @@ async fn delete_naia_adk(
         return Err(format!("Not a directory: {adk_path}"));
     }
 
-    // E2E mock — bypass agent kill + filesystem delete; e2e specs use
+    // E2E mock ??bypass agent kill + filesystem delete; e2e specs use
     // disposable temp paths so a best-effort cleanup is enough.
     if std::env::var("NAIA_E2E_MOCK_CLONE")
         .map(|v| v == "1")
         .unwrap_or(false)
     {
-        log_verbose("[delete_naia_adk] NAIA_E2E_MOCK_CLONE=1 — best-effort cleanup");
+        log_verbose("[delete_naia_adk] NAIA_E2E_MOCK_CLONE=1 ??best-effort cleanup");
         let _ = std::fs::remove_dir_all(&adk);
         return Ok(());
     }
@@ -4460,8 +4352,8 @@ async fn delete_naia_adk(
 /// Fails if the directory already exists and is non-empty.
 ///
 /// Emits `adk_setup_progress` events so the UI can show what is happening:
-///   { phase: "zip_fallback" }                                  — git failed
-///   { phase: "zip_progress", downloaded, total }               — bytes received
+///   { phase: "zip_fallback" }                                  ??git failed
+///   { phase: "zip_progress", downloaded, total }               ??bytes received
 #[tauri::command]
 async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), String> {
     if adk_path.is_empty() {
@@ -4478,16 +4370,16 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
         }
     }
 
-    // E2E mock — bypass network/git/zip and lay down a minimal scaffold.
+    // E2E mock ??bypass network/git/zip and lay down a minimal scaffold.
     // Activated by NAIA_E2E_MOCK_CLONE=1 (set by wdio.conf.ts). This lets
-    // the setup UI proceed through clone → init → copy-assets → onboarding
+    // the setup UI proceed through clone ??init ??copy-assets ??onboarding
     // in O(ms) instead of O(seconds-to-minutes) and removes network/CI
     // flakiness from #328 e2e.
     if std::env::var("NAIA_E2E_MOCK_CLONE")
         .map(|v| v == "1")
         .unwrap_or(false)
     {
-        log_verbose("[clone_naia_adk] NAIA_E2E_MOCK_CLONE=1 — writing mock scaffold");
+        log_verbose("[clone_naia_adk] NAIA_E2E_MOCK_CLONE=1 ??writing mock scaffold");
         std::fs::create_dir_all(&path).map_err(|e| format!("mock create_dir_all: {e}"))?;
         std::fs::write(path.join("README.md"), "# E2E mock naia-adk\n")
             .map_err(|e| format!("mock write README: {e}"))?;
@@ -4515,7 +4407,7 @@ async fn clone_naia_adk(adk_path: String, app_handle: AppHandle) -> Result<(), S
         }
     }
 
-    // Fallback: download zip from GitHub and extract — emit progress so UI is not silent.
+    // Fallback: download zip from GitHub and extract ??emit progress so UI is not silent.
     let _ = app_handle.emit(
         "adk_setup_progress",
         serde_json::json!({
@@ -4567,7 +4459,7 @@ async fn naia_adk_download_zip(adk_path: &str, app_handle: &AppHandle) -> Result
         }),
     );
 
-    // Extract — GitHub zips contain a single top-level "naia-adk-main/" folder.
+    // Extract ??GitHub zips contain a single top-level "naia-adk-main/" folder.
     let cursor = std::io::Cursor::new(buf);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("zip open failed: {e}"))?;
 
@@ -4607,7 +4499,7 @@ pub fn run() {
         .format_timestamp_millis()
         .init();
 
-    // Open debug log file — frontend logs are written here with flush so crashes are captured.
+    // Open debug log file ??frontend logs are written here with flush so crashes are captured.
     let log_path = std::env::temp_dir().join("naia-debug.log");
     match std::fs::OpenOptions::new()
         .create(true)
@@ -4694,8 +4586,7 @@ pub fn run() {
             generate_oauth_state,
             read_local_binary,
             write_temp_text,
-            read_discord_bot_token,
-            write_discord_bot_token,
+            discord_bot_token_available,
             discord_api,
             fetch_linked_channels,
             gemini_live_connect,
@@ -4731,7 +4622,7 @@ pub fn run() {
             clone_naia_adk,
             write_naia_asset,
             copy_bundled_assets,
-            // 대화 transcript read-only(FR-CONV.3) — agent write / shell read(E1 agent 독립)
+            // ???transcript read-only(FR-CONV.3) ??agent write / shell read(E1 agent ?낅┰)
             list_conversations,
             read_conversation,
             delete_conversation,
@@ -4809,15 +4700,15 @@ pub fn run() {
             log_verbose(&format!("[Naia] Audit DB initialized at: {}", audit_db_path.display()));
 
             // Memory: Agent MemorySystem reads/writes ~/.naia/memory/alpha-memory.json directly.
-            // Shell reads that file via memory::get_all_agent_facts() — no SQLite DB needed.
+            // Shell reads that file via memory::get_all_agent_facts() ??no SQLite DB needed.
 
-            // Migrate legacy vosk-models → stt-models
+            // Migrate legacy vosk-models ??stt-models
             stt_models::migrate_legacy_vosk_models(&app_handle);
 
-            // OAuth callback HTTP server (#341 옵션 B — Linux dev:tauri 의
-            // `naia://` 미등록 우회). 동일 query parameter shape 라
-            // process_deep_link_url 그대로 활용. Best-effort: bind 실패 시
-            // (port 충돌 등) 경고만 + deep-link path 로만 동작.
+            // OAuth callback HTTP server (#341 ?듭뀡 B ??Linux dev:tauri ??
+            // `naia://` 誘몃벑濡??고쉶). ?숈씪 query parameter shape ??
+            // process_deep_link_url 洹몃?濡??쒖슜. Best-effort: bind ?ㅽ뙣 ??
+            // (port 異⑸룎 ?? 寃쎄퀬留?+ deep-link path 濡쒕쭔 ?숈옉.
             let oauth_state_clone = state.oauth_state.clone();
             if let Err(e) =
                 spawn_oauth_callback_server(app_handle.clone(), oauth_state_clone)
@@ -4983,7 +4874,7 @@ pub fn run() {
             // can isolate whether keyboard input works with just the bare
             // Tauri + WebView2 shell. Set NAIA_MINIMAL=1 to activate.
             if std::env::var("NAIA_MINIMAL").is_ok() {
-                log_both("[Naia] *** MINIMAL MODE — skipping gateway/agent/orphan cleanup ***");
+                log_both("[Naia] *** MINIMAL MODE ??skipping gateway/agent/orphan cleanup ***");
                 let _ = app_handle.emit(
                     "gateway_status",
                     serde_json::json!({ "running": false, "managed": false }),
@@ -4994,8 +4885,8 @@ pub fn run() {
             // Clean up orphan processes from previous sessions
             platform::cleanup_orphan_processes();
             platform::kill_stale_gateway();
-            // ★cascade 고아(uvicorn facade 손자, PID 미추적) 정리 — 8910 EADDRINUSE 방지(R2.2b).
-            // dev 반복 기동 시 이전 세션의 cascade 가 안 죽고 남아 다음 start_cascade 를 막는다.
+            // ?꿤ascade 怨좎븘(uvicorn facade ?먯옄, PID 誘몄텛?? ?뺣━ ??8910 EADDRINUSE 諛⑹?(R2.2b).
+            // dev 諛섎났 湲곕룞 ???댁쟾 ?몄뀡??cascade 媛 ??二쎄퀬 ?⑥븘 ?ㅼ쓬 start_cascade 瑜?留됰뒗??
             platform::kill_stale_cascade();
 
             // Spawn Gateway first (Agent connects to it via WebSocket)
@@ -5039,14 +4930,14 @@ pub fn run() {
                 }
             }
 
-            // Then spawn Agent (naia-agent replaces OpenClaw gateway — handles all tools directly)
+            // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
             match spawn_agent_core(&app_handle, &audit_db) {
                 Ok(process) => {
                     let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
                     *guard = Some(process);
                     drop(guard);
                     log_both("[Naia] agent-core started");
-                    // Emit running:true — naia-agent is the tool backend after #201
+                    // Emit running:true ??naia-agent is the tool backend after #201
                     let _ = app_handle.emit(
                         "gateway_status",
                         serde_json::json!({ "running": true, "managed": true }),
@@ -5058,7 +4949,7 @@ pub fn run() {
                 }
             }
 
-            // Spawn YouTube BGM HTTP server (port 18791) — #335.
+            // Spawn YouTube BGM HTTP server (port 18791) ??#335.
             // Standalone sidecar because the preferred standalone naia-agent
             // submodule (lib.rs:912-928) lacks startYoutubeServer(), so the
             // shell BGM player would otherwise get connection-refused on 18791.
@@ -5121,7 +5012,7 @@ pub fn run() {
                         }
                     }
 
-                    // Kill BGM server sidecar (#335) — independent of agent
+                    // Kill BGM server sidecar (#335) ??independent of agent
                     let bgm_lock = state.bgm_server.lock();
                     if let Ok(mut guard) = bgm_lock {
                         if let Some(mut process) = guard.take() {
@@ -5131,7 +5022,7 @@ pub fn run() {
                     }
                     remove_pid_file("bgm-server");
 
-                    // Kill local cascade supervisor (R2.2b) — loader teardowns its
+                    // Kill local cascade supervisor (R2.2b) ??loader teardowns its
                     // children. Drop also kills, but take()+kill here is explicit.
                     if let Ok(mut guard) = state.cascade.lock() {
                         if let Some(mut process) = guard.take() {
@@ -5157,7 +5048,7 @@ pub fn run() {
                                 let _ = process.child.kill();
                                 remove_pid_file("gateway");
                             } else {
-                                log_verbose("[Naia] Gateway not managed by us — leaving it running");
+                                log_verbose("[Naia] Gateway not managed by us ??leaving it running");
                             }
                         }
                     }
@@ -5297,7 +5188,7 @@ mod tests {
     fn find_node_binary_returns_result() {
         // Should find node on dev machine (CI may differ)
         let result = find_node_binary();
-        // Either Ok (node found) or Err (not found) — both are valid
+        // Either Ok (node found) or Err (not found) ??both are valid
         match result {
             Ok(path) => assert!(
                 path.is_absolute(),
@@ -5462,9 +5353,9 @@ mod tests {
         assert!(dir.ends_with(".naia/logs"));
     }
 
-    // W1.review P0 (#341 옵션 B) — path guard 가 HTTP callback 형식도 받아야 함.
-    // 옛 guard 는 host_str=="auth" 만 인정해 HTTP `http://127.0.0.1:18792/auth/callback`
-    // 을 silently reject. 수정 = `is_deep_link_auth || is_http_callback` 형식.
+    // W1.review P0 (#341 ?듭뀡 B) ??path guard 媛 HTTP callback ?뺤떇??諛쏆븘????
+    // ??guard ??host_str=="auth" 留??몄젙??HTTP `http://127.0.0.1:18792/auth/callback`
+    // ??silently reject. ?섏젙 = `is_deep_link_auth || is_http_callback` ?뺤떇.
     #[test]
     fn path_guard_accepts_http_callback() {
         let url =

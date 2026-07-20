@@ -71,6 +71,7 @@
       ".gitmodules",
       ".env.example",
       "LICENSE",
+      "CONTEXT-LICENSE",
       "package.json",
       "pnpm-workspace.yaml",
       "pnpm-lock.yaml",

@@ -1,174 +1,174 @@
-# 조립 매트릭스 (assembly matrix) — 이식·보충·수직·수평 전수 추적 SoT (2026-06-10, v2)
+﻿# 議곕┰ 留ㅽ듃由?뒪 (assembly matrix) ???댁떇쨌蹂댁땐쨌?섏쭅쨌?섑룊 ?꾩닔 異붿쟻 SoT (2026-06-10, v2)
 
-> **목적 = drift/드롭 방지 anchor.** v1이 "자리만" 적고 미분류 0을 거짓 주장(codex HIGH) → v2는 **UC1~15 + S01~71 전수 분류**(미분류 0 *기계 강제* via `scripts/check-assembly-coverage.mjs`). AI 판단 못 믿음 → 결정론 체크가 앵커([[project_drift_detection_anchor_thesis]]).
-> 진실=사용자 시나리오(UC); 옛 동작은 *맞던 곳만* 참조.
+> **紐⑹쟻 = drift/?쒕∼ 諛⑹? anchor.** v1??"?먮━留? ?곴퀬 誘몃텇瑜?0??嫄곗쭞 二쇱옣(codex HIGH) ??v2??**UC1~15 + S01~71 ?꾩닔 遺꾨쪟**(誘몃텇瑜?0 *湲곌퀎 媛뺤젣* via `scripts/check-assembly-coverage.mjs`). AI ?먮떒 紐?誘우쓬 ??寃곗젙濡?泥댄겕媛 ?듭빱([[project_drift_detection_anchor_thesis]]).
+> 吏꾩떎=?ъ슜???쒕굹由ъ삤(UC); ???숈옉? *留욌뜕 怨노쭔* 李몄“.
 
-## 축 (직교 — 둘 다)
-- **수직=UC** / **수평=포트 canon 전체(시스템 인터페이스, 다중 클라이언트)**.
-- **이식**(옛것 맞게 돎)/**보충**(없거나 깨짐)/**rejected**(이식 제외).
-- **권위**: `old-auth`(옛 *관측 행동* 기준, 구조는 인지 포트 재표현) / `scenario-auth`(UC 기준, 옛것과 달라도 됨).
-- **인지 포트 매핑 + fit**: clean / **mismatch**(1급 표면화) / 미평가.
+## 異?(吏곴탳 ??????
+- **?섏쭅=UC** / **?섑룊=?ы듃 canon ?꾩껜(?쒖뒪???명꽣?섏씠?? ?ㅼ쨷 ?대씪?댁뼵??**.
+- **?댁떇**(?쏄쾬 留욊쾶 ??/**蹂댁땐**(?녾굅??源⑥쭚)/**rejected**(?댁떇 ?쒖쇅).
+- **沅뚯쐞**: `old-auth`(??*愿痢??됰룞* 湲곗?, 援ъ“???몄? ?ы듃 ?ы몴?? / `scenario-auth`(UC 湲곗?, ?쏄쾬怨??щ씪????.
+- **?몄? ?ы듃 留ㅽ븨 + fit**: clean / **mismatch**(1湲??쒕㈃?? / 誘명룊媛.
 
-## 현재 활성 슬라이스
-- **활성 = UC1** (텍스트 대화). 활성 슬라이스의 fit=미평가 backlog 는 check 가 *가시화*(영구 은닉 금지, GLM 3차 C-1). 진전 없이 무한 pending 금지 — 활성은 항상 명시.
+## ?꾩옱 ?쒖꽦 ?щ씪?댁뒪
+- **?쒖꽦 = UC1** (?띿뒪?????. ?쒖꽦 ?щ씪?댁뒪??fit=誘명룊媛 backlog ??check 媛 *媛?쒗솕*(?곴뎄 ???湲덉?, GLM 3李?C-1). 吏꾩쟾 ?놁씠 臾댄븳 pending 湲덉? ???쒖꽦? ??긽 紐낆떆.
 
-## fit 게이트 (이빨 — codex HIGH 정정)
-- `미평가`는 **상태 ∈ {pending, 계약} 에서만 허용.** 상태를 `코드`/`검증`으로 올리려면 fit ∈ {clean, mismatch-resolved} **필수**. 즉 **미평가인 채 슬라이스 done 금지.**
-- `mismatch` 발견 = 행에 **해결경로 명시**(=(a) UC 인지흐름 재매핑 / (b) 수평 갭 재검토) + 미해결 시 그 슬라이스 commit 차단.
-- **기계 강제**: `scripts/check-assembly-coverage.mjs` = ① user-scenarios의 모든 UC/S가 이 표에 있나(미분류 0) ② 상태≥코드인데 fit=미평가인 행 0. 위반=비0 exit.
+## fit 寃뚯씠??(?대묠 ??codex HIGH ?뺤젙)
+- `誘명룊媛`??**?곹깭 ??{pending, 怨꾩빟} ?먯꽌留??덉슜.** ?곹깭瑜?`肄붾뱶`/`寃利??쇰줈 ?щ━?ㅻ㈃ fit ??{clean, mismatch-resolved} **?꾩닔**. 利?**誘명룊媛??梨??щ씪?댁뒪 done 湲덉?.**
+- `mismatch` 諛쒓껄 = ?됱뿉 **?닿껐寃쎈줈 紐낆떆**(=(a) UC ?몄??먮쫫 ?щℓ??/ (b) ?섑룊 媛??ш??? + 誘명빐寃???洹??щ씪?댁뒪 commit 李⑤떒.
+- **湲곌퀎 媛뺤젣**: `scripts/check-assembly-coverage.mjs` = ??user-scenarios??紐⑤뱺 UC/S媛 ???쒖뿉 ?덈굹(誘몃텇瑜?0) ???곹깭?μ퐫?쒖씤??fit=誘명룊媛????0. ?꾨컲=鍮? exit.
 
 ---
 
-## 수평 트랙 — 포트 canon 전체 (다중 클라이언트·다중 UC 공통, AppPort 재흡수 금지)
-| # | 포트/배선 | 역할 | old | 이식/보충 | 권위 | 상태(slice) |
+## ?섑룊 ?몃옓 ???ы듃 canon ?꾩껜 (?ㅼ쨷 ?대씪?댁뼵?맞룸떎以?UC 怨듯넻, AppPort ?ы씉??湲덉?)
+| # | ?ы듃/諛곗꽑 | ??븷 | old | ?댁떇/蹂댁땐 | 沅뚯쐞 | ?곹깭(slice) |
 |---|---|---|---|---|---|---|
-| H-proto | `protocol` | transport-neutral 의미 DTO(직렬화 누출 금지) | △산재 | 보충 | scenario | 부분(F0)·일반화 필요 |
-| H-tx | transport 어댑터 | stdio(now)→gRPC(목표), 어댑터 교체 | O(stdio) | 이식+보충 | old(stdio)/scen(gRPC) | pending |
-| H-client | `ClientSessionPort` | 다중 클라이언트 신원·lease·arbitration | △ | 보충 | scenario | pending(UC10a) |
-| H-safety | `SafetyPort` | e-stop·lease revoke·강등(reactive) | △ | 보충 | scenario | pending(UC13a) |
-| H-app | `AppPort`(=ChatPort+ToolPort *조립 facade*, 재흡수 아님) | facade | △ | 보충 | scenario | pending |
-| H-chat | `ChatPort` | 대화 ingress(독립) | O transport동작·**추상화 없음**(shell↔Tauri 직결) | 이식(흐름)+보충(추상화) | old-auth(흐름) | pending(UC1) |
-| H-tool | `ToolPort` | 툴 interaction(독립) | △직접호출 | 보충 | scenario | pending(UC5) |
-| H-sensory | `SensoryPort` | 감각(audio/vision/screen) | O(부분) | 이식+보충 | mixed | pending(UC2/61) |
-| H-intero | `InteroceptivePort` | 내수용(시스템 상태) | O | 이식 | old | **F1 계약+코드** |
-| H-express | `ExpressionPort` | 표현(speak/emote, embodiment-neutral) | △(UI직결) | 보충 | scenario | pending(UC1/2) |
-| H-env | `EnvironmentPort`(observe/act/space/app-surface/host) | 환경 관측·행위 | O | 이식 | old | **F2(observe)+F3(mutate) 계약+코드**; app-surface/space pending |
-| H-approval | `ApprovalPort` | 승인 게이트+결속 | O(부분) | 이식+보충 | mixed | **F1 계약+코드** |
-| H-proprio | `ProprioceptivePort` | 고유수용(자세·관절·self/body model) | △ | 보충 | scenario | pending(2단계·로봇) |
-| H-action | `ActionPort` | 행위(body 이동·조작·파지) | △ | 보충 | scenario | pending(2단계·로봇) |
-| H-cron | `CronPort` | temporal 작업 스케줄 | △(미빌드) | 보충 | scenario | pending(2단계) |
-| **H-agent** | **agent(brain)↔os 연결** | stdio JSON-line(send_to_agent_command↔agent_response) | **기본 chat=O 동작(이식)**; 깊은 통합(memory/context)=보충 | 이식(chat I/O)+보충(deep) | old-auth(chat)/scenario(deep) | chat 동작·**ChatPort 추상화 없음** |
+| H-proto | `protocol` | transport-neutral ?섎? DTO(吏곷젹???꾩텧 湲덉?) | ?녹궛??| 蹂댁땐 | scenario | 遺遺?F0)쨌?쇰컲???꾩슂 |
+| H-tx | transport ?대뙌??| stdio(now)?뭛RPC(紐⑺몴), ?대뙌??援먯껜 | O(stdio) | ?댁떇+蹂댁땐 | old(stdio)/scen(gRPC) | pending |
+| H-client | `ClientSessionPort` | ?ㅼ쨷 ?대씪?댁뼵???좎썝쨌lease쨌arbitration | ??| 蹂댁땐 | scenario | pending(UC10a) |
+| H-safety | `SafetyPort` | e-stop쨌lease revoke쨌媛뺣벑(reactive) | ??| 蹂댁땐 | scenario | pending(UC13a) |
+| H-app | `AppPort`(=ChatPort+ToolPort *議곕┰ facade*, ?ы씉???꾨떂) | facade | ??| 蹂댁땐 | scenario | pending |
+| H-chat | `ChatPort` | ???ingress(?낅┰) | O transport?숈옉쨌**異붿긽???놁쓬**(shell?봗auri 吏곴껐) | ?댁떇(?먮쫫)+蹂댁땐(異붿긽?? | old-auth(?먮쫫) | pending(UC1) |
+| H-tool | `ToolPort` | ??interaction(?낅┰) | ?녹쭅?묓샇異?| 蹂댁땐 | scenario | pending(UC5) |
+| H-sensory | `SensoryPort` | 媛먭컖(audio/vision/screen) | O(遺遺? | ?댁떇+蹂댁땐 | mixed | pending(UC2/61) |
+| H-intero | `InteroceptivePort` | ?댁닔???쒖뒪???곹깭) | O | ?댁떇 | old | **F1 怨꾩빟+肄붾뱶** |
+| H-express | `ExpressionPort` | ?쒗쁽(speak/emote, embodiment-neutral) | ??UI吏곴껐) | 蹂댁땐 | scenario | pending(UC1/2) |
+| H-env | `EnvironmentPort`(observe/act/space/app-surface/host) | ?섍꼍 愿痢≤룻뻾??| O | ?댁떇 | old | **F2(observe)+F3(mutate) 怨꾩빟+肄붾뱶**; app-surface/space pending |
+| H-approval | `ApprovalPort` | ?뱀씤 寃뚯씠??寃곗냽 | O(遺遺? | ?댁떇+蹂댁땐 | mixed | **F1 怨꾩빟+肄붾뱶** |
+| H-proprio | `ProprioceptivePort` | 怨좎쑀?섏슜(?먯꽭쨌愿?댟톝elf/body model) | ??| 蹂댁땐 | scenario | pending(2?④퀎쨌濡쒕큸) |
+| H-action | `ActionPort` | ?됱쐞(body ?대룞쨌議곗옉쨌?뚯?) | ??| 蹂댁땐 | scenario | pending(2?④퀎쨌濡쒕큸) |
+| H-cron | `CronPort` | temporal ?묒뾽 ?ㅼ?以?| ??誘몃퉴?? | 蹂댁땐 | scenario | pending(2?④퀎) |
+| **H-agent** | **agent(brain)?봮s ?곌껐** | stdio JSON-line(send_to_agent_command?봞gent_response) | **湲곕낯 chat=O ?숈옉(?댁떇)**; 源딆? ?듯빀(memory/context)=蹂댁땐 | ?댁떇(chat I/O)+蹂댁땐(deep) | old-auth(chat)/scenario(deep) | chat ?숈옉쨌**ChatPort 異붿긽???놁쓬** |
 
-> ⚠️ v1처럼 "protocol→AppPort 단일경로"로 좁히지 않음. AppPort=Chat/Tool 하나일 뿐, 나머지 포트는 독립(canon: Sensory·Interoceptive·**Proprioceptive**·Chat·Express·Environment·**Action**·Approval·ClientSession·Safety·Cron). 다중 클라이언트=H-client. (GLM 3차: Proprioceptive·Action·Cron 누락 정정.)
+> ?좑툘 v1泥섎읆 "protocol?묨ppPort ?⑥씪寃쎈줈"濡?醫곹엳吏 ?딆쓬. AppPort=Chat/Tool ?섎굹??肉? ?섎㉧吏 ?ы듃???낅┰(canon: Sensory쨌Interoceptive쨌**Proprioceptive**쨌Chat쨌Express쨌Environment쨌**Action**쨌Approval쨌ClientSession쨌Safety쨌Cron). ?ㅼ쨷 ?대씪?댁뼵??H-client. (GLM 3李? Proprioceptive쨌Action쨌Cron ?꾨씫 ?뺤젙.)
 
 ---
 
-## 수직 UC 트랙 — UC1~15 전수 (분류; UC1 상세)
+## ?섏쭅 UC ?몃옓 ??UC1~15 ?꾩닔 (遺꾨쪟; UC1 ?곸꽭)
 
-| UC | 이식/보충 | 주 인지포트 | 권위 | slice/상태 |
+| UC | ?댁떇/蹂댁땐 | 二??몄??ы듃 | 沅뚯쐞 | slice/?곹깭 |
 |---|---|---|---|---|
-| **UC1** 텍스트대화 | **이식**(채팅 동작)+보충(ChatPort 추상화) | Chat→agent→Express | old-auth(흐름) | ↓ 상세 |
-| UC2 음성대화 | 이식+보충 | Sensory→…→Express(avatar) | mixed(외부키) | pending(후속 tranche) |
-| UC3 기억대화 | **보충** | Chat+memory | scenario | pending(naia-memory 트랙) |
-| UC4 능동회상 | **보충** | memory+temporal | scenario | pending |
-| UC5 도구사용 | 이식 | ToolPort+Environment | old | pending |
-| UC6 환경조작-브라우저 | 이식 | EnvironmentPort(app-surface) | old | pending |
-| UC7a 시스템관측 | 이식 | EnvironmentPort observe | old | **F2 계약+코드** |
-| UC7 시스템조작 | 이식+보충 | EnvironmentPort act+reafference | mixed | **F3 계약+코드** |
-| UC8 공간분위기 | 이식 | EnvironmentPort(space) | old | pending |
-| UC9 패널앱 | 이식 | EnvironmentPort(app-surface) | old | pending |
-| UC10 멀티채널 | 이식+보충 | (채널 ingress) | mixed | pending(S36 깨짐) |
-| UC10a 다중클라이언트 | **보충** | ClientSessionPort | scenario | pending(H-client) |
-| UC11 자기상태 | 이식 | InteroceptivePort→Express | old | **F1 계약+코드** |
-| UC12-min 최소부팅 | 이식 | control-plane | old | **F0 계약+코드** |
-| UC12 온보딩/설정 | 이식 | control-plane(session/auth) | old | 부분(F0)·외부auth pending |
-| UC12a 설정검증 | 보충 | InteroceptivePort | scenario | **F1 흡수** |
-| UC13 승인게이트 | 이식+보충 | ApprovalPort | mixed | **F1 계약+코드** |
-| UC13a 중단/e-stop | **보충** | SafetyPort | scenario | pending(H-safety) |
-| UC14 degradation | **보충** | InteroceptivePort→Express | scenario | **F1(정직 degradation 신설)** |
-| UC15 자유·연속 발화 session stream | **보충** | AgentGrpcClient→ExpressionPort→SafetyPort | scenario | pending(#82 cross-repo) |
+| **UC1** ?띿뒪?몃???| **?댁떇**(梨꾪똿 ?숈옉)+蹂댁땐(ChatPort 異붿긽?? | Chat?뭓gent?묮xpress | old-auth(?먮쫫) | ???곸꽭 |
+| UC2 ?뚯꽦???| ?댁떇+蹂댁땐 | Sensory?믠╈넂Express(avatar) | mixed(?몃??? | pending(?꾩냽 tranche) |
+| UC3 湲곗뼲???| **蹂댁땐** | Chat+memory | scenario | pending(naia-memory ?몃옓) |
+| UC4 ?λ룞?뚯긽 | **蹂댁땐** | memory+temporal | scenario | pending |
+| UC5 ?꾧뎄?ъ슜 | ?댁떇 | ToolPort+Environment | old | pending |
+| UC6 ?섍꼍議곗옉-釉뚮씪?곗? | ?댁떇 | EnvironmentPort(app-surface) | old | pending |
+| UC7a ?쒖뒪?쒓?痢?| ?댁떇 | EnvironmentPort observe | old | **F2 怨꾩빟+肄붾뱶** |
+| UC7 ?쒖뒪?쒖“??| ?댁떇+蹂댁땐 | EnvironmentPort act+reafference | mixed | **F3 怨꾩빟+肄붾뱶** |
+| UC8 怨듦컙遺꾩쐞湲?| ?댁떇 | EnvironmentPort(space) | old | pending |
+| UC9 ?⑤꼸??| ?댁떇 | EnvironmentPort(app-surface) | old | pending |
+| UC10 硫?곗콈??| ?댁떇+蹂댁땐 | (梨꾨꼸 ingress) | mixed | pending(S36 源⑥쭚) |
+| UC10a ?ㅼ쨷?대씪?댁뼵??| **蹂댁땐** | ClientSessionPort | scenario | pending(H-client) |
+| UC11 ?먭린?곹깭 | ?댁떇 | InteroceptivePort?묮xpress | old | **F1 怨꾩빟+肄붾뱶** |
+| UC12-min 理쒖냼遺??| ?댁떇 | control-plane | old | **F0 怨꾩빟+肄붾뱶** |
+| UC12 ?⑤낫???ㅼ젙 | ?댁떇 | control-plane(session/auth) | old | 遺遺?F0)쨌?몃?auth pending |
+| UC12a ?ㅼ젙寃利?| 蹂댁땐 | InteroceptivePort | scenario | **F1 ?≪닔** |
+| UC13 ?뱀씤寃뚯씠??| ?댁떇+蹂댁땐 | ApprovalPort | mixed | **F1 怨꾩빟+肄붾뱶** |
+| UC13a 以묐떒/e-stop | **蹂댁땐** | SafetyPort | scenario | pending(H-safety) |
+| UC14 degradation | **蹂댁땐** | InteroceptivePort?묮xpress | scenario | **F1(?뺤쭅 degradation ?좎꽕)** |
+| UC15 continuous speech stream | 보충 | H-agent+H-tx+ExpressionPort+SafetyPort | scenario | pending(#82 cross-repo; Rust/Tauri activity stream tests planned) |
 
-### UC1 상세 — 텍스트 대화 (Chat→사고→표현)
-| # | 조각(S) | old | 이식/보충 | 인지 포트 | fit | 권위 | 상태 |
+### UC1 ?곸꽭 ???띿뒪?????(Chat?믪궗怨졻넂?쒗쁽)
+| # | 議곌컖(S) | old | ?댁떇/蹂댁땐 | ?몄? ?ы듃 | fit | 沅뚯쐞 | ?곹깭 |
 |---|---|---|---|---|---|---|---|
-| U1.1 | S13 채팅 입력 UI | O(shell) | 이식 | ChatPort(ingress) | 미평가 | old-auth | pending |
-| U1.2 | LLM 사고/추론 | **O 동작**(shell→stdio→agent→provider.chat 스트리밍) | 이식(흐름)+보충(ChatPort 추상화) | agent(brain) via H-chat/H-app | 미평가 | old-auth(흐름 동작) | pending |
-| U1.3a | 응답 *텍스트 표시* UI | O(shell) | 이식 | (shell 렌더) ← Express 출력 소비 | 미평가 | old-auth | pending |
-| U1.3b | 응답 *speech-intent* | △ | **보충** | ExpressionPort(embodiment-neutral) | 미평가 | scenario-auth | pending |
-| U1.4 | S62 @멘션 파일선택 | O(shell) | 이식 | ChatPort + EnvironmentPort observe | 미평가 | old-auth | pending |
-| U1.5 | S70 파일 deeplink (UC1/UC7 공유) | O(shell) | 이식 | ChatPort + EnvironmentPort **app-surface 행위**(패널 open/전환) | 미평가 | old-auth | pending |
-| U1.6a | S03 provider 설정 UI (UC12 공유) | O | 이식 | control-plane/config | 미평가 | old-auth | pending(F0 인접, 미측정) |
-| U1.6b | S03 provider→agent 연결/검증 | O 동작(creds_update·chat_request provider) | 이식 | control-plane→agent | 미평가 | old-auth | pending |
+| U1.1 | S13 梨꾪똿 ?낅젰 UI | O(shell) | ?댁떇 | ChatPort(ingress) | 誘명룊媛 | old-auth | pending |
+| U1.2 | LLM ?ш퀬/異붾줎 | **O ?숈옉**(shell?뭩tdio?뭓gent?뭦rovider.chat ?ㅽ듃由щ컢) | ?댁떇(?먮쫫)+蹂댁땐(ChatPort 異붿긽?? | agent(brain) via H-chat/H-app | 誘명룊媛 | old-auth(?먮쫫 ?숈옉) | pending |
+| U1.3a | ?묐떟 *?띿뒪???쒖떆* UI | O(shell) | ?댁떇 | (shell ?뚮뜑) ??Express 異쒕젰 ?뚮퉬 | 誘명룊媛 | old-auth | pending |
+| U1.3b | ?묐떟 *speech-intent* | ??| **蹂댁땐** | ExpressionPort(embodiment-neutral) | 誘명룊媛 | scenario-auth | pending |
+| U1.4 | S62 @硫섏뀡 ?뚯씪?좏깮 | O(shell) | ?댁떇 | ChatPort + EnvironmentPort observe | 誘명룊媛 | old-auth | pending |
+| U1.5 | S70 ?뚯씪 deeplink (UC1/UC7 怨듭쑀) | O(shell) | ?댁떇 | ChatPort + EnvironmentPort **app-surface ?됱쐞**(?⑤꼸 open/?꾪솚) | 誘명룊媛 | old-auth | pending |
+| U1.6a | S03 provider ?ㅼ젙 UI (UC12 怨듭쑀) | O | ?댁떇 | control-plane/config | 誘명룊媛 | old-auth | pending(F0 ?몄젒, 誘몄륫?? |
+| U1.6b | S03 provider?뭓gent ?곌껐/寃利?| O ?숈옉(creds_update쨌chat_request provider) | ?댁떇 | control-plane?뭓gent | 誘명룊媛 | old-auth | pending |
 
 
-> **UC1 grounding (2026-06-10, Explore 실코드):** 옛 앱 채팅 *동작함* — `ChatPanel→chat-service.sendChatMessage→invoke("send_to_agent_command")→stdio→agent index.ts handleChatRequest→provider.chat() 스트리밍→"agent_response" event→handleChunk`. transport=**stdio JSON-line**(gRPC 0). DTO=`protocol.ts` ChatRequest/AgentResponseChunk(이식 가능). **ChatPort/AppPort 추상화 없음**(shell↔transport 직결)=보충. 루크 "agent 미연결"=memory/깊은통합(UC3+)이지 *기본 chat 아님*. → **UC1 수평 = 동작하는 흐름을 ChatPort/protocol(transport-neutral)로 *재표현*(이식) + gRPC=어댑터 교체**. scenario-auth 아님(old 동작 기준).
+> **UC1 grounding (2026-06-10, Explore ?ㅼ퐫??:** ????梨꾪똿 *?숈옉?? ??`ChatPanel?뭖hat-service.sendChatMessage?뭝nvoke("send_to_agent_command")?뭩tdio?뭓gent index.ts handleChatRequest?뭦rovider.chat() ?ㅽ듃由щ컢??agent_response" event?뭜andleChunk`. transport=**stdio JSON-line**(gRPC 0). DTO=`protocol.ts` ChatRequest/AgentResponseChunk(?댁떇 媛??. **ChatPort/AppPort 異붿긽???놁쓬**(shell?봳ransport 吏곴껐)=蹂댁땐. 猷⑦겕 "agent 誘몄뿰寃?=memory/源딆??듯빀(UC3+)?댁? *湲곕낯 chat ?꾨떂*. ??**UC1 ?섑룊 = ?숈옉?섎뒗 ?먮쫫??ChatPort/protocol(transport-neutral)濡?*?ы몴??(?댁떇) + gRPC=?대뙌??援먯껜**. scenario-auth ?꾨떂(old ?숈옉 湲곗?).
 
-**UC1 착수**: 수평 H-proto·H-tx·H-app·**H-agent** 먼저(agent 연결 *제대로*) → U1.1→U1.2→U1.3a/b 재표현 엮기 → mismatch=표면화(우김 금지) → U1.4~U1.6.
+**UC1 李⑹닔**: ?섑룊 H-proto쨌H-tx쨌H-app쨌**H-agent** 癒쇱?(agent ?곌껐 *?쒕?濡?) ??U1.1?뭊1.2?뭊1.3a/b ?ы몴????린 ??mismatch=?쒕㈃???곌? 湲덉?) ??U1.4~U1.6.
 
 ---
 
-## S 전수 분류 (S01~71 — per-S 테이블, 행단위 미분류 0; 기계 검증 대상)
-> GLM 3차: 불릿 그룹핑은 S별 이식/보충·multi-UC를 흐림 → per-S 행으로 전환. 각 행에 이식/보충/rej·UC(들)·포트·권위 필수.
+## S ?꾩닔 遺꾨쪟 (S01~71 ??per-S ?뚯씠釉? ?됰떒??誘몃텇瑜?0; 湲곌퀎 寃利????
+> GLM 3李? 遺덈┸ 洹몃９?묒? S蹂??댁떇/蹂댁땐쨌multi-UC瑜??먮┝ ??per-S ?됱쑝濡??꾪솚. 媛??됱뿉 ?댁떇/蹂댁땐/rej쨌UC(??쨌?ы듃쨌沅뚯쐞 ?꾩닔.
 
-| S | 기능 | UC(들) | 이식/보충/rej | 주 포트 | 권위 | 상태 |
+| S | 湲곕뒫 | UC(?? | ?댁떇/蹂댁땐/rej | 二??ы듃 | 沅뚯쐞 | ?곹깭 |
 |---|---|---|---|---|---|---|
-| S01 | 온보딩/welcome | UC12 | 이식 | control-plane | old-auth | pending |
-| S02 | 설정/settings 패널 | UC12 | 이식 | control-plane | old-auth | pending |
-| S03 | provider 설정 | UC12·UC1 | 이식 | control-plane (연결=H-agent 보충) | old-auth | pending(복잡·미측정) |
-| S04 | naia 계정/api key | UC12 | 이식 | control-plane | old-auth | pending |
-| S05 | sessions 관리 | UC12 | 이식 | ClientSessionPort/control | old-auth | pending |
-| S06 | agents 관리 | UC12 | 이식 | control-plane·skill | old-auth | pending |
-| S07 | skill-manager | UC12·skill | 이식 | ToolPort·EnvironmentPort(exec) | old-auth | pending(F3 인접) |
-| S08 | notify-config | UC12 | 이식 | control-plane | old-auth | pending |
-| S09 | system-status | UC11 | 이식 | InteroceptivePort | old-auth | F1 계약+코드 |
-| S10 | diagnostics | UC11 | 이식 | InteroceptivePort | old-auth | F1 계약+코드 |
-| S11 | device 상태/제어 | UC11·UC7 | 이식 | InteroceptivePort·EnvironmentPort | old-auth | F1(부분) |
-| S12 | approvals 승인 | UC13 | 이식+보충 | ApprovalPort | mixed | F1 계약+코드 |
-| S13 | 텍스트 대화 | UC1 | 이식+보충 | ChatPort(UI 이식)·llm/agent·ExpressionPort(보충) | old-auth(UI)/scenario(agent·Express) | pending |
-| S14 | omni 음성 | UC2 | 이식+보충 | SensoryPort·voice | mixed | pending(외부키) |
-| S15 | gemini-live 음성 | UC2 | 이식 | SensoryPort·voice | mixed | pending(외부키) |
-| S16 | openai-realtime 음성 | UC2 | 이식 | SensoryPort·voice | mixed | pending(외부키) |
-| S17 | tts | UC2 | 이식 | ExpressionPort(speech) | old-auth | pending |
-| S18 | voicewake | UC2 | 이식 | SensoryPort·wake | old-auth(잔재·미검증) | pending |
-| S19 | avatar 표현 | UC2 | 이식 | ExpressionPort(avatar) | old-auth | pending |
-| S20 | time | UC5 | 이식 | ToolPort | old-auth | pending |
-| S21 | weather | UC5 | 이식 | ToolPort | old-auth | pending |
-| S22 | memo | UC5 | 이식 | ToolPort | old-auth | pending |
-| S23 | github skill | UC5 | 이식 | ToolPort | old-auth | pending |
-| S24 | obsidian skill | UC5 | 이식 | ToolPort | old-auth | pending |
-| S25 | mcp 연결 | UC5 | 이식 | ToolPort | old-auth | pending |
-| S26 | agent-browser | UC6 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
-| S27 | browser 패널 | UC6 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
-| S28 | panel 설치 | UC9 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
-| S29 | generic-installed 패널 | UC9 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
-| S30 | sample-note 패널 | UC9 | rejected | — | — | rejected(제거됨) |
-| S31 | youtube-bgm | UC8 | 이식 | EnvironmentPort(space) | old-auth | pending |
-| S32 | 배경화면/scene | UC8 | 이식 | EnvironmentPort(space) | old-auth | pending |
-| S33 | workspace(fs·editor·filetree) | UC7 | 이식 | EnvironmentPort(observe+act) | old-auth | F2(observe)+F3(act) |
-| S34 | terminal(pty) | UC7 | 이식 | EnvironmentPort(observe+act) | old-auth | F2+F3(부분) |
-| S35 | channels 일반 | UC10 | 이식+보충 | (채널 ingress) | mixed | pending |
-| S36 | naia-discord | UC10 | 보충 | (채널) | scenario-auth | pending(깨짐) |
-| S37 | notify-discord | UC10 | 이식 | (notify) | old-auth | pending |
-| S38 | notify-google-chat | UC10 | 이식 | (notify) | old-auth | pending |
-| S39 | notify-slack | UC10 | 이식 | (notify) | old-auth | pending |
-| S41 | 기억 recall/주입 | UC3 | 이식+보충 | memory·scrubber(scrubber 이식, recall 보충) | mixed | pending(recall 미배선) |
-| S42 | 능동 회상 | UC4 | 보충 | memory·CronPort | scenario-auth | pending(미배선) |
-| S43 | cron 작업 | temporal·UC4 | 보충 | CronPort | scenario-auth | pending(미빌드; scaffold 발견 시 이식+보충 재평가) |
-| S44 | graceful degradation | UC14 | 보충 | InteroceptivePort·ExpressionPort | scenario-auth | F1(신설) |
-| S45 | 실행 중 중단/e-stop | UC13a | 보충 | SafetyPort | scenario-auth | pending |
-| S46 | 다중 클라이언트 충돌 | UC10a | 보충 | ClientSessionPort | scenario-auth | pending |
-| S47 | 페르소나/personality | UC12·표현 | 이식 | control-plane·ExpressionPort | old-auth | pending |
-| S48 | 로컬 스킬 로딩·확장 | UC5·skill | 이식+보충 | ToolPort·EnvironmentPort(loader 이식, 확장배선 보충) | mixed | pending(배선의존) |
-| S49 | STT 모델 관리 | UC2 | 이식 | SensoryPort·adapter | old-auth | pending |
-| S50 | 오디오 출력 장치 | UC2 | 이식 | (효과기 audio) | old-auth | pending |
-| S51 | gateway 운영 | control-plane | 이식 | control-plane | old-auth | pending |
-| S52 | memory facts CRUD | UC3 | 이식 | memory(facts) | old-auth | pending |
-| S52b | 메모리 백업/복원 | UC3 | 이식 | memory | old-auth | pending |
-| S53 | audit log | control-plane | 이식 | control-plane | old-auth | pending |
-| S54 | OAuth/로그인·key 검증 | UC12 | 이식+보충 | control-plane(auth) | mixed | pending(외부auth) |
-| S55 | gateway 스킬(web_search·x·discord) | UC5·UC10 | 이식 | ToolPort(gateway) | old-auth | pending |
-| S56 | external 광고 tool | UC5 | 이식 | ToolPort(gateway/mcp) | old-auth | pending |
-| S57 | ADK 부트스트랩 | UC12 | 이식 | control-plane | old-auth | F0 계약+코드 |
-| S58 | 비용 대시보드·잔액 | UC12 | 이식 | control-plane | old-auth | pending |
-| S59 | 앱 업데이트 알림/설치 | control-plane | 이식 | control-plane | old-auth | pending |
-| S60 | 원격 공지 배너 | control-plane | 이식 | control-plane | old-auth | pending |
-| S61 | 화면/패널 비전 캡처 | UC11·UC6 | 이식 | SensoryPort(vision) | old-auth | pending |
-| S62 | 채팅 @멘션 파일선택 | UC1 | 이식 | ChatPort·EnvironmentPort(observe) | old-auth | pending |
-| S63 | GitHub Issues 패널 | UC5·UC7 | 이식 | ToolPort·EnvironmentPort | old-auth | pending |
-| S64 | ModeBar 브라우저 바로가기 | UC6 | 이식 | EnvironmentPort(app-surface) | old-auth | pending |
-| S65 | botmadang 연동 | UC10·UC5 | rejected | — | — | rejected(루크 결정) |
-| S66 | 참조 오디오/voice clone | UC2 | 이식 | voice·ExpressionPort(timbre) | old-auth | pending |
-| S67 | Naia Lab 설정 동기화 | UC12 | 이식 | control-plane | old-auth | pending |
-| S70 | 채팅 파일 deeplink | UC1·UC7 | 이식 | ChatPort·EnvironmentPort(app-surface 행위) | old-auth | pending |
-| S71 | 번들 default-skills(~60+, OpenClaw) | UC5·skill | 이식 | ToolPort/SkillPort·gateway | old-auth | pending(per-skill 검증) |
+| S01 | ?⑤낫??welcome | UC12 | ?댁떇 | control-plane | old-auth | pending |
+| S02 | ?ㅼ젙/settings ?⑤꼸 | UC12 | ?댁떇 | control-plane | old-auth | pending |
+| S03 | provider ?ㅼ젙 | UC12쨌UC1 | ?댁떇 | control-plane (?곌껐=H-agent 蹂댁땐) | old-auth | pending(蹂듭옟쨌誘몄륫?? |
+| S04 | naia 怨꾩젙/api key | UC12 | ?댁떇 | control-plane | old-auth | pending |
+| S05 | sessions 愿由?| UC12 | ?댁떇 | ClientSessionPort/control | old-auth | pending |
+| S06 | agents 愿由?| UC12 | ?댁떇 | control-plane쨌skill | old-auth | pending |
+| S07 | skill-manager | UC12쨌skill | ?댁떇 | ToolPort쨌EnvironmentPort(exec) | old-auth | pending(F3 ?몄젒) |
+| S08 | notify-config | UC12 | ?댁떇 | control-plane | old-auth | pending |
+| S09 | system-status | UC11 | ?댁떇 | InteroceptivePort | old-auth | F1 怨꾩빟+肄붾뱶 |
+| S10 | diagnostics | UC11 | ?댁떇 | InteroceptivePort | old-auth | F1 怨꾩빟+肄붾뱶 |
+| S11 | device ?곹깭/?쒖뼱 | UC11쨌UC7 | ?댁떇 | InteroceptivePort쨌EnvironmentPort | old-auth | F1(遺遺? |
+| S12 | approvals ?뱀씤 | UC13 | ?댁떇+蹂댁땐 | ApprovalPort | mixed | F1 怨꾩빟+肄붾뱶 |
+| S13 | ?띿뒪?????| UC1 | ?댁떇+蹂댁땐 | ChatPort(UI ?댁떇)쨌llm/agent쨌ExpressionPort(蹂댁땐) | old-auth(UI)/scenario(agent쨌Express) | pending |
+| S14 | omni ?뚯꽦 | UC2 | ?댁떇+蹂댁땐 | SensoryPort쨌voice | mixed | pending(?몃??? |
+| S15 | gemini-live ?뚯꽦 | UC2 | ?댁떇 | SensoryPort쨌voice | mixed | pending(?몃??? |
+| S16 | openai-realtime ?뚯꽦 | UC2 | ?댁떇 | SensoryPort쨌voice | mixed | pending(?몃??? |
+| S17 | tts | UC2 | ?댁떇 | ExpressionPort(speech) | old-auth | pending |
+| S18 | voicewake | UC2 | ?댁떇 | SensoryPort쨌wake | old-auth(?붿옱쨌誘멸?利? | pending |
+| S19 | avatar ?쒗쁽 | UC2 | ?댁떇 | ExpressionPort(avatar) | old-auth | pending |
+| S20 | time | UC5 | ?댁떇 | ToolPort | old-auth | pending |
+| S21 | weather | UC5 | ?댁떇 | ToolPort | old-auth | pending |
+| S22 | memo | UC5 | ?댁떇 | ToolPort | old-auth | pending |
+| S23 | github skill | UC5 | ?댁떇 | ToolPort | old-auth | pending |
+| S24 | obsidian skill | UC5 | ?댁떇 | ToolPort | old-auth | pending |
+| S25 | mcp ?곌껐 | UC5 | ?댁떇 | ToolPort | old-auth | pending |
+| S26 | agent-browser | UC6 | ?댁떇 | EnvironmentPort(app-surface) | old-auth | pending |
+| S27 | browser ?⑤꼸 | UC6 | ?댁떇 | EnvironmentPort(app-surface) | old-auth | pending |
+| S28 | panel ?ㅼ튂 | UC9 | ?댁떇 | EnvironmentPort(app-surface) | old-auth | pending |
+| S29 | generic-installed ?⑤꼸 | UC9 | ?댁떇 | EnvironmentPort(app-surface) | old-auth | pending |
+| S30 | sample-note ?⑤꼸 | UC9 | rejected | ??| ??| rejected(?쒓굅?? |
+| S31 | youtube-bgm | UC8 | ?댁떇 | EnvironmentPort(space) | old-auth | pending |
+| S32 | 諛곌꼍?붾㈃/scene | UC8 | ?댁떇 | EnvironmentPort(space) | old-auth | pending |
+| S33 | workspace(fs쨌editor쨌filetree) | UC7 | ?댁떇 | EnvironmentPort(observe+act) | old-auth | F2(observe)+F3(act) |
+| S34 | terminal(pty) | UC7 | ?댁떇 | EnvironmentPort(observe+act) | old-auth | F2+F3(遺遺? |
+| S35 | channels ?쇰컲 | UC10 | ?댁떇+蹂댁땐 | (梨꾨꼸 ingress) | mixed | pending |
+| S36 | naia-discord | UC10 | 蹂댁땐 | (梨꾨꼸) | scenario-auth | pending(源⑥쭚) |
+| S37 | notify-discord | UC10 | ?댁떇 | (notify) | old-auth | pending |
+| S38 | notify-google-chat | UC10 | ?댁떇 | (notify) | old-auth | pending |
+| S39 | notify-slack | UC10 | ?댁떇 | (notify) | old-auth | pending |
+| S41 | 湲곗뼲 recall/二쇱엯 | UC3 | ?댁떇+蹂댁땐 | memory쨌scrubber(scrubber ?댁떇, recall 蹂댁땐) | mixed | pending(recall 誘몃같?? |
+| S42 | ?λ룞 ?뚯긽 | UC4 | 蹂댁땐 | memory쨌CronPort | scenario-auth | pending(誘몃같?? |
+| S43 | cron ?묒뾽 | temporal쨌UC4 | 蹂댁땐 | CronPort | scenario-auth | pending(誘몃퉴?? scaffold 諛쒓껄 ???댁떇+蹂댁땐 ?ы룊媛) |
+| S44 | graceful degradation | UC14 | 蹂댁땐 | InteroceptivePort쨌ExpressionPort | scenario-auth | F1(?좎꽕) |
+| S45 | ?ㅽ뻾 以?以묐떒/e-stop | UC13a | 蹂댁땐 | SafetyPort | scenario-auth | pending |
+| S46 | ?ㅼ쨷 ?대씪?댁뼵??異⑸룎 | UC10a | 蹂댁땐 | ClientSessionPort | scenario-auth | pending |
+| S47 | ?섎Ⅴ?뚮굹/personality | UC12쨌?쒗쁽 | ?댁떇 | control-plane쨌ExpressionPort | old-auth | pending |
+| S48 | 濡쒖뺄 ?ㅽ궗 濡쒕뵫쨌?뺤옣 | UC5쨌skill | ?댁떇+蹂댁땐 | ToolPort쨌EnvironmentPort(loader ?댁떇, ?뺤옣諛곗꽑 蹂댁땐) | mixed | pending(諛곗꽑?섏〈) |
+| S49 | STT 紐⑤뜽 愿由?| UC2 | ?댁떇 | SensoryPort쨌adapter | old-auth | pending |
+| S50 | ?ㅻ뵒??異쒕젰 ?μ튂 | UC2 | ?댁떇 | (?④낵湲?audio) | old-auth | pending |
+| S51 | gateway ?댁쁺 | control-plane | ?댁떇 | control-plane | old-auth | pending |
+| S52 | memory facts CRUD | UC3 | ?댁떇 | memory(facts) | old-auth | pending |
+| S52b | 硫붾え由?諛깆뾽/蹂듭썝 | UC3 | ?댁떇 | memory | old-auth | pending |
+| S53 | audit log | control-plane | ?댁떇 | control-plane | old-auth | pending |
+| S54 | OAuth/濡쒓렇?맞톕ey 寃利?| UC12 | ?댁떇+蹂댁땐 | control-plane(auth) | mixed | pending(?몃?auth) |
+| S55 | gateway ?ㅽ궗(web_search쨌x쨌discord) | UC5쨌UC10 | ?댁떇 | ToolPort(gateway) | old-auth | pending |
+| S56 | external 愿묎퀬 tool | UC5 | ?댁떇 | ToolPort(gateway/mcp) | old-auth | pending |
+| S57 | ADK 遺?몄뒪?몃옪 | UC12 | ?댁떇 | control-plane | old-auth | F0 怨꾩빟+肄붾뱶 |
+| S58 | 鍮꾩슜 ??쒕낫?쑣룹옍??| UC12 | ?댁떇 | control-plane | old-auth | pending |
+| S59 | ???낅뜲?댄듃 ?뚮┝/?ㅼ튂 | control-plane | ?댁떇 | control-plane | old-auth | pending |
+| S60 | ?먭꺽 怨듭? 諛곕꼫 | control-plane | ?댁떇 | control-plane | old-auth | pending |
+| S61 | ?붾㈃/?⑤꼸 鍮꾩쟾 罹≪쿂 | UC11쨌UC6 | ?댁떇 | SensoryPort(vision) | old-auth | pending |
+| S62 | 梨꾪똿 @硫섏뀡 ?뚯씪?좏깮 | UC1 | ?댁떇 | ChatPort쨌EnvironmentPort(observe) | old-auth | pending |
+| S63 | GitHub Issues ?⑤꼸 | UC5쨌UC7 | ?댁떇 | ToolPort쨌EnvironmentPort | old-auth | pending |
+| S64 | ModeBar 釉뚮씪?곗? 諛붾줈媛湲?| UC6 | ?댁떇 | EnvironmentPort(app-surface) | old-auth | pending |
+| S65 | botmadang ?곕룞 | UC10쨌UC5 | rejected | ??| ??| rejected(猷⑦겕 寃곗젙) |
+| S66 | 李몄“ ?ㅻ뵒??voice clone | UC2 | ?댁떇 | voice쨌ExpressionPort(timbre) | old-auth | pending |
+| S67 | Naia Lab ?ㅼ젙 ?숆린??| UC12 | ?댁떇 | control-plane | old-auth | pending |
+| S70 | 梨꾪똿 ?뚯씪 deeplink | UC1쨌UC7 | ?댁떇 | ChatPort쨌EnvironmentPort(app-surface ?됱쐞) | old-auth | pending |
+| S71 | 踰덈뱾 default-skills(~60+, OpenClaw) | UC5쨌skill | ?댁떇 | ToolPort/SkillPort쨌gateway | old-auth | pending(per-skill 寃利? |
 
-> (S40·S68·S69 = user-scenarios 인벤토리에 없음/배포 out-of-scope.)
+> (S40쨌S68쨌S69 = user-scenarios ?몃깽?좊━???놁쓬/諛고룷 out-of-scope.)
 
-## 갱신/체크 규칙
-조각 작업 시 해당 행 상태·fit 갱신, mismatch=즉시 기록+해결경로. **commit 전 `node scripts/check-assembly-coverage.mjs` 통과 필수**(미분류 0 + 상태≥코드 행 fit≠미평가). 다음 UC는 같은 수평 위에 수직만 추가.
+## 媛깆떊/泥댄겕 洹쒖튃
+議곌컖 ?묒뾽 ???대떦 ???곹깭쨌fit 媛깆떊, mismatch=利됱떆 湲곕줉+?닿껐寃쎈줈. **commit ??`node scripts/check-assembly-coverage.mjs` ?듦낵 ?꾩닔**(誘몃텇瑜?0 + ?곹깭?μ퐫????fit?좊??됯?). ?ㅼ쓬 UC??媛숈? ?섑룊 ?꾩뿉 ?섏쭅留?異붽?.
 
-## 검증 한계 (바운드 — 4계보 교차 후 정직 기록)
-codex·gemini·GLM 4라운드로 *내용 결함*(미분류0 거짓·수평 좁힘·canon포트 누락·per-S 오분류·S71 누락·H-app 재결합)은 정정됨. 남은 결함 = **체크 스크립트가 prose markdown 을 regex 로 검사**하는 한 내재적:
-- staleness 가 숫자 출력뿐(기준시각·증가차단 없음 → 무한 pending 가능) — backlog 가시화로 *은닉*은 막았으나 *강제*는 못 함.
-- per-S 행 검증이 컬럼 수·중복·테이블 소속까지는 못 봄(regex 한계).
-**근본 해결(권장, 미실행)**: 매트릭스를 **structured-data(YAML/JSON) + schema 검증**으로 — 그러면 regex 우회·format 누락 class 가 한 번에 닫힘. 지금은 prose+regex 로 *우발적 드롭은 잡고*(미분류0·per-S 분류·fit게이트·활성선언) 무한 하드닝은 바운드. AI "한 축만" 방지의 1차 안전망으로 충분, 2차(structured)는 이식 진행하며.
+## 寃利??쒓퀎 (諛붿슫????4怨꾨낫 援먯감 ???뺤쭅 湲곕줉)
+codex쨌gemini쨌GLM 4?쇱슫?쒕줈 *?댁슜 寃고븿*(誘몃텇瑜? 嫄곗쭞쨌?섑룊 醫곹옒쨌canon?ы듃 ?꾨씫쨌per-S ?ㅻ텇瑜샕톁71 ?꾨씫쨌H-app ?ш껐??? ?뺤젙?? ?⑥? 寃고븿 = **泥댄겕 ?ㅽ겕由쏀듃媛 prose markdown ??regex 濡?寃??*?섎뒗 ???댁옱??
+- staleness 媛 ?レ옄 異쒕젰肉?湲곗??쒓컖쨌利앷?李⑤떒 ?놁쓬 ??臾댄븳 pending 媛?? ??backlog 媛?쒗솕濡?*???? 留됱븯?쇰굹 *媛뺤젣*??紐???
+- per-S ??寃利앹씠 而щ읆 ?샕룹쨷蹂돠룻뀒?대툝 ?뚯냽源뚯???紐?遊?regex ?쒓퀎).
+**洹쇰낯 ?닿껐(沅뚯옣, 誘몄떎??**: 留ㅽ듃由?뒪瑜?**structured-data(YAML/JSON) + schema 寃利?*?쇰줈 ??洹몃윭硫?regex ?고쉶쨌format ?꾨씫 class 媛 ??踰덉뿉 ?ロ옒. 吏湲덉? prose+regex 濡?*?곕컻???쒕∼? ?↔퀬*(誘몃텇瑜?쨌per-S 遺꾨쪟쨌fit寃뚯씠?맞룻솢?깆꽑?? 臾댄븳 ?섎뱶?앹? 諛붿슫?? AI "??異뺣쭔" 諛⑹???1李??덉쟾留앹쑝濡?異⑸텇, 2李?structured)???댁떇 吏꾪뻾?섎ŉ.

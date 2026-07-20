@@ -7,6 +7,7 @@ import {
 	localFacadeUrlFromReady,
 	pcm16ToWav,
 	probeCascadeHealth,
+	remoteCascadeUrlFromConfig,
 	sampleCornerKey,
 	useCascadeCharacter,
 } from "../cascade-renderer";
@@ -522,6 +523,31 @@ describe("localFacadeUrlFromReady", () => {
 	it("JSON 파싱 실패 → null(안전)", () => {
 		expect(localFacadeUrlFromReady("not json")).toBeNull();
 		expect(localFacadeUrlFromReady("")).toBeNull();
+	});
+});
+
+describe("remoteCascadeUrlFromConfig", () => {
+	it("returns a trimmed remote Host only for logged-in Naia config", () => {
+		expect(
+			remoteCascadeUrlFromConfig({
+				naiaKey: "key",
+				cascadeRuntimeUrl: " https://gpu.example:9449/ ",
+			}),
+		).toBe("https://gpu.example:9449/");
+	});
+
+	it("ignores stale remote Host config after logout", () => {
+		expect(
+			remoteCascadeUrlFromConfig({
+				cascadeRuntimeUrl: "https://stale.example:9449",
+			}),
+		).toBeUndefined();
+		expect(
+			remoteCascadeUrlFromConfig({
+				naiaKey: "",
+				cascadeRuntimeUrl: "https://stale.example:9449",
+			}),
+		).toBeUndefined();
 	});
 });
 

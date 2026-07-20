@@ -1,46 +1,46 @@
-import { Logger } from "../logger";
+﻿import { Logger } from "../logger";
 /**
- * CascadeAvatarRenderer — NVA 비디오 아바타의 "말하는 입"을 cascade 런타임에서 받아 그리는 렌더러.
+ * CascadeAvatarRenderer ??NVA 鍮꾨뵒???꾨컮???"留먰븯??????cascade ?고??꾩뿉??諛쏆븘 洹몃━???뚮뜑??
  *
- * 아키텍처(TalkingKiosk `nva-renderer.ts` 검증 로직 이식): 클라이언트는 **얇은 MSE 이중버퍼 소비자**.
- * 실제 립싱크 픽셀은 cascade 런타임(Ditto TRT, GPU)이 생성해 fragmented MP4(또는 알파 webm)로 스트리밍한다.
- *   - host(`<video>`) = idle 루프(`GET {runtimeUrl}/idle`) — 비발화 시 노출.
- *   - buf(오버레이 `<video>`) = 발화 스트림(`POST /stream_text` 또는 `/stream`) — 첫 프레임에 host 위로 swap.
+ * ?꾪궎?띿쿂(TalkingKiosk `nva-renderer.ts` 寃利?濡쒖쭅 ?댁떇): ?대씪?댁뼵?몃뒗 **?뉗? MSE ?댁쨷踰꾪띁 ?뚮퉬??*.
+ * ?ㅼ젣 由쎌떛???쎌?? cascade ?고???Ditto TRT, GPU)???앹꽦??fragmented MP4(?먮뒗 ?뚰뙆 webm)濡??ㅽ듃由щ컢?쒕떎.
+ *   - host(`<video>`) = idle 猷⑦봽(`GET {runtimeUrl}/idle`) ??鍮꾨컻?????몄텧.
+ *   - buf(?ㅻ쾭?덉씠 `<video>`) = 諛쒗솕 ?ㅽ듃由?`POST /stream_text` ?먮뒗 `/stream`) ??泥??꾨젅?꾩뿉 host ?꾨줈 swap.
  *
- * naia-os 적응(TalkingKiosk 대비 차이):
- *   - gs:// 경로 제거 — cascade 가 `/load_nva` 로 이미 로드한 캐릭터를 쓴다(필요 시 `nvaName` query).
- *   - runtimeUrl = 로컬 임베드 cascade facade(예 http://127.0.0.1:8910) 또는 원격 GPU PC URL.
- *   - CODEC 설정 가능(facade 가 mp4/webm 중 무엇을 주는지에 따름).
- *   - `probeHealth()` 정적 헬퍼 — VideoAvatarCanvas 가 cascade 도달 가능 여부로 모드(cascade/미연결) 결정.
+ * naia-os ?곸쓳(TalkingKiosk ?鍮?李⑥씠):
+ *   - gs:// 寃쎈줈 ?쒓굅 ??cascade 媛 `/load_nva` 濡??대? 濡쒕뱶??罹먮┃?곕? ?대떎(?꾩슂 ??`nvaName` query).
+ *   - runtimeUrl = 濡쒖뺄 ?꾨쿋??cascade facade(??http://127.0.0.1:8910) ?먮뒗 ?먭꺽 GPU PC URL.
+ *   - CODEC ?ㅼ젙 媛??facade 媛 mp4/webm 以?臾댁뾿??二쇰뒗吏???곕쫫).
+ *   - `probeHealth()` ?뺤쟻 ?ы띁 ??VideoAvatarCanvas 媛 cascade ?꾨떖 媛???щ?濡?紐⑤뱶(cascade/誘몄뿰寃? 寃곗젙.
  *
  * SoT: .agents/progress/naia-os-cascade-talking-avatar-2026-07-01.md
  */
 
-/** TalkingKiosk 기본 코덱(H.264 Constrained Baseline + AAC). 알파가 필요하면 webm 코덱으로 override. */
+/** TalkingKiosk 湲곕낯 肄붾뜳(H.264 Constrained Baseline + AAC). ?뚰뙆媛 ?꾩슂?섎㈃ webm 肄붾뜳?쇰줈 override. */
 export const DEFAULT_CASCADE_CODEC =
 	'video/mp4; codecs="avc1.42E01F, mp4a.40.2"';
 
-/** 발화 종료 대기 상한(서버 행 방지). RTF~0.95 라 통상 수 초. */
+/** 諛쒗솕 醫낅즺 ?湲??곹븳(?쒕쾭 ??諛⑹?). RTF~0.95 ???듭긽 ??珥? */
 const ENDED_WAIT_CAP_MS = 300_000;
 
-/** 끊김(언더런) 방지용 소량 프리버퍼(초) — 첫 청크 즉시 재생 대신 이만큼 쌓은 뒤 시작. */
+/** ?딄?(?몃뜑?? 諛⑹????뚮웾 ?꾨━踰꾪띁(珥? ??泥?泥?겕 利됱떆 ?ъ깮 ????대쭔???볦? ???쒖옉. */
 const PREBUFFER_S = 0.2;
 
 export interface CascadeRendererConfig {
-	/** cascade facade(output_cascade) 절대/상대 URL. 예: http://127.0.0.1:8910 또는 https://gpu-pc/avatar */
+	/** cascade facade(output_cascade) ?덈?/?곷? URL. ?? http://127.0.0.1:8910 ?먮뒗 https://gpu-pc/avatar */
 	runtimeUrl: string;
-	/** cascade 가 멀티 캐릭터일 때 선택용(옵션). 보통 /load_nva 로 미리 로드하므로 생략. */
+	/** cascade 媛 硫??罹먮┃?곗씪 ???좏깮???듭뀡). 蹂댄넻 /load_nva 濡?誘몃━ 濡쒕뱶?섎?濡??앸왂. */
 	nvaName?: string;
-	/** MSE SourceBuffer 코덱. 기본 mp4(avc1+aac). 알파 webm 이면 호출측이 override. */
+	/** MSE SourceBuffer 肄붾뜳. 湲곕낯 mp4(avc1+aac). ?뚰뙆 webm ?대㈃ ?몄텧痢≪씠 override. */
 	codec?: string;
 }
 
 /**
- * `start_cascade` 의 CASCADE_READY 페이로드(JSON 문자열)에서 **로컬** facade URL 유도.
- * 아바타(ditto) 서비스가 실제로 떠 있을 때만 URL 반환 — 립싱크 가능한 경우에만 로컬 배선.
- * (focus=voice 로 avatar 서비스가 없으면 null → VideoAvatarCanvas 는 "미연결"로 표시, 아바타 노출 안 함.)
- * 파싱 실패 / facade_port 부재 / avatar 서비스 부재 → null(안전).
- * 페이로드 계약: windows-manager `loader/launcher.py` supervise() = `{facade_port, services:[{kind}]}`.
+ * `start_cascade` ??CASCADE_READY ?섏씠濡쒕뱶(JSON 臾몄옄???먯꽌 **濡쒖뺄** facade URL ?좊룄.
+ * ?꾨컮?(ditto) ?쒕퉬?ㅺ? ?ㅼ젣濡????덉쓣 ?뚮쭔 URL 諛섑솚 ??由쎌떛??媛?ν븳 寃쎌슦?먮쭔 濡쒖뺄 諛곗꽑.
+ * (focus=voice 濡?avatar ?쒕퉬?ㅺ? ?놁쑝硫?null ??VideoAvatarCanvas ??"誘몄뿰寃?濡??쒖떆, ?꾨컮? ?몄텧 ????)
+ * ?뚯떛 ?ㅽ뙣 / facade_port 遺??/ avatar ?쒕퉬??遺????null(?덉쟾).
+ * ?섏씠濡쒕뱶 怨꾩빟: windows-manager `loader/launcher.py` supervise() = `{facade_port, services:[{kind}]}`.
  */
 export function localFacadeUrlFromReady(ready: string): string | null {
 	try {
@@ -59,7 +59,21 @@ export function localFacadeUrlFromReady(ready: string): string | null {
 	}
 }
 
-/** PCM16 mono → WAV 컨테이너. speakAudio(외부 TTS PCM)를 /stream(wav)로 보내기 위함. */
+export function remoteCascadeUrlFromConfig(
+	config:
+		| {
+				naiaKey?: string | null;
+				cascadeRuntimeUrl?: string | null;
+		  }
+		| null
+		| undefined,
+): string | undefined {
+	if (!config?.naiaKey) return undefined;
+	const url = config.cascadeRuntimeUrl?.trim();
+	return url || undefined;
+}
+
+/** PCM16 mono ??WAV 而⑦뀒?대꼫. speakAudio(?몃? TTS PCM)瑜?/stream(wav)濡?蹂대궡湲??꾪븿. */
 export function pcm16ToWav(pcm: Uint8Array, sampleRate: number): Uint8Array {
 	const n = pcm.length;
 	const buf = new ArrayBuffer(44 + n);
@@ -85,11 +99,11 @@ export function pcm16ToWav(pcm: Uint8Array, sampleRate: number): Uint8Array {
 }
 
 /**
- * 외부 TTS 오디오(base64) → /stream 에 보낼 WAV bytes.
- *  - RIFF/WAVE 컨테이너면 그대로(게이트웨이 LINEAR16 = Google TTS 는 WAV 로 반환).
- *  - raw PCM16(헤더 없음)이면 sampleRate 로 WAV 컨테이너를 씌움.
- * trt /stream 은 librosa.load(sr=16000) 로 WAV 헤더의 원 샘플레이트를 읽어 16k 로 리샘플하므로,
- * 이미 WAV 인 것을 다시 감싸면(이중 WAV) librosa 가 헤더를 PCM 으로 오독 → 노이즈. 그래서 감지 필요.
+ * ?몃? TTS ?ㅻ뵒??base64) ??/stream ??蹂대궪 WAV bytes.
+ *  - RIFF/WAVE 而⑦뀒?대꼫硫?洹몃?濡?寃뚯씠?몄썾??LINEAR16 = Google TTS ??WAV 濡?諛섑솚).
+ *  - raw PCM16(?ㅻ뜑 ?놁쓬)?대㈃ sampleRate 濡?WAV 而⑦뀒?대꼫瑜??뚯?.
+ * trt /stream ? librosa.load(sr=16000) 濡?WAV ?ㅻ뜑?????섑뵆?덉씠?몃? ?쎌뼱 16k 濡?由ъ깦?뚰븯誘濡?
+ * ?대? WAV ??寃껋쓣 ?ㅼ떆 媛먯떥硫??댁쨷 WAV) librosa 媛 ?ㅻ뜑瑜?PCM ?쇰줈 ?ㅻ룆 ???몄씠利? 洹몃옒??媛먯? ?꾩슂.
  */
 export function ttsAudioToWav(
 	audioBase64: string,
@@ -98,7 +112,7 @@ export function ttsAudioToWav(
 	const bin = atob(audioBase64);
 	const bytes = new Uint8Array(bin.length);
 	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-	// "RIFF"(0x52494646) + offset8 "WAVE"(0x57415645) → 이미 WAV 컨테이너.
+	// "RIFF"(0x52494646) + offset8 "WAVE"(0x57415645) ???대? WAV 而⑦뀒?대꼫.
 	const isWav =
 		bytes.length >= 12 &&
 		bytes[0] === 0x52 &&
@@ -112,22 +126,22 @@ export function ttsAudioToWav(
 	return isWav ? bytes : pcm16ToWav(bytes, sampleRate);
 }
 
-/** 크로마 키잉 — NVA 플레이어(에디터 compose)의 색거리 키잉 이식 + 유리룩 보정.
- *  에디터 원본은 순수 크로마(초록) 배경 전제라 거리<90 일괄 투명화지만, 셸이 받는 프레임은
- *  **flatten 배경**이고 나이아 몸이 유리(반투명) 룩 = 배경과 색이 가까워 90 이면 몸까지 빠진다
- *  (2026-07-16 실기 "알파 과함"). 그래서 이중 임계:
- *   - 색거리 ≤ hard(기본 24) = 순수 배경 → 완전 투명 (h264 압축 노이즈 흡수 여유)
- *   - hard~soft(기본 56)     = 배경 근접(유리 가장자리) → 거리 비례 페더(반투명)
- *   - 그 밖                  = 캐릭터 → 보존 */
+/** ?щ줈留??ㅼ엵 ??NVA ?뚮젅?댁뼱(?먮뵒??compose)???됯굅由??ㅼ엵 ?댁떇 + ?좊━猷?蹂댁젙.
+ *  ?먮뵒???먮낯? ?쒖닔 ?щ줈留?珥덈줉) 諛곌꼍 ?꾩젣??嫄곕━<90 ?쇨큵 ?щ챸?붿?留? ?몄씠 諛쏅뒗 ?꾨젅?꾩?
+ *  **flatten 諛곌꼍**?닿퀬 ?섏씠??紐몄씠 ?좊━(諛섑닾紐? 猷?= 諛곌꼍怨??됱씠 媛源뚯썙 90 ?대㈃ 紐멸퉴吏 鍮좎쭊??
+ *  (2026-07-16 ?ㅺ린 "?뚰뙆 怨쇳븿"). 洹몃옒???댁쨷 ?꾧퀎:
+ *   - ?됯굅由???hard(湲곕낯 24) = ?쒖닔 諛곌꼍 ???꾩쟾 ?щ챸 (h264 ?뺤텞 ?몄씠利??≪닔 ?ъ쑀)
+ *   - hard~soft(湲곕낯 56)     = 諛곌꼍 洹쇱젒(?좊━ 媛?μ옄由? ??嫄곕━ 鍮꾨? ?섎뜑(諛섑닾紐?
+ *   - 洹?諛?                 = 罹먮┃????蹂댁〈 */
 export function chromaKeyImage(
 	d: Uint8ClampedArray,
 	r: number,
 	g: number,
 	b: number,
-	// ⚠️ 기본값 초보수(2026-07-16 실기 2차): 나이아 몸=유리(반투명 베이크)라 배경과 색이 섞여
-	// 있어 임계를 조금만 키워도 몸이 통째로 뚫린다("다 뚫려보여"). 색거리 키잉은 flatten 배경의
-	// 근사 제거까지만 담당하고, **진짜 마스크는 서버 알파(VP9 yuva420p) 채널이 정본** — 알파가
-	// 오면 sampleCornerKey 가 null 을 반환해 이 함수 자체가 호출되지 않는다.
+	// ?좑툘 湲곕낯媛?珥덈낫??2026-07-16 ?ㅺ린 2李?: ?섏씠??紐??좊━(諛섑닾紐?踰좎씠????諛곌꼍怨??됱씠 ?욎뿬
+	// ?덉뼱 ?꾧퀎瑜?議곌툑留??ㅼ썙??紐몄씠 ?듭㎏濡??ル┛??"???ル젮蹂댁뿬"). ?됯굅由??ㅼ엵? flatten 諛곌꼍??
+	// 洹쇱궗 ?쒓굅源뚯?留??대떦?섍퀬, **吏꾩쭨 留덉뒪?щ뒗 ?쒕쾭 ?뚰뙆(VP9 yuva420p) 梨꾨꼸???뺣낯** ???뚰뙆媛
+	// ?ㅻ㈃ sampleCornerKey 媛 null ??諛섑솚?????⑥닔 ?먯껜媛 ?몄텧?섏? ?딅뒗??
 	hard = 12,
 	soft = 20,
 ): void {
@@ -149,10 +163,10 @@ export function chromaKeyImage(
 	}
 }
 
-/** 프레임 배경(키) 색 추출 — 4모서리(2px 안쪽) 평균. NVA 계약상 캐릭터는 캔버스 중앙,
- *  배경은 단색 flatten 이므로 모서리 = 배경색. 모서리가 이미 투명(서버 알파 webm)이면
- *  null = 키잉 불요. 모서리 4점의 색이 서로 크게 다르면(배경이 단색이 아님 — 실사 등)
- *  null = 키잉하면 안 되는 소스. */
+/** ?꾨젅??諛곌꼍(?? ??異붿텧 ??4紐⑥꽌由?2px ?덉そ) ?됯퇏. NVA 怨꾩빟??罹먮┃?곕뒗 罹붾쾭??以묒븰,
+ *  諛곌꼍? ?⑥깋 flatten ?대?濡?紐⑥꽌由?= 諛곌꼍?? 紐⑥꽌由ш? ?대? ?щ챸(?쒕쾭 ?뚰뙆 webm)?대㈃
+ *  null = ?ㅼ엵 遺덉슂. 紐⑥꽌由?4?먯쓽 ?됱씠 ?쒕줈 ?ш쾶 ?ㅻⅤ硫?諛곌꼍???⑥깋???꾨떂 ???ㅼ궗 ??
+ *  null = ?ㅼ엵?섎㈃ ???섎뒗 ?뚯뒪. */
 export function sampleCornerKey(
 	d: Uint8ClampedArray,
 	w: number,
@@ -160,9 +174,9 @@ export function sampleCornerKey(
 ): [number, number, number] | null {
 	if (w < 32 || h < 32) return null;
 	const px = (x: number, y: number) => (y * w + x) * 4;
-	// ⚠️ 인셋 = 변의 2%(최소 4px). 최외곽 2~3px 에서 뽑으면 h264 프레임 경계의 어두운
-	// 테두리 아티팩트를 배경색으로 오인한다 — 2026-07-16 실측(Jina idle): 배경(254,240,213)
-	// 균일한데 (2,2)=(239,225,199) → 키가 26 거리로 어긋나 97.8% 보존(배경 불투명).
+	// ?좑툘 ?몄뀑 = 蹂??2%(理쒖냼 4px). 理쒖쇅怨?2~3px ?먯꽌 戮묒쑝硫?h264 ?꾨젅??寃쎄퀎???대몢??
+	// ?뚮몢由??꾪떚?⑺듃瑜?諛곌꼍?됱쑝濡??ㅼ씤?쒕떎 ??2026-07-16 ?ㅼ륫(Jina idle): 諛곌꼍(254,240,213)
+	// 洹좎씪?쒕뜲 (2,2)=(239,225,199) ???ㅺ? 26 嫄곕━濡??닿툔??97.8% 蹂댁〈(諛곌꼍 遺덊닾紐?.
 	const ix = Math.max(4, Math.round(w * 0.02));
 	const iy = Math.max(4, Math.round(h * 0.02));
 	const pts = [
@@ -181,7 +195,7 @@ export function sampleCornerKey(
 		b += d[p + 2];
 		a += d[p + 3];
 	}
-	if (a / 4 < 250) return null; // 소스가 이미 알파 채널 보유 — 이중 키잉 금지
+	if (a / 4 < 250) return null; // ?뚯뒪媛 ?대? ?뚰뙆 梨꾨꼸 蹂댁쑀 ???댁쨷 ?ㅼ엵 湲덉?
 	r = Math.round(r / 4);
 	g = Math.round(g / 4);
 	b = Math.round(b / 4);
@@ -189,12 +203,12 @@ export function sampleCornerKey(
 		const dr = d[p] - r;
 		const dg = d[p + 1] - g;
 		const db = d[p + 2] - b;
-		if (dr * dr + dg * dg + db * db > 8100) return null; // 모서리 불일치 = 단색 배경 아님
+		if (dr * dr + dg * dg + db * db > 8100) return null; // 紐⑥꽌由?遺덉씪移?= ?⑥깋 諛곌꼍 ?꾨떂
 	}
 	return [r, g, b];
 }
 
-/** cascade 도달 가능 여부 — `GET {url}/health`. VideoAvatarCanvas 의 모드 결정에 쓴다. */
+/** cascade ?꾨떖 媛???щ? ??`GET {url}/health`. VideoAvatarCanvas ??紐⑤뱶 寃곗젙???대떎. */
 export async function probeCascadeHealth(
 	runtimeUrl: string,
 	timeoutMs = 2000,
@@ -206,7 +220,7 @@ export async function probeCascadeHealth(
 	try {
 		const res = await fetchImpl(`${base}/health`, { signal: ctrl.signal });
 		if (!res.ok) return false;
-		// facade /health 는 {ok, ...} 또는 백엔드 not-ready 시 503. ok 필드 우선, 없으면 res.ok.
+		// facade /health ??{ok, ...} ?먮뒗 諛깆뿏??not-ready ??503. ok ?꾨뱶 ?곗꽑, ?놁쑝硫?res.ok.
 		try {
 			const j = (await res.json()) as { ok?: boolean };
 			return j.ok !== false;
@@ -220,13 +234,13 @@ export async function probeCascadeHealth(
 	}
 }
 
-/** 원격 cascade 의 활성 캐릭터 전환 — 셸 피커의 번들 폴더명(minho 등)을 서버 등록
- *  bundle_id(manifest meta.name, 예 "Minho" / "Naia (기본 캐릭터)")로 해석해
- *  `POST /use_character/{bundle_id}`. NVA 에디터와 동일 계약 — 이 호출이 없으면 셸에서
- *  아바타를 바꿔도 서버가 이전 캐릭터를 계속 내보낸다(2026-07-16 실기: jina/minho 무반응).
- *  음성은 분리 계약(PUT /voice)이라 캐릭터를 전환해도 음색은 안 바뀐다.
- *  매칭: bundle_id 정확일치 → bundle_id 접두일치 → name 접두일치 (대소문자 무시).
- *  실패/미등록 = false (서버 활성 캐릭터 유지 — fail-soft). */
+/** ?먭꺽 cascade ???쒖꽦 罹먮┃???꾪솚 ?????쇱빱??踰덈뱾 ?대뜑紐?minho ?????쒕쾭 ?깅줉
+ *  bundle_id(manifest meta.name, ??"Minho" / "Naia (湲곕낯 罹먮┃??")濡??댁꽍??
+ *  `POST /use_character/{bundle_id}`. NVA ?먮뵒?곗? ?숈씪 怨꾩빟 ?????몄텧???놁쑝硫??몄뿉??
+ *  ?꾨컮?瑜?諛붽퓭???쒕쾭媛 ?댁쟾 罹먮┃?곕? 怨꾩냽 ?대낫?몃떎(2026-07-16 ?ㅺ린: jina/minho 臾대컲??.
+ *  ?뚯꽦? 遺꾨━ 怨꾩빟(PUT /voice)?대씪 罹먮┃?곕? ?꾪솚?대룄 ?뚯깋? ??諛붾먮떎.
+ *  留ㅼ묶: bundle_id ?뺥솗?쇱튂 ??bundle_id ?묐몢?쇱튂 ??name ?묐몢?쇱튂 (??뚮Ц??臾댁떆).
+ *  ?ㅽ뙣/誘몃벑濡?= false (?쒕쾭 ?쒖꽦 罹먮┃???좎? ??fail-soft). */
 export async function useCascadeCharacter(
 	runtimeUrl: string,
 	bundleName: string,
@@ -256,12 +270,12 @@ export async function useCascadeCharacter(
 	}
 }
 
-/** 원격 cascade 에 선택 캐릭터가 활성화되도록 **보장**한다:
- *  ① `useCascadeCharacter` 로 전환 시도 → 성공이면 끝.
- *  ② 서버 미등록(예: 재부팅으로 /tmp 업로드분 소실)이라 실패하면 `uploader` 로 로컬 번들을
- *     서버에 업로드(`POST /upload_nva`, 에디터 casUpload 계약)한 뒤 **한 번 더** 전환 시도.
- *  uploader 는 Tauri invoke("upload_nva_bundle") 주입 — 이 함수 자체는 Tauri 비의존(테스트 가능).
- *  반환 = 최종 전환 성공 여부. 업로드가 throw 하면 false(서버 활성 캐릭터 유지, fail-soft). */
+/** ?먭꺽 cascade ???좏깮 罹먮┃?곌? ?쒖꽦?붾릺?꾨줉 **蹂댁옣**?쒕떎:
+ *  ??`useCascadeCharacter` 濡??꾪솚 ?쒕룄 ???깃났?대㈃ ??
+ *  ???쒕쾭 誘몃벑濡??? ?щ??낆쑝濡?/tmp ?낅줈?쒕텇 ?뚯떎)?대씪 ?ㅽ뙣?섎㈃ `uploader` 濡?濡쒖뺄 踰덈뱾??
+ *     ?쒕쾭???낅줈??`POST /upload_nva`, ?먮뵒??casUpload 怨꾩빟)????**??踰???* ?꾪솚 ?쒕룄.
+ *  uploader ??Tauri invoke("upload_nva_bundle") 二쇱엯 ?????⑥닔 ?먯껜??Tauri 鍮꾩쓽議??뚯뒪??媛??.
+ *  諛섑솚 = 理쒖쥌 ?꾪솚 ?깃났 ?щ?. ?낅줈?쒓? throw ?섎㈃ false(?쒕쾭 ?쒖꽦 罹먮┃???좎?, fail-soft). */
 export async function ensureRemoteCharacter(
 	runtimeUrl: string,
 	bundleName: string,
@@ -280,23 +294,23 @@ export class CascadeAvatarRenderer {
 	private host: HTMLVideoElement | null = null;
 	private buf: HTMLVideoElement | null = null;
 	private active: HTMLVideoElement | null = null;
-	private gen = 0; // 발화 세대 — barge-in/중복 무효화
+	private gen = 0; // 諛쒗솕 ?몃? ??barge-in/以묐났 臾댄슚??
 	private disposed = false;
 	private teardown: (() => void) | null = null;
 	private idleObjectUrl: string | null = null;
-	// ── 마스크(배경 제거) 캔버스 — NVA 플레이어(에디터 compose 루프) 이식 ──
-	// NVA 계약은 투명 배경 캐릭터(manifest background=transparent)인데, cascade 불투명(mp4)
-	// 출력은 배경이 단색으로 flatten 돼 온다. 플레이어(셸)가 프레임을 캔버스에 그리며 모서리
-	// 샘플색(=flatten 배경색)과의 색거리<90 픽셀을 투명화한다. 서버가 알파 webm 을 주면
-	// (모서리 알파<250) 키잉 없이 알파 보존 그대로 — 이중 처리 없음.
+	// ?? 留덉뒪??諛곌꼍 ?쒓굅) 罹붾쾭????NVA ?뚮젅?댁뼱(?먮뵒??compose 猷⑦봽) ?댁떇 ??
+	// NVA 怨꾩빟? ?щ챸 諛곌꼍 罹먮┃??manifest background=transparent)?몃뜲, cascade 遺덊닾紐?mp4)
+	// 異쒕젰? 諛곌꼍???⑥깋?쇰줈 flatten ???⑤떎. ?뚮젅?댁뼱(??媛 ?꾨젅?꾩쓣 罹붾쾭?ㅼ뿉 洹몃━硫?紐⑥꽌由?
+	// ?섑뵆??=flatten 諛곌꼍??怨쇱쓽 ?됯굅由?90 ?쎌????щ챸?뷀븳?? ?쒕쾭媛 ?뚰뙆 webm ??二쇰㈃
+	// (紐⑥꽌由??뚰뙆<250) ?ㅼ엵 ?놁씠 ?뚰뙆 蹂댁〈 洹몃?濡????댁쨷 泥섎━ ?놁쓬.
 	private mask: HTMLCanvasElement | null = null;
 	private maskOff: HTMLCanvasElement | null = null;
 	private maskRaf = 0;
 	private maskLastTs = 0;
-	// ★2026-07-10 립싱크 직렬 큐(라이브 발화 폭주 근본수정): 여러 문장(TTS 청크)이 거의 동시에
-	//   speak 를 호출해도 **하나씩 순서대로** 렌더/재생한다. 예전엔 각 speak 가 gen++ 로 이전을
-	//   supersede → 서로 취소 + 백엔드(cascade facade)에 동시 /stream 폭주 → 단일 GPU 큐 적체 →
-	//   facade 20s read 타임아웃으로 렌더 실패 → 립싱크·발화음성(webm mux) 둘 다 드롭.
+	// ??026-07-10 由쎌떛??吏곷젹 ???쇱씠釉?諛쒗솕 ??＜ 洹쇰낯?섏젙): ?щ윭 臾몄옣(TTS 泥?겕)??嫄곗쓽 ?숈떆??
+	//   speak 瑜??몄텧?대룄 **?섎굹???쒖꽌?濡?* ?뚮뜑/?ъ깮?쒕떎. ?덉쟾??媛?speak 媛 gen++ 濡??댁쟾??
+	//   supersede ???쒕줈 痍⑥냼 + 諛깆뿏??cascade facade)???숈떆 /stream ??＜ ???⑥씪 GPU ???곸껜 ??
+	//   facade 20s read ??꾩븘?껋쑝濡??뚮뜑 ?ㅽ뙣 ??由쎌떛??룸컻?붿쓬??webm mux) ?????쒕∼.
 	private speakQueue: Array<{
 		text: string;
 		audioWav?: Uint8Array;
@@ -308,7 +322,7 @@ export class CascadeAvatarRenderer {
 
 	constructor(
 		private readonly cfg: CascadeRendererConfig,
-		/** 발화 시작/종료 콜백(자막·STT 에코게이트·setSpeaking 동기화용). */
+		/** 諛쒗솕 ?쒖옉/醫낅즺 肄쒕갚(?먮쭑쨌STT ?먯퐫寃뚯씠?맞톝etSpeaking ?숆린?붿슜). */
 		private readonly onTalking?: (talking: boolean) => void,
 	) {}
 
@@ -316,7 +330,7 @@ export class CascadeAvatarRenderer {
 		return this.cfg.codec ?? DEFAULT_CASCADE_CODEC;
 	}
 
-	/** 런타임 엔드포인트 URL. nvaName 이 있으면 query 로 부착. 상대경로는 location.origin 기준 해석. */
+	/** ?고????붾뱶?ъ씤??URL. nvaName ???덉쑝硫?query 濡?遺李? ?곷?寃쎈줈??location.origin 湲곗? ?댁꽍. */
 	streamUrl(path: string): string {
 		const base = this.cfg.runtimeUrl.replace(/\/$/, "");
 		const origin =
@@ -336,13 +350,13 @@ export class CascadeAvatarRenderer {
 		t?.();
 	}
 
-	/** 활성 레퍼런스 음색 설정 — cascade `PUT /voice` 계약(2026-07-16 3자 합의: NVA/캐릭터 전환과
-	 *  독립된 런타임 음성). ⚠️ 외부(GCS 등) URL 을 **그대로 보내지 않는다** — 서버가 외부 파일을
-	 *  다운로드해 레퍼런스로 쓰면 샘플레이트 불일치로 합성이 깨진 실증(2026-07-16 새벽, 시연 서버
-	 *  무음 사고). cascade 는 같은 프리셋들의 48kHz 로컬 미러 팔레트(`GET /ref/voices` →
-	 *  `/ref/audio/<name>`)를 가지므로, **파일명만 뽑아 팔레트 URL 로 변환**해 보낸다.
-	 *  팔레트에 없는 이름 = 서버 400 fail-closed(기존 활성 음성 유지) → false.
-	 *  미지정이면 아무것도 보내지 않아 서버 기본(naia 팔레트 default)이 유지된다. */
+	/** ?쒖꽦 ?덊띁?곗뒪 ?뚯깋 ?ㅼ젙 ??cascade `PUT /voice` 怨꾩빟(2026-07-16 3???⑹쓽: NVA/罹먮┃???꾪솚怨?
+	 *  ?낅┰???고????뚯꽦). ?좑툘 ?몃?(GCS ?? URL ??**洹몃?濡?蹂대궡吏 ?딅뒗??* ???쒕쾭媛 ?몃? ?뚯씪??
+	 *  ?ㅼ슫濡쒕뱶???덊띁?곗뒪濡??곕㈃ ?섑뵆?덉씠??遺덉씪移섎줈 ?⑹꽦??源⑥쭊 ?ㅼ쬆(2026-07-16 ?덈꼍, ?쒖뿰 ?쒕쾭
+	 *  臾댁쓬 ?ш퀬). cascade ??媛숈? ?꾨━?뗫뱾??48kHz 濡쒖뺄 誘몃윭 ?붾젅??`GET /ref/voices` ??
+	 *  `/ref/audio/<name>`)瑜?媛吏誘濡? **?뚯씪紐낅쭔 戮묒븘 ?붾젅??URL 濡?蹂??*??蹂대궦??
+	 *  ?붾젅?몄뿉 ?녿뒗 ?대쫫 = ?쒕쾭 400 fail-closed(湲곗〈 ?쒖꽦 ?뚯꽦 ?좎?) ??false.
+	 *  誘몄??뺤씠硫??꾨Т寃껊룄 蹂대궡吏 ?딆븘 ?쒕쾭 湲곕낯(naia ?붾젅??default)???좎??쒕떎. */
 	async setVoice(refUrl: string | null | undefined): Promise<boolean> {
 		const raw = refUrl?.trim();
 		if (!raw) return false;
@@ -376,20 +390,20 @@ export class CascadeAvatarRenderer {
 		}
 	}
 
-	/** host 비디오에 idle 루프를 걸고, 그 위에 발화용 오버레이 buf 를 만든다. */
+	/** host 鍮꾨뵒?ㅼ뿉 idle 猷⑦봽瑜?嫄멸퀬, 洹??꾩뿉 諛쒗솕???ㅻ쾭?덉씠 buf 瑜?留뚮뱺?? */
 	start(hostVideo: HTMLVideoElement): void {
 		this.host = hostVideo;
 		this.disposed = false;
 		const b = document.createElement("video");
 		b.playsInline = true;
 		b.muted = true;
-		// ★2026-07-11 발화 오버레이(buf)를 idle(host)과 **정확히 겹치게**. 예전엔 buf=absolute 100%×100%
-		//   라 host(VIDEO_BASE_STYLE=maxWidth min(100%,56vh)/maxHeight 92% 로 중앙 축소)보다 크게 떠서
-		//   발화 영상이 다른 위치/크기(가운데 크게)로 나왔다(사용자 보고 — 발화 overlay가 이제
-		//   화면에 떠서 원래 있던 버그가 드러남). host 의 크기제약(maxWidth/maxHeight)·objectFit 을
-		//   **그대로 복사**하고 width/height=auto(→ 같은 비디오 = 같은 박스), **절대 중앙정렬**로 겹친다.
-		//   pan(host transform)은 중앙정렬 뒤에 이어붙여 동일 위치. inline 복사라 반응형 유지.
-		//   (grid-area 방식은 host 를 다음 행으로 밀어내 세로 어긋남 → absolute 중앙정렬로 회귀.)
+		// ??026-07-11 諛쒗솕 ?ㅻ쾭?덉씠(buf)瑜?idle(host)怨?**?뺥솗??寃뱀튂寃?*. ?덉쟾??buf=absolute 100%횞100%
+		//   ??host(VIDEO_BASE_STYLE=maxWidth min(100%,56vh)/maxHeight 92% 濡?以묒븰 異뺤냼)蹂대떎 ?ш쾶 ?좎꽌
+		//   諛쒗솕 ?곸긽???ㅻⅨ ?꾩튂/?ш린(媛?대뜲 ?ш쾶)濡??섏솕???ъ슜??蹂닿퀬 ??諛쒗솕 overlay媛 ?댁젣
+		//   ?붾㈃???좎꽌 ?먮옒 ?덈뜕 踰꾧렇媛 ?쒕윭??. host ???ш린?쒖빟(maxWidth/maxHeight)쨌objectFit ??
+		//   **洹몃?濡?蹂듭궗**?섍퀬 width/height=auto(??媛숈? 鍮꾨뵒??= 媛숈? 諛뺤뒪), **?덈? 以묒븰?뺣젹**濡?寃뱀튇??
+		//   pan(host transform)? 以묒븰?뺣젹 ?ㅼ뿉 ?댁뼱遺숈뿬 ?숈씪 ?꾩튂. inline 蹂듭궗??諛섏쓳???좎?.
+		//   (grid-area 諛⑹떇? host 瑜??ㅼ쓬 ?됱쑝濡?諛?대궡 ?몃줈 ?닿툔????absolute 以묒븰?뺣젹濡??뚭?.)
 		const _hcs = getComputedStyle(hostVideo);
 		b.style.cssText =
 			"position:absolute;top:50%;left:50%;width:auto;height:auto;opacity:0;transition:opacity .18s ease;pointer-events:none;z-index:1";
@@ -412,9 +426,9 @@ export class CascadeAvatarRenderer {
 		void this.loadIdle(hostVideo);
 		this.active = hostVideo;
 
-		// 마스크 캔버스 — buf 와 같은 박스/정렬로 videos 위(z-index 2)에 얹고, 원본 videos 는
-		// visibility 로 숨긴다(재생/디코딩은 계속 — 캔버스가 매 프레임 여기서 읽어 그린다).
-		// 오디오는 video 요소에서 그대로 나온다(visibility 는 음소거와 무관).
+		// 留덉뒪??罹붾쾭????buf ? 媛숈? 諛뺤뒪/?뺣젹濡?videos ??z-index 2)???밴퀬, ?먮낯 videos ??
+		// visibility 濡??④릿???ъ깮/?붿퐫?⑹? 怨꾩냽 ??罹붾쾭?ㅺ? 留??꾨젅???ш린???쎌뼱 洹몃┛??.
+		// ?ㅻ뵒?ㅻ뒗 video ?붿냼?먯꽌 洹몃?濡??섏삩??visibility ???뚯냼嫄곗? 臾닿?).
 		const cvs = document.createElement("canvas");
 		cvs.style.cssText =
 			"position:absolute;top:50%;left:50%;width:auto;height:auto;pointer-events:none;z-index:2";
@@ -429,8 +443,8 @@ export class CascadeAvatarRenderer {
 		this.maskRaf = requestAnimationFrame(this.drawMask);
 	}
 
-	/** 마스크 렌더 루프 — 활성 비디오(idle host 또는 발화 buf) 프레임을 키잉해 캔버스에 그린다.
-	 *  25fps 클립이므로 ~30ms 로 스로틀(불필요한 getImageData 절약). */
+	/** 留덉뒪???뚮뜑 猷⑦봽 ???쒖꽦 鍮꾨뵒??idle host ?먮뒗 諛쒗솕 buf) ?꾨젅?꾩쓣 ?ㅼ엵??罹붾쾭?ㅼ뿉 洹몃┛??
+	 *  25fps ?대┰?대?濡?~30ms 濡??ㅻ줈?(遺덊븘?뷀븳 getImageData ?덉빟). */
 	private drawMask = (ts = 0): void => {
 		if (this.disposed || !this.mask || !this.maskOff) return;
 		if (ts - this.maskLastTs >= 30) {
@@ -459,10 +473,10 @@ export class CascadeAvatarRenderer {
 						ctx.clearRect(0, 0, w, h);
 						ctx.putImageData(img, 0, 0);
 						if (key) {
-							// h264 프레임 최외곽의 어두운 경계 아티팩트(실측: 좌우 6px 밴드 —
-							// keyed 잔존 col 0~5·714~719, Minho/Jina idle)를 링으로 제거.
-							// NVA 프레이밍상 캐릭터가 최외곽 8px 에 닿지 않으므로 안전.
-							// 키잉이 켜진(불투명 flatten) 프레임에만 적용.
+							// h264 ?꾨젅??理쒖쇅怨쎌쓽 ?대몢??寃쎄퀎 ?꾪떚?⑺듃(?ㅼ륫: 醫뚯슦 6px 諛대뱶 ??
+							// keyed ?붿〈 col 0~5쨌714~719, Minho/Jina idle)瑜?留곸쑝濡??쒓굅.
+							// NVA ?꾨젅?대컢??罹먮┃?곌? 理쒖쇅怨?8px ???우? ?딆쑝誘濡??덉쟾.
+							// ?ㅼ엵??耳쒖쭊(遺덊닾紐?flatten) ?꾨젅?꾩뿉留??곸슜.
 							const RING = 8;
 							ctx.clearRect(0, 0, w, RING);
 							ctx.clearRect(0, h - RING, w, RING);
@@ -470,7 +484,7 @@ export class CascadeAvatarRenderer {
 							ctx.clearRect(w - RING, 0, RING, h);
 						}
 					} catch {
-						// getImageData 실패(taint 등) — 키잉 포기, 원본 프레임 그대로 노출
+						// getImageData ?ㅽ뙣(taint ?? ???ㅼ엵 ?ш린, ?먮낯 ?꾨젅??洹몃?濡??몄텧
 						ctx.clearRect(0, 0, w, h);
 						ctx.drawImage(v, 0, 0, w, h);
 					}
@@ -480,9 +494,9 @@ export class CascadeAvatarRenderer {
 		this.maskRaf = requestAnimationFrame(this.drawMask);
 	};
 
-	/** 발화 요청 — **직렬 큐**에 넣어 하나씩 순서대로 렌더/재생한다(동시 폭주 방지). 여러 문장의
-	 *  TTS 청크가 거의 동시에 speakAudio→speak 를 호출해도, 각 발화는 앞 발화가 끝난 뒤 시작한다.
-	 *  interrupt()/stop() 이 대기 큐를 비운다(barge-in). 실제 렌더/재생은 speakNow. */
+	/** 諛쒗솕 ?붿껌 ??**吏곷젹 ??*???ｌ뼱 ?섎굹???쒖꽌?濡??뚮뜑/?ъ깮?쒕떎(?숈떆 ??＜ 諛⑹?). ?щ윭 臾몄옣??
+	 *  TTS 泥?겕媛 嫄곗쓽 ?숈떆??speakAudio?뭩peak 瑜??몄텧?대룄, 媛?諛쒗솕????諛쒗솕媛 ?앸궃 ???쒖옉?쒕떎.
+	 *  interrupt()/stop() ???湲??먮? 鍮꾩슫??barge-in). ?ㅼ젣 ?뚮뜑/?ъ깮? speakNow. */
 	async speak(
 		text: string,
 		audioWav?: Uint8Array,
@@ -502,8 +516,8 @@ export class CascadeAvatarRenderer {
 		});
 	}
 
-	/** 큐를 하나씩 순차 처리(재진입 방지). 한 발화가 끝나야 다음이 시작 → 백엔드에 /stream 이
-	 *  항상 1건만 in-flight → 큐 적체·타임아웃 소멸. disposed/큐비움 시 종료. */
+	/** ?먮? ?섎굹???쒖감 泥섎━(?ъ쭊??諛⑹?). ??諛쒗솕媛 ?앸굹???ㅼ쓬???쒖옉 ??諛깆뿏?쒖뿉 /stream ??
+	 *  ??긽 1嫄대쭔 in-flight ?????곸껜쨌??꾩븘???뚮㈇. disposed/?먮퉬? ??醫낅즺. */
 	private async drainSpeakQueue(): Promise<void> {
 		if (this.draining) return;
 		this.draining = true;
@@ -523,18 +537,18 @@ export class CascadeAvatarRenderer {
 			}
 		} finally {
 			this.draining = false;
-			// drain 도중 새로 들어온 항목이 있으면 이어서 처리(경합 방지).
+			// drain ?꾩쨷 ?덈줈 ?ㅼ뼱????ぉ???덉쑝硫??댁뼱??泥섎━(寃쏀빀 諛⑹?).
 			if (this.speakQueue.length && !this.disposed) void this.drainSpeakQueue();
 		}
 	}
 
-	/** 텍스트 발화(직렬 큐 drainSpeakQueue 가 호출) — audioWav 미지정 시 cascade 내장 TTS(/stream_text),
-	 *  지정 시 /stream(wav). 응답 Content-Type 로 렌더 방식 결정:
-	 *   - video/webm(완전 파일, composite 마스크 video/알파) → Blob → `<video>.src` (전체 수신 후 재생).
-	 *   - video/mp4(fragmented) → MSE 이중버퍼(첫 청크부터 저지연 재생).
-	 *  ★composite 알파 webm 은 스트리밍 시 duration/cues 부재로 `<video>`가 비디오 트랙을 못 넘김
-	 *   (오디오만·화면정지) → 서버가 **완전한 webm 파일**로 출력하고 클라는 Blob 으로 받아야 한다
-	 *   (avatar_ditto_composite.py 의 "완전한 webm 파일로 출력" 주석과 대칭). */
+	/** ?띿뒪??諛쒗솕(吏곷젹 ??drainSpeakQueue 媛 ?몄텧) ??audioWav 誘몄?????cascade ?댁옣 TTS(/stream_text),
+	 *  吏????/stream(wav). ?묐떟 Content-Type 濡??뚮뜑 諛⑹떇 寃곗젙:
+	 *   - video/webm(?꾩쟾 ?뚯씪, composite 留덉뒪??video/?뚰뙆) ??Blob ??`<video>.src` (?꾩껜 ?섏떊 ???ъ깮).
+	 *   - video/mp4(fragmented) ??MSE ?댁쨷踰꾪띁(泥?泥?겕遺???吏???ъ깮).
+	 *  ?꿤omposite ?뚰뙆 webm ? ?ㅽ듃由щ컢 ??duration/cues 遺?щ줈 `<video>`媛 鍮꾨뵒???몃옓??紐??섍?
+	 *   (?ㅻ뵒?ㅻ쭔쨌?붾㈃?뺤?) ???쒕쾭媛 **?꾩쟾??webm ?뚯씪**濡?異쒕젰?섍퀬 ?대씪??Blob ?쇰줈 諛쏆븘???쒕떎
+	 *   (avatar_ditto_composite.py ??"?꾩쟾??webm ?뚯씪濡?異쒕젰" 二쇱꽍怨??移?. */
 	private async speakNow(
 		text: string,
 		audioWav?: Uint8Array,
@@ -582,10 +596,10 @@ export class CascadeAvatarRenderer {
 		} finally {
 			// Never swallow speech when rendering fails or returns an empty stream.
 			signalPlaybackReady();
-			// ★현 세대만 자기 정리를 한다. 발화가 새 speak/interrupt/stop 으로 대체되면 gen 이 올라가고,
-			//   그 대체자가 자기 시작 시 runTeardown 으로 **이 세대의** cleanup 을 이미 실행한다. 여기서
-			//   또 runTeardown 하면 this.teardown 이 가리키는 **더 새로운 세대**의 cleanup 을 잘못 실행해
-			//   현재 발화의 objectURL 을 revoke 하고 swap/ended 리스너를 떼어버린다(정체성 가드 상실 회귀).
+			// ?낇쁽 ?몃?留??먭린 ?뺣━瑜??쒕떎. 諛쒗솕媛 ??speak/interrupt/stop ?쇰줈 ?泥대릺硫?gen ???щ씪媛怨?
+			//   洹??泥댁옄媛 ?먭린 ?쒖옉 ??runTeardown ?쇰줈 **???몃???* cleanup ???대? ?ㅽ뻾?쒕떎. ?ш린??
+			//   ??runTeardown ?섎㈃ this.teardown ??媛由ы궎??**???덈줈???몃?**??cleanup ???섎せ ?ㅽ뻾??
+			//   ?꾩옱 諛쒗솕??objectURL ??revoke ?섍퀬 swap/ended 由ъ뒪?덈? ?쇱뼱踰꾨┛???뺤껜??媛???곸떎 ?뚭?).
 			if (my === this.gen) {
 				this.onTalking?.(false);
 				try {
@@ -600,8 +614,8 @@ export class CascadeAvatarRenderer {
 		}
 	}
 
-	/** 발화 종료 대기 — `ended` 이벤트 또는 폴링(back.ended)·상한(ENDED_WAIT_CAP_MS). endedFn 등록 콜백으로
-	 *  호출측 cleanup 이 리스너를 제거하게 한다. barge-in(gen 변경) 시 즉시 resolve. */
+	/** 諛쒗솕 醫낅즺 ?湲???`ended` ?대깽???먮뒗 ?대쭅(back.ended)쨌?곹븳(ENDED_WAIT_CAP_MS). endedFn ?깅줉 肄쒕갚?쇰줈
+	 *  ?몄텧痢?cleanup ??由ъ뒪?덈? ?쒓굅?섍쾶 ?쒕떎. barge-in(gen 蹂寃? ??利됱떆 resolve. */
 	private waitEnded(
 		back: HTMLVideoElement,
 		my: number,
@@ -626,7 +640,7 @@ export class CascadeAvatarRenderer {
 		});
 	}
 
-	/** fragmented mp4 스트림 → MSE 이중버퍼. 첫 청크부터 재생, swap 시 host 위로 노출. */
+	/** fragmented mp4 ?ㅽ듃由???MSE ?댁쨷踰꾪띁. 泥?泥?겕遺???ъ깮, swap ??host ?꾨줈 ?몄텧. */
 	private async renderMseStream(
 		res: Response,
 		back: HTMLVideoElement,
@@ -673,7 +687,7 @@ export class CascadeAvatarRenderer {
 			try {
 				if (ms.readyState === "open") ms.endOfStream();
 			} catch {
-				/* updating 중이거나 이미 닫힘 */
+				/* updating 以묒씠嫄곕굹 ?대? ?ロ옒 */
 			}
 			try {
 				URL.revokeObjectURL(url);
@@ -721,7 +735,7 @@ export class CascadeAvatarRenderer {
 				try {
 					sb.appendBuffer(queue.shift()! as BufferSource);
 				} catch {
-					/* SourceBuffer 닫힘/제거 경합 — 무시 */
+					/* SourceBuffer ?ロ옒/?쒓굅 寃쏀빀 ??臾댁떆 */
 				}
 			} else if (ended && ms.readyState === "open") {
 				try {
@@ -765,15 +779,15 @@ export class CascadeAvatarRenderer {
 			playStarted = true;
 			void back.play().catch(() => undefined);
 		}
-		if (first) return; // 빈 스트림 — 즉시 종료(고착 회피)
+		if (first) return; // 鍮??ㅽ듃由???利됱떆 醫낅즺(怨좎갑 ?뚰뵾)
 		await this.waitEnded(back, my, (fn) => {
 			endedFn = fn;
 		});
 	}
 
-	/** 완전한 VP9 알파 webm 파일(composite 마스크 video) → Blob → `<video>.src`.
-	 *  전체 수신 후 재생(스트리밍 webm 은 브라우저가 비디오 트랙을 못 넘김). webm 에 오디오(opus)
-	 *  포함 → swap 시 unmute 로 발화 음성 재생. */
+	/** ?꾩쟾??VP9 ?뚰뙆 webm ?뚯씪(composite 留덉뒪??video) ??Blob ??`<video>.src`.
+	 *  ?꾩껜 ?섏떊 ???ъ깮(?ㅽ듃由щ컢 webm ? 釉뚮씪?곗?媛 鍮꾨뵒???몃옓??紐??섍?). webm ???ㅻ뵒??opus)
+	 *  ?ы븿 ??swap ??unmute 濡?諛쒗솕 ?뚯꽦 ?ъ깮. */
 	private async renderWebmFile(
 		res: Response,
 		back: HTMLVideoElement,
@@ -832,8 +846,8 @@ export class CascadeAvatarRenderer {
 	}
 
 	/**
-	 * 외부 TTS 오디오(base64) 주입 → /stream 립싱크. WAV 컨테이너면 그대로, raw PCM16 이면
-	 * sampleRate 로 감싼다(ttsAudioToWav — 이중 WAV 방지). 게이트웨이 LINEAR16 = Google TTS WAV.
+	 * ?몃? TTS ?ㅻ뵒??base64) 二쇱엯 ??/stream 由쎌떛?? WAV 而⑦뀒?대꼫硫?洹몃?濡? raw PCM16 ?대㈃
+	 * sampleRate 濡?媛먯떬??ttsAudioToWav ???댁쨷 WAV 諛⑹?). 寃뚯씠?몄썾??LINEAR16 = Google TTS WAV.
 	 */
 	async speakAudio(
 		audioBase64: string,
@@ -844,14 +858,14 @@ export class CascadeAvatarRenderer {
 		return this.speak("(audio)", ttsAudioToWav(audioBase64, sampleRate), opts);
 	}
 
-	/** 대기 큐 비우기 — 각 대기자를 조용히 resolve(await 행 방지). interrupt/stop 공용. */
+	/** ?湲???鍮꾩슦湲???媛??湲곗옄瑜?議곗슜??resolve(await ??諛⑹?). interrupt/stop 怨듭슜. */
 	private clearSpeakQueue(): void {
 		const pending = this.speakQueue;
 		this.speakQueue = [];
 		for (const p of pending) p.resolve();
 	}
 
-	/** 현재 발화 즉시 중단(barge-in). 대기 중인 큐도 모두 취소한다. */
+	/** ?꾩옱 諛쒗솕 利됱떆 以묐떒(barge-in). ?湲?以묒씤 ?먮룄 紐⑤몢 痍⑥냼?쒕떎. */
 	interrupt(): void {
 		this.clearSpeakQueue();
 		this.gen++;
@@ -873,7 +887,7 @@ export class CascadeAvatarRenderer {
 		this.disposed = true;
 		this.gen++;
 		this.runTeardown();
-		// 발화 중 정지(언마운트 등)면 setSpeaking(true) 가 전역 스토어에 남지 않도록 해제(interrupt 와 대칭).
+		// 諛쒗솕 以??뺤?(?몃쭏?댄듃 ??硫?setSpeaking(true) 媛 ?꾩뿭 ?ㅽ넗?댁뿉 ?⑥? ?딅룄濡??댁젣(interrupt ? ?移?.
 		this.onTalking?.(false);
 		try {
 			this.active?.pause();

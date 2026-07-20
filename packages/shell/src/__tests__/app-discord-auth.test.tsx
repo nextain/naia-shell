@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const listeners: Record<
@@ -14,6 +14,11 @@ vi.mock("@tauri-apps/api/event", () => ({
 			delete listeners[name];
 		});
 	}),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+	convertFileSrc: vi.fn((path: string) => path),
+	invoke: vi.fn(() => Promise.resolve(null)),
 }));
 
 // App 마운트 effect(secure-store via migrate*/loadConfig)가 @tauri-apps/plugin-store `load` 를 호출한다.
@@ -42,6 +47,10 @@ vi.mock("../components/OnboardingWizard", () => ({
 
 vi.mock("../components/AvatarCanvas", () => ({
 	AvatarCanvas: () => <div>avatar</div>,
+}));
+
+vi.mock("../components/VideoAvatarCanvas", () => ({
+	VideoAvatarCanvas: () => <div>video-avatar</div>,
 }));
 
 vi.mock("../components/ChatArea", () => ({
@@ -86,6 +95,7 @@ import { App } from "../App";
 
 describe("App discord deep-link persistence", () => {
 	afterEach(() => {
+		cleanup();
 		localStorage.clear();
 		Object.keys(listeners).forEach((key) => delete listeners[key]);
 	});
@@ -126,5 +136,46 @@ describe("App discord deep-link persistence", () => {
 		);
 		render(<App />);
 		expect(typeof listeners.naia_auth_complete).toBe("function");
+	});
+
+	it("does not mount stale logged-out video avatar config", () => {
+		localStorage.setItem("naia-adk-path", "C:\\naia");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-3-flash-preview",
+				apiKey: "",
+				onboardingComplete: true,
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "Naia",
+				cascadeRuntimeUrl: "https://stale.example:9449",
+			}),
+		);
+
+		render(<App />);
+
+		expect(screen.queryByText("video-avatar")).toBeNull();
+		expect(screen.getByText("avatar")).toBeTruthy();
+	});
+
+	it("mounts video avatar for a logged-out explicit local avatar profile", () => {
+		localStorage.setItem("naia-adk-path", "C:\\naia");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-3-flash-preview",
+				apiKey: "",
+				onboardingComplete: true,
+				avatarProvider: "naia-video-avatar",
+				nvaModel: "Naia",
+				localGpuTier: "laptop-4060-8g",
+			}),
+		);
+
+		render(<App />);
+
+		expect(screen.getByText("video-avatar")).toBeTruthy();
 	});
 });

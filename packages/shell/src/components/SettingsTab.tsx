@@ -23,7 +23,11 @@ import {
 	getDefaultTtsVoiceForAvatar,
 	getDefaultVoiceForAvatar,
 } from "../lib/avatar-presets";
-import { localFacadeUrlFromReady } from "../lib/avatar/cascade-renderer";
+import {
+	localFacadeUrlFromReady,
+	remoteCascadeUrlFromConfig,
+} from "../lib/avatar/cascade-renderer";
+import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
 import {
@@ -652,7 +656,7 @@ export function SettingsTab() {
 	// 의 cascadeUrl 폴백과 동형으로 정렬).
 	const cascadeProbeUrl =
 		localFacadeUrl?.trim() ||
-		loadConfig()?.cascadeRuntimeUrl?.trim() ||
+		remoteCascadeUrlFromConfig(loadConfig()) ||
 		(ttsProvider === "naia-local-voice" ? vllmTtsHost?.trim() : "") ||
 		null;
 	useEffect(() => {
@@ -1767,6 +1771,9 @@ export function SettingsTab() {
 		persistConfig({
 			avatarProvider: "naia-video-avatar",
 			nvaModel: selectedNva,
+			cascadeRuntimeUrl: naiaKey
+				? cascadeRuntimeUrl.trim() || undefined
+				: undefined,
 		});
 	}
 
@@ -2076,6 +2083,10 @@ export function SettingsTab() {
 		// Derive ttsEngine from ttsProvider for agent compatibility
 		// Only "google" uses direct Google TTS; all others (including nextain) use Gateway
 		const derivedTtsEngine = ttsProvider === "google" ? "google" : "gateway";
+		const savedAvatarProvider: AppConfig["avatarProvider"] =
+			cascadeAvatarPossible && avatarProvider === "naia-video-avatar"
+				? "naia-video-avatar"
+				: "vrm";
 		const newConfig = {
 			...existing,
 			provider,
@@ -2087,13 +2098,13 @@ export function SettingsTab() {
 			locale,
 			theme,
 			vrmModel: vrmModel !== defaultVrm ? vrmModel : undefined,
-			avatarProvider,
+			avatarProvider: savedAvatarProvider,
 			nvaModel:
-				avatarProvider === "naia-video-avatar"
+				savedAvatarProvider === "naia-video-avatar"
 					? nvaModel || DEFAULT_NVA_MODEL // R6: 미지정이면 기본 번들
 					: undefined,
 			cascadeRuntimeUrl:
-				avatarProvider === "naia-video-avatar"
+				savedAvatarProvider === "naia-video-avatar" && naiaKey
 					? cascadeRuntimeUrl.trim() || undefined
 					: undefined,
 			customVrms: customVrms.length > 0 ? customVrms : undefined,
@@ -2284,9 +2295,8 @@ export function SettingsTab() {
 	// 위젯 disabled 만으로는 부족 — 로그아웃 후에도 config 의 localGpuTier 가 남아
 	// activeLocalTier 가 truthy 가 되면 요약/추천 배지가 로컬을 반영해 게이트가 샌다.
 	// 설정값(config)은 남겨 재로그인 시 복원되지만, 파생 활성상태는 로그인에 종속시킨다.
-	const activeLocalTier = naiaKey
-		? resolveActiveTier(localGpuTier, detectedVramGb)
-		: null;
+	const configuredLocalTier = resolveActiveTier(localGpuTier, detectedVramGb);
+	const activeLocalTier = naiaKey ? configuredLocalTier : null;
 	// 배타 티어(8G)면 focus 로 실제 로컬 capability 를 해소(llm | avatar | both). 비배타면 전부.
 	const tierExclusive =
 		!!activeLocalTier?.exclusiveLocal && !tierFitsBoth(activeLocalTier);
@@ -2298,20 +2308,22 @@ export function SettingsTab() {
 		1.5,
 		activeLocalTier,
 	);
-	const localTierCapabilities = localVramFit.caps;
 	// free VRAM 부족으로 로컬 LLM 이 클라우드로 강등됐는지 — 프라이버시 정직 위해 UI 경고 표시.
 	const localLlmFallbackToCloud = localVramFit.llmFallbackToCloud;
-	// 비디오 아바타(cascade Ditto)를 띄울 수 있는가 = 로컬 GPU 프로파일이 "avatar" capability 를
-	// **실제로** 제공할 때만(capability 기반 — exclusive/focus 휴리스틱 아님). resolveLocalCapabilities
-	// 가 모든 케이스를 해소: 로그아웃(activeLocalTier=null)→[]→false(FR-3), 6G(avatar)→true,
-	// 8G 배타는 focus=avatar|both 일 때 true·llm 일 때 false, 12G+ 는 true. 이 값으로 아바타 유형 피커의
-	// "비디오 아바타" 선택을 게이트한다(가능할 때만 선택). VideoAvatarCanvas 자동기동과 동일 로직.
-	// 로그인 사용자는 NVA를 선택한 뒤 같은 아바타 설정에서 원격 Host URL을 지정할 수 있다.
-	// 선택 자체가 로컬 TRT capability나 local8gFocus를 만들어내지는 않는다.
-	const cascadeAvatarPossible =
-		localTierCapabilities.includes("avatar") ||
-		!!normalizeCascadeUrl(cascadeRuntimeUrl).url ||
-		!!naiaKey;
+	// NVA selection is available when either an account-backed remote cascade is
+	// configured or an explicit local tier provides avatar capability. Stale
+	// localStorage alone must not unlock remote Host controls after logout.
+	// Keep activeLocalTier login-scoped for remote/cost/account-bound summaries.
+	const localAvatarCapable = resolveLocalCapabilities(
+		localGpuTier === "auto" ? null : configuredLocalTier,
+		local8gFocus,
+	).includes("avatar");
+	const cascadeAvatarPossible = !!naiaKey || localAvatarCapable;
+	const remoteCascadeConfigAllowed = !!naiaKey;
+	const effectiveAvatarProvider =
+		avatarProvider === "naia-video-avatar" && !cascadeAvatarPossible
+			? "vrm"
+			: avatarProvider;
 	// FR-VRAM.4: tier 가 VRAM 예산 내에서 로컬 추천할 슬롯(숨김 아님 — 추천만).
 	const effectiveCapabilities: ModelCapability[] = baseCapabilities;
 	const capabilitySlots = deriveSettingsSlots(effectiveCapabilities);
@@ -2322,6 +2334,8 @@ export function SettingsTab() {
 	// 슬롯 오버뷰 = **적용(applied) 상태**(라이브). 피커/셀렉터는 스테이징(React state)이고
 	// "적용"(handleSave)이 스테이징→적용으로 커밋한다. 그래서 요약은 loadConfig() 을 읽는다.
 	const appliedCfg = loadConfig();
+	const appliedEffectiveAvatarProvider =
+		effectiveAvatarProviderFromConfig(appliedCfg);
 	const slotSnapshot = readSlots(appliedCfg ?? ({} as AppConfig));
 
 	const SLOT_LABEL_KEYS: Record<SlotId, string> = {
@@ -2343,7 +2357,7 @@ export function SettingsTab() {
 				: "starting";
 		}
 		if (id === "avatar") {
-			if (appliedCfg?.avatarProvider !== "naia-video-avatar") return null;
+			if (appliedEffectiveAvatarProvider !== "naia-video-avatar") return null;
 			return cascadeHealth?.avatar_enabled && cascadeHealth.avatar
 				? "running"
 				: "starting";
@@ -2377,7 +2391,7 @@ export function SettingsTab() {
 				// (마이그레이션이 비움)를 읽어 항상 "미설정"으로 뜨므로, 여기선 적용된 config
 				// (appliedCfg.avatarProvider + nvaModel/vrmModel)를 직접 표시한다. 경로면 basename 만.
 				const bare = (v: string) => v.split(/[/\\]/).filter(Boolean).pop() ?? v;
-				const ap = appliedCfg?.avatarProvider;
+				const ap = appliedEffectiveAvatarProvider;
 				if (ap === "naia-video-avatar") {
 					return `${t("settings.avatarProviderVideo")}${appliedCfg?.nvaModel ? ` / ${bare(appliedCfg.nvaModel)}` : ""}`;
 				}
@@ -2723,7 +2737,7 @@ export function SettingsTab() {
 						<label>{t("settings.avatarProvider")}</label>
 						<select
 							id="avatar-provider"
-							value={avatarProvider}
+							value={effectiveAvatarProvider}
 							onChange={(e) => {
 								const next = e.target.value as "vrm" | "naia-video-avatar";
 								// cascade 기동 불가 시 비디오 아바타 선택 차단(정적 사진 폴백을 안 만들기 위함).
@@ -2744,6 +2758,7 @@ export function SettingsTab() {
 									persistConfig({
 										avatarProvider: next,
 										nvaModel: undefined,
+										cascadeRuntimeUrl: undefined,
 									});
 								}
 							}}
@@ -2787,7 +2802,7 @@ export function SettingsTab() {
 					</div>
 
 					{/* VRM picker — shown when avatarProvider === "vrm" */}
-					{avatarProvider === "vrm" && (
+					{effectiveAvatarProvider === "vrm" && (
 						<div className="settings-field">
 							<label>{t("settings.vrmModel")}</label>
 							<div className="vrm-list">
@@ -2865,7 +2880,7 @@ export function SettingsTab() {
 					)}
 
 					{/* .nva picker — shown when avatarProvider === "naia-video-avatar" */}
-					{avatarProvider === "naia-video-avatar" && (
+					{effectiveAvatarProvider === "naia-video-avatar" && (
 						<div className="settings-field">
 							<label>{t("settings.avatarProviderVideo")}</label>
 							<div className="vrm-list">
@@ -2908,44 +2923,50 @@ export function SettingsTab() {
 								)}
 							</div>
 							{/* FR-6(2026-07-01): 립싱크는 TTS 음성이 있을 때만. TTS 꺼짐 → 정적. */}
-							<label htmlFor="cascade-runtime-url">
-								{t("settings.cascadeRuntimeUrlLabel")}
-							</label>
-							<input
-								id="cascade-runtime-url"
-								type="text"
-								className="settings-input"
-								value={cascadeRuntimeUrl}
-								placeholder="https://gpu-host.example:9449"
-								onChange={(e) => {
-									setCascadeRuntimeUrl(e.target.value);
-									if (cascadeUrlError) setCascadeUrlError("");
-								}}
-								onBlur={(e) => {
-									const { url, error } = normalizeCascadeUrl(e.target.value);
-									if (error) {
-										setCascadeUrlError(error);
-										return;
-									}
-									setCascadeUrlError("");
-									setCascadeRuntimeUrl(url ?? "");
-									persistConfig({ cascadeRuntimeUrl: url });
-								}}
-							/>
-							{cascadeUrlError && (
-								<div
-									className="settings-hint settings-hint-error"
-									data-testid="cascade-url-error"
-								>
-									{t("settings.cascadeUrlError")}
-								</div>
+							{remoteCascadeConfigAllowed && (
+								<>
+									<label htmlFor="cascade-runtime-url">
+										{t("settings.cascadeRuntimeUrlLabel")}
+									</label>
+									<input
+										id="cascade-runtime-url"
+										type="text"
+										className="settings-input"
+										value={cascadeRuntimeUrl}
+										placeholder="https://gpu-host.example:9449"
+										onChange={(e) => {
+											setCascadeRuntimeUrl(e.target.value);
+											if (cascadeUrlError) setCascadeUrlError("");
+										}}
+										onBlur={(e) => {
+											const { url, error } = normalizeCascadeUrl(
+												e.target.value,
+											);
+											if (error) {
+												setCascadeUrlError(error);
+												return;
+											}
+											setCascadeUrlError("");
+											setCascadeRuntimeUrl(url ?? "");
+											persistConfig({ cascadeRuntimeUrl: url });
+										}}
+									/>
+									{cascadeUrlError && (
+										<div
+											className="settings-hint settings-hint-error"
+											data-testid="cascade-url-error"
+										>
+											{t("settings.cascadeUrlError")}
+										</div>
+									)}
+									<div className="settings-hint">
+										{t("settings.cascadeRuntimeUrlHint")}
+									</div>
+									<div className="settings-hint">
+										{t("settings.cascadeRuntimeUrlEgress")}
+									</div>
+								</>
 							)}
-							<div className="settings-hint">
-								{t("settings.cascadeRuntimeUrlHint")}
-							</div>
-							<div className="settings-hint">
-								{t("settings.cascadeRuntimeUrlEgress")}
-							</div>
 							<div
 								className="settings-hint"
 								data-testid="nva-lipsync-note"

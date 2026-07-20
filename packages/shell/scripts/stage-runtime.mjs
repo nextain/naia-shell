@@ -48,6 +48,115 @@ const CASCADE_LOADER_SIBLING = resolve(
 	SHELL,
 	"../../../naia-omni-windows-manager/loader",
 );
+const REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290";
+const REQUIRED_PROTO_SHA256 = "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92";
+const AGENT_CANDIDATES = [
+	resolve(REPO_ROOT, "..", "naia-agent"),
+	resolve(REPO_ROOT, "..", "..", "naia-agent"),
+	resolve(REPO_ROOT, "..", "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
+	resolve(REPO_ROOT, "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
+];
+
+function gitOutput(dir, args) {
+	try {
+		return execFileSync("git", ["-C", dir, ...args], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+	} catch {
+		return null;
+	}
+}
+
+function isCleanProto(dir) {
+	return gitOutput(dir, ["status", "--porcelain", "--", "src/main/adapters/grpc/naia_agent.proto"]) === "";
+}
+
+function isCleanAgentEntrypoint(dir) {
+	return gitOutput(dir, ["status", "--porcelain", "--", "scripts/builds/agent-stdio-entry.mjs"]) === "";
+}
+
+function isCleanCheckout(dir) {
+	return gitOutput(dir, ["status", "--porcelain"]) === "";
+}
+
+function sha256File(path) {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function isPairedAgentCheckout(dir) {
+	return (
+		existsSync(resolve(dir, "scripts/builds/agent-stdio-entry.mjs")) &&
+		existsSync(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) &&
+		gitOutput(dir, ["rev-parse", "HEAD"]) === REQUIRED_AGENT_COMMIT &&
+		isCleanProto(dir) &&
+		isCleanAgentEntrypoint(dir) &&
+		isCleanCheckout(dir) &&
+		sha256File(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) === REQUIRED_PROTO_SHA256
+	);
+}
+
+function firstPairedAgentCheckout() {
+	for (const dir of AGENT_CANDIDATES) {
+		if (isPairedAgentCheckout(dir)) return dir;
+	}
+	return null;
+}
+
+function gitRootForPath(path, isFile) {
+	const dir = isFile ? dirname(resolve(path)) : resolve(path);
+	const root = gitOutput(dir, ["rev-parse", "--show-toplevel"]);
+	if (!root) throw new Error(`[stage-runtime] path is not inside a git checkout: ${path}`);
+	return root.replaceAll("\\", "/");
+}
+
+function validateAgentEnvPair(agentScript, protoDir) {
+	if (!existsSync(agentScript)) throw new Error(`[stage-runtime] NAIA_AGENT_SCRIPT not found: ${agentScript}`);
+	if (!existsSync(resolve(protoDir, "naia_agent.proto"))) {
+		throw new Error(`[stage-runtime] NAIA_AGENT_PROTO_DIR missing naia_agent.proto: ${protoDir}`);
+	}
+	const scriptRoot = gitRootForPath(agentScript, true);
+	const protoRoot = gitRootForPath(protoDir, false);
+	if (scriptRoot !== protoRoot) {
+		throw new Error(`[stage-runtime] NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must come from the same checkout: ${scriptRoot} !== ${protoRoot}`);
+	}
+	if (resolve(agentScript).replaceAll("\\", "/") !== resolve(scriptRoot, "scripts/builds/agent-stdio-entry.mjs").replaceAll("\\", "/")) {
+		throw new Error(`[stage-runtime] NAIA_AGENT_SCRIPT must be scripts/builds/agent-stdio-entry.mjs from the paired checkout: ${agentScript}`);
+	}
+	if (resolve(protoDir).replaceAll("\\", "/") !== resolve(scriptRoot, "src/main/adapters/grpc").replaceAll("\\", "/")) {
+		throw new Error(`[stage-runtime] NAIA_AGENT_PROTO_DIR must be src/main/adapters/grpc from the paired checkout: ${protoDir}`);
+	}
+	if (gitOutput(scriptRoot, ["rev-parse", "HEAD"]) !== REQUIRED_AGENT_COMMIT) {
+		throw new Error(`[stage-runtime] paired naia-agent checkout must be exactly ${REQUIRED_AGENT_COMMIT}: ${scriptRoot}`);
+	}
+	if (!isCleanProto(scriptRoot)) {
+		throw new Error(`[stage-runtime] paired naia-agent proto must be clean: ${scriptRoot}`);
+	}
+	if (!isCleanAgentEntrypoint(scriptRoot)) {
+		throw new Error(`[stage-runtime] paired naia-agent entrypoint must be clean: ${scriptRoot}`);
+	}
+	if (!isCleanCheckout(scriptRoot)) {
+		throw new Error(`[stage-runtime] paired naia-agent checkout must be clean: ${scriptRoot}`);
+	}
+	if (sha256File(resolve(protoDir, "naia_agent.proto")) !== REQUIRED_PROTO_SHA256) {
+		throw new Error(`[stage-runtime] paired naia-agent proto SHA256 must be ${REQUIRED_PROTO_SHA256}: ${protoDir}`);
+	}
+}
+
+function applyPairedAgentEnv(env) {
+	const pairedAgent = firstPairedAgentCheckout();
+	if (!pairedAgent) {
+		throw new Error(
+			`[stage-runtime] no paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT} with agent-stdio-entry.mjs and naia_agent.proto`,
+		);
+	}
+	env.NAIA_AGENT_SCRIPT =
+		env.NAIA_AGENT_SCRIPT ?? resolve(pairedAgent, "scripts/builds/agent-stdio-entry.mjs");
+	env.NAIA_AGENT_PROTO_DIR =
+		env.NAIA_AGENT_PROTO_DIR ?? resolve(pairedAgent, "src/main/adapters/grpc");
+	validateAgentEnvPair(env.NAIA_AGENT_SCRIPT, env.NAIA_AGENT_PROTO_DIR);
+	return pairedAgent;
+}
 
 /* ───────────────────────── 순수 함수 (vitest 대상 — 부작용 0) ───────────────────────── */
 
@@ -454,13 +563,14 @@ async function main() {
 	const matrix = readMatrix();
 
 	await prepareRuntime(matrix, platform, arch);
+	const pairedAgentRoot = applyPairedAgentEnv(process.env);
 
 	// ③ 스테이징 — 정책은 매트릭스 staging 필드가 소유(P1-R1: 하드코딩이면 매트릭스가 장식이 됨)
 	const stagingUnits = [
 		{
 			key: "agent",
 			script: "scripts/stage-agent.mjs",
-			sibling: resolve(SHELL, "../../../naia-agent"),
+			sibling: pairedAgentRoot,
 		},
 		{
 			key: "bgmSidecar",

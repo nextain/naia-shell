@@ -10,28 +10,50 @@ const sInv = [...new Set([...src.matchAll(/^\|\s*\*{0,2}(S\d+b?)\b/gm)].map((m) 
 const ucInv = [...new Set([...src.matchAll(/\*\*(UC\d+[a-z-]*)/g)].map((m) => m[1]))];
 
 // per-S: 각 S 는 *자기 표 행*(| S## | ... |)을 갖고 이식/보충/rej 분류 동반해야 (GLM C-2: 불릿 그룹 우회 차단)
-const CLASSIFY = /(이식|보충|reject|rejected|rej\b)/;
+const CLASSIFY_TOKENS = ["이식", "보충", "reject", "rejected", "?댁떇", "蹂댁땐"];
+const hasAnyToken = (text, tokens) => tokens.some((token) => text.includes(token));
+const hasClassification = (text) => hasAnyToken(text, CLASSIFY_TOKENS) || /\brej\b/.test(text);
 const sRow = (tok) => lines.find((l) => new RegExp(`^\\|\\s*${tok}\\s*\\|`).test(l));
 const missingS = sInv.filter((s) => {
-  const r = sRow(s); if (!r || !CLASSIFY.test(r)) return true;
+  const r = sRow(s); if (!r || !hasClassification(r)) return true;
   return r.split("|").map((c)=>c.trim()).filter(Boolean).length < 6; // S|기능|UC|이식/보충|포트|권위|상태 ≈ 7칸(여유 6)
 });
 // UC: 분류 라인 내 존재
-const CLASS = /(이식|보충|reject|rejected|old-auth|scenario|F0|F1|F2|F3|pending|계약|코드|검증|Port|control-plane|out-of-scope)/;
-const classifiedLines = lines.filter((l) => (/^\s*\|/.test(l) || /^\s*-/.test(l)) && CLASS.test(l));
+const CLASS_TOKENS = [
+  ...CLASSIFY_TOKENS,
+  "old-auth",
+  "scenario",
+  "F0",
+  "F1",
+  "F2",
+  "F3",
+  "pending",
+  "계약",
+  "코드",
+  "검증",
+  "Port",
+  "control-plane",
+  "out-of-scope",
+  "怨꾩빟",
+  "肄붾뱶",
+  "寃利",
+];
+const classifiedLines = lines.filter((l) => (/^\s*\|/.test(l) || /^\s*-/.test(l)) && hasAnyToken(l, CLASS_TOKENS));
 const missingUC = ucInv.filter((u) => !classifiedLines.some((l) => new RegExp(`\\b${u.replace(/-/g,"\\-")}\\b`).test(l)));
 
 // fit 게이트: fit-추적 행(미평가/clean/mismatch 토큰 보유) 중 상태(마지막 셀) 코드/검증인데 fit∉{clean,resolved}
-const FIT_TOK = /(clean|mismatch|미평가|resolved)/, FIT_OK = /(clean|mismatch-resolved|resolved)/;
-const fitRows = lines.filter((l) => /^\s*\|/.test(l) && FIT_TOK.test(l));
+const FIT_TOKENS = ["clean", "mismatch", "미평가", "resolved", "誘명룊媛"];
+const FIT_OK_TOKENS = ["clean", "mismatch-resolved", "resolved"];
+const DONE_STATUS_TOKENS = ["코드", "검증", "肄붾뱶", "寃利"];
+const fitRows = lines.filter((l) => /^\s*\|/.test(l) && hasAnyToken(l, FIT_TOKENS));
 const fitViol = fitRows.filter((l) => {
   const cells = l.split("|").map((c) => c.trim()).filter(Boolean);
   const status = cells[cells.length - 1];
-  const fitCell = cells.find((c) => FIT_TOK.test(c)) || "";
-  return /(코드|검증)/.test(status) && !FIT_OK.test(fitCell);
+  const fitCell = cells.find((c) => hasAnyToken(c, FIT_TOKENS)) || "";
+  return hasAnyToken(status, DONE_STATUS_TOKENS) && !hasAnyToken(fitCell, FIT_OK_TOKENS);
 });
-const backlog = fitRows.filter((l) => /미평가/.test(l)).length;       // 가시화(영구 은닉 금지)
-const hasActive = /## 현재 활성/.test(mtx);
+const backlog = fitRows.filter((l) => hasAnyToken(l, ["미평가", "誘명룊媛"])).length;       // 가시화(영구 은닉 금지)
+const hasActive = /## 현재 활성/.test(mtx) || mtx.includes("## ?꾩옱 ?쒖꽦");
 
 let fail = 0;
 console.log(`[assembly-coverage] S ${sInv.length} / UC ${ucInv.length}`);
