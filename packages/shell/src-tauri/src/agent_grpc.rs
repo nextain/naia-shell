@@ -408,6 +408,21 @@ impl AgentGrpc {
         Ok(self.client.diagnostics(pb::DiagnosticsRequest {}).await?.into_inner())
     }
 
+    pub async fn shutdown(&mut self, nonce: String) -> Result<(), tonic::Status> {
+        let ack = self
+            .client
+            .shutdown(pb::ShutdownRequest { nonce })
+            .await?
+            .into_inner();
+        if ack.ok {
+            Ok(())
+        } else {
+            Err(tonic::Status::permission_denied(
+                "agent graceful shutdown rejected",
+            ))
+        }
+    }
+
     /// Chat server-stream → 각 AgentEvent 를 UI JSON 으로 emit(현 reader loop 의 agent_response 와 동일 형태).
     pub async fn chat<F: FnMut(String)>(&mut self, req: ChatRequest, mut emit: F) -> Result<(), tonic::Status> {
         let mut stream = self.client.chat(req).await?.into_inner();

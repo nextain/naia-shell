@@ -255,8 +255,14 @@ struct AgentProcess {
     lease: Option<AgentChildLease>,
     discord_cleanup: Option<DiscordSpawnCleanup>,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
+    shutdown_tx: tokio::sync::mpsc::UnboundedSender<AgentShutdownCommand>,
     /// agent-core gRPC listening addr ??寃곌낵 諛섑솚??unary 而ㅻ㎤???? compile_knowledge)媛 蹂꾨룄 ?대씪濡?connect.
     grpc_addr: String,
+}
+
+struct AgentShutdownCommand {
+    nonce: String,
+    result: std::sync::mpsc::SyncSender<Result<(), String>>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
@@ -941,8 +947,7 @@ fn spawn_background_discord_reaper(
 // Drop ?먯꽌 紐낆떆 kill 濡?orphan 諛⑹?(codex 由щ럭 #1). 醫낅즺/replace ?묒そ 而ㅻ쾭.
 impl Drop for AgentProcess {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let child_reaped = self.child.wait().is_ok();
+        let child_reaped = graceful_shutdown_and_reap_agent(self).is_ok();
         let _ = self.finish_owned_cleanup(child_reaped);
     }
 }
@@ -1850,6 +1855,10 @@ fn spawn_agent_core(
         || Ok(()),
     )?;
     cmd.arg(&child_lease.marker);
+    // Cross-platform graceful shutdown capability. This is independent from
+    // the Discord credential, is never logged, and the Agent deletes it from
+    // its environment before loading runtime modules.
+    cmd.env("NAIA_AGENT_SHUTDOWN_NONCE", &child_lease.nonce);
 
     log_verbose(&format!(
         "[Naia] Starting agent-core: {} {}",
@@ -2099,10 +2108,13 @@ fn spawn_agent_core(
 
     // 硫붿떆吏 梨꾨꼸: send_to_agent(sync) ??dispatcher task(async, gRPC ?대씪 ?뚯쑀). nested runtime ?뚰뵾.
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (shutdown_tx, shutdown_rx) =
+        tokio::sync::mpsc::unbounded_channel::<AgentShutdownCommand>();
     tauri::async_runtime::spawn(agent_dispatcher(
         addr.clone(),
         adk_path,
         rx,
+        shutdown_rx,
         app_handle.clone(),
         audit_db.clone(),
     ));
@@ -2113,6 +2125,7 @@ fn spawn_agent_core(
         lease: Some(lease),
         discord_cleanup,
         tx,
+        shutdown_tx,
         grpc_addr: addr,
     })
 }
@@ -2124,6 +2137,7 @@ async fn agent_dispatcher(
     addr: String,
     adk_path: String,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    mut shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
     app: AppHandle,
     audit_db: audit::AuditDb,
 ) {
@@ -2178,7 +2192,31 @@ async fn agent_dispatcher(
             }
         });
     }
-    while let Some(msg) = rx.recv().await {
+    loop {
+        let msg = tokio::select! {
+            biased;
+            command = shutdown_rx.recv() => {
+                let Some(AgentShutdownCommand { nonce, result }) = command else {
+                    break;
+                };
+                let shutdown_result = client
+                    .shutdown(nonce)
+                    .await
+                    .map_err(|error| format!("agent_graceful_shutdown_rpc_failed: {error}"));
+                let accepted = shutdown_result.is_ok();
+                let _ = result.send(shutdown_result);
+                if accepted {
+                    break;
+                }
+                continue;
+            }
+            message = rx.recv() => {
+                let Some(message) = message else {
+                    break;
+                };
+                message
+            }
+        };
         let v: serde_json::Value = match serde_json::from_str(&msg) {
             Ok(v) => v,
             Err(_) => continue,
@@ -2972,7 +3010,7 @@ fn restart_agent(
             guard.take()
         };
         if let Some(process) = previous.as_mut() {
-            if let Err(error) = terminate_and_reap_discord_child(&mut process.child) {
+            if let Err(error) = graceful_shutdown_and_reap_agent(process) {
                 let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
                 *guard = previous;
                 return Err(error);
@@ -3046,7 +3084,7 @@ fn restart_agent_for_discord_config_unmarked(
         guard.take()
     };
     if let Some(process) = previous.as_mut() {
-        if let Err(error) = terminate_and_reap_discord_child(&mut process.child) {
+        if let Err(error) = graceful_shutdown_and_reap_agent(process) {
             let mut guard =
                 lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
             *guard = previous;
@@ -3091,7 +3129,7 @@ fn restart_agent_for_discord_config_unmarked(
                 };
                 if let Some(process) = failed.as_mut() {
                     if let Err(cleanup_error) =
-                        terminate_and_reap_discord_child(&mut process.child)
+                        graceful_shutdown_and_reap_agent(process)
                     {
                         let mut guard = lock_or_recover(
                             &state.agent,
@@ -3145,6 +3183,109 @@ impl DiscordChildLifecycle for Child {
     fn has_exited(&mut self) -> std::io::Result<bool> {
         self.try_wait().map(|status| status.is_some())
     }
+}
+
+fn wait_for_discord_child_exit_with<C, N, S>(
+    child: &mut C,
+    timeout: std::time::Duration,
+    mut now: N,
+    mut sleep: S,
+) -> Result<bool, String>
+where
+    C: DiscordChildLifecycle,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    let started = now();
+    let poll = std::time::Duration::from_millis(10);
+    loop {
+        if child
+            .has_exited()
+            .map_err(|_| "discord_agent_reap_failed".to_string())?
+        {
+            return Ok(true);
+        }
+        let elapsed = now().saturating_sub(started);
+        if elapsed >= timeout {
+            return Ok(false);
+        }
+        sleep(poll.min(timeout.saturating_sub(elapsed)));
+    }
+}
+
+fn graceful_then_force_reap_with<C, G, N, S>(
+    child: &mut C,
+    request_graceful_shutdown: G,
+    graceful_timeout: std::time::Duration,
+    force_timeout: std::time::Duration,
+    mut now: N,
+    mut sleep: S,
+) -> Result<(), String>
+where
+    C: DiscordChildLifecycle,
+    G: FnOnce() -> Result<(), String>,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    if child
+        .has_exited()
+        .map_err(|_| "discord_agent_reap_failed".to_string())?
+    {
+        return Ok(());
+    }
+
+    if request_graceful_shutdown().is_ok()
+        && wait_for_discord_child_exit_with(
+            child,
+            graceful_timeout,
+            &mut now,
+            &mut sleep,
+        )?
+    {
+        return Ok(());
+    }
+
+    child
+        .request_termination()
+        .map_err(|_| "discord_agent_terminate_failed".to_string())?;
+    if wait_for_discord_child_exit_with(child, force_timeout, now, sleep)? {
+        Ok(())
+    } else {
+        Err("discord_agent_reap_timeout".to_string())
+    }
+}
+
+fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), String> {
+    let dispatcher = process.shutdown_tx.clone();
+    let nonce = process
+        .lease
+        .as_ref()
+        .map(|lease| lease.nonce.clone())
+        .ok_or_else(|| "agent_graceful_shutdown_lease_missing".to_string());
+    let started = std::time::Instant::now();
+    graceful_then_force_reap_with(
+        &mut process.child,
+        move || {
+            let nonce = nonce?;
+            let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+            dispatcher
+                .send(AgentShutdownCommand {
+                    nonce,
+                    result: result_tx,
+                })
+                .map_err(|_| "agent_graceful_shutdown_dispatch_failed".to_string())?;
+            result_rx
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .map_err(|_| "agent_graceful_shutdown_ack_timeout".to_string())?
+        },
+        // Agent bounds Discord drain at 20s and memory flush at 8s, with a
+        // 30s process watchdog. Leave both phases room while still escalating
+        // before an indefinitely stuck child can block the next generation.
+        std::time::Duration::from_secs(29),
+        std::time::Duration::from_secs(5),
+        move || started.elapsed(),
+        std::thread::sleep,
+    )
 }
 
 fn terminate_and_reap_discord_child(child: &mut Child) -> Result<(), String> {
@@ -4795,7 +4936,14 @@ fn quarantine_discord_runtime_locked(state: &AppState) -> Result<(), String> {
         guard.take()
     };
     let process_result = if let Some(process) = process.as_mut() {
-        terminate_and_reap_discord_child(&mut process.child)
+        graceful_shutdown_and_reap_agent(process).and_then(|_| {
+            let outcome = process.finish_owned_cleanup(true);
+            require_owned_cleanup_complete(
+                &outcome,
+                true,
+                "discord_agent_owned_cleanup_incomplete",
+            )
+        })
     } else {
         Ok(())
     };
@@ -7566,7 +7714,13 @@ async fn delete_naia_adk(
     if let Ok(mut guard) = state.agent.lock() {
         if let Some(mut process) = guard.take() {
             log_verbose("[Naia] Terminating agent-core before adk delete...");
-            let _ = process.child.kill();
+            graceful_shutdown_and_reap_agent(&mut process)?;
+            let outcome = process.finish_owned_cleanup(true);
+            require_owned_cleanup_complete(
+                &outcome,
+                true,
+                "agent_owned_cleanup_incomplete",
+            )?;
         }
     }
     // Kill gateway + node host
@@ -8277,7 +8431,7 @@ pub fn run() {
                     if let Ok(mut guard) = agent_lock {
                         if let Some(mut process) = guard.take() {
                             log_verbose("[Naia] Terminating agent-core...");
-                            let _ = process.child.kill();
+                            let _ = graceful_shutdown_and_reap_agent(&mut process);
                         }
                     }
 
@@ -8817,6 +8971,80 @@ mod tests {
                 .exit_after_checks
                 .is_some_and(|required| self.exit_checks >= required))
         }
+    }
+
+    #[test]
+    fn agent_restart_requests_graceful_shutdown_before_cleanup() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let graceful_calls = std::cell::Cell::new(0);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(4),
+        };
+
+        let result = graceful_then_force_reap_with(
+            &mut child,
+            || {
+                graceful_calls.set(graceful_calls.get() + 1);
+                Ok(())
+            },
+            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(graceful_calls.get(), 1);
+        assert_eq!(child.terminate_calls, 0);
+        assert_eq!(child.exit_checks, 4);
+    }
+
+    #[test]
+    fn agent_restart_forces_and_reaps_when_graceful_rpc_is_unavailable() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(3),
+        };
+
+        let result = graceful_then_force_reap_with(
+            &mut child,
+            || Err("rpc unavailable".to_string()),
+            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 1);
+        assert_eq!(child.exit_checks, 3);
+    }
+
+    #[test]
+    fn agent_restart_escalates_once_when_graceful_shutdown_hangs() {
+        let clock = std::cell::Cell::new(std::time::Duration::ZERO);
+        let mut child = DeferredDiscordChild {
+            terminate_calls: 0,
+            exit_checks: 0,
+            exit_after_checks: Some(8),
+        };
+
+        let result = graceful_then_force_reap_with(
+            &mut child,
+            || Ok(()),
+            std::time::Duration::from_millis(25),
+            std::time::Duration::from_millis(100),
+            || clock.get(),
+            |duration| clock.set(clock.get() + duration),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(child.terminate_calls, 1);
+        assert_eq!(child.exit_checks, 8);
     }
 
     #[test]

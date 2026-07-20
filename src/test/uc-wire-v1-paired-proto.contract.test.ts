@@ -30,10 +30,10 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("pins the paired agent ancestry and build evidence", () => {
 		expect(BUILD_RS).toContain(
-			'REQUIRED_AGENT_COMMIT: &str = "cd6b76310eac73df2a90635fd1bedc9c42751b6d"',
+			'REQUIRED_AGENT_COMMIT: &str = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
 		);
 		expect(BUILD_RS).toContain(
-			'REQUIRED_PROTO_SHA256: &str =\n        "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
+			'REQUIRED_PROTO_SHA256: &str =\n        "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
 		);
 		expect(BUILD_RS).not.toContain("merge-base");
 		expect(BUILD_RS).toContain("NAIA_AGENT_REQUIRED_COMMIT");
@@ -76,6 +76,8 @@ describe("UC-WIRE-V1 paired proto build", () => {
 			"optional GroundingRequest grounding = 12;",
 			"optional ProviderSessionRequest provider_session = 13;",
 			"ProcessingDisclosureEvent processing_disclosure = 20;",
+			"rpc Shutdown(ShutdownRequest) returns (Ack);",
+			"message ShutdownRequest { string nonce = 1; }",
 			"enum WireErrorCode",
 			"ATTACHMENT_INVALID_REF",
 		]) {
@@ -84,10 +86,10 @@ describe("UC-WIRE-V1 paired proto build", () => {
 	});
 	it("selects and validates one exact paired agent/proto checkout", () => {
 		expect(TAURI_WITH_MODE).toContain(
-			'REQUIRED_AGENT_COMMIT = "cd6b76310eac73df2a90635fd1bedc9c42751b6d"',
+			'REQUIRED_AGENT_COMMIT = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
 		);
 		expect(TAURI_WITH_MODE).toContain(
-			'REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
+			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
 		);
 		expect(TAURI_WITH_MODE).toContain("naia-agent-issue-388-proto");
 		expect(TAURI_WITH_MODE).not.toContain("merge-base");
@@ -135,10 +137,10 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("applies the same paired agent/proto env before direct Tauri bundle builds", () => {
 		expect(STAGE_RUNTIME).toContain(
-			'REQUIRED_AGENT_COMMIT = "cd6b76310eac73df2a90635fd1bedc9c42751b6d"',
+			'REQUIRED_AGENT_COMMIT = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
 		);
 		expect(STAGE_RUNTIME).toContain(
-			'REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
+			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
 		);
 		expect(STAGE_RUNTIME).toContain("applyPairedAgentEnv(process.env)");
 		expect(STAGE_RUNTIME).toContain("AGENT_WORKTREE_ROOTS");
@@ -178,10 +180,10 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("requires stage-agent to stage the same validated paired checkout", () => {
 		expect(STAGE_AGENT).toContain(
-			'REQUIRED_AGENT_COMMIT = "cd6b76310eac73df2a90635fd1bedc9c42751b6d"',
+			'REQUIRED_AGENT_COMMIT = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
 		);
 		expect(STAGE_AGENT).toContain(
-			'REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
+			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
 		);
 		expect(STAGE_AGENT).toContain("NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR are required");
 		expect(STAGE_AGENT).toContain("const AGENT = gitRootForPath(AGENT_SCRIPT, true)");
