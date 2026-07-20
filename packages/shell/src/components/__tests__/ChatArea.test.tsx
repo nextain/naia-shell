@@ -182,6 +182,39 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
+	it("ignores Discord message chunks in the private chat transcript and store", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/메시지|message/i);
+		fireEvent.change(input, { target: { value: "private baseline" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+
+		const before = useChatStore.getState();
+		capturedOnChunk?.({
+			type: "discord_message",
+			requestId: capturedRequests[0].requestId,
+			from: "discord_100_200",
+			content: "discord-only-canary",
+			timestamp: "2026-07-21T00:00:00.000Z",
+		});
+
+		const after = useChatStore.getState();
+		expect(after.messages).toEqual(before.messages);
+		expect(after.streamingContent).toBe(before.streamingContent);
+		expect(
+			screen.queryByText("discord-only-canary", { exact: false }),
+		).toBeNull();
+		localStorage.removeItem("naia-config");
+	});
+
 	it("sends message on Enter", async () => {
 		render(<ChatArea />);
 		const input = screen.getByPlaceholderText(/메시지|message/i);

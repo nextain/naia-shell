@@ -4198,10 +4198,25 @@ fn discord_binding_snapshot_from_manifest(
 }
 
 fn discord_binding_generation_matches(
-    manifest: Option<&DiscordBindingManifest>,
+    current_generation: Option<u64>,
     expected_generation: Option<u64>,
 ) -> bool {
-    manifest.map(|value| value.generation) == expected_generation
+    current_generation == expected_generation
+}
+
+async fn discord_binding_save_if_generation_matches<T, F, Fut>(
+    current_generation: Option<u64>,
+    expected_generation: Option<u64>,
+    operation: F,
+) -> Result<T, String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    if !discord_binding_generation_matches(current_generation, expected_generation) {
+        return Err("discord_bindings_generation_conflict".to_string());
+    }
+    operation().await
 }
 
 fn discord_bindings_have_unique_identity(bindings: &[DiscordBindingInput]) -> bool {
@@ -4358,6 +4373,7 @@ async fn discord_save_bindings(
     app_handle: AppHandle,
     audit_state: tauri::State<'_, AuditState>,
 ) -> Result<u64, String> {
+    let app_state = state.inner();
     let _operation = state.discord_config_operation.lock().await;
     if bindings.len() > 256 {
         return Err("discord_bindings_invalid".to_string());
@@ -4395,87 +4411,92 @@ async fn discord_save_bindings(
     }
     let path = discord_settings_dir()?.join("discord-bindings.json");
     let previous_manifest = read_discord_binding_manifest(&path)?;
-    if !discord_binding_generation_matches(previous_manifest.as_ref(), expected_generation) {
-        return Err("discord_bindings_generation_conflict".to_string());
-    }
-    if !bindings.is_empty() {
-        let discovery = discord_discover_channels().await?;
-        if !discovery.message_content_intent {
-            return Err("discord_message_content_intent_missing".to_string());
-        }
-        let usable = discovery
-            .guilds
-            .iter()
-            .flat_map(|guild| {
-                guild
-                    .channels
+    let previous_generation = previous_manifest
+        .as_ref()
+        .map(|manifest| manifest.generation);
+    discord_binding_save_if_generation_matches(
+        previous_generation,
+        expected_generation,
+        || async move {
+            if !bindings.is_empty() {
+                let discovery = discord_discover_channels().await?;
+                if !discovery.message_content_intent {
+                    return Err("discord_message_content_intent_missing".to_string());
+                }
+                let usable = discovery
+                    .guilds
                     .iter()
-                    .filter(|channel| channel.permissions.usable)
-                    .map(|channel| (guild.id.as_str(), channel.id.as_str()))
-            })
-            .collect::<std::collections::BTreeSet<_>>();
-        let preserved_stale = previous_manifest
-            .as_ref()
-            .map(|manifest| manifest.bindings.iter().collect::<Vec<_>>());
-        if bindings.iter().any(|binding| {
-            !usable.contains(&(binding.guild_id.as_str(), binding.channel_id.as_str()))
-                && !preserved_stale
+                    .flat_map(|guild| {
+                        guild
+                            .channels
+                            .iter()
+                            .filter(|channel| channel.permissions.usable)
+                            .map(|channel| (guild.id.as_str(), channel.id.as_str()))
+                    })
+                    .collect::<std::collections::BTreeSet<_>>();
+                let preserved_stale = previous_manifest
                     .as_ref()
-                    .is_some_and(|existing| existing.iter().any(|value| *value == binding))
-        }) {
-            return Err("discord_binding_permission_denied".to_string());
-        }
-    }
-    let generation = next_discord_generation(
-        previous_manifest.as_ref().map(|manifest| manifest.generation),
-    )?;
-    let clearing_all_bindings = bindings.is_empty();
-    let manifest = DiscordBindingManifest {
-        version: 1,
-        generation,
-        bindings,
-        processing_profiles: std::collections::BTreeMap::from([(
-            "default".to_string(),
-            "local_only".to_string(),
-        )]),
-    };
-    let bytes =
-        serde_json::to_vec_pretty(&manifest).map_err(|_| "discord_bindings_invalid".to_string())?;
-    if bytes.len() > 512 * 1024 {
-        return Err("discord_bindings_too_large".to_string());
-    }
-    let previous = std::fs::read(&path).ok();
-    write_owner_only_atomic(&path, &bytes)?;
-    if let Err(error) = restart_agent_for_discord_config(
-        &state,
-        &app_handle,
-        &audit_state.db,
-        (!clearing_all_bindings).then_some(generation),
-    ) {
-        if clearing_all_bindings {
-            return Err(format!("discord_bindings_cleared_{error}"));
-        }
-        match previous {
-            Some(previous) => {
-                let _ = write_owner_only_atomic(&path, &previous);
+                    .map(|manifest| manifest.bindings.iter().collect::<Vec<_>>());
+                if bindings.iter().any(|binding| {
+                    !usable.contains(&(binding.guild_id.as_str(), binding.channel_id.as_str()))
+                        && !preserved_stale
+                            .as_ref()
+                            .is_some_and(|existing| existing.iter().any(|value| *value == binding))
+                }) {
+                    return Err("discord_binding_permission_denied".to_string());
+                }
             }
-            None => {
-                let _ = std::fs::remove_file(&path);
+            let generation = next_discord_generation(previous_generation)?;
+            let clearing_all_bindings = bindings.is_empty();
+            let manifest = DiscordBindingManifest {
+                version: 1,
+                generation,
+                bindings,
+                processing_profiles: std::collections::BTreeMap::from([(
+                    "default".to_string(),
+                    "local_only".to_string(),
+                )]),
+            };
+            let bytes = serde_json::to_vec_pretty(&manifest)
+                .map_err(|_| "discord_bindings_invalid".to_string())?;
+            if bytes.len() > 512 * 1024 {
+                return Err("discord_bindings_too_large".to_string());
             }
+            let previous = std::fs::read(&path).ok();
+            write_owner_only_atomic(&path, &bytes)?;
+            if let Err(error) = restart_agent_for_discord_config(
+                app_state,
+                &app_handle,
+                &audit_state.db,
+                (!clearing_all_bindings).then_some(generation),
+            ) {
+                if clearing_all_bindings {
+                    return Err(format!("discord_bindings_cleared_{error}"));
+                }
+                match previous {
+                    Some(previous) => {
+                        let _ = write_owner_only_atomic(&path, &previous);
+                    }
+                    None => {
+                        let _ = std::fs::remove_file(&path);
+                    }
+                }
+                let rollback_generation = read_discord_binding_manifest(&path)
+                    .ok()
+                    .flatten()
+                    .map(|manifest| manifest.generation);
+                let _ = restart_agent_for_discord_config(
+                    app_state,
+                    &app_handle,
+                    &audit_state.db,
+                    rollback_generation,
+                );
+                return Err(error);
+            }
+            Ok(generation)
         }
-        let rollback_generation = read_discord_binding_manifest(&path)
-            .ok()
-            .flatten()
-            .map(|manifest| manifest.generation);
-        let _ = restart_agent_for_discord_config(
-            &state,
-            &app_handle,
-            &audit_state.db,
-            rollback_generation,
-        );
-        return Err(error);
-    }
-    Ok(generation)
+    )
+    .await
 }
 
 fn next_discord_generation(previous: Option<u64>) -> Result<u64, String> {
@@ -7586,25 +7607,60 @@ mod tests {
 
     #[test]
     fn discord_binding_generation_distinguishes_present_empty_from_absent() {
-        let present_empty = DiscordBindingManifest {
-            version: 1,
-            generation: 42,
-            bindings: Vec::new(),
-            processing_profiles: std::collections::BTreeMap::from([(
-                "default".to_string(),
-                "local_only".to_string(),
-            )]),
-        };
-        assert!(discord_binding_generation_matches(
-            Some(&present_empty),
-            Some(42)
-        ));
-        assert!(!discord_binding_generation_matches(
-            Some(&present_empty),
-            None
-        ));
+        assert!(discord_binding_generation_matches(Some(42), Some(42)));
+        assert!(!discord_binding_generation_matches(Some(42), None));
         assert!(discord_binding_generation_matches(None, None));
         assert!(!discord_binding_generation_matches(None, Some(42)));
+    }
+
+    #[tokio::test]
+    async fn discord_binding_generation_conflict_runs_no_save_side_effects() {
+        async fn assert_conflict_is_side_effect_free(
+            path: &std::path::Path,
+            current_generation: Option<u64>,
+            expected_generation: Option<u64>,
+        ) {
+            let discovery_calls = std::cell::Cell::new(0);
+            let write_calls = std::cell::Cell::new(0);
+            let restart_calls = std::cell::Cell::new(0);
+            let before = std::fs::read(path).ok();
+
+            let result = discord_binding_save_if_generation_matches(
+                current_generation,
+                expected_generation,
+                || async {
+                    discovery_calls.set(discovery_calls.get() + 1);
+                    write_calls.set(write_calls.get() + 1);
+                    std::fs::write(path, b"mutated").unwrap();
+                    restart_calls.set(restart_calls.get() + 1);
+                    Ok(())
+                },
+            )
+            .await;
+
+            assert_eq!(
+                result,
+                Err("discord_bindings_generation_conflict".to_string())
+            );
+            assert_eq!(discovery_calls.get(), 0);
+            assert_eq!(write_calls.get(), 0);
+            assert_eq!(restart_calls.get(), 0);
+            assert_eq!(std::fs::read(path).ok(), before);
+        }
+
+        let present = tempfile::tempdir().unwrap();
+        let present_path = present.path().join("discord-bindings.json");
+        std::fs::write(
+            &present_path,
+            r#"{"version":1,"generation":42,"bindings":[],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert_conflict_is_side_effect_free(&present_path, Some(42), Some(41)).await;
+
+        let absent = tempfile::tempdir().unwrap();
+        let absent_path = absent.path().join("discord-bindings.json");
+        assert_conflict_is_side_effect_free(&absent_path, None, Some(42)).await;
+        assert!(!absent_path.exists());
     }
 
     #[test]

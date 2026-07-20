@@ -26,7 +26,7 @@ scripts/check-traceability.mjs 가 이 표를 파싱한다. (ID 형식 = REQ-###
 | REQ-009 | 도구/스킬 | 에이전트 **도구루프 + skills**(time/weather/memo/github/obsidian/mcp 등, agent-local) | In-progress | UC-005 | SPEC-006 | TEST-S-005 |
 | REQ-010 | 브라우저 | 에이전트 **브라우저 조작**(navigate/click/fill/snapshot, agent-local + 외부 CLI) | Draft | UC-006 | SPEC-006 | TEST-S-006 |
 | REQ-011 | 유투브/BGM | **공간 분위기 BGM**(youtube search/play/volume, agent-local + shell player) | Draft | UC-008 | SPEC-006 | TEST-S-008 |
-| REQ-012 | Discord 채널 | **로컬 우선 Discord 채널 에이전트**: OS 키체인 토큰, 서버/채널 허용목록, 다중 채널 Inbox, 실시간 Gateway 송수신·재연결, 중복 방지, 개인 채팅 격리 (FR-DISCORD.1~10) | Done | UC-014, UC-015, UC-016 | SPEC-009, SPEC-010 | TEST-S-014, TEST-S-015 |
+| REQ-012 | Discord 채널 | **로컬 우선 Discord 채널 에이전트**: OS 키체인 토큰, 서버/채널 허용목록, 다중 채널 Inbox, 실시간 Gateway 송수신·재연결, 중복 방지, 개인 채팅 격리 (FR-DISCORD.1~10). 자동화 구현 완료, 실제 bot/키체인 운영자 인수 대기 | In-progress | UC-014, UC-015, UC-016 | SPEC-009, SPEC-010 | TEST-S-014, TEST-S-015 |
 
 ## 비기능 요구사항 (NFR → REQ, 횡단 — TEST-S 직결)
 
