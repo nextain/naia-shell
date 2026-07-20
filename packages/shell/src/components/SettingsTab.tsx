@@ -1556,6 +1556,8 @@ export function SettingsTab() {
 	}, []);
 
 	// Fetch Lab balance for a given key
+	const LAB_BALANCE_FETCH_TIMEOUT_MS = 8_000;
+
 	function fetchLabBalance(key: string) {
 		if (!mountedRef.current) return Promise.resolve();
 		Logger.debug("SettingsTab", "fetchLabBalance called", {
@@ -1564,8 +1566,14 @@ export function SettingsTab() {
 		});
 		setLabBalanceLoading(true);
 		setLabBalanceError(false);
+		const controller = new AbortController();
+		const timeout = window.setTimeout(
+			() => controller.abort(),
+			LAB_BALANCE_FETCH_TIMEOUT_MS,
+		);
 		return fetch(`${LAB_GATEWAY_URL}/v1/profile/balance`, {
 			headers: { "X-AnyLLM-Key": `Bearer ${key}` },
+			signal: controller.signal,
 		})
 			.then((res) => {
 				if (!mountedRef.current) throw new Error("BALANCE_ABORTED");
@@ -1599,6 +1607,7 @@ export function SettingsTab() {
 				setLabBalanceError(true);
 			})
 			.finally(() => {
+				window.clearTimeout(timeout);
 				if (mountedRef.current) setLabBalanceLoading(false);
 			});
 	}
