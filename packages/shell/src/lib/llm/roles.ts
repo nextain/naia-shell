@@ -40,12 +40,13 @@ export function readConfiguredLlmRoles(config: AppConfig): Partial<Record<LlmRol
 				}
 			: memory
 				? { inherit: "memory" }
-				: { inherit: "main" }
+				: undefined
 	);
+	const effectiveMemory = memory ?? (sub ? { inherit: "sub" as const } : undefined);
 	return {
 		...(main ? { main } : {}),
 		...(sub ? { sub } : {}),
-		...(memory ? { memory } : { memory: { inherit: "sub" } }),
+		...(effectiveMemory ? { memory: effectiveMemory } : {}),
 	};
 }
 

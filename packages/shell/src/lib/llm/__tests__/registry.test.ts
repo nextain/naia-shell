@@ -47,6 +47,12 @@ describe("registry — Codex app-server provider", () => {
 		expect(providerSupportsRole("ollama", "sub")).toBe(true);
 		expect(providerSupportsRole("ollama", "memory")).toBe(true);
 	});
+
+	it("Anthropic Messages API는 OpenAI-compat batch/memory 역할에서 제외", () => {
+		expect(providerSupportsRole("anthropic", "main")).toBe(true);
+		expect(providerSupportsRole("anthropic", "sub")).toBe(false);
+		expect(providerSupportsRole("anthropic", "memory")).toBe(false);
+	});
 });
 
 describe("registry — Naia (nextain) provider models", () => {

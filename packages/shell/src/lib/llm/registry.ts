@@ -509,6 +509,7 @@ registerLlmProvider({
 	description: "Claude models — requires Anthropic API key.",
 	descKey: "provider.apiKeyRequired",
 	requiresApiKey: true,
+	supportedRoles: ["main"],
 	defaultModel: "claude-sonnet-4-6",
 	models: [
 		{

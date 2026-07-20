@@ -61,4 +61,12 @@ describe("Shell main/sub/memory 역할 설정", () => {
 		const unsupported = writeConfiguredLlmRole(config, "sub", { provider: "codex", model: "gpt-5.4" });
 		expect(resolveEffectiveLlmRoles(unsupported)).toEqual({ ok: false, role: "sub", reason: "unsupported" });
 	});
+
+	it("legacy main만 있는 기존 사용자는 sub/memory를 자동 활성화하지 않는다", () => {
+		const config: AppConfig = { provider: "openai", model: "gpt-5.4", apiKey: "key" };
+		expect(readConfiguredLlmRoles(config)).toEqual({
+			main: { provider: "openai", model: "gpt-5.4" },
+		});
+		expect(resolveEffectiveLlmRoles(config)).toEqual({ ok: false, role: "sub", reason: "missing" });
+	});
 });
