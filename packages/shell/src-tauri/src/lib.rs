@@ -252,7 +252,8 @@ use webkit2gtk::PermissionRequestExt;
 // agent-core process handle ???뺣낯 transport=gRPC. child=?꾨줈?몄뒪 lifecycle, tx=硫붿떆吏瑜?dispatcher task(gRPC ?대씪 ?뚯쑀)濡?
 struct AgentProcess {
     child: Child,
-    lease: AgentChildLease,
+    lease: Option<AgentChildLease>,
+    discord_cleanup: Option<DiscordSpawnCleanup>,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
     /// agent-core gRPC listening addr ??寃곌낵 諛섑솚??unary 而ㅻ㎤???? compile_knowledge)媛 蹂꾨룄 ?대씪濡?connect.
     grpc_addr: String,
@@ -377,11 +378,6 @@ where
         .map_err(|_| "agent_lease_write_failed".to_string())
 }
 
-fn remove_matching_agent_child_lease(lease: &AgentChildLease) -> Result<bool, String> {
-    let lock = acquire_agent_child_lease_lock()?;
-    remove_matching_agent_child_lease_locked(&lock, lease)
-}
-
 fn remove_matching_agent_child_lease_locked(
     lock: &AgentChildLeaseLock,
     lease: &AgentChildLease,
@@ -465,7 +461,10 @@ where
     D: FnOnce() -> Result<(), String>,
 {
     let live = match lease.pid {
-        Some(pid) => query(pid)? == Some(true),
+        Some(pid) => match query(pid)? {
+            Some(true) => true,
+            Some(false) | None => enumerate()?,
+        },
         None => enumerate()?,
     };
     if live {
@@ -491,6 +490,12 @@ struct DiscordSpawnCleanup {
     quarantined: Arc<std::sync::atomic::AtomicBool>,
 }
 
+#[derive(Clone, Copy)]
+enum OwnedAgentCleanupMode {
+    Normal,
+    Quarantine,
+}
+
 #[derive(Default)]
 struct OwnedAgentCleanupOutcome {
     superseded: bool,
@@ -509,12 +514,23 @@ fn cleanup_owned_agent_child_locked(
     lease: &AgentChildLease,
     child_reaped: bool,
     cleanup: Option<&DiscordSpawnCleanup>,
+    mode: OwnedAgentCleanupMode,
 ) -> OwnedAgentCleanupOutcome {
     cleanup_owned_agent_child_with(
         lease,
         child_reaped,
         cleanup.is_some(),
+        mode,
         || read_agent_child_lease_locked(lock),
+        |lease| write_agent_child_lease_locked(lock, lease),
+        || platform::find_agent_process_by_marker(&lease.marker),
+        || {
+            if let Some(cleanup) = cleanup {
+                revoke_discord_runtime_files(&cleanup.runtime)
+            } else {
+                Ok(())
+            }
+        },
         || {
             if let Some(cleanup) = cleanup {
                 cleanup
@@ -529,16 +545,23 @@ fn cleanup_owned_agent_child_locked(
     )
 }
 
-fn cleanup_owned_agent_child_with<R, Q, D>(
+fn cleanup_owned_agent_child_with<R, W, E, V, Q, D>(
     lease: &AgentChildLease,
     child_reaped: bool,
     runtime_cleanup_required: bool,
+    mode: OwnedAgentCleanupMode,
     read: R,
+    restore: W,
+    enumerate: E,
+    revoke: V,
     quarantine: Q,
     remove: D,
 ) -> OwnedAgentCleanupOutcome
 where
     R: FnOnce() -> Result<Option<AgentChildLease>, String>,
+    W: FnOnce(&AgentChildLease) -> Result<(), String>,
+    E: FnOnce() -> Result<bool, String>,
+    V: FnOnce() -> Result<(), String>,
     Q: FnOnce() -> Result<(), String>,
     D: FnOnce() -> Result<bool, String>,
 {
@@ -546,20 +569,33 @@ where
         Ok(value) => value,
         Err(_) => return OwnedAgentCleanupOutcome::default(),
     };
-    if current.as_ref().map(|value| value.nonce.as_str()) != Some(lease.nonce.as_str()) {
-        return OwnedAgentCleanupOutcome {
-            superseded: true,
-            ..OwnedAgentCleanupOutcome::default()
-        };
+    match current.as_ref() {
+        Some(value) if value.nonce != lease.nonce => {
+            return OwnedAgentCleanupOutcome {
+                superseded: true,
+                ..OwnedAgentCleanupOutcome::default()
+            };
+        }
+        Some(_) => {}
+        None if restore(lease).is_ok() => {}
+        None => return OwnedAgentCleanupOutcome::default(),
     }
-    if runtime_cleanup_required && quarantine().is_err() {
+    let fully_reaped = child_reaped && matches!(enumerate(), Ok(false));
+    let runtime_result = if !runtime_cleanup_required {
+        Ok(())
+    } else if fully_reaped && matches!(mode, OwnedAgentCleanupMode::Normal) {
+        revoke()
+    } else {
+        quarantine()
+    };
+    if runtime_result.is_err() {
         return OwnedAgentCleanupOutcome::default();
     }
     let mut outcome = OwnedAgentCleanupOutcome {
         runtime_confirmed: true,
         ..OwnedAgentCleanupOutcome::default()
     };
-    if child_reaped {
+    if fully_reaped {
         outcome.lease_removed = remove().unwrap_or(false);
     }
     outcome
@@ -569,11 +605,12 @@ fn cleanup_owned_agent_child(
     lease: &AgentChildLease,
     child_reaped: bool,
     cleanup: Option<&DiscordSpawnCleanup>,
+    mode: OwnedAgentCleanupMode,
 ) -> OwnedAgentCleanupOutcome {
     let Ok(lock) = acquire_agent_child_lease_lock() else {
         return OwnedAgentCleanupOutcome::default();
     };
-    cleanup_owned_agent_child_locked(&lock, lease, child_reaped, cleanup)
+    cleanup_owned_agent_child_locked(&lock, lease, child_reaped, cleanup, mode)
 }
 
 impl SpawnedAgentChild {
@@ -595,11 +632,11 @@ impl SpawnedAgentChild {
         self.child.as_mut().expect("spawned child must be present")
     }
 
-    fn into_inner(mut self) -> (Child, AgentChildLease) {
-        self.discord_cleanup = None;
+    fn into_inner(mut self) -> (Child, AgentChildLease, Option<DiscordSpawnCleanup>) {
         (
             self.child.take().expect("spawned child must be present"),
             self.lease.clone(),
+            self.discord_cleanup.take(),
         )
     }
 
@@ -608,6 +645,7 @@ impl SpawnedAgentChild {
             &self.lease,
             child_reaped,
             self.discord_cleanup.as_ref(),
+            OwnedAgentCleanupMode::Quarantine,
         );
         let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
         let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_confirmed);
@@ -636,7 +674,12 @@ impl SpawnedAgentChild {
 
 impl Drop for SpawnedAgentChild {
     fn drop(&mut self) {
-        let outcome = cleanup_owned_agent_child(&self.lease, false, self.discord_cleanup.as_ref());
+        let outcome = cleanup_owned_agent_child(
+            &self.lease,
+            false,
+            self.discord_cleanup.as_ref(),
+            OwnedAgentCleanupMode::Quarantine,
+        );
         let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
         let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_confirmed);
         if let Some(child) = self.child.take() {
@@ -727,7 +770,12 @@ struct DiscordReaperOwnership {
 
 impl DiscordReaperOwnership {
     fn retry_cleanup(&mut self, child_reaped: bool) -> bool {
-        let outcome = cleanup_owned_agent_child(&self.lease, child_reaped, self.cleanup.as_ref());
+        let outcome = cleanup_owned_agent_child(
+            &self.lease,
+            child_reaped,
+            self.cleanup.as_ref(),
+            OwnedAgentCleanupMode::Quarantine,
+        );
         if outcome.superseded || outcome.runtime_confirmed {
             self.cleanup = None;
         }
@@ -796,6 +844,21 @@ fn recover_failed_discord_reaper_handoff_with<T>(
 ) where
     T: FnOnce(&mut Child) -> Result<(), String>,
 {
+    recover_failed_discord_reaper_handoff_and_cleanup_with(
+        container,
+        terminate_child,
+        |ownership, child_reaped| ownership.retry_cleanup(child_reaped),
+    )
+}
+
+fn recover_failed_discord_reaper_handoff_and_cleanup_with<T, C>(
+    container: DiscordReaperContainer,
+    terminate_child: T,
+    finish_cleanup: C,
+) where
+    T: FnOnce(&mut Child) -> Result<(), String>,
+    C: FnOnce(&mut DiscordReaperOwnership, bool) -> bool,
+{
     let mut ownership = take_discord_reaper_ownership(&container);
     let child_reaped = ownership
         .child
@@ -806,7 +869,7 @@ fn recover_failed_discord_reaper_handoff_with<T>(
     if child_reaped {
         ownership.child = None;
     }
-    let cleanup_confirmed = ownership.retry_cleanup(child_reaped);
+    let cleanup_confirmed = finish_cleanup(&mut ownership, child_reaped);
     finish_owned_discord_reaper(
         ownership,
         child_reaped && cleanup_confirmed,
@@ -846,12 +909,32 @@ fn spawn_background_discord_reaper(
 impl Drop for AgentProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
-        // `Child::kill` does not reap on Unix and process termination is not
-        // synchronously observable on every platform. Keep the generic fallback
-        // leak-free; Discord config restarts use the bounded checked path below.
-        if self.child.wait().is_ok() {
-            let _ = remove_matching_agent_child_lease(&self.lease);
+        let child_reaped = self.child.wait().is_ok();
+        let _ = self.finish_owned_cleanup(child_reaped);
+    }
+}
+
+impl AgentProcess {
+    fn finish_owned_cleanup(&mut self, child_reaped: bool) -> OwnedAgentCleanupOutcome {
+        let Some(lease) = self.lease.as_ref() else {
+            return OwnedAgentCleanupOutcome {
+                superseded: true,
+                ..OwnedAgentCleanupOutcome::default()
+            };
+        };
+        let outcome = cleanup_owned_agent_child(
+            lease,
+            child_reaped,
+            self.discord_cleanup.as_ref(),
+            OwnedAgentCleanupMode::Normal,
+        );
+        if outcome.superseded || outcome.runtime_confirmed {
+            self.discord_cleanup = None;
         }
+        if outcome.complete(child_reaped) {
+            self.lease = None;
+        }
+        outcome
     }
 }
 
@@ -1873,6 +1956,7 @@ fn spawn_agent_core(
                 &child_lease,
                 true,
                 discord_cleanup.as_ref(),
+                OwnedAgentCleanupMode::Quarantine,
             );
             let runtime_confirmed = outcome.superseded || outcome.runtime_confirmed;
             return finalize_discord_startup_failure(
@@ -1986,10 +2070,11 @@ fn spawn_agent_core(
         audit_db.clone(),
     ));
 
-    let (child, lease) = spawned.into_inner();
+    let (child, lease, discord_cleanup) = spawned.into_inner();
     Ok(AgentProcess {
         child,
-        lease,
+        lease: Some(lease),
+        discord_cleanup,
         tx,
         grpc_addr: addr,
     })
@@ -2854,6 +2939,10 @@ fn restart_agent(
                 let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
                 *guard = previous;
                 return Err(error);
+            }
+            if !process.finish_owned_cleanup(true).complete(true) {
+                drop(previous);
+                return Err("agent_owned_cleanup_incomplete".to_string());
             }
         }
         drop(previous);
@@ -9455,7 +9544,7 @@ mod tests {
             reconcile_agent_child_lease_with(
                 &lease,
                 |_| Ok(Some(false)),
-                || panic!("pid lease must not enumerate"),
+                || Ok(false),
                 || {
                     phases.borrow_mut().push("cleanup");
                     Ok(())
@@ -9470,6 +9559,30 @@ mod tests {
         );
         assert_eq!(phases.into_inner(), vec!["cleanup", "remove"]);
         assert_eq!(removed.get(), 1);
+    }
+
+    #[test]
+    fn wrapper_pid_gone_but_marker_descendant_alive_blocks_reconcile() {
+        let lease = test_agent_child_lease(42);
+        let cleaned = std::cell::Cell::new(0);
+        let removed = std::cell::Cell::new(0);
+        assert_eq!(
+            reconcile_agent_child_lease_with(
+                &lease,
+                |_| Ok(None),
+                || Ok(true),
+                || {
+                    cleaned.set(cleaned.get() + 1);
+                    Ok(())
+                },
+                || {
+                    removed.set(removed.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("agent_lease_live_blocked".to_string())
+        );
+        assert_eq!((cleaned.get(), removed.get()), (0, 0));
     }
 
     #[test]
@@ -9594,7 +9707,14 @@ mod tests {
             &old,
             true,
             true,
+            OwnedAgentCleanupMode::Normal,
             || Ok(Some(replacement)),
+            |_| panic!("superseded lease must not be restored"),
+            || panic!("superseded lease must not enumerate"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
             || {
                 runtime_calls.set(runtime_calls.get() + 1);
                 Ok(())
@@ -9619,7 +9739,11 @@ mod tests {
             &lease,
             false,
             true,
+            OwnedAgentCleanupMode::Normal,
             || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || panic!("unreaped child must not enumerate"),
+            || panic!("uncertain termination must not cleanly revoke"),
             || {
                 runtime_calls.set(runtime_calls.get() + 1);
                 Ok(())
@@ -9634,6 +9758,157 @@ mod tests {
         assert!(!outcome.lease_removed);
         assert_eq!(runtime_calls.get(), 1);
         assert_eq!(remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn wrapper_reaped_but_marker_descendant_alive_quarantines_and_retains_lease() {
+        let lease = test_agent_child_lease(42);
+        let runtime_calls = std::cell::Cell::new(0);
+        let remove_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || Ok(true),
+            || panic!("live descendant must not cleanly revoke"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                Ok(true)
+            },
+        );
+        assert!(!outcome.complete(true));
+        assert!(outcome.runtime_confirmed);
+        assert!(!outcome.lease_removed);
+        assert_eq!(runtime_calls.get(), 1);
+        assert_eq!(remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn missing_owned_lease_is_restored_before_quarantine_and_remove() {
+        let lease = test_agent_child_lease(42);
+        let phases = std::cell::RefCell::new(Vec::new());
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Quarantine,
+            || Ok(None),
+            |restored| {
+                assert_eq!(restored.nonce, lease.nonce);
+                phases.borrow_mut().push("restore");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("enumerate");
+                Ok(false)
+            },
+            || panic!("quarantine mode must not cleanly revoke"),
+            || {
+                phases.borrow_mut().push("quarantine");
+                Ok(())
+            },
+            || {
+                phases.borrow_mut().push("remove");
+                Ok(true)
+            },
+        );
+        assert!(!outcome.superseded);
+        assert!(outcome.complete(true));
+        assert_eq!(
+            phases.into_inner(),
+            vec!["restore", "enumerate", "quarantine", "remove"]
+        );
+    }
+
+    #[test]
+    fn normal_shutdown_revokes_runtime_without_quarantine_before_lease_remove() {
+        let lease = test_agent_child_lease(42);
+        let phases = std::cell::RefCell::new(Vec::new());
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || {
+                phases.borrow_mut().push("enumerate");
+                Ok(false)
+            },
+            || {
+                phases.borrow_mut().push("revoke");
+                Ok(())
+            },
+            || panic!("confirmed normal shutdown must not quarantine"),
+            || {
+                phases.borrow_mut().push("remove");
+                Ok(true)
+            },
+        );
+        assert!(outcome.complete(true));
+        assert_eq!(phases.into_inner(), vec!["enumerate", "revoke", "remove"]);
+    }
+
+    #[test]
+    fn failed_generic_replacement_cannot_leave_stale_discord_status() {
+        let runtime = tempfile::tempdir().unwrap();
+        std::fs::write(runtime.path().join("authority.json"), b"authority").unwrap();
+        std::fs::write(runtime.path().join("status.json"), b"status").unwrap();
+        let lease = test_agent_child_lease(42);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(Some(lease.clone())),
+            |_| panic!("present lease must not be restored"),
+            || Ok(false),
+            || revoke_discord_runtime_files(runtime.path()),
+            || panic!("confirmed normal restart must not quarantine"),
+            || Ok(true),
+        );
+        assert!(outcome.complete(true));
+
+        let replacement: Result<(), String> = Err("replacement failed".to_string());
+        assert!(replacement.is_err());
+        let authority: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(runtime.path().join("authority.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(authority["generation"], "revoked");
+        assert!(!runtime.path().join("status.json").exists());
+        assert!(!runtime.path().join("quarantine.json").exists());
+    }
+
+    #[test]
+    fn missing_owned_lease_restore_failure_is_incomplete_and_touches_no_runtime() {
+        let lease = test_agent_child_lease(42);
+        let runtime_calls = std::cell::Cell::new(0);
+        let outcome = cleanup_owned_agent_child_with(
+            &lease,
+            true,
+            true,
+            OwnedAgentCleanupMode::Normal,
+            || Ok(None),
+            |_| Err("restore failed".to_string()),
+            || panic!("failed restore must not enumerate"),
+            || panic!("failed restore must not revoke"),
+            || {
+                runtime_calls.set(runtime_calls.get() + 1);
+                Ok(())
+            },
+            || panic!("failed restore must not remove"),
+        );
+        assert!(!outcome.superseded);
+        assert!(!outcome.complete(true));
+        assert_eq!(runtime_calls.get(), 0);
     }
 
     #[test]
@@ -9722,9 +9997,11 @@ mod tests {
             spawn_result,
             Err("injected_thread_spawn_failure".to_string())
         );
-        recover_failed_discord_reaper_handoff_with(container, |_child| {
-            Err("injected_reap_unconfirmed".to_string())
-        });
+        recover_failed_discord_reaper_handoff_and_cleanup_with(
+            container,
+            |_child| Err("injected_reap_unconfirmed".to_string()),
+            |_ownership, child_reaped| child_reaped,
+        );
 
         assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
         assert_eq!(
@@ -9747,7 +10024,11 @@ mod tests {
             Err("injected_thread_spawn_failure".to_string())
         })
         .is_err());
-        recover_failed_discord_reaper_handoff_with(container, |_child| Ok(()));
+        recover_failed_discord_reaper_handoff_and_cleanup_with(
+            container,
+            |_child| Ok(()),
+            |_ownership, child_reaped| child_reaped,
+        );
 
         assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 0);
         assert_eq!(ensure_no_pending_discord_reaper(&pending, true), Ok(()));
@@ -9803,43 +10084,6 @@ mod tests {
         )
         .expect("failed quarantine must retain exact cleanup");
         assert_eq!(retry.runtime, runtime);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn spawned_agent_drop_is_nonblocking_and_skips_unowned_runtime() {
-        let runtime = tempfile::tempdir().unwrap();
-        let quarantined = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let child = Command::new("sh")
-            .args(["-c", "exec sleep 30"])
-            .spawn()
-            .unwrap();
-        let lease = test_agent_child_lease(child.id());
-        let spawned = SpawnedAgentChild::new(
-            child,
-            lease,
-            Some(DiscordSpawnCleanup {
-                runtime: runtime.path().to_path_buf(),
-                quarantined: quarantined.clone(),
-            }),
-            pending.clone(),
-        );
-
-        let started = std::time::Instant::now();
-        drop(spawned);
-
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(1),
-            "Drop must transfer process ownership without waiting for reap"
-        );
-        assert!(!quarantined.load(std::sync::atomic::Ordering::Acquire));
-        assert!(!runtime.path().join("quarantine.json").exists());
-        assert!(!runtime.path().join("authority.json").exists());
-        assert!(
-            pending.load(std::sync::atomic::Ordering::Acquire) <= 1,
-            "Drop may finish reap immediately or retain exactly one pending owner"
-        );
     }
 
     #[test]
