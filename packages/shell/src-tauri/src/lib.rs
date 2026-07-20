@@ -1166,49 +1166,58 @@ fn spawn_agent_core(
                 cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
                 cmd.env("NAIA_ADK_PATH", adk_path_str);
                 let bindings_path = settings_dir.join("discord-bindings.json");
-                if let Ok(metadata) = std::fs::metadata(&bindings_path) {
-                    if metadata.is_file() && metadata.len() <= 512 * 1024 {
-                        if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
-                            let generation = serde_json::from_str::<serde_json::Value>(&bindings_json)
-                                .ok()
-                                .and_then(|value| value.get("generation").and_then(|item| item.as_u64()));
-                            if let Some(generation) = generation {
-                                if let Ok(token) = read_discord_bot_token() {
-                                    if validate_discord_token(&token).is_ok() {
-                                        let runtime_dir = settings_dir.join("discord-runtime");
-                                        std::fs::create_dir_all(&runtime_dir)
-                                            .map_err(|_| "discord_runtime_dir_unavailable".to_string())?;
-                                        let generation = generation.to_string();
-                                        let authority_path = runtime_dir.join("authority.json");
-                                        let authority = serde_json::json!({
-                                            "version": 1,
-                                            "generation": generation.clone(),
+                let runtime_dir = settings_dir.join("discord-runtime");
+                if discord_runtime_activation_allowed(&runtime_dir) {
+                    if let Ok(metadata) = std::fs::metadata(&bindings_path) {
+                        if metadata.is_file() && metadata.len() <= 512 * 1024 {
+                            if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
+                                let generation =
+                                    serde_json::from_str::<serde_json::Value>(&bindings_json)
+                                        .ok()
+                                        .and_then(|value| {
+                                            value
+                                                .get("generation")
+                                                .and_then(|item| item.as_u64())
                                         });
-                                        write_owner_only_atomic(
-                                            &authority_path,
-                                            &serde_json::to_vec(&authority)
-                                                .map_err(|_| "discord_authority_invalid".to_string())?,
-                                        )?;
-                                        cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
-                                        cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
-                                        cmd.env("NAIA_DISCORD_GENERATION", &generation);
-                                        cmd.env(
-                                            "NAIA_DISCORD_STATUS_PATH",
-                                            runtime_dir.join("status.json"),
-                                        );
-                                        cmd.env(
-                                            "NAIA_DISCORD_AUTHORITY_PATH",
-                                            &authority_path,
-                                        );
-                                        cmd.env(
-                                            "NAIA_DISCORD_DEDUPE_PATH",
-                                            runtime_dir.join("dedupe.json"),
-                                        );
-                                        cmd.env(
-                                            "NAIA_DISCORD_INBOX_PATH",
-                                            runtime_dir.join("inbox.json"),
-                                        );
-                                        discord_token_frame = Some(token);
+                                if let Some(generation) = generation {
+                                    if let Ok(token) = read_discord_bot_token() {
+                                        if validate_discord_token(&token).is_ok() {
+                                            std::fs::create_dir_all(&runtime_dir).map_err(|_| {
+                                                "discord_runtime_dir_unavailable".to_string()
+                                            })?;
+                                            let generation = generation.to_string();
+                                            let authority_path = runtime_dir.join("authority.json");
+                                            let authority = serde_json::json!({
+                                                "version": 1,
+                                                "generation": generation.clone(),
+                                            });
+                                            write_owner_only_atomic(
+                                                &authority_path,
+                                                &serde_json::to_vec(&authority).map_err(|_| {
+                                                    "discord_authority_invalid".to_string()
+                                                })?,
+                                            )?;
+                                            cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
+                                            cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
+                                            cmd.env("NAIA_DISCORD_GENERATION", &generation);
+                                            cmd.env(
+                                                "NAIA_DISCORD_STATUS_PATH",
+                                                runtime_dir.join("status.json"),
+                                            );
+                                            cmd.env(
+                                                "NAIA_DISCORD_AUTHORITY_PATH",
+                                                &authority_path,
+                                            );
+                                            cmd.env(
+                                                "NAIA_DISCORD_DEDUPE_PATH",
+                                                runtime_dir.join("dedupe.json"),
+                                            );
+                                            cmd.env(
+                                                "NAIA_DISCORD_INBOX_PATH",
+                                                runtime_dir.join("inbox.json"),
+                                            );
+                                            discord_token_frame = Some(token);
+                                        }
                                     }
                                 }
                             }
@@ -2176,6 +2185,26 @@ fn restart_agent_for_discord_config(
     audit_db: &audit::AuditDb,
     expected_generation: Option<u64>,
 ) -> Result<(), String> {
+    run_discord_repair_activation(
+        || clear_discord_quarantine_marker(&discord_runtime_dir()?),
+        || {
+            restart_agent_for_discord_config_unmarked(
+                state,
+                app_handle,
+                audit_db,
+                expected_generation,
+            )
+        },
+        || write_discord_quarantine_marker(&discord_runtime_dir()?),
+    )
+}
+
+fn restart_agent_for_discord_config_unmarked(
+    state: &AppState,
+    app_handle: &AppHandle,
+    audit_db: &audit::AuditDb,
+    expected_generation: Option<u64>,
+) -> Result<(), String> {
     log_both("[Naia] Restarting agent-core for Discord configuration...");
     revoke_discord_runtime_authority()?;
     let mut previous = {
@@ -2312,6 +2341,55 @@ fn revoke_discord_runtime_files(runtime: &std::path::Path) -> Result<(), String>
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(_) => Err("discord_status_revoke_failed".to_string()),
+    }
+}
+
+fn discord_quarantine_marker_path(runtime: &std::path::Path) -> std::path::PathBuf {
+    runtime.join("quarantine.json")
+}
+
+fn write_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), String> {
+    let marker = serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        "state": "quarantined",
+    }))
+    .map_err(|_| "discord_quarantine_marker_invalid".to_string())?;
+    write_owner_only_atomic(&discord_quarantine_marker_path(runtime), &marker)
+        .map_err(|_| "discord_quarantine_marker_write_failed".to_string())
+}
+
+fn clear_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(discord_quarantine_marker_path(runtime)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("discord_quarantine_marker_clear_failed".to_string()),
+    }
+}
+
+fn discord_runtime_activation_allowed(runtime: &std::path::Path) -> bool {
+    discord_quarantine_marker_path(runtime)
+        .try_exists()
+        .map(|exists| !exists)
+        .unwrap_or(false)
+}
+
+fn run_discord_repair_activation<C, A, M>(
+    clear_marker: C,
+    activate: A,
+    restore_marker: M,
+) -> Result<(), String>
+where
+    C: FnOnce() -> Result<(), String>,
+    A: FnOnce() -> Result<(), String>,
+    M: FnOnce() -> Result<(), String>,
+{
+    clear_marker()?;
+    match activate() {
+        Ok(()) => Ok(()),
+        Err(error) => match restore_marker() {
+            Ok(()) => Err(error),
+            Err(_) => Err("discord_activation_quarantine_uncertain".to_string()),
+        },
     }
 }
 
@@ -3351,6 +3429,45 @@ fn trim_secret_newline(value: &mut zeroize::Zeroizing<Vec<u8>>) {
     }
 }
 
+#[cfg(any(not(target_os = "windows"), test))]
+#[derive(Clone, Copy)]
+enum AgentSecretLookupPlatform {
+    #[cfg(any(target_os = "macos", test))]
+    MacOs,
+    #[cfg(any(not(any(target_os = "windows", target_os = "macos")), test))]
+    Linux,
+}
+
+#[cfg(any(not(target_os = "windows"), test))]
+fn classify_agent_secret_lookup(
+    platform: AgentSecretLookupPlatform,
+    success: bool,
+    _exit_code: Option<i32>,
+    _stderr: &[u8],
+) -> Result<(), String> {
+    if success {
+        return Ok(());
+    }
+    let absent = match platform {
+        #[cfg(any(target_os = "macos", test))]
+        AgentSecretLookupPlatform::MacOs => _exit_code == Some(44),
+        #[cfg(any(not(any(target_os = "windows", target_os = "macos")), test))]
+        AgentSecretLookupPlatform::Linux => _stderr.is_empty(),
+    };
+    if absent {
+        Err("token_not_found".to_string())
+    } else {
+        Err("keychain_unavailable".to_string())
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn classify_agent_secret_file_presence(
+    presence: std::io::Result<bool>,
+) -> Result<bool, String> {
+    presence.map_err(|_| "keychain_unavailable".to_string())
+}
+
 fn read_agent_secret(
     adk_path: &str,
     env_key: &str,
@@ -3363,7 +3480,7 @@ fn read_agent_secret(
             .join("naia-settings")
             .join(".keys")
             .join(format!("{env_key}.dpapi"));
-        if !file.exists() {
+        if !classify_agent_secret_file_presence(file.try_exists())? {
             return Err("token_not_found".to_string());
         }
         let path = file.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
@@ -3390,9 +3507,12 @@ fn read_agent_secret(
             .args(["find-generic-password", "-a", env_key, "-s", "naia-agent", "-w"])
             .output()
             .map_err(|_| "keychain_unavailable".to_string())?;
-        if !output.status.success() {
-            return Err("token_not_found".to_string());
-        }
+        classify_agent_secret_lookup(
+            AgentSecretLookupPlatform::MacOs,
+            output.status.success(),
+            output.status.code(),
+            &output.stderr,
+        )?;
         let mut value = zeroize::Zeroizing::new(output.stdout);
         trim_secret_newline(&mut value);
         return Ok(value);
@@ -3403,9 +3523,12 @@ fn read_agent_secret(
             .args(["lookup", "service", "naia-agent", "account", env_key])
             .output()
             .map_err(|_| "keychain_unavailable".to_string())?;
-        if !output.status.success() {
-            return Err("token_not_found".to_string());
-        }
+        classify_agent_secret_lookup(
+            AgentSecretLookupPlatform::Linux,
+            output.status.success(),
+            output.status.code(),
+            &output.stderr,
+        )?;
         let mut value = zeroize::Zeroizing::new(output.stdout);
         trim_secret_newline(&mut value);
         Ok(value)
@@ -3665,6 +3788,9 @@ where
 }
 
 fn quarantine_discord_runtime(state: &AppState) -> Result<(), String> {
+    let marker_result =
+        discord_runtime_dir().and_then(|runtime| write_discord_quarantine_marker(&runtime));
+    let initial_revoke_result = revoke_discord_runtime_authority();
     let mut process = {
         let mut guard =
             lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
@@ -3680,8 +3806,11 @@ fn quarantine_discord_runtime(state: &AppState) -> Result<(), String> {
             lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
         *guard = process;
     }
-    let revoke_result = revoke_discord_runtime_authority();
-    process_result.and(revoke_result)
+    let final_revoke_result = revoke_discord_runtime_authority();
+    marker_result
+        .and(initial_revoke_result)
+        .and(process_result)
+        .and(final_revoke_result)
 }
 
 fn discord_credential_rollback_error(
@@ -4533,6 +4662,22 @@ fn discord_binding_rollback_error(
     }
 }
 
+fn finish_discord_clear_activation<Q>(
+    activation: Result<(), String>,
+    quarantine_runtime: Q,
+) -> Result<(), String>
+where
+    Q: FnOnce() -> Result<(), String>,
+{
+    match activation {
+        Ok(()) => Ok(()),
+        Err(_) => match quarantine_runtime() {
+            Ok(()) => Err("discord_bindings_clear_failed".to_string()),
+            Err(_) => Err("discord_bindings_clear_quarantine_uncertain".to_string()),
+        },
+    }
+}
+
 #[tauri::command]
 async fn discord_save_bindings(
     bindings: Vec<DiscordBindingInput>,
@@ -4632,15 +4777,19 @@ async fn discord_save_bindings(
             }
             let previous = read_discord_file_preimage(&path)?;
             write_owner_only_atomic(&path, &bytes)?;
-            if let Err(error) = restart_agent_for_discord_config(
+            let activation = restart_agent_for_discord_config(
                 app_state,
                 &app_handle,
                 &audit_state.db,
                 (!clearing_all_bindings).then_some(generation),
-            ) {
-                if clearing_all_bindings {
-                    return Err(format!("discord_bindings_cleared_{error}"));
-                }
+            );
+            if clearing_all_bindings {
+                finish_discord_clear_activation(activation, || {
+                    quarantine_discord_runtime(app_state)
+                })?;
+                return Ok(generation);
+            }
+            if let Err(error) = activation {
                 let restore_path = path.clone();
                 let remove_path = path.clone();
                 let rollback = rollback_discord_binding_file(
@@ -7541,6 +7690,64 @@ mod tests {
         );
     }
 
+    #[test]
+    fn agent_secret_lookup_classifies_absence_without_hiding_backend_errors() {
+        assert_eq!(classify_agent_secret_file_presence(Ok(false)), Ok(false));
+        assert_eq!(classify_agent_secret_file_presence(Ok(true)), Ok(true));
+        assert_eq!(
+            classify_agent_secret_file_presence(Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "metadata denied",
+            ))),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::MacOs,
+                false,
+                Some(44),
+                b"item not found",
+            ),
+            Err("token_not_found".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::MacOs,
+                false,
+                Some(36),
+                b"interaction not allowed",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                Some(1),
+                b"",
+            ),
+            Err("token_not_found".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                false,
+                Some(1),
+                b"secret service unavailable",
+            ),
+            Err("keychain_unavailable".to_string())
+        );
+        assert_eq!(
+            classify_agent_secret_lookup(
+                AgentSecretLookupPlatform::Linux,
+                true,
+                Some(0),
+                b"",
+            ),
+            Ok(())
+        );
+    }
+
     struct DeferredDiscordChild {
         terminate_calls: usize,
         exit_checks: usize,
@@ -7987,6 +8194,116 @@ mod tests {
             ),
             "discord_credential_restart_failed_rollback_uncertain"
         );
+    }
+
+    #[test]
+    fn discord_clear_activation_failure_always_quarantines_and_classifies_uncertainty() {
+        let successful_quarantine_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            finish_discord_clear_activation(
+                Err("initial authority revoke failed".to_string()),
+                || {
+                    successful_quarantine_calls
+                        .set(successful_quarantine_calls.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("discord_bindings_clear_failed".to_string())
+        );
+        assert_eq!(successful_quarantine_calls.get(), 1);
+
+        let uncertain_quarantine_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            finish_discord_clear_activation(
+                Err("restart failed".to_string()),
+                || {
+                    uncertain_quarantine_calls
+                        .set(uncertain_quarantine_calls.get() + 1);
+                    Err("reap failed".to_string())
+                },
+            ),
+            Err("discord_bindings_clear_quarantine_uncertain".to_string())
+        );
+        assert_eq!(uncertain_quarantine_calls.get(), 1);
+
+        let success_quarantine_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            finish_discord_clear_activation(Ok(()), || {
+                success_quarantine_calls.set(success_quarantine_calls.get() + 1);
+                Ok(())
+            }),
+            Ok(())
+        );
+        assert_eq!(success_quarantine_calls.get(), 0);
+    }
+
+    #[test]
+    fn discord_quarantine_marker_blocks_later_spawn_until_explicit_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(discord_runtime_activation_allowed(dir.path()));
+
+        write_discord_quarantine_marker(dir.path()).unwrap();
+        assert!(!discord_runtime_activation_allowed(dir.path()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(discord_quarantine_marker_path(dir.path()))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+
+        clear_discord_quarantine_marker(dir.path()).unwrap();
+        assert!(discord_runtime_activation_allowed(dir.path()));
+    }
+
+    #[test]
+    fn discord_repair_activation_restores_marker_on_failure_and_uncertainty() {
+        let restore_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_discord_repair_activation(
+                || Ok(()),
+                || Err("activation failed".to_string()),
+                || {
+                    restore_calls.set(restore_calls.get() + 1);
+                    Ok(())
+                },
+            ),
+            Err("activation failed".to_string())
+        );
+        assert_eq!(restore_calls.get(), 1);
+
+        let uncertain_restore_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_discord_repair_activation(
+                || Ok(()),
+                || Err("activation failed".to_string()),
+                || {
+                    uncertain_restore_calls.set(uncertain_restore_calls.get() + 1);
+                    Err("marker write failed".to_string())
+                },
+            ),
+            Err("discord_activation_quarantine_uncertain".to_string())
+        );
+        assert_eq!(uncertain_restore_calls.get(), 1);
+
+        let success_restore_calls = std::cell::Cell::new(0);
+        assert_eq!(
+            run_discord_repair_activation(
+                || Ok(()),
+                || Ok(()),
+                || {
+                    success_restore_calls.set(success_restore_calls.get() + 1);
+                    Ok(())
+                },
+            ),
+            Ok(())
+        );
+        assert_eq!(success_restore_calls.get(), 0);
     }
 
     #[test]
