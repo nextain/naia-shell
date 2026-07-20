@@ -263,6 +263,7 @@ struct AgentProcess {
 struct SpawnedAgentChild {
     child: Option<Child>,
     discord_cleanup: Option<DiscordSpawnCleanup>,
+    pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 struct DiscordSpawnCleanup {
@@ -271,10 +272,15 @@ struct DiscordSpawnCleanup {
 }
 
 impl SpawnedAgentChild {
-    fn new(child: Child, discord_cleanup: Option<DiscordSpawnCleanup>) -> Self {
+    fn new(
+        child: Child,
+        discord_cleanup: Option<DiscordSpawnCleanup>,
+        pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
         Self {
             child: Some(child),
             discord_cleanup,
+            pending_reapers,
         }
     }
 
@@ -288,49 +294,120 @@ impl SpawnedAgentChild {
     }
 
     fn finish_explicit_cleanup(&mut self, child_reaped: bool, runtime_quarantined: bool) {
-        let cleanup = self.discord_cleanup.take();
+        let cleanup = discord_cleanup_retry(self.discord_cleanup.take(), runtime_quarantined);
         let child = self.child.take();
-        if child_reaped && runtime_quarantined {
+        if child_reaped && cleanup.is_none() {
             return;
         }
         if child.is_some() || cleanup.is_some() {
-            spawn_background_discord_reaper(child, cleanup);
+            spawn_background_discord_reaper(
+                child,
+                cleanup,
+                Arc::clone(&self.pending_reapers),
+            );
         }
     }
 }
 
 impl Drop for SpawnedAgentChild {
     fn drop(&mut self) {
-        let cleanup = self.discord_cleanup.take();
+        let mut cleanup = self.discord_cleanup.take();
+        let mut runtime_quarantined = true;
         if let Some(cleanup) = cleanup.as_ref() {
             cleanup
                 .quarantined
                 .store(true, std::sync::atomic::Ordering::Release);
-            let _ = quarantine_discord_runtime_files(&cleanup.runtime);
+            runtime_quarantined = quarantine_discord_runtime_files(&cleanup.runtime).is_ok();
         }
+        cleanup = discord_cleanup_retry(cleanup, runtime_quarantined);
         if let Some(child) = self.child.take() {
-            spawn_background_discord_reaper(Some(child), cleanup);
+            spawn_background_discord_reaper(
+                Some(child),
+                cleanup,
+                Arc::clone(&self.pending_reapers),
+            );
         } else if cleanup.is_some() {
-            spawn_background_discord_reaper(None, cleanup);
+            spawn_background_discord_reaper(
+                None,
+                cleanup,
+                Arc::clone(&self.pending_reapers),
+            );
         }
+    }
+}
+
+fn discord_cleanup_retry(
+    cleanup: Option<DiscordSpawnCleanup>,
+    runtime_quarantined: bool,
+) -> Option<DiscordSpawnCleanup> {
+    if runtime_quarantined {
+        None
+    } else {
+        cleanup
+    }
+}
+
+struct PendingDiscordReaper {
+    pending: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl PendingDiscordReaper {
+    fn begin(pending: Arc<std::sync::atomic::AtomicUsize>) -> Self {
+        pending.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        Self { pending }
+    }
+}
+
+impl Drop for PendingDiscordReaper {
+    fn drop(&mut self) {
+        self.pending
+            .fetch_sub(1, std::sync::atomic::Ordering::Release);
+    }
+}
+
+fn run_pending_discord_reaper<R, Q>(
+    pending: PendingDiscordReaper,
+    reap_child: R,
+    retry_cleanup: Q,
+) where
+    R: FnOnce(),
+    Q: FnOnce(),
+{
+    reap_child();
+    retry_cleanup();
+    drop(pending);
+}
+
+fn reap_discord_child_in_background(child: &mut Child) {
+    let _ = child.kill();
+    while child.wait().is_err() {
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
 fn spawn_background_discord_reaper(
     mut child: Option<Child>,
     cleanup: Option<DiscordSpawnCleanup>,
+    pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
 ) {
+    let pending = PendingDiscordReaper::begin(pending_reapers);
     std::thread::spawn(move || {
-        if let Some(child) = child.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        if let Some(cleanup) = cleanup {
-            cleanup
-                .quarantined
-                .store(true, std::sync::atomic::Ordering::Release);
-            let _ = quarantine_discord_runtime_files(&cleanup.runtime);
-        }
+        run_pending_discord_reaper(
+            pending,
+            || {
+                if let Some(child) = child.as_mut() {
+                    reap_discord_child_in_background(child);
+                }
+            },
+            || {
+                if let Some(cleanup) = cleanup {
+                    cleanup
+                        .quarantined
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    let _ = quarantine_discord_runtime_files(&cleanup.runtime);
+                }
+            },
+        );
     });
 }
 
@@ -385,6 +462,8 @@ struct AppState {
     discord_lifecycle: Mutex<()>,
     /// Process-local fail-closed latch. Only verified explicit repair clears it.
     discord_quarantined: Arc<std::sync::atomic::AtomicBool>,
+    /// Blocks every spawn while an unconfirmed child is owned by a background reaper.
+    discord_pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
     /// Serializes Discord credential and binding mutations across async Tauri commands.
     /// A single operation owns manifest/key rollback and the corresponding agent restart.
     discord_config_operation: tokio::sync::Mutex<()>,
@@ -1145,13 +1224,27 @@ fn spawn_adk_path_snapshot() -> Option<String> {
     })
 }
 
+fn ensure_no_pending_discord_reaper(
+    pending_reapers: &std::sync::atomic::AtomicUsize,
+    _discord_repair_bypass: bool,
+) -> Result<(), String> {
+    if pending_reapers.load(std::sync::atomic::Ordering::Acquire) == 0 {
+        Ok(())
+    } else {
+        Err("discord_agent_reap_pending".to_string())
+    }
+}
+
 fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
     discord_quarantined: &Arc<std::sync::atomic::AtomicBool>,
+    discord_pending_reapers: &Arc<std::sync::atomic::AtomicUsize>,
     discord_repair_bypass: bool,
 ) -> Result<AgentProcess, String> {
     use std::io::Write as _;
+
+    ensure_no_pending_discord_reaper(discord_pending_reapers, discord_repair_bypass)?;
 
     let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
     log_both(&format!("[Naia] node = {}", agent_path));
@@ -1341,7 +1434,11 @@ fn spawn_agent_core(
             runtime: runtime.clone(),
             quarantined: Arc::clone(discord_quarantined),
         });
-    let mut spawned = SpawnedAgentChild::new(child, discord_cleanup);
+    let mut spawned = SpawnedAgentChild::new(
+        child,
+        discord_cleanup,
+        Arc::clone(discord_pending_reapers),
+    );
 
     if let Some(frame) = discord_token_frame {
         let Some(mut stdin) = spawned.child_mut().stdin.take() else {
@@ -2286,7 +2383,13 @@ fn restart_agent(
         }
     };
     let restarted = with_discord_lifecycle(&state.discord_lifecycle, || {
-        match spawn_agent_core(app_handle, db, &state.discord_quarantined, false) {
+        match spawn_agent_core(
+            app_handle,
+            db,
+            &state.discord_quarantined,
+            &state.discord_pending_reapers,
+            false,
+        ) {
             Ok(process) => {
                 let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
                 *guard = Some(process);
@@ -2351,7 +2454,13 @@ fn restart_agent_for_discord_config_unmarked(
     // The old process may have raced the first tombstone and rewritten status
     // while it was terminating. Reassert revocation after it is fully reaped.
     revoke_discord_runtime_authority()?;
-    match spawn_agent_core(app_handle, audit_db, &state.discord_quarantined, true) {
+    match spawn_agent_core(
+        app_handle,
+        audit_db,
+        &state.discord_quarantined,
+        &state.discord_pending_reapers,
+        true,
+    ) {
         Ok(process) => {
             let mut guard =
                 lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
@@ -7062,6 +7171,7 @@ pub fn run() {
             agent: Mutex::new(None),
             discord_lifecycle: Mutex::new(()),
             discord_quarantined: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            discord_pending_reapers: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             discord_config_operation: tokio::sync::Mutex::new(()),
             discord_inbox_authorized_bindings:
                 tokio::sync::Mutex::new(None),
@@ -7465,6 +7575,7 @@ pub fn run() {
                     &app_handle,
                     &audit_db,
                     &state.discord_quarantined,
+                    &state.discord_pending_reapers,
                     false,
                 )?;
                 let mut guard = lock_or_recover(&state.agent, "state.agent(setup)");
@@ -8787,11 +8898,67 @@ mod tests {
         assert_eq!(finish_calls.get(), 1);
     }
 
+    #[test]
+    fn pending_reaper_blocks_spawn_until_reap_and_cleanup_finish() {
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let phases = std::cell::RefCell::new(Vec::new());
+        let ownership = PendingDiscordReaper::begin(pending.clone());
+
+        assert_eq!(
+            ensure_no_pending_discord_reaper(&pending, false),
+            Err("discord_agent_reap_pending".to_string())
+        );
+        assert_eq!(
+            ensure_no_pending_discord_reaper(&pending, true),
+            Err("discord_agent_reap_pending".to_string()),
+            "explicit repair must not bypass an owned old child"
+        );
+        run_pending_discord_reaper(
+            ownership,
+            || {
+                assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+                phases.borrow_mut().push("reap");
+            },
+            || {
+                assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+                phases.borrow_mut().push("cleanup");
+            },
+        );
+
+        assert_eq!(phases.into_inner(), vec!["reap", "cleanup"]);
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert_eq!(ensure_no_pending_discord_reaper(&pending, false), Ok(()));
+        assert_eq!(ensure_no_pending_discord_reaper(&pending, true), Ok(()));
+    }
+
+    #[test]
+    fn successful_quarantine_strips_late_runtime_cleanup() {
+        let runtime = std::path::PathBuf::from("/exact/runtime");
+        let quarantined = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let cleanup = DiscordSpawnCleanup {
+            runtime: runtime.clone(),
+            quarantined,
+        };
+
+        assert!(discord_cleanup_retry(Some(cleanup), true).is_none());
+
+        let retry = discord_cleanup_retry(
+            Some(DiscordSpawnCleanup {
+                runtime: runtime.clone(),
+                quarantined: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            }),
+            false,
+        )
+        .expect("failed quarantine must retain exact cleanup");
+        assert_eq!(retry.runtime, runtime);
+    }
+
     #[cfg(unix)]
     #[test]
     fn spawned_agent_drop_is_nonblocking_and_uses_exact_runtime() {
         let runtime = tempfile::tempdir().unwrap();
         let quarantined = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let child = Command::new("sh")
             .args(["-c", "exec sleep 30"])
             .spawn()
@@ -8802,6 +8969,7 @@ mod tests {
                 runtime: runtime.path().to_path_buf(),
                 quarantined: quarantined.clone(),
             }),
+            pending.clone(),
         );
 
         let started = std::time::Instant::now();
@@ -8814,6 +8982,10 @@ mod tests {
         assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
         assert!(runtime.path().join("quarantine.json").is_file());
         assert!(runtime.path().join("authority.json").is_file());
+        assert!(
+            pending.load(std::sync::atomic::Ordering::Acquire) <= 1,
+            "Drop may finish reap immediately or retain exactly one pending owner"
+        );
     }
 
     #[test]
