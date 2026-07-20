@@ -265,7 +265,10 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		);
 		expect(LIB_RS).toContain("async fn agent_shutdown_dispatcher(");
 		expect(LIB_RS).toContain(
-			"tokio::time::timeout(std::time::Duration::from_secs(2)",
+			"const AGENT_SHUTDOWN_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2)",
+		);
+		expect(LIB_RS).toContain(
+			"agent_shutdown_dispatcher_with_timeout(addr, rx, AGENT_SHUTDOWN_RPC_TIMEOUT)",
 		);
 		expect(LIB_RS).toContain("AgentShutdownOutcome::Ambiguous");
 		expect(LIB_RS).toContain(
