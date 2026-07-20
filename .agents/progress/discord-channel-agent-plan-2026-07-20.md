@@ -466,3 +466,19 @@ credential-flow run and OS-level post-exit process audit remain operator
 acceptance items; they are not represented as automated passes. Live Discord
 acceptance is likewise PASS only when an operator has configured a credential
 through the native UI.
+
+## Final stage status — 2026-07-21
+
+- Planning: two consecutive clean adversarial reviews.
+- Development: two consecutive clean adversarial reviews after authenticated
+  shutdown and accepted-reservation recovery fixes.
+- Test: two consecutive clean adversarial reviews after Shell lifecycle,
+  Agent real-process, build, traceability, and Playwright evidence.
+- Integration: two consecutive clean adversarial reviews on probe
+  `18ebd99a80e697fbfcebc6fdf47dae26094fad14`.
+- The concurrent proactive/continuous-speech lane remains semantically intact;
+  its conflicting V-model identifiers were remapped in the probe, with duplicate
+  definitions, dead links, and orphans all at zero.
+- Credentialed live Discord and real operating-system credential-store
+  acceptance remain explicitly `Partial`; no automated completion claim is
+  made for those operator-owned gates.

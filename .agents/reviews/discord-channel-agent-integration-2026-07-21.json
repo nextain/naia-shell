@@ -1,0 +1,41 @@
+{
+  "stage": "integration",
+  "protocol": "review-pass",
+  "scope": "Discord channel agent integrated with the concurrent proactive/continuous-speech Shell lane",
+  "shell_code_and_test_head": "c9239ad4e872e93cf7a867075f120f9fddf2ef01",
+  "shell_development_and_test_review_head": "d63923e77b4af54d68d35f08620a879b750b08d1",
+  "agent_runtime_commit": "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5",
+  "agent_test_commit": "3f8cfb057cf9a5524c4cea7618a0d00e3e36e280",
+  "agent_trace_head": "dff1da88b0c889f34676fe93a378ca91869f8749",
+  "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
+  "radio_head": "847ba0afa9343673ddfa279dfa2e2bad04aded88",
+  "integration_probe_commit": "18ebd99a80e697fbfcebc6fdf47dae26094fad14",
+  "integration_evidence": {
+    "ancestry": "Probe is a two-parent merge of radio 847ba0afa9343673ddfa279dfa2e2bad04aded88 and Shell d63923e77b4af54d68d35f08620a879b750b08d1; c9239ad4e872e93cf7a867075f120f9fddf2ef01 is ancestral.",
+    "identifier_remap": "Radio REQ-012→REQ-013, UC-015→UC-017, TEST-S-015→TEST-S-016, SPEC-009→SPEC-011, TEST-F-009→TEST-F-011.",
+    "traceability": "REQ 17, UC 13, TEST-S 15, SPEC 11, TEST-F 11; duplicate definitions 0, dead-link 0, orphan 0.",
+    "runtime_overlap": "No runtime-path overlap; conflict resolution is limited to requirements, scenario, and V-model registry documentation.",
+    "probe_root_tests": "24 files; 228 tests passed",
+    "coordination": "Root shared handoff supersedes the prior proto-change notice with exact final commits, protocol hash, test evidence, remap, and Partial external gates."
+  },
+  "clean_convergence": {
+    "required_consecutive_clean": 2,
+    "rounds_after_last_edit": [
+      {
+        "round": 1,
+        "reviewer": "codex/final-clean-b",
+        "verdict": "CLEAN"
+      },
+      {
+        "round": 2,
+        "reviewer": "codex/final-clean-a",
+        "verdict": "CLEAN"
+      }
+    ],
+    "result": "CLEAN"
+  },
+  "external_acceptance_pending": [
+    "Live two-channel Discord receive/reply, RESUME/reconnect, dedupe replay, permission loss, and token rotate/revoke.",
+    "Real operating-system credential prompt and credential-store lifecycle."
+  ]
+}
