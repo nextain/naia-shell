@@ -26,7 +26,7 @@
 - Shell strengthened-test commit:
   `c756a9c9feed4be38c7592a5e33f8c4d11ccc930`
 - Reviewed Shell production HEAD:
-  `88e8e8ee3ec89c357da8840e328e28dc4a7ecb53`
+  `68d80cf6bd260f6c0ea0a0c048a37a0c908bcc8e`
 - Paired proto SHA-256:
   `4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa`
 - Live Discord and real OS credential-store acceptance remain explicit
