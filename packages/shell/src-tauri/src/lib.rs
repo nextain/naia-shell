@@ -256,13 +256,22 @@ struct AgentProcess {
     discord_cleanup: Option<DiscordSpawnCleanup>,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
     shutdown_tx: tokio::sync::mpsc::UnboundedSender<AgentShutdownCommand>,
+    shutdown_nonce: zeroize::Zeroizing<String>,
+    termination_attempted: bool,
     /// agent-core gRPC listening addr ??寃곌낵 諛섑솚??unary 而ㅻ㎤???? compile_knowledge)媛 蹂꾨룄 ?대씪濡?connect.
     grpc_addr: String,
 }
 
 struct AgentShutdownCommand {
     nonce: String,
-    result: std::sync::mpsc::SyncSender<Result<(), String>>,
+    result: std::sync::mpsc::SyncSender<AgentShutdownOutcome>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AgentShutdownOutcome {
+    Accepted,
+    Rejected,
+    Ambiguous,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
@@ -418,9 +427,7 @@ where
 fn new_agent_child_lease(
     runtime: Option<std::path::PathBuf>,
 ) -> Result<AgentChildLease, String> {
-    let mut random = [0u8; 16];
-    getrandom::fill(&mut random).map_err(|_| "agent_lease_rng_failed".to_string())?;
-    let nonce = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    let nonce = new_agent_nonce()?;
     Ok(AgentChildLease {
         version: 1,
         pid: None,
@@ -432,6 +439,12 @@ fn new_agent_child_lease(
             .as_millis() as u64,
         runtime,
     })
+}
+
+fn new_agent_nonce() -> Result<String, String> {
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|_| "agent_lease_rng_failed".to_string())?;
+    Ok(random.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn reconcile_agent_child_lease_locked(lock: &AgentChildLeaseLock) -> Result<(), String> {
@@ -947,7 +960,15 @@ fn spawn_background_discord_reaper(
 // Drop ?먯꽌 紐낆떆 kill 濡?orphan 諛⑹?(codex 由щ럭 #1). 醫낅즺/replace ?묒そ 而ㅻ쾭.
 impl Drop for AgentProcess {
     fn drop(&mut self) {
-        let child_reaped = graceful_shutdown_and_reap_agent(self).is_ok();
+        let child_reaped = if self.termination_attempted {
+            // An explicit lifecycle operation already spent the graceful
+            // deadline. Do not replay the authenticated drain on Drop, but
+            // retain the orphan-prevention guarantee with one bounded
+            // force-and-reap attempt.
+            terminate_and_reap_discord_child(&mut self.child).is_ok()
+        } else {
+            graceful_shutdown_and_reap_agent(self).is_ok()
+        };
         let _ = self.finish_owned_cleanup(child_reaped);
     }
 }
@@ -1849,6 +1870,7 @@ fn spawn_agent_core(
     let lease_lock = acquire_agent_child_lease_lock()?;
     reconcile_agent_child_lease_locked(&lease_lock)?;
     let mut child_lease = new_agent_child_lease(None)?;
+    let shutdown_nonce = zeroize::Zeroizing::new(new_agent_nonce()?);
     persist_agent_child_lease_before(
         &child_lease,
         |lease| write_agent_child_lease_locked(&lease_lock, lease),
@@ -1858,7 +1880,7 @@ fn spawn_agent_core(
     // Cross-platform graceful shutdown capability. This is independent from
     // the Discord credential, is never logged, and the Agent deletes it from
     // its environment before loading runtime modules.
-    cmd.env("NAIA_AGENT_SHUTDOWN_NONCE", &child_lease.nonce);
+    cmd.env("NAIA_AGENT_SHUTDOWN_NONCE", shutdown_nonce.as_str());
 
     log_verbose(&format!(
         "[Naia] Starting agent-core: {} {}",
@@ -2110,11 +2132,11 @@ fn spawn_agent_core(
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (shutdown_tx, shutdown_rx) =
         tokio::sync::mpsc::unbounded_channel::<AgentShutdownCommand>();
+    tauri::async_runtime::spawn(agent_shutdown_dispatcher(addr.clone(), shutdown_rx));
     tauri::async_runtime::spawn(agent_dispatcher(
         addr.clone(),
         adk_path,
         rx,
-        shutdown_rx,
         app_handle.clone(),
         audit_db.clone(),
     ));
@@ -2126,8 +2148,45 @@ fn spawn_agent_core(
         discord_cleanup,
         tx,
         shutdown_tx,
+        shutdown_nonce,
+        termination_attempted: false,
         grpc_addr: addr,
     })
+}
+
+async fn agent_shutdown_dispatcher(
+    addr: String,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
+) {
+    while let Some(AgentShutdownCommand { nonce, result }) = rx.recv().await {
+        let attempt = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            match agent_grpc::AgentGrpc::connect(format!("http://{}", addr)).await {
+                Ok(mut client) => client
+                    .shutdown(nonce)
+                    .await
+                    .map_err(|status| Some(status.code())),
+                Err(_) => Err(None),
+            }
+        })
+        .await;
+        let outcome = match attempt {
+            Ok(result) => classify_agent_shutdown_rpc_result(result),
+            Err(_) => AgentShutdownOutcome::Ambiguous,
+        };
+        let _ = result.send(outcome);
+    }
+}
+
+fn classify_agent_shutdown_rpc_result(
+    result: Result<(), Option<tonic::Code>>,
+) -> AgentShutdownOutcome {
+    match result {
+        Ok(()) => AgentShutdownOutcome::Accepted,
+        Err(Some(tonic::Code::Unauthenticated | tonic::Code::PermissionDenied)) => {
+            AgentShutdownOutcome::Rejected
+        }
+        Err(_) => AgentShutdownOutcome::Ambiguous,
+    }
 }
 
 /// gRPC dispatcher ??connect ??SetWorkspace(naia-adk 濡쒕뵫) ??硫붿떆吏 猷⑦봽.
@@ -2137,7 +2196,6 @@ async fn agent_dispatcher(
     addr: String,
     adk_path: String,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<String>,
-    mut shutdown_rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
     app: AppHandle,
     audit_db: audit::AuditDb,
 ) {
@@ -2192,31 +2250,7 @@ async fn agent_dispatcher(
             }
         });
     }
-    loop {
-        let msg = tokio::select! {
-            biased;
-            command = shutdown_rx.recv() => {
-                let Some(AgentShutdownCommand { nonce, result }) = command else {
-                    break;
-                };
-                let shutdown_result = client
-                    .shutdown(nonce)
-                    .await
-                    .map_err(|error| format!("agent_graceful_shutdown_rpc_failed: {error}"));
-                let accepted = shutdown_result.is_ok();
-                let _ = result.send(shutdown_result);
-                if accepted {
-                    break;
-                }
-                continue;
-            }
-            message = rx.recv() => {
-                let Some(message) = message else {
-                    break;
-                };
-                message
-            }
-        };
+    while let Some(msg) = rx.recv().await {
         let v: serde_json::Value = match serde_json::from_str(&msg) {
             Ok(v) => v,
             Err(_) => continue,
@@ -3052,6 +3086,7 @@ fn restart_agent_for_discord_config(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
     expected_generation: Option<u64>,
+    revoke_mode: DiscordAuthorityRevokeMode,
 ) -> Result<(), String> {
     with_discord_lifecycle(&state.discord_lifecycle, || {
         run_discord_repair_activation(
@@ -3063,6 +3098,7 @@ fn restart_agent_for_discord_config(
                     app_handle,
                     audit_db,
                     expected_generation,
+                    revoke_mode,
                 )
             },
             || write_discord_quarantine_marker(&discord_runtime_dir()?),
@@ -3075,9 +3111,15 @@ fn restart_agent_for_discord_config_unmarked(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
     expected_generation: Option<u64>,
+    revoke_mode: DiscordAuthorityRevokeMode,
 ) -> Result<(), String> {
     log_both("[Naia] Restarting agent-core for Discord configuration...");
-    revoke_discord_runtime_authority()?;
+    // Security-tightening changes revoke before shutdown. Additive changes
+    // quiesce and drain the old generation before revocation so
+    // already-admitted messages reach a durable terminal state.
+    if matches!(revoke_mode, DiscordAuthorityRevokeMode::BeforeShutdown) {
+        revoke_discord_runtime_authority()?;
+    }
     let mut previous = {
         let mut guard =
             lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
@@ -3103,8 +3145,8 @@ fn restart_agent_for_discord_config_unmarked(
         }
     }
     drop(previous);
-    // The old process may have raced the first tombstone and rewritten status
-    // while it was terminating. Reassert revocation after it is fully reaped.
+    // Revoke only after ordinary graceful drain, and reassert after an
+    // emergency revoke because the old process may have raced the tombstone.
     revoke_discord_runtime_authority()?;
     match spawn_agent_core(
         app_handle,
@@ -3168,6 +3210,12 @@ fn restart_agent_for_discord_config_unmarked(
             Err(format!("discord_agent_restart_failed: {error}"))
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DiscordAuthorityRevokeMode {
+    BeforeShutdown,
+    AfterDrain,
 }
 
 trait DiscordChildLifecycle {
@@ -3256,10 +3304,13 @@ where
 }
 
 fn classify_agent_shutdown_ack(
-    result: Result<Result<(), String>, std::sync::mpsc::RecvTimeoutError>,
+    result: Result<AgentShutdownOutcome, std::sync::mpsc::RecvTimeoutError>,
 ) -> Result<(), String> {
     match result {
-        Ok(result) => result,
+        Ok(AgentShutdownOutcome::Accepted | AgentShutdownOutcome::Ambiguous) => Ok(()),
+        Ok(AgentShutdownOutcome::Rejected) => {
+            Err("agent_graceful_shutdown_rejected".to_string())
+        }
         // The request may already be accepted while only its ACK is delayed
         // or lost. The caller must observe the child for the graceful deadline
         // before escalating.
@@ -3271,17 +3322,13 @@ fn classify_agent_shutdown_ack(
 }
 
 fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), String> {
+    process.termination_attempted = true;
     let dispatcher = process.shutdown_tx.clone();
-    let nonce = process
-        .lease
-        .as_ref()
-        .map(|lease| lease.nonce.clone())
-        .ok_or_else(|| "agent_graceful_shutdown_lease_missing".to_string());
+    let nonce = process.shutdown_nonce.to_string();
     let started = std::time::Instant::now();
     graceful_then_force_reap_with(
         &mut process.child,
         move || {
-            let nonce = nonce?;
             let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
             dispatcher
                 .send(AgentShutdownCommand {
@@ -3293,10 +3340,9 @@ fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), St
                 result_rx.recv_timeout(std::time::Duration::from_secs(3)),
             )
         },
-        // Agent bounds Discord drain at 20s and memory flush at 8s, with a
-        // 30s process watchdog. Leave both phases room while still escalating
-        // before an indefinitely stuck child can block the next generation.
-        std::time::Duration::from_secs(29),
+        // Agent has a 30s watchdog around all drain/flush phases. Observe past
+        // that bound so Shell never kills a healthy cleanup one second early.
+        std::time::Duration::from_secs(35),
         std::time::Duration::from_secs(5),
         move || started.elapsed(),
         std::thread::sleep,
@@ -5016,6 +5062,7 @@ async fn discord_capture_bot_token(
             &app_handle,
             &audit_state.db,
             expected_generation,
+            DiscordAuthorityRevokeMode::BeforeShutdown,
         )
     });
     if let Err(error) = activation {
@@ -5037,6 +5084,7 @@ async fn discord_capture_bot_token(
                     &app_handle,
                     &audit_state.db,
                     expected_generation,
+                    DiscordAuthorityRevokeMode::BeforeShutdown,
                 )
             },
         )
@@ -5071,7 +5119,13 @@ async fn discord_remove_bot_token(
     let activation = remove_agent_key(&adk_path, DISCORD_TOKEN_KEY)
         .await
         .and_then(|()| {
-            restart_agent_for_discord_config(&state, &app_handle, &audit_state.db, None)
+            restart_agent_for_discord_config(
+                &state,
+                &app_handle,
+                &audit_state.db,
+                None,
+                DiscordAuthorityRevokeMode::BeforeShutdown,
+            )
         });
     if let Err(error) = activation {
         let restore_path = adk_path.clone();
@@ -5088,6 +5142,7 @@ async fn discord_remove_bot_token(
                     &app_handle,
                     &audit_state.db,
                     expected_generation,
+                    DiscordAuthorityRevokeMode::BeforeShutdown,
                 )
             },
         )
@@ -5568,6 +5623,73 @@ struct DiscordBindingManifest {
     processing_profiles: std::collections::BTreeMap<String, String>,
 }
 
+fn discord_binding_update_revoke_mode(
+    previous: Option<&DiscordBindingManifest>,
+    next_bindings: &[DiscordBindingInput],
+    next_profiles: &std::collections::BTreeMap<String, String>,
+) -> DiscordAuthorityRevokeMode {
+    let Some(previous) = previous else {
+        return DiscordAuthorityRevokeMode::AfterDrain;
+    };
+    let next_by_id = next_bindings
+        .iter()
+        .map(|binding| (binding.binding_id.as_str(), binding))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let participation_rank = |value: &str| match value {
+        "paused" => Some(0u8),
+        "mentions" => Some(1u8),
+        "all" => Some(2u8),
+        _ => None,
+    };
+    let tightens = previous.bindings.iter().any(|old| {
+        let Some(new) = next_by_id.get(old.binding_id.as_str()) else {
+            return true;
+        };
+        if old.guild_id != new.guild_id
+            || old.channel_id != new.channel_id
+            || old.processing_profile_ref != new.processing_profile_ref
+            // Empty allowlists are invalid in the current schema. Treat any
+            // malformed/legacy occurrence as security-sensitive rather than
+            // guessing whether it once meant wildcard or deny-all.
+            || old.allowed_user_ids.is_empty()
+            || new.allowed_user_ids.is_empty()
+        {
+            return true;
+        }
+        let new_users = new
+            .allowed_user_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        if old
+            .allowed_user_ids
+            .iter()
+            .any(|user| !new_users.contains(user.as_str()))
+        {
+            return true;
+        }
+        let participation_tightened = match (
+            participation_rank(&old.participation),
+            participation_rank(&new.participation),
+        ) {
+            (Some(old), Some(new)) => new < old,
+            _ => true,
+        };
+        if participation_tightened {
+            return true;
+        }
+        previous
+            .processing_profiles
+            .get(&old.processing_profile_ref)
+            != next_profiles.get(&new.processing_profile_ref)
+    });
+    if tightens {
+        DiscordAuthorityRevokeMode::BeforeShutdown
+    } else {
+        DiscordAuthorityRevokeMode::AfterDrain
+    }
+}
+
 const DISCORD_MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
 
 #[derive(serde::Serialize)]
@@ -5767,6 +5889,28 @@ fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), S
     Ok(())
 }
 
+fn activate_discord_binding_update<V, W, R>(
+    revoke_mode: DiscordAuthorityRevokeMode,
+    revoke_authority: V,
+    write_manifest: W,
+    restart_agent: R,
+) -> Result<(), String>
+where
+    V: FnOnce() -> Result<(), String>,
+    W: FnOnce() -> Result<(), String>,
+    R: FnOnce(DiscordAuthorityRevokeMode) -> Result<(), String>,
+{
+    // For a narrowing update the tombstone is the commit boundary: old
+    // authority is gone before the new manifest can become visible. If the
+    // write fails, callers restore the preimage and recover the old runtime;
+    // until that recovery completes the tombstone keeps the system fail-closed.
+    if matches!(revoke_mode, DiscordAuthorityRevokeMode::BeforeShutdown) {
+        revoke_authority()?;
+    }
+    write_manifest()?;
+    restart_agent(revoke_mode)
+}
+
 #[cfg(any(unix, test))]
 fn sync_parent_directory_with<T, O, S>(open_directory: O, sync_directory: S) -> std::io::Result<()>
 where
@@ -5939,14 +6083,20 @@ async fn discord_save_bindings(
             }
             let generation = next_discord_generation(previous_generation)?;
             let clearing_all_bindings = bindings.is_empty();
+            let processing_profiles = std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]);
+            let revoke_mode = discord_binding_update_revoke_mode(
+                previous_manifest.as_ref(),
+                &bindings,
+                &processing_profiles,
+            );
             let manifest = DiscordBindingManifest {
                 version: 1,
                 generation,
                 bindings,
-                processing_profiles: std::collections::BTreeMap::from([(
-                    "default".to_string(),
-                    "local_only".to_string(),
-                )]),
+                processing_profiles,
             };
             let bytes = serde_json::to_vec_pretty(&manifest)
                 .map_err(|_| "discord_bindings_invalid".to_string())?;
@@ -5954,14 +6104,20 @@ async fn discord_save_bindings(
                 return Err("discord_bindings_too_large".to_string());
             }
             let previous = read_discord_file_preimage(&path)?;
-            let activation = write_owner_only_atomic(&path, &bytes).and_then(|()| {
-                restart_agent_for_discord_config(
-                    app_state,
-                    &app_handle,
-                    &audit_state.db,
-                    (!clearing_all_bindings).then_some(generation),
-                )
-            });
+            let activation = activate_discord_binding_update(
+                revoke_mode,
+                revoke_discord_runtime_authority,
+                || write_owner_only_atomic(&path, &bytes),
+                |mode| {
+                    restart_agent_for_discord_config(
+                        app_state,
+                        &app_handle,
+                        &audit_state.db,
+                        (!clearing_all_bindings).then_some(generation),
+                        mode,
+                    )
+                },
+            );
             if clearing_all_bindings {
                 finish_discord_clear_activation(activation, || {
                     quarantine_discord_runtime(app_state)
@@ -5981,6 +6137,7 @@ async fn discord_save_bindings(
                             &app_handle,
                             &audit_state.db,
                             previous_generation,
+                            DiscordAuthorityRevokeMode::BeforeShutdown,
                         )
                     },
                 );
@@ -9077,8 +9234,24 @@ mod tests {
             Err("agent_graceful_shutdown_dispatch_failed".to_string())
         );
         assert_eq!(
-            classify_agent_shutdown_ack(Ok(Err("unauthenticated".to_string()))),
-            Err("unauthenticated".to_string())
+            classify_agent_shutdown_ack(Ok(AgentShutdownOutcome::Ambiguous)),
+            Ok(())
+        );
+        assert_eq!(
+            classify_agent_shutdown_ack(Ok(AgentShutdownOutcome::Rejected)),
+            Err("agent_graceful_shutdown_rejected".to_string())
+        );
+        assert_eq!(
+            classify_agent_shutdown_rpc_result(Err(Some(tonic::Code::Unavailable))),
+            AgentShutdownOutcome::Ambiguous
+        );
+        assert_eq!(
+            classify_agent_shutdown_rpc_result(Err(Some(tonic::Code::Cancelled))),
+            AgentShutdownOutcome::Ambiguous
+        );
+        assert_eq!(
+            classify_agent_shutdown_rpc_result(Err(Some(tonic::Code::Unauthenticated))),
+            AgentShutdownOutcome::Rejected
         );
     }
 
@@ -9169,6 +9342,206 @@ mod tests {
         assert_eq!(revoked["version"], 1);
         assert_eq!(revoked["generation"], "revoked");
         assert!(!status.exists(), "stale ready status must be removed");
+    }
+
+    fn test_discord_binding(
+        id: &str,
+        channel: &str,
+        users: &[&str],
+        participation: &str,
+    ) -> DiscordBindingInput {
+        DiscordBindingInput {
+            binding_id: id.to_string(),
+            guild_id: "100".to_string(),
+            guild_name: Some("Guild".to_string()),
+            channel_id: channel.to_string(),
+            channel_name: Some("channel".to_string()),
+            allowed_user_ids: users.iter().map(|value| (*value).to_string()).collect(),
+            processing_profile_ref: "default".to_string(),
+            participation: participation.to_string(),
+        }
+    }
+
+    fn test_discord_manifest(bindings: Vec<DiscordBindingInput>) -> DiscordBindingManifest {
+        DiscordBindingManifest {
+            version: 1,
+            generation: 42,
+            bindings,
+            processing_profiles: std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]),
+        }
+    }
+
+    fn test_discord_profiles() -> std::collections::BTreeMap<String, String> {
+        std::collections::BTreeMap::from([("default".to_string(), "local_only".to_string())])
+    }
+
+    #[test]
+    fn discord_binding_partial_removal_revokes_before_shutdown() {
+        let previous = test_discord_manifest(vec![
+            test_discord_binding("one", "200", &["300"], "mentions"),
+            test_discord_binding("two", "201", &["301"], "mentions"),
+        ]);
+        let next = vec![test_discord_binding("two", "201", &["301"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_user_removal_revokes_before_shutdown() {
+        let previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300", "301"],
+            "mentions",
+        )]);
+        let next = vec![test_discord_binding("one", "200", &["301"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_pause_revokes_before_shutdown() {
+        let previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        let next = vec![test_discord_binding("one", "200", &["300"], "paused")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_additive_update_drains_before_revoke() {
+        let previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        let next = vec![
+            test_discord_binding("one", "200", &["300", "301"], "all"),
+            test_discord_binding("two", "201", &["302"], "mentions"),
+        ];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::AfterDrain,
+        );
+    }
+
+    #[test]
+    fn discord_binding_profile_change_revokes_before_shutdown() {
+        let mut previous = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        previous
+            .processing_profiles
+            .insert("default".to_string(), "legacy_profile".to_string());
+        let next = vec![test_discord_binding("one", "200", &["300"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(Some(&previous), &next, &test_discord_profiles()),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_invalid_empty_user_scopes_revoke_conservatively() {
+        let previous_empty =
+            test_discord_manifest(vec![test_discord_binding("one", "200", &[], "mentions")]);
+        let next_nonempty = vec![test_discord_binding("one", "200", &["300"], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(
+                Some(&previous_empty),
+                &next_nonempty,
+                &test_discord_profiles(),
+            ),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+
+        let previous_nonempty = test_discord_manifest(vec![test_discord_binding(
+            "one",
+            "200",
+            &["300"],
+            "mentions",
+        )]);
+        let next_empty = vec![test_discord_binding("one", "200", &[], "mentions")];
+        assert_eq!(
+            discord_binding_update_revoke_mode(
+                Some(&previous_nonempty),
+                &next_empty,
+                &test_discord_profiles(),
+            ),
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+        );
+    }
+
+    #[test]
+    fn discord_binding_tightening_revokes_before_manifest_write_and_restart() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = activate_discord_binding_update(
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+            || {
+                events.borrow_mut().push("revoke");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("write");
+                Ok(())
+            },
+            |mode| {
+                assert_eq!(mode, DiscordAuthorityRevokeMode::BeforeShutdown);
+                events.borrow_mut().push("restart");
+                Ok(())
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(*events.borrow(), ["revoke", "write", "restart"]);
+    }
+
+    #[test]
+    fn discord_binding_write_failure_stays_revoked_until_rollback_recovery() {
+        let events = std::cell::RefCell::new(Vec::new());
+        let activation = activate_discord_binding_update(
+            DiscordAuthorityRevokeMode::BeforeShutdown,
+            || {
+                events.borrow_mut().push("revoke");
+                Ok(())
+            },
+            || {
+                events.borrow_mut().push("write");
+                Err("write failed".to_string())
+            },
+            |_| panic!("restart must not run after a failed manifest write"),
+        );
+        assert_eq!(activation, Err("write failed".to_string()));
+
+        let rollback = rollback_discord_binding_file(
+            DiscordFilePreimage::Present(b"before".to_vec()),
+            |_| {
+                events.borrow_mut().push("restore");
+                Ok(())
+            },
+            || panic!("present preimage must not remove"),
+            || {
+                events.borrow_mut().push("recover");
+                Ok(())
+            },
+        );
+        assert!(rollback.is_ok());
+        assert_eq!(*events.borrow(), ["revoke", "write", "restore", "recover"]);
     }
 
     #[test]
@@ -9694,6 +10067,17 @@ mod tests {
         );
         assert_eq!(dispatcher_path, "/workspace/a");
         assert_eq!(cache.borrow().as_deref(), Some("/workspace/b"));
+    }
+
+    #[test]
+    fn shutdown_capability_is_distinct_from_persisted_process_marker() {
+        let lease = new_agent_child_lease(None).unwrap();
+        let shutdown_nonce = new_agent_nonce().unwrap();
+        assert_eq!(lease.nonce.len(), 32);
+        assert_eq!(shutdown_nonce.len(), 32);
+        assert_ne!(shutdown_nonce, lease.nonce);
+        assert!(lease.marker.contains(&lease.nonce));
+        assert!(!lease.marker.contains(&shutdown_nonce));
     }
 
     #[test]

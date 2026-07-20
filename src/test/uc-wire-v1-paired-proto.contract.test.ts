@@ -30,7 +30,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("pins the paired agent ancestry and build evidence", () => {
 		expect(BUILD_RS).toContain(
-			'REQUIRED_AGENT_COMMIT: &str = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
+			'REQUIRED_AGENT_COMMIT: &str = "0a6b8cce70d8cc11f04ab9eaa803ba39d55465da"',
 		);
 		expect(BUILD_RS).toContain(
 			'REQUIRED_PROTO_SHA256: &str =\n        "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -86,7 +86,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 	});
 	it("selects and validates one exact paired agent/proto checkout", () => {
 		expect(TAURI_WITH_MODE).toContain(
-			'REQUIRED_AGENT_COMMIT = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
+			'REQUIRED_AGENT_COMMIT = "0a6b8cce70d8cc11f04ab9eaa803ba39d55465da"',
 		);
 		expect(TAURI_WITH_MODE).toContain(
 			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -137,7 +137,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("applies the same paired agent/proto env before direct Tauri bundle builds", () => {
 		expect(STAGE_RUNTIME).toContain(
-			'REQUIRED_AGENT_COMMIT = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
+			'REQUIRED_AGENT_COMMIT = "0a6b8cce70d8cc11f04ab9eaa803ba39d55465da"',
 		);
 		expect(STAGE_RUNTIME).toContain(
 			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -180,7 +180,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("requires stage-agent to stage the same validated paired checkout", () => {
 		expect(STAGE_AGENT).toContain(
-			'REQUIRED_AGENT_COMMIT = "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc"',
+			'REQUIRED_AGENT_COMMIT = "0a6b8cce70d8cc11f04ab9eaa803ba39d55465da"',
 		);
 		expect(STAGE_AGENT).toContain(
 			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -256,5 +256,20 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		expect(LIB_RS).not.toContain("NAIA_AGENT_STANDALONE_PATH");
 		expect(LIB_RS).not.toContain("agent-standalone");
 		expect(LIB_RS).not.toContain("../agent/dist/index.js");
+	});
+
+	it("keeps authenticated shutdown independent from stalled ordinary RPCs", () => {
+		const LIB_RS = readFileSync("packages/shell/src-tauri/src/lib.rs", "utf8");
+		expect(LIB_RS).toContain(
+			"tauri::async_runtime::spawn(agent_shutdown_dispatcher(addr.clone(), shutdown_rx))",
+		);
+		expect(LIB_RS).toContain("async fn agent_shutdown_dispatcher(");
+		expect(LIB_RS).toContain(
+			"tokio::time::timeout(std::time::Duration::from_secs(2)",
+		);
+		expect(LIB_RS).toContain("AgentShutdownOutcome::Ambiguous");
+		expect(LIB_RS).toContain(
+			"async fn agent_dispatcher(\n    addr: String,\n    adk_path: String,\n    mut rx: tokio::sync::mpsc::UnboundedReceiver<String>",
+		);
 	});
 });
