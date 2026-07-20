@@ -210,8 +210,16 @@ export function ConnectionsSettingsTab() {
 					latestRuntime.generation === runtime.generation);
 			if (!runtimeIsCurrent && !matchesLatestRuntime) return;
 			if (runtimeIsCurrent) runtimeStatusRef.current = runtime;
-			restoreBindings(bindings);
 			if (!runtime.tokenConfigured) {
+				const currentRuntime = runtimeStatusRef.current;
+				if (
+					refreshVersionRef.current !== refreshVersion ||
+					(currentRuntime !== null &&
+						(currentRuntime.tokenConfigured !== runtime.tokenConfigured ||
+							currentRuntime.generation !== runtime.generation))
+				)
+					return;
+				restoreBindings(bindings);
 				setDiscovery(null);
 				setState("disconnected");
 				return;
@@ -227,6 +235,7 @@ export function ConnectionsSettingsTab() {
 						currentRuntime.generation !== runtime.generation))
 			)
 				return;
+			restoreBindings(bindings);
 			setDiscovery(result);
 			if (!result.messageContentIntent) {
 				setDiscoveryErrorCode(result.intentCode);
@@ -256,7 +265,16 @@ export function ConnectionsSettingsTab() {
 		try {
 			const runtime = await invoke<RuntimeStatus>("discord_connection_status");
 			if (statusVersionRef.current !== statusVersion) return;
+			const previousRuntime = runtimeStatusRef.current;
 			runtimeStatusRef.current = runtime;
+			if (
+				previousRuntime !== null &&
+				(previousRuntime.tokenConfigured !== runtime.tokenConfigured ||
+					previousRuntime.generation !== runtime.generation)
+			) {
+				void refresh();
+				return;
+			}
 			if (!runtime.tokenConfigured) {
 				setDiscovery(null);
 				setDiscoveryErrorCode(null);
@@ -271,7 +289,7 @@ export function ConnectionsSettingsTab() {
 			setState("error");
 			setRuntimeErrorCode(String(error));
 		}
-	}, []);
+	}, [refresh]);
 
 	useEffect(() => {
 		void refresh();

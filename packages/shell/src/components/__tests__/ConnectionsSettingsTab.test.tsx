@@ -461,6 +461,75 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		);
 	});
 
+	it("reloads bindings when runtime generation changes during discovery", async () => {
+		const olderBinding = {
+			bindingId: "existing_general",
+			guildId: "200",
+			guildName: "Nextain",
+			channelId: "300",
+			channelName: "general",
+			allowedUserIds: ["666666"],
+			processingProfileRef: "default",
+			participation: "mentions",
+		};
+		const newerBinding = {
+			...olderBinding,
+			allowedUserIds: ["777777"],
+			participation: "all",
+		};
+		let statusReads = 0;
+		let bindingReads = 0;
+		let discoveryReads = 0;
+		let resolveOlderDiscovery!: (value: typeof discovery) => void;
+		const pendingOlderDiscovery = new Promise<typeof discovery>((resolve) => {
+			resolveOlderDiscovery = resolve;
+		});
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status") {
+				statusReads += 1;
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: statusReads === 1 ? 1 : 2,
+					state: "ready",
+					authoritative: true,
+				});
+			}
+			if (command === "discord_binding_snapshot") {
+				bindingReads += 1;
+				return Promise.resolve(
+					bindingReads === 1 ? [olderBinding] : [newerBinding],
+				);
+			}
+			if (command === "discord_discover_channels") {
+				discoveryReads += 1;
+				return discoveryReads === 1
+					? pendingOlderDiscovery
+					: Promise.resolve(discovery);
+			}
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() => expect(discoveryReads).toBe(1));
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		const listener = mockListen.mock.calls[0]?.[1] as (() => void) | undefined;
+		await act(async () => {
+			listener?.();
+		});
+
+		await screen.findByDisplayValue("777777");
+		expect(bindingReads).toBe(2);
+		expect(
+			screen.getByRole("combobox", { name: /Nextain.*general/ }),
+		).toHaveValue("all");
+
+		await act(async () => {
+			resolveOlderDiscovery(discovery);
+		});
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(screen.getByDisplayValue("777777")).toBeDefined();
+	});
+
 	it("preserves bindings from a guild whose discovery is degraded", async () => {
 		const uncertain = {
 			bindingId: "discord_900_901",
