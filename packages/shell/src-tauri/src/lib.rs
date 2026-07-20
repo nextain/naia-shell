@@ -4173,6 +4173,37 @@ struct DiscordBindingManifest {
     processing_profiles: std::collections::BTreeMap<String, String>,
 }
 
+const DISCORD_MAX_SAFE_GENERATION: u64 = 9_007_199_254_740_991;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordBindingSnapshot {
+    generation: Option<u64>,
+    bindings: Vec<DiscordBindingInput>,
+}
+
+fn discord_binding_snapshot_from_manifest(
+    manifest: Option<DiscordBindingManifest>,
+) -> DiscordBindingSnapshot {
+    match manifest {
+        Some(value) => DiscordBindingSnapshot {
+            generation: Some(value.generation),
+            bindings: value.bindings,
+        },
+        None => DiscordBindingSnapshot {
+            generation: None,
+            bindings: Vec::new(),
+        },
+    }
+}
+
+fn discord_binding_generation_matches(
+    manifest: Option<&DiscordBindingManifest>,
+    expected_generation: Option<u64>,
+) -> bool {
+    manifest.map(|value| value.generation) == expected_generation
+}
+
 fn discord_bindings_have_unique_identity(bindings: &[DiscordBindingInput]) -> bool {
     let mut binding_ids = std::collections::BTreeSet::new();
     let mut tuples = std::collections::BTreeSet::new();
@@ -4191,6 +4222,12 @@ fn read_discord_binding_manifest(
         .is_some_and(|value| value.version != 1)
     {
         return Err("discord_bindings_upgrade_required".to_string());
+    }
+    if manifest
+        .as_ref()
+        .is_some_and(|value| value.generation > DISCORD_MAX_SAFE_GENERATION)
+    {
+        return Err("discord_bindings_generation_invalid".to_string());
     }
     if manifest
         .as_ref()
@@ -4213,10 +4250,10 @@ fn discord_settings_dir() -> Result<std::path::PathBuf, String> {
 }
 
 #[tauri::command]
-async fn discord_binding_snapshot() -> Result<Vec<DiscordBindingInput>, String> {
+async fn discord_binding_snapshot() -> Result<DiscordBindingSnapshot, String> {
     let manifest =
         read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?;
-    Ok(manifest.map(|value| value.bindings).unwrap_or_default())
+    Ok(discord_binding_snapshot_from_manifest(manifest))
 }
 
 #[tauri::command]
@@ -4314,6 +4351,7 @@ fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), S
 #[tauri::command]
 async fn discord_save_bindings(
     bindings: Vec<DiscordBindingInput>,
+    expected_generation: Option<u64>,
     state: tauri::State<'_, AppState>,
     app_handle: AppHandle,
     audit_state: tauri::State<'_, AuditState>,
@@ -4355,6 +4393,9 @@ async fn discord_save_bindings(
     }
     let path = discord_settings_dir()?.join("discord-bindings.json");
     let previous_manifest = read_discord_binding_manifest(&path)?;
+    if !discord_binding_generation_matches(previous_manifest.as_ref(), expected_generation) {
+        return Err("discord_bindings_generation_conflict".to_string());
+    }
     if !bindings.is_empty() {
         let discovery = discord_discover_channels().await?;
         if !discovery.message_content_intent {
@@ -4440,9 +4481,17 @@ fn next_discord_generation(previous: Option<u64>) -> Result<u64, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "clock_unavailable".to_string())?
         .as_millis() as u64;
-    Ok(previous
-        .and_then(|value| value.checked_add(1))
-        .map_or(now, |minimum| now.max(minimum)))
+    let generation = match previous {
+        Some(value) => value
+            .checked_add(1)
+            .map(|minimum| now.max(minimum))
+            .ok_or_else(|| "discord_bindings_generation_invalid".to_string())?,
+        None => now,
+    };
+    if generation > DISCORD_MAX_SAFE_GENERATION {
+        return Err("discord_bindings_generation_invalid".to_string());
+    }
+    Ok(generation)
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -7498,6 +7547,80 @@ mod tests {
         let future = first.saturating_add(10_000);
         let after_future = next_discord_generation(Some(future)).unwrap();
         assert_eq!(after_future, future + 1);
+        assert_eq!(
+            next_discord_generation(Some(DISCORD_MAX_SAFE_GENERATION)),
+            Err("discord_bindings_generation_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_binding_snapshot_serializes_generation_with_its_bindings() {
+        let snapshot = discord_binding_snapshot_from_manifest(Some(DiscordBindingManifest {
+            version: 1,
+            generation: 42,
+            bindings: vec![DiscordBindingInput {
+                binding_id: "binding_1".to_string(),
+                guild_id: "100".to_string(),
+                guild_name: Some("Guild".to_string()),
+                channel_id: "200".to_string(),
+                channel_name: Some("general".to_string()),
+                allowed_user_ids: vec!["300".to_string()],
+                processing_profile_ref: "default".to_string(),
+                participation: "mentions".to_string(),
+            }],
+            processing_profiles: std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]),
+        }));
+        let value = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(value["generation"], 42);
+        assert_eq!(value["bindings"][0]["bindingId"], "binding_1");
+
+        let empty = serde_json::to_value(discord_binding_snapshot_from_manifest(None)).unwrap();
+        assert!(empty["generation"].is_null());
+        assert_eq!(empty["bindings"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn discord_binding_generation_distinguishes_present_empty_from_absent() {
+        let present_empty = DiscordBindingManifest {
+            version: 1,
+            generation: 42,
+            bindings: Vec::new(),
+            processing_profiles: std::collections::BTreeMap::from([(
+                "default".to_string(),
+                "local_only".to_string(),
+            )]),
+        };
+        assert!(discord_binding_generation_matches(
+            Some(&present_empty),
+            Some(42)
+        ));
+        assert!(!discord_binding_generation_matches(
+            Some(&present_empty),
+            None
+        ));
+        assert!(discord_binding_generation_matches(None, None));
+        assert!(!discord_binding_generation_matches(None, Some(42)));
+    }
+
+    #[test]
+    fn discord_binding_manifest_rejects_generation_above_js_safe_integer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            format!(
+                r#"{{"version":1,"generation":{},"bindings":[],"processingProfiles":{{"default":"local_only"}}}}"#,
+                DISCORD_MAX_SAFE_GENERATION + 1
+            ),
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_generation_invalid"
+        ));
     }
 
     #[test]

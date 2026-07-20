@@ -47,7 +47,7 @@ interface DiscordDiscovery {
 
 interface RuntimeStatus {
 	readonly tokenConfigured: boolean;
-	readonly generation?: number;
+	readonly generation: number | null;
 	readonly state: string;
 	readonly code?: string;
 	readonly authoritative: boolean;
@@ -64,7 +64,30 @@ interface BindingInput {
 	readonly participation: Participation;
 }
 
+interface BindingSnapshot {
+	readonly generation: number | null;
+	readonly bindings: readonly BindingInput[];
+}
+
 const SNOWFLAKE = /^\d{6,32}$/;
+
+function isSafeGeneration(value: unknown): value is number | null {
+	return (
+		value === null ||
+		(typeof value === "number" &&
+			Number.isSafeInteger(value) &&
+			value >= 0)
+	);
+}
+
+function isBindingSnapshot(value: unknown): value is BindingSnapshot {
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		return false;
+	const snapshot = value as Partial<BindingSnapshot>;
+	return (
+		isSafeGeneration(snapshot.generation) && Array.isArray(snapshot.bindings)
+	);
+}
 
 function bindingIdFor(guildId: string, channelId: string): string {
 	return `discord_${guildId}_${channelId}`;
@@ -82,6 +105,9 @@ export function ConnectionsSettingsTab() {
 	const [bindingSnapshot, setBindingSnapshot] = useState<
 		readonly BindingInput[]
 	>([]);
+	const [bindingGeneration, setBindingGeneration] = useState<
+		number | null | undefined
+	>(undefined);
 	const [runtimeErrorCode, setRuntimeErrorCode] = useState<string | null>(null);
 	const [discoveryErrorCode, setDiscoveryErrorCode] = useState<string | null>(
 		null,
@@ -193,13 +219,14 @@ export function ConnectionsSettingsTab() {
 		const statusVersion = ++statusVersionRef.current;
 		setState("checking");
 		setDiscovery(null);
+		setBindingGeneration(undefined);
 		setRuntimeErrorCode(null);
 		setDiscoveryErrorCode(null);
 		setSaved(false);
 		try {
-			const [runtime, bindings] = await Promise.all([
+			const [runtime, snapshot] = await Promise.all([
 				invoke<RuntimeStatus>("discord_connection_status"),
-				invoke<BindingInput[]>("discord_binding_snapshot"),
+				invoke<unknown>("discord_binding_snapshot"),
 			]);
 			if (
 				refreshVersionRef.current !== refreshVersion ||
@@ -207,8 +234,17 @@ export function ConnectionsSettingsTab() {
 			)
 				return;
 			if (!runtime.tokenConfigured) {
-				restoreBindings(bindings);
+				restoreBindings([]);
 				setState("disconnected");
+				return;
+			}
+			if (
+				!isSafeGeneration(runtime.generation) ||
+				!isBindingSnapshot(snapshot) ||
+				runtime.generation !== snapshot.generation
+			) {
+				setState("configured");
+				setRuntimeErrorCode("discord_binding_generation_mismatch");
 				return;
 			}
 			const result = await invoke<DiscordDiscovery>(
@@ -219,7 +255,8 @@ export function ConnectionsSettingsTab() {
 				statusVersionRef.current !== statusVersion
 			)
 				return;
-			restoreBindings(bindings);
+			restoreBindings(snapshot.bindings);
+			setBindingGeneration(snapshot.generation);
 			setDiscovery(result);
 			if (!result.messageContentIntent) {
 				setDiscoveryErrorCode(result.intentCode);
@@ -309,7 +346,13 @@ export function ConnectionsSettingsTab() {
 	}
 
 	async function saveBindings() {
-		if (!discovery || !selectedUsersValid || saving) return;
+		if (
+			!discovery ||
+			bindingGeneration === undefined ||
+			!selectedUsersValid ||
+			saving
+		)
+			return;
 		const usableBindings: BindingInput[] = discovery.guilds.flatMap((guild) =>
 			guild.channels
 				.filter((channel) => {
@@ -349,12 +392,19 @@ export function ConnectionsSettingsTab() {
 		];
 		setSaving(true);
 		try {
-			await invoke<number>("discord_save_bindings", { bindings });
+			await invoke<number>("discord_save_bindings", {
+				bindings,
+				expectedGeneration: bindingGeneration,
+			});
 			await refresh();
 			setSaved(true);
 		} catch (error) {
 			setSaved(false);
-			setRuntimeErrorCode(String(error));
+			if (String(error).includes("discord_bindings_generation_conflict")) {
+				await refresh();
+			} else {
+				setRuntimeErrorCode(String(error));
+			}
 		} finally {
 			setSaving(false);
 		}
@@ -616,7 +666,11 @@ export function ConnectionsSettingsTab() {
 					<div className="settings-actions">
 						<button
 							type="button"
-							disabled={saving || !selectedUsersValid}
+							disabled={
+								saving ||
+								bindingGeneration === undefined ||
+								!selectedUsersValid
+							}
 							onClick={() => void saveBindings()}
 						>
 							{t("settings.save")}

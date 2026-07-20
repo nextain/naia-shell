@@ -62,6 +62,13 @@ const discovery = {
 	],
 };
 
+function bindingSnapshot<T>(
+	bindings: readonly T[],
+	generation: number | null = 1,
+) {
+	return { generation, bindings };
+}
+
 describe("ConnectionsSettingsTab Discord binding", () => {
 	afterEach(() => {
 		cleanup();
@@ -80,7 +87,8 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				});
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
-			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([]));
 			return Promise.resolve();
 		});
 		render(<ConnectionsSettingsTab />);
@@ -102,7 +110,8 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				});
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
-			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([]));
 			if (command === "discord_save_bindings") return Promise.resolve(123);
 			return Promise.resolve();
 		});
@@ -120,6 +129,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				expectedGeneration: 1,
 				bindings: [
 					{
 						bindingId: "discord_200_300",
@@ -137,6 +147,112 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		await waitFor(() => expect(screen.getByRole("status")).toBeDefined());
 	});
 
+	it("allows the first binding save when no manifest generation exists", async () => {
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: null,
+					state: "configured",
+					authoritative: false,
+				});
+			if (command === "discord_discover_channels")
+				return Promise.resolve(discovery);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([], null));
+			if (command === "discord_save_bindings") return Promise.resolve(123);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await screen.findByText("Nextain");
+		fireEvent.click(screen.getByRole("checkbox", { name: /general/ }));
+		fireEvent.change(screen.getByRole("textbox"), {
+			target: { value: "400000" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /저장|Save|Apply/i }));
+
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				expectedGeneration: null,
+				bindings: [
+					{
+						bindingId: "discord_200_300",
+						guildId: "200",
+						guildName: "Nextain",
+						channelId: "300",
+						channelName: "general",
+						allowedUserIds: ["400000"],
+						processingProfileRef: "default",
+						participation: "mentions",
+					},
+				],
+			}),
+		);
+	});
+
+	it("refreshes instead of retrying a save after a generation conflict", async () => {
+		const olderBinding = {
+			bindingId: "existing_general",
+			guildId: "200",
+			guildName: "Nextain",
+			channelId: "300",
+			channelName: "general",
+			allowedUserIds: ["666666"],
+			processingProfileRef: "default",
+			participation: "mentions",
+		};
+		const newerBinding = {
+			...olderBinding,
+			allowedUserIds: ["777777"],
+			participation: "all",
+		};
+		let statusReads = 0;
+		let bindingReads = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status") {
+				statusReads += 1;
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: statusReads,
+					state: "ready",
+					authoritative: true,
+				});
+			}
+			if (command === "discord_binding_snapshot") {
+				bindingReads += 1;
+				return Promise.resolve(
+					bindingReads === 1
+						? bindingSnapshot([olderBinding], 1)
+						: bindingSnapshot([newerBinding], 2),
+				);
+			}
+			if (command === "discord_discover_channels")
+				return Promise.resolve(discovery);
+			if (command === "discord_save_bindings")
+				return Promise.reject(
+					new Error("discord_bindings_generation_conflict"),
+				);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await screen.findByDisplayValue("666666");
+		fireEvent.click(screen.getByRole("button", { name: /저장|Save|Apply/i }));
+
+		await screen.findByDisplayValue("777777");
+		expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+			expectedGeneration: 1,
+			bindings: [olderBinding],
+		});
+		expect(
+			mockInvoke.mock.calls.filter(
+				([command]) => command === "discord_save_bindings",
+			),
+		).toHaveLength(1);
+		expect(screen.queryByRole("alert")).toBeNull();
+	});
+
 	it("matches the native six-to-thirty-two digit user snowflake boundary", async () => {
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "discord_connection_status")
@@ -148,7 +264,8 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				});
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
-			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([]));
 			return Promise.resolve();
 		});
 		render(<ConnectionsSettingsTab />);
@@ -211,7 +328,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
 			if (command === "discord_binding_snapshot")
-				return Promise.resolve(savedBindings);
+				return Promise.resolve(bindingSnapshot(savedBindings));
 			if (command === "discord_save_bindings") return Promise.resolve(124);
 			return Promise.resolve();
 		});
@@ -237,6 +354,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		fireEvent.click(screen.getByRole("button", { name: /저장|Save|Apply/i }));
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				expectedGeneration: 1,
 				bindings: savedBindings.slice(0, 1),
 			}),
 		);
@@ -264,7 +382,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
 			if (command === "discord_binding_snapshot")
-				return Promise.resolve([stale]);
+				return Promise.resolve(bindingSnapshot([stale]));
 			if (command === "discord_save_bindings") return Promise.resolve(125);
 			return Promise.resolve();
 		});
@@ -276,6 +394,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				expectedGeneration: 1,
 				bindings: [],
 			}),
 		);
@@ -296,7 +415,8 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			}
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
-			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([]));
 			return Promise.resolve();
 		});
 
@@ -328,7 +448,8 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 					...discovery,
 					degradedGuildIds: ["900"],
 				});
-			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([]));
 			return Promise.resolve();
 		});
 
@@ -370,7 +491,8 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 					? pendingDiscovery
 					: Promise.resolve(discovery);
 			}
-			if (command === "discord_binding_snapshot") return Promise.resolve([]);
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([]));
 			return Promise.resolve();
 		});
 
@@ -427,10 +549,12 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 				return Promise.resolve(discovery);
 			if (command === "discord_binding_snapshot") {
 				bindingReads += 1;
-				if (bindingReads === 1) return Promise.resolve([]);
-				if (bindingReads === 2) return pendingOlder;
-				if (bindingReads === 3) return pendingNewer;
-				return Promise.resolve([newerBinding]);
+				if (bindingReads === 1) return Promise.resolve(bindingSnapshot([]));
+				if (bindingReads === 2)
+					return pendingOlder.then((bindings) => bindingSnapshot(bindings));
+				if (bindingReads === 3)
+					return pendingNewer.then((bindings) => bindingSnapshot(bindings));
+				return Promise.resolve(bindingSnapshot([newerBinding]));
 			}
 			if (command === "discord_save_bindings") return Promise.resolve(127);
 			return Promise.resolve();
@@ -462,6 +586,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		fireEvent.click(screen.getByRole("button", { name: /저장|Save|Apply/i }));
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				expectedGeneration: 1,
 				bindings: [newerBinding],
 			}),
 		);
@@ -520,8 +645,10 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			if (command === "discord_binding_snapshot") {
 				bindingReads += 1;
 				return bindingReads === 1
-					? pendingInitialBindings
-					: Promise.resolve([newerBinding]);
+					? pendingInitialBindings.then((bindings) =>
+							bindingSnapshot(bindings, 1),
+						)
+					: Promise.resolve(bindingSnapshot([newerBinding], 2));
 			}
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
@@ -555,6 +682,157 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		});
 		expect(screen.queryByDisplayValue("666666")).toBeNull();
 		expect(screen.getByDisplayValue("777777")).toBeDefined();
+	});
+
+	it("hides mismatched binding generations until a matching status refresh", async () => {
+		const olderBinding = {
+			bindingId: "existing_general",
+			guildId: "200",
+			guildName: "Nextain",
+			channelId: "300",
+			channelName: "general",
+			allowedUserIds: ["666666"],
+			processingProfileRef: "default",
+			participation: "mentions",
+		};
+		const newerBinding = {
+			...olderBinding,
+			allowedUserIds: ["777777"],
+			participation: "all",
+		};
+		let bindingReads = 0;
+		let discoveryReads = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 3,
+					state: "ready",
+					authoritative: true,
+				});
+			if (command === "discord_binding_snapshot") {
+				bindingReads += 1;
+				return Promise.resolve(
+					bindingReads === 1
+						? bindingSnapshot([olderBinding], 2)
+						: bindingSnapshot([newerBinding], 3),
+				);
+			}
+			if (command === "discord_discover_channels") {
+				discoveryReads += 1;
+				return Promise.resolve(discovery);
+			}
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() => expect(bindingReads).toBe(1));
+		expect(discoveryReads).toBe(0);
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeNull();
+		expect(screen.getByRole("alert").getAttribute("data-error-code")).toBe(
+			"discord_binding_generation_mismatch",
+		);
+
+		const listener = mockListen.mock.calls[0]?.[1] as (() => void) | undefined;
+		await act(async () => {
+			listener?.();
+		});
+
+		await screen.findByDisplayValue("777777");
+		expect(bindingReads).toBe(2);
+		expect(discoveryReads).toBe(1);
+		expect(
+			screen.getByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeEnabled();
+		expect(screen.queryByRole("alert")).toBeNull();
+	});
+
+	it("fails closed for a legacy array snapshot without a generation", async () => {
+		let discoveryReads = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 3,
+					state: "ready",
+					authoritative: true,
+				});
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve([
+					{
+						bindingId: "legacy",
+						guildId: "200",
+						guildName: "Nextain",
+						channelId: "300",
+						channelName: "general",
+						allowedUserIds: ["666666"],
+						processingProfileRef: "default",
+						participation: "mentions",
+					},
+				]);
+			if (command === "discord_discover_channels") {
+				discoveryReads += 1;
+				return Promise.resolve(discovery);
+			}
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() =>
+			expect(screen.getByRole("alert").getAttribute("data-error-code")).toBe(
+				"discord_binding_generation_mismatch",
+			),
+		);
+		expect(discoveryReads).toBe(0);
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeNull();
+	});
+
+	it("clears binding and save state when the token is not configured", async () => {
+		let discoveryReads = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: false,
+					generation: 3,
+					state: "disconnected",
+					authoritative: false,
+				});
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(
+					bindingSnapshot(
+						[
+							{
+								bindingId: "stale",
+								guildId: "200",
+								channelId: "300",
+								allowedUserIds: ["666666"],
+								processingProfileRef: "default",
+								participation: "mentions",
+							},
+						],
+						2,
+					),
+				);
+			if (command === "discord_discover_channels") {
+				discoveryReads += 1;
+				return Promise.resolve(discovery);
+			}
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await screen.findByText(t("settings.connectionsDisconnected"));
+		expect(discoveryReads).toBe(0);
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeNull();
 	});
 
 	it("rejects old discovery before the replacement status resolves", async () => {
@@ -609,7 +887,10 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			if (command === "discord_binding_snapshot") {
 				bindingReads += 1;
 				return Promise.resolve(
-					bindingReads === 1 ? [olderBinding] : [newerBinding],
+					bindingSnapshot(
+						bindingReads === 1 ? [olderBinding] : [newerBinding],
+						bindingReads === 1 ? 1 : 2,
+					),
 				);
 			}
 			if (command === "discord_discover_channels") {
@@ -684,8 +965,10 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			if (command === "discord_binding_snapshot") {
 				bindingReads += 1;
 				return bindingReads === 1
-					? Promise.resolve([olderBinding])
-					: pendingNewerBindings;
+					? Promise.resolve(bindingSnapshot([olderBinding]))
+					: pendingNewerBindings.then((bindings) =>
+							bindingSnapshot(bindings, 2),
+						);
 			}
 			if (command === "discord_discover_channels")
 				return Promise.resolve(discovery);
@@ -751,7 +1034,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 					degradedGuildIds: ["900"],
 				});
 			if (command === "discord_binding_snapshot")
-				return Promise.resolve([uncertain]);
+				return Promise.resolve(bindingSnapshot([uncertain]));
 			if (command === "discord_save_bindings") return Promise.resolve(126);
 			return Promise.resolve();
 		});
@@ -765,6 +1048,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		fireEvent.click(screen.getByRole("button", { name: /저장|Save|Apply/i }));
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("discord_save_bindings", {
+				expectedGeneration: 1,
 				bindings: [uncertain],
 			}),
 		);
@@ -795,7 +1079,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 					discoveryTruncated: true,
 				});
 			if (command === "discord_binding_snapshot")
-				return Promise.resolve([beyondProductBound]);
+				return Promise.resolve(bindingSnapshot([beyondProductBound]));
 			return Promise.resolve();
 		});
 

@@ -75,7 +75,8 @@ const DISCORD_TAURI_MOCK = `
 				],
 			}],
 		};
-		if (cmd === "discord_binding_snapshot") return [];
+		if (cmd === "discord_binding_snapshot")
+			return { generation: 1, bindings: [] };
 		if (cmd === "discord_save_bindings") return (args.bindings || []).length;
 		if (cmd === "discord_get_last_binding") return null;
 		if (cmd === "discord_set_last_binding") return null;
@@ -193,6 +194,7 @@ test("Connections에서 권한 가능한 채널만 저장한다", async ({ page 
 			),
 		);
 	expect(save?.args).toEqual({
+		expectedGeneration: 1,
 		bindings: [
 			{
 				bindingId: "discord_100_200",
