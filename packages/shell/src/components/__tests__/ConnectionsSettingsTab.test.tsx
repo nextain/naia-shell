@@ -793,6 +793,37 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		).toBeNull();
 	});
 
+	it("rejects generation zero before discovery or save is exposed", async () => {
+		let discoveryReads = 0;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: 0,
+					state: "configured",
+					authoritative: false,
+				});
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([], 0));
+			if (command === "discord_discover_channels") {
+				discoveryReads += 1;
+				return Promise.resolve(discovery);
+			}
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() =>
+			expect(screen.getByRole("alert").getAttribute("data-error-code")).toBe(
+				"discord_binding_generation_mismatch",
+			),
+		);
+		expect(discoveryReads).toBe(0);
+		expect(
+			screen.queryByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeNull();
+	});
+
 	it("clears binding and save state when the token is not configured", async () => {
 		let discoveryReads = 0;
 		mockInvoke.mockImplementation((command: string) => {

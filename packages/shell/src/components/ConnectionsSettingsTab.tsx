@@ -76,7 +76,7 @@ function isSafeGeneration(value: unknown): value is number | null {
 		value === null ||
 		(typeof value === "number" &&
 			Number.isSafeInteger(value) &&
-			value >= 0)
+			value >= 1)
 	);
 }
 

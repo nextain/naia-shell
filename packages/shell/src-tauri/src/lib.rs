@@ -4225,7 +4225,9 @@ fn read_discord_binding_manifest(
     }
     if manifest
         .as_ref()
-        .is_some_and(|value| value.generation > DISCORD_MAX_SAFE_GENERATION)
+        .is_some_and(|value| {
+            value.generation == 0 || value.generation > DISCORD_MAX_SAFE_GENERATION
+        })
     {
         return Err("discord_bindings_generation_invalid".to_string());
     }
@@ -7606,9 +7608,19 @@ mod tests {
     }
 
     #[test]
-    fn discord_binding_manifest_rejects_generation_above_js_safe_integer() {
+    fn discord_binding_manifest_rejects_generation_outside_agent_range() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":0,"bindings":[],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_generation_invalid"
+        ));
+
         std::fs::write(
             &path,
             format!(
