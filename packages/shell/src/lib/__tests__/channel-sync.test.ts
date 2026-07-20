@@ -46,13 +46,9 @@ describe("syncLinkedChannels", () => {
 		localStorage.clear();
 		vi.clearAllMocks();
 		// Default: openDmChannel via Rust returns a DM channel ID
-		mockedInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
-			if (cmd === "discord_api") {
-				const a = args as Record<string, unknown> | undefined;
-				const endpoint = a?.endpoint as string;
-				if (endpoint === "/users/@me/channels") {
-					return JSON.stringify({ id: "1234567890123456789" });
-				}
+		mockedInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "discord_open_dm_channel") {
+				return "1234567890123456789";
 			}
 			return "";
 		});
@@ -84,9 +80,9 @@ describe("syncLinkedChannels", () => {
 		await syncLinkedChannels();
 
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
-		// No discord_api invoke should happen (Logger may call invoke for frontend_log)
+		// No Discord DM invoke should happen (Logger may call invoke for frontend_log)
 		expect(mockedInvoke).not.toHaveBeenCalledWith(
-			"discord_api",
+			"discord_open_dm_channel",
 			expect.anything(),
 		);
 		fetchSpy.mockRestore();
@@ -123,7 +119,7 @@ describe("syncLinkedChannels", () => {
 		await syncLinkedChannels();
 
 		expect(mockedInvoke).not.toHaveBeenCalledWith(
-			"discord_api",
+			"discord_open_dm_channel",
 			expect.anything(),
 		);
 		fetchSpy.mockRestore();
@@ -145,10 +141,8 @@ describe("syncLinkedChannels", () => {
 		await syncLinkedChannels();
 
 		// Should have called openDmChannel via Rust invoke
-		expect(mockedInvoke).toHaveBeenCalledWith("discord_api", {
-			endpoint: "/users/@me/channels",
-			method: "POST",
-			body: JSON.stringify({ recipient_id: discordUserId }),
+		expect(mockedInvoke).toHaveBeenCalledWith("discord_open_dm_channel", {
+			recipientUserId: discordUserId,
 		});
 
 		// Config should have discord user ID and DM channel ID
@@ -242,9 +236,9 @@ describe("syncLinkedChannels", () => {
 
 		await syncLinkedChannels();
 
-		// No discord_api invoke should happen (Logger may call invoke for frontend_log)
+		// No Discord DM invoke should happen (Logger may call invoke for frontend_log)
 		expect(mockedInvoke).not.toHaveBeenCalledWith(
-			"discord_api",
+			"discord_open_dm_channel",
 			expect.anything(),
 		);
 

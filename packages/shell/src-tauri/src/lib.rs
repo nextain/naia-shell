@@ -300,6 +300,13 @@ impl Drop for CascadeProcess {
 
 struct AppState {
     agent: Mutex<Option<AgentProcess>>,
+    /// Serializes Discord credential and binding mutations across async Tauri commands.
+    /// A single operation owns manifest/key rollback and the corresponding agent restart.
+    discord_config_operation: tokio::sync::Mutex<()>,
+    /// Server-side cache of binding ids proven usable by the latest live
+    /// discovery. The WebView may narrow this set but can never broaden it.
+    discord_inbox_authorized_bindings:
+        tokio::sync::Mutex<Option<(u64, std::collections::BTreeSet<String>)>>,
     bgm_server: Mutex<Option<BgmServerProcess>>,
     cascade: Mutex<Option<CascadeProcess>>,
     gateway: Mutex<Option<GatewayProcess>>,
@@ -1033,6 +1040,8 @@ fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
 ) -> Result<AgentProcess, String> {
+    use std::io::Write as _;
+
     let agent_path = resolve_spawn_node(app_handle, "NAIA_AGENT_PATH");
     log_both(&format!("[Naia] node = {}", agent_path));
 
@@ -1101,6 +1110,8 @@ fn spawn_agent_core(
         .stdout(Stdio::piped())
         .stderr(stderr_stdio);
 
+    let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
+
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
     // at runtime. Read from ~/.naia/adk-path written by write_naia_path_cache.
@@ -1112,6 +1123,56 @@ fn spawn_agent_core(
                 let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
                 cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
                 cmd.env("NAIA_ADK_PATH", adk_path_str);
+                let bindings_path = settings_dir.join("discord-bindings.json");
+                if let Ok(metadata) = std::fs::metadata(&bindings_path) {
+                    if metadata.is_file() && metadata.len() <= 512 * 1024 {
+                        if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
+                            let generation = serde_json::from_str::<serde_json::Value>(&bindings_json)
+                                .ok()
+                                .and_then(|value| value.get("generation").and_then(|item| item.as_u64()));
+                            if let Some(generation) = generation {
+                                if let Ok(token) = read_discord_bot_token() {
+                                    if validate_discord_token(&token).is_ok() {
+                                        let runtime_dir = settings_dir.join("discord-runtime");
+                                        std::fs::create_dir_all(&runtime_dir)
+                                            .map_err(|_| "discord_runtime_dir_unavailable".to_string())?;
+                                        let generation = generation.to_string();
+                                        let authority_path = runtime_dir.join("authority.json");
+                                        let authority = serde_json::json!({
+                                            "version": 1,
+                                            "generation": generation.clone(),
+                                        });
+                                        write_owner_only_atomic(
+                                            &authority_path,
+                                            &serde_json::to_vec(&authority)
+                                                .map_err(|_| "discord_authority_invalid".to_string())?,
+                                        )?;
+                                        cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
+                                        cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
+                                        cmd.env("NAIA_DISCORD_GENERATION", &generation);
+                                        cmd.env(
+                                            "NAIA_DISCORD_STATUS_PATH",
+                                            runtime_dir.join("status.json"),
+                                        );
+                                        cmd.env(
+                                            "NAIA_DISCORD_AUTHORITY_PATH",
+                                            &authority_path,
+                                        );
+                                        cmd.env(
+                                            "NAIA_DISCORD_DEDUPE_PATH",
+                                            runtime_dir.join("dedupe.json"),
+                                        );
+                                        cmd.env(
+                                            "NAIA_DISCORD_INBOX_PATH",
+                                            runtime_dir.join("inbox.json"),
+                                        );
+                                        discord_token_frame = Some(token);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 log_verbose(&format!(
                     "[Naia] agent NAIA_ADK_PATH={} NAIA_SETTINGS_DIR={}",
                     adk_path_str,
@@ -1126,6 +1187,23 @@ fn spawn_agent_core(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn agent-core: {}", e))?;
+
+    if let Some(frame) = discord_token_frame {
+        let Some(mut stdin) = child.stdin.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("discord_token_pipe_unavailable".to_string());
+        };
+        let write_result = stdin
+            .write_all(&frame)
+            .and_then(|_| stdin.flush());
+        drop(stdin);
+        if write_result.is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("discord_token_pipe_failed".to_string());
+        }
+    }
 
     // gRPC: stdin ? ?곗씠??梨꾨꼸 ?꾨떂(child 媛 蹂댁쑀, 誘몄궗??. stdout = GRPC_LISTENING ?몃뱶?곗씠??+ 濡쒓렇.
     let stdout = child
@@ -2042,6 +2120,68 @@ fn restart_agent(
             send_to_agent(state, message, None, audit_db)
         }
         Err(e) => Err(format!("Restart failed: {}", e)),
+    }
+}
+
+fn restart_agent_for_discord_config(
+    state: &AppState,
+    app_handle: &AppHandle,
+    audit_db: &audit::AuditDb,
+    expected_generation: Option<u64>,
+) -> Result<(), String> {
+    log_both("[Naia] Restarting agent-core for Discord configuration...");
+    let previous = {
+        let mut guard =
+            lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+        guard.take()
+    };
+    drop(previous);
+    match spawn_agent_core(app_handle, audit_db) {
+        Ok(process) => {
+            let mut guard =
+                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            *guard = Some(process);
+            drop(guard);
+            replay_startup_messages_to_agent(state);
+            wait_for_discord_runtime_ready(expected_generation)?;
+            log_both("[Naia] agent-core restarted for Discord configuration");
+            Ok(())
+        }
+        Err(error) => Err(format!("discord_agent_restart_failed: {error}")),
+    }
+}
+
+fn wait_for_discord_runtime_ready(expected_generation: Option<u64>) -> Result<(), String> {
+    let token_readable = expected_generation.is_none() || read_discord_bot_token().is_ok();
+    let Some(expected_generation) =
+        discord_runtime_token_prerequisite(expected_generation, token_readable)?
+    else {
+        return Ok(());
+    };
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let expected = expected_generation.to_string();
+    let runtime = settings.join("discord-runtime");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let status = read_bounded_json::<DiscordRuntimeStatusFile>(
+            &runtime.join("status.json"),
+            16 * 1024,
+        )?;
+        let authority = read_bounded_json::<DiscordRuntimeAuthorityFile>(
+            &runtime.join("authority.json"),
+            16 * 1024,
+        )?;
+        if discord_runtime_matches_generation(
+            &expected,
+            status.as_ref(),
+            authority.as_ref(),
+        ) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("discord_agent_ready_timeout".to_string());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -3023,79 +3163,1512 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Read Discord bot token.
-/// Raw token storage is intentionally unavailable until the native
-/// secret-backed Discord setup contract is wired. Legacy plaintext files are
-/// not accepted because the WebView writer path was removed in #388.
-async fn read_discord_bot_token() -> Result<String, String> {
-    Err("Discord bot token native secret storage is not wired".to_string())
+const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
+
+fn current_adk_path() -> Result<String, String> {
+    let path = dirs::home_dir()
+        .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
+        .ok_or_else(|| "adk_path_unavailable".to_string())?;
+    let path = path.trim();
+    if path.is_empty() {
+        Err("adk_path_unavailable".to_string())
+    } else {
+        Ok(path.to_string())
+    }
+}
+
+fn trim_secret_newline(value: &mut zeroize::Zeroizing<Vec<u8>>) {
+    while matches!(value.last(), Some(b'\n' | b'\r')) {
+        value.pop();
+    }
+}
+
+fn read_agent_secret(
+    adk_path: &str,
+    env_key: &str,
+) -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
+    #[cfg(not(target_os = "windows"))]
+    let _ = adk_path;
+    #[cfg(target_os = "windows")]
+    {
+        let file = std::path::PathBuf::from(adk_path)
+            .join("naia-settings")
+            .join(".keys")
+            .join(format!("{env_key}.dpapi"));
+        if !file.exists() {
+            return Err("token_not_found".to_string());
+        }
+        let path = file.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
+        let script = format!(
+            "Add-Type -AssemblyName System.Security; $e=[IO.File]::ReadAllBytes('{path}'); \
+             $b=[Security.Cryptography.ProtectedData]::Unprotect($e,$null,\
+             [Security.Cryptography.DataProtectionScope]::CurrentUser); \
+             [Console]::Out.Write([Text.Encoding]::UTF8.GetString($b))"
+        );
+        let mut command = std::process::Command::new("powershell");
+        command.args(["-NonInteractive", "-Command", &script]);
+        platform::hide_console(&mut command);
+        let output = command.output().map_err(|_| "keychain_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("keychain_unavailable".to_string());
+        }
+        std::str::from_utf8(&output.stdout)
+            .map_err(|_| "keychain_value_invalid".to_string())?;
+        return Ok(zeroize::Zeroizing::new(output.stdout));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("security")
+            .args(["find-generic-password", "-a", env_key, "-s", "naia-agent", "-w"])
+            .output()
+            .map_err(|_| "keychain_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("token_not_found".to_string());
+        }
+        let mut value = zeroize::Zeroizing::new(output.stdout);
+        trim_secret_newline(&mut value);
+        return Ok(value);
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let output = std::process::Command::new("secret-tool")
+            .args(["lookup", "service", "naia-agent", "account", env_key])
+            .output()
+            .map_err(|_| "keychain_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("token_not_found".to_string());
+        }
+        let mut value = zeroize::Zeroizing::new(output.stdout);
+        trim_secret_newline(&mut value);
+        Ok(value)
+    }
+}
+
+fn read_discord_bot_token() -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
+    read_agent_secret(&current_adk_path()?, DISCORD_TOKEN_KEY)
+}
+
+fn validate_discord_token(token: &[u8]) -> Result<(), String> {
+    if token.is_empty()
+        || token.len() > 512
+        || !token.iter().all(|byte| (b'!'..=b'~').contains(byte))
+    {
+        Err("token_invalid".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 #[tauri::command]
 async fn discord_bot_token_available() -> Result<bool, String> {
-    Ok(read_discord_bot_token().await.is_ok())
+    match read_discord_bot_token() {
+        Ok(token) => {
+            validate_discord_token(&token)?;
+            Ok(true)
+        }
+        Err(error) if error == "token_not_found" => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
-/// Proxy Discord REST API calls through Rust to bypass CORS.
-/// Returns the JSON response body as a string.
+#[derive(serde::Deserialize)]
+struct DiscordRuntimeStatusFile {
+    generation: String,
+    state: String,
+    code: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordRuntimeAuthorityFile {
+    generation: String,
+}
+
+fn discord_runtime_matches_generation(
+    expected: &str,
+    status: Option<&DiscordRuntimeStatusFile>,
+    authority: Option<&DiscordRuntimeAuthorityFile>,
+) -> bool {
+    status.is_some_and(|value| value.generation == expected && value.state == "ready")
+        && authority.is_some_and(|value| value.generation == expected)
+}
+
+fn discord_runtime_status_for_generation<'a>(
+    expected: Option<&str>,
+    status: Option<&'a DiscordRuntimeStatusFile>,
+) -> Option<&'a DiscordRuntimeStatusFile> {
+    status.filter(|status| expected.is_some_and(|value| status.generation == value))
+}
+
+fn discord_runtime_token_prerequisite(
+    expected_generation: Option<u64>,
+    token_readable: bool,
+) -> Result<Option<u64>, String> {
+    match (expected_generation, token_readable) {
+        (Some(generation), true) => Ok(Some(generation)),
+        (Some(_), false) => Err("discord_token_unavailable".to_string()),
+        (None, _) => Ok(None),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordConnectionStatus {
+    token_configured: bool,
+    generation: Option<u64>,
+    state: String,
+    code: Option<String>,
+    authoritative: bool,
+}
+
 #[tauri::command]
-async fn discord_api(
-    endpoint: String,
-    method: String,
-    body: Option<String>,
-) -> Result<String, String> {
-    let token = read_discord_bot_token().await?;
-
-    // Validate endpoint to prevent path traversal / URL injection (CWE-94).
-    if endpoint.contains("..")
-        || endpoint.contains("//")
-        || endpoint.contains('@')
-        || endpoint.contains('\n')
-        || endpoint.contains('\r')
-    {
-        return Err("Invalid endpoint: suspicious characters".to_string());
-    }
-    // Must start with / and only contain safe URL chars
-    if !endpoint.starts_with('/') {
-        return Err("Invalid endpoint: must start with /".to_string());
-    }
-
-    let url = format!("https://discord.com/api/v10{}", endpoint);
-
-    let client = reqwest::Client::new();
-    let mut req = match method.to_uppercase().as_str() {
-        "POST" => client.post(&url),
-        "PUT" => client.put(&url),
-        "DELETE" => client.delete(&url),
-        "PATCH" => client.patch(&url),
-        _ => client.get(&url),
+async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> {
+    let token_configured = discord_bot_token_available().await?;
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
+    let generation = manifest.as_ref().map(|value| value.generation);
+    let runtime = settings.join("discord-runtime");
+    let status =
+        read_bounded_json::<DiscordRuntimeStatusFile>(&runtime.join("status.json"), 16 * 1024)?;
+    let authority = read_bounded_json::<DiscordRuntimeAuthorityFile>(
+        &runtime.join("authority.json"),
+        16 * 1024,
+    )?;
+    let expected = generation.map(|value| value.to_string());
+    let current_status =
+        discord_runtime_status_for_generation(expected.as_deref(), status.as_ref());
+    let authoritative = expected.as_ref().is_some_and(|value| {
+        discord_runtime_matches_generation(value, status.as_ref(), authority.as_ref())
+    });
+    let state = if !token_configured {
+        "disconnected".to_string()
+    } else if authoritative {
+        "ready".to_string()
+    } else {
+        current_status
+            .map(|status| status.state.clone())
+            .unwrap_or_else(|| "configured".to_string())
     };
+    Ok(DiscordConnectionStatus {
+        token_configured,
+        generation,
+        state,
+        code: current_status.and_then(|value| value.code.clone()),
+        authoritative,
+    })
+}
 
-    req = req
-        .header("Authorization", format!("Bot {}", token))
-        .header("Content-Type", "application/json");
+fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> {
+    #[cfg(target_os = "linux")]
+    let candidates: &[(&str, &[&str])] = &[
+        ("kdialog", &["--password", "Discord bot token"]),
+        ("zenity", &["--password", "--title=Discord bot token"]),
+    ];
+    #[cfg(target_os = "linux")]
+    {
+        for (program, args) in candidates {
+            if let Ok(output) = std::process::Command::new(program).args(*args).output() {
+                if output.status.success() {
+                    let mut bytes = zeroize::Zeroizing::new(output.stdout);
+                    trim_secret_newline(&mut bytes);
+                    validate_discord_token(&bytes)?;
+                    let value = String::from_utf8(std::mem::take(&mut *bytes))
+                        .map_err(|_| "token_invalid".to_string())?;
+                    return Ok(zeroize::Zeroizing::new(value));
+                }
+                return Err("capture_cancelled".to_string());
+            }
+        }
+        return Err("native_prompt_unavailable".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                "display dialog \"Discord bot token\" default answer \"\" with hidden answer buttons {\"Cancel\", \"Save\"} default button \"Save\"",
+                "-e",
+                "text returned of result",
+            ])
+            .output()
+            .map_err(|_| "native_prompt_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("capture_cancelled".to_string());
+        }
+        let mut bytes = zeroize::Zeroizing::new(output.stdout);
+        trim_secret_newline(&mut bytes);
+        validate_discord_token(&bytes)?;
+        return String::from_utf8(std::mem::take(&mut *bytes))
+            .map(zeroize::Zeroizing::new)
+            .map_err(|_| "token_invalid".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let script = "Add-Type -AssemblyName PresentationFramework; \
+          $w=New-Object Windows.Window; $w.Title='Discord bot token'; \
+          $w.Width=520; $w.Height=170; $w.WindowStartupLocation='CenterScreen'; \
+          $g=New-Object Windows.Controls.Grid; $g.Margin='16'; \
+          $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
+          $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
+          $p=New-Object Windows.Controls.PasswordBox; $p.Margin='0,0,0,12'; \
+          [Windows.Controls.Grid]::SetRow($p,0); $g.Children.Add($p) | Out-Null; \
+          $b=New-Object Windows.Controls.Button; $b.Content='Save'; $b.Width=90; \
+          $b.HorizontalAlignment='Right'; [Windows.Controls.Grid]::SetRow($b,1); \
+          $b.Add_Click({$w.DialogResult=$true; $w.Close()}); $g.Children.Add($b) | Out-Null; \
+          $w.Content=$g; $ok=$w.ShowDialog(); \
+          if($ok -ne $true){exit 2}; [Console]::Out.Write($p.Password)";
+        let mut command = std::process::Command::new("powershell");
+        command.args(["-NoProfile", "-Command", script]);
+        platform::hide_console(&mut command);
+        let output = command.output().map_err(|_| "native_prompt_unavailable".to_string())?;
+        if !output.status.success() {
+            return Err("capture_cancelled".to_string());
+        }
+        validate_discord_token(&output.stdout)?;
+        return String::from_utf8(output.stdout)
+            .map(zeroize::Zeroizing::new)
+            .map_err(|_| "token_invalid".to_string());
+    }
+}
 
-    if let Some(b) = body {
-        req = req.body(b);
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordCredentialStatus {
+    configured: bool,
+    code: &'static str,
+}
+
+#[tauri::command]
+async fn discord_capture_bot_token(
+    state: tauri::State<'_, AppState>,
+    app_handle: AppHandle,
+    audit_state: tauri::State<'_, AuditState>,
+) -> Result<DiscordCredentialStatus, String> {
+    let _operation = state.discord_config_operation.lock().await;
+    let adk_path = current_adk_path()?;
+    let previous = read_discord_bot_token().ok();
+    let token = capture_discord_token_native()?;
+    write_agent_key(
+        adk_path.clone(),
+        DISCORD_TOKEN_KEY.to_string(),
+        token.to_string(),
+    )
+    .await?;
+    let expected_generation =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
+    .map(|manifest| manifest.generation);
+    if let Err(error) = restart_agent_for_discord_config(
+        &state,
+        &app_handle,
+        &audit_state.db,
+        expected_generation,
+    ) {
+        if let Some(previous) = previous {
+            if let Ok(previous) = String::from_utf8(previous.to_vec()) {
+                let _ =
+                    write_agent_key(adk_path, DISCORD_TOKEN_KEY.to_string(), previous).await;
+            }
+        } else {
+            let _ = remove_agent_key(&adk_path, DISCORD_TOKEN_KEY).await;
+        }
+        let _ = restart_agent_for_discord_config(
+            &state,
+            &app_handle,
+            &audit_state.db,
+            expected_generation,
+        );
+        return Err(error);
+    }
+    Ok(DiscordCredentialStatus {
+        configured: true,
+        code: "stored",
+    })
+}
+
+#[tauri::command]
+async fn discord_remove_bot_token(
+    state: tauri::State<'_, AppState>,
+    app_handle: AppHandle,
+    audit_state: tauri::State<'_, AuditState>,
+) -> Result<(), String> {
+    let _operation = state.discord_config_operation.lock().await;
+    let adk_path = current_adk_path()?;
+    let previous = read_discord_bot_token()?;
+    let previous =
+        String::from_utf8(previous.to_vec()).map_err(|_| "token_invalid".to_string())?;
+    remove_agent_key(&adk_path, DISCORD_TOKEN_KEY).await?;
+    if let Err(error) =
+        restart_agent_for_discord_config(&state, &app_handle, &audit_state.db, None)
+    {
+        let _ = write_agent_key(
+            adk_path,
+            DISCORD_TOKEN_KEY.to_string(),
+            previous,
+        )
+        .await;
+        let expected_generation = read_discord_binding_manifest(
+            &discord_settings_dir()?.join("discord-bindings.json"),
+        )
+        .ok()
+        .flatten()
+        .map(|manifest| manifest.generation);
+        let _ = restart_agent_for_discord_config(
+            &state,
+            &app_handle,
+            &audit_state.db,
+            expected_generation,
+        );
+        return Err(error);
+    }
+    Ok(())
+}
+
+const DISCORD_VIEW_CHANNEL: u64 = 1 << 10;
+const DISCORD_SEND_MESSAGES: u64 = 1 << 11;
+const DISCORD_READ_MESSAGE_HISTORY: u64 = 1 << 16;
+const DISCORD_ADMINISTRATOR: u64 = 1 << 3;
+const DISCORD_REQUIRED_PERMISSIONS: u64 =
+    DISCORD_VIEW_CHANNEL | DISCORD_SEND_MESSAGES | DISCORD_READ_MESSAGE_HISTORY;
+
+#[derive(serde::Deserialize)]
+struct DiscordApiUser {
+    id: String,
+    username: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiApplication {
+    #[serde(default)]
+    flags: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiGuild {
+    id: String,
+    name: String,
+    permissions: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiMember {
+    roles: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiMessageAuthor {
+    id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiMessage {
+    id: String,
+    content: String,
+    author: DiscordApiMessageAuthor,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiOverwrite {
+    id: String,
+    #[serde(rename = "type")]
+    kind: u8,
+    allow: String,
+    deny: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordApiChannel {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    kind: u8,
+    position: Option<i64>,
+    permission_overwrites: Option<Vec<DiscordApiOverwrite>>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordPermissionSummary {
+    view_channel: bool,
+    send_messages: bool,
+    read_message_history: bool,
+    usable: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordDiscoveredChannel {
+    id: String,
+    name: String,
+    kind: u8,
+    position: i64,
+    permissions: DiscordPermissionSummary,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordDiscoveredGuild {
+    id: String,
+    name: String,
+    channels: Vec<DiscordDiscoveredChannel>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordDiscovery {
+    bot_id: String,
+    bot_username: String,
+    message_content_intent: bool,
+    intent_code: &'static str,
+    guilds: Vec<DiscordDiscoveredGuild>,
+    degraded_guild_ids: Vec<String>,
+    discovery_truncated: bool,
+}
+
+const DISCORD_GATEWAY_MESSAGE_CONTENT: u64 = 1 << 18;
+const DISCORD_GATEWAY_MESSAGE_CONTENT_LIMITED: u64 = 1 << 19;
+const DISCORD_GUILD_DISCOVERY_PAGE_SIZE: usize = 100;
+const DISCORD_GUILD_DISCOVERY_LIMIT: usize = 200;
+
+fn parse_discord_permissions(value: &str) -> u64 {
+    value.parse::<u64>().unwrap_or(0)
+}
+
+fn apply_discord_overwrites(
+    guild_id: &str,
+    bot_id: &str,
+    role_ids: &[String],
+    base: u64,
+    overwrites: &[DiscordApiOverwrite],
+) -> u64 {
+    if base & DISCORD_ADMINISTRATOR != 0 {
+        return u64::MAX;
+    }
+    let mut result = base;
+    if let Some(everyone) = overwrites
+        .iter()
+        .find(|entry| entry.kind == 0 && entry.id == guild_id)
+    {
+        result &= !parse_discord_permissions(&everyone.deny);
+        result |= parse_discord_permissions(&everyone.allow);
+    }
+    let mut role_allow = 0;
+    let mut role_deny = 0;
+    for overwrite in overwrites
+        .iter()
+        .filter(|entry| entry.kind == 0 && role_ids.contains(&entry.id))
+    {
+        role_allow |= parse_discord_permissions(&overwrite.allow);
+        role_deny |= parse_discord_permissions(&overwrite.deny);
+    }
+    result &= !role_deny;
+    result |= role_allow;
+    if let Some(member) = overwrites
+        .iter()
+        .find(|entry| entry.kind == 1 && entry.id == bot_id)
+    {
+        result &= !parse_discord_permissions(&member.deny);
+        result |= parse_discord_permissions(&member.allow);
+    }
+    result
+}
+
+fn discord_permission_summary(value: u64) -> DiscordPermissionSummary {
+    let view_channel = value & DISCORD_VIEW_CHANNEL != 0;
+    let send_messages = value & DISCORD_SEND_MESSAGES != 0;
+    let read_message_history = value & DISCORD_READ_MESSAGE_HISTORY != 0;
+    DiscordPermissionSummary {
+        view_channel,
+        send_messages,
+        read_message_history,
+        usable: value & DISCORD_REQUIRED_PERMISSIONS == DISCORD_REQUIRED_PERMISSIONS,
+    }
+}
+
+fn discord_bot_member_endpoint(guild_id: &str, bot_id: &str) -> String {
+    format!("/guilds/{guild_id}/members/{bot_id}")
+}
+
+fn discord_guilds_endpoint(after: Option<&str>) -> String {
+    match after {
+        Some(after) => format!(
+            "/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}&after={after}"
+        ),
+        None => format!(
+            "/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}"
+        ),
+    }
+}
+
+fn discord_guild_discovery_truncated(total: usize, last_page_len: usize) -> bool {
+    total >= DISCORD_GUILD_DISCOVERY_LIMIT
+        && last_page_len == DISCORD_GUILD_DISCOVERY_PAGE_SIZE
+}
+
+fn discord_channel_history_endpoint(channel_id: &str) -> String {
+    format!("/channels/{channel_id}/messages?limit=50")
+}
+
+fn discord_snowflake_timestamp_ms(value: &str) -> Option<u64> {
+    let snowflake = value.parse::<u64>().ok()?;
+    Some((snowflake >> 22).saturating_add(1_420_070_400_000))
+}
+
+fn discord_http_client(token: &[u8]) -> Result<reqwest::Client, String> {
+    use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
+    let mut authorization = zeroize::Zeroizing::new(Vec::with_capacity(token.len() + 4));
+    authorization.extend_from_slice(b"Bot ");
+    authorization.extend_from_slice(token);
+    let mut value =
+        HeaderValue::from_bytes(&authorization).map_err(|_| "token_invalid".to_string())?;
+    value.set_sensitive(true);
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, value);
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|_| "discord_client_unavailable".to_string())
+}
+
+async fn discord_get_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    endpoint: &str,
+) -> Result<T, String> {
+    const MAX_BODY_BYTES: usize = 1024 * 1024;
+    static DISCORD_REST_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> =
+        std::sync::OnceLock::new();
+    let _request = DISCORD_REST_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    for attempt in 0..3 {
+        let response = client
+            .get(format!("https://discord.com/api/v10{endpoint}"))
+            .send()
+            .await
+            .map_err(|_| "discord_network_unavailable".to_string())?;
+        let status = response.status().as_u16();
+        if status == 429 {
+            if attempt == 2 {
+                return Err("discord_rate_limited".to_string());
+            }
+            let base_delay_ms = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|seconds| (seconds * 1000.0).ceil() as u64)
+                .unwrap_or(1000)
+                .clamp(100, 5000);
+            let jitter_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| u64::from(duration.subsec_nanos()) % 251)
+                .unwrap_or(0);
+            let delay_ms = base_delay_ms.saturating_add(jitter_ms).min(5250);
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            continue;
+        }
+        match status {
+            200..=299 => {
+                if response
+                    .content_length()
+                    .is_some_and(|length| length > MAX_BODY_BYTES as u64)
+                {
+                    return Err("discord_response_too_large".to_string());
+                }
+                let bytes = response
+                    .bytes()
+                    .await
+                    .map_err(|_| "discord_response_invalid".to_string())?;
+                if bytes.len() > MAX_BODY_BYTES {
+                    return Err("discord_response_too_large".to_string());
+                }
+                return serde_json::from_slice::<T>(&bytes)
+                    .map_err(|_| "discord_response_invalid".to_string());
+            }
+            401 => return Err("discord_auth_failed".to_string()),
+            403 => return Err("discord_permission_denied".to_string()),
+            _ => return Err("discord_api_unavailable".to_string()),
+        }
+    }
+    Err("discord_rate_limited".to_string())
+}
+
+/// Discover only bounded public Discord metadata. The token remains in native
+/// memory and is installed as a sensitive HTTP header; it never crosses IPC.
+#[tauri::command]
+async fn discord_discover_channels() -> Result<DiscordDiscovery, String> {
+    let token = read_discord_bot_token()?;
+    validate_discord_token(&token)?;
+    let client = discord_http_client(&token)?;
+    let bot = discord_get_json::<DiscordApiUser>(&client, "/users/@me").await?;
+    let application =
+        discord_get_json::<DiscordApiApplication>(&client, "/oauth2/applications/@me").await?;
+    let message_content_intent = application.flags & (DISCORD_GATEWAY_MESSAGE_CONTENT
+        | DISCORD_GATEWAY_MESSAGE_CONTENT_LIMITED)
+        != 0;
+    if !is_valid_discord_snowflake(&bot.id) {
+        return Err("discord_response_invalid".to_string());
+    }
+    let mut guilds = Vec::with_capacity(DISCORD_GUILD_DISCOVERY_LIMIT);
+    let mut after: Option<String> = None;
+    let mut discovery_truncated = false;
+    while guilds.len() < DISCORD_GUILD_DISCOVERY_LIMIT {
+        let mut page = discord_get_json::<Vec<DiscordApiGuild>>(
+            &client,
+            &discord_guilds_endpoint(after.as_deref()),
+        )
+        .await?;
+        if page.len() > DISCORD_GUILD_DISCOVERY_PAGE_SIZE {
+            return Err("discord_response_invalid".to_string());
+        }
+        if page.is_empty() {
+            break;
+        }
+        let page_len = page.len();
+        let next_after = page
+            .last()
+            .map(|guild| guild.id.clone())
+            .filter(|id| is_valid_discord_snowflake(id))
+            .ok_or_else(|| "discord_response_invalid".to_string())?;
+        let remaining = DISCORD_GUILD_DISCOVERY_LIMIT - guilds.len();
+        guilds.extend(page.drain(..page.len().min(remaining)));
+        discovery_truncated = discord_guild_discovery_truncated(guilds.len(), page_len);
+        if page_len < DISCORD_GUILD_DISCOVERY_PAGE_SIZE
+            || guilds.len() == DISCORD_GUILD_DISCOVERY_LIMIT
+        {
+            break;
+        }
+        after = Some(next_after);
+    }
+    let mut discovered = Vec::with_capacity(guilds.len());
+    let mut degraded_guild_ids = Vec::new();
+    for guild in guilds {
+        if !is_valid_discord_snowflake(&guild.id) {
+            return Err("discord_response_invalid".to_string());
+        }
+        let Ok(member) = discord_get_json::<DiscordApiMember>(
+            &client,
+            &discord_bot_member_endpoint(&guild.id, &bot.id),
+        )
+        .await
+        else {
+            degraded_guild_ids.push(guild.id);
+            continue;
+        };
+        let Ok(mut channels) = discord_get_json::<Vec<DiscordApiChannel>>(
+            &client,
+            &format!("/guilds/{}/channels", guild.id),
+        )
+        .await
+        else {
+            degraded_guild_ids.push(guild.id);
+            continue;
+        };
+        if channels.len() > 500 {
+            channels.truncate(500);
+        }
+        let base = parse_discord_permissions(&guild.permissions);
+        let mut channel_rows = channels
+            .into_iter()
+            .filter(|channel| {
+                (channel.kind == 0 || channel.kind == 5)
+                    && is_valid_discord_snowflake(&channel.id)
+            })
+            .map(|channel| {
+                let effective = apply_discord_overwrites(
+                    &guild.id,
+                    &bot.id,
+                    &member.roles,
+                    base,
+                    channel.permission_overwrites.as_deref().unwrap_or_default(),
+                );
+                DiscordDiscoveredChannel {
+                    id: channel.id,
+                    name: channel.name.chars().take(100).collect(),
+                    kind: channel.kind,
+                    position: channel.position.unwrap_or(0),
+                    permissions: discord_permission_summary(effective),
+                }
+            })
+            .filter(|channel| channel.permissions.view_channel)
+            .collect::<Vec<_>>();
+        channel_rows.sort_by_key(|channel| channel.position);
+        discovered.push(DiscordDiscoveredGuild {
+            id: guild.id,
+            name: guild.name.chars().take(100).collect(),
+            channels: channel_rows,
+        });
+    }
+    discovered.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(DiscordDiscovery {
+        bot_id: bot.id,
+        bot_username: bot.username.chars().take(100).collect(),
+        message_content_intent,
+        intent_code: if message_content_intent {
+            "message_content_enabled"
+        } else {
+            "message_content_disabled"
+        },
+        guilds: discovered,
+        degraded_guild_ids,
+        discovery_truncated,
+    })
+}
+
+async fn discord_usable_channel_keys(
+) -> Result<std::collections::BTreeSet<(String, String)>, String> {
+    let discovery = discord_discover_channels().await?;
+    if !discovery.message_content_intent {
+        return Err("discord_message_content_intent_missing".to_string());
+    }
+    if !discovery.degraded_guild_ids.is_empty() || discovery.discovery_truncated {
+        return Err("discord_discovery_incomplete".to_string());
+    }
+    Ok(discovery
+        .guilds
+        .into_iter()
+        .flat_map(|guild| {
+            guild.channels.into_iter().filter_map(move |channel| {
+                channel
+                    .permissions
+                    .usable
+                    .then_some((guild.id.clone(), channel.id))
+            })
+        })
+        .collect())
+}
+
+fn discord_binding_is_usable(
+    binding: &DiscordBindingInput,
+    usable: &std::collections::BTreeSet<(String, String)>,
+) -> bool {
+    usable.contains(&(binding.guild_id.clone(), binding.channel_id.clone()))
+}
+
+#[derive(Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DiscordBindingInput {
+    binding_id: String,
+    guild_id: String,
+    guild_name: Option<String>,
+    channel_id: String,
+    channel_name: Option<String>,
+    allowed_user_ids: Vec<String>,
+    processing_profile_ref: String,
+    participation: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DiscordBindingManifest {
+    version: u8,
+    generation: u64,
+    bindings: Vec<DiscordBindingInput>,
+    processing_profiles: std::collections::BTreeMap<String, String>,
+}
+
+fn discord_bindings_have_unique_identity(bindings: &[DiscordBindingInput]) -> bool {
+    let mut binding_ids = std::collections::BTreeSet::new();
+    let mut tuples = std::collections::BTreeSet::new();
+    bindings.iter().all(|binding| {
+        binding_ids.insert(binding.binding_id.as_str())
+            && tuples.insert((binding.guild_id.as_str(), binding.channel_id.as_str()))
+    })
+}
+
+fn read_discord_binding_manifest(
+    path: &std::path::Path,
+) -> Result<Option<DiscordBindingManifest>, String> {
+    let manifest = read_bounded_json::<DiscordBindingManifest>(path, 512 * 1024)?;
+    if manifest
+        .as_ref()
+        .is_some_and(|value| value.version != 1)
+    {
+        return Err("discord_bindings_upgrade_required".to_string());
+    }
+    if manifest
+        .as_ref()
+        .is_some_and(|value| !discord_bindings_have_unique_identity(&value.bindings))
+    {
+        return Err("discord_bindings_invalid".to_string());
+    }
+    Ok(manifest)
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordUiPreference {
+    version: u8,
+    last_binding_id: Option<String>,
+}
+
+fn discord_settings_dir() -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from(current_adk_path()?).join("naia-settings"))
+}
+
+#[tauri::command]
+async fn discord_binding_snapshot() -> Result<Vec<DiscordBindingInput>, String> {
+    let manifest =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?;
+    Ok(manifest.map(|value| value.bindings).unwrap_or_default())
+}
+
+#[tauri::command]
+async fn discord_get_last_binding() -> Result<Option<String>, String> {
+    let settings = discord_settings_dir()?;
+    let preference = read_bounded_json::<DiscordUiPreference>(
+        &settings.join("discord-ui.json"),
+        16 * 1024,
+    )?;
+    let Some(binding_id) = preference.and_then(|value| value.last_binding_id) else {
+        return Ok(None);
+    };
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
+    let usable = discord_usable_channel_keys().await?;
+    Ok(manifest
+        .is_some_and(|value| {
+            value
+                .bindings
+                .iter()
+                .any(|binding| {
+                    binding.binding_id == binding_id && discord_binding_is_usable(binding, &usable)
+                })
+        })
+        .then_some(binding_id))
+}
+
+#[tauri::command]
+async fn discord_set_last_binding(
+    binding_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let _operation = state.discord_config_operation.lock().await;
+    let settings = discord_settings_dir()?;
+    if let Some(value) = binding_id.as_ref() {
+        if value.is_empty() || value.len() > 128 {
+            return Err("discord_binding_invalid".to_string());
+        }
+        let manifest =
+            read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+        let binding = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.binding_id == *value)
+            .ok_or_else(|| "discord_binding_not_allowed".to_string())?;
+        let usable = discord_usable_channel_keys().await?;
+        if !discord_binding_is_usable(binding, &usable) {
+            return Err("discord_binding_not_allowed".to_string());
+        }
+    }
+    let preference = DiscordUiPreference {
+        version: 1,
+        last_binding_id: binding_id,
+    };
+    let bytes = serde_json::to_vec(&preference)
+        .map_err(|_| "discord_preference_invalid".to_string())?;
+    write_owner_only_atomic(&settings.join("discord-ui.json"), &bytes)
+}
+
+fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "discord_config_path_invalid".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|_| "discord_config_write_failed".to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| "discord_config_write_failed".to_string())?;
+    }
+    file.write_all(bytes)
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    file.as_file()
+        .sync_all()
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    file.persist(path)
+        .map_err(|_| "discord_config_write_failed".to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| "discord_config_write_failed".to_string())?;
+    }
+    if let Ok(directory) = std::fs::File::open(parent) {
+        let _ = directory.sync_all();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn discord_save_bindings(
+    bindings: Vec<DiscordBindingInput>,
+    state: tauri::State<'_, AppState>,
+    app_handle: AppHandle,
+    audit_state: tauri::State<'_, AuditState>,
+) -> Result<u64, String> {
+    let _operation = state.discord_config_operation.lock().await;
+    if bindings.len() > 256 {
+        return Err("discord_bindings_invalid".to_string());
+    }
+    if !discord_bindings_have_unique_identity(&bindings) {
+        return Err("discord_bindings_invalid".to_string());
+    }
+    for binding in &bindings {
+        if binding.binding_id.is_empty()
+            || binding.binding_id.len() > 128
+            || !is_valid_discord_snowflake(&binding.guild_id)
+            || !is_valid_discord_snowflake(&binding.channel_id)
+            || binding
+                .guild_name
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.chars().count() > 100)
+            || binding
+                .channel_name
+                .as_ref()
+                .is_some_and(|name| name.is_empty() || name.chars().count() > 100)
+            || binding.allowed_user_ids.is_empty()
+            || binding.allowed_user_ids.len() > 256
+            || !binding
+                .allowed_user_ids
+                .iter()
+                .all(|id| is_valid_discord_snowflake(id))
+            || binding.processing_profile_ref != "default"
+            || !matches!(
+                binding.participation.as_str(),
+                "mentions" | "all" | "paused"
+            )
+        {
+            return Err("discord_bindings_invalid".to_string());
+        }
+    }
+    let path = discord_settings_dir()?.join("discord-bindings.json");
+    let previous_manifest = read_discord_binding_manifest(&path)?;
+    if !bindings.is_empty() {
+        let discovery = discord_discover_channels().await?;
+        if !discovery.message_content_intent {
+            return Err("discord_message_content_intent_missing".to_string());
+        }
+        let usable = discovery
+            .guilds
+            .iter()
+            .flat_map(|guild| {
+                guild
+                    .channels
+                    .iter()
+                    .filter(|channel| channel.permissions.usable)
+                    .map(|channel| (guild.id.as_str(), channel.id.as_str()))
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let preserved_stale = previous_manifest
+            .as_ref()
+            .map(|manifest| manifest.bindings.iter().collect::<Vec<_>>());
+        if bindings.iter().any(|binding| {
+            !usable.contains(&(binding.guild_id.as_str(), binding.channel_id.as_str()))
+                && !preserved_stale
+                    .as_ref()
+                    .is_some_and(|existing| existing.iter().any(|value| *value == binding))
+        }) {
+            return Err("discord_binding_permission_denied".to_string());
+        }
+    }
+    let generation = next_discord_generation(
+        previous_manifest.as_ref().map(|manifest| manifest.generation),
+    )?;
+    let clearing_all_bindings = bindings.is_empty();
+    let manifest = DiscordBindingManifest {
+        version: 1,
+        generation,
+        bindings,
+        processing_profiles: std::collections::BTreeMap::from([(
+            "default".to_string(),
+            "local_only".to_string(),
+        )]),
+    };
+    let bytes =
+        serde_json::to_vec_pretty(&manifest).map_err(|_| "discord_bindings_invalid".to_string())?;
+    if bytes.len() > 512 * 1024 {
+        return Err("discord_bindings_too_large".to_string());
+    }
+    let previous = std::fs::read(&path).ok();
+    write_owner_only_atomic(&path, &bytes)?;
+    if let Err(error) = restart_agent_for_discord_config(
+        &state,
+        &app_handle,
+        &audit_state.db,
+        (!clearing_all_bindings).then_some(generation),
+    ) {
+        if clearing_all_bindings {
+            return Err(format!("discord_bindings_cleared_{error}"));
+        }
+        match previous {
+            Some(previous) => {
+                let _ = write_owner_only_atomic(&path, &previous);
+            }
+            None => {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        let rollback_generation = read_discord_binding_manifest(&path)
+            .ok()
+            .flatten()
+            .map(|manifest| manifest.generation);
+        let _ = restart_agent_for_discord_config(
+            &state,
+            &app_handle,
+            &audit_state.db,
+            rollback_generation,
+        );
+        return Err(error);
+    }
+    Ok(generation)
+}
+
+fn next_discord_generation(previous: Option<u64>) -> Result<u64, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "clock_unavailable".to_string())?
+        .as_millis() as u64;
+    Ok(previous
+        .and_then(|value| value.checked_add(1))
+        .map_or(now, |minimum| now.max(minimum)))
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordInboxRecordNative {
+    record_id: String,
+    direction: String,
+    binding_id: String,
+    guild_id: String,
+    channel_id: String,
+    source_message_id: String,
+    author_id: Option<String>,
+    content: String,
+    created_at: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordInboxDocumentNative {
+    version: u8,
+    generation: String,
+    channels: std::collections::BTreeMap<String, Vec<DiscordInboxRecordNative>>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+struct DiscordInboxCursors {
+    version: u8,
+    #[serde(default)]
+    generation: String,
+    cursors: std::collections::BTreeMap<String, u64>,
+}
+
+fn update_discord_inbox_cursor(
+    mut cursors: DiscordInboxCursors,
+    generation: &str,
+    active_keys: &std::collections::BTreeSet<String>,
+    cursor_key: String,
+    created_at: u64,
+) -> Result<DiscordInboxCursors, String> {
+    if cursors.version != 1 || cursors.generation != generation {
+        cursors = DiscordInboxCursors {
+            version: 1,
+            generation: generation.to_string(),
+            cursors: std::collections::BTreeMap::new(),
+        };
+    }
+    cursors.version = 1;
+    cursors.generation = generation.to_string();
+    cursors.cursors.retain(|key, _| active_keys.contains(key));
+    let current = cursors.cursors.entry(cursor_key).or_insert(0);
+    *current = (*current).max(created_at);
+    if cursors.cursors.len() > 256 {
+        return Err("discord_cursor_invalid".to_string());
+    }
+    Ok(cursors)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordInboxChannelSnapshot {
+    binding_id: String,
+    guild_id: String,
+    guild_name: String,
+    channel_id: String,
+    channel_name: String,
+    participation: String,
+    records: Vec<DiscordInboxRecordNative>,
+    unread: usize,
+    last_activity: Option<u64>,
+}
+
+fn read_bounded_json<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    max_bytes: u64,
+) -> Result<Option<T>, String> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("discord_cache_read_failed".to_string()),
+    };
+    if !metadata.is_file() || metadata.len() > max_bytes {
+        return Err("discord_cache_invalid".to_string());
+    }
+    let bytes = std::fs::read(path).map_err(|_| "discord_cache_read_failed".to_string())?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| "discord_cache_invalid".to_string())
+}
+
+fn discord_runtime_dir() -> Result<std::path::PathBuf, String> {
+    Ok(std::path::PathBuf::from(current_adk_path()?)
+        .join("naia-settings")
+        .join("discord-runtime"))
+}
+
+fn discord_binding_cache_key(binding: &DiscordBindingInput) -> String {
+    format!(
+        "{}:{}:{}",
+        binding.binding_id, binding.guild_id, binding.channel_id
+    )
+}
+
+fn read_discord_inbox_snapshot(
+    settings: &std::path::Path,
+    manifest: DiscordBindingManifest,
+    allowed_binding_ids: &std::collections::BTreeSet<String>,
+) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
+    let runtime = settings.join("discord-runtime");
+    let inbox =
+        read_bounded_json::<DiscordInboxDocumentNative>(&runtime.join("inbox.json"), 16 * 1024 * 1024)?
+            .unwrap_or(DiscordInboxDocumentNative {
+                version: 1,
+                generation: manifest.generation.to_string(),
+                channels: std::collections::BTreeMap::new(),
+            });
+    if inbox.version != 1 || inbox.generation != manifest.generation.to_string() {
+        return Err("discord_cache_generation_mismatch".to_string());
+    }
+    let mut cursors = read_bounded_json::<DiscordInboxCursors>(
+        &runtime.join("inbox-cursors.json"),
+        512 * 1024,
+    )?
+    .unwrap_or_default();
+    let generation = manifest.generation.to_string();
+    if cursors.version != 1 || cursors.generation != generation {
+        cursors = DiscordInboxCursors {
+            version: 1,
+            generation,
+            cursors: std::collections::BTreeMap::new(),
+        };
+    }
+    let mut result = Vec::with_capacity(manifest.bindings.len());
+    for binding in manifest
+        .bindings
+        .into_iter()
+        .filter(|binding| allowed_binding_ids.contains(&binding.binding_id))
+    {
+        let key = discord_binding_cache_key(&binding);
+        let mut records = inbox.channels.get(&key).cloned().unwrap_or_default();
+        records.sort_by_key(|record| record.created_at);
+        let cursor = cursors.cursors.get(&key).copied().unwrap_or(0);
+        let unread = records
+            .iter()
+            .filter(|record| record.direction == "incoming" && record.created_at > cursor)
+            .count();
+        result.push(DiscordInboxChannelSnapshot {
+            binding_id: binding.binding_id,
+            guild_id: binding.guild_id.clone(),
+            guild_name: binding.guild_name.unwrap_or(binding.guild_id),
+            channel_id: binding.channel_id.clone(),
+            channel_name: binding.channel_name.unwrap_or(binding.channel_id),
+            participation: binding.participation,
+            last_activity: records.last().map(|record| record.created_at),
+            records,
+            unread,
+        });
+    }
+    result.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+    Ok(result)
+}
+
+#[tauri::command]
+async fn discord_inbox_snapshot(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let usable = discord_usable_channel_keys().await?;
+    let allowed_binding_ids: std::collections::BTreeSet<String> = manifest
+        .bindings
+        .iter()
+        .filter(|binding| discord_binding_is_usable(binding, &usable))
+        .map(|binding| binding.binding_id.clone())
+        .collect();
+    *state.discord_inbox_authorized_bindings.lock().await =
+        Some((manifest.generation, allowed_binding_ids.clone()));
+    read_discord_inbox_snapshot(&settings, manifest, &allowed_binding_ids)
+}
+
+/// Reads only local runtime files for bindings already authorized by the most
+/// recent live snapshot. File watcher events must never trigger Discord REST
+/// discovery, especially during an outage or an atomic cursor/status write.
+#[tauri::command]
+async fn discord_inbox_snapshot_cached(
+    binding_ids: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
+    if binding_ids.len() > 256
+        || binding_ids
+            .iter()
+            .any(|binding_id| binding_id.is_empty() || binding_id.len() > 128)
+    {
+        return Err("discord_binding_invalid".to_string());
+    }
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let requested_binding_ids = binding_ids.into_iter().collect::<std::collections::BTreeSet<_>>();
+    let authorized = state.discord_inbox_authorized_bindings.lock().await;
+    let allowed_binding_ids = authorized
+        .as_ref()
+        .filter(|(generation, _)| *generation == manifest.generation)
+        .map(|(_, binding_ids)| {
+            binding_ids
+                .intersection(&requested_binding_ids)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    drop(authorized);
+    read_discord_inbox_snapshot(&settings, manifest, &allowed_binding_ids)
+}
+
+#[tauri::command]
+async fn discord_fetch_channel_history(
+    binding_id: String,
+) -> Result<Vec<DiscordInboxRecordNative>, String> {
+    if binding_id.is_empty() || binding_id.len() > 128 {
+        return Err("discord_binding_invalid".to_string());
+    }
+    let settings = discord_settings_dir()?;
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+    .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let binding = manifest
+        .bindings
+        .iter()
+        .find(|binding| binding.binding_id == binding_id)
+        .ok_or_else(|| "discord_binding_not_allowed".to_string())?;
+    let usable = discord_usable_channel_keys().await?;
+    if !discord_binding_is_usable(binding, &usable) {
+        return Err("discord_binding_not_allowed".to_string());
     }
 
-    let res = req
-        .send()
-        .await
-        .map_err(|e| format!("Discord API request failed: {}", e))?;
-    let status = res.status().as_u16();
-    let text = res
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    if status >= 400 {
-        // Use char boundary-safe truncation to avoid panic on multi-byte UTF-8
-        let truncated: String = text.chars().take(200).collect();
-        return Err(format!("Discord API error {}: {}", status, truncated));
+    let token = read_discord_bot_token()?;
+    validate_discord_token(&token)?;
+    let client = discord_http_client(&token)?;
+    let bot = discord_get_json::<DiscordApiUser>(&client, "/users/@me").await?;
+    let mut messages = discord_get_json::<Vec<DiscordApiMessage>>(
+        &client,
+        &discord_channel_history_endpoint(&binding.channel_id),
+    )
+    .await?;
+    if messages.len() > 50 {
+        messages.truncate(50);
     }
+    let mut records = messages
+        .into_iter()
+        .filter_map(|message| {
+            if !is_valid_discord_snowflake(&message.id)
+                || !is_valid_discord_snowflake(&message.author.id)
+            {
+                return None;
+            }
+            let created_at = discord_snowflake_timestamp_ms(&message.id)?;
+            Some(DiscordInboxRecordNative {
+                record_id: format!("history_{}", message.id),
+                direction: if message.author.id == bot.id {
+                    "outgoing".to_string()
+                } else {
+                    "incoming".to_string()
+                },
+                binding_id: binding.binding_id.clone(),
+                guild_id: binding.guild_id.clone(),
+                channel_id: binding.channel_id.clone(),
+                source_message_id: message.id,
+                author_id: Some(message.author.id),
+                content: message.content.chars().take(4_000).collect(),
+                created_at,
+            })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by_key(|record| record.created_at);
+    Ok(records)
+}
 
-    Ok(text)
+#[tauri::command]
+async fn discord_mark_inbox_read(
+    binding_id: String,
+    created_at: u64,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let _operation = state.discord_config_operation.lock().await;
+    if binding_id.is_empty() || binding_id.len() > 128 || created_at == 0 {
+        return Err("discord_cursor_invalid".to_string());
+    }
+    let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
+    let manifest =
+        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+    .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let binding = manifest
+        .bindings
+        .iter()
+        .find(|binding| binding.binding_id == binding_id)
+        .ok_or_else(|| "discord_cursor_invalid".to_string())?;
+    let usable = discord_usable_channel_keys().await?;
+    if !discord_binding_is_usable(binding, &usable) {
+        return Err("discord_cursor_invalid".to_string());
+    }
+    let cursor_key = discord_binding_cache_key(binding);
+    let active_keys = manifest
+        .bindings
+        .iter()
+        .map(discord_binding_cache_key)
+        .collect::<std::collections::BTreeSet<_>>();
+    let generation = manifest.generation.to_string();
+    let runtime = discord_runtime_dir()?;
+    let path = runtime.join("inbox-cursors.json");
+    let cursors =
+        read_bounded_json::<DiscordInboxCursors>(&path, 512 * 1024)?.unwrap_or(DiscordInboxCursors {
+            version: 1,
+            generation: generation.clone(),
+            cursors: std::collections::BTreeMap::new(),
+        });
+    let cursors =
+        update_discord_inbox_cursor(cursors, &generation, &active_keys, cursor_key, created_at)?;
+    let bytes =
+        serde_json::to_vec(&cursors).map_err(|_| "discord_cursor_invalid".to_string())?;
+    write_owner_only_atomic(&path, &bytes)
+}
+
+fn start_discord_inbox_watcher(app: AppHandle) {
+    use notify::Watcher as _;
+    let Ok(runtime) = discord_runtime_dir() else {
+        return;
+    };
+    if std::fs::create_dir_all(&runtime).is_err() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let Ok(mut watcher) = notify::recommended_watcher(move |event| {
+            let _ = sender.send(event);
+        }) else {
+            return;
+        };
+        if watcher
+            .watch(&runtime, notify::RecursiveMode::NonRecursive)
+            .is_err()
+        {
+            return;
+        }
+        for event in receiver.into_iter().flatten() {
+            if event.paths.iter().any(|path| {
+                matches!(
+                    path.file_name().and_then(|name| name.to_str()),
+                    Some("inbox.json" | "inbox-cursors.json")
+                )
+            }) {
+                let _ = app.emit("discord_inbox_changed", ());
+            }
+            if event.paths.iter().any(|path| {
+                matches!(
+                    path.file_name().and_then(|name| name.to_str()),
+                    Some("status.json")
+                )
+            }) {
+                let _ = app.emit("discord_status_changed", ());
+            }
+        }
+    });
+}
+
+#[derive(serde::Deserialize)]
+struct DiscordOpenDmResponse {
+    id: String,
+}
+
+/// Legacy account-link compatibility surface. It can only open a DM for one
+/// validated Discord user id; the WebView cannot choose routes, methods, or bodies.
+#[tauri::command]
+async fn discord_open_dm_channel(recipient_user_id: String) -> Result<String, String> {
+    if !is_valid_discord_snowflake(&recipient_user_id) {
+        return Err("discord_recipient_invalid".to_string());
+    }
+    let token = read_discord_bot_token()?;
+    validate_discord_token(&token)?;
+    let client = discord_http_client(&token)?;
+    for attempt in 0..3 {
+        let response = client
+            .post("https://discord.com/api/v10/users/@me/channels")
+            .json(&serde_json::json!({ "recipient_id": recipient_user_id }))
+            .send()
+            .await
+            .map_err(|_| "discord_network_unavailable".to_string())?;
+        let status = response.status().as_u16();
+        if status == 429 {
+            if attempt == 2 {
+                return Err("discord_rate_limited".to_string());
+            }
+            let delay_ms = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|seconds| (seconds * 1000.0).ceil() as u64)
+                .unwrap_or(1000)
+                .clamp(100, 5000);
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            continue;
+        }
+        match status {
+            200..=299 => {
+                if response
+                    .content_length()
+                    .is_some_and(|length| length > 64 * 1024)
+                {
+                    return Err("discord_response_too_large".to_string());
+                }
+                let bytes = response
+                    .bytes()
+                    .await
+                    .map_err(|_| "discord_response_invalid".to_string())?;
+                if bytes.len() > 64 * 1024 {
+                    return Err("discord_response_too_large".to_string());
+                }
+                let value = serde_json::from_slice::<DiscordOpenDmResponse>(&bytes)
+                    .map_err(|_| "discord_response_invalid".to_string())?;
+                if !is_valid_discord_snowflake(&value.id) {
+                    return Err("discord_response_invalid".to_string());
+                }
+                return Ok(value.id);
+            }
+            401 => return Err("discord_auth_failed".to_string()),
+            403 => return Err("discord_permission_denied".to_string()),
+            _ => return Err("discord_api_unavailable".to_string()),
+        }
+    }
+    Err("discord_rate_limited".to_string())
 }
 
 #[tauri::command]
@@ -3980,6 +5553,7 @@ mod conversation_io_tests {
 /// Also updates the credentials manifest at `{adk_path}/naia-settings/credentials`.
 #[tauri::command]
 async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Result<(), String> {
+    let value = zeroize::Zeroizing::new(value);
     #[cfg(not(target_os = "macos"))]
     use std::io::Write as _;
     use std::path::PathBuf;
@@ -4042,21 +5616,30 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     #[cfg(target_os = "macos")]
     {
         // macOS Keychain ??same service name as naia-agent ("naia-agent").
-        let status = std::process::Command::new("security")
+        let mut child = std::process::Command::new("security")
             .args([
                 "add-generic-password",
                 "-a",
                 &env_key,
                 "-s",
                 "naia-agent",
-                "-w",
-                &value,
                 "-U", // update if exists
+                "-w", // final flag prompts on stdin; never expose the token in argv
             ])
+            .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status()
+            .spawn()
             .map_err(|e| format!("security CLI failed: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(value.as_bytes())
+                .and_then(|_| stdin.write_all(b"\n"))
+                .map_err(|e| format!("security stdin failed: {e}"))?;
+        }
+        let status = child
+            .wait()
+            .map_err(|e| format!("security CLI wait failed: {e}"))?;
         if !status.success() {
             return Err(format!("macOS Keychain write failed (exit {status})"));
         }
@@ -4117,6 +5700,58 @@ async fn write_agent_key(adk_path: String, env_key: String, value: String) -> Re
     }
 
     Ok(())
+}
+
+async fn remove_agent_key(adk_path: &str, env_key: &str) -> Result<(), String> {
+    let settings_dir = std::path::PathBuf::from(adk_path).join("naia-settings");
+    #[cfg(target_os = "windows")]
+    {
+        let path = settings_dir.join(".keys").join(format!("{env_key}.dpapi"));
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("DPAPI delete failed: {error}")),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("security")
+            .args(["delete-generic-password", "-a", env_key, "-s", "naia-agent"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|error| format!("security CLI failed: {error}"))?;
+        if !status.success() {
+            return Err("macOS Keychain delete failed".to_string());
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let status = std::process::Command::new("secret-tool")
+            .args(["clear", "service", "naia-agent", "account", env_key])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|error| format!("secret-tool failed: {error}"))?;
+        if !status.success() {
+            return Err("Linux Secret Service delete failed".to_string());
+        }
+    }
+    let credentials = settings_dir.join("credentials");
+    let keys = std::fs::read_to_string(&credentials)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.get("keys").and_then(|keys| keys.as_array()).cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .filter(|key| key != env_key)
+        .collect::<Vec<_>>();
+    write_owner_only_atomic(
+        &credentials,
+        &(serde_json::to_vec_pretty(&serde_json::json!({ "keys": keys }))
+            .map_err(|_| "credentials_manifest_invalid".to_string())?),
+    )
 }
 
 /// ??λ맂 ??*議댁옱 ?щ?*留?蹂닿퀬?쒕떎(媛믪? ?덈? 諛섑솚 ??????鍮꾨???webview 濡??섏씫吏 ?딅뒗?? 蹂댁븞).
@@ -4549,6 +6184,9 @@ pub fn run() {
 
     builder.manage(AppState {
             agent: Mutex::new(None),
+            discord_config_operation: tokio::sync::Mutex::new(()),
+            discord_inbox_authorized_bindings:
+                tokio::sync::Mutex::new(None),
             bgm_server: Mutex::new(None),
             cascade: Mutex::new(None),
             gateway: Mutex::new(None),
@@ -4587,7 +6225,19 @@ pub fn run() {
             read_local_binary,
             write_temp_text,
             discord_bot_token_available,
-            discord_api,
+            discord_connection_status,
+            discord_capture_bot_token,
+            discord_remove_bot_token,
+            discord_discover_channels,
+            discord_binding_snapshot,
+            discord_save_bindings,
+            discord_get_last_binding,
+            discord_set_last_binding,
+            discord_inbox_snapshot,
+            discord_inbox_snapshot_cached,
+            discord_fetch_channel_history,
+            discord_mark_inbox_read,
+            discord_open_dm_channel,
             fetch_linked_channels,
             gemini_live_connect,
             gemini_live_send_audio,
@@ -4753,6 +6403,7 @@ pub fn run() {
             }
 
             platform::start_deep_link_file_watcher(app_handle.clone());
+            start_discord_inbox_watcher(app_handle.clone());
 
             // Set window icon explicitly (prevents default yellow WRY icon on Linux)
             if let Some(window) = app.get_webview_window("main") {
@@ -5398,5 +7049,273 @@ mod tests {
             !is_deep_link_auth && !is_http_callback,
             "Localhost paths outside /auth must be rejected (defense-in-depth)"
         );
+    }
+
+    #[test]
+    fn discord_token_validation_is_bounded_and_printable() {
+        assert!(validate_discord_token(b"abc.DEF-123").is_ok());
+        assert_eq!(validate_discord_token(b""), Err("token_invalid".to_string()));
+        assert_eq!(
+            validate_discord_token(b"contains space"),
+            Err("token_invalid".to_string())
+        );
+        assert_eq!(
+            validate_discord_token(&vec![b'x'; 513]),
+            Err("token_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_runtime_requires_matching_ready_status_and_authority() {
+        let ready = DiscordRuntimeStatusFile {
+            generation: "42".to_string(),
+            state: "ready".to_string(),
+            code: None,
+        };
+        let starting = DiscordRuntimeStatusFile {
+            generation: "42".to_string(),
+            state: "starting".to_string(),
+            code: None,
+        };
+        let authority = DiscordRuntimeAuthorityFile {
+            generation: "42".to_string(),
+        };
+        let stale_authority = DiscordRuntimeAuthorityFile {
+            generation: "41".to_string(),
+        };
+        assert!(discord_runtime_matches_generation(
+            "42",
+            Some(&ready),
+            Some(&authority),
+        ));
+        assert!(!discord_runtime_matches_generation(
+            "42",
+            Some(&starting),
+            Some(&authority),
+        ));
+        assert!(!discord_runtime_matches_generation(
+            "42",
+            Some(&ready),
+            Some(&stale_authority),
+        ));
+        assert!(!discord_runtime_matches_generation(
+            "42",
+            None,
+            Some(&authority),
+        ));
+        let stale = DiscordRuntimeStatusFile {
+            generation: "41".to_string(),
+            state: "failed".to_string(),
+            code: Some("stale_failure".to_string()),
+        };
+        assert!(
+            discord_runtime_status_for_generation(Some("42"), Some(&stale)).is_none(),
+            "a stale runtime generation must not surface its state or diagnostic code"
+        );
+        assert_eq!(
+            discord_runtime_status_for_generation(Some("42"), Some(&ready))
+                .map(|status| status.state.as_str()),
+            Some("ready")
+        );
+    }
+
+    #[test]
+    fn discord_expected_generation_fails_when_token_cannot_be_read() {
+        assert_eq!(
+            discord_runtime_token_prerequisite(Some(42), false),
+            Err("discord_token_unavailable".to_string())
+        );
+        assert_eq!(
+            discord_runtime_token_prerequisite(Some(42), true),
+            Ok(Some(42))
+        );
+        assert_eq!(discord_runtime_token_prerequisite(None, false), Ok(None));
+    }
+
+    #[test]
+    fn discord_generation_is_strictly_monotonic_even_with_same_clock_tick() {
+        let first = next_discord_generation(None).unwrap();
+        let second = next_discord_generation(Some(first)).unwrap();
+        assert!(second > first);
+
+        let future = first.saturating_add(10_000);
+        let after_future = next_discord_generation(Some(future)).unwrap();
+        assert_eq!(after_future, future + 1);
+    }
+
+    #[test]
+    fn discord_binding_manifest_rejects_unsupported_schema_versions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            r#"{"version":2,"generation":1,"bindings":[],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_upgrade_required"
+        ));
+    }
+
+    #[test]
+    fn discord_binding_manifest_rejects_unknown_fields_and_duplicate_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("discord-bindings.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":1,"bindings":[],"processingProfiles":{"default":"local_only"},"unexpected":true}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_cache_invalid"
+        ));
+
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":1,"bindings":[{"bindingId":"same","guildId":"100","channelId":"200","allowedUserIds":["300"],"processingProfileRef":"default","participation":"mentions"},{"bindingId":"same","guildId":"101","channelId":"201","allowedUserIds":["301"],"processingProfileRef":"default","participation":"all"}],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_bindings_invalid"
+        ));
+
+        std::fs::write(
+            &path,
+            r#"{"version":1,"generation":1,"bindings":[{"bindingId":"one","guildId":"100","channelId":"200","allowedUserIds":["300"],"processingProfileRef":"default","participation":"mentions","unexpected":true}],"processingProfiles":{"default":"local_only"}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_discord_binding_manifest(&path),
+            Err(code) if code == "discord_cache_invalid"
+        ));
+    }
+
+    #[test]
+    fn discord_cursor_updates_preserve_other_channels_and_monotonic_max() {
+        let active_keys =
+            std::collections::BTreeSet::from(["one".to_string(), "two".to_string()]);
+        let cursors = DiscordInboxCursors {
+            version: 1,
+            generation: "42".to_string(),
+            cursors: std::collections::BTreeMap::from([("two".to_string(), 7)]),
+        };
+        let cursors =
+            update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 10)
+                .unwrap();
+        let cursors =
+            update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 5)
+                .unwrap();
+        assert_eq!(cursors.cursors.get("one"), Some(&10));
+        assert_eq!(cursors.cursors.get("two"), Some(&7));
+    }
+
+    #[test]
+    fn discord_stale_binding_is_not_usable_for_preference_or_inbox() {
+        let binding = DiscordBindingInput {
+            binding_id: "binding_1".to_string(),
+            guild_id: "100".to_string(),
+            guild_name: Some("Guild".to_string()),
+            channel_id: "200".to_string(),
+            channel_name: Some("channel".to_string()),
+            allowed_user_ids: vec!["300".to_string()],
+            processing_profile_ref: "default".to_string(),
+            participation: "mentions".to_string(),
+        };
+        let mut usable = std::collections::BTreeSet::new();
+        assert!(!discord_binding_is_usable(&binding, &usable));
+        usable.insert(("100".to_string(), "200".to_string()));
+        assert!(discord_binding_is_usable(&binding, &usable));
+    }
+
+    #[test]
+    fn discord_bot_member_and_bounded_history_use_bot_endpoints() {
+        assert_eq!(
+            discord_bot_member_endpoint("100", "200"),
+            "/guilds/100/members/200"
+        );
+        assert_eq!(
+            discord_channel_history_endpoint("300"),
+            "/channels/300/messages?limit=50"
+        );
+        assert!(!discord_bot_member_endpoint("100", "200").contains("/users/@me/"));
+        assert_eq!(
+            discord_guilds_endpoint(None),
+            "/users/@me/guilds?limit=100"
+        );
+        assert_eq!(
+            discord_guilds_endpoint(Some("999")),
+            "/users/@me/guilds?limit=100&after=999"
+        );
+        assert_eq!(DISCORD_GUILD_DISCOVERY_LIMIT, 200);
+        assert!(discord_guild_discovery_truncated(200, 100));
+        assert!(!discord_guild_discovery_truncated(199, 100));
+        assert!(!discord_guild_discovery_truncated(200, 99));
+    }
+
+    #[test]
+    fn discord_snowflake_timestamp_is_bounded_and_deterministic() {
+        assert_eq!(
+            discord_snowflake_timestamp_ms("0"),
+            Some(1_420_070_400_000)
+        );
+        assert!(discord_snowflake_timestamp_ms("not-a-snowflake").is_none());
+    }
+
+    #[test]
+    fn discord_channel_overwrites_follow_discord_precedence() {
+        let base = DISCORD_VIEW_CHANNEL | DISCORD_READ_MESSAGE_HISTORY;
+        let overwrites = vec![
+            DiscordApiOverwrite {
+                id: "100".to_string(),
+                kind: 0,
+                allow: "0".to_string(),
+                deny: DISCORD_READ_MESSAGE_HISTORY.to_string(),
+            },
+            DiscordApiOverwrite {
+                id: "200".to_string(),
+                kind: 0,
+                allow: (DISCORD_SEND_MESSAGES | DISCORD_READ_MESSAGE_HISTORY).to_string(),
+                deny: "0".to_string(),
+            },
+            DiscordApiOverwrite {
+                id: "300".to_string(),
+                kind: 1,
+                allow: "0".to_string(),
+                deny: DISCORD_SEND_MESSAGES.to_string(),
+            },
+        ];
+        let effective = apply_discord_overwrites(
+            "100",
+            "300",
+            &["200".to_string()],
+            base,
+            &overwrites,
+        );
+        let summary = discord_permission_summary(effective);
+        assert!(summary.view_channel);
+        assert!(summary.read_message_history);
+        assert!(!summary.send_messages);
+        assert!(!summary.usable);
+    }
+
+    #[test]
+    fn discord_administrator_bypasses_channel_overwrites() {
+        let effective = apply_discord_overwrites(
+            "100",
+            "300",
+            &[],
+            DISCORD_ADMINISTRATOR,
+            &[DiscordApiOverwrite {
+                id: "100".to_string(),
+                kind: 0,
+                allow: "0".to_string(),
+                deny: u64::MAX.to_string(),
+            }],
+        );
+        assert!(discord_permission_summary(effective).usable);
     }
 }

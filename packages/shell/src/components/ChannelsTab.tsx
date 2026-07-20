@@ -1,166 +1,323 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { loadConfig, saveConfig } from "../lib/config";
-import {
-	type DiscordMessage,
-	fetchDiscordMessages,
-	getBotUserId,
-	isDiscordApiAvailable,
-	openDmChannel,
-} from "../lib/discord-api";
-import { onDiscordMessages } from "../lib/discord-relay";
-import { discoverAndPersistDiscordDmChannel } from "../lib/gateway-sessions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 
-interface ChannelsTabProps {
-	onAskAI?: (message: string) => void;
+interface InboxRecord {
+	readonly recordId: string;
+	readonly direction: "incoming" | "outgoing";
+	readonly bindingId: string;
+	readonly guildId: string;
+	readonly channelId: string;
+	readonly sourceMessageId: string;
+	readonly authorId?: string;
+	readonly content: string;
+	readonly createdAt: number;
 }
 
-const POLL_INTERVAL_MS = 10_000;
+interface InboxChannel {
+	readonly bindingId: string;
+	readonly guildId: string;
+	readonly guildName: string;
+	readonly channelId: string;
+	readonly channelName: string;
+	readonly participation: "mentions" | "all" | "paused";
+	readonly records: readonly InboxRecord[];
+	readonly unread: number;
+	readonly lastActivity?: number;
+}
 
-export function ChannelsTab(_props: ChannelsTabProps) {
-	const [messages, setMessages] = useState<DiscordMessage[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [channelId, setChannelId] = useState<string | null>(null);
-	const [botId, setBotId] = useState<string | null>(null);
-	const [apiAvailable, setApiAvailable] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-	const [initError, setInitError] = useState<string | null>(null);
-	const messagesEndRef = useRef<HTMLDivElement>(null);
-	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+function formatTime(timestamp?: number): string {
+	if (!timestamp) return "";
+	try {
+		return new Date(timestamp).toLocaleString([], {
+			month: "short",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	} catch {
+		return "";
+	}
+}
 
-	// Resolve DM channel: config → auto-open from userId → Gateway session discovery
-	const resolveChannel = useCallback(async (): Promise<string | null> => {
-		const config = loadConfig();
-		if (config?.discordDmChannelId) return config.discordDmChannelId;
-
-		if (config?.discordDefaultUserId) {
-			const id = await openDmChannel(config.discordDefaultUserId);
-			if (id && config) {
-				saveConfig({ ...config, discordDmChannelId: id });
+function latestChannelBindingId(
+	channels: readonly InboxChannel[],
+): string | null {
+	return (
+		channels.reduce<InboxChannel | null>((latest, channel) => {
+			if (channel.lastActivity === undefined) return latest;
+			if (!latest) return channel;
+			const latestActivity = latest.lastActivity as number;
+			const channelActivity = channel.lastActivity;
+			if (channelActivity !== latestActivity) {
+				return channelActivity > latestActivity ? channel : latest;
 			}
-			return id;
+			return channel.bindingId.localeCompare(latest.bindingId) < 0
+				? channel
+				: latest;
+		}, null)?.bindingId ?? null
+	);
+}
+
+function mergeChannelRecords(
+	history: readonly InboxRecord[],
+	inbox: readonly InboxRecord[],
+): readonly InboxRecord[] {
+	const bySourceMessage = new Map<string, InboxRecord>();
+	for (const record of [...history, ...inbox]) {
+		bySourceMessage.set(
+			`${record.direction}:${record.sourceMessageId}`,
+			record,
+		);
+	}
+	return [...bySourceMessage.values()].sort(
+		(left, right) => left.createdAt - right.createdAt,
+	);
+}
+
+export function ChannelsTab() {
+	const [channels, setChannels] = useState<readonly InboxChannel[]>([]);
+	const [selectedId, setSelectedId] = useState<string | null>(null);
+	const selectedIdRef = useRef<string | null>(null);
+	const visibleBindingIdsRef = useRef<readonly string[]>([]);
+	const preferenceHydratedRef = useRef(false);
+	const selectionVersionRef = useRef(0);
+	const preferenceQueueRef = useRef<Promise<void>>(Promise.resolve());
+	const [historyByBinding, setHistoryByBinding] = useState<
+		Readonly<Record<string, readonly InboxRecord[]>>
+	>({});
+	const [detailOpen, setDetailOpen] = useState(false);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(false);
+
+	const syncChannelHistory = useCallback(async (bindingId: string) => {
+		try {
+			const records = await invoke<InboxRecord[]>(
+				"discord_fetch_channel_history",
+				{ bindingId },
+			);
+			setHistoryByBinding((current) => ({
+				...current,
+				[bindingId]: records,
+			}));
+		} catch (cause) {
+			Logger.warn("ChannelsTab", "Discord channel history fetch failed", {
+				error: String(cause),
+			});
 		}
-
-		// Fallback: discover from Gateway sessions (works after reset when bot is still connected)
-		const discovered = await discoverAndPersistDiscordDmChannel();
-		if (discovered) return discovered;
-
-		return null;
 	}, []);
 
-	const initDiscord = useCallback(async () => {
-		setLoading(true);
-		setInitError(null);
-
-		const apiOk = await isDiscordApiAvailable();
-		setApiAvailable(apiOk);
-		if (!apiOk) {
-			setInitError("봇 토큰을 찾을 수 없습니다.");
-			setLoading(false);
-			return;
-		}
-
-		const dmChannelId = await resolveChannel();
-		if (!dmChannelId) {
-			setInitError(
-				"Discord DM 채널을 찾을 수 없습니다. 설정에서 Discord 연동을 확인하세요.",
-			);
-			setLoading(false);
-			return;
-		}
-
-		setChannelId(dmChannelId);
-		const bid = await getBotUserId();
-		setBotId(bid);
-	}, [resolveChannel]);
-
-	// Initialize on mount
-	useEffect(() => {
-		initDiscord();
-	}, [initDiscord]);
-
-	// Re-initialize when Discord OAuth completes
-	useEffect(() => {
-		const unlisten = listen("discord_auth_complete", () => {
-			Logger.info("ChannelsTab", "Discord auth completed, re-initializing");
-			initDiscord();
-		});
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, [initDiscord]);
-
-	const fetchHistory = useCallback(async () => {
-		if (!channelId) return;
-
+	const refresh = useCallback(async (syncHistory = false) => {
 		try {
-			const msgs = await fetchDiscordMessages(channelId, 50);
-			setMessages(msgs);
-			setError(null);
-		} catch (err) {
-			Logger.warn("ChannelsTab", "Failed to fetch Discord messages", {
-				error: String(err),
+			const snapshot = await invoke<InboxChannel[]>("discord_inbox_snapshot");
+			let persisted: string | null = null;
+			const hydratePreference = !preferenceHydratedRef.current;
+			preferenceHydratedRef.current = true;
+			if (hydratePreference) {
+				try {
+					persisted = await invoke<string | null>(
+						"discord_get_last_binding",
+					);
+				} catch (cause) {
+					Logger.warn("ChannelsTab", "Discord channel preference read failed", {
+						error: String(cause),
+					});
+				}
+			}
+			const current = selectedIdRef.current;
+			const nextSelected =
+				persisted &&
+				snapshot.some((channel) => channel.bindingId === persisted)
+					? persisted
+					: current &&
+						  snapshot.some((channel) => channel.bindingId === current)
+						? current
+						: latestChannelBindingId(snapshot);
+			visibleBindingIdsRef.current = snapshot.map(
+				(channel) => channel.bindingId,
+			);
+			setChannels(snapshot);
+			selectedIdRef.current = nextSelected;
+			setSelectedId(nextSelected);
+			if (syncHistory && nextSelected) {
+				setDetailOpen(true);
+				await syncChannelHistory(nextSelected);
+				const newestIncoming = snapshot
+					.find((channel) => channel.bindingId === nextSelected)
+					?.records.filter((record) => record.direction === "incoming")
+					.at(-1);
+				if (newestIncoming) {
+					try {
+						await invoke("discord_mark_inbox_read", {
+							bindingId: nextSelected,
+							createdAt: newestIncoming.createdAt,
+						});
+						setChannels((currentChannels) =>
+							currentChannels.map((channel) =>
+								channel.bindingId === nextSelected
+									? { ...channel, unread: 0 }
+									: channel,
+							),
+						);
+					} catch (cause) {
+						Logger.warn(
+							"ChannelsTab",
+							"Discord automatic read cursor update failed",
+							{ error: String(cause) },
+						);
+					}
+				}
+			}
+			if (
+				persisted &&
+				!snapshot.some((channel) => channel.bindingId === persisted)
+			) {
+				try {
+					await invoke("discord_set_last_binding", { bindingId: null });
+				} catch (cause) {
+					Logger.warn(
+						"ChannelsTab",
+						"Discord invalid channel preference clear failed",
+						{ error: String(cause) },
+					);
+				}
+			}
+			setError(false);
+		} catch (cause) {
+			Logger.warn("ChannelsTab", "Discord inbox snapshot failed", {
+				error: String(cause),
 			});
-			setError(String(err));
+			setChannels([]);
+			selectedIdRef.current = null;
+			setSelectedId(null);
+			setError(true);
 		} finally {
 			setLoading(false);
 		}
-	}, [channelId]);
+	}, [syncChannelHistory]);
 
-	// Fetch history once channel ID is set
+	const refreshCached = useCallback(async () => {
+		const bindingIds = visibleBindingIdsRef.current;
+		if (bindingIds.length === 0) return;
+		try {
+			const snapshot = await invoke<InboxChannel[]>(
+				"discord_inbox_snapshot_cached",
+				{ bindingIds },
+			);
+			const current = selectedIdRef.current;
+			const nextSelected =
+				current && snapshot.some((channel) => channel.bindingId === current)
+					? current
+					: latestChannelBindingId(snapshot);
+			setChannels(snapshot);
+			selectedIdRef.current = nextSelected;
+			setSelectedId(nextSelected);
+			setError(false);
+		} catch (cause) {
+			// Keep the last authoritative live snapshot during transient local
+			// writes. A watcher event must not empty the list or hit Discord REST.
+			Logger.warn("ChannelsTab", "Discord cached inbox refresh failed", {
+				error: String(cause),
+			});
+		}
+	}, []);
+
 	useEffect(() => {
-		if (!channelId) return;
-		fetchHistory();
-	}, [channelId, fetchHistory]);
+		void refresh(true);
+		let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+		const unlisten = listen("discord_inbox_changed", () => {
+			if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+			refreshTimer = setTimeout(() => void refreshCached(), 100);
+		});
+		return () => {
+			if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+			void unlisten.then((stop) => stop());
+		};
+	}, [refresh, refreshCached]);
 
-	// Subscribe to discord-relay messages (primary) + fallback poll
-	useEffect(() => {
-		if (!channelId) return;
+	const displayChannels = useMemo(
+		() =>
+			channels.map((channel) => {
+				const records = mergeChannelRecords(
+					historyByBinding[channel.bindingId] ?? [],
+					channel.records,
+				);
+				return {
+					...channel,
+					records,
+					lastActivity: records.at(-1)?.createdAt ?? channel.lastActivity,
+				};
+			}),
+		[channels, historyByBinding],
+	);
 
-		// Primary: subscribe to relay for real-time updates
-		const unsubscribe = onDiscordMessages((msgs) => {
-			if (msgs.length > 0) {
-				setMessages((prev) => {
-					const existingIds = new Set(prev.map((m) => m.id));
-					const newMsgs = msgs.filter((m) => !existingIds.has(m.id));
-					return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev;
+	const selected = useMemo(
+		() =>
+			displayChannels.find((channel) => channel.bindingId === selectedId) ??
+			null,
+		[displayChannels, selectedId],
+	);
+
+	async function selectChannel(channel: InboxChannel) {
+		const selectionVersion = ++selectionVersionRef.current;
+		selectedIdRef.current = channel.bindingId;
+		setSelectedId(channel.bindingId);
+		setDetailOpen(true);
+		const persistPreference = preferenceQueueRef.current.then(async () => {
+			await invoke("discord_set_last_binding", {
+				bindingId: channel.bindingId,
+			});
+		});
+		preferenceQueueRef.current = persistPreference.catch(() => {});
+		try {
+			await persistPreference;
+		} catch (cause) {
+			Logger.warn("ChannelsTab", "Discord channel preference update failed", {
+				error: String(cause),
+			});
+		}
+		await syncChannelHistory(channel.bindingId);
+		if (selectionVersionRef.current !== selectionVersion) return;
+		const newestIncoming = [...channel.records]
+			.reverse()
+			.find((record) => record.direction === "incoming");
+		if (newestIncoming) {
+			try {
+				await invoke("discord_mark_inbox_read", {
+					bindingId: channel.bindingId,
+					createdAt: newestIncoming.createdAt,
+				});
+				await refreshCached();
+			} catch (cause) {
+				Logger.warn("ChannelsTab", "Discord read cursor update failed", {
+					error: String(cause),
 				});
 			}
-		});
-
-		// Fallback: slower poll to catch anything missed
-		pollRef.current = setInterval(fetchHistory, POLL_INTERVAL_MS);
-		return () => {
-			unsubscribe();
-			if (pollRef.current) {
-				clearInterval(pollRef.current);
-				pollRef.current = null;
-			}
-		};
-	}, [channelId, fetchHistory]);
-
-	// Auto-scroll to bottom
-	useEffect(() => {
-		messagesEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
-	}, [messages]);
-
-	function formatTime(ts: string): string {
-		try {
-			const d = new Date(ts);
-			return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-		} catch {
-			return "";
 		}
 	}
 
-	// Not connected
-	if (!loading && !channelId) {
+	function showChannelList() {
+		setDetailOpen(false);
+	}
+
+	if (loading) {
+		return (
+			<div className="channels-tab" data-testid="channels-tab">
+				<div className="dm-loading-more">{t("channels.loading")}</div>
+			</div>
+		);
+	}
+
+	if (error || channels.length === 0) {
 		return (
 			<div className="channels-tab" data-testid="channels-tab">
 				<div className="dm-empty">
-					<span>{initError ?? "Discord DM 연결이 필요합니다."}</span>
+					<span>{error ? t("channels.error") : t("channels.empty")}</span>
+					<button type="button" onClick={() => void refresh(true)}>
+						{t("channels.refresh")}
+					</button>
 				</div>
 			</div>
 		);
@@ -168,71 +325,89 @@ export function ChannelsTab(_props: ChannelsTabProps) {
 
 	return (
 		<div className="channels-tab" data-testid="channels-tab">
-			{/* Header */}
 			<div className="dm-header">
 				<div className="dm-header-title">
-					<span>Discord DM</span>
-					<span
-						className={`dm-header-status ${apiAvailable ? "connected" : ""}`}
-					>
-						{apiAvailable
-							? t("channels.connected")
-							: t("channels.disconnected") || "연결 안됨"}
+					<span>{t("channels.title")}</span>
+					<span className="dm-header-status connected">
+						{t("channels.connected")}
 					</span>
 				</div>
 				<button
 					type="button"
 					className="channels-refresh-btn"
-					onClick={fetchHistory}
+					onClick={() => void refresh(true)}
 				>
 					{t("channels.refresh")}
 				</button>
 			</div>
-
-			{/* Messages (read-only) */}
-			<div className="dm-messages">
-				{loading ? (
-					<div className="dm-loading-more">{t("channels.loading")}</div>
-				) : messages.length === 0 ? (
-					<div className="dm-empty">
-						<span>아직 메시지가 없습니다.</span>
-						<span style={{ fontSize: 11, color: "var(--cream-dim)" }}>
-							Discord에서 봇에게 DM을 보내보세요.
-						</span>
-					</div>
-				) : (
-					messages.map((msg) => {
-						const isBot = msg.author.bot === true || msg.author.id === botId;
+			<div
+				className={`channels-inbox-layout${detailOpen ? " detail-open" : ""}`}
+			>
+				<nav aria-label={t("channels.title")} className="channels-inbox-list">
+					{displayChannels.map((channel) => {
+						const preview = channel.records.at(-1)?.content ?? "";
 						return (
-							<div
-								key={msg.id}
-								className={`dm-message ${isBot ? "outbound" : "inbound"}`}
+							<button
+								type="button"
+								key={channel.bindingId}
+								className={
+									channel.bindingId === selectedId ? "selected" : undefined
+								}
+								aria-current={
+									channel.bindingId === selectedId ? "page" : undefined
+								}
+								onClick={() => void selectChannel(channel)}
 							>
-								<span className="dm-message-sender">{msg.author.username}</span>
-								<div className="dm-message-bubble">{msg.content}</div>
-								<span className="dm-message-time">
-									{formatTime(msg.timestamp)}
-								</span>
-							</div>
+								<strong>
+									{channel.guildName} · #{channel.channelName}
+								</strong>
+								<span>{preview}</span>
+								<time
+									dateTime={new Date(channel.lastActivity ?? 0).toISOString()}
+								>
+									{formatTime(channel.lastActivity)}
+								</time>
+								{channel.unread > 0 && (
+									<span aria-label={`${channel.unread}`}>{channel.unread}</span>
+								)}
+							</button>
 						);
-					})
-				)}
-				<div ref={messagesEndRef} />
-			</div>
-
-			{/* Error bar */}
-			{error && (
-				<div
-					style={{
-						padding: "4px 12px",
-						fontSize: 11,
-						color: "var(--error)",
-						borderTop: "1px solid var(--espresso-light)",
-					}}
+					})}
+				</nav>
+				<section
+					className="dm-messages"
+					aria-live="polite"
+					aria-label={
+						selected
+							? `${selected.guildName} #${selected.channelName}`
+							: t("channels.title")
+					}
 				>
-					{error}
-				</div>
-			)}
+					<button
+						type="button"
+						className="channels-inbox-back"
+						onClick={showChannelList}
+					>
+						{t("onboard.back")}
+					</button>
+					{!selected && (
+						<div className="dm-empty">{t("channels.selectChannel")}</div>
+					)}
+					{selected?.records.map((record) => (
+						<article
+							key={record.recordId}
+							className={`dm-message ${
+								record.direction === "outgoing" ? "outbound" : "inbound"
+							}`}
+						>
+							<div className="dm-message-bubble">{record.content}</div>
+							<time className="dm-message-time">
+								{formatTime(record.createdAt)}
+							</time>
+						</article>
+					))}
+				</section>
+			</div>
 		</div>
 	);
 }

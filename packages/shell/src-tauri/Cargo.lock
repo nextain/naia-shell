@@ -3123,6 +3123,7 @@ dependencies = [
  "webkit2gtk",
  "windows-sys 0.59.0",
  "x11rb",
+ "zeroize",
  "zip 2.4.2",
 ]
 

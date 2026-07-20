@@ -2,7 +2,7 @@
  * Test: tauri.conf.json CSP must not allow direct WebView access to discord.com.
  *
  * Security regression — #259 Discord webhook exfiltration channel.
- * All Discord API traffic must go through Rust's `discord_api` Tauri command,
+ * Discord setup traffic must go through narrow typed Rust commands,
  * which reads the bot token from gateway config and performs the request
  * server-side. WebView-side fetch to discord.com is an exfiltration vector
  * because prompt injection / XSS can POST conversation data to a

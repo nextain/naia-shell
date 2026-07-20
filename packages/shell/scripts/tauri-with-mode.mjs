@@ -16,7 +16,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { platform } from "node:os";
 import { dirname, resolve } from "node:path";
 
@@ -25,13 +25,17 @@ const mode = process.argv[2] === "prod" ? "prod" : "dev";
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
-const REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290";
-const REQUIRED_PROTO_SHA256 = "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92";
-const AGENT_CANDIDATES = [
+const REQUIRED_AGENT_COMMIT = "392bf27d0adf4ab9a64e95cfa59fce5b9499391f";
+const REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa";
+const STATIC_AGENT_CANDIDATES = [
 	resolve(OS_ROOT, "..", "naia-agent"),
 	resolve(OS_ROOT, "..", "..", "naia-agent"),
 	resolve(OS_ROOT, "..", "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
 	resolve(OS_ROOT, "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
+];
+const AGENT_WORKTREE_ROOTS = [
+	resolve(OS_ROOT, "..", "naia-agent-worktrees"),
+	resolve(OS_ROOT, "..", "..", "naia-agent-worktrees"),
 ];
 
 function gitOutput(dir, args) {
@@ -68,27 +72,28 @@ function isPairedAgentCheckout(dir) {
 	return (
 		existsSync(resolve(dir, "scripts/builds/agent-stdio-entry.mjs")) &&
 		existsSync(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) &&
-		hasRequiredAgentCommit(dir) &&
-		isCleanProto(dir) &&
-		isCleanAgentEntrypoint(dir) &&
-		isCleanCheckout(dir) &&
-		sha256File(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) === REQUIRED_PROTO_SHA256
+		hasRequiredAgentCommit(dir)
 	);
 }
 
+function agentCandidates() {
+	const candidates = [...STATIC_AGENT_CANDIDATES];
+	for (const root of AGENT_WORKTREE_ROOTS) {
+		if (!existsSync(root)) continue;
+		for (const entry of readdirSync(root, { withFileTypes: true })) {
+			if (entry.isDirectory()) candidates.push(resolve(root, entry.name));
+		}
+	}
+	return [...new Set(candidates)];
+}
+
 function firstPairedAgentCheckout() {
-	for (const dir of AGENT_CANDIDATES) {
+	for (const dir of agentCandidates()) {
 		if (isPairedAgentCheckout(dir)) return dir;
 	}
 	return null;
 }
 
-const PAIRED_AGENT = firstPairedAgentCheckout();
-if (!PAIRED_AGENT) {
-	throw new Error(
-		`No paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT} with both agent-stdio-entry.mjs and naia_agent.proto`,
-	);
-}
 const WINDOWS_MANAGER = resolve(OS_ROOT, "..", "naia-omni-windows-manager");
 
 const env = { ...process.env };
@@ -96,10 +101,6 @@ const env = { ...process.env };
 // ── 새 코어 + 분리 에이전트 (new-naia-os 불변) ──
 env.VITE_NAIA_NEW_CORE = env.VITE_NAIA_NEW_CORE ?? "1";
 env.NAIA_AGENT_STANDALONE = env.NAIA_AGENT_STANDALONE ?? "1";
-env.NAIA_AGENT_SCRIPT =
-	env.NAIA_AGENT_SCRIPT ?? resolve(PAIRED_AGENT, "scripts/builds/agent-stdio-entry.mjs");
-env.NAIA_AGENT_PROTO_DIR =
-	env.NAIA_AGENT_PROTO_DIR ?? resolve(PAIRED_AGENT, "src/main/adapters/grpc");
 
 function gitDirForPath(path) {
 	let dir = resolve(path);
@@ -140,6 +141,38 @@ function validateAgentEnvPair(agentScript, protoDir) {
 	if (sha256File(resolve(protoDir, "naia_agent.proto")) !== REQUIRED_PROTO_SHA256) {
 		throw new Error(`Paired naia-agent proto SHA256 must be ${REQUIRED_PROTO_SHA256}: ${protoDir}`);
 	}
+}
+
+function applyPairedAgentEnv(targetEnv) {
+	const explicitScript = targetEnv.NAIA_AGENT_SCRIPT;
+	const explicitProtoDir = targetEnv.NAIA_AGENT_PROTO_DIR;
+	if (explicitScript || explicitProtoDir) {
+		if (!explicitScript || !explicitProtoDir) {
+			throw new Error("NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must be provided together");
+		}
+		validateAgentEnvPair(explicitScript, explicitProtoDir);
+		return gitDirForPath(explicitScript);
+	}
+
+	const pairedAgent = firstPairedAgentCheckout();
+	if (!pairedAgent) {
+		throw new Error(
+			`No paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT} with both agent-stdio-entry.mjs and naia_agent.proto`,
+		);
+	}
+	targetEnv.NAIA_AGENT_SCRIPT = resolve(
+		pairedAgent,
+		"scripts/builds/agent-stdio-entry.mjs",
+	);
+	targetEnv.NAIA_AGENT_PROTO_DIR = resolve(
+		pairedAgent,
+		"src/main/adapters/grpc",
+	);
+	validateAgentEnvPair(
+		targetEnv.NAIA_AGENT_SCRIPT,
+		targetEnv.NAIA_AGENT_PROTO_DIR,
+	);
+	return pairedAgent;
 }
 
 // ── 로컬 cascade loader (dev): 소스 sibling repo(loader/ 포함 dir) 를 가리킨다.
@@ -188,6 +221,12 @@ const envPath = resolve(SHELL, `.env.${mode}`);
 if (existsSync(envPath)) {
 	let n = 0;
 	for (const [k, v] of Object.entries(loadEnvFile(envPath))) {
+		if (
+			(k === "NAIA_AGENT_SCRIPT" || k === "NAIA_AGENT_PROTO_DIR") &&
+			env[k]
+		) {
+			continue;
+		}
 		env[k] = v;
 		n++;
 	}
@@ -196,7 +235,7 @@ if (existsSync(envPath)) {
 	process.stdout.write(`[tauri-with-mode] ${mode.toUpperCase()} — .env.${mode} 없음; config 기본값 사용\n`);
 }
 
-validateAgentEnvPair(env.NAIA_AGENT_SCRIPT, env.NAIA_AGENT_PROTO_DIR);
+applyPairedAgentEnv(env);
 process.stdout.write(`[tauri-with-mode] new core=${env.VITE_NAIA_NEW_CORE}, agent=${env.NAIA_AGENT_SCRIPT}, proto=${env.NAIA_AGENT_PROTO_DIR}\n`);
 
 const r = spawnSync("pnpm", ["run", "tauri", "dev"], { env, stdio: "inherit", shell: true });

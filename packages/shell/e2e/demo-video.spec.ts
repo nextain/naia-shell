@@ -517,7 +517,6 @@ function buildDemoMockScript(lang: NarrationLang): string {
 
 		// Discord
 		if (cmd === "discord_bot_token_available") return true;
-		if (cmd === "discord_api") return JSON.stringify({ status: "ok" });
 
 		// OpenClaw sync
 		if (cmd === "sync_openclaw_config") return undefined;

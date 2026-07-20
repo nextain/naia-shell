@@ -30,10 +30,10 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("pins the paired agent ancestry and build evidence", () => {
 		expect(BUILD_RS).toContain(
-			'REQUIRED_AGENT_COMMIT: &str = "de844dfe0392d3174c12fcce5969e638ce997290"',
+			'REQUIRED_AGENT_COMMIT: &str = "392bf27d0adf4ab9a64e95cfa59fce5b9499391f"',
 		);
 		expect(BUILD_RS).toContain(
-			'REQUIRED_PROTO_SHA256: &str =\n        "49f4f5c1a983b1c563dd8a723fddc89134db2aba005b22b85e31161bc63c9f92"',
+			'REQUIRED_PROTO_SHA256: &str =\n        "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
 		);
 		expect(BUILD_RS).not.toContain("merge-base");
 		expect(BUILD_RS).toContain("NAIA_AGENT_REQUIRED_COMMIT");
@@ -84,13 +84,19 @@ describe("UC-WIRE-V1 paired proto build", () => {
 	});
 	it("selects and validates one exact paired agent/proto checkout", () => {
 		expect(TAURI_WITH_MODE).toContain(
-			'REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290"',
+			'REQUIRED_AGENT_COMMIT = "392bf27d0adf4ab9a64e95cfa59fce5b9499391f"',
+		);
+		expect(TAURI_WITH_MODE).toContain(
+			'REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
 		);
 		expect(TAURI_WITH_MODE).toContain("naia-agent-issue-388-proto");
 		expect(TAURI_WITH_MODE).not.toContain("merge-base");
 		expect(TAURI_WITH_MODE).not.toContain("--is-ancestor");
 		expect(TAURI_WITH_MODE).toContain("firstPairedAgentCheckout");
-		expect(TAURI_WITH_MODE).toContain("PAIRED_AGENT");
+		expect(TAURI_WITH_MODE).toContain("AGENT_WORKTREE_ROOTS");
+		expect(TAURI_WITH_MODE).toContain('"naia-agent-worktrees"');
+		expect(TAURI_WITH_MODE).toContain("readdirSync(root, { withFileTypes: true })");
+		expect(TAURI_WITH_MODE).toContain("agentCandidates()");
 		expect(TAURI_WITH_MODE).toContain("validateAgentEnvPair");
 		expect(TAURI_WITH_MODE).toContain("gitDirForPath");
 		expect(TAURI_WITH_MODE).toContain("scriptRoot !== protoRoot");
@@ -103,9 +109,24 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		expect(TAURI_WITH_MODE).toContain("REQUIRED_PROTO_SHA256");
 		expect(TAURI_WITH_MODE).toContain("NAIA_AGENT_SCRIPT must be scripts/builds/agent-stdio-entry.mjs");
 		expect(TAURI_WITH_MODE).toContain("NAIA_AGENT_PROTO_DIR");
-		expect(TAURI_WITH_MODE.lastIndexOf("validateAgentEnvPair(env.NAIA_AGENT_SCRIPT, env.NAIA_AGENT_PROTO_DIR)")).toBeGreaterThan(
+		expect(TAURI_WITH_MODE.lastIndexOf("applyPairedAgentEnv(env)")).toBeGreaterThan(
 			TAURI_WITH_MODE.indexOf("if (existsSync(envPath))"),
 		);
+		expect(TAURI_WITH_MODE).toContain(
+			'k === "NAIA_AGENT_SCRIPT" || k === "NAIA_AGENT_PROTO_DIR"',
+		);
+		const applyBody = TAURI_WITH_MODE.slice(
+			TAURI_WITH_MODE.indexOf("function applyPairedAgentEnv"),
+			TAURI_WITH_MODE.indexOf("// ── 로컬 cascade loader"),
+		);
+		expect(applyBody.indexOf("validateAgentEnvPair(explicitScript, explicitProtoDir)")).toBeLessThan(
+			applyBody.indexOf("firstPairedAgentCheckout()"),
+		);
+		const candidateBody = TAURI_WITH_MODE.slice(
+			TAURI_WITH_MODE.indexOf("function isPairedAgentCheckout"),
+			TAURI_WITH_MODE.indexOf("function agentCandidates"),
+		);
+		expect(candidateBody).not.toContain("isCleanCheckout");
 		expect(TAURI_WITH_MODE).not.toContain("firstAgentWith");
 		expect(TAURI_WITH_MODE).not.toContain(
 			'env.NAIA_AGENT_PROTO_DIR = env.NAIA_AGENT_PROTO_DIR ?? resolve(AGENT, "src/main/adapters/grpc")',
@@ -114,9 +135,16 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("applies the same paired agent/proto env before direct Tauri bundle builds", () => {
 		expect(STAGE_RUNTIME).toContain(
-			'REQUIRED_AGENT_COMMIT = "de844dfe0392d3174c12fcce5969e638ce997290"',
+			'REQUIRED_AGENT_COMMIT = "392bf27d0adf4ab9a64e95cfa59fce5b9499391f"',
+		);
+		expect(STAGE_RUNTIME).toContain(
+			'REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
 		);
 		expect(STAGE_RUNTIME).toContain("applyPairedAgentEnv(process.env)");
+		expect(STAGE_RUNTIME).toContain("AGENT_WORKTREE_ROOTS");
+		expect(STAGE_RUNTIME).toContain('"naia-agent-worktrees"');
+		expect(STAGE_RUNTIME).toContain("readdirSync(root, { withFileTypes: true })");
+		expect(STAGE_RUNTIME).toContain("agentCandidates()");
 		expect(STAGE_RUNTIME).toContain("const pairedAgentRoot = applyPairedAgentEnv(process.env)");
 		expect(STAGE_RUNTIME).toContain("sibling: pairedAgentRoot");
 		expect(STAGE_RUNTIME).toContain("validateAgentEnvPair");
@@ -126,14 +154,35 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		expect(STAGE_RUNTIME).toContain("sha256File");
 		expect(STAGE_RUNTIME).toContain("NAIA_AGENT_SCRIPT must be scripts/builds/agent-stdio-entry.mjs");
 		expect(STAGE_RUNTIME.indexOf("const pairedAgentRoot = applyPairedAgentEnv(process.env)")).toBeLessThan(
+			STAGE_RUNTIME.indexOf("await prepareRuntime(matrix, platform, arch)"),
+		);
+		expect(STAGE_RUNTIME.indexOf("const pairedAgentRoot = applyPairedAgentEnv(process.env)")).toBeLessThan(
 			STAGE_RUNTIME.indexOf('script: "scripts/stage-agent.mjs"'),
 		);
 		expect(STAGE_RUNTIME.indexOf("const pairedAgentRoot = applyPairedAgentEnv(process.env)")).toBeLessThan(
 			STAGE_RUNTIME.indexOf("pnpm exec tauri build --verbose --config"),
 		);
+		const applyBody = STAGE_RUNTIME.slice(
+			STAGE_RUNTIME.indexOf("function applyPairedAgentEnv"),
+			STAGE_RUNTIME.indexOf("/* ───────────────────────── 순수 함수"),
+		);
+		expect(applyBody.indexOf("validateAgentEnvPair(explicitScript, explicitProtoDir)")).toBeLessThan(
+			applyBody.indexOf("firstPairedAgentCheckout()"),
+		);
+		const candidateBody = STAGE_RUNTIME.slice(
+			STAGE_RUNTIME.indexOf("function isPairedAgentCheckout"),
+			STAGE_RUNTIME.indexOf("function agentCandidates"),
+		);
+		expect(candidateBody).not.toContain("isCleanCheckout");
 	});
 
 	it("requires stage-agent to stage the same validated paired checkout", () => {
+		expect(STAGE_AGENT).toContain(
+			'REQUIRED_AGENT_COMMIT = "392bf27d0adf4ab9a64e95cfa59fce5b9499391f"',
+		);
+		expect(STAGE_AGENT).toContain(
+			'REQUIRED_PROTO_SHA256 = "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"',
+		);
 		expect(STAGE_AGENT).toContain("NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR are required");
 		expect(STAGE_AGENT).toContain("const AGENT = gitRootForPath(AGENT_SCRIPT, true)");
 		expect(STAGE_AGENT).toContain("NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must come from the same checkout");

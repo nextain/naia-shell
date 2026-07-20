@@ -1,0 +1,61 @@
+{
+  "stage": "planning",
+  "date": "2026-07-20",
+  "plan": ".agents/progress/discord-channel-agent-plan-2026-07-20.md",
+  "requirements": [
+    "docs/requirements.md#FR-DISCORD.1-10",
+    "naia-agent/docs/requirements.md#FR-DISCORD-RT-1-7"
+  ],
+  "review_protocol": "review-pass",
+  "configured_reviewers": ["claude", "gemini"],
+  "availability": {
+    "claude": "unavailable: OAuth session expired",
+    "gemini": "unavailable: unsupported Gemini Code Assist client",
+    "codex": "aborted: repository discovery escaped intended worktree scope",
+    "openrouter_nemotron": "unavailable: no final verdict",
+    "openrouter_north_mini_code": "low health: malformed or tool-diverted output",
+    "openrouter_deepseek_v4_flash_free": "available intermittently; one CLEAN, later timeout",
+    "openrouter_hy3_free": "available"
+  },
+  "openrouter_verification": {
+    "model": "opencode/hy3-free",
+    "provider_slug": "tencent/hy3:free",
+    "verified_date": "2026-07-20",
+    "context": "262K",
+    "price": "free at verification time",
+    "scope": "embedded plan and Discord requirement excerpts only; no credentials or private user data"
+  },
+  "resolved_findings": [
+    "Replace WebView/env token transport with native capture plus one-shot OS pipe/handle injection.",
+    "Assign exact FR-DISCORD-RT-1-7 implementation and test trace.",
+    "Define atomic generation activation, fsync/rename ownership, cache bounds and corruption precedence.",
+    "Make Agent the sole inbox-cache writer and Shell a read-only watcher.",
+    "Scope session/history by binding/guild/channel/user and dedupe by binding/message.",
+    "Define write-ahead partial-reply behavior that prefers omission over duplicate send.",
+    "Add permission-overwrite discovery, rate-limit, participation/authority Cartesian tests.",
+    "Ban message/document/search content from diagnostics and persistent WebView storage.",
+    "Separate code-migration, automated E2E, and mandatory live Discord acceptance gates.",
+    "Add cross-session shared-file lock plus acknowledgment and latest-HEAD diff gates."
+  ],
+  "dismissed_unconfirmed_findings": [
+    "Development coordination lock was incorrectly conflated with Agent runtime stop state.",
+    "Bounded dedupe constants were incorrectly treated as contradictory to explicit corruption reset.",
+    "Shell memory-only one-shot REST history was incorrectly treated as an inbox write despite an explicit no-write contract."
+  ],
+  "convergence": {
+    "required_consecutive_clean": 2,
+    "rounds_after_last_edit": [
+      {
+        "reviewer": "opencode/hy3-free",
+        "verdict": "CLEAN",
+        "findings": []
+      },
+      {
+        "reviewer": "opencode/hy3-free",
+        "verdict": "CLEAN",
+        "findings": []
+      }
+    ],
+    "result": "CLEAN"
+  }
+}

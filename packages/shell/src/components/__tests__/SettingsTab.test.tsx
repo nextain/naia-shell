@@ -56,8 +56,8 @@ vi.mock("../../lib/chat-service", () => ({
 
 import { SettingsTab } from "../SettingsTab";
 
-// SettingsTab 9-tab restructure (#FR-SLOT.4, 2026-06-29):
-// profile | brain | voice | avatar | persona | memory | knowledge | skills | general
+// SettingsTab order:
+// profile | brain | voice | avatar | persona | memory | knowledge | skills | connections | general
 // engine→profile, ai→brain, models→memory(병합), info→general(흡수).
 // voice/avatar/persona/knowledge = 신규(Phase1 placeholder). Tests navigate via this helper.
 const SETTINGS_TAB_INDEX = {
@@ -69,7 +69,8 @@ const SETTINGS_TAB_INDEX = {
 	memory: 5,
 	knowledge: 6,
 	skills: 7,
-	general: 8,
+	connections: 8,
+	general: 9,
 } as const;
 function gotoSettingsTab(name: keyof typeof SETTINGS_TAB_INDEX) {
 	const btn = document.querySelector(
@@ -86,6 +87,23 @@ describe("SettingsTab", () => {
 		eventListeners.clear();
 		vi.clearAllMocks();
 		vi.unstubAllGlobals();
+	});
+
+	it("places Connections between Skills and General and never renders a token field", async () => {
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_bot_token_available") return Promise.resolve(false);
+			return Promise.resolve([]);
+		});
+		render(<SettingsTab />);
+		const tabs = [...document.querySelectorAll("[data-settings-tab]")]
+			.map((element) => element.getAttribute("data-settings-tab"));
+		expect(tabs).toEqual([
+			"profile", "brain", "voice", "avatar", "persona",
+			"memory", "knowledge", "skills", "connections", "general",
+		]);
+		gotoSettingsTab("connections");
+		expect(await screen.findByTestId("discord-connections")).toBeDefined();
+		expect(document.querySelector('input[type="password"]')).toBeNull();
 	});
 
 	// config(models) 정상화: 구 skill_config directToolCall → 게이트웨이 `GET /v1/pricing` 셸-직결(E1).
@@ -406,9 +424,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 		render(<SettingsTab />);
 		const tabBar = document.querySelector(".settings-tab-bar");
 		expect(tabBar).toBeTruthy();
-		// 9-tab restructure: profile|brain|voice|avatar|persona|memory|knowledge|skills|general
+		// 10 tabs: profile|brain|voice|avatar|persona|memory|knowledge|skills|connections|general
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
-		expect(tabBtns.length).toBe(9);
+		expect(tabBtns.length).toBe(10);
 	});
 
 	it("GPU 프로파일 = 자동 설정 — local-llm-voice-16g 선택 시 두뇌·음성·호스트가 로컬로 전환 (2026-07-15)", async () => {
