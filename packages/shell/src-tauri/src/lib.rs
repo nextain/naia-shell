@@ -258,18 +258,23 @@ struct AgentProcess {
 }
 
 /// Owns a freshly spawned child until every startup handshake has succeeded.
-/// Any early return after `Command::spawn` must synchronously terminate and
-/// reap the process instead of leaving an untracked agent behind.
+/// Any early return after `Command::spawn` either confirms bounded termination
+/// or transfers the child and exact Discord runtime to a background reaper.
 struct SpawnedAgentChild {
     child: Option<Child>,
-    revoke_discord_on_drop: bool,
+    discord_cleanup: Option<DiscordSpawnCleanup>,
+}
+
+struct DiscordSpawnCleanup {
+    runtime: std::path::PathBuf,
+    quarantined: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SpawnedAgentChild {
-    fn new(child: Child, revoke_discord_on_drop: bool) -> Self {
+    fn new(child: Child, discord_cleanup: Option<DiscordSpawnCleanup>) -> Self {
         Self {
             child: Some(child),
-            revoke_discord_on_drop,
+            discord_cleanup,
         }
     }
 
@@ -278,21 +283,55 @@ impl SpawnedAgentChild {
     }
 
     fn into_inner(mut self) -> Child {
-        self.revoke_discord_on_drop = false;
+        self.discord_cleanup = None;
         self.child.take().expect("spawned child must be present")
+    }
+
+    fn finish_explicit_cleanup(&mut self, child_reaped: bool, runtime_quarantined: bool) {
+        let cleanup = self.discord_cleanup.take();
+        let child = self.child.take();
+        if child_reaped && runtime_quarantined {
+            return;
+        }
+        if child.is_some() || cleanup.is_some() {
+            spawn_background_discord_reaper(child, cleanup);
+        }
     }
 }
 
 impl Drop for SpawnedAgentChild {
     fn drop(&mut self) {
-        if let Some(child) = self.child.as_mut() {
+        let cleanup = self.discord_cleanup.take();
+        if let Some(cleanup) = cleanup.as_ref() {
+            cleanup
+                .quarantined
+                .store(true, std::sync::atomic::Ordering::Release);
+            let _ = quarantine_discord_runtime_files(&cleanup.runtime);
+        }
+        if let Some(child) = self.child.take() {
+            spawn_background_discord_reaper(Some(child), cleanup);
+        } else if cleanup.is_some() {
+            spawn_background_discord_reaper(None, cleanup);
+        }
+    }
+}
+
+fn spawn_background_discord_reaper(
+    mut child: Option<Child>,
+    cleanup: Option<DiscordSpawnCleanup>,
+) {
+    std::thread::spawn(move || {
+        if let Some(child) = child.as_mut() {
             let _ = child.kill();
             let _ = child.wait();
         }
-        if self.revoke_discord_on_drop {
-            let _ = revoke_discord_runtime_authority();
+        if let Some(cleanup) = cleanup {
+            cleanup
+                .quarantined
+                .store(true, std::sync::atomic::Ordering::Release);
+            let _ = quarantine_discord_runtime_files(&cleanup.runtime);
         }
-    }
+    });
 }
 
 // ?좑툘 Rust ??Child drop ???꾨줈?몄뒪瑜?二쎌씠吏 ?딆쓬 ??restart 濡?*guard 援먯껜 ????agent 媛 orphan(gRPC ?쒕쾭 ?붾쪟).
@@ -345,7 +384,7 @@ struct AppState {
     /// Serializes every agent spawn/publication with Discord repair and quarantine.
     discord_lifecycle: Mutex<()>,
     /// Process-local fail-closed latch. Only verified explicit repair clears it.
-    discord_quarantined: std::sync::atomic::AtomicBool,
+    discord_quarantined: Arc<std::sync::atomic::AtomicBool>,
     /// Serializes Discord credential and binding mutations across async Tauri commands.
     /// A single operation owns manifest/key rollback and the corresponding agent restart.
     discord_config_operation: tokio::sync::Mutex<()>,
@@ -1090,10 +1129,26 @@ fn resolve_paired_bundled_agent_script(app_handle: &AppHandle) -> Result<String,
 }
 
 /// Spawn the Node.js agent-core process with stdio pipes
+fn spawn_adk_path_snapshot_with<R>(read_cache: R) -> Option<String>
+where
+    R: FnOnce() -> Option<String>,
+{
+    read_cache()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn spawn_adk_path_snapshot() -> Option<String> {
+    spawn_adk_path_snapshot_with(|| {
+        dirs::home_dir()
+            .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
+    })
+}
+
 fn spawn_agent_core(
     app_handle: &AppHandle,
     audit_db: &audit::AuditDb,
-    discord_quarantined: &std::sync::atomic::AtomicBool,
+    discord_quarantined: &Arc<std::sync::atomic::AtomicBool>,
     discord_repair_bypass: bool,
 ) -> Result<AgentProcess, String> {
     use std::io::Write as _;
@@ -1168,99 +1223,95 @@ fn spawn_agent_core(
 
     let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
     let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
+    let spawn_adk_path = spawn_adk_path_snapshot();
 
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
-    // at runtime. Read from ~/.naia/adk-path written by write_naia_path_cache.
-    if let Some(home) = dirs::home_dir() {
-        let adk_path_file = home.join(".naia").join("adk-path");
-        if let Ok(adk_path_str) = std::fs::read_to_string(&adk_path_file) {
-            let adk_path_str = adk_path_str.trim();
-            if !adk_path_str.is_empty() {
-                let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
-                cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
-                cmd.env("NAIA_ADK_PATH", adk_path_str);
-                let bindings_path = settings_dir.join("discord-bindings.json");
-                let runtime_dir = settings_dir.join("discord-runtime");
-                if discord_runtime_activation_allowed(
-                    discord_quarantined,
-                    &runtime_dir,
-                    discord_repair_bypass,
-                ) {
-                    if let Ok(metadata) = std::fs::metadata(&bindings_path) {
-                        if metadata.is_file() && metadata.len() <= 512 * 1024 {
-                            if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
-                                let generation =
-                                    serde_json::from_str::<serde_json::Value>(&bindings_json)
-                                        .ok()
-                                        .and_then(|value| {
-                                            value
-                                                .get("generation")
-                                                .and_then(|item| item.as_u64())
-                                        });
-                                if let Some(generation) = generation {
-                                    if let Ok(token) = read_discord_bot_token() {
-                                        if validate_discord_token(&token).is_ok() {
-                                            std::fs::create_dir_all(&runtime_dir).map_err(|_| {
-                                                "discord_runtime_dir_unavailable".to_string()
-                                            })?;
-                                            let generation = generation.to_string();
-                                            let authority_path = runtime_dir.join("authority.json");
-                                            let authority = serde_json::json!({
-                                                "version": 1,
-                                                "generation": generation.clone(),
-                                            });
-                                            let authority_bytes = serde_json::to_vec(&authority)
-                                                .map_err(|_| {
-                                                    "discord_authority_invalid".to_string()
-                                                })?;
-                                            issue_discord_runtime_authority(
-                                                discord_quarantined,
-                                                || {
-                                                    write_owner_only_atomic(
-                                                        &authority_path,
-                                                        &authority_bytes,
-                                                    )
-                                                },
-                                                || {
-                                                    quarantine_discord_runtime_files(&runtime_dir)
-                                                },
-                                            )?;
-                                            cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
-                                            cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
-                                            cmd.env("NAIA_DISCORD_GENERATION", &generation);
-                                            cmd.env(
-                                                "NAIA_DISCORD_STATUS_PATH",
-                                                runtime_dir.join("status.json"),
-                                            );
-                                            cmd.env(
-                                                "NAIA_DISCORD_AUTHORITY_PATH",
+    // at runtime. The cache is captured exactly once so a concurrent path
+    // update cannot mix settings, Discord runtime, and dispatcher workspaces.
+    if let Some(adk_path_str) = spawn_adk_path.as_deref() {
+        let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
+        cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
+        cmd.env("NAIA_ADK_PATH", adk_path_str);
+        let bindings_path = settings_dir.join("discord-bindings.json");
+        let runtime_dir = settings_dir.join("discord-runtime");
+        if discord_runtime_activation_allowed(
+            discord_quarantined,
+            &runtime_dir,
+            discord_repair_bypass,
+        ) {
+            if let Ok(metadata) = std::fs::metadata(&bindings_path) {
+                if metadata.is_file() && metadata.len() <= 512 * 1024 {
+                    if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
+                        let generation =
+                            serde_json::from_str::<serde_json::Value>(&bindings_json)
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .get("generation")
+                                        .and_then(|item| item.as_u64())
+                                });
+                        if let Some(generation) = generation {
+                            if let Ok(token) = read_discord_bot_token() {
+                                if validate_discord_token(&token).is_ok() {
+                                    std::fs::create_dir_all(&runtime_dir).map_err(|_| {
+                                        "discord_runtime_dir_unavailable".to_string()
+                                    })?;
+                                    let generation = generation.to_string();
+                                    let authority_path = runtime_dir.join("authority.json");
+                                    let authority = serde_json::json!({
+                                        "version": 1,
+                                        "generation": generation.clone(),
+                                    });
+                                    let authority_bytes = serde_json::to_vec(&authority)
+                                        .map_err(|_| {
+                                            "discord_authority_invalid".to_string()
+                                        })?;
+                                    issue_discord_runtime_authority(
+                                        discord_quarantined,
+                                        || {
+                                            write_owner_only_atomic(
                                                 &authority_path,
-                                            );
-                                            cmd.env(
-                                                "NAIA_DISCORD_DEDUPE_PATH",
-                                                runtime_dir.join("dedupe.json"),
-                                            );
-                                            cmd.env(
-                                                "NAIA_DISCORD_INBOX_PATH",
-                                                runtime_dir.join("inbox.json"),
-                                            );
-                                            discord_runtime_cleanup = Some(runtime_dir.clone());
-                                            discord_token_frame = Some(token);
-                                        }
-                                    }
+                                                &authority_bytes,
+                                            )
+                                        },
+                                        || {
+                                            quarantine_discord_runtime_files(&runtime_dir)
+                                        },
+                                    )?;
+                                    cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
+                                    cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
+                                    cmd.env("NAIA_DISCORD_GENERATION", &generation);
+                                    cmd.env(
+                                        "NAIA_DISCORD_STATUS_PATH",
+                                        runtime_dir.join("status.json"),
+                                    );
+                                    cmd.env(
+                                        "NAIA_DISCORD_AUTHORITY_PATH",
+                                        &authority_path,
+                                    );
+                                    cmd.env(
+                                        "NAIA_DISCORD_DEDUPE_PATH",
+                                        runtime_dir.join("dedupe.json"),
+                                    );
+                                    cmd.env(
+                                        "NAIA_DISCORD_INBOX_PATH",
+                                        runtime_dir.join("inbox.json"),
+                                    );
+                                    discord_runtime_cleanup = Some(runtime_dir.clone());
+                                    discord_token_frame = Some(token);
                                 }
                             }
                         }
                     }
                 }
-                log_verbose(&format!(
-                    "[Naia] agent NAIA_ADK_PATH={} NAIA_SETTINGS_DIR={}",
-                    adk_path_str,
-                    settings_dir.display()
-                ));
             }
         }
+        log_verbose(&format!(
+            "[Naia] agent NAIA_ADK_PATH={} NAIA_SETTINGS_DIR={}",
+            adk_path_str,
+            settings_dir.display()
+        ));
     }
 
     #[cfg(windows)]
@@ -1284,22 +1335,22 @@ fn spawn_agent_core(
             );
         }
     };
-    let mut spawned = SpawnedAgentChild::new(child, discord_runtime_armed);
+    let discord_cleanup = discord_runtime_cleanup
+        .as_ref()
+        .map(|runtime| DiscordSpawnCleanup {
+            runtime: runtime.clone(),
+            quarantined: Arc::clone(discord_quarantined),
+        });
+    let mut spawned = SpawnedAgentChild::new(child, discord_cleanup);
 
     if let Some(frame) = discord_token_frame {
         let Some(mut stdin) = spawned.child_mut().stdin.take() else {
-            return fail_discord_agent_startup(
+            return fail_spawned_discord_agent_startup(
                 "discord_token_pipe_unavailable".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                || terminate_and_reap_discord_child(spawned.child_mut()),
-                || {
-                    quarantine_discord_runtime_files(
-                        discord_runtime_cleanup
-                            .as_deref()
-                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
-                    )
-                },
+                discord_runtime_cleanup.as_deref(),
+                &mut spawned,
             );
         };
         let write_result = stdin
@@ -1307,18 +1358,12 @@ fn spawn_agent_core(
             .and_then(|_| stdin.flush());
         drop(stdin);
         if write_result.is_err() {
-            return fail_discord_agent_startup(
+            return fail_spawned_discord_agent_startup(
                 "discord_token_pipe_failed".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                || terminate_and_reap_discord_child(spawned.child_mut()),
-                || {
-                    quarantine_discord_runtime_files(
-                        discord_runtime_cleanup
-                            .as_deref()
-                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
-                    )
-                },
+                discord_runtime_cleanup.as_deref(),
+                &mut spawned,
             );
         }
     }
@@ -1327,18 +1372,12 @@ fn spawn_agent_core(
     let stdout = match spawned.child_mut().stdout.take() {
         Some(stdout) => stdout,
         None => {
-            return fail_discord_agent_startup(
+            return fail_spawned_discord_agent_startup(
                 "Failed to get agent stdout".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                || terminate_and_reap_discord_child(spawned.child_mut()),
-                || {
-                    quarantine_discord_runtime_files(
-                        discord_runtime_cleanup
-                            .as_deref()
-                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
-                    )
-                },
+                discord_runtime_cleanup.as_deref(),
+                &mut spawned,
             );
         }
     };
@@ -1366,28 +1405,19 @@ fn spawn_agent_core(
     let addr = match addr_rx.recv_timeout(std::time::Duration::from_secs(20)) {
         Ok(addr) => addr,
         Err(_) => {
-            return fail_discord_agent_startup(
+            return fail_spawned_discord_agent_startup(
                 "agent gRPC addr handshake timeout".to_string(),
                 discord_runtime_armed,
                 discord_quarantined,
-                || terminate_and_reap_discord_child(spawned.child_mut()),
-                || {
-                    quarantine_discord_runtime_files(
-                        discord_runtime_cleanup
-                            .as_deref()
-                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
-                    )
-                },
+                discord_runtime_cleanup.as_deref(),
+                &mut spawned,
             );
         }
     };
     log_both(&format!("[Naia] agent-core gRPC @{}", addr));
 
     // adk_path (SetWorkspace ?? ??env(NAIA_ADK_PATH) ? ?숈씪 異쒖쿂(~/.naia/adk-path).
-    let adk_path = dirs::home_dir()
-        .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
+    let adk_path = spawn_adk_path.unwrap_or_default();
 
     // 硫붿떆吏 梨꾨꼸: send_to_agent(sync) ??dispatcher task(async, gRPC ?대씪 ?뚯쑀). nested runtime ?뚰뵾.
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -2492,17 +2522,75 @@ where
     K: FnOnce() -> Result<(), String>,
     Q: FnOnce() -> Result<(), String>,
 {
-    if !discord_runtime_armed {
-        return Err(startup_error);
+    if discord_runtime_armed {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
     }
-    quarantined.store(true, std::sync::atomic::Ordering::Release);
     let terminate_result = terminate_child();
-    let quarantine_result = quarantine_runtime();
-    if terminate_result.is_err() || quarantine_result.is_err() {
+    let quarantine_result = if discord_runtime_armed {
+        quarantine_runtime()
+    } else {
+        Ok(())
+    };
+    finalize_discord_startup_failure(
+        startup_error,
+        discord_runtime_armed,
+        quarantined,
+        terminate_result.is_ok(),
+        quarantine_result.is_ok(),
+        |_, _| {},
+    )
+}
+
+fn finalize_discord_startup_failure<T, F>(
+    startup_error: String,
+    discord_runtime_armed: bool,
+    quarantined: &std::sync::atomic::AtomicBool,
+    child_reaped: bool,
+    runtime_quarantined: bool,
+    finish_ownership: F,
+) -> Result<T, String>
+where
+    F: FnOnce(bool, bool),
+{
+    if discord_runtime_armed {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+    }
+    finish_ownership(child_reaped, runtime_quarantined);
+    if discord_runtime_armed && (!child_reaped || !runtime_quarantined) {
         Err("discord_startup_quarantine_uncertain".to_string())
     } else {
         Err(startup_error)
     }
+}
+
+fn fail_spawned_discord_agent_startup<T>(
+    startup_error: String,
+    discord_runtime_armed: bool,
+    quarantined: &std::sync::atomic::AtomicBool,
+    runtime: Option<&std::path::Path>,
+    spawned: &mut SpawnedAgentChild,
+) -> Result<T, String> {
+    if discord_runtime_armed {
+        quarantined.store(true, std::sync::atomic::Ordering::Release);
+    }
+    let terminate_result = terminate_and_reap_discord_child(spawned.child_mut());
+    let quarantine_result = if discord_runtime_armed {
+        runtime
+            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())
+            .and_then(quarantine_discord_runtime_files)
+    } else {
+        Ok(())
+    };
+    finalize_discord_startup_failure(
+        startup_error,
+        discord_runtime_armed,
+        quarantined,
+        terminate_result.is_ok(),
+        quarantine_result.is_ok(),
+        |child_reaped, runtime_quarantined| {
+            spawned.finish_explicit_cleanup(child_reaped, runtime_quarantined);
+        },
+    )
 }
 
 fn clear_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), String> {
@@ -6625,16 +6713,21 @@ async fn init_naia_settings(adk_path: String) -> Result<(), String> {
 /// Called by setAdkPath() in adk-store.ts whenever the user sets or changes
 /// their workspace path.
 #[tauri::command]
-async fn write_naia_path_cache(adk_path: String) -> Result<(), String> {
-    if adk_path.is_empty() {
-        return Err("adk_path is empty".to_string());
-    }
-    let naia_dir = dirs::home_dir()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?
-        .join(".naia");
-    std::fs::create_dir_all(&naia_dir).map_err(|e| e.to_string())?;
-    std::fs::write(naia_dir.join("adk-path"), &adk_path).map_err(|e| e.to_string())?;
-    Ok(())
+async fn write_naia_path_cache(
+    adk_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        if adk_path.is_empty() {
+            return Err("adk_path is empty".to_string());
+        }
+        let naia_dir = dirs::home_dir()
+            .ok_or_else(|| "Cannot determine home directory".to_string())?
+            .join(".naia");
+        std::fs::create_dir_all(&naia_dir).map_err(|e| e.to_string())?;
+        std::fs::write(naia_dir.join("adk-path"), &adk_path).map_err(|e| e.to_string())?;
+        Ok(())
+    })
 }
 
 /// Copy bundled default assets (vrm-files, background, bgm-musics) from the app's
@@ -6968,7 +7061,7 @@ pub fn run() {
     builder.manage(AppState {
             agent: Mutex::new(None),
             discord_lifecycle: Mutex::new(()),
-            discord_quarantined: std::sync::atomic::AtomicBool::new(false),
+            discord_quarantined: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             discord_config_operation: tokio::sync::Mutex::new(()),
             discord_inbox_authorized_bindings:
                 tokio::sync::Mutex::new(None),
@@ -8587,6 +8680,140 @@ mod tests {
         );
         assert_eq!(terminate_calls.get(), 1);
         assert_eq!(post_spawn_cleanup_calls.get(), 1);
+    }
+
+    #[test]
+    fn spawn_adk_path_snapshot_is_reused_across_cache_interleaving() {
+        let cache = std::cell::RefCell::new(Some(" /workspace/a ".to_string()));
+        let snapshot = spawn_adk_path_snapshot_with(|| cache.borrow().clone()).unwrap();
+        *cache.borrow_mut() = Some("/workspace/b".to_string());
+
+        let settings_path = std::path::PathBuf::from(&snapshot).join("naia-settings");
+        let discord_runtime = settings_path.join("discord-runtime");
+        let dispatcher_path = snapshot.clone();
+
+        assert_eq!(snapshot, "/workspace/a");
+        assert_eq!(
+            discord_runtime,
+            std::path::PathBuf::from("/workspace/a/naia-settings/discord-runtime")
+        );
+        assert_eq!(dispatcher_path, "/workspace/a");
+        assert_eq!(cache.borrow().as_deref(), Some("/workspace/b"));
+    }
+
+    #[test]
+    fn path_cache_mutation_waits_for_spawn_lifecycle() {
+        let lifecycle = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let cache = std::sync::Arc::new(std::sync::Mutex::new("workspace-a".to_string()));
+        let (spawn_entered_tx, spawn_entered_rx) = std::sync::mpsc::channel();
+        let (release_spawn_tx, release_spawn_rx) = std::sync::mpsc::channel();
+        let spawn_lifecycle = lifecycle.clone();
+        let spawn = std::thread::spawn(move || {
+            with_discord_lifecycle(&spawn_lifecycle, || {
+                spawn_entered_tx.send(()).unwrap();
+                release_spawn_rx.recv().unwrap();
+            });
+        });
+        spawn_entered_rx.recv().unwrap();
+
+        let (write_done_tx, write_done_rx) = std::sync::mpsc::channel();
+        let write_lifecycle = lifecycle.clone();
+        let write_cache = cache.clone();
+        let writer = std::thread::spawn(move || {
+            with_discord_lifecycle(&write_lifecycle, || {
+                *write_cache.lock().unwrap() = "workspace-b".to_string();
+            });
+            write_done_tx.send(()).unwrap();
+        });
+        assert!(
+            write_done_rx
+                .recv_timeout(std::time::Duration::from_millis(20))
+                .is_err(),
+            "path cache mutation must not interleave with a spawn"
+        );
+        assert_eq!(cache.lock().unwrap().as_str(), "workspace-a");
+
+        release_spawn_tx.send(()).unwrap();
+        spawn.join().unwrap();
+        write_done_rx.recv().unwrap();
+        writer.join().unwrap();
+        assert_eq!(cache.lock().unwrap().as_str(), "workspace-b");
+    }
+
+    #[test]
+    fn discord_cleanup_timeout_transfers_ownership_without_double_cleanup() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let finish_calls = std::cell::Cell::new(0);
+        let handed_off = std::cell::Cell::new(None);
+        let result: Result<(), String> = finalize_discord_startup_failure(
+            "gRPC handshake failed".to_string(),
+            true,
+            &quarantined,
+            false,
+            true,
+            |child_reaped, runtime_quarantined| {
+                finish_calls.set(finish_calls.get() + 1);
+                handed_off.set(Some((child_reaped, runtime_quarantined)));
+            },
+        );
+
+        assert_eq!(
+            result,
+            Err("discord_startup_quarantine_uncertain".to_string())
+        );
+        assert_eq!(finish_calls.get(), 1);
+        assert_eq!(handed_off.get(), Some((false, true)));
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn discord_cleanup_success_disarms_drop_ownership_exactly_once() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let finish_calls = std::cell::Cell::new(0);
+        let result: Result<(), String> = finalize_discord_startup_failure(
+            "token pipe failed".to_string(),
+            true,
+            &quarantined,
+            true,
+            true,
+            |child_reaped, runtime_quarantined| {
+                finish_calls.set(finish_calls.get() + 1);
+                assert!(child_reaped);
+                assert!(runtime_quarantined);
+            },
+        );
+
+        assert_eq!(result, Err("token pipe failed".to_string()));
+        assert_eq!(finish_calls.get(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawned_agent_drop_is_nonblocking_and_uses_exact_runtime() {
+        let runtime = tempfile::tempdir().unwrap();
+        let quarantined = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let child = Command::new("sh")
+            .args(["-c", "exec sleep 30"])
+            .spawn()
+            .unwrap();
+        let spawned = SpawnedAgentChild::new(
+            child,
+            Some(DiscordSpawnCleanup {
+                runtime: runtime.path().to_path_buf(),
+                quarantined: quarantined.clone(),
+            }),
+        );
+
+        let started = std::time::Instant::now();
+        drop(spawned);
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "Drop must transfer process ownership without waiting for reap"
+        );
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+        assert!(runtime.path().join("quarantine.json").is_file());
+        assert!(runtime.path().join("authority.json").is_file());
     }
 
     #[test]
