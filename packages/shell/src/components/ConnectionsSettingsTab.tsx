@@ -88,7 +88,6 @@ export function ConnectionsSettingsTab() {
 	);
 	const refreshVersionRef = useRef(0);
 	const statusVersionRef = useRef(0);
-	const runtimeStatusRef = useRef<RuntimeStatus | null>(null);
 	const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 	const [participation, setParticipation] = useState<
 		Readonly<Record<string, Participation>>
@@ -193,6 +192,7 @@ export function ConnectionsSettingsTab() {
 		const refreshVersion = ++refreshVersionRef.current;
 		const statusVersion = ++statusVersionRef.current;
 		setState("checking");
+		setDiscovery(null);
 		setRuntimeErrorCode(null);
 		setDiscoveryErrorCode(null);
 		setSaved(false);
@@ -201,38 +201,22 @@ export function ConnectionsSettingsTab() {
 				invoke<RuntimeStatus>("discord_connection_status"),
 				invoke<BindingInput[]>("discord_binding_snapshot"),
 			]);
-			if (refreshVersionRef.current !== refreshVersion) return;
-			const runtimeIsCurrent = statusVersionRef.current === statusVersion;
-			const latestRuntime = runtimeStatusRef.current;
-			const matchesLatestRuntime =
-				latestRuntime === null ||
-				(latestRuntime.tokenConfigured === runtime.tokenConfigured &&
-					latestRuntime.generation === runtime.generation);
-			if (!runtimeIsCurrent && !matchesLatestRuntime) return;
-			if (runtimeIsCurrent) runtimeStatusRef.current = runtime;
+			if (
+				refreshVersionRef.current !== refreshVersion ||
+				statusVersionRef.current !== statusVersion
+			)
+				return;
 			if (!runtime.tokenConfigured) {
-				const currentRuntime = runtimeStatusRef.current;
-				if (
-					refreshVersionRef.current !== refreshVersion ||
-					(currentRuntime !== null &&
-						(currentRuntime.tokenConfigured !== runtime.tokenConfigured ||
-							currentRuntime.generation !== runtime.generation))
-				)
-					return;
 				restoreBindings(bindings);
-				setDiscovery(null);
 				setState("disconnected");
 				return;
 			}
 			const result = await invoke<DiscordDiscovery>(
 				"discord_discover_channels",
 			);
-			const currentRuntime = runtimeStatusRef.current;
 			if (
 				refreshVersionRef.current !== refreshVersion ||
-				(currentRuntime !== null &&
-					(currentRuntime.tokenConfigured !== runtime.tokenConfigured ||
-						currentRuntime.generation !== runtime.generation))
+				statusVersionRef.current !== statusVersion
 			)
 				return;
 			restoreBindings(bindings);
@@ -247,60 +231,27 @@ export function ConnectionsSettingsTab() {
 			} else {
 				setDiscoveryErrorCode(null);
 			}
-			if (statusVersionRef.current === statusVersion) {
-				setState(runtime.authoritative ? "connected" : "configured");
-				setRuntimeErrorCode(runtime.code ?? null);
-			}
+			setState(runtime.authoritative ? "connected" : "configured");
+			setRuntimeErrorCode(runtime.code ?? null);
 		} catch (error) {
-			if (statusVersionRef.current !== statusVersion) return;
-			setDiscovery(null);
+			if (
+				refreshVersionRef.current !== refreshVersion ||
+				statusVersionRef.current !== statusVersion
+			)
+				return;
 			setState("error");
 			setDiscoveryErrorCode(null);
 			setRuntimeErrorCode(String(error));
 		}
 	}, [restoreBindings]);
 
-	const refreshRuntimeStatus = useCallback(async () => {
-		const statusVersion = ++statusVersionRef.current;
-		try {
-			const runtime = await invoke<RuntimeStatus>("discord_connection_status");
-			if (statusVersionRef.current !== statusVersion) return;
-			const previousRuntime = runtimeStatusRef.current;
-			runtimeStatusRef.current = runtime;
-			if (
-				previousRuntime !== null &&
-				(previousRuntime.tokenConfigured !== runtime.tokenConfigured ||
-					previousRuntime.generation !== runtime.generation)
-			) {
-				void refresh();
-				return;
-			}
-			if (!runtime.tokenConfigured) {
-				setDiscovery(null);
-				setDiscoveryErrorCode(null);
-				setState("disconnected");
-				setRuntimeErrorCode(null);
-				return;
-			}
-			setState(runtime.authoritative ? "connected" : "configured");
-			setRuntimeErrorCode(runtime.code ?? null);
-		} catch (error) {
-			if (statusVersionRef.current !== statusVersion) return;
-			setState("error");
-			setRuntimeErrorCode(String(error));
-		}
-	}, [refresh]);
-
 	useEffect(() => {
 		void refresh();
-		const unlisten = listen(
-			"discord_status_changed",
-			() => void refreshRuntimeStatus(),
-		);
+		const unlisten = listen("discord_status_changed", () => void refresh());
 		return () => {
 			void unlisten.then((stop) => stop());
 		};
-	}, [refresh, refreshRuntimeStatus]);
+	}, [refresh]);
 
 	async function captureCredential() {
 		setRuntimeErrorCode(null);

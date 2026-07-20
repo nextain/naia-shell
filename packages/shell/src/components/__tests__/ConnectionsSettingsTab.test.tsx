@@ -349,6 +349,7 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 
 	it("does not let an older discovery refresh overwrite newer runtime status", async () => {
 		let statusReads = 0;
+		let discoveryReads = 0;
 		let resolveDiscovery!: (value: typeof discovery) => void;
 		const pendingDiscovery = new Promise<typeof discovery>((resolve) => {
 			resolveDiscovery = resolve;
@@ -363,7 +364,12 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 					authoritative: statusReads > 1,
 				});
 			}
-			if (command === "discord_discover_channels") return pendingDiscovery;
+			if (command === "discord_discover_channels") {
+				discoveryReads += 1;
+				return discoveryReads === 1
+					? pendingDiscovery
+					: Promise.resolve(discovery);
+			}
 			if (command === "discord_binding_snapshot") return Promise.resolve([]);
 			return Promise.resolve();
 		});
@@ -461,7 +467,97 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		);
 	});
 
-	it("reloads bindings when runtime generation changes during discovery", async () => {
+	it("loads the latest generation when a status event beats the initial snapshot", async () => {
+		const olderBinding = {
+			bindingId: "existing_general",
+			guildId: "200",
+			guildName: "Nextain",
+			channelId: "300",
+			channelName: "general",
+			allowedUserIds: ["666666"],
+			processingProfileRef: "default",
+			participation: "mentions",
+		};
+		const newerBinding = {
+			...olderBinding,
+			allowedUserIds: ["777777"],
+			participation: "all",
+		};
+		let statusReads = 0;
+		let bindingReads = 0;
+		let resolveInitialStatus!: (value: {
+			tokenConfigured: boolean;
+			generation: number;
+			state: string;
+			authoritative: boolean;
+		}) => void;
+		let resolveInitialBindings!: (value: (typeof olderBinding)[]) => void;
+		const pendingInitialStatus = new Promise<{
+			tokenConfigured: boolean;
+			generation: number;
+			state: string;
+			authoritative: boolean;
+		}>((resolve) => {
+			resolveInitialStatus = resolve;
+		});
+		const pendingInitialBindings = new Promise<(typeof olderBinding)[]>(
+			(resolve) => {
+				resolveInitialBindings = resolve;
+			},
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status") {
+				statusReads += 1;
+				return statusReads === 1
+					? pendingInitialStatus
+					: Promise.resolve({
+							tokenConfigured: true,
+							generation: 2,
+							state: "ready",
+							authoritative: true,
+						});
+			}
+			if (command === "discord_binding_snapshot") {
+				bindingReads += 1;
+				return bindingReads === 1
+					? pendingInitialBindings
+					: Promise.resolve([newerBinding]);
+			}
+			if (command === "discord_discover_channels")
+				return Promise.resolve(discovery);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await waitFor(() => {
+			expect(statusReads).toBe(1);
+			expect(bindingReads).toBe(1);
+		});
+		const listener = mockListen.mock.calls[0]?.[1] as (() => void) | undefined;
+		await act(async () => {
+			listener?.();
+		});
+
+		await screen.findByDisplayValue("777777");
+		expect(bindingReads).toBe(2);
+		expect(
+			screen.getByRole("combobox", { name: /Nextain.*general/ }),
+		).toHaveValue("all");
+
+		await act(async () => {
+			resolveInitialStatus({
+				tokenConfigured: true,
+				generation: 1,
+				state: "ready",
+				authoritative: true,
+			});
+			resolveInitialBindings([olderBinding]);
+		});
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(screen.getByDisplayValue("777777")).toBeDefined();
+	});
+
+	it("rejects old discovery before the replacement status resolves", async () => {
 		const olderBinding = {
 			bindingId: "existing_general",
 			guildId: "200",
@@ -481,18 +577,34 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		let bindingReads = 0;
 		let discoveryReads = 0;
 		let resolveOlderDiscovery!: (value: typeof discovery) => void;
+		let resolveNewerStatus!: (value: {
+			tokenConfigured: boolean;
+			generation: number;
+			state: string;
+			authoritative: boolean;
+		}) => void;
 		const pendingOlderDiscovery = new Promise<typeof discovery>((resolve) => {
 			resolveOlderDiscovery = resolve;
+		});
+		const pendingNewerStatus = new Promise<{
+			tokenConfigured: boolean;
+			generation: number;
+			state: string;
+			authoritative: boolean;
+		}>((resolve) => {
+			resolveNewerStatus = resolve;
 		});
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "discord_connection_status") {
 				statusReads += 1;
-				return Promise.resolve({
-					tokenConfigured: true,
-					generation: statusReads === 1 ? 1 : 2,
-					state: "ready",
-					authoritative: true,
-				});
+				return statusReads === 1
+					? Promise.resolve({
+							tokenConfigured: true,
+							generation: 1,
+							state: "ready",
+							authoritative: true,
+						})
+					: pendingNewerStatus;
 			}
 			if (command === "discord_binding_snapshot") {
 				bindingReads += 1;
@@ -517,16 +629,100 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 			listener?.();
 		});
 
+		await act(async () => {
+			resolveOlderDiscovery(discovery);
+		});
+		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		expect(screen.queryByDisplayValue("777777")).toBeNull();
+
+		await act(async () => {
+			resolveNewerStatus({
+				tokenConfigured: true,
+				generation: 2,
+				state: "ready",
+				authoritative: true,
+			});
+		});
 		await screen.findByDisplayValue("777777");
 		expect(bindingReads).toBe(2);
 		expect(
 			screen.getByRole("combobox", { name: /Nextain.*general/ }),
 		).toHaveValue("all");
+	});
+
+	it("removes stale save controls while event refresh data is pending", async () => {
+		const olderBinding = {
+			bindingId: "existing_general",
+			guildId: "200",
+			guildName: "Nextain",
+			channelId: "300",
+			channelName: "general",
+			allowedUserIds: ["666666"],
+			processingProfileRef: "default",
+			participation: "mentions",
+		};
+		const newerBinding = {
+			...olderBinding,
+			allowedUserIds: ["777777"],
+			participation: "all",
+		};
+		let bindingReads = 0;
+		let resolveNewerBindings!: (value: (typeof newerBinding)[]) => void;
+		const pendingNewerBindings = new Promise<(typeof newerBinding)[]>(
+			(resolve) => {
+				resolveNewerBindings = resolve;
+			},
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: true,
+					generation: bindingReads === 0 ? 1 : 2,
+					state: "ready",
+					authoritative: true,
+				});
+			if (command === "discord_binding_snapshot") {
+				bindingReads += 1;
+				return bindingReads === 1
+					? Promise.resolve([olderBinding])
+					: pendingNewerBindings;
+			}
+			if (command === "discord_discover_channels")
+				return Promise.resolve(discovery);
+			if (command === "discord_save_bindings") return Promise.resolve(128);
+			return Promise.resolve();
+		});
+
+		render(<ConnectionsSettingsTab />);
+		await screen.findByDisplayValue("666666");
+		const staleSave = screen.getByRole("button", {
+			name: /저장|Save|Apply/i,
+		});
+		const listener = mockListen.mock.calls[0]?.[1] as (() => void) | undefined;
+		await act(async () => {
+			listener?.();
+		});
+
+		expect(
+			screen.queryByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeNull();
+		fireEvent.click(staleSave);
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"discord_save_bindings",
+			expect.anything(),
+		);
 
 		await act(async () => {
-			resolveOlderDiscovery(discovery);
+			resolveNewerBindings([newerBinding]);
 		});
-		expect(screen.queryByDisplayValue("666666")).toBeNull();
+		await screen.findByDisplayValue("777777");
+		expect(
+			screen.getByRole("button", { name: /저장|Save|Apply/i }),
+		).toBeEnabled();
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"discord_save_bindings",
+			expect.anything(),
+		);
 		expect(screen.getByDisplayValue("777777")).toBeDefined();
 	});
 
