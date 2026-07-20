@@ -1209,11 +1209,21 @@ fn spawn_agent_core(
                                                 "version": 1,
                                                 "generation": generation.clone(),
                                             });
-                                            write_owner_only_atomic(
-                                                &authority_path,
-                                                &serde_json::to_vec(&authority).map_err(|_| {
+                                            let authority_bytes = serde_json::to_vec(&authority)
+                                                .map_err(|_| {
                                                     "discord_authority_invalid".to_string()
-                                                })?,
+                                                })?;
+                                            issue_discord_runtime_authority(
+                                                discord_quarantined,
+                                                || {
+                                                    write_owner_only_atomic(
+                                                        &authority_path,
+                                                        &authority_bytes,
+                                                    )
+                                                },
+                                                || {
+                                                    quarantine_discord_runtime_files(&runtime_dir)
+                                                },
                                             )?;
                                             cmd.env("NAIA_DISCORD_TOKEN_PIPE", "stdin");
                                             cmd.env("NAIA_DISCORD_BINDINGS_JSON", bindings_json);
@@ -2360,12 +2370,13 @@ fn revoke_discord_runtime_files(runtime: &std::path::Path) -> Result<(), String>
         "generation": "revoked",
     }))
     .map_err(|_| "discord_authority_invalid".to_string())?;
-    write_owner_only_atomic(&runtime.join("authority.json"), &tombstone)?;
-    match std::fs::remove_file(runtime.join("status.json")) {
+    let authority_result = write_owner_only_atomic(&runtime.join("authority.json"), &tombstone);
+    let status_result = match std::fs::remove_file(runtime.join("status.json")) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(_) => Err("discord_status_revoke_failed".to_string()),
-    }
+    };
+    authority_result.and(status_result)
 }
 
 fn discord_quarantine_marker_path(runtime: &std::path::Path) -> std::path::PathBuf {
@@ -2380,6 +2391,31 @@ fn write_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), Stri
     .map_err(|_| "discord_quarantine_marker_invalid".to_string())?;
     write_owner_only_atomic(&discord_quarantine_marker_path(runtime), &marker)
         .map_err(|_| "discord_quarantine_marker_write_failed".to_string())
+}
+
+fn quarantine_discord_runtime_files(runtime: &std::path::Path) -> Result<(), String> {
+    let marker_result = write_discord_quarantine_marker(runtime);
+    let revoke_result = revoke_discord_runtime_files(runtime);
+    marker_result.and(revoke_result)
+}
+
+fn issue_discord_runtime_authority<W, Q>(
+    quarantined: &std::sync::atomic::AtomicBool,
+    write_authority: W,
+    quarantine_runtime: Q,
+) -> Result<(), String>
+where
+    W: FnOnce() -> Result<(), String>,
+    Q: FnOnce() -> Result<(), String>,
+{
+    if write_authority().is_ok() {
+        return Ok(());
+    }
+    quarantined.store(true, std::sync::atomic::Ordering::Release);
+    match quarantine_runtime() {
+        Ok(()) => Err("discord_authority_write_failed".to_string()),
+        Err(_) => Err("discord_authority_write_quarantine_uncertain".to_string()),
+    }
 }
 
 fn clear_discord_quarantine_marker(runtime: &std::path::Path) -> Result<(), String> {
@@ -8381,6 +8417,48 @@ mod tests {
             dir.path(),
             true,
         ));
+    }
+
+    #[test]
+    fn discord_authority_partial_write_failure_latches_and_cleans_stale_status() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let authority_persisted = std::cell::Cell::new(false);
+        let stale_status_present = std::cell::Cell::new(true);
+        assert_eq!(
+            issue_discord_runtime_authority(
+                &quarantined,
+                || {
+                    authority_persisted.set(true);
+                    Err("parent fsync failed".to_string())
+                },
+                || {
+                    assert!(authority_persisted.get());
+                    stale_status_present.set(false);
+                    Ok(())
+                },
+            ),
+            Err("discord_authority_write_failed".to_string())
+        );
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+        assert!(!stale_status_present.get());
+
+        assert_eq!(
+            issue_discord_runtime_authority(
+                &quarantined,
+                || Err("write failed".to_string()),
+                || Err("tombstone durability failed".to_string()),
+            ),
+            Err("discord_authority_write_quarantine_uncertain".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_authority_revoke_removes_status_even_when_tombstone_write_fails() {
+        let runtime = tempfile::tempdir().unwrap();
+        std::fs::create_dir(runtime.path().join("authority.json")).unwrap();
+        std::fs::write(runtime.path().join("status.json"), b"stale ready").unwrap();
+        assert!(revoke_discord_runtime_files(runtime.path()).is_err());
+        assert!(!runtime.path().join("status.json").exists());
     }
 
     #[test]
