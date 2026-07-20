@@ -1032,6 +1032,44 @@ export function SettingsTab() {
 	const labSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const labBrowserVisibleRef = useRef(false);
 
+	// A profile can have been saved before its automatic slot wiring was
+	// available (or while the app was being restarted). Reconcile it once after
+	// login so an already-selected local profile does not silently keep an old
+	// cloud main model and leave the cascade stopped until the user changes the
+	// selector a second time.
+	const restoredLocalProfileRef = useRef<string>("");
+	useEffect(() => {
+		// `auto` only describes detected hardware. It is not an explicit request
+		// to replace the user's configured remote model on startup.
+		if (
+			!naiaKey ||
+			localGpuTier === "off" ||
+			localGpuTier === "auto"
+		)
+			return;
+		const key = `${localGpuTier}|${local8gFocus}`;
+		if (restoredLocalProfileRef.current === key) return;
+		restoredLocalProfileRef.current = key;
+
+		const staged = stageLocalSlots(localGpuTier, local8gFocus);
+		void warmLocalProfile(localGpuTier, local8gFocus, staged);
+		persistConfig({
+			localGpuTier,
+			local8gFocus,
+			avatarProvider: staged.avatar,
+			nvaModel: staged.nva || undefined,
+			ttsProvider: staged.tts,
+			vllmTtsHost: staged.ttsHost || undefined,
+			provider: staged.mainProvider,
+			model: staged.mainModel,
+			ollamaNumGpu:
+				staged.mainProvider === "ollama" && forceCpuNpuBrain(localGpuTier)
+					? 0
+					: undefined,
+			...(staged.tts === "naia-local-voice" ? { ttsEnabled: true } : {}),
+		});
+	}, [naiaKey, localGpuTier, local8gFocus]);
+
 	// Hide Chrome X11 embed while STT model modal is open
 	useEffect(() => {
 		if (sttModelModalOpen) {

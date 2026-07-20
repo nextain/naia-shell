@@ -302,6 +302,10 @@ struct AppState {
     agent: Mutex<Option<AgentProcess>>,
     bgm_server: Mutex<Option<BgmServerProcess>>,
     cascade: Mutex<Option<CascadeProcess>>,
+    /// Serializes asynchronous cascade starts. React dev remounts and repeated
+    /// settings events can otherwise both observe an empty `cascade` slot and
+    /// launch competing supervisors for the same :8901/:8902/:8910 ports.
+    cascade_start: tokio::sync::Mutex<()>,
     gateway: Mutex<Option<GatewayProcess>>,
     health_monitor_shutdown: Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
     /// Random state token for OAuth deep link CSRF protection.
@@ -939,9 +943,13 @@ fn sha256_file_hex(path: &std::path::Path) -> Result<String, String> {
 }
 
 fn validate_runtime_agent_script_override(agent_script: &str) -> Result<(), String> {
-    let expected = option_env!("NAIA_AGENT_PAIRED_SCRIPT")
-        .ok_or_else(|| "NAIA_AGENT_PAIRED_SCRIPT build evidence missing".to_string())?
-        .replace('\\', "/");
+    let expected_raw = option_env!("NAIA_AGENT_PAIRED_SCRIPT")
+        .ok_or_else(|| "NAIA_AGENT_PAIRED_SCRIPT build evidence missing".to_string())?;
+    // On Windows build.rs can embed a canonical extended-length path
+    // (`//?/D:/...`) while an environment override arrives as `D:/...`.
+    // Normalize both paths before comparing so a genuinely paired dev agent is
+    // not rejected merely for its Windows path spelling.
+    let expected = normalize_paired_path(std::path::Path::new(expected_raw));
     let actual = normalize_paired_path(std::path::Path::new(agent_script));
     if actual != expected {
         return Err(format!(
@@ -2832,6 +2840,10 @@ async fn start_cascade(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
+    // Keep this guard until the spawned supervisor is stored below. A second
+    // IPC call then returns the same ready payload instead of cleaning the
+    // first launch's child services out from underneath it.
+    let _start_guard = state.cascade_start.lock().await;
     {
         let mut guard = lock_or_recover(&state.cascade, "cascade");
         if let Some(c) = guard.as_mut() {
@@ -2848,6 +2860,12 @@ async fn start_cascade(
         .ok_or_else(|| "adk path not set (naia-settings ?뚰겕?ㅽ럹?댁뒪 誘몄꽕??".to_string())?;
     // ?꾨쿋?? 踰덈뱾??loader(resource_dir) ?곗꽑 ???몃? adk 泥댄겕?꾩썐 誘몄쓽議?
     let loader_dir = resolve_cascade_loader_dir(&app, &adk_path);
+
+    // A prior interrupted loader can leave its :8901/:8902/:8910 children
+    // alive even when no supervisor is held in AppState. Clean those exact
+    // cascade command lines before a new 4060 profile launch, otherwise the
+    // loader reports ready with only a stale TTS process still bound.
+    platform::kill_stale_cascade();
 
     let proc = tokio::task::spawn_blocking(move || {
         let vram = detect_vram_gb_blocking();
@@ -3576,7 +3594,20 @@ async fn read_naia_config(adk_path: String) -> Result<String, String> {
 async fn write_naia_config(adk_path: String, json: String) -> Result<(), String> {
     let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())
+    std::fs::write(dir.join("config.json"), json).map_err(|e| e.to_string())?;
+    // The paired agent treats processing.json as a strict trust boundary for
+    // live settings reload. A fresh standalone install has no policies yet,
+    // so seed the valid empty policy rather than letting every model change
+    // report `loaded=false` until a separate feature happens to create it.
+    let processing = dir.join("processing.json");
+    if !processing.exists() {
+        std::fs::write(
+            processing,
+            "{\n  \"version\": 1,\n  \"profiles\": [],\n  \"consents\": []\n}\n",
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Read `{adk_path}/naia-settings/ui-config.json` (?뚰겕?ㅽ럹?댁뒪蹂?UI ?뺤껜????VRM/諛곌꼍/BGM).
@@ -4551,6 +4582,7 @@ pub fn run() {
             agent: Mutex::new(None),
             bgm_server: Mutex::new(None),
             cascade: Mutex::new(None),
+            cascade_start: tokio::sync::Mutex::new(()),
             gateway: Mutex::new(None),
             health_monitor_shutdown: Mutex::new(None),
             oauth_state: Arc::new(Mutex::new(None)),

@@ -490,6 +490,41 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.nvaModel).toBeTruthy();
 	});
 
+	it("restores an explicitly saved 8GB profile as CPU/NPU brain plus local cascade", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				localGpuTier: "laptop-4060-8g",
+				local8gFocus: "llm",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
+			if (cmd === "start_cascade") {
+				return Promise.resolve(
+					JSON.stringify({ facade_port: 8910, services: [] }),
+				);
+			}
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+
+		await vi.waitFor(() => {
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved.provider).toBe("ollama");
+			expect(saved.model).toBe("dna3:latest");
+			expect(saved.ollamaNumGpu).toBe(0);
+			expect(saved.ttsProvider).toBe("naia-local-voice");
+			expect(saved.vllmTtsHost).toBe("http://localhost:8910");
+			expect(saved.avatarProvider).toBe("naia-video-avatar");
+			expect(mockInvoke).toHaveBeenCalledWith("start_cascade");
+		});
+	});
+
 	it("renders S-SLOT gate + 3 groups (Brain/Voice/Avatar) without moving canonical controls", async () => {
 		localStorage.setItem(
 			"naia-config",

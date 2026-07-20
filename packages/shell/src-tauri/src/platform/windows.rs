@@ -21,6 +21,26 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     alive
 }
 
+/// A PID alone is not a process identity: Windows can reuse it after a crash.
+/// Verify that a PID-file entry still belongs to the component before killing
+/// it, otherwise a stale cascade PID can terminate a newly started shell.
+fn pid_matches_component(pid: u32, component: &str) -> bool {
+    let command_pattern = match component {
+        "cascade" => "*loader*launch*",
+        "bgm-server" => "*bgm-server-bin.js*",
+        "node-host" => "*node*host*",
+        "gateway" => "*naia*gateway*",
+        _ => return false,
+    };
+    let script = format!(
+        "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}'; if ($null -ne $p -and $p.CommandLine -like '{command_pattern}') {{ exit 0 }}; exit 1"
+    );
+    let mut cmd = Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+    hide_console(&mut cmd);
+    cmd.status().map(|status| status.success()).unwrap_or(false)
+}
+
 /// Suppress the visible console window that GUI-spawned processes would otherwise show.
 pub(crate) fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
@@ -61,7 +81,10 @@ pub(crate) fn kill_stale_cascade() {
     cmd.args([
         "-NoProfile", "-NonInteractive", "-Command",
         // output_cascade facade (uvicorn ...output_cascade.app:app) + loader (python -m loader launch).
-        "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*output_cascade.app:app*' -or $_.CommandLine -like '*loader*launch*' -or $_.CommandLine -like '*trt_native_stream_server*' -or $_.CommandLine -like '*voxcpm2_service*' } | ForEach-Object { $_.Terminate() }",
+        // The 4060 8GB profile uses naia-labs' int8 `tts_server.py` on :8901,
+        // not the legacy `voxcpm2_service`. Include it so a force-killed
+        // supervisor cannot leave GPU-backed TTS blocking the next profile start.
+        "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*output_cascade.app:app*' -or $_.CommandLine -like '*loader*launch*' -or $_.CommandLine -like '*trt_native_stream_server*' -or $_.CommandLine -like '*voxcpm2_service*' -or $_.CommandLine -like '*naia-labs*tts_server.py*' } | ForEach-Object { $_.Terminate() }",
     ]);
     hide_console(&mut cmd);
     let _ = cmd.output();
@@ -74,6 +97,14 @@ pub(crate) fn cleanup_orphan_processes() {
     for component in &["gateway", "node-host", "bgm-server", "cascade"] {
         if let Some(pid) = crate::read_pid_file(component) {
             if is_pid_alive(pid) {
+                if !pid_matches_component(pid, component) {
+                    crate::log_verbose(&format!(
+                        "[Naia] Ignoring reused PID {} from stale {} PID file",
+                        pid, component
+                    ));
+                    crate::remove_pid_file(component);
+                    continue;
+                }
                 crate::log_verbose(&format!(
                     "[Naia] Orphan {} found (PID {}) — terminating",
                     component, pid

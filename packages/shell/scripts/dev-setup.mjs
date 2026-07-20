@@ -57,15 +57,19 @@ function killStale() {
 		} else {
 			// Windows: vite(1420)=node 라 naia-shell.exe kill 로는 안 잡힘 → 좀비 vite 가 포트 점유 시
 			// 다음 dev 가 "Port 1420 is already in use" 로 죽는다. netstat 로 LISTENING PID 만 정밀 정리.
-			const out = execSync("netstat -ano -p tcp", { encoding: "utf8" });
-			const pids = new Set();
-			for (const line of out.split("\n")) {
-				if (/:1420\s/.test(line) && /LISTENING/i.test(line)) {
-					const cols = line.trim().split(/\s+/);
-					const pid = cols[cols.length - 1];
-					if (pid && pid !== "0") pids.add(pid);
-				}
-			}
+			// netstat misses the IPv6 ::1 listener in some Windows shells. Ask
+			// the networking cmdlet directly so an orphaned Vite never blocks
+			// the next `tauri:dev` run with a false "Port 1420 in use" error.
+			const out = execSync(
+				'powershell -NoProfile -NonInteractive -Command "Get-NetTCPConnection -State Listen -LocalPort 1420 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"',
+				{ encoding: "utf8" },
+			);
+			const pids = new Set(
+				out
+					.split(/\s+/)
+					.map((pid) => pid.trim())
+					.filter((pid) => /^\d+$/.test(pid) && pid !== "0"),
+			);
 			for (const pid of pids) execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: "ignore" });
 		}
 	} catch {
@@ -81,7 +85,10 @@ function tscBuild(dir, label) {
 	}
 	console.log(`[dev-setup] ${label} tsc 빌드...`);
 	try {
-		execSync("npx tsc -p tsconfig.json", { cwd: dir, stdio: "inherit" });
+		const tsconfig = existsSync(resolve(dir, "tsconfig.build.json"))
+			? "tsconfig.build.json"
+			: "tsconfig.json";
+		execSync(`npx tsc -p ${tsconfig}`, { cwd: dir, stdio: "inherit" });
 	} catch {
 		// tsc 비치명 타입오류 — old dev-setup 정책: dist 있으면 계속(dev 차단 방지).
 		console.log(`[dev-setup] ${label} tsc 타입오류 — dist 있으면 계속`);
