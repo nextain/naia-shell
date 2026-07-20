@@ -30,7 +30,7 @@ import { dirname, resolve } from "node:path";
 
 const SHELL = process.cwd(); // packages/shell
 const STAGE = resolve(SHELL, "src-tauri/agent");
-const REQUIRED_AGENT_COMMIT = "0a6b8cce70d8cc11f04ab9eaa803ba39d55465da";
+const REQUIRED_AGENT_COMMIT = "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5";
 const REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a";
 
 function die(message) {
