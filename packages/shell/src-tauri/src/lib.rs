@@ -3255,6 +3255,21 @@ where
     }
 }
 
+fn classify_agent_shutdown_ack(
+    result: Result<Result<(), String>, std::sync::mpsc::RecvTimeoutError>,
+) -> Result<(), String> {
+    match result {
+        Ok(result) => result,
+        // The request may already be accepted while only its ACK is delayed
+        // or lost. The caller must observe the child for the graceful deadline
+        // before escalating.
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Ok(()),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("agent_graceful_shutdown_dispatch_failed".to_string())
+        }
+    }
+}
+
 fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), String> {
     let dispatcher = process.shutdown_tx.clone();
     let nonce = process
@@ -3274,9 +3289,9 @@ fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), St
                     result: result_tx,
                 })
                 .map_err(|_| "agent_graceful_shutdown_dispatch_failed".to_string())?;
-            result_rx
-                .recv_timeout(std::time::Duration::from_secs(3))
-                .map_err(|_| "agent_graceful_shutdown_ack_timeout".to_string())?
+            classify_agent_shutdown_ack(
+                result_rx.recv_timeout(std::time::Duration::from_secs(3)),
+            )
         },
         // Agent bounds Discord drain at 20s and memory flush at 8s, with a
         // 30s process watchdog. Leave both phases room while still escalating
@@ -9045,6 +9060,26 @@ mod tests {
         assert_eq!(result, Ok(()));
         assert_eq!(child.terminate_calls, 1);
         assert_eq!(child.exit_checks, 8);
+    }
+
+    #[test]
+    fn agent_restart_treats_lost_ack_as_uncertain_acceptance() {
+        assert_eq!(
+            classify_agent_shutdown_ack(Err(
+                std::sync::mpsc::RecvTimeoutError::Timeout
+            )),
+            Ok(())
+        );
+        assert_eq!(
+            classify_agent_shutdown_ack(Err(
+                std::sync::mpsc::RecvTimeoutError::Disconnected
+            )),
+            Err("agent_graceful_shutdown_dispatch_failed".to_string())
+        );
+        assert_eq!(
+            classify_agent_shutdown_ack(Ok(Err("unauthenticated".to_string()))),
+            Err("unauthenticated".to_string())
+        );
     }
 
     #[test]
