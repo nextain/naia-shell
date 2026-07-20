@@ -23,8 +23,10 @@
   `be78b852ca9c6ba8e1bccbd795ac4e26e2864911`
 - Agent V-model evidence HEAD:
   `5f8ff165837594f5f5b100f8938ab109a293babc`
-- Reviewed Shell implementation/test HEAD:
+- Shell strengthened-test commit:
   `c756a9c9feed4be38c7592a5e33f8c4d11ccc930`
+- Reviewed Shell production HEAD:
+  `9d632f1fae648b088954e6809f00023bceef5953`
 - Paired proto SHA-256:
   `4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa`
 - Live Discord and real OS credential-store acceptance remain explicit
