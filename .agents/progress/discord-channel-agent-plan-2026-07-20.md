@@ -15,27 +15,29 @@
 
 ## Execution status
 
-- Automated implementation is complete; final stage convergence was reopened
-  after the native CAS production hardening and integration-artifact findings.
+- Automated implementation is complete; final stage convergence is reopened
+  after an adversarial review found that forced child termination bypassed
+  Discord in-flight drain. The new fixed snapshot must reconverge from zero.
 - Paired Agent runtime commit:
-  `cd6b76310eac73df2a90635fd1bedc9c42751b6d`
+  `5f6dd7dd0a71850de8e33a757eefe762ca8f96cc`
 - Agent test-evidence commit:
-  `be78b852ca9c6ba8e1bccbd795ac4e26e2864911`
+  `cdd2e76b9ba88fe712068f2c1357714f6e0c2f63`
 - Agent V-model evidence HEAD:
-  `5f8ff165837594f5f5b100f8938ab109a293babc`
+  `560157dd0e07f8d3b8d8c4988a65514572a628fb`
 - Shell strengthened-test commit:
-  `c756a9c9feed4be38c7592a5e33f8c4d11ccc930`
+  `841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac`
 - Reviewed Shell production HEAD:
-  `732f31b876439487e7c900158b51c05f0dfc4c49`
+  `841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac`
 - Paired proto SHA-256:
-  `4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa`
+  `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
 - Live Discord and real OS credential-store acceptance remain explicit
   operator gates and are not represented as automated passes.
 - The original DEVELOPMENT gate had three consecutive CLEAN reviews before the
   CAS hardening. After test-strengthening findings were fixed, the TEST gate
   independently reconverged with two consecutive CLEAN reviews on the
   Agent/Shell evidence HEADs above. DEVELOPMENT and INTEGRATION are explicitly
-  rerun on the final production/evidence snapshots.
+  rerun on the final production/evidence snapshots. Current Shell native suite
+  is 152/152 and the paired wire suite is 9/9.
 
 ## Outcome
 

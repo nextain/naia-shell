@@ -23,7 +23,7 @@ area = core(헥사고날 코어 @nextain/naia-os-core) / shell(packages/shell) /
 | SPEC-006 | UC-001 | **UC1 ChatService gRPC** — startTurn/cancel/deliverChunk + chat-bridge + shell-compat(makeShellChatService) + 도구/승인 페이로드 포워딩. ports/uc1·app/chat·adapters | core | Done(graft+e2e) | TEST-F-006 |
 | SPEC-007 | UC-012 | **UC12 OnboardingController** — submit/assets/startNaiaAuth/onNaiaAuthCallback/complete/completeWith(§D 신규계약)/update. app/control/onboarding | core | In-progress(completeWith graft 완료, 나이아계정 OAuth 흐름 graft 미연결) | TEST-F-007 |
 | SPEC-008 | UC-002 | **V2 음성** — SensoryPort/ExpressionPort/VoiceProviderPort + os-local 어댑터(AudioPlayer/MicCapture/STT/avatar). ports/v2·domain/voice | core | Done(os-local 이식, external WS=루크머신) | TEST-F-008 |
-| SPEC-009 | UC-014, UC-015 | **Shell Discord 연결·Inbox** — native secret capture/키체인, discovery·allow-list CAS, agent token pipe/revoke/reap, 다중 채널 저장소·반응형 Channels UI | shell | Done | TEST-F-009 |
+| SPEC-009 | UC-014, UC-015 | **Shell Discord 연결·Inbox** — native secret capture/키체인, discovery·allow-list CAS, agent token pipe, nonce 인증 graceful shutdown→bounded exit wait→force fallback, revoke/reap·lease 소유권, 다중 채널 저장소·반응형 Channels UI | shell | Done | TEST-F-009 |
 | SPEC-010 | UC-016 | **Agent Discord Gateway runtime** — 허용목록 ingress, outbound reply, reconnect/rate-limit/cancel, durable dedupe, lifecycle epoch·generation 권한 | agent | Done | TEST-F-010 |
 
 ## 비고

@@ -28,6 +28,18 @@
         "naia-agent/src/main/adapters/protocol.ts",
         "naia-agent/src/main/domain/chat.ts"
       ]
+    },
+    {
+      "at": "2026-07-21 06:29 KST",
+      "paths": [
+        "naia-agent/src/main/adapters/grpc/naia_agent.proto",
+        "naia-agent/src/main/adapters/grpc/grpc-server.ts",
+        "naia-agent/src/main/adapters/discord-channel.ts",
+        "naia-agent/scripts/builds/agent-stdio-entry.mjs",
+        "naia-shell/packages/shell/src-tauri/src/agent_grpc.rs",
+        "naia-shell/packages/shell/src-tauri/src/lib.rs"
+      ],
+      "reason": "adversarial HIGH: forced restart bypassed Discord in-flight drain"
     }
   ],
   "lock": {
@@ -56,11 +68,11 @@
     "result": "No radio profile/activity runtime file was modified by the Discord lane; registry conflicts require ordinary integration resolution."
   },
   "superseding_handoff": {
-    "agent_runtime": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
-    "agent_test_evidence": "be78b852ca9c6ba8e1bccbd795ac4e26e2864911",
-    "agent_v_model_evidence": "5f8ff165837594f5f5b100f8938ab109a293babc",
-    "shell_strengthened_test": "c756a9c9feed4be38c7592a5e33f8c4d11ccc930",
-    "shell_production": "732f31b876439487e7c900158b51c05f0dfc4c49",
-    "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"
+    "agent_runtime": "5f6dd7dd0a71850de8e33a757eefe762ca8f96cc",
+    "agent_test_evidence": "cdd2e76b9ba88fe712068f2c1357714f6e0c2f63",
+    "agent_v_model_evidence": "560157dd0e07f8d3b8d8c4988a65514572a628fb",
+    "shell_strengthened_test": "841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac",
+    "shell_production": "841f67b5d9ffe44bb89f5ba7ca62f5d0a7bc09ac",
+    "proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"
   }
 }
