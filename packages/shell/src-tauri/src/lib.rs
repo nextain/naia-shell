@@ -365,6 +365,7 @@ impl Drop for PendingDiscordReaper {
     }
 }
 
+#[cfg(test)]
 fn run_pending_discord_reaper<R, Q>(
     pending: PendingDiscordReaper,
     reap_child: R,
@@ -378,37 +379,149 @@ fn run_pending_discord_reaper<R, Q>(
     drop(pending);
 }
 
-fn reap_discord_child_in_background(child: &mut Child) {
-    let _ = child.kill();
-    while child.wait().is_err() {
-        std::thread::sleep(std::time::Duration::from_millis(10));
+fn confirm_background_reap_with<W>(mut wait: W) -> bool
+where
+    W: FnMut() -> std::io::Result<()>,
+{
+    loop {
+        match wait() {
+            Ok(()) => return true,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return false,
+        }
     }
 }
 
+fn reap_discord_child_in_background(child: &mut Child) -> bool {
+    let _ = child.kill();
+    confirm_background_reap_with(|| child.wait().map(|_| ()))
+}
+
+struct DiscordReaperOwnership {
+    child: Option<Child>,
+    cleanup: Option<DiscordSpawnCleanup>,
+    _pending: Option<PendingDiscordReaper>,
+}
+
+impl DiscordReaperOwnership {
+    fn retry_cleanup(&mut self) -> bool {
+        let Some(cleanup) = self.cleanup.take() else {
+            return true;
+        };
+        cleanup
+            .quarantined
+            .store(true, std::sync::atomic::Ordering::Release);
+        if quarantine_discord_runtime_files(&cleanup.runtime).is_ok() {
+            true
+        } else {
+            self.cleanup = Some(cleanup);
+            false
+        }
+    }
+}
+
+type DiscordReaperContainer = Arc<Mutex<Option<DiscordReaperOwnership>>>;
+type DiscordReaperTask = Box<dyn FnOnce() + Send + 'static>;
+
+fn finish_owned_discord_reaper<T>(
+    ownership: T,
+    confirmed: bool,
+    diagnostic: &'static str,
+) {
+    if confirmed {
+        drop(ownership);
+    } else {
+        log_both(&format!("[Naia] {diagnostic}"));
+        std::mem::forget(ownership);
+    }
+}
+
+fn take_discord_reaper_ownership(
+    container: &DiscordReaperContainer,
+) -> DiscordReaperOwnership {
+    lock_or_recover(container, "discord_reaper_ownership")
+        .take()
+        .expect("reaper ownership must be present")
+}
+
+fn run_background_discord_reaper(container: DiscordReaperContainer) {
+    let mut ownership = take_discord_reaper_ownership(&container);
+    let child_reaped = ownership
+        .child
+        .as_mut()
+        .map(reap_discord_child_in_background)
+        .unwrap_or(true);
+    if child_reaped {
+        ownership.child = None;
+    }
+    let cleanup_confirmed = ownership.retry_cleanup();
+    finish_owned_discord_reaper(
+        ownership,
+        child_reaped && cleanup_confirmed,
+        "discord_reaper_wait_or_cleanup_unconfirmed_pending",
+    );
+}
+
+fn spawn_discord_reaper_task_with<S>(
+    container: &DiscordReaperContainer,
+    spawn_task: S,
+) -> Result<(), String>
+where
+    S: FnOnce(DiscordReaperTask) -> Result<(), String>,
+{
+    let thread_container = Arc::clone(container);
+    spawn_task(Box::new(move || {
+        run_background_discord_reaper(thread_container);
+    }))
+}
+
+fn recover_failed_discord_reaper_handoff_with<T>(
+    container: DiscordReaperContainer,
+    terminate_child: T,
+) where
+    T: FnOnce(&mut Child) -> Result<(), String>,
+{
+    let mut ownership = take_discord_reaper_ownership(&container);
+    let child_reaped = ownership
+        .child
+        .as_mut()
+        .map(terminate_child)
+        .transpose()
+        .is_ok();
+    if child_reaped {
+        ownership.child = None;
+    }
+    let cleanup_confirmed = ownership.retry_cleanup();
+    finish_owned_discord_reaper(
+        ownership,
+        child_reaped && cleanup_confirmed,
+        "discord_reaper_thread_spawn_failed_pending",
+    );
+}
+
 fn spawn_background_discord_reaper(
-    mut child: Option<Child>,
+    child: Option<Child>,
     cleanup: Option<DiscordSpawnCleanup>,
     pending_reapers: Arc<std::sync::atomic::AtomicUsize>,
 ) {
-    let pending = PendingDiscordReaper::begin(pending_reapers);
-    std::thread::spawn(move || {
-        run_pending_discord_reaper(
-            pending,
-            || {
-                if let Some(child) = child.as_mut() {
-                    reap_discord_child_in_background(child);
-                }
-            },
-            || {
-                if let Some(cleanup) = cleanup {
-                    cleanup
-                        .quarantined
-                        .store(true, std::sync::atomic::Ordering::Release);
-                    let _ = quarantine_discord_runtime_files(&cleanup.runtime);
-                }
-            },
-        );
+    let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
+        child,
+        cleanup,
+        _pending: Some(PendingDiscordReaper::begin(pending_reapers)),
+    })));
+    let spawn_result = spawn_discord_reaper_task_with(&container, |task| {
+        std::thread::Builder::new()
+            .name("naia-discord-reaper".to_string())
+            .spawn(move || task())
+            .map(|_| ())
+            .map_err(|_| "discord_reaper_thread_spawn_failed".to_string())
     });
+    if spawn_result.is_err() {
+        log_both("[Naia] discord_reaper_thread_spawn_failed_fallback");
+        recover_failed_discord_reaper_handoff_with(container, |child| {
+            terminate_and_reap_discord_child(child)
+        });
+    }
 }
 
 // ?좑툘 Rust ??Child drop ???꾨줈?몄뒪瑜?二쎌씠吏 ?딆쓬 ??restart 濡?*guard 援먯껜 ????agent 媛 orphan(gRPC ?쒕쾭 ?붾쪟).
@@ -8929,6 +9042,94 @@ mod tests {
         assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 0);
         assert_eq!(ensure_no_pending_discord_reaper(&pending, false), Ok(()));
         assert_eq!(ensure_no_pending_discord_reaper(&pending, true), Ok(()));
+    }
+
+    fn exited_reaper_test_child() -> Child {
+        #[cfg(windows)]
+        let mut child = Command::new("cmd")
+            .args(["/C", "exit", "0"])
+            .spawn()
+            .unwrap();
+        #[cfg(not(windows))]
+        let mut child = Command::new("true").spawn().unwrap();
+        child.wait().unwrap();
+        child
+    }
+
+    #[test]
+    fn reaper_thread_spawn_failure_retains_unconfirmed_owner_and_pending_barrier() {
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
+            child: Some(exited_reaper_test_child()),
+            cleanup: None,
+            _pending: Some(PendingDiscordReaper::begin(pending.clone())),
+        })));
+
+        let spawn_result = spawn_discord_reaper_task_with(&container, |_task| {
+            Err("injected_thread_spawn_failure".to_string())
+        });
+        assert_eq!(
+            spawn_result,
+            Err("injected_thread_spawn_failure".to_string())
+        );
+        recover_failed_discord_reaper_handoff_with(container, |_child| {
+            Err("injected_reap_unconfirmed".to_string())
+        });
+
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
+        assert_eq!(
+            ensure_no_pending_discord_reaper(&pending, true),
+            Err("discord_agent_reap_pending".to_string())
+        );
+    }
+
+    #[test]
+    fn reaper_thread_spawn_failure_releases_confirmed_fallback() {
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let container = Arc::new(Mutex::new(Some(DiscordReaperOwnership {
+            child: Some(exited_reaper_test_child()),
+            cleanup: None,
+            _pending: Some(PendingDiscordReaper::begin(pending.clone())),
+        })));
+
+        assert!(spawn_discord_reaper_task_with(&container, |_task| {
+            Err("injected_thread_spawn_failure".to_string())
+        })
+        .is_err());
+        recover_failed_discord_reaper_handoff_with(container, |_child| Ok(()));
+
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 0);
+        assert_eq!(ensure_no_pending_discord_reaper(&pending, true), Ok(()));
+    }
+
+    #[test]
+    fn permanent_background_wait_error_retains_owner_and_pending() {
+        let wait_calls = std::cell::Cell::new(0);
+        let confirmed = confirm_background_reap_with(|| {
+            let call = wait_calls.get();
+            wait_calls.set(call + 1);
+            if call == 0 {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "injected interrupt",
+                ))
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "injected permanent wait failure",
+                ))
+            }
+        });
+        assert!(!confirmed);
+        assert_eq!(wait_calls.get(), 2);
+
+        let pending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        finish_owned_discord_reaper(
+            PendingDiscordReaper::begin(pending.clone()),
+            confirmed,
+            "injected_permanent_wait_failure_pending",
+        );
+        assert_eq!(pending.load(std::sync::atomic::Ordering::Acquire), 1);
     }
 
     #[test]
