@@ -3623,6 +3623,84 @@ struct DiscordCredentialStatus {
     code: &'static str,
 }
 
+#[derive(Debug)]
+enum DiscordRollbackFailure {
+    Restore,
+    Recovery,
+}
+
+fn discord_token_preimage() -> Result<Option<zeroize::Zeroizing<String>>, String> {
+    match read_discord_bot_token() {
+        Ok(value) => String::from_utf8(value.to_vec())
+            .map(zeroize::Zeroizing::new)
+            .map(Some)
+            .map_err(|_| "discord_credential_snapshot_failed".to_string()),
+        Err(error) if error == "token_not_found" => Ok(None),
+        Err(_) => Err("discord_credential_snapshot_failed".to_string()),
+    }
+}
+
+async fn rollback_discord_credential<W, WF, D, DF, R>(
+    previous: Option<zeroize::Zeroizing<String>>,
+    restore_previous: W,
+    remove_current: D,
+    recover_runtime: R,
+) -> Result<(), DiscordRollbackFailure>
+where
+    W: FnOnce(String) -> WF,
+    WF: std::future::Future<Output = Result<(), String>>,
+    D: FnOnce() -> DF,
+    DF: std::future::Future<Output = Result<(), String>>,
+    R: FnOnce() -> Result<(), String>,
+{
+    match previous {
+        Some(previous) => restore_previous(previous.to_string())
+            .await
+            .map_err(|_| DiscordRollbackFailure::Restore)?,
+        None => remove_current()
+            .await
+            .map_err(|_| DiscordRollbackFailure::Restore)?,
+    }
+    recover_runtime().map_err(|_| DiscordRollbackFailure::Recovery)
+}
+
+fn quarantine_discord_runtime(state: &AppState) -> Result<(), String> {
+    let mut process = {
+        let mut guard =
+            lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
+        guard.take()
+    };
+    let process_result = if let Some(process) = process.as_mut() {
+        terminate_and_reap_discord_child(&mut process.child)
+    } else {
+        Ok(())
+    };
+    if process_result.is_err() {
+        let mut guard =
+            lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
+        *guard = process;
+    }
+    let revoke_result = revoke_discord_runtime_authority();
+    process_result.and(revoke_result)
+}
+
+fn discord_credential_rollback_error(
+    failure: DiscordRollbackFailure,
+    quarantine_result: Result<(), String>,
+) -> String {
+    if quarantine_result.is_err() {
+        return "discord_credential_restart_failed_rollback_uncertain".to_string();
+    }
+    match failure {
+        DiscordRollbackFailure::Restore => {
+            "discord_credential_restart_failed_rollback_failed".to_string()
+        }
+        DiscordRollbackFailure::Recovery => {
+            "discord_credential_restart_failed_recovery_failed".to_string()
+        }
+    }
+}
+
 #[tauri::command]
 async fn discord_capture_bot_token(
     state: tauri::State<'_, AppState>,
@@ -3631,37 +3709,54 @@ async fn discord_capture_bot_token(
 ) -> Result<DiscordCredentialStatus, String> {
     let _operation = state.discord_config_operation.lock().await;
     let adk_path = current_adk_path()?;
-    let previous = read_discord_bot_token().ok();
+    let previous = discord_token_preimage()?;
+    let expected_generation =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
+    .map(|manifest| manifest.generation);
     let token = capture_discord_token_native()?;
-    write_agent_key(
+    let mutation = write_agent_key(
         adk_path.clone(),
         DISCORD_TOKEN_KEY.to_string(),
         token.to_string(),
     )
-    .await?;
-    let expected_generation =
-        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
-    .map(|manifest| manifest.generation);
-    if let Err(error) = restart_agent_for_discord_config(
-        &state,
-        &app_handle,
-        &audit_state.db,
-        expected_generation,
-    ) {
-        if let Some(previous) = previous {
-            if let Ok(previous) = String::from_utf8(previous.to_vec()) {
-                let _ =
-                    write_agent_key(adk_path, DISCORD_TOKEN_KEY.to_string(), previous).await;
-            }
-        } else {
-            let _ = remove_agent_key(&adk_path, DISCORD_TOKEN_KEY).await;
-        }
-        let _ = restart_agent_for_discord_config(
+    .await;
+    let activation = mutation.and_then(|()| {
+        restart_agent_for_discord_config(
             &state,
             &app_handle,
             &audit_state.db,
             expected_generation,
-        );
+        )
+    });
+    if let Err(error) = activation {
+        let restore_path = adk_path.clone();
+        let remove_path = adk_path.clone();
+        let rollback = rollback_discord_credential(
+            previous,
+            move |previous| {
+                write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous)
+            },
+            move || async move { remove_agent_key(&remove_path, DISCORD_TOKEN_KEY).await },
+            || {
+                let expected_generation = read_discord_binding_manifest(
+                    &discord_settings_dir()?.join("discord-bindings.json"),
+                )?
+                .map(|manifest| manifest.generation);
+                restart_agent_for_discord_config(
+                    &state,
+                    &app_handle,
+                    &audit_state.db,
+                    expected_generation,
+                )
+            },
+        )
+        .await;
+        if let Err(failure) = rollback {
+            return Err(discord_credential_rollback_error(
+                failure,
+                quarantine_discord_runtime(&state),
+            ));
+        }
         return Err(error);
     }
     Ok(DiscordCredentialStatus {
@@ -3678,31 +3773,41 @@ async fn discord_remove_bot_token(
 ) -> Result<(), String> {
     let _operation = state.discord_config_operation.lock().await;
     let adk_path = current_adk_path()?;
-    let previous = read_discord_bot_token()?;
-    let previous =
-        String::from_utf8(previous.to_vec()).map_err(|_| "token_invalid".to_string())?;
-    remove_agent_key(&adk_path, DISCORD_TOKEN_KEY).await?;
-    if let Err(error) =
-        restart_agent_for_discord_config(&state, &app_handle, &audit_state.db, None)
-    {
-        let _ = write_agent_key(
-            adk_path,
-            DISCORD_TOKEN_KEY.to_string(),
-            previous,
+    let previous = discord_token_preimage()?
+        .ok_or_else(|| "token_not_found".to_string())?;
+    let expected_generation =
+        read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
+            .map(|manifest| manifest.generation);
+    let activation = remove_agent_key(&adk_path, DISCORD_TOKEN_KEY)
+        .await
+        .and_then(|()| {
+            restart_agent_for_discord_config(&state, &app_handle, &audit_state.db, None)
+        });
+    if let Err(error) = activation {
+        let restore_path = adk_path.clone();
+        let remove_path = adk_path.clone();
+        let rollback = rollback_discord_credential(
+            Some(previous),
+            move |previous| {
+                write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous)
+            },
+            move || async move { remove_agent_key(&remove_path, DISCORD_TOKEN_KEY).await },
+            || {
+                restart_agent_for_discord_config(
+                    &state,
+                    &app_handle,
+                    &audit_state.db,
+                    expected_generation,
+                )
+            },
         )
         .await;
-        let expected_generation = read_discord_binding_manifest(
-            &discord_settings_dir()?.join("discord-bindings.json"),
-        )
-        .ok()
-        .flatten()
-        .map(|manifest| manifest.generation);
-        let _ = restart_agent_for_discord_config(
-            &state,
-            &app_handle,
-            &audit_state.db,
-            expected_generation,
-        );
+        if let Err(failure) = rollback {
+            return Err(discord_credential_rollback_error(
+                failure,
+                quarantine_discord_runtime(&state),
+            ));
+        }
         return Err(error);
     }
     Ok(())
@@ -4365,6 +4470,69 @@ fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), S
     Ok(())
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum DiscordFilePreimage {
+    Absent,
+    Present(Vec<u8>),
+}
+
+fn read_discord_file_preimage(path: &std::path::Path) -> Result<DiscordFilePreimage, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(DiscordFilePreimage::Present(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(DiscordFilePreimage::Absent)
+        }
+        Err(_) => Err("discord_bindings_snapshot_failed".to_string()),
+    }
+}
+
+fn rollback_discord_binding_file<W, D, R>(
+    preimage: DiscordFilePreimage,
+    restore_present: W,
+    restore_absent: D,
+    recover_runtime: R,
+) -> Result<(), DiscordRollbackFailure>
+where
+    W: FnOnce(Vec<u8>) -> Result<(), String>,
+    D: FnOnce() -> Result<(), String>,
+    R: FnOnce() -> Result<(), String>,
+{
+    match preimage {
+        DiscordFilePreimage::Present(bytes) => {
+            restore_present(bytes).map_err(|_| DiscordRollbackFailure::Restore)?
+        }
+        DiscordFilePreimage::Absent => {
+            restore_absent().map_err(|_| DiscordRollbackFailure::Restore)?
+        }
+    }
+    recover_runtime().map_err(|_| DiscordRollbackFailure::Recovery)
+}
+
+fn remove_discord_binding_manifest(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("discord_bindings_restore_failed".to_string()),
+    }
+}
+
+fn discord_binding_rollback_error(
+    failure: DiscordRollbackFailure,
+    quarantine_result: Result<(), String>,
+) -> String {
+    if quarantine_result.is_err() {
+        return "discord_bindings_restart_failed_rollback_uncertain".to_string();
+    }
+    match failure {
+        DiscordRollbackFailure::Restore => {
+            "discord_bindings_restart_failed_rollback_failed".to_string()
+        }
+        DiscordRollbackFailure::Recovery => {
+            "discord_bindings_restart_failed_recovery_failed".to_string()
+        }
+    }
+}
+
 #[tauri::command]
 async fn discord_save_bindings(
     bindings: Vec<DiscordBindingInput>,
@@ -4462,7 +4630,7 @@ async fn discord_save_bindings(
             if bytes.len() > 512 * 1024 {
                 return Err("discord_bindings_too_large".to_string());
             }
-            let previous = std::fs::read(&path).ok();
+            let previous = read_discord_file_preimage(&path)?;
             write_owner_only_atomic(&path, &bytes)?;
             if let Err(error) = restart_agent_for_discord_config(
                 app_state,
@@ -4473,24 +4641,27 @@ async fn discord_save_bindings(
                 if clearing_all_bindings {
                     return Err(format!("discord_bindings_cleared_{error}"));
                 }
-                match previous {
-                    Some(previous) => {
-                        let _ = write_owner_only_atomic(&path, &previous);
-                    }
-                    None => {
-                        let _ = std::fs::remove_file(&path);
-                    }
-                }
-                let rollback_generation = read_discord_binding_manifest(&path)
-                    .ok()
-                    .flatten()
-                    .map(|manifest| manifest.generation);
-                let _ = restart_agent_for_discord_config(
-                    app_state,
-                    &app_handle,
-                    &audit_state.db,
-                    rollback_generation,
+                let restore_path = path.clone();
+                let remove_path = path.clone();
+                let rollback = rollback_discord_binding_file(
+                    previous,
+                    move |bytes| write_owner_only_atomic(&restore_path, &bytes),
+                    move || remove_discord_binding_manifest(&remove_path),
+                    || {
+                        restart_agent_for_discord_config(
+                            app_state,
+                            &app_handle,
+                            &audit_state.db,
+                            previous_generation,
+                        )
+                    },
                 );
+                if let Err(failure) = rollback {
+                    return Err(discord_binding_rollback_error(
+                        failure,
+                        quarantine_discord_runtime(app_state),
+                    ));
+                }
                 return Err(error);
             }
             Ok(generation)
@@ -7661,6 +7832,161 @@ mod tests {
         let absent_path = absent.path().join("discord-bindings.json");
         assert_conflict_is_side_effect_free(&absent_path, None, Some(42)).await;
         assert!(!absent_path.exists());
+    }
+
+    #[test]
+    fn discord_binding_preimage_distinguishes_absence_from_read_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.json");
+        assert_eq!(
+            read_discord_file_preimage(&missing),
+            Ok(DiscordFilePreimage::Absent)
+        );
+
+        let present = dir.path().join("present.json");
+        std::fs::write(&present, b"before").unwrap();
+        assert_eq!(
+            read_discord_file_preimage(&present),
+            Ok(DiscordFilePreimage::Present(b"before".to_vec()))
+        );
+
+        assert_eq!(
+            read_discord_file_preimage(dir.path()),
+            Err("discord_bindings_snapshot_failed".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_binding_rollback_reports_restore_and_recovery_failures() {
+        let restore_calls = std::cell::Cell::new(0);
+        let recovery_calls = std::cell::Cell::new(0);
+        let restore_failed = rollback_discord_binding_file(
+            DiscordFilePreimage::Present(b"before".to_vec()),
+            |_| {
+                restore_calls.set(restore_calls.get() + 1);
+                Err("restore failed".to_string())
+            },
+            || panic!("present preimage must not remove"),
+            || {
+                recovery_calls.set(recovery_calls.get() + 1);
+                Ok(())
+            },
+        );
+        assert!(matches!(
+            restore_failed,
+            Err(DiscordRollbackFailure::Restore)
+        ));
+        assert_eq!(restore_calls.get(), 1);
+        assert_eq!(recovery_calls.get(), 0);
+
+        let removed = std::cell::Cell::new(0);
+        let recovery_failed = rollback_discord_binding_file(
+            DiscordFilePreimage::Absent,
+            |_| panic!("absent preimage must not write"),
+            || {
+                removed.set(removed.get() + 1);
+                Ok(())
+            },
+            || Err("restart failed".to_string()),
+        );
+        assert!(matches!(
+            recovery_failed,
+            Err(DiscordRollbackFailure::Recovery)
+        ));
+        assert_eq!(removed.get(), 1);
+    }
+
+    #[tokio::test]
+    async fn discord_credential_rollback_covers_present_absent_and_recovery_failure() {
+        let restore_calls = std::cell::Cell::new(0);
+        let recovery_calls = std::cell::Cell::new(0);
+        let restore_failed = rollback_discord_credential(
+            Some(zeroize::Zeroizing::new("previous".to_string())),
+            |_| {
+                restore_calls.set(restore_calls.get() + 1);
+                async { Err("keyring restore failed".to_string()) }
+            },
+            || async { panic!("present credential must not remove") },
+            || {
+                recovery_calls.set(recovery_calls.get() + 1);
+                Ok(())
+            },
+        )
+        .await;
+        assert!(matches!(
+            restore_failed,
+            Err(DiscordRollbackFailure::Restore)
+        ));
+        assert_eq!(restore_calls.get(), 1);
+        assert_eq!(recovery_calls.get(), 0);
+
+        let remove_calls = std::cell::Cell::new(0);
+        let absent_failed = rollback_discord_credential(
+            None,
+            |_| async { panic!("absent credential must not restore") },
+            || {
+                remove_calls.set(remove_calls.get() + 1);
+                async { Err("keyring remove failed".to_string()) }
+            },
+            || Ok(()),
+        )
+        .await;
+        assert!(matches!(
+            absent_failed,
+            Err(DiscordRollbackFailure::Restore)
+        ));
+        assert_eq!(remove_calls.get(), 1);
+
+        let restored_value = std::cell::RefCell::new(String::new());
+        let recovery_failed = rollback_discord_credential(
+            Some(zeroize::Zeroizing::new("previous".to_string())),
+            |value| {
+                *restored_value.borrow_mut() = value;
+                async { Ok(()) }
+            },
+            || async { Ok(()) },
+            || Err("recovery restart failed".to_string()),
+        )
+        .await;
+        assert!(matches!(
+            recovery_failed,
+            Err(DiscordRollbackFailure::Recovery)
+        ));
+        assert_eq!(restored_value.borrow().as_str(), "previous");
+    }
+
+    #[test]
+    fn discord_rollback_errors_are_stable_and_expose_quarantine_uncertainty() {
+        assert_eq!(
+            discord_binding_rollback_error(DiscordRollbackFailure::Restore, Ok(())),
+            "discord_bindings_restart_failed_rollback_failed"
+        );
+        assert_eq!(
+            discord_binding_rollback_error(DiscordRollbackFailure::Recovery, Ok(())),
+            "discord_bindings_restart_failed_recovery_failed"
+        );
+        assert_eq!(
+            discord_binding_rollback_error(
+                DiscordRollbackFailure::Restore,
+                Err("revoke failed".to_string())
+            ),
+            "discord_bindings_restart_failed_rollback_uncertain"
+        );
+        assert_eq!(
+            discord_credential_rollback_error(DiscordRollbackFailure::Restore, Ok(())),
+            "discord_credential_restart_failed_rollback_failed"
+        );
+        assert_eq!(
+            discord_credential_rollback_error(DiscordRollbackFailure::Recovery, Ok(())),
+            "discord_credential_restart_failed_recovery_failed"
+        );
+        assert_eq!(
+            discord_credential_rollback_error(
+                DiscordRollbackFailure::Recovery,
+                Err("reap failed".to_string())
+            ),
+            "discord_credential_restart_failed_rollback_uncertain"
+        );
     }
 
     #[test]
