@@ -1167,6 +1167,7 @@ fn spawn_agent_core(
         .stderr(stderr_stdio);
 
     let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
+    let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
 
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
@@ -1244,6 +1245,7 @@ fn spawn_agent_core(
                                                 "NAIA_DISCORD_INBOX_PATH",
                                                 runtime_dir.join("inbox.json"),
                                             );
+                                            discord_runtime_cleanup = Some(runtime_dir.clone());
                                             discord_token_frame = Some(token);
                                         }
                                     }
@@ -1267,33 +1269,79 @@ fn spawn_agent_core(
     let child = match cmd.spawn() {
         Ok(child) => child,
         Err(error) => {
-            if discord_runtime_armed {
-                let _ = revoke_discord_runtime_authority();
-            }
-            return Err(format!("Failed to spawn agent-core: {error}"));
+            return fail_discord_agent_startup(
+                format!("Failed to spawn agent-core: {error}"),
+                discord_runtime_armed,
+                discord_quarantined,
+                || Ok(()),
+                || {
+                    quarantine_discord_runtime_files(
+                        discord_runtime_cleanup
+                            .as_deref()
+                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
+                    )
+                },
+            );
         }
     };
     let mut spawned = SpawnedAgentChild::new(child, discord_runtime_armed);
 
     if let Some(frame) = discord_token_frame {
         let Some(mut stdin) = spawned.child_mut().stdin.take() else {
-            return Err("discord_token_pipe_unavailable".to_string());
+            return fail_discord_agent_startup(
+                "discord_token_pipe_unavailable".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                || terminate_and_reap_discord_child(spawned.child_mut()),
+                || {
+                    quarantine_discord_runtime_files(
+                        discord_runtime_cleanup
+                            .as_deref()
+                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
+                    )
+                },
+            );
         };
         let write_result = stdin
             .write_all(&frame)
             .and_then(|_| stdin.flush());
         drop(stdin);
         if write_result.is_err() {
-            return Err("discord_token_pipe_failed".to_string());
+            return fail_discord_agent_startup(
+                "discord_token_pipe_failed".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                || terminate_and_reap_discord_child(spawned.child_mut()),
+                || {
+                    quarantine_discord_runtime_files(
+                        discord_runtime_cleanup
+                            .as_deref()
+                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
+                    )
+                },
+            );
         }
     }
 
     // gRPC: stdin ? ?곗씠??梨꾨꼸 ?꾨떂(child 媛 蹂댁쑀, 誘몄궗??. stdout = GRPC_LISTENING ?몃뱶?곗씠??+ 濡쒓렇.
-    let stdout = spawned
-        .child_mut()
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to get agent stdout".to_string())?;
+    let stdout = match spawned.child_mut().stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            return fail_discord_agent_startup(
+                "Failed to get agent stdout".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                || terminate_and_reap_discord_child(spawned.child_mut()),
+                || {
+                    quarantine_discord_runtime_files(
+                        discord_runtime_cleanup
+                            .as_deref()
+                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
+                    )
+                },
+            );
+        }
+    };
 
     // ?? gRPC(?뺣낯 transport): stdout ??`GRPC_LISTENING <addr>` ?몃뱶?곗씠??1以꾨쭔 ?쎄퀬 ?섎㉧吏??濡쒓렇 ??
     // ?곗씠???붿껌/?묐떟)??gRPC. agent_response ?대깽?몃뒗 dispatcher ??Chat stream task 媛 ?ш뎄?깊빐 emit.
@@ -1315,9 +1363,24 @@ fn spawn_agent_core(
     });
 
     // gRPC listening addr ?섏떊(timeout) ??湲곕룞 ?몃뱶?곗씠?? ?ㅽ뙣 = 湲곕룞 ?ㅽ뙣.
-    let addr = addr_rx
-        .recv_timeout(std::time::Duration::from_secs(20))
-        .map_err(|_| "agent gRPC addr handshake timeout".to_string())?;
+    let addr = match addr_rx.recv_timeout(std::time::Duration::from_secs(20)) {
+        Ok(addr) => addr,
+        Err(_) => {
+            return fail_discord_agent_startup(
+                "agent gRPC addr handshake timeout".to_string(),
+                discord_runtime_armed,
+                discord_quarantined,
+                || terminate_and_reap_discord_child(spawned.child_mut()),
+                || {
+                    quarantine_discord_runtime_files(
+                        discord_runtime_cleanup
+                            .as_deref()
+                            .ok_or_else(|| "discord_runtime_dir_unavailable".to_string())?,
+                    )
+                },
+            );
+        }
+    };
     log_both(&format!("[Naia] agent-core gRPC @{}", addr));
 
     // adk_path (SetWorkspace ?? ??env(NAIA_ADK_PATH) ? ?숈씪 異쒖쿂(~/.naia/adk-path).
@@ -2415,6 +2478,30 @@ where
     match quarantine_runtime() {
         Ok(()) => Err("discord_authority_write_failed".to_string()),
         Err(_) => Err("discord_authority_write_quarantine_uncertain".to_string()),
+    }
+}
+
+fn fail_discord_agent_startup<T, K, Q>(
+    startup_error: String,
+    discord_runtime_armed: bool,
+    quarantined: &std::sync::atomic::AtomicBool,
+    terminate_child: K,
+    quarantine_runtime: Q,
+) -> Result<T, String>
+where
+    K: FnOnce() -> Result<(), String>,
+    Q: FnOnce() -> Result<(), String>,
+{
+    if !discord_runtime_armed {
+        return Err(startup_error);
+    }
+    quarantined.store(true, std::sync::atomic::Ordering::Release);
+    let terminate_result = terminate_child();
+    let quarantine_result = quarantine_runtime();
+    if terminate_result.is_err() || quarantine_result.is_err() {
+        Err("discord_startup_quarantine_uncertain".to_string())
+    } else {
+        Err(startup_error)
     }
 }
 
@@ -8459,6 +8546,47 @@ mod tests {
         std::fs::write(runtime.path().join("status.json"), b"stale ready").unwrap();
         assert!(revoke_discord_runtime_files(runtime.path()).is_err());
         assert!(!runtime.path().join("status.json").exists());
+    }
+
+    #[test]
+    fn discord_startup_failures_explicitly_quarantine_before_and_after_spawn() {
+        let quarantined = std::sync::atomic::AtomicBool::new(false);
+        let pre_spawn_cleanup_calls = std::cell::Cell::new(0);
+        let pre_spawn: Result<(), String> = fail_discord_agent_startup(
+            "command spawn failed".to_string(),
+            true,
+            &quarantined,
+            || Ok(()),
+            || {
+                pre_spawn_cleanup_calls.set(pre_spawn_cleanup_calls.get() + 1);
+                Ok(())
+            },
+        );
+        assert_eq!(pre_spawn, Err("command spawn failed".to_string()));
+        assert_eq!(pre_spawn_cleanup_calls.get(), 1);
+        assert!(quarantined.load(std::sync::atomic::Ordering::Acquire));
+
+        let terminate_calls = std::cell::Cell::new(0);
+        let post_spawn_cleanup_calls = std::cell::Cell::new(0);
+        let post_spawn: Result<(), String> = fail_discord_agent_startup(
+            "gRPC handshake failed".to_string(),
+            true,
+            &quarantined,
+            || {
+                terminate_calls.set(terminate_calls.get() + 1);
+                Err("reap failed".to_string())
+            },
+            || {
+                post_spawn_cleanup_calls.set(post_spawn_cleanup_calls.get() + 1);
+                Err("status cleanup failed".to_string())
+            },
+        );
+        assert_eq!(
+            post_spawn,
+            Err("discord_startup_quarantine_uncertain".to_string())
+        );
+        assert_eq!(terminate_calls.get(), 1);
+        assert_eq!(post_spawn_cleanup_calls.get(), 1);
     }
 
     #[test]
