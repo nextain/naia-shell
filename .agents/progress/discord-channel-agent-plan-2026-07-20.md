@@ -15,21 +15,25 @@
 
 ## Execution status
 
-- Automated implementation and adversarial clean convergence are complete.
+- Automated implementation is complete; final stage convergence was reopened
+  after the native CAS production hardening and integration-artifact findings.
 - Paired Agent runtime commit:
   `cd6b76310eac73df2a90635fd1bedc9c42751b6d`
-- Agent test-evidence HEAD:
+- Agent test-evidence commit:
   `be78b852ca9c6ba8e1bccbd795ac4e26e2864911`
+- Agent V-model evidence HEAD:
+  `5f8ff165837594f5f5b100f8938ab109a293babc`
 - Reviewed Shell implementation/test HEAD:
   `c756a9c9feed4be38c7592a5e33f8c4d11ccc930`
 - Paired proto SHA-256:
   `4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa`
 - Live Discord and real OS credential-store acceptance remain explicit
   operator gates and are not represented as automated passes.
-- Three consecutive independent final reviews were CLEAN on the fixed Agent
-  runtime and Shell code snapshots. After test-strengthening findings were
-  fixed, the TEST gate independently reconverged with two consecutive CLEAN
-  reviews on the Agent/Shell evidence HEADs above.
+- The original DEVELOPMENT gate had three consecutive CLEAN reviews before the
+  CAS hardening. After test-strengthening findings were fixed, the TEST gate
+  independently reconverged with two consecutive CLEAN reviews on the
+  Agent/Shell evidence HEADs above. DEVELOPMENT and INTEGRATION are explicitly
+  rerun on the final production/evidence snapshots.
 
 ## Outcome
 
@@ -359,8 +363,10 @@ Potential shared files:
 - agent spawn wiring in Rust
 
 These files are changed only after a `BLOCKING` notice in the coordination
-channel, coordination acknowledgment, shared-file lock acquisition, and a
-clean merge-base/diff against the radio lane's latest HEAD.
+channel, shared-file lock acquisition, and a clean merge-base/diff against the
+radio lane's latest HEAD. Under the user's explicit autonomous/no-question
+instruction, the coordination channel's no-blocking-response window served as
+the go-ahead; no synchronous bilateral acknowledgment is claimed.
 
 Changes:
 
@@ -369,9 +375,10 @@ Changes:
   message, and navigate to Connections. This deterministic safety flow does not
   ask an LLM or the user to place a token in chat.
 - Validate Shell ↔ Agent schema/version compatibility and restart lifecycle.
-- Run fake-Gateway E2E, full builds, real Tauri E2E, and opt-in live Discord
-  acceptance in an isolated test guild when a credential is configured through
-  native UI. The live gate covers Identify/READY, message-content intent,
+- Run fake-Gateway E2E and full builds autonomously. Real Tauri credential-flow
+  E2E and opt-in live Discord acceptance remain operator gates for an isolated
+  test guild when a credential is configured through native UI. The live gate
+  covers Identify/READY, message-content intent,
   receive/reply in two allow-listed channels, RESUME/reconnect, dedupe, 403,
   and revoke/rotate recovery; without that evidence FR-DISCORD.5 remains
   `Pending` and the product is not reported complete.
@@ -450,11 +457,12 @@ two consecutive passes contain no new blocking or actionable findings:
 3. test review after automated and real UI tests;
 4. integration review after rebasing both branches onto latest main.
 
-Final verification includes conflict-marker scan, hardcoded-string/i18n checks,
-Rust checks, full shell workspace typecheck/build, agent test/build, Playwright
-UI tests, Tauri E2E, secret canary scan, Git diff/status inspection, and a
-process-lifecycle test proving stop leaves no detached Discord child, scheduled
-task, service, or relay. Live
-Discord acceptance is reported separately as PASS only when an operator has
-configured a credential through the native UI; absence of a credential is not
-misreported as product completion.
+Completed autonomous verification includes conflict-marker scan, scoped
+hardcoded-string/i18n checks, Rust checks, Shell package typecheck/build, Agent
+test/build, Playwright UI tests, secret-canary contracts, Git diff/status
+inspection, and deterministic lifecycle tests for epoch cancellation,
+authority revoke, child terminate/reap, and legacy relay removal. A real Tauri
+credential-flow run and OS-level post-exit process audit remain operator
+acceptance items; they are not represented as automated passes. Live Discord
+acceptance is likewise PASS only when an operator has configured a credential
+through the native UI.

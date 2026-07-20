@@ -1,0 +1,65 @@
+{
+  "scope": "Discord lane coordination with radio/continuous-speech and provider-role lanes",
+  "shared_channel": "/var/home/luke/alpha-adk/.agents/progress/xsession-coordination-discord-x-continuous-speech-2026-07-20.md",
+  "policy": {
+    "user_instruction": "continue autonomously without questions and create a communication channel",
+    "notice_mode": "BLOCKING notices plus shared-file lock and diff audit",
+    "acknowledgment": "No synchronous bilateral acknowledgment is claimed; no blocking response was posted before the announced edits."
+  },
+  "notices": [
+    {
+      "at": "2026-07-20 22:14 KST",
+      "paths": [
+        "naia-agent/scripts/builds/agent-stdio-entry.mjs",
+        "naia-shell/packages/shell/src-tauri/src/lib.rs"
+      ]
+    },
+    {
+      "at": "2026-07-20 22:21 KST",
+      "paths": [
+        "naia-shell/packages/shell/src/components/ChatArea.tsx"
+      ]
+    },
+    {
+      "at": "2026-07-20 22:53 KST",
+      "paths": [
+        "naia-agent/src/main/adapters/grpc/naia_agent.proto",
+        "naia-agent/src/main/adapters/grpc/grpc-codec.ts",
+        "naia-agent/src/main/adapters/protocol.ts",
+        "naia-agent/src/main/domain/chat.ts"
+      ]
+    }
+  ],
+  "lock": {
+    "path": ".agents/work/xsession-locks/discord-radio-shared/owner.json",
+    "status": "released",
+    "release_record": "2026-07-21 02:46 KST"
+  },
+  "final_diff_audit": {
+    "shell_radio_lane": {
+      "branch": "issue-82-tauri-e2e",
+      "head": "847ba0afa9343673ddfa279dfa2e2bad04aded88",
+      "runtime_path_overlap": [],
+      "registry_overlap": [
+        "docs/progress/01.requirements/INDEX.md",
+        "docs/progress/02.user-scenarios/INDEX.md",
+        "docs/progress/03.uc-tests/INDEX.md",
+        "docs/progress/04.features/INDEX.md",
+        "docs/progress/05.features-tests/INDEX.md"
+      ]
+    },
+    "agent_radio_checkout": {
+      "head": "2b6bbaaee072ad67631266a2ce1a5a559be018ab",
+      "dirty_paths": "harness/CI files only",
+      "discord_or_radio_runtime_overlap": []
+    },
+    "result": "No radio profile/activity runtime file was modified by the Discord lane; registry conflicts require ordinary integration resolution."
+  },
+  "superseding_handoff": {
+    "agent_runtime": "cd6b76310eac73df2a90635fd1bedc9c42751b6d",
+    "agent_test_evidence": "be78b852ca9c6ba8e1bccbd795ac4e26e2864911",
+    "agent_v_model_evidence": "5f8ff165837594f5f5b100f8938ab109a293babc",
+    "shell_implementation_test": "c756a9c9feed4be38c7592a5e33f8c4d11ccc930",
+    "proto_sha256": "4258d959f254e9ad3816679010e425d7e0d76f872fa17e3384a329692ea98caa"
+  }
+}

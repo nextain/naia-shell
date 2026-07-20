@@ -19,7 +19,7 @@
     "shell_rust": "103 passed",
     "playwright": "3 passed on isolated port 14327",
     "shell_build": "passed",
-    "traceability": "REQ 16, UC 12, TEST-S 14, SPEC 10, TEST-F 10; dead-link 0; orphan 0",
+    "shell_traceability": "REQ 16, UC 12, TEST-S 14, SPEC 10, TEST-F 10; dead-link 0; orphan 0",
     "verify_implementation": {
       "conflict_markers": "PASS on both fixed worktrees",
       "build": "PASS for Shell package and Agent TypeScript",
