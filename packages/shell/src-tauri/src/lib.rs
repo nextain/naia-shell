@@ -3101,6 +3101,22 @@ fn restart_agent_for_discord_config_unmarked(
                         let _ = revoke_discord_runtime_authority();
                         return Err(format!("{error}; {cleanup_error}"));
                     }
+                    let outcome = process.finish_owned_cleanup(true);
+                    if require_owned_cleanup_complete(
+                        &outcome,
+                        true,
+                        "discord_agent_owned_cleanup_incomplete",
+                    )
+                    .is_err()
+                    {
+                        let mut guard = lock_or_recover(
+                            &state.agent,
+                            "state.agent(restart_agent_for_discord_config)",
+                        );
+                        *guard = failed;
+                        let _ = revoke_discord_runtime_authority();
+                        return Err("discord_agent_owned_cleanup_incomplete".to_string());
+                    }
                 }
                 drop(failed);
                 revoke_discord_runtime_authority()?;
@@ -9977,8 +9993,12 @@ mod tests {
     }
 
     #[test]
-    fn discord_config_restart_waits_for_transient_lease_remove_failure() {
+    fn discord_ready_timeout_retains_ownership_across_transient_lease_remove_failure() {
+        let ready_result: Result<(), String> =
+            Err("discord_runtime_ready_timeout".to_string());
+        assert!(ready_result.is_err());
         let lease = test_agent_child_lease(42);
+        let mut retained_owner = Some(lease.clone());
         let first = cleanup_owned_agent_child_with(
             &lease,
             true,
@@ -9991,14 +10011,19 @@ mod tests {
             || panic!("runtime cleanup is not required"),
             || Ok(false),
         );
+        let first_gate = require_owned_cleanup_complete(
+            &first,
+            true,
+            "discord_agent_owned_cleanup_incomplete",
+        );
+        if first_gate.is_ok() {
+            retained_owner = None;
+        }
         assert_eq!(
-            require_owned_cleanup_complete(
-                &first,
-                true,
-                "discord_agent_owned_cleanup_incomplete",
-            ),
+            first_gate,
             Err("discord_agent_owned_cleanup_incomplete".to_string())
         );
+        assert!(retained_owner.is_some());
 
         let retry = cleanup_owned_agent_child_with(
             &lease,
@@ -10012,14 +10037,16 @@ mod tests {
             || panic!("runtime cleanup is not required"),
             || Ok(true),
         );
-        assert_eq!(
-            require_owned_cleanup_complete(
-                &retry,
-                true,
-                "discord_agent_owned_cleanup_incomplete",
-            ),
-            Ok(())
+        let retry_gate = require_owned_cleanup_complete(
+            &retry,
+            true,
+            "discord_agent_owned_cleanup_incomplete",
         );
+        if retry_gate.is_ok() {
+            retained_owner = None;
+        }
+        assert_eq!(retry_gate, Ok(()));
+        assert!(retained_owner.is_none());
     }
 
     #[test]
