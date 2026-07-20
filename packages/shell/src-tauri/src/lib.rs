@@ -960,17 +960,39 @@ fn spawn_background_discord_reaper(
 // Drop ?먯꽌 紐낆떆 kill 濡?orphan 諛⑹?(codex 由щ럭 #1). 醫낅즺/replace ?묒そ 而ㅻ쾭.
 impl Drop for AgentProcess {
     fn drop(&mut self) {
-        let child_reaped = if self.termination_attempted {
-            // An explicit lifecycle operation already spent the graceful
-            // deadline. Do not replay the authenticated drain on Drop, but
-            // retain the orphan-prevention guarantee with one bounded
-            // force-and-reap attempt.
-            terminate_and_reap_discord_child(&mut self.child).is_ok()
-        } else {
-            graceful_shutdown_and_reap_agent(self).is_ok()
-        };
-        let _ = self.finish_owned_cleanup(child_reaped);
+        finish_agent_process_drop_with(
+            self,
+            self.termination_attempted,
+            |process| graceful_shutdown_and_reap_agent(process).is_ok(),
+            |process| terminate_and_reap_discord_child(&mut process.child).is_ok(),
+            |process, child_reaped| {
+                let _ = process.finish_owned_cleanup(child_reaped);
+            },
+        );
     }
+}
+
+fn finish_agent_process_drop_with<T, G, F, C>(
+    target: &mut T,
+    termination_attempted: bool,
+    graceful: G,
+    force_and_reap: F,
+    cleanup_owned: C,
+) where
+    G: FnOnce(&mut T) -> bool,
+    F: FnOnce(&mut T) -> bool,
+    C: FnOnce(&mut T, bool),
+{
+    let child_reaped = if termination_attempted {
+        // An explicit lifecycle operation already spent the graceful
+        // deadline. Do not replay the authenticated drain on Drop, but
+        // retain the orphan-prevention guarantee with one bounded
+        // force-and-reap attempt.
+        force_and_reap(target)
+    } else {
+        graceful(target)
+    };
+    cleanup_owned(target, child_reaped);
 }
 
 impl AgentProcess {
@@ -2156,10 +2178,23 @@ fn spawn_agent_core(
 
 async fn agent_shutdown_dispatcher(
     addr: String,
+    rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
+) {
+    agent_shutdown_dispatcher_with_timeout(addr, rx, AGENT_SHUTDOWN_RPC_TIMEOUT).await;
+}
+
+const AGENT_SHUTDOWN_RPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const AGENT_SHUTDOWN_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const AGENT_GRACEFUL_EXIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(35);
+const AGENT_FORCE_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+async fn agent_shutdown_dispatcher_with_timeout(
+    addr: String,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<AgentShutdownCommand>,
+    rpc_timeout: std::time::Duration,
 ) {
     while let Some(AgentShutdownCommand { nonce, result }) = rx.recv().await {
-        let attempt = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        let attempt = tokio::time::timeout(rpc_timeout, async {
             match agent_grpc::AgentGrpc::connect(format!("http://{}", addr)).await {
                 Ok(mut client) => client
                     .shutdown(nonce)
@@ -3322,12 +3357,36 @@ fn classify_agent_shutdown_ack(
 }
 
 fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), String> {
-    process.termination_attempted = true;
     let dispatcher = process.shutdown_tx.clone();
     let nonce = process.shutdown_nonce.to_string();
     let started = std::time::Instant::now();
-    graceful_then_force_reap_with(
+    graceful_shutdown_and_reap_agent_with(
         &mut process.child,
+        &mut process.termination_attempted,
+        dispatcher,
+        nonce,
+        move || started.elapsed(),
+        std::thread::sleep,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn graceful_shutdown_and_reap_agent_with<C, N, S>(
+    child: &mut C,
+    termination_attempted: &mut bool,
+    dispatcher: tokio::sync::mpsc::UnboundedSender<AgentShutdownCommand>,
+    nonce: String,
+    now: N,
+    sleep: S,
+) -> Result<(), String>
+where
+    C: DiscordChildLifecycle,
+    N: FnMut() -> std::time::Duration,
+    S: FnMut(std::time::Duration),
+{
+    *termination_attempted = true;
+    graceful_then_force_reap_with(
+        child,
         move || {
             let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
             dispatcher
@@ -3336,16 +3395,14 @@ fn graceful_shutdown_and_reap_agent(process: &mut AgentProcess) -> Result<(), St
                     result: result_tx,
                 })
                 .map_err(|_| "agent_graceful_shutdown_dispatch_failed".to_string())?;
-            classify_agent_shutdown_ack(
-                result_rx.recv_timeout(std::time::Duration::from_secs(3)),
-            )
+            classify_agent_shutdown_ack(result_rx.recv_timeout(AGENT_SHUTDOWN_ACK_TIMEOUT))
         },
         // Agent has a 30s watchdog around all drain/flush phases. Observe past
         // that bound so Shell never kills a healthy cleanup one second early.
-        std::time::Duration::from_secs(35),
-        std::time::Duration::from_secs(5),
-        move || started.elapsed(),
-        std::thread::sleep,
+        AGENT_GRACEFUL_EXIT_TIMEOUT,
+        AGENT_FORCE_REAP_TIMEOUT,
+        now,
+        sleep,
     )
 }
 
@@ -3353,7 +3410,7 @@ fn terminate_and_reap_discord_child(child: &mut Child) -> Result<(), String> {
     let started = std::time::Instant::now();
     terminate_and_reap_discord_child_with(
         child,
-        std::time::Duration::from_secs(5),
+        AGENT_FORCE_REAP_TIMEOUT,
         move || started.elapsed(),
         std::thread::sleep,
     )
@@ -11250,3 +11307,6 @@ mod tests {
         assert!(discord_permission_summary(effective).usable);
     }
 }
+
+#[cfg(test)]
+mod shutdown_lifecycle_tests;

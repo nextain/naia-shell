@@ -232,7 +232,11 @@ fn main() {
         protoc_bin_vendored::protoc_bin_path().expect("vendored protoc path"),
     );
     tonic_build::configure()
-        .build_server(false)
+        // Keep the generated server surface available for the in-process
+        // transport contract tests. Production still only instantiates the
+        // client; unused server code is eliminated by the linker.
+        .build_server(true)
+        .generate_default_stubs(true)
         .compile_protos(&[proto.as_path()], &[proto_dir.as_path()])
         .expect("naia_agent.proto gRPC client codegen failed");
 

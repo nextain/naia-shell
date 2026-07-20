@@ -70,6 +70,7 @@ tempfile = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+tokio-stream = { version = "0.1", features = ["net"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
