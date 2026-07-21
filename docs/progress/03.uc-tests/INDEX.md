@@ -23,7 +23,7 @@
 | TEST-S-007 | UC-007 | workspace 관측/조작 | e2e | `packages/shell/e2e/91-workspace-panel.spec.ts`(old-path) | Planned |
 | TEST-S-008 | UC-008 | youtube BGM 검색/재생 | e2e | — | Planned |
 | TEST-S-011 | UC-011 | 자기상태/진단 보고(Diagnostics RPC) | e2e | — | Planned |
-| TEST-S-016 | UC-017 | 계약: activity 표시/TTS·yield/control/stop·stale 폐기. 실제 Tauri: profile 저장·복원, DJ 실제 BGM·첫 결과·stop, 전시 greeting·stop | 계약+native | `packages/shell/src/lib/__tests__/speech-profile-commands.test.ts`, `packages/shell/e2e-tauri/specs/71-proactive-speech-profiles.spec.ts` | Pass (3/3 native, 2026-07-21) |
+| TEST-S-016 | UC-017 | 계약: activity 표시/TTS·yield/control/stop·stale 폐기. 실제 Tauri: profile 저장·복원, DJ 실제 BGM·첫 결과·stop, 전시 greeting·stop. 실시간 audible TTS·live barge-in은 운영 인수 | 계약+native | `packages/shell/src/lib/__tests__/speech-profile-commands.test.ts`, `packages/shell/e2e-tauri/specs/71-proactive-speech-profiles.spec.ts` | Partial (native 3/3, audible/live 인수 대기) |
 | TEST-S-101 | REQ-101 | substrate-agnostic: core 가 @tauri-apps 미의존(import 검사) | 정적 | (compile-integrity + import 검사) | Planned |
 | TEST-S-103 | REQ-103 | provenance: provider 출처 추적(actor/correlation) | e2e | `packages/shell/e2e/uc-provider-provenance-live.spec.ts` | Pass |
 | TEST-S-104 | REQ-104 | 계약 드리프트 0토큰 결정론 게이트 | 게이트 | `scripts/conform/` (conform-gate) | Planned |

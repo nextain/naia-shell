@@ -25,7 +25,7 @@ area = core(헥사고날 코어 @nextain/naia-os-core) / shell(packages/shell) /
 | SPEC-008 | UC-002 | **V2 음성** — SensoryPort/ExpressionPort/VoiceProviderPort + os-local 어댑터(AudioPlayer/MicCapture/STT/avatar). ports/v2·domain/voice | core | Done(os-local 이식, external WS=루크머신) | TEST-F-008 |
 | SPEC-009 | UC-014, UC-015 | **Shell Discord 연결·Inbox** — native secret capture/키체인, discovery·allow-list CAS, agent token pipe, nonce 인증 graceful shutdown→bounded exit wait→force fallback, revoke/reap·lease 소유권, 다중 채널 저장소·반응형 Channels UI | shell | Done | TEST-F-009 |
 | SPEC-010 | UC-016 | **Agent Discord Gateway runtime** — 허용목록 ingress, outbound reply, reconnect/rate-limit/cancel, durable dedupe, lifecycle epoch·generation 권한 | agent | Done | TEST-F-010 |
-| SPEC-011 | UC-017 | **선제 발화 전달** — persisted profile 설정, session activity stream, 기존 agent_response/TTS/BGM 표현, yield/control/stop, generation 기반 stale 폐기 | shell+Rust | Done | TEST-F-011 |
+| SPEC-011 | UC-017 | **선제 발화 전달** — persisted profile 설정, session activity stream, 기존 agent_response/TTS/BGM 표현, yield/control/stop, generation 기반 stale 폐기 | shell+Rust | Partial (audible/live 인수 대기) | TEST-F-011 |
 | SPEC-012 | UC-018 | **Codex·역할 분리 Shell 배선** — Codex provider option, main/sub/memory role별 설정 영속, keyless chat config, Agent commit+proto exact pair의 dev/stage/build 공통 강제 | shell+Rust | Done | TEST-F-012 |
 
 ## 비고

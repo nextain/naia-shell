@@ -11,21 +11,23 @@
 
 ## 현재 결합 기준
 
-- Agent: `ea6afa1d1f9227e754c68e4498364e5dc6405034`
+- Agent: `380a1f8cda90e90573dc58367cd4d888abee3240`
 - Shell: 이 문서를 포함하는 `integration/discord-radio-codex`
 - Agent proto SHA-256: `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
-- Memory main: `a39b30c`
+- Memory: `1d6d93871192bf61f6b2be476d35e84e30fdba99`
+- Workshop: `cdc5a596a72a24e3f8a1fd11808b545c60718c10`
 
 ## 실행 증거
 
-- Agent 전체: 108 files pass / 3 skip, 1,284 tests pass / 9 skip
-- Agent 통합 집중: 17 files, 204 tests pass; 인증 배선 21/21 pass; build pass
-- Memory 전체: 24 files, 390 tests pass; build pass
-- Shell core: 24 files, 228 tests pass
+- Agent 전체: 108 files pass / 3 skip, 1,293 tests pass / 9 skip; build pass
+- Agent Codex/Discord 집중: 4 files, 85 tests pass
+- Memory 전체: 24 files, 393 tests pass; typecheck/build pass
+- Shell core: 25 files, 229 tests pass
 - Shell UI: 121 files pass / 2 skip, 1,332 tests pass / 13 skip
 - Shell production build: pass
 - Playwright: Discord 3 + proactive speech 7 = 10/10 pass
-- Rust paired integration: 172/172 pass against Agent `ea6afa1d1f9227e754c68e4498364e5dc6405034`
+- Rust paired integration: 172/172 pass against the exact Agent pin
+- 실제 Codex app-server dynamic-tool smoke: `get_time` 1회 toolUse/toolResult, success, final text, completed, exit 0 (`naia-agent:docs/progress/99.dev-comm/codex-dynamic-tool-smoke-2026-07-21.md`)
 - 전주 강의: preflight 14/14, publisher 5/5, 장 14개 오류 0, starter 정적 검사 13/13
 
 ## 정직한 미완료 경계
@@ -33,7 +35,7 @@
 - 실제 Discord bot 2채널 송수신·RESUME·403·rotate/revoke와 OS credential prompt/store는
   운영 자격증명이 필요한 인수 항목이다.
 - 전주 강의는 실제 Windows/Linux 120분 전체 리허설 전까지 WikiDocs 공개 준비 완료로 선언하지 않는다.
-- 최종 통합 소스에서 Tauri WebDriver 설정 E2E를 재시도했으나 세션 생성 단계에서
-  `UND_ERR_INVALID_ARG`로 시작하지 못했다. 라디오 기능 단독 스냅샷의 실제 Tauri 설정 E2E는
-  1/1 통과했으며, 최종 결합은 위 Rust 172개와 Playwright 10개로 검증했다.
+- Node 26 + webdriverio 9의 세션 `Content-Length` 호환 문제는 `transformRequest`와 회귀 계약으로 해결했고, 최종 Tauri WDIO는 Agent·BGM 실 프로세스로 3/3 통과했다.
+- release 바이너리 빌드는 통과했지만 AppImage 패키징은 현재 Linux host의 `librsvg-2.0.pc` 부재로 번들러 단계에서 실패했다.
+- 연속발화의 실시간 audible TTS·live barge-in은 TEST-F-011 운영 인수 항목으로 Partial을 유지한다.
 - 최종 통합 적대리뷰 2회 연속 CLEAN은 이 snapshot에서 계속 검증한다.
