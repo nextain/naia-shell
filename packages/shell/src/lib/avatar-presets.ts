@@ -4,7 +4,25 @@ export interface AvatarPreset {
 	gender: AvatarGender;
 }
 
-export const DEFAULT_AVATAR_MODEL = "/avatars/Naia.vrm";
+/**
+ * A VRM is an ADK-owned asset, so it cannot have a package-relative default.
+ * The old `/avatars/Naia.vrm` value was left over from an early bundled demo
+ * and is not installed by a fresh ADK. Callers select the first installed VRM
+ * instead (currently the Shino character).
+ */
+export const DEFAULT_AVATAR_MODEL = "";
+
+const LEGACY_BUNDLED_VRM_MODELS = new Set([
+	"Naia.vrm",
+	"Naia-Base.vrm",
+	"Naia-Hair.vrm",
+]);
+
+/** True when a saved model refers to the removed bundled-demo VRM family. */
+export function isLegacyBundledVrmModel(modelPath?: string): boolean {
+	const filename = modelPath?.split(/[/\\]/).pop() ?? "";
+	return LEGACY_BUNDLED_VRM_MODELS.has(filename);
+}
 
 /**
  * 비디오 아바타(NVA) 기본 번들 이름(bare name). 비디오 아바타를 켰는데 nvaModel 이
@@ -17,21 +35,6 @@ export const DEFAULT_NVA_MODEL = "naia";
 export type AvatarGender = "female" | "male";
 
 export const AVATAR_PRESETS: AvatarPreset[] = [
-	{
-		filename: "Naia.vrm",
-		label: "Naia",
-		gender: "female",
-	},
-	{
-		filename: "Naia-Base.vrm",
-		label: "Naia Base",
-		gender: "female",
-	},
-	{
-		filename: "Naia-Hair.vrm",
-		label: "Naia Hair",
-		gender: "female",
-	},
 	{
 		filename: "01-Sendagaya-Shino-uniform.vrm",
 		label: "Shino",

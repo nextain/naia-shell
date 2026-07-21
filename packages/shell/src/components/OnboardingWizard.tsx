@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { buildNaiaConfigEnv, getAdkPath, listNaiaAssets, toAssetUrl, toLocalBlobUrl, writeAgentKey, writeNaiaConfig } from "../lib/adk-store";
-import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
+import { isLegacyBundledVrmModel } from "../lib/avatar-presets";
 import { isNewCore, sendAuthUpdate } from "../lib/chat-service";
 import { type AppConfig, NAIA_WEB_BASE_URL, loadConfig, saveConfigSecure } from "../lib/config";
 import { getDefaultLlmModel } from "../lib/llm";
@@ -138,7 +138,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [honorific, setHonorific] = useState("");
 	const [extraPersona, setExtraPersona] = useState("");
 	const [naiaVrms, setNaiaVrms] = useState<string[]>([]);
-	const [selectedVrm, setSelectedVrm] = useState(DEFAULT_AVATAR_MODEL);
+	const [selectedVrm, setSelectedVrm] = useState("");
 	const [backgrounds, setBackgrounds] = useState<BgOption[]>([]);
 	const [selectedBg, setSelectedBg] = useState("");
 	// Provider step state
@@ -268,7 +268,17 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			.then((paths) => {
 				const vrms = paths.filter((p) => p.toLowerCase().endsWith(".vrm"));
 				setNaiaVrms(vrms);
-				if (vrms.length > 0) setSelectedVrm((prev) => prev || vrms[0]);
+				if (vrms.length > 0) {
+					setSelectedVrm((prev) => {
+						const savedFilename = prev.split(/[/\\]/).pop() ?? "";
+						const isInstalled = vrms.some(
+							(path) => path.split(/[/\\]/).pop() === savedFilename,
+						);
+						return !prev || isLegacyBundledVrmModel(prev) || !isInstalled
+							? vrms[0]
+							: prev;
+					});
+				}
 			})
 			.catch(() => {});
 	}, []);
@@ -467,7 +477,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			model: isByo ? getDefaultLlmModel("gemini") : NAIA_SLOT_DEFAULTS.main.model,
 			apiKey: "",
 		};
-		const vrmPath = snapshot.selectedVrm || DEFAULT_AVATAR_MODEL;
+		const vrmPath = snapshot.selectedVrm || naiaVrms[0] || undefined;
 		const selectedBgOption = snapshot.backgrounds.find(
 			(bg) => bg.url === snapshot.selectedBg,
 		);
@@ -521,7 +531,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			: (completedFlat as unknown as AppConfig);
 		await saveConfigSecure(finalConfig);
 
-		setAvatarModelPath(vrmPath);
+		if (vrmPath) setAvatarModelPath(vrmPath);
 		return finalConfig as unknown as Record<string, unknown>;
 	}
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DEFAULT_AVATAR_MODEL } from "../lib/avatar-presets";
+import { isLegacyBundledVrmModel } from "../lib/avatar-presets";
 import { loadConfig } from "../lib/config";
 import type { EmotionName } from "../lib/vrm/expression";
 
@@ -33,7 +33,8 @@ interface AvatarState {
 
 function getInitialModelPath(): string {
 	const config = loadConfig();
-	return config?.vrmModel || DEFAULT_AVATAR_MODEL;
+	const modelPath = config?.vrmModel ?? "";
+	return isLegacyBundledVrmModel(modelPath) ? "" : modelPath;
 }
 
 function getInitialBgImage(): string {
