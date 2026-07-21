@@ -68,7 +68,7 @@ const MOCK_SCRIPT = `
         var rid = payload.requestId;
         var chunks = [
           { type: "panel_tool_call", requestId: rid, toolCallId: "tc-bgm-1", toolName: "skill_youtube_bgm", args: ${JSON.stringify(BGM_TOOL_ARGS)} },
-          { type: "text", requestId: rid, text: "음악을 틀었어요." },
+          { type: "text", requestId: rid, text: "재생을 요청했어요. 실제 재생이 확인되면 곡을 소개할게요." },
           { type: "finish", requestId: rid },
         ];
         var d = 150;
@@ -91,6 +91,16 @@ function configScript(cfg: Record<string, unknown>): string {
 
 test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 	test.beforeEach(async ({ page }) => {
+		// Deterministic local iframe: this e2e never contacts YouTube.
+		await page.route("https://www.youtube-nocookie.com/embed/**", async (route) => {
+			await route.fulfill({
+				contentType: "text/html",
+				body: `<!doctype html><script>
+					parent.postMessage(JSON.stringify({ event: "onReady" }), "*");
+					setTimeout(() => parent.postMessage(JSON.stringify({ event: "onStateChange", info: 1 }), "*"), 700);
+				</script>`,
+			});
+		});
 		await page.addInitScript(NEW_CORE_FLAG);
 		await page.addInitScript(MOCK_SCRIPT);
 		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
@@ -150,7 +160,28 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		await input.fill("잔잔한 음악 틀어줘");
 		await input.press("Enter");
 
+		await expect.poll(async () => page.evaluate(() => {
+			const out = (window as unknown as { __E2E_OUTBOUND__?: Array<Record<string, unknown>> })
+				.__E2E_OUTBOUND__ ?? [];
+			return out.find((message) => message.type === "panel_tool_result")?.result ?? null;
+		}), { timeout: 10_000 }).not.toBeNull();
+		const toolResult = await page.evaluate(() => {
+			const out = (window as unknown as { __E2E_OUTBOUND__?: Array<Record<string, unknown>> })
+				.__E2E_OUTBOUND__ ?? [];
+			return String(out.find((message) => message.type === "panel_tool_result")?.result ?? "");
+		});
+		expect(JSON.parse(toolResult)).toMatchObject({
+			playback: { status: "requested" },
+			announceTrack: false,
+		});
+		expect(JSON.parse(toolResult)).not.toHaveProperty("title");
+
 		// 배선 end-to-end 입증: dispatch → executeBgmSkill → bgm_youtube_play → BgmPlayer 재생.
+		// Replacing the iframe is only a request. The fixture has not reported
+		// `playing` at this point, so the compact player must not claim it.
+		await page.waitForTimeout(250);
+		await expect(page.locator(".bgm-icon--playing")).toHaveCount(0);
+
 		await expect(page.locator(".bgm-icon--playing")).toBeVisible({
 			timeout: 15_000,
 		});

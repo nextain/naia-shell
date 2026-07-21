@@ -9,6 +9,7 @@ import {
 	type BgmSearchResult,
 	type BgmSkillDeps,
 } from "../bgm-skill";
+import { createBgmPlaybackPort } from "../bgm-playback";
 
 function mkDeps(results: BgmSearchResult[] = []) {
 	const emitted: Record<string, unknown>[] = [];
@@ -21,6 +22,7 @@ function mkDeps(results: BgmSearchResult[] = []) {
 		emitBgm: async (p) => {
 			emitted.push(p);
 		},
+		playback: createBgmPlaybackPort(),
 	};
 	return { deps, emitted, searched };
 }
@@ -53,11 +55,12 @@ describe("executeBgmSkill", () => {
 				thumbnail: "http://t/1.jpg",
 			},
 		]);
-		expect(JSON.parse(out)).toEqual({
+		expect(JSON.parse(out)).toMatchObject({
 			ok: true,
 			action: "play",
-			videoId: "v1",
-			title: "Lofi Beats",
+			playback: { status: "requested", sequence: 1 },
+			selected: { videoId: "v1", title: "Lofi Beats" },
+			announceTrack: false,
 		});
 	});
 
@@ -71,11 +74,12 @@ describe("executeBgmSkill", () => {
 		expect(emitted).toEqual([
 			{ type: "bgm_youtube_play", videoId: "abc123", title: "직접곡" },
 		]);
-		expect(JSON.parse(out)).toEqual({
+		expect(JSON.parse(out)).toMatchObject({
 			ok: true,
 			action: "play",
-			videoId: "abc123",
-			title: "직접곡",
+			playback: { status: "requested", sequence: 1 },
+			selected: { videoId: "abc123", title: "직접곡" },
+			announceTrack: false,
 		});
 	});
 
@@ -104,6 +108,7 @@ describe("executeBgmSkill", () => {
 				throw new Error("BGM 검색 서버 오류 (HTTP 503)");
 			},
 			emitBgm: async () => {},
+			playback: createBgmPlaybackPort(),
 		};
 		await expect(
 			executeBgmSkill({ action: "play", query: "x" }, deps),

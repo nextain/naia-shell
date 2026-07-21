@@ -14,6 +14,11 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { NaiaTool } from "./app-registry";
+import {
+	bgmPlayback,
+	toBgmPlayToolResult,
+	type BgmPlaybackPort,
+} from "./bgm-playback";
 
 /** panelExec 등록용 패널 id — 위젯 전용(앱 아님), panel_skills_clear 대상 아님(항상 유지). */
 export const BGM_PANEL_ID = "bgm-widget";
@@ -64,6 +69,7 @@ export interface BgmSkillDeps {
 	search: (query: string) => Promise<BgmSearchResult[]>;
 	/** 위젯(BgmPlayer)이 listen("agent_response") 로 받는 payload 를 발사. */
 	emitBgm: (payload: Record<string, unknown>) => Promise<void>;
+	playback: BgmPlaybackPort;
 }
 
 /** 사이드카 검색 — BgmPlayer.ytSearch 동형 표면(GET /yt/search?q=&max=). */
@@ -83,6 +89,7 @@ const defaultDeps: BgmSkillDeps = {
 	search: sidecarSearch,
 	// Tauri emit 은 JS listen("agent_response") 리스너에도 브로드캐스트 — BgmPlayer 가 즉시 반응.
 	emitBgm: (payload) => emit("agent_response", JSON.stringify(payload)),
+	playback: bgmPlayback,
 };
 
 /** 도메인: volume 0..1 clamp(순수) — agent UC8 어댑터 clampVolume 동형. 비유한=0.5. */
@@ -112,8 +119,13 @@ export async function executeBgmSkill(
 		const videoId = args.videoId;
 		if (typeof videoId === "string" && videoId.trim()) {
 			const title = typeof args.title === "string" ? args.title : "";
-			await deps.emitBgm({ type: "bgm_youtube_play", videoId, title });
-			return JSON.stringify({ ok: true, action: act, videoId, title });
+			const playback = deps.playback.request({ videoId, title });
+			await deps.emitBgm({
+				type: "bgm_youtube_play",
+				videoId,
+				title,
+			});
+			return JSON.stringify(toBgmPlayToolResult(playback));
 		}
 		const query = args.query;
 		if (typeof query !== "string" || !query.trim()) {
@@ -124,13 +136,14 @@ export async function executeBgmSkill(
 			return JSON.stringify({ ok: false, action: act, reason: "no_search_results", query });
 		}
 		const top = results[0];
+		const playback = deps.playback.request({ videoId: top.id, title: top.title });
 		await deps.emitBgm({
 			type: "bgm_youtube_play",
 			videoId: top.id,
 			title: top.title,
 			...(top.thumbnail ? { thumbnail: top.thumbnail } : {}),
 		});
-		return JSON.stringify({ ok: true, action: act, videoId: top.id, title: top.title });
+		return JSON.stringify(toBgmPlayToolResult(playback));
 	}
 
 	if (act === "volume") {

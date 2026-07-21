@@ -5,6 +5,12 @@ import { listNaiaAssets, toLocalBlobUrl } from "../lib/adk-store";
 import { t } from "../lib/i18n";
 import { emitAiInterferenceEvent } from "../lib/ai-interference";
 import { loadConfig, saveConfig } from "../lib/config";
+import {
+	bgmPlayback,
+	toBgmObservedContext,
+	type BgmPlaybackSnapshot,
+	type BgmPlaybackStatus,
+} from "../lib/bgm-playback";
 import { Logger } from "../lib/logger";
 import type { NaiaContextBridge } from "../lib/app-registry";
 import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
@@ -89,6 +95,7 @@ const YT_PANEL_H_MIN = 200;
 const YT_PANEL_H_MAX = 700;
 // Marquee kicks in when track label exceeds this character count
 const MARQUEE_THRESHOLD = 22;
+const PLAYBACK_TIMEOUT_MS = 12_000;
 
 function loadPanelHeight(): number {
 	const v = parseInt(localStorage.getItem(YT_PANEL_H_KEY) ?? "", 10);
@@ -129,6 +136,10 @@ export function BgmPlayer({ naia }: Props) {
 	const [source, setSource] = useState<Source>(() => (loadConfig()?.bgmSource as Source | undefined) ?? "youtube");
 	const [playing, setPlaying] = useState(false); // never auto-play on restore
 	const [volume, setVolume] = useState(() => loadConfig()?.bgmVolume ?? 0.3);
+	const [playbackSnapshot, setPlaybackSnapshot] = useState<BgmPlaybackSnapshot | null>(
+		() => bgmPlayback.current(),
+	);
+	const playbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// ── Unified panel state ───────────────────────────────────────────────────
 	// panelExpanded: the single panel is open or closed
@@ -163,17 +174,75 @@ export function BgmPlayer({ naia }: Props) {
 	const volumeRef = useRef(volume);
 	useEffect(() => { volumeRef.current = volume; }, [volume]);
 
+	function clearPlaybackTimeout() {
+		if (playbackTimeoutRef.current) {
+			clearTimeout(playbackTimeoutRef.current);
+			playbackTimeoutRef.current = null;
+		}
+	}
+
+	function observePlayback(status: Exclude<BgmPlaybackStatus, "requested">, reason?: string) {
+		const current = bgmPlayback.current();
+		if (!current) return;
+		const next = bgmPlayback.observe({
+			playbackId: current.playbackId,
+			sequence: current.sequence + 1,
+			status,
+			...(reason ? { reason } : {}),
+		});
+		if (!next) return;
+		setPlaybackSnapshot(next);
+		if (status === "playing" || status === "paused" || status === "ended" || status === "error" || status === "timeout") {
+			clearPlaybackTimeout();
+		}
+	}
+
+	function beginPlaybackTimeout(playbackId: string) {
+		clearPlaybackTimeout();
+		playbackTimeoutRef.current = setTimeout(() => {
+			const current = bgmPlayback.current();
+			if (current?.playbackId !== playbackId || current.status === "playing") return;
+			observePlayback("timeout", "iframe_playing_not_observed");
+			setPlaying(false);
+		}, PLAYBACK_TIMEOUT_MS);
+	}
+
+	useEffect(() => () => clearPlaybackTimeout(), []);
+
 	// ── YouTube IFrame API bridge ──────────────────────────────────────────────
 	// YouTube sends `initialDelivery` when the player finishes loading.
 	// We must reply with `{event:"listening"}` to activate the command bridge,
 	// then immediately sync the current volume. Without this handshake
 	// `setVolume` postMessages are silently ignored by the player.
 	useEffect(() => {
-		function onYtMessage(e: MessageEvent) {
+	function onYtMessage(e: MessageEvent) {
 			if (!e.data || typeof e.data !== "string") return;
+			const activeIframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
+			if (activeIframe?.contentWindow && e.source && e.source !== activeIframe.contentWindow) {
+				return;
+			}
 			try {
 				const msg = JSON.parse(e.data) as Record<string, unknown>;
+				if (msg.event === "onStateChange") {
+					const state = Number(msg.info ?? msg.data);
+					if (state === 1) {
+						setPlaying(true);
+						observePlayback("playing");
+					} else if (state === 2) {
+						setPlaying(false);
+						observePlayback("paused");
+					} else if (state === 0) {
+						setPlaying(false);
+						observePlayback("ended");
+					} else if (state === -1 || state === 3) {
+						observePlayback("loading");
+					}
+				} else if (msg.event === "onError") {
+					setPlaying(false);
+					observePlayback("error", String(msg.info ?? msg.data ?? "youtube_iframe_error"));
+				}
 				if (msg.event === "initialDelivery" || msg.event === "onReady") {
+					observePlayback("loading");
 					const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
 					if (!iframe?.contentWindow) return;
 					iframe.contentWindow.postMessage(JSON.stringify({ event: "listening" }), "*");
@@ -340,13 +409,19 @@ export function BgmPlayer({ naia }: Props) {
 	useEffect(() => {
 		const cfg = loadConfig();
 		if (!cfg?.bgmYoutubeVideoId || !cfg.bgmPlaying) return;
+		const playback = bgmPlayback.request({
+			videoId: cfg.bgmYoutubeVideoId,
+			title: cfg.bgmYoutubeTitle ?? "",
+		});
+		setPlaybackSnapshot(playback);
+		beginPlaybackTimeout(playback.playbackId);
 		const embedUrl =
 			`https://www.youtube-nocookie.com/embed/${cfg.bgmYoutubeVideoId}` +
 			`?autoplay=1&enablejsapi=1` +
 			`&origin=${encodeURIComponent(window.location.origin)}`;
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
-		setPlaying(true);
+		setPlaying(false);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
@@ -355,19 +430,21 @@ export function BgmPlayer({ naia }: Props) {
 	// Supported commands: bgm_youtube_play, bgm_youtube_stop, bgm_youtube_fav_add, bgm_youtube_fav_remove
 	useEffect(() => {
 		if (!naia) return;
+		const observed = toBgmObservedContext(playbackSnapshot);
 		naia.pushContext({
 			type: "bgm",
 			data: {
 				source,
 				playing,
 				volume,
+				...observed,
 				// YouTube info
-				currentVideoId: currentYt?.id ?? null,
+				currentVideoId: observed.currentTrack?.videoId ?? null,
 				currentTitle:
 					source === "youtube"
-						? (currentYt?.title ?? null)
+						? (observed.announceTrack ? (currentYt?.title ?? null) : null)
 						: (localNames[localIndex] ?? null),
-				currentChannel: currentYt?.channel ?? null,
+				currentChannel: observed.announceTrack ? (currentYt?.channel ?? null) : null,
 				isCurrentFavorited: currentYt ? favs.some((f) => f.id === currentYt.id) : false,
 				favoritesCount: favs.length,
 				favoritesList: favs.slice(0, 10).map((f) => ({ id: f.id, title: f.title })),
@@ -381,20 +458,29 @@ export function BgmPlayer({ naia }: Props) {
 				// bgm_youtube_fav_remove — remove current track from favorites
 			},
 		});
-	}, [naia, source, playing, volume, currentYt, favs, localNames, localIndex, localTracks.length]);
+	}, [naia, source, playing, volume, playbackSnapshot, currentYt, favs, localNames, localIndex, localTracks.length]);
 
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
-	function handleYtSelect(video: YtVideo) {
+	function handleYtSelect(video: YtVideo, requestedPlaybackId?: string) {
 		audioRef.current?.pause();
+		const current = bgmPlayback.current();
+		const snapshot =
+			(requestedPlaybackId && current?.playbackId === requestedPlaybackId) ||
+			current?.selected.videoId === video.id
+				? current!
+				: bgmPlayback.request({ videoId: video.id, title: video.title });
+		setPlaybackSnapshot(snapshot);
+		beginPlaybackTimeout(snapshot.playbackId);
 		setCurrentYt(video);
 		lastYtRef.current = video;
 		setSource("youtube");
-		setPlaying(true);
+		// Iframe replacement is a request, not observed audio playback.
+		setPlaying(false);
 		emitAiInterferenceEvent({
 			source: "bgm",
 			action: "music_changed",
-			summary: `BGM: YouTube "${video.title}" (${video.channel}) 재생 시작`,
+			summary: `BGM: YouTube "${video.title}" playback requested`,
 		});
 
 		if (!prevBgVideoRef.current && prevBgMediaRef.current === "") {
