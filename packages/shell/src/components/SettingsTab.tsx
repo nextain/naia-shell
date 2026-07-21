@@ -3533,9 +3533,7 @@ export function SettingsTab() {
 
 					{/* API key — shown before model selector so user can enter key first */}
 					{provider !== "nextain" &&
-						provider !== "ollama" &&
-						provider !== "vllm" &&
-						provider !== "claude-code-cli" && (
+						!isApiKeyOptional(provider) && (
 							<div className="settings-field">
 								<label htmlFor="apikey-input">{t("settings.apiKey")}</label>
 								<input

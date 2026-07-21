@@ -239,6 +239,24 @@ describe("SettingsTab", () => {
 		expect(providerSelect.value).toBe("claude-code-cli");
 	});
 
+	it("shows Codex in the main provider selector without an API key field", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const providerSelect = document.getElementById(
+			"provider-select",
+		) as HTMLSelectElement;
+		expect(providerSelect.querySelector('option[value="codex"]')).toBeTruthy();
+
+		fireEvent.change(providerSelect, { target: { value: "codex" } });
+
+		expect(providerSelect.value).toBe("codex");
+		expect(screen.queryByLabelText(/^API/i)).toBeNull();
+		expect(
+			(document.getElementById("model-select") as HTMLSelectElement).value,
+		).toBe("gpt-5.4");
+	});
+
 	it("renders VRM model picker — shows empty state when no VRMs in naia-settings", () => {
 		// No adkPath set → listNaiaAssets returns [] without calling invoke
 		mockInvoke.mockResolvedValue([]);
