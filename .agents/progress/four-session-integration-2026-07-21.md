@@ -18,10 +18,11 @@
 
 ## 실행 증거
 
-- Agent 전체: 108 files pass / 3 skip, 1,282 tests pass / 9 skip
+- Agent 전체: 108 files pass / 3 skip, 1,284 tests pass / 9 skip
 - Agent 통합 집중: 17 files, 204 tests pass; 인증 배선 21/21 pass; build pass
 - Memory 전체: 24 files, 390 tests pass; build pass
-- Shell 전체: 120 files pass / 2 skip, 1,327 tests pass / 13 skip
+- Shell core: 24 files, 228 tests pass
+- Shell UI: 121 files pass / 2 skip, 1,332 tests pass / 13 skip
 - Shell production build: pass
 - Playwright: Discord 3 + proactive speech 7 = 10/10 pass
 - Rust paired integration: 172/172 pass against Agent `ea6afa1d1f9227e754c68e4498364e5dc6405034`
