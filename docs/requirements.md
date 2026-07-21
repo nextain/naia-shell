@@ -464,3 +464,14 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 - 같은 봇이 여러 채널에 초대된 경우, 지구본을 열면 최근 채널이 먼저 보이고 목록에서 다른 채널을 고르면 그 채널의 대화만 보인다.
 - 좁은 창에서 채널을 고르면 목록은 대화 화면으로 전환되고, 뒤로 가기를 누르면 원래 목록으로 돌아온다.
 - 봇 토큰이 없거나 만료됐을 때는 연결 화면에서 복구 방법을 설명하고, 채널 메시지·로그·agent 요청 어디에도 토큰 원문이 나타나지 않는다.
+
+## Codex·LLM 역할 분리 요구사항 (2026-07-21)
+
+| ID | 요구사항 | 검증 기준 |
+|---|---|---|
+| **FR-LLM-ROLE.1** | 설정에서 Codex를 API key 없는 local-login provider로 선택할 수 있다. | provider option과 keyless chat config 계약 |
+| **FR-LLM-ROLE.2** | main/sub/memory 역할의 provider·model·credentialRef를 독립 저장하고 복원한다. | role config roundtrip 계약 |
+| **FR-LLM-ROLE.3** | dev/stage/Tauri build는 동일한 정확한 Agent commit과 proto SHA를 강제하며 임의 sibling checkout을 사용하지 않는다. | paired contract와 dirty/wrong-commit negative test |
+
+- **NFR-LLM-ROLE-secret**: Codex 로그인 파일이나 토큰을 Shell 설정·wire·로그로 복사하지 않는다.
+- **NFR-LLM-ROLE-pairing**: Agent 기능 변경 뒤 Shell pin을 새 정확한 commit으로 갱신하기 전에는 빌드가 실패해야 한다.

@@ -81,3 +81,7 @@ packages/shell/e2e/mini-node-host.mjs
 
 # playwright 자동생성 산출물
 packages/shell/test-results/
+packages/shell/playwright.config.js
+packages/shell/playwright.config.d.ts
+packages/shell/vite.config.js
+packages/shell/vite.config.d.ts

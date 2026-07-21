@@ -184,6 +184,14 @@ export const config = {
 	waitforTimeout: 30_000,
 	connectionRetryTimeout: 120_000,
 	connectionRetryCount: 3,
+	// Node 26 exposes its global fetch dispatcher through an undici compatibility
+	// wrapper. webdriverio 9 precomputes Content-Length before that wrapper, which
+	// rejects the otherwise valid session request as UND_ERR_INVALID_ARG. Let fetch
+	// compute the byte length from the unchanged JSON body instead.
+	transformRequest: (request) => {
+		request.headers.delete("Content-Length");
+		return request;
+	},
 
 	port: 4448,
 	hostname: "127.0.0.1",
