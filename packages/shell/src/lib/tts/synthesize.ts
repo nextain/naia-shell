@@ -291,7 +291,9 @@ async function synthNaiaLocalVoice(
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
-			model: "naia-local-voice",
+			// `naia-local-voice` is the shell provider id. The cascade's
+			// OpenAI-compatible contract names its actual backend explicitly.
+			model: "voxcpm2",
 			input: opts.text,
 			// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
 			// it to this facade palette id; keep it intact all the way to :8910.

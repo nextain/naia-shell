@@ -279,7 +279,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 		const body = JSON.parse(init.body as string);
 		expect(init.headers).toEqual({ "Content-Type": "application/json" });
 		expect(body).toEqual({
-			model: "naia-local-voice",
+			model: "voxcpm2",
 			input: "안녕",
 			voice: "naia-default",
 			response_format: "wav",
@@ -301,7 +301,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body).toMatchObject({
-			model: "naia-local-voice",
+			model: "voxcpm2",
 			input: "x",
 			voice: "naia-default",
 			response_format: "wav",
@@ -319,7 +319,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body).toMatchObject({
-			model: "naia-local-voice",
+			model: "voxcpm2",
 			input: "x",
 			voice: "naia-default",
 			response_format: "wav",
@@ -337,7 +337,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body).toMatchObject({
-			model: "naia-local-voice",
+			model: "voxcpm2",
 			input: "x",
 			voice: "my-cloned-voice",
 			response_format: "wav",
