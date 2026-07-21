@@ -26,6 +26,7 @@ const runningWorker: CodingWorker = {
 	task: "Inspect the feature",
 	state: "running",
 	updatedAt: "2026-07-22T00:00:00.000Z",
+	resumable: false,
 };
 
 function adapter(
@@ -137,7 +138,7 @@ describe("CodingWorkersPanel", () => {
 			...runningWorker,
 			id: "worker-resumable",
 			state: "failed",
-			checkpointId: "checkpoint-1",
+		resumable: true,
 		};
 		const completedWorker: CodingWorker = {
 			...runningWorker,

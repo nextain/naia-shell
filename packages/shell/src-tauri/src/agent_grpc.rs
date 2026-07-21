@@ -8,7 +8,7 @@ pub mod pb {
 
 use pb::agent_event::Event;
 use pb::naia_agent_client::NaiaAgentClient;
-use pb::{ApprovalResponseRequest, CancelRequest, ChatRequest, CredsUpdate, Message, SetWorkspaceRequest, ToolRequestControl};
+use pb::{ApprovalResponseRequest, CancelCodingJobRequest, CancelRequest, ChatRequest, CredsUpdate, GetCodingJobRequest, ListCodingJobsRequest, Message, ResumeCodingJobRequest, SetWorkspaceRequest, StartCodingJobRequest, ToolRequestControl};
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 
@@ -401,6 +401,34 @@ impl AgentGrpc {
     /// naia-agent 가 naia-settings/knowledge.json 을 읽어 kb-compiler compile. 통계 반환(no-throw RPC).
     pub async fn compile_knowledge(&mut self, adk_path: String) -> Result<pb::CompileKnowledgeResult, tonic::Status> {
         Ok(self.client.compile_knowledge(pb::CompileKnowledgeRequest { adk_path }).await?.into_inner())
+    }
+
+    pub async fn start_coding_job(
+        &mut self,
+        workspace_path: String,
+        task: String,
+    ) -> Result<pb::CodingJob, tonic::Status> {
+        Ok(self.client.start_coding_job(StartCodingJobRequest {
+            workspace_path,
+            task,
+            model: None,
+        }).await?.into_inner())
+    }
+
+    pub async fn get_coding_job(&mut self, job_id: String) -> Result<pb::CodingJob, tonic::Status> {
+        Ok(self.client.get_coding_job(GetCodingJobRequest { job_id }).await?.into_inner())
+    }
+
+    pub async fn list_coding_jobs(&mut self) -> Result<Vec<pb::CodingJob>, tonic::Status> {
+        Ok(self.client.list_coding_jobs(ListCodingJobsRequest { workspace_path: None }).await?.into_inner().jobs)
+    }
+
+    pub async fn cancel_coding_job(&mut self, job_id: String) -> Result<pb::CodingJob, tonic::Status> {
+        Ok(self.client.cancel_coding_job(CancelCodingJobRequest { job_id }).await?.into_inner())
+    }
+
+    pub async fn resume_coding_job(&mut self, job_id: String) -> Result<pb::CodingJob, tonic::Status> {
+        Ok(self.client.resume_coding_job(ResumeCodingJobRequest { job_id }).await?.into_inner())
     }
 
     /// F1 rich-health(신규계약 Diagnostics RPC): agent version/uptime/components. os InteroceptivePort rich payload.

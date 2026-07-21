@@ -23,7 +23,8 @@ export interface CodingWorker {
 	task: string;
 	state: CodingWorkerState;
 	updatedAt: string;
-	checkpointId?: string;
+	/** The Agent exposes only whether a durable checkpoint exists, never its id. */
+	resumable: boolean;
 }
 
 export interface CreateCodingWorkerRequest {
@@ -77,7 +78,7 @@ export function isWorktreeOccupied(
 
 export function canResumeCodingWorker(worker: CodingWorker): boolean {
 	return (
-		Boolean(worker.checkpointId) &&
+		worker.resumable &&
 		(worker.state === "cancelled" || worker.state === "failed")
 	);
 }

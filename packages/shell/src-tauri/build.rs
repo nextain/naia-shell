@@ -8,9 +8,9 @@ fn main() {
         env,
         path::{Path, PathBuf},
     };
-    const REQUIRED_AGENT_COMMIT: &str = "e44b0f575549d607f4207f433a0284cb15c44746";
+    const REQUIRED_AGENT_COMMIT: &str = "5c496c394e2d54bdffdce37d3730353e34832827";
     const REQUIRED_PROTO_SHA256: &str =
-        "18000e2902410c5279f2d0d38a04c1ecb6c6f3d6566532c2d3b81ddecc9c8d3b";
+        "ebde3daeac8f697fe880ec8306391092c99649dec687cab30f922cef074f2de3";
     const REQUIRED_PROTO_MARKERS: &[&str] = &[
         "repeated AttachmentRef attachments = 4;",
         "message AttachmentRef",
@@ -24,6 +24,8 @@ fn main() {
         "ProcessingDisclosureEvent processing_disclosure = 20;",
         "rpc Shutdown(ShutdownRequest) returns (Ack);",
         "message ShutdownRequest { string nonce = 1; }",
+        "rpc StartCodingJob(StartCodingJobRequest) returns (CodingJob);",
+        "string task = 11;",
         "enum WireErrorCode",
         "ATTACHMENT_INVALID_REF",
     ];
@@ -141,7 +143,9 @@ fn main() {
             );
         }
     }
-    let proto_sha256 = format!("{:x}", Sha256::digest(&proto_bytes));
+    // Git may check out the same proto as CRLF or LF on Windows. The paired
+    // contract is content, not line-ending policy, so normalize before hashing.
+    let proto_sha256 = format!("{:x}", Sha256::digest(proto_text.replace("\r\n", "\n").as_bytes()));
     if proto_sha256 != REQUIRED_PROTO_SHA256 {
         panic!(
             "NAIA_AGENT_PROTO_DIR must point to the paired naia_agent.proto SHA256 {REQUIRED_PROTO_SHA256}; got {proto_sha256}"

@@ -7358,6 +7358,106 @@ async fn compile_knowledge(
     }))
 }
 
+fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_json::Value, String> {
+    use agent_grpc::pb::CodingJobState;
+
+    let state = match CodingJobState::try_from(job.state).ok() {
+        Some(CodingJobState::Queued) => "queued",
+        Some(CodingJobState::Running) => "running",
+        Some(CodingJobState::Cancelling) => "cancelling",
+        Some(CodingJobState::Cancelled) => "cancelled",
+        Some(CodingJobState::Completed) => "completed",
+        Some(CodingJobState::Failed) => "failed",
+        _ => return Err("coding worker returned an invalid state".to_string()),
+    };
+    Ok(serde_json::json!({
+        "id": job.job_id,
+        "provider": "codex",
+        "worktree": job.worktree_path,
+        "task": job.task,
+        "state": state,
+        "updatedAt": job.updated_at,
+        "resumable": job.resumable,
+    }))
+}
+
+fn coding_job_grpc_addr(state: &AppState) -> Result<String, String> {
+    let guard = state.agent.lock().map_err(|_| "agent lock".to_string())?;
+    guard
+        .as_ref()
+        .map(|agent| agent.grpc_addr.clone())
+        .ok_or_else(|| "coding worker service is not connected".to_string())
+}
+
+/// Creates an Agent-owned Codex worker in a generated, leased worktree.
+#[tauri::command]
+async fn start_coding_job(
+    workspace_path: String,
+    task: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let addr = coding_job_grpc_addr(&state)?;
+    let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
+        .await
+        .map_err(|_| "coding worker service is not connected".to_string())?;
+    let job = client
+        .start_coding_job(workspace_path, task)
+        .await
+        .map_err(|_| "coding worker request could not be completed".to_string())?;
+    coding_job_to_shell_value(job)
+}
+
+#[tauri::command]
+async fn list_coding_jobs(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let addr = coding_job_grpc_addr(&state)?;
+    let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
+        .await
+        .map_err(|_| "coding worker service is not connected".to_string())?;
+    client
+        .list_coding_jobs()
+        .await
+        .map_err(|_| "coding worker request could not be completed".to_string())?
+        .into_iter()
+        .map(coding_job_to_shell_value)
+        .collect()
+}
+
+#[tauri::command]
+async fn cancel_coding_job(
+    job_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let addr = coding_job_grpc_addr(&state)?;
+    let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
+        .await
+        .map_err(|_| "coding worker service is not connected".to_string())?;
+    coding_job_to_shell_value(
+        client
+            .cancel_coding_job(job_id)
+            .await
+            .map_err(|_| "coding worker request could not be completed".to_string())?,
+    )
+}
+
+#[tauri::command]
+async fn resume_coding_job(
+    job_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let addr = coding_job_grpc_addr(&state)?;
+    let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
+        .await
+        .map_err(|_| "coding worker service is not connected".to_string())?;
+    coding_job_to_shell_value(
+        client
+            .resume_coding_job(job_id)
+            .await
+            .map_err(|_| "coding worker request could not be completed".to_string())?,
+    )
+}
+
 // ?? ???transcript read(FR-CONV.3) ?????????????????????????????????????????????
 // `{adk_path}/conversations/` = agent(?꾨몢??媛 append ?섎뒗 verbatim ??붾줉(?고????곗씠??. **content ?⑥씪 writer = agent**;
 // shell ? read + delete(?몄뀡 lifecycle 愿由? UI ??젣踰꾪듉)留???content append/?섏젙 ???? agent 遺??二쎌쓬?먮룄 ?뚯씪 吏곸젒
@@ -8392,6 +8492,10 @@ pub fn run() {
             write_naia_knowledge_config,
             read_naia_knowledge_kb,
             compile_knowledge,
+            start_coding_job,
+            list_coding_jobs,
+            cancel_coding_job,
+            resume_coding_job,
             write_agent_key,
             agent_key_exists,
             check_naia_settings,

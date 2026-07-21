@@ -48,8 +48,8 @@ const CASCADE_LOADER_SIBLING = resolve(
 	SHELL,
 	"../../../naia-omni-windows-manager/loader",
 );
-const REQUIRED_AGENT_COMMIT = "e44b0f575549d607f4207f433a0284cb15c44746";
-const REQUIRED_PROTO_SHA256 = "18000e2902410c5279f2d0d38a04c1ecb6c6f3d6566532c2d3b81ddecc9c8d3b";
+const REQUIRED_AGENT_COMMIT = "5c496c394e2d54bdffdce37d3730353e34832827";
+const REQUIRED_PROTO_SHA256 = "ebde3daeac8f697fe880ec8306391092c99649dec687cab30f922cef074f2de3";
 const STATIC_AGENT_CANDIDATES = [
 	resolve(REPO_ROOT, "..", "naia-agent"),
 	resolve(REPO_ROOT, "..", "..", "naia-agent"),
@@ -85,7 +85,9 @@ function isCleanCheckout(dir) {
 }
 
 function sha256File(path) {
-	return createHash("sha256").update(readFileSync(path)).digest("hex");
+	return createHash("sha256")
+		.update(readFileSync(path, "utf8").replace(/\r\n/g, "\n"))
+		.digest("hex");
 }
 
 function isPairedAgentCheckout(dir) {

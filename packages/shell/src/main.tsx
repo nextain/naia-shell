@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { setCodingWorkersAdapterFactory } from "./apps/workspace/coding-workers-adapter";
+import { tauriCodingWorkersAdapter } from "./apps/workspace/coding-workers-tauri";
 import { probeNvaCapabilities } from "./lib/avatar/nva-capability";
 import { Logger } from "./lib/logger";
 import "./styles/global.css";
@@ -10,6 +12,12 @@ if (
 	new URLSearchParams(window.location.search).has("reset")
 ) {
 	localStorage.clear();
+}
+
+// The browser test surface deliberately keeps the unavailable adapter. Only a
+// real Tauri window may call the paired Agent coding-job RPCs.
+if ("__TAURI_INTERNALS__" in window) {
+	setCodingWorkersAdapterFactory(() => tauriCodingWorkersAdapter);
 }
 
 // NVA 레이어드 플레이어 capability 진단 — 부팅 1회. 실 런타임(WebView2)에서 레이어드 합성 능력을

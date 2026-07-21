@@ -114,12 +114,12 @@ export function CodingWorkersPanel({
 					</select>
 				</label>
 				<label>
-					Worktree
+					Workspace root (a dedicated worktree is created automatically)
 					<input
 						data-testid="coding-worker-worktree"
 						value={worktree}
 						onChange={(event) => setWorktree(event.target.value)}
-						placeholder="D:\\worktrees\\feature"
+						placeholder="D:\\alpha-adk\\projects\\naia-shell"
 					/>
 				</label>
 				<label>
