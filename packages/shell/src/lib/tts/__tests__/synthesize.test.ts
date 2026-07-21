@@ -249,9 +249,8 @@ describe("synthesizeTts — vllm", () => {
 	});
 });
 
-describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표면)", () => {
-	// 서버가 audio/wav(RIFF) bytes 를 그대로 반환한다 (2026-07-15 3자 합의:
-	// raw /tts 직결은 음색 상태 우회 → 소비자는 OpenAI 표면만 쓴다).
+describe("synthesizeTts — naia-local-voice (cascade /tts facade contract)", () => {
+	// The public facade returns audio/wav (RIFF) bytes directly.
 	const WAV_BYTES = new Uint8Array([
 		0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
 	]); // "RIFF....WAVE" 헤더 선두
@@ -263,26 +262,21 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 		text: async () => "",
 	});
 
-	it("POSTs to {host}/v1/audio/speech (NOT raw /tts) and passes the WAV through", async () => {
+	it("POSTs to {host}/tts with the facade payload and passes the WAV through", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
 		vi.stubGlobal("fetch", fetchMock);
 		const res = await synthesizeTts({
 			text: "안녕",
 			provider: "naia-local-voice",
-			vllmTtsHost: "http://localhost:22600/",
+			vllmTtsHost: "http://localhost:8910/",
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
-		);
+		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8910/tts");
 		const init = fetchMock.mock.calls[0][1];
-		// 로컬/사설 컨테이너 인증: Bearer 임의값 (공식 매뉴얼)
 		const body = JSON.parse(init.body as string);
 		expect(init.headers).toEqual({ "Content-Type": "application/json" });
 		expect(body).toEqual({
-			model: "voxcpm2",
-			input: "안녕",
+			text: "안녕",
 			voice: "naia-default",
-			response_format: "wav",
 		});
 		// WAV bytes 무변환 패스스루 (AudioQueue/ttsAudioToWav 가 RIFF 네이티브 감지)
 		const out = Uint8Array.from(atob(res.audioBase64), (c) => c.charCodeAt(0));
@@ -297,14 +291,12 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 		await synthesizeTts({
 			text: "x",
 			provider: "naia-local-voice",
-			vllmTtsHost: "http://localhost:22600",
+			vllmTtsHost: "http://localhost:8910",
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body).toMatchObject({
-			model: "voxcpm2",
-			input: "x",
+			text: "x",
 			voice: "naia-default",
-			response_format: "wav",
 		});
 	});
 
@@ -315,14 +307,12 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			text: "x",
 			provider: "naia-local-voice",
 			voice: "default", // SettingsTab 이 naia-local-voice 에 넣는 placeholder
-			vllmTtsHost: "http://localhost:22600",
+			vllmTtsHost: "http://localhost:8910",
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body).toMatchObject({
-			model: "voxcpm2",
-			input: "x",
+			text: "x",
 			voice: "naia-default",
-			response_format: "wav",
 		});
 	});
 
@@ -333,14 +323,12 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			text: "x",
 			provider: "naia-local-voice",
 			voice: "my-cloned-voice",
-			vllmTtsHost: "http://localhost:22600",
+			vllmTtsHost: "http://localhost:8910",
 		});
 		const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
 		expect(body).toMatchObject({
-			model: "voxcpm2",
-			input: "x",
+			text: "x",
 			voice: "my-cloned-voice",
-			response_format: "wav",
 		});
 	});
 
@@ -351,16 +339,12 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			text: "x",
 			provider: "naia-local-voice",
 			vllmHost: "http://localhost:8000", // LLM — 무시
-			vllmTtsHost: "http://localhost:22600",
+			vllmTtsHost: "http://localhost:8910",
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:22600/v1/audio/speech",
-		);
+		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8910/tts");
 	});
 
-	it("defaults to :8910(로컬 façade — 정본 표면 보유) when no voice host (never the LLM vllmHost)", async () => {
-		// raw VoxCPM2(:22600)는 /v1/audio/speech 가 없다 — UI 에서 로컬 음성만 고르면
-		// 기본값이 정본 표면을 서빙하는 로컬 cascade façade 로 가야 한다 (2026-07-15).
+	it("defaults to :8910 facade when no voice host (never the LLM vllmHost)", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(wavResponse());
 		vi.stubGlobal("fetch", fetchMock);
 		await synthesizeTts({
@@ -368,9 +352,7 @@ describe("synthesizeTts — naia-local-voice (OpenAI /v1/audio/speech 정본 표
 			provider: "naia-local-voice",
 			vllmHost: "http://localhost:9000", // LLM — 폴백 안 함
 		});
-		expect(fetchMock.mock.calls[0][0]).toBe(
-			"http://localhost:8910/v1/audio/speech",
-		);
+		expect(fetchMock.mock.calls[0][0]).toBe("http://localhost:8910/tts");
 	});
 
 	it("throws on service error (5xx)", async () => {
@@ -388,7 +370,7 @@ describe("streamsAvatarPcm — 아바타 립싱크 PCM 직결 게이트 (FR-VOIC
 	it("nextain(게이트웨이 LINEAR16=WAV) → true", () => {
 		expect(streamsAvatarPcm("nextain")).toBe(true);
 	});
-	it("naia-local-voice(/v1/audio/speech WAV, 음색=서버 해석) → true", () => {
+	it("naia-local-voice(/tts WAV, 음색=서버 해석) → true", () => {
 		// 8g avatar-only 파사드는 자체 TTS 가 없어 /stream_text 는 무음 —
 		// 셸 합성 WAV 를 /stream 으로 흘리는 것이 유일한 립싱크 경로.
 		expect(streamsAvatarPcm("naia-local-voice")).toBe(true);
