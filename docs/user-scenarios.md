@@ -221,7 +221,23 @@ Shell은 빌드 때 고정된 정확한 Agent 런타임만 실행한다.
 - 재시도: 사용자가 설치 또는 로그인을 마친 뒤 같은 화면에서 다시 확인할 수 있다.
 - 경계: 이 확인은 Codex에게 파일 작성·Git commit·push·배포를 맡기지 않는다. Git과 GitHub Pages는 수강생이 별도 단계에서 직접 수행한다.
 
+## UC-CODEX-WORKER-LIFECYCLE — 격리된 Codex 코딩 작업자를 관리한다
+
+사용자는 워크스페이스의 **Coding Workers** 패널에서 provider `codex`, 작업할 worktree, 작업 설명을 명시해 코딩 작업자를 요청한다. Shell은 준비되지 않은 adapter를 성공으로 표시하지 않으며, API가 연결되기 전에는 “작업자 서비스에 연결할 수 없음”을 표시하고 목록 상태를 만들지 않는다.
+
+작업자가 생성된 뒤에는 각 항목의 worktree·작업 설명·마지막 갱신 시각·`queued`/`running`/`cancelling`/`cancelled`/`completed`/`failed` 상태를 독립적으로 본다. 실행 중인 작업자가 같은 worktree를 이미 점유하면 두 번째 요청은 충돌 이유를 표시하고 전송하지 않는다. 동시에 실행할 작업자는 서로 다른 격리 worktree를 사용한다.
+
+사용자는 대상 작업자에만 취소를 요청할 수 있다. Shell은 adapter가 확인한 상태만 렌더하며, PTY 종료를 취소 성공으로 바꾸지 않는다. 재개는 checkpoint 식별자가 있는 `cancelled` 또는 `failed` 항목에만 노출한다. checkpoint가 없으면 재개 버튼을 제공하지 않고, 단순 터미널 재시작을 재개로 표현하지 않는다.
+
+- 성공: adapter가 반환한 작업자만 목록에 추가·갱신되고, 두 작업자는 서로 다른 worktree에서 병렬로 관찰된다.
+- 실패: API 미연결·요청 실패·동일 worktree 충돌은 안전한 오류만 표시하며 새 상태·비밀값·원본 adapter 오류는 화면이나 로그에 남기지 않는다.
+- 경계: 로그인 토큰·계정 식별자·Codex CLI 출력은 worker request·UI·로그에 포함하지 않는다. 실제 gRPC schema가 확정되기 전 Shell은 작업자 실행을 흉내 내지 않는다.
+
 ## Test Coverage Map (P02)
+
+| UC | 단위/계약 | UI 통합 |
+|---|---|---|
+| UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers.test.tsx`: form validation, same-worktree collision, state rendering, checkpoint-only resume, unavailable adapter의 no-fake-success | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.

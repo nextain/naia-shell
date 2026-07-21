@@ -14,6 +14,7 @@ import { appRegistry } from "../../lib/app-registry";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { useChatStore } from "../../stores/chat";
 import { useAppStore } from "../../stores/app";
+import { getCodingWorkersAdapter } from "./coding-workers-adapter";
 import { DocTabBar } from "./DocTabBar";
 import { Editor, type EditorHandle } from "./Editor";
 import { FileTree } from "./FileTree";
@@ -24,6 +25,7 @@ import { IssuesArea } from "./IssuesArea";
 import type { SessionInfo } from "./SessionCard";
 import { SkillLauncher } from "./SkillLauncher";
 import { Terminal } from "./Terminal";
+import { CodingWorkersPanel } from "./CodingWorkersPanel";
 import { ACTIVE_THRESHOLD_SECONDS, WORKSPACE_ROOT } from "./constants";
 
 // ─── File navigation history ─────────────────────────────────────────────────
@@ -246,6 +248,8 @@ export function WorkspaceCenterArea({ naia }: AppCenterProps) {
 	// Terminal viewing mode in the bottom zone: "tabs" = one focused terminal,
 	// "grid" = all terminals tiled. User-toggleable (was auto by count).
 	const [terminalView, setTerminalView] = useState<"tabs" | "grid">("grid");
+	const [codingWorkersOpen, setCodingWorkersOpen] = useState(false);
+	const codingWorkersAdapter = useMemo(() => getCodingWorkersAdapter(), []);
 	// Open document tabs (zone 3 top). The user keeps many work documents open;
 	// this strip keeps them findable + switchable. activeDoc = openFilePath.
 	const [openDocs, setOpenDocs] = useState<string[]>([]);
@@ -1679,6 +1683,19 @@ export function WorkspaceCenterArea({ naia }: AppCenterProps) {
 					className="workspace-panel__term-zone"
 					style={{ flexGrow: 1 - docSplit, flexBasis: 0, minHeight: 0 }}
 				>
+					<div className="workspace-panel__coding-workers-toolbar">
+						<button
+							type="button"
+							data-testid="coding-workers-toggle"
+							aria-expanded={codingWorkersOpen}
+							onClick={() => setCodingWorkersOpen((open) => !open)}
+						>
+							Coding Workers
+						</button>
+					</div>
+					{codingWorkersOpen && (
+						<CodingWorkersPanel adapter={codingWorkersAdapter} />
+					)}
 					{terminals.length > 0 ? (
 						<>
 							<div className="workspace-panel__tab-bar" role="tablist">

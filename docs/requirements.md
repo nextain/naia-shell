@@ -483,3 +483,15 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-COURSE-CODEX.1** | 사용자가 설정의 두뇌에서 Codex를 main provider로 선택했을 때, Shell은 `Codex 연결 확인`으로 해당 PC의 Codex CLI 설치와 로그인 상태를 확인하고 `준비됨`·`설치 필요`·`로그인 필요`·`확인 실패`을 구분해 표시한다. | Rust 명령 계약 테스트에서 Windows와 비-Windows 실행 경로·상태 분류를 확인하고, Settings 단위 테스트에서 상태 표시와 재시도를 확인한다. |
 | **FR-COURSE-CODEX.2** | Codex 준비 확인은 인증 토큰·계정 식별자·CLI 출력 원문을 UI·설정·agent 요청·로그에 저장하거나 표시하지 않으며, provider·모델·워크스페이스 설정을 변경하지 않는다. | 실패 상태 단위 테스트와 IPC 결과 직렬화 검사에서 안전한 상태 코드만 노출되는지 확인한다. |
 | **FR-COURSE-CODEX.3** | Codex가 아닌 provider를 선택하면 Codex 준비 확인 UI를 노출하지 않는다. Codex 선택으로 돌아오면 사용자가 명시적으로 다시 확인할 수 있다. | Settings FE 테스트에서 provider 전환과 재시도 동작을 확인한다. |
+
+## Codex 코딩 작업자 요구사항 (2026-07-22)
+
+| ID | 요구사항 | 검증 기준 |
+|---|---|---|
+| **FR-CODEX-WORKER.1** | Shell은 Coding Workers 패널에서 `codex` provider, 절대 worktree 경로, 비어 있지 않은 작업 설명을 받아 worker adapter에 생성 요청할 수 있다. adapter가 없거나 실패하면 성공 상태를 만들지 않는다. | adapter fake 계약과 UI 테스트에서 생성 성공은 반환된 worker에만 한정되고 unavailable adapter는 오류·빈 목록으로 남는지 확인한다. |
+| **FR-CODEX-WORKER.2** | worker는 안정적 ID, provider, worktree, task, 상태, 마지막 갱신 시각, 선택적 checkpoint ID를 가진다. 상태는 `queued`, `running`, `cancelling`, `cancelled`, `completed`, `failed`만 허용한다. | 도메인 검증 및 상태 렌더링 테스트. |
+| **FR-CODEX-WORKER.3** | `queued`·`running`·`cancelling` worker가 점유한 worktree에는 새 worker를 요청하지 않고 충돌 이유를 표시한다. 병렬 작업은 서로 다른 격리 worktree에서만 시작한다. | same-worktree negative UI 테스트. |
+| **FR-CODEX-WORKER.4** | 취소와 재개는 각각 worker adapter의 대상 ID 요청으로만 수행한다. 재개는 checkpoint ID가 있는 `cancelled` 또는 `failed` worker에만 가능하며, PTY kill 또는 새 shell 생성은 재개가 아니다. | cancel/resume adapter 호출 및 checkpoint negative 테스트. |
+| **FR-CODEX-WORKER.5** | Shell은 원본 adapter 오류, Codex 로그인 토큰, 계정 식별자, CLI 출력 원문을 worker UI·로그·persistent config에 노출하지 않는다. | unavailable/error sanitization 테스트. |
+
+- **NFR-CODEX-WORKER-contract**: Agent gRPC schema가 확정되기 전에는 Shell adapter가 worker lifecycle의 성공을 반환하거나 PTY를 worker로 위장하지 않는다.

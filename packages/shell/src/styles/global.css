@@ -8368,6 +8368,97 @@ body.resizing-col * {
 	overflow: hidden;
 }
 
+.workspace-panel__coding-workers-toolbar {
+	display: flex;
+	justify-content: flex-end;
+	padding: 4px 8px;
+	background: var(--surface, #242424);
+	border-bottom: 1px solid var(--border-color, #333);
+}
+
+.workspace-panel__coding-workers-toolbar button {
+	font-size: 12px;
+}
+
+.coding-workers {
+	flex: 0 0 auto;
+	max-height: 300px;
+	overflow: auto;
+	padding: 10px;
+	background: var(--surface, #242424);
+	border-bottom: 1px solid var(--border-color, #333);
+}
+
+.coding-workers__header h3,
+.coding-workers__header p {
+	margin: 0;
+}
+
+.coding-workers__header p {
+	margin-top: 4px;
+	font-size: 12px;
+	color: var(--text-secondary, #aaa);
+}
+
+.coding-workers__form {
+	display: grid;
+	grid-template-columns: minmax(100px, 1fr) minmax(160px, 2fr) minmax(160px, 3fr) auto;
+	gap: 8px;
+	align-items: end;
+	margin-top: 8px;
+}
+
+.coding-workers__form label {
+	display: grid;
+	gap: 4px;
+	font-size: 12px;
+}
+
+.coding-workers__form input,
+.coding-workers__form select,
+.coding-workers__form textarea {
+	min-width: 0;
+	box-sizing: border-box;
+}
+
+.coding-workers__form textarea {
+	min-height: 32px;
+	resize: vertical;
+}
+
+.coding-workers__list {
+	display: grid;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.coding-workers__list article {
+	display: grid;
+	grid-template-columns: auto auto 1fr auto auto;
+	gap: 6px;
+	align-items: center;
+	padding: 6px;
+	border: 1px solid var(--border-color, #444);
+	border-radius: 4px;
+	font-size: 12px;
+}
+
+.coding-workers__list p {
+	margin: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+@media (max-width: 800px) {
+	.coding-workers__form {
+		grid-template-columns: 1fr;
+	}
+	.coding-workers__list article {
+		grid-template-columns: 1fr;
+	}
+}
+
 /* Tab mode: show only the focused terminal (cells are stacked absolute). */
 .workspace-panel__terminal-area:not(.workspace-panel__terminal-area--grid)
 	.workspace-panel__terminal-cell:not(.workspace-panel__terminal-cell--focused) {
