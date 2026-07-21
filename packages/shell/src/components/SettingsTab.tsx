@@ -67,6 +67,7 @@ import {
 	type SttProviderId,
 	type ThemeId,
 	type TtsProviderId,
+	type LlmRoleConfig,
 	clearAllowedTools,
 	loadConfig,
 	loadConfigWithSecrets,
@@ -106,6 +107,8 @@ import {
 	isOmniModel,
 	listLlmProviders,
 } from "../lib/llm";
+import { readConfiguredLlmRoles, writeConfiguredLlmRole } from "../lib/llm/roles";
+import { providerSupportsRole } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
 import { toSpeechProfileCommandInput } from "../lib/proactive-speech-settings";
@@ -1112,17 +1115,14 @@ export function SettingsTab() {
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
 	);
-	const [memoryLlmProvider, setMemoryLlmProvider] = useState<
-		"none" | "naia" | "vllm" | "ollama"
-	>(existing?.memoryLlmProvider ?? "none");
-	const [memoryLlmBaseUrl, setMemoryLlmBaseUrl] = useState(
-		existing?.memoryLlmBaseUrl ?? "",
+	const initialLlmRoles = readConfiguredLlmRoles(
+		existing ?? { provider: "gemini", model: getDefaultLlmModel("gemini"), apiKey: "" },
 	);
-	const [memoryLlmApiKey, setMemoryLlmApiKey] = useState(
-		existing?.memoryLlmApiKey ?? "",
+	const [subLlmRole, setSubLlmRole] = useState<LlmRoleConfig>(
+		initialLlmRoles.sub ?? { inherit: "main" },
 	);
-	const [memoryLlmModel, setMemoryLlmModel] = useState(
-		existing?.memoryLlmModel ?? "",
+	const [memoryLlmRole, setMemoryLlmRole] = useState<LlmRoleConfig>(
+		initialLlmRoles.memory ?? { inherit: "sub" },
 	);
 	const [backupPassword, setBackupPassword] = useState("");
 	const [backupStatus, setBackupStatus] = useState<
@@ -1947,6 +1947,17 @@ export function SettingsTab() {
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 	}
 
+	function persistLlmRole(
+		role: "sub" | "memory",
+		value: LlmRoleConfig,
+	) {
+		const cfg = loadConfig();
+		if (!cfg) return;
+		const next = writeConfiguredLlmRole(cfg, role, value);
+		saveConfig(next);
+		void writeNaiaConfig(next as unknown as Record<string, unknown>);
+	}
+
 	function persistVideoAvatarSelection(nextNva?: string) {
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
 		setAvatarProvider("naia-video-avatar");
@@ -1976,15 +1987,21 @@ export function SettingsTab() {
 		}
 		// UC-MODEL-SELECT contract: persist the provider/model switch so the gRPC
 		// agent reloads with it (prev. only Save persisted → stale provider/model).
-		const provSel = applyModelSelectionToConfig(
+		const selectedModel = id !== "ollama"
+			? getDefaultLlmModel(id)
+			: ((loadConfig()?.model as string | undefined) ?? "");
+		const legacySelection = applyModelSelectionToConfig(
 			loadConfig() as Record<string, unknown> | null,
 			id,
-			id !== "ollama"
-				? getDefaultLlmModel(id)
-				: ((loadConfig()?.model as string | undefined) ?? ""),
+			selectedModel,
+		);
+		const provSel = writeConfiguredLlmRole(
+			legacySelection as unknown as AppConfig,
+			"main",
+			{ provider: id, model: selectedModel },
 		);
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
-		void writeNaiaConfig(provSel);
+		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
 	}
 
 	async function checkCodexReadiness() {
@@ -2291,7 +2308,7 @@ export function SettingsTab() {
 			cascadeAvatarPossible && avatarProvider === "naia-video-avatar"
 				? "naia-video-avatar"
 				: "vrm";
-		const newConfig = {
+		let newConfig: AppConfig = {
 			...existing,
 			provider,
 			model,
@@ -2397,19 +2414,13 @@ export function SettingsTab() {
 				memoryAdapter === "qdrant" ? qdrantUrl || undefined : undefined,
 			qdrantApiKey:
 				memoryAdapter === "qdrant" ? qdrantApiKey || undefined : undefined,
-			memoryLlmProvider:
-				memoryLlmProvider !== "none" ? memoryLlmProvider : undefined,
-			memoryLlmBaseUrl:
-				memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama"
-					? memoryLlmBaseUrl || undefined
-					: undefined,
-			memoryLlmApiKey:
-				memoryLlmProvider === "vllm" || memoryLlmProvider === "ollama"
-					? memoryLlmApiKey || undefined
-					: undefined,
-			memoryLlmModel:
-				memoryLlmProvider !== "none" ? memoryLlmModel || undefined : undefined,
 		};
+		newConfig = writeConfiguredLlmRole(newConfig, "main", {
+			provider,
+			model,
+		});
+		newConfig = writeConfiguredLlmRole(newConfig, "sub", subLlmRole);
+		newConfig = writeConfiguredLlmRole(newConfig, "memory", memoryLlmRole);
 		saveConfig(newConfig);
 		// Also persist to naia-settings/config.json so ADK reload restores the same settings
 		void writeNaiaConfig(newConfig as unknown as Record<string, unknown>);
@@ -2477,6 +2488,96 @@ export function SettingsTab() {
 	}
 
 	const providerModels = dynamicModels[provider] ?? [];
+	const renderLlmRoleEditor = (
+		role: "sub" | "memory",
+		labelKey: TranslationKey,
+		roleConfig: LlmRoleConfig,
+		setRoleConfig: (value: LlmRoleConfig) => void,
+		inheritTargets: readonly ("main" | "sub")[],
+	) => {
+		const compatibleProviders = LLM_PROVIDERS.filter((candidate) =>
+			providerSupportsRole(candidate.id, role),
+		);
+		const mode = roleConfig.inherit
+			? `inherit:${roleConfig.inherit}`
+			: "explicit";
+		const updateRole = (next: LlmRoleConfig) => {
+			setRoleConfig(next);
+			persistLlmRole(role, next);
+		};
+		return (
+			<div className="settings-field" data-testid={`${role}-llm-role`}>
+				<label htmlFor={`${role}-llm-mode`}>{t(labelKey)}</label>
+				<select
+					id={`${role}-llm-mode`}
+					data-testid={`${role}-llm-mode`}
+					value={mode}
+					onChange={(event) => {
+						if (event.target.value.startsWith("inherit:")) {
+							updateRole({
+								inherit: event.target.value.slice("inherit:".length) as "main" | "sub",
+							});
+							return;
+						}
+						const selectedProvider = compatibleProviders.find(
+							(candidate) => candidate.id === provider,
+						) ?? compatibleProviders[0];
+						if (!selectedProvider) return;
+						updateRole({
+							provider: selectedProvider.id,
+							model: getDefaultLlmModel(selectedProvider.id),
+						});
+					}}
+				>
+					{inheritTargets.map((target) => (
+						<option key={target} value={`inherit:${target}`}>
+							{target === "main"
+								? t("settings.roleInheritMain")
+								: t("settings.roleInheritSub")}
+						</option>
+					))}
+					<option value="explicit">{t("settings.roleExplicit")}</option>
+				</select>
+				{!roleConfig.inherit && (
+					<div className="settings-field" style={{ marginTop: "8px" }}>
+						<label htmlFor={`${role}-llm-provider`}>
+							{t("settings.provider")}
+						</label>
+						<select
+							id={`${role}-llm-provider`}
+							data-testid={`${role}-llm-provider`}
+							value={roleConfig.provider ?? ""}
+							onChange={(event) =>
+								updateRole({
+									provider: event.target.value as ProviderId,
+									model: getDefaultLlmModel(event.target.value),
+								})
+							}
+						>
+							{compatibleProviders.map((candidate) => (
+								<option key={candidate.id} value={candidate.id}>
+									{candidate.name}
+								</option>
+							))}
+						</select>
+						<label htmlFor={`${role}-llm-model`}>
+							{t("settings.model")}
+						</label>
+						<input
+							id={`${role}-llm-model`}
+							data-testid={`${role}-llm-model`}
+							type="text"
+							value={roleConfig.model ?? ""}
+							onChange={(event) =>
+								updateRole({ ...roleConfig, model: event.target.value })
+							}
+							placeholder={getDefaultLlmModel(roleConfig.provider ?? "")}
+						/>
+					</div>
+				)}
+			</div>
+		);
+	};
 	const selectedModelMeta = providerModels.find((m) => m.id === model);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const isSelectedOmni =
@@ -2625,7 +2726,9 @@ export function SettingsTab() {
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
 		setModel(next.model);
-		if (next.memoryLlmProvider) setMemoryLlmProvider(next.memoryLlmProvider);
+		const nextRoles = readConfiguredLlmRoles(next);
+		setSubLlmRole(nextRoles.sub ?? { inherit: "main" });
+		setMemoryLlmRole(nextRoles.memory ?? { inherit: "sub" });
 		if (next.memoryEmbeddingProvider)
 			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
 	}
@@ -3886,15 +3989,20 @@ export function SettingsTab() {
 								// (e.g. an omni gemini-2.5-flash-live from a prior voice session) survived.
 								// Skip while a nextain login is pending (naia_auth_complete persists then).
 								if (!(provider === "nextain" && !naiaKey)) {
-									const nextSel = applyModelSelectionToConfig(
+									const legacySelection = applyModelSelectionToConfig(
 										loadConfig() as Record<string, unknown> | null,
 										provider,
 										e.target.value,
 									);
+									const nextSel = writeConfiguredLlmRole(
+										legacySelection as unknown as AppConfig,
+										"main",
+										{ provider, model: e.target.value },
+									);
 									saveConfig(
 										nextSel as unknown as Parameters<typeof saveConfig>[0],
 									);
-									void writeNaiaConfig(nextSel);
+									void writeNaiaConfig(nextSel as unknown as Record<string, unknown>);
 								}
 								// When switching to an omni model, set default voice if not already set
 								const newMeta = providerModels.find(
@@ -4079,82 +4187,20 @@ export function SettingsTab() {
 					<div className="settings-section-divider">
 						<span>{t("settings.brainSubSection")}</span>
 					</div>
-					<div className="settings-field">
-						<label>{t("settings.modelsSmallLlm")}</label>
-						<div className="settings-hint">
-							{t("settings.modelsSmallLlmHint")}
-						</div>
-						<div
-							style={{
-								display: "flex",
-								flexDirection: "column",
-								gap: "8px",
-								marginTop: "4px",
-							}}
-						>
-							{(
-								[
-									["none", t("settings.memoryLlmNone")],
-									["naia", t("settings.memoryLlmNaia")],
-									["vllm", t("settings.memoryLlmVllm")],
-									["ollama", t("settings.memoryLlmOllama")],
-								] as const
-							).map(([val, label]) => (
-								<label
-									key={val}
-									style={{ display: "flex", alignItems: "center", gap: "6px" }}
-								>
-									<input
-										type="radio"
-										name="memory-llm"
-										value={val}
-										checked={memoryLlmProvider === val}
-										onChange={() => {
-											setMemoryLlmProvider(val);
-											persistConfig({ memoryLlmProvider: val });
-										}}
-									/>
-									{label}
-								</label>
-							))}
-						</div>
-						{(memoryLlmProvider === "vllm" ||
-							memoryLlmProvider === "ollama") && (
-							<div
-								style={{
-									marginTop: "8px",
-									display: "flex",
-									flexDirection: "column",
-									gap: "6px",
-								}}
-							>
-								<input
-									type="text"
-									value={memoryLlmBaseUrl}
-									onChange={(e) => setMemoryLlmBaseUrl(e.target.value)}
-									onBlur={(e) =>
-										persistConfig({ memoryLlmBaseUrl: e.target.value })
-									}
-									placeholder="http://localhost:8000"
-								/>
-								<input
-									type="password"
-									value={memoryLlmApiKey}
-									onChange={(e) => setMemoryLlmApiKey(e.target.value)}
-									placeholder={t("settings.apiKey")}
-								/>
-								<input
-									type="text"
-									value={memoryLlmModel}
-									onChange={(e) => setMemoryLlmModel(e.target.value)}
-									onBlur={(e) =>
-										persistConfig({ memoryLlmModel: e.target.value })
-									}
-									placeholder={t("settings.model")}
-								/>
-							</div>
-						)}
-					</div>
+					{renderLlmRoleEditor(
+						"sub",
+						"settings.brainSubSection",
+						subLlmRole,
+						setSubLlmRole,
+						["main"],
+					)}
+					{renderLlmRoleEditor(
+						"memory",
+						"settings.memoryLlm",
+						memoryLlmRole,
+						setMemoryLlmRole,
+						["main", "sub"],
+					)}
 
 					<div className="settings-actions">
 						<button

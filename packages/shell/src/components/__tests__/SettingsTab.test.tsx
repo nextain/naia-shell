@@ -176,6 +176,45 @@ describe("SettingsTab", () => {
 		expect(providerSelect.value).toBe("nextain");
 	});
 
+	it("persists role-specific models while keeping main-only Codex out of sub and memory", () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "codex", model: "gpt-5.4", apiKey: "" }),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		const subMode = screen.getByTestId("sub-llm-mode") as HTMLSelectElement;
+		const memoryMode = screen.getByTestId(
+			"memory-llm-mode",
+		) as HTMLSelectElement;
+		expect(subMode.value).toBe("inherit:main");
+		expect(memoryMode.value).toBe("inherit:sub");
+
+		fireEvent.change(subMode, { target: { value: "explicit" } });
+		const subProvider = screen.getByTestId(
+			"sub-llm-provider",
+		) as HTMLSelectElement;
+		expect([...subProvider.options].map((option) => option.value)).not.toContain(
+			"codex",
+		);
+		fireEvent.change(subProvider, { target: { value: "gemini" } });
+		const subModel = screen.getByTestId("sub-llm-model") as HTMLInputElement;
+		fireEvent.change(subModel, { target: { value: "gemini-3.1-flash-lite" } });
+		fireEvent.blur(subModel);
+		fireEvent.change(memoryMode, { target: { value: "inherit:main" } });
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.llmRoles).toMatchObject({
+			sub: { provider: "gemini", model: "gemini-3.1-flash-lite" },
+			memory: { inherit: "main" },
+		});
+		expect(saved.subLlmProvider).toBe("gemini");
+		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
+		expect(saved.memoryLlmProvider).toBeUndefined();
+	});
+
 	it("persists Naia auth callback even when no config exists yet", async () => {
 		mockInvoke.mockResolvedValue([]);
 		const authReady = vi.fn();

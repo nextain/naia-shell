@@ -25,7 +25,10 @@ configureCodexE2eEnvironment();
 
 export const config = {
 	runner: "local" as const,
-	specs: ["./specs/90-codex-live-chat.spec.ts"],
+	specs: [
+		"./specs/90-codex-live-chat.spec.ts",
+		"./specs/95-llm-role-settings.spec.ts",
+	],
 	maxInstances: 1,
 	hostname: "127.0.0.1",
 	port: Number(process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450"),
