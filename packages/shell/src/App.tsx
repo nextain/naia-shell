@@ -421,8 +421,13 @@ export function App() {
 			// 되면 이 effect 가 재실행돼 파일→캐시 하이드레이션 후 게이트를 연다.
 			return;
 		}
+		let cancelled = false;
 		Promise.all([readNaiaConfig(), readNaiaUiConfig()]).then(
 			([fileConfig, uiConfig]) => {
+				// React development Strict Mode deliberately mounts, cleans up, then
+				// mounts again. An older file read must never hydrate or unlock the
+				// write-back gate after its owning effect has been cleaned up.
+				if (cancelled) return;
 				const merged = mergeBootConfig(
 					loadConfig() as unknown as Record<string, unknown> | null,
 					fileConfig ?? null,
@@ -443,6 +448,9 @@ export function App() {
 				window.dispatchEvent(new CustomEvent("naia-config-changed"));
 			},
 		);
+		return () => {
+			cancelled = true;
+		};
 	}, [showAdkSetup]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
