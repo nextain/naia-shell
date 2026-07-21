@@ -8288,6 +8288,24 @@ const translations = {
 		id: "Secure input was cancelled.",
 		vi: "Secure input was cancelled.",
 	},
+	"settings.connectionsNativePromptUnavailable": {
+		ko: "운영체제의 보안 입력 창을 열 수 없습니다. 데스크톱 세션에서 다시 시도하세요.", en: "The operating system secure prompt could not be opened. Try again from a desktop session.", ja: "The operating system secure prompt could not be opened. Try again from a desktop session.", zh: "The operating system secure prompt could not be opened. Try again from a desktop session.",
+		fr: "The operating system secure prompt could not be opened. Try again from a desktop session.", de: "The operating system secure prompt could not be opened. Try again from a desktop session.", ru: "The operating system secure prompt could not be opened. Try again from a desktop session.", es: "The operating system secure prompt could not be opened. Try again from a desktop session.",
+		ar: "The operating system secure prompt could not be opened. Try again from a desktop session.", hi: "The operating system secure prompt could not be opened. Try again from a desktop session.", bn: "The operating system secure prompt could not be opened. Try again from a desktop session.", pt: "The operating system secure prompt could not be opened. Try again from a desktop session.",
+		id: "The operating system secure prompt could not be opened. Try again from a desktop session.", vi: "The operating system secure prompt could not be opened. Try again from a desktop session.",
+	},
+	"settings.connectionsDiscoveryIncomplete": {
+		ko: "서버 또는 채널 권한 확인이 아직 끝나지 않았습니다. 권한을 보완한 뒤 새로고침하세요.", en: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", ja: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", zh: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.",
+		fr: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", de: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", ru: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", es: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.",
+		ar: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", hi: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", bn: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", pt: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.",
+		id: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.", vi: "Server or channel permission discovery is incomplete. Fix permissions and refresh before saving.",
+	},
+	"settings.connectionsRuntimeUnavailable": {
+		ko: "Discord 에이전트 실행 상태를 확인할 수 없습니다. 새로고침해도 계속되면 연결을 다시 설정하세요.", en: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", ja: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", zh: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.",
+		fr: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", de: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", ru: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", es: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.",
+		ar: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", hi: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", bn: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", pt: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.",
+		id: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.", vi: "The Discord agent runtime is unavailable. Refresh, then reconnect if the problem continues.",
+	},
 	"settings.connectionsTroubleshoot": {
 		ko: "운영체제 보안 저장소와 Discord 봇 토큰을 확인한 뒤 다시 시도하세요.",
 		en: "Check the operating system credential store and Discord bot token, then try again.",

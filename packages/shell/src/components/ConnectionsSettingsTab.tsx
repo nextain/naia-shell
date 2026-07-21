@@ -70,6 +70,14 @@ interface BindingSnapshot {
 }
 
 const SNOWFLAKE = /^\d{6,32}$/;
+const KNOWN_RUNTIME_STATES = new Set([
+	"configured",
+	"connecting",
+	"starting",
+	"ready",
+	"stopped",
+	"failed",
+]);
 
 function isSafeGeneration(value: unknown): value is number | null {
 	return (
@@ -123,7 +131,8 @@ export function ConnectionsSettingsTab() {
 	>({});
 	const [saved, setSaved] = useState(false);
 	const [saving, setSaving] = useState(false);
-	const [capturingCredential, setCapturingCredential] = useState(false);
+	const [credentialOperationPending, setCredentialOperationPending] =
+		useState(false);
 	const errorCode = runtimeErrorCode ?? discoveryErrorCode;
 
 	const snapshotByBindingId = useMemo(
@@ -188,6 +197,20 @@ export function ConnectionsSettingsTab() {
 		() => unavailableBindings.filter(bindingDiscoveryIsUncertain),
 		[bindingDiscoveryIsUncertain, unavailableBindings],
 	);
+	const discoveryComplete =
+		discovery?.messageContentIntent === true &&
+		discovery.degradedGuildIds.length === 0 &&
+		!discovery.discoveryTruncated;
+	const bindingEditorEnabled =
+		discoveryComplete && (state === "connected" || state === "configured");
+	const canRetryUnchangedUncertainBindings =
+		!bindingEditorEnabled &&
+		selected.size > 0 &&
+		[...selected].every((bindingId) =>
+			uncertainBindings.some((binding) => binding.bindingId === bindingId),
+		);
+	const bindingSaveEnabled =
+		bindingEditorEnabled || canRetryUnchangedUncertainBindings;
 	const selectedUsersValid = useMemo(
 		() =>
 			[...selected].every((bindingId) => {
@@ -248,6 +271,16 @@ export function ConnectionsSettingsTab() {
 				setRuntimeErrorCode("discord_binding_generation_mismatch");
 				return;
 			}
+			if (!KNOWN_RUNTIME_STATES.has(runtime.state)) {
+				setState("error");
+				setRuntimeErrorCode("discord_runtime_status_invalid");
+				return;
+			}
+			if (runtime.state === "stopped" || runtime.state === "failed") {
+				setState("error");
+				setRuntimeErrorCode(runtime.code ?? "discord_runtime_stopped");
+				return;
+			}
 			const result = await invoke<DiscordDiscovery>(
 				"discord_discover_channels",
 			);
@@ -292,10 +325,10 @@ export function ConnectionsSettingsTab() {
 	}, [refresh]);
 
 	async function captureCredential() {
-		if (capturingCredential) return;
+		if (credentialOperationPending) return;
+		setCredentialOperationPending(true);
 		setRuntimeErrorCode(null);
 		setSaved(false);
-		setCapturingCredential(true);
 		try {
 			const result = await invoke<CredentialStatus>(
 				"discord_capture_bot_token",
@@ -314,11 +347,13 @@ export function ConnectionsSettingsTab() {
 					: "native_prompt_unavailable",
 			);
 		} finally {
-			setCapturingCredential(false);
+			setCredentialOperationPending(false);
 		}
 	}
 
 	async function removeCredential() {
+		if (credentialOperationPending) return;
+		setCredentialOperationPending(true);
 		setRuntimeErrorCode(null);
 		setSaved(false);
 		try {
@@ -326,6 +361,8 @@ export function ConnectionsSettingsTab() {
 			await refresh();
 		} catch (error) {
 			setRuntimeErrorCode(String(error));
+		} finally {
+			setCredentialOperationPending(false);
 		}
 	}
 
@@ -354,6 +391,7 @@ export function ConnectionsSettingsTab() {
 		if (
 			!discovery ||
 			bindingGeneration === undefined ||
+			!bindingSaveEnabled ||
 			!selectedUsersValid ||
 			saving
 		)
@@ -449,33 +487,30 @@ export function ConnectionsSettingsTab() {
 			<div className="settings-actions">
 				<button
 					type="button"
-					disabled={capturingCredential}
+					disabled={credentialOperationPending}
 					onClick={() => void captureCredential()}
 				>
-					{capturingCredential
-						? t("settings.connectionsPromptOpening")
-						: state === "connected" || state === "configured"
+					{state === "connected" || state === "configured"
 						? t("settings.connectionsRotate")
 						: t("settings.connectionsConnect")}
 				</button>
-				<button type="button" onClick={() => void refresh()}>
+				<button
+					type="button"
+					disabled={credentialOperationPending}
+					onClick={() => void refresh()}
+				>
 					{t("settings.connectionsRefresh")}
 				</button>
 				{state !== "disconnected" && (
-					<button type="button" onClick={() => void removeCredential()}>
+					<button
+						type="button"
+						disabled={credentialOperationPending}
+						onClick={() => void removeCredential()}
+					>
 						{t("settings.connectionsRemove")}
 					</button>
 				)}
 			</div>
-			{capturingCredential && (
-				<p
-					className="settings-hint"
-					data-testid="discord-secure-prompt-opening"
-					role="status"
-				>
-					{t("settings.connectionsPromptOpening")}
-				</p>
-			)}
 
 			<div className="settings-field">
 				<h3>{t("settings.connectionsPermissions")}</h3>
@@ -505,7 +540,10 @@ export function ConnectionsSettingsTab() {
 											<input
 												type="checkbox"
 												checked={isSelected}
-												disabled={!channel.permissions.usable && !isSelected}
+											disabled={
+												!bindingEditorEnabled ||
+												(!channel.permissions.usable && !isSelected)
+											}
 												onChange={() => toggleChannel(bindingId)}
 											/>
 											<span>#{channel.name}</span>
@@ -524,7 +562,9 @@ export function ConnectionsSettingsTab() {
 													<input
 														type="text"
 														inputMode="numeric"
-														disabled={!channel.permissions.usable}
+												disabled={
+													!bindingEditorEnabled || !channel.permissions.usable
+												}
 														value={allowedUsersText[bindingId] ?? ""}
 														onChange={(event) =>
 															setAllowedUsersText((current) => ({
@@ -544,7 +584,9 @@ export function ConnectionsSettingsTab() {
 												</label>
 												<select
 													aria-label={`${guild.name} #${channel.name}`}
-													disabled={!channel.permissions.usable}
+											disabled={
+													!bindingEditorEnabled || !channel.permissions.usable
+												}
 													value={
 														participation[bindingId] ??
 														restored?.participation ??
@@ -595,7 +637,8 @@ export function ConnectionsSettingsTab() {
 								<label>
 									<input
 										type="checkbox"
-										checked={selected.has(binding.bindingId)}
+													checked={selected.has(binding.bindingId)}
+													disabled={!bindingEditorEnabled}
 										onChange={(event) =>
 											setSelected((current) => {
 												const next = new Set(current);
@@ -651,7 +694,8 @@ export function ConnectionsSettingsTab() {
 							<label>
 								<input
 									type="checkbox"
-									checked={selected.has(binding.bindingId)}
+													checked={selected.has(binding.bindingId)}
+													disabled={!bindingEditorEnabled}
 									onChange={(event) =>
 										setSelected((current) => {
 											const next = new Set(current);
@@ -689,6 +733,7 @@ export function ConnectionsSettingsTab() {
 							disabled={
 								saving ||
 								bindingGeneration === undefined ||
+								!bindingSaveEnabled ||
 								!selectedUsersValid
 							}
 							onClick={() => void saveBindings()}
@@ -704,9 +749,16 @@ export function ConnectionsSettingsTab() {
 				<p role="alert" data-error-code={errorCode}>
 					{errorCode === "capture_cancelled"
 						? t("settings.connectionsCaptureCancelled")
+						: errorCode === "native_prompt_unavailable"
+							? t("settings.connectionsNativePromptUnavailable")
 						: errorCode === "message_content_disabled" ||
 								errorCode === "discord_message_content_intent_missing"
 							? t("settings.connectionsIntentMissing")
+							: errorCode === "discord_discovery_incomplete"
+								? t("settings.connectionsDiscoveryIncomplete")
+								: errorCode === "discord_runtime_stopped" ||
+										errorCode === "discord_runtime_status_invalid"
+									? t("settings.connectionsRuntimeUnavailable")
 							: t("settings.connectionsTroubleshoot")}
 				</p>
 			)}

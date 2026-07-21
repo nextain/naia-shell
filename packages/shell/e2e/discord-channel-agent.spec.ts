@@ -13,6 +13,7 @@ const DISCORD_TAURI_MOCK = `
 		currentWebview: { windowLabel: "main", label: "main" },
 	};
 	window.__DISCORD_INVOKES__ = [];
+	window.__DISCORD_CAPTURE_MODE__ = "success";
 	var callbacks = new Map();
 	var nextCallbackId = 1;
 	window.__TAURI_INTERNALS__.transformCallback = function(fn, once) {
@@ -77,6 +78,11 @@ const DISCORD_TAURI_MOCK = `
 		};
 		if (cmd === "discord_binding_snapshot")
 			return { generation: 1, bindings: [] };
+		if (cmd === "discord_capture_bot_token") {
+			if (window.__DISCORD_CAPTURE_MODE__ === "cancel")
+				throw new Error("capture_cancelled");
+			return { configured: true, code: "stored" };
+		}
 		if (cmd === "discord_save_bindings") return (args.bindings || []).length;
 		if (cmd === "discord_get_last_binding") return null;
 		if (cmd === "discord_set_last_binding") return null;
