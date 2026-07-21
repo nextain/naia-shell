@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "recorded_at": "2026-07-21T14:53:12+09:00",
+  "status": "passed",
+  "shell_test_source_commit": "025ac6b2d31f7d566ed17429d6a92fb9423be3f8",
+  "agent_commit": "1e0acab83622fe446f301811d0fe35bb10285b86",
+  "environment": {
+    "os": "Linux Bazzite",
+    "shell_driver": "WebdriverIO 9 + tauri-driver + WebKitWebDriver",
+    "codex_login": "ready",
+    "model": "gpt-5.4"
+  },
+  "command": "NAIA_AGENT_SCRIPT=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/scripts/builds/agent-stdio-entry.mjs NAIA_AGENT_PROTO_DIR=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/src/main/adapters/grpc pnpm exec wdio run e2e-tauri/wdio.conf.codex.ts",
+  "cwd": "packages/shell",
+  "assertions": {
+    "agent_reload": "loaded=true codex/gpt-5.4",
+    "request_provider": "codex",
+    "response_marker": "NAIA_SHELL_CODEX_E2E_OK_20260721",
+    "usage_tokens": "> 0",
+    "error_markers": "absent",
+    "settings_restore": "loaded=true gemini/gemini-2.5-flash"
+  },
+  "result": {
+    "tests_passed": 1,
+    "tests_failed": 0,
+    "duration_seconds": 12.3,
+    "spec_files_passed": 1,
+    "exit_code": 0
+  },
+  "regression": {
+    "shell_ui": "121 files passed, 2 skipped; 1332 tests passed, 13 skipped",
+    "shell_core": "25 files, 229 tests passed",
+    "production_build": "passed"
+  },
+  "diagnostic_note": "The first live run reached codex/gpt-5.4, rendered the exact response marker, and emitted usage/finish, but the test itself used an unsupported two-argument expect call. That harness-only assertion error was fixed; two subsequent live runs passed, including the final run on the committed test source."
+}
