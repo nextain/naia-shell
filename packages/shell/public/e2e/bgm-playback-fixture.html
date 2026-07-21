@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Naia BGM E2E fixture</title></head>
+  <body>
+    <p id="status">loaded</p>
+    <button id="report-playing" type="button">Report playing</button>
+    <script>
+      (() => {
+        const send = (event, info) => parent.postMessage(JSON.stringify({ event, info }), window.location.origin);
+        send("initialDelivery", 0);
+        document.getElementById("report-playing").addEventListener("click", () => {
+          document.getElementById("status").textContent = "playing";
+          send("onStateChange", 1);
+        });
+      })();
+    </script>
+  </body>
+</html>

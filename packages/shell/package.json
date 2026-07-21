@@ -25,6 +25,8 @@
     "build:e2e:tauri": "node scripts/build-e2e-tauri.mjs",
     "test:e2e:tauri:codex": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.codex.ts",
     "test:e2e:tauri:discord-settings": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.discord-settings.ts",
+
+    "test:e2e:tauri:radio": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.radio.ts",
     "test:e2e:tauri:nva": "wdio run e2e-tauri/wdio.conf.ts --spec e2e-tauri/specs/13-nva-capability.spec.ts",
     "test:e2e:tauri:nva-startup": "node e2e-tauri/nva-startup-capability.mjs",
     "gen:nva-golden": "node scripts/gen-nva-golden.mjs"

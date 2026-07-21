@@ -97,6 +97,25 @@ const YT_PANEL_H_MAX = 700;
 const MARQUEE_THRESHOLD = 22;
 const PLAYBACK_TIMEOUT_MS = 12_000;
 
+/**
+ * Production always embeds YouTube's privacy-enhanced player.  The isolated
+ * native acceptance binary may opt into a same-origin fixture so the
+ * requested→observed boundary can be exercised without network playback.
+ */
+function youtubeEmbedUrl(videoId: string): string {
+	const fixture = import.meta.env.VITE_NAIA_E2E_BGM_IFRAME_URL?.trim();
+	if (fixture) {
+		const url = new URL(fixture, window.location.origin);
+		url.searchParams.set("videoId", videoId);
+		return url.toString();
+	}
+	return (
+		`https://www.youtube-nocookie.com/embed/${videoId}` +
+		`?autoplay=1&enablejsapi=1` +
+		`&origin=${encodeURIComponent(window.location.origin)}`
+	);
+}
+
 function loadPanelHeight(): number {
 	const v = parseInt(localStorage.getItem(YT_PANEL_H_KEY) ?? "", 10);
 	return Number.isFinite(v) ? Math.max(YT_PANEL_H_MIN, Math.min(YT_PANEL_H_MAX, v)) : YT_PANEL_H_DEFAULT;
@@ -415,10 +434,7 @@ export function BgmPlayer({ naia }: Props) {
 		});
 		setPlaybackSnapshot(playback);
 		beginPlaybackTimeout(playback.playbackId);
-		const embedUrl =
-			`https://www.youtube-nocookie.com/embed/${cfg.bgmYoutubeVideoId}` +
-			`?autoplay=1&enablejsapi=1` +
-			`&origin=${encodeURIComponent(window.location.origin)}`;
+		const embedUrl = youtubeEmbedUrl(cfg.bgmYoutubeVideoId);
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 		setPlaying(false);
@@ -490,10 +506,7 @@ export function BgmPlayer({ naia }: Props) {
 				prevBgMediaRef.current = curType;
 			}
 		}
-		const embedUrl =
-			`https://www.youtube-nocookie.com/embed/${video.id}` +
-			`?autoplay=1&enablejsapi=1` +
-			`&origin=${encodeURIComponent(window.location.origin)}`;
+		const embedUrl = youtubeEmbedUrl(video.id);
 		setBackgroundVideoUrl(embedUrl);
 		setBackgroundMediaType("iframe");
 	}
@@ -643,7 +656,14 @@ export function BgmPlayer({ naia }: Props) {
 	// ── Render ────────────────────────────────────────────────────────────────
 
 	return (
-		<div className="bgm-player" ref={playerRef}>
+		<div
+			className="bgm-player"
+			ref={playerRef}
+			data-bgm-playback-status={playbackSnapshot?.status ?? "idle"}
+			data-bgm-announced-title={
+				toBgmObservedContext(playbackSnapshot).currentTrack?.title ?? ""
+			}
+		>
 			<audio
 				ref={audioRef}
 				loop={source === "local" && localTracks.length <= 1}

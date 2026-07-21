@@ -150,6 +150,8 @@ export async function startOwnedViteServer(): Promise<void> {
 			BROWSER: "none",
 			VITE_NAIA_E2E_ADK_PATH: E2E_WORKSPACE,
 			VITE_NAIA_E2E_NO_AVATAR: "1",
+			// The BGM acceptance fixture is same-origin and never contacts YouTube.
+			VITE_NAIA_E2E_BGM_IFRAME_URL: "/e2e/bgm-playback-fixture.html",
 		},
 	});
 	viteServer.stderr?.on("data", (data: Buffer) =>

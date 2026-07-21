@@ -1304,6 +1304,33 @@ fn debug_e2e_enabled() -> bool {
     )
 }
 
+/// Test-only bridge for native acceptance.  It is not compiled into normal
+/// Shell builds and accepts only the one BGM event consumed by the player.
+#[cfg(feature = "webdriver-e2e")]
+#[tauri::command]
+fn e2e_emit_bgm_play_request(
+    app: tauri::AppHandle,
+    video_id: String,
+    title: String,
+) -> Result<(), String> {
+    if !debug_e2e_enabled() {
+        return Err("e2e runtime is not enabled".to_string());
+    }
+    if video_id.trim().is_empty() || title.trim().is_empty() {
+        return Err("video_id and title are required".to_string());
+    }
+    app.emit(
+        "agent_response",
+        serde_json::json!({
+            "type": "bgm_youtube_play",
+            "videoId": video_id,
+            "title": title,
+        })
+        .to_string(),
+    )
+    .map_err(|error| error.to_string())
+}
+
 /// Native acceptance tests may isolate their process markers, WebView state,
 /// and agent lease under one explicitly owned directory. Production and normal
 /// developer runs never honour this override.
@@ -8825,6 +8852,8 @@ pub fn run() {
             pty::pty_kill,
             pty::pty_execute_sync,
             enable_webview2_ime,
+			#[cfg(feature = "webdriver-e2e")]
+			e2e_emit_bgm_play_request,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
