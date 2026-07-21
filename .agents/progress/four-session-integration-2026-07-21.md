@@ -39,18 +39,22 @@
 - Node 26 + webdriverio 9의 세션 `Content-Length` 호환 문제는 `transformRequest`와 회귀 계약으로 해결했고, 최종 Tauri WDIO는 Agent·BGM 실 프로세스로 3/3 통과했다.
 - release 바이너리 빌드는 통과했지만 AppImage 패키징은 현재 Linux host의 `librsvg-2.0.pc` 부재로 번들러 단계에서 실패했다.
 - 연속발화의 실시간 audible TTS·live barge-in은 TEST-F-011 운영 인수 항목으로 Partial을 유지한다.
-- 최종 통합 적대리뷰 2회 연속 CLEAN은 이 snapshot에서 계속 검증한다.
+- 아래 운영 종단간 보강까지 포함한 고정 snapshot을 최종 통합 적대리뷰 대상으로 사용한다.
 
 ## 운영 종단간 보강 — 실제 Codex via Naia Shell
 
-- 테스트 소스: Shell `025ac6b2d31f7d566ed17429d6a92fb9423be3f8`
+- 테스트 소스: Shell `f4d411ae464bb1c72d9699fb95351d25fbf14913`
 - 실제 운영 로그인 상태의 Codex를 사용해
   `Tauri Shell → gRPC Agent → codex app-server → usage/finish → Shell 화면`을 실행했다.
-- Agent reload: `loaded=true codex/gpt-5.4`
-- 실제 요청 provenance: `chat_request provider=codex`
+- 테스트 시작 이후의 런타임 로그 구간에서 Agent reload
+  `loaded=true codex/gpt-5.4`와 실제 요청 provenance
+  `[E2E-DEBUG] chat_request provider=codex`를 자동 단언했다.
 - Shell 화면 응답: `NAIA_SHELL_CODEX_E2E_OK_20260721`
-- usage 토큰 양수, 오류 마커 없음, 테스트 종료 후 기존
-  `gemini/gemini-2.5-flash` 설정 복구를 확인했다.
-- 고정 커밋 재실행: 1/1 pass, 12.3초; spec 1/1 pass.
+- 새 응답에 속한 usage 토큰 양수, 오류 마커 없음, 테스트 종료 후 파일과
+  격리 localStorage의 정확한 원본 및 `gemini/gemini-2.5-flash` 활성 상태 복구를 확인했다.
+- WebView 상태는 전용 XDG 디렉터리로 격리하고 종료 시 제거한다. Codex 설정 변경 직후
+  worker를 강제 종료하는 복구 시험에서도 launcher의 durable backup이 원본을 복원했다.
+- 종료 중 permission poller hot loop를 제거해 정상 teardown까지 포함했다.
+- 고정 커밋 재실행: 1/1 pass, 13.1초; spec 1/1 pass; 전체 20초; exit 0.
 - 회귀: Shell UI 1,332 pass / 13 skip, core 229/229, production build pass.
 - 상세 증거: `.agents/reviews/codex-shell-live-e2e-2026-07-21.json`

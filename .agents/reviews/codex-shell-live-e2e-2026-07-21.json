@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "recorded_at": "2026-07-21T14:53:12+09:00",
+  "recorded_at": "2026-07-21T15:21:40+09:00",
   "status": "passed",
-  "shell_test_source_commit": "025ac6b2d31f7d566ed17429d6a92fb9423be3f8",
+  "shell_test_source_commit": "f4d411ae464bb1c72d9699fb95351d25fbf14913",
   "agent_commit": "1e0acab83622fe446f301811d0fe35bb10285b86",
   "environment": {
     "os": "Linux Bazzite",
@@ -13,17 +13,20 @@
   "command": "NAIA_AGENT_SCRIPT=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/scripts/builds/agent-stdio-entry.mjs NAIA_AGENT_PROTO_DIR=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/src/main/adapters/grpc pnpm exec wdio run e2e-tauri/wdio.conf.codex.ts",
   "cwd": "packages/shell",
   "assertions": {
-    "agent_reload": "loaded=true codex/gpt-5.4",
-    "request_provider": "codex",
+    "agent_reload": "run-scoped runtime log contains loaded=true codex/gpt-5.4",
+    "request_provider": "run-scoped runtime log contains [E2E-DEBUG] chat_request provider=codex",
     "response_marker": "NAIA_SHELL_CODEX_E2E_OK_20260721",
-    "usage_tokens": "> 0",
+    "usage_tokens": "new assistant message cost badge > 0",
     "error_markers": "absent",
-    "settings_restore": "loaded=true gemini/gemini-2.5-flash"
+    "settings_restore": "file and isolated localStorage equal their exact snapshots; runtime reload is loaded=true gemini/gemini-2.5-flash",
+    "webview_isolation": "XDG config/data/cache confined to ~/.naia/run/codex-live-e2e-xdg and removed on completion",
+    "crash_recovery": "simulated worker exit 86 after Codex mutation; launcher restored the durable config backup and removed it"
   },
   "result": {
     "tests_passed": 1,
     "tests_failed": 0,
-    "duration_seconds": 12.3,
+    "duration_seconds": 13.1,
+    "total_duration_seconds": 20,
     "spec_files_passed": 1,
     "exit_code": 0
   },
@@ -32,5 +35,5 @@
     "shell_core": "25 files, 229 tests passed",
     "production_build": "passed"
   },
-  "diagnostic_note": "The first live run reached codex/gpt-5.4, rendered the exact response marker, and emitted usage/finish, but the test itself used an unsupported two-argument expect call. That harness-only assertion error was fixed; two subsequent live runs passed, including the final run on the committed test source."
+  "diagnostic_note": "Early diagnostic runs exposed three harness defects rather than product failures: an unsupported two-argument expect call, provider/usage assertions that were not causally scoped to the new request, and an undisposed permission poller that hot-looped after WebKit session teardown and exhausted the worker heap. The final committed source fixes all three, adds durable crash recovery and isolated WebView state, and exits 0. The operational Codex request itself rendered the marker and usage in every run that reached chat."
 }
