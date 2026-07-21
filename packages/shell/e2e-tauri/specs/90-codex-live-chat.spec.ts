@@ -8,6 +8,7 @@ import {
 import { S } from "../helpers/selectors.js";
 
 const RESPONSE_MARKER = "NAIA_SHELL_CODEX_E2E_OK_20260722";
+const SECOND_RESPONSE_MARKER = "NAIA_SHELL_CODEX_SECOND_TURN_OK_20260722";
 const adkPath = process.env.NAIA_E2E_ADK_PATH;
 let logPath = "";
 let logStart = 0;
@@ -93,7 +94,7 @@ describe("Codex live chat through the isolated real Naia Shell", () => {
 		await waitForRunLog("loaded=true codex/gpt-5.4");
 	});
 
-	it("boots the embedded Windows UI and renders a real Codex response", async () => {
+	it("renders two consecutive real Codex turns in the embedded Windows UI", async () => {
 		const before = await countCompletedAssistantMessages();
 		logStart = statSync(logPath).size;
 		await sendMessage(`Respond with exactly ${RESPONSE_MARKER} and nothing else.`);
@@ -109,6 +110,28 @@ describe("Codex live chat through the isolated real Naia Shell", () => {
 		expect(text).toContain(RESPONSE_MARKER);
 		expect(text).not.toMatch(
 			/login required|API key|Bad Request|provider error|failed:|\b40[0-9]\b|\b500\b/i,
+		);
+
+		// Regression boundary: production reports showed that the first local or
+		// remote answer could succeed while the second request failed with a
+		// malformed-request error. Keep the same Shell/Agent session and require a
+		// fresh request, usage, finish, and visible answer for turn two.
+		const beforeSecondTurn = await countCompletedAssistantMessages();
+		logStart = statSync(logPath).size;
+		await sendMessage(`Respond with exactly ${SECOND_RESPONSE_MARKER} and nothing else.`);
+		await waitForRunLog("[E2E-DEBUG] chat_request requestId=");
+		const secondRequestMatch = readCurrentRunLog().match(
+			/\[E2E-DEBUG\] chat_request requestId=([^ ]+) provider=codex\b/,
+		);
+		expect(secondRequestMatch).not.toBeNull();
+		const secondRequestId = secondRequestMatch?.[1] ?? "";
+		expect(secondRequestId).not.toBe(requestId);
+		await waitForRunLog(`[E2E-DEBUG] agent_event requestId=${secondRequestId} type=usage`);
+		await waitForRunLog(`[E2E-DEBUG] agent_event requestId=${secondRequestId} type=finish`);
+		const secondText = (await getNewAssistantMessages(beforeSecondTurn)).at(-1) ?? "";
+		expect(secondText).toContain(SECOND_RESPONSE_MARKER);
+		expect(secondText).not.toMatch(
+			/\[오류\]|login required|API key|Bad Request|provider error|failed:|\b40[0-9]\b|\b500\b/i,
 		);
 		// The provider does not promise token counts. A real usage event plus the
 		// rendered response is the cross-process assertion; do not invent tokens.
