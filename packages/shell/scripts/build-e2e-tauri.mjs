@@ -1,0 +1,84 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+import process from "node:process";
+
+const shellDir = resolve(import.meta.dirname, "..");
+const manifestPath = resolve(shellDir, "src-tauri", "Cargo.toml");
+// MSVC's FileTracker and CMake scratch projects still fail at ordinary
+// worktree depths. Keep the *test-only* target short on Windows; callers may
+// override it, and production/development targets are never reused.
+const targetDir = resolve(
+	process.env.NAIA_E2E_TARGET_DIR ??
+		(process.platform === "win32"
+			? "C:/tmp/naia-shell-e2e"
+			: resolve(shellDir, "src-tauri", "target-e2e")),
+);
+const e2eTauriConfig = resolve(shellDir, "src-tauri", "tauri.e2e.conf.json");
+const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
+const pairedAgent = "D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-4e488ab";
+const agentScript = resolve(pairedAgent, "scripts/builds/agent-stdio-entry.mjs");
+const agentProtoDir = resolve(pairedAgent, "src/main/adapters/grpc");
+const REQUIRED_AGENT_COMMIT = "4e488abaef2a6d76a7abceefab3924a3b6423656";
+const REQUIRED_PROTO_SHA256 = "b77761930c0991ee825b6d2827adad264fc352a9f220404912a284fc166b691b";
+
+function gitOutput(args) {
+	const result = spawnSync("git", ["-C", pairedAgent, ...args], { encoding: "utf8", shell: false });
+	return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function assertPairedAgent() {
+	if (!existsSync(agentScript) || !existsSync(resolve(agentProtoDir, "naia_agent.proto"))) {
+		throw new Error("The paired naia-agent checkout required by the Shell build is unavailable");
+	}
+	if (gitOutput(["rev-parse", "HEAD"]) !== REQUIRED_AGENT_COMMIT) {
+		throw new Error(`The Tauri E2E build requires paired naia-agent ${REQUIRED_AGENT_COMMIT}`);
+	}
+	if (gitOutput(["status", "--porcelain"]) !== "") {
+		throw new Error("The paired naia-agent checkout must be clean before the Tauri E2E build");
+	}
+	const protoHash = createHash("sha256")
+		.update(readFileSync(resolve(agentProtoDir, "naia_agent.proto"), "utf8").replace(/\r\n/g, "\n"))
+		.digest("hex");
+	if (protoHash !== REQUIRED_PROTO_SHA256) {
+		throw new Error(`The paired naia-agent proto SHA256 must be ${REQUIRED_PROTO_SHA256}`);
+	}
+}
+
+if (!existsSync(manifestPath) || !existsSync(e2eTauriConfig)) throw new Error("Missing Tauri E2E build input");
+assertPairedAgent();
+const agentBuild = spawnSync("pnpm", ["run", "build"], {
+	cwd: pairedAgent,
+	stdio: "inherit",
+	shell: process.platform === "win32",
+});
+if (agentBuild.status !== 0 || !existsSync(resolve(pairedAgent, "dist", "main", "composition", "index.js"))) {
+	throw new Error("The paired naia-agent build failed or did not produce dist/main/composition/index.js");
+}
+const result = spawnSync(cargo, ["build", "--manifest-path", manifestPath, "--features", "webdriver-e2e"], {
+	cwd: shellDir,
+	stdio: "inherit",
+	env: {
+		...process.env,
+		CARGO_TARGET_DIR: targetDir,
+		// tauri-build consumes TAURI_CONFIG as JSON content, while
+		// generate_context! receives the file path in Rust.
+		TAURI_CONFIG: readFileSync(e2eTauriConfig, "utf8"),
+		NAIA_AGENT_SCRIPT: agentScript,
+		NAIA_AGENT_PROTO_DIR: agentProtoDir,
+	},
+});
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+// tauri-plugin-stt currently stages Vosk's Windows runtime beside the default
+// `src-tauri/target/debug` binary even when CARGO_TARGET_DIR is overridden.
+// Mirror only those generated DLLs into our owned target so the E2E executable
+// can start; never write into a developer's normal target directory.
+if (process.platform === "win32") {
+	const defaultDebug = resolve(shellDir, "src-tauri", "target", "debug");
+	const e2eDebug = resolve(targetDir, "debug");
+	for (const name of readdirSync(defaultDebug).filter((entry) => entry.toLowerCase().endsWith(".dll"))) {
+		copyFileSync(resolve(defaultDebug, name), resolve(e2eDebug, name));
+	}
+}

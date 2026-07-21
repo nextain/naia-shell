@@ -392,14 +392,16 @@ stable-code-only wire, localized presentation.
 
 ## Discord setup/preflight policy (#388)
 
-> Status: Contract frozen. The production Discord setup wizard remains hidden
-> until native secret-backed setup/preflight facts are wired. Handoff note:
-> `docs/progress/99.dev-comm/discord-wizard-prefreeze-policy-2026-07-19.md`.
+> Status: the isolated Windows Tauri WebDriver now verifies the visible native
+> credential **cancellation** path. The token remains native-only: this is not a
+> WebView token form. A provisioned Discord bot is still required for the final live
+> discovery and authority acceptance run.
 
 | ID | Requirement | UC/Scenario | Verification | Status |
 |---|---|---|---|:---:|
-| **FR-DISCORD-SETUP-01** | Discord install URL policy uses only a canonical snowflake client id, `bot` scope, and minimum permissions/intents. Raw bot tokens must not cross WebView string IPC or UI persistence boundaries. | UC10/S36/S37, UC12 auth | `src/test/discord-install-policy.contract.test.ts` | Contract frozen; raw-token IPC guard enforced |
-| **FR-DISCORD-SETUP-02** | Discord preflight policy classifies network, rate limit, token validity, message-content intent, guild install, channel visibility, permissions, and agent readiness into stable codes; malformed/unknown facts fail closed. This change freezes the policy only; production setup must supply native preflight facts before enabling the wizard. | UC10, UC14 degradation | `src/test/discord-preflight.contract.test.ts` | Contract frozen |
+| **FR-DISCORD-SETUP-01** | Discord install URL policy uses only a canonical snowflake client id, `bot` scope, and minimum permissions/intents. A raw bot token must not cross WebView string IPC, UI persistence, or diagnostics. `discord_capture_bot_token` opens a native OS password prompt and returns only configured/error metadata. | UC-DISCORD-1A | Rust credential tests; `ConnectionsSettingsTab` no-argument contract; `e2e-tauri/specs/92-discord-secure-cancel.spec.ts` isolated native cancellation | Native cancellation E2E verified; live acceptance pending |
+| **FR-DISCORD-SETUP-02** | The visible Settings flow must classify native credential cancellation, token/storage failure, current runtime authority, message-content intent, incomplete discovery, and generation conflict using stable native facts. Unknown or incomplete discovery fails closed: it cannot save an allow-list or claim `연결됨`. | UC-DISCORD-1A | Rust status/discovery contracts; component, Playwright, and Tauri WebDriver Settings tests | Partial: native cancellation verified; discovery/authority pending |
+| **FR-DISCORD-SETUP-03** | `연결됨` is shown only when token presence, binding generation, runtime `ready`, and Agent authority agree. A stored token without that authority is `설정됨`; a reported runtime failure is an error, not a successful configuration. | UC-DISCORD-1A | `ConnectionsSettingsTab` status tests and native Tauri status-view test | Implementing E2E recovery |
 
 ## Steam Windows launch-readiness requirements (#314)
 

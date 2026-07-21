@@ -512,5 +512,6 @@ P02 검증:
 | Scenario | Unit / contract | UI / integration | Real Discord E2E |
 |---|---|---|---|
 | UC-DISCORD-1 | credential boundary, allow-list, participation policy | Settings connection flow | bot invite, permissions, allowed-channel activation |
+| UC-DISCORD-1A | `ConnectionsSettingsTab.test.tsx`: native credential result/status-generation classification, incomplete-discovery fail-closed, binding conflict | `e2e/discord-settings-secure.spec.ts`: no inline token and no-argument native-command contract; `e2e-tauri/specs/92-discord-secure-cancel.spec.ts`: isolated real Tauri WebView cancellation; `e2e/discord-channel-agent.spec.ts`: allow-list save. | provisioned test bot: OS keychain store → discover → allow-list save → Agent authority `ready` |
 | UC-DISCORD-2 | recency and selected-channel persistence | narrow/wide channel inbox navigation | multi-channel history visibility |
 | UC-DISCORD-3 | Gateway event deduplication, per-channel context, reconnect | live status and unread rendering | two-channel message/reply/reconnect flow |

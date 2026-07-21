@@ -1,6 +1,9 @@
 // Always use windows subsystem — even in debug builds, to prevent a console
 // window flash when the OS launches a second instance for deep link handling.
-#![windows_subsystem = "windows"]
+#![cfg_attr(
+    all(target_os = "windows", not(feature = "webdriver-e2e")),
+    windows_subsystem = "windows"
+)]
 
 fn main() {
     // Windows: If launched with a naia:// deep link URL as argument (e.g. by a

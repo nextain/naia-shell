@@ -142,7 +142,11 @@ function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 	const [timedOut, setTimedOut] = useState(false);
 	// 새 core(이식) dev = 채팅 백엔드 검증이 목적, 아바타는 이 슬라이스 밖 → 아바타 로드 대기 안 함(즉시 ready).
 	// 아바타 자산 미배치·로드 행으로 스플래시가 안 풀리는 것 방지(유저 진입 UI 이식 전 임시).
-	const skipAvatarWait = showAdkSetup || showOnboarding || isNewCore();
+	const skipAvatarWait =
+		showAdkSetup ||
+		showOnboarding ||
+		isNewCore() ||
+		import.meta.env.VITE_NAIA_E2E_NO_AVATAR === "1";
 
 	useEffect(() => {
 		if (skipAvatarWait || avatarLoaded) return;
@@ -158,6 +162,30 @@ function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 }
 
 export function App() {
+	// The native WebDriver binary starts with a fresh WebView2 profile.  Seed
+	// only that explicitly supplied E2E workspace before the first render so
+	// the real app follows its normal hydrated-config path rather than being
+	// stranded on the ADK setup screen.  Production builds do not define this
+	// value and therefore keep the normal first-run behaviour.
+	const e2eAdkPath = import.meta.env.VITE_NAIA_E2E_ADK_PATH?.trim();
+	if (e2eAdkPath && !getAdkPath()) setAdkPath(e2eAdkPath);
+	// A fresh native WebView has no browser storage, even when the isolated E2E
+	// workspace already has a file-backed config.  Seed only the explicit test
+	// workspace before the first onboarding check; no credential is supplied.
+	if (e2eAdkPath && !isOnboardingComplete()) {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "codex",
+				model: "gpt-5.4",
+				apiKey: "",
+				locale: "ko",
+				ttsEnabled: false,
+				onboardingComplete: true,
+				workspaceRoot: e2eAdkPath,
+			}),
+		);
+	}
 	const [showSplash, setShowSplash] = useState(true);
 	const [showAdkSetup, setShowAdkSetup] = useState(!isAdkInitialized());
 	const [showOnboarding, setShowOnboarding] = useState(false);

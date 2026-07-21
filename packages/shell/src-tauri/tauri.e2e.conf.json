@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicollasricas/tauri-settings-schema/refs/heads/master/schemas/v2/tauri.conf.json",
+  "productName": "Naia E2E",
+  "identifier": "com.naia.shell.e2e",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1421",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [{
+      "title": "Naia E2E",
+      "width": 1366,
+      "height": 768,
+      "resizable": true,
+      "fullscreen": false,
+      "decorations": false,
+      "transparent": false,
+      "visible": false,
+      "backgroundColor": [6, 13, 20, 255]
+    }],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$RESOURCE/**", "$APPDATA/**", "$APPCONFIG/**", "$APPLOCALDATA/**", "$HOME/**", "/tmp/naia-*/**", "/var/home/*/naia-adk/**", "/var/home/*/naia/**"],
+          "requireLiteralLeadingDot": true
+        }
+      },
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http: https: ws: wss: http://localhost:18789 ws://localhost:18789 http://localhost:18791 http://127.0.0.1:18792 http://localhost:18792 https://naia.nextain.io wss://naia.nextain.io https://www.naia.land wss://www.naia.land https://api.nextain.io wss://api.nextain.io https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://speech.googleapis.com https://api.x.ai https://api.anthropic.com https://api.openai.com wss://api.openai.com http://asset.localhost https://asset.localhost tauri://localhost blob: data:; img-src 'self' asset: http://asset.localhost https://asset.localhost tauri://localhost blob: data: https://i.ytimg.com https://*.ytimg.com; media-src 'self' asset: http://asset.localhost https://asset.localhost https://storage.googleapis.com blob: data:; font-src 'self' data:; worker-src 'self' blob:; frame-src http://asset.localhost https://asset.localhost https://www.youtube.com https://www.youtube-nocookie.com"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico", "icons/icon.png"],
+    "category": "Utility",
+    "shortDescription": "Naia E2E test application",
+    "longDescription": "Test-only Naia Shell binary with an isolated Windows app identifier."
+  },
+  "plugins": {
+    "deep-link": { "desktop": { "schemes": ["naia-e2e"] } },
+    "updater": {
+      "endpoints": ["https://github.com/nextain/naia-os/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyMEYyM0RCNjgxMUUzNEMKUldSTTR4Rm8yeU1QOGpib1NhclN5MTVGZzdmUlEwRHZmYk9VdHcvNEJIVzV4T3Y5R3pSUEdPT0IK"
+    }
+  }
+}

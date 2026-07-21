@@ -290,14 +290,20 @@ struct AgentChildLeaseLock {
 }
 
 fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::home_dir()
+	if let Some(runtime_dir) = e2e_runtime_dir() {
+		return Ok(runtime_dir.join("agent-child-lease.json"));
+	}
+	Ok(dirs::home_dir()
         .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
         .join(".naia")
         .join("agent-child-lease.json"))
 }
 
 fn agent_child_lease_lock_path() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::home_dir()
+	if let Some(runtime_dir) = e2e_runtime_dir() {
+		return Ok(runtime_dir.join("agent-child-lease.lock"));
+	}
+	Ok(dirs::home_dir()
         .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
         .join(".naia")
         .join("agent-child-lease.lock"))
@@ -1298,9 +1304,22 @@ fn debug_e2e_enabled() -> bool {
     )
 }
 
+/// Native acceptance tests may isolate their process markers, WebView state,
+/// and agent lease under one explicitly owned directory. Production and normal
+/// developer runs never honour this override.
+fn e2e_runtime_dir() -> Option<std::path::PathBuf> {
+	if !debug_e2e_enabled() {
+		return None;
+	}
+	std::env::var_os("NAIA_E2E_RUNTIME_DIR")
+		.map(std::path::PathBuf::from)
+		.filter(|path| path.is_absolute())
+}
+
 /// Get the run directory (~/.naia/run/) for PID files
 fn run_dir() -> std::path::PathBuf {
-    let dir = std::path::PathBuf::from(home_dir()).join(".naia/run");
+	let dir = e2e_runtime_dir()
+		.unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join(".naia/run"));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -1832,7 +1851,15 @@ where
 }
 
 fn spawn_adk_path_snapshot() -> Option<String> {
-    spawn_adk_path_snapshot_with(|| {
+	if debug_e2e_enabled() {
+		if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
+			let path = path.trim().to_string();
+			if !path.is_empty() {
+				return Some(path);
+			}
+		}
+	}
+	spawn_adk_path_snapshot_with(|| {
         dirs::home_dir()
             .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
     })
@@ -4920,7 +4947,15 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
 fn current_adk_path() -> Result<String, String> {
-    let path = dirs::home_dir()
+	if debug_e2e_enabled() {
+		if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
+			let path = path.trim().to_string();
+			if !path.is_empty() {
+				return Ok(path);
+			}
+		}
+	}
+	let path = dirs::home_dir()
         .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
         .ok_or_else(|| "adk_path_unavailable".to_string())?;
     let path = path.trim();
@@ -5175,6 +5210,18 @@ async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> 
 }
 
 fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> {
+    // Native WebDriver acceptance must exercise the real IPC command without
+    // opening a host password dialog or handling a real bot token.  This seam
+    // is reachable only from the explicitly isolated CAFE_DEBUG_E2E runtime.
+    #[cfg(feature = "webdriver-e2e")]
+    if debug_e2e_enabled()
+        && matches!(
+            std::env::var("NAIA_E2E_DISCORD_CAPTURE").ok().as_deref(),
+            Some("cancel")
+        )
+    {
+        return Err("capture_cancelled".to_string());
+    }
     #[cfg(target_os = "linux")]
     let candidates: &[(&str, &[&str])] = &[
         ("kdialog", &["--password", "Discord bot token"]),
@@ -8605,9 +8652,21 @@ pub fn run() {
         .plugin(tauri_plugin_stt::init());
 
     // Flatpak manages its own updates; skip updater plugin in Flatpak builds
-    if !is_flatpak {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
-    }
+	if !is_flatpak {
+		builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+	}
+
+	// An automation endpoint is available only in the explicitly feature-gated
+	// acceptance binary; it is never linked into normal Shell builds.
+	#[cfg(feature = "webdriver-e2e")]
+	{
+		builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+	}
+
+	#[cfg(feature = "webdriver-e2e")]
+	let context = tauri::generate_context!("tauri.e2e.conf.json");
+	#[cfg(not(feature = "webdriver-e2e"))]
+	let context = tauri::generate_context!();
 
     builder.manage(AppState {
             agent: Mutex::new(None),
@@ -9153,7 +9212,7 @@ pub fn run() {
                 _ => {}
             }
         })
-        .run(tauri::generate_context!())
+		.run(context)
         .expect("error while running tauri application");
 }
 
