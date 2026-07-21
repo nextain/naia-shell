@@ -11,15 +11,15 @@
 
 ## 현재 결합 기준
 
-- Agent: `380a1f8cda90e90573dc58367cd4d888abee3240`
+- Agent: `4838c906d221558f8d3424870158b01022de9972`
 - Shell: 이 문서를 포함하는 `integration/discord-radio-codex`
 - Agent proto SHA-256: `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
 - Memory: `1d6d93871192bf61f6b2be476d35e84e30fdba99`
-- Workshop: `a761c2caded87a51afd671d5ef325d8a658c985c`
+- Workshop: `bb1d140f9334eba04c6bc73a2cf04cf8f0ce494d`
 
 ## 실행 증거
 
-- Agent 전체: 108 files pass / 3 skip, 1,293 tests pass / 9 skip; build pass
+- Agent 전체: 108 files pass / 3 skip, 1,294 tests pass / 9 skip; build pass
 - Agent Codex/Discord 집중: 4 files, 85 tests pass
 - Memory 전체: 24 files, 393 tests pass; typecheck/build pass
 - Shell core: 25 files, 229 tests pass
@@ -28,7 +28,7 @@
 - Playwright: Discord 3 + proactive speech 7 = 10/10 pass
 - Rust paired integration: 172/172 pass against the exact Agent pin
 - 실제 Codex app-server dynamic-tool smoke: `get_time` 1회 toolUse/toolResult, success, final text, completed, exit 0 (`naia-agent:docs/progress/99.dev-comm/codex-dynamic-tool-smoke-2026-07-21.md`)
-- 전주 강의: preflight 14/14, publisher 5/5, 장 14개 오류 0, starter 정적 검사 13/13
+- 전주 강의: preflight 23/23, publisher 5/5, 장 14개 오류 0, starter 정적 검사 13/13
 
 ## 정직한 미완료 경계
 
