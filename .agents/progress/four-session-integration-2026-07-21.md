@@ -11,7 +11,7 @@
 
 ## 현재 결합 기준
 
-- Agent: `4838c906d221558f8d3424870158b01022de9972`
+- Agent: `1e0acab83622fe446f301811d0fe35bb10285b86`
 - Shell: 이 문서를 포함하는 `integration/discord-radio-codex`
 - Agent proto SHA-256: `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
 - Memory: `1d6d93871192bf61f6b2be476d35e84e30fdba99`

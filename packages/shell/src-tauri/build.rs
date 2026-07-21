@@ -8,7 +8,7 @@ fn main() {
         env,
         path::{Path, PathBuf},
     };
-    const REQUIRED_AGENT_COMMIT: &str = "4838c906d221558f8d3424870158b01022de9972";
+    const REQUIRED_AGENT_COMMIT: &str = "1e0acab83622fe446f301811d0fe35bb10285b86";
     const REQUIRED_PROTO_SHA256: &str =
         "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a";
     const REQUIRED_PROTO_MARKERS: &[&str] = &[

@@ -30,7 +30,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("pins the paired agent ancestry and build evidence", () => {
 		expect(BUILD_RS).toContain(
-			'REQUIRED_AGENT_COMMIT: &str = "4838c906d221558f8d3424870158b01022de9972"',
+			'REQUIRED_AGENT_COMMIT: &str = "1e0acab83622fe446f301811d0fe35bb10285b86"',
 		);
 		expect(BUILD_RS).toContain(
 			'REQUIRED_PROTO_SHA256: &str =\n        "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -86,7 +86,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 	});
 	it("selects and validates one exact paired agent/proto checkout", () => {
 		expect(TAURI_WITH_MODE).toContain(
-			'REQUIRED_AGENT_COMMIT = "4838c906d221558f8d3424870158b01022de9972"',
+			'REQUIRED_AGENT_COMMIT = "1e0acab83622fe446f301811d0fe35bb10285b86"',
 		);
 		expect(TAURI_WITH_MODE).toContain(
 			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -137,7 +137,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("applies the same paired agent/proto env before direct Tauri bundle builds", () => {
 		expect(STAGE_RUNTIME).toContain(
-			'REQUIRED_AGENT_COMMIT = "4838c906d221558f8d3424870158b01022de9972"',
+			'REQUIRED_AGENT_COMMIT = "1e0acab83622fe446f301811d0fe35bb10285b86"',
 		);
 		expect(STAGE_RUNTIME).toContain(
 			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
@@ -180,7 +180,7 @@ describe("UC-WIRE-V1 paired proto build", () => {
 
 	it("requires stage-agent to stage the same validated paired checkout", () => {
 		expect(STAGE_AGENT).toContain(
-			'REQUIRED_AGENT_COMMIT = "4838c906d221558f8d3424870158b01022de9972"',
+			'REQUIRED_AGENT_COMMIT = "1e0acab83622fe446f301811d0fe35bb10285b86"',
 		);
 		expect(STAGE_AGENT).toContain(
 			'REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a"',
