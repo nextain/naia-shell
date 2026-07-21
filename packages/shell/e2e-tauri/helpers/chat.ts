@@ -2,7 +2,12 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { S } from "./selectors.js";
 
-const UI_TRACE_DIR = resolve(process.cwd(), "e2e-tauri/.artifacts");
+// Native Tauri acceptance runs own a per-port runtime directory. Keep their
+// best-effort UI trace there so a successful run cannot dirty the checkout.
+// Browser-only callers retain the historical local artifact location.
+const UI_TRACE_DIR = process.env.NAIA_E2E_ARTIFACTS_DIR
+	? resolve(process.env.NAIA_E2E_ARTIFACTS_DIR)
+	: resolve(process.cwd(), "e2e-tauri/.artifacts");
 const UI_TRACE_FILE = resolve(UI_TRACE_DIR, "ui-message-trace.ndjson");
 
 type StopLogger = () => Promise<void>;

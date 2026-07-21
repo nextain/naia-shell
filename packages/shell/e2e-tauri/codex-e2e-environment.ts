@@ -53,6 +53,7 @@ export function configureCodexE2eEnvironment(): void {
 	process.env.NAIA_E2E_MOCK_CLONE = "1";
 	process.env.NAIA_E2E_ADK_PATH = E2E_WORKSPACE;
 	process.env.NAIA_E2E_RUNTIME_DIR = E2E_RUNTIME;
+	process.env.NAIA_E2E_ARTIFACTS_DIR = E2E_ARTIFACTS;
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_WEBVIEW2_DATA;
 	process.env.NAIA_E2E_DISCORD_CAPTURE = "cancel";
 	process.env.NAIA_AGENT_SCRIPT = resolve(
