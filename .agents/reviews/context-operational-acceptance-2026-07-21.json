@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "recorded_at": "2026-07-21T15:47:00+09:00",
+  "status": "passed",
+  "scope": ".agents/context/agents-rules.json verification_discipline R6-R7",
+  "source_evidence": ".agents/reviews/codex-shell-live-e2e-2026-07-21.json",
+  "checks": {
+    "json_parse": "passed",
+    "rule_count": 7,
+    "native_provider_rule": "requestId-correlated provider, usage, finish and same-turn DOM usage required",
+    "isolation_rule": "exact restore, crash hash recovery, no XDG or backup residue, clean teardown required",
+    "skill_drift": "no verify skill update required; two context rules and one evidence record do not meet the three-file shared-pattern creation threshold"
+  }
+}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://nextain.com/schemas/agents-rules/v2",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "project": "naia-os",
   "description": "Machine-readable rules for AI tools. SoT for all enforcement gates. Edit this file, then run scripts/sync-harness-mirrors.sh.",
   "charter_immutability": {
@@ -156,7 +156,9 @@
       "R2 환경 없으면 구축: 어떤 코드 경로를 기존 하네스로 못 돌리면 하네스를 만든다(punt 금지). 검증된 기법 — Playwright(chromium ≈ Windows WebView2)에서 실 소스 모듈 직접 import(`await import('/src/lib/.../x.ts')`)로 실 네트워크/합성 실행 · 읽기전용 전역(speechSynthesis 등)은 `Object.defineProperty` 로 교체 · `page.route` 로 네트워크 mock/관찰 · 실-네트워크 프로브로 런타임 실패 원인 확정 · 실 Rust/webview 는 e2e-tauri(wdio).",
       "R3 워크스페이스 전체 typecheck: tsc 는 건드린 패키지뿐 아니라 전 패키지(shell + core + agent + 모든 sidecar)를 덮어야 한다. 한 패키지 'tsc 0' ≠ 워크스페이스 그린. dev-setup 이 sidecar tsc 에러를 비치명 처리해도, 검증 단계에선 전 패키지를 직접 typecheck 한다.",
       "R4 재검증: 발견·수정은 '실제 테스트 통과'로 재확인한다. 코드만 고치고 '됐다'라고 단정하지 않는다(거짓 그린 금지).",
-      "R5 출력·기능 전수: 텍스트·음성(TTS/STT)·아바타·슬롯 전개·라우팅·설정 영속 등 사용자가 보고 듣는 모든 출력은 헤드리스로 검증 대상. '소리 나는지'는 speechSynthesis/Audio mock 으로 호출·폴백을 단언(실 음원 바이트는 천장이나 배선·폴백은 검증)."
+      "R5 출력·기능 전수: 텍스트·음성(TTS/STT)·아바타·슬롯 전개·라우팅·설정 영속 등 사용자가 보고 듣는 모든 출력은 헤드리스로 검증 대상. '소리 나는지'는 speechSynthesis/Audio mock 으로 호출·폴백을 단언(실 음원 바이트는 천장이나 배선·폴백은 검증).",
+      "R6 운영 공급자 완료선: Playwright의 브라우저 UI/mock 통과를 실제 Tauri Shell→gRPC Agent→외부 provider 운영 통과로 표현하지 않는다. provider 연결 완료를 주장하려면 네이티브 e2e-tauri에서 실제 로그인/자격 상태를 사용하고, 한 requestId가 선택 provider→usage→finish를 관통하며, 그 응답 DOM과 사용량 표시가 동일 turn에 속함을 자동 단언한다.",
+      "R7 운영 테스트 격리·복구: 실제 사용자 설정을 사용하는 네이티브 검증은 file config와 WebView 상태를 격리·백업하고 정상 종료 후 exact restore를 단언한다. worker/app/driver crash를 유도한 별도 시험에서 durable backup 복구, 전후 설정 hash 동일, 임시 XDG/backup 잔여물 0을 증명한다. 기능 assertion 통과 뒤 runner teardown/OOM이면 전체 실행은 RED이며 종료 누수까지 고쳐야 한다."
     ],
     "incident": "2026-06-25: TTS 무음/미리듣기 실패를 사용자에게 'provider/에러 알려달라'고 떠넘김 → 잘못. Playwright 로 실 edge-tts WS(실패)·nextain(키없음)·google(도달)을 직접 재현해 근본원인(edge WS 는 브라우저 핸드셰이크 거부=원천불가) 확정·수정·검증. + shell-한정 tsc 가 bgm-sidecar 17 에러를 놓침(R3 위반)."
   },
