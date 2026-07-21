@@ -1,3 +1,6 @@
+import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import {
 	countCompletedAssistantMessages,
 	getNewAssistantMessages,
@@ -11,6 +14,8 @@ let adkPath = "";
 let originalFileConfig = "";
 let originalLocalConfig = "";
 let snapshotCaptured = false;
+let logPath = "";
+let logStart = 0;
 
 async function tauriInvoke<T>(
 	command: string,
@@ -42,10 +47,59 @@ async function reloadAgentSettings(): Promise<void> {
 	await browser.pause(2_000);
 }
 
+function readCurrentRunLog(): string {
+	if (!logPath) return "";
+	try {
+		// stat size is bytes, not UTF-16 string indices. Slice the Buffer first so
+		// Korean log lines before this run cannot shift the provenance window.
+		return readFileSync(logPath).subarray(logStart).toString("utf8");
+	} catch {
+		return "";
+	}
+}
+
+async function waitForRunLog(fragment: string): Promise<void> {
+	await browser.waitUntil(() => readCurrentRunLog().includes(fragment), {
+		timeout: 15_000,
+		timeoutMsg: `Naia runtime log did not contain: ${fragment}`,
+	});
+}
+
 describe("90 — Codex live chat through the real Naia Shell", () => {
 	before(async () => {
 		const appRoot = await $(S.appRoot);
 		await appRoot.waitForDisplayed({ timeout: 30_000 });
+		adkPath = readFileSync(resolve(homedir(), ".naia/adk-path"), "utf8").trim();
+		if (!adkPath) throw new Error("ADK path unavailable for Codex live E2E");
+		originalLocalConfig = await browser.execute(
+			() => localStorage.getItem("naia-config") ?? "",
+		);
+		originalFileConfig = await tauriInvoke<string>("read_naia_config", {
+			adkPath,
+		});
+		const uiConfig = await tauriInvoke<string>("read_naia_ui_config", {
+			adkPath,
+		});
+		await browser.execute(
+			(path: string, fileRaw: string, uiRaw: string) => {
+				const file = fileRaw ? JSON.parse(fileRaw) : {};
+				const ui = uiRaw ? JSON.parse(uiRaw) : {};
+				localStorage.setItem("naia-adk-path", path);
+				localStorage.setItem(
+					"naia-config",
+					JSON.stringify({
+						...file,
+						...ui,
+						onboardingComplete: true,
+						workspaceRoot: path,
+					}),
+				);
+				location.reload();
+			},
+			adkPath,
+			originalFileConfig,
+			uiConfig,
+		);
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForEnabled({ timeout: 60_000 });
 		// File-backed settings hydrate asynchronously and are the authority. Capture
@@ -53,17 +107,12 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 		// settings with a stale localStorage cache.
 		await browser.pause(1_500);
 
-		const snapshot = await browser.execute(() => ({
-			adkPath: localStorage.getItem("naia-adk-path") ?? "",
-			localConfig: localStorage.getItem("naia-config") ?? "",
-		}));
-		adkPath = snapshot.adkPath;
-		originalLocalConfig = snapshot.localConfig;
-		if (!adkPath) throw new Error("ADK path unavailable for Codex live E2E");
-
-		originalFileConfig = await tauriInvoke<string>("read_naia_config", {
-			adkPath,
-		});
+		logPath = await tauriInvoke<string>("get_gateway_log_path");
+		try {
+			logStart = statSync(logPath).size;
+		} catch {
+			logStart = 0;
+		}
 		snapshotCaptured = true;
 		const current = originalFileConfig ? JSON.parse(originalFileConfig) : {};
 		const currentLocal = originalLocalConfig
@@ -89,18 +138,28 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 			adkPath,
 			json: JSON.stringify(codexFileConfig, null, 2),
 		});
-		await browser.execute((next: Record<string, unknown>) => {
-			localStorage.setItem("naia-config", JSON.stringify(next));
-			window.dispatchEvent(new CustomEvent("naia-config-changed"));
-		}, {
-			...currentLocal,
-			...codexFileConfig,
-			enableTools: false,
-			ttsEnabled: false,
-			locale: "ko",
-			onboardingComplete: true,
-		});
+		await browser.execute(
+			(next: Record<string, unknown>) => {
+				localStorage.setItem("naia-config", JSON.stringify(next));
+				window.dispatchEvent(new CustomEvent("naia-config-changed"));
+			},
+			{
+				...currentLocal,
+				...codexFileConfig,
+				enableTools: false,
+				ttsEnabled: false,
+				locale: "ko",
+				onboardingComplete: true,
+			},
+		);
 		await reloadAgentSettings();
+		await waitForRunLog("loaded=true codex/gpt-5.4");
+		// Recovery acceptance mode: terminate the worker after the real config
+		// mutation, before Mocha can run `after`. The launcher-level onComplete
+		// hook must restore the durable backup without help from this process.
+		if (process.env.NAIA_CODEX_E2E_SIMULATE_WORKER_CRASH === "1") {
+			process.exit(86);
+		}
 	});
 
 	after(async () => {
@@ -115,6 +174,24 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 			window.dispatchEvent(new CustomEvent("naia-config-changed"));
 		}, originalLocalConfig);
 		await reloadAgentSettings();
+		// eslint-disable-next-line no-console
+		console.log("[codex-live-e2e] restore command completed");
+		const restored = await tauriInvoke<string>("read_naia_config", { adkPath });
+		expect(JSON.parse(restored || "{}")).toEqual(
+			JSON.parse(originalFileConfig || "{}"),
+		);
+		const restoredLocal = await browser.execute(
+			() => localStorage.getItem("naia-config") ?? "",
+		);
+		expect(restoredLocal).toBe(originalLocalConfig);
+		// eslint-disable-next-line no-console
+		console.log("[codex-live-e2e] file/local restoration verified");
+		const original = JSON.parse(originalFileConfig || "{}");
+		if (original.provider && original.model) {
+			await waitForRunLog(`loaded=true ${original.provider}/${original.model}`);
+		}
+		// eslint-disable-next-line no-console
+		console.log("[codex-live-e2e] provider restoration verified");
 	});
 
 	it("renders a real Codex response and usage in the Shell chat UI", async () => {
@@ -122,23 +199,32 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 		await sendMessage(
 			`운영 종단간 검증입니다. 다른 설명이나 마크다운 없이 정확히 ${RESPONSE_MARKER} 만 응답하세요.`,
 		);
+		await waitForRunLog("[E2E-DEBUG] chat_request provider=codex");
 		const messages = await getNewAssistantMessages(before);
 		const text = messages.at(-1) ?? "";
 		// eslint-disable-next-line no-console
-		console.log(`=== NAIA SHELL CODEX RESPONSE ===\n${text}\n==================================`);
+		console.log(
+			`=== NAIA SHELL CODEX RESPONSE ===\n${text}\n==================================`,
+		);
 		expect(text).toContain(RESPONSE_MARKER);
 		expect(text).not.toMatch(
 			/\[오류\]|login required|API key|Bad Request|provider error|failed:|\b40[0-9]\b|\b500\b/i,
 		);
 
-		const tokens = await browser.execute(() => {
-			const badges = document.querySelectorAll(
-				".chat-message.assistant:not(.streaming) .cost-badge",
+		const tokens = await browser.execute((newMessageIndex: number) => {
+			const completed = document.querySelectorAll(
+				".chat-message.assistant:not(.streaming)",
 			);
-			const last = badges[badges.length - 1]?.textContent ?? "";
-			const match = last.match(/(\d[\d,]*)\s*(?:토큰|tokens?)/i);
+			const newMessage = completed[newMessageIndex];
+			if (!newMessage) return 0;
+			const badge = newMessage.querySelector(".cost-badge");
+			const label = badge?.textContent ?? "";
+			const match = label.match(/(\d[\d,]*)\s*(?:토큰|tokens?)/i);
 			return match ? Number(match[1].replace(/,/g, "")) : 0;
-		});
+		}, before);
 		expect(tokens).toBeGreaterThan(0);
+		const runLog = readCurrentRunLog();
+		expect(runLog).toContain("loaded=true codex/gpt-5.4");
+		expect(runLog).toContain("[E2E-DEBUG] chat_request provider=codex");
 	});
 });
