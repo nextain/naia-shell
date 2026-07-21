@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -8,16 +8,22 @@ import { execPath } from "node:process";
 
 export const SHELL_DIR = resolve(import.meta.dirname, "..");
 export const E2E_RUN_PARENT = resolve(homedir(), ".naia", "run");
-const E2E_WEBDRIVER_PORT = Number(process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450");
+const E2E_WEBDRIVER_PORT = Number(
+	process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450",
+);
 // A port-scoped root prevents a delayed Windows WebView2 teardown from
 // contaminating the next independent native run.
-export const E2E_ROOT = resolve(E2E_RUN_PARENT, `codex-live-e2e-${E2E_WEBDRIVER_PORT}`);
+export const E2E_ROOT = resolve(
+	E2E_RUN_PARENT,
+	`codex-live-e2e-${E2E_WEBDRIVER_PORT}`,
+);
 export const E2E_WORKSPACE = resolve(E2E_ROOT, "workspace");
 export const E2E_SETTINGS = resolve(E2E_WORKSPACE, "naia-settings");
 export const E2E_WEBVIEW2_DATA = resolve(E2E_ROOT, "webview2");
 export const E2E_ARTIFACTS = resolve(E2E_ROOT, "artifacts");
 export const E2E_RUNTIME = resolve(E2E_ROOT, "runtime");
 export const E2E_CONFIG_PATH = resolve(E2E_SETTINGS, "config.json");
+export const E2E_UI_CONFIG_PATH = resolve(E2E_SETTINGS, "ui-config.json");
 export const VITE_ENTRY = resolve(SHELL_DIR, "node_modules/vite/bin/vite.js");
 // Keep Windows CMake/MSVC paths short without sharing the live Shell target.
 // This must match scripts/build-e2e-tauri.mjs.
@@ -28,6 +34,8 @@ export const E2E_TARGET_DIR = resolve(
 			: resolve(SHELL_DIR, "src-tauri", "target-e2e")),
 );
 const E2E_VITE_PORT = 1421;
+const E2E_AVATAR_ENABLED = process.env.NAIA_E2E_AVATAR === "1";
+const E2E_NVA_SOURCE = process.env.NAIA_E2E_NVA_SOURCE;
 
 let viteServer: ChildProcess | undefined;
 let e2eApp: ChildProcess | undefined;
@@ -71,39 +79,82 @@ export function resetCodexE2eRoot(): void {
 	// WebView2 may release its user-data files a few seconds after the app exits.
 	// This is an owned E2E directory, so bounded retry is safe and avoids leaving
 	// a failed run's profile locked for the next isolated run.
-	rmSync(E2E_ROOT, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+	rmSync(E2E_ROOT, {
+		recursive: true,
+		force: true,
+		maxRetries: 20,
+		retryDelay: 250,
+	});
 	mkdirSync(E2E_SETTINGS, { recursive: true });
 	mkdirSync(E2E_WEBVIEW2_DATA, { recursive: true });
 	mkdirSync(E2E_ARTIFACTS, { recursive: true });
 	mkdirSync(E2E_RUNTIME, { recursive: true });
-	writeFileSync(
-		E2E_CONFIG_PATH,
-		JSON.stringify(
-			{
+	const config = {
+		provider: "codex",
+		model: "gpt-5.4",
+		NAIA_MAIN_PROVIDER: "codex",
+		NAIA_MAIN_MODEL: "gpt-5.4",
+		llmRoles: {
+			main: {
 				provider: "codex",
 				model: "gpt-5.4",
-				NAIA_MAIN_PROVIDER: "codex",
-				NAIA_MAIN_MODEL: "gpt-5.4",
-				llmRoles: {
-					main: {
-						provider: "codex",
-						model: "gpt-5.4",
-						credentialRef: "codex-login",
-					},
-				},
+				credentialRef: "codex-login",
 			},
-			null,
-			2,
-		),
-		{ mode: 0o600 },
-	);
+		},
+		...(E2E_AVATAR_ENABLED
+			? {
+					avatarProvider: "naia-video-avatar",
+					nvaModel: "naia",
+					localGpuTier: "laptop-4060-8g",
+					ttsProvider: "naia-local-voice",
+					vllmTtsHost: "http://127.0.0.1:8910",
+				}
+			: {}),
+	};
+	if (E2E_AVATAR_ENABLED) {
+		if (!E2E_NVA_SOURCE || !existsSync(E2E_NVA_SOURCE)) {
+			throw new Error(
+				"NAIA_E2E_AVATAR=1 requires NAIA_E2E_NVA_SOURCE pointing to a real NVA bundle",
+			);
+		}
+		cpSync(E2E_NVA_SOURCE, resolve(E2E_SETTINGS, "nva-files", "naia"), {
+			recursive: true,
+		});
+	}
+	writeFileSync(E2E_CONFIG_PATH, JSON.stringify(config, null, 2), {
+		mode: 0o600,
+	});
+	if (E2E_AVATAR_ENABLED) {
+		writeFileSync(
+			E2E_UI_CONFIG_PATH,
+			JSON.stringify(
+				{
+					avatarProvider: "naia-video-avatar",
+					nvaModel: "naia",
+					localGpuTier: "laptop-4060-8g",
+					ttsProvider: "naia-local-voice",
+					vllmTtsHost: "http://127.0.0.1:8910",
+				},
+				null,
+				2,
+			),
+			{ mode: 0o600 },
+		);
+	}
 }
 
 export function assertCodexE2eIsolation(): void {
-	for (const path of [E2E_WORKSPACE, E2E_SETTINGS, E2E_WEBVIEW2_DATA, E2E_RUNTIME]) {
-		if (!existsSync(path)) throw new Error(`E2E isolation path missing: ${path}`);
+	for (const path of [
+		E2E_WORKSPACE,
+		E2E_SETTINGS,
+		E2E_WEBVIEW2_DATA,
+		E2E_RUNTIME,
+	]) {
+		if (!existsSync(path))
+			throw new Error(`E2E isolation path missing: ${path}`);
 	}
-	if (!existsSync(E2E_CONFIG_PATH)) throw new Error("E2E provider config was not seeded");
+	if (!existsSync(E2E_CONFIG_PATH))
+		throw new Error("E2E provider config was not seeded");
 }
 
 function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
@@ -117,7 +168,10 @@ function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
 			});
 			socket.once("error", () => {
 				socket.destroy();
-				if (Date.now() >= deadline) reject(new Error(`Vite did not listen on ${port} within ${timeoutMs}ms`));
+				if (Date.now() >= deadline)
+					reject(
+						new Error(`Vite did not listen on ${port} within ${timeoutMs}ms`),
+					);
 				else setTimeout(attempt, 250);
 			});
 		};
@@ -139,22 +193,28 @@ export async function startOwnedViteServer(): Promise<void> {
 				rejectClosed(new Error("closed"));
 			});
 		});
-		throw new Error(`Port ${E2E_VITE_PORT} is already in use; refusing to replace a non-E2E Vite server`);
+		throw new Error(
+			`Port ${E2E_VITE_PORT} is already in use; refusing to replace a non-E2E Vite server`,
+		);
 	} catch (error) {
 		if (error instanceof Error && error.message !== "closed") throw error;
 	}
-	viteServer = spawn(execPath, [VITE_ENTRY, "--host", "127.0.0.1", "--port", String(E2E_VITE_PORT)], {
-		cwd: SHELL_DIR,
-		stdio: ["ignore", "pipe", "pipe"],
-		env: {
-			...process.env,
-			BROWSER: "none",
-			VITE_NAIA_E2E_ADK_PATH: E2E_WORKSPACE,
-			VITE_NAIA_E2E_NO_AVATAR: "1",
-			// The BGM acceptance fixture is same-origin and never contacts YouTube.
-			VITE_NAIA_E2E_BGM_IFRAME_URL: "/e2e/bgm-playback-fixture.html",
+	viteServer = spawn(
+		execPath,
+		[VITE_ENTRY, "--host", "127.0.0.1", "--port", String(E2E_VITE_PORT)],
+		{
+			cwd: SHELL_DIR,
+			stdio: ["ignore", "pipe", "pipe"],
+			env: {
+				...process.env,
+				BROWSER: "none",
+				VITE_NAIA_E2E_ADK_PATH: E2E_WORKSPACE,
+				...(E2E_AVATAR_ENABLED ? {} : { VITE_NAIA_E2E_NO_AVATAR: "1" }),
+				// The BGM acceptance fixture is same-origin and never contacts YouTube.
+				VITE_NAIA_E2E_BGM_IFRAME_URL: "/e2e/bgm-playback-fixture.html",
+			},
 		},
-	});
+	);
 	viteServer.stderr?.on("data", (data: Buffer) =>
 		process.stderr.write(`[codex-e2e:vite] ${data.toString()}`),
 	);
@@ -174,7 +234,9 @@ export async function startOwnedEmbeddedApp(appBinary: string): Promise<void> {
 				rejectClosed(new Error("closed"));
 			});
 		});
-		throw new Error(`Port ${E2E_WEBDRIVER_PORT} is already in use; refusing to replace a non-E2E WebDriver server`);
+		throw new Error(
+			`Port ${E2E_WEBDRIVER_PORT} is already in use; refusing to replace a non-E2E WebDriver server`,
+		);
 	} catch (error) {
 		if (error instanceof Error && error.message !== "closed") throw error;
 	}
@@ -188,7 +250,11 @@ export async function startOwnedEmbeddedApp(appBinary: string): Promise<void> {
 	);
 	const appExit = new Promise<never>((_, reject) => {
 		e2eApp?.once("exit", (code, signal) =>
-			reject(new Error(`Embedded E2E app exited before WebDriver became ready (code=${code}, signal=${signal})`)),
+			reject(
+				new Error(
+					`Embedded E2E app exited before WebDriver became ready (code=${code}, signal=${signal})`,
+				),
+			),
 		);
 	});
 	await Promise.race([waitForPort(E2E_WEBDRIVER_PORT, 90_000), appExit]);
@@ -208,9 +274,13 @@ export async function stopOwnedEmbeddedApp(): Promise<void> {
 		// dedicated WebDriver socket and owned profile open.  This PID is created
 		// by startOwnedEmbeddedApp in this run; terminate only its process tree.
 		await new Promise<void>((resolveStopped) => {
-			const killer = spawn("taskkill.exe", ["/pid", String(app.pid), "/t", "/f"], {
-				stdio: "ignore",
-			});
+			const killer = spawn(
+				"taskkill.exe",
+				["/pid", String(app.pid), "/t", "/f"],
+				{
+					stdio: "ignore",
+				},
+			);
 			const timeout = setTimeout(resolveStopped, 5_000);
 			killer.once("exit", () => {
 				clearTimeout(timeout);
@@ -232,11 +302,18 @@ export async function stopOwnedEmbeddedApp(): Promise<void> {
 export function cleanupCodexE2eRoot(): void {
 	assertOwnedRoot(E2E_ROOT);
 	try {
-		rmSync(E2E_ROOT, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+		rmSync(E2E_ROOT, {
+			recursive: true,
+			force: true,
+			maxRetries: 20,
+			retryDelay: 250,
+		});
 	} catch (error) {
 		// Do not turn a passed product UC into a false red solely because Windows
 		// has not yet released this run's *owned* WebView2 files. The port-scoped
 		// root makes the next run independent and the warning preserves evidence.
-		process.stderr.write(`[codex-e2e] deferred cleanup for ${E2E_ROOT}: ${String(error)}\n`);
+		process.stderr.write(
+			`[codex-e2e] deferred cleanup for ${E2E_ROOT}: ${String(error)}\n`,
+		);
 	}
 }

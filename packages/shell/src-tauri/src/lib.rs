@@ -9362,11 +9362,15 @@ pub fn run() {
             }
 
             // Clean up orphan processes from previous sessions
-            platform::cleanup_orphan_processes();
-            platform::kill_stale_gateway();
+            if debug_e2e_enabled() {
+                log_verbose("[Naia] E2E mode: skipping global orphan/cascade cleanup");
+            } else {
+                platform::cleanup_orphan_processes();
+                platform::kill_stale_gateway();
             // ?꿤ascade 怨좎븘(uvicorn facade ?먯옄, PID 誘몄텛?? ?뺣━ ??8910 EADDRINUSE 諛⑹?(R2.2b).
             // dev 諛섎났 湲곕룞 ???댁쟾 ?몄뀡??cascade 媛 ??二쎄퀬 ?⑥븘 ?ㅼ쓬 start_cascade 瑜?留됰뒗??
-            platform::kill_stale_cascade();
+                platform::kill_stale_cascade();
+            }
 
             // Spawn Gateway first (Agent connects to it via WebSocket)
             let (gateway_running, gateway_managed) = match spawn_gateway() {
