@@ -27,7 +27,7 @@
 - Shell production build: pass
 - Playwright: Discord 3 + proactive speech 7 = 10/10 pass
 - Rust paired integration: 172/172 pass against the exact Agent pin
-- Native Tauri WDIO: 3/3 pass against Shell `2c1f1a15c69e389ab7dba8e033d9ff98f5a438f1` and the exact Agent pin (`.agents/reviews/four-session-native-e2e-2026-07-21.json`)
+- Native Tauri WDIO: 3/3 pass against Shell `dc110b190304aa0741752800a8a4b1eeffc108f0` and Agent `1e0acab83622fe446f301811d0fe35bb10285b86` (`.agents/reviews/four-session-native-e2e-2026-07-21.json`)
 - 실제 Codex app-server dynamic-tool smoke: `get_time` 1회 toolUse/toolResult, success, final text, completed, exit 0 (`naia-agent:docs/progress/99.dev-comm/codex-dynamic-tool-smoke-2026-07-21.md`)
 - 전주 강의: preflight 23/23, publisher 5/5, 장 14개 오류 0, starter 정적 검사 13/13
 
