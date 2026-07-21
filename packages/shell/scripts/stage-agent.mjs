@@ -30,7 +30,7 @@ import { dirname, resolve } from "node:path";
 
 const SHELL = process.cwd(); // packages/shell
 const STAGE = resolve(SHELL, "src-tauri/agent");
-const REQUIRED_AGENT_COMMIT = "4e488abaef2a6d76a7abceefab3924a3b6423656";
+const REQUIRED_AGENT_COMMIT = "8f5b0d1c5c9161530e194328a573cdc0291aa6a5";
 // Hash text after CRLF normalization: the paired checkout may use a different
 // Windows git autocrlf setting while still containing the identical proto.
 const REQUIRED_PROTO_SHA256 = "b77761930c0991ee825b6d2827adad264fc352a9f220404912a284fc166b691b";
