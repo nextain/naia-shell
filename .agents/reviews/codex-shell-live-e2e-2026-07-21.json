@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
-  "recorded_at": "2026-07-21T15:21:40+09:00",
+  "recorded_at": "2026-07-21T15:35:20+09:00",
   "status": "passed",
-  "shell_test_source_commit": "f4d411ae464bb1c72d9699fb95351d25fbf14913",
+  "shell_test_source_commit": "fb40e0c4",
   "agent_commit": "1e0acab83622fe446f301811d0fe35bb10285b86",
   "environment": {
     "os": "Linux Bazzite",
@@ -14,9 +14,10 @@
   "cwd": "packages/shell",
   "assertions": {
     "agent_reload": "run-scoped runtime log contains loaded=true codex/gpt-5.4",
-    "request_provider": "run-scoped runtime log contains [E2E-DEBUG] chat_request provider=codex",
+    "request_provider": "run-scoped runtime log binds one requestId to chat_request provider=codex",
     "response_marker": "NAIA_SHELL_CODEX_E2E_OK_20260721",
-    "usage_tokens": "new assistant message cost badge > 0",
+    "usage_tokens": "the assistant DOM element containing the response marker has a cost badge > 0",
+    "correlated_completion": "the same requestId appears in provider, usage, and finish runtime events",
     "error_markers": "absent",
     "settings_restore": "file and isolated localStorage equal their exact snapshots; runtime reload is loaded=true gemini/gemini-2.5-flash",
     "webview_isolation": "XDG config/data/cache confined to ~/.naia/run/codex-live-e2e-xdg and removed on completion",
@@ -25,15 +26,27 @@
   "result": {
     "tests_passed": 1,
     "tests_failed": 0,
-    "duration_seconds": 13.1,
+    "duration_seconds": 13.3,
     "total_duration_seconds": 20,
     "spec_files_passed": 1,
     "exit_code": 0
+  },
+  "crash_recovery_run": {
+    "command": "NAIA_CODEX_E2E_SIMULATE_WORKER_CRASH=1 NAIA_AGENT_SCRIPT=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/scripts/builds/agent-stdio-entry.mjs NAIA_AGENT_PROTO_DIR=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/src/main/adapters/grpc pnpm exec wdio run e2e-tauri/wdio.conf.codex.ts",
+    "configured_worker_exit": 86,
+    "launcher_exit": 1,
+    "expected_launcher_failure": true,
+    "config_sha256_before": "31458de1c11f1994d0ba51468e15e4dd566623bb8eaf7b6253a8f733c07c0274",
+    "config_sha256_after": "31458de1c11f1994d0ba51468e15e4dd566623bb8eaf7b6253a8f733c07c0274",
+    "restored_provider": "gemini",
+    "restored_model": "gemini-2.5-flash",
+    "durable_backup_after": "absent",
+    "isolated_xdg_after": "absent"
   },
   "regression": {
     "shell_ui": "121 files passed, 2 skipped; 1332 tests passed, 13 skipped",
     "shell_core": "25 files, 229 tests passed",
     "production_build": "passed"
   },
-  "diagnostic_note": "Early diagnostic runs exposed three harness defects rather than product failures: an unsupported two-argument expect call, provider/usage assertions that were not causally scoped to the new request, and an undisposed permission poller that hot-looped after WebKit session teardown and exhausted the worker heap. The final committed source fixes all three, adds durable crash recovery and isolated WebView state, and exits 0. The operational Codex request itself rendered the marker and usage in every run that reached chat."
+  "diagnostic_note": "Early diagnostic runs exposed harness defects rather than product failures: an unsupported two-argument expect call, provider/usage assertions that were not causally scoped to one request, and an undisposed permission poller that hot-looped after WebKit session teardown and exhausted the worker heap. The final committed source binds provider/usage/finish to one requestId, scopes cost to the marker DOM element, adds durable crash recovery and isolated WebView state, and exits 0. The separate crash run intentionally exits nonzero and proves byte-identical config restoration."
 }

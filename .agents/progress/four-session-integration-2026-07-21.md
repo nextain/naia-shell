@@ -43,18 +43,21 @@
 
 ## 운영 종단간 보강 — 실제 Codex via Naia Shell
 
-- 테스트 소스: Shell `f4d411ae464bb1c72d9699fb95351d25fbf14913`
+- 테스트 소스: Shell `fb40e0c4`
 - 실제 운영 로그인 상태의 Codex를 사용해
   `Tauri Shell → gRPC Agent → codex app-server → usage/finish → Shell 화면`을 실행했다.
 - 테스트 시작 이후의 런타임 로그 구간에서 Agent reload
-  `loaded=true codex/gpt-5.4`와 실제 요청 provenance
-  `[E2E-DEBUG] chat_request provider=codex`를 자동 단언했다.
+  `loaded=true codex/gpt-5.4`를 확인하고, 전송 직전부터 하나의 `requestId`가
+  `chat_request provider=codex` → `usage` → `finish`를 관통하는지 자동 단언했다.
 - Shell 화면 응답: `NAIA_SHELL_CODEX_E2E_OK_20260721`
-- 새 응답에 속한 usage 토큰 양수, 오류 마커 없음, 테스트 종료 후 파일과
+- marker를 포함한 바로 그 assistant DOM의 usage 토큰 양수, 오류 마커 없음, 테스트 종료 후 파일과
   격리 localStorage의 정확한 원본 및 `gemini/gemini-2.5-flash` 활성 상태 복구를 확인했다.
 - WebView 상태는 전용 XDG 디렉터리로 격리하고 종료 시 제거한다. Codex 설정 변경 직후
   worker를 강제 종료하는 복구 시험에서도 launcher의 durable backup이 원본을 복원했다.
 - 종료 중 permission poller hot loop를 제거해 정상 teardown까지 포함했다.
-- 고정 커밋 재실행: 1/1 pass, 13.1초; spec 1/1 pass; 전체 20초; exit 0.
+- crash 복구 재실행: worker exit 86 유도, launcher exit 1(예상 실패), 설정 SHA-256
+  `31458de1...c0274` 전후 동일, Gemini 복구, backup/XDG 잔여물 없음.
+- 고정 커밋 재실행: 1/1 pass, 13.3초; spec 1/1 pass; 전체 20초; exit 0.
+- V-model 정본 `TEST-S-017/UC-018`, `TEST-F-012/SPEC-012`에도 native E2E와 증거를 연결했다.
 - 회귀: Shell UI 1,332 pass / 13 skip, core 229/229, production build pass.
 - 상세 증거: `.agents/reviews/codex-shell-live-e2e-2026-07-21.json`
