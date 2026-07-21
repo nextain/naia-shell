@@ -26,6 +26,7 @@ vi.mock("@tauri-apps/plugin-store", () => {
 let capturedOnChunk: ((chunk: AgentResponseChunk) => void) | null = null;
 const capturedRequests: {
 	message: string;
+	history: { role: "user" | "assistant"; content: string }[];
 	requestId: string;
 	onChunk: (chunk: AgentResponseChunk) => void;
 }[] = [];
@@ -33,6 +34,7 @@ vi.mock("../../lib/chat-service", () => ({
 	sendChatMessage: vi.fn().mockImplementation(
 		(opts: {
 			message: string;
+			history: { role: "user" | "assistant"; content: string }[];
 			requestId: string;
 			onChunk: (chunk: AgentResponseChunk) => void;
 		}) => {
@@ -493,6 +495,10 @@ describe("ChatArea", () => {
 
 		await waitFor(() => expect(sendChatMessage).toHaveBeenCalledTimes(2));
 		expect(capturedRequests[1].message).toBe("두번째");
+		expect(capturedRequests[1].history).toEqual([
+			{ role: "user", content: "첫번째" },
+			{ role: "assistant", content: "첫 응답" },
+		]);
 
 		localStorage.removeItem("naia-config");
 	});
@@ -588,10 +594,10 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
-	// === Session loading from Gateway ===
+	// === Local conversation ownership ===
 
-	it("loads session from Gateway on mount", async () => {
-		// Set discordSessionMigrated so it skips migration and loads history
+	it("does not hydrate stale Gateway history over the local conversation", async () => {
+		// A completed first turn must remain the source of the second request.
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({ discordSessionMigrated: true }),
@@ -617,9 +623,8 @@ describe("ChatArea", () => {
 
 		const state = useChatStore.getState();
 		expect(state.sessionId).toBe("agent:main:main");
-		expect(state.messages).toHaveLength(2);
-		expect(state.messages[0].content).toBe("이전 메시지");
-		expect(state.messages[1].content).toBe("이전 응답");
+		expect(getGatewayHistory).not.toHaveBeenCalled();
+		expect(state.messages).toHaveLength(0);
 
 		localStorage.removeItem("naia-config");
 	});

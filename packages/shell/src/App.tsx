@@ -49,6 +49,7 @@ import {
 	migrateSpeechStyleValues,
 	saveConfig,
 	mergeBootConfig,
+	reconcileExplicitLocalProfile,
 } from "./lib/config";
 import { persistDiscordDefaults } from "./lib/discord-auth";
 import { startIframeBridge } from "./lib/iframe-bridge";
@@ -400,8 +401,14 @@ export function App() {
 					uiConfig ?? null,
 				);
 				// null = files absent → keep existing cache (no wipe). Still hydrated.
-				if (merged)
-					saveConfig(merged as unknown as Parameters<typeof saveConfig>[0]);
+				if (merged) {
+					const reconciled = reconcileExplicitLocalProfile(
+						merged as unknown as Parameters<
+							typeof reconcileExplicitLocalProfile
+						>[0],
+					);
+					saveConfig(reconciled);
+				}
 				configHydratedRef.current = true;
 				// Re-run the gateway-mode sync now that the file value is in cache
 				// (the immediate sync on mount was gated off until this point).

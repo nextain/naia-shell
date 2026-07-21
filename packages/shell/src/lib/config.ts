@@ -7,6 +7,7 @@ import {
 	saveSecretKey,
 } from "./secure-store";
 import type { ProviderId } from "./types";
+import { DEFAULT_NVA_MODEL } from "./avatar-presets";
 // LiveProviderId kept for migration only — will be removed after migration period
 import type { LiveProviderId } from "./voice/types";
 
@@ -766,6 +767,33 @@ export const DEFAULT_VLLM_HOST = "http://localhost:8000";
 // `/stream` (Ditto rendering); the bundled VoxCPM2 service on :8901 remains
 // private behind this facade.
 export const DEFAULT_LOCAL_VOICE_HOST = "http://localhost:8910";
+
+/**
+ * Restore the contract of an explicitly selected 8GB laptop profile after a
+ * restart. Older config files kept their previous cloud main model even though
+ * the profile was already stored, so the UI could warm Ditto/VoxCPM2 while the
+ * agent still answered through the remote provider.
+ */
+export function reconcileExplicitLocalProfile(config: AppConfig): AppConfig {
+	if (config.localGpuTier !== "laptop-4060-8g") return config;
+	const isLocalHostUrl = /^(https?:\/\/)?(localhost|127\.0\.0\.1)([:/]|$)/i;
+	const shouldUseFacade =
+		!config.vllmTtsHost || isLocalHostUrl.test(config.vllmTtsHost);
+	return {
+		...config,
+		provider: "ollama",
+		model:
+			config.provider === "ollama" && config.model
+				? config.model
+				: DEFAULT_LOCAL_LLM_MODEL,
+		ollamaNumGpu: 0,
+		ttsProvider: "naia-local-voice",
+		ttsEnabled: true,
+		...(shouldUseFacade ? { vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST } : {}),
+		avatarProvider: "naia-video-avatar",
+		nvaModel: config.nvaModel || DEFAULT_NVA_MODEL,
+	};
+}
 
 /**
  * The previous 4060 profile wrote a Hugging Face reference into Ollama's

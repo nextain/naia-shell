@@ -8,6 +8,7 @@ import {
 	loadConfig,
 	migrateLegacyDna3OllamaModel,
 	normalizeCascadeUrl,
+	reconcileExplicitLocalProfile,
 	resolveConfiguredGatewayUrl,
 	resolveGatewayUrl,
 	saveConfig,
@@ -71,6 +72,24 @@ describe("config", () => {
 		saveConfig({ provider: "ollama", model: "my-local-model", apiKey: "" });
 		migrateLegacyDna3OllamaModel();
 		expect(loadConfig()?.model).toBe("my-local-model");
+	});
+
+	it("restores the explicit 4060 profile to CPU/NPU DNA3 and local facade", () => {
+		const restored = reconcileExplicitLocalProfile({
+			provider: "nextain",
+			model: "gemini-3.5-flash",
+			apiKey: "",
+			localGpuTier: "laptop-4060-8g",
+			vllmTtsHost: "http://localhost:8901",
+		});
+
+		expect(restored.provider).toBe("ollama");
+		expect(restored.model).toBe("dna3:latest");
+		expect(restored.ollamaNumGpu).toBe(0);
+		expect(restored.ttsProvider).toBe("naia-local-voice");
+		expect(restored.vllmTtsHost).toBe("http://localhost:8910");
+		expect(restored.avatarProvider).toBe("naia-video-avatar");
+		expect(restored.nvaModel).toBe("naia");
 	});
 
 	it("hasApiKey returns false when not set", () => {

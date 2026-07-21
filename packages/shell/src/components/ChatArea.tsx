@@ -70,7 +70,6 @@ import {
 import { remoteCascadeUrlFromConfig } from "../lib/avatar/cascade-renderer";
 import {
 	discoverAndPersistDiscordDmChannel,
-	getGatewayHistory,
 	resetGatewaySession,
 } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
@@ -683,7 +682,10 @@ export function ChatArea({
 
 	const setEmotion = useAvatarStore((s) => s.setEmotion);
 
-	// Load previous session from Gateway (SoT)
+	// The agent owns the local transcript. Do not hydrate the visual chat from
+	// the legacy Gateway session: its asynchronous response can arrive after a
+	// first local turn and replace the completed user/assistant pair with an
+	// unrelated history. The next request then has an invalid role sequence.
 	useEffect(() => {
 		if (sessionLoaded.current) return;
 		sessionLoaded.current = true;
@@ -705,13 +707,9 @@ export function ChatArea({
 					"One-time reset: cleared Discord-contaminated main session",
 				);
 			} else {
-				const messages = await getGatewayHistory("agent:main:main");
-				if (messages.length > 0) {
-					store.setMessages(messages);
-					Logger.info("ChatArea", "Session loaded from Gateway", {
-						messageCount: messages.length,
-					});
-				}
+				Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
+					reason: "agent-local-transcript-is-authoritative",
+				});
 			}
 		};
 

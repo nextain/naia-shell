@@ -25,7 +25,7 @@ const mode = process.argv[2] === "prod" ? "prod" : "dev";
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
-const REQUIRED_AGENT_COMMIT = "8b6b4e019e9a4d655fa0f8e9a75cc44b93ceecc5";
+const REQUIRED_AGENT_COMMIT = "ea6afa1d1f9227e754c68e4498364e5dc6405034";
 const REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a";
 const STATIC_AGENT_CANDIDATES = [
 	resolve(OS_ROOT, "..", "naia-agent"),
@@ -235,7 +235,19 @@ if (existsSync(envPath)) {
 	process.stdout.write(`[tauri-with-mode] ${mode.toUpperCase()} — .env.${mode} 없음; config 기본값 사용\n`);
 }
 
-applyPairedAgentEnv(env);
+const pairedAgent = applyPairedAgentEnv(env);
+// The Tauri process runs the compiled agent entrypoint. Always build the exact
+// paired source before development so a clean checkout cannot start with a
+// missing or stale dist/ tree.
+const agentBuild = spawnSync("pnpm", ["run", "build"], {
+	cwd: pairedAgent,
+	env,
+	stdio: "inherit",
+	shell: process.platform === "win32",
+});
+if (agentBuild.status !== 0 || !existsSync(resolve(pairedAgent, "dist/main/composition/index.js"))) {
+	throw new Error(`Paired naia-agent build failed or did not produce dist/main/composition/index.js: ${pairedAgent}`);
+}
 process.stdout.write(`[tauri-with-mode] new core=${env.VITE_NAIA_NEW_CORE}, agent=${env.NAIA_AGENT_SCRIPT}, proto=${env.NAIA_AGENT_PROTO_DIR}\n`);
 
 const r = spawnSync("pnpm", ["run", "tauri", "dev"], { env, stdio: "inherit", shell: true });
