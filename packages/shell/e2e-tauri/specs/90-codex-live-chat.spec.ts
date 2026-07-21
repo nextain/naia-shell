@@ -196,10 +196,25 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 
 	it("renders a real Codex response and usage in the Shell chat UI", async () => {
 		const before = await countCompletedAssistantMessages();
+		// Correlation starts immediately before this unique turn. Provider, usage,
+		// finish, rendered marker, and cost must all belong to the same request.
+		logStart = statSync(logPath).size;
 		await sendMessage(
 			`운영 종단간 검증입니다. 다른 설명이나 마크다운 없이 정확히 ${RESPONSE_MARKER} 만 응답하세요.`,
 		);
-		await waitForRunLog("[E2E-DEBUG] chat_request provider=codex");
+		await waitForRunLog("[E2E-DEBUG] chat_request requestId=");
+		const requestMatch = readCurrentRunLog().match(
+			/\[E2E-DEBUG\] chat_request requestId=([^ ]+) provider=codex\b/,
+		);
+		expect(requestMatch).not.toBeNull();
+		const requestId = requestMatch?.[1] ?? "";
+		expect(requestId).toMatch(/^req-/);
+		await waitForRunLog(
+			`[E2E-DEBUG] agent_event requestId=${requestId} type=usage`,
+		);
+		await waitForRunLog(
+			`[E2E-DEBUG] agent_event requestId=${requestId} type=finish`,
+		);
 		const messages = await getNewAssistantMessages(before);
 		const text = messages.at(-1) ?? "";
 		// eslint-disable-next-line no-console
@@ -211,20 +226,33 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 			/\[오류\]|login required|API key|Bad Request|provider error|failed:|\b40[0-9]\b|\b500\b/i,
 		);
 
-		const tokens = await browser.execute((newMessageIndex: number) => {
-			const completed = document.querySelectorAll(
-				".chat-message.assistant:not(.streaming)",
-			);
-			const newMessage = completed[newMessageIndex];
-			if (!newMessage) return 0;
-			const badge = newMessage.querySelector(".cost-badge");
-			const label = badge?.textContent ?? "";
-			const match = label.match(/(\d[\d,]*)\s*(?:토큰|tokens?)/i);
-			return match ? Number(match[1].replace(/,/g, "")) : 0;
-		}, before);
+		const tokens = await browser.execute(
+			(newMessageIndex: number, marker: string) => {
+				const completed = document.querySelectorAll(
+					".chat-message.assistant:not(.streaming)",
+				);
+				const matchingMessage = Array.from(completed)
+					.slice(newMessageIndex)
+					.find((message) => message.textContent?.includes(marker));
+				if (!matchingMessage) return 0;
+				const badge = matchingMessage.querySelector(".cost-badge");
+				const label = badge?.textContent ?? "";
+				const match = label.match(/(\d[\d,]*)\s*(?:토큰|tokens?)/i);
+				return match ? Number(match[1].replace(/,/g, "")) : 0;
+			},
+			before,
+			RESPONSE_MARKER,
+		);
 		expect(tokens).toBeGreaterThan(0);
 		const runLog = readCurrentRunLog();
-		expect(runLog).toContain("loaded=true codex/gpt-5.4");
-		expect(runLog).toContain("[E2E-DEBUG] chat_request provider=codex");
+		expect(runLog).toContain(
+			`[E2E-DEBUG] chat_request requestId=${requestId} provider=codex`,
+		);
+		expect(runLog).toContain(
+			`[E2E-DEBUG] agent_event requestId=${requestId} type=usage`,
+		);
+		expect(runLog).toContain(
+			`[E2E-DEBUG] agent_event requestId=${requestId} type=finish`,
+		);
 	});
 });

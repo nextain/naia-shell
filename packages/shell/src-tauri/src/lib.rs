@@ -2341,6 +2341,22 @@ async fn agent_dispatcher(
                             if memory::dispatch_backup_response(&parsed) {
                                 return;
                             }
+                            if debug_e2e_enabled() {
+                                let event_type = parsed
+                                    .get("type")
+                                    .and_then(|value| value.as_str())
+                                    .unwrap_or("");
+                                if matches!(event_type, "usage" | "finish") {
+                                    let event_request_id = parsed
+                                        .get("requestId")
+                                        .and_then(|value| value.as_str())
+                                        .unwrap_or("");
+                                    log_both(&format!(
+                                        "[E2E-DEBUG] agent_event requestId={} type={}",
+                                        event_request_id, event_type
+                                    ));
+                                }
+                            }
                         }
                         let _ = app2.emit("agent_response", &json);
                     };
@@ -2963,6 +2979,10 @@ fn send_to_agent(
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(message) {
             let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
             if t == "chat_request" {
+                let request_id = parsed
+                    .get("requestId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let provider = parsed
                     .get("provider")
                     .and_then(|v| v.get("provider"))
@@ -2988,8 +3008,8 @@ fn send_to_agent(
                     .map(|a| a.len())
                     .unwrap_or(0);
                 log_both(&format!(
-                    "[E2E-DEBUG] chat_request provider={} enableTools={} hasGatewayUrl={} hasGatewayToken={} disabledSkills={}",
-                    provider, enable_tools, has_gateway_url, has_gateway_token, disabled_len
+                    "[E2E-DEBUG] chat_request requestId={} provider={} enableTools={} hasGatewayUrl={} hasGatewayToken={} disabledSkills={}",
+                    request_id, provider, enable_tools, has_gateway_url, has_gateway_token, disabled_len
                 ));
             }
         }

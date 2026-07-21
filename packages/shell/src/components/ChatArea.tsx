@@ -1544,6 +1544,7 @@ export function ChatArea({
 		} else if (chunk.type === "finish" || chunk.type === "usage") {
 			Logger.info("ChatArea", "handleChunk", {
 				type: chunk.type,
+				requestId: chunk.requestId,
 				pipelineActive: pipelineActiveRef.current,
 				hasChunker: !!sentenceChunkerRef.current,
 			});
