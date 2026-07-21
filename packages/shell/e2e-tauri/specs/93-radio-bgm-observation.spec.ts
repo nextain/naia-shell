@@ -15,6 +15,17 @@ async function tauriInvoke<T>(command: string, args: Record<string, unknown> = {
 }
 
 describe("Radio BGM observation through the real Tauri Shell", () => {
+	it("starts the shell-owned BGM sidecar before the player uses it", async () => {
+		// Query from the WDIO Node runner so this check observes the real local
+		// process without coupling sidecar readiness to the test Vite origin's
+		// browser CORS policy.
+		const response = await fetch("http://127.0.0.1:18791/health");
+		const body: unknown = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body).toMatchObject({ ok: true });
+	});
+
 	it("does not announce a requested track until the local iframe reports playing", async () => {
 		await browser.waitUntil(
 			() => browser.execute(() => document.querySelector(".bgm-player") !== null),

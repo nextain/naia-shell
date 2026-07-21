@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 const shellDir = resolve(import.meta.dirname, "..");
+const workspaceRoot = resolve(shellDir, "..", "..");
 const manifestPath = resolve(shellDir, "src-tauri", "Cargo.toml");
 // MSVC's FileTracker and CMake scratch projects still fail at ordinary
 // worktree depths. Keep the *test-only* target short on Windows; callers may
@@ -16,6 +17,7 @@ const targetDir = resolve(
 			: resolve(shellDir, "src-tauri", "target-e2e")),
 );
 const e2eTauriConfig = resolve(shellDir, "src-tauri", "tauri.e2e.conf.json");
+const bgmSidecar = resolve(shellDir, "..", "bgm-sidecar");
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
 const pairedAgent = "D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-8f5b0d1";
 const agentScript = resolve(pairedAgent, "scripts/builds/agent-stdio-entry.mjs");
@@ -67,6 +69,32 @@ const agentBuild = spawnSync("pnpm", ["run", "build"], {
 });
 if (agentBuild.status !== 0 || !existsSync(resolve(pairedAgent, "dist", "main", "composition", "index.js"))) {
 	throw new Error("The paired naia-agent build failed or did not produce dist/main/composition/index.js");
+}
+// The native E2E binary runs in development mode, so Rust resolves the
+// shell-owned BGM process from packages/bgm-sidecar/dist rather than from a
+// release resource directory. That directory is gitignored and therefore
+// absent in a clean worktree unless the E2E entry point builds it explicitly.
+// Do not fall back to the retired packages/agent source: it is neither owned
+// by this package nor present in the rebuilt workspace.
+if (!existsSync(resolve(bgmSidecar, "node_modules"))) {
+	const bgmInstall = spawnSync("pnpm", ["install", "--frozen-lockfile", "--filter", "@naia/bgm-sidecar"], {
+		cwd: workspaceRoot,
+		stdio: "inherit",
+		shell: process.platform === "win32",
+	});
+	if (bgmInstall.status !== 0) throw new Error("The shell-owned BGM sidecar dependency install failed");
+}
+const bgmBuild = spawnSync("pnpm", ["run", "build"], {
+	cwd: bgmSidecar,
+	stdio: "inherit",
+	shell: process.platform === "win32",
+});
+if (
+	bgmBuild.status !== 0 ||
+	!existsSync(resolve(bgmSidecar, "dist", "bgm-server-bin.js")) ||
+	!existsSync(resolve(bgmSidecar, "dist", "youtube-server.js"))
+) {
+	throw new Error("The shell-owned BGM sidecar build failed or did not produce its runtime entry files");
 }
 const result = spawnSync(cargo, ["build", "--manifest-path", manifestPath, "--features", "webdriver-e2e"], {
 	cwd: shellDir,
