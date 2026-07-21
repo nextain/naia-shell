@@ -15,6 +15,9 @@ export const CODING_WORKER_STATES = [
 ] as const;
 
 export type CodingWorkerState = (typeof CODING_WORKER_STATES)[number];
+export type CodingWorkerExecutionMode =
+	| "isolated_worktree"
+	| "selected_workspace";
 
 export interface CodingWorker {
 	id: string;
@@ -25,12 +28,20 @@ export interface CodingWorker {
 	updatedAt: string;
 	/** The Agent exposes only whether a durable checkpoint exists, never its id. */
 	resumable: boolean;
+	/** Selected workspace is reserved for the reviewed Jeonju course preset. */
+	executionMode: CodingWorkerExecutionMode;
+	/** Present only for the fixed selected-workspace course boundary. */
+	allowedFiles: readonly string[];
+	/** Agent-owned post-run result; failed changes remain available for review. */
+	verificationSummary?: string;
 }
 
 export interface CreateCodingWorkerRequest {
 	provider: "codex";
 	worktree: string;
 	task: string;
+	/** False by default: ordinary workers stay in an Agent-created worktree. */
+	coursePreset?: boolean;
 }
 
 export interface CodingWorkersAdapter {
@@ -44,6 +55,14 @@ export class CodingWorkerApiUnavailableError extends Error {
 	constructor() {
 		super("Coding-worker API is not paired with the Agent runtime.");
 		this.name = "CodingWorkerApiUnavailableError";
+	}
+}
+
+/** Safe, local preflight outcome; no Git command output is exposed to WebView. */
+export class CourseWorkspaceNotReadyError extends Error {
+	constructor() {
+		super("The selected course workspace is not ready.");
+		this.name = "CourseWorkspaceNotReadyError";
 	}
 }
 

@@ -14,6 +14,8 @@ const worker = {
 	state: "running" as const,
 	updatedAt: "2026-07-22T01:30:00.000Z",
 	resumable: false,
+	executionMode: "isolated_worktree" as const,
+	allowedFiles: [],
 };
 
 describe("tauri coding-worker adapter", () => {
@@ -25,12 +27,48 @@ describe("tauri coding-worker adapter", () => {
 				provider: "codex",
 				worktree: "D:\\alpha-adk\\projects\\naia-shell",
 				task: worker.task,
+				coursePreset: false,
 			}),
 		).resolves.toEqual(worker);
 		expect(invoke).toHaveBeenCalledWith("start_coding_job", {
 			workspacePath: "D:\\alpha-adk\\projects\\naia-shell",
 			task: worker.task,
+			coursePreset: false,
 		});
+	});
+
+	it("forwards only a course-preset boolean, never caller-supplied allowed files", async () => {
+		invoke.mockResolvedValueOnce({
+			...worker,
+			executionMode: "selected_workspace",
+			allowedFiles: ["index.html", "hero.svg"],
+		});
+
+		await tauriCodingWorkersAdapter.create({
+			provider: "codex",
+			worktree: "D:\\student-site",
+			task: "Change the hero",
+			coursePreset: true,
+		});
+
+		expect(invoke).toHaveBeenCalledWith("start_coding_job", {
+			workspacePath: "D:\\student-site",
+			task: "Change the hero",
+			coursePreset: true,
+		});
+	});
+
+	it("maps native course preflight rejection to a safe typed error", async () => {
+		invoke.mockRejectedValueOnce("course_workspace_not_ready");
+
+		await expect(
+			tauriCodingWorkersAdapter.create({
+				provider: "codex",
+				worktree: "D:\\student-site",
+				task: "Change the hero",
+				coursePreset: true,
+			}),
+		).rejects.toMatchObject({ name: "CourseWorkspaceNotReadyError" });
 	});
 
 	it("uses target job ids for cancellation and never exposes a checkpoint id", async () => {

@@ -7368,8 +7368,10 @@ async fn compile_knowledge(
     }))
 }
 
+const JEONJU_COURSE_ALLOWED_FILES: [&str; 2] = ["index.html", "hero.svg"];
+
 fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_json::Value, String> {
-    use agent_grpc::pb::CodingJobState;
+    use agent_grpc::pb::{CodingJobExecutionMode, CodingJobState};
 
     let state = match CodingJobState::try_from(job.state).ok() {
         Some(CodingJobState::Queued) => "queued",
@@ -7380,6 +7382,20 @@ fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_jso
         Some(CodingJobState::Failed) => "failed",
         _ => return Err("coding worker returned an invalid state".to_string()),
     };
+    let execution_mode = match CodingJobExecutionMode::try_from(job.execution_mode).ok() {
+        Some(CodingJobExecutionMode::IsolatedWorktree) => "isolated_worktree",
+        Some(CodingJobExecutionMode::SelectedWorkspace) => "selected_workspace",
+        _ => return Err("coding worker returned an invalid execution mode".to_string()),
+    };
+    let expected_course_files: Vec<String> = JEONJU_COURSE_ALLOWED_FILES
+        .iter()
+        .map(|file| (*file).to_string())
+        .collect();
+    if (execution_mode == "isolated_worktree" && !job.allowed_files.is_empty())
+        || (execution_mode == "selected_workspace" && job.allowed_files != expected_course_files)
+    {
+        return Err("coding worker returned an invalid course boundary".to_string());
+    }
     Ok(serde_json::json!({
         "id": job.job_id,
         "provider": "codex",
@@ -7388,7 +7404,42 @@ fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_jso
         "state": state,
         "updatedAt": job.updated_at,
         "resumable": job.resumable,
+        "executionMode": execution_mode,
+        "allowedFiles": job.allowed_files,
+        "verificationSummary": job.verification_summary,
     }))
+}
+
+fn course_git_output(workspace_path: &str, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(workspace_path)
+        .args(args)
+        .output()
+        .map_err(|_| "course_workspace_not_ready".to_string())?;
+    if !output.status.success() {
+        return Err("course_workspace_not_ready".to_string());
+    }
+    String::from_utf8(output.stdout)
+        .map(|text| text.trim().to_string())
+        .map_err(|_| "course_workspace_not_ready".to_string())
+}
+
+/// Course mode is a deliberate exception to isolated workers. The Agent repeats
+/// this guard, but Shell rejects an unready folder before opening an RPC session.
+fn verify_jeonju_course_workspace(workspace_path: &str) -> Result<(), String> {
+    let selected = std::fs::canonicalize(workspace_path)
+        .map_err(|_| "course_workspace_not_ready".to_string())?;
+    let git_root = course_git_output(workspace_path, &["rev-parse", "--show-toplevel"])?;
+    let root = std::fs::canonicalize(git_root)
+        .map_err(|_| "course_workspace_not_ready".to_string())?;
+    if selected != root
+        || !course_git_output(workspace_path, &["status", "--porcelain"] )?.is_empty()
+        || course_git_output(workspace_path, &["config", "--get", "remote.origin.url"] )?.is_empty()
+    {
+        return Err("course_workspace_not_ready".to_string());
+    }
+    Ok(())
 }
 
 fn coding_job_grpc_addr(state: &AppState) -> Result<String, String> {
@@ -7399,19 +7450,33 @@ fn coding_job_grpc_addr(state: &AppState) -> Result<String, String> {
         .ok_or_else(|| "coding worker service is not connected".to_string())
 }
 
-/// Creates an Agent-owned Codex worker in a generated, leased worktree.
+/// Creates an Agent-owned isolated worker, or the reviewed Jeonju course worker.
+/// The only selected-workspace boundary is this fixed two-file preset.
 #[tauri::command]
 async fn start_coding_job(
     workspace_path: String,
     task: String,
+    course_preset: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
+    let (execution_mode, allowed_files) = if course_preset {
+        verify_jeonju_course_workspace(&workspace_path)?;
+        (
+            agent_grpc::pb::CodingJobExecutionMode::SelectedWorkspace as i32,
+            JEONJU_COURSE_ALLOWED_FILES.iter().map(|file| (*file).to_string()).collect(),
+        )
+    } else {
+        (
+            agent_grpc::pb::CodingJobExecutionMode::IsolatedWorktree as i32,
+            Vec::new(),
+        )
+    };
     let addr = coding_job_grpc_addr(&state)?;
     let mut client = agent_grpc::AgentGrpc::connect(format!("http://{}", addr))
         .await
         .map_err(|_| "coding worker service is not connected".to_string())?;
     let job = client
-        .start_coding_job(workspace_path, task)
+        .start_coding_job(workspace_path, task, execution_mode, allowed_files)
         .await
         .map_err(|_| "coding worker request could not be completed".to_string())?;
     coding_job_to_shell_value(job)

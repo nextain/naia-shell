@@ -12,6 +12,7 @@ import { CodingWorkersPanel } from "../workspace/CodingWorkersPanel";
 import {
 	type CodingWorker,
 	type CodingWorkersAdapter,
+	CourseWorkspaceNotReadyError,
 	unavailableCodingWorkersAdapter,
 } from "../workspace/coding-workers";
 import {
@@ -27,6 +28,8 @@ const runningWorker: CodingWorker = {
 	state: "running",
 	updatedAt: "2026-07-22T00:00:00.000Z",
 	resumable: false,
+	executionMode: "isolated_worktree",
+	allowedFiles: [],
 };
 
 function adapter(
@@ -107,10 +110,59 @@ describe("CodingWorkersPanel", () => {
 			provider: "codex",
 			worktree: queuedWorker.worktree,
 			task: queuedWorker.task,
+			coursePreset: false,
 		});
 		expect(
 			screen.getByTestId("coding-worker-state-worker-created"),
 		).toHaveTextContent("queued");
+	});
+
+	it("uses the reviewed Jeonju preset without accepting editable file allowances", async () => {
+		const selectedWorkspaceWorker: CodingWorker = {
+			...runningWorker,
+			id: "course-worker",
+			worktree: "D:\\student-site",
+			executionMode: "selected_workspace",
+			allowedFiles: ["index.html", "hero.svg"],
+			verificationSummary: "selected workspace verified",
+		};
+		const workerAdapter = adapter({
+			create: vi.fn().mockResolvedValue(selectedWorkspaceWorker),
+		});
+		render(<CodingWorkersPanel adapter={workerAdapter} />);
+
+		fillCreateForm(selectedWorkspaceWorker.worktree, selectedWorkspaceWorker.task);
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+		fireEvent.click(screen.getByTestId("coding-worker-start"));
+
+		await waitFor(() =>
+			expect(workerAdapter.create).toHaveBeenCalledWith({
+				provider: "codex",
+				worktree: selectedWorkspaceWorker.worktree,
+				task: selectedWorkspaceWorker.task,
+				coursePreset: true,
+			}),
+		);
+		expect(screen.getByTestId("coding-worker-course-boundary-course-worker")).toHaveTextContent("index.html, hero.svg");
+		expect(screen.getByTestId("coding-worker-verification-course-worker")).toHaveTextContent("selected workspace verified");
+		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
+	});
+
+	it("blocks an unready selected Git workspace before rendering a course worker", async () => {
+		const workerAdapter = adapter({
+			create: vi.fn().mockRejectedValue(new CourseWorkspaceNotReadyError()),
+		});
+		render(<CodingWorkersPanel adapter={workerAdapter} />);
+		fillCreateForm("D:\\not-a-clean-git-root", "Change the hero");
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+		fireEvent.click(screen.getByTestId("coding-worker-start"));
+
+		await waitFor(() =>
+			expect(screen.getByTestId("coding-worker-error")).toHaveTextContent(
+				"Course mode requires a clean Git root with a remote.",
+			),
+		);
+		expect(screen.queryByTestId(/coding-worker-worker-/)).not.toBeInTheDocument();
 	});
 
 	it("rejects a second active worker for the same worktree before calling the adapter", async () => {

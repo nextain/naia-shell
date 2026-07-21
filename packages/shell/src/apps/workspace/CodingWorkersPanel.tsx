@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
 	type CodingWorker,
 	CodingWorkerApiUnavailableError,
+	CourseWorkspaceNotReadyError,
 	type CodingWorkersAdapter,
 	canCancelCodingWorker,
 	canResumeCodingWorker,
@@ -16,6 +17,9 @@ interface CodingWorkersPanelProps {
 function safeWorkerError(error: unknown): string {
 	if (error instanceof CodingWorkerApiUnavailableError) {
 		return "Coding worker service is not connected yet.";
+	}
+	if (error instanceof CourseWorkspaceNotReadyError) {
+		return "Course mode requires a clean Git root with a remote. Review the selected folder and try again.";
 	}
 	// Adapter failures can include provider output or credentials. Never render it.
 	return "Coding worker request could not be completed.";
@@ -37,6 +41,7 @@ export function CodingWorkersPanel({
 	const [workers, setWorkers] = useState<CodingWorker[]>(initialWorkers);
 	const [worktree, setWorktree] = useState("");
 	const [task, setTask] = useState("");
+	const [coursePreset, setCoursePreset] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -71,10 +76,12 @@ export function CodingWorkersPanel({
 				provider: "codex",
 				worktree: normalizedWorktree,
 				task: normalizedTask,
+				coursePreset,
 			});
 			setWorkers((current) => mergeWorker(current, created));
 			setWorktree("");
 			setTask("");
+			setCoursePreset(false);
 		} catch (reason) {
 			setError(safeWorkerError(reason));
 		}
@@ -130,6 +137,15 @@ export function CodingWorkersPanel({
 						onChange={(event) => setTask(event.target.value)}
 					/>
 				</label>
+				<label>
+					<input
+						type="checkbox"
+						data-testid="coding-worker-jeonju-course-preset"
+						checked={coursePreset}
+						onChange={(event) => setCoursePreset(event.target.checked)}
+					/>
+					Jeonju course mode — work directly in this selected Git root; only index.html and hero.svg may change.
+				</label>
 				<button
 					type="button"
 					data-testid="coding-worker-start"
@@ -152,6 +168,16 @@ export function CodingWorkersPanel({
 						</span>
 						<p>{worker.worktree}</p>
 						<p>{worker.task}</p>
+						{worker.executionMode === "selected_workspace" && (
+							<p data-testid={`coding-worker-course-boundary-${worker.id}`}>
+								Course mode: {worker.allowedFiles.join(", ")}
+							</p>
+						)}
+						{worker.verificationSummary && (
+							<p data-testid={`coding-worker-verification-${worker.id}`}>
+								Verification: {worker.verificationSummary}
+							</p>
+						)}
 						<time dateTime={worker.updatedAt}>{worker.updatedAt}</time>
 						{canCancelCodingWorker(worker) && (
 							<button

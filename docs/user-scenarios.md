@@ -233,7 +233,18 @@ Shell은 빌드 때 고정된 정확한 Agent 런타임만 실행한다.
 - 실패: API 미연결·요청 실패·동일 worktree 충돌은 안전한 오류만 표시하며 새 상태·비밀값·원본 adapter 오류는 화면이나 로그에 남기지 않는다.
 - 경계: 로그인 토큰·계정 식별자·Codex CLI 출력은 worker request·UI·로그에 포함하지 않는다. 실제 gRPC schema가 확정되기 전 Shell은 작업자 실행을 흉내 내지 않는다.
 
+## UC-JEONJU-COURSE-WORKER
+
+For the Jeonju course, the user explicitly selects a Git root and enables course mode. The default remains an Agent-created isolated worktree. Course mode is the only route that can run in the selected workspace.
+
+- Shell and Agent both fail closed unless the selected folder is the exact clean Git root with a remote.
+- The allowed file list is fixed by Shell IPC to `index.html` and `hero.svg`. WebView input, Discord messages, LLM text, and task text cannot supply or change that list.
+- The worker card shows the returned verification summary. A failed check preserves student changes for manual review; Shell never resets or cleans the student workspace.
+- If readiness fails, no worker is created and the UI gives a safe instruction to review the selected folder rather than exposing raw Git or Agent output.
+
 ## Test Coverage Map (P02)
+
+**UC-JEONJU-COURSE-WORKER** maps to `apps/__tests__/coding-workers.test.tsx` and `apps/workspace/__tests__/coding-workers-tauri.test.ts` for the explicit preset, fixed boundary, preflight rejection, and verification summary. Its native acceptance spec is `e2e-tauri/specs/91-jeonju-course-worker.spec.ts`; it must run serially with the paired Agent and an isolated fixture repository.
 
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|

@@ -407,11 +407,15 @@ impl AgentGrpc {
         &mut self,
         workspace_path: String,
         task: String,
+        execution_mode: i32,
+        allowed_files: Vec<String>,
     ) -> Result<pb::CodingJob, tonic::Status> {
         Ok(self.client.start_coding_job(StartCodingJobRequest {
             workspace_path,
             task,
             model: None,
+            execution_mode,
+            allowed_files,
         }).await?.into_inner())
     }
 

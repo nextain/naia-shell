@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { CourseWorkspaceNotReadyError } from "./coding-workers";
 import type {
 	CodingWorker,
 	CodingWorkersAdapter,
@@ -13,6 +14,9 @@ interface TauriCodingWorker {
 	state: CodingWorker["state"];
 	updatedAt: string;
 	resumable: boolean;
+	executionMode: "isolated_worktree" | "selected_workspace";
+	allowedFiles: string[];
+	verificationSummary?: string;
 }
 
 function asWorker(value: TauriCodingWorker): CodingWorker {
@@ -24,6 +28,9 @@ function asWorker(value: TauriCodingWorker): CodingWorker {
 		state: value.state,
 		updatedAt: value.updatedAt,
 		resumable: value.resumable,
+		executionMode: value.executionMode,
+		allowedFiles: value.allowedFiles,
+		verificationSummary: value.verificationSummary,
 	};
 }
 
@@ -33,12 +40,18 @@ export const tauriCodingWorkersAdapter: CodingWorkersAdapter = {
 		return (await invoke<TauriCodingWorker[]>("list_coding_jobs")).map(asWorker);
 	},
 	async create(request: CreateCodingWorkerRequest) {
-		return asWorker(
-			await invoke<TauriCodingWorker>("start_coding_job", {
+		try {
+			return asWorker(await invoke<TauriCodingWorker>("start_coding_job", {
 				workspacePath: request.worktree,
 				task: request.task,
-			}),
-		);
+				coursePreset: request.coursePreset === true,
+			}));
+		} catch (error) {
+			if (String(error).includes("course_workspace_not_ready")) {
+				throw new CourseWorkspaceNotReadyError();
+			}
+			throw error;
+		}
 	},
 	async cancel(workerId: string) {
 		return asWorker(

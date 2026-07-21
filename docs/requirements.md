@@ -486,6 +486,10 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 
 ## Codex 코딩 작업자 요구사항 (2026-07-22)
 
+| **FR-CODEX-WORKER.6** | Jeonju course mode is explicit and leaves the default isolated worktree behavior unchanged. Shell preflights the selected Git root, clean working tree, and remote before asking Agent for selected-workspace execution. | Shell UI/adapter contract and native preflight contract; normal workers remain `ISOLATED_WORKTREE`. |
+| **FR-CODEX-WORKER.7** | The course file boundary is fixed in Rust IPC to `index.html` and `hero.svg`. WebView, LLM, Discord, and task text cannot provide or modify allowed files. Shell displays Agent's verification summary. | typed Tauri invoke contract, selected-workspace Agent contract, and Tauri E2E with an isolated course fixture. |
+| **FR-CODEX-WORKER.8** | On course preflight or verification failure Shell creates no success state, gives a safe folder-readiness message, and preserves student changes for review. | rejection unit/adapter test and paired Agent failure contract. |
+
 | ID | 요구사항 | 검증 기준 |
 |---|---|---|
 | **FR-CODEX-WORKER.1** | Shell은 Coding Workers 패널에서 `codex` provider, 절대 worktree 경로, 비어 있지 않은 작업 설명을 받아 worker adapter에 생성 요청할 수 있다. adapter가 없거나 실패하면 성공 상태를 만들지 않는다. | adapter fake 계약과 UI 테스트에서 생성 성공은 반환된 worker에만 한정되고 unavailable adapter는 오류·빈 목록으로 남는지 확인한다. |
