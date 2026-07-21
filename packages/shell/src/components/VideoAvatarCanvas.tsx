@@ -207,13 +207,32 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 					}
 					// 로컬 임베드 cascade 면 번들 디렉토리로 캐릭터 등록(원격이면 경로 부재로 실패 → 무시).
 					try {
-						await fetch(`${cascadeUrl.replace(/\/$/, "")}/load_nva`, {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({ dir: bundleDir }),
-						});
-					} catch {
-						/* 등록 실패 비치명 — cascade 기본 캐릭터/idle 가능 */
+						const response = await fetch(
+							`${cascadeUrl.replace(/\/$/, "")}/load_nva`,
+							{
+								method: "POST",
+								headers: { "Content-Type": "application/json" },
+								body: JSON.stringify({ dir: bundleDir }),
+							},
+						);
+						const payload = (await response.json().catch(() => null)) as {
+							ok?: boolean;
+							detail?: string;
+							error?: string;
+						} | null;
+						if (!response.ok || payload?.ok !== true) {
+							throw new Error(
+								payload?.detail ||
+									payload?.error ||
+									`load_nva HTTP ${response.status}`,
+							);
+						}
+					} catch (error) {
+						if (disposed) return;
+						setError(`cascade-nva-load-failed: ${String(error)}`);
+						setMode("unavailable");
+						setLoaded(false);
+						return;
 					}
 					if (disposed) return;
 					cascadeCfgRef.current = { url: cascadeUrl, name: bundleName };
