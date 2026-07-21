@@ -28,6 +28,9 @@ export function autoApprovePermissions(): { dispose: () => void } {
 				await browser.pause(500);
 			} catch {
 				// 세션 navigating/종료 — 예상됨. 흡수(unhandled rejection 방지로 워커 보호).
+				// browser.pause 자체도 죽은 세션에서는 즉시 reject 하므로, Node 타이머로
+				// backoff 하지 않으면 dispose 전까지 hot loop/OOM 이 된다.
+				await new Promise((resolve) => setTimeout(resolve, 500));
 			}
 		}
 	};
