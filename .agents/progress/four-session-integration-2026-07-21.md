@@ -20,7 +20,7 @@
 ## 실행 증거
 
 - Agent 전체: 108 files pass / 3 skip, 1,294 tests pass / 9 skip; build pass
-- Agent Codex/Discord 집중: 4 files, 85 tests pass
+- Agent Codex/Discord 집중: 4 files, 86 tests pass
 - Memory 전체: 24 files, 393 tests pass; typecheck/build pass
 - Shell core: 25 files, 229 tests pass
 - Shell UI: 121 files pass / 2 skip, 1,332 tests pass / 13 skip
