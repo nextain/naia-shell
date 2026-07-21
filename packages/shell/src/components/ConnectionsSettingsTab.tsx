@@ -123,6 +123,7 @@ export function ConnectionsSettingsTab() {
 	>({});
 	const [saved, setSaved] = useState(false);
 	const [saving, setSaving] = useState(false);
+	const [capturingCredential, setCapturingCredential] = useState(false);
 	const errorCode = runtimeErrorCode ?? discoveryErrorCode;
 
 	const snapshotByBindingId = useMemo(
@@ -291,8 +292,10 @@ export function ConnectionsSettingsTab() {
 	}, [refresh]);
 
 	async function captureCredential() {
+		if (capturingCredential) return;
 		setRuntimeErrorCode(null);
 		setSaved(false);
+		setCapturingCredential(true);
 		try {
 			const result = await invoke<CredentialStatus>(
 				"discord_capture_bot_token",
@@ -310,6 +313,8 @@ export function ConnectionsSettingsTab() {
 					? "capture_cancelled"
 					: "native_prompt_unavailable",
 			);
+		} finally {
+			setCapturingCredential(false);
 		}
 	}
 
@@ -442,8 +447,14 @@ export function ConnectionsSettingsTab() {
 				</div>
 			)}
 			<div className="settings-actions">
-				<button type="button" onClick={() => void captureCredential()}>
-					{state === "connected" || state === "configured"
+				<button
+					type="button"
+					disabled={capturingCredential}
+					onClick={() => void captureCredential()}
+				>
+					{capturingCredential
+						? t("settings.connectionsPromptOpening")
+						: state === "connected" || state === "configured"
 						? t("settings.connectionsRotate")
 						: t("settings.connectionsConnect")}
 				</button>
@@ -456,6 +467,15 @@ export function ConnectionsSettingsTab() {
 					</button>
 				)}
 			</div>
+			{capturingCredential && (
+				<p
+					className="settings-hint"
+					data-testid="discord-secure-prompt-opening"
+					role="status"
+				>
+					{t("settings.connectionsPromptOpening")}
+				</p>
+			)}
 
 			<div className="settings-field">
 				<h3>{t("settings.connectionsPermissions")}</h3>

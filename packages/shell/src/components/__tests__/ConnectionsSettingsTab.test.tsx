@@ -99,6 +99,45 @@ describe("ConnectionsSettingsTab Discord binding", () => {
 		expect(screen.getByRole("checkbox", { name: /private/ })).toBeDisabled();
 	});
 
+	it("keeps the Shell visibly pending while the native secure token prompt is open", async () => {
+		let completeCapture:
+			| ((value: { configured: boolean; code: string }) => void)
+			| undefined;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "discord_connection_status")
+				return Promise.resolve({
+					tokenConfigured: false,
+					generation: null,
+					state: "disconnected",
+					authoritative: false,
+				});
+			if (command === "discord_binding_snapshot")
+				return Promise.resolve(bindingSnapshot([], null));
+			if (command === "discord_capture_bot_token")
+				return new Promise<{ configured: boolean; code: string }>((resolve) => {
+					completeCapture = resolve;
+				});
+			return Promise.resolve();
+		});
+		render(<ConnectionsSettingsTab />);
+
+		const captureButton = await screen.findByRole("button", {
+			name: /Connect securely|보안 입력으로 연결/i,
+		});
+		fireEvent.click(captureButton);
+		await waitFor(() =>
+			expect(screen.getByTestId("discord-secure-prompt-opening")).toBeDefined(),
+		);
+		expect(captureButton).toBeDisabled();
+
+		completeCapture?.({ configured: false, code: "capture_cancelled" });
+		await waitFor(() =>
+			expect(
+				screen.queryByTestId("discord-secure-prompt-opening"),
+			).toBeNull(),
+		);
+	});
+
 	it("saves only usable selected channels with explicit users and participation", async () => {
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "discord_connection_status")

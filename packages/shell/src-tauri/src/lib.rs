@@ -5599,16 +5599,17 @@ fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> 
     {
         let script = "Add-Type -AssemblyName PresentationFramework; \
           $w=New-Object Windows.Window; $w.Title='Discord bot token'; \
-          $w.Width=520; $w.Height=170; $w.WindowStartupLocation='CenterScreen'; \
+          $w.Width=520; $w.Height=205; $w.WindowStartupLocation='CenterScreen'; $w.Topmost=$true; $w.ShowInTaskbar=$true; $w.ResizeMode='NoResize'; \
           $g=New-Object Windows.Controls.Grid; $g.Margin='16'; \
           $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
           $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
-          $p=New-Object Windows.Controls.PasswordBox; $p.Margin='0,0,0,12'; \
-          [Windows.Controls.Grid]::SetRow($p,0); $g.Children.Add($p) | Out-Null; \
-          $b=New-Object Windows.Controls.Button; $b.Content='Save'; $b.Width=90; \
-          $b.HorizontalAlignment='Right'; [Windows.Controls.Grid]::SetRow($b,1); \
-          $b.Add_Click({$w.DialogResult=$true; $w.Close()}); $g.Children.Add($b) | Out-Null; \
-          $w.Content=$g; $ok=$w.ShowDialog(); \
+          $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
+          $l=New-Object Windows.Controls.TextBlock; $l.Text='Paste the Discord bot token. It is stored only in the Windows credential store.'; $l.TextWrapping='Wrap'; $l.Margin='0,0,0,8'; [Windows.Controls.Grid]::SetRow($l,0); $g.Children.Add($l) | Out-Null; \
+          $p=New-Object Windows.Controls.PasswordBox; $p.Margin='0,0,0,12'; [Windows.Controls.Grid]::SetRow($p,1); $g.Children.Add($p) | Out-Null; \
+          $buttons=New-Object Windows.Controls.StackPanel; $buttons.Orientation='Horizontal'; $buttons.HorizontalAlignment='Right'; [Windows.Controls.Grid]::SetRow($buttons,2); \
+          $c=New-Object Windows.Controls.Button; $c.Content='Cancel'; $c.Width=90; $c.Margin='0,0,8,0'; $c.Add_Click({$w.DialogResult=$false; $w.Close()}); $buttons.Children.Add($c) | Out-Null; \
+          $b=New-Object Windows.Controls.Button; $b.Content='Save'; $b.Width=90; $b.IsDefault=$true; $b.Add_Click({$w.DialogResult=$true; $w.Close()}); $buttons.Children.Add($b) | Out-Null; \
+          $g.Children.Add($buttons) | Out-Null; $w.Content=$g; $w.Add_ContentRendered({$w.Activate(); $p.Focus()}); $ok=$w.ShowDialog(); \
           if($ok -ne $true){exit 2}; [Console]::Out.Write($p.Password)";
         let mut command = std::process::Command::new("powershell");
         command.args(["-NoProfile", "-Command", script]);
