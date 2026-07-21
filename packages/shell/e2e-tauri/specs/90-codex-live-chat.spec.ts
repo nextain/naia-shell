@@ -192,6 +192,10 @@ describe("90 — Codex live chat through the real Naia Shell", () => {
 		}
 		// eslint-disable-next-line no-console
 		console.log("[codex-live-e2e] provider restoration verified");
+		// End the native session while the worker is still in a bounded hook. On
+		// WebKitGTK, leaving shutdown entirely to WDIO can retain the Tauri output
+		// stream until the worker exhausts its heap after an otherwise passing test.
+		await browser.deleteSession();
 	});
 
 	it("renders a real Codex response and usage in the Shell chat UI", async () => {
