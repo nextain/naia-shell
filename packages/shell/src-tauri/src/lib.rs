@@ -1717,6 +1717,16 @@ fn sha256_file_hex(path: &std::path::Path) -> Result<String, String> {
     Ok(format!("{:x}", Sha256::digest(&bytes)))
 }
 
+/// The paired proto is a content contract. A Windows checkout can use CRLF
+/// while build.rs validated the identical LF content, so runtime uses the same
+/// canonical representation before comparing its recorded digest.
+fn sha256_proto_file_hex(path: &std::path::Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {} for SHA256: {e}", path.display()))?;
+    Ok(format!("{:x}", Sha256::digest(text.replace("\r\n", "\n").as_bytes())))
+}
+
 fn validate_runtime_agent_script_override(agent_script: &str) -> Result<(), String> {
     let expected_raw = option_env!("NAIA_AGENT_PAIRED_SCRIPT")
         .ok_or_else(|| "NAIA_AGENT_PAIRED_SCRIPT build evidence missing".to_string())?;
@@ -1757,7 +1767,7 @@ fn validate_runtime_agent_script_override(agent_script: &str) -> Result<(), Stri
     let expected_proto_hash = option_env!("NAIA_AGENT_PAIRED_PROTO_SHA256")
         .ok_or_else(|| "NAIA_AGENT_PAIRED_PROTO_SHA256 build evidence missing".to_string())?;
     let proto_path = root_path.join("src/main/adapters/grpc/naia_agent.proto");
-    let actual_proto_hash = sha256_file_hex(&proto_path)?;
+    let actual_proto_hash = sha256_proto_file_hex(&proto_path)?;
     if actual_proto_hash != expected_proto_hash {
         return Err(format!(
             "NAIA_AGENT_PROTO hash must remain {expected_proto_hash}; got {actual_proto_hash}"
@@ -1796,7 +1806,7 @@ fn resolve_paired_bundled_agent_script(app_handle: &AppHandle) -> Result<String,
     }
     let expected_proto_hash = option_env!("NAIA_AGENT_PAIRED_PROTO_SHA256")
         .ok_or_else(|| "NAIA_AGENT_PAIRED_PROTO_SHA256 build evidence missing".to_string())?;
-    let actual_proto_hash = sha256_file_hex(&bundled_proto)?;
+    let actual_proto_hash = sha256_proto_file_hex(&bundled_proto)?;
     if actual_proto_hash != expected_proto_hash {
         return Err(format!(
             "bundled paired agent proto hash must remain {expected_proto_hash}; got {actual_proto_hash}"
