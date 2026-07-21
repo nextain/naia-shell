@@ -286,12 +286,16 @@ async function synthNaiaLocalVoice(
 		/\/$/,
 		"",
 	);
-	const resp = await fetch(`${base}/tts`, {
+	const resp = await fetch(`${base}/v1/audio/speech`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
 			// :8910 owns the private VoxCPM2 (:8901) implementation detail.
 			// The facade contract intentionally remains `{ text, voice }`.
+			model: "voxcpm2",
+			input: opts.text,
+			// Retained as an ignored compatibility field for facades that share
+			// the same request parser with their optional `/tts` route.
 			text: opts.text,
 			// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
 			// it to this facade palette id; keep it intact all the way to :8910.
@@ -299,6 +303,7 @@ async function synthNaiaLocalVoice(
 				!opts.voice || opts.voice === "default"
 					? "naia-default"
 					: opts.voice,
+			response_format: "wav",
 		}),
 		signal: opts.signal,
 	});
