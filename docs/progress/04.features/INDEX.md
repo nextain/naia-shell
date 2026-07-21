@@ -27,6 +27,7 @@ area = core(헥사고날 코어 @nextain/naia-os-core) / shell(packages/shell) /
 | SPEC-010 | UC-016 | **Agent Discord Gateway runtime** — 허용목록 ingress, outbound reply, reconnect/rate-limit/cancel, durable dedupe, lifecycle epoch·generation 권한 | agent | Done | TEST-F-010 |
 | SPEC-011 | UC-017 | **선제 발화 전달** — persisted profile 설정, session activity stream, 기존 agent_response/TTS/BGM 표현, yield/control/stop, generation 기반 stale 폐기 | shell+Rust | Partial (audible/live 인수 대기) | TEST-F-011 |
 | SPEC-012 | UC-018 | **Codex·역할 분리 Shell 배선** — Codex provider option, main/sub/memory role별 설정 영속, keyless chat config, Agent commit+proto exact pair의 dev/stage/build 공통 강제 | shell+Rust | Done | TEST-F-012 |
+| SPEC-013 | UC-019 | **강의 Codex 준비 확인** — OS별 Codex CLI preflight를 안전한 상태 코드로 정규화하고 두뇌 설정에서 상태·재시도를 노출 | shell+Rust | Pass | TEST-F-013 |
 
 ## 비고
 - **graft 미연결(dormant)** = SPEC 은 이식+리뷰+컴파일 완료지만 실행 셸(packages/shell)이 아직 new-core 경유 안 함(old 경로 구동). graft 완료 = SPEC-006(chat)·SPEC-003(승인, chat흐름 내)·SPEC-007 일부(completeWith).

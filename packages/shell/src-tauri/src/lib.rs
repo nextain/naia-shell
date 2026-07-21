@@ -4663,6 +4663,71 @@ async fn gateway_health(state: tauri::State<'_, AppState>) -> Result<bool, Strin
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexPreflightResult {
+    status: &'static str,
+}
+
+fn classify_codex_preflight(exit_success: bool, output: &str) -> &'static str {
+    let normalized = output.to_ascii_lowercase();
+    if exit_success && normalized.contains("logged in") {
+        "ready"
+    } else if normalized.contains("not logged in")
+        || normalized.contains("login required")
+        || normalized.contains("unauthorized")
+    {
+        "login-required"
+    } else if normalized.contains("not recognized")
+        || normalized.contains("command not found")
+        || normalized.contains("no such file")
+    {
+        "not-installed"
+    } else {
+        "error"
+    }
+}
+
+fn codex_login_status_command() -> Command {
+    #[cfg(windows)]
+    let mut command = {
+        let comspec = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+        let mut cmd = Command::new(comspec);
+        cmd.args(["/d", "/s", "/c", "codex.cmd login status"]);
+        cmd
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut cmd = Command::new("codex");
+        cmd.args(["login", "status"]);
+        cmd
+    };
+    platform::hide_console(&mut command);
+    command
+}
+
+/// Returns only a safe Codex readiness code. CLI output is intentionally never
+/// exposed because it can contain account identifiers or diagnostic details.
+#[tauri::command]
+async fn codex_preflight() -> Result<CodexPreflightResult, String> {
+    let result = tokio::task::spawn_blocking(|| codex_login_status_command().output())
+        .await
+        .map_err(|_| "codex_preflight_task_failed".to_string())?;
+    let status = match result {
+        Ok(output) => {
+            let text = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            classify_codex_preflight(output.status.success(), &text)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "not-installed",
+        Err(_) => "error",
+    };
+    Ok(CodexPreflightResult { status })
+}
+
 /// Returns the path to the Naia log file (~/.naia/logs/naia.log).
 #[tauri::command]
 fn get_gateway_log_path() -> String {
@@ -8274,6 +8339,7 @@ pub fn run() {
             cancel_stream,
             reset_window_state,
             gateway_health,
+            codex_preflight,
             get_gateway_log_path,
             get_log_dir,
             open_log_in_editor,
@@ -8997,6 +9063,23 @@ mod tests {
         // Should return a bool without panicking, regardless of gateway state
         let _healthy = check_gateway_health_sync();
         // Result is environment-dependent: true if gateway running, false if not
+    }
+
+    #[test]
+    fn codex_preflight_classifies_only_safe_readiness_states() {
+        assert_eq!(
+            classify_codex_preflight(true, "Logged in using ChatGPT"),
+            "ready"
+        );
+        assert_eq!(
+            classify_codex_preflight(false, "Not logged in. Run codex login."),
+            "login-required"
+        );
+        assert_eq!(
+            classify_codex_preflight(false, "'codex.cmd' is not recognized"),
+            "not-installed"
+        );
+        assert_eq!(classify_codex_preflight(false, "unexpected failure"), "error");
     }
 
     #[test]

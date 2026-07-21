@@ -257,6 +257,67 @@ describe("SettingsTab", () => {
 		).toBe("gpt-5.4");
 	});
 
+	it("checks Codex readiness without rendering CLI output or changing credentials", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "codex",
+				model: "gpt-5.4",
+				apiKey: "",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "codex_preflight") {
+				return Promise.resolve({
+					status: "ready",
+					output: "Logged in as private@example.com",
+				});
+			}
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		const check = await screen.findByTestId("codex-readiness-check");
+		fireEvent.click(check);
+
+		await vi.waitFor(() => {
+			expect(screen.getByTestId("codex-readiness-status").textContent).toContain(
+				"Ready",
+			);
+		});
+		expect(mockInvoke).toHaveBeenCalledWith("codex_preflight");
+		expect(screen.queryByText("private@example.com")).toBeNull();
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").apiKey).toBe("");
+	});
+
+	it("shows a safe Codex login-required state and clears it on provider switch", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ onboardingComplete: true, provider: "codex", model: "gpt-5.4" }),
+		);
+		mockInvoke.mockImplementation((command: string) =>
+			Promise.resolve(
+				command === "codex_preflight" ? { status: "login-required" } : [],
+			),
+		);
+
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+		fireEvent.click(await screen.findByTestId("codex-readiness-check"));
+		await vi.waitFor(() => {
+			expect(screen.getByTestId("codex-readiness-status").textContent).toContain(
+				"Login required",
+			);
+		});
+
+		fireEvent.change(document.getElementById("provider-select")!, {
+			target: { value: "gemini" },
+		});
+		expect(screen.queryByTestId("codex-readiness")).toBeNull();
+	});
+
 	it("renders VRM model picker — shows empty state when no VRMs in naia-settings", () => {
 		// No adkPath set → listNaiaAssets returns [] without calling invoke
 		mockInvoke.mockResolvedValue([]);

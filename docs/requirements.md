@@ -475,3 +475,11 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 
 - **NFR-LLM-ROLE-secret**: Codex 로그인 파일이나 토큰을 Shell 설정·wire·로그로 복사하지 않는다.
 - **NFR-LLM-ROLE-pairing**: Agent 기능 변경 뒤 Shell pin을 새 정확한 commit으로 갱신하기 전에는 빌드가 실패해야 한다.
+
+## 전주대 강의 Codex 준비 상태 요구사항 (2026-07-21)
+
+| ID | 요구사항 | 검증 기준 |
+|---|---|---|
+| **FR-COURSE-CODEX.1** | 사용자가 설정의 두뇌에서 Codex를 main provider로 선택했을 때, Shell은 `Codex 연결 확인`으로 해당 PC의 Codex CLI 설치와 로그인 상태를 확인하고 `준비됨`·`설치 필요`·`로그인 필요`·`확인 실패`을 구분해 표시한다. | Rust 명령 계약 테스트에서 Windows와 비-Windows 실행 경로·상태 분류를 확인하고, Settings 단위 테스트에서 상태 표시와 재시도를 확인한다. |
+| **FR-COURSE-CODEX.2** | Codex 준비 확인은 인증 토큰·계정 식별자·CLI 출력 원문을 UI·설정·agent 요청·로그에 저장하거나 표시하지 않으며, provider·모델·워크스페이스 설정을 변경하지 않는다. | 실패 상태 단위 테스트와 IPC 결과 직렬화 검사에서 안전한 상태 코드만 노출되는지 확인한다. |
+| **FR-COURSE-CODEX.3** | Codex가 아닌 provider를 선택하면 Codex 준비 확인 UI를 노출하지 않는다. Codex 선택으로 돌아오면 사용자가 명시적으로 다시 확인할 수 있다. | Settings FE 테스트에서 provider 전환과 재시도 동작을 확인한다. |

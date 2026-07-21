@@ -230,8 +230,8 @@ async function synthElevenlabs(
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
 }
 
-/** vllm → local OpenAI-compatible `/v1/audio/speech`. (naia-local-voice 는 VoxCPM2
- * 자체 프로토콜 `/tts` 라 synthNaiaLocalVoice 가 따로 처리.) */
+/** vllm → local OpenAI-compatible `/v1/audio/speech`. naia-local-voice uses
+ * the same façade surface but has separate reference-voice semantics. */
 async function synthVllm(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 	const base = opts.vllmHost?.replace(/\/$/, "");
 	if (!base) {
@@ -275,11 +275,10 @@ async function synthEdge(opts: SynthesizeOpts): Promise<SynthesizeResult> {
 // is needed before it is queued for playback or avatar lip sync.
 
 /**
- * naia-local-voice → bundled VoxCPM2 `/tts` service. The 8GB cascade profile
- * exposes the stable desktop endpoint on :8910. The raw VoxCPM2 service on
- * :8901 is private. It accepts `{ text }` and returns RIFF WAV. Voice
- * selection is server-owned through its configured reference sample; do not
- * send OpenAI-only fields or a synthetic Bearer token to this endpoint.
+ * naia-local-voice → the cascade façade's OpenAI-compatible speech surface.
+ * The 8GB profile exposes :8910; raw VoxCPM2 on :8901 stays private. The
+ * façade resolves the selected reference voice and returns RIFF WAV without a
+ * bearer token.
  */
 async function synthNaiaLocalVoice(
 	opts: SynthesizeOpts,
@@ -288,17 +287,19 @@ async function synthNaiaLocalVoice(
 		/\/$/,
 		"",
 	);
-	const resp = await fetch(`${base}/tts`, {
+	const resp = await fetch(`${base}/v1/audio/speech`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-	body: JSON.stringify({
-			text: opts.text,
+		body: JSON.stringify({
+			model: "naia-local-voice",
+			input: opts.text,
 			// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
 			// it to this facade palette id; keep it intact all the way to :8910.
 			voice:
 				!opts.voice || opts.voice === "default"
 					? "naia-default"
 					: opts.voice,
+			response_format: "wav",
 		}),
 		signal: opts.signal,
 	});

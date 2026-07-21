@@ -25,8 +25,8 @@ const mode = process.argv[2] === "prod" ? "prod" : "dev";
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
-const REQUIRED_AGENT_COMMIT = "1e0acab83622fe446f301811d0fe35bb10285b86";
-const REQUIRED_PROTO_SHA256 = "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a";
+const REQUIRED_AGENT_COMMIT = "e44b0f575549d607f4207f433a0284cb15c44746";
+const REQUIRED_PROTO_SHA256 = "18000e2902410c5279f2d0d38a04c1ecb6c6f3d6566532c2d3b81ddecc9c8d3b";
 const STATIC_AGENT_CANDIDATES = [
 	resolve(OS_ROOT, "..", "naia-agent"),
 	resolve(OS_ROOT, "..", "..", "naia-agent"),
@@ -72,7 +72,12 @@ function isPairedAgentCheckout(dir) {
 	return (
 		existsSync(resolve(dir, "scripts/builds/agent-stdio-entry.mjs")) &&
 		existsSync(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) &&
-		hasRequiredAgentCommit(dir)
+		hasRequiredAgentCommit(dir) &&
+		isCleanProto(dir) &&
+		isCleanAgentEntrypoint(dir) &&
+		isCleanCheckout(dir) &&
+		sha256File(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) ===
+			REQUIRED_PROTO_SHA256
 	);
 }
 

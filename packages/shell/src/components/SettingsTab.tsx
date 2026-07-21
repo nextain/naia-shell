@@ -136,6 +136,23 @@ import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 
 const LLM_PROVIDERS = listLlmProviders();
 
+type CodexPreflightStatus =
+	| "idle"
+	| "checking"
+	| "ready"
+	| "not-installed"
+	| "login-required"
+	| "error";
+
+const CODEX_PREFLIGHT_LABELS: Record<CodexPreflightStatus, TranslationKey> = {
+	idle: "settings.codexReadinessIdle",
+	checking: "settings.codexReadinessChecking",
+	ready: "settings.codexReadinessReady",
+	"not-installed": "settings.codexReadinessNotInstalled",
+	"login-required": "settings.codexReadinessLoginRequired",
+	error: "settings.codexReadinessError",
+};
+
 function vramTierLabelKey(id: VramTierId) {
 	return `settings.vramTier.${id}` as const;
 }
@@ -462,6 +479,8 @@ export function SettingsTab() {
 	const [agentHealthCheckedAt, setAgentHealthCheckedAt] = useState<Date | null>(
 		null,
 	);
+	const [codexPreflightStatus, setCodexPreflightStatus] =
+		useState<CodexPreflightStatus>("idle");
 	const existing = loadConfig();
 	const setAvatarModelPath = useAvatarStore((s) => s.setModelPath);
 	const setAvatarBackgroundImage = useAvatarStore((s) => s.setBackgroundImage);
@@ -1856,6 +1875,9 @@ export function SettingsTab() {
 
 	function handleProviderChange(id: ProviderId) {
 		setProvider(id);
+		if (id !== "codex") {
+			setCodexPreflightStatus("idle");
+		}
 		if (id !== "ollama") {
 			setModel(getDefaultLlmModel(id));
 		}
@@ -1876,6 +1898,24 @@ export function SettingsTab() {
 		);
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
 		void writeNaiaConfig(provSel);
+	}
+
+	async function checkCodexReadiness() {
+		setCodexPreflightStatus("checking");
+		try {
+			const result = await invoke<{ status: CodexPreflightStatus }>(
+				"codex_preflight",
+			);
+			setCodexPreflightStatus(
+				result.status === "ready" ||
+					result.status === "not-installed" ||
+					result.status === "login-required"
+					? result.status
+					: "error",
+			);
+		} catch {
+			setCodexPreflightStatus("error");
+		}
 	}
 
 	function handleLocaleChange(id: Locale) {
@@ -3638,6 +3678,29 @@ export function SettingsTab() {
 					</div>
 
 					{/* API key — shown before model selector so user can enter key first */}
+					{provider === "codex" && (
+						<div className="settings-field" data-testid="codex-readiness">
+							<span>{t("settings.codexReadiness")}</span>
+							<div className="settings-hint">
+								{t("settings.codexReadinessHint")}
+							</div>
+							<div className="settings-row">
+								<span aria-live="polite" data-testid="codex-readiness-status">
+									{t(CODEX_PREFLIGHT_LABELS[codexPreflightStatus])}
+								</span>
+								<button
+									type="button"
+									className="btn-secondary"
+									data-testid="codex-readiness-check"
+									disabled={codexPreflightStatus === "checking"}
+									onClick={() => void checkCodexReadiness()}
+								>
+									{t("settings.codexReadinessCheck")}
+								</button>
+							</div>
+						</div>
+					)}
+
 					{provider !== "nextain" &&
 						!isApiKeyOptional(provider) && (
 							<div className="settings-field">

@@ -2470,6 +2470,51 @@ const translations = {
 		vi: "Kiểm tra",
 	},
 
+	// Jeonju course Codex readiness
+	"settings.codexReadiness": {
+		ko: "Codex 준비 상태", en: "Codex readiness", ja: "Codex readiness", zh: "Codex readiness",
+		fr: "Codex readiness", de: "Codex readiness", ru: "Codex readiness", es: "Codex readiness",
+		ar: "Codex readiness", hi: "Codex readiness", bn: "Codex readiness", pt: "Codex readiness",
+		id: "Codex readiness", vi: "Codex readiness",
+	},
+	"settings.codexReadinessHint": {
+		ko: "설치와 로그인 상태만 확인합니다. 인증 정보나 명령 출력은 저장하지 않습니다.",
+		en: "Checks only installation and login. Authentication data and command output are never stored.",
+		ja: "Checks only installation and login. Authentication data and command output are never stored.",
+		zh: "Checks only installation and login. Authentication data and command output are never stored.",
+		fr: "Checks only installation and login. Authentication data and command output are never stored.",
+		de: "Checks only installation and login. Authentication data and command output are never stored.",
+		ru: "Checks only installation and login. Authentication data and command output are never stored.",
+		es: "Checks only installation and login. Authentication data and command output are never stored.",
+		ar: "Checks only installation and login. Authentication data and command output are never stored.",
+		hi: "Checks only installation and login. Authentication data and command output are never stored.",
+		bn: "Checks only installation and login. Authentication data and command output are never stored.",
+		pt: "Checks only installation and login. Authentication data and command output are never stored.",
+		id: "Checks only installation and login. Authentication data and command output are never stored.",
+		vi: "Checks only installation and login. Authentication data and command output are never stored.",
+	},
+	"settings.codexReadinessIdle": {
+		ko: "확인 전", en: "Not checked", ja: "Not checked", zh: "Not checked", fr: "Not checked", de: "Not checked", ru: "Not checked", es: "Not checked", ar: "Not checked", hi: "Not checked", bn: "Not checked", pt: "Not checked", id: "Not checked", vi: "Not checked",
+	},
+	"settings.codexReadinessChecking": {
+		ko: "확인 중…", en: "Checking…", ja: "Checking…", zh: "Checking…", fr: "Checking…", de: "Checking…", ru: "Checking…", es: "Checking…", ar: "Checking…", hi: "Checking…", bn: "Checking…", pt: "Checking…", id: "Checking…", vi: "Checking…",
+	},
+	"settings.codexReadinessReady": {
+		ko: "준비됨 ✓", en: "Ready ✓", ja: "Ready ✓", zh: "Ready ✓", fr: "Ready ✓", de: "Ready ✓", ru: "Ready ✓", es: "Ready ✓", ar: "Ready ✓", hi: "Ready ✓", bn: "Ready ✓", pt: "Ready ✓", id: "Ready ✓", vi: "Ready ✓",
+	},
+	"settings.codexReadinessNotInstalled": {
+		ko: "설치 필요", en: "Installation required", ja: "Installation required", zh: "Installation required", fr: "Installation required", de: "Installation required", ru: "Installation required", es: "Installation required", ar: "Installation required", hi: "Installation required", bn: "Installation required", pt: "Installation required", id: "Installation required", vi: "Installation required",
+	},
+	"settings.codexReadinessLoginRequired": {
+		ko: "로그인 필요", en: "Login required", ja: "Login required", zh: "Login required", fr: "Login required", de: "Login required", ru: "Login required", es: "Login required", ar: "Login required", hi: "Login required", bn: "Login required", pt: "Login required", id: "Login required", vi: "Login required",
+	},
+	"settings.codexReadinessError": {
+		ko: "확인 실패", en: "Check failed", ja: "Check failed", zh: "Check failed", fr: "Check failed", de: "Check failed", ru: "Check failed", es: "Check failed", ar: "Check failed", hi: "Check failed", bn: "Check failed", pt: "Check failed", id: "Check failed", vi: "Check failed",
+	},
+	"settings.codexReadinessCheck": {
+		ko: "Codex 연결 확인", en: "Check Codex connection", ja: "Check Codex connection", zh: "Check Codex connection", fr: "Check Codex connection", de: "Check Codex connection", ru: "Check Codex connection", es: "Check Codex connection", ar: "Check Codex connection", hi: "Check Codex connection", bn: "Check Codex connection", pt: "Check Codex connection", id: "Check Codex connection", vi: "Check Codex connection",
+	},
+
 	// Log viewer (#297)
 	"settings.logViewer": {
 		ko: "에이전트 로그",

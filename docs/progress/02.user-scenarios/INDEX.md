@@ -28,6 +28,7 @@
 | UC-016 | Discord 실시간 대화 | 허용된 채널의 사용자가 메시지를 보내면 에이전트가 Gateway로 받아 응답하고 재연결·중복 이벤트에도 한 번만 처리 → 장기 실행 중 안전하게 대화 지속. 결정론적 자동화 완료, 실제 Discord 운영자 인수 대기 | REQ-012 | In-progress | TEST-S-015 |
 | UC-017 | 선제·연속 발화 | 개인 라디오 DJ와 회사 전시 소개가 무입력으로 시작하고 기존 표현 경로를 사용. 계약 흐름 구현, native는 시작/BGM 또는 greeting/stop 경계 | REQ-013 | Partial | TEST-S-016 |
 | UC-018 | Codex·역할 분리 | 사용자가 설정에서 Codex를 main으로 선택하고 main/sub/memory 역할별 provider·model을 저장한 뒤 재시작해도 동일한 Agent 런타임으로 대화·위임 | REQ-014 | Done | TEST-S-017 |
+| UC-019 | 전주대 강의 Codex 준비 | Codex 설치·로그인 상태와 수업 워크스페이스를 파일 변경 없이 확인한 뒤 Discord 제작 요청을 시작 | REQ-015 | Pass | TEST-S-018 |
 
 > **제외(루크 2026-06-15)**: ⑧메모리(구 UC3/UC4)=off-scope(naia-memory 다른 세션 소유, canon out_of_scope). ⑨워크스페이스(UC-007)=보류(신규발명 방향 결정 후).
 > 상세 granular(S01~71 — provider/voice/skills/channels 60+)·테스트 커버리지 맵 = `docs/user-scenarios.md`.

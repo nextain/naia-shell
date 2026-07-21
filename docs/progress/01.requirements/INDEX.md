@@ -29,6 +29,7 @@ scripts/check-traceability.mjs 가 이 표를 파싱한다. (ID 형식 = REQ-###
 | REQ-012 | Discord 채널 | **로컬 우선 Discord 채널 에이전트**: OS 키체인 토큰, 서버/채널 허용목록, 다중 채널 Inbox, 실시간 Gateway 송수신·재연결, 중복 방지, 개인 채팅 격리 (FR-DISCORD.1~10). 자동화 구현 완료, 실제 bot/키체인 운영자 인수 대기 | In-progress | UC-014, UC-015, UC-016 | SPEC-009, SPEC-010 | TEST-S-014, TEST-S-015 |
 | REQ-013 | 선제 발화 profile | 개인 라디오 DJ·전시 소개 activity를 gRPC로 구독해 기존 텍스트/TTS/BGM에 표현하고 yield/control/stop 전달. native 증적은 시작/BGM 또는 greeting/stop까지 | Partial | UC-017 | SPEC-011 | TEST-S-016 |
 | REQ-014 | LLM 역할 분리 | 사용자가 Codex를 main provider로 선택하고, main/sub/memory 역할을 독립 설정하며 Shell이 정확히 고정된 Agent 런타임으로 전달 | Done | UC-018 | SPEC-012 | TEST-S-017 |
+| REQ-015 | 전주대 Codex 준비 | Codex CLI 설치·로그인 상태를 안전하게 판정하고 수업 워크스페이스를 변경 없이 확인 | Pass | UC-019 | SPEC-013 | TEST-S-018 |
 
 ## 비기능 요구사항 (NFR → REQ, 횡단 — TEST-S 직결)
 
