@@ -1,87 +1,85 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	unlinkSync,
-	writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
-import { config as chat } from "./wdio.conf.chat.js";
+	E2E_TARGET_DIR,
+	E2E_WEBVIEW2_DATA,
+	assertCodexE2eIsolation,
+	cleanupCodexE2eRoot,
+	configureCodexE2eEnvironment,
+	resetCodexE2eRoot,
+	startOwnedEmbeddedApp,
+	startOwnedViteServer,
+	stopOwnedEmbeddedApp,
+	stopOwnedViteServer,
+} from "./codex-e2e-environment.js";
 
-const BACKUP_PATH = resolve(
-	homedir(),
-	".naia/run/codex-live-e2e-config-backup.json",
-);
-const E2E_XDG_ROOT = resolve(homedir(), ".naia/run/codex-live-e2e-xdg");
+const EXE = process.platform === "win32" ? ".exe" : "";
+const TAURI_BINARY = process.env.TAURI_BINARY
+	? process.env.TAURI_BINARY
+	: resolve(E2E_TARGET_DIR, "debug", `naia-shell${EXE}`);
 
-type ConfigBackup = {
-	configPath: string;
-	existed: boolean;
-	content: string;
-};
-
-function restoreDurableConfigBackup(): void {
-	if (!existsSync(BACKUP_PATH)) return;
-	const backup = JSON.parse(readFileSync(BACKUP_PATH, "utf8")) as ConfigBackup;
-	if (backup.existed) {
-		mkdirSync(dirname(backup.configPath), { recursive: true });
-		const restorePath = `${backup.configPath}.codex-e2e-restore`;
-		writeFileSync(restorePath, backup.content, { mode: 0o600 });
-		renameSync(restorePath, backup.configPath);
-	} else if (existsSync(backup.configPath)) {
-		unlinkSync(backup.configPath);
-	}
-	unlinkSync(BACKUP_PATH);
-}
-
-function captureDurableConfigBackup(): void {
-	// Recover an interrupted earlier run before taking a new baseline. The backup
-	// lives outside the test worker, so driver/app crashes cannot strand Codex as
-	// the user's active provider.
-	restoreDurableConfigBackup();
-	const adkPathFile = resolve(homedir(), ".naia/adk-path");
-	const adkPath = readFileSync(adkPathFile, "utf8").trim();
-	if (!adkPath)
-		throw new Error("Cannot back up config: ~/.naia/adk-path is empty");
-	const configPath = resolve(adkPath, "naia-settings/config.json");
-	const backup: ConfigBackup = {
-		configPath,
-		existed: existsSync(configPath),
-		content: existsSync(configPath) ? readFileSync(configPath, "utf8") : "",
-	};
-	mkdirSync(dirname(BACKUP_PATH), { recursive: true });
-	writeFileSync(BACKUP_PATH, JSON.stringify(backup), { mode: 0o600 });
-}
+// This is intentionally independent of wdio.conf.ts.  That legacy config
+// starts tauri-driver and a system msedgedriver; the embedded test binary
+// instead exposes its own Tauri WebDriver endpoint.
+configureCodexE2eEnvironment();
 
 export const config = {
-	...chat,
+	runner: "local" as const,
 	specs: ["./specs/90-codex-live-chat.spec.ts"],
+	maxInstances: 1,
+	hostname: "127.0.0.1",
+	port: Number(process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450"),
+	capabilities: [
+		{
+			maxInstances: 1,
+			browserName: "tauri",
+			"wdio:enforceWebDriverClassic": true,
+			pageLoadStrategy: "eager",
+			"tauri:options": { application: TAURI_BINARY },
+		},
+	],
+	logLevel: "error",
+	waitforTimeout: 30_000,
+	connectionRetryTimeout: 120_000,
+	connectionRetryCount: 2,
+	framework: "mocha",
+	mochaOpts: { ui: "bdd", timeout: 300_000 },
+	reporters: ["spec"],
 	async onPrepare() {
-		captureDurableConfigBackup();
-		// Never mutate the real Shell WebView cache. Codex login remains available
-		// through $HOME/.codex, while Tauri/WebKit state is isolated under XDG.
-		rmSync(E2E_XDG_ROOT, { recursive: true, force: true });
-		for (const name of ["config", "data", "cache"]) {
-			mkdirSync(resolve(E2E_XDG_ROOT, name), { recursive: true });
+		if (!existsSync(TAURI_BINARY)) {
+			throw new Error(
+				`Missing embedded E2E binary: ${TAURI_BINARY}. Run pnpm run build:e2e:tauri first.`,
+			);
 		}
-		process.env.XDG_CONFIG_HOME = resolve(E2E_XDG_ROOT, "config");
-		process.env.XDG_DATA_HOME = resolve(E2E_XDG_ROOT, "data");
-		process.env.XDG_CACHE_HOME = resolve(E2E_XDG_ROOT, "cache");
-		const prepare = chat.onPrepare as (() => Promise<void> | void) | undefined;
-		await prepare?.();
+		resetCodexE2eRoot();
+		assertCodexE2eIsolation();
+		await startOwnedViteServer();
+		await startOwnedEmbeddedApp(TAURI_BINARY);
+	},
+	async before() {
+		await browser.waitUntil(
+			async () => {
+				try {
+					return await browser.execute(() => document.location.href.startsWith("http"));
+				} catch {
+					return false;
+				}
+			},
+			{
+				timeout: 45_000,
+				timeoutMsg: "embedded Tauri webview never reached dedicated E2E Vite",
+			},
+		);
+		if (!existsSync(E2E_WEBVIEW2_DATA)) {
+			throw new Error("WebView2 test profile was not created under the owned E2E root");
+		}
 	},
 	async onComplete() {
 		try {
-			restoreDurableConfigBackup();
+			await stopOwnedEmbeddedApp();
+			stopOwnedViteServer();
 		} finally {
-			rmSync(E2E_XDG_ROOT, { recursive: true, force: true });
-			const complete = chat.onComplete as
-				| (() => Promise<void> | void)
-				| undefined;
-			await complete?.();
+			cleanupCodexE2eRoot();
 		}
 	},
 };
