@@ -355,14 +355,12 @@ export function BgmPlayer({ naia }: Props) {
 				} else if (msg.type === "bgm_youtube_pause") {
 					const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
 					iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
-					setPlaying(false);
 				} else if (msg.type === "bgm_youtube_resume") {
 					const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
 					if (!iframe && currentYtRef.current) {
 						handleYtSelect(currentYtRef.current);
 					} else {
 						iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
-						setPlaying(true);
 					}
 				} else if (msg.type === "bgm_youtube_next") {
 					const curFavs = favsRef.current;
@@ -523,7 +521,6 @@ export function BgmPlayer({ naia }: Props) {
 		if (source === "youtube") {
 			if (playing) {
 				sendYtCmd("pauseVideo");
-				setPlaying(false);
 			} else {
 				const iframe = document.querySelector(".app-bg-iframe") as HTMLIFrameElement | null;
 				if (!iframe && currentYt) {
@@ -531,7 +528,6 @@ export function BgmPlayer({ naia }: Props) {
 					handleYtSelect(currentYt);
 				} else {
 					sendYtCmd("playVideo");
-					setPlaying(true);
 				}
 			}
 			return;
