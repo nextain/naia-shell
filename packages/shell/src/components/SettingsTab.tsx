@@ -721,6 +721,13 @@ export function SettingsTab() {
 			persistConfig({ vllmTtsHost: DEFAULT_LOCAL_VOICE_HOST });
 		}
 	}, [ttsProvider]);
+	// A loader's CASCADE_READY payload only proves its ports were bound.  Rust
+	// checks the facade too; repeat that public check here so an IPC stub or an
+	// older loader cannot make the Shell show a false ready state.
+	const startCascadeAndConfirm = async (): Promise<string | null> => {
+		const ready = await invoke<string>("start_cascade");
+		return (await invoke<boolean>("cascade_status")) ? ready : null;
+	};
 	const handleToggleCascade = async () => {
 		setCascadeBusy(true);
 		setCascadeMsg("");
@@ -738,7 +745,12 @@ export function SettingsTab() {
 				// start_cascade 는 CASCADE_READY 페이로드({facade_port,services}) 를 반환 —
 				// facade_port 로 로컬 cascade URL 을 유도해 VideoAvatarCanvas(아바타 립싱크)가
 				// 로컬 facade 에 붙게 한다(focus=avatar 로 avatar 서비스가 떴을 때 입 움직임).
-				const ready = await invoke<string>("start_cascade");
+				const ready = await startCascadeAndConfirm();
+				if (!ready) {
+					setCascadeRunning(false);
+					setCascadeMsg(t("settings.cascadeError"));
+					return;
+				}
 				const localUrl = localFacadeUrlFromReady(ready);
 				useCascadeAvatarStore.getState().setLocalFacadeUrl(localUrl);
 				setCascadeRunning(true);
@@ -882,7 +894,12 @@ export function SettingsTab() {
 					: undefined,
 			} as AppConfig;
 			await writeSlotsManifest(cfg);
-			const ready = await invoke<string>("start_cascade");
+			const ready = await startCascadeAndConfirm();
+			if (!ready) {
+				setCascadeRunning(false);
+				setCascadeMsg(t("settings.cascadeError"));
+				return;
+			}
 			useCascadeAvatarStore
 				.getState()
 				.setLocalFacadeUrl(localFacadeUrlFromReady(ready));

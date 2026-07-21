@@ -587,6 +587,45 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.nvaModel).toBeTruthy();
 	});
 
+	it("does not report the 4060 voice/avatar runtime ready before facade health confirms it", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "nk",
+				ttsProvider: "nextain",
+				avatarProvider: "vrm",
+			}),
+		);
+		mockInvoke.mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
+			if (cmd === "start_cascade") {
+				return Promise.resolve(
+					JSON.stringify({ facade_port: 8910, services: [] }),
+				);
+			}
+			if (cmd === "cascade_status") return Promise.resolve(false);
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		await vi.waitFor(() => {
+			expect(document.getElementById("local-gpu-tier")).toBeTruthy();
+		});
+		fireEvent.change(document.getElementById("local-gpu-tier") as HTMLElement, {
+			target: { value: "laptop-4060-8g" },
+		});
+
+		await vi.waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith("cascade_status");
+			expect(screen.getByTestId("local-warm-status").textContent).toMatch(
+				/Local voice engine error/i,
+			);
+		});
+	});
+
 	it("restores an explicitly saved 8GB profile as CPU/NPU brain plus local cascade", async () => {
 		localStorage.setItem(
 			"naia-config",

@@ -4535,23 +4535,82 @@ fn cascade_facade_url_from_ready(ready: &str) -> Option<String> {
 /// died. Do not turn that supervisor-only state into a false "running" UI
 /// state: the desktop-facing public contract is the facade health endpoint.
 async fn cascade_facade_is_healthy(ready: &str) -> bool {
+    cascade_facade_health(ready)
+        .await
+        .as_ref()
+        .is_some_and(|body| body.get("ok").and_then(serde_json::Value::as_bool) == Some(true))
+}
+
+/// A bound TCP port is not proof that VoxCPM2 and Ditto are usable.  Keep the
+/// health document as the sole desktop-facing readiness source.
+async fn cascade_facade_health(ready: &str) -> Option<serde_json::Value> {
     let Some(url) = cascade_facade_url_from_ready(ready) else {
-        return false;
+        return None;
     };
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
     else {
-        return false;
+        return None;
     };
     match client.get(url).send().await {
-        Ok(response) if response.status().is_success() => response
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|body| body.get("ok").and_then(serde_json::Value::as_bool))
-            == Some(true),
-        _ => false,
+        Ok(response) if response.status().is_success() => {
+            response.json::<serde_json::Value>().await.ok()
+        }
+        _ => None,
+    }
+}
+
+/// A 4060 profile requests both VoxCPM2 and Ditto.  A façade may answer
+/// `/health` while one component is still loading, so require every component
+/// described by `CASCADE_READY` before displaying the runtime as ready.
+fn cascade_health_satisfies_requested_services(ready: &str, health: &serde_json::Value) -> bool {
+    if health.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+        return false;
+    }
+    let Some(services) = serde_json::from_str::<serde_json::Value>(ready)
+        .ok()
+        .and_then(|payload| {
+            payload
+                .get("services")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+        })
+    else {
+        return false;
+    };
+    let wants_tts = services.iter().any(|service| {
+        service.get("kind").and_then(serde_json::Value::as_str) == Some("tts")
+    });
+    let wants_avatar = services.iter().any(|service| {
+        service.get("kind").and_then(serde_json::Value::as_str) == Some("avatar")
+    });
+    (!wants_tts
+        || (health.get("tts").and_then(serde_json::Value::as_bool) == Some(true)
+            && health
+                .get("tts_enabled")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)))
+        && (!wants_avatar
+            || (health.get("avatar").and_then(serde_json::Value::as_bool) == Some(true)
+                && health
+                    .get("avatar_enabled")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true)))
+}
+
+async fn wait_for_cascade_facade_ready(ready: &str) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        if let Some(health) = cascade_facade_health(ready).await {
+            if cascade_health_satisfies_requested_services(ready, &health) {
+                return true;
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
 }
 
@@ -4611,6 +4670,11 @@ async fn start_cascade(
     .map_err(|e| format!("task error: {e}"))??;
 
     let ready = proc.ready.clone();
+    if !wait_for_cascade_facade_ready(&ready).await {
+        // `proc` remains local, so Drop terminates its owned supervisor.  This
+        // prevents a failed standalone runtime from being published as ready.
+        return Err("Local cascade started but its requested voice/avatar services did not become ready. The local runtime may still be loading or is incomplete; see cascade logs.".to_string());
+    }
     *lock_or_recover(&state.cascade, "cascade") = Some(proc);
     Ok(ready)
 }
@@ -9436,6 +9500,63 @@ mod tests {
         );
         incomplete_responder.join().unwrap();
         assert!(!cascade_facade_is_healthy(r#"{"facade_port":0}"#).await);
+    }
+
+    #[test]
+    fn cascade_health_requires_each_service_requested_by_the_loader() {
+        let ready = r#"{
+            "facade_port": 8910,
+            "services": [
+                {"id":"voxcpm2_int8_tts","kind":"tts"},
+                {"id":"ditto_avatar","kind":"avatar"},
+                {"id":"cascade_facade","kind":"facade"}
+            ]
+        }"#;
+        let fully_ready = serde_json::json!({
+            "ok": true,
+            "tts": true,
+            "tts_enabled": true,
+            "avatar": true,
+            "avatar_enabled": true,
+        });
+        assert!(cascade_health_satisfies_requested_services(ready, &fully_ready));
+
+        let avatar_loading = serde_json::json!({
+            "ok": true,
+            "tts": true,
+            "tts_enabled": true,
+            "avatar": false,
+            "avatar_enabled": true,
+        });
+        assert!(!cascade_health_satisfies_requested_services(ready, &avatar_loading));
+
+        let tts_disabled = serde_json::json!({
+            "ok": true,
+            "tts": true,
+            "tts_enabled": false,
+            "avatar": true,
+            "avatar_enabled": true,
+        });
+        assert!(!cascade_health_satisfies_requested_services(ready, &tts_disabled));
+    }
+
+    #[test]
+    fn cascade_health_does_not_require_unrequested_components() {
+        let ready = r#"{
+            "facade_port": 8910,
+            "services": [
+                {"id":"voxcpm2_int8_tts","kind":"tts"},
+                {"id":"cascade_facade","kind":"facade"}
+            ]
+        }"#;
+        let tts_ready = serde_json::json!({
+            "ok": true,
+            "tts": true,
+            "tts_enabled": true,
+            "avatar": false,
+            "avatar_enabled": false,
+        });
+        assert!(cascade_health_satisfies_requested_services(ready, &tts_ready));
     }
 
     #[test]
