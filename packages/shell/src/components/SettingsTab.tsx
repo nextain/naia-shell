@@ -153,6 +153,36 @@ const CODEX_PREFLIGHT_LABELS: Record<CodexPreflightStatus, TranslationKey> = {
 	error: "settings.codexReadinessError",
 };
 
+type CascadeInstallationStatus = {
+	phase: "ready" | "ready-to-start" | "requires-action" | "blocked";
+	ready: boolean;
+	canStart: boolean;
+	summary: string;
+	steps: Array<{
+		id: string;
+		label: string;
+		state: "complete" | "waiting" | "blocked";
+		action: "install" | "download" | "verify";
+		actionAvailable: boolean;
+		progressPercent: number;
+		retryable: boolean;
+		failure?: { code: string; message: string; retryable: boolean } | null;
+	}>;
+};
+
+function isCascadeInstallationStatus(
+	value: unknown,
+): value is CascadeInstallationStatus {
+	if (!value || typeof value !== "object") return false;
+	const candidate = value as Partial<CascadeInstallationStatus>;
+	return (
+		typeof candidate.canStart === "boolean" &&
+		typeof candidate.ready === "boolean" &&
+		typeof candidate.summary === "string" &&
+		Array.isArray(candidate.steps)
+	);
+}
+
 function vramTierLabelKey(id: VramTierId) {
 	return `settings.vramTier.${id}` as const;
 }
@@ -659,11 +689,35 @@ export function SettingsTab() {
 	const [cascadeRunning, setCascadeRunning] = useState(false);
 	const [cascadeBusy, setCascadeBusy] = useState(false);
 	const [cascadeMsg, setCascadeMsg] = useState("");
+	const [cascadeInstallation, setCascadeInstallation] =
+		useState<CascadeInstallationStatus | null>(null);
+	const refreshCascadeInstallation = useCallback(async () => {
+		try {
+			const status = await invoke<unknown>(
+				"cascade_installation_status",
+			);
+			if (!isCascadeInstallationStatus(status)) {
+				Logger.warn("Settings", "Malformed cascade installation status", {});
+				setCascadeInstallation(null);
+				return null;
+			}
+			setCascadeInstallation(status);
+			return status;
+		} catch (error) {
+			Logger.warn("Settings", "Cascade installation status unavailable", {
+				error: String(error),
+			});
+			return null;
+		}
+	}, []);
 	useEffect(() => {
 		invoke<boolean>("cascade_status")
 			.then(setCascadeRunning)
 			.catch(() => {});
 	}, []);
+	useEffect(() => {
+		void refreshCascadeInstallation();
+	}, [refreshCascadeInstallation]);
 	// 슬롯 오버뷰 실시간 상태 — facade /health({ok,tts,avatar,tts_enabled,avatar_enabled})를
 	// 폴링해 로컬 음성/아바타 슬롯이 실제로 도는지 표시. 좀비(facade 는 떴으나 tts_enabled=false 로
 	// 붙은 상태)를 가시화한다. localFacadeUrl 없으면(로컬 cascade 미가동) 상태 = null.
@@ -724,9 +778,25 @@ export function SettingsTab() {
 	// A loader's CASCADE_READY payload only proves its ports were bound.  Rust
 	// checks the facade too; repeat that public check here so an IPC stub or an
 	// older loader cannot make the Shell show a false ready state.
-	const startCascadeAndConfirm = async (): Promise<string | null> => {
+	const startCascadeAndConfirm = async (): Promise<{
+		ready: string | null;
+		message?: string;
+	}> => {
+		const installation = await refreshCascadeInstallation();
+		if (!installation?.canStart) {
+			return {
+				ready: null,
+				message: installation?.summary,
+			};
+		}
 		const ready = await invoke<string>("start_cascade");
-		return (await invoke<boolean>("cascade_status")) ? ready : null;
+		const afterStart = await refreshCascadeInstallation();
+		return afterStart?.ready
+			? { ready }
+			: {
+					ready: null,
+					message: afterStart?.summary,
+				};
 	};
 	const handleToggleCascade = async () => {
 		setCascadeBusy(true);
@@ -745,13 +815,13 @@ export function SettingsTab() {
 				// start_cascade 는 CASCADE_READY 페이로드({facade_port,services}) 를 반환 —
 				// facade_port 로 로컬 cascade URL 을 유도해 VideoAvatarCanvas(아바타 립싱크)가
 				// 로컬 facade 에 붙게 한다(focus=avatar 로 avatar 서비스가 떴을 때 입 움직임).
-				const ready = await startCascadeAndConfirm();
-				if (!ready) {
+				const start = await startCascadeAndConfirm();
+				if (!start.ready) {
 					setCascadeRunning(false);
-					setCascadeMsg(t("settings.cascadeError"));
+					setCascadeMsg(start.message ?? t("settings.cascadeError"));
 					return;
 				}
-				const localUrl = localFacadeUrlFromReady(ready);
+				const localUrl = localFacadeUrlFromReady(start.ready);
 				useCascadeAvatarStore.getState().setLocalFacadeUrl(localUrl);
 				setCascadeRunning(true);
 				setCascadeMsg(t("settings.cascadeStarted"));
@@ -894,15 +964,15 @@ export function SettingsTab() {
 					: undefined,
 			} as AppConfig;
 			await writeSlotsManifest(cfg);
-			const ready = await startCascadeAndConfirm();
-			if (!ready) {
+			const start = await startCascadeAndConfirm();
+			if (!start.ready) {
 				setCascadeRunning(false);
-				setCascadeMsg(t("settings.cascadeError"));
+				setCascadeMsg(start.message ?? t("settings.cascadeError"));
 				return;
 			}
 			useCascadeAvatarStore
 				.getState()
-				.setLocalFacadeUrl(localFacadeUrlFromReady(ready));
+				.setLocalFacadeUrl(localFacadeUrlFromReady(start.ready));
 			setCascadeRunning(true);
 			warmedProfileRef.current = key;
 			setCascadeMsg(t("settings.cascadeStarted"));
@@ -3595,6 +3665,26 @@ export function SettingsTab() {
 										: cascadeRunning
 											? `✓ ${t("settings.cascadeStarted")}`
 											: cascadeMsg}
+								</div>
+							)}
+						{naiaKey &&
+							localGpuTier !== "off" &&
+							cascadeInstallation && (
+								<div
+									className="settings-hint"
+									data-testid="cascade-installation-status"
+								>
+									<div data-testid="cascade-installation-summary">
+										{cascadeInstallation.summary}
+									</div>
+									<ul data-testid="cascade-installation-steps">
+										{cascadeInstallation.steps.map((step) => (
+											<li key={step.id} data-cascade-install-step={step.id}>
+												{step.label}: {step.state} · {step.progressPercent}%
+												{step.failure ? ` · ${step.failure.message}` : ""}
+											</li>
+										))}
+									</ul>
 								</div>
 							)}
 					</div>

@@ -509,3 +509,11 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-CODEX-WORKER.5** | Shell은 원본 adapter 오류, Codex 로그인 토큰, 계정 식별자, CLI 출력 원문을 worker UI·로그·persistent config에 노출하지 않는다. | unavailable/error sanitization 테스트. |
 
 - **NFR-CODEX-WORKER-contract**: Agent gRPC schema가 확정되기 전에는 Shell adapter가 worker lifecycle의 성공을 반환하거나 PTY를 worker로 위장하지 않는다.
+
+## Cascade standalone install-plan requirements (2026-07-22)
+
+| ID | Requirement | Verification |
+|---|---|---|
+| **FR-CASCADE.2** | Shell owns the 4060 cascade installation-plan status. Each of `loader`, `python-runtime`, `cascade-service-bundle`, `ditto-engine`, `voxcpm2-model`, and `reference-voices` supplies `complete|waiting|blocked`, 0–100 progress, `install|download|verify`, retryability, and a failure reason. | Rust pure-plan contract tests and SettingsTab IPC rendering test. |
+| **FR-CASCADE.3** | `ready=true` only when all install steps are complete and the Shell-owned :8910 façade reports every requested TTS/avatar service healthy. Prerequisites without a started service are `ready-to-start`, not ready. | Rust live-status classification tests. |
+| **FR-CASCADE.4** | Querying install status is read-only: no model download, service spawn, or user-file mutation. A profile warm with `canStart=false` must not call `start_cascade`. Missing package metadata must be reported as unavailable, never as an active download. | SettingsTab negative invocation test plus command contract review. |

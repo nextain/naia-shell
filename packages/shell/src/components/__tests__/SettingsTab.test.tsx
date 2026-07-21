@@ -587,22 +587,43 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(saved.nvaModel).toBeTruthy();
 	});
 
-	it("does not report the 4060 voice/avatar runtime ready before facade health confirms it", async () => {
+	it("shows the 4060 install plan and does not start a missing runtime", async () => {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
 				provider: "nextain",
 				model: "gemini-3.5-flash",
 				naiaKey: "nk",
-				ttsProvider: "nextain",
-				avatarProvider: "vrm",
+				localGpuTier: "laptop-4060-8g",
+				local8gFocus: "llm",
 			}),
 		);
 		mockInvoke.mockImplementation((cmd: string) => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
-			if (cmd === "start_cascade") {
+			if (cmd === "cascade_installation_status") {
 				return Promise.resolve(
-					JSON.stringify({ facade_port: 8910, services: [] }),
+					{
+						phase: "blocked",
+						ready: false,
+						canStart: false,
+						summary: "Local runtime installation is blocked because required package artifacts are missing.",
+						steps: [
+							{
+								id: "cascade-service-bundle",
+								label: "Cascade service bundle",
+								state: "blocked",
+								action: "install",
+								actionAvailable: false,
+								progressPercent: 0,
+								retryable: false,
+								failure: {
+									code: "CASCADE_SERVICE_BUNDLE_MISSING",
+									message: "VoxCPM2, Ditto, or facade service files are not packaged.",
+									retryable: false,
+								},
+							},
+						],
+					},
 				);
 			}
 			if (cmd === "cascade_status") return Promise.resolve(false);
@@ -610,19 +631,11 @@ describe("SettingsTab — memory tab (#298)", () => {
 		});
 
 		render(<SettingsTab />);
-		gotoSettingsTab("profile");
 		await vi.waitFor(() => {
-			expect(document.getElementById("local-gpu-tier")).toBeTruthy();
-		});
-		fireEvent.change(document.getElementById("local-gpu-tier") as HTMLElement, {
-			target: { value: "laptop-4060-8g" },
-		});
-
-		await vi.waitFor(() => {
-			expect(mockInvoke).toHaveBeenCalledWith("cascade_status");
-			expect(screen.getByTestId("local-warm-status").textContent).toMatch(
-				/Local voice engine error/i,
+			expect(screen.getByTestId("cascade-installation-status").textContent).toMatch(
+				/Cascade service bundle.*blocked.*0%/i,
 			);
+			expect(mockInvoke).not.toHaveBeenCalledWith("start_cascade");
 		});
 	});
 
@@ -639,6 +652,15 @@ describe("SettingsTab — memory tab (#298)", () => {
 		);
 		mockInvoke.mockImplementation((cmd: string) => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
+			if (cmd === "cascade_installation_status") {
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "Local runtime files are ready. Services have not been started yet.",
+					steps: [],
+				});
+			}
 			if (cmd === "start_cascade") {
 				return Promise.resolve(
 					JSON.stringify({ facade_port: 8910, services: [] }),

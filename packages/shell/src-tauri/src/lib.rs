@@ -4422,6 +4422,265 @@ fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
     Some(profile.to_string())
 }
 
+/// The desktop owns this preflight contract.  It deliberately describes work
+/// that a future installer must perform, but never downloads an artifact or
+/// starts a service while merely answering a status request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CascadeInstallFailure {
+    code: String,
+    message: String,
+    retryable: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CascadeInstallStep {
+    id: String,
+    label: String,
+    state: String,
+    action: String,
+    action_available: bool,
+    progress_percent: u8,
+    retryable: bool,
+    failure: Option<CascadeInstallFailure>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CascadeInstallationStatus {
+    phase: String,
+    ready: bool,
+    can_start: bool,
+    summary: String,
+    steps: Vec<CascadeInstallStep>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CascadeInstallChecks {
+    loader: bool,
+    python_runtime: bool,
+    service_bundle: bool,
+    ditto_engine: bool,
+    voxcpm2_model: bool,
+    reference_voices: bool,
+}
+
+fn cascade_complete_step(id: &str, label: &str) -> CascadeInstallStep {
+    CascadeInstallStep {
+        id: id.to_string(),
+        label: label.to_string(),
+        state: "complete".to_string(),
+        action: "verify".to_string(),
+        action_available: false,
+        progress_percent: 100,
+        retryable: false,
+        failure: None,
+    }
+}
+
+fn cascade_missing_step(
+    id: &str,
+    label: &str,
+    action: &str,
+    state: &str,
+    code: &str,
+    message: &str,
+    retryable: bool,
+) -> CascadeInstallStep {
+    CascadeInstallStep {
+        id: id.to_string(),
+        label: label.to_string(),
+        state: state.to_string(),
+        action: action.to_string(),
+        // This status API does not have a signed artifact URL or checksum.
+        // Keeping this false prevents a disabled bundle from looking like an
+        // active download button.
+        action_available: false,
+        progress_percent: 0,
+        retryable,
+        failure: Some(CascadeInstallFailure {
+            code: code.to_string(),
+            message: message.to_string(),
+            retryable,
+        }),
+    }
+}
+
+fn cascade_installation_plan(
+    checks: CascadeInstallChecks,
+    live_services_ready: bool,
+) -> CascadeInstallationStatus {
+    let steps = vec![
+        if checks.loader {
+            cascade_complete_step("loader", "Cascade loader")
+        } else {
+            cascade_missing_step(
+                "loader",
+                "Cascade loader",
+                "install",
+                "blocked",
+                "CASCADE_LOADER_NOT_BUNDLED",
+                "The installed Shell bundle does not include the cascade loader.",
+                false,
+            )
+        },
+        if checks.python_runtime {
+            cascade_complete_step("python-runtime", "Python runtime")
+        } else {
+            cascade_missing_step(
+                "python-runtime",
+                "Python runtime",
+                "install",
+                "blocked",
+                "CASCADE_PYTHON_RUNTIME_MISSING",
+                "The packaged local Python runtime is not installed.",
+                false,
+            )
+        },
+        if checks.service_bundle {
+            cascade_complete_step("cascade-service-bundle", "Cascade service bundle")
+        } else {
+            cascade_missing_step(
+                "cascade-service-bundle",
+                "Cascade service bundle",
+                "install",
+                "blocked",
+                "CASCADE_SERVICE_BUNDLE_MISSING",
+                "VoxCPM2, Ditto, or facade service files are not packaged.",
+                false,
+            )
+        },
+        if checks.ditto_engine {
+            cascade_complete_step("ditto-engine", "Ditto engine")
+        } else {
+            cascade_missing_step(
+                "ditto-engine",
+                "Ditto engine",
+                "install",
+                "blocked",
+                "DITTO_ENGINE_MISSING",
+                "The GPU-specific Ditto engine is not installed.",
+                false,
+            )
+        },
+        if checks.voxcpm2_model {
+            cascade_complete_step("voxcpm2-model", "VoxCPM2 model")
+        } else {
+            cascade_missing_step(
+                "voxcpm2-model",
+                "VoxCPM2 model",
+                "download",
+                "waiting",
+                "VOXCPM2_MODEL_MISSING",
+                "VoxCPM2 model download is required; this build has no download manifest yet.",
+                true,
+            )
+        },
+        if checks.reference_voices {
+            cascade_complete_step("reference-voices", "Reference voices")
+        } else {
+            cascade_missing_step(
+                "reference-voices",
+                "Reference voices",
+                "install",
+                "blocked",
+                "REFERENCE_VOICES_MISSING",
+                "The bundled reference voice assets are not installed.",
+                false,
+            )
+        },
+    ];
+    let can_start = steps.iter().all(|step| step.state == "complete");
+    let (phase, ready, summary) = if can_start && live_services_ready {
+        (
+            "ready",
+            true,
+            "Local VoxCPM2 and Ditto services are running and verified.",
+        )
+    } else if can_start {
+        (
+            "ready-to-start",
+            false,
+            "Local runtime files are ready. Services have not been started yet.",
+        )
+    } else if steps.iter().any(|step| step.state == "blocked") {
+        (
+            "blocked",
+            false,
+            "Local runtime installation is blocked because required package artifacts are missing.",
+        )
+    } else {
+        (
+            "requires-action",
+            false,
+            "Local runtime needs a model download before it can start.",
+        )
+    };
+    CascadeInstallationStatus {
+        phase: phase.to_string(),
+        ready,
+        can_start,
+        summary: summary.to_string(),
+        steps,
+    }
+}
+
+fn cascade_runtime_root() -> std::path::PathBuf {
+    std::env::var("NAIA_CASCADE_RUNTIME_ROOT")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join("naia-omni"))
+}
+
+fn directory_contains_extension(path: &std::path::Path, extension: &str) -> bool {
+    std::fs::read_dir(path)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .any(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some(extension))
+}
+
+fn cascade_install_checks(loader_dir: &str, adk_path: &str) -> CascadeInstallChecks {
+    let runtime_root = cascade_runtime_root();
+    let source_root = infer_repos_adk_root(adk_path)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(adk_path));
+    let labs_service = source_root.join("projects/naia-labs/avatar/service");
+    let cascade = source_root.join("projects/naia-omni-cascade");
+    let ditto = source_root.join("projects/ditto-talkinghead");
+    let hf_home = std::env::var("HF_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(home_dir()).join(".cache/huggingface"));
+    let model_snapshots = hf_home
+        .join("hub")
+        .join("models--openbmb--VoxCPM2")
+        .join("snapshots");
+    let ditto_native = runtime_root.join("checkpoints/ditto_trt_native");
+    let ditto_ampere = runtime_root.join("checkpoints/ditto_trt_Ampere_Plus");
+
+    CascadeInstallChecks {
+        loader: std::path::Path::new(loader_dir).join("loader/__init__.py").is_file(),
+        python_runtime: runtime_root.join(".venv-ditto/Scripts/python.exe").is_file(),
+        service_bundle: labs_service.join("tts_server.py").is_file()
+            && labs_service.join("trt_native_stream_server.py").is_file()
+            && cascade.join("output_cascade/app.py").is_file()
+            && ditto.is_dir(),
+        ditto_engine: directory_contains_extension(&ditto_native, "engine")
+            || directory_contains_extension(&ditto_ampere, "engine"),
+        voxcpm2_model: model_snapshots.is_dir()
+            && std::fs::read_dir(model_snapshots)
+                .ok()
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .any(|entry| entry.path().is_dir()),
+        reference_voices: directory_contains_extension(&cascade.join("assets/ref_audio"), "wav"),
+    }
+}
+
 /// 濡쒖뺄 cascade loader supervisor 瑜??ъ씠?쒖뭅濡?spawn. stdout `CASCADE_READY {json}`
 /// ?몃뱶?곗씠?щ줈 以鍮꾩셿猷??먯젙(紐⑤뜽 濡쒕뱶媛 湲몄뼱 timeout ?됰꼮??. ???꾨줈?몄뒪瑜?kill ?섎㈃
 /// loader 媛 VoxCPM2 ???먯떇 ?쒕퉬?ㅻ? teardown ?쒕떎(?먭꺽 湲덉?쨌濡쒖뺄 ?꾨쿋??.
@@ -4668,6 +4927,13 @@ async fn wait_for_cascade_facade_ready(ready: &str) -> bool {
     }
 }
 
+async fn cascade_requested_services_are_ready(ready: &str) -> bool {
+    cascade_facade_health(ready)
+        .await
+        .as_ref()
+        .is_some_and(|health| cascade_health_satisfies_requested_services(ready, health))
+}
+
 /// R2.2b: ?ㅼ젙?먯꽌 "濡쒖뺄 ?뚯꽦/cascade ?쒖옉". manifest(R2.2a 媛 write) + 媛먯? VRAM(total)?쇰줈
 /// loader supervisor 瑜??꾩슫?? ?대? 媛??以묒씠硫?湲곗〈 ready 諛섑솚(硫깅벑).
 #[tauri::command]
@@ -4763,9 +5029,46 @@ async fn cascade_status(state: tauri::State<'_, AppState>) -> Result<bool, Strin
         }
     };
     Ok(match ready {
-        Some(ready) => cascade_facade_is_healthy(&ready).await,
+        Some(ready) => cascade_requested_services_are_ready(&ready).await,
         None => false,
     })
+}
+
+/// Read-only standalone readiness plan.  This command intentionally performs
+/// no download, no unpacking, and no process launch: callers use `canStart`
+/// to decide whether a later explicit lifecycle command is safe to call.
+#[tauri::command]
+async fn cascade_installation_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<CascadeInstallationStatus, String> {
+    let adk_path = dirs::home_dir()
+        .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        // A missing workspace is itself reflected as missing service files.
+        // The loader may still be bundled, so do not turn this into an IPC
+        // exception that hides the actionable installation plan.
+        .unwrap_or_default();
+    let loader_dir = resolve_cascade_loader_dir(&app, &adk_path);
+    let checks = cascade_install_checks(&loader_dir, &adk_path);
+    let ready = {
+        let mut guard = lock_or_recover(&state.cascade, "cascade");
+        if let Some(cascade) = guard.as_mut() {
+            let result = matches!(cascade.child.try_wait(), Ok(None)).then(|| cascade.ready.clone());
+            if result.is_none() {
+                let _ = guard.take();
+            }
+            result
+        } else {
+            None
+        }
+    };
+    let live_services_ready = match ready {
+        Some(ready) => cascade_requested_services_are_ready(&ready).await,
+        None => false,
+    };
+    Ok(cascade_installation_plan(checks, live_services_ready))
 }
 
 /// R2.2a: slots-manifest.json write(`{adk}/naia-settings/slots-manifest.json`).
@@ -8773,6 +9076,7 @@ pub fn run() {
             start_cascade,
             stop_cascade,
             cascade_status,
+            cascade_installation_status,
             read_naia_ui_config,
             write_naia_ui_config,
             read_naia_knowledge_config,
@@ -9645,6 +9949,76 @@ mod tests {
             "avatar_enabled": false,
         });
         assert!(cascade_health_satisfies_requested_services(ready, &tts_ready));
+    }
+
+    fn fully_installed_cascade_checks() -> CascadeInstallChecks {
+        CascadeInstallChecks {
+            loader: true,
+            python_runtime: true,
+            service_bundle: true,
+            ditto_engine: true,
+            voxcpm2_model: true,
+            reference_voices: true,
+        }
+    }
+
+    #[test]
+    fn cascade_install_plan_reports_model_download_without_claiming_ready() {
+        let mut checks = fully_installed_cascade_checks();
+        checks.voxcpm2_model = false;
+        let plan = cascade_installation_plan(checks, false);
+
+        assert_eq!(plan.phase, "requires-action");
+        assert!(!plan.ready);
+        assert!(!plan.can_start);
+        let model = plan
+            .steps
+            .iter()
+            .find(|step| step.id == "voxcpm2-model")
+            .expect("VoxCPM2 step");
+        assert_eq!(model.state, "waiting");
+        assert_eq!(model.action, "download");
+        assert_eq!(model.progress_percent, 0);
+        assert!(model.retryable);
+        assert!(!model.action_available);
+        assert_eq!(
+            model.failure.as_ref().map(|failure| failure.code.as_str()),
+            Some("VOXCPM2_MODEL_MISSING")
+        );
+    }
+
+    #[test]
+    fn cascade_install_plan_distinguishes_ready_to_start_from_live_ready() {
+        let not_started = cascade_installation_plan(fully_installed_cascade_checks(), false);
+        assert_eq!(not_started.phase, "ready-to-start");
+        assert!(!not_started.ready);
+        assert!(not_started.can_start);
+
+        let running = cascade_installation_plan(fully_installed_cascade_checks(), true);
+        assert_eq!(running.phase, "ready");
+        assert!(running.ready);
+        assert!(running.can_start);
+    }
+
+    #[test]
+    fn cascade_install_plan_blocks_missing_package_artifacts() {
+        let mut checks = fully_installed_cascade_checks();
+        checks.service_bundle = false;
+        let plan = cascade_installation_plan(checks, false);
+        let services = plan
+            .steps
+            .iter()
+            .find(|step| step.id == "cascade-service-bundle")
+            .expect("service bundle step");
+
+        assert_eq!(plan.phase, "blocked");
+        assert!(!plan.can_start);
+        assert_eq!(services.state, "blocked");
+        assert!(!services.retryable);
+        assert_eq!(
+            services.failure.as_ref().map(|failure| failure.code.as_str()),
+            Some("CASCADE_SERVICE_BUNDLE_MISSING")
+        );
     }
 
     #[test]
