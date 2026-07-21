@@ -1,9 +1,11 @@
 import { S } from "../helpers/selectors.js";
+import { safeRefresh } from "../helpers/settings.js";
 
 let originalLocalConfig = "";
 let originalUiConfig = "";
 let adkPath = "";
 let snapshotCaptured = false;
+let agentProfileMutated = false;
 
 async function tauriInvoke<T>(
 	command: string,
@@ -19,8 +21,7 @@ async function tauriInvoke<T>(
 					core?: { invoke: (c: string, a: unknown) => Promise<unknown> };
 				};
 			};
-			const invoke =
-				w.__TAURI_INTERNALS__?.invoke ?? w.__TAURI__?.core?.invoke;
+			const invoke = w.__TAURI_INTERNALS__?.invoke ?? w.__TAURI__?.core?.invoke;
 			if (!invoke) throw new Error("Tauri invoke unavailable");
 			return invoke(cmd, a);
 		},
@@ -86,8 +87,7 @@ async function fileBackedUiConfig(): Promise<Record<string, unknown>> {
 
 async function waitForPersistedProfile(profile: string): Promise<void> {
 	await browser.waitUntil(
-		async () =>
-			(await fileBackedUiConfig()).proactiveSpeechProfile === profile,
+		async () => (await fileBackedUiConfig()).proactiveSpeechProfile === profile,
 		{
 			timeout: 10_000,
 			timeoutMsg: `file-backed UI config did not persist profile: ${profile}`,
@@ -95,12 +95,99 @@ async function waitForPersistedProfile(profile: string): Promise<void> {
 	);
 }
 
+async function openGeneralSettings(): Promise<void> {
+	const tabsAlreadyVisible = await browser.execute(() =>
+		Boolean(document.querySelector('[data-settings-tab="general"]')),
+	);
+	if (!tabsAlreadyVisible) {
+		await browser.waitUntil(
+			async () =>
+				browser.execute(() =>
+					Boolean(document.querySelector(".app-bar-settings")),
+				),
+			{ timeout: 10_000, timeoutMsg: "settings button unavailable" },
+		);
+		await browser.execute(() => {
+			const button = document.querySelector(
+				".app-bar-settings",
+			) as HTMLButtonElement | null;
+			if (!button) throw new Error("settings button unavailable");
+			button.click();
+		});
+	}
+	await browser.waitUntil(
+		async () =>
+			browser.execute(() =>
+				Boolean(document.querySelector('[data-settings-tab="general"]')),
+			),
+		{ timeout: 10_000, timeoutMsg: "settings tabs unavailable" },
+	);
+	await browser.execute(() => {
+		const tab = document.querySelector(
+			'[data-settings-tab="general"]',
+		) as HTMLButtonElement | null;
+		tab?.click();
+	});
+	await browser.waitUntil(
+		async () =>
+			browser.execute(() =>
+				Boolean(
+					document.querySelector('[data-testid="proactive-speech-settings"]'),
+				),
+			),
+		{ timeout: 10_000, timeoutMsg: "proactive settings unavailable" },
+	);
+}
+
+async function fillProactiveSettings(): Promise<void> {
+	await browser.execute(() => {
+		const changeValue = (selector: string, value: string) => {
+			const element = document.querySelector(selector) as
+				| HTMLInputElement
+				| HTMLSelectElement
+				| null;
+			if (!element) throw new Error(`missing proactive control: ${selector}`);
+			const prototype =
+				element instanceof HTMLSelectElement
+					? HTMLSelectElement.prototype
+					: HTMLInputElement.prototype;
+			const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+			setter?.call(element, value);
+			element.dispatchEvent(new Event("change", { bubbles: true }));
+			element.dispatchEvent(new Event("input", { bubbles: true }));
+		};
+		changeValue(
+			'[data-testid="proactive-speech-profile"]',
+			"personal_radio_dj",
+		);
+		const consent = document.querySelector(
+			'[data-testid="proactive-weather-consent"]',
+		) as HTMLInputElement | null;
+		if (!consent) throw new Error("missing proactive weather consent");
+		if (!consent.checked) consent.click();
+		changeValue('[data-testid="proactive-weather-latitude"]', "37.5665");
+		changeValue('[data-testid="proactive-weather-longitude"]', "126.978");
+		changeValue('[data-testid="proactive-timezone"]', "Asia/Seoul");
+		changeValue('[data-testid="proactive-idle-ms"]', "5000");
+		changeValue('[data-testid="proactive-interval-ms"]', "30000");
+		changeValue('[data-testid="proactive-knowledge-scope"]', "expo-2026");
+		const bgm = document.querySelector(
+			'[data-testid="proactive-bgm-autoplay"]',
+		) as HTMLInputElement | null;
+		if (!bgm) throw new Error("missing proactive BGM control");
+		if (!bgm.checked) bgm.click();
+		(
+			document.querySelector(
+				'[data-testid="proactive-settings-save"]',
+			) as HTMLButtonElement | null
+		)?.click();
+	});
+}
+
 async function assistantMessages(): Promise<string[]> {
 	return browser.execute(() =>
 		Array.from(
-			document.querySelectorAll(
-				".chat-message.assistant .message-content",
-			),
+			document.querySelectorAll(".chat-message.assistant .message-content"),
 		)
 			.map((node) => node.textContent?.trim() ?? "")
 			.filter(Boolean),
@@ -133,8 +220,7 @@ describe("71 — Proactive speech profiles (#82)", () => {
 					agentName: current.agentName || "Naia",
 					userName: current.userName || "Tester",
 					vrmModel:
-						current.vrmModel ||
-						"/avatars/01-Sendagaya-Shino-uniform.vrm",
+						current.vrmModel || "/avatars/01-Sendagaya-Shino-uniform.vrm",
 					persona: current.persona || "Friendly AI companion",
 					enableTools: true,
 					locale: "ko",
@@ -182,18 +268,21 @@ describe("71 — Proactive speech profiles (#82)", () => {
 		if (!snapshotCaptured) return;
 		// A failed assertion must not leave the real development workspace in an
 		// active speech profile or with test BGM/config values.
-		await tauriInvoke("send_to_agent_command", {
-			message: JSON.stringify({
-				type: "configure_speech_profile",
-				requestId: `e2e-cleanup-${Date.now()}`,
-				sessionId: "agent:main:main",
-				profile: "disabled",
-			}),
-		}).catch(() => undefined);
+		if (agentProfileMutated) {
+			await tauriInvoke("send_to_agent_command", {
+				message: JSON.stringify({
+					type: "configure_speech_profile",
+					requestId: `e2e-cleanup-${Date.now()}`,
+					sessionId: "agent:main:main",
+					profile: "disabled",
+				}),
+			}).catch(() => undefined);
+		}
 		await browser.execute((raw: string) => {
 			if (raw) localStorage.setItem("naia-config", raw);
 			else localStorage.removeItem("naia-config");
 			window.dispatchEvent(new CustomEvent("naia-config-changed"));
+			return true;
 		}, originalLocalConfig);
 		// Let App's pending debounce settle, then restore the exact file snapshot
 		// so this real-Tauri test is config-neutral across runs.
@@ -205,6 +294,7 @@ describe("71 — Proactive speech profiles (#82)", () => {
 	});
 
 	it("starts and persists personal radio DJ through the real Tauri IPC path", async () => {
+		agentProfileMutated = true;
 		const before = (await assistantMessages()).length;
 		await submitProfilePhrase("개인 라디오 시작해");
 
@@ -238,7 +328,74 @@ describe("71 — Proactive speech profiles (#82)", () => {
 		await waitForPersistedProfile("disabled");
 	});
 
+	it("persists validated proactive settings after cache-clear native reload", async () => {
+		await openGeneralSettings();
+		await fillProactiveSettings();
+		await browser.waitUntil(async () => {
+			const config = await fileBackedUiConfig();
+			return (
+				config.proactiveSpeechProfile === "personal_radio_dj" &&
+				config.proactiveSpeechTimezone === "Asia/Seoul" &&
+				config.proactiveSpeechIdleMs === 5000 &&
+				config.proactiveSpeechIntervalMs === 30000 &&
+				config.proactiveSpeechBgmAutoPlay === true &&
+				config.proactiveSpeechWeatherConsented === true &&
+				config.proactiveSpeechWeatherLatitude === 37.5665 &&
+				config.proactiveSpeechWeatherLongitude === 126.978 &&
+				config.proactiveSpeechKnowledgeScope === "expo-2026"
+			);
+		});
+		await browser.execute(() => {
+			const raw = localStorage.getItem("naia-config");
+			const config = raw ? JSON.parse(raw) : {};
+			for (const key of Object.keys(config)) {
+				if (key.startsWith("proactiveSpeech")) delete config[key];
+			}
+			localStorage.setItem("naia-config", JSON.stringify(config));
+		});
+		await safeRefresh();
+		await browser.waitUntil(
+			async () => {
+				const restored = await storedProfile();
+				return (
+					restored.proactiveSpeechProfile === "personal_radio_dj" &&
+					restored.proactiveSpeechTimezone === "Asia/Seoul" &&
+					restored.proactiveSpeechIdleMs === 5000 &&
+					restored.proactiveSpeechIntervalMs === 30000 &&
+					restored.proactiveSpeechBgmAutoPlay === true &&
+					restored.proactiveSpeechWeatherConsented === true &&
+					restored.proactiveSpeechWeatherLatitude === 37.5665 &&
+					restored.proactiveSpeechWeatherLongitude === 126.978 &&
+					restored.proactiveSpeechKnowledgeScope === "expo-2026"
+				);
+			},
+			{ timeout: 20_000 },
+		);
+		await openGeneralSettings();
+		await browser.execute(() => {
+			const consent = document.querySelector(
+				'[data-testid="proactive-weather-consent"]',
+			) as HTMLInputElement | null;
+			if (!consent) throw new Error("missing reloaded weather consent");
+			if (consent.checked) consent.click();
+			(
+				document.querySelector(
+					'[data-testid="proactive-settings-save"]',
+				) as HTMLButtonElement | null
+			)?.click();
+		});
+		await browser.waitUntil(async () => {
+			const config = await fileBackedUiConfig();
+			return (
+				config.proactiveSpeechWeatherConsented === false &&
+				config.proactiveSpeechWeatherLatitude == null &&
+				config.proactiveSpeechWeatherLongitude == null
+			);
+		});
+	});
+
 	it("starts exhibition introduction without waiting for ordinary chat", async () => {
+		agentProfileMutated = true;
 		const before = (await assistantMessages()).length;
 		await submitProfilePhrase("행사 소개 시작");
 
@@ -251,7 +408,9 @@ describe("71 — Proactive speech profiles (#82)", () => {
 			async () =>
 				(await assistantMessages())
 					.slice(before)
-					.some((text) => text.includes("넥스테인 전시에 오신 것을 환영합니다")),
+					.some((text) =>
+						text.includes("넥스테인 전시에 오신 것을 환영합니다"),
+					),
 			{
 				timeout: 30_000,
 				timeoutMsg:

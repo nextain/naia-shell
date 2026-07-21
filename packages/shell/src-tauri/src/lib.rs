@@ -2251,22 +2251,37 @@ async fn agent_dispatcher(
     // Proactive speech is a session-level server stream, independent from an
     // ordinary chat request. Keep one subscription alive for the shell's main
     // session so activity events can arrive while the input box is idle.
-    let (activity_shutdown_tx, mut activity_shutdown_rx) = tokio::sync::watch::channel(false);
+    let (activity_shutdown_tx, mut activity_shutdown_rx) =
+        tokio::sync::watch::channel(0_u64);
     {
         let mut activity_client = client.clone();
         let activity_app = app.clone();
         tauri::async_runtime::spawn(async move {
             loop {
+                let subscription_epoch = *activity_shutdown_rx.borrow();
+                if subscription_epoch == u64::MAX {
+                    break;
+                }
                 let emit_app = activity_app.clone();
                 let emit = move |json: String| {
-                    let _ = emit_app.emit("agent_response", &json);
+                    let enriched = serde_json::from_str::<serde_json::Value>(&json)
+                        .ok()
+                        .and_then(|mut value| {
+                            value.as_object_mut()?.insert(
+                                "subscriptionEpoch".to_string(),
+                                serde_json::json!(subscription_epoch),
+                            );
+                            Some(value.to_string())
+                        })
+                        .unwrap_or(json);
+                    let _ = emit_app.emit("agent_response", &enriched);
                 };
                 let result = tokio::select! {
                     result = activity_client.subscribe_speech_activities(
                         "agent:main:main".to_string(),
                         emit,
                     ) => result,
-                    _ = activity_shutdown_rx.changed() => break,
+                    _ = activity_shutdown_rx.changed() => continue,
                 };
                 let err = serde_json::json!({
                     "type": "speech_activity_subscription_error",
@@ -2280,7 +2295,7 @@ async fn agent_dispatcher(
                 let _ = activity_app.emit("agent_response", &err);
                 tokio::select! {
                     _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {},
-                    _ = activity_shutdown_rx.changed() => break,
+                    _ = activity_shutdown_rx.changed() => continue,
                 }
             }
         });
@@ -2418,12 +2433,18 @@ async fn agent_dispatcher(
                     .unwrap_or("")
                     .to_string();
                 let result = client.configure_speech_profile(request).await;
+                let mut subscription_epoch = *activity_shutdown_tx.borrow();
+                if matches!(&result, Ok(true)) {
+                    subscription_epoch = subscription_epoch.saturating_add(1);
+                    let _ = activity_shutdown_tx.send(subscription_epoch);
+                }
                 let payload = match result {
                     Ok(ok) => serde_json::json!({
                         "type": "speech_profile_configured",
                         "requestId": request_id,
                         "ok": ok,
                         "profile": profile_name,
+                        "subscriptionEpoch": subscription_epoch,
                     }),
                     Err(e) => serde_json::json!({
                         "type": "error",
@@ -2716,7 +2737,7 @@ async fn agent_dispatcher(
             _ => {}
         }
     }
-    let _ = activity_shutdown_tx.send(true);
+    let _ = activity_shutdown_tx.send(u64::MAX);
     log_verbose("[Naia] agent dispatcher ended");
 }
 

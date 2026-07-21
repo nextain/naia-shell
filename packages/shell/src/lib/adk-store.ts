@@ -398,15 +398,18 @@ function extractUiConfig(
 /** UI 정체성 키만 `{adkPath}/naia-settings/ui-config.json` 에 저장(FR-WS.2). 비치명. */
 export async function writeNaiaUiConfig(
 	config: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
 	const adkPath = getAdkPath();
-	if (!adkPath) return;
-	await invoke("write_naia_ui_config", {
-		adkPath,
-		json: JSON.stringify(extractUiConfig(config), null, 2),
-	}).catch(() => {
-		/* 비치명 — 다음 저장 시 재시도 */
-	});
+	if (!adkPath) return false;
+	try {
+		await invoke("write_naia_ui_config", {
+			adkPath,
+			json: JSON.stringify(extractUiConfig(config), null, 2),
+		});
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** ui-config.json 읽기(워크스페이스 전환 복원용). 없으면 null. */

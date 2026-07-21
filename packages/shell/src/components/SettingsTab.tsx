@@ -15,6 +15,7 @@ import {
 	writeAgentKey,
 	writeAgentSecret,
 	writeNaiaConfig,
+	writeNaiaUiConfig,
 	writeSlotsManifest,
 } from "../lib/adk-store";
 import {
@@ -48,6 +49,7 @@ import {
 } from "../lib/capabilities/vram-tiers";
 import { syncLinkedChannels } from "../lib/channel-sync";
 import {
+	configureSpeechProfile,
 	sendAuthUpdate,
 	sendCredsUpdate,
 	sendNotifyConfig,
@@ -106,6 +108,7 @@ import {
 } from "../lib/llm";
 import { Logger } from "../lib/logger";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
+import { toSpeechProfileCommandInput } from "../lib/proactive-speech-settings";
 import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
 import {
 	type GateMode,
@@ -126,6 +129,7 @@ import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
+import { ProactiveSpeechSettingsSection } from "./ProactiveSpeechSettingsSection";
 import { RefAudioSection } from "./RefAudioSection";
 import { SkillsTab } from "./SkillsTab";
 import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
@@ -2562,6 +2566,61 @@ export function SettingsTab() {
 			</div>
 			{activeSettingsTab === "general" && (
 				<>
+					<ProactiveSpeechSettingsSection
+						value={{
+							profile: existing?.proactiveSpeechProfile ?? "disabled",
+							timezone:
+								existing?.proactiveSpeechTimezone ??
+								Intl.DateTimeFormat().resolvedOptions().timeZone ??
+								"UTC",
+							idleMs: existing?.proactiveSpeechIdleMs,
+							intervalMs: existing?.proactiveSpeechIntervalMs,
+							bgmAutoPlay: existing?.proactiveSpeechBgmAutoPlay,
+							weatherConsented: existing?.proactiveSpeechWeatherConsented,
+							weatherLatitude: existing?.proactiveSpeechWeatherLatitude,
+							weatherLongitude: existing?.proactiveSpeechWeatherLongitude,
+							knowledgeScope: existing?.proactiveSpeechKnowledgeScope,
+						}}
+						onSave={async (settings) => {
+							const current = loadConfig();
+							if (!current) return false;
+							const next: AppConfig = {
+								...current,
+								proactiveSpeechProfile: settings.profile,
+								proactiveSpeechTimezone: settings.timezone,
+								proactiveSpeechIdleMs: settings.idleMs,
+								proactiveSpeechIntervalMs: settings.intervalMs,
+								proactiveSpeechBgmAutoPlay: settings.bgmAutoPlay,
+								proactiveSpeechWeatherConsented: settings.weatherConsented,
+								proactiveSpeechWeatherLatitude: settings.weatherLatitude,
+								proactiveSpeechWeatherLongitude: settings.weatherLongitude,
+								proactiveSpeechKnowledgeScope: settings.knowledgeScope,
+							};
+							window.dispatchEvent(
+								new CustomEvent("naia-proactive-profile-changing"),
+							);
+							const persisted = await writeNaiaUiConfig(
+								next as unknown as Record<string, unknown>,
+							);
+							if (!persisted) {
+								await configureSpeechProfile({
+									profile: "disabled",
+									timezone: settings.timezone,
+									weatherConsented: false,
+								});
+								return false;
+							}
+							saveConfig(next);
+							const disabled = await configureSpeechProfile({
+								profile: "disabled",
+								timezone: settings.timezone,
+								weatherConsented: false,
+							});
+							if (!disabled) return false;
+							if (settings.profile === "disabled") return true;
+							return configureSpeechProfile(toSpeechProfileCommandInput(settings));
+						}}
+					/>
 					<div className="settings-field">
 						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 							<label htmlFor="locale-select" style={{ margin: 0 }}>

@@ -48,6 +48,10 @@ import {
 	shouldQueueBeforeSpeechYield,
 } from "../lib/speech-profile-commands";
 import {
+	normalizeProactiveSpeechSettings,
+	toSpeechProfileCommandInput,
+} from "../lib/proactive-speech-settings";
+import {
 	DEFAULT_NAIA_LOCAL_URL,
 	DEFAULT_VLLM_HOST,
 	DEFAULT_VOICE_REF_URL,
@@ -553,6 +557,9 @@ export function ChatArea({
 		activityId: string;
 		profileGeneration: number;
 	} | null>(null);
+	const retiredSpeechActivityIdsRef = useRef(new Set<string>());
+	const speechActivitySubscriptionEpochRef = useRef(0);
+	const acceptSpeechActivitiesRef = useRef(true);
 	const queuedSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const voiceSessionRef = useRef<VoiceSession | null>(null);
 	// #313 L3 — mid-session panel context bridge handle (detached in every
@@ -936,19 +943,46 @@ export function ChatArea({
 		let unlisten: (() => void) | undefined;
 		void loadConfigWithSecrets().then((config) => {
 			if (!config || disposed) return;
-			void configureSpeechProfile({
+			void configureSpeechProfile(toSpeechProfileCommandInput(
+				normalizeProactiveSpeechSettings({
 				profile: config.proactiveSpeechProfile ?? "disabled",
 				idleMs: config.proactiveSpeechIdleMs,
-				djIntervalMs: config.proactiveSpeechIntervalMs,
-				introIntervalMs: config.proactiveSpeechIntervalMs,
-				timezone: config.proactiveSpeechTimezone,
-				bgmAutoPlayOptIn: config.proactiveSpeechBgmAutoPlay,
+				intervalMs: config.proactiveSpeechIntervalMs,
+				timezone: config.proactiveSpeechTimezone ?? "UTC",
+				bgmAutoPlay: config.proactiveSpeechBgmAutoPlay,
 				weatherConsented: config.proactiveSpeechWeatherConsented,
 				weatherLatitude: config.proactiveSpeechWeatherLatitude,
 				weatherLongitude: config.proactiveSpeechWeatherLongitude,
 				knowledgeScope: config.proactiveSpeechKnowledgeScope,
-			});
+				}),
+			));
 		});
+		const retireActiveSpeech = () => {
+			acceptSpeechActivitiesRef.current = false;
+			interruptTts();
+			const active = activeSpeechActivityRef.current;
+			if (active) retiredSpeechActivityIdsRef.current.add(active.activityId);
+			activeSpeechActivityRef.current = null;
+		};
+		window.addEventListener(
+			"naia-proactive-profile-changing",
+			retireActiveSpeech,
+		);
+		const acceptConfiguredProfile = (event: Event) => {
+			const detail = (event as CustomEvent<{
+				ok?: boolean;
+				subscriptionEpoch?: number;
+			}>).detail;
+			const epoch = Number(detail?.subscriptionEpoch);
+			if (detail?.ok === true && Number.isSafeInteger(epoch) && epoch >= 0) {
+				speechActivitySubscriptionEpochRef.current = epoch;
+				acceptSpeechActivitiesRef.current = true;
+			}
+		};
+		window.addEventListener(
+			"naia-proactive-profile-configured",
+			acceptConfiguredProfile,
+		);
 		void listen<string>("agent_response", (event) => {
 			let chunk: Record<string, unknown>;
 			try {
@@ -962,13 +996,23 @@ export function ChatArea({
 				return;
 			}
 			const activityId = chunk.activityId;
+			const subscriptionEpoch = Number(chunk.subscriptionEpoch ?? 0);
 			const profileGeneration = Number(chunk.profileGeneration ?? 0);
 			const active = activeSpeechActivityRef.current;
+			if (!acceptSpeechActivitiesRef.current) return;
+			if (subscriptionEpoch !== speechActivitySubscriptionEpochRef.current) return;
+			if (retiredSpeechActivityIdsRef.current.has(activityId)) return;
 			if (
 				active
-				&& active.activityId === activityId
 				&& profileGeneration < active.profileGeneration
 			) return;
+			if (active && active.activityId !== activityId) {
+				retiredSpeechActivityIdsRef.current.add(active.activityId);
+				if (retiredSpeechActivityIdsRef.current.size > 100) {
+					const oldest = retiredSpeechActivityIdsRef.current.values().next().value;
+					if (oldest) retiredSpeechActivityIdsRef.current.delete(oldest);
+				}
+			}
 			activeSpeechActivityRef.current = { activityId, profileGeneration };
 			// A direct Live/omni model would answer visitor audio outside the
 			// exhibition KB/privacy path. Proactive profiles therefore own the
@@ -1021,6 +1065,7 @@ export function ChatArea({
 			}
 			if (chunk.type === "finish" || chunk.type === "error") {
 				if (activeSpeechActivityRef.current?.activityId === activityId) {
+					retiredSpeechActivityIdsRef.current.add(activityId);
 					activeSpeechActivityRef.current = null;
 				}
 			}
@@ -1031,6 +1076,14 @@ export function ChatArea({
 		return () => {
 			disposed = true;
 			unlisten?.();
+			window.removeEventListener(
+				"naia-proactive-profile-changing",
+				retireActiveSpeech,
+			);
+			window.removeEventListener(
+				"naia-proactive-profile-configured",
+				acceptConfiguredProfile,
+			);
 		};
 	}, []);
 
@@ -1311,6 +1364,50 @@ export function ChatArea({
 		if (command.kind === "configure") {
 			const { profile } = command;
 			const config = await loadConfig();
+			interruptTts();
+			window.dispatchEvent(
+				new CustomEvent("naia-proactive-profile-changing"),
+			);
+			if (activeSpeechActivityRef.current) {
+				retiredSpeechActivityIdsRef.current.add(
+					activeSpeechActivityRef.current.activityId,
+				);
+			}
+			activeSpeechActivityRef.current = null;
+			const disabled = await configureSpeechProfile({
+				profile: "disabled",
+				timezone: config?.proactiveSpeechTimezone ?? "UTC",
+				weatherConsented: false,
+			});
+			const configured = disabled && (
+				profile === "disabled"
+				|| await configureSpeechProfile(toSpeechProfileCommandInput(
+				normalizeProactiveSpeechSettings({
+				profile,
+				idleMs:
+					config?.proactiveSpeechIdleMs
+					?? (profile === "personal_radio_dj" ? 5_000 : 1_000),
+				intervalMs: config?.proactiveSpeechIntervalMs,
+				timezone: config?.proactiveSpeechTimezone ?? "UTC",
+				bgmAutoPlay:
+					profile === "personal_radio_dj"
+						? true
+						: config?.proactiveSpeechBgmAutoPlay,
+				weatherConsented: config?.proactiveSpeechWeatherConsented,
+				weatherLatitude: config?.proactiveSpeechWeatherLatitude,
+				weatherLongitude: config?.proactiveSpeechWeatherLongitude,
+					knowledgeScope: config?.proactiveSpeechKnowledgeScope,
+				}),
+				))
+			);
+			if (!configured) {
+				useChatStore.getState().addMessage({
+					role: "assistant",
+					content: t("settings.proactiveSaveError"),
+				});
+				setInput("");
+				return true;
+			}
 			if (config) {
 				saveConfig({
 					...config,
@@ -1323,25 +1420,6 @@ export function ChatArea({
 						: {}),
 				});
 			}
-			interruptTts();
-			activeSpeechActivityRef.current = null;
-			await configureSpeechProfile({
-				profile,
-				idleMs:
-					config?.proactiveSpeechIdleMs
-					?? (profile === "personal_radio_dj" ? 5_000 : 1_000),
-				djIntervalMs: config?.proactiveSpeechIntervalMs,
-				introIntervalMs: config?.proactiveSpeechIntervalMs,
-				timezone: config?.proactiveSpeechTimezone,
-				bgmAutoPlayOptIn:
-					profile === "personal_radio_dj"
-						? true
-						: config?.proactiveSpeechBgmAutoPlay,
-				weatherConsented: config?.proactiveSpeechWeatherConsented,
-				weatherLatitude: config?.proactiveSpeechWeatherLatitude,
-				weatherLongitude: config?.proactiveSpeechWeatherLongitude,
-				knowledgeScope: config?.proactiveSpeechKnowledgeScope,
-			});
 			setInput("");
 			useChatStore.getState().addMessage({ role: "user", content: text });
 			return true;
@@ -1352,7 +1430,10 @@ export function ChatArea({
 		const { action } = command;
 		interruptTts();
 		await controlSpeechActivity(action, activity.activityId);
-		if (action === "stop") activeSpeechActivityRef.current = null;
+		if (action === "stop") {
+			retiredSpeechActivityIdsRef.current.add(activity.activityId);
+			activeSpeechActivityRef.current = null;
+		}
 		setInput("");
 		useChatStore.getState().addMessage({ role: "user", content: text });
 		return true;

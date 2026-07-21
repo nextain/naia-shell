@@ -56,6 +56,7 @@ const VITE_ENTRY = resolve(SHELL_DIR, "node_modules/vite/bin/vite.js");
 
 let tauriDriver: ChildProcess;
 let viteServer: ChildProcess;
+let permissionPoller: { dispose: () => void } | undefined;
 
 // ── Process cleanup helpers ───────────────────────────────────────────────────
 
@@ -87,7 +88,8 @@ function killByName(name: string, force = false): void {
 
 /**
  * Kill processes listening on a TCP port.
- * Linux: `lsof -ti:<port> | xargs -r kill -9`.
+ * Linux: kill only the listening process. Matching every socket also matches
+ * the WDIO worker's outbound connection and kills the test reporter itself.
  * Windows: parse `netstat -ano -p tcp` and `taskkill /F /PID`.
  */
 function killByPort(port: number): void {
@@ -112,9 +114,10 @@ function killByPort(port: number): void {
 				}
 			}
 		} else {
-			execSync(`lsof -ti:${port} | xargs -r kill -9 2>/dev/null || true`, {
-				stdio: "ignore",
-			});
+			execSync(
+				`lsof -tiTCP:${port} -sTCP:LISTEN | xargs -r kill -9 2>/dev/null || true`,
+				{ stdio: "ignore" },
+			);
 		}
 	} catch {
 		/* ignore */
@@ -303,7 +306,12 @@ export const config = {
 		// Auto-approve permission modals globally for all specs.
 		// Prevents tool-call hangs when AI tries to use a tool not yet approved.
 		const { autoApprovePermissions } = await import("./helpers/permissions.js");
-		autoApprovePermissions();
+		permissionPoller = autoApprovePermissions();
+	},
+
+	after() {
+		permissionPoller?.dispose();
+		permissionPoller = undefined;
 	},
 
 	afterSession() {

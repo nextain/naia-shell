@@ -34,6 +34,18 @@ UC 를 인지흐름이 *어디까지 도는가*로 묶는다(기능 나열 ❌).
 | **UC14 graceful degradation** (신규) ★ | **현 설정된 것의 degradation 감지·보고**(read-only) — F1=미설정·시스템 이상, *UC12 후 자동 확장*=외부 인증/키 깨짐(Discord). *대체(fallback)=후속 tranche*(행위라 밖) | 내수용(실패 감지)→지각→표현(정직 보고) | InteroceptivePort·ExpressionPort |
 | **UC17 자유·연속 발화 전달** | agent가 사용자 요청 또는 내부 trigger로 여러 발화를 이어 보내면 셸이 session stream을 구독해 기존 채팅·TTS·취소 경로로 표현 | 사고(agent activity) → gRPC stream → 표현(text/TTS/avatar) → 끼어들기 | Agent gRPC client·ExpressionPort·SafetyPort(cancel) |
 
+UC15 제품 수용 확장(#84):
+
+- DJ 사용자는 설정에서 profile·간격·날씨 위치/동의와 전시 knowledgeScope를 관리한다. 잘못된 timezone,
+  부분/범위 밖 좌표, 빈 전시 scope는 시작하지 않으며 동의 철회 뒤 좌표를 보내지 않는다(PA-DJ-04).
+- `DJ 좋아요/싫어요/취향 삭제:`는 다음 런타임까지 명시 취향으로 남고, `DJ 상태:`는 같은 세션 6시간만
+  추천에 쓰인다. 일반 대화나 청취 시간으로 취향·기분을 추론하지 않는다(PA-DJ-01/02).
+- 선제 DJ 텍스트는 지원 TTS 경로별로 실제 재생을 시작한다. 8개 멘트가 반복되지 않고, 5개 제어와 ordinary
+  chat 끼어들기는 현재 음성을 먼저 끊고 이전 generation의 늦은 출력을 버린다(PA-DJ-03/05).
+- 8시간 상당 운용에도 BGM/controller 하나와 bounded lease를 유지하고 stop 경계 뒤 추가 호출이 없다(PA-DJ-06).
+- 전시는 유효 KB scope로만 시작한다. 질문이 소개를 중단하고 source 답변 뒤 미소개 항목으로 복귀하며,
+  quiet/restart/stop을 지킨다. memory/transcript/raw-content log는 남기지 않는다(PA-EX-01/02).
+
 ★ = naia 차별점(기억·경험·능동) — *기반 성숙 후* 별도 트랙(아래 순서 SoT).
 
 > **우선순위 SoT = 아래 "Foundation tranche + vertical 순서"** (F0→F1→F2→F3 → V1·V2). UC3(기억)은 baseline 부재로 deferred. (인지흐름 관통 깊이는 *분류* 기준일 뿐, 착수 우선순위는 *기반 성숙도*가 결정.)
@@ -359,8 +371,24 @@ P02 검증:
   결과 text·stop, 전시 greeting·stop만 검증한다. 이 테스트는 TTS를 꺼 두므로 audible TTS, DJ 멘트2,
   전시 질문 barge-in→답변→resume, 모든 control, stale audio 폐기를 native로 증명하지 않는다.
 
-Test Coverage Map: UC17 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
-`packages/shell/e2e-tauri` 시작/표현 일부 full-stack, 기존 `src/main/adapters/tauri/uc1`·ChatArea cancel 회귀.
+Test Coverage Map:
+
+- UC17 / FR-CONT-SHELL.1~7 → Rust `agent_grpc` contract+live tests,
+  `packages/shell/e2e-tauri` 시작/표현 일부 full-stack, 기존 `src/main/adapters/tauri/uc1`·ChatArea cancel 회귀.
+- FR-CONT-SHELL.8 / PA-DJ-04 UC test → `packages/shell/e2e-tauri/specs/71-proactive-speech-profiles.spec.ts`
+  `persists validated proactive settings after cache-clear native reload`; FE tests →
+  `packages/shell/src/lib/__tests__/proactive-speech-settings.test.ts` `normalizes proactive settings fail-closed`와
+  `packages/shell/src/components/__tests__/SettingsTab.proactive-speech.test.tsx`
+  `edits and persists proactive speech settings`.
+- FR-CONT-SHELL.9 / PA-DJ-05·PA-EX-01 UC tests →
+  `packages/shell/e2e/121-proactive-speech-product-acceptance.spec.ts`
+  `speaks proactive text through browser TTS`, `plays synthesized proactive audio`,
+  `interrupts before every DJ control and drops stale output`,
+  `ordinary chat interrupts before yielding the active exhibition`;
+  native `packages/shell/e2e-tauri/specs/71-proactive-speech-profiles.spec.ts`
+  `starts and persists personal radio DJ through the real Tauri IPC path`,
+  `persists validated proactive settings after cache-clear native reload`,
+  `starts exhibition introduction without waiting for ordinary chat`.
 
 ## UC-WIRE-V1 — 이미지·Discord·RAG·처리 공개 공통 채팅 경계 (#384 / naia-agent #89)
 

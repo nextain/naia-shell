@@ -360,15 +360,48 @@ export async function configureSpeechProfile(input: {
 	weatherConsented?: boolean;
 	knowledgeScope?: string;
 }): Promise<boolean> {
-	return safeSendToAgent(
-		{
-			type: "configure_speech_profile",
-			requestId: generateControlRequestId(),
-			sessionId: input.sessionId ?? "agent:main:main",
-			...input,
-		},
-		"configureSpeechProfile",
-	);
+	const requestId = generateControlRequestId();
+	return new Promise(async (resolve) => {
+		let settled = false;
+		let unlisten: (() => void) | undefined;
+		const finish = (ok: boolean, subscriptionEpoch?: number) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			unlisten?.();
+			window.dispatchEvent(new CustomEvent("naia-proactive-profile-configured", {
+				detail: { ok, subscriptionEpoch },
+			}));
+			resolve(ok);
+		};
+		const timeout = setTimeout(() => finish(false), 5_000);
+		unlisten = await listen<string>("agent_response", (event) => {
+			try {
+				const raw = typeof event.payload === "string"
+					? event.payload
+					: JSON.stringify(event.payload);
+				const message = JSON.parse(raw) as Record<string, unknown>;
+				if (message.requestId !== requestId) return;
+				if (message.type === "speech_profile_configured") {
+					finish(message.ok === true, Number(message.subscriptionEpoch));
+				} else if (message.type === "error") {
+					finish(false);
+				}
+			} catch {
+				// Ignore unrelated malformed broadcasts.
+			}
+		});
+		const sent = await safeSendToAgent(
+			{
+				type: "configure_speech_profile",
+				requestId,
+				sessionId: input.sessionId ?? "agent:main:main",
+				...input,
+			},
+			"configureSpeechProfile",
+		);
+		if (!sent) finish(false);
+	});
 }
 
 export async function yieldSpeechActivity(
