@@ -4518,6 +4518,43 @@ fn spawn_cascade(
     Ok(CascadeProcess { child, ready })
 }
 
+/// Resolve the public facade URL only from the loader's readiness payload.
+/// The individual VoxCPM2 and Ditto ports are private implementation details;
+/// a live Shell must be able to reach the single :8910 facade before reporting
+/// that the local cascade is running.
+fn cascade_facade_url_from_ready(ready: &str) -> Option<String> {
+    let payload: serde_json::Value = serde_json::from_str(ready).ok()?;
+    let port = payload.get("facade_port")?.as_u64()?;
+    if port == 0 || port > u16::MAX as u64 {
+        return None;
+    }
+    Some(format!("http://127.0.0.1:{port}/health"))
+}
+
+/// A loader process can still be alive while its facade or a child service has
+/// died. Do not turn that supervisor-only state into a false "running" UI
+/// state: the desktop-facing public contract is the facade health endpoint.
+async fn cascade_facade_is_healthy(ready: &str) -> bool {
+    let Some(url) = cascade_facade_url_from_ready(ready) else {
+        return false;
+    };
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    else {
+        return false;
+    };
+    match client.get(url).send().await {
+        Ok(response) if response.status().is_success() => response
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|body| body.get("ok").and_then(serde_json::Value::as_bool))
+            == Some(true),
+        _ => false,
+    }
+}
+
 /// R2.2b: ?ㅼ젙?먯꽌 "濡쒖뺄 ?뚯꽦/cascade ?쒖옉". manifest(R2.2a 媛 write) + 媛먯? VRAM(total)?쇰줈
 /// loader supervisor 瑜??꾩슫?? ?대? 媛??以묒씠硫?湲곗〈 ready 諛섑솚(硫깅벑).
 #[tauri::command]
@@ -4529,14 +4566,28 @@ async fn start_cascade(
     // IPC call then returns the same ready payload instead of cleaning the
     // first launch's child services out from underneath it.
     let _start_guard = state.cascade_start.lock().await;
-    {
+    let prior_ready = {
         let mut guard = lock_or_recover(&state.cascade, "cascade");
         if let Some(c) = guard.as_mut() {
             if matches!(c.child.try_wait(), Ok(None)) {
-                return Ok(c.ready.clone());
+                Some(c.ready.clone())
+            } else {
+                let _ = guard.take(); // 二쎌뼱?덉쑝硫??뺣━ ???ш린??
+                None
             }
-            let _ = guard.take(); // 二쎌뼱?덉쑝硫??뺣━ ???ш린??
+        } else {
+            None
         }
+    };
+    if let Some(ready) = prior_ready {
+        if cascade_facade_is_healthy(&ready).await {
+            return Ok(ready);
+        }
+        // The supervisor is not useful without its public facade. Drop only
+        // the process owned by this AppState, then let the normal exact-port
+        // stale cleanup and fresh loader launch recover it below.
+        log_both("[Naia] Local cascade supervisor is alive but its facade is unavailable; restarting it");
+        let _ = lock_or_recover(&state.cascade, "cascade").take();
     }
     let adk_path = dirs::home_dir()
         .and_then(|h| std::fs::read_to_string(h.join(".naia").join("adk-path")).ok())
@@ -4581,9 +4632,20 @@ async fn stop_cascade(state: tauri::State<'_, AppState>) -> Result<(), String> {
 /// R2.2b: 濡쒖뺄 cascade 媛???곹깭(?ㅼ젙 ?좉? ?쒖떆??.
 #[tauri::command]
 async fn cascade_status(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    let mut guard = lock_or_recover(&state.cascade, "cascade");
-    Ok(match guard.as_mut() {
-        Some(c) => matches!(c.child.try_wait(), Ok(None)),
+    let ready = {
+        let mut guard = lock_or_recover(&state.cascade, "cascade");
+        if let Some(c) = guard.as_mut() {
+            let ready = matches!(c.child.try_wait(), Ok(None)).then(|| c.ready.clone());
+            if ready.is_none() {
+                let _ = guard.take();
+            }
+            ready
+        } else {
+            None
+        }
+    };
+    Ok(match ready {
+        Some(ready) => cascade_facade_is_healthy(&ready).await,
         None => false,
     })
 }
@@ -9326,6 +9388,54 @@ mod tests {
         std::fs::write(&manifest, r#"{"gpu":{"loaderProfile":"laptop;rm"}}"#).unwrap();
 
         assert_eq!(read_cascade_loader_profile(&manifest), None);
+    }
+
+    #[test]
+    fn cascade_facade_url_accepts_only_a_valid_public_readiness_port() {
+        assert_eq!(
+            cascade_facade_url_from_ready(r#"{"facade_port":8910}"#).as_deref(),
+            Some("http://127.0.0.1:8910/health")
+        );
+        assert_eq!(cascade_facade_url_from_ready(r#"{"facade_port":0}"#), None);
+        assert_eq!(
+            cascade_facade_url_from_ready(r#"{"facade_port":65536}"#),
+            None
+        );
+        assert_eq!(cascade_facade_url_from_ready(r#"{"services":[]}"#), None);
+        assert_eq!(cascade_facade_url_from_ready("not-json"), None);
+    }
+
+    #[tokio::test]
+    async fn cascade_facade_health_requires_the_public_facade_endpoint() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        let responder = std::thread::spawn(move || {
+            let request = server.recv().unwrap();
+            assert_eq!(request.url(), "/health");
+            let response = tiny_http::Response::from_string(r#"{"ok":true}"#)
+                .with_status_code(tiny_http::StatusCode(200));
+            request.respond(response).unwrap();
+        });
+
+        assert!(cascade_facade_is_healthy(&format!(
+            r#"{{"facade_port":{port}}}"#
+        ))
+        .await);
+        responder.join().unwrap();
+
+        let incomplete_server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let incomplete_port = incomplete_server.server_addr().to_ip().unwrap().port();
+        let incomplete_responder = std::thread::spawn(move || {
+            let request = incomplete_server.recv().unwrap();
+            let response = tiny_http::Response::from_string(r#"{"tts":"ready"}"#)
+                .with_status_code(tiny_http::StatusCode(200));
+            request.respond(response).unwrap();
+        });
+        assert!(
+            !cascade_facade_is_healthy(&format!(r#"{{"facade_port":{incomplete_port}}}"#)).await
+        );
+        incomplete_responder.join().unwrap();
+        assert!(!cascade_facade_is_healthy(r#"{"facade_port":0}"#).await);
     }
 
     #[test]
