@@ -342,6 +342,49 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		expect(written).not.toHaveProperty("bgmPlaying");
 	});
 
+	it("preserves unowned persisted choices when a boot-time UI patch is partial", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") {
+				return JSON.stringify({
+					avatarProvider: "naia-video-avatar",
+					nvaModel: "naia",
+					vllmTtsHost: "http://127.0.0.1:8910",
+				});
+			}
+			return undefined;
+		});
+
+		await writeNaiaUiConfig({ bgmVolume: 0.3, ttsEnabled: false });
+
+		const [, arg] = mockInvoke.mock.calls.find(
+			([name]) => name === "write_naia_ui_config",
+		)!;
+		expect(JSON.parse((arg as { json: string }).json)).toEqual({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "naia",
+			vllmTtsHost: "http://127.0.0.1:8910",
+			bgmVolume: 0.3,
+			ttsEnabled: false,
+		});
+	});
+
+	it("removes a choice only when the caller explicitly provides undefined", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config")
+				return JSON.stringify({ vrmModel: "selected.vrm", theme: "ocean" });
+			return undefined;
+		});
+
+		await writeNaiaUiConfig({ vrmModel: undefined });
+
+		const [, arg] = mockInvoke.mock.calls.find(
+			([name]) => name === "write_naia_ui_config",
+		)!;
+		expect(JSON.parse((arg as { json: string }).json)).toEqual({ theme: "ocean" });
+	});
+
 	// 회귀 방지 — 로컬 보이스 호스트가 write→read 왕복에서 살아남는가 (루크 발견 버그).
 	it("round-trips vllmTtsHost through ui-config (regression: local voice host reset)", async () => {
 		setAdkPath(WIN_ADK);

@@ -53,6 +53,18 @@ describe("4060 local voice and Ditto avatar through the real Tauri Shell", () =>
 		await browser.pause(1_000);
 		const adkPath = process.env.NAIA_E2E_ADK_PATH;
 		expect(adkPath).toBeTruthy();
+		const bootUiJson = await tauriInvoke<string>("read_naia_ui_config", {
+			adkPath: adkPath ?? "",
+		});
+		const bootUi = JSON.parse(bootUiJson) as Record<string, unknown>;
+		// A normal shell boot must not let early BGM/default UI state replace the
+		// stored 4060 voice/avatar selection before the renderer hydrates.
+		expect(bootUi).toMatchObject({
+			avatarProvider: "naia-video-avatar",
+			nvaModel: "naia",
+			ttsProvider: "naia-local-voice",
+			vllmTtsHost: "http://127.0.0.1:8910",
+		});
 		const ui = {
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "naia",

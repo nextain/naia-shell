@@ -385,14 +385,30 @@ const UI_PERSIST_KEYS: readonly string[] = [...UI_ONLY_CONFIG_KEYS].filter(
 	(k) => !UI_SESSION_ONLY_KEYS.has(k),
 );
 
-function extractUiConfig(
-	config: Record<string, unknown>,
+/**
+ * Applies a UI-config patch without treating an omitted key as a delete.
+ *
+ * During boot several independent UI components persist their own small state
+ * (for example BGM volume).  Those callers do not necessarily have the fully
+ * hydrated configuration yet.  Replacing ui-config.json with that subset
+ * erased the selected NVA and local voice host.  An own property with
+ * `undefined` remains an explicit delete, so Settings can still clear a
+ * persisted choice deliberately.
+ */
+function mergeUiConfigPatch(
+	persisted: Record<string, unknown> | null,
+	patch: Record<string, unknown>,
 ): Record<string, unknown> {
-	const out: Record<string, unknown> = {};
-	for (const k of UI_PERSIST_KEYS) {
-		if (config[k] !== undefined) out[k] = config[k];
+	const next = { ...(persisted ?? {}) };
+	for (const key of UI_PERSIST_KEYS) {
+		if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+		if (patch[key] === undefined) {
+			delete next[key];
+		} else {
+			next[key] = patch[key];
+		}
 	}
-	return out;
+	return next;
 }
 
 /** UI 정체성 키만 `{adkPath}/naia-settings/ui-config.json` 에 저장(FR-WS.2). 비치명. */
@@ -402,9 +418,17 @@ export async function writeNaiaUiConfig(
 	const adkPath = getAdkPath();
 	if (!adkPath) return false;
 	try {
+		// Preserve existing selections when a pre-hydration caller supplies only
+		// the UI fields it owns. readNaiaUiConfig is fail-soft, so a missing/corrupt
+		// file still creates a valid config from this patch.
+		const json = JSON.stringify(
+			mergeUiConfigPatch(await readNaiaUiConfig(), config),
+			null,
+			2,
+		);
 		await invoke("write_naia_ui_config", {
 			adkPath,
-			json: JSON.stringify(extractUiConfig(config), null, 2),
+			json,
 		});
 		return true;
 	} catch {
