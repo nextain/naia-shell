@@ -4,6 +4,7 @@ import {
 	CascadeAvatarRenderer,
 	ensureRemoteCharacter,
 	chromaKeyImage,
+	localCascadeUrlFromConfig,
 	localFacadeUrlFromReady,
 	pcm16ToWav,
 	probeCascadeHealth,
@@ -546,6 +547,38 @@ describe("remoteCascadeUrlFromConfig", () => {
 			remoteCascadeUrlFromConfig({
 				naiaKey: "",
 				cascadeRuntimeUrl: "https://stale.example:9449",
+			}),
+		).toBeUndefined();
+	});
+});
+
+describe("localCascadeUrlFromConfig", () => {
+	it("reuses only the local :8910 cascade facade for naia local voice", () => {
+		expect(
+			localCascadeUrlFromConfig({
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: " http://localhost:8910/ ",
+			}),
+		).toBe("http://localhost:8910");
+	});
+
+	it("does not promote private, remote, or unrelated TTS endpoints to avatar runtimes", () => {
+		expect(
+			localCascadeUrlFromConfig({
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: "http://127.0.0.1:8901",
+			}),
+		).toBeUndefined();
+		expect(
+			localCascadeUrlFromConfig({
+				ttsProvider: "naia-local-voice",
+				vllmTtsHost: "https://voice.example.invalid:8910",
+			}),
+		).toBeUndefined();
+		expect(
+			localCascadeUrlFromConfig({
+				ttsProvider: "edge",
+				vllmTtsHost: "http://localhost:8910",
 			}),
 		).toBeUndefined();
 	});

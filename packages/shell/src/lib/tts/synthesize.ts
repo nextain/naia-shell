@@ -299,9 +299,12 @@ async function synthNaiaLocalVoice(
 			text: opts.text,
 			// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
 			// it to this facade palette id; keep it intact all the way to :8910.
+			// The standalone facade ships this CC0 preset with the Shell bundle.
+			// `naia-default` was only a former server-side alias; it is not present
+			// in the Windows facade palette and causes a 400 after a fresh install.
 			voice:
 				!opts.voice || opts.voice === "default"
-					? "naia-default"
+					? "cc0-ko-female-01.wav"
 					: opts.voice,
 			response_format: "wav",
 		}),

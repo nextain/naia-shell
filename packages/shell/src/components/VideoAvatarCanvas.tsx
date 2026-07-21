@@ -8,6 +8,7 @@ import {
 import {
 	CascadeAvatarRenderer,
 	ensureRemoteCharacter,
+	localCascadeUrlFromConfig,
 	localFacadeUrlFromReady,
 	probeCascadeHealth,
 	remoteCascadeUrlFromConfig,
@@ -161,10 +162,14 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 			//   URL 을 확보한다(self-heal): localFacadeUrl store 는 인메모리라 앱 재시작으로 비고,
 			//   start_cascade 는 실행 중이면 캐시 ready 반환(재spawn 아님) → facade_port 확보.
 			const configuredCascadeUrl = remoteCascadeUrlFromConfig(cfg);
+			const configuredLocalFacadeUrl = canLocalCascade
+				? localCascadeUrlFromConfig(cfg)
+				: undefined;
 			// An explicitly configured NVA Host is a user routing decision. It must
 			// win over a local profile facade and must never trigger local Ditto as
 			// an implicit fallback when the remote health check is transiently down.
-			let cascadeUrl = configuredCascadeUrl || localFacadeUrl?.trim();
+			let cascadeUrl =
+				configuredCascadeUrl || configuredLocalFacadeUrl || localFacadeUrl?.trim();
 			if (!cascadeUrl) {
 				try {
 					if (await invoke<boolean>("cascade_status")) {

@@ -73,6 +73,40 @@ export function remoteCascadeUrlFromConfig(
 	return url || undefined;
 }
 
+/**
+ * The desktop's local-voice endpoint is the cascade facade, not the private
+ * VoxCPM2 worker.  An explicitly selected local avatar profile can therefore
+ * reconnect to an already-running :8910 facade after a Shell restart instead
+ * of trying to launch a second cascade process.
+ *
+ * Keep this deliberately narrow: a non-loopback TTS URL is only a voice
+ * endpoint and must never be treated as an avatar runtime.
+ */
+export function localCascadeUrlFromConfig(
+	config:
+		| {
+				ttsProvider?: string | null;
+				vllmTtsHost?: string | null;
+		  }
+		| null
+		| undefined,
+): string | undefined {
+	if (config?.ttsProvider !== "naia-local-voice") return undefined;
+	const raw = config.vllmTtsHost?.trim();
+	if (!raw) return undefined;
+	try {
+		const url = new URL(raw);
+		const isLoopback =
+			url.hostname === "localhost" ||
+			url.hostname === "127.0.0.1" ||
+			url.hostname === "[::1]";
+		if (!isLoopback || url.port !== "8910") return undefined;
+		return raw.replace(/\/+$/, "");
+	} catch {
+		return undefined;
+	}
+}
+
 /** PCM16 mono ??WAV 而⑦뀒?대꼫. speakAudio(?몃? TTS PCM)瑜?/stream(wav)濡?蹂대궡湲??꾪븿. */
 export function pcm16ToWav(pcm: Uint8Array, sampleRate: number): Uint8Array {
 	const n = pcm.length;

@@ -1,3 +1,5 @@
+import { sendMessage } from "../helpers/chat.js";
+
 describe("4060 local voice and Ditto avatar through the real Tauri Shell", () => {
 	after(async () => {
 		// The facade is a real user-owned process, not an E2E fixture. It was
@@ -63,28 +65,36 @@ describe("4060 local voice and Ditto avatar through the real Tauri Shell", () =>
 			avatarProvider: "naia-video-avatar",
 			nvaModel: "naia",
 			ttsProvider: "naia-local-voice",
-			vllmTtsHost: "http://127.0.0.1:8910",
 		});
-		const ui = {
-			avatarProvider: "naia-video-avatar",
-			nvaModel: "naia",
-			localGpuTier: "laptop-4060-8g",
-			ttsProvider: "naia-local-voice",
-			vllmTtsHost: "http://127.0.0.1:8910",
-			cascadeRuntimeUrl: "http://127.0.0.1:8910",
-		};
-		await tauriInvoke("write_naia_ui_config", {
-			adkPath: adkPath ?? "",
-			json: JSON.stringify(ui),
-		});
-		await browser.execute((next: Record<string, unknown>) => {
-			const current = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
-			localStorage.setItem(
-				"naia-config",
-				JSON.stringify({ ...current, ...next, naiaKey: "e2e-local-facade" }),
-			);
-			window.dispatchEvent(new CustomEvent("naia-config-changed"));
-		}, ui);
+		expect(new URL(String(bootUi.vllmTtsHost)).port).toBe("8910");
+		expect(["127.0.0.1", "localhost"]).toContain(
+			new URL(String(bootUi.vllmTtsHost)).hostname,
+		);
+		await browser.waitUntil(
+			async () => {
+				const bootConfig = await browser.execute(
+					() =>
+						JSON.parse(localStorage.getItem("naia-config") ?? "{}") as Record<
+							string,
+							unknown
+						>,
+				);
+				return (
+					bootConfig.avatarProvider === "naia-video-avatar" &&
+					bootConfig.nvaModel === "naia" &&
+					bootConfig.ttsProvider === "naia-local-voice" &&
+					typeof bootConfig.vllmTtsHost === "string" &&
+					(() => {
+						const host = new URL(bootConfig.vllmTtsHost).hostname;
+						return host === "127.0.0.1" || host === "localhost";
+					})()
+				);
+			},
+			{
+				timeout: 20_000,
+				timeoutMsg: "file-backed 4060 voice/avatar settings never hydrated into Shell",
+			},
+		);
 		await browser.waitUntil(
 			() =>
 				browser.execute(
@@ -92,7 +102,7 @@ describe("4060 local voice and Ditto avatar through the real Tauri Shell", () =>
 				),
 			{
 				timeout: 45_000,
-				timeoutMsg: "video avatar did not mount after settings update",
+				timeoutMsg: "video avatar did not mount from persisted settings",
 			},
 		);
 		const avatar = await $("[data-video-avatar]");
@@ -112,6 +122,63 @@ describe("4060 local voice and Ditto avatar through the real Tauri Shell", () =>
 			{
 				timeout: 30_000,
 				timeoutMsg: "cascade avatar did not receive its idle media",
+			},
+		);
+
+		// Keep this a real Shell path: observe the live browser fetches but forward
+		// every request unchanged. The LLM response must be synthesized by the
+		// local facade and its resulting PCM must be sent to Ditto's /stream route.
+		await browser.execute(() => {
+			const w = window as typeof window & {
+				__naiaCascadeFetches?: Array<{ url: string; status: number }>;
+				__naiaOriginalFetch?: typeof fetch;
+			};
+			w.__naiaCascadeFetches = [];
+			if (!w.__naiaOriginalFetch) {
+				w.__naiaOriginalFetch = window.fetch.bind(window);
+				window.fetch = async (...args) => {
+					const response = await w.__naiaOriginalFetch!(...args);
+					const request = args[0];
+					const url =
+						typeof request === "string"
+							? request
+							: request instanceof Request
+								? request.url
+								: String(request);
+					w.__naiaCascadeFetches?.push({ url, status: response.status });
+					return response;
+				};
+			}
+		});
+		await sendMessage(
+			"Respond with exactly 안녕. and nothing else.",
+		);
+		await browser.waitUntil(
+			() =>
+				browser.execute(() => {
+					const events = (window as typeof window & {
+						__naiaCascadeFetches?: Array<{ url: string; status: number }>;
+					}).__naiaCascadeFetches ?? [];
+					const hasPath = (path: string) =>
+						events.some((event) => {
+							try {
+								return new URL(event.url).pathname === path && event.status === 200;
+							} catch {
+								return false;
+							}
+						});
+					return (
+						events.some(
+							(event) =>
+								event.url.endsWith("/v1/audio/speech") && event.status === 200,
+						) &&
+						hasPath("/stream")
+					);
+				}),
+			{
+				timeout: 90_000,
+				timeoutMsg:
+					"Shell chat did not complete both local VoxCPM2 synthesis and Ditto lip-sync streaming",
 			},
 		);
 	});

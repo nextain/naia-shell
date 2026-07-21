@@ -188,6 +188,11 @@ export function App() {
 	}
 	const [showSplash, setShowSplash] = useState(true);
 	const [showAdkSetup, setShowAdkSetup] = useState(!isAdkInitialized());
+	// The main surface contains components that persist their own initial UI
+	// state.  Do not mount them until file-backed config has replaced the stale
+	// WebView cache, otherwise their mount effects can overwrite a selected
+	// avatar/voice profile before it has rendered.
+	const [configReady, setConfigReady] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [showPanelInstall, setShowPanelInstall] = useState(false);
 	const [naiaVisible, setNaiaVisible] = useState(true);
@@ -413,6 +418,7 @@ export function App() {
 	// push the stale pre-hydration cache back into config.json (FR-CONFIG-SOT.2).
 	useEffect(() => {
 		if (showAdkSetup) {
+			setConfigReady(false);
 			// (하이드레이션은 부팅/이 effect 재실행 시에만 돈다 — 파일을 외부에서 고쳤으면 리로드 필요.)
 			// AdkSetup 화면 동안은 게이트를 **닫아둔다**. 이전에 여기서 hydrated=true 로
 			// 마킹해 mount-time syncConfigToFile(아래 boot-sync)이 800ms 뒤 스테일
@@ -428,6 +434,10 @@ export function App() {
 				// mounts again. An older file read must never hydrate or unlock the
 				// write-back gate after its owning effect has been cleaned up.
 				if (cancelled) return;
+				Logger.info("App", "File-backed config hydration", {
+					fileKeys: Object.keys(fileConfig ?? {}),
+					uiKeys: Object.keys(uiConfig ?? {}),
+				});
 				const merged = mergeBootConfig(
 					loadConfig() as unknown as Record<string, unknown> | null,
 					fileConfig ?? null,
@@ -443,6 +453,7 @@ export function App() {
 					saveConfig(reconciled);
 				}
 				configHydratedRef.current = true;
+				setConfigReady(true);
 				// Re-run the gateway-mode sync now that the file value is in cache
 				// (the immediate sync on mount was gated off until this point).
 				window.dispatchEvent(new CustomEvent("naia-config-changed"));
@@ -946,7 +957,12 @@ export function App() {
 			) : null}
 
 			{/* ② Splash — position:fixed covers everything */}
-			{showSplash && <SplashScreen onDone={onSplashDone} ready={appReady} />}
+			{showSplash && (
+				<SplashScreen
+					onDone={onSplashDone}
+					ready={appReady && (showAdkSetup || configReady)}
+				/>
+			)}
 
 			{/* ③ Window resize handles */}
 			{winResizeHandles}
@@ -970,7 +986,7 @@ export function App() {
 			)}
 
 			{/* ⑤ Main app — always visible after ADK setup */}
-			{!showAdkSetup && (
+			{!showAdkSetup && configReady && (
 				<>
 					<TitleBar
 						panelVisible={naiaVisible}
