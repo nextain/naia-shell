@@ -15,7 +15,7 @@
 - Shell: 이 문서를 포함하는 `integration/discord-radio-codex`
 - Agent proto SHA-256: `02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a`
 - Memory: `1d6d93871192bf61f6b2be476d35e84e30fdba99`
-- Workshop: `cdc5a596a72a24e3f8a1fd11808b545c60718c10`
+- Workshop: `a761c2caded87a51afd671d5ef325d8a658c985c`
 
 ## 실행 증거
 
