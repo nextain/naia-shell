@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "recorded_at": "2026-07-21T13:40:24+09:00",
+  "shell_source_commit": "2c1f1a15c69e389ab7dba8e033d9ff98f5a438f1",
+  "agent_source_commit": "4838c906d221558f8d3424870158b01022de9972",
+  "agent_proto_sha256": "02bf7557c9b31c0e749497fdef9ab8c87fd1181f5967c9b6ed7469798fd9f26a",
+  "environment": {
+    "os": "Linux Bazzite",
+    "node": "26.3.0",
+    "webdriver": "WebdriverIO 9 + tauri-driver + WebKitWebDriver",
+    "display": "active local display"
+  },
+  "build": {
+    "command": "NAIA_AGENT_SCRIPT=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/scripts/builds/agent-stdio-entry.mjs NAIA_AGENT_PROTO_DIR=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/src/main/adapters/grpc cargo build",
+    "cwd": "packages/shell/src-tauri",
+    "exit_code": 0,
+    "paired_commit": "4838c906d221558f8d3424870158b01022de9972",
+    "paired_checkout_dirty": false
+  },
+  "native_e2e": {
+    "command": "NAIA_AGENT_SCRIPT=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/scripts/builds/agent-stdio-entry.mjs NAIA_AGENT_PROTO_DIR=/var/home/luke/alpha-adk/projects/naia-agent-worktrees/integration-discord-codex/src/main/adapters/grpc pnpm exec wdio run e2e-tauri/wdio.conf.ts --spec e2e-tauri/specs/71-proactive-speech-profiles.spec.ts",
+    "cwd": "packages/shell",
+    "exit_code": 0,
+    "duration_seconds": 18.3,
+    "spec_files": {
+      "passed": 1,
+      "failed": 0
+    },
+    "tests": [
+      {
+        "name": "starts and persists personal radio DJ through the real Tauri IPC path",
+        "status": "passed"
+      },
+      {
+        "name": "persists validated proactive settings after cache-clear native reload",
+        "status": "passed"
+      },
+      {
+        "name": "starts exhibition introduction without waiting for ordinary chat",
+        "status": "passed"
+      }
+    ],
+    "reporter_summary": "3 passing (18.3s); Spec Files: 1 passed, 1 total"
+  },
+  "precondition_note": "A preceding diagnostic run intentionally omitted NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR and failed 1/3 because the unbundled debug binary correctly refused to start Agent. It is not counted as acceptance evidence; the exact paired command above supplied both paths and passed 3/3.",
+  "remaining_partial": [
+    "audible TTS quality on real audio hardware",
+    "live microphone barge-in timing"
+  ]
+}
