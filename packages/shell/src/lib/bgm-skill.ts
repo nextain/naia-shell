@@ -14,6 +14,7 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { NaiaTool } from "./app-registry";
+import { BGM_SIDECAR_BASE_URL } from "./bgm-sidecar-url";
 import {
 	bgmPlayback,
 	toBgmPlayToolResult,
@@ -23,7 +24,7 @@ import {
 /** panelExec 등록용 패널 id — 위젯 전용(앱 아님), panel_skills_clear 대상 아님(항상 유지). */
 export const BGM_PANEL_ID = "bgm-widget";
 
-const YT_BASE = "http://localhost:18791";
+const YT_BASE = BGM_SIDECAR_BASE_URL;
 
 export const BGM_ACTIONS = [
 	"play",

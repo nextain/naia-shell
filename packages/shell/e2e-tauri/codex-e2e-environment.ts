@@ -11,6 +11,7 @@ export const E2E_RUN_PARENT = resolve(homedir(), ".naia", "run");
 const E2E_WEBDRIVER_PORT = Number(
 	process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450",
 );
+const E2E_BGM_PORT = 18_000 + (E2E_WEBDRIVER_PORT % 1_000);
 // A port-scoped root prevents a delayed Windows WebView2 teardown from
 // contaminating the next independent native run.
 export const E2E_ROOT = resolve(
@@ -64,6 +65,8 @@ export function configureCodexE2eEnvironment(): void {
 	process.env.NAIA_E2E_ARTIFACTS_DIR = E2E_ARTIFACTS;
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_WEBVIEW2_DATA;
 	process.env.NAIA_E2E_DISCORD_CAPTURE = "cancel";
+	process.env.NAIA_BGM_PORT = String(E2E_BGM_PORT);
+	process.env.VITE_NAIA_BGM_BASE = `http://127.0.0.1:${E2E_BGM_PORT}`;
 	process.env.NAIA_AGENT_SCRIPT = resolve(
 		"D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env",
 		"scripts/builds/agent-stdio-entry.mjs",

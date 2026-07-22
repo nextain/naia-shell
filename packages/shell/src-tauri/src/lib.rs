@@ -1040,6 +1040,19 @@ struct BgmServerProcess {
     child: Child,
 }
 
+fn bgm_server_port() -> u16 {
+    if debug_e2e_enabled() {
+        if let Ok(port) = std::env::var("NAIA_BGM_PORT") {
+            if let Ok(port) = port.parse::<u16>() {
+                if port != 0 {
+                    return port;
+                }
+            }
+        }
+    }
+    18791
+}
+
 // Local cascade supervisor (R2.2b) ??naia-os媛 windows-manager loader(`python -m loader
 // launch`)瑜?1媛??ъ씠?쒖뭅濡?援щ룞?쒕떎. loader 媛 VoxCPM2 ???ㅼ젣 ?쒕퉬?ㅻ? spawn쨌媛먮룆?섍퀬,
 // ???꾨줈?몄뒪瑜?kill ?섎㈃ loader 媛 ?먯떇?ㅼ쓣 teardown ?쒕떎(?먭꺽 湲덉?쨌濡쒖뺄 ?꾨쿋??.
@@ -2899,6 +2912,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     });
 
     let use_tsx = script_path.ends_with(".ts");
+    let bgm_port = bgm_server_port();
 
     // tsx-direct resolution (same pattern as spawn_agent_core lines 1018-1024)
     let agent_dir = std::path::Path::new(&script_path)
@@ -2959,6 +2973,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             .as_nanos()
     );
     cmd.env("NAIA_BGM_HEALTH_NONCE", &health_nonce);
+    cmd.env("NAIA_BGM_PORT", bgm_port.to_string());
 
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
@@ -2969,8 +2984,8 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
 
     let pid = child.id();
     log_both(&format!(
-        "[Naia] BGM server spawned (pid={}, port=18791)",
-        pid
+        "[Naia] BGM server spawned (pid={}, port={})",
+        pid, bgm_port
     ));
 
     // Persist PID so the next session's cleanup_orphan_processes() can kill an
@@ -2983,15 +2998,15 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     // can't see (server.on("error") in youtube-server.ts logs but doesn't exit).
     // Non-fatal: BGM is optional; we only log a warning on timeout so users
     // see a recovery hint in ~/.naia/logs/naia.log.
-    if !probe_bgm_server_ready(std::time::Duration::from_secs(3), &health_nonce) {
+    if !probe_bgm_server_ready(std::time::Duration::from_secs(3), &health_nonce, bgm_port) {
         log_both(
-            "[Naia] WARN BGM server did not respond on http://127.0.0.1:18791/health within 3s",
+            &format!("[Naia] WARN BGM server did not respond on http://127.0.0.1:{}/health within 3s", bgm_port),
         );
         log_both(
-            "[Naia] WARN BGM player may show connection-refused; restart the app or kill any stray Node process bound to 18791",
+            &format!("[Naia] WARN BGM player may show connection-refused; restart the app or kill any stray Node process bound to {}", bgm_port),
         );
     } else {
-        log_both("[Naia] BGM server ready @ http://127.0.0.1:18791/health");
+        log_both(&format!("[Naia] BGM server ready @ http://127.0.0.1:{}/health", bgm_port));
     }
 
     Ok(BgmServerProcess { child })
@@ -3005,8 +3020,8 @@ fn bgm_health_matches(body: &serde_json::Value, expected_nonce: &str) -> bool {
         && body.get("nonce").and_then(|value| value.as_str()) == Some(expected_nonce)
 }
 
-fn probe_bgm_server_ready(timeout: std::time::Duration, expected_nonce: &str) -> bool {
-    let url = "http://127.0.0.1:18791/health";
+fn probe_bgm_server_ready(timeout: std::time::Duration, expected_nonce: &str, port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{}/health", port);
     let deadline = std::time::Instant::now() + timeout;
     let interval = std::time::Duration::from_millis(100);
     loop {
@@ -3014,7 +3029,7 @@ fn probe_bgm_server_ready(timeout: std::time::Duration, expected_nonce: &str) ->
         let agent = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_millis(200))
             .build();
-        if let Ok(resp) = agent.get(url).call() {
+        if let Ok(resp) = agent.get(&url).call() {
             if resp.status() >= 200
                 && resp.status() < 300
                 && resp

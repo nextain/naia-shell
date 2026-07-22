@@ -26,7 +26,9 @@ describe("Radio BGM observation through the real Tauri Shell", () => {
 		// Query from the WDIO Node runner so this check observes the real local
 		// process without coupling sidecar readiness to the test Vite origin's
 		// browser CORS policy.
-		const response = await fetch("http://127.0.0.1:18791/health");
+		const baseUrl = process.env.VITE_NAIA_BGM_BASE;
+		if (!baseUrl) throw new Error("isolated E2E BGM base URL is required");
+		const response = await fetch(`${baseUrl}/health`);
 		const body: unknown = await response.json();
 
 		expect(response.status).toBe(200);

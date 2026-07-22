@@ -21,12 +21,13 @@
  */
 
 import { DEFAULT_LOCAL_VOICE_HOST, type TtsProviderId } from "../config";
+import { BGM_SIDECAR_BASE_URL } from "../bgm-sidecar-url";
 import { resolveEdgeVoice } from "./edge-tts";
 
 // Edge neural TTS runs in the bgm/media sidecar (node msedge-tts) — the in-app
 // webview can't do the MS WebSocket handshake (it can't set the required
 // headers/Origin → 400). The shell fetches the sidecar's /edge-tts (#363).
-const EDGE_TTS_SIDECAR_URL = "http://localhost:18791/edge-tts";
+const EDGE_TTS_SIDECAR_URL = `${BGM_SIDECAR_BASE_URL}/edge-tts`;
 
 export interface SynthesizeOpts {
 	/** Text to speak (emotion tags / emoji already stripped by caller). */

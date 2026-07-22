@@ -12,12 +12,13 @@ import {
 	type BgmPlaybackStatus,
 } from "../lib/bgm-playback";
 import { Logger } from "../lib/logger";
+import { BGM_SIDECAR_BASE_URL } from "../lib/bgm-sidecar-url";
 import type { NaiaContextBridge } from "../lib/app-registry";
 import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
-const YT_BASE = "http://localhost:18791";
+const YT_BASE = BGM_SIDECAR_BASE_URL;
 
 
 interface YtVideo {
