@@ -87,7 +87,7 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 
 		await (await $("[data-testid='coding-worker-worktree']")).setValue(COURSE_ROOT);
 		await (await $("[data-testid='coding-worker-task']")).setValue(
-			"Revise only index.html in the existing course repository. Preserve its hero.svg reference and existing content, then add a visible section headed 'Updated lesson plan' with a short mobile-friendly revision note. Do not create, delete, rename, commit, push, install, or deploy anything.",
+			"Revise only hero.svg in the existing course repository. Change its primary blue color from #2563EB to #7C3AED while preserving a valid SVG illustration. Do not modify index.html. Do not create, delete, rename, commit, push, install, or deploy anything.",
 		);
 		// The form deliberately resets after each submission; reselect the fixed
 		// course boundary so this is a revision in the same student Git root,
@@ -100,10 +100,10 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		);
 		await waitForCourseTerminal(1);
 
-		expect(changedFiles()).toEqual(["index.html"]);
+		expect(changedFiles()).toEqual(["hero.svg"]);
 		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("2");
 		const revisedIndex = readFileSync(resolve(COURSE_ROOT, "index.html"), "utf8");
 		expect(revisedIndex).toContain("./hero.svg");
-		expect(revisedIndex).toContain("Updated lesson plan");
+		expect(readFileSync(resolve(COURSE_ROOT, "hero.svg"), "utf8")).toContain("#7C3AED");
 	});
 });
