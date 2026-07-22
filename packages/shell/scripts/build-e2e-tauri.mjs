@@ -22,7 +22,7 @@ const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
 const pairedAgent = "D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env";
 const agentScript = resolve(pairedAgent, "scripts/builds/agent-stdio-entry.mjs");
 const agentProtoDir = resolve(pairedAgent, "src/main/adapters/grpc");
-const REQUIRED_AGENT_COMMIT = "2340cfec70209fb255e2f34b3933505b2be8d089";
+const REQUIRED_AGENT_COMMIT = "288d6e2e329e854ec11f3bea6390b3086b66288a";
 const REQUIRED_PROTO_SHA256 = "b77761930c0991ee825b6d2827adad264fc352a9f220404912a284fc166b691b";
 
 function gitOutput(args) {

@@ -7936,9 +7936,12 @@ fn course_target_path(adk_path: &str) -> std::path::PathBuf {
 }
 
 fn verify_jeonju_course_target_path(adk_path: &str, workspace_path: &str) -> Result<String, String> {
-    let control_root = std::fs::canonicalize(adk_path)
+    // `std::fs::canonicalize` returns a Windows `\\\\?\\` path.  That is
+    // acceptable to this process, but not a portable value to persist for the
+    // separately spawned Node Agent.  `dunce` removes that namespace prefix.
+    let control_root = dunce::canonicalize(adk_path)
         .map_err(|_| "course_target_not_ready".to_string())?;
-    let selected_root = std::fs::canonicalize(workspace_path)
+    let selected_root = dunce::canonicalize(workspace_path)
         .map_err(|_| "course_target_not_ready".to_string())?;
     if !selected_root.starts_with(&control_root) {
         return Err("course_target_not_ready".to_string());
@@ -8042,10 +8045,10 @@ fn course_git_output(workspace_path: &str, args: &[&str]) -> Result<String, Stri
 /// Course mode is a deliberate exception to isolated workers. The Agent repeats
 /// this guard, but Shell rejects an unready folder before opening an RPC session.
 fn verify_jeonju_course_workspace(workspace_path: &str) -> Result<(), String> {
-    let selected = std::fs::canonicalize(workspace_path)
+    let selected = dunce::canonicalize(workspace_path)
         .map_err(|_| "course_workspace_not_ready".to_string())?;
     let git_root = course_git_output(workspace_path, &["rev-parse", "--show-toplevel"])?;
-    let root = std::fs::canonicalize(git_root)
+    let root = dunce::canonicalize(git_root)
         .map_err(|_| "course_workspace_not_ready".to_string())?;
     if selected != root
         || !course_git_output(workspace_path, &["status", "--porcelain"] )?.is_empty()

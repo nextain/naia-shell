@@ -57,6 +57,14 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 			"Create a simple Korean course introduction page. Create exactly index.html and hero.svg. index.html must reference ./hero.svg, include the heading '나의 첫 AI 웹페이지', a short introduction, a same-page contact 안내 link, and mobile-friendly CSS. hero.svg must be a blue #2563EB illustration. Do not run any git, package, or deployment command.",
 		);
 		await (await $("[data-testid='coding-worker-jeonju-course-preset']")).click();
+		// Persist the same constrained target that a Discord /course request will
+		// load when the Agent next starts. This exercises the native Rust bridge
+		// (clean Git root + origin + control-root containment), rather than merely
+		// relying on the direct coding-worker form state below.
+		await (await $("[data-testid='coding-worker-save-course-target']")).click();
+		const savedCourseTarget = await $("[data-testid='coding-worker-course-target-saved']");
+		await savedCourseTarget.waitForDisplayed({ timeout: 30_000 });
+		expect(await savedCourseTarget.getText()).toContain("index.html, hero.svg");
 		await (await $("[data-testid='coding-worker-start']")).click();
 
 		await browser.waitUntil(
