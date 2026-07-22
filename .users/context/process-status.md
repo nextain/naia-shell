@@ -1,4 +1,11 @@
-<!-- src-sha: 40fa012a363d8ddd -->
+<!-- src-sha: 263924117c7cd56c -->
+
+## Jeonju course vertical acceptance — 2026-07-22
+
+- Shell: `dc5a5c5b`; paired Agent: `288d6e2`.
+- Coding Workers saves a fixed Discord course target under the active ADK control root. Rust removes the Windows `\\?\` canonical-path namespace before the separately spawned Agent reads the target file.
+- Evidence: 21 focused Shell tests, a matching Agent/Shell pair build, and native Tauri E2E for target save plus initial/revision student work within the `index.html` and `hero.svg` boundary.
+- Final adversarial review found no P0/P1 issue. Live Discord remains a credentialed operational smoke, separate from the isolated Gateway and native Shell acceptance.
 <!-- 자동 번역 미러 (M13-mirror). 원본: .agents/context/process-status.json -->
 
 # 프로세스 현황 (Process Status) SoT
