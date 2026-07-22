@@ -28,6 +28,7 @@ export const config = {
 	specs: [
 		"./specs/90-codex-live-chat.spec.ts",
 		"./specs/95-llm-role-settings.spec.ts",
+		"./specs/96-codex-readiness.spec.ts",
 	],
 	maxInstances: 1,
 	hostname: "127.0.0.1",

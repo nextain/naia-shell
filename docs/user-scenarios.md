@@ -225,6 +225,8 @@ Shell은 빌드 때 고정된 정확한 Agent 런타임만 실행한다.
 - 재시도: 사용자가 설치 또는 로그인을 마친 뒤 같은 화면에서 다시 확인할 수 있다.
 - 경계: 이 확인은 Codex에게 파일 작성·Git commit·push·배포를 맡기지 않는다. Git과 GitHub Pages는 수강생이 별도 단계에서 직접 수행한다.
 
+이 UC의 상태 분류과 토큰 비노출은 Rust·Settings 단위 테스트로, 실제 로그인된 Codex CLI와 Brain 화면의 준비 상태 표시는 `e2e-tauri/specs/96-codex-readiness.spec.ts` 네이티브 Tauri E2E로 검증한다.
+
 ## UC-CODEX-WORKER-LIFECYCLE — 격리된 Codex 코딩 작업자를 관리한다
 
 사용자는 워크스페이스의 **Coding Workers** 패널에서 provider `codex`, 작업할 worktree, 작업 설명을 명시해 코딩 작업자를 요청한다. Shell은 준비되지 않은 adapter를 성공으로 표시하지 않으며, API가 연결되기 전에는 “작업자 서비스에 연결할 수 없음”을 표시하고 목록 상태를 만들지 않는다.
