@@ -77,7 +77,15 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("1");
 		expect(readFileSync(resolve(COURSE_ROOT, "index.html"), "utf8")).toContain("./hero.svg");
 		expect(readFileSync(resolve(COURSE_ROOT, "hero.svg"), "utf8")).toContain("#2563EB");
+		// The student owns Git.  Commit the initial reviewable result before a
+		// follow-up request, matching the course's minimum-Git lesson rather than
+		// asking the coding worker to commit on their behalf.
+		git(["add", "index.html", "hero.svg"]);
+		git(["commit", "-m", "student: initial course page"]);
+		expect(changedFiles()).toEqual([]);
+		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("2");
 
+		await (await $("[data-testid='coding-worker-worktree']")).setValue(COURSE_ROOT);
 		await (await $("[data-testid='coding-worker-task']")).setValue(
 			"Revise only index.html in the existing course repository. Preserve its hero.svg reference and existing content, then add a visible section headed 'Updated lesson plan' with a short mobile-friendly revision note. Do not create, delete, rename, commit, push, install, or deploy anything.",
 		);
@@ -92,8 +100,8 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		);
 		await waitForCourseTerminal(1);
 
-		expect(changedFiles().sort()).toEqual(["hero.svg", "index.html"]);
-		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("1");
+		expect(changedFiles()).toEqual(["index.html"]);
+		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("2");
 		const revisedIndex = readFileSync(resolve(COURSE_ROOT, "index.html"), "utf8");
 		expect(revisedIndex).toContain("./hero.svg");
 		expect(revisedIndex).toContain("Updated lesson plan");
