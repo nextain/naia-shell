@@ -3,14 +3,10 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { E2E_WORKSPACE } from "../codex-e2e-environment.js";
 
-// Model the product topology: E2E_WORKSPACE is the Naia ADK control root;
-// Codex writes only the independently versioned course project beneath it.
+// Model the product topology: E2E_WORKSPACE is the Naia ADK control root.
+// The proposal worker reads the independently versioned course project; Naia
+// applies and verifies the accepted two-file proposal.
 const COURSE_ROOT = resolve(E2E_WORKSPACE, "projects", "jeonju-course-fixture");
-// A Codex-hosted development session imposes a read-only sandbox on every
-// child `codex exec`, independently of the child's own CLI environment. This
-// test is an acceptance test for a signed-in standalone Shell, so fail closed
-// here instead of treating that host-policy rejection as product evidence.
-const courseAcceptance = process.env.CODEX_THREAD_ID ? it.skip : it;
 
 function git(args: string[]): string {
 	return execFileSync("git", args, { cwd: COURSE_ROOT, encoding: "utf8" });
@@ -48,7 +44,7 @@ async function waitForCourseTerminal(cardIndex: number) {
 describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 	before(() => createCleanCourseRepository());
 
-	courseAcceptance("completes the initial build and a revision in one student Git root without escaping the two-file boundary", async () => {
+	it("completes the initial build and a revision in one student Git root without escaping the two-file boundary", async () => {
 		const workspacePanel = await $("button[data-panel-id='workspace']");
 		await workspacePanel.waitForClickable({ timeout: 45_000 });
 		await workspacePanel.click();
@@ -68,8 +64,8 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 			{ timeout: 60_000, timeoutMsg: "initial course worker card did not render" },
 		);
 		const card = await waitForCourseTerminal(0);
-		await expect(card.$("[data-testid^='coding-worker-course-boundary-']")).toHaveText(
-			"Course mode: index.html, hero.svg",
+		expect(await card.$("[data-testid^='coding-worker-course-boundary-']").getText()).toContain(
+			"index.html, hero.svg",
 		);
 		expect(
 			await card.$("[data-testid^='coding-worker-verification-']").getText(),

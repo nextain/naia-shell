@@ -197,7 +197,7 @@ describe("CodingWorkersPanel", () => {
 			"naia-adk",
 		);
 		expect(screen.getByTestId("coding-worker-target-hint")).toHaveTextContent(
-			"Codex works only in the execution-target Git root below.",
+			"The selected coding brain reads only the execution-target Git root below.",
 		);
 		expect(workspaceInput.closest("label")).toHaveTextContent(
 			"Execution target Git root — a dedicated worktree is created automatically.",
@@ -212,7 +212,7 @@ describe("CodingWorkersPanel", () => {
 			"Course execution-target Git root",
 		);
 		expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
-			"Only index.html and hero.svg may change.",
+			"In course mode the coding brain creates a read-only proposal. Naia applies and verifies it. Only index.html and hero.svg may change.",
 		);
 	});
 
@@ -226,7 +226,7 @@ describe("CodingWorkersPanel", () => {
 			expect(screen.getByText("Coding Workers(코딩 작업자)")).toBeInTheDocument();
 			expect(screen.getByText("Course execution-target Git root(수업 실행 대상 Git 루트)")).toBeInTheDocument();
 			expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
-				"index.html과 hero.svg만 변경할 수 있습니다.",
+				"작업 두뇌는 읽기 전용 제안만 만듭니다. Naia가 이를 적용·검증하며 index.html과 hero.svg만 변경할 수 있습니다.",
 			);
 		} finally {
 			setLocale(previousLocale);
