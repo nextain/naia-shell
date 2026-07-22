@@ -8,6 +8,7 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getLocale, setLocale } from "../../lib/i18n";
 import { CodingWorkersPanel } from "../workspace/CodingWorkersPanel";
 import {
 	type CodingWorker,
@@ -146,6 +147,43 @@ describe("CodingWorkersPanel", () => {
 		expect(screen.getByTestId("coding-worker-course-boundary-course-worker")).toHaveTextContent("index.html, hero.svg");
 		expect(screen.getByTestId("coding-worker-verification-course-worker")).toHaveTextContent("selected workspace verified");
 		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
+	});
+
+	it("switches the workspace guidance immediately when course mode is selected", () => {
+		render(<CodingWorkersPanel adapter={adapter()} />);
+		const workspaceInput = screen.getByTestId("coding-worker-worktree");
+		expect(workspaceInput.closest("label")).toHaveTextContent(
+			"Workspace root — a dedicated worktree is created automatically.",
+		);
+		expect(
+			screen.queryByTestId("coding-worker-course-mode-hint"),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+
+		expect(workspaceInput.closest("label")).toHaveTextContent(
+			"Course workspace Git root",
+		);
+		expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
+			"Only index.html and hero.svg may change.",
+		);
+	});
+
+	it("renders the course boundary in Korean without removing the technical terms", () => {
+		const previousLocale = getLocale();
+		try {
+			setLocale("ko");
+			render(<CodingWorkersPanel adapter={adapter()} />);
+			fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+
+			expect(screen.getByText("Coding Workers(코딩 작업자)")).toBeInTheDocument();
+			expect(screen.getByText("Course workspace Git root(수업 워크스페이스 Git 루트)")).toBeInTheDocument();
+			expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
+				"index.html과 hero.svg만 변경할 수 있습니다.",
+			);
+		} finally {
+			setLocale(previousLocale);
+		}
 	});
 
 	it("blocks an unready selected Git workspace before rendering a course worker", async () => {

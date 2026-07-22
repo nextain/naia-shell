@@ -252,6 +252,8 @@ For the Jeonju course, the user explicitly selects a Git root and enables course
 
 **UC-JEONJU-COURSE-WORKER** maps to `apps/__tests__/coding-workers.test.tsx` and `apps/workspace/__tests__/coding-workers-tauri.test.ts` for the explicit preset, fixed boundary, preflight rejection, and verification summary. Its native acceptance spec is `e2e-tauri/specs/91-jeonju-course-worker.spec.ts`; it must run serially with the paired Agent and an isolated fixture repository. It is a signed-in standalone-Codex acceptance: a host that sets `CODEX_THREAD_ID` is intentionally skipped because that host injects a read-only child sandbox and cannot evidence a course write.
 
+The worker form changes its workspace label and help text immediately when course mode is selected, so the default isolated worktree route cannot be mistaken for direct course-repository work. `apps/__tests__/coding-workers.test.tsx` verifies both the transition and the Korean explanatory labels while retaining the technical terms. `e2e-tauri/specs/97-course-worker-guidance.spec.ts` verifies the same transition in the actual Tauri Shell.
+
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers.test.tsx`: form validation, same-worktree collision, state rendering, checkpoint-only resume, unavailable adapter의 no-fake-success | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |

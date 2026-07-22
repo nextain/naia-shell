@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { t } from "../../lib/i18n";
 import {
 	type CodingWorker,
 	CodingWorkerApiUnavailableError,
-	CourseWorkspaceNotReadyError,
 	type CodingWorkersAdapter,
+	CourseWorkspaceNotReadyError,
 	canCancelCodingWorker,
 	canResumeCodingWorker,
 	isWorktreeOccupied,
@@ -16,13 +17,13 @@ interface CodingWorkersPanelProps {
 
 function safeWorkerError(error: unknown): string {
 	if (error instanceof CodingWorkerApiUnavailableError) {
-		return "Coding worker service is not connected yet.";
+		return t("workspace.codingWorkersUnavailable");
 	}
 	if (error instanceof CourseWorkspaceNotReadyError) {
-		return "Course mode requires a clean Git root with a remote. Review the selected folder and try again.";
+		return t("workspace.codingWorkersCourseUnready");
 	}
 	// Adapter failures can include provider output or credentials. Never render it.
-	return "Coding worker request could not be completed.";
+	return t("workspace.codingWorkersRequestFailed");
 }
 
 function mergeWorker(
@@ -66,11 +67,11 @@ export function CodingWorkersPanel({
 		const normalizedWorktree = worktree.trim();
 		const normalizedTask = task.trim();
 		if (!normalizedWorktree || !normalizedTask) {
-			setError("Worktree and task are required.");
+			setError(t("workspace.codingWorkersRequired"));
 			return;
 		}
 		if (isWorktreeOccupied(workers, normalizedWorktree)) {
-			setError("This worktree already has an active coding worker.");
+			setError(t("workspace.codingWorkersOccupied"));
 			return;
 		}
 		setError(null);
@@ -113,27 +114,29 @@ export function CodingWorkersPanel({
 	return (
 		<section className="coding-workers" data-testid="coding-workers">
 			<header className="coding-workers__header">
-				<h3>Coding Workers</h3>
-				<p>Codex workers require a paired Agent lifecycle service.</p>
+				<h3>{t("workspace.codingWorkersTitle")}</h3>
+				<p>{t("workspace.codingWorkersDescription")}</p>
 			</header>
 			<div className="coding-workers__form" data-testid="coding-worker-create">
 				<label>
-					Provider
+					{t("workspace.codingWorkersProvider")}
 					<select data-testid="coding-worker-provider" value="codex" disabled>
 						<option value="codex">Codex</option>
 					</select>
 				</label>
 				<label>
-					Workspace root (a dedicated worktree is created automatically)
+					{coursePreset
+						? t("workspace.codingWorkersCourseRoot")
+						: t("workspace.codingWorkersWorkspaceRoot")}
 					<input
 						data-testid="coding-worker-worktree"
 						value={worktree}
 						onChange={(event) => setWorktree(event.target.value)}
-						placeholder="D:\\alpha-adk\\projects\\naia-shell"
+						placeholder={t("workspace.codingWorkersWorkspaceExample")}
 					/>
 				</label>
 				<label>
-					Task
+					{t("workspace.codingWorkersTask")}
 					<textarea
 						data-testid="coding-worker-task"
 						value={task}
@@ -147,14 +150,19 @@ export function CodingWorkersPanel({
 						checked={coursePreset}
 						onChange={(event) => setCoursePreset(event.target.checked)}
 					/>
-					Jeonju course mode — work directly in this selected Git root; only index.html and hero.svg may change.
+					{t("workspace.codingWorkersCourseMode")}
 				</label>
+				{coursePreset && (
+					<p data-testid="coding-worker-course-mode-hint">
+						{t("workspace.codingWorkersCourseHint")}
+					</p>
+				)}
 				<button
 					type="button"
 					data-testid="coding-worker-start"
 					onClick={() => void createWorker()}
 				>
-					Start worker
+					{t("workspace.codingWorkersStart")}
 				</button>
 			</div>
 			{error && (
@@ -173,12 +181,12 @@ export function CodingWorkersPanel({
 						<p>{worker.task}</p>
 						{worker.executionMode === "selected_workspace" && (
 							<p data-testid={`coding-worker-course-boundary-${worker.id}`}>
-								Course mode: {worker.allowedFiles.join(", ")}
+								{t("workspace.codingWorkersCourseBoundary")}: {worker.allowedFiles.join(", ")}
 							</p>
 						)}
 						{worker.verificationSummary && (
 							<p data-testid={`coding-worker-verification-${worker.id}`}>
-								Verification: {worker.verificationSummary}
+								{t("workspace.codingWorkersVerification")}: {worker.verificationSummary}
 							</p>
 						)}
 						<time dateTime={worker.updatedAt}>{worker.updatedAt}</time>
@@ -188,7 +196,7 @@ export function CodingWorkersPanel({
 								data-testid={`coding-worker-cancel-${worker.id}`}
 								onClick={() => void cancelWorker(worker)}
 							>
-								Cancel
+								{t("workspace.codingWorkersCancel")}
 							</button>
 						)}
 						{canResumeCodingWorker(worker) && (
@@ -197,7 +205,7 @@ export function CodingWorkersPanel({
 								data-testid={`coding-worker-resume-${worker.id}`}
 								onClick={() => void resumeWorker(worker)}
 							>
-								Resume
+								{t("workspace.codingWorkersResume")}
 							</button>
 						)}
 					</article>

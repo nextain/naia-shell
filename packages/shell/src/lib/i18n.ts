@@ -32,6 +32,63 @@ const translations = {
 		id: "Pengaturan",
 		vi: "Cài đặt",
 	},
+	"workspace.codingWorkersTitle": {
+		ko: "Coding Workers(코딩 작업자)", en: "Coding Workers", ja: "Coding Workers", zh: "Coding Workers", fr: "Coding Workers", de: "Coding Workers", ru: "Coding Workers", es: "Coding Workers", ar: "Coding Workers", hi: "Coding Workers", bn: "Coding Workers", pt: "Coding Workers", id: "Coding Workers", vi: "Coding Workers",
+	},
+	"workspace.codingWorkersDescription": {
+		ko: "Codex 작업자는 연결된 Agent 작업 수명주기 서비스를 사용합니다.", en: "Codex workers use the paired Agent lifecycle service.", ja: "Codex workers use the paired Agent lifecycle service.", zh: "Codex workers use the paired Agent lifecycle service.", fr: "Codex workers use the paired Agent lifecycle service.", de: "Codex workers use the paired Agent lifecycle service.", ru: "Codex workers use the paired Agent lifecycle service.", es: "Codex workers use the paired Agent lifecycle service.", ar: "Codex workers use the paired Agent lifecycle service.", hi: "Codex workers use the paired Agent lifecycle service.", bn: "Codex workers use the paired Agent lifecycle service.", pt: "Codex workers use the paired Agent lifecycle service.", id: "Codex workers use the paired Agent lifecycle service.", vi: "Codex workers use the paired Agent lifecycle service.",
+	},
+	"workspace.codingWorkersProvider": {
+		ko: "Provider(제공자)", en: "Provider", ja: "Provider", zh: "Provider", fr: "Provider", de: "Provider", ru: "Provider", es: "Provider", ar: "Provider", hi: "Provider", bn: "Provider", pt: "Provider", id: "Provider", vi: "Provider",
+	},
+	"workspace.codingWorkersWorkspaceRoot": {
+		ko: "Workspace root(작업 루트) — 전용 worktree가 자동으로 만들어집니다.", en: "Workspace root — a dedicated worktree is created automatically.", ja: "Workspace root — a dedicated worktree is created automatically.", zh: "Workspace root — a dedicated worktree is created automatically.", fr: "Workspace root — a dedicated worktree is created automatically.", de: "Workspace root — a dedicated worktree is created automatically.", ru: "Workspace root — a dedicated worktree is created automatically.", es: "Workspace root — a dedicated worktree is created automatically.", ar: "Workspace root — a dedicated worktree is created automatically.", hi: "Workspace root — a dedicated worktree is created automatically.", bn: "Workspace root — a dedicated worktree is created automatically.", pt: "Workspace root — a dedicated worktree is created automatically.", id: "Workspace root — a dedicated worktree is created automatically.", vi: "Workspace root — a dedicated worktree is created automatically.",
+	},
+	"workspace.codingWorkersCourseRoot": {
+		ko: "Course workspace Git root(수업 워크스페이스 Git 루트)", en: "Course workspace Git root", ja: "Course workspace Git root", zh: "Course workspace Git root", fr: "Course workspace Git root", de: "Course workspace Git root", ru: "Course workspace Git root", es: "Course workspace Git root", ar: "Course workspace Git root", hi: "Course workspace Git root", bn: "Course workspace Git root", pt: "Course workspace Git root", id: "Course workspace Git root", vi: "Course workspace Git root",
+	},
+	"workspace.codingWorkersWorkspaceExample": {
+		ko: "예: D:\\alpha-adk\\projects\\naia-shell", en: "Example: D:\\alpha-adk\\projects\\naia-shell", ja: "Example: D:\\alpha-adk\\projects\\naia-shell", zh: "Example: D:\\alpha-adk\\projects\\naia-shell", fr: "Example: D:\\alpha-adk\\projects\\naia-shell", de: "Example: D:\\alpha-adk\\projects\\naia-shell", ru: "Example: D:\\alpha-adk\\projects\\naia-shell", es: "Example: D:\\alpha-adk\\projects\\naia-shell", ar: "Example: D:\\alpha-adk\\projects\\naia-shell", hi: "Example: D:\\alpha-adk\\projects\\naia-shell", bn: "Example: D:\\alpha-adk\\projects\\naia-shell", pt: "Example: D:\\alpha-adk\\projects\\naia-shell", id: "Example: D:\\alpha-adk\\projects\\naia-shell", vi: "Example: D:\\alpha-adk\\projects\\naia-shell",
+	},
+	"workspace.codingWorkersTask": {
+		ko: "Task(작업 요청)", en: "Task", ja: "Task", zh: "Task", fr: "Task", de: "Task", ru: "Task", es: "Task", ar: "Task", hi: "Task", bn: "Task", pt: "Task", id: "Task", vi: "Task",
+	},
+	"workspace.codingWorkersCourseMode": {
+		ko: "Jeonju course mode(전주대 수업 모드)", en: "Jeonju course mode", ja: "Jeonju course mode", zh: "Jeonju course mode", fr: "Jeonju course mode", de: "Jeonju course mode", ru: "Jeonju course mode", es: "Jeonju course mode", ar: "Jeonju course mode", hi: "Jeonju course mode", bn: "Jeonju course mode", pt: "Jeonju course mode", id: "Jeonju course mode", vi: "Jeonju course mode",
+	},
+	"workspace.codingWorkersCourseHint": {
+		ko: "수업 모드는 선택한 깨끗한 Git 루트에서 직접 작업합니다. index.html과 hero.svg만 변경할 수 있습니다.", en: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", ja: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", zh: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", fr: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", de: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", ru: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", es: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", ar: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", hi: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", bn: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", pt: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", id: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.", vi: "Course mode works directly in the selected clean Git root. Only index.html and hero.svg may change.",
+	},
+	"workspace.codingWorkersStart": {
+		ko: "Start worker(작업자 시작)", en: "Start worker", ja: "Start worker", zh: "Start worker", fr: "Start worker", de: "Start worker", ru: "Start worker", es: "Start worker", ar: "Start worker", hi: "Start worker", bn: "Start worker", pt: "Start worker", id: "Start worker", vi: "Start worker",
+	},
+	"workspace.codingWorkersUnavailable": {
+		ko: "코딩 작업자 서비스에 아직 연결되지 않았습니다.", en: "Coding worker service is not connected yet.", ja: "Coding worker service is not connected yet.", zh: "Coding worker service is not connected yet.", fr: "Coding worker service is not connected yet.", de: "Coding worker service is not connected yet.", ru: "Coding worker service is not connected yet.", es: "Coding worker service is not connected yet.", ar: "Coding worker service is not connected yet.", hi: "Coding worker service is not connected yet.", bn: "Coding worker service is not connected yet.", pt: "Coding worker service is not connected yet.", id: "Coding worker service is not connected yet.", vi: "Coding worker service is not connected yet",
+	},
+	"workspace.codingWorkersCourseUnready": {
+		ko: "수업 모드는 remote가 있는 깨끗한 Git 루트가 필요합니다. 선택한 폴더를 확인한 뒤 다시 시도하세요.", en: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", ja: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", zh: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", fr: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", de: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", ru: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", es: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", ar: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", hi: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", bn: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", pt: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", id: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.", vi: "Course mode requires a clean Git root with a remote. Review the selected folder and try again.",
+	},
+	"workspace.codingWorkersRequestFailed": {
+		ko: "코딩 작업자 요청을 완료할 수 없습니다.", en: "Coding worker request could not be completed.", ja: "Coding worker request could not be completed.", zh: "Coding worker request could not be completed.", fr: "Coding worker request could not be completed.", de: "Coding worker request could not be completed.", ru: "Coding worker request could not be completed.", es: "Coding worker request could not be completed.", ar: "Coding worker request could not be completed.", hi: "Coding worker request could not be completed.", bn: "Coding worker request could not be completed.", pt: "Coding worker request could not be completed.", id: "Coding worker request could not be completed.", vi: "Coding worker request could not be completed.",
+	},
+	"workspace.codingWorkersRequired": {
+		ko: "작업 루트와 작업 요청은 필수입니다.", en: "Worktree and task are required.", ja: "Worktree and task are required.", zh: "Worktree and task are required.", fr: "Worktree and task are required.", de: "Worktree and task are required.", ru: "Worktree and task are required.", es: "Worktree and task are required.", ar: "Worktree and task are required.", hi: "Worktree and task are required.", bn: "Worktree and task are required.", pt: "Worktree and task are required.", id: "Worktree and task are required.", vi: "Worktree and task are required.",
+	},
+	"workspace.codingWorkersOccupied": {
+		ko: "이 worktree에는 이미 실행 중인 코딩 작업자가 있습니다.", en: "This worktree already has an active coding worker.", ja: "This worktree already has an active coding worker.", zh: "This worktree already has an active coding worker.", fr: "This worktree already has an active coding worker.", de: "This worktree already has an active coding worker.", ru: "This worktree already has an active coding worker.", es: "This worktree already has an active coding worker.", ar: "This worktree already has an active coding worker.", hi: "This worktree already has an active coding worker.", bn: "This worktree already has an active coding worker.", pt: "This worktree already has an active coding worker.", id: "This worktree already has an active coding worker.", vi: "This worktree already has an active coding worker.",
+	},
+	"workspace.codingWorkersCourseBoundary": {
+		ko: "수업 모드", en: "Course mode", ja: "Course mode", zh: "Course mode", fr: "Course mode", de: "Course mode", ru: "Course mode", es: "Course mode", ar: "Course mode", hi: "Course mode", bn: "Course mode", pt: "Course mode", id: "Course mode", vi: "Course mode",
+	},
+	"workspace.codingWorkersVerification": {
+		ko: "검증", en: "Verification", ja: "Verification", zh: "Verification", fr: "Verification", de: "Verification", ru: "Verification", es: "Verification", ar: "Verification", hi: "Verification", bn: "Verification", pt: "Verification", id: "Verification", vi: "Verification",
+	},
+	"workspace.codingWorkersCancel": {
+		ko: "취소", en: "Cancel", ja: "Cancel", zh: "Cancel", fr: "Cancel", de: "Cancel", ru: "Cancel", es: "Cancel", ar: "Cancel", hi: "Cancel", bn: "Cancel", pt: "Cancel", id: "Cancel", vi: "Cancel",
+	},
+	"workspace.codingWorkersResume": {
+		ko: "재개", en: "Resume", ja: "Resume", zh: "Resume", fr: "Resume", de: "Resume", ru: "Resume", es: "Resume", ar: "Resume", hi: "Resume", bn: "Resume", pt: "Resume", id: "Resume", vi: "Resume",
+	},
 	"settings.provider": {
 		ko: "프로바이더",
 		en: "Provider",

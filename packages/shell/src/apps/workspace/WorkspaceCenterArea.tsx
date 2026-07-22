@@ -11,6 +11,7 @@ import { getAdkPath, setAdkPath } from "../../lib/adk-store";
 import { loadConfig, saveConfig } from "../../lib/config";
 import { Logger } from "../../lib/logger";
 import { appRegistry } from "../../lib/app-registry";
+import { t } from "../../lib/i18n";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { useChatStore } from "../../stores/chat";
 import { useAppStore } from "../../stores/app";
@@ -1690,7 +1691,7 @@ export function WorkspaceCenterArea({ naia }: AppCenterProps) {
 							aria-expanded={codingWorkersOpen}
 							onClick={() => setCodingWorkersOpen((open) => !open)}
 						>
-							Coding Workers
+							{t("workspace.codingWorkersTitle")}
 						</button>
 					</div>
 					{codingWorkersOpen && (
