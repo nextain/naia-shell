@@ -4,10 +4,10 @@ import { resolve } from "node:path";
 import { E2E_WORKSPACE } from "../codex-e2e-environment.js";
 
 const COURSE_ROOT = resolve(E2E_WORKSPACE, "jeonju-course-fixture");
-// A Codex-hosted development session injects its own read-only tool sandbox
-// into every child `codex exec`. That is not a standalone Shell acceptance
-// environment: fail closed rather than treating its forced worker failure as
-// product evidence. A signed-in standalone CLI has no CODEX_THREAD_ID.
+// A Codex-hosted development session imposes a read-only sandbox on every
+// child `codex exec`, independently of the child's own CLI environment. This
+// test is an acceptance test for a signed-in standalone Shell, so fail closed
+// here instead of treating that host-policy rejection as product evidence.
 const courseAcceptance = process.env.CODEX_THREAD_ID ? it.skip : it;
 
 function git(args: string[]): string {
@@ -30,10 +30,23 @@ function changedFiles(): string[] {
 		.map((line) => line.slice(3));
 }
 
+async function waitForCourseTerminal(cardIndex: number) {
+	const cards = await $$(".coding-workers__list article");
+	const card = cards[cardIndex];
+	if (!card) throw new Error(`course worker card ${cardIndex} was not rendered`);
+	const state = await card.$("[data-testid^='coding-worker-state-']");
+	await browser.waitUntil(async () => ["completed", "failed", "cancelled"].includes(await state.getText()), {
+		timeout: 300_000,
+		timeoutMsg: `course worker ${cardIndex} did not reach a terminal state`,
+	});
+	expect(await state.getText()).toBe("completed");
+	return card;
+}
+
 describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 	before(() => createCleanCourseRepository());
 
-	courseAcceptance("starts one real Codex course job, shows its verified completion, and preserves the two-file Git boundary", async () => {
+	courseAcceptance("completes the initial build and a revision in one student Git root without escaping the two-file boundary", async () => {
 		const workspacePanel = await $("button[data-panel-id='workspace']");
 		await workspacePanel.waitForClickable({ timeout: 45_000 });
 		await workspacePanel.click();
@@ -48,14 +61,11 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		await (await $("[data-testid='coding-worker-jeonju-course-preset']")).click();
 		await (await $("[data-testid='coding-worker-start']")).click();
 
-		const card = await $(".coding-workers__list article");
-		await card.waitForExist({ timeout: 60_000 });
-		const state = await card.$("[data-testid^='coding-worker-state-']");
-		await browser.waitUntil(async () => ["completed", "failed", "cancelled"].includes(await state.getText()), {
-			timeout: 300_000,
-			timeoutMsg: "course worker did not reach a terminal state",
-		});
-		expect(await state.getText()).toBe("completed");
+		await browser.waitUntil(
+			async () => (await $$(".coding-workers__list article")).length === 1,
+			{ timeout: 60_000, timeoutMsg: "initial course worker card did not render" },
+		);
+		const card = await waitForCourseTerminal(0);
 		await expect(card.$("[data-testid^='coding-worker-course-boundary-']")).toHaveText(
 			"Course mode: index.html, hero.svg",
 		);
@@ -67,5 +77,21 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("1");
 		expect(readFileSync(resolve(COURSE_ROOT, "index.html"), "utf8")).toContain("./hero.svg");
 		expect(readFileSync(resolve(COURSE_ROOT, "hero.svg"), "utf8")).toContain("#2563EB");
+
+		await (await $("[data-testid='coding-worker-task']")).setValue(
+			"Revise only index.html in the existing course repository. Preserve its hero.svg reference and existing content, then add a visible section headed 'Updated lesson plan' with a short mobile-friendly revision note. Do not create, delete, rename, commit, push, install, or deploy anything.",
+		);
+		await (await $("[data-testid='coding-worker-start']")).click();
+		await browser.waitUntil(
+			async () => (await $$(".coding-workers__list article")).length === 2,
+			{ timeout: 60_000, timeoutMsg: "revision course worker card did not render" },
+		);
+		await waitForCourseTerminal(1);
+
+		expect(changedFiles().sort()).toEqual(["hero.svg", "index.html"]);
+		expect(git(["rev-list", "--count", "HEAD"]).trim()).toBe("1");
+		const revisedIndex = readFileSync(resolve(COURSE_ROOT, "index.html"), "utf8");
+		expect(revisedIndex).toContain("./hero.svg");
+		expect(revisedIndex).toContain("Updated lesson plan");
 	});
 });
