@@ -7394,10 +7394,10 @@ const translations = {
 		id: "Remove connection", vi: "Remove connection",
 	},
 	"settings.connectionsRefresh": {
-		ko: "상태 새로고침", en: "Refresh status", ja: "状態を更新", zh: "刷新状态",
-		fr: "Actualiser", de: "Status aktualisieren", ru: "Обновить", es: "Actualizar",
-		ar: "تحديث الحالة", hi: "स्थिति रीफ़्रेश", bn: "অবস্থা রিফ্রেশ", pt: "Atualizar",
-		id: "Segarkan status", vi: "Làm mới",
+		ko: "연결 테스트", en: "Test connection", ja: "接続をテスト", zh: "测试连接",
+		fr: "Tester la connexion", de: "Verbindung testen", ru: "Проверить подключение", es: "Probar conexión",
+		ar: "اختبار الاتصال", hi: "कनेक्शन जाँचें", bn: "সংযোগ পরীক্ষা", pt: "Testar conexão",
+		id: "Uji koneksi", vi: "Kiểm tra kết nối",
 	},
 	"settings.connectionsPermissions": {
 		ko: "서버·채널 권한", en: "Server and channel permissions", ja: "サーバーとチャンネルの権限", zh: "服务器和频道权限",
