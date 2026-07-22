@@ -149,6 +149,39 @@ describe("CodingWorkersPanel", () => {
 		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
 	});
 
+	it("requires the fixed course preset again for a follow-up request in the same student repository", async () => {
+		const first: CodingWorker = {
+			...runningWorker,
+			id: "course-first",
+			worktree: "D:\\student-site",
+			state: "completed",
+			executionMode: "selected_workspace",
+			allowedFiles: ["index.html", "hero.svg"],
+		};
+		const second: CodingWorker = { ...first, id: "course-second" };
+		const create = vi.fn()
+			.mockResolvedValueOnce(first)
+			.mockResolvedValueOnce(second);
+		const workerAdapter = adapter({ create });
+		render(<CodingWorkersPanel adapter={workerAdapter} />);
+
+		fillCreateForm(first.worktree, "Create the initial course page");
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+		fireEvent.click(screen.getByTestId("coding-worker-start"));
+		await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+
+		fillCreateForm(first.worktree, "Revise the existing course page");
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+		fireEvent.click(screen.getByTestId("coding-worker-start"));
+		await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+		expect(create).toHaveBeenNthCalledWith(2, {
+			provider: "codex",
+			worktree: first.worktree,
+			task: "Revise the existing course page",
+			coursePreset: true,
+		});
+	});
+
 	it("switches the workspace guidance immediately when course mode is selected", () => {
 		render(<CodingWorkersPanel adapter={adapter()} />);
 		const workspaceInput = screen.getByTestId("coding-worker-worktree");

@@ -81,6 +81,10 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		await (await $("[data-testid='coding-worker-task']")).setValue(
 			"Revise only index.html in the existing course repository. Preserve its hero.svg reference and existing content, then add a visible section headed 'Updated lesson plan' with a short mobile-friendly revision note. Do not create, delete, rename, commit, push, install, or deploy anything.",
 		);
+		// The form deliberately resets after each submission; reselect the fixed
+		// course boundary so this is a revision in the same student Git root,
+		// not an ordinary isolated-worktree job.
+		await (await $("[data-testid='coding-worker-jeonju-course-preset']")).click();
 		await (await $("[data-testid='coding-worker-start']")).click();
 		await browser.waitUntil(
 			async () => (await $$(".coding-workers__list article")).length === 2,
