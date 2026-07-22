@@ -25,7 +25,7 @@ const mode = process.argv[2] === "prod" ? "prod" : "dev";
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os
-const REQUIRED_AGENT_COMMIT = "53ed538839a3a22c612e19364183871ea5fd34fd";
+const REQUIRED_AGENT_COMMIT = "bcb83239c7a7f13fd19c70e64f5a6395931dac1a";
 const REQUIRED_PROTO_SHA256 = "b77761930c0991ee825b6d2827adad264fc352a9f220404912a284fc166b691b";
 const STATIC_AGENT_CANDIDATES = [
 	resolve(OS_ROOT, "..", "naia-agent"),
