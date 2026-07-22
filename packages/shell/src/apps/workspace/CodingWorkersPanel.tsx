@@ -8,7 +8,14 @@ import {
 	canCancelCodingWorker,
 	canResumeCodingWorker,
 	isWorktreeOccupied,
+	reconcileCodingWorkers,
 } from "./coding-workers";
+import {
+	type JeonjuCourseTarget,
+	CourseTargetNotReadyError,
+	readJeonjuCourseTarget,
+	saveJeonjuCourseTarget,
+} from "./jeonju-course-target";
 
 interface CodingWorkersPanelProps {
 	adapter: CodingWorkersAdapter;
@@ -46,16 +53,27 @@ export function CodingWorkersPanel({
 	const [worktree, setWorktree] = useState("");
 	const [task, setTask] = useState("");
 	const [coursePreset, setCoursePreset] = useState(false);
+	const [courseTarget, setCourseTarget] = useState<JeonjuCourseTarget | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let active = true;
+		let refreshing = false;
 		const refresh = async () => {
+			// A gRPC request can outlive the two-second timer. Keep just one
+			// snapshot in flight so an old `running` response cannot overwrite a
+			// later terminal state in the card.
+			if (refreshing) return;
+			refreshing = true;
 			try {
 				const listed = await adapter.list();
-				if (active) setWorkers(listed);
+				if (active) {
+					setWorkers((current) => reconcileCodingWorkers(current, listed));
+				}
 			} catch (reason) {
 				if (active) setError(safeWorkerError(reason));
+			} finally {
+				refreshing = false;
 			}
 		};
 		void refresh();
@@ -65,6 +83,31 @@ export function CodingWorkersPanel({
 			window.clearInterval(interval);
 		};
 	}, [adapter]);
+
+	useEffect(() => {
+		let active = true;
+		if (!controlRoot) {
+			setCourseTarget(null);
+			return () => {
+				active = false;
+			};
+		}
+		void readJeonjuCourseTarget(controlRoot)
+			.then((target) => {
+				if (active) setCourseTarget(target);
+			})
+			.catch((reason) => {
+				if (!active) return;
+				setError(
+					reason instanceof CourseTargetNotReadyError
+						? t("workspace.codingWorkersCourseTargetUnready")
+						: t("workspace.codingWorkersCourseTargetInvalid"),
+				);
+			});
+		return () => {
+			active = false;
+		};
+	}, [controlRoot]);
 
 	async function createWorker() {
 		const normalizedWorktree = worktree.trim();
@@ -114,6 +157,26 @@ export function CodingWorkersPanel({
 		}
 	}
 
+	async function saveCourseTarget() {
+		const workspacePath = worktree.trim();
+		if (!controlRoot || !workspacePath) {
+			setError(t("workspace.codingWorkersCourseTargetRequired"));
+			return;
+		}
+		setError(null);
+		try {
+			const saved = await saveJeonjuCourseTarget(controlRoot, workspacePath);
+			setCourseTarget(saved);
+			setWorktree(saved.workspacePath);
+		} catch (reason) {
+			setError(
+				reason instanceof CourseTargetNotReadyError
+					? t("workspace.codingWorkersCourseTargetUnready")
+					: t("workspace.codingWorkersCourseTargetInvalid"),
+			);
+		}
+	}
+
 	return (
 		<section className="coding-workers" data-testid="coding-workers">
 			<header className="coding-workers__header">
@@ -158,14 +221,37 @@ export function CodingWorkersPanel({
 						type="checkbox"
 						data-testid="coding-worker-jeonju-course-preset"
 						checked={coursePreset}
-						onChange={(event) => setCoursePreset(event.target.checked)}
+						onChange={(event) => {
+							const enabled = event.target.checked;
+							setCoursePreset(enabled);
+							if (enabled && !worktree && courseTarget) {
+								setWorktree(courseTarget.workspacePath);
+							}
+						}}
 					/>
 					{t("workspace.codingWorkersCourseMode")}
 				</label>
 				{coursePreset && (
-					<p data-testid="coding-worker-course-mode-hint">
-						{t("workspace.codingWorkersCourseHint")}
-					</p>
+					<>
+						<p data-testid="coding-worker-course-mode-hint">
+							{t("workspace.codingWorkersCourseHint")}
+						</p>
+						<p data-testid="coding-worker-course-target-hint">
+							{t("workspace.codingWorkersCourseTargetHint")}
+						</p>
+						<button
+							type="button"
+							data-testid="coding-worker-save-course-target"
+							onClick={() => void saveCourseTarget()}
+						>
+							{t("workspace.codingWorkersSaveCourseTarget")}
+						</button>
+						{courseTarget && (
+							<p data-testid="coding-worker-course-target-saved">
+								{t("workspace.codingWorkersSavedCourseTarget")}: {courseTarget.workspacePath} ({courseTarget.allowedFiles.join(", ")})
+							</p>
+						)}
+					</>
 				)}
 				<button
 					type="button"

@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import {
 	cleanup,
+	act,
 	fireEvent,
 	render,
 	screen,
@@ -9,11 +10,25 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getLocale, setLocale } from "../../lib/i18n";
+
+const { readJeonjuCourseTarget, saveJeonjuCourseTarget } = vi.hoisted(() => ({
+	readJeonjuCourseTarget: vi.fn().mockResolvedValue(null),
+	saveJeonjuCourseTarget: vi.fn(),
+}));
+
+vi.mock("../workspace/jeonju-course-target", () => ({
+	CourseTargetNotReadyError: class CourseTargetNotReadyError extends Error {},
+	CourseTargetInvalidError: class CourseTargetInvalidError extends Error {},
+	readJeonjuCourseTarget,
+	saveJeonjuCourseTarget,
+}));
+
 import { CodingWorkersPanel } from "../workspace/CodingWorkersPanel";
 import {
 	type CodingWorker,
 	type CodingWorkersAdapter,
 	CourseWorkspaceNotReadyError,
+	reconcileCodingWorkers,
 	unavailableCodingWorkersAdapter,
 } from "../workspace/coding-workers";
 import {
@@ -58,6 +73,9 @@ describe("CodingWorkersPanel", () => {
 	afterEach(() => {
 		cleanup();
 		setCodingWorkersAdapterFactory(() => unavailableCodingWorkersAdapter);
+		readJeonjuCourseTarget.mockReset();
+		readJeonjuCourseTarget.mockResolvedValue(null);
+		saveJeonjuCourseTarget.mockReset();
 	});
 
 	it("exposes a narrow adapter factory for the future Tauri bridge", () => {
@@ -146,6 +164,77 @@ describe("CodingWorkersPanel", () => {
 		);
 		expect(screen.getByTestId("coding-worker-course-boundary-course-worker")).toHaveTextContent("index.html, hero.svg");
 		expect(screen.getByTestId("coding-worker-verification-course-worker")).toHaveTextContent("selected workspace verified");
+		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
+	});
+
+	it("does not issue overlapping polls or regress a terminal card to an older running snapshot", async () => {
+		vi.useFakeTimers();
+		let resolveFirstList: ((workers: CodingWorker[]) => void) | undefined;
+		const list = vi.fn(
+			() => new Promise<CodingWorker[]>((resolve) => {
+				resolveFirstList = resolve;
+			}),
+		);
+		try {
+			render(
+				<CodingWorkersPanel
+					adapter={adapter({ list })}
+					initialWorkers={[runningWorker]}
+				/>,
+			);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(6_000);
+			});
+			expect(list).toHaveBeenCalledTimes(1);
+
+			await act(async () => {
+				resolveFirstList?.([{ ...runningWorker, state: "completed" }]);
+				await Promise.resolve();
+			});
+			expect(screen.getByTestId("coding-worker-state-worker-running")).toHaveTextContent(
+				"completed",
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("preserves a terminal card when an older Agent snapshot arrives afterward", () => {
+		expect(
+			reconcileCodingWorkers(
+				[{ ...runningWorker, state: "completed" }],
+				[{ ...runningWorker, state: "running" }],
+			),
+		).toEqual([{ ...runningWorker, state: "completed" }]);
+	});
+
+	it("saves the Discord course target through the explicit course-mode control", async () => {
+		const target = {
+			version: 1 as const,
+			workspacePath: "D:\\alpha-adk\\projects\\course-site",
+			allowedFiles: ["index.html", "hero.svg"] as const,
+		};
+		saveJeonjuCourseTarget.mockResolvedValue(target);
+		render(
+			<CodingWorkersPanel
+				adapter={adapter()}
+				controlRoot={"D:\\alpha-adk"}
+			/>,
+		);
+
+		fillCreateForm(target.workspacePath, "Prepare the course page");
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+		fireEvent.click(screen.getByTestId("coding-worker-save-course-target"));
+
+		await waitFor(() =>
+			expect(saveJeonjuCourseTarget).toHaveBeenCalledWith(
+				"D:\\alpha-adk",
+				target.workspacePath,
+			),
+		);
+		expect(screen.getByTestId("coding-worker-course-target-saved")).toHaveTextContent(
+			"index.html, hero.svg",
+		);
 		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
 	});
 

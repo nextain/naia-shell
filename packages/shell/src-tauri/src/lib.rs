@@ -7888,6 +7888,101 @@ async fn compile_knowledge(
 }
 
 const JEONJU_COURSE_ALLOWED_FILES: [&str; 2] = ["index.html", "hero.svg"];
+const JEONJU_COURSE_TARGET_VERSION: u8 = 1;
+const JEONJU_COURSE_TARGET_FILENAME: &str = "jeonju-discord-course.json";
+
+/// Trusted startup input for Discord-triggered Jeonju work.  The WebView can
+/// provide only the selected Git root to the write command; Rust owns this
+/// version and the fixed file boundary.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct JeonjuCourseTarget {
+    version: u8,
+    workspace_path: String,
+    allowed_files: Vec<String>,
+}
+
+fn fixed_jeonju_course_target(workspace_path: String) -> JeonjuCourseTarget {
+    JeonjuCourseTarget {
+        version: JEONJU_COURSE_TARGET_VERSION,
+        workspace_path,
+        allowed_files: JEONJU_COURSE_ALLOWED_FILES
+            .iter()
+            .map(|file| (*file).to_string())
+            .collect(),
+    }
+}
+
+fn parse_jeonju_course_target(json: &str) -> Result<JeonjuCourseTarget, String> {
+    let target: JeonjuCourseTarget =
+        serde_json::from_str(json).map_err(|_| "course_target_invalid".to_string())?;
+    if target.version != JEONJU_COURSE_TARGET_VERSION
+        || target.workspace_path.trim().is_empty()
+        || target.allowed_files
+            != JEONJU_COURSE_ALLOWED_FILES
+                .iter()
+                .map(|file| (*file).to_string())
+                .collect::<Vec<_>>()
+    {
+        return Err("course_target_invalid".to_string());
+    }
+    Ok(target)
+}
+
+fn course_target_path(adk_path: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(adk_path)
+        .join("naia-settings")
+        .join(JEONJU_COURSE_TARGET_FILENAME)
+}
+
+fn verify_jeonju_course_target_path(adk_path: &str, workspace_path: &str) -> Result<String, String> {
+    let control_root = std::fs::canonicalize(adk_path)
+        .map_err(|_| "course_target_not_ready".to_string())?;
+    let selected_root = std::fs::canonicalize(workspace_path)
+        .map_err(|_| "course_target_not_ready".to_string())?;
+    if !selected_root.starts_with(&control_root) {
+        return Err("course_target_not_ready".to_string());
+    }
+    let selected = selected_root
+        .to_str()
+        .ok_or_else(|| "course_target_not_ready".to_string())?;
+    verify_jeonju_course_workspace(selected)
+        .map_err(|_| "course_target_not_ready".to_string())?;
+    Ok(selected.to_string())
+}
+
+#[tauri::command]
+async fn read_jeonju_course_target(adk_path: String) -> Result<String, String> {
+    let path = course_target_path(&adk_path);
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    let json = std::fs::read_to_string(path).map_err(|_| "course_target_invalid".to_string())?;
+    let target = parse_jeonju_course_target(&json)?;
+    if verify_jeonju_course_target_path(&adk_path, &target.workspace_path)
+        .map_err(|_| "course_target_invalid".to_string())?
+        != target.workspace_path
+    {
+        return Err("course_target_invalid".to_string());
+    }
+    serde_json::to_string(&target).map_err(|_| "course_target_invalid".to_string())
+}
+
+/// Writes a strict, startup-consumed course target.  The target never accepts
+/// an allowed-files field from IPC, so Discord/chat/model text cannot widen it.
+#[tauri::command]
+async fn write_jeonju_course_target(
+    adk_path: String,
+    workspace_path: String,
+) -> Result<String, String> {
+    let workspace_path = verify_jeonju_course_target_path(&adk_path, &workspace_path)?;
+    let target = fixed_jeonju_course_target(workspace_path);
+    let json = serde_json::to_string_pretty(&target)
+        .map_err(|_| "course_target_write_failed".to_string())?;
+    write_owner_only_atomic(&course_target_path(&adk_path), json.as_bytes())
+        .map_err(|_| "course_target_write_failed".to_string())?;
+    Ok(json)
+}
 
 fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_json::Value, String> {
     use agent_grpc::pb::{CodingJobExecutionMode, CodingJobState};
@@ -9088,6 +9183,8 @@ pub fn run() {
             delete_naia_asset,
             read_naia_config,
             write_naia_config,
+            read_jeonju_course_target,
+            write_jeonju_course_target,
             write_slots_manifest,
             start_cascade,
             stop_cascade,
@@ -9797,6 +9894,24 @@ mod tests {
             "not-installed"
         );
         assert_eq!(classify_codex_preflight(false, "unexpected failure"), "error");
+    }
+
+    #[test]
+    fn jeonju_course_target_has_exact_versioned_boundary() {
+        let target = fixed_jeonju_course_target("D:\\alpha-adk\\projects\\course-site".to_string());
+        let json = serde_json::to_string(&target).unwrap();
+        assert_eq!(parse_jeonju_course_target(&json).unwrap(), target);
+    }
+
+    #[test]
+    fn jeonju_course_target_rejects_wrong_version_files_and_extra_fields() {
+        for json in [
+            r#"{"version":2,"workspacePath":"D:\\course","allowedFiles":["index.html","hero.svg"]}"#,
+            r#"{"version":1,"workspacePath":"D:\\course","allowedFiles":["index.html","notes.md"]}"#,
+            r#"{"version":1,"workspacePath":"D:\\course","allowedFiles":["index.html","hero.svg"],"task":"untrusted"}"#,
+        ] {
+            assert_eq!(parse_jeonju_course_target(json), Err("course_target_invalid".to_string()));
+        }
     }
 
     #[test]

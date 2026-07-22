@@ -105,3 +105,30 @@ export function canResumeCodingWorker(worker: CodingWorker): boolean {
 export function canCancelCodingWorker(worker: CodingWorker): boolean {
 	return worker.state === "queued" || worker.state === "running";
 }
+
+function isTerminalCodingWorkerState(state: CodingWorkerState): boolean {
+	return state === "cancelled" || state === "completed" || state === "failed";
+}
+
+/**
+ * Agent snapshots are authoritative, but an older in-flight poll must never
+ * turn a terminal card back into a live one. This keeps the visible lifecycle
+ * monotonic while the next fresh poll catches up.
+ */
+export function reconcileCodingWorkers(
+	current: readonly CodingWorker[],
+	observed: readonly CodingWorker[],
+): CodingWorker[] {
+	const currentById = new Map(current.map((worker) => [worker.id, worker]));
+	return observed.map((next) => {
+		const previous = currentById.get(next.id);
+		if (
+			previous &&
+			isTerminalCodingWorkerState(previous.state) &&
+			!isTerminalCodingWorkerState(next.state)
+		) {
+			return previous;
+		}
+		return next;
+	});
+}

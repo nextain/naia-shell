@@ -251,9 +251,22 @@ For the Jeonju course, the user explicitly selects a Git root and enables course
 - The worker card shows the returned verification summary. A failed check preserves student changes for manual review; Shell never resets or cleans the student workspace.
 - If readiness fails, no worker is created and the UI gives a safe instruction to review the selected folder rather than exposing raw Git or Agent output.
 
+### UC-JEONJU-DISCORD-COURSE-TARGET
+
+Before starting the Agent, the instructor opens **Coding Workers**, enables Jeonju course mode, and explicitly saves the Discord course target. Shell writes the target only to the active ADK control root at `naia-settings/jeonju-discord-course.json`.
+
+- The persisted document is versioned (`version: 1`) and contains the canonical selected Git root plus the exact fixed file list `index.html`, `hero.svg`.
+- Rust accepts only a clean Git root with `origin` that is the control root or its descendant. A sibling checkout, arbitrary absolute path, dirty repository, missing remote, malformed document, or altered file list fails closed.
+- The form exposes the fixed file boundary as status only. Discord messages, chat task text, and model output never supply a workspace path or allowed-file list.
+- Agent startup consumes this trusted target document. The saved target is distinct from an ordinary Coding Worker request, so normal workers continue to use isolated worktrees.
+
+Success means the visible confirmation identifies the saved target and fixed boundary without exposing a token or raw Git output. A failed save keeps the prior target unchanged and gives only the folder-readiness guidance.
+
 ## Test Coverage Map (P02)
 
 **UC-JEONJU-COURSE-WORKER** maps to `apps/__tests__/coding-workers.test.tsx` and `apps/workspace/__tests__/coding-workers-tauri.test.ts` for the explicit preset, fixed boundary, preflight rejection, proposal/apply explanation, and verification summary. Its native acceptance spec is `e2e-tauri/specs/91-jeonju-course-worker.spec.ts`; it runs serially with the paired Agent and an isolated fixture repository. The proposal worker may inherit a read-only parent sandbox, because it no longer writes the course repository: Naia performs the constrained apply and post-apply verification.
+
+**UC-JEONJU-DISCORD-COURSE-TARGET** maps to `apps/__tests__/coding-workers.test.tsx` and `apps/workspace/__tests__/jeonju-course-target.test.ts` for the explicit save action, fixed schema parser, and no caller-supplied allowed files. `src-tauri/src/lib.rs` contracts cover canonical containment and exact schema rejection. Its native Tauri coverage extends the Jeonju course acceptance fixture so the saved target exists before Agent startup.
 
 The worker form shows the control-root path separately from the execution-target input, then changes the target label and help text immediately when course mode is selected. This prevents the default ADK workspace from being mistaken for Codex's write target and prevents the default isolated-worktree route from being mistaken for direct course-repository work. `apps/__tests__/coding-workers.test.tsx` verifies the transition, root/target explanation, and Korean explanatory labels while retaining the technical terms. `e2e-tauri/specs/97-course-worker-guidance.spec.ts` verifies the same transition in the actual Tauri Shell; `91-jeonju-course-worker.spec.ts` creates the course repository below the isolated ADK fixture's `projects/` directory.
 
