@@ -31,6 +31,13 @@ describe("Discord secure credential cancellation through the real Tauri Shell", 
 		const panel = await $("[data-testid='discord-connections']");
 		await panel.waitForDisplayed({ timeout: 30_000 });
 		expect(await panel.$$("input[type='password']")).toHaveLength(0);
+		expect(
+			await browser.execute(() =>
+				document
+					.querySelector("[data-testid='discord-connections'] .settings-actions button:nth-child(2)")
+					?.textContent?.trim(),
+			),
+		).toMatch(/Test connection|연결 테스트/);
 
 		// The isolated WebView starts without a Discord credential. The focused
 		// component contract test separately proves this action invokes the native
