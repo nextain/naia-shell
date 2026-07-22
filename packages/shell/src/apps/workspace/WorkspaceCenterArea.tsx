@@ -1695,7 +1695,10 @@ export function WorkspaceCenterArea({ naia }: AppCenterProps) {
 						</button>
 					</div>
 					{codingWorkersOpen && (
-						<CodingWorkersPanel adapter={codingWorkersAdapter} />
+						<CodingWorkersPanel
+							adapter={codingWorkersAdapter}
+							controlRoot={resolvedRoot}
+						/>
 					)}
 					{terminals.length > 0 ? (
 						<>

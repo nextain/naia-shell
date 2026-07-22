@@ -19,6 +19,9 @@ describe("Jeonju course worker guidance through the real Tauri Shell", () => {
 		await toggle.click();
 		const panel = await $("[data-testid='coding-workers']");
 		await panel.waitForDisplayed({ timeout: 30_000 });
+		const controlRoot = await $("[data-testid='coding-worker-control-root']");
+		expect(await controlRoot.getText()).toMatch(/ADK control root|ADK 제어 루트/);
+		expect(await controlRoot.getText()).not.toMatch(/Not configured|설정되지 않음/);
 		expect(await workspaceLabel()).toMatch(
 			/dedicated worktree is created automatically|전용 worktree가 자동으로 만들어집니다/,
 		);
@@ -26,7 +29,7 @@ describe("Jeonju course worker guidance through the real Tauri Shell", () => {
 		const courseMode = await $("[data-testid='coding-worker-jeonju-course-preset']");
 		await courseMode.click();
 		await browser.waitUntil(
-			async () => (await workspaceLabel()).includes("Course workspace Git root"),
+			async () => (await workspaceLabel()).includes("Course execution-target Git root"),
 			{
 				timeout: 10_000,
 				timeoutMsg: "course mode did not replace the isolated-worktree guidance",

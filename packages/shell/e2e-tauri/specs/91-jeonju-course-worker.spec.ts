@@ -3,7 +3,9 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { E2E_WORKSPACE } from "../codex-e2e-environment.js";
 
-const COURSE_ROOT = resolve(E2E_WORKSPACE, "jeonju-course-fixture");
+// Model the product topology: E2E_WORKSPACE is the Naia ADK control root;
+// Codex writes only the independently versioned course project beneath it.
+const COURSE_ROOT = resolve(E2E_WORKSPACE, "projects", "jeonju-course-fixture");
 // A Codex-hosted development session imposes a read-only sandbox on every
 // child `codex exec`, independently of the child's own CLI environment. This
 // test is an acceptance test for a signed-in standalone Shell, so fail closed

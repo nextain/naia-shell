@@ -13,6 +13,8 @@ import {
 interface CodingWorkersPanelProps {
 	adapter: CodingWorkersAdapter;
 	initialWorkers?: CodingWorker[];
+	/** ADK control plane: settings and skills live here; Codex writes at the target. */
+	controlRoot?: string;
 }
 
 function safeWorkerError(error: unknown): string {
@@ -38,6 +40,7 @@ function mergeWorker(
 export function CodingWorkersPanel({
 	adapter,
 	initialWorkers = [],
+	controlRoot,
 }: CodingWorkersPanelProps) {
 	const [workers, setWorkers] = useState<CodingWorker[]>(initialWorkers);
 	const [worktree, setWorktree] = useState("");
@@ -118,6 +121,13 @@ export function CodingWorkersPanel({
 				<p>{t("workspace.codingWorkersDescription")}</p>
 			</header>
 			<div className="coding-workers__form" data-testid="coding-worker-create">
+				<p data-testid="coding-worker-control-root">
+					<strong>{t("workspace.codingWorkersControlRoot")}: </strong>
+					<code>{controlRoot || t("workspace.codingWorkersControlRootUnavailable")}</code>
+				</p>
+				<p data-testid="coding-worker-target-hint">
+					{t("workspace.codingWorkersTargetHint")}
+				</p>
 				<label>
 					{t("workspace.codingWorkersProvider")}
 					<select data-testid="coding-worker-provider" value="codex" disabled>
@@ -126,8 +136,8 @@ export function CodingWorkersPanel({
 				</label>
 				<label>
 					{coursePreset
-						? t("workspace.codingWorkersCourseRoot")
-						: t("workspace.codingWorkersWorkspaceRoot")}
+						? t("workspace.codingWorkersCourseTarget")
+						: t("workspace.codingWorkersExecutionTarget")}
 					<input
 						data-testid="coding-worker-worktree"
 						value={worktree}

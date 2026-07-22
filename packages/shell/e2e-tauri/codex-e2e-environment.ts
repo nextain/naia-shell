@@ -3,11 +3,13 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { execPath } from "node:process";
 
 export const SHELL_DIR = resolve(import.meta.dirname, "..");
-export const E2E_RUN_PARENT = resolve(homedir(), ".naia", "run");
+export const E2E_RUN_PARENT = resolve(
+	process.env.NAIA_E2E_RUN_PARENT ?? resolve(homedir(), ".naia", "run"),
+);
 const E2E_WEBDRIVER_PORT = Number(
 	process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450",
 );
@@ -46,7 +48,7 @@ function assertOwnedRoot(path: string): void {
 	if (
 		candidate !== E2E_ROOT ||
 		dirname(candidate) !== E2E_RUN_PARENT ||
-		E2E_RUN_PARENT !== resolve(homedir(), ".naia", "run")
+		basename(candidate) !== `codex-live-e2e-${E2E_WEBDRIVER_PORT}`
 	) {
 		throw new Error(`Refusing to clean a non-E2E path: ${candidate}`);
 	}

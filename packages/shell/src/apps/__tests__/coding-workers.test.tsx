@@ -182,11 +182,25 @@ describe("CodingWorkersPanel", () => {
 		});
 	});
 
-	it("switches the workspace guidance immediately when course mode is selected", () => {
-		render(<CodingWorkersPanel adapter={adapter()} />);
+	it("shows the ADK control root separately and switches execution-target guidance for course mode", () => {
+		render(
+			<CodingWorkersPanel
+				adapter={adapter()}
+				controlRoot="D:\\alpha-adk\\projects\\naia-adk"
+			/>,
+		);
 		const workspaceInput = screen.getByTestId("coding-worker-worktree");
+		expect(screen.getByTestId("coding-worker-control-root")).toHaveTextContent(
+			"ADK control root:",
+		);
+		expect(screen.getByTestId("coding-worker-control-root")).toHaveTextContent(
+			"naia-adk",
+		);
+		expect(screen.getByTestId("coding-worker-target-hint")).toHaveTextContent(
+			"Codex works only in the execution-target Git root below.",
+		);
 		expect(workspaceInput.closest("label")).toHaveTextContent(
-			"Workspace root — a dedicated worktree is created automatically.",
+			"Execution target Git root — a dedicated worktree is created automatically.",
 		);
 		expect(
 			screen.queryByTestId("coding-worker-course-mode-hint"),
@@ -195,7 +209,7 @@ describe("CodingWorkersPanel", () => {
 		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
 
 		expect(workspaceInput.closest("label")).toHaveTextContent(
-			"Course workspace Git root",
+			"Course execution-target Git root",
 		);
 		expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
 			"Only index.html and hero.svg may change.",
@@ -210,7 +224,7 @@ describe("CodingWorkersPanel", () => {
 			fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
 
 			expect(screen.getByText("Coding Workers(코딩 작업자)")).toBeInTheDocument();
-			expect(screen.getByText("Course workspace Git root(수업 워크스페이스 Git 루트)")).toBeInTheDocument();
+			expect(screen.getByText("Course execution-target Git root(수업 실행 대상 Git 루트)")).toBeInTheDocument();
 			expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
 				"index.html과 hero.svg만 변경할 수 있습니다.",
 			);
