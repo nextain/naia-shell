@@ -248,7 +248,7 @@ For the Jeonju course, the user explicitly selects a Git root and enables course
 
 ## Test Coverage Map (P02)
 
-**UC-JEONJU-COURSE-WORKER** maps to `apps/__tests__/coding-workers.test.tsx` and `apps/workspace/__tests__/coding-workers-tauri.test.ts` for the explicit preset, fixed boundary, preflight rejection, and verification summary. Its native acceptance spec is `e2e-tauri/specs/91-jeonju-course-worker.spec.ts`; it must run serially with the paired Agent and an isolated fixture repository.
+**UC-JEONJU-COURSE-WORKER** maps to `apps/__tests__/coding-workers.test.tsx` and `apps/workspace/__tests__/coding-workers-tauri.test.ts` for the explicit preset, fixed boundary, preflight rejection, and verification summary. Its native acceptance spec is `e2e-tauri/specs/91-jeonju-course-worker.spec.ts`; it must run serially with the paired Agent and an isolated fixture repository. It is a signed-in standalone-Codex acceptance: a host that sets `CODEX_THREAD_ID` is intentionally skipped because that host injects a read-only child sandbox and cannot evidence a course write.
 
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|

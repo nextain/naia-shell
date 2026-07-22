@@ -19,10 +19,10 @@ const targetDir = resolve(
 const e2eTauriConfig = resolve(shellDir, "src-tauri", "tauri.e2e.conf.json");
 const bgmSidecar = resolve(shellDir, "..", "bgm-sidecar");
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
-const pairedAgent = "D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-8f5b0d1";
+const pairedAgent = "D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env";
 const agentScript = resolve(pairedAgent, "scripts/builds/agent-stdio-entry.mjs");
 const agentProtoDir = resolve(pairedAgent, "src/main/adapters/grpc");
-const REQUIRED_AGENT_COMMIT = "8f5b0d1c5c9161530e194328a573cdc0291aa6a5";
+const REQUIRED_AGENT_COMMIT = "6658ee02e60a7e18eb3fd903730befffdf9450fd";
 const REQUIRED_PROTO_SHA256 = "b77761930c0991ee825b6d2827adad264fc352a9f220404912a284fc166b691b";
 
 function gitOutput(args) {

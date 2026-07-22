@@ -46,16 +46,19 @@ export function CodingWorkersPanel({
 
 	useEffect(() => {
 		let active = true;
-		void adapter
-			.list()
-			.then((listed) => {
+		const refresh = async () => {
+			try {
+				const listed = await adapter.list();
 				if (active) setWorkers(listed);
-			})
-			.catch((reason) => {
+			} catch (reason) {
 				if (active) setError(safeWorkerError(reason));
-			});
+			}
+		};
+		void refresh();
+		const interval = window.setInterval(() => void refresh(), 2_000);
 		return () => {
 			active = false;
+			window.clearInterval(interval);
 		};
 	}, [adapter]);
 

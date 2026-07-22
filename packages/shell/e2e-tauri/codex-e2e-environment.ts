@@ -65,11 +65,11 @@ export function configureCodexE2eEnvironment(): void {
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_WEBVIEW2_DATA;
 	process.env.NAIA_E2E_DISCORD_CAPTURE = "cancel";
 	process.env.NAIA_AGENT_SCRIPT = resolve(
-		"D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-8f5b0d1",
+		"D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env",
 		"scripts/builds/agent-stdio-entry.mjs",
 	);
 	process.env.NAIA_AGENT_PROTO_DIR = resolve(
-		"D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-8f5b0d1",
+		"D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env",
 		"src/main/adapters/grpc",
 	);
 }
