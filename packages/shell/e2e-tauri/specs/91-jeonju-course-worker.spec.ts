@@ -90,6 +90,21 @@ describe("Jeonju course worker through the isolated real Tauri Shell", () => {
 		expect(
 			await $("[data-testid='coding-worker-course-target-status']").getText(),
 		).toContain("index.html, hero.svg");
+		// The native bridge writes the exact contract consumed by naia-agent on a
+		// later Discord /course invocation. Assert the persisted hand-off, not
+		// only the optimistic Shell status text.
+		expect(
+			JSON.parse(
+				readFileSync(
+					resolve(E2E_WORKSPACE, "naia-settings", "jeonju-discord-course.json"),
+					"utf8",
+				),
+			),
+		).toEqual({
+			version: 1,
+			workspacePath: COURSE_ROOT,
+			allowedFiles: ["index.html", "hero.svg"],
+		});
 		await (await $("[data-testid='coding-worker-start']")).click();
 
 		await browser.waitUntil(

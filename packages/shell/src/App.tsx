@@ -17,6 +17,8 @@ import { UpdateBanner } from "./components/UpdateBanner";
 import { getBridgeForPanel } from "./lib/active-bridge";
 import {
 	getAdkPath,
+	beginNaiaConfigHydration,
+	completeNaiaConfigHydration,
 	isAdkInitialized,
 	listNaiaAssets,
 	readNaiaConfig,
@@ -158,17 +160,27 @@ function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 }
 
 export function App() {
+	const configHydrationStartedRef = useRef(false);
+	if (!configHydrationStartedRef.current) {
+		beginNaiaConfigHydration();
+		configHydrationStartedRef.current = true;
+	}
 	// The native WebDriver binary starts with a fresh WebView2 profile. Seed
 	// only the explicitly supplied E2E workspace before first render so the
 	// real application follows its normal hydrated-config path.
 	const e2eAdkPath = import.meta.env.VITE_NAIA_E2E_ADK_PATH?.trim();
-	if (e2eAdkPath && !getAdkPath()) setAdkPath(e2eAdkPath);
+	const e2eProvider = import.meta.env.VITE_NAIA_E2E_PROVIDER?.trim() || "ollama";
+	const e2eModel = import.meta.env.VITE_NAIA_E2E_MODEL?.trim() || "e2e";
+	// A native E2E run owns its ADK root.  WebView2 can retain a prior profile
+	// while Windows tears it down, so merely filling an absent cache lets an
+	// earlier run's workspace silently override this run's seeded config.
+	if (e2eAdkPath && getAdkPath() !== e2eAdkPath) setAdkPath(e2eAdkPath);
 	if (e2eAdkPath && !isOnboardingComplete()) {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
-				provider: "ollama",
-				model: "e2e",
+				provider: e2eProvider,
+				model: e2eModel,
 				apiKey: "",
 				locale: "ko",
 				ttsEnabled: false,
@@ -429,11 +441,20 @@ export function App() {
 					saveConfig(reconciled);
 				}
 				configHydratedRef.current = true;
+				completeNaiaConfigHydration();
 				// Re-run the gateway-mode sync now that the file value is in cache
 				// (the immediate sync on mount was gated off until this point).
 				window.dispatchEvent(new CustomEvent("naia-config-changed"));
 			},
-		);
+		).catch((error: unknown) => {
+			// Keep the writeback gate closed when workspace hydration fails. The
+			// provider/model are intentionally omitted from the log; this is a
+			// seam diagnostic, not configuration telemetry.
+			Logger.error("App", "workspace config hydration failed", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+			completeNaiaConfigHydration();
+		});
 	}, [showAdkSetup]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).

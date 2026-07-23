@@ -8,7 +8,11 @@ pub mod pb {
 
 use pb::agent_event::Event;
 use pb::naia_agent_client::NaiaAgentClient;
-use pb::{ApprovalResponseRequest, CancelCodingJobRequest, CancelRequest, ChatRequest, CredsUpdate, GetCodingJobRequest, ListCodingJobsRequest, Message, ResumeCodingJobRequest, SetWorkspaceRequest, StartCodingJobRequest, ToolRequestControl};
+use pb::{
+    ApprovalResponseRequest, CancelCodingJobRequest, CancelRequest, ChatRequest, CredsUpdate,
+    GetCodingJobRequest, ListCodingJobsRequest, Message, ResumeCodingJobRequest,
+    SetWorkspaceRequest, StartCodingJobRequest, ToolRequestControl,
+};
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 
@@ -20,10 +24,18 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
     let mut out = match &ev.event {
         Some(Event::Text(t)) => json!({"type":"text","requestId":rid,"text":t.text}),
         Some(Event::Thinking(t)) => json!({"type":"thinking","requestId":rid,"text":t.text}),
-        Some(Event::ToolUse(t)) => json!({"type":"tool_use","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}),
-        Some(Event::ToolResult(t)) => json!({"type":"tool_result","requestId":rid,"toolCallId":t.tool_call_id,"output":t.output,"toolName":t.tool_name,"success":t.success}),
-        Some(Event::ApprovalRequest(t)) => json!({"type":"approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"tier":t.tier,"args":parse(&t.args_json),"description":t.description}),
-        Some(Event::GatewayApprovalRequest(t)) => json!({"type":"gateway_approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}),
+        Some(Event::ToolUse(t)) => {
+            json!({"type":"tool_use","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)})
+        }
+        Some(Event::ToolResult(t)) => {
+            json!({"type":"tool_result","requestId":rid,"toolCallId":t.tool_call_id,"output":t.output,"toolName":t.tool_name,"success":t.success})
+        }
+        Some(Event::ApprovalRequest(t)) => {
+            json!({"type":"approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"tier":t.tier,"args":parse(&t.args_json),"description":t.description})
+        }
+        Some(Event::GatewayApprovalRequest(t)) => {
+            json!({"type":"gateway_approval_request","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)})
+        }
         Some(Event::Usage(u)) => {
             let mut o = json!({"type":"usage","requestId":rid,"inputTokens":u.input_tokens,"outputTokens":u.output_tokens});
             if let Some(c) = u.cost {
@@ -34,8 +46,12 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
             }
             o
         }
-        Some(Event::LogEntry(l)) => json!({"type":"log_entry","requestId":rid,"level":l.level,"message":l.message}),
-        Some(Event::TokenWarning(t)) => json!({"type":"token_warning","requestId":rid,"raw":parse(&t.raw_json)}),
+        Some(Event::LogEntry(l)) => {
+            json!({"type":"log_entry","requestId":rid,"level":l.level,"message":l.message})
+        }
+        Some(Event::TokenWarning(t)) => {
+            json!({"type":"token_warning","requestId":rid,"raw":parse(&t.raw_json)})
+        }
         Some(Event::Finish(_)) => json!({"type":"finish","requestId":rid}),
         Some(Event::Error(e)) => {
             let mut value = json!({"type":"error","requestId":rid,"message":e.message});
@@ -52,28 +68,39 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
             }
             value
         }
-        Some(Event::Compacted(c)) => json!({"type":"compacted","requestId":rid,"droppedCount":c.dropped_count}), // UC-compaction(FR-COMPACT)
-        Some(Event::PanelToolCall(t)) => json!({"type":"panel_tool_call","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)}), // UC-PANEL FR-PANEL-2: 환경 도구 위임 → 셸 실행
-        Some(Event::Grounding(g)) => {
-            match pb::GroundingStatus::try_from(g.status) {
-                Ok(status) if status != pb::GroundingStatus::Unspecified => {
-                    let sources: Vec<Value> = g.sources.iter()
-                        .map(|s| json!({"title":s.title,"sourceUris":s.source_uris}))
-                        .collect();
-                    json!({
-                        "type":"grounding","requestId":rid,
-                        "status":status.as_str_name().to_ascii_lowercase(),"sources":sources
-                    })
-                }
-                _ => json!({
-                    "type":"error","requestId":rid,"message":"Unsupported wire enum",
-                    "code":"WIRE_UNSUPPORTED_ENUM"
-                }),
+        Some(Event::Compacted(c)) => {
+            json!({"type":"compacted","requestId":rid,"droppedCount":c.dropped_count})
+        } // UC-compaction(FR-COMPACT)
+        Some(Event::PanelToolCall(t)) => {
+            json!({"type":"panel_tool_call","requestId":rid,"toolCallId":t.tool_call_id,"toolName":t.tool_name,"args":parse(&t.args_json)})
+        } // UC-PANEL FR-PANEL-2: 환경 도구 위임 → 셸 실행
+        Some(Event::Grounding(g)) => match pb::GroundingStatus::try_from(g.status) {
+            Ok(status) if status != pb::GroundingStatus::Unspecified => {
+                let sources: Vec<Value> = g
+                    .sources
+                    .iter()
+                    .map(|s| json!({"title":s.title,"sourceUris":s.source_uris}))
+                    .collect();
+                json!({
+                    "type":"grounding","requestId":rid,
+                    "status":status.as_str_name().to_ascii_lowercase(),"sources":sources
+                })
             }
-        }
+            _ => json!({
+                "type":"error","requestId":rid,"message":"Unsupported wire enum",
+                "code":"WIRE_UNSUPPORTED_ENUM"
+            }),
+        },
         Some(Event::Artifact(a)) => {
-            match a.artifact.as_ref().map(image_artifact_to_ui_value).transpose() {
-                Ok(Some(artifact)) => json!({"type":"artifact","requestId":rid,"artifact":artifact}),
+            match a
+                .artifact
+                .as_ref()
+                .map(image_artifact_to_ui_value)
+                .transpose()
+            {
+                Ok(Some(artifact)) => {
+                    json!({"type":"artifact","requestId":rid,"artifact":artifact})
+                }
                 Ok(None) => json!({
                     "type":"error","requestId":rid,"message":"Invalid attachment field artifact",
                     "code":"ATTACHMENT_INVALID_REF"
@@ -84,25 +111,26 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
                 }),
             }
         }
-        Some(Event::ProviderSession(s)) => {
-            match pb::ProviderSessionState::try_from(s.state) {
-                Ok(state) if state != pb::ProviderSessionState::Unspecified => json!({
-                    "type":"provider_session","requestId":rid,"sessionId":s.session_id,
-                    "providerSessionRef":s.provider_session_ref,
-                    "state":state.as_str_name().to_ascii_lowercase(),
-                }),
-                _ => json!({
-                    "type":"error","requestId":rid,"message":"Unsupported wire enum",
-                    "code":"WIRE_UNSUPPORTED_ENUM"
-                }),
-            }
-        }
+        Some(Event::ProviderSession(s)) => match pb::ProviderSessionState::try_from(s.state) {
+            Ok(state) if state != pb::ProviderSessionState::Unspecified => json!({
+                "type":"provider_session","requestId":rid,"sessionId":s.session_id,
+                "providerSessionRef":s.provider_session_ref,
+                "state":state.as_str_name().to_ascii_lowercase(),
+            }),
+            _ => json!({
+                "type":"error","requestId":rid,"message":"Unsupported wire enum",
+                "code":"WIRE_UNSUPPORTED_ENUM"
+            }),
+        },
         Some(Event::ProcessingDisclosure(p)) => {
-            let workload = pb::ProcessingWorkload::try_from(p.workload).ok()
+            let workload = pb::ProcessingWorkload::try_from(p.workload)
+                .ok()
                 .filter(|value| *value != pb::ProcessingWorkload::Unspecified);
-            let destination = pb::ProcessingDestination::try_from(p.destination).ok()
+            let destination = pb::ProcessingDestination::try_from(p.destination)
+                .ok()
                 .filter(|value| *value != pb::ProcessingDestination::Unspecified);
-            let decision = pb::ProcessingDecision::try_from(p.decision).ok()
+            let decision = pb::ProcessingDecision::try_from(p.decision)
+                .ok()
                 .filter(|value| *value != pb::ProcessingDecision::Unspecified);
             if workload.is_none() || destination.is_none() || decision.is_none() {
                 return json!({
@@ -118,8 +146,12 @@ pub fn agent_event_to_ui_json(ev: &pb::AgentEvent) -> Value {
                 "decision":decision.unwrap().as_str_name().to_ascii_lowercase(),
                 "processingProfileRef":p.processing_profile_ref,
             });
-            if let Some(provider) = &p.provider { value["provider"] = json!(provider); }
-            if let Some(model) = &p.model { value["model"] = json!(model); }
+            if let Some(provider) = &p.provider {
+                value["provider"] = json!(provider);
+            }
+            if let Some(model) = &p.model {
+                value["model"] = json!(model);
+            }
             value
         }
         None => json!({"type":"error","requestId":rid,"message":"empty AgentEvent"}),
@@ -170,19 +202,34 @@ fn validate_image_attachment_fields(
         return Err(WireInputError::attachment("ATTACHMENT_INVALID_REF", "id"));
     }
     if !is_opaque_attachment_ref(local_ref) {
-        return Err(WireInputError::attachment("ATTACHMENT_INVALID_REF", "localRef"));
+        return Err(WireInputError::attachment(
+            "ATTACHMENT_INVALID_REF",
+            "localRef",
+        ));
     }
     if kind != "image" {
-        return Err(WireInputError::attachment("ATTACHMENT_UNSUPPORTED_TYPE", "kind"));
+        return Err(WireInputError::attachment(
+            "ATTACHMENT_UNSUPPORTED_TYPE",
+            "kind",
+        ));
     }
     if !matches!(mime_type, "image/png" | "image/jpeg" | "image/webp") {
-        return Err(WireInputError::attachment("ATTACHMENT_UNSUPPORTED_TYPE", "mimeType"));
+        return Err(WireInputError::attachment(
+            "ATTACHMENT_UNSUPPORTED_TYPE",
+            "mimeType",
+        ));
     }
     if size_bytes <= 0 {
-        return Err(WireInputError::attachment("ATTACHMENT_INVALID_REF", "sizeBytes"));
+        return Err(WireInputError::attachment(
+            "ATTACHMENT_INVALID_REF",
+            "sizeBytes",
+        ));
     }
     if size_bytes > MAX_ATTACHMENT_SIZE_BYTES {
-        return Err(WireInputError::attachment("ATTACHMENT_TOO_LARGE", "sizeBytes"));
+        return Err(WireInputError::attachment(
+            "ATTACHMENT_TOO_LARGE",
+            "sizeBytes",
+        ));
     }
     Ok(())
 }
@@ -193,7 +240,9 @@ fn image_artifact_to_ui_value(x: &pb::ImageArtifact) -> Result<Value, WireInputE
         "id":x.id, "kind":x.kind, "mimeType":x.mime_type,
         "sizeBytes":x.size_bytes, "localRef":x.local_ref,
     });
-    if let Some(name) = &x.name { value["name"] = json!(name); }
+    if let Some(name) = &x.name {
+        value["name"] = json!(name);
+    }
     Ok(value)
 }
 
@@ -213,7 +262,10 @@ fn is_opaque_attachment_ref(value: &str) -> bool {
 
 fn parse_attachment_ref(value: &Value) -> Result<pb::AttachmentRef, WireInputError> {
     let Some(item) = value.as_object() else {
-        return Err(WireInputError::attachment("ATTACHMENT_INVALID_REF", "attachment"));
+        return Err(WireInputError::attachment(
+            "ATTACHMENT_INVALID_REF",
+            "attachment",
+        ));
     };
     let string_field = |field: &str| item.get(field).and_then(|x| x.as_str());
     let id = string_field("id")
@@ -261,25 +313,25 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
                                 .collect::<Result<Vec<_>, _>>()?
                         }
                         None => Vec::new(),
-					};
-					Ok(Message {
-						role: m
-							.get("role")
-							.and_then(|x| x.as_str())
-							.unwrap_or("user")
-							.to_string(),
-						content: m
-							.get("content")
-							.and_then(|x| x.as_str())
-							.unwrap_or("")
-							.to_string(),
-						tool_call_id: m
-							.get("toolCallId")
-							.and_then(|x| x.as_str())
-							.map(|x| x.to_string()),
-						attachments,
-					})
-				})
+                    };
+                    Ok(Message {
+                        role: m
+                            .get("role")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("user")
+                            .to_string(),
+                        content: m
+                            .get("content")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        tool_call_id: m
+                            .get("toolCallId")
+                            .and_then(|x| x.as_str())
+                            .map(|x| x.to_string()),
+                        attachments,
+                    })
+                })
                 .collect::<Result<Vec<_>, WireInputError>>()
         })
         .transpose()?
@@ -292,10 +344,26 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
             }),
             Some("discord") => Some(pb::ChannelContext {
                 channel: Some(pb::channel_context::Channel::Discord(pb::DiscordChannel {
-                    binding_id: c.get("bindingId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    guild_id: c.get("guildId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    channel_id: c.get("channelId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    user_id: c.get("userId").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                    binding_id: c
+                        .get("bindingId")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    guild_id: c
+                        .get("guildId")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    channel_id: c
+                        .get("channelId")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    user_id: c
+                        .get("userId")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 })),
             }),
             other => return Err(WireInputError::unsupported_enum("channel.kind", other)),
@@ -313,7 +381,11 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
             };
             Some(pb::GroundingRequest {
                 policy,
-                knowledge_scope: g.get("knowledgeScope").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                knowledge_scope: g
+                    .get("knowledgeScope")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
             })
         }
         None => None,
@@ -324,11 +396,19 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
             let mode = match p.get("mode").and_then(|x| x.as_str()) {
                 Some("new") => pb::ProviderSessionMode::New as i32,
                 Some("resume") => pb::ProviderSessionMode::Resume as i32,
-                other => return Err(WireInputError::unsupported_enum("providerSession.mode", other)),
+                other => {
+                    return Err(WireInputError::unsupported_enum(
+                        "providerSession.mode",
+                        other,
+                    ))
+                }
             };
             Some(pb::ProviderSessionRequest {
                 mode,
-                provider_session_ref: p.get("providerSessionRef").and_then(|x| x.as_str()).map(str::to_string),
+                provider_session_ref: p
+                    .get("providerSessionRef")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string),
             })
         }
         None => None,
@@ -351,7 +431,11 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
         disabled_skills: v
             .get("disabledSkills")
             .and_then(|x| x.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(|x| x.to_string()))
+                    .collect()
+            })
             .unwrap_or_default(),
         activity_resume: v.get("activityResume").and_then(|r| {
             Some(pb::ActivityResume {
@@ -365,7 +449,8 @@ pub fn try_json_to_chat_request(v: &Value) -> Result<ChatRequest, WireInputError
         grounding,
         provider_session,
         processing: v.get("processing").map(|p| pb::ProcessingRequest {
-            processing_profile_ref: p.get("processingProfileRef")
+            processing_profile_ref: p
+                .get("processingProfileRef")
                 .and_then(|x| x.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -389,18 +474,36 @@ impl AgentGrpc {
         Ok(Self { client })
     }
 
-    pub async fn set_workspace(&mut self, adk_path: String) -> Result<pb::SetWorkspaceResult, tonic::Status> {
-        Ok(self.client.set_workspace(SetWorkspaceRequest { adk_path }).await?.into_inner())
+    pub async fn set_workspace(
+        &mut self,
+        adk_path: String,
+    ) -> Result<pb::SetWorkspaceResult, tonic::Status> {
+        Ok(self
+            .client
+            .set_workspace(SetWorkspaceRequest { adk_path })
+            .await?
+            .into_inner())
     }
 
     pub async fn reload_settings(&mut self) -> Result<pb::SetWorkspaceResult, tonic::Status> {
-        Ok(self.client.reload_settings(pb::ReloadSettingsRequest {}).await?.into_inner())
+        Ok(self
+            .client
+            .reload_settings(pb::ReloadSettingsRequest {})
+            .await?
+            .into_inner())
     }
 
     /// UC-KNOWLEDGE-COMPILE(FR-KB-5): 설정 지식 탭 "지금 컴파일" → 등록 소스 폴더 → kb.json.
     /// naia-agent 가 naia-settings/knowledge.json 을 읽어 kb-compiler compile. 통계 반환(no-throw RPC).
-    pub async fn compile_knowledge(&mut self, adk_path: String) -> Result<pb::CompileKnowledgeResult, tonic::Status> {
-        Ok(self.client.compile_knowledge(pb::CompileKnowledgeRequest { adk_path }).await?.into_inner())
+    pub async fn compile_knowledge(
+        &mut self,
+        adk_path: String,
+    ) -> Result<pb::CompileKnowledgeResult, tonic::Status> {
+        Ok(self
+            .client
+            .compile_knowledge(pb::CompileKnowledgeRequest { adk_path })
+            .await?
+            .into_inner())
     }
 
     pub async fn start_coding_job(
@@ -410,34 +513,67 @@ impl AgentGrpc {
         execution_mode: i32,
         allowed_files: Vec<String>,
     ) -> Result<pb::CodingJob, tonic::Status> {
-        Ok(self.client.start_coding_job(StartCodingJobRequest {
-            workspace_path,
-            task,
-            model: None,
-            execution_mode,
-            allowed_files,
-        }).await?.into_inner())
+        Ok(self
+            .client
+            .start_coding_job(StartCodingJobRequest {
+                workspace_path,
+                task,
+                model: None,
+                execution_mode,
+                allowed_files,
+            })
+            .await?
+            .into_inner())
     }
 
     pub async fn get_coding_job(&mut self, job_id: String) -> Result<pb::CodingJob, tonic::Status> {
-        Ok(self.client.get_coding_job(GetCodingJobRequest { job_id }).await?.into_inner())
+        Ok(self
+            .client
+            .get_coding_job(GetCodingJobRequest { job_id })
+            .await?
+            .into_inner())
     }
 
     pub async fn list_coding_jobs(&mut self) -> Result<Vec<pb::CodingJob>, tonic::Status> {
-        Ok(self.client.list_coding_jobs(ListCodingJobsRequest { workspace_path: None }).await?.into_inner().jobs)
+        Ok(self
+            .client
+            .list_coding_jobs(ListCodingJobsRequest {
+                workspace_path: None,
+            })
+            .await?
+            .into_inner()
+            .jobs)
     }
 
-    pub async fn cancel_coding_job(&mut self, job_id: String) -> Result<pb::CodingJob, tonic::Status> {
-        Ok(self.client.cancel_coding_job(CancelCodingJobRequest { job_id }).await?.into_inner())
+    pub async fn cancel_coding_job(
+        &mut self,
+        job_id: String,
+    ) -> Result<pb::CodingJob, tonic::Status> {
+        Ok(self
+            .client
+            .cancel_coding_job(CancelCodingJobRequest { job_id })
+            .await?
+            .into_inner())
     }
 
-    pub async fn resume_coding_job(&mut self, job_id: String) -> Result<pb::CodingJob, tonic::Status> {
-        Ok(self.client.resume_coding_job(ResumeCodingJobRequest { job_id }).await?.into_inner())
+    pub async fn resume_coding_job(
+        &mut self,
+        job_id: String,
+    ) -> Result<pb::CodingJob, tonic::Status> {
+        Ok(self
+            .client
+            .resume_coding_job(ResumeCodingJobRequest { job_id })
+            .await?
+            .into_inner())
     }
 
     /// F1 rich-health(신규계약 Diagnostics RPC): agent version/uptime/components. os InteroceptivePort rich payload.
     pub async fn diagnostics(&mut self) -> Result<pb::DiagnosticsResult, tonic::Status> {
-        Ok(self.client.diagnostics(pb::DiagnosticsRequest {}).await?.into_inner())
+        Ok(self
+            .client
+            .diagnostics(pb::DiagnosticsRequest {})
+            .await?
+            .into_inner())
     }
 
     pub async fn shutdown(&mut self, nonce: String) -> Result<(), tonic::Status> {
@@ -456,7 +592,11 @@ impl AgentGrpc {
     }
 
     /// Chat server-stream → 각 AgentEvent 를 UI JSON 으로 emit(현 reader loop 의 agent_response 와 동일 형태).
-    pub async fn chat<F: FnMut(String)>(&mut self, req: ChatRequest, mut emit: F) -> Result<(), tonic::Status> {
+    pub async fn chat<F: FnMut(String)>(
+        &mut self,
+        req: ChatRequest,
+        mut emit: F,
+    ) -> Result<(), tonic::Status> {
         let mut stream = self.client.chat(req).await?.into_inner();
         while let Some(ev) = stream.message().await? {
             emit(agent_event_to_ui_json(&ev).to_string());
@@ -466,20 +606,47 @@ impl AgentGrpc {
 
     /// 구 standalone tool_request(셸 directToolCall) — new-core 미지원 → 즉시 error 스트림(셸 120s 행 방지).
     /// 드롭하면 셸 기동 directToolCall(skill_voicewake/skill_config/skill_sessions)이 응답 없이 행한다(회귀).
-    pub async fn tool_request<F: FnMut(String)>(&mut self, request_id: String, tool_name: String, mut emit: F) -> Result<(), tonic::Status> {
-        let mut stream = self.client.tool_request(ToolRequestControl { request_id, tool_name }).await?.into_inner();
+    pub async fn tool_request<F: FnMut(String)>(
+        &mut self,
+        request_id: String,
+        tool_name: String,
+        mut emit: F,
+    ) -> Result<(), tonic::Status> {
+        let mut stream = self
+            .client
+            .tool_request(ToolRequestControl {
+                request_id,
+                tool_name,
+            })
+            .await?
+            .into_inner();
         while let Some(ev) = stream.message().await? {
             emit(agent_event_to_ui_json(&ev).to_string());
         }
         Ok(())
     }
 
-    pub async fn update_creds(&mut self, provider: String, api_key: Option<String>, naia_key: Option<String>) -> Result<(), tonic::Status> {
-        self.client.update_creds(CredsUpdate { provider, api_key, naia_key }).await?;
+    pub async fn update_creds(
+        &mut self,
+        provider: String,
+        api_key: Option<String>,
+        naia_key: Option<String>,
+    ) -> Result<(), tonic::Status> {
+        self.client
+            .update_creds(CredsUpdate {
+                provider,
+                api_key,
+                naia_key,
+            })
+            .await?;
         Ok(())
     }
 
-    pub async fn cancel(&mut self, request_id: String, activity_id: Option<String>) -> Result<(), tonic::Status> {
+    pub async fn cancel(
+        &mut self,
+        request_id: String,
+        activity_id: Option<String>,
+    ) -> Result<(), tonic::Status> {
         self.client
             .cancel(CancelRequest {
                 request_id,
@@ -490,34 +657,62 @@ impl AgentGrpc {
         Ok(())
     }
 
-    pub async fn approval_response(&mut self, request_id: String, tool_call_id: String, approve: bool) -> Result<(), tonic::Status> {
+    pub async fn approval_response(
+        &mut self,
+        request_id: String,
+        tool_call_id: String,
+        approve: bool,
+    ) -> Result<(), tonic::Status> {
         let decision = if approve {
             pb::approval_response_request::Decision::Approve
         } else {
             pb::approval_response_request::Decision::Reject
         };
         self.client
-            .approval_response(ApprovalResponseRequest { request_id, tool_call_id, decision: decision as i32 })
+            .approval_response(ApprovalResponseRequest {
+                request_id,
+                tool_call_id,
+                decision: decision as i32,
+            })
             .await?;
         Ok(())
     }
 
     // UC-PANEL FR-PANEL: 환경 panel skill RPC 클라이언트(셸→agent). agent_dispatcher 가 wire JSON 을 이리로 라우팅.
-    pub async fn register_panel_skills(&mut self, panel_id: String, tools: Vec<pb::ToolSpec>) -> Result<(), tonic::Status> {
-        self.client.register_panel_skills(pb::PanelSkills { panel_id, tools }).await?;
+    pub async fn register_panel_skills(
+        &mut self,
+        panel_id: String,
+        tools: Vec<pb::ToolSpec>,
+    ) -> Result<(), tonic::Status> {
+        self.client
+            .register_panel_skills(pb::PanelSkills { panel_id, tools })
+            .await?;
         Ok(())
     }
 
     pub async fn clear_panel_skills(&mut self, panel_id: String) -> Result<(), tonic::Status> {
-        self.client.clear_panel_skills(pb::PanelId { panel_id }).await?;
+        self.client
+            .clear_panel_skills(pb::PanelId { panel_id })
+            .await?;
         Ok(())
     }
 
     pub async fn list_skills(&mut self) -> Result<pb::SkillList, tonic::Status> {
-        Ok(self.client.list_skills(pb::ListSkillsRequest {}).await?.into_inner())
+        Ok(self
+            .client
+            .list_skills(pb::ListSkillsRequest {})
+            .await?
+            .into_inner())
     }
 
-    pub async fn panel_tool_result(&mut self, request_id: String, tool_call_id: String, output: String, success: bool, activity_id: Option<String>) -> Result<(), tonic::Status> {
+    pub async fn panel_tool_result(
+        &mut self,
+        request_id: String,
+        tool_call_id: String,
+        output: String,
+        success: bool,
+        activity_id: Option<String>,
+    ) -> Result<(), tonic::Status> {
         self.client
             .panel_tool_result(pb::PanelToolResultMsg {
                 request_id,
@@ -531,12 +726,25 @@ impl AgentGrpc {
         Ok(())
     }
 
-    pub async fn configure_speech_profile(&mut self, req: pb::ConfigureSpeechProfileRequest) -> Result<bool, tonic::Status> {
-        Ok(self.client.configure_speech_profile(req).await?.into_inner().ok)
+    pub async fn configure_speech_profile(
+        &mut self,
+        req: pb::ConfigureSpeechProfileRequest,
+    ) -> Result<bool, tonic::Status> {
+        Ok(self
+            .client
+            .configure_speech_profile(req)
+            .await?
+            .into_inner()
+            .ok)
     }
 
-    pub async fn subscribe_speech_activities<F: FnMut(String)>(&mut self, session_id: String, mut emit: F) -> Result<(), tonic::Status> {
-        let mut stream = self.client
+    pub async fn subscribe_speech_activities<F: FnMut(String)>(
+        &mut self,
+        session_id: String,
+        mut emit: F,
+    ) -> Result<(), tonic::Status> {
+        let mut stream = self
+            .client
             .subscribe_speech_activities(pb::SpeechActivitySubscription { session_id })
             .await?
             .into_inner();
@@ -546,24 +754,50 @@ impl AgentGrpc {
         Ok(())
     }
 
-    pub async fn yield_speech_activity(&mut self, session_id: String, activity_id: String) -> Result<pb::YieldSpeechActivityResult, tonic::Status> {
-        Ok(self.client
-            .yield_speech_activity(pb::YieldSpeechActivityRequest { session_id, activity_id })
+    pub async fn yield_speech_activity(
+        &mut self,
+        session_id: String,
+        activity_id: String,
+    ) -> Result<pb::YieldSpeechActivityResult, tonic::Status> {
+        Ok(self
+            .client
+            .yield_speech_activity(pb::YieldSpeechActivityRequest {
+                session_id,
+                activity_id,
+            })
             .await?
             .into_inner())
     }
 
-    pub async fn stop_speech_activity(&mut self, session_id: String, activity_id: Option<String>) -> Result<bool, tonic::Status> {
-        Ok(self.client
-            .stop_speech_activity(pb::StopSpeechActivityRequest { session_id, activity_id })
+    pub async fn stop_speech_activity(
+        &mut self,
+        session_id: String,
+        activity_id: Option<String>,
+    ) -> Result<bool, tonic::Status> {
+        Ok(self
+            .client
+            .stop_speech_activity(pb::StopSpeechActivityRequest {
+                session_id,
+                activity_id,
+            })
             .await?
             .into_inner()
             .ok)
     }
 
-    pub async fn control_speech_activity(&mut self, session_id: String, activity_id: Option<String>, action: String) -> Result<bool, tonic::Status> {
-        Ok(self.client
-            .control_speech_activity(pb::ControlSpeechActivityRequest { session_id, activity_id, action })
+    pub async fn control_speech_activity(
+        &mut self,
+        session_id: String,
+        activity_id: Option<String>,
+        action: String,
+    ) -> Result<bool, tonic::Status> {
+        Ok(self
+            .client
+            .control_speech_activity(pb::ControlSpeechActivityRequest {
+                session_id,
+                activity_id,
+                action,
+            })
             .await?
             .into_inner()
             .ok)
@@ -614,7 +848,10 @@ mod transcode_tests {
             "profile-local-cloud-001"
         );
         assert_eq!(req.grounding.as_ref().unwrap().knowledge_scope, "workshop");
-        assert_eq!(req.provider_session.as_ref().unwrap().mode, pb::ProviderSessionMode::New as i32);
+        assert_eq!(
+            req.provider_session.as_ref().unwrap().mode,
+            pb::ProviderSessionMode::New as i32
+        );
     }
 
     #[test]
@@ -633,7 +870,10 @@ mod transcode_tests {
         let grounding_json = agent_event_to_ui_json(&grounding);
         assert_eq!(grounding_json["type"], "grounding");
         assert_eq!(grounding_json["status"], "grounded");
-        assert_eq!(grounding_json["sources"][0]["sourceUris"][0], "kb://workshop");
+        assert_eq!(
+            grounding_json["sources"][0]["sourceUris"][0],
+            "kb://workshop"
+        );
 
         let artifact = pb::AgentEvent {
             request_id: "wire-r1".into(),
@@ -722,10 +962,16 @@ mod transcode_tests {
         };
         assert_eq!(discord.binding_id, "bind_1");
         assert_eq!(discord.guild_id, "1234567890123456");
-        assert_eq!(req.grounding.unwrap().policy, pb::GroundingPolicy::Required as i32);
+        assert_eq!(
+            req.grounding.unwrap().policy,
+            pb::GroundingPolicy::Required as i32
+        );
         let session = req.provider_session.unwrap();
         assert_eq!(session.mode, pb::ProviderSessionMode::Resume as i32);
-        assert_eq!(session.provider_session_ref.as_deref(), Some("opaque-session-ref"));
+        assert_eq!(
+            session.provider_session_ref.as_deref(),
+            Some("opaque-session-ref")
+        );
     }
 
     #[test]
@@ -916,38 +1162,61 @@ mod transcode_tests {
     #[test]
     fn wire_v1_unspecified_and_unknown_output_enums_fail_closed() {
         for event in [
-            Event::Grounding(pb::GroundingEvent { status: 0, sources: vec![] }),
-            Event::Grounding(pb::GroundingEvent { status: 999, sources: vec![] }),
-            Event::ProviderSession(pb::ProviderSessionEvent {
-                session_id: "s1".into(), provider_session_ref: "ref".into(), state: 0,
+            Event::Grounding(pb::GroundingEvent {
+                status: 0,
+                sources: vec![],
+            }),
+            Event::Grounding(pb::GroundingEvent {
+                status: 999,
+                sources: vec![],
             }),
             Event::ProviderSession(pb::ProviderSessionEvent {
-                session_id: "s1".into(), provider_session_ref: "ref".into(), state: 999,
+                session_id: "s1".into(),
+                provider_session_ref: "ref".into(),
+                state: 0,
+            }),
+            Event::ProviderSession(pb::ProviderSessionEvent {
+                session_id: "s1".into(),
+                provider_session_ref: "ref".into(),
+                state: 999,
             }),
             Event::Error(pb::ErrorEvent {
-                message: "unsafe detail".into(), code: Some(0),
+                message: "unsafe detail".into(),
+                code: Some(0),
             }),
             Event::Error(pb::ErrorEvent {
-                message: "unsafe detail".into(), code: Some(999),
+                message: "unsafe detail".into(),
+                code: Some(999),
             }),
             Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
-                workload: 0, destination: pb::ProcessingDestination::LocalDevice as i32,
+                workload: 0,
+                destination: pb::ProcessingDestination::LocalDevice as i32,
                 decision: pb::ProcessingDecision::Allowed as i32,
-                processing_profile_ref: "profile".into(), provider: None, model: None,
-            }),
-            Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
-                workload: pb::ProcessingWorkload::Embedding as i32, destination: 999,
-                decision: pb::ProcessingDecision::Allowed as i32,
-                processing_profile_ref: "profile".into(), provider: None, model: None,
+                processing_profile_ref: "profile".into(),
+                provider: None,
+                model: None,
             }),
             Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
                 workload: pb::ProcessingWorkload::Embedding as i32,
-                destination: pb::ProcessingDestination::ExternalCloud as i32, decision: 0,
-                processing_profile_ref: "profile".into(), provider: None, model: None,
+                destination: 999,
+                decision: pb::ProcessingDecision::Allowed as i32,
+                processing_profile_ref: "profile".into(),
+                provider: None,
+                model: None,
+            }),
+            Event::ProcessingDisclosure(pb::ProcessingDisclosureEvent {
+                workload: pb::ProcessingWorkload::Embedding as i32,
+                destination: pb::ProcessingDestination::ExternalCloud as i32,
+                decision: 0,
+                processing_profile_ref: "profile".into(),
+                provider: None,
+                model: None,
             }),
         ] {
             let value = agent_event_to_ui_json(&pb::AgentEvent {
-                request_id: "wire-invalid".into(), event: Some(event), ..Default::default()
+                request_id: "wire-invalid".into(),
+                event: Some(event),
+                ..Default::default()
             });
             assert_eq!(value["type"], "error");
             assert_eq!(value["code"], "WIRE_UNSUPPORTED_ENUM");
@@ -966,7 +1235,9 @@ mod transcode_tests {
             ]
         });
         let req = json_to_chat_request(&v);
-        let json = req.environment_segments_json.expect("environment_segments_json present");
+        let json = req
+            .environment_segments_json
+            .expect("environment_segments_json present");
         // 코어가 다시 파싱해 화이트리스트 디코드 — 무손실 array 운반.
         let parsed: Value = serde_json::from_str(&json).expect("valid json");
         assert!(parsed.is_array());
@@ -985,15 +1256,20 @@ mod transcode_tests {
 
     #[test]
     fn non_array_environment_segments_is_none() {
-        let v = serde_json::json!({ "requestId": "r1", "messages": [], "environmentSegments": "nope" });
+        let v =
+            serde_json::json!({ "requestId": "r1", "messages": [], "environmentSegments": "nope" });
         assert!(json_to_chat_request(&v).environment_segments_json.is_none());
     }
 
     #[test]
     fn explicit_system_prompt_override_preserved() {
         // voice-pipeline / discord 의 명시 override 경로(코어가 honor) — 무회귀.
-        let v = serde_json::json!({ "requestId": "r1", "messages": [], "systemPrompt": "OVERRIDE" });
-        assert_eq!(json_to_chat_request(&v).system_prompt.as_deref(), Some("OVERRIDE"));
+        let v =
+            serde_json::json!({ "requestId": "r1", "messages": [], "systemPrompt": "OVERRIDE" });
+        assert_eq!(
+            json_to_chat_request(&v).system_prompt.as_deref(),
+            Some("OVERRIDE")
+        );
     }
 }
 
@@ -1014,11 +1290,17 @@ mod live_tests {
         let entry = std::env::var("NAIA_AGENT_ENTRY")
             .expect("set NAIA_AGENT_ENTRY to the agent-stdio-entry.mjs path for this live test");
         // agent stderr(DEBUG ingress) → 안정 파일($HOME). cargo test stdout 미포착·/tmp 소실 회피.
-        let dbg_path = format!("{}/rust-grpc-agent-stderr.log", std::env::var("HOME").unwrap_or_default());
+        let dbg_path = format!(
+            "{}/rust-grpc-agent-stderr.log",
+            std::env::var("HOME").unwrap_or_default()
+        );
         let dbg_file = std::fs::File::create(&dbg_path).expect("dbg file");
         let mut child = Command::new("node")
             .arg(entry)
-            .env("NAIA_ADK_PATH", std::env::var("NAIA_ADK_PATH").unwrap_or_default())
+            .env(
+                "NAIA_ADK_PATH",
+                std::env::var("NAIA_ADK_PATH").unwrap_or_default(),
+            )
             .env("NAIA_AGENT_SKILLS", "off")
             .env("NAIA_AGENT_MEMORY", "off")
             .env("NAIA_AGENT_DEBUG", "1")
@@ -1038,9 +1320,17 @@ mod live_tests {
             line.clear();
         }
         assert!(!addr.is_empty(), "GRPC_LISTENING addr");
-        let mut client = AgentGrpc::connect(format!("http://{}", addr)).await.expect("connect");
-        let sw = client.set_workspace(std::env::var("NAIA_ADK_PATH").unwrap_or_default()).await.expect("set_workspace");
-        eprintln!("[RUST-GRPC-TEST] SetWorkspace loaded={} {}/{}", sw.loaded, sw.provider, sw.model);
+        let mut client = AgentGrpc::connect(format!("http://{}", addr))
+            .await
+            .expect("connect");
+        let sw = client
+            .set_workspace(std::env::var("NAIA_ADK_PATH").unwrap_or_default())
+            .await
+            .expect("set_workspace");
+        eprintln!(
+            "[RUST-GRPC-TEST] SetWorkspace loaded={} {}/{}",
+            sw.loaded, sw.provider, sw.model
+        );
         let req = json_to_chat_request(&serde_json::json!({
             "requestId": "rust-t1",
             "messages": [{ "role": "user", "content": "한 문장으로 인사해줘" }]
@@ -1055,7 +1345,10 @@ mod live_tests {
                 let v: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
                 match v["type"].as_str() {
                     Some("text") => text.push_str(v["text"].as_str().unwrap_or("")),
-                    Some("usage") => tokens = v["inputTokens"].as_i64().unwrap_or(0) + v["outputTokens"].as_i64().unwrap_or(0),
+                    Some("usage") => {
+                        tokens = v["inputTokens"].as_i64().unwrap_or(0)
+                            + v["outputTokens"].as_i64().unwrap_or(0)
+                    }
                     Some("error") => err = Some(v["message"].as_str().unwrap_or("").to_string()),
                     _ => {}
                 }
@@ -1074,7 +1367,13 @@ mod live_tests {
             sw.loaded, sw.provider, sw.model,
             text.chars().take(80).collect::<String>(), err
         );
-        let _ = std::fs::write(format!("{}/rust-grpc-result.txt", std::env::var("HOME").unwrap_or_default()), &result);
+        let _ = std::fs::write(
+            format!(
+                "{}/rust-grpc-result.txt",
+                std::env::var("HOME").unwrap_or_default()
+            ),
+            &result,
+        );
         eprintln!("[RUST-GRPC-TEST] {}", result.replace('\n', " | "));
         assert!(err.is_none(), "no error: {:?}", err);
         assert!(tokens > 0, "tokens>0 = 실 z.ai (chat_state={chat_state})");

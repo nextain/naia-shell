@@ -71,7 +71,6 @@ describe("LLM role settings through the real Tauri Shell", () => {
 			);
 		}, { timeout: 30_000, timeoutMsg: "role settings were not written to the isolated ADK config" });
 
-		await browser.execute(() => localStorage.removeItem("naia-config"));
 		await browser.refresh();
 		const restartedSettings = await $(".app-bar-settings");
 		await restartedSettings.waitForClickable({ timeout: 45_000 });
@@ -79,7 +78,17 @@ describe("LLM role settings through the real Tauri Shell", () => {
 		const restartedBrainTab = await $("[data-settings-tab='brain']");
 		await restartedBrainTab.waitForClickable({ timeout: 30_000 });
 		await restartedBrainTab.click();
-
+		await browser.waitUntil(
+			async () =>
+				(await (await $("[data-testid='sub-llm-mode']")).getValue()) ===
+					"explicit" &&
+				(await (await $("[data-testid='memory-llm-mode']")).getValue()) ===
+					"inherit:main",
+			{
+				timeout: 30_000,
+				timeoutMsg: "persisted LLM role settings did not hydrate after WebView restart",
+			},
+		);
 		expect(await (await $("[data-testid='sub-llm-mode']")).getValue()).toBe("explicit");
 		expect(await (await $("[data-testid='sub-llm-provider']")).getValue()).toBe("gemini");
 		expect(await (await $("[data-testid='sub-llm-model']")).getValue()).toBe(

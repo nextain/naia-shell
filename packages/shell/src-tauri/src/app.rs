@@ -264,8 +264,8 @@ pub fn app_remove_installed(panel_id: String) -> Result<(), String> {
         id: Option<String>,
     }
 
-    for entry in std::fs::read_dir(&apps_root)
-        .map_err(|e| format!("Failed to read panels dir: {}", e))?
+    for entry in
+        std::fs::read_dir(&apps_root).map_err(|e| format!("Failed to read panels dir: {}", e))?
     {
         let entry = match entry {
             Ok(e) => e,
@@ -298,8 +298,7 @@ pub fn app_remove_installed(panel_id: String) -> Result<(), String> {
         }
 
         // Canonicalize to defeat symlinks — never delete outside HOME.
-        let canonical =
-            dunce::canonicalize(&dir).map_err(|_| "Access denied".to_string())?;
+        let canonical = dunce::canonicalize(&dir).map_err(|_| "Access denied".to_string())?;
         if !canonical.starts_with(&home_path) {
             return Err("Access denied".to_string());
         }
@@ -370,15 +369,16 @@ pub fn app_install(source: String) -> Result<AppInstallResult, String> {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
     if !derived_ok {
-        return Err(format!("유효하지 않은 저장소 이름이 도출되었습니다: {:?}", derived));
+        return Err(format!(
+            "유효하지 않은 저장소 이름이 도출되었습니다: {:?}",
+            derived
+        ));
     }
 
     let home = home_dir();
-    let home_path =
-        dunce::canonicalize(&home).unwrap_or_else(|_| std::path::PathBuf::from(&home));
+    let home_path = dunce::canonicalize(&home).unwrap_or_else(|_| std::path::PathBuf::from(&home));
     let apps_root = std::path::PathBuf::from(&home).join(".naia").join("panels");
-    std::fs::create_dir_all(&apps_root)
-        .map_err(|e| format!("앱 디렉토리 생성 실패: {}", e))?;
+    std::fs::create_dir_all(&apps_root).map_err(|e| format!("앱 디렉토리 생성 실패: {}", e))?;
 
     // Temp clone target *inside* apps_root (same volume → rename is atomic).
     // Leading-dot prefix keeps it out of the installed-panel list while cloning.
@@ -440,7 +440,9 @@ pub fn app_install(source: String) -> Result<AppInstallResult, String> {
         && !id.contains("..")
         && !id.contains('\0')
         && !id.chars().any(char::is_control)
-        && id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+        && id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
     if !id_safe {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(format!(

@@ -45,7 +45,11 @@ pub(crate) const OAUTH_CALLBACK_PORT: u16 = 18792;
 fn oauth_callback_port() -> u16 {
     if debug_e2e_enabled() {
         if let Ok(port) = std::env::var("NAIA_E2E_OAUTH_CALLBACK_PORT") {
-            if let Ok(port) = port.parse::<u16>() { if port != 0 { return port; } }
+            if let Ok(port) = port.parse::<u16>() {
+                if port != 0 {
+                    return port;
+                }
+            }
         }
     }
     OAUTH_CALLBACK_PORT
@@ -301,7 +305,9 @@ struct AgentChildLeaseLock {
 }
 
 fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
-    if let Some(runtime) = e2e_runtime_dir() { return Ok(runtime.join("agent-child-lease.json")); }
+    if let Some(runtime) = e2e_runtime_dir() {
+        return Ok(runtime.join("agent-child-lease.json"));
+    }
     Ok(dirs::home_dir()
         .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
         .join(".naia")
@@ -309,7 +315,9 @@ fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
 }
 
 fn agent_child_lease_lock_path() -> Result<std::path::PathBuf, String> {
-    if let Some(runtime) = e2e_runtime_dir() { return Ok(runtime.join("agent-child-lease.lock")); }
+    if let Some(runtime) = e2e_runtime_dir() {
+        return Ok(runtime.join("agent-child-lease.lock"));
+    }
     Ok(dirs::home_dir()
         .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
         .join(".naia")
@@ -360,8 +368,8 @@ fn read_agent_child_lease_locked(
     let bytes = std::fs::read(path).map_err(|_| "agent_lease_read_failed".to_string())?;
     let lease = serde_json::from_slice::<AgentChildLease>(&bytes)
         .map_err(|_| "agent_lease_invalid".to_string())?;
-    let nonce_valid = lease.nonce.len() == 32
-        && lease.nonce.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let nonce_valid =
+        lease.nonce.len() == 32 && lease.nonce.bytes().all(|byte| byte.is_ascii_hexdigit());
     if lease.version != 1
         || !nonce_valid
         || lease.marker != format!("--naia-agent-child={}", lease.nonce)
@@ -376,9 +384,7 @@ fn write_agent_child_lease_locked(
     _lock: &AgentChildLeaseLock,
     lease: &AgentChildLease,
 ) -> Result<(), String> {
-    persist_agent_child_lease_with(lease, |path, bytes| {
-        write_owner_only_atomic(path, bytes)
-    })
+    persist_agent_child_lease_with(lease, |path, bytes| write_owner_only_atomic(path, bytes))
 }
 
 fn persist_agent_child_lease_before<T, W, N>(
@@ -394,16 +400,12 @@ where
     next()
 }
 
-fn persist_agent_child_lease_with<W>(
-    lease: &AgentChildLease,
-    write: W,
-) -> Result<(), String>
+fn persist_agent_child_lease_with<W>(lease: &AgentChildLease, write: W) -> Result<(), String>
 where
     W: FnOnce(&std::path::Path, &[u8]) -> Result<(), String>,
 {
     let bytes = serde_json::to_vec(lease).map_err(|_| "agent_lease_invalid".to_string())?;
-    write(&agent_child_lease_path()?, &bytes)
-        .map_err(|_| "agent_lease_write_failed".to_string())
+    write(&agent_child_lease_path()?, &bytes).map_err(|_| "agent_lease_write_failed".to_string())
 }
 
 fn remove_matching_agent_child_lease_locked(
@@ -437,9 +439,7 @@ where
     Ok(true)
 }
 
-fn new_agent_child_lease(
-    runtime: Option<std::path::PathBuf>,
-) -> Result<AgentChildLease, String> {
+fn new_agent_child_lease(runtime: Option<std::path::PathBuf>) -> Result<AgentChildLease, String> {
     let nonce = new_agent_nonce()?;
     Ok(AgentChildLease {
         version: 1,
@@ -795,11 +795,8 @@ impl Drop for PendingDiscordReaper {
 }
 
 #[cfg(test)]
-fn run_pending_discord_reaper<R, Q>(
-    pending: PendingDiscordReaper,
-    reap_child: R,
-    retry_cleanup: Q,
-) where
+fn run_pending_discord_reaper<R, Q>(pending: PendingDiscordReaper, reap_child: R, retry_cleanup: Q)
+where
     R: FnOnce(),
     Q: FnOnce(),
 {
@@ -851,11 +848,7 @@ impl DiscordReaperOwnership {
 type DiscordReaperContainer = Arc<Mutex<Option<DiscordReaperOwnership>>>;
 type DiscordReaperTask = Box<dyn FnOnce() + Send + 'static>;
 
-fn finish_owned_discord_reaper<T>(
-    ownership: T,
-    confirmed: bool,
-    diagnostic: &'static str,
-) {
+fn finish_owned_discord_reaper<T>(ownership: T, confirmed: bool, diagnostic: &'static str) {
     if confirmed {
         drop(ownership);
     } else {
@@ -864,9 +857,7 @@ fn finish_owned_discord_reaper<T>(
     }
 }
 
-fn take_discord_reaper_ownership(
-    container: &DiscordReaperContainer,
-) -> DiscordReaperOwnership {
+fn take_discord_reaper_ownership(container: &DiscordReaperContainer) -> DiscordReaperOwnership {
     lock_or_recover(container, "discord_reaper_ownership")
         .take()
         .expect("reaper ownership must be present")
@@ -1320,29 +1311,55 @@ fn debug_e2e_enabled() -> bool {
 
 #[cfg(feature = "webdriver-e2e")]
 #[tauri::command]
-fn e2e_emit_bgm_event(app: tauri::AppHandle, action: String, video_id: Option<String>, title: Option<String>) -> Result<(), String> {
-    if !debug_e2e_enabled() { return Err("e2e runtime is not enabled".to_string()); }
+fn e2e_emit_bgm_event(
+    app: tauri::AppHandle,
+    action: String,
+    video_id: Option<String>,
+    title: Option<String>,
+) -> Result<(), String> {
+    if !debug_e2e_enabled() {
+        return Err("e2e runtime is not enabled".to_string());
+    }
     let event_type = match action.as_str() {
         "play" | "enqueue" => {
-            if !video_id.as_deref().is_some_and(|value| !value.trim().is_empty()) || !title.as_deref().is_some_and(|value| !value.trim().is_empty()) {
+            if !video_id
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+                || !title
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+            {
                 return Err("video_id and title are required for play and enqueue".to_string());
             }
-            if action == "play" { "bgm_youtube_play" } else { "e2e_bgm_enqueue" }
+            if action == "play" {
+                "bgm_youtube_play"
+            } else {
+                "e2e_bgm_enqueue"
+            }
         }
         "stop" => "bgm_youtube_stop",
         _ => return Err("action must be play, enqueue, or stop".to_string()),
     };
-    app.emit("agent_response", serde_json::json!({ "type": event_type, "videoId": video_id, "title": title }).to_string()).map_err(|error| error.to_string())
+    app.emit(
+        "agent_response",
+        serde_json::json!({ "type": event_type, "videoId": video_id, "title": title }).to_string(),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn e2e_runtime_dir() -> Option<std::path::PathBuf> {
-    if !debug_e2e_enabled() { return None; }
-    std::env::var_os("NAIA_E2E_RUNTIME_DIR").map(std::path::PathBuf::from).filter(|path| path.is_absolute())
+    if !debug_e2e_enabled() {
+        return None;
+    }
+    std::env::var_os("NAIA_E2E_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
 }
 
 /// Get the run directory (~/.naia/run/) for PID files
 fn run_dir() -> std::path::PathBuf {
-    let dir = e2e_runtime_dir().unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join(".naia/run"));
+    let dir =
+        e2e_runtime_dir().unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join(".naia/run"));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -1741,11 +1758,7 @@ fn runtime_git_output(dir: &std::path::Path, args: &[&str]) -> Result<String, St
         .output()
         .map_err(|e| format!("git invocation failed for {}: {e}", dir.display()))?;
     if !output.status.success() {
-        return Err(format!(
-            "git {:?} failed for {}",
-            args,
-            dir.display()
-        ));
+        return Err(format!("git {:?} failed for {}", args, dir.display()));
     }
     String::from_utf8(output.stdout)
         .map(|value| value.trim().to_string())
@@ -1766,7 +1779,10 @@ fn sha256_proto_file_hex(path: &std::path::Path) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("failed to read {} for SHA256: {e}", path.display()))?;
-    Ok(format!("{:x}", Sha256::digest(text.replace("\r\n", "\n").as_bytes())))
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(text.replace("\r\n", "\n").as_bytes())
+    ))
 }
 
 fn validate_runtime_agent_script_override(agent_script: &str) -> Result<(), String> {
@@ -1874,7 +1890,14 @@ where
 }
 
 fn spawn_adk_path_snapshot() -> Option<String> {
-    if debug_e2e_enabled() { if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") { let path = path.trim().to_string(); if !path.is_empty() { return Some(path); } } }
+    if debug_e2e_enabled() {
+        if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
+            let path = path.trim().to_string();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
     spawn_adk_path_snapshot_with(|| {
         dirs::home_dir()
             .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
@@ -2007,14 +2030,11 @@ fn spawn_agent_core(
             if let Ok(metadata) = std::fs::metadata(&bindings_path) {
                 if metadata.is_file() && metadata.len() <= 512 * 1024 {
                     if let Ok(bindings_json) = std::fs::read_to_string(&bindings_path) {
-                        let generation =
-                            serde_json::from_str::<serde_json::Value>(&bindings_json)
-                                .ok()
-                                .and_then(|value| {
-                                    value
-                                        .get("generation")
-                                        .and_then(|item| item.as_u64())
-                                });
+                        let generation = serde_json::from_str::<serde_json::Value>(&bindings_json)
+                            .ok()
+                            .and_then(|value| {
+                                value.get("generation").and_then(|item| item.as_u64())
+                            });
                         if let Some(generation) = generation {
                             if let Ok(token) = read_discord_bot_token() {
                                 if validate_discord_token(&token).is_ok() {
@@ -2029,14 +2049,10 @@ fn spawn_agent_core(
                                         "generation": generation.clone(),
                                     });
                                     let authority_bytes = serde_json::to_vec(&authority)
-                                        .map_err(|_| {
-                                            "discord_authority_invalid".to_string()
-                                        })?;
+                                        .map_err(|_| "discord_authority_invalid".to_string())?;
                                     persist_agent_child_lease_before(
                                         &child_lease,
-                                        |lease| {
-                                            write_agent_child_lease_locked(&lease_lock, lease)
-                                        },
+                                        |lease| write_agent_child_lease_locked(&lease_lock, lease),
                                         || {
                                             issue_discord_runtime_authority(
                                                 discord_quarantined,
@@ -2046,9 +2062,7 @@ fn spawn_agent_core(
                                                         &authority_bytes,
                                                     )
                                                 },
-                                                || {
-                                                    quarantine_discord_runtime_files(&runtime_dir)
-                                                },
+                                                || quarantine_discord_runtime_files(&runtime_dir),
                                             )
                                         },
                                     )?;
@@ -2059,10 +2073,7 @@ fn spawn_agent_core(
                                         "NAIA_DISCORD_STATUS_PATH",
                                         runtime_dir.join("status.json"),
                                     );
-                                    cmd.env(
-                                        "NAIA_DISCORD_AUTHORITY_PATH",
-                                        &authority_path,
-                                    );
+                                    cmd.env("NAIA_DISCORD_AUTHORITY_PATH", &authority_path);
                                     cmd.env(
                                         "NAIA_DISCORD_DEDUPE_PATH",
                                         runtime_dir.join("dedupe.json"),
@@ -2127,7 +2138,10 @@ fn spawn_agent_core(
 
     let lease_update = write_agent_child_lease_locked(
         &lease_lock,
-        spawned.lease.as_ref().expect("spawned lease must be present"),
+        spawned
+            .lease
+            .as_ref()
+            .expect("spawned lease must be present"),
     );
     drop(lease_lock);
     if let Err(error) = lease_update {
@@ -2148,9 +2162,7 @@ fn spawn_agent_core(
                 &mut spawned,
             );
         };
-        let write_result = stdin
-            .write_all(&frame)
-            .and_then(|_| stdin.flush());
+        let write_result = stdin.write_all(&frame).and_then(|_| stdin.flush());
         drop(stdin);
         if write_result.is_err() {
             return fail_spawned_discord_agent_startup(
@@ -2213,8 +2225,7 @@ fn spawn_agent_core(
 
     // 硫붿떆吏 梨꾨꼸: send_to_agent(sync) ??dispatcher task(async, gRPC ?대씪 ?뚯쑀). nested runtime ?뚰뵾.
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let (shutdown_tx, shutdown_rx) =
-        tokio::sync::mpsc::unbounded_channel::<AgentShutdownCommand>();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::mpsc::unbounded_channel::<AgentShutdownCommand>();
     tauri::async_runtime::spawn(agent_shutdown_dispatcher(addr.clone(), shutdown_rx));
     tauri::async_runtime::spawn(agent_dispatcher(
         addr.clone(),
@@ -2312,8 +2323,7 @@ async fn agent_dispatcher(
     // Proactive speech is a session-level server stream, independent from an
     // ordinary chat request. Keep one subscription alive for the shell's main
     // session so activity events can arrive while the input box is idle.
-    let (activity_shutdown_tx, mut activity_shutdown_rx) =
-        tokio::sync::watch::channel(0_u64);
+    let (activity_shutdown_tx, mut activity_shutdown_rx) = tokio::sync::watch::channel(0_u64);
     {
         let mut activity_client = client.clone();
         let activity_app = app.clone();
@@ -2368,7 +2378,11 @@ async fn agent_dispatcher(
         };
         match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
             "chat_request" => {
-                let request_id = v.get("requestId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let request_id = v
+                    .get("requestId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let req = match agent_grpc::try_json_to_chat_request(&v) {
                     Ok(req) => req,
                     Err(e) => {
@@ -2830,7 +2844,15 @@ async fn agent_dispatcher(
 ///  - hide_console on Windows (no console flash in release builds)
 ///  - kill() called on Tauri WindowEvent::Destroyed (no orphan process)
 fn bgm_server_port() -> u16 {
-    if debug_e2e_enabled() { if let Ok(port) = std::env::var("NAIA_BGM_PORT") { if let Ok(port) = port.parse::<u16>() { if port != 0 { return port; } } } }
+    if debug_e2e_enabled() {
+        if let Ok(port) = std::env::var("NAIA_BGM_PORT") {
+            if let Ok(port) = port.parse::<u16>() {
+                if port != 0 {
+                    return port;
+                }
+            }
+        }
+    }
     18791
 }
 
@@ -2989,7 +3011,10 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             bgm_port
         ));
     } else {
-        log_both(&format!("[Naia] BGM server ready @ http://127.0.0.1:{}/health", bgm_port));
+        log_both(&format!(
+            "[Naia] BGM server ready @ http://127.0.0.1:{}/health",
+            bgm_port
+        ));
     }
 
     Ok(BgmServerProcess { child })
@@ -3267,25 +3292,29 @@ fn restart_agent_for_discord_config_unmarked(
         revoke_discord_runtime_authority()?;
     }
     let mut previous = {
-        let mut guard =
-            lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+        let mut guard = lock_or_recover(
+            &state.agent,
+            "state.agent(restart_agent_for_discord_config)",
+        );
         guard.take()
     };
     if let Some(process) = previous.as_mut() {
         if let Err(error) = graceful_shutdown_and_reap_agent(process) {
-            let mut guard =
-                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            let mut guard = lock_or_recover(
+                &state.agent,
+                "state.agent(restart_agent_for_discord_config)",
+            );
             *guard = previous;
             return Err(error);
         }
         let outcome = process.finish_owned_cleanup(true);
-        if let Err(error) = require_owned_cleanup_complete(
-            &outcome,
-            true,
-            "discord_agent_owned_cleanup_incomplete",
-        ) {
-            let mut guard =
-                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+        if let Err(error) =
+            require_owned_cleanup_complete(&outcome, true, "discord_agent_owned_cleanup_incomplete")
+        {
+            let mut guard = lock_or_recover(
+                &state.agent,
+                "state.agent(restart_agent_for_discord_config)",
+            );
             *guard = previous;
             return Err(error);
         }
@@ -3302,8 +3331,10 @@ fn restart_agent_for_discord_config_unmarked(
         true,
     ) {
         Ok(process) => {
-            let mut guard =
-                lock_or_recover(&state.agent, "state.agent(restart_agent_for_discord_config)");
+            let mut guard = lock_or_recover(
+                &state.agent,
+                "state.agent(restart_agent_for_discord_config)",
+            );
             *guard = Some(process);
             drop(guard);
             replay_startup_messages_to_agent(state);
@@ -3316,9 +3347,7 @@ fn restart_agent_for_discord_config_unmarked(
                     guard.take()
                 };
                 if let Some(process) = failed.as_mut() {
-                    if let Err(cleanup_error) =
-                        graceful_shutdown_and_reap_agent(process)
-                    {
+                    if let Err(cleanup_error) = graceful_shutdown_and_reap_agent(process) {
                         let mut guard = lock_or_recover(
                             &state.agent,
                             "state.agent(restart_agent_for_discord_config)",
@@ -3429,12 +3458,7 @@ where
     }
 
     if request_graceful_shutdown().is_ok()
-        && wait_for_discord_child_exit_with(
-            child,
-            graceful_timeout,
-            &mut now,
-            &mut sleep,
-        )?
+        && wait_for_discord_child_exit_with(child, graceful_timeout, &mut now, &mut sleep)?
     {
         return Ok(());
     }
@@ -3454,9 +3478,7 @@ fn classify_agent_shutdown_ack(
 ) -> Result<(), String> {
     match result {
         Ok(AgentShutdownOutcome::Accepted | AgentShutdownOutcome::Ambiguous) => Ok(()),
-        Ok(AgentShutdownOutcome::Rejected) => {
-            Err("agent_graceful_shutdown_rejected".to_string())
-        }
+        Ok(AgentShutdownOutcome::Rejected) => Err("agent_graceful_shutdown_rejected".to_string()),
         // The request may already be accepted while only its ACK is delayed
         // or lost. The caller must observe the child for the graceful deadline
         // before escalating.
@@ -3768,19 +3790,13 @@ fn wait_for_discord_runtime_ready(expected_generation: Option<u64>) -> Result<()
     let runtime = settings.join("discord-runtime");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        let status = read_bounded_json::<DiscordRuntimeStatusFile>(
-            &runtime.join("status.json"),
-            16 * 1024,
-        )?;
+        let status =
+            read_bounded_json::<DiscordRuntimeStatusFile>(&runtime.join("status.json"), 16 * 1024)?;
         let authority = read_bounded_json::<DiscordRuntimeAuthorityFile>(
             &runtime.join("authority.json"),
             16 * 1024,
         )?;
-        if discord_runtime_matches_generation(
-            &expected,
-            status.as_ref(),
-            authority.as_ref(),
-        ) {
+        if discord_runtime_matches_generation(&expected, status.as_ref(), authority.as_ref()) {
             return Ok(());
         }
         if std::time::Instant::now() >= deadline {
@@ -4558,7 +4574,7 @@ fn spawn_cascade(
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     return Err(
-                        "cascade readiness handshake timeout (CASCADE_READY 誘몄닔??".to_string()
+                        "cascade readiness handshake timeout (CASCADE_READY 誘몄닔??".to_string(),
                     );
                 }
             }
@@ -4597,12 +4613,14 @@ async fn cascade_facade_is_healthy(ready: &str) -> bool {
         return false;
     };
     match client.get(url).send().await {
-        Ok(response) if response.status().is_success() => response
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|body| body.get("ok").and_then(serde_json::Value::as_bool))
-            == Some(true),
+        Ok(response) if response.status().is_success() => {
+            response
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|body| body.get("ok").and_then(serde_json::Value::as_bool))
+                == Some(true)
+        }
         _ => false,
     }
 }
@@ -4638,7 +4656,9 @@ async fn start_cascade(
         // The supervisor is not useful without its public facade. Drop only
         // the process owned by this AppState, then let the normal exact-port
         // stale cleanup and fresh loader launch recover it below.
-        log_both("[Naia] Local cascade supervisor is alive but its facade is unavailable; restarting it");
+        log_both(
+            "[Naia] Local cascade supervisor is alive but its facade is unavailable; restarting it",
+        );
         let _ = lock_or_recover(&state.cascade, "cascade").take();
     }
     let adk_path = dirs::home_dir()
@@ -4908,7 +4928,14 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
 fn current_adk_path() -> Result<String, String> {
-    if debug_e2e_enabled() { if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") { let path = path.trim().to_string(); if !path.is_empty() { return Ok(path); } } }
+    if debug_e2e_enabled() {
+        if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
+            let path = path.trim().to_string();
+            if !path.is_empty() {
+                return Ok(path);
+            }
+        }
+    }
     let path = dirs::home_dir()
         .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
         .ok_or_else(|| "adk_path_unavailable".to_string())?;
@@ -4959,16 +4986,11 @@ fn classify_agent_secret_lookup(
 }
 
 #[cfg(any(target_os = "windows", test))]
-fn classify_agent_secret_file_presence(
-    presence: std::io::Result<bool>,
-) -> Result<bool, String> {
+fn classify_agent_secret_file_presence(presence: std::io::Result<bool>) -> Result<bool, String> {
     presence.map_err(|_| "keychain_unavailable".to_string())
 }
 
-fn read_agent_secret(
-    adk_path: &str,
-    env_key: &str,
-) -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
+fn read_agent_secret(adk_path: &str, env_key: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
     #[cfg(not(target_os = "windows"))]
     let _ = adk_path;
     #[cfg(target_os = "windows")]
@@ -4980,7 +5002,10 @@ fn read_agent_secret(
         if !classify_agent_secret_file_presence(file.try_exists())? {
             return Err("token_not_found".to_string());
         }
-        let path = file.to_string_lossy().replace('\'', "''").replace('\\', "\\\\");
+        let path = file
+            .to_string_lossy()
+            .replace('\'', "''")
+            .replace('\\', "\\\\");
         let script = format!(
             "Add-Type -AssemblyName System.Security; $e=[IO.File]::ReadAllBytes('{path}'); \
              $b=[Security.Cryptography.ProtectedData]::Unprotect($e,$null,\
@@ -4990,18 +5015,26 @@ fn read_agent_secret(
         let mut command = std::process::Command::new("powershell");
         command.args(["-NonInteractive", "-Command", &script]);
         platform::hide_console(&mut command);
-        let output = command.output().map_err(|_| "keychain_unavailable".to_string())?;
+        let output = command
+            .output()
+            .map_err(|_| "keychain_unavailable".to_string())?;
         if !output.status.success() {
             return Err("keychain_unavailable".to_string());
         }
-        std::str::from_utf8(&output.stdout)
-            .map_err(|_| "keychain_value_invalid".to_string())?;
+        std::str::from_utf8(&output.stdout).map_err(|_| "keychain_value_invalid".to_string())?;
         return Ok(zeroize::Zeroizing::new(output.stdout));
     }
     #[cfg(target_os = "macos")]
     {
         let output = std::process::Command::new("security")
-            .args(["find-generic-password", "-a", env_key, "-s", "naia-agent", "-w"])
+            .args([
+                "find-generic-password",
+                "-a",
+                env_key,
+                "-s",
+                "naia-agent",
+                "-w",
+            ])
             .output()
             .map_err(|_| "keychain_unavailable".to_string())?;
         classify_agent_secret_lookup(
@@ -5105,9 +5138,8 @@ fn discord_runtime_is_authoritative(
     authority: Option<&DiscordRuntimeAuthorityFile>,
 ) -> bool {
     token_configured
-        && expected.is_some_and(|value| {
-            discord_runtime_matches_generation(value, status, authority)
-        })
+        && expected
+            .is_some_and(|value| discord_runtime_matches_generation(value, status, authority))
 }
 
 #[derive(serde::Serialize)]
@@ -5124,8 +5156,7 @@ struct DiscordConnectionStatus {
 async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> {
     let token_configured = discord_bot_token_available().await?;
     let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
-    let manifest =
-        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
+    let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
     let generation = manifest.as_ref().map(|value| value.generation);
     let runtime = settings.join("discord-runtime");
     let status =
@@ -5225,7 +5256,9 @@ fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> 
         let mut command = std::process::Command::new("powershell");
         command.args(["-NoProfile", "-Command", script]);
         platform::hide_console(&mut command);
-        let output = command.output().map_err(|_| "native_prompt_unavailable".to_string())?;
+        let output = command
+            .output()
+            .map_err(|_| "native_prompt_unavailable".to_string())?;
         if !output.status.success() {
             return Err("capture_cancelled".to_string());
         }
@@ -5298,25 +5331,19 @@ fn quarantine_discord_runtime_locked(state: &AppState) -> Result<(), String> {
         discord_runtime_dir().and_then(|runtime| write_discord_quarantine_marker(&runtime));
     let initial_revoke_result = revoke_discord_runtime_authority();
     let mut process = {
-        let mut guard =
-            lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
+        let mut guard = lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
         guard.take()
     };
     let process_result = if let Some(process) = process.as_mut() {
         graceful_shutdown_and_reap_agent(process).and_then(|_| {
             let outcome = process.finish_owned_cleanup(true);
-            require_owned_cleanup_complete(
-                &outcome,
-                true,
-                "discord_agent_owned_cleanup_incomplete",
-            )
+            require_owned_cleanup_complete(&outcome, true, "discord_agent_owned_cleanup_incomplete")
         })
     } else {
         Ok(())
     };
     if process_result.is_err() {
-        let mut guard =
-            lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
+        let mut guard = lock_or_recover(&state.agent, "state.agent(quarantine_discord_runtime)");
         *guard = process;
     }
     let final_revoke_result = revoke_discord_runtime_authority();
@@ -5354,7 +5381,7 @@ async fn discord_capture_bot_token(
     let previous = discord_token_preimage()?;
     let expected_generation =
         read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
-    .map(|manifest| manifest.generation);
+            .map(|manifest| manifest.generation);
     let token = capture_discord_token_native()?;
     let mutation = write_agent_key(
         adk_path.clone(),
@@ -5376,9 +5403,7 @@ async fn discord_capture_bot_token(
         let remove_path = adk_path.clone();
         let rollback = rollback_discord_credential(
             previous,
-            move |previous| {
-                write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous)
-            },
+            move |previous| write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous),
             move || async move { remove_agent_key(&remove_path, DISCORD_TOKEN_KEY).await },
             || {
                 let expected_generation = read_discord_binding_manifest(
@@ -5417,8 +5442,7 @@ async fn discord_remove_bot_token(
 ) -> Result<(), String> {
     let _operation = state.discord_config_operation.lock().await;
     let adk_path = current_adk_path()?;
-    let previous = discord_token_preimage()?
-        .ok_or_else(|| "token_not_found".to_string())?;
+    let previous = discord_token_preimage()?.ok_or_else(|| "token_not_found".to_string())?;
     let expected_generation =
         read_discord_binding_manifest(&discord_settings_dir()?.join("discord-bindings.json"))?
             .map(|manifest| manifest.generation);
@@ -5438,9 +5462,7 @@ async fn discord_remove_bot_token(
         let remove_path = adk_path.clone();
         let rollback = rollback_discord_credential(
             Some(previous),
-            move |previous| {
-                write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous)
-            },
+            move |previous| write_agent_key(restore_path, DISCORD_TOKEN_KEY.to_string(), previous),
             move || async move { remove_agent_key(&remove_path, DISCORD_TOKEN_KEY).await },
             || {
                 restart_agent_for_discord_config(
@@ -5631,18 +5653,15 @@ fn discord_bot_member_endpoint(guild_id: &str, bot_id: &str) -> String {
 
 fn discord_guilds_endpoint(after: Option<&str>) -> String {
     match after {
-        Some(after) => format!(
-            "/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}&after={after}"
-        ),
-        None => format!(
-            "/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}"
-        ),
+        Some(after) => {
+            format!("/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}&after={after}")
+        }
+        None => format!("/users/@me/guilds?limit={DISCORD_GUILD_DISCOVERY_PAGE_SIZE}"),
     }
 }
 
 fn discord_guild_discovery_truncated(total: usize, last_page_len: usize) -> bool {
-    total >= DISCORD_GUILD_DISCOVERY_LIMIT
-        && last_page_len == DISCORD_GUILD_DISCOVERY_PAGE_SIZE
+    total >= DISCORD_GUILD_DISCOVERY_LIMIT && last_page_len == DISCORD_GUILD_DISCOVERY_PAGE_SIZE
 }
 
 fn discord_channel_history_endpoint(channel_id: &str) -> String {
@@ -5765,8 +5784,8 @@ async fn discord_discover_channels() -> Result<DiscordDiscovery, String> {
     let bot = discord_get_json::<DiscordApiUser>(&client, "/users/@me").await?;
     let application =
         discord_get_json::<DiscordApiApplication>(&client, "/oauth2/applications/@me").await?;
-    let message_content_intent = application.flags & (DISCORD_GATEWAY_MESSAGE_CONTENT
-        | DISCORD_GATEWAY_MESSAGE_CONTENT_LIMITED)
+    let message_content_intent = application.flags
+        & (DISCORD_GATEWAY_MESSAGE_CONTENT | DISCORD_GATEWAY_MESSAGE_CONTENT_LIMITED)
         != 0;
     if !is_valid_discord_snowflake(&bot.id) {
         return Err("discord_response_invalid".to_string());
@@ -5833,8 +5852,7 @@ async fn discord_discover_channels() -> Result<DiscordDiscovery, String> {
         let mut channel_rows = channels
             .into_iter()
             .filter(|channel| {
-                (channel.kind == 0 || channel.kind == 5)
-                    && is_valid_discord_snowflake(&channel.id)
+                (channel.kind == 0 || channel.kind == 5) && is_valid_discord_snowflake(&channel.id)
             })
             .map(|channel| {
                 let effective = apply_discord_overwrites(
@@ -6055,18 +6073,12 @@ fn read_discord_binding_manifest(
     path: &std::path::Path,
 ) -> Result<Option<DiscordBindingManifest>, String> {
     let manifest = read_bounded_json::<DiscordBindingManifest>(path, 512 * 1024)?;
-    if manifest
-        .as_ref()
-        .is_some_and(|value| value.version != 1)
-    {
+    if manifest.as_ref().is_some_and(|value| value.version != 1) {
         return Err("discord_bindings_upgrade_required".to_string());
     }
-    if manifest
-        .as_ref()
-        .is_some_and(|value| {
-            value.generation == 0 || value.generation > DISCORD_MAX_SAFE_GENERATION
-        })
-    {
+    if manifest.as_ref().is_some_and(|value| {
+        value.generation == 0 || value.generation > DISCORD_MAX_SAFE_GENERATION
+    }) {
         return Err("discord_bindings_generation_invalid".to_string());
     }
     if manifest
@@ -6099,24 +6111,18 @@ async fn discord_binding_snapshot() -> Result<DiscordBindingSnapshot, String> {
 #[tauri::command]
 async fn discord_get_last_binding() -> Result<Option<String>, String> {
     let settings = discord_settings_dir()?;
-    let preference = read_bounded_json::<DiscordUiPreference>(
-        &settings.join("discord-ui.json"),
-        16 * 1024,
-    )?;
+    let preference =
+        read_bounded_json::<DiscordUiPreference>(&settings.join("discord-ui.json"), 16 * 1024)?;
     let Some(binding_id) = preference.and_then(|value| value.last_binding_id) else {
         return Ok(None);
     };
-    let manifest =
-        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
+    let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?;
     let usable = discord_usable_channel_keys().await?;
     Ok(manifest
         .is_some_and(|value| {
-            value
-                .bindings
-                .iter()
-                .any(|binding| {
-                    binding.binding_id == binding_id && discord_binding_is_usable(binding, &usable)
-                })
+            value.bindings.iter().any(|binding| {
+                binding.binding_id == binding_id && discord_binding_is_usable(binding, &usable)
+            })
         })
         .then_some(binding_id))
 }
@@ -6132,9 +6138,8 @@ async fn discord_set_last_binding(
         if value.is_empty() || value.len() > 128 {
             return Err("discord_binding_invalid".to_string());
         }
-        let manifest =
-            read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
-        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+        let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
         let binding = manifest
             .bindings
             .iter()
@@ -6149,8 +6154,8 @@ async fn discord_set_last_binding(
         version: 1,
         last_binding_id: binding_id,
     };
-    let bytes = serde_json::to_vec(&preference)
-        .map_err(|_| "discord_preference_invalid".to_string())?;
+    let bytes =
+        serde_json::to_vec(&preference).map_err(|_| "discord_preference_invalid".to_string())?;
     write_owner_only_atomic(&settings.join("discord-ui.json"), &bytes)
 }
 
@@ -6456,7 +6461,7 @@ async fn discord_save_bindings(
                 return Err(error);
             }
             Ok(generation)
-        }
+        },
     )
     .await
 }
@@ -6584,21 +6589,21 @@ fn read_discord_inbox_snapshot(
     allowed_binding_ids: &std::collections::BTreeSet<String>,
 ) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
     let runtime = settings.join("discord-runtime");
-    let inbox =
-        read_bounded_json::<DiscordInboxDocumentNative>(&runtime.join("inbox.json"), 16 * 1024 * 1024)?
-            .unwrap_or(DiscordInboxDocumentNative {
-                version: 1,
-                generation: manifest.generation.to_string(),
-                channels: std::collections::BTreeMap::new(),
-            });
+    let inbox = read_bounded_json::<DiscordInboxDocumentNative>(
+        &runtime.join("inbox.json"),
+        16 * 1024 * 1024,
+    )?
+    .unwrap_or(DiscordInboxDocumentNative {
+        version: 1,
+        generation: manifest.generation.to_string(),
+        channels: std::collections::BTreeMap::new(),
+    });
     if inbox.version != 1 || inbox.generation != manifest.generation.to_string() {
         return Err("discord_cache_generation_mismatch".to_string());
     }
-    let mut cursors = read_bounded_json::<DiscordInboxCursors>(
-        &runtime.join("inbox-cursors.json"),
-        512 * 1024,
-    )?
-    .unwrap_or_default();
+    let mut cursors =
+        read_bounded_json::<DiscordInboxCursors>(&runtime.join("inbox-cursors.json"), 512 * 1024)?
+            .unwrap_or_default();
     let generation = manifest.generation.to_string();
     if cursors.version != 1 || cursors.generation != generation {
         cursors = DiscordInboxCursors {
@@ -6642,9 +6647,8 @@ async fn discord_inbox_snapshot(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<DiscordInboxChannelSnapshot>, String> {
     let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
-    let manifest =
-        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
-            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
     let usable = discord_usable_channel_keys().await?;
     let allowed_binding_ids: std::collections::BTreeSet<String> = manifest
         .bindings
@@ -6673,10 +6677,11 @@ async fn discord_inbox_snapshot_cached(
         return Err("discord_binding_invalid".to_string());
     }
     let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
-    let manifest =
-        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
-            .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
-    let requested_binding_ids = binding_ids.into_iter().collect::<std::collections::BTreeSet<_>>();
+    let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let requested_binding_ids = binding_ids
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
     let authorized = state.discord_inbox_authorized_bindings.lock().await;
     let allowed_binding_ids = authorized
         .as_ref()
@@ -6700,9 +6705,8 @@ async fn discord_fetch_channel_history(
         return Err("discord_binding_invalid".to_string());
     }
     let settings = discord_settings_dir()?;
-    let manifest =
-        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
-    .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
     let binding = manifest
         .bindings
         .iter()
@@ -6766,9 +6770,8 @@ async fn discord_mark_inbox_read(
         return Err("discord_cursor_invalid".to_string());
     }
     let settings = std::path::PathBuf::from(current_adk_path()?).join("naia-settings");
-    let manifest =
-        read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
-    .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
+    let manifest = read_discord_binding_manifest(&settings.join("discord-bindings.json"))?
+        .ok_or_else(|| "discord_bindings_unavailable".to_string())?;
     let binding = manifest
         .bindings
         .iter()
@@ -6787,16 +6790,16 @@ async fn discord_mark_inbox_read(
     let generation = manifest.generation.to_string();
     let runtime = discord_runtime_dir()?;
     let path = runtime.join("inbox-cursors.json");
-    let cursors =
-        read_bounded_json::<DiscordInboxCursors>(&path, 512 * 1024)?.unwrap_or(DiscordInboxCursors {
+    let cursors = read_bounded_json::<DiscordInboxCursors>(&path, 512 * 1024)?.unwrap_or(
+        DiscordInboxCursors {
             version: 1,
             generation: generation.clone(),
             cursors: std::collections::BTreeMap::new(),
-        });
+        },
+    );
     let cursors =
         update_discord_inbox_cursor(cursors, &generation, &active_keys, cursor_key, created_at)?;
-    let bytes =
-        serde_json::to_vec(&cursors).map_err(|_| "discord_cursor_invalid".to_string())?;
+    let bytes = serde_json::to_vec(&cursors).map_err(|_| "discord_cursor_invalid".to_string())?;
     write_owner_only_atomic(&path, &bytes)
 }
 
@@ -7484,6 +7487,89 @@ async fn compile_knowledge(
 }
 
 const JEONJU_COURSE_ALLOWED_FILES: [&str; 2] = ["index.html", "hero.svg"];
+const JEONJU_COURSE_TARGET_FILE: &str = "jeonju-discord-course.json";
+
+fn jeonju_course_target_json(workspace_path: &str) -> serde_json::Value {
+    serde_json::json!({
+        "version": 1,
+        "workspacePath": workspace_path,
+        "allowedFiles": JEONJU_COURSE_ALLOWED_FILES,
+    })
+}
+
+fn parse_jeonju_course_target_json(raw: &str) -> Result<serde_json::Value, String> {
+    let target: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| "course_target_invalid".to_string())?;
+    let object = target
+        .as_object()
+        .ok_or_else(|| "course_target_invalid".to_string())?;
+    let expected_files: Vec<serde_json::Value> = JEONJU_COURSE_ALLOWED_FILES
+        .iter()
+        .map(|file| serde_json::Value::String((*file).to_string()))
+        .collect();
+    if object.len() != 3
+        || object.get("version") != Some(&serde_json::json!(1))
+        || object
+            .get("workspacePath")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_none()
+        || object
+            .get("allowedFiles")
+            .and_then(serde_json::Value::as_array)
+            != Some(&expected_files)
+    {
+        return Err("course_target_invalid".to_string());
+    }
+    Ok(target)
+}
+
+/// Load the host-owned Discord course target. The Agent parses this file again
+/// at process start; Shell validates its shape here so the UI never presents a
+/// broadened or hand-edited target as ready.
+#[tauri::command]
+async fn read_jeonju_course_target(adk_path: String) -> Result<String, String> {
+    let path = std::path::PathBuf::from(adk_path)
+        .join("naia-settings")
+        .join(JEONJU_COURSE_TARGET_FILE);
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    let raw = std::fs::read_to_string(path).map_err(|_| "course_target_invalid".to_string())?;
+    let target = parse_jeonju_course_target_json(&raw)?;
+    serde_json::to_string(&target).map_err(|_| "course_target_invalid".to_string())
+}
+
+/// Persist one explicit course Git root under the ADK control root. No chat or
+/// Discord payload can choose this path: the fixed two-file boundary is written
+/// by Shell only after the target passes the same readiness guard as a job.
+#[tauri::command]
+async fn write_jeonju_course_target(
+    adk_path: String,
+    workspace_path: String,
+) -> Result<String, String> {
+    let control_root =
+        std::fs::canonicalize(&adk_path).map_err(|_| "course_target_not_ready".to_string())?;
+    let workspace_root = std::fs::canonicalize(&workspace_path)
+        .map_err(|_| "course_target_not_ready".to_string())?;
+    if !workspace_root.starts_with(&control_root) {
+        return Err("course_target_not_ready".to_string());
+    }
+    verify_jeonju_course_workspace(&workspace_path)
+        .map_err(|_| "course_target_not_ready".to_string())?;
+    // `canonicalize` returns a Windows extended-length (`\\?\\`) path. Keep
+    // that representation for the containment check only; the persisted target
+    // is a normal user-selected path that Node/Git and the UI can consume.
+    let target = jeonju_course_target_json(workspace_path.trim());
+    let json =
+        serde_json::to_string_pretty(&target).map_err(|_| "course_target_invalid".to_string())?;
+    let settings_dir = control_root.join("naia-settings");
+    std::fs::create_dir_all(&settings_dir).map_err(|_| "course_target_not_ready".to_string())?;
+    std::fs::write(settings_dir.join(JEONJU_COURSE_TARGET_FILE), json)
+        .map_err(|_| "course_target_not_ready".to_string())?;
+    serde_json::to_string(&target).map_err(|_| "course_target_invalid".to_string())
+}
 
 fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_json::Value, String> {
     use agent_grpc::pb::{CodingJobExecutionMode, CodingJobState};
@@ -7546,11 +7632,11 @@ fn verify_jeonju_course_workspace(workspace_path: &str) -> Result<(), String> {
     let selected = std::fs::canonicalize(workspace_path)
         .map_err(|_| "course_workspace_not_ready".to_string())?;
     let git_root = course_git_output(workspace_path, &["rev-parse", "--show-toplevel"])?;
-    let root = std::fs::canonicalize(git_root)
-        .map_err(|_| "course_workspace_not_ready".to_string())?;
+    let root =
+        std::fs::canonicalize(git_root).map_err(|_| "course_workspace_not_ready".to_string())?;
     if selected != root
-        || !course_git_output(workspace_path, &["status", "--porcelain"] )?.is_empty()
-        || course_git_output(workspace_path, &["config", "--get", "remote.origin.url"] )?.is_empty()
+        || !course_git_output(workspace_path, &["status", "--porcelain"])?.is_empty()
+        || course_git_output(workspace_path, &["config", "--get", "remote.origin.url"])?.is_empty()
     {
         return Err("course_workspace_not_ready".to_string());
     }
@@ -7578,7 +7664,10 @@ async fn start_coding_job(
         verify_jeonju_course_workspace(&workspace_path)?;
         (
             agent_grpc::pb::CodingJobExecutionMode::SelectedWorkspace as i32,
-            JEONJU_COURSE_ALLOWED_FILES.iter().map(|file| (*file).to_string()).collect(),
+            JEONJU_COURSE_ALLOWED_FILES
+                .iter()
+                .map(|file| (*file).to_string())
+                .collect(),
         )
     } else {
         (
@@ -8372,11 +8461,7 @@ async fn delete_naia_adk(
             log_verbose("[Naia] Terminating agent-core before adk delete...");
             graceful_shutdown_and_reap_agent(&mut process)?;
             let outcome = process.finish_owned_cleanup(true);
-            require_owned_cleanup_complete(
-                &outcome,
-                true,
-                "agent_owned_cleanup_incomplete",
-            )?;
+            require_owned_cleanup_complete(&outcome, true, "agent_owned_cleanup_incomplete")?;
         }
     }
     // Kill gateway + node host
@@ -8598,7 +8683,9 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     }
     #[cfg(feature = "webdriver-e2e")]
-    { builder = builder.plugin(tauri_plugin_wdio_webdriver::init()); }
+    {
+        builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    }
     #[cfg(feature = "webdriver-e2e")]
     let context = tauri::generate_context!("tauri.e2e.conf.json");
     #[cfg(not(feature = "webdriver-e2e"))]
@@ -8688,6 +8775,8 @@ pub fn run() {
             write_naia_knowledge_config,
             read_naia_knowledge_kb,
             compile_knowledge,
+            read_jeonju_course_target,
+            write_jeonju_course_target,
             start_coding_job,
             list_coding_jobs,
             cancel_coding_job,
@@ -9383,7 +9472,10 @@ mod tests {
             classify_codex_preflight(false, "'codex.cmd' is not recognized"),
             "not-installed"
         );
-        assert_eq!(classify_codex_preflight(false, "unexpected failure"), "error");
+        assert_eq!(
+            classify_codex_preflight(false, "unexpected failure"),
+            "error"
+        );
     }
 
     #[test]
@@ -9480,10 +9572,7 @@ mod tests {
             request.respond(response).unwrap();
         });
 
-        assert!(cascade_facade_is_healthy(&format!(
-            r#"{{"facade_port":{port}}}"#
-        ))
-        .await);
+        assert!(cascade_facade_is_healthy(&format!(r#"{{"facade_port":{port}}}"#)).await);
         responder.join().unwrap();
 
         let incomplete_server = tiny_http::Server::http("127.0.0.1:0").unwrap();
@@ -9603,7 +9692,10 @@ mod tests {
     #[test]
     fn discord_token_validation_is_bounded_and_printable() {
         assert!(validate_discord_token(b"abc.DEF-123").is_ok());
-        assert_eq!(validate_discord_token(b""), Err("token_invalid".to_string()));
+        assert_eq!(
+            validate_discord_token(b""),
+            Err("token_invalid".to_string())
+        );
         assert_eq!(
             validate_discord_token(b"contains space"),
             Err("token_invalid".to_string())
@@ -9644,30 +9736,15 @@ mod tests {
             Err("keychain_unavailable".to_string())
         );
         assert_eq!(
-            classify_agent_secret_lookup(
-                AgentSecretLookupPlatform::Linux,
-                false,
-                Some(1),
-                b"",
-            ),
+            classify_agent_secret_lookup(AgentSecretLookupPlatform::Linux, false, Some(1), b"",),
             Err("token_not_found".to_string())
         );
         assert_eq!(
-            classify_agent_secret_lookup(
-                AgentSecretLookupPlatform::Linux,
-                false,
-                None,
-                b"",
-            ),
+            classify_agent_secret_lookup(AgentSecretLookupPlatform::Linux, false, None, b"",),
             Err("keychain_unavailable".to_string())
         );
         assert_eq!(
-            classify_agent_secret_lookup(
-                AgentSecretLookupPlatform::Linux,
-                false,
-                Some(2),
-                b"",
-            ),
+            classify_agent_secret_lookup(AgentSecretLookupPlatform::Linux, false, Some(2), b"",),
             Err("keychain_unavailable".to_string())
         );
         assert_eq!(
@@ -9680,12 +9757,7 @@ mod tests {
             Err("keychain_unavailable".to_string())
         );
         assert_eq!(
-            classify_agent_secret_lookup(
-                AgentSecretLookupPlatform::Linux,
-                true,
-                Some(0),
-                b"",
-            ),
+            classify_agent_secret_lookup(AgentSecretLookupPlatform::Linux, true, Some(0), b"",),
             Ok(())
         );
     }
@@ -9787,15 +9859,11 @@ mod tests {
     #[test]
     fn agent_restart_treats_lost_ack_as_uncertain_acceptance() {
         assert_eq!(
-            classify_agent_shutdown_ack(Err(
-                std::sync::mpsc::RecvTimeoutError::Timeout
-            )),
+            classify_agent_shutdown_ack(Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
             Ok(())
         );
         assert_eq!(
-            classify_agent_shutdown_ack(Err(
-                std::sync::mpsc::RecvTimeoutError::Disconnected
-            )),
+            classify_agent_shutdown_ack(Err(std::sync::mpsc::RecvTimeoutError::Disconnected)),
             Err("agent_graceful_shutdown_dispatch_failed".to_string())
         );
         assert_eq!(
@@ -10144,12 +10212,7 @@ mod tests {
             Some(&authority),
         ));
         assert!(
-            !discord_runtime_is_authoritative(
-                false,
-                Some("42"),
-                Some(&ready),
-                Some(&authority),
-            ),
+            !discord_runtime_is_authoritative(false, Some("42"), Some(&ready), Some(&authority),),
             "a matching stale tuple cannot be authoritative without a token"
         );
         assert!(!discord_runtime_matches_generation(
@@ -10455,8 +10518,7 @@ mod tests {
             finish_discord_clear_activation(
                 Err("initial authority revoke failed".to_string()),
                 || {
-                    successful_quarantine_calls
-                        .set(successful_quarantine_calls.get() + 1);
+                    successful_quarantine_calls.set(successful_quarantine_calls.get() + 1);
                     Ok(())
                 },
             ),
@@ -10466,14 +10528,10 @@ mod tests {
 
         let uncertain_quarantine_calls = std::cell::Cell::new(0);
         assert_eq!(
-            finish_discord_clear_activation(
-                Err("restart failed".to_string()),
-                || {
-                    uncertain_quarantine_calls
-                        .set(uncertain_quarantine_calls.get() + 1);
-                    Err("reap failed".to_string())
-                },
-            ),
+            finish_discord_clear_activation(Err("restart failed".to_string()), || {
+                uncertain_quarantine_calls.set(uncertain_quarantine_calls.get() + 1);
+                Err("reap failed".to_string())
+            },),
             Err("discord_bindings_clear_quarantine_uncertain".to_string())
         );
         assert_eq!(uncertain_quarantine_calls.get(), 1);
@@ -10665,7 +10723,10 @@ mod tests {
         let (_runner, mut command) = direct_agent_command(
             "/runtime/node",
             "/agent/entry.ts",
-            Some(("/runtime/node".to_string(), "/agent/tsx/cli.mjs".to_string())),
+            Some((
+                "/runtime/node".to_string(),
+                "/agent/tsx/cli.mjs".to_string(),
+            )),
         )
         .unwrap();
         command.arg(marker);
@@ -10990,7 +11051,10 @@ mod tests {
         persist_agent_child_lease_before(
             &lease,
             |value| {
-                assert_eq!(value.runtime.as_deref(), Some(std::path::Path::new("/exact/runtime")));
+                assert_eq!(
+                    value.runtime.as_deref(),
+                    Some(std::path::Path::new("/exact/runtime"))
+                );
                 phases.borrow_mut().push("runtime-intent");
                 Ok(())
             },
@@ -11206,8 +11270,7 @@ mod tests {
 
     #[test]
     fn discord_ready_timeout_retains_ownership_across_transient_lease_remove_failure() {
-        let ready_result: Result<(), String> =
-            Err("discord_runtime_ready_timeout".to_string());
+        let ready_result: Result<(), String> = Err("discord_runtime_ready_timeout".to_string());
         assert!(ready_result.is_err());
         let lease = test_agent_child_lease(42);
         let mut retained_owner = Some(lease.clone());
@@ -11223,11 +11286,8 @@ mod tests {
             || panic!("runtime cleanup is not required"),
             || Ok(false),
         );
-        let first_gate = require_owned_cleanup_complete(
-            &first,
-            true,
-            "discord_agent_owned_cleanup_incomplete",
-        );
+        let first_gate =
+            require_owned_cleanup_complete(&first, true, "discord_agent_owned_cleanup_incomplete");
         if first_gate.is_ok() {
             retained_owner = None;
         }
@@ -11249,11 +11309,8 @@ mod tests {
             || panic!("runtime cleanup is not required"),
             || Ok(true),
         );
-        let retry_gate = require_owned_cleanup_complete(
-            &retry,
-            true,
-            "discord_agent_owned_cleanup_incomplete",
-        );
+        let retry_gate =
+            require_owned_cleanup_complete(&retry, true, "discord_agent_owned_cleanup_incomplete");
         if retry_gate.is_ok() {
             retained_owner = None;
         }
@@ -11283,10 +11340,9 @@ mod tests {
 
         let replacement: Result<(), String> = Err("replacement failed".to_string());
         assert!(replacement.is_err());
-        let authority: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(runtime.path().join("authority.json")).unwrap(),
-        )
-        .unwrap();
+        let authority: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(runtime.path().join("authority.json")).unwrap())
+                .unwrap();
         assert_eq!(authority["generation"], "revoked");
         assert!(!runtime.path().join("status.json").exists());
         assert!(!runtime.path().join("quarantine.json").exists());
@@ -11600,7 +11656,10 @@ mod tests {
     #[test]
     fn parent_directory_persistence_errors_are_propagated() {
         assert!(sync_parent_directory_with(
-            || Err::<(), _>(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "open")),
+            || Err::<(), _>(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "open"
+            )),
             |_| Ok(()),
         )
         .is_err());
@@ -11692,8 +11751,7 @@ mod tests {
 
     #[test]
     fn discord_cursor_updates_preserve_other_channels_and_monotonic_max() {
-        let active_keys =
-            std::collections::BTreeSet::from(["one".to_string(), "two".to_string()]);
+        let active_keys = std::collections::BTreeSet::from(["one".to_string(), "two".to_string()]);
         let cursors = DiscordInboxCursors {
             version: 1,
             generation: "42".to_string(),
@@ -11703,8 +11761,7 @@ mod tests {
             update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 10)
                 .unwrap();
         let cursors =
-            update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 5)
-                .unwrap();
+            update_discord_inbox_cursor(cursors, "42", &active_keys, "one".to_string(), 5).unwrap();
         assert_eq!(cursors.cursors.get("one"), Some(&10));
         assert_eq!(cursors.cursors.get("two"), Some(&7));
     }
@@ -11738,10 +11795,7 @@ mod tests {
             "/channels/300/messages?limit=50"
         );
         assert!(!discord_bot_member_endpoint("100", "200").contains("/users/@me/"));
-        assert_eq!(
-            discord_guilds_endpoint(None),
-            "/users/@me/guilds?limit=100"
-        );
+        assert_eq!(discord_guilds_endpoint(None), "/users/@me/guilds?limit=100");
         assert_eq!(
             discord_guilds_endpoint(Some("999")),
             "/users/@me/guilds?limit=100&after=999"
@@ -11754,10 +11808,7 @@ mod tests {
 
     #[test]
     fn discord_snowflake_timestamp_is_bounded_and_deterministic() {
-        assert_eq!(
-            discord_snowflake_timestamp_ms("0"),
-            Some(1_420_070_400_000)
-        );
+        assert_eq!(discord_snowflake_timestamp_ms("0"), Some(1_420_070_400_000));
         assert!(discord_snowflake_timestamp_ms("not-a-snowflake").is_none());
     }
 
@@ -11784,13 +11835,8 @@ mod tests {
                 deny: DISCORD_SEND_MESSAGES.to_string(),
             },
         ];
-        let effective = apply_discord_overwrites(
-            "100",
-            "300",
-            &["200".to_string()],
-            base,
-            &overwrites,
-        );
+        let effective =
+            apply_discord_overwrites("100", "300", &["200".to_string()], base, &overwrites);
         let summary = discord_permission_summary(effective);
         assert!(summary.view_channel);
         assert!(summary.read_message_history);

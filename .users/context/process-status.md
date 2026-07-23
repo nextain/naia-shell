@@ -1,4 +1,11 @@
-<!-- src-sha: 1d58da21572af7d2 -->
+<!-- src-sha: e2fe6424a4462339 -->
+
+## Coding Workers visual and UX gate — 2026-07-23
+
+- Scope: hierarchy, saved-course-target feedback, narrow layout, and mutation/error states.
+- Passed: 104 focused Shell tests; TypeScript and production builds; paired Agent/Shell native build; and isolated Tauri WebDriver with the exact paired Agent checkout.
+- Native course acceptance passed: the Shell saved the exact `jeonju-discord-course.json` contract, Codex created only `index.html` and `hero.svg`, the student committed the result, and a second request modified only `hero.svg`.
+- Adversarial review closed E2E isolation gaps for runtime-owned logs and the fixed Vite port. A real Discord server smoke still requires configured bot credentials and is separate from this isolated Shell acceptance.
 
 ## Coding Workers visual and UX gate — 2026-07-22
 

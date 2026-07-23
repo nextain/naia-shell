@@ -23,6 +23,11 @@ export const E2E_ROOT = resolve(
 export const E2E_WORKSPACE = resolve(E2E_ROOT, "workspace");
 export const E2E_SETTINGS = resolve(E2E_WORKSPACE, "naia-settings");
 export const E2E_WEBVIEW2_DATA = resolve(E2E_ROOT, "webview2");
+// Tauri resolves the native config directory through APPDATA/LOCALAPPDATA.
+// WebView2 alone is not enough: without this pair, a prior test can silently
+// replace the seeded Codex provider with the developer's persisted E2E app
+// settings.
+export const E2E_APPDATA = resolve(E2E_ROOT, "appdata");
 export const E2E_ARTIFACTS = resolve(E2E_ROOT, "artifacts");
 export const E2E_RUNTIME = resolve(E2E_ROOT, "runtime");
 export const E2E_CONFIG_PATH = resolve(E2E_SETTINGS, "config.json");
@@ -36,7 +41,9 @@ export const E2E_TARGET_DIR = resolve(
 			? "C:/tmp/naia-shell-e2e"
 			: resolve(SHELL_DIR, "src-tauri", "target-e2e")),
 );
-const E2E_VITE_PORT = 1421;
+// Must match src-tauri/tauri.e2e.conf.json's devUrl. Keeping this explicit
+// avoids a rebuilt test binary silently waiting on a different Vite server.
+const E2E_VITE_PORT = 1422;
 const E2E_AVATAR_ENABLED = process.env.NAIA_E2E_AVATAR === "1";
 const E2E_NVA_SOURCE = process.env.NAIA_E2E_NVA_SOURCE;
 
@@ -56,8 +63,9 @@ function assertOwnedRoot(path: string): void {
 
 /**
  * The test owns exactly this directory. Its three consumers are isolated:
- * Shell workspace/config, WebView2 profile, and WDIO artifacts. The Tauri
- * E2E binary uses com.naia.shell.e2e, isolating native Windows app data too.
+ * Shell workspace/config, WebView2 profile, native app data, and WDIO
+ * artifacts. The Tauri E2E binary uses com.naia.shell.e2e, but that identity
+ * still shares its APPDATA location unless the harness owns it explicitly.
  */
 export function configureCodexE2eEnvironment(): void {
 	process.env.CAFE_DEBUG_E2E = "1";
@@ -66,6 +74,8 @@ export function configureCodexE2eEnvironment(): void {
 	process.env.NAIA_E2E_RUNTIME_DIR = E2E_RUNTIME;
 	process.env.NAIA_E2E_ARTIFACTS_DIR = E2E_ARTIFACTS;
 	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_WEBVIEW2_DATA;
+	process.env.APPDATA = resolve(E2E_APPDATA, "roaming");
+	process.env.LOCALAPPDATA = resolve(E2E_APPDATA, "local");
 	process.env.NAIA_E2E_DISCORD_CAPTURE = "cancel";
 	process.env.NAIA_BGM_PORT = String(E2E_BGM_PORT);
 	process.env.VITE_NAIA_BGM_BASE = `http://127.0.0.1:${E2E_BGM_PORT}`;
@@ -92,6 +102,7 @@ export function resetCodexE2eRoot(): void {
 	});
 	mkdirSync(E2E_SETTINGS, { recursive: true });
 	mkdirSync(E2E_WEBVIEW2_DATA, { recursive: true });
+	mkdirSync(E2E_APPDATA, { recursive: true });
 	mkdirSync(E2E_ARTIFACTS, { recursive: true });
 	mkdirSync(E2E_RUNTIME, { recursive: true });
 	const config = {
@@ -153,6 +164,7 @@ export function assertCodexE2eIsolation(): void {
 		E2E_WORKSPACE,
 		E2E_SETTINGS,
 		E2E_WEBVIEW2_DATA,
+		E2E_APPDATA,
 		E2E_RUNTIME,
 	]) {
 		if (!existsSync(path))
@@ -212,8 +224,10 @@ export async function startOwnedViteServer(): Promise<void> {
 			stdio: ["ignore", "pipe", "pipe"],
 			env: {
 				...process.env,
-				BROWSER: "none",
-				VITE_NAIA_E2E_ADK_PATH: E2E_WORKSPACE,
+			BROWSER: "none",
+			VITE_NAIA_E2E_ADK_PATH: E2E_WORKSPACE,
+			VITE_NAIA_E2E_PROVIDER: "codex",
+			VITE_NAIA_E2E_MODEL: "gpt-5.4",
 				...(E2E_AVATAR_ENABLED ? {} : { VITE_NAIA_E2E_NO_AVATAR: "1" }),
 				// The BGM acceptance fixture is same-origin and never contacts YouTube.
 				VITE_NAIA_E2E_BGM_IFRAME_URL: "/e2e/bgm-playback-fixture.html",

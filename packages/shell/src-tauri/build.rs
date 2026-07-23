@@ -37,7 +37,7 @@ fn main() {
     ];
     fn git_output(dir: &Path, args: &[&str]) -> Option<String> {
         std::process::Command::new("git")
-            .args(["-C", dir.to_str()?,])
+            .args(["-C", dir.to_str()?])
             .args(args)
             .output()
             .ok()
@@ -151,7 +151,10 @@ fn main() {
     }
     // Git may check out the same proto as CRLF or LF on Windows. The paired
     // contract is content, not line-ending policy, so normalize before hashing.
-    let proto_sha256 = format!("{:x}", Sha256::digest(proto_text.replace("\r\n", "\n").as_bytes()));
+    let proto_sha256 = format!(
+        "{:x}",
+        Sha256::digest(proto_text.replace("\r\n", "\n").as_bytes())
+    );
     if proto_sha256 != REQUIRED_PROTO_SHA256 {
         panic!(
             "NAIA_AGENT_PROTO_DIR must point to the paired naia_agent.proto SHA256 {REQUIRED_PROTO_SHA256}; got {proto_sha256}"

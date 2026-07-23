@@ -456,63 +456,63 @@ pub fn workspace_start_watch(
 
         let watcher = RecommendedWatcher::new(
             move |result: notify::Result<Event>| {
-            if let Ok(event) = result {
-                let is_content_change =
-                    matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
-                if !is_content_change {
-                    return;
-                }
-
-                for changed_path in &event.paths {
-                    let name = changed_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
-                    if name.starts_with('.') || name.ends_with(".lock") {
-                        continue;
-                    }
-                    if !changed_path.is_file() {
-                        continue;
+                if let Ok(event) = result {
+                    let is_content_change =
+                        matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
+                    if !is_content_change {
+                        return;
                     }
 
-                    if let Some(session_dir) = find_session_dir(changed_path) {
-                        let session_str = session_dir.to_string_lossy().to_string();
-                        let now = now_secs();
-                        let rel = changed_path
-                            .strip_prefix(&session_dir)
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|_| name.to_string());
+                    for changed_path in &event.paths {
+                        let name = changed_path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("");
+                        if name.starts_with('.') || name.ends_with(".lock") {
+                            continue;
+                        }
+                        if !changed_path.is_file() {
+                            continue;
+                        }
 
-                        {
-                            let mut lc = last_change_clone.lock().unwrap();
-                            lc.insert(session_str.clone(), now);
-                        }
-                        {
-                            let mut rf = recent_files_clone.lock().unwrap();
-                            rf.insert(session_str.clone(), rel.clone());
-                        }
-                        {
-                            let new_branch = get_branch(&session_dir);
-                            let mut bc = branch_cache_clone.lock().unwrap();
-                            if new_branch.is_some() {
-                                bc.insert(session_str.clone(), new_branch);
-                            } else {
-                                bc.remove(&session_str);
+                        if let Some(session_dir) = find_session_dir(changed_path) {
+                            let session_str = session_dir.to_string_lossy().to_string();
+                            let now = now_secs();
+                            let rel = changed_path
+                                .strip_prefix(&session_dir)
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_else(|_| name.to_string());
+
+                            {
+                                let mut lc = last_change_clone.lock().unwrap();
+                                lc.insert(session_str.clone(), now);
                             }
-                        }
+                            {
+                                let mut rf = recent_files_clone.lock().unwrap();
+                                rf.insert(session_str.clone(), rel.clone());
+                            }
+                            {
+                                let new_branch = get_branch(&session_dir);
+                                let mut bc = branch_cache_clone.lock().unwrap();
+                                if new_branch.is_some() {
+                                    bc.insert(session_str.clone(), new_branch);
+                                } else {
+                                    bc.remove(&session_str);
+                                }
+                            }
 
-                        let _ = app_clone.emit(
-                            "workspace:file-changed",
-                            serde_json::json!({
-                                "session": session_str,
-                                "file": rel,
-                                "timestamp": now,
-                            }),
-                        );
+                            let _ = app_clone.emit(
+                                "workspace:file-changed",
+                                serde_json::json!({
+                                    "session": session_str,
+                                    "file": rel,
+                                    "timestamp": now,
+                                }),
+                            );
+                        }
                     }
                 }
-            }
-        },
+            },
             Config::default(),
         );
         let mut w = match watcher {

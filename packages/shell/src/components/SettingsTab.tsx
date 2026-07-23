@@ -10,6 +10,7 @@ import {
 	clearAdkPath,
 	getAdkPath,
 	listNaiaAssets,
+	readNaiaConfig,
 	setAdkPath,
 	toLocalBlobUrl,
 	writeAgentKey,
@@ -545,6 +546,28 @@ export function SettingsTab() {
 	const [model, setModel] = useState(
 		modelValid ? savedModel : getDefaultLlmModel(initProvider),
 	);
+	// SettingsTab remains mounted while the Shell starts.  The workspace config
+	// hydrates asynchronously, so its initial state can otherwise keep showing
+	// the bootstrap provider even after the agent has loaded the workspace's
+	// actual brain. Keep the editable main-brain controls synchronized with the
+	// config SoT; user changes emit the same event and therefore converge on
+	// their persisted selection rather than being reverted.
+	useEffect(() => {
+		const syncMainBrainFromConfig = () => {
+			const cfg = loadConfig();
+			if (!cfg?.provider) return;
+			const nextProvider = cfg.provider as ProviderId;
+			setProvider(nextProvider);
+			setModel(
+				typeof cfg.model === "string" && cfg.model.trim()
+					? cfg.model
+					: getDefaultLlmModel(nextProvider),
+			);
+		};
+		window.addEventListener("naia-config-changed", syncMainBrainFromConfig);
+		return () =>
+			window.removeEventListener("naia-config-changed", syncMainBrainFromConfig);
+	}, []);
 	const [apiKey, setApiKey] = useState(existing?.apiKey ?? "");
 	// config.json 은 비밀을 strip(키는 키체인/credentials 매니페스트)하므로 existing.apiKey 는 항상 "".
 	// provider 에 저장된 키가 있으면 입력란을 `*****`(저장됨)로 마스킹 표기(값은 안 읽음 — agentKeyExists 는
@@ -1124,6 +1147,37 @@ export function SettingsTab() {
 	const [memoryLlmRole, setMemoryLlmRole] = useState<LlmRoleConfig>(
 		initialLlmRoles.memory ?? { inherit: "sub" },
 	);
+	// The roles have their own staged controls. Rehydrate them alongside the
+	// main brain after a workspace switch or WebView restart; otherwise the
+	// persisted explicit sub-brain is rendered as the initial inherit default.
+	useEffect(() => {
+		const syncLlmRolesFromConfig = () => {
+			const cfg = loadConfig();
+			if (!cfg) return;
+			const roles = readConfiguredLlmRoles(cfg);
+			setSubLlmRole(roles.sub ?? { inherit: "main" });
+			setMemoryLlmRole(roles.memory ?? { inherit: "sub" });
+		};
+		syncLlmRolesFromConfig();
+		// The workspace files are the config SoT.  Settings can be mounted after
+		// the boot hydration event (or while WebView restart effects race), so an
+		// event-only subscription leaves its staged role controls at defaults.
+		// Read the file once on mount as the deterministic fallback.
+		void readNaiaConfig().then((fileConfig) => {
+			if (!fileConfig) return;
+			const roles = readConfiguredLlmRoles({
+				provider: existing?.provider ?? "gemini",
+				model: existing?.model ?? getDefaultLlmModel("gemini"),
+				apiKey: existing?.apiKey ?? "",
+				...fileConfig,
+			});
+			setSubLlmRole(roles.sub ?? { inherit: "main" });
+			setMemoryLlmRole(roles.memory ?? { inherit: "sub" });
+		});
+		window.addEventListener("naia-config-changed", syncLlmRolesFromConfig);
+		return () =>
+			window.removeEventListener("naia-config-changed", syncLlmRolesFromConfig);
+	}, []);
 	const [backupPassword, setBackupPassword] = useState("");
 	const [backupStatus, setBackupStatus] = useState<
 		"idle" | "exporting" | "importing" | "done" | "error"

@@ -6,6 +6,21 @@ import { buildSlotsManifest, serializeSlotsManifest } from "./slots/manifest";
 
 const ADK_PATH_KEY = "naia-adk-path";
 
+// App starts children before the workspace-owned config files have finished
+// hydrating. A child may persist a harmless UI preference during that window,
+// but its incomplete bootstrap object must never replace the config SoT.
+// Standalone utility/test callers never begin this gate and retain the normal
+// immediate-write behavior.
+let configHydrationPending = false;
+
+export function beginNaiaConfigHydration(): void {
+	configHydrationPending = true;
+}
+
+export function completeNaiaConfigHydration(): void {
+	configHydrationPending = false;
+}
+
 // ── ADK Path ──────────────────────────────────────────────────────────────────
 
 export function getAdkPath(): string | null {
@@ -328,16 +343,18 @@ export async function agentKeyExists(
 	return invoke<boolean>("agent_key_exists", { adkPath, envKey }).catch(() => false);
 }
 
-export async function readNaiaConfig(): Promise<Record<
-	string,
-	unknown
-> | null> {
+/**
+ * Reads the workspace configuration file.  A workspace may be in the middle of
+ * first-run creation, so callers must treat this as a partial configuration and
+ * provide their own required-field defaults before using it as an AppConfig.
+ */
+export async function readNaiaConfig(): Promise<Partial<AppConfig> | null> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return null;
 	try {
 		const json = await invoke<string>("read_naia_config", { adkPath });
 		if (!json) return null;
-		return JSON.parse(json) as Record<string, unknown>;
+		return JSON.parse(json) as Partial<AppConfig>;
 	} catch {
 		return null;
 	}
@@ -415,6 +432,7 @@ function mergeUiConfigPatch(
 export async function writeNaiaUiConfig(
 	config: Record<string, unknown>,
 ): Promise<boolean> {
+	if (configHydrationPending) return false;
 	const adkPath = getAdkPath();
 	if (!adkPath) return false;
 	try {
@@ -508,6 +526,7 @@ export async function writeSlotsManifest(
 export async function writeNaiaConfig(
 	config: Record<string, unknown>,
 ): Promise<void> {
+	if (configHydrationPending) return;
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
 	await invoke("write_naia_config", {
