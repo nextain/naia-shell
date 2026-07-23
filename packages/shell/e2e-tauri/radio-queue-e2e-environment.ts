@@ -44,8 +44,8 @@ export function configure() {
  process.env.APPDATA = resolve(appData, "roaming");
  process.env.LOCALAPPDATA = resolve(appData, "local");
  process.env.VITE_NAIA_BGM_BASE = `http://127.0.0.1:${bgmPort}`;
- process.env.NAIA_AGENT_SCRIPT = resolve("D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-4e488ab", "scripts/builds/agent-stdio-entry.mjs");
- process.env.NAIA_AGENT_PROTO_DIR = resolve("D:/alpha-adk/projects/naia-agent-worktrees/shell-pair-4e488ab", "src/main/adapters/grpc");
+ process.env.NAIA_AGENT_SCRIPT = resolve("D:/alpha-adk/projects/naia-agent-worktrees/codex-job-terminal", "scripts/builds/agent-stdio-entry.mjs");
+ process.env.NAIA_AGENT_PROTO_DIR = resolve("D:/alpha-adk/projects/naia-agent-worktrees/codex-job-terminal", "src/main/adapters/grpc");
 }
 export function reset() {
  assertOwnedRoot(root); rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
