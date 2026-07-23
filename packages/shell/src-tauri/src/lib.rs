@@ -1262,7 +1262,14 @@ fn save_window_state(app_handle: &AppHandle, state: &WindowState) {
 
 /// Get log directory (~/.naia/logs/) and ensure it exists
 fn log_dir() -> std::path::PathBuf {
-    let dir = std::path::PathBuf::from(home_dir()).join(".naia/logs");
+    let dir = if std::env::var("CAFE_DEBUG_E2E").ok().as_deref() == Some("1") {
+        std::env::var_os("NAIA_E2E_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .map(|runtime| runtime.join("logs"))
+            .unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join(".naia/logs"))
+    } else {
+        std::path::PathBuf::from(home_dir()).join(".naia/logs")
+    };
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

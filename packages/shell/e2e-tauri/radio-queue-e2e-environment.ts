@@ -7,7 +7,9 @@ import { execPath } from "node:process";
 
 export const shellDir = resolve(import.meta.dirname, "..");
 export const e2ePort = Number(process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4472");
-export const vitePort = Number(process.env.NAIA_E2E_VITE_PORT ?? "1422");
+const configuredVitePort = Number(process.env.NAIA_E2E_VITE_PORT ?? "1422");
+if (configuredVitePort !== 1422) throw new Error("radio native E2E binary is fixed to Vite port 1422");
+export const vitePort = 1422;
 export const bgmPort = Number(process.env.NAIA_E2E_BGM_PORT ?? "18772");
 export const oauthPort = Number(process.env.NAIA_E2E_OAUTH_CALLBACK_PORT ?? "18793");
 export const root = resolve("D:/tmp", `naia-radio-queue-e2e-${e2ePort}`);
