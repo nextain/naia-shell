@@ -12,13 +12,12 @@ import {
 	type BgmPlaybackStatus,
 } from "../lib/bgm-playback";
 import { Logger } from "../lib/logger";
-import { BGM_SIDECAR_BASE_URL } from "../lib/bgm-sidecar-url";
 import type { NaiaContextBridge } from "../lib/app-registry";
 import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
-const YT_BASE = BGM_SIDECAR_BASE_URL;
+const YT_BASE = import.meta.env.VITE_NAIA_BGM_BASE?.replace(/\/$/, "") ?? "http://localhost:18791";
 
 
 interface YtVideo {
@@ -98,11 +97,7 @@ const YT_PANEL_H_MAX = 700;
 const MARQUEE_THRESHOLD = 22;
 const PLAYBACK_TIMEOUT_MS = 12_000;
 
-/**
- * Production always embeds YouTube's privacy-enhanced player.  The isolated
- * native acceptance binary may opt into a same-origin fixture so the
- * requested→observed boundary can be exercised without network playback.
- */
+/** Native E2E uses a same-origin fixture; normal Shell runs always use YouTube. */
 function youtubeEmbedUrl(videoId: string): string {
 	const fixture = import.meta.env.VITE_NAIA_E2E_BGM_IFRAME_URL?.trim();
 	if (fixture) {
@@ -159,6 +154,7 @@ export function BgmPlayer({ naia }: Props) {
 	const [playbackSnapshot, setPlaybackSnapshot] = useState<BgmPlaybackSnapshot | null>(
 		() => bgmPlayback.current(),
 	);
+	const [queueVersion, setQueueVersion] = useState(0);
 	const playbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// ── Unified panel state ───────────────────────────────────────────────────
@@ -254,6 +250,12 @@ export function BgmPlayer({ naia }: Props) {
 					} else if (state === 0) {
 						setPlaying(false);
 						observePlayback("ended");
+						const next = bgmPlayback.advance();
+						if (next) {
+							setPlaybackSnapshot(next);
+							setQueueVersion((version) => version + 1);
+							handleYtSelect({ id: next.selected.videoId, title: next.selected.title, thumbnail: "", duration: "", channel: "" }, next.playbackId);
+						}
 					} else if (state === -1 || state === 3) {
 						observePlayback("loading");
 					}
@@ -326,6 +328,18 @@ export function BgmPlayer({ naia }: Props) {
 						channel: "",
 					};
 					handleYtSelect(video);
+				} else if (msg.type === "bgm_youtube_enqueue") {
+					setQueueVersion((version) => version + 1);
+				} else if (msg.type === "e2e_bgm_enqueue") {
+					const result = bgmPlayback.enqueue({
+						videoId: String(msg.videoId ?? ""),
+						title: String(msg.title ?? ""),
+					});
+					if (result.disposition === "play") {
+						handleYtSelect({ id: result.playback.selected.videoId, title: result.playback.selected.title, thumbnail: "", duration: "", channel: "" }, result.playback.playbackId);
+					}
+					setPlaybackSnapshot(bgmPlayback.current());
+					setQueueVersion((version) => version + 1);
 				} else if (msg.type === "bgm_youtube_stop") {
 					audioRef.current?.pause();
 					setPlaying(false);
@@ -335,6 +349,10 @@ export function BgmPlayer({ naia }: Props) {
 					}
 					prevBgVideoRef.current = "";
 					prevBgMediaRef.current = "";
+					bgmPlayback.clearQueue();
+					observePlayback("ended");
+					setPlaybackSnapshot(bgmPlayback.current());
+					setQueueVersion((version) => version + 1);
 				} else if (msg.type === "bgm_youtube_fav_add") {
 					// Add currently playing YT track to favorites (or explicit videoId)
 					const cur = currentYtRef.current;
@@ -445,7 +463,7 @@ export function BgmPlayer({ naia }: Props) {
 	// Supported commands: bgm_youtube_play, bgm_youtube_stop, bgm_youtube_fav_add, bgm_youtube_fav_remove
 	useEffect(() => {
 		if (!naia) return;
-		const observed = toBgmObservedContext(playbackSnapshot);
+		const observed = toBgmObservedContext(playbackSnapshot, Date.now(), bgmPlayback.queue());
 		naia.pushContext({
 			type: "bgm",
 			data: {
@@ -473,7 +491,7 @@ export function BgmPlayer({ naia }: Props) {
 				// bgm_youtube_fav_remove — remove current track from favorites
 			},
 		});
-	}, [naia, source, playing, volume, playbackSnapshot, currentYt, favs, localNames, localIndex, localTracks.length]);
+	}, [naia, source, playing, volume, playbackSnapshot, queueVersion, currentYt, favs, localNames, localIndex, localTracks.length]);
 
 	// ── Playback helpers ──────────────────────────────────────────────────────
 
@@ -657,9 +675,8 @@ export function BgmPlayer({ naia }: Props) {
 			className="bgm-player"
 			ref={playerRef}
 			data-bgm-playback-status={playbackSnapshot?.status ?? "idle"}
-			data-bgm-announced-title={
-				toBgmObservedContext(playbackSnapshot).currentTrack?.title ?? ""
-			}
+			data-bgm-current-title={playbackSnapshot?.selected.title ?? ""}
+			data-bgm-queue-length={bgmPlayback.queue().length}
 		>
 			<audio
 				ref={audioRef}

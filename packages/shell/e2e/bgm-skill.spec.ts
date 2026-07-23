@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { SEED_ADK_PATH, TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mock";
+import {
+	SEED_ADK_PATH,
+	TAURI_BASE_MOCK_FALLBACK,
+} from "./helpers/tauri-base-mock";
 
 /**
  * UC8 / FR-BGM.1 — skill_youtube_bgm 배선 회귀 가드 (실 UI, 새 core).
@@ -23,7 +26,10 @@ import { SEED_ADK_PATH, TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mo
 const NEW_CORE_FLAG = `window.__NAIA_NEW_CORE__ = true; window.__E2E_OUTBOUND__ = [];`;
 
 // play+videoId 경로 = 사이드카(:18791) 미접촉(검색 skip) → 헤르메틱.
-const BGM_TOOL_ARGS = { action: "play", videoId: "e2evid001", title: "E2E BGM Track" };
+const BGM_TOOL_ARGS = [
+	{ action: "play", videoId: "e2evid001", title: "E2E First Track" },
+	{ action: "play", videoId: "e2evid002", title: "E2E Queued Track" },
+];
 
 const MOCK_SCRIPT = `
 (function () {
@@ -67,7 +73,8 @@ const MOCK_SCRIPT = `
       if (payload && payload.type === "chat_request") {
         var rid = payload.requestId;
         var chunks = [
-          { type: "panel_tool_call", requestId: rid, toolCallId: "tc-bgm-1", toolName: "skill_youtube_bgm", args: ${JSON.stringify(BGM_TOOL_ARGS)} },
+          { type: "panel_tool_call", requestId: rid, toolCallId: "tc-bgm-1", toolName: "skill_youtube_bgm", args: ${JSON.stringify(BGM_TOOL_ARGS[0])} },
+          { type: "panel_tool_call", requestId: rid, toolCallId: "tc-bgm-2", toolName: "skill_youtube_bgm", args: ${JSON.stringify(BGM_TOOL_ARGS[1])} },
           { type: "text", requestId: rid, text: "재생을 요청했어요. 실제 재생이 확인되면 곡을 소개할게요." },
           { type: "finish", requestId: rid },
         ];
@@ -92,15 +99,19 @@ function configScript(cfg: Record<string, unknown>): string {
 test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 	test.beforeEach(async ({ page }) => {
 		// Deterministic local iframe: this e2e never contacts YouTube.
-		await page.route("https://www.youtube-nocookie.com/embed/**", async (route) => {
-			await route.fulfill({
-				contentType: "text/html",
-				body: `<!doctype html><script>
+		await page.route(
+			"https://www.youtube-nocookie.com/embed/**",
+			async (route) => {
+				await route.fulfill({
+					contentType: "text/html",
+					body: `<!doctype html><script>
 					parent.postMessage(JSON.stringify({ event: "onReady" }), "*");
 					setTimeout(() => parent.postMessage(JSON.stringify({ event: "onStateChange", info: 1 }), "*"), 700);
+					setTimeout(() => parent.postMessage(JSON.stringify({ event: "onStateChange", info: 0 }), "*"), 1500);
 				</script>`,
-			});
-		});
+				});
+			},
+		);
 		await page.addInitScript(NEW_CORE_FLAG);
 		await page.addInitScript(MOCK_SCRIPT);
 		await page.addInitScript({ content: TAURI_BASE_MOCK_FALLBACK });
@@ -160,21 +171,58 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		await input.fill("잔잔한 음악 틀어줘");
 		await input.press("Enter");
 
-		await expect.poll(async () => page.evaluate(() => {
-			const out = (window as unknown as { __E2E_OUTBOUND__?: Array<Record<string, unknown>> })
-				.__E2E_OUTBOUND__ ?? [];
-			return out.find((message) => message.type === "panel_tool_result")?.result ?? null;
-		}), { timeout: 10_000 }).not.toBeNull();
+		await expect
+			.poll(
+				async () =>
+					page.evaluate(() => {
+						const out =
+							(
+								window as unknown as {
+									__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
+								}
+							).__E2E_OUTBOUND__ ?? [];
+						return (
+							out.find((message) => message.type === "panel_tool_result")
+								?.result ?? null
+						);
+					}),
+				{ timeout: 10_000 },
+			)
+			.not.toBeNull();
 		const toolResult = await page.evaluate(() => {
-			const out = (window as unknown as { __E2E_OUTBOUND__?: Array<Record<string, unknown>> })
-				.__E2E_OUTBOUND__ ?? [];
-			return String(out.find((message) => message.type === "panel_tool_result")?.result ?? "");
+			const out =
+				(
+					window as unknown as {
+						__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
+					}
+				).__E2E_OUTBOUND__ ?? [];
+			return String(
+				out.find((message) => message.type === "panel_tool_result")?.result ??
+					"",
+			);
 		});
 		expect(JSON.parse(toolResult)).toMatchObject({
 			playback: { status: "requested" },
 			announceTrack: false,
 		});
 		expect(JSON.parse(toolResult)).not.toHaveProperty("title");
+
+		const toolResults = await page.evaluate(() => {
+			const out =
+				(
+					window as unknown as {
+						__E2E_OUTBOUND__?: Array<Record<string, unknown>>;
+					}
+				).__E2E_OUTBOUND__ ?? [];
+			return out
+				.filter((message) => message.type === "panel_tool_result")
+				.map((message) => JSON.parse(String(message.result)));
+		});
+		expect(toolResults).toHaveLength(2);
+		expect(toolResults[1]).toMatchObject({
+			queued: { position: 1, selected: { videoId: "e2evid002" } },
+			announceTrack: false,
+		});
 
 		// 배선 end-to-end 입증: dispatch → executeBgmSkill → bgm_youtube_play → BgmPlayer 재생.
 		// Replacing the iframe is only a request. The fixture has not reported
@@ -185,5 +233,15 @@ test.describe("UC8 BGM 스킬 배선 (FR-BGM.1)", () => {
 		await expect(page.locator(".bgm-icon--playing")).toBeVisible({
 			timeout: 15_000,
 		});
+		await expect(page.locator(".bgm-track-name")).toContainText(
+			"E2E First Track",
+		);
+
+		// The fixture ends the first iframe. Only then may the queued second track
+		// replace it and become visibly playing.
+		await expect(page.locator(".bgm-track-name")).toContainText(
+			"E2E Queued Track",
+			{ timeout: 15_000 },
+		);
 	});
 });

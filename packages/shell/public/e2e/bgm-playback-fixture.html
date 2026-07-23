@@ -1,30 +1,14 @@
 <!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8" /><title>Naia BGM E2E fixture</title></head>
-  <body>
-    <p id="status">loaded</p>
-    <button id="report-playing" type="button">Report playing</button>
-    <button id="report-paused" type="button">Report paused</button>
-    <script>
-      (() => {
-        const send = (event, info) => parent.postMessage(JSON.stringify({ event, info }), window.location.origin);
-        send("initialDelivery", 0);
-        document.getElementById("report-playing").addEventListener("click", () => {
-          document.getElementById("status").textContent = "playing";
-          send("onStateChange", 1);
-        });
-        document.getElementById("report-paused").addEventListener("click", () => {
-          document.getElementById("status").textContent = "paused";
-          send("onStateChange", 2);
-        });
-        // The native E2E can retain detached A, then prove its late error cannot
-        // overwrite the newly active B iframe.
-        window.addEventListener("message", (event) => {
-          if (event.source !== parent || event.data !== "e2e-report-error") return;
-          document.getElementById("status").textContent = "error";
-          send("onError", "fixture_late_error");
-        });
-      })();
-    </script>
-  </body>
-</html>
+<html lang="en"><meta charset="utf-8" /><title>Naia BGM E2E fixture</title>
+<body>
+<button id="report-playing" type="button">Report playing</button>
+<button id="report-ended" type="button">Report ended</button>
+<script>
+(() => {
+ const send = (event, info) => parent.postMessage(JSON.stringify({ event, info }), window.location.origin);
+ send('initialDelivery', 0);
+ document.querySelector('#report-playing').addEventListener('click', () => send('onStateChange', 1));
+ document.querySelector('#report-ended').addEventListener('click', () => send('onStateChange', 0));
+})();
+</script>
+</body></html>

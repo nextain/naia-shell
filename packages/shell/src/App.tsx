@@ -142,11 +142,7 @@ function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 	const [timedOut, setTimedOut] = useState(false);
 	// 새 core(이식) dev = 채팅 백엔드 검증이 목적, 아바타는 이 슬라이스 밖 → 아바타 로드 대기 안 함(즉시 ready).
 	// 아바타 자산 미배치·로드 행으로 스플래시가 안 풀리는 것 방지(유저 진입 UI 이식 전 임시).
-	const skipAvatarWait =
-		showAdkSetup ||
-		showOnboarding ||
-		isNewCore() ||
-		import.meta.env.VITE_NAIA_E2E_NO_AVATAR === "1";
+	const skipAvatarWait = showAdkSetup || showOnboarding || isNewCore();
 
 	useEffect(() => {
 		if (skipAvatarWait || avatarLoaded) return;
@@ -162,22 +158,17 @@ function useAppReady(showAdkSetup: boolean, showOnboarding: boolean): boolean {
 }
 
 export function App() {
-	// The native WebDriver binary starts with a fresh WebView2 profile.  Seed
-	// only that explicitly supplied E2E workspace before the first render so
-	// the real app follows its normal hydrated-config path rather than being
-	// stranded on the ADK setup screen.  Production builds do not define this
-	// value and therefore keep the normal first-run behaviour.
+	// The native WebDriver binary starts with a fresh WebView2 profile. Seed
+	// only the explicitly supplied E2E workspace before first render so the
+	// real application follows its normal hydrated-config path.
 	const e2eAdkPath = import.meta.env.VITE_NAIA_E2E_ADK_PATH?.trim();
 	if (e2eAdkPath && !getAdkPath()) setAdkPath(e2eAdkPath);
-	// A fresh native WebView has no browser storage, even when the isolated E2E
-	// workspace already has a file-backed config.  Seed only the explicit test
-	// workspace before the first onboarding check; no credential is supplied.
 	if (e2eAdkPath && !isOnboardingComplete()) {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
-				provider: "codex",
-				model: "gpt-5.4",
+				provider: "ollama",
+				model: "e2e",
 				apiKey: "",
 				locale: "ko",
 				ttsEnabled: false,
@@ -188,11 +179,6 @@ export function App() {
 	}
 	const [showSplash, setShowSplash] = useState(true);
 	const [showAdkSetup, setShowAdkSetup] = useState(!isAdkInitialized());
-	// The main surface contains components that persist their own initial UI
-	// state.  Do not mount them until file-backed config has replaced the stale
-	// WebView cache, otherwise their mount effects can overwrite a selected
-	// avatar/voice profile before it has rendered.
-	const [configReady, setConfigReady] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [showPanelInstall, setShowPanelInstall] = useState(false);
 	const [naiaVisible, setNaiaVisible] = useState(true);
@@ -418,7 +404,6 @@ export function App() {
 	// push the stale pre-hydration cache back into config.json (FR-CONFIG-SOT.2).
 	useEffect(() => {
 		if (showAdkSetup) {
-			setConfigReady(false);
 			// (하이드레이션은 부팅/이 effect 재실행 시에만 돈다 — 파일을 외부에서 고쳤으면 리로드 필요.)
 			// AdkSetup 화면 동안은 게이트를 **닫아둔다**. 이전에 여기서 hydrated=true 로
 			// 마킹해 mount-time syncConfigToFile(아래 boot-sync)이 800ms 뒤 스테일
@@ -427,17 +412,8 @@ export function App() {
 			// 되면 이 effect 가 재실행돼 파일→캐시 하이드레이션 후 게이트를 연다.
 			return;
 		}
-		let cancelled = false;
 		Promise.all([readNaiaConfig(), readNaiaUiConfig()]).then(
 			([fileConfig, uiConfig]) => {
-				// React development Strict Mode deliberately mounts, cleans up, then
-				// mounts again. An older file read must never hydrate or unlock the
-				// write-back gate after its owning effect has been cleaned up.
-				if (cancelled) return;
-				Logger.info("App", "File-backed config hydration", {
-					fileKeys: Object.keys(fileConfig ?? {}),
-					uiKeys: Object.keys(uiConfig ?? {}),
-				});
 				const merged = mergeBootConfig(
 					loadConfig() as unknown as Record<string, unknown> | null,
 					fileConfig ?? null,
@@ -453,15 +429,11 @@ export function App() {
 					saveConfig(reconciled);
 				}
 				configHydratedRef.current = true;
-				setConfigReady(true);
 				// Re-run the gateway-mode sync now that the file value is in cache
 				// (the immediate sync on mount was gated off until this point).
 				window.dispatchEvent(new CustomEvent("naia-config-changed"));
 			},
 		);
-		return () => {
-			cancelled = true;
-		};
 	}, [showAdkSetup]);
 
 	// Auto-allow built-in skills that are always available (no per-session approval needed).
@@ -957,12 +929,7 @@ export function App() {
 			) : null}
 
 			{/* ② Splash — position:fixed covers everything */}
-			{showSplash && (
-				<SplashScreen
-					onDone={onSplashDone}
-					ready={appReady && (showAdkSetup || configReady)}
-				/>
-			)}
+			{showSplash && <SplashScreen onDone={onSplashDone} ready={appReady} />}
 
 			{/* ③ Window resize handles */}
 			{winResizeHandles}
@@ -986,7 +953,7 @@ export function App() {
 			)}
 
 			{/* ⑤ Main app — always visible after ADK setup */}
-			{!showAdkSetup && configReady && (
+			{!showAdkSetup && (
 				<>
 					<TitleBar
 						panelVisible={naiaVisible}

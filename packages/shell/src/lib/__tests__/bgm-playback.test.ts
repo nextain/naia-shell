@@ -9,12 +9,19 @@ describe("BGM playback observation contract", () => {
 	it("returns a request receipt, not a currently-playing claim", () => {
 		let clock = 1_000;
 		const playback = createBgmPlaybackPort(() => clock);
-		const requested = playback.request({ videoId: "track-a", title: "Track A" });
+		const requested = playback.request({
+			videoId: "track-a",
+			title: "Track A",
+		});
 
 		expect(toBgmPlayToolResult(requested)).toMatchObject({
 			ok: true,
 			action: "play",
-			playback: { playbackId: "bgm-playback-1", sequence: 1, status: "requested" },
+			playback: {
+				playbackId: "bgm-playback-1",
+				sequence: 1,
+				status: "requested",
+			},
 			selected: { videoId: "track-a", title: "Track A" },
 			announceTrack: false,
 		});
@@ -27,7 +34,10 @@ describe("BGM playback observation contract", () => {
 	it("exposes a title only after the same fresh playback reports playing", () => {
 		let clock = 1_000;
 		const playback = createBgmPlaybackPort(() => clock);
-		const requested = playback.request({ videoId: "track-a", title: "Track A" });
+		const requested = playback.request({
+			videoId: "track-a",
+			title: "Track A",
+		});
 		clock += 100;
 		const playing = playback.observe({
 			playbackId: requested.playbackId,
@@ -48,7 +58,11 @@ describe("BGM playback observation contract", () => {
 		const b = playback.request({ videoId: "track-b", title: "Track B" });
 
 		expect(
-			playback.observe({ playbackId: a.playbackId, sequence: 2, status: "error" }),
+			playback.observe({
+				playbackId: a.playbackId,
+				sequence: 2,
+				status: "error",
+			}),
 		).toBeNull();
 		expect(playback.current()).toMatchObject({
 			playbackId: b.playbackId,
@@ -59,10 +73,47 @@ describe("BGM playback observation contract", () => {
 
 	it("does not accept a lower sequence for the active playback", () => {
 		const playback = createBgmPlaybackPort(() => 1_000);
-		const requested = playback.request({ videoId: "track-a", title: "Track A" });
+		const requested = playback.request({
+			videoId: "track-a",
+			title: "Track A",
+		});
 		expect(
-			playback.observe({ playbackId: requested.playbackId, sequence: 1, status: "playing" }),
+			playback.observe({
+				playbackId: requested.playbackId,
+				sequence: 1,
+				status: "playing",
+			}),
 		).toBeNull();
 		expect(playback.current()?.status).toBe("requested");
+	});
+
+	it("queues a second tool request and promotes it only after the active track ends", () => {
+		const playback = createBgmPlaybackPort(() => 1_000);
+		const first = playback.enqueue({ videoId: "track-a", title: "Track A" });
+		const second = playback.enqueue({ videoId: "track-b", title: "Track B" });
+
+		expect(first).toMatchObject({
+			disposition: "play",
+			playback: { selected: { videoId: "track-a" } },
+		});
+		expect(second).toMatchObject({
+			disposition: "queued",
+			queued: { position: 1, selected: { videoId: "track-b" } },
+		});
+		expect(playback.current()?.selected.videoId).toBe("track-a");
+		expect(playback.queue()).toHaveLength(1);
+
+		const active = playback.current()!;
+		playback.observe({
+			playbackId: active.playbackId,
+			sequence: 2,
+			status: "ended",
+		});
+		const promoted = playback.advance();
+		expect(promoted).toMatchObject({
+			selected: { videoId: "track-b" },
+			status: "requested",
+		});
+		expect(playback.queue()).toHaveLength(0);
 	});
 });

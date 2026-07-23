@@ -9,8 +9,7 @@ edition = "2021"
 default = []
 whisper = ["tauri-plugin-stt/whisper"]
 cuda = ["whisper", "tauri-plugin-stt/cuda"]
-# Test-only Windows/macOS/Linux WebDriver server. This must be supplied
-# explicitly by the isolated E2E build and is absent from normal builds.
+# Test-only WebDriver endpoint, only enabled for an isolated acceptance build.
 webdriver-e2e = ["dep:tauri-plugin-wdio-webdriver"]
 
 [lib]

@@ -18,6 +18,7 @@ import { BGM_SIDECAR_BASE_URL } from "./bgm-sidecar-url";
 import {
 	bgmPlayback,
 	toBgmPlayToolResult,
+	toBgmQueuedToolResult,
 	type BgmPlaybackPort,
 } from "./bgm-playback";
 
@@ -49,7 +50,10 @@ export const SKILL_YOUTUBE_BGM: NaiaTool = {
 				enum: [...BGM_ACTIONS],
 				description: BGM_ACTIONS.join(" | "),
 			},
-			query: { type: "string", description: "검색어 (play 에서 videoId 없을 때)" },
+			query: {
+				type: "string",
+				description: "검색어 (play 에서 videoId 없을 때)",
+			},
 			videoId: { type: "string", description: "YouTube video id (play, 선택)" },
 			title: { type: "string", description: "제목 (play+videoId, 선택)" },
 			volume: { type: "number", description: "0.0~1.0 (volume)" },
@@ -116,35 +120,52 @@ export async function executeBgmSkill(
 	}
 	const act = action as BgmAction;
 
-	if (act === "play") {
-		const videoId = args.videoId;
-		if (typeof videoId === "string" && videoId.trim()) {
-			const title = typeof args.title === "string" ? args.title : "";
-			const playback = deps.playback.request({ videoId, title });
+	const enqueueTrack = async (track: BgmSearchResult): Promise<string> => {
+		const result = deps.playback.enqueue({
+			videoId: track.id,
+			title: track.title,
+		});
+		if (result.disposition === "play") {
 			await deps.emitBgm({
 				type: "bgm_youtube_play",
-				videoId,
-				title,
+				videoId: track.id,
+				title: track.title,
+				...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 			});
-			return JSON.stringify(toBgmPlayToolResult(playback));
+			return JSON.stringify(toBgmPlayToolResult(result.playback));
 		}
-		const query = args.query;
-		if (typeof query !== "string" || !query.trim()) {
-			throw new Error("play 에는 query(검색어) 또는 videoId 가 필요합니다");
-		}
-		const results = await deps.search(query);
-		if (results.length === 0) {
-			return JSON.stringify({ ok: false, action: act, reason: "no_search_results", query });
-		}
-		const top = results[0];
-		const playback = deps.playback.request({ videoId: top.id, title: top.title });
 		await deps.emitBgm({
-			type: "bgm_youtube_play",
-			videoId: top.id,
-			title: top.title,
-			...(top.thumbnail ? { thumbnail: top.thumbnail } : {}),
+			type: "bgm_youtube_enqueue",
+			videoId: track.id,
+			title: track.title,
+			queueId: result.queued.queueId,
+			position: result.queued.position,
+			...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 		});
-		return JSON.stringify(toBgmPlayToolResult(playback));
+		return JSON.stringify(
+			toBgmQueuedToolResult(result.queued, result.queueLength),
+		);
+	};
+
+	if (act === "play") {
+		const videoId = args.videoId;
+		if (typeof videoId === "string" && videoId.trim())
+			return enqueueTrack({
+				id: videoId,
+				title: typeof args.title === "string" ? args.title : "",
+			});
+		const query = args.query;
+		if (typeof query !== "string" || !query.trim())
+			throw new Error("play requires query or videoId");
+		const results = await deps.search(query);
+		if (results.length === 0)
+			return JSON.stringify({
+				ok: false,
+				action: act,
+				reason: "no_search_results",
+				query,
+			});
+		return enqueueTrack(results[0]);
 	}
 
 	if (act === "volume") {

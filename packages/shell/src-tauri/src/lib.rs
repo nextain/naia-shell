@@ -1,4 +1,4 @@
-﻿mod agent_grpc;
+mod agent_grpc;
 mod app;
 mod audit;
 mod browser;
@@ -39,6 +39,17 @@ fn is_valid_gateway_key(value: &str) -> bool {
 /// 諛쏆븘 redirect: `http://127.0.0.1:18792/auth/callback?key=...&state=...&user_id=...`.
 /// ?숈씪 query ?뚮씪誘명꽣 ?뗭씠??`process_deep_link_url` ??寃利?濡쒖쭅 洹몃?濡??쒖슜.
 pub(crate) const OAUTH_CALLBACK_PORT: u16 = 18792;
+
+/// Native E2E must never claim the user's OAuth callback port. The override is
+/// honoured only by the explicit debug acceptance runtime.
+fn oauth_callback_port() -> u16 {
+    if debug_e2e_enabled() {
+        if let Ok(port) = std::env::var("NAIA_E2E_OAUTH_CALLBACK_PORT") {
+            if let Ok(port) = port.parse::<u16>() { if port != 0 { return port; } }
+        }
+    }
+    OAUTH_CALLBACK_PORT
+}
 pub(crate) const OAUTH_CALLBACK_PATH: &str = "/auth/callback";
 
 /// Process a deep-link URL (naia://auth?key=xxx). Extracted as a function
@@ -202,7 +213,7 @@ pub(crate) fn spawn_oauth_callback_server(
 ) -> Result<(), String> {
     use tiny_http::{Header, Response, Server};
 
-    let bind_addr = format!("127.0.0.1:{}", OAUTH_CALLBACK_PORT);
+    let bind_addr = format!("127.0.0.1:{}", oauth_callback_port());
     let server = Server::http(&bind_addr).map_err(|e| {
         format!(
             "[Naia] OAuth callback server bind failed ({}): {}",
@@ -227,7 +238,7 @@ pub(crate) fn spawn_oauth_callback_server(
             // Reuse `process_deep_link_url` so the parameter parsing, state CSRF
             // verification, and event emit stay identical to the deep-link path.
             // The function only inspects scheme-agnostic parts (path + query).
-            let url_str = format!("http://127.0.0.1:{}{}", OAUTH_CALLBACK_PORT, raw_url);
+            let url_str = format!("http://127.0.0.1:{}{}", oauth_callback_port(), raw_url);
             process_deep_link_url(&url_str, &app_handle, Some(&oauth_state), "http_callback");
 
             // Send a small HTML page that closes the tab and informs the user.
@@ -290,20 +301,16 @@ struct AgentChildLeaseLock {
 }
 
 fn agent_child_lease_path() -> Result<std::path::PathBuf, String> {
-	if let Some(runtime_dir) = e2e_runtime_dir() {
-		return Ok(runtime_dir.join("agent-child-lease.json"));
-	}
-	Ok(dirs::home_dir()
+    if let Some(runtime) = e2e_runtime_dir() { return Ok(runtime.join("agent-child-lease.json")); }
+    Ok(dirs::home_dir()
         .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
         .join(".naia")
         .join("agent-child-lease.json"))
 }
 
 fn agent_child_lease_lock_path() -> Result<std::path::PathBuf, String> {
-	if let Some(runtime_dir) = e2e_runtime_dir() {
-		return Ok(runtime_dir.join("agent-child-lease.lock"));
-	}
-	Ok(dirs::home_dir()
+    if let Some(runtime) = e2e_runtime_dir() { return Ok(runtime.join("agent-child-lease.lock")); }
+    Ok(dirs::home_dir()
         .ok_or_else(|| "agent_lease_home_unavailable".to_string())?
         .join(".naia")
         .join("agent-child-lease.lock"))
@@ -1040,19 +1047,6 @@ struct BgmServerProcess {
     child: Child,
 }
 
-fn bgm_server_port() -> u16 {
-    if debug_e2e_enabled() {
-        if let Ok(port) = std::env::var("NAIA_BGM_PORT") {
-            if let Ok(port) = port.parse::<u16>() {
-                if port != 0 {
-                    return port;
-                }
-            }
-        }
-    }
-    18791
-}
-
 // Local cascade supervisor (R2.2b) ??naia-os媛 windows-manager loader(`python -m loader
 // launch`)瑜?1媛??ъ씠?쒖뭅濡?援щ룞?쒕떎. loader 媛 VoxCPM2 ???ㅼ젣 ?쒕퉬?ㅻ? spawn쨌媛먮룆?섍퀬,
 // ???꾨줈?몄뒪瑜?kill ?섎㈃ loader 媛 ?먯떇?ㅼ쓣 teardown ?쒕떎(?먭꺽 湲덉?쨌濡쒖뺄 ?꾨쿋??.
@@ -1317,49 +1311,31 @@ fn debug_e2e_enabled() -> bool {
     )
 }
 
-/// Test-only bridge for native acceptance.  It is not compiled into normal
-/// Shell builds and accepts only the one BGM event consumed by the player.
 #[cfg(feature = "webdriver-e2e")]
 #[tauri::command]
-fn e2e_emit_bgm_play_request(
-    app: tauri::AppHandle,
-    video_id: String,
-    title: String,
-) -> Result<(), String> {
-    if !debug_e2e_enabled() {
-        return Err("e2e runtime is not enabled".to_string());
-    }
-    if video_id.trim().is_empty() || title.trim().is_empty() {
-        return Err("video_id and title are required".to_string());
-    }
-    app.emit(
-        "agent_response",
-        serde_json::json!({
-            "type": "bgm_youtube_play",
-            "videoId": video_id,
-            "title": title,
-        })
-        .to_string(),
-    )
-    .map_err(|error| error.to_string())
+fn e2e_emit_bgm_event(app: tauri::AppHandle, action: String, video_id: Option<String>, title: Option<String>) -> Result<(), String> {
+    if !debug_e2e_enabled() { return Err("e2e runtime is not enabled".to_string()); }
+    let event_type = match action.as_str() {
+        "play" | "enqueue" => {
+            if !video_id.as_deref().is_some_and(|value| !value.trim().is_empty()) || !title.as_deref().is_some_and(|value| !value.trim().is_empty()) {
+                return Err("video_id and title are required for play and enqueue".to_string());
+            }
+            if action == "play" { "bgm_youtube_play" } else { "e2e_bgm_enqueue" }
+        }
+        "stop" => "bgm_youtube_stop",
+        _ => return Err("action must be play, enqueue, or stop".to_string()),
+    };
+    app.emit("agent_response", serde_json::json!({ "type": event_type, "videoId": video_id, "title": title }).to_string()).map_err(|error| error.to_string())
 }
 
-/// Native acceptance tests may isolate their process markers, WebView state,
-/// and agent lease under one explicitly owned directory. Production and normal
-/// developer runs never honour this override.
 fn e2e_runtime_dir() -> Option<std::path::PathBuf> {
-	if !debug_e2e_enabled() {
-		return None;
-	}
-	std::env::var_os("NAIA_E2E_RUNTIME_DIR")
-		.map(std::path::PathBuf::from)
-		.filter(|path| path.is_absolute())
+    if !debug_e2e_enabled() { return None; }
+    std::env::var_os("NAIA_E2E_RUNTIME_DIR").map(std::path::PathBuf::from).filter(|path| path.is_absolute())
 }
 
 /// Get the run directory (~/.naia/run/) for PID files
 fn run_dir() -> std::path::PathBuf {
-	let dir = e2e_runtime_dir()
-		.unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join(".naia/run"));
+    let dir = e2e_runtime_dir().unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join(".naia/run"));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -1891,15 +1867,8 @@ where
 }
 
 fn spawn_adk_path_snapshot() -> Option<String> {
-	if debug_e2e_enabled() {
-		if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
-			let path = path.trim().to_string();
-			if !path.is_empty() {
-				return Some(path);
-			}
-		}
-	}
-	spawn_adk_path_snapshot_with(|| {
+    if debug_e2e_enabled() { if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") { let path = path.trim().to_string(); if !path.is_empty() { return Some(path); } } }
+    spawn_adk_path_snapshot_with(|| {
         dirs::home_dir()
             .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
     })
@@ -2853,6 +2822,11 @@ async fn agent_dispatcher(
 ///  - stderr ??~/.naia/logs/bgm-server-stderr.log (crashes visible in GUI mode)
 ///  - hide_console on Windows (no console flash in release builds)
 ///  - kill() called on Tauri WindowEvent::Destroyed (no orphan process)
+fn bgm_server_port() -> u16 {
+    if debug_e2e_enabled() { if let Ok(port) = std::env::var("NAIA_BGM_PORT") { if let Ok(port) = port.parse::<u16>() { if port != 0 { return port; } } } }
+    18791
+}
+
 fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, String> {
     // Node binary ??same resolution chain as spawn_agent_core
     let node_path = resolve_spawn_node(app_handle, "NAIA_BGM_NODE_PATH");
@@ -2912,7 +2886,6 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     });
 
     let use_tsx = script_path.ends_with(".ts");
-    let bgm_port = bgm_server_port();
 
     // tsx-direct resolution (same pattern as spawn_agent_core lines 1018-1024)
     let agent_dir = std::path::Path::new(&script_path)
@@ -2972,6 +2945,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             .map_err(|e| format!("Failed to create BGM health nonce: {e}"))?
             .as_nanos()
     );
+    let bgm_port = bgm_server_port();
     cmd.env("NAIA_BGM_HEALTH_NONCE", &health_nonce);
     cmd.env("NAIA_BGM_PORT", bgm_port.to_string());
 
@@ -2993,18 +2967,20 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     // review finding 1). The on-exit handler calls remove_pid_file("bgm-server").
     write_pid_file("bgm-server", pid);
 
-    // Readiness probe ??poll /health for up to 3s (#335 codex review finding
+    // Readiness probe ??poll /health for up to 10s (#335 codex review finding
     // 2). Catches EADDRINUSE and other startup failures that the spawn handle
     // can't see (server.on("error") in youtube-server.ts logs but doesn't exit).
     // Non-fatal: BGM is optional; we only log a warning on timeout so users
     // see a recovery hint in ~/.naia/logs/naia.log.
-    if !probe_bgm_server_ready(std::time::Duration::from_secs(3), &health_nonce, bgm_port) {
-        log_both(
-            &format!("[Naia] WARN BGM server did not respond on http://127.0.0.1:{}/health within 3s", bgm_port),
-        );
-        log_both(
-            &format!("[Naia] WARN BGM player may show connection-refused; restart the app or kill any stray Node process bound to {}", bgm_port),
-        );
+    if !probe_bgm_server_ready(std::time::Duration::from_secs(10), &health_nonce, bgm_port) {
+        log_both(&format!(
+            "[Naia] WARN BGM server did not respond on http://127.0.0.1:{}/health within 10s",
+            bgm_port
+        ));
+        log_both(&format!(
+            "[Naia] WARN BGM player may show connection-refused; inspect the owned BGM sidecar on port {}",
+            bgm_port
+        ));
     } else {
         log_both(&format!("[Naia] BGM server ready @ http://127.0.0.1:{}/health", bgm_port));
     }
@@ -3012,7 +2988,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     Ok(BgmServerProcess { child })
 }
 
-/// Poll `http://127.0.0.1:18791/health` every 100 ms for up to `timeout`.
+/// Poll the selected BGM port health endpoint every 100 ms for up to `timeout`.
 /// Returns `true` as soon as a 2xx response arrives; `false` on timeout.
 /// Used by `spawn_youtube_bgm_server` to detect EADDRINUSE / startup failure.
 fn bgm_health_matches(body: &serde_json::Value, expected_nonce: &str) -> bool {
@@ -4437,265 +4413,6 @@ fn read_cascade_loader_profile(manifest: &std::path::Path) -> Option<String> {
     Some(profile.to_string())
 }
 
-/// The desktop owns this preflight contract.  It deliberately describes work
-/// that a future installer must perform, but never downloads an artifact or
-/// starts a service while merely answering a status request.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CascadeInstallFailure {
-    code: String,
-    message: String,
-    retryable: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CascadeInstallStep {
-    id: String,
-    label: String,
-    state: String,
-    action: String,
-    action_available: bool,
-    progress_percent: u8,
-    retryable: bool,
-    failure: Option<CascadeInstallFailure>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CascadeInstallationStatus {
-    phase: String,
-    ready: bool,
-    can_start: bool,
-    summary: String,
-    steps: Vec<CascadeInstallStep>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct CascadeInstallChecks {
-    loader: bool,
-    python_runtime: bool,
-    service_bundle: bool,
-    ditto_engine: bool,
-    voxcpm2_model: bool,
-    reference_voices: bool,
-}
-
-fn cascade_complete_step(id: &str, label: &str) -> CascadeInstallStep {
-    CascadeInstallStep {
-        id: id.to_string(),
-        label: label.to_string(),
-        state: "complete".to_string(),
-        action: "verify".to_string(),
-        action_available: false,
-        progress_percent: 100,
-        retryable: false,
-        failure: None,
-    }
-}
-
-fn cascade_missing_step(
-    id: &str,
-    label: &str,
-    action: &str,
-    state: &str,
-    code: &str,
-    message: &str,
-    retryable: bool,
-) -> CascadeInstallStep {
-    CascadeInstallStep {
-        id: id.to_string(),
-        label: label.to_string(),
-        state: state.to_string(),
-        action: action.to_string(),
-        // This status API does not have a signed artifact URL or checksum.
-        // Keeping this false prevents a disabled bundle from looking like an
-        // active download button.
-        action_available: false,
-        progress_percent: 0,
-        retryable,
-        failure: Some(CascadeInstallFailure {
-            code: code.to_string(),
-            message: message.to_string(),
-            retryable,
-        }),
-    }
-}
-
-fn cascade_installation_plan(
-    checks: CascadeInstallChecks,
-    live_services_ready: bool,
-) -> CascadeInstallationStatus {
-    let steps = vec![
-        if checks.loader {
-            cascade_complete_step("loader", "Cascade loader")
-        } else {
-            cascade_missing_step(
-                "loader",
-                "Cascade loader",
-                "install",
-                "blocked",
-                "CASCADE_LOADER_NOT_BUNDLED",
-                "The installed Shell bundle does not include the cascade loader.",
-                false,
-            )
-        },
-        if checks.python_runtime {
-            cascade_complete_step("python-runtime", "Python runtime")
-        } else {
-            cascade_missing_step(
-                "python-runtime",
-                "Python runtime",
-                "install",
-                "blocked",
-                "CASCADE_PYTHON_RUNTIME_MISSING",
-                "The packaged local Python runtime is not installed.",
-                false,
-            )
-        },
-        if checks.service_bundle {
-            cascade_complete_step("cascade-service-bundle", "Cascade service bundle")
-        } else {
-            cascade_missing_step(
-                "cascade-service-bundle",
-                "Cascade service bundle",
-                "install",
-                "blocked",
-                "CASCADE_SERVICE_BUNDLE_MISSING",
-                "VoxCPM2, Ditto, or facade service files are not packaged.",
-                false,
-            )
-        },
-        if checks.ditto_engine {
-            cascade_complete_step("ditto-engine", "Ditto engine")
-        } else {
-            cascade_missing_step(
-                "ditto-engine",
-                "Ditto engine",
-                "install",
-                "blocked",
-                "DITTO_ENGINE_MISSING",
-                "The GPU-specific Ditto engine is not installed.",
-                false,
-            )
-        },
-        if checks.voxcpm2_model {
-            cascade_complete_step("voxcpm2-model", "VoxCPM2 model")
-        } else {
-            cascade_missing_step(
-                "voxcpm2-model",
-                "VoxCPM2 model",
-                "download",
-                "waiting",
-                "VOXCPM2_MODEL_MISSING",
-                "VoxCPM2 model download is required; this build has no download manifest yet.",
-                true,
-            )
-        },
-        if checks.reference_voices {
-            cascade_complete_step("reference-voices", "Reference voices")
-        } else {
-            cascade_missing_step(
-                "reference-voices",
-                "Reference voices",
-                "install",
-                "blocked",
-                "REFERENCE_VOICES_MISSING",
-                "The bundled reference voice assets are not installed.",
-                false,
-            )
-        },
-    ];
-    let can_start = steps.iter().all(|step| step.state == "complete");
-    let (phase, ready, summary) = if can_start && live_services_ready {
-        (
-            "ready",
-            true,
-            "Local VoxCPM2 and Ditto services are running and verified.",
-        )
-    } else if can_start {
-        (
-            "ready-to-start",
-            false,
-            "Local runtime files are ready. Services have not been started yet.",
-        )
-    } else if steps.iter().any(|step| step.state == "blocked") {
-        (
-            "blocked",
-            false,
-            "Local runtime installation is blocked because required package artifacts are missing.",
-        )
-    } else {
-        (
-            "requires-action",
-            false,
-            "Local runtime needs a model download before it can start.",
-        )
-    };
-    CascadeInstallationStatus {
-        phase: phase.to_string(),
-        ready,
-        can_start,
-        summary: summary.to_string(),
-        steps,
-    }
-}
-
-fn cascade_runtime_root() -> std::path::PathBuf {
-    std::env::var("NAIA_CASCADE_RUNTIME_ROOT")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| std::path::PathBuf::from(home_dir()).join("naia-omni"))
-}
-
-fn directory_contains_extension(path: &std::path::Path, extension: &str) -> bool {
-    std::fs::read_dir(path)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .any(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some(extension))
-}
-
-fn cascade_install_checks(loader_dir: &str, adk_path: &str) -> CascadeInstallChecks {
-    let runtime_root = cascade_runtime_root();
-    let source_root = infer_repos_adk_root(adk_path)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from(adk_path));
-    let labs_service = source_root.join("projects/naia-labs/avatar/service");
-    let cascade = source_root.join("projects/naia-omni-cascade");
-    let ditto = source_root.join("projects/ditto-talkinghead");
-    let hf_home = std::env::var("HF_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from(home_dir()).join(".cache/huggingface"));
-    let model_snapshots = hf_home
-        .join("hub")
-        .join("models--openbmb--VoxCPM2")
-        .join("snapshots");
-    let ditto_native = runtime_root.join("checkpoints/ditto_trt_native");
-    let ditto_ampere = runtime_root.join("checkpoints/ditto_trt_Ampere_Plus");
-
-    CascadeInstallChecks {
-        loader: std::path::Path::new(loader_dir).join("loader/__init__.py").is_file(),
-        python_runtime: runtime_root.join(".venv-ditto/Scripts/python.exe").is_file(),
-        service_bundle: labs_service.join("tts_server.py").is_file()
-            && labs_service.join("trt_native_stream_server.py").is_file()
-            && cascade.join("output_cascade/app.py").is_file()
-            && ditto.is_dir(),
-        ditto_engine: directory_contains_extension(&ditto_native, "engine")
-            || directory_contains_extension(&ditto_ampere, "engine"),
-        voxcpm2_model: model_snapshots.is_dir()
-            && std::fs::read_dir(model_snapshots)
-                .ok()
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-                .any(|entry| entry.path().is_dir()),
-        reference_voices: directory_contains_extension(&cascade.join("assets/ref_audio"), "wav"),
-    }
-}
-
 /// 濡쒖뺄 cascade loader supervisor 瑜??ъ씠?쒖뭅濡?spawn. stdout `CASCADE_READY {json}`
 /// ?몃뱶?곗씠?щ줈 以鍮꾩셿猷??먯젙(紐⑤뜽 濡쒕뱶媛 湲몄뼱 timeout ?됰꼮??. ???꾨줈?몄뒪瑜?kill ?섎㈃
 /// loader 媛 VoxCPM2 ???먯떇 ?쒕퉬?ㅻ? teardown ?쒕떎(?먭꺽 湲덉?쨌濡쒖뺄 ?꾨쿋??.
@@ -4863,90 +4580,24 @@ fn cascade_facade_url_from_ready(ready: &str) -> Option<String> {
 /// died. Do not turn that supervisor-only state into a false "running" UI
 /// state: the desktop-facing public contract is the facade health endpoint.
 async fn cascade_facade_is_healthy(ready: &str) -> bool {
-    cascade_facade_health(ready)
-        .await
-        .as_ref()
-        .is_some_and(|body| body.get("ok").and_then(serde_json::Value::as_bool) == Some(true))
-}
-
-/// A bound TCP port is not proof that VoxCPM2 and Ditto are usable.  Keep the
-/// health document as the sole desktop-facing readiness source.
-async fn cascade_facade_health(ready: &str) -> Option<serde_json::Value> {
     let Some(url) = cascade_facade_url_from_ready(ready) else {
-        return None;
+        return false;
     };
     let Ok(client) = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
     else {
-        return None;
+        return false;
     };
     match client.get(url).send().await {
-        Ok(response) if response.status().is_success() => {
-            response.json::<serde_json::Value>().await.ok()
-        }
-        _ => None,
+        Ok(response) if response.status().is_success() => response
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|body| body.get("ok").and_then(serde_json::Value::as_bool))
+            == Some(true),
+        _ => false,
     }
-}
-
-/// A 4060 profile requests both VoxCPM2 and Ditto.  A façade may answer
-/// `/health` while one component is still loading, so require every component
-/// described by `CASCADE_READY` before displaying the runtime as ready.
-fn cascade_health_satisfies_requested_services(ready: &str, health: &serde_json::Value) -> bool {
-    if health.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
-        return false;
-    }
-    let Some(services) = serde_json::from_str::<serde_json::Value>(ready)
-        .ok()
-        .and_then(|payload| {
-            payload
-                .get("services")
-                .and_then(serde_json::Value::as_array)
-                .cloned()
-        })
-    else {
-        return false;
-    };
-    let wants_tts = services.iter().any(|service| {
-        service.get("kind").and_then(serde_json::Value::as_str) == Some("tts")
-    });
-    let wants_avatar = services.iter().any(|service| {
-        service.get("kind").and_then(serde_json::Value::as_str) == Some("avatar")
-    });
-    (!wants_tts
-        || (health.get("tts").and_then(serde_json::Value::as_bool) == Some(true)
-            && health
-                .get("tts_enabled")
-                .and_then(serde_json::Value::as_bool)
-                == Some(true)))
-        && (!wants_avatar
-            || (health.get("avatar").and_then(serde_json::Value::as_bool) == Some(true)
-                && health
-                    .get("avatar_enabled")
-                    .and_then(serde_json::Value::as_bool)
-                    == Some(true)))
-}
-
-async fn wait_for_cascade_facade_ready(ready: &str) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-    loop {
-        if let Some(health) = cascade_facade_health(ready).await {
-            if cascade_health_satisfies_requested_services(ready, &health) {
-                return true;
-            }
-        }
-        if std::time::Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    }
-}
-
-async fn cascade_requested_services_are_ready(ready: &str) -> bool {
-    cascade_facade_health(ready)
-        .await
-        .as_ref()
-        .is_some_and(|health| cascade_health_satisfies_requested_services(ready, health))
 }
 
 /// R2.2b: ?ㅼ젙?먯꽌 "濡쒖뺄 ?뚯꽦/cascade ?쒖옉". manifest(R2.2a 媛 write) + 媛먯? VRAM(total)?쇰줈
@@ -5005,11 +4656,6 @@ async fn start_cascade(
     .map_err(|e| format!("task error: {e}"))??;
 
     let ready = proc.ready.clone();
-    if !wait_for_cascade_facade_ready(&ready).await {
-        // `proc` remains local, so Drop terminates its owned supervisor.  This
-        // prevents a failed standalone runtime from being published as ready.
-        return Err("Local cascade started but its requested voice/avatar services did not become ready. The local runtime may still be loading or is incomplete; see cascade logs.".to_string());
-    }
     *lock_or_recover(&state.cascade, "cascade") = Some(proc);
     Ok(ready)
 }
@@ -5044,46 +4690,9 @@ async fn cascade_status(state: tauri::State<'_, AppState>) -> Result<bool, Strin
         }
     };
     Ok(match ready {
-        Some(ready) => cascade_requested_services_are_ready(&ready).await,
+        Some(ready) => cascade_facade_is_healthy(&ready).await,
         None => false,
     })
-}
-
-/// Read-only standalone readiness plan.  This command intentionally performs
-/// no download, no unpacking, and no process launch: callers use `canStart`
-/// to decide whether a later explicit lifecycle command is safe to call.
-#[tauri::command]
-async fn cascade_installation_status(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<CascadeInstallationStatus, String> {
-    let adk_path = dirs::home_dir()
-        .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        // A missing workspace is itself reflected as missing service files.
-        // The loader may still be bundled, so do not turn this into an IPC
-        // exception that hides the actionable installation plan.
-        .unwrap_or_default();
-    let loader_dir = resolve_cascade_loader_dir(&app, &adk_path);
-    let checks = cascade_install_checks(&loader_dir, &adk_path);
-    let ready = {
-        let mut guard = lock_or_recover(&state.cascade, "cascade");
-        if let Some(cascade) = guard.as_mut() {
-            let result = matches!(cascade.child.try_wait(), Ok(None)).then(|| cascade.ready.clone());
-            if result.is_none() {
-                let _ = guard.take();
-            }
-            result
-        } else {
-            None
-        }
-    };
-    let live_services_ready = match ready {
-        Some(ready) => cascade_requested_services_are_ready(&ready).await,
-        None => false,
-    };
-    Ok(cascade_installation_plan(checks, live_services_ready))
 }
 
 /// R2.2a: slots-manifest.json write(`{adk}/naia-settings/slots-manifest.json`).
@@ -5292,15 +4901,8 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
 fn current_adk_path() -> Result<String, String> {
-	if debug_e2e_enabled() {
-		if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
-			let path = path.trim().to_string();
-			if !path.is_empty() {
-				return Ok(path);
-			}
-		}
-	}
-	let path = dirs::home_dir()
+    if debug_e2e_enabled() { if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") { let path = path.trim().to_string(); if !path.is_empty() { return Ok(path); } } }
+    let path = dirs::home_dir()
         .and_then(|home| std::fs::read_to_string(home.join(".naia").join("adk-path")).ok())
         .ok_or_else(|| "adk_path_unavailable".to_string())?;
     let path = path.trim();
@@ -5555,18 +5157,6 @@ async fn discord_connection_status() -> Result<DiscordConnectionStatus, String> 
 }
 
 fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> {
-    // Native WebDriver acceptance must exercise the real IPC command without
-    // opening a host password dialog or handling a real bot token.  This seam
-    // is reachable only from the explicitly isolated CAFE_DEBUG_E2E runtime.
-    #[cfg(feature = "webdriver-e2e")]
-    if debug_e2e_enabled()
-        && matches!(
-            std::env::var("NAIA_E2E_DISCORD_CAPTURE").ok().as_deref(),
-            Some("cancel")
-        )
-    {
-        return Err("capture_cancelled".to_string());
-    }
     #[cfg(target_os = "linux")]
     let candidates: &[(&str, &[&str])] = &[
         ("kdialog", &["--password", "Discord bot token"]),
@@ -5614,17 +5204,16 @@ fn capture_discord_token_native() -> Result<zeroize::Zeroizing<String>, String> 
     {
         let script = "Add-Type -AssemblyName PresentationFramework; \
           $w=New-Object Windows.Window; $w.Title='Discord bot token'; \
-          $w.Width=520; $w.Height=205; $w.WindowStartupLocation='CenterScreen'; $w.Topmost=$true; $w.ShowInTaskbar=$true; $w.ResizeMode='NoResize'; \
+          $w.Width=520; $w.Height=170; $w.WindowStartupLocation='CenterScreen'; \
           $g=New-Object Windows.Controls.Grid; $g.Margin='16'; \
           $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
           $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
-          $g.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition)); \
-          $l=New-Object Windows.Controls.TextBlock; $l.Text='Paste the Discord bot token. It is stored only in the Windows credential store.'; $l.TextWrapping='Wrap'; $l.Margin='0,0,0,8'; [Windows.Controls.Grid]::SetRow($l,0); $g.Children.Add($l) | Out-Null; \
-          $p=New-Object Windows.Controls.PasswordBox; $p.Margin='0,0,0,12'; [Windows.Controls.Grid]::SetRow($p,1); $g.Children.Add($p) | Out-Null; \
-          $buttons=New-Object Windows.Controls.StackPanel; $buttons.Orientation='Horizontal'; $buttons.HorizontalAlignment='Right'; [Windows.Controls.Grid]::SetRow($buttons,2); \
-          $c=New-Object Windows.Controls.Button; $c.Content='Cancel'; $c.Width=90; $c.Margin='0,0,8,0'; $c.Add_Click({$w.DialogResult=$false; $w.Close()}); $buttons.Children.Add($c) | Out-Null; \
-          $b=New-Object Windows.Controls.Button; $b.Content='Save'; $b.Width=90; $b.IsDefault=$true; $b.Add_Click({$w.DialogResult=$true; $w.Close()}); $buttons.Children.Add($b) | Out-Null; \
-          $g.Children.Add($buttons) | Out-Null; $w.Content=$g; $w.Add_ContentRendered({$w.Activate(); $p.Focus()}); $ok=$w.ShowDialog(); \
+          $p=New-Object Windows.Controls.PasswordBox; $p.Margin='0,0,0,12'; \
+          [Windows.Controls.Grid]::SetRow($p,0); $g.Children.Add($p) | Out-Null; \
+          $b=New-Object Windows.Controls.Button; $b.Content='Save'; $b.Width=90; \
+          $b.HorizontalAlignment='Right'; [Windows.Controls.Grid]::SetRow($b,1); \
+          $b.Add_Click({$w.DialogResult=$true; $w.Close()}); $g.Children.Add($b) | Out-Null; \
+          $w.Content=$g; $ok=$w.ShowDialog(); \
           if($ok -ne $true){exit 2}; [Console]::Out.Write($p.Password)";
         let mut command = std::process::Command::new("powershell");
         command.args(["-NoProfile", "-Command", script]);
@@ -7888,104 +7477,6 @@ async fn compile_knowledge(
 }
 
 const JEONJU_COURSE_ALLOWED_FILES: [&str; 2] = ["index.html", "hero.svg"];
-const JEONJU_COURSE_TARGET_VERSION: u8 = 1;
-const JEONJU_COURSE_TARGET_FILENAME: &str = "jeonju-discord-course.json";
-
-/// Trusted startup input for Discord-triggered Jeonju work.  The WebView can
-/// provide only the selected Git root to the write command; Rust owns this
-/// version and the fixed file boundary.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct JeonjuCourseTarget {
-    version: u8,
-    workspace_path: String,
-    allowed_files: Vec<String>,
-}
-
-fn fixed_jeonju_course_target(workspace_path: String) -> JeonjuCourseTarget {
-    JeonjuCourseTarget {
-        version: JEONJU_COURSE_TARGET_VERSION,
-        workspace_path,
-        allowed_files: JEONJU_COURSE_ALLOWED_FILES
-            .iter()
-            .map(|file| (*file).to_string())
-            .collect(),
-    }
-}
-
-fn parse_jeonju_course_target(json: &str) -> Result<JeonjuCourseTarget, String> {
-    let target: JeonjuCourseTarget =
-        serde_json::from_str(json).map_err(|_| "course_target_invalid".to_string())?;
-    if target.version != JEONJU_COURSE_TARGET_VERSION
-        || target.workspace_path.trim().is_empty()
-        || target.allowed_files
-            != JEONJU_COURSE_ALLOWED_FILES
-                .iter()
-                .map(|file| (*file).to_string())
-                .collect::<Vec<_>>()
-    {
-        return Err("course_target_invalid".to_string());
-    }
-    Ok(target)
-}
-
-fn course_target_path(adk_path: &str) -> std::path::PathBuf {
-    std::path::PathBuf::from(adk_path)
-        .join("naia-settings")
-        .join(JEONJU_COURSE_TARGET_FILENAME)
-}
-
-fn verify_jeonju_course_target_path(adk_path: &str, workspace_path: &str) -> Result<String, String> {
-    // `std::fs::canonicalize` returns a Windows `\\\\?\\` path.  That is
-    // acceptable to this process, but not a portable value to persist for the
-    // separately spawned Node Agent.  `dunce` removes that namespace prefix.
-    let control_root = dunce::canonicalize(adk_path)
-        .map_err(|_| "course_target_not_ready".to_string())?;
-    let selected_root = dunce::canonicalize(workspace_path)
-        .map_err(|_| "course_target_not_ready".to_string())?;
-    if !selected_root.starts_with(&control_root) {
-        return Err("course_target_not_ready".to_string());
-    }
-    let selected = selected_root
-        .to_str()
-        .ok_or_else(|| "course_target_not_ready".to_string())?;
-    verify_jeonju_course_workspace(selected)
-        .map_err(|_| "course_target_not_ready".to_string())?;
-    Ok(selected.to_string())
-}
-
-#[tauri::command]
-async fn read_jeonju_course_target(adk_path: String) -> Result<String, String> {
-    let path = course_target_path(&adk_path);
-    if !path.exists() {
-        return Ok(String::new());
-    }
-    let json = std::fs::read_to_string(path).map_err(|_| "course_target_invalid".to_string())?;
-    let target = parse_jeonju_course_target(&json)?;
-    if verify_jeonju_course_target_path(&adk_path, &target.workspace_path)
-        .map_err(|_| "course_target_invalid".to_string())?
-        != target.workspace_path
-    {
-        return Err("course_target_invalid".to_string());
-    }
-    serde_json::to_string(&target).map_err(|_| "course_target_invalid".to_string())
-}
-
-/// Writes a strict, startup-consumed course target.  The target never accepts
-/// an allowed-files field from IPC, so Discord/chat/model text cannot widen it.
-#[tauri::command]
-async fn write_jeonju_course_target(
-    adk_path: String,
-    workspace_path: String,
-) -> Result<String, String> {
-    let workspace_path = verify_jeonju_course_target_path(&adk_path, &workspace_path)?;
-    let target = fixed_jeonju_course_target(workspace_path);
-    let json = serde_json::to_string_pretty(&target)
-        .map_err(|_| "course_target_write_failed".to_string())?;
-    write_owner_only_atomic(&course_target_path(&adk_path), json.as_bytes())
-        .map_err(|_| "course_target_write_failed".to_string())?;
-    Ok(json)
-}
 
 fn coding_job_to_shell_value(job: agent_grpc::pb::CodingJob) -> Result<serde_json::Value, String> {
     use agent_grpc::pb::{CodingJobExecutionMode, CodingJobState};
@@ -8045,10 +7536,10 @@ fn course_git_output(workspace_path: &str, args: &[&str]) -> Result<String, Stri
 /// Course mode is a deliberate exception to isolated workers. The Agent repeats
 /// this guard, but Shell rejects an unready folder before opening an RPC session.
 fn verify_jeonju_course_workspace(workspace_path: &str) -> Result<(), String> {
-    let selected = dunce::canonicalize(workspace_path)
+    let selected = std::fs::canonicalize(workspace_path)
         .map_err(|_| "course_workspace_not_ready".to_string())?;
     let git_root = course_git_output(workspace_path, &["rev-parse", "--show-toplevel"])?;
-    let root = dunce::canonicalize(git_root)
+    let root = std::fs::canonicalize(git_root)
         .map_err(|_| "course_workspace_not_ready".to_string())?;
     if selected != root
         || !course_git_output(workspace_path, &["status", "--porcelain"] )?.is_empty()
@@ -9096,21 +8587,15 @@ pub fn run() {
         .plugin(tauri_plugin_stt::init());
 
     // Flatpak manages its own updates; skip updater plugin in Flatpak builds
-	if !is_flatpak {
-		builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
-	}
-
-	// An automation endpoint is available only in the explicitly feature-gated
-	// acceptance binary; it is never linked into normal Shell builds.
-	#[cfg(feature = "webdriver-e2e")]
-	{
-		builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
-	}
-
-	#[cfg(feature = "webdriver-e2e")]
-	let context = tauri::generate_context!("tauri.e2e.conf.json");
-	#[cfg(not(feature = "webdriver-e2e"))]
-	let context = tauri::generate_context!();
+    if !is_flatpak && !debug_e2e_enabled() {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    #[cfg(feature = "webdriver-e2e")]
+    { builder = builder.plugin(tauri_plugin_wdio_webdriver::init()); }
+    #[cfg(feature = "webdriver-e2e")]
+    let context = tauri::generate_context!("tauri.e2e.conf.json");
+    #[cfg(not(feature = "webdriver-e2e"))]
+    let context = tauri::generate_context!();
 
     builder.manage(AppState {
             agent: Mutex::new(None),
@@ -9186,13 +8671,10 @@ pub fn run() {
             delete_naia_asset,
             read_naia_config,
             write_naia_config,
-            read_jeonju_course_target,
-            write_jeonju_course_target,
             write_slots_manifest,
             start_cascade,
             stop_cascade,
             cascade_status,
-            cascade_installation_status,
             read_naia_ui_config,
             write_naia_ui_config,
             read_naia_knowledge_config,
@@ -9272,8 +8754,8 @@ pub fn run() {
             pty::pty_kill,
             pty::pty_execute_sync,
             enable_webview2_ime,
-			#[cfg(feature = "webdriver-e2e")]
-			e2e_emit_bgm_play_request,
+            #[cfg(feature = "webdriver-e2e")]
+            e2e_emit_bgm_event,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -9478,15 +8960,13 @@ pub fn run() {
             }
 
             // Clean up orphan processes from previous sessions
-            if debug_e2e_enabled() {
-                log_verbose("[Naia] E2E mode: skipping global orphan/cascade cleanup");
-            } else {
+            if !debug_e2e_enabled() {
                 platform::cleanup_orphan_processes();
                 platform::kill_stale_gateway();
+            }
             // ?꿤ascade 怨좎븘(uvicorn facade ?먯옄, PID 誘몄텛?? ?뺣━ ??8910 EADDRINUSE 諛⑹?(R2.2b).
             // dev 諛섎났 湲곕룞 ???댁쟾 ?몄뀡??cascade 媛 ??二쎄퀬 ?⑥븘 ?ㅼ쓬 start_cascade 瑜?留됰뒗??
-                platform::kill_stale_cascade();
-            }
+            if !debug_e2e_enabled() { platform::kill_stale_cascade(); }
 
             // Spawn Gateway first (Agent connects to it via WebSocket)
             let (gateway_running, gateway_managed) = match spawn_gateway() {
@@ -9665,7 +9145,7 @@ pub fn run() {
                 _ => {}
             }
         })
-		.run(context)
+        .run(context)
         .expect("error while running tauri application");
 }
 
@@ -9900,24 +9380,6 @@ mod tests {
     }
 
     #[test]
-    fn jeonju_course_target_has_exact_versioned_boundary() {
-        let target = fixed_jeonju_course_target("D:\\alpha-adk\\projects\\course-site".to_string());
-        let json = serde_json::to_string(&target).unwrap();
-        assert_eq!(parse_jeonju_course_target(&json).unwrap(), target);
-    }
-
-    #[test]
-    fn jeonju_course_target_rejects_wrong_version_files_and_extra_fields() {
-        for json in [
-            r#"{"version":2,"workspacePath":"D:\\course","allowedFiles":["index.html","hero.svg"]}"#,
-            r#"{"version":1,"workspacePath":"D:\\course","allowedFiles":["index.html","notes.md"]}"#,
-            r#"{"version":1,"workspacePath":"D:\\course","allowedFiles":["index.html","hero.svg"],"task":"untrusted"}"#,
-        ] {
-            assert_eq!(parse_jeonju_course_target(json), Err("course_target_invalid".to_string()));
-        }
-    }
-
-    #[test]
     fn infer_repos_adk_root_finds_workspace_from_nested_naia_adk() {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path().join("alpha-adk");
@@ -10030,133 +9492,6 @@ mod tests {
         );
         incomplete_responder.join().unwrap();
         assert!(!cascade_facade_is_healthy(r#"{"facade_port":0}"#).await);
-    }
-
-    #[test]
-    fn cascade_health_requires_each_service_requested_by_the_loader() {
-        let ready = r#"{
-            "facade_port": 8910,
-            "services": [
-                {"id":"voxcpm2_int8_tts","kind":"tts"},
-                {"id":"ditto_avatar","kind":"avatar"},
-                {"id":"cascade_facade","kind":"facade"}
-            ]
-        }"#;
-        let fully_ready = serde_json::json!({
-            "ok": true,
-            "tts": true,
-            "tts_enabled": true,
-            "avatar": true,
-            "avatar_enabled": true,
-        });
-        assert!(cascade_health_satisfies_requested_services(ready, &fully_ready));
-
-        let avatar_loading = serde_json::json!({
-            "ok": true,
-            "tts": true,
-            "tts_enabled": true,
-            "avatar": false,
-            "avatar_enabled": true,
-        });
-        assert!(!cascade_health_satisfies_requested_services(ready, &avatar_loading));
-
-        let tts_disabled = serde_json::json!({
-            "ok": true,
-            "tts": true,
-            "tts_enabled": false,
-            "avatar": true,
-            "avatar_enabled": true,
-        });
-        assert!(!cascade_health_satisfies_requested_services(ready, &tts_disabled));
-    }
-
-    #[test]
-    fn cascade_health_does_not_require_unrequested_components() {
-        let ready = r#"{
-            "facade_port": 8910,
-            "services": [
-                {"id":"voxcpm2_int8_tts","kind":"tts"},
-                {"id":"cascade_facade","kind":"facade"}
-            ]
-        }"#;
-        let tts_ready = serde_json::json!({
-            "ok": true,
-            "tts": true,
-            "tts_enabled": true,
-            "avatar": false,
-            "avatar_enabled": false,
-        });
-        assert!(cascade_health_satisfies_requested_services(ready, &tts_ready));
-    }
-
-    fn fully_installed_cascade_checks() -> CascadeInstallChecks {
-        CascadeInstallChecks {
-            loader: true,
-            python_runtime: true,
-            service_bundle: true,
-            ditto_engine: true,
-            voxcpm2_model: true,
-            reference_voices: true,
-        }
-    }
-
-    #[test]
-    fn cascade_install_plan_reports_model_download_without_claiming_ready() {
-        let mut checks = fully_installed_cascade_checks();
-        checks.voxcpm2_model = false;
-        let plan = cascade_installation_plan(checks, false);
-
-        assert_eq!(plan.phase, "requires-action");
-        assert!(!plan.ready);
-        assert!(!plan.can_start);
-        let model = plan
-            .steps
-            .iter()
-            .find(|step| step.id == "voxcpm2-model")
-            .expect("VoxCPM2 step");
-        assert_eq!(model.state, "waiting");
-        assert_eq!(model.action, "download");
-        assert_eq!(model.progress_percent, 0);
-        assert!(model.retryable);
-        assert!(!model.action_available);
-        assert_eq!(
-            model.failure.as_ref().map(|failure| failure.code.as_str()),
-            Some("VOXCPM2_MODEL_MISSING")
-        );
-    }
-
-    #[test]
-    fn cascade_install_plan_distinguishes_ready_to_start_from_live_ready() {
-        let not_started = cascade_installation_plan(fully_installed_cascade_checks(), false);
-        assert_eq!(not_started.phase, "ready-to-start");
-        assert!(!not_started.ready);
-        assert!(not_started.can_start);
-
-        let running = cascade_installation_plan(fully_installed_cascade_checks(), true);
-        assert_eq!(running.phase, "ready");
-        assert!(running.ready);
-        assert!(running.can_start);
-    }
-
-    #[test]
-    fn cascade_install_plan_blocks_missing_package_artifacts() {
-        let mut checks = fully_installed_cascade_checks();
-        checks.service_bundle = false;
-        let plan = cascade_installation_plan(checks, false);
-        let services = plan
-            .steps
-            .iter()
-            .find(|step| step.id == "cascade-service-bundle")
-            .expect("service bundle step");
-
-        assert_eq!(plan.phase, "blocked");
-        assert!(!plan.can_start);
-        assert_eq!(services.state, "blocked");
-        assert!(!services.retryable);
-        assert_eq!(
-            services.failure.as_ref().map(|failure| failure.code.as_str()),
-            Some("CASCADE_SERVICE_BUNDLE_MISSING")
-        );
     }
 
     #[test]
