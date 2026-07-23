@@ -10,7 +10,7 @@ export const SHELL_DIR = resolve(import.meta.dirname, "..");
 export const E2E_RUN_PARENT = resolve(
 	process.env.NAIA_E2E_RUN_PARENT ?? resolve(homedir(), ".naia", "run"),
 );
-const E2E_WEBDRIVER_PORT = Number(
+export const E2E_WEBDRIVER_PORT = Number(
 	process.env.NAIA_E2E_WEBDRIVER_PORT ?? "4450",
 );
 const E2E_BGM_PORT = 18_000 + (E2E_WEBDRIVER_PORT % 1_000);
@@ -70,11 +70,11 @@ export function configureCodexE2eEnvironment(): void {
 	process.env.NAIA_BGM_PORT = String(E2E_BGM_PORT);
 	process.env.VITE_NAIA_BGM_BASE = `http://127.0.0.1:${E2E_BGM_PORT}`;
 	process.env.NAIA_AGENT_SCRIPT = resolve(
-		"D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env",
+		"D:/alpha-adk/projects/naia-agent-worktrees/codex-job-terminal",
 		"scripts/builds/agent-stdio-entry.mjs",
 	);
 	process.env.NAIA_AGENT_PROTO_DIR = resolve(
-		"D:/alpha-adk/projects/naia-agent-worktrees/jeonju-course-codex-env",
+		"D:/alpha-adk/projects/naia-agent-worktrees/codex-job-terminal",
 		"src/main/adapters/grpc",
 	);
 }

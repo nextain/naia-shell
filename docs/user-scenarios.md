@@ -239,6 +239,15 @@ Shell은 빌드 때 고정된 정확한 Agent 런타임만 실행한다.
 - 실패: API 미연결·요청 실패·동일 worktree 충돌은 안전한 오류만 표시하며 새 상태·비밀값·원본 adapter 오류는 화면이나 로그에 남기지 않는다.
 - 경계: 로그인 토큰·계정 식별자·Codex CLI 출력은 worker request·UI·로그에 포함하지 않는다. 실제 gRPC schema가 확정되기 전 Shell은 작업자 실행을 흉내 내지 않는다.
 
+### 시각·사용성 수용 기준
+
+사용자는 작업자 패널을 열었을 때 제어 루트, 실행 대상, 현재 수업 대상의 저장 상태, 다음 행동을 한 화면에서 구분한다. 선택할 수 없는 provider를 선택 상자처럼 보이지 않게 하며, 상태는 원시 enum이나 원문 시간만으로 전달하지 않는다. 패널은 1,100px 이하의 Shell 분할 폭에서도 입력·수업 경계·실행 버튼이 한 열의 의도된 순서로 유지된다.
+
+- 빈 목록: 작업자가 없다는 사실과 첫 작업을 시작할 수 있는 입력 흐름을 표시한다.
+- 진행 중: 저장·시작·취소·재개 요청 중에는 해당 행동을 중복 전송하지 않고 진행 상태를 표시한다.
+- 오류: 안전한 원인과 재시도 전에 확인할 행동을 해당 요청 맥락에서 표시한다. 주기적 연결 오류가 사용자의 저장·시작 결과를 덮어쓰지 않는다.
+- 수업 대상: 저장된 대상은 `다음 Agent 시작 시 적용`임을 명시하고, 저장되지 않았거나 아직 적용되지 않은 상태를 구분한다.
+
 ## UC-JEONJU-COURSE-WORKER
 
 For the Jeonju course, the user explicitly selects a Git root and enables course mode. The default remains an Agent-created isolated worktree. Course mode is the only route that can run in the selected workspace.
@@ -270,9 +279,12 @@ Success means the visible confirmation identifies the saved target and fixed bou
 
 The worker form shows the control-root path separately from the execution-target input, then changes the target label and help text immediately when course mode is selected. This prevents the default ADK workspace from being mistaken for Codex's write target and prevents the default isolated-worktree route from being mistaken for direct course-repository work. `apps/__tests__/coding-workers.test.tsx` verifies the transition, root/target explanation, and Korean explanatory labels while retaining the technical terms. `e2e-tauri/specs/97-course-worker-guidance.spec.ts` verifies the same transition in the actual Tauri Shell; `91-jeonju-course-worker.spec.ts` creates the course repository below the isolated ADK fixture's `projects/` directory.
 
+**시각 검토 게이트:** 기능 UI 변경은 구현 전 상태 매트릭스(기본·빈 목록·진행·성공·오류·좁은 폭)를 P02에 기록한다. P04에서는 해당 상태를 컴포넌트/Playwright와 실제 Tauri Shell에서 확인하고, 스크린샷 또는 동등한 DOM·레이아웃 증거를 남긴다. 기능 계약 테스트만 통과한 경우에는 P05 완료로 선언하지 않는다.
+
 | UC | 단위/계약 | UI 통합 |
 |---|---|---|
 | UC-CODEX-WORKER-LIFECYCLE | `apps/workspace/__tests__/coding-workers.test.tsx`: form validation, same-worktree collision, state rendering, checkpoint-only resume, unavailable adapter의 no-fake-success | `e2e/coding-workers.spec.ts` (후속): Tauri adapter fixture로 두 isolated worktree와 cancel/reconciliation을 검증한다. 실제 Agent schema 수신 전에는 fixture가 성공 실행을 가장하지 않는다. |
+| UC-CODEX-WORKER-LIFECYCLE 시각 수용 | `apps/__tests__/coding-workers.test.tsx`: provider 표현, 빈 목록, 상태 배지, 수업 대상의 다음 Agent 적용 상태, 요청 중 중복 차단, 안전한 오류 맥락 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. `e2e-tauri/specs/97-course-worker-guidance.spec.ts`: 실제 Tauri WebView에서 같은 안내·상태·레이아웃을 확인. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):

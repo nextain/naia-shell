@@ -91,7 +91,7 @@ npx tsc -p tsconfig.json && (cd packages/shell && pnpm test)  # 깨어짐
 | P01 | 사용자 시나리오 | `docs/user-scenarios.md` UC 항목 | UC 없으면 다음 단계 금지 |
 | P02 | 테스트 시나리오 | Test Coverage Map 매핑 | 테스트 매핑 없으면 다음 단계 금지 |
 | P03 | 요구사항 | `docs/requirements.md` FR/NFR 항목 | 요구사항 없으면 코드 작성 금지 |
-| P04 | 통합 테스트 | 테스트 파일(vitest + Playwright e2e + 해당 시 e2e-tauri) | 테스트 없으면 PR 머지 금지 — UI/Rust 변경은 실 UI(Playwright) 또는 실 백엔드(e2e-tauri) 검증 포함. 계획(P01~P03)에 Rust+UI 테스트 명시 포함 |
+| P04 | 통합 테스트 | 테스트 파일(vitest + Playwright e2e + 해당 시 e2e-tauri) + `verify-visual-ux` 시각·UX 검토 증거 | 테스트 없으면 PR 머지 금지 — UI/Rust 변경은 실 UI(Playwright) 또는 실 백엔드(e2e-tauri) 검증과 시각·UX 검토를 모두 포함. P02에 기본·빈 목록·진행·성공·오류·좁은 폭 상태를 명시하고 P04에서 정보 위계·상태·오류 복구·키보드/ARIA·반응형을 확인 |
 | P05 | 완료 | requirements.md 상태 → Done | 커밋 전 업데이트 필수 |
 
 **세션 규칙**:

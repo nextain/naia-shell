@@ -1,13 +1,12 @@
-<!-- src-sha: 263924117c7cd56c -->
+<!-- src-sha: 1d58da21572af7d2 -->
 
-## Jeonju course vertical acceptance — 2026-07-22
+## Coding Workers visual and UX gate — 2026-07-22
 
-- Shell: `dc5a5c5b`; paired Agent: `288d6e2`.
-- Coding Workers saves a fixed Discord course target under the active ADK control root. Rust removes the Windows `\\?\` canonical-path namespace before the separately spawned Agent reads the target file.
-- Evidence: 21 focused Shell tests, a matching Agent/Shell pair build, and native Tauri E2E for target save plus initial/revision student work within the `index.html` and `hero.svg` boundary.
-- Final adversarial review found no P0/P1 issue. Live Discord remains a credentialed operational smoke, separate from the isolated Gateway and native Shell acceptance.
-<!-- 자동 번역 미러 (M13-mirror). 원본: .agents/context/process-status.json -->
-
+- Scope: hierarchy, saved-course-target feedback, narrow layout, and mutation/error states.
+- Passed: focused React tests, browser Playwright E2E, TypeScript, production build, paired Agent/Shell native bundle, and the isolated Tauri WebDriver session with the exact paired Agent checkout.
+- Not passed: the first real Codex course job did not reach a terminal state within the 300-second acceptance limit. The native UC remains incomplete.
+- Adversarial review corrected the persisted-course-boundary second-request regression and two E2E wiring defects (WebDriver port and paired Agent checkout).
+<!-- Human mirror of .agents/context/process-status.json -->
 # 프로세스 현황 (Process Status) SoT
 
 **스키마 버전**: 1.0

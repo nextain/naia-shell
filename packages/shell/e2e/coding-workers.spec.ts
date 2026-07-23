@@ -50,9 +50,9 @@ test("UC-CODEX-WORKER-LIFECYCLE: unpaired worker API never fabricates a queued w
 
 	await page.getByTestId("coding-workers-toggle").click();
 	await expect(page.getByTestId("coding-workers")).toBeVisible();
-	await expect(page.getByTestId("coding-worker-error")).toContainText(
-		"Coding worker service is not connected yet.",
-	);
+	await expect(
+		page.getByTestId("coding-worker-connection-error"),
+	).toContainText(/not connected yet|Could not refresh workers/);
 
 	await page
 		.getByTestId("coding-worker-worktree")
@@ -61,9 +61,38 @@ test("UC-CODEX-WORKER-LIFECYCLE: unpaired worker API never fabricates a queued w
 	await page.getByTestId("coding-worker-start").click();
 
 	await expect(page.getByTestId("coding-worker-error")).toContainText(
-		"Coding worker service is not connected yet.",
+		/request could not be completed|not connected yet/,
 	);
 	await expect(
 		page.locator('[data-testid^="coding-worker-worker-"]'),
 	).toHaveCount(0);
+});
+
+test("UC-CODEX-WORKER-LIFECYCLE visual acceptance: clear hierarchy survives a narrow Shell pane", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 900, height: 900 });
+	await page.locator('button[data-panel-id="workspace"]').click();
+	await page.getByTestId("coding-workers-toggle").click();
+
+	await expect(page.getByTestId("coding-workers-empty")).toBeVisible();
+	await expect(page.getByTestId("coding-worker-provider")).toContainText(
+		"Codex",
+	);
+	await expect(
+		page.getByTestId("coding-worker-provider").locator("select"),
+	).toHaveCount(0);
+	await page.getByTestId("coding-worker-jeonju-course-preset").check();
+	await expect(
+		page.getByTestId("coding-worker-course-target-status"),
+	).toContainText("No Discord course target has been saved.");
+
+	const targetBox = await page
+		.getByTestId("coding-worker-worktree")
+		.boundingBox();
+	const taskBox = await page.getByTestId("coding-worker-task").boundingBox();
+	expect(targetBox).not.toBeNull();
+	expect(taskBox).not.toBeNull();
+	expect(Math.abs((targetBox?.x ?? 0) - (taskBox?.x ?? 0))).toBeLessThan(2);
+	expect(taskBox?.y).toBeGreaterThan(targetBox?.y ?? 0);
 });

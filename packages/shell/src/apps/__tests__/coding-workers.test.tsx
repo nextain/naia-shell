@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import {
-	cleanup,
 	act,
+	cleanup,
 	fireEvent,
 	render,
 	screen,
@@ -89,9 +89,9 @@ describe("CodingWorkersPanel", () => {
 		render(<CodingWorkersPanel adapter={unavailableCodingWorkersAdapter} />);
 
 		await waitFor(() =>
-			expect(screen.getByTestId("coding-worker-error")).toHaveTextContent(
-				"Coding worker service is not connected yet.",
-			),
+			expect(
+				screen.getByTestId("coding-worker-connection-error"),
+			).toHaveTextContent("Coding worker service is not connected yet."),
 		);
 		fillCreateForm("D:\\worktrees\\one", "Implement a worker");
 		fireEvent.click(screen.getByTestId("coding-worker-start"));
@@ -133,7 +133,11 @@ describe("CodingWorkersPanel", () => {
 		});
 		expect(
 			screen.getByTestId("coding-worker-state-worker-created"),
-		).toHaveTextContent("queued");
+		).toHaveTextContent("Queued");
+		expect(screen.getByTestId("coding-worker-provider")).toHaveTextContent(
+			"Codex",
+		);
+		expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
 	});
 
 	it("uses the reviewed Jeonju preset without accepting editable file allowances", async () => {
@@ -150,7 +154,10 @@ describe("CodingWorkersPanel", () => {
 		});
 		render(<CodingWorkersPanel adapter={workerAdapter} />);
 
-		fillCreateForm(selectedWorkspaceWorker.worktree, selectedWorkspaceWorker.task);
+		fillCreateForm(
+			selectedWorkspaceWorker.worktree,
+			selectedWorkspaceWorker.task,
+		);
 		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
 		fireEvent.click(screen.getByTestId("coding-worker-start"));
 
@@ -162,8 +169,12 @@ describe("CodingWorkersPanel", () => {
 				coursePreset: true,
 			}),
 		);
-		expect(screen.getByTestId("coding-worker-course-boundary-course-worker")).toHaveTextContent("index.html, hero.svg");
-		expect(screen.getByTestId("coding-worker-verification-course-worker")).toHaveTextContent("selected workspace verified");
+		expect(
+			screen.getByTestId("coding-worker-course-boundary-course-worker"),
+		).toHaveTextContent("index.html, hero.svg");
+		expect(
+			screen.getByTestId("coding-worker-verification-course-worker"),
+		).toHaveTextContent("selected workspace verified");
 		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
 	});
 
@@ -171,9 +182,10 @@ describe("CodingWorkersPanel", () => {
 		vi.useFakeTimers();
 		let resolveFirstList: ((workers: CodingWorker[]) => void) | undefined;
 		const list = vi.fn(
-			() => new Promise<CodingWorker[]>((resolve) => {
-				resolveFirstList = resolve;
-			}),
+			() =>
+				new Promise<CodingWorker[]>((resolve) => {
+					resolveFirstList = resolve;
+				}),
 		);
 		try {
 			render(
@@ -191,9 +203,9 @@ describe("CodingWorkersPanel", () => {
 				resolveFirstList?.([{ ...runningWorker, state: "completed" }]);
 				await Promise.resolve();
 			});
-			expect(screen.getByTestId("coding-worker-state-worker-running")).toHaveTextContent(
-				"completed",
-			);
+			expect(
+				screen.getByTestId("coding-worker-state-worker-running"),
+			).toHaveTextContent("Completed");
 		} finally {
 			vi.useRealTimers();
 		}
@@ -216,10 +228,7 @@ describe("CodingWorkersPanel", () => {
 		};
 		saveJeonjuCourseTarget.mockResolvedValue(target);
 		render(
-			<CodingWorkersPanel
-				adapter={adapter()}
-				controlRoot={"D:\\alpha-adk"}
-			/>,
+			<CodingWorkersPanel adapter={adapter()} controlRoot={"D:\\alpha-adk"} />,
 		);
 
 		fillCreateForm(target.workspacePath, "Prepare the course page");
@@ -232,9 +241,12 @@ describe("CodingWorkersPanel", () => {
 				target.workspacePath,
 			),
 		);
-		expect(screen.getByTestId("coding-worker-course-target-saved")).toHaveTextContent(
-			"index.html, hero.svg",
-		);
+		expect(
+			screen.getByTestId("coding-worker-course-target-saved"),
+		).toHaveTextContent(target.workspacePath);
+		expect(
+			screen.getByTestId("coding-worker-course-target-status"),
+		).toHaveTextContent("applies on the next Agent start");
 		expect(screen.queryByLabelText(/allowed files/i)).not.toBeInTheDocument();
 	});
 
@@ -248,7 +260,8 @@ describe("CodingWorkersPanel", () => {
 			allowedFiles: ["index.html", "hero.svg"],
 		};
 		const second: CodingWorker = { ...first, id: "course-second" };
-		const create = vi.fn()
+		const create = vi
+			.fn()
 			.mockResolvedValueOnce(first)
 			.mockResolvedValueOnce(second);
 		const workerAdapter = adapter({ create });
@@ -260,7 +273,6 @@ describe("CodingWorkersPanel", () => {
 		await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
 
 		fillCreateForm(first.worktree, "Revise the existing course page");
-		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
 		fireEvent.click(screen.getByTestId("coding-worker-start"));
 		await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
 		expect(create).toHaveBeenNthCalledWith(2, {
@@ -286,11 +298,9 @@ describe("CodingWorkersPanel", () => {
 			"naia-adk",
 		);
 		expect(screen.getByTestId("coding-worker-target-hint")).toHaveTextContent(
-			"The selected coding brain reads only the execution-target Git root below.",
+			"The worker changes only this work target.",
 		);
-		expect(workspaceInput.closest("label")).toHaveTextContent(
-			"Execution target Git root — a dedicated worktree is created automatically.",
-		);
+		expect(workspaceInput.closest("label")).toHaveTextContent("Work target");
 		expect(
 			screen.queryByTestId("coding-worker-course-mode-hint"),
 		).not.toBeInTheDocument();
@@ -300,8 +310,10 @@ describe("CodingWorkersPanel", () => {
 		expect(workspaceInput.closest("label")).toHaveTextContent(
 			"Course execution-target Git root",
 		);
-		expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
-			"In course mode the coding brain creates a read-only proposal. Naia applies and verifies it. Only index.html and hero.svg may change.",
+		expect(
+			screen.getByTestId("coding-worker-course-mode-hint"),
+		).toHaveTextContent(
+			"Naia applies and verifies the proposal. Changes are limited to index.html and hero.svg.",
 		);
 	});
 
@@ -312,14 +324,64 @@ describe("CodingWorkersPanel", () => {
 			render(<CodingWorkersPanel adapter={adapter()} />);
 			fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
 
-			expect(screen.getByText("Coding Workers(코딩 작업자)")).toBeInTheDocument();
-			expect(screen.getByText("Course execution-target Git root(수업 실행 대상 Git 루트)")).toBeInTheDocument();
-			expect(screen.getByTestId("coding-worker-course-mode-hint")).toHaveTextContent(
-				"작업 두뇌는 읽기 전용 제안만 만듭니다. Naia가 이를 적용·검증하며 index.html과 hero.svg만 변경할 수 있습니다.",
+			expect(screen.getByText("코딩 작업")).toBeInTheDocument();
+			expect(screen.getByText("수업 작업 대상 Git 루트")).toBeInTheDocument();
+			expect(
+				screen.getByTestId("coding-worker-course-mode-hint"),
+			).toHaveTextContent(
+				"Naia가 제안을 적용하고 검증합니다. 변경 범위는 index.html, hero.svg로 고정됩니다.",
 			);
 		} finally {
 			setLocale(previousLocale);
 		}
+	});
+
+	it("keeps empty, saved-target, and in-flight states distinct for the course instructor", async () => {
+		let resolveSave:
+			| ((value: {
+					version: 1;
+					workspacePath: string;
+					allowedFiles: readonly ["index.html", "hero.svg"];
+			  }) => void)
+			| undefined;
+		saveJeonjuCourseTarget.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveSave = resolve;
+				}),
+		);
+		render(
+			<CodingWorkersPanel adapter={adapter()} controlRoot="D:\\alpha-adk" />,
+		);
+
+		expect(screen.getByTestId("coding-workers-empty")).toBeInTheDocument();
+		fillCreateForm(
+			"D:\\alpha-adk\\projects\\course-site",
+			"Prepare the course page",
+		);
+		fireEvent.click(screen.getByTestId("coding-worker-jeonju-course-preset"));
+		expect(
+			screen.getByTestId("coding-worker-course-target-status"),
+		).toHaveTextContent("No Discord course target has been saved.");
+
+		fireEvent.click(screen.getByTestId("coding-worker-save-course-target"));
+		expect(
+			screen.getByTestId("coding-worker-save-course-target"),
+		).toBeDisabled();
+		expect(screen.getByTestId("coding-worker-start")).toBeDisabled();
+
+		await act(async () => {
+			resolveSave?.({
+				version: 1,
+				workspacePath: "D:\\alpha-adk\\projects\\course-site",
+				allowedFiles: ["index.html", "hero.svg"],
+			});
+		});
+		await waitFor(() =>
+			expect(
+				screen.getByTestId("coding-worker-course-target-status"),
+			).toHaveTextContent("Saved · applies on the next Agent start"),
+		);
 	});
 
 	it("blocks an unready selected Git workspace before rendering a course worker", async () => {
@@ -336,7 +398,9 @@ describe("CodingWorkersPanel", () => {
 				"Course mode requires a clean Git root with a remote.",
 			),
 		);
-		expect(screen.queryByTestId(/coding-worker-worker-/)).not.toBeInTheDocument();
+		expect(
+			screen.queryByTestId(/coding-worker-worker-/),
+		).not.toBeInTheDocument();
 	});
 
 	it("rejects a second active worker for the same worktree before calling the adapter", async () => {
@@ -364,7 +428,7 @@ describe("CodingWorkersPanel", () => {
 			...runningWorker,
 			id: "worker-resumable",
 			state: "failed",
-		resumable: true,
+			resumable: true,
 		};
 		const completedWorker: CodingWorker = {
 			...runningWorker,
@@ -393,7 +457,7 @@ describe("CodingWorkersPanel", () => {
 		await waitFor(() =>
 			expect(
 				screen.getByTestId("coding-worker-state-worker-running"),
-			).toHaveTextContent("cancelling"),
+			).toHaveTextContent("Cancelling"),
 		);
 		expect(workerAdapter.cancel).toHaveBeenCalledWith("worker-running");
 
@@ -403,7 +467,7 @@ describe("CodingWorkersPanel", () => {
 		await waitFor(() =>
 			expect(
 				screen.getByTestId("coding-worker-state-worker-resumable"),
-			).toHaveTextContent("running"),
+			).toHaveTextContent("Running"),
 		);
 		expect(workerAdapter.resume).toHaveBeenCalledWith("worker-resumable");
 		expect(

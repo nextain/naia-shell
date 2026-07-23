@@ -511,6 +511,9 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-CODEX-WORKER.3** | `queued`·`running`·`cancelling` worker가 점유한 worktree에는 새 worker를 요청하지 않고 충돌 이유를 표시한다. 병렬 작업은 서로 다른 격리 worktree에서만 시작한다. | same-worktree negative UI 테스트. |
 | **FR-CODEX-WORKER.4** | 취소와 재개는 각각 worker adapter의 대상 ID 요청으로만 수행한다. 재개는 checkpoint ID가 있는 `cancelled` 또는 `failed` worker에만 가능하며, PTY kill 또는 새 shell 생성은 재개가 아니다. | cancel/resume adapter 호출 및 checkpoint negative 테스트. |
 | **FR-CODEX-WORKER.5** | Shell은 원본 adapter 오류, Codex 로그인 토큰, 계정 식별자, CLI 출력 원문을 worker UI·로그·persistent config에 노출하지 않는다. | unavailable/error sanitization 테스트. |
+| **FR-CODEX-WORKER.6** | Coding Workers는 제어 루트·실행 대상·고정된 수업 파일 경계와 수업 대상의 저장/적용 시점을 구분해 표시한다. 수업 대상 저장 후에는 다음 Agent 시작 시 적용됨을 명시하며, 현재 Agent가 즉시 다시 읽었다고 표시하지 않는다. | 컴포넌트·Playwright·native Tauri 테스트에서 저장 전/후 상태와 `다음 Agent 시작` 안내를 검증한다. |
+| **FR-CODEX-WORKER.7** | Coding Workers는 빈 목록, 요청 중, 성공, 실패, 취소 가능, 재개 가능 상태를 사용자 행동 중심으로 표시한다. 원시 상태값·원문 adapter 오류·원문 ISO 시각만으로 상태를 전달하지 않으며, mutation 요청은 진행 중 중복 전송하지 않는다. | 상태 배지/시간/빈 상태/중복 차단/안전한 오류 맥락에 대한 컴포넌트 및 UI E2E 테스트. |
+| **NFR-VISUAL-UX-GATE.1** | Shell의 기능 UI 변경은 P02에서 기본·빈 목록·진행·성공·오류·좁은 폭 상태를 명시하고, P04에서 컴포넌트·Playwright와 해당 시 native Tauri Shell로 시각·접근성·복구 행동을 검증해야 한다. 기능 계약만으로 P05 완료를 선언할 수 없다. | `verify-visual-ux` 결과와 변경 기능의 UI E2E 증거가 모두 PASS여야 한다. |
 
 - **NFR-CODEX-WORKER-contract**: Agent gRPC schema가 확정되기 전에는 Shell adapter가 worker lifecycle의 성공을 반환하거나 PTY를 worker로 위장하지 않는다.
 
