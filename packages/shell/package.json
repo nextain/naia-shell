@@ -27,7 +27,7 @@
     "test:e2e:tauri:jeonju-course": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.jeonju-course.ts",
     "test:e2e:tauri:discord-settings": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.discord-settings.ts",
 
-    "test:e2e:tauri:radio": "pnpm run build:e2e:tauri && wdio run e2e-tauri/wdio.conf.radio.ts",
+    "test:e2e:tauri:radio": "node scripts/build-radio-queue-e2e.mjs && wdio run e2e-tauri/wdio.conf.radio-queue.ts",
     "test:e2e:tauri:nva": "wdio run e2e-tauri/wdio.conf.ts --spec e2e-tauri/specs/13-nva-capability.spec.ts",
     "test:e2e:tauri:nva-startup": "node e2e-tauri/nva-startup-capability.mjs",
     "gen:nva-golden": "node scripts/gen-nva-golden.mjs"
