@@ -17,7 +17,7 @@ import {
 const EXE = process.platform === "win32" ? ".exe" : "";
 const TAURI_BINARY =
 	process.env.TAURI_BINARY ??
-	resolve(E2E_TARGET_DIR, E2E_WEBDRIVER_PORT, "debug", `naia-shell${EXE}`);
+	resolve(E2E_TARGET_DIR, "debug", `naia-shell${EXE}`);
 
 configureCodexE2eEnvironment();
 
