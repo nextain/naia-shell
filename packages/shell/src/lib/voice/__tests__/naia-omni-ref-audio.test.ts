@@ -162,7 +162,7 @@ describe("MiniCPM-o ref_audio wire plumbing", () => {
 
 	it("forwards refAudioUrl as session.update.session.ref_audio_url (#15)", async () => {
 		const url =
-			"https://storage.googleapis.com/naia-ref-audio-presets/aihub-10/female-30s-01.wav";
+			"https://stnaiapub83b29893.blob.core.windows.net/ref-audio/aihub-10/female-30s-01.wav";
 		const { promise } = connect({
 			provider: "naia-omni",
 			serverUrl: "http://localhost:8000",

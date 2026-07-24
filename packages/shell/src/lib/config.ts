@@ -27,7 +27,7 @@ export const DEFAULT_NAIA_LOCAL_URL = "ws://127.0.0.1:8892";
  * voice is always a stable human voice, never the unconditioned/random default.
  */
 export const DEFAULT_VOICE_REF_URL =
-	"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-female-01.wav";
+	"https://stnaiapub83b29893.blob.core.windows.net/ref-audio/cc0/cc0-ko-female-01.wav";
 
 export type ThemeId =
 	| "system"

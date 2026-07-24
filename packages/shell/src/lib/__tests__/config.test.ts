@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	DEFAULT_VOICE_REF_URL,
 	addAllowedTool,
 	clearAllowedTools,
 	hasApiKey,
@@ -25,6 +26,12 @@ describe("config", () => {
 
 	it("loadConfig returns null when not set", () => {
 		expect(loadConfig()).toBeNull();
+	});
+
+	it("uses the Azure public copy for the default reference voice", () => {
+		expect(DEFAULT_VOICE_REF_URL).toBe(
+			"https://stnaiapub83b29893.blob.core.windows.net/ref-audio/cc0/cc0-ko-female-01.wav",
+		);
 	});
 
 	it("saveConfig stores and loadConfig retrieves", () => {
