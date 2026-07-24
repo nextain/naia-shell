@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	DEFAULT_VOICE_REF_URL,
 	addAllowedTool,
 	clearAllowedTools,
 	hasApiKey,
@@ -21,6 +22,13 @@ describe("config", () => {
 
 	afterEach(() => {
 		localStorage.clear();
+	});
+
+	it("uses the public Azure Blob CC0 preset without a GCS dependency", () => {
+		expect(DEFAULT_VOICE_REF_URL).toBe(
+			"https://stnaiapub83b29893.blob.core.windows.net/ref-audio/cc0/cc0-ko-female-01.wav",
+		);
+		expect(DEFAULT_VOICE_REF_URL).not.toContain("storage.googleapis.com");
 	});
 
 	it("loadConfig returns null when not set", () => {

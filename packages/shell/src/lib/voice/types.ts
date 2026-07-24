@@ -134,10 +134,12 @@ export interface NaiaOmniConfig extends LiveProviderConfigBase {
 	/**
 	 * Optional voice-clone reference as an https URL (#15). Sent on the
 	 * initial `session.update` as `ref_audio_url`; the backend downloads it
-	 * once (allowlist: storage.googleapis.com / naia.nextain.io) and clones
+	 * once (allowlist: the public Nextain Azure Blob origin / naia.nextain.io)
+	 * and clones
 	 * the timbre. Takes priority over `refAudio` (base64) server-side, so
-	 * presets (sample_url) and uploads (storage URL) avoid shipping a heavy
-	 * blob each session.
+	 * public presets (sample_url) avoid shipping a heavy blob each session.
+	 * The cloud gateway may separately inject a stored private upload; this
+	 * client field does not represent the gateway's active-upload state.
 	 */
 	refAudioUrl?: string;
 	/** BCP-47-ish hint to the speech tokenizer. Server defaults to "en". */

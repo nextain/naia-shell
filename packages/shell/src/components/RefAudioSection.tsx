@@ -48,7 +48,8 @@ const MAX_DURATION_S = 30;
  * Persist the active voice-reference preset URL into AppConfig so the realtime
  * voice session (ChatArea) sends it directly as `ref_audio_url` — the
  * deterministic source the web demo uses. Pass null on upload/remove so an
- * uploaded voice (injected server-side from GCS) is not shadowed by a preset.
+ * uploaded voice (injected server-side from private object storage) is not
+ * shadowed by a preset.
  */
 function setConfigVoiceRefUrl(url: string | null): void {
 	const c = loadConfig();
@@ -387,7 +388,7 @@ export function RefAudioSection() {
 		setError("");
 		try {
 			if (active.kind === "preset") {
-				// Presets store no GCS blob — the content endpoint 404s for them.
+				// Presets have no private upload blob — the content endpoint 404s for them.
 				// Preview via the preset's public sampleUrl instead.
 				const list = presets ?? (await getRefAudioPresets());
 				if (presets === null) setPresets(list);

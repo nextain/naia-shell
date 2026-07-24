@@ -291,7 +291,7 @@ const mdComponents: Components = {
  *  비팔레트 형식(녹음/업로드 data·로컬경로)은 façade 가 400 fail-closed 라 기본 음색 폴백. */
 function naiaLocalVoiceId(voiceRefUrl?: string): string {
 	if (!voiceRefUrl) return "naia-default";
-	// 쿼리/프래그먼트 제거 후 basename — GCS 서명 URL(...wav?X-Goog-...) 이나 프리셋
+	// 쿼리/프래그먼트 제거 후 basename — 서명된 객체 URL이나 프리셋
 	// sampleUrl 의 쿼리스트링 때문에 정규식이 빗나가 프리셋이 무시되던 것 방지(2026-07-15 리뷰).
 	const noQuery = voiceRefUrl.split(/[?#]/)[0];
 	const base = noQuery.split(/[/\\]/).pop()?.trim() ?? "";
@@ -2829,12 +2829,13 @@ export function ChatArea({
 				// uses (no unreliable GET /v1/ref-audio status round-trip).
 				// Sent for BOTH cloud gateway AND Naia Local (own container, direct
 				// mode): both run the same omni cascade and accept ref_audio_url in
-				// session.update. For Naia Local there is NO gateway GCS injection in
+				// session.update. For Naia Local there is NO gateway-side URL injection in
 				// the path, so the client sending the URL is the ONLY way the cloned
 				// voice reaches the container — gating this behind gateway mode left
 				// local-container voice with a random per-turn voice. The sample_url
-				// is a public storage.googleapis.com URL (no secret), so it is safe
-				// on the direct socket. Empty for uploads (injected server-side).
+				// is a public Azure Blob URL (no secret), so it is safe on the direct
+				// socket. The cloud gateway independently injects any stored private
+				// upload; this pre-existing fallback behavior is unchanged here.
 				// Naia Local recorded/uploaded voice is kept as a base64 WAV locally
 				// (no gateway upload → no credit charge) and sent embedded. It wins
 				// over a preset URL when present.
