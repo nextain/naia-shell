@@ -23,11 +23,11 @@ export const DEFAULT_NAIA_LOCAL_URL = "ws://127.0.0.1:8892";
 /**
  * Default reference voice ("여성 음색 1" / cc0-ko-female-01) used when the user
  * has no custom ref and no preset selected. Public CC0 sample (Mozilla Common
- * Voice) on the gateway's public bucket — sent as `ref_audio_url` so the omni
+ * Voice) on the public Azure Blob container — sent as `ref_audio_url` so the omni
  * voice is always a stable human voice, never the unconditioned/random default.
  */
 export const DEFAULT_VOICE_REF_URL =
-	"https://storage.googleapis.com/naia-ref-audio-presets/cc0/cc0-ko-female-01.wav";
+	"https://stnaiapub83b29893.blob.core.windows.net/ref-audio/cc0/cc0-ko-female-01.wav";
 
 export type ThemeId =
 	| "system"
@@ -136,7 +136,8 @@ export interface AppConfig {
 	 * when the user applies a preset in Settings; sent verbatim as
 	 * `session.update.ref_audio_url` at connect (the deterministic source the
 	 * web demo uses — no dependence on the GET /v1/ref-audio status round-trip).
-	 * Empty for uploads/recordings (those are injected server-side from GCS).
+	 * Applying an upload clears this stored preset. The connection fallback and
+	 * the cloud gateway's separate private-upload injection are independent.
 	 */
 	voiceRefUrl?: string;
 	persona?: string;

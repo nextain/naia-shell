@@ -119,7 +119,7 @@ describe("ref-audio preset (CONTRACT P1-P7)", () => {
 		gender: "female",
 		age_range: "30s",
 		duration_seconds: 8.2,
-		sample_url: "https://storage.googleapis.com/x/female-30s-01.wav",
+		sample_url: "https://stnaiapub83b29893.blob.core.windows.net/ref-audio/cc0/female-30s-01.wav",
 		sample_format: "wav",
 		source: "aihub-10",
 		license: "research-internal",
@@ -136,7 +136,7 @@ describe("ref-audio preset (CONTRACT P1-P7)", () => {
 		expect(list[0]).toMatchObject({
 			id: "aihub-10-female-30s-01",
 			ageRange: "30s",
-			sampleUrl: "https://storage.googleapis.com/x/female-30s-01.wav",
+			sampleUrl: "https://stnaiapub83b29893.blob.core.windows.net/ref-audio/cc0/female-30s-01.wav",
 			durationSeconds: 8.2,
 		});
 	});
@@ -274,7 +274,7 @@ describe("getRefAudioContent (upload preview)", () => {
 		);
 	});
 
-	it("404 no-active-ref → 'no-active-ref' code (preset has no GCS blob)", async () => {
+	it("404 no-active-ref → 'no-active-ref' code (preset has no private blob)", async () => {
 		mockFetch.mockResolvedValue(
 			new Response(JSON.stringify({ error: "no-active-ref" }), { status: 404 }),
 		);

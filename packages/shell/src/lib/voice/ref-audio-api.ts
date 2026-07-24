@@ -22,7 +22,7 @@ const TAG = "RefAudioApi";
 
 // ── Naia Local recorded/uploaded reference voice (no gateway, no credits) ──
 // For Naia Local the voice WS goes direct to the user's own container, so the
-// gateway GCS upload+inject path can't reach it (and would charge $0.01). We
+// gateway upload+inject path can't reach it (and would charge $0.01). We
 // instead keep the recorded clip as a base64 WAV in localStorage and send it
 // straight to the container as `session.update.session.ref_audio`. Stored
 // outside AppConfig so the (large) blob never bloats the frequently-saved
@@ -442,7 +442,7 @@ export async function deleteRefAudio(
  * Stream the user's active *uploaded* ref-audio back as a WAV blob for
  * in-app preview (GET /v1/ref-audio/content). Free (no charge).
  *
- * Only valid when the active slot is an upload — presets store no GCS blob,
+ * Only valid when the active slot is an upload — presets have no private blob,
  * so the gateway returns 404 `no-active-ref` for them; callers must preview
  * presets via their `sampleUrl` instead. Throws `RefAudioApiError` with code
  * `no-active-ref` (404), `unauthenticated` (401), or `network`/`unknown`.

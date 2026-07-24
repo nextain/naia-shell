@@ -1,4 +1,4 @@
-<!-- src-sha: 40fa012a363d8ddd -->
+<!-- src-sha: 25331ad8c94d5c57 -->
 <!-- 자동 번역 미러 (M13-mirror). 원본: .agents/context/process-status.json -->
 
 # 프로세스 현황 (Process Status) SoT
@@ -34,7 +34,7 @@
 
 **시작**: 2026-06-08
 
-**마지막 업데이트**: 2026-07-17 00:00 KST
+**마지막 업데이트**: 2026-07-24 13:42 KST
 
 **상태**: 진행 중 (in_progress)
 
@@ -172,6 +172,16 @@
 | **P03** | 완료 | `docs/requirements.md` — FR-INSTALL.1~6 + NFR-noWSL (불변) · NFR-honesty | P01 과 동일. R4 개정 반영: agent 리소스 4종 = 매트릭스 3 OS 공통 그룹 → 생성 conf 소유 (base 금지 — tauri-build `copy_resources` 가 dev/cargo check 포함 무조건 실행) |
 | **P04** | 완료 | `platform-matrix.test.ts` + `verify-artifacts.mjs` + `verify-installed-smoke.mjs` + 3 OS `build-installers.yml` | **완료 2026-07-19** — PR #379 merge `7ba15dc9`; exact 검증 head `de0e9e25`; installer CI 29658918546 Windows/Linux/macOS GREEN; Windows NSIS 실제 설치·실행·제거 후 Steam depot 독립 기동; Linux deb 설치·mutation/tamper probe; 적대 리뷰 2회 연속 CLEAN |
 | **P05** | 완료 | README + platform matrix/manifest + artifact SHA report + GitHub #377 final report | **완료 2026-07-19** — FR-INSTALL.1~6, FR-STEAM.1~3, NFR-noWSL 충족. #377 종료; Steamworks 운영 단계는 #314에 이관 |
+
+### 병행 트랙: #392 Azure 참조 음성 전환 (azure_ref_audio_392)
+
+| 게이트 | 상태 | 산출물 (Deliverable) | 참조 |
+|--------|------|---------------------|------|
+| **P01** | 완료 | `docs/user-scenarios.md` S66 GCS 비의존·Azure Blob 전환 시나리오 | GitHub #392, 2026-07-24 |
+| **P02** | 완료 | `config.test.ts` + `azure-ref-audio-csp.contract.test.ts` + `cascade-renderer.test.ts` + Azure Blob HTTP/WAV probe | 2026-07-24 |
+| **P03** | 완료 | `docs/requirements.md` FR-VOICE.8 | GitHub #392, 2026-07-24 |
+| **P04** | 완료 | 패키지 CSP 계약 테스트 + 집중 셸 vitest + 루트 build + 셸 production build + Azure Blob HTTP 200/RIFF | 전체 루트 테스트의 paired-agent pin 실패 4건은 변경 전부터 존재하는 별도 이슈 |
+| **P05** | 완료 | `docs/requirements.md` FR-VOICE.8 상태 Done, 구현·검증 | GitHub #392, 2026-07-24 |
 
 ---
 
