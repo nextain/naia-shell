@@ -12,6 +12,10 @@ const eventListeners = vi.hoisted(
 	() =>
 		new Map<string, (event: { payload: unknown }) => void | Promise<void>>(),
 );
+const authMocks = vi.hoisted(() => ({
+	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
+	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@tauri-apps/plugin-store", () => {
 	const store = {
@@ -47,9 +51,9 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 
 vi.mock("../../lib/chat-service", () => ({
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
-	sendAuthUpdate: vi.fn().mockResolvedValue(undefined),
+	sendAuthUpdate: authMocks.sendAuthUpdate,
 	sendNotifyConfig: vi.fn().mockResolvedValue(undefined),
-	sendCredsUpdate: vi.fn().mockResolvedValue(undefined),
+	sendCredsUpdate: authMocks.sendCredsUpdate,
 }));
 
 // (gateway-sync mock 제거됨 2026-06-12 — 모듈 삭제)
@@ -91,15 +95,25 @@ describe("SettingsTab", () => {
 
 	it("places Connections between Skills and General and never renders a token field", async () => {
 		mockInvoke.mockImplementation((command: string) => {
-			if (command === "discord_bot_token_available") return Promise.resolve(false);
+			if (command === "discord_bot_token_available")
+				return Promise.resolve(false);
 			return Promise.resolve([]);
 		});
 		render(<SettingsTab />);
-		const tabs = [...document.querySelectorAll("[data-settings-tab]")]
-			.map((element) => element.getAttribute("data-settings-tab"));
+		const tabs = [...document.querySelectorAll("[data-settings-tab]")].map(
+			(element) => element.getAttribute("data-settings-tab"),
+		);
 		expect(tabs).toEqual([
-			"profile", "brain", "voice", "avatar", "persona",
-			"memory", "knowledge", "skills", "connections", "general",
+			"profile",
+			"brain",
+			"voice",
+			"avatar",
+			"persona",
+			"memory",
+			"knowledge",
+			"skills",
+			"connections",
+			"general",
 		]);
 		gotoSettingsTab("connections");
 		expect(await screen.findByTestId("discord-connections")).toBeDefined();
@@ -196,7 +210,9 @@ describe("SettingsTab", () => {
 		const subProvider = screen.getByTestId(
 			"sub-llm-provider",
 		) as HTMLSelectElement;
-		expect([...subProvider.options].map((option) => option.value)).toContain("codex");
+		expect([...subProvider.options].map((option) => option.value)).toContain(
+			"codex",
+		);
 		fireEvent.change(subProvider, { target: { value: "gemini" } });
 		const subModel = screen.getByTestId("sub-llm-model") as HTMLInputElement;
 		fireEvent.change(subModel, { target: { value: "gemini-3.1-flash-lite" } });
@@ -245,7 +261,45 @@ describe("SettingsTab", () => {
 		expect(saved.naiaKey).toBe("gw-test-key");
 		expect(saved.naiaUserId).toBe("user-123");
 		expect(authReady).toHaveBeenCalledTimes(1);
+		expect(authMocks.sendAuthUpdate).toHaveBeenCalledWith("gw-test-key");
 		window.removeEventListener("naia_auth_ready", authReady);
+	});
+
+	it("allows an Ollama API key and preserves a custom model outside discovery", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "ollama",
+				model: "qwen3.8",
+				apiKey: "",
+				ollamaHost: "https://gpu.example/v1",
+			}),
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("brain");
+
+		const key = await screen.findByLabelText(/^API/i);
+		const model = document.getElementById("model-select") as HTMLInputElement;
+		expect(model.tagName).toBe("INPUT");
+		expect(model.value).toBe("qwen3.8");
+		fireEvent.change(key, { target: { value: "ollama-secret" } });
+		fireEvent.change(model, { target: { value: "custom/model:latest" } });
+		fireEvent.click(document.querySelector(".settings-save-btn")!);
+
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.apiKey).toBe("ollama-secret");
+		expect(saved.model).toBe("custom/model:latest");
+		expect(authMocks.sendCredsUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				keys: { ollama: "ollama-secret" },
+			}),
+		);
 	});
 
 	it("shows STT provider selector with vosk option", () => {
@@ -321,13 +375,15 @@ describe("SettingsTab", () => {
 		fireEvent.click(check);
 
 		await vi.waitFor(() => {
-			expect(screen.getByTestId("codex-readiness-status").textContent).toContain(
-				"Ready",
-			);
+			expect(
+				screen.getByTestId("codex-readiness-status").textContent,
+			).toContain("Ready");
 		});
 		expect(mockInvoke).toHaveBeenCalledWith("codex_preflight");
 		expect(screen.queryByText("private@example.com")).toBeNull();
-		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").apiKey).toBe("");
+		expect(JSON.parse(localStorage.getItem("naia-config") || "{}").apiKey).toBe(
+			"",
+		);
 	});
 
 	it("saves main, sub, and memory brains as role settings", () => {
@@ -346,7 +402,9 @@ describe("SettingsTab", () => {
 
 		const subMode = screen.getByTestId("sub-llm-mode");
 		fireEvent.change(subMode, { target: { value: "explicit" } });
-		const subProvider = screen.getByTestId("sub-llm-provider") as HTMLSelectElement;
+		const subProvider = screen.getByTestId(
+			"sub-llm-provider",
+		) as HTMLSelectElement;
 		fireEvent.change(subProvider, { target: { value: "nextain" } });
 		fireEvent.change(screen.getByTestId("memory-llm-mode"), {
 			target: { value: "explicit" },
@@ -357,17 +415,30 @@ describe("SettingsTab", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.llmRoles).toEqual(expect.objectContaining({
-			main: expect.objectContaining({ provider: "codex", model: "gpt-5.4" }),
-			sub: expect.objectContaining({ provider: "nextain", model: "gemini-3.1-flash-lite" }),
-			memory: expect.objectContaining({ provider: "nextain", model: "gemini-3.1-flash-lite" }),
-		}));
+		expect(saved.llmRoles).toEqual(
+			expect.objectContaining({
+				main: expect.objectContaining({ provider: "codex", model: "gpt-5.4" }),
+				sub: expect.objectContaining({
+					provider: "nextain",
+					model: "gemini-3.1-flash-lite",
+				}),
+				memory: expect.objectContaining({
+					provider: "nextain",
+					model: "gemini-3.1-flash-lite",
+				}),
+			}),
+		);
 	});
 
 	it("allows an explicit Codex sub brain but excludes Codex from memory", () => {
 		localStorage.setItem(
 			"naia-config",
-			JSON.stringify({ onboardingComplete: true, provider: "codex", model: "gpt-5.4", apiKey: "" }),
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "codex",
+				model: "gpt-5.4",
+				apiKey: "",
+			}),
 		);
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
@@ -380,17 +451,21 @@ describe("SettingsTab", () => {
 			target: { value: "explicit" },
 		});
 		expect(
-			[...(screen.getByTestId("sub-llm-provider") as HTMLSelectElement).options].map(
-				(option) => option.value,
-			),
+			[
+				...(screen.getByTestId("sub-llm-provider") as HTMLSelectElement)
+					.options,
+			].map((option) => option.value),
 		).toContain("codex");
 		expect(
-			[...(screen.getByTestId("memory-llm-provider") as HTMLSelectElement).options].map(
-				(option) => option.value,
-			),
+			[
+				...(screen.getByTestId("memory-llm-provider") as HTMLSelectElement)
+					.options,
+			].map((option) => option.value),
 		).not.toContain("codex");
 		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-		const roles = JSON.parse(localStorage.getItem("naia-config") || "{}").llmRoles;
+		const roles = JSON.parse(
+			localStorage.getItem("naia-config") || "{}",
+		).llmRoles;
 		expect(roles.sub).toMatchObject({ provider: "codex", model: "gpt-5.4" });
 		expect(roles.memory.provider).not.toBe("codex");
 	});
@@ -398,7 +473,11 @@ describe("SettingsTab", () => {
 	it("shows a safe Codex login-required state and clears it on provider switch", async () => {
 		localStorage.setItem(
 			"naia-config",
-			JSON.stringify({ onboardingComplete: true, provider: "codex", model: "gpt-5.4" }),
+			JSON.stringify({
+				onboardingComplete: true,
+				provider: "codex",
+				model: "gpt-5.4",
+			}),
 		);
 		mockInvoke.mockImplementation((command: string) =>
 			Promise.resolve(
@@ -410,9 +489,9 @@ describe("SettingsTab", () => {
 		gotoSettingsTab("brain");
 		fireEvent.click(await screen.findByTestId("codex-readiness-check"));
 		await vi.waitFor(() => {
-			expect(screen.getByTestId("codex-readiness-status").textContent).toContain(
-				"Login required",
-			);
+			expect(
+				screen.getByTestId("codex-readiness-status").textContent,
+			).toContain("Login required");
 		});
 
 		fireEvent.change(document.getElementById("provider-select")!, {
@@ -705,30 +784,30 @@ describe("SettingsTab — memory tab (#298)", () => {
 		mockInvoke.mockImplementation((cmd: string) => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(8);
 			if (cmd === "cascade_installation_status") {
-				return Promise.resolve(
-					{
-						phase: "blocked",
-						ready: false,
-						canStart: false,
-						summary: "Local runtime installation is blocked because required package artifacts are missing.",
-						steps: [
-							{
-								id: "cascade-service-bundle",
-								label: "Cascade service bundle",
-								state: "blocked",
-								action: "install",
-								actionAvailable: false,
-								progressPercent: 0,
+				return Promise.resolve({
+					phase: "blocked",
+					ready: false,
+					canStart: false,
+					summary:
+						"Local runtime installation is blocked because required package artifacts are missing.",
+					steps: [
+						{
+							id: "cascade-service-bundle",
+							label: "Cascade service bundle",
+							state: "blocked",
+							action: "install",
+							actionAvailable: false,
+							progressPercent: 0,
+							retryable: false,
+							failure: {
+								code: "CASCADE_SERVICE_BUNDLE_MISSING",
+								message:
+									"VoxCPM2, Ditto, or facade service files are not packaged.",
 								retryable: false,
-								failure: {
-									code: "CASCADE_SERVICE_BUNDLE_MISSING",
-									message: "VoxCPM2, Ditto, or facade service files are not packaged.",
-									retryable: false,
-								},
 							},
-						],
-					},
-				);
+						},
+					],
+				});
 			}
 			if (cmd === "cascade_status") return Promise.resolve(false);
 			return Promise.resolve([]);
@@ -736,9 +815,9 @@ describe("SettingsTab — memory tab (#298)", () => {
 
 		render(<SettingsTab />);
 		await vi.waitFor(() => {
-			expect(screen.getByTestId("cascade-installation-status").textContent).toMatch(
-				/Cascade service bundle.*blocked.*0%/i,
-			);
+			expect(
+				screen.getByTestId("cascade-installation-status").textContent,
+			).toMatch(/Cascade service bundle.*blocked.*0%/i);
 			expect(mockInvoke).not.toHaveBeenCalledWith("start_cascade");
 		});
 	});
@@ -761,7 +840,8 @@ describe("SettingsTab — memory tab (#298)", () => {
 					phase: "ready-to-start",
 					ready: false,
 					canStart: true,
-					summary: "Local runtime files are ready. Services have not been started yet.",
+					summary:
+						"Local runtime files are ready. Services have not been started yet.",
 					steps: [],
 				});
 			}

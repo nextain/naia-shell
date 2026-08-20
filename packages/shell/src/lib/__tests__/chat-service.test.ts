@@ -169,7 +169,15 @@ describe("chat-service", () => {
 		const { sendChatMessage } = await import("../chat-service");
 		await sendChatMessage({
 			message: "화면 설명",
-			attachments: [{ id: "a1", kind: "image", mimeType: "image/png", sizeBytes: 10, localRef: "img_1" }],
+			attachments: [
+				{
+					id: "a1",
+					kind: "image",
+					mimeType: "image/png",
+					sizeBytes: 10,
+					localRef: "img_1",
+				},
+			],
 			provider: { provider: "codex", model: "main", apiKey: "" },
 			history: [],
 			onChunk: vi.fn(),
@@ -183,9 +191,17 @@ describe("chat-service", () => {
 		const parsed = JSON.parse(mockInvoke.mock.calls[0][1].message);
 		expect(parsed.messages[0].attachments[0].localRef).toBe("img_1");
 		expect(parsed.channel).toEqual({ kind: "shell" });
-		expect(parsed.grounding).toEqual({ policy: "required", knowledgeScope: "workshop" });
-		expect(parsed.providerSession).toEqual({ mode: "resume", providerSessionRef: "opaque-ref" });
-		expect(parsed.processing).toEqual({ processingProfileRef: "profile-local-cloud-001" });
+		expect(parsed.grounding).toEqual({
+			policy: "required",
+			knowledgeScope: "workshop",
+		});
+		expect(parsed.providerSession).toEqual({
+			mode: "resume",
+			providerSessionRef: "opaque-ref",
+		});
+		expect(parsed.processing).toEqual({
+			processingProfileRef: "profile-local-cloud-001",
+		});
 	});
 
 	it("UC-WIRE-V1 new-core public API preserves the same rich fields", async () => {
@@ -193,7 +209,15 @@ describe("chat-service", () => {
 		const { sendChatMessage } = await import("../chat-service");
 		await sendChatMessage({
 			message: "화면 설명",
-			attachments: [{ id: "a1", kind: "image", mimeType: "image/png", sizeBytes: 10, localRef: "img_1" }],
+			attachments: [
+				{
+					id: "a1",
+					kind: "image",
+					mimeType: "image/png",
+					sizeBytes: 10,
+					localRef: "img_1",
+				},
+			],
 			provider: { provider: "codex", model: "main", apiKey: "" },
 			history: [],
 			onChunk: vi.fn(),
@@ -204,13 +228,20 @@ describe("chat-service", () => {
 			providerSession: { mode: "new" },
 			processing: { processingProfileRef: "profile-local-cloud-001" },
 		});
-		const call = mockInvoke.mock.calls.find(([command]) => command === "send_to_agent_command");
+		const call = mockInvoke.mock.calls.find(
+			([command]) => command === "send_to_agent_command",
+		);
 		const parsed = JSON.parse(call?.[1].message);
 		expect(parsed.messages[0].attachments[0].localRef).toBe("img_1");
 		expect(parsed.channel).toEqual({ kind: "shell" });
-		expect(parsed.grounding).toEqual({ policy: "required", knowledgeScope: "workshop" });
+		expect(parsed.grounding).toEqual({
+			policy: "required",
+			knowledgeScope: "workshop",
+		});
 		expect(parsed.providerSession).toEqual({ mode: "new" });
-		expect(parsed.processing).toEqual({ processingProfileRef: "profile-local-cloud-001" });
+		expect(parsed.processing).toEqual({
+			processingProfileRef: "profile-local-cloud-001",
+		});
 	});
 
 	it("includes ttsEngine in request when provided", async () => {
@@ -284,7 +315,9 @@ describe("chat-service", () => {
 		mockListen.mockImplementation(
 			async (_event: string, handler: (event: { payload: string }) => void) => {
 				setTimeout(() => {
-					handler({ payload: JSON.stringify({ type: "finish", requestId: "req-seg" }) });
+					handler({
+						payload: JSON.stringify({ type: "finish", requestId: "req-seg" }),
+					});
 				}, 10);
 				return mockUnlisten;
 			},
@@ -319,7 +352,9 @@ describe("chat-service", () => {
 		mockListen.mockImplementation(
 			async (_event: string, handler: (event: { payload: string }) => void) => {
 				setTimeout(() => {
-					handler({ payload: JSON.stringify({ type: "finish", requestId: "req-voice" }) });
+					handler({
+						payload: JSON.stringify({ type: "finish", requestId: "req-voice" }),
+					});
 				}, 10);
 				return mockUnlisten;
 			},
@@ -352,7 +387,12 @@ describe("chat-service", () => {
 		mockListen.mockImplementation(
 			async (_event: string, handler: (event: { payload: string }) => void) => {
 				setTimeout(() => {
-					handler({ payload: JSON.stringify({ type: "finish", requestId: "req-seg-empty" }) });
+					handler({
+						payload: JSON.stringify({
+							type: "finish",
+							requestId: "req-seg-empty",
+						}),
+					});
 				}, 10);
 				return mockUnlisten;
 			},
@@ -500,7 +540,9 @@ describe("chat-service", () => {
 			const credsCall = mockInvoke.mock.calls.find(
 				(c) =>
 					c[0] === "send_to_agent_command" &&
-					String((c[1] as { message?: string })?.message).includes("creds_update"),
+					String((c[1] as { message?: string })?.message).includes(
+						"creds_update",
+					),
 			);
 			expect(credsCall).toBeTruthy();
 			const parsed = JSON.parse((credsCall![1] as { message: string }).message);
@@ -519,7 +561,9 @@ describe("chat-service", () => {
 			const credsCall = mockInvoke.mock.calls.find(
 				(c) =>
 					c[0] === "send_to_agent_command" &&
-					String((c[1] as { message?: string })?.message).includes("creds_update"),
+					String((c[1] as { message?: string })?.message).includes(
+						"creds_update",
+					),
 			);
 			expect(credsCall).toBeTruthy(); // 빈 키도 전송(old-baseline unset 시맨틱)
 			const parsed = JSON.parse((credsCall![1] as { message: string }).message);
@@ -533,7 +577,9 @@ describe("chat-service", () => {
 			const credsCall = mockInvoke.mock.calls.find(
 				(c) =>
 					c[0] === "send_to_agent_command" &&
-					String((c[1] as { message?: string })?.message).includes("creds_update"),
+					String((c[1] as { message?: string })?.message).includes(
+						"creds_update",
+					),
 			);
 			expect(credsCall).toBeTruthy();
 			const parsed = JSON.parse((credsCall![1] as { message: string }).message);
@@ -541,6 +587,25 @@ describe("chat-service", () => {
 			expect(parsed.provider).toBe("nextain");
 			expect(parsed.naiaKey).toBe("naia-key-xyz");
 			expect("auth_update").not.toBe(parsed.type);
+		});
+
+		it("sendAuthUpdate: empty naiaKey remains an explicit agent-side logout", async () => {
+			const { sendAuthUpdate } = await import("../chat-service");
+			await sendAuthUpdate("");
+			const credsCall = mockInvoke.mock.calls.find(
+				(c) =>
+					c[0] === "send_to_agent_command" &&
+					String((c[1] as { message?: string })?.message).includes(
+						"creds_update",
+					),
+			);
+			expect(
+				JSON.parse((credsCall![1] as { message: string }).message),
+			).toMatchObject({
+				type: "creds_update",
+				provider: "nextain",
+				naiaKey: "",
+			});
 		});
 	});
 
