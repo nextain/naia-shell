@@ -11,7 +11,12 @@ build alone is not a completed release.
 2. Keep the updater endpoint on
    `nextain/naia-shell/releases/latest/download/latest.json`.
 3. Windows must generate updater artifacts; Linux and macOS remain disabled
-   until their signing and publishing contracts are restored.
+   until their signing and publishing contracts are restored. Linux artifacts
+   are now published without them — see `linux-release-process.md`. That
+   publishing path relies on Linux releases staying prereleases, because
+   GitHub resolves `releases/latest` to the newest non-draft, non-prerelease
+   tag. Promoting a release out of prerelease without a verified `latest.json`
+   in the same release 404s the updater endpoint for every installed client.
 4. The approved local key pair is stored outside this repository at
    `D:/alpha-adk/data-private/key/naia-tauri.key` and `.key.pub`. The private
    key is encrypted. Local runs may set `TAURI_SIGNING_PRIVATE_KEY` to that
