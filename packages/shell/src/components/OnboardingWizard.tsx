@@ -33,7 +33,7 @@ import {
 	saveConfig,
 	saveConfigSecure,
 } from "../lib/config";
-import { getLocale, t } from "../lib/i18n";
+import { getLocale, t, type Locale, type TranslationKey } from "../lib/i18n";
 import {
 	fetchLabBalancePayload,
 	parseLabCredits,
@@ -91,28 +91,47 @@ function isVideo(url: string) {
 	);
 }
 
+// Languages whose completion line opens with the name rather than embedding it
+// mid-sentence. Keep in step with onboard.chat.complete.
+const LEADS_WITH_NAME = new Set<Locale>(["ko", "ja", "zh"]);
+
 function stepChat(step: Step, name: string, user: string): string {
-	const n = name || "나이아";
-	const u = user ? `${user}님` : "";
+	// These strings used to be Korean literals, so a person on an English system
+	// met an English UI with Naia speaking Korean at them. The translations for
+	// the rest of onboarding were already here and simply were not being used.
+	const n = name || t("onboard.defaultAgentName");
+	// Korean attaches an honorific to the name; other languages do not, so the
+	// suffix belongs to the Korean string rather than to this interpolation.
+	const u = user ? (getLocale() === "ko" ? `${user}님` : user) : "";
+	const fill = (key: TranslationKey) =>
+		t(key).replace("{agent}", n).replace("{user}", u);
+
 	switch (step) {
 		case "welcome":
-			return "안녕하세요! 시작하기 전에 잠깐 확인해 주세요 😊";
+			return t("onboard.chat.welcome");
 		case "agentName":
-			return "안녕하세요! 저는 나이아예요. 제 이름을 지어주세요! ✨";
+			return t("onboard.chat.agentName");
 		case "userName":
-			return `${n}! 정말 좋은 이름이에요. 그럼 저는 당신을 어떻게 부를까요?`;
+			return fill("onboard.chat.userName");
 		case "speechStyle":
-			return `${u || ""}! 어떤 말투로 대화할까요? 편한 걸 골라주세요 😊`;
+			return fill("onboard.chat.speechStyle");
 		case "character":
-			return "제 외모를 골라주세요! 마음에 드는 캐릭터가 있나요? 🌸";
+			return t("onboard.chat.character");
 		case "background":
-			return "배경화면도 함께 골라볼까요? 클릭하면 바로 바뀌어요! 🌟";
+			return t("onboard.chat.background");
 		case "provider":
-			return "거의 다 왔어요! 저의 두뇌를 연결해 주세요 🧠";
+			return t("onboard.chat.provider");
 		case "voice":
-			return "제 목소리도 골라주세요! 마음에 드는 음성을 미리 들어볼 수 있어요 🎙️";
+			return t("onboard.chat.voice");
 		case "complete":
-			return `${u ? u + ", " : ""}준비 완료! ${n}와 함께 시작해요! 🎉`;
+			// The line leads with the user's name when there is one, so {user}
+			// carries its own separator rather than being a bare name.
+			// Where the name belongs differs by language, so each string places
+			// {user} itself and this only supplies the separator its position
+			// needs. Empty when there is no name, and the line still reads.
+			return t("onboard.chat.complete")
+				.replace("{user}", u ? (LEADS_WITH_NAME.has(getLocale()) ? `${u}, ` : `, ${u}`) : "")
+				.replace("{agent}", n);
 	}
 }
 
@@ -572,7 +591,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			case "welcome":
 				return { step: "welcome" };
 			case "agentName":
-				return { step: "agentName", agentName: agentName.trim() || "나이아" };
+				return { step: "agentName", agentName: agentName.trim() || t("onboard.defaultAgentName") };
 			case "userName":
 				return {
 					step: "userName",
@@ -848,7 +867,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					role: "assistant",
 					content: stepChat(
 						next,
-						agentName.trim() || "나이아",
+						agentName.trim() || t("onboard.defaultAgentName"),
 						userName.trim(),
 					),
 				});
@@ -1106,7 +1125,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				role: "assistant",
 				content: stepChat(
 					"complete",
-					agentName.trim() || "나이아",
+					agentName.trim() || t("onboard.defaultAgentName"),
 					userName.trim(),
 				),
 			});
@@ -1231,7 +1250,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						<h2 className="onboarding-step__title">
 							{t("onboard.userName.title").replace(
 								"{agent}",
-								agentName.trim() || "나이아",
+								agentName.trim() || t("onboard.defaultAgentName"),
 							)}
 						</h2>
 						<input
@@ -1254,7 +1273,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						<h2 className="onboarding-step__title">
 							{t("onboard.speechStyle.title").replace(
 								"{agent}",
-								agentName.trim() || "나이아",
+								agentName.trim() || t("onboard.defaultAgentName"),
 							)}
 						</h2>
 						<div className="onboarding-step__options">
@@ -1300,7 +1319,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						<h2 className="onboarding-step__title">
 							{t("onboard.character.title")
 								.replace("{user}", userName.trim() || "")
-								.replace("{agent}", agentName.trim() || "나이아")}
+								.replace("{agent}", agentName.trim() || t("onboard.defaultAgentName"))}
 						</h2>
 						<div className="onboarding-step__avatar-grid">
 							{naiaVrms.length === 0 && naiaNvas.length === 0 ? (
@@ -1594,7 +1613,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						<p className="onboarding-step__hint">
 							{t("onboard.complete.ready").replace(
 								"{agent}",
-								agentName.trim() || "나이아",
+								agentName.trim() || t("onboard.defaultAgentName"),
 							)}
 						</p>
 					</>
