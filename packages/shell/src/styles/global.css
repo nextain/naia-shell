@@ -4760,6 +4760,18 @@ body.resizing-row {
 	white-space: nowrap;
 }
 
+/* Shared lazy panel states */
+.chat-panel-state {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 1;
+	color: var(--cream-dim);
+	font-size: 12px;
+	padding: 20px;
+	text-align: center;
+}
+
 /* History Tab */
 .history-tab {
 	flex: 1;

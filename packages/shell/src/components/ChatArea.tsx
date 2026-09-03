@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
 	type ReactNode,
+	lazy,
 	useCallback,
 	useEffect,
 	useRef,
@@ -196,21 +197,37 @@ import { useChatStore } from "../stores/chat";
 import { useLogsStore } from "../stores/logs";
 import { useProgressStore } from "../stores/progress";
 import { useSkillsStore } from "../stores/skills";
-import { AgentsTab } from "./AgentsTab";
 import {
 	type AtMentionHandle,
 	AtMentionPopover,
 	type AtMentionResult,
 	isWorkspaceAvailable,
 } from "./AtMentionPopover";
-import { ChannelsTab } from "./ChannelsTab";
-import { CostDashboard } from "./CostDashboard";
-import { DiagnosticsTab } from "./DiagnosticsTab";
-import { HistoryTab } from "./HistoryTab";
+import { LazyPanel } from "./LazyPanel";
 import { PermissionModal } from "./PermissionModal";
 import { SkillsTab } from "./SkillsTab";
 import { ToolActivity } from "./ToolActivity";
 import { WorkProgressArea } from "./WorkProgressArea";
+
+const loadAgentsTab = () =>
+	import("./AgentsTab").then((module) => ({ default: module.AgentsTab }));
+const loadChannelsTab = () =>
+	import("./ChannelsTab").then((module) => ({ default: module.ChannelsTab }));
+const loadCostDashboard = () =>
+	import("./CostDashboard").then((module) => ({
+		default: module.CostDashboard,
+	}));
+const loadDiagnosticsTab = () =>
+	import("./DiagnosticsTab").then((module) => ({
+		default: module.DiagnosticsTab,
+	}));
+const loadHistoryTab = () =>
+	import("./HistoryTab").then((module) => ({ default: module.HistoryTab }));
+const LazyAgentsTab = lazy(loadAgentsTab);
+const LazyChannelsTab = lazy(loadChannelsTab);
+const LazyCostDashboard = lazy(loadCostDashboard);
+const LazyDiagnosticsTab = lazy(loadDiagnosticsTab);
+const LazyHistoryTab = lazy(loadHistoryTab);
 
 type TabId =
 	| "chat"
@@ -4185,27 +4202,58 @@ export function ChatArea({
 					/>
 				)}
 
-				{/* Agents tab */}
-				{activeTab === "agents" && <AgentsTab />}
-
-				{/* Diagnostics tab */}
-				{activeTab === "diagnostics" && <DiagnosticsTab />}
-
-				{/* Settings tab */}
+				{/* Dormant legacy routes remain renderable if an existing caller selects them. */}
+				{activeTab === "agents" && (
+					<LazyPanel
+						component={LazyAgentsTab}
+						renderComponent={(Panel) => <Panel />}
+						loadingLabel={t("chat.panelLoading")}
+						errorLabel={t("chat.panelUnavailable")}
+					/>
+				)}
+				{activeTab === "diagnostics" && (
+					<LazyPanel
+						component={LazyDiagnosticsTab}
+						renderComponent={(Panel) => <Panel />}
+						loadingLabel={t("chat.panelLoading")}
+						errorLabel={t("chat.panelUnavailable")}
+					/>
+				)}
 
 				{/* Channels tab */}
-				{activeTab === "channels" && <ChannelsTab />}
+				{activeTab === "channels" && (
+					<LazyPanel
+						component={LazyChannelsTab}
+						renderComponent={(Panel) => <Panel />}
+						loadingLabel={t("chat.panelLoading")}
+						errorLabel={t("chat.panelUnavailable")}
+					/>
+				)}
 
 				{/* History tab */}
 				{activeTab === "history" && (
-					<HistoryTab onLoadSession={() => setActiveTab("chat")} />
+					<LazyPanel
+						component={LazyHistoryTab}
+						renderComponent={(Panel) => (
+							<Panel onLoadSession={() => setActiveTab("chat")} />
+						)}
+						loadingLabel={t("chat.panelLoading")}
+						errorLabel={t("chat.panelUnavailable")}
+					/>
 				)}
 
 				{/* Cost dashboard (dropdown) */}
 				{showCostDashboard && activeTab === "chat" && (
-					<CostDashboard
-						messages={messages}
-						sessionCostEntries={sessionCostEntries}
+					<LazyPanel
+						component={LazyCostDashboard}
+						renderComponent={(Panel) => (
+							<Panel
+								messages={messages}
+								sessionCostEntries={sessionCostEntries}
+							/>
+						)}
+						loadingLabel={t("chat.panelLoading")}
+						errorLabel={t("chat.panelUnavailable")}
 					/>
 				)}
 
