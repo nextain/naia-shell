@@ -9,7 +9,7 @@ import {
 import { Logger } from "../lib/logger";
 
 class PanelErrorBoundary extends Component<
-	{ children: ReactNode; errorLabel: string },
+	{ children: ReactNode; errorLabel: string; stateClassName: string },
 	{ failed: boolean }
 > {
 	state = { failed: false };
@@ -28,7 +28,7 @@ class PanelErrorBoundary extends Component<
 	render() {
 		if (this.state.failed) {
 			return (
-				<div className="chat-panel-state" role="alert">
+				<div className={this.props.stateClassName} role="alert">
 					{this.props.errorLabel}
 				</div>
 			);
@@ -44,6 +44,7 @@ interface LazyPanelProps<Props extends object> {
 	) => ReactNode;
 	loadingLabel: string;
 	errorLabel: string;
+	compact?: boolean;
 }
 
 export function LazyPanel<Props extends object>({
@@ -51,12 +52,14 @@ export function LazyPanel<Props extends object>({
 	renderComponent,
 	loadingLabel,
 	errorLabel,
+	compact = false,
 }: LazyPanelProps<Props>) {
+	const stateClassName = `chat-panel-state${compact ? " chat-panel-state--compact" : ""}`;
 	return (
-		<PanelErrorBoundary errorLabel={errorLabel}>
+		<PanelErrorBoundary errorLabel={errorLabel} stateClassName={stateClassName}>
 			<Suspense
 				fallback={
-					<output className="chat-panel-state" aria-live="polite">
+					<output className={stateClassName} aria-live="polite">
 						{loadingLabel}
 					</output>
 				}

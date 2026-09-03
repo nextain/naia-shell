@@ -53,4 +53,21 @@ describe("LazyPanel", () => {
 		);
 		expect(screen.getByText("preserved sibling")).toBeInTheDocument();
 	});
+
+	it("uses a compact state for inline panels", () => {
+		const PendingPanel = lazy(() => new Promise<never>(() => {}));
+		const { container } = render(
+			<LazyPanel
+				component={PendingPanel}
+				renderComponent={(Panel) => <Panel />}
+				loadingLabel="Loading panel…"
+				errorLabel="Panel unavailable"
+				compact
+			/>,
+		);
+
+		expect(
+			container.querySelector(".chat-panel-state--compact"),
+		).not.toBeNull();
+	});
 });

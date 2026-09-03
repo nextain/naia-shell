@@ -4254,6 +4254,7 @@ export function ChatArea({
 						)}
 						loadingLabel={t("chat.outputStage.render")}
 						errorLabel={t("chat.error")}
+						compact
 					/>
 				)}
 

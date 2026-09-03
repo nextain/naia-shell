@@ -4772,6 +4772,10 @@ body.resizing-row {
 	text-align: center;
 }
 
+.chat-panel-state--compact {
+	flex: 0 0 auto;
+}
+
 /* History Tab */
 .history-tab {
 	flex: 1;
