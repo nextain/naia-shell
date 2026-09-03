@@ -83,6 +83,10 @@ vi.mock("../../lib/logger", () => ({
 	},
 }));
 
+// Keep the async BGM chunk pending so AppBar's layout-preserving fallback can
+// be asserted deterministically without loading the real player dependencies.
+vi.mock("../BgmPlayer", () => new Promise(() => {}));
+
 const mockPushModal = vi.fn();
 const mockPopModal = vi.fn();
 
@@ -127,6 +131,11 @@ describe("AppBar — add dialog", () => {
 	it("renders + button", () => {
 		render(<AppBar />);
 		expect(screen.getByTitle("appbar.addItem")).toBeDefined();
+	});
+
+	it("reserves the BGM player slot while its async chunk loads", () => {
+		const { container } = render(<AppBar />);
+		expect(container.querySelector(".bgm-player[aria-hidden='true']")).not.toBeNull();
 	});
 
 	it("keeps desktop, browser, workspace as the first three tabs", () => {
