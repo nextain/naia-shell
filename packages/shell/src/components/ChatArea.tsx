@@ -4207,16 +4207,16 @@ export function ChatArea({
 					<LazyPanel
 						component={LazyAgentsTab}
 						renderComponent={(Panel) => <Panel />}
-						loadingLabel={t("chat.panelLoading")}
-						errorLabel={t("chat.panelUnavailable")}
+						loadingLabel={t("chat.outputStage.render")}
+						errorLabel={t("chat.error")}
 					/>
 				)}
 				{activeTab === "diagnostics" && (
 					<LazyPanel
 						component={LazyDiagnosticsTab}
 						renderComponent={(Panel) => <Panel />}
-						loadingLabel={t("chat.panelLoading")}
-						errorLabel={t("chat.panelUnavailable")}
+						loadingLabel={t("chat.outputStage.render")}
+						errorLabel={t("chat.error")}
 					/>
 				)}
 
@@ -4225,8 +4225,8 @@ export function ChatArea({
 					<LazyPanel
 						component={LazyChannelsTab}
 						renderComponent={(Panel) => <Panel />}
-						loadingLabel={t("chat.panelLoading")}
-						errorLabel={t("chat.panelUnavailable")}
+						loadingLabel={t("chat.outputStage.render")}
+						errorLabel={t("chat.error")}
 					/>
 				)}
 
@@ -4237,8 +4237,8 @@ export function ChatArea({
 						renderComponent={(Panel) => (
 							<Panel onLoadSession={() => setActiveTab("chat")} />
 						)}
-						loadingLabel={t("chat.panelLoading")}
-						errorLabel={t("chat.panelUnavailable")}
+						loadingLabel={t("chat.outputStage.render")}
+						errorLabel={t("chat.error")}
 					/>
 				)}
 
@@ -4252,8 +4252,8 @@ export function ChatArea({
 								sessionCostEntries={sessionCostEntries}
 							/>
 						)}
-						loadingLabel={t("chat.panelLoading")}
-						errorLabel={t("chat.panelUnavailable")}
+						loadingLabel={t("chat.outputStage.render")}
+						errorLabel={t("chat.error")}
 					/>
 				)}
 

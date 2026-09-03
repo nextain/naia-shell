@@ -70,14 +70,6 @@ const codingWorkerUxTranslations = {
 		"앱 디렉터리에 index.html을 추가하면 즉시 표시됩니다.",
 		"Add index.html to the app directory to display it.",
 	),
-	"chat.panelLoading": codingWorkerText(
-		"패널을 불러오는 중…",
-		"Loading panel…",
-	),
-	"chat.panelUnavailable": codingWorkerText(
-		"패널을 열 수 없습니다. 앱을 다시 시작해 주세요.",
-		"The panel is unavailable. Restart the app to try again.",
-	),
 	"workspace.terminalProcessExited": codingWorkerText(
 		"프로세스 종료",
 		"Process exited",
