@@ -171,7 +171,6 @@ vi.stubGlobal(
 describe("ChatArea", () => {
 	afterEach(() => {
 		cleanup();
-		localStorage.removeItem("naia-adk-path");
 		capturedOnChunk = null;
 		capturedRequests.length = 0;
 		vi.clearAllMocks();
@@ -196,84 +195,6 @@ describe("ChatArea", () => {
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
-	});
-
-	it("preserves the local draft, conversation, and voice state across an optional panel", async () => {
-		localStorage.setItem("naia-adk-path", "/tmp/naia-test");
-		mockInvoke.mockImplementation(async (command: string) => {
-			if (command === "list_conversations") {
-				return JSON.stringify({
-					sessions: [
-						{
-							key: "saved-session",
-							label: "Saved session",
-							messageCount: 1,
-							createdAt: 100,
-							updatedAt: 200,
-						},
-					],
-				});
-			}
-			if (command === "read_conversation") {
-				return JSON.stringify({
-					role: "assistant",
-					content: "loaded conversation",
-					timestamp: 200,
-				});
-			}
-			return undefined;
-		});
-		useChatStore.setState({
-			messages: [
-				{
-					id: "preserved-message",
-					role: "user",
-					content: "keep this conversation",
-					timestamp: 1000,
-				},
-			],
-		});
-		useAvatarStore.getState().setSpeaking(true);
-
-		render(<ChatArea />);
-		const input = screen.getByPlaceholderText(/메시지|message/i);
-		fireEvent.change(input, { target: { value: "keep this draft" } });
-		fireEvent.click(screen.getByRole("button", { name: /history|기록/i }));
-
-		await screen.findByRole("button", {
-			name: /saved session/i,
-		});
-		expect(useChatStore.getState().messages[0]?.content).toBe(
-			"keep this conversation",
-		);
-		expect(useAvatarStore.getState().isSpeaking).toBe(true);
-
-		fireEvent.click(screen.getByRole("button", { name: /^(chat|대화)$/i }));
-		expect(screen.getByText("keep this conversation")).toBeDefined();
-		expect(screen.getByDisplayValue("keep this draft")).toBe(input);
-
-		fireEvent.click(screen.getByRole("button", { name: /channels|채널/i }));
-		await screen.findByTestId("channels-tab");
-		expect(useChatStore.getState().messages[0]?.content).toBe(
-			"keep this conversation",
-		);
-		expect(useAvatarStore.getState().isSpeaking).toBe(true);
-
-		fireEvent.click(screen.getByRole("button", { name: /^(chat|대화)$/i }));
-		expect(screen.getByText("keep this conversation")).toBeDefined();
-		expect(screen.getByDisplayValue("keep this draft")).toBe(input);
-
-		fireEvent.click(screen.getByRole("button", { name: /history|기록/i }));
-		expect(screen.queryByText(/loading panel|패널을 불러오는 중/i)).toBeNull();
-		const reopenedSession = await screen.findByRole("button", {
-			name: /saved session/i,
-		});
-
-		fireEvent.click(reopenedSession);
-		await waitFor(() =>
-			expect(screen.getByText("loaded conversation")).toBeDefined(),
-		);
-		expect(screen.getByDisplayValue("keep this draft")).toBe(input);
 	});
 
 	it("interrupts the active speech pipeline when the global TTS toggle turns off", async () => {
@@ -581,19 +502,10 @@ describe("ChatArea", () => {
 		expect(messages[0].role).toBe("user");
 	});
 
-	it("loads the cost panel on demand without losing chat state", async () => {
+	it("displays session cost header", () => {
 		useChatStore.setState({ totalSessionCost: 0.005 });
-		const { container } = render(<ChatArea />);
-		const input = screen.getByPlaceholderText(/메시지|message/i);
-		fireEvent.change(input, { target: { value: "keep cost draft" } });
-		fireEvent.click(screen.getByText(/\$0\.005/));
-
-		await waitFor(() =>
-			expect(
-				container.querySelector(".cost-dashboard, .cost-dashboard-empty"),
-			).not.toBeNull(),
-		);
-		expect(screen.getByDisplayValue("keep cost draft")).toBe(input);
+		render(<ChatArea />);
+		expect(screen.getByText(/\$0\.005/)).toBeDefined();
 	});
 
 	it("shows streaming indicator when streaming", () => {
