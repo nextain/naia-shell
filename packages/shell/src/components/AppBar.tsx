@@ -1,6 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	type MouseEvent,
+	Suspense,
+	lazy,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -8,6 +10,9 @@ import {
 	useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { getBridgeForApp } from "../lib/active-bridge";
+import { removeInstalledApp } from "../lib/app-loader";
+import { appRegistry } from "../lib/app-registry";
 import {
 	type BrowserLink,
 	addBrowserShortcut,
@@ -20,11 +25,14 @@ import {
 import { NAIA_WEB_BASE_URL, loadConfig, saveConfig } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
-import { getBridgeForApp } from "../lib/active-bridge";
-import { removeInstalledApp } from "../lib/app-loader";
-import { appRegistry } from "../lib/app-registry";
 import { useAppStore } from "../stores/app";
-import { BgmPlayer } from "./BgmPlayer";
+import { ErrorBoundary } from "./ErrorBoundary";
+
+const BgmPlayer = lazy(() =>
+	import("./BgmPlayer").then(({ BgmPlayer: Component }) => ({
+		default: Component,
+	})),
+);
 
 // BGM player lives in the always-on app-bar (not a switchable app), so it
 // needs its own persistent bridge to push BGM context (favorites, current
@@ -737,7 +745,14 @@ export function AppBar({ onAddApp }: AppBarProps) {
 					document.body,
 				)}
 			{/* ── BGM (right side of app-bar) ─── */}
-			<BgmPlayer naia={bgmBridge} />
+			<ErrorBoundary
+				scope="AppBar(BgmPlayer)"
+				fallback={<div className="bgm-player" aria-hidden="true" />}
+			>
+				<Suspense fallback={<div className="bgm-player" aria-hidden="true" />}>
+					<BgmPlayer naia={bgmBridge} />
+				</Suspense>
+			</ErrorBoundary>
 			<button
 				type="button"
 				className={`app-bar-settings${activeApp === "settings" ? " app-bar-settings--active" : ""}`}

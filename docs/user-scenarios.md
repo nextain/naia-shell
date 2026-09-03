@@ -1532,6 +1532,7 @@ Test Coverage Map (P02):
 - CI는 초기 진입 JS의 raw/gzip 크기와 전체 배포 디렉터리 크기를 재고, 예산을 넘으면 실패하면서 기계 판독 가능한 보고서를 남긴다.
 - 기본 대화 탭으로 시작할 때 사용자가 실제로 여는 기록·채널·비용 패널의 전용 코드는 초기 진입 JS에서 분리되고, 해당 패널을 처음 열 때 내려받는다(공유 의존성은 초기 청크에 남을 수 있다). 패널을 전환해도 대화·음성 상태와 입력 초안은 그대로 유지하며, 같은 패널을 다시 열 때는 이미 해석된 lazy 모듈을 재사용한다.
 - 선택 패널의 로드·렌더가 실패하면 오류는 해당 패널 안에만 표시되어 나머지 셸은 유지된다. 브라우저가 거부된 모듈 URL을 캐시할 수 있으므로 셸 안에서 재시도한다고 약속하지 않고 앱 재시작을 안내한다.
+- 앱 바의 BGM 플레이어는 별도 청크로 비동기 로드되며, 로드 중에도 플레이어 폭을 미리 확보해 주변 앱 탭과 설정 버튼이 이동하지 않는다.
 
 Test Coverage Map (P02):
 
@@ -1542,3 +1543,4 @@ Test Coverage Map (P02):
 | UC-PERF-BUNDLE-BUDGET | vitest `packages/shell/scripts/__tests__/check-bundle-budget.test.mjs` | 진입점 탐색, raw/gzip/전체 크기, 예산 초과 fail-closed, JSON 보고서 |
 | UC-PERF-BUNDLE-BUDGET | production build + CI artifact | 초기 번들에서 Mermaid 분리 및 예산 보고서 보존 |
 | UC-PERF-BUNDLE-BUDGET | vitest `packages/shell/src/components/__tests__/LazyPanel.test.tsx`, `ChatArea.test.tsx` + production build | 선택 패널 지연 로드·접근 가능한 로딩 상태·오류 격리, 기본 대화 상태 보존, 초기 진입 청크 분리 |
+| UC-PERF-BUNDLE-BUDGET | vitest `packages/shell/src/components/__tests__/AppBar.test.tsx` + production build | 앱 바 기능 회귀와 BGM 플레이어 비동기 청크·고정 폭 로딩 자리표시자 |
