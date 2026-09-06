@@ -1654,6 +1654,21 @@ fn debug_e2e_enabled() -> bool {
 }
 
 #[cfg(feature = "webdriver-e2e")]
+fn valid_e2e_dev_url(raw: &str) -> Option<url::Url> {
+    let parsed = url::Url::parse(raw.trim()).ok()?;
+    if parsed.scheme() != "http" || !parsed.username().is_empty() || parsed.password().is_some() {
+        return None;
+    }
+    let loopback = match parsed.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(host)) => host == std::net::Ipv4Addr::LOCALHOST,
+        Some(url::Host::Ipv6(host)) => host == std::net::Ipv6Addr::LOCALHOST,
+        None => false,
+    };
+    loopback.then_some(parsed)
+}
+
+#[cfg(feature = "webdriver-e2e")]
 #[tauri::command]
 fn e2e_emit_bgm_event(
     app: tauri::AppHandle,
@@ -12130,7 +12145,15 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     }
     #[cfg(feature = "webdriver-e2e")]
-    let context = tauri::generate_context!("tauri.e2e.conf.json");
+    let mut context = tauri::generate_context!("tauri.e2e.conf.json");
+    #[cfg(feature = "webdriver-e2e")]
+    if debug_e2e_enabled() {
+        if let Ok(raw) = std::env::var("NAIA_E2E_DEV_URL") {
+            if let Some(dev_url) = valid_e2e_dev_url(&raw) {
+                context.config_mut().build.dev_url = Some(dev_url);
+            }
+        }
+    }
     #[cfg(not(feature = "webdriver-e2e"))]
     let context = tauri::generate_context!();
 
@@ -15492,6 +15515,27 @@ mod tests {
         assert!(!debug_e2e_flags_enabled(None, Some("1")));
         assert!(debug_e2e_flags_enabled(Some("1"), Some("1")));
         assert!(debug_e2e_flags_enabled(Some("true"), Some("1")));
+    }
+
+    #[cfg(feature = "webdriver-e2e")]
+    #[test]
+    fn e2e_dev_url_accepts_only_http_loopback_urls() {
+        for raw in [
+            "http://127.0.0.1:1420",
+            "http://localhost:5173/app",
+            "http://[::1]:4173/",
+        ] {
+            assert!(valid_e2e_dev_url(raw).is_some(), "expected loopback URL: {raw}");
+        }
+        for raw in [
+            "https://127.0.0.1:1420",
+            "http://0.0.0.0:1420",
+            "http://127.0.0.1.evil.test:1420",
+            "http://attacker.example.test:1420",
+            "not a URL",
+        ] {
+            assert!(valid_e2e_dev_url(raw).is_none(), "accepted invalid URL: {raw}");
+        }
     }
 
     #[test]
