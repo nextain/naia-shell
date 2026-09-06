@@ -23,7 +23,6 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_deep_link::DeepLinkExt;
-use tauri_plugin_store::StoreExt;
 
 const WORKSPACE_OPEN_FILE_EVENT: &str = "workspace-open-file-request";
 
@@ -1701,11 +1700,7 @@ fn e2e_seed_secure_naia_key(app: tauri::AppHandle, naia_key: String) -> Result<(
     if !is_valid_gateway_key(&naia_key) {
         return Err("invalid e2e Naia key".to_string());
     }
-    let store_path = std::env::var("NAIA_E2E_SECURE_STORE_FILE")
-        .map_err(|_| "isolated e2e secure store is not configured".to_string())?;
-    let store = app.store(store_path).map_err(|error| error.to_string())?;
-    store.set("naiaKey", serde_json::Value::String(naia_key));
-    store.save().map_err(|error| error.to_string())?;
+    secure_store_set_current("naiaKey", &naia_key)?;
     if !cascade_has_naia_credential(&app) {
         return Err("e2e Naia key was not visible to the native member gate".to_string());
     }
@@ -6047,19 +6042,10 @@ fn directory_has_compiled_module(
         })
 }
 
-pub(crate) fn read_secure_naia_credential(app: &tauri::AppHandle) -> Option<String> {
-    let store_path = if debug_e2e_enabled() {
-        std::env::var("NAIA_E2E_SECURE_STORE_FILE")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "secure-keys.dat".to_string())
-    } else {
-        "secure-keys.dat".to_string()
-    };
-    app.store(store_path)
+pub(crate) fn read_secure_naia_credential(_app: &tauri::AppHandle) -> Option<String> {
+    secure_store_get_current("naiaKey")
         .ok()
-        .and_then(|store| store.get("naiaKey"))
-        .and_then(|value| value.as_str().map(str::to_string))
+        .flatten()
         .filter(|value| is_valid_gateway_key(value))
 }
 
@@ -7715,6 +7701,217 @@ fn current_adk_path() -> Result<String, String> {
     }
 }
 
+const SECURE_STORE_DIR: &str = "data-private";
+const SECURE_STORE_FILE: &str = "secure-keys.dat";
+const SECURE_STORE_TEMP_DIR: &str = ".secure-keys-tmp";
+const SECURE_STORE_KEYS: &[&str] = &[
+    "apiKey",
+    "googleApiKey",
+    "openaiTtsApiKey",
+    "elevenlabsApiKey",
+    "naiaKey",
+    "gatewayToken",
+    "openaiRealtimeApiKey",
+    "subLlmApiKey",
+    "memoryLlmApiKey",
+    "memoryEmbeddingApiKey",
+    "qdrantApiKey",
+];
+static SECURE_STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn secure_store_lock() -> &'static Mutex<()> {
+    SECURE_STORE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn secure_store_key_allowed(name: &str) -> bool {
+    (SECURE_STORE_KEYS.contains(&name) || name == "labKey")
+        || (name.len() <= 512
+            && name
+                .strip_prefix("app:")
+                .is_some_and(|suffix| {
+                    !suffix.is_empty()
+                        && !suffix.chars().any(|character| {
+                            character.is_control() || character == '/' || character == '\\'
+                        })
+                }))
+}
+
+fn secure_store_path_for_adk(adk_path: &str) -> Result<std::path::PathBuf, String> {
+    let adk_path = adk_path.trim();
+    if adk_path.is_empty() {
+        return Err("adk_path_unavailable".to_string());
+    }
+    let root = std::path::Path::new(adk_path);
+    if !root.is_absolute() {
+        return Err("adk_path_must_be_absolute".to_string());
+    }
+    Ok(root.join(SECURE_STORE_DIR).join(SECURE_STORE_FILE))
+}
+
+fn current_secure_store_path() -> Result<std::path::PathBuf, String> {
+    secure_store_path_for_adk(&current_adk_path()?)
+}
+
+fn secure_store_expected_path_matches(
+    expected_store_path: Option<&str>,
+    current_path: &std::path::Path,
+) -> Result<(), String> {
+    if let Some(expected_store_path) = expected_store_path {
+        if std::path::Path::new(expected_store_path.trim()) != current_path {
+            return Err("secure_store_adk_changed".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn secure_store_operation_path(
+    expected_store_path: Option<&str>,
+) -> Result<(std::sync::MutexGuard<'static, ()>, std::path::PathBuf), String> {
+    // Capture and validate the path before waiting on the shared operation lock. The
+    // caller's expectedStorePath prevents a JS read-modify-write sequence that began
+    // on ADK A from being silently redirected to ADK B while it was awaiting another
+    // command. Re-check after locking as the selected ADK can change while waiting.
+    let path = current_secure_store_path()?;
+    secure_store_expected_path_matches(expected_store_path, &path)?;
+    let guard = secure_store_lock()
+        .lock()
+        .map_err(|_| "secure_store_busy".to_string())?;
+    if current_secure_store_path()? != path {
+        return Err("secure_store_adk_changed".to_string());
+    }
+    Ok((guard, path))
+}
+
+fn read_secure_store_map(
+    path: &std::path::Path,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Default::default()),
+        Err(_) => return Err("secure_store_read_failed".to_string()),
+    };
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "secure_store_invalid_json".to_string())?;
+    value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| "secure_store_invalid_object".to_string())
+}
+
+fn secure_store_get_at_path(
+    path: &std::path::Path,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let map = read_secure_store_map(path)?;
+    let Some(value) = map.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(str::to_string)
+        .map(Some)
+        .ok_or_else(|| "secure_store_value_invalid".to_string())
+}
+
+fn secure_store_set_at_path(
+    path: &std::path::Path,
+    name: &str,
+    value: &str,
+) -> Result<(), String> {
+    let mut map = read_secure_store_map(path)?;
+    map.insert(
+        name.to_string(),
+        serde_json::Value::String(value.to_string()),
+    );
+    let bytes = serde_json::to_vec(&serde_json::Value::Object(map))
+        .map_err(|_| "secure_store_encode_failed".to_string())?;
+    write_secure_store_atomic(path, &bytes)
+}
+
+fn secure_store_delete_at_path(path: &std::path::Path, name: &str) -> Result<(), String> {
+    let mut map = read_secure_store_map(path)?;
+    if map.remove(name).is_none() {
+        return Ok(());
+    }
+    let bytes = serde_json::to_vec(&serde_json::Value::Object(map))
+        .map_err(|_| "secure_store_encode_failed".to_string())?;
+    write_secure_store_atomic(path, &bytes)
+}
+
+fn secure_store_get_current_with_expected(
+    name: &str,
+    expected_store_path: Option<&str>,
+) -> Result<Option<String>, String> {
+    if !secure_store_key_allowed(name) {
+        return Err("secure_store_key_not_allowed".to_string());
+    }
+    let (_guard, path) = secure_store_operation_path(expected_store_path)?;
+    secure_store_get_at_path(&path, name)
+}
+
+fn secure_store_get_current(name: &str) -> Result<Option<String>, String> {
+    secure_store_get_current_with_expected(name, None)
+}
+
+fn secure_store_set_current_with_expected(
+    name: &str,
+    value: &str,
+    expected_store_path: Option<&str>,
+) -> Result<(), String> {
+    if !secure_store_key_allowed(name) {
+        return Err("secure_store_key_not_allowed".to_string());
+    }
+    let (_guard, path) = secure_store_operation_path(expected_store_path)?;
+    secure_store_set_at_path(&path, name, value)
+}
+
+fn secure_store_set_current(name: &str, value: &str) -> Result<(), String> {
+    secure_store_set_current_with_expected(name, value, None)
+}
+
+fn secure_store_delete_current_with_expected(
+    name: &str,
+    expected_store_path: Option<&str>,
+) -> Result<(), String> {
+    if !secure_store_key_allowed(name) {
+        return Err("secure_store_key_not_allowed".to_string());
+    }
+    let (_guard, path) = secure_store_operation_path(expected_store_path)?;
+    secure_store_delete_at_path(&path, name)
+}
+
+fn secure_store_delete_current(name: &str) -> Result<(), String> {
+    secure_store_delete_current_with_expected(name, None)
+}
+
+/// Read one secret from the selected ADK's private store.
+#[tauri::command]
+fn secure_store_get(
+    name: String,
+    expected_store_path: Option<String>,
+) -> Result<Option<String>, String> {
+    secure_store_get_current_with_expected(&name, expected_store_path.as_deref())
+}
+
+/// Write one secret to the selected ADK's private store atomically.
+#[tauri::command]
+fn secure_store_set(
+    name: String,
+    value: String,
+    expected_store_path: Option<String>,
+) -> Result<(), String> {
+    secure_store_set_current_with_expected(&name, &value, expected_store_path.as_deref())
+}
+
+/// Remove one secret from the selected ADK's private store.
+#[tauri::command]
+fn secure_store_delete(
+    name: String,
+    expected_store_path: Option<String>,
+) -> Result<(), String> {
+    secure_store_delete_current_with_expected(&name, expected_store_path.as_deref())
+}
+
 fn trim_secret_newline(value: &mut zeroize::Zeroizing<Vec<u8>>) {
     while matches!(value.last(), Some(b'\n' | b'\r')) {
         value.pop();
@@ -8997,12 +9194,24 @@ async fn discord_set_last_binding(
 }
 
 fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "discord_config_path_invalid".to_string())?;
+    write_owner_only_atomic_in(path, bytes, parent)
+}
+
+fn write_owner_only_atomic_in(
+    path: &std::path::Path,
+    bytes: &[u8],
+    temp_dir: &std::path::Path,
+) -> Result<(), String> {
     use std::io::Write;
     let parent = path
         .parent()
         .ok_or_else(|| "discord_config_path_invalid".to_string())?;
     std::fs::create_dir_all(parent).map_err(|_| "discord_config_write_failed".to_string())?;
-    let mut file = tempfile::NamedTempFile::new_in(parent)
+    std::fs::create_dir_all(temp_dir).map_err(|_| "discord_config_write_failed".to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(temp_dir)
         .map_err(|_| "discord_config_write_failed".to_string())?;
     #[cfg(unix)]
     {
@@ -9035,6 +9244,29 @@ fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), S
         let _ = directory.sync_all();
     }
     Ok(())
+}
+
+fn write_secure_store_atomic(
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "secure_store_write_failed".to_string())?;
+    let temp_dir = parent.join(SECURE_STORE_TEMP_DIR);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(&temp_dir)
+            .map_err(|_| "secure_store_write_failed".to_string())?;
+        std::fs::set_permissions(&temp_dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|_| "secure_store_write_failed".to_string())?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|_| "secure_store_write_failed".to_string())?;
+    write_owner_only_atomic_in(path, bytes, &temp_dir)
+        .map_err(|_| "secure_store_write_failed".to_string())
 }
 
 fn activate_discord_binding_update<V, W, R>(
@@ -11529,6 +11761,33 @@ async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> 
             "[copy_bundled_assets] asset scope extend failed for {adk_path}: {e}"
         ));
     }
+    // The broad ADK grant is needed for user and installed-app assets. Keep the
+    // credential file itself outside asset:// without blocking app runtime files
+    // under the same data-private directory.
+    let secure_store_path = std::path::Path::new(&adk_path)
+        .join(SECURE_STORE_DIR)
+        .join(SECURE_STORE_FILE);
+    if let Err(e) = app_handle
+        .asset_protocol_scope()
+        .forbid_file(&secure_store_path)
+    {
+        log_verbose(&format!(
+            "[copy_bundled_assets] secure store asset scope forbid failed for {}: {e}",
+            secure_store_path.display()
+        ));
+    }
+    let secure_store_temp_path = std::path::Path::new(&adk_path)
+        .join(SECURE_STORE_DIR)
+        .join(SECURE_STORE_TEMP_DIR);
+    if let Err(e) = app_handle
+        .asset_protocol_scope()
+        .forbid_directory(&secure_store_temp_path, true)
+    {
+        log_verbose(&format!(
+            "[copy_bundled_assets] secure store temp scope forbid failed for {}: {e}",
+            secure_store_temp_path.display()
+        ));
+    }
     Ok(())
 }
 
@@ -11984,6 +12243,9 @@ pub fn run() {
             resume_coding_job,
             write_agent_key,
             agent_key_exists,
+            secure_store_get,
+            secure_store_set,
+            secure_store_delete,
             check_naia_settings,
             inspect_adk_dir,
             init_naia_settings,
@@ -12539,6 +12801,98 @@ mod tests {
     fn write_test_file(path: &std::path::Path) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, b"fixture").unwrap();
+    }
+
+    #[test]
+    fn secure_store_round_trip_preserves_entries_in_selected_adk_private_file() {
+        let adk = tempfile::tempdir().unwrap();
+        let path = secure_store_path_for_adk(adk.path().to_str().unwrap()).unwrap();
+
+        secure_store_set_at_path(&path, "naiaKey", "naia-test-key").unwrap();
+        secure_store_set_at_path(&path, "app:slides:token", "app-secret").unwrap();
+
+        assert_eq!(
+            secure_store_get_at_path(&path, "naiaKey").unwrap().as_deref(),
+            Some("naia-test-key")
+        );
+        assert_eq!(
+            secure_store_get_at_path(&path, "app:slides:token")
+                .unwrap()
+                .as_deref(),
+            Some("app-secret")
+        );
+        assert_eq!(secure_store_get_at_path(&path, "missing").unwrap(), None);
+        assert_eq!(path, adk.path().join("data-private").join("secure-keys.dat"));
+
+        secure_store_delete_at_path(&path, "naiaKey").unwrap();
+        assert_eq!(secure_store_get_at_path(&path, "naiaKey").unwrap(), None);
+        assert_eq!(
+            secure_store_get_at_path(&path, "app:slides:token")
+                .unwrap()
+                .as_deref(),
+            Some("app-secret")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
+
+    #[test]
+    fn secure_store_rejects_unapproved_keys_and_relative_adk_paths() {
+        assert!(!secure_store_key_allowed("password"));
+        assert!(!secure_store_key_allowed("app:"));
+        assert!(!secure_store_key_allowed("app:slides/escape"));
+        assert!(secure_store_key_allowed("app:slides:token"));
+        assert!(secure_store_key_allowed("naiaKey"));
+        assert_eq!(
+            secure_store_path_for_adk("relative-adk").unwrap_err(),
+            "adk_path_must_be_absolute"
+        );
+    }
+
+    #[test]
+    fn secure_store_rejects_a_stale_selected_adk_path() {
+        let adk = tempfile::tempdir().unwrap();
+        let current = secure_store_path_for_adk(adk.path().to_str().unwrap()).unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let other_path = secure_store_path_for_adk(other.path().to_str().unwrap()).unwrap();
+
+        assert!(secure_store_expected_path_matches(None, &current).is_ok());
+        assert!(secure_store_expected_path_matches(
+            Some(current.to_str().unwrap()),
+            &current
+        )
+        .is_ok());
+        assert_eq!(
+            secure_store_expected_path_matches(Some(other_path.to_str().unwrap()), &current)
+                .unwrap_err(),
+            "secure_store_adk_changed"
+        );
+    }
+
+    #[test]
+    fn secure_store_rejects_malformed_or_non_object_files() {
+        let adk = tempfile::tempdir().unwrap();
+        let path = secure_store_path_for_adk(adk.path().to_str().unwrap()).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        std::fs::write(&path, b"not-json").unwrap();
+        assert_eq!(
+            secure_store_get_at_path(&path, "naiaKey").unwrap_err(),
+            "secure_store_invalid_json"
+        );
+
+        std::fs::write(&path, b"[]").unwrap();
+        assert_eq!(
+            secure_store_get_at_path(&path, "naiaKey").unwrap_err(),
+            "secure_store_invalid_object"
+        );
     }
 
     #[test]
