@@ -653,11 +653,9 @@ export async function loadConfigWithSecrets(): Promise<AppConfig | null> {
 
 /**
  * Save sensitive fields to the selected ADK store and the public config cache.
- *
- * #329 (B) hygiene: provider="nextain" relies solely on `naiaKey`. Any
- * stale `apiKey` from an earlier direct-provider session would collide
- * with `naiaKey` via the secret IPC race (see L059). Delete it actively
- * so the secure store stays clean and the agent only sees one source.
+ * Provider-specific agent wiring decides which stored credential is used;
+ * changing providers must not erase credentials needed when the user returns
+ * to a previous provider.
  */
 export async function saveConfigSecure(config: AppConfig): Promise<void> {
 	const publicConfig = { ...config };
@@ -683,13 +681,6 @@ export async function saveConfigSecure(config: AppConfig): Promise<void> {
 		}
 		assertSelectedAdkPath(securePath, "Saving configuration");
 		(publicConfig as any)[key] = undefined;
-	}
-
-	// #329 (B) — purge collision-causing stale fields per provider.
-	if (config.provider === "nextain") {
-		if (securePath) {
-			await deleteSecretKeyAtPath("apiKey", securePath);
-		}
 	}
 
 	// Keep the ordinary config-change contract: Settings/App listeners must see

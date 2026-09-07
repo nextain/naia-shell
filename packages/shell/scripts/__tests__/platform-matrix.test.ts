@@ -261,8 +261,13 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(stage).not.toContain("../../../naia-omni-cascade");
 	});
 
-	it("starts and cleans up only the standalone VoxCPM2 module", () => {
+	it("uses one shared VoxCPM2 runner with platform cleanup wiring", () => {
 		const rust = readFileSync(resolve(SHELL, "src-tauri/src/lib.rs"), "utf8");
+		const platformFacade = readFileSync(
+			resolve(SHELL, "src-tauri/src/platform/mod.rs"),
+			"utf8",
+		);
+		expect(rust).toContain("fn spawn_voxcpm2(");
 		expect(rust).toContain(
 			'"from voxcpm2_tensorrt.http_server import main; main()"',
 		);
@@ -276,12 +281,19 @@ describe("platform-matrix 스키마 (FR-INSTALL.1)", () => {
 		expect(rust).toContain('.env("PYTHONUTF8", "1")');
 		expect(rust).toContain('.env("PYTHONIOENCODING", "utf-8")');
 		expect(rust).toContain('.env("PYTHONDONTWRITEBYTECODE", "1")');
+		expect(rust).toContain("spawn_voxcpm2(&bundle_root, naia_key.as_str()");
+		expect(
+			rust.match(/platform::kill_stale_voxcpm2\(\);/g)?.length ?? 0,
+		).toBeGreaterThanOrEqual(3);
 		for (const platform of ["windows", "linux", "macos"]) {
 			const source = readFileSync(
 				resolve(SHELL, `src-tauri/src/platform/${platform}.rs`),
 				"utf8",
 			);
-			expect(source).toContain("voxcpm2_tensorrt.http_server");
+			expect(platformFacade).toContain(`mod ${platform};`);
+			expect(platformFacade).toContain(`pub(crate) use ${platform}::*;`);
+			expect(source).toContain("pub(crate) fn kill_stale_voxcpm2()");
+			expect(source).toContain("Skipping global VoxCPM2 process matching");
 		}
 	});
 
@@ -980,6 +992,43 @@ describe("installer workflow integration contracts", () => {
 		expect(workflow).toContain("append-signature: true");
 		expect(workflow).toContain("tauri bundle --verbose");
 		expect(workflow).toContain("--config src-tauri/tauri.conf.generated.json");
+	});
+
+	it("separates the macOS app build from bundling and preserves the payload after a bundle failure", () => {
+		const buildMarker =
+			"      - name: Build installer bundle from platform matrix\n";
+		const bundleMarker =
+			"      - name: Bundle macOS application from preserved app build\n";
+		const preserveMarker =
+			"      - name: Preserve macOS outputs after bundle attempt\n";
+		const section = (marker: string) => {
+			const start = workflow.indexOf(marker);
+			expect(start).toBeGreaterThan(-1);
+			const end = workflow.indexOf("\n      - name:", start + marker.length);
+			return workflow.slice(start, end === -1 ? workflow.length : end);
+		};
+		const build = section(buildMarker);
+		const bundle = section(bundleMarker);
+		const preserve = section(preserveMarker);
+
+		expect(build).toContain(
+			"NAIA_TAURI_NO_BUNDLE: ${{ (matrix.platform == 'win32' || matrix.platform == 'darwin') && '1' || '0' }}",
+		);
+		expect(bundle).toContain("if: matrix.platform == 'darwin'");
+		expect(bundle).toContain("tauri bundle --verbose");
+		expect(bundle).toContain("--config src-tauri/tauri.conf.generated.json");
+		expect(bundle).not.toContain("tauri:build:bundle");
+		expect(bundle).not.toMatch(/\btauri build\b/);
+		expect(preserve).toContain("if: always() && matrix.platform == 'darwin'");
+		expect(preserve).toContain("target/release/naia-shell");
+		expect(preserve).toContain("target/release/bundle/macos");
+		expect(preserve).toContain("if-no-files-found: warn");
+		expect(workflow.indexOf(buildMarker)).toBeLessThan(
+			workflow.indexOf(bundleMarker),
+		);
+		expect(workflow.indexOf(bundleMarker)).toBeLessThan(
+			workflow.indexOf(preserveMarker),
+		);
 	});
 
 	it("builds a directly launchable Steam depot without the NSIS uninstaller", () => {

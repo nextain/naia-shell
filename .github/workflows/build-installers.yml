@@ -170,8 +170,25 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ matrix.platform == 'win32' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ matrix.platform == 'win32' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-          NAIA_TAURI_NO_BUNDLE: ${{ matrix.platform == 'win32' && '1' || '0' }}
+          NAIA_TAURI_NO_BUNDLE: ${{ (matrix.platform == 'win32' || matrix.platform == 'darwin') && '1' || '0' }}
         run: pnpm -C packages/shell run tauri:build:bundle
+
+      - name: Bundle macOS application from preserved app build
+        if: matrix.platform == 'darwin'
+        run: >-
+          pnpm -C packages/shell exec tauri bundle --verbose
+          --config src-tauri/tauri.conf.generated.json
+
+      - name: Preserve macOS outputs after bundle attempt
+        if: always() && matrix.platform == 'darwin'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: naia-shell-macos-bundle-input-${{ matrix.artifact }}-${{ github.run_id }}
+          path: |
+            packages/shell/src-tauri/target/release/naia-shell
+            packages/shell/src-tauri/target/release/bundle/macos
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Authenticate to Azure for Artifact Signing
         if: matrix.platform == 'win32'
