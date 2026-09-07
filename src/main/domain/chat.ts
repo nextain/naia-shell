@@ -246,6 +246,8 @@ export interface CredsUpdate {
   readonly kind: "credsUpdate";
   readonly provider: string;
   readonly secret: { readonly apiKey?: string; readonly naiaKey?: string };
+  /** Captured ADK source for live shell sends; never serialized into agent wire. */
+  readonly adkPath?: string | null;
 }
 
 export type DomainOutbound = ChatRequest | CancelTurn | ApprovalResponseIntent | CredsUpdate;

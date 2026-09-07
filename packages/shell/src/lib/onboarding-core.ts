@@ -27,6 +27,14 @@ import {
 // 셸 AppConfig(특정 타입) ↔ core LiveDeps(Record<string,unknown>) 경계 어댑트 — 직교 유지(core 는 셸 타입 무지).
 type FlatConfig = Record<string, unknown>;
 
+/**
+ * A callback captures the ADK that initiated OAuth before its first await.
+ * Core's credential writer reads f0.getAdkPath(), so keep that lookup bound to
+ * the callback while the controller is persisting the credential.  The scope
+ * is request-local and is restored even when core rejects the callback.
+ */
+type AdkPathScope = { active: boolean; path: string | null };
+
 /** 단계 전이로 graft 가 셸에 노출하는 자산 참조(셸은 path 에서 UI URL 전략 재유도).
  *  type 은 core 포트 AssetRef 와 동일(image|video) — 셸은 path 만 읽음(url/type 미사용). */
 export interface CoreAssetRef {
@@ -37,7 +45,7 @@ export interface CoreAssetRef {
 }
 
 // 셸 함수 주입 묶음(completeWith 와 session 이 공유 — 동일 deps 구성).
-function buildDeps() {
+function buildDeps(scope: AdkPathScope) {
 	return {
 		f0: {
 			invoke,
@@ -45,7 +53,7 @@ function buildDeps() {
 			saveConfig: (c: FlatConfig) => saveConfig(c as unknown as AppConfig),
 			loadConfigWithSecrets: async () =>
 				(await loadConfigWithSecrets()) as FlatConfig | null,
-			getAdkPath,
+			getAdkPath: () => (scope.active ? scope.path : getAdkPath()),
 			setAdkPath,
 			isOnboardingComplete,
 		},
@@ -68,20 +76,45 @@ export interface OnboardingSession {
 	/** 단계 input 적용 + 전이. 반환 step = 전이 후(게이트 차단 시 동일 step). */
 	submit(input: StepInput): Promise<{ step: string }>;
 	/** naia OAuth callback 의 core 반영(naiaLoginDone=게이트해제 + 키체인). idempotent. */
-	onNaiaAuthCallback(naiaKey: string): Promise<{ step: string }>;
+	onNaiaAuthCallback(
+		naiaKey: string,
+		adkPath?: string | null,
+	): Promise<{ step: string }>;
 	currentStep(): string;
 	/** §D — 셸 snapshot(flat) 으로 완료 영속(secret=키체인 전담, markComplete). */
 	completeWith(flat: FlatConfig): Promise<void>;
 }
 
 export function makeOnboardingSession(): OnboardingSession {
-	const ctrl = makeShellOnboarding(buildDeps());
+	const scope: AdkPathScope = { active: false, path: null };
+	const ctrl = makeShellOnboarding(buildDeps(scope));
+	// The core controller owns one dependency object, so serialize callbacks
+	// before temporarily binding its ADK lookup.  This keeps the scope
+	// request-local even when two OAuth completions overlap an ADK switch.
+	let callbackTail: Promise<void> = Promise.resolve();
 	return {
 		assets: (kind) => ctrl.assets(kind) as Promise<readonly CoreAssetRef[]>,
 		submit: async (input) => ({ step: (await ctrl.submit(input)).step }),
-		onNaiaAuthCallback: async (naiaKey) => ({
-			step: (await ctrl.onNaiaAuthCallback({ naiaKey })).step,
-		}),
+		onNaiaAuthCallback: (naiaKey, adkPath) => {
+			const operation = callbackTail.then(async () => {
+				const previous = { ...scope };
+				if (adkPath !== undefined) {
+					scope.active = true;
+					scope.path = adkPath;
+				}
+				try {
+					return { step: (await ctrl.onNaiaAuthCallback({ naiaKey })).step };
+				} finally {
+					scope.active = previous.active;
+					scope.path = previous.path;
+				}
+			});
+			callbackTail = operation.then(
+				() => undefined,
+				() => undefined,
+			);
+			return operation;
+		},
 		currentStep: () => ctrl.current().step,
 		completeWith: (flat) => ctrl.completeWith(toNaiaConfig(flat)),
 	};

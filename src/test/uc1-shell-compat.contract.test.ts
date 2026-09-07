@@ -99,4 +99,14 @@ describe("makeShellChatService (drop-in seam)", () => {
     const msg = JSON.parse(invokes[0]!.args["message"] as string);
     expect(msg.type).toBe("creds_update"); expect(msg.apiKey).toBe("sk-x");
   });
+  it("sendCredsUpdate: captured ADK travels in invoke envelope, never agent wire", async () => {
+    const { live, invokes } = mockTauri();
+    const svc = makeShellChatService({ live });
+    await svc.sendCredsUpdate({ provider: "openai", apiKey: "sk-x", adkPath: "/adk/a" });
+    expect(invokes[0]!.args["adkPath"]).toBe("/adk/a");
+    const msg = JSON.parse(invokes[0]!.args["message"] as string);
+    expect(msg.type).toBe("creds_update");
+    expect(msg.apiKey).toBe("sk-x");
+    expect(msg.adkPath).toBeUndefined();
+  });
 });

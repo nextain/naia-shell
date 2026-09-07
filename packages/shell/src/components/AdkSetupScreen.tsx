@@ -197,6 +197,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 							);
 						}
 						await invoke("store_startup_message", {
+							adkPath,
 							message: JSON.stringify({
 								type: "auth_update",
 								naiaKey: event.payload.naiaKey,

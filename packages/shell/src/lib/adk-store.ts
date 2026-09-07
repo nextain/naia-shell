@@ -511,6 +511,22 @@ export async function writeAgentKeyStrict(
 	value: string,
 ): Promise<void> {
 	const adkPath = getAdkPath();
+	return writeAgentKeyStrictAtPath(provider, keyField, value, adkPath);
+}
+
+/**
+ * Persist a provider credential to a previously captured ADK.
+ *
+ * OAuth callbacks can yield after the user switches workspaces.  The caller
+ * captures this path before its first await and native code rejects a changed
+ * workspace instead of writing the callback credential into the new ADK.
+ */
+export async function writeAgentKeyStrictAtPath(
+	provider: string,
+	keyField: "apiKey" | "naiaKey",
+	value: string,
+	adkPath: string | null,
+): Promise<void> {
 	if (!adkPath) throw new Error("ADK path is not configured");
 	if (!value) throw new Error("Agent credential is empty");
 	const envKey = resolveAgentEnvKey(provider, keyField);
@@ -529,6 +545,15 @@ export async function writeAgentSecret(
 	value: string,
 ): Promise<void> {
 	const adkPath = getAdkPath();
+	return writeAgentSecretAtPath(envKey, value, adkPath);
+}
+
+/** Persist a non-provider secret to a captured ADK, rejecting a changed path. */
+export async function writeAgentSecretAtPath(
+	envKey: string,
+	value: string,
+	adkPath: string | null,
+): Promise<void> {
 	if (!adkPath || !value) return;
 	await invoke("write_agent_key", { adkPath, envKey, value }).catch(() => {
 		// Non-fatal — env fallback / next save retries.

@@ -103,7 +103,13 @@ export function makeLiveStdioTransport(deps: LiveTransportDeps): AgentTransportP
         return;
       }
       // chat_request·approval_response·creds_update = stdin JSON-line(send_to_agent_command)
-      await deps.invoke("send_to_agent_command", { message: JSON.stringify(payload) });
+      const args: Record<string, unknown> = { message: JSON.stringify(payload) };
+      // The path is a shell-side routing guard. Keep it out of the agent wire
+      // payload, but carry the captured workspace alongside the native invoke.
+      if (out.kind === "credsUpdate" && out.adkPath !== undefined) {
+        args.adkPath = out.adkPath;
+      }
+      await deps.invoke("send_to_agent_command", args);
     },
     onMessage(cb: (m: AgentMessage) => void): Unsub {
       // listen 은 async — unsub 가 listen resolve 전에 호출될 경쟁 처리(즉시 dispose 플래그).

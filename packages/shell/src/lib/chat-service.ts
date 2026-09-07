@@ -59,11 +59,14 @@ function coreChat() {
 async function safeSendToAgent(
 	message: object,
 	opName: string,
+	adkPath?: string | null,
 ): Promise<boolean> {
 	try {
-		await invoke("send_to_agent_command", {
+		const args: { message: string; adkPath?: string | null } = {
 			message: JSON.stringify(message),
-		});
+		};
+		if (adkPath !== undefined) args.adkPath = adkPath;
+		await invoke("send_to_agent_command", args);
 		return true;
 	} catch (err) {
 		Logger.warn("ChatService", `${opName} swallowed — naia-agent unavailable`, {
@@ -125,7 +128,10 @@ export interface NotifyConfig {
  * URL transmission (#260) — credentials stay out of chat_request / tool_request
  * stdio frames.
  */
-export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
+export async function sendNotifyConfig(
+	cfg: NotifyConfig,
+	adkPath?: string | null,
+): Promise<void> {
 	const request = {
 		type: "notify_config",
 		...(cfg.slackWebhookUrl !== undefined && {
@@ -147,7 +153,7 @@ export async function sendNotifyConfig(cfg: NotifyConfig): Promise<void> {
 			discordDmChannelId: cfg.discordDmChannelId,
 		}),
 	};
-	await safeSendToAgent(request, "sendNotifyConfig");
+	await safeSendToAgent(request, "sendNotifyConfig", adkPath);
 }
 
 export interface CredsPayload {
@@ -169,7 +175,10 @@ export interface CredsPayload {
  * Empty string for any entry clears the agent-side cached value (explicit
  * unset when the user removes a key from settings).
  */
-export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
+export async function sendCredsUpdate(
+	payload: CredsPayload,
+	adkPath?: string | null,
+): Promise<void> {
 	// new-core graft: 셸 keys-map({[provider]:apiKey})을 core 의 구조화 객체(ShellCredsPayload{provider,apiKey})로
 	// 매핑해 creds_update(structured) 채널로 전송. ttsKeys/gatewayToken 은 새 아키텍처서 agent 미소비
 	// (TTS=os→provider WS 직결 / gateway=naiaKey 경유) → 의도적 미전송(Old-Baseline 드리프트 아님, 새 agent 실수요 충실).
@@ -182,7 +191,7 @@ export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
 		for (const [provider, apiKey] of Object.entries(payload.keys)) {
 			if (!provider) continue;
 			await coreChat()
-				.sendCredsUpdate({ provider, apiKey })
+				.sendCredsUpdate({ provider, apiKey, adkPath })
 				.catch(() => {});
 		}
 		return;
@@ -194,7 +203,7 @@ export async function sendCredsUpdate(payload: CredsPayload): Promise<void> {
 	if (payload.ttsKeys !== undefined) request.ttsKeys = payload.ttsKeys;
 	if (payload.gatewayToken !== undefined)
 		request.gatewayToken = payload.gatewayToken;
-	await safeSendToAgent(request, "sendCredsUpdate");
+	await safeSendToAgent(request, "sendCredsUpdate", adkPath);
 }
 
 /**
@@ -932,28 +941,40 @@ export async function sendAppToolResult(
 }
 
 /** Send naiaKey to the agent (backend). Call on login and on app init if key exists. */
-export async function sendAuthUpdate(naiaKey: string): Promise<void> {
+export async function sendAuthUpdate(
+	naiaKey: string,
+	adkPath?: string | null,
+): Promise<void> {
 	// new-core graft: old auth_update 채널은 새 agent 미지원(protocol=creds_update만) → naia 계정 키를
 	// creds_update(structured, provider=nextain[any-llm gateway]·naiaKey secret) 채널로 routing.
 	// 새 agent protocol = {provider, apiKey, naiaKey} 라 naiaKey 가 그대로 키체인/resolver 로 적재됨(Old-Baseline 등가).
 	if (isNewCore()) {
 		await coreChat()
-			.sendCredsUpdate({ provider: "nextain", naiaKey })
+			.sendCredsUpdate({ provider: "nextain", naiaKey, adkPath })
 			.catch(() => {});
 		return;
 	}
-	await safeSendToAgent({ type: "auth_update", naiaKey }, "sendAuthUpdate");
+	await safeSendToAgent(
+		{ type: "auth_update", naiaKey },
+		"sendAuthUpdate",
+		adkPath,
+	);
 }
 
 /** Transactional onboarding cannot treat credential replay as best-effort. */
-export async function sendAuthUpdateStrict(naiaKey: string): Promise<void> {
+export async function sendAuthUpdateStrict(
+	naiaKey: string,
+	adkPath?: string | null,
+): Promise<void> {
 	if (isNewCore()) {
-		await coreChat().sendCredsUpdate({ provider: "nextain", naiaKey });
+		await coreChat().sendCredsUpdate({ provider: "nextain", naiaKey, adkPath });
 		return;
 	}
-	await invoke("send_to_agent_command", {
+	const args: { message: string; adkPath?: string | null } = {
 		message: JSON.stringify({ type: "auth_update", naiaKey }),
-	});
+	};
+	if (adkPath !== undefined) args.adkPath = adkPath;
+	await invoke("send_to_agent_command", args);
 }
 
 /** Reload persisted settings in the live Agent; failures are caller-visible. */
