@@ -1266,9 +1266,11 @@ export function SettingsTab() {
 			setVoxcpm2InstallError(null);
 			return true;
 		} catch (e) {
-			const loginRequired = String(e).includes(
-				"voxcpm2_naia_member_login_required",
-			);
+			const errorCode = e instanceof Error ? e.message.trim() : String(e).trim();
+			const loginRequired =
+				errorCode === "voxcpm2_naia_member_login_required";
+			const entitlementRejected =
+				errorCode === "voxcpm2_entitlement_rejected";
 			if (originalConfig) {
 				try {
 					await rollbackLocalVoiceSelection(
@@ -1288,7 +1290,7 @@ export function SettingsTab() {
 				setVoxcpm2InstallError(t("settings.ttsNaiaRequired"));
 			} else {
 				surfaceLocalVoiceRevert(
-					`${t("settings.cascadeError")}: ${String(e)} — ${t(
+					`${t("settings.cascadeError")}${entitlementRejected ? "" : `: ${String(e)}`} — ${t(
 						"settings.localVoiceSelectionReverted",
 					)}`,
 				);

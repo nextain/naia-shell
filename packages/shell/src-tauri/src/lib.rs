@@ -7277,7 +7277,7 @@ fn parse_voxcpm2_startup_line(line: &str) -> Option<VoxCpm2StartupEvent> {
 
 fn map_voxcpm2_startup_error(code: &str) -> String {
     match code {
-        "entitlement_rejected" => "voxcpm2_naia_member_login_required",
+        "entitlement_rejected" => "voxcpm2_entitlement_rejected",
         "entitlement_inactive" => "voxcpm2_naia_membership_required",
         "entitlement_unavailable" => "voxcpm2_entitlement_unavailable",
         "activation_bootstrap_invalid" => "voxcpm2_activation_bootstrap_invalid",
@@ -16390,7 +16390,7 @@ mod tests {
         );
         assert_eq!(
             map_voxcpm2_startup_error("entitlement_rejected"),
-            "voxcpm2_naia_member_login_required"
+            "voxcpm2_entitlement_rejected"
         );
         assert_eq!(
             map_voxcpm2_startup_error("entitlement_unavailable"),

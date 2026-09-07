@@ -618,7 +618,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				.setLocalFacadeUrl(localVoiceFacadeUrlFromReady(ready));
 			setLocalVoiceEnabled(true);
 		} catch (error) {
-			if (String(error).includes("voxcpm2_naia_member_login_required")) {
+			const errorCode =
+				error instanceof Error ? error.message.trim() : String(error).trim();
+			if (errorCode === "voxcpm2_naia_member_login_required") {
 				await deleteSecretKey("naiaKey");
 				localStorage.removeItem("naia-remote-key");
 				setNaiaLoginDone(false);

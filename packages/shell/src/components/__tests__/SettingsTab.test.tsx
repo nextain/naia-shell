@@ -2159,6 +2159,77 @@ describe("SettingsTab — memory tab (#298)", () => {
 		});
 	});
 
+	it("preserves the gateway credential when VoxCPM2 entitlement is rejected", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "gw-stale",
+				naiaUserId: "member-1",
+				ttsProvider: "edge",
+				ttsEnabled: true,
+				localVoiceEnabled: false,
+			}),
+		);
+		secureStoreMock.get.mockImplementation((key: string) =>
+			Promise.resolve(key === "naiaKey" ? "gw-stale" : null),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "read_naia_config")
+				return Promise.resolve(localStorage.getItem("naia-config") ?? "{}");
+			if (command === "read_naia_ui_config") return Promise.resolve("{}");
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "VoxCPM2 TensorRT ready",
+					steps: [],
+				});
+			if (command === "start_voxcpm2")
+				return Promise.reject(new Error("voxcpm2_entitlement_rejected"));
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		const selector = screen.getByTestId("profile-tts-provider");
+		await vi.waitFor(() =>
+			expect(
+				(selector as HTMLSelectElement).querySelector(
+					'option[value="naia-local-voice"]',
+				),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await vi.waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"start_voxcpm2",
+				expect.objectContaining({
+					expectedLoaderProfile: "windows_trt_6g",
+					gpuIndex: null,
+				}),
+			);
+		});
+		await vi.waitFor(() => {
+			expect(screen.getByTestId("profile-voice-status")).toHaveTextContent(
+				/Host voice engine error/i,
+			);
+			expect(secureStoreMock.delete).not.toHaveBeenCalledWith("naiaKey");
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved.naiaKey).toBe("gw-stale");
+			expect(saved.naiaUserId).toBe("member-1");
+			expect(saved.localVoiceEnabled).toBe(false);
+			expect(saved.ttsEnabled).toBe(true);
+			expect(saved.ttsProvider).toBe("edge");
+		});
+	});
+
 	it.skip("retired: restores an explicitly saved 8GB profile without replacing the external LLM", async () => {
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		localStorage.setItem(
