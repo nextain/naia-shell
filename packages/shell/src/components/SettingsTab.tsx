@@ -3557,6 +3557,8 @@ export function SettingsTab() {
 		}
 		return configureSpeechProfile(toSpeechProfileCommandInput(settings));
 	};
+	const sttNeedsLocalModel =
+		sttProvider === "vosk" || sttProvider === "whisper";
 
 	return (
 		<div className="settings-tab">
@@ -5246,13 +5248,17 @@ export function SettingsTab() {
 									{!sttProvider && (
 										<div>{t("settings.voiceStatusSttNeeded")}</div>
 									)}
-									{sttProvider && !sttModel && (
+									{sttProvider && sttNeedsLocalModel && !sttModel && (
 										<div>{t("settings.voiceStatusModelNeeded")}</div>
 									)}
-									{sttProvider && sttModel && !ttsEnabled && (
+									{sttProvider &&
+										(!sttNeedsLocalModel || sttModel) &&
+										!ttsEnabled && (
 										<div>{t("settings.voiceStatusTtsOff")}</div>
 									)}
-									{sttProvider && sttModel && ttsEnabled && (
+									{sttProvider &&
+										(!sttNeedsLocalModel || sttModel) &&
+										ttsEnabled && (
 										<div style={{ color: "var(--success-color, #4caf50)" }}>
 											{t("settings.voiceStatusReady")}
 										</div>

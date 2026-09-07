@@ -174,9 +174,29 @@ vi.stubGlobal(
 	},
 );
 
+class FakeSpeechRecognition {
+	static latest: FakeSpeechRecognition | null = null;
+	onresult: ((event: unknown) => void) | null = null;
+	onerror: ((event: { error: string; message: string }) => void) | null = null;
+	lang = "";
+	continuous = false;
+	interimResults = false;
+	maxAlternatives = 0;
+	start = vi.fn();
+	stop = vi.fn();
+	abort = vi.fn();
+
+	constructor() {
+		FakeSpeechRecognition.latest = this;
+	}
+}
+
 describe("ChatArea", () => {
 	afterEach(() => {
 		cleanup();
+		Reflect.deleteProperty(window, "SpeechRecognition");
+		Reflect.deleteProperty(window, "webkitSpeechRecognition");
+		FakeSpeechRecognition.latest = null;
 		capturedOnChunk = null;
 		capturedRequests.length = 0;
 		vi.clearAllMocks();
@@ -202,6 +222,44 @@ describe("ChatArea", () => {
 		expect(screen.getByPlaceholderText(/메시지|message/i)).toBeDefined();
 		const buttons = screen.getAllByRole("button");
 		expect(buttons.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("cleans up the pipeline when Web Speech reports a permission error", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				sttProvider: "web-speech",
+				sttModel: "",
+				ttsEnabled: true,
+			}),
+		);
+		Object.defineProperty(window, "SpeechRecognition", {
+			configurable: true,
+			value: FakeSpeechRecognition,
+		});
+
+		render(<ChatArea />);
+		fireEvent.click(document.querySelector(".chat-voice-btn") as HTMLButtonElement);
+
+		await waitFor(() =>
+			expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledTimes(1),
+		);
+		FakeSpeechRecognition.latest?.onerror?.({
+			error: "not-allowed",
+			message: "Permission denied",
+		});
+
+		await waitFor(() => {
+			expect(useChatStore.getState().messages.at(-1)?.content).toContain(
+				"Voice connection failed: not-allowed: Permission denied",
+			);
+		});
+		expect(FakeSpeechRecognition.latest?.stop).toHaveBeenCalledTimes(1);
+		expect(document.querySelector(".chat-voice-btn")?.className).not.toContain(
+			"active",
+		);
 	});
 
 	it("does not send while the lazy at-mention picker is opening", () => {

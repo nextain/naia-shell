@@ -2639,6 +2639,30 @@ export function ChatArea({
 		sttStop().catch(() => {});
 	}
 
+	function handleWebSpeechSttError(err: {
+		code: string;
+		message: string;
+	}): void {
+		if (!pipelineActiveRef.current) return;
+		Logger.warn("ChatArea", "Web Speech STT error", {
+			code: err.code,
+			message: err.message,
+		});
+		const detail = [err.code, err.message?.trim()]
+			.filter((part) => part.length > 0)
+			.join(": ");
+		const content = `${t("chat.voiceError")}${detail ? `: ${detail}` : ""}`;
+		cleanupPipeline();
+		const terminal: VoiceConnectionStatus = {
+			phase: "error",
+			reason: "unknown",
+			message: content,
+		};
+		setVoiceStatus(terminal);
+		lastVoiceStatusRef.current = terminal;
+		useChatStore.getState().addMessage({ role: "assistant", content });
+	}
+
 	async function handleVoiceToggle() {
 		// Barge-in: if TTS is playing, stop TTS + cancel stream, stay in voice mode
 		if (voiceMode === "active" && ttsPlayingRef.current) {
@@ -3000,14 +3024,13 @@ export function ChatArea({
 					} else if (isWebBased) {
 						// Web Speech API — browser built-in, free, no model download
 						const session = createWebSpeechSttSession(sttLang);
+						let webSpeechError = false;
 						const cleanupResult = session.onResult(handleSttResult);
 						sttCleanupRef.current.push(cleanupResult);
 						if (session.onError) {
 							const cleanupError = session.onError((err) => {
-								Logger.warn("ChatArea", "Web Speech STT error", {
-									code: err.code,
-									message: err.message,
-								});
+								webSpeechError = true;
+								handleWebSpeechSttError(err);
 							});
 							sttCleanupRef.current.push(cleanupError);
 						}
@@ -3017,6 +3040,9 @@ export function ChatArea({
 						sttPauseRef.current = () => void session.stop();
 						sttResumeRef.current = () => void session.start();
 						await session.start();
+						// Some implementations can report a synchronous start error before
+						// start() resolves. Do not re-enable listening after cleanup.
+						if (webSpeechError || !pipelineActiveRef.current) return;
 						setSttState("listening");
 					} else {
 						// Tauri plugin (offline: Vosk/Whisper)

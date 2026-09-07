@@ -761,6 +761,49 @@ describe("SettingsTab", () => {
 		expect(sttSelect.querySelector('option[value="vosk"]')).toBeDefined();
 	});
 
+	it("does not require a local model for Web Speech STT", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				sttProvider: "web-speech",
+				sttModel: "",
+				ttsEnabled: true,
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+
+		expect(await screen.findByTestId("voice-status-summary")).toBeInTheDocument();
+		expect(
+			screen.queryByText("STT model download and selection required."),
+		).toBeNull();
+		fireEvent.click(document.getElementById("tts-toggle") as HTMLInputElement);
+		expect(screen.getByText("Voice chat ready!")).toBeInTheDocument();
+	});
+
+	it("still requires a local model for offline STT providers", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				sttProvider: "vosk",
+				sttModel: "",
+				ttsEnabled: true,
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+
+		expect(
+			await screen.findByText("STT model download and selection required."),
+		).toBeInTheDocument();
+	});
+
 	it("hides API key input for Claude Code CLI provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
