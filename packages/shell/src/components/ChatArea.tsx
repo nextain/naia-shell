@@ -2721,7 +2721,17 @@ export function ChatArea({
 							`${t("voice.setupRequired")}\n\n${t("voice.goToSettings")}?`,
 						)
 					) {
-						setActiveTab("settings");
+						useAppStore.getState().setActiveApp("settings");
+						window.dispatchEvent(
+							new CustomEvent("naia-open-settings", {
+								detail: { tab: "voice" },
+							}),
+						);
+						window.setTimeout(() => {
+							document
+								.querySelector<HTMLButtonElement>('[data-settings-tab="voice"]')
+								?.click();
+						}, 0);
 					}
 					return;
 				}
@@ -2909,7 +2919,17 @@ export function ChatArea({
 									"STT API key is required.\n\nGo to Settings?",
 								)
 							) {
-								setActiveTab("settings");
+								useAppStore.getState().setActiveApp("settings");
+								window.dispatchEvent(
+									new CustomEvent("naia-open-settings", {
+										detail: { tab: "voice" },
+									}),
+								);
+								window.setTimeout(() => {
+									document
+										.querySelector<HTMLButtonElement>('[data-settings-tab="voice"]')
+										?.click();
+								}, 0);
 							}
 							return;
 						}
