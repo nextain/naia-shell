@@ -97,7 +97,7 @@ jobs:
           test -f installer/hook-post-rootfs.sh
           test -f installer/flatpaks
           test -f config/files/usr/share/naia/naia-os-version
-          test -f config/files/usr/share/naia/image-ref
+          test -f config/files/variant/amd/usr/share/naia/image-ref
           test -f cosign.pub
           cosign_fingerprint="$(tr -d '[:space:]' < cosign.pub | md5sum | cut -c1-32)"
           test "$cosign_fingerprint" = "54f58f952bf8d55bf008e49b9933be7e" || {
