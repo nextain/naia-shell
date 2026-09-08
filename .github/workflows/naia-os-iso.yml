@@ -140,6 +140,7 @@ jobs:
           podman run --rm --entrypoint /bin/bash "$LIVE_IMAGE" -c '
             set -euo pipefail
             test "$(tr -d "[:space:]" < /usr/share/naia/naia-os-version)" = "0.2.3"
+            grep -Fqx "PRETTY_NAME=\"Naia OS 0.2.3 (Bazzite)\"" /usr/lib/os-release
             test "$(tr -d "[:space:]" < /usr/share/naia/source-build-manifest)" = "0.2.3+13980895"
             jq -e ".source_build == \"0.2.3+13980895\" and .source_commit == \"1398089595ee1a7330f8ec1cfe387439f0807227\"" \
               /usr/share/naia/source-build-manifest.json >/dev/null

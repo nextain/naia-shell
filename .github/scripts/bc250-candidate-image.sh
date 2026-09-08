@@ -150,6 +150,16 @@ RUN set -eux; \
       /usr/share/naia/source-build-manifest; \
     install -Dm0644 /tmp/naia-candidate-metadata/source-build-manifest.json \
       /usr/share/naia/source-build-manifest.json; \
+    for os_release in /usr/lib/os-release /usr/etc/os-release /etc/os-release; do \
+      if test -f "$os_release" && test ! -L "$os_release"; then \
+        original_version_id="$(sed -n 's/^VERSION_ID=//p' "$os_release" | head -n1)"; \
+        sed -i \
+          -e "s/^PRETTY_NAME=.*/PRETTY_NAME=\"Naia OS ${NAIA_VERSION} (Bazzite)\"/" \
+          -e "s/^NAIA_VERSION=.*/NAIA_VERSION=\"${NAIA_VERSION}\"/" \
+          "$os_release"; \
+        test "$(sed -n 's/^VERSION_ID=//p' "$os_release" | head -n1)" = "$original_version_id"; \
+      fi; \
+    done; \
     test -f /usr/share/ublue-os/image-info.json; \
     jq --arg ref "ostree-image-signed:docker://${IMAGE_REF}" \
       --arg tag "${IMAGE_TAG}" \
@@ -158,6 +168,11 @@ RUN set -eux; \
     mv /tmp/image-info.json /usr/share/ublue-os/image-info.json; \
     test "$(cat /usr/share/naia/naia-os-version)" = "${NAIA_VERSION}"; \
     test "$(cat /usr/share/naia/sourcebuildmanifest)" = "${SOURCE_BUILD}"; \
+    for os_release in /usr/lib/os-release /usr/etc/os-release /etc/os-release; do \
+      if test -f "$os_release"; then \
+        test "$(sed -n 's/^PRETTY_NAME=//p' "$os_release" | head -n1)" = "\"Naia OS ${NAIA_VERSION} (Bazzite)\""; \
+      fi; \
+    done; \
     jq -e --arg source "${SOURCE_COMMIT}" --arg build "${SOURCE_BUILD}" \
       '.source_commit == $source and .source_build == $build and .source == $source and .build == $build' \
       /usr/share/naia/source-build-manifest.json; \
@@ -219,6 +234,11 @@ cat > "$work_dir/verify-image.sh" <<'VERIFY'
 set -Eeuo pipefail
 test "$(cat /usr/share/naia/naia-os-version)" = "$EXPECTED_NAIA_VERSION"
 test "$(cat /usr/share/naia/sourcebuildmanifest)" = "$EXPECTED_SOURCE_BUILD"
+for os_release in /usr/lib/os-release /usr/etc/os-release /etc/os-release; do
+  if test -f "$os_release"; then
+    test "$(sed -n 's/^PRETTY_NAME=//p' "$os_release" | head -n1)" = "\"Naia OS ${EXPECTED_NAIA_VERSION} (Bazzite)\""
+  fi
+done
 test "$(rpm -q --qf '%{NAME} %{VERSION} %{RELEASE} %{ARCH}' naia)" = "naia 0.2.3 1 x86_64"
 jq -e --arg source "$EXPECTED_SOURCE_COMMIT" --arg build "$EXPECTED_SOURCE_BUILD" \
   '.source_commit == $source and .source_build == $build and .source == $source and .build == $build' \
