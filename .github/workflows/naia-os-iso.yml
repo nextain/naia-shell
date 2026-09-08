@@ -13,7 +13,7 @@ on:
       candidate_tag:
         description: "Immutable AMD candidate image tag"
         required: true
-        default: candidate-bc250-0.2.3-13980895-support2
+        default: candidate-bc250-0.2.3-13980895-support3
         type: string
       candidate_digest:
         description: "Digest printed by the signed candidate image workflow (sha256:...)"
@@ -30,12 +30,12 @@ env:
   CANDIDATE_TAG: ${{ inputs.candidate_tag }}
   CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
   IMAGE_LAYER_REF: ${{ inputs.image_layer_ref }}
-  EXPECTED_IMAGE_LAYER_REF: b3da54785f9fa5c17b111525212f28c20418df95
-  EXPECTED_TAG: candidate-bc250-0.2.3-13980895-support2
+  EXPECTED_IMAGE_LAYER_REF: 3087718e723f2a171ef4f06d51e31fd477310a46
+  EXPECTED_TAG: candidate-bc250-0.2.3-13980895-support3
   NAIA_VERSION: "0.2.3"
   SOURCE_BUILD: 0.2.3+13980895
   SOURCE_COMMIT: 1398089595ee1a7330f8ec1cfe387439f0807227
-  ISO_NAME: naia-os-bc250-0.2.3-13980895-support2-amd64.iso
+  ISO_NAME: naia-os-bc250-0.2.3-13980895-support3-amd64.iso
   R2_PUBLIC: https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev
   R2_BUCKET: s3://naia-releases
   TITANOBOA_REF: df63ab42567fb817eafda4296c7dcfa6a1c94b04
@@ -111,7 +111,7 @@ jobs:
         run: |
           set -euo pipefail
           stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          prefix="builds/amd/0.2.3.${stamp}-13980895-support2"
+          prefix="builds/amd/0.2.3.${stamp}-13980895-support3"
           echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
           echo "Candidate R2 prefix: $prefix"
@@ -266,7 +266,7 @@ jobs:
       - name: Upload candidate ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: naia-os-bc250-0.2.3-13980895-support2-amd64-${{ github.run_id }}
+          name: naia-os-bc250-0.2.3-13980895-support3-amd64-${{ github.run_id }}
           path: |
             ${{ steps.build.outputs.iso-dest }}
             ${{ steps.build.outputs.iso-dest }}-CHECKSUM

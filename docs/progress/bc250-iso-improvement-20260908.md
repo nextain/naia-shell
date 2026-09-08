@@ -32,3 +32,5 @@ unresolved acceptance criterion: current BC250 boot uses amdgpu without nomodese
 kernel7.2.0-ogc6.1.fc44, but previous failure-stage evidence is insufficient.
 Do not claim this package fixes pre-render-node graphics initialization. Actual
 normal/recovery boot, DP audio and Anaconda deployment must be tested on hardware.
+
+Support3 adds bounded120 consecutive retries with fresh register discovery for delayed GPU access and transient modeset/read errors. Ten fixtures cover identity, signatures, readback races, recovery command lines and retry limits. CI executes these before image publication. No governor is included.
