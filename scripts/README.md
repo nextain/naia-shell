@@ -72,5 +72,6 @@
 | `qa-round.mjs` | 후보·회차·기기 결과를 고정하고 회차 상태를 원자적으로 기록·확정한다. |
 | `qa-traceability.mjs` | QA 원본 정의와 UC/FE/요구사항·시나리오 연결을 검증한다. |
 | `qa-catalog.mjs` | 소스 기반 QA 조각을 병합하고 선언된 coverage/gap 검토를 생성한다. |
+| `qa-qc-numbers.mjs` | 선택된 ADK sidecar에 QA Case Number(`QC-001`...)를 append-only로 부여하고 catalog/round 표시용 매핑을 제공한다. |
 | `qa-batch.mjs` | native batch 계획을 만들고 JSONL 결과를 고정된 회차/기기 매핑으로 가져온다. |
 | `qa-round-transfer.mjs` | 중앙 회차 snapshot과 기기별 결과 receipt를 파일로 export/import한다. |

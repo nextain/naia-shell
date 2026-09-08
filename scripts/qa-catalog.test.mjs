@@ -345,6 +345,8 @@ test("outputs preserve unverified execution status and the source-backed ledger"
   assert.match(markdown, /Execution status: \*\*not-performed\*\*/);
   assert.match(markdown, /Structural ready: \*\*yes\*\*/);
   assert.match(markdown, /Scope review ready: \*\*no\*\*/);
+  assert.match(markdown, /## QC case index/);
+  assert.match(markdown, /QC-001.*CASE-001/);
   assert.match(markdown, /Coverage by inventory layer/);
   assert.match(renderCatalogMarkdown(catalog), /SPEC counts/);
 });

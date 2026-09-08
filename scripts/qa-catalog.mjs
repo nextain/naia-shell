@@ -16,10 +16,11 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { validateManifest as validateRoundManifest } from "./qa-round.mjs";
+import { ensureQcNumbers, qcNumberForCaseId } from "./qa-qc-numbers.mjs";
 
 export const QA_CATALOG_VERSION = 2;
 export const QA_CATALOG_SCHEMA = "naia-shell.qa-catalog.v2";
@@ -1461,8 +1462,13 @@ export function renderGapReportMarkdown(gapReport) {
   return `${lines.join("\n")}\n`;
 }
 
-export function renderCatalogMarkdown(catalog) {
+export function renderCatalogMarkdown(catalog, { adkPath, mapPath, qcNumbers: suppliedQcNumbers } = {}) {
   const { coverage, diagnostics } = catalog;
+  const qcNumbers = suppliedQcNumbers ?? ensureQcNumbers({
+    adkPath,
+    mapPath,
+    caseIds: catalog.cases.map((item) => item.id),
+  });
   const specRows = catalog.specCaseCounts;
   const gapReport = catalog.gapReport ?? { summary: { total: 0, groups: 0 }, groups: [], entries: [] };
   const statusRows = [
@@ -1490,6 +1496,14 @@ export function renderCatalogMarkdown(catalog) {
     `- Merged cases: ${catalog.cases.length}`,
     `- Merged sources: ${catalog.sources.length}`,
     `- Diagnostics: ${diagnostics.errors.length} errors, ${diagnostics.warnings.length} warnings`,
+    "",
+    "## QC case index",
+    "",
+    "QC numbers are stable presentation labels; when this view is bound to an ADK they are stored in its sidecar, while the original case ID remains the catalog identity.",
+    "",
+    "| QC | Case ID | Title |",
+    "| --- | --- | --- |",
+    catalog.cases.map((item) => `| ${markdownCell(qcNumberForCaseId(qcNumbers, item.id))} | \`${markdownCell(item.id)}\` | ${markdownCell(item.title)} |`).join("\n"),
     "",
     "## Coverage status",
     "",
@@ -1547,7 +1561,7 @@ export function renderCatalogMarkdown(catalog) {
   return `${lines.join("\n")}\n`;
 }
 
-export function writeCatalogOutputs(catalog, outputDir) {
+export function writeCatalogOutputs(catalog, outputDir, { adkPath, mapPath } = {}) {
   const target = resolve(outputDir);
   mkdirSync(target, { recursive: true });
   const manifestPath = `${target}/qa-catalog.json`;
@@ -1555,6 +1569,12 @@ export function writeCatalogOutputs(catalog, outputDir) {
   const markdownPath = `${target}/qa-catalog.md`;
   const gapPath = `${target}/qa-catalog-gaps.json`;
   const gapMarkdownPath = `${target}/qa-catalog-gaps.md`;
+  const persistedMapPath = mapPath ?? (adkPath ? undefined : join(target, "qc-numbers.json"));
+  const qcNumbers = ensureQcNumbers({
+    adkPath,
+    mapPath: persistedMapPath,
+    caseIds: catalog.cases.map((item) => item.id),
+  });
   let v1ManifestPath = null;
   const coverageReport = {
     schemaVersion: QA_CATALOG_VERSION,
@@ -1581,14 +1601,14 @@ export function writeCatalogOutputs(catalog, outputDir) {
   };
   writeFileSync(manifestPath, `${JSON.stringify(catalog, null, 2)}\n`);
   writeFileSync(coveragePath, `${JSON.stringify(coverageReport, null, 2)}\n`);
-  writeFileSync(markdownPath, renderCatalogMarkdown(catalog));
+  writeFileSync(markdownPath, renderCatalogMarkdown(catalog, { qcNumbers }));
   writeFileSync(gapPath, `${JSON.stringify(catalog.gapReport, null, 2)}\n`);
   writeFileSync(gapMarkdownPath, renderGapReportMarkdown(catalog.gapReport));
   if (catalog.initializationAllowed) {
     v1ManifestPath = `${target}/qa-round-manifest.json`;
     writeFileSync(v1ManifestPath, `${JSON.stringify(exportV1Manifest(catalog), null, 2)}\n`);
   }
-  return { outputDir: target, manifestPath, coveragePath, markdownPath, gapPath, gapMarkdownPath, v1ManifestPath };
+  return { outputDir: target, manifestPath, coveragePath, markdownPath, gapPath, gapMarkdownPath, qcNumberPath: qcNumbers.path, v1ManifestPath };
 }
 
 function parseCli(argv) {
@@ -1625,7 +1645,7 @@ if (process.argv[1] && resolve(process.argv[1]) === invokedPath) {
     }
     const outputDir = options.outputDir ?? (options.adk ? resolve(options.adk, "qa", "catalog") : resolve(process.cwd(), "qa-catalog-output"));
     const catalog = compileCatalog(options);
-    const outputs = writeCatalogOutputs(catalog, outputDir);
+    const outputs = writeCatalogOutputs(catalog, outputDir, { adkPath: options.adk });
     console.log(JSON.stringify({
       schema: catalog.schema,
       catalogStatus: catalog.catalogStatus,

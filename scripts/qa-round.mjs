@@ -15,6 +15,8 @@ import {
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ensureQcNumbers, qcNumberForCaseId } from "./qa-qc-numbers.mjs";
+
 export const QA_ROUND_VERSION = 1;
 export const QA_ROUND_SCHEMA = "naia-shell.qa-round.v1";
 export const QA_STATUSES = Object.freeze(["PASS", "FAIL", "BLOCKED"]);
@@ -597,7 +599,7 @@ function markdownCell(value) {
 	return String(value).replaceAll("|", "\\|").replace(/[\r\n]+/g, " ");
 }
 
-function renderSheet(state) {
+function renderSheet(state, qcNumbers) {
 	const byId = new Map(state.cases.map((item) => [item.id, item]));
 	const counts = summarize(state);
 	const lines = [
@@ -611,21 +613,25 @@ function renderSheet(state) {
 		`- Launch ready: ${state.launchReady ? "true" : "false"}`,
 		`- Counts: total ${counts.total}, PASS ${counts.PASS}, FAIL ${counts.FAIL}, BLOCKED ${counts.BLOCKED}, NOT_RUN ${counts.NOT_RUN}`,
 		"",
-		"| Case ID | 테스트 방법 | 예상하는 테스트 결과 | 관련 유저 시나리오(UC) | 관련 기능(FE) | Platform | Device | 실행 결과 | 실행 일시 | Evidence | 실패 이유 |",
-		"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+		"| QC | Case ID | 테스트 방법 | 예상하는 테스트 결과 | 관련 유저 시나리오(UC) | 관련 기능(FE) | Platform | Device | 실행 결과 | 실행 일시 | Evidence | 실패 이유 |",
+		"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 	];
 	for (const result of state.results) {
 		const item = byId.get(result.caseId);
 		lines.push(
-			`| ${markdownCell(result.caseId)} | ${markdownCell(item.method)} | ${markdownCell(item.expectedResult)} | ${markdownCell(item.ucIds.join(", "))} | ${markdownCell(item.feIds.join(", "))} | ${markdownCell(result.platform)} | ${markdownCell(result.deviceId)} | ${markdownCell(result.result)} | ${markdownCell(result.executedAt)} | ${markdownCell(result.evidence)} | ${markdownCell(result.failureReason)} |`,
+			`| ${markdownCell(qcNumberForCaseId(qcNumbers, result.caseId))} | ${markdownCell(result.caseId)} | ${markdownCell(item.method)} | ${markdownCell(item.expectedResult)} | ${markdownCell(item.ucIds.join(", "))} | ${markdownCell(item.feIds.join(", "))} | ${markdownCell(result.platform)} | ${markdownCell(result.deviceId)} | ${markdownCell(result.result)} | ${markdownCell(result.executedAt)} | ${markdownCell(result.evidence)} | ${markdownCell(result.failureReason)} |`,
 		);
 	}
 	return `${lines.join("\n")}\n`;
 }
 
 function persistRound(paths, state) {
+	const qcNumbers = ensureQcNumbers({
+		adkPath: paths.adkPath,
+		caseIds: state.cases.map((item) => item.id),
+	});
 	writeJsonAtomic(paths.statePath, state);
-	writeTextAtomic(paths.sheetPath, renderSheet(state));
+	writeTextAtomic(paths.sheetPath, renderSheet(state, qcNumbers));
 }
 
 function assertCandidate(state, candidate) {
@@ -776,6 +782,31 @@ export function getRoundStatus({ adkPath, roundId }) {
 	};
 }
 
+/**
+ * Refresh the human-facing sheet from the frozen round state.
+ *
+ * This projection deliberately does not rewrite state or the round manifest;
+ * callers can add presentation metadata such as QC numbers without changing
+ * the hash-bound execution record.
+ */
+export function renderRoundSheet({ adkPath, roundId }) {
+	const paths = pathsFor(adkPath, roundId);
+	return withExclusiveLock(paths.lockPath, () => {
+		const state = loadState(paths);
+		const qcNumbers = ensureQcNumbers({
+			adkPath: paths.adkPath,
+			caseIds: state.cases.map((item) => item.id),
+		});
+		writeTextAtomic(paths.sheetPath, renderSheet(state, qcNumbers));
+		return {
+			roundId: state.roundId,
+			statePath: paths.statePath,
+			sheetPath: paths.sheetPath,
+			qcNumberPath: qcNumbers.path,
+		};
+	});
+}
+
 export function acquireLease({ adkPath, deviceId, owner }) {
 	const normalizedDeviceId = nonEmptyString(deviceId, "deviceId");
 	const normalizedOwner = nonEmptyString(owner, "owner");
@@ -845,6 +876,7 @@ function usage() {
 		"  qa-round.mjs record --adk /abs/adk --round ID --candidate VALUE --case ID --device ID --platform NAME --executed-at ISO --result PASS|FAIL|BLOCKED --evidence REF [--failure-reason TEXT]",
 		"  qa-round.mjs finalize --adk /abs/adk --round ID [--candidate VALUE]",
 		"  qa-round.mjs status --adk /abs/adk --round ID",
+		"  qa-round.mjs render --adk /abs/adk --round ID",
 		"  qa-round.mjs lease acquire|release --adk /abs/adk --device ID --owner NAME",
 	].join("\n");
 }
@@ -881,6 +913,8 @@ function runCli(argv) {
 		output = finalizeRound({ adkPath: options.adk, roundId: options.round, candidate: options.candidate });
 	} else if (command === "status") {
 		output = getRoundStatus({ adkPath: options.adk, roundId: options.round });
+	} else if (command === "render") {
+		output = renderRoundSheet({ adkPath: options.adk, roundId: options.round });
 	} else if (command === "lease" || command === "lease-acquire" || command === "lease-release") {
 		const action = command === "lease" ? positionals[1] : command.slice("lease-".length);
 		if (action === "acquire") {

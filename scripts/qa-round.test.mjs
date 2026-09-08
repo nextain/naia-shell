@@ -12,6 +12,7 @@ import {
 	getRoundStatus,
 	initRound,
 	recordResult,
+	renderRoundSheet,
 	releaseLease,
 	validateManifest,
 } from "./qa-round.mjs";
@@ -93,6 +94,8 @@ test("init creates a full NOT_RUN matrix and never reuses a prior PASS", () => {
 		assert.deepEqual(second.results.map((entry) => entry.result), ["NOT_RUN", "NOT_RUN"]);
 		assert.equal(second.previousResultsReused, false);
 		const sheet = readFileSync(join(f.adk, "qa", "rounds", "r2", "sheet.md"), "utf8");
+		assert.match(sheet, /\| QC \| Case ID \|/);
+		assert.match(sheet, /\| QC-001 \| chat-1 \|/);
 		assert.match(sheet, /테스트 방법/);
 		assert.match(sheet, /예상하는 테스트 결과/);
 		assert.match(sheet, /관련 유저 시나리오\(UC\)/);
@@ -115,6 +118,27 @@ test("round snapshot hash rejects catalog edits and the CLI reports the fixed sc
 		roundManifest.cases[0].title = "tampered";
 		writeFileSync(roundManifestPath, `${JSON.stringify(roundManifest)}\n`);
 		assert.throws(() => getRoundStatus({ adkPath: f.adk, roundId: "cli-r1" }), /catalog hash|snapshot/i);
+	} finally {
+		cleanup(f);
+	}
+});
+
+test("render-only refresh preserves the hash-bound round files", () => {
+	const f = fixture();
+	try {
+		initRound({ adkPath: f.adk, manifestPath: f.manifestPath, roundId: "render-r1", candidate: "candidate-a" });
+		const statePath = join(f.adk, "qa", "rounds", "render-r1", "state.json");
+		const roundManifestPath = join(f.adk, "qa", "rounds", "render-r1", "manifest.json");
+		const sheetPath = join(f.adk, "qa", "rounds", "render-r1", "sheet.md");
+		const stateBefore = readFileSync(statePath);
+		const manifestBefore = readFileSync(roundManifestPath);
+		writeFileSync(sheetPath, "stale presentation\n");
+		const rendered = renderRoundSheet({ adkPath: f.adk, roundId: "render-r1" });
+		assert.equal(rendered.roundId, "render-r1");
+		assert.deepEqual(readFileSync(statePath), stateBefore);
+		assert.deepEqual(readFileSync(roundManifestPath), manifestBefore);
+		assert.match(readFileSync(sheetPath, "utf8"), /\| QC \| Case ID \|/);
+		assert.match(readFileSync(sheetPath, "utf8"), /\| QC-001 \| chat-1 \|/);
 	} finally {
 		cleanup(f);
 	}
