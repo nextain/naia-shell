@@ -181,6 +181,51 @@ test("finalize rejects omitted checks, then permits fixes with BLOCKED not launc
 	}
 });
 
+test("technical scope review keeps an otherwise full PASS round from launch readiness", () => {
+	const f = fixture();
+	try {
+		const reviewedManifest = manifest({
+			scopeReview: {
+				present: true,
+				valid: true,
+				dispositionCounts: {
+					"direct-case": 1,
+					"technical-verification-pending": 1,
+				},
+			},
+		});
+		writeFileSync(f.manifestPath, `${JSON.stringify(reviewedManifest, null, 2)}\n`);
+		const opened = initRound({
+			adkPath: f.adk,
+			manifestPath: f.manifestPath,
+			roundId: "scope-r1",
+			candidate: "candidate-a",
+		});
+		for (const deviceId of ["linux-3090", "windows-4060"]) {
+			recordResult({
+				adkPath: f.adk,
+				roundId: "scope-r1",
+				candidate: "candidate-a",
+				caseId: "chat-1",
+				deviceId,
+				platform: deviceId.startsWith("linux") ? "Linux" : "Windows",
+				executedAt: executionAt(opened),
+				result: "PASS",
+				evidence: `receipt://scope-r1/${deviceId}`,
+			});
+		}
+		const finalized = finalizeRound({ adkPath: f.adk, roundId: "scope-r1", candidate: "candidate-a" });
+		assert.equal(finalized.launchReady, false);
+		assert.equal(getRoundStatus({ adkPath: f.adk, roundId: "scope-r1" }).launchReady, false);
+		assert.deepEqual(finalized.scopeReview.dispositionCounts, {
+			"direct-case": 1,
+			"technical-verification-pending": 1,
+		});
+	} finally {
+		cleanup(f);
+	}
+});
+
 test("loadState rejects finalized result mutations and missing terminal evidence fields", () => {
 	const mutations = [
 		{ name: "platform", mutate: (state) => { state.results[0].platform = null; }, pattern: /platform/i },

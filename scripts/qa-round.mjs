@@ -120,6 +120,26 @@ function normalizeVerification(input) {
 	};
 }
 
+function normalizeScopeReview(input) {
+	if (input === undefined || input === null) return undefined;
+	if (!input || typeof input !== "object" || Array.isArray(input)) {
+		fail("manifest.scopeReview must be an object");
+	}
+	const rawCounts = input.dispositionCounts;
+	if (!rawCounts || typeof rawCounts !== "object" || Array.isArray(rawCounts)) {
+		fail("manifest.scopeReview.dispositionCounts must be an object");
+	}
+	const dispositionCounts = {};
+	for (const [name, count] of Object.entries(rawCounts)) {
+		const normalizedName = nonEmptyString(name, "manifest.scopeReview.dispositionCounts key");
+		if (!Number.isSafeInteger(count) || count < 0) {
+			fail(`manifest.scopeReview.dispositionCounts.${normalizedName} must be a non-negative integer`);
+		}
+		dispositionCounts[normalizedName] = count;
+	}
+	return { dispositionCounts };
+}
+
 /**
  * Validate the declared catalog. This checks IDs and coverage within the
  * supplied manifest; verification.evidenceRef records the external review
@@ -134,6 +154,7 @@ export function validateManifest(input) {
 		fail(`manifest.version must be ${QA_ROUND_VERSION}`);
 	}
 	const verification = normalizeVerification(input);
+	const scopeReview = normalizeScopeReview(input.scopeReview);
 	const sourceInputs = asArray(input.sources, "manifest.sources");
 	if (sourceInputs.length === 0) fail("manifest.sources must not be empty");
 	const sourceById = new Map();
@@ -241,6 +262,7 @@ export function validateManifest(input) {
 		verification,
 		sources,
 		cases,
+		...(scopeReview ? { scopeReview } : {}),
 		...(exclusions.length > 0 ? { exclusions } : {}),
 	};
 }
@@ -378,6 +400,7 @@ function initialState({ roundId, candidate, catalogHash, manifest, paths }) {
 		executionPolicy: "full_scope_no_previous_pass_reuse",
 		previousResultsReused: false,
 		verification: manifest.verification,
+		...(manifest.scopeReview ? { scopeReview: manifest.scopeReview } : {}),
 		cases: manifest.cases,
 		results: matrixForManifest(manifest),
 		history: [],
@@ -393,6 +416,17 @@ function finalizedSnapshotHash(state) {
 		results: state.results,
 		history: state.history,
 	});
+}
+
+function hasTechnicalVerificationPending(state) {
+	return (state.scopeReview?.dispositionCounts?.["technical-verification-pending"] ?? 0) > 0;
+}
+
+function launchReadyFor(state, counts) {
+	return counts.PASS === counts.total
+		&& counts.FAIL === 0
+		&& counts.BLOCKED === 0
+		&& !hasTechnicalVerificationPending(state);
 }
 
 function validateRecordedEntry(entry, { createdAt, label }) {
@@ -444,6 +478,12 @@ function validateState(state) {
 	safeRoundId(state.roundId);
 	const candidate = candidateForState(state.candidate);
 	if (state.candidateHash !== hashCandidate(candidate)) fail("state candidate hash mismatch", "INTEGRITY");
+	if (state.scopeReview !== undefined) {
+		const normalizedScopeReview = normalizeScopeReview(state.scopeReview);
+		if (hashJson(normalizedScopeReview) !== hashJson(state.scopeReview)) {
+			fail("state scope review snapshot is not normalized", "INTEGRITY");
+		}
+	}
 	if (typeof state.finalized !== "boolean") fail("state.finalized must be boolean", "INTEGRITY");
 	const createdAt = parseIsoDateTime(state.createdAt, "state.createdAt");
 	const updatedAt = parseIsoDateTime(state.updatedAt, "state.updatedAt");
@@ -504,7 +544,7 @@ function validateState(state) {
 	const counts = summarize(state);
 	if (state.finalized) {
 		if (counts.NOT_RUN > 0) fail("finalized state cannot contain NOT_RUN results", "INTEGRITY");
-		const expectedLaunchReady = counts.PASS === counts.total && counts.FAIL === 0 && counts.BLOCKED === 0;
+		const expectedLaunchReady = launchReadyFor(state, counts);
 		if (state.launchReady !== expectedLaunchReady) fail("finalized launchReady does not match results", "INTEGRITY");
 		if (typeof state.finalizedResultsHash !== "string" || state.finalizedResultsHash !== finalizedSnapshotHash(state)) {
 			fail("finalized result snapshot hash mismatch", "INTEGRITY");
@@ -527,6 +567,9 @@ function loadState(paths) {
 	}
 	if (hashJson(state.cases) !== hashJson(manifest.cases)) {
 		fail("state case snapshot does not match its manifest snapshot", "INTEGRITY");
+	}
+	if (hashJson(state.scopeReview ?? null) !== hashJson(manifest.scopeReview ?? null)) {
+		fail("state scope review snapshot does not match its manifest snapshot", "INTEGRITY");
 	}
 	return state;
 }
@@ -707,7 +750,7 @@ export function finalizeRound({ adkPath, roundId, candidate } = {}) {
 		state.finalized = true;
 		state.phase = "FIX_ALLOWED";
 		state.status = "FIX_ALLOWED";
-		state.launchReady = counts.PASS === counts.total && counts.FAIL === 0 && counts.BLOCKED === 0;
+		state.launchReady = launchReadyFor(state, counts);
 		state.finalizedResultsHash = finalizedSnapshotHash(state);
 		state.updatedAt = nowIso();
 		persistRound(paths, state);
