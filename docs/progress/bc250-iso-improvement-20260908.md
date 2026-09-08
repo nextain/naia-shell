@@ -34,3 +34,5 @@ Do not claim this package fixes pre-render-node graphics initialization. Actual
 normal/recovery boot, DP audio and Anaconda deployment must be tested on hardware.
 
 Support3 adds bounded120 consecutive retries with fresh register discovery for delayed GPU access and transient modeset/read errors. Ten fixtures cover identity, signatures, readback races, recovery command lines and retry limits. CI executes these before image publication. No governor is included.
+
+Support4 also retries a failed initial PCI identity read from main(). Eleven fixtures pass; both workflows pin the final source commit. Physical boot/install remains unverified.

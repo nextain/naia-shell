@@ -30,7 +30,7 @@ require_command() {
 
 readonly EXPECTED_IMAGE_REF="ghcr.io/nextain/naia-os-amd"
 readonly EXPECTED_BASE_IMAGE="ghcr.io/nextain/naia-os-amd@sha256:5bf36115118aa8099aed8760b0b6bfd4dd9e1122a7a5f2e8e8b772a97a13c474"
-readonly EXPECTED_IMAGE_TAG="candidate-bc250-0.2.3-13980895-support3"
+readonly EXPECTED_IMAGE_TAG="candidate-bc250-0.2.3-13980895-support4"
 readonly EXPECTED_RPM_URL="https://github.com/nextain/naia-shell/releases/download/bc250-20260908-13980895/Naia-0.2.3-1.x86_64.rpm"
 readonly EXPECTED_RPM_SHA256="1e912b1c87e84e1ae1094a1943e88c71e6688b010c19f3ded9b69a3c72f189ad"
 readonly EXPECTED_SOURCE_COMMIT="1398089595ee1a7330f8ec1cfe387439f0807227"
