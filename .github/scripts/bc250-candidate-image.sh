@@ -30,7 +30,7 @@ require_command() {
 
 readonly EXPECTED_IMAGE_REF="ghcr.io/nextain/naia-os-amd"
 readonly EXPECTED_BASE_IMAGE="ghcr.io/nextain/naia-os-amd@sha256:5bf36115118aa8099aed8760b0b6bfd4dd9e1122a7a5f2e8e8b772a97a13c474"
-readonly EXPECTED_IMAGE_TAG="candidate-bc250-0.2.3-13980895"
+readonly EXPECTED_IMAGE_TAG="candidate-bc250-0.2.3-13980895-support1"
 readonly EXPECTED_RPM_URL="https://github.com/nextain/naia-shell/releases/download/bc250-20260908-13980895/Naia-0.2.3-1.x86_64.rpm"
 readonly EXPECTED_RPM_SHA256="1e912b1c87e84e1ae1094a1943e88c71e6688b010c19f3ded9b69a3c72f189ad"
 readonly EXPECTED_SOURCE_COMMIT="1398089595ee1a7330f8ec1cfe387439f0807227"
@@ -123,6 +123,8 @@ jq -n \
     source: $source, build: $build}' \
   > "$metadata_dir/source-build-manifest.json"
 
+cp -a "$IMAGE_LAYER_DIR/installer/bc250" "$context_dir/bc250"
+
 cat > "$context_dir/Containerfile" <<'CONTAINERFILE'
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
@@ -135,6 +137,7 @@ ARG SOURCE_BUILD
 
 COPY Naia-0.2.3-1.x86_64.rpm /tmp/naia-shell.rpm
 COPY metadata/ /tmp/naia-candidate-metadata/
+COPY bc250/ /tmp/naia-bc250-support/
 
 RUN set -eux; \
     if rpm -q naia >/dev/null 2>&1; then \
@@ -186,6 +189,10 @@ LABEL org.opencontainers.image.version="${NAIA_VERSION}" \
       io.nextain.source-build="${SOURCE_BUILD}" \
       io.nextain.candidate="true"
 
+RUN bash /tmp/naia-bc250-support/install-bc250.sh && \
+    test -x /usr/libexec/naia-bc250-governor && \
+    test -x /usr/libexec/naia-bc250-dp-audio && \
+    rm -rf /tmp/naia-bc250-support
 RUN /usr/libexec/naia-verify-image
 CONTAINERFILE
 
