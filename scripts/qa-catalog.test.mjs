@@ -11,6 +11,7 @@ import {
   validateManifest,
   writeCatalogOutputs,
 } from "./qa-catalog.mjs";
+import { initRound } from "./qa-round.mjs";
 
 function fixtureRoot() {
   const root = mkdtempSync(join(tmpdir(), "naia-qa-catalog-test-"));
@@ -57,7 +58,7 @@ function baseCase(overrides = {}) {
     feIds: ["SPEC-001"],
     sourceRef: "docs/source.md:1",
     deviceIds: ["linux3090"],
-    execution: { kind: "node", ref: "fixture" },
+    execution: { kind: "manual", ref: "fixture" },
     ...overrides,
   };
 }
@@ -396,8 +397,14 @@ test("scope review hashes and per-source dispositions unlock v1 export", () => {
   assert.equal(reviewed.initializationAllowed, true);
   assert.equal(reviewed.catalogStatus, "COMPLETE_REVIEWED");
   const manifest = exportV1Manifest(reviewed);
+  assert.equal(manifest.version, 1);
   assert.equal(manifest.schema, "naia-shell.qa-round.v1");
   assert.equal(manifest.executionStatus, "not-performed");
+  assert.equal(manifest.sources.length, 2);
+  assert.equal(manifest.cases.length, 1);
+  assert.deepEqual(manifest.exclusions, []);
+  assert.equal(manifest.verification.status, "verified");
+  assert.match(manifest.verification.evidenceRef, /scope-review-and-coverage/);
   const scenarioLink = manifest.sourceLinks.find((entry) => entry.id === "S-1");
   assert.equal(scenarioLink.kind, "UC");
   assert.equal(scenarioLink.layer, "scenario-catalog");
@@ -417,6 +424,63 @@ test("scope review hashes and per-source dispositions unlock v1 export", () => {
   assert.equal(changedReview.structuralReady, true);
   assert.equal(changedReview.scopeReviewReady, false);
   assert.ok(changedReview.scopeReview.errors.some((entry) => entry.code === "scope-review-inventory-hash-mismatch"));
+});
+
+test("v1 export initializes a NOT_RUN round through the actual round validator", () => {
+  const root = fixtureRoot();
+  const inventoryValue = inventory([
+    ["S-1", "scenario-catalog"],
+    ["SPEC-001", "feature-design"],
+  ]);
+  const fragments = [{ path: "fixture.json", value: { cases: [baseCase({ ucIds: [], scenarioIds: ["S-1"] })] } }];
+  const draft = compileCatalog({
+    inventory: inventoryValue,
+    projectRoot: root,
+    fragments,
+    generatedAtUtc: "2026-09-08T00:00:00.000Z",
+  });
+  const reviewed = compileCatalog({
+    inventory: inventoryValue,
+    projectRoot: root,
+    fragments,
+    scopeReview: {
+      schema: "naia-shell.qa-scope-review.v1",
+      reviewer: "fixture-reviewer",
+      reviewedAtUtc: "2026-09-08T00:01:00.000Z",
+      inventorySha256: draft.inventorySha256,
+      compiledCasesSha256: draft.compiledCasesSha256,
+      dispositions: [
+        {
+          sourceId: "S-1",
+          disposition: "direct-case",
+          evidence: ["CASE-001 declares scenarioIds=[S-1]"],
+          targetIds: ["CASE-001"],
+        },
+        {
+          sourceId: "SPEC-001",
+          disposition: "direct-case",
+          evidence: ["CASE-001 declares feIds=[SPEC-001]"],
+          targetIds: ["CASE-001"],
+        },
+      ],
+    },
+    generatedAtUtc: "2026-09-08T00:02:00.000Z",
+  });
+  const manifest = exportV1Manifest(reviewed);
+  const manifestPath = join(root, "round-manifest.json");
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const state = initRound({
+    adkPath: join(root, "adk"),
+    manifestPath,
+    roundId: "catalog-export",
+    candidate: "fixture-candidate",
+  });
+
+  assert.equal(state.launchReady, false);
+  assert.deepEqual(state.results.map((entry) => entry.result), ["NOT_RUN"]);
+  assert.equal(state.verification.status, "verified");
+  assert.equal(state.cases[0].ucIds.includes("S-1"), true);
+  assert.equal(state.cases[0].feIds.includes("SPEC-001"), true);
 });
 
 test("v1 manifest validation rejects missing, changed, and unresolved review evidence", () => {

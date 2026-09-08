@@ -19,6 +19,8 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { validateManifest as validateRoundManifest } from "./qa-round.mjs";
+
 export const QA_CATALOG_VERSION = 2;
 export const QA_CATALOG_SCHEMA = "naia-shell.qa-catalog.v2";
 export const QA_ROUND_MANIFEST_VERSION = 1;
@@ -40,10 +42,12 @@ const SCOPE_REVIEW_DISPOSITIONS = new Set([
 const SOURCE_KIND_BY_LAYER = Object.freeze({
   "use-case": "UC",
   "scenario-catalog": "UC",
+  "scenario-test": "UC",
   "feature-design": "FE",
   "feature-requirement": "FE",
   "nonfunctional-requirement": "FE",
   requirement: "FE",
+  "feature-test": "FE",
 });
 
 /**
@@ -1188,7 +1192,47 @@ export function exportV1Manifest(catalog) {
   if (!catalog.scopeReview.scopeReviewReady || catalog.scopeReview.unresolvedCount > 0) {
     throw new Error("Cannot export v1 manifest: scope review has unresolved dispositions");
   }
+  const sourceLinks = (Array.isArray(catalog.sourceLinks) ? catalog.sourceLinks : []).map((source) => ({
+    ...source,
+    // Older compiled catalogs persisted declaration kinds (REQ/S/TEST) in
+    // sourceLinks.  The round manifest deliberately exposes only the UC/FE
+    // source namespace, so normalize those persisted links at export time as
+    // well as during a fresh compile.
+    kind: SOURCE_KIND_BY_LAYER[source.layer] ?? source.kind,
+  }));
+  const sourceKindById = new Map(sourceLinks.map((source) => [source.id, source.kind]));
+  const sources = sourceLinks.map(({ id, kind, ref }) => ({ id, kind, ref }));
+  const cases = catalog.cases.map((item) => {
+    const linkedIds = LINK_FIELDS.flatMap((field) => item[field] ?? []);
+    const ucIds = unique([
+      ...(item.ucIds ?? []),
+      ...linkedIds.filter((id) => sourceKindById.get(id) === "UC"),
+    ]);
+    const feIds = unique([
+      ...(item.feIds ?? []),
+      ...linkedIds.filter((id) => sourceKindById.get(id) === "FE"),
+    ]);
+    return {
+      id: item.id,
+      title: item.title,
+      method: item.method,
+      expectedResult: item.expectedResult,
+      ucIds,
+      feIds,
+      sourceRef: item.sourceRef,
+      deviceIds: item.deviceIds,
+      execution: {
+        kind: item.execution?.kind,
+        ref: item.execution?.ref,
+      },
+    };
+  });
+  const sourceIds = new Set(sources.map((source) => source.id));
+  const exclusions = (catalog.coverage?.ledger ?? [])
+    .filter((entry) => sourceIds.has(entry.id) && entry.coverageStatus === "EXCLUDED" && entry.exclusion?.reason)
+    .map((entry) => ({ sourceId: entry.id, reason: entry.exclusion.reason }));
   const manifest = {
+    version: QA_ROUND_MANIFEST_VERSION,
     schemaVersion: QA_ROUND_MANIFEST_VERSION,
     schema: QA_ROUND_MANIFEST_SCHEMA,
     generatedAtUtc: catalog.generatedAtUtc,
@@ -1200,15 +1244,19 @@ export function exportV1Manifest(catalog) {
     executionStatus: "not-performed",
     inventorySha256: catalog.inventorySha256,
     compiledCasesSha256: catalog.compiledCasesSha256,
-    caseCount: catalog.cases.length,
-    sourceCount: catalog.inventory.entityCount,
-    sourceLinks: catalog.sourceLinks,
+    caseCount: cases.length,
+    sourceCount: sources.length,
+    sourceLinks,
+    sources,
+    cases,
+    exclusions,
     scopeReview: scopeReviewSummary(catalog.scopeReview),
     verification: {
-      status: "reviewed",
+      status: "verified",
       method: "qa-catalog-structural-and-scope-review",
+      evidenceRef: `qa-catalog.json#scope-review-and-coverage:${catalog.scopeReview.sha256}:${catalog.compiledCasesSha256}`,
       reviewed: true,
-      note: "Scope review was completed; product execution remains not-performed.",
+      note: "Structural catalog, source coverage, and scope dispositions were reviewed; product execution remains not-performed.",
     },
   };
   const validation = validateManifest(manifest, {
@@ -1218,6 +1266,7 @@ export function exportV1Manifest(catalog) {
   if (!validation.valid) {
     throw new Error(`Cannot export v1 manifest: ${validation.errors.map((entry) => entry.code).join(", ")}`);
   }
+  validateRoundManifest(manifest);
   return manifest;
 }
 
