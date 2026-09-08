@@ -1,235 +1,85 @@
-name: Naia OS image
+name: Naia OS BC250 candidate image
 
-# The image layer lives in nextain/naia-os. This workflow lives here because
-# this is the only repository that holds the cosign private key.
-#
-# SIGNING_SECRET is the private half of cosign.pub, and every installed Naia OS
-# machine pins ghcr.io/nextain/naia-os to that public key in its
-# /etc/containers/policy.json. GitHub secrets cannot be read back, and the key
-# exists nowhere else — not in the age vault, not on disk, not in git history.
-# So an image signed anywhere but here would be signed with a different key, and
-# every machine in the field would reject the update.
+# This file keeps the registered workflow path but is deliberately candidate
+# only. A successful run must not satisfy a workflow_run trigger that builds
+# the production/NVIDIA ISO, and it must never move a production tag.
 
 on:
-  schedule:
-    - cron: "0 6 * * 3" # Wednesdays 06:00 UTC — pick up Bazzite base updates
-  workflow_dispatch:
-    inputs:
-      variant:
-        description: "Which image to build"
-        required: false
-        default: nvidia
-        type: choice
-        options: [nvidia, amd]
-      image_ref:
-        description: "nextain/naia-os ref to build (branch, tag or SHA)"
-        required: false
-        default: "main"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
   packages: write
   id-token: write
 
-env:
-  IMAGE_REGISTRY: ghcr.io/nextain
-  IMAGE_LAYER_REPO: nextain/naia-os
-
 jobs:
-  build:
-    name: Build and publish the OS image
-    runs-on: ubuntu-latest
+  candidate-image:
+    name: Build and sign the BC250 0.2.3 candidate image
+    runs-on: ubuntu-24.04
     outputs:
-      digest: ${{ steps.published.outputs.digest }}
-      previous: ${{ steps.previous.outputs.digest }}
+      image_ref: ${{ steps.candidate.outputs.image_ref }}
+      image_tag: ${{ steps.candidate.outputs.image_tag }}
+      image_digest: ${{ steps.candidate.outputs.image_digest }}
 
     steps:
-      # The image layer, not this repository. skip_checkout is set on the
-      # BlueBuild step below because the checkout happens here instead.
-      - name: Check out the image layer
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@v9
+
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Check out the pinned image layer
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.IMAGE_LAYER_REPO }}
-          ref: ${{ inputs.image_ref || 'main' }}
+          repository: nextain/naia-os
+          ref: 48779b61c522556ee85e1ee27b90f22b3b5e021d
           path: image
 
-      # The two variants are separate images, not tags. Resolving the pair here
-      # keeps every later step from having to know which one is being built.
-      - name: Resolve the variant
-        id: variant
+      - name: Install image build tools
+        shell: bash
         run: |
           set -euo pipefail
-          case "${{ inputs.variant || 'nvidia' }}" in
-            nvidia) echo "recipe=recipe.yml"     >> "$GITHUB_OUTPUT"
-                    echo "image=naia-os"         >> "$GITHUB_OUTPUT" ;;
-            amd)    echo "recipe=recipe-amd.yml" >> "$GITHUB_OUTPUT"
-                    echo "image=naia-os-amd"     >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::unknown variant '${{ inputs.variant }}'"; exit 1 ;;
-          esac
-
-      # The scheduled run has no inputs, so it rebuilds the NVIDIA image only.
-      # The AMD image is built on demand until it has hardware regularly testing
-      # it — a weekly image nobody boots is how the last one rotted.
-      - name: Read the Naia OS version
-        id: version
-        working-directory: image
-        run: |
-          set -euo pipefail
-          VERSION="$(tr -d '[:space:]' < config/files/usr/share/naia/naia-os-version)"
-          test -n "$VERSION" || { echo "::error::naia-os-version is empty"; exit 1; }
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Naia OS $VERSION"
-
-      # The public key shipped in the image layer must be the one installed
-      # machines already trust. If these ever diverge, the build would sign with
-      # a key nobody pins and every machine would stop updating — with a
-      # signature error the user has no way to interpret.
-      - name: Assert the signing identity has not changed
-        working-directory: image
-        run: |
-          set -euo pipefail
-          test -f cosign.pub || { echo "::error::image layer has no cosign.pub"; exit 1; }
-          EXPECTED="54f58f952bf8d55bf008e49b9933be7e"
-          ACTUAL="$(tr -d '[:space:]' < cosign.pub | md5sum | cut -c1-32)"
-          echo "cosign.pub fingerprint: $ACTUAL"
-          test "$ACTUAL" = "$EXPECTED" || {
-            echo "::error::cosign.pub changed. Installed machines pin the old key and would reject this image."
-            echo "::error::If this rotation is intentional, every machine in the field must be re-provisioned first."
-            exit 1
-          }
-
-      # Record what latest points at before touching anything, so a bad publish
-      # has somewhere to go back to. BlueBuild has no `tags` input, so the image
-      # cannot be staged under another tag first.
-      - name: Record the currently published digest
-        id: previous
-        run: |
-          set -euo pipefail
-          REF="${IMAGE_REGISTRY}/${{ steps.variant.outputs.image }}:latest"
-          if DIGEST="$(skopeo inspect --format '{{.Digest}}' "docker://${REF}" 2>/dev/null)"; then
-            echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-            echo "Current latest: $DIGEST"
-          else
-            echo "digest=" >> "$GITHUB_OUTPUT"
-            echo "Nothing published yet."
+          missing=()
+          for command in jq podman rpm skopeo; do
+            command -v "$command" >/dev/null 2>&1 || missing+=("$command")
+          done
+          if ((${#missing[@]})); then
+            echo "Installing missing image tools: ${missing[*]}"
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends jq podman rpm skopeo
           fi
+          for command in jq podman rpm skopeo; do
+            command -v "$command" >/dev/null 2>&1 || {
+              echo "::error::required image tool is unavailable: $command"
+              exit 1
+            }
+          done
 
-      # The recipe layers the shell from a naia-shell release asset URL. Two
-      # things can go wrong there that rpm-ostree reports only as a generic
-      # download failure.
-      #
-      # Reachability: a draft release's assets need an authorization token and
-      # the recipe cannot carry one. Publish as a prerelease — GitHub's `latest`
-      # skips prereleases, so releases/latest/download/latest.json keeps serving
-      # the Windows updater feed.
-      #
-      # Content: release assets are not immutable. The same tag and file name can
-      # be replaced. Pinning the URL pins the name, not the bytes, so compare
-      # against the SHA-256 the release publishes alongside it. Without this a
-      # swapped asset would be layered, signed with the production key, and
-      # shipped to installed machines.
-      - name: Resolve and pin the layered shell RPM
-        working-directory: image
-        run: |
-          set -euo pipefail
-          RPM_URL="$(grep -oE 'https://github\.com/[^ ]+\.rpm' recipes/recipe.yml | head -1)"
-          test -n "$RPM_URL" || { echo "::error::recipe.yml declares no shell RPM URL"; exit 1; }
-          echo "Shell RPM: $RPM_URL"
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.8.1
 
-          CODE="$(curl -sIL -o /dev/null -w '%{http_code}' "$RPM_URL")"
-          test "$CODE" = "200" || {
-            echo "::error::Shell RPM is not anonymously downloadable (HTTP $CODE): $RPM_URL"
-            echo "::error::A draft release cannot be consumed here. Publish it as a prerelease."
-            exit 1
-          }
+      - name: Build, publish and verify the candidate
+        id: candidate
+        env:
+          BASE_IMAGE: ghcr.io/nextain/naia-os-amd@sha256:5bf36115118aa8099aed8760b0b6bfd4dd9e1122a7a5f2e8e8b772a97a13c474
+          IMAGE_REF: ghcr.io/nextain/naia-os-amd
+          IMAGE_TAG: candidate-bc250-0.2.3-13980895
+          RPM_URL: https://github.com/nextain/naia-shell/releases/download/bc250-20260908-13980895/Naia-0.2.3-1.x86_64.rpm
+          RPM_SHA256: 1e912b1c87e84e1ae1094a1943e88c71e6688b010c19f3ded9b69a3c72f189ad
+          SOURCE_COMMIT: 1398089595ee1a7330f8ec1cfe387439f0807227
+          NAIA_VERSION: "0.2.3"
+          SOURCE_BUILD: 0.2.3+13980895
+          REGISTRY_TOKEN: ${{ github.token }}
+          SIGNING_SECRET: ${{ secrets.SIGNING_SECRET }}
+          COSIGN_PASSWORD: ""
+          IMAGE_LAYER_DIR: ${{ github.workspace }}/image
+        run: .github/scripts/bc250-candidate-image.sh
 
-          MANIFEST_URL="${RPM_URL%/*}/artifacts.sha256"
-          curl -sfL "$MANIFEST_URL" -o artifacts.sha256 || {
-            echo "::error::Release publishes no artifacts.sha256 at $MANIFEST_URL"
-            exit 1
-          }
-          RPM_NAME="${RPM_URL##*/}"
-          EXPECTED="$(awk -v n="$RPM_NAME" 'index($2, n) {print $1}' artifacts.sha256 | head -1)"
-          test -n "$EXPECTED" || {
-            echo "::error::artifacts.sha256 has no entry for $RPM_NAME"
-            cat artifacts.sha256
-            exit 1
-          }
-
-          curl -sfL "$RPM_URL" -o shell.rpm
-          ACTUAL="$(sha256sum shell.rpm | awk '{print $1}')"
-          echo "expected: $EXPECTED"
-          echo "actual:   $ACTUAL"
-          test "$EXPECTED" = "$ACTUAL" || {
-            echo "::error::Shell RPM bytes do not match the SHA-256 the release published."
-            echo "::error::The asset was replaced after it was verified. Refusing to sign it."
-            exit 1
-          }
-
-          # The layering precondition, re-checked against the bytes about to be
-          # layered rather than against whatever was checked at release time.
-          ROOTS="$(rpm -qp --list shell.rpm | awk -F/ '{print "/"$2}' | sort -u)"
-          test "$ROOTS" = "/usr" || {
-            echo "::error::Shell RPM installs outside /usr — rpm-ostree cannot layer it:"
-            echo "$ROOTS"
-            exit 1
-          }
-          rm -f shell.rpm artifacts.sha256
-          echo "Shell RPM pinned and verified."
-
-      # config/scripts/verify-naia-image.sh runs as a recipe module during the
-      # build. A failed assertion fails the container build, so an image that
-      # does not satisfy it is never pushed and never signed. That is what
-      # closes the window where a machine could pull a bad image between the
-      # push and a post-push test — BlueBuild offers no staging tag to do it the
-      # other way round.
-      - name: Build, sign and publish
-        uses: blue-build/github-action@v1
+      - name: Upload candidate receipt
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
-          recipe: ${{ steps.variant.outputs.recipe }}
-          working_directory: image
-          skip_checkout: "true"
-          cosign_private_key: ${{ secrets.SIGNING_SECRET }}
-          registry_token: ${{ github.token }}
-          pr_event_number: 0
-
-      - name: Resolve the published digest
-        id: published
-        run: |
-          set -euo pipefail
-          DIGEST="$(skopeo inspect --format '{{.Digest}}' "docker://${IMAGE_REGISTRY}/${{ steps.variant.outputs.image }}:latest")"
-          test -n "$DIGEST" || { echo "::error::could not resolve the published image"; exit 1; }
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "Published: $DIGEST"
-
-      # The in-build gate already passed. This re-runs the same predicate
-      # against the published artifact, which catches anything lost between the
-      # build context and the final container.
-      - name: Verify the published image
-        id: verify
-        run: |
-          set -euo pipefail
-          podman run --rm --entrypoint /bin/bash \
-            "${IMAGE_REGISTRY}/${{ steps.variant.outputs.image }}@${{ steps.published.outputs.digest }}" \
-            /usr/libexec/naia-verify-image
-
-      # If the published image fails, put latest back where it was. Retagging
-      # moves the tag to a digest that was signed when it was built, so the
-      # restored image is still trusted by installed machines.
-      - name: Roll back to the previous image
-        if: failure() && steps.published.outcome == 'success' && steps.previous.outputs.digest != ''
-        run: |
-          set -euo pipefail
-          echo "${{ github.token }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-          echo "::warning::Restoring ${{ steps.previous.outputs.digest }} as latest"
-          skopeo copy --all \
-            "docker://${IMAGE_REGISTRY}/${{ steps.variant.outputs.image }}@${{ steps.previous.outputs.digest }}" \
-            "docker://${IMAGE_REGISTRY}/${{ steps.variant.outputs.image }}:latest"
-          echo "::warning::Rolled back. latest is the previous image."
-
-      - name: Report
-        if: always()
-        run: |
-          echo "Naia OS ${{ steps.version.outputs.version }} (${{ inputs.variant || 'nvidia' }} -> ${{ steps.variant.outputs.image }})"
-          echo "previous:  ${{ steps.previous.outputs.digest }}"
-          echo "published: ${{ steps.published.outputs.digest }}"
+          name: naia-os-bc250-0.2.3-image-receipt
+          path: ${{ github.workspace }}/candidate-image-receipt.json
+          if-no-files-found: error
+          retention-days: 30
