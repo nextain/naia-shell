@@ -2,12 +2,22 @@
 
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppConfig } from "../../lib/config";
+
+type StartupMessageArgs = {
+	adkPath: string | null;
+	message: string;
+};
 
 const mocks = vi.hoisted(() => ({
-	invoke: vi.fn(() => Promise.resolve()),
+	invoke: vi.fn<(command: string, args: StartupMessageArgs) => Promise<void>>(
+		() => Promise.resolve(),
+	),
 	listen: vi.fn(() => Promise.resolve(vi.fn())),
 	loadConfig: vi.fn(),
-	loadConfigWithSecrets: vi.fn(() => Promise.resolve(null)),
+	loadConfigWithSecrets: vi.fn<() => Promise<AppConfig | null>>(() =>
+		Promise.resolve(null),
+	),
 	saveConfig: vi.fn(),
 	syncLinkedChannels: vi.fn(() => Promise.resolve()),
 	sendAuthUpdate: vi.fn(() => Promise.resolve()),
@@ -40,6 +50,7 @@ import { useAgentAuthSync } from "../useAgentAuthSync";
 describe("useAgentAuthSync — structured main model preservation", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.loadConfig.mockReturnValue(undefined);
 		mocks.loadConfigWithSecrets.mockResolvedValue(null);
 	});
 
@@ -71,6 +82,84 @@ describe("useAgentAuthSync — structured main model preservation", () => {
 
 		expect(mocks.saveConfig).toHaveBeenCalledWith(
 			expect.objectContaining({ model: "deepseek-v4-flash" }),
+		);
+	});
+
+	it("does not replay a Nextain direct key as naia-anyllm credentials", async () => {
+		mocks.loadConfigWithSecrets.mockResolvedValue({
+			provider: "nextain",
+			model: "test-model",
+			apiKey: "direct-key",
+			naiaKey: "naia-key",
+			googleApiKey: "google-tts-key",
+			openaiTtsApiKey: "openai-tts-key",
+			elevenlabsApiKey: "elevenlabs-tts-key",
+			gatewayToken: "gateway-token",
+		});
+
+		renderHook(() => useAgentAuthSync(false, false, true));
+
+		await vi.waitFor(() =>
+			expect(mocks.sendCredsUpdate).toHaveBeenCalledTimes(1),
+		);
+		expect(mocks.sendAuthUpdate).toHaveBeenCalledWith("naia-key", null);
+		expect(mocks.sendCredsUpdate).toHaveBeenCalledWith(
+			{
+				keys: {},
+				ttsKeys: {
+					google: "google-tts-key",
+					openai: "openai-tts-key",
+					elevenlabs: "elevenlabs-tts-key",
+				},
+				gatewayToken: "gateway-token",
+			},
+			null,
+		);
+
+		const startupMessages = mocks.invoke.mock.calls
+			.filter(([command]) => command === "store_startup_message")
+			.map(([, args]) => JSON.parse(args.message));
+		expect(startupMessages).toContainEqual({
+			type: "auth_update",
+			naiaKey: "naia-key",
+		});
+		expect(startupMessages).toContainEqual({
+			type: "creds_update",
+			keys: {},
+			ttsKeys: {
+				google: "google-tts-key",
+				openai: "openai-tts-key",
+				elevenlabs: "elevenlabs-tts-key",
+			},
+			gatewayToken: "gateway-token",
+		});
+	});
+
+	it("preserves a direct provider key alongside TTS credentials", async () => {
+		mocks.loadConfigWithSecrets.mockResolvedValue({
+			provider: "openai",
+			model: "test-model",
+			apiKey: "direct-key",
+			googleApiKey: "google-tts-key",
+			openaiTtsApiKey: "openai-tts-key",
+			elevenlabsApiKey: "elevenlabs-tts-key",
+		});
+
+		renderHook(() => useAgentAuthSync(false, false, true));
+
+		await vi.waitFor(() =>
+			expect(mocks.sendCredsUpdate).toHaveBeenCalledTimes(1),
+		);
+		expect(mocks.sendCredsUpdate).toHaveBeenCalledWith(
+			{
+				keys: { openai: "direct-key" },
+				ttsKeys: {
+					google: "google-tts-key",
+					openai: "openai-tts-key",
+					elevenlabs: "elevenlabs-tts-key",
+				},
+			},
+			null,
 		);
 	});
 });

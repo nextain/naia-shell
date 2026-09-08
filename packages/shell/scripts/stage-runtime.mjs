@@ -37,11 +37,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 import {
-	parseGitWorktreePaths,
 	REQUIRED_AGENT_COMMIT,
 	REQUIRED_PROTO_SHA256,
+	resolvePairedAgent,
 } from "./agent-pairing.mjs";
 import { herdrReleaseDir } from "./stage-herdr.mjs";
+import { interactiveLaunchEnv } from "./launch-env.mjs";
 
 const SHELL = resolve(dirname(fileURLToPath(import.meta.url)), ".."); // packages/shell
 const REPO_ROOT = resolve(SHELL, "../..");
@@ -54,17 +55,6 @@ const CASCADE_LOADER_SIBLING = resolve(
 	SHELL,
 	"../../../naia-omni-windows-manager/loader",
 );
-const STATIC_AGENT_CANDIDATES = [
-	resolve(REPO_ROOT, "..", "naia-agent"),
-	resolve(REPO_ROOT, "..", "..", "naia-agent"),
-	resolve(REPO_ROOT, "..", "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
-	resolve(REPO_ROOT, "..", "..", ".agents", "work", "naia-agent-issue-388-proto"),
-];
-const AGENT_WORKTREE_ROOTS = [
-	resolve(REPO_ROOT, "..", "naia-agent-worktrees"),
-	resolve(REPO_ROOT, "..", "..", "naia-agent-worktrees"),
-];
-
 function gitOutput(dir, args) {
 	try {
 		return execFileSync("git", ["-C", dir, ...args], {
@@ -117,45 +107,6 @@ function sha256File(path) {
 	return createHash("sha256")
 		.update(readFileSync(path, "utf8").replace(/\r\n/g, "\n"))
 		.digest("hex");
-}
-
-function isPairedAgentCheckout(dir) {
-	return (
-		existsSync(resolve(dir, "scripts/builds/agent-stdio-entry.mjs")) &&
-		existsSync(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) &&
-		gitOutput(dir, ["rev-parse", "HEAD"]) === REQUIRED_AGENT_COMMIT &&
-		isCleanProto(dir) &&
-		isCleanAgentEntrypoint(dir) &&
-		isCleanCheckout(dir) &&
-		sha256File(resolve(dir, "src/main/adapters/grpc/naia_agent.proto")) ===
-			REQUIRED_PROTO_SHA256
-	);
-}
-
-function agentCandidates() {
-	const candidates = [...STATIC_AGENT_CANDIDATES];
-	for (const repository of STATIC_AGENT_CANDIDATES) {
-		if (!existsSync(repository)) continue;
-		candidates.push(
-			...parseGitWorktreePaths(
-				gitOutput(repository, ["worktree", "list", "--porcelain"]),
-			),
-		);
-	}
-	for (const root of AGENT_WORKTREE_ROOTS) {
-		if (!existsSync(root)) continue;
-		for (const entry of readdirSync(root, { withFileTypes: true })) {
-			if (entry.isDirectory()) candidates.push(resolve(root, entry.name));
-		}
-	}
-	return [...new Set(candidates)];
-}
-
-function firstPairedAgentCheckout() {
-	for (const dir of agentCandidates()) {
-		if (isPairedAgentCheckout(dir)) return dir;
-	}
-	return null;
 }
 
 function gitRootForPath(path, isFile) {
@@ -211,17 +162,11 @@ function applyPairedAgentEnv(env) {
 		return gitRootForPath(explicitScript, true);
 	}
 
-	const pairedAgent = firstPairedAgentCheckout();
-	if (!pairedAgent) {
-		throw new Error(
-			`[stage-runtime] no paired naia-agent checkout contains ${REQUIRED_AGENT_COMMIT} with agent-stdio-entry.mjs and naia_agent.proto`,
-		);
-	}
-	env.NAIA_AGENT_SCRIPT =
-		env.NAIA_AGENT_SCRIPT ?? resolve(pairedAgent, "scripts/builds/agent-stdio-entry.mjs");
-	env.NAIA_AGENT_PROTO_DIR =
-		env.NAIA_AGENT_PROTO_DIR ?? resolve(pairedAgent, "src/main/adapters/grpc");
-	validateAgentEnvPair(env.NAIA_AGENT_SCRIPT, env.NAIA_AGENT_PROTO_DIR);
+	const { pairedAgent, agentScript, agentProtoDir } = resolvePairedAgent({
+		env,
+	});
+	env.NAIA_AGENT_SCRIPT = agentScript;
+	env.NAIA_AGENT_PROTO_DIR = agentProtoDir;
 	return pairedAgent;
 }
 
@@ -650,6 +595,11 @@ export function invalidateVoskBuildCache(
 }
 
 async function main() {
+	// Installer staging is a product build, so native E2E checkout selectors must
+	// not leak into its paired-agent choice or into child staging commands.
+	const cleanLaunchEnv = interactiveLaunchEnv(process.env);
+	for (const key of Object.keys(process.env)) delete process.env[key];
+	Object.assign(process.env, cleanLaunchEnv);
 	const platform = process.platform;
 	const arch = process.arch;
 	const matrix = readMatrix();

@@ -132,10 +132,11 @@ export function useAgentAuthSync(
 			if (cfg.googleApiKey) ttsKeys.google = cfg.googleApiKey;
 			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
 			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
-			const credsProvider =
-				cfg.provider === "nextain" ? "naia-anyllm" : cfg.provider;
 			const credsPayload = {
-				keys: cfg.apiKey && cfg.provider ? { [credsProvider]: cfg.apiKey } : {},
+				keys:
+					cfg.apiKey && cfg.provider && cfg.provider !== "nextain"
+						? { [cfg.provider]: cfg.apiKey }
+						: {},
 				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
 				...(cfg.gatewayToken !== undefined && {
 					gatewayToken: cfg.gatewayToken,
