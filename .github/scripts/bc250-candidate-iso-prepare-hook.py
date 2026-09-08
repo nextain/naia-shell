@@ -133,7 +133,7 @@ grep -Fq "container-image-reference=ostree-image-signed:docker://${{NAIA_CANDIDA
 # Exercise the same image lookup transport as Anaconda, not only podman metadata.
 command -v skopeo >/dev/null
 skopeo inspect --raw "containers-storage:${{candidate_ref}}" >/dev/null
-for unit in naia-bc250-governor naia-bc250-dp-audio; do
+for unit in naia-bc250-dp-audio; do
     test -x "/usr/libexec/${{unit}}"
     test -L "/etc/systemd/system/multi-user.target.wants/${{unit}}.service"
     grep -Fq 'ConditionKernelCommandLine=!nomodeset' "/usr/lib/systemd/system/${{unit}}.service"

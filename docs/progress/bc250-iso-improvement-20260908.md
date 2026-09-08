@@ -7,7 +7,7 @@ explicitly requested public BC250 source-based improvements for testing tomorrow
 
 P02/P03 acceptance: retain the pinned shell RPM and signing key; preserve
 BIOS/UEFI and basic-graphics recovery; bind the Kickstart reference to the
-embedded container; include guarded governor and DP-audio support in the
+embedded container; include guarded DP-audio support in the
 installed image as well as the live rootfs; preserve icon alpha; never change
 production latest or the public download pointer. Exact checksum and USB
 readback are required before delivery. Hardware boot/install stays unverified
@@ -23,3 +23,12 @@ file, not to the remote candidate build.
 
 P05: pending actual image/ISO build, local checksum, spare-media readback and
 human-installed boot. No release promotion.
+
+Development review rejected automatic GPU voltage control: per-board stability,
+concurrent controller handling and upstream error cleanup were unverified. The
+support2 candidate excludes the governor binary, profile, wrapper and service.
+DP audio and installer reference fixes remain. Normal graphics boot is a separate
+unresolved acceptance criterion: current BC250 boot uses amdgpu without nomodeset,
+kernel7.2.0-ogc6.1.fc44, but previous failure-stage evidence is insufficient.
+Do not claim this package fixes pre-render-node graphics initialization. Actual
+normal/recovery boot, DP audio and Anaconda deployment must be tested on hardware.
