@@ -130,6 +130,14 @@ grep -Fq "ostreecontainer --url=${{NAIA_CANDIDATE_IMAGE}}:${{NAIA_CANDIDATE_TAG}
     /usr/share/anaconda/interactive-defaults.ks
 grep -Fq "container-image-reference=ostree-image-signed:docker://${{NAIA_CANDIDATE_IMAGE}}:${{NAIA_CANDIDATE_TAG}}" \\
     /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
+# Exercise the same image lookup transport as Anaconda, not only podman metadata.
+command -v skopeo >/dev/null
+skopeo inspect --raw "containers-storage:${{candidate_ref}}" >/dev/null
+for unit in naia-bc250-governor naia-bc250-dp-audio; do
+    test -x "/usr/libexec/${{unit}}"
+    test -L "/etc/systemd/system/multi-user.target.wants/${{unit}}.service"
+    grep -Fq 'ConditionKernelCommandLine=!nomodeset' "/usr/lib/systemd/system/${{unit}}.service"
+done
 echo "[naia] candidate image-info, embedded digest, and signed kickstart checks passed"
 '''
 
