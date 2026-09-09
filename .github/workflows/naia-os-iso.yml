@@ -1,4 +1,4 @@
-name: Naia OS BC250 AMD ISO candidate
+name: Naia OS BC250 AMD live login repair ISO
 
 # This workflow is deliberately manual. The image workflow publishes the
 # candidate tag and digest first; this workflow wraps that immutable image and
@@ -30,12 +30,12 @@ env:
   CANDIDATE_TAG: ${{ inputs.candidate_tag }}
   CANDIDATE_DIGEST: ${{ inputs.candidate_digest }}
   IMAGE_LAYER_REF: ${{ inputs.image_layer_ref }}
-  EXPECTED_IMAGE_LAYER_REF: 8c049e647cba4e451f4f52357434651383b596f7
+  EXPECTED_IMAGE_LAYER_REF: 2976c5f2d446e90475a63f2668242451d7a1c8b7
   EXPECTED_TAG: candidate-bc250-0.2.3-13980895-support4
   NAIA_VERSION: "0.2.3"
   SOURCE_BUILD: 0.2.3+13980895
   SOURCE_COMMIT: 1398089595ee1a7330f8ec1cfe387439f0807227
-  ISO_NAME: naia-os-bc250-0.2.3-13980895-support4-amd64.iso
+  ISO_NAME: naia-os-bc250-0.2.3-13980895-support5-livefix-amd64.iso
   R2_PUBLIC: https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev
   R2_BUCKET: s3://naia-releases
   TITANOBOA_REF: df63ab42567fb817eafda4296c7dcfa6a1c94b04
@@ -95,6 +95,9 @@ jobs:
         run: |
           set -euo pipefail
           test -f installer/hook-post-rootfs.sh
+          test -f installer/check-live-session.sh
+          bash -n installer/hook-post-rootfs.sh
+          bash -n installer/check-live-session.sh
           test -f installer/flatpaks
           test -f config/files/usr/share/naia/naia-os-version
           test -f config/files/variant/amd/usr/share/naia/image-ref
@@ -111,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          prefix="builds/amd/0.2.3.${stamp}-13980895-support4"
+          prefix="builds/amd/0.2.3.${stamp}-13980895-support5-livefix"
           echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
           echo "Candidate R2 prefix: $prefix"
@@ -171,6 +174,15 @@ jobs:
           set -euo pipefail
           python3 "$HELPER" "$SOURCE_HOOK" "$CANDIDATE_HOOK" \
             "$IMAGE_REF" "$CANDIDATE_TAG" "$CANDIDATE_DIGEST"
+          cat >> "$CANDIDATE_HOOK" <<'CHECK_HEADER'
+          cat > /usr/libexec/naia-check-live-session <<'NAIA_LIVE_CHECK'
+          CHECK_HEADER
+          cat "${SOURCE_HOOK%/*}/check-live-session.sh" >> "$CANDIDATE_HOOK"
+          cat >> "$CANDIDATE_HOOK" <<'CHECK_FOOTER'
+          NAIA_LIVE_CHECK
+          chmod 0755 /usr/libexec/naia-check-live-session
+          printf '%s\n' 'bc250-0.2.3-13980895-support5-livefix' > /usr/share/naia/live-iso-revision
+          CHECK_FOOTER
           bash -n "$CANDIDATE_HOOK"
           grep -Eq 'NAIA_CANDIDATE_(IMAGE|TAG|DIGEST)|embedded candidate|ostreecontainer --url|container-image-reference' \
             "$CANDIDATE_HOOK"

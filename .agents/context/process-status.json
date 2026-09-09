@@ -10,6 +10,18 @@
   },
 
   "current_work": {
+    "bc250_live_login_580": {
+      "issue": "https://github.com/nextain/naia-shell/issues/580",
+      "issue_doc": "docs/progress/issue-580-live-login.md",
+      "source_commit": "2976c5f2d446e90475a63f2668242451d7a1c8b7",
+      "P01_user_scenarios": "done",
+      "P02_test_coverage_map": "done",
+      "P03_requirements": "done",
+      "P04_integration_test": "in_progress",
+      "P05_complete": "pending",
+      "verification": "Original USB failure reproduced; mount-only masking restored KDE. Actual generator/runtime checker and syntax checks passed. Fresh ISO, persistence and USB delivery remain pending; physical BC250 has not been observed.",
+      "last_updated": "2026-09-09T04:14:16Z"
+    },
     "issue": "naia-shell-transplant",
     "title": "naia-shell 헥사고날 이식 — foundation tranche F0~F3 (control-plane/자기상태/관측/조작) [repo=naia-shell; naia-os=배포판 계층 별개]",
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",

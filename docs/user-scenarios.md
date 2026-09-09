@@ -1752,3 +1752,13 @@ Test Coverage Map
 | UC | 단위·계약 | 비고 |
 |---|---|---|
 | UC-QUALITY-STABILITY-CONCURRENCY | `packages/shell/src-tauri/src/app_sandbox.rs`: 여덟 스레드가 한 파일을 두고 다투는 동안 읽는 스레드 둘이 반쪽짜리를 보는지 감시 | 원자적 쓰기를 비원자적으로 되돌리면 스무 번 중 스무 번 잡는다. 처음에는 쓰는 내용이 한 글자라 절반만 잡았다 |
+
+## BC250 live ISO delivery (#580)
+
+Derived from the owner's 2026-09-09 live-login report and instruction to repair the attached USB. The distribution implementation is in `nextain/naia-os`; this repository owns the ISO workflow.
+
+| UC | User scenario | Test coverage |
+|---|---|---|
+| UC-BC250-LIVE-INSTALL | Boot a freshly written USB through the regular entry, reach the live KDE desktop without a password or persistence partition, and open the installer. Automatic locking must not trap the new passwordless live user. | Candidate ISO boot; `nextain/naia-os:installer/check-live-session.sh none`; visible desktop and installer capture. |
+| UC-BC250-LIVE-PERSISTENCE | Boot with an existing `naia-data` filesystem and retain the live home and its settings across a reboot. | Disposable labeled btrfs disk; `installer/check-live-session.sh present`; sentinel survives a second boot. |
+| UC-BC250-LIVE-DELIVERY | Receive the repaired candidate on the identified USB, with traceable source/image pins and verified recorded bytes. | Workflow receipt, served ISO checksum, refreshed USB identity and readback hash; actual BC250 boot is a separate observation. |

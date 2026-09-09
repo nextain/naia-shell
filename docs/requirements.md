@@ -1123,6 +1123,16 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-BUNDLE.7** | #431 기준 초기 진입 예산을 개선된 측정값에 맞춰 raw 500,000바이트, gzip 160,000바이트로 강화한다. 최종 후보 실측은 기준선 2,913,442/836,096바이트에서 raw 439,810바이트/gzip 138,469바이트로 감소했다. 빌드 시각이 엔트리에 포함되어 gzip 값은 수 바이트 변동할 수 있으며, 이 수치는 엔트리 파일 크기 감소이지 초기 총 네트워크 전송량 감소를 뜻하지 않는다. | UC-PERF-BUNDLE-BUDGET | production build + `bundle-budget-report.json` | Done |
 
 
+## BC250 live ISO requirements (#580)
+
+Derived from the owner's 2026-09-09 report and repair/USB instruction; issue #580 tracks execution. Implementation remains in `nextain/naia-os`, with candidate delivery through this repository's workflow.
+
+| Requirement | Behavior | Scenario / verification |
+|---|---|---|
+| FR-BC250-LIVE.1 | A regular live boot without `naia-data` reaches an active KDE Wayland session; the absent optional home mount cannot become a failed login dependency. New passwordless live users have automatic lock and lock-on-resume disabled. Public image metadata stays readable by the live user. | UC-BC250-LIVE-INSTALL; actual candidate boot, runtime checker and installer capture. |
+| FR-BC250-LIVE.2 | Existing labeled btrfs media retain the original live-home mount, initialization ordering, persisted data and user settings. | UC-BC250-LIVE-PERSISTENCE; labeled virtual disk and sentinel checked across two boots. |
+| FR-BC250-LIVE.3 | The ISO pins the reviewed installer commit and the signed AMD image digest, publishes a distinct candidate path, and preserves installation/update identity. USB recording targets the freshly identified non-system USB and verifies the recorded image bytes. VM success does not count as BC250 hardware validation or authorize latest promotion. | UC-BC250-LIVE-DELIVERY; workflow, receipt, checksum, disk identity and readback evidence. |
+
 ## 기능 요구사항 (FR) — 앱 샌드박스 · BGM 라이브러리 · 슬라이드 녹화 (2026-09-05, #528 #543 #546 통합 완성)
 
 > 리눅스 핸드오프의 bgm-wip 통합을 완성하며 누락돼 있던 신규 파일 셋과 그 계약을 명문화한다.
