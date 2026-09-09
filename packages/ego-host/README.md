@@ -24,6 +24,7 @@ packages/ego-host/
 │  ├─ LICENSE, AGENTS.md
 │  ├─ UPSTREAM.md              고정 커밋·허용 목록·재동기화 절차
 │  └─ MANIFEST.sha256          파일별 sha256 (생성물)
+├─ skill/                      파생 SKILL.md + UPSTREAM-DIFF.md + learnings/ (S4)
 ├─ src/supervisor/             감독자 — 프레이밍·소켓·CDP 다중화·소켓 경로·브라우저 탐색·런처·lease·조정·조립
 ├─ src/client/                 CLI 쪽 — 소켓 클라이언트·globalThis.ego 프록시·preload
 ├─ bin/ego-browser.mjs         런처 (`nodejs [--sdk-path <dist>]`)
@@ -42,7 +43,7 @@ packages/ego-host/
 
 `vendor/ego-lite/` 아래 파일은 한 글자도 고치지 않는다. 필요한 변경은 호스트 쪽 래핑으로
 흡수하거나 업스트림에 PR 한다. 스킬 문서만 예외로 파생본을 두되, 파생본은 벤더 밖
-(`skill/SKILL.md`, S4 에서 생성)에 둔다. 자세한 내용은 `vendor/ego-lite/UPSTREAM.md`.
+(`skill/SKILL.md`)에 둔다. 자세한 내용은 `vendor/ego-lite/UPSTREAM.md`.
 
 이 원칙은 문서가 아니라 **검사기가 지킨다.** 벤더 파일을 고치면 `vendor:check` 가
 종료 코드 1 로 실패한다.
@@ -202,3 +203,32 @@ S2b 까지가 "브라우저를 띄우고, 소유하고, 어떻게 죽어도 고�
 기본 거부), S2e 작업·취소·스냅샷·캡처(무간섭 (2) 활성 창 불변 포함), S2f 실브라우저 적합성이다.
 그때 지켜야 할 계약이 `docs/ego-runtime-abi.md` 이며, 각 행에 그 행을 밟는 테스트 이름이
 병기돼 있다.
+
+
+## 파생 스킬과 사이트 학습 (S4)
+
+```
+skill/
+├─ SKILL.md                파생 스킬 — 에이전트가 읽는 문서
+├─ UPSTREAM-DIFF.md        바꾼 문장마다 원문·파생문·이유
+└─ learnings/<site>/       사이트 학습 (manifest.json · notes · tools · browser-tools)
+```
+
+파생 결정은 넷이다. 비로그인 격리(로그인 상속 문장 삭제), 헤드리스 인계 불가(인계·회수·claim 은
+거부되고 사람이 필요하면 멈추고 보고), 지원 범위는 `docs/helper-matrix.md` 의 측정 결과, 두
+진입점의 승인 등급(형식 도구 대 heredoc 건별 승인). 근거는 `skill/UPSTREAM-DIFF.md` 의 표다.
+
+```bash
+# 파생본·표·학습을 한 번에 검사 (지원 목록 누출, cliLog 자리, 로그인 상속, 표의 인용, 학습 형식)
+node --test test/skill.test.mjs
+
+# 벤더 검사기로 학습 형식만 따로
+cd vendor/ego-lite/package/ego-browser \
+  && EGO_BROWSER_AGENT_WORKSPACE=../../../../skill node dist/scripts/validate-site-skills.js
+
+# 업스트림이 올라가면 3자 diff 로 파생 결정을 다시 본다
+node scripts/sync-ego-lite.mjs --ref <커밋>
+```
+
+학습 루트는 `EGO_BROWSER_AGENT_WORKSPACE` 로 지정한다. 어댑터는 ADK 별 작업 공간을 주므로,
+저장소의 `skill/learnings/` 는 **원본**이고 실행 시 루트는 ADK 안이다.
