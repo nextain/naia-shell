@@ -6,6 +6,7 @@ mod browser;
 mod browser_webview;
 mod capture;
 pub mod data_home;
+mod ego_host;
 mod gemini_live;
 mod herdr;
 mod memory;
@@ -4335,6 +4336,8 @@ fn restart_agent(
     }
 
     log_both("[Naia] Restarting agent-core...");
+    // #582 S6b: 재시작은 소유 런타임 정리 경로다. 감독자도 그 목록에 있다.
+    ego_host::cleanup_current_adk("cleanup(restart)");
     // Use a temporary empty db if none provided (shouldn't happen in practice)
     let empty_db;
     let db = match audit_db {
@@ -11047,6 +11050,8 @@ async fn reset_naia_config_files(adk_path: String) -> Result<(), String> {
     if adk_path.trim().is_empty() {
         return Err("adk_path is empty".to_string());
     }
+    // #582 S6b: Reset 은 소유 런타임 정리 경로다. 감독자·Chromium 을 marker 로 회수한다.
+    ego_host::cleanup_ego_host(std::path::Path::new(&adk_path));
     reset_naia_config_files_at(std::path::Path::new(&adk_path))
 }
 
@@ -13151,6 +13156,8 @@ pub fn run() {
                 }
             }
 
+            // #582 S6b: 시작 조정 — 크래시가 남긴 감독자·Chromium 을 marker 로 회수한다 (계약 4.8).
+            crate::ego_host::reap_current_adk();
             // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
             let agent_spawn = with_discord_lifecycle(&state.discord_lifecycle, || {
                 let process = spawn_agent_core(
@@ -13230,6 +13237,8 @@ pub fn run() {
 					}
                     // Kill Chrome on app exit (not on React component unmount)
                     crate::browser::browser_embed_kill();
+                    // #582 S6b: 정상 종료도 소유 런타임 정리 경로다 (계약 4.8).
+                    crate::ego_host::cleanup_current_adk("cleanup(shutdown)");
 
                     let state: tauri::State<'_, AppState> = window.state();
 

@@ -1147,7 +1147,9 @@
 		{
 			"spec": "env-tool-browser-host-lifecycle.spec.ts",
 			"conf": [],
-			"env": [],
+			"env": [
+				"NAIA_E2E_ADK_PATH"
+			],
 			"tier": "deterministic_ci"
 		},
 		{
