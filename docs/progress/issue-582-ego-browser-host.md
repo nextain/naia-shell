@@ -1,6 +1,6 @@
 # #582 에이전트 브라우저 호스트 — ego-lite 공개 런타임 벤더링과 #499 실제 어댑터
 
-작성 2026-09-09. 상태: 설계 4판(Codex 3차 반려 반영, S2 정책 4차 리뷰 대기. S0 착수 가능). 부모 #499, 조사 출처 #553, 형제 #583(QA 시간·포커스 원인).
+작성 2026-09-09. 상태: 설계 5판(Codex 4차 조건부 승인의 착수 전 조건 반영. S0 진행 중, S2 착수 가능). 부모 #499, 조사 출처 #553, 형제 #583(QA 시간·포커스 원인).
 역할: 분석·설계·사후 리뷰 Fable, 계획 적대 리뷰 Codex, 구현·실행 Opus.
 
 ## 1. 한 줄 요약
@@ -89,9 +89,13 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 
 ### 4.3 CDP 중계: 기본 거부 행렬
 
-#### 4.3.1 세션 라우팅
+#### 4.3.1 세션 라우팅과 타깃 lease
 
-`Target.attachToTarget({flatten:true})` 응답의 `result.sessionId`, 후속 명령의 최상위 `sessionId`, 이벤트의 최상위·`params.sessionId` 는 요청 id 와 별개의 이름공간이다. 감독자는 **Chromium 의 sessionId 를 그대로 유지**하고(별칭 없음), `sessionId → {connection, workspace, target}` 단일 소유 장부를 둔다. attach 요청을 받으면 응답이 오기 전에 `{connection, targetId}` 로 소유자를 예약해 두어, `Target.attachedToTarget` 이벤트가 응답보다 먼저 와도 유실되거나 다른 연결로 새지 않는다. 테스트는 응답 → 이벤트, 이벤트 → 응답 두 순서 모두를 강제한다. `detachedFromTarget` 은 장부에서 소유를 지우고 그 세션의 대기 요청을 원래 id 로 실패시킨다.
+- **sessionId 는 보존한다**(별칭 없음). 라우팅 키는 최상위 `sessionId` 만이다. 중첩 `params.sessionId` 는 메서드별로 해석한다. `Target.attachedToTarget`·`Target.detachedFromTarget` 의 것만 자식 타깃 세션이고, `Page.screencastFrame.params.sessionId` 는 `Page.screencastFrameAck` 용 프레임 토큰이다. 중첩 필드를 포괄적으로 장부 조회·재작성하지 않는다.
+- 장부는 둘로 나눈다. 영속 `targetId → workspace` 와 배타적 `targetId → {connection, generation}` **타깃 lease**. 같은 타깃에 두 연결이 동시에 attach 하면 원자적으로 한 연결만 승인하고 나머지는 원래 id 로 `EGO_TARGET_BUSY`. attach 요청마다 세대(generation)를 올리고, 응답이 오기 전에 `{connection, targetId, generation}` 으로 예약한다. 연결이 예약 중에 끊기면 예약을 철회하고, 그 뒤 도착한 늦은 응답은 감독자가 내부적으로 `Target.detachFromTarget` 한다. detach 된 sessionId 는 묘비(tombstone)로 남겨 같은 값이 재사용돼도 옛 세대의 요청·이벤트를 거부한다.
+- 자식 타깃(iframe·worker) auto-attach 는 쓰지 않는다. `Target.setAutoAttach` 는 거부 목록이며, 예기치 않은 자식 `attachedToTarget` 이 오면 fail-closed 로 감독자가 detach 한다. `waitingForDebugger: true` 로 멈춘 타깃은 장부 등록 뒤 감독자 전용 `Runtime.runIfWaitingForDebugger` 로 풀거나 detach 한다. 이 두 메서드는 감독자 전용이라 연결에는 노출하지 않는다.
+- 순서: Chromium 에서 이미 받은 응답·이벤트는 단일 FIFO 순서를 유지한다. 4.2 의 "응답 우선"은 아직 Chromium 으로 보내지 않은 요청과 감독자 자체 원격측정보다 응답 전달이 먼저라는 뜻으로 한정한다. attach 응답과 `attachedToTarget` 사이에 재정렬을 적용하지 않는다.
+- 테스트는 응답→이벤트, 이벤트→응답 두 순서, 동시 attach, 예약 중 연결 종료, 묘비 뒤 재사용, 예기치 않은 자식 attach 를 각각 강제한다.
 
 #### 4.3.2 행렬
 
@@ -104,6 +108,20 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 - **세션 소유 강제**: `Page.navigate/reload/stopLoading/enable/captureScreenshot/getLayoutMetrics/handleJavaScriptDialog/…`, `Runtime.evaluate/callFunctionOn/enable/…`, `DOM.getDocument/querySelector/getBoxModel/resolveNode/describeNode/…`, `Accessibility.getFullAXTree/…`, `Input.dispatchMouseEvent/dispatchKeyEvent/insertText`, `Emulation.*` 의 개별 메서드, `Network.setCookie`, `Fetch.enable/disable` 은 `{connection, sessionId, targetId, workspaceId}` 장부를 통과한 세션에서만. 정책 파일이 메서드 하나하나를 나열한다.
 - **작업 소유 강제**: `Runtime.terminateExecution`, `Fetch.failRequest/fulfillRequest/continueRequest/continueWithAuth`, `Browser.cancelDownload`, `IO.read/close` 는 해당 작업(operation)이 소유한 세션·requestId·GUID·스트림 핸들에만 허용한다. 취소 훅(4.7)이 쓰는 메서드가 바로 이 묶음이며 허용 목록에 명시적으로 들어 있다.
 - **Target 장부 통과**: `Target.getTargets/attachToTarget/activateTarget/closeTarget/getTargetInfo` 는 연결이 소유한 타깃으로 범위를 좁히고 결과·이벤트도 필터. 다운로드 GUID, `Fetch.requestPaused` 응답 의무, `IO` 스트림 핸들은 같은 장부에 묶고 작업 취소·연결 종료 시 정리한다.
+
+벤더 런타임의 `driver/*.ts` 와 `element-resolver.ts`·`browser-runtime.ts` 가 실제로 부르는 CDP 메서드 전수표(4차 리뷰가 소스에서 뽑음). 이것이 `mediator-policy.ts` 의 초안이며, 소스에 있는 메서드가 정책표에 없으면 테스트 수집 단계에서 실패한다.
+
+| 분류 | 메서드 |
+|---|---|
+| 거부 | `DOM.setFileInputFiles` |
+| 컨텍스트 강제 | `Browser.setDownloadBehavior`, `Page.setDownloadBehavior` |
+| 세션 소유 강제 | `Page.enable`, `Page.navigate`, `Page.reload`, `Page.getFrameTree`, `Page.captureScreenshot`, `Page.startScreencast`, `Page.stopScreencast`, `Runtime.evaluate`, `DOM.resolveNode`, `DOM.getBoxModel`, `Accessibility.getFullAXTree`, `Input.dispatchKeyEvent`, `Input.dispatchMouseEvent`, `Input.insertText`, `Network.enable`, `Network.disable` |
+| 작업·자원 소유 강제 | `Network.getResponseBody`(requestId), `Page.screencastFrameAck`(프레임 토큰), `Runtime.callFunctionOn`·`Runtime.releaseObject`(objectId) — 세션 검사만으로는 부족해 작업·자원 장부와 결속 |
+| Target 장부 | `Target.getTargets`, `Target.attachToTarget`, `Target.activateTarget`, `Target.closeTarget` |
+| 감독자 전용(연결 비노출) | `Target.detachFromTarget`, `Runtime.runIfWaitingForDebugger`, `Target.createBrowserContext/disposeBrowserContext`, `Browser.close` |
+
+취소 훅(4.7)이 쓰는 `Page.stopLoading`, `Fetch.failRequest`, `Browser.cancelDownload`, `Runtime.terminateExecution` 은 작업·자원 소유 강제 묶음에 속한다.
+
 - **격리 검증**은 같은 출처(로컬 HTTP 픽스처)에서 쿠키·localStorage·IndexedDB·CacheStorage·서비스 워커·권한·다운로드 경로를 공간 A 에서 심은 뒤 공간 B 에서 보이지 않음을 negative 로 확인한다. 인증서 예외 공유는 범위 밖(양보)이며 관련 명령을 막는 것으로 대신한다.
 
 ### 4.4 작업·자원·권한
@@ -133,11 +151,17 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 
 ### 4.7 취소
 
-`Page.stopLoading` 만으로는 부족하다. 작업마다 취소 훅을 둔다. 이동은 `Page.stopLoading` 과 세션 분리, Fetch 가로채기는 `Fetch.disable` 과 대기 중 요청의 `Fetch.failRequest`, 다운로드는 `Browser.cancelDownload`, 평가는 `Runtime.terminateExecution`. 취소 뒤 확인하는 것은 최종 상태가 cancelled 로 유지되는지, 후속 이벤트가 없는지, 열린 가로채기·스트림·세션이 0 인지, 부분 효과가 기록됐는지다.
+`Page.stopLoading` 만으로는 부족하다. 작업마다 취소 훅을 두되, 훅이 **작업보다 넓은 상태를 파괴하지 않게** 한다.
+
+- 이동: `Page.stopLoading` 과, 그 작업이 만든 세션이고 다른 사용자가 없을 때만 세션 detach.
+- Fetch 가로채기: 작업이 소유한 requestId 만 `Fetch.failRequest`. `Fetch.disable`·`Network.disable` 은 도메인 참조 횟수(refcount)가 0 이 될 때만.
+- 다운로드: 작업이 소유한 GUID 만 `Browser.cancelDownload`.
+- 평가: `Runtime.terminateExecution` 은 세션 전체에 작용하므로 이동·평가는 세션당 배타 슬롯으로 돌려 같은 세션에 다른 작업이 없을 때만 부른다.
+- 취소 뒤 확인하는 것: 최종 상태가 cancelled 로 유지되는지, 취소 장벽 뒤 **그 작업에 결속된** 이벤트가 0 인지(세션 전체 이벤트가 아니라), 그 작업이 연 가로채기·스트림·세션이 0 인지, 부분 효과가 기록됐는지, 같은 세션의 다른 작업이 영향을 받지 않았는지.
 
 ### 4.8 소유·lease·정리
 
-- Chromium 은 `--remote-debugging-pipe` 로 띄운다(stdio 3·4번). Chromium 은 파이프 EOF 를 연결 해제로 처리해 브라우저를 닫는다. 이것이 성립하려면 **부모 쪽 파이프 끝의 유일한 소유자가 감독자**여야 한다. 파이프 fd 는 CLOEXEC(Windows 는 비상속)로 만들고 CLI·worker·다른 자식에 절대 넘기지 않는다. 그래야 감독자가 SIGKILL 로 죽을 때 EOF 가 발생해 Chromium 이 스스로 종료한다. 신호 핸들러에 기대지 않는다. 실브라우저 테스트는 SIGKILL 뒤 제한 시간 안에 Chromium PID 가 소멸함을 확인하고, 소멸하지 않으면 lease 기반 강제 회수가 그 사실을 기록하며 회수함을 확인한다.
+- Chromium 은 `--remote-debugging-pipe` 로 띄운다(자식 쪽 fd 3·4). Chromium 은 파이프 EOF 를 연결 해제로 처리해 브라우저를 닫는다. 이것이 성립하려면 **부모 쪽 파이프 끝의 유일한 소유자가 감독자**여야 한다. Node 의 공개 `child_process` API 로는 부모 fd 에 CLOEXEC 나 Windows 비상속 플래그를 사후 설정할 수 없으므로, 규율로 집행한다. Chromium spawn 에서만 `stdio` 배열의 3·4번에 `'pipe'` 를 두고, 부모 쪽 스트림은 감독자 내부 클로저에만 보관하며, 감독자의 다른 모든 spawn(CLI 포함)은 명시적 stdio 허용 목록만 쓰고 스트림·숫자 fd 를 절대 넘기지 않는다(fd 3 이상은 Node 기본이 `ignore`). 리눅스에서는 후손 프로세스의 `/proc/<pid>/fd` 에 파이프가 없음을 실측하고, 감독자 SIGKILL 뒤 제한 시간 안에 Chromium PID 가 소멸함을 확인한다. 소멸하지 않으면 lease 기반 강제 회수가 그 사실을 기록하며 회수한다. Windows 의 HANDLE 비상속은 실측 전까지 추측이며 windows4060 게이트 항목이다.
 - 감독자의 소유자는 셸이다. 기존 에이전트 lease 와 같은 형식(nonce·marker·started-at·runtime 경로·PID)으로 `<ADK>/ego-host/lease.json` 을 쓴다. 시작 시 조정에서 marker 가 일치하는 프로세스만 입양하거나 회수한다. 셸 크래시 뒤 다음 시작에서 고아 0 을 이 경로가 보장한다.
 - ADK 전환은 A 의 감독자 정상 종료 → B 의 lease 조정 순서를 어댑터가 강제한다.
 - Reset·재시작·종료 경로에서 셸(Rust)의 소유 런타임 정리 목록에 감독자를 넣는다(S6b). 검증은 `test:e2e:tauri` 로 셸→IPC→Rust→감독자→Chromium 전체를 돈다.
@@ -213,12 +237,12 @@ P01~P03 은 코드보다 먼저 쓴다(S-1). 기존 FR-ENV-TOOL.2·6·9 는 In-p
 | **S0b 동시성·deadline** | 종결 상태 CAS, 진행 중 멱등 공유(같은 키 동시 요청은 포트 호출 1회), 실제 deadline 타이머와 `AbortSignal` 전파, 오류 코드를 뭉개지 않음. 경주·동시 멱등·deadline 계약 테스트 | `pnpm test` 0 |
 | **S0c 포트** | `BrowserWorkspacePort {create, list, close}`, `BrowserOperationPort {open, navigate, snapshot, click, fill, evaluate, screenshot, close}`, `CancellationPort.cancel` 이 포트까지 내려감, 서비스에 등급 고정 RPC 표. 대역 갱신 | `pnpm test` 0 |
 | **S1 벤더링** | 4.1·6 절대로. `vendor/ego-lite` 전체, UPSTREAM.md, MANIFEST.sha256, THIRD_PARTY_NOTICES.md, `sync-ego-lite.mjs`, `docs/ego-runtime-abi.md`(근거 줄 정정), 임의 디렉터리 설치 테스트 | `sync --check` 0, 벤더 `npm test` 0, 설치 테스트 0 |
-| **S2a RPC·CLI ABI** | 소켓 프레이밍·핸드셰이크·연결별 id 공간·이벤트 필터·유한 큐·14초 deadline, CLI `nodejs --sdk-path`. 가짜 CDP 백엔드로 전송 실패 모드 테스트(15초 경계, 동시 두 CLI 같은 id, 순서 보존, 이벤트 폭주, 단절, id 없는 오류의 영향 범위) | 0 |
+| **S2a RPC·CLI ABI** | 소켓 프레이밍·핸드셰이크·연결별 id 공간·이벤트 필터·유한 큐·14초 deadline, CLI `nodejs --sdk-path`. 가짜 CDP 백엔드로 전송 실패 모드 테스트(15초 경계, 동시 두 CLI 같은 id, 순서 보존, 이벤트 폭주, 단절, id 없는 오류의 영향 범위), worker·fork·cluster 에서 preload fail-closed, `sync --provenance`(고정 커밋 실체화 후 형식·모드·심링크·바이트·누락·추가 비교) | 0 |
 | **S2b 런처·lease** | `--remote-debugging-pipe` 런처(linux, win32 경로 탐색), lease 파일, 시작 조정. 실브라우저: 감독자 SIGKILL → Chromium 소멸, 조정 → 고아 0 | 0 |
 | **S2c 장부** | 작업 공간(격리 컨텍스트)·타깃·세션 장부, 연결별 선택 공간, 원자적 저장 | 0 |
-| **S2d 중계기** | 4.3 행렬을 데이터로, 기본 거부. 행렬을 읽어 각 셀을 실브라우저에서 검증(거부 셀은 원래 id 오류 응답, 컨텍스트 강제 셀은 재작성 확인). 격리 행렬 negative | 0 |
+| **S2d 중계기** | 4.3.2 전수표를 데이터로, 기본 거부. 소스 스캔으로 뽑은 메서드가 정책표에 없으면 수집 단계 실패(미분류 0). 각 셀을 실브라우저에서 검증(거부 셀은 원래 id 오류 응답, 컨텍스트 강제 셀은 재작성 확인). 4.3.1 세션 경주표 전부 강제. 격리 행렬 negative | 0 |
 | **S2e 작업·스냅샷·캡처** | 작업별 세션, 취소 훅(4.7), deadline, 접근성 스냅샷, 캡처, 무간섭 세 겹 | 0 |
-| **S2f 적합성** | 실제 감독자 + 벤더 런타임으로 ABI 각 행. 업스트림 `real-browser-e2e` 는 `EGO_BROWSER_REAL_E2E_ONLY` 로 지원 케이스만 고정한 통과 묶음과, 미지원 헬퍼의 형식 있는 거부 묶음으로 분리. 지원 헬퍼 행렬은 헬퍼별 독립 probe 하네스(manifest)로 생성 | 0, 행렬 파일 산출 |
+| **S2f 적합성** | 실제 감독자 + 벤더 런타임으로 ABI 각 행. 업스트림 `real-browser-e2e` 는 `EGO_BROWSER_REAL_E2E_ONLY` 로 지원 케이스만 고정한 통과 묶음과, 미지원 헬퍼의 형식 있는 거부 묶음으로 분리. 지원 헬퍼 행렬은 헬퍼별 독립 probe 하네스(manifest)로 생성. 리눅스 후손 프로세스 fd 부재, SIGKILL→EOF→PID 소멸, 취소와 동시 작업 무간섭 | 0, 행렬 파일 산출 |
 | **S3a 어댑터·조립** | `ego-browser-env.ts` = 감독자 클라이언트, ADK 별 절대 경로 환경 주입, composition 배선, module-manifest 등록. `env-tool-browser-host.contract.test.ts` 로 S0 계약 전체를 실제 어댑터로(경주·동시 멱등·deadline·취소 부작용 정지·재연결·stale ref·캡처 파일·작업/자원 id 일치) | 0, `check-file-anchors` 0 |
 | **S3b ADK 전환** | A 종료 → B 조정 순서, lease 격리 테스트 | 0 |
 | **S4 스킬(파생)·학습** | `skill/SKILL.md` + `UPSTREAM-DIFF.md`, S2f 행렬 반영, `learnings/naia-land/` 첫 예시, `validate-site-skills` | 0 |
@@ -246,6 +270,8 @@ S6b 착수 전에 진행 중 QA 세션의 수정 worktree 변경 파일 목록�
 - 2026-09-09 S1 완료(커밋 1fa2e7ed). S1 의 설치 테스트는 "재현 가능한 설치·빌드 표면"이며 ABI 적합성 판정은 S2f 전에는 주장하지 않는다. 구현 중 확정한 사실: 허용 목록에 워크플로 파일 하나 추가, CLI 는 런처 형태(위 2절·4.2), `listTabs` 는 `{tabs}` 로 통일, 세션 상실 문구는 `Session not found` 계열 정규식에 걸려야 자동 재접속이 돈다, 미지의 `error_code` 는 그대로 통과하므로 사람이 읽을 설명은 `error` 문자열에 담는다. ABI 문서의 근거 줄 여섯 행을 정정했다.
 
 - 2026-09-09 Codex 3차: 반려. 2차 지적 32건 중 26 해소·6 부분 해소. 남은 P0 둘은 S2 세부(flatten sessionId 라우팅·attach 경주, 접두사 허용이 기본 거부를 무효화). P1: `--import` 의 worker·fork 전파, 파이프 fd 상속 금지 불변, ABI 문서 CLI 주입 행 오기, `--check` 는 출처 증명이 아님. 전부 4판에 반영(4.2.1·4.3.1·4.3.2·4.8·6절). S0 는 막힌 항목이 없어 착수한다. S2 착수 전 4.2~4.3·4.8 을 대상으로 4차 리뷰를 받는다.
+
+- 2026-09-09 Codex 4차(S2 정책 한정): 조건부 승인. 3차 잔여 P0 둘 중 접두사 문제 해소, 세션 라우팅은 부분 해소. 착수 전 조건 넷(중첩 sessionId 메서드별 해석, 타깃 lease·세대·묘비·자식 attach·waitingForDebugger, 누락 CDP 메서드 8개와 감독자 전용 메서드 분류, 취소 배타성·refcount 와 파이프 구현 문구)을 5판에 반영(4.3.1·4.3.2·4.7·4.8). 슬라이스별 확인 조건은 9절 S2a·S2d·S2f 행에 반영.
 
 ## 12. 위험과 미결
 
