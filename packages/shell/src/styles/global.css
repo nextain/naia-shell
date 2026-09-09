@@ -3674,6 +3674,191 @@ body.resizing-row {
 	word-break: break-all;
 }
 
+/* #582 브라우저 호스트 결과 카드 — 백그라운드 브라우저는 화면이 없어 증거가 유일한 확인 수단이다 */
+.tool-activity.tool-browser-host {
+	border-left-width: 3px;
+}
+
+.tool-activity-header-static {
+	cursor: default;
+}
+
+.browser-host-card {
+	padding: 4px 8px 8px 22px;
+	font-size: 11px;
+	line-height: 1.5;
+}
+
+.browser-host-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-bottom: 4px;
+}
+
+.browser-host-space {
+	font-family: var(--mono);
+	color: var(--cream-dim);
+	word-break: break-all;
+}
+
+.browser-host-badge {
+	border: 1px solid var(--cream-dim);
+	border-radius: 3px;
+	padding: 0 5px;
+	font-size: 10px;
+	color: var(--cream-dim);
+}
+
+.browser-host-badge[data-state="success"] {
+	border-color: var(--sage);
+	color: var(--sage);
+}
+
+.browser-host-badge[data-state="pending"] {
+	border-color: var(--amber);
+	color: var(--amber);
+}
+
+.browser-host-badge[data-state="refused"],
+.browser-host-badge[data-state="error"] {
+	border-color: var(--error);
+	color: var(--error);
+}
+
+.browser-host-progress {
+	display: block;
+	color: var(--amber);
+	margin: 2px 0 4px;
+}
+
+.browser-host-evidence {
+	margin: 0;
+	display: grid;
+	gap: 2px;
+}
+
+.browser-host-evidence-row {
+	display: grid;
+	grid-template-columns: 52px minmax(0, 1fr);
+	gap: 8px;
+}
+
+.browser-host-evidence-row dt {
+	color: var(--cream-dim);
+	opacity: 0.75;
+}
+
+.browser-host-evidence-row dd {
+	margin: 0;
+	font-family: var(--mono);
+	color: var(--cream);
+	overflow-wrap: anywhere;
+}
+
+.browser-host-url {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	align-items: baseline;
+}
+
+.browser-host-revision {
+	font-family: var(--mono);
+	font-size: 10px;
+	color: var(--cream-dim);
+	opacity: 0.8;
+}
+
+.browser-host-empty {
+	margin: 4px 0 0;
+	color: var(--cream-dim);
+}
+
+.browser-host-spaces {
+	list-style: none;
+	margin: 4px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 2px;
+}
+
+.browser-host-spaces li {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	align-items: baseline;
+}
+
+.browser-host-space-id {
+	font-family: var(--mono);
+	color: var(--cream);
+	overflow-wrap: anywhere;
+}
+
+.browser-host-space-meta {
+	color: var(--cream-dim);
+	opacity: 0.8;
+	font-size: 10px;
+}
+
+.browser-host-value {
+	margin: 4px 0 0;
+	font-family: var(--mono);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	max-height: 180px;
+	overflow-y: auto;
+	color: var(--cream);
+}
+
+.browser-host-note {
+	margin: 4px 0 0;
+	color: var(--amber);
+}
+
+.browser-host-refusals {
+	margin-top: 6px;
+	display: grid;
+	gap: 4px;
+}
+
+.browser-host-refusal {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 2px 8px;
+	border-left: 2px solid var(--error);
+	padding-left: 8px;
+}
+
+.browser-host-refusal-code {
+	font-family: var(--mono);
+	color: var(--error);
+}
+
+.browser-host-refusal-detail {
+	color: var(--cream);
+	overflow-wrap: anywhere;
+}
+
+.browser-host-refusal-hint {
+	grid-column: 1 / -1;
+	color: var(--cream-dim);
+}
+
+/* 좁은 폭 — 셸 패널이 좁아지면 증거의 이름과 값이 두 줄로 접힌다. 값이 잘리면 증거가 아니다. */
+@media (max-width: 1100px) {
+	.browser-host-evidence-row,
+	.browser-host-refusal {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.browser-host-evidence-row dt {
+		font-size: 10px;
+	}
+}
+
 /* Permission Modal */
 .permission-overlay {
 	position: fixed;

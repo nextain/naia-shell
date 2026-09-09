@@ -290,5 +290,20 @@ export function makeEnvironmentToolService(deps: EnvironmentToolLiveDeps): Envir
 }
 
 export { EnvironmentToolService } from "../app/control/env-tool.js";
+export { BROWSER_RPC_TIERS, BROWSER_RPCS_REQUIRING_APPROVAL, TERMINAL_EXEC_TIER_FLOOR } from "../app/control/env-tool.js";
+export type { BrowserRpc, CompletedOperation, EnvOutcome, OperationSnapshot, ResourceOutcome } from "../app/control/env-tool.js";
+export type {
+  BrowserEvidence,
+  BrowserWorkspace,
+  ElementTarget,
+  EnvFailureReason,
+  EnvOperationRequest,
+  EnvRejection,
+  Evidence,
+  OperationState,
+  Termination,
+} from "../domain/env-tool.js";
+export { ALL_TIERS } from "../domain/capability.js";
+export type { CapabilityTier } from "../domain/capability.js";
 export { createEgoBrowserEnvironment, unsupportedBrowserPorts } from "../adapters/ego-browser-env.js";
 export type { EgoBrowserEnvOptions, EgoPlatform, EgoSwitchReport } from "../adapters/ego-browser-env.js";
