@@ -1,0 +1,71 @@
+{
+  "recorded_at": "2026-09-09",
+  "scope": "Existing validation receipts from the original Windows session; no physical BC250 boot result is inferred.",
+  "build": {
+    "product": "naia-os",
+    "variant": "amd",
+    "hardware_target": "BC250",
+    "version": "0.2.3",
+    "source_commit": "1398089595ee1a7330f8ec1cfe387439f0807227",
+    "source_build": "0.2.3+13980895",
+    "image_layer_repo": "nextain/naia-os",
+    "image_layer_commit": "2976c5f2d446e90475a63f2668242451d7a1c8b7",
+    "image_ref": "ghcr.io/nextain/naia-os-amd@sha256:c57179418162829c62e725aad0e2b2d65340d9d44333db14e2300ba856669991",
+    "container_image": "ghcr.io/nextain/naia-os-amd:candidate-bc250-0.2.3-13980895-support4",
+    "candidate_tag": "candidate-bc250-0.2.3-13980895-support4",
+    "candidate_digest": "sha256:c57179418162829c62e725aad0e2b2d65340d9d44333db14e2300ba856669991",
+    "titanoboa_ref": "df63ab42567fb817eafda4296c7dcfa6a1c94b04",
+    "iso_file": "naia-os-bc250-0.2.3-13980895-support5-livefix-amd64.iso",
+    "iso_bytes": 8492503040,
+    "iso_sha256": "6461112cb12b0bb611ef1f19fdf448595ee3b497b62230b4546fac3dca3d57bd",
+    "r2_prefix": "builds/amd/0.2.3.20260909T042604Z-13980895-support5-livefix",
+    "candidate_only": true,
+    "hardware_boot_validation": "unverified"
+  },
+  "urls": {
+    "runId": "34310750809",
+    "isoUrl": "https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev/builds/amd/0.2.3.20260909T042604Z-13980895-support5-livefix/naia-os-bc250-0.2.3-13980895-support5-livefix-amd64.iso",
+    "receiptUrl": "https://pub-affd0538517845d98ce44a5aec11dd98.r2.dev/builds/amd/0.2.3.20260909T042604Z-13980895-support5-livefix/build-receipt.json"
+  },
+  "validation": {
+    "run_id": 34310750809,
+    "iso_sha256": "6461112cb12b0bb611ef1f19fdf448595ee3b497b62230b4546fac3dca3d57bd",
+    "empty_boot": true,
+    "persistence_reboot": true,
+    "installer_visible": true,
+    "preserved_sentinel": true,
+    "preserved_lock_settings": true,
+    "first_persistent_boot_id": "6a8b1be9-bc0c-452a-8f84-d573637c00e9",
+    "second_persistent_boot_id": "970c140f-195e-44fa-84a1-2d281864f21f",
+    "physical_bc250_boot": "not_observed"
+  },
+  "usb": {
+    "iso_file": "naia-os-bc250-0.2.3-13980895-support5-livefix-amd64.iso",
+    "iso_sha256": "6461112cb12b0bb611ef1f19fdf448595ee3b497b62230b4546fac3dca3d57bd",
+    "completed_at": "2026-09-09T06:49:36.5640808Z",
+    "started_at": "2026-09-09T06:37:00.8947515Z",
+    "iso_bytes": 8492503040,
+    "physical_bc250_boot": "not_observed",
+    "old_tail_gpt_cleared": true,
+    "readback_sha256": "6461112cb12b0bb611ef1f19fdf448595ee3b497b62230b4546fac3dca3d57bd",
+    "status": "PASS"
+  },
+  "empty_boot": {
+    "exitcode": 0,
+    "out-data": "BOOT_ID=01992875-06fa-4a33-82e9-a50061edd8f4\nKERNEL=7.2.1-ogc4.1.fc44.x86_64\nBOOT_IMAGE=(cd0)/boot/vmlinuz quiet rhgb root=live:CDLABEL=Naia-OS-Live enforcing=0 rd.live.image\nPASS: active KDE live desktop; persistence=none; metadata readable; installer entry present\n6dc0fae94f8df1bdcb62e7f5c7b5b8c3163ccc63010bd3c69b995232fba8c238  /usr/lib/systemd/system-generators/naia-live-persistence\nc28a882fcb7b2908275b70a443dcc78132aed1a03311987b7360692b430ccaf4  /usr/libexec/naia-check-live-session\n644 /usr/share/ublue-os/image-info.json\nCANDIDATE_RUNTIME_PASS=none\n",
+    "out-truncated": false,
+    "exited": true
+  },
+  "persistent_first_boot": {
+    "exitcode": 0,
+    "out-data": "BOOT_ID=6a8b1be9-bc0c-452a-8f84-d573637c00e9\nKERNEL=7.2.1-ogc4.1.fc44.x86_64\nBOOT_IMAGE=(cd0)/boot/vmlinuz quiet rhgb root=live:CDLABEL=Naia-OS-Live enforcing=0 rd.live.image\nPASS: active KDE live desktop; persistence=present; metadata readable; installer entry present\n6dc0fae94f8df1bdcb62e7f5c7b5b8c3163ccc63010bd3c69b995232fba8c238  /usr/lib/systemd/system-generators/naia-live-persistence\nc28a882fcb7b2908275b70a443dcc78132aed1a03311987b7360692b430ccaf4  /usr/libexec/naia-check-live-session\n644 /usr/share/ublue-os/image-info.json\n95d0313501f1ffec611d862b07a470b064108fbd10e540302b5c341436bd5cd2  /var/home/liveuser/bc250-preservation-sentinel.txt\nTARGET             SOURCE   FSTYPE OPTIONS\n/var/home/liveuser /dev/vdb btrfs  rw,noatime,seclabel,compress=zstd:1,space_cache=v2,commit=120,subvolid=5,subvol=/\nCANDIDATE_RUNTIME_PASS=present\n",
+    "out-truncated": false,
+    "exited": true
+  },
+  "persistent_reboot": {
+    "exitcode": 0,
+    "out-data": "BOOT_ID=970c140f-195e-44fa-84a1-2d281864f21f\nKERNEL=7.2.1-ogc4.1.fc44.x86_64\nBOOT_IMAGE=(cd0)/boot/vmlinuz quiet rhgb root=live:CDLABEL=Naia-OS-Live enforcing=0 rd.live.image\nPASS: active KDE live desktop; persistence=present; metadata readable; installer entry present\n6dc0fae94f8df1bdcb62e7f5c7b5b8c3163ccc63010bd3c69b995232fba8c238  /usr/lib/systemd/system-generators/naia-live-persistence\nc28a882fcb7b2908275b70a443dcc78132aed1a03311987b7360692b430ccaf4  /usr/libexec/naia-check-live-session\n644 /usr/share/ublue-os/image-info.json\n95d0313501f1ffec611d862b07a470b064108fbd10e540302b5c341436bd5cd2  /var/home/liveuser/bc250-preservation-sentinel.txt\nTARGET             SOURCE   FSTYPE OPTIONS\n/var/home/liveuser /dev/vdb btrfs  rw,noatime,seclabel,compress=zstd:1,space_cache=v2,commit=120,subvolid=5,subvol=/\nCANDIDATE_RUNTIME_PASS=present\n",
+    "out-truncated": false,
+    "exited": true
+  }
+}

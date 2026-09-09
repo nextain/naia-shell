@@ -17,10 +17,13 @@
       "P01_user_scenarios": "done",
       "P02_test_coverage_map": "done",
       "P03_requirements": "done",
-      "P04_integration_test": "in_progress",
+      "P04_integration_test": "done",
       "P05_complete": "pending",
-      "verification": "Original USB failure reproduced; mount-only masking restored KDE. Actual generator/runtime checker and syntax checks passed. Fresh ISO, persistence and USB delivery remain pending; physical BC250 has not been observed.",
-      "last_updated": "2026-09-09T04:14:16Z"
+      "verification": "Fresh support5-livefix ISO passed normal UEFI/KDE checks without persistence and with existing persistence across reboot; Korean installer welcome was visually confirmed. USB disk1 was written and all 8492503040 bytes read back with the exact published ISO SHA256. Physical BC250 boot/install has not been observed; keep issue580 open.",
+      "delivery": "usb_written_and_verified",
+      "candidate_run": "https://github.com/nextain/naia-shell/actions/runs/34310750809",
+      "iso_sha256": "6461112cb12b0bb611ef1f19fdf448595ee3b497b62230b4546fac3dca3d57bd",
+      "last_updated": "2026-09-09T06:49:36Z"
     },
     "issue": "naia-shell-transplant",
     "title": "naia-shell 헥사고날 이식 — foundation tranche F0~F3 (control-plane/자기상태/관측/조작) [repo=naia-shell; naia-os=배포판 계층 별개]",
