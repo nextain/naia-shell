@@ -10,6 +10,23 @@
   },
 
   "current_work": {
+    "issue_582_ego_browser_host": {
+      "issue": 582,
+      "parent": 499,
+      "title": "에이전트 브라우저 호스트 — ego-lite 공개 런타임 벤더링 + 세 OS 감독자 + #499 실제 어댑터",
+      "contract": "docs/progress/issue-582-ego-browser-host.md",
+      "branch": "feat/582-ego-browser-host",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done (linux 실기; win32·darwin 게이트 열림)", "P05": "done" },
+      "status": "ready_to_merge",
+      "open_followups": [
+        "FR-ENV-TOOL.14b 승인 UI·script 경계",
+        "NFR-ENV-TOOL-OS.1 win32·darwin 실기 게이트",
+        "FR-ENV-TOOL.2b 다운로드·이벤트",
+        "QC-206+ 번호 부여는 Linux 2회차 종료 후",
+        "e2e/env-tool-browser.spec.ts 첫 케이스 기존 실패(대역 read_naia_config)"
+      ],
+      "last_updated": "2026-09-10T00:00:00+09:00"
+    },
     "issue": "naia-shell-transplant",
     "title": "naia-shell 헥사고날 이식 — foundation tranche F0~F3 (control-plane/자기상태/관측/조작) [repo=naia-shell; naia-os=배포판 계층 별개]",
     "issue_doc": "docs/progress/ (F0-baseline, F0-contract, F{1,2,3}-baseline-contract, F0-graft) + 00-PHASES.md",

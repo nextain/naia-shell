@@ -2,14 +2,14 @@
   "version": 1,
   "schema": "naia-shell.qa-round.v1",
   "status": "DRAFT_NO_QC_NUMBERS",
-  "scope": "#582 에이전트 브라우저 호스트. QC 번호는 진행 중인 Linux 2회차가 끝난 뒤 qa-qc-numbers.mjs 로 QC-206 부터 append 한다. 이 파일은 qa/qc-numbers.json 을 건드리지 않는다.",
+  "scope": "#582 에이전트 브라우저 호스트. QC 번호는 진행 중인 Linux 2회차가 끝난 뒤 qa-qc-numbers.mjs 로 QC-206 부터 append 한다. 이 파일은 qa/qc-numbers.json 을 건드리지 않는다. 2026-09-10 S5 검토: 12건. Windows 행은 NFR-ENV-TOOL-OS.1 게이트 통과 전까지 기능 플래그 꺼짐 상태에서 실행되므로 '도구 미등록' 이 기대 결과다.",
   "verification": {
     "status": "NOT_RUN",
     "method": "manual on device after S6",
     "evidenceRef": null,
     "note": "소스 참조는 P02 골격 테스트 파일이며 구현 슬라이스에서 채워진다."
   },
-  "caseCount": 11,
+  "caseCount": 12,
   "cases": [
     {
       "id": "BROWSER-HOST-001",
@@ -383,6 +383,41 @@
       "mappingStatus": "MAPPED",
       "status": "NOT_RUN",
       "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-012",
+      "title": "셸에서 도구 호출이 실 브라우저 증거를 돌려준다",
+      "method": "실제 셸에서 채팅에 로컬 시험 페이지 열기를 요청한다. 결과 카드의 캡처 파일 경로를 열어 본다.",
+      "expectedResult": "결과 카드에 스냅샷 참조·캡처 경로·주소 개정이 있고 캡처 파일이 PNG 로 존재하며 화면에 브라우저 창이 뜨지 않는다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-BROWSE"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.2a"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/shell/e2e-tauri/specs/env-tool-browser-host-fullstack.spec.ts",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "e2e-tauri 풀스택 스펙이 같은 조건을 덮는다(linux 통과 2026-09-10). 기기 회차에서는 사람이 카드와 파일을 직접 본다.",
       "execution": {
         "kind": "manual",
         "ref": null,

@@ -1254,7 +1254,7 @@ Test Coverage Map (P02):
 
 - Naia 는 열기·이동·스냅샷·클릭·입력·캡처처럼 효과가 정해진 도구를 기본으로 쓴다.
 - 여러 단계를 자바스크립트 한 덩어리로 묶어 실행하는 것은 터미널 명령 실행과 같은 등급이다. 승인 없이는 시작되지 않는다.
-- 승인된 묶음 실행도 워크스페이스·네트워크·파일 경계를 벗어나지 않는다.
+- 승인된 묶음 실행도 워크스페이스·네트워크·파일 경계를 벗어나지 않는다. (2026-09-10: 승인 UI 와 경계 강제는 미구현. FR-ENV-TOOL.14b Pending. 지금은 승인 참조 없는 실행이 거부되는 것까지만 검증됐다.)
 - 낮은 등급의 도구가 묶음 실행으로 승격되는 길은 없다.
 
 Test Coverage Map (P02):
@@ -1276,6 +1276,9 @@ Test Coverage Map (P02):
 | UC-ENV-TOOL-SCRIPT | Playwright `packages/shell/e2e/env-tool-browser-host.spec.ts` | 형식 도구 호출 → 증거 반환, 승인 없는 묶음 실행 거부, 기존 `skill_browser_*` 불변 |
 | UC-ENV-TOOL-SCRIPT | node:test `packages/ego-host/test/handshake.test.mjs` | grant 없는 핸드셰이크 거부, 관측 연결 무영향 |
 | 전체 | node:test `packages/ego-host/test/vendor-install.test.mjs` | 벤더 매니페스트 일치, 임의 디렉터리 설치·빌드·실행 |
+| UC-ENV-TOOL-BROWSE·SCRIPT | e2e-tauri `packages/shell/e2e-tauri/specs/env-tool-browser-host-fullstack.spec.ts` | 실 Tauri 앱에서 도구 호출 → 실 Chromium 캡처·스냅샷·주소 개정, 참조 클릭, 승인 없는 script 거부, 종료 뒤 잔류 0 |
+| UC-ENV-TOOL-SCRIPT | vitest `packages/shell/src/lib/__tests__/ego-browser-env-ipc.test.ts`·`browser-host-skill.test.ts` | IPC 어댑터가 포트를 올바른 명령으로 부르고 거부를 형식 있게 전달, 플래그·이름 비충돌 |
+| UC-ENV-TOOL-RECOVER | Rust `packages/shell/src-tauri/src/ego_host.rs`·`ego_host_bridge.rs` 단위 | lease 파싱·marker 경계·unverified 처분·소켓 경로 Node 동일성·관리 비밀 불일치 거부 |
 
 상태 매트릭스: 기본(공간 0), 진행(작업 실행 중), 성공, 오류(거부·타임아웃·취소·실행기 종료), 회수(재시작 뒤 조정)를 매핑한다.
 화면이 없는 기능이므로 좁은 폭 상태는 도구 결과 카드에만 적용된다.
