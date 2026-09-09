@@ -90,3 +90,13 @@ S5 검토 결과.
 - 레지스트리: UC-025 Approved, TEST-S-026·TEST-F-018 Pass(linux), SPEC-018 Done(linux).
 - QC 조각 12건(풀스택 케이스 추가). 번호는 Linux 2회차 종료 후 QC-206 부터.
 - process-status.json 에 current_work 항목을 텍스트 최소 삽입(17줄)으로 추가. 헌장 파일이지만 관문 절차가 요구하는 산출물이고 루크가 이 작업을 지시했다.
+
+# S7 리뷰 (Fable, 2026-09-10)
+
+대상: 7b816baa, 93ea8444, 9c36455a, cacef673. Codex 구현 리뷰(`codex-impl-review-20260910.md`) 7건 전부 처리됐고, 각 자리를 되돌리면 새 테스트가 RED 가 되는 변이 탐침을 확인했다.
+
+- P0 처리 방식(원시 CDP 를 이름으로 없애지 않고 `ego_host_op_*` 세션의 등급 상한 `workspace-write` 로 가둠, grant 는 Rust 가 명령 이름으로 결정, script 는 양쪽에서 거부)은 양보한 신뢰 경계(웹뷰=셸) 안에서 수용한다. 남는 사실: 웹뷰 JS 가 `ego_host_op_cdp` 로 같은 등급의 임의 CDP 를 보낼 수 있다. 등급을 넘지 못하고 중계기의 컨텍스트 격리는 그대로 적용된다. 이것을 4.4 에 적었다.
+- P1-3 첫 구현이 `workspaceId: ""` 를 막아 S3a 계약 테스트만 잡은 회귀는, 패키지 안 테스트만으로는 못 보는 자리였다는 점에서 루트 묶음을 매 슬라이스 돌린 규율이 값을 했다.
+- `Browser.downloadWillBegin` 의 GUID 에 세션 대조를 걸지 않은 판단(브라우저 수준 이벤트라 세션 없음)은 맞다.
+
+머지 판단: 가능. 조건은 없다. 열린 후속은 process-status 의 open_followups 다섯 건 그대로.
