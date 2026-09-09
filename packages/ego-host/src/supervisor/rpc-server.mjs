@@ -9,7 +9,7 @@
 //  - 유한 송신 큐. 넘치면 **그 연결만** 형식 있는 오류로 끊는다.
 //  - 나가는 프레임은 하나의 FIFO 를 지난다. Chromium 에서 받은 순서가 그대로 유지된다(4.3.1).
 import { createServer } from "node:net";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { CODES, hostError, toShape } from "../errors.mjs";
 import { MAX_FRAME_BYTES, createFrameDecoder, encodeFrame } from "./rpc-framing.mjs";
@@ -51,6 +51,33 @@ export const HEADLESS_DENIED_RPCS = new Set([
   "takeOverTaskSpace",
 ]);
 
+/**
+ * 소유자 전용 RPC (계약 4.8, S6c).
+ *
+ * 이 목록은 **관리 연결에서만** 부를 수 있다. 관리 연결은 핸드셰이크에 `{admin:<secret>}` 를
+ * 실은 연결이고, 그 비밀은 감독자를 띄운 쪽(셸의 Rust)이 spawn 환경으로만 넘긴다 —
+ * 파일·lease·로그 어디에도 적지 않는다.
+ *
+ * 왜 나누는가: `issueToken` 은 **다른 연결의 승인 등급을 만드는** 문이다. 작업 연결이 그것을
+ * 부를 수 있으면 관측 등급으로 붙은 heredoc 이 스스로 destructive 토큰을 발급해 다시 붙을 수
+ * 있고, 그러면 등급표가 장식이 된다. `stop`·`switchAdk` 도 같은 이유다 — 남의 작업이 도는
+ * 브라우저를 아무 연결이나 내릴 수 있으면 소유가 없는 것과 같다.
+ */
+export const ADMIN_RPCS = new Set([
+  "issueToken",
+  "stop",
+  "switchAdk",
+  "reconcileLease",
+  "waitForPidExit",
+  "ensureDirs",
+  "writeEnvFiles",
+  "runScript",
+  "hostInfo",
+  "cancelOperationOwned",
+  "endOperationOwned",
+  "listOperationsOwned",
+]);
+
 const HEADLESS_DENIAL_MESSAGE =
   "이 브라우저는 헤드리스로 돌아 사람에게 넘길 창이 없다. 인계·회수·claim 은 지원하지 않는다 " +
   "(#582 계약 4.4). 로그인이나 captcha 가 필요하면 작업을 멈추고 사람에게 보고한다.";
@@ -83,6 +110,11 @@ export function createSupervisorServer({
   maxQueuedBytes = MAX_QUEUED_BYTES,
   browserVersion = FIXED_BROWSER_VERSION,
   snapshotProvider = null,
+  /**
+   * 관리 연결의 비밀. null 이면 관리 연결 자체가 없다(모든 `{admin}` 핸드셰이크가 거부된다).
+   * 감독자를 띄운 쪽만 이 값을 안다.
+   */
+  adminSecret = null,
 } = {}) {
   // 장부 → 정책 → mux 순서로 엮인다. 장부와 정책은 감독자 전용 CDP 통로(`mux.hostRequest`)를
   // 쓰는데 그 통로는 mux 안에 있으므로, 늦게 묶이는 클로저로 넘긴다.
@@ -117,6 +149,25 @@ export function createSupervisorServer({
   activeOperations.onReject((operationId, code, message) =>
     mux.rejectOperation(operationId, code, message),
   );
+  /**
+   * 관리 RPC 의 실제 몸통. 감독자 핸들이 있어야 만들 수 있으므로(`stop` 은 자기 자신을 내린다)
+   * 서버가 선 뒤에 `setAdminHandlers` 로 늦게 묶는다.
+   */
+  let adminHandlers = {};
+
+  /**
+   * 비밀 비교. 길이가 다르면 `timingSafeEqual` 이 던지므로 길이부터 본다.
+   * 문자열 `===` 는 첫 다른 바이트에서 끝나 길이 정보를 흘린다.
+   */
+  function adminSecretMatches(candidate) {
+    if (typeof adminSecret !== "string" || adminSecret === "") return false;
+    if (typeof candidate !== "string" || candidate === "") return false;
+    const a = Buffer.from(adminSecret, "utf8");
+    const b = Buffer.from(candidate, "utf8");
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  }
+
   /** token -> {operationId, workspaceId, grant, used} */
   const tokens = new Map();
   const connections = new Set();
@@ -136,6 +187,8 @@ export function createSupervisorServer({
       id: nextConnectionId++,
       socket,
       state: "awaiting-hello",
+      /** 소유자 통로인가. 관리 연결만 ADMIN_RPCS 를 부를 수 있다(S6c). */
+      admin: false,
       operationId: null,
       workspaceId: null,
       grant: null,
@@ -222,7 +275,69 @@ export function createSupervisorServer({
     return browserContextId ? { browserContextId } : {};
   }
 
+  /**
+   * 소유자 전용 RPC 의 몸통 (S6c).
+   *
+   * 작업 장부 셋은 여기서 직접 부른다. 같은 뜻의 비관리 RPC(`cancelOperation` 등)는 자기
+   * 연결의 작업만 다루지만, 소유자는 **다른 연결이 시작한 작업**을 취소·종결해야 한다 —
+   * 웹뷰의 취소 단추가 그 자리다. 이름을 나눠 둔 이유가 그것이다.
+   */
+  async function handleAdminRpc(method, params) {
+    switch (method) {
+      case "issueToken":
+        return {
+          token: issueToken({
+            ...(params?.operationId ? { operationId: params.operationId } : {}),
+            workspaceId: params?.workspaceId ?? null,
+            grant: params?.grant ?? null,
+          }),
+        };
+      case "cancelOperationOwned": {
+        const result = await activeOperations.cancel(params?.operationId);
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "endOperationOwned": {
+        const result = await activeOperations.complete(params?.operationId, {
+          status: params?.status ?? "completed",
+          reason: params?.reason ?? null,
+        });
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "listOperationsOwned":
+        return { operations: activeOperations.list() };
+      default: {
+        const handler = adminHandlers[method];
+        if (typeof handler !== "function") {
+          throw hostError(
+            CODES.ADMIN_UNAVAILABLE,
+            `이 감독자에는 관리 RPC 가 붙어 있지 않다: ${method}`,
+          );
+        }
+        return (await handler(params ?? {})) ?? {};
+      }
+    }
+  }
+
   async function handleRpc(connection, method, params) {
+    // 소유자 통로가 먼저다. 여기서 갈라 두지 않으면 아래의 grant 검사가 "grant 만 있으면
+    // 무엇이든" 으로 읽혀 작업 연결이 토큰을 발급하게 된다(S6c).
+    if (ADMIN_RPCS.has(method)) {
+      if (!connection.admin) {
+        throw hostError(
+          CODES.ADMIN_REQUIRED,
+          `소유자 전용 RPC 다. 관리 연결에서만 부를 수 있다: ${method}`,
+        );
+      }
+      return handleAdminRpc(method, params);
+    }
+    if (connection.admin) {
+      // 관리 연결은 브라우저를 만지지 않는다. 만지는 일은 토큰을 받은 작업 연결이 한다 —
+      // 그래야 모든 브라우저 작업이 등급·승인이 붙은 토큰 하나를 지난다.
+      throw hostError(
+        CODES.ADMIN_DENIED,
+        `관리 연결은 작업 RPC 를 부르지 않는다: ${method}`,
+      );
+    }
     if (connection.grant === null && !OBSERVE_RPCS.has(method)) {
       throw hostError(
         CODES.GRANT_REQUIRED,
@@ -460,6 +575,22 @@ export function createSupervisorServer({
   }
 
   function onHello(connection, message) {
+    // 관리 연결 (S6c). `admin` 칸이 있으면 토큰 경로가 아니라 비밀 경로다. 비밀이 틀리면
+    // **왜 틀렸는지 말하지 않고** 끊는다 — 길이·존재를 알려 주면 그것이 곧 탐색 수단이다.
+    if (message !== null && typeof message === "object" && "admin" in message) {
+      if (!adminSecretMatches(message.admin)) {
+        connection.kill(CODES.ADMIN_DENIED, "관리 연결의 비밀이 맞지 않는다");
+        return;
+      }
+      connection.state = "open";
+      connection.admin = true;
+      connection.grant = null;
+      connection.operationId = null;
+      connection.workspaceId = null;
+      connection.deadlineAt = requestDeadlineMs;
+      connection.send({ type: "welcome", admin: true, deadlineMs: requestDeadlineMs });
+      return;
+    }
     const { token, grant = null, operationId = null, workspaceId = null, deadline = null } = message ?? {};
     if (typeof token !== "string" || token === "") {
       connection.kill(CODES.TOKEN_MISSING, "핸드셰이크에 토큰이 없다");
@@ -592,6 +723,17 @@ export function createSupervisorServer({
 
   return {
     issueToken,
+    /**
+     * 관리 RPC 의 몸통을 늦게 묶는다. `stop` 은 자기 자신을 내리므로 감독자 핸들이 있어야
+     * 만들 수 있고, 그 핸들은 이 서버가 선 뒤에야 생긴다.
+     */
+    setAdminHandlers(handlers) {
+      adminHandlers = handlers ?? {};
+    },
+    /** 관리 연결이 있는가. 비밀 없이 띄운 감독자(테스트·조립)는 거짓이다. */
+    get hasAdminChannel() {
+      return typeof adminSecret === "string" && adminSecret !== "";
+    },
     mux,
     ledger: activeLedger,
     operations: activeOperations,
