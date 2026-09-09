@@ -22,7 +22,7 @@ import {
   removeLease,
   writeLease,
 } from "./lease.mjs";
-import { createLedgerRoute } from "./ledger.mjs";
+import { createMediator } from "./mediator.mjs";
 import { reconcileLease } from "./reconcile.mjs";
 import { createSupervisorServer } from "./rpc-server.mjs";
 import { socketNeedsUnlink, supervisorSocketPath } from "./socket-path.mjs";
@@ -110,7 +110,13 @@ export async function startSupervisor({
   const server = createSupervisorServer({
     backend: wrapBackend ? wrapBackend(browser) : browser,
     adkDir,
-    ...(route ? { route } : { routeFactory: routeFactory ?? (({ ledger }) => createLedgerRoute({ ledger })) }),
+    // 기본 정책 = 중계기(기본 거부 행렬, 계약 4.3.2). 가짜 백엔드 테스트는 route 를 직접 준다.
+    ...(route
+      ? { route }
+      : {
+          routeFactory:
+            routeFactory ?? (({ ledger, adkDir: dir }) => createMediator({ ledger, adkDir: dir })),
+        }),
     ...serverOptions,
   });
   // 지난 감독자의 장부가 남아 있으면 죽은 컨텍스트를 걷어낸다. 새 Chromium 은 옛 컨텍스트를 모른다.

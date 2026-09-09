@@ -41,6 +41,8 @@ function allowAll() {
  * @param {(method:string, params:object, sessionId:string|undefined, connection:object)=>{allow:boolean,message?:string,code?:string,params?:object}} [options.route]
  *   장부·정책 훅. S2c(장부)·S2d(행렬)가 여기에 끼워 들어온다. `params` 를 돌려주면 그것이
  *   Chromium 으로 나가는 인자다(컨텍스트 강제 재작성).
+ * @param {((entry:object, data:object)=>object)|null} [options.filterResponse]
+ *   응답 정형 훅(S2d). 연결이 볼 수 없는 것을 결과에서 걷어낸다. 감독자 자신의 요청에는 안 건다.
  * @param {ReturnType<typeof createLedger>} [options.ledger]
  *   작업 공간·타깃 lease·세션 장부(S2c). 세션 소유·묘비·attach 배타 arbitration 이 여기 있다.
  *   기본값은 저장 없는 인메모리 장부다(감독자는 `<ADK>` 를 붙인 장부를 넣는다).
@@ -48,6 +50,7 @@ function allowAll() {
 export function createCdpMux({
   backend,
   route = allowAll,
+  filterResponse = null,
   ledger = createLedger(),
   requestDeadlineMs = SUPERVISOR_REQUEST_DEADLINE_MS,
 } = {}) {
@@ -274,7 +277,9 @@ export function createCdpMux({
       // 감독자 자신의 요청(hostRequest)은 장부의 소유를 만들지 않는다. 만들면 감독자가
       // 만든 탭의 주인이 "감독자"가 되어, 정작 그 탭을 쓰려는 연결이 EGO_TARGET_BUSY 를 받는다.
       if (!entry.host && !recordFromResponse(entry, data)) return;
-      entry.connection.deliverCdp(JSON.stringify({ ...data, id: entry.clientId }));
+      // 결과 필터. `Target.getTargets` 처럼 브라우저 전체를 보여 주는 응답을 연결 소유로 좁힌다.
+      const shaped = entry.host || !filterResponse ? data : filterResponse(entry, data);
+      entry.connection.deliverCdp(JSON.stringify({ ...shaped, id: entry.clientId }));
       return;
     }
     const owner = applyEventToLedger(data);

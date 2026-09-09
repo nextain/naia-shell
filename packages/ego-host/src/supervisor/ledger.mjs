@@ -19,7 +19,6 @@
 //
 // 자식 타깃 auto-attach 는 쓰지 않는다. `Target.setAutoAttach` 는 거부 목록이고, 예기치 않은
 // 자식 `attachedToTarget` 은 fail-closed 로 감독자가 detach 한다.
-import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CODES, hostError } from "../errors.mjs";
@@ -410,9 +409,21 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
     targetOwner(targetId) {
       return leases.get(targetId)?.connection ?? routing.get(targetId) ?? null;
     },
-    /** 탭을 만든 연결을 그 탭의 이벤트 주인으로 적는다. 배타 lease 는 걸지 않는다. */
+    /**
+     * 탭을 만든 연결을 그 탭의 이벤트 주인으로 적는다. 배타 lease 는 걸지 않는다.
+     * 연결이 공간을 골라 뒀으면 타깃을 그 공간에 묶는다 — 원시 CDP `Target.createTarget` 으로
+     * 만든 탭도 장부에 들어와야 `Target.getTargetInfo`·`getTargets` 가 그것을 자기 것으로 본다.
+     */
     claimTarget(connection, targetId) {
       routing.set(targetId, connection);
+      const selected = connection?.selectedSpaceId;
+      if (selected !== null && selected !== undefined && !targetSpace.has(targetId)) {
+        const space = spaces.get(Number(selected));
+        if (space) {
+          targetSpace.set(targetId, space.id);
+          persist();
+        }
+      }
       return true;
     },
     releaseTarget,
@@ -552,65 +563,3 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
     },
   };
 }
-
-/**
- * S2c 의 `route` 훅. 장부를 CDP 경계에 연결한다.
- *
- * 여기서 막는 것은 **감독자 전용 능력**뿐이다. 메서드 전수표(기본 거부)는 S2d 의
- * `mediator-policy.mjs` 가 든다. 이 훅은 그 전까지 격리를 지키는 최소한이다:
- * 연결이 스스로 브라우저 컨텍스트를 만들거나 없애거나, auto-attach 로 자식 세션을 얻거나,
- * 다른 컨텍스트에 탭을 만들지 못하게 한다.
- *
- * @param {object} options
- * @param {ReturnType<typeof createLedger>} options.ledger
- */
-export function createLedgerRoute({ ledger }) {
-  /** 연결에는 절대 노출하지 않는 감독자 전용 메서드(계약 4.3.2 마지막 행). */
-  const SUPERVISOR_ONLY = new Set([
-    "Target.createBrowserContext",
-    "Target.disposeBrowserContext",
-    "Target.detachFromTarget",
-    "Target.attachToBrowserTarget",
-    "Target.exposeDevToolsProtocol",
-    "Target.sendMessageToTarget",
-    "Target.setAutoAttach",
-    "Runtime.runIfWaitingForDebugger",
-    "Browser.close",
-  ]);
-
-  return function route(method, params, sessionId, connection) {
-    if (SUPERVISOR_ONLY.has(method)) {
-      return {
-        allow: false,
-        code: CODES.METHOD_DENIED,
-        message: `${method} 는 감독자 전용이다. 연결에는 노출하지 않는다(#582 계약 4.3.2).`,
-      };
-    }
-    if (method === "Target.createTarget") {
-      const space =
-        connection.selectedSpaceId === null ? null : ledger.get(connection.selectedSpaceId);
-      if (!space) {
-        return {
-          allow: false,
-          code: CODES.NO_TASK_SPACE,
-          message: "선택된 작업 공간이 없다. 탭은 공간의 격리 컨텍스트 안에서만 만든다",
-        };
-      }
-      const wanted = ledger.browserContextOf(space);
-      const given = params?.browserContextId;
-      if (typeof given === "string" && wanted && given !== wanted) {
-        return {
-          allow: false,
-          code: "EGO_CONTEXT_MISMATCH",
-          message: "다른 브라우저 컨텍스트에 탭을 만들 수 없다(#582 계약 4.3.2).",
-        };
-      }
-      return { allow: true, params: wanted ? { ...params, browserContextId: wanted } : params };
-    }
-    return { allow: true };
-  };
-}
-
-/** 감독자·테스트가 같은 임시 파일 규칙을 쓰도록 노출한다. */
-export { writeAtomic };
-export { randomUUID as newLedgerNonce };

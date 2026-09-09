@@ -50,6 +50,11 @@ export const FIXED_BROWSER_VERSION = Object.freeze({
   updateAvailable: false,
 });
 
+function normalizePolicy(value) {
+  if (typeof value === "function") return { route: value };
+  return value ?? {};
+}
+
 export function createSupervisorServer({
   backend,
   route = null,
@@ -72,8 +77,19 @@ export function createSupervisorServer({
   let mux;
   const hostRequest = (method, params, sessionId) => mux.hostRequest(method, params, sessionId);
   const activeLedger = ledger ?? createLedger({ adkDir, hostRequest });
-  const activeRoute = route ?? (routeFactory ? routeFactory({ ledger: activeLedger, hostRequest, adkDir }) : undefined);
-  mux = createCdpMux({ backend, route: activeRoute, ledger: activeLedger, requestDeadlineMs });
+  // 정책 훅은 함수 하나(`route`)일 수도, 응답 필터를 함께 가진 객체일 수도 있다(중계기).
+  const policy = route
+    ? { route }
+    : routeFactory
+      ? normalizePolicy(routeFactory({ ledger: activeLedger, hostRequest, adkDir }))
+      : {};
+  mux = createCdpMux({
+    backend,
+    route: policy.route,
+    filterResponse: policy.filterResponse ?? null,
+    ledger: activeLedger,
+    requestDeadlineMs,
+  });
   /** token -> {operationId, workspaceId, grant, used} */
   const tokens = new Map();
   const connections = new Set();

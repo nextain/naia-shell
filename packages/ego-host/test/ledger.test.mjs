@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createLedger, spacesPath } from "../src/supervisor/ledger.mjs";
-import { cleanupAll } from "./helpers/live-browser.mjs";
+import { cleanupAll, tempDir } from "./helpers/live-browser.mjs";
 import {
   cdpChannel,
   connectClient,
@@ -274,7 +274,6 @@ test("예기치 않은 자식 attachedToTarget 은 연결에 안 가고 감독�
 // ── 원자적 저장 ──────────────────────────────────────────────────────────────
 
 test("장부 저장은 원자적이다 — 쓰는 도중 죽여도 이전 파일이 온전하다", async () => {
-  const { tempDir } = await import("./helpers/live-browser.mjs");
   const adkDir = tempDir("ego-atomic-");
   const child = spawn(process.execPath, [LEDGER_WRITER, adkDir], { stdio: ["ignore", "pipe", "pipe"] });
   const path = spacesPath(adkDir);

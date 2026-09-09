@@ -11,7 +11,6 @@
 //      경로를 밟는다. 주입임을 증거에 적는다.
 //
 // 브라우저가 없으면 건너뛰지 않고 RED 다(live-browser.mjs 와 같은 원칙).
-import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { connectSupervisor } from "../../src/client/rpc-client.mjs";
 import { startSupervisor } from "../../src/supervisor/supervisor.mjs";
@@ -218,11 +217,15 @@ export function cdpChannel(client, { timeoutMs = 20_000 } = {}) {
   };
 }
 
-/** 조건이 참이 될 때까지 기다린다. 못 되면 null. */
+/**
+ * 조건이 참이 될 때까지 기다린다. 못 되면 null.
+ * **비동기 조건도 기다린다** — `await` 없이 쓰면 Promise 객체 자체가 참이라 모든 대기가
+ * 즉시 통과한다(그러면 "기다렸다"가 거짓말이 된다).
+ */
 export async function waitFor(predicate, { timeoutMs = 10_000, stepMs = 25 } = {}) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const value = predicate();
+    const value = await predicate();
     if (value) return value;
     await new Promise((resolve) => setTimeout(resolve, stepMs));
   }
@@ -241,11 +244,4 @@ export async function stopAllLive() {
       await supervisor.stop();
     } catch {}
   }
-}
-
-/** 공간별 다운로드 디렉터리(테스트가 파일 존재를 확인하는 자리). */
-export function downloadsOf(live, workspaceId) {
-  const dir = join(live.adkDir, "ego-host", "downloads", String(workspaceId));
-  mkdirSync(dir, { recursive: true });
-  return dir;
 }
