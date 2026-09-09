@@ -198,7 +198,7 @@
 | **`cliLog` 전역은 더 이상 없다.** 에이전트의 출력 채널은 `console.log` 이며 출력 싱크로 라우팅된다 | `src/index.ts:175-186`, `src/run.ts:139-145` |
 | 스크립트가 던지면 버퍼를 버리고 오류를 전파해 프로세스가 **종료 코드 1** 로 끝난다 | `src/run.ts:116-130` |
 | 호스트가 없으면 첫 `ego` 접촉에서 `browser runtime is not available` 로 죽는다 | `src/browser-runtime.ts:31-36` |
-| `installEgoSdk(target, {cliLog})` 가 SDK 경로의 주입 지점이다. 우리 감독자 CLI(S2)의 `nodejs` 서브커맨드는 이 함수를 쓴다 | `src/index.ts:144-217` |
+| 런처는 인자(`nodejs [--sdk-path]`)를 소비한 뒤 벤더 `dist/out/index.js` 를 `node --import <preload> <index.js>` 로 **직접 실행**한다. 그러면 `process.argv[1]` 이 벤더 index 라 `isDirectCli()` 가 참이 되어 `runMain()` 경로로 들어간다. `installEgoSdk()` 는 이 경로에서 호출되지 않는다(import 될 때만). preload 는 최상위 await 로 핸드셰이크를 끝내고 `globalThis.ego` 를 세우며 벤더 모듈을 정적으로 import 하지 않는다 | `src/index.ts:256-278`(isDirectCli·runMain), `src/index.ts:144-217`(installEgoSdk, 미사용 경로) |
 
 > 계획 문서 4.2 와 S1 지시는 벤더 bin 에 `nodejs` 서브커맨드가 있고 `cliLog('x')` 가
 > 전역이라고 적었지만, 고정 커밋의 **런타임 코드에서는 둘 다 사실이 아니다.** 벤더 bin 에
