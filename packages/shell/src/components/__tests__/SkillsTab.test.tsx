@@ -191,7 +191,7 @@ describe("SkillsTab", () => {
 			JSON.stringify({ provider: "gemini", model: "test", apiKey: "test" }),
 		);
 		mockFetchAgentSkills.mockResolvedValue(AGENT_SKILLS);
-		const { container } = render(<SkillsTab />);
+		render(<SkillsTab />);
 		await waitFor(() => expect(screen.getByText("get_time")).toBeDefined());
 
 		const card = screen.getByText("get_time").closest(".skill-card");
