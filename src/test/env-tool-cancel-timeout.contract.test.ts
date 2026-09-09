@@ -68,8 +68,9 @@ describe("멱등 재전송 (FR-ENV-TOOL.9)", () => {
   });
 
   it("거절된 요청은 기억하지 않는다", async () => {
+    // 거절 사유는 등급이 아니라 경계다 — 클릭의 등급은 표가 정하므로 선언으로 거절을 만들 수 없다(#582 4.4).
     const { svc, browser } = service();
-    const bad = await svc.click(envRequest({ capability: "purchase" }), { kind: "reference", ref: "b" });
+    const bad = await svc.click(envRequest({ cwd: "../밖" }), { kind: "reference", ref: "b" });
     expect(bad.ok).toBe(false);
     const good = await svc.click(envRequest(), { kind: "reference", ref: "b" });
     expect(good.ok).toBe(true);
@@ -106,6 +107,9 @@ function controllableBrowser(): ControllableBrowser {
     async open() {
       throw new Error("쓰지 않는다");
     },
+    async navigate() {
+      throw new Error("쓰지 않는다");
+    },
     async snapshot() {
       throw new Error("쓰지 않는다");
     },
@@ -117,6 +121,12 @@ function controllableBrowser(): ControllableBrowser {
       });
     },
     async fill() {
+      throw new Error("쓰지 않는다");
+    },
+    async evaluate() {
+      throw new Error("쓰지 않는다");
+    },
+    async screenshot() {
       throw new Error("쓰지 않는다");
     },
     async close() {},
@@ -217,12 +227,12 @@ describe("진행 중 멱등 공유 (FR-ENV-TOOL.9) [UC-ENV-TOOL-CANCEL]", () => 
     expect(browser.calls.filter((c) => c === "click")).toHaveLength(2);
   });
 
-  it("권한이 없는 호출자는 같은 키의 진행 중 결과를 주워 가지 못한다", async () => {
+  it("판정을 통과하지 못한 호출자는 같은 키의 진행 중 결과를 주워 가지 못한다", async () => {
     const browser = controllableBrowser();
     const svc = new EnvironmentToolService(browser, fakeTerminal(), fakeCancellation(), ["observe", "workspace-write"]);
     const inflight = svc.click(envRequest(), REF);
     await Promise.resolve();
-    const stolen = await svc.click(envRequest({ operationId: "op-2", capability: "purchase" }), REF);
+    const stolen = await svc.click(envRequest({ operationId: "op-2", cwd: "../밖" }), REF);
     expect(stolen.ok).toBe(false);
     browser.finish();
     await inflight;

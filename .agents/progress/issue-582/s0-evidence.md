@@ -86,3 +86,46 @@ node scripts/check-traceability.mjs --enforce  # EXIT=0
    기존 순서(캐시 먼저)를 유지하면 키만 알면 결과를 주워 갈 수 있었다.
 5. **포트에 `signal?` 을 S0b 에서 넣었다.** 계약 9절은 포트 형태를 S0c 로 잡지만, "신호를 포트까지 전달" 을 S0b 에서 증명하려면
    포트가 인자를 받아야 한다. S0c 는 그 위에서 포트를 마저 넓힌다.
+
+## S0c 포트·등급 고정 RPC 표
+
+명령과 종료 코드:
+
+```
+npx tsc -p tsconfig.json                                            # EXIT=0
+npx vitest run src/test/env-tool-approval-matrix.contract.test.ts   # EXIT=0 (38 passed)
+pnpm test                                                           # EXIT=1 (실패 7건 = 기준선 그대로, Tests 7 failed | 1617 passed)
+node scripts/check-file-anchors.mjs                                 # EXIT=0 (69 파일 전부 앵커됨)
+node scripts/check-traceability.mjs --enforce                       # EXIT=0
+```
+
+테스트 수: 1593 → 1617 passed (S0c 계약 테스트 24건). 새 실패 0.
+
+바꾼 것:
+
+- `src/main/ports/env-tool.ts` — `BrowserWorkspacePort {create, list, close}`,
+  `BrowserOperationPort {open, navigate, snapshot, click, fill, evaluate, screenshot, close}`(각각 `signal?`),
+  `BrowserScript`·`BrowserEvaluation`, `CancellationPort` 유지.
+- `src/main/app/control/env-tool.ts` — `BROWSER_RPC_TIERS`(관측 셋·워크스페이스 변경 여덟)와 `requiredTierFor`,
+  RPC 별 서비스 메서드, 증거를 만들지 않는 RPC 를 위한 `ResourceOutcome`, 판정에 쓴 등급을 장부에 남기는 `snapshotOf().tier`.
+- `src/test/helpers/env-tool-fixture.ts` — 새 포트에 맞춘 대역, `fakeWorkspaces`, 포트가 받은 신호 기록.
+- `src/test/env-tool-approval-matrix.contract.test.ts` — 표 자체와 "선언을 믿지 않는다" 계약.
+- `src/test/env-tool-live.contract.test.ts` — 컴파일만 맞춤(브라우저는 여전히 쓰지 않는다).
+- `.agents/context/module-manifest.json` — env-tool 세 항목의 `uc` 에 SPACE·RECOVER·SCRIPT 를 나눠 넣었다.
+  `contract` 는 문자열 한 칸이라 병기할 자리가 없어 기존 값(`docs/progress/issue-497-universal-agent.md`)을 유지했다.
+- `docs/requirements.md`·`docs/user-scenarios.md` — FR-ENV-TOOL.14 와 UC-ENV-TOOL-SCRIPT 에 확인 수단 등재.
+
+### 계약과 달랐던 판단 (S0c)
+
+1. **`listWorkspaces` 등급.** 계약은 관측(스냅샷·캡처)과 워크스페이스 변경(열기·이동·클릭·입력·평가·닫기·공간 생성/닫기)만 적었다.
+   목록 조회는 보기만 하므로 관측으로 넣었다. 관측 등급 RPC 는 셋이 된다.
+2. **등급 판정 근거를 `notes` 가 아니라 장부에 남겼다.** 선언과 표가 다를 때 결과 메모에 적으니 기본 클릭마다 메모가 붙어
+   "좌표를 썼다" 같은 실제 효과 기록과 섞였다. 대신 `snapshotOf().tier` 로 판정에 쓴 등급을 노출한다.
+3. **증거 없는 RPC 는 다른 결과 타입을 쓴다.** `close`·`createWorkspace`·`listWorkspaces`·`closeWorkspace` 는 스냅샷이 없다
+   (닫힌 페이지에는 볼 것이 없다). 같은 생명주기·상한·취소를 쓰되 `ResourceOutcome<T>` 로 자원을 돌려준다.
+   대신 이 경로에는 멱등 캐시를 두지 않았다 — "공간을 다시 만들어 달라" 와 "같은 공간을 달라" 는 다른 말이다.
+4. **작업 공간 포트는 생성자 다섯 번째 선택 인자다.** 아직 어댑터가 없는 조립(S3a 이전)이 많고, 없으면 공간 RPC 가
+   `method-denied` 로 끝난다. 조용히 성공하지 않는 것이 요점이다.
+5. **기존 계약 테스트 셋을 새 계약대로 고쳤다.** 클릭의 요구 등급을 표가 정하므로 "선언 등급으로 거절을 만드는" 테스트는
+   더 이상 성립하지 않는다. FR-ENV-TOOL.4(페이지 문장이 판정을 못 바꾼다)는 관측 권한만 준 조립에서 양쪽 다 거절되는 형태로,
+   "거절된 요청은 기억하지 않는다" 는 경계 이탈로 각각 바꿨다.

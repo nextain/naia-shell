@@ -1272,6 +1272,7 @@ Test Coverage Map (P02):
 | UC-ENV-TOOL-RECOVER | node:test `packages/ego-host/test/lease.test.mjs` | 감독자 SIGKILL → Chromium 소멸, 시작 조정 → 고아 0, marker 불일치 프로세스 불간섭, CLI 강제 종료 → 같은 공간 재접속 |
 | UC-ENV-TOOL-RECOVER | vitest `src/test/env-tool-adk-switch.contract.test.ts` | ADK A 종료 → B 조정 순서 |
 | UC-ENV-TOOL-RECOVER | e2e-tauri `packages/shell/e2e-tauri/specs/env-tool-browser-host-lifecycle.spec.ts` | Reset·재시작·정상 종료 뒤 PID·marker·lease |
+| UC-ENV-TOOL-SCRIPT | vitest `src/test/env-tool-approval-matrix.contract.test.ts` | 등급 고정 RPC 표(관측 둘·워크스페이스 변경 여덟), 호출자 선언을 판정에 쓰지 않음 |
 | UC-ENV-TOOL-SCRIPT | Playwright `packages/shell/e2e/env-tool-browser-host.spec.ts` | 형식 도구 호출 → 증거 반환, 승인 없는 묶음 실행 거부, 기존 `skill_browser_*` 불변 |
 | UC-ENV-TOOL-SCRIPT | node:test `packages/ego-host/test/handshake.test.mjs` | grant 없는 핸드셰이크 거부, 관측 연결 무영향 |
 | 전체 | node:test `packages/ego-host/test/vendor-install.test.mjs` | 벤더 매니페스트 일치, 임의 디렉터리 설치·빌드·실행 |

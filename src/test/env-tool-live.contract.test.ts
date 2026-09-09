@@ -118,18 +118,31 @@ function liveTerminal(): TerminalOperationPort {
   };
 }
 
+const NO_BROWSER = () => {
+  throw new Error("이 테스트는 브라우저를 쓰지 않는다");
+};
+
 const unusedBrowser: BrowserOperationPort = {
   async open() {
-    throw new Error("이 테스트는 브라우저를 쓰지 않는다");
+    return NO_BROWSER();
+  },
+  async navigate() {
+    return NO_BROWSER();
   },
   async snapshot() {
-    throw new Error("이 테스트는 브라우저를 쓰지 않는다");
+    return NO_BROWSER();
   },
   async click() {
-    throw new Error("이 테스트는 브라우저를 쓰지 않는다");
+    return NO_BROWSER();
   },
   async fill() {
-    throw new Error("이 테스트는 브라우저를 쓰지 않는다");
+    return NO_BROWSER();
+  },
+  async evaluate() {
+    return NO_BROWSER();
+  },
+  async screenshot() {
+    return NO_BROWSER();
   },
   async close() {},
 };
