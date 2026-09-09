@@ -1,12 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
 	Fragment,
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useRef,
 	useState,
 } from "react";
-import { directToolCall } from "../lib/chat-service";
+import { directToolCall, fetchAgentSkills } from "../lib/chat-service";
 import {
 	getDisabledSkills,
 	isSkillDisabled,
@@ -38,6 +38,16 @@ function tierLabel(tier: number): string {
 	return `T${tier}`;
 }
 
+function toAgentSkillInfo(
+	skill: Awaited<ReturnType<typeof fetchAgentSkills>>[number],
+): SkillManifestInfo {
+	return {
+		name: skill.name,
+		description: skill.description,
+		type: "agent",
+	};
+}
+
 export function SkillsTab({
 	onAskAI,
 	children,
@@ -58,6 +68,8 @@ export function SkillsTab({
 	const [installResults, setInstallResults] = useState<
 		Map<string, { success: boolean; message: string }>
 	>(() => new Map());
+	const [skillsLoadError, setSkillsLoadError] = useState(false);
+	const skillsLoadEpoch = useRef(0);
 
 	const fetchGatewayStatus = useCallback(async () => {
 		const config = loadConfig();
@@ -160,22 +172,39 @@ export function SkillsTab({
 	);
 
 	useEffect(() => {
-		loadSkills();
-		fetchGatewayStatus();
+		const epoch = ++skillsLoadEpoch.current;
+		let active = true;
+		const isCurrent = () => active && skillsLoadEpoch.current === epoch;
+
+		void loadSkills(isCurrent);
+		void fetchGatewayStatus();
+
+		return () => {
+			active = false;
+		};
 	}, [fetchGatewayStatus]);
 
-	async function loadSkills() {
+	async function loadSkills(isCurrent: () => boolean) {
 		const store = useSkillsStore.getState();
+		if (!isCurrent()) return;
 		store.setLoading(true);
+		store.setSkills([]);
+		setSkillsLoadError(false);
 		try {
-			const result = await invoke<SkillManifestInfo[]>("list_skills");
-			store.setSkills(result);
+			const result = await fetchAgentSkills();
+			if (!isCurrent()) return;
+			store.setSkills(result.map(toAgentSkillInfo));
 		} catch (err) {
+			if (!isCurrent()) return;
+			store.setSkills([]);
+			setSkillsLoadError(true);
 			Logger.warn("SkillsTab", "Failed to load skills", {
 				error: String(err),
 			});
 		} finally {
-			store.setLoading(false);
+			if (isCurrent()) {
+				store.setLoading(false);
+			}
 		}
 	}
 
@@ -194,10 +223,10 @@ export function SkillsTab({
 	function handleDisableAll() {
 		const config = loadConfig();
 		if (!config) return;
-		const customNames = skills
+		const enabledSkillNames = skills
 			.filter((s) => s.type !== "built-in")
 			.map((s) => s.name);
-		saveConfig({ ...config, disabledSkills: customNames });
+		saveConfig({ ...config, disabledSkills: enabledSkillNames });
 		useSkillsStore.getState().bumpConfigVersion();
 	}
 
@@ -211,7 +240,10 @@ export function SkillsTab({
 		: skills;
 
 	const builtInSkills = filtered.filter((s) => s.type === "built-in");
-	const customSkills = filtered.filter((s) => s.type !== "built-in");
+	const agentSkills = filtered.filter((s) => s.type === "agent");
+	const customSkills = filtered.filter(
+		(s) => s.type === "gateway" || s.type === "command",
+	);
 	const hasVisibleMemoSkill = builtInSkills.some(
 		(skill) => skill.name === "skill_memo",
 	);
@@ -231,7 +263,12 @@ export function SkillsTab({
 	if (skills.length === 0 && !children) {
 		return (
 			<div className="skills-tab">
-				<div className="skills-empty">{t("skills.empty")}</div>
+				<div
+					className={skillsLoadError ? "skills-error" : "skills-empty"}
+					data-testid={skillsLoadError ? "skills-load-error" : "skills-empty"}
+				>
+					{skillsLoadError ? t("skills.loadError") : t("skills.empty")}
+				</div>
 			</div>
 		);
 	}
@@ -272,6 +309,11 @@ export function SkillsTab({
 
 			{/* Skill list */}
 			<div className="skills-list">
+				{skillsLoadError && (
+					<div className="skills-error" data-testid="skills-load-error">
+						{t("skills.loadError")}
+					</div>
+				)}
 				{builtInSkills.length > 0 && (
 					<>
 						<div className="skills-section-title">
@@ -292,6 +334,23 @@ export function SkillsTab({
 				)}
 
 				{!hasVisibleMemoSkill && children}
+
+				{agentSkills.length > 0 && (
+					<>
+						<div className="skills-section-title">
+							{t("skills.agentSection")} ({agentSkills.length})
+						</div>
+						{agentSkills.map((skill) => (
+							<SkillCard
+								key={skill.name}
+								skill={skill}
+								disabled={isSkillDisabled(skill.name)}
+								onToggle={handleToggle}
+								onAskAI={onAskAI}
+							/>
+						))}
+					</>
+				)}
 
 				{customSkills.length > 0 && (
 					<>
@@ -471,12 +530,16 @@ function SkillCard({
 						)}
 						{!isBuiltIn && (
 							<span className={`skill-badge ${skill.type}`}>
-								{skill.type === "gateway"
-									? t("skills.gateway")
-									: t("skills.command")}
+								{skill.type === "agent"
+									? t("skills.agentTool")
+									: skill.type === "gateway"
+										? t("skills.gateway")
+										: t("skills.command")}
 							</span>
 						)}
-						<span className="skill-badge tier">{tierLabel(skill.tier)}</span>
+						{skill.tier !== undefined && (
+							<span className="skill-badge tier">{tierLabel(skill.tier)}</span>
+						)}
 						{skill.source && (
 							<span className="skill-badge source">{skill.source}</span>
 						)}
