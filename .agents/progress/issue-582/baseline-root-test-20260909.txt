@@ -1,0 +1,11 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/test/app-install-root.contract.test.ts > 앱 설치·목록·삭제의 자리 > 네 갈래가 모두 같은 자리 함수를 지난다
+ FAIL  src/test/app-install-root.contract.test.ts > 앱 설치·목록·삭제의 자리 > 정본 자리 함수는 옛 자리를 실제로 옮긴다
+ FAIL  src/test/e2e-runtime-isolation.contract.test.ts > 전용 e2e 환경의 실행 자리도 임시 디렉터리 아래다 > radio-queue-e2e-environment.ts 의 자리가 데이터 홈 밖의 임시 디렉터리다
+ FAIL  src/test/environment-wire-conformance.contract.test.ts > 짝 저장소와의 표본 드리프트 > 짝 저장소 표본을 실제로 찾았다 — 건너뛴 게이트는 게이트가 아니다
+ FAIL  src/test/onboarding-reset.contract.test.ts > 온보딩을 되살리는 길 (#564) > 네 스펙이 저마다 손으로 비우지 않고 같은 헬퍼를 쓴다
+ FAIL  src/test/wire-union-drift.contract.test.ts > 뇌가 보내는 것을 셸이 전부 안다 (FR-WIRE-UNION.3) > 표본이 아니라 짝 저장소의 실제 송신 코드와 대조한다
+ FAIL  src/test/wire-union-drift.contract.test.ts > 짝 저장소와의 표본 드리프트 (FR-WIRE-UNION.6) > 짝 저장소 표본을 실제로 찾았다 — 건너뛴 게이트는 게이트가 아니다
+ Test Files  5 failed | 97 passed | 1 skipped (103)
+      Tests  7 failed | 1556 passed | 4 skipped (1567)
+baseline commit: 5f979d26

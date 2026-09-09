@@ -1,0 +1,15 @@
+{
+  "name": "@nextain/naia-ego-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "naia-shell 에이전트 브라우저 호스트 — ego-lite 공개 런타임 벤더링 (#582)",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "vendor:check": "node scripts/sync-ego-lite.mjs --check",
+    "vendor:test": "cd vendor/ego-lite/package/ego-browser && npm test",
+    "test": "node --test test/*.test.mjs"
+  }
+}
