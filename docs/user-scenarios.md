@@ -1277,7 +1277,7 @@ Test Coverage Map (P02):
 | UC-ENV-TOOL-SCRIPT | node:test `packages/ego-host/test/handshake.test.mjs` | grant 없는 핸드셰이크 거부, 관측 연결 무영향 |
 | 전체 | node:test `packages/ego-host/test/vendor-install.test.mjs` | 벤더 매니페스트 일치, 임의 디렉터리 설치·빌드·실행 |
 | UC-ENV-TOOL-BROWSE·SCRIPT | e2e-tauri `packages/shell/e2e-tauri/specs/env-tool-browser-host-fullstack.spec.ts` | 실 Tauri 앱에서 도구 호출 → 실 Chromium 캡처·스냅샷·주소 개정, 참조 클릭, 승인 없는 script 거부, 종료 뒤 잔류 0 |
-| UC-ENV-TOOL-SCRIPT | vitest `packages/shell/src/lib/__tests__/ego-browser-env-ipc.test.ts`·`browser-host-skill.test.ts` | IPC 어댑터가 포트를 올바른 명령으로 부르고 거부를 형식 있게 전달, 플래그·이름 비충돌 |
+| UC-ENV-TOOL-SCRIPT | vitest `packages/shell/src/lib/__tests__/ego-browser-env-ipc.test.ts`·`packages/shell/src/lib/__tests__/browser-host-skill.test.ts` | IPC 어댑터가 포트를 올바른 명령으로 부르고 거부를 형식 있게 전달, 플래그·이름 비충돌 |
 | UC-ENV-TOOL-RECOVER | Rust `packages/shell/src-tauri/src/ego_host.rs`·`ego_host_bridge.rs` 단위 | lease 파싱·marker 경계·unverified 처분·소켓 경로 Node 동일성·관리 비밀 불일치 거부 |
 
 상태 매트릭스: 기본(공간 0), 진행(작업 실행 중), 성공, 오류(거부·타임아웃·취소·실행기 종료), 회수(재시작 뒤 조정)를 매핑한다.
