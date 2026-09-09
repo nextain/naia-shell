@@ -107,6 +107,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 - **거부**: `Target.setAutoAttach`, `Target.attachToBrowserTarget`, `Target.createBrowserContext`, `Target.disposeBrowserContext`, `Target.sendMessageToTarget`, `Target.exposeDevToolsProtocol`, 비 flatten 첨부, `Security.setIgnoreCertificateErrors`, `Network.clearBrowserCookies`, `Network.clearBrowserCache`, 컨텍스트 없는 `Storage.clearDataForOrigin`, `DOM.setFileInputFiles`(임의 호스트 경로. 이번 범위에서 파일 업로드는 미지원으로 거부), `Page.crash`.
 - **컨텍스트 강제**: `Target.createTarget`, `Storage.getCookies/setCookies/clearCookies`, `Browser.grantPermissions/resetPermissions`, `Storage.clearDataForOrigin`(컨텍스트 지정 시). `Browser.setDownloadBehavior` **와** `Page.setDownloadBehavior` 둘 다 `downloadPath` 를 컨텍스트별 디렉터리로 재작성한다(어느 한쪽만 막으면 우회된다). 다른 컨텍스트를 지정하면 `EGO_CONTEXT_MISMATCH`.
 - **세션 소유 강제**: `Page.navigate/reload/stopLoading/enable/captureScreenshot/getLayoutMetrics/handleJavaScriptDialog/…`, `Runtime.evaluate/callFunctionOn/enable/…`, `DOM.getDocument/querySelector/getBoxModel/resolveNode/describeNode/…`, `Accessibility.getFullAXTree/…`, `Input.dispatchMouseEvent/dispatchKeyEvent/insertText`, `Emulation.*` 의 개별 메서드, `Network.setCookie`, `Fetch.enable/disable` 은 `{connection, sessionId, targetId, workspaceId}` 장부를 통과한 세션에서만. 정책 파일이 메서드 하나하나를 나열한다.
+- 거부 응답의 `error.message` 끝에는 안정 코드(`EGO_HOST_METHOD_DENIED` 등)를 넣는다. 벤더 런타임이 CDP 오류의 `error.code` 를 버리므로 문구가 유일한 통로다(S2f).
 - **작업 소유 강제**: `Runtime.terminateExecution`, `Fetch.failRequest/fulfillRequest/continueRequest/continueWithAuth`, `Browser.cancelDownload`, `IO.read/close` 는 해당 작업(operation)이 소유한 세션·requestId·GUID·스트림 핸들에만 허용한다. 취소 훅(4.7)이 쓰는 메서드가 바로 이 묶음이며 허용 목록에 명시적으로 들어 있다.
 - **Target 장부 통과**: `Target.getTargets/attachToTarget/activateTarget/closeTarget/getTargetInfo` 는 연결이 소유한 타깃으로 범위를 좁히고 결과·이벤트도 필터. 다운로드 GUID, `Fetch.requestPaused` 응답 의무, `IO` 스트림 핸들은 같은 장부에 묶고 작업 취소·연결 종료 시 정리한다.
 
@@ -148,7 +149,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 
 ### 4.6 무간섭
 
-브라우저는 `--headless=new` 로 띄운다. 검증은 세 겹이다. (1) 실제 Chromium 프로세스의 명령줄에 헤드리스 인자가 있다. (2) 호스트 동작 전후로 활성 창 식별자가 같다. 이 검사는 조건부가 아니다. 실브라우저 테스트 환경은 Xvfb·창 관리자·`xdotool` 을 필수 의존으로 고정하고, 없으면 RED 다. (3) 감독자 프로세스 트리의 어떤 PID 도 창을 소유하지 않는다(`xdotool search --pid`).
+브라우저는 `--headless=new` 로 띄운다. 검증은 세 겹이다. (1) 실제 Chromium 프로세스의 명령줄에 헤드리스 인자가 있다. (2) 호스트 동작 전후로 활성 창 식별자가 같다. 이 검사는 조건부가 아니다. 실브라우저 테스트 환경은 Xvfb 또는 `cage`(wlroots 헤드리스 백엔드 위 Xwayland)와 `xdotool` 을 필수 의존으로 고정하고, 없으면 RED 다. 사람의 Wayland 세션(`:0`)에서 재면 활성 창 값이 바뀔 수 없어 검사가 공허해지므로 그 디스플레이에서는 재지 않는다(S2e 실측). 계기가 살아 있음(창을 하나 더 띄우면 활성 창이 실제로 바뀜)을 같은 테스트가 증명한다. (3) 감독자 프로세스 트리의 어떤 PID 도 창을 소유하지 않는다(`xdotool search --pid`).
 
 ### 4.7 취소
 
