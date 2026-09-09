@@ -629,10 +629,10 @@ export function createSupervisorServer({
       ["workspaceId", workspaceId, record.workspaceId],
     ]) {
       if (declared === null || declared === undefined) continue;
-      if (typeof declared !== "string" || declared === "") {
+      if (typeof declared !== "string") {
         connection.kill(
           CODES.HANDSHAKE_INVALID,
-          `핸드셰이크의 ${field} 는 비지 않은 문자열이어야 한다. 받은 것: ${JSON.stringify(declared)}`,
+          `핸드셰이크의 ${field} 는 문자열이어야 한다. 받은 것: ${JSON.stringify(declared)}`,
         );
         return;
       }

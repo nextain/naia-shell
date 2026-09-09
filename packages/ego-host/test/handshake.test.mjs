@@ -121,7 +121,9 @@ test("hello 의 operationId·workspaceId 는 토큰 기록과 정확히 같아�
   assert.equal(filled.at(-1)?.workspaceId, "A");
 
   // (4) 잘못된 타입 — 조용히 문자열로 바꾸지 않는다.
-  for (const bad of [123, ["approved"], { id: "approved" }, ""]) {
+  //     빈 문자열은 타입 오류가 아니다. "작업 공간 없음"의 정당한 값이라(어댑터의
+  //     `listWorkspaces` 가 그렇게 부른다) 아래에서 **기록과의 일치**로 판정한다.
+  for (const bad of [123, true, ["approved"], { id: "approved" }]) {
     const token = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
     const frames = await rawHello(socketPath, {
       type: "hello",
@@ -136,6 +138,26 @@ test("hello 의 operationId·workspaceId 는 토큰 기록과 정확히 같아�
       `${JSON.stringify(bad)} 가 통과했다`,
     );
   }
+
+  // (5) 빈 문자열은 기록이 같으면 통과하고 다르면 거부다 — 모양이 아니라 값이 판정한다.
+  const emptySpace = server.issueToken({ operationId: "approved", workspaceId: "", grant });
+  const emptyOk = await rawHello(socketPath, {
+    type: "hello",
+    token: emptySpace,
+    grant,
+    operationId: "approved",
+    workspaceId: "",
+  });
+  assert.equal(emptyOk.at(-1)?.type, "welcome", "기록과 같은 빈 문자열이 거부됐다");
+  const emptyBad = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
+  const emptyDenied = await rawHello(socketPath, {
+    type: "hello",
+    token: emptyBad,
+    grant,
+    operationId: "approved",
+    workspaceId: "",
+  });
+  assert.equal(emptyDenied.at(-1)?.error_code, CODES.HANDSHAKE_INVALID);
 });
 
 test("grant 없는 연결은 관측 RPC 만 되고 변경 RPC 는 거부된다", async () => {
