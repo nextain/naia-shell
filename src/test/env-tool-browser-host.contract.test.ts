@@ -9,7 +9,6 @@
 // 미검증은 다음 사람에게 "검증했다"로 읽힌다(packages/ego-host/test/helpers/live-browser.mjs
 // 와 같은 원칙). 대신 페이지는 전부 이 프로세스가 띄운 로컬 픽스처다 — 외부 네트워크는 없다.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -121,6 +120,7 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
+  const ownedPid = environment?.browserPid ?? null;
   try {
     await environment?.stop();
   } finally {
@@ -129,15 +129,21 @@ afterAll(async () => {
     for (const dir of [adkDir, runtimeDir]) if (dir) rmSync(dir, { recursive: true, force: true });
   }
   // 감독자를 내린 **뒤** 재는 것이 뜻이 있다. 테스트 안에서 재면 그때는 당연히 살아 있다.
-  // `pgrep` 은 하나도 못 찾으면 종료 코드 1 이므로 그것이 깨끗함이다.
-  let leftover = "";
-  try {
-    leftover = execFileSync("pgrep", ["-f", "naia-ego-[m]arker"], { encoding: "utf8" });
-  } catch {
-    leftover = "";
+  // 재는 대상은 **이 파일이 띄운 PID** 다 — `pgrep` 으로 기계 전체를 훑으면 나란히 도는 다른
+  // 테스트 파일의 살아 있는 브라우저를 우리 고아로 읽는다(vitest 는 파일을 병렬로 돌린다).
+  if (ownedPid !== null && pidAlive(ownedPid)) {
+    throw new Error(`이 파일이 띄운 브라우저가 남았다: ${ownedPid}`);
   }
-  if (leftover.trim() !== "") throw new Error(`marker 프로세스가 남았다: ${leftover.trim()}`);
 }, 60_000);
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 /** 스냅샷 증거 파일에서 안정 참조 하나를 꺼낸다. 참조는 본문의 `[ref=N …]` 이다(ABI 7). */
 function refOf(snapshotRef: string, pattern: RegExp): string {

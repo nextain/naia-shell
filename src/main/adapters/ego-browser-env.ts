@@ -292,6 +292,8 @@ export interface EgoHostApi {
   connectSupervisor(options: Record<string, unknown>): Promise<EgoClient>;
   reconcileLease(options: Record<string, unknown>): Promise<{ status: string; orphans: number; note: string }>;
   ensureDirs(dirs: readonly string[]): void;
+  pidAlive(pid: number): boolean;
+  waitForPidExit(pid: number, timeoutMs?: number, stepMs?: number): Promise<boolean>;
   writeEnvFiles(files: readonly { path: string; values: Record<string, string> }[]): readonly string[];
   runEgoScript(options: Record<string, unknown>): Promise<{ status: number | null; stdout: string; stderr: string; timedOut: boolean }>;
   readonly DEFAULT_SDK_DIR: string;
@@ -436,6 +438,11 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     return this.supervisor !== null && this.lostReason === null;
   }
 
+  /** 지금 이 어댑터가 소유한 Chromium 의 PID. 내린 뒤에는 null 이다(고아 판정의 축). */
+  get browserPid(): number | null {
+    return this.supervisor?.browserPid ?? null;
+  }
+
   private async loadApi(): Promise<EgoHostApi> {
     if (!this.api) this.api = await (this.options.loadApi ?? defaultEgoHostApi)();
     return this.api;
@@ -533,6 +540,9 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
       throw failure((error as EgoErrorShape).error_code, `감독자에 붙지 못했다: ${describe(error)}`);
     }
     const cdp = cdpChannel(client, request.timeoutMs);
+    // 연결이 끊기면 대기 중인 CDP 를 **바로** 끊는다. 안 그러면 감독자가 내려간 뒤에도 요청
+    // 하나하나가 자기 상한을 다 채우고 나서야 실패해, ADK 전환이 몇 분씩 매달린다(S3b).
+    client.onClose(() => cdp.dispose());
     let ok = false;
     let thrown: unknown = null;
     try {
@@ -833,7 +843,7 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
    * 순서를 어기면 그 순간 고아가 하나 생기고, B 의 lease 가 A 의 것을 덮어써 영영 회수할 수
    * 없게 된다. 그래서 A 가 살아 있는 동안 B 를 시작하는 길을 **형식 오류**로 막는다.
    */
-  async switchAdk(fromDir: string, toDir: string): Promise<EgoSwitchReport> {
+  async switchAdk(fromDir: string, toDir: string, { start = true }: { start?: boolean } = {}): Promise<EgoSwitchReport> {
     const from = resolveAdkDir(fromDir, this.options.cwd ?? "", this.platform);
     const to = resolveAdkDir(toDir, this.options.cwd ?? "", this.platform);
     if (from === to) {
@@ -846,13 +856,36 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
       );
     }
     const api = await this.loadApi();
+
+    // (1) A 를 내린다.
     const stoppedPid = this.supervisor?.browserPid ?? null;
     await this.stop();
-    if (this.supervisor !== null) {
-      throw new EnvOperationFailure("disconnected", "A 의 감독자가 살아 있는 동안에는 B 를 시작하지 않는다");
+
+    // (2) **정말 내려갔는지** 를 판정 기준으로 삼는다. "종료를 요청했다"는 기준이 아니다 —
+    //     A 의 Chromium 이 살아 있는데 B 를 시작하면 그 순간 고아가 하나 생기고, B 의 lease 가
+    //     A 의 것을 덮어써 영영 회수할 수 없게 된다(계약 4.8).
+    if (stoppedPid !== null && !(await api.waitForPidExit(stoppedPid, 10_000))) {
+      throw new EnvOperationFailure(
+        "disconnected",
+        `이전 ADK(${from})의 Chromium(PID ${stoppedPid})이 아직 살아 있다. ` +
+          "A 가 살아 있는 동안에는 B 의 lease 를 건드리지도, B 를 시작하지도 않는다(#582 계약 4.8).",
+      );
     }
+    // 전환한 어댑터는 되살아나지 않는다. 다음 요청이 A 를 조용히 다시 띄우면 ADK 가 둘이 된다.
+    this.lostReason = `이 어댑터의 ADK(${from})는 ${to} 로 전환하며 내려갔다`;
+
+    // (3) B 의 lease 조정 — 이전 감독자의 흔적을 치운 뒤에야 (4) B 를 시작한다.
     const reconciliation = await api.reconcileLease({ adkDir: to, platform: this.platform });
-    return { from, to, stoppedPid, reconciliation };
+    const next = start
+      ? createEgoBrowserEnvironment({ ...this.options, adkDir: to })
+      : null;
+    if (next) await next.start();
+    return { from, to, stoppedPid, reconciliation, next };
+  }
+
+  /** 감독자를 미리 띄운다. 첫 사용까지 기다리지 않아도 되는 자리(전환·부팅)를 위한 문. */
+  async start(): Promise<void> {
+    await this.ensureSupervisor();
   }
 
   // ── 포트 얼굴 ─────────────────────────────────────────────────────────────
@@ -928,6 +961,8 @@ export interface EgoSwitchReport {
   readonly to: string;
   readonly stoppedPid: number | null;
   readonly reconciliation: { readonly status: string; readonly orphans: number; readonly note: string };
+  /** 전환한 뒤 쓰는 어댑터. 어댑터 하나는 ADK 하나에 묶인다 — 옛 것은 다시 쓰지 않는다. */
+  readonly next: EgoBrowserEnvironment | null;
 }
 
 /** 조립에서 쓰는 팩토리. 클래스를 직접 부르는 자리를 하나로 모은다. */

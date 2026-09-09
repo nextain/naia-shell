@@ -41,7 +41,8 @@ export function ensureDirs(dirs = []) {
  * `.env` 파일들을 놓는다 (ABI 8 "`.env` 를 두 곳에서 읽는다").
  *
  * 이미 설정된 변수는 벤더가 덮어쓰지 않으므로(`src/env.ts:40-42`) 이 파일들은 spawn 환경의
- * **아래**에 깔리는 기본값이다. 그래서 두 곳 다 놓아도 서로 싸우지 않는다.
+ * **아래**에 깔리는 기본값이다. 무엇을 어디에 놓을지는 호출자가 정한다 — 어댑터는 ADK 를
+ * 따라다니는 값만 ADK 안 한 곳에 놓는다(S3a 증거 3.1).
  *
  * @param {readonly {path:string, values:Record<string,string>}[]} files
  */
@@ -57,6 +58,35 @@ export function writeEnvFiles(files = []) {
     written.push(file.path);
   }
   return written;
+}
+
+/** PID 가 살아 있는가. EPERM 은 "남의 것이지만 있다"이므로 살아 있는 것으로 센다. */
+export function pidAlive(pid) {
+  if (typeof pid !== "number") return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+/**
+ * PID 가 사라질 때까지 기다린다 (S3b).
+ *
+ * ADK 전환에서 이것이 순서의 판정 기준이다 — "정상 종료를 요청했다"가 아니라 "그 프로세스가
+ * 실제로 없다"여야 다음 ADK 를 시작해도 고아가 안 생긴다.
+ *
+ * @returns {Promise<boolean>} 제한 시간 안에 사라졌으면 true
+ */
+export async function waitForPidExit(pid, timeoutMs = 10_000, stepMs = 50) {
+  if (typeof pid !== "number") return true;
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, stepMs));
+  }
+  return !pidAlive(pid);
 }
 
 /**

@@ -19,6 +19,8 @@ export {
   DEFAULT_SDK_DIR,
   LAUNCHER,
   ensureDirs,
+  pidAlive,
   runEgoScript,
+  waitForPidExit,
   writeEnvFiles,
 } from "./client/script-runner.mjs";
