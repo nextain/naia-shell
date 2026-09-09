@@ -1,6 +1,11 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { AppContext, NaiaContextBridge, ToolHandler } from "../../lib/app-registry";
+import { initializeI18n } from "../../lib/i18n";
+import {
+	SLIDES_HOST_ENVIRONMENT_EVENT,
+	startSlidesHostClientBridge,
+} from "../../lib/slides-host";
 import { SlidesCenterArea } from "./SlidesCenterArea";
 import "./standalone.css";
 
@@ -34,6 +39,27 @@ window.addEventListener("message", async (event) => {
 	}
 });
 
-createRoot(document.getElementById("root")!).render(
-	<React.StrictMode><SlidesCenterArea naia={bridge} /></React.StrictMode>,
-);
+function StandaloneSlides() {
+	const [, forceRender] = useState(0);
+	useEffect(() => {
+		const onEnvironment = () => forceRender((value) => value + 1);
+		window.addEventListener(SLIDES_HOST_ENVIRONMENT_EVENT, onEnvironment);
+		return () => window.removeEventListener(SLIDES_HOST_ENVIRONMENT_EVENT, onEnvironment);
+	}, []);
+	// Re-rendering this stable component applies translated labels and CSS
+	// variables without remounting SlidesCenterArea or losing the current deck.
+	return <SlidesCenterArea naia={bridge} />;
+}
+
+async function bootstrap() {
+	await initializeI18n();
+	const host = startSlidesHostClientBridge();
+	await host.ready;
+	const root = document.getElementById("root");
+	if (!root) return;
+	createRoot(root).render(
+		<React.StrictMode><StandaloneSlides /></React.StrictMode>,
+	);
+}
+
+void bootstrap();

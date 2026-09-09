@@ -6,10 +6,6 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { Document, Page as PdfPage, pdfjs } from "react-pdf";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { appRegistry } from "../../lib/app-registry";
 import { t } from "../../lib/i18n";
@@ -19,6 +15,7 @@ import {
 	boundedDeckContext,
 	narrationForPage,
 	parseSlideSpeakerNotes,
+	presentationRangeForNotes,
 	reduceSlidePresenter,
 } from "../../lib/slide-presenter";
 import {
@@ -28,11 +25,24 @@ import {
 	requestSlidePresenterSpeech,
 } from "../../lib/slide-presenter-events";
 import { useTabSkills } from "../../lib/tab-skills";
-import { startSlidesRecording, stopSlidesRecording } from "../../lib/app-sandbox";
+import {
+	openSlidesDocument,
+	watchSlidesPickerAvailable,
+	type SlidesOpenedPdf,
+} from "../../lib/slides-files";
+import { replaceSlideScriptPage } from "../../lib/slide-script";
+import { startSlidesRecording, stopSlidesRecording } from "../../lib/slides-host";
 import { useAppStore } from "../../stores/app";
+import { SlidesControls } from "./SlidesControls";
+import {
+	SlidesErrorNotice,
+	type SlidesFileError,
+} from "./SlidesErrorNotice";
+import { SlidesFileActions } from "./SlidesFileActions";
+import { SlidesScriptPanel } from "./SlidesScriptPanel";
+import { SlidesStatus } from "./SlidesStatus";
+import { SlidesViewer } from "./SlidesViewer";
 import "./slides.css";
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const TAG = "SlidesCenterArea";
 
@@ -51,6 +61,12 @@ function stateLabel(mode: string): string {
 	return t(key);
 }
 
+function scriptDownloadName(scriptName: string, pdfName: string): string {
+	const source = scriptName || pdfName || "slides";
+	const base = source.replace(/\.(?:markdown|md|txt|pdf|pptx)$/i, "");
+	return `${base || "slides"}.edited.md`;
+}
+
 export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [state, dispatch] = useReducer(
 		reduceSlidePresenter,
@@ -61,12 +77,30 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const [pdfFile, setPdfFile] = useState<File | null>(null);
 	const [pdfName, setPdfName] = useState("");
 	const [scriptName, setScriptName] = useState("");
+	const [nativePickerAvailable, setNativePickerAvailable] = useState(false);
+	const [pickingPdf, setPickingPdf] = useState(false);
+	const [importPhase, setImportPhase] = useState<string | null>(null);
+	const [fileError, setFileError] = useState<SlidesFileError | null>(null);
+	const selectedFileRef = useRef<File | null>(null);
+	const scriptRevisionRef = useRef(0);
+	const pickerAbortRef = useRef<AbortController | null>(null);
+	const [scriptMarkdown, setScriptMarkdown] = useState("");
+	const [scriptEditorOpen, setScriptEditorOpen] = useState(false);
+	const [editingPage, setEditingPage] = useState<number | null>(null);
+	const [draftText, setDraftText] = useState("");
+	const [draftDirty, setDraftDirty] = useState(false);
+	const [unexportedScript, setUnexportedScript] = useState(false);
+	const draftOriginalRef = useRef("");
+	const scriptDirtyRef = useRef(false);
 	const [speakerNotes, setSpeakerNotes] = useState<Map<number, string>>(
 		new Map(),
 	);
 	const [pageTexts, setPageTexts] = useState<string[]>([]);
 	const [viewerWidth, setViewerWidth] = useState(960);
 	const viewerRef = useRef<HTMLDivElement>(null);
+	const appRef = useRef<HTMLElement>(null);
+	const [fullscreen, setFullscreen] = useState(false);
+	const [fullscreenError, setFullscreenError] = useState(false);
 	const [recording, setRecording] = useState(false);
 	const [recordingError, setRecordingError] = useState<string | null>(null);
 	const [focusMode, setFocusMode] = useState(false);
@@ -76,8 +110,68 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	const pageTextsRef = useRef(pageTexts);
 	notesRef.current = speakerNotes;
 	pageTextsRef.current = pageTexts;
+	const hasUnsavedScript = draftDirty || unexportedScript;
+	scriptDirtyRef.current = hasUnsavedScript;
 
 	useTabSkills(viewerRef, naia);
+
+	useEffect(() => {
+		const onChange = () =>
+			setFullscreen(document.fullscreenElement === appRef.current);
+		document.addEventListener("fullscreenchange", onChange);
+		return () => document.removeEventListener("fullscreenchange", onChange);
+	}, []);
+
+	async function toggleFullscreen() {
+		try {
+			setFullscreenError(false);
+			if (document.fullscreenElement === appRef.current) {
+				await document.exitFullscreen();
+			} else {
+				await appRef.current?.requestFullscreen();
+			}
+		} catch (error) {
+			setFullscreenError(true);
+			Logger.warn(TAG, "fullscreen failed", { error: String(error) });
+		}
+	}
+
+	useEffect(() => watchSlidesPickerAvailable(setNativePickerAvailable), []);
+	useEffect(
+		() => () => {
+			pickerAbortRef.current?.abort();
+			scriptRevisionRef.current++;
+			selectedFileRef.current = null;
+		},
+		[],
+	);
+
+	useEffect(() => {
+		if (!hasUnsavedScript) return;
+		const onBeforeUnload = (event: BeforeUnloadEvent) => {
+			event.preventDefault();
+			event.returnValue = t("slides.unsavedChangesConfirm");
+		};
+		window.addEventListener("beforeunload", onBeforeUnload);
+		return () => window.removeEventListener("beforeunload", onBeforeUnload);
+	}, [hasUnsavedScript]);
+
+	function confirmScriptReplacement(): boolean {
+		if (!scriptDirtyRef.current) return true;
+		const discard = window.confirm(t("slides.unsavedChangesConfirm"));
+		if (!discard) setFileError("unsaved");
+		return discard;
+	}
+
+	function documentErrorKey(error: unknown): SlidesFileError {
+		const code = String(error).replace(/^Error:\s*/u, "").toLowerCase();
+		if (code.includes("converter_unavailable")) return "converter";
+		if (code.includes("invalid_pptx")) return "invalidPptx";
+		if (code.includes("conversion_timeout")) return "conversionTimeout";
+		if (code.includes("conversion_failed")) return "conversionFailed";
+		if (code.includes("picker_busy") || code.includes("import_busy")) return "busy";
+		return "import";
+	}
 
 	const currentNarration = useMemo(
 		() => narrationForPage(state.page, speakerNotes, pageTexts),
@@ -109,6 +203,7 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				| "previous"
 				| "question",
 		) => {
+			if (scriptEditorOpen) return;
 			if (["pause", "stop", "next", "previous", "question"].includes(action)) {
 				cancelSpeech();
 			}
@@ -118,21 +213,27 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				page: stateRef.current.page,
 			});
 		},
-		[cancelSpeech],
+		[cancelSpeech, scriptEditorOpen],
 	);
 
 	const gotoPage = useCallback(
 		(page: number) => {
+			if (scriptEditorOpen) return;
 			cancelSpeech();
 			dispatch({ type: "goto", page });
 		},
-		[cancelSpeech],
+		[cancelSpeech, scriptEditorOpen],
 	);
 
 	useEffect(() => {
 		if (state.mode !== "presenting" || state.speech !== "requested") return;
 		const text = currentNarration.trim();
 		if (!text) {
+			if (notesRef.current.has(state.page)) {
+				cancelSpeech();
+				dispatch({ type: "pause" });
+				return;
+			}
 			dispatch({
 				type: "speech-failed",
 				generation: state.generation,
@@ -204,8 +305,16 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	useEffect(() => {
 		if (window.parent === window) return;
 		const onMessage = (event: MessageEvent) => {
-			if (event.source !== window.parent || event.data?.type !== "naia-slides:speech-result") return;
-			window.dispatchEvent(new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, { detail: event.data.detail }));
+			if (
+				event.source !== window.parent ||
+				event.data?.type !== "naia-slides:speech-result"
+			)
+				return;
+			window.dispatchEvent(
+				new CustomEvent(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, {
+					detail: event.data.detail,
+				}),
+			);
 		};
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);
@@ -213,9 +322,19 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (window.parent === window && useAppStore.getState().activeApp !== "slides") return;
+			if (
+				window.parent === window &&
+				useAppStore.getState().activeApp !== "slides"
+			)
+				return;
 			if (
 				(event.target as HTMLElement | null)?.matches("input, textarea, select")
+			)
+				return;
+			// Focused controls own Space activation; do not pause instead of toggling repeat.
+			if (
+				event.key === " " &&
+				(event.target as HTMLElement | null)?.closest("button")
 			)
 				return;
 			if (["ArrowRight", "PageDown"].includes(event.key)) {
@@ -238,7 +357,10 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 	useEffect(() => {
 		const onFocusShortcut = (event: KeyboardEvent) => {
 			if (event.key.toLowerCase() !== "f") return;
-			if ((event.target as HTMLElement | null)?.matches("input, textarea, select")) return;
+			if (
+				(event.target as HTMLElement | null)?.matches("input, textarea, select")
+			)
+				return;
 			event.preventDefault();
 			setFocusMode((focused) => !focused);
 		};
@@ -256,6 +378,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 				totalPages: state.totalPages,
 				currentSlideText: pageTexts[state.page - 1] ?? "",
 				currentSpeakerNote: currentNarration,
+				rangeStart: state.rangeStart,
+				rangeEnd: state.rangeEnd,
+				repeat: state.repeat,
 				deckContext,
 			},
 		};
@@ -270,6 +395,9 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		state.mode,
 		state.page,
 		state.totalPages,
+		state.rangeStart,
+		state.rangeEnd,
+		state.repeat,
 	]);
 
 	useEffect(() => {
@@ -345,11 +473,164 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 		return () => appRegistry.updateApi("slides", undefined);
 	}, [gotoPage, runAction]);
 
+	function loadPdf(file: File, companion?: SlidesOpenedPdf) {
+		cancelSpeech();
+		scriptRevisionRef.current++;
+		selectedFileRef.current = file;
+		setPdfFile(file);
+		setPdfName(file.name);
+		setPageTexts([]);
+		setScriptMarkdown(companion?.script?.text ?? "");
+		setSpeakerNotes(
+			companion?.script
+				? parseSlideSpeakerNotes(companion.script.text)
+				: new Map(),
+		);
+		setScriptName(companion?.script?.name ?? "");
+		setScriptEditorOpen(false);
+		setEditingPage(null);
+		setDraftText("");
+		setDraftDirty(false);
+		setUnexportedScript(false);
+		setImportPhase(null);
+		setFileError(companion?.scriptReadFailed ? "script" : null);
+		dispatch({ type: "load" });
+		Logger.info(TAG, "PDF selected", {
+			fileName: file.name,
+			bytes: file.size,
+			companion: !!companion?.script,
+		});
+	}
+
+	async function pickPdf() {
+		if (pickerAbortRef.current) return;
+		const abort = new AbortController();
+		pickerAbortRef.current = abort;
+		setPickingPdf(true);
+		setImportPhase("picking");
+		try {
+			const selection = await openSlidesDocument(abort.signal, setImportPhase);
+			if (!abort.signal.aborted && selection && confirmScriptReplacement()) {
+				loadPdf(selection.file, selection);
+			}
+		} catch (error) {
+			if (!abort.signal.aborted) {
+				setFileError(documentErrorKey(error));
+				setImportPhase(null);
+				Logger.warn(TAG, "document selection failed", { error: String(error) });
+			}
+		} finally {
+			if (pickerAbortRef.current === abort) pickerAbortRef.current = null;
+			setPickingPdf(false);
+		}
+	}
+
+	function cancelImport() {
+		const abort = pickerAbortRef.current;
+		if (!abort) return;
+		abort.abort();
+		pickerAbortRef.current = null;
+		setPickingPdf(false);
+		setImportPhase(null);
+	}
+
 	async function loadScript(file: File) {
-		const markdown = await file.text();
-		setSpeakerNotes(parseSlideSpeakerNotes(markdown));
-		setScriptName(file.name);
-		Logger.info(TAG, "speaker script loaded", { fileName: file.name });
+		const revision = ++scriptRevisionRef.current;
+		try {
+			const markdown = await file.text();
+			if (revision !== scriptRevisionRef.current) return;
+			if (!confirmScriptReplacement()) return;
+			const notes = parseSlideSpeakerNotes(markdown);
+			setScriptMarkdown(markdown);
+			setSpeakerNotes(notes);
+			if (stateRef.current.totalPages) {
+				cancelSpeech();
+				dispatch({
+					type: "set-range",
+					...presentationRangeForNotes(notes, stateRef.current.totalPages),
+				});
+			}
+			setScriptName(file.name);
+			setScriptEditorOpen(false);
+			setEditingPage(null);
+			setDraftText("");
+			setDraftDirty(false);
+			setUnexportedScript(false);
+			setFileError(null);
+			Logger.info(TAG, "speaker script loaded", { fileName: file.name });
+		} catch (error) {
+			if (revision !== scriptRevisionRef.current) return;
+			setFileError("script");
+			Logger.warn(TAG, "speaker script load failed", { error: String(error) });
+		}
+	}
+
+	function beginScriptEdit() {
+		cancelSpeech();
+		if (stateRef.current.mode === "presenting") dispatch({ type: "pause" });
+		const initial = speakerNotes.has(state.page)
+			? speakerNotes.get(state.page) ?? ""
+			: currentNarration;
+		draftOriginalRef.current = initial;
+		setEditingPage(state.page);
+		setDraftText(initial);
+		setDraftDirty(false);
+		setScriptEditorOpen(true);
+	}
+
+	function cancelScriptEdit() {
+		setDraftText("");
+		setDraftDirty(false);
+		setEditingPage(null);
+		setScriptEditorOpen(false);
+	}
+
+	function applyScriptEdit() {
+		if (!scriptEditorOpen) return;
+		cancelSpeech();
+		if (stateRef.current.mode === "presenting") dispatch({ type: "pause" });
+		const nextMarkdown = replaceSlideScriptPage(
+			scriptMarkdown,
+			editingPage ?? state.page,
+			draftText,
+		);
+		const nextNotes = parseSlideSpeakerNotes(nextMarkdown);
+		setScriptMarkdown(nextMarkdown);
+		setSpeakerNotes(nextNotes);
+		setUnexportedScript(true);
+		setFileError(null);
+		cancelScriptEdit();
+		Logger.info(TAG, "slide script edit applied", {
+			page: editingPage ?? state.page,
+		});
+	}
+
+	function downloadEditedScript() {
+		if (draftDirty) {
+			setFileError("exportUnsaved");
+			return;
+		}
+		if (!unexportedScript) return;
+		let url = "";
+		try {
+			if (!URL.createObjectURL) throw new Error("download_unavailable");
+			const blob = new Blob([scriptMarkdown], { type: "text/markdown" });
+			url = URL.createObjectURL(blob);
+			const anchor = document.createElement("a");
+			anchor.href = url;
+			anchor.download = scriptDownloadName(scriptName, pdfName);
+			anchor.style.display = "none";
+			document.body.append(anchor);
+			anchor.click();
+			anchor.remove();
+			setUnexportedScript(false);
+			setFileError(null);
+		} catch (error) {
+			setFileError("export");
+			Logger.warn(TAG, "edited script download failed", { error: String(error) });
+		} finally {
+			if (url) window.setTimeout(() => URL.revokeObjectURL(url), 0);
+		}
 	}
 
 	async function toggleRecording() {
@@ -365,13 +646,14 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 			const fileName = output.split(/[\\/]/).pop();
 			if (fileName) await naia.openInWorkspace?.(`video/${fileName}`);
 		} catch (error) {
-			setRecording(false);
+			// A failed stop retains native ownership, so keep Stop available to retry.
 			setRecordingError(String(error));
 		}
 	}
 
 	return (
 		<section
+			ref={appRef}
 			className="slides-app"
 			aria-label={t("slides.title")}
 			data-focus={focusMode}
@@ -383,230 +665,114 @@ export function SlidesCenterArea({ naia }: AppCenterProps) {
 					<h1>{t("slides.title")}</h1>
 					<p>{t("slides.subtitle")}</p>
 				</div>
-				<div className="slides-app__file-actions">
-					<label className="slides-app__file-button">
-						{t("slides.openPdf")}
-						<input
-							aria-label={t("slides.openPdf")}
-							type="file"
-							accept="application/pdf,.pdf"
-							onChange={(event) => {
-								const file = event.currentTarget.files?.[0];
-								if (!file) return;
-								cancelSpeech();
-								setPdfFile(file);
-								setPdfName(file.name);
-								setPageTexts([]);
-								dispatch({ type: "load" });
-								Logger.info(TAG, "PDF selected", {
-									fileName: file.name,
-									bytes: file.size,
-								});
-							}}
-						/>
-					</label>
-					<label className="slides-app__file-button slides-app__file-button--secondary">
-						{t("slides.openScript")}
-						<input
-							aria-label={t("slides.openScript")}
-							type="file"
-							accept="text/markdown,text/plain,.md,.txt"
-							onChange={(event) => {
-								const file = event.currentTarget.files?.[0];
-								if (file) void loadScript(file);
-							}}
-						/>
-					</label>
-				<button
-					type="button"
-					className="slides-app__focus-button"
-					onClick={() => setFocusMode((focused) => !focused)}
-				>
-					{focusMode ? t("slides.focusExit") : t("slides.focusStart")}
-				</button>
-				</div>
+				<SlidesFileActions
+					nativePickerAvailable={nativePickerAvailable}
+					picking={pickingPdf}
+					focusMode={focusMode}
+					notesVisible={notesVisible}
+					onPickNative={() => void pickPdf()}
+					onPdfSelected={(file) => {
+						if (confirmScriptReplacement()) loadPdf(file);
+					}}
+					onScriptSelected={(file) => void loadScript(file)}
+					onToggleFocus={() => setFocusMode((focused) => !focused)}
+					onShowNotes={() => setNotesVisible(true)}
+				/>
 			</header>
+			{focusMode ? (
 				<button
 					type="button"
-					className="slides-app__focus-button"
-					onClick={() => setNotesVisible((visible) => !visible)}
+					className="slides-app__focus-exit slides-app__focus-button"
+					onClick={() => setFocusMode(false)}
 				>
-					{notesVisible ? t("slides.notesHide") : t("slides.notesShow")}
+					{t("slides.focusExit")}
 				</button>
+			) : null}
 
-			<output className="slides-app__status" aria-live="polite">
-				<span className="slides-app__state-dot" />
-				<strong>{stateLabel(state.mode)}</strong>
-				<span>{pdfName || t("slides.noPdf")}</span>
-				{scriptName ? <span>{scriptName}</span> : null}
-			</output>
+			<SlidesStatus
+				modeLabel={stateLabel(state.mode)}
+				pdfName={pdfName}
+				scriptName={scriptName}
+				draftDirty={draftDirty}
+				unexportedScript={unexportedScript}
+				picking={pickingPdf}
+				importPhase={importPhase}
+				onCancelImport={cancelImport}
+			/>
 
 			<div className="slides-app__workspace">
-				<div
-					className="slides-app__viewer"
-					ref={viewerRef}
-					data-testid="slides-viewer"
-				>
-					{pdfFile ? (
-						<Document
-							file={pdfFile}
-							onLoadSuccess={async (document) => {
-								dispatch({ type: "loaded", totalPages: document.numPages });
-								const texts: string[] = [];
-								for (let page = 1; page <= document.numPages; page++) {
-									const pdfPage = await document.getPage(page);
-									const content = await pdfPage.getTextContent();
-									texts.push(
-										content.items
-											.map((item) => ("str" in item ? item.str : ""))
-											.join(" ")
-											.replace(/\s+/g, " ")
-											.trim(),
-									);
-								}
-								setPageTexts(texts);
-								Logger.info(TAG, "PDF ready", { pages: document.numPages });
-							}}
-							onLoadError={(error) => {
-								dispatch({
-									type: "fail",
-									error: String(error.message ?? error),
-								});
-								Logger.warn(TAG, "PDF load failed", { error: String(error) });
-							}}
-							loading={
-								<div className="slides-app__empty">{t("slides.loading")}</div>
-							}
-							error={
-								<div className="slides-app__empty slides-app__empty--error">
-									{t("slides.loadError")}
-								</div>
-							}
-						>
-							{state.totalPages > 0 ? (
-								<PdfPage
-									key={`${pdfName}-${state.page}`}
-									pageNumber={state.page}
-									width={viewerWidth}
-									renderAnnotationLayer={false}
-									renderTextLayer={false}
-									className="slides-app__page"
-								/>
-							) : null}
-						</Document>
-					) : (
-						<div className="slides-app__empty">
-							<div className="slides-app__empty-icon">▣</div>
-							<h2>{t("slides.emptyTitle")}</h2>
-							<p>{t("slides.emptyBody")}</p>
-						</div>
-					)}
-				</div>
+				<SlidesViewer
+					file={pdfFile}
+					fileName={pdfName}
+					page={state.page}
+					viewerRef={viewerRef}
+					viewerWidth={viewerWidth}
+					totalPages={state.totalPages}
+					onReady={(file, totalPages, texts) => {
+						if (selectedFileRef.current !== file) return;
+						dispatch({
+							type: "loaded",
+							totalPages,
+							range: presentationRangeForNotes(notesRef.current, totalPages),
+						});
+						setPageTexts(texts);
+						Logger.info(TAG, "PDF ready", { pages: totalPages });
+					}}
+					onError={(file, error) => {
+						if (selectedFileRef.current !== file) return;
+						dispatch({ type: "fail", error: String(error) });
+						Logger.warn(TAG, "PDF load failed", { error: String(error) });
+					}}
+				/>
 
-				<aside className="slides-app__notes" aria-label={t("slides.notes")}>
-					<div className="slides-app__progress">
-						<span>{t("slides.current")}</span>
-						<strong>
-							{state.totalPages > 0
-								? `${state.page} / ${state.totalPages}`
-								: "—"}
-						</strong>
-					</div>
-					<h2>{t("slides.notes")}</h2>
-					<p data-testid="slides-current-note">
-						{state.totalPages > 0 ? currentNarration : t("slides.noNotes")}
-					</p>
-					<div className="slides-app__shortcuts">
-						<span>← →</span>
-						<span>{t("slides.shortcutNavigate")}</span>
-						<span>Space</span>
-						<span>{t("slides.shortcutPause")}</span>
-					</div>
-				</aside>
+				{notesVisible ? (
+					<SlidesScriptPanel
+						page={state.page}
+						totalPages={state.totalPages}
+						currentNarration={currentNarration}
+						scriptEditorOpen={scriptEditorOpen}
+						draftText={draftText}
+						draftDirty={draftDirty}
+						unexportedScript={unexportedScript}
+						onBeginEdit={beginScriptEdit}
+						onDownload={downloadEditedScript}
+						onHide={() => setNotesVisible(false)}
+						onDraftChange={(value) => {
+							setDraftText(value);
+							setDraftDirty(value !== draftOriginalRef.current);
+						}}
+						onApply={applyScriptEdit}
+						onCancel={cancelScriptEdit}
+					/>
+				) : null}
 			</div>
 
-			<footer
-				className="slides-app__controls"
-				aria-label={t("slides.controls")}
-			>
-				<button
-					type="button"
-					onClick={() => runAction("previous")}
-					disabled={state.totalPages === 0 || state.page <= 1}
-					aria-label={t("slides.previous")}
-				>
-					←
-				</button>
-				<button
-					type="button"
-					className="slides-app__primary"
-					onClick={() =>
-						runAction(
-							state.mode === "presenting"
-								? "pause"
-								: state.mode === "paused" || state.mode === "answering"
-									? "resume"
-									: "start",
-						)
-					}
-					disabled={state.totalPages === 0}
-				>
-					{state.mode === "presenting"
-						? t("slides.pause")
-						: state.mode === "paused" || state.mode === "answering"
-							? t("slides.resume")
-							: t("slides.start")}
-				</button>
-				<button
-					type="button"
-					onClick={() => runAction("stop")}
-					disabled={state.totalPages === 0}
-				>
-					{t("slides.stop")}
-				</button>
-				<button
-					type="button"
-					onClick={() => runAction("next")}
-					disabled={state.totalPages === 0 || state.page >= state.totalPages}
-					aria-label={t("slides.next")}
-				>
-					→
-				</button>
-				<label className="slides-app__page-input">
-					{t("slides.goto")}
-					<input
-						type="number"
-						min={1}
-						max={Math.max(1, state.totalPages)}
-						value={state.page}
-						disabled={state.totalPages === 0}
-						onChange={(event) => gotoPage(Number(event.currentTarget.value))}
-					/>
-				</label>
-				<button
-					type="button"
-					onClick={() => void viewerRef.current?.requestFullscreen()}
-					disabled={state.totalPages === 0}
-				>
-					{t("slides.fullscreen")}
-				</button>
-				<button
-					type="button"
-					onClick={() => void toggleRecording()}
-					disabled={state.totalPages === 0}
-					aria-label={recording ? t("slides.recordStop") : t("slides.recordStart")}
-				>
-					{recording ? t("slides.recordStop") : t("slides.recordStart")}
-				</button>
-			</footer>
-			{state.error ? (
-				<div className="slides-app__error" role="alert">
-					{t("slides.speechError")}
-				</div>
-			) : null}
-			{recordingError ? (
-				<div className="slides-app__error" role="alert">{recordingError}</div>
-			) : null}
+			<SlidesControls
+				state={state}
+				fullscreen={fullscreen}
+				recording={recording}
+				editing={scriptEditorOpen}
+				onAction={runAction}
+				onRangeChange={(start, end) => {
+					cancelSpeech();
+					dispatch({ type: "set-range", start, end });
+				}}
+				onGoto={gotoPage}
+				onToggleRepeat={() => {
+					dispatch({ type: "toggle-repeat" });
+					Logger.info(TAG, "presentation repeat toggled", {
+						enabled: !state.repeat,
+					});
+				}}
+				onToggleFullscreen={() => void toggleFullscreen()}
+				onToggleRecording={() => void toggleRecording()}
+			/>
+			<SlidesErrorNotice
+				speechError={Boolean(state.error)}
+				recordingError={recordingError}
+				fullscreenError={fullscreenError}
+				fileError={fileError}
+			/>
 		</section>
 	);
 }

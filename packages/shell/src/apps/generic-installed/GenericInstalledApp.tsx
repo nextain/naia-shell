@@ -1,6 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useEffect, useRef } from "react";
-import type { NaiaTool, AppCenterProps } from "../../lib/app-registry";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
+import { installSlidesFilesBridge } from "../../lib/slides-files-bridge";
+import { installSlidesHostBridge } from "../../lib/slides-host-bridge";
+import { isTrustedSlidesEntry } from "../../lib/slides-host";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -32,6 +35,21 @@ export function createGenericInstalledApp(
 ) {
 	return function GenericInstalledApp({ naia }: AppCenterProps) {
 		const iframeRef = useRef<HTMLIFrameElement>(null);
+		const frameSrc = htmlEntry ? convertFileSrc(htmlEntry) : "";
+		const trustedSlides = htmlEntry ? isTrustedSlidesEntry(htmlEntry) : false;
+
+		useLayoutEffect(() => {
+			if (!iframeRef.current || !htmlEntry || !frameSrc) return;
+			const frame = iframeRef.current;
+			const disposeFilesBridge = installSlidesFilesBridge(frame, htmlEntry);
+			const disposeHostBridge = installSlidesHostBridge(frame, htmlEntry, {
+				expectedFrameSrc: frameSrc,
+			});
+			return () => {
+				disposeHostBridge();
+				disposeFilesBridge();
+			};
+		}, [htmlEntry, frameSrc]);
 
 		// Register a postMessage bridge for each declared tool.
 		useEffect(() => {
@@ -100,9 +118,14 @@ export function createGenericInstalledApp(
 				<iframe
 					ref={iframeRef}
 					className="generic-installed-app__iframe"
-					src={convertFileSrc(htmlEntry)}
+					src={frameSrc}
 					title="App"
-					sandbox="allow-scripts allow-same-origin"
+					sandbox={
+						trustedSlides
+							? "allow-scripts allow-same-origin allow-downloads allow-modals"
+							: "allow-scripts allow-same-origin"
+					}
+					allowFullScreen={trustedSlides}
 				/>
 			);
 		}

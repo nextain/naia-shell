@@ -1,4 +1,13 @@
-<!-- src-sha: d05ea05ca1af07db -->
+<!-- src-sha: aaf228364abdcb80 -->
+
+## Slides #581 — 2026-09-09 검토용 작업본
+
+- 별도 개발 clone에서 PPTX 로컬 변환, 현재 페이지 대본 편집/복사본 다운로드, 설치 iframe의 ADK·언어·테마 연동을 반영했다.
+- 기존 PDF·동일 basename 대본·범위·반복·발표문 표시·전체화면·음성 선택 경로를 유지한다.
+- 검증: 전체 Shell 1,918개, 최종 변경부·다국어 83개, Rust 32개, 실제 브라우저 7개 시나리오 통과. Shell/Slides 운영 빌드와 전체 네이티브 cargo check도 통과했다.
+- 실제 LibreOffice로 한글·표·이미지·숨긴 페이지가 있는 PPTX를 변환하고 원본 불변, 물리 페이지/빈 노트, 캐시 재사용을 확인했다.
+- 전달 상태는 REVIEW_ONLY다. 정식 complexity/review 게이트와 조율된 실제 음성·녹화 QA는 남아 있다. 설치본·원래 QA 작업본·원본 문서·음성 설정·스토어는 변경하지 않았다.
+- 근거: `.agents/progress/slides-581-development-20260909.json`; 개발 작업 디렉터리의 `RESULT.md`와 `evidence/`.
 
 ## 시작 시 업데이트 확인 팝업 — 2026-08-20 (#468)
 

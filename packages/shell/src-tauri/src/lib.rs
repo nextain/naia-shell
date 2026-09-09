@@ -1,6 +1,8 @@
 mod agent_grpc;
 mod app;
 mod app_sandbox;
+mod slides_import;
+mod slides_files;
 mod audit;
 mod browser;
 mod browser_webview;
@@ -11943,6 +11945,9 @@ pub fn run() {
             app::app_run_shell,
             app::app_install,
             app_sandbox::app_sandbox_root,
+            slides_files::slides_open_pdf,
+            slides_files::slides_open_document,
+            slides_files::slides_cancel_open,
             app_sandbox::app_sandbox_write_file,
             app_sandbox::app_sandbox_read_file,
             app_sandbox::app_sandbox_open_in_workspace,

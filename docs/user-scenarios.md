@@ -1006,6 +1006,11 @@ P02 상태 매트릭스: 업데이트 없음, v0.2.0 발견, 다운로드·설�
 |---|---|---|
 | **UC-V021-APP-INSTALL-LIFECYCLE** | 깨끗한 프로필에서 앱 설치 후 즉시 목록과 탭에 나타나고 재시작 뒤에도 유지되며, 제거 성공 뒤 `~/.naia/apps/{id}`와 목록에서 함께 사라진다. 예전 `~/.naia/apps` 설치는 안전한 경우 한 번만 이동한다. | isolated filesystem lifecycle + loader tests |
 | **UC-V021-APP-REMOVE-HONESTY** | 삭제 권한·파일시스템 오류가 나면 앱은 목록에 남고 실패 알림이 표시된다. symlink, 경로 탈출, 잘못된/중복 id는 외부 파일을 변경하지 않는다. | Rust boundary mutations + AppBar alert contract |
+| **UC-SLIDES-PDF-ASSET-RECOVERY** | 기존 설치 Slides를 일반 `pnpm run tauri:prod`로 다시 불러오면 PDF worker가 앱의 assets 디렉터리에서 로드된다. 설치 HTML 원본은 한 번 보관하며, 경로 수정은 반복 호출에 멱등이고 외부 파일·URL은 변경하지 않는다. | `app_assets_test.rs` + installed-worker URL/browser regression; native startup evidence tracked separately |
+| **UC-SLIDES-SIDECAR** | PDF 선택 시 같은 폴더·같은 파일명의 `.md` 대본을 우선 연결한다. 없는 경우 수동 대본 선택을 유지한다. 취소하면 현재 문서를 보존하며, 새 문서에 이전 대본이나 늦게 완료된 읽기 결과가 섞이지 않는다. 경로를 직접 입력받아 임의 파일을 읽지 않는다. | `slides_files_test.rs`, `slides-files.test.ts`, `slides-files-bridge.test.ts`, `slides-center-area.test.tsx`, `slides-sidecar.spec.ts`: native sibling bounds, installed iframe identity, 기본/누락/선택 중/성공/오류/취소/좁은 폭 및 키보드/ARIA |
+| **UC-SLIDES-REPEAT** | 반복 재생 버튼을 켜면 지정 범위의 마지막 페이지 정상 발화 완료 후 지정 시작 페이지부터 다시 발표한다. 기본값은 끔이며, 끄면 지정 종료 페이지에서 종료한다. 일시정지·중지·발화 실패·지연된 완료 이벤트는 반복을 시작하지 않는다. | `slide-presenter.test.ts`, `slides-center-area.test.tsx`, `slides-sidecar.spec.ts`: 단일/복수 페이지, 여러 회차, 진행 중 토글, 취소/중지, 키보드 토글 및 aria-pressed |
+| **UC-SLIDES-VIEWER-CONTROLS** | 전체화면에서 발표 제어를 유지하고 버튼으로 나가거나 브라우저 종료 동작을 반영한다. 거부 시 오류를 표시한다. 발표문 내부 닫기와 다시 열기는 대본·발화를 보존한다. 설치 Slides에만 전체화면을 허용한다. | `slides-center-area.test.tsx`, `generic-installed-slides.test.tsx`, `slides-sidecar.spec.ts`: 빈 문서 비활성, 진입/종료/실패, 발표 중 대본 닫기·복원, 실제 iframe, 키보드, 좁은 폭 |
+| **UC-SLIDES-RANGE** | 발표 시작·종료 페이지를 지정한다. 대본의 유효한 페이지 번호 범위를 기본으로 제안하며 직접 바꿀 수 있다. 자동 발표·반복은 지정 범위에 한정하고, 부록은 수동으로 볼 수 있다. 발표 중 범위 변경이나 범위 밖 이동은 발화를 멈춘다. | `slide-presenter.test.ts`, `slides-center-area.test.tsx`, `slides-sidecar.spec.ts`: 대본 기반 범위, 직접 수정, 종료/반복 경계, 부록 이동, 문서 교체 초기화, 늦은 발화 결과 무시 |
 
 P02 상태 매트릭스: clean install/list/restart/remove/list, legacy migration, canonical duplicate, malformed id, symlink escape, 중간 삭제 실패를 각각 검증한다.
 ### 2026-08-20 v0.2.1 Workspace Markdown viewer (#474)
@@ -1751,3 +1756,13 @@ Test Coverage Map
 | UC | 단위·계약 | 비고 |
 |---|---|---|
 | UC-QUALITY-STABILITY-CONCURRENCY | `packages/shell/src-tauri/src/app_sandbox.rs`: 여덟 스레드가 한 파일을 두고 다투는 동안 읽는 스레드 둘이 반쪽짜리를 보는지 감시 | 원자적 쓰기를 비원자적으로 되돌리면 스무 번 중 스무 번 잡는다. 처음에는 쓰는 내용이 한 글자라 절반만 잡았다 |
+# Slides follow-up (#581)
+
+| Scenario | Acceptance | Test mapping |
+|---|---|---|
+| UC-SLIDES-HOST | Installed Slides follows shell language/theme live without losing the deck; recording uses the host ADK via source/origin checked requests. A failed recording stop retains its retry affordance. File results use a document-bound channel, including during navigation before the next load event. | slides-host.test.ts, slides-host-bridge.test.ts, slides-files-bridge.test.ts, generic-installed-slides.test.tsx, slides-script-editor.test.tsx, slides-sidecar.spec.ts; coordinated native recording |
+| UC-SLIDES-PPTX | Select PDF/PPTX; lazily convert general PPTX locally with isolated LibreOffice profile. Preserve original files and existing Office sessions. Display original filename and same-basename MD, else embedded notes, with blank/hidden page mapping. | slides_import and slides_files Rust tests; slides-files.test.ts, slides-files-bridge.test.ts, slides-center-area.test.tsx; real isolated conversion fixture |
+| UC-SLIDES-IMPORT-LIFETIME | Progress, cancel, retry, timeout, missing converter, corrupt input, bounded content/version/options cache and late result rejection. | slides_import Rust tests; slides-files.test.ts, slides-files-bridge.test.ts; slides-sidecar.spec.ts |
+| UC-SLIDES-EDIT | Edit page narration; apply/cancel; pause speech before applying; export edited Markdown copy; guard unapplied and unexported changes on document/script replacement. | slide-script.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts |
+
+P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.

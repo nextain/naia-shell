@@ -58,6 +58,7 @@ tauri-plugin-stt = { path = "plugins/tauri-plugin-stt", default-features = false
 log = "0.4"
 env_logger = "0.11"
 zip = "2"
+quick-xml = "0.37"
 # HTTP client for CDP health-check (tiny, no async needed here)
 ureq = { version = "2", features = ["json"] }
 notify = "6"
@@ -86,5 +87,5 @@ webkit2gtk = "2.0"
 x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Threading", "Win32_System_JobObjects", "Win32_System_Diagnostics_ToolHelp", "Win32_Security", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_Ime"] }
 raw-window-handle = "0.6"

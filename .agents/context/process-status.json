@@ -1,5 +1,16 @@
 {
   "schema_version": "1.0",
+  "slides_581": {
+    "status": "in_progress",
+    "last_updated": "2026-09-09T14:50:00Z",
+    "P01": "docs/user-scenarios.md UC-SLIDES-HOST/PPTX/IMPORT-LIFETIME/EDIT",
+    "P02": "docs/user-scenarios.md Slides follow-up test mapping",
+    "P03": "docs/requirements.md FR-SLIDES-HOST/PPTX/EDIT",
+    "P04": "scoped_pass: 7 browser, 83 focused, 1918 full-suite, 32 Rust; production builds and native cargo check pass",
+    "delivery_state": "REVIEW_ONLY: formal complexity/review gates and coordinated native voice/recording QA remain",
+    "P05": "pending",
+    "evidence": ".agents/progress/slides-581-development-20260909.json"
+  },
   "description": "프로세스 현황 SoT. 세션 시작/종료 시 반드시 업데이트. 구조명세·이슈·리소스를 유기적으로 링크.",
 
   "refs": {

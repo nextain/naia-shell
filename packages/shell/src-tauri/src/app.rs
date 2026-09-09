@@ -6,6 +6,9 @@ use std::io::Read;
 
 use crate::data_home::{self, DataHomeChild};
 
+#[path = "app_assets.rs"]
+mod app_assets;
+
 #[derive(Debug, Deserialize)]
 struct StoreArtifact {
     sha256: String,
@@ -362,6 +365,9 @@ fn list_installed_from(home: &std::path::Path) -> Result<Vec<AppManifest>, Strin
             }
         }
 
+        // Repair pre-existing packages as well as freshly installed ones.
+        rewrite_installed_app_asset_urls(&entry.path());
+
         // Detect index.html for iframe rendering
         let html_path = entry.path().join("index.html");
         if html_path.exists() {
@@ -675,111 +681,11 @@ pub struct AppInstallResult {
     pub path: String,
 }
 
-/// `encodeURIComponent`-equivalent — matches Tauri's `convertFileSrc`, which
-/// percent-encodes the whole file path into one URL segment. Keeps the JS
-/// unreserved set (`A-Za-z0-9-_.!~*'()`) and UTF-8 percent-encodes the rest.
-fn encode_uri_component(input: &str) -> String {
-    let mut out = String::with_capacity(input.len() * 3);
-    for b in input.bytes() {
-        if b.is_ascii_alphanumeric()
-            || matches!(b, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')')
-        {
-            out.push(b as char);
-        } else {
-            out.push('%');
-            out.push_str(&format!("{:02X}", b));
-        }
-    }
-    out
-}
-
-/// Build the Tauri asset-protocol URL for an absolute file path, matching
-/// `convertFileSrc(path, "asset")`: `http://asset.localhost/<enc>` on
-/// Windows/Android, `asset://localhost/<enc>` elsewhere. The iframe bridge
-/// (`iframe-bridge.ts`) gates on the `http://asset.localhost` origin, so an
-/// installed app *must* stay on this origin for tool-call/bridge messaging.
-fn asset_localhost_url(full_path: &str) -> String {
-    let enc = encode_uri_component(full_path);
-    #[cfg(any(windows, target_os = "android"))]
-    {
-        format!("http://asset.localhost/{enc}")
-    }
-    #[cfg(not(any(windows, target_os = "android")))]
-    {
-        format!("asset://localhost/{enc}")
-    }
-}
-
-/// Rewrite an installed app's `index.html` so every relative sub-resource
-/// (`./assets/x.js`, `assets/x.css`, `/logo.svg`) becomes an absolute Tauri
-/// asset URL.
-///
-/// Why: `convertFileSrc` percent-encodes the app's absolute path into a single
-/// URL segment (`http://asset.localhost/C%3A%5C…%5Cindex.html`), so the iframe
-/// has no real path separators to resolve `./assets/x.js` against — the request
-/// goes out as bare `assets/x.js`, which the asset-protocol scope (absolute
-/// `$HOME/.naia/apps/**`) rejects, and the app renders blank (2026-08-31
-/// rehearsal: installed Slides #root stayed empty in real WebView2). Rewriting
-/// each in-package ref to its own full asset URL sidesteps relative resolution
-/// while keeping the frame on the `asset.localhost` origin the bridge requires.
-///
-/// Signature integrity is unaffected: the Ed25519/SHA-256 checks run on the
-/// downloaded ZIP bytes *before* extraction; this is a post-install on-disk
-/// transform. Only refs that resolve to a real file inside `app_dir` are
-/// rewritten (never remote URLs, anchors, or `data:`).
+/// Log a recoverable package error without hiding other installed apps.
 fn rewrite_installed_app_asset_urls(app_dir: &std::path::Path) {
-    let index_path = app_dir.join("index.html");
-    let Ok(html) = std::fs::read_to_string(&index_path) else {
-        return; // non-iframe app (no index.html) — nothing to rewrite
-    };
-    let mut result = String::with_capacity(html.len() + 512);
-    let mut rest = html.as_str();
-    const ATTRS: [&str; 2] = ["src=\"", "href=\""];
-    loop {
-        let next = ATTRS
-            .iter()
-            .filter_map(|a| rest.find(a).map(|i| (i, a.len())))
-            .min_by_key(|(i, _)| *i);
-        let Some((idx, attr_len)) = next else {
-            result.push_str(rest);
-            break;
-        };
-        let value_start = idx + attr_len;
-        let Some(rel_end) = rest[value_start..].find('"') else {
-            result.push_str(rest);
-            break;
-        };
-        let end = value_start + rel_end;
-        let value = &rest[value_start..end];
-        result.push_str(&rest[..value_start]); // through the opening quote
-        result.push_str(&rewrite_asset_value(value, app_dir));
-        result.push('"');
-        rest = &rest[end + 1..];
+    if let Err(error) = app_assets::rewrite_installed_app_asset_urls(app_dir) {
+        log::warn!("Failed to prepare installed app assets: {error}");
     }
-    let _ = std::fs::write(&index_path, result);
-}
-
-/// Rewrite a single attribute value to an absolute asset URL when it points at a
-/// real in-package file; otherwise return it unchanged.
-fn rewrite_asset_value(value: &str, app_dir: &std::path::Path) -> String {
-    if value.is_empty()
-        || value.starts_with('#')
-        || value.starts_with("data:")
-        || value.starts_with("//")
-        || value.contains("://")
-    {
-        return value.to_string();
-    }
-    let rel = value.trim_start_matches("./").trim_start_matches('/');
-    if rel.is_empty() {
-        return value.to_string();
-    }
-    let rel_os = rel.replace('/', std::path::MAIN_SEPARATOR_STR);
-    let full = app_dir.join(&rel_os);
-    if !full.is_file() {
-        return value.to_string();
-    }
-    asset_localhost_url(&full.to_string_lossy())
 }
 
 /// Derive a app directory name from a Git URL.
@@ -1168,60 +1074,4 @@ pub fn app_install_store(
         name: manifest.name,
         path: destination.to_string_lossy().into_owned(),
     })
-}
-
-#[cfg(test)]
-mod asset_rewrite_tests {
-    use super::*;
-
-    #[test]
-    fn encodes_uri_component_like_js() {
-        // Matches JS encodeURIComponent: unreserved kept, the rest %XX (UTF-8).
-        assert_eq!(encode_uri_component("a-b_c.d~e"), "a-b_c.d~e");
-        assert_eq!(encode_uri_component("C:\\x\\y.js"), "C%3A%5Cx%5Cy.js");
-        assert_eq!(encode_uri_component("a/b"), "a%2Fb");
-    }
-
-    #[test]
-    fn rewrites_only_real_in_package_refs() {
-        let dir = tempfile::tempdir().unwrap();
-        let app = dir.path();
-        std::fs::create_dir_all(app.join("assets")).unwrap();
-        std::fs::write(app.join("assets/app.js"), "//js").unwrap();
-        std::fs::write(app.join("assets/app.css"), "/*css*/").unwrap();
-        let html = concat!(
-            "<!doctype html><html><head>",
-            "<link rel=\"stylesheet\" href=\"./assets/app.css\">",
-            "<link rel=\"icon\" href=\"https://cdn.example/x.ico\">",
-            "<a href=\"#top\">t</a>",
-            "</head><body>",
-            "<script type=\"module\" src=\"assets/app.js\"></script>",
-            "<img src=\"assets/missing.png\">",
-            "</body></html>",
-        );
-        std::fs::write(app.join("index.html"), html).unwrap();
-
-        rewrite_installed_app_asset_urls(app);
-        let out = std::fs::read_to_string(app.join("index.html")).unwrap();
-
-        // Real in-package refs → absolute asset URL for their own full path.
-        // Join per-component so the expected path uses the OS separator the
-        // rewrite emits (backslash on Windows), matching the actual output.
-        let css_url = asset_localhost_url(&app.join("assets").join("app.css").to_string_lossy());
-        let js_url = asset_localhost_url(&app.join("assets").join("app.js").to_string_lossy());
-        assert!(out.contains(&format!("href=\"{css_url}\"")), "css: {out}");
-        assert!(out.contains(&format!("src=\"{js_url}\"")), "js: {out}");
-        // Remote URL, anchor, and non-existent file are all left untouched.
-        assert!(out.contains("href=\"https://cdn.example/x.ico\""));
-        assert!(out.contains("href=\"#top\""));
-        assert!(out.contains("src=\"assets/missing.png\""));
-    }
-
-    #[test]
-    fn no_index_html_is_a_noop() {
-        let dir = tempfile::tempdir().unwrap();
-        // Must not panic or create anything when there is no index.html.
-        rewrite_installed_app_asset_urls(dir.path());
-        assert!(!dir.path().join("index.html").exists());
-    }
 }
