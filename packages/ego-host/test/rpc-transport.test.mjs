@@ -177,16 +177,28 @@ test("중첩 params.sessionId 는 Target.attachedToTarget 에서만 세션으로
   const [response] = await attached;
   const parent = response.result.sessionId;
 
-  const child = collector(client, 1);
+  // S2c 부터: 중첩 sessionId 를 세션으로 **해석은 하되**, 예약도 소유도 없는 자식은
+  // 등록하지 않고 감독자가 끊는다(계약 4.3.1 fail-closed). 자식 auto-attach 는 쓰지 않는다.
   backend.push({
     sessionId: parent,
     method: "Target.attachedToTarget",
     params: { sessionId: "CHILD", targetInfo: { targetId: "T2" } },
   });
-  await child;
+  await new Promise((r) => setTimeout(r, 30));
   assert.ok(
-    server.mux.inspect().sessions.includes("CHILD"),
-    "attachedToTarget 의 중첩 sessionId 를 세션으로 잡지 못했다",
+    !server.mux.inspect().sessions.includes("CHILD"),
+    "예약 없는 자식 세션이 장부에 등록됐다",
+  );
+  assert.ok(
+    server.mux.inspect().rejectedChildren.some((entry) => entry.sessionId === "CHILD"),
+    "예기치 않은 자식 세션을 감독자가 끊지 않았다",
+  );
+  assert.ok(
+    backend.sent.some(
+      (message) =>
+        message.method === "Target.detachFromTarget" && message.params?.sessionId === "CHILD",
+    ),
+    "감독자가 Target.detachFromTarget 을 보내지 않았다",
   );
 
   // screencastFrame 의 params.sessionId 는 Ack 용 프레임 토큰이지 세션이 아니다.

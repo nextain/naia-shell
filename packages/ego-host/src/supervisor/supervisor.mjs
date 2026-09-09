@@ -22,6 +22,7 @@ import {
   removeLease,
   writeLease,
 } from "./lease.mjs";
+import { createLedgerRoute } from "./ledger.mjs";
 import { reconcileLease } from "./reconcile.mjs";
 import { createSupervisorServer } from "./rpc-server.mjs";
 import { socketNeedsUnlink, supervisorSocketPath } from "./socket-path.mjs";
@@ -50,7 +51,15 @@ export async function startSupervisor({
   profileDir = null,
   runtimeDir = null,
   headless = true,
-  route,
+  route = null,
+  routeFactory = null,
+  /**
+   * CDP 통로에 껍질을 씌운다. **테스트 전용 이음매**다(운영 경로는 null).
+   * 계약 4.3.1 이 요구하는 "응답→이벤트 / 이벤트→응답 두 순서"는 Chromium 이 정하는 것이라
+   * 밖에서 강제할 자리가 필요하고, 예기치 않은 자식 attach 는 auto-attach 를 켜야만 생기는데
+   * 우리는 절대 켜지 않으므로 결함 주입 자리도 필요하다. 그 둘이 이 인자의 전부다.
+   */
+  wrapBackend = null,
   server: serverOptions = {},
 } = {}) {
   if (!adkDir) throw new Error("startSupervisor 에 adkDir 이 필요하다");
@@ -97,8 +106,15 @@ export async function startSupervisor({
     } catch {}
   });
 
-  // 5) 소켓 서버
-  const server = createSupervisorServer({ backend: browser, route, ...serverOptions });
+  // 5) 소켓 서버 — 장부는 `<ADK>` 에 원자적으로 저장되고, 정책 훅은 그 장부를 본다.
+  const server = createSupervisorServer({
+    backend: wrapBackend ? wrapBackend(browser) : browser,
+    adkDir,
+    ...(route ? { route } : { routeFactory: routeFactory ?? (({ ledger }) => createLedgerRoute({ ledger })) }),
+    ...serverOptions,
+  });
+  // 지난 감독자의 장부가 남아 있으면 죽은 컨텍스트를 걷어낸다. 새 Chromium 은 옛 컨텍스트를 모른다.
+  const ledgerRestore = await server.ledger.restore();
   await server.listen(socket.path, { kind: socket.kind });
 
   let stopped = false;
@@ -162,6 +178,8 @@ export async function startSupervisor({
     socketPath: socket.path,
     socketKind: socket.kind,
     server,
+    ledger: server.ledger,
+    ledgerRestore,
     stop,
   };
 }

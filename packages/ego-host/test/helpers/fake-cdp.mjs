@@ -6,6 +6,7 @@ export function createFakeCdp({ autoRespond = true } = {}) {
   const sent = [];
   let nextSession = 1;
   let nextTarget = 1;
+  let nextContext = 1;
   const responders = new Map();
   /** 응답하지 않을 메서드. 감독자 deadline 을 밟는 데 쓴다. */
   const blackHole = new Set();
@@ -32,6 +33,15 @@ export function createFakeCdp({ autoRespond = true } = {}) {
           emitRaw(
             JSON.stringify({ id: data.id, result: { sessionId: `S${nextSession++}` } }),
           );
+          return;
+        }
+        if (data.method === "Target.createBrowserContext") {
+          // S2c: 작업 공간 하나 = 격리 컨텍스트 하나. 가짜 백엔드도 진짜처럼 id 를 준다.
+          emitRaw(JSON.stringify({ id: data.id, result: { browserContextId: `BC${nextContext++}` } }));
+          return;
+        }
+        if (data.method === "Target.getBrowserContexts") {
+          emitRaw(JSON.stringify({ id: data.id, result: { browserContextIds: [] } }));
           return;
         }
         if (data.method === "Target.createTarget") {

@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { CODES, hostError, toShape } from "../errors.mjs";
 import { MAX_FRAME_BYTES, createFrameDecoder, encodeFrame } from "./rpc-framing.mjs";
 import { SUPERVISOR_REQUEST_DEADLINE_MS, createCdpMux } from "./cdp-mux.mjs";
-import { createTaskSpaceLedger } from "./task-space-ledger.mjs";
+import { createLedger } from "./ledger.mjs";
 import { socketNeedsUnlink } from "./socket-path.mjs";
 
 /** 연결당 송신 큐 상한. 이벤트 폭주가 감독자 메모리를 먹지 못하게 한다. */
@@ -52,8 +52,14 @@ export const FIXED_BROWSER_VERSION = Object.freeze({
 
 export function createSupervisorServer({
   backend,
-  route,
-  ledger = createTaskSpaceLedger(),
+  route = null,
+  /**
+   * 정책 훅 공장. 장부와 감독자 전용 CDP 통로가 준비된 뒤에 만들어야 해서 함수로 받는다
+   * (`route` 를 직접 주면 그것이 이긴다 — S2a 의 가짜 백엔드 테스트가 쓰는 길).
+   */
+  routeFactory = null,
+  ledger = null,
+  adkDir = null,
   requestDeadlineMs = SUPERVISOR_REQUEST_DEADLINE_MS,
   maxFrameBytes = MAX_FRAME_BYTES,
   maxQueuedFrames = MAX_QUEUED_FRAMES,
@@ -61,7 +67,13 @@ export function createSupervisorServer({
   browserVersion = FIXED_BROWSER_VERSION,
   snapshotProvider = null,
 } = {}) {
-  const mux = createCdpMux({ backend, route, requestDeadlineMs });
+  // 장부 → 정책 → mux 순서로 엮인다. 장부와 정책은 감독자 전용 CDP 통로(`mux.hostRequest`)를
+  // 쓰는데 그 통로는 mux 안에 있으므로, 늦게 묶이는 클로저로 넘긴다.
+  let mux;
+  const hostRequest = (method, params, sessionId) => mux.hostRequest(method, params, sessionId);
+  const activeLedger = ledger ?? createLedger({ adkDir, hostRequest });
+  const activeRoute = route ?? (routeFactory ? routeFactory({ ledger: activeLedger, hostRequest, adkDir }) : undefined);
+  mux = createCdpMux({ backend, route: activeRoute, ledger: activeLedger, requestDeadlineMs });
   /** token -> {operationId, workspaceId, grant, used} */
   const tokens = new Map();
   const connections = new Set();
@@ -148,6 +160,12 @@ export function createSupervisorServer({
     return connection;
   }
 
+  /** 감독자가 만드는 탭에 공간의 격리 컨텍스트를 붙인다. 컨텍스트가 없는 장부(테스트)는 빈 객체. */
+  function contextParams(space) {
+    const browserContextId = activeLedger.browserContextOf(space);
+    return browserContextId ? { browserContextId } : {};
+  }
+
   async function handleRpc(connection, method, params) {
     if (connection.grant === null && !OBSERVE_RPCS.has(method)) {
       throw hostError(
@@ -160,7 +178,7 @@ export function createSupervisorServer({
     }
 
     const selected = () => {
-      const space = connection.selectedSpaceId === null ? null : ledger.get(connection.selectedSpaceId);
+      const space = connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
       if (!space) {
         throw hostError(
           CODES.NO_TASK_SPACE,
@@ -174,11 +192,11 @@ export function createSupervisorServer({
       case "getBrowserVersion":
         return { ...browserVersion };
       case "listTaskSpaces":
-        return { taskSpaces: ledger.list() };
+        return { taskSpaces: activeLedger.list() };
       case "listTabs":
-        return { tabs: ledger.tabsOf(selected()) };
+        return { tabs: activeLedger.tabsOf(selected()) };
       case "useTaskSpace": {
-        const space = ledger.get(params?.id);
+        const space = activeLedger.get(params?.id);
         if (!space) {
           throw hostError(CODES.TASK_SPACE_NOT_FOUND, `작업 공간을 찾지 못했다: ${params?.id}`);
         }
@@ -190,28 +208,40 @@ export function createSupervisorServer({
         if (typeof name !== "string" || name === "") {
           throw hostError(CODES.HANDSHAKE_INVALID, "createTaskSpace 에는 비지 않은 이름이 필요하다");
         }
-        const space = ledger.create(name);
-        const created = await mux.hostRequest("Target.createTarget", { url: "about:blank" });
-        ledger.addTab(space, { targetId: created.targetId, url: "about:blank", title: "" });
-        mux.claimTarget(connection, created.targetId);
+        // 멱등: 같은 키로 재전송하면 같은 공간을 돌려준다(공간이 둘 생기지 않는다).
+        const space = await activeLedger.create(name, { idempotencyKey: params?.idempotencyKey ?? null });
+        if (space.tabs.length === 0) {
+          const created = await mux.hostRequest("Target.createTarget", {
+            url: "about:blank",
+            // 공간의 격리 컨텍스트 안에서만 탭을 만든다. 컨텍스트 없이 만들면 기본 컨텍스트에
+            // 열려 쿠키·저장소가 다른 공간과 섞인다.
+            ...contextParams(space),
+          });
+          activeLedger.addTab(space, { targetId: created.targetId, url: "about:blank", title: "" });
+          activeLedger.claimTarget(connection, created.targetId);
+        }
         connection.selectedSpaceId = space.id;
-        return ledger.shape(space);
+        return activeLedger.shape(space);
       }
       case "createTab": {
         const space = selected();
         const url = typeof params?.url === "string" ? params.url : "about:blank";
-        const created = await mux.hostRequest("Target.createTarget", { url });
-        ledger.addTab(space, { targetId: created.targetId, url, title: "" });
-        mux.claimTarget(connection, created.targetId);
+        const created = await mux.hostRequest("Target.createTarget", {
+          url,
+          ...contextParams(space),
+        });
+        activeLedger.addTab(space, { targetId: created.targetId, url, title: "" });
+        activeLedger.claimTarget(connection, created.targetId);
         return { targetId: created.targetId };
       }
       case "closeTaskSpace": {
         const space = selected();
         for (const tab of [...space.tabs]) {
           await mux.hostRequest("Target.closeTarget", { targetId: tab.targetId }).catch(() => {});
-          mux.releaseTarget(tab.targetId);
+          activeLedger.releaseTarget(tab.targetId);
         }
-        ledger.remove(space.id);
+        // 컨텍스트 dispose 까지가 "공간 닫기"다. 탭만 닫으면 쿠키·저장소가 살아남는다.
+        await activeLedger.close(space.id);
         connection.selectedSpaceId = null;
         return {};
       }
@@ -233,7 +263,7 @@ export function createSupervisorServer({
    */
   async function snapshot(connection, options) {
     if (snapshotProvider) return snapshotProvider(connection, options);
-    const space = connection.selectedSpaceId === null ? null : ledger.get(connection.selectedSpaceId);
+    const space = connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
     if (!space) {
       throw hostError(
         CODES.NO_TASK_SPACE,
@@ -379,7 +409,7 @@ export function createSupervisorServer({
   return {
     issueToken,
     mux,
-    ledger,
+    ledger: activeLedger,
     connections,
     rejected,
     listen(socketPath, { kind = "unix" } = {}) {
