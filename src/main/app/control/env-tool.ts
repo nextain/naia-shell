@@ -30,7 +30,7 @@ import {
   type PageObservation,
   type Termination,
 } from "../../domain/env-tool.js";
-import type { CapabilityTier } from "../../domain/capability.js";
+import { ALL_TIERS, type CapabilityTier } from "../../domain/capability.js";
 
 export interface CompletedOperation {
   readonly operationId: string;
@@ -78,6 +78,12 @@ export const BROWSER_RPC_TIERS: Readonly<Record<BrowserRpc, CapabilityTier>> = {
   evaluate: "workspace-write",
   close: "workspace-write",
 };
+
+/**
+ * 터미널 실행의 등급 바닥 (#582 S0d, FR-ENV-TOOL.14).
+ * 브라우저 RPC 와 달리 터미널 명령의 효과는 목록으로 고정할 수 없으므로 표가 아니라 바닥을 둔다.
+ */
+export const TERMINAL_EXEC_TIER_FLOOR: CapabilityTier = "workspace-write";
 
 export type EnvOutcome =
   | { readonly ok: true; readonly operation: CompletedOperation }
@@ -217,12 +223,19 @@ export class EnvironmentToolService {
     return this.workspaces;
   }
 
+  /**
+   * 터미널 실행 (#582 S0d). 등급 바닥은 `workspace-write` 다 — 명령 하나가 무엇을 하는지는
+   * 셸이 미리 알 수 없으므로 "보기만 한다"는 선언은 받지 않는다. 호출자가 더 높은 등급을
+   * 선언하면(파괴적 명령 등) 그 높은 쪽으로 판정한다. 낮추는 길은 막고 올리는 길은 둔다.
+   * 판정에 쓴 등급은 작업 장부(`snapshotOf().tier`)에 남는다.
+   */
   async exec(request: EnvOperationRequest, terminalId: string, command: StructuredCommand, page?: PageObservation): Promise<EnvOutcome> {
     if (!isStructuredCommand(command)) {
       return { ok: false, rejections: [{ code: "workspace-escape", detail: `명령이 구조화되지 않았다: ${command.executable}` }] };
     }
-    return this.run(request, page, async (signal) => ({
-      evidence: { kind: "terminal", value: await this.terminal.exec(request, terminalId, command, signal) } as Evidence,
+    const floored = withFlooredTier(request, TERMINAL_EXEC_TIER_FLOOR);
+    return this.run(floored, page, async (signal) => ({
+      evidence: { kind: "terminal", value: await this.terminal.exec(floored, terminalId, command, signal) } as Evidence,
       notes: [],
     }));
   }
@@ -439,5 +452,21 @@ export function requiredTierFor(rpc: BrowserRpc): CapabilityTier {
 
 function withFixedTier(request: EnvOperationRequest, rpc: BrowserRpc): EnvOperationRequest {
   const required = requiredTierFor(rpc);
+  return request.capability === required ? request : { ...request, capability: required };
+}
+
+/**
+ * 등급 바닥 (#582 S0d). 선언과 바닥 중 `ALL_TIERS` 순서로 높은 쪽을 쓴다.
+ * 목록에 없는 선언은 믿지 않고 바닥으로 되돌린다 — 모르는 이름이 바닥을 뚫는 길이 되면 안 된다.
+ */
+export function flooredTierFor(declared: CapabilityTier, floor: CapabilityTier): CapabilityTier {
+  const declaredRank = ALL_TIERS.indexOf(declared);
+  const floorRank = ALL_TIERS.indexOf(floor);
+  if (declaredRank < 0) return floor;
+  return declaredRank > floorRank ? declared : floor;
+}
+
+function withFlooredTier(request: EnvOperationRequest, floor: CapabilityTier): EnvOperationRequest {
+  const required = flooredTierFor(request.capability, floor);
   return request.capability === required ? request : { ...request, capability: required };
 }

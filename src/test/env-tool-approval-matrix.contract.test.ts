@@ -6,6 +6,8 @@ import { ALL_TIERS, permits, requiresApproval, requiresHumanDecision, type Capab
 import {
   BROWSER_RPC_TIERS,
   EnvironmentToolService,
+  TERMINAL_EXEC_TIER_FLOOR,
+  flooredTierFor,
   requiredTierFor,
   type BrowserRpc,
 } from "../main/app/control/env-tool.js";
@@ -227,5 +229,60 @@ describe("작업 공간 RPC (FR-ENV-TOOL.10·14) [UC-ENV-TOOL-SPACE]", () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.rejections.map((r) => r.code)).toEqual(["method-denied"]);
+  });
+});
+
+// ── #582 S0d: 터미널 실행 등급 바닥 (FR-ENV-TOOL.14) ──────────────────────────
+// 계약: .agents/progress/issue-582/s0-review-fable.md 1번. 낮추는 길은 막고 올리는 길은 둔다.
+
+const EXEC_COMMAND = { executable: "pnpm", args: ["test", "--run"], cwd: "packages/shell", env: { CI: "1" } };
+
+function terminalService(granted: CapabilityTier[]) {
+  const terminal = fakeTerminal();
+  return { svc: new EnvironmentToolService(fakeBrowser(), terminal, fakeCancellation(), granted), terminal };
+}
+
+describe("터미널 실행 등급 바닥 (FR-ENV-TOOL.14) [UC-ENV-TOOL-SCRIPT]", () => {
+  it("바닥은 워크스페이스 내부 변경이다", () => {
+    expect(TERMINAL_EXEC_TIER_FLOOR).toBe("workspace-write");
+    expect(ALL_TIERS).toContain(TERMINAL_EXEC_TIER_FLOOR);
+  });
+
+  it("관측만 부여된 조립에서 관측으로 선언한 exec 는 거부된다 — 낮게 적어 통과하는 길이 없다", async () => {
+    const { svc, terminal } = terminalService(OBSERVE_ONLY);
+    const outcome = await svc.exec(envRequest({ capability: "observe" }), "t1", EXEC_COMMAND);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejections.map((r) => r.code)).toContain("capability-denied");
+    expect(terminal.execs, "거절인데 터미널 포트에 닿았다").toEqual([]);
+  });
+
+  it("관측 선언이라도 워크스페이스 권한이 있으면 바닥 등급으로 판정해 통과하고 장부에 바닥이 남는다", async () => {
+    const { svc, terminal } = terminalService(["observe", "workspace-write"]);
+    const outcome = await svc.exec(envRequest({ capability: "observe" }), "t1", EXEC_COMMAND);
+    expect(outcome.ok).toBe(true);
+    expect(terminal.execs).toHaveLength(1);
+    expect(svc.snapshotOf("op1")?.tier).toBe("workspace-write");
+  });
+
+  it("파괴적 선언은 그대로 파괴적으로 판정된다 — 올리는 길은 열려 있다", async () => {
+    const { svc, terminal } = terminalService(["observe", "workspace-write"]);
+    const denied = await svc.exec(envRequest({ capability: "destructive", approvalRef: "a-1" }), "t1", EXEC_COMMAND);
+    expect(denied.ok, "파괴적 등급이 워크스페이스 권한으로 통과했다").toBe(false);
+    expect(terminal.execs).toEqual([]);
+
+    const { svc: allowed } = terminalService(["observe", "workspace-write", "destructive"]);
+    const outcome = await allowed.exec(envRequest({ capability: "destructive", approvalRef: "a-1" }), "t1", EXEC_COMMAND);
+    expect(outcome.ok).toBe(true);
+    expect(allowed.snapshotOf("op1")?.tier).toBe("destructive");
+  });
+
+  it("바닥 계산은 ALL_TIERS 순서를 따르고 모르는 선언은 바닥으로 되돌린다", () => {
+    expect(flooredTierFor("observe", "workspace-write")).toBe("workspace-write");
+    expect(flooredTierFor("workspace-write", "workspace-write")).toBe("workspace-write");
+    for (const higher of ["credential", "external-message", "publication", "purchase", "destructive", "production"] as const) {
+      expect(flooredTierFor(higher, "workspace-write")).toBe(higher);
+    }
+    expect(flooredTierFor("made-up" as CapabilityTier, "workspace-write")).toBe("workspace-write");
   });
 });
