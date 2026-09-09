@@ -133,9 +133,12 @@ export async function connectSupervisor({
 
   return {
     greeting,
-    /** 동기 enqueue 또는 동기 throw. 이 함수는 절대 Promise 를 돌려주지 않는다. */
-    sendCdp(payload) {
-      write({ type: "cdp", payload });
+    /**
+     * 동기 enqueue 또는 동기 throw. 이 함수는 절대 Promise 를 돌려주지 않는다.
+     * `operationId` 는 우리 확장이다(S2e). 벤더 런타임은 붙이지 않으므로 뿌리 작업으로 간다.
+     */
+    sendCdp(payload, { operationId = null } = {}) {
+      write({ type: "cdp", payload, ...(operationId ? { operationId } : {}) });
     },
     call(method, params = {}) {
       const id = nextCallId++;

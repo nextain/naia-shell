@@ -115,7 +115,10 @@ export async function startSupervisor({
       ? { route }
       : {
           routeFactory:
-            routeFactory ?? (({ ledger, adkDir: dir }) => createMediator({ ledger, adkDir: dir })),
+            routeFactory ??
+            (({ ledger, operations, adkDir: dir }) =>
+              // S2e: 작업 장부가 중계기의 `operationHook` 자리에 들어온다.
+              createMediator({ ledger, adkDir: dir, operationHook: operations?.hook ?? null })),
         }),
     ...serverOptions,
   });

@@ -166,13 +166,15 @@
 | 기대 | 근거 |
 |---|---|
 | `snapshot(options)` → `{content, refs:[...]}` | `src/driver/observe.ts:52`, `:61`, `:79` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId 와 같다" |
-| `refs` 항목은 `{backendNodeId, role, name}`. `backendNodeId` 가 `undefined`/`null` 인 항목은 버려진다 | `src/browser-runtime.ts:309-326` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId 와 같다" |
+| `refs` 항목은 `{backendNodeId, role, name}`. `backendNodeId` 가 `undefined`/`null` 인 항목은 버려진다 | `src/browser-runtime.ts:309-326` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId 와 같다", test/snapshot.test.mjs "스냅샷: 본문은 [ref=N, loc=…] 이고 refs 의 backendNodeId 로 실제 요소를 잡는다"(실 Chromium, `DOM.resolveNode` 로 요소 확인) |
 | ref 키는 `String(backendNodeId)` 다 — 본문 주석의 `ref=N` 과 이 값이 같아야 한다 | `src/browser-runtime.ts:318-324` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId 와 같다" |
 | `content` 가 없으면 빈 문자열로 degrade 한다 | `src/driver/observe.ts:79` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId 와 같다" |
 | `refs` 가 없어도 죽지 않는다(`result.refs \|\| []`) | `src/driver/observe.ts:61` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId 와 같다" |
+| `snapshot(options)` 의 `options` 는 `{scope, includeActionMarks, includeStableLocator}` 다 | `src/driver/observe.ts:24-28`, 기본값 `:73-77` — 테스트: test/snapshot.test.mjs "스냅샷: includeStableLocator·includeActionMarks 는 지원하고 scope 는 무시한다". **`scope` 는 우리 감독자가 지원하지 않는다** — 무시하고 전체 문서를 준다. 뷰포트 판정은 노드마다 `DOM.getBoxModel` 을 불러야 해 왕복이 노드 수만큼 늘고, 헤드리스 창 크기는 사람이 보는 뷰포트가 아니라 잘라 낼 근거가 없다(벤더 기본값도 `full_page`) |
+| 본문은 `[ref=N, loc=..., url=...]` 주석이 달린 들여쓴 접근성 트리 텍스트다. 벤더는 본문을 **파싱하지 않는다** | `skills/ego-browser/SKILL.md:182`, `:128`, `src/browser-runtime.ts:309-326` — 테스트: test/snapshot.test.mjs "스냅샷: 본문은 [ref=N, loc=…] 이고 refs 의 backendNodeId 로 실제 요소를 잡는다". 로케이터는 `css:`·`href:`·`role:` 셋뿐이며 `DOM.getDocument` 한 번으로 만든다. 노드 1500·깊이 25 상한을 넘으면 본문에 잘렸다고 적는다 |
 | **사람 제어 중이면 `snapshot` 이 `EGO_TASK_SPACE_USER_IN_CONTROL` 로 거부해야 한다.** 이것이 제어권 판정의 유일한 신호다 | `src/helpers.ts:364-374`, 코드 판정 `src/ego-errors.ts:115` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 resolve 가 아니라 reject 로 사람 제어를 알린다" |
 | `waitForAgentControl` 은 이 신호를 폴링한다. 다른 오류는 그대로 전파된다 | `src/helpers.ts:371-372`, `:384-409` — 테스트: test/conformance.test.mjs "ABI 7: snapshot 은 resolve 가 아니라 reject 로 사람 제어를 알린다" |
-| 화면 캡처는 `ego` 메서드가 아니라 CDP `Page.captureScreenshot` 으로 나가며, 기본 저장 경로는 `os.tmpdir()` 아래다 | `src/driver/observe.ts:97-100` — 테스트: **S2e** — 캡처 경로는 증거 슬라이스 |
+| 화면 캡처는 `ego` 메서드가 아니라 CDP `Page.captureScreenshot` 으로 나가며, 기본 저장 경로는 `os.tmpdir()` 아래다 | `src/driver/observe.ts:97-100` — 테스트: test/snapshot.test.mjs "캡처: 감독자가 정한 경로에 PNG 가 생기고 사용자 인자 경로는 무시된다" — 우리 캡처 통로는 `screenshot` RPC 이며 경로를 **감독자가** 정한다(계약 4.4·4.5). 벤더 헬퍼 `captureScreenshot()` 을 그대로 쓰는 경로에 증거 디렉터리를 물리는 일은 어댑터 몫이다(S3a) |
 
 ## 8. 환경·경로 의존
 
@@ -191,7 +193,7 @@
 | 빌드는 `package/ego-browser` 의 **두 단계 위**를 저장소 루트로 보고 `skills/ego-browser` 를 찾는다 | `scripts/build.mjs:24-31` | 벤더 트리가 업스트림 경로를 그대로 미러링해야 하는 이유 — 테스트: test/vendor-install.test.mjs "(b) 임의 디렉터리에서 npm ci + build + test 가 0 으로 끝난다" |
 | 빌드는 `package/ego-browser/.build.lock` 을 배타 생성한다. 동시 빌드 두 개는 실패한다 | `scripts/build.mjs:32-42` | 병렬 테스트에서 같은 디렉터리를 두 번 빌드하지 않는다 — 테스트: package.json `test` 의 `--test-concurrency=1` |
 | `npm ci` 시 `prepare` 스크립트가 `cd ../.. && lefthook install` 을 시도한다 | `package.json` `scripts.prepare` | `CI=true` 이거나 `--ignore-scripts` 여야 안전하다 — 테스트: test/vendor-install.test.mjs "(b) 임의 디렉터리에서 npm ci + build + test 가 0 으로 끝난다" |
-| 캡처 임시 파일이 `os.tmpdir()` 에 쌓인다 | `src/driver/observe.ts:100` | 증거 경로(`<ADK>/ego-host/evidence/`)를 쓰려면 `options.path` 를 항상 지정한다 — 테스트: **S2e** — 증거 경로 지정은 캡처 슬라이스 |
+| 캡처 임시 파일이 `os.tmpdir()` 에 쌓인다 | `src/driver/observe.ts:100` | 증거 경로(`<ADK>/ego-host/evidence/<operationId>-<n>.png`)는 감독자가 정하며 사용자 인자 경로는 무시한다 — 테스트: test/snapshot.test.mjs "캡처: 감독자가 정한 경로에 PNG 가 생기고 사용자 인자 경로는 무시된다" |
 
 ## 9. CLI 진입점 — 계획 문서와 실제가 다른 부분
 

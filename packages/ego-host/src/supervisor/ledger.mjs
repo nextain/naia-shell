@@ -101,6 +101,15 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
   const tombstones = new Set();
   /** 감독자가 fail-closed 로 끊어낸 자식 세션(시험용 관측). */
   const rejectedChildren = [];
+  /**
+   * **감독자 자신이 붙은 세션.** 스냅샷·캡처는 감독자 내부 CDP 로 도는데(계약 4.4: 승인 없는
+   * 관측 연결도 받아야 한다), 그때 오는 `Target.attachedToTarget` 이벤트는 예약도 소유도 없어
+   * 예기치 않은 자식으로 보인다. 그대로 두면 감독자가 **자기 세션을 스스로 끊는다**(실측:
+   * 두 번째 캡처부터 "Session with given id not found").
+   * 그래서 attach 를 보내기 전에 표시해 두고, 그 짝 이벤트는 아무에게도 주지 않고 지나보낸다.
+   */
+  const hostAttaches = new Map();
+  const hostSessions = new Set();
 
   function persist() {
     if (!adkDir) return;
@@ -262,6 +271,11 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
   }
 
   function dropSession(sessionId) {
+    // 감독자 자신의 세션은 장부 밖이다. 묘비를 세우면 같은 값이 재사용될 때 남의 요청까지 막는다.
+    if (hostSessions.has(sessionId)) {
+      hostSessions.delete(sessionId);
+      return null;
+    }
     const record = sessions.get(sessionId);
     sessions.delete(sessionId);
     tombstones.add(sessionId);
@@ -411,19 +425,30 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
     },
     /**
      * 탭을 만든 연결을 그 탭의 이벤트 주인으로 적는다. 배타 lease 는 걸지 않는다.
-     * 연결이 공간을 골라 뒀으면 타깃을 그 공간에 묶는다 — 원시 CDP `Target.createTarget` 으로
-     * 만든 탭도 장부에 들어와야 `Target.getTargetInfo`·`getTargets` 가 그것을 자기 것으로 본다.
+     * 연결이 공간을 골라 뒀으면 타깃을 그 공간에 묶고 **탭 목록에도 넣는다**.
+     *
+     * S2d 는 여기서 `targetSpace` 만 채웠다. 그래서 원시 CDP `Target.createTarget` 으로 만든
+     * 탭은 `Target.getTargetInfo` 는 통과하는데 `listTabs` 에는 안 보이는 비대칭이 남았다
+     * (S2d 증거 5번). 같은 탭이 한 표면에서는 있고 다른 표면에서는 없으면 에이전트는 자기가
+     * 만든 탭을 다시 찾지 못한다. 두 표면을 같은 장부에서 뽑는다.
      */
-    claimTarget(connection, targetId) {
+    claimTarget(connection, targetId, { url = "", title = "" } = {}) {
       routing.set(targetId, connection);
       const selected = connection?.selectedSpaceId;
-      if (selected !== null && selected !== undefined && !targetSpace.has(targetId)) {
-        const space = spaces.get(Number(selected));
-        if (space) {
-          targetSpace.set(targetId, space.id);
-          persist();
-        }
+      if (selected === null || selected === undefined) return true;
+      const space = spaces.get(Number(selected));
+      if (!space) return true;
+      if (!targetSpace.has(targetId)) targetSpace.set(targetId, space.id);
+      if (targetSpace.get(targetId) !== space.id) {
+        // 남의 공간 타깃이면 목록에 넣지 않는다. 소유 판정은 중계기가 따로 한다.
+        return true;
       }
+      if (!space.tabs.some((tab) => tab.targetId === targetId)) {
+        space.tabs.push({ targetId, url: url ?? "", title: title ?? "" });
+        space.activeTargetId = targetId;
+        space.revision += 1;
+      }
+      persist();
       return true;
     },
     releaseTarget,
@@ -472,6 +497,14 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
      * 예약·소유가 있으면 그 연결의 것이고, 없으면 **예기치 않은 자식**이라 fail-closed 다.
      */
     resolveAttachedEvent({ targetId, sessionId }) {
+      if (hostSessions.has(sessionId)) return { ok: true, host: true, connection: null };
+      const pendingHost = hostAttaches.get(targetId) ?? 0;
+      if (pendingHost > 0) {
+        if (pendingHost <= 1) hostAttaches.delete(targetId);
+        else hostAttaches.set(targetId, pendingHost - 1);
+        hostSessions.add(sessionId);
+        return { ok: true, host: true, connection: null };
+      }
       const known = sessions.get(sessionId);
       if (known) return { ok: true, connection: known.connection, record: known };
       const lease = targetId ? leases.get(targetId) : null;
@@ -505,6 +538,22 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
       return hostRequest("Runtime.runIfWaitingForDebugger", {}, sessionId)
         .then(() => true)
         .catch(() => false);
+    },
+
+    // ── 감독자 자신의 세션 ─────────────────────────────────────────────────
+    /** 감독자가 attach 를 보내기 직전에 표시한다. 짝 이벤트가 자식으로 오해받지 않게. */
+    beginHostAttach(targetId) {
+      if (typeof targetId !== "string" || targetId === "") return;
+      hostAttaches.set(targetId, (hostAttaches.get(targetId) ?? 0) + 1);
+    },
+    noteHostSession(sessionId) {
+      if (typeof sessionId === "string" && sessionId !== "") hostSessions.add(sessionId);
+    },
+    endHostSession(sessionId) {
+      return hostSessions.delete(sessionId);
+    },
+    isHostSession(sessionId) {
+      return hostSessions.has(sessionId);
     },
 
     // ── 세션 장부 ───────────────────────────────────────────────────────────

@@ -52,6 +52,12 @@ export function createCdpMux({
   route = allowAll,
   filterResponse = null,
   ledger = createLedger(),
+  /**
+   * 작업 장부 이음매(S2e). 요청이 끝날 때(`settled`)와 이벤트가 지날 때(`event`) 불린다.
+   * `event` 가 거짓을 돌려주면 그 이벤트는 **아무에게도 가지 않는다** — 취소 장벽 뒤에
+   * 그 작업에 결속된 이벤트를 0 으로 만드는 자리가 여기다(계약 4.7).
+   */
+  observer = null,
   requestDeadlineMs = SUPERVISOR_REQUEST_DEADLINE_MS,
 } = {}) {
   let nextUpstreamId = 1;
@@ -63,8 +69,12 @@ export function createCdpMux({
     connection.deliverCdp(JSON.stringify({ id: clientId, error: { message, code } }));
   }
 
-  /** 연결이 보낸 원문 페이로드 하나. 동기적으로 판정하고 동기적으로 백엔드에 넣는다. */
-  function fromClient(connection, payload) {
+  /**
+   * 연결이 보낸 원문 페이로드 하나. 동기적으로 판정하고 동기적으로 백엔드에 넣는다.
+   * `meta.operationId` 는 우리 확장이다(벤더 런타임은 절대 붙이지 않는다). 없으면 정책이
+   * 연결의 뿌리 작업으로 읽는다.
+   */
+  function fromClient(connection, payload, meta = null) {
     let data;
     try {
       data = JSON.parse(payload);
@@ -93,7 +103,7 @@ export function createCdpMux({
 
     let verdict;
     try {
-      verdict = route(method, data.params ?? {}, sessionId, connection) ?? { allow: true };
+      verdict = route(method, data.params ?? {}, sessionId, connection, meta) ?? { allow: true };
     } catch (error) {
       verdict = { allow: false, message: `정책 판정 실패: ${error.message}` };
     }
@@ -136,6 +146,7 @@ export function createCdpMux({
           generation: entry.generation,
         });
       }
+      if (entry) observer?.settled?.(entry, null);
       errorResponse(
         connection,
         clientId,
@@ -144,14 +155,18 @@ export function createCdpMux({
       );
     }, requestDeadlineMs);
     timer.unref?.();
-    pending.set(upstreamId, {
+    const entry = {
       connection,
       clientId,
       method,
       params: outgoingParams,
+      sessionId,
+      operationId: verdict.operationId ?? null,
+      tookSlot: verdict.tookSlot === true,
       generation,
       timer,
-    });
+    };
+    pending.set(upstreamId, entry);
 
     // sessionId 는 그대로 둔다. 재작성하는 것은 id 하나뿐이다.
     const rewritten = { ...data, id: upstreamId, params: outgoingParams };
@@ -160,6 +175,7 @@ export function createCdpMux({
     } catch (error) {
       clearTimeout(timer);
       pending.delete(upstreamId);
+      observer?.settled?.(entry, null);
       if (generation !== null) {
         ledger.failAttach({ connection, targetId: outgoingParams?.targetId, generation });
       }
@@ -196,7 +212,8 @@ export function createCdpMux({
       });
     }
     if (entry.method === "Target.createTarget" && typeof result.targetId === "string") {
-      ledger.claimTarget(entry.connection, result.targetId);
+      // 만든 탭이 장부의 탭 목록에도 들어가야 `listTabs` 가 그것을 본다(S2e, listTabs 비대칭).
+      ledger.claimTarget(entry.connection, result.targetId, { url: entry.params?.url ?? "" });
     }
     return true;
   }
@@ -235,6 +252,8 @@ export function createCdpMux({
         ledger.rejectChildSession(child, resolved.reason);
         return null;
       }
+      // 감독자 자신이 붙은 세션이다. 아무에게도 주지 않지만 **끊지도 않는다**.
+      if (resolved.host) return null;
       if (data.params?.waitingForDebugger === true) ledger.resumeIfWaiting(child);
       return resolved.connection;
     }
@@ -274,6 +293,8 @@ export function createCdpMux({
       }
       pending.delete(data.id);
       clearTimeout(entry.timer);
+      // 작업 장부는 응답에서 objectId·세션을 적고 배타 슬롯을 놓는다(감독자 자신의 요청은 제외).
+      if (!entry.host) observer?.settled?.(entry, data);
       // 감독자 자신의 요청(hostRequest)은 장부의 소유를 만들지 않는다. 만들면 감독자가
       // 만든 탭의 주인이 "감독자"가 되어, 정작 그 탭을 쓰려는 연결이 EGO_TARGET_BUSY 를 받는다.
       if (!entry.host && !recordFromResponse(entry, data)) return;
@@ -283,6 +304,12 @@ export function createCdpMux({
       return;
     }
     const owner = applyEventToLedger(data);
+    // 작업 결속은 주인 판정과 별개다 — 주인이 없어 버릴 이벤트에서도 자원 등록은 필요 없지만,
+    // 주인이 있는 이벤트는 취소 장벽을 지나야 한다.
+    if (observer?.event && observer.event(data) === false) {
+      dropped.push(data.method);
+      return;
+    }
     if (!owner) {
       dropped.push(data.method);
       return;
@@ -295,6 +322,10 @@ export function createCdpMux({
     /** 감독자 자신의 CDP 요청. 연결 id 공간과 섞이지 않고 정책도 통과하지 않는다. */
     hostRequest(method, params = {}, sessionId = undefined) {
       const id = nextUpstreamId++;
+      // 감독자 자신의 attach 는 짝 이벤트가 오기 **전에** 표시해야 한다(이벤트가 응답보다
+      // 먼저 오는 순서가 실제로 있다, 4.3.1). 그러지 않으면 우리 세션을 우리가 끊는다.
+      if (method === "Target.attachToTarget") ledger.beginHostAttach?.(params?.targetId);
+      if (method === "Target.detachFromTarget") ledger.endHostSession?.(params?.sessionId);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
@@ -307,7 +338,12 @@ export function createCdpMux({
             deliverCdp(raw) {
               const data = JSON.parse(raw);
               if (data.error) reject(new Error(data.error.message || "CDP 오류"));
-              else resolve(data.result ?? {});
+              else {
+                if (typeof data.result?.sessionId === "string") {
+                  ledger.noteHostSession?.(data.result.sessionId);
+                }
+                resolve(data.result ?? {});
+              }
             },
             deliverCdpFatal(message) {
               reject(new Error(message));
@@ -326,6 +362,22 @@ export function createCdpMux({
           reject(error);
         }
       });
+    },
+    /**
+     * 한 작업의 in-flight 요청을 **원래 id 오류**로 끊는다(계약 4.7 취소, deadline 만료).
+     * id 없는 통로(`onSendCDPMessageError`)를 쓰지 않는 이유는 ABI 2 그대로다 — 그 통로는
+     * 그 연결의 pending 전부를 같이 죽인다.
+     */
+    rejectOperation(operationId, code, message) {
+      const stopped = [];
+      for (const [upstreamId, entry] of [...pending]) {
+        if (entry.host || entry.operationId !== operationId) continue;
+        clearTimeout(entry.timer);
+        pending.delete(upstreamId);
+        stopped.push(entry.method);
+        errorResponse(entry.connection, entry.clientId, message, code);
+      }
+      return stopped;
     },
     /** 연결이 사라졌다. 그 연결의 예약·세션만 걷어낸다. 다른 연결은 건드리지 않는다. */
     detach(connection) {

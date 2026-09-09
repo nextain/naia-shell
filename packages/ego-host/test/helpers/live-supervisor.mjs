@@ -141,7 +141,7 @@ export async function connectClient(live, { grant = { tier: "workspace-write" } 
  * 연결 하나의 CDP 통로. 요청 id 는 **연결마다 1 부터**다(벤더 런타임과 같은 규칙).
  * `sendWithId` 는 두 연결이 같은 id 를 동시에 쓰는 경우를 그대로 재현할 때 쓴다.
  */
-export function cdpChannel(client, { timeoutMs = 20_000 } = {}) {
+export function cdpChannel(client, { timeoutMs = 20_000, operationId = null } = {}) {
   let nextId = 1;
   const pending = new Map();
   const events = [];
@@ -187,18 +187,24 @@ export function cdpChannel(client, { timeoutMs = 20_000 } = {}) {
     send(method, params = {}, sessionId = undefined) {
       const id = nextId++;
       const waiting = await_(id);
-      client.sendCdp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+      client.sendCdp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }), {
+        operationId,
+      });
       return waiting;
     },
     sendWithId(id, method, params = {}, sessionId = undefined) {
       const waiting = await_(id);
-      client.sendCdp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+      client.sendCdp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }), {
+        operationId,
+      });
       return waiting;
     },
     /** 응답을 기다리지 않고 넣기만 한다(동시 요청 경주용). */
     fire(id, method, params = {}, sessionId = undefined) {
       const waiting = await_(id);
-      client.sendCdp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+      client.sendCdp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }), {
+        operationId,
+      });
       return waiting;
     },
     /** 결과만. 오류면 던진다. */

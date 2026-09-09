@@ -347,7 +347,13 @@ test("ABI 7: snapshot 은 {content, refs} 를 주고 ref 키가 backendNodeId �
   assert.equal(typeof snap.content, "string");
   assert.deepEqual(Object.keys(snap.refs[0]).sort(), ["backendNodeId", "name", "role"]);
   for (const ref of snap.refs) {
-    assert.match(snap.content, new RegExp(`\\[ref=${ref.backendNodeId}\\]`), "본문 주석과 ref 키가 어긋났다");
+    // S2e 부터 본문 주석은 `[ref=N, loc=..., url=...]` 다(벤더 SKILL.md:182 의 형식).
+    // 기계 계약은 `ref=N` 과 `refs[].backendNodeId` 가 같은 값이라는 것 하나뿐이다.
+    assert.match(
+      snap.content,
+      new RegExp(`\\[ref=${ref.backendNodeId}[,\\]]`),
+      "본문 주석과 ref 키가 어긋났다",
+    );
   }
   assert.equal(json(result, "TEXT"), snap.content);
 });

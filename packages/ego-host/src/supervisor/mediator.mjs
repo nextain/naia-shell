@@ -21,9 +21,14 @@ import { policyFor, requiresSession } from "./mediator-policy.mjs";
  * @param {object} options
  * @param {import("./ledger.mjs").createLedger} options.ledger
  * @param {string|null} [options.adkDir]  다운로드 재작성 경로의 뿌리
- * @param {((method:string, params:object, ctx:object)=>{ok:boolean,code?:string,message?:string})|null} [options.operationHook]
- *   **S2e 자리**. 작업·자원 결속(requestId·objectId·다운로드 GUID·IO 스트림 핸들)은 작업 장부가
- *   생겨야 판정할 수 있다. 이번 슬라이스는 세션 소유까지 강제하고 이 훅을 비워 둔다.
+ * @param {((method:string, params:object, ctx:object)=>{ok:boolean,code?:string,message?:string,operationId?:string,tookSlot?:boolean})|null} [options.operationHook]
+ *   작업 장부(S2e). requestId·objectId·다운로드 GUID·IO 스트림 핸들·screencast 프레임 토큰의
+ *   결속, 이동·평가의 세션당 배타 슬롯, 도메인 참조 횟수가 이 훅에 있다.
+ *
+ *   **훅은 작업 등급 메서드만이 아니라 허용된 모든 메서드를 지난다.** S2d 는 `scope:"operation"`
+ *   에만 걸었는데, 계약 4.7 의 배타 슬롯은 `Page.navigate`·`Runtime.evaluate`(세션 등급)에
+ *   걸리고 도메인 참조 횟수는 `Fetch.enable`·`Network.disable`(세션 등급)에 걸린다. 작업 등급만
+ *   지나게 하면 그 둘이 영영 판정되지 않는다.
  */
 export function createMediator({ ledger, adkDir = null, operationHook = null } = {}) {
   /** workspaceId -> 만들어 둔 다운로드 디렉터리. mkdir 을 요청마다 하지 않는다. */
@@ -79,7 +84,7 @@ export function createMediator({ ledger, adkDir = null, operationHook = null } =
     return null;
   }
 
-  function route(method, params, sessionId, connection) {
+  function route(method, params, sessionId, connection, meta = null) {
     const entry = policyFor(method);
     if (!entry) {
       return deny(
@@ -99,6 +104,9 @@ export function createMediator({ ledger, adkDir = null, operationHook = null } =
     }
 
     const ctx = contextOf(connection);
+    // 표시 없는 CDP 는 연결의 뿌리 작업 것이다(operations.mjs 머리 주석의 규칙 1).
+    ctx.sessionId = typeof sessionId === "string" && sessionId !== "" ? sessionId : null;
+    ctx.operationId = meta?.operationId ?? connection?.operationId ?? null;
 
     if (requiresSession(entry)) {
       if (typeof sessionId !== "string" || sessionId === "") {
@@ -120,19 +128,28 @@ export function createMediator({ ledger, adkDir = null, operationHook = null } =
       if (denial) return denial;
     }
 
-    if (entry.scope === "operation" && operationHook) {
-      const verdict = operationHook(method, params, ctx);
-      if (verdict && verdict.ok === false) {
-        return deny(verdict.code ?? CODES.METHOD_DENIED, verdict.message ?? `${method} 거부`);
-      }
-    }
-
+    // 인자 재작성(컨텍스트 강제)을 **먼저** 한다. 훅이 자원을 등록·점유하는데, 그 뒤에 인자
+    // 검사에서 거부되면 슬롯과 참조가 새어 나간 채로 남는다.
+    let outgoing = params ?? {};
     if (entry.args) {
       const verdict = entry.args(params ?? {}, ctx);
       if (!verdict.ok) return deny(verdict.code ?? CODES.METHOD_DENIED, verdict.message);
-      return { allow: true, params: verdict.params };
+      outgoing = verdict.params;
     }
-    return { allow: true };
+
+    if (operationHook) {
+      const verdict = operationHook(method, outgoing, ctx);
+      if (verdict && verdict.ok === false) {
+        return deny(verdict.code ?? CODES.METHOD_DENIED, verdict.message ?? `${method} 거부`);
+      }
+      return {
+        allow: true,
+        params: outgoing,
+        operationId: verdict?.operationId ?? ctx.operationId,
+        tookSlot: verdict?.tookSlot === true,
+      };
+    }
+    return { allow: true, params: outgoing, operationId: ctx.operationId };
   }
 
   /**

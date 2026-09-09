@@ -15,6 +15,8 @@ import { CODES, hostError, toShape } from "../errors.mjs";
 import { MAX_FRAME_BYTES, createFrameDecoder, encodeFrame } from "./rpc-framing.mjs";
 import { SUPERVISOR_REQUEST_DEADLINE_MS, createCdpMux } from "./cdp-mux.mjs";
 import { createLedger } from "./ledger.mjs";
+import { createOperations } from "./operations.mjs";
+import { captureAxSnapshot, captureScreenshot } from "./ax-snapshot.mjs";
 import { socketNeedsUnlink } from "./socket-path.mjs";
 
 /** 연결당 송신 큐 상한. 이벤트 폭주가 감독자 메모리를 먹지 못하게 한다. */
@@ -31,6 +33,9 @@ export const OBSERVE_RPCS = new Set([
   "listTaskSpaces",
   "useTaskSpace",
   "snapshot",
+  // 캡처는 관측이다(계약 4.4 "관측: 스냅샷·캡처"). 승인 없는 연결도 받을 수 있어야 하며,
+  // 그래서 감독자 내부 CDP 로 실행한다 — 원시 CDP 로 구현하면 관측 연결이 막힌다.
+  "screenshot",
   "getBrowserVersion",
 ]);
 
@@ -64,7 +69,9 @@ export function createSupervisorServer({
    */
   routeFactory = null,
   ledger = null,
+  operations = null,
   adkDir = null,
+  log = () => {},
   requestDeadlineMs = SUPERVISOR_REQUEST_DEADLINE_MS,
   maxFrameBytes = MAX_FRAME_BYTES,
   maxQueuedFrames = MAX_QUEUED_FRAMES,
@@ -77,19 +84,34 @@ export function createSupervisorServer({
   let mux;
   const hostRequest = (method, params, sessionId) => mux.hostRequest(method, params, sessionId);
   const activeLedger = ledger ?? createLedger({ adkDir, hostRequest });
+  // 작업 장부(S2e). 취소 훅의 정리 명령도 감독자 전용 통로로 나간다.
+  const activeOperations =
+    operations ?? createOperations({ hostRequest, ledger: activeLedger, log });
   // 정책 훅은 함수 하나(`route`)일 수도, 응답 필터를 함께 가진 객체일 수도 있다(중계기).
   const policy = route
     ? { route }
     : routeFactory
-      ? normalizePolicy(routeFactory({ ledger: activeLedger, hostRequest, adkDir }))
+      ? normalizePolicy(
+          routeFactory({
+            ledger: activeLedger,
+            operations: activeOperations,
+            hostRequest,
+            adkDir,
+          }),
+        )
       : {};
   mux = createCdpMux({
     backend,
     route: policy.route,
     filterResponse: policy.filterResponse ?? null,
     ledger: activeLedger,
+    observer: activeOperations,
     requestDeadlineMs,
   });
+  // 취소·만료가 in-flight 요청을 **원래 id 오류**로 끊는 통로(계약 4.7, ABI 2).
+  activeOperations.onReject((operationId, code, message) =>
+    mux.rejectOperation(operationId, code, message),
+  );
   /** token -> {operationId, workspaceId, grant, used} */
   const tokens = new Map();
   const connections = new Set();
@@ -268,18 +290,44 @@ export function createSupervisorServer({
       }
       case "snapshot":
         return snapshot(connection, params?.options ?? {});
+      case "screenshot":
+        return screenshot(connection, params ?? {});
+      case "beginOperation": {
+        // 시한은 **짧은 쪽이 이긴다**(계약 4.2). 연결의 deadline 을 요청이 늘릴 수 없다.
+        const requested = Number(params?.timeoutMs);
+        const deadlineMs =
+          Number.isFinite(requested) && requested > 0
+            ? Math.min(requested, connection.deadlineAt ?? requested)
+            : (connection.deadlineAt ?? null);
+        const op = activeOperations.begin({
+          id: params?.operationId ?? randomUUID(),
+          connection,
+          deadlineMs,
+        });
+        return { operationId: op.id, deadlineMs, status: op.status };
+      }
+      case "cancelOperation": {
+        const result = await activeOperations.cancel(params?.operationId ?? connection.operationId);
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "endOperation": {
+        const result = await activeOperations.complete(
+          params?.operationId ?? connection.operationId,
+          { status: params?.status ?? "completed" },
+        );
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "listOperations":
+        return { operations: activeOperations.list() };
       default:
         throw hostError(CODES.METHOD_DENIED, `알 수 없는 RPC: ${method}`);
     }
   }
 
-  /**
-   * 접근성 스냅샷. S2e 가 실제 렌더러를 넣는다.
-   * 여기서 지키는 것은 ABI 7 의 모양뿐이다: `{content, refs}`, ref 키 = String(backendNodeId).
-   */
-  async function snapshot(connection, options) {
-    if (snapshotProvider) return snapshotProvider(connection, options);
-    const space = connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
+  /** 이 연결이 보고 있는 탭. 스냅샷·캡처의 대상은 감독자가 장부에서 고른다. */
+  function observedTarget(connection) {
+    const space =
+      connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
     if (!space) {
       throw hostError(
         CODES.NO_TASK_SPACE,
@@ -287,25 +335,49 @@ export function createSupervisorServer({
       );
     }
     const targetId = space.activeTargetId ?? space.tabs.at(-1)?.targetId;
-    if (!targetId) throw hostError(CODES.NO_TASK_SPACE, "스냅샷을 찍을 탭이 없다");
-    const attached = await mux.hostRequest("Target.attachToTarget", { targetId, flatten: true });
-    const sessionId = attached.sessionId;
-    try {
-      const tree = await mux.hostRequest("Accessibility.getFullAXTree", {}, sessionId);
-      const refs = [];
-      const lines = [];
-      for (const node of tree.nodes || []) {
-        if (node.backendDOMNodeId === undefined && node.backendNodeId === undefined) continue;
-        const backendNodeId = node.backendNodeId ?? node.backendDOMNodeId;
-        const role = node.role?.value ?? node.role ?? "";
-        const name = node.name?.value ?? node.name ?? "";
-        refs.push({ backendNodeId, role, name });
-        lines.push(`- ${role} "${name}" [ref=${backendNodeId}]`);
-      }
-      return { content: lines.join("\n"), refs };
-    } finally {
-      mux.hostRequest("Target.detachFromTarget", { sessionId }).catch(() => {});
+    if (!targetId) throw hostError(CODES.NO_TASK_SPACE, "관측할 탭이 없다");
+    return { space, targetId };
+  }
+
+  /**
+   * 접근성 스냅샷 (ABI 7). 본문 형식과 로케이터는 `ax-snapshot.mjs` 가 든다.
+   * **감독자 내부 CDP** 로 돈다 — 승인 없는 관측 연결도 스냅샷을 받아야 하기 때문이다(계약 4.4).
+   */
+  async function snapshot(connection, options) {
+    if (snapshotProvider) return snapshotProvider(connection, options);
+    const { targetId } = observedTarget(connection);
+    const result = await captureAxSnapshot({
+      hostRequest: (method, params, sessionId) => mux.hostRequest(method, params, sessionId),
+      targetId,
+      options,
+    });
+    return { content: result.content, refs: result.refs };
+  }
+
+  /**
+   * 화면 캡처 (계약 4.4·4.5). **사용자 인자 경로를 받지 않는다** — 경로는 감독자가
+   * `<ADK>/ego-host/evidence/<operationId>-<n>.png` 로 정한다.
+   */
+  async function screenshot(connection, params) {
+    const { targetId } = observedTarget(connection);
+    if (!adkDir) {
+      throw hostError(
+        CODES.EVIDENCE_FAILED,
+        "증거 디렉터리를 정할 ADK 경로가 없다. 감독자에 adkDir 이 있어야 캡처를 남긴다",
+      );
     }
+    const operationId = params?.operationId ?? connection.operationId;
+    const index = activeOperations.nextEvidenceIndex(operationId);
+    const shot = await captureScreenshot({
+      hostRequest: (method, inner, sessionId) => mux.hostRequest(method, inner, sessionId),
+      targetId,
+      adkDir,
+      operationId,
+      index,
+      fullPage: params?.fullPage === true,
+    });
+    activeOperations.recordEvidence(operationId, shot.path);
+    return { path: shot.path, bytes: shot.bytes, targetId };
   }
 
   function onHello(connection, message) {
@@ -339,6 +411,13 @@ export function createSupervisorServer({
     // 두 상한 중 짧은 쪽이 이긴다. 호출자가 더 긴 시한을 적어 감독자 상한을 늘리지 못한다.
     const requested = typeof deadline === "number" && deadline > 0 ? deadline : requestDeadlineMs;
     connection.deadlineAt = Math.min(requested, requestDeadlineMs);
+    // 연결마다 뿌리 작업 하나. 표시 없는 CDP 는 전부 이 작업의 것이다(operations.mjs 규칙 1).
+    // 시한은 이 작업에도 그대로 걸린다 — 만료하면 취소와 같은 정리가 돈다(계약 4.7).
+    activeOperations.begin({
+      id: connection.operationId,
+      connection,
+      deadlineMs: connection.deadlineAt,
+    });
     connection.send({
       type: "welcome",
       operationId: connection.operationId,
@@ -382,7 +461,12 @@ export function createSupervisorServer({
         }
         return;
       }
-      mux.fromClient(connection, message.payload);
+      // `operationId` 는 우리 확장이다. 벤더 런타임은 붙이지 않으므로 뿌리 작업으로 간다.
+      mux.fromClient(
+        connection,
+        message.payload,
+        message.operationId ? { operationId: message.operationId } : null,
+      );
       return;
     }
     if (message?.type === "rpc") {
@@ -418,6 +502,11 @@ export function createSupervisorServer({
     socket.on("close", () => {
       connection.closed = true;
       connections.delete(connection);
+      // 작업을 먼저 종결한다(계약 4.8 `failed(process-exit)`). 정리 명령은 감독자 통로로
+      // 나가므로 연결이 이미 죽어도 가로채기·스트림·세션이 함께 걷힌다.
+      activeOperations
+        .detachConnection(connection)
+        .catch((error) => log(`연결 종료 정리 실패: ${error.message}`));
       mux.detach(connection);
     });
   }
@@ -426,6 +515,7 @@ export function createSupervisorServer({
     issueToken,
     mux,
     ledger: activeLedger,
+    operations: activeOperations,
     connections,
     rejected,
     listen(socketPath, { kind = "unix" } = {}) {
