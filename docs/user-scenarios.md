@@ -1263,6 +1263,7 @@ Test Coverage Map (P02):
 |---|---|---|
 | UC-ENV-TOOL-BROWSE | vitest `src/test/env-tool-browser-host.contract.test.ts` | 실제 어댑터로 열기·이동·스냅샷·안정 참조 클릭·입력·캡처·닫기, 증거 셋(스냅샷·캡처·주소 개정) |
 | UC-ENV-TOOL-BROWSE | node:test `packages/ego-host/test/conformance.test.mjs` | 실제 감독자 + 벤더 런타임의 실행 ABI 각 행, 전송 실패 모드(15초 경계·순서·이벤트 폭주·단절·id 없는 오류 범위) |
+| UC-ENV-TOOL-SPACE | vitest `src/test/env-tool-workspace-resource.contract.test.ts` | 헤드리스 소유권 전이 표(인계·회수·claim 거부), 작업 공간·페이지 자원 형태, 개정 확인, 형식 있는 실패 사유 |
 | UC-ENV-TOOL-SPACE | node:test `packages/ego-host/test/isolation.test.mjs` | 로컬 출처에서 쿠키·localStorage·IndexedDB·CacheStorage·서비스 워커·권한·다운로드 경로 negative, 두 CLI 동시 id 1 |
 | UC-ENV-TOOL-SPACE | node:test `packages/ego-host/test/no-interference.test.mjs` | 헤드리스 인자·활성 창 불변·감독자 트리 창 0 (Xvfb·xdotool 필수) |
 | UC-ENV-TOOL-SPACE | node:test `packages/ego-host/test/mediator.test.mjs` | 기본 거부 행렬 각 셀(거부는 원래 id 오류 응답, 컨텍스트 강제는 재작성), 헤드리스 인계 거부 |

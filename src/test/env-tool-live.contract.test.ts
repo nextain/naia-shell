@@ -154,6 +154,8 @@ function request(overrides: Partial<EnvOperationRequest> = {}): EnvOperationRequ
     idempotencyKey: `k-${NONCE}-1`,
     capability: "workspace-write",
     timeoutMs: 20_000,
+    // 이 테스트의 자리는 Herdr 워크스페이스다 (#582 S0a: 모든 작업은 자리를 밝힌다).
+    workspaceId: workspaceId || NONCE,
     cwd: ".",
     ...overrides,
   };

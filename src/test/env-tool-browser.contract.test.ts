@@ -76,6 +76,14 @@ describe("증거 (FR-ENV-TOOL.6)", () => {
     expect(out.ok).toBe(false);
     expect(svc.stateOf("op1")).toBe("failed");
   });
+
+  it("캡처 없는 브라우저 완료도 서비스가 거절한다 (#582 4.5)", async () => {
+    // 스냅샷만 있고 화면 캡처가 없으면 "무엇을 보고 눌렀는지"는 알아도 "무엇이 보였는지"는 모른다.
+    const svc = service(fakeBrowser({ screenshotRef: "" }));
+    const out = await svc.click(envRequest(), { kind: "reference", ref: "b" });
+    expect(out.ok).toBe(false);
+    expect(svc.stateOf("op1")).toBe("failed");
+  });
 });
 
 describe("페이지 내용은 자료다 (FR-ENV-TOOL.4)", () => {

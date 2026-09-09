@@ -65,5 +65,5 @@ export function fakeCancellation(partial: readonly string[] = ["파일 3개 기�
 }
 
 export function envRequest(over: Partial<EnvOperationRequest> = {}): EnvOperationRequest {
-  return { operationId: "op1", idempotencyKey: "k1", capability: "observe", timeoutMs: 5_000, ...over };
+  return { operationId: "op1", idempotencyKey: "k1", capability: "observe", timeoutMs: 5_000, workspaceId: "ws-1", ...over };
 }
