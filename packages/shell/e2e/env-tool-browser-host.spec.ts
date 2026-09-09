@@ -20,7 +20,7 @@ import { SEED_ADK_PATH, TAURI_BASE_MOCK_FALLBACK } from "./helpers/tauri-base-mo
  */
 
 const NEW_CORE_FLAG =
-	"window.__NAIA_NEW_CORE__ = true; window.__E2E_OUTBOUND__ = []; window.__E2E_WV__ = []; window.__E2E_PORTS__ = [];";
+	"window.__NAIA_NEW_CORE__ = true; window.__E2E_OUTBOUND__ = []; window.__E2E_WV__ = []; window.__E2E_PORTS__ = []; window.__E2E_EGO_HOST__ = [];";
 
 /** 어댑터 자리의 대역. 무엇이 불렸는지 기록해 "거부됐는데 포트가 불렸다"를 잡는다. */
 const PORTS_SCRIPT = `
@@ -100,6 +100,14 @@ const MOCK_SCRIPT = `
       return null;
     }
 
+    // #582 S6c: 프로덕션에서 도구가 지나는 다리(ego_host_*). 이 스펙은 어댑터 **아래**를
+    // 포트 대역으로 바꾸므로 여기에 닿을 일이 없고, 닿았다면 대역이 안 걸렸다는 뜻이다.
+    // 그 사실을 기록해 두고 형식 있는 실패로 돌려준다 — 조용한 성공을 만들지 않는다.
+    if (cmd && cmd.indexOf("ego_host_") === 0) {
+      window.__E2E_EGO_HOST__ = window.__E2E_EGO_HOST__ || [];
+      window.__E2E_EGO_HOST__.push(cmd);
+      return Promise.reject("ego-host 다리는 이 대역에 없다");
+    }
     if (cmd === "send_to_agent_command") {
       var payload = JSON.parse(args.message);
       window.__E2E_OUTBOUND__.push(payload);
@@ -244,6 +252,11 @@ test.describe("#582 브라우저 호스트 도구 (UC-ENV-TOOL-BROWSE·SCRIPT)",
 		await expect
 			.poll(async () => (await portCalls(page)).join(","), { timeout: 20_000 })
 			.toBe("open,snapshot");
+		// #582 S6c: DEV 에서는 포트 대역이 이긴다. 다리(ego_host_*)까지 갔다면 대역이 안 걸린
+		// 것이고, 그때 이 스펙이 재는 것은 우리가 재려던 것이 아니다.
+		expect(
+			await page.evaluate(() => (window as unknown as { __E2E_EGO_HOST__: string[] }).__E2E_EGO_HOST__),
+		).toEqual([]);
 		// 좁은 폭은 턴이 끝난 뒤의 메시지 카드에서 잰다 — 사용자가 실제로 다시 보는 자리다.
 		await page.setViewportSize({ width: 900, height: 800 });
 		const settled = page.locator(".browser-host-card").first();

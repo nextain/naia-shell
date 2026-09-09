@@ -246,16 +246,46 @@ export function detectPlatform(userAgent: string): EgoPlatform {
 // ── 조립 ──────────────────────────────────────────────────────────────────────
 
 /**
- * 감독자를 실제로 띄우는 쪽(node)으로 가는 다리.
+ * 감독자를 실제로 띄우는 쪽(node)으로 가는 다리 (S6c).
  *
- * ⚠️ 셸 웹뷰에는 node 가 없다. 코어의 기본 로더는 `packages/ego-host/src/host-api.mjs` 를
- *    동적 import 하므로 웹뷰에서는 실패하고, 그 실패는 **형식 있는 거부 사유로 그대로** 뇌에
- *    올라간다(조용한 성공이 아니다). 다리를 놓는 일은 이 슬라이스 밖이며, 그때까지는
- *    `globalThis.__NAIA_EGO_HOST_API__` 로 주입된 구현이 있으면 그것을 쓴다 —
- *    계약 테스트(node)와 Playwright e2e(브라우저)가 같은 자리를 쓴다.
+ * 셸 웹뷰에는 node 가 없다. 코어의 기본 로더는 `packages/ego-host/src/host-api.mjs` 를
+ * 동적 import 하므로 웹뷰에서는 늘 실패했고, 그것이 S6a·S6b 가 남긴 구멍이었다 —
+ * 테스트가 초록이어도 사용자는 도구를 쓸 수 없었다. 이제 그 자리에 **Tauri IPC 구현**을
+ * 꽂는다(`ego-browser-env-ipc.ts`): 웹뷰 → Rust → `bin/supervisord.mjs` → 감독자 → Chromium.
+ *
+ * `globalThis.__NAIA_EGO_HOST_API__` 는 그대로 둔다. 계약 테스트(node)와 개발용 주입이
+ * 쓰는 자리이며, 주입이 있으면 그것이 이긴다.
  */
 function injectedHostApi(): unknown {
 	return (globalThis as { __NAIA_EGO_HOST_API__?: unknown }).__NAIA_EGO_HOST_API__;
+}
+
+/**
+ * 이 조립이 실제로 어느 감독자 면을 쓰는가. 테스트가 이 값을 읽어 **프로덕션 번들에서
+ * 대역이 아니라 IPC 다리가 쓰이는지**를 확인한다 — 그 확인이 없으면 대역만 통과한 초록을
+ * "사용자가 쓸 수 있다" 로 읽게 된다.
+ */
+export type BrowserHostApiSource = "injected-ports" | "injected-api" | "ipc" | "none";
+
+/**
+ * 이 웹뷰에 Tauri IPC 다리가 있는가. `ego-browser-env-ipc.ts` 를 정적으로 물지 않으려고
+ * 여기서 본다 — 그 모듈을 물면 미룬 import 의 뜻이 사라진다.
+ */
+function hasTauriIpc(): boolean {
+	const scope = globalThis as {
+		__TAURI_INTERNALS__?: { invoke?: unknown };
+		__TAURI__?: { core?: { invoke?: unknown } };
+	};
+	return (
+		typeof scope.__TAURI_INTERNALS__?.invoke === "function" ||
+		typeof scope.__TAURI__?.core?.invoke === "function"
+	);
+}
+
+let lastApiSource: BrowserHostApiSource = "none";
+
+export function browserHostApiSource(): BrowserHostApiSource {
+	return lastApiSource;
 }
 
 /**
@@ -314,6 +344,7 @@ export function browserHostWiring(options: BrowserHostWiringOptions = {}): Envir
 	const flag = browserHostFlag(options.flag ?? { env: viteEnv(), config: loadConfig() });
 	const ports = injectedPorts();
 	if (ports) {
+		lastApiSource = "injected-ports";
 		wiring = {
 			service: new EnvironmentToolService(
 				ports.browser,
@@ -330,12 +361,23 @@ export function browserHostWiring(options: BrowserHostWiringOptions = {}): Envir
 		return wiring;
 	}
 	const api = injectedHostApi();
+	// 주입 > IPC 다리 > 없음. 다리가 없는 자리(vitest·순수 브라우저)에서는 코어의 기본
+	// 로더가 형식 있는 거부로 끝난다 — 조용한 성공으로 바꾸지 않는다.
+	//
+	// IPC 구현은 **미룬 import** 다. 브라우저 도구를 한 번도 안 쓰는 사용자의 첫 화면에
+	// 다리 코드가 실릴 이유가 없다(진입 번들 예산, `scripts/check-bundle-budget.mjs`).
+	const loadApi = api
+		? async () => api as never
+		: hasTauriIpc()
+			? () => import("./ego-browser-env-ipc").then((module) => module.ipcEgoHostApi() as never)
+			: undefined;
+	lastApiSource = api ? "injected-api" : loadApi ? "ipc" : "none";
 	wiring = makeEnvironmentToolService({
 		adkDir,
 		platform,
 		grantedTiers: options.grantedTiers ?? ALL_TIERS,
 		...(flag !== undefined ? { egoHostFlag: flag } : {}),
-		...(api ? { loadApi: async () => api as never } : {}),
+		...(loadApi ? { loadApi } : {}),
 	});
 	wiringAdkDir = adkDir;
 	return wiring;
@@ -649,6 +691,27 @@ export function liveBrowserHostDeps(toolCallId: string): BrowserHostDeps {
 		rememberWorkspace: setBrowserHostWorkspaceId,
 	};
 }
+
+/**
+ * e2e-tauri 이음매 — 뇌를 거치지 않고 도구 호출 하나를 **실 경로**로 트리거한다 (S6c).
+ *
+ * 왜 두는가: 풀스택 실기의 질문은 "실 Tauri 앱에서 도구가 실 Chromium 증거를 돌려주는가" 다.
+ * 그 질문에 답하려면 도구 호출 하나가 필요한데, 실기에서 뇌를 부르면 LLM 이 그 도구를 고를
+ * 때까지 기다려야 하고 그 선택은 결정적이지 않다. 그래서 **ChatArea 가 부르는 그 함수를**
+ * 같은 인자로 부르는 문을 하나 낸다.
+ *
+ * 대역이 아니다. 서비스·등급표·승인 장부·감독자·Chromium 이 전부 실물이며, 승인 장부는
+ * 여기서 채우지 않으므로 승인 없는 `env_browser_script` 는 이 문으로도 거부된다.
+ *
+ * 권한이 늘지 않는다: 웹뷰에서 도는 코드는 이미 `invoke("ego_host_*")` 로 감독자에 직접
+ * 닿을 수 있다. 이 문은 그보다 **좁은** 길이다 — 반드시 서비스의 판정을 지난다.
+ */
+(globalThis as { __NAIA_BROWSER_HOST_CALL__?: unknown }).__NAIA_BROWSER_HOST_CALL__ = (
+	toolName: string,
+	args: Record<string, unknown>,
+	toolCallId: string,
+): Promise<BrowserHostResult> =>
+	executeBrowserHostSkill(toolName, args ?? {}, liveBrowserHostDeps(toolCallId));
 
 /**
  * 등록할 도구 목록. 꺼져 있으면 **빈 목록**이다 — 호출자는 빈 목록이면 등록하지 않는다.

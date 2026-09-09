@@ -307,3 +307,5 @@ export { ALL_TIERS } from "../domain/capability.js";
 export type { CapabilityTier } from "../domain/capability.js";
 export { createEgoBrowserEnvironment, unsupportedBrowserPorts } from "../adapters/ego-browser-env.js";
 export type { EgoBrowserEnvOptions, EgoPlatform, EgoSwitchReport } from "../adapters/ego-browser-env.js";
+// #582 S6c: 셸이 감독자 모듈 자리에 IPC 구현을 꽂으려면 그 면의 타입이 필요하다.
+export type { EgoGrant, EgoHostApi } from "../adapters/ego-browser-env.js";

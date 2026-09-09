@@ -280,7 +280,12 @@ interface EgoSupervisorHandle {
   readonly socketPath: string;
   readonly browserPid: number;
   readonly server: {
-    issueToken(options: { operationId?: string; workspaceId?: string | null; grant?: EgoGrant | null }): string;
+    /**
+     * 토큰 하나. **동기일 수도 비동기일 수도 있다.** 감독자가 이 프로세스 안에 있으면
+     * 문자열이 곧바로 나오고(S3a 계약 테스트), 웹뷰에서 Tauri 명령을 지나면 Promise 다(S6c).
+     * 호출부는 언제나 `await` 한다 — 문자열을 await 해도 같은 문자열이다.
+     */
+    issueToken(options: { operationId?: string; workspaceId?: string | null; grant?: EgoGrant | null }): string | Promise<string>;
     operations: EgoOperationsLedger;
   };
   readonly browser: { on(event: "exit", handler: () => void): void };
@@ -291,10 +296,11 @@ export interface EgoHostApi {
   startSupervisor(options: Record<string, unknown>): Promise<EgoSupervisorHandle>;
   connectSupervisor(options: Record<string, unknown>): Promise<EgoClient>;
   reconcileLease(options: Record<string, unknown>): Promise<{ status: string; orphans: number; note: string }>;
-  ensureDirs(dirs: readonly string[]): void;
+  /** 자리를 만든다. IPC 를 지나는 조립에서는 비동기다(S6c). */
+  ensureDirs(dirs: readonly string[]): void | Promise<void>;
   pidAlive(pid: number): boolean;
   waitForPidExit(pid: number, timeoutMs?: number, stepMs?: number): Promise<boolean>;
-  writeEnvFiles(files: readonly { path: string; values: Record<string, string> }[]): readonly string[];
+  writeEnvFiles(files: readonly { path: string; values: Record<string, string> }[]): readonly string[] | Promise<readonly string[]>;
   runEgoScript(options: Record<string, unknown>): Promise<{ status: number | null; stdout: string; stderr: string; timedOut: boolean }>;
   readonly DEFAULT_SDK_DIR: string;
 }
@@ -458,7 +464,7 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     if (this.starting) return this.starting;
     const starting = (async (): Promise<EgoSupervisorHandle> => {
       const api = await this.loadApi();
-      api.ensureDirs([this.paths.egoHostDir, this.paths.evidenceDir, this.paths.agentWorkspace, this.paths.learnings]);
+      await api.ensureDirs([this.paths.egoHostDir, this.paths.evidenceDir, this.paths.agentWorkspace, this.paths.learnings]);
       const supervisor = await api.startSupervisor({
         adkDir: this.adkDir,
         platform: this.platform,
@@ -520,7 +526,7 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     const supervisor = await this.ensureSupervisor();
     const api = await this.loadApi();
     const grant = grantFor(rpc, request);
-    const token = supervisor.server.issueToken({
+    const token = await supervisor.server.issueToken({
       operationId: request.operationId,
       workspaceId: request.workspaceId,
       grant,
@@ -773,7 +779,7 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     const supervisor = await this.ensureSupervisor();
     const api = await this.loadApi();
     const grant = grantFor("script", request);
-    const token = supervisor.server.issueToken({
+    const token = await supervisor.server.issueToken({
       operationId: request.operationId,
       workspaceId: request.workspaceId,
       grant,
@@ -795,8 +801,8 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     // `<SDK REPO_ROOT>/.env` 는 이 기계의 모든 ADK 가 공유하는 자리라, 거기에 ADK 별 경로를
     // 적으면 마지막에 쓴 ADK 가 다른 ADK 의 기본값이 된다. 실측으로 확인한 사실이다 —
     // 한 번 그렇게 적었더니 그 뒤의 모든 벤더 실행이 남의 작업 id 를 물고 돌았다(S3a).
-    api.ensureDirs([this.paths.agentWorkspace, this.paths.learnings, this.paths.evidenceDir]);
-    api.writeEnvFiles([{ path: joinPath(this.platform, this.paths.agentWorkspace, ".env"), values: envFileValues(env) }]);
+    await api.ensureDirs([this.paths.agentWorkspace, this.paths.learnings, this.paths.evidenceDir]);
+    await api.writeEnvFiles([{ path: joinPath(this.platform, this.paths.agentWorkspace, ".env"), values: envFileValues(env) }]);
     const run = await api.runEgoScript({ code, env, timeoutMs: request.timeoutMs, ...(signal ? { signal } : {}) });
     if (run.timedOut) throw new EnvOperationFailure("timeout", `묶음 실행이 ${request.timeoutMs}ms 를 넘겼다`);
     if (run.status !== 0) {

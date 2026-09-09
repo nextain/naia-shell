@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
@@ -422,10 +422,20 @@ async fn ensure_daemon(adk_dir: &str, resource_dir: Option<PathBuf>) -> Result<V
         .stdout
         .take()
         .ok_or_else(|| "감독자 데몬의 stdout 을 잡지 못했다".to_string())?;
+    // 데몬의 stderr 는 로그로도 가고 **여기 버퍼에도** 쌓인다. 기동 실패의 이유가 그 안에
+    // 있는데 로그 파일에만 두면, 웹뷰가 받는 것은 "준비되지 않았다" 한 줄뿐이다.
+    let diagnostics: Arc<StdMutex<String>> = Arc::new(StdMutex::new(String::new()));
     if let Some(stderr) = child.stderr.take() {
+        let sink = diagnostics.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                 crate::log_both(&format!("[Naia] ego-host daemon: {line}"));
+                if let Ok(mut buffer) = sink.lock() {
+                    if buffer.len() < 4096 {
+                        buffer.push_str(&line);
+                        buffer.push('\n');
+                    }
+                }
             }
         });
     }
@@ -451,10 +461,31 @@ async fn ensure_daemon(adk_dir: &str, resource_dir: Option<PathBuf>) -> Result<V
 
     let ready_line = match ready_line {
         Ok(line) => line,
-        Err(_) => {
+        Err(reason) => {
+            // 상한 초과와 "그 전에 죽었다"는 다른 사실이다. 뭉치면 원인을 못 짚는다.
+            let cause = match reason {
+                std::sync::mpsc::RecvTimeoutError::Timeout => {
+                    format!("{READY_TIMEOUT_MS}ms 안에 준비 줄이 오지 않았다")
+                }
+                std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                    "준비 줄 없이 stdout 이 닫혔다(데몬이 그 전에 죽었다)".to_string()
+                }
+            };
+            let status = child
+                .try_wait()
+                .ok()
+                .flatten()
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "아직 살아 있다".to_string());
+            let noise = diagnostics
+                .lock()
+                .map(|buffer| buffer.clone())
+                .unwrap_or_default();
             let _ = child.kill();
             return Err(format!(
-                "감독자 데몬이 {READY_TIMEOUT_MS}ms 안에 준비되지 않았다"
+                "감독자 데몬이 서지 못했다: {cause} (node={}, 진입점={}, 종료={status})\n{noise}",
+                node.display(),
+                entry.display()
             ));
         }
     };

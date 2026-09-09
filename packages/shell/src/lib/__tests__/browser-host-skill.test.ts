@@ -30,6 +30,9 @@ import {
 	elementTarget,
 	executeBrowserHostSkill,
 	isBrowserHostTool,
+	browserHostApiSource,
+	browserHostWiring,
+	resetBrowserHostWiring,
 	type BrowserHostDeps,
 } from "../browser-host-skill";
 
@@ -356,5 +359,56 @@ describe("#582 S6a 조작 대상 (FR-ENV-TOOL.3)", () => {
 		);
 		expect(result.ok).toBe(true);
 		expect(result.card.notes?.join(" ")).toMatch(/좌표 조작 사용/);
+	});
+});
+
+/**
+ * #582 S6c — 조립이 실제로 어느 감독자 면을 무는가.
+ *
+ * 이것이 없으면 "대역만 통과한 초록"을 사용자가 쓸 수 있다로 읽게 된다. S6a 의 Playwright 는
+ * 어댑터 아래를 대역으로 바꾸고, 그 대역은 `import.meta.env.DEV` 에서만 읽힌다. 프로덕션
+ * 번들에서 실제로 쓰이는 것은 **Tauri IPC 다리**여야 한다.
+ */
+describe("조립이 무는 감독자 면 (S6c)", () => {
+	const scope = globalThis as {
+		__TAURI_INTERNALS__?: { invoke?: unknown };
+		__NAIA_EGO_HOST_API__?: unknown;
+	};
+
+	function clean(): void {
+		resetBrowserHostWiring();
+		scope.__TAURI_INTERNALS__ = undefined;
+		scope.__NAIA_EGO_HOST_API__ = undefined;
+	}
+
+	const options = {
+		adkDir: "/adk",
+		platform: "linux" as const,
+		flag: { env: { NAIA_EGO_HOST: "1" }, config: null },
+	};
+
+	it("Tauri 다리가 있으면 IPC 구현을 문다 — 프로덕션 경로", () => {
+		clean();
+		scope.__TAURI_INTERNALS__ = { invoke: () => Promise.resolve(null) };
+		const wiring = browserHostWiring(options);
+		expect(wiring.enabled).toBe(true);
+		expect(browserHostApiSource()).toBe("ipc");
+		clean();
+	});
+
+	it("주입된 구현이 있으면 그것이 이긴다 — 계약 테스트·개발 자리", () => {
+		clean();
+		scope.__TAURI_INTERNALS__ = { invoke: () => Promise.resolve(null) };
+		scope.__NAIA_EGO_HOST_API__ = { startSupervisor: () => Promise.resolve({}) };
+		browserHostWiring(options);
+		expect(browserHostApiSource()).toBe("injected-api");
+		clean();
+	});
+
+	it("다리도 주입도 없으면 아무것도 물지 않는다 — 조용한 성공을 만들지 않는다", () => {
+		clean();
+		browserHostWiring(options);
+		expect(browserHostApiSource()).toBe("none");
+		clean();
 	});
 });

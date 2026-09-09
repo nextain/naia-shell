@@ -46,6 +46,12 @@
 	},
 	"bundle": {
 		"active": true,
+		"resources": {
+			"../../ego-host/package.json": "ego-host/package.json",
+			"../../ego-host/bin/": "ego-host/bin/",
+			"../../ego-host/src/": "ego-host/src/",
+			"../../ego-host/vendor/ego-lite/package/ego-browser/dist/": "ego-host/vendor/ego-lite/package/ego-browser/dist/"
+		},
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
