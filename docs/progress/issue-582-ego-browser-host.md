@@ -1,6 +1,6 @@
 # #582 에이전트 브라우저 호스트 — ego-lite 공개 런타임 벤더링과 #499 실제 어댑터
 
-작성 2026-09-09. 상태: 설계 5판(Codex 4차 조건부 승인의 착수 전 조건 반영. S0 진행 중, S2 착수 가능). 부모 #499, 조사 출처 #553, 형제 #583(QA 시간·포커스 원인).
+작성 2026-09-09. 상태: 설계 5판(Codex 4차 조건부 승인의 착수 전 조건 반영, 루크 지시로 세 OS 지원 추가). S0 완료, S2a 진행 중. 부모 #499, 조사 출처 #553, 형제 #583(QA 시간·포커스 원인).
 역할: 분석·설계·사후 리뷰 Fable, 계획 적대 리뷰 Codex, 구현·실행 Opus.
 
 ## 1. 한 줄 요약
@@ -38,6 +38,7 @@ ego-lite 가 말하는 "2.5배 빠름"은 에이전트가 도구를 한 번씩 �
 3. **Chromium 의 장기 소유자는 셸 코어가 소유한 감독자 하나다.** heredoc 마다 뜨는 CLI 는 소켓 클라이언트다. 취소·정리·장부는 감독자가 든다.
 4. **진입점은 둘이고 권한 등급이 다르다.** 형식 있는 도구(`env_browser_*`)는 효과가 고정된 RPC 만 부르며 관측·워크스페이스 내부 변경 등급에서 돈다. 임의 자바스크립트 heredoc(`env_browser_script`)은 터미널 실행과 같은 등급으로 승인·샌드박스·경계를 적용하고, 승인 결과(grant)를 소켓 핸드셰이크로 감독자에 전달한다. 낮은 등급 도구가 임의 JS 로 승격되는 경로는 없다.
 5. **관문 순서를 지킨다.** UC(P01)·테스트 매핑(P02)·요구사항(P03)을 코드보다 먼저 쓴다(9절 S-1).
+6. **세 OS 모두 지원한다(루크 지시, 2026-09-09).** 리눅스·윈도우·macOS 에서 감독자·런처·어댑터가 같은 코드로 돌아야 한다. OS 의존 코드는 런처(브라우저 탐색·프로세스 확인)와 소켓 경로 함수 두 곳에만 둔다. 실측은 기기가 있는 OS 에서만 가능하므로, OS 별 게이트와 기능 플래그 기본값을 4.9 의 행렬로 분리한다.
 
 ## 4. 아키텍처
 
@@ -167,6 +168,21 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 - Reset·재시작·종료 경로에서 셸(Rust)의 소유 런타임 정리 목록에 감독자를 넣는다(S6b). 검증은 `test:e2e:tauri` 로 셸→IPC→Rust→감독자→Chromium 전체를 돈다.
 - CLI 가 heredoc 도중 죽으면 감독자는 그 연결의 세션·가로채기·스트림을 정리하고 작업을 `failed(process-exit)` 로 기록한다. 작업 공간과 탭은 유지되어 다음 heredoc 이 같은 공간에 재접속한다.
 
+### 4.9 OS 행렬
+
+| 항목 | 리눅스 | 윈도우 | macOS |
+|---|---|---|---|
+| 브라우저 후보 탐색 순서 | Playwright chromium(`~/.cache/ms-playwright`), `chromium`, `google-chrome`, Flatpak Chrome(감지만) | Playwright chromium, `msedge`(`%ProgramFiles(x86)%\Microsoft\Edge`), `chrome`(`%ProgramFiles%\Google\Chrome`), 레지스트리 App Paths | Playwright chromium, `/Applications/Google Chrome.app`, `/Applications/Microsoft Edge.app`, `/Applications/Chromium.app` |
+| 헤드리스 인자 | `--headless=new` | 동일 | 동일 |
+| CDP 전송 | `--remote-debugging-pipe`(fd 3·4) | 동일(HANDLE 상속 규율, 실측 전 추측) | 동일 |
+| 감독자 소켓 | unix 소켓(짧은 런타임 디렉터리, 108 바이트 제한) | named pipe `\\.\pipe\naia-ego-host-<adk-hash>` | unix 소켓(104 바이트 제한) |
+| 프로세스 확인·회수 | `/proc/<pid>` + marker | `tasklist`/WMI 대신 Node `process.kill(pid, 0)` + marker 파일 | `ps -p` + marker |
+| 무간섭 검증 | Xvfb + xdotool 필수 | 활성 창 API(PowerShell `GetForegroundWindow`) | `osascript` 로 frontmost 앱 |
+| 실측 기기 | linux3090(이 세션) | windows4060(별도 게이트) | 없음(별도 게이트, 기기 확보 전 미실측) |
+| 기능 플래그 기본값 | 실측 통과 후 켬 | 실측 통과 전 끔 | 실측 통과 전 끔 |
+
+OS 별 게이트는 같은 테스트 묶음(격리·무간섭·취소·lease·적합성)을 그 OS 에서 종료 코드 0 으로 돌리는 것이다. 통과하지 않은 OS 에서는 기능 플래그가 꺼진 채 배포되고, 그 사실을 requirements 상태에 OS 별로 적는다. 단위 수준(소켓 경로·후보 경로·인자 조립)은 플랫폼 값을 주입해 세 OS 를 이 머신에서 검증한다.
+
 ## 5. 워크스페이스·설치 앱·브라우저의 공통 추상화 검토
 
 루크의 가설은 "세 가지가 같은 방식의 계층이 아닐까"였다. 코드로 확인한 결과는 다음과 같다.
@@ -202,7 +218,7 @@ P01~P03 은 코드보다 먼저 쓴다(S-1). 기존 FR-ENV-TOOL.2·6·9 는 In-p
 |---|---|---|
 | P01 UC | `docs/user-scenarios.md`, `02.user-scenarios/INDEX.md` | UC-ENV-TOOL-BROWSE·CANCEL 재개. 신규 **UC-ENV-TOOL-SPACE** "에이전트는 자기 공간에서만 일한다"(비로그인 격리, 사람의 창과 포커스 불변, 로그인·captcha 가 필요하면 멈추고 보고). 신규 **UC-ENV-TOOL-RECOVER** "셸이 죽어도 브라우저가 남지 않는다". 신규 **UC-ENV-TOOL-SCRIPT** "묶음 실행은 승인이 먼저다"(heredoc 은 터미널 등급 승인). |
 | P02 테스트 매핑 | Test Coverage Map | 9절의 검증 항목을 UC 별로 표에 추가 |
-| P03 요구사항 | `docs/requirements.md`, `01.requirements/INDEX.md`, `04.features/INDEX.md` | **FR-ENV-TOOL.2 를 .2a(지원: 컨텍스트·페이지·스냅샷·안정 참조·이동·평가·캡처·닫기)와 .2b(보류: 다운로드·이벤트 스트림)로 분리**하고 .2b 는 Pending 으로 정직하게 남긴다. **.6** 캡처 필수 증거 재개방. **.9** 실제 deadline·재연결·취소 훅 재개방. **FR-ENV-TOOL.10** 브라우저 작업 공간 자원의 격리와 소유권(브라우저 한정, 헤드리스 전이 표). **.11** 무간섭(헤드리스, 활성 창 불변, 세 겹 검증). **.12** 사이트 학습 형식. **.13** 기존 `skill_browser_*` 와 새 `env_browser_*` 의 이름·권한·증거 분리와 기능 플래그. **.14** 두 진입점의 권한 등급(형식 RPC 대 heredoc). **NFR-ENV-TOOL-VENDOR.1** 벤더 무수정·매니페스트 검사·스킬 파생 diff. **NFR-ENV-TOOL-ABI.1** 실행 ABI 문서와 전송 실패 모드 적합성 테스트. |
+| P03 요구사항 | `docs/requirements.md`, `01.requirements/INDEX.md`, `04.features/INDEX.md` | **FR-ENV-TOOL.2 를 .2a(지원: 컨텍스트·페이지·스냅샷·안정 참조·이동·평가·캡처·닫기)와 .2b(보류: 다운로드·이벤트 스트림)로 분리**하고 .2b 는 Pending 으로 정직하게 남긴다. **.6** 캡처 필수 증거 재개방. **.9** 실제 deadline·재연결·취소 훅 재개방. **FR-ENV-TOOL.10** 브라우저 작업 공간 자원의 격리와 소유권(브라우저 한정, 헤드리스 전이 표). **.11** 무간섭(헤드리스, 활성 창 불변, 세 겹 검증). **.12** 사이트 학습 형식. **.13** 기존 `skill_browser_*` 와 새 `env_browser_*` 의 이름·권한·증거 분리와 기능 플래그. **.14** 두 진입점의 권한 등급(형식 RPC 대 heredoc). **NFR-ENV-TOOL-VENDOR.1** 벤더 무수정·매니페스트 검사·스킬 파생 diff. **NFR-ENV-TOOL-ABI.1** 실행 ABI 문서와 전송 실패 모드 적합성 테스트. **NFR-ENV-TOOL-OS.1** 리눅스·윈도우·macOS 동일 코드, OS 의존은 런처·소켓 경로에만, OS 별 게이트와 플래그 기본값. |
 | P04 테스트 | 9절 | 실브라우저 테스트는 리눅스 필수 게이트(Chromium·Xvfb·xdotool 부재 = RED). Windows 는 windows4060 별도 필수 게이트, 통과 전 기능 플래그 Windows 기본 끔. Rust 변경은 `test:e2e:tauri` 로 검증. |
 | P05 | requirements.md 상태, process-status.json | 커밋 전 |
 
@@ -238,7 +254,7 @@ P01~P03 은 코드보다 먼저 쓴다(S-1). 기존 FR-ENV-TOOL.2·6·9 는 In-p
 | **S0c 포트** | `BrowserWorkspacePort {create, list, close}`, `BrowserOperationPort {open, navigate, snapshot, click, fill, evaluate, screenshot, close}`, `CancellationPort.cancel` 이 포트까지 내려감, 서비스에 등급 고정 RPC 표. 대역 갱신 | `pnpm test` 0 |
 | **S1 벤더링** | 4.1·6 절대로. `vendor/ego-lite` 전체, UPSTREAM.md, MANIFEST.sha256, THIRD_PARTY_NOTICES.md, `sync-ego-lite.mjs`, `docs/ego-runtime-abi.md`(근거 줄 정정), 임의 디렉터리 설치 테스트 | `sync --check` 0, 벤더 `npm test` 0, 설치 테스트 0 |
 | **S2a RPC·CLI ABI** | 소켓 프레이밍·핸드셰이크·연결별 id 공간·이벤트 필터·유한 큐·14초 deadline, CLI `nodejs --sdk-path`. 가짜 CDP 백엔드로 전송 실패 모드 테스트(15초 경계, 동시 두 CLI 같은 id, 순서 보존, 이벤트 폭주, 단절, id 없는 오류의 영향 범위), worker·fork·cluster 에서 preload fail-closed, `sync --provenance`(고정 커밋 실체화 후 형식·모드·심링크·바이트·누락·추가 비교) | 0 |
-| **S2b 런처·lease** | `--remote-debugging-pipe` 런처(linux, win32 경로 탐색), lease 파일, 시작 조정. 실브라우저: 감독자 SIGKILL → Chromium 소멸, 조정 → 고아 0 | 0 |
+| **S2b 런처·lease** | `--remote-debugging-pipe` 런처(linux·win32·darwin 후보 탐색과 프로세스 확인, 4.9), lease 파일, 시작 조정. 세 OS 의 후보 경로·인자 조립을 플랫폼 주입 단위 테스트로. 실브라우저: 감독자 SIGKILL → Chromium 소멸, 조정 → 고아 0 | 0 |
 | **S2c 장부** | 작업 공간(격리 컨텍스트)·타깃·세션 장부, 연결별 선택 공간, 원자적 저장 | 0 |
 | **S2d 중계기** | 4.3.2 전수표를 데이터로, 기본 거부. 소스 스캔으로 뽑은 메서드가 정책표에 없으면 수집 단계 실패(미분류 0). 각 셀을 실브라우저에서 검증(거부 셀은 원래 id 오류 응답, 컨텍스트 강제 셀은 재작성 확인). 4.3.1 세션 경주표 전부 강제. 격리 행렬 negative | 0 |
 | **S2e 작업·스냅샷·캡처** | 작업별 세션, 취소 훅(4.7), deadline, 접근성 스냅샷, 캡처, 무간섭 세 겹 | 0 |

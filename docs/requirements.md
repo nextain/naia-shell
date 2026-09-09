@@ -964,6 +964,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-ENV-TOOL.15** | 감독자는 셸이 lease(nonce·marker·started-at·경로·PID)로 소유한다. Chromium 은 감독자가 파이프로 소유해 감독자가 죽으면 함께 종료된다. 시작 조정은 marker 가 일치하는 프로세스만 회수한다. ADK 전환은 이전 감독자 종료 뒤 새 lease 조정 순서를 지킨다. | UC-ENV-TOOL-RECOVER | `packages/ego-host/test/lease.test.mjs`·`src/test/env-tool-adk-switch.contract.test.ts`·e2e-tauri lifecycle | Pending |
 | **NFR-ENV-TOOL-VENDOR.1** | 벤더 런타임(`packages/ego-host/vendor/ego-lite`)은 고정 커밋과 바이트 단위로 같아야 하며 매니페스트 검사가 이를 강제한다. 벤더 파일을 편집하지 않는다. 스킬은 파생본이며 업스트림과의 차이를 `UPSTREAM-DIFF.md` 로 추적한다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/test/vendor-install.test.mjs` | In-progress |
 | **NFR-ENV-TOOL-ABI.1** | 벤더 런타임이 기대하는 실행 ABI 를 근거 줄과 함께 문서화하고, 실제 감독자 + 벤더 런타임 조합으로 각 행과 전송 실패 모드를 검증한다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/docs/ego-runtime-abi.md`·`packages/ego-host/test/conformance.test.mjs` | In-progress |
+| **NFR-ENV-TOOL-OS.1** | 감독자·런처·어댑터는 리눅스·윈도우·macOS 에서 같은 코드로 동작한다. OS 의존 코드는 브라우저 탐색·프로세스 확인(런처)과 소켓 경로 함수에만 둔다. OS 별 게이트(격리·무간섭·취소·lease·적합성 묶음을 그 OS 에서 종료 코드 0)를 통과하기 전에는 그 OS 에서 기능 플래그가 꺼진 채 배포된다. | UC-ENV-TOOL-SPACE | `packages/ego-host/test/*.test.mjs` 플랫폼 주입 단위 + OS 별 실측 게이트 | Pending |
 
 ## 기능 요구사항 (FR) — 이슈 리더와 코딩 작업자 오케스트레이션 (#500, 에픽 #497)
 
