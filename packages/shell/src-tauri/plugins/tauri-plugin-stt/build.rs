@@ -200,12 +200,16 @@ fn setup_vosk() {
             .and_then(|p| p.parent()) // src-tauri
             .unwrap()
             .to_path_buf();
-        let target_dir = src_tauri_dir.join("target");
-
-        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let bin_dir = target_dir.join(&profile);
-        // Create bin_dir if it doesn't exist yet (first build)
-        let _ = std::fs::create_dir_all(&bin_dir);
+        // OUT_DIR is target/<profile>/build/<package-hash>/out. Deriving the
+        // profile directory from it keeps custom CARGO_TARGET_DIR builds
+        // runnable; CARGO_MANIFEST_DIR/target is only the default target root.
+        let bin_dir = out_dir
+            .parent()
+            .and_then(|path| path.parent())
+            .and_then(|path| path.parent())
+            .map(PathBuf::from)
+            .expect("Cargo OUT_DIR does not have the expected target profile layout");
+        std::fs::create_dir_all(&bin_dir).expect("Failed to create Cargo target profile directory");
 
         // Also copy to resources/ for NSIS/MSI installer bundling
         let resources_dir = src_tauri_dir.join("resources");

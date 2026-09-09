@@ -1,0 +1,22 @@
+{
+  "kind": "session-contract-archival-receipt",
+  "archived_at_utc": "2026-09-07T15:15:08.824Z",
+  "source_commit": "72af137978196cd5c6ae220a7db34e0efb6c3b15",
+  "old_path": ".agents/session-contracts/issue-447-shell-bootstrap.json",
+  "archived_path": "quarantine/issue-447-shell-bootstrap.json",
+  "old_contract_id": "issue-447-shell-bootstrap",
+  "old_session_id": "01a0004a-f64e-73b0-82da-c1069dece3bd",
+  "old_contract_digest": "d89797255838a53415db996f019b165f9ea9446618ce43518a14bf7d1c56540f",
+  "old_file_sha256": "46b2d14ddf9f0f294f0505dd25d7749ad1715dd2397bfa0eb09b6d6b106711e8",
+  "archived_file_sha256": "46b2d14ddf9f0f294f0505dd25d7749ad1715dd2397bfa0eb09b6d6b106711e8",
+  "replacement_path": ".agents/session-contracts/issue-447-v017-launch-qa.json",
+  "replacement_contract_id": "issue-447-v017-launch-qa",
+  "replacement_contract_digest": "7804b4a9efcd09795286ef33794ca4ebee35db43a1e3a60eb1a04342dca09cfe",
+  "replacement_file_sha256": "4b8f89228a27ba7bd6653d51c7a370b69c3cdccaf952aad8c8db84ab7ea046f6",
+  "reason": "Superseded historical bootstrap; preserve byte-exact recovery. Replacement binding is not verified by this archival receipt.",
+  "active_binding_preserved": false,
+  "active_binding_status": "not_verified",
+  "binding_verification_reason": "Replacement contract path and digest are recorded for provenance, but this receipt does not independently establish a live session binding.",
+  "session_map_path": ".agents/session-contracts/.session-map.json",
+  "purge_performed": false
+}

@@ -1,0 +1,55 @@
+{
+  "issue": 581,
+  "baseline": "4c28fbb49e43c913c8ce7f3b87998cbbf63d0052",
+  "feature_commit": "3cc7237a5c52afc209d893aa5ee995e719b8ffaa",
+  "formal_clean": false,
+  "summary": "Integration against main 4c28fbb4: Slides and locale tests 91/91, Rust modules 33/33, browser scenarios 7/7, production builds and native cargo check passed. Full Shell: 1945 passed, 48 failed, 21 skipped; one additional suite load error. The same 48 failures and suite error reproduce on unchanged main. Core: 1513 passed, 54 failed, 17 skipped; identical 54 failures reproduce on unchanged main. No new failure in these comparisons. Real speech/recording, live converter cancellation/timeout and formal review eligibility remain outstanding; no installer or store release.",
+  "checks": [
+    {
+      "id": "integration-core-build",
+      "status": 0,
+      "log_sha256": "9097e650ecf82d2b3586a5df37c442af793c21fac8a215a931e9237bc08de937"
+    },
+    {
+      "id": "integration-bgm-build",
+      "status": 0,
+      "log_sha256": "9be06f15dad5f108bfc83254ff44baf97324e0c5c5578131a9dfddce62aec9a6"
+    },
+    {
+      "id": "integration-assembly",
+      "status": 0,
+      "log_sha256": "76bf9db8f86bc67ad1efc96d5255d10006dfae5837cd14b7bb3f5aaa0bd0a85f"
+    },
+    {
+      "id": "integration-rust-modules",
+      "status": 0,
+      "log_sha256": "97a94f624cb25d73278fa66a1926b4289bc31f7879c15055f859c5023103797d"
+    },
+    {
+      "id": "integration-native-check",
+      "status": 0,
+      "log_sha256": "d258f5c49faa6dd0d8d883e64b89a0f61b14a933e22580ce60d37b353b129f91"
+    },
+    {
+      "id": "integration-shell-build",
+      "status": 0,
+      "log_sha256": "dd4d1cae82edaf983043d9726ad681708c08b24e8b3ed236e837fa7eb0a7fcc6"
+    },
+    {
+      "id": "integration-slides-build",
+      "status": 0,
+      "log_sha256": "01efdc1f8f7ee262c9e1aef826ce7aab907e10b8f0e08f77177398a4a1b8be33"
+    },
+    {
+      "id": "integration-slides-browser",
+      "status": 0,
+      "log_sha256": "7f86d7e80f739b5ce20a8d800b2a198161e0b69c3945d694c459648f8b28500a"
+    },
+    {
+      "id": "integration-logging",
+      "status": 0,
+      "log_sha256": "cd69ce7b055a15955e4155c4b8a2af3ec5a521a80455de428f49e6c512de3d41"
+    }
+  ],
+  "independent_review": "Scoped integration reviews preserved installed PDF worker URL resolution and clipping, ADK relocation with canonical containment, command registration and ADK-switch bridge disposal. No unresolved finding in those bounded reviews."
+}

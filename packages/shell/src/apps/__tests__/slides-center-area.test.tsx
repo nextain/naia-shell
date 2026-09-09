@@ -85,7 +85,10 @@ vi.mock("react-pdf", async () => {
 vi.mock("react-pdf/dist/Page/AnnotationLayer.css", () => ({}));
 vi.mock("react-pdf/dist/Page/TextLayer.css", () => ({}));
 
-import { SlidesCenterArea } from "../slides/SlidesCenterArea";
+import {
+	SlidesCenterArea,
+	resolveSlidesPdfWorkerUrl,
+} from "../slides/SlidesCenterArea";
 
 class MockBridge implements NaiaContextBridge {
 	contexts: AppContext[] = [];
@@ -121,6 +124,47 @@ class MockBridge implements NaiaContextBridge {
 }
 
 describe("SlidesCenterArea", () => {
+	it("rebases the PDF worker under a Tauri asset app path", () => {
+		expect(
+			resolveSlidesPdfWorkerUrl("/assets/pdf.worker.min-hash.mjs", {
+				protocol: "asset:",
+				host: "localhost",
+				pathname:
+					"/%2Fvar%2Ftmp%2Fnaia-store-proof%2Fadk%2F.naia%2Fapps%2Fland.naia.slides%2Findex.html",
+			}),
+		).toBe(
+			"asset://localhost/%2Fvar%2Ftmp%2Fnaia-store-proof%2Fadk%2F.naia%2Fapps%2Fland.naia.slides%2Fassets%2Fpdf.worker.min-hash.mjs",
+		);
+	});
+
+	it("leaves ordinary browser worker URLs unchanged", () => {
+		const workerUrl = "/assets/pdf.worker.min-hash.mjs";
+		expect(
+			resolveSlidesPdfWorkerUrl(workerUrl, {
+				protocol: "http:",
+				host: "localhost:5173",
+				pathname: "/src/apps/slides/index.html",
+			}),
+		).toBe(workerUrl);
+	});
+
+	it("rebases Windows asset.localhost drive paths from either encoded form", () => {
+		const expected =
+			"http://asset.localhost/C%3A%5CUsers%5CLuke%5C.naia%5Capps%5Cland.naia.slides%5Cassets%5Cpdf.worker.min-hash.mjs";
+		for (const pathname of [
+			"/C%3A%5CUsers%5CLuke%5C.naia%5Capps%5Cland.naia.slides%5Cindex.html",
+			"/%2FC%3A%5CUsers%5CLuke%5C.naia%5Capps%5Cland.naia.slides%5Cindex.html",
+		]) {
+			expect(
+				resolveSlidesPdfWorkerUrl("/assets/pdf.worker.min-hash.mjs", {
+					protocol: "http:",
+					host: "asset.localhost",
+					pathname,
+				}),
+			).toBe(expected);
+		}
+	});
+
 	beforeEach(async () => {
 		picker.available = false;
 		picker.open.mockReset();

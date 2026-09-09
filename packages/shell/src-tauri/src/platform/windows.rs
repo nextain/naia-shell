@@ -1,28 +1,114 @@
 //! Windows platform implementations.
 
 use super::{PlatformHandle, PlatformWindowManager, WindowRect};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::Manager;
 
 /// Check if a process with the given PID is still running (Windows: OpenProcess + GetExitCodeProcess).
 pub(crate) fn is_pid_alive(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::CloseHandle;
+    if pid == 0 {
+        return false;
+    }
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER};
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess};
-    let handle = unsafe { OpenProcess(0x0400, 0, pid) }; // PROCESS_QUERY_INFORMATION
+    let handle = unsafe { OpenProcess(0x1000, 0, pid) }; // PROCESS_QUERY_LIMITED_INFORMATION
     if handle.is_null() {
-        return false; // OpenProcess returns NULL HANDLE on failure
+        // ERROR_INVALID_PARAMETER means the PID is gone.  ACCESS_DENIED and
+        // all other failures are deliberately treated as alive/unknown: an
+        // inaccessible owner must not become eligible for orphan cleanup.
+        return unsafe { GetLastError() != ERROR_INVALID_PARAMETER };
     }
     let mut exit_code: u32 = 0;
-    let alive = unsafe {
-        GetExitCodeProcess(handle, &mut exit_code) != 0 && exit_code == 259 // STILL_ACTIVE
-    };
+    let query_succeeded = unsafe { GetExitCodeProcess(handle, &mut exit_code) != 0 };
+    // A query failure leaves liveness unknown.  Treat it as alive so an
+    // inaccessible owner or child cannot become eligible for reaping.
+    let alive = !query_succeeded || exit_code == 259; // STILL_ACTIVE
     unsafe { CloseHandle(handle) };
     alive
 }
 
+/// Windows process start identity from the creation FILETIME.
+pub(crate) fn process_identity(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, OpenProcess};
+
+    let handle = unsafe { OpenProcess(0x1000, 0, pid) }; // PROCESS_QUERY_LIMITED_INFORMATION
+    if handle.is_null() {
+        return None;
+    }
+    let mut creation = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut exit = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut kernel = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let mut user = FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let ok = unsafe {
+        GetProcessTimes(
+            handle,
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        ) != 0
+    };
+    unsafe { CloseHandle(handle) };
+    ok.then(|| format!("{}:{}", creation.dwHighDateTime, creation.dwLowDateTime))
+}
+
+/// Replace a same-directory temporary file without exposing a partially
+/// written PID record to another Shell.
+pub(crate) fn replace_file_atomically(temporary: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let source: Vec<u16> = temporary
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let target: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x00000001;
+    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), MOVEFILE_REPLACE_EXISTING) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 /// Force-terminate a process by PID (Windows: TerminateProcess).
+pub(crate) fn terminate_pid(pid: u32) {
+    // Windows has no portable SIGTERM equivalent for an arbitrary process.
+    // Keep this first-stage operation targeted and revalidate the identity in
+    // the caller before invoking it.  Cascade's Job Object is escalated only
+    // after this bounded supervisor shutdown window.
+    kill_pid(pid);
+}
+
 pub(crate) fn kill_pid(pid: u32) {
+    if pid == 0 {
+        return;
+    }
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess};
     let handle = unsafe { OpenProcess(0x0001, 0, pid) }; // PROCESS_TERMINATE
@@ -32,6 +118,216 @@ pub(crate) fn kill_pid(pid: u32) {
             CloseHandle(handle);
         }
     }
+}
+
+#[cfg(windows)]
+pub(crate) struct CascadeOwnership {
+    job: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(windows)]
+unsafe impl Send for CascadeOwnership {}
+
+#[cfg(windows)]
+impl Drop for CascadeOwnership {
+    fn drop(&mut self) {
+        if !self.job.is_null() {
+            use windows_sys::Win32::Foundation::CloseHandle;
+            unsafe {
+                CloseHandle(self.job);
+            }
+            self.job = std::ptr::null_mut();
+        }
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn prepare_cascade_command(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    // Keep the supervisor suspended until claim_cascade_process has assigned
+    // it to the private Job Object.  This closes the window in which a loader
+    // could spawn an unowned descendant between CreateProcess and assignment.
+    const CREATE_SUSPENDED: u32 = 0x00000004;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    // `prepare_cascade_command` runs after `hide_console`; pass both flags so
+    // adding the suspended launch boundary does not re-enable a console.
+    cmd.creation_flags(CREATE_SUSPENDED | CREATE_NO_WINDOW);
+}
+
+#[cfg(windows)]
+pub(crate) fn claim_cascade_process(pid: u32) -> Result<CascadeOwnership, String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, THREADENTRY32,
+        TH32CS_SNAPTHREAD,
+    };
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+        JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, OpenThread, ResumeThread, IO_COUNTERS, THREAD_SUSPEND_RESUME,
+    };
+
+    if pid == 0 {
+        return Err("invalid Cascade process PID".to_string());
+    }
+    let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    if job.is_null() {
+        return Err(format!(
+            "CreateJobObjectW failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+
+    // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE is valid for the extended limit
+    // information class.  Using class 2 here silently fails on Windows.
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
+            PerProcessUserTimeLimit: 0,
+            PerJobUserTimeLimit: 0,
+            LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            MinimumWorkingSetSize: 0,
+            MaximumWorkingSetSize: 0,
+            ActiveProcessLimit: 0,
+            Affinity: 0,
+            PriorityClass: 0,
+            SchedulingClass: 0,
+        },
+        IoInfo: IO_COUNTERS {
+            ReadOperationCount: 0,
+            WriteOperationCount: 0,
+            OtherOperationCount: 0,
+            ReadTransferCount: 0,
+            WriteTransferCount: 0,
+            OtherTransferCount: 0,
+        },
+        ProcessMemoryLimit: 0,
+        JobMemoryLimit: 0,
+        PeakProcessMemoryUsed: 0,
+        PeakJobMemoryUsed: 0,
+    };
+    let configured = unsafe {
+        SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            (&mut limits as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        ) != 0
+    };
+    if !configured {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(format!("SetInformationJobObject failed: {error}"));
+    }
+
+    // PROCESS_SET_QUOTA | PROCESS_TERMINATE are the documented rights needed
+    // by AssignProcessToJobObject.  Refuse launch when either access or job
+    // assignment is unavailable instead of leaving an unowned process tree.
+    let process = unsafe { OpenProcess(0x0100 | 0x0001, 0, pid) };
+    if process.is_null() {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(format!("OpenProcess for Cascade Job Object failed: {error}"));
+    }
+    let assigned = unsafe { AssignProcessToJobObject(job, process) != 0 };
+    unsafe {
+        CloseHandle(process);
+    }
+    if !assigned {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(format!(
+            "AssignProcessToJobObject failed for Cascade supervisor: {error}"
+        ));
+    }
+
+    // CommandExt exposes the child process but not its primary thread handle.
+    // The suspended process has only its primary thread at this point, so a
+    // Toolhelp snapshot lets us resume exactly that thread after assignment.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            CloseHandle(job);
+        }
+        return Err(format!(
+            "CreateToolhelp32Snapshot for Cascade primary thread failed: {error}"
+        ));
+    }
+    let mut entry = THREADENTRY32 {
+        dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+        cntUsage: 0,
+        th32ThreadID: 0,
+        th32OwnerProcessID: 0,
+        tpBasePri: 0,
+        tpDeltaPri: 0,
+        dwFlags: 0,
+    };
+    let mut resumed = false;
+    let mut snapshot_ok = unsafe { Thread32First(snapshot, &mut entry) != 0 };
+    while snapshot_ok {
+        if entry.th32OwnerProcessID == pid {
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if !thread.is_null() {
+                let result = unsafe { ResumeThread(thread) };
+                unsafe {
+                    CloseHandle(thread);
+                }
+                if result != u32::MAX {
+                    resumed = true;
+                    break;
+                }
+            }
+        }
+        snapshot_ok = unsafe { Thread32Next(snapshot, &mut entry) != 0 };
+    }
+    unsafe {
+        CloseHandle(snapshot);
+    }
+    if !resumed {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            // Closing a configured Job Object with KILL_ON_JOB_CLOSE also
+            // tears down any descendant if resuming the primary thread fails.
+            CloseHandle(job);
+        }
+        return Err(format!(
+            "Could not resume Cascade supervisor after Job Object assignment: {error}"
+        ));
+    }
+
+    Ok(CascadeOwnership { job })
+}
+
+#[cfg(windows)]
+pub(crate) fn terminate_cascade(_ownership: Option<&CascadeOwnership>, pid: u32) {
+    // Give the supervisor a chance to run its own cleanup.  The retained Job
+    // Object is used by the bounded escalation below.
+    terminate_pid(pid);
+}
+
+#[cfg(windows)]
+pub(crate) fn kill_cascade(ownership: Option<&CascadeOwnership>, pid: u32) {
+    use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+
+    if let Some(ownership) = ownership {
+        let terminated = unsafe { TerminateJobObject(ownership.job, 1) != 0 };
+        if terminated {
+            return;
+        }
+    }
+    // This fallback is only for a legacy record or a failed Job Object claim;
+    // the caller has already revalidated the exact supervisor identity.
+    kill_pid(pid);
 }
 
 /// PID of the process listening on a local TCP port, if any (FR-BGM.13 #517).
@@ -131,27 +427,6 @@ pub(crate) fn find_agent_process_by_marker(marker: &str) -> Result<bool, String>
     Ok(false)
 }
 
-/// A PID alone is not a process identity: Windows can reuse it after a crash.
-/// Verify that a PID-file entry still belongs to the component before killing
-/// it, otherwise a stale cascade PID can terminate a newly started shell.
-fn pid_matches_component(pid: u32, component: &str) -> bool {
-    let command_pattern = match component {
-        "cascade" => "*loader*launch*",
-        "voxcpm2" => "*voxcpm2_tensorrt.http_server*",
-        "bgm-server" => "*bgm-server-bin.js*",
-        "node-host" => "*node*host*",
-        "gateway" => "*naia*gateway*",
-        _ => return false,
-    };
-    let script = format!(
-        "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}'; if ($null -ne $p -and $p.CommandLine -like '{command_pattern}') {{ exit 0 }}; exit 1"
-    );
-    let mut cmd = Command::new("powershell");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
-    hide_console(&mut cmd);
-    cmd.status().map(|status| status.success()).unwrap_or(false)
-}
-
 /// Suppress the visible console window that GUI-spawned processes would otherwise show.
 pub(crate) fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
@@ -167,86 +442,85 @@ pub(crate) fn find_bundled_node(app_handle: &tauri::AppHandle) -> Option<PathBuf
         .then(|| dunce::canonicalize(&candidate).unwrap_or(candidate))
 }
 
-/// Kill any stale gateway process from a previous session (Windows: wmic command-line match).
+/// Name-based orphan cleanup is intentionally disabled.  Only an exact,
+/// owner-dead PID record can authorize a process operation.
 pub(crate) fn kill_stale_gateway() {
-    // cleanup_orphan_processes() handles PID-file tracked processes.
-    // This covers any stragglers without a PID file.
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile", "-NonInteractive", "-Command",
-        "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*naia*gateway*' } | ForEach-Object { $_.Terminate() }",
-    ]);
-    hide_console(&mut cmd);
-    let _ = cmd.output();
+    crate::log_verbose("[Naia] Skipping global gateway process matching");
 }
 
-/// Kill stale cascade (output_cascade uvicorn + loader) from a previous session.
-///
-/// The cascade loader is PID-tracked (cleanup_orphan_processes "cascade"), but the
-/// facade uvicorn it spawns is a *grandchild* whose PID is NOT recorded. On Windows
-/// force-kill (taskkill / crash / dev timeout), the loader dies but the uvicorn
-/// survives → orphaned on port 8910 → next start hits EADDRINUSE → cascade tears down
-/// → avatar never shows (R2.2b). Match by command-line like kill_stale_gateway.
+/// Name-based Cascade cleanup is intentionally disabled.  A healthy Cascade
+/// can be shared by another Shell (FR-SHELL-ISO.1), and crash-grandchild
+/// cleanup remains a later Windows Job/process-group design task.
 pub(crate) fn kill_stale_cascade() {
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile", "-NonInteractive", "-Command",
-        // output_cascade facade (uvicorn ...output_cascade.app:app) + loader (python -m loader launch).
-        // The 4060 8GB profile uses naia-labs' int8 `tts_server.py` on :8901,
-        // not the legacy `voxcpm2_service`. Include it so a force-killed
-        // supervisor cannot leave GPU-backed TTS blocking the next profile start.
-        "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*output_cascade.app:app*' -or $_.CommandLine -like '*loader*launch*' -or $_.CommandLine -like '*trt_native_stream_server*' -or $_.CommandLine -like '*voxcpm2_service*' -or $_.CommandLine -like '*naia-labs*tts_server.py*' } | ForEach-Object { $_.Terminate() }",
-    ]);
-    hide_console(&mut cmd);
-    let _ = cmd.output();
+    crate::log_verbose("[Naia] Skipping global Cascade process matching");
 }
 
 /// Kill only the direct Windows VoxCPM2 service. Generic Cascade supervisors
 /// and remote WebSocket sessions are outside this lifecycle.
 pub(crate) fn kill_stale_voxcpm2() {
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*voxcpm2_tensorrt.http_server*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }",
-    ]);
-    hide_console(&mut cmd);
-    let _ = cmd.output();
+    crate::log_verbose("[Naia] Skipping global VoxCPM2 process matching");
 }
 
-/// Clean up orphan processes from a previous session (Windows: TerminateProcess).
+/// Clean up orphan processes from a previous session.  Windows has no
+/// portable SIGTERM for an arbitrary process, so both stages use the native
+/// targeted terminate operation after the same identity checks.  Job/process-
+/// group cleanup for crash grandchildren remains future work.
 pub(crate) fn cleanup_orphan_processes() {
-    // ★"cascade" 포함 — loader PID 를 추적. 단 uvicorn 손자(facade)는 PID 미기록이라
-    // kill_stale_cascade() 가 커맨드라인 매칭으로 잡는다(R2.2b, 8910 고아 → EADDRINUSE 방지).
     for component in &["gateway", "node-host", "bgm-server", "cascade", "voxcpm2"] {
-        if let Some(pid) = crate::read_pid_file(component) {
-            if is_pid_alive(pid) {
-                if !pid_matches_component(pid, component) {
-                    crate::log_verbose(&format!(
-                        "[Naia] Ignoring reused PID {} from stale {} PID file",
-                        pid, component
-                    ));
-                    crate::remove_pid_file(component);
-                    continue;
-                }
-                crate::log_verbose(&format!(
-                    "[Naia] Orphan {} found (PID {}) — terminating",
-                    component, pid
-                ));
-                let handle = unsafe {
-                    windows_sys::Win32::System::Threading::OpenProcess(0x0001, 0, pid)
-                    // PROCESS_TERMINATE
-                };
-                if !handle.is_null() {
-                    unsafe {
-                        windows_sys::Win32::System::Threading::TerminateProcess(handle, 1);
-                        windows_sys::Win32::Foundation::CloseHandle(handle);
-                    }
-                }
+        let _ = crate::with_process_record_lock(component, || {
+            let Some(record) = crate::read_process_record(component) else {
+                // Legacy bare PID files and malformed/unverifiable records
+                // authorize no process operation and remain for diagnostics.
+                return;
+            };
+            if !crate::process_record_owner_is_dead(&record)
+                || !crate::process_record_matches(component, &record)
+                // Re-read both identities after the record check and right
+                // before the first terminate; the PID may have been reused
+                // between the initial observation and this operation.
+                || !crate::process_record_can_be_reaped(&record)
+            {
+                return;
             }
-            crate::remove_pid_file(component);
-        }
+
+            let pid = record.child_pid;
+            crate::log_verbose(&format!(
+                "[Naia] Orphan {component} found (PID {pid}) — terminating"
+            ));
+            terminate_pid(pid);
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            // Revalidate owner and record before escalation.  Never escalate
+            // a PID that was reused meanwhile.  If the first terminate made
+            // the exact child disappear, remove only the still-matching
+            // record; an inaccessible/live PID remains protected.
+            if !crate::process_record_matches(component, &record)
+                || !crate::process_record_owner_is_dead(&record)
+            {
+                return;
+            }
+            if !crate::process_record_can_be_reaped(&record) {
+                if !is_pid_alive(pid)
+                    && !crate::process_record_child_is_exact(&record)
+                    && crate::process_record_matches(component, &record)
+                {
+                    let _ = crate::remove_process_record_if_matches_locked(component, &record);
+                }
+                return;
+            }
+            if is_pid_alive(pid) {
+                crate::log_verbose(&format!(
+                    "[Naia] Orphan {component} still alive (PID {pid}) — terminating again"
+                ));
+                kill_pid(pid);
+            }
+            if !is_pid_alive(pid)
+                && !crate::process_record_child_is_exact(&record)
+                && crate::process_record_matches(component, &record)
+            {
+                let _ = crate::remove_process_record_if_matches_locked(component, &record);
+            }
+        });
     }
 }
 

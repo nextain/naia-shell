@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process";
-import { execSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -7,17 +8,13 @@ import {
 	readdirSync,
 	rmSync,
 } from "node:fs";
-import { connect, createServer } from "node:net";
+import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { execPath } from "node:process";
 import { resolvePairedAgent } from "../scripts/agent-pairing.mjs";
 import { reclaimLeakedAgentChild as reclaimAgentChild } from "./agent-child-lease.js";
 import { reclaimSidecarForRuntimeDir } from "./bgm-sidecar-lease.mjs";
-import { applyHarnessXdg } from "./e2e-xdg.mjs";
-import { isCoverFailure, reportCover } from "./helpers/cover-probe.mjs";
-import { stopHarnessHerdrSession } from "./herdr-session.mjs";
-import { startNotifyWebhookStub } from "./notify-webhook-stub.mjs";
 import {
 	CREDENTIALED_KEY_ENV,
 	CREDENTIALED_MAIN_MODEL,
@@ -26,6 +23,10 @@ import {
 	credentialedSeedOptionsFromEnv,
 	seedCredentialedAdk,
 } from "./credentialed-adk-seed.js";
+import { applyHarnessXdg } from "./e2e-xdg.mjs";
+import { isCoverFailure, reportCover } from "./helpers/cover-probe.mjs";
+import { stopHarnessHerdrSession } from "./herdr-session.mjs";
+import { startNotifyWebhookStub } from "./notify-webhook-stub.mjs";
 
 // Enable debug logging for Tauri app — Rust logs all agent events to stderr + naia.log
 process.env.CAFE_DEBUG_E2E = "1";
@@ -62,11 +63,73 @@ loadEnvFile(resolve(import.meta.dirname, "../.env"));
 const IS_WINDOWS = process.platform === "win32";
 const EXE = IS_WINDOWS ? ".exe" : "";
 
-// #539(Windows): TIME_WAIT 페어가 최대 4분간 같은 포트의 Rust rebind 를 막는다.
-// 워커(runner 프로세스)마다 포트를 달리해 이전 실행·이전 세션과 절대 겹치지 않게 한다.
-// 아래 실행 자리(runtime dir)도 이 포트로 이름을 나눠, 동시에 도는 묶음끼리
-// 서로의 리스를 밟지 않게 한다 — 전용 설정 둘이 쓰는 규칙과 같다.
-const IN_APP_PORT = IS_WINDOWS ? 4450 + (process.pid % 37) : 4448;
+// Every runner gets an identity before it creates any child process. The identity
+// is inherited by Vite, the native app, and the agent so artifacts and cleanup can
+// be attributed to one run without matching unrelated process names.
+const E2E_RUN_ID = process.env.NAIA_E2E_RUN_ID?.trim() || randomUUID();
+if (E2E_RUN_ID.length > 64 || !/^[A-Za-z0-9_-]+$/.test(E2E_RUN_ID)) {
+	throw new Error(`Invalid NAIA_E2E_RUN_ID: ${E2E_RUN_ID}`);
+}
+process.env.NAIA_E2E_RUN_ID = E2E_RUN_ID;
+
+function hashRunId(value: string): number {
+	let hash = 2_166_136_261;
+	for (const char of value) {
+		hash ^= char.charCodeAt(0);
+		hash = Math.imul(hash, 16_777_619);
+	}
+	return hash >>> 0;
+}
+
+function parsePort(
+	raw: string | undefined,
+	fallback: number,
+	name: string,
+): number {
+	if (!raw?.trim()) return fallback;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value < 1024 || value > 65_535) {
+		throw new Error(`${name} must be a TCP port between 1024 and 65535`);
+	}
+	return value;
+}
+
+const RUN_HASH = hashRunId(E2E_RUN_ID);
+// Keep the WebDriver and Vite ranges separate so a generated pair cannot collide.
+const IN_APP_PORT = parsePort(
+	process.env.NAIA_E2E_WEBDRIVER_PORT,
+	45_000 + (RUN_HASH % 1_000),
+	"NAIA_E2E_WEBDRIVER_PORT",
+);
+const NATIVE_DRIVER_PORT = parsePort(
+	process.env.NAIA_E2E_NATIVE_DRIVER_PORT,
+	47_000 + (RUN_HASH % 1_000),
+	"NAIA_E2E_NATIVE_DRIVER_PORT",
+);
+const DEFAULT_VITE_PORT = 46_000 + ((RUN_HASH + 503) % 1_000);
+// The native app and its sidecars otherwise fall back to the product ports
+// (18791/18792). Derive one pair per runner and pass the same values to Rust,
+// Vite, and any inherited worker. Explicit values remain available for a
+// caller that has reserved ports before loading this config.
+const E2E_BGM_PORT = parsePort(
+	process.env.NAIA_BGM_PORT?.trim() || process.env.NAIA_E2E_BGM_PORT?.trim(),
+	18_000 + (RUN_HASH % 1_000),
+	"NAIA_BGM_PORT",
+);
+const E2E_OAUTH_CALLBACK_PORT = parsePort(
+	process.env.NAIA_OAUTH_CALLBACK_PORT?.trim() ||
+		process.env.NAIA_E2E_OAUTH_CALLBACK_PORT?.trim(),
+	19_000 + (RUN_HASH % 1_000),
+	"NAIA_OAUTH_CALLBACK_PORT",
+);
+process.env.NAIA_E2E_WEBDRIVER_PORT = String(IN_APP_PORT);
+process.env.NAIA_E2E_NATIVE_DRIVER_PORT = String(NATIVE_DRIVER_PORT);
+process.env.NAIA_BGM_PORT = String(E2E_BGM_PORT);
+process.env.NAIA_E2E_BGM_PORT = String(E2E_BGM_PORT);
+process.env.VITE_NAIA_BGM_BASE = `http://127.0.0.1:${E2E_BGM_PORT}`;
+process.env.NAIA_OAUTH_CALLBACK_PORT = String(E2E_OAUTH_CALLBACK_PORT);
+process.env.NAIA_E2E_OAUTH_CALLBACK_PORT = String(E2E_OAUTH_CALLBACK_PORT);
+process.env.VITE_NAIA_OAUTH_CALLBACK_URL = `http://127.0.0.1:${E2E_OAUTH_CALLBACK_PORT}/auth/callback`;
 
 // ── e2e 실행 자리 격리 ────────────────────────────────────────────────────────
 // Rust 는 CAFE_DEBUG_E2E=1 일 때 로그(lib.rs log_dir)와 실행 중 리스·PID(lib.rs
@@ -83,12 +146,24 @@ const IN_APP_PORT = IS_WINDOWS ? 4450 + (process.pid % 37) : 4448;
 // 자리는 **OS 임시 디렉터리 아래**다. 저장소 안에 두면 `git add` 에 딸려 들어가고
 // (실제로 그 사고가 있었다), 홈 아래에 두면 규칙 위반이 그대로다.
 const E2E_RUNTIME_PARENT = resolve(tmpdir());
-const E2E_RUNTIME_NAME = `naia-shell-e2e-${IN_APP_PORT}`;
+const E2E_RUNTIME_NAME = `naia-shell-e2e-${E2E_RUN_ID}`;
 const E2E_RUNTIME_DIR = resolve(E2E_RUNTIME_PARENT, E2E_RUNTIME_NAME);
 // 밖에서 이미 정해 넣었으면 그것이 정본이다 — 감싸는 러너가 자기 자리를 주는
 // 경우를 덮어쓰면, 그 러너는 자기가 정리할 곳이 아닌 데를 보게 된다.
 const OWNS_RUNTIME_DIR = !process.env.NAIA_E2E_RUNTIME_DIR?.trim();
 if (OWNS_RUNTIME_DIR) process.env.NAIA_E2E_RUNTIME_DIR = E2E_RUNTIME_DIR;
+const EFFECTIVE_RUNTIME_DIR = resolve(
+	process.env.NAIA_E2E_RUNTIME_DIR?.trim() || E2E_RUNTIME_DIR,
+);
+// NAIA_HOME is part of the Rust data-home boundary, so inheriting a user's
+// product home would still share config, leases, and logs between runners.
+// An explicit E2E home is caller-owned; otherwise each generated run gets one.
+const explicitE2eHome = process.env.NAIA_E2E_HOME?.trim();
+const E2E_HOME = explicitE2eHome
+	? resolve(explicitE2eHome)
+	: resolve(EFFECTIVE_RUNTIME_DIR, "home");
+process.env.NAIA_E2E_HOME = E2E_HOME;
+process.env.NAIA_HOME = E2E_HOME;
 // 자리는 여기서 만들지 않는다. import 만으로 디렉터리가 생기면 계약 테스트가
 // 파일시스템을 더럽힌다. 실제로 만드는 것은 onPrepare 와 Rust 의 create_dir_all.
 
@@ -97,6 +172,21 @@ if (OWNS_RUNTIME_DIR) process.env.NAIA_E2E_RUNTIME_DIR = E2E_RUNTIME_DIR;
 // 살아남는다 — 자세한 이유는 `e2e-xdg.mjs` 머리말. 값은 여기서 세우고 자리는
 // onPrepare 가 만든다.
 const HARNESS_XDG = applyHarnessXdg();
+const explicitProfileDir = process.env.NAIA_E2E_PROFILE_DIR?.trim();
+const E2E_PROFILE_DIR = explicitProfileDir
+	? resolve(explicitProfileDir)
+	: resolve(EFFECTIVE_RUNTIME_DIR, "profile");
+process.env.NAIA_E2E_PROFILE_DIR = E2E_PROFILE_DIR;
+if (IS_WINDOWS) {
+	const appDataRoot = process.env.NAIA_E2E_APPDATA?.trim()
+		? resolve(process.env.NAIA_E2E_APPDATA.trim())
+		: resolve(EFFECTIVE_RUNTIME_DIR, "appdata");
+	// Windows always supplies APPDATA/LOCALAPPDATA globally. Assign the private
+	// run paths explicitly; `??=` would silently keep the user's shared profile.
+	process.env.APPDATA = resolve(appDataRoot, "roaming");
+	process.env.LOCALAPPDATA = resolve(appDataRoot, "local");
+	process.env.WEBVIEW2_USER_DATA_FOLDER = E2E_PROFILE_DIR;
+}
 
 // ── 자격증명 등급의 살아 있는 기본 공급자 (#547) ──────────────────────────────
 // 에이전트는 셸이 실어 보내는 provider 를 gRPC 경계에서 버리고, 워크스페이스의
@@ -110,17 +200,19 @@ const HARNESS_XDG = applyHarnessXdg();
 //
 // 밖에서 이미 `NAIA_E2E_ADK_PATH` 를 준 경우(전용 설정, 감싸는 러너)에는 손대지
 // 않는다. 그쪽이 자기 워크스페이스의 주인이다.
-const SEEDED_ADK_PATH = resolve(
-	process.env.NAIA_E2E_RUNTIME_DIR ?? E2E_RUNTIME_DIR,
-	"adk",
-);
+const EXPLICIT_ADK_PATH = process.env.NAIA_E2E_ADK_PATH?.trim();
+const SEEDED_ADK_PATH = resolve(EFFECTIVE_RUNTIME_DIR, "adk");
 const SEEDS_CREDENTIALED_ADK =
-	!process.env.NAIA_E2E_ADK_PATH?.trim() && credentialedSeedAvailable();
-if (SEEDS_CREDENTIALED_ADK) {
+	!EXPLICIT_ADK_PATH && credentialedSeedAvailable();
+if (EXPLICIT_ADK_PATH) {
+	process.env.NAIA_E2E_ADK_PATH = EXPLICIT_ADK_PATH;
+} else {
+	// Even a credential-free smoke must get a private ADK path. Falling back to
+	// ~/.naia here makes two workers overwrite each other's config and leases.
 	process.env.NAIA_E2E_ADK_PATH = SEEDED_ADK_PATH;
-	// ensureAppReady 의 폴백(`NAIA_E2E_ADK_FIXTURE`, 기본값은 형제 naia-adk)이
-	// 격리와 어긋나면 화면만 다른 워크스페이스를 가리킨다.
-	process.env.NAIA_E2E_ADK_FIXTURE ??= SEEDED_ADK_PATH;
+	process.env.NAIA_E2E_ADK_FIXTURE = SEEDED_ADK_PATH;
+}
+if (SEEDS_CREDENTIALED_ADK) {
 	// 이 설정은 워커에서도 다시 읽히는데, 그때는 위 경로가 이미 환경에 있어
 	// `SEEDS_CREDENTIALED_ADK` 가 거짓이 된다. 그러면 스펙 앞에서 키를 실어 주는
 	// 대목이 통째로 건너뛰어지고, 실패는 401 이라는 엉뚱한 모습으로만 보인다
@@ -134,7 +226,7 @@ if (SEEDS_CREDENTIALED_ADK) {
 	// `shell_exec` 는 격리 실행 자리 아래(`allowRoots = adkPath`)로만 나간다.
 	process.env.NAIA_SHELL_TOOL = "1";
 	process.env.NAIA_E2E_NOTIFY_LOG = resolve(
-		process.env.NAIA_E2E_RUNTIME_DIR ?? E2E_RUNTIME_DIR,
+		EFFECTIVE_RUNTIME_DIR,
 		"notify-received.jsonl",
 	);
 }
@@ -231,7 +323,8 @@ const VITE_ENTRY = resolve(SHELL_DIR, "node_modules/vite/bin/vite.js");
  *    Tauri IPC 가 모든 호출을 "Origin header is not a valid URL" 로 거절한다 —
  *    실패가 스펙이 아니라 하네스에서 나므로 원인을 찾기 어렵다.
  */
-const E2E_DEV_URL = new URL(
+const configuredDevUrl = process.env.NAIA_E2E_DEV_URL?.trim();
+const staticDevUrl =
 	(
 		JSON.parse(
 			readFileSync(
@@ -239,51 +332,37 @@ const E2E_DEV_URL = new URL(
 				"utf8",
 			),
 		) as { build?: { devUrl?: string } }
-	).build?.devUrl ?? "http://127.0.0.1:1420",
-);
-const VITE_PORT = Number(E2E_DEV_URL.port || "1420");
-const VITE_HOST = E2E_DEV_URL.hostname;
-
-let tauriDriver: ChildProcess;
-let notifyStub: Awaited<ReturnType<typeof startNotifyWebhookStub>> | undefined;
-
-/** #539(Windows 인앱): 앱 트리를 강제 종료하고 4448 이 실제로 닫힐 때까지 기다린다.
- *  agent-core/node 자식이 소켓을 물고 늦게 죽어 10초 대기로는 모자라다. */
-async function forceFreeInAppPort(): Promise<void> {
-	try {
-		execSync("taskkill /F /T /IM naia-shell.exe", { stdio: "ignore" });
-	} catch {
-		// 살아 있는 인스턴스가 없으면 taskkill 이 비영으로 끝난다 — 정상.
-	}
-	for (let attempt = 0; attempt < 30; attempt++) {
-		const open = await new Promise<boolean>((done) => {
-			const socket = connect({ host: "127.0.0.1", port: 4448 }, () => {
-				socket.destroy();
-				done(true);
-			});
-			socket.once("error", () => done(false));
-			socket.setTimeout(500, () => {
-				socket.destroy();
-				done(false);
-			});
-		});
-		if (!open) return;
-		await new Promise((wait) => setTimeout(wait, 1_000));
-	}
-	throw new Error("in-app WebDriver port never freed");
+	).build?.devUrl ?? "http://127.0.0.1:1420";
+const requestedDevUrl = new URL(configuredDevUrl || staticDevUrl);
+const requestedHost = requestedDevUrl.hostname;
+if (!["127.0.0.1", "localhost", "[::1]"].includes(requestedHost)) {
+	throw new Error(`E2E devUrl must be loopback, got ${requestedDevUrl.href}`);
 }
-let viteServer: ChildProcess;
+const explicitVitePort = process.env.NAIA_E2E_VITE_PORT?.trim();
+const vitePort = parsePort(
+	explicitVitePort,
+	explicitVitePort
+		? Number(explicitVitePort)
+		: configuredDevUrl
+			? Number(requestedDevUrl.port || "1420")
+			: DEFAULT_VITE_PORT,
+	"NAIA_E2E_VITE_PORT",
+);
+const E2E_DEV_URL = new URL(`http://${requestedHost}:${vitePort}`);
+const VITE_PORT = vitePort;
+// URL.hostname retains brackets for IPv6 literals, while Vite expects the
+// unbracketed bind address. Keep the bracketed form only in the URL.
+const VITE_HOST = requestedHost === "[::1]" ? "::1" : requestedHost;
+process.env.NAIA_E2E_VITE_PORT = String(VITE_PORT);
+process.env.NAIA_E2E_DEV_URL = E2E_DEV_URL.href;
+
+let tauriDriver: ChildProcess | undefined;
+let notifyStub: Awaited<ReturnType<typeof startNotifyWebhookStub>> | undefined;
+let viteServer: ChildProcess | undefined;
 let permissionPoller: { dispose: () => void } | undefined;
 
 // ── Process cleanup helpers ───────────────────────────────────────────────────
 
-/**
- * Kill processes by image name.
- * Linux: `pkill [-9] -x <name>` (matches the executable name exactly).
- * Windows: `taskkill /F /IM <name>.exe` (matches against image name only).
- *
- * Always swallows errors — "no such process" is the common case.
- */
 /**
  * 앞선 실행이 흘린 agent 자식을 회수한다 (#541).
  *
@@ -333,88 +412,192 @@ function reclaimLeakedBgmSidecar(): boolean {
 	return outcome.reclaimed;
 }
 
-function killByName(name: string, force = false): void {
+/** Fail closed when a generated or explicitly requested run port is occupied. */
+function requirePortFree(port: number, host = "127.0.0.1"): Promise<void> {
+	return new Promise((resolvePort, rejectPort) => {
+		const socket = connect({ host, port });
+		const finish = (error?: Error) => {
+			socket.destroy();
+			if (error) rejectPort(error);
+			else resolvePort();
+		};
+		socket.once("connect", () =>
+			finish(new Error(`E2E port ${port} is already in use by another run`)),
+		);
+		socket.once("error", (error: NodeJS.ErrnoException) => {
+			if (error.code === "ECONNREFUSED") finish();
+			else finish(error);
+		});
+		socket.setTimeout(750, () =>
+			finish(new Error(`Timed out checking E2E port ${port}`)),
+		);
+	});
+}
+
+function childIsRunning(
+	child: ChildProcess | undefined,
+): child is ChildProcess {
+	// A failed spawn (for example ENOENT or a missing DLL on Windows) can return
+	// a ChildProcess object before it emits `error`, but it never owns a PID. Do
+	// not treat that object as a live process during cleanup.
+	return Boolean(
+		child &&
+		child.pid &&
+		child.exitCode === null &&
+		child.signalCode === null,
+	);
+}
+
+function signalOwnedProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+	if (!child.pid) return;
+	if (IS_WINDOWS) {
+		// `/PID` is the exact child we spawned; `/T` covers only its descendants.
+		spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+			stdio: "ignore",
+		});
+		return;
+	}
 	try {
-		if (IS_WINDOWS) {
-			const exe = name.endsWith(".exe") ? name : `${name}.exe`;
-			execSync(`taskkill /F /IM ${exe}`, { stdio: "ignore" });
-		} else {
-			const flag = force ? "-9 " : "";
-			// Never use `-f` here. Every WDIO worker command line contains the
-			// repository path `.../naia-shell/...`, so broad matching kills the
-			// Node worker itself before it can report a test result.
-			execSync(`pkill ${flag}-x ${name} 2>/dev/null || true`, {
-				stdio: "ignore",
-			});
-		}
+		// Vite and tauri-driver are spawned as detached process groups below.
+		process.kill(-child.pid, signal);
 	} catch {
-		/* ignore — no matching processes */
+		try {
+			child.kill(signal);
+		} catch {
+			/* The owned child exited between the status check and the signal. */
+		}
 	}
 }
 
-/**
- * Kill processes listening on a TCP port.
- * Linux: kill only the listening process. Matching every socket also matches
- * the WDIO worker's outbound connection and kills the test reporter itself.
- * Windows: parse `netstat -ano -p tcp` and `taskkill /F /PID`.
- */
-function killByPort(port: number): void {
+async function stopOwnedProcess(
+	child: ChildProcess | undefined,
+	label: string,
+): Promise<void> {
+	if (!childIsRunning(child)) return;
+	signalOwnedProcess(child, "SIGTERM");
 	try {
-		if (IS_WINDOWS) {
-			const out = execSync("netstat -ano -p tcp", {
-				encoding: "utf-8",
-				stdio: ["ignore", "pipe", "ignore"],
-			});
-			const pids = new Set<string>();
-			for (const rawLine of out.split(/\r?\n/)) {
-				const line = rawLine.trim();
-				// e.g. "TCP    0.0.0.0:4444   0.0.0.0:0   LISTENING   12345"
-				const match = line.match(/^TCP\s+\S+:(\d+)\s+\S+\s+\S+\s+(\d+)$/);
-				if (match && Number(match[1]) === port) pids.add(match[2]);
-			}
-			for (const pid of pids) {
-				try {
-					execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
-				} catch {
-					/* ignore */
-				}
-			}
-		} else {
-			execSync(
-				`lsof -tiTCP:${port} -sTCP:LISTEN | xargs -r kill -9 2>/dev/null || true`,
-				{ stdio: "ignore" },
-			);
-		}
+		await waitForChildExit(child, 5_000);
 	} catch {
-		/* ignore */
+		if (childIsRunning(child)) signalOwnedProcess(child, "SIGKILL");
+		try {
+			await waitForChildExit(child, 5_000);
+		} catch {
+			throw new Error(`Owned ${label} process did not exit`);
+		}
 	}
+}
+
+function waitForChildExit(
+	child: ChildProcess,
+	timeoutMs: number,
+): Promise<void> {
+	if (!childIsRunning(child)) return Promise.resolve();
+	return new Promise((resolveExit, rejectExit) => {
+		const onExit = () => {
+			clearTimeout(timer);
+			resolveExit();
+		};
+		const timer = setTimeout(() => {
+			child.removeListener("exit", onExit);
+			rejectExit(new Error("child exit timeout"));
+		}, timeoutMs);
+		child.once("exit", onExit);
+		if (!childIsRunning(child)) {
+			clearTimeout(timer);
+			resolveExit();
+		}
+	});
 }
 
 /** Wait until a port is accepting connections. */
-function waitForPort(port: number, timeoutMs = 30_000): Promise<void> {
+export function waitForPort(
+	port: number,
+	timeoutMs = 30_000,
+	ownedChild?: { child: ChildProcess; label: string },
+	connectPort: typeof connect = connect,
+): Promise<void> {
 	return new Promise((ok, fail) => {
 		const deadline = Date.now() + timeoutMs;
+		const sockets = new Set<ReturnType<typeof connect>>();
+		let retryTimer: ReturnType<typeof setTimeout> | undefined;
+		let settled = false;
+
+		const cleanup = () => {
+			if (retryTimer !== undefined) clearTimeout(retryTimer);
+			for (const socket of sockets) socket.destroy();
+			sockets.clear();
+			if (ownedChild) {
+				ownedChild.child.removeListener("error", onChildError);
+				ownedChild.child.removeListener("exit", onChildExit);
+			}
+		};
+		const finish = (error?: Error) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			if (error) fail(error);
+			else ok();
+		};
+		const failForChild = (reason: string) => {
+			const label = ownedChild?.label ?? "owned process";
+			finish(
+				new Error(
+					`Owned ${label} failed before port ${port} was ready: ${reason}`,
+				),
+			);
+		};
+		const onChildError = (error: Error) => {
+			failForChild(`startup error: ${error.message}`);
+		};
+		const onChildExit = (code: number | null, signal: NodeJS.Signals | null) => {
+			failForChild(
+				`exited before readiness (code=${code ?? "null"}, signal=${signal ?? "none"})`,
+			);
+		};
+
+		if (ownedChild) {
+			ownedChild.child.once("error", onChildError);
+			ownedChild.child.once("exit", onChildExit);
+			if (
+				ownedChild.child.exitCode !== null ||
+				ownedChild.child.signalCode !== null
+			) {
+				failForChild(
+					`already exited (code=${ownedChild.child.exitCode ?? "null"}, signal=${ownedChild.child.signalCode ?? "none"})`,
+				);
+				return;
+			}
+		}
+
 		const tryConnect = () => {
+			if (settled) return;
+			retryTimer = undefined;
 			const hosts = ["127.0.0.1", "::1", "localhost"] as const;
 			let attempts = hosts.length;
 			let connected = false;
 			for (const host of hosts) {
-				const sock = connect(port, host);
-				sock.once("connect", () => {
-					if (connected) return;
+				if (settled) return;
+				const socket = connectPort(port, host);
+				sockets.add(socket);
+				socket.once("connect", () => {
+					sockets.delete(socket);
+					if (connected || settled) {
+						socket.destroy();
+						return;
+					}
 					connected = true;
-					sock.destroy();
-					ok();
+					socket.destroy();
+					finish();
 				});
-				sock.once("error", () => {
-					sock.destroy();
+				socket.once("error", () => {
+					sockets.delete(socket);
+					socket.destroy();
 					attempts -= 1;
-					if (connected) return;
-					if (attempts > 0) return;
-					if (Date.now() > deadline) {
-						fail(new Error(`Port ${port} not ready within ${timeoutMs}ms`));
+					if (connected || settled || attempts > 0) return;
+					if (Date.now() >= deadline) {
+						finish(new Error(`Port ${port} not ready within ${timeoutMs}ms`));
 					} else {
-						setTimeout(tryConnect, 500);
+						retryTimer = setTimeout(tryConnect, 500);
 					}
 				});
 			}
@@ -527,11 +710,12 @@ export async function deliverCredentialedGatewayKey(): Promise<void> {
 			// 이 wire 가 곧장 막히고 재시작마저 억제(cooldown)에 걸린다. 이름을 그대로
 			// 두면 다음 사람이 자격증명을 뒤진다 — 실제로 그렇게 한 번 샜다.
 			throw new Error(
-				`creds_update failed: ${credsSeedState}` +
-					(/restart debounced|not running|died/.test(credsSeedState)
+				`creds_update failed: ${credsSeedState}${
+					/restart debounced|not running|died/.test(credsSeedState)
 						? " — 이 세션은 agent 없이 떴다. 앞 세션의 agent 자식이 리스를 쥐고" +
 							" 있었을 가능성이 크다 (naia.log 의 agent_lease_live_blocked)."
-						: ""),
+						: ""
+				}`,
 			);
 		}
 		console.log("[e2e] gateway key delivered to agent (creds_update)");
@@ -590,22 +774,18 @@ export const config = {
 	reporters: ["spec"],
 
 	async onPrepare() {
-		// Kill orphaned processes from previous runs
-		killByPort(1420);
-		killByPort(VITE_PORT);
-		killByPort(4448);
-		killByPort(4449);
-		killByName("tauri-driver");
-		if (IS_WINDOWS) {
-			killByName("msedgedriver");
-		} else {
-			killByName("WebKitWebDriver");
-		}
-		killByName("naia-shell");
-		// 회수가 먼저다. 자리를 먼저 비우면 앞 실행이 흘린 리스가 사라져,
-		// 고아를 가리키던 유일한 단서를 우리가 지우게 된다.
+		// Never reclaim by image name or port: another worker may own either one.
+		// A stale run is recoverable through its run-scoped lease; an unrelated
+		// listener fails closed and leaves its owner untouched.
+		// Reclaim this run's stale lease before checking its ports so a previous
+		// interrupted invocation can release its own sidecar/agent safely.
 		reclaimLeakedAgentChild();
 		reclaimLeakedBgmSidecar();
+		await requirePortFree(VITE_PORT, VITE_HOST);
+		await requirePortFree(IN_APP_PORT);
+		if (!IS_WINDOWS) await requirePortFree(NATIVE_DRIVER_PORT);
+		await requirePortFree(E2E_BGM_PORT);
+		await requirePortFree(E2E_OAUTH_CALLBACK_PORT);
 		if (OWNS_RUNTIME_DIR) {
 			const owned = assertOwnedRuntimeDir();
 			rmSync(owned, {
@@ -624,6 +804,11 @@ export const config = {
 				mkdirSync(dir, { recursive: true });
 			}
 			console.log(`[e2e] isolated app profile: ${HARNESS_XDG.XDG_CONFIG_HOME}`);
+		}
+		mkdirSync(E2E_PROFILE_DIR, { recursive: true });
+		mkdirSync(E2E_HOME, { recursive: true });
+		if (!EXPLICIT_ADK_PATH) {
+			mkdirSync(SEEDED_ADK_PATH, { recursive: true });
 		}
 		if (SEEDS_CREDENTIALED_ADK) {
 			// 실행 자리를 비운 **다음**에 심는다. 순서가 뒤집히면 방금 심은 것을
@@ -647,23 +832,28 @@ export const config = {
 			process.env.NAIA_NOTIFY_DISCORD_WEBHOOK = notifyStub.urlFor("discord");
 			console.log(`[e2e] notify webhook stub on 127.0.0.1:${notifyStub.port}`);
 		}
-		await waitForPortClosed(1420);
-		await waitForPortClosed(VITE_PORT);
-		if (!IS_WINDOWS) {
-			await waitForPortClosed(4448);
-			await waitForPortClosed(4449);
-		}
-
-		// Start Vite dev server (debug binary loads from devUrl localhost:1420).
-		viteServer = spawn(execPath, [VITE_ENTRY, "--host", VITE_HOST], {
-			cwd: SHELL_DIR,
-			stdio: ["ignore", "pipe", "pipe"],
-			env: {
-				...process.env,
-				BROWSER: "none",
-				PLAYWRIGHT_PORT: String(VITE_PORT),
+		// Start Vite at this run's loopback URL. The native binary receives the
+		// same URL through its inherited NAIA_E2E_DEV_URL environment.
+		viteServer = spawn(
+			execPath,
+			[VITE_ENTRY, "--host", VITE_HOST, "--port", String(VITE_PORT)],
+			{
+				cwd: SHELL_DIR,
+				stdio: ["ignore", "pipe", "pipe"],
+				detached: !IS_WINDOWS,
+				env: {
+					...process.env,
+					NAIA_E2E_RUN_ID: E2E_RUN_ID,
+					NAIA_E2E_VITE_PORT: String(VITE_PORT),
+					BROWSER: "none",
+					// The normal launch script defaults to new-core mode. Keep the direct
+					// WebDriver runner on that same path so ChatArea does not take the
+					// legacy API-key gate before the agent credential overlay arrives.
+					VITE_NAIA_NEW_CORE: "1",
+					PLAYWRIGHT_PORT: String(VITE_PORT),
+				},
 			},
-		});
+		);
 		viteServer.stdout?.on("data", (d: Buffer) => {
 			const line = d.toString();
 			if (line.includes("error") || line.includes("Error")) {
@@ -680,34 +870,20 @@ export const config = {
 	},
 
 	async beforeSession() {
-		// The native drivers are an external boundary. Clear only leftovers before
-		// creating a fresh session; the previous session is never killed mid-start.
-		killByName("naia-shell", true);
-		if (!IS_WINDOWS) killByName("naia-node", true);
-		// 앱을 죽이면 그 agent 자식은 고아가 되고, 리스는 그 PID 를 계속 가리킨다.
-		// 다음 세션의 네이티브는 그 리스를 보고 agent 를 아예 안 띄운다
-		// (`agent_lease_live_blocked`). 그래서 **여기서**, 앱을 띄우기 전에
-		// 회수한다. onPrepare 한 번으로는 스펙 사이를 못 막는다 — 실측에서
-		// 서른여덟 중 서른일곱이 뇌 없이 돌았다.
+		// The native drivers are an external boundary. Reclaim only this run's
+		// lease, then fail closed if a different run owns either driver port.
 		reclaimLeakedAgentChild();
-		killByName("tauri-driver", true);
-		if (IS_WINDOWS) killByName("msedgedriver", true);
-		else killByName("WebKitWebDriver", true);
-		if (!IS_WINDOWS) {
-			killByPort(4448);
-			killByPort(4449);
-			await waitForPortClosed(4448);
-			await waitForPortClosed(4449);
-		}
+		await requirePortFree(IN_APP_PORT);
+		if (!IS_WINDOWS) await requirePortFree(NATIVE_DRIVER_PORT);
 
 		if (IS_WINDOWS) {
-			// #539: 인앱 WebDriver — 앱이 곧 서버다. 세션 삭제가 앱을 끝내 주지
-			// 않으므로(구 tauri-driver 와 다름) 스폰 직전 강제 정리로 4448 을 비운다.
-			await forceFreeInAppPort();
 			tauriDriver = spawn(TAURI_BINARY, [], {
 				stdio: [null, process.stdout, process.stderr],
+				detached: false,
 				env: {
 					...process.env,
+					NAIA_E2E_RUN_ID: E2E_RUN_ID,
+					NAIA_E2E_NATIVE_DRIVER_PORT: String(NATIVE_DRIVER_PORT),
 					RUST_LOG: process.env.RUST_LOG ?? "tauri_plugin_wdio_webdriver=debug",
 					TAURI_WEBDRIVER_PORT: String(IN_APP_PORT),
 				},
@@ -715,17 +891,53 @@ export const config = {
 		} else {
 			tauriDriver = spawn(
 				TAURI_DRIVER,
-				["--port", "4448", "--native-driver", NATIVE_DRIVER],
+				[
+					"--port",
+					String(IN_APP_PORT),
+					"--native-port",
+					String(NATIVE_DRIVER_PORT),
+					"--native-driver",
+					NATIVE_DRIVER,
+				],
 				{
 					stdio: [null, process.stdout, process.stderr],
+					detached: true,
 					env: {
 						...process.env,
+						NAIA_E2E_RUN_ID: E2E_RUN_ID,
+						NAIA_E2E_NATIVE_DRIVER_PORT: String(NATIVE_DRIVER_PORT),
+						TAURI_WEBDRIVER_PORT: String(IN_APP_PORT),
 						RUST_LOG: process.env.RUST_LOG ?? "tauri_driver=debug",
 					},
 				},
 			);
 		}
-		await waitForPort(IN_APP_PORT, 30_000);
+		try {
+			await waitForPort(
+				IN_APP_PORT,
+				30_000,
+				IS_WINDOWS
+					? {
+							child: tauriDriver as ChildProcess,
+							label: `native WebDriver/app (${TAURI_BINARY})`,
+						}
+					: undefined,
+			);
+		} catch (error) {
+			// Startup failures must clean only the child created by this hook. Keep
+			// the original spawn/exit error visible instead of replacing it with a
+			// cleanup timeout, and prevent onComplete from attempting a second kill.
+			const failedChild = tauriDriver;
+			tauriDriver = undefined;
+			try {
+				await stopOwnedProcess(failedChild, "native WebDriver/app");
+			} catch (cleanupError) {
+				process.stderr.write(
+					`[e2e] native startup cleanup failed: ${String(cleanupError)}\n`,
+				);
+			}
+			throw error;
+		}
 	},
 
 	async before() {
@@ -779,30 +991,19 @@ export const config = {
 	},
 
 	async afterSession() {
-		// 객체 리터럴에 같은 키가 둘이면 뒤엣것만 남는다. #539 의 윈도우 인앱 포트
-		// 해제가 별도 afterSession 에 있다가 이 훅에 덮여 한 번도 돌지 않았다 —
-		// 그래서 훅은 하나뿐이어야 하고, 그 검사는 계약 테스트가 맡는다.
-		// The service owns the driver processes. Only clean the app/legacy child
-		// after a session so the next native spec starts from a known state.
-		if (!IS_WINDOWS) {
-			killByName("naia-node");
+		try {
+			await stopOwnedProcess(tauriDriver, "native WebDriver/app");
+		} finally {
+			tauriDriver = undefined;
 		}
-		killByName("naia-shell");
-		// 앱이 죽은 직후가 고아를 잡기 가장 쉬운 때다. 다음 세션이 시작할 때
-		// 한 번 더 보지만, 여기서 걷어 두면 그 대기가 짧아진다.
+		try {
+			await waitForPortClosed(IN_APP_PORT);
+		} catch (error) {
+			process.stderr.write(
+				`[e2e] owned driver port did not close: ${String(error)}\n`,
+			);
+		}
 		reclaimLeakedAgentChild();
-		if (IS_WINDOWS) {
-			killByName("msedgedriver");
-		} else {
-			killByName("WebKitWebDriver");
-		}
-		killByName("tauri-driver");
-		killByPort(4448);
-		killByPort(4449);
-		// #539(Windows 인앱): 세션이 끝나도 앱 프로세스는 남는다 — 직접 끝낸다.
-		if (IS_WINDOWS) {
-			await forceFreeInAppPort();
-		}
 	},
 
 	/**
@@ -832,10 +1033,26 @@ export const config = {
 	},
 
 	async onComplete() {
-		viteServer?.kill();
-		await notifyStub?.close();
-		if (OWNS_RUNTIME_DIR)
+		try {
+			await stopOwnedProcess(tauriDriver, "native WebDriver/app");
+		} catch (error) {
+			process.stderr.write(`[e2e] native cleanup failed: ${String(error)}\n`);
+		}
+		tauriDriver = undefined;
+		try {
+			await stopOwnedProcess(viteServer, "Vite");
+		} catch (error) {
+			process.stderr.write(`[e2e] Vite cleanup failed: ${String(error)}\n`);
+		}
+		viteServer = undefined;
+		try {
+			await notifyStub?.close();
+		} finally {
+			notifyStub = undefined;
+		}
+		if (OWNS_RUNTIME_DIR) {
 			stopHarnessHerdrSession(process.env.NAIA_E2E_RUNTIME_DIR, spawnSync);
+		}
 		// 붉은 실행의 로그·리스를 볼 수 있어야 원인을 가린다. codex 전용 설정과
 		// 같은 손잡이를 쓴다.
 		if (!OWNS_RUNTIME_DIR) return;

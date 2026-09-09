@@ -33,8 +33,10 @@ vi.mock("../secure-store", () => ({
 import {
 	applyModelSelectionToConfig,
 	applyWorkspaceConfigToLocal,
+	beginNaiaConfigHydration,
 	buildNaiaConfigEnv,
 	clearAdkPath,
+	completeNaiaConfigHydration,
 	copyBundledAssets,
 	getAdkPath,
 	isAdkInitialized,
@@ -47,6 +49,7 @@ import {
 	toAssetUrl,
 	writeAgentKeyStrict,
 	writeNaiaConfig,
+	writeNaiaConfigAtPath,
 	writeNaiaUiConfig,
 } from "../adk-store";
 
@@ -104,9 +107,14 @@ const UNIX_ADK = "/home/user/naia-adk";
 beforeEach(() => {
 	localStorage.clear();
 	mockInvoke.mockReset();
-	// Default: any invoke resolves. setAdkPath awaits the native workspace rebind,
-	// so callers only continue once the first-run agent sees this ADK path.
-	mockInvoke.mockResolvedValue(undefined);
+	// Native read commands return an empty string for a missing file. Keep that
+	// contract in the default mock while other commands resolve without a value.
+	mockInvoke.mockImplementation(async (command: string) => {
+		if (command === "read_naia_config" || command === "read_naia_ui_config") {
+			return "";
+		}
+		return undefined;
+	});
 	mockConvertFileSrc.mockClear();
 	secureState.naiaKey = null;
 	secureState.deleted = [];
@@ -328,16 +336,24 @@ describe("readNaiaConfig", () => {
 		expect(await readNaiaConfig()).toBeNull();
 	});
 
-	it("returns null on invoke error", async () => {
+	it("throws on invoke error", async () => {
 		setAdkPath(WIN_ADK);
 		mockInvoke.mockRejectedValue(new Error("File not found"));
-		expect(await readNaiaConfig()).toBeNull();
+		await expect(readNaiaConfig()).rejects.toThrow("File not found");
 	});
 
 	it("returns null for empty string response", async () => {
 		setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue("");
 		expect(await readNaiaConfig()).toBeNull();
+	});
+
+	it("throws for malformed and non-object responses", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockResolvedValueOnce("not-json");
+		await expect(readNaiaConfig()).rejects.toThrow();
+		mockInvoke.mockResolvedValueOnce("[]");
+		await expect(readNaiaConfig()).rejects.toThrow("invalid_json");
 	});
 
 	it("parses and returns config JSON", async () => {
@@ -375,7 +391,9 @@ describe("writeNaiaConfig", () => {
 
 	it("calls invoke with serialized JSON", async () => {
 		setAdkPath(WIN_ADK);
-		mockInvoke.mockResolvedValue(undefined);
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "read_naia_ui_config" ? "" : undefined,
+		);
 
 		await writeNaiaConfig({ provider: "openai", model: "gpt-4o" });
 
@@ -457,9 +475,241 @@ describe("writeNaiaConfig", () => {
 		await expect(
 			writeNaiaConfig({ provider: "openai", model: "gpt-4o" }),
 		).rejects.toThrow("config disk full");
-		expect(mockInvoke.mock.calls.map(([command]) => command)).toEqual([
+		expect(
+			mockInvoke.mock.calls
+				.filter(([command]) => command !== "write_naia_path_cache")
+				.map(([command]) => command),
+		).toEqual([
 			"write_naia_config",
 		]);
+	});
+
+	it("rejects visibly when the paired UI config write fails", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "read_naia_ui_config") return "";
+			if (command === "write_naia_ui_config") {
+				throw new Error("ui disk full");
+			}
+			return undefined;
+		});
+
+		await expect(
+			writeNaiaConfig({ provider: "openai", model: "gpt-4o" }),
+		).rejects.toThrow("ui-config write failed");
+		expect(
+			mockInvoke.mock.calls
+				.filter(([command]) => command !== "write_naia_path_cache")
+				.map(([command]) => command),
+		).toEqual([
+			"write_naia_config",
+			"read_naia_ui_config",
+			"write_naia_ui_config",
+		]);
+	});
+
+	it("pins the request path and config snapshot for queued writes", async () => {
+		setAdkPath(WIN_ADK);
+		let releaseFirst!: () => void;
+		const firstWriteFinished = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		mockInvoke.mockImplementation(async (command: string, args?: unknown) => {
+			if (command === "write_naia_config") {
+				const json = (args as { json: string }).json;
+				if (JSON.parse(json).model === "first") await firstWriteFinished;
+			}
+			if (command === "read_naia_ui_config") return "";
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		const first = { provider: "openai", model: "first" };
+		const second = { provider: "openai", model: "second" };
+		const firstWrite = writeNaiaConfig(first);
+		const secondWrite = writeNaiaConfig(second);
+		second.model = "mutated-after-enqueue";
+		localStorage.setItem("naia-adk-path", UNIX_ADK);
+		releaseFirst();
+		await Promise.all([firstWrite, secondWrite]);
+
+		const configWrites = mockInvoke.mock.calls.filter(
+			([command]) => command === "write_naia_config",
+		);
+		expect(configWrites).toHaveLength(2);
+		expect(configWrites.map(([, args]) => (args as { adkPath: string }).adkPath)).toEqual([
+			WIN_ADK,
+			WIN_ADK,
+		]);
+		expect(
+			configWrites.map(([, args]) => JSON.parse((args as { json: string }).json).model),
+		).toEqual(["first", "second"]);
+
+		const pairedWrites = mockInvoke.mock.calls.filter(
+			([command]) =>
+				command === "write_naia_ui_config" || command === "write_slots_manifest",
+		);
+		expect(pairedWrites).toHaveLength(4);
+		expect(
+			pairedWrites.map(([, args]) => (args as { adkPath: string }).adkPath),
+		).toEqual([WIN_ADK, WIN_ADK, WIN_ADK, WIN_ADK]);
+	});
+
+	it("does not write a config queued during hydration after the gate opens", async () => {
+		setAdkPath(WIN_ADK);
+		beginNaiaConfigHydration();
+		const pendingWrite = writeNaiaConfig({
+			provider: "openai",
+			model: "stale-before-hydration",
+		});
+		completeNaiaConfigHydration();
+		await pendingWrite;
+		expect(
+			mockInvoke.mock.calls.some(([command]) => command === "write_naia_config"),
+		).toBe(false);
+	});
+
+	it("allows setup to persist the selected ADK while ordinary hydration writes stay gated", async () => {
+		setAdkPath(WIN_ADK);
+		beginNaiaConfigHydration();
+
+		const selectedWrite = writeNaiaConfigAtPath(
+			{ provider: "openai", model: "selected-adk-model" },
+			WIN_ADK,
+		);
+		const blockedWrite = writeNaiaConfig({
+			provider: "openai",
+			model: "stale-local-cache",
+		});
+
+		await selectedWrite;
+		await blockedWrite;
+		completeNaiaConfigHydration();
+
+		const configWrites = mockInvoke.mock.calls.filter(
+			([command]) => command === "write_naia_config",
+		);
+		expect(configWrites).toHaveLength(1);
+		expect(configWrites[0]?.[1]).toEqual(
+			expect.objectContaining({ adkPath: WIN_ADK }),
+		);
+		expect(
+			JSON.parse((configWrites[0]?.[1] as { json: string }).json).model,
+		).toBe("selected-adk-model");
+	});
+
+	it("does not borrow the newly selected ADK credential for a queued old-path manifest", async () => {
+		setAdkPath(WIN_ADK);
+		secureState.naiaKey = "credential-from-new-selection";
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "write_naia_config") {
+				// Simulate a workspace switch while the old path is awaiting native I/O.
+				localStorage.setItem("naia-adk-path", UNIX_ADK);
+			}
+			if (command === "read_naia_ui_config") return "";
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		await writeNaiaConfigAtPath(
+			{ provider: "nextain", model: "old-workspace-model" },
+			WIN_ADK,
+		);
+
+		const manifestCall = mockInvoke.mock.calls.find(
+			([command]) => command === "write_slots_manifest",
+		);
+		const manifest = JSON.parse((manifestCall?.[1] as { json: string }).json);
+		expect(manifest.gate.naiaAccount).toBe(false);
+	});
+
+	it("completes an approved write when hydration starts while it waits", async () => {
+		setAdkPath(WIN_ADK);
+		let releaseFirst!: () => void;
+		const firstWriteFinished = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		let firstWriteStarted!: () => void;
+		const firstWriteStartedPromise = new Promise<void>((resolve) => {
+			firstWriteStarted = resolve;
+		});
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "write_naia_config") {
+				firstWriteStarted();
+				await firstWriteFinished;
+			}
+			if (command === "read_naia_ui_config") return "";
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		const firstWrite = writeNaiaConfig({
+			provider: "openai",
+			model: "approved-before-hydration",
+		});
+		await firstWriteStartedPromise;
+		beginNaiaConfigHydration();
+		const secondWrite = writeNaiaConfig({
+			provider: "openai",
+			model: "blocked-during-hydration",
+		});
+
+		releaseFirst();
+		try {
+			await firstWrite;
+			await secondWrite;
+
+			const configWrites = mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_config",
+			);
+			expect(configWrites).toHaveLength(1);
+			expect(
+				JSON.parse((configWrites[0]?.[1] as { json: string }).json).model,
+			).toBe("approved-before-hydration");
+			const uiWrites = mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_ui_config",
+			);
+			expect(uiWrites).toHaveLength(1);
+		} finally {
+			completeNaiaConfigHydration();
+		}
+	});
+
+	it("serializes direct UI patches behind a full config write", async () => {
+		setAdkPath(WIN_ADK);
+		let releaseConfigWrite!: () => void;
+		const configWriteStarted = new Promise<void>((resolve) => {
+			releaseConfigWrite = resolve;
+		});
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "write_naia_config") await configWriteStarted;
+			if (command === "read_naia_ui_config") return "";
+			if (command === "detect_gpu_vram") return null;
+			return undefined;
+		});
+
+		const fullWrite = writeNaiaConfig({
+			provider: "openai",
+			model: "full-config",
+		});
+		const uiWrite = writeNaiaUiConfig({ theme: "dark" });
+		await Promise.resolve();
+		expect(
+			mockInvoke.mock.calls.filter(
+				([command]) => command === "write_naia_ui_config",
+			),
+		).toHaveLength(0);
+		releaseConfigWrite();
+		await Promise.all([fullWrite, uiWrite]);
+
+		const uiWrites = mockInvoke.mock.calls.filter(
+			([command]) => command === "write_naia_ui_config",
+		);
+		expect(uiWrites).toHaveLength(2);
+		expect(JSON.parse((uiWrites[0]?.[1] as { json: string }).json)).toEqual({});
+		expect(JSON.parse((uiWrites[1]?.[1] as { json: string }).json)).toEqual({
+			theme: "dark",
+		});
 	});
 
 	it("writes the current flat memory contract to config.json and strips secrets", async () => {
@@ -497,7 +747,9 @@ describe("writeNaiaConfig", () => {
 
 	it("drops stale derived env aliases and regenerates only current values", async () => {
 		setAdkPath(WIN_ADK);
-		mockInvoke.mockResolvedValue(undefined);
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "read_naia_ui_config" ? "" : undefined,
+		);
 
 		await writeNaiaConfig({
 			provider: "nextain",
@@ -521,7 +773,9 @@ describe("writeNaiaConfig", () => {
 	it("preserves the member slots gate when the public config omits the secure Naia key", async () => {
 		setAdkPath(WIN_ADK);
 		secureState.naiaKey = "secure-member-key";
-		mockInvoke.mockResolvedValue(undefined);
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "read_naia_ui_config" ? "" : undefined,
+		);
 
 		await writeNaiaConfig({
 			provider: "nextain",
@@ -540,7 +794,9 @@ describe("writeNaiaConfig", () => {
 
 	it("llmRoles는 opaque credentialRef만 보존하고 중첩 token/apiKey를 제거한다", async () => {
 		setAdkPath(WIN_ADK);
-		mockInvoke.mockResolvedValue(undefined);
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "read_naia_ui_config" ? "" : undefined,
+		);
 		await writeNaiaConfig({
 			provider: "codex",
 			model: "gpt-5.4",
@@ -610,6 +866,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 			appPosition: "left", // 앱 레이아웃 → 저장
 			bgmVolume: 0.5, // BGM 볼륨 → 저장
 			locale: "ko", // 로케일 → 저장
+			uiPreferences: { chatMode: "app" }, // grouped shell preferences → 저장
 		});
 		const [, arg] = mockInvoke.mock.calls.find(
 			([name]) => name === "write_naia_ui_config",
@@ -622,6 +879,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		expect(written.appPosition).toBe("left");
 		expect(written.bgmVolume).toBe(0.5);
 		expect(written.locale).toBe("ko");
+		expect(written.uiPreferences).toEqual({ chatMode: "app" });
 		// agent 키·시크릿은 ui-config 에 안 들어간다
 		expect(written).not.toHaveProperty("provider");
 		expect(written).not.toHaveProperty("naiaKey");
@@ -756,6 +1014,16 @@ describe("readNaiaUiConfig", () => {
 		setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue(JSON.stringify({ vrmModel: "b.vrm" }));
 		expect((await readNaiaUiConfig())?.vrmModel).toBe("b.vrm");
+	});
+
+	it("throws on I/O, malformed, and non-object responses", async () => {
+		setAdkPath(WIN_ADK);
+		mockInvoke.mockRejectedValueOnce(new Error("permission denied"));
+		await expect(readNaiaUiConfig()).rejects.toThrow("permission denied");
+		mockInvoke.mockResolvedValueOnce("not-json");
+		await expect(readNaiaUiConfig()).rejects.toThrow();
+		mockInvoke.mockResolvedValueOnce("null");
+		await expect(readNaiaUiConfig()).rejects.toThrow("invalid_json");
 	});
 });
 
@@ -957,4 +1225,3 @@ describe("syncMainRoleOpenAiBaseUrl (#515)", () => {
 		);
 	});
 });
-

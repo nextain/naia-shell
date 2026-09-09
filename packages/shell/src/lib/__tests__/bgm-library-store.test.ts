@@ -2,13 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sandbox = vi.hoisted(() => ({
 	read: vi.fn<(appId: string, path: string) => Promise<number[]>>(),
-	write: vi.fn<(appId: string, path: string, bytes: number[]) => Promise<string>>(),
+	write: vi.fn<(
+		appId: string,
+		path: string,
+		bytes: number[],
+		explicitAdkPath?: string | null,
+	) => Promise<string>>(),
 }));
 
 vi.mock("../app-sandbox", () => ({
 	readAppSandboxFile: sandbox.read,
 	writeAppSandboxFile: sandbox.write,
 }));
+
+const adk = vi.hoisted(() => ({
+	getPath: vi.fn<() => string | null>(() => null),
+}));
+vi.mock("../adk-store", () => ({ getAdkPath: adk.getPath }));
 
 const config = vi.hoisted(() => ({
 	load: vi.fn<() => unknown>(() => null),
@@ -33,6 +43,8 @@ describe("bgm-library-store", () => {
 		resetBgmLibraryCache();
 		sandbox.read.mockReset();
 		sandbox.write.mockReset();
+		adk.getPath.mockReset();
+		adk.getPath.mockReturnValue(null);
 		config.load.mockReset();
 		config.load.mockReturnValue(null);
 		config.save.mockReset();
@@ -119,5 +131,43 @@ describe("bgm-library-store", () => {
 
 		expect(loaded.updatedAt).toBe(7); // sandbox kept; fieldless config coalesces to 0
 		expect(sandbox.write).not.toHaveBeenCalled();
+	});
+
+	it("captures the ADK path when each queued write is accepted", async () => {
+		adk.getPath.mockReturnValue("/workspace-a");
+		let releaseFirst!: (value: string) => void;
+		sandbox.write.mockImplementationOnce(
+			() => new Promise((resolve) => { releaseFirst = resolve; }),
+		);
+		sandbox.write.mockResolvedValue("ok");
+
+		const first = persistBgmLibrary(createEmptyBgmLibrary(1));
+		await Promise.resolve();
+		adk.getPath.mockReturnValue("/workspace-b");
+		const second = persistBgmLibrary(createEmptyBgmLibrary(2));
+		releaseFirst("ok");
+
+		await expect(first).resolves.toBe(true);
+		await expect(second).resolves.toBe(true);
+		expect(sandbox.write.mock.calls.map((call) => call[3])).toEqual([
+			"/workspace-a",
+			"/workspace-b",
+		]);
+	});
+
+	it("does not write a failed queued request into a newly selected workspace", async () => {
+		adk.getPath.mockReturnValue("/workspace-a");
+		let rejectWrite!: (error: Error) => void;
+		sandbox.write.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => { rejectWrite = reject; }),
+		);
+
+		const pending = persistBgmLibrary(createEmptyBgmLibrary(1));
+		await Promise.resolve();
+		adk.getPath.mockReturnValue("/workspace-b");
+		rejectWrite(new Error("workspace a unavailable"));
+
+		await expect(pending).resolves.toBe(false);
+		expect(config.save).not.toHaveBeenCalled();
 	});
 });

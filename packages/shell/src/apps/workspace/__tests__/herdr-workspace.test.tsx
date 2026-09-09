@@ -9,7 +9,11 @@ import {
 } from "@testing-library/react";
 import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { NaiaContextBridge, ToolHandler } from "../../../lib/app-registry";
+import {
+	ActiveAppBridge,
+	type NaiaContextBridge,
+	type ToolHandler,
+} from "../../../lib/app-registry";
 import type { FileLocation, TerminalHandle } from "../Terminal";
 
 const mockInvoke = vi.fn();
@@ -27,7 +31,11 @@ vi.mock("../../../lib/adk-store", () => ({
 
 vi.mock("../../../stores/app", () => ({
 	useAppStore: {
-		getState: () => ({ activeApp: "workspace", setActiveApp: vi.fn() }),
+		getState: () => ({
+			activeApp: "workspace",
+			setActiveApp: vi.fn(),
+			setActiveAppContext: vi.fn(),
+		}),
 	},
 }));
 
@@ -363,7 +371,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 					return "/work/naia/src/App.tsx";
 				if (command === "workspace_read_file") return "before before";
 				if (command === "pty_execute_sync")
-					return { stdout: "ok", stderr: "", code: 0 };
+					return { success: true, output: "ok", exit_code: 0 };
 				if (
 					command === "workspace_write_file" ||
 					command === "herdr_create_workspace"
@@ -423,7 +431,7 @@ describe("HerdrWorkspaceCenterArea", () => {
 				}),
 			),
 		);
-		expect(execute).toEqual({ stdout: "ok", stderr: "", code: 0 });
+		expect(execute).toEqual({ success: true, output: "ok", exit_code: 0 });
 		expect(mockInvoke).toHaveBeenCalledWith("pty_execute_sync", {
 			dir: "/work/naia",
 			command: "pnpm test",
@@ -437,9 +445,9 @@ describe("HerdrWorkspaceCenterArea", () => {
 				dir: "/missing",
 			}),
 		).toBe("Error: Herdr space not found: /missing");
-		expect(
-			await toolHandlers.get("skill_workspace_execute")?.({ command: " " }),
-		).toBe("Error: command is required");
+		await expect(
+			toolHandlers.get("skill_workspace_execute")?.({ command: " " }),
+		).rejects.toThrow("Error: command is required");
 
 		view.unmount();
 		expect(toolHandlers.size).toBe(0);
@@ -543,16 +551,16 @@ function respondWith(current: unknown) {
 		if (command === "workspace_classify_dirs")
 			return [{ name: "naia", path: "/work/naia", category: "project" }];
 		if (command === "pty_execute_sync")
-			return { stdout: "ok", stderr: "", code: 0 };
+			return { success: true, output: "ok", exit_code: 0 };
 		return null;
 	});
 }
 
-async function renderHerdr() {
+async function renderHerdr(naia: NaiaContextBridge = bridge) {
 	const { HerdrWorkspaceCenterArea } = await import(
 		"../HerdrWorkspaceCenterArea"
 	);
-	return render(<HerdrWorkspaceCenterArea naia={bridge} />);
+	return render(<HerdrWorkspaceCenterArea naia={naia} />);
 }
 
 describe("Naia workspace tool contract — Herdr bridge", () => {
@@ -663,6 +671,56 @@ describe("Naia workspace tool contract — Herdr bridge", () => {
 				timeout_secs: undefined,
 			});
 		});
+	});
+
+	it("rejects failed PTY execution with output and exit code preserved", async () => {
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "herdr_pty_create") return { pty_id: "pty-7", pid: 7 };
+			if (command === "herdr_snapshot") return snapshot;
+			if (command === "workspace_set_root") return "/work/naia";
+			if (command === "pty_execute_sync") {
+				return {
+					success: false,
+					output: "rg: no matches\n",
+					exit_code: 1,
+				};
+			}
+			return null;
+		});
+		const appBridge = new ActiveAppBridge("workspace");
+		await renderHerdr(appBridge);
+		await expect(
+			appBridge.callTool("skill_workspace_execute", {
+				command: 'rg -l "missing" .',
+				dir: "/work/naia",
+			}),
+		).rejects.toThrow(
+			JSON.stringify({
+				success: false,
+				output: "rg: no matches\n",
+				exit_code: 1,
+			}),
+		);
+	});
+
+	it("propagates PTY invoke rejection through the app bridge", async () => {
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "herdr_pty_create") return { pty_id: "pty-8", pid: 8 };
+			if (command === "herdr_snapshot") return snapshot;
+			if (command === "workspace_set_root") return "/work/naia";
+			if (command === "pty_execute_sync") {
+				throw new Error("PTY unavailable");
+			}
+			return null;
+		});
+		const appBridge = new ActiveAppBridge("workspace");
+		await renderHerdr(appBridge);
+		await expect(
+			appBridge.callTool("skill_workspace_execute", {
+				command: "pwd",
+				dir: "/work/naia",
+			}),
+		).rejects.toThrow("PTY unavailable");
 	});
 
 	it("App API: getApi returns WorkspaceAppApi after mount, undefined after unmount", async () => {

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
 	act,
 	cleanup,
@@ -31,12 +32,19 @@ vi.mock("../../lib/voice/host-profile", () => ({
 	resetVoiceHostProfileCache: () => {},
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({
-	invoke: vi.fn((command: string) =>
+const defaultInvoke = vi.hoisted(
+	() => (command: string) =>
 		command === "fetch_naia_balance"
 			? Promise.resolve({ balance: 1_000_000 })
-			: Promise.resolve(true),
-	),
+			: command === "secure_store_get"
+				? Promise.resolve(null)
+				: command === "read_naia_ui_config"
+					? Promise.resolve("{}")
+					: Promise.resolve(true),
+);
+
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: vi.fn(defaultInvoke),
 	convertFileSrc: vi.fn((path: string) => `file://${path}`),
 }));
 
@@ -117,9 +125,12 @@ describe("OnboardingWizard", () => {
 		vi.useRealTimers();
 		cleanup();
 		onComplete.mockReset();
-		secureStore.get.mockClear();
+		secureStore.get.mockReset();
+		secureStore.get.mockResolvedValue(null);
 		secureStore.set.mockClear();
 		secureStore.delete.mockClear();
+		(invoke as ReturnType<typeof vi.fn>).mockClear();
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation(defaultInvoke);
 		eventListeners.clear();
 		localStorage.removeItem("naia-config");
 		localStorage.removeItem("naia-adk-path");
@@ -230,11 +241,77 @@ describe("OnboardingWizard", () => {
 		expect(screen.getByText(/Set up later/)).toBeDefined();
 	});
 
+	it("restores the Naia gate from the selected ADK without localStorage", async () => {
+		localStorage.setItem("naia-adk-path", "/adk-a");
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation(
+			(command: string) =>
+				command === "secure_store_get"
+					? Promise.resolve("adk-a-key")
+					: defaultInvoke(command),
+		);
+
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+		advanceFromAgentNameToProvider();
+
+		expect(screen.getByTestId("onboarding-next")).toBeDefined();
+		expect(
+			screen.queryByRole("button", { name: /Naia 로그인|Naia Login/ }),
+		).toBeNull();
+		expect(localStorage.getItem("naia-remote-key")).toBeNull();
+	});
+
+	it("does not apply a deferred key after switching from one ADK to another", async () => {
+		let resolveA!: (value: string | null) => void;
+		const deferredA = new Promise<string | null>((resolve) => {
+			resolveA = resolve;
+		});
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation(
+			(command: string, args?: { expectedStorePath?: string }) => {
+				if (command !== "secure_store_get") return defaultInvoke(command);
+				if (args?.expectedStorePath?.includes("/adk-a/")) return deferredA;
+				return Promise.resolve(null);
+			},
+		);
+
+		localStorage.setItem("naia-adk-path", "/adk-a");
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		localStorage.setItem("naia-adk-path", "/adk-b");
+		act(() => {
+			window.dispatchEvent(new Event("naia-adk-path-changed"));
+		});
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		await act(async () => {
+			resolveA("stale-a-key");
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+		advanceFromAgentNameToProvider();
+
+		expect(screen.queryByTestId("onboarding-next")).toBeNull();
+		expect(
+			screen.getByRole("button", {
+				name: /Start with Naia|Naia 로그인|Naia Login/,
+			}),
+		).toBeDefined();
+	});
+
 	it("shows that detected GPU voice choices live in Voice Settings", async () => {
 		const { invoke } = await import("@tauri-apps/api/core");
 		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
-			return Promise.resolve(true);
+			return defaultInvoke(cmd);
 		});
 
 		renderAtAgentName();
@@ -268,7 +345,7 @@ describe("OnboardingWizard", () => {
 							: [],
 					);
 				}
-				return Promise.resolve(true);
+				return defaultInvoke(cmd);
 			},
 		);
 
@@ -330,7 +407,7 @@ describe("OnboardingWizard", () => {
 						args?.subdir === "background" ? ["space.webm"] : [],
 					);
 				}
-				return Promise.resolve(true);
+				return defaultInvoke(cmd);
 			},
 		);
 
@@ -355,7 +432,7 @@ describe("OnboardingWizard", () => {
 		const { invoke } = await import("@tauri-apps/api/core");
 		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
-			return Promise.resolve(true);
+			return defaultInvoke(cmd);
 		});
 		useAppStore.getState().setActiveApp(null);
 
@@ -390,6 +467,7 @@ describe("OnboardingWizard", () => {
 	});
 
 	it("actually starts VoxCPM2 from the voice step instead of only saving a preference", async () => {
+		localStorage.setItem("naia-adk-path", "/adk-voxcpm2");
 		const { invoke } = await import("@tauri-apps/api/core");
 		let installed = false;
 		let cascadeStarted = false;
@@ -417,7 +495,7 @@ describe("OnboardingWizard", () => {
 					}),
 				);
 			}
-			return Promise.resolve(true);
+			return defaultInvoke(cmd);
 		});
 
 		renderAtAgentName();
@@ -567,7 +645,7 @@ describe("OnboardingWizard", () => {
 			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
 			if (cmd === "fetch_naia_balance")
 				return Promise.resolve({ balance: 1_000_000 });
-			return Promise.resolve(true);
+			return defaultInvoke(cmd);
 		});
 		localStorage.setItem("naia-adk-path", "D:\\alpha-adk\\projects\\naia-adk");
 		renderAtAgentName();
@@ -647,7 +725,16 @@ describe("OnboardingWizard", () => {
 		expect(config.agentName).toBe("Mochi");
 		expect(config.workspaceRoot).toBe("D:\\alpha-adk\\projects\\naia-adk");
 		expect(config.localGpuTier).toBeUndefined();
-		expect(secureStore.set).toHaveBeenCalledWith("naiaKey", "gw-test-key");
+		expect(invoke).toHaveBeenCalledWith(
+			"secure_store_set",
+			expect.objectContaining({
+				name: "naiaKey",
+				value: "gw-test-key",
+				expectedStorePath: expect.stringContaining(
+					"D:\\alpha-adk\\projects\\naia-adk",
+				),
+			}),
+		);
 	});
 
 	// #341 옵션 B (W1) — naia 로그인 OAuth URL 빌더 검증
@@ -669,7 +756,7 @@ describe("OnboardingWizard", () => {
 				if (cmd === "generate_oauth_state") {
 					return Promise.resolve("csrf-test-token-abc123");
 				}
-				return Promise.resolve(true);
+				return defaultInvoke(cmd);
 			});
 
 			render(<OnboardingWizard onComplete={onComplete} />);
@@ -708,6 +795,7 @@ describe("OnboardingWizard", () => {
 		});
 
 		it("naia_auth_complete event 수신 시 naiaKey + naiaUserId localStorage 저장 + complete step 진입", async () => {
+			localStorage.setItem("naia-adk-path", "/adk-oauth");
 			render(<OnboardingWizard onComplete={onComplete} />);
 
 			// 시뮬레이트: Rust callback server (또는 deep link) 가
@@ -737,9 +825,13 @@ describe("OnboardingWizard", () => {
 				"gw-test-key-from-http-callback",
 			);
 			expect(localStorage.getItem("naia-remote-user-id")).toBe("user-via-http");
-			expect(secureStore.set).toHaveBeenCalledWith(
-				"naiaKey",
-				"gw-test-key-from-http-callback",
+			expect(invoke).toHaveBeenCalledWith(
+				"secure_store_set",
+				expect.objectContaining({
+					name: "naiaKey",
+					value: "gw-test-key-from-http-callback",
+					expectedStorePath: "/adk-oauth/data-private/secure-keys.dat",
+				}),
 			);
 			// onComplete 자체는 "시작하기" 버튼에서 호출되므로 listener 만으로는
 			// 부르지 않음 (별 step 진행). 여기서는 localStorage 저장까지만 검증.

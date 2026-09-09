@@ -90,6 +90,7 @@ import { ThinkingStreamFilter } from "../lib/llm/thinking-stream-filter";
 import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import { buildSystemPrompt } from "../lib/persona";
+import { effectiveMainRole } from "../lib/slots/model";
 import {
 	RADIO_DJ_DEFAULT_SETTINGS,
 	normalizeProactiveSpeechSettings,
@@ -129,6 +130,7 @@ import type {
 	AgentResponseChunk,
 	AuditEvent,
 	AuditFilter,
+	CostEntry,
 	ProviderId,
 	ToolCall,
 } from "../lib/types";
@@ -441,6 +443,10 @@ export function ChatArea({
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const sessionLoaded = useRef(false);
 	const currentRequestId = useRef<string | null>(null);
+	// Providers may emit one usage event for each tool round before the final
+	// assistant text. Keep those entries with the live request so usage cannot
+	// finalize an empty assistant message before the terminal finish chunk.
+	const pendingCostRef = useRef<CostEntry | null>(null);
 	/** #572 — 마지막으로 보낸 사용자 발화. 실패 알림의 재시도가 이것을 다시 보낸다. */
 	const lastSentTextRef = useRef("");
 	const activeSpeechActivityRef = useRef<{
@@ -762,6 +768,9 @@ export function ChatArea({
 			});
 		}
 		if (store.isStreaming) store.finishStreaming();
+		// Cancellation has no terminal provider chunk, but usage already emitted
+		// for completed tool rounds still belongs to the partial assistant.
+		commitPendingCost();
 		setEmotion("neutral");
 		completeCurrentRequest(reqId);
 	}
@@ -1101,10 +1110,34 @@ export function ChatArea({
 		}
 	}
 
+	function deferCostEntry(entry: CostEntry): void {
+		const previous = pendingCostRef.current;
+		pendingCostRef.current = previous
+			? {
+					inputTokens: previous.inputTokens + entry.inputTokens,
+					outputTokens: previous.outputTokens + entry.outputTokens,
+					cost: previous.cost + entry.cost,
+					provider: entry.provider,
+					model: entry.model,
+				}
+			: entry;
+	}
+
+	function commitPendingCost(): void {
+		const pending = pendingCostRef.current;
+		if (!pending) return;
+		pendingCostRef.current = null;
+		useChatStore.getState().addCostEntry(pending);
+	}
+
 	function finishStreamingWithVoiceTail(terminal = true): void {
 		const store = useChatStore.getState();
 		const wasStreaming = store.isStreaming;
 		if (wasStreaming) store.finishStreaming();
+		// Usage entries arrive before or alongside the terminal chunk. Commit only
+		// after finishStreaming creates the assistant message so tool-round costs
+		// attach to the final visible reply.
+		commitPendingCost();
 		const sync = ttsTextSyncRef.current;
 		if (!sync.active) return;
 		if (terminal) sync.llmFinished = true;
@@ -1619,6 +1652,7 @@ export function ChatArea({
 		// without a final chunk (cancel, disconnect, provider error).
 		thinkingStreamFilterRef.current.reset();
 		currentRequestId.current = requestId;
+		pendingCostRef.current = null;
 		// #572 — 실패했을 때 "같은 입력을 다시" 를 제안하려면 그 입력을 알아야 한다.
 		lastSentTextRef.current = text;
 
@@ -1635,8 +1669,14 @@ export function ChatArea({
 		const store = useChatStore.getState();
 
 		const config = await loadConfigWithSecrets();
+		// Structured llmRoles.main is the source of truth. The flat provider/model
+		// fields remain a compatibility mirror and may be stale or absent after an
+		// ADK seed, so route the turn from the same effective role as Settings.
+		const mainRole = config ? effectiveMainRole(config) : {};
+		const configuredProvider = mainRole.provider ?? config?.provider;
+		const configuredModel = mainRole.model ?? config?.model;
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
-		if (!isNewCore() && config?.provider === "nextain" && !config?.naiaKey) {
+		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
 			useChatStore
 				.getState()
 				.appendStreamChunk(
@@ -1657,9 +1697,9 @@ export function ChatArea({
 		// 모델셋팅 슬라이스). 여기에 !isNewCore() 가드를 걸면 omni 모델 텍스트가 새 core 로 잘못 흘러
 		// uc1-new-core "omni → realtime 우회" 계약을 깬다(라이브 검증서 회귀로 적발, 2026-06-12).
 		if (
-			config?.provider === "nextain" &&
-			config?.model &&
-			isOmniModel(config.provider, config.model)
+			configuredProvider === "nextain" &&
+			configuredModel &&
+			isOmniModel(configuredProvider, configuredModel)
 		) {
 			useChatStore.getState().finishStreaming();
 			completeCurrentRequest(requestId);
@@ -1671,7 +1711,7 @@ export function ChatArea({
 		// 새 core 는 에이전트가 provider/key(GLM_KEY env) 를 쥐므로 UI 키 게이트 우회(없어도 전송).
 		if (
 			!isNewCore() &&
-			!isApiKeyOptional(config?.provider ?? "") &&
+			!isApiKeyOptional(configuredProvider ?? "") &&
 			!config?.apiKey &&
 			!config?.naiaKey
 		) {
@@ -1696,7 +1736,7 @@ export function ChatArea({
 		// Agent auto-TTS disabled — Shell controls TTS directly via requestTts IPC.
 		const chatTtsEnabled =
 			!pipelineActiveRef.current && config.ttsEnabled === true;
-		const activeProvider = config.provider || provider;
+		const activeProvider = configuredProvider || provider;
 
 		// Initialize/update SentenceChunker + AudioQueue for chat TTS
 		if (chatTtsEnabled) {
@@ -1716,10 +1756,21 @@ export function ChatArea({
 		// When the saved model is not valid for the active provider, fall back to the default.
 		// Skip validation for providers with dynamic models (e.g. Ollama — empty static model list).
 		const savedModel =
-			config.model || getDefaultLlmModel(activeProvider) || "gemini-2.5-flash";
+			configuredModel || getDefaultLlmModel(activeProvider) || "gemini-2.5-flash";
 		const providerMeta = getLlmProvider(activeProvider);
 		const hasDynamicModels = providerMeta && providerMeta.models.length === 0;
+		// The gateway catalog is populated asynchronously, so a model selected
+		// from that catalog may not be present in the static registry yet. A
+		// structured main role is the canonical persisted selection and must
+		// survive that gap.
+		const hasExplicitStructuredMainModel = Boolean(
+			config?.llmRoles?.main &&
+				!config.llmRoles.main.inherit &&
+				config.llmRoles.main.provider === activeProvider &&
+				config.llmRoles.main.model === savedModel,
+		);
 		const modelIsValid =
+			hasExplicitStructuredMainModel ||
 			!providerMeta ||
 			hasDynamicModels ||
 			providerMeta.models.some((m) => m.id === savedModel);
@@ -2329,17 +2380,10 @@ export function ChatArea({
 					Logger.info("ChatArea", "Deferring empty zero-token usage");
 					break;
 				}
-				// #513 — usage 가 text 보다 먼저 오는 프로바이더(codex 등)에서 빈 스트림을 여기서
-				//        완결하면 빈 assistant 메시지가 확정되고 이후 본문이 streamingContent 에
-				//        좌초한다(마스크가 가리다 동기화 종료 때 "대화가 사라짐"). 내용이 있을 때만
-				//        완결하고, 빈 스트림은 finish/error 종결에 맡긴다(비용 기록은 그대로).
-				if (
-					store.streamingContent.length > 0 ||
-					store.streamingToolCalls.length > 0
-				) {
-					finishStreamingWithVoiceTail(false);
-				}
-				store.addCostEntry({
+				// A provider may emit usage after a tool round and before the final
+				// assistant text. Keep the request streaming until its terminal finish;
+				// otherwise the later text would be stranded outside the message.
+				deferCostEntry({
 					inputTokens: chunk.inputTokens,
 					outputTokens: chunk.outputTokens,
 					cost: chunk.cost,

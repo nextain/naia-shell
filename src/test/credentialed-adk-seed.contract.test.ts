@@ -133,7 +133,7 @@ describe("자격증명 등급 시딩", () => {
 
 	it("키 값을 파일에 남기지 않는다 — 환경 변수 이름만 적는다", () => {
 		const adk = freshAdk();
-		const secret = "gw-thiscontracttestsecretvalue-0123456789";
+		const secret = "test-gateway-key-placeholder";
 		const previous = process.env[seedModule.CREDENTIALED_KEY_ENV];
 		process.env[seedModule.CREDENTIALED_KEY_ENV] = secret;
 		try {

@@ -81,3 +81,56 @@ tauri-driver (port 4444)
 - **Gateway 연결 실패**: `lsof -ti:18789`로 Gateway 확인
 - **LLM 응답 없음**: `.env`에 유효한 API 키가 있는지 확인
 - **스킬 도구 미실행**: LLM이 도구를 사용하지 않을 수 있음 → 재실행 (비결정성)
+
+## 단일 세션 배치 실행
+
+여러 개의 작은 UI 시나리오를 같은 앱 세션에서 순서대로 실행해야 할 때는
+명시적인 ADK plan을 사용합니다. plan은 `NAIA_E2E_ADK_PATH` 아래의
+`e2e-batch-plan.json`이어야 하며, WDIO의 `--spec` 재정의와 glob은 허용되지
+않습니다. 호출자는 `restartInstallExcluded: true`를 선언해야 합니다. 이 값은
+plan의 계약을 검증하며, runner 자체는 앱 재시작이나 설치를 수행하지 않습니다.
+개별 spec이 그 작업을 직접 호출하지 않는지는 spec 작성자가 보장합니다.
+
+```json
+{
+  "version": 1,
+  "contract": "single-session-ui",
+  "restartInstallExcluded": true,
+  "specs": [[
+    "./specs/your-batch-case-a.spec.ts",
+    "./specs/your-batch-case-b.spec.ts"
+  ]]
+}
+```
+
+위 두 경로는 예시 자리표시자입니다. 실행할 두 개의 작은 spec으로 바꾸고,
+각 경로는 glob이 아닌 실제 파일을 가리켜야 합니다. 상대 경로는 이
+`wdio.conf.batch.ts`가 있는 `e2e-tauri/` 디렉터리를 기준으로 해석되며,
+runner가 WDIO를 시작하기 전에 파일 존재 여부를 확인합니다.
+
+```bash
+cd packages/shell
+NAIA_E2E_ADK_PATH=/var/tmp/naia-adk \
+NAIA_E2E_RUN_ID=batch-20260907-smoke \
+pnpm exec wdio run e2e-tauri/wdio.conf.batch.ts
+```
+
+PowerShell:
+
+```powershell
+cd packages/shell
+$env:NAIA_E2E_ADK_PATH = 'C:\qa\naia-adk'
+$env:NAIA_E2E_RUN_ID = 'batch-smoke'
+pnpm exec wdio run e2e-tauri/wdio.conf.batch.ts
+```
+
+The nested spec group is given to one WDIO worker with `bail: 0`, so an
+independent test that WDIO schedules after a failed case can still run. A
+	Mocha `before` or `beforeEach` failure may prevent later tests from starting.
+	Hook failures and started-but-unfinished tests are recorded; the run summary
+	flags unvisited scope, but does not enumerate tests that never started.
+The batch reporter appends each case and hook result as it happens to
+`<NAIA_E2E_ADK_PATH>/e2e-batch-results/<unique-run-id>/results.jsonl`; keep that
+receipt with the plan and the other run artifacts. The reporter's failure
+receipt and process status are the run result; do not infer success from an HTTP
+response alone.

@@ -1,7 +1,11 @@
 import { Logger } from "./logger";
+import {
+	UI_PREFERENCE_KEYS,
+	getUiPreference,
+	patchUiPreferences,
+} from "./ui-preferences";
 
 const ANNOUNCEMENTS_URL = "https://www.naia.land/api/announcements";
-const STORAGE_KEY = "naia_read_announcements";
 const FETCH_TIMEOUT_MS = 8000;
 
 export type AnnouncementType = "release" | "maintenance" | "info" | "warning";
@@ -23,25 +27,27 @@ interface AnnouncementsFile {
 }
 
 function getReadIds(): Set<string> {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return new Set();
-		return new Set(JSON.parse(raw) as string[]);
-	} catch {
-		return new Set();
-	}
+	const stored = getUiPreference<unknown>(
+		UI_PREFERENCE_KEYS.readAnnouncementIds,
+		[],
+	);
+	return new Set(
+		Array.isArray(stored)
+			? stored.filter((id): id is string => typeof id === "string")
+			: [],
+	);
 }
 
 export function markAnnouncementRead(id: string): void {
-	try {
-		const ids = getReadIds();
-		ids.add(id);
-		localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
-	} catch (err) {
+	const ids = getReadIds();
+	ids.add(id);
+	void patchUiPreferences({
+		[UI_PREFERENCE_KEYS.readAnnouncementIds]: [...ids],
+	}).catch((err: unknown) => {
 		Logger.warn("announcements", "Failed to persist read id", {
 			error: String(err),
 		});
-	}
+	});
 }
 
 export function getLocalizedText(

@@ -10,6 +10,7 @@
 		"core:event:allow-emit",
 		"core:window:default",
 		"core:window:allow-close",
+		"core:window:allow-destroy",
 		"core:window:allow-minimize",
 		"core:window:allow-maximize",
 		"core:window:allow-unmaximize",

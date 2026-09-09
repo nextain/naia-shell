@@ -1,4 +1,18 @@
 {
 	"version": 1,
-	"quarantined": []
+	"quarantined": [
+		{
+			"name": "issue-447-shell-bootstrap.json",
+			"origin": ".agents/session-contracts/issue-447-shell-bootstrap.json",
+			"quarantined_date": "2026-09-07",
+			"reason": "Superseded historical bootstrap; preserve byte-exact recovery. Replacement binding is not verified by the archival receipt",
+			"retention_months": 3,
+			"review_by": "2026-12-07",
+			"compress_on_expiry": true,
+			"status": "archived",
+			"compressed": false,
+			"pending_notice": false,
+			"user_approved": true
+		}
+	]
 }

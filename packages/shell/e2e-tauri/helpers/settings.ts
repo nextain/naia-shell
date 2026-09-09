@@ -285,11 +285,101 @@ const ADK_FIXTURE =
 	process.env.NAIA_E2E_ADK_FIXTURE ??
 	resolve(import.meta.dirname, "..", "..", "..", "..", "naia-adk");
 
+const normalizeAdkPath = (path: string): string =>
+	path.replaceAll("\\", "/").replace(/\/+$/, "");
+
+async function waitForAppReadySurface(): Promise<void> {
+	// Wait for app + tabs to be ready
+	// W1.옵션A — timeout 60s 로 늘렸으나 Bazzite + WebKitWebDriver 환경에서도
+	// 일부 spec 통과 못함. 윈도우 환경에서 통과 가능성 높음 (사용자 명시 2026-05-29
+	// "윈도우 위주로 테스트 하려고해"). 60s 그대로 둠 — windows wdio 환경에서
+	// VRM 로딩 시간 충분 대비.
+	const appRoot = await $(S.appRoot);
+	await appRoot.waitForDisplayed({ timeout: 60_000 });
+	await browser.waitUntil(
+		async () =>
+			browser.execute(
+				(sel: string) => !document.querySelector(sel),
+				S.onboardingOverlay,
+			),
+		{ timeout: 60_000 },
+	);
+	// jikime c0d967e9 baseline 의 ChatApp.tsx 는 chat-tabs 안에 button.chat-tab
+	// 3개 (chat / history / channels). origin/main 의 #337 시리즈에서 8 tab 으로
+	// 확장됐던 helper 가 cherry-pick 으로 baseline 위에 그대로 들어옴 = mismatch.
+	// 3 tab 이 baseline 의 정확한 contract. (debug log 에서 무한 false 확인.)
+	await browser.waitUntil(
+		async () =>
+			browser.execute(
+				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 3,
+			),
+		{ timeout: 60_000 },
+	);
+}
+
 /**
  * Ensure the app is ready: bypass onboarding, set base config, wait for tabs.
  * Safe to call multiple times — skips if already configured.
  */
 export async function ensureAppReady(): Promise<void> {
+	const explicitAdkPath = process.env.NAIA_E2E_ADK_PATH?.trim();
+	if (explicitAdkPath) {
+		// An explicit ADK is prepared by the caller. Its config.json is the source
+		// of truth; do not write a legacy localStorage config or refresh over it.
+		const expectedAdkPath = normalizeAdkPath(explicitAdkPath);
+		await browser.waitUntil(
+			async () => {
+				const state = await browser.execute(() => {
+					const selectedPath = localStorage.getItem("naia-adk-path") ?? "";
+					const raw = localStorage.getItem("naia-config");
+					if (!raw) return { selectedPath, ready: false };
+					try {
+						const config = JSON.parse(raw) as {
+							onboardingComplete?: unknown;
+							llmRoles?: {
+								main?: {
+									provider?: unknown;
+									model?: unknown;
+								};
+							};
+						};
+						const main = config.llmRoles?.main;
+						return {
+							selectedPath,
+							ready:
+								config.onboardingComplete === true &&
+								typeof main?.provider === "string" &&
+								main.provider.length > 0 &&
+								typeof main.model === "string" &&
+								main.model.length > 0,
+						};
+					} catch {
+						return { selectedPath, ready: false };
+					}
+				});
+				const selectedPath = String(state.selectedPath ?? "");
+				if (
+					selectedPath &&
+					normalizeAdkPath(selectedPath) !== expectedAdkPath
+				) {
+					throw new Error(
+						`selected ADK path mismatch: expected ${explicitAdkPath}, got ${selectedPath}`,
+					);
+				}
+				return (
+					normalizeAdkPath(selectedPath) === expectedAdkPath &&
+					state.ready === true
+				);
+			},
+			{
+				timeout: 60_000,
+				timeoutMsg: `explicit ADK did not hydrate: ${explicitAdkPath} (selected path, onboarding, and main provider/model are required)`,
+			},
+		);
+		await waitForAppReadySurface();
+		return;
+	}
+
 	// Ensure ADK path is set so AdkSetupScreen does not gate the rest of the app.
 	// Uses NAIA_E2E_ADK_FIXTURE (default projects/naia-adk) so we never hit a
 	// fresh-install screen during specs that just need the chat surface.
@@ -401,32 +491,7 @@ export async function ensureAppReady(): Promise<void> {
 		}
 	}
 
-	// Wait for app + tabs to be ready
-	// W1.옵션A — timeout 60s 로 늘렸으나 Bazzite + WebKitWebDriver 환경에서도
-	// 일부 spec 통과 못함. 윈도우 환경에서 통과 가능성 높음 (사용자 명시 2026-05-29
-	// "윈도우 위주로 테스트 하려고해"). 60s 그대로 둠 — windows wdio 환경에서
-	// VRM 로딩 시간 충분 대비.
-	const appRoot = await $(S.appRoot);
-	await appRoot.waitForDisplayed({ timeout: 60_000 });
-	await browser.waitUntil(
-		async () =>
-			browser.execute(
-				(sel: string) => !document.querySelector(sel),
-				S.onboardingOverlay,
-			),
-		{ timeout: 60_000 },
-	);
-	// jikime c0d967e9 baseline 의 ChatApp.tsx 는 chat-tabs 안에 button.chat-tab
-	// 3개 (chat / history / channels). origin/main 의 #337 시리즈에서 8 tab 으로
-	// 확장됐던 helper 가 cherry-pick 으로 baseline 위에 그대로 들어옴 = mismatch.
-	// 3 tab 이 baseline 의 정확한 contract. (debug log 에서 무한 false 확인.)
-	await browser.waitUntil(
-		async () =>
-			browser.execute(
-				() => document.querySelectorAll(".chat-tabs .chat-tab").length >= 3,
-			),
-		{ timeout: 60_000 },
-	);
+	await waitForAppReadySurface();
 }
 
 /**

@@ -27,6 +27,7 @@ import {
 	extractArchive,
 	generateConf,
 	invalidateVoskBuildCache,
+	installerCoreEnv,
 	prepareRuntime,
 	provisionNode,
 	selectNodeArchive,
@@ -817,6 +818,13 @@ describe("agent production staging", () => {
 });
 
 describe("clean-checkout build order", () => {
+	it("builds installers through the new core by default, matching tauri-with-mode", () => {
+		expect(installerCoreEnv({})).toEqual({ VITE_NAIA_NEW_CORE: "1" });
+		expect(installerCoreEnv({ VITE_NAIA_NEW_CORE: "0" })).toEqual({
+			VITE_NAIA_NEW_CORE: "0",
+		});
+	});
+
 	it("invalidates generated Vosk files, rebuilds the plugin, and verifies resources before installer build", () => {
 		const resources = mkdtempSync(resolve(tmpdir(), "naia-vosk-incremental-"));
 		const shellDir = mkdtempSync(resolve(tmpdir(), "naia-vosk-shell-"));
@@ -871,8 +879,10 @@ describe("clean-checkout build order", () => {
 			resolve(SHELL, "scripts/stage-runtime.mjs"),
 			"utf8",
 		);
-		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT)');
-		const preserveNativeRuntime = source.indexOf('process.env.NO_STRIP = "1"');
+		const coreBuild = source.indexOf('run("pnpm build", REPO_ROOT, coreEnv)');
+		const preserveNativeRuntime = source.indexOf(
+			'const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1" }',
+		);
 		const tauriBuild = source.indexOf(
 			'"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json"',
 		);
@@ -881,11 +891,13 @@ describe("clean-checkout build order", () => {
 		);
 
 		expect(coreBuild).toBeGreaterThan(-1);
+		expect(source).toContain('const coreEnv = installerCoreEnv();');
 		expect(preserveNativeRuntime).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(coreBuild);
 		expect(tauriBuild).toBeGreaterThan(preserveNativeRuntime);
 		expect(clearBundle).toBeGreaterThan(preserveNativeRuntime);
 		expect(tauriBuild).toBeGreaterThan(clearBundle);
+		expect(source).toContain("run(tauriBuildCommand, SHELL, tauriBuildEnv)");
 		expect(source).toContain('process.env.NAIA_TAURI_NO_BUNDLE === "1"');
 	});
 });

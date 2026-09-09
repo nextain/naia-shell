@@ -1,4 +1,4 @@
-import { loadConfig, saveConfig } from "./config";
+import { loadConfig, loadConfigWithSecrets, saveConfig } from "./config";
 import { openDmChannel } from "./discord-api";
 import { Logger } from "./logger";
 
@@ -54,7 +54,7 @@ async function fetchLinkedChannels(
  * 3. Persist to config + sync to Naia Gateway + restart
  */
 export async function syncLinkedChannels(): Promise<void> {
-	const config = loadConfig();
+	const config = await loadConfigWithSecrets();
 	if (!config?.naiaKey || !config?.naiaUserId) {
 		Logger.info("channel-sync", "No lab credentials, skipping channel sync");
 		return;

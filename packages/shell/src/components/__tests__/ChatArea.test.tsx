@@ -9,6 +9,7 @@ import {
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
+import { isNewCore } from "../../lib/chat-service";
 import type { AgentResponseChunk } from "../../lib/types";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
@@ -107,6 +108,10 @@ vi.mock("@tauri-apps/plugin-store", () => {
 let capturedOnChunk: ((chunk: AgentResponseChunk) => void) | null = null;
 const capturedRequests: {
 	message: string;
+	provider?: {
+		provider?: string;
+		model?: string;
+	};
 	history: { role: "user" | "assistant"; content: string }[];
 	requestId: string;
 	onChunk: (chunk: AgentResponseChunk) => void;
@@ -175,6 +180,7 @@ describe("ChatArea", () => {
 		capturedOnChunk = null;
 		capturedRequests.length = 0;
 		vi.clearAllMocks();
+		vi.mocked(isNewCore).mockReturnValue(false);
 		mockInvoke.mockResolvedValue(undefined);
 		useChatStore.setState(useChatStore.getInitialState());
 		useAvatarStore.setState(useAvatarStore.getInitialState());
@@ -250,6 +256,60 @@ describe("ChatArea", () => {
 		const request = capturedRequests[0];
 		request.onChunk({ type: "finish", requestId: request.requestId });
 		expect(useAvatarStore.getState().currentEmotion).toBe("neutral");
+		localStorage.removeItem("naia-config");
+	});
+
+	it("routes the structured main role when the flat provider mirror is stale", async () => {
+		vi.mocked(isNewCore).mockReturnValue(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				llmRoles: {
+					main: { provider: "nextain", model: "deepseek-v4-flash" },
+				},
+				enableTools: false,
+			}),
+		);
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "structured role route" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(capturedRequests[0].provider).toMatchObject({
+			provider: "nextain",
+			model: "deepseek-v4-flash",
+		});
+		localStorage.removeItem("naia-config");
+	});
+
+	it("preserves a dynamically catalogued structured main model", async () => {
+		vi.mocked(isNewCore).mockReturnValue(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				llmRoles: {
+					main: { provider: "nextain", model: "gemini-3.7-flash" },
+				},
+				enableTools: false,
+			}),
+		);
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "dynamic gateway model" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		expect(capturedRequests[0].provider).toMatchObject({
+			provider: "nextain",
+			model: "gemini-3.7-flash",
+		});
 		localStorage.removeItem("naia-config");
 	});
 
@@ -1463,6 +1523,131 @@ describe("ChatArea", () => {
 		ttsSyncMocks.synthesizeTts.mockResolvedValue({
 			audioBase64: "default-audio",
 			costUsd: 0,
+		});
+		localStorage.removeItem("naia-config");
+	});
+
+	it("keeps the final text streaming after tool-round usage", async () => {
+		localStorage.removeItem("naia-adk-path");
+		vi.mocked(isNewCore).mockReturnValue(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "continue after tool" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "tool_use",
+			requestId: request.requestId,
+			toolCallId: "tool-1",
+			toolName: "list_dir",
+			args: { path: "." },
+		});
+		request.onChunk({
+			type: "tool_result",
+			requestId: request.requestId,
+			toolCallId: "tool-1",
+			toolName: "list_dir",
+			output: "[]",
+			success: true,
+		});
+		request.onChunk({
+			type: "usage",
+			requestId: request.requestId,
+			inputTokens: 3,
+			outputTokens: 2,
+			cost: 0.0059,
+			model: "gemini-2.5-flash",
+		});
+		// The first text chunk is still inside a thinking tag, so there is no
+		// visible text yet. The usage event must not commit a blank assistant.
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "<thi",
+		});
+		expect(useChatStore.getState().isStreaming).toBe(true);
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "nk>private chain</think>Visible answer.",
+		});
+		request.onChunk({ type: "finish", requestId: request.requestId });
+
+		await waitFor(() => expect(screen.getByText("Visible answer.")).toBeDefined());
+		const assistants = useChatStore
+			.getState()
+			.messages.filter((message) => message.role === "assistant");
+		expect(assistants).toHaveLength(1);
+		expect(assistants[0].content).toContain("Visible answer.");
+		await waitFor(() =>
+			expect(document.querySelector(".cost-badge")).not.toBeNull(),
+		);
+		localStorage.removeItem("naia-config");
+	});
+
+	it("commits accumulated tool-round cost when a response is cancelled", async () => {
+		localStorage.removeItem("naia-adk-path");
+		vi.mocked(isNewCore).mockReturnValue(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+			}),
+		);
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "cancel after tool usage" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+		await waitFor(() => expect(capturedRequests).toHaveLength(1));
+		const request = capturedRequests[0];
+		request.onChunk({
+			type: "text",
+			requestId: request.requestId,
+			text: "Partial answer.",
+		});
+		request.onChunk({
+			type: "usage",
+			requestId: request.requestId,
+			inputTokens: 1,
+			outputTokens: 2,
+			cost: 0.001,
+			model: "gemini-2.5-flash",
+		});
+		request.onChunk({
+			type: "usage",
+			requestId: request.requestId,
+			inputTokens: 3,
+			outputTokens: 4,
+			cost: 0.002,
+			model: "gemini-2.5-flash",
+		});
+
+		fireEvent.click(screen.getByTitle("ESC"));
+		await waitFor(() =>
+			expect(useChatStore.getState().isStreaming).toBe(false),
+		);
+		const assistants = useChatStore
+			.getState()
+			.messages.filter((message) => message.role === "assistant");
+		expect(assistants).toHaveLength(1);
+		expect(assistants[0].content).toContain("Partial answer.");
+		expect(assistants[0].cost).toMatchObject({
+			inputTokens: 4,
+			outputTokens: 6,
+			cost: 0.003,
 		});
 		localStorage.removeItem("naia-config");
 	});

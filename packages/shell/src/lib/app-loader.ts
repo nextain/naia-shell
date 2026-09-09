@@ -41,6 +41,7 @@ interface InstalledAppManifest {
  * 아무 말을 하지 않았다. 부팅의 이 구간을 측정 안으로 들인다.
  */
 let installedAppsSettled = false;
+let installedAppsLoadGeneration = 0;
 export function areInstalledAppsSettled(): boolean {
 	return installedAppsSettled;
 }
@@ -49,12 +50,37 @@ export function resetInstalledAppsSettled(): void {
 	installedAppsSettled = false;
 }
 
+/**
+ * Drop registrations from the previous ADK before loading a newly selected
+ * root. This is intentionally separate from a normal refresh: unchanged
+ * installed apps stay mounted during ordinary list calls, while an ADK switch
+ * must not leave an old app (or its active context) visible during the async
+ * replacement.
+ */
+export function invalidateInstalledApps(): void {
+	const installed = appRegistry
+		.list()
+		.filter((descriptor) => descriptor.source === "installed");
+	if (installed.length === 0) return;
+
+	const activeApp = useAppStore.getState().activeApp;
+	for (const descriptor of installed) {
+		appRegistry.unregister(descriptor.id);
+	}
+	if (activeApp && installed.some((descriptor) => descriptor.id === activeApp)) {
+		useAppStore.getState().setActiveApp(null);
+	}
+	useAppStore.getState().bumpAppListVersion();
+}
+
 export async function loadInstalledApps(): Promise<void> {
+	const loadGeneration = ++installedAppsLoadGeneration;
 	let manifests: InstalledAppManifest[];
 	try {
 		Logger.debug("AppLoader", "Invoking app_list_installed");
 		manifests = await invoke<InstalledAppManifest[]>("app_list_installed");
 	} catch (err) {
+		if (loadGeneration !== installedAppsLoadGeneration) return;
 		Logger.warn("AppLoader", "Failed to load installed apps", {
 			err: String(err),
 		});
@@ -64,7 +90,32 @@ export async function loadInstalledApps(): Promise<void> {
 		return;
 	}
 
+	// A path switch can start a second list while the first native call is
+	// pending. The older result belongs to the previous ADK and must not mutate
+	// the registry after the newer request has started.
+	if (loadGeneration !== installedAppsLoadGeneration) return;
+
 	Logger.info("AppLoader", `Found ${manifests.length} installed app(s)`);
+
+	// The selected ADK is the source of truth. On an ADK switch, an installed
+	// descriptor from the previous root can have the same id but an old
+	// htmlEntry. Drop only installed descriptors whose current manifest is gone
+	// or points at a different root; built-ins and live unchanged apps remain.
+	const currentById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+	for (const registered of appRegistry.list()) {
+		if (registered.source !== "installed") continue;
+		const current = currentById.get(registered.id);
+		if (!current || registered.htmlEntry !== current.htmlEntry) {
+			if (useAppStore.getState().activeApp === registered.id) {
+				useAppStore.getState().setActiveApp(null);
+			}
+			appRegistry.unregister(registered.id);
+			Logger.debug(
+				"AppLoader",
+				`Removed stale installed registration: ${registered.id}`,
+			);
+		}
+	}
 
 	for (const manifest of manifests) {
 		if (appRegistry.get(manifest.id)) {
@@ -120,6 +171,9 @@ export async function removeInstalledApp(appId: string): Promise<void> {
 	}
 
 	appRegistry.unregister(appId);
+	if (useAppStore.getState().activeApp === appId) {
+		useAppStore.getState().setActiveApp(null);
+	}
 	useAppStore.getState().bumpAppListVersion();
 	Logger.debug("AppLoader", `App unregistered: ${appId}`);
 }

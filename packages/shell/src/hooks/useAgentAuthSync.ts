@@ -26,6 +26,7 @@ function notifyNaiaAuthReady(source: "startup" | "auth-complete"): void {
 export function useAgentAuthSync(
 	showAdkSetup: boolean,
 	showOnboarding: boolean,
+	configHydrated: boolean,
 ): void {
 	useEffect(() => {
 		const unlisten = listen<{ naiaKey?: string }>(
@@ -49,13 +50,25 @@ export function useAgentAuthSync(
 	}, []);
 
 	useEffect(() => {
-		if (showAdkSetup || showOnboarding) return;
+		if (showAdkSetup || showOnboarding || !configHydrated) return;
 		const preMigrate = loadConfig();
 		if (preMigrate) {
-			const decision = shouldMigrateNextainModel(
-				preMigrate.provider,
-				preMigrate.model,
+			// A structured main role is the canonical persisted selection.
+			// Gateway models are loaded dynamically and may not exist in the
+			// static registry when startup migration runs.
+			const structuredMain = preMigrate.llmRoles?.main;
+			const hasExplicitStructuredMainModel = Boolean(
+				structuredMain &&
+					!structuredMain.inherit &&
+					structuredMain.provider &&
+					structuredMain.model,
 			);
+			const decision = hasExplicitStructuredMainModel
+				? { migrate: false as const }
+				: shouldMigrateNextainModel(
+						preMigrate.provider,
+						preMigrate.model,
+					);
 			if (decision.migrate) {
 				Logger.warn("App", "#248 model migration", {
 					from: preMigrate.model,
@@ -127,5 +140,5 @@ export function useAgentAuthSync(
 		return () => {
 			active = false;
 		};
-	}, [showAdkSetup, showOnboarding]);
+	}, [showAdkSetup, showOnboarding, configHydrated]);
 }

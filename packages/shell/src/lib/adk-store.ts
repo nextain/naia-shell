@@ -33,6 +33,10 @@ export function completeNaiaConfigHydration(): void {
 	configHydrationPending = false;
 }
 
+export function isNaiaConfigHydrationPending(): boolean {
+	return configHydrationPending;
+}
+
 // ── ADK Path ──────────────────────────────────────────────────────────────────
 
 export function getAdkPath(): string | null {
@@ -209,6 +213,9 @@ const SECRET_CONFIG_KEYS = new Set([
 // G-08: UI-only fields — naia-agent doesn't consume these. Stripped to prevent
 // flattenConfig() from polluting process.env with THEME, APP_POSITION, BGM_TRACK, etc.
 const UI_ONLY_CONFIG_KEYS = new Set([
+	// UI-local preferences are grouped by the shell so individual screens can
+	// migrate their legacy localStorage keys without adding agent fields.
+	"uiPreferences",
 	// Appearance
 	"theme",
 	"backgroundImage",
@@ -550,16 +557,32 @@ export async function agentKeyExists(
  * first-run creation, so callers must treat this as a partial configuration and
  * provide their own required-field defaults before using it as an AppConfig.
  */
-export async function readNaiaConfig(): Promise<Partial<AppConfig> | null> {
-	const adkPath = getAdkPath();
-	if (!adkPath) return null;
-	try {
-		const json = await invoke<string>("read_naia_config", { adkPath });
-		if (!json) return null;
-		return JSON.parse(json) as Partial<AppConfig>;
-	} catch {
-		return null;
+function resolveAdkPath(adkPathOverride?: string | null): string | null {
+	return adkPathOverride === undefined ? getAdkPath() : adkPathOverride;
+}
+
+function parsePersistedConfig<T extends object>(
+	command: string,
+	json: unknown,
+): T | null {
+	if (typeof json !== "string") {
+		throw new Error(`${command}_invalid_response`);
 	}
+	if (json.trim() === "") return null;
+	const parsed: unknown = JSON.parse(json);
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error(`${command}_invalid_json`);
+	}
+	return parsed as T;
+}
+
+export async function readNaiaConfig(
+	adkPathOverride?: string | null,
+): Promise<Partial<AppConfig> | null> {
+	const adkPath = resolveAdkPath(adkPathOverride);
+	if (!adkPath) return null;
+	const json = await invoke<unknown>("read_naia_config", { adkPath });
+	return parsePersistedConfig<Partial<AppConfig>>("read_naia_config", json);
 }
 
 /**
@@ -655,19 +678,19 @@ function mergeUiConfigPatch(
 	return next;
 }
 
-/** UI 정체성 키만 `{adkPath}/naia-settings/ui-config.json` 에 저장(FR-WS.2). 비치명. */
-export async function writeNaiaUiConfig(
+/** UI 정체성 키만 `{adkPath}/naia-settings/ui-config.json` 에 저장(FR-WS.2). */
+async function writeNaiaUiConfigNow(
 	config: Record<string, unknown>,
+	adkPathOverride?: string | null,
 ): Promise<boolean> {
-	if (configHydrationPending) return false;
-	const adkPath = getAdkPath();
+	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return false;
 	try {
-		// Preserve existing selections when a pre-hydration caller supplies only
-		// the UI fields it owns. readNaiaUiConfig is fail-soft, so a missing/corrupt
-		// file still creates a valid config from this patch.
+		// Preserve existing selections when a caller supplies only the UI fields it
+		// owns. An empty file is a valid first-run state; I/O and malformed data
+		// return false here so the enclosing config transaction can reject it.
 		const json = JSON.stringify(
-			mergeUiConfigPatch(await readNaiaUiConfig(), config),
+			mergeUiConfigPatch(await readNaiaUiConfig(adkPath), config),
 			null,
 			2,
 		);
@@ -681,20 +704,35 @@ export async function writeNaiaUiConfig(
 	}
 }
 
+/** Serialize standalone UI patches with full config writes. */
+export function writeNaiaUiConfig(
+	config: Record<string, unknown>,
+	adkPathOverride?: string | null,
+): Promise<boolean> {
+	if (configHydrationPending) return Promise.resolve(false);
+	const configSnapshot = snapshotConfig(config);
+	const adkPath = resolveAdkPath(adkPathOverride);
+	const operation = naiaConfigWriteTail.then(() =>
+		writeNaiaUiConfigNow(configSnapshot, adkPath),
+	);
+	naiaConfigWriteTail = operation.then(
+		() => undefined,
+		() => undefined,
+	);
+	return operation;
+}
+
 /** ui-config.json 읽기(워크스페이스 전환 복원용). 없으면 null. */
-export async function readNaiaUiConfig(): Promise<Record<
-	string,
-	unknown
-> | null> {
-	const adkPath = getAdkPath();
+export async function readNaiaUiConfig(
+	adkPathOverride?: string | null,
+): Promise<Record<string, unknown> | null> {
+	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return null;
-	try {
-		const json = await invoke<string>("read_naia_ui_config", { adkPath });
-		if (!json) return null;
-		return JSON.parse(json) as Record<string, unknown>;
-	} catch {
-		return null;
-	}
+	const json = await invoke<unknown>("read_naia_ui_config", { adkPath });
+	return parsePersistedConfig<Record<string, unknown>>(
+		"read_naia_ui_config",
+		json,
+	);
 }
 
 /**
@@ -706,8 +744,8 @@ export async function readNaiaUiConfig(): Promise<Record<
 export async function applyWorkspaceConfigToLocal(): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) return;
-	const fileConfig = (await readNaiaConfig()) ?? {};
-	const uiConfig = (await readNaiaUiConfig()) ?? {};
+	const fileConfig = (await readNaiaConfig(adkPath)) ?? {};
+	const uiConfig = (await readNaiaUiConfig(adkPath)) ?? {};
 	const merged = {
 		...(mergeBootConfig(null, fileConfig, uiConfig) ?? {}),
 		onboardingComplete: true,
@@ -726,8 +764,9 @@ let slotsManifestWriteTail: Promise<void> = Promise.resolve();
 async function writeSlotsManifestNow(
 	config: AppConfig,
 	detectedVramGb?: number,
+	adkPathOverride?: string | null,
 ): Promise<SlotsManifest | null> {
-	const adkPath = getAdkPath();
+	const adkPath = resolveAdkPath(adkPathOverride);
 	if (!adkPath) return null;
 	// ★tier 해석(buildSlotsManifest 가 "auto" → 해석된 id 로)에 VRAM 이 필요.
 	// 호출처가 vram 을 안 넘기면 자체 감지(detect_gpu_vram IPC) — 모든 write 경로가
@@ -757,9 +796,12 @@ async function writeSlotsManifestNow(
 export function writeSlotsManifest(
 	config: AppConfig,
 	detectedVramGb?: number,
+	adkPathOverride?: string | null,
 ): Promise<SlotsManifest | null> {
+	const configSnapshot = snapshotConfig(config);
+	const adkPath = resolveAdkPath(adkPathOverride);
 	const operation = slotsManifestWriteTail.then(() =>
-		writeSlotsManifestNow(config, detectedVramGb),
+		writeSlotsManifestNow(configSnapshot, detectedVramGb, adkPath),
 	);
 	slotsManifestWriteTail = operation.then(
 		() => undefined,
@@ -770,11 +812,24 @@ export function writeSlotsManifest(
 
 let naiaConfigWriteTail: Promise<void> = Promise.resolve();
 
+function snapshotConfig<T>(config: T): T {
+	if (Array.isArray(config)) {
+		return config.map((item) => snapshotConfig(item)) as T;
+	}
+	if (config && typeof config === "object") {
+		const snapshot: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(config)) {
+			snapshot[key] = snapshotConfig(value);
+		}
+		return snapshot as T;
+	}
+	return config;
+}
+
 async function writeNaiaConfigNow(
 	config: Record<string, unknown>,
+	adkPath: string | null,
 ): Promise<void> {
-	if (configHydrationPending) return;
-	const adkPath = getAdkPath();
 	if (!adkPath) return;
 	const publicAgentConfig = stripForAgent(config);
 	syncMainRoleOpenAiBaseUrl(publicAgentConfig); // #515
@@ -794,7 +849,9 @@ async function writeNaiaConfigNow(
 		json: normalizedAgentConfigJson,
 	});
 	// UI 정체성(VRM/배경/BGM)은 agent 가 안 읽으므로 별도 ui-config.json 에 — 워크스페이스 전환 복원용(FR-WS.2).
-	await writeNaiaUiConfig(config);
+	if (!(await writeNaiaUiConfigNow(config, adkPath))) {
+		throw new Error("ui-config write failed");
+	}
 	// R2.2a: 로컬 cascade 구동 결정용 slots-manifest.json 동기화(windows-manager loader 가 read).
 	// 비밀 0(buildSlotsManifest 가 provider/model 만 직렬화). 항상 config 와 동기.
 	// 실패는 config 저장을 막지 않되(부가 산출물) 영구 stale 추적 위해 로깅.
@@ -803,7 +860,12 @@ async function writeNaiaConfigNow(
 	// Without this, any ordinary UI-config sync overwrites a valid member manifest
 	// with gate.naiaAccount=false and tears down the selected local voice/avatar.
 	let manifestConfig = config as unknown as AppConfig;
-	if (!manifestConfig.naiaKey) {
+	// The write path is captured when the transaction is queued. If the user
+	// switches ADKs while an awaited write is in flight, never read the newly
+	// selected ADK's credential into the old workspace's manifest. Login/setup
+	// passes its freshly persisted key in `config`, so it remains safe even
+	// while hydration is still pending.
+	if (!manifestConfig.naiaKey && adkPath === getAdkPath()) {
 		try {
 			const naiaKey = await getSecretKey("naiaKey");
 			if (naiaKey) manifestConfig = { ...manifestConfig, naiaKey };
@@ -812,7 +874,7 @@ async function writeNaiaConfigNow(
 			// store failure therefore remains fail-closed here.
 		}
 	}
-	await writeSlotsManifest(manifestConfig).catch((e) => {
+	await writeSlotsManifest(manifestConfig, undefined, adkPath).catch((e) => {
 		Logger.warn("adk-store", "slots-manifest write failed", {
 			error: e instanceof Error ? e.message : String(e),
 		});
@@ -825,15 +887,36 @@ async function writeNaiaConfigNow(
 	await invoke("reload_agent_settings");
 }
 
-/** Keep config, UI config, and the derived slots manifest as one ordered
- * transaction. In particular, logout must remain after any pending restore. */
-export function writeNaiaConfig(
+/**
+ * Persist a complete config to one captured ADK path.
+ *
+ * Setup uses this while App hydration is pending: the ordinary writer remains
+ * gated so an incomplete localStorage snapshot cannot win the startup race,
+ * while the explicit selected-workspace transaction can finish before setup
+ * calls onComplete(). Both the path and deep config snapshot are captured
+ * before entering the shared write tail.
+ */
+export function writeNaiaConfigAtPath(
 	config: Record<string, unknown>,
+	adkPath: string | null,
 ): Promise<void> {
-	const operation = naiaConfigWriteTail.then(() => writeNaiaConfigNow(config));
+	const configSnapshot = snapshotConfig(config);
+	const pathSnapshot = adkPath ? adkPath.replace(/[/\\]+$/, "") : null;
+	const operation = naiaConfigWriteTail.then(() =>
+		writeNaiaConfigNow(configSnapshot, pathSnapshot),
+	);
 	naiaConfigWriteTail = operation.then(
 		() => undefined,
 		() => undefined,
 	);
 	return operation;
+}
+
+/** Keep config, UI config, and the derived slots manifest as one ordered
+ * transaction. In particular, logout must remain after any pending restore. */
+export function writeNaiaConfig(
+	config: Record<string, unknown>,
+): Promise<void> {
+	if (configHydrationPending) return Promise.resolve();
+	return writeNaiaConfigAtPath(config, getAdkPath());
 }

@@ -44,6 +44,7 @@ import { SlidesStatus } from "./SlidesStatus";
 import { SlidesViewer } from "./SlidesViewer";
 import "./slides.css";
 
+export { resolveSlidesPdfWorkerUrl } from "./SlidesViewer";
 const TAG = "SlidesCenterArea";
 
 export interface SlidesAppApi {

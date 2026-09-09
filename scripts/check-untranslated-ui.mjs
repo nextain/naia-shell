@@ -27,6 +27,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, sep as SEP } from "node:path";
+import assert from "node:assert/strict";
 import ts from "typescript";
 
 const ROOT = "packages/shell/src";
@@ -62,6 +63,81 @@ function hasHangul(text) {
 }
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;
 
+function parseSource(file, source) {
+	return ts.createSourceFile(
+		file,
+		source,
+		ts.ScriptTarget.Latest,
+		true,
+		/\.tsx$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+	);
+}
+
+/**
+ * Remove only regular-expression literal tokens from a source copy while
+ * preserving offsets, newlines, and every other token on the line. Korean
+ * vocabulary in a normalizer regex is algorithmic; Korean UI text beside that
+ * regex is still counted by the gate.
+ */
+function maskRegexLiterals(file, source) {
+	const masked = source.split("");
+	const tree = parseSource(file, source);
+	const visit = (node) => {
+		if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) {
+			for (let index = node.getStart(tree); index < node.end; index += 1) {
+				if (masked[index] !== "\n" && masked[index] !== "\r") masked[index] = " ";
+			}
+		}
+		node.forEachChild(visit);
+	};
+	visit(tree);
+	return masked.join("");
+}
+
+function countHangulLines(file, source) {
+	return maskRegexLiterals(file, source)
+		.split("\n")
+		.filter((line) => !COMMENT.test(line) && hasHangul(line)).length;
+}
+
+function runClassifierSelfTest() {
+	const cases = [
+		{
+			name: "regex token is masked",
+			source: "const suffix = /(?:가사|오디오)/u;",
+			expected: 0,
+		},
+		{
+			name: "same-line UI string remains counted",
+			source: 'const label = "화면"; const suffix = /(?:가사)/u;',
+			expected: 1,
+		},
+		{
+			name: "division and UI string remain counted",
+			source: 'const ratio = "화면" / value;',
+			expected: 1,
+		},
+		{
+			name: "marker text cannot bypass the gate",
+			source: 'const label = "표시"; // untranslated-ui: non-display-regex-token',
+			expected: 1,
+		},
+	];
+	for (const testCase of cases) {
+		assert.equal(
+			countHangulLines("classifier-fixture.ts", testCase.source),
+			testCase.expected,
+			testCase.name,
+		);
+	}
+	console.log(`[untranslated-ui] classifier self-test ${cases.length}/${cases.length} passed`);
+}
+
+if (process.argv.includes("--classifier-self-test")) {
+	runClassifierSelfTest();
+	process.exit(0);
+}
+
 function walk(dir, out = []) {
 	for (const name of readdirSync(dir)) {
 		if (name === "node_modules" || name === "__tests__") continue;
@@ -84,12 +160,10 @@ function walk(dir, out = []) {
 const perFile = [];
 let total = 0;
 for (const file of walk(ROOT)) {
-	const lines = readFileSync(file, "utf8")
-		.split("\n")
-		.filter((line) => !COMMENT.test(line) && hasHangul(line));
-	if (lines.length) {
-		perFile.push({ file, lines: lines.length });
-		total += lines.length;
+	const lines = countHangulLines(file, readFileSync(file, "utf8"));
+	if (lines > 0) {
+		perFile.push({ file, lines });
+		total += lines;
 	}
 }
 perFile.sort((a, b) => b.lines - a.lines);
@@ -259,8 +333,8 @@ for (const file of walk(ROOT)) {
 // 522 에서 521 로 한 줄 줄었다. 브라우저 앱의 "표면 없음"·"이동 실패" 안내를
 // browser.noSurface/browser.navigateFailed 로 옮겼다(#576). 같은 회차에 새로
 // 생긴 아바타 없음 안내는 처음부터 avatar.noModel 키로 들어가 집계에 오르지 않았다.
-const BASELINE_LINES = 521;
-const BASELINE_FILES = 61;
+const BASELINE_LINES = 515;
+const BASELINE_FILES = 60;
 
 console.log(`[untranslated-ui] 화면에 박힌 한국어 ${total}줄 / ${perFile.length}파일 (baseline ${BASELINE_LINES}줄 / ${BASELINE_FILES}파일)`);
 for (const row of perFile.slice(0, 5)) console.log(`  ${String(row.lines).padStart(4)} ${row.file}`);

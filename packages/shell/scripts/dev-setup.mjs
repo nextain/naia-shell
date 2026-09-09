@@ -4,94 +4,58 @@
  *
  * 옛 old-naia-os/scripts/dev-setup.mjs 의 새-구조 이식판. 핵심 차이:
  *  - 에이전트가 **분리 repo** (`../naia-agent`) → 옛 임베디드 `../agent` + `../../naia-agent` submodule 로직 제거(obsolete).
- *  - 코어(`new-naia-os` 루트, 헥사고날 src/main)와 에이전트를 각각 tsc 빌드.
- *  - new-naia-os 는 항상 새 코어 → VITE_NAIA_NEW_CORE / NAIA_AGENT_SCRIPT 주입은 tauri-with-mode.mjs(env 레이어)가 담당.
+ *  - 코어(`new-naia-os` 루트, 헥사고날 src/main)와 BGM 사이드카를 tsc 빌드.
+ *  - paired naia-agent 선택/빌드는 tauri-with-mode.mjs가 담당한다. 이 스크립트는
+ *    sibling checkout을 임의로 빌드하지 않는다.
  *
- * 책임: ① stale 프로세스 정리 ② 코어/에이전트 tsc 빌드 ③ (--clean) Rust 증분캐시 삭제.
+ * 책임: ① 기존 프로세스를 보존한다는 사실을 알림 ② 코어/BGM tsc 빌드
+ * ③ (--clean) Rust 증분캐시 삭제.
  * 플랫폼 env(GDK_BACKEND 등)는 spawn 시점이라 tauri-with-mode.mjs 가 주입.
  */
 import { execSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
-import { platform } from "node:os";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const cleanMode = process.argv.includes("--clean");
-const isWin = platform() === "win32";
 
 const HERE = import.meta.dirname; // packages/shell/scripts
 const SHELL = resolve(HERE, ".."); // packages/shell
 const OS_ROOT = resolve(SHELL, "..", ".."); // new-naia-os (코어)
-const AGENT = resolve(OS_ROOT, "..", "naia-agent"); // 분리 repo
 const BGM = resolve(SHELL, "..", "bgm-sidecar"); // 환경 사이드카(YouTube BGM) — dist 없으면 lib.rs 가 옛 ../agent 로 폴백
 
-// ─── 1. stale 프로세스 정리 ──────────────────────────────────────────────────
-// ⚠️ pkill -f 금지(컨테이너/무관 프로세스 오살). 정확 프로세스명(-x) + 포트 1420(vite)만.
-// ★8910(cascade facade uvicorn) 추가 — Windows 강제종료 시 loader 는 죽어도 uvicorn 손자가
-//   살아남아(port 점유) 다음 start_cascade 가 EADDRINUSE 로 죽는다(R2.2b). dev 반복 기동 필수 정리.
-function killStale() {
-	try {
-		if (isWin) execSync("taskkill /F /IM naia-shell.exe 2>nul", { stdio: "ignore" });
-		else execSync("pkill -9 -x naia-shell 2>/dev/null || true", { stdio: "ignore", shell: "/bin/bash" });
-	} catch {
-		/* 미실행 — 정상 */
-	}
-	// cascade 고아(uvicorn output_cascade / loader / trt / voxcpm2) — PID 미추적 손자 정리.
-	try {
-		if (isWin) {
-			execSync(
-				'powershell -NoProfile -NonInteractive -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*output_cascade.app:app*\' -or $_.CommandLine -like \'*loader*launch*\' -or $_.CommandLine -like \'*trt_native_stream_server*\' -or $_.CommandLine -like \'*voxcpm2_service*\' } | ForEach-Object { $_.Terminate() }"',
-				{ stdio: "ignore" },
-			);
-		} else {
-			for (const pat of ["output_cascade.app:app", "loader.*launch", "trt_native_stream_server", "voxcpm2_service"]) {
-				execSync(`pkill -f '${pat}' 2>/dev/null || true`, { stdio: "ignore", shell: "/bin/bash" });
-			}
-		}
-	} catch {
-		/* 미실행 — 정상 */
-	}
-	try {
-		if (!isWin) {
-			const pid = execSync("lsof -ti:1420 2>/dev/null || true", { encoding: "utf8" }).trim();
-			if (pid) execSync(`kill -9 ${pid.split(/\s+/).join(" ")}`, { stdio: "ignore" });
-		} else {
-			// Windows: vite(1420)=node 라 naia-shell.exe kill 로는 안 잡힘 → 좀비 vite 가 포트 점유 시
-			// 다음 dev 가 "Port 1420 is already in use" 로 죽는다. netstat 로 LISTENING PID 만 정밀 정리.
-			// netstat misses the IPv6 ::1 listener in some Windows shells. Ask
-			// the networking cmdlet directly so an orphaned Vite never blocks
-			// the next `tauri:dev` run with a false "Port 1420 in use" error.
-			const out = execSync(
-				'powershell -NoProfile -NonInteractive -Command "Get-NetTCPConnection -State Listen -LocalPort 1420 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"',
-				{ encoding: "utf8" },
-			);
-			const pids = new Set(
-				out
-					.split(/\s+/)
-					.map((pid) => pid.trim())
-					.filter((pid) => /^\d+$/.test(pid) && pid !== "0"),
-			);
-			for (const pid of pids) execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: "ignore" });
-		}
-	} catch {
-		/* 포트 free — 정상 */
-	}
+// ─── 1. 프로세스 소유권 경계 ────────────────────────────────────────────────
+// dev-setup은 Shell PID/시작 identity와 child record를 소유하지 않는다. 따라서
+// 기존 프로세스나 포트 보유자를 "stale"로 추정하여 종료하지 않고, 다음 계층이
+// 자기 소유 기록을 확인하게 둔다. 이 보수적 정책은 병렬 세션을 보존한다.
+export function reportProcessOwnershipBoundary() {
+	console.log(
+		"[dev-setup] process cleanup skipped: ownership is not proven; existing processes and listeners are preserved.",
+	);
 }
 
-// ─── 2. tsc 빌드(코어 + 에이전트) ────────────────────────────────────────────
-function tscBuild(dir, label) {
+// ─── 2. tsc 빌드(코어 + BGM) ─────────────────────────────────────────────────
+export function tscBuild(dir, label, runTsc = execSync) {
 	if (!existsSync(resolve(dir, "package.json"))) {
 		console.log(`[dev-setup] ${label} 없음(${dir}) — skip`);
-		return;
+		return false;
 	}
 	console.log(`[dev-setup] ${label} tsc 빌드...`);
 	try {
 		const tsconfig = existsSync(resolve(dir, "tsconfig.build.json"))
 			? "tsconfig.build.json"
 			: "tsconfig.json";
-		execSync(`npx tsc -p ${tsconfig}`, { cwd: dir, stdio: "inherit" });
-	} catch {
-		// tsc 비치명 타입오류 — old dev-setup 정책: dist 있으면 계속(dev 차단 방지).
-		console.log(`[dev-setup] ${label} tsc 타입오류 — dist 있으면 계속`);
+		runTsc(`npx --no-install tsc -p ${tsconfig}`, { cwd: dir, stdio: "inherit" });
+	} catch (error) {
+		console.error(`[dev-setup] ${label} tsc 실패 — 후속 실행을 중단합니다.`);
+		throw error;
+	}
+	return true;
+}
+
+export function requiredTscBuild(dir, label, runTsc = execSync) {
+	if (!tscBuild(dir, label, runTsc)) {
+		throw new Error(`[dev-setup] ${label} package.json 없음 — 빌드를 중단합니다.`);
 	}
 }
 
@@ -108,9 +72,14 @@ function cleanRustCache() {
 }
 
 // ─── 실행 ────────────────────────────────────────────────────────────────────
-if (cleanMode) cleanRustCache();
-killStale();
-tscBuild(OS_ROOT, "core(new-naia-os)");
-tscBuild(AGENT, "naia-agent");
-tscBuild(BGM, "bgm-sidecar"); // dist/bgm-server-bin.js → lib.rs 1순위 후보 적중(BGM health 복구)
-console.log("[dev-setup] 완료 — tauri-with-mode 로 env 주입 후 tauri dev 진입.");
+export function main() {
+	if (cleanMode) cleanRustCache();
+	reportProcessOwnershipBoundary();
+	requiredTscBuild(OS_ROOT, "core(new-naia-os)");
+	// paired naia-agent는 여기서 sibling checkout을 빌드하지 않는다.
+	// tauri-with-mode가 commit/proto/dirty 상태를 검증한 뒤 paired checkout을 빌드한다.
+	requiredTscBuild(BGM, "bgm-sidecar"); // dist/bgm-server-bin.js → lib.rs 1순위 후보 적중(BGM health 복구)
+	console.log("[dev-setup] 완료 — tauri-with-mode 로 paired env 주입 후 tauri dev 진입.");
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

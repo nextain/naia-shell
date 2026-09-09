@@ -56,7 +56,7 @@ describe("BGM persistent library", () => {
 
 	it("auto-relinks a missing local track only when one candidate is unambiguous", () => {
 		const track = { ...local("D:/old/song.mp3"), fileSize: 100, durationSeconds: 180, fingerprint: "abc" };
-		expect(findLocalRelink(track, [{ path: "/home/me/Music/song.mp3", fileName: "song.mp3", fileSize: 100, durationSeconds: 180, fingerprint: "abc" }])).toBe("/home/me/Music/song.mp3");
+		expect(findLocalRelink(track, [{ path: "/home/user/Music/song.mp3", fileName: "song.mp3", fileSize: 100, durationSeconds: 180, fingerprint: "abc" }])).toBe("/home/user/Music/song.mp3");
 		expect(findLocalRelink(track, [
 			{ path: "/a/song.mp3", fileName: "song.mp3" },
 			{ path: "/b/song.mp3", fileName: "song.mp3" },

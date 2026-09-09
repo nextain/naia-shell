@@ -407,7 +407,7 @@ if (existsSync(envPath)) {
 
 // A developer .env file must not be able to re-introduce native E2E ownership
 // after the inherited environment was scrubbed above.
-const postFileEnv = interactiveLaunchEnv(env);
+const postFileEnv = interactiveLaunchEnv(env, mode);
 for (const key of Object.keys(env)) delete env[key];
 Object.assign(env, postFileEnv);
 

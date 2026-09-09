@@ -349,6 +349,15 @@ export function generateConf(
 	return { bundle };
 }
 
+/**
+ * Installer builds use the new Shell core just like tauri-with-mode dev/prod
+ * launches. Keep an explicit caller value for diagnostics, but default the
+ * build to the new core when stage-runtime is invoked directly.
+ */
+export function installerCoreEnv(source = process.env) {
+	return { VITE_NAIA_NEW_CORE: source.VITE_NAIA_NEW_CORE ?? "1" };
+}
+
 /* ───────────────────────── 부작용 단계 ───────────────────────── */
 
 const run = (cmd, cwd, env) =>
@@ -644,6 +653,7 @@ async function main() {
 	const platform = process.platform;
 	const arch = process.arch;
 	const matrix = readMatrix();
+	const coreEnv = installerCoreEnv();
 	const pairedAgentRoot = applyPairedAgentEnv(process.env);
 	const unsignedUpdaterValidation =
 		process.env.NAIA_UNSIGNED_UPDATER_BUILD === "1";
@@ -751,14 +761,14 @@ async function main() {
 	console.log(`[stage-runtime] ④ conf 생성 → ${GENERATED_CONF}`);
 
 	console.log("[stage-runtime] ⑤ core build");
-	run("pnpm build", REPO_ROOT);
+	run("pnpm build", REPO_ROOT, coreEnv);
 
 	console.log("[stage-runtime] ⑥ tauri build");
 	// AppImage의 linuxdeploy가 번들 안의 Node 및 다중 아키텍처 네이티브 모듈까지
 	// strip하려 들면 제3자 런타임이 변형되거나 외부 아키텍처 ELF에서 실패한다.
 	// 설치 계약은 검증된 런타임 원본을 동봉하는 것이므로 모든 플랫폼에서 보존한다
 	// (NO_STRIP을 소비하는 도구는 linuxdeploy뿐이다).
-	process.env.NO_STRIP = "1";
+	const tauriBuildEnv = { ...coreEnv, NO_STRIP: "1" };
 	// 이전 로컬 빌드의 stale 포맷이 같은 glob으로 업로드되는 것을 구조적으로 차단한다.
 	rmSync(resolve(SHELL, "src-tauri", "target", "release", "bundle"), {
 		recursive: true,
@@ -767,7 +777,7 @@ async function main() {
 	const tauriBuildCommand =
 		"pnpm exec tauri build --verbose --config src-tauri/tauri.conf.generated.json" +
 		(process.env.NAIA_TAURI_NO_BUNDLE === "1" ? " --no-bundle" : "");
-	run(tauriBuildCommand, SHELL);
+	run(tauriBuildCommand, SHELL, tauriBuildEnv);
 }
 
 // vitest 가 순수 함수만 import 할 수 있도록 main 은 직접 실행 시에만.

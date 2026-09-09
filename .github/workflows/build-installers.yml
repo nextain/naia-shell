@@ -4,6 +4,10 @@ on:
   push:
   workflow_dispatch:
 
+concurrency:
+  group: build-installers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
@@ -66,7 +70,7 @@ jobs:
         run: |
           git init ../naia-agent
           git -C ../naia-agent remote add origin https://github.com/nextain/naia-agent.git
-          git -C ../naia-agent fetch --depth 1 origin bc468a17fbc0b6c8db3dd95c8b66665c62a31bc7
+          git -C ../naia-agent fetch --depth 1 origin 43ed7d03a88995e930b802891cc57b4b6f86df7e
           git -C ../naia-agent checkout --detach FETCH_HEAD
           git init ../naia-kb-compiler
           git -C ../naia-kb-compiler remote add origin https://github.com/nextain/naia-kb-compiler.git
@@ -98,6 +102,7 @@ jobs:
              libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
              libasound2-dev libssl-dev libxdo-dev libudev-dev \
              pipewire-alsa xvfb rpm
+          sudo apt-get install -y libarchive-tools
 
       - name: Assert macOS runner architecture
         if: matrix.platform == 'darwin'
@@ -133,6 +138,33 @@ jobs:
           "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime" >> $env:GITHUB_ENV
           "NAIA_VOXCPM2_TRT_ARCHIVE=$archive" >> $env:GITHUB_ENV
           "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=5dc02662267f79489896621d39f975af1d081bba49fecf5daac2a1a78e0a4ce5" >> $env:GITHUB_ENV
+
+      - name: Provision verified Linux VoxCPM2 release input
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://stnaiapub83b29893.blob.core.windows.net/releases/linux_trt_6g/releases/0.2.3/voxcpm2-runtime-linux-trt6g-r1.zip"
+          archive="${RUNNER_TEMP}/voxcpm2-runtime-linux-trt6g-r1.zip"
+          runtime="${RUNNER_TEMP}/voxcpm2-runtime"
+          archive_bytes=2935215844
+          archive_sha256="e6e6a76f970a1311cc868ba38aa95bd7654a60d7f77f6c6274c9433ab62b642d"
+          manifest_sha256="43a80742df8828465f7df05f72519c412111bcdd5b727d113280e8112dc51778"
+          curl --location --fail --retry 4 --retry-all-errors --output "$archive" "$url"
+          test "$(stat -c '%s' "$archive")" = "$archive_bytes"
+          printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --status
+          rm -rf "$runtime"
+          mkdir -p "$runtime"
+          bsdtar -xf "$archive" -C "$runtime"
+          test -f "$runtime/artifact-manifest.json"
+          test "$(sha256sum "$runtime/artifact-manifest.json" | cut -d' ' -f1)" = "$manifest_sha256"
+          {
+            echo "NAIA_VOXCPM2_TARGET_PLATFORM=linux"
+            echo "NAIA_SYSTEM_TAR=bsdtar"
+            echo "NAIA_VOXCPM2_TRT_RUNTIME_DIR=$runtime"
+            echo "NAIA_VOXCPM2_TRT_ARCHIVE=$archive"
+            echo "NAIA_VOXCPM2_TRT_ARTIFACT_SHA256=$manifest_sha256"
+          } >> "$GITHUB_ENV"
 
       - name: Build installer bundle from platform matrix
         env:

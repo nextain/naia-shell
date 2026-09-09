@@ -901,6 +901,149 @@ describe("SettingsTab", () => {
 		);
 	});
 
+	it.each([
+		{
+			name: "stale legacy mirror",
+			legacy: { provider: "gemini", model: "gemini-2.5-flash" },
+		},
+		{
+			name: "role-only config",
+			legacy: {},
+		},
+	])(
+		"hydrates the authoritative main role and preserves metadata on save ($name)",
+		async ({ legacy }) => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					onboardingComplete: true,
+					// The legacy fields are stale or absent. The structured main role
+					// is the persisted source of truth for the editable brain controls.
+					...legacy,
+					apiKey: "stored-api-key",
+					llmRoles: {
+						main: {
+							provider: "openai",
+							model: "gpt-5.4",
+							credentialRef: "OPENAI_API_KEY",
+							baseUrl: "https://proxy.example/v1",
+						},
+					},
+				}),
+			);
+			mockInvoke.mockResolvedValue([]);
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+
+			await vi.waitFor(() => {
+				expect(
+					(document.getElementById("provider-select") as HTMLSelectElement)
+						.value,
+				).toBe("openai");
+				expect(
+					(document.getElementById("model-select") as HTMLSelectElement).value,
+				).toBe("gpt-5.4");
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+			await vi.waitFor(() => {
+				const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+				expect(saved.llmRoles?.main).toEqual(
+					expect.objectContaining({
+						provider: "openai",
+						model: "gpt-5.4",
+						credentialRef: "OPENAI_API_KEY",
+						baseUrl: "https://proxy.example/v1",
+					}),
+				);
+			});
+		},
+	);
+
+	it.each([
+		{
+			name: "same-provider model change",
+			nextProvider: "openai",
+			nextModel: "gpt-4.1",
+			preservesMetadata: true,
+		},
+		{
+			name: "provider change",
+			nextProvider: "gemini",
+			nextModel: "gemini-2.5-flash",
+			preservesMetadata: false,
+		},
+	])(
+		"preserves connection metadata only when the provider stays the same ($name)",
+		async ({ nextProvider, nextModel, preservesMetadata }) => {
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					onboardingComplete: true,
+					provider: "openai",
+					model: "gpt-5.4",
+					apiKey: "stored-api-key",
+					llmRoles: {
+						main: {
+							provider: "openai",
+							model: "gpt-5.4",
+							credentialRef: "OPENAI_API_KEY",
+							baseUrl: "https://proxy.example/v1",
+						},
+					},
+				}),
+			);
+			mockInvoke.mockResolvedValue([]);
+			render(<SettingsTab />);
+			gotoSettingsTab("brain");
+
+			const providerSelect = () =>
+				document.getElementById("provider-select") as HTMLSelectElement;
+			const modelSelect = () =>
+				document.getElementById("model-select") as HTMLSelectElement;
+			await vi.waitFor(() => expect(providerSelect().value).toBe("openai"));
+
+			if (nextProvider !== "openai") {
+				fireEvent.change(providerSelect(), {
+					target: { value: nextProvider },
+				});
+				await vi.waitFor(() =>
+					expect(providerSelect().value).toBe(nextProvider),
+				);
+			}
+
+			await vi.waitFor(() =>
+				expect(
+					[...modelSelect().options].map((option) => option.value),
+				).toContain(nextModel),
+			);
+			fireEvent.change(modelSelect(), { target: { value: nextModel } });
+			await vi.waitFor(() => expect(modelSelect().value).toBe(nextModel));
+			fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+			await vi.waitFor(() => {
+				const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+				expect(saved.llmRoles?.main).toEqual(
+					expect.objectContaining({
+						provider: nextProvider,
+						model: nextModel,
+					}),
+				);
+				if (preservesMetadata) {
+					expect(saved.llmRoles.main).toEqual(
+						expect.objectContaining({
+							credentialRef: "OPENAI_API_KEY",
+							baseUrl: "https://proxy.example/v1",
+						}),
+					);
+				} else {
+					expect(saved.llmRoles.main.credentialRef).toBeUndefined();
+					expect(saved.llmRoles.main.baseUrl).toBeUndefined();
+				}
+			});
+		},
+	);
+
 	it("saves main, sub, and memory brains as role settings", () => {
 		localStorage.setItem(
 			"naia-config",
@@ -1285,7 +1428,7 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(tabBtns.length).toBe(10);
 	});
 
-	it("owns radio DJ parameters under skill_youtube_bgm, not General", async () => {
+	it("keeps radio DJ parameters under skills and exhibition parameters under General", async () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		gotoSettingsTab("skills");
@@ -1315,10 +1458,15 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(screen.queryByTestId("proactive-knowledge-scope")).toBeNull();
 
 		gotoSettingsTab("general");
-		expect(screen.queryByTestId("proactive-speech-settings")).toBeNull();
-		expect(screen.queryByTestId("proactive-speech-profile")).toBeNull();
+		expect(screen.getByTestId("proactive-speech-settings")).toBeDefined();
+		expect(screen.getByTestId("proactive-knowledge-scope")).toBeDefined();
 		expect(screen.queryByTestId("proactive-bgm-autoplay")).toBeNull();
-		expect(screen.queryByTestId("proactive-knowledge-scope")).toBeNull();
+		expect(
+			Array.from(
+				(screen.getByTestId("proactive-speech-profile") as HTMLSelectElement)
+					.options,
+			).map((option) => option.value),
+		).toEqual(["disabled", "exhibition_intro"]);
 	});
 
 	it("does not expose a GPU profile or start local voice from detection", async () => {

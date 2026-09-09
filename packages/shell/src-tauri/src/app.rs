@@ -2,7 +2,7 @@ use base64::Engine as _;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::Read;
+use std::io::{Read, Write};
 
 use crate::data_home::{self, DataHomeChild};
 
@@ -135,20 +135,82 @@ struct ManifestIdentity {
     id: String,
 }
 
-fn manifest_id(dir: &std::path::Path) -> Result<String, String> {
+#[derive(Debug)]
+enum LegacyMigrationError {
+    Rejected(String),
+    Io(String),
+}
+
+impl std::fmt::Display for LegacyMigrationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rejected(message) | Self::Io(message) => formatter.write_str(message),
+        }
+    }
+}
+
+fn migration_manifest_id(
+    dir: &std::path::Path,
+) -> Result<String, LegacyMigrationError> {
     let path = dir.join("app.json");
-    let data = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    let manifest: ManifestIdentity =
-        serde_json::from_str(&data).map_err(|e| format!("Invalid {}: {}", path.display(), e))?;
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(LegacyMigrationError::Rejected(format!(
+                "Legacy app manifest is missing: {}",
+                path.display()
+            )))
+        }
+        Err(error) => {
+            return Err(LegacyMigrationError::Io(format!(
+                "Failed to inspect {}: {}",
+                path.display(),
+                error
+            )))
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(LegacyMigrationError::Rejected(format!(
+            "Legacy app manifest is not a regular file: {}",
+            path.display()
+        )));
+    }
+    let data = match std::fs::read_to_string(&path) {
+        Ok(data) => data,
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::InvalidData
+            ) => {
+                return Err(LegacyMigrationError::Rejected(format!(
+                    "Invalid legacy app manifest {}: {}",
+                    path.display(),
+                    error
+                )))
+            }
+        Err(error) => {
+            return Err(LegacyMigrationError::Io(format!(
+                "Failed to read {}: {}",
+                path.display(),
+                error
+            )))
+        }
+    };
+    let manifest: ManifestIdentity = serde_json::from_str(&data).map_err(|error| {
+        LegacyMigrationError::Rejected(format!("Invalid {}: {}", path.display(), error))
+    })?;
     if !is_safe_app_id(&manifest.id) {
-        return Err(format!(
+        return Err(LegacyMigrationError::Rejected(format!(
             "Invalid app id in {}: {:?}",
             path.display(),
             manifest.id
-        ));
+        )));
     }
     Ok(manifest.id)
+}
+
+fn manifest_id(dir: &std::path::Path) -> Result<String, String> {
+    migration_manifest_id(dir).map_err(|error| error.to_string())
 }
 
 fn ensure_directory(path: &std::path::Path, label: &str) -> Result<(), String> {
@@ -166,9 +228,358 @@ fn ensure_directory(path: &std::path::Path, label: &str) -> Result<(), String> {
     }
 }
 
-/// Establish the canonical app root and migrate the pre-#472 `panels` root.
-/// Refuse ambiguity instead of overwriting either copy.
+/// Resolve the ADK selected by the running shell. Installed apps live below
+/// this path so changing workspaces changes the app source of truth too.
+fn selected_adk_path() -> Result<std::path::PathBuf, String> {
+    let raw = crate::current_adk_path()?;
+    let path = std::path::PathBuf::from(raw.trim());
+    if path.as_os_str().is_empty() {
+        return Err("Selected ADK path is empty".to_string());
+    }
+    ensure_directory(&path, "selected ADK directory")?;
+    Ok(path)
+}
+
+/// Copy a legacy app without following symlinks.
+///
+/// A copy is used instead of the old rename migration so the source remains a
+/// recoverable fallback if validation or a later ADK switch fails. App ZIPs
+/// already reject symlinks; applying the same rule here keeps a legacy app
+/// from widening the selected ADK's file boundary during migration.
+fn copy_tree_without_symlinks(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<(), LegacyMigrationError> {
+    let source_type = std::fs::symlink_metadata(source)
+        .map_err(|error| {
+            LegacyMigrationError::Io(format!("Failed to inspect legacy app: {}", error))
+        })?
+        .file_type();
+    if !source_type.is_dir() || source_type.is_symlink() {
+        return Err(LegacyMigrationError::Rejected(
+            "Legacy app must be a real directory".to_string(),
+        ));
+    }
+    std::fs::create_dir_all(destination)
+        .map_err(|error| {
+            LegacyMigrationError::Io(format!(
+                "Failed to create migration directory: {}",
+                error
+            ))
+        })?;
+    for entry in std::fs::read_dir(source)
+        .map_err(|error| {
+            LegacyMigrationError::Io(format!("Failed to read legacy app: {}", error))
+        })?
+    {
+        let entry = entry.map_err(|error| {
+            LegacyMigrationError::Io(format!("Failed to read legacy app entry: {}", error))
+        })?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry
+            .file_type()
+            .map_err(|error| {
+                LegacyMigrationError::Io(format!(
+                    "Failed to inspect legacy app entry: {}",
+                    error
+                ))
+            })?;
+        if file_type.is_symlink() {
+            return Err(LegacyMigrationError::Rejected(format!(
+                "Legacy app contains a symlink: {}",
+                source_path.display()
+            )));
+        }
+        if file_type.is_dir() {
+            copy_tree_without_symlinks(&source_path, &destination_path)?;
+        } else if file_type.is_file() {
+            std::fs::copy(&source_path, &destination_path)
+                .map_err(|error| {
+                    LegacyMigrationError::Io(format!(
+                        "Failed to copy legacy app file: {}",
+                        error
+                    ))
+                })?;
+        } else {
+            return Err(LegacyMigrationError::Rejected(format!(
+                "Legacy app contains an unsupported entry: {}",
+                source_path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Preserve the pre-#472 `panels` root while making safe, verified copies into
+/// the canonical root. Invalid or ambiguous entries stay in place and are
+/// reported diagnostically; they never block unrelated canonical apps.
+fn copy_legacy_apps(root: &std::path::Path, legacy: &std::path::Path) -> Result<(), String> {
+    let metadata = match std::fs::symlink_metadata(legacy) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(format!(
+                "Failed to inspect legacy apps directory: {}",
+                error
+            ))
+        }
+        Ok(metadata) => metadata,
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        crate::log_verbose(&format!(
+            "[app storage] preserving invalid legacy panels path: {}",
+            legacy.display()
+        ));
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(legacy)
+        .map_err(|e| format!("Failed to read legacy apps directory: {}", e))?
+    {
+        let entry = entry.map_err(|e| format!("Failed to read legacy app entry: {}", e))?;
+        let source = entry.path();
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".~install-")
+        {
+            crate::log_verbose(&format!(
+                "[app storage] preserving incomplete legacy install: {}",
+                source.display()
+            ));
+            continue;
+        }
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Failed to inspect legacy app entry: {}", e))?;
+        if file_type.is_symlink() || !file_type.is_dir() {
+            crate::log_verbose(&format!(
+                "[app storage] preserving unsupported legacy app entry: {}",
+                source.display()
+            ));
+            continue;
+        }
+        let id = match migration_manifest_id(&source) {
+            Ok(id) => id,
+            Err(LegacyMigrationError::Rejected(error)) => {
+                crate::log_verbose(&format!(
+                    "[app storage] preserving legacy app with invalid manifest: {} ({})",
+                    source.display(),
+                    error
+                ));
+                continue;
+            }
+            Err(LegacyMigrationError::Io(error)) => {
+                return Err(format!(
+                    "Failed to inspect legacy app manifest {}: {}",
+                    source.display(),
+                    error
+                ));
+            }
+        };
+        let destination = root.join(&id);
+        if destination.exists() {
+            crate::log_verbose(&format!(
+                "[app storage] preserving ambiguous legacy app; canonical copy exists: {}",
+                source.display()
+            ));
+            continue;
+        }
+
+        let temporary = tempfile::Builder::new()
+            .prefix(".~migrate-")
+            .tempdir_in(root)
+            .map_err(|e| format!("Failed to create legacy migration directory: {}", e))?;
+        let temporary_app = temporary.path().join(&id);
+        match copy_tree_without_symlinks(&source, &temporary_app) {
+            Ok(()) => {}
+            Err(LegacyMigrationError::Rejected(error)) => {
+                crate::log_verbose(&format!(
+                    "[app storage] preserving legacy app after rejected copy: {} ({})",
+                    source.display(),
+                    error
+                ));
+                continue;
+            }
+            Err(LegacyMigrationError::Io(error)) => {
+                return Err(format!(
+                    "Failed to copy legacy app {}: {}",
+                    source.display(),
+                    error
+                ));
+            }
+        }
+        match migration_manifest_id(&temporary_app) {
+            Ok(copied_id) if copied_id == id => {}
+            Ok(_) | Err(LegacyMigrationError::Rejected(_)) => {
+                crate::log_verbose(&format!(
+                    "[app storage] preserving legacy app after copy verification failure: {}",
+                    source.display()
+                ));
+                continue;
+            }
+            Err(LegacyMigrationError::Io(error)) => {
+                return Err(format!(
+                    "Failed to verify migrated legacy app {}: {}",
+                    source.display(),
+                    error
+                ));
+            }
+        }
+        if let Err(error) = std::fs::rename(&temporary_app, &destination) {
+            return Err(format!(
+                "Failed to finalize migrated legacy app {}: {}",
+                source.display(),
+                error
+            ));
+        }
+        rewrite_installed_app_asset_urls(&destination);
+    }
+    Ok(())
+}
+
+const LEGACY_MIGRATION_RECEIPT: &str = "naia-apps-legacy-panels-v1\n";
+const DEVICE_LEGACY_MIGRATION_RECEIPT: &str = "naia-apps-adk-bound-v1\n";
+
+fn legacy_migration_receipt(root: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    root.parent()
+        .map(|parent| parent.join(".apps-legacy-migrated-v1"))
+        .ok_or_else(|| "Apps directory has no ADK metadata parent".to_string())
+}
+
+fn legacy_migration_completed(root: &std::path::Path) -> Result<bool, String> {
+    let receipt = legacy_migration_receipt(root)?;
+    let metadata = match std::fs::symlink_metadata(&receipt) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("Failed to inspect app migration receipt: {}", error)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!(
+            "App migration receipt must be a regular file: {}",
+            receipt.display()
+        ));
+    }
+    let contents = std::fs::read_to_string(&receipt)
+        .map_err(|e| format!("Failed to read app migration receipt: {}", e))?;
+    if contents != LEGACY_MIGRATION_RECEIPT {
+        return Err(format!(
+            "Invalid app migration receipt: {}",
+            receipt.display()
+        ));
+    }
+    Ok(true)
+}
+
+fn write_legacy_migration_receipt(root: &std::path::Path) -> Result<(), String> {
+    let receipt = legacy_migration_receipt(root)?;
+    let parent = receipt
+        .parent()
+        .ok_or_else(|| "App migration receipt has no parent".to_string())?;
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".apps-legacy-migrated-")
+        .tempfile_in(parent)
+        .map_err(|e| format!("Failed to create app migration receipt: {}", e))?;
+    temporary
+        .write_all(LEGACY_MIGRATION_RECEIPT.as_bytes())
+        .map_err(|e| format!("Failed to write app migration receipt: {}", e))?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|e| format!("Failed to flush app migration receipt: {}", e))?;
+    temporary
+        .persist(&receipt)
+        .map_err(|e| format!("Failed to finalize app migration receipt: {}", e.error))?;
+    Ok(())
+}
+
+fn device_legacy_migration_receipt(
+    legacy_home: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
+    apps_root(legacy_home)
+        .parent()
+        .map(|parent| parent.join(".apps-adk-bound-v1"))
+        .ok_or_else(|| "Legacy apps directory has no metadata parent".to_string())
+}
+
+fn device_legacy_migration_completed(legacy_home: &std::path::Path) -> Result<bool, String> {
+    let receipt = device_legacy_migration_receipt(legacy_home)?;
+    let metadata = match std::fs::symlink_metadata(&receipt) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "Failed to inspect device app migration receipt: {}",
+                error
+            ))
+        }
+    };
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!(
+            "Device app migration receipt must be a regular file: {}",
+            receipt.display()
+        ));
+    }
+    let contents = std::fs::read_to_string(&receipt)
+        .map_err(|e| format!("Failed to read device app migration receipt: {}", e))?;
+    if contents != DEVICE_LEGACY_MIGRATION_RECEIPT {
+        return Err(format!(
+            "Invalid device app migration receipt: {}",
+            receipt.display()
+        ));
+    }
+    Ok(true)
+}
+
+fn write_device_legacy_migration_receipt(
+    legacy_home: &std::path::Path,
+) -> Result<(), String> {
+    let receipt = device_legacy_migration_receipt(legacy_home)?;
+    let parent = receipt
+        .parent()
+        .ok_or_else(|| "Device app migration receipt has no parent".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("Failed to create device app migration receipt: {}", e))?;
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".apps-adk-bound-")
+        .tempfile_in(parent)
+        .map_err(|e| format!("Failed to create device app migration receipt: {}", e))?;
+    temporary
+        .write_all(DEVICE_LEGACY_MIGRATION_RECEIPT.as_bytes())
+        .map_err(|e| format!("Failed to write device app migration receipt: {}", e))?;
+    temporary
+        .as_file()
+        .sync_all()
+        .map_err(|e| format!("Failed to flush device app migration receipt: {}", e))?;
+    temporary
+        .persist(&receipt)
+        .map_err(|e| format!("Failed to finalize device app migration receipt: {}", e.error))?;
+    Ok(())
+}
+
+fn legacy_user_home() -> Result<std::path::PathBuf, String> {
+    let raw = data_home::user_home();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("User home is empty; cannot migrate installed apps".to_string());
+    }
+    Ok(std::path::PathBuf::from(trimmed))
+}
+
+/// Establish the canonical app root below the selected ADK.
+///
+/// The pre-#472 `panels` directory is never removed. Safe entries are copied
+/// only after verification, while invalid or ambiguous entries remain as a
+/// read-only fallback with a diagnostic.
 fn prepare_apps_root(home: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let legacy_home = legacy_user_home()?;
+    prepare_apps_root_with_legacy_home(home, &legacy_home)
+}
+
+fn prepare_apps_root_with_legacy_home(
+    home: &std::path::Path,
+    legacy_home: &std::path::Path,
+) -> Result<std::path::PathBuf, String> {
     let root = apps_root(home);
     // 앱 자리의 부모가 곧 데이터 홈이다. 데이터 홈 경로를 따로 받아 오지
     // 않는다 — 그 디렉터리를 손에 쥐면 이름표 없는 자리를 만들 수 있다.
@@ -183,85 +594,22 @@ fn prepare_apps_root(home: &std::path::Path) -> Result<std::path::PathBuf, Strin
         return Err("Apps directory escapes the user home".to_string());
     }
 
-    let legacy = legacy_apps_root(home);
-    match std::fs::symlink_metadata(&legacy) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(root),
-        Err(error) => {
-            return Err(format!(
-                "Failed to inspect legacy apps directory: {}",
-                error
-            ))
-        }
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-            return Err(format!(
-                "Legacy apps path must be a real directory: {}",
-                legacy.display()
-            ));
-        }
-        Ok(_) => {}
+    if !device_legacy_migration_completed(legacy_home)? {
+        // The old HOME roots are the only device-wide migration sources. A
+        // device receipt prevents those sources from being replayed into a
+        // later ADK, while each ADK's own panels root is migrated separately
+        // under that ADK's receipt below.
+        copy_legacy_apps(&root, &apps_root(legacy_home))?;
+        copy_legacy_apps(&root, &legacy_apps_root(legacy_home))?;
+        write_device_legacy_migration_receipt(legacy_home)?;
     }
-
-    let mut migrations = Vec::new();
-    let mut ids = std::collections::HashSet::new();
-    for entry in std::fs::read_dir(&legacy)
-        .map_err(|e| format!("Failed to read legacy apps directory: {}", e))?
-    {
-        let entry = entry.map_err(|e| format!("Failed to read legacy app entry: {}", e))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|e| format!("Failed to inspect legacy app entry: {}", e))?;
-        if !file_type.is_dir() {
-            return Err(format!(
-                "Refusing to migrate non-directory legacy app entry: {}",
-                entry.path().display()
-            ));
-        }
-        if entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".~install-")
-        {
-            return Err(format!(
-                "Incomplete legacy app install requires cleanup: {}",
-                entry.path().display()
-            ));
-        }
-
-        let id = manifest_id(&entry.path())?;
-        let destination = root.join(&id);
-        if destination.exists() || !ids.insert(id.clone()) {
-            return Err(format!(
-                "Cannot migrate app {:?}: duplicate canonical destination",
-                id
-            ));
-        }
-        migrations.push((entry.path(), destination, id));
+    if !legacy_migration_completed(&root)? {
+        // Keep a per-ADK receipt for the selected ADK's own legacy panels.
+        // This lets a later ADK migrate its own panels once without replaying
+        // the device-wide HOME sources or resurrecting removed apps.
+        copy_legacy_apps(&root, &legacy_apps_root(home))?;
+        write_legacy_migration_receipt(&root)?;
     }
-
-    let mut moved = Vec::new();
-    for (source, destination, id) in &migrations {
-        if let Err(error) = std::fs::rename(source, destination) {
-            let mut rollback_errors = Vec::new();
-            for (moved_source, moved_destination) in moved.iter().rev() {
-                if let Err(rollback_error) = std::fs::rename(moved_destination, moved_source) {
-                    rollback_errors.push(rollback_error.to_string());
-                }
-            }
-            let rollback = if rollback_errors.is_empty() {
-                "migration rolled back".to_string()
-            } else {
-                format!("rollback also failed: {}", rollback_errors.join("; "))
-            };
-            return Err(format!(
-                "Failed to migrate app {:?}: {}; {}",
-                id, error, rollback
-            ));
-        }
-        moved.push((source, destination));
-    }
-
-    std::fs::remove_dir(&legacy)
-        .map_err(|e| format!("Failed to remove empty legacy apps directory: {}", e))?;
     Ok(root)
 }
 
@@ -318,9 +666,31 @@ fn default_tool_tier() -> u8 {
     1
 }
 
-/// List installed panels by scanning ~/.naia/apps/
+/// List installed apps by scanning the selected ADK's `.naia/apps/`.
 fn list_installed_from(home: &std::path::Path) -> Result<Vec<AppManifest>, String> {
-    let apps_dir = prepare_apps_root(home)?;
+    // Test and in-process lifecycle callers use their temporary home as the
+    // migration source. The Tauri command below opts into the device HOME
+    // source explicitly so tests never touch the user's receipt.
+    list_installed_from_with_legacy_home(home, home)
+}
+
+fn list_installed_from_selected(home: &std::path::Path) -> Result<Vec<AppManifest>, String> {
+    let legacy_home = legacy_user_home()?;
+    list_installed_from_with_legacy_home(home, &legacy_home)
+}
+
+fn list_installed_from_with_legacy_home(
+    home: &std::path::Path,
+    legacy_home: &std::path::Path,
+) -> Result<Vec<AppManifest>, String> {
+    let apps_dir = prepare_apps_root_with_legacy_home(home, legacy_home)?;
+    list_installed_from_root(home, apps_dir)
+}
+
+fn list_installed_from_root(
+    _home: &std::path::Path,
+    apps_dir: std::path::PathBuf,
+) -> Result<Vec<AppManifest>, String> {
 
     let mut apps: Vec<AppManifest> = Vec::new();
 
@@ -365,12 +735,15 @@ fn list_installed_from(home: &std::path::Path) -> Result<Vec<AppManifest>, Strin
             }
         }
 
-        // Repair pre-existing packages as well as freshly installed ones.
-        rewrite_installed_app_asset_urls(&entry.path());
-
         // Detect index.html for iframe rendering
         let html_path = entry.path().join("index.html");
-        if html_path.exists() {
+        if std::fs::symlink_metadata(&html_path)
+            .map(|metadata| metadata.file_type().is_file())
+            .unwrap_or(false)
+        {
+            // An app may have been copied to a different ADK after install.
+            // Rebase any old asset-protocol URLs before exposing htmlEntry.
+            rewrite_installed_app_asset_urls(&entry.path());
             manifest.html_entry = html_path.to_string_lossy().into_owned().into();
         }
 
@@ -381,24 +754,34 @@ fn list_installed_from(home: &std::path::Path) -> Result<Vec<AppManifest>, Strin
 }
 
 #[tauri::command]
-pub fn app_list_installed() -> Result<Vec<AppManifest>, String> {
-    list_installed_from(std::path::Path::new(&data_home::user_home()))
+pub fn app_list_installed(app_handle: tauri::AppHandle) -> Result<Vec<AppManifest>, String> {
+    let adk = selected_adk_path()?;
+    let apps_root = prepare_apps_root(&adk)?;
+    crate::allow_installed_app_asset_scope(&app_handle, &apps_root);
+    list_installed_from_selected(&adk)
 }
 
 /// Read a file on behalf of an iframe panel.
-/// Restricted to files inside the user's HOME directory (max 1 MB).
+/// Restricted to files inside the selected ADK's installed-app root (max 1 MB).
 /// Called from iframe-bridge.ts → Tauri invoke("app_read_file").
 #[tauri::command]
 pub fn app_read_file(path: String) -> Result<String, String> {
-    let home = data_home::user_home();
-    // Canonicalize HOME itself to handle symlinks in the home path
-    let home_path = dunce::canonicalize(&home).map_err(|_| "Access denied".to_string())?;
+    let adk = selected_adk_path()?;
+    let apps_root = prepare_apps_root(&adk)?;
+    read_installed_app_file(&apps_root, &path)
+}
+
+fn read_installed_app_file(
+    apps_root: &std::path::Path,
+    path: &str,
+) -> Result<String, String> {
+    let root = dunce::canonicalize(apps_root).map_err(|_| "Access denied".to_string())?;
 
     // Resolve to canonical path to defeat symlink / path-traversal attacks.
     // Returns a generic "Access denied" to avoid leaking path existence.
-    let canonical = dunce::canonicalize(&path).map_err(|_| "Access denied".to_string())?;
+    let canonical = dunce::canonicalize(path).map_err(|_| "Access denied".to_string())?;
 
-    if !canonical.starts_with(&home_path) {
+    if !canonical.starts_with(&root) {
         return Err("Access denied".to_string());
     }
 
@@ -518,22 +901,39 @@ pub fn app_run_shell(cmd: String, args: Vec<String>) -> Result<AppShellResult, S
 
 /// Remove an installed app by its app id.
 ///
-/// Removes exactly `~/.naia/apps/{id}` after validating that its manifest id
+/// Removes exactly `<selected-adk>/.naia/apps/{id}` after validating that its manifest id
 /// matches its canonical directory name.
 #[tauri::command]
 pub fn app_remove_installed(app_id: String) -> Result<(), String> {
     // The frontend invokes this with { appId } (removeInstalledApp). Tauri binds
     // by exact camelCase name, so the old `panel_id` (→ panelId) never received
     // the value and every removal failed ("제거하지 못했습니다", 2026-08-31).
-    remove_installed_from(std::path::Path::new(&data_home::user_home()), &app_id)
+    let adk = selected_adk_path()?;
+    remove_installed_from_selected(&adk, &app_id)
 }
 
 fn remove_installed_from(home: &std::path::Path, panel_id: &str) -> Result<(), String> {
+    remove_installed_from_with_legacy_home(home, panel_id, home)
+}
+
+fn remove_installed_from_selected(
+    home: &std::path::Path,
+    panel_id: &str,
+) -> Result<(), String> {
+    let legacy_home = legacy_user_home()?;
+    remove_installed_from_with_legacy_home(home, panel_id, &legacy_home)
+}
+
+fn remove_installed_from_with_legacy_home(
+    home: &std::path::Path,
+    panel_id: &str,
+    legacy_home: &std::path::Path,
+) -> Result<(), String> {
     if !is_safe_app_id(panel_id) {
         return Err(format!("Invalid app id: {}", panel_id));
     }
 
-    let root = prepare_apps_root(home)?;
+    let root = prepare_apps_root_with_legacy_home(home, legacy_home)?;
     let dir = root.join(&panel_id);
     if !dir.exists() {
         return Ok(());
@@ -597,22 +997,100 @@ mod tests {
     #[test]
     fn migrates_legacy_panels_once() {
         let home = tempfile::tempdir().unwrap();
-        write_app(&legacy_apps_root(home.path()), "old-repo-name", "slides");
+        let legacy = write_app(&legacy_apps_root(home.path()), "old-repo-name", "slides");
 
         let installed = list_installed_from(home.path()).unwrap();
         assert_eq!(installed[0].id, "slides");
         assert!(apps_root(home.path()).join("slides/app.json").is_file());
-        assert!(!legacy_apps_root(home.path()).exists());
+        assert!(legacy.is_dir());
+        assert!(legacy_migration_receipt(&apps_root(home.path()))
+            .unwrap()
+            .is_file());
+
+        remove_installed_from(home.path(), "slides").unwrap();
+        assert!(list_installed_from(home.path()).unwrap().is_empty());
+        assert!(legacy.is_dir());
     }
 
     #[test]
-    fn migration_refuses_duplicate_without_moving_legacy_app() {
+    fn migrates_home_apps_and_first_adk_panels_once_per_device() {
+        let legacy_home = tempfile::tempdir().unwrap();
+        let adk_a = tempfile::tempdir().unwrap();
+        let adk_b = tempfile::tempdir().unwrap();
+        let home_app = write_app(&apps_root(legacy_home.path()), "home-name", "home-app");
+        let home_panel = write_app(
+            &legacy_apps_root(legacy_home.path()),
+            "home-panel-name",
+            "home-panel",
+        );
+        let first_adk_panel = write_app(&legacy_apps_root(adk_a.path()), "panel-name", "panel-app");
+
+        let listed_a = list_installed_from_with_legacy_home(adk_a.path(), legacy_home.path()).unwrap();
+        let mut ids = listed_a.into_iter().map(|app| app.id).collect::<Vec<_>>();
+        ids.sort();
+        assert_eq!(ids, vec!["home-app", "home-panel", "panel-app"]);
+        assert!(device_legacy_migration_receipt(legacy_home.path())
+            .unwrap()
+            .is_file());
+
+        remove_installed_from_with_legacy_home(adk_a.path(), "home-app", legacy_home.path())
+            .unwrap();
+        remove_installed_from_with_legacy_home(adk_a.path(), "home-panel", legacy_home.path())
+            .unwrap();
+        remove_installed_from_with_legacy_home(adk_a.path(), "panel-app", legacy_home.path())
+            .unwrap();
+        assert!(list_installed_from_with_legacy_home(adk_a.path(), legacy_home.path())
+            .unwrap()
+            .is_empty());
+
+        // A later ADK cannot replay the old HOME sources, but its own legacy
+        // panels are migrated once under that ADK's local receipt.
+        write_app(&legacy_apps_root(adk_b.path()), "b-panel-name", "b-panel");
+        let listed_b = list_installed_from_with_legacy_home(adk_b.path(), legacy_home.path())
+            .unwrap();
+        assert_eq!(
+            listed_b.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
+            ["b-panel"]
+        );
+        remove_installed_from_with_legacy_home(adk_b.path(), "b-panel", legacy_home.path())
+            .unwrap();
+        assert!(list_installed_from_with_legacy_home(adk_b.path(), legacy_home.path())
+            .unwrap()
+            .is_empty());
+        assert!(home_app.is_dir());
+        assert!(home_panel.is_dir());
+        assert!(first_adk_panel.is_dir());
+    }
+
+    #[test]
+    fn rejects_missing_or_non_regular_legacy_manifests_without_failing_listing() {
+        let legacy_home = tempfile::tempdir().unwrap();
+        let adk = tempfile::tempdir().unwrap();
+        let missing = legacy_apps_root(legacy_home.path()).join("incomplete");
+        std::fs::create_dir_all(&missing).unwrap();
+        let non_regular = legacy_apps_root(legacy_home.path()).join("directory-manifest");
+        std::fs::create_dir_all(non_regular.join("app.json")).unwrap();
+
+        assert!(list_installed_from_with_legacy_home(adk.path(), legacy_home.path())
+            .unwrap()
+            .is_empty());
+        assert!(device_legacy_migration_receipt(legacy_home.path())
+            .unwrap()
+            .is_file());
+        assert!(missing.is_dir());
+        assert!(non_regular.join("app.json").is_dir());
+    }
+
+    #[test]
+    fn migration_keeps_duplicate_legacy_app_without_resurrecting_it() {
         let home = tempfile::tempdir().unwrap();
         let legacy = write_app(&legacy_apps_root(home.path()), "legacy", "slides");
         write_app(&apps_root(home.path()), "slides", "slides");
 
-        let error = list_installed_from(home.path()).unwrap_err();
-        assert!(error.contains("duplicate canonical destination"));
+        let installed = list_installed_from(home.path()).unwrap();
+        assert_eq!(installed.len(), 1);
+        remove_installed_from(home.path(), "slides").unwrap();
+        assert!(list_installed_from(home.path()).unwrap().is_empty());
         assert!(legacy.is_dir());
     }
 
@@ -628,8 +1106,49 @@ mod tests {
         std::fs::create_dir_all(&legacy).unwrap();
         symlink(outside.path().join("target"), legacy.join("slides")).unwrap();
 
-        assert!(list_installed_from(home.path()).is_err());
+        assert!(list_installed_from(home.path()).unwrap().is_empty());
         assert!(outside.path().join("target/app.json").is_file());
+    }
+
+    #[test]
+    fn selected_app_read_stays_inside_canonical_apps_root() {
+        let home = tempfile::tempdir().unwrap();
+        let app = write_app(&apps_root(home.path()), "slides", "slides");
+        std::fs::write(app.join("assets.txt"), "inside").unwrap();
+        let outside = home.path().join("outside.txt");
+        std::fs::write(&outside, "outside").unwrap();
+
+        assert_eq!(
+            read_installed_app_file(&apps_root(home.path()), &app.join("assets.txt").to_string_lossy())
+                .unwrap(),
+            "inside"
+        );
+        assert_eq!(
+            read_installed_app_file(&apps_root(home.path()), &outside.to_string_lossy())
+                .unwrap_err(),
+            "Access denied"
+        );
+    }
+
+    #[test]
+    fn switching_adk_roots_uses_only_the_current_apps_directory() {
+        let adk_a = tempfile::tempdir().unwrap();
+        let adk_b = tempfile::tempdir().unwrap();
+        let app_a = write_app(&apps_root(adk_a.path()), "slides", "slides");
+        std::fs::write(app_a.join("assets.txt"), "A").unwrap();
+        let app_b = apps_root(adk_b.path()).join("slides");
+        copy_tree_without_symlinks(&app_a, &app_b).unwrap();
+        std::fs::write(app_b.join("assets.txt"), "B").unwrap();
+
+        let listed_a = list_installed_from(adk_a.path()).unwrap();
+        let listed_b = list_installed_from(adk_b.path()).unwrap();
+        assert_eq!(listed_a[0].html_entry.as_deref(), Some(app_a.join("index.html").to_string_lossy().as_ref()));
+        assert_eq!(listed_b[0].html_entry.as_deref(), Some(app_b.join("index.html").to_string_lossy().as_ref()));
+        assert_eq!(
+            read_installed_app_file(&apps_root(adk_b.path()), &app_b.join("assets.txt").to_string_lossy())
+                .unwrap(),
+            "B"
+        );
     }
 
     #[test]
@@ -703,7 +1222,7 @@ fn derive_app_name(source: &str) -> String {
     seg.to_string()
 }
 
-/// Install a app from a Git URL into `~/.naia/apps/{app-id}/`.
+/// Install an app from a Git URL into `<selected-adk>/.naia/apps/{app-id}/`.
 ///
 /// Ported from the legacy agent skill `agent/src/skills/built-in/app.ts`
 /// (#89, with #257 HTTPS-only hardening) into a shell-side Tauri command —
@@ -721,7 +1240,10 @@ fn derive_app_name(source: &str) -> String {
 /// - `git` is invoked with an arg vector (no shell).
 /// - On any failure the temp clone is removed.
 #[tauri::command]
-pub fn app_install(source: String) -> Result<AppInstallResult, String> {
+pub fn app_install(
+    app_handle: tauri::AppHandle,
+    source: String,
+) -> Result<AppInstallResult, String> {
     let source = source.trim();
 
     // #257: HTTPS-only.
@@ -745,8 +1267,9 @@ pub fn app_install(source: String) -> Result<AppInstallResult, String> {
         ));
     }
 
-    let home = data_home::user_home();
-    let apps_root = prepare_apps_root(std::path::Path::new(&home))?;
+    let adk = selected_adk_path()?;
+    let apps_root = prepare_apps_root(&adk)?;
+    crate::allow_installed_app_asset_scope(&app_handle, &apps_root);
     let canonical_apps_root =
         dunce::canonicalize(&apps_root).map_err(|_| "Access denied".to_string())?;
 
@@ -832,7 +1355,7 @@ pub fn app_install(source: String) -> Result<AppInstallResult, String> {
         format!("설치 마무리 실패 (rename): {}", e)
     })?;
 
-    // Home boundary sanity check (defense in depth).
+    // Selected ADK boundary sanity check (defense in depth).
     if let Ok(canonical_dest) = dunce::canonicalize(&dest) {
         if canonical_dest.parent() != Some(canonical_apps_root.as_path()) {
             let _ = std::fs::remove_dir_all(&canonical_dest);
@@ -1005,13 +1528,15 @@ pub fn app_install_store(
     }
     verify_artifact_signature(digest_bytes.as_slice(), &artifact.signature)?;
 
-    // 설치·목록·삭제가 같은 자리 함수를 쓰게 한다.
+    // 설치·목록·삭제가 선택된 ADK의 같은 자리 함수를 쓰게 한다.
     //
     // 이 자리만 `direct_child_of` 를 직접 불렀다. 그러면 옛 `panels` 자리를
     // 옮기는 이주도, 홈 밖으로 새는지 보는 검사도 건너뛴다 — 설치는 성공했다고
     // 말하는데 목록·탭에는 안 보이던 #472 가 정확히 그 갈라짐이었다. 스토어
     // 설치가 그 자리에 다시 서면 같은 사고가 다시 난다.
-    let apps_root = prepare_apps_root(std::path::Path::new(&data_home::user_home()))?;
+    let adk = selected_adk_path()?;
+    let apps_root = prepare_apps_root(&adk)?;
+    crate::allow_installed_app_asset_scope(&app, &apps_root);
     let temp = tempfile::Builder::new()
         .prefix(".store-install-")
         .tempdir_in(&apps_root)

@@ -1,4 +1,17 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const uiPreferences = vi.hoisted(() => ({
+	UI_PREFERENCE_KEYS: { updatePromptSnooze: "updatePromptSnooze" },
+	getUiPreference: vi.fn<(key: string, fallback: unknown) => unknown>(
+		() => undefined,
+	),
+	patchUiPreferences: vi.fn<
+		(patch: Record<string, unknown>) => Promise<boolean>
+	>(async () => true),
+}));
+
+vi.mock("../ui-preferences", () => uiPreferences);
 
 const check = vi.fn();
 const relaunch = vi.fn();
@@ -26,6 +39,12 @@ describe("checkForUpdate", () => {
 	beforeEach(() => {
 		check.mockReset();
 		relaunch.mockReset();
+		uiPreferences.getUiPreference.mockReset();
+		uiPreferences.getUiPreference.mockImplementation(
+			(_key: string, fallback: unknown) => fallback,
+		);
+		uiPreferences.patchUiPreferences.mockReset();
+		uiPreferences.patchUiPreferences.mockResolvedValue(true);
 	});
 
 	it("returns null only when the updater confirms there is no update", async () => {
@@ -110,5 +129,33 @@ describe("checkForUpdate", () => {
 		expect(
 			shouldShowStartupUpdatePrompt("0.2.0", Date.now(), unavailable),
 		).toBe(true);
+	});
+
+	it("stores the product snooze in ADK UI preferences and restores it by ADK", () => {
+		const values = new Map<string, unknown>();
+		let activeAdk = "adk-a";
+		uiPreferences.getUiPreference.mockImplementation(
+			(_key: string, fallback: unknown) => values.get(activeAdk) ?? fallback,
+		);
+		uiPreferences.patchUiPreferences.mockImplementation(async (patch) => {
+			values.set(activeAdk, patch.updatePromptSnooze);
+			return true;
+		});
+
+		const now = Date.UTC(2026, 7, 20);
+		snoozeStartupUpdatePrompt("0.2.0", now);
+
+		expect(uiPreferences.patchUiPreferences).toHaveBeenCalledWith({
+			updatePromptSnooze: {
+				version: "0.2.0",
+				until: now + UPDATE_PROMPT_SNOOZE_MS,
+			},
+		});
+		expect(shouldShowStartupUpdatePrompt("0.2.0", now)).toBe(false);
+
+		activeAdk = "adk-b";
+		expect(shouldShowStartupUpdatePrompt("0.2.0", now)).toBe(true);
+		activeAdk = "adk-a";
+		expect(shouldShowStartupUpdatePrompt("0.2.0", now)).toBe(false);
 	});
 });

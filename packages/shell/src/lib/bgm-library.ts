@@ -10,6 +10,8 @@ export interface BgmLibraryTrack {
 	id: string;
 	source: BgmLibrarySource;
 	title: string;
+	/** Unix milliseconds when this track was confirmed playing (history only). */
+	playedAt?: number;
 	youtubeId?: string;
 	path?: string;
 	thumbnail?: string;
@@ -57,6 +59,20 @@ function finiteNonNegative(value: unknown): number | undefined {
 	return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
 
+/** Normalize common YouTube decorations so alternate uploads count as one song. */
+export function normalizeBgmTitle(title: string): string {
+	return title
+		.normalize("NFKC")
+		.toLocaleLowerCase()
+		.replace(
+			/[\[(]\s*(?:official\s*)?(?:music\s*)?(?:video|audio|lyrics?|mv|가사|뮤직비디오|오디오)\s*[\])]/giu,
+			" ",
+		)
+		.replace(/\b(?:official|audio|lyrics?|mv)\b/giu, " ")
+		.replace(/[^\p{L}\p{N}]+/gu, " ")
+		.trim();
+}
+
 export function trackIdentity(track: Pick<BgmLibraryTrack, "source" | "youtubeId" | "path" | "id">): string {
 	if (track.source === "youtube" && track.youtubeId) return `youtube:${track.youtubeId}`;
 	if (track.source === "local" && track.path) return `local:${track.path.toLocaleLowerCase()}`;
@@ -77,6 +93,7 @@ export function normalizeBgmTrack(value: unknown): BgmLibraryTrack | null {
 		id,
 		source,
 		title: cleanText(input.title) || (source === "youtube" ? youtubeId! : path!.split(/[\\/]/).pop() || path!),
+		...(finiteNonNegative(input.playedAt) !== undefined ? { playedAt: finiteNonNegative(input.playedAt) } : {}),
 		...(youtubeId ? { youtubeId } : {}),
 		...(path ? { path } : {}),
 		...(cleanText(input.thumbnail, 2_048) ? { thumbnail: cleanText(input.thumbnail, 2_048) } : {}),
@@ -85,6 +102,28 @@ export function normalizeBgmTrack(value: unknown): BgmLibraryTrack | null {
 		...(finiteNonNegative(input.fileSize) !== undefined ? { fileSize: finiteNonNegative(input.fileSize) } : {}),
 		...(cleanText(input.fingerprint, 256) ? { fingerprint: cleanText(input.fingerprint, 256) } : {}),
 	};
+}
+
+function historyEquivalent(left: BgmLibraryTrack, right: BgmLibraryTrack): boolean {
+	if (trackIdentity(left) === trackIdentity(right)) return true;
+	return (
+		left.source === "youtube" &&
+		right.source === "youtube" &&
+		Boolean(normalizeBgmTitle(left.title)) &&
+		normalizeBgmTitle(left.title) === normalizeBgmTitle(right.title)
+	);
+}
+
+function uniqueHistoryTracks(values: unknown, limit: number): BgmLibraryTrack[] {
+	if (!Array.isArray(values)) return [];
+	const tracks: BgmLibraryTrack[] = [];
+	for (const value of values) {
+		const track = normalizeBgmTrack(value);
+		if (!track || tracks.some((item) => historyEquivalent(item, track))) continue;
+		tracks.push(track);
+		if (tracks.length >= limit) break;
+	}
+	return tracks;
 }
 
 function uniqueTracks(values: unknown, limit: number): BgmLibraryTrack[] {
@@ -156,7 +195,7 @@ export function loadBgmLibrary(raw: unknown, legacyYoutubeLikes: readonly unknow
 		shuffle: input.shuffle === true,
 		repeat: input.repeat === "all" || input.repeat === "one" ? input.repeat : "off",
 		queue: uniqueTracks(input.queue, BGM_PLAYLIST_TRACK_LIMIT),
-		history: uniqueTracks(input.history, BGM_HISTORY_LIMIT),
+		history: uniqueHistoryTracks(input.history, BGM_HISTORY_LIMIT),
 	};
 }
 
@@ -221,10 +260,34 @@ export function toggleBgmLike(state: BgmLibraryState, trackValue: BgmLibraryTrac
 }
 
 export function recordBgmHistory(state: BgmLibraryState, trackValue: BgmLibraryTrack, now = Date.now()): BgmLibraryState {
-	const track = normalizeBgmTrack(trackValue);
+	const track = normalizeBgmTrack({ ...trackValue, playedAt: now });
 	if (!track) return state;
-	const identity = trackIdentity(track);
-	return { ...state, history: [track, ...state.history.filter((item) => trackIdentity(item) !== identity)].slice(0, BGM_HISTORY_LIMIT), updatedAt: now };
+	return {
+		...state,
+		history: [track, ...state.history.filter((item) => !historyEquivalent(item, track))].slice(0, BGM_HISTORY_LIMIT),
+		updatedAt: now,
+	};
+}
+
+/**
+ * Add legacy recent-play records behind the existing ADK history.
+ * Existing ADK records always win identity/title collisions and retain their
+ * metadata/timestamps.
+ */
+export function mergeBgmHistory(
+	state: BgmLibraryState,
+	tracks: readonly BgmLibraryTrack[],
+	now = Date.now(),
+): BgmLibraryState {
+	const history = [...state.history];
+	for (const value of tracks) {
+		const track = normalizeBgmTrack(value);
+		if (!track || history.some((item) => historyEquivalent(item, track))) continue;
+		history.push(track);
+		if (history.length >= BGM_HISTORY_LIMIT) break;
+	}
+	if (history.length === state.history.length) return state;
+	return { ...state, history, updatedAt: now };
 }
 
 export function nextPlaylistIndex(state: BgmLibraryState, direction: 1 | -1, random: () => number = Math.random): number {

@@ -73,6 +73,7 @@ export interface AppMainContentProps {
 	chatDragRef: MutableRefObject<ChatDragState | null>;
 	chatHeight: number;
 	chatVisible: boolean;
+	configSaveError: string | null;
 	handleNaiaWidthPointerDown: (event: PointerEvent) => void;
 	handleNaiaWidthPointerMove: (event: PointerEvent) => void;
 	handleNaiaWidthPointerUp: () => void;
@@ -112,6 +113,7 @@ export function AppMainContent(props: AppMainContentProps) {
 		chatDragRef,
 		chatHeight,
 		chatVisible,
+		configSaveError,
 		handleNaiaWidthPointerDown,
 		handleNaiaWidthPointerMove,
 		handleNaiaWidthPointerUp,
@@ -171,6 +173,11 @@ export function AppMainContent(props: AppMainContentProps) {
 				onToggleApp={toggleNaia}
 				title={appTitle}
 			/>
+			{configSaveError && (
+				<div role="alert" className="app-bar__remove-error">
+					{configSaveError}
+				</div>
+			)}
 			{updateInfo && showUpdatePrompt && !showOnboarding && (
 				<Suspense fallback={null}>
 					<UpdatePrompt

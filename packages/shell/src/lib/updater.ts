@@ -1,4 +1,9 @@
 import { Logger } from "./logger";
+import {
+	UI_PREFERENCE_KEYS,
+	getUiPreference,
+	patchUiPreferences,
+} from "./ui-preferences";
 
 export interface UpdateInfo {
 	currentVersion: string;
@@ -19,9 +24,39 @@ interface UpdatePromptSnooze {
 
 export const UPDATE_PROMPT_SNOOZE_KEY = "naia.updatePromptSnooze";
 export const UPDATE_PROMPT_SNOOZE_MS = 30 * 24 * 60 * 60 * 1000;
+const UPDATE_PROMPT_SNOOZE_PREFERENCE = UI_PREFERENCE_KEYS.updatePromptSnooze;
 
 function browserStorage(): UpdatePromptStorage | null {
-	return typeof window === "undefined" ? null : window.localStorage;
+	if (typeof window === "undefined") return null;
+	return {
+		getItem: (key) => {
+			if (key !== UPDATE_PROMPT_SNOOZE_KEY) return null;
+			const value = getUiPreference<unknown>(
+				UPDATE_PROMPT_SNOOZE_PREFERENCE,
+				null,
+			);
+			return value === null || value === undefined
+				? null
+				: JSON.stringify(value);
+		},
+		setItem: (key, value) => {
+			if (key !== UPDATE_PROMPT_SNOOZE_KEY) return;
+			try {
+				const parsed = JSON.parse(value) as unknown;
+				void patchUiPreferences({
+					[UPDATE_PROMPT_SNOOZE_PREFERENCE]: parsed,
+				}).catch((error: unknown) => {
+					Logger.warn("Updater", "ADK update snooze persistence failed", {
+						error: error instanceof Error ? error.message : String(error),
+					});
+				});
+			} catch (error) {
+				Logger.warn("Updater", "ADK update snooze value was not valid JSON", {
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		},
+	};
 }
 
 export function shouldShowStartupUpdatePrompt(

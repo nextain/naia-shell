@@ -71,6 +71,10 @@ function bytesToBase64(bytes: number[]): string {
 	return btoa(binary);
 }
 
+function isCurrentAdkPath(adkPath: string): boolean {
+	return getAdkPath() === adkPath;
+}
+
 /** Persist the local reference voice in the selected ADK and refresh the cache. */
 export async function persistLocalRefAudioB64(b64: string): Promise<void> {
 	const adkPath = getAdkPath();
@@ -79,7 +83,7 @@ export async function persistLocalRefAudioB64(b64: string): Promise<void> {
 		adkPath,
 		bytes: base64ToBytes(b64),
 	});
-	setLocalRefAudioB64(b64);
+	if (isCurrentAdkPath(adkPath)) setLocalRefAudioB64(b64);
 }
 
 /**
@@ -93,7 +97,7 @@ export async function clearLocalRefAudio(): Promise<void> {
 	const adkPath = getAdkPath();
 	if (!adkPath) throw new Error("ADK path is not configured");
 	await invoke("delete_naia_ref_audio", { adkPath });
-	setLocalRefAudioB64(null);
+	if (isCurrentAdkPath(adkPath)) setLocalRefAudioB64(null);
 }
 
 /** Hydrate the synchronous runtime cache from the selected ADK source of truth. */
@@ -107,7 +111,7 @@ export async function hydrateLocalRefAudioB64(): Promise<string | null> {
 		adkPath,
 	});
 	const b64 = bytes && bytes.length > 0 ? bytesToBase64(bytes) : null;
-	setLocalRefAudioB64(b64);
+	if (isCurrentAdkPath(adkPath)) setLocalRefAudioB64(b64);
 	return b64;
 }
 

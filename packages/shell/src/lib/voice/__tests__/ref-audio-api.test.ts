@@ -4,6 +4,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockInvoke, mockGetAdkPath } = vi.hoisted(() => ({
+	mockInvoke: vi.fn(),
+	mockGetAdkPath: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+
+vi.mock("../../adk-store", () => ({ getAdkPath: mockGetAdkPath }));
+
 vi.mock("../../config", () => ({
 	DEFAULT_LOCAL_VOICE_HOST: "http://localhost:8910",
 	LAB_GATEWAY_URL: "https://gateway.test",
@@ -33,10 +42,61 @@ import {
 	getRefAudioContent,
 	getRefAudioPresets,
 	getRefAudioStatus,
+	hydrateLocalRefAudioB64,
+	getLocalRefAudioB64,
 	uploadRefAudio,
 } from "../ref-audio-api";
 
 const originalFetch = globalThis.fetch;
+
+describe("local reference voice ADK hydration", () => {
+	const storage = new Map<string, string>();
+
+	beforeEach(() => {
+		storage.clear();
+		vi.stubGlobal("localStorage", {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => storage.set(key, value),
+			removeItem: (key: string) => storage.delete(key),
+		});
+		mockInvoke.mockReset();
+		mockGetAdkPath.mockReset();
+		mockGetAdkPath.mockReturnValue("ADK-A");
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("keeps the current ADK cache when an earlier hydration completes late", async () => {
+		let resolveA!: (bytes: number[]) => void;
+		const pendingA = new Promise<number[]>((resolve) => {
+			resolveA = resolve;
+		});
+		mockInvoke.mockImplementation(
+			(command: string, args: { adkPath?: string }) => {
+				if (command !== "read_naia_ref_audio") {
+					throw new Error(`unexpected invoke: ${command}`);
+				}
+				return args.adkPath === "ADK-A" ? pendingA : Promise.resolve([66]);
+			},
+		);
+
+		const hydrateA = hydrateLocalRefAudioB64();
+		mockGetAdkPath.mockReturnValue("ADK-B");
+		await expect(hydrateLocalRefAudioB64()).resolves.toBe("Qg==");
+		resolveA([65]);
+		await expect(hydrateA).resolves.toBe("QQ==");
+
+		expect(getLocalRefAudioB64()).toBe("Qg==");
+		expect(mockInvoke).toHaveBeenNthCalledWith(1, "read_naia_ref_audio", {
+			adkPath: "ADK-A",
+		});
+		expect(mockInvoke).toHaveBeenNthCalledWith(2, "read_naia_ref_audio", {
+			adkPath: "ADK-B",
+		});
+	});
+});
 
 describe("standalone local runtime voice palette", () => {
 	const mockFetch = vi.fn();

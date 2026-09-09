@@ -3,9 +3,12 @@ import {
 	clickBySelector,
 	ensureAppReady,
 	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 	setNativeValue,
 } from "../helpers/settings.js";
+
+const modelSelector = "#model-select";
 
 /**
  * 55 — Settings: Persona & Model
@@ -13,7 +16,7 @@ import {
  * Pure client-side interactions:
  * - Persona textarea set value via native setter
  * - Provider select shows current value
- * - Model input set value
+ * - Model control (input or select) is rendered
  */
 describe("55 — settings persona & model", () => {
 	before(async () => {
@@ -24,17 +27,26 @@ describe("55 — settings persona & model", () => {
 	});
 
 	it("should have persona textarea", async () => {
+		await openSettingsSection("persona");
 		await scrollToSection(S.personaInput);
-		const exists = await browser.execute(
-			(sel: string) => !!document.querySelector(sel),
-			S.personaInput,
-		);
-		expect(exists).toBe(true);
+		const state = await browser.execute((sel: string) => {
+			const input = document.querySelector(sel) as HTMLTextAreaElement | null;
+			return { exists: !!input, disabled: input?.disabled ?? true };
+		}, S.personaInput);
+		expect(state.exists).toBe(true);
+		expect(state.disabled).toBe(false);
 	});
 
 	it("should set persona value", async () => {
+		await openSettingsSection("persona");
 		const testText = "E2E 테스트 페르소나";
+		await browser.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLTextAreaElement | null)?.focus();
+		}, S.personaInput);
 		await setNativeValue(S.personaInput, testText);
+		await browser.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLTextAreaElement | null)?.blur();
+		}, S.personaInput);
 		await browser.pause(200);
 
 		const value = await browser.execute(
@@ -46,6 +58,7 @@ describe("55 — settings persona & model", () => {
 	});
 
 	it("should show provider select with valid value", async () => {
+		await openSettingsSection("brain");
 		await scrollToSection(S.providerSelect);
 		const value = await browser.execute(
 			(sel: string) =>
@@ -55,11 +68,12 @@ describe("55 — settings persona & model", () => {
 		expect(value.length).toBeGreaterThan(0);
 	});
 
-	it("should have model input", async () => {
-		await scrollToSection(S.modelInput);
+	it("should have model control", async () => {
+		await openSettingsSection("brain");
+		await scrollToSection(modelSelector);
 		const exists = await browser.execute(
 			(sel: string) => !!document.querySelector(sel),
-			S.modelInput,
+			modelSelector,
 		);
 		expect(exists).toBe(true);
 	});

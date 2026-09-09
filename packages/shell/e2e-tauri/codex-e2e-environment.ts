@@ -77,6 +77,7 @@ export const E2E_TARGET_DIR = resolve(
 // Must match src-tauri/tauri.e2e.conf.json's devUrl. Keeping this explicit
 // avoids a rebuilt test binary silently waiting on a different Vite server.
 const E2E_VITE_PORT = 1422;
+const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 const E2E_PREBAKED_NVA_ENABLED = process.env.NAIA_E2E_PREBAKED_NVA === "1";
 const E2E_VOICE_6G_ENABLED = process.env.NAIA_E2E_VOICE_6G === "1";
 const E2E_NVA_SOURCE =
@@ -238,7 +239,7 @@ export function resetCodexE2eRoot(): void {
 		cpSync(E2E_VRM_SOURCE, voiceVrmPath);
 	}
 	const mainProvider = process.env.NAIA_E2E_MAIN_PROVIDER ?? "codex";
-	const mainModel = process.env.NAIA_E2E_MAIN_MODEL ?? "gpt-5.4";
+	const mainModel = process.env.NAIA_E2E_MAIN_MODEL ?? DEFAULT_CODEX_MODEL;
 	const config = buildSeedShellConfig({
 		provider: mainProvider,
 		model: mainModel,
@@ -286,7 +287,7 @@ export function resetCodexE2eRoot(): void {
 					version: 1,
 					gate: { naiaAccount: true, mode: "naia" },
 					slots: {
-						main: { provider: "codex", model: "gpt-5.4" },
+						main: { provider: mainProvider, model: mainModel },
 						sub: { provider: "none" },
 						embedding: { provider: "none" },
 						stt: {},
@@ -404,12 +405,14 @@ export async function startOwnedViteServer(): Promise<void> {
 				...process.env,
 				VITE_NAIA_SECURE_STORE_FILE: process.env.NAIA_E2E_SECURE_STORE_FILE,
 				VITE_NAIA_E2E_MODE: "1",
+				VITE_NAIA_NEW_CORE: "1",
 				BROWSER: "none",
 				VITE_NAIA_E2E_ADK_PATH: E2E_WORKSPACE,
 				// Same override the seeded shell config honours, so the webview and
 				// the file-backed config never disagree about the main provider.
 				VITE_NAIA_E2E_PROVIDER: process.env.NAIA_E2E_MAIN_PROVIDER ?? "codex",
-				VITE_NAIA_E2E_MODEL: process.env.NAIA_E2E_MAIN_MODEL ?? "gpt-5.4",
+				VITE_NAIA_E2E_MODEL:
+					process.env.NAIA_E2E_MAIN_MODEL ?? DEFAULT_CODEX_MODEL,
 				...(E2E_PREBAKED_NVA_ENABLED || E2E_VOICE_6G_ENABLED
 					? {}
 					: { VITE_NAIA_E2E_NO_AVATAR: "1" }),

@@ -127,7 +127,7 @@
 
 .slides-app__viewer {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	justify-content: center;
 	min-width: 0;
 	min-height: 320px;
@@ -135,6 +135,11 @@
 	border: 1px solid var(--border-color);
 	border-radius: 14px;
 	background: #11141a;
+}
+
+.slides-app__viewer:fullscreen {
+	padding: 24px;
+	background: #080a0d;
 }
 
 .slides-app:fullscreen {

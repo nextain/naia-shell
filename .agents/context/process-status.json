@@ -1,15 +1,15 @@
 {
   "schema_version": "1.0",
   "slides_581": {
-    "status": "in_progress",
-    "last_updated": "2026-09-09T14:50:00Z",
+    "status": "implemented",
+    "last_updated": "2026-09-09T15:54:59.276Z",
     "P01": "docs/user-scenarios.md UC-SLIDES-HOST/PPTX/IMPORT-LIFETIME/EDIT",
     "P02": "docs/user-scenarios.md Slides follow-up test mapping",
     "P03": "docs/requirements.md FR-SLIDES-HOST/PPTX/EDIT",
-    "P04": "scoped_pass: 7 browser, 83 focused, 1918 full-suite, 32 Rust; production builds and native cargo check pass",
-    "delivery_state": "REVIEW_ONLY: formal complexity/review gates and coordinated native voice/recording QA remain",
-    "P05": "pending",
-    "evidence": ".agents/progress/slides-581-development-20260909.json"
+    "P04": "Integration against main 4c28fbb4: Slides and locale tests 91/91, Rust modules 33/33, browser scenarios 7/7, production builds and native cargo check passed. Full Shell: 1945 passed, 48 failed, 21 skipped; one additional suite load error. The same 48 failures and suite error reproduce on unchanged main. Core: 1513 passed, 54 failed, 17 skipped; identical 54 failures reproduce on unchanged main. No new failure in these comparisons. Real speech/recording, live converter cancellation/timeout and formal review eligibility remain outstanding; no installer or store release.",
+    "delivery_state": "Main integration authorized by user 2026-09-10; native and formal QC limitations retained",
+    "P05": "Feature implementation verified; native voice/recording acceptance remains pending",
+    "evidence": "docs/user-scenarios.md#slides-quality-checks-581"
   },
   "description": "프로세스 현황 SoT. 세션 시작/종료 시 반드시 업데이트. 구조명세·이슈·리소스를 유기적으로 링크.",
 

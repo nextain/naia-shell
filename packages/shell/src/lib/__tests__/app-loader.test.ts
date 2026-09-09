@@ -26,6 +26,7 @@ describe("app-loader", () => {
 	beforeEach(() => {
 		appsSnapshot = appRegistry.list();
 		mockInvoke.mockReset();
+		useAppStore.setState({ activeApp: null, activeAppContext: null });
 	});
 
 	afterEach(() => {
@@ -35,6 +36,7 @@ describe("app-loader", () => {
 				appRegistry.unregister(p.id);
 			}
 		}
+		useAppStore.setState({ activeApp: null, activeAppContext: null });
 		vi.clearAllMocks();
 	});
 
@@ -117,6 +119,80 @@ describe("app-loader", () => {
 			await loadInstalledApps();
 
 			expect(appRegistry.get("keepalive-off")?.keepAlive).toBe(false);
+		});
+
+		it("replaces an installed registration when the same app id moves roots", async () => {
+			appRegistry.register({
+				id: "relocated-app",
+				name: "Old location",
+				source: "installed",
+				htmlEntry: "/old/.naia/apps/relocated-app/index.html",
+				center: FakeCenterapp,
+			});
+			useAppStore.setState({
+				activeApp: "relocated-app",
+				activeAppContext: { type: "relocated-app", data: { root: "old" } },
+			});
+			mockInvoke.mockResolvedValue([
+				{
+					id: "relocated-app",
+					name: "New location",
+					htmlEntry: "/new/.naia/apps/relocated-app/index.html",
+				},
+			]);
+
+			await loadInstalledApps();
+
+			expect(appRegistry.get("relocated-app")?.name).toBe("New location");
+			expect(appRegistry.get("relocated-app")?.htmlEntry).toBe(
+				"/new/.naia/apps/relocated-app/index.html",
+			);
+			expect(useAppStore.getState().activeApp).toBeNull();
+			expect(useAppStore.getState().activeAppContext).toBeNull();
+		});
+
+		it("removes an active app when the selected ADK no longer lists it", async () => {
+			appRegistry.register({
+				id: "removed-active-app",
+				name: "Removed",
+				source: "installed",
+				center: FakeCenterapp,
+			});
+			useAppStore.setState({
+				activeApp: "removed-active-app",
+				activeAppContext: {
+					type: "removed-active-app",
+					data: { active: true },
+				},
+			});
+			mockInvoke.mockResolvedValue([]);
+
+			await loadInstalledApps();
+
+			expect(appRegistry.get("removed-active-app")).toBeUndefined();
+			expect(useAppStore.getState().activeApp).toBeNull();
+			expect(useAppStore.getState().activeAppContext).toBeNull();
+		});
+
+		it("ignores an older list result after a newer ADK load starts", async () => {
+			let resolveOlder!: (manifests: unknown[]) => void;
+			const olderResult = new Promise<unknown[]>((resolve) => {
+				resolveOlder = resolve;
+			});
+			mockInvoke
+				.mockImplementationOnce(() => olderResult)
+				.mockResolvedValueOnce([
+					{ id: "new-root-app", name: "New root" },
+				]);
+
+			const olderLoad = loadInstalledApps();
+			const newerLoad = loadInstalledApps();
+			await newerLoad;
+			resolveOlder([{ id: "old-root-app", name: "Old root" }]);
+			await olderLoad;
+
+			expect(appRegistry.get("new-root-app")).toBeDefined();
+			expect(appRegistry.get("old-root-app")).toBeUndefined();
 		});
 	});
 

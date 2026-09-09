@@ -5,7 +5,64 @@ import "react-pdf/dist/Page/TextLayer.css";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { t } from "../../lib/i18n";
 
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+type SlidesWorkerLocation = Pick<Location, "protocol" | "host" | "pathname">;
+
+export function resolveSlidesPdfWorkerUrl(
+	workerUrl: string,
+	location: SlidesWorkerLocation | undefined = typeof window === "undefined"
+		? undefined
+		: window.location,
+): string {
+	if (
+		!location ||
+		!(
+			location.protocol === "asset:" ||
+			((location.protocol === "http:" || location.protocol === "https:") &&
+				(location.host === "asset.localhost" ||
+					location.host.startsWith("asset.localhost:")))
+		)
+	) {
+		return workerUrl;
+	}
+
+	const workerName = workerUrl.split(/[\\/]/).pop()?.split(/[?#]/, 1)[0];
+	if (!workerName) {
+		return workerUrl;
+	}
+
+	let decodedPath: string;
+	try {
+		decodedPath = decodeURIComponent(location.pathname);
+	} catch {
+		return workerUrl;
+	}
+
+	const absolutePath = decodedPath.startsWith("//")
+		? decodedPath.slice(1)
+		: decodedPath;
+	const normalizedPath = absolutePath.replaceAll("\\", "/");
+	const isWindowsDrivePath = /^\/?[A-Za-z]:\//.test(normalizedPath);
+	const pathWithoutUrlSlash =
+		isWindowsDrivePath && absolutePath.startsWith("/")
+			? absolutePath.slice(1)
+			: absolutePath;
+	const normalizedAbsolutePath = pathWithoutUrlSlash.replaceAll("\\", "/");
+	const lastSlash = normalizedAbsolutePath.lastIndexOf("/");
+	if (
+		(!normalizedAbsolutePath.startsWith("/") && !/^[A-Za-z]:\//.test(normalizedAbsolutePath)) ||
+		lastSlash <= 0
+	) {
+		return workerUrl;
+	}
+
+	const appRoot = normalizedAbsolutePath.slice(0, lastSlash);
+	const separator = pathWithoutUrlSlash.includes("\\") ? "\\" : "/";
+	const outputRoot = separator === "\\" ? appRoot.replaceAll("/", "\\") : appRoot;
+	const workerPath = `${outputRoot}${separator}assets${separator}${workerName}`;
+	return `${location.protocol}//${location.host}/${encodeURIComponent(workerPath)}`;
+}
+
+pdfjs.GlobalWorkerOptions.workerSrc = resolveSlidesPdfWorkerUrl(pdfWorkerUrl);
 
 export interface SlidesViewerProps {
 	file: File | null;

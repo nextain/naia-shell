@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const listeners: Record<
@@ -7,6 +7,18 @@ const listeners: Record<
 	((event: { payload: any }) => void) | undefined
 > = {};
 const secureState = vi.hoisted(() => ({ naiaKey: null as string | null }));
+const tauriState = vi.hoisted(() => ({ startupMessages: [] as string[] }));
+const adkState = vi.hoisted(() => ({
+	config: null as Record<string, unknown> | null,
+	uiConfig: null as Record<string, unknown> | null,
+}));
+const backgroundState = vi.hoisted(() => ({
+	assets: [] as string[],
+	configReadDeferred: false,
+	releaseConfigRead: null as (() => void) | null,
+	listNaiaAssets: vi.fn(async () => [] as string[]),
+	toLocalBlobUrl: vi.fn(async (path: string) => path),
+}));
 
 vi.mock("@tauri-apps/api/event", () => ({
 	listen: vi.fn((name: string, cb: (event: { payload: any }) => void) => {
@@ -19,9 +31,11 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
 	convertFileSrc: vi.fn((path: string) => path),
-	invoke: vi.fn((command: string) =>
-		Promise.resolve(command === "detect_gpu_vram" ? 8 : null),
-	),
+	invoke: vi.fn((command: string, args?: { message?: string }) => {
+		if (command === "store_startup_message" && args?.message)
+			tauriState.startupMessages.push(args.message);
+		return Promise.resolve(command === "detect_gpu_vram" ? 8 : null);
+	}),
 }));
 
 // App 마운트 effect(secure-store via migrate*/loadConfig)가 @tauri-apps/plugin-store `load` 를 호출한다.
@@ -41,6 +55,56 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 		}),
 	),
 }));
+
+// The workspace tests run without the native composition package. Keep the App
+// boundary focused on startup state rather than constructing its live session.
+vi.mock("../lib/environment-skill", () => ({
+	ENVIRONMENT_APP_ID: "environment",
+	SKILL_ENVIRONMENT: {
+		name: "skill_environment",
+		description: "test environment skill",
+		parameters: { type: "object", properties: {} },
+		tier: 1,
+	},
+	noteEnvironmentToolAck: vi.fn(),
+	refreshEnvironment: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../lib/chat-service", async () => {
+	const actual = await vi.importActual<typeof import("../lib/chat-service")>(
+		"../lib/chat-service",
+	);
+	return {
+		...actual,
+		sendAppSkills: vi.fn().mockResolvedValue(true),
+		sendAppSkillsClear: vi.fn().mockResolvedValue(true),
+	};
+});
+
+vi.mock("../lib/adk-store", async () => {
+	const actual = await vi.importActual<typeof import("../lib/adk-store")>(
+		"../lib/adk-store",
+	);
+	return {
+		...actual,
+		readNaiaConfig: vi.fn(async () => {
+			if (backgroundState.configReadDeferred) {
+				return await new Promise<Record<string, unknown> | null>((resolve) => {
+					backgroundState.releaseConfigRead = () => resolve(adkState.config);
+				});
+			}
+			if (adkState.config) return adkState.config;
+			const raw = globalThis.localStorage?.getItem("naia-config");
+			return raw ? JSON.parse(raw) : null;
+		}),
+		readNaiaUiConfig: vi.fn(async () => adkState.uiConfig),
+		listNaiaAssets: backgroundState.listNaiaAssets,
+		toLocalBlobUrl: backgroundState.toLocalBlobUrl,
+		setAdkPath: vi.fn().mockResolvedValue(undefined),
+		writeNaiaConfig: vi.fn().mockResolvedValue(undefined),
+		writeNaiaUiConfig: vi.fn().mockResolvedValue(undefined),
+	};
+});
 
 vi.mock("../components/OnboardingWizard", () => ({
 	OnboardingWizard: ({ onComplete }: { onComplete: () => void }) => (
@@ -110,6 +174,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 		onResized: vi.fn().mockResolvedValue(() => {}),
 		onScaleChanged: vi.fn().mockResolvedValue(() => {}),
 		setSize: vi.fn().mockResolvedValue(undefined),
+		onCloseRequested: vi.fn().mockResolvedValue(() => {}),
 	}),
 }));
 vi.mock("@tauri-apps/plugin-updater", () => ({
@@ -119,6 +184,9 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 	relaunch: vi.fn().mockResolvedValue(undefined),
 }));
 import { App } from "../App";
+import { sendAppSkills } from "../lib/chat-service";
+import { refreshEnvironment } from "../lib/environment-skill";
+import { useAppStore } from "../stores/app";
 
 describe("App discord deep-link persistence", () => {
 	afterEach(() => {
@@ -126,6 +194,107 @@ describe("App discord deep-link persistence", () => {
 		localStorage.clear();
 		Object.keys(listeners).forEach((key) => delete listeners[key]);
 		secureState.naiaKey = null;
+		tauriState.startupMessages = [];
+		adkState.config = null;
+		adkState.uiConfig = null;
+		backgroundState.assets = [];
+		backgroundState.configReadDeferred = false;
+		backgroundState.releaseConfigRead = null;
+		backgroundState.listNaiaAssets.mockReset();
+		backgroundState.listNaiaAssets.mockImplementation(async () => backgroundState.assets);
+		backgroundState.toLocalBlobUrl.mockReset();
+		backgroundState.toLocalBlobUrl.mockImplementation(async (path: string) => path);
+		vi.mocked(refreshEnvironment).mockClear();
+		vi.mocked(sendAppSkills).mockClear();
+		useAppStore.setState(useAppStore.getInitialState());
+	});
+
+	it("does not register environment before a disabled cold ADK finishes hydrating", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/environment-off");
+		backgroundState.configReadDeferred = true;
+		adkState.config = {
+			provider: "ollama",
+			model: "e2e",
+			onboardingComplete: true,
+			environmentAwareness: "off",
+		};
+
+		render(<App />);
+
+		expect(backgroundState.releaseConfigRead).toEqual(expect.any(Function));
+		expect(refreshEnvironment).not.toHaveBeenCalled();
+		expect(sendAppSkills).not.toHaveBeenCalledWith(
+			"environment",
+			expect.anything(),
+			expect.anything(),
+		);
+
+		backgroundState.releaseConfigRead?.();
+		await waitFor(() => {
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") || "{}").environmentAwareness,
+			).toBe("off");
+		});
+		expect(refreshEnvironment).not.toHaveBeenCalled();
+		expect(sendAppSkills).not.toHaveBeenCalledWith(
+			"environment",
+			expect.anything(),
+			expect.anything(),
+		);
+	});
+
+	it("registers environment after a cold ADK enables awareness", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/environment-on");
+		backgroundState.configReadDeferred = true;
+		adkState.config = {
+			provider: "ollama",
+			model: "e2e",
+			onboardingComplete: true,
+			environmentAwareness: "auto",
+		};
+
+		render(<App />);
+
+		expect(backgroundState.releaseConfigRead).toEqual(expect.any(Function));
+		expect(refreshEnvironment).not.toHaveBeenCalled();
+		backgroundState.releaseConfigRead?.();
+
+		await waitFor(() => {
+			expect(refreshEnvironment).toHaveBeenCalledTimes(1);
+			expect(sendAppSkills).toHaveBeenCalledWith(
+				"environment",
+				expect.any(Array),
+				expect.objectContaining({ awaitAck: true }),
+			);
+		});
+	});
+
+	it("waits for the ADK background preference when assets resolve first", async () => {
+		const adkPath = "/adk/custom-background";
+		const customBackground = `${adkPath}/naia-settings/background/custom.webp`;
+		const defaultBackground = `${adkPath}/naia-settings/background/naia-dawn-city-uhd.webp`;
+		localStorage.setItem("naia-adk-path", adkPath);
+		backgroundState.assets = [customBackground, defaultBackground];
+		backgroundState.listNaiaAssets.mockImplementation(async () => backgroundState.assets);
+		backgroundState.toLocalBlobUrl.mockImplementation(async (path: string) => path);
+		backgroundState.configReadDeferred = true;
+		adkState.config = {
+			provider: "gemini",
+			model: "gemini-3-flash-preview",
+			onboardingComplete: true,
+			backgroundVideo: "custom.webp",
+		};
+
+		render(<App />);
+
+		expect(backgroundState.listNaiaAssets).not.toHaveBeenCalled();
+		backgroundState.releaseConfigRead?.();
+
+		await waitFor(() => {
+			expect(backgroundState.listNaiaAssets).toHaveBeenCalledWith("background");
+			expect(backgroundState.toLocalBlobUrl).toHaveBeenCalledWith(customBackground);
+		});
+		expect(backgroundState.toLocalBlobUrl).not.toHaveBeenCalledWith(defaultBackground);
 	});
 
 	it("persists discord defaults from global listener", () => {
@@ -228,5 +397,115 @@ describe("App discord deep-link persistence", () => {
 
 		expect(await screen.findByText("video-avatar")).toBeTruthy();
 		expect(screen.queryByText("avatar")).toBeNull();
+	});
+
+	it("does not leave onboarding open when a cold cache restores completed ADK config", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/complete");
+		adkState.config = {
+			provider: "gemini",
+			model: "gemini-3-flash-preview",
+			onboardingComplete: true,
+		};
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(
+				JSON.parse(localStorage.getItem("naia-config") || "{}").onboardingComplete,
+			).toBe(true);
+			expect(
+				document.querySelector(".app-root")?.getAttribute("data-app-ready"),
+			).toBe("true");
+			expect(screen.queryByRole("button", { name: "onboarding" })).toBeNull();
+		});
+	});
+
+	it("hydrates the persisted TTS enabled state into the app store", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/complete");
+		adkState.config = {
+			provider: "ollama",
+			model: "e2e",
+			onboardingComplete: true,
+			ttsEnabled: true,
+		};
+		useAppStore.setState({ ttsEnabled: false });
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(useAppStore.getState().ttsEnabled).toBe(true);
+		});
+	});
+
+	it("clears a stale TTS enabled state when cold ADK config disables it", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/complete");
+		adkState.config = {
+			provider: "ollama",
+			model: "e2e",
+			onboardingComplete: true,
+			ttsEnabled: false,
+		};
+		useAppStore.setState({ ttsEnabled: true });
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(useAppStore.getState().ttsEnabled).toBe(false);
+		});
+	});
+
+	it("defaults TTS off when cold ADK config omits the setting", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/complete");
+		adkState.config = {
+			provider: "ollama",
+			model: "e2e",
+			onboardingComplete: true,
+		};
+		useAppStore.setState({ ttsEnabled: true });
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(useAppStore.getState().ttsEnabled).toBe(false);
+		});
+	});
+
+	it("resets TTS when a selected ADK has no config files yet", async () => {
+		localStorage.setItem("naia-adk-path", "/adk/empty");
+		useAppStore.setState({ ttsEnabled: true });
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(useAppStore.getState().ttsEnabled).toBe(false);
+		});
+	});
+
+	it("replays secure startup auth after cold ADK hydration", async () => {
+		secureState.naiaKey = "secure-cold-key";
+		localStorage.setItem("naia-adk-path", "/adk/complete");
+		adkState.config = {
+			provider: "nextain",
+			model: "gemini-2.5-flash",
+			onboardingComplete: true,
+		};
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(
+				tauriState.startupMessages.some((message) => {
+					try {
+						const parsed = JSON.parse(message) as {
+							type?: string;
+							naiaKey?: string;
+						};
+						return parsed.type === "auth_update" && parsed.naiaKey === "secure-cold-key";
+					} catch {
+						return false;
+					}
+				}),
+			).toBe(true);
+		});
 	});
 });

@@ -14,8 +14,15 @@
 
 import { emit } from "@tauri-apps/api/event";
 import type { NaiaTool } from "./app-registry";
-import { loadBgmLibrary, type BgmLibraryState } from "./bgm-library";
-import { bgmLibraryCache } from "./bgm-library-store";
+import {
+	type BgmLibraryState,
+	type BgmLibraryTrack,
+	loadBgmLibrary,
+	mergeBgmHistory,
+	normalizeBgmTitle,
+	recordBgmHistory,
+} from "./bgm-library";
+import { bgmLibraryCache, persistBgmLibrary } from "./bgm-library-store";
 import {
 	type BgmPlaybackPort,
 	bgmPlayback,
@@ -110,22 +117,12 @@ export interface BgmRecentTrack extends BgmSearchResult {
 
 export const BGM_RECENT_KEY = "yt-bgm-recent-v1";
 const RECENT_TRACK_LIMIT = 20;
+let legacyRecentMigration: Promise<boolean> | null = null;
 
-/** Normalize common YouTube decorations so alternate uploads count as one song. */
-export function normalizeBgmTitle(title: string): string {
-	return title
-		.normalize("NFKC")
-		.toLocaleLowerCase()
-		.replace(
-			/[\[(]\s*(?:official\s*)?(?:music\s*)?(?:video|audio|lyrics?|mv|가사|뮤직비디오|오디오)\s*[\])]/giu,
-			" ",
-		)
-		.replace(/\b(?:official|audio|lyrics?|mv)\b/giu, " ")
-		.replace(/[^\p{L}\p{N}]+/gu, " ")
-		.trim();
-}
+/** Keep the skill's existing public export while sharing the library rule. */
+export { normalizeBgmTitle } from "./bgm-library";
 
-export function getBgmRecentTracks(): BgmRecentTrack[] {
+function readLegacyRecentTracks(): BgmRecentTrack[] {
 	try {
 		if (typeof localStorage === "undefined") return [];
 		const parsed = JSON.parse(localStorage.getItem(BGM_RECENT_KEY) ?? "[]");
@@ -137,7 +134,7 @@ export function getBgmRecentTracks(): BgmRecentTrack[] {
 					typeof item === "object" &&
 					typeof item.id === "string" &&
 					typeof item.title === "string" &&
-					typeof item.playedAt === "number",
+					Number.isFinite(item.playedAt),
 			)
 			.slice(0, RECENT_TRACK_LIMIT);
 	} catch {
@@ -145,24 +142,128 @@ export function getBgmRecentTracks(): BgmRecentTrack[] {
 	}
 }
 
+function recentToLibraryTrack(track: BgmRecentTrack): BgmLibraryTrack {
+	return {
+		id: `youtube:${track.id}`,
+		source: "youtube",
+		youtubeId: track.id,
+		title: track.title,
+		...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
+		playedAt: track.playedAt,
+	};
+}
+
+function libraryToRecentTrack(track: BgmLibraryTrack): BgmRecentTrack | null {
+	if (track.source !== "youtube" || !track.youtubeId) return null;
+	return {
+		id: track.youtubeId,
+		title: track.title,
+		...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
+		playedAt: track.playedAt ?? 0,
+	};
+}
+
+function recentIsRepresented(history: readonly BgmLibraryTrack[], recent: BgmRecentTrack): boolean {
+	const normalized = normalizeBgmTitle(recent.title);
+	return history.some(
+		(track) =>
+			track.source === "youtube" &&
+			((track.youtubeId === recent.id || track.id === recent.id || track.id === `youtube:${recent.id}`) ||
+				(Boolean(normalized) && normalizeBgmTitle(track.title) === normalized)),
+	);
+}
+
+function allRecentRepresented(history: readonly BgmLibraryTrack[], recent: readonly BgmRecentTrack[]): boolean {
+	return recent.every((item) => recentIsRepresented(history, item));
+}
+
+function legacyRecentSignature(recent: readonly BgmRecentTrack[]): string {
+	return JSON.stringify(recent);
+}
+
+function removeLegacyRecentTracksIfUnchanged(expected: readonly BgmRecentTrack[]): void {
+	try {
+		if (typeof localStorage === "undefined") return;
+		if (legacyRecentSignature(readLegacyRecentTracks()) !== legacyRecentSignature(expected)) return;
+		localStorage.removeItem(BGM_RECENT_KEY);
+	} catch {}
+}
+
+function scheduleLegacyRecentMigration(state: BgmLibraryState, legacy: readonly BgmRecentTrack[]): void {
+	if (legacy.length === 0 || legacyRecentMigration) return;
+	const merged = mergeBgmHistory(state, legacy.map(recentToLibraryTrack));
+	legacyRecentMigration = persistBgmLibrary(merged)
+		.then((persisted) => {
+			if (persisted && allRecentRepresented(merged.history, legacy)) {
+				removeLegacyRecentTracksIfUnchanged(legacy);
+			}
+			return persisted;
+		})
+		.catch(() => false)
+		.finally(() => {
+			legacyRecentMigration = null;
+		});
+}
+
+export function getBgmRecentTracks(): BgmRecentTrack[] {
+	const legacy = readLegacyRecentTracks();
+	const cached = bgmLibraryCache();
+	if (!cached) return legacy;
+	const merged = legacy.length ? mergeBgmHistory(cached, legacy.map(recentToLibraryTrack)) : cached;
+	if (legacy.length) scheduleLegacyRecentMigration(cached, legacy);
+	return merged.history.flatMap((track) => {
+		const recent = libraryToRecentTrack(track);
+		return recent ? [recent] : [];
+	}).slice(0, RECENT_TRACK_LIMIT);
+}
+
 /** Persist only a track that the iframe has actually reported as playing. */
 export function recordBgmPlayedTrack(
 	track: BgmSearchResult,
 	playedAt = Date.now(),
-): void {
+): Promise<boolean> {
+	const timestamp = Number.isFinite(playedAt) && playedAt >= 0 ? playedAt : Date.now();
+	const legacyBeforeRecord = readLegacyRecentTracks();
 	try {
-		if (typeof localStorage === "undefined") return;
-		const normalized = normalizeBgmTitle(track.title);
-		const next = [
-			{ ...track, playedAt },
-			...getBgmRecentTracks().filter(
-				(item) =>
-					item.id !== track.id &&
-					(!normalized || normalizeBgmTitle(item.title) !== normalized),
-			),
-		].slice(0, RECENT_TRACK_LIMIT);
-		localStorage.setItem(BGM_RECENT_KEY, JSON.stringify(next));
+		if (typeof localStorage !== "undefined") {
+			const normalized = normalizeBgmTitle(track.title);
+			const next = [
+				{ ...track, playedAt: timestamp },
+				...legacyBeforeRecord.filter(
+					(item) =>
+						item.id !== track.id &&
+						(!normalized || normalizeBgmTitle(item.title) !== normalized),
+				),
+			].slice(0, RECENT_TRACK_LIMIT);
+			localStorage.setItem(BGM_RECENT_KEY, JSON.stringify(next));
+		}
 	} catch {}
+
+	const cached = bgmLibraryCache();
+	if (!cached) return Promise.resolve(false);
+	const recentAfterRecord = readLegacyRecentTracks();
+	let nextLibrary = legacyBeforeRecord.length
+		? mergeBgmHistory(cached, legacyBeforeRecord.map(recentToLibraryTrack))
+		: cached;
+	nextLibrary = recordBgmHistory(
+		nextLibrary,
+		{
+			id: `youtube:${track.id}`,
+			source: "youtube",
+			youtubeId: track.id,
+			title: track.title,
+			...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
+		},
+		timestamp,
+	);
+	return persistBgmLibrary(nextLibrary)
+		.then((persisted) => {
+			if (persisted && allRecentRepresented(nextLibrary.history, recentAfterRecord)) {
+				removeLegacyRecentTracksIfUnchanged(recentAfterRecord);
+			}
+			return persisted;
+		})
+		.catch(() => false);
 }
 
 /** 주입 가능 deps — 테스트 헤르메틱(사이드카/Tauri 불요). */

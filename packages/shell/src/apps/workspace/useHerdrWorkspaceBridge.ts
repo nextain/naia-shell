@@ -163,7 +163,7 @@ export function useHerdrWorkspaceBridge({
 			}),
 			naia.onToolCall("skill_workspace_execute", async (args) => {
 				const command = String(args.command ?? "");
-				if (!command.trim()) return "Error: command is required";
+				if (!command.trim()) throw new Error("Error: command is required");
 				let dir = String(args.dir ?? "").trim();
 				if (dir && !/^(\/|[a-zA-Z]:[\\/]|\\\\)/.test(dir)) {
 					const space = findWorkspace(dir);
@@ -172,20 +172,23 @@ export function useHerdrWorkspaceBridge({
 						: `${workspaceRoot.replace(/[\\/]+$/, "")}/${dir}`;
 				}
 				if (!dir) dir = workspaceRoot;
-				if (!dir) return "Error: no working directory available";
+				if (!dir) throw new Error("Error: no working directory available");
+				let result: Awaited<ReturnType<typeof executePty>>;
 				try {
-					return JSON.stringify(
-						await executePty(
-							dir,
-							command,
-							typeof args.timeout_secs === "number"
-								? args.timeout_secs
-								: undefined,
-						),
+					result = await executePty(
+						dir,
+						command,
+						typeof args.timeout_secs === "number"
+							? args.timeout_secs
+							: undefined,
 					);
 				} catch (error) {
-					return `Error: ${String(error)}`;
+					throw error instanceof Error ? error : new Error(String(error));
 				}
+				if (!result.success) {
+					throw new Error(JSON.stringify(result));
+				}
+				return JSON.stringify(result);
 			}),
 		];
 		return () => {

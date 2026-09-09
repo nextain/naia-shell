@@ -10,6 +10,7 @@ import {
 import { ChatService } from "../main/app/chat/chat-service.js";
 import { InMemoryClientSession } from "../main/app/chat/client-session.js";
 import { MessageRouter } from "../main/adapters/message-router.js";
+import { chatChunkToWire } from "../main/adapters/shell-compat.js";
 import { toAgentOutbound, decodeAgentMessage, encodeWire, makeLiveStdioTransport, type LiveTransportDeps } from "../main/adapters/tauri/uc1.js";
 import type {
   AgentMessage, AgentTransportPort, Unsub,
@@ -245,6 +246,53 @@ describe("ChatService + MessageRouter 계약", () => {
     transport.emit({ type: "finish", requestId: "r1" });
     expect(got.map((c) => c.kind)).toEqual(["text", "finish"]);
     expect(handle.requestId).toBe("r1");
+  });
+  it.each([0, 3, 2_147_483_647])("numeric tier=%d approval_request: router → domain → Shell wire 보존", async (tier) => {
+    const { transport, chat, diag } = wire();
+    const got: ChatChunk[] = [];
+    const { sent } = chat.startTurn(req(), (c) => got.push(c));
+    await sent;
+
+    transport.emit({
+      type: "approval_request",
+      requestId: "r1",
+      toolCallId: "call_5609989225023579983_0",
+      toolName: "list_dir",
+      tier,
+      args: { path: "." },
+      description: "워크스페이스 내 디렉터리의 항목 목록",
+    });
+
+    expect(diag).toHaveLength(0);
+    expect(got).toContainEqual({
+      kind: "approvalRequest",
+      toolCallId: "call_5609989225023579983_0",
+      toolName: "list_dir",
+      tier,
+      args: { path: "." },
+      description: "워크스페이스 내 디렉터리의 항목 목록",
+    });
+    expect(chatChunkToWire("r1", got[0]!)).toMatchObject({
+      type: "approval_request",
+      requestId: "r1",
+      toolCallId: "call_5609989225023579983_0",
+      toolName: "list_dir",
+      tier,
+    });
+  });
+  it("negative numeric approval tier → malformed 진단", async () => {
+    const { transport, chat, diag } = wire();
+    const got: ChatChunk[] = [];
+    const { sent } = chat.startTurn(req(), (c) => got.push(c));
+    await sent;
+
+    transport.emit({
+      type: "approval_request", requestId: "r1", toolCallId: "call-invalid",
+      toolName: "list_dir", tier: -1, args: { path: "." }, description: "invalid",
+    });
+
+    expect(got).toHaveLength(0);
+    expect(diag.some((d) => d.reason.includes("malformed chat-turn payload: approval_request"))).toBe(true);
   });
   it("finish = terminal → ownership 해제", async () => {
     const { transport, sessions, chat } = wire();

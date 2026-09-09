@@ -21,6 +21,12 @@ import { getAdkPath } from "../lib/adk-store";
 import { getCameraActions } from "../lib/avatar/camera-actions";
 import { Logger } from "../lib/logger";
 import {
+	UI_PREFERENCE_KEYS,
+	getUiPreference,
+	patchUiPreferences,
+	subscribeUiPreferences,
+} from "../lib/ui-preferences";
+import {
 	clipFromVRMAnimation,
 	loadVRMAnimation,
 	reAnchorRootPositionTrack,
@@ -58,7 +64,6 @@ function computeFilmOffset(camera: PerspectiveCamera, canvasWidth: number): numb
 	return -targetNDC * halfFovTan * aspect * camera.filmGauge;
 }
 const MAX_DELTA = 0.05;
-const CAMERA_STORAGE_KEY = "naia-camera-v20";
 const DEFAULT_CAMERA = {
 	// X=0: filmOffset already centers world-origin on the naia column → auto-aligns with chat app.
 	position: { x: 0, y: 1.27, z: -1.83 },
@@ -75,17 +80,26 @@ interface SavedCamera {
 }
 
 function loadCameraState(): SavedCamera | null {
-	try {
-		const raw = localStorage.getItem(CAMERA_STORAGE_KEY);
-		if (!raw) return null;
-		return JSON.parse(raw) as SavedCamera;
-	} catch {
-		return null;
-	}
+	const value = getUiPreference<unknown>(
+		UI_PREFERENCE_KEYS.avatarCamera,
+		null,
+	);
+	if (!value || typeof value !== "object") return null;
+	const camera = value as Partial<SavedCamera>;
+	const values = [camera.px, camera.py, camera.pz, camera.tx, camera.ty, camera.tz];
+	return values.every((part) => typeof part === "number" && Number.isFinite(part))
+		? (camera as SavedCamera)
+		: null;
+}
+
+function cameraStateSignature(camera: SavedCamera | null): string {
+	return camera
+		? [camera.px, camera.py, camera.pz, camera.tx, camera.ty, camera.tz].join(",")
+		: "default";
 }
 
 export function clearSavedCamera(): void {
-	localStorage.removeItem(CAMERA_STORAGE_KEY);
+	void patchUiPreferences({ [UI_PREFERENCE_KEYS.avatarCamera]: undefined });
 }
 
 function saveCameraState(camera: PerspectiveCamera, target: Vector3): void {
@@ -97,7 +111,7 @@ function saveCameraState(camera: PerspectiveCamera, target: Vector3): void {
 		ty: target.y,
 		tz: target.z,
 	};
-	localStorage.setItem(CAMERA_STORAGE_KEY, JSON.stringify(state));
+	void patchUiPreferences({ [UI_PREFERENCE_KEYS.avatarCamera]: state });
 }
 
 const BLINK_DURATION = 0.2;
@@ -346,29 +360,43 @@ export function AvatarCanvas() {
 			saveCameraState(camera, controls.target);
 		};
 
-		// Set initial camera position immediately
-		const savedCam = loadCameraState();
-		if (savedCam) {
-			camera.position.set(savedCam.px, savedCam.py, savedCam.pz);
-			controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
-			Logger.info("AvatarCanvas", "Camera restored from saved state");
-		} else {
-			camera.position.set(
-				DEFAULT_CAMERA.position.x,
-				DEFAULT_CAMERA.position.y,
-				DEFAULT_CAMERA.position.z,
-			);
-			controls.target.set(
-				DEFAULT_CAMERA.target.x,
-				DEFAULT_CAMERA.target.y,
-				DEFAULT_CAMERA.target.z,
-			);
-			Logger.info("AvatarCanvas", "Camera set to default position");
-		}
-		// Apply filmOffset so avatar appears in left naia column
-		camera.filmOffset = computeFilmOffset(camera, container.clientWidth);
-		camera.updateProjectionMatrix();
-		controls.update();
+		const applyCameraState = (savedCam: SavedCamera | null) => {
+			if (savedCam) {
+				camera.position.set(savedCam.px, savedCam.py, savedCam.pz);
+				controls.target.set(savedCam.tx, savedCam.ty, savedCam.tz);
+				Logger.info("AvatarCanvas", "Camera restored from saved state");
+			} else {
+				camera.position.set(
+					DEFAULT_CAMERA.position.x,
+					DEFAULT_CAMERA.position.y,
+					DEFAULT_CAMERA.position.z,
+				);
+				controls.target.set(
+					DEFAULT_CAMERA.target.x,
+					DEFAULT_CAMERA.target.y,
+					DEFAULT_CAMERA.target.z,
+				);
+				Logger.info("AvatarCanvas", "Camera set to default position");
+			}
+			// Apply filmOffset so avatar appears in left naia column.
+			camera.filmOffset = computeFilmOffset(camera, container.clientWidth);
+			camera.updateProjectionMatrix();
+			controls.update();
+		};
+
+		// Set the initial camera immediately, then listen for the ADK hydration
+		// publish. Only a changed camera value is applied, so unrelated UI
+		// preference hydration cannot reset a user's live camera.
+		let appliedCameraSignature = "";
+		const applyHydratedCamera = () => {
+			const nextCamera = loadCameraState();
+			const nextSignature = cameraStateSignature(nextCamera);
+			if (nextSignature === appliedCameraSignature) return;
+			appliedCameraSignature = nextSignature;
+			applyCameraState(nextCamera);
+		};
+		applyHydratedCamera();
+		const unsubscribeUiPreferences = subscribeUiPreferences(applyHydratedCamera);
 
 		// Save camera on control change
 		let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -620,6 +648,7 @@ export function AvatarCanvas() {
 			cancelAnimationFrame(frameId);
 			unsubSpeaking();
 			unsubEmotion();
+			unsubscribeUiPreferences();
 			mouthCtrl?.stop();
 			if (saveTimeout) clearTimeout(saveTimeout);
 			// Save camera position on unmount

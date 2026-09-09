@@ -2,7 +2,7 @@
 // AgentMessage(protocol) demux → chat-turn(requestId)→domain ChatChunk→ChatPort.deliverChunk /
 //   비-chat known→PendingRouteSink(UC1 미배선) / Unknown·소유권없음→DiagnosticSink. 미지=error+log(silent drop 금지).
 // transport(wire)와 분리된 별 컴포넌트(중복전달·구독주체 모호 제거). app 은 demux/protocol 안 봄.
-import type { AttachmentRef, ChatChunk, WireErrorCode } from "../domain/chat.js";
+import type { ApprovalTier, AttachmentRef, ChatChunk, WireErrorCode } from "../domain/chat.js";
 import { classifyVariant } from "../domain/chat.js";
 import type {
   AgentMessage, AgentTransportPort, ChatPort, ClientSessionPort,
@@ -89,7 +89,7 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
         : { kind: "toolResult", toolCallId, toolName: reqStr(r["toolName"]) ?? "", output, success: r["success"] === true };
     }
     case "approval_request": {
-      const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]); const tier = reqStr(r["tier"]);
+      const toolCallId = reqStr(r["toolCallId"]); const toolName = reqStr(r["toolName"]); const tier = reqApprovalTier(r["tier"]);
       // UC1 리뷰 fix(보안): args/description 보존(승인 다이얼로그가 인자 보여야 — blind approval 방지).
       return toolCallId === null || toolName === null || tier === null
         ? null : { kind: "approvalRequest", toolCallId, toolName, tier, args: r["args"], description: reqStr(r["description"]) ?? "" };
@@ -181,6 +181,18 @@ function toChatChunk(type: string, m: AgentMessage): ChatChunk | null {
 /** 필수 string — 문자열 아니면 null(손상 신호). */
 function reqStr(v: unknown): string | null {
   return typeof v === "string" ? v : null;
+}
+
+/**
+ * Rust/gRPC emits the shell approval tier as a nonnegative int32. Preserve
+ * every valid numeric value, while keeping the old T0…T3 core spelling for
+ * existing callers.
+ */
+function reqApprovalTier(v: unknown): ApprovalTier | null {
+  if (typeof v === "number") {
+    return Number.isInteger(v) && v >= 0 && v <= 2_147_483_647 ? v : null;
+  }
+  return v === "T0" || v === "T1" || v === "T2" || v === "T3" ? v : null;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {

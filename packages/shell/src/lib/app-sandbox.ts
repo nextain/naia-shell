@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getAdkPath } from "./adk-store";
 
-function adkPath(): string {
-	const path = getAdkPath();
+function adkPath(explicitPath?: string | null): string {
+	const path = explicitPath === undefined ? getAdkPath() : explicitPath;
 	if (!path) throw new Error("ADK path is not configured");
 	return path;
 }
@@ -11,8 +11,18 @@ export function getAppSandboxRoot(appId: string): Promise<string> {
 	return invoke("app_sandbox_root", { adkPath: adkPath(), appId });
 }
 
-export function writeAppSandboxFile(appId: string, relativePath: string, bytes: number[]): Promise<string> {
-	return invoke("app_sandbox_write_file", { adkPath: adkPath(), appId, relativePath, bytes });
+export function writeAppSandboxFile(
+	appId: string,
+	relativePath: string,
+	bytes: number[],
+	explicitAdkPath?: string | null,
+): Promise<string> {
+	return invoke("app_sandbox_write_file", {
+		adkPath: adkPath(explicitAdkPath),
+		appId,
+		relativePath,
+		bytes,
+	});
 }
 
 export function readAppSandboxFile(appId: string, relativePath: string): Promise<number[]> {

@@ -13,6 +13,11 @@ import { isCurrentBgmYoutubeUrl } from "../../lib/bgm-playback";
 import { appRegistry } from "../../lib/app-registry";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { useTabSkills } from "../../lib/tab-skills";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
 import { useAppStore } from "../../stores/app";
 import { BrowserMetaArea } from "./BrowserMetaArea";
 
@@ -56,8 +61,6 @@ interface BrowserToolPerms {
 	eval: boolean;
 }
 
-const PERMS_KEY = "browser-tool-perms";
-const TOOLBAR_COLLAPSED_KEY = "browser-toolbar-collapsed";
 const DEFAULT_PERMS: BrowserToolPerms = {
 	navigate: true,
 	back: true,
@@ -71,20 +74,6 @@ const DEFAULT_PERMS: BrowserToolPerms = {
 	getText: true,
 	eval: false, // JS eval off by default (high risk)
 };
-
-function loadPerms(): BrowserToolPerms {
-	try {
-		const raw = localStorage.getItem(PERMS_KEY);
-		if (raw) return { ...DEFAULT_PERMS, ...JSON.parse(raw) };
-	} catch {}
-	return { ...DEFAULT_PERMS };
-}
-
-function savePerms(p: BrowserToolPerms) {
-	try {
-		localStorage.setItem(PERMS_KEY, JSON.stringify(p));
-	} catch {}
-}
 
 type PermKey = keyof BrowserToolPerms;
 
@@ -211,22 +200,39 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 	const [bookmarksOpen, setBookmarksOpen] = useState(false);
 	const lastAiEventUrlRef = useRef("");
 
-	// AI tool permissions — loaded from localStorage
-	const [toolPerms, setToolPerms] = useState<BrowserToolPerms>(loadPerms);
+	// AI tool permissions — the helper reads legacy localStorage only until the
+	// selected ADK has hydrated its ui-config.json.
+	const persistedToolPerms = useUiPreference<BrowserToolPerms>(
+		UI_PREFERENCE_KEYS.browserToolPerms,
+		DEFAULT_PERMS,
+	);
+	const [toolPerms, setToolPerms] =
+		useState<BrowserToolPerms>(persistedToolPerms);
 	const toolPermsRef = useRef(toolPerms);
 	useEffect(() => {
 		toolPermsRef.current = toolPerms;
-		savePerms(toolPerms);
 	}, [toolPerms]);
+	useEffect(() => {
+		setToolPerms(persistedToolPerms);
+	}, [persistedToolPerms]);
 
 	// Toolbar collapsed state — persisted
-	const [toolbarCollapsed, setToolbarCollapsed] = useState(
-		() => localStorage.getItem(TOOLBAR_COLLAPSED_KEY) === "1",
+	const persistedToolbarCollapsed = useUiPreference<boolean>(
+		UI_PREFERENCE_KEYS.browserToolbarCollapsed,
+		false,
 	);
+	const [toolbarCollapsed, setToolbarCollapsed] = useState(
+		persistedToolbarCollapsed,
+	);
+	useEffect(() => {
+		setToolbarCollapsed(persistedToolbarCollapsed);
+	}, [persistedToolbarCollapsed]);
 	function toggleToolbar() {
 		setToolbarCollapsed((c) => {
 			const next = !c;
-			localStorage.setItem(TOOLBAR_COLLAPSED_KEY, next ? "1" : "0");
+			void patchUiPreferences({
+				[UI_PREFERENCE_KEYS.browserToolbarCollapsed]: next,
+			});
 			return next;
 		});
 	}
@@ -237,9 +243,18 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 		const next = { ...DEFAULT_PERMS };
 		for (const k of PERM_KEYS) next[k] = on;
 		setToolPerms(next);
+		void patchUiPreferences({
+			[UI_PREFERENCE_KEYS.browserToolPerms]: next,
+		});
 	}
 	function setOne(key: PermKey, on: boolean) {
-		setToolPerms((p) => ({ ...p, [key]: on }));
+		setToolPerms((p) => {
+			const next = { ...p, [key]: on };
+			void patchUiPreferences({
+				[UI_PREFERENCE_KEYS.browserToolPerms]: next,
+			});
+			return next;
+		});
 	}
 
 	// ── Page info ─────────────────────────────────────────────────────────────

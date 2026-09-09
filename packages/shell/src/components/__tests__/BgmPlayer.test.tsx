@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { onAiInterferenceEvent } from "../../lib/ai-interference";
 import { bgmPlayback } from "../../lib/bgm-playback";
+import { loadBgmLibraryFromSandbox, resetBgmLibraryCache } from "../../lib/bgm-library-store";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
 
@@ -23,6 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 	),
 }));
 vi.mock("../../lib/adk-store", () => ({
+	getAdkPath: vi.fn().mockReturnValue(null),
 	listNaiaAssets: vi.fn().mockResolvedValue([]),
 	toLocalBlobUrl: vi.fn().mockResolvedValue("blob:mock"),
 }));
@@ -433,6 +435,34 @@ describe("BgmPlayer YouTube playback state machine", () => {
 			expect.objectContaining({ youtubeId: "v-fav", title: "Favorite Candidate" }),
 		]);
 		expect(localStorage.getItem("yt-bgm-favorites")).toBeNull();
+	});
+
+	it("keeps confirmed play history when a like update follows before library reload", async () => {
+		resetBgmLibraryCache();
+		localStorage.setItem("naia-config", JSON.stringify({ locale: "en" }));
+		render(<BgmPlayer />);
+		await startTrack("v-played", "Played Before Like");
+		attachIframeForCurrentPlayback();
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		// The PLAYING event records history through the store cache first. The like
+		// command follows before React has rendered that cache update.
+		bgmCommandHandler()({
+			payload: JSON.stringify({ type: "bgm_youtube_fav_add" }),
+		});
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		resetBgmLibraryCache();
+		const restored = await loadBgmLibraryFromSandbox();
+		expect(restored.history).toEqual([
+			expect.objectContaining({ youtubeId: "v-played", title: "Played Before Like" }),
+		]);
+		expect(restored.likes).toEqual([
+			expect.objectContaining({ youtubeId: "v-played", title: "Played Before Like" }),
+		]);
 	});
 
 	it("creates and persists a named playlist from the player UI", async () => {

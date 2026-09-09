@@ -1,6 +1,7 @@
 import { S } from "../helpers/selectors.js";
 import {
 	navigateToSettings,
+	openSettingsSection,
 	persistConfigPatch,
 	resetOnboarding,
 	safeRefresh,
@@ -46,6 +47,69 @@ async function findSpeechStyleSelect() {
 	return undefined;
 }
 
+/** Speech style lives in the Persona subtab, not the top-level Settings entry. */
+async function openPersonaSettings() {
+	await navigateToSettings();
+	await openSettingsSection("persona");
+	await browser.waitUntil(
+		async () =>
+			(await browser.execute(() =>
+				Boolean(
+					document.querySelector(
+						'[data-settings-tab="persona"].settings-tab-btn--active',
+					),
+				),
+			)) === true,
+		{
+			timeout: 10_000,
+			timeoutMsg: "Persona settings subtab did not become active",
+		},
+	);
+}
+
+async function tauriInvoke<T>(
+	command: string,
+	args: Record<string, unknown> = {},
+): Promise<T> {
+	return (await browser.execute(
+		async (cmd: string, input: Record<string, unknown>) => {
+			const w = window as unknown as {
+				__TAURI_INTERNALS__?: {
+					invoke: (name: string, payload: unknown) => Promise<unknown>;
+				};
+				__TAURI__?: {
+					core?: { invoke: (name: string, payload: unknown) => Promise<unknown> };
+				};
+			};
+			const invoke =
+				w.__TAURI_INTERNALS__?.invoke ?? w.__TAURI__?.core?.invoke;
+			if (!invoke) throw new Error("Tauri invoke unavailable");
+			return invoke(cmd, input);
+		},
+		command,
+		args,
+	)) as T;
+}
+
+/** Seed the legacy value in the selected ADK file, then let startup migrate it. */
+async function seedLegacySpeechStyleInAdkFile(): Promise<void> {
+	const adkPath = await browser.execute(
+		() => localStorage.getItem("naia-adk-path") ?? "",
+	);
+	if (!adkPath) throw new Error("ADK pointer unavailable for legacy migration");
+	const raw = await tauriInvoke<string>("read_naia_config", { adkPath });
+	const config = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+	config.locale = "ko";
+	config.speechStyle = "반말";
+	await tauriInvoke("write_naia_config", {
+		adkPath,
+		json: JSON.stringify(config),
+	});
+	// Leave only the bootstrap pointer. This makes config.json the only legacy
+	// input and prevents a stale render cache from making the migration pass.
+	await browser.execute(() => localStorage.removeItem("naia-config"));
+}
+
 describe("54 — Locale affects system prompt config", () => {
 	before(async () => {
 		await safeRefresh();
@@ -76,7 +140,7 @@ describe("54 — Locale affects system prompt config", () => {
 	for (const locale of NON_FORMALITY_LOCALES) {
 		it(`speechStyle/honorific hidden for non-formality locale '${locale}'`, async () => {
 			await setLocale(locale);
-			await navigateToSettings();
+			await openPersonaSettings();
 			const speechSelect = await findSpeechStyleSelect();
 			expect(speechSelect).toBeUndefined();
 		});
@@ -86,7 +150,7 @@ describe("54 — Locale affects system prompt config", () => {
 	for (const locale of FORMALITY_LOCALES) {
 		it(`speechStyle/honorific visible for formality locale '${locale}'`, async () => {
 			await setLocale(locale, "casual");
-			await navigateToSettings();
+			await openPersonaSettings();
 			const speechSelect = await findSpeechStyleSelect();
 			expect(speechSelect).toBeDefined();
 		});
@@ -95,7 +159,7 @@ describe("54 — Locale affects system prompt config", () => {
 	// Test: speechStyle stores "casual"/"formal" (not legacy Korean values)
 	it("speechStyle stores normalized values", async () => {
 		await setLocale("ja", "casual");
-		await navigateToSettings();
+		await openPersonaSettings();
 
 		const speechSelect = await findSpeechStyleSelect();
 		expect(speechSelect).toBeDefined();
@@ -105,14 +169,7 @@ describe("54 — Locale affects system prompt config", () => {
 
 	// Test: legacy "반말" value is migrated on startup
 	it("migrates legacy speechStyle values on startup", async () => {
-		// Set legacy value directly
-		await browser.execute(() => {
-			const raw = localStorage.getItem("naia-config");
-			const config = raw ? JSON.parse(raw) : {};
-			config.speechStyle = "반말";
-			config.locale = "ko";
-			localStorage.setItem("naia-config", JSON.stringify(config));
-		});
+		await seedLegacySpeechStyleInAdkFile();
 		await safeRefresh();
 		await browser.pause(2000);
 
@@ -123,6 +180,21 @@ describe("54 — Locale affects system prompt config", () => {
 			return config.speechStyle;
 		});
 		expect(speechStyle).toBe("casual");
+		const fileSpeechStyle = await browser.waitUntil(
+			async () => {
+				const adkPath = await browser.execute(
+					() => localStorage.getItem("naia-adk-path") ?? "",
+				);
+				const raw = await tauriInvoke<string>("read_naia_config", { adkPath });
+				const config = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+				return config.speechStyle === "casual" ? "casual" : undefined;
+			},
+			{
+				timeout: 10_000,
+				timeoutMsg: "ADK config.json did not receive normalized speechStyle",
+			},
+		);
+		expect(fileSpeechStyle).toBe("casual");
 	});
 });
 

@@ -55,6 +55,22 @@ fn asset_localhost_url(full_path: &str) -> String {
     }
 }
 
+/// Recover the package-relative suffix from an asset URL written before an
+/// installed app was copied to a different ADK. The old absolute path is
+/// never opened; the reconstructed candidate is validated below against the
+/// current canonical app directory.
+fn relocated_asset_target(decoded: &str, app_dir: &Path) -> Option<std::path::PathBuf> {
+    let app_id = app_dir.file_name()?.to_str()?;
+    let normalized = decoded.replace('\\', "/");
+    let marker = format!("/.naia/apps/{app_id}/");
+    let marker_start = normalized.rfind(&marker)?;
+    let relative = &normalized[marker_start + marker.len()..];
+    if relative.is_empty() {
+        return None;
+    }
+    Some(app_dir.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR)))
+}
+
 fn rewrite_asset_value(value: &str, app_dir: &Path) -> String {
     let original = || value.to_string();
     if value.is_empty() || value.starts_with('#') || value.starts_with("//") {
@@ -73,12 +89,23 @@ fn rewrite_asset_value(value: &str, app_dir: &Path) -> String {
     let Some(decoded) = decode_uri_component(&raw[..end]) else {
         return original();
     };
+    let Ok(root) = fs::canonicalize(app_dir) else {
+        return original();
+    };
     let target = if legacy.is_some() {
         let path = Path::new(&decoded);
         if !path.is_absolute() {
             return original();
         }
-        path.to_path_buf()
+        match fs::canonicalize(path) {
+            Ok(canonical) if canonical.starts_with(&root) && canonical.is_file() => {
+                path.to_path_buf()
+            }
+            _ => match relocated_asset_target(&decoded, app_dir) {
+                Some(target) => target,
+                None => return original(),
+            },
+        }
     } else {
         // A leading slash in Vite output is package-relative, not filesystem-root.
         let relative = decoded
@@ -89,9 +116,6 @@ fn rewrite_asset_value(value: &str, app_dir: &Path) -> String {
             return original();
         }
         app_dir.join(relative)
-    };
-    let Ok(root) = fs::canonicalize(app_dir) else {
-        return original();
     };
     let Ok(canonical) = fs::canonicalize(&target) else {
         return original();

@@ -29,6 +29,7 @@ import {
 	DEFAULT_LOCAL_VOICE_HOST,
 	LAB_GATEWAY_URL,
 	NAIA_WEB_BASE_URL,
+	hasNaiaKeySecure,
 	loadConfig,
 	saveConfig,
 	saveConfigSecure,
@@ -50,7 +51,11 @@ import {
 	type StepInput,
 	makeOnboardingSession,
 } from "../lib/onboarding-core";
-import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
+import {
+	deleteSecretKey,
+	getSecureStorePath,
+	saveSecretKey,
+} from "../lib/secure-store";
 import { NAIA_SLOT_DEFAULTS, applyNaiaSlotDefaults } from "../lib/slots/model";
 import { voiceHostProfile } from "../lib/voice/host-profile";
 import {
@@ -323,7 +328,6 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	);
 	const addMessage = useChatStore((s) => s.addMessage);
 
-	const hasNaiaKey = !!localStorage.getItem("naia-remote-key");
 	// Always use full steps so user can see/confirm the provider connection during onboarding
 	const STEPS = STEPS_WITHOUT_NAIA;
 
@@ -346,7 +350,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	const [selectedBg, setSelectedBg] = useState("");
 	// Provider step state
 	const [naiaLoginWaiting, setNaiaLoginWaiting] = useState(false);
-	const [naiaLoginDone, setNaiaLoginDone] = useState(hasNaiaKey);
+	const [naiaLoginDone, setNaiaLoginDone] = useState(false);
 	const [detectedVramGb, setDetectedVramGb] = useState<number | null>(null);
 	// Voice step state — default ON with the free Web TTS engine (FR-VOICE onboarding).
 	const [ttsEnabled, setTtsEnabled] = useState(true);
@@ -369,13 +373,14 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		useState<NaiaAuthPayload | null>(null);
 	const [completing, setCompleting] = useState(false);
 	const [completionError, setCompletionError] = useState("");
-	// memoryAI step state — default to "naia" when Naia key already present
+	// memoryAI step state. A selected ADK credential hydrates these defaults below;
+	// localStorage is deliberately not used as a credential or login signal.
 	const [memoryEmbeddingProvider, setMemoryEmbeddingProvider] = useState<
 		"none" | "offline" | "vllm" | "ollama" | "naia"
-	>(hasNaiaKey ? "naia" : "none");
+	>("none");
 	const [memoryLlmProvider, setMemoryLlmProvider] = useState<
 		"none" | "naia" | "vllm" | "ollama"
-	>(hasNaiaKey ? "naia" : "none");
+	>("none");
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const latestRef = useRef<OnboardingSnapshot | null>(null);
 	const onboardingGpuSummary =
@@ -392,6 +397,47 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	useEffect(() => {
 		detectGpuVramGb().then(setDetectedVramGb);
+	}, []);
+
+	// Restore the onboarding gate from the selected ADK only. The secure store
+	// lookup is intentionally one-way: it never repopulates the legacy webview
+	// cache, so switching to an empty ADK cannot inherit another user's login.
+	useEffect(() => {
+		let active = true;
+		let requestId = 0;
+
+		const restoreForSelectedAdk = () => {
+			const expectedPath = getSecureStorePath();
+			const currentRequest = ++requestId;
+			// A path switch invalidates the previous gate immediately. The secure
+			// lookup below is async, so this prevents A's result from surviving
+			// while the wizard is still mounted on an empty B.
+			setNaiaLoginDone(false);
+			setMemoryEmbeddingProvider("none");
+			setMemoryLlmProvider("none");
+			void hasNaiaKeySecure()
+				.then((hasKey) => {
+					if (
+						active &&
+						currentRequest === requestId &&
+						getSecureStorePath() === expectedPath &&
+						hasKey
+					) {
+						setNaiaLoginDone(true);
+					}
+				})
+				.catch(() => {});
+		};
+
+		restoreForSelectedAdk();
+		window.addEventListener("naia-adk-path-changed", restoreForSelectedAdk);
+		return () => {
+			active = false;
+			window.removeEventListener(
+				"naia-adk-path-changed",
+				restoreForSelectedAdk,
+			);
+		};
 	}, []);
 
 	// Populate the Web TTS voice list. Some platforms (WebView2 included)

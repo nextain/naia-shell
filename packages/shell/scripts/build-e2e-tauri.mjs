@@ -205,20 +205,6 @@ const result = spawnSync(
 );
 if (result.status !== 0) process.exit(result.status ?? 1);
 
-// tauri-plugin-stt currently stages Vosk's Windows runtime beside the default
-// `src-tauri/target/debug` binary even when CARGO_TARGET_DIR is overridden.
-// Mirror only those generated DLLs into our owned target so the E2E executable
-// can start; never write into a developer's normal target directory.
-if (process.platform === "win32") {
-	const defaultDebug = resolve(shellDir, "src-tauri", "target", "debug");
-	const e2eDebug = resolve(targetDir, "debug");
-	for (const name of readdirSync(defaultDebug).filter((entry) =>
-		entry.toLowerCase().endsWith(".dll"),
-	)) {
-		copyFileSync(resolve(defaultDebug, name), resolve(e2eDebug, name));
-	}
-}
-
 // #508: the E2E debug binary resolves its resource_dir to CARGO_TARGET_DIR/
 // debug. Stage the three trusted installer resources there so
 // voxcpm2_installation_status / install_voxcpm2_runtime see the same contract

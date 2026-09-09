@@ -8,28 +8,16 @@ import {
 } from "react";
 import type { AppCenterProps } from "../../lib/app-registry";
 import { Logger } from "../../lib/logger";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
 import { useAppStore } from "../../stores/app";
 import type { EditorHandle } from "./Editor";
 import type { FileLocation, TerminalHandle } from "./Terminal";
 import type { HerdrSnapshot } from "./herdr";
 import type { ClassifiedDir } from "./types";
-
-const CLASSIFIED_DIRS_KEY = "workspace-classified-dirs";
-
-function loadClassifiedDirs(): ClassifiedDir[] | null {
-	try {
-		const raw = localStorage.getItem(CLASSIFIED_DIRS_KEY);
-		return raw ? (JSON.parse(raw) as ClassifiedDir[]) : null;
-	} catch {
-		return null;
-	}
-}
-
-function saveClassifiedDirs(dirs: ClassifiedDir[]): void {
-	try {
-		localStorage.setItem(CLASSIFIED_DIRS_KEY, JSON.stringify(dirs));
-	} catch {}
-}
 
 interface DocumentsOptions {
 	naia: AppCenterProps["naia"];
@@ -44,18 +32,20 @@ function useClassifyDirs(naia: {
 	onToolCall: (
 		name: string,
 		handler: (args: Record<string, unknown>) => Promise<string>,
-	) => () => void;
+		) => () => void;
 }) {
-	const [classifiedDirs, setClassifiedDirs] = useState<ClassifiedDir[] | null>(
-		loadClassifiedDirs,
+	const classifiedDirs = useUiPreference<ClassifiedDir[] | null>(
+		UI_PREFERENCE_KEYS.classifiedDirs,
+		null,
 	);
 	useEffect(
 		() =>
 			naia.onToolCall("skill_workspace_classify_dirs", async (args) => {
 				if (Array.isArray(args.confirmed)) {
 					const next = args.confirmed as ClassifiedDir[];
-					setClassifiedDirs(next);
-					saveClassifiedDirs(next);
+					void patchUiPreferences({
+						[UI_PREFERENCE_KEYS.classifiedDirs]: next,
+					});
 					return `Classification applied: ${next.length} directories`;
 				}
 				try {

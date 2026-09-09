@@ -184,6 +184,27 @@ async function openDjSkillSettings(): Promise<void> {
 			),
 		{ timeout: 10_000, timeoutMsg: "YouTube BGM skill settings unavailable" },
 	);
+	await browser.execute(() => {
+		const header = document.querySelector(
+			".radio-dj-skill-card-header",
+		) as HTMLButtonElement | null;
+		if (!header) throw new Error("radio DJ skill card header unavailable");
+		if (header.getAttribute("aria-expanded") !== "true") header.click();
+	});
+	await browser.waitUntil(
+		async () =>
+			browser.execute(() =>
+				Boolean(document.querySelector('[data-testid="proactive-speech-settings"]')),
+			),
+		{ timeout: 10_000, timeoutMsg: "proactive DJ settings unavailable" },
+	);
+	// The DJ card owns BGM/profile controls. Exhibition knowledge scope belongs
+	// to the exhibition section and is intentionally absent from this panel.
+	expect(
+		await browser.execute(() =>
+			Boolean(document.querySelector('[data-testid="proactive-knowledge-scope"]')),
+		),
+	).toBe(false);
 }
 
 async function fillProactiveSettings(): Promise<void> {
@@ -217,7 +238,6 @@ async function fillProactiveSettings(): Promise<void> {
 		changeValue('[data-testid="proactive-timezone"]', "Asia/Seoul");
 		changeValue('[data-testid="proactive-idle-ms"]', "5000");
 		changeValue('[data-testid="proactive-interval-ms"]', "30000");
-		changeValue('[data-testid="proactive-knowledge-scope"]', "expo-2026");
 		const bgm = document.querySelector(
 			'[data-testid="proactive-bgm-autoplay"]',
 		) as HTMLInputElement | null;
@@ -407,8 +427,7 @@ describe("71 — Proactive speech profiles (#82)", () => {
 				config.proactiveSpeechBgmAutoPlay === true &&
 				config.proactiveSpeechWeatherConsented === true &&
 				config.proactiveSpeechWeatherLatitude === 37.5665 &&
-				config.proactiveSpeechWeatherLongitude === 126.978 &&
-				config.proactiveSpeechKnowledgeScope === "expo-2026"
+				config.proactiveSpeechWeatherLongitude === 126.978
 			);
 		});
 		await browser.execute(() => {
@@ -432,8 +451,7 @@ describe("71 — Proactive speech profiles (#82)", () => {
 					restored.proactiveSpeechBgmAutoPlay === true &&
 					restored.proactiveSpeechWeatherConsented === true &&
 					restored.proactiveSpeechWeatherLatitude === 37.5665 &&
-					restored.proactiveSpeechWeatherLongitude === 126.978 &&
-					restored.proactiveSpeechKnowledgeScope === "expo-2026"
+					restored.proactiveSpeechWeatherLongitude === 126.978
 				);
 			},
 			{ timeout: 20_000 },
@@ -459,6 +477,158 @@ describe("71 — Proactive speech profiles (#82)", () => {
 				config.proactiveSpeechWeatherLongitude == null
 			);
 		});
+	});
+
+	it("persists exhibition settings through the visible General section after cache-clear native reload", async () => {
+		await openGeneralSettings();
+		const controls = await browser.execute(() => ({
+			profileOptions: Array.from(
+				document.querySelectorAll<HTMLSelectElement>(
+					'[data-testid="proactive-speech-profile"] option',
+				),
+			).map((option) => option.value),
+			bgmPresent: Boolean(
+				document.querySelector('[data-testid="proactive-bgm-autoplay"]'),
+			),
+			knowledgeScopePresent: Boolean(
+				document.querySelector('[data-testid="proactive-knowledge-scope"]'),
+			),
+		}));
+		expect(controls.profileOptions).toEqual(["disabled", "exhibition_intro"]);
+		expect(controls.bgmPresent).toBe(false);
+		expect(controls.knowledgeScopePresent).toBe(true);
+
+		await browser.execute(() => {
+			const setValue = (selector: string, value: string) => {
+				const element = document.querySelector(selector) as
+					| HTMLInputElement
+					| HTMLSelectElement
+					| null;
+				if (!element) throw new Error(`missing exhibition control: ${selector}`);
+				const prototype =
+					element instanceof HTMLSelectElement
+						? HTMLSelectElement.prototype
+						: HTMLInputElement.prototype;
+				const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+				setter?.call(element, value);
+				element.dispatchEvent(new Event("input", { bubbles: true }));
+				element.dispatchEvent(new Event("change", { bubbles: true }));
+			};
+			setValue('[data-testid="proactive-speech-profile"]', "exhibition_intro");
+			setValue('[data-testid="proactive-timezone"]', "Asia/Seoul");
+			setValue('[data-testid="proactive-idle-ms"]', "5000");
+			setValue('[data-testid="proactive-interval-ms"]', "30000");
+			setValue('[data-testid="proactive-knowledge-scope"]', "expo-2026");
+			(
+				document.querySelector(
+					'[data-testid="proactive-settings-save"]',
+				) as HTMLButtonElement | null
+			)?.click();
+		});
+		await browser.waitUntil(async () => {
+			const config = await fileBackedUiConfig();
+			return (
+				config.proactiveSpeechProfile === "exhibition_intro" &&
+				config.proactiveSpeechPermitted === false &&
+				config.proactiveSpeechTimezone === "Asia/Seoul" &&
+				config.proactiveSpeechIdleMs === 5000 &&
+				config.proactiveSpeechIntervalMs === 30000 &&
+				config.proactiveSpeechKnowledgeScope === "expo-2026"
+			);
+		}, { timeout: 10_000, timeoutMsg: "exhibition settings were not persisted" });
+
+		const bootstrap = await browser.execute(() => {
+			const raw = localStorage.getItem("naia-config");
+			const config = raw ? JSON.parse(raw) : {};
+			for (const key of Object.keys(config)) {
+				if (key.startsWith("proactiveSpeech")) delete config[key];
+			}
+			localStorage.setItem("naia-config", JSON.stringify(config));
+			return {
+				pointer: localStorage.getItem("naia-adk-path"),
+				proactiveKeys: Object.keys(config).filter((key) =>
+					key.startsWith("proactiveSpeech"),
+				),
+			};
+		});
+		expect(bootstrap.pointer).toBe(adkPath);
+		expect(bootstrap.proactiveKeys).toEqual([]);
+		await safeRefresh();
+		await browser.waitUntil(
+			async () => {
+				const restored = await storedProfile();
+				return (
+					restored.proactiveSpeechProfile === "exhibition_intro" &&
+					restored.proactiveSpeechTimezone === "Asia/Seoul" &&
+					restored.proactiveSpeechIdleMs === 5000 &&
+					restored.proactiveSpeechIntervalMs === 30000 &&
+					restored.proactiveSpeechKnowledgeScope === "expo-2026"
+				);
+			},
+			{ timeout: 20_000, timeoutMsg: "exhibition settings did not restore from ADK file" },
+		);
+		await openGeneralSettings();
+		const visible = await browser.execute(() => ({
+			profile: (
+				document.querySelector(
+					'[data-testid="proactive-speech-profile"]',
+				) as HTMLSelectElement | null
+			)?.value,
+			timezone: (
+				document.querySelector(
+					'[data-testid="proactive-timezone"]',
+				) as HTMLInputElement | null
+			)?.value,
+			idleMs: (
+				document.querySelector(
+					'[data-testid="proactive-idle-ms"]',
+				) as HTMLInputElement | null
+			)?.value,
+			intervalMs: (
+				document.querySelector(
+					'[data-testid="proactive-interval-ms"]',
+				) as HTMLInputElement | null
+			)?.value,
+			knowledgeScope: (
+				document.querySelector(
+					'[data-testid="proactive-knowledge-scope"]',
+				) as HTMLInputElement | null
+			)?.value,
+			bgmPresent: Boolean(
+				document.querySelector('[data-testid="proactive-bgm-autoplay"]'),
+			),
+		}));
+		expect(visible).toEqual({
+			profile: "exhibition_intro",
+			timezone: "Asia/Seoul",
+			idleMs: "5000",
+			intervalMs: "30000",
+			knowledgeScope: "expo-2026",
+			bgmPresent: false,
+		});
+
+		// Leave the isolated ADK in the opt-out state for later checks.
+		await browser.execute(() => {
+			const profile = document.querySelector(
+				'[data-testid="proactive-speech-profile"]',
+			) as HTMLSelectElement | null;
+			if (!profile) throw new Error("exhibition profile control disappeared");
+			const setter = Object.getOwnPropertyDescriptor(
+				HTMLSelectElement.prototype,
+				"value",
+			)?.set;
+			setter?.call(profile, "disabled");
+			profile.dispatchEvent(new Event("change", { bubbles: true }));
+			(
+				document.querySelector(
+					'[data-testid="proactive-settings-save"]',
+				) as HTMLButtonElement | null
+			)?.click();
+		});
+		await browser.waitUntil(
+			async () => (await fileBackedUiConfig()).proactiveSpeechProfile === "disabled",
+			{ timeout: 10_000, timeoutMsg: "exhibition cleanup did not persist disabled profile" },
+		);
 	});
 
 	it("reports the standalone cascade boundary through registered native IPC", async () => {

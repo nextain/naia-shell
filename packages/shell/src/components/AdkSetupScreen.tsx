@@ -9,8 +9,9 @@ import {
 	getAdkPath,
 	readNaiaConfig,
 	setAdkPath,
+	writeNaiaConfigAtPath,
 } from "../lib/adk-store";
-import { NAIA_WEB_BASE_URL } from "../lib/config";
+import { NAIA_WEB_BASE_URL, saveConfigSecure } from "../lib/config";
 import { type TranslationKey, getLocale, t } from "../lib/i18n";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import { NAIA_SLOT_DEFAULTS, applyNaiaSlotDefaults } from "../lib/slots/model";
@@ -154,46 +155,53 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 		const unlisten = listen<{ naiaKey: string; naiaUserId?: string }>(
 			"naia_auth_complete",
 			(event) => {
-				const adkPath = path || defaultPath;
+				const adkPath = (path || defaultPath).trim();
 				setLoginWaiting(false);
-				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
-				if (event.payload.naiaUserId) {
-					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
-				}
-				// Mark onboarding complete — Naia login implies an existing account/setup.
-				const existing = JSON.parse(
-					localStorage.getItem("naia-config") ?? "{}",
-				);
-				// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용(비파괴).
-				// §9 #5: stale hardcode gemini-2.5-flash → NAIA_SLOT_DEFAULTS.main.model(gemini-3.5-flash).
-				const loginConfig = applyNaiaSlotDefaults({
-					provider: "nextain",
-					model: NAIA_SLOT_DEFAULTS.main.model,
-					apiKey: "",
-					...(existing as Record<string, unknown>),
-					naiaKey: event.payload.naiaKey,
-					naiaUserId: event.payload.naiaUserId,
-					onboardingComplete: true,
-				} as import("../lib/config").AppConfig);
-				localStorage.setItem(
-					"naia-config",
-					JSON.stringify(
-						preserveWorkspaceRoot(
-							loginConfig as unknown as Record<string, unknown>,
-							adkPath,
-						),
-					),
-				);
-				// Cache naiaKey for crash-restart replay before calling onComplete.
+				// Read the selected workspace before binding it. localStorage may still
+				// describe the previous ADK while onboarding is visible, so it must not
+				// seed a login for the newly selected workspace.
 				void (async () => {
 					try {
+						const selectedConfig = (await readNaiaConfig(adkPath)) ?? {};
+						// FR-SLOT.3 / R2-1: naia 게이트 통과 → 미설정 슬롯에 Gemini 기본값 자동 적용(비파괴).
+						// §9 #5: stale hardcode gemini-2.5-flash → NAIA_SLOT_DEFAULTS.main.model(gemini-3.5-flash).
+						const loginConfig = applyNaiaSlotDefaults({
+							provider: "nextain",
+							model: NAIA_SLOT_DEFAULTS.main.model,
+							apiKey: "",
+							...(selectedConfig as Record<string, unknown>),
+							naiaKey: event.payload.naiaKey,
+							naiaUserId: event.payload.naiaUserId,
+							onboardingComplete: true,
+						} as import("../lib/config").AppConfig);
+						const persistedLoginConfig = preserveWorkspaceRoot(
+							loginConfig as unknown as Record<string, unknown>,
+							adkPath,
+						);
+						// Bind the selected ADK before saving so the key is written to that
+						// workspace's secure store rather than only to the browser cache.
+						await setAdkPath(adkPath);
+						await saveConfigSecure(
+							persistedLoginConfig as unknown as import("../lib/config").AppConfig,
+						);
+						// App hydration is still gated until onComplete. Explicitly persist
+						// the selected ADK's public snapshot before releasing that gate.
+						await writeNaiaConfigAtPath(persistedLoginConfig, adkPath);
+						// Keep these legacy identity mirrors only after the canonical ADK
+						// transaction has succeeded; they are never login input.
+						localStorage.setItem("naia-remote-key", event.payload.naiaKey);
+						if (event.payload.naiaUserId) {
+							localStorage.setItem(
+								"naia-remote-user-id",
+								event.payload.naiaUserId,
+							);
+						}
 						await invoke("store_startup_message", {
 							message: JSON.stringify({
 								type: "auth_update",
 								naiaKey: event.payload.naiaKey,
 							}),
 						});
-						await setAdkPath(adkPath);
 						onComplete();
 					} catch (error) {
 						setError(String(error));
@@ -260,7 +268,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			setSetupStatus("copyingAssets");
 			await copyBundledAssets(adkPath);
 			clearAllLocalData();
-			const fileConfig = await readNaiaConfig();
+			const fileConfig = await readNaiaConfig(adkPath);
 			if (fileConfig) {
 				localStorage.setItem(
 					"naia-config",
@@ -320,7 +328,7 @@ export function AdkSetupScreen({ onComplete }: AdkSetupScreenProps) {
 			setSetupStatus("copyingAssets");
 			await copyBundledAssets(trimmed);
 			// Restore config from the selected ADK folder, then mark onboarding done
-			const fileConfig = await readNaiaConfig();
+			const fileConfig = await readNaiaConfig(trimmed);
 			const base = fileConfig ?? {};
 			localStorage.setItem(
 				"naia-config",

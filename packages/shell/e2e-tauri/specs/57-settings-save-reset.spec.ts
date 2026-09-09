@@ -3,6 +3,7 @@ import {
 	clickBySelector,
 	ensureAppReady,
 	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 	setNativeValue,
 } from "../helpers/settings.js";
@@ -10,7 +11,7 @@ import {
 /**
  * 57 — Settings: Save & Reset Round-trip
  *
- * Verifies settings persistence:
+ * Verifies settings state across an in-app tab round-trip:
  * - Change theme + persona → Save
  * - Navigate away (chat tab) → come back
  * - Values should persist
@@ -18,6 +19,7 @@ import {
  */
 describe("57 — settings save & reset", () => {
 	let originalThemeIdx: number;
+	let changedThemeIdx: number;
 
 	before(async () => {
 		await ensureAppReady();
@@ -27,18 +29,20 @@ describe("57 — settings save & reset", () => {
 	});
 
 	it("should save current theme index", async () => {
+		await openSettingsSection("general");
 		originalThemeIdx = await browser.execute((allSel: string) => {
 			const all = document.querySelectorAll(allSel);
 			for (let i = 0; i < all.length; i++) {
 				if (all[i].classList.contains("active")) return i;
 			}
-			return 0;
+			return -1;
 		}, S.themeSwatch);
 		expect(originalThemeIdx).toBeGreaterThanOrEqual(0);
 	});
 
 	it("should change theme to a different swatch", async () => {
-		const changed = await browser.execute(
+		await openSettingsSection("general");
+		changedThemeIdx = await browser.execute(
 			(allSel: string, origIdx: number) => {
 				const all = document.querySelectorAll(allSel);
 				for (let i = 0; i < all.length; i++) {
@@ -52,18 +56,35 @@ describe("57 — settings save & reset", () => {
 			S.themeSwatch,
 			originalThemeIdx,
 		);
-		expect(changed).toBeGreaterThanOrEqual(0);
+		expect(changedThemeIdx).toBeGreaterThanOrEqual(0);
+		expect(changedThemeIdx).not.toBe(originalThemeIdx);
 		await browser.pause(200);
 	});
 
 	it("should set persona text", async () => {
+		await openSettingsSection("persona");
 		await scrollToSection(S.personaInput);
+		const state = await browser.execute((sel: string) => {
+			const input = document.querySelector(sel) as HTMLTextAreaElement | null;
+			return { exists: !!input, disabled: input?.disabled ?? true };
+		}, S.personaInput);
+		expect(state.exists).toBe(true);
+		expect(state.disabled).toBe(false);
+		await browser.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLTextAreaElement | null)?.focus();
+		}, S.personaInput);
 		await setNativeValue(S.personaInput, "저장 테스트 페르소나");
+		await browser.execute((sel: string) => {
+			(document.querySelector(sel) as HTMLTextAreaElement | null)?.blur();
+		}, S.personaInput);
 		await browser.pause(200);
 	});
 
 	it("should click save button", async () => {
+		await openSettingsSection("brain");
 		await scrollToSection(S.settingsSaveBtn);
+		const saveButton = await $(S.settingsSaveBtn);
+		await saveButton.waitForDisplayed({ timeout: 10_000 });
 		await clickBySelector(S.settingsSaveBtn);
 		await browser.pause(500);
 	});
@@ -77,7 +98,7 @@ describe("57 — settings save & reset", () => {
 		await navigateToSettings();
 		await browser.pause(500);
 
-		// Theme should NOT be the original index
+		await openSettingsSection("general");
 		const currentThemeIdx = await browser.execute((allSel: string) => {
 			const all = document.querySelectorAll(allSel);
 			for (let i = 0; i < all.length; i++) {
@@ -85,9 +106,10 @@ describe("57 — settings save & reset", () => {
 			}
 			return -1;
 		}, S.themeSwatch);
-		expect(currentThemeIdx).not.toBe(originalThemeIdx);
+		expect(currentThemeIdx).toBeGreaterThanOrEqual(0);
+		expect(currentThemeIdx).toBe(changedThemeIdx);
 
-		// Persona should contain our test text
+		await openSettingsSection("persona");
 		await scrollToSection(S.personaInput);
 		const persona = await browser.execute(
 			(sel: string) =>
@@ -98,6 +120,7 @@ describe("57 — settings save & reset", () => {
 	});
 
 	it("should have a reset button", async () => {
+		await openSettingsSection("general");
 		await scrollToSection(S.settingsResetBtn);
 		const exists = await browser.execute(
 			(sel: string) => !!document.querySelector(sel),

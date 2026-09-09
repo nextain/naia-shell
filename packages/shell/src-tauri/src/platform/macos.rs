@@ -2,13 +2,52 @@
 #![allow(dead_code)]
 
 use super::{PlatformHandle, PlatformWindowManager, WindowRect};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use tauri::Manager;
 
 /// Check if a process with the given PID is still running (Unix: kill(pid, 0)).
+///
+/// Permission errors mean the process exists but is not inspectable by this
+/// Shell.  Treat those as alive so an inaccessible owner can never authorize
+/// orphan cleanup by accident.
 pub(crate) fn is_pid_alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    if pid == 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    result == 0
+        || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
+/// macOS process start identity from `proc_pidinfo`.
+pub(crate) fn process_identity(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>();
+    let result = unsafe {
+        libc::proc_pidinfo(
+            i32::try_from(pid).ok()?,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            i32::try_from(size).ok()?,
+        )
+    };
+    if result != i32::try_from(size).ok()? {
+        return None;
+    }
+    let info = unsafe { info.assume_init() };
+    Some(format!("{}:{}", info.pbi_start_tvsec, info.pbi_start_tvusec))
+}
+
+pub(crate) fn replace_file_atomically(
+    temporary: &Path,
+    destination: &Path,
+) -> std::io::Result<()> {
+    std::fs::rename(temporary, destination)
 }
 
 pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool>, String> {
@@ -60,6 +99,16 @@ pub(crate) fn dummy_child() -> Result<Child, String> {
 pub(crate) fn hide_console(_cmd: &mut Command) {}
 
 /// Force-terminate a process by PID using SIGKILL.
+pub(crate) fn terminate_pid(pid: u32) {
+    let signed_pid = match i32::try_from(pid) {
+        Ok(p) if p > 0 => p,
+        _ => return,
+    };
+    unsafe {
+        libc::kill(signed_pid, libc::SIGTERM);
+    }
+}
+
 pub(crate) fn kill_pid(pid: u32) {
     let signed_pid = match i32::try_from(pid) {
         Ok(p) if p > 0 => p,
@@ -68,6 +117,71 @@ pub(crate) fn kill_pid(pid: u32) {
     unsafe {
         libc::kill(signed_pid, libc::SIGKILL);
     }
+}
+
+/// Keep the Cascade supervisor and its loader children in one private process
+/// group so teardown remains scoped to this Shell instance.
+pub(crate) fn prepare_cascade_command(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+
+    // SAFETY: `pre_exec` only invokes the async-signal-safe setpgid(2) call in
+    // the child between fork and exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setpgid(0, 0) == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+}
+
+pub(crate) struct CascadeOwnership {
+    pgid: libc::pid_t,
+}
+
+pub(crate) fn claim_cascade_process(pid: u32) -> Result<CascadeOwnership, String> {
+    let signed_pid = i32::try_from(pid).map_err(|_| "invalid Cascade PID".to_string())?;
+    if signed_pid <= 1 {
+        return Err("invalid Cascade process-group PID".to_string());
+    }
+    let pgid = unsafe { libc::getpgid(signed_pid) };
+    if pgid != signed_pid {
+        return Err(format!(
+            "Cascade supervisor did not enter its private process group (pid={pid})"
+        ));
+    }
+    Ok(CascadeOwnership { pgid })
+}
+
+fn cascade_signal(ownership: Option<&CascadeOwnership>, pid: u32, signal: libc::c_int) {
+    let signed_pid = match i32::try_from(pid) {
+        Ok(value) if value > 1 => value,
+        _ => return,
+    };
+    let group = ownership
+        .map(|value| value.pgid)
+        .filter(|value| *value == signed_pid)
+        .or_else(|| {
+            let observed = unsafe { libc::getpgid(signed_pid) };
+            (observed == signed_pid).then_some(observed)
+        });
+    unsafe {
+        if let Some(pgid) = group {
+            libc::kill(-pgid, signal);
+        } else {
+            libc::kill(signed_pid, signal);
+        }
+    }
+}
+
+pub(crate) fn terminate_cascade(ownership: Option<&CascadeOwnership>, pid: u32) {
+    cascade_signal(ownership, pid, libc::SIGTERM);
+}
+
+pub(crate) fn kill_cascade(ownership: Option<&CascadeOwnership>, pid: u32) {
+    cascade_signal(ownership, pid, libc::SIGKILL);
 }
 
 /// PID of the process listening on a local TCP port, if any (FR-BGM.13 #517).
@@ -106,88 +220,89 @@ pub(crate) fn pid_command_line(pid: u32) -> Option<String> {
 /// Clean up orphan processes from a previous session.
 pub(crate) fn cleanup_orphan_processes() {
     for component in &["gateway", "node-host", "bgm-server", "cascade", "voxcpm2"] {
-        if let Some(pid) = crate::read_pid_file(component) {
-            let signed_pid = match i32::try_from(pid) {
-                Ok(p) if p > 0 => p,
-                _ => {
-                    crate::log_verbose(&format!(
-                        "[Naia] Invalid PID {} for {} — skipping",
-                        pid, component
-                    ));
-                    crate::remove_pid_file(component);
-                    continue;
-                }
+        let _ = crate::with_process_record_lock(component, || {
+            let Some(record) = crate::read_process_record(component) else {
+                // Legacy bare PID files and malformed/unverifiable records
+                // are deliberately left for diagnostics; they authorize no
+                // process operation.
+                return;
             };
+            if !crate::process_record_owner_is_dead(&record)
+                || !crate::process_record_matches(component, &record)
+                // Re-read both identities after the record check and right
+                // before the first signal; the PID may have been reused
+                // between the initial observation and this operation.
+                || !crate::process_record_can_be_reaped(&record)
+            {
+                return;
+            }
+
+            let pid = record.child_pid;
+            crate::log_verbose(&format!(
+                "[Naia] Orphan {component} found (PID {pid}) — sending SIGTERM"
+            ));
+            if *component == "cascade" {
+                // Persisted Cascade records have no live ownership handle, so
+                // recover the supervisor's private process group from its PID.
+                terminate_cascade(None, pid);
+            } else {
+                terminate_pid(pid);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            // Revalidate owner and record before escalation.  Never escalate
+            // a PID that was reused meanwhile.  If TERM already made the
+            // exact child disappear, remove only the still-matching record;
+            // an inaccessible/live PID remains protected.
+            if !crate::process_record_matches(component, &record)
+                || !crate::process_record_owner_is_dead(&record)
+            {
+                return;
+            }
+            if !crate::process_record_can_be_reaped(&record) {
+                if !is_pid_alive(pid)
+                    && !crate::process_record_child_is_exact(&record)
+                    && crate::process_record_matches(component, &record)
+                {
+                    let _ = crate::remove_process_record_if_matches_locked(component, &record);
+                }
+                return;
+            }
             if is_pid_alive(pid) {
                 crate::log_verbose(&format!(
-                    "[Naia] Orphan {} found (PID {}) — sending SIGTERM",
-                    component, pid
+                    "[Naia] Orphan {component} still alive (PID {pid}) — sending SIGKILL"
                 ));
-                unsafe {
-                    libc::kill(signed_pid, libc::SIGTERM);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                if is_pid_alive(pid) {
-                    crate::log_verbose(&format!(
-                        "[Naia] Orphan {} still alive (PID {}) — sending SIGKILL",
-                        component, pid
-                    ));
-                    unsafe {
-                        libc::kill(signed_pid, libc::SIGKILL);
-                    }
+                if *component == "cascade" {
+                    kill_cascade(None, pid);
+                } else {
+                    kill_pid(pid);
                 }
             }
-            crate::remove_pid_file(component);
-        }
+            if !is_pid_alive(pid)
+                && !crate::process_record_child_is_exact(&record)
+                && crate::process_record_matches(component, &record)
+            {
+                let _ = crate::remove_process_record_if_matches_locked(component, &record);
+            }
+        });
     }
 }
 
-/// Kill stale gateway process.
+/// Name-based orphan cleanup is intentionally disabled.  Only an exact,
+/// owner-dead PID record can authorize a process operation.
 pub(crate) fn kill_stale_gateway() {
-    if let Ok(uid) = std::env::var("UID").or_else(|_| {
-        Command::new("id")
-            .arg("-u")
-            .output()
-            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-    }) {
-        let domain_target = format!("gui/{uid}/ai.openclaw.gateway");
-        let _ = Command::new("launchctl")
-            .arg("bootout")
-            .arg(domain_target)
-            .output();
-        let plist = format!(
-            "{}/Library/LaunchAgents/ai.openclaw.gateway.plist",
-            crate::data_home::unix_home()
-        );
-        let _ = Command::new("launchctl")
-            .arg("bootout")
-            .arg(format!("gui/{uid}"))
-            .arg(plist)
-            .output();
-    }
-    let _ = Command::new("pkill")
-        .arg("-f")
-        .arg("openclaw.*gateway|naia.*gateway")
-        .output();
+    crate::log_verbose("[Naia] Skipping global gateway process matching");
 }
 
-/// Kill stale cascade (output_cascade uvicorn + loader + children) — macOS (R2.2b).
+/// Name-based Cascade cleanup is intentionally disabled.  A healthy Cascade
+/// can be shared by another Shell (FR-SHELL-ISO.1), and crash-grandchild
+/// cleanup remains a later process-group design task.
 pub(crate) fn kill_stale_cascade() {
-    for pat in &[
-        "output_cascade.app:app",
-        "loader.*launch",
-        "trt_native_stream_server",
-        "voxcpm2_service",
-    ] {
-        let _ = Command::new("pkill").arg("-f").arg(*pat).output();
-    }
+    crate::log_verbose("[Naia] Skipping global Cascade process matching");
 }
 
 pub(crate) fn kill_stale_voxcpm2() {
-    let _ = Command::new("pkill")
-        .arg("-f")
-        .arg("voxcpm2_tensorrt.http_server")
-        .output();
+    crate::log_verbose("[Naia] Skipping global VoxCPM2 process matching");
 }
 
 /// Find Node.js via Unix version managers.

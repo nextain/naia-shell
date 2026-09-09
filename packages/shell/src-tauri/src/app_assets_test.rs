@@ -89,6 +89,29 @@ fn both_platform_asset_origins_are_migrated() {
 }
 
 #[test]
+fn asset_urls_are_rebased_after_adk_relocation() {
+    let old_root = tempfile::tempdir().unwrap();
+    let old_app = old_root.path().join(".naia/apps/slides");
+    fs::create_dir_all(old_app.join("assets")).unwrap();
+    fs::write(old_app.join("assets/index.js"), "// old").unwrap();
+    let old_url = format!(
+        "{}?v=1#module",
+        asset_localhost_url(&old_app.join("assets/index.js").to_string_lossy())
+    );
+
+    let new_root = tempfile::tempdir().unwrap();
+    let new_app = new_root.path().join(".naia/apps/slides");
+    fs::create_dir_all(new_app.join("assets")).unwrap();
+    fs::write(new_app.join("assets/index.js"), "// new").unwrap();
+    let expected = format!(
+        "{}?v=1#module",
+        asset_localhost_url(&new_app.join("assets/index.js").to_string_lossy())
+    );
+
+    assert_eq!(rewrite_asset_value(&old_url, &new_app), expected);
+}
+
+#[test]
 fn local_script_stylesheet_and_single_quotes_are_rewritten() {
     let f = Fixture::new();
     f.html("<script src=\"./assets/index.js\"></script><link href='assets/style.css'><img src=\"assets/missing.png\">");

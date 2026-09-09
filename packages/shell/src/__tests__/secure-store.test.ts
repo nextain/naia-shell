@@ -1,11 +1,21 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// vi.mock factory must not reference variables declared in the same scope
+const mockInvoke = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: mockInvoke,
+}));
+
+// Legacy migration still uses the old app-data store. Canonical ADK secrets
+// must go through the native invoke API above.
 vi.mock("@tauri-apps/plugin-store", () => {
 	const store = {
 		get: vi.fn(),
 		set: vi.fn(),
 		delete: vi.fn(),
+		save: vi.fn(),
+		entries: vi.fn(),
 	};
 	return {
 		load: vi.fn().mockResolvedValue(store),
@@ -22,47 +32,44 @@ import {
 	saveSecretKey,
 } from "../lib/secure-store";
 
-// Get mock store reference
-// function getMockStore() {
-// 	return (load as unknown as { __mockStore: ReturnType<typeof vi.fn> }).__mockStore ??
-// 		// fallback: resolve from the mock module
-// 		vi.mocked(load).mock.results[0]?.value;
-// }
-
 describe("secure-store", () => {
-	let mockStore: {
-		get: ReturnType<typeof vi.fn>;
-		set: ReturnType<typeof vi.fn>;
-		delete: ReturnType<typeof vi.fn>;
-	};
-
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		// Get the mock store after module loads
-		const mod = await import("@tauri-apps/plugin-store");
-		mockStore = (mod as any).__mockStore;
+		localStorage.clear();
+		localStorage.setItem("naia-adk-path", "/adk-a");
 	});
 
 	it("saves a key to the store", async () => {
 		await saveSecretKey("apiKey", "test-value");
-		expect(mockStore.set).toHaveBeenCalledWith("apiKey", "test-value");
+		expect(mockInvoke).toHaveBeenCalledWith("secure_store_set", {
+			name: "apiKey",
+			value: "test-value",
+			expectedStorePath: "/adk-a/data-private/secure-keys.dat",
+		});
 	});
 
 	it("retrieves a key from the store", async () => {
-		mockStore.get.mockResolvedValueOnce("stored-value");
+		mockInvoke.mockResolvedValueOnce("stored-value");
 		const result = await getSecretKey("apiKey");
 		expect(result).toBe("stored-value");
+		expect(mockInvoke).toHaveBeenCalledWith("secure_store_get", {
+			name: "apiKey",
+			expectedStorePath: "/adk-a/data-private/secure-keys.dat",
+		});
 	});
 
 	it("returns null for missing key", async () => {
-		mockStore.get.mockResolvedValueOnce(undefined);
+		mockInvoke.mockResolvedValueOnce(null);
 		const result = await getSecretKey("nonexistent");
 		expect(result).toBeNull();
 	});
 
 	it("deletes a key from the store", async () => {
 		await deleteSecretKey("apiKey");
-		expect(mockStore.delete).toHaveBeenCalledWith("apiKey");
+		expect(mockInvoke).toHaveBeenCalledWith("secure_store_delete", {
+			name: "apiKey",
+			expectedStorePath: "/adk-a/data-private/secure-keys.dat",
+		});
 	});
 
 	it("identifies secret key names", () => {

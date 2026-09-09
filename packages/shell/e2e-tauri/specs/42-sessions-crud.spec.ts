@@ -7,16 +7,13 @@ import { S } from "../helpers/selectors.js";
 /**
  * 42 — 세션 대화록이 실제로 남는다 (재조준, #567)
  *
- * 예전에는 대화로 `skill_sessions` 를 시켜 preview/patch/reset 을 보았다. 그 도구는
- * 없어졌다 — 셸이 스스로 "new-core 는 standalone tool 미지원(chat 도구루프로만 실행)"
- * 이라며 그 경로를 막는다(`chat-service.ts`). 능력이 죽은 것이 아니라 **실행 경로가
- * 바뀌었다.** 세션은 이제 에이전트의 `ConversationLogPort` 가 `<ADK>/conversations/
- * <sessionId>.jsonl` 에 한 줄씩 덧붙여 남긴다(`conversation-log-store.ts`,
- * append-only JSONL, 1줄 = 1메시지).
+ * 이 스펙은 preview/patch/reset 도구의 동작을 검증하지 않는다. 현재 대화 경로에서
+ * 에이전트의 `ConversationLogPort` 가 `<ADK>/conversations/<sessionId>.jsonl` 에
+ * 한 줄씩 덧붙여 남기는 기록만 확인한다(`conversation-log-store.ts`, append-only
+ * JSONL, 1줄 = 1메시지).
  *
- * 그래서 여기서는 도구 이름을 부르지 않고 **그 자리에 무엇이 남는지**를 잰다.
- * 대화가 기록되지 않으면 세션이라는 개념이 성립하지 않으므로, 이것이 preview·patch·
- * reset 이 딛고 서 있던 바닥이다.
+ * 그래서 여기서는 도구 이름이나 다른 세션 파일의 크기를 추측하지 않고, 이번 테스트가
+ * 보낸 고유 user marker가 들어간 파일을 고정한 뒤 그 파일의 append만 잰다.
  */
 const adkPath = process.env.NAIA_E2E_ADK_PATH;
 
@@ -32,20 +29,53 @@ function readTurns(path: string): { role: string; content: string }[] {
 		.map((line) => JSON.parse(line) as { role: string; content: string });
 }
 
-/** 지금 가장 최근에 쓰인 대화록. 세션 파일명은 클라이언트가 정하므로 박아 두지 않는다. */
-function newestTranscript(dir: string): string | undefined {
+/** 이번 테스트의 고유 user marker가 들어간 대화록 경로를 찾는다. */
+function transcriptForUserMarker(
+	dir: string,
+	marker: string,
+): string | undefined {
 	const files = transcriptFiles(dir);
-	if (files.length === 0) return undefined;
 	return files
 		.map((name) => resolve(dir, name))
-		.sort(
-			(a, b) => readFileSync(b, "utf8").length - readFileSync(a, "utf8").length,
-		)[0];
+		.find((path) =>
+			readTurns(path).some(
+				(turn) => turn.role === "user" && turn.content.includes(marker),
+			),
+		);
+}
+
+function userTurnIndex(
+	turns: { role: string; content: string }[],
+	marker: string,
+	from = 0,
+): number {
+	return turns.findIndex(
+		(turn, index) =>
+			index >= from && turn.role === "user" && turn.content.includes(marker),
+	);
+}
+
+function hasNonEmptyAssistantAfter(
+	turns: { role: string; content: string }[],
+	userIndex: number,
+): boolean {
+	return (
+		userIndex >= 0 &&
+		turns
+			.slice(userIndex + 1)
+			.some(
+				(turn) =>
+					turn.role === "assistant" &&
+					typeof turn.content === "string" &&
+					turn.content.trim().length > 0,
+			)
+	);
 }
 
 describe("42 — 세션 대화록(ConversationLogPort)", () => {
 	let dispose: (() => void) | undefined;
 	let conversationsDir: string;
+	let pinnedTranscript: string | undefined;
 
 	before(async () => {
 		if (!adkPath) throw new Error("NAIA_E2E_ADK_PATH is required");
@@ -65,10 +95,8 @@ describe("42 — 세션 대화록(ConversationLogPort)", () => {
 
 		await browser.waitUntil(
 			async () => {
-				const path = newestTranscript(conversationsDir);
-				return (
-					path !== undefined && readFileSync(path, "utf8").includes(marker)
-				);
+				pinnedTranscript = transcriptForUserMarker(conversationsDir, marker);
+				return pinnedTranscript !== undefined;
 			},
 			{
 				timeout: 30_000,
@@ -76,33 +104,56 @@ describe("42 — 세션 대화록(ConversationLogPort)", () => {
 			},
 		);
 
-		const path = newestTranscript(conversationsDir) as string;
+		const path = pinnedTranscript;
+		if (!path) throw new Error("이번 턴의 대화록 경로를 고정하지 못했다");
+		await browser.waitUntil(
+			async () => {
+				const turns = readTurns(path);
+				return hasNonEmptyAssistantAfter(turns, userTurnIndex(turns, marker));
+			},
+			{
+				timeout: 30_000,
+				timeoutMsg:
+					"이번 user 뒤에 비어 있지 않은 assistant 응답이 남지 않았다",
+			},
+		);
+
 		const turns = readTurns(path);
-		// 한 턴은 두 줄이다 — 사용자가 말한 것과 나이아가 답한 것.
-		expect(
-			turns.some((t) => t.role === "user" && t.content.includes(marker)),
-		).toBe(true);
-		expect(turns.some((t) => t.role === "assistant")).toBe(true);
+		const currentUserIndex = userTurnIndex(turns, marker);
+		expect(currentUserIndex).toBeGreaterThanOrEqual(0);
+		expect(hasNonEmptyAssistantAfter(turns, currentUserIndex)).toBe(true);
 	});
 
 	it("다음 턴이 같은 세션 파일에 이어 붙는다 — 덮어쓰지 않는다", async () => {
-		const path = newestTranscript(conversationsDir) as string;
-		const before = readTurns(path).length;
+		const path = pinnedTranscript;
+		if (!path) throw new Error("첫 턴의 대화록 경로가 고정되지 않았다");
+		const beforeRaw = readFileSync(path, "utf8");
+		const before = readTurns(path);
 		const marker = `이어 붙는지 확인 ${Date.now()}`;
 
 		await sendMessage(marker);
 
 		await browser.waitUntil(
-			async () => readFileSync(path, "utf8").includes(marker),
+			async () => {
+				const turns = readTurns(path);
+				const currentUserIndex = userTurnIndex(turns, marker, before.length);
+				return hasNonEmptyAssistantAfter(turns, currentUserIndex);
+			},
 			{
 				timeout: 30_000,
-				timeoutMsg: "다음 턴이 같은 대화록에 이어 붙지 않았다",
+				timeoutMsg:
+					"다음 턴이 같은 대화록에 user 뒤 비어 있지 않은 assistant로 이어 붙지 않았다",
 			},
 		);
 
+		const afterRaw = readFileSync(path, "utf8");
 		const after = readTurns(path);
-		// append-only 계약: 앞의 줄이 그대로 있고 뒤로만 늘어난다.
-		expect(after.length).toBeGreaterThan(before);
-		expect(after.some((t) => t.content.includes(marker))).toBe(true);
+		// append-only 계약: 앞의 내용이 그대로 있고 뒤로만 늘어난다.
+		expect(afterRaw.startsWith(beforeRaw)).toBe(true);
+		expect(after.slice(0, before.length)).toEqual(before);
+		expect(after.length).toBeGreaterThan(before.length);
+		const currentUserIndex = userTurnIndex(after, marker, before.length);
+		expect(currentUserIndex).toBeGreaterThanOrEqual(before.length);
+		expect(hasNonEmptyAssistantAfter(after, currentUserIndex)).toBe(true);
 	});
 });

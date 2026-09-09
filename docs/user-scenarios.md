@@ -1766,3 +1766,18 @@ Test Coverage Map
 | UC-SLIDES-EDIT | Edit page narration; apply/cancel; pause speech before applying; export edited Markdown copy; guard unapplied and unexported changes on document/script replacement. | slide-script.test.ts, slides-center-area.test.tsx, slides-sidecar.spec.ts |
 
 P04 must cover empty, loaded, progress, success, error, narrow viewport, keyboard/ARIA and error recovery. Browser IPC mocks prove wiring only; native recording and store delivery require separate evidence. Existing range, repeat, notes toggle, fullscreen and voice selection remain covered.
+
+## Slides quality checks (#581)
+
+The automated quality checks are committed with the feature:
+
+- `packages/shell/e2e/slides-sidecar.spec.ts`: seven browser scenarios for PDF rendering, paired scripts, range/repeat, fullscreen, narrow layout, script editing/export, live host language/theme, recording request wiring, cancelled import and document-navigation isolation.
+- `packages/shell/src/lib/__tests__/slides-{files,files-bridge,host,host-bridge}.test.ts` and `slide-script.test.ts`: message lifetime, capability validation, cleanup, failure recovery and lossless script section editing.
+- `packages/shell/src/apps/__tests__/slides-script-editor.test.tsx`, `slides-center-area.test.tsx` and `generic-installed-slides.test.tsx`: controls, replacement protection, recording-stop retry and installed iframe integration.
+- `packages/shell/src-tauri/src/{slides_import,slides_files,app_assets}_test.rs`: bounded import, note mapping, cache/temporary-file cleanup, source preservation and installed asset recovery.
+
+Run browser checks from `packages/shell` with `pnpm exec playwright test slides-sidecar.spec.ts`; run unit checks with `pnpm test`. Rust module tests are part of the native library test target. A real four-page LibreOffice conversion was also checked with synthetic text, tables, images, a hidden slide and blank notes; original PPTX bytes were unchanged.
+
+Development snapshot verification on 2026-09-09: 1,918 Shell tests, 83 focused tests, 32 Rust module tests and seven browser scenarios passed. Shell/Slides production builds and whole native `cargo check` passed. This record does not claim real speech or recording success: browser speech and native recording IPC are mocked. Native voice/recording, live conversion cancellation/timeout, packaging and Unix execution require separate evidence. Supplemental independent reviews resolved their accepted findings; formal complexity/review eligibility was not CLEAN. Main-branch integration was explicitly requested on 2026-09-10; it does not constitute a store or installer release.
+
+Integration against main 4c28fbb4: Slides and locale tests 91/91, Rust modules 33/33, browser scenarios 7/7, production builds and native cargo check passed. Full Shell: 1945 passed, 48 failed, 21 skipped; one additional suite load error. The same 48 failures and suite error reproduce on unchanged main. Core: 1513 passed, 54 failed, 17 skipped; identical 54 failures reproduce on unchanged main. No new failure in these comparisons. Real speech/recording, live converter cancellation/timeout and formal review eligibility remain outstanding; no installer or store release.

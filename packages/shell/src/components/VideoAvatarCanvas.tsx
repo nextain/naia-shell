@@ -8,6 +8,11 @@ import {
 import { PrebakedAvatarRenderer } from "../lib/avatar/prebaked-renderer";
 import { getLocale, t } from "../lib/i18n";
 import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../lib/ui-preferences";
+import {
 	type NvaManifest,
 	isPrebakedNvaManifest,
 	parseNvaManifest,
@@ -20,22 +25,11 @@ interface VideoAvatarCanvasProps {
 	nvaModel?: string;
 }
 type Mode = "loading" | "prebaked" | "error";
-const NVA_PAN_KEY = "naia-nva-pan-v1";
 interface NvaPan {
 	x: number;
 	y: number;
 }
-
-function loadNvaPan(): NvaPan {
-	try {
-		const value = JSON.parse(
-			localStorage.getItem(NVA_PAN_KEY) ?? "{}",
-		) as Partial<NvaPan>;
-		return { x: Number(value.x) || 0, y: Number(value.y) || 0 };
-	} catch {
-		return { x: 0, y: 0 };
-	}
-}
+const DEFAULT_NVA_PAN: NvaPan = { x: 0, y: 0 };
 function videoTransform(pan: NvaPan): string {
 	return `translate(calc(var(--naia-width, 320px) / 2 - 50vw + ${pan.x}px), ${pan.y}px)`;
 }
@@ -54,7 +48,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 	const [bundleDir, setBundleDir] = useState("");
 	const [video, setVideo] = useState<HTMLVideoElement | null>(null);
 	const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-	const [pan, setPan] = useState<NvaPan>(loadNvaPan);
+	const persistedPan = useUiPreference<NvaPan>(
+		UI_PREFERENCE_KEYS.nvaPan,
+		DEFAULT_NVA_PAN,
+	);
+	const [pan, setPan] = useState<NvaPan>(persistedPan);
+	useEffect(() => setPan(persistedPan), [persistedPan]);
 	const panRef = useRef(pan);
 	panRef.current = pan;
 
@@ -65,10 +64,12 @@ export function VideoAvatarCanvas({ nvaModel }: VideoAvatarCanvasProps) {
 				setPan((current) => ({ x: current.x + dx, y: current.y + dy })),
 			reset: () => {
 				setPan({ x: 0, y: 0 });
-				localStorage.removeItem(NVA_PAN_KEY);
+				void patchUiPreferences({ [UI_PREFERENCE_KEYS.nvaPan]: undefined });
 			},
 			save: () =>
-				localStorage.setItem(NVA_PAN_KEY, JSON.stringify(panRef.current)),
+				void patchUiPreferences({
+					[UI_PREFERENCE_KEYS.nvaPan]: panRef.current,
+				}),
 		});
 		return () => clearCameraActions();
 	}, []);

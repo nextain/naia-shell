@@ -9,7 +9,9 @@ import {
 } from "../helpers/chat.js";
 
 const COURSE_ROOT = resolve(E2E_WORKSPACE, "projects", "codex-chat-delegation");
+const COURSE_RELATIVE_ROOT = "projects/codex-chat-delegation";
 const RESPONSE_MARKER = "NAIA_CODEX_DELEGATION_OK_20260726";
+const CODEX_MODEL = process.env.NAIA_E2E_MAIN_MODEL ?? "gpt-5.6-sol";
 let logPath = "";
 let logStart = 0;
 
@@ -72,26 +74,9 @@ describe("Codex chat delegates one workspace-bound coding session", () => {
 			readFileSync(resolve(E2E_WORKSPACE, "naia-settings/config.json"), "utf8"),
 		) as Record<string, unknown>;
 		expect(seeded.provider).toBe("codex");
-		expect(seeded.model).toBe("gpt-5.4");
+		expect(seeded.model).toBe(CODEX_MODEL);
 		expect(seeded).not.toHaveProperty("NAIA_MAIN_PROVIDER");
 		expect(seeded).not.toHaveProperty("llmRoles");
-
-		await browser.execute((workspaceRoot: string) => {
-			const existing = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
-			localStorage.setItem(
-				"naia-config",
-				JSON.stringify({
-					...existing,
-					provider: "codex",
-					model: "gpt-5.4",
-					enableTools: true,
-					ttsEnabled: false,
-					onboardingComplete: true,
-					workspaceRoot,
-				}),
-			);
-			window.dispatchEvent(new CustomEvent("naia-config-changed"));
-		}, E2E_WORKSPACE);
 		logPath = await tauriInvoke<string>("get_gateway_log_path");
 		try {
 			logStart = statSync(logPath).size;
@@ -104,7 +89,7 @@ describe("Codex chat delegates one workspace-bound coding session", () => {
 		const before = await countCompletedAssistantMessages();
 		logStart = statSync(logPath).size;
 		await sendMessage(
-			`Use the delegate_agent tool exactly once with agent=codex and workdir=${COURSE_ROOT}. Give the child this task: create exactly index.html and hero.svg. index.html must contain the heading Jeonju Codex Workshop and reference ./hero.svg. hero.svg must be valid SVG and contain #2563EB. Do not commit, push, install, or deploy. After the tool succeeds, answer with ${RESPONSE_MARKER} and a short result summary.`,
+			`Use the delegate_agent tool exactly once with agent=main. The host has already selected the workspace; do not provide a workdir override. Give the child this task: in ${COURSE_RELATIVE_ROOT}, create exactly index.html and hero.svg. index.html must contain the heading Jeonju Codex Workshop and reference ./hero.svg. hero.svg must be valid SVG and contain #2563EB. Do not commit, push, install, or deploy. After the tool succeeds, answer with ${RESPONSE_MARKER} and a short result summary.`,
 		);
 		await waitForRunLog("[E2E-DEBUG] chat_request requestId=");
 		const requestMatch = readCurrentRunLog().match(

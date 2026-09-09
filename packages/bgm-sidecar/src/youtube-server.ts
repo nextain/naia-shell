@@ -6,6 +6,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import { Innertube } from "youtubei.js";
+import { allowOriginFor } from "./cors-origin.js";
 
 // Fixed default 18791 (shell hardcodes it); NAIA_BGM_PORT overrides for tests.
 export const YT_SERVER_PORT = Number(process.env.NAIA_BGM_PORT) || 18791;
@@ -33,22 +34,9 @@ export async function getInnertube(): Promise<Innertube> {
 
 // ── CORS headers ──────────────────────────────────────────────────────────────
 
-const ALLOWED_ORIGINS = new Set([
-	"tauri://localhost",
-	"http://tauri.localhost",
-	"https://tauri.localhost",
-	"http://localhost:1420",
-	// The isolated native Shell runs Vite on this loopback origin. Keep it
-	// explicit: this is not a wildcard CORS relaxation for the sidecar.
-	"http://127.0.0.1:1422",
-]);
-
 function cors(req: IncomingMessage, res: ServerResponse) {
 	const origin = String(req.headers.origin ?? "");
-	res.setHeader(
-		"Access-Control-Allow-Origin",
-		ALLOWED_ORIGINS.has(origin) ? origin : "tauri://localhost",
-	);
+	res.setHeader("Access-Control-Allow-Origin", allowOriginFor(origin));
 	res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
 	res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 	res.setHeader("Vary", "Origin");
@@ -190,10 +178,7 @@ async function handleEdgeTts(
 		audioStream.on("error", reject);
 	});
 	const origin = String(req.headers.origin ?? "");
-	res.setHeader(
-		"Access-Control-Allow-Origin",
-		ALLOWED_ORIGINS.has(origin) ? origin : "tauri://localhost",
-	);
+	res.setHeader("Access-Control-Allow-Origin", allowOriginFor(origin));
 	res.setHeader("Vary", "Origin");
 	res.setHeader("Content-Type", "audio/mpeg");
 	res.writeHead(200);

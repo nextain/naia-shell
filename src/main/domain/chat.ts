@@ -61,6 +61,13 @@ export interface ProcessingRequest {
 }
 
 /**
+ * 승인 등급의 live shell wire 표현은 nonnegative int32 숫자다.
+ * 초기 core 계약이 사용하던 T0…T3 문자열도 기존 대화 경로 호환을 위해 유지한다.
+ * 숫자 범위는 message-router ingress 에서 검증한다.
+ */
+export type ApprovalTier = number | "T0" | "T1" | "T2" | "T3";
+
+/**
  * S4 — 환경고유 컨텍스트 세그먼트(naia-os 클라가 코어에 전달). 코어(naia-agent)가 persona+workspace 뒤에 머지.
  * raw systemPrompt 를 굽는 두벌을 제거: persona/locale/honorific/speechStyle/userName 은 코어가 config.json 에서
  * 스스로 조립하므로 셸이 안 보낸다. 셸 고유 = 아바타 감정 태그(avatarEmotion) + 앱 컨텍스트(app) +
@@ -127,7 +134,7 @@ export type ChatChunk =
   | { readonly kind: "thinking"; readonly text: string }
   | { readonly kind: "toolUse"; readonly toolCallId: string; readonly name: string; readonly args: unknown }
   | { readonly kind: "toolResult"; readonly toolCallId: string; readonly toolName: string; readonly output: string; readonly success: boolean }
-  | { readonly kind: "approvalRequest"; readonly toolCallId: string; readonly toolName: string; readonly tier: string; readonly args: unknown; readonly description: string }
+  | { readonly kind: "approvalRequest"; readonly toolCallId: string; readonly toolName: string; readonly tier: ApprovalTier; readonly args: unknown; readonly description: string }
   | { readonly kind: "gatewayApprovalRequest"; readonly toolCallId: string; readonly toolName: string; readonly args: unknown }
   | { readonly kind: "usage"; readonly raw: unknown }
   | { readonly kind: "logEntry"; readonly level: string; readonly message: string }

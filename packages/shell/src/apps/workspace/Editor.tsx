@@ -31,6 +31,11 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { MermaidBlock } from "../../components/MarkdownCodeBlock";
 import { t } from "../../lib/i18n";
 import { Logger } from "../../lib/logger";
+import {
+	UI_PREFERENCE_KEYS,
+	patchUiPreferences,
+	useUiPreference,
+} from "../../lib/ui-preferences";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { AUTOSAVE_DEBOUNCE_MS } from "./constants";
 import {
@@ -124,6 +129,12 @@ function detectViewMode(filePath: string): ViewMode {
 	return resolveWorkspaceViewer(filePath);
 }
 
+function normalizeEditorZoom(value: unknown): number {
+	const numeric = typeof value === "number" ? value : Number(value);
+	if (!Number.isFinite(numeric)) return 100;
+	return Math.max(50, Math.min(200, numeric));
+}
+
 const ansiConverter = new AnsiToHtml({ escapeXML: true });
 
 /** Custom code block renderer — intercepts ```mermaid blocks */
@@ -159,13 +170,14 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 	const [hwpSidecar, setHwpSidecar] = useState<string | null>(null);
 	const [hwpLoading, setHwpLoading] = useState(false);
 	// ── Zoom (Ctrl+Scroll) — persisted, not applied during print ─────
-	const [zoom, setZoom] = useState(() => {
-		try {
-			return Number(localStorage.getItem("workspace-editor-zoom")) || 100;
-		} catch {
-			return 100;
-		}
-	});
+	const persistedZoom = useUiPreference<unknown>(
+		UI_PREFERENCE_KEYS.editorZoom,
+		100,
+	);
+	const [zoom, setZoom] = useState(() => normalizeEditorZoom(persistedZoom));
+	useEffect(() => {
+		setZoom(normalizeEditorZoom(persistedZoom));
+	}, [persistedZoom]);
 	const zoomRef = useRef(zoom);
 	zoomRef.current = zoom;
 	const [saving, setSaving] = useState(false);
@@ -537,9 +549,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 			const next = Math.max(50, Math.min(200, zoomRef.current + delta));
 			if (next !== zoomRef.current) {
 				setZoom(next);
-				try {
-					localStorage.setItem("workspace-editor-zoom", String(next));
-				} catch {}
+				void patchUiPreferences({
+					[UI_PREFERENCE_KEYS.editorZoom]: next,
+				});
 			}
 		};
 		el.addEventListener("wheel", handler, { passive: false });

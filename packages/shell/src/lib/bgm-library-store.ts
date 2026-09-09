@@ -10,7 +10,8 @@
  */
 
 import { readAppSandboxFile, writeAppSandboxFile } from "./app-sandbox";
-import { loadBgmLibrary, type BgmLibraryState } from "./bgm-library";
+import { getAdkPath } from "./adk-store";
+import { type BgmLibraryState, loadBgmLibrary } from "./bgm-library";
 import { loadConfig, saveConfig } from "./config";
 import { Logger } from "./logger";
 
@@ -18,6 +19,15 @@ const APP_ID = "land.naia.shell";
 const LIBRARY_PATH = "bgm/library.json";
 
 let cache: BgmLibraryState | null = null;
+let persistQueue: Promise<void> = Promise.resolve();
+
+function currentAdkPath(): string | null {
+	try {
+		return getAdkPath();
+	} catch {
+		return null;
+	}
+}
 
 /** 동기 판독용 캐시 — hydrate 전에는 null. */
 export function bgmLibraryCache(): BgmLibraryState | null {
@@ -73,19 +83,39 @@ export async function loadBgmLibraryFromSandbox(
 	return migrated;
 }
 
-/** 캐시 갱신 + 샌드박스 기록. 실패 시 config 폴백을 남기고 경고한다. */
-export async function persistBgmLibrary(state: BgmLibraryState): Promise<void> {
+/**
+ * 캐시 갱신 + 샌드박스 기록. 실패 시 config 폴백을 남기고 경고한다.
+ * 반환값은 legacy localStorage를 제거해도 되는지 나타낸다. config 폴백만
+ * 성공한 경우에는 아직 ADK 샌드박스 기록이 확인되지 않았으므로 false다.
+ */
+export function persistBgmLibrary(state: BgmLibraryState): Promise<boolean> {
 	cache = state;
-	try {
-		const bytes = Array.from(new TextEncoder().encode(JSON.stringify(state)));
-		await writeAppSandboxFile(APP_ID, LIBRARY_PATH, bytes);
-	} catch (error) {
-		Logger.warn(
-			"BgmLibraryStore",
-			"sandbox persist failed — falling back to config.json",
-			{ error: String(error) },
-		);
-		const cfg = loadConfig();
-		if (cfg) saveConfig({ ...cfg, bgmLibrary: state });
-	}
+	const capturedAdkPath = currentAdkPath();
+	const bytes = Array.from(new TextEncoder().encode(JSON.stringify(state)));
+	const write = persistQueue.then(async () => {
+		try {
+			await writeAppSandboxFile(APP_ID, LIBRARY_PATH, bytes, capturedAdkPath);
+			return true;
+		} catch (error) {
+			Logger.warn(
+				"BgmLibraryStore",
+				"sandbox persist failed — falling back to config.json",
+				{ error: String(error) },
+			);
+			// A queued write belongs to the workspace selected when the request was
+			// accepted. Never copy its fallback into a newly selected workspace.
+			if (currentAdkPath() !== capturedAdkPath) return false;
+			try {
+				const cfg = loadConfig();
+				if (cfg) saveConfig({ ...cfg, bgmLibrary: state });
+			} catch (fallbackError) {
+				Logger.warn("BgmLibraryStore", "config fallback persist failed", {
+					error: String(fallbackError),
+				});
+			}
+			return false;
+		}
+	});
+	persistQueue = write.then(() => undefined, () => undefined);
+	return write;
 }

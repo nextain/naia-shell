@@ -1,49 +1,44 @@
 import { S } from "../helpers/selectors.js";
 import {
 	clickBySelector,
-	enableToolsForSpec,
 	ensureAppReady,
 	navigateToSettings,
+	openSettingsSection,
 	scrollToSection,
 } from "../helpers/settings.js";
 
 /**
  * 64 — Settings: Gateway TTS Provider
  *
- * Verifies Gateway TTS section (requires enableTools):
+ * Verifies the TTS provider control in the Settings voice section:
  * - Gateway TTS provider select renders
  * - Value can be changed
- * - Status text visible
- * (Gateway dependent — graceful)
  */
 describe("64 — settings gateway TTS", () => {
 	before(async () => {
 		await ensureAppReady();
-		// Enable tools so Gateway sections render
-		await enableToolsForSpec([]);
 		await navigateToSettings();
 		const settingsTab = await $(S.settingsTab);
 		await settingsTab.waitForDisplayed({ timeout: 10_000 });
 	});
 
 	it("should scroll to Gateway TTS section", async () => {
-		// The gateway TTS section only renders when enableTools is on
-		// and Gateway responds. Try to find it.
-		await browser.pause(2_000);
+		await openSettingsSection("voice");
+		await scrollToSection(S.gatewayTtsProvider);
 		const exists = await browser.execute(
 			(sel: string) => !!document.querySelector(sel),
 			S.gatewayTtsProvider,
 		);
-		// May not render if Gateway not connected — that's ok
-		expect(typeof exists).toBe("boolean");
+		expect(exists).toBe(true);
 	});
 
 	it("should have TTS provider select with options", async () => {
+		await openSettingsSection("voice");
 		const exists = await browser.execute(
 			(sel: string) => !!document.querySelector(sel),
 			S.gatewayTtsProvider,
 		);
-		if (!exists) return;
+		expect(exists).toBe(true);
 
 		const optionCount = await browser.execute((sel: string) => {
 			const select = document.querySelector(sel) as HTMLSelectElement | null;
@@ -54,42 +49,54 @@ describe("64 — settings gateway TTS", () => {
 	});
 
 	it("should show current TTS provider value", async () => {
+		await openSettingsSection("voice");
 		const exists = await browser.execute(
 			(sel: string) => !!document.querySelector(sel),
 			S.gatewayTtsProvider,
 		);
-		if (!exists) return;
+		expect(exists).toBe(true);
 
 		const value = await browser.execute(
 			(sel: string) =>
 				(document.querySelector(sel) as HTMLSelectElement)?.value ?? "",
 			S.gatewayTtsProvider,
 		);
-		expect(typeof value).toBe("string");
+		expect(value.length).toBeGreaterThan(0);
 	});
 
 	it("should change TTS provider value", async () => {
+		await openSettingsSection("voice");
 		const optionCount = await browser.execute((sel: string) => {
 			const select = document.querySelector(sel) as HTMLSelectElement | null;
 			return select?.options.length ?? 0;
 		}, S.gatewayTtsProvider);
+		expect(optionCount).toBeGreaterThanOrEqual(2);
 
-		if (optionCount < 2) return;
-
-		const original = await browser.execute(
-			(sel: string) =>
-				(document.querySelector(sel) as HTMLSelectElement)?.value ?? "",
-			S.gatewayTtsProvider,
-		);
-
-		// Select a different option
-		await browser.execute((sel: string) => {
-			const select = document.querySelector(sel) as HTMLSelectElement;
-			if (!select || select.options.length < 2) return;
-			const newIdx = select.selectedIndex === 0 ? 1 : 0;
-			select.selectedIndex = newIdx;
-			select.dispatchEvent(new Event("change", { bubbles: true }));
+		const alternative = await browser.execute((sel: string) => {
+			const select = document.querySelector(sel) as HTMLSelectElement | null;
+			if (!select) return "";
+			const current = select.value;
+			return (
+				Array.from(select.options).find(
+					(option) =>
+						!option.disabled &&
+						option.value !== current &&
+						option.value !== "naia-local-voice",
+				)?.value ?? ""
+			);
 		}, S.gatewayTtsProvider);
+		expect(alternative.length).toBeGreaterThan(0);
+
+		await browser.execute(
+			(sel: string, value: string) => {
+				const select = document.querySelector(sel) as HTMLSelectElement | null;
+				if (!select) throw new Error(`TTS provider select ${sel} not found`);
+				select.value = value;
+				select.dispatchEvent(new Event("change", { bubbles: true }));
+			},
+			S.gatewayTtsProvider,
+			alternative,
+		);
 		await browser.pause(500);
 
 		const updated = await browser.execute(
@@ -98,8 +105,7 @@ describe("64 — settings gateway TTS", () => {
 			S.gatewayTtsProvider,
 		);
 
-		// Either changed or only 1 option
-		expect(typeof updated).toBe("string");
+		expect(updated).toBe(alternative);
 	});
 
 	it("should navigate back to chat tab", async () => {

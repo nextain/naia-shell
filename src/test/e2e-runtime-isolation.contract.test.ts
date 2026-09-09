@@ -267,10 +267,10 @@ describe("앱 프로필도 실행 자리 아래로 간다", () => {
 		// 이것이 무너지면 사람이 쓰는 앱의 설정 자리가 옮겨진다. 하네스 밖에서는
 		// 한 글자도 바뀌면 안 된다.
 		const env: Record<string, string | undefined> = {
-			XDG_CONFIG_HOME: "/home/luke/.config",
+			XDG_CONFIG_HOME: "/home/user/.config",
 		};
 		expect(xdg.applyHarnessXdg(env, "linux")).toBeNull();
-		expect(env.XDG_CONFIG_HOME).toBe("/home/luke/.config");
+		expect(env.XDG_CONFIG_HOME).toBe("/home/user/.config");
 		expect(env.XDG_DATA_HOME).toBeUndefined();
 		expect(env.XDG_CACHE_HOME).toBeUndefined();
 	});
@@ -672,12 +672,31 @@ describe("전용 e2e 환경의 실행 자리도 임시 디렉터리 아래다", 
 		["radio-queue-e2e-environment.ts", ["root", "runtime"]],
 	];
 
+	const importEnvironment = async (name: string, url: string) => {
+		const previousVitePort = process.env.NAIA_E2E_VITE_PORT;
+		if (name === "radio-queue-e2e-environment.ts") {
+			// The radio binary is compiled against Vite 1422.  The surrounding
+			// WDIO config may leave a synthetic port in the process environment;
+			// isolate that caller state while importing the fixed-port fixture.
+			process.env.NAIA_E2E_VITE_PORT = "1422";
+		}
+		try {
+			return (await import(url)) as Record<string, unknown>;
+		} finally {
+			if (previousVitePort === undefined) {
+				delete process.env.NAIA_E2E_VITE_PORT;
+			} else {
+				process.env.NAIA_E2E_VITE_PORT = previousVitePort;
+			}
+		}
+	};
+
 	for (const [name, exported] of ROOTS) {
 		it(`${name} 의 자리가 데이터 홈 밖의 임시 디렉터리다`, async () => {
 			const url = fileURLToPath(
 				new URL(`../../packages/shell/e2e-tauri/${name}`, import.meta.url),
 			);
-			const loaded = (await import(url)) as Record<string, unknown>;
+			const loaded = await importEnvironment(name, url);
 			for (const key of exported) {
 				const value = loaded[key];
 				expect(typeof value, `${name} 이 ${key} 를 내놓지 않는다`).toBe("string");

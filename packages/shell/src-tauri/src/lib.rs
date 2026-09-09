@@ -25,7 +25,6 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_deep_link::DeepLinkExt;
-use tauri_plugin_store::StoreExt;
 
 const WORKSPACE_OPEN_FILE_EVENT: &str = "workspace-open-file-request";
 
@@ -1211,15 +1210,36 @@ impl Drop for BgmServerProcess {
 // Rust ??Child drop ??二쎌씠吏 ?딆쑝誘濡?Drop ?먯꽌 紐낆떆 kill(AgentProcess ?숉삎, orphan 諛⑹?).
 struct CascadeProcess {
     child: Child,
+    ownership: platform::CascadeOwnership,
     /// stdout `CASCADE_READY {json}` ?섏씠濡쒕뱶(facade_port + services). UI ?곹깭?쒖떆??
     ready: String,
 }
+impl CascadeProcess {
+    /// Stop the supervisor and its exact owned process tree.  The bounded
+    /// escalation is deliberately kept here instead of using a global
+    /// command-name cleanup so a healthy Cascade adopted by another Shell is
+    /// never touched.
+    fn terminate(&mut self) {
+        // The supervisor may have exited while its loader descendants are
+        // still unwinding.  The platform ownership handle/group remains
+        // valid, so signal it even after the leader is gone.
+        platform::terminate_cascade(Some(&self.ownership), self.child.id());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while std::time::Instant::now() < deadline {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        // Escalate through the same ownership boundary even when the leader
+        // exited early: descendants can remain in the private group/job.
+        platform::kill_cascade(Some(&self.ownership), self.child.id());
+        let _ = self.child.wait();
+    }
+}
 impl Drop for CascadeProcess {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        // kill()? ?쒓렇?먮쭔 ??wait()濡?reap ?댁빞 Unix(Bazzite)?먯꽌 醫鍮?<defunct>)媛 ???⑥쓬.
-        // stop_cascade/WindowEvent ??take()?묭rop 寃쎌쑀??????怨녹씠 ??寃쎈줈瑜?而ㅻ쾭.
-        let _ = self.child.wait();
+        self.terminate();
     }
 }
 
@@ -1370,6 +1390,9 @@ struct WindowState {
     height: u32,
 }
 
+const WINDOW_STATE_SETTINGS_DIR: &str = "naia-settings";
+const WINDOW_STATE_FILE_NAME: &str = "window-state.json";
+
 #[derive(Debug, Clone, Copy)]
 struct WindowBounds {
     x: i32,
@@ -1511,28 +1534,83 @@ fn monitor_for_window_state(
         .or_else(|| window.primary_monitor().ok().flatten())
 }
 
-fn window_state_path(app_handle: &AppHandle) -> Option<std::path::PathBuf> {
-    app_handle
-        .path()
-        .app_config_dir()
-        .ok()
-        .map(|d| d.join("window-state.json"))
+fn adk_window_state_path(adk_path: &str) -> Option<std::path::PathBuf> {
+    let adk_path = adk_path.trim();
+    (!adk_path.is_empty()).then(|| {
+        std::path::PathBuf::from(adk_path)
+            .join(WINDOW_STATE_SETTINGS_DIR)
+            .join(WINDOW_STATE_FILE_NAME)
+    })
 }
 
-fn load_window_state(app_handle: &AppHandle) -> Option<WindowState> {
-    let path = window_state_path(app_handle)?;
+fn window_state_path(_app_handle: &AppHandle) -> Option<std::path::PathBuf> {
+    adk_window_state_path(&current_adk_path().ok()?)
+}
+
+fn legacy_window_state_path_for(
+    app_config_dir: Option<&std::path::Path>,
+    isolated_runtime_dir: Option<&std::path::Path>,
+    e2e_enabled: bool,
+) -> Option<std::path::PathBuf> {
+    if e2e_enabled {
+        return isolated_runtime_dir.map(|path| path.join(WINDOW_STATE_FILE_NAME));
+    }
+    app_config_dir.map(|path| path.join(WINDOW_STATE_FILE_NAME))
+}
+
+fn legacy_window_state_path(app_handle: &AppHandle) -> Option<std::path::PathBuf> {
+    let app_config_dir = app_handle.path().app_config_dir().ok();
+    let isolated_runtime_dir = e2e_runtime_dir();
+    legacy_window_state_path_for(
+        app_config_dir.as_deref(),
+        isolated_runtime_dir.as_deref(),
+        debug_e2e_enabled(),
+    )
+}
+
+fn read_window_state_file(path: &std::path::Path) -> Option<WindowState> {
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
+fn write_window_state_file(path: &std::path::Path, state: &WindowState) -> bool {
+    let bytes = match serde_json::to_vec(state) {
+        Ok(bytes) => bytes,
+        Err(_) => return false,
+    };
+    write_owner_only_atomic(path, &bytes).is_ok()
+}
+
+/// Read the ADK window state, migrating the old app-config copy only when the
+/// ADK does not have a state yet. The legacy file is removed only after the
+/// canonical file has been written successfully.
+fn load_or_migrate_window_state(
+    adk_path: &std::path::Path,
+    legacy_path: Option<&std::path::Path>,
+) -> Option<WindowState> {
+    if adk_path.exists() {
+        return read_window_state_file(adk_path);
+    }
+
+    let legacy_path = legacy_path?;
+    let state = read_window_state_file(legacy_path)?;
+    if write_window_state_file(adk_path, &state) {
+        let _ = std::fs::remove_file(legacy_path);
+    }
+    Some(state)
+}
+
+fn load_window_state(app_handle: &AppHandle) -> Option<WindowState> {
+    let adk_path = window_state_path(app_handle)?;
+    load_or_migrate_window_state(
+        &adk_path,
+        legacy_window_state_path(app_handle).as_deref(),
+    )
+}
+
 fn save_window_state(app_handle: &AppHandle, state: &WindowState) {
     if let Some(path) = window_state_path(app_handle) {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(json) = serde_json::to_string(state) {
-            let _ = std::fs::write(&path, json);
-        }
+        let _ = write_window_state_file(&path, state);
     }
 }
 
@@ -1599,6 +1677,30 @@ fn debug_e2e_enabled() -> bool {
 }
 
 #[cfg(feature = "webdriver-e2e")]
+fn valid_e2e_dev_url(raw: &str) -> Option<url::Url> {
+    let parsed = url::Url::parse(raw.trim()).ok()?;
+    if parsed.scheme() != "http" || !parsed.username().is_empty() || parsed.password().is_some() {
+        return None;
+    }
+    let loopback = match parsed.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(host)) => host == std::net::Ipv4Addr::LOCALHOST,
+        Some(url::Host::Ipv6(host)) => host == std::net::Ipv6Addr::LOCALHOST,
+        None => false,
+    };
+    loopback.then_some(parsed)
+}
+
+#[cfg(feature = "webdriver-e2e")]
+fn valid_e2e_run_id(raw: &str) -> bool {
+    !raw.is_empty()
+        && raw.len() <= 64
+        && raw
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+}
+
+#[cfg(feature = "webdriver-e2e")]
 #[tauri::command]
 fn e2e_emit_bgm_event(
     app: tauri::AppHandle,
@@ -1645,11 +1747,7 @@ fn e2e_seed_secure_naia_key(app: tauri::AppHandle, naia_key: String) -> Result<(
     if !is_valid_gateway_key(&naia_key) {
         return Err("invalid e2e Naia key".to_string());
     }
-    let store_path = std::env::var("NAIA_E2E_SECURE_STORE_FILE")
-        .map_err(|_| "isolated e2e secure store is not configured".to_string())?;
-    let store = app.store(store_path).map_err(|error| error.to_string())?;
-    store.set("naiaKey", serde_json::Value::String(naia_key));
-    store.save().map_err(|error| error.to_string())?;
+    secure_store_set_current("naiaKey", &naia_key)?;
     if !cascade_has_naia_credential(&app) {
         return Err("e2e Naia key was not visible to the native member gate".to_string());
     }
@@ -1673,29 +1771,426 @@ fn run_dir() -> std::path::PathBuf {
     dir
 }
 
-/// Write PID file for a managed process
-fn write_pid_file(component: &str, pid: u32) {
-    let path = run_dir().join(format!("{}.pid", component));
-    let _ = std::fs::write(&path, pid.to_string());
-    log_verbose(&format!(
-        "[Naia] PID file written: {} (PID {})",
-        path.display(),
-        pid
-    ));
+const PROCESS_RECORD_VERSION: u8 = 1;
+
+/// The single durable ownership record for a managed child.
+///
+/// A PID is only a locator.  The platform start identities make both the
+/// Shell owner and its child unambiguous across crashes and PID reuse.  The
+/// record is replaced atomically, so a reader sees either the old complete
+/// record or the new complete record.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub(crate) struct ProcessRecord {
+    pub version: u8,
+    pub child_pid: u32,
+    pub child_identity: String,
+    pub owner_pid: u32,
+    pub owner_identity: String,
 }
 
-/// Read PID from a PID file (returns None if file doesn't exist or is invalid)
-fn read_pid_file(component: &str) -> Option<u32> {
-    let path = run_dir().join(format!("{}.pid", component));
-    std::fs::read_to_string(&path)
+impl ProcessRecord {
+    fn is_valid(&self) -> bool {
+        self.version == PROCESS_RECORD_VERSION
+            && self.child_pid > 0
+            && self.owner_pid > 0
+            && !self.child_identity.is_empty()
+            && !self.owner_identity.is_empty()
+    }
+}
+
+fn parse_process_record(bytes: &[u8]) -> Option<ProcessRecord> {
+    serde_json::from_slice::<ProcessRecord>(bytes)
         .ok()
-        .and_then(|s| s.trim().parse().ok())
+        .filter(ProcessRecord::is_valid)
 }
 
-/// Remove a PID file
+pub(crate) fn process_record_path(component: &str) -> std::path::PathBuf {
+    run_dir().join(format!("{component}.pid"))
+}
+
+/// Read only the new ownership record.  Legacy bare PID files intentionally
+/// do not become eligible for cleanup because they have no proof of ownership.
+pub(crate) fn read_process_record(component: &str) -> Option<ProcessRecord> {
+    let path = process_record_path(component);
+    let metadata = std::fs::metadata(&path).ok()?;
+    if !metadata.is_file() || metadata.len() > 16 * 1024 {
+        return None;
+    }
+    parse_process_record(&std::fs::read(path).ok()?)
+}
+
+/// Serialize a record to a same-directory temporary file and atomically
+/// replace the destination.  The destination is the only lifecycle record;
+/// no identity sidecar can drift away from its PID.
+fn write_process_record_atomically(path: &std::path::Path, record: &ProcessRecord) -> bool {
+    let bytes = match serde_json::to_vec(record) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            log_verbose(&format!(
+                "[Naia] Could not serialize process record {}: {error}",
+                path.display()
+            ));
+            return false;
+        }
+    };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let component = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("process")
+        .replace('.', "_");
+    let temp = path.with_file_name(format!(".{component}.{}.{}.tmp", std::process::id(), stamp));
+    let result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        platform::replace_file_atomically(&temp, path)
+    })();
+    let _ = std::fs::remove_file(&temp);
+    if let Err(error) = result {
+        log_verbose(&format!(
+            "[Naia] Could not atomically write process record {}: {error}",
+            path.display()
+        ));
+        return false;
+    }
+    true
+}
+
+/// Serialize access to one component record.  The lock is advisory and
+/// transient; a crashed Shell releases it through the operating system.  It
+/// is not used as ownership evidence and is never consulted for cleanup.
+pub(crate) fn with_process_record_lock<R>(
+    component: &str,
+    operation: impl FnOnce() -> R,
+) -> Option<R> {
+    use fs2::FileExt;
+
+    let lock_path = run_dir().join(format!("{component}.pid.lock"));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .ok()?;
+    file.lock_exclusive().ok()?;
+    Some(operation())
+}
+
+fn current_process_record(child_pid: u32) -> Option<ProcessRecord> {
+    Some(ProcessRecord {
+        version: PROCESS_RECORD_VERSION,
+        child_pid,
+        child_identity: platform::process_identity(child_pid)?,
+        owner_pid: std::process::id(),
+        owner_identity: platform::process_identity(std::process::id())?,
+    })
+}
+
+fn process_record_owner_is_live(record: &ProcessRecord) -> bool {
+    match platform::process_identity(record.owner_pid) {
+        Some(identity) => identity == record.owner_identity,
+        None => platform::is_pid_alive(record.owner_pid),
+    }
+}
+
+/// Return true only when the recorded owner is provably gone or its PID has
+/// been reused.  An owner whose identity cannot currently be queried remains
+/// protected by the conservative `is_pid_alive` fallback.
+pub(crate) fn process_record_owner_is_dead(record: &ProcessRecord) -> bool {
+    !process_record_owner_is_live(record)
+}
+
+/// Return true only when the target PID currently has the recorded start
+/// identity.  A missing or changed identity is never a kill authorization.
+pub(crate) fn process_record_child_is_exact(record: &ProcessRecord) -> bool {
+    platform::process_identity(record.child_pid)
+        .is_some_and(|identity| identity == record.child_identity)
+}
+
+pub(crate) fn process_record_owned_by_current_shell(record: &ProcessRecord) -> bool {
+    record.owner_pid == std::process::id()
+        && platform::process_identity(record.owner_pid)
+            .is_some_and(|identity| identity == record.owner_identity)
+}
+
+fn process_record_write_allowed(
+    existing: &ProcessRecord,
+    candidate: &ProcessRecord,
+    existing_owner_live: bool,
+) -> bool {
+    let same_owner = existing.owner_pid == candidate.owner_pid
+        && existing.owner_identity == candidate.owner_identity;
+    same_owner || !existing_owner_live
+}
+
+/// Re-check the record and both process identities immediately before a kill.
+pub(crate) fn process_record_can_be_reaped(record: &ProcessRecord) -> bool {
+    let owner_identity = platform::process_identity(record.owner_pid);
+    let owner_alive = platform::is_pid_alive(record.owner_pid);
+    let child_identity = platform::process_identity(record.child_pid);
+    process_record_can_be_reaped_with(
+        record,
+        owner_identity.as_deref(),
+        owner_alive,
+        child_identity.as_deref(),
+    )
+}
+
+/// Pure ownership policy used by focused regression tests.  An unavailable
+/// owner identity is safe only when the owner is also known to be gone; the
+/// child must still have the exact recorded identity.
+pub(crate) fn process_record_can_be_reaped_with(
+    record: &ProcessRecord,
+    observed_owner_identity: Option<&str>,
+    owner_alive: bool,
+    observed_child_identity: Option<&str>,
+) -> bool {
+    let owner_dead = match observed_owner_identity {
+        Some(identity) => identity != record.owner_identity,
+        None => !owner_alive,
+    };
+    owner_dead && observed_child_identity == Some(record.child_identity.as_str())
+}
+
+/// Read PID from a PID file.  Existing diagnostic/status consumers remain
+/// compatible with both the new JSON record and legacy bare PID files.
+#[allow(dead_code)]
+fn read_pid_file(component: &str) -> Option<u32> {
+    let path = process_record_path(component);
+    let bytes = std::fs::read(path).ok()?;
+    parse_process_record(&bytes)
+        .map(|record| record.child_pid)
+        .or_else(|| {
+            std::str::from_utf8(&bytes)
+                .ok()
+                .and_then(|value| value.trim().parse().ok())
+        })
+}
+
+/// Remove a record only when it is still the exact record supplied by the
+/// caller.  Callers that use this function during cleanup already hold the
+/// component lock.
+pub(crate) fn remove_process_record_if_matches_locked(
+    component: &str,
+    expected: &ProcessRecord,
+) -> bool {
+    if read_process_record(component).as_ref() != Some(expected) {
+        return false;
+    }
+    std::fs::remove_file(process_record_path(component)).is_ok()
+}
+
+pub(crate) fn process_record_matches(component: &str, expected: &ProcessRecord) -> bool {
+    read_process_record(component).as_ref() == Some(expected)
+}
+
+/// Kill the BGM child left in the record while its readiness probe was still
+/// running.  This path has no `Child` handle, so it must take the component
+/// lock and prove the current Shell owns both identities immediately before
+/// the targeted kill.  A record from another Shell is left untouched.
+fn terminate_untracked_bgm_record() {
+    let _ = with_process_record_lock("bgm-server", || {
+        let Some(record) = read_process_record("bgm-server") else {
+            return;
+        };
+        if !process_record_owned_by_current_shell(&record)
+            || !process_record_child_is_exact(&record)
+            || !process_record_matches("bgm-server", &record)
+            || !platform::pid_command_line(record.child_pid)
+                .is_some_and(|cmdline| bgm_sidecar_cmdline(&cmdline))
+        {
+            return;
+        }
+
+        // Revalidate after the command-line read: PID reuse or a concurrent
+        // record replacement must never turn this into an unrelated kill.
+        if !process_record_owned_by_current_shell(&record)
+            || !process_record_child_is_exact(&record)
+            || !process_record_matches("bgm-server", &record)
+        {
+            return;
+        }
+        log_verbose(&format!(
+            "[Naia] Terminating untracked BGM sidecar from PID file (PID {})",
+            record.child_pid
+        ));
+        platform::kill_pid(record.child_pid);
+    });
+}
+
+/// Remove the current Shell's record.  A record written by another live
+/// Shell, a legacy PID file, or an unverifiable record is left untouched.
 fn remove_pid_file(component: &str) {
-    let path = run_dir().join(format!("{}.pid", component));
-    let _ = std::fs::remove_file(&path);
+    let Some(owner_identity) = platform::process_identity(std::process::id()) else {
+        log_verbose(&format!(
+            "[Naia] Cannot remove {component} record without owner identity"
+        ));
+        return;
+    };
+    let owner_pid = std::process::id();
+    let _ = with_process_record_lock(component, || {
+        let Some(record) = read_process_record(component) else {
+            return;
+        };
+        if record.owner_pid == owner_pid && record.owner_identity == owner_identity {
+            let _ = remove_process_record_if_matches_locked(component, &record);
+        } else {
+            log_verbose(&format!(
+                "[Naia] Preserving {component} record owned by another Shell"
+            ));
+        }
+    });
+}
+
+fn write_pid_file(component: &str, pid: u32) -> bool {
+    let Some(record) = current_process_record(pid) else {
+        log_verbose(&format!(
+            "[Naia] Refusing unverifiable {component} process record (PID {pid})"
+        ));
+        return false;
+    };
+    let Some(written) = with_process_record_lock(component, || {
+        if let Some(existing) = read_process_record(component) {
+            if !process_record_write_allowed(
+                &existing,
+                &record,
+                process_record_owner_is_live(&existing),
+            ) {
+                log_verbose(&format!(
+                    "[Naia] Preserving live {component} record owned by another Shell"
+                ));
+                return false;
+            }
+        }
+        write_process_record_atomically(&process_record_path(component), &record)
+    }) else {
+        log_verbose(&format!(
+            "[Naia] Could not lock {component} process record; leaving it unchanged"
+        ));
+        return false;
+    };
+    if written {
+        log_verbose(&format!(
+            "[Naia] Process record written: {} (PID {})",
+            process_record_path(component).display(),
+            pid
+        ));
+    }
+    written
+}
+
+#[cfg(test)]
+mod process_record_tests {
+    use super::*;
+
+    fn record() -> ProcessRecord {
+        ProcessRecord {
+            version: PROCESS_RECORD_VERSION,
+            child_pid: 41,
+            child_identity: "child-start-1".to_string(),
+            owner_pid: 40,
+            owner_identity: "owner-start-1".to_string(),
+        }
+    }
+
+    #[test]
+    fn legacy_bare_pid_is_not_a_reclaimable_record() {
+        assert!(parse_process_record(b"41").is_none());
+    }
+
+    #[test]
+    fn live_recorded_owner_cannot_be_reaped() {
+        let value = record();
+        assert!(!process_record_can_be_reaped_with(
+            &value,
+            Some("owner-start-1"),
+            true,
+            Some("child-start-1"),
+        ));
+    }
+
+    #[test]
+    fn owner_pid_reuse_is_treated_as_dead_old_owner() {
+        let value = record();
+        assert!(process_record_can_be_reaped_with(
+            &value,
+            Some("owner-start-2"),
+            true,
+            Some("child-start-1"),
+        ));
+    }
+
+    #[test]
+    fn dead_owner_and_exact_child_can_be_reaped() {
+        let value = record();
+        assert!(process_record_can_be_reaped_with(
+            &value,
+            None,
+            false,
+            Some("child-start-1"),
+        ));
+    }
+
+    #[test]
+    fn reused_child_pid_cannot_be_reaped() {
+        let value = record();
+        assert!(!process_record_can_be_reaped_with(
+            &value,
+            None,
+            false,
+            Some("child-start-2"),
+        ));
+    }
+
+    #[test]
+    fn unverifiable_live_owner_is_protected() {
+        let value = record();
+        assert!(!process_record_can_be_reaped_with(
+            &value,
+            None,
+            true,
+            Some("child-start-1"),
+        ));
+    }
+
+    #[test]
+    fn record_serializes_both_owner_and_child_identities() {
+        let value = serde_json::to_value(record()).expect("record is serializable");
+        assert_eq!(value["owner_identity"], "owner-start-1");
+        assert_eq!(value["child_identity"], "child-start-1");
+    }
+
+    #[test]
+    fn live_foreign_owner_rejects_record_replacement() {
+        let existing = record();
+        let candidate = ProcessRecord {
+            child_pid: 42,
+            child_identity: "child-start-2".to_string(),
+            owner_pid: 99,
+            owner_identity: "owner-start-9".to_string(),
+            ..existing.clone()
+        };
+        assert!(!process_record_write_allowed(&existing, &candidate, true));
+        assert!(process_record_write_allowed(&existing, &candidate, false));
+    }
+
+    #[test]
+    fn same_owner_may_refresh_its_component_record() {
+        let existing = record();
+        let candidate = ProcessRecord {
+            child_pid: 42,
+            child_identity: "child-start-2".to_string(),
+            ..existing.clone()
+        };
+        assert!(process_record_write_allowed(&existing, &candidate, true));
+    }
 }
 
 // Note: is_pid_alive, kill_pid, and cleanup_orphan_processes live in the
@@ -3310,6 +3805,7 @@ enum BgmPortReclaim {
     Reclaimed(u32),
     ForeignHolder(u32),
     UnknownHolder(u32),
+    ProtectedSidecar(u32),
 }
 
 /// Port-reclaim decision with injected probes (unit-testable). Kill only a
@@ -3317,19 +3813,54 @@ enum BgmPortReclaim {
 fn reclaim_bgm_port_with(
     port_owner: impl Fn() -> Option<u32>,
     command_line: impl Fn(u32) -> Option<String>,
-    kill: impl Fn(u32),
+    kill: impl Fn(u32) -> bool,
 ) -> BgmPortReclaim {
     let Some(pid) = port_owner() else {
         return BgmPortReclaim::Free;
     };
     match command_line(pid) {
         Some(cmdline) if bgm_sidecar_cmdline(&cmdline) => {
-            kill(pid);
-            BgmPortReclaim::Reclaimed(pid)
+            if kill(pid) {
+                BgmPortReclaim::Reclaimed(pid)
+            } else {
+                BgmPortReclaim::ProtectedSidecar(pid)
+            }
         }
         Some(_) => BgmPortReclaim::ForeignHolder(pid),
         None => BgmPortReclaim::UnknownHolder(pid),
     }
+}
+
+/// Reclaim a BGM listener only when its durable record proves that the
+/// previous Shell is gone and the listener still has the exact recorded
+/// identity.  A sidecar command line by itself is insufficient because a
+/// healthy BGM sidecar may belong to another Shell.
+fn reclaim_recorded_bgm_if_owned(pid: u32) -> bool {
+    with_process_record_lock("bgm-server", || {
+        let Some(record) = read_process_record("bgm-server") else {
+            return false;
+        };
+        if record.child_pid != pid
+            || !process_record_owner_is_dead(&record)
+            || !process_record_matches("bgm-server", &record)
+            || !process_record_can_be_reaped(&record)
+            || !platform::pid_command_line(pid).is_some_and(|cmdline| bgm_sidecar_cmdline(&cmdline))
+        {
+            return false;
+        }
+
+        // Re-read the owner, child, and record after the command-line query;
+        // a PID reuse or concurrent record replacement must never authorize a
+        // kill based on the earlier observations.
+        if !process_record_can_be_reaped(&record)
+            || !process_record_matches("bgm-server", &record)
+        {
+            return false;
+        }
+        platform::kill_pid(pid);
+        true
+    })
+    .unwrap_or(false)
 }
 
 fn bgm_port_accepts_connection(port: u16) -> bool {
@@ -3349,7 +3880,7 @@ fn reclaim_bgm_port(port: u16) {
     match reclaim_bgm_port_with(
         || platform::pid_listening_on_port(port),
         platform::pid_command_line,
-        platform::kill_pid,
+        reclaim_recorded_bgm_if_owned,
     ) {
         BgmPortReclaim::Free => {}
         BgmPortReclaim::Reclaimed(pid) => {
@@ -3373,6 +3904,12 @@ fn reclaim_bgm_port(port: u16) {
         BgmPortReclaim::UnknownHolder(pid) => {
             log_both(&format!(
                 "[Naia] WARN BGM port {} holder (PID {}) has no readable command line — leaving it alone",
+                port, pid
+            ));
+        }
+        BgmPortReclaim::ProtectedSidecar(pid) => {
+            log_both(&format!(
+                "[Naia] WARN BGM port {} is held by a sidecar owned by another or unverifiable Shell (PID {}) — leaving it alone",
                 port, pid
             ));
         }
@@ -3505,7 +4042,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn BGM server: {}", e))?;
 
@@ -3518,7 +4055,14 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
     // Persist PID so the next session's cleanup_orphan_processes() can kill an
     // orphan if Tauri crashes before WindowEvent::Destroyed fires (#335 codex
     // review finding 1). The on-exit handler calls remove_pid_file("bgm-server").
-    write_pid_file("bgm-server", pid);
+    if !write_pid_file("bgm-server", pid) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(
+            "BGM server ownership record is held by another Shell; refusing an untracked child"
+                .to_string(),
+        );
+    }
 
     // Readiness probe: poll /health for the bounded cold-start budget (#335).
     // 2). Catches EADDRINUSE and other startup failures that the spawn handle
@@ -3531,7 +4075,6 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             bgm_port,
             BGM_STARTUP_TIMEOUT.as_secs()
         ));
-        let mut child = child;
         let _ = child.kill();
         let _ = child.wait();
         remove_pid_file("bgm-server");
@@ -5991,19 +6534,10 @@ fn directory_has_compiled_module(
         })
 }
 
-pub(crate) fn read_secure_naia_credential(app: &tauri::AppHandle) -> Option<String> {
-    let store_path = if debug_e2e_enabled() {
-        std::env::var("NAIA_E2E_SECURE_STORE_FILE")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "secure-keys.dat".to_string())
-    } else {
-        "secure-keys.dat".to_string()
-    };
-    app.store(store_path)
+pub(crate) fn read_secure_naia_credential(_app: &tauri::AppHandle) -> Option<String> {
+    secure_store_get_current("naiaKey")
         .ok()
-        .and_then(|store| store.get("naiaKey"))
-        .and_then(|value| value.as_str().map(str::to_string))
+        .flatten()
         .filter(|value| is_valid_gateway_key(value))
 }
 
@@ -6767,7 +7301,14 @@ fn spawn_voxcpm2(
         let _ = child.kill();
         return Err(error);
     }
-    write_pid_file("voxcpm2", child.id());
+    if !write_pid_file("voxcpm2", child.id()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(
+            "Naia Host TensorRT ownership record is held by another Shell; refusing an untracked child"
+                .to_string(),
+        );
+    }
     // The readiness payload contains a per-launch loopback bearer used by the
     // WebView. Never write that credential to logs.
     log_both("[Naia] Windows Naia Host TensorRT ready on loopback");
@@ -6863,6 +7404,10 @@ fn spawn_cascade(
         .stderr(stderr_stdio);
     #[cfg(windows)]
     platform::hide_console(&mut cmd);
+    // On Windows this adds CREATE_SUSPENDED.  The platform claim assigns the
+    // supervisor to its private Job Object before resuming its primary thread,
+    // closing the launch-time descendant race.
+    platform::prepare_cascade_command(&mut cmd);
 
     log_both(&format!(
         "[Naia] Starting local cascade: {} -m loader launch (cwd={}, profile={}, repos_adk={})",
@@ -6882,10 +7427,23 @@ fn spawn_cascade(
         )
     })?;
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to get cascade stdout".to_string())?;
+    let ownership = match platform::claim_cascade_process(child.id()) {
+        Ok(ownership) => ownership,
+        Err(error) => {
+            platform::kill_cascade(None, child.id());
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            platform::kill_cascade(Some(&ownership), child.id());
+            let _ = child.wait();
+            return Err("Failed to get cascade stdout".to_string());
+        }
+    };
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<String>();
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
@@ -6912,7 +7470,8 @@ fn spawn_cascade(
             Ok(r) => break r,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 // stdout reader 醫낅즺 = loader ?꾨줈?몄뒪 exit(ready 誘몄닔??.
-                let _ = child.try_wait();
+                platform::kill_cascade(Some(&ownership), child.id());
+                let _ = child.wait();
                 let tail = read_cascade_stderr_tail();
                 return Err(format!(
                     "濡쒖뺄 ?뚯꽦 ?붿쭊???쒖옉?섏? 紐삵뻽?듬땲??loader 醫낅즺).{}",
@@ -6925,6 +7484,8 @@ fn spawn_cascade(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if let Ok(Some(status)) = child.try_wait() {
+                    platform::kill_cascade(Some(&ownership), child.id());
+                    let _ = child.wait();
                     let tail = read_cascade_stderr_tail();
                     return Err(format!(
                         "濡쒖뺄 ?뚯꽦 ?붿쭊???쒖옉?섏? 紐삵뻽?듬땲??loader 醫낅즺 code={:?}).{}",
@@ -6937,7 +7498,8 @@ fn spawn_cascade(
                     ));
                 }
                 if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
+                    platform::kill_cascade(Some(&ownership), child.id());
+                    let _ = child.wait();
                     return Err(
                         "cascade readiness handshake timeout (CASCADE_READY 誘몄닔??".to_string(),
                     );
@@ -6946,9 +7508,20 @@ fn spawn_cascade(
         }
     };
 
-    write_pid_file("cascade", child.id());
+    if !write_pid_file("cascade", child.id()) {
+        platform::kill_cascade(Some(&ownership), child.id());
+        let _ = child.wait();
+        return Err(
+            "Cascade ownership record is held by another Shell; refusing an untracked child"
+                .to_string(),
+        );
+    }
     log_both(&format!("[Naia] local cascade ready: {}", ready));
-    Ok(CascadeProcess { child, ready })
+    Ok(CascadeProcess {
+        child,
+        ownership,
+        ready,
+    })
 }
 
 /// Resolve the public facade URL only from the loader's readiness payload.
@@ -7266,11 +7839,8 @@ async fn start_cascade(
 async fn stop_cascade(state: tauri::State<'_, AppState>) -> Result<(), String> {
     if let Some(mut c) = lock_or_recover(&state.cascade, "cascade").take() {
         log_verbose("[Naia] Terminating local cascade...");
-        let _ = c.child.kill();
+        c.terminate();
     }
-    // Child::kill force-terminates the Python supervisor on Windows, so its
-    // finally block cannot reliably release GPU-owning grandchildren.
-    platform::kill_stale_cascade();
     remove_pid_file("cascade");
     Ok(())
 }
@@ -7624,8 +8194,15 @@ async fn generate_oauth_state(state: tauri::State<'_, AppState>) -> Result<Strin
 
 #[tauri::command]
 async fn reset_window_state(app: AppHandle) -> Result<(), String> {
-    if let Some(path) = window_state_path(&app) {
-        let _ = std::fs::remove_file(&path);
+    let canonical = window_state_path(&app);
+    let legacy = legacy_window_state_path(&app);
+    let mut removed = false;
+    for path in [canonical.as_deref(), legacy.as_deref()].into_iter().flatten() {
+        if std::fs::remove_file(path).is_ok() {
+            removed = true;
+        }
+    }
+    if removed {
         log_verbose("[Naia] Window state reset");
     }
     Ok(())
@@ -7650,6 +8227,217 @@ fn current_adk_path() -> Result<String, String> {
     } else {
         Ok(path.to_string())
     }
+}
+
+const SECURE_STORE_DIR: &str = "data-private";
+const SECURE_STORE_FILE: &str = "secure-keys.dat";
+const SECURE_STORE_TEMP_DIR: &str = ".secure-keys-tmp";
+const SECURE_STORE_KEYS: &[&str] = &[
+    "apiKey",
+    "googleApiKey",
+    "openaiTtsApiKey",
+    "elevenlabsApiKey",
+    "naiaKey",
+    "gatewayToken",
+    "openaiRealtimeApiKey",
+    "subLlmApiKey",
+    "memoryLlmApiKey",
+    "memoryEmbeddingApiKey",
+    "qdrantApiKey",
+];
+static SECURE_STORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn secure_store_lock() -> &'static Mutex<()> {
+    SECURE_STORE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn secure_store_key_allowed(name: &str) -> bool {
+    (SECURE_STORE_KEYS.contains(&name) || name == "labKey")
+        || (name.len() <= 512
+            && name
+                .strip_prefix("app:")
+                .is_some_and(|suffix| {
+                    !suffix.is_empty()
+                        && !suffix.chars().any(|character| {
+                            character.is_control() || character == '/' || character == '\\'
+                        })
+                }))
+}
+
+fn secure_store_path_for_adk(adk_path: &str) -> Result<std::path::PathBuf, String> {
+    let adk_path = adk_path.trim();
+    if adk_path.is_empty() {
+        return Err("adk_path_unavailable".to_string());
+    }
+    let root = std::path::Path::new(adk_path);
+    if !root.is_absolute() {
+        return Err("adk_path_must_be_absolute".to_string());
+    }
+    Ok(root.join(SECURE_STORE_DIR).join(SECURE_STORE_FILE))
+}
+
+fn current_secure_store_path() -> Result<std::path::PathBuf, String> {
+    secure_store_path_for_adk(&current_adk_path()?)
+}
+
+fn secure_store_expected_path_matches(
+    expected_store_path: Option<&str>,
+    current_path: &std::path::Path,
+) -> Result<(), String> {
+    if let Some(expected_store_path) = expected_store_path {
+        if std::path::Path::new(expected_store_path.trim()) != current_path {
+            return Err("secure_store_adk_changed".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn secure_store_operation_path(
+    expected_store_path: Option<&str>,
+) -> Result<(std::sync::MutexGuard<'static, ()>, std::path::PathBuf), String> {
+    // Capture and validate the path before waiting on the shared operation lock. The
+    // caller's expectedStorePath prevents a JS read-modify-write sequence that began
+    // on ADK A from being silently redirected to ADK B while it was awaiting another
+    // command. Re-check after locking as the selected ADK can change while waiting.
+    let path = current_secure_store_path()?;
+    secure_store_expected_path_matches(expected_store_path, &path)?;
+    let guard = secure_store_lock()
+        .lock()
+        .map_err(|_| "secure_store_busy".to_string())?;
+    if current_secure_store_path()? != path {
+        return Err("secure_store_adk_changed".to_string());
+    }
+    Ok((guard, path))
+}
+
+fn read_secure_store_map(
+    path: &std::path::Path,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Default::default()),
+        Err(_) => return Err("secure_store_read_failed".to_string()),
+    };
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "secure_store_invalid_json".to_string())?;
+    value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| "secure_store_invalid_object".to_string())
+}
+
+fn secure_store_get_at_path(
+    path: &std::path::Path,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let map = read_secure_store_map(path)?;
+    let Some(value) = map.get(name) else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .map(str::to_string)
+        .map(Some)
+        .ok_or_else(|| "secure_store_value_invalid".to_string())
+}
+
+fn secure_store_set_at_path(
+    path: &std::path::Path,
+    name: &str,
+    value: &str,
+) -> Result<(), String> {
+    let mut map = read_secure_store_map(path)?;
+    map.insert(
+        name.to_string(),
+        serde_json::Value::String(value.to_string()),
+    );
+    let bytes = serde_json::to_vec(&serde_json::Value::Object(map))
+        .map_err(|_| "secure_store_encode_failed".to_string())?;
+    write_secure_store_atomic(path, &bytes)
+}
+
+fn secure_store_delete_at_path(path: &std::path::Path, name: &str) -> Result<(), String> {
+    let mut map = read_secure_store_map(path)?;
+    if map.remove(name).is_none() {
+        return Ok(());
+    }
+    let bytes = serde_json::to_vec(&serde_json::Value::Object(map))
+        .map_err(|_| "secure_store_encode_failed".to_string())?;
+    write_secure_store_atomic(path, &bytes)
+}
+
+fn secure_store_get_current_with_expected(
+    name: &str,
+    expected_store_path: Option<&str>,
+) -> Result<Option<String>, String> {
+    if !secure_store_key_allowed(name) {
+        return Err("secure_store_key_not_allowed".to_string());
+    }
+    let (_guard, path) = secure_store_operation_path(expected_store_path)?;
+    secure_store_get_at_path(&path, name)
+}
+
+fn secure_store_get_current(name: &str) -> Result<Option<String>, String> {
+    secure_store_get_current_with_expected(name, None)
+}
+
+fn secure_store_set_current_with_expected(
+    name: &str,
+    value: &str,
+    expected_store_path: Option<&str>,
+) -> Result<(), String> {
+    if !secure_store_key_allowed(name) {
+        return Err("secure_store_key_not_allowed".to_string());
+    }
+    let (_guard, path) = secure_store_operation_path(expected_store_path)?;
+    secure_store_set_at_path(&path, name, value)
+}
+
+fn secure_store_set_current(name: &str, value: &str) -> Result<(), String> {
+    secure_store_set_current_with_expected(name, value, None)
+}
+
+fn secure_store_delete_current_with_expected(
+    name: &str,
+    expected_store_path: Option<&str>,
+) -> Result<(), String> {
+    if !secure_store_key_allowed(name) {
+        return Err("secure_store_key_not_allowed".to_string());
+    }
+    let (_guard, path) = secure_store_operation_path(expected_store_path)?;
+    secure_store_delete_at_path(&path, name)
+}
+
+fn secure_store_delete_current(name: &str) -> Result<(), String> {
+    secure_store_delete_current_with_expected(name, None)
+}
+
+/// Read one secret from the selected ADK's private store.
+#[tauri::command]
+fn secure_store_get(
+    name: String,
+    expected_store_path: Option<String>,
+) -> Result<Option<String>, String> {
+    secure_store_get_current_with_expected(&name, expected_store_path.as_deref())
+}
+
+/// Write one secret to the selected ADK's private store atomically.
+#[tauri::command]
+fn secure_store_set(
+    name: String,
+    value: String,
+    expected_store_path: Option<String>,
+) -> Result<(), String> {
+    secure_store_set_current_with_expected(&name, &value, expected_store_path.as_deref())
+}
+
+/// Remove one secret from the selected ADK's private store.
+#[tauri::command]
+fn secure_store_delete(
+    name: String,
+    expected_store_path: Option<String>,
+) -> Result<(), String> {
+    secure_store_delete_current_with_expected(&name, expected_store_path.as_deref())
 }
 
 fn trim_secret_newline(value: &mut zeroize::Zeroizing<Vec<u8>>) {
@@ -8934,12 +9722,24 @@ async fn discord_set_last_binding(
 }
 
 fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "discord_config_path_invalid".to_string())?;
+    write_owner_only_atomic_in(path, bytes, parent)
+}
+
+fn write_owner_only_atomic_in(
+    path: &std::path::Path,
+    bytes: &[u8],
+    temp_dir: &std::path::Path,
+) -> Result<(), String> {
     use std::io::Write;
     let parent = path
         .parent()
         .ok_or_else(|| "discord_config_path_invalid".to_string())?;
     std::fs::create_dir_all(parent).map_err(|_| "discord_config_write_failed".to_string())?;
-    let mut file = tempfile::NamedTempFile::new_in(parent)
+    std::fs::create_dir_all(temp_dir).map_err(|_| "discord_config_write_failed".to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(temp_dir)
         .map_err(|_| "discord_config_write_failed".to_string())?;
     #[cfg(unix)]
     {
@@ -8972,6 +9772,29 @@ fn write_owner_only_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), S
         let _ = directory.sync_all();
     }
     Ok(())
+}
+
+fn write_secure_store_atomic(
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "secure_store_write_failed".to_string())?;
+    let temp_dir = parent.join(SECURE_STORE_TEMP_DIR);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(&temp_dir)
+            .map_err(|_| "secure_store_write_failed".to_string())?;
+        std::fs::set_permissions(&temp_dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|_| "secure_store_write_failed".to_string())?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(&temp_dir)
+        .map_err(|_| "secure_store_write_failed".to_string())?;
+    write_owner_only_atomic_in(path, bytes, &temp_dir)
+        .map_err(|_| "secure_store_write_failed".to_string())
 }
 
 fn activate_discord_binding_update<V, W, R>(
@@ -10136,16 +10959,21 @@ async fn delete_naia_asset(
     }
 }
 
+fn read_naia_settings_file(path: &std::path::Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(config) => Ok(config),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 /// Read `{adk_path}/naia-settings/config.json`. Returns empty string if not found.
 #[tauri::command]
 async fn read_naia_config(adk_path: String) -> Result<String, String> {
     let path = std::path::PathBuf::from(&adk_path)
         .join("naia-settings")
         .join("config.json");
-    if !path.exists() {
-        return Ok(String::new());
-    }
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    read_naia_settings_file(&path)
 }
 
 fn write_naia_config_atomic(path: &std::path::Path, json: &str) -> Result<(), String> {
@@ -10186,18 +11014,14 @@ async fn read_naia_ui_config(adk_path: String) -> Result<String, String> {
     let path = std::path::PathBuf::from(&adk_path)
         .join("naia-settings")
         .join("ui-config.json");
-    if !path.exists() {
-        return Ok(String::new());
-    }
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    read_naia_settings_file(&path)
 }
 
 /// Write `{adk_path}/naia-settings/ui-config.json` (???꾩슜 ??agent 誘몄냼鍮?.
 #[tauri::command]
 async fn write_naia_ui_config(adk_path: String, json: String) -> Result<(), String> {
     let dir = std::path::PathBuf::from(&adk_path).join("naia-settings");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(dir.join("ui-config.json"), json).map_err(|e| e.to_string())
+    write_naia_config_atomic(&dir.join("ui-config.json"), &json)
 }
 
 fn reset_naia_config_files_at(adk: &std::path::Path) -> Result<(), String> {
@@ -11465,7 +12289,57 @@ async fn copy_bundled_assets(app_handle: tauri::AppHandle, adk_path: String) -> 
             "[copy_bundled_assets] asset scope extend failed for {adk_path}: {e}"
         ));
     }
+    // The broad ADK grant is needed for user and installed-app assets. Keep the
+    // credential file itself outside asset:// without blocking app runtime files
+    // under the same data-private directory.
+    let secure_store_path = std::path::Path::new(&adk_path)
+        .join(SECURE_STORE_DIR)
+        .join(SECURE_STORE_FILE);
+    if let Err(e) = app_handle
+        .asset_protocol_scope()
+        .forbid_file(&secure_store_path)
+    {
+        log_verbose(&format!(
+            "[copy_bundled_assets] secure store asset scope forbid failed for {}: {e}",
+            secure_store_path.display()
+        ));
+    }
+    let secure_store_temp_path = std::path::Path::new(&adk_path)
+        .join(SECURE_STORE_DIR)
+        .join(SECURE_STORE_TEMP_DIR);
+    if let Err(e) = app_handle
+        .asset_protocol_scope()
+        .forbid_directory(&secure_store_temp_path, true)
+    {
+        log_verbose(&format!(
+            "[copy_bundled_assets] secure store temp scope forbid failed for {}: {e}",
+            secure_store_temp_path.display()
+        ));
+    }
     Ok(())
+}
+
+/// Allow asset:// URLs for installed apps in the selected ADK.
+///
+/// The static scope contains the default home placement, but a selected ADK
+/// can live elsewhere and its hidden `.naia/apps` directory is not covered by
+/// a broad ADK directory rule when literal leading-dot matching is enabled.
+/// Keep this grant limited to the canonical installed-app root; callers invoke
+/// it when the root is first listed or an app is installed.
+pub(crate) fn allow_installed_app_asset_scope(
+    app_handle: &tauri::AppHandle,
+    apps_root: &std::path::Path,
+) {
+    let scope_root = dunce::canonicalize(apps_root).unwrap_or_else(|_| apps_root.to_path_buf());
+    if let Err(error) = app_handle
+        .asset_protocol_scope()
+        .allow_directory(&scope_root, true)
+    {
+        log_verbose(&format!(
+            "[apps] installed app asset scope extend failed for {}: {error}",
+            scope_root.display()
+        ));
+    }
 }
 
 /// Write binary data to `{adk_path}/naia-settings/{subdir}/{filename}`.
@@ -11784,7 +12658,23 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     }
     #[cfg(feature = "webdriver-e2e")]
-    let context = tauri::generate_context!("tauri.e2e.conf.json");
+    let mut context = tauri::generate_context!("tauri.e2e.conf.json");
+    #[cfg(feature = "webdriver-e2e")]
+    if debug_e2e_enabled() {
+        if let Ok(run_id) = std::env::var("NAIA_E2E_RUN_ID") {
+            if valid_e2e_run_id(&run_id) {
+                let base_identifier = context.config().identifier.clone();
+                context.config_mut().identifier = format!("{base_identifier}.run-{run_id}");
+            } else {
+                log_verbose("[Naia] ignoring invalid NAIA_E2E_RUN_ID for E2E identifier");
+            }
+        }
+        if let Ok(raw) = std::env::var("NAIA_E2E_DEV_URL") {
+            if let Some(dev_url) = valid_e2e_dev_url(&raw) {
+                context.config_mut().build.dev_url = Some(dev_url);
+            }
+        }
+    }
     #[cfg(not(feature = "webdriver-e2e"))]
     let context = tauri::generate_context!();
 
@@ -11897,6 +12787,9 @@ pub fn run() {
             resume_coding_job,
             write_agent_key,
             agent_key_exists,
+            secure_store_get,
+            secure_store_set,
+            secure_store_delete,
             check_naia_settings,
             inspect_adk_dir,
             init_naia_settings,
@@ -12090,8 +12983,8 @@ pub fn run() {
             // discard it so the new desktop-window default takes effect.
             const LEGACY_APP_WIDTH_CAP: u32 = 600;
             if let Some(window) = app.get_webview_window("main") {
-                let restored = load_window_state(&app_handle)
-                    .filter(|s| s.width >= LEGACY_APP_WIDTH_CAP);
+                let loaded_state = load_window_state(&app_handle);
+                let restored = loaded_state.filter(|s| s.width >= LEGACY_APP_WIDTH_CAP);
 
                 if let Some(saved) = restored {
                     let fitted = monitor_for_window_state(&app_handle, &window, &saved)
@@ -12120,8 +13013,8 @@ pub fn run() {
                 } else {
                     // Discard any legacy side-app state so the desktop default
                     // is not overwritten on next start.
-                    if let Some(path) = window_state_path(&app_handle) {
-                        if path.exists() {
+                    if loaded_state.is_some() {
+                        if let Some(path) = window_state_path(&app_handle) {
                             let _ = std::fs::remove_file(&path);
                             log_verbose("[Naia] Discarded legacy side-app window state");
                         }
@@ -12312,7 +13205,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             match event {
-                tauri::WindowEvent::Moved(pos) => {
+                tauri::WindowEvent::Moved(pos) if window.label() == "main" => {
                     if let Ok(size) = window.outer_size() {
                         save_window_state(&window.app_handle(), &WindowState {
                             x: pos.x,
@@ -12322,7 +13215,7 @@ pub fn run() {
                         });
                     }
                 }
-                tauri::WindowEvent::Resized(size) => {
+                tauri::WindowEvent::Resized(size) if window.label() == "main" => {
                     if let Ok(pos) = window.outer_position() {
                         save_window_state(&window.app_handle(), &WindowState {
                             x: pos.x,
@@ -12367,31 +13260,24 @@ pub fn run() {
                         if let Some(mut process) = guard.take() {
                             log_verbose("[Naia] Terminating BGM server...");
                             let _ = process.child.kill();
-                        } else if let Some(pid) = read_pid_file("bgm-server") {
+                        } else {
                             // FR-BGM.15 (#517): a spawn still inside its readiness
                             // probe has written the PID file but not yet stored the
-                            // child in state. Erasing the file alone would leave a
-                            // live sidecar untracked forever; verify identity and
-                            // kill it before removing the record.
-                            if platform::pid_command_line(pid)
-                                .is_some_and(|cmdline| bgm_sidecar_cmdline(&cmdline))
-                            {
-                                log_verbose(&format!(
-                                    "[Naia] Terminating untracked BGM sidecar from PID file (PID {})",
-                                    pid
-                                ));
-                                platform::kill_pid(pid);
-                            }
+                            // child in state. The helper takes the record lock and
+                            // revalidates this Shell's owner/child identities before
+                            // the targeted kill; another Shell's record is preserved.
+                            terminate_untracked_bgm_record();
                         }
                     }
                     remove_pid_file("bgm-server");
 
-                    // Kill local cascade supervisor (R2.2b) ??loader teardowns its
-                    // children. Drop also kills, but take()+kill here is explicit.
+                    // Kill the owned local cascade tree (R2.2b). The platform
+                    // ownership handle/process group covers loader descendants;
+                    // Drop remains a final safety net if this path changes.
                     if let Ok(mut guard) = state.cascade.lock() {
                         if let Some(mut process) = guard.take() {
                             log_verbose("[Naia] Terminating local cascade...");
-                            let _ = process.child.kill();
+                            process.terminate();
                         }
                     }
                     remove_pid_file("cascade");
@@ -12455,6 +13341,98 @@ mod tests {
     fn write_test_file(path: &std::path::Path) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, b"fixture").unwrap();
+    }
+
+    #[test]
+    fn secure_store_round_trip_preserves_entries_in_selected_adk_private_file() {
+        let adk = tempfile::tempdir().unwrap();
+        let path = secure_store_path_for_adk(adk.path().to_str().unwrap()).unwrap();
+
+        secure_store_set_at_path(&path, "naiaKey", "naia-test-key").unwrap();
+        secure_store_set_at_path(&path, "app:slides:token", "app-secret").unwrap();
+
+        assert_eq!(
+            secure_store_get_at_path(&path, "naiaKey").unwrap().as_deref(),
+            Some("naia-test-key")
+        );
+        assert_eq!(
+            secure_store_get_at_path(&path, "app:slides:token")
+                .unwrap()
+                .as_deref(),
+            Some("app-secret")
+        );
+        assert_eq!(secure_store_get_at_path(&path, "missing").unwrap(), None);
+        assert_eq!(path, adk.path().join("data-private").join("secure-keys.dat"));
+
+        secure_store_delete_at_path(&path, "naiaKey").unwrap();
+        assert_eq!(secure_store_get_at_path(&path, "naiaKey").unwrap(), None);
+        assert_eq!(
+            secure_store_get_at_path(&path, "app:slides:token")
+                .unwrap()
+                .as_deref(),
+            Some("app-secret")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
+
+    #[test]
+    fn secure_store_rejects_unapproved_keys_and_relative_adk_paths() {
+        assert!(!secure_store_key_allowed("password"));
+        assert!(!secure_store_key_allowed("app:"));
+        assert!(!secure_store_key_allowed("app:slides/escape"));
+        assert!(secure_store_key_allowed("app:slides:token"));
+        assert!(secure_store_key_allowed("naiaKey"));
+        assert_eq!(
+            secure_store_path_for_adk("relative-adk").unwrap_err(),
+            "adk_path_must_be_absolute"
+        );
+    }
+
+    #[test]
+    fn secure_store_rejects_a_stale_selected_adk_path() {
+        let adk = tempfile::tempdir().unwrap();
+        let current = secure_store_path_for_adk(adk.path().to_str().unwrap()).unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let other_path = secure_store_path_for_adk(other.path().to_str().unwrap()).unwrap();
+
+        assert!(secure_store_expected_path_matches(None, &current).is_ok());
+        assert!(secure_store_expected_path_matches(
+            Some(current.to_str().unwrap()),
+            &current
+        )
+        .is_ok());
+        assert_eq!(
+            secure_store_expected_path_matches(Some(other_path.to_str().unwrap()), &current)
+                .unwrap_err(),
+            "secure_store_adk_changed"
+        );
+    }
+
+    #[test]
+    fn secure_store_rejects_malformed_or_non_object_files() {
+        let adk = tempfile::tempdir().unwrap();
+        let path = secure_store_path_for_adk(adk.path().to_str().unwrap()).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        std::fs::write(&path, b"not-json").unwrap();
+        assert_eq!(
+            secure_store_get_at_path(&path, "naiaKey").unwrap_err(),
+            "secure_store_invalid_json"
+        );
+
+        std::fs::write(&path, b"[]").unwrap();
+        assert_eq!(
+            secure_store_get_at_path(&path, "naiaKey").unwrap_err(),
+            "secure_store_invalid_object"
+        );
     }
 
     #[test]
@@ -12926,6 +13904,109 @@ mod tests {
         let parsed: WindowState = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.x, 100);
         assert_eq!(parsed.width, 380);
+    }
+
+    #[test]
+    fn adk_window_state_path_uses_workspace_settings_dir() {
+        let adk = tempfile::tempdir().unwrap();
+
+        assert_eq!(
+            adk_window_state_path(adk.path().to_str().unwrap()),
+            Some(
+                adk.path()
+                    .join("naia-settings")
+                    .join("window-state.json")
+            )
+        );
+        assert_eq!(adk_window_state_path("  "), None);
+    }
+
+    #[test]
+    fn e2e_window_state_legacy_path_is_isolated_from_app_config() {
+        let root = tempfile::tempdir().unwrap();
+        let app_config = root.path().join("app-config");
+        let runtime = root.path().join("e2e-runtime");
+
+        assert_eq!(
+            legacy_window_state_path_for(Some(&app_config), Some(&runtime), true),
+            Some(runtime.join(WINDOW_STATE_FILE_NAME))
+        );
+        assert_eq!(
+            legacy_window_state_path_for(Some(&app_config), None, true),
+            None
+        );
+        assert_eq!(
+            legacy_window_state_path_for(Some(&app_config), Some(&runtime), false),
+            Some(app_config.join(WINDOW_STATE_FILE_NAME))
+        );
+    }
+
+    #[test]
+    fn window_state_migrates_legacy_file_after_adk_write() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join("legacy/window-state.json");
+        let canonical = root
+            .path()
+            .join("workspace/naia-settings/window-state.json");
+        let state = WindowState {
+            x: -800,
+            y: 40,
+            width: 1366,
+            height: 768,
+        };
+
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, serde_json::to_vec(&state).unwrap()).unwrap();
+
+        assert_eq!(
+            load_or_migrate_window_state(&canonical, Some(&legacy)),
+            Some(state)
+        );
+        assert_eq!(read_window_state_file(&canonical), Some(state));
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn existing_adk_window_state_wins_over_legacy_file() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join("legacy/window-state.json");
+        let canonical = root
+            .path()
+            .join("workspace/naia-settings/window-state.json");
+        let adk_state = WindowState {
+            x: 100,
+            y: 200,
+            width: 1366,
+            height: 768,
+        };
+        let legacy_state = WindowState {
+            x: 10,
+            y: 20,
+            width: 800,
+            height: 600,
+        };
+
+        assert!(write_window_state_file(&canonical, &adk_state));
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, serde_json::to_vec(&legacy_state).unwrap()).unwrap();
+
+        assert_eq!(
+            load_or_migrate_window_state(&canonical, Some(&legacy)),
+            Some(adk_state)
+        );
+        assert_eq!(read_window_state_file(&canonical), Some(adk_state));
+        assert!(legacy.exists());
+    }
+
+    #[test]
+    fn settings_reads_treat_only_missing_files_as_empty() {
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing.json");
+        assert_eq!(read_naia_settings_file(&missing).unwrap(), "");
+
+        let directory = root.path().join("settings.json");
+        std::fs::create_dir(&directory).unwrap();
+        assert!(read_naia_settings_file(&directory).is_err());
     }
 
     #[test]
@@ -13702,7 +14783,14 @@ mod tests {
 
         // Free port: no kill.
         assert_eq!(
-            reclaim_bgm_port_with(|| None, |_| unreachable!(), |_| killed.set(killed.get() + 1)),
+            reclaim_bgm_port_with(
+                || None,
+                |_| unreachable!(),
+                |_| {
+                    killed.set(killed.get() + 1);
+                    true
+                },
+            ),
             BgmPortReclaim::Free
         );
         assert_eq!(killed.get(), 0);
@@ -13715,6 +14803,7 @@ mod tests {
                 |pid| {
                     assert_eq!(pid, 4242);
                     killed.set(killed.get() + 1);
+                    true
                 }
             ),
             BgmPortReclaim::Reclaimed(4242)
@@ -13726,7 +14815,10 @@ mod tests {
             reclaim_bgm_port_with(
                 || Some(77),
                 |_| Some("python -m http.server 18791".to_string()),
-                |_| killed.set(killed.get() + 100)
+                |_| {
+                    killed.set(killed.get() + 100);
+                    true
+                }
             ),
             BgmPortReclaim::ForeignHolder(77)
         );
@@ -13734,18 +14826,37 @@ mod tests {
 
         // Holder without a readable command line: fail closed, never killed.
         assert_eq!(
-            reclaim_bgm_port_with(|| Some(88), |_| None, |_| killed.set(killed.get() + 100)),
+            reclaim_bgm_port_with(
+                || Some(88),
+                |_| None,
+                |_| {
+                    killed.set(killed.get() + 100);
+                    true
+                },
+            ),
             BgmPortReclaim::UnknownHolder(88)
         );
         assert_eq!(killed.get(), 1);
+
+        // A sidecar lineage is still protected when the ownership proof says
+        // it belongs to another live Shell (or cannot be proven reclaimable).
+        assert_eq!(
+            reclaim_bgm_port_with(
+                || Some(99),
+                |_| Some("node bgm-sidecar/dist/bgm-server-bin.js".to_string()),
+                |_| false,
+            ),
+            BgmPortReclaim::ProtectedSidecar(99)
+        );
     }
 
-    /// FR-BGM.13 (#517) end-to-end on the real OS: a leftover node process whose
-    /// command line names bgm-server-bin.js holds a port; reclaim must terminate
-    /// it and release the port. A non-sidecar name must be left alone.
+    /// FR-BGM.13 (#517) end-to-end on the real OS: a node process whose command
+    /// line names bgm-server-bin.js is still protected when it has no durable
+    /// ownership record.  Command-line lineage alone cannot prove that the
+    /// listener belongs to this Shell; a non-sidecar name is protected too.
     #[cfg(windows)]
     #[test]
-    fn bgm_port_reclaim_terminates_real_stale_sidecar_listener() {
+    fn bgm_port_reclaim_leaves_unrecorded_sidecar_listener() {
         let node = which_node_for_test();
         let Some(node) = node else {
             eprintln!("node not found on PATH — skipping real reclaim test");
@@ -13756,7 +14867,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let listener_js = "require('http').createServer(()=>{}).listen(Number(process.argv[2]));setInterval(()=>{},1000);";
 
-        // Case 1: holder proves sidecar lineage by script name → reclaimed.
+        // Case 1: sidecar lineage without an ownership record → protected.
         let sidecar_script = dir.join("bgm-server-bin.js");
         std::fs::write(&sidecar_script, listener_js).unwrap();
         let port = free_local_port();
@@ -13771,8 +14882,8 @@ mod tests {
         );
         reclaim_bgm_port(port);
         assert!(
-            wait_for_port(port, false),
-            "reclaim did not release the port held by a sidecar-lineage process"
+            bgm_port_accepts_connection(port),
+            "reclaim killed an unrecorded sidecar port holder"
         );
         let _ = child.kill();
         let _ = child.wait();
@@ -14951,6 +16062,40 @@ mod tests {
         assert!(!debug_e2e_flags_enabled(None, Some("1")));
         assert!(debug_e2e_flags_enabled(Some("1"), Some("1")));
         assert!(debug_e2e_flags_enabled(Some("true"), Some("1")));
+    }
+
+    #[cfg(feature = "webdriver-e2e")]
+    #[test]
+    fn e2e_dev_url_accepts_only_http_loopback_urls() {
+        for raw in [
+            "http://127.0.0.1:1420",
+            "http://localhost:5173/app",
+            "http://[::1]:4173/",
+        ] {
+            assert!(valid_e2e_dev_url(raw).is_some(), "expected loopback URL: {raw}");
+        }
+        for raw in [
+            "https://127.0.0.1:1420",
+            "http://0.0.0.0:1420",
+            "http://127.0.0.1.evil.test:1420",
+            "http://attacker.example.test:1420",
+            "not a URL",
+        ] {
+            assert!(valid_e2e_dev_url(raw).is_none(), "accepted invalid URL: {raw}");
+        }
+    }
+
+    #[cfg(feature = "webdriver-e2e")]
+    #[test]
+    fn e2e_run_id_accepts_only_bounded_safe_identifier_suffixes() {
+        for raw in ["run-a", "a_b-2", "0123456789"] {
+            assert!(valid_e2e_run_id(raw), "expected valid E2E run ID: {raw}");
+        }
+        for raw in ["", "a.b", "a/b", "a b", "a\n"] {
+            assert!(!valid_e2e_run_id(raw), "accepted invalid E2E run ID: {raw:?}");
+        }
+        assert!(valid_e2e_run_id(&"a".repeat(64)));
+        assert!(!valid_e2e_run_id(&"a".repeat(65)));
     }
 
     #[test]
