@@ -36,7 +36,7 @@ ego-lite 가 말하는 "2.5배 빠름"은 에이전트가 도구를 한 번씩 �
 1. **작업 공간은 비로그인 격리 공간이다.** 업스트림 스킬의 "사용자 로그인 상태 상속"은 온프레미스·무간섭·격리와 양립하지 않는다. 로그인이 필요한 작업은 자격증명 사용 권한(FR-ENV-TOOL.8)을 가진 별도 작업으로 나중에 설계한다.
 2. **기본은 헤드리스이고, 헤드리스에서 사람 인계는 지원하지 않는다.** `handOffTaskSpace`·`takeOverTaskSpace`·`claimTaskSpace` 는 헤드리스 공간에서 원래 요청 id 를 가진 형식 있는 오류(`EGO_HANDOFF_UNSUPPORTED_HEADLESS`)로 거부한다. `agentDelegatedToUser` 와 `user` 소유 상태는 헤드리스에서 도달 불가능하다. 창이 있는 모드는 이번 범위 밖이다.
 3. **Chromium 의 장기 소유자는 셸 코어가 소유한 감독자 하나다.** heredoc 마다 뜨는 CLI 는 소켓 클라이언트다. 취소·정리·장부는 감독자가 든다.
-4. **진입점은 둘이고 권한 등급이 다르다.** 형식 있는 도구(`env_browser_*`)는 효과가 고정된 RPC 만 부르며 관측·워크스페이스 내부 변경 등급에서 돈다. 임의 자바스크립트 heredoc(`env_browser_script`)은 터미널 실행과 같은 등급으로 승인·샌드박스·경계를 적용하고, 승인 결과(grant)를 소켓 핸드셰이크로 감독자에 전달한다. 낮은 등급 도구가 임의 JS 로 승격되는 경로는 없다.
+4. **진입점은 둘이고 권한 등급이 다르다.** 형식 있는 도구(`env_browser_*`)는 효과가 고정된 RPC 만 부르며 관측·워크스페이스 내부 변경 등급에서 돈다. 임의 자바스크립트 heredoc(`env_browser_script`)은 터미널 실행의 바닥 등급(`workspace-write`)에 **RPC 단위 건별 승인**을 더해 적용하고(등급을 `credential` 로 올리면 자격증명 권한을 부여해야 해 비상속 원칙을 깬다), 승인 결과(grant)를 소켓 핸드셰이크로 감독자에 전달한다. 낮은 등급 도구가 임의 JS 로 승격되는 경로는 없다.
 5. **관문 순서를 지킨다.** UC(P01)·테스트 매핑(P02)·요구사항(P03)을 코드보다 먼저 쓴다(9절 S-1).
 6. **세 OS 모두 지원한다(루크 지시, 2026-09-09).** 리눅스·윈도우·macOS 에서 감독자·런처·어댑터가 같은 코드로 돌아야 한다. OS 의존 코드는 런처(브라우저 탐색·프로세스 확인)와 소켓 경로 함수 두 곳에만 둔다. 실측은 기기가 있는 OS 에서만 가능하므로, OS 별 게이트와 기능 플래그 기본값을 4.9 의 행렬로 분리한다.
 
@@ -80,7 +80,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 | 세션 | `Target.attachToTarget({flatten:true})` 응답 모양, `Page.enable` 뒤 Target/Page 이벤트 지속 전달 | 응답과 이벤트의 원래 순서 보존. 아웃바운드 이벤트는 연결이 소유한 타깃·세션으로 필터 |
 | 탭·공간 | `listTabs()` → `{tabs:[{targetId,url,title,active}]}`, `createTab` → `targetId`, `{taskSpaces:[...]}`, 숫자 `id`, `taskId`, `name`, ownership 문자열은 정확히 `agent`·`agentDelegatedToUser`·`user`, 메서드별 resolve/reject 규칙, `{error, error_code}` | 선택된 공간은 감독자 전역이 아니라 **연결별 상태**. 두 CLI 가 동시에 id 1 과 서로 다른 공간을 써도 섞이지 않는다 |
 | 스냅샷 | `{content, refs:[{backendNodeId, role, name}]}`, 사람 제어 중이면 `EGO_TASK_SPACE_USER_IN_CONTROL` | 헤드리스에서는 사람 제어 상태가 없으므로 해당 오류는 나오지 않는다(문서에 명시) |
-| 환경·경로 | Node 22 이상, `HOME`/`USERPROFILE`, `EGO_BROWSER_AGENT_WORKSPACE`, 런타임 위치 기준 `.env`, `<agentWorkspace>/agent_helpers.js` 동적 import, `nodejs --sdk-path <dist>` | 어댑터가 ADK 별 절대 경로를 spawn 시점 환경으로 주입(SDK import 뒤 주입은 늦다). 런처는 `nodejs [--sdk-path <dist>]` 를 받아 `node --import <preload.mjs> <dist>/index.js` 로 SDK 를 무수정 실행한다. preload 는 최상위 await 로 소켓 연결·핸드셰이크를 끝낸 뒤 `globalThis.ego` 를 세운다. 출력 통로는 `console.log` |
+| 환경·경로 | Node 22 이상, `HOME`/`USERPROFILE`, `EGO_BROWSER_AGENT_WORKSPACE`, 런타임 위치 기준 `.env`, `<agentWorkspace>/agent_helpers.js` 동적 import, `nodejs --sdk-path <dist>` | 어댑터가 ADK 별 절대 경로를 spawn 시점 환경으로 주입(SDK import 뒤 주입은 늦다). `.env` 는 **작업 공간 한 곳에만** 둔다. SDK 저장소 루트의 `.env` 는 모든 ADK 가 공유하므로 거기에 적으면 남의 작업 id·토큰이 샌다(S3a 실측). 토큰·작업 id 는 `.env` 에 적지 않는다. 런처는 `nodejs [--sdk-path <dist>]` 를 받아 `node --import <preload.mjs> <dist>/index.js` 로 SDK 를 무수정 실행한다. preload 는 최상위 await 로 소켓 연결·핸드셰이크를 끝낸 뒤 `globalThis.ego` 를 세운다. 출력 통로는 `console.log` |
 | 버전 | `getBrowserVersion()` 이 갱신 없음을 알려야 알림이 침묵 | 고정 문자열 |
 
 ### 4.2.1 런처 불변
@@ -141,6 +141,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 | `completeTaskSpace({keep:false})` | 닫음 | 도달 불가 | 도달 불가 |
 | `completeTaskSpace({keep:true})` | 유지 | 도달 불가 | 도달 불가 |
 
+- **안정 참조의 유효성**: Chromium 은 문서가 바뀌어도 `backendNodeId` 를 재사용하므로 옛 참조가 새 페이지의 엉뚱한 요소로 풀린다(S3a 실측). 참조를 쓸 때마다 현재 스냅샷의 refs 에 그 값이 있는지 먼저 확인하고, 없으면 `stale-ref` 형식 오류로 끝낸다.
 - **권한**은 호출자 선언을 믿지 않는다. 형식 있는 도구는 효과가 고정된 RPC(열기·이동·스냅샷·클릭·입력·평가·캡처·닫기)만 부르고, 각 RPC 의 등급은 서비스가 정한다(관측: 스냅샷·캡처, 워크스페이스 내부 변경: 이동·클릭·입력·평가). heredoc 은 터미널 실행과 같은 등급이며 승인 없이는 감독자가 핸드셰이크에서 거부한다. 공간 선택(`useTaskSpace`)은 브라우저를 바꾸지 않으므로 관측 등급이다. 승인 없는 연결은 원시 CDP 를 보낼 수 없고, 관측 RPC(스냅샷·캡처·탭 목록)는 감독자가 내부 CDP 연결로 대신 실행한다. 캡처 경로는 사용자 인자가 아니라 감독자가 `<ADK>/ego-host/evidence/` 아래로 정한다.
 
 ### 4.5 화면 캡처와 증거
