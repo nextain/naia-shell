@@ -16,7 +16,7 @@ import { MAX_FRAME_BYTES, createFrameDecoder, encodeFrame } from "./rpc-framing.
 import { SUPERVISOR_REQUEST_DEADLINE_MS, createCdpMux } from "./cdp-mux.mjs";
 import { createLedger } from "./ledger.mjs";
 import { createOperations } from "./operations.mjs";
-import { captureAxSnapshot, captureScreenshot } from "./ax-snapshot.mjs";
+import { captureAxSnapshot, captureScreenshot, writeSnapshotFile } from "./ax-snapshot.mjs";
 import { socketNeedsUnlink } from "./socket-path.mjs";
 
 /** 연결당 송신 큐 상한. 이벤트 폭주가 감독자 메모리를 먹지 못하게 한다. */
@@ -36,6 +36,8 @@ export const OBSERVE_RPCS = new Set([
   "listTaskSpaces",
   "useTaskSpace",
   "snapshot",
+  // 주소와 개정을 읽는 것도 관측이다(S3a). 어댑터의 증거 셋 중 `url`·`urlRevision` 이 여기서 온다.
+  "pageInfo",
   // 캡처는 관측이다(계약 4.4 "관측: 스냅샷·캡처"). 승인 없는 연결도 받을 수 있어야 하며,
   // 그래서 감독자 내부 CDP 로 실행한다 — 원시 CDP 로 구현하면 관측 연결이 막힌다.
   "screenshot",
@@ -201,6 +203,19 @@ export function createSupervisorServer({
     return connection;
   }
 
+  /** 이 연결이 고른 작업 공간. 없으면 형식 있는 오류다(벤더 런타임이 읽는 코드). */
+  function selectedSpaceOf(connection) {
+    const space =
+      connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
+    if (!space) {
+      throw hostError(
+        CODES.NO_TASK_SPACE,
+        "선택된 작업 공간이 없다. taskSpaces.useOrCreate(name) 을 먼저 부른다",
+      );
+    }
+    return space;
+  }
+
   /** 감독자가 만드는 탭에 공간의 격리 컨텍스트를 붙인다. 컨텍스트가 없는 장부(테스트)는 빈 객체. */
   function contextParams(space) {
     const browserContextId = activeLedger.browserContextOf(space);
@@ -218,22 +233,16 @@ export function createSupervisorServer({
       throw hostError(CODES.HANDOFF_HEADLESS, HEADLESS_DENIAL_MESSAGE);
     }
 
-    const selected = () => {
-      const space = connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
-      if (!space) {
-        throw hostError(
-          CODES.NO_TASK_SPACE,
-          "선택된 작업 공간이 없다. taskSpaces.useOrCreate(name) 을 먼저 부른다",
-        );
-      }
-      return space;
-    };
+    const selected = () => selectedSpaceOf(connection);
 
     switch (method) {
       case "getBrowserVersion":
         return { ...browserVersion };
       case "listTaskSpaces":
-        return { taskSpaces: activeLedger.list() };
+        // `taskSpaces` 는 벤더 런타임이 읽는 ABI 모양이고, `resources` 는 계약 4.4 의 공개 자원
+        // 모양이다(어댑터가 읽는다). 한 왕복에 둘 다 주는 편이 두 RPC 로 나누는 것보다 낫다 —
+        // 두 번 물으면 그 사이에 목록이 바뀌어 개정과 목록이 어긋난다.
+        return { taskSpaces: activeLedger.list(), resources: activeLedger.resources() };
       case "listTabs": {
         const space = selected();
         // 목록을 주기 전에 브라우저의 실제 타깃과 맞춘다. 장부만 읽으면 이동한 탭의 주소가
@@ -267,7 +276,7 @@ export function createSupervisorServer({
           activeLedger.claimTarget(connection, created.targetId);
         }
         connection.selectedSpaceId = space.id;
-        return activeLedger.shape(space);
+        return { ...activeLedger.shape(space), resource: activeLedger.resourceOf(space) };
       }
       case "createTab": {
         const space = selected();
@@ -298,6 +307,8 @@ export function createSupervisorServer({
       }
       case "snapshot":
         return snapshot(connection, params?.options ?? {});
+      case "pageInfo":
+        return pageInfo(connection);
       case "screenshot":
         return screenshot(connection, params ?? {});
       case "beginOperation": {
@@ -330,6 +341,29 @@ export function createSupervisorServer({
       default:
         throw hostError(CODES.METHOD_DENIED, `알 수 없는 RPC: ${method}`);
     }
+  }
+
+  /**
+   * 지금 보고 있는 탭의 주소와 개정 (계약 4.4, S3a).
+   *
+   * 어댑터가 `BrowserEvidence.url`·`urlRevision` 을 여기서 받는다. 주소를 세션에서 직접
+   * 읽지 않고 감독자를 지나게 하는 이유는 둘이다. 관측 등급 연결(grant 없음)도 주소를 알아야
+   * 하고, 개정은 **장부**가 세는 값이라 세션에서는 셀 수 없다.
+   */
+  async function pageInfo(connection) {
+    const space = selectedSpaceOf(connection);
+    await refreshTabs(space);
+    const targetId = space.activeTargetId ?? space.tabs.at(-1)?.targetId ?? null;
+    const tab = space.tabs.find((t) => t.targetId === targetId) ?? null;
+    return {
+      workspaceId: String(space.id),
+      revision: space.revision,
+      targetId,
+      url: tab?.url ?? "",
+      title: tab?.title ?? "",
+      urlRevision: tab?.urlRevision ?? 0,
+      tabs: activeLedger.tabsOf(space),
+    };
   }
 
   /** 장부의 탭을 브라우저의 실제 타깃과 맞춘다. 감독자 전용 통로로 한 번 묻는다. */
@@ -385,7 +419,18 @@ export function createSupervisorServer({
       targetId,
       options,
     });
-    return { content: result.content, refs: result.refs };
+    const shape = { content: result.content, refs: result.refs };
+    // 본문을 증거 파일로도 남긴다(계약 4.5, S3a). 벤더 런타임은 `path` 를 읽지 않는다 —
+    // 어댑터가 `BrowserEvidence.snapshotRef` 로 쓴다. adkDir 없는 조립(가짜 백엔드 테스트)은
+    // 남길 자리가 없으므로 모양만 돌려준다.
+    // `record:false` 는 증거를 남기지 않는 조회다(어댑터의 참조 살아 있음 검사). 조회마다
+    // 파일이 쌓이면 증거 디렉터리가 무엇이 실제 관측이었는지 말해 주지 못한다.
+    if (!adkDir || options?.record === false) return shape;
+    const operationId = connection.operationId;
+    const index = activeOperations.nextEvidenceIndex(operationId);
+    const written = writeSnapshotFile({ adkDir, operationId, index, content: result.content });
+    activeOperations.recordEvidence(operationId, written.path);
+    return { ...shape, path: written.path };
   }
 
   /**

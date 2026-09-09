@@ -38,6 +38,14 @@ export interface BrowserOperationPort {
   close(request: EnvOperationRequest, signal?: AbortSignal): Promise<void>;
 }
 
+/**
+ * 묶음 실행 (heredoc). 형식 RPC 와 **다른 포트**인 이유는 등급이 다르기 때문이다 (#582 4.4).
+ * 낮은 등급 도구가 이 포트에 닿는 길은 없다 — 서비스가 승인 없는 호출을 포트 앞에서 막는다.
+ */
+export interface BrowserScriptPort {
+  script(request: EnvOperationRequest, code: string, signal?: AbortSignal): Promise<BrowserEvaluation>;
+}
+
 /** 터미널 실행 요청. Herdr 가 만든 터미널을 참조할 뿐 직접 소유하지 않는다. */
 export interface TerminalOperationPort {
   exec(request: EnvOperationRequest, terminalId: string, command: StructuredCommand, signal?: AbortSignal): Promise<TerminalEvidence>;

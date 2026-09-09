@@ -171,11 +171,17 @@ export interface Termination {
   readonly state: OperationState;
   /** 이미 일어난 일. 취소·타임아웃이어도 남긴다. */
   readonly partialEffects: readonly string[];
+  /**
+   * 장부가 아는 작업이었는가 (#582 S0 리뷰 3번).
+   * 모르는 작업의 취소에 `cancelled` 만 돌려주면 "취소했다"와 "그런 작업이 없다"가 같은 말이
+   * 된다. 상태는 그대로 두고(기존 호출부 호환) 사실 한 칸을 더 싣는다.
+   */
+  readonly known: boolean;
 }
 
-export function terminate(cause: TerminationCause, partialEffects: readonly string[]): Termination {
+export function terminate(cause: TerminationCause, partialEffects: readonly string[], known = true): Termination {
   const state: OperationState = cause === "finished" ? "completed" : cause === "cancelled" ? "cancelled" : "failed";
-  return { state, partialEffects };
+  return { state, partialEffects, known };
 }
 
 // ── 브라우저 작업 공간 자원 (#582 4.4, FR-ENV-TOOL.10) ────────────────────────

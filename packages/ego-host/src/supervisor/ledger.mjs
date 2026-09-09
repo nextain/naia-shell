@@ -124,7 +124,12 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
         revision: space.revision,
         createdAt: space.createdAt,
         idempotencyKey: space.idempotencyKey,
-        tabs: space.tabs.map((tab) => ({ targetId: tab.targetId, url: tab.url, title: tab.title })),
+        tabs: space.tabs.map((tab) => ({
+          targetId: tab.targetId,
+          url: tab.url,
+          title: tab.title,
+          urlRevision: tab.urlRevision ?? 1,
+        })),
         activeTargetId: space.activeTargetId,
       })),
       targets: Object.fromEntries([...targetSpace.entries()]),
@@ -296,6 +301,10 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
     list() {
       return [...spaces.values()].map(shape);
     },
+    /** 계약 4.4 의 공개 자원 목록. 어댑터가 `BrowserWorkspace[]` 로 옮긴다. */
+    resources() {
+      return [...spaces.values()].map(resourceOf);
+    },
     get(id) {
       return spaces.get(Number(id)) ?? null;
     },
@@ -369,7 +378,9 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
     },
 
     addTab(space, tab) {
-      space.tabs.push({ targetId: tab.targetId, url: tab.url ?? "", title: tab.title ?? "" });
+      // 주소 개정(S3a). 탭의 주소가 바뀔 때마다 오른다 — 낡은 참조가 다른 페이지에 작용하지
+      // 못하게 하는 축이며, 어댑터의 `expectedRevision` 이 이 값을 본다(계약 4.4).
+      space.tabs.push({ targetId: tab.targetId, url: tab.url ?? "", title: tab.title ?? "", urlRevision: 1 });
       space.activeTargetId = tab.targetId;
       targetSpace.set(tab.targetId, space.id);
       bumpRevision(space);
@@ -425,6 +436,8 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
         const url = info.url ?? tab.url;
         const title = info.title ?? tab.title;
         if (url !== tab.url || title !== tab.title) {
+          // 주소가 바뀐 때만 개정을 올린다. 제목만 바뀐 것은 같은 페이지다.
+          if (url !== tab.url) tab.urlRevision = (tab.urlRevision ?? 1) + 1;
           tab.url = url;
           tab.title = title;
           updated += 1;
@@ -441,6 +454,7 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
         targetId: tab.targetId,
         title: tab.title || "",
         url: tab.url || "",
+        urlRevision: tab.urlRevision ?? 1,
         active: tab.targetId === space.activeTargetId,
         index,
       }));
@@ -495,7 +509,7 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
         return true;
       }
       if (!space.tabs.some((tab) => tab.targetId === targetId)) {
-        space.tabs.push({ targetId, url: url ?? "", title: title ?? "" });
+        space.tabs.push({ targetId, url: url ?? "", title: title ?? "", urlRevision: 1 });
         space.activeTargetId = targetId;
         space.revision += 1;
       }

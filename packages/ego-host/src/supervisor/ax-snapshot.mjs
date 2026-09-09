@@ -219,6 +219,26 @@ export async function captureAxSnapshot({ hostRequest, targetId, options = {} })
 }
 
 /**
+ * 접근성 스냅샷 본문을 증거 파일로 남긴다 (계약 4.5, S3a).
+ *
+ * 캡처와 같은 이름 규칙(`<operationId>-<n>`)을 쓰고 확장자만 다르다. 어댑터가
+ * `BrowserEvidence.snapshotRef` 로 이 경로를 돌려주므로, 증거가 대화 기록 안의 휘발성
+ * 문자열이 아니라 **나중에 다시 열어 볼 수 있는 파일**이 된다.
+ *
+ * @returns {{path:string, bytes:number}}
+ */
+export function writeSnapshotFile({ adkDir, operationId, index = 1, content = "" }) {
+  if (!adkDir) throw hostError(CODES.USAGE, "스냅샷 증거 경로에 adkDir 이 필요하다");
+  const dir = evidenceDir(adkDir);
+  mkdirSync(dir, { recursive: true });
+  const safeOperation = String(operationId ?? "unknown").replace(/[^A-Za-z0-9._-]/g, "_");
+  const path = join(dir, `${safeOperation}-${index}.snapshot.txt`);
+  const bytes = Buffer.from(content, "utf8");
+  writeFileSync(path, bytes, { mode: 0o600 });
+  return { path, bytes: bytes.length };
+}
+
+/**
  * 화면 캡처 하나. **경로는 감독자가 정한다** — 사용자 인자를 받지 않는다(계약 4.4 마지막 문장).
  *
  * @returns {Promise<{path:string, bytes:number}>}

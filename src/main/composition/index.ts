@@ -188,3 +188,107 @@ export { EnvironmentSession, PERMITTED_INTENTS, WATCH_TURN_BUDGET, type ActOutco
 export { ALLOWED_METHODS, type DispatchGrants, type DispatchOutcome } from "../app/control/environment-dispatch.js";
 export { surfaceRef, type EnvironmentIntent, type EnvironmentReport, type SurfaceReport } from "../domain/environment-intent.js";
 export type { EnvironmentCommandPort } from "../ports/environment-dispatch.js";
+
+// ── #582 환경 도구 브라우저 (실배선) ──
+// 감독자 어댑터는 어디에서 조립되는지가 계약이다. 여기 한 곳에서만 만든다 — 셸이 자기 자리에서
+// `new EgoBrowserEnvironment` 를 부르기 시작하면 기능 플래그를 지나지 않는 두 번째 길이 생긴다.
+import { EnvironmentToolService } from "../app/control/env-tool.js";
+import {
+  createEgoBrowserEnvironment,
+  unsupportedBrowserPorts,
+  type EgoBrowserEnvironment,
+  type EgoHostApi,
+  type EgoPlatform,
+} from "../adapters/ego-browser-env.js";
+import type { BrowserOperationPort, BrowserScriptPort, BrowserWorkspacePort, CancellationPort, TerminalOperationPort } from "../ports/env-tool.js";
+import { ALL_TIERS, type CapabilityTier } from "../domain/capability.js";
+import { EnvOperationFailure } from "../domain/env-tool.js";
+
+/**
+ * 기능 플래그 (계약 4.9). 리눅스는 실측을 통과했으므로 기본이 켬이고, 윈도우·macOS 는
+ * 실측 게이트를 통과하기 전이라 기본이 끔이다. 값이 있으면 사람이 정한 값이 이긴다.
+ */
+export function egoHostEnabled(platform: EgoPlatform, flag?: string | boolean): boolean {
+  if (typeof flag === "boolean") return flag;
+  if (typeof flag === "string" && flag !== "") {
+    const value = flag.trim().toLowerCase();
+    if (["1", "true", "on", "yes"].includes(value)) return true;
+    if (["0", "false", "off", "no"].includes(value)) return false;
+  }
+  return platform === "linux";
+}
+
+export interface EnvironmentToolLiveDeps {
+  /** `<ADK>` 루트. 감독자의 lease·프로필·소켓·증거가 전부 이 아래다. */
+  readonly adkDir: string;
+  readonly platform?: EgoPlatform;
+  /** 상대 ADK 경로를 풀 자리. 셸은 절대 경로를 주는 편이 낫다. */
+  readonly cwd?: string;
+  readonly home?: string;
+  readonly baseEnv?: Readonly<Record<string, string>>;
+  readonly executable?: string;
+  readonly runtimeDir?: string;
+  /** `NAIA_EGO_HOST`. 셸이 환경에서 읽어 그대로 넘긴다. */
+  readonly egoHostFlag?: string | boolean;
+  readonly grantedTiers?: readonly CapabilityTier[];
+  /** Herdr 쪽 터미널 포트. 없으면 터미널 실행은 형식 있는 오류로 끝난다. */
+  readonly terminal?: TerminalOperationPort;
+  readonly loadApi?: () => Promise<EgoHostApi>;
+}
+
+export interface EnvironmentToolWiring {
+  readonly service: EnvironmentToolService;
+  /** 플래그가 꺼졌으면 null. 셸 종료 경로가 `stop()` 을 부를 대상이 없다는 뜻이다. */
+  readonly environment: EgoBrowserEnvironment | null;
+  readonly enabled: boolean;
+}
+
+const NOT_WIRED_TERMINAL: TerminalOperationPort = {
+  async exec() {
+    throw new EnvOperationFailure("method-denied", "이 조립에는 터미널 포트가 없다");
+  },
+};
+
+/**
+ * #499·#582 환경 도구 실배선. 플래그가 꺼진 OS 에서는 어댑터 대신 **형식 있는 미지원** 포트를
+ * 꽂는다 — 조용히 성공하는 대역을 꽂으면 미검증 OS 에서 "브라우저가 됐다"는 거짓 증거가 나온다.
+ */
+export function makeEnvironmentToolService(deps: EnvironmentToolLiveDeps): EnvironmentToolWiring {
+  const platform = deps.platform ?? "linux";
+  const enabled = egoHostEnabled(platform, deps.egoHostFlag);
+  const terminal = deps.terminal ?? NOT_WIRED_TERMINAL;
+  const tiers = deps.grantedTiers ?? ALL_TIERS;
+  if (!enabled) {
+    const denied = unsupportedBrowserPorts(
+      `에이전트 브라우저 호스트는 ${platform} 에서 아직 켜지지 않았다(#582 계약 4.9 OS 게이트).`,
+    );
+    return {
+      service: new EnvironmentToolService(denied, terminal, denied, tiers, denied, denied),
+      environment: null,
+      enabled: false,
+    };
+  }
+  const environment = createEgoBrowserEnvironment({
+    adkDir: deps.adkDir,
+    platform,
+    ...(deps.cwd !== undefined ? { cwd: deps.cwd } : {}),
+    ...(deps.home !== undefined ? { home: deps.home } : {}),
+    ...(deps.baseEnv !== undefined ? { baseEnv: deps.baseEnv } : {}),
+    ...(deps.executable !== undefined ? { executable: deps.executable } : {}),
+    ...(deps.runtimeDir !== undefined ? { runtimeDir: deps.runtimeDir } : {}),
+    ...(deps.loadApi !== undefined ? { loadApi: deps.loadApi } : {}),
+  });
+  const browser: BrowserOperationPort = environment.operationPort();
+  const workspaces: BrowserWorkspacePort = environment.workspacePort();
+  const scripts: BrowserScriptPort = environment;
+  const cancellation: CancellationPort = environment;
+  return {
+    service: new EnvironmentToolService(browser, terminal, cancellation, tiers, workspaces, scripts),
+    environment,
+    enabled: true,
+  };
+}
+
+export { EnvironmentToolService } from "../app/control/env-tool.js";
+export { createEgoBrowserEnvironment, unsupportedBrowserPorts } from "../adapters/ego-browser-env.js";
+export type { EgoBrowserEnvOptions, EgoPlatform, EgoSwitchReport } from "../adapters/ego-browser-env.js";

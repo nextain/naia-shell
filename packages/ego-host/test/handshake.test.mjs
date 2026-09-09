@@ -72,7 +72,10 @@ test("grant 없는 연결은 관측 RPC 만 되고 변경 RPC 는 거부된다",
   assert.equal(client.greeting.observeOnly, true);
 
   const observed = await client.call("listTaskSpaces");
-  assert.deepEqual(observed, { taskSpaces: [] }, "관측 RPC 가 막혔다");
+  // 목록은 두 모양을 함께 준다 — 벤더가 읽는 `taskSpaces` 와 어댑터가 읽는 `resources`(S3a).
+  assert.equal(observed.error, undefined, "관측 RPC 가 막혔다");
+  assert.deepEqual(observed.taskSpaces, []);
+  assert.deepEqual(observed.resources, []);
 
   const denied = await client.call("createTaskSpace", { name: "몰래" });
   assert.equal(denied.error_code, CODES.GRANT_REQUIRED);

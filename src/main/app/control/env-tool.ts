@@ -4,6 +4,7 @@
 import type {
   BrowserOperationPort,
   BrowserScript,
+  BrowserScriptPort,
   BrowserWorkspacePort,
   CancellationPort,
   TerminalOperationPort,
@@ -58,7 +59,12 @@ export type BrowserRpc =
   | "fill"
   | "evaluate"
   | "screenshot"
-  | "close";
+  | "close"
+  /**
+   * 묶음 실행(heredoc). 목록에 **있는** 이유는 등급과 승인을 표가 정해야 하기 때문이다 —
+   * 표 밖에 두면 호출자 선언이 등급이 되고, 그것이 4.4 가 막으려던 바로 그 길이다.
+   */
+  | "script";
 
 /**
  * 등급 고정 표. 호출자가 선언한 등급은 판정에 쓰지 않는다 —
@@ -77,7 +83,21 @@ export const BROWSER_RPC_TIERS: Readonly<Record<BrowserRpc, CapabilityTier>> = {
   fill: "workspace-write",
   evaluate: "workspace-write",
   close: "workspace-write",
+  // heredoc = 터미널 실행과 같은 등급이다(계약 3절 4번). 그 등급은 `TERMINAL_EXEC_TIER_FLOOR`
+  // 와 같은 `workspace-write` 이며, 승인은 등급이 아니라 아래 목록이 따로 요구한다 —
+  // `requiresApproval` 이 참인 등급(credential 이상)으로 올려 적으면 heredoc 하나 때문에
+  // 자격증명 등급이 부여돼야 하고, 그것은 "권한은 상속되지 않는다"를 정면으로 어긴다.
+  script: "workspace-write",
 };
+
+/**
+ * 등급과 별개로 **건별 승인**이 반드시 있어야 하는 RPC (계약 3절 4번, FR-ENV-TOOL.14).
+ *
+ * 터미널 실행은 무엇을 하는지 명령 하나하나로 드러나지만 heredoc 은 임의 자바스크립트다.
+ * 같은 등급에서 돌되 승인 없이는 시작되지 않는다. 여기서 막지 않으면 감독자 핸드셰이크가
+ * 마지막 방어선이 되는데, 그때는 이미 자식 프로세스가 떠 있다.
+ */
+export const BROWSER_RPCS_REQUIRING_APPROVAL: ReadonlySet<BrowserRpc> = new Set<BrowserRpc>(["script"]);
 
 /**
  * 터미널 실행의 등급 바닥 (#582 S0d, FR-ENV-TOOL.14).
@@ -131,6 +151,8 @@ export class EnvironmentToolService {
     private readonly grantedTiers: readonly CapabilityTier[],
     /** 작업 공간 포트. 아직 배선되지 않은 조립에서는 공간 RPC 가 형식 있는 오류로 끝난다. */
     private readonly workspaces?: BrowserWorkspacePort,
+    /** 묶음 실행 포트. 없으면 `script` 는 형식 있는 오류로 끝난다 — 조용히 성공하지 않는다. */
+    private readonly scripts?: BrowserScriptPort,
   ) {}
 
   stateOf(operationId: string): OperationState | undefined {
@@ -203,6 +225,22 @@ export class EnvironmentToolService {
     });
   }
 
+  /**
+   * 묶음 실행 (UC-ENV-TOOL-SCRIPT). 승인이 없으면 포트를 부르지 않는다 —
+   * 거부는 자식 프로세스가 뜨기 **전에** 일어나야 한다.
+   */
+  async script(request: EnvOperationRequest, code: string, page?: PageObservation): Promise<EnvOutcome> {
+    return this.runBrowser(request, "script", page, async (fixed, signal) => {
+      const evaluation = await this.requireScripts().script(fixed, code, signal);
+      return { evidence: evaluation.evidence, notes: [], result: evaluation.result };
+    });
+  }
+
+  private requireScripts(): BrowserScriptPort {
+    if (!this.scripts) throw new EnvOperationFailure("method-denied", "이 조립에는 묶음 실행 포트가 없다");
+    return this.scripts;
+  }
+
   async createWorkspace(request: EnvOperationRequest, page?: PageObservation): Promise<ResourceOutcome<BrowserWorkspace>> {
     return this.runResource(request, "createWorkspace", page, async (fixed, signal) => this.requireWorkspaces().create(fixed, signal));
   }
@@ -249,7 +287,8 @@ export class EnvironmentToolService {
     const record = this.operations.get(operationId);
     if (!record || !canTransition(record.state, "cancelled")) {
       if (record) record.lateTerminations.push(`cancelled 늦게 도착 — ${record.state} 유지`);
-      return terminate("cancelled", []);
+      // 모르는 작업과 이미 끝난 작업을 구별해 돌려준다(#582 S0 리뷰 3번).
+      return terminate("cancelled", [], record !== undefined);
     }
     this.settle(operationId, "cancelled", "cancelled");
     record.controller.abort(new EnvOperationFailure("cancelled", `작업 ${operationId} 취소`));
@@ -260,7 +299,7 @@ export class EnvironmentToolService {
       record.lateTerminations.push(`취소 포트 실패: ${describe(e)}`);
     }
     record.partialEffects.push(...partial);
-    return terminate("cancelled", partial);
+    return terminate("cancelled", partial, true);
   }
 
   private async run(
@@ -298,6 +337,8 @@ export class EnvironmentToolService {
     body: (fixed: EnvOperationRequest, signal: AbortSignal) => Promise<{ evidence: BrowserEvidence; notes: readonly string[]; result?: string }>,
   ): Promise<EnvOutcome> {
     const fixed = withFixedTier(request, rpc);
+    const missing = approvalRejectionFor(rpc, fixed);
+    if (missing) return { ok: false, rejections: [missing] };
     return this.run(fixed, page, async (signal) => {
       const out = await body(fixed, signal);
       return { evidence: { kind: "browser", value: out.evidence } as Evidence, notes: out.notes, result: out.result };
@@ -448,6 +489,13 @@ function terminalAlready(record: OperationRecord): EnvRejection {
  */
 export function requiredTierFor(rpc: BrowserRpc): CapabilityTier {
   return BROWSER_RPC_TIERS[rpc];
+}
+
+/** 승인이 필요한 RPC 인데 승인 참조가 없으면 형식 있는 거부 하나. 아니면 undefined. */
+function approvalRejectionFor(rpc: BrowserRpc, request: EnvOperationRequest): EnvRejection | undefined {
+  if (!BROWSER_RPCS_REQUIRING_APPROVAL.has(rpc)) return undefined;
+  if (request.approvalRef) return undefined;
+  return { code: "approval-missing", detail: `${rpc} 는 터미널 실행과 같은 등급이며 건별 승인이 필요하다` };
 }
 
 function withFixedTier(request: EnvOperationRequest, rpc: BrowserRpc): EnvOperationRequest {

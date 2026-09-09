@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import { admitEnvOperation } from "../main/domain/env-tool.js";
 import { ALL_TIERS, permits, requiresApproval, requiresHumanDecision, type CapabilityTier } from "../main/domain/capability.js";
 import {
+  BROWSER_RPCS_REQUIRING_APPROVAL,
   BROWSER_RPC_TIERS,
   EnvironmentToolService,
   TERMINAL_EXEC_TIER_FLOOR,
@@ -98,7 +99,7 @@ function service(granted: CapabilityTier[]) {
 }
 
 describe("등급 고정 RPC 표 (FR-ENV-TOOL.14) [UC-ENV-TOOL-SCRIPT]", () => {
-  it("표가 부를 수 있는 RPC 열한 개를 남김없이 정한다", () => {
+  it("표가 부를 수 있는 RPC 열두 개를 남김없이 정한다", () => {
     expect(Object.keys(BROWSER_RPC_TIERS).sort()).toEqual([
       "click",
       "close",
@@ -110,8 +111,21 @@ describe("등급 고정 RPC 표 (FR-ENV-TOOL.14) [UC-ENV-TOOL-SCRIPT]", () => {
       "navigate",
       "open",
       "screenshot",
+      "script",
       "snapshot",
     ]);
+  });
+
+  it("묶음 실행은 터미널 실행과 같은 등급이고 승인이 따로 필요하다 (계약 3절 4번)", () => {
+    // 등급을 `credential` 이상으로 올려 적으면 heredoc 하나 때문에 자격증명 등급이 부여돼야
+    // 하므로 그 길은 쓰지 않는다. 등급은 터미널 바닥과 같게 두고 승인만 따로 요구한다.
+    expect(requiredTierFor("script")).toBe(TERMINAL_EXEC_TIER_FLOOR);
+    expect(requiresApproval(requiredTierFor("script")), "등급만으로는 승인이 안 붙는다").toBe(false);
+    expect(BROWSER_RPCS_REQUIRING_APPROVAL.has("script"), "승인 목록에 없다").toBe(true);
+    // 반증: 나머지 RPC 는 승인 목록에 없다 — 목록이 전부를 삼키면 승인이 뜻을 잃는다.
+    for (const rpc of Object.keys(BROWSER_RPC_TIERS) as BrowserRpc[]) {
+      if (rpc !== "script") expect(BROWSER_RPCS_REQUIRING_APPROVAL.has(rpc)).toBe(false);
+    }
   });
 
   it.each(["snapshot", "screenshot", "listWorkspaces"] as const)("%s 는 관측 등급이다", (rpc) => {
