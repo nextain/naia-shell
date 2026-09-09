@@ -384,6 +384,57 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
       releaseTarget(targetId);
       bumpRevision(space);
     },
+    /**
+     * 활성 탭을 바꾼다. `Target.activateTarget` 이 성공한 뒤 부른다.
+     *
+     * 헤드리스에는 사람이 보는 "앞에 있는 창"이 없으므로, **활성 탭의 정본은 장부**다.
+     * 이걸 안 적으면 `Target.activateTarget` 이 성공해도 `listTabs` 의 `active` 가 안 바뀌고,
+     * 벤더 `currentTab()` 이 옛 탭을 계속 준다(업스트림 e2e 의 탭 케이스가 잡았다).
+     */
+    setActiveTarget(targetId) {
+      const space = this.workspaceOfTarget(targetId);
+      if (!space) return false;
+      if (space.activeTargetId === targetId) return true;
+      space.activeTargetId = targetId;
+      space.revision += 1;
+      persist();
+      return true;
+    },
+
+    /**
+     * 브라우저의 실제 타깃 목록과 장부의 탭을 맞춘다.
+     *
+     * 장부가 탭의 **주소를 만든 시점 그대로** 들고 있으면 두 가지가 깨진다. 벤더
+     * `openOrReuseTab` 은 목록의 url 로 재사용할 탭을 고르므로 이동한 탭을 못 찾아 매번 새 탭을
+     * 열고, 페이지가 스스로 닫은 탭(`window.close`)은 목록에 유령으로 남는다. 둘 다 업스트림
+     * e2e 케이스가 실제로 잡아냈다(navigation helpers, workflow multi-page navigation).
+     *
+     * @param {object} space
+     * @param {Map<string, {url?:string, title?:string}>} live `Target.getTargets` 의 페이지 타깃
+     */
+    syncTabs(space, live) {
+      if (!space) return { updated: 0, dropped: 0 };
+      let updated = 0;
+      const gone = [];
+      for (const tab of space.tabs) {
+        const info = live.get(tab.targetId);
+        if (!info) {
+          gone.push(tab.targetId);
+          continue;
+        }
+        const url = info.url ?? tab.url;
+        const title = info.title ?? tab.title;
+        if (url !== tab.url || title !== tab.title) {
+          tab.url = url;
+          tab.title = title;
+          updated += 1;
+        }
+      }
+      for (const targetId of gone) this.forgetTarget(targetId);
+      if (updated > 0 || gone.length > 0) persist();
+      return { updated, dropped: gone.length };
+    },
+
     /** 벤더 nav.ts:112-133 이 읽는 모양. active 가 하나도 없으면 마지막 탭을 활성으로 본다. */
     tabsOf(space) {
       const tabs = space.tabs.map((tab, index) => ({
@@ -452,6 +503,21 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
       return true;
     },
     releaseTarget,
+    /**
+     * 타깃이 브라우저에서 사라졌다. 라우팅·lease 뿐 아니라 **탭 목록에서도** 뺀다.
+     * S2d·S2e 까지는 `releaseTarget` 만 불러서, 원시 CDP `Target.closeTarget` 으로 닫은 탭이
+     * `listTabs` 에 유령으로 남았다. 벤더 `closeTab` 은 목록에서 사라질 때까지 기다리므로
+     * 그 상태에서 **영원히 기다린다**(헬퍼 행렬 첫 측정에서 실제로 걸렸다).
+     */
+    forgetTarget(targetId) {
+      const space = this.workspaceOfTarget(targetId);
+      if (space) {
+        this.removeTab(space, targetId);
+        return true;
+      }
+      releaseTarget(targetId);
+      return false;
+    },
 
     // ── 타깃 lease (계약 4.3.1) ────────────────────────────────────────────
     /**

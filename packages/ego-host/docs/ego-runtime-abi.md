@@ -10,10 +10,15 @@
 호스트(감독자)는 벤더 런타임을 **한 글자도 고치지 않고** 돌린다. 따라서 아래는
 협상 대상이 아니라 우리가 맞춰야 하는 계약이다.
 
-각 행 끝의 **테스트**는 그 행을 실제로 밟는 테스트 파일과 이름이다(S2a 에서 붙였다).
-`**S2b**`·`**S2c**` 처럼 슬라이스가 적힌 행은 아직 테스트가 없고 그 슬라이스가 든다.
-`**헤드리스 도달 불가**` 는 우리 정책(계약 4.4)에서 그 상태가 생기지 않는다는 뜻이며,
-테스트는 그 자리에 오는 거부를 대신 확인한다.
+각 행 끝의 **테스트**는 그 행을 실제로 밟는 테스트 파일과 이름이다(S2a 에서 붙이고 S2f 에서
+남은 행을 채웠다). 남아 있는 `**S3a**` 는 어댑터가 들 행이고, `**범위 밖**`·`**문서 사실**` 은
+시험할 대상이 아니라는 뜻이다. `**헤드리스 도달 불가**` 는 우리 정책(계약 4.4)에서 그 상태가
+생기지 않는다는 뜻이며, 테스트는 그 자리에 오는 거부를 대신 확인한다.
+
+S2f 부터 적합성은 두 겹이다. **가짜 CDP 백엔드**로 전송 계약을 고정하고(우리가 쓴 대로 답하는
+백엔드라 우리 가정이 틀렸다는 것은 알려 주지 않는다), 같은 행을 **실 감독자 + 실 Chromium +
+런처로 실행한 벤더 런타임**으로 다시 밟는다. 그 위에 업스트림 실브라우저 e2e 케이스를
+`scripts/run-upstream-e2e.mjs` 가 지원 묶음과 형식 있는 거부 묶음으로 나눠 돌린다.
 
 ---
 
@@ -35,8 +40,8 @@
 | `useTaskSpace(numericId)` | `src/helpers.ts:249` — 테스트: test/conformance.test.mjs "ABI 5: 선택 공간은 연결별이라 두 CLI 가 서로 다른 공간에서 일한다" |
 | `createTaskSpace(name)` | `src/helpers.ts:177` — 테스트: test/conformance.test.mjs "ABI 5: listTaskSpaces 는 {taskSpaces} 와 숫자 id, ownership 'agent' 를 준다" |
 | `claimTaskSpace(numericId, name)` | `src/helpers.ts:236` — 테스트: test/conformance.test.mjs "ABI 6: 헤드리스 인계·회수·claim 은 EGO_HANDOFF_UNSUPPORTED_HEADLESS 와 설명으로 거부된다" |
-| `closeTaskSpace()` | `src/helpers.ts:314` — 테스트: **S2c** — 공간 닫기의 실제 컨텍스트 정리는 장부 슬라이스 |
-| `completeTaskSpace()` | `src/helpers.ts:304` — 테스트: **S2c** — keep:true 유지 의미는 장부 슬라이스 |
+| `closeTaskSpace()` | `src/helpers.ts:314` — 테스트: test/conformance.test.mjs "ABI 5 실브라우저: completeTaskSpace{keep:true} 는 유지하고 closeTaskSpace 는 컨텍스트까지 닫는다" |
+| `completeTaskSpace()` | `src/helpers.ts:304` — 테스트: test/conformance.test.mjs "ABI 5 실브라우저: completeTaskSpace{keep:true} 는 유지하고 closeTaskSpace 는 컨텍스트까지 닫는다" |
 | `handOffTaskSpace()` | `src/helpers.ts:338` — 테스트: test/conformance.test.mjs "ABI 6: 헤드리스 인계·회수·claim 은 EGO_HANDOFF_UNSUPPORTED_HEADLESS 와 설명으로 거부된다" |
 | `takeOverTaskSpace()` | `src/helpers.ts:353` — 테스트: test/conformance.test.mjs "ABI 6: 헤드리스 인계·회수·claim 은 EGO_HANDOFF_UNSUPPORTED_HEADLESS 와 설명으로 거부된다" |
 
@@ -95,7 +100,7 @@
 | `Page.enable` **한 번 뒤에는 이벤트가 계속 와야 한다** — 세션당 한 번만 보내고 다시 보내지 않는다 | `pageEnabledSessions` `src/browser-runtime.ts:23`, `:206`, `:211` — 테스트: test/conformance.test.mjs "ABI 3: attachToTarget flatten 뒤 Page.enable 은 세션당 한 번이고 이벤트가 계속 온다" |
 | 세션 캐시 수명 2초(`SESSION_TTL_MS`). 2초마다 `listTabs()` 가 다시 온다 | `src/browser-runtime.ts:5`, `:108-110` — 테스트: test/conformance.test.mjs "ABI 4: listTabs 는 {tabs} 를 주고 항목이 {targetId,title,url,active} 다" |
 | `Target.detachedFromTarget` / `Target.targetDestroyed` 를 받으면 세션을 버린다 | `src/browser-runtime.ts:252-265` — 테스트: test/rpc-transport.test.mjs "중첩 params.sessionId 는 Target.attachedToTarget 에서만 세션으로 해석된다" |
-| `Page.javascriptDialogOpening` / `...Closed` 로 대기 중 대화상자를 추적한다 | `src/browser-runtime.ts:266-276` — 테스트: **S2e** — 대화상자 추적은 작업·취소 슬라이스 |
+| `Page.javascriptDialogOpening` / `...Closed` 로 대기 중 대화상자를 추적한다 | `src/browser-runtime.ts:266-276` — 테스트: test/conformance.test.mjs "ABI 3 실브라우저: 대기 중 대화상자를 pageInfo 가 알리고 handleJavaScriptDialog 가 푼다" |
 
 **호스트가 지킬 것**: flatten 세션이므로 이벤트 JSON 에 `sessionId` 필드를 그대로 실어야
 한다(`src/browser-runtime.ts:280`, `:256`, `:267` 이 `data.sessionId` 를 읽는다).
@@ -113,7 +118,7 @@
 | `createTab(url)` → `{targetId}` 를 반환한다. 없으면 `newTab returned no targetId` 로 던진다 | `src/driver/nav.ts:169-173` — 테스트: test/conformance.test.mjs "ABI 4: createTab 은 targetId 를 주고 새 탭이 목록에 들어온다" |
 | 래퍼가 `value?.targetId \|\| value?.result?.targetId` 를 읽어 preferred target 으로 잡는다 | `src/index.ts:311-312` — 테스트: test/conformance.test.mjs "ABI 4: createTab 은 targetId 를 주고 새 탭이 목록에 들어온다" |
 | `listTabs()` 가 `{error}` 를 담아 resolve 하면 오류로 승격된다 | `src/driver/nav.ts:116`, `src/ego-errors.ts:162-172` — 테스트: test/handshake.test.mjs "공간을 고르지 않은 연결의 listTabs 는 형식 있는 오류다" |
-| 탭 전환·닫기는 CDP `Target.activateTarget` / `Target.closeTarget` 로 나간다 | `src/driver/nav.ts:157`, `:224` — 테스트: **S2d** — Target 장부 통과 행렬 |
+| 탭 전환·닫기는 CDP `Target.activateTarget` / `Target.closeTarget` 로 나간다 | `src/driver/nav.ts:157`, `:224` — 테스트: test/conformance.test.mjs "ABI 4 실브라우저: 탭 전환·닫기가 Target 장부를 지나고 목록이 실제와 맞는다". **헤드리스에는 '앞에 있는 창'이 없으므로 활성 탭의 정본은 장부다** — `Target.activateTarget` 응답에서 장부의 활성 탭을 바꾼다. `listTabs` 는 줄 때마다 `Target.getTargets` 로 주소·생존을 맞춘다(그러지 않으면 이동한 탭을 `openOrReuseTab` 이 못 찾고 스스로 닫힌 탭이 유령으로 남는다) |
 
 ## 5. 작업 공간 — `{taskSpaces}` 모양과 ownership 문자열
 
@@ -138,7 +143,7 @@
 | `useOrCreateTaskSpace` | 선택만 한다(claim 안 함) → 이후 조작에서 `EGO_TASK_SPACE_USER_IN_CONTROL` 이 드러난다 | `src/helpers.ts:205-211` — 테스트: test/conformance.test.mjs "ABI 5: listTaskSpaces 는 {taskSpaces} 와 숫자 id, ownership 'agent' 를 준다" |
 | `handOffTaskSpace` | `{done:false, skipped:"user-owned"}` 로 **resolve** 한다 | `src/helpers.ts:333-335` — 테스트: test/conformance.test.mjs "ABI 6: 헤드리스 인계·회수·claim 은 EGO_HANDOFF_UNSUPPORTED_HEADLESS 와 설명으로 거부된다" |
 | `completeTaskSpace {keep:true}` | `{done:false, skipped:"user-owned"}` 로 resolve | `src/helpers.ts:297-299` — 테스트: **헤드리스 도달 불가** — user 소유 상태가 없다 |
-| `completeTaskSpace {keep:false}` | claim 한 뒤 닫는다 | `src/helpers.ts:306-314` — 테스트: **S2c** — 공간 닫기 |
+| `completeTaskSpace {keep:false}` | claim 한 뒤 닫는다 | `src/helpers.ts:306-314` — 테스트: test/conformance.test.mjs "ABI 5 실브라우저: completeTaskSpace{keep:true} 는 유지하고 closeTaskSpace 는 컨텍스트까지 닫는다" |
 | `takeOverTaskSpace` / `waitForAgentControl` | 소유권 검사 없이 그대로 실행 | `src/helpers.ts:347-354`, `:384-409` — 테스트: test/conformance.test.mjs "ABI 6: 헤드리스 인계·회수·claim 은 EGO_HANDOFF_UNSUPPORTED_HEADLESS 와 설명으로 거부된다" |
 | 성공한 `handOffTaskSpace` | `{done:true}` | `src/helpers.ts:339` — 테스트: **헤드리스 도달 불가** — 인계 성공 경로가 없다 |
 
@@ -187,7 +192,7 @@
 | `REPO_ROOT` 는 **모듈 파일의 상위 디렉터리**다. 번들 bin 에서는 `dist/`, 소스에서는 `package/ego-browser/` | `src/env.ts:5-6` | 경로 가정을 bin 위치에 걸지 않는다 — 테스트: test/vendor-install.test.mjs "(b) 임의 디렉터리에서 npm ci + build + test 가 0 으로 끝난다" |
 | `.env` 를 두 곳에서 읽는다: `<REPO_ROOT>/.env`, `<agentWorkspace>/.env` | `src/env.ts:46-49` | 우리 작업 공간에 `.env` 를 두면 읽힌다. 이미 설정된 변수는 덮어쓰지 않는다(`src/env.ts:40-42`) — 테스트: **S3a** — 작업 공간 .env 배치는 어댑터 몫 |
 | `loadEnv()` 는 **`state.ts` 모듈 로드 시점에 즉시** 실행된다 | `src/state.ts:6` | 환경 변수는 프로세스 spawn 시점에 이미 자리잡아야 한다. 런타임 import 이후 주입은 늦다 — 테스트: test/conformance.test.mjs "ABI 8: EGO_BROWSER_AGENT_WORKSPACE 의 agent_helpers.js 가 spawn 시점 환경으로 잡힌다" |
-| `EGO_BROWSER_NAME` 이 인스턴스 이름(기본 `"default"`) | `src/state.ts:8` | 작업 공간별 분리에 쓸 수 있다 — 테스트: **S2c** — 인스턴스 이름 분리는 장부 슬라이스 |
+| `EGO_BROWSER_NAME` 이 인스턴스 이름(기본 `"default"`) | `src/state.ts:8` | **작업 공간을 나누지 않는다.** 장부는 감독자 하나가 들고 공간은 격리 브라우저 컨텍스트로 나뉜다(계약 4.3.1). 이름이 달라도 같은 공간 목록을 본다 — 테스트: test/conformance.test.mjs "ABI 8 실브라우저: EGO_BROWSER_NAME 은 작업 공간을 나누지 않는다 — 장부는 감독자가 든다" |
 | `<agentWorkspace>/agent_helpers.js` 가 있으면 **매 실행마다 동적 import** 되어 헬퍼로 노출된다 | `src/helpers.ts:852-865` | 우리 작업 공간에 이 파일을 두면 우리 헬퍼를 주입할 수 있다. `_` 로 시작하는 이름은 제외된다 — 테스트: test/conformance.test.mjs "ABI 8: EGO_BROWSER_AGENT_WORKSPACE 의 agent_helpers.js 가 spawn 시점 환경으로 잡힌다" |
 | 사이트 학습 루트는 `<agentWorkspace>/learnings` | `src/learning/check-domain-learning.ts:67-69` | S4 의 `learnings/naia-land/` 가 여기로 간다 — 테스트: test/vendor-install.test.mjs "(d) EGO_BROWSER_AGENT_WORKSPACE 가 학습 루트를 결정한다" |
 | 빌드는 `package/ego-browser` 의 **두 단계 위**를 저장소 루트로 보고 `skills/ego-browser` 를 찾는다 | `scripts/build.mjs:24-31` | 벤더 트리가 업스트림 경로를 그대로 미러링해야 하는 이유 — 테스트: test/vendor-install.test.mjs "(b) 임의 디렉터리에서 npm ci + build + test 가 0 으로 끝난다" |
@@ -200,6 +205,8 @@
 | 기대 | 근거 |
 |---|---|
 | bin 은 `dist/out/index.js` 다 | `package.json` `bin` — 테스트: test/conformance.test.mjs "ABI 9: 런처가 --sdk-path 로 받은 dist 를 쓴다" |
+| `--sdk-path` 에 **진입점 파일 경로**를 주는 호출자가 있다 | `scripts/real-browser-e2e/runner.mjs:20-21` 이 `dist/out/index.js` 를 그대로 넘긴다 — 테스트: test/conformance.test.mjs "ABI 9: 런처가 --sdk-path 로 받은 dist 를 쓴다"(디렉터리), scripts/run-upstream-e2e.mjs(파일). 우리 런처는 둘 다 받는다 |
+| **`ego.helpers` 는 `installEgoSdk()` 경로에서만 생긴다** | `src/index.ts:196`, 분기 `:256-265`. 직접 실행(`isDirectCli()` 참, 계약 4.2.1 이 고른 길)에서는 `runMain()` 으로 가므로 `ego.helpers` 가 없다. 업스트림 실브라우저 러너의 첫 케이스가 그 값을 통과 조건으로 삼아 우리 런처에서는 반드시 실패한다 — 흉내 내지 않고 케이스를 우리 하네스에서 직접 돌린다(scripts/run-upstream-e2e.mjs 머리 주석) |
 | **서브커맨드가 없다.** stdin 으로 JS 본문을 받는 것이 유일한 실행 형태다 | `src/run.ts:55-59`(USAGE), `:94-101` — 테스트: test/conformance.test.mjs "ABI 9: 런처가 nodejs 를 받아 stdin 을 그대로 넘기고 console.log 가 stdout 으로 나온다" |
 | 인자가 하나라도 있으면 USAGE 를 stderr 에 찍고 **종료 코드 2** 로 끝난다. 예외는 `-h`/`--help`/`--doctor`/`--reload`/`--debug-clicks` 뿐 | `src/run.ts:73-92` — 테스트: test/conformance.test.mjs "ABI 9: 런처 인자가 틀리거나 sdk 가 없으면 형식 있는 오류로 끝난다" |
 | **`cliLog` 전역은 더 이상 없다.** 에이전트의 출력 채널은 `console.log` 이며 출력 싱크로 라우팅된다 | `src/index.ts:175-186`, `src/run.ts:139-145` — 테스트: test/conformance.test.mjs "ABI 9: 런처가 nodejs 를 받아 stdin 을 그대로 넘기고 console.log 가 stdout 으로 나온다" |

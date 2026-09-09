@@ -7,6 +7,8 @@ export function createFakeCdp({ autoRespond = true } = {}) {
   let nextSession = 1;
   let nextTarget = 1;
   let nextContext = 1;
+  /** targetId -> targetInfo. `Target.getTargets` 가 이것을 돌려준다. */
+  const targets = new Map();
   const responders = new Map();
   /** 응답하지 않을 메서드. 감독자 deadline 을 밟는 데 쓴다. */
   const blackHole = new Set();
@@ -45,7 +47,25 @@ export function createFakeCdp({ autoRespond = true } = {}) {
           return;
         }
         if (data.method === "Target.createTarget") {
-          emitRaw(JSON.stringify({ id: data.id, result: { targetId: `T${nextTarget++}` } }));
+          const targetId = `T${nextTarget++}`;
+          // S2f: 감독자가 `listTabs` 마다 실제 타깃 목록과 장부를 맞춘다. 가짜 백엔드도 자기가
+          // 만든 타깃을 기억해야 그 대조가 진짜처럼 돈다(안 그러면 만든 탭이 곧바로 사라진다).
+          targets.set(targetId, {
+            targetId,
+            type: "page",
+            url: typeof data.params?.url === "string" ? data.params.url : "about:blank",
+            title: "",
+          });
+          emitRaw(JSON.stringify({ id: data.id, result: { targetId } }));
+          return;
+        }
+        if (data.method === "Target.getTargets") {
+          emitRaw(JSON.stringify({ id: data.id, result: { targetInfos: [...targets.values()] } }));
+          return;
+        }
+        if (data.method === "Target.closeTarget") {
+          targets.delete(data.params?.targetId);
+          emitRaw(JSON.stringify({ id: data.id, result: { success: true } }));
           return;
         }
         if (data.method === "Accessibility.getFullAXTree") {
@@ -77,6 +97,10 @@ export function createFakeCdp({ autoRespond = true } = {}) {
     },
     silence(method) {
       blackHole.add(method);
+    },
+    /** 시험용: 지금 살아 있는 타깃 목록. */
+    targets() {
+      return [...targets.values()];
     },
     /** 마지막으로 받은 요청의 상류 id. id 재작성 확인에 쓴다. */
     lastId() {

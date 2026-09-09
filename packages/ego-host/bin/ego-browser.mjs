@@ -67,7 +67,11 @@ export function parseArgs(argv) {
     }
     return { error: `알 수 없는 인자: ${arg}\n${USAGE}`, error_code: CODES.USAGE };
   }
-  return { sdkPath, entry: join(sdkPath, "index.js") };
+  // `--sdk-path` 는 **디렉터리도 파일도** 받는다. 업스트림 실브라우저 e2e 러너는 진입점 파일을
+  // 그대로 넘긴다(`scripts/real-browser-e2e/runner.mjs:20-21` — `dist/out/index.js`). 디렉터리만
+  // 받으면 그 러너를 벤더 무수정으로 붙일 수 없다(`index.js/index.js` 가 되어 종료 코드 2).
+  const entry = /\.[cm]?js$/i.test(sdkPath) ? sdkPath : join(sdkPath, "index.js");
+  return { sdkPath, entry };
 }
 
 export function main(argv = process.argv.slice(2), { stderr = process.stderr } = {}) {

@@ -21,6 +21,9 @@ import { socketNeedsUnlink } from "./socket-path.mjs";
 
 /** 연결당 송신 큐 상한. 이벤트 폭주가 감독자 메모리를 먹지 못하게 한다. */
 export const MAX_QUEUED_FRAMES = 1024;
+
+/** `listTabs` 가 브라우저와 탭을 맞추는 데 쓰는 상한. 감독자 상한(13초)보다 훨씬 짧아야 한다. */
+export const TAB_REFRESH_MS = 2_000;
 export const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
 /**
@@ -231,8 +234,13 @@ export function createSupervisorServer({
         return { ...browserVersion };
       case "listTaskSpaces":
         return { taskSpaces: activeLedger.list() };
-      case "listTabs":
-        return { tabs: activeLedger.tabsOf(selected()) };
+      case "listTabs": {
+        const space = selected();
+        // 목록을 주기 전에 브라우저의 실제 타깃과 맞춘다. 장부만 읽으면 이동한 탭의 주소가
+        // 옛 값이고 스스로 닫힌 탭이 유령으로 남는다(S2f 업스트림 케이스가 잡았다).
+        await refreshTabs(space);
+        return { tabs: activeLedger.tabsOf(space) };
+      }
       case "useTaskSpace": {
         const space = activeLedger.get(params?.id);
         if (!space) {
@@ -322,6 +330,32 @@ export function createSupervisorServer({
       default:
         throw hostError(CODES.METHOD_DENIED, `알 수 없는 RPC: ${method}`);
     }
+  }
+
+  /** 장부의 탭을 브라우저의 실제 타깃과 맞춘다. 감독자 전용 통로로 한 번 묻는다. */
+  async function refreshTabs(space) {
+    let live;
+    try {
+      // 짧은 상한을 따로 둔다. 감독자 상한(13초)까지 기다리면 브라우저가 멈춘 동안 `listTabs` 가
+      // 통째로 막히고, 벤더 런타임은 2초마다 이 호출을 한다(ABI 3 세션 캐시 TTL).
+      live = await Promise.race([
+        mux.hostRequest("Target.getTargets", {}),
+        new Promise((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("탭 대조 상한 초과")), TAB_REFRESH_MS);
+          timer.unref?.();
+        }),
+      ]);
+    } catch {
+      return { updated: 0, dropped: 0, unverified: true };
+    }
+    // 목록을 못 읽었으면 **아무것도 바꾸지 않는다.** 빈 응답을 "타깃이 하나도 없다"로 읽으면
+    // 살아 있는 탭을 장부에서 지운다.
+    if (!Array.isArray(live?.targetInfos)) return { updated: 0, dropped: 0, unverified: true };
+    const pages = new Map();
+    for (const info of live.targetInfos) {
+      if (info?.type === "page" && typeof info.targetId === "string") pages.set(info.targetId, info);
+    }
+    return activeLedger.syncTabs(space, pages);
   }
 
   /** 이 연결이 보고 있는 탭. 스냅샷·캡처의 대상은 감독자가 장부에서 고른다. */

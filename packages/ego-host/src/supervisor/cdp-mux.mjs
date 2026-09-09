@@ -65,8 +65,18 @@ export function createCdpMux({
   const pending = new Map();
   const dropped = [];
 
+  /**
+   * 거부 하나. **문구 끝에 안정 코드를 넣는다.**
+   *
+   * 벤더 런타임은 CDP 오류에서 `error.message` 만 읽고 `error.code` 는 버린다
+   * (`browser-runtime.ts:245-248`). `{error, error_code}` 로 코드가 살아 오는 것은 `ego` 메서드
+   * 쪽뿐이다(ABI 6). 그래서 CDP 통로로 거부하면 에이전트에게 **안정 코드가 아예 남지 않는다**.
+   * 문구에 넣어야 사람도 에이전트도 어떤 규칙에 걸렸는지 안다. `error.code` 는 그대로 둔다 —
+   * 우리 클라이언트는 그쪽을 읽는다.
+   */
   function errorResponse(connection, clientId, message, code) {
-    connection.deliverCdp(JSON.stringify({ id: clientId, error: { message, code } }));
+    const text = code && !String(message).includes(code) ? `${message} [${code}]` : message;
+    connection.deliverCdp(JSON.stringify({ id: clientId, error: { message: text, code } }));
   }
 
   /**
@@ -211,6 +221,17 @@ export function createCdpMux({
         generation: entry.generation,
       });
     }
+    if (entry.method === "Target.activateTarget" && !data.error) {
+      // 헤드리스에는 "앞에 있는 창"이 없다. 활성 탭의 정본은 장부이므로 여기서 적는다.
+      ledger.setActiveTarget?.(entry.params?.targetId);
+    }
+    if (entry.method === "Target.closeTarget" && !data.error) {
+      // **응답으로 안다.** `Target.targetDestroyed` 이벤트는 `Target.setDiscoverTargets` 를 켜야
+      // 오는데 그 메서드는 정책표 밖(기본 거부)이라 우리에게는 영영 오지 않는다. 그래서 닫힘은
+      // 응답에서 장부에 반영한다 — 그러지 않으면 닫은 탭이 `listTabs` 에 유령으로 남고
+      // 벤더 `closeTab` 이 사라지기를 영원히 기다린다(헬퍼 행렬 첫 측정에서 실제로 걸렸다).
+      ledger.forgetTarget?.(entry.params?.targetId);
+    }
     if (entry.method === "Target.createTarget" && typeof result.targetId === "string") {
       // 만든 탭이 장부의 탭 목록에도 들어가야 `listTabs` 가 그것을 본다(S2e, listTabs 비대칭).
       ledger.claimTarget(entry.connection, result.targetId, { url: entry.params?.url ?? "" });
@@ -266,7 +287,8 @@ export function createCdpMux({
     if (data.method === "Target.targetDestroyed") {
       const owner = ownerOfEvent(data);
       const targetId = data.params?.targetId;
-      if (typeof targetId === "string") ledger.releaseTarget(targetId);
+      // 탭 목록에서도 뺀다. 목록에 유령이 남으면 벤더 `closeTab` 이 영원히 기다린다.
+      if (typeof targetId === "string") ledger.forgetTarget(targetId);
       return owner;
     }
     return ownerOfEvent(data);

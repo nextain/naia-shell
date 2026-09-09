@@ -1,0 +1,351 @@
+{
+  "upstreamCommit": "5ca3c36cba2240b8df2e22ba32127747029039d5",
+  "source": "vendor/ego-lite/skills/ego-browser/SKILL.md — ## Common helpers",
+  "groups": [
+    {
+      "category": "Task spaces",
+      "names": [
+        "listTaskSpaces",
+        "useOrCreateTaskSpace",
+        "claimTaskSpace",
+        "handOffTaskSpace",
+        "takeOverTaskSpace",
+        "waitForAgentControl",
+        "completeTaskSpace"
+      ]
+    },
+    {
+      "category": "Navigation / state",
+      "names": [
+        "listTabs",
+        "openOrReuseTab",
+        "closeTab",
+        "gotoAndWait",
+        "currentTab",
+        "switchTab",
+        "gotoUrl",
+        "pageInfo",
+        "ensureRealTab"
+      ]
+    },
+    {
+      "category": "Observation",
+      "names": [
+        "snapshotText",
+        "captureScreenshot",
+        "drainEvents"
+      ]
+    },
+    {
+      "category": "Scroll / mouse",
+      "names": [
+        "scrollBy",
+        "scrollToBottomUntil",
+        "scroll",
+        "click",
+        "doubleClick",
+        "hover",
+        "dragMouse"
+      ]
+    },
+    {
+      "category": "Keyboard & input",
+      "names": [
+        "typeText",
+        "fillInput",
+        "pressKey",
+        "dispatchKey"
+      ]
+    },
+    {
+      "category": "File",
+      "names": [
+        "uploadFile"
+      ]
+    },
+    {
+      "category": "Wait",
+      "names": [
+        "wait",
+        "waitForLoad",
+        "waitForElement",
+        "waitForNetworkIdle"
+      ]
+    },
+    {
+      "category": "Fetch",
+      "names": [
+        "serverFetch",
+        "browserFetch"
+      ]
+    },
+    {
+      "category": "CDP / evaluate",
+      "names": [
+        "js",
+        "cdp"
+      ]
+    },
+    {
+      "category": "Output",
+      "names": [
+        "cliLog",
+        "help"
+      ]
+    }
+  ],
+  "helpers": {
+    "listTaskSpaces": {
+      "runtime": "taskSpaces.list()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": 1
+    },
+    "useOrCreateTaskSpace": {
+      "runtime": "taskSpaces.useOrCreate(nameOrId)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": 1
+    },
+    "claimTaskSpace": {
+      "runtime": "taskSpaces.claim(nameOrId)",
+      "verdict": "rejected(EGO_HANDOFF_UNSUPPORTED_HEADLESS)",
+      "kind": "rejected",
+      "message": "claimTaskSpace: 이 브라우저는 헤드리스로 돌아 사람에게 넘길 창이 없다. 인계·회수·claim 은 지원하지 않는다 (#582 계약 4.4). 로그인이나 captcha 가 필요하면 작업을 멈추고 사람에게 보고한다."
+    },
+    "handOffTaskSpace": {
+      "runtime": "taskSpaces.handOff(nameOrId)",
+      "verdict": "rejected(EGO_HANDOFF_UNSUPPORTED_HEADLESS)",
+      "kind": "rejected",
+      "message": "handOffTaskSpace: 이 브라우저는 헤드리스로 돌아 사람에게 넘길 창이 없다. 인계·회수·claim 은 지원하지 않는다 (#582 계약 4.4). 로그인이나 captcha 가 필요하면 작업을 멈추고 사람에게 보고한다."
+    },
+    "takeOverTaskSpace": {
+      "runtime": "taskSpaces.takeOver(nameOrId)",
+      "verdict": "rejected(EGO_HANDOFF_UNSUPPORTED_HEADLESS)",
+      "kind": "rejected",
+      "message": "takeOverTaskSpace: 이 브라우저는 헤드리스로 돌아 사람에게 넘길 창이 없다. 인계·회수·claim 은 지원하지 않는다 (#582 계약 4.4). 로그인이나 captcha 가 필요하면 작업을 멈추고 사람에게 보고한다."
+    },
+    "waitForAgentControl": {
+      "runtime": "taskSpaces.waitForAgentControl(nameOrId, options)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": null
+    },
+    "completeTaskSpace": {
+      "runtime": "taskSpaces.complete(nameOrId, {keep})",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": {
+        "done": true
+      }
+    },
+    "listTabs": {
+      "runtime": "browser.listTabs()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": 2
+    },
+    "openOrReuseTab": {
+      "runtime": "browser.openOrReuseTab(url, options)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "closeTab": {
+      "runtime": "browser.closeTab(target)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "gotoAndWait": {
+      "runtime": "page.goto(url, {waitUntil:\"load\"})",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "currentTab": {
+      "runtime": "browser.currentTab()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "switchTab": {
+      "runtime": "browser.switchTab(target)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "gotoUrl": {
+      "runtime": "page.goto(url, {waitUntil:\"commit\"})",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "pageInfo": {
+      "runtime": "page.info()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "ensureRealTab": {
+      "runtime": "browser.ensureRealTab()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "snapshotText": {
+      "runtime": "page.snapshot()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "captureScreenshot": {
+      "runtime": "page.screenshot(options)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "drainEvents": {
+      "runtime": "page.drainEvents()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "scrollBy": {
+      "runtime": "page.mouse.wheel(dx, dy)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "scrollToBottomUntil": {
+      "runtime": "(없음) — page.mouse.wheel + page.evaluate 로 직접 짠다",
+      "verdict": "unsupported(고정 커밋 런타임에 이 이름의 헬퍼가 없다(벤더 SKILL 이 런타임보다 낡았다))",
+      "kind": "unsupported"
+    },
+    "scroll": {
+      "runtime": "page.locator(sel).scrollIntoViewIfNeeded()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "click": {
+      "runtime": "page.locator(sel).click()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "doubleClick": {
+      "runtime": "page.mouse.dblclick(x, y)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "hover": {
+      "runtime": "page.locator(sel).hover()",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "dragMouse": {
+      "runtime": "page.mouse.drag(points)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "typeText": {
+      "runtime": "page.keyboard.type(text)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": "naia"
+    },
+    "fillInput": {
+      "runtime": "page.locator(sel).fill(value)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": "582"
+    },
+    "pressKey": {
+      "runtime": "page.keyboard.press(key)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": "582a"
+    },
+    "dispatchKey": {
+      "runtime": "page.keyboard.down(key) / page.keyboard.up(key)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "uploadFile": {
+      "runtime": "page.locator(sel).setInputFiles(path)",
+      "verdict": "rejected(EGO_HOST_METHOD_DENIED)",
+      "kind": "rejected",
+      "message": "DOM.setFileInputFiles 는 거부 목록이다(#582 계약 4.3.2). [EGO_HOST_METHOD_DENIED]"
+    },
+    "wait": {
+      "runtime": "page.waitForTimeout(ms)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "waitForLoad": {
+      "runtime": "page.waitForLoadState(state)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "waitForElement": {
+      "runtime": "page.locator(sel).waitFor(options) / page.waitForSelector(sel)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "waitForNetworkIdle": {
+      "runtime": "page.waitForLoadState(\"networkidle\")",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "serverFetch": {
+      "runtime": "fetch.server(url, options)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "browserFetch": {
+      "runtime": "fetch.browser(url, options)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "js": {
+      "runtime": "page.evaluate(expression)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": 2
+    },
+    "cdp": {
+      "runtime": "cdp(method, params)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    },
+    "cliLog": {
+      "runtime": "console.log(value)",
+      "verdict": "unsupported(고정 커밋 런타임에서 `cliLog` 전역이 없어졌다(src/index.ts:175-186). 출력 통로는 console.log 다)",
+      "kind": "unsupported"
+    },
+    "help": {
+      "runtime": "help(name)",
+      "verdict": "supported",
+      "kind": "supported",
+      "value": true
+    }
+  },
+  "totals": {
+    "total": 41,
+    "supported": 35,
+    "rejected": 4,
+    "unsupported": 2
+  }
+}

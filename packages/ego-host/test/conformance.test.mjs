@@ -9,6 +9,7 @@
  * 여기 이름이 병기돼 있다.
  */
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +18,14 @@ import test, { after, before } from "node:test";
 import { CODES } from "../src/errors.mjs";
 import { createFakeCdp } from "./helpers/fake-cdp.mjs";
 import { closeAll, shortDir, startSupervisor } from "./helpers/supervisor-fixture.mjs";
+import { cleanupAll } from "./helpers/live-browser.mjs";
+import {
+  cdpChannel,
+  connectClient,
+  startLiveSupervisor,
+  stopAllLive,
+  waitFor,
+} from "./helpers/live-supervisor.mjs";
 import {
   LAUNCHER,
   VENDOR_DIST,
@@ -26,7 +35,48 @@ import {
   runEgoScript,
 } from "./helpers/vendor-runtime.mjs";
 
-after(closeAll);
+const liveServers = [];
+
+after(async () => {
+  await closeAll();
+  for (const server of liveServers.splice(0)) await new Promise((done) => server.close(done));
+  await stopAllLive();
+  cleanupAll();
+});
+
+/**
+ * 실브라우저 적합성용 로컬 픽스처.
+ * 대화상자·링크·여러 탭을 만들 자리가 필요하다. 외부 네트워크로 나가지 않는다.
+ */
+async function startLiveFixture() {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(
+      `<!doctype html><meta charset=utf-8><title>naia 582 적합성 ${request.url}</title>` +
+        "<body><h1>적합성</h1><button id=go>가기</button>" +
+        '<a id="away" href="/other">다른 곳</a></body>',
+    );
+  });
+  liveServers.push(server);
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  return { origin: `http://127.0.0.1:${server.address().port}` };
+}
+
+/** 실 감독자 + 실 Chromium + 벤더 런타임(런처로 실제 실행) 한 벌. */
+async function liveStage() {
+  const fixture = await startLiveFixture();
+  const live = await startLiveSupervisor();
+  return { fixture, live, token: () => live.server.issueToken({ grant: { tier: "workspace-write" } }) };
+}
+
+function runLive(stage, script, options = {}) {
+  return runEgoScript({
+    socketPath: stage.live.socketPath,
+    token: stage.token(),
+    script: `const BASE = ${JSON.stringify(stage.fixture.origin)};\n${script}`,
+    ...options,
+  });
+}
 
 before(() => ensureVendorDist(), { timeout: 900_000 });
 
@@ -523,4 +573,145 @@ test("런처는 stdio 를 정확히 세 칸의 명시 목록으로만 넘긴다 
   const source = readFileSync(LAUNCHER, "utf8");
   assert.match(source, /stdio: \["inherit", "inherit", "inherit"\]/);
   assert.ok(!/stdio:\s*\[[^\]]*\d/.test(source), "stdio 목록에 숫자 fd 가 들어 있다");
+});
+
+// ── S2f: 실 감독자 + 실 Chromium + 벤더 런타임으로 다시 밟는 행들 ───────────
+//
+// 위의 ABI 테스트는 가짜 CDP 백엔드로 **전송 계약**을 고정한다(그대로 둔다). 아래는 같은 행을
+// 진짜 브라우저에서 다시 밟는다 — 가짜 백엔드는 우리가 쓴 대로 답하므로, 우리 가정이 틀렸다는
+// 것은 진짜 브라우저만 알려 준다.
+
+test("ABI 3 실브라우저: 대기 중 대화상자를 pageInfo 가 알리고 handleJavaScriptDialog 가 푼다", async () => {
+  const stage = await liveStage();
+  const result = await runLive(
+    stage,
+    `
+      await taskSpaces.useOrCreate("dialog");
+      await browser.openOrReuseTab(BASE + "/dialog", { wait: true, timeout: 15000 });
+      // alert 은 페이지 자바스크립트를 멈춘다. 먼저 돌려주고 나서 뜨게 한다.
+      await page.evaluate("setTimeout(() => alert('naia-582'), 0)");
+      await page.waitForTimeout(500);
+      console.log("DURING " + JSON.stringify(await page.info()));
+      await cdp("Page.handleJavaScriptDialog", { accept: true });
+      await page.waitForTimeout(300);
+      console.log("AFTER " + JSON.stringify(await page.info()));
+    `,
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const during = json(result, "DURING");
+  assert.ok("dialog" in during, `대화상자 중에도 pageInfo 가 평범한 값을 줬다: ${JSON.stringify(during)}`);
+  const after = json(result, "AFTER");
+  assert.ok(!("dialog" in after), "대화상자를 처리한 뒤에도 dialog 가 남았다");
+  assert.ok(after.url.includes("/dialog"));
+  await stage.live.stop();
+});
+
+test("ABI 4 실브라우저: 탭 전환·닫기가 Target 장부를 지나고 목록이 실제와 맞는다", async () => {
+  const stage = await liveStage();
+  const result = await runLive(
+    stage,
+    `
+      await taskSpaces.useOrCreate("tabs");
+      const first = await browser.openOrReuseTab(BASE + "/one", { wait: true, timeout: 15000 });
+      const second = await browser.openOrReuseTab(BASE + "/two", { wait: true, timeout: 15000 });
+      console.log("BOTH " + JSON.stringify((await browser.listTabs()).map((t) => t.url)));
+      await browser.switchTab(first.targetId);
+      console.log("CURRENT " + JSON.stringify((await browser.currentTab()).targetId === first.targetId));
+      await browser.closeTab(second.targetId);
+      console.log("AFTER " + JSON.stringify((await browser.listTabs()).map((t) => t.targetId)));
+      console.log("CLOSED " + JSON.stringify(second.targetId));
+    `,
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const both = json(result, "BOTH");
+  assert.ok(
+    both.some((url) => url.includes("/one")) && both.some((url) => url.includes("/two")),
+    `탭 목록의 주소가 실제와 다르다: ${JSON.stringify(both)}`,
+  );
+  assert.equal(json(result, "CURRENT"), true, "Target.activateTarget 뒤 현재 탭이 안 바뀌었다");
+  assert.ok(
+    !json(result, "AFTER").includes(json(result, "CLOSED")),
+    "닫은 탭이 목록에 유령으로 남았다",
+  );
+  await stage.live.stop();
+});
+
+test("ABI 5 실브라우저: completeTaskSpace{keep:true} 는 유지하고 closeTaskSpace 는 컨텍스트까지 닫는다", async () => {
+  const stage = await liveStage();
+  const client = await connectClient(stage.live);
+  const kept = await runLive(
+    stage,
+    `
+      const space = await taskSpaces.useOrCreate("유지");
+      await browser.openOrReuseTab(BASE + "/keep", { wait: true, timeout: 15000 });
+      console.log("DONE " + JSON.stringify(await taskSpaces.complete(space.id, { keep: true })));
+      console.log("ID " + JSON.stringify(space.id));
+    `,
+  );
+  assert.equal(kept.status, 0, kept.stderr);
+  const keptId = json(kept, "ID");
+  const stillThere = await client.call("listTaskSpaces");
+  assert.ok(
+    stillThere.taskSpaces.some((space) => space.id === keptId),
+    "keep:true 인데 공간이 사라졌다",
+  );
+
+  const closed = await runLive(
+    stage,
+    `
+      const space = await taskSpaces.useOrCreate("닫기");
+      await browser.openOrReuseTab(BASE + "/close", { wait: true, timeout: 15000 });
+      await ego.closeTaskSpace();
+      console.log("ID " + JSON.stringify(space.id));
+    `,
+  );
+  assert.equal(closed.status, 0, closed.stderr);
+  const closedId = json(closed, "ID");
+  const after = await client.call("listTaskSpaces");
+  assert.ok(
+    !after.taskSpaces.some((space) => space.id === closedId),
+    "closeTaskSpace 뒤에도 공간이 장부에 남았다",
+  );
+  // 컨텍스트까지 사라졌는지는 브라우저에게 되묻는다.
+  const contexts = await stage.live.supervisor.server.mux.hostRequest("Target.getBrowserContexts", {});
+  const ledgerContexts = stage.live.ledger.inspect().contexts.filter(Boolean);
+  for (const contextId of ledgerContexts) {
+    assert.ok(
+      contexts.browserContextIds.includes(contextId),
+      "장부가 든 컨텍스트가 브라우저에 없다",
+    );
+  }
+  assert.equal(
+    ledgerContexts.length,
+    after.taskSpaces.length,
+    "장부의 컨텍스트 수와 공간 수가 어긋났다",
+  );
+  await stage.live.stop();
+});
+
+test("ABI 8 실브라우저: EGO_BROWSER_NAME 은 작업 공간을 나누지 않는다 — 장부는 감독자가 든다", async () => {
+  const stage = await liveStage();
+  const first = await runLive(
+    stage,
+    `
+      const space = await taskSpaces.useOrCreate("이름-무관");
+      console.log("ID " + JSON.stringify(space.id));
+    `,
+    { env: { EGO_BROWSER_NAME: "instance-a" } },
+  );
+  assert.equal(first.status, 0, first.stderr);
+  const second = await runLive(
+    stage,
+    `
+      const spaces = await taskSpaces.list();
+      console.log("NAMES " + JSON.stringify(spaces.map((s) => s.name)));
+    `,
+    { env: { EGO_BROWSER_NAME: "instance-b" } },
+  );
+  assert.equal(second.status, 0, second.stderr);
+  assert.ok(
+    json(second, "NAMES").includes("이름-무관"),
+    "인스턴스 이름이 다르다고 작업 공간이 갈라졌다 — 장부는 감독자 하나가 든다",
+  );
+  await stage.live.stop();
 });
