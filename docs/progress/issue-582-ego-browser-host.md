@@ -74,7 +74,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 
 | 항목 | 기대 | 감독자의 의무 |
 |---|---|---|
-| CDP 통로 | `sendCDPMessage(json)` 은 **동기 호출**이고 반환값을 기다리지 않는다. 런타임은 호출 전에 pending 과 15초 타이머를 만든다 | 벤더 런타임 실행 전에 소켓 연결·핸드셰이크를 끝낸다. `sendCDPMessage` 는 동기 enqueue 또는 동기 throw 만 한다. 길이 프레이밍, 최대 프레임, 유한 큐, 응답 우선, 감독자 쪽 deadline 14초 미만 |
+| CDP 통로 | `sendCDPMessage(json)` 은 **동기 호출**이고 반환값을 기다리지 않는다. 런타임은 호출 전에 pending 과 15초 타이머를 만든다 | 벤더 런타임 실행 전에 소켓 연결·핸드셰이크를 끝낸다. `sendCDPMessage` 는 동기 enqueue 또는 동기 throw 만 한다. 길이 프레이밍(4바이트, 8MiB 상한), 유한 큐, 응답 우선, 감독자 쪽 deadline 13초(핸드셰이크 deadline 은 짧은 쪽이 이긴다) |
 | 요청 id | 각 CLI 런타임은 id 1 부터 시작한다 | 연결마다 독립 id 공간. 런타임 경계에서는 id 를 보존하고 Chromium 쪽 id 만 `{connection, clientId} ↔ upstreamId` 로 재작성한다. **sessionId 는 재작성하지 않는다**(4.3.1) |
 | 오류 통로 | `onSendCDPMessageError` 에는 id 가 없어 한 번 호출되면 pending 전부가 실패한다 | 정책 거부·컨텍스트 불일치·메서드 금지는 **원래 id 를 가진 CDP 오류 응답**으로 `onCDPMessage` 에 보낸다. id 없는 오류는 소켓 단절처럼 연결 전체가 죽은 경우에만 |
 | 세션 | `Target.attachToTarget({flatten:true})` 응답 모양, `Page.enable` 뒤 Target/Page 이벤트 지속 전달 | 응답과 이벤트의 원래 순서 보존. 아웃바운드 이벤트는 연결이 소유한 타깃·세션으로 필터 |
@@ -140,7 +140,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 | `completeTaskSpace({keep:false})` | 닫음 | 도달 불가 | 도달 불가 |
 | `completeTaskSpace({keep:true})` | 유지 | 도달 불가 | 도달 불가 |
 
-- **권한**은 호출자 선언을 믿지 않는다. 형식 있는 도구는 효과가 고정된 RPC(열기·이동·스냅샷·클릭·입력·평가·캡처·닫기)만 부르고, 각 RPC 의 등급은 서비스가 정한다(관측: 스냅샷·캡처, 워크스페이스 내부 변경: 이동·클릭·입력·평가). heredoc 은 터미널 실행과 같은 등급이며 승인 없이는 감독자가 핸드셰이크에서 거부한다. 캡처 경로는 사용자 인자가 아니라 감독자가 `<ADK>/ego-host/evidence/` 아래로 정한다.
+- **권한**은 호출자 선언을 믿지 않는다. 형식 있는 도구는 효과가 고정된 RPC(열기·이동·스냅샷·클릭·입력·평가·캡처·닫기)만 부르고, 각 RPC 의 등급은 서비스가 정한다(관측: 스냅샷·캡처, 워크스페이스 내부 변경: 이동·클릭·입력·평가). heredoc 은 터미널 실행과 같은 등급이며 승인 없이는 감독자가 핸드셰이크에서 거부한다. 공간 선택(`useTaskSpace`)은 브라우저를 바꾸지 않으므로 관측 등급이다. 승인 없는 연결은 원시 CDP 를 보낼 수 없고, 관측 RPC(스냅샷·캡처·탭 목록)는 감독자가 내부 CDP 연결로 대신 실행한다. 캡처 경로는 사용자 인자가 아니라 감독자가 `<ADK>/ego-host/evidence/` 아래로 정한다.
 
 ### 4.5 화면 캡처와 증거
 
