@@ -47,14 +47,30 @@ function enforceContext(params, ctx, { field = "browserContextId" } = {}) {
         "taskSpaces.useOrCreate(name) 을 먼저 부른다(#582 계약 4.3.2).",
     };
   }
-  if (typeof given === "string" && given !== ctx.browserContextId) {
-    return {
-      ok: false,
-      code: CONTEXT_MISMATCH,
-      message:
-        `다른 브라우저 컨텍스트(${given})를 지정할 수 없다. 작업 공간의 컨텍스트 안에서만 ` +
-        "돈다(#582 계약 4.3.2).",
-    };
+  // 필드가 있으면 **모양부터** 본다 (S7 P2).
+  //
+  // 전에는 문자열만 비교하고 나머지 타입은 조용히 우리 컨텍스트로 덮었다. 그래서
+  // `browserContextId: null`·`["foreign"]`·`{}`·`3` 은 입력 오류 없이 통과했고, 호출자는
+  // 자기가 지정한 컨텍스트에서 돌았다고 믿는다. 값이 아니라 **믿음이 틀리는** 자리다.
+  if (given !== undefined) {
+    if (typeof given !== "string" || given === "") {
+      return {
+        ok: false,
+        code: CONTEXT_MISMATCH,
+        message:
+          `${field} 는 비지 않은 문자열이어야 한다. 받은 것: ${JSON.stringify(given)} ` +
+          "(#582 계약 4.3.2). 값을 조용히 바꾸지 않는다.",
+      };
+    }
+    if (given !== ctx.browserContextId) {
+      return {
+        ok: false,
+        code: CONTEXT_MISMATCH,
+        message:
+          `다른 브라우저 컨텍스트(${given})를 지정할 수 없다. 작업 공간의 컨텍스트 안에서만 ` +
+          "돈다(#582 계약 4.3.2).",
+      };
+    }
   }
   return { ok: true, params: { ...params, [field]: ctx.browserContextId } };
 }

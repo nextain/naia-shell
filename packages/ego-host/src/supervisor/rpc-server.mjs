@@ -613,10 +613,42 @@ export function createSupervisorServer({
       );
       return;
     }
+    /**
+     * 선언은 **토큰 기록과 정확히 같아야 한다** (S7 P1-3).
+     *
+     * 전에는 grant 만 대조하고 operation·workspace 는 클라이언트가 보낸 non-null 값을 우선했다.
+     * 그래서 `{operationId:"approved", workspaceId:"A"}` 로 발급받은 토큰에 hello 만
+     * `{operationId:"other", workspaceId:"B"}` 로 실으면 승인이 붙은 연결이 **다른 작업·다른
+     * 공간**에 결박됐다. 토큰이 승인에 결박된다는 문장이 그 순간 빈 말이 된다.
+     *
+     * 누락(`null`·`undefined`)은 기록을 쓴다 — 벤더 런처는 이 필드를 싣지 않는다.
+     * 있는데 다르거나 문자열이 아니면 거부다.
+     */
+    for (const [field, declared, bound] of [
+      ["operationId", operationId, record.operationId],
+      ["workspaceId", workspaceId, record.workspaceId],
+    ]) {
+      if (declared === null || declared === undefined) continue;
+      if (typeof declared !== "string" || declared === "") {
+        connection.kill(
+          CODES.HANDSHAKE_INVALID,
+          `핸드셰이크의 ${field} 는 비지 않은 문자열이어야 한다. 받은 것: ${JSON.stringify(declared)}`,
+        );
+        return;
+      }
+      if (bound !== null && bound !== undefined && String(bound) !== declared) {
+        connection.kill(
+          CODES.HANDSHAKE_INVALID,
+          `핸드셰이크의 ${field} 가 토큰이 발급된 값과 다르다. 토큰=${JSON.stringify(bound)} ` +
+            `선언=${JSON.stringify(declared)} (#582 계약 4.2 토큰은 승인에 결박된다)`,
+        );
+        return;
+      }
+    }
     record.used = true;
     connection.state = "open";
-    connection.operationId = operationId ?? record.operationId;
-    connection.workspaceId = workspaceId ?? record.workspaceId;
+    connection.operationId = record.operationId ?? operationId;
+    connection.workspaceId = record.workspaceId ?? workspaceId;
     connection.grant = record.grant;
     // 두 상한 중 짧은 쪽이 이긴다. 호출자가 더 긴 시한을 적어 감독자 상한을 늘리지 못한다.
     const requested = typeof deadline === "number" && deadline > 0 ? deadline : requestDeadlineMs;

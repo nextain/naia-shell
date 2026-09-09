@@ -144,8 +144,10 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       requestIds: new Map(),
       /** objectId -> sessionId (그 원격 객체가 사는 세션) */
       objectIds: new Map(),
-      downloads: new Set(),
-      streams: new Set(),
+      /** guid -> sessionId (그 다운로드를 만든 세션. 브라우저 수준 이벤트면 null) */
+      downloads: new Map(),
+      /** handle -> sessionId (그 스트림이 사는 세션) */
+      streams: new Map(),
       frameTokens: new Set(),
       /** `${domain}:${sessionId}` */
       domains: new Set(),
@@ -170,13 +172,23 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
     if (record?.targetId) targetUsers.set(record.targetId, op.id);
   }
 
-  /** 그 세션을 가장 최근에 쓴 **살아 있는** 작업. */
-  function lastUserOf(sessionId) {
+  /**
+   * 그 세션을 가장 최근에 쓴 작업. **상태를 보지 않는다** (S7 P1-5).
+   *
+   * 취소 장벽이 도달 불가능했던 이유가 여기 있었다. 귀속을 `lastUserOf` 로 찾으면 종결된
+   * 작업은 검색에서 아예 빠지고, 그 작업이 유발한 지연 이벤트가 **한 칸 앞의 다른 작업**에
+   * 붙는다. 그 뒤에 놓인 "owner 가 terminal 이면 버린다" 검사는 영원히 참이 되지 않는다.
+   * 그래서 상태를 거르기 **전에** 실제 마지막 소유자를 찾고, terminal 이면 거기서 끝낸다.
+   *
+   * 귀속 정보(`sessionUsers`)는 `cleanupOperation` 이 끝날 때 지워진다. 종결과 정리 사이가
+   * 바로 지연 이벤트가 도착하는 구간이므로, 그 구간에서 정보를 지우면 장벽이 다시 빈다.
+   */
+  function lastUserOfAny(sessionId) {
     const users = sessionUsers.get(sessionId);
     if (!users) return null;
     for (let i = users.length - 1; i >= 0; i -= 1) {
       const op = operations.get(users[i]);
-      if (op && op.status === "running") return op;
+      if (op) return op;
     }
     return null;
   }
@@ -226,6 +238,35 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
     );
   }
 
+  function sessionMismatchDenial(kind, method, value, boundTo, given) {
+    return deny(
+      CODES.RESOURCE_NOT_OWNED,
+      `${method} 의 ${kind} ${JSON.stringify(value ?? null)} 는 세션 ${boundTo} 의 것이다. ` +
+        `이 요청은 세션 ${JSON.stringify(given ?? null)} 에서 왔다. 자원은 작업과 세션 ` +
+        "양쪽에 결박된다(#582 계약 4.3.2).",
+    );
+  }
+
+  /**
+   * 불투명 id 하나가 **이 작업의 것이면서 이 세션의 것인가** (S7 P1-4).
+   *
+   * 전에는 `map.has(id)` 만 봤다. 한 작업이 두 세션을 들면 S1 이 만든 objectId·requestId 를
+   * S2 의 명령에 넣어도 정책층이 통과시켰다 — 작업 결속은 있었지만 세션 격리는 없었다.
+   * 없는 것과 남의 세션 것은 **다른 사실**이므로 오류도 나눈다.
+   *
+   * 세션 없이 적힌 자원(`Browser.downloadWillBegin` 처럼 세션이 없는 이벤트에서 온 것)은
+   * 대조할 세션이 없으므로 작업 소유만 본다 — 없는 사실을 지어내 거부하지 않는다.
+   */
+  function resourceDenial(map, value, sessionId, kind, method) {
+    if (!map.has(value)) return ownershipDenial(kind, method, value);
+    const boundTo = map.get(value);
+    if (boundTo === null || boundTo === undefined) return null;
+    if (boundTo !== sessionId) {
+      return sessionMismatchDenial(kind, method, value, boundTo, sessionId);
+    }
+    return null;
+  }
+
   /**
    * 중계기가 부르는 훅. **허용된 모든 메서드**가 여기를 지난다(S2d 는 작업 등급만 지나게
    * 했는데, 이동·평가의 배타 슬롯과 도메인 참조 횟수는 세션 등급 메서드에 걸린다).
@@ -267,28 +308,28 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       case "Fetch.fulfillRequest":
       case "Fetch.continueRequest":
       case "Fetch.continueWithAuth":
-      case "Network.getResponseBody":
-        if (!op.requestIds.has(params?.requestId)) {
-          return ownershipDenial("requestId", method, params?.requestId);
-        }
+      case "Network.getResponseBody": {
+        const denial = resourceDenial(op.requestIds, params?.requestId, sessionId, "requestId", method);
+        if (denial) return denial;
         break;
+      }
       case "Runtime.callFunctionOn":
-      case "Runtime.releaseObject":
-        if (!op.objectIds.has(params?.objectId)) {
-          return ownershipDenial("objectId", method, params?.objectId);
-        }
+      case "Runtime.releaseObject": {
+        const denial = resourceDenial(op.objectIds, params?.objectId, sessionId, "objectId", method);
+        if (denial) return denial;
         break;
-      case "Browser.cancelDownload":
-        if (!op.downloads.has(params?.guid)) {
-          return ownershipDenial("다운로드 GUID", method, params?.guid);
-        }
+      }
+      case "Browser.cancelDownload": {
+        const denial = resourceDenial(op.downloads, params?.guid, sessionId, "다운로드 GUID", method);
+        if (denial) return denial;
         break;
+      }
       case "IO.read":
-      case "IO.close":
-        if (!op.streams.has(params?.handle)) {
-          return ownershipDenial("IO 스트림 핸들", method, params?.handle);
-        }
+      case "IO.close": {
+        const denial = resourceDenial(op.streams, params?.handle, sessionId, "IO 스트림 핸들", method);
+        if (denial) return denial;
         break;
+      }
       case "Page.screencastFrameAck":
         // 여기서만 `params.sessionId` 는 프레임 토큰이다(계약 4.3.1). 장부 조회를 하지 않는다.
         if (!op.frameTokens.has(params?.sessionId)) {
@@ -387,7 +428,9 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       useSession(op, result.sessionId);
     }
     // 스트림 핸들을 만드는 메서드는 지금 정책표에 없다. 통로만 둔다(파일 머리 주석).
-    if (typeof result.stream === "string") addCapped(op.streams, result.stream);
+    if (typeof result.stream === "string") {
+      addCappedWithSession(op.streams, result.stream, entry.sessionId);
+    }
   }
 
   /**
@@ -397,7 +440,14 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
   function event(data) {
     const sessionId = typeof data?.sessionId === "string" ? data.sessionId : null;
     const method = data?.method;
-    let owner = sessionId ? lastUserOf(sessionId) : null;
+    // 상태 필터 **전에** 실제 마지막 소유자를 본다. 종결된 작업의 지연 이벤트가 남의 작업으로
+    // 흘러 들어가는 길이 여기였다(S7 P1-5).
+    const lastOwner = sessionId ? lastUserOfAny(sessionId) : null;
+    if (lastOwner && !isRunning(lastOwner)) {
+      droppedAfterBarrier.push({ method, operationId: lastOwner.id });
+      return false;
+    }
+    let owner = lastOwner;
 
     if (method === "Fetch.requestPaused" && sessionId) {
       const holders = [...domainHolders("Fetch", sessionId)];
@@ -416,7 +466,7 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       // params.sessionId 는 프레임 토큰이다(계약 4.3.1). 세션으로 읽지 않는다.
       addCapped(owner.frameTokens, data.params?.sessionId);
     } else if (method === "Page.downloadWillBegin" && owner) {
-      addCapped(owner.downloads, data.params?.guid);
+      addCappedWithSession(owner.downloads, data.params?.guid, sessionId);
     } else if (method === "Browser.downloadWillBegin") {
       // 브라우저 수준 이벤트라 최상위 sessionId 가 없다. Chromium 에서 최상위 프레임의
       // frameId 는 그 타깃의 targetId 와 같으므로 그 타깃을 쓰던 작업에 귀속한다.
@@ -424,7 +474,8 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
       const opId = frameId ? targetUsers.get(frameId) : null;
       const target = opId ? operations.get(opId) : null;
       if (target && isRunning(target)) {
-        addCapped(target.downloads, data.params?.guid);
+        // 브라우저 수준 이벤트라 세션이 없다. 세션 없이 적힌 자원은 세션 대조를 받지 않는다.
+        addCappedWithSession(target.downloads, data.params?.guid, null);
         owner = target;
       }
     }
@@ -488,14 +539,14 @@ export function createOperations({ hostRequest = null, ledger = null, log = () =
     }
 
     // 3) 다운로드 — 소유한 GUID 만.
-    for (const guid of op.downloads) {
+    for (const guid of [...op.downloads.keys()]) {
       await call("Browser.cancelDownload", { guid });
       done.cancelledDownloads.push(guid);
     }
     op.downloads.clear();
 
     // 4) IO 스트림 — 소유한 핸들만.
-    for (const handle of op.streams) {
+    for (const handle of [...op.streams.keys()]) {
       await call("IO.close", { handle });
       done.closedStreams.push(handle);
     }

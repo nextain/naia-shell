@@ -154,6 +154,45 @@ test("Target.createTarget 은 공간의 컨텍스트로 재작성되어 Chromium
   await live.stop();
 });
 
+/**
+ * S7 P2 — 컨텍스트 인자의 **모양**을 본다.
+ *
+ * 고치기 전에는 문자열만 비교하고 나머지 타입은 조용히 우리 컨텍스트로 덮었다. 그래서
+ * `browserContextId: null`·`["foreign"]`·`{}`·`3` 이 입력 오류 없이 통과했고, 호출자는 자기가
+ * 지정한 컨텍스트에서 돌았다고 믿는다. 값이 아니라 **믿음이 틀리는** 자리다.
+ */
+test("컨텍스트 인자의 null·배열·객체·숫자·빈 문자열은 조용히 덮이지 않고 거부된다", async () => {
+  const live = await startLiveSupervisor({ wrap: true });
+  const { channel } = await stage(live, "컨텍스트타입");
+  const sentBefore = live.backend.sentMethods("Target.createTarget").length;
+
+  for (const bad of [null, ["foreign"], { id: "foreign" }, 3, ""]) {
+    const denied = await channel.send("Target.createTarget", {
+      url: "about:blank",
+      browserContextId: bad,
+    });
+    assert.equal(
+      denied.error?.code,
+      CONTEXT_MISMATCH,
+      `${JSON.stringify(bad)} 가 통과했다: ${JSON.stringify(denied)}`,
+    );
+    assert.match(denied.error.message, /비지 않은 문자열/);
+  }
+  assert.equal(
+    live.backend.sentMethods("Target.createTarget").length,
+    sentBefore,
+    "거부된 인자가 Chromium 까지 갔다",
+  );
+
+  // 권한 계열도 같은 규칙을 쓴다(같은 강제기를 지난다).
+  const permission = await channel.send("Browser.grantPermissions", {
+    browserContextId: ["foreign"],
+    permissions: [],
+  });
+  assert.equal(permission.error?.code, CONTEXT_MISMATCH, JSON.stringify(permission));
+  await live.stop();
+});
+
 test("Browser.setDownloadBehavior 와 Page.setDownloadBehavior 는 둘 다 downloadPath 가 재작성된다", async () => {
   const live = await startLiveSupervisor({ wrap: true });
   const { channel, space, sessionId } = await stage(live, "다운로드");

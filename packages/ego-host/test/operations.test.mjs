@@ -120,3 +120,59 @@ test("로케이터: css → href → role 순으로 고르고 없으면 붙이�
   assert.equal(stableLocator({ role: "button", name: "보내기" }), 'role:button[name="보내기"]');
   assert.equal(stableLocator({}), null);
 });
+
+/**
+ * S7 P1-4 — 불투명 id 는 작업과 **세션** 양쪽에 결박된다 (계약 4.3.2).
+ *
+ * 고치기 전에는 `map.has(id)` 만 봤다. 한 작업이 두 세션을 들면 S1 이 만든 objectId 를 S2 의
+ * 명령에 넣어도 정책층이 통과시켜 Chromium 까지 갔다. 작업 결속은 있었지만 세션 격리가 없었다.
+ */
+test("같은 작업의 두 세션이 서로의 objectId·requestId 를 쓰지 못한다", async () => {
+  const fixture = await startFixture();
+  const live = await startLiveSupervisor();
+  const client = await connectClient(live);
+  const { channel, sessionId: first } = await openSession(client, "교차", fixture.origin);
+
+  // 같은 작업(뿌리 작업)이 두 번째 탭에도 붙는다 — 세션 둘, 작업 하나.
+  const created = await channel.call("Target.createTarget", { url: `${fixture.origin}/` });
+  const { sessionId: second } = await channel.call(
+    "Target.attachToTarget",
+    { targetId: created.targetId, flatten: true },
+  );
+  assert.notEqual(first, second, "두 번째 세션이 서지 않았다");
+
+  // S1 에서 원격 객체 하나를 만든다. 등록은 감독자가 응답에서 직접 한다(선언을 믿지 않는다).
+  const made = await channel.call("Runtime.evaluate", { expression: "({naia:1})" }, first);
+  const objectId = made.result?.objectId;
+  assert.ok(objectId, `objectId 를 못 받았다: ${JSON.stringify(made)}`);
+
+  // 자기 세션에서는 쓸 수 있다.
+  const own = await channel.call(
+    "Runtime.callFunctionOn",
+    { objectId, functionDeclaration: "function(){return this.naia}", returnByValue: true },
+    first,
+  );
+  assert.equal(own.result?.value, 1, `자기 세션에서 막혔다: ${JSON.stringify(own)}`);
+
+  // 남의 세션에서는 **세션 불일치**로 거부다. 없는 것과 다른 세션 것은 다른 사실이다.
+  const crossId = channel.nextId();
+  const cross = await channel.send(
+    "Runtime.callFunctionOn",
+    { objectId, functionDeclaration: "function(){return this.naia}", returnByValue: true },
+    second,
+  );
+  assert.equal(cross.id, crossId, "거부가 원래 id 를 잃었다");
+  assert.equal(cross.error.code, CODES.RESOURCE_NOT_OWNED, JSON.stringify(cross));
+  assert.match(cross.error.message, new RegExp(`세션 ${first} 의 것이다`));
+
+  // 아예 없는 id 는 소유 없음으로 거부된다(같은 코드, 다른 문구).
+  const absent = await channel.send(
+    "Runtime.callFunctionOn",
+    { objectId: "지어낸-객체", functionDeclaration: "function(){return 1}" },
+    first,
+  );
+  assert.equal(absent.error.code, CODES.RESOURCE_NOT_OWNED);
+  assert.match(absent.error.message, /이 작업이 연 것이 아니다/);
+
+  await live.stop();
+});

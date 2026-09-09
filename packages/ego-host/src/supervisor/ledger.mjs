@@ -108,8 +108,27 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
    * 두 번째 캡처부터 "Session with given id not found").
    * 그래서 attach 를 보내기 전에 표시해 두고, 그 짝 이벤트는 아무에게도 주지 않고 지나보낸다.
    */
-  const hostAttaches = new Map();
+  /**
+   * **correlationId -> 예약** (S7 P1-2). 전에는 `targetId -> 횟수` 하나였고, 응답이 먼저 온
+   * 순서에서 그 횟수가 줄지 않았다. 응답 경로는 세션만 적고, 뒤따라 온 이벤트는 "이미 아는
+   * 감독자 세션" 검사에서 먼저 돌아가 예약을 소비하지 않기 때문이다. 남은 예약은 그 타깃의
+   * **예기치 않은 자식 attach** 가 주워 감독자 세션으로 승인받는 문이 된다. 타임아웃·CDP
+   * 오류·송신 실패에서도 예약이 남았다.
+   *
+   * 그래서 예약을 요청 하나에 결박한 객체로 든다. 응답과 이벤트 어느 쪽이 먼저 와도 **정확히
+   * 한 번** 소비되고, 늦게 온 짝은 이미 소비된 예약을 자기 세션으로 확인만 한다. 짝이 아닌
+   * 늦은 attach 는 예약을 못 찾아 거부·detach 된다.
+   */
+  const hostReservations = new Map();
   const hostSessions = new Set();
+
+  /** 그 타깃에서 아직 소비되지 않은 예약 하나. 먼저 보낸 요청의 것부터 준다(FIFO). */
+  function unconsumedHostReservation(targetId) {
+    for (const reservation of hostReservations.values()) {
+      if (reservation.targetId === targetId && reservation.sessionId === null) return reservation;
+    }
+    return null;
+  }
 
   function persist() {
     if (!adkDir) return;
@@ -263,11 +282,22 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
     if (existing && existing.connection === connection && existing.targetId === targetId) {
       return { ok: true, already: true, record: existing };
     }
+    /**
+     * 묘비를 다시 세우지 않는다 (S7 P1-1).
+     *
+     * 전에는 새 attach 가 성공하면 `tombstones.delete(sessionId)` 로 묘비를 지우고 같은 값을
+     * 새 소유자로 등록했다. 그러면 `gen1:T→S`, detach, `gen2:T→S` 재사용 뒤에 도착한 gen1 의
+     * 지연 요청·이벤트가 gen2 의 것으로 수락된다 — 묘비가 막으라고 있는 바로 그 경로다.
+     * 감독자가 사는 동안 한 번 죽은 sessionId 는 다시 살아나지 않고, 그 attach 는 감독자가
+     * 곧바로 detach 한다.
+     */
+    if (tombstones.has(sessionId)) {
+      return { ok: false, reason: "tombstoned" };
+    }
     const lease = leases.get(targetId);
     if (!lease || lease.connection !== connection || lease.generation !== generation) {
       return { ok: false, reason: lease ? "stale-generation" : "revoked" };
     }
-    tombstones.delete(sessionId);
     const workspaceId = targetSpace.get(targetId) ?? null;
     const record = { connection, workspaceId, targetId, generation };
     sessions.set(sessionId, record);
@@ -578,15 +608,27 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
      */
     resolveAttachedEvent({ targetId, sessionId }) {
       if (hostSessions.has(sessionId)) return { ok: true, host: true, connection: null };
-      const pendingHost = hostAttaches.get(targetId) ?? 0;
-      if (pendingHost > 0) {
-        if (pendingHost <= 1) hostAttaches.delete(targetId);
-        else hostAttaches.set(targetId, pendingHost - 1);
+      // 묘비가 먼저다. 같은 값이 재사용되면 옛 세대의 이벤트가 새 주인에게 붙는다(S7 P1-1).
+      if (tombstones.has(sessionId)) return { ok: false, reason: "tombstoned" };
+      const reservation = unconsumedHostReservation(targetId);
+      if (reservation) {
+        reservation.sessionId = sessionId;
         hostSessions.add(sessionId);
         return { ok: true, host: true, connection: null };
       }
       const known = sessions.get(sessionId);
-      if (known) return { ok: true, connection: known.connection, record: known };
+      if (known) {
+        // 아는 세션이라도 **어느 타깃의 어느 세대**인지 본다. 전에는 그대로 통과시켜서
+        // 같은 sessionId 가 다른 타깃에 붙어도 옛 주인에게 이벤트가 갔다(S7 P1-1).
+        if (targetId && known.targetId !== targetId) {
+          return { ok: false, reason: "session-target-mismatch" };
+        }
+        const currentLease = known.targetId ? leases.get(known.targetId) : null;
+        if (currentLease && currentLease.generation !== known.generation) {
+          return { ok: false, reason: "stale-generation" };
+        }
+        return { ok: true, connection: known.connection, record: known };
+      }
       const lease = targetId ? leases.get(targetId) : null;
       if (!lease) return { ok: false, reason: "unexpected-child" };
       const settled = settleAttach({
@@ -622,9 +664,42 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
 
     // ── 감독자 자신의 세션 ─────────────────────────────────────────────────
     /** 감독자가 attach 를 보내기 직전에 표시한다. 짝 이벤트가 자식으로 오해받지 않게. */
-    beginHostAttach(targetId) {
-      if (typeof targetId !== "string" || targetId === "") return;
-      hostAttaches.set(targetId, (hostAttaches.get(targetId) ?? 0) + 1);
+    beginHostAttach(targetId, correlationId) {
+      if (typeof targetId !== "string" || targetId === "") return null;
+      if (correlationId === undefined || correlationId === null) return null;
+      const reservation = { correlationId, targetId, sessionId: null };
+      hostReservations.set(correlationId, reservation);
+      return reservation;
+    },
+    /**
+     * attach 응답이 왔다. 예약을 **정확히 한 번** 소비한다.
+     * 이벤트가 먼저 와 이미 소비됐으면 같은 세션인지 확인만 한다 — 다르면 거짓 짝이다.
+     */
+    settleHostAttach({ correlationId, sessionId }) {
+      if (typeof sessionId !== "string" || sessionId === "") return { ok: false, reason: "no-session" };
+      const reservation = hostReservations.get(correlationId);
+      if (!reservation) {
+        // 예약이 이미 걷혔다(상한·오류·연결 종료). 주인 없는 세션을 만들지 않는다.
+        return { ok: false, reason: "revoked" };
+      }
+      if (reservation.sessionId !== null) {
+        const same = reservation.sessionId === sessionId;
+        if (same) hostReservations.delete(correlationId);
+        return same ? { ok: true, already: true } : { ok: false, reason: "session-mismatch" };
+      }
+      reservation.sessionId = sessionId;
+      hostSessions.add(sessionId);
+      hostReservations.delete(correlationId);
+      return { ok: true };
+    },
+    /** 예약을 걷는다(상한 초과·CDP 오류·송신 실패). 걷힌 뒤의 늦은 attach 는 자식으로 거부된다. */
+    cancelHostAttach(correlationId) {
+      if (correlationId === undefined || correlationId === null) return false;
+      return hostReservations.delete(correlationId);
+    },
+    /** 시험용 관측: 아직 살아 있는 감독자 attach 예약. */
+    hostReservationCount() {
+      return hostReservations.size;
     },
     noteHostSession(sessionId) {
       if (typeof sessionId === "string" && sessionId !== "") hostSessions.add(sessionId);
@@ -687,6 +762,11 @@ export function createLedger({ adkDir = null, hostRequest = null, log = () => {}
         })),
         sessions: [...sessions.keys()],
         tombstones: [...tombstones],
+        hostReservations: [...hostReservations.values()].map((r) => ({
+          correlationId: r.correlationId,
+          targetId: r.targetId,
+          sessionId: r.sessionId,
+        })),
         rejectedChildren: [...rejectedChildren],
       };
     },

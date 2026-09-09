@@ -300,3 +300,68 @@ test("배타 슬롯: 같은 세션에 두 작업이 동시에 평가하면 두 �
   assert.equal(afterRelease.result.value, 8);
   await live.stop();
 });
+
+/**
+ * S7 P1-5 — 취소 장벽 뒤의 지연 이벤트는 **다른 작업으로 흘러가지 않는다** (계약 4.7).
+ *
+ * 고치기 전에는 이벤트 소유자 탐색이 running 작업만 훑었다. 그래서 종결된 O2 는 검색에서
+ * 아예 빠지고 O2 가 유발한 지연 이벤트가 한 칸 앞의 O1 에 붙었으며, 뒤에 놓인 "owner 가
+ * terminal 이면 버린다" 검사는 영원히 참이 되지 않았다.
+ *
+ * 그 구간(terminal CAS ↔ 정리 완료)을 강제로 열어야 재현된다. 정리 명령의 응답을 붙잡아
+ * 두면 정리가 그 자리에 멈추고, 그때 지연 이벤트를 주입한다.
+ */
+test("취소: CAS 직후 도착한 지연 이벤트는 O2 에 귀속돼 버려지고 O1 의 것만 통과한다", async () => {
+  const fixture = await startFixture();
+  const live = await startLiveSupervisor({ wrap: true });
+  const client = await connectClient(live);
+  const rootId = client.greeting.operationId;
+  const { channel, sessionId } = await openSession(client, "장벽", fixture.origin);
+
+  // O2 가 같은 세션을 **마지막으로** 쓴다.
+  const b = await client.call("beginOperation", { timeoutMs: 20_000 });
+  const bChannel = cdpChannel(client, { operationId: b.operationId });
+  await bChannel.call("Runtime.evaluate", { expression: "1+1", returnByValue: true }, sessionId);
+
+  const delayed = {
+    sessionId,
+    method: "Runtime.consoleAPICalled",
+    params: { type: "log", args: [{ type: "string", value: "지연" }], executionContextId: 1, timestamp: 1 },
+  };
+  const before = channel.eventsOf("Runtime.consoleAPICalled").length;
+
+  // 정리 명령의 응답을 붙잡아 CAS 와 정리 완료 사이를 연다.
+  live.backend.hold((message) => Object.hasOwn(message, "id"));
+  const cancelling = client.call("cancelOperation", { operationId: b.operationId });
+  await waitFor(() => (operationOf(live, b.operationId)?.status === "cancelled" ? true : null));
+
+  live.backend.inject(delayed);
+  const dropped = await waitFor(() => {
+    const found = live.server.operations
+      .inspect()
+      .droppedAfterBarrier.filter((entry) => entry.operationId === b.operationId);
+    return found.length > 0 ? found : null;
+  });
+  assert.equal(dropped[0].method, "Runtime.consoleAPICalled");
+  assert.equal(
+    channel.eventsOf("Runtime.consoleAPICalled").length,
+    before,
+    "종결된 작업의 지연 이벤트가 O1 에 전달됐다",
+  );
+
+  live.backend.release();
+  const cancelled = await cancelling;
+  assert.equal(cancelled.status, "cancelled");
+
+  // 정리가 끝나면 그 세션의 마지막 소유자는 다시 O1 이고, O1 의 이벤트는 통과한다.
+  await channel.call("Runtime.evaluate", { expression: "2+2", returnByValue: true }, sessionId);
+  assert.equal(operationOf(live, rootId).status, "running");
+  live.backend.inject(delayed);
+  const passed = await waitFor(() =>
+    channel.eventsOf("Runtime.consoleAPICalled").length > before
+      ? channel.eventsOf("Runtime.consoleAPICalled")
+      : null,
+  );
+  assert.ok(passed, "장벽이 살아 있는 작업의 이벤트까지 막았다");
+  await live.stop();
+});

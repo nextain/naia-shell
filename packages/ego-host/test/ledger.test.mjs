@@ -12,6 +12,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { createCdpMux } from "../src/supervisor/cdp-mux.mjs";
 import { createLedger, spacesPath } from "../src/supervisor/ledger.mjs";
 import { cleanupAll, tempDir } from "./helpers/live-browser.mjs";
 import {
@@ -332,4 +333,148 @@ test("연결이 끊기면 그 연결의 세션·예약만 걷어내고 다른 �
   // 공간은 남는다 — CLI 가 죽어도 다음 heredoc 이 같은 공간에 다시 붙는다(계약 4.8).
   assert.ok(live.ledger.get(going.space.id), "연결이 끊겼다고 작업 공간을 지우면 안 된다");
   await live.stop();
+});
+
+// ── S7 P1-1·P1-2 (적대 리뷰 지적) ────────────────────────────────────────────
+
+test("묘비 sessionId 는 lease 가 살아 있어도 재등록되지 않고 그 attach 는 감독자가 detach 한다", async () => {
+  const live = await startLiveSupervisor({ wrap: true });
+  const client = await connectClient(live);
+  const { targetId } = await spaceWithTab(live, client, "묘비재사용");
+  const channel = cdpChannel(client);
+  const { sessionId } = await channel.call("Target.attachToTarget", { targetId, flatten: true });
+
+  // gen1 이 죽는다 — 탭을 닫으면 Chromium 이 detachedFromTarget 을 준다.
+  await channel.call("Target.closeTarget", { targetId });
+  await waitFor(() => (live.ledger.isTombstoned(sessionId) ? true : null));
+
+  // gen2: 새 탭에 진짜 attach 를 걸어 **예약(lease)을 살려 둔다.** 그 상태에서 옛 sessionId 를
+  // 재사용하는 attach 이벤트가 오면, 고치기 전 장부는 묘비를 지우고 gen2 의 세션으로 등록했다.
+  // Chromium 은 sessionId 를 재사용하지 않으므로 그 순간은 주입으로만 만들 수 있다.
+  const created = await client.call("createTab", { url: "about:blank" });
+  live.backend.hold((message) => typeof message.result?.sessionId === "string");
+  const pending = channel.send("Target.attachToTarget", { targetId: created.targetId, flatten: true });
+  live.backend.inject({
+    method: "Target.attachedToTarget",
+    params: {
+      sessionId,
+      targetInfo: { targetId: created.targetId, type: "page", attached: true },
+      waitingForDebugger: false,
+    },
+  });
+  const rejected = await waitFor(() => {
+    const found = live.ledger
+      .inspect()
+      .rejectedChildren.filter((entry) => entry.sessionId === sessionId);
+    return found.length > 0 ? found[0] : null;
+  });
+  assert.equal(rejected.reason, "tombstoned", "묘비 재사용이 자식 오탐이 아니라 묘비로 거부돼야 한다");
+  assert.equal(
+    live.ledger.inspect().sessions.includes(sessionId),
+    false,
+    "묘비 sessionId 가 다시 장부에 올랐다",
+  );
+
+  // 진짜 짝은 그대로 선다 — 거부가 정상 attach 를 망가뜨리지 않는다.
+  live.backend.release();
+  const settled = await pending;
+  assert.ok(settled.result.sessionId, "정상 attach 응답이 세션을 안 줬다");
+  assert.notEqual(settled.result.sessionId, sessionId);
+
+  // gen1 의 지연 요청도 여전히 거부다(원래 id 보존).
+  const deniedId = channel.nextId();
+  const denied = await channel.send("Runtime.evaluate", { expression: "1+1" }, sessionId);
+  assert.equal(denied.id, deniedId);
+  assert.ok(denied.error, "묘비 세션의 지연 요청이 통과했다");
+  await live.stop();
+});
+
+/**
+ * 가짜 CDP 백엔드 하나. 감독자 attach 예약은 **응답·이벤트의 순서와 실패 경로**가 판정
+ * 대상이라, 어느 쪽이 먼저 올지 Chromium 이 정하는 실브라우저로는 두 순서를 다 강제할 수 없다.
+ * 이 자리에서만 백엔드를 가짜로 쓴다(위의 모든 시험은 실 Chromium 이다).
+ */
+function scriptedBackend() {
+  const handlers = new Set();
+  const sent = [];
+  return {
+    sent,
+    send(raw) {
+      sent.push(JSON.parse(raw));
+    },
+    onMessage(handler) {
+      handlers.add(handler);
+    },
+    on() {},
+    emit(message) {
+      const raw = JSON.stringify(message);
+      for (const handler of handlers) handler(raw);
+    },
+  };
+}
+
+test("감독자 attach 예약은 응답·이벤트 두 순서에서 정확히 한 번 소비된다", async () => {
+  for (const order of ["response-first", "event-first"]) {
+    const ledger = createLedger();
+    const backend = scriptedBackend();
+    const mux = createCdpMux({ backend, ledger });
+    const targetId = `T-${order}`;
+    const sessionId = `S-${order}`;
+
+    const request = mux.hostRequest("Target.attachToTarget", { targetId, flatten: true });
+    const sent = backend.sent.at(-1);
+    assert.equal(ledger.inspect().hostReservations.length, 1, `${order}: 예약이 서지 않았다`);
+
+    const response = { id: sent.id, result: { sessionId } };
+    const event = {
+      method: "Target.attachedToTarget",
+      params: { sessionId, targetInfo: { targetId, type: "page", attached: true } },
+    };
+    if (order === "response-first") {
+      backend.emit(response);
+      await request;
+      backend.emit(event);
+    } else {
+      backend.emit(event);
+      backend.emit(response);
+      await request;
+    }
+
+    assert.equal(ledger.isHostSession(sessionId), true, `${order}: 감독자 세션으로 안 잡혔다`);
+    assert.equal(
+      ledger.inspect().hostReservations.length,
+      0,
+      `${order}: 예약이 남았다 — 남은 예약은 예기치 않은 자식이 주워 간다`,
+    );
+    assert.deepEqual(ledger.inspect().rejectedChildren, [], `${order}: 짝을 자식으로 끊었다`);
+  }
+});
+
+test("attach 가 실패하면 예약이 걷히고 늦게 온 자식 attach 는 그것을 소비하지 못한다", async () => {
+  const ledger = createLedger();
+  const backend = scriptedBackend();
+  const mux = createCdpMux({ backend, ledger });
+
+  const failed = mux.hostRequest("Target.attachToTarget", { targetId: "T-fail", flatten: true });
+  const sent = backend.sent.at(-1);
+  assert.equal(ledger.inspect().hostReservations.length, 1);
+  backend.emit({ id: sent.id, error: { message: "No target with given id" } });
+  await assert.rejects(failed, /No target with given id/);
+  assert.equal(ledger.inspect().hostReservations.length, 0, "실패 뒤에도 예약이 남았다");
+
+  // 그 타깃에 예기치 않은 자식이 붙는다. 남은 예약이 없으므로 감독자 세션이 되지 못한다.
+  backend.emit({
+    method: "Target.attachedToTarget",
+    params: {
+      sessionId: "CHILD-AFTER-FAILURE",
+      targetInfo: { targetId: "T-fail", type: "iframe", attached: true },
+      waitingForDebugger: true,
+    },
+  });
+  assert.equal(ledger.isHostSession("CHILD-AFTER-FAILURE"), false, "자식이 감독자 세션으로 승인됐다");
+  assert.deepEqual(
+    ledger.inspect().rejectedChildren.map((entry) => entry.sessionId),
+    ["CHILD-AFTER-FAILURE"],
+    "실패 뒤 자식이 끊기지 않았다",
+  );
 });

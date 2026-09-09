@@ -346,11 +346,17 @@ export function createCdpMux({
       const id = nextUpstreamId++;
       // 감독자 자신의 attach 는 짝 이벤트가 오기 **전에** 표시해야 한다(이벤트가 응답보다
       // 먼저 오는 순서가 실제로 있다, 4.3.1). 그러지 않으면 우리 세션을 우리가 끊는다.
-      if (method === "Target.attachToTarget") ledger.beginHostAttach?.(params?.targetId);
+      //
+      // 표시는 **이 요청 하나에 결박한 예약**이다(S7 P1-2). 요청 id 가 correlation 이므로
+      // 응답·이벤트 어느 쪽이 먼저 와도 정확히 한 번 소비되고, 상한·오류·송신 실패에서는
+      // 아래 세 자리가 예약을 걷는다. 걷힌 뒤 도착한 attach 는 예기치 않은 자식으로 detach 된다.
+      const attachCorrelation = method === "Target.attachToTarget" ? id : null;
+      if (attachCorrelation !== null) ledger.beginHostAttach?.(params?.targetId, attachCorrelation);
       if (method === "Target.detachFromTarget") ledger.endHostSession?.(params?.sessionId);
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           pending.delete(id);
+          if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
           reject(new Error(`감독자 내부 CDP 상한 초과: ${method}`));
         }, requestDeadlineMs);
         timer.unref?.();
@@ -359,15 +365,31 @@ export function createCdpMux({
           connection: {
             deliverCdp(raw) {
               const data = JSON.parse(raw);
-              if (data.error) reject(new Error(data.error.message || "CDP 오류"));
-              else {
-                if (typeof data.result?.sessionId === "string") {
+              if (data.error) {
+                if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
+                reject(new Error(data.error.message || "CDP 오류"));
+                return;
+              }
+              if (typeof data.result?.sessionId === "string") {
+                if (attachCorrelation !== null) {
+                  const settled = ledger.settleHostAttach?.({
+                    correlationId: attachCorrelation,
+                    sessionId: data.result.sessionId,
+                  });
+                  if (settled && settled.ok === false) {
+                    // 예약이 이미 걷혔거나 짝이 아니다. 주인 없는 세션을 남기지 않는다.
+                    ledger.rejectChildSession?.(data.result.sessionId, `host-attach-${settled.reason}`);
+                    reject(new Error(`감독자 attach 예약을 찾지 못했다(${settled.reason}): ${method}`));
+                    return;
+                  }
+                } else {
                   ledger.noteHostSession?.(data.result.sessionId);
                 }
-                resolve(data.result ?? {});
               }
+              resolve(data.result ?? {});
             },
             deliverCdpFatal(message) {
+              if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
               reject(new Error(message));
             },
           },
@@ -381,6 +403,7 @@ export function createCdpMux({
         } catch (error) {
           clearTimeout(timer);
           pending.delete(id);
+          if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
           reject(error);
         }
       });

@@ -66,6 +66,78 @@ test("grant 가 토큰 발급분과 다르면 거부된다", async () => {
   assert.equal(frames.at(-1)?.error_code, CODES.HANDSHAKE_INVALID);
 });
 
+/**
+ * S7 P1-3 — hello 의 operation·workspace 선언은 토큰 기록을 **덮지 못한다**.
+ *
+ * 고치기 전에는 grant 만 대조하고 두 값은 클라이언트가 보낸 non-null 을 우선했다. 그래서
+ * 승인이 붙은 토큰 하나로 다른 작업·다른 공간에 결박된 연결을 세울 수 있었다.
+ */
+test("hello 의 operationId·workspaceId 는 토큰 기록과 정확히 같아야 한다", async () => {
+  const { server, socketPath } = await startSupervisor();
+  const grant = { tier: "workspace-write" };
+
+  // (1) 정상 일치 — 같은 값을 실으면 선다.
+  const matching = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
+  const ok = await rawHello(socketPath, {
+    type: "hello",
+    token: matching,
+    grant,
+    operationId: "approved",
+    workspaceId: "A",
+  });
+  assert.equal(ok.at(-1)?.type, "welcome", `일치하는 선언이 거부됐다: ${JSON.stringify(ok.at(-1))}`);
+  assert.equal(ok.at(-1)?.operationId, "approved");
+  assert.equal(ok.at(-1)?.workspaceId, "A");
+
+  // (2) 불일치 — 작업 id 를 바꿔 실으면 거부다.
+  const otherOp = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
+  const denied = await rawHello(socketPath, {
+    type: "hello",
+    token: otherOp,
+    grant,
+    operationId: "other",
+    workspaceId: "A",
+  });
+  assert.equal(denied.at(-1)?.error_code, CODES.HANDSHAKE_INVALID);
+  assert.match(String(denied.at(-1)?.error), /operationId/);
+
+  // (2b) 공간 id 도 마찬가지다.
+  const otherSpace = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
+  const deniedSpace = await rawHello(socketPath, {
+    type: "hello",
+    token: otherSpace,
+    grant,
+    operationId: "approved",
+    workspaceId: "B",
+  });
+  assert.equal(deniedSpace.at(-1)?.error_code, CODES.HANDSHAKE_INVALID);
+  assert.match(String(deniedSpace.at(-1)?.error), /workspaceId/);
+
+  // (3) 누락 — 벤더 런처는 이 필드를 싣지 않는다. 토큰 기록을 쓴다.
+  const missing = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
+  const filled = await rawHello(socketPath, { type: "hello", token: missing, grant });
+  assert.equal(filled.at(-1)?.type, "welcome");
+  assert.equal(filled.at(-1)?.operationId, "approved");
+  assert.equal(filled.at(-1)?.workspaceId, "A");
+
+  // (4) 잘못된 타입 — 조용히 문자열로 바꾸지 않는다.
+  for (const bad of [123, ["approved"], { id: "approved" }, ""]) {
+    const token = server.issueToken({ operationId: "approved", workspaceId: "A", grant });
+    const frames = await rawHello(socketPath, {
+      type: "hello",
+      token,
+      grant,
+      operationId: bad,
+      workspaceId: "A",
+    });
+    assert.equal(
+      frames.at(-1)?.error_code,
+      CODES.HANDSHAKE_INVALID,
+      `${JSON.stringify(bad)} 가 통과했다`,
+    );
+  }
+});
+
 test("grant 없는 연결은 관측 RPC 만 되고 변경 RPC 는 거부된다", async () => {
   const { server, socketPath } = await startSupervisor();
   const client = await connectClient(server, socketPath, { grant: null });
