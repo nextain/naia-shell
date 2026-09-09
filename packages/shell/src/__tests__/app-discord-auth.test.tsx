@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AppConfig } from "../lib/config";
 
 const listeners: Record<
 	string,
@@ -31,6 +32,10 @@ const backgroundState = vi.hoisted(() => ({
 	releaseConfigRead: null as (() => void) | null,
 	listNaiaAssets: vi.fn(async () => [] as string[]),
 	toLocalBlobUrl: vi.fn(async (path: string) => path),
+}));
+const avatarConfigState = vi.hoisted(() => ({
+	loadConfigWithSecrets: null as (() => Promise<AppConfig | null>) | null,
+	calls: 0,
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -146,6 +151,21 @@ vi.mock("../lib/adk-store", async () => {
 	};
 });
 
+vi.mock("../lib/config", async () => {
+	const actual = await vi.importActual<typeof import("../lib/config")>(
+		"../lib/config",
+	);
+	return {
+		...actual,
+		loadConfigWithSecrets: () => {
+			avatarConfigState.calls += 1;
+			return avatarConfigState.loadConfigWithSecrets
+				? avatarConfigState.loadConfigWithSecrets()
+				: actual.loadConfigWithSecrets();
+		},
+	};
+});
+
 vi.mock("../components/OnboardingWizard", () => ({
 	OnboardingWizard: ({ onComplete }: { onComplete: () => void }) => (
 		<button type="button" onClick={onComplete}>
@@ -168,6 +188,13 @@ vi.mock("../components/ChatArea", () => ({
 
 vi.mock("../components/TitleBar", () => ({
 	TitleBar: () => <div>title</div>,
+}));
+
+// Keep this App regression focused on App's avatar sync effect. The live
+// control bar performs its own config refresh and deliberately has a separate
+// lifecycle, which would otherwise consume the deferred promise below.
+vi.mock("../components/AiControlBar", () => ({
+	AiControlBar: () => <div data-testid="ai-control-bar" />,
 }));
 
 // Mock app system to prevent built-in apps from loading Tauri APIs
@@ -229,6 +256,7 @@ import { readNaiaConfig, writeNaiaConfig } from "../lib/adk-store";
 import { sendAppSkills } from "../lib/chat-service";
 import { refreshEnvironment } from "../lib/environment-skill";
 import { useAppStore } from "../stores/app";
+import { useAvatarStore } from "../stores/avatar";
 
 const E2E_ADK_PATH = "/adk/e2e-target";
 const COLD_ADK_PATH = "/adk/complete";
@@ -272,6 +300,8 @@ describe("App discord deep-link persistence", () => {
 		backgroundState.listNaiaAssets.mockImplementation(async () => backgroundState.assets);
 		backgroundState.toLocalBlobUrl.mockReset();
 		backgroundState.toLocalBlobUrl.mockImplementation(async (path: string) => path);
+		avatarConfigState.loadConfigWithSecrets = null;
+		avatarConfigState.calls = 0;
 		vi.mocked(refreshEnvironment).mockClear();
 		vi.mocked(sendAppSkills).mockClear();
 		vi.mocked(readNaiaConfig).mockClear();
@@ -563,6 +593,54 @@ describe("App discord deep-link persistence", () => {
 		expect(nativeState.adkPathBinds).toEqual([E2E_ADK_PATH]);
 		expect(readNaiaConfig).not.toHaveBeenCalled();
 		expect(writeNaiaConfig).not.toHaveBeenCalled();
+	});
+
+	it("does not publish a deferred avatar rejection after unmount", async () => {
+		localStorage.setItem("naia-adk-path", PREVIOUS_ADK_PATH);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				...PREVIOUS_ADK_CONFIG,
+				vrmModel: `${PREVIOUS_ADK_PATH}/previous.vrm`,
+			}),
+		);
+		useAvatarStore.getState().setModelPath(`${PREVIOUS_ADK_PATH}/previous.vrm`);
+
+		let rejectAvatarLoad!: (reason?: unknown) => void;
+		const deferredAvatarLoad = new Promise<AppConfig | null>((_, reject) => {
+			rejectAvatarLoad = reject;
+		});
+		let firstLoad = true;
+		avatarConfigState.loadConfigWithSecrets = () => {
+			if (firstLoad) {
+				firstLoad = false;
+				return deferredAvatarLoad;
+			}
+			return Promise.resolve({
+				provider: "gemini",
+				model: "gemini-3-flash-preview",
+				apiKey: "",
+				vrmModel: `${PREVIOUS_ADK_PATH}/hydrated.vrm`,
+				onboardingComplete: true,
+			});
+		};
+
+		const view = render(<App />);
+		await waitFor(() => {
+			expect(avatarConfigState.calls).toBeGreaterThan(0);
+		});
+		await waitFor(() => {
+			expect(useAvatarStore.getState().modelPath).toBe(
+				`${PREVIOUS_ADK_PATH}/hydrated.vrm`,
+			);
+		});
+
+		const publishedPath = useAvatarStore.getState().modelPath;
+		view.unmount();
+		rejectAvatarLoad(new Error("deferred avatar load rejected after unmount"));
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+		expect(useAvatarStore.getState().modelPath).toBe(publishedPath);
 	});
 
 	it("hydrates the persisted TTS enabled state into the app store", async () => {
