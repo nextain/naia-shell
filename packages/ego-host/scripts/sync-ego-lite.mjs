@@ -19,8 +19,10 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   rmSync,
   statSync,
@@ -236,7 +238,7 @@ function gitOrThrow(args, options = {}) {
   return result.stdout;
 }
 
-function fetchUpstream(ref, destDir, source) {
+function fetchUpstream(ref, destDir, source, { blobs = false } = {}) {
   mkdirSync(destDir, { recursive: true });
   const origin = source || UPSTREAM_URL;
   gitOrThrow(["init", "-q", destDir]);
@@ -247,7 +249,8 @@ function fetchUpstream(ref, destDir, source) {
     "fetch",
     "--depth",
     "1",
-    "--filter=blob:none",
+    // 출처 게이트는 바이트를 직접 비교하므로 blob 을 실제로 받아야 한다.
+    ...(blobs ? [] : ["--filter=blob:none"]),
     "origin",
     ref,
   ]);
@@ -418,11 +421,151 @@ export function runSync(ref, { log = console.log, source = null } = {}) {
   }
 }
 
+
+// ----------------------------------------------------------- --provenance
+
+/**
+ * 트리 항목 열거. `--check` 의 `listVendorFiles` 와 달리 **심링크와 모드까지** 본다.
+ * 매니페스트는 sha256 만 보므로 심링크가 같은 내용의 실파일로 바뀌어도 통과한다 —
+ * 출처 게이트는 그 자리를 메운다.
+ */
+export function listTreeEntries(root) {
+  const out = [];
+  const walk = (absDir) => {
+    for (const entry of readdirSync(absDir, { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : 1,
+    )) {
+      const abs = join(absDir, entry.name);
+      const rel = toPosix(relative(root, abs));
+      if (isIgnored(rel)) continue;
+      if (OUR_VENDOR_FILES.has(rel)) continue;
+      if (entry.isSymbolicLink()) {
+        out.push({ rel, type: "symlink", target: toPosix(readlinkSync(abs)) });
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(abs);
+        continue;
+      }
+      if (entry.isFile()) {
+        const stat = lstatSync(abs);
+        out.push({
+          rel,
+          type: "file",
+          executable: (stat.mode & 0o111) !== 0,
+          size: stat.size,
+        });
+      }
+    }
+  };
+  if (!existsSync(root)) return out;
+  walk(root);
+  return out.sort((a, b) => (a.rel < b.rel ? -1 : 1));
+}
+
+/** 두 트리를 형식·모드·심링크·바이트·누락·추가까지 비교한다. */
+export function compareTrees(vendorRoot, upstreamRoot) {
+  const vendor = new Map(listTreeEntries(vendorRoot).map((e) => [e.rel, e]));
+  const upstream = new Map(listTreeEntries(upstreamRoot).map((e) => [e.rel, e]));
+  const problems = [];
+
+  for (const [rel, want] of upstream) {
+    const got = vendor.get(rel);
+    if (!got) {
+      problems.push(`업스트림에 있으나 벤더에 없다: ${rel}`);
+      continue;
+    }
+    if (got.type !== want.type) {
+      problems.push(`형식이 다르다(${want.type} -> ${got.type}): ${rel}`);
+      continue;
+    }
+    if (want.type === "symlink") {
+      if (got.target !== want.target) {
+        problems.push(`심링크 대상이 다르다(${want.target} -> ${got.target}): ${rel}`);
+      }
+      continue;
+    }
+    if (got.executable !== want.executable) {
+      problems.push(
+        `실행 비트가 다르다(${want.executable ? "x" : "-"} -> ${got.executable ? "x" : "-"}): ${rel}`,
+      );
+    }
+    if (got.size !== want.size) {
+      problems.push(`크기가 다르다(${want.size} -> ${got.size}바이트): ${rel}`);
+      continue;
+    }
+    if (!readFileSync(join(vendorRoot, rel)).equals(readFileSync(join(upstreamRoot, rel)))) {
+      problems.push(`바이트가 다르다: ${rel}`);
+    }
+  }
+  for (const rel of vendor.keys()) {
+    if (!upstream.has(rel)) problems.push(`업스트림에 없는 파일이 벤더에 있다: ${rel}`);
+  }
+  return problems;
+}
+
+/**
+ * 출처 게이트. `--check` 는 매니페스트와 대조할 뿐이라 매니페스트·벤더·UPSTREAM.md 를 함께
+ * 바꾸면 속는다. 여기서는 UPSTREAM.md 의 **고정 커밋 트리를 실체화해** 직접 비교한다.
+ *
+ * 네트워크가 없으면 `--source <로컬 클론 경로>` 로 실체화한다. 판정은 종료 코드다.
+ */
+export function runProvenance({ source = null, log = console.log, err = console.error } = {}) {
+  let pinned;
+  try {
+    pinned = readPinnedCommit();
+  } catch (error) {
+    err(`[sync-ego-lite] ${error.message}`);
+    return 1;
+  }
+  const scratch = mkdtempSync(join(tmpdir(), "ego-lite-prov-"));
+  const repoDir = join(scratch, "repo");
+  const treeDir = join(scratch, "tree");
+  try {
+    log(
+      `[sync-ego-lite] --provenance: ${source || UPSTREAM_URL} 에서 고정 커밋 ${pinned.commit} 를 실체화한다`,
+    );
+    const { commit } = fetchUpstream(pinned.commit, repoDir, source, { blobs: true });
+    if (commit !== pinned.commit) {
+      err(
+        `[sync-ego-lite] --provenance 실패: 받은 커밋(${commit})이 UPSTREAM.md 고정 커밋(${pinned.commit})과 다르다`,
+      );
+      return 1;
+    }
+    extractAllowlist(repoDir, commit, treeDir);
+    const problems = compareTrees(VENDOR_DIR, treeDir);
+    if (problems.length > 0) {
+      err(`[sync-ego-lite] --provenance 실패 (${problems.length}건), 고정 커밋 ${pinned.commit}`);
+      for (const problem of problems) err(`  - ${problem}`);
+      err("  이 게이트는 매니페스트를 보지 않는다 — 벤더 트리가 고정 커밋 그 자체여야 한다");
+      return 1;
+    }
+    const count = listTreeEntries(VENDOR_DIR).length;
+    log(
+      `[sync-ego-lite] --provenance 통과: ${count}개 항목이 ${pinned.commit} 와 형식·모드·심링크·바이트까지 같다`,
+    );
+    return 0;
+  } catch (error) {
+    err(`[sync-ego-lite] --provenance 실패: ${error.message}`);
+    return 1;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 // -------------------------------------------------------------------- CLI
+
+function sourceArg(argv) {
+  const at = argv.indexOf("--source");
+  return at >= 0 ? argv[at + 1] ?? null : null;
+}
 
 export function main(argv) {
   if (argv.includes("--check")) {
     return runCheck();
+  }
+  if (argv.includes("--provenance")) {
+    return runProvenance({ source: sourceArg(argv) });
   }
   const refIndex = argv.indexOf("--ref");
   if (refIndex >= 0) {
@@ -431,8 +574,7 @@ export function main(argv) {
       console.error("[sync-ego-lite] --ref 뒤에 커밋을 적는다");
       return 2;
     }
-    const sourceIndex = argv.indexOf("--source");
-    const source = sourceIndex >= 0 ? argv[sourceIndex + 1] : null;
+    const source = sourceArg(argv);
     try {
       return runSync(ref, { source });
     } catch (error) {
@@ -441,7 +583,10 @@ export function main(argv) {
     }
   }
   console.error(
-    "사용법:\n  node scripts/sync-ego-lite.mjs --check\n  node scripts/sync-ego-lite.mjs --ref <commit> [--source <git-url-or-path>]",
+    "사용법:\n" +
+      "  node scripts/sync-ego-lite.mjs --check\n" +
+      "  node scripts/sync-ego-lite.mjs --provenance [--source <git-url-or-path>]\n" +
+      "  node scripts/sync-ego-lite.mjs --ref <commit> [--source <git-url-or-path>]",
   );
   return 2;
 }

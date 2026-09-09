@@ -24,9 +24,12 @@ packages/ego-host/
 │  ├─ LICENSE, AGENTS.md
 │  ├─ UPSTREAM.md              고정 커밋·허용 목록·재동기화 절차
 │  └─ MANIFEST.sha256          파일별 sha256 (생성물)
-├─ scripts/sync-ego-lite.mjs   --check / --ref 동기화 도구
-├─ docs/ego-runtime-abi.md     런타임이 호스트에게 요구하는 실행 ABI (근거 줄 포함)
-├─ test/vendor-install.test.mjs 설치·무결성 검증
+├─ src/supervisor/             감독자 — 프레이밍·소켓·CDP 다중화·소켓 경로·임시 장부
+├─ src/client/                 CLI 쪽 — 소켓 클라이언트·globalThis.ego 프록시·preload
+├─ bin/ego-browser.mjs         런처 (`nodejs [--sdk-path <dist>]`)
+├─ scripts/sync-ego-lite.mjs   --check / --provenance / --ref 동기화·출처 도구
+├─ docs/ego-runtime-abi.md     런타임이 호스트에게 요구하는 실행 ABI (근거 줄 + 행별 테스트 이름)
+├─ test/                       vendor-install · conformance · handshake · rpc-transport · provenance
 ├─ THIRD_PARTY_NOTICES.md
 └─ package.json
 ```
@@ -50,6 +53,9 @@ packages/ego-host/
 # 벤더가 고정 커밋과 바이트 단위로 같은지 (네트워크 불필요, 판정은 종료 코드)
 npm run vendor:check
 
+# 출처 게이트 — 고정 커밋 트리를 실체화해 형식·모드·심링크·바이트까지 직접 비교
+node scripts/sync-ego-lite.mjs --provenance [--source <로컬 클론 경로>]
+
 # 이 패키지의 검증 — 무결성 + 임의 디렉터리 설치·빌드·단위 테스트 + bin 동작
 npm test
 
@@ -60,10 +66,73 @@ npm run vendor:test
 node scripts/sync-ego-lite.mjs --ref <커밋 해시>
 ```
 
-## 다음 (S2)
 
-이 패키지는 슬라이스 S2 에서 **감독자(supervisor)와 CLI** 를 갖는다. 감독자는 셸이
-lease 로 소유하는 장기 프로세스로 Chromium 을 헤드리스로 띄우고, 작업 공간(브라우저
-컨텍스트) 장부와 CDP 중계기, 작업별 세션·취소·시간 제한, 접근성 스냅샷과 화면 캡처를
-맡는다. CLI 의 `nodejs` 서브커맨드는 벤더 런타임에 `globalThis.ego` 를 소켓 프록시로
-주입하는 얇은 클라이언트가 된다. 그때 지켜야 할 계약이 `docs/ego-runtime-abi.md` 다.
+## 런처와 감독자 (S2a)
+
+### 실행 모양
+
+```bash
+# 감독자가 소켓 경로와 단일 사용 토큰을 환경으로 내려주고, 런처가 벤더 SDK 를 무수정 실행한다
+EGO_HOST_SOCKET=/run/user/1000/naia-ego-host-<해시>.sock \
+EGO_HOST_TOKEN=<단일 사용 토큰> \
+EGO_HOST_GRANT='{"tier":"workspace-write","approvalRef":"a-1"}' \
+node packages/ego-host/bin/ego-browser.mjs nodejs [--sdk-path <dist>] <<'JS'
+const space = await taskSpaces.useOrCreate("조사");
+console.log(await browser.listTabs());
+JS
+```
+
+런처가 하는 일은 하나다: `node --import <preload.mjs> <dist>/index.js` 로 벤더 진입점을
+**직접** 실행하고 stdin 을 그대로 넘긴다. 그래야 벤더 `index.js` 의 `process.argv[1]` 이
+자기 자신이 되어 `isDirectCli()` 가 참이 되고 `runMain()` 경로로 들어간다. preload 는
+벤더 모듈을 정적으로 import 하지 않고, 최상위 await 로 소켓 연결·핸드셰이크를 끝낸 뒤
+`globalThis.ego` 만 세운다. 기본 SDK 경로는 벤더 `dist/out` 이며, 없으면 형식 있는
+오류(`EGO_HOST_SDK_NOT_FOUND`)로 종료 코드 2 다.
+
+### 핸드셰이크
+
+첫 프레임이 `{type:"hello", token, grant, operationId, workspaceId, deadline}` 다.
+
+| 규칙 | 이유 |
+|---|---|
+| 토큰은 **단일 사용** | Node 가 `--import` 를 worker·fork·cluster 자식에 전파한다. worker 는 `isMainThread` 로 막히고, 별도 프로세스인 fork·cluster 는 토큰 재사용 거부로 막힌다 |
+| `grant` 가 없으면 **관측 RPC 만** | 임의 자바스크립트는 터미널 실행과 같은 등급이다. 승인 없는 연결의 CDP 는 원래 id 를 가진 오류 응답으로 거부되고 연결은 살아 있다 |
+| `deadline` 은 **짧은 쪽이 이긴다** | 호출자가 긴 시한을 적어 감독자 상한을 늘리지 못한다. 감독자 상한은 13초로 런타임의 15초보다 반드시 먼저 만료한다 |
+| 선택한 작업 공간은 **연결별 상태** | 두 CLI 가 동시에 요청 id 1 과 서로 다른 공간을 써도 섞이지 않는다 |
+
+### 환경 변수
+
+벤더 `state.ts` 가 **모듈 로드 시점에** `.env` 를 읽으므로, 아래는 전부 spawn 시점에
+자리잡아야 한다. SDK import 뒤의 주입은 늦다.
+
+| 변수 | 쓰임 |
+|---|---|
+| `EGO_HOST_SOCKET` | 감독자 소켓 경로(unix 소켓 또는 named pipe) |
+| `EGO_HOST_TOKEN` | 단일 사용 핸드셰이크 토큰 |
+| `EGO_HOST_GRANT` | 승인 JSON. 없으면 관측 전용 연결 |
+| `EGO_HOST_OPERATION_ID` · `EGO_HOST_WORKSPACE_ID` · `EGO_HOST_DEADLINE_MS` | 작업 결속(선택) |
+| `HOME` (Windows 는 `USERPROFILE`) | 벤더의 `~` 확장이 이 순서로 읽는다 |
+| `EGO_BROWSER_AGENT_WORKSPACE` | 학습·헬퍼 디렉터리를 벤더 밖에 두는 유일한 수단 |
+
+### OS 별 소켓 경로와 브라우저 후보
+
+소켓 경로 결정은 `src/supervisor/socket-path.mjs` 한 곳에 모여 있다.
+`process.platform` 분기는 그 파일과 런처 밖으로 나가지 않는다.
+
+| OS | 소켓 | 경로 모양 | 브라우저 후보 탐색(S2b) | 실측 |
+|---|---|---|---|---|
+| linux | unix 도메인 소켓 | `$XDG_RUNTIME_DIR/naia-ego-host-<adk 해시 12자>.sock` (없으면 `os.tmpdir()`) | Playwright chromium → 시스템 `chromium`/`google-chrome`. Flatpak Chrome 은 감지만 | 이 머신에서 실측 |
+| darwin | unix 도메인 소켓 | 같음. 경로 상한이 104바이트라 ADK 경로 대신 해시를 쓴다 | `/Applications/Google Chrome.app/…`, `…/Microsoft Edge.app/…` | **미실측** |
+| win32 | named pipe | `\\.\pipe\naia-ego-host-<adk 해시 12자>` (디렉터리 없음, 길이 제한 없음) | `%ProgramFiles%` / `%LOCALAPPDATA%` 의 `msedge.exe`·`chrome.exe` (#228 경로 목록) | **미실측**, windows4060 게이트 |
+
+이름은 ADK 루트의 sha256 앞 12자다. 같은 ADK 는 같은 소켓, 다른 ADK 는 다른 소켓이다.
+브라우저 후보 탐색과 `--remote-debugging-pipe` 기동은 **S2b** 몫이며 이 슬라이스에 없다.
+
+## 다음 (S2b~)
+
+S2a 까지는 전송 계층과 ABI 표면이다. CDP 백엔드는 **가짜**이며 실브라우저는 없다.
+남은 것은 S2b 런처·lease(`--remote-debugging-pipe`, 브라우저 후보 탐색, SIGKILL→PID 소멸),
+S2c 장부(격리 브라우저 컨텍스트·타깃 lease·원자적 저장), S2d 중계기(4.3.2 메서드 행렬,
+기본 거부), S2e 작업·취소·스냅샷·캡처, S2f 실브라우저 적합성이다.
+그때 지켜야 할 계약이 `docs/ego-runtime-abi.md` 이며, 각 행에 그 행을 밟는 테스트 이름이
+병기돼 있다.

@@ -10,6 +10,8 @@
   "scripts": {
     "vendor:check": "node scripts/sync-ego-lite.mjs --check",
     "vendor:test": "cd vendor/ego-lite/package/ego-browser && npm test",
-    "test": "node --test test/*.test.mjs"
+    "provenance": "node scripts/sync-ego-lite.mjs --provenance",
+    "//test": "--test-concurrency=1 은 취향이 아니라 필요다. vendor-install 과 provenance 가 같은 벤더 파일을 잠시 변조했다 되돌리므로 병렬로 돌면 서로의 복원을 밟는다.",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs"
   }
 }

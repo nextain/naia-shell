@@ -2,8 +2,21 @@
 
 `packages/ego-host` 는 아래 제3자 소프트웨어를 포함하거나 참조한다.
 
-<!-- 참조 구현 citrolabs/ego-lite PR #228(커밋 4f99b181960a)에서 코드를 가져오면
-     그 출처와 MIT 저작권 표시를 이 문서에 추가한다 — 이슈 #582 슬라이스 S2. -->
+---
+
+## ego-lite PR #228 (`package/ego-windows-host`) — 참조 구현
+
+- 출처: <https://github.com/citrolabs/ego-lite/pull/228>
+- 커밋: `4f99b181960afa4602706345ff2b09d32f3f42a3` (2026-08-24)
+- 저자: hotragn
+- 라이선스: MIT (ego-lite 저장소와 동일. 전문은 아래 ego-lite 절)
+- 가져온 위치: `packages/ego-host/src/supervisor/cdp-mux.mjs` 의 pending 맵·요청 타이머·응답
+  id 대조 골격. 파일 머리 주석에 같은 출처를 적어 두었다.
+- **가져오지 않은 것**: #228 의 핵심 설계인 *원문 통과*(에이전트 연결 하나를 그대로 relay 하는
+  `sendRaw`)는 쓰지 않는다. 우리 감독자는 연결마다 독립 id 공간을 두고 Chromium 쪽 id 만
+  재작성하며, 라우팅·이벤트 필터·정책 훅을 통과한 것만 위로 올린다(#582 계약 4.3).
+  `ego-bridge.ts` 의 작업 공간 표면은 모양(ownership 문자열, `{taskSpaces}`, `{error,error_code}`)
+  만 참고했고 헤드리스 정책은 우리 것이다(인계·회수·claim 거부).
 
 ---
 
