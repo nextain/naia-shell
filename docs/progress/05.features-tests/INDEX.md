@@ -42,3 +42,4 @@
 | TEST-F-015 | SPEC-015 | VRAM parser/gate, explicit start/ready/timeout/stop, orphan cleanup, reference voice APIs, no-login and restart roundtrip | settings/lib/Rust lifecycle tests + focused native voice E2E | Planned |
 | TEST-F-016 | SPEC-016 | authority reducer와 cold-boot negative, structured skill radio gate, ended transition scope, observed pause toggle | BGM/Radio/Proactive unit + focused Playwright | Planned |
 | TEST-F-017 | SPEC-017 | onboarding image capture/fallback, name placeholder, layout migration, icon tooltip/keyboard/ARIA, Windows Discord isolated runner and exit bounds | component/Playwright/Discord integration tests | Planned |
+| TEST-F-018 | SPEC-018 | 벤더 매니페스트·설치 테스트, ABI 적합성과 전송 실패 모드, 중계 행렬 각 셀, 격리·무간섭·취소·lease 실브라우저 테스트, 실제 어댑터 계약 테스트(경주·동시 멱등·deadline·재연결·stale ref·캡처 파일), Playwright 도구·승인 e2e, e2e-tauri 생명주기 | node:test + vitest + Playwright + e2e-tauri | In-progress |

@@ -1231,6 +1231,53 @@ Test Coverage Map (P02):
 상태 매트릭스: 기본, 빈 목록(열린 컨텍스트 0개), 진행(작업 실행 중), 성공, 오류(거부·타임아웃·취소),
 좁은 폭(도구 결과 앱 축소)을 모두 매핑한다.
 
+## 2026-09-09 에이전트 브라우저 호스트 (#582, 부모 #499, 에픽 #497)
+
+> 계약: `docs/progress/issue-582-ego-browser-host.md`. UC-ENV-TOOL-BROWSE·CANCEL 을 실제 브라우저(감독자가 소유한
+> 헤드리스 Chromium)로 재개하고, 아래 세 시나리오를 추가한다. 셸 임베디드 브라우저(UC6)는 그대로 둔다.
+
+### UC-ENV-TOOL-SPACE — 에이전트는 자기 공간에서만 일한다
+
+- Naia 가 웹 작업을 하는 동안 사용자의 창, 포커스, 마우스는 변하지 않는다. 브라우저 창은 뜨지 않는다.
+- 작업 공간은 비어 있는 격리 공간이다. 사용자의 로그인·쿠키·저장소를 물려받지 않고, 공간끼리도 새지 않는다.
+- 두 작업이 동시에 돌아도 서로의 탭·응답·이벤트를 보지 못한다.
+- 로그인이나 captcha 처럼 사람이 필요한 순간이 오면 Naia 는 멈추고 사용자에게 보고한다. 사용자에게 브라우저를 넘겨주는 흉내를 내지 않는다.
+
+### UC-ENV-TOOL-RECOVER — 셸이 죽어도 브라우저가 남지 않는다
+
+- 셸이 정상 종료·재시작·Reset 되면 Naia 의 브라우저도 함께 정리된다.
+- 셸이나 감독자가 강제 종료돼도 다음 시작에서 남은 브라우저가 회수되고, 다른 프로그램의 프로세스는 건드리지 않는다.
+- 다른 ADK 로 전환하면 이전 ADK 의 브라우저를 먼저 닫고 새 ADK 의 상태를 조정한다.
+- 작업 도중 실행기가 죽으면 그 작업은 실패로 기록되고, 작업 공간은 유지되어 다음 작업이 이어 쓴다.
+
+### UC-ENV-TOOL-SCRIPT — 묶음 실행은 승인이 먼저다
+
+- Naia 는 열기·이동·스냅샷·클릭·입력·캡처처럼 효과가 정해진 도구를 기본으로 쓴다.
+- 여러 단계를 자바스크립트 한 덩어리로 묶어 실행하는 것은 터미널 명령 실행과 같은 등급이다. 승인 없이는 시작되지 않는다.
+- 승인된 묶음 실행도 워크스페이스·네트워크·파일 경계를 벗어나지 않는다.
+- 낮은 등급의 도구가 묶음 실행으로 승격되는 길은 없다.
+
+Test Coverage Map (P02):
+
+| UC | 검증 수단 | 대상 |
+|---|---|---|
+| UC-ENV-TOOL-BROWSE | vitest `src/test/env-tool-browser-host.contract.test.ts` | 실제 어댑터로 열기·이동·스냅샷·안정 참조 클릭·입력·캡처·닫기, 증거 셋(스냅샷·캡처·주소 개정) |
+| UC-ENV-TOOL-BROWSE | node:test `packages/ego-host/test/conformance.test.mjs` | 실제 감독자 + 벤더 런타임의 실행 ABI 각 행, 전송 실패 모드(15초 경계·순서·이벤트 폭주·단절·id 없는 오류 범위) |
+| UC-ENV-TOOL-SPACE | node:test `packages/ego-host/test/isolation.test.mjs` | 로컬 출처에서 쿠키·localStorage·IndexedDB·CacheStorage·서비스 워커·권한·다운로드 경로 negative, 두 CLI 동시 id 1 |
+| UC-ENV-TOOL-SPACE | node:test `packages/ego-host/test/no-interference.test.mjs` | 헤드리스 인자·활성 창 불변·감독자 트리 창 0 (Xvfb·xdotool 필수) |
+| UC-ENV-TOOL-SPACE | node:test `packages/ego-host/test/mediator.test.mjs` | 기본 거부 행렬 각 셀(거부는 원래 id 오류 응답, 컨텍스트 강제는 재작성), 헤드리스 인계 거부 |
+| UC-ENV-TOOL-CANCEL | vitest `src/test/env-tool-cancel-timeout.contract.test.ts` | 종결 CAS 경주, 동시 멱등 1회, 실제 deadline |
+| UC-ENV-TOOL-CANCEL | node:test `packages/ego-host/test/cancel.test.mjs` | 이동·Fetch 가로채기·평가 취소 훅, 후속 이벤트 0, 열린 가로채기·스트림·세션 0 |
+| UC-ENV-TOOL-RECOVER | node:test `packages/ego-host/test/lease.test.mjs` | 감독자 SIGKILL → Chromium 소멸, 시작 조정 → 고아 0, marker 불일치 프로세스 불간섭, CLI 강제 종료 → 같은 공간 재접속 |
+| UC-ENV-TOOL-RECOVER | vitest `src/test/env-tool-adk-switch.contract.test.ts` | ADK A 종료 → B 조정 순서 |
+| UC-ENV-TOOL-RECOVER | e2e-tauri `packages/shell/e2e-tauri/specs/env-tool-browser-host-lifecycle.spec.ts` | Reset·재시작·정상 종료 뒤 PID·marker·lease |
+| UC-ENV-TOOL-SCRIPT | Playwright `packages/shell/e2e/env-tool-browser-host.spec.ts` | 형식 도구 호출 → 증거 반환, 승인 없는 묶음 실행 거부, 기존 `skill_browser_*` 불변 |
+| UC-ENV-TOOL-SCRIPT | node:test `packages/ego-host/test/handshake.test.mjs` | grant 없는 핸드셰이크 거부, 관측 연결 무영향 |
+| 전체 | node:test `packages/ego-host/test/vendor-install.test.mjs` | 벤더 매니페스트 일치, 임의 디렉터리 설치·빌드·실행 |
+
+상태 매트릭스: 기본(공간 0), 진행(작업 실행 중), 성공, 오류(거부·타임아웃·취소·실행기 종료), 회수(재시작 뒤 조정)를 매핑한다.
+화면이 없는 기능이므로 좁은 폭 상태는 도구 결과 카드에만 적용된다.
+
 ## 2026-08-26 이슈 리더와 코딩 작업자 오케스트레이션 (#500, 에픽 #497)
 
 > 계약: `docs/progress/issue-497-universal-agent.md`. 선행: #501의 컨텍스트 해석과 #502의 제어면.

@@ -942,19 +942,28 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 ## 기능 요구사항 (FR) — 브라우저·터미널 환경 도구 (#499, 에픽 #497)
 
 > 계약: `docs/progress/issue-497-universal-agent.md`. 출처 시나리오: `UC-ENV-TOOL-*` 네 항목.
-> 기존 UC6·UC7·UC7a·UC13a를 확장한다. 상태: 전부 Pending.
+> 기존 UC6·UC7·UC7a·UC13a를 확장한다. 2026-09-09 #582 가 .2·.6·.9 를 재개방하고 .10~.15 와 NFR 둘을 추가했다(계약: `docs/progress/issue-582-ego-browser-host.md`).
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-ENV-TOOL.1** | 브라우저와 터미널 작업이 하나의 공통 생명주기(접수·실행중·완료·실패·취소)를 공유한다. 각 상태 전이는 관측 가능하며 중간 상태를 완료로 승격하지 않는다. | UC-ENV-TOOL-BROWSE·CANCEL | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-cancel-timeout.contract.test.ts` | Done |
-| **FR-ENV-TOOL.2** | 브라우저 자원으로 컨텍스트, 페이지, 스냅샷, 다운로드, 이벤트, 안정된 요소 참조를 노출한다. 도구는 생성·열기·이동·스냅샷·클릭·입력·평가·다운로드·닫기를 제공한다. | UC-ENV-TOOL-BROWSE | `src/test/env-tool-browser.contract.test.ts` 자원·도구 계약 | Done |
+| **FR-ENV-TOOL.2a** | 브라우저 자원으로 작업 공간(격리 컨텍스트), 페이지, 스냅샷, 안정된 요소 참조를 노출한다. 도구는 공간 생성·열기·이동·스냅샷·클릭·입력·평가·캡처·닫기를 제공한다. (#582 에서 .2 를 분리. 실제 어댑터 기준) | UC-ENV-TOOL-BROWSE | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-browser-host.contract.test.ts` | In-progress |
+| **FR-ENV-TOOL.2b** | 다운로드와 이벤트 스트림을 브라우저 자원으로 노출한다. (#582 범위 밖. 실제 어댑터가 제공하기 전까지 Pending) | UC-ENV-TOOL-BROWSE | — | Pending |
 | **FR-ENV-TOOL.3** | 브라우저 조작은 스냅샷의 안정된 요소 참조를 우선 사용한다. 좌표 조작은 참조가 불가능한 경우로 제한하고 그 사실을 결과에 남긴다. | UC-ENV-TOOL-BROWSE | `packages/shell/e2e/env-tool-browser.spec.ts` 참조 기반 조작 | Done |
 | **FR-ENV-TOOL.4** | 페이지 내용은 자료로만 취급한다. 페이지에 담긴 문장이 권한 확장, 승인 우회, 외부 발신의 근거가 되지 않는다. | UC-ENV-TOOL-BROWSE | `packages/shell/e2e/env-tool-injection.spec.ts` 주입 negative | Done |
 | **FR-ENV-TOOL.5** | 터미널 자원은 Herdr의 터미널·세션·프로세스·출력 스트림을 참조하며, 생명주기 소유는 Herdr에 위임한다. 실행은 실행 파일과 인자 배열, 작업 디렉터리, 환경을 구조화해 전달하고 셸 문자열로 조립하지 않는다. | UC-ENV-TOOL-TERMINAL-EXEC | `src/test/env-tool-terminal.contract.test.ts` 위임·구조화 인자 | Done |
-| **FR-ENV-TOOL.6** | 모든 작업은 증거를 반환한다. 브라우저는 구조 또는 접근성 스냅샷, 화면 캡처, 최종 주소와 개정을, 터미널은 종료 코드와 출력·로그·산출물 참조를 반환한다. | UC-ENV-TOOL-BROWSE·TERMINAL-EXEC | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-terminal.contract.test.ts` | Done |
+| **FR-ENV-TOOL.6** | 모든 작업은 증거를 반환한다. 브라우저는 구조 또는 접근성 스냅샷, 화면 캡처, 최종 주소와 개정을, 터미널은 종료 코드와 출력·로그·산출물 참조를 반환한다. | UC-ENV-TOOL-BROWSE·TERMINAL-EXEC | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-terminal.contract.test.ts`·`src/test/env-tool-browser-host.contract.test.ts`(캡처 파일 존재, `hasEvidence` 가 캡처 검사) | In-progress |
 | **FR-ENV-TOOL.7** | 명령은 확정된 워크스페이스 경계를 명시적 권한 없이 벗어나지 못한다. 경계 이탈 시도는 조용히 무시하지 않고 명시적으로 거부한다. | UC-ENV-TOOL-TERMINAL-EXEC·BOUNDARY-DENY | `src/test/env-tool-workspace-escape.contract.test.ts` 이탈 negative | Done |
 | **FR-ENV-TOOL.8** | 관측, 워크스페이스 내부 변경, 자격증명 사용, 외부 발신, 게시, 구매, 파괴적 명령, 운영 변경을 별도 권한으로 분리한다. 일반 편집 권한은 이들 중 어느 것도 상속하지 않는다. | UC-ENV-TOOL-BOUNDARY-DENY | `src/test/env-tool-approval-matrix.contract.test.ts` 비상속 negative | Done |
-| **FR-ENV-TOOL.9** | 모든 작업은 취소 가능하고 타임아웃을 가지며 재연결과 멱등 재전송을 정의한다. 취소, 타임아웃, 부분 실행은 성공으로 승격되지 않고 각각 구별되어 기록된다. | UC-ENV-TOOL-CANCEL | `src/test/env-tool-cancel-timeout.contract.test.ts` 구별·멱등 | Done |
+| **FR-ENV-TOOL.9** | 모든 작업은 취소 가능하고 타임아웃을 가지며 재연결과 멱등 재전송을 정의한다. 취소, 타임아웃, 부분 실행은 성공으로 승격되지 않고 각각 구별되어 기록된다. | UC-ENV-TOOL-CANCEL | `src/test/env-tool-cancel-timeout.contract.test.ts` 구별·멱등·종결 CAS·동시 멱등·실제 deadline, `packages/ego-host/test/cancel.test.mjs` 취소 훅 | In-progress |
+| **FR-ENV-TOOL.10** | 브라우저 작업 공간은 작업과 수명이 다른 자원이다. 각 공간은 격리된 브라우저 컨텍스트이며 쿠키·저장소·서비스 워커·권한·다운로드 경로를 공간끼리 공유하지 않고 사용자 프로필도 물려받지 않는다. 소유권은 `agent`·`agentDelegatedToUser`·`user` 이며, 헤드리스 공간에서는 인계·회수·claim 이 형식 있는 오류로 거부되고 `agent` 외 상태에 도달하지 않는다. 이 규칙은 브라우저 자원에만 적용한다. | UC-ENV-TOOL-SPACE | `packages/ego-host/test/isolation.test.mjs`·`mediator.test.mjs` | Pending |
+| **FR-ENV-TOOL.11** | 브라우저 호스트는 창을 만들지 않는다. 검증은 실제 프로세스 인자, 호스트 동작 전후 활성 창 동일, 감독자 프로세스 트리의 창 0 의 세 겹이며 환경 부재를 건너뛰지 않는다. | UC-ENV-TOOL-SPACE | `packages/ego-host/test/no-interference.test.mjs` | Pending |
+| **FR-ENV-TOOL.12** | 사이트별 학습(도메인 manifest·페이지 구조 메모·추출 도구)을 ego-lite 학습 형식으로 저장하고 검증 스크립트로 형식을 강제한다. 학습 루트는 선택된 ADK 아래다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/skill/learnings/` + `validate-site-skills` | Pending |
+| **FR-ENV-TOOL.13** | 새 브라우저 호스트 도구(`env_browser_*`)는 `EnvironmentToolService` 를 통해서만 노출되고 기능 플래그로 켠다(리눅스 기본 켬, Windows 는 별도 게이트 통과 전 기본 끔). 기존 임베디드 브라우저 도구(`skill_browser_*`)의 이름·권한·동작은 바뀌지 않는다. | UC-ENV-TOOL-SCRIPT | `packages/shell/e2e/env-tool-browser-host.spec.ts` 기존 도구 불변 | Pending |
+| **FR-ENV-TOOL.14** | 진입점은 둘이다. 형식 있는 도구는 효과가 고정된 RPC 만 부르며 등급은 서비스가 정한다(관측: 스냅샷·캡처, 워크스페이스 내부 변경: 이동·클릭·입력·평가). 임의 자바스크립트 묶음 실행(`env_browser_script`)은 터미널 실행과 같은 등급이며, 승인 결과가 감독자 핸드셰이크에 실려야 시작된다. 캡처 파일 경로는 감독자가 정한다. | UC-ENV-TOOL-SCRIPT | `packages/ego-host/test/handshake.test.mjs`·Playwright 승인 없는 script 거부 | Pending |
+| **FR-ENV-TOOL.15** | 감독자는 셸이 lease(nonce·marker·started-at·경로·PID)로 소유한다. Chromium 은 감독자가 파이프로 소유해 감독자가 죽으면 함께 종료된다. 시작 조정은 marker 가 일치하는 프로세스만 회수한다. ADK 전환은 이전 감독자 종료 뒤 새 lease 조정 순서를 지킨다. | UC-ENV-TOOL-RECOVER | `packages/ego-host/test/lease.test.mjs`·`src/test/env-tool-adk-switch.contract.test.ts`·e2e-tauri lifecycle | Pending |
+| **NFR-ENV-TOOL-VENDOR.1** | 벤더 런타임(`packages/ego-host/vendor/ego-lite`)은 고정 커밋과 바이트 단위로 같아야 하며 매니페스트 검사가 이를 강제한다. 벤더 파일을 편집하지 않는다. 스킬은 파생본이며 업스트림과의 차이를 `UPSTREAM-DIFF.md` 로 추적한다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/test/vendor-install.test.mjs` | In-progress |
+| **NFR-ENV-TOOL-ABI.1** | 벤더 런타임이 기대하는 실행 ABI 를 근거 줄과 함께 문서화하고, 실제 감독자 + 벤더 런타임 조합으로 각 행과 전송 실패 모드를 검증한다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/docs/ego-runtime-abi.md`·`packages/ego-host/test/conformance.test.mjs` | In-progress |
 
 ## 기능 요구사항 (FR) — 이슈 리더와 코딩 작업자 오케스트레이션 (#500, 에픽 #497)
 
