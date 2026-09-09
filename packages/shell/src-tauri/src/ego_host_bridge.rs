@@ -30,7 +30,6 @@
 //! 두 구현이 갈라지면 Rust 는 아무도 없는 자리에 붙고, 그 실패는 "감독자가 안 뜬다"로 보인다.
 //! 단위 테스트가 그 모듈을 실제로 실행해 세 플랫폼의 값을 대조한다.
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -595,6 +594,8 @@ struct Session {
     writer: mpsc::UnboundedSender<Vec<u8>>,
     pending: Arc<StdMutex<HashMap<u64, oneshot::Sender<Value>>>>,
     next_rpc_id: AtomicU64,
+    /// 이 연결의 등급. **부른 명령의 이름으로 Rust 가 정한 값**이며 웹뷰의 선언이 아니다(S7).
+    tier: &'static str,
 }
 
 static SESSIONS: OnceLock<Arc<StdMutex<HashMap<u64, Arc<Session>>>>> = OnceLock::new();
@@ -617,7 +618,7 @@ fn session_of(id: u64) -> Result<Arc<Session>, String> {
 ///
 /// `welcome` 은 **여기서 삼킨다.** 웹뷰가 듣기 전에 나가면 아무도 못 받고, 웹뷰는 연결이
 /// 섰다는 사실을 `session_open` 의 성공으로 이미 안다.
-async fn open_session(app: AppHandle, hello: Value) -> Result<u64, String> {
+async fn open_session(app: AppHandle, hello: Value, tier: &'static str) -> Result<u64, String> {
     let (socket_path, _secret) = admin_target().await?;
     let mut stream = connect_stream(&socket_path).await?;
     stream
@@ -719,6 +720,7 @@ async fn open_session(app: AppHandle, hello: Value) -> Result<u64, String> {
                 writer: writer_tx,
                 pending,
                 next_rpc_id: AtomicU64::new(1),
+                tier,
             }),
         );
     Ok(id)
@@ -750,29 +752,87 @@ fn deliver_frame(
 }
 
 // ── Tauri 명령 ──────────────────────────────────────────────────────────────
+//
+// ## 웹뷰가 부를 수 있는 것은 효과가 고정된 작업뿐이다 (S7, P0)
+//
+// S6c 까지 이 자리에는 세 개의 넓은 문이 있었다. 임의 grant 로 토큰을 만드는 문
+// (`ego_host_issue_token`), 아무 관리 RPC 나 부르는 문(`ego_host_rpc`), 그리고 그 토큰으로
+// 아무 등급 연결이나 여는 문(`ego_host_session_open`). 판정은 웹뷰의 `EnvironmentToolService`
+// 가 한다고 적어 두었지만, **판정하는 쪽과 판정을 지나지 않고도 닿는 쪽이 같은 웹뷰**였다.
+// 그래서 웹뷰 하나가 뚫리면 등급표·승인 장부가 통째로 장식이 된다.
+//
+// 이제 웹뷰가 부를 수 있는 것은 `ego_host_op_*` 뿐이고, 각 명령의 **등급은 그 명령의 이름이
+// 정한다.** 클라이언트가 실은 `grant`·`approvalRef` 는 받자마자 버린다. 토큰 발급과 관리
+// 채널은 이 파일 안에서만 쓰인다.
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EgoGrantArg {
-    pub tier: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval_ref: Option<String>,
+/// 웹뷰에 노출하는 효과 고정 RPC 의 등급표 (계약 4.4).
+///
+/// **정본이 아니다.** 정본은 서비스의 `BROWSER_RPC_TIERS`
+/// (`src/main/app/control/env-tool.ts`)이고, 이 표는 그것과 같은 값이어야 한다 — 단위 테스트가
+/// 그 파일을 실제로 읽어 칸마다 대조한다. 하드코딩한 기대값을 적으면 두 표가 갈라진 사실을
+/// 아무도 잡지 못한다(같은 이유로 소켓 경로도 Node 모듈을 실행해 대조한다).
+pub(crate) const OP_TIERS: &[(&str, &str)] = &[
+    ("snapshot", "observe"),
+    ("screenshot", "observe"),
+    ("listWorkspaces", "observe"),
+    ("createWorkspace", "workspace-write"),
+    ("closeWorkspace", "workspace-write"),
+    ("open", "workspace-write"),
+    ("navigate", "workspace-write"),
+    ("click", "workspace-write"),
+    ("fill", "workspace-write"),
+    ("evaluate", "workspace-write"),
+    ("close", "workspace-write"),
+];
+
+/// 웹뷰에서 **언제나 거부**하는 RPC.
+///
+/// `script` 는 임의 자바스크립트 heredoc 이고 건별 승인을 요구하는데(계약 3절 4번),
+/// 그 승인을 남기는 자리가 Rust 에 없다. 승인 기록 없이 통과시키면 "승인이 필요하다"가
+/// 웹뷰의 자기 신고 하나에 걸린다. FR-ENV-TOOL.14b(승인 UI)가 닫히기 전까지 여기서 끝낸다.
+pub(crate) const OP_ALWAYS_REFUSED: &[&str] = &["script"];
+
+/// 거부 문구. 서비스의 `approval-missing` 거부와 같은 코드를 문구 앞에 둔다 —
+/// 벤더·Tauri 경계를 지나며 구조가 문자열로 납작해지므로 코드가 문구 안에 있어야 읽힌다.
+pub(crate) const SCRIPT_REFUSAL: &str =
+    "approval-missing: script 는 Rust 쪽 승인 기록이 없어 웹뷰에서 거부한다 — 승인 UI 미구현 (FR-ENV-TOOL.14b)";
+
+/// 명령 이름 → 등급. 표에 없으면 거부다(기본 거부).
+pub(crate) fn op_tier(rpc: &str) -> Result<&'static str, String> {
+    if OP_ALWAYS_REFUSED.contains(&rpc) {
+        return Err(SCRIPT_REFUSAL.to_string());
+    }
+    OP_TIERS
+        .iter()
+        .find(|(name, _)| *name == rpc)
+        .map(|(_, tier)| *tier)
+        .ok_or_else(|| format!("effect-unknown: 등급표에 없는 RPC 다: {rpc}"))
 }
 
-/// 감독자를 띄우거나 이미 떠 있음을 확인한다.
-#[tauri::command]
-pub async fn ego_host_ensure(app: AppHandle, adk_dir: String) -> Result<Value, String> {
-    let resource_dir = tauri::Manager::path(&app).resource_dir().ok();
-    ensure_daemon(&adk_dir, resource_dir).await
+/// 등급 하나를 감독자 grant 로. 관측 등급은 grant 없이 붙어 **원시 CDP 를 아예 못 보낸다**.
+pub(crate) fn grant_of_tier(tier: &str) -> Option<Value> {
+    if tier == "observe" {
+        None
+    } else {
+        // `approvalRef` 를 넣지 않는다. Rust 에 승인 기록이 없으므로 없는 승인을 지어내지 않는다.
+        Some(json!({ "tier": tier }))
+    }
 }
 
-/// 토큰 하나. 등급·승인은 웹뷰의 서비스가 이미 정했고 여기서는 그대로 나른다.
-#[tauri::command]
-pub async fn ego_host_issue_token(
+/// 작업 하나를 연다. 토큰 발급도 여기서 한다 — 웹뷰는 토큰을 보지도, 만들지도 못한다.
+async fn begin_op(
+    app: AppHandle,
+    rpc: &'static str,
     operation_id: String,
     workspace_id: Option<String>,
+    deadline: Option<u64>,
     grant: Option<Value>,
-) -> Result<Value, String> {
-    admin_call(
+) -> Result<u64, String> {
+    // 클라이언트가 실은 등급 선언은 **여기서 버린다.** 이름이 정한 것만 쓴다.
+    drop(grant);
+    let tier = op_tier(rpc)?;
+    let grant = grant_of_tier(tier);
+    let issued = admin_call(
         "issueToken",
         json!({
             "operationId": operation_id,
@@ -781,25 +841,15 @@ pub async fn ego_host_issue_token(
         }),
         true,
     )
-    .await
-}
-
-/// 소유자 전용 RPC 하나. 관리 연결을 열어 실행하고 닫는다.
-#[tauri::command]
-pub async fn ego_host_rpc(method: String, params: Option<Value>) -> Result<Value, String> {
-    admin_call(&method, params.unwrap_or_else(|| json!({})), true).await
-}
-
-/// 작업 연결 하나를 연다. 여러 RPC·CDP 를 한 작업으로 묶어야 하므로 연결을 든다.
-#[tauri::command]
-pub async fn ego_host_session_open(
-    app: AppHandle,
-    token: String,
-    grant: Option<Value>,
-    operation_id: Option<String>,
-    workspace_id: Option<String>,
-    deadline: Option<u64>,
-) -> Result<u64, String> {
+    .await?;
+    if let Some(error) = issued.get("error").and_then(Value::as_str) {
+        return Err(format!("토큰 발급이 거부됐다: {error}"));
+    }
+    let token = issued
+        .get("token")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "토큰 발급 응답에 토큰이 없다".to_string())?
+        .to_string();
     open_session(
         app,
         json!({
@@ -810,13 +860,66 @@ pub async fn ego_host_session_open(
             "workspaceId": workspace_id,
             "deadline": deadline,
         }),
+        tier,
     )
     .await
 }
 
-/// 작업 연결의 RPC 하나. 감독자는 실패를 던지지 않고 `{error, error_code}` 로 답한다.
+/// 효과가 고정된 명령 하나하나. 이름이 곧 등급이므로 인자에 등급이 없다.
+///
+/// 매크로로 찍는 이유는 열두 벌의 몸통이 **정확히 같아야** 하기 때문이다. 손으로 적으면
+/// 한 벌에서 `drop(grant)` 하나가 빠지는 날 그 명령만 클라이언트 선언을 받는다.
+macro_rules! fixed_effect_ops {
+    ($($name:ident => $rpc:literal),+ $(,)?) => {$(
+        #[tauri::command]
+        pub async fn $name(
+            app: AppHandle,
+            operation_id: String,
+            workspace_id: Option<String>,
+            deadline: Option<u64>,
+            grant: Option<Value>,
+        ) -> Result<u64, String> {
+            begin_op(app, $rpc, operation_id, workspace_id, deadline, grant).await
+        }
+    )+};
+}
+
+fixed_effect_ops! {
+    ego_host_op_open => "open",
+    ego_host_op_navigate => "navigate",
+    ego_host_op_snapshot => "snapshot",
+    ego_host_op_click => "click",
+    ego_host_op_fill => "fill",
+    ego_host_op_evaluate => "evaluate",
+    ego_host_op_screenshot => "screenshot",
+    ego_host_op_close => "close",
+    ego_host_op_create_workspace => "createWorkspace",
+    ego_host_op_list_workspaces => "listWorkspaces",
+    ego_host_op_close_workspace => "closeWorkspace",
+}
+
+/// heredoc 은 여기서 끝난다. 명령은 **있지만** 어떤 인자로도 통과하지 않는다.
+///
+/// 명령을 아예 두지 않으면 "없는 명령"과 "거부된 명령"이 같은 실패로 보여, 승인 UI 가 생긴
+/// 뒤 무엇이 바뀌어야 하는지 실패 문구가 말해 주지 못한다.
 #[tauri::command]
-pub async fn ego_host_session_rpc(
+pub async fn ego_host_op_script() -> Result<u64, String> {
+    Err(SCRIPT_REFUSAL.to_string())
+}
+
+/// 감독자를 띄우거나 이미 떠 있음을 확인한다.
+#[tauri::command]
+pub async fn ego_host_ensure(app: AppHandle, adk_dir: String) -> Result<Value, String> {
+    let resource_dir = tauri::Manager::path(&app).resource_dir().ok();
+    ensure_daemon(&adk_dir, resource_dir).await
+}
+
+/// 작업 연결의 RPC 하나. 감독자는 실패를 던지지 않고 `{error, error_code}` 로 답한다.
+///
+/// `method` 가 자유롭지만 등급을 넘지 못한다: 감독자가 관리 RPC(`issueToken`·`stop`…)를
+/// **작업 연결에서는 거부**하고(`ADMIN_RPCS`), grant 없는 연결에는 관측 RPC 만 허용한다.
+#[tauri::command]
+pub async fn ego_host_op_rpc(
     session: u64,
     method: String,
     params: Option<Value>,
@@ -844,13 +947,22 @@ pub async fn ego_host_session_rpc(
 }
 
 /// CDP 한 통. 응답은 이벤트로 올라간다 — 벤더 런타임과 같은 비동기 통로다.
+///
+/// 이중 방어다. 관측 등급 연결은 감독자가 grant 없이 세웠으므로 감독자가 이미 거부하지만,
+/// 여기서도 먼저 거부한다. 두 겹 중 하나가 깨져도 다른 하나가 남는다.
 #[tauri::command]
-pub async fn ego_host_session_cdp(
+pub async fn ego_host_op_cdp(
     session: u64,
     payload: String,
     operation_id: Option<String>,
 ) -> Result<(), String> {
     let handle = session_of(session)?;
+    if handle.tier == "observe" {
+        return Err(format!(
+            "grant-required: 관측 등급 작업({})은 원시 CDP 를 보낼 수 없다",
+            handle.tier
+        ));
+    }
     let mut frame = json!({ "type": "cdp", "payload": payload });
     if let Some(operation) = operation_id.filter(|value| !value.is_empty()) {
         frame["operationId"] = json!(operation);
@@ -861,32 +973,68 @@ pub async fn ego_host_session_cdp(
         .map_err(|_| format!("세션 {session} 의 송신 통로가 닫혔다"))
 }
 
+/// 작업 연결 하나를 닫는다. 작업의 **종결**은 `ego_host_op_complete` 가 적는다.
 #[tauri::command]
-pub async fn ego_host_session_close(session: u64) -> Result<(), String> {
+pub async fn ego_host_op_end(session: u64) -> Result<(), String> {
     if let Ok(mut map) = sessions().lock() {
         map.remove(&session);
     }
     Ok(())
 }
 
-/// ADK 전환. 순서(A 종료 → 소멸 확인 → B 조정 → B 시작)는 데몬이 강제한다(계약 4.8).
+/// 작업 하나를 취소한다. 메서드 이름은 고정이며 웹뷰가 고르지 않는다.
 #[tauri::command]
-pub async fn ego_host_switch_adk(from: String, to: String) -> Result<Value, String> {
-    let result = admin_call("switchAdk", json!({ "from": from, "to": to }), true).await?;
-    if let Some(error) = result.get("error").and_then(Value::as_str) {
-        return Err(error.to_string());
-    }
-    // 전환하면 소켓 경로가 바뀐다. 다음 관리 호출이 옛 자리에 붙지 않도록 여기서 갱신한다.
-    if let Some(socket_path) = result.get("socketPath").and_then(Value::as_str) {
-        let slot = daemon_slot().clone();
-        let mut guard = slot.lock().await;
-        if let Some(daemon) = guard.as_mut() {
-            daemon.socket_path = socket_path.to_string();
-            daemon.adk_dir = to.clone();
-            daemon.browser_pid = result.get("browserPid").and_then(Value::as_u64).map(|v| v as u32);
-        }
-    }
-    Ok(result)
+pub async fn ego_host_op_cancel(operation_id: String, reason: Option<String>) -> Result<Value, String> {
+    admin_call(
+        "cancelOperationOwned",
+        json!({ "operationId": operation_id, "reason": reason }),
+        true,
+    )
+    .await
+}
+
+/// 작업 하나를 종결로 적는다. 상태·사유는 형식이 있는 값만 지난다.
+#[tauri::command]
+pub async fn ego_host_op_complete(
+    operation_id: String,
+    status: Option<String>,
+    reason: Option<String>,
+) -> Result<Value, String> {
+    admin_call(
+        "endOperationOwned",
+        json!({ "operationId": operation_id, "status": status, "reason": reason }),
+        true,
+    )
+    .await
+}
+
+/// lease 조정. 감독자 소유는 Rust 의 사실이므로 메서드가 고정이다.
+#[tauri::command]
+pub async fn ego_host_reconcile_lease(adk_dir: Option<String>) -> Result<Value, String> {
+    admin_call("reconcileLease", json!({ "adkDir": adk_dir }), true).await
+}
+
+/// 작업 공간 자리 만들기. 경로 목록만 지난다.
+#[tauri::command]
+pub async fn ego_host_ensure_dirs(dirs: Vec<String>) -> Result<Value, String> {
+    admin_call("ensureDirs", json!({ "dirs": dirs }), true).await
+}
+
+/// 작업 공간 `.env` 쓰기. 감독자가 자기 자리 안으로만 쓴다.
+#[tauri::command]
+pub async fn ego_host_write_env_files(files: Value) -> Result<Value, String> {
+    admin_call("writeEnvFiles", json!({ "files": files }), true).await
+}
+
+/// PID 소멸 대기. 프로세스는 Rust 쪽 사실이지만 감독자가 자기 자식을 안다.
+#[tauri::command]
+pub async fn ego_host_wait_pid_exit(pid: u32, timeout_ms: Option<u64>) -> Result<Value, String> {
+    admin_call(
+        "waitForPidExit",
+        json!({ "pid": pid, "timeoutMs": timeout_ms.unwrap_or(10_000) }),
+        true,
+    )
+    .await
 }
 
 /// 감독자를 내린다. 관리 통로로 알린 뒤 데몬 프로세스까지 확실히 회수한다.
@@ -899,6 +1047,7 @@ pub async fn ego_host_stop() -> Result<Value, String> {
         .map_err(|error| format!("데몬 회수가 깨졌다: {error}"))?;
     Ok(json!({ "stopped": true, "notified": notified }))
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -966,6 +1115,93 @@ mod tests {
             compared += 1;
         }
         assert_eq!(compared, 3, "세 플랫폼을 다 대조하지 않았다");
+    }
+
+    /// 서비스의 등급표(`BROWSER_RPC_TIERS`)를 **파일에서 읽어** 칸마다 뜯는다.
+    ///
+    /// 기대값을 여기 적으면 두 표가 갈라진 사실을 못 잡는다 — 갈라지는 쪽이 TS 여도 Rust 의
+    /// 상수는 그대로이기 때문이다. 소켓 경로를 Node 모듈을 실행해 대조하는 것과 같은 이유다.
+    fn service_rpc_tiers() -> Vec<(String, String)> {
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../src/main/app/control/env-tool.ts");
+        let text = std::fs::read_to_string(&file)
+            .unwrap_or_else(|error| panic!("서비스 등급표를 읽지 못했다({}): {error}", file.display()));
+        let start = text
+            .find("BROWSER_RPC_TIERS: Readonly<Record<BrowserRpc, CapabilityTier>> = {")
+            .expect("BROWSER_RPC_TIERS 선언을 찾지 못했다 — 이름이 바뀌었으면 이 검사부터 고친다");
+        let body = &text[start..];
+        let end = body.find("\n};").expect("등급표의 끝을 찾지 못했다");
+        let mut rows = Vec::new();
+        for line in body[..end].lines().skip(1) {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("//") || line.starts_with("*") {
+                continue;
+            }
+            let Some((name, rest)) = line.split_once(':') else { continue };
+            let tier = rest.trim().trim_end_matches(',').trim_matches('"');
+            rows.push((name.trim().to_string(), tier.to_string()));
+        }
+        assert!(rows.len() >= 12, "등급표를 {}칸밖에 못 읽었다 — 파싱이 깨졌다", rows.len());
+        rows
+    }
+
+    #[test]
+    fn the_rust_tier_table_matches_the_service_table_cell_by_cell() {
+        let service = service_rpc_tiers();
+        let mut checked = 0;
+        for (rpc, tier) in &service {
+            if OP_ALWAYS_REFUSED.contains(&rpc.as_str()) {
+                let error = op_tier(rpc).unwrap_err();
+                assert!(error.contains("approval-missing"), "{rpc}: {error}");
+                checked += 1;
+                continue;
+            }
+            assert_eq!(
+                op_tier(rpc).unwrap_or_else(|error| panic!("{rpc} 가 Rust 표에 없다: {error}")),
+                tier.as_str(),
+                "{rpc} 의 등급이 서비스와 다르다"
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, service.len());
+        // 반대 방향도 본다. Rust 에만 있는 이름은 서비스가 판정하지 않는 문이 된다.
+        for (rpc, _) in OP_TIERS {
+            assert!(
+                service.iter().any(|(name, _)| name == rpc),
+                "{rpc} 가 Rust 표에만 있다"
+            );
+        }
+    }
+
+    #[test]
+    fn a_client_declared_grant_never_reaches_the_tier_decision() {
+        // 이름이 정한다. 인자로 무엇이 오든 `begin_op` 는 그것을 버리고 표를 본다.
+        assert_eq!(op_tier("snapshot").unwrap(), "observe");
+        assert_eq!(op_tier("click").unwrap(), "workspace-write");
+        assert_eq!(grant_of_tier("observe"), None);
+        assert_eq!(
+            grant_of_tier("workspace-write"),
+            Some(json!({ "tier": "workspace-write" }))
+        );
+        // 승인 참조를 지어내지 않는다 — Rust 에 승인 기록이 없다.
+        let grant = grant_of_tier("workspace-write").unwrap();
+        assert!(grant.get("approvalRef").is_none());
+    }
+
+    #[test]
+    fn script_is_refused_and_unknown_rpcs_are_refused_too() {
+        let refused = op_tier("script").unwrap_err();
+        assert!(refused.contains("approval-missing"), "{refused}");
+        assert!(refused.contains("FR-ENV-TOOL.14b"), "{refused}");
+        assert_eq!(refused, SCRIPT_REFUSAL);
+        let unknown = op_tier("Runtime.evaluate").unwrap_err();
+        assert!(unknown.contains("effect-unknown"), "{unknown}");
+    }
+
+    #[tokio::test]
+    async fn the_script_command_refuses_before_it_can_reach_the_supervisor() {
+        let error = ego_host_op_script().await.unwrap_err();
+        assert_eq!(error, SCRIPT_REFUSAL);
     }
 
     #[test]

@@ -28,7 +28,38 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { EgoGrant, EgoHostApi } from "@nextain/naia-os-core/composition";
+import type { EgoHostApi } from "@nextain/naia-os-core/composition";
+
+/**
+ * 도구 RPC 이름 → 그 RPC 의 Tauri 명령 (S7).
+ *
+ * 웹뷰가 부를 수 있는 문은 이 표에 있는 것뿐이다. 토큰 발급·관리 RPC·원시 CDP 의 넓은 문은
+ * Rust 에서 사라졌고, **등급은 부른 명령의 이름이 정한다** — 여기서 등급을 실어 보내지 않는다.
+ * 표에 없는 이름은 명령을 찾지 못해 실패한다(기본 거부).
+ */
+export const EGO_HOST_OP_COMMAND: Readonly<Record<string, string>> = {
+	open: "ego_host_op_open",
+	navigate: "ego_host_op_navigate",
+	snapshot: "ego_host_op_snapshot",
+	click: "ego_host_op_click",
+	fill: "ego_host_op_fill",
+	evaluate: "ego_host_op_evaluate",
+	screenshot: "ego_host_op_screenshot",
+	close: "ego_host_op_close",
+	createWorkspace: "ego_host_op_create_workspace",
+	listWorkspaces: "ego_host_op_list_workspaces",
+	closeWorkspace: "ego_host_op_close_workspace",
+};
+
+/**
+ * heredoc 은 여기서 끝난다 (FR-ENV-TOOL.14b Pending).
+ *
+ * 승인을 남기는 자리가 Rust 에 없다. 서비스가 승인 참조를 요구하지만 그 참조를 만드는 UI 가
+ * 아직 없고, 웹뷰의 자기 신고만으로 임의 자바스크립트를 통과시키면 승인 요구가 빈 말이 된다.
+ * 그래서 **어댑터에서 한 번, Rust 의 `ego_host_op_script` 에서 또 한 번** 거부한다.
+ */
+export const EGO_HOST_SCRIPT_REFUSAL =
+	"approval-missing: script 는 Rust 쪽 승인 기록이 없어 웹뷰에서 거부한다 — 승인 UI 미구현 (FR-ENV-TOOL.14b)";
 
 /** Rust 가 작업 연결의 프레임을 올려 보내는 이름. `ego_host_bridge.rs` 의 `FRAME_EVENT` 와 같다. */
 export const EGO_HOST_FRAME_EVENT = "ego-host://frame";
@@ -119,19 +150,25 @@ export function createIpcEgoHostApi(
 				socketPath,
 				browserPid,
 				server: {
-					/** 토큰은 **소유자 통로**로만 나온다. 웹뷰가 스스로 만드는 길은 없다. */
-					issueToken: (issue) =>
-						call<Record<string, unknown>>("ego_host_issue_token", {
-							operationId: String(issue.operationId ?? ""),
-							workspaceId: issue.workspaceId ?? null,
-							grant: issue.grant ?? null,
-						}).then((value) => String(throwIfShaped(value, "issueToken").token ?? "")),
+					/**
+					 * 토큰은 **Rust 안에서만** 만들어진다 (S7).
+					 *
+					 * S6c 까지는 이 자리가 `ego_host_issue_token` 으로 나가면서 웹뷰가 고른 등급을
+					 * 그대로 실어 보냈다. 그 문 하나로 웹뷰는 자기 판정을 건너뛴 등급을 스스로
+					 * 만들 수 있었다. 이제 그 명령은 없고, 토큰은 `ego_host_op_*` 가 자기 이름이
+					 * 정한 등급으로 발급한다. 어댑터가 이 문자열을 핸드셰이크로 나르지 않으므로
+					 * 빈 값이 맞다 — 여기서 그럴듯한 값을 지어내면 그것이 토큰으로 읽힌다.
+					 */
+					issueToken: async (issue) => {
+						if (issue.rpc === "script") throw new Error(EGO_HOST_SCRIPT_REFUSAL);
+						return "";
+					},
 					operations: {
 						cancel: async (id, cancelOptions) => {
 							const value = throwIfShaped(
-								await call("ego_host_rpc", {
-									method: "cancelOperationOwned",
-									params: { operationId: id, ...(cancelOptions ?? {}) },
+								await call("ego_host_op_cancel", {
+									operationId: id,
+									reason: (cancelOptions as { reason?: string } | undefined)?.reason ?? null,
 								}),
 								"cancelOperation",
 							);
@@ -142,10 +179,12 @@ export function createIpcEgoHostApi(
 							};
 						},
 						complete: async (id, completeOptions) => {
+							const shape = (completeOptions ?? {}) as { status?: string; reason?: string };
 							const value = throwIfShaped(
-								await call("ego_host_rpc", {
-									method: "endOperationOwned",
-									params: { operationId: id, ...(completeOptions ?? {}) },
+								await call("ego_host_op_complete", {
+									operationId: id,
+									status: shape.status ?? null,
+									reason: shape.reason ?? null,
 								}),
 								"endOperation",
 							);
@@ -181,9 +220,14 @@ export function createIpcEgoHostApi(
 
 		async connectSupervisor(options: Record<string, unknown>) {
 			await subscribe();
-			const session = await call<number>("ego_host_session_open", {
-				token: String(options.token ?? ""),
-				grant: (options.grant ?? null) as EgoGrant | null,
+			const rpc = String(options.rpc ?? "");
+			if (rpc === "script") throw new Error(EGO_HOST_SCRIPT_REFUSAL);
+			const command = EGO_HOST_OP_COMMAND[rpc];
+			if (!command) {
+				throw new Error(`effect-unknown: 효과가 고정된 명령이 없는 RPC 다: ${rpc || "(이름 없음)"}`);
+			}
+			// `token`·`grant` 를 보내지 않는다. 둘 다 Rust 가 명령 이름으로 정한다(S7).
+			const session = await call<number>(command, {
 				operationId: options.operationId ?? null,
 				workspaceId: options.workspaceId ?? null,
 				deadline: options.deadline ?? null,
@@ -207,7 +251,7 @@ export function createIpcEgoHostApi(
 				async call(method: string, params: Record<string, unknown> = {}) {
 					if (closed) return { error: "감독자 연결이 닫혔다", error_code: "EGO_HOST_DISCONNECTED" };
 					try {
-						return (await call<Record<string, unknown>>("ego_host_session_rpc", {
+						return (await call<Record<string, unknown>>("ego_host_op_rpc", {
 							session,
 							method,
 							params,
@@ -224,7 +268,7 @@ export function createIpcEgoHostApi(
 				 * 것은 우리 어댑터의 `cdpChannel` 이다 — 그쪽은 자기 상한으로 응답을 기다린다.
 				 */
 				sendCdp(payload: string, sendOptions?: { operationId?: string | null }) {
-					void call("ego_host_session_cdp", {
+					void call("ego_host_op_cdp", {
 						session,
 						payload,
 						operationId: sendOptions?.operationId ?? null,
@@ -242,17 +286,14 @@ export function createIpcEgoHostApi(
 				},
 				close() {
 					frameHandlers.delete(session);
-					void call("ego_host_session_close", { session }).catch(() => {});
+					void call("ego_host_op_end", { session }).catch(() => {});
 				},
 			};
 		},
 
 		async reconcileLease(options: Record<string, unknown>) {
 			const value = throwIfShaped(
-				await call("ego_host_rpc", {
-					method: "reconcileLease",
-					params: { adkDir: options.adkDir ?? null },
-				}),
+				await call("ego_host_reconcile_lease", { adkDir: options.adkDir ?? null }),
 				"reconcileLease",
 			);
 			return {
@@ -270,14 +311,11 @@ export function createIpcEgoHostApi(
 			// 감독자 전이면 만들 통로가 없다. 데몬이 기동하며 같은 자리를 만들므로 여기서는
 			// 아무 일도 하지 않는다 — 없는 통로에 대고 실패를 만들지 않는다.
 			if (!supervisorUp) return;
-			await call("ego_host_rpc", { method: "ensureDirs", params: { dirs } });
+			await call("ego_host_ensure_dirs", { dirs });
 		},
 
 		writeEnvFiles: (files) =>
-			call<Record<string, unknown>>("ego_host_rpc", {
-				method: "writeEnvFiles",
-				params: { files },
-			}).then((value) => {
+			call<Record<string, unknown>>("ego_host_write_env_files", { files }).then((value) => {
 				const written = throwIfShaped(value, "writeEnvFiles").written;
 				return Array.isArray(written) ? written.map((entry) => String(entry)) : [];
 			}),
@@ -292,33 +330,21 @@ export function createIpcEgoHostApi(
 
 		waitForPidExit: async (pid: number, timeoutMs?: number) => {
 			const value = throwIfShaped(
-				await call("ego_host_rpc", {
-					method: "waitForPidExit",
-					params: { pid, timeoutMs: timeoutMs ?? 10_000 },
-				}),
+				await call("ego_host_wait_pid_exit", { pid, timeoutMs: timeoutMs ?? 10_000 }),
 				"waitForPidExit",
 			);
 			return value.exited === true;
 		},
 
-		runEgoScript: async (options: Record<string, unknown>) => {
-			const value = throwIfShaped(
-				await call("ego_host_rpc", {
-					method: "runScript",
-					params: {
-						code: options.code ?? "",
-						env: options.env ?? {},
-						timeoutMs: options.timeoutMs ?? 30_000,
-					},
-				}),
-				"runScript",
-			);
-			return {
-				status: value.status === null || value.status === undefined ? null : Number(value.status),
-				stdout: String(value.stdout ?? ""),
-				stderr: String(value.stderr ?? ""),
-				timedOut: value.timedOut === true,
-			};
+		/**
+		 * heredoc 실행. 웹뷰에서는 **자식 프로세스가 뜨기 전에** 끝난다 (S7).
+		 *
+		 * 등급 판정만으로는 부족하다. 승인 참조는 웹뷰가 스스로 채우는 값이고 그것을 검증할
+		 * 기록이 Rust 에 없다. Rust 에도 `ego_host_op_script` 가 같은 문구로 거부한다 —
+		 * 두 겹 중 하나가 깨져도 다른 하나가 남는다.
+		 */
+		runEgoScript: async () => {
+			throw new Error(EGO_HOST_SCRIPT_REFUSAL);
 		},
 
 		/** 벤더 SDK 자리는 node 쪽 사실이다. 어댑터는 이 값을 읽지 않는다. */

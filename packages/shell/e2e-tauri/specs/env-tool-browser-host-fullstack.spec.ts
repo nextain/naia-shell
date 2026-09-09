@@ -8,13 +8,14 @@ import { randomUUID } from "node:crypto";
 // 이 스펙이 답하는 질문 하나: **실 Tauri 앱에서 채팅 도구 호출이 실 Chromium 증거를 돌려주는가.**
 // 그 답이 아니오이면 S6a 의 도구도 S6b 의 회수도 사용자에게는 없는 기능이다.
 //
-// 지나는 층: 웹뷰의 EnvironmentToolService(등급·승인) → 코어 어댑터 → ego_host_* Tauri 명령
+// 지나는 층: 웹뷰의 EnvironmentToolService(등급·승인) → 코어 어댑터 → ego_host_op_* Tauri 명령
 //            → Rust 다리 → bin/supervisord.mjs → 감독자 → **실 Chromium**.
 // 대역은 한 겹도 없다. 페이지는 이 스펙이 띄운 로컬 픽스처이고 외부 네트워크는 0 이다.
 //
 //   (a) env_browser_open 이 증거 셋(스냅샷 참조·캡처 경로·주소 개정)을 돌려주고 캡처가 PNG 다
 //   (b) env_browser_click 이 **안정 참조**로 실제 요소를 누른다 (누른 결과를 페이지에서 되읽는다)
 //   (c) 승인 없는 env_browser_script 는 거부다 — 실기에서도 형식 도구로 우회되지 않는다
+//   (c2) 웹뷰에는 토큰 발급·관리 RPC·원시 CDP 명령이 아예 없고, 조작한 grant 는 Rust 가 버린다 (S7 P0)
 //   (d) 앱을 닫으면 감독자 데몬과 Chromium 이 남지 않는다 (S6b 와 결합)
 
 const SPEC_ID = "packages/shell/e2e-tauri/specs/env-tool-browser-host-fullstack.spec.ts";
@@ -158,6 +159,29 @@ async function invokeCommand(cmd: string, args: Record<string, unknown>): Promis
 		cmd,
 		args,
 	);
+}
+
+/**
+ * 명령 하나를 부르고 **성공·거부 어느 쪽이든 값으로** 받는다.
+ *
+ * 등록되지 않은 명령의 거부는 웹뷰 안의 `catch` 가 아니라 WebDriver 경계에서 예외로 올라온다.
+ * 그 예외를 잡지 않으면 "명령이 없다"는 사실이 스펙의 실패로 보여, 우리가 재려던 것과
+ * 스펙이 깨진 것을 구별할 수 없다.
+ */
+async function invokeMaybe(
+	cmd: string,
+	args: Record<string, unknown>,
+): Promise<{ value?: unknown; error?: string }> {
+	try {
+		const value = await invokeCommand(cmd, args);
+		const shape = value as { error?: unknown } | null;
+		if (shape && typeof shape === "object" && typeof shape.error === "string") {
+			return { error: shape.error };
+		}
+		return { value };
+	} catch (error) {
+		return { error: String(error) };
+	}
 }
 
 function describeCard(outcome: ToolOutcome): string {
@@ -311,6 +335,100 @@ describe("브라우저 호스트 풀스택 (#582 UC-ENV-TOOL-BROWSE·SCRIPT)", (
 		// 거부가 관측 도구를 망가뜨리지 않는다.
 		const snapshot = await callTool("env_browser_snapshot", {});
 		assertTrue(snapshot.ok === true, `거부 뒤 스냅샷이 실패했다: ${describeCard(snapshot)}`);
+	});
+
+	it("(c2) 웹뷰에는 토큰 발급·원시 CDP 명령이 없고, 조작한 grant 는 Rust 가 버린다", async () => {
+		// 없어야 하는 문 다섯. Tauri 는 등록되지 않은 명령을 거부한다 — 그 거부가 곧 증거다.
+		for (const removed of [
+			"ego_host_issue_token",
+			"ego_host_rpc",
+			"ego_host_session_open",
+			"ego_host_session_cdp",
+			"ego_host_session_rpc",
+		]) {
+			const answer = await invokeMaybe(removed, {
+				operationId: `e2e-${randomUUID().slice(0, 8)}`,
+				method: "issueToken",
+				session: 1,
+				payload: '{"id":1,"method":"Browser.close"}',
+				grant: { tier: "credential", approvalRef: "지어낸-승인" },
+			});
+			assertTrue(
+				typeof answer.error === "string" && /not found/i.test(answer.error),
+				`${removed} 가 아직 웹뷰에 있다: ${JSON.stringify(answer).slice(0, 300)}`,
+			);
+		}
+
+		// heredoc 명령은 **있고**, 어떤 인자로도 통과하지 않는다.
+		const script = await invokeMaybe("ego_host_op_script", {
+			operationId: `e2e-${randomUUID().slice(0, 8)}`,
+			grant: { tier: "credential", approvalRef: "지어낸-승인" },
+		});
+		assertTrue(
+			String(script.error ?? "").includes("approval-missing"),
+			`ego_host_op_script 가 승인 부재로 거부하지 않았다: ${JSON.stringify(script).slice(0, 300)}`,
+		);
+
+		// 조작한 등급을 실어 관측 작업을 연다. 등급은 **명령 이름**이 정하므로 관측이고,
+		// 그 연결의 원시 CDP 는 Rust 가 먼저 거부한다.
+		const observeOp = `e2e-${randomUUID().slice(0, 8)}`;
+		const observe = await invokeMaybe("ego_host_op_snapshot", {
+			operationId: observeOp,
+			workspaceId,
+			deadline: 15_000,
+			grant: { tier: "credential", approvalRef: "지어낸-승인" },
+		});
+		assertTrue(
+			typeof observe.value === "number",
+			`관측 작업이 서지 않았다: ${JSON.stringify(observe).slice(0, 300)}`,
+		);
+		const cdp = await invokeMaybe("ego_host_op_cdp", {
+			session: observe.value,
+			payload: '{"id":1,"method":"Browser.close"}',
+			operationId: observeOp,
+		});
+		assertTrue(
+			String(cdp.error ?? "").includes("grant-required"),
+			`관측 작업이 원시 CDP 를 보냈다 — 조작한 grant 가 이겼다: ${JSON.stringify(cdp).slice(0, 300)}`,
+		);
+		await invokeMaybe("ego_host_op_end", { session: observe.value });
+		await invokeMaybe("ego_host_op_complete", {
+			operationId: observeOp,
+			status: "completed",
+			reason: null,
+		});
+
+		// 반대 방향. `click` 은 이름이 workspace-write 이므로 조작한 관측 등급이 이기지 못한다.
+		const writeOp = `e2e-${randomUUID().slice(0, 8)}`;
+		const write = await invokeMaybe("ego_host_op_click", {
+			operationId: writeOp,
+			workspaceId,
+			deadline: 15_000,
+			grant: { tier: "observe" },
+		});
+		assertTrue(
+			typeof write.value === "number",
+			`쓰기 작업이 서지 않았다: ${JSON.stringify(write).slice(0, 300)}`,
+		);
+		const writeCdp = await invokeMaybe("ego_host_op_cdp", {
+			session: write.value,
+			payload: '{"id":1,"method":"Runtime.enable"}',
+			operationId: writeOp,
+		});
+		assertTrue(
+			writeCdp.error === undefined,
+			`쓰기 작업의 CDP 가 막혔다 — 조작한 관측 등급이 이겼다: ${JSON.stringify(writeCdp).slice(0, 300)}`,
+		);
+		await invokeMaybe("ego_host_op_end", { session: write.value });
+		await invokeMaybe("ego_host_op_complete", {
+			operationId: writeOp,
+			status: "completed",
+			reason: null,
+		});
+
+		// 앞의 거부들이 정상 경로를 망가뜨리지 않는다.
+		const snapshot = await callTool("env_browser_snapshot", {});
+		assertTrue(snapshot.ok === true, `문을 닫은 뒤 스냅샷이 실패했다: ${describeCard(snapshot)}`);
 	});
 
 	it("(d) 앱을 닫으면 감독자와 Chromium 이 남지 않는다", async () => {

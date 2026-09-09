@@ -12708,12 +12708,20 @@ pub fn run() {
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
         .invoke_handler(tauri::generate_handler![
-            // #582 S6c: 웹뷰 → Rust → node 감독자 다리. 판정은 웹뷰 서비스가 한다.
-            ego_host_bridge::ego_host_ensure, ego_host_bridge::ego_host_issue_token,
-            ego_host_bridge::ego_host_rpc, ego_host_bridge::ego_host_session_open,
-            ego_host_bridge::ego_host_session_rpc, ego_host_bridge::ego_host_session_cdp,
-            ego_host_bridge::ego_host_session_close, ego_host_bridge::ego_host_switch_adk,
-            ego_host_bridge::ego_host_stop,
+            // #582 S7: 웹뷰에는 효과가 고정된 작업 명령만 낸다. 등급은 명령 이름이 정한다.
+            ego_host_bridge::ego_host_ensure, ego_host_bridge::ego_host_stop,
+            ego_host_bridge::ego_host_op_open, ego_host_bridge::ego_host_op_navigate,
+            ego_host_bridge::ego_host_op_snapshot, ego_host_bridge::ego_host_op_click,
+            ego_host_bridge::ego_host_op_fill, ego_host_bridge::ego_host_op_evaluate,
+            ego_host_bridge::ego_host_op_screenshot, ego_host_bridge::ego_host_op_close,
+            ego_host_bridge::ego_host_op_create_workspace,
+            ego_host_bridge::ego_host_op_list_workspaces,
+            ego_host_bridge::ego_host_op_close_workspace,
+            ego_host_bridge::ego_host_op_script, ego_host_bridge::ego_host_op_rpc,
+            ego_host_bridge::ego_host_op_cdp, ego_host_bridge::ego_host_op_end,
+            ego_host_bridge::ego_host_op_cancel, ego_host_bridge::ego_host_op_complete,
+            ego_host_bridge::ego_host_reconcile_lease, ego_host_bridge::ego_host_ensure_dirs,
+            ego_host_bridge::ego_host_write_env_files, ego_host_bridge::ego_host_wait_pid_exit,
             list_skills,
             frontend_log,
             list_stt_models,

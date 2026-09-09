@@ -285,7 +285,13 @@ interface EgoSupervisorHandle {
      * 문자열이 곧바로 나오고(S3a 계약 테스트), 웹뷰에서 Tauri 명령을 지나면 Promise 다(S6c).
      * 호출부는 언제나 `await` 한다 — 문자열을 await 해도 같은 문자열이다.
      */
-    issueToken(options: { operationId?: string; workspaceId?: string | null; grant?: EgoGrant | null }): string | Promise<string>;
+    issueToken(options: {
+      /** 어떤 RPC 의 작업인가. 웹뷰 다리가 등급을 정할 때 쓰는 유일한 입력이다(S7). */
+      rpc?: BrowserRpc;
+      operationId?: string;
+      workspaceId?: string | null;
+      grant?: EgoGrant | null;
+    }): string | Promise<string>;
     operations: EgoOperationsLedger;
   };
   readonly browser: { on(event: "exit", handler: () => void): void };
@@ -527,6 +533,7 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     const api = await this.loadApi();
     const grant = grantFor(rpc, request);
     const token = await supervisor.server.issueToken({
+      rpc,
       operationId: request.operationId,
       workspaceId: request.workspaceId,
       grant,
@@ -537,6 +544,9 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
         socketPath: supervisor.socketPath,
         token,
         grant,
+        // RPC 이름을 함께 내린다. node 조립은 이 값을 읽지 않지만, 웹뷰 다리(S7)는 **이 이름으로**
+        // 등급을 정하고 토큰을 스스로 발급한다 — 웹뷰가 고른 등급은 그 다리에서 버려진다.
+        rpc,
         operationId: request.operationId,
         workspaceId: request.workspaceId,
         deadline: request.timeoutMs,
@@ -780,6 +790,7 @@ export class EgoBrowserEnvironment implements BrowserScriptPort, CancellationPor
     const api = await this.loadApi();
     const grant = grantFor("script", request);
     const token = await supervisor.server.issueToken({
+      rpc: "script",
       operationId: request.operationId,
       workspaceId: request.workspaceId,
       grant,
