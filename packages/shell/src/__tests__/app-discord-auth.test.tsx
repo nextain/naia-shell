@@ -7,7 +7,15 @@ const listeners: Record<
 	string,
 	((event: { payload: any }) => void) | undefined
 > = {};
-const secureState = vi.hoisted(() => ({ naiaKey: null as string | null }));
+const secureState = vi.hoisted(() => ({
+	naiaKey: null as string | null,
+	legacyNaiaKey: null as string | null,
+	nativeStorePath: null as string | null,
+	nativeReads: [] as Array<{
+		name: string;
+		expectedStorePath: string;
+	}>,
+}));
 const tauriState = vi.hoisted(() => ({ startupMessages: [] as string[] }));
 const nativeState = vi.hoisted(() => ({
 	adkPathBinds: [] as string[],
@@ -36,28 +44,51 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
 	convertFileSrc: vi.fn((path: string) => path),
-	invoke: vi.fn((command: string, args?: { adkPath?: string; message?: string }) => {
-		if (command === "store_startup_message" && args?.message)
-			tauriState.startupMessages.push(args.message);
-		if (command === "write_naia_path_cache" && args?.adkPath) {
-			nativeState.adkPathBinds.push(args.adkPath);
-			if (nativeState.pendingAdkPathBind)
-				return nativeState.pendingAdkPathBind;
-		}
-		return Promise.resolve(command === "detect_gpu_vram" ? 8 : null);
-	}),
+	invoke: vi.fn(
+		(
+			command: string,
+			args?: {
+				adkPath?: string;
+				message?: string;
+				name?: string;
+				expectedStorePath?: string;
+			},
+		) => {
+			if (command === "secure_store_get") {
+				const name = args?.name ?? "";
+				const expectedStorePath = args?.expectedStorePath ?? "";
+				secureState.nativeReads.push({ name, expectedStorePath });
+				return Promise.resolve(
+					name === "naiaKey" &&
+						expectedStorePath === secureState.nativeStorePath
+						? secureState.naiaKey
+						: null,
+				);
+			}
+			if (command === "store_startup_message" && args?.message)
+				tauriState.startupMessages.push(args.message);
+			if (command === "write_naia_path_cache" && args?.adkPath) {
+				nativeState.adkPathBinds.push(args.adkPath);
+				if (nativeState.pendingAdkPathBind)
+					return nativeState.pendingAdkPathBind;
+			}
+			return Promise.resolve(command === "detect_gpu_vram" ? 8 : null);
+		},
+	),
 }));
 
-// App 마운트 effect(secure-store via migrate*/loadConfig)가 @tauri-apps/plugin-store `load` 를 호출한다.
+// App 마운트의 secure-store migration 경로가 @tauri-apps/plugin-store `load` 를 호출한다.
 // 그 내부가 Tauri core invoke 를 부르는데 jsdom 엔 __TAURI_INTERNALS__ 가 없어 *unhandled rejection*
 // (secure-store.ts:16 getStore→Store.load) 4건 → 케이스는 통과해도 vitest 'Errors' → exit 1.
 // ⚠️ @tauri-apps/api/core 를 mock 해도 plugin-store 가 내부에서(다른 pnpm 물리경로) core 를 import 해 안 잡힌다.
-// secure-store 가 직접 import 하는 경계 = plugin-store 의 load → 여기에 stub Store 를 줘 차단.
+// secure-store 가 직접 import 하는 migration 경계 = plugin-store 의 load → 여기에 stub Store 를 줘 차단.
 vi.mock("@tauri-apps/plugin-store", () => ({
 	load: vi.fn(() =>
 		Promise.resolve({
 			get: vi.fn((name: string) =>
-				Promise.resolve(name === "naiaKey" ? secureState.naiaKey : null),
+				Promise.resolve(
+					name === "naiaKey" ? secureState.legacyNaiaKey : null,
+				),
 			),
 			set: vi.fn(() => Promise.resolve()),
 			delete: vi.fn(() => Promise.resolve()),
@@ -200,6 +231,8 @@ import { refreshEnvironment } from "../lib/environment-skill";
 import { useAppStore } from "../stores/app";
 
 const E2E_ADK_PATH = "/adk/e2e-target";
+const COLD_ADK_PATH = "/adk/complete";
+const COLD_ADK_STORE_PATH = `${COLD_ADK_PATH}/data-private/secure-keys.dat`;
 const PREVIOUS_ADK_PATH = "/adk/previous";
 const PREVIOUS_ADK_CONFIG = {
 	provider: "legacy-provider",
@@ -224,6 +257,9 @@ describe("App discord deep-link persistence", () => {
 		localStorage.clear();
 		Object.keys(listeners).forEach((key) => delete listeners[key]);
 		secureState.naiaKey = null;
+		secureState.legacyNaiaKey = null;
+		secureState.nativeStorePath = null;
+		secureState.nativeReads = [];
 		tauriState.startupMessages = [];
 		adkState.config = null;
 		adkState.uiConfig = null;
@@ -412,7 +448,7 @@ describe("App discord deep-link persistence", () => {
 	});
 
 	it("mounts the selected 8GB NVA after restoring the Naia key from secure storage", async () => {
-		secureState.naiaKey = "secure-member-key";
+		secureState.legacyNaiaKey = "secure-member-key";
 		localStorage.setItem("naia-adk-path", "C:\\naia");
 		localStorage.setItem(
 			"naia-config",
@@ -592,7 +628,8 @@ describe("App discord deep-link persistence", () => {
 
 	it("replays secure startup auth after cold ADK hydration", async () => {
 		secureState.naiaKey = "secure-cold-key";
-		localStorage.setItem("naia-adk-path", "/adk/complete");
+		secureState.nativeStorePath = COLD_ADK_STORE_PATH;
+		localStorage.setItem("naia-adk-path", COLD_ADK_PATH);
 		adkState.config = {
 			provider: "nextain",
 			model: "gemini-2.5-flash",
@@ -615,6 +652,11 @@ describe("App discord deep-link persistence", () => {
 					}
 				}),
 			).toBe(true);
+		});
+
+		expect(secureState.nativeReads).toContainEqual({
+			name: "naiaKey",
+			expectedStorePath: COLD_ADK_STORE_PATH,
 		});
 	});
 });
