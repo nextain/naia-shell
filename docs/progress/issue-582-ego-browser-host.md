@@ -162,7 +162,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 
 ### 4.8 소유·lease·정리
 
-- Chromium 은 `--remote-debugging-pipe` 로 띄운다(자식 쪽 fd 3·4). Chromium 은 파이프 EOF 를 연결 해제로 처리해 브라우저를 닫는다. 이것이 성립하려면 **부모 쪽 파이프 끝의 유일한 소유자가 감독자**여야 한다. Node 의 공개 `child_process` API 로는 부모 fd 에 CLOEXEC 나 Windows 비상속 플래그를 사후 설정할 수 없으므로, 규율로 집행한다. Chromium spawn 에서만 `stdio` 배열의 3·4번에 `'pipe'` 를 두고, 부모 쪽 스트림은 감독자 내부 클로저에만 보관하며, 감독자의 다른 모든 spawn(CLI 포함)은 명시적 stdio 허용 목록만 쓰고 스트림·숫자 fd 를 절대 넘기지 않는다(fd 3 이상은 Node 기본이 `ignore`). 리눅스에서는 후손 프로세스의 `/proc/<pid>/fd` 에 파이프가 없음을 실측하고, 감독자 SIGKILL 뒤 제한 시간 안에 Chromium PID 가 소멸함을 확인한다. 소멸하지 않으면 lease 기반 강제 회수가 그 사실을 기록하며 회수한다. Windows 의 HANDLE 비상속은 실측 전까지 추측이며 windows4060 게이트 항목이다.
+- Chromium 은 `--remote-debugging-pipe` 로 띄운다(자식 쪽 fd 3·4). Chromium 은 파이프 EOF 를 연결 해제로 처리해 브라우저를 닫는다. 이것이 성립하려면 **부모 쪽 파이프 끝의 유일한 소유자가 감독자**여야 한다. Node 의 공개 `child_process` API 로는 부모 fd 에 CLOEXEC 나 Windows 비상속 플래그를 사후 설정할 수 없으므로, 규율로 집행한다. Chromium spawn 에서만 `stdio` 배열의 3·4번에 `'pipe'` 를 두고, 부모 쪽 스트림은 감독자 내부 클로저에만 보관하며, 감독자의 다른 모든 spawn(CLI 포함)은 명시적 stdio 허용 목록만 쓰고 스트림·숫자 fd 를 절대 넘기지 않는다(fd 3 이상은 Node 기본이 `ignore`). 리눅스에서는 후손 프로세스의 `/proc/<pid>/fd` 에 파이프가 없음을 실측하고(libuv 의 stdio 파이프는 socketpair 라 `socket:[N]` 으로 보인다), 감독자 SIGKILL 뒤 제한 시간 안에 Chromium PID 가 소멸함을 확인한다. **2026-09-09 실측: 약 200ms 에 소멸(S2b).** 감독자가 정상 종료할 때는 파이프 스트림을 명시적으로 파괴해야 한다. 그러지 않으면 Node 프로세스가 이벤트 루프에 매달려 끝나지 않는다. 소멸하지 않으면 lease 기반 강제 회수가 그 사실을 기록하며 회수한다. Windows 의 HANDLE 비상속은 실측 전까지 추측이며 windows4060 게이트 항목이다.
 - 감독자의 소유자는 셸이다. 기존 에이전트 lease 와 같은 형식(nonce·marker·started-at·runtime 경로·PID)으로 `<ADK>/ego-host/lease.json` 을 쓴다. 시작 시 조정에서 marker 가 일치하는 프로세스만 입양하거나 회수한다. 셸 크래시 뒤 다음 시작에서 고아 0 을 이 경로가 보장한다.
 - ADK 전환은 A 의 감독자 정상 종료 → B 의 lease 조정 순서를 어댑터가 강제한다.
 - Reset·재시작·종료 경로에서 셸(Rust)의 소유 런타임 정리 목록에 감독자를 넣는다(S6b). 검증은 `test:e2e:tauri` 로 셸→IPC→Rust→감독자→Chromium 전체를 돈다.
@@ -176,7 +176,7 @@ naia-agent(뇌) ──gRPC──▶ 셸 ──app_tool_call──▶ Environment
 | 헤드리스 인자 | `--headless=new` | 동일 | 동일 |
 | CDP 전송 | `--remote-debugging-pipe`(fd 3·4) | 동일(HANDLE 상속 규율, 실측 전 추측) | 동일 |
 | 감독자 소켓 | unix 소켓(짧은 런타임 디렉터리, 108 바이트 제한) | named pipe `\\.\pipe\naia-ego-host-<adk-hash>` | unix 소켓(104 바이트 제한) |
-| 프로세스 확인·회수 | `/proc/<pid>` + marker | `tasklist`/WMI 대신 Node `process.kill(pid, 0)` + marker 파일 | `ps -p` + marker |
+| 프로세스 확인·회수 | `/proc/<pid>/cmdline` 의 marker(Chromium 이 argv 를 공백으로 재작성하므로 `\0`·공백 모두 경계로 본다) | `process.kill(pid, 0)` 생존만. marker 미확인 프로세스는 `unverified` 로 기록하고 **회수하지 않는다**(windows4060 게이트에서 확인 수단 확정) | `ps -p <pid> -o command=` 의 marker |
 | 무간섭 검증 | Xvfb + xdotool 필수 | 활성 창 API(PowerShell `GetForegroundWindow`) | `osascript` 로 frontmost 앱 |
 | 실측 기기 | linux3090(이 세션) | windows4060(별도 게이트) | 없음(별도 게이트, 기기 확보 전 미실측) |
 | 기능 플래그 기본값 | 실측 통과 후 켬 | 실측 통과 전 끔 | 실측 통과 전 끔 |
