@@ -1372,6 +1372,9 @@ struct AppState {
     agent: Mutex<Option<AgentProcess>>,
     /// Serializes every agent spawn/publication with Discord repair and quarantine.
     discord_lifecycle: Mutex<()>,
+    /// Blocks agent sends and replacement spawns while the frontend hands
+    /// control to the native relaunch plugin.
+    agent_relaunch_pending: Arc<std::sync::atomic::AtomicBool>,
     /// Process-local fail-closed latch. Only verified explicit repair clears it.
     discord_quarantined: Arc<std::sync::atomic::AtomicBool>,
     /// Blocks every spawn while an unconfirmed child is owned by a background reaper.
@@ -4241,6 +4244,92 @@ fn should_teardown_for_window(label: &str) -> bool {
     label == "main"
 }
 
+fn ensure_agent_relaunch_not_pending(state: &AppState) -> Result<(), String> {
+    if state
+        .agent_relaunch_pending
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        Err("agent_relaunch_pending".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn claim_agent_relaunch(
+    pending: &std::sync::atomic::AtomicBool,
+) -> Result<(), String> {
+    pending
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .map(|_| ())
+        .map_err(|_| "agent_relaunch_pending".to_string())
+}
+
+fn prepare_agent_relaunch_unlocked(state: &AppState) -> Result<(), String> {
+    let mut previous = {
+        let mut guard = lock_or_recover(&state.agent, "state.agent(prepare_app_relaunch)");
+        guard.take()
+    };
+    let result = (|| {
+        if let Some(process) = previous.as_mut() {
+            graceful_shutdown_and_reap_agent(process)?;
+            let outcome = process.finish_owned_cleanup(true);
+            require_owned_cleanup_complete(
+                &outcome,
+                true,
+                "agent_owned_cleanup_incomplete",
+            )?;
+        }
+
+        // If no in-memory process was published, reconcile the durable lease
+        // before the WebView clears its ADK binding. This also handles a
+        // previous hard shutdown that left only an orphan child behind.
+        let lease_lock = acquire_agent_child_lease_lock()?;
+        reconcile_agent_child_lease_locked(&lease_lock)
+    })();
+
+    if result.is_err() {
+        // A failed prepare cancels the relaunch. Keep the process available
+        // for an explicit retry, including a lease whose cleanup was partial.
+        let mut guard = lock_or_recover(&state.agent, "state.agent(prepare_app_relaunch)");
+        *guard = previous;
+    } else {
+        drop(previous);
+    }
+    result
+}
+
+/// Drain and disarm the owned Agent before the frontend invokes the native
+/// relaunch plugin. The guard remains set until `cancel_app_relaunch` or the
+/// process exits through the successful relaunch path.
+#[tauri::command]
+fn prepare_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    claim_agent_relaunch(&state.agent_relaunch_pending)?;
+    let result = with_discord_lifecycle(&state.discord_lifecycle, || {
+        prepare_agent_relaunch_unlocked(&state)
+    });
+    if result.is_err() {
+        state
+            .agent_relaunch_pending
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+    result
+}
+
+/// Release a failed relaunch attempt so the user can retry after the native
+/// update/reset operation reports its error.
+#[tauri::command]
+fn cancel_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state
+        .agent_relaunch_pending
+        .store(false, std::sync::atomic::Ordering::Release);
+    Ok(())
+}
+
 /// Poll the selected BGM port health endpoint every 100 ms for up to `timeout`.
 /// Returns `true` as soon as a 2xx response arrives; `false` on timeout.
 /// Used by `spawn_youtube_bgm_server` to detect EADDRINUSE / startup failure.
@@ -4283,6 +4372,7 @@ fn send_to_agent(
     app_handle: Option<&AppHandle>,
     audit_db: Option<&audit::AuditDb>,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     if debug_e2e_enabled() {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(message) {
             let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -4353,6 +4443,10 @@ fn send_to_agent(
     }
 
     let mut guard = lock_or_recover(&state.agent, "state.agent(send_to_agent)");
+    // The relaunch command claims the guard before taking this slot. Recheck
+    // after locking so a send that was queued behind prepare cannot trigger a
+    // replacement Agent while the native relaunch owns the transition.
+    ensure_agent_relaunch_not_pending(state)?;
 
     if let Some(ref mut process) = *guard {
         // Check if process is still alive
@@ -4422,6 +4516,7 @@ fn restart_agent_process_unlocked(
     app_handle: &AppHandle,
     db: &audit::AuditDb,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     let mut previous = {
         let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
         guard.take()
@@ -4436,11 +4531,13 @@ fn restart_agent_process_unlocked(
         if let Err(error) =
             require_owned_cleanup_complete(&outcome, true, "agent_owned_cleanup_incomplete")
         {
-            drop(previous);
+            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+            *guard = previous;
             return Err(error);
         }
     }
     drop(previous);
+    ensure_agent_relaunch_not_pending(state)?;
     match spawn_agent_core(
         app_handle,
         db,
@@ -4466,6 +4563,7 @@ fn restart_agent_process_unlocked(
 /// holds `discord_lifecycle`; no nested restart is attempted here.
 fn send_to_agent_without_restart(state: &AppState, message: &str) -> Result<(), String> {
     let mut guard = lock_or_recover(&state.agent, "state.agent(send_without_restart)");
+    ensure_agent_relaunch_not_pending(state)?;
     let Some(process) = guard.as_mut() else {
         return Err("agent-core not running after restart".to_string());
     };
@@ -4488,6 +4586,7 @@ fn send_startup_message_to_agent(
     source_adk_path: Option<&str>,
 ) -> Result<(), String> {
     with_discord_lifecycle(&state.discord_lifecycle, || {
+        ensure_agent_relaunch_not_pending(state)?;
         {
             let guard = state.startup_messages.lock().unwrap();
             guard.validate_source(source_adk_path)?;
@@ -4535,6 +4634,7 @@ fn restart_agent(
     message: &str,
     audit_db: Option<&audit::AuditDb>,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     reserve_agent_restart(state)?;
 
     log_both("[Naia] Restarting agent-core...");
@@ -4563,6 +4663,7 @@ fn restart_agent_for_discord_config(
     expected_generation: Option<u64>,
     revoke_mode: DiscordAuthorityRevokeMode,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     with_discord_lifecycle(&state.discord_lifecycle, || {
         run_discord_repair_activation(
             &state.discord_quarantined,
@@ -4588,6 +4689,7 @@ fn restart_agent_for_discord_config_unmarked(
     expected_generation: Option<u64>,
     revoke_mode: DiscordAuthorityRevokeMode,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     log_both("[Naia] Restarting agent-core for Discord configuration...");
     // Security-tightening changes revoke before shutdown. Additive changes
     // quiesce and drain the old generation before revocation so
@@ -4627,6 +4729,7 @@ fn restart_agent_for_discord_config_unmarked(
     // Revoke only after ordinary graceful drain, and reassert after an
     // emergency revoke because the old process may have raced the tombstone.
     revoke_discord_runtime_authority()?;
+    ensure_agent_relaunch_not_pending(state)?;
     match spawn_agent_core(
         app_handle,
         audit_db,
@@ -5331,6 +5434,7 @@ async fn store_startup_message(
     adk_path: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(&state)?;
     const CACHEABLE: &[&str] = &["auth_update", "notify_config", "creds_update"];
     let parsed: serde_json::Value = serde_json::from_str(&message)
         .map_err(|_| "store_startup_message: invalid JSON".to_string())?;
@@ -12342,6 +12446,7 @@ async fn write_naia_path_cache(
     audit_state: tauri::State<'_, AuditState>,
 ) -> Result<(), String> {
     with_discord_lifecycle(&state.discord_lifecycle, || {
+        ensure_agent_relaunch_not_pending(&state)?;
         if adk_path.is_empty() {
             return Err("adk_path is empty".to_string());
         }
@@ -12896,6 +13001,7 @@ pub fn run() {
     builder.manage(AppState {
             agent: Mutex::new(None),
             discord_lifecycle: Mutex::new(()),
+            agent_relaunch_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             discord_quarantined: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             discord_pending_reapers: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             discord_config_operation: tokio::sync::Mutex::new(()),
@@ -12922,6 +13028,8 @@ pub fn run() {
             list_stt_models,
             download_stt_model,
             delete_stt_model,
+            prepare_app_relaunch,
+            cancel_app_relaunch,
             store_startup_message,
             send_to_agent_command,
             cancel_stream,
@@ -13370,6 +13478,7 @@ pub fn run() {
 
             // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
             let agent_spawn = with_discord_lifecycle(&state.discord_lifecycle, || {
+                ensure_agent_relaunch_not_pending(&state)?;
                 let process = spawn_agent_core(
                     &app_handle,
                     &audit_db,
@@ -13534,6 +13643,17 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relaunch_guard_rejects_overlap_and_can_be_released() {
+        let pending = std::sync::atomic::AtomicBool::new(false);
+
+        assert!(claim_agent_relaunch(&pending).is_ok());
+        assert!(claim_agent_relaunch(&pending).is_err());
+
+        pending.store(false, std::sync::atomic::Ordering::Release);
+        assert!(claim_agent_relaunch(&pending).is_ok());
+    }
 
     #[test]
     fn startup_message_cache_clears_and_rejects_stale_adk_sources() {

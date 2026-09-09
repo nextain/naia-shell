@@ -3751,11 +3751,35 @@ export function SettingsTab() {
 								type="button"
 								className="voice-preview-btn"
 								onClick={async () => {
-									await resetAdkPathBinding();
-									const { relaunch } = await import(
-										"@tauri-apps/plugin-process"
-									);
-									await relaunch();
+									setError("");
+									let prepared = false;
+									try {
+										await invoke("prepare_app_relaunch");
+										prepared = true;
+										await resetAdkPathBinding();
+										const { relaunch } = await import(
+											"@tauri-apps/plugin-process"
+										);
+										await relaunch();
+									} catch (error) {
+										if (prepared) {
+											await invoke("cancel_app_relaunch").catch(
+												(cancelError) => {
+													Logger.warn(
+														"Settings",
+														"Failed to release relaunch guard",
+														{ error: String(cancelError) },
+													);
+												},
+											);
+										}
+										Logger.error("Settings", "Workspace reset failed", {
+											error: String(error),
+										});
+										setError(
+											`${t("settings.saveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+										);
+									}
 								}}
 							>
 								{t("settings.adkResetBtn")}

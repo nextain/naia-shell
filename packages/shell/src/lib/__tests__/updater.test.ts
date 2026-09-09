@@ -13,11 +13,23 @@ const uiPreferences = vi.hoisted(() => ({
 
 vi.mock("../ui-preferences", () => uiPreferences);
 
-const check = vi.fn();
-const relaunch = vi.fn();
+const nativeMocks = vi.hoisted(() => ({
+	check: vi.fn(),
+	invoke: vi.fn(),
+	relaunch: vi.fn(),
+}));
 
-vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
-vi.mock("@tauri-apps/plugin-process", () => ({ relaunch }));
+vi.mock("@tauri-apps/plugin-updater", () => ({
+	check: nativeMocks.check,
+}));
+vi.mock("@tauri-apps/api/core", () => ({
+	invoke: nativeMocks.invoke,
+}));
+vi.mock("@tauri-apps/plugin-process", () => ({
+	relaunch: nativeMocks.relaunch,
+}));
+
+const { check, invoke, relaunch } = nativeMocks;
 
 import {
 	UPDATE_PROMPT_SNOOZE_KEY,
@@ -38,6 +50,8 @@ function memoryStorage() {
 describe("checkForUpdate", () => {
 	beforeEach(() => {
 		check.mockReset();
+		invoke.mockReset();
+		invoke.mockResolvedValue(undefined);
 		relaunch.mockReset();
 		uiPreferences.getUiPreference.mockReset();
 		uiPreferences.getUiPreference.mockImplementation(
@@ -58,12 +72,25 @@ describe("checkForUpdate", () => {
 	});
 
 	it("downloads, installs, and relaunches an available update", async () => {
-		const downloadAndInstall = vi.fn().mockResolvedValue(undefined);
+		const events: string[] = [];
+		const download = vi.fn(async () => {
+			events.push("download");
+		});
+		const install = vi.fn(async () => {
+			events.push("install");
+		});
+		invoke.mockImplementation(async (command: string) => {
+			events.push(command);
+		});
+		relaunch.mockImplementation(async () => {
+			events.push("relaunch");
+		});
 		check.mockResolvedValue({
 			currentVersion: "0.1.9",
 			version: "0.2.0",
 			body: "Signed updater recovery",
-			downloadAndInstall,
+			download,
+			install,
 		});
 
 		const update = await checkForUpdate();
@@ -73,8 +100,53 @@ describe("checkForUpdate", () => {
 			body: "Signed updater recovery",
 		});
 		await update?.installFn();
-		expect(downloadAndInstall).toHaveBeenCalledOnce();
+		expect(download).toHaveBeenCalledOnce();
+		expect(install).toHaveBeenCalledOnce();
+		expect(events).toEqual([
+			"download",
+			"prepare_app_relaunch",
+			"install",
+			"relaunch",
+		]);
 		expect(relaunch).toHaveBeenCalledOnce();
+	});
+
+	it("does not release another request's guard when prepare is rejected", async () => {
+		const download = vi.fn().mockResolvedValue(undefined);
+		const install = vi.fn().mockResolvedValue(undefined);
+		invoke.mockRejectedValueOnce(new Error("agent_relaunch_pending"));
+		check.mockResolvedValue({
+			currentVersion: "0.1.9",
+			version: "0.2.0",
+			body: "Signed updater recovery",
+			download,
+			install,
+		});
+
+		const update = await checkForUpdate();
+		await expect(update?.installFn()).rejects.toThrow("agent_relaunch_pending");
+		expect(invoke).toHaveBeenCalledTimes(1);
+		expect(invoke).toHaveBeenCalledWith("prepare_app_relaunch");
+		expect(install).not.toHaveBeenCalled();
+		expect(relaunch).not.toHaveBeenCalled();
+	});
+
+	it("releases its guard when installation fails after prepare", async () => {
+		const download = vi.fn().mockResolvedValue(undefined);
+		const install = vi.fn().mockRejectedValue(new Error("install failed"));
+		check.mockResolvedValue({
+			currentVersion: "0.1.9",
+			version: "0.2.0",
+			body: "Signed updater recovery",
+			download,
+			install,
+		});
+
+		const update = await checkForUpdate();
+		await expect(update?.installFn()).rejects.toThrow("install failed");
+		expect(invoke).toHaveBeenNthCalledWith(1, "prepare_app_relaunch");
+		expect(invoke).toHaveBeenNthCalledWith(2, "cancel_app_relaunch");
+		expect(relaunch).not.toHaveBeenCalled();
 	});
 
 	it("defers only the selected version for exactly 30 days", () => {

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const listeners: Record<
@@ -8,6 +9,10 @@ const listeners: Record<
 > = {};
 const secureState = vi.hoisted(() => ({ naiaKey: null as string | null }));
 const tauriState = vi.hoisted(() => ({ startupMessages: [] as string[] }));
+const nativeState = vi.hoisted(() => ({
+	adkPathBinds: [] as string[],
+	pendingAdkPathBind: null as Promise<unknown> | null,
+}));
 const adkState = vi.hoisted(() => ({
 	config: null as Record<string, unknown> | null,
 	uiConfig: null as Record<string, unknown> | null,
@@ -31,9 +36,14 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
 	convertFileSrc: vi.fn((path: string) => path),
-	invoke: vi.fn((command: string, args?: { message?: string }) => {
+	invoke: vi.fn((command: string, args?: { adkPath?: string; message?: string }) => {
 		if (command === "store_startup_message" && args?.message)
 			tauriState.startupMessages.push(args.message);
+		if (command === "write_naia_path_cache" && args?.adkPath) {
+			nativeState.adkPathBinds.push(args.adkPath);
+			if (nativeState.pendingAdkPathBind)
+				return nativeState.pendingAdkPathBind;
+		}
 		return Promise.resolve(command === "detect_gpu_vram" ? 8 : null);
 	}),
 }));
@@ -100,7 +110,6 @@ vi.mock("../lib/adk-store", async () => {
 		readNaiaUiConfig: vi.fn(async () => adkState.uiConfig),
 		listNaiaAssets: backgroundState.listNaiaAssets,
 		toLocalBlobUrl: backgroundState.toLocalBlobUrl,
-		setAdkPath: vi.fn().mockResolvedValue(undefined),
 		writeNaiaConfig: vi.fn().mockResolvedValue(undefined),
 		writeNaiaUiConfig: vi.fn().mockResolvedValue(undefined),
 	};
@@ -134,6 +143,7 @@ vi.mock("../components/TitleBar", () => ({
 vi.mock("../lib/app-loader", () => ({
 	loadInstalledApps: vi.fn().mockResolvedValue(undefined),
 	areInstalledAppsSettled: vi.fn().mockReturnValue(false),
+	invalidateInstalledApps: vi.fn(),
 	resetInstalledAppsSettled: vi.fn(),
 }));
 vi.mock("../lib/app-registry", () => ({
@@ -184,9 +194,29 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 	relaunch: vi.fn().mockResolvedValue(undefined),
 }));
 import { App } from "../App";
+import { readNaiaConfig, writeNaiaConfig } from "../lib/adk-store";
 import { sendAppSkills } from "../lib/chat-service";
 import { refreshEnvironment } from "../lib/environment-skill";
 import { useAppStore } from "../stores/app";
+
+const E2E_ADK_PATH = "/adk/e2e-target";
+const PREVIOUS_ADK_PATH = "/adk/previous";
+const PREVIOUS_ADK_CONFIG = {
+	provider: "legacy-provider",
+	model: "legacy-model",
+	onboardingComplete: true,
+	workspaceRoot: PREVIOUS_ADK_PATH,
+	allowedTools: ["skill_app", "skill_youtube_bgm"],
+};
+
+function seedPreviousAdk(): void {
+	localStorage.setItem("naia-adk-path", PREVIOUS_ADK_PATH);
+	localStorage.setItem("naia-config", JSON.stringify(PREVIOUS_ADK_CONFIG));
+}
+
+function readLocalAdkConfig(): Record<string, unknown> {
+	return JSON.parse(localStorage.getItem("naia-config") || "{}");
+}
 
 describe("App discord deep-link persistence", () => {
 	afterEach(() => {
@@ -197,6 +227,8 @@ describe("App discord deep-link persistence", () => {
 		tauriState.startupMessages = [];
 		adkState.config = null;
 		adkState.uiConfig = null;
+		nativeState.adkPathBinds = [];
+		nativeState.pendingAdkPathBind = null;
 		backgroundState.assets = [];
 		backgroundState.configReadDeferred = false;
 		backgroundState.releaseConfigRead = null;
@@ -206,6 +238,8 @@ describe("App discord deep-link persistence", () => {
 		backgroundState.toLocalBlobUrl.mockImplementation(async (path: string) => path);
 		vi.mocked(refreshEnvironment).mockClear();
 		vi.mocked(sendAppSkills).mockClear();
+		vi.mocked(readNaiaConfig).mockClear();
+		vi.mocked(writeNaiaConfig).mockClear();
 		useAppStore.setState(useAppStore.getInitialState());
 	});
 
@@ -418,6 +452,81 @@ describe("App discord deep-link persistence", () => {
 			).toBe("true");
 			expect(screen.queryByRole("button", { name: "onboarding" })).toBeNull();
 		});
+	});
+
+	it("keeps the previous ADK cache untouched while the E2E native bind is pending", async () => {
+		seedPreviousAdk();
+		adkState.config = {
+			provider: "new-provider",
+			model: "new-model",
+			onboardingComplete: true,
+		};
+		let releaseBind!: () => void;
+		nativeState.pendingAdkPathBind = new Promise<void>((resolve) => {
+			releaseBind = resolve;
+		});
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(nativeState.adkPathBinds).toEqual([E2E_ADK_PATH]);
+		});
+		expect(readLocalAdkConfig()).toMatchObject(PREVIOUS_ADK_CONFIG);
+		expect(localStorage.getItem("naia-adk-path")).toBe(PREVIOUS_ADK_PATH);
+		expect(readNaiaConfig).not.toHaveBeenCalled();
+		expect(writeNaiaConfig).not.toHaveBeenCalled();
+		expect(document.querySelector(".app-root")?.getAttribute("data-ui-mode")).toBe(
+			"setup",
+		);
+
+		releaseBind();
+		await waitFor(() => {
+			expect(localStorage.getItem("naia-adk-path")).toBe(E2E_ADK_PATH);
+			expect(readNaiaConfig).toHaveBeenCalledWith(E2E_ADK_PATH);
+			expect(readLocalAdkConfig()).toMatchObject({
+				provider: "new-provider",
+				model: "new-model",
+				workspaceRoot: E2E_ADK_PATH,
+			});
+		});
+	});
+
+	it("retains the previous ADK after a rejected E2E bind without StrictMode retries", async () => {
+		seedPreviousAdk();
+		let rejectBind!: (reason?: unknown) => void;
+		nativeState.pendingAdkPathBind = new Promise<void>((_, reject) => {
+			rejectBind = reject;
+		});
+
+		const view = render(
+			<StrictMode>
+				<App />
+			</StrictMode>,
+		);
+
+		await waitFor(() => {
+			expect(nativeState.adkPathBinds).toEqual([E2E_ADK_PATH]);
+		});
+		rejectBind(new Error("native bind rejected"));
+
+		await waitFor(() => {
+			expect(localStorage.getItem("naia-adk-path")).toBe(PREVIOUS_ADK_PATH);
+			expect(readLocalAdkConfig()).toMatchObject(PREVIOUS_ADK_CONFIG);
+			expect(
+				document.querySelector(".app-root")?.getAttribute("data-ui-mode"),
+			).toBe("setup");
+		});
+
+		view.rerender(
+			<StrictMode>
+				<App />
+			</StrictMode>,
+		);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+		expect(nativeState.adkPathBinds).toEqual([E2E_ADK_PATH]);
+		expect(readNaiaConfig).not.toHaveBeenCalled();
+		expect(writeNaiaConfig).not.toHaveBeenCalled();
 	});
 
 	it("hydrates the persisted TTS enabled state into the app store", async () => {
