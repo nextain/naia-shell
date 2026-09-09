@@ -266,3 +266,28 @@ export function applyWorkspaceHelper(workspace: BrowserWorkspace, helper: Worksp
 export function revisionMatches(expected: number | undefined, actual: number): boolean {
   return expected === undefined || expected === actual;
 }
+
+/**
+ * 포트가 실패 사유를 실어 보내는 통로 (#582 4.4).
+ * 이것이 없으면 조립층이 오류를 문자열로 받아 한 가지 코드로 뭉갠다 — 실제로 그랬다.
+ */
+export class EnvOperationFailure extends Error {
+  constructor(
+    readonly reason: EnvFailureReason,
+    detail: string,
+  ) {
+    super(detail);
+    this.name = "EnvOperationFailure";
+  }
+}
+
+/** 던져진 값에서 형식 있는 사유를 읽는다. 못 읽으면 지어내지 않고 undefined 다. */
+export function envFailureReasonOf(error: unknown): EnvFailureReason | undefined {
+  if (error instanceof EnvOperationFailure) return error.reason;
+  if (typeof error !== "object" || error === null) return undefined;
+  for (const key of ["reason", "code"] as const) {
+    const value = (error as Record<string, unknown>)[key];
+    if (typeof value === "string" && isEnvFailureReason(value)) return value;
+  }
+  return undefined;
+}

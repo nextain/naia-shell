@@ -49,3 +49,40 @@ node scripts/check-traceability.mjs --enforce  # EXIT=0 (dead-link 0 · orphan 0
    정리 대상이 그때그때 정해져 고아가 남는다(4.8). `env-tool-live` 계약 테스트는 자기 Herdr 워크스페이스 id 를 넣도록 맞췄다.
 4. **`completeTaskSpaceClose` 는 개정을 올린다.** 표에는 개정 규칙이 없다. 닫힘도 공간의 상태 변화이므로
    낡은 참조가 닫힌 공간에 작용하지 못하도록 `revision + 1` 로 표시한다.
+
+## S0b 동시성·deadline
+
+명령과 종료 코드:
+
+```
+npx tsc -p tsconfig.json                       # EXIT=0
+npx vitest run src/test/env-tool-cancel-timeout.contract.test.ts  # EXIT=0 (24 passed)
+pnpm test                                      # EXIT=1 (실패 7건 = 기준선 그대로, Tests 7 failed | 1593 passed)
+node scripts/check-file-anchors.mjs            # EXIT=0
+node scripts/check-traceability.mjs --enforce  # EXIT=0
+```
+
+테스트 수: 1578 → 1593 passed (S0b 계약 테스트 15건). 새 실패 0.
+
+바꾼 것:
+
+- `src/main/app/control/env-tool.ts` — 작업 장부를 상태 한 칸에서 기록(`OperationRecord`)으로 바꾸고
+  종결 CAS(`settle`), 진행 중 멱등 공유(`inflight`), 실제 deadline 타이머와 `AbortController`,
+  포트가 실은 사유 보존, `snapshotOf` 로 상태·사유·부분 효과·늦게 온 종결 시도 노출.
+- `src/main/ports/env-tool.ts` — 브라우저·터미널 포트 메서드에 `signal?: AbortSignal` 추가(신호를 포트까지 내리기 위한 최소 변경).
+- `src/main/domain/env-tool.ts` — `EnvOperationFailure`(포트가 사유를 싣는 통로)와 `envFailureReasonOf`.
+- `src/test/env-tool-cancel-timeout.contract.test.ts` — 경주 양방향, 동시 멱등 5건 → 포트 1회, 가짜 타이머 deadline,
+  사유 보존, 취소가 포트·신호까지 도달.
+
+### 계약과 달랐던 판단 (S0b)
+
+1. **취소 순서.** 4.7 은 "취소 훅" 만 말한다. 구현 순서는 ① 종결 자리 CAS 선점 → ② `AbortSignal` 발화 → ③ 취소 포트 호출로 고정했다.
+   신호를 먼저 끊으면 몸통이 먼저 실패로 종결해 취소가 `failed` 로 둔갑한다(실제로 그렇게 짜면 뒤집힌다).
+2. **사유를 못 읽은 오류.** 계약은 형식 있는 사유 11개만 정하고 "사유 없는 예외" 를 정하지 않았다.
+   지어내지 않으려면 새 코드를 만들어야 하는데, 코드가 늘면 감독자·어댑터 분기가 계약보다 앞서 늘어난다.
+   그래서 `disconnected`(사유를 받지 못한 통로)로 적고 원문 메시지를 `detail` 에 남긴다. 경계 이탈(`workspace-escape`)로는 절대 뭉개지 않는다.
+3. **증거 없는 완료의 사유는 `partial`** 로 바꿨다(전에는 `workspace-escape`). 일은 일어났고 증거만 없는 상태다.
+4. **판정이 멱등 조회보다 앞선다.** 같은 멱등 키라도 권한이 없는 호출자는 진행 중·완료된 남의 결과를 받지 못한다.
+   기존 순서(캐시 먼저)를 유지하면 키만 알면 결과를 주워 갈 수 있었다.
+5. **포트에 `signal?` 을 S0b 에서 넣었다.** 계약 9절은 포트 형태를 S0c 로 잡지만, "신호를 포트까지 전달" 을 S0b 에서 증명하려면
+   포트가 인자를 받아야 한다. S0c 는 그 위에서 포트를 마저 넓힌다.
