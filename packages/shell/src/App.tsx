@@ -313,13 +313,20 @@ export function App() {
 		let revision = 0;
 		async function syncAvatarConfig() {
 			const currentRevision = ++revision;
-			const cfg = await loadConfigWithSecrets();
-			if (!active || currentRevision !== revision) return;
-			setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
-			setNvaModel(cfg?.nvaModel ?? "");
-			const nextAvatarModelPath = cfg?.vrmModel ?? "";
-			if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
-				setAvatarModelPath(nextAvatarModelPath);
+			try {
+				const cfg = await loadConfigWithSecrets();
+				if (!active || currentRevision !== revision) return;
+				setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
+				setNvaModel(cfg?.nvaModel ?? "");
+				const nextAvatarModelPath = cfg?.vrmModel ?? "";
+				if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
+					setAvatarModelPath(nextAvatarModelPath);
+				}
+			} catch (error) {
+				if (!active || currentRevision !== revision) return;
+				Logger.warn("App", "Failed to sync avatar config", {
+					error: String(error),
+				});
 			}
 		}
 		void syncAvatarConfig();

@@ -1471,6 +1471,46 @@ describe("SettingsTab — memory tab (#298)", () => {
 		expect(tabBtns.length).toBe(10);
 	});
 
+	it("keeps memory backup controls disabled until native support exists", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("memory");
+
+		expect(
+			screen.getByText("Backup feature is coming in a future version."),
+		).toBeInTheDocument();
+		const password = screen.getByPlaceholderText(
+			"Backup password",
+		) as HTMLInputElement;
+		const exportButton = screen.getByRole("button", { name: "Export" });
+		const importButton = screen.getByRole("button", { name: "Import" });
+		const createElement = vi.spyOn(document, "createElement");
+
+		expect(password).toBeDisabled();
+		expect(exportButton).toBeDisabled();
+		expect(importButton).toBeDisabled();
+
+		fireEvent.click(exportButton);
+		fireEvent.keyDown(exportButton, { key: "Enter", code: "Enter" });
+		fireEvent.keyDown(exportButton, { key: " ", code: "Space" });
+		fireEvent.click(importButton);
+		fireEvent.keyDown(importButton, { key: "Enter", code: "Enter" });
+		fireEvent.keyDown(importButton, { key: " ", code: "Space" });
+
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"memory_export_backup",
+			expect.anything(),
+		);
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"memory_import_backup",
+			expect.anything(),
+		);
+		expect(createElement).not.toHaveBeenCalledWith("input");
+		expect(createElement).not.toHaveBeenCalledWith("a");
+		expect(screen.queryByText("✓")).not.toBeInTheDocument();
+		createElement.mockRestore();
+	});
+
 	it("keeps radio DJ parameters under skills and exhibition parameters under General", async () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
