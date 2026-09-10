@@ -184,9 +184,9 @@ test("연결 안내는 미완성 Connections를 열거나 바인딩을 저장하
 	await guide.getByRole("button").click();
 
 	const connectionsTab = page.locator('[data-settings-tab="connections"]');
-	await expect(connectionsTab).toBeDisabled();
-	await expect(connectionsTab).toContainText(/준비중|Coming Soon/i);
-	await expect(page.getByTestId("discord-connections")).toHaveCount(0);
+	await expect(connectionsTab).toBeEnabled();
+	await connectionsTab.click();
+	await expect(page.getByTestId("discord-connections")).toBeVisible();
 	const saveCalls = await page.evaluate(() =>
 		(
 			window as unknown as {

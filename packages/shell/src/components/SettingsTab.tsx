@@ -165,6 +165,7 @@ import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
+import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -3632,10 +3633,10 @@ export function SettingsTab() {
 				<button
 					type="button"
 					data-settings-tab="connections"
-					className="settings-tab-btn"
-					disabled
+					className={`settings-tab-btn${activeSettingsTab === "connections" ? " settings-tab-btn--active" : ""}`}
+					onClick={() => setActiveSettingsTab("connections")}
 				>
-					{t("settings.tabConnections")} · {t("settings.comingSoonTag")}
+					{t("settings.tabConnections")}
 				</button>
 				<button
 					type="button"
@@ -6183,6 +6184,7 @@ export function SettingsTab() {
 				</>
 			)}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
+			{activeSettingsTab === "connections" && <ConnectionsSettingsTab />}
 			{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
 					<SkillsTab>
