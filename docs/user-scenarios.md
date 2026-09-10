@@ -165,6 +165,8 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 | 시나리오 | 사용자 경험 | 인지/레이어 | 검증(P02) |
 |---|---|---|---|
 | **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(edge/google/nextain/openai/elevenlabs). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **UC-VOICE-TTS-HD** ([#585](https://github.com/nextain/naia-shell/issues/585)) | 텍스트 LLM + Naia Cloud TTS를 고르면 SunHi/Hyunsu DragonHD로 읽고, 크레딧은 게이트웨이 API×1.1 금액이다. 라이브 모델을 고르면 TTS 슬롯이 잠긴다 | UC2 표현 · S-TTS | `registry.test.ts` · `slots.test.ts` |
+| **UC-VOICE-LIVE-AZURE** ([#585](https://github.com/nextain/naia-shell/issues/585)) | main=`azure-realtime`이면 STT와 TTS가 묶여 숨고, 말·글 입력이 `/v1/voice-live`로 가서 sunhi가 대답한다 | UC2 omni | `resolve-live-provider.test.ts` · `registry.test.ts` |
 | **S-CAP** (#365) | 모델을 고르면 그 모델 **능력에 맞춰 설정이 전개**(omni→STT/TTS 슬롯 숨김, 텍스트→노출). gateway 가 능력 선언 | 제어면(설정) — capability manifest 도출 | `test_models.py`·`capability-fetch.test.ts`·`slots.test.ts`. ⚠️ 라이브 /v1/models=게이트웨이 배포 |
 | **S-VRAM** (#2) | 내 GPU VRAM 을 감지해 **로컬에서 돌릴 수 있는 tier**(아바타·음성)를 보여주고 선택. opt-in 시 외부 슬롯 대신 로컬 | 제어면(설정) — VRAM→capability 브리지 | `vram-tiers.test.ts`. ⚠️ 실 VRAM 감지=실 GPU, 로컬 serving=windows-manager 로더(DEFER) |
 | **S-SLOT** (#gate-slots, 신규 — 2026-06-28) | 설정이 **naia 계정 게이트 → 6 클라우드 슬롯(LLM main·LLM sub·embedding·STT·TTS·video avatar) 각각 독립 설정** 순서로 전개. naia 계정 시 Gemini 기본값 자동 적용. 구 engine/ai/models/memory 분산을 통합해 "설정 헷갈림" 해소. **Naia는 provider가 아닌 접근 유형(게이트)**. local 런타임(cascade)은 별도 "naia-omni local setting" 영역(wm 연동, **DEFER**). legacy 고정 VRAM tier는 R2-3으로 폐기 → capability 토글+VRAM 예산(설계 P1.4) | 제어면(설정) — 게이트+슬롯 모델 | `settings-slots.contract.test.ts`(신규)·`settings-tab.test.ts`·`onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)=wm 언블록 후 |
@@ -357,6 +359,8 @@ Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
 | UC-NAIA-AZURE-MODELS | `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: Naia 모델 목록이 가격 가중 순서로 서고, 쓸 수 없는 모델은 숨으며, Azure provenance 와 도구 지원 여부가 gateway 응답대로 반영되는지 / `packages/shell/src/lib/__tests__/config.test.ts`: 선택이 재시작 뒤 복원되는지 | 실제 대화가 그 모델로 가는지는 사람이 받는다 — 자동으로 재는 자리는 아직 없다 |
+| UC-VOICE-TTS-HD | `src/lib/tts/__tests__/registry.test.ts` 피커 순서 Edge→로컬 GPU→Naia HD; `sentence-pipeline.test.ts` 게이트웨이 `costUsd`를 다시 1.1 곱하지 않음; `slots.test.ts` omni면 STT/TTS 숨김 | 설정 Voice: 기본·빈 목록·omni 잠금. 실기 P04는 게이트웨이 키 필요 |
+| UC-VOICE-LIVE-AZURE | `src/lib/voice/__tests__/resolve-live-provider.test.ts` azure-realtime→`/v1/voice-live`; `registry.test.ts` omni+sunhi/hyunsu; nextain 카탈로그에 gpt-4o-mini live 없음 | 말·글 입력이 sunhi로 대답. 실기 P04는 `AZURE_SPEECH_KEY`(southeastasia) 필요 |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
@@ -1803,3 +1807,19 @@ Test Coverage Map
 | UC | 단위·계약 | 비고 |
 |---|---|---|
 | UC-QUALITY-STABILITY-CONCURRENCY | `packages/shell/src-tauri/src/app_sandbox.rs`: 여덟 스레드가 한 파일을 두고 다투는 동안 읽는 스레드 둘이 반쪽짜리를 보는지 감시 | 원자적 쓰기를 비원자적으로 되돌리면 스무 번 중 스무 번 잡는다. 처음에는 쓰는 내용이 한 글자라 절반만 잡았다 |
+
+## 2026-09-08 회차별 제품 QA (사용자 지시)
+
+### UC-QA-ROUND
+
+QA 담당자는 원본 사용자 시나리오(UC 또는 S)와 기능 요구사항·설계(FR/FE/SPEC)를 연결한 검사 목록에서 각 항목의 준비 조건, 실행 방법, 예상 결과를 확인한다. 원본에 없는 연결을 만들어 빈칸을 감추지 않으며, 누락된 정의는 근거와 함께 보완한다.
+
+회차 시작 때 전체 목록과 후보를 고정하고 Linux 3090 및 Windows 4060의 적용 행을 모두 NOT_RUN으로 생성한다. 한 기기의 GUI는 한 실행자가 맡고, 가능한 검사를 같은 앱 세션에 묶어 각각 기록한다. 결과에는 실제 플랫폼·기기·실행 시각·관찰·증거가 있으며 FAIL/BLOCKED에는 이유가 있다. 실패를 발견해도 독립적으로 실행할 수 있는 나머지 검사를 계속한다.
+
+전체 예정 행의 결과를 수집한 뒤 실패를 원인별로 분석하고 수정한다. 수정한 후보는 새 회차에서 전체를 다시 실행하며 이전 PASS를 복사하지 않는다. 설정·회차·증거는 선택한 QA ADK에서 저장하고 읽는다. 하네스 자체 검증을 먼저 수행하되 그 통과를 제품이나 다른 플랫폼의 통과로 보고하지 않는다.
+
+Test Coverage Map
+
+| UC | 하네스 계약 검증 | 제품 검증 |
+|---|---|---|
+| UC-QA-ROUND | `scripts/qa-round.test.mjs`, `qa-traceability.test.mjs`, `qa-catalog.test.mjs`, `qa-batch.test.mjs`, `qa-round-transfer.test.mjs`; 증거: `.agents/progress/qa-resume-20260907/qa-harness-review-20260908.md` | 고정한 전체 목록을 기기별 실행한 회차 기록으로 별도 판정. 하네스 fixture는 제품 결과가 아니다. |

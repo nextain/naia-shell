@@ -373,18 +373,17 @@ export function createSentenceTtsPipeline(
 					localVoiceScheduler?.onEnqueued(localVoiceGeneration, seq);
 				}
 				// Track TTS cost: server cost for Naia Cloud, estimate for others.
-				// Naia account (nextain): 10% service markup on top of base cost.
+				// Gateway already charges API × 1.1. Do not markup server costUsd again.
 				const NAIA_TTS_MARKUP = 1.1;
 				const isNaiaTts = ttsProviderForCost === "nextain";
-				const baseTtsCost =
+				const ttsCost =
 					costUsd != null
 						? costUsd
 						: estimateTtsCost(
 								ttsProviderForCost,
 								clean.length,
 								ttsVoiceForCost,
-							);
-				const ttsCost = isNaiaTts ? baseTtsCost * NAIA_TTS_MARKUP : baseTtsCost;
+							) * (isNaiaTts ? NAIA_TTS_MARKUP : 1);
 				if (ttsCost > 0) {
 					// addCostEntry keeps TTS in a separate CostDashboard row.
 					deps.addCostEntry({

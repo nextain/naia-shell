@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getLlmModel } from "../../llm/registry";
 import type { ModelCapability } from "../../types";
 import { deriveSettingsSlots } from "../slots";
 
@@ -16,6 +17,15 @@ describe("deriveSettingsSlots", () => {
 		const plan = deriveSettingsSlots(["llm", "omni"]);
 		expect(plan.coversVoiceInput).toBe(true);
 		expect(plan.coversVoiceOutput).toBe(true);
+		expect(plan.needsExternalStt).toBe(false);
+		expect(plan.needsExternalTts).toBe(false);
+		expect(plan.showVoiceSection).toBe(false);
+	});
+
+	it("azure-realtime omni locks external STT/TTS slots", () => {
+		const model = getLlmModel("nextain", "azure-realtime");
+		expect(model?.capabilities).toEqual(["llm", "omni"]);
+		const plan = deriveSettingsSlots(model!.capabilities);
 		expect(plan.needsExternalStt).toBe(false);
 		expect(plan.needsExternalTts).toBe(false);
 		expect(plan.showVoiceSection).toBe(false);

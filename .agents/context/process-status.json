@@ -10,6 +10,16 @@
   },
 
   "current_work": {
+    "issue_585_azure_voice": {
+      "issue": 585,
+      "title": "Azure omni live locks STT/TTS; Naia TTS is Neural HD",
+      "contract": "docs/progress/issue-585-azure-voice.md",
+      "branch": "issue/585-azure-voice",
+      "gateway_issue": "naia-anyllm#74",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
+      "status": "in_progress",
+      "last_updated": "2026-09-10T15:00:00+09:00"
+    },
     "issue_582_ego_browser_host": {
       "issue": 582,
       "parent": 499,

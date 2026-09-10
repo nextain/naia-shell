@@ -155,6 +155,7 @@ import {
 	type VoiceSession,
 	attachAppContextBridge,
 	createVoiceSession,
+	resolveLiveProvider,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
@@ -3136,18 +3137,12 @@ export function ChatArea({
 			// Realtime (/v1/realtime via gateway). Gemini live (gemini-*-live)
 			// routes to Gemini Live (/v1/live) under "naia". Both are isOmni,
 			// so branch on the model id prefix first.
-			const liveProvider =
-				isOmni && config.model?.startsWith("naia-")
-					? ("naia-omni" as const)
-					: isOmni && config.provider === "vllm"
-						? ("naia-omni" as const)
-						: config.provider === "vllm"
-							? ("vllm-omni" as const)
-							: config.provider === "openai"
-								? ("openai-realtime" as const)
-								: naiaKey
-									? ("naia" as const)
-									: ("gemini-live" as const);
+			const liveProvider = resolveLiveProvider({
+				isOmni,
+				provider: config.provider,
+				model: config.model,
+				hasNaiaKey: !!naiaKey,
+			});
 
 			Logger.info("ChatArea", "Voice config", {
 				provider: config.provider,
@@ -3173,6 +3168,15 @@ export function ChatArea({
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: "Gemini Live를 사용하려면 Google API Key를 입력하세요.",
+				});
+				setVoiceStatus({ phase: "idle" });
+				return;
+			}
+			if (liveProvider === "azure-voice-live" && !naiaKey) {
+				Logger.warn("ChatArea", "Azure Voice Live requires Naia key");
+				useChatStore.getState().addMessage({
+					role: "assistant",
+					content: t("chat.voiceNeedLabKey"),
 				});
 				setVoiceStatus({ phase: "idle" });
 				return;
@@ -3559,6 +3563,19 @@ export function ChatArea({
 					apiKey: openaiKey!,
 					model: config.model,
 					voice: selectedVoice,
+					locale: getLocale(),
+					systemInstruction: voiceSystemPrompt,
+					tools: voiceTools.length ? voiceTools : undefined,
+				});
+			} else if (liveProvider === "azure-voice-live") {
+				const azureVoice =
+					selectedVoice === "Kore" || !selectedVoice ? "sunhi" : selectedVoice;
+				await session.connect({
+					provider: "azure-voice-live",
+					gatewayUrl: LAB_GATEWAY_URL,
+					naiaKey: naiaKey!,
+					model: config.model ?? "azure-realtime",
+					voice: azureVoice,
 					locale: getLocale(),
 					systemInstruction: voiceSystemPrompt,
 					tools: voiceTools.length ? voiceTools : undefined,
