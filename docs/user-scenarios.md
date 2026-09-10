@@ -1807,19 +1807,3 @@ Test Coverage Map
 | UC | 단위·계약 | 비고 |
 |---|---|---|
 | UC-QUALITY-STABILITY-CONCURRENCY | `packages/shell/src-tauri/src/app_sandbox.rs`: 여덟 스레드가 한 파일을 두고 다투는 동안 읽는 스레드 둘이 반쪽짜리를 보는지 감시 | 원자적 쓰기를 비원자적으로 되돌리면 스무 번 중 스무 번 잡는다. 처음에는 쓰는 내용이 한 글자라 절반만 잡았다 |
-
-## 2026-09-08 회차별 제품 QA (사용자 지시)
-
-### UC-QA-ROUND
-
-QA 담당자는 원본 사용자 시나리오(UC 또는 S)와 기능 요구사항·설계(FR/FE/SPEC)를 연결한 검사 목록에서 각 항목의 준비 조건, 실행 방법, 예상 결과를 확인한다. 원본에 없는 연결을 만들어 빈칸을 감추지 않으며, 누락된 정의는 근거와 함께 보완한다.
-
-회차 시작 때 전체 목록과 후보를 고정하고 Linux 3090 및 Windows 4060의 적용 행을 모두 NOT_RUN으로 생성한다. 한 기기의 GUI는 한 실행자가 맡고, 가능한 검사를 같은 앱 세션에 묶어 각각 기록한다. 결과에는 실제 플랫폼·기기·실행 시각·관찰·증거가 있으며 FAIL/BLOCKED에는 이유가 있다. 실패를 발견해도 독립적으로 실행할 수 있는 나머지 검사를 계속한다.
-
-전체 예정 행의 결과를 수집한 뒤 실패를 원인별로 분석하고 수정한다. 수정한 후보는 새 회차에서 전체를 다시 실행하며 이전 PASS를 복사하지 않는다. 설정·회차·증거는 선택한 QA ADK에서 저장하고 읽는다. 하네스 자체 검증을 먼저 수행하되 그 통과를 제품이나 다른 플랫폼의 통과로 보고하지 않는다.
-
-Test Coverage Map
-
-| UC | 하네스 계약 검증 | 제품 검증 |
-|---|---|---|
-| UC-QA-ROUND | `scripts/qa-round.test.mjs`, `qa-traceability.test.mjs`, `qa-catalog.test.mjs`, `qa-batch.test.mjs`, `qa-round-transfer.test.mjs`; 증거: `.agents/progress/qa-resume-20260907/qa-harness-review-20260908.md` | 고정한 전체 목록을 기기별 실행한 회차 기록으로 별도 판정. 하네스 fixture는 제품 결과가 아니다. |
