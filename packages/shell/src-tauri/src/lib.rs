@@ -13244,6 +13244,15 @@ pub fn run() {
                         });
                     }
                 }
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    // plugin:window|close hits this before Destroyed. Clean ego-host
+                    // lease here so e2e "정상 종료 뒤 lease 가 정리된다" is not racing
+                    // a driver that never delivers Destroyed.
+                    if should_teardown_for_window(window.label()) {
+                        crate::ego_host_bridge::stop_blocking("cleanup(close-requested)");
+                        crate::ego_host::cleanup_current_adk("cleanup(close-requested)");
+                    }
+                }
                 tauri::WindowEvent::Destroyed => {
 					if !should_teardown_for_window(window.label()) {
 						log_verbose(&format!(

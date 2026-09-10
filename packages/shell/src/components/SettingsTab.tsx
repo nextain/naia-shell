@@ -38,6 +38,7 @@ import {
 import { effectiveAvatarProviderFromConfig } from "../lib/avatar/nva-gate";
 import { detectGpuVramGb } from "../lib/capabilities/gpu";
 import { deriveSettingsSlots } from "../lib/capabilities/slots";
+import { isConnectionsTabEnabled } from "../lib/settings-connections";
 import {
 	isRecommendedLocalValue,
 	slotRecommendation,
@@ -161,6 +162,7 @@ import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
+import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -601,6 +603,15 @@ function DeviceSelect({
 }
 
 export function SettingsTab() {
+	// The Discord surface is enabled only for the explicit IR/web preview route
+	// until the native settings flow is promoted. Preview data is supplied by
+	// the WebView boundary; the product never invents a credential or status.
+	const connectionsPreviewEnabled = isConnectionsTabEnabled({
+		isTauri:
+			typeof window !== "undefined" && "__TAURI_INTERNALS__" in window,
+		search: typeof window !== "undefined" ? window.location.search : "",
+		isDev: import.meta.env.DEV,
+	});
 	const [activeSettingsTab, setActiveSettingsTab] = useState<
 		| "profile"
 		| "brain"
@@ -3560,10 +3571,12 @@ export function SettingsTab() {
 				<button
 					type="button"
 					data-settings-tab="connections"
-					className="settings-tab-btn"
-					disabled
+					className={`settings-tab-btn${activeSettingsTab === "connections" ? " settings-tab-btn--active" : ""}`}
+					disabled={!connectionsPreviewEnabled}
+					onClick={() => setActiveSettingsTab("connections")}
 				>
-					{t("settings.tabConnections")} · {t("settings.comingSoonTag")}
+					{t("settings.tabConnections")}
+					{!connectionsPreviewEnabled && <> · {t("settings.comingSoonTag")}</>}
 				</button>
 				<button
 					type="button"
@@ -3579,6 +3592,7 @@ export function SettingsTab() {
 					{error}
 				</div>
 			)}
+			{activeSettingsTab === "connections" && <ConnectionsSettingsTab />}
 			{activeSettingsTab === "general" && (
 				<>
 					<ProactiveSpeechSettingsSection
@@ -6148,6 +6162,7 @@ export function SettingsTab() {
 							<label>{t("settings.memoryBackup")}</label>
 							<input
 								type="password"
+								data-testid="memory-backup-password"
 								value={backupPassword}
 								onChange={(e) => setBackupPassword(e.target.value)}
 								placeholder={t("settings.memoryBackupPassword")}
@@ -6155,6 +6170,7 @@ export function SettingsTab() {
 							<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
 								<button
 									type="button"
+									data-testid="memory-backup-export"
 									onClick={async () => {
 										setBackupStatus("exporting");
 										setBackupError("");
