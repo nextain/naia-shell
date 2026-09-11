@@ -1,3 +1,4 @@
+import { Logger } from "./logger";
 import {
 	SLIDE_PRESENTER_CANCEL_EVENT,
 	SLIDE_PRESENTER_SPEAK_EVENT,
@@ -7,6 +8,12 @@ import {
 } from "./slide-presenter-events";
 
 // Installed apps run in an asset-protocol iframe; only that origin may drive TTS.
+// Linux(WebKitGTK)의 convertFileSrc 는 `asset://localhost` origin 을 준다 (2026-09-11 실측).
+const ALLOWED_ORIGINS = new Set([
+	"http://asset.localhost",
+	"https://asset.localhost",
+	"asset://localhost",
+]);
 const ALLOWED_ORIGIN = "http://asset.localhost";
 
 /**
@@ -28,9 +35,10 @@ const ALLOWED_ORIGIN = "http://asset.localhost";
  */
 export function startSlidePresenterIframeBridge(): () => void {
 	let slidesFrame: Window | null = null;
+	let slidesFrameOrigin: string | null = null;
 
 	const onMessage = (event: MessageEvent) => {
-		if (event.origin !== ALLOWED_ORIGIN) return;
+		if (!ALLOWED_ORIGINS.has(event.origin)) return;
 		const data = event.data as
 			| { type?: string; detail?: unknown }
 			| null
@@ -39,6 +47,7 @@ export function startSlidePresenterIframeBridge(): () => void {
 		if (data.type === "naia-slides:speak") {
 			// Remember the requesting frame so results route back to it only.
 			slidesFrame = event.source as Window | null;
+			slidesFrameOrigin = event.origin;
 			window.dispatchEvent(
 				new CustomEvent<SlidePresenterSpeechRequest>(
 					SLIDE_PRESENTER_SPEAK_EVENT,
@@ -59,13 +68,54 @@ export function startSlidePresenterIframeBridge(): () => void {
 		const detail = (event as CustomEvent<SlidePresenterSpeechResult>).detail;
 		slidesFrame.postMessage(
 			{ type: "naia-slides:speech-result", detail },
-			ALLOWED_ORIGIN,
+			slidesFrameOrigin ?? ALLOWED_ORIGIN,
 		);
 	};
 
+	// DEV-ONLY (2026-09-11 영상 제작 임시): 로컬 프록시에서 슬라이드 제어 명령을 폴링해
+	// 설치 앱 iframe 에 skill_slide_presenter 도구 호출로 전달한다. 키보드 포커스가
+	// iframe 밖에 있을 때 발표를 재개·이동하기 위한 우회로. 릴리스 빌드에는 포함되지 않는다.
+	let devPoll: ReturnType<typeof setInterval> | null = null;
+	if (import.meta.env.DEV) {
+		devPoll = setInterval(() => {
+			fetch("http://127.0.0.1:8919/slides-cmd")
+				.then((r) => r.json())
+				.then((cmd: { action?: string; page?: number }) => {
+					if (!cmd?.action) return;
+					const frame =
+						slidesFrame ??
+						(
+							document.querySelector(
+								".generic-installed-app__iframe",
+							) as HTMLIFrameElement | null
+						)?.contentWindow ??
+						null;
+					if (!frame) {
+						Logger.warn(
+							"slides-bridge",
+							"dev slides-cmd dropped — no slides frame yet",
+							cmd,
+						);
+						return;
+					}
+					frame.postMessage(
+						{
+							type: "naia-tool-call",
+							id: `dev-${Date.now()}`,
+							tool: "skill_slide_presenter",
+							args: cmd,
+						},
+						slidesFrameOrigin ?? "*",
+					);
+					Logger.info("slides-bridge", "dev slides-cmd forwarded", cmd);
+				})
+				.catch(() => {});
+		}, 2000);
+	}
 	window.addEventListener("message", onMessage);
 	window.addEventListener(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, onResult);
 	return () => {
+		if (devPoll) clearInterval(devPoll);
 		window.removeEventListener("message", onMessage);
 		window.removeEventListener(SLIDE_PRESENTER_SPEECH_RESULT_EVENT, onResult);
 	};

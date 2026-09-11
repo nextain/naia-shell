@@ -41,6 +41,10 @@ export function canCarryAlpha(clipPath: string): boolean {
  */
 export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 	private video: HTMLVideoElement | null = null;
+	/** 마운트된 숨은 디코드 요소(첫 클립이 차지). 다른 클립은 형제 요소를 만든다. */
+	private mountedVideo: HTMLVideoElement | null = null;
+	/** 클립 URL → 그 클립을 계속 들고 있는 <video>. 한 번 로드한 클립은 src 를 다시 대입하지 않는다. */
+	private clipVideos = new Map<string, HTMLVideoElement>();
 	private canvas: HTMLCanvasElement | null = null;
 	private ctx: CanvasRenderingContext2D | null = null;
 	private keyer: NvaChromakeyGL | null = null;
@@ -56,6 +60,7 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 
 	start(video: HTMLVideoElement, canvas: HTMLCanvasElement): void {
 		this.video = video;
+		this.mountedVideo = video;
 		this.canvas = canvas;
 		this.ctx = canvas.getContext("2d", { alpha: true });
 		void this.playIdle();
@@ -136,12 +141,21 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		muted: boolean,
 		options?: AvatarPlaybackOptions,
 	): Promise<void> {
-		const video = this.video;
-		if (!video) throw new Error("NVA video is not mounted");
+		if (!this.video || !this.mountedVideo)
+			throw new Error("NVA video is not mounted");
 		this.currentKeyColor =
 			this.config.manifest.chroma_key ??
-			(canCarryAlpha(path) ? undefined : this.config.manifest.background?.color);
-		video.src = await this.config.resolveAssetUrl(path);
+			(canCarryAlpha(path)
+				? undefined
+				: this.config.manifest.background?.color);
+		const url = await this.config.resolveAssetUrl(path);
+		if (this.disposed || !this.mountedVideo)
+			throw new Error("NVA renderer stopped");
+		const video = this.videoForClip(url);
+		if (this.video !== video) {
+			this.video.pause();
+			this.video = video;
+		}
 		video.loop = loop;
 		video.muted = muted;
 		video.currentTime = 0;
@@ -158,6 +172,36 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 			video.addEventListener("error", failed, { once: true });
 			video.play().catch(failed);
 		});
+	}
+
+	/**
+	 * 클립마다 <video> 를 하나씩 두고 재사용한다. WebKitGTK 에서 `src=` 재대입은 이전
+	 * GStreamer 파이프라인을 메인 스레드에서 동기 해체하는데, 그 파이프라인의 demuxer
+	 * 스레드가 bus 동기 핸들러에서 메인 스레드를 기다리는 순간과 겹치면 서로 기다리며
+	 * 웹뷰 전체가 멈춘다(gdb: HTMLMediaElement::prepareForLoad → MediaPlayerPrivateGStreamer
+	 * ::tearDown ↔ matroskademux → callOnMainThreadAndWait; 슬라이드 낭독 idle/talking
+	 * 전환에서 3/3 재현, 2026-09-11). 첫 클립은 마운트된 요소를 쓰고, 다른 클립은 같은
+	 * 부모 아래 같은 스타일의 숨은 형제 요소를 만든다. 그래서 idle↔talking 왕복에 해체가 없다.
+	 */
+	private videoForClip(url: string): HTMLVideoElement {
+		const mounted = this.mountedVideo;
+		if (!mounted) throw new Error("NVA video is not mounted");
+		const pooled = this.clipVideos.get(url);
+		if (pooled) return pooled;
+		let video: HTMLVideoElement;
+		if (this.clipVideos.size === 0) {
+			video = mounted;
+		} else {
+			video = document.createElement("video");
+			video.playsInline = true;
+			video.crossOrigin = mounted.crossOrigin;
+			video.style.cssText = mounted.style.cssText;
+			mounted.parentNode?.insertBefore(video, mounted.nextSibling);
+		}
+		video.src = url;
+		video.dataset.naiaClipUrl = url;
+		this.clipVideos.set(url, video);
+		return video;
 	}
 
 	private async playIdle(): Promise<void> {
@@ -235,8 +279,14 @@ export class PrebakedAvatarRenderer implements AvatarSpeechRenderer {
 		this.keyer?.dispose();
 		this.keyer = null;
 		this.interrupt();
+		for (const v of this.clipVideos.values()) {
+			v.pause();
+			if (v !== this.mountedVideo) v.remove();
+		}
+		this.clipVideos.clear();
 		this.video?.pause();
 		this.video = null;
+		this.mountedVideo = null;
 		this.canvas = null;
 		this.ctx = null;
 	}

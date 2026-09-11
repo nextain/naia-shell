@@ -806,3 +806,155 @@ describe("synthesizeTts — unsupported", () => {
 		).rejects.toThrow(/지원하지 않는/);
 	});
 });
+
+describe("synthesizeTts — naia-local-voice streaming PCM contract", () => {
+	beforeEach(() => {
+		localVoiceFacadeUrlFromReady(
+			JSON.stringify({
+				service: "voxcpm2-tensorrt",
+				capabilities: ["tts"],
+				port: 8910,
+				local_access_token: "c".repeat(64),
+			}),
+		);
+	});
+
+	/** A host that answers `audio/pcm` in chunks, as the realtime demo does. */
+	function pcmStreamResponse(
+		chunks: Uint8Array[],
+		contentType = "audio/pcm;rate=24000;channels=1;format=s16le",
+	) {
+		let index = 0;
+		return {
+			ok: true,
+			status: 200,
+			headers: new Headers({ "content-type": contentType }),
+			json: async () => ({}),
+			text: async () => "",
+			arrayBuffer: async () => new ArrayBuffer(0),
+			body: {
+				getReader: () => ({
+					read: async () =>
+						index < chunks.length
+							? { value: chunks[index++], done: false }
+							: { value: undefined, done: true },
+				}),
+			},
+		} as unknown as Response;
+	}
+
+	const decode = (b64: string) =>
+		Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+	it("asks the host to stream pcm16 instead of a whole WAV", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(pcmStreamResponse([new Uint8Array([1, 2])]));
+		vi.stubGlobal("fetch", fetchMock);
+		await synthesizeTts({
+			text: "hello",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+			streamPcm: true,
+		});
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+			{
+				response_format: "pcm16",
+				stream: true,
+			},
+		);
+	});
+
+	it("keeps the whole-WAV request shape when streaming is not requested", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			arrayBuffer: async () =>
+				Uint8Array.from([0x52, 0x49, 0x46, 0x46]).buffer.slice(0),
+			json: async () => ({}),
+			text: async () => "",
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const res = await synthesizeTts({
+			text: "hello",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+		});
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject(
+			{
+				response_format: "wav",
+				stream: false,
+			},
+		);
+		expect(decode(res.audioBase64).subarray(0, 4)).toEqual(
+			Uint8Array.from([0x52, 0x49, 0x46, 0x46]),
+		);
+	});
+
+	it("delivers PCM16 samples across an odd byte boundary and assembles the WAV", async () => {
+		const received: { samples: number[]; rate: number }[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(
+				pcmStreamResponse([
+					new Uint8Array([0x01, 0x02, 0x03]), // one sample + half of the next
+					new Uint8Array([0x04, 0x05, 0x06, 0x07]), // completes it, leaves a half
+				]),
+			),
+		);
+		const res = await synthesizeTts({
+			text: "안녕",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+			streamPcm: true,
+			onPcmChunk: (chunk, rate) =>
+				received.push({ samples: Array.from(chunk), rate }),
+		});
+		// The dangling byte is carried into the next chunk, never mis-decoded.
+		expect(received).toEqual([
+			{ samples: [0x0201], rate: 24_000 },
+			{ samples: [0x0403, 0x0605], rate: 24_000 },
+		]);
+
+		const wav = decode(res.audioBase64);
+		const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+		expect(String.fromCharCode(...wav.subarray(0, 4))).toBe("RIFF");
+		expect(String.fromCharCode(...wav.subarray(8, 12))).toBe("WAVE");
+		expect(view.getUint16(22, true)).toBe(1); // mono
+		expect(view.getUint32(24, true)).toBe(24_000);
+		expect(view.getUint16(34, true)).toBe(16);
+		expect(String.fromCharCode(...wav.subarray(36, 40))).toBe("data");
+		expect(view.getUint32(40, true)).toBe(6); // three samples survived
+		expect(wav.byteLength).toBe(44 + 6);
+		expect([
+			view.getInt16(44, true),
+			view.getInt16(46, true),
+			view.getInt16(48, true),
+		]).toEqual([0x0201, 0x0403, 0x0605]);
+	});
+
+	it("falls back to the whole-WAV path when the host ignores streaming", async () => {
+		const onPcmChunk = vi.fn();
+		const WAV = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x24, 0x00]);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				status: 200,
+				headers: new Headers({ "content-type": "audio/wav" }),
+				json: async () => ({}),
+				text: async () => "",
+				arrayBuffer: async () => WAV.buffer.slice(0),
+			}),
+		);
+		const res = await synthesizeTts({
+			text: "hello",
+			provider: "naia-local-voice",
+			vllmTtsHost: "http://localhost:8910",
+			streamPcm: true,
+			onPcmChunk,
+		});
+		expect(onPcmChunk).not.toHaveBeenCalled();
+		expect(decode(res.audioBase64)).toEqual(WAV);
+	});
+});

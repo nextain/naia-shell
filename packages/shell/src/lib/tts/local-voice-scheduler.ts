@@ -149,6 +149,21 @@ export class LocalVoiceScheduler {
 		this.maybeReleaseCompletedTurn();
 	}
 
+	/**
+	 * Streaming host (2026-09-11): the first PCM chunk of a sentence is the
+	 * enqueue signal — audio exists, so playback may start now instead of after
+	 * the whole WAV. A first chunk that lands within a second proves the engine
+	 * realtime (release condition a) without waiting for the sentence's RTF.
+	 */
+	onFirstChunk(generation: number, elapsedSeconds: number): void {
+		if (generation !== this.state.generation) return;
+		if (elapsedSeconds <= 1) {
+			this.state.warmed = true;
+			this.state.firstResultSeen = true;
+		}
+		if (!this.state.holdActive || this.state.warmed) this.release(generation);
+	}
+
 	/** A failed sentence must never leave playback paused (release condition c). */
 	releaseOnFailure(generation: number): void {
 		if (generation !== this.state.generation) return;

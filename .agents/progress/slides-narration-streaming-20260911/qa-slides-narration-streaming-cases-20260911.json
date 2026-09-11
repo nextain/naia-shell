@@ -1,0 +1,205 @@
+{
+  "version": "2026-09-11",
+  "status": "DRAFT_GAP_REVIEW",
+  "scope": "Slide narration streaming TTS acceptance on a device: time to first sound, gapless sentence-to-sentence playback, immediate stop, and the whole-WAV fallback for a host that does not stream. Definitions only — no product execution is claimed here.",
+  "baseCatalogs": [
+    "projects/naia-shell/docs/user-scenarios.md#S-SLIDES-NARRATION-LATENCY",
+    "projects/naia-shell/docs/requirements.md#FR-VOICE.20",
+    "projects/naia-shell/.agents/progress/qa-resume-20260907/qa-slides-gap-cases-20260908.json"
+  ],
+  "deviceScope": [
+    {
+      "id": "linux3090",
+      "platform": "Linux",
+      "availability": "target QA device; NOT_RUN in this definition task"
+    },
+    {
+      "id": "windows4060",
+      "platform": "Windows",
+      "availability": "target QA device; NOT_RUN in this definition task"
+    }
+  ],
+  "caseCount": 5,
+  "cases": [
+    {
+      "id": "SLIDES-NARRATION-STREAM-001",
+      "title": "First narration sound is audible within one second of starting a page",
+      "method": "With the installed Slides app, the local voice host running, and TTS enabled, start presenting a deck whose page carries at least three sentences of speaker notes. Start a stopwatch (or screen recording with audio) at the moment narration for the page begins and stop it at the first audible sound. Repeat on the second page so the measurement is not the engine's cold start alone.",
+      "expectedResult": "The first sound of the page is audible within one second of narration starting, on a warm engine. The page does not stay silent for the whole synthesis of its text.",
+      "ucIds": [
+        "UC9"
+      ],
+      "feIds": [
+        "FR-VOICE.20"
+      ],
+      "scenarioIds": [
+        "S-SLIDES-NARRATION-LATENCY"
+      ],
+      "sourceRef": "docs/requirements.md:167; docs/user-scenarios.md:1829-1851; packages/shell/src/lib/tts/synthesize.ts:495-496; packages/shell/src/lib/tts/sentence-pipeline.ts:303-316; packages/shell/src/components/ChatArea.tsx:385-396; packages/shell/src/components/ChatArea.tsx:1291-1297",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "mappingStatus": "MAPPED",
+      "gapReason": "The deterministic tests can prove the request shape, chunk decoding, and playback order, but not how long the user waits for the first sound. That is a wall-clock property of a real engine and speaker.",
+      "automationGap": "No headless harness measures audible latency; the unit tests assert contract shape only.",
+      "execution": {
+        "kind": "manual",
+        "ref": "qa-slides-narration-streaming-cases-20260911.json#SLIDES-NARRATION-STREAM-001",
+        "status": "NOT_RUN",
+        "result": "NOT_RUN",
+        "executedAt": null,
+        "failureReason": null,
+        "platforms": [
+          "linux3090",
+          "windows4060"
+        ],
+        "availability": "Requires the installed Slides app, a local voice host, and audio output on the device."
+      }
+    },
+    {
+      "id": "SLIDES-NARRATION-STREAM-002",
+      "title": "Sentences follow each other without a gap or an overlap",
+      "method": "Record the audio of a page with at least four sentences of notes. Listen to the whole page and inspect the recording's waveform between sentences.",
+      "expectedResult": "Sentences are spoken in the written order, one after another, with no silence long enough to read as a stall and no two sentences overlapping. The page's narration ends once, and the presenter advances after it.",
+      "ucIds": [
+        "UC9"
+      ],
+      "feIds": [
+        "FR-VOICE.20"
+      ],
+      "scenarioIds": [
+        "S-SLIDES-NARRATION-LATENCY"
+      ],
+      "sourceRef": "docs/requirements.md:167; packages/shell/src/lib/voice/audio-queue.ts:234-297; packages/shell/src/lib/voice/__tests__/audio-queue.test.ts:206-249",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "mappingStatus": "MAPPED",
+      "gapReason": "Chunk scheduling is asserted against a fake Web Audio clock. Whether the result sounds continuous on a real output device is not derivable from that.",
+      "automationGap": "No device-level audio capture and analysis exists in this repository.",
+      "execution": {
+        "kind": "manual",
+        "ref": "qa-slides-narration-streaming-cases-20260911.json#SLIDES-NARRATION-STREAM-002",
+        "status": "NOT_RUN",
+        "result": "NOT_RUN",
+        "executedAt": null,
+        "failureReason": null,
+        "platforms": [
+          "linux3090",
+          "windows4060"
+        ],
+        "availability": "Requires audio capture of the presentation on the device."
+      }
+    },
+    {
+      "id": "SLIDES-NARRATION-STREAM-003",
+      "title": "Stopping the presentation silences the narration immediately",
+      "method": "While a page is being narrated mid-sentence, stop or leave the presentation (and separately, send a new chat turn). Observe how long sound continues.",
+      "expectedResult": "Sound stops right away — no already-scheduled chunk keeps playing after the stop, and no queued sentence starts afterwards.",
+      "ucIds": [
+        "UC9"
+      ],
+      "feIds": [
+        "FR-VOICE.20"
+      ],
+      "scenarioIds": [
+        "S-SLIDES-NARRATION-LATENCY"
+      ],
+      "sourceRef": "docs/requirements.md:167; packages/shell/src/lib/voice/audio-queue.ts:197-232; packages/shell/src/lib/voice/__tests__/audio-queue.test.ts:250-262",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "mappingStatus": "MAPPED",
+      "gapReason": "Streamed chunks are scheduled ahead of the clock, so a stop that only clears the queue can still let buffered audio play. Only a device run proves the scheduled sources were stopped.",
+      "automationGap": "The unit test asserts that stop() was called on the fake sources; audible silence is not observable headlessly.",
+      "execution": {
+        "kind": "manual",
+        "ref": "qa-slides-narration-streaming-cases-20260911.json#SLIDES-NARRATION-STREAM-003",
+        "status": "NOT_RUN",
+        "result": "NOT_RUN",
+        "executedAt": null,
+        "failureReason": null,
+        "platforms": [
+          "linux3090",
+          "windows4060"
+        ],
+        "availability": "Requires the installed Slides app and audio output on the device."
+      }
+    },
+    {
+      "id": "SLIDES-NARRATION-STREAM-004",
+      "title": "A host that cannot stream still narrates the page",
+      "method": "Point the shell at a local voice host build that answers `/v1/audio/speech` with a whole `audio/wav` body and ignores `stream:true`. Present a page with speaker notes.",
+      "expectedResult": "Narration is still spoken in full, sentence by sentence, using the whole-WAV path. Nothing is silently dropped and no error notice replaces the narration.",
+      "ucIds": [
+        "UC9"
+      ],
+      "feIds": [
+        "FR-VOICE.20"
+      ],
+      "scenarioIds": [
+        "S-SLIDES-NARRATION-LATENCY"
+      ],
+      "sourceRef": "docs/requirements.md:167; packages/shell/src/lib/tts/synthesize.ts:634-661; packages/shell/src/lib/tts/sentence-pipeline.ts:396-420; packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts:337-352",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "mappingStatus": "MAPPED",
+      "gapReason": "The fallback is asserted against a stub response. Which build of the host a given machine actually runs is a field fact, and the regression this guards against (narration disappearing on an older host) is only visible on that machine.",
+      "automationGap": "No pinned older-host fixture is served in CI.",
+      "execution": {
+        "kind": "manual",
+        "ref": "qa-slides-narration-streaming-cases-20260911.json#SLIDES-NARRATION-STREAM-004",
+        "status": "NOT_RUN",
+        "result": "NOT_RUN",
+        "executedAt": null,
+        "failureReason": null,
+        "platforms": [
+          "linux3090",
+          "windows4060"
+        ],
+        "availability": "Requires a non-streaming local voice host build on the device."
+      }
+    },
+    {
+      "id": "SLIDES-NARRATION-STREAM-005",
+      "title": "The shell stays responsive for a whole deck of narrated slides",
+      "method": "On Linux (WebKitGTK), present a deck of at least ten slides with speaker notes from beginning to end without touching the app. Watch the avatar switch between idle and talking on every page and try to interact with the shell (click a tab, type in chat) after each page.",
+      "expectedResult": "The avatar keeps switching, narration continues to the last page, and the window keeps responding. The webview never freezes mid-presentation.",
+      "ucIds": [
+        "UC9"
+      ],
+      "feIds": [
+        "FR-VOICE.20"
+      ],
+      "scenarioIds": [
+        "S-SLIDES-NARRATION-LATENCY"
+      ],
+      "sourceRef": "docs/requirements.md:167; packages/shell/src/lib/avatar/prebaked-renderer.ts:138-200; packages/shell/src/lib/avatar/nva-layered-player.ts:215-280; packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts:140-260",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "mappingStatus": "MAPPED",
+      "gapReason": "The freeze was a GStreamer/WebKitGTK media-pipeline deadlock reached by repeated idle<->talking clip switches during narration (gdb: prebaked renderer 3/3, layered player 2/2, 2026-09-11). jsdom can assert that a clip is never re-loaded, but not that the real webview stays alive.",
+      "automationGap": "No headless environment reproduces the WebKitGTK media pipeline; only a device run can show the window still responds.",
+      "execution": {
+        "kind": "manual",
+        "ref": "qa-slides-narration-streaming-cases-20260911.json#SLIDES-NARRATION-STREAM-005",
+        "status": "NOT_RUN",
+        "result": "NOT_RUN",
+        "executedAt": null,
+        "failureReason": null,
+        "platforms": [
+          "linux3090",
+          "windows4060"
+        ],
+        "availability": "Requires the installed Slides app with an NVA avatar on the device; the freeze is platform-specific to WebKitGTK."
+      }
+    }
+  ]
+}

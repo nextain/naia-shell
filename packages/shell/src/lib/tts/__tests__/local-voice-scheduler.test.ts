@@ -185,4 +185,50 @@ describe("LocalVoiceScheduler (FR-VOICE.16 Phase 2a — FR-VOICE.11/12/19 semant
 		scheduler.onEnqueued(scheduler.generation, 0);
 		expect(resumePlayback).toHaveBeenCalledTimes(1);
 	});
+
+	it("FR-VOICE.20: the first streamed chunk releases playback before the sentence finishes", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 16,
+			durationSeconds: 2,
+		});
+		expect(resumePlayback).not.toHaveBeenCalled();
+		// Audio exists the moment the first chunk lands, and it landed fast —
+		// that is the realtime proof, without waiting for the sentence's RTF.
+		scheduler.onFirstChunk(scheduler.generation, 0.35);
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+		expect(setWarmingVisible).toHaveBeenLastCalledWith(false);
+	});
+
+	it("FR-VOICE.20: a slow first chunk keeps the warming hold closed", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 16,
+			durationSeconds: 2,
+		});
+		scheduler.onFirstChunk(scheduler.generation, 4);
+		expect(resumePlayback).not.toHaveBeenCalled();
+		expect(setWarmingVisible).toHaveBeenLastCalledWith(true);
+	});
+
+	it("FR-VOICE.20: outside a hold the first chunk releases the seq-0 playback window", () => {
+		const { scheduler, resumePlayback } = make();
+		scheduler.noteSentence(0);
+		scheduler.onFirstChunk(scheduler.generation, 0.2);
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+	});
+
+	it("FR-VOICE.20: a chunk from a superseded turn does not release the new one", () => {
+		const { scheduler, resumePlayback } = make();
+		scheduler.noteSentence(0);
+		const stale = scheduler.generation;
+		scheduler.interrupt();
+		scheduler.noteSentence(0);
+		scheduler.onFirstChunk(stale, 0.1);
+		expect(resumePlayback).not.toHaveBeenCalled();
+	});
 });

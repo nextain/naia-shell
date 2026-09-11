@@ -1781,3 +1781,51 @@ Run browser checks from `packages/shell` with `pnpm exec playwright test slides-
 Development snapshot verification on 2026-09-09: 1,918 Shell tests, 83 focused tests, 32 Rust module tests and seven browser scenarios passed. Shell/Slides production builds and whole native `cargo check` passed. This record does not claim real speech or recording success: browser speech and native recording IPC are mocked. Native voice/recording, live conversion cancellation/timeout, packaging and Unix execution require separate evidence. Supplemental independent reviews resolved their accepted findings; formal complexity/review eligibility was not CLEAN. Main-branch integration was explicitly requested on 2026-09-10; it does not constitute a store or installer release.
 
 Integration against main 4c28fbb4: Slides and locale tests 91/91, Rust modules 33/33, browser scenarios 7/7, production builds and native cargo check passed. Full Shell: 1945 passed, 48 failed, 21 skipped; one additional suite load error. The same 48 failures and suite error reproduce on unchanged main. Core: 1513 passed, 54 failed, 17 skipped; identical 54 failures reproduce on unchanged main. No new failure in these comparisons. Real speech/recording, live converter cancellation/timeout and formal review eligibility remain outstanding; no installer or store release.
+
+## 2026-09-08 회차별 제품 QA (사용자 지시)
+
+### UC-QA-ROUND
+
+QA 담당자는 원본 사용자 시나리오(UC 또는 S)와 기능 요구사항·설계(FR/FE/SPEC)를 연결한 검사 목록에서 각 항목의 준비 조건, 실행 방법, 예상 결과를 확인한다. 원본에 없는 연결을 만들어 빈칸을 감추지 않으며, 누락된 정의는 근거와 함께 보완한다.
+
+회차 시작 때 전체 목록과 후보를 고정하고 Linux 3090 및 Windows 4060의 적용 행을 모두 NOT_RUN으로 생성한다. 한 기기의 GUI는 한 실행자가 맡고, 가능한 검사를 같은 앱 세션에 묶어 각각 기록한다. 결과에는 실제 플랫폼·기기·실행 시각·관찰·증거가 있으며 FAIL/BLOCKED에는 이유가 있다. 실패를 발견해도 독립적으로 실행할 수 있는 나머지 검사를 계속한다.
+
+전체 예정 행의 결과를 수집한 뒤 실패를 원인별로 분석하고 수정한다. 수정한 후보는 새 회차에서 전체를 다시 실행하며 이전 PASS를 복사하지 않는다. 설정·회차·증거는 선택한 QA ADK에서 저장하고 읽는다. 하네스 자체 검증을 먼저 수행하되 그 통과를 제품이나 다른 플랫폼의 통과로 보고하지 않는다.
+
+Test Coverage Map
+
+| UC | 하네스 계약 검증 | 제품 검증 |
+|---|---|---|
+| UC-QA-ROUND | `scripts/qa-round.test.mjs`, `qa-traceability.test.mjs`, `qa-catalog.test.mjs`, `qa-batch.test.mjs`, `qa-round-transfer.test.mjs`; 증거: `.agents/progress/qa-resume-20260907/qa-harness-review-20260908.md` | 고정한 전체 목록을 기기별 실행한 회차 기록으로 별도 판정. 하네스 fixture는 제품 결과가 아니다. |
+
+## 2026-09-11 슬라이드 낭독 지연 — 문장 단위 스트리밍 (UC9 앱)
+
+> **S-SLIDES-NARRATION-LATENCY**: 사용자가 슬라이드 발표를 시작하면, 낭독을 시작한
+> 뒤 1초 안에 첫 음성이 들리고 그다음부터는 문장이 끊김 없이 이어 붙어 재생된다.
+> 발표를 멈추면 소리도 즉시 멈춘다.
+
+- 이전 계약은 한 페이지의 낭독문 전체를 한 번의 `/v1/audio/speech` 요청으로 보내고
+  WAV 한 벌을 다 받은 뒤에 재생했다. 로컬 음성 엔진에서는 그 시간이 페이지당 수십
+  초라 사용자는 페이지를 넘긴 뒤 오래 침묵을 듣는다. 발표는 그 침묵 동안 멈춰 있다.
+- 채팅 응답은 이미 문장 단위로 나뉘어 들어가는데 슬라이드 낭독만 페이지 한 덩어리로
+  들어갔다. 같은 파이프라인을 쓰면서 입구 모양만 달라 생긴 지연이다.
+- 음성은 문장 순서대로 들려야 한다. 뒤 문장이 먼저 합성돼도 앞 문장보다 먼저 나오면
+  발표 내용이 뒤바뀐다.
+- 호스트가 스트리밍을 모르면 소리가 사라지는 대신 지금까지처럼 WAV 한 벌로 재생한다.
+  새 계약을 모르는 기계에서 낭독이 통째로 없어지는 것이 더 나쁜 실패다.
+
+| S-ID | 기능 | 근거 UC | 검증 |
+|------|------|---------|------|
+| S-SLIDES-NARRATION-LATENCY | 슬라이드 낭독 문장 분할 + PCM 스트리밍 재생 | UC9 앱 (S-SLIDES-REC 와 같은 슬라이드 계열) | `synthesize.test.ts`·`audio-queue.test.ts`·`sentence-pipeline.test.ts`·`ChatArea.test.tsx` (아래 표) |
+
+Test Coverage Map (P02)
+
+| S | 단위·계약 | 실기 | 비고 |
+|---|---|---|---|
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/tts/__tests__/synthesize.test.ts`: 스트리밍 요청 모양(`response_format:"pcm16"`, `stream:true`)과 `audio/pcm` 청크의 PCM16 해석·홀수 바이트 경계·조립된 WAV 헤더, 그리고 호스트가 WAV 로 답할 때의 폴백 | `packages/shell/e2e/467-slide-presenter.spec.ts`: 설치한 슬라이드 앱의 발표·낭독 경로 | 첫 음성까지의 실제 시간은 결정론 테스트가 잴 수 없다 — QA 회차(QC)에서 실기로 잰다 |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/voice/__tests__/audio-queue.test.ts`: 뒤 문장 스트림이 앞 문장보다 먼저 와도 순서를 지키는지, 첫 청크에서 재생이 시작되는지, 빈 스트림이 다음 문장으로 넘어가는지, 정지 후 늦게 온 청크를 무시하는지 | — | 청크를 이어 붙이는 시각(다음 청크 시작 = 앞 청크 끝)을 단언해 겹쳐 재생되는 회귀를 잡는다 |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts`: 합성 전에 순서 슬롯을 스트림으로 잡는지, 큐가 스트리밍을 모르면 기존 경로로 가는지, 청크가 0개면 WAV 슬롯으로 되돌리는지, 합성이 실패해도 다음 문장이 막히지 않는지 | — | 슬롯을 먼저 잡는 것이 첫 소리를 앞당기는 핵심이라 호출 순서를 단언한다 |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/components/__tests__/ChatArea.test.tsx`: 슬라이드 낭독문이 문장 수만큼 나뉘어 TTS 로 들어가는지 | — | 페이지 한 덩어리 요청으로 되돌아가면 호출 수가 1 이 되어 붉어진다 |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/tts/__tests__/local-voice-scheduler.test.ts`: 첫 PCM 청크가 워밍업 홀드를 푸는지(1초 이내면 엔진 웜으로 인정), 느린 첫 청크는 홀드를 유지하는지, 지난 턴의 청크가 새 턴을 풀지 않는지 | — | 첫 청크가 곧 enqueue 신호다 — 이것이 없으면 스트리밍을 해도 홀드가 문장 완성까지 안 풀려 지연이 그대로 남는다 |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 실사용 아바타 렌더러가 클립마다 `<video>` 를 하나씩 두어 왕복에서 `src` 재대입이 없는지, 활성 요소만 재생하고 떠난 요소는 멈추는지, 만든 형제 요소를 정지 때 거두는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | VideoAvatarCanvas 가 등록하는 렌더러가 이쪽이다 — layered 플레이어만 고치면 실제 경로는 그대로 멈춘다(2026-09-11 3/3) |
+| S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: idle↔talk 왕복에서 같은 클립을 다시 로드하지 않고(버퍼당 `src` 대입 1회) 매번 교체는 일어나는지, 재사용 클립을 되감는지, 로드가 취소된 클립은 다시 로드하는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | 낭독이 아바타를 idle↔talk 로 계속 왕복시켜 WebKitGTK 미디어 파이프라인 해체 교착을 밟았다(gdb 2/2). 재생 계약과 같은 슬라이스에 둔다 |

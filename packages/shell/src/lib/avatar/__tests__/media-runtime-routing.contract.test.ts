@@ -116,7 +116,13 @@ describe("Shell TTS single-ownership speech routing contract", () => {
 		expect(chatArea).toContain(
 			"window.addEventListener(SLIDE_PRESENTER_SPEAK_EVENT, handleSpeak)",
 		);
-		expect(chatArea).toContain("sendSentenceToTts(detail.text.trim())");
+		// FR-VOICE.20 (2026-09-11): the page's narration is split into sentences
+		// and fed to the same pipeline one at a time, so the first sentence can
+		// play while the rest are still being synthesized. The routing contract
+		// is unchanged — every piece still goes through sendSentenceToTts, and
+		// the text still comes from the presenter event's own detail.
+		expect(chatArea).toContain("splitSlideNarration(detail.text.trim())");
+		expect(chatArea).toContain("sendSentenceToTts(piece)");
 		expect(chatArea).toContain('settleSlidePresenterSpeech("finished")');
 	});
 });

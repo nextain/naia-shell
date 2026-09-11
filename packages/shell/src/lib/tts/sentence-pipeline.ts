@@ -22,6 +22,7 @@ import type { TtsProviderId } from "../config";
  * SentenceTtsPipelineDeps and calls the public interface only.
  */
 import { Logger } from "../logger";
+import { PcmStreamSource } from "../voice/audio-queue";
 import { wavDurationSeconds } from "../voice/audio-queue";
 import { estimateTtsCost } from "./cost";
 import { getTtsProviderMeta } from "./index";
@@ -60,6 +61,15 @@ export interface CascadeSpeechRenderer {
 
 export interface OrderedTtsQueue {
 	reserveSeq(): number;
+	/** Streaming PCM slot (local voice hosts that stream `audio/pcm`). */
+	enqueueOrderedStream?(
+		seq: number,
+		stream: PcmStreamSource,
+		callbacks: {
+			onPlaybackStart: () => void;
+			onPlaybackUnavailable: () => void;
+		},
+	): void;
 	enqueueOrdered(
 		seq: number,
 		audioBase64: string,
@@ -290,6 +300,21 @@ export function createSentenceTtsPipeline(
 		const abort = new AbortController();
 		abortControllers.set(reqId, abort);
 		let synthesisStartedAt = 0;
+		// 2026-09-11 streaming contract: for the local voice host, reserve the
+		// ordered slot as a PCM stream *now* and feed chunks as they arrive, so
+		// playback starts on the first chunk instead of after the whole WAV.
+		const streamQueue = deps.getQueue();
+		const pcmStream =
+			ttsProviderForCost === "naia-local-voice" &&
+			streamQueue?.enqueueOrderedStream
+				? new PcmStreamSource(24000)
+				: null;
+		if (pcmStream && streamQueue?.enqueueOrderedStream) {
+			streamQueue.enqueueOrderedStream(seq, pcmStream, {
+				onPlaybackStart: revealText,
+				onPlaybackUnavailable: revealText,
+			});
+		}
 		const synthesize = () => {
 			if (!activeRequests.has(reqId)) {
 				return Promise.reject(
@@ -312,6 +337,28 @@ export function createSentenceTtsPipeline(
 						? (deps.getLocalRefAudioB64() ?? undefined)
 						: undefined,
 				signal: abort.signal,
+				streamPcm: !!pcmStream,
+				onPcmChunk: pcmStream
+					? (chunk, rate) => {
+							if (!activeRequests.has(reqId)) return;
+							pcmStream.sampleRate = rate;
+							const firstChunk = pcmStream.chunks.length === 0;
+							pcmStream.push(chunk);
+							if (firstChunk) {
+								const elapsed =
+									Math.max(0, performance.now() - synthesisStartedAt) / 1000;
+								Logger.info(TAG, "Local voice first chunk", {
+									seq,
+									firstChunkMs: Math.round(elapsed * 1000),
+									rate,
+								});
+								localVoiceScheduler?.onFirstChunk(
+									localVoiceGeneration,
+									elapsed,
+								);
+							}
+						}
+					: undefined,
 			});
 		};
 		// The Windows 8GB path shares one GPU between VoxCPM2 and Ditto. Keep it
@@ -335,13 +382,28 @@ export function createSentenceTtsPipeline(
 				);
 				const audioDurationSeconds = wavDurationSeconds(audioBase64);
 				void Promise.resolve()
-					.then(() => deps.onSynthesisResult?.({
-						reqId, seq, text: clean, provider: ttsProviderForCost,
-						voice: ttsVoiceForCost, audioBase64, elapsedMs, audioDurationSeconds,
-						localReferenceAudioPresent: ttsProviderForCost === "naia-local-voice" && Boolean(deps.getLocalRefAudioB64()),
-						vllmTtsHost: voiceCfg?.vllmTtsHost,
-					}))
-					.catch((error) => Logger.warn(TAG, "TTS diagnostic capture failed", { reqId, error: String(error) }));
+					.then(() =>
+						deps.onSynthesisResult?.({
+							reqId,
+							seq,
+							text: clean,
+							provider: ttsProviderForCost,
+							voice: ttsVoiceForCost,
+							audioBase64,
+							elapsedMs,
+							audioDurationSeconds,
+							localReferenceAudioPresent:
+								ttsProviderForCost === "naia-local-voice" &&
+								Boolean(deps.getLocalRefAudioB64()),
+							vllmTtsHost: voiceCfg?.vllmTtsHost,
+						}),
+					)
+					.catch((error) =>
+						Logger.warn(TAG, "TTS diagnostic capture failed", {
+							reqId,
+							error: String(error),
+						}),
+					);
 
 				// FR-VOICE.19 (#519): measure every local sentence, not only the
 				// first — a later RTF<1 is the "engine warmed" release signal.
@@ -365,10 +427,23 @@ export function createSentenceTtsPipeline(
 					}
 				}
 				activeRequests.delete(reqId);
-				deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
-					onPlaybackStart: revealText,
-					onPlaybackUnavailable: revealText,
-				});
+				if (pcmStream) {
+					if (pcmStream.chunks.length === 0) {
+						// Host answered a whole WAV (no streaming support): play it whole.
+						pcmStream.fail();
+						deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
+							onPlaybackStart: revealText,
+							onPlaybackUnavailable: revealText,
+						});
+					} else {
+						pcmStream.end();
+					}
+				} else {
+					deps.getQueue()?.enqueueOrdered(seq, audioBase64, {
+						onPlaybackStart: revealText,
+						onPlaybackUnavailable: revealText,
+					});
+				}
 				if (ttsProviderForCost === "naia-local-voice") {
 					localVoiceScheduler?.onEnqueued(localVoiceGeneration, seq);
 				}
@@ -404,7 +479,8 @@ export function createSentenceTtsPipeline(
 				if (!activeRequests.has(reqId)) return;
 				// Release the reserved ordered slot so later sentences don't stall
 				// behind this seq (enqueueOrdered waits for contiguous numbers).
-				deps.getQueue()?.skipOrdered(seq);
+				if (pcmStream) pcmStream.fail();
+				else deps.getQueue()?.skipOrdered(seq);
 				if (ttsProviderForCost === "naia-local-voice") {
 					localVoiceScheduler?.releaseOnFailure(localVoiceGeneration);
 				}
