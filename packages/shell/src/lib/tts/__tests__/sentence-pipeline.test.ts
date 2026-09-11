@@ -268,3 +268,159 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 		expect(pipeline.recentTexts()).toHaveLength(0);
 	});
 });
+
+describe("sentence TTS pipeline — local voice streaming slot", () => {
+	afterEach(() => {
+		vi.clearAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	/** A queue that understands the streaming contract. */
+	function makeStreamingDeps(scheduler: LocalVoiceScheduler | null = null) {
+		const { deps, queue, reveal } = makeDeps({
+			getVoiceConfig: () => ({ ttsProvider: "naia-local-voice" }),
+			getScheduler: () => scheduler,
+		});
+		const streaming = Object.assign(queue, {
+			enqueueOrderedStream: vi.fn(),
+		});
+		return { deps, queue: streaming, reveal };
+	}
+
+	const chunkOf = (...samples: number[]) => Int16Array.from(samples);
+
+	it("reserves the ordered slot as a stream before synthesis and feeds it chunks", async () => {
+		synthesizeMock.mockImplementation(async (opts: any) => {
+			opts.onPcmChunk?.(chunkOf(1, 2), 24_000);
+			opts.onPcmChunk?.(chunkOf(3), 24_000);
+			return { audioBase64: "QUJD" };
+		});
+		const { deps, queue } = makeStreamingDeps();
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		expect(queue.enqueueOrderedStream).toHaveBeenCalledTimes(1);
+		// The slot is claimed before the request leaves — that is what removes
+		// the whole-page wait before the first sound.
+		expect(
+			queue.enqueueOrderedStream.mock.invocationCallOrder[0],
+		).toBeLessThan(synthesizeMock.mock.invocationCallOrder[0]);
+		await flush();
+		expect(synthesizeMock).toHaveBeenCalledWith(
+			expect.objectContaining({ streamPcm: true }),
+		);
+		const [seq, stream] = queue.enqueueOrderedStream.mock.calls[0];
+		expect(seq).toBe(0);
+		expect(stream.chunks.map((c: Int16Array) => Array.from(c))).toEqual([
+			[1, 2],
+			[3],
+		]);
+		expect(stream.ended).toBe(true);
+		expect(stream.failed).toBe(false);
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+	});
+
+	it("keeps the whole-WAV path when the queue cannot take a stream", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { deps, queue } = makeDeps({
+			getVoiceConfig: () => ({ ttsProvider: "naia-local-voice" }),
+		});
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		await flush();
+		expect(synthesizeMock).toHaveBeenCalledWith(
+			expect.objectContaining({ streamPcm: false }),
+		);
+		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
+			0,
+			"QUJD",
+			expect.any(Object),
+		);
+	});
+
+	it("plays the assembled WAV when the host answered without streaming", async () => {
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { deps, queue } = makeStreamingDeps();
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		await flush();
+		const stream = queue.enqueueOrderedStream.mock.calls[0][1];
+		expect(stream.chunks).toHaveLength(0);
+		// The reserved stream slot is released, and the sentence still plays.
+		expect(stream.failed).toBe(true);
+		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
+			0,
+			"QUJD",
+			expect.any(Object),
+		);
+	});
+
+	it("releases a failed stream slot so the next sentence is not stalled", async () => {
+		synthesizeMock.mockRejectedValue(new Error("ECONNREFUSED"));
+		const { deps, queue } = makeStreamingDeps();
+		const pipeline = createSentenceTtsPipeline(deps);
+		pipeline.sendSentence("첫 문장.");
+		pipeline.sendSentence("둘째 문장.");
+		await flush();
+		await flush();
+		const seqs = queue.enqueueOrderedStream.mock.calls.map(
+			(call: unknown[]) => call[0],
+		);
+		expect(seqs).toEqual([0, 1]);
+		for (const call of queue.enqueueOrderedStream.mock.calls) {
+			expect(call[1].failed).toBe(true);
+			expect(call[1].ended).toBe(true);
+		}
+		// fail() replaces skipOrdered for streamed slots — never both.
+		expect(queue.skipOrdered).not.toHaveBeenCalled();
+		expect(pipeline.hasActiveRequests()).toBe(false);
+	});
+
+	it("FR-VOICE.20: the first chunk resumes playback before the sentence finishes", async () => {
+		const pausePlayback = vi.fn();
+		const resumePlayback = vi.fn();
+		const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+		let sendChunk!: (chunk: Int16Array) => void;
+		let finish!: (value: { audioBase64: string }) => void;
+		synthesizeMock.mockImplementation((opts: any) => {
+			sendChunk = (chunk) => opts.onPcmChunk?.(chunk, 24_000);
+			return new Promise((resolve) => {
+				finish = resolve;
+			}) as ReturnType<typeof synthesizeTts>;
+		});
+		const { deps, queue } = makeStreamingDeps(scheduler);
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		await flush();
+		expect(pausePlayback).toHaveBeenCalledTimes(1);
+		expect(resumePlayback).not.toHaveBeenCalled();
+
+		sendChunk(chunkOf(1, 2));
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+		// Synthesis has not returned yet — the release came from the chunk, not
+		// from the finished WAV.
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+
+		sendChunk(chunkOf(3));
+		expect(resumePlayback).toHaveBeenCalledTimes(1); // only the first chunk
+
+		finish({ audioBase64: "QUJD" });
+		await flush();
+		// The sentence played through the streamed slot, so the assembled WAV is
+		// never enqueued a second time.
+		expect(queue.enqueueOrdered).not.toHaveBeenCalled();
+		expect(queue.enqueueOrderedStream.mock.calls[0][1].ended).toBe(true);
+	});
+
+	it("FR-VOICE.20: a host that sends no chunks still releases through the enqueue path", async () => {
+		const pausePlayback = vi.fn();
+		const resumePlayback = vi.fn();
+		const scheduler = new LocalVoiceScheduler({ pausePlayback, resumePlayback });
+		synthesizeMock.mockResolvedValue({ audioBase64: "QUJD" });
+		const { deps, queue } = makeStreamingDeps(scheduler);
+		createSentenceTtsPipeline(deps).sendSentence("첫 문장.");
+		await flush();
+		expect(queue.enqueueOrdered).toHaveBeenCalledWith(
+			0,
+			"QUJD",
+			expect.any(Object),
+		);
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+	});
+
+});

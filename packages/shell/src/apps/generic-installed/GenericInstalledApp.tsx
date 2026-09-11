@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useRef } from "react";
-import type { NaiaTool, AppCenterProps } from "../../lib/app-registry";
+import type { AppCenterProps, NaiaTool } from "../../lib/app-registry";
 
 /**
  * Tool-call protocol between the Shell and an installed iframe app.
@@ -26,6 +26,17 @@ const TOOL_TIMEOUT_MS = 15_000;
  * with the app's Naia bridge and routed to the iframe via postMessage, so an
  * installed app can expose AI tools the same way a built-in app does.
  */
+
+/**
+ * Linux(WebKitGTK)에서 `convertFileSrc` 는 `asset://localhost/…` 를 돌려주는데,
+ * 셸 CSP `frame-src` 와 슬라이드 브리지(`slide-presenter-iframe-bridge.ts`)는
+ * `http://asset.localhost` 만 허용한다 → 설치 앱 iframe 이 빈 화면으로 남는다
+ * (2026-09-11 Linux 실측). AvatarCanvas 와 같은 정규화를 적용한다.
+ */
+function installedAppFrameSrc(htmlEntry: string): string {
+	return convertFileSrc(htmlEntry);
+}
+
 export function createGenericInstalledApp(
 	htmlEntry?: string,
 	tools: NaiaTool[] = [],
@@ -100,7 +111,7 @@ export function createGenericInstalledApp(
 				<iframe
 					ref={iframeRef}
 					className="generic-installed-app__iframe"
-					src={convertFileSrc(htmlEntry)}
+					src={installedAppFrameSrc(htmlEntry)}
 					title="App"
 					sandbox="allow-scripts allow-same-origin"
 				/>

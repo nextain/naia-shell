@@ -380,6 +380,19 @@ function ChatErrorNotice({
  */
 export type ChatVariant = "rail" | "floating";
 
+
+/** 슬라이드 낭독문 분할 (VITE_NAIA_SLIDES_TTS_CHUNK: word | phrase | sentence). */
+function splitSlideNarration(text: string): string[] {
+	const mode = (import.meta.env.VITE_NAIA_SLIDES_TTS_CHUNK as string | undefined) ?? "sentence";
+	const clean = text.replace(/\s+/g, " ").trim();
+	if (!clean) return [];
+	let parts: string[];
+	if (mode === "word") parts = clean.split(" ");
+	else if (mode === "phrase") parts = clean.split(/(?<=[,.!?…])\s+/);
+	else parts = clean.split(/(?<=[.!?…])\s+/);
+	return parts.map((p) => p.trim()).filter(Boolean);
+}
+
 export function ChatArea({
 	variant = "floating",
 }: { variant?: ChatVariant } = {}) {
@@ -1275,7 +1288,13 @@ export function ChatArea({
 				}
 				initializeSpeechTts(config);
 				beginProactiveTtsTextSync(detail.text.trim());
-				sendSentenceToTts(detail.text.trim());
+				// 2026-09-11: 슬라이드 낭독문은 한 장 전체가 한 요청으로 들어와 첫 소리까지
+				// 장 전체 합성 시간을 기다렸다(로컬 VoxCPM2 RTF 0.48 → 8~50초 무음). 채팅 경로처럼
+				// 조각으로 나눠 순서대로 넣으면 첫 조각부터 재생된다. 조각 단위는
+				// VITE_NAIA_SLIDES_TTS_CHUNK = word | phrase | sentence (기본 sentence).
+				for (const piece of splitSlideNarration(detail.text.trim())) {
+					sendSentenceToTts(piece);
+				}
 				finishLocalVoicePrebuffer();
 				Logger.info("ChatArea", "slide narration entered TTS pipeline", {
 					page: detail.page,

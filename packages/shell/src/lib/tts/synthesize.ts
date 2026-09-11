@@ -198,6 +198,13 @@ export interface SynthesizeOpts {
 	localRefAudioBase64?: string;
 	/** Abort signal for cancellation / interrupt. */
 	signal?: AbortSignal;
+	/**
+	 * naia-local-voice: ask the host for a streamed `audio/pcm` response and
+	 * deliver PCM16 chunks as they arrive (the caller plays them immediately).
+	 * Hosts that ignore it still return a whole WAV, which is handled as before.
+	 */
+	streamPcm?: boolean;
+	onPcmChunk?: (chunk: Int16Array, sampleRate: number) => void;
 }
 
 export interface SynthesizeResult {
@@ -483,7 +490,10 @@ async function synthNaiaLocalVoice(
 				// RefAudioSection stores a preset URL in voiceRefUrl. ChatArea resolves
 				// it to this facade palette id; keep it intact all the way to :8910.
 				voice: runtimeVoice(voice),
-				response_format: "wav",
+				// 2026-09-11: streaming contract — a host that supports it answers
+				// `audio/pcm;rate=24000` in chunks; older hosts answer a whole WAV.
+				response_format: opts.streamPcm ? "pcm16" : "wav",
+				stream: !!opts.streamPcm,
 			}),
 			signal: opts.signal,
 		});
@@ -618,8 +628,77 @@ async function synthNaiaLocalVoice(
 		}
 		throw new Error(`호스트 음성 합성 실패 (${resp.status}): ${detail}`);
 	}
+	// Streaming host: consume `audio/pcm` chunks as they arrive, hand each to
+	// the caller for immediate playback, and still assemble the WAV for the
+	// existing consumers (duration/RTF/diagnostics).
+	// Only a streaming request inspects the headers — a plain WAV caller keeps
+	// the previous contract exactly (and keeps working with header-less stubs).
+	const ctype = opts.streamPcm ? (resp.headers?.get("content-type") ?? "") : "";
+	if (opts.streamPcm && ctype.startsWith("audio/pcm") && resp.body) {
+		const rate = Number(/rate=(\d+)/.exec(ctype)?.[1] ?? "24000");
+		const reader = resp.body.getReader();
+		const parts: Int16Array[] = [];
+		let carry: Uint8Array = new Uint8Array(0);
+		let total = 0;
+		for (;;) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			if (!value || value.length === 0) continue;
+			let bytes = value;
+			if (carry.length) {
+				const merged = new Uint8Array(carry.length + value.length);
+				merged.set(carry);
+				merged.set(value, carry.length);
+				bytes = merged;
+			}
+			const even = bytes.length - (bytes.length % 2);
+			carry = bytes.slice(even);
+			if (even === 0) continue;
+			const chunk = new Int16Array(
+				bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + even),
+			);
+			parts.push(chunk);
+			total += chunk.length;
+			opts.onPcmChunk?.(chunk, rate);
+		}
+		return { audioBase64: pcm16ToWavBase64(parts, total, rate) };
+	}
 	// audio/wav(RIFF) bytes — AudioQueue/ttsAudioToWav 가 RIFF 를 네이티브 감지.
 	return { audioBase64: arrayBufferToBase64(await resp.arrayBuffer()) };
+}
+
+/** Assemble PCM16 mono chunks into a RIFF/WAVE base64 payload. */
+function pcm16ToWavBase64(
+	parts: Int16Array[],
+	total: number,
+	rate: number,
+): string {
+	const buf = new ArrayBuffer(44 + total * 2);
+	const v = new DataView(buf);
+	const w = (o: number, str: string) => {
+		for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i));
+	};
+	w(0, "RIFF");
+	v.setUint32(4, 36 + total * 2, true);
+	w(8, "WAVE");
+	w(12, "fmt ");
+	v.setUint32(16, 16, true);
+	v.setUint16(20, 1, true);
+	v.setUint16(22, 1, true);
+	v.setUint32(24, rate, true);
+	v.setUint32(28, rate * 2, true);
+	v.setUint16(32, 2, true);
+	v.setUint16(34, 16, true);
+	w(36, "data");
+	v.setUint32(40, total * 2, true);
+	let off = 44;
+	for (const p of parts) {
+		for (let i = 0; i < p.length; i++) {
+			v.setInt16(off, p[i], true);
+			off += 2;
+		}
+	}
+	return arrayBufferToBase64(buf);
 }
 
 /**

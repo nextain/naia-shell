@@ -24,7 +24,7 @@ related:
   - docs/quality-process.md
   - docs/e2e-inventory.json
   - packages/shell/e2e/store-certification.spec.ts
-updated_at: 2026-09-05
+updated_at: 2026-09-11
 source: user-directive-2026-08-27
 version: 2
 
@@ -87,6 +87,20 @@ entries:
       - { tier: browser_mock, path: packages/shell/e2e/tts-fallback.spec.ts }
       - { tier: credentialed_live, path: packages/shell/e2e/voxcpm2-real-voice.spec.ts }
     gap: "Real audio output, cloud credentials, and GPU runtimes are opt-in."
+  - id: naia-shell:feature:req-003-slides-narration-streaming
+    requirement: REQ-003
+    feature: Streaming PCM narration for the slides app (FR-VOICE.20, S-SLIDES-NARRATION-LATENCY)
+    status: partial
+    tests:
+      - { tier: deterministic_ci, path: packages/shell/src/lib/tts/__tests__/synthesize.test.ts }
+      - { tier: deterministic_ci, path: packages/shell/src/lib/voice/__tests__/audio-queue.test.ts }
+      - { tier: deterministic_ci, path: packages/shell/src/lib/tts/__tests__/sentence-pipeline.test.ts }
+      - { tier: deterministic_ci, path: packages/shell/src/components/__tests__/ChatArea.test.tsx }
+      - { tier: deterministic_ci, path: packages/shell/src/lib/tts/__tests__/local-voice-scheduler.test.ts }
+      - { tier: deterministic_ci, path: packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts }
+      - { tier: deterministic_ci, path: packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts }
+      - { tier: browser_mock, path: packages/shell/e2e/467-slide-presenter.spec.ts }
+    gap: "Time to first sound and gapless playback are audible properties; they are judged on a device in the QA round, not by these tests."
   - id: naia-shell:feature:req-004
     requirement: REQ-004
     feature: Permission prompts and shortcuts

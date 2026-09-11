@@ -23,12 +23,56 @@ export interface AudioQueueItemCallbacks {
 }
 
 interface AudioQueueItem extends AudioQueueItemCallbacks {
-	audioBase64: string;
+	audioBase64?: string;
+	/** Streaming PCM item (local voice engines that stream `audio/pcm`). */
+	stream?: PcmStreamSource;
+}
+
+/**
+ * PCM16 chunk stream produced by a streaming TTS response. The producer
+ * (`synthNaiaLocalVoice`) pushes chunks as they arrive; the AudioQueue
+ * subscribes when the item's turn comes and schedules chunks back-to-back on
+ * a Web Audio timeline (same scheme as the naia.land realtime demo), so the
+ * first chunk plays while the engine is still synthesizing the rest.
+ */
+export class PcmStreamSource {
+	readonly chunks: Int16Array[] = [];
+	ended = false;
+	failed = false;
+	private onChunk: ((chunk: Int16Array) => void) | null = null;
+	private onEnd: (() => void) | null = null;
+	constructor(public sampleRate = 24000) {}
+	push(chunk: Int16Array): void {
+		if (this.ended || chunk.length === 0) return;
+		this.chunks.push(chunk);
+		this.onChunk?.(chunk);
+	}
+	end(): void {
+		if (this.ended) return;
+		this.ended = true;
+		this.onEnd?.();
+	}
+	fail(): void {
+		this.failed = true;
+		this.end();
+	}
+	subscribe(onChunk: (chunk: Int16Array) => void, onEnd: () => void): void {
+		this.onChunk = onChunk;
+		this.onEnd = onEnd;
+		for (const c of this.chunks) onChunk(c);
+		if (this.ended) onEnd();
+	}
+	unsubscribe(): void {
+		this.onChunk = null;
+		this.onEnd = null;
+	}
 }
 
 export class AudioQueue {
 	private queue: AudioQueueItem[] = [];
 	private current: HTMLAudioElement | null = null;
+	private currentStream: PcmStreamSource | null = null;
+	private streamSources = new Set<AudioBufferSourceNode>();
 	private playing = false;
 	private playbackPaused = false;
 	private generation = 0;
@@ -45,10 +89,7 @@ export class AudioQueue {
 	}
 
 	/** Add MP3 base64 audio to the queue. Starts playback if idle. */
-	enqueue(
-		mp3Base64: string,
-		callbacks: AudioQueueItemCallbacks = {},
-	): void {
+	enqueue(mp3Base64: string, callbacks: AudioQueueItemCallbacks = {}): void {
 		this.queue.push({ audioBase64: mp3Base64, ...callbacks });
 		if (!this.playing && !this.playbackPaused) {
 			this.playNext();
@@ -59,6 +100,11 @@ export class AudioQueue {
 				queued: this.queue.length,
 			});
 		}
+	}
+
+	private enqueueItem(item: AudioQueueItem): void {
+		this.queue.push(item);
+		if (!this.playing && !this.playbackPaused) this.playNext();
 	}
 
 	/** Hold queued audio without stopping an item that is already playing. */
@@ -100,6 +146,23 @@ export class AudioQueue {
 	}
 
 	/**
+	 * Enqueue a streaming PCM item by sequence number. Playback starts on the
+	 * first chunk once this seq's turn arrives; `stream.end()`/`fail()` closes it.
+	 */
+	enqueueOrderedStream(
+		seq: number,
+		stream: PcmStreamSource,
+		callbacks: AudioQueueItemCallbacks = {},
+	): void {
+		Logger.debug("AudioQueue", "enqueueOrderedStream", {
+			seq,
+			cursor: this.flushCursor,
+		});
+		this.pendingOrdered.set(seq, { stream, ...callbacks });
+		this.flushOrdered();
+	}
+
+	/**
 	 * Release a reserved sequence slot without audio (synthesis failed or fell
 	 * back to a non-queued path, e.g. browser TTS). Without this, the contiguous
 	 * flush cursor would stall forever waiting for the missing seq.
@@ -124,7 +187,8 @@ export class AudioQueue {
 			this.pendingOrdered.delete(this.flushCursor);
 			this.flushCursor++;
 			// null = skipped slot (failed/fell-back synthesis); advance only.
-			if (item) this.enqueue(item.audioBase64, item);
+			if (item?.stream) this.enqueueItem(item);
+			else if (item?.audioBase64) this.enqueue(item.audioBase64, item);
 		}
 	}
 
@@ -141,6 +205,18 @@ export class AudioQueue {
 			this.current.src = "";
 			this.current = null;
 		}
+		if (this.currentStream) {
+			this.currentStream.unsubscribe();
+			this.currentStream = null;
+		}
+		for (const src of this.streamSources) {
+			try {
+				src.stop();
+			} catch {
+				/* already stopped */
+			}
+		}
+		this.streamSources.clear();
 		if (this.playing) {
 			this.playing = false;
 			this.callbacks.onPlaybackEnd?.();
@@ -155,6 +231,87 @@ export class AudioQueue {
 	/** Destroy the queue and release resources. */
 	destroy(): void {
 		this.clear();
+	}
+
+	/** Play a streaming PCM item: schedule chunks back-to-back as they arrive. */
+	private playStream(
+		item: AudioQueueItem,
+		stream: PcmStreamSource,
+		generation: number,
+		wasPlaying: boolean,
+	): void {
+		const ctx = ensureAudioContext(this.callbacks.outputDeviceId);
+		Logger.debug("AudioQueue", "playStream:begin", {
+			ctxState: ctx.state,
+			buffered: stream.chunks.length,
+			ended: stream.ended,
+		});
+		this.currentStream = stream;
+		let nextStart = 0;
+		let started = false;
+		let advanced = false;
+		let pending = 0;
+		let ended = false;
+		const isCurrent = () =>
+			generation === this.generation && this.currentStream === stream;
+		const advance = () => {
+			if (!isCurrent() || advanced) return;
+			advanced = true;
+			stream.unsubscribe();
+			this.currentStream = null;
+			this.playNext();
+		};
+		const maybeFinish = () => {
+			if (ended && pending === 0) advance();
+		};
+		stream.subscribe(
+			(chunk) => {
+				if (!isCurrent()) return;
+				const buf = ctx.createBuffer(1, chunk.length, stream.sampleRate);
+				const ch = buf.getChannelData(0);
+				for (let i = 0; i < chunk.length; i++) ch[i] = chunk[i] / 0x8000;
+				const src = ctx.createBufferSource();
+				src.buffer = buf;
+				src.connect(ctx.destination);
+				const now = ctx.currentTime;
+				// 40 ms lead on the very first chunk absorbs scheduling jitter.
+				const at = Math.max(now + (started ? 0 : 0.04), nextStart);
+				src.start(at);
+				nextStart = at + buf.duration;
+				pending++;
+				this.streamSources.add(src);
+				src.onended = () => {
+					this.streamSources.delete(src);
+					pending--;
+					maybeFinish();
+				};
+				if (!started) {
+					started = true;
+					Logger.debug("AudioQueue", "playStream:first chunk scheduled", {
+						at: Number(at.toFixed(3)),
+						now: Number(now.toFixed(3)),
+						ctxState: ctx.state,
+					});
+					item.onPlaybackStart?.();
+					if (!wasPlaying) this.callbacks.onPlaybackStart?.();
+				}
+			},
+			() => {
+				if (!isCurrent()) return;
+				ended = true;
+				Logger.debug("AudioQueue", "playStream:source ended", {
+					pending,
+					started,
+				});
+				if (!started) {
+					// Nothing arrived (failed/empty synthesis): release the slot.
+					item.onPlaybackUnavailable?.();
+					advance();
+					return;
+				}
+				maybeFinish();
+			},
+		);
 	}
 
 	private playNext(): void {
@@ -174,10 +331,14 @@ export class AudioQueue {
 			this.callbacks.onPlaybackEnd?.();
 			return;
 		}
-		const mp3Base64 = item.audioBase64;
 		const generation = this.generation;
 		const wasPlaying = this.playing;
 		this.playing = true;
+		if (item.stream) {
+			this.playStream(item, item.stream, generation, wasPlaying);
+			return;
+		}
+		const mp3Base64 = item.audioBase64 ?? "";
 
 		// WAV base64 starts with "UklGR" (RIFF header); use audio/wav MIME for omni model output
 		const isWav = mp3Base64.startsWith("UklGR");
@@ -238,11 +399,29 @@ export class AudioQueue {
 	}
 }
 
+/** Shared Web Audio context for streamed PCM playback (lazily created, one per page). */
+let sharedAudioContext: AudioContext | null = null;
+function ensureAudioContext(outputDeviceId?: string): AudioContext {
+	if (!sharedAudioContext) sharedAudioContext = new AudioContext();
+	const ctx = sharedAudioContext;
+	if (ctx.state === "suspended") ctx.resume().catch(() => {});
+	const setSinkId = (
+		ctx as unknown as { setSinkId?: (id: string) => Promise<void> }
+	).setSinkId;
+	if (outputDeviceId && setSinkId)
+		setSinkId.call(ctx, outputDeviceId).catch(() => {});
+	return ctx;
+}
+
 /** Return the PCM duration encoded by a RIFF/WAVE base64 payload. */
 export function wavDurationSeconds(audioBase64: string): number | null {
 	try {
 		const binary = atob(audioBase64);
-		if (binary.length < 44 || binary.slice(0, 4) !== "RIFF" || binary.slice(8, 12) !== "WAVE") {
+		if (
+			binary.length < 44 ||
+			binary.slice(0, 4) !== "RIFF" ||
+			binary.slice(8, 12) !== "WAVE"
+		) {
 			return null;
 		}
 		const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));

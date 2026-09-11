@@ -215,36 +215,58 @@ export class NvaLayeredPlayer {
 		const back = this.back;
 		back.loop = opts.loop;
 
-		const loaded = await new Promise<"ok" | "aborted" | "error">((resolve) => {
-			const done = () => {
-				cleanup();
-				resolve("ok");
-			};
-			const fail = () => {
-				cleanup();
-				resolve("error");
-			};
-			const cleanup = () => {
-				back.removeEventListener("loadeddata", done);
-				back.removeEventListener("error", fail);
-				if (this.abortLoad === abort) this.abortLoad = null;
-			};
-			const abort = () => {
-				cleanup();
-				// 실제 로드 취소(고아 디코딩 제거) — 리스너 이미 해제됐으니 emptied/abort 이벤트 무해.
-				try {
-					back.removeAttribute("src");
-					back.load();
-				} catch {
-					/* noop */
-				}
-				resolve("aborted");
-			};
-			this.abortLoad = abort;
-			back.src = url;
-			back.addEventListener("loadeddata", done, { once: true });
-			back.addEventListener("error", fail, { once: true });
-		});
+		// 2026-09-11: back 이 이미 같은 클립을 디코드해 두었으면 src 를 다시 대입하지 않는다.
+		// idle↔talk 왕복은 두 <video> 가 각각 한 클립을 계속 들고 있으므로 첫 왕복 뒤에는
+		// 미디어 파이프라인 해체가 한 번도 일어나지 않는다. WebKitGTK 에서 `src=` 대입은 이전
+		// 플레이어를 동기 해체하는데, 그 파이프라인의 demuxer 스레드가 bus 동기 핸들러에서
+		// 메인 스레드를 기다리는 순간과 겹치면 서로 기다리며 웹뷰 전체가 멈춘다
+		// (gdb: HTMLMediaElement::prepareForLoad → MediaPlayerPrivateGStreamer::tearDown ↔
+		// matroskademux → callOnMainThreadAndWait; 슬라이드 낭독 2/2 재현, 2026-09-11).
+		const alreadyLoaded =
+			back.dataset.naiaClipUrl === url && back.readyState >= 2 && !back.error;
+		const loaded = alreadyLoaded
+			? await Promise.resolve<"ok" | "aborted" | "error">(
+					(() => {
+						try {
+							back.currentTime = 0;
+						} catch {
+							/* noop */
+						}
+						return "ok" as const;
+					})(),
+				)
+			: await new Promise<"ok" | "aborted" | "error">((resolve) => {
+					const done = () => {
+						cleanup();
+						resolve("ok");
+					};
+					const fail = () => {
+						cleanup();
+						resolve("error");
+					};
+					const cleanup = () => {
+						back.removeEventListener("loadeddata", done);
+						back.removeEventListener("error", fail);
+						if (this.abortLoad === abort) this.abortLoad = null;
+					};
+					const abort = () => {
+						cleanup();
+						// 실제 로드 취소(고아 디코딩 제거) — 리스너 이미 해제됐으니 emptied/abort 이벤트 무해.
+						try {
+							back.removeAttribute("src");
+							delete back.dataset.naiaClipUrl;
+							back.load();
+						} catch {
+							/* noop */
+						}
+						resolve("aborted");
+					};
+					this.abortLoad = abort;
+					back.src = url;
+					back.dataset.naiaClipUrl = url;
+					back.addEventListener("loadeddata", done, { once: true });
+					back.addEventListener("error", fail, { once: true });
+				});
 
 		// aborted = abort() 가 이미 취소·정리 완료(공유 상태 건드리지 않음).
 		if (loaded === "aborted") return;

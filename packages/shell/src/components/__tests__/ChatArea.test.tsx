@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appRegistry } from "../../lib/app-registry";
 import { isNewCore } from "../../lib/chat-service";
+import { SLIDE_PRESENTER_SPEAK_EVENT } from "../../lib/slide-presenter-events";
 import type { AgentResponseChunk } from "../../lib/types";
 import { useAppStore } from "../../stores/app";
 import { useAvatarStore } from "../../stores/avatar";
@@ -2096,4 +2097,40 @@ describe("ChatArea", () => {
 		// Value should remain unchanged
 		expect(input.value).toBe("some text");
 	});
+
+	it("splits slide narration into sentences instead of one page-sized request", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				apiKey: "test-key",
+				provider: "gemini",
+				model: "gemini-2.5-flash",
+				ttsEnabled: true,
+				ttsProvider: "nextain",
+			}),
+		);
+		render(<ChatArea />);
+		window.dispatchEvent(
+			new CustomEvent(SLIDE_PRESENTER_SPEAK_EVENT, {
+				detail: {
+					requestId: "slide-speak-1",
+					generation: 1,
+					page: 3,
+					text: "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.",
+				},
+			}),
+		);
+		// One request per sentence — the first one can play while the rest
+		// are still being synthesized.
+		await waitFor(() =>
+			expect(ttsSyncMocks.synthesizeTts).toHaveBeenCalledTimes(3),
+		);
+		expect(
+			ttsSyncMocks.synthesizeTts.mock.calls.map(
+				(call: any[]) => call[0].text,
+			),
+		).toEqual(["첫 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."]);
+		localStorage.removeItem("naia-config");
+	});
+
 });
