@@ -218,7 +218,10 @@ describe("SettingsTab", () => {
 		expect(await screen.findByText(/10\.00/)).toBeDefined();
 	});
 
-	it("keeps unfinished Connections disabled between Skills and General", async () => {
+	// ef3dc42c 이후 Connections 는 브라우저 미리보기에서도 열린다. 자리는 그대로
+	// Skills 와 General 사이이고, 봇 토큰이 없는 기계에서도 탭이 열려 안내 화면을
+	// 보여 준다. 토큰 입력란을 WebView 로 내리지 않는다는 제약은 그대로다.
+	it("opens Connections between Skills and General", async () => {
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "discord_bot_token_available")
 				return Promise.resolve(false);
@@ -243,8 +246,19 @@ describe("SettingsTab", () => {
 		const connections = document.querySelector(
 			'[data-settings-tab="connections"]',
 		) as HTMLButtonElement;
-		expect(connections.disabled).toBe(true);
+		expect(connections.disabled).toBe(false);
+		// 열기 전에는 패널이 없다 — 클릭이 실제로 무언가를 여는지 재기 위해서다.
 		expect(screen.queryByTestId("discord-connections")).toBeNull();
+
+		await act(async () => {
+			gotoSettingsTab("connections");
+		});
+
+		expect(connections.className).toContain("settings-tab-btn--active");
+		await waitFor(() => {
+			expect(screen.getByTestId("discord-connections")).toBeTruthy();
+		});
+		// 토큰은 네이티브가 갖는다. 패널을 열어도 WebView 에는 입력란이 없다.
 		expect(document.querySelector('input[type="password"]')).toBeNull();
 	});
 

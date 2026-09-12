@@ -123,8 +123,9 @@ test("UC-JEONJU-COURSE-READINESS: student checks Codex before selecting the cour
 		workspaceRoot: "/tmp/mock-naia-adk-workspace",
 	});
 
-	// Connections is intentionally not shipped yet. Course readiness keeps that
-	// unfinished surface disabled and never exposes a raw token field.
+	// Connections opens in the browser preview too (ef3dc42c). Course readiness
+	// checks that it opens and that a raw token field never reaches the WebView —
+	// the bot token stays in native secure storage.
 	const connectionsTab = page.locator('[data-settings-tab="connections"]');
 	await expect(connectionsTab).toBeEnabled();
 	await connectionsTab.click();
