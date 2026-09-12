@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	readFileSync,
 	readdirSync,
@@ -204,6 +205,49 @@ const result = spawnSync(
 	},
 );
 if (result.status !== 0) process.exit(result.status ?? 1);
+
+// #582 S6c: 에이전트 브라우저 호스트(감독자 데몬)는 번들에서 resource_dir/ego-host 로
+// 찾는다. 그 자리는 **tauri.conf.json 의 `bundle.resources` 가 채운다** — tauri-build 가
+// E2E 빌드에서도 리소스를 CARGO_TARGET_DIR/debug 로 복사하기 때문이다. 여기서 따로 두지 않는다.
+//
+// ⚠️ 그 자리에 소스 트리를 가리키는 **심링크를 두면 안 된다.** 2026-09-10 실측: 링크를 두자
+//    tauri-build 의 리소스 복사가 원본을 자기 자신 위에 복사해 `packages/ego-host` 의 소스
+//    파일 23개가 전부 0바이트가 됐다. 지난 실행이 남긴 링크가 있으면 여기서 걷어낸다.
+const egoHostSource = resolve(shellDir, "..", "ego-host");
+const egoHostStaged = resolve(targetDir, "debug", "ego-host");
+if (lstatSafe(egoHostStaged)?.isSymbolicLink()) {
+	rmSync(egoHostStaged, { force: true });
+	process.stdout.write("[e2e] 지난 ego-host 심링크를 걷어냈다 (리소스 복사가 소유하는 자리다)\n");
+}
+// 벤더 SDK dist 는 `env_browser_script` 만 쓴다. 이미 빌드돼 있으면 다시 만들지 않는다 —
+// npm ci 는 네트워크를 요구하고 이 실기는 오프라인이어야 한다.
+if (existsSync(egoHostSource)) {
+	const vendorRoot = resolve(egoHostSource, "vendor/ego-lite/package/ego-browser");
+	const vendorDist = resolve(vendorRoot, "dist/out/index.js");
+	if (!existsSync(vendorDist) && existsSync(resolve(vendorRoot, "node_modules"))) {
+		const vendorBuild = spawnSync("npm", ["run", "build"], {
+			cwd: vendorRoot,
+			stdio: "inherit",
+			shell: process.platform === "win32",
+		});
+		if (vendorBuild.status !== 0) {
+			process.stdout.write("[e2e] 벤더 ego-browser 빌드 실패 — env_browser_script 는 못 돈다\n");
+		}
+	} else if (!existsSync(vendorDist)) {
+		process.stdout.write(
+			"[e2e] 벤더 ego-browser 의 node_modules 가 없다 — 오프라인 실기이므로 설치하지 않는다\n",
+		);
+	}
+}
+
+/** `lstat` 은 없는 경로에서 던진다. 없음과 오류를 여기서 하나로 만든다. */
+function lstatSafe(path) {
+	try {
+		return lstatSync(path);
+	} catch {
+		return null;
+	}
+}
 
 // #508: the E2E debug binary resolves its resource_dir to CARGO_TARGET_DIR/
 // debug. Stage the three trusted installer resources there so

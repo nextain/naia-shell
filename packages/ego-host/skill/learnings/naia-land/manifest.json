@@ -1,0 +1,40 @@
+{
+  "id": "naia-land",
+  "name": "naia.land (Naia 포털)",
+  "domains": ["naia.land", "*.naia.land", "naia.nextain.io"],
+  "notes": ["notes/overview.md"],
+  "nodeTools": {
+    "open_public_page": {
+      "description": "Open a locale-prefixed public page on naia.land and return its address and title.",
+      "path": "tools/public-page.js",
+      "callable": "openPublicPage",
+      "args": {
+        "locale": {
+          "type": "string",
+          "required": false,
+          "description": "Two-letter locale segment such as ko or en. Defaults to ko."
+        },
+        "path": {
+          "type": "string",
+          "required": false,
+          "description": "Path under the locale segment, without a leading slash. Empty means the home page."
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "Object with url and title of the page that was opened."
+      }
+    }
+  },
+  "browserTools": {
+    "read_login_form": {
+      "description": "Report which sign-in providers the login card offers and whether a person is required.",
+      "path": "browser-tools/login-form.js",
+      "args": {},
+      "returns": {
+        "type": "object",
+        "description": "Object with providers, submitCount, and needsHuman."
+      }
+    }
+  }
+}

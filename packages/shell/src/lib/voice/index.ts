@@ -18,9 +18,11 @@ import { createNaiaOmniSession } from "./naia-omni";
 // Barge-in energy gate — shared SoT from omni development (#216).
 export { SPEECH_RMS_THRESHOLD, rmsFromBase64Pcm } from "./echo-gate";
 
+import { createAzureVoiceLiveSession } from "./azure-voice-live";
 import { createOpenAIRealtimeSession } from "./openai-realtime";
 import type { LiveProviderId, VoiceSession } from "./types";
 import { createVllmOmniSession } from "./vllm-omni";
+export { resolveLiveProvider } from "./resolve-live-provider";
 
 // #313 L3 — mid-session app context bridge.
 export {
@@ -40,6 +42,7 @@ export {
 	LIVE_PROVIDER_COST_HINTS,
 } from "./types";
 export type {
+	AzureVoiceLiveConfig,
 	GeminiLiveConfig,
 	NaiaOmniConfig,
 	OpenAIRealtimeConfig,
@@ -71,6 +74,8 @@ export function createVoiceSession(
 				: createGeminiLiveSession();
 		case "openai-realtime":
 			return createOpenAIRealtimeSession();
+		case "azure-voice-live":
+			return createAzureVoiceLiveSession();
 		case "naia-omni":
 			return createNaiaOmniSession();
 		case "vllm-omni":

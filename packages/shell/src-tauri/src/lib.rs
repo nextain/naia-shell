@@ -8,6 +8,8 @@ mod browser;
 mod browser_webview;
 mod capture;
 pub mod data_home;
+mod ego_host;
+mod ego_host_bridge;
 mod gemini_live;
 mod herdr;
 mod memory;
@@ -4640,6 +4642,9 @@ fn restart_agent(
     reserve_agent_restart(state)?;
 
     log_both("[Naia] Restarting agent-core...");
+    // #582 S6b: 재시작은 소유 런타임 정리 경로다. 감독자도 그 목록에 있다.
+    ego_host_bridge::stop_blocking("cleanup(restart)"); // #582 S6c: 다리가 띄운 감독자 데몬 먼저
+    ego_host::cleanup_current_adk("cleanup(restart)");
     // Use a temporary empty db if none provided (shouldn't happen in practice)
     let empty_db;
     let db = match audit_db {
@@ -11327,6 +11332,9 @@ async fn reset_naia_config_files(adk_path: String) -> Result<(), String> {
     if adk_path.trim().is_empty() {
         return Err("adk_path is empty".to_string());
     }
+    // #582 S6b: Reset 은 소유 런타임 정리 경로다. 감독자·Chromium 을 marker 로 회수한다.
+    ego_host_bridge::stop_blocking("cleanup(reset)"); // #582 S6c
+    ego_host::cleanup_ego_host(std::path::Path::new(&adk_path));
     reset_naia_config_files_at(std::path::Path::new(&adk_path))
 }
 
@@ -13025,6 +13033,20 @@ pub fn run() {
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
         .invoke_handler(tauri::generate_handler![
+            // #582 S7: 웹뷰에는 효과가 고정된 작업 명령만 낸다. 등급은 명령 이름이 정한다.
+            ego_host_bridge::ego_host_ensure, ego_host_bridge::ego_host_stop,
+            ego_host_bridge::ego_host_op_open, ego_host_bridge::ego_host_op_navigate,
+            ego_host_bridge::ego_host_op_snapshot, ego_host_bridge::ego_host_op_click,
+            ego_host_bridge::ego_host_op_fill, ego_host_bridge::ego_host_op_evaluate,
+            ego_host_bridge::ego_host_op_screenshot, ego_host_bridge::ego_host_op_close,
+            ego_host_bridge::ego_host_op_create_workspace,
+            ego_host_bridge::ego_host_op_list_workspaces,
+            ego_host_bridge::ego_host_op_close_workspace,
+            ego_host_bridge::ego_host_op_script, ego_host_bridge::ego_host_op_rpc,
+            ego_host_bridge::ego_host_op_cdp, ego_host_bridge::ego_host_op_end,
+            ego_host_bridge::ego_host_op_cancel, ego_host_bridge::ego_host_op_complete,
+            ego_host_bridge::ego_host_reconcile_lease, ego_host_bridge::ego_host_ensure_dirs,
+            ego_host_bridge::ego_host_write_env_files, ego_host_bridge::ego_host_wait_pid_exit,
             list_skills,
             frontend_log,
             list_stt_models,
@@ -13481,6 +13503,8 @@ pub fn run() {
                 }
             }
 
+            // #582 S6b: 시작 조정 — 크래시가 남긴 감독자·Chromium 을 marker 로 회수한다 (계약 4.8).
+            crate::ego_host::reap_current_adk();
             // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
             let agent_spawn = with_discord_lifecycle(&state.discord_lifecycle, || {
                 ensure_agent_relaunch_not_pending(&state)?;
@@ -13551,6 +13575,15 @@ pub fn run() {
                         });
                     }
                 }
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    // plugin:window|close hits this before Destroyed. Clean ego-host
+                    // lease here so e2e "정상 종료 뒤 lease 가 정리된다" is not racing
+                    // a driver that never delivers Destroyed.
+                    if should_teardown_for_window(window.label()) {
+                        crate::ego_host_bridge::stop_blocking("cleanup(close-requested)");
+                        crate::ego_host::cleanup_current_adk("cleanup(close-requested)");
+                    }
+                }
                 tauri::WindowEvent::Destroyed => {
 					if !should_teardown_for_window(window.label()) {
 						log_verbose(&format!(
@@ -13561,6 +13594,9 @@ pub fn run() {
 					}
                     // Kill Chrome on app exit (not on React component unmount)
                     crate::browser::browser_embed_kill();
+                    // #582 S6b: 정상 종료도 소유 런타임 정리 경로다 (계약 4.8).
+                    crate::ego_host_bridge::stop_blocking("cleanup(shutdown)"); // #582 S6c
+                    crate::ego_host::cleanup_current_adk("cleanup(shutdown)");
 
                     let state: tauri::State<'_, AppState> = window.state();
 

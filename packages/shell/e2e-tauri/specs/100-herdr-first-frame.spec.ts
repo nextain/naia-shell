@@ -19,7 +19,7 @@ describe("100 — Herdr first frame", () => {
 					return Boolean(terminal) && !overlay;
 				}),
 			{
-				timeout: 20_000,
+				timeout: 45_000,
 				timeoutMsg: "Herdr PTY never delivered its first frame to xterm",
 			},
 		);

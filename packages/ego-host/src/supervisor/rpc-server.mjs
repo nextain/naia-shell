@@ -1,0 +1,794 @@
+// #582 S2a — 감독자 RPC 서버 (계약 4.2·4.2.1·4.3.1·4.4).
+//
+// loopback 전용이다. 리눅스·macOS 는 unix 소켓, Windows 는 named pipe 이며 둘 다 node:net 이
+// 같은 API 로 받는다(경로 결정은 src/supervisor/socket-path.mjs 하나가 든다).
+//
+// 연결 하나가 CLI heredoc 하나다. 연결마다:
+//  - 첫 프레임은 핸드셰이크다. 토큰은 단일 사용이라 재사용·fork 재시도는 즉시 거부된다.
+//  - 선택한 작업 공간은 **연결별 상태**다. 감독자 전역이 아니다(4.2 "탭·공간" 행).
+//  - 유한 송신 큐. 넘치면 **그 연결만** 형식 있는 오류로 끊는다.
+//  - 나가는 프레임은 하나의 FIFO 를 지난다. Chromium 에서 받은 순서가 그대로 유지된다(4.3.1).
+import { createServer } from "node:net";
+import { randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { CODES, hostError, toShape } from "../errors.mjs";
+import { MAX_FRAME_BYTES, createFrameDecoder, encodeFrame } from "./rpc-framing.mjs";
+import { SUPERVISOR_REQUEST_DEADLINE_MS, createCdpMux } from "./cdp-mux.mjs";
+import { createLedger } from "./ledger.mjs";
+import { createOperations } from "./operations.mjs";
+import { captureAxSnapshot, captureScreenshot, writeSnapshotFile } from "./ax-snapshot.mjs";
+import { socketNeedsUnlink } from "./socket-path.mjs";
+
+/** 연결당 송신 큐 상한. 이벤트 폭주가 감독자 메모리를 먹지 못하게 한다. */
+export const MAX_QUEUED_FRAMES = 1024;
+
+/** `listTabs` 가 브라우저와 탭을 맞추는 데 쓰는 상한. 감독자 상한(13초)보다 훨씬 짧아야 한다. */
+export const TAB_REFRESH_MS = 2_000;
+export const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
+
+/**
+ * grant 없는 연결이 부를 수 있는 것 (계약 4.4).
+ * `useTaskSpace` 가 여기 있는 이유: 선택은 **연결별 상태**를 바꿀 뿐 브라우저를 바꾸지 않는다.
+ * 선택을 막으면 관측 연결이 아무것도 볼 수 없어 "관측 RPC 는 허용"이 빈 말이 된다.
+ */
+export const OBSERVE_RPCS = new Set([
+  "listTabs",
+  "listTaskSpaces",
+  "useTaskSpace",
+  "snapshot",
+  // 주소와 개정을 읽는 것도 관측이다(S3a). 어댑터의 증거 셋 중 `url`·`urlRevision` 이 여기서 온다.
+  "pageInfo",
+  // 캡처는 관측이다(계약 4.4 "관측: 스냅샷·캡처"). 승인 없는 연결도 받을 수 있어야 하며,
+  // 그래서 감독자 내부 CDP 로 실행한다 — 원시 CDP 로 구현하면 관측 연결이 막힌다.
+  "screenshot",
+  "getBrowserVersion",
+]);
+
+/** 헤드리스에서 도달 불가능한 인계 계열 (계약 4.4 표). */
+export const HEADLESS_DENIED_RPCS = new Set([
+  "claimTaskSpace",
+  "handOffTaskSpace",
+  "takeOverTaskSpace",
+]);
+
+/**
+ * 소유자 전용 RPC (계약 4.8, S6c).
+ *
+ * 이 목록은 **관리 연결에서만** 부를 수 있다. 관리 연결은 핸드셰이크에 `{admin:<secret>}` 를
+ * 실은 연결이고, 그 비밀은 감독자를 띄운 쪽(셸의 Rust)이 spawn 환경으로만 넘긴다 —
+ * 파일·lease·로그 어디에도 적지 않는다.
+ *
+ * 왜 나누는가: `issueToken` 은 **다른 연결의 승인 등급을 만드는** 문이다. 작업 연결이 그것을
+ * 부를 수 있으면 관측 등급으로 붙은 heredoc 이 스스로 destructive 토큰을 발급해 다시 붙을 수
+ * 있고, 그러면 등급표가 장식이 된다. `stop`·`switchAdk` 도 같은 이유다 — 남의 작업이 도는
+ * 브라우저를 아무 연결이나 내릴 수 있으면 소유가 없는 것과 같다.
+ */
+export const ADMIN_RPCS = new Set([
+  "issueToken",
+  "stop",
+  "switchAdk",
+  "reconcileLease",
+  "waitForPidExit",
+  "ensureDirs",
+  "writeEnvFiles",
+  "runScript",
+  "hostInfo",
+  "cancelOperationOwned",
+  "endOperationOwned",
+  "listOperationsOwned",
+]);
+
+const HEADLESS_DENIAL_MESSAGE =
+  "이 브라우저는 헤드리스로 돌아 사람에게 넘길 창이 없다. 인계·회수·claim 은 지원하지 않는다 " +
+  "(#582 계약 4.4). 로그인이나 captcha 가 필요하면 작업을 멈추고 사람에게 보고한다.";
+
+export const FIXED_BROWSER_VERSION = Object.freeze({
+  currentVersion: "chromium (naia ego-host)",
+  updateAvailable: false,
+});
+
+function normalizePolicy(value) {
+  if (typeof value === "function") return { route: value };
+  return value ?? {};
+}
+
+export function createSupervisorServer({
+  backend,
+  route = null,
+  /**
+   * 정책 훅 공장. 장부와 감독자 전용 CDP 통로가 준비된 뒤에 만들어야 해서 함수로 받는다
+   * (`route` 를 직접 주면 그것이 이긴다 — S2a 의 가짜 백엔드 테스트가 쓰는 길).
+   */
+  routeFactory = null,
+  ledger = null,
+  operations = null,
+  adkDir = null,
+  log = () => {},
+  requestDeadlineMs = SUPERVISOR_REQUEST_DEADLINE_MS,
+  maxFrameBytes = MAX_FRAME_BYTES,
+  maxQueuedFrames = MAX_QUEUED_FRAMES,
+  maxQueuedBytes = MAX_QUEUED_BYTES,
+  browserVersion = FIXED_BROWSER_VERSION,
+  snapshotProvider = null,
+  /**
+   * 관리 연결의 비밀. null 이면 관리 연결 자체가 없다(모든 `{admin}` 핸드셰이크가 거부된다).
+   * 감독자를 띄운 쪽만 이 값을 안다.
+   */
+  adminSecret = null,
+} = {}) {
+  // 장부 → 정책 → mux 순서로 엮인다. 장부와 정책은 감독자 전용 CDP 통로(`mux.hostRequest`)를
+  // 쓰는데 그 통로는 mux 안에 있으므로, 늦게 묶이는 클로저로 넘긴다.
+  let mux;
+  const hostRequest = (method, params, sessionId) => mux.hostRequest(method, params, sessionId);
+  const activeLedger = ledger ?? createLedger({ adkDir, hostRequest });
+  // 작업 장부(S2e). 취소 훅의 정리 명령도 감독자 전용 통로로 나간다.
+  const activeOperations =
+    operations ?? createOperations({ hostRequest, ledger: activeLedger, log });
+  // 정책 훅은 함수 하나(`route`)일 수도, 응답 필터를 함께 가진 객체일 수도 있다(중계기).
+  const policy = route
+    ? { route }
+    : routeFactory
+      ? normalizePolicy(
+          routeFactory({
+            ledger: activeLedger,
+            operations: activeOperations,
+            hostRequest,
+            adkDir,
+          }),
+        )
+      : {};
+  mux = createCdpMux({
+    backend,
+    route: policy.route,
+    filterResponse: policy.filterResponse ?? null,
+    ledger: activeLedger,
+    observer: activeOperations,
+    requestDeadlineMs,
+  });
+  // 취소·만료가 in-flight 요청을 **원래 id 오류**로 끊는 통로(계약 4.7, ABI 2).
+  activeOperations.onReject((operationId, code, message) =>
+    mux.rejectOperation(operationId, code, message),
+  );
+  /**
+   * 관리 RPC 의 실제 몸통. 감독자 핸들이 있어야 만들 수 있으므로(`stop` 은 자기 자신을 내린다)
+   * 서버가 선 뒤에 `setAdminHandlers` 로 늦게 묶는다.
+   */
+  let adminHandlers = {};
+
+  /**
+   * 비밀 비교. 길이가 다르면 `timingSafeEqual` 이 던지므로 길이부터 본다.
+   * 문자열 `===` 는 첫 다른 바이트에서 끝나 길이 정보를 흘린다.
+   */
+  function adminSecretMatches(candidate) {
+    if (typeof adminSecret !== "string" || adminSecret === "") return false;
+    if (typeof candidate !== "string" || candidate === "") return false;
+    const a = Buffer.from(adminSecret, "utf8");
+    const b = Buffer.from(candidate, "utf8");
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  }
+
+  /** token -> {operationId, workspaceId, grant, used} */
+  const tokens = new Map();
+  const connections = new Set();
+  const rejected = [];
+  let nextConnectionId = 1;
+  let server = null;
+  let listening = null;
+
+  function issueToken({ operationId = randomUUID(), workspaceId = null, grant = null } = {}) {
+    const token = randomUUID();
+    tokens.set(token, { operationId, workspaceId, grant, used: false });
+    return token;
+  }
+
+  function makeConnection(socket) {
+    const connection = {
+      id: nextConnectionId++,
+      socket,
+      state: "awaiting-hello",
+      /** 소유자 통로인가. 관리 연결만 ADMIN_RPCS 를 부를 수 있다(S6c). */
+      admin: false,
+      operationId: null,
+      workspaceId: null,
+      grant: null,
+      deadlineAt: null,
+      /** 연결별 선택 공간. 두 CLI 가 서로 다른 공간을 써도 섞이지 않는다. */
+      selectedSpaceId: null,
+      queue: [],
+      queuedBytes: 0,
+      writable: true,
+      closed: false,
+      /** 나가는 모든 프레임의 유일한 통로. 순서는 여기서 지켜진다. */
+      send(value) {
+        if (connection.closed) return false;
+        let frame;
+        try {
+          frame = encodeFrame(value, { maxBytes: maxFrameBytes });
+        } catch (error) {
+          connection.kill(toShape(error).error_code, toShape(error).error);
+          return false;
+        }
+        if (
+          connection.queue.length >= maxQueuedFrames ||
+          connection.queuedBytes + frame.length > maxQueuedBytes
+        ) {
+          connection.kill(
+            CODES.BACKPRESSURE,
+            `연결 ${connection.id} 의 송신 큐가 상한(${maxQueuedFrames}프레임/${maxQueuedBytes}바이트)을 넘었다. ` +
+              "이 연결만 끊는다 — 다른 연결은 영향받지 않는다.",
+          );
+          return false;
+        }
+        connection.queue.push(frame);
+        connection.queuedBytes += frame.length;
+        connection.pump();
+        return true;
+      },
+      pump() {
+        while (connection.writable && connection.queue.length > 0 && !connection.closed) {
+          const frame = connection.queue.shift();
+          connection.queuedBytes -= frame.length;
+          connection.writable = socket.write(frame);
+        }
+      },
+      deliverCdp(raw) {
+        connection.send({ type: "cdp", payload: raw });
+      },
+      /** id 없는 통로. 연결 전체가 죽은 경우에만 쓴다(ABI 2). */
+      deliverCdpFatal(message, code) {
+        connection.send({ type: "cdp-error", error: message, error_code: code });
+      },
+      kill(code, message) {
+        if (connection.closed) return;
+        connection.closed = true;
+        connection.queue.length = 0;
+        connection.queuedBytes = 0;
+        rejected.push({ id: connection.id, code, message });
+        try {
+          // 큐를 버리고 마지막 프레임 하나만 흘려보낸다. 이유 없이 끊으면 상대가 원인을 못 읽는다.
+          socket.end(encodeFrame({ type: "fatal", error: message, error_code: code }));
+        } catch {
+          socket.destroy();
+        }
+      },
+    };
+    return connection;
+  }
+
+  /** 이 연결이 고른 작업 공간. 없으면 형식 있는 오류다(벤더 런타임이 읽는 코드). */
+  function selectedSpaceOf(connection) {
+    const space =
+      connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
+    if (!space) {
+      throw hostError(
+        CODES.NO_TASK_SPACE,
+        "선택된 작업 공간이 없다. taskSpaces.useOrCreate(name) 을 먼저 부른다",
+      );
+    }
+    return space;
+  }
+
+  /** 감독자가 만드는 탭에 공간의 격리 컨텍스트를 붙인다. 컨텍스트가 없는 장부(테스트)는 빈 객체. */
+  function contextParams(space) {
+    const browserContextId = activeLedger.browserContextOf(space);
+    return browserContextId ? { browserContextId } : {};
+  }
+
+  /**
+   * 소유자 전용 RPC 의 몸통 (S6c).
+   *
+   * 작업 장부 셋은 여기서 직접 부른다. 같은 뜻의 비관리 RPC(`cancelOperation` 등)는 자기
+   * 연결의 작업만 다루지만, 소유자는 **다른 연결이 시작한 작업**을 취소·종결해야 한다 —
+   * 웹뷰의 취소 단추가 그 자리다. 이름을 나눠 둔 이유가 그것이다.
+   */
+  async function handleAdminRpc(method, params) {
+    switch (method) {
+      case "issueToken":
+        return {
+          token: issueToken({
+            ...(params?.operationId ? { operationId: params.operationId } : {}),
+            workspaceId: params?.workspaceId ?? null,
+            grant: params?.grant ?? null,
+          }),
+        };
+      case "cancelOperationOwned": {
+        const result = await activeOperations.cancel(params?.operationId);
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "endOperationOwned": {
+        const result = await activeOperations.complete(params?.operationId, {
+          status: params?.status ?? "completed",
+          reason: params?.reason ?? null,
+        });
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "listOperationsOwned":
+        return { operations: activeOperations.list() };
+      default: {
+        const handler = adminHandlers[method];
+        if (typeof handler !== "function") {
+          throw hostError(
+            CODES.ADMIN_UNAVAILABLE,
+            `이 감독자에는 관리 RPC 가 붙어 있지 않다: ${method}`,
+          );
+        }
+        return (await handler(params ?? {})) ?? {};
+      }
+    }
+  }
+
+  async function handleRpc(connection, method, params) {
+    // 소유자 통로가 먼저다. 여기서 갈라 두지 않으면 아래의 grant 검사가 "grant 만 있으면
+    // 무엇이든" 으로 읽혀 작업 연결이 토큰을 발급하게 된다(S6c).
+    if (ADMIN_RPCS.has(method)) {
+      if (!connection.admin) {
+        throw hostError(
+          CODES.ADMIN_REQUIRED,
+          `소유자 전용 RPC 다. 관리 연결에서만 부를 수 있다: ${method}`,
+        );
+      }
+      return handleAdminRpc(method, params);
+    }
+    if (connection.admin) {
+      // 관리 연결은 브라우저를 만지지 않는다. 만지는 일은 토큰을 받은 작업 연결이 한다 —
+      // 그래야 모든 브라우저 작업이 등급·승인이 붙은 토큰 하나를 지난다.
+      throw hostError(
+        CODES.ADMIN_DENIED,
+        `관리 연결은 작업 RPC 를 부르지 않는다: ${method}`,
+      );
+    }
+    if (connection.grant === null && !OBSERVE_RPCS.has(method)) {
+      throw hostError(
+        CODES.GRANT_REQUIRED,
+        `승인(grant) 없는 연결은 관측 RPC 만 부를 수 있다. 거부된 호출: ${method}`,
+      );
+    }
+    if (HEADLESS_DENIED_RPCS.has(method)) {
+      throw hostError(CODES.HANDOFF_HEADLESS, HEADLESS_DENIAL_MESSAGE);
+    }
+
+    const selected = () => selectedSpaceOf(connection);
+
+    switch (method) {
+      case "getBrowserVersion":
+        return { ...browserVersion };
+      case "listTaskSpaces":
+        // `taskSpaces` 는 벤더 런타임이 읽는 ABI 모양이고, `resources` 는 계약 4.4 의 공개 자원
+        // 모양이다(어댑터가 읽는다). 한 왕복에 둘 다 주는 편이 두 RPC 로 나누는 것보다 낫다 —
+        // 두 번 물으면 그 사이에 목록이 바뀌어 개정과 목록이 어긋난다.
+        return { taskSpaces: activeLedger.list(), resources: activeLedger.resources() };
+      case "listTabs": {
+        const space = selected();
+        // 목록을 주기 전에 브라우저의 실제 타깃과 맞춘다. 장부만 읽으면 이동한 탭의 주소가
+        // 옛 값이고 스스로 닫힌 탭이 유령으로 남는다(S2f 업스트림 케이스가 잡았다).
+        await refreshTabs(space);
+        return { tabs: activeLedger.tabsOf(space) };
+      }
+      case "useTaskSpace": {
+        const space = activeLedger.get(params?.id);
+        if (!space) {
+          throw hostError(CODES.TASK_SPACE_NOT_FOUND, `작업 공간을 찾지 못했다: ${params?.id}`);
+        }
+        connection.selectedSpaceId = space.id;
+        return {};
+      }
+      case "createTaskSpace": {
+        const name = params?.name;
+        if (typeof name !== "string" || name === "") {
+          throw hostError(CODES.HANDSHAKE_INVALID, "createTaskSpace 에는 비지 않은 이름이 필요하다");
+        }
+        // 멱등: 같은 키로 재전송하면 같은 공간을 돌려준다(공간이 둘 생기지 않는다).
+        const space = await activeLedger.create(name, { idempotencyKey: params?.idempotencyKey ?? null });
+        if (space.tabs.length === 0) {
+          const created = await mux.hostRequest("Target.createTarget", {
+            url: "about:blank",
+            // 공간의 격리 컨텍스트 안에서만 탭을 만든다. 컨텍스트 없이 만들면 기본 컨텍스트에
+            // 열려 쿠키·저장소가 다른 공간과 섞인다.
+            ...contextParams(space),
+          });
+          activeLedger.addTab(space, { targetId: created.targetId, url: "about:blank", title: "" });
+          activeLedger.claimTarget(connection, created.targetId);
+        }
+        connection.selectedSpaceId = space.id;
+        return { ...activeLedger.shape(space), resource: activeLedger.resourceOf(space) };
+      }
+      case "createTab": {
+        const space = selected();
+        const url = typeof params?.url === "string" ? params.url : "about:blank";
+        const created = await mux.hostRequest("Target.createTarget", {
+          url,
+          ...contextParams(space),
+        });
+        activeLedger.addTab(space, { targetId: created.targetId, url, title: "" });
+        activeLedger.claimTarget(connection, created.targetId);
+        return { targetId: created.targetId };
+      }
+      case "closeTaskSpace": {
+        const space = selected();
+        for (const tab of [...space.tabs]) {
+          await mux.hostRequest("Target.closeTarget", { targetId: tab.targetId }).catch(() => {});
+          activeLedger.releaseTarget(tab.targetId);
+        }
+        // 컨텍스트 dispose 까지가 "공간 닫기"다. 탭만 닫으면 쿠키·저장소가 살아남는다.
+        await activeLedger.close(space.id);
+        connection.selectedSpaceId = null;
+        return {};
+      }
+      case "completeTaskSpace": {
+        // keep:true 경로. 헤드리스에서는 사람에게 넘길 대상이 없으므로 공간을 그대로 둔다.
+        selected();
+        return {};
+      }
+      case "snapshot":
+        return snapshot(connection, params?.options ?? {});
+      case "pageInfo":
+        return pageInfo(connection);
+      case "screenshot":
+        return screenshot(connection, params ?? {});
+      case "beginOperation": {
+        // 시한은 **짧은 쪽이 이긴다**(계약 4.2). 연결의 deadline 을 요청이 늘릴 수 없다.
+        const requested = Number(params?.timeoutMs);
+        const deadlineMs =
+          Number.isFinite(requested) && requested > 0
+            ? Math.min(requested, connection.deadlineAt ?? requested)
+            : (connection.deadlineAt ?? null);
+        const op = activeOperations.begin({
+          id: params?.operationId ?? randomUUID(),
+          connection,
+          deadlineMs,
+        });
+        return { operationId: op.id, deadlineMs, status: op.status };
+      }
+      case "cancelOperation": {
+        const result = await activeOperations.cancel(params?.operationId ?? connection.operationId);
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "endOperation": {
+        const result = await activeOperations.complete(
+          params?.operationId ?? connection.operationId,
+          { status: params?.status ?? "completed" },
+        );
+        return { status: result.status, changed: result.changed, cleanup: result.cleanup };
+      }
+      case "listOperations":
+        return { operations: activeOperations.list() };
+      default:
+        throw hostError(CODES.METHOD_DENIED, `알 수 없는 RPC: ${method}`);
+    }
+  }
+
+  /**
+   * 지금 보고 있는 탭의 주소와 개정 (계약 4.4, S3a).
+   *
+   * 어댑터가 `BrowserEvidence.url`·`urlRevision` 을 여기서 받는다. 주소를 세션에서 직접
+   * 읽지 않고 감독자를 지나게 하는 이유는 둘이다. 관측 등급 연결(grant 없음)도 주소를 알아야
+   * 하고, 개정은 **장부**가 세는 값이라 세션에서는 셀 수 없다.
+   */
+  async function pageInfo(connection) {
+    const space = selectedSpaceOf(connection);
+    await refreshTabs(space);
+    const targetId = space.activeTargetId ?? space.tabs.at(-1)?.targetId ?? null;
+    const tab = space.tabs.find((t) => t.targetId === targetId) ?? null;
+    return {
+      workspaceId: String(space.id),
+      revision: space.revision,
+      targetId,
+      url: tab?.url ?? "",
+      title: tab?.title ?? "",
+      urlRevision: tab?.urlRevision ?? 0,
+      tabs: activeLedger.tabsOf(space),
+    };
+  }
+
+  /** 장부의 탭을 브라우저의 실제 타깃과 맞춘다. 감독자 전용 통로로 한 번 묻는다. */
+  async function refreshTabs(space) {
+    let live;
+    try {
+      // 짧은 상한을 따로 둔다. 감독자 상한(13초)까지 기다리면 브라우저가 멈춘 동안 `listTabs` 가
+      // 통째로 막히고, 벤더 런타임은 2초마다 이 호출을 한다(ABI 3 세션 캐시 TTL).
+      live = await Promise.race([
+        mux.hostRequest("Target.getTargets", {}),
+        new Promise((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("탭 대조 상한 초과")), TAB_REFRESH_MS);
+          timer.unref?.();
+        }),
+      ]);
+    } catch {
+      return { updated: 0, dropped: 0, unverified: true };
+    }
+    // 목록을 못 읽었으면 **아무것도 바꾸지 않는다.** 빈 응답을 "타깃이 하나도 없다"로 읽으면
+    // 살아 있는 탭을 장부에서 지운다.
+    if (!Array.isArray(live?.targetInfos)) return { updated: 0, dropped: 0, unverified: true };
+    const pages = new Map();
+    for (const info of live.targetInfos) {
+      if (info?.type === "page" && typeof info.targetId === "string") pages.set(info.targetId, info);
+    }
+    return activeLedger.syncTabs(space, pages);
+  }
+
+  /** 이 연결이 보고 있는 탭. 스냅샷·캡처의 대상은 감독자가 장부에서 고른다. */
+  function observedTarget(connection) {
+    const space =
+      connection.selectedSpaceId === null ? null : activeLedger.get(connection.selectedSpaceId);
+    if (!space) {
+      throw hostError(
+        CODES.NO_TASK_SPACE,
+        "선택된 작업 공간이 없다. taskSpaces.useOrCreate(name) 을 먼저 부른다",
+      );
+    }
+    const targetId = space.activeTargetId ?? space.tabs.at(-1)?.targetId;
+    if (!targetId) throw hostError(CODES.NO_TASK_SPACE, "관측할 탭이 없다");
+    return { space, targetId };
+  }
+
+  /**
+   * 접근성 스냅샷 (ABI 7). 본문 형식과 로케이터는 `ax-snapshot.mjs` 가 든다.
+   * **감독자 내부 CDP** 로 돈다 — 승인 없는 관측 연결도 스냅샷을 받아야 하기 때문이다(계약 4.4).
+   */
+  async function snapshot(connection, options) {
+    if (snapshotProvider) return snapshotProvider(connection, options);
+    const { targetId } = observedTarget(connection);
+    const result = await captureAxSnapshot({
+      hostRequest: (method, params, sessionId) => mux.hostRequest(method, params, sessionId),
+      targetId,
+      options,
+    });
+    const shape = { content: result.content, refs: result.refs };
+    // 본문을 증거 파일로도 남긴다(계약 4.5, S3a). 벤더 런타임은 `path` 를 읽지 않는다 —
+    // 어댑터가 `BrowserEvidence.snapshotRef` 로 쓴다. adkDir 없는 조립(가짜 백엔드 테스트)은
+    // 남길 자리가 없으므로 모양만 돌려준다.
+    // `record:false` 는 증거를 남기지 않는 조회다(어댑터의 참조 살아 있음 검사). 조회마다
+    // 파일이 쌓이면 증거 디렉터리가 무엇이 실제 관측이었는지 말해 주지 못한다.
+    if (!adkDir || options?.record === false) return shape;
+    const operationId = connection.operationId;
+    const index = activeOperations.nextEvidenceIndex(operationId);
+    const written = writeSnapshotFile({ adkDir, operationId, index, content: result.content });
+    activeOperations.recordEvidence(operationId, written.path);
+    return { ...shape, path: written.path };
+  }
+
+  /**
+   * 화면 캡처 (계약 4.4·4.5). **사용자 인자 경로를 받지 않는다** — 경로는 감독자가
+   * `<ADK>/ego-host/evidence/<operationId>-<n>.png` 로 정한다.
+   */
+  async function screenshot(connection, params) {
+    const { targetId } = observedTarget(connection);
+    if (!adkDir) {
+      throw hostError(
+        CODES.EVIDENCE_FAILED,
+        "증거 디렉터리를 정할 ADK 경로가 없다. 감독자에 adkDir 이 있어야 캡처를 남긴다",
+      );
+    }
+    const operationId = params?.operationId ?? connection.operationId;
+    const index = activeOperations.nextEvidenceIndex(operationId);
+    const shot = await captureScreenshot({
+      hostRequest: (method, inner, sessionId) => mux.hostRequest(method, inner, sessionId),
+      targetId,
+      adkDir,
+      operationId,
+      index,
+      fullPage: params?.fullPage === true,
+    });
+    activeOperations.recordEvidence(operationId, shot.path);
+    return { path: shot.path, bytes: shot.bytes, targetId };
+  }
+
+  function onHello(connection, message) {
+    // 관리 연결 (S6c). `admin` 칸이 있으면 토큰 경로가 아니라 비밀 경로다. 비밀이 틀리면
+    // **왜 틀렸는지 말하지 않고** 끊는다 — 길이·존재를 알려 주면 그것이 곧 탐색 수단이다.
+    if (message !== null && typeof message === "object" && "admin" in message) {
+      if (!adminSecretMatches(message.admin)) {
+        connection.kill(CODES.ADMIN_DENIED, "관리 연결의 비밀이 맞지 않는다");
+        return;
+      }
+      connection.state = "open";
+      connection.admin = true;
+      connection.grant = null;
+      connection.operationId = null;
+      connection.workspaceId = null;
+      connection.deadlineAt = requestDeadlineMs;
+      connection.send({ type: "welcome", admin: true, deadlineMs: requestDeadlineMs });
+      return;
+    }
+    const { token, grant = null, operationId = null, workspaceId = null, deadline = null } = message ?? {};
+    if (typeof token !== "string" || token === "") {
+      connection.kill(CODES.TOKEN_MISSING, "핸드셰이크에 토큰이 없다");
+      return;
+    }
+    const record = tokens.get(token);
+    if (!record) {
+      connection.kill(CODES.TOKEN_MISSING, "알 수 없는 핸드셰이크 토큰이다");
+      return;
+    }
+    if (record.used) {
+      // fork·cluster 자식이 상속한 토큰으로 다시 붙는 경로가 여기서 닫힌다(계약 4.2.1).
+      connection.kill(CODES.TOKEN_REUSED, "이미 쓴 핸드셰이크 토큰이다. 토큰은 단일 사용이다");
+      return;
+    }
+    if (JSON.stringify(record.grant ?? null) !== JSON.stringify(grant ?? null)) {
+      connection.kill(
+        CODES.HANDSHAKE_INVALID,
+        "핸드셰이크의 grant 가 토큰이 발급된 승인과 다르다",
+      );
+      return;
+    }
+    /**
+     * 선언은 **토큰 기록과 정확히 같아야 한다** (S7 P1-3).
+     *
+     * 전에는 grant 만 대조하고 operation·workspace 는 클라이언트가 보낸 non-null 값을 우선했다.
+     * 그래서 `{operationId:"approved", workspaceId:"A"}` 로 발급받은 토큰에 hello 만
+     * `{operationId:"other", workspaceId:"B"}` 로 실으면 승인이 붙은 연결이 **다른 작업·다른
+     * 공간**에 결박됐다. 토큰이 승인에 결박된다는 문장이 그 순간 빈 말이 된다.
+     *
+     * 누락(`null`·`undefined`)은 기록을 쓴다 — 벤더 런처는 이 필드를 싣지 않는다.
+     * 있는데 다르거나 문자열이 아니면 거부다.
+     */
+    for (const [field, declared, bound] of [
+      ["operationId", operationId, record.operationId],
+      ["workspaceId", workspaceId, record.workspaceId],
+    ]) {
+      if (declared === null || declared === undefined) continue;
+      if (typeof declared !== "string") {
+        connection.kill(
+          CODES.HANDSHAKE_INVALID,
+          `핸드셰이크의 ${field} 는 문자열이어야 한다. 받은 것: ${JSON.stringify(declared)}`,
+        );
+        return;
+      }
+      if (bound !== null && bound !== undefined && String(bound) !== declared) {
+        connection.kill(
+          CODES.HANDSHAKE_INVALID,
+          `핸드셰이크의 ${field} 가 토큰이 발급된 값과 다르다. 토큰=${JSON.stringify(bound)} ` +
+            `선언=${JSON.stringify(declared)} (#582 계약 4.2 토큰은 승인에 결박된다)`,
+        );
+        return;
+      }
+    }
+    record.used = true;
+    connection.state = "open";
+    connection.operationId = record.operationId ?? operationId;
+    connection.workspaceId = record.workspaceId ?? workspaceId;
+    connection.grant = record.grant;
+    // 두 상한 중 짧은 쪽이 이긴다. 호출자가 더 긴 시한을 적어 감독자 상한을 늘리지 못한다.
+    const requested = typeof deadline === "number" && deadline > 0 ? deadline : requestDeadlineMs;
+    connection.deadlineAt = Math.min(requested, requestDeadlineMs);
+    // 연결마다 뿌리 작업 하나. 표시 없는 CDP 는 전부 이 작업의 것이다(operations.mjs 규칙 1).
+    // 시한은 이 작업에도 그대로 걸린다 — 만료하면 취소와 같은 정리가 돈다(계약 4.7).
+    activeOperations.begin({
+      id: connection.operationId,
+      connection,
+      deadlineMs: connection.deadlineAt,
+    });
+    connection.send({
+      type: "welcome",
+      operationId: connection.operationId,
+      workspaceId: connection.workspaceId,
+      deadlineMs: connection.deadlineAt,
+      observeOnly: connection.grant === null,
+    });
+  }
+
+  function onFrame(connection, message) {
+    if (connection.closed) return;
+    if (connection.state === "awaiting-hello") {
+      if (message?.type !== "hello") {
+        connection.kill(CODES.HANDSHAKE_REQUIRED, "첫 프레임은 핸드셰이크(hello)여야 한다");
+        return;
+      }
+      onHello(connection, message);
+      return;
+    }
+    if (message?.type === "cdp") {
+      if (connection.grant === null) {
+        // 원래 id 를 가진 CDP 오류 응답으로 돌려준다. 연결은 죽이지 않는다.
+        let clientId = null;
+        try {
+          clientId = JSON.parse(message.payload)?.id ?? null;
+        } catch {
+          clientId = null;
+        }
+        if (typeof clientId === "number") {
+          connection.deliverCdp(
+            JSON.stringify({
+              id: clientId,
+              error: {
+                message: "승인(grant) 없는 연결은 CDP 를 보낼 수 없다",
+                code: CODES.GRANT_REQUIRED,
+              },
+            }),
+          );
+        } else {
+          connection.deliverCdpFatal("승인 없는 연결의 CDP 송신", CODES.GRANT_REQUIRED);
+        }
+        return;
+      }
+      // `operationId` 는 우리 확장이다. 벤더 런타임은 붙이지 않으므로 뿌리 작업으로 간다.
+      mux.fromClient(
+        connection,
+        message.payload,
+        message.operationId ? { operationId: message.operationId } : null,
+      );
+      return;
+    }
+    if (message?.type === "rpc") {
+      const { id, method, params } = message;
+      Promise.resolve()
+        .then(() => handleRpc(connection, method, params ?? {}))
+        .then(
+          (value) => connection.send({ type: "rpc-result", id, value }),
+          (error) => connection.send({ type: "rpc-result", id, value: toShape(error) }),
+        );
+      return;
+    }
+    connection.kill(CODES.FRAME_MALFORMED, `알 수 없는 프레임 종류: ${message?.type}`);
+  }
+
+  function onConnection(socket) {
+    socket.setNoDelay?.(true);
+    const connection = makeConnection(socket);
+    connections.add(connection);
+    const decoder = createFrameDecoder({
+      maxBytes: maxFrameBytes,
+      onFrame: (message) => onFrame(connection, message),
+      onError: (error) => connection.kill(toShape(error).error_code, toShape(error).error),
+    });
+    socket.on("data", (chunk) => decoder.push(chunk));
+    socket.on("drain", () => {
+      connection.writable = true;
+      connection.pump();
+    });
+    socket.on("error", () => {
+      /* 끊긴 소켓은 close 에서 정리한다. */
+    });
+    socket.on("close", () => {
+      connection.closed = true;
+      connections.delete(connection);
+      // 작업을 먼저 종결한다(계약 4.8 `failed(process-exit)`). 정리 명령은 감독자 통로로
+      // 나가므로 연결이 이미 죽어도 가로채기·스트림·세션이 함께 걷힌다.
+      activeOperations
+        .detachConnection(connection)
+        .catch((error) => log(`연결 종료 정리 실패: ${error.message}`));
+      mux.detach(connection);
+    });
+  }
+
+  return {
+    issueToken,
+    /**
+     * 관리 RPC 의 몸통을 늦게 묶는다. `stop` 은 자기 자신을 내리므로 감독자 핸들이 있어야
+     * 만들 수 있고, 그 핸들은 이 서버가 선 뒤에야 생긴다.
+     */
+    setAdminHandlers(handlers) {
+      adminHandlers = handlers ?? {};
+    },
+    /** 관리 연결이 있는가. 비밀 없이 띄운 감독자(테스트·조립)는 거짓이다. */
+    get hasAdminChannel() {
+      return typeof adminSecret === "string" && adminSecret !== "";
+    },
+    mux,
+    ledger: activeLedger,
+    operations: activeOperations,
+    connections,
+    rejected,
+    listen(socketPath, { kind = "unix" } = {}) {
+      if (socketNeedsUnlink(kind)) {
+        const dir = socketPath.slice(0, socketPath.lastIndexOf("/"));
+        if (dir) mkdirSync(dir, { recursive: true });
+        if (existsSync(socketPath)) rmSync(socketPath, { force: true });
+      }
+      server = createServer(onConnection);
+      listening = new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(socketPath, () => resolve(socketPath));
+      });
+      return listening;
+    },
+    async close() {
+      for (const connection of [...connections]) connection.socket.destroy();
+      if (!server) return;
+      await new Promise((resolve) => server.close(resolve));
+      server = null;
+    },
+  };
+}

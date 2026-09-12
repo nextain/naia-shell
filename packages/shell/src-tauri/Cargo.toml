@@ -30,7 +30,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zeroize = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "stream"] }
-tokio = { version = "1", features = ["sync", "macros", "rt", "rt-multi-thread", "net", "time"] }
+tokio = { version = "1", features = ["sync", "macros", "rt", "rt-multi-thread", "net", "time", "io-util"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 # os↔agent 단일 transport = gRPC(정본). naia_agent.proto tonic 클라이언트. hyper 1.x 를 reqwest 0.12 와 공유.
 tonic = "0.12"

@@ -138,9 +138,12 @@ describe("sentence TTS pipeline (FR-VOICE.16 Phase 2b)", () => {
 			"QUJD",
 			expect.objectContaining({ onPlaybackStart: expect.any(Function) }),
 		);
-		// nextain carries the 10% Naia service markup.
+		// Gateway costUsd is already API × 1.1. Do not multiply again.
 		expect(deps.addCostEntry).toHaveBeenCalledWith(
-			expect.objectContaining({ model: "tts:nextain (+10%)" }),
+			expect.objectContaining({
+				cost: 0.01,
+				model: "tts:nextain (+10%)",
+			}),
 		);
 	});
 

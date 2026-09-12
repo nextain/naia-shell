@@ -531,6 +531,7 @@ const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
 	"gemini-3.5-flash-lite": 3,
 	"gemini-3.1-flash-lite": 3,
 	"gemini-2.5-flash-live": 4,
+	"azure-realtime": 4,
 	"naia-0.9-omni-24g": 5,
 	"claude-opus-5": 5,
 };
@@ -572,6 +573,11 @@ export function sortModels(
 }
 
 // ─── Shared voice lists ──────────────────────────────────────────────────────
+
+export const AZURE_REALTIME_VOICES: LlmVoiceMeta[] = [
+	{ id: "sunhi", label: "SunHi (여성)" },
+	{ id: "hyunsu", label: "Hyunsu (남성)" },
+];
 
 export const GEMINI_LIVE_VOICES: LlmVoiceMeta[] = [
 	{ id: "Kore", label: "Kore (여성, 부드러움)" },
@@ -719,6 +725,15 @@ registerLlmProvider({
 			supportsTools: true,
 			voiceSelectable: true,
 			voices: [...GEMINI_LIVE_VOICES],
+			transcriptProvided: true,
+		},
+		{
+			id: "azure-realtime",
+			label: "Azure Realtime (SunHi)",
+			capabilities: ["llm", "omni"],
+			supportsTools: true,
+			voiceSelectable: true,
+			voices: [...AZURE_REALTIME_VOICES],
 			transcriptProvided: true,
 		},
 		{

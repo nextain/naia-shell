@@ -1,0 +1,435 @@
+{
+  "version": 1,
+  "schema": "naia-shell.qa-round.v1",
+  "status": "DRAFT_NO_QC_NUMBERS",
+  "scope": "#582 에이전트 브라우저 호스트. QC 번호는 진행 중인 Linux 2회차가 끝난 뒤 qa-qc-numbers.mjs 로 QC-206 부터 append 한다. 이 파일은 qa/qc-numbers.json 을 건드리지 않는다. 2026-09-10 S5 검토: 12건. Windows 행은 NFR-ENV-TOOL-OS.1 게이트 통과 전까지 기능 플래그 꺼짐 상태에서 실행되므로 '도구 미등록' 이 기대 결과다.",
+  "verification": {
+    "status": "NOT_RUN",
+    "method": "manual on device after S6",
+    "evidenceRef": null,
+    "note": "소스 참조는 P02 골격 테스트 파일이며 구현 슬라이스에서 채워진다."
+  },
+  "caseCount": 12,
+  "cases": [
+    {
+      "id": "BROWSER-HOST-001",
+      "title": "호스트가 사람의 창을 건드리지 않는다",
+      "method": "활성 창 식별자를 기록한 뒤 채팅에서 에이전트에게 웹 페이지 제목을 읽어 오라고 요청한다. 작업 중과 후에 활성 창과 새 창 유무를 확인한다.",
+      "expectedResult": "작업 전후 활성 창이 같고 새 창이 뜨지 않으며 감독자 프로세스 트리에 창이 없다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-SPACE"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.11"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/no-interference.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-002",
+      "title": "작업 공간끼리 상태가 새지 않는다",
+      "method": "작업 A 에서 로컬 픽스처 페이지에 쿠키·localStorage·서비스 워커를 심는다. 작업 B 에서 같은 출처를 열어 값을 읽는다.",
+      "expectedResult": "B 에는 쿠키·저장소·서비스 워커가 없다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-SPACE"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.10"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/isolation.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-003",
+      "title": "헤드리스 인계는 형식이 맞게 거부된다",
+      "method": "에이전트가 로그인 페이지에서 인계·회수·claim 을 시도하게 한다.",
+      "expectedResult": "원래 요청 id 를 가진 EGO_HANDOFF_UNSUPPORTED_HEADLESS 오류가 돌아오고 다른 대기 요청은 영향이 없으며 에이전트가 사람에게 멈춤을 보고한다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-SPACE"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.10"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/mediator.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-004",
+      "title": "증거가 셋 다 남는다",
+      "method": "에이전트에게 픽스처 페이지의 버튼 하나를 누르게 한다.",
+      "expectedResult": "도구 결과에 스냅샷 참조, 감독자가 정한 경로의 캡처 파일, 주소 개정이 모두 있다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-BROWSE"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.6"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; src/test/env-tool-browser-host.contract.test.ts",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-005",
+      "title": "재시작·종료·Reset 에 브라우저가 남지 않는다",
+      "method": "에이전트 웹 작업 중 셸을 재시작한다. Reset 과 정상 종료도 각각 수행한다.",
+      "expectedResult": "이전 Chromium 과 감독자 PID 가 없고 lease 가 정리된다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-RECOVER"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.15"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/shell/e2e-tauri/specs/env-tool-browser-host-lifecycle.spec.ts",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-006",
+      "title": "벤더가 고정 커밋과 같다",
+      "method": "packages/ego-host 에서 vendor:check 를 실행한다.",
+      "expectedResult": "종료 코드 0.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-BROWSE"
+      ],
+      "feIds": [
+        "NFR-ENV-TOOL-VENDOR.1"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/vendor-install.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-007",
+      "title": "취소가 실제로 멈춘다",
+      "method": "응답을 멈춘 픽스처 주소로 이동시키고 Fetch 가로채기를 켠 채 취소한다.",
+      "expectedResult": "후속 이벤트 0, 열린 가로채기·스트림·세션 0, 최종 상태 cancelled 유지.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-CANCEL"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.9"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/cancel.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-008",
+      "title": "감독자가 강제 종료돼도 Chromium 이 남지 않는다",
+      "method": "감독자 PID 에 SIGKILL 을 보내고 Chromium PID 를 관찰한다. 셸을 다시 시작한다.",
+      "expectedResult": "Chromium PID 가 소멸하고 다음 시작 조정에서 고아 0.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-RECOVER"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.15"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/lease.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-009",
+      "title": "두 에이전트가 동시에 써도 섞이지 않는다",
+      "method": "CLI 두 개를 동시에 띄워 각자 다른 작업 공간에서 요청 id 1 부터 쓰게 한다.",
+      "expectedResult": "응답과 이벤트가 각자에게만 간다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-SPACE"
+      ],
+      "feIds": [
+        "NFR-ENV-TOOL-ABI.1"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/conformance.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-010",
+      "title": "기존 브라우저 앱 도구는 그대로 돈다",
+      "method": "skill_browser_navigate 로 임베디드 웹뷰를 연다.",
+      "expectedResult": "기존 동작이 그대로이고 새 도구와 이름·권한이 겹치지 않는다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-SCRIPT"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.13"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/shell/e2e/env-tool-browser-host.spec.ts",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-011",
+      "title": "묶음 실행은 승인이 먼저다",
+      "method": "승인 없이 env_browser_script 를 호출한다.",
+      "expectedResult": "감독자 핸드셰이크에서 거부되고 관측 도구는 영향이 없다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-SCRIPT"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.14"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/ego-host/test/handshake.test.mjs",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "구현 슬라이스의 자동 테스트가 같은 조건을 덮는다. 기기 회차에서는 실제 셸 경로로 한 번 더 확인한다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    },
+    {
+      "id": "BROWSER-HOST-012",
+      "title": "셸에서 도구 호출이 실 브라우저 증거를 돌려준다",
+      "method": "실제 셸에서 채팅에 로컬 시험 페이지 열기를 요청한다. 결과 카드의 캡처 파일 경로를 열어 본다.",
+      "expectedResult": "결과 카드에 스냅샷 참조·캡처 경로·주소 개정이 있고 캡처 파일이 PNG 로 존재하며 화면에 브라우저 창이 뜨지 않는다.",
+      "deviceIds": [
+        "linux3090",
+        "windows4060"
+      ],
+      "ucIds": [
+        "UC-ENV-TOOL-BROWSE"
+      ],
+      "feIds": [
+        "FR-ENV-TOOL.2a"
+      ],
+      "requirementIds": [],
+      "scenarioIds": [],
+      "testIds": [],
+      "sourceRef": "docs/progress/issue-582-ego-browser-host.md; packages/shell/e2e-tauri/specs/env-tool-browser-host-fullstack.spec.ts",
+      "mappingStatus": "MAPPED",
+      "status": "NOT_RUN",
+      "automationGap": "e2e-tauri 풀스택 스펙이 같은 조건을 덮는다(linux 통과 2026-09-10). 기기 회차에서는 사람이 카드와 파일을 직접 본다.",
+      "execution": {
+        "kind": "manual",
+        "ref": null,
+        "status": "NOT_RUN",
+        "platforms": [
+          "Linux",
+          "Windows"
+        ],
+        "executedAt": null,
+        "result": "NOT_RUN",
+        "failureReason": null
+      }
+    }
+  ]
+}

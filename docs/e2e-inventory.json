@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 106,
+	"total": 108,
 	"summary": {
 		"credentialed_live": 78,
-		"deterministic_ci": 20,
+		"deterministic_ci": 22,
 		"native_local": 8
 	},
 	"specs": [
@@ -1206,6 +1206,22 @@
 			"conf": [],
 			"env": [],
 			"tier": "credentialed_live"
+		},
+		{
+			"spec": "env-tool-browser-host-fullstack.spec.ts",
+			"conf": [],
+			"env": [
+				"NAIA_E2E_ADK_PATH"
+			],
+			"tier": "deterministic_ci"
+		},
+		{
+			"spec": "env-tool-browser-host-lifecycle.spec.ts",
+			"conf": [],
+			"env": [
+				"NAIA_E2E_ADK_PATH"
+			],
+			"tier": "deterministic_ci"
 		},
 		{
 			"spec": "env-tool-browser-native.spec.ts",

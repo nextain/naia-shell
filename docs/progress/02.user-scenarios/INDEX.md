@@ -42,3 +42,4 @@
 | UC-022 | BGM·Radio DJ 동의 | 사용자가 재생하거나 LLM이 명시적 radio_dj play tool을 호출한 경우에만 음악/DJ가 시작되고, 같은 버튼으로 일시정지하며 Proactive 설정은 이를 시작하지 않는다. | REQ-018 | Approved | TEST-S-021 |
 | UC-023 | 온보딩·표시·Windows Gateway | 사용자는 일반 이름과 실제 video-frame 썸네일로 온보딩하고 좌측 chat layout과 compact Proactive icon을 사용한다. Windows Discord는 종료·재연결 후 orphan child 없이 복구된다. | REQ-019 | Approved | TEST-S-022 |
 | UC-024 | 웹 구매 후 단일 앱 설치 | 사용자가 AppBar의 앱스토어에서 웹 목록과 상세를 보고 구매한다. 웹의 설치 링크가 Shell을 열면 요청한 앱 하나만 확인창에 표시되고, 사용자가 설치를 승인하면 Shell이 서버 권리와 서명·해시를 재검증해 설치한다. | REQ-020 | In-progress | TEST-S-023 |
+| UC-025 | 에이전트 브라우저 호스트 | Naia 가 사용자 화면을 건드리지 않고 자기 격리 공간에서 웹 작업을 하고, 사람이 필요하면 멈춰 보고하며, 셸이 죽어도 브라우저가 남지 않는다. 상세 시나리오 UC-ENV-TOOL-SPACE·RECOVER·SCRIPT (`docs/user-scenarios.md`). | REQ-021 | Approved | TEST-S-026 |

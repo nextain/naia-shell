@@ -62,6 +62,7 @@ import {
 	noteEnvironmentToolAck,
 	refreshEnvironment,
 } from "./lib/environment-skill";
+import { BROWSER_HOST_APP_ID, browserHostTools } from "./lib/browser-host-skill";
 import { setLocale, t } from "./lib/i18n";
 import { startIframeBridge } from "./lib/iframe-bridge";
 import { Logger } from "./lib/logger";
@@ -465,6 +466,15 @@ export function App() {
 			// 첫 관측을 미리 받아 둔다 — 사용자의 첫 물음에 되묻지 않기 위해서다 (FR-ENV-LIVE.1).
 			// Herdr 이 안 돌고 있으면 조용히 아무것도 모르는 상태로 남는다.
 			refreshEnvironment().catch(() => {});
+		}
+		// #582 S6a (FR-ENV-TOOL.13): 에이전트 브라우저 호스트도 상시 표면이다. 목록이 비면
+		// 기능 플래그가 꺼진 OS 라는 뜻이고, 그때는 **등록하지 않는다** — 뇌가 보지 못한다.
+		// 판정·조립·실행은 전부 lib/browser-host-skill.ts 에 있다.
+		const browserHost = browserHostTools();
+		if (browserHost.length > 0) {
+			sendAppSkills(BROWSER_HOST_APP_ID, [...browserHost]).catch((err) =>
+				Logger.warn("App", "startup browser host skills failed", { error: String(err) }),
+			);
 		}
 		const all = appRegistry.list();
 		for (const descriptor of all) {

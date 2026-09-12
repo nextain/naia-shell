@@ -165,6 +165,12 @@ export interface AppConfig {
 	 * 기본이 "auto" 인 이유: 목록을 늘 실으면 요청마다 토큰이 붙고 터미널 이름이 늘 뇌로 간다.
 	 */
 	environmentAwareness?: EnvironmentAwareness;
+	/**
+	 * #582 (FR-ENV-TOOL.13, 계약 4.9) — 에이전트 브라우저 호스트(env_browser_*)를 켜는가.
+	 * 값이 없으면 OS 별 기본값이 이긴다: 실측을 통과한 리눅스는 켬, 윈도우·macOS 는 끔.
+	 * 꺼져 있으면 도구를 **등록하지 않는다** — 등록만 하고 안에서 거절하면 요청마다 토큰만 먹는다.
+	 */
+	egoHostEnabled?: boolean;
 	customVrms?: string[];
 	customBgs?: string[];
 	sttProvider?: SttProviderId;

@@ -1,0 +1,459 @@
+// #582 S2a — CDP 다중화 채널 (계약 4.2·4.3.1).
+//
+// 참조 구현: citrolabs/ego-lite PR #228 (커밋 4f99b181960a) 의
+// `package/ego-windows-host/src/cdp-connection.ts` 에서 pending 맵·타이머·id 대조 골격을
+// 가져왔다(MIT, THIRD_PARTY_NOTICES.md). **가져오지 않은 것이 더 중요하다**: #228 은
+// 에이전트 연결 하나를 원문 그대로 통과시킨다(`sendRaw`). 우리는 그 설계를 쓰지 않는다.
+// 연결마다 독립 id 공간을 두고 Chromium 쪽 id 만 재작성하며, 라우팅·필터·정책 훅을 통과한
+// 것만 위로 올린다.
+//
+// 불변식 넷.
+//  (1) 런타임 경계에서 id 를 보존한다. Chromium 쪽 id 만 {connection, clientId} ↔ upstreamId.
+//  (2) **sessionId 는 재작성하지 않는다.** 라우팅 키는 최상위 sessionId 뿐이고, 중첩
+//      params.sessionId 는 Target.attachedToTarget·detachedFromTarget 에서만 세션이다
+//      (Page.screencastFrame 의 것은 Ack 용 프레임 토큰이지 세션이 아니다).
+//  (3) 거부는 **원래 id 를 가진 CDP 오류 응답**이다. id 없는 통로는 연결 전체가 죽었을 때만.
+//  (4) Chromium 에서 이미 받은 응답·이벤트는 단일 FIFO 순서를 유지한다.
+import { CODES } from "../errors.mjs";
+import { createLedger } from "./ledger.mjs";
+
+/** 감독자 쪽 요청 상한. 런타임의 15초(RESPONSE_TIMEOUT_MS)보다 반드시 먼저 만료해야 한다. */
+export const SUPERVISOR_REQUEST_DEADLINE_MS = 13_000;
+
+/** 런타임이 가진 상한. 우리 상한이 이보다 작다는 사실을 테스트가 읽는다. */
+export const RUNTIME_RESPONSE_TIMEOUT_MS = 15_000;
+
+/** 중첩 params.sessionId 를 세션으로 해석하는 메서드. 이 둘 말고는 세션이 아니다. */
+export const NESTED_SESSION_METHODS = new Set([
+  "Target.attachedToTarget",
+  "Target.detachedFromTarget",
+]);
+
+/** 기본 정책. S2d 의 `mediator-policy` 가 이 자리에 들어온다. */
+function allowAll() {
+  return { allow: true };
+}
+
+/**
+ * @param {object} options
+ * @param {{send(payload:string):void, onMessage(handler:(raw:string)=>void):void}} options.backend
+ *   Chromium(또는 가짜 CDP 백엔드) 연결. S2b 가 실제 파이프 연결로 바꾼다.
+ * @param {(method:string, params:object, sessionId:string|undefined, connection:object)=>{allow:boolean,message?:string,code?:string,params?:object}} [options.route]
+ *   장부·정책 훅. S2c(장부)·S2d(행렬)가 여기에 끼워 들어온다. `params` 를 돌려주면 그것이
+ *   Chromium 으로 나가는 인자다(컨텍스트 강제 재작성).
+ * @param {((entry:object, data:object)=>object)|null} [options.filterResponse]
+ *   응답 정형 훅(S2d). 연결이 볼 수 없는 것을 결과에서 걷어낸다. 감독자 자신의 요청에는 안 건다.
+ * @param {ReturnType<typeof createLedger>} [options.ledger]
+ *   작업 공간·타깃 lease·세션 장부(S2c). 세션 소유·묘비·attach 배타 arbitration 이 여기 있다.
+ *   기본값은 저장 없는 인메모리 장부다(감독자는 `<ADK>` 를 붙인 장부를 넣는다).
+ */
+export function createCdpMux({
+  backend,
+  route = allowAll,
+  filterResponse = null,
+  ledger = createLedger(),
+  /**
+   * 작업 장부 이음매(S2e). 요청이 끝날 때(`settled`)와 이벤트가 지날 때(`event`) 불린다.
+   * `event` 가 거짓을 돌려주면 그 이벤트는 **아무에게도 가지 않는다** — 취소 장벽 뒤에
+   * 그 작업에 결속된 이벤트를 0 으로 만드는 자리가 여기다(계약 4.7).
+   */
+  observer = null,
+  requestDeadlineMs = SUPERVISOR_REQUEST_DEADLINE_MS,
+} = {}) {
+  let nextUpstreamId = 1;
+  /** upstreamId -> {connection, clientId, method, timer} */
+  const pending = new Map();
+  const dropped = [];
+
+  /**
+   * 거부 하나. **문구 끝에 안정 코드를 넣는다.**
+   *
+   * 벤더 런타임은 CDP 오류에서 `error.message` 만 읽고 `error.code` 는 버린다
+   * (`browser-runtime.ts:245-248`). `{error, error_code}` 로 코드가 살아 오는 것은 `ego` 메서드
+   * 쪽뿐이다(ABI 6). 그래서 CDP 통로로 거부하면 에이전트에게 **안정 코드가 아예 남지 않는다**.
+   * 문구에 넣어야 사람도 에이전트도 어떤 규칙에 걸렸는지 안다. `error.code` 는 그대로 둔다 —
+   * 우리 클라이언트는 그쪽을 읽는다.
+   */
+  function errorResponse(connection, clientId, message, code) {
+    const text = code && !String(message).includes(code) ? `${message} [${code}]` : message;
+    connection.deliverCdp(JSON.stringify({ id: clientId, error: { message: text, code } }));
+  }
+
+  /**
+   * 연결이 보낸 원문 페이로드 하나. 동기적으로 판정하고 동기적으로 백엔드에 넣는다.
+   * `meta.operationId` 는 우리 확장이다(벤더 런타임은 절대 붙이지 않는다). 없으면 정책이
+   * 연결의 뿌리 작업으로 읽는다.
+   */
+  function fromClient(connection, payload, meta = null) {
+    let data;
+    try {
+      data = JSON.parse(payload);
+    } catch {
+      // id 를 못 읽으면 그 요청만 거부할 방법이 없다. 연결 전체가 죽은 경우로 처리한다.
+      connection.deliverCdpFatal("CDP 페이로드가 JSON 이 아니다", CODES.FRAME_MALFORMED);
+      return;
+    }
+    const clientId = data.id;
+    if (typeof clientId !== "number") {
+      connection.deliverCdpFatal("CDP 요청에 숫자 id 가 없다", CODES.FRAME_MALFORMED);
+      return;
+    }
+    const method = String(data.method || "");
+    const sessionId = typeof data.sessionId === "string" ? data.sessionId : undefined;
+
+    if (sessionId && ledger.isTombstoned(sessionId)) {
+      errorResponse(connection, clientId, `Session not found: ${sessionId}`, CODES.METHOD_DENIED);
+      return;
+    }
+    if (sessionId && ledger.sessionOwner(sessionId) !== connection) {
+      // 남의 세션. 런타임이 재접속을 시도하도록 세션 상실 문구를 쓴다(ABI 1).
+      errorResponse(connection, clientId, `Session not found: ${sessionId}`, CODES.METHOD_DENIED);
+      return;
+    }
+
+    let verdict;
+    try {
+      verdict = route(method, data.params ?? {}, sessionId, connection, meta) ?? { allow: true };
+    } catch (error) {
+      verdict = { allow: false, message: `정책 판정 실패: ${error.message}` };
+    }
+    if (!verdict.allow) {
+      errorResponse(
+        connection,
+        clientId,
+        verdict.message || `메서드가 거부됐다: ${method}`,
+        verdict.code || CODES.METHOD_DENIED,
+      );
+      return;
+    }
+
+    // 인자 재작성(컨텍스트 강제)은 정책이 돌려준 것만 쓴다. 나머지는 원문 그대로다.
+    const outgoingParams = verdict.params ?? data.params ?? {};
+
+    // 예약: attach 응답이 오기 전에 도착한 이벤트도 주인이 있어야 한다(4.3.1).
+    // 배타 arbitration(EGO_TARGET_BUSY)·세대는 장부가 **동기적으로** 판정한다.
+    let generation = null;
+    if (method === "Target.attachToTarget") {
+      const targetId = outgoingParams?.targetId;
+      if (typeof targetId === "string") {
+        const reservation = ledger.reserveAttach(connection, targetId);
+        if (!reservation.ok) {
+          errorResponse(connection, clientId, reservation.message, reservation.code);
+          return;
+        }
+        generation = reservation.generation;
+      }
+    }
+
+    const upstreamId = nextUpstreamId++;
+    const timer = setTimeout(() => {
+      const entry = pending.get(upstreamId);
+      pending.delete(upstreamId);
+      if (entry?.generation !== null && entry?.method === "Target.attachToTarget") {
+        ledger.failAttach({
+          connection,
+          targetId: entry.params?.targetId,
+          generation: entry.generation,
+        });
+      }
+      if (entry) observer?.settled?.(entry, null);
+      errorResponse(
+        connection,
+        clientId,
+        `감독자 상한 ${requestDeadlineMs}ms 를 넘겼다: ${method}`,
+        CODES.DEADLINE,
+      );
+    }, requestDeadlineMs);
+    timer.unref?.();
+    const entry = {
+      connection,
+      clientId,
+      method,
+      params: outgoingParams,
+      sessionId,
+      operationId: verdict.operationId ?? null,
+      tookSlot: verdict.tookSlot === true,
+      generation,
+      timer,
+    };
+    pending.set(upstreamId, entry);
+
+    // sessionId 는 그대로 둔다. 재작성하는 것은 id 하나뿐이다.
+    const rewritten = { ...data, id: upstreamId, params: outgoingParams };
+    try {
+      backend.send(JSON.stringify(rewritten));
+    } catch (error) {
+      clearTimeout(timer);
+      pending.delete(upstreamId);
+      observer?.settled?.(entry, null);
+      if (generation !== null) {
+        ledger.failAttach({ connection, targetId: outgoingParams?.targetId, generation });
+      }
+      errorResponse(connection, clientId, `백엔드 송신 실패: ${error.message}`, CODES.DISCONNECTED);
+    }
+  }
+
+  /**
+   * 응답에서 얻은 세션·타깃 소유를 장부에 남긴다.
+   * 예약이 철회된 뒤 도착한 늦은 attach 응답은 **감독자가 내부적으로 detach** 한다(4.3.1).
+   * 그러지 않으면 주인 없는 세션이 브라우저에 남는다.
+   *
+   * @returns {boolean} 이 응답을 연결에 전달해도 되는가
+   */
+  function recordFromResponse(entry, data) {
+    const result = data.result || {};
+    if (entry.method === "Target.attachToTarget" && typeof result.sessionId === "string") {
+      const settled = ledger.settleAttach({
+        connection: entry.connection,
+        targetId: entry.params?.targetId,
+        generation: entry.generation,
+        sessionId: result.sessionId,
+      });
+      if (!settled.ok) {
+        ledger.rejectChildSession(result.sessionId, settled.reason);
+        return false;
+      }
+    }
+    if (entry.method === "Target.attachToTarget" && data.error) {
+      ledger.failAttach({
+        connection: entry.connection,
+        targetId: entry.params?.targetId,
+        generation: entry.generation,
+      });
+    }
+    if (entry.method === "Target.activateTarget" && !data.error) {
+      // 헤드리스에는 "앞에 있는 창"이 없다. 활성 탭의 정본은 장부이므로 여기서 적는다.
+      ledger.setActiveTarget?.(entry.params?.targetId);
+    }
+    if (entry.method === "Target.closeTarget" && !data.error) {
+      // **응답으로 안다.** `Target.targetDestroyed` 이벤트는 `Target.setDiscoverTargets` 를 켜야
+      // 오는데 그 메서드는 정책표 밖(기본 거부)이라 우리에게는 영영 오지 않는다. 그래서 닫힘은
+      // 응답에서 장부에 반영한다 — 그러지 않으면 닫은 탭이 `listTabs` 에 유령으로 남고
+      // 벤더 `closeTab` 이 사라지기를 영원히 기다린다(헬퍼 행렬 첫 측정에서 실제로 걸렸다).
+      ledger.forgetTarget?.(entry.params?.targetId);
+    }
+    if (entry.method === "Target.createTarget" && typeof result.targetId === "string") {
+      // 만든 탭이 장부의 탭 목록에도 들어가야 `listTabs` 가 그것을 본다(S2e, listTabs 비대칭).
+      ledger.claimTarget(entry.connection, result.targetId, { url: entry.params?.url ?? "" });
+    }
+    return true;
+  }
+
+  /** 이벤트의 주인. 못 찾으면 아무에게도 주지 않는다(fail-closed). */
+  function ownerOfEvent(data) {
+    const top = typeof data.sessionId === "string" ? data.sessionId : null;
+    if (top) return ledger.sessionOwner(top);
+    if (NESTED_SESSION_METHODS.has(data.method)) {
+      const nested = typeof data.params?.sessionId === "string" ? data.params.sessionId : null;
+      const owner = nested ? ledger.sessionOwner(nested) : null;
+      if (owner) return owner;
+    }
+    const targetId = data.params?.targetId ?? data.params?.targetInfo?.targetId ?? null;
+    if (typeof targetId === "string") return ledger.targetOwner(targetId);
+    return null;
+  }
+
+  /**
+   * 이벤트가 세션 장부를 바꾸는 경우. 중첩 sessionId 는 이 두 메서드에서만 세션이다.
+   *
+   * `Target.attachedToTarget` 은 우리가 건 attach 의 짝일 수도, **예기치 않은 자식**일 수도
+   * 있다. 자식 auto-attach 는 쓰지 않으므로 예약도 소유도 없는 자식은 fail-closed 로 감독자가
+   * 끊는다(4.3.1). `waitingForDebugger:true` 로 멈춘 타깃은 장부에 든 뒤 감독자 전용
+   * `Runtime.runIfWaitingForDebugger` 로 푼다 — 그 메서드는 연결에 노출되지 않는다.
+   *
+   * @returns {object|null} 이 이벤트를 받을 연결. null 이면 아무에게도 주지 않는다.
+   */
+  function applyEventToLedger(data) {
+    if (data.method === "Target.attachedToTarget") {
+      const child = data.params?.sessionId;
+      const targetId = data.params?.targetInfo?.targetId ?? data.params?.targetId ?? null;
+      if (typeof child !== "string") return null;
+      const resolved = ledger.resolveAttachedEvent({ targetId, sessionId: child });
+      if (!resolved.ok) {
+        ledger.rejectChildSession(child, resolved.reason);
+        return null;
+      }
+      // 감독자 자신이 붙은 세션이다. 아무에게도 주지 않지만 **끊지도 않는다**.
+      if (resolved.host) return null;
+      if (data.params?.waitingForDebugger === true) ledger.resumeIfWaiting(child);
+      return resolved.connection;
+    }
+    if (data.method === "Target.detachedFromTarget") {
+      const gone = data.params?.sessionId ?? data.sessionId;
+      const owner = ownerOfEvent(data);
+      if (typeof gone === "string") ledger.dropSession(gone);
+      return owner;
+    }
+    if (data.method === "Target.targetDestroyed") {
+      const owner = ownerOfEvent(data);
+      const targetId = data.params?.targetId;
+      // 탭 목록에서도 뺀다. 목록에 유령이 남으면 벤더 `closeTab` 이 영원히 기다린다.
+      if (typeof targetId === "string") ledger.forgetTarget(targetId);
+      return owner;
+    }
+    return ownerOfEvent(data);
+  }
+
+  backend.onMessage((raw) => {
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (Object.hasOwn(data, "id")) {
+      const entry = pending.get(data.id);
+      if (!entry) {
+        // 대기 항목이 없는 응답 = 연결이 끊겼거나 상한이 이미 원래 id 오류를 돌려준 뒤다.
+        // 보통은 조용히 버리면 되지만, **세션을 만들어 준 응답**은 버리면 안 된다. 주인 없는
+        // 세션이 브라우저에 남아 이벤트를 계속 만든다. 감독자가 내부적으로 detach 한다(4.3.1).
+        const orphanSession = data.result?.sessionId;
+        if (typeof orphanSession === "string" && !ledger.sessionOwner(orphanSession)) {
+          ledger.rejectChildSession(orphanSession, "orphaned-attach-response");
+        }
+        return;
+      }
+      pending.delete(data.id);
+      clearTimeout(entry.timer);
+      // 작업 장부는 응답에서 objectId·세션을 적고 배타 슬롯을 놓는다(감독자 자신의 요청은 제외).
+      if (!entry.host) observer?.settled?.(entry, data);
+      // 감독자 자신의 요청(hostRequest)은 장부의 소유를 만들지 않는다. 만들면 감독자가
+      // 만든 탭의 주인이 "감독자"가 되어, 정작 그 탭을 쓰려는 연결이 EGO_TARGET_BUSY 를 받는다.
+      if (!entry.host && !recordFromResponse(entry, data)) return;
+      // 결과 필터. `Target.getTargets` 처럼 브라우저 전체를 보여 주는 응답을 연결 소유로 좁힌다.
+      const shaped = entry.host || !filterResponse ? data : filterResponse(entry, data);
+      entry.connection.deliverCdp(JSON.stringify({ ...shaped, id: entry.clientId }));
+      return;
+    }
+    const owner = applyEventToLedger(data);
+    // 작업 결속은 주인 판정과 별개다 — 주인이 없어 버릴 이벤트에서도 자원 등록은 필요 없지만,
+    // 주인이 있는 이벤트는 취소 장벽을 지나야 한다.
+    if (observer?.event && observer.event(data) === false) {
+      dropped.push(data.method);
+      return;
+    }
+    if (!owner) {
+      dropped.push(data.method);
+      return;
+    }
+    owner.deliverCdp(raw);
+  });
+
+  return {
+    fromClient,
+    /** 감독자 자신의 CDP 요청. 연결 id 공간과 섞이지 않고 정책도 통과하지 않는다. */
+    hostRequest(method, params = {}, sessionId = undefined) {
+      const id = nextUpstreamId++;
+      // 감독자 자신의 attach 는 짝 이벤트가 오기 **전에** 표시해야 한다(이벤트가 응답보다
+      // 먼저 오는 순서가 실제로 있다, 4.3.1). 그러지 않으면 우리 세션을 우리가 끊는다.
+      //
+      // 표시는 **이 요청 하나에 결박한 예약**이다(S7 P1-2). 요청 id 가 correlation 이므로
+      // 응답·이벤트 어느 쪽이 먼저 와도 정확히 한 번 소비되고, 상한·오류·송신 실패에서는
+      // 아래 세 자리가 예약을 걷는다. 걷힌 뒤 도착한 attach 는 예기치 않은 자식으로 detach 된다.
+      const attachCorrelation = method === "Target.attachToTarget" ? id : null;
+      if (attachCorrelation !== null) ledger.beginHostAttach?.(params?.targetId, attachCorrelation);
+      if (method === "Target.detachFromTarget") ledger.endHostSession?.(params?.sessionId);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
+          reject(new Error(`감독자 내부 CDP 상한 초과: ${method}`));
+        }, requestDeadlineMs);
+        timer.unref?.();
+        pending.set(id, {
+          host: true,
+          connection: {
+            deliverCdp(raw) {
+              const data = JSON.parse(raw);
+              if (data.error) {
+                if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
+                reject(new Error(data.error.message || "CDP 오류"));
+                return;
+              }
+              if (typeof data.result?.sessionId === "string") {
+                if (attachCorrelation !== null) {
+                  const settled = ledger.settleHostAttach?.({
+                    correlationId: attachCorrelation,
+                    sessionId: data.result.sessionId,
+                  });
+                  if (settled && settled.ok === false) {
+                    // 예약이 이미 걷혔거나 짝이 아니다. 주인 없는 세션을 남기지 않는다.
+                    ledger.rejectChildSession?.(data.result.sessionId, `host-attach-${settled.reason}`);
+                    reject(new Error(`감독자 attach 예약을 찾지 못했다(${settled.reason}): ${method}`));
+                    return;
+                  }
+                } else {
+                  ledger.noteHostSession?.(data.result.sessionId);
+                }
+              }
+              resolve(data.result ?? {});
+            },
+            deliverCdpFatal(message) {
+              if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
+              reject(new Error(message));
+            },
+          },
+          clientId: id,
+          method,
+          params,
+          timer,
+        });
+        try {
+          backend.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+        } catch (error) {
+          clearTimeout(timer);
+          pending.delete(id);
+          if (attachCorrelation !== null) ledger.cancelHostAttach?.(attachCorrelation);
+          reject(error);
+        }
+      });
+    },
+    /**
+     * 한 작업의 in-flight 요청을 **원래 id 오류**로 끊는다(계약 4.7 취소, deadline 만료).
+     * id 없는 통로(`onSendCDPMessageError`)를 쓰지 않는 이유는 ABI 2 그대로다 — 그 통로는
+     * 그 연결의 pending 전부를 같이 죽인다.
+     */
+    rejectOperation(operationId, code, message) {
+      const stopped = [];
+      for (const [upstreamId, entry] of [...pending]) {
+        if (entry.host || entry.operationId !== operationId) continue;
+        clearTimeout(entry.timer);
+        pending.delete(upstreamId);
+        stopped.push(entry.method);
+        errorResponse(entry.connection, entry.clientId, message, code);
+      }
+      return stopped;
+    },
+    /** 연결이 사라졌다. 그 연결의 예약·세션만 걷어낸다. 다른 연결은 건드리지 않는다. */
+    detach(connection) {
+      for (const [upstreamId, entry] of [...pending]) {
+        if (entry.connection !== connection) continue;
+        clearTimeout(entry.timer);
+        pending.delete(upstreamId);
+      }
+      // 예약 중이던 attach 는 여기서 철회된다. 그 뒤 도착하는 늦은 응답은
+      // recordFromResponse 가 감독자 detach 로 처리한다(4.3.1).
+      return ledger.detachConnection(connection);
+    },
+    ledger,
+    claimTarget(connection, targetId) {
+      ledger.claimTarget(connection, targetId);
+    },
+    releaseTarget(targetId) {
+      ledger.releaseTarget(targetId);
+    },
+    /** 시험용 관측 창. 판정에 쓰지 않는다. */
+    inspect() {
+      const led = ledger.inspect();
+      return {
+        pending: pending.size,
+        sessions: led.sessions,
+        targets: led.leases.map((lease) => lease.targetId),
+        tombstones: led.tombstones,
+        droppedEvents: [...dropped],
+        leases: led.leases,
+        rejectedChildren: led.rejectedChildren,
+      };
+    },
+  };
+}

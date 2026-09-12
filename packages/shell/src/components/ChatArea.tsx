@@ -63,6 +63,11 @@ import {
 	saveConfig,
 } from "../lib/config";
 import {
+	executeBrowserHostSkill,
+	isBrowserHostTool,
+	liveBrowserHostDeps,
+} from "../lib/browser-host-skill";
+import {
 	ENVIRONMENT_APP_ID,
 	SKILL_ENVIRONMENT,
 	environmentClearNeeded,
@@ -150,6 +155,7 @@ import {
 	type VoiceSession,
 	attachAppContextBridge,
 	createVoiceSession,
+	resolveLiveProvider,
 	rmsFromBase64Pcm,
 } from "../lib/voice/index";
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
@@ -2121,6 +2127,46 @@ export function ChatArea({
 		// #502 실배선 (FR-ENV-LIVE.3~5): 작업 표면은 화면 앱이 아니라 상시 환경이라
 		// appRegistry 소유자 탐색으로 못 찾는다 — 전용 분기.
 		// 터미널 입력 권한은 사용자가 켠 경우에만 참이다(기본 꺼짐, FR-ENV-LIVE.4).
+		// #582 S6a (FR-ENV-TOOL.13·14): 브라우저 호스트도 화면 앱이 아니라 상시 표면이라
+		// appRegistry 소유자 탐색으로 못 찾는다 — 전용 분기. 판정·등급·승인은 전부
+		// EnvironmentToolService 가 하고, 여기서는 결과와 거부 사유를 그대로 실어 나른다.
+		if (isBrowserHostTool(req.toolName)) {
+			useChatStore
+				.getState()
+				.addStreamingToolUse(req.toolCallId, req.toolName, req.args ?? {});
+			executeBrowserHostSkill(
+				req.toolName,
+				req.args ?? {},
+				liveBrowserHostDeps(req.toolCallId),
+			)
+				.then((result) => {
+					useChatStore
+						.getState()
+						.updateStreamingToolResult(req.toolCallId, result.ok, result.text);
+					// 거절·오류를 성공으로 바꾸지 않는다. 판정은 실행기가 낸다.
+					return sendAppToolResult(
+						req.requestId,
+						req.toolCallId,
+						result.text,
+						result.ok,
+						req.activityId,
+					);
+				})
+				.catch((err) => {
+					Logger.warn("ChatArea", "browser host skill error", { error: String(err) });
+					useChatStore
+						.getState()
+						.updateStreamingToolResult(req.toolCallId, false, String(err));
+					return sendAppToolResult(
+						req.requestId,
+						req.toolCallId,
+						String(err),
+						false,
+						req.activityId,
+					);
+				});
+			return;
+		}
 		if (req.toolName === SKILL_ENVIRONMENT.name) {
 			executeEnvironmentSkill(
 				req.args,
@@ -3156,18 +3202,12 @@ export function ChatArea({
 			// Realtime (/v1/realtime via gateway). Gemini live (gemini-*-live)
 			// routes to Gemini Live (/v1/live) under "naia". Both are isOmni,
 			// so branch on the model id prefix first.
-			const liveProvider =
-				isOmni && config.model?.startsWith("naia-")
-					? ("naia-omni" as const)
-					: isOmni && config.provider === "vllm"
-						? ("naia-omni" as const)
-						: config.provider === "vllm"
-							? ("vllm-omni" as const)
-							: config.provider === "openai"
-								? ("openai-realtime" as const)
-								: naiaKey
-									? ("naia" as const)
-									: ("gemini-live" as const);
+			const liveProvider = resolveLiveProvider({
+				isOmni,
+				provider: config.provider,
+				model: config.model,
+				hasNaiaKey: !!naiaKey,
+			});
 
 			Logger.info("ChatArea", "Voice config", {
 				provider: config.provider,
@@ -3193,6 +3233,15 @@ export function ChatArea({
 				useChatStore.getState().addMessage({
 					role: "assistant",
 					content: "Gemini Live를 사용하려면 Google API Key를 입력하세요.",
+				});
+				setVoiceStatus({ phase: "idle" });
+				return;
+			}
+			if (liveProvider === "azure-voice-live" && !naiaKey) {
+				Logger.warn("ChatArea", "Azure Voice Live requires Naia key");
+				useChatStore.getState().addMessage({
+					role: "assistant",
+					content: t("chat.voiceNeedLabKey"),
 				});
 				setVoiceStatus({ phase: "idle" });
 				return;
@@ -3579,6 +3628,19 @@ export function ChatArea({
 					apiKey: openaiKey!,
 					model: config.model,
 					voice: selectedVoice,
+					locale: getLocale(),
+					systemInstruction: voiceSystemPrompt,
+					tools: voiceTools.length ? voiceTools : undefined,
+				});
+			} else if (liveProvider === "azure-voice-live") {
+				const azureVoice =
+					selectedVoice === "Kore" || !selectedVoice ? "sunhi" : selectedVoice;
+				await session.connect({
+					provider: "azure-voice-live",
+					gatewayUrl: LAB_GATEWAY_URL,
+					naiaKey: naiaKey!,
+					model: config.model ?? "azure-realtime",
+					voice: azureVoice,
 					locale: getLocale(),
 					systemInstruction: voiceSystemPrompt,
 					tools: voiceTools.length ? voiceTools : undefined,

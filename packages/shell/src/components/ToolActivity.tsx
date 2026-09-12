@@ -7,6 +7,7 @@ import {
 	parseKnowledgeResult,
 } from "../lib/knowledge-result";
 import type { ToolCall } from "../lib/types";
+import { BrowserHostResult, browserHostCardFor } from "./BrowserHostResult";
 import { KnowledgeToolResult } from "./KnowledgeToolResult";
 
 const KnowledgeGraphView = lazy(() =>
@@ -51,6 +52,25 @@ export function ToolActivity({ tool }: Props) {
 
 	const label = getToolLabel(tool.toolName);
 	const icon = STATUS_ICON[tool.status];
+
+	// #582 S6a — 브라우저 호스트 결과는 증거 카드로 그린다. 백그라운드 브라우저는 화면이 없어
+	// 사용자가 직접 볼 수 없고, 증거(스냅샷·캡처·주소 개정)가 유일한 확인 수단이다.
+	// 파싱 실패 시 기본 렌더로 폴백 — 못 읽은 것을 빈 증거로 그리지 않는다.
+	const browserHost = browserHostCardFor(tool.toolName, tool.output);
+	if (browserHost) {
+		return (
+			<div
+				className={`tool-activity tool-${tool.status} tool-browser-host`}
+				data-tool-name={tool.toolName}
+			>
+				<div className="tool-activity-header tool-activity-header-static">
+					<span className="tool-status-icon">{icon}</span>
+					<span className="tool-name">{browserHost.tool}</span>
+				</div>
+				<BrowserHostResult card={browserHost} status={tool.status} />
+			</div>
+		);
+	}
 
 	// 지식 도구(skill_knowledge_ask/search) = 답변 + 출처 칩 렌더(K2). 파싱 실패 시 기본 렌더로 폴백.
 	if (isKnowledgeTool(tool.toolName) && tool.status === "success") {

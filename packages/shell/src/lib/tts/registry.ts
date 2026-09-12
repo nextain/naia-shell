@@ -11,7 +11,7 @@ export function getTtsProviderMeta(id: string): TtsProviderMeta | undefined {
 }
 
 export function listTtsProviderMetas(): TtsProviderMeta[] {
-	const providerOrder = ["browser", "naia-local-voice"];
+	const providerOrder = ["edge", "naia-local-voice", "nextain"];
 	return Array.from(providers.values()).sort((left, right) => {
 		const leftPriority = providerOrder.indexOf(left.id);
 		const rightPriority = providerOrder.indexOf(right.id);
@@ -134,11 +134,22 @@ registerTtsProviderMeta({
 	id: "nextain",
 	name: "Naia Cloud TTS",
 	description:
-		"Cloud TTS without API key. Currently Google Chirp 3 HD + Neural2.",
+		"Azure Neural HD (SunHi / Hyunsu). Credits = API cost × 1.1 via the gateway.",
 	requiresApiKey: false,
 	requiresNaiaKey: true,
-	pricing: "Naia credit",
-	voices: GOOGLE_TTS_VOICES,
+	pricing: "Naia credit (API × 1.1)",
+	voices: [
+		{
+			id: "ko-KR-SunHi:DragonHDLatestNeural",
+			label: "SunHi HD (여성)",
+			gender: "female",
+		},
+		{
+			id: "ko-KR-Hyunsu:DragonHDLatestNeural",
+			label: "Hyunsu HD (남성)",
+			gender: "male",
+		},
+	],
 });
 
 registerTtsProviderMeta({

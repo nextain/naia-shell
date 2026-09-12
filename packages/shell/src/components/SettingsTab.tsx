@@ -6270,6 +6270,7 @@ export function SettingsTab() {
 							<input
 								type="password"
 								disabled
+								data-testid="memory-backup-password"
 								value={backupPassword}
 								onChange={(e) => setBackupPassword(e.target.value)}
 								placeholder={t("settings.memoryBackupPassword")}
@@ -6278,6 +6279,7 @@ export function SettingsTab() {
 								<button
 									type="button"
 									disabled
+									data-testid="memory-backup-export"
 									onClick={async () => {
 										setBackupStatus("exporting");
 										setBackupError("");

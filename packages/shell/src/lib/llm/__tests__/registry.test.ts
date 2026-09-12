@@ -97,6 +97,20 @@ describe("registry — Naia (nextain) provider models", () => {
 		expect(isOmniModel("nextain", "gemini-2.5-flash-live")).toBe(true);
 	});
 
+	it("azure-realtime is omni and hides pipeline STT/TTS", () => {
+		const model = getLlmModel("nextain", "azure-realtime");
+		expect(model?.capabilities).toEqual(["llm", "omni"]);
+		expect(isOmniModel("nextain", "azure-realtime")).toBe(true);
+		expect(model?.voices?.map((voice) => voice.id)).toEqual(["sunhi", "hyunsu"]);
+	});
+
+	it("does not offer gpt-4o-mini live on the Naia catalog", () => {
+		const nextain = listLlmProviders().find((provider) => provider.id === "nextain");
+		expect(
+			nextain?.models.some((model) => model.id.includes("gpt-4o-mini")),
+		).toBe(false);
+	});
+
 	it("Gemini 2.5 Flash Live is omni capable", () => {
 		expect(isOmniModel("nextain", "gemini-2.5-flash-live")).toBe(true);
 	});

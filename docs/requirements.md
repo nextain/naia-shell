@@ -72,6 +72,14 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | **FR-TTS.1** | 파이프라인·프리뷰 TTS 를 셸이 직접 합성(`lib/tts/synthesize.ts`) — agent 우회. browser(isClientSide)는 기존 speechSynthesis 유지 | S-TTS·UC2 | `synthesize.test.ts`(provider 분기) · 셸 vitest |
 | **FR-TTS.2** | provider 분기: nextain(gateway `POST /v1/audio/speech`, `X-AnyLLM-Key: Bearer`)·google·openai·elevenlabs(bytes)·vllm(OpenAI-compat)·edge(MS WS). **nextain creds(naiaKey/gatewayUrl)를 pipelineVoiceConfig 두 구성 지점에 탑재** = 무음 직접원인 해소 | S-TTS | `synthesize.test.ts` |
 | **FR-TTS.3** | edge WS 실패 시 browser speechSynthesis 폴백(`onstart/onend/onerror`로 avatar speaking 상태 누수 방지) → 기본값 무음 금지. 합성 실패 = `audioQueue.skipOrdered(seq)` 로 ordered 슬롯 해제(후속 오디오 stall 방지) | S-TTS | `edge-tts.test.ts` · audio-queue |
+| **FR-TTS.4** ([#585](https://github.com/nextain/naia-shell/issues/585)) | Naia Cloud TTS(`nextain`) 기본 목소리는 Azure Neural HD `ko-KR-SunHi:DragonHDLatestNeural` / `Hyunsu`. 게이트웨이 `cost_usd`는 API×1.1이며 셸은 서버 금액을 다시 곱하지 않는다. 피커 순서: edge → naia-local-voice → nextain → BYO API | S-TTS · UC-VOICE-TTS-HD | `registry.test.ts` · `sentence-pipeline.test.ts` |
+
+### Azure omni live (#585, 2026-09-10)
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-VOICE-AZURE.1** | `azure-realtime`은 nextain omni. 선택 시 외부 STT/TTS 슬롯 잠금(FR-CAP.2). 목소리는 sunhi/hyunsu | UC-VOICE-LIVE-AZURE | `registry.test.ts` · `slots.test.ts` |
+| **FR-VOICE-AZURE.2** | 음성 연결은 게이트웨이 `/v1/voice-live`로만 간다. Gemini `/v1/live`로 보내지 않는다. `gpt-4o-mini` live는 제품에 없다 | UC-VOICE-LIVE-AZURE | `resolve-live-provider.test.ts` |
 
 > NFR: NFR-isolation(합성 실패가 턴 안 깸·슬롯 누수 0) · NFR-efferent-async(audioQueue 순서·interrupt 정합). ⚠️ 라이브 네트워크/edge-WS 왕복 = 실 앱(naiaKey) 검증 천장.
 
@@ -944,19 +952,30 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 ## 기능 요구사항 (FR) — 브라우저·터미널 환경 도구 (#499, 에픽 #497)
 
 > 계약: `docs/progress/issue-497-universal-agent.md`. 출처 시나리오: `UC-ENV-TOOL-*` 네 항목.
-> 기존 UC6·UC7·UC7a·UC13a를 확장한다. 상태: 전부 Pending.
+> 기존 UC6·UC7·UC7a·UC13a를 확장한다. 2026-09-09 #582 가 .2·.6·.9 를 재개방하고 .10~.15 와 NFR 둘을 추가했다(계약: `docs/progress/issue-582-ego-browser-host.md`).
 
 | ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
 |---|---|---|---|---|
 | **FR-ENV-TOOL.1** | 브라우저와 터미널 작업이 하나의 공통 생명주기(접수·실행중·완료·실패·취소)를 공유한다. 각 상태 전이는 관측 가능하며 중간 상태를 완료로 승격하지 않는다. | UC-ENV-TOOL-BROWSE·CANCEL | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-cancel-timeout.contract.test.ts` | Done |
-| **FR-ENV-TOOL.2** | 브라우저 자원으로 컨텍스트, 페이지, 스냅샷, 다운로드, 이벤트, 안정된 요소 참조를 노출한다. 도구는 생성·열기·이동·스냅샷·클릭·입력·평가·다운로드·닫기를 제공한다. | UC-ENV-TOOL-BROWSE | `src/test/env-tool-browser.contract.test.ts` 자원·도구 계약 | Done |
+| **FR-ENV-TOOL.2a** | 브라우저 자원으로 작업 공간(격리 컨텍스트), 페이지, 스냅샷, 안정된 요소 참조를 노출한다. 도구는 공간 생성·열기·이동·스냅샷·클릭·입력·평가·캡처·닫기를 제공한다. (#582 에서 .2 를 분리. 실제 어댑터 기준) | UC-ENV-TOOL-BROWSE | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-browser-host.contract.test.ts` (2026-09-10 실 어댑터+실 Chromium 계약 12건·풀스택 e2e-tauri 4건 통과) | Done |
+| **FR-ENV-TOOL.2b** | 다운로드와 이벤트 스트림을 브라우저 자원으로 노출한다. (#582 범위 밖. 실제 어댑터가 제공하기 전까지 Pending) | UC-ENV-TOOL-BROWSE | — | Pending |
 | **FR-ENV-TOOL.3** | 브라우저 조작은 스냅샷의 안정된 요소 참조를 우선 사용한다. 좌표 조작은 참조가 불가능한 경우로 제한하고 그 사실을 결과에 남긴다. | UC-ENV-TOOL-BROWSE | `packages/shell/e2e/env-tool-browser.spec.ts` 참조 기반 조작 | Done |
 | **FR-ENV-TOOL.4** | 페이지 내용은 자료로만 취급한다. 페이지에 담긴 문장이 권한 확장, 승인 우회, 외부 발신의 근거가 되지 않는다. | UC-ENV-TOOL-BROWSE | `packages/shell/e2e/env-tool-injection.spec.ts` 주입 negative | Done |
 | **FR-ENV-TOOL.5** | 터미널 자원은 Herdr의 터미널·세션·프로세스·출력 스트림을 참조하며, 생명주기 소유는 Herdr에 위임한다. 실행은 실행 파일과 인자 배열, 작업 디렉터리, 환경을 구조화해 전달하고 셸 문자열로 조립하지 않는다. | UC-ENV-TOOL-TERMINAL-EXEC | `src/test/env-tool-terminal.contract.test.ts` 위임·구조화 인자 | Done |
-| **FR-ENV-TOOL.6** | 모든 작업은 증거를 반환한다. 브라우저는 구조 또는 접근성 스냅샷, 화면 캡처, 최종 주소와 개정을, 터미널은 종료 코드와 출력·로그·산출물 참조를 반환한다. | UC-ENV-TOOL-BROWSE·TERMINAL-EXEC | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-terminal.contract.test.ts` | Done |
+| **FR-ENV-TOOL.6** | 모든 작업은 증거를 반환한다. 브라우저는 구조 또는 접근성 스냅샷, 화면 캡처, 최종 주소와 개정을, 터미널은 종료 코드와 출력·로그·산출물 참조를 반환한다. | UC-ENV-TOOL-BROWSE·TERMINAL-EXEC | `src/test/env-tool-browser.contract.test.ts`·`src/test/env-tool-terminal.contract.test.ts`·`src/test/env-tool-workspace-resource.contract.test.ts`(`hasEvidence` 가 캡처 없는 완료를 거부)·`src/test/env-tool-browser-host.contract.test.ts`(캡처 파일 존재) (캡처 PNG 파일 존재 확인, `hasEvidence` 캡처 검사) | Done |
 | **FR-ENV-TOOL.7** | 명령은 확정된 워크스페이스 경계를 명시적 권한 없이 벗어나지 못한다. 경계 이탈 시도는 조용히 무시하지 않고 명시적으로 거부한다. | UC-ENV-TOOL-TERMINAL-EXEC·BOUNDARY-DENY | `src/test/env-tool-workspace-escape.contract.test.ts` 이탈 negative | Done |
 | **FR-ENV-TOOL.8** | 관측, 워크스페이스 내부 변경, 자격증명 사용, 외부 발신, 게시, 구매, 파괴적 명령, 운영 변경을 별도 권한으로 분리한다. 일반 편집 권한은 이들 중 어느 것도 상속하지 않는다. | UC-ENV-TOOL-BOUNDARY-DENY | `src/test/env-tool-approval-matrix.contract.test.ts` 비상속 negative | Done |
-| **FR-ENV-TOOL.9** | 모든 작업은 취소 가능하고 타임아웃을 가지며 재연결과 멱등 재전송을 정의한다. 취소, 타임아웃, 부분 실행은 성공으로 승격되지 않고 각각 구별되어 기록된다. | UC-ENV-TOOL-CANCEL | `src/test/env-tool-cancel-timeout.contract.test.ts` 구별·멱등 | Done |
+| **FR-ENV-TOOL.9** | 모든 작업은 취소 가능하고 타임아웃을 가지며 재연결과 멱등 재전송을 정의한다. 취소, 타임아웃, 부분 실행은 성공으로 승격되지 않고 각각 구별되어 기록된다. | UC-ENV-TOOL-CANCEL | `src/test/env-tool-cancel-timeout.contract.test.ts` 구별·멱등·종결 CAS·동시 멱등·실제 deadline, `packages/ego-host/test/cancel.test.mjs` 취소 훅 (CAS·동시 멱등·deadline·취소 훅·재접속 실브라우저 통과) | Done |
+| **FR-ENV-TOOL.10** | 브라우저 작업 공간은 작업과 수명이 다른 자원이다. 각 공간은 격리된 브라우저 컨텍스트이며 쿠키·저장소·서비스 워커·권한·다운로드 경로를 공간끼리 공유하지 않고 사용자 프로필도 물려받지 않는다. 소유권은 `agent`·`agentDelegatedToUser`·`user` 이며, 헤드리스 공간에서는 인계·회수·claim 이 형식 있는 오류로 거부되고 `agent` 외 상태에 도달하지 않는다. 이 규칙은 브라우저 자원에만 적용한다. | UC-ENV-TOOL-SPACE | `src/test/env-tool-workspace-resource.contract.test.ts` 헤드리스 전이 표·자원 형태·개정 확인, `packages/ego-host/test/isolation.test.mjs`·`mediator.test.mjs` (격리 행렬 7축 negative·헤드리스 인계 거부, 리눅스 실측) | Done |
+| **FR-ENV-TOOL.11** | 브라우저 호스트는 창을 만들지 않는다. 검증은 실제 프로세스 인자, 호스트 동작 전후 활성 창 동일, 감독자 프로세스 트리의 창 0 의 세 겹이며 환경 부재를 건너뛰지 않는다. | UC-ENV-TOOL-SPACE | `packages/ego-host/test/no-interference.test.mjs` (리눅스: cage 위 활성 창 불변·헤드리스 인자·창 0 실측. win32·darwin 은 NFR-OS.1 게이트) | Done |
+| **FR-ENV-TOOL.12** | 사이트별 학습(도메인 manifest·페이지 구조 메모·추출 도구)을 ego-lite 학습 형식으로 저장하고 검증 스크립트로 형식을 강제한다. 학습 루트는 선택된 ADK 아래다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/skill/learnings/` + `validate-site-skills` (naia.land 학습 예시, validate-site-skills 0) | Done |
+| **FR-ENV-TOOL.13** | 새 브라우저 호스트 도구(`env_browser_*`)는 `EnvironmentToolService` 를 통해서만 노출되고 기능 플래그로 켠다(리눅스 기본 켬, Windows 는 별도 게이트 통과 전 기본 끔). 기존 임베디드 브라우저 도구(`skill_browser_*`)의 이름·권한·동작은 바뀌지 않는다. | UC-ENV-TOOL-SCRIPT | `packages/shell/e2e/env-tool-browser-host.spec.ts` 기존 도구 불변 (Playwright 7건: 기존 skill_browser_* 불변, 플래그 OS 기본값) | Done |
+| **FR-ENV-TOOL.14** | 진입점은 둘이다. 형식 있는 도구는 효과가 고정된 RPC 만 부르며 등급은 서비스가 정한다(관측: 스냅샷·캡처, 워크스페이스 내부 변경: 이동·클릭·입력·평가). 임의 자바스크립트 묶음 실행(`env_browser_script`)은 터미널 실행과 같은 등급이며, 승인 결과가 감독자 핸드셰이크에 실려야 시작된다. 캡처 파일 경로는 감독자가 정한다. | UC-ENV-TOOL-SCRIPT | `src/test/env-tool-approval-matrix.contract.test.ts` 등급 고정 RPC 표(선언 무시)·`packages/ego-host/test/handshake.test.mjs`·Playwright 승인 없는 script 거부 (등급표+RPC 단위 승인, 승인 없는 script 거부 실기 확인) | Done |
+| **FR-ENV-TOOL.14b** | 승인된 묶음 실행(`env_browser_script`)은 워크스페이스·네트워크·파일 경계를 벗어나지 않는다. 승인 UI 와 샌드박스 경계 강제는 #582 범위에서 구현되지 않았다. 승인 경로는 실기 미측정. | UC-ENV-TOOL-SCRIPT | — (후속 이슈) | Pending |
+| **FR-ENV-TOOL.15** | 감독자는 셸이 lease(nonce·marker·started-at·경로·PID)로 소유한다. Chromium 은 감독자가 파이프로 소유해 감독자가 죽으면 함께 종료된다. 시작 조정은 marker 가 일치하는 프로세스만 회수한다. ADK 전환은 이전 감독자 종료 뒤 새 lease 조정 순서를 지킨다. | UC-ENV-TOOL-RECOVER | `packages/ego-host/test/lease.test.mjs`·`src/test/env-tool-adk-switch.contract.test.ts`·e2e-tauri lifecycle (e2e-tauri: Reset·재시작·정상 종료 회수, marker 불일치 보존, 리눅스 실측) | Done |
+| **NFR-ENV-TOOL-VENDOR.1** | 벤더 런타임(`packages/ego-host/vendor/ego-lite`)은 고정 커밋과 바이트 단위로 같아야 하며 매니페스트 검사가 이를 강제한다. 벤더 파일을 편집하지 않는다. 스킬은 파생본이며 업스트림과의 차이를 `UPSTREAM-DIFF.md` 로 추적한다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/test/vendor-install.test.mjs` (매니페스트·출처 게이트·변조 탐침·파생 diff 테스트) | Done |
+| **NFR-ENV-TOOL-ABI.1** | 벤더 런타임이 기대하는 실행 ABI 를 근거 줄과 함께 문서화하고, 실제 감독자 + 벤더 런타임 조합으로 각 행과 전송 실패 모드를 검증한다. | UC-ENV-TOOL-BROWSE | `packages/ego-host/docs/ego-runtime-abi.md`·`packages/ego-host/test/conformance.test.mjs` (실 감독자+벤더 런타임 적합성, 전송 실패 모드) | Done |
+| **NFR-ENV-TOOL-OS.1** | 감독자·런처·어댑터는 리눅스·윈도우·macOS 에서 같은 코드로 동작한다. OS 의존 코드는 브라우저 탐색·프로세스 확인(런처)과 소켓 경로 함수에만 둔다. OS 별 게이트(격리·무간섭·취소·lease·적합성 묶음을 그 OS 에서 종료 코드 0)를 통과하기 전에는 그 OS 에서 기능 플래그가 꺼진 채 배포된다. | UC-ENV-TOOL-SPACE | `packages/ego-host/test/*.test.mjs` 플랫폼 주입 단위 + OS 별 실측 게이트 (코드·단위 세 OS. 실기 게이트: 리눅스 통과, win32·darwin 미실측 — 플래그 기본 끔) | In-progress |
 
 ## 기능 요구사항 (FR) — 이슈 리더와 코딩 작업자 오케스트레이션 (#500, 에픽 #497)
 
@@ -1154,3 +1173,58 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | FR-SLIDES-EDIT.2 | Explicitly download edited Markdown copy; never automatically overwrite original MD/PPTX. Label unsaved state and failures. | Pending |
 
 Design: general PPTX follows the issue's local PDF conversion path first. The measured image-only direct rendering shortcut remains optional, not a replacement for general import. Verify synthetic text/table/image decks separately. Static viewing excludes animations, transitions, embedded-video playback and raster/PPTX text editing.
+
+## 기능 요구사항 — 회차별 제품 QA (2026-09-08 사용자 지시)
+
+| ID | 요구사항 | 출처 시나리오 | 검증 |
+|---|---|---|---|
+| **FR-QA-ROUND.1** | QA 정의는 준비 조건·방법·예상 결과와 실존하는 사용자 시나리오 및 기능 근거를 포함한다. 원본 연결 누락·허위 ID·검토되지 않은 범위를 검사하며 원본 계층의 ID 수를 독립 QA 항목 수로 보고하지 않는다. | UC-QA-ROUND | `qa-traceability.test.mjs`, `qa-catalog.test.mjs`; 내용 대응은 별도 검토 |
+| **FR-QA-ROUND.2** | 회차마다 목록·후보·적용 기기를 고정한다. 모든 예정 행을 NOT_RUN으로 생성하고 다른 후보·회차·기기의 결과 혼입을 거부한다. | UC-QA-ROUND | `qa-round.test.mjs`, `qa-round-transfer.test.mjs` |
+| **FR-QA-ROUND.3** | 실행 결과는 플랫폼·기기·실제 시각·증거와 FAIL/BLOCKED 이유를 기록한다. 미실행을 PASS로 채우거나 확정 결과를 덮어쓰지 않는다. | UC-QA-ROUND | `qa-round.test.mjs`, `qa-batch.test.mjs` |
+| **FR-QA-ROUND.4** | 전체 예정 행의 결과 수집을 회차 확정과 수정 단계 진입의 조건으로 삼는다. 수정 후보는 새 전체 회차로 검증한다. BLOCKED를 포함한 회차 확정은 출시 통과를 뜻하지 않는다. 범위 검토에 기술 검증 미완료가 남아 있으면 앱 검사 행이 모두 PASS여도 launchReady는 false여야 한다. | UC-QA-ROUND | `qa-round.test.mjs`; 운영 순서는 회차 이력 검토 |
+| **FR-QA-ROUND.5** | 기기당 GUI 실행자를 하나로 조정하고 가능한 다수 검사를 한 앱 세션에 묶는다. 매핑한 필수 관찰을 모두 확보해야 해당 QA를 PASS로 기록한다. 기기 간 결과 교환은 동일 회차·목록·후보 결속을 검사한다. | UC-QA-ROUND | `qa-batch.test.mjs`, `qa-round-transfer.test.mjs`; 실제 프로세스와 재시작 횟수는 기기 증거 검토 |
+| **FR-QA-ROUND.6** | QA 설정·목록·실행 기록·증거를 선택 ADK에서 저장하고 불러온다. 하네스 검증을 제품 실행보다 먼저 수행하고 fixture 통과와 실제 제품·플랫폼 통과를 구분해 표시한다. | UC-QA-ROUND | 다섯 QA 하네스 test suite 및 회차 증거 검토 |
+
+## 기존 시나리오의 누락된 기능 정의 보완 (2026-09-08 QA 원본 대조)
+
+아래는 기존 사용자 시나리오와 제품 표면의 판정 기준을 명문화한 것이다. 기능 구현이나 실기 통과를 뜻하지 않는다. Slides의 FR-SLIDE.1~5는 `docs/progress/issue-467-slide-presenter.md`가 정본에 있다고 기록했으나 실제 정의가 누락되어, 해당 문서의 Intended slice와 검증 대상을 기준으로 복원했다. QA 시트의 실행 결과는 별도 회차에서 기록한다.
+
+| ID | 요구사항 | 출처 시나리오·원본 | 검증 대상 |
+|---|---|---|---|
+| **FR-MEMORY-FACTS.1** | 설정의 메모리 표면은 선택 ADK의 저장된 사실 목록과 내용을 표시하고, 확인한 항목만 삭제하여 다시 열어도 그 삭제를 유지한다. 다른 ADK의 사실은 변경하지 않는다. 빈 목록과 읽기·쓰기 실패는 성공한 삭제로 혼동하지 않는다. | UC3, S52; `docs/user-scenarios.md` facts CRUD | 목록·확인 취소·단일 삭제·재로드·A/B 격리 |
+| **FR-PROVIDER-SETTINGS.1** | 제공되는 provider를 선택하면 해당 provider의 모델·엔드포인트·인증 설정을 표시하고 선택 ADK에 저장·복원한다. 지원 여부·자격 부족·연결 실패를 성공한 대화와 혼동하지 않는다. 제공되지 않는 구 provider는 현행 지원 목록과 대체 경로를 검토한다. | UC12, UC1, S03 | 현행 provider 목록, 설정 복원, 인증 및 실제 응답 경계 |
+| **FR-LAB-COST.1** | 비용 대시보드는 대화 사용량을 provider·model별로 집계하고 합계를 표시한다. Naia 계정의 잔액은 별도 조회 결과·로딩·실패로 표시하며 충전 링크를 제공한다. 조회 실패를 유효한 잔액 0으로 표시하지 않는다. | UC12, S58; `CostDashboard.tsx` | 대화 비용 집계, 계정 잔액, 실패, 충전 링크 |
+| **FR-ANNOUNCEMENT.1** | 원격 공지에서 유효한 미읽음 항목을 우선순위·날짜 순으로 표시하고 로케일에 맞는 제목·본문을 사용한다. 단건·전체 닫기는 읽음 상태를 선택 ADK에 보존하며 상세 링크는 HTTP(S)만 연다. 빈 응답·잘못된 항목·조회 실패로 앱 시작을 막거나 공지 내용을 만들어내지 않는다. | S60; `AnnouncementBanner.tsx`, `lib/announcements.ts` | 표시·정렬·닫기·재로드·상세 링크·조회 실패 |
+| **FR-LAB-SYNC.1** | Lab 설정 조회와 허용 필드의 push를 지원한다. 원격 값과 로컬 값이 다르면 온라인 사용/로컬 유지 선택을 제공한다. 선택한 결과와 로컬 변경은 선택 ADK에 보존하고, 동기화 대상 이외의 자격·설정을 덮어쓰지 않는다. 통신 실패를 원격 반영 성공의 증거로 취급하지 않는다. | UC12, S67; `lib/lab-sync.ts`, `SettingsTab.tsx` | pull·충돌 선택·자동 push·실패·ADK 복원 |
+| **FR-SLIDE.1** | Slides 앱은 유효한 PDF의 한 페이지를 렌더링하고 현재 페이지·전체 페이지·준비 상태를 표시한다. 잘못된 PDF를 준비 완료로 표시하지 않는다. ODP/PPTX 직접 렌더링은 현행 PDF 우선 범위 밖이며 지원 여부를 명확히 한다. | UC9; `docs/progress/issue-467-slide-presenter.md` | PDF 로딩·오류·형식 경계 |
+| **FR-SLIDE.2** | 버튼·키보드·페이지 입력으로 범위 안의 페이지를 이동하며 렌더링·페이지 번호·진행 상태를 일치시킨다. 텍스트 입력 중 이동 단축키로 입력을 가로채지 않는다. | UC9; 같은 issue의 keyboard/accessible controls | 앞/뒤/경계·입력 포커스 |
+| **FR-SLIDE.3** | Markdown 발표 노트를 해당 페이지에 연결하고 현재 노트를 표시한다. 발표 요청과 완료·실패·취소를 연결하여 완료 때 한 번만 진행하고 일시정지·재개·종료 상태를 유지한다. | UC9, UC-PERF-BUNDLE-BUDGET; 같은 issue의 note parser/narration bridge | 노트·나레이션·실패 복구 |
+| **FR-SLIDE.4** | 설치한 Slides 앱으로 진입하고 앱 전환 후 다시 사용할 수 있다. 집중 표시와 노트 표시 제어를 제공하고 좁은 화면에서도 발표 내용·핵심 조작을 사용할 수 있게 한다. | UC9, S-SLIDES-REC; 같은 issue의 UI/desktop/narrow 검증 | 앱 설치·재진입·집중·노트·반응형 |
+| **FR-SLIDE.5** | 현재 발표 자료·페이지에 관한 질문에 사용될 active-app context를 제공한다. 자료가 없거나 페이지가 바뀐 상태에서 이전 자료를 현재 자료로 제시하지 않는다. | UC9; 같은 issue의 active-app context for questions | 현재 자료·페이지 컨텍스트 |
+
+
+### 기존 S37~S70 기능 추적 보완
+
+아래 ID는 기존 시나리오의 기능에 추적 식별자를 부여한다. 새 기능 추가나 구현 완료 선언이 아니다.
+
+| ID | 요구사항 | 출처 | 검증 대상 |
+|---|---|---|---|
+| **FR-NOTIFY-CHANNELS.1** | 설정된 Discord·Google Chat·Slack 대상에 알림을 보내고 목적지의 수신 결과와 오류를 구분한다. 승인되지 않은 대상으로 시험 메시지를 보내지 않는다. | UC10, S37, S38, S39; docs/user-scenarios.md | 승인된 시험 채널별 발송·수신 대조, 자격·라우팅 실패 |
+| **FR-AUDIT-VIEW.1** | audit 표면에서 log와 stats를 조회하여 실제 작업의 이벤트와 통계를 확인할 수 있다. 조회 실패·누락을 성공한 감사 기록으로 표시하지 않는다. | S53; docs/user-scenarios.md | 시험 이벤트와 로그·통계의 대응 |
+| **FR-VIEWPORT-CAPTURE.1** | screenshot 도구가 현재 viewport를 PNG로 캡처하여 관찰 결과로 반환한다. 캡처 실패나 빈 출력은 정상 이미지로 처리하지 않는다. | UC11, UC6, S61; docs/user-scenarios.md | 현재 화면과 PNG 결과 대조 |
+| **FR-CHAT-MENTION.1** | 채팅의 @멘션 검색은 워크스페이스 파일·폴더를 fuzzy 검색하고 선택한 참조를 입력에 삽입한다. | UC1, S62; docs/user-scenarios.md | 파일·폴더 검색, 참조 삽입·전송 |
+| **FR-GITHUB-ISSUES-APP.1** | 워크스페이스의 GitHub Issues 앱은 gh issue list 결과를 표시한다. 인증·조회 실패는 빈 성공 목록과 구분한다. | UC5, UC7, S63; docs/user-scenarios.md | 알려진 저장소 issue 목록 대조 |
+| **FR-BROWSER-SHORTCUT.1** | AppBar의 URL 바로가기는 추가·삭제·순서 변경·아이콘 표시를 제공하고 선택 ADK에 저장·복원한다. | UC6, S64; docs/user-scenarios.md | 추가·재배치·아이콘·삭제·cold 복원 |
+| **FR-FILE-DEEPLINK.1** | 채팅의 절대 경로 FILE 딥링크는 워크스페이스 앱에서 그 파일을 열며 실패 시 관계없는 파일을 대신 열지 않는다. | UC1, UC7, S70; docs/user-scenarios.md | 링크 경로와 열린 파일 일치 |
+
+
+### 기존 기억·예약 시나리오의 QA 기대값 식별
+
+기존 S41~S43은 미배선 상태까지 포함해 검사한다. 아래는 기존 의도의 식별자이며 구현 완료 선언이 아니다. S52b는 현행 비활성 UI 계약이며 암호화 백업 기능의 출시 완료를 뜻하지 않는다.
+
+| ID | 요구사항 | 출처 | 검증 대상 |
+|---|---|---|---|
+| **FR-MEMORY-RECALL.1** | 저장한 사실을 후속 대화에 회상·주입하고 `<recalled_memories>`의 출처를 확인할 수 있어야 한다. 미배선이면 회상 성공으로 표시하지 않는다. | UC3, S41; docs/user-scenarios.md | 고유 사실 저장 후 후속 요청의 주입·출처 관찰 |
+| **FR-ACTIVE-RECALL.1** | 기념일·시간 앵커에 연결된 능동 회상 이벤트를 관찰할 수 있어야 한다. 미배선이나 이벤트 부재를 성공으로 간주하지 않는다. | UC4, S42; docs/user-scenarios.md | 통제된 시간 앵커의 이벤트·중복 확인 |
+| **FR-CRON-JOB.1** | 일회 예약 작업의 생성과 트리거 실행을 연결해 확인할 수 있어야 한다. 생성만 되고 실행되지 않거나 미배선인 경우를 구분한다. | S43; docs/user-scenarios.md | 소유 시험 작업의 ID·예약 시각·실행 이벤트 |
+| **FR-MEMORY-BACKUP-UI.1** | 현행 메모리 Backup UI는 비활성/ComingSoon 상태를 명확히 보여 주고 실제 백업·복원이 완료된 것처럼 표시하지 않는다. 기능이 활성화되었다면 별도 암호화 round-trip 검증 없이 백업 가능으로 판정하지 않는다. | UC3, S52b; docs/user-scenarios.md | disabled·안내·클릭 무효·파일 미생성 |

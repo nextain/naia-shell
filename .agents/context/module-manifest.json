@@ -321,7 +321,9 @@
 				"UC-ENV-TOOL-BROWSE",
 				"UC-ENV-TOOL-TERMINAL-EXEC",
 				"UC-ENV-TOOL-CANCEL",
-				"UC-ENV-TOOL-BOUNDARY-DENY"
+				"UC-ENV-TOOL-BOUNDARY-DENY",
+				"UC-ENV-TOOL-SPACE",
+				"UC-ENV-TOOL-RECOVER"
 			],
 			"contract": "docs/progress/issue-497-universal-agent.md"
 		},
@@ -330,9 +332,23 @@
 			"uc": [
 				"UC-ENV-TOOL-BROWSE",
 				"UC-ENV-TOOL-TERMINAL-EXEC",
-				"UC-ENV-TOOL-CANCEL"
+				"UC-ENV-TOOL-CANCEL",
+				"UC-ENV-TOOL-SPACE",
+				"UC-ENV-TOOL-RECOVER",
+				"UC-ENV-TOOL-SCRIPT"
 			],
 			"contract": "docs/progress/issue-497-universal-agent.md"
+		},
+		"src/main/adapters/ego-browser-env.ts": {
+			"layer": "adapters",
+			"uc": [
+				"UC-ENV-TOOL-BROWSE",
+				"UC-ENV-TOOL-CANCEL",
+				"UC-ENV-TOOL-SPACE",
+				"UC-ENV-TOOL-RECOVER",
+				"UC-ENV-TOOL-SCRIPT"
+			],
+			"contract": "docs/progress/issue-582-ego-browser-host.md"
 		},
 		"src/main/app/control/env-tool.ts": {
 			"layer": "app",
@@ -340,7 +356,9 @@
 				"UC-ENV-TOOL-BROWSE",
 				"UC-ENV-TOOL-TERMINAL-EXEC",
 				"UC-ENV-TOOL-CANCEL",
-				"UC-ENV-TOOL-BOUNDARY-DENY"
+				"UC-ENV-TOOL-BOUNDARY-DENY",
+				"UC-ENV-TOOL-SPACE",
+				"UC-ENV-TOOL-SCRIPT"
 			],
 			"contract": "docs/progress/issue-497-universal-agent.md"
 		},

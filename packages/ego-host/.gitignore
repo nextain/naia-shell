@@ -1,0 +1,11 @@
+# 벤더 런타임의 빌드 산출물 — 업스트림도 무시한다. MANIFEST.sha256 추적 대상이 아니다.
+vendor/ego-lite/package/ego-browser/dist/
+vendor/ego-lite/package/ego-browser/node_modules/
+vendor/ego-lite/package/ego-browser/artifacts/
+vendor/ego-lite/package/ego-browser/.build.lock
+vendor/ego-lite/package/ego-browser/bin/
+vendor/ego-lite/package/ego-browser/ego-browser.js
+
+# 이 패키지 자신의 산출물
+dist/
+node_modules/

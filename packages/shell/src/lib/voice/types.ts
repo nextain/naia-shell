@@ -16,6 +16,7 @@ export type LiveProviderId =
 	| "openai-realtime"
 	| "naia-omni"
 	| "vllm-omni"
+	| "azure-voice-live"
 	| "edge-tts";
 
 export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
@@ -24,6 +25,7 @@ export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	"openai-realtime": "OpenAI",
 	"naia-omni": "Naia Omni",
 	"vllm-omni": "vLLM Omni (Local)",
+	"azure-voice-live": "Azure Voice Live",
 	"edge-tts": "Edge (TTS Only)",
 };
 
@@ -36,6 +38,10 @@ export const LIVE_PROVIDER_COST_HINTS: Record<
 	naia: { cost: "~$0.03/min", note: "Naia credits" },
 	"gemini-live": { cost: "~$0.03/min", note: "Google API Key" },
 	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
+	"azure-voice-live": {
+		cost: "~$0.019/min",
+		note: "Naia credits — Voice Live Std LLM Audio × 1.1",
+	},
 	"naia-omni": {
 		cost: "~$0.33/hr",
 		note: "Naia credits ??hourly session (local: free)",
@@ -91,6 +97,12 @@ export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
 	provider: "openai-realtime";
 	apiKey: string;
 	serverUrl?: string;
+}
+
+export interface AzureVoiceLiveConfig extends LiveProviderConfigBase {
+	provider: "azure-voice-live";
+	gatewayUrl: string;
+	naiaKey: string;
 }
 
 export interface NaiaOmniConfig extends LiveProviderConfigBase {
@@ -156,7 +168,8 @@ export type LiveProviderConfig =
 	| GeminiLiveConfig
 	| OpenAIRealtimeConfig
 	| NaiaOmniConfig
-	| VllmOmniConfig;
+	| VllmOmniConfig
+	| AzureVoiceLiveConfig;
 
 // ?? Audio input requirements (per-provider, read by the shared mic layer) ??
 
