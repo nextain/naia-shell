@@ -279,6 +279,21 @@ function readLocalAdkConfig(): Record<string, unknown> {
 	return JSON.parse(localStorage.getItem("naia-config") || "{}");
 }
 
+/**
+ * E2E 자동 실행을 켠다.
+ *
+ * App 의 E2E 워크스페이스 결속(setAdkPath → write_naia_path_cache)은
+ * `VITE_NAIA_E2E_MODE=1` 과 `VITE_NAIA_E2E_ADK_PATH` 가 둘 다 있을 때만 돈다
+ * (App.tsx `e2eMode`/`e2eAdkPath`). 이것을 켜지 않으면 아래 두 케이스는 결속
+ * 자체가 일어나지 않아 "결속 실패 시 이전 ADK 를 지킨다" 는 계약을 재지 못한다.
+ * 앞서 이 자리는 실행 셸에 그 변수가 있느냐에 따라 결과가 갈렸다 — 전제를
+ * 테스트 안에서 세워 그 의존을 없앤다.
+ */
+function enterE2eMode(): void {
+	vi.stubEnv("VITE_NAIA_E2E_MODE", "1");
+	vi.stubEnv("VITE_NAIA_E2E_ADK_PATH", E2E_ADK_PATH);
+}
+
 describe("App discord deep-link persistence", () => {
 	afterEach(() => {
 		cleanup();
@@ -306,6 +321,7 @@ describe("App discord deep-link persistence", () => {
 		vi.mocked(sendAppSkills).mockClear();
 		vi.mocked(readNaiaConfig).mockClear();
 		vi.mocked(writeNaiaConfig).mockClear();
+		vi.unstubAllEnvs();
 		useAppStore.setState(useAppStore.getInitialState());
 	});
 
@@ -521,6 +537,7 @@ describe("App discord deep-link persistence", () => {
 	});
 
 	it("keeps the previous ADK cache untouched while the E2E native bind is pending", async () => {
+		enterE2eMode();
 		seedPreviousAdk();
 		adkState.config = {
 			provider: "new-provider",
@@ -558,6 +575,7 @@ describe("App discord deep-link persistence", () => {
 	});
 
 	it("retains the previous ADK after a rejected E2E bind without StrictMode retries", async () => {
+		enterE2eMode();
 		seedPreviousAdk();
 		let rejectBind!: (reason?: unknown) => void;
 		nativeState.pendingAdkPathBind = new Promise<void>((_, reject) => {
