@@ -11,6 +11,7 @@ const BUILD_RS = readText("packages/shell/src-tauri/build.rs");
 const TAURI_WITH_MODE = readText("packages/shell/scripts/tauri-with-mode.mjs");
 const STAGE_RUNTIME = readText("packages/shell/scripts/stage-runtime.mjs");
 const STAGE_AGENT = readText("packages/shell/scripts/stage-agent.mjs");
+const AGENT_PAIRING = readText("packages/shell/scripts/agent-pairing.mjs");
 const BUILD_E2E_TAURI = readText("packages/shell/scripts/build-e2e-tauri.mjs");
 const CODEX_E2E_ENVIRONMENT = readText("packages/shell/e2e-tauri/codex-e2e-environment.ts");
 const PAIRING = JSON.parse(readText("packages/shell/agent-pairing.json")) as {
@@ -90,8 +91,58 @@ describe("UC-WIRE-V1 paired proto build", () => {
 			expect(BUILD_RS).toContain(marker);
 		}
 	});
+	// #539 로 짝 체크아웃 **선택**이 agent-pairing.mjs 한 곳으로 모였다. 그전에는
+	// 런처(tauri-with-mode)와 설치 스테이징(stage-runtime)이 각자 후보를 열거해
+	// 서로 다른 워크트리를 고를 수 있었고, 그러면 빌드가 박아 둔 짝과 실행이 넘기는
+	// 짝이 어긋난다. 계약 자체는 그대로다 — "정확히 하나의 짝 agent/proto 체크아웃을
+	// 고르고 검증한다". 그 계약이 성립하는 자리만 옮겼으므로 단정도 그 자리를 본다.
 	it("selects and validates one exact paired agent/proto checkout", () => {
-		expect(TAURI_WITH_MODE).toContain('from "./agent-pairing.mjs"');
+		// ① 후보 열거는 공유 해석기만 갖는다. 두 진입점이 자기 사본을 다시 만들면
+		//    둘이 갈라질 수 있으므로 사본이 없다는 것까지 못 박는다.
+		for (const source of [TAURI_WITH_MODE, STAGE_RUNTIME]) {
+			expect(source).toContain('from "./agent-pairing.mjs"');
+			expect(source).toContain("resolvePairedAgent({");
+			expect(source).not.toContain("AGENT_WORKTREE_ROOTS");
+			expect(source).not.toContain("function agentCandidates");
+			expect(source).not.toContain("function firstPairedAgentCheckout");
+			expect(source).not.toContain("function isPairedAgentCheckout");
+			expect(source).not.toContain("merge-base");
+			expect(source).not.toContain("--is-ancestor");
+		}
+
+		// ② 해석기가 후보를 모은다. 옛 하드코딩 자리(.agents/work/naia-agent-issue-388-proto)
+		//    대신 워크트리 모음 디렉터리와 주 저장소에 **등록된** 워크트리 목록을 본다.
+		expect(AGENT_PAIRING).toContain("export function resolvePairedAgent");
+		expect(AGENT_PAIRING).toContain("sourceEnv.NAIA_E2E_AGENT_ROOT");
+		expect(AGENT_PAIRING).toContain("sourceEnv.NAIA_AGENT_WORKTREES_DIR");
+		expect(AGENT_PAIRING).toContain('"naia-agent-worktrees"');
+		expect(AGENT_PAIRING).toContain("readdirSync(root, { withFileTypes: true })");
+		expect(AGENT_PAIRING).toContain('["worktree", "list", "--porcelain"]');
+		expect(AGENT_PAIRING).toContain("parseGitWorktreePaths(");
+		// 임시 디렉터리의 사본은 후보에서 뺀다. 이것이 회귀 전체의 전제를 조용히
+		// 바꿨던 자리라 빠져도 통과하면 안 된다.
+		expect(AGENT_PAIRING).toContain("TEMPORARY_PATH.test(path)");
+
+		// ③ 후보가 여럿이어도 **하나만** 고르고, 부르는 쪽이 달라도 같은 하나를
+		//    고른다: 중복 제거 + 경로 정렬 후 첫 합격자에서 return.
+		expect(AGENT_PAIRING).toContain("[...new Set(candidates)].sort()");
+		expect(AGENT_PAIRING).toContain("return { pairedAgent, agentScript, agentProtoDir };");
+
+		// ④ 고른 것을 실제로 검증한다 — 핀 커밋 · 깨끗함 · proto 해시 · 정해진 경로.
+		expect(AGENT_PAIRING).toContain('"scripts/builds/agent-stdio-entry.mjs"');
+		expect(AGENT_PAIRING).toContain('"src/main/adapters/grpc"');
+		expect(AGENT_PAIRING).toContain('"naia_agent.proto"');
+		expect(AGENT_PAIRING).toContain('["rev-parse", "HEAD"]');
+		expect(AGENT_PAIRING).toContain("!==\n\t\t\tREQUIRED_AGENT_COMMIT");
+		expect(AGENT_PAIRING).toContain('["status", "--porcelain"]');
+		expect(AGENT_PAIRING).toContain("if (dirty) continue;");
+		expect(AGENT_PAIRING).toContain("hashProto(proto) !== REQUIRED_PROTO_SHA256");
+
+		// ⑤ 하나도 합격하지 않으면 조용히 넘어가지 않고 실패한다.
+		expect(AGENT_PAIRING).toContain("No clean paired naia-agent checkout");
+
+		// ⑥ 런처: 명시 env 가 있으면 해석기로 내려가기 **전에** 그 쌍을 직접 검증하고,
+		//    없으면 해석 결과를 env 에 심는다. 그리고 그 짝 소스를 빌드한다.
 		expect(TAURI_WITH_MODE).toContain('from "./package-manager.mjs"');
 		expect(TAURI_WITH_MODE).toContain(
 			'runProjectPnpm(["run", "build"], pairedAgent, env)',
@@ -99,14 +150,6 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		expect(TAURI_WITH_MODE).not.toContain(
 			'spawnSync("pnpm", ["run", "build"]',
 		);
-		expect(TAURI_WITH_MODE).toContain("naia-agent-issue-388-proto");
-		expect(TAURI_WITH_MODE).not.toContain("merge-base");
-		expect(TAURI_WITH_MODE).not.toContain("--is-ancestor");
-		expect(TAURI_WITH_MODE).toContain("firstPairedAgentCheckout");
-		expect(TAURI_WITH_MODE).toContain("AGENT_WORKTREE_ROOTS");
-		expect(TAURI_WITH_MODE).toContain('"naia-agent-worktrees"');
-		expect(TAURI_WITH_MODE).toContain("readdirSync(root, { withFileTypes: true })");
-		expect(TAURI_WITH_MODE).toContain("agentCandidates()");
 		expect(TAURI_WITH_MODE).toContain("validateAgentEnvPair");
 		expect(TAURI_WITH_MODE).toContain("gitDirForPath");
 		expect(TAURI_WITH_MODE).toContain("scriptRoot !== protoRoot");
@@ -129,15 +172,17 @@ describe("UC-WIRE-V1 paired proto build", () => {
 			TAURI_WITH_MODE.indexOf("function applyPairedAgentEnv"),
 			TAURI_WITH_MODE.indexOf("// ── 로컬 cascade loader"),
 		);
+		expect(applyBody).toContain(
+			"NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must be provided together",
+		);
+		// 두 호출이 모두 있어야 순서를 따질 수 있다. indexOf 만 비교하면 호출이
+		// 통째로 사라진 경우 -1 이 앞선 것으로 읽혀 조용히 통과한다.
+		expect(applyBody).toContain("validateAgentEnvPair(explicitScript, explicitProtoDir)");
 		expect(applyBody.indexOf("validateAgentEnvPair(explicitScript, explicitProtoDir)")).toBeLessThan(
-			applyBody.indexOf("firstPairedAgentCheckout()"),
+			applyBody.indexOf("resolvePairedAgent({"),
 		);
-		const candidateBody = TAURI_WITH_MODE.slice(
-			TAURI_WITH_MODE.indexOf("function isPairedAgentCheckout"),
-			TAURI_WITH_MODE.indexOf("function agentCandidates"),
-		);
-		expect(candidateBody).toContain("isCleanCheckout");
-		expect(candidateBody).toContain("REQUIRED_PROTO_SHA256");
+		expect(applyBody).toContain("targetEnv.NAIA_AGENT_SCRIPT = agentScript");
+		expect(applyBody).toContain("targetEnv.NAIA_AGENT_PROTO_DIR = agentProtoDir");
 		expect(TAURI_WITH_MODE).not.toContain("firstAgentWith");
 		expect(TAURI_WITH_MODE).not.toContain(
 			'env.NAIA_AGENT_PROTO_DIR = env.NAIA_AGENT_PROTO_DIR ?? resolve(AGENT, "src/main/adapters/grpc")',
@@ -147,18 +192,48 @@ describe("UC-WIRE-V1 paired proto build", () => {
 	it("applies the same paired agent/proto env before direct Tauri bundle builds", () => {
 		expect(STAGE_RUNTIME).toContain('from "./agent-pairing.mjs"');
 		expect(STAGE_RUNTIME).toContain("applyPairedAgentEnv(process.env)");
-		expect(STAGE_RUNTIME).toContain("AGENT_WORKTREE_ROOTS");
-		expect(STAGE_RUNTIME).toContain('"naia-agent-worktrees"');
-		expect(STAGE_RUNTIME).toContain("readdirSync(root, { withFileTypes: true })");
-		expect(STAGE_RUNTIME).toContain("agentCandidates()");
-		expect(STAGE_RUNTIME).toContain("const pairedAgentRoot = applyPairedAgentEnv(process.env)");
-		expect(STAGE_RUNTIME).toContain("sibling: pairedAgentRoot");
+		expect(STAGE_RUNTIME).toContain(
+			"const pairedAgentRoot = applyPairedAgentEnv(process.env)",
+		);
+
+		// 런처와 같은 해석기를 같은 방식으로 부른다 — 스테이징이 후보를 따로
+		// 추리거나 검증을 건너뛰면 두 쪽이 다른 체크아웃을 고르게 된다.
+		const applyBody = STAGE_RUNTIME.slice(
+			STAGE_RUNTIME.indexOf("function applyPairedAgentEnv"),
+			STAGE_RUNTIME.indexOf("/* ───────────────────────── 순수 함수"),
+		);
+		expect(applyBody).toContain("resolvePairedAgent({");
+		expect(applyBody).toContain(
+			"NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must be provided together",
+		);
+		expect(applyBody).toContain("validateAgentEnvPair(explicitScript, explicitProtoDir)");
+		expect(applyBody.indexOf("validateAgentEnvPair(explicitScript, explicitProtoDir)")).toBeLessThan(
+			applyBody.indexOf("resolvePairedAgent({"),
+		);
+		expect(applyBody).toContain("env.NAIA_AGENT_SCRIPT = agentScript");
+		expect(applyBody).toContain("env.NAIA_AGENT_PROTO_DIR = agentProtoDir");
+
+		// 명시 env 로 들어온 쌍도 런처와 같은 항목을 검사한다.
 		expect(STAGE_RUNTIME).toContain("validateAgentEnvPair");
 		expect(STAGE_RUNTIME).toContain("NAIA_AGENT_SCRIPT and NAIA_AGENT_PROTO_DIR must come from the same checkout");
+		expect(STAGE_RUNTIME).toContain("isCleanProto");
 		expect(STAGE_RUNTIME).toContain("isCleanAgentEntrypoint");
 		expect(STAGE_RUNTIME).toContain("isCleanCheckout");
 		expect(STAGE_RUNTIME).toContain("sha256File");
 		expect(STAGE_RUNTIME).toContain("NAIA_AGENT_SCRIPT must be scripts/builds/agent-stdio-entry.mjs");
+
+		// 해석 결과가 실제로 스테이징 대상이 된다.
+		expect(STAGE_RUNTIME).toContain("sibling: pairedAgentRoot");
+
+		// 그리고 그 적용은 런타임 준비·에이전트 스테이징·번들 빌드 **앞**에 온다.
+		// 비교 대상이 실제로 존재하는지 먼저 못 박는다(없으면 -1 로 통과해 버린다).
+		for (const anchor of [
+			"await prepareRuntime(matrix, platform, arch)",
+			'script: "scripts/stage-agent.mjs"',
+			"pnpm exec tauri build --verbose --config",
+		]) {
+			expect(STAGE_RUNTIME).toContain(anchor);
+		}
 		expect(STAGE_RUNTIME.indexOf("const pairedAgentRoot = applyPairedAgentEnv(process.env)")).toBeLessThan(
 			STAGE_RUNTIME.indexOf("await prepareRuntime(matrix, platform, arch)"),
 		);
@@ -168,19 +243,6 @@ describe("UC-WIRE-V1 paired proto build", () => {
 		expect(STAGE_RUNTIME.indexOf("const pairedAgentRoot = applyPairedAgentEnv(process.env)")).toBeLessThan(
 			STAGE_RUNTIME.indexOf("pnpm exec tauri build --verbose --config"),
 		);
-		const applyBody = STAGE_RUNTIME.slice(
-			STAGE_RUNTIME.indexOf("function applyPairedAgentEnv"),
-			STAGE_RUNTIME.indexOf("/* ───────────────────────── 순수 함수"),
-		);
-		expect(applyBody.indexOf("validateAgentEnvPair(explicitScript, explicitProtoDir)")).toBeLessThan(
-			applyBody.indexOf("firstPairedAgentCheckout()"),
-		);
-		const candidateBody = STAGE_RUNTIME.slice(
-			STAGE_RUNTIME.indexOf("function isPairedAgentCheckout"),
-			STAGE_RUNTIME.indexOf("function agentCandidates"),
-		);
-		expect(candidateBody).toContain("isCleanCheckout");
-		expect(candidateBody).toContain("REQUIRED_PROTO_SHA256");
 	});
 
 	it("requires stage-agent to stage the same validated paired checkout", () => {
