@@ -7,6 +7,7 @@ import {
 	sendCredsUpdate,
 	sendNotifyConfig,
 } from "../lib/chat-service";
+import { getAdkPath } from "../lib/adk-store";
 import { loadConfig, loadConfigWithSecrets, saveConfig } from "../lib/config";
 import { shouldMigrateNextainModel } from "../lib/llm/registry";
 import { Logger } from "../lib/logger";
@@ -31,16 +32,12 @@ export function useAgentAuthSync(
 	useEffect(() => {
 		const unlisten = listen<{ naiaKey?: string }>(
 			"naia_auth_complete",
-			(event) => {
-				const key = event.payload.naiaKey;
-				if (key) {
-					void invoke("store_startup_message", {
-						message: JSON.stringify({ type: "auth_update", naiaKey: key }),
-					})
-						.catch(() => {})
-						.then(() => sendAuthUpdate(key).catch(() => {}));
-					notifyNaiaAuthReady("auth-complete");
-				}
+			() => {
+				// The mounted login owner (SettingsTab, OnboardingWizard, or
+				// AdkSetupScreen) captures the ADK that opened the browser flow.
+				// This app-wide listener must not replay a callback against whatever
+				// ADK is selected now: a late A callback arriving after an A→B
+				// switch would otherwise be sent to B.
 				void syncLinkedChannels();
 			},
 		);
@@ -80,6 +77,9 @@ export function useAgentAuthSync(
 
 		let active = true;
 		async function initAuth() {
+			// Capture the selected ADK before the first await.  A switch while the
+			// config/secret load is pending must not label A's snapshot as B.
+			const sourceAdkPath = getAdkPath();
 			let cfg: Awaited<ReturnType<typeof loadConfigWithSecrets>>;
 			try {
 				cfg = await loadConfigWithSecrets();
@@ -90,15 +90,24 @@ export function useAgentAuthSync(
 				return;
 			}
 			if (!cfg || !active) return;
+			if (getAdkPath() !== sourceAdkPath) {
+				Logger.warn("App", "initAuth ADK changed during config restore", {
+					sourceAdkPath,
+					currentAdkPath: getAdkPath(),
+				});
+				return;
+			}
 
 			if (cfg.naiaKey) {
 				await invoke("store_startup_message", {
+					adkPath: sourceAdkPath,
 					message: JSON.stringify({
 						type: "auth_update",
 						naiaKey: cfg.naiaKey,
 					}),
 				}).catch(() => {});
-				if (active) await sendAuthUpdate(cfg.naiaKey).catch(() => {});
+				if (active)
+					await sendAuthUpdate(cfg.naiaKey, sourceAdkPath).catch(() => {});
 				if (active) notifyNaiaAuthReady("startup");
 			}
 			if (!active) return;
@@ -112,28 +121,33 @@ export function useAgentAuthSync(
 				discordDmChannelId: cfg.discordDmChannelId,
 			};
 			await invoke("store_startup_message", {
+				adkPath: sourceAdkPath,
 				message: JSON.stringify({ type: "notify_config", ...notifyPayload }),
 			}).catch(() => {});
-			if (active) await sendNotifyConfig(notifyPayload).catch(() => {});
+			if (active)
+				await sendNotifyConfig(notifyPayload, sourceAdkPath).catch(() => {});
 			if (!active) return;
 
 			const ttsKeys: Record<string, string> = {};
 			if (cfg.googleApiKey) ttsKeys.google = cfg.googleApiKey;
 			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
 			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
-			const credsProvider =
-				cfg.provider === "nextain" ? "naia-anyllm" : cfg.provider;
 			const credsPayload = {
-				keys: cfg.apiKey && cfg.provider ? { [credsProvider]: cfg.apiKey } : {},
+				keys:
+					cfg.apiKey && cfg.provider && cfg.provider !== "nextain"
+						? { [cfg.provider]: cfg.apiKey }
+						: {},
 				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
 				...(cfg.gatewayToken !== undefined && {
 					gatewayToken: cfg.gatewayToken,
 				}),
 			};
 			await invoke("store_startup_message", {
+				adkPath: sourceAdkPath,
 				message: JSON.stringify({ type: "creds_update", ...credsPayload }),
 			}).catch(() => {});
-			if (active) await sendCredsUpdate(credsPayload).catch(() => {});
+			if (active)
+				await sendCredsUpdate(credsPayload, sourceAdkPath).catch(() => {});
 		}
 
 		void initAuth();

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { Logger } from "./logger";
 import {
 	UI_PREFERENCE_KEYS,
@@ -120,9 +121,27 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 			version: update.version,
 			body: update.body ?? "",
 			installFn: async () => {
-				await update.downloadAndInstall();
-				const { relaunch } = await import("@tauri-apps/plugin-process");
-				await relaunch();
+				// Keep the native Agent alive while the package downloads. The
+				// Windows updater exits the current process from install(), so
+				// the guard must be claimed before that call.
+				await update.download();
+				let prepared = false;
+				await invoke("prepare_app_relaunch");
+				prepared = true;
+				try {
+					await update.install();
+					const { relaunch } = await import("@tauri-apps/plugin-process");
+					await relaunch();
+				} catch (error) {
+					if (prepared) {
+						await invoke("cancel_app_relaunch").catch((cancelError) => {
+							Logger.warn("updater", "Failed to release relaunch guard", {
+								error: String(cancelError),
+							});
+						});
+					}
+					throw error;
+				}
 			},
 		};
 	} catch (err) {

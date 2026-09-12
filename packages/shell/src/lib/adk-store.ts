@@ -46,6 +46,9 @@ export function getAdkPath(): string | null {
 export async function setAdkPath(path: string): Promise<void> {
 	// Normalize: remove trailing slash/backslash
 	const normalized = path.replace(/[/\\]+$/, "");
+	// Native rebinding is the commit point. Keep the existing bootstrap pointer
+	// and config untouched while the agent is restarting or if the rebind fails.
+	await invoke("write_naia_path_cache", { adkPath: normalized });
 	localStorage.setItem(ADK_PATH_KEY, normalized);
 	// config.workspaceRoot is defined as an adkPath mirror (see config.ts). The
 	// two used to drift: onboarding's AdkSetupScreen writes only the adk path,
@@ -57,9 +60,6 @@ export async function setAdkPath(path: string): Promise<void> {
 	if (cfg && cfg.workspaceRoot !== normalized) {
 		saveConfig({ ...cfg, workspaceRoot: normalized });
 	}
-	// Persist to ~/.naia/adk-path. Native restarts/rebinds an already-running
-	// agent when this changes, so setup must await completion before continuing.
-	await invoke("write_naia_path_cache", { adkPath: normalized });
 	// The workspace app is keepAlive and mounts during onboarding, before the
 	// user has picked a workspace. Announce the new binding so it re-reads the
 	// path and re-runs workspace_set_root instead of staying on whatever it
@@ -511,6 +511,22 @@ export async function writeAgentKeyStrict(
 	value: string,
 ): Promise<void> {
 	const adkPath = getAdkPath();
+	return writeAgentKeyStrictAtPath(provider, keyField, value, adkPath);
+}
+
+/**
+ * Persist a provider credential to a previously captured ADK.
+ *
+ * OAuth callbacks can yield after the user switches workspaces.  The caller
+ * captures this path before its first await and native code rejects a changed
+ * workspace instead of writing the callback credential into the new ADK.
+ */
+export async function writeAgentKeyStrictAtPath(
+	provider: string,
+	keyField: "apiKey" | "naiaKey",
+	value: string,
+	adkPath: string | null,
+): Promise<void> {
 	if (!adkPath) throw new Error("ADK path is not configured");
 	if (!value) throw new Error("Agent credential is empty");
 	const envKey = resolveAgentEnvKey(provider, keyField);
@@ -529,6 +545,15 @@ export async function writeAgentSecret(
 	value: string,
 ): Promise<void> {
 	const adkPath = getAdkPath();
+	return writeAgentSecretAtPath(envKey, value, adkPath);
+}
+
+/** Persist a non-provider secret to a captured ADK, rejecting a changed path. */
+export async function writeAgentSecretAtPath(
+	envKey: string,
+	value: string,
+	adkPath: string | null,
+): Promise<void> {
 	if (!adkPath || !value) return;
 	await invoke("write_agent_key", { adkPath, envKey, value }).catch(() => {
 		// Non-fatal — env fallback / next save retries.

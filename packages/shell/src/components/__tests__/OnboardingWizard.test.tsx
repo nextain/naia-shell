@@ -553,6 +553,76 @@ describe("OnboardingWizard", () => {
 		expect(config.ttsEnabled).toBe(true);
 	});
 
+	it("keeps the logged-in gateway credential when VoxCPM2 entitlement is rejected", async () => {
+		localStorage.setItem("naia-adk-path", "/adk-voxcpm2");
+		const { invoke } = await import("@tauri-apps/api/core");
+		let installed = false;
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
+			if (cmd === "voxcpm2_installation_status") {
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: installed,
+					summary: "ok",
+					steps: installed ? [] : [{ actionAvailable: true }],
+				});
+			}
+			if (cmd === "install_voxcpm2_runtime") {
+				installed = true;
+				return Promise.resolve(true);
+			}
+			if (cmd === "start_voxcpm2")
+				return Promise.reject(new Error("voxcpm2_entitlement_rejected"));
+			return defaultInvoke(cmd);
+		});
+
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+		});
+		advanceFromAgentNameToProvider();
+		const loginButton = screen
+			.getAllByRole("button")
+			.find((button) => button.textContent?.includes("Naia"));
+		expect(loginButton).toBeDefined();
+		fireEvent.click(loginButton!);
+		act(() => {
+			eventListeners.get("naia_auth_complete")?.({
+				payload: { naiaKey: "gw-member", naiaUserId: "member-1" },
+			});
+		});
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /Turn on host voice/ }),
+		);
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+
+		await vi.waitFor(() => {
+			expect(invoke).toHaveBeenCalledWith("start_voxcpm2", {
+				expectedLoaderProfile: "windows_trt_6g",
+				gpuIndex: null,
+			});
+			expect(screen.getByText(/installation failed|설치에 실패했습니다/i)).toBeDefined();
+		});
+		expect(localStorage.getItem("naia-remote-key")).toBe("gw-member");
+		expect(localStorage.getItem("naia-remote-user-id")).toBe("member-1");
+		expect(invoke).not.toHaveBeenCalledWith(
+			"secure_store_delete",
+			expect.objectContaining({ name: "naiaKey" }),
+		);
+		expect(screen.getByRole("button", { name: /Turn on host voice/ })).toBeDefined();
+	});
+
 	it("Next button is always enabled (agentName is optional)", () => {
 		renderAtAgentName();
 

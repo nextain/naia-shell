@@ -312,9 +312,10 @@ export type AgentResponseChunk =
 export interface SkillManifestInfo {
 	name: string;
 	description: string;
-	type: "gateway" | "command" | "built-in";
-	tier: number;
-	source: string;
+	type: "gateway" | "command" | "built-in" | "agent";
+	/** Tier/source are available for legacy manifest rows only. Agent ToolSpecs do not carry them. */
+	tier?: number;
+	source?: string;
 	gatewaySkill?: string;
 }
 

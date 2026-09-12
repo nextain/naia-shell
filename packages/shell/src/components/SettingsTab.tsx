@@ -22,10 +22,10 @@ import {
 	resetAdkPathBinding,
 	resetNaiaPersistedSettings,
 	toLocalBlobUrl,
-	writeAgentKey,
-	writeAgentKeyStrict,
-	writeAgentSecret,
+	writeAgentKeyStrictAtPath,
+	writeAgentSecretAtPath,
 	writeNaiaConfig,
+	writeNaiaConfigAtPath,
 	writeNaiaUiConfig,
 	writeSlotsManifest,
 } from "../lib/adk-store";
@@ -135,7 +135,11 @@ import {
 	type ProactiveSpeechSettings,
 	toSpeechProfileCommandInput,
 } from "../lib/proactive-speech-settings";
-import { deleteSecretKey, saveSecretKey } from "../lib/secure-store";
+import {
+	deleteSecretKeyAtPath,
+	getSecureStorePath,
+	saveSecretKeyAtPath,
+} from "../lib/secure-store";
 import {
 	type GateMode,
 	SLOT_GROUPS,
@@ -1088,19 +1092,25 @@ export function SettingsTab() {
 		setVoxcpm2InstallError(message);
 	};
 	async function recoverRejectedVoxCpm2Credential(): Promise<void> {
+		const sourceAdkPath = getAdkPath();
+		const sourceSecureStorePath = getSecureStorePath();
+		if (!sourceAdkPath) return;
 		clearLocalVoiceAccessToken();
 		try {
 			await invoke("stop_voxcpm2");
 		} catch {
 			// The rejected child normally exited before readiness.
 		}
+		if (getAdkPath() !== sourceAdkPath) return;
 		setCascadeRunning(false);
 		useCascadeAvatarStore.getState().setLocalFacadeUrl(null);
 		naiaCredentialEpochRef.current += 1;
 		setNaiaKeyState("");
 		setSecureNaiaCredentialReady(false);
 		setLabBalance(null);
-		await deleteSecretKey("naiaKey");
+		if (sourceSecureStorePath)
+			await deleteSecretKeyAtPath("naiaKey", sourceSecureStorePath);
+		if (getAdkPath() !== sourceAdkPath) return;
 		const current = loadConfig();
 		if (current) {
 			const loginRequiredConfig: AppConfig = {
@@ -1111,12 +1121,15 @@ export function SettingsTab() {
 				ttsEnabled: false,
 			};
 			saveConfig(loginRequiredConfig);
-			await writeNaiaConfig(
+			await writeNaiaConfigAtPath(
 				loginRequiredConfig as unknown as Record<string, unknown>,
+				sourceAdkPath,
 			);
-			await writeSlotsManifest(loginRequiredConfig);
+			if (getAdkPath() !== sourceAdkPath) return;
+			await writeSlotsManifest(loginRequiredConfig, undefined, sourceAdkPath);
+			if (getAdkPath() !== sourceAdkPath) return;
 		}
-		await sendAuthUpdateStrict("");
+		await sendAuthUpdateStrict("", sourceAdkPath);
 	}
 	const localVoiceTransactionRef = useRef(false);
 	useEffect(() => {
@@ -1253,9 +1266,11 @@ export function SettingsTab() {
 			setVoxcpm2InstallError(null);
 			return true;
 		} catch (e) {
-			const loginRequired = String(e).includes(
-				"voxcpm2_naia_member_login_required",
-			);
+			const errorCode = e instanceof Error ? e.message.trim() : String(e).trim();
+			const loginRequired =
+				errorCode === "voxcpm2_naia_member_login_required";
+			const entitlementRejected =
+				errorCode === "voxcpm2_entitlement_rejected";
 			if (originalConfig) {
 				try {
 					await rollbackLocalVoiceSelection(
@@ -1275,7 +1290,7 @@ export function SettingsTab() {
 				setVoxcpm2InstallError(t("settings.ttsNaiaRequired"));
 			} else {
 				surfaceLocalVoiceRevert(
-					`${t("settings.cascadeError")}: ${String(e)} — ${t(
+					`${t("settings.cascadeError")}${entitlementRejected ? "" : `: ${String(e)}`} — ${t(
 						"settings.localVoiceSelectionReverted",
 					)}`,
 				);
@@ -2162,6 +2177,7 @@ export function SettingsTab() {
 	const [labBalanceLoading, setLabBalanceLoading] = useState(false);
 	const [labBalanceError, setLabBalanceError] = useState(false);
 	const mountedRef = useRef(true);
+	const loginAdkPathRef = useRef<string | null>(null);
 	useEffect(() => {
 		// React StrictMode runs effect setup → cleanup → setup in development.
 		// Re-arm the ref on every setup or the first synthetic cleanup leaves
@@ -2173,6 +2189,7 @@ export function SettingsTab() {
 	}, []);
 
 	const startLabLogin = async () => {
+		loginAdkPathRef.current = getAdkPath();
 		setLabWaiting(true);
 		const timeout = window.setTimeout(() => setLabWaiting(false), 180_000);
 		try {
@@ -2310,6 +2327,22 @@ export function SettingsTab() {
 				naiaCredentialEpochRef.current += 1;
 				const nextNaiaKey = event.payload.naiaKey;
 				const nextNaiaUserId = event.payload.naiaUserId ?? "";
+				const currentAdkPath = getAdkPath();
+				const sourceAdkPath = loginAdkPathRef.current ?? currentAdkPath;
+				const capturedSecureStorePath = getSecureStorePath();
+				if (
+					sourceAdkPath !== currentAdkPath ||
+					!sourceAdkPath ||
+					!capturedSecureStorePath
+				) {
+					setLabWaiting(false);
+					setError("The login callback belongs to a different ADK.");
+					return;
+				}
+				const assertCurrentAdk = () => {
+					if (getAdkPath() !== sourceAdkPath)
+						throw new Error("The login callback belongs to a different ADK.");
+				};
 				setLabWaiting(true);
 				setError("");
 				try {
@@ -2318,20 +2351,37 @@ export function SettingsTab() {
 						nextNaiaKey,
 						nextNaiaUserId,
 					);
-					await saveSecretKey("naiaKey", nextNaiaKey);
-					await writeAgentKeyStrict("nextain", "naiaKey", nextNaiaKey);
+					await saveSecretKeyAtPath(
+						"naiaKey",
+						nextNaiaKey,
+						capturedSecureStorePath,
+					);
+					assertCurrentAdk();
+					await writeAgentKeyStrictAtPath(
+						"nextain",
+						"naiaKey",
+						nextNaiaKey,
+						sourceAdkPath,
+					);
+					assertCurrentAdk();
 					saveConfig(nextConfig);
-					await writeNaiaConfig({
+					assertCurrentAdk();
+					await writeNaiaConfigAtPath({
 						...(nextConfig as unknown as Record<string, unknown>),
 						...buildNaiaConfigEnv(nextConfig),
-					});
-					await sendAuthUpdateStrict(nextNaiaKey);
+					}, sourceAdkPath);
+					assertCurrentAdk();
+					await sendAuthUpdateStrict(nextNaiaKey, sourceAdkPath);
+					assertCurrentAdk();
+					loginAdkPathRef.current = null;
 					await activateNaiaLlm(
 						nextNaiaKey,
 						String(nextConfig.provider || "nextain"),
 						String(nextConfig.model || getDefaultLlmModel("nextain")),
 					);
+					assertCurrentAdk();
 					await fetchLabBalance(nextNaiaKey, true);
+					assertCurrentAdk();
 
 					setNaiaKeyState(nextNaiaKey);
 					setNaiaUserIdState(nextNaiaUserId);
@@ -2359,6 +2409,7 @@ export function SettingsTab() {
 							nextNaiaKey,
 							nextNaiaUserId,
 						);
+						assertCurrentAdk();
 						if (onlineConfig) {
 							const diffs = diffConfigs(nextConfig, onlineConfig);
 							if (diffs.length > 0) {
@@ -2894,6 +2945,9 @@ export function SettingsTab() {
 	}
 
 	async function handleSave() {
+		// Capture the selected ADK before the first await. Every persisted secret
+		// and live update below must belong to this Apply operation's workspace.
+		const applyAdkPath = getAdkPath();
 		// Keep previous key when input is empty (password field UX).
 		const resolvedApiKey = apiKey.trim() || existing?.apiKey || "";
 		const isNextainProvider = provider === "nextain";
@@ -3043,35 +3097,48 @@ export function SettingsTab() {
 			const credentialWrites: Promise<void>[] = [];
 			if (resolvedApiKey) {
 				credentialWrites.push(
-					writeAgentKey(newConfig.provider, "apiKey", resolvedApiKey),
+					writeAgentKeyStrictAtPath(
+						newConfig.provider,
+						"apiKey",
+						resolvedApiKey,
+						applyAdkPath,
+					).catch(() => {}),
 				);
 			}
 			if (naiaKey) {
 				credentialWrites.push(
-					writeAgentKey(newConfig.provider, "naiaKey", naiaKey),
+					writeAgentKeyStrictAtPath(
+						newConfig.provider,
+						"naiaKey",
+						naiaKey,
+						applyAdkPath,
+					).catch(() => {}),
 				);
 			}
 			if (newConfig.memoryEmbeddingApiKey) {
 				credentialWrites.push(
-					writeAgentSecret(
+					writeAgentSecretAtPath(
 						"NAIA_MEMORY_EMBED_API_KEY",
 						newConfig.memoryEmbeddingApiKey,
+						applyAdkPath,
 					),
 				);
 			}
 			if (newConfig.qdrantApiKey) {
 				credentialWrites.push(
-					writeAgentSecret(
+					writeAgentSecretAtPath(
 						"NAIA_MEMORY_QDRANT_API_KEY",
 						newConfig.qdrantApiKey,
+						applyAdkPath,
 					),
 				);
 			}
 			if (newConfig.memoryLlmApiKey) {
 				credentialWrites.push(
-					writeAgentSecret(
+					writeAgentSecretAtPath(
 						"NAIA_MEMORY_LLM_API_KEY",
 						newConfig.memoryLlmApiKey,
+						applyAdkPath,
 					),
 				);
 			}
@@ -3079,7 +3146,10 @@ export function SettingsTab() {
 			// Also persist to naia-settings/config.json so ADK reload restores the same settings.
 			// The success badge below is only reachable after the native write and
 			// agent reload request have completed.
-			await writeNaiaConfig(newConfig as unknown as Record<string, unknown>);
+			await writeNaiaConfigAtPath(
+				newConfig as unknown as Record<string, unknown>,
+				applyAdkPath,
+			);
 		} catch (saveError) {
 			setError(
 				`${t("settings.saveFailed")}: ${saveError instanceof Error ? saveError.message : String(saveError)}`,
@@ -3096,7 +3166,7 @@ export function SettingsTab() {
 			discordDefaultUserId: newConfig.discordDefaultUserId,
 			discordDefaultTarget: newConfig.discordDefaultTarget,
 			discordDmChannelId: newConfig.discordDmChannelId,
-		});
+		}, applyAdkPath);
 		// Push all per-session credentials (#260 follow-up). Empty strings
 		// clear the corresponding cached entry on the agent — keeps the cache
 		// in sync with what the user just saved.
@@ -3110,7 +3180,7 @@ export function SettingsTab() {
 				: {},
 			ttsKeys,
 			gatewayToken: newConfig.gatewayToken ?? "",
-		});
+		}, applyAdkPath);
 		await setLocale(locale);
 		setAvatarModelPath(vrmModel);
 		setAvatarBackgroundImage(backgroundImage);
@@ -3489,6 +3559,8 @@ export function SettingsTab() {
 		}
 		return configureSpeechProfile(toSpeechProfileCommandInput(settings));
 	};
+	const sttNeedsLocalModel =
+		sttProvider === "vosk" || sttProvider === "whisper";
 
 	return (
 		<div className="settings-tab">
@@ -3679,11 +3751,35 @@ export function SettingsTab() {
 								type="button"
 								className="voice-preview-btn"
 								onClick={async () => {
-									await resetAdkPathBinding();
-									const { relaunch } = await import(
-										"@tauri-apps/plugin-process"
-									);
-									await relaunch();
+									setError("");
+									let prepared = false;
+									try {
+										await invoke("prepare_app_relaunch");
+										prepared = true;
+										await resetAdkPathBinding();
+										const { relaunch } = await import(
+											"@tauri-apps/plugin-process"
+										);
+										await relaunch();
+									} catch (error) {
+										if (prepared) {
+											await invoke("cancel_app_relaunch").catch(
+												(cancelError) => {
+													Logger.warn(
+														"Settings",
+														"Failed to release relaunch guard",
+														{ error: String(cancelError) },
+													);
+												},
+											);
+										}
+										Logger.error("Settings", "Workspace reset failed", {
+											error: String(error),
+										});
+										setError(
+											`${t("settings.saveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
+										);
+									}
 								}}
 							>
 								{t("settings.adkResetBtn")}
@@ -4113,16 +4209,20 @@ export function SettingsTab() {
 												{t("settings.labDisconnectConfirm")}
 											</p>
 											<div className="reset-confirm-actions">
-												<button
-													type="button"
+													<button
+														type="button"
 													className="settings-reset-btn"
 													onClick={async () => {
+														const sourceAdkPath = getAdkPath();
+														const sourceSecureStorePath = getSecureStorePath();
+														if (!sourceAdkPath) return;
 														try {
 															clearLocalVoiceAccessToken();
 															await invoke("stop_voxcpm2");
 														} catch {
 															/* already stopped */
 														}
+														if (getAdkPath() !== sourceAdkPath) return;
 														setCascadeRunning(false);
 														useCascadeAvatarStore
 															.getState()
@@ -4138,7 +4238,12 @@ export function SettingsTab() {
 														setDiscordDmChannelId("");
 														setDiscordDefaultTarget("");
 														setShowLabDisconnect(false);
-														await deleteSecretKey("naiaKey");
+														if (sourceSecureStorePath)
+															await deleteSecretKeyAtPath(
+																"naiaKey",
+																sourceSecureStorePath,
+															);
+														if (getAdkPath() !== sourceAdkPath) return;
 														const current = loadConfig();
 														if (current) {
 															const loggedOutBase = {
@@ -4174,14 +4279,21 @@ export function SettingsTab() {
 																},
 															);
 															saveConfig(loggedOutConfig);
-															await writeNaiaConfig(
+															await writeNaiaConfigAtPath(
 																loggedOutConfig as unknown as Record<
 																	string,
 																	unknown
 																>,
+																sourceAdkPath,
 															);
-															await writeSlotsManifest(loggedOutConfig);
-															await sendAuthUpdateStrict("");
+															if (getAdkPath() !== sourceAdkPath) return;
+															await writeSlotsManifest(
+																loggedOutConfig,
+																undefined,
+																sourceAdkPath,
+															);
+															if (getAdkPath() !== sourceAdkPath) return;
+															await sendAuthUpdateStrict("", sourceAdkPath);
 															await reloadAgentSettings();
 														}
 													}}
@@ -5162,13 +5274,17 @@ export function SettingsTab() {
 									{!sttProvider && (
 										<div>{t("settings.voiceStatusSttNeeded")}</div>
 									)}
-									{sttProvider && !sttModel && (
+									{sttProvider && sttNeedsLocalModel && !sttModel && (
 										<div>{t("settings.voiceStatusModelNeeded")}</div>
 									)}
-									{sttProvider && sttModel && !ttsEnabled && (
+									{sttProvider &&
+										(!sttNeedsLocalModel || sttModel) &&
+										!ttsEnabled && (
 										<div>{t("settings.voiceStatusTtsOff")}</div>
 									)}
-									{sttProvider && sttModel && ttsEnabled && (
+									{sttProvider &&
+										(!sttNeedsLocalModel || sttModel) &&
+										ttsEnabled && (
 										<div style={{ color: "var(--success-color, #4caf50)" }}>
 											{t("settings.voiceStatusReady")}
 										</div>
@@ -6146,8 +6262,12 @@ export function SettingsTab() {
 						{/* Backup section — 구현 검증 전까지 비활성. */}
 						<div className="settings-field">
 							<label>{t("settings.memoryBackup")}</label>
+							<span className="settings-hint">
+								{t("settings.memoryBackupComingSoon")}
+							</span>
 							<input
 								type="password"
+								disabled
 								value={backupPassword}
 								onChange={(e) => setBackupPassword(e.target.value)}
 								placeholder={t("settings.memoryBackupPassword")}
@@ -6155,6 +6275,7 @@ export function SettingsTab() {
 							<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
 								<button
 									type="button"
+									disabled
 									onClick={async () => {
 										setBackupStatus("exporting");
 										setBackupError("");
@@ -6184,6 +6305,7 @@ export function SettingsTab() {
 								</button>
 								<button
 									type="button"
+									disabled
 									onClick={async () => {
 										const pw = backupPassword;
 										const fileInput = document.createElement("input");

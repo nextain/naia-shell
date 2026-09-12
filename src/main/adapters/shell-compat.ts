@@ -70,7 +70,7 @@ export function chatChunkToWire(requestId: string, c: ChatChunk): Record<string,
  * 한 번 wire → 여러 turn. clientId=이 shell 신원. onChunk 별 turn 의 render 로 라우팅.
  */
 /** creds_update drop-in payload(old sendCredsUpdate). */
-export interface ShellCredsPayload { provider: string; apiKey?: string; naiaKey?: string; }
+export interface ShellCredsPayload { provider: string; apiKey?: string; naiaKey?: string; adkPath?: string | null; }
 
 export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?: string }): {
   sendChatMessage(opts: ShellSendOptions): Promise<void>;
@@ -129,7 +129,7 @@ export function makeShellChatService(deps: { live: LiveTransportDeps; clientId?:
       const secret: { apiKey?: string; naiaKey?: string } = {};
       if (payload.apiKey !== undefined) secret.apiKey = payload.apiKey;
       if (payload.naiaKey !== undefined) secret.naiaKey = payload.naiaKey;
-      return transport.send({ kind: "credsUpdate", provider: payload.provider, secret });
+      return transport.send({ kind: "credsUpdate", provider: payload.provider, secret, adkPath: payload.adkPath });
     },
     // UC13 — 승인 응답 송신(approval_response wire). decision=approve|reject(매핑은 shell chat-service). send reject 전파.
     sendApprovalResponse(requestId: string, toolCallId: string, decision: "approve" | "reject"): Promise<void> {

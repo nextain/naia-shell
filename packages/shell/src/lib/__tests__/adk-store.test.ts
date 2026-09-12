@@ -131,18 +131,18 @@ describe("getAdkPath", () => {
 		expect(getAdkPath()).toBeNull();
 	});
 
-	it("returns the stored path after setAdkPath", () => {
-		setAdkPath(WIN_ADK);
+	it("returns the stored path after setAdkPath", async () => {
+		await setAdkPath(WIN_ADK);
 		expect(getAdkPath()).toBe(WIN_ADK);
 	});
 
-	it("strips trailing backslash on Windows path", () => {
-		setAdkPath("C:\\work\\naia-adk\\");
+	it("strips trailing backslash on Windows path", async () => {
+		await setAdkPath("C:\\work\\naia-adk\\");
 		expect(getAdkPath()).toBe(WIN_ADK);
 	});
 
-	it("strips trailing slash on Unix path", () => {
-		setAdkPath("/home/user/naia-adk/");
+	it("strips trailing slash on Unix path", async () => {
+		await setAdkPath("/home/user/naia-adk/");
 		expect(getAdkPath()).toBe(UNIX_ADK);
 	});
 });
@@ -157,11 +157,79 @@ describe("setAdkPath native binding", () => {
 		expect(getAdkPath()).toBe(WIN_ADK);
 	});
 
-	it("surfaces a native rebind failure while retaining the bootstrap path", async () => {
+	it("surfaces a native rebind failure while retaining the existing path and settings", async () => {
+		const existingPath = "D:\\existing\\naia-adk";
+		await setAdkPath(existingPath);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				workspaceRoot: existingPath,
+				provider: "ollama",
+				model: "existing-model",
+			}),
+		);
+		mockInvoke.mockClear();
 		mockInvoke.mockRejectedValueOnce(new Error("agent restart failed"));
+		const pathChanged = vi.fn();
+		window.addEventListener("naia-adk-path-changed", pathChanged);
 
-		await expect(setAdkPath(WIN_ADK)).rejects.toThrow("agent restart failed");
-		expect(getAdkPath()).toBe(WIN_ADK);
+		try {
+			await expect(setAdkPath(WIN_ADK)).rejects.toThrow("agent restart failed");
+			expect(getAdkPath()).toBe(existingPath);
+			expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}")).toEqual({
+				workspaceRoot: existingPath,
+				provider: "ollama",
+				model: "existing-model",
+			});
+			expect(pathChanged).not.toHaveBeenCalled();
+		} finally {
+			window.removeEventListener("naia-adk-path-changed", pathChanged);
+		}
+	});
+
+	it("keeps the existing path and settings until native rebind succeeds", async () => {
+		const existingPath = "D:\\existing\\naia-adk";
+		await setAdkPath(existingPath);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				workspaceRoot: existingPath,
+				provider: "ollama",
+				model: "existing-model",
+			}),
+		);
+		mockInvoke.mockClear();
+		let resolveRebind!: () => void;
+		const pendingRebind = new Promise<void>((resolve) => {
+			resolveRebind = resolve;
+		});
+		mockInvoke.mockReturnValue(pendingRebind);
+		const pathChanged = vi.fn();
+		window.addEventListener("naia-adk-path-changed", pathChanged);
+
+		try {
+			const rebinding = setAdkPath(WIN_ADK);
+			await Promise.resolve();
+			expect(getAdkPath()).toBe(existingPath);
+			expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}")).toEqual({
+				workspaceRoot: existingPath,
+				provider: "ollama",
+				model: "existing-model",
+			});
+			expect(pathChanged).not.toHaveBeenCalled();
+
+			resolveRebind();
+			await rebinding;
+			expect(getAdkPath()).toBe(WIN_ADK);
+			expect(JSON.parse(localStorage.getItem("naia-config") ?? "{}")).toMatchObject({
+				workspaceRoot: WIN_ADK,
+				provider: "ollama",
+				model: "existing-model",
+			});
+			expect(pathChanged).toHaveBeenCalledOnce();
+		} finally {
+			window.removeEventListener("naia-adk-path-changed", pathChanged);
+		}
 	});
 
 	// #447-6 regression: config.workspaceRoot is an adkPath mirror. A stale
@@ -187,15 +255,15 @@ describe("isAdkInitialized", () => {
 		expect(isAdkInitialized()).toBe(false);
 	});
 
-	it("returns true after setAdkPath", () => {
-		setAdkPath(WIN_ADK);
+	it("returns true after setAdkPath", async () => {
+		await setAdkPath(WIN_ADK);
 		expect(isAdkInitialized()).toBe(true);
 	});
 });
 
 describe("clearAdkPath", () => {
-	it("removes stored path", () => {
-		setAdkPath(WIN_ADK);
+	it("removes stored path", async () => {
+		await setAdkPath(WIN_ADK);
 		clearAdkPath();
 		expect(getAdkPath()).toBeNull();
 		expect(isAdkInitialized()).toBe(false);
@@ -204,7 +272,7 @@ describe("clearAdkPath", () => {
 
 describe("resetNaiaPersistedSettings", () => {
 	it("removes file-backed config and secure keys before clearing the bootstrap cache", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		localStorage.setItem("naia-config", JSON.stringify({ provider: "ollama" }));
 
 		await resetNaiaPersistedSettings();
@@ -222,7 +290,7 @@ describe("resetNaiaPersistedSettings", () => {
 	});
 
 	it("keeps the bootstrap cache retryable when native reset fails", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		localStorage.setItem("naia-config", "{}");
 		mockInvoke.mockImplementation((command: string) => {
 			if (command === "reset_naia_config_files") {
@@ -298,7 +366,7 @@ describe("listNaiaAssets", () => {
 	});
 
 	it("calls invoke with correct args and maps filenames to absolute paths (Unix)", async () => {
-		setAdkPath(UNIX_ADK);
+		await setAdkPath(UNIX_ADK);
 		mockInvoke.mockResolvedValue([
 			"background-space.png",
 			"anime-rainbow-landscape.jpg",
@@ -312,7 +380,7 @@ describe("listNaiaAssets", () => {
 	});
 
 	it("returns empty array on invoke error", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockRejectedValue(new Error("Permission denied"));
 
 		const result = await listNaiaAssets("background");
@@ -320,7 +388,7 @@ describe("listNaiaAssets", () => {
 	});
 
 	it("works for bgm-musics subdir", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue(["Afternoon Whispers.mp3", "lounge.mp3"]);
 
 		const result = await listNaiaAssets("bgm-musics");
@@ -337,19 +405,19 @@ describe("readNaiaConfig", () => {
 	});
 
 	it("throws on invoke error", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockRejectedValue(new Error("File not found"));
 		await expect(readNaiaConfig()).rejects.toThrow("File not found");
 	});
 
 	it("returns null for empty string response", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue("");
 		expect(await readNaiaConfig()).toBeNull();
 	});
 
 	it("throws for malformed and non-object responses", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValueOnce("not-json");
 		await expect(readNaiaConfig()).rejects.toThrow();
 		mockInvoke.mockResolvedValueOnce("[]");
@@ -357,7 +425,7 @@ describe("readNaiaConfig", () => {
 	});
 
 	it("parses and returns config JSON", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue(
 			JSON.stringify({ provider: "gemini", apiKey: "key123" }),
 		);
@@ -390,7 +458,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("calls invoke with serialized JSON", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) =>
 			command === "read_naia_ui_config" ? "" : undefined,
 		);
@@ -413,7 +481,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("persists config, UI config, slots manifest, then reloads the agent in order", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockClear();
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "{}";
@@ -447,7 +515,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("rejects visibly when the running agent cannot apply memory settings", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "{}";
 			if (command === "detect_gpu_vram") return null;
@@ -463,7 +531,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("rejects visibly when the primary config write fails and stops the transaction", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockClear();
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "write_naia_config") {
@@ -485,7 +553,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("rejects visibly when the paired UI config write fails", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "";
 			if (command === "write_naia_ui_config") {
@@ -509,7 +577,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("pins the request path and config snapshot for queued writes", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		let releaseFirst!: () => void;
 		const firstWriteFinished = new Promise<void>((resolve) => {
 			releaseFirst = resolve;
@@ -556,7 +624,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("does not write a config queued during hydration after the gate opens", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		beginNaiaConfigHydration();
 		const pendingWrite = writeNaiaConfig({
 			provider: "openai",
@@ -570,7 +638,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("allows setup to persist the selected ADK while ordinary hydration writes stay gated", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		beginNaiaConfigHydration();
 
 		const selectedWrite = writeNaiaConfigAtPath(
@@ -599,7 +667,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("does not borrow the newly selected ADK credential for a queued old-path manifest", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		secureState.naiaKey = "credential-from-new-selection";
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "write_naia_config") {
@@ -624,7 +692,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("completes an approved write when hydration starts while it waits", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		let releaseFirst!: () => void;
 		const firstWriteFinished = new Promise<void>((resolve) => {
 			releaseFirst = resolve;
@@ -676,7 +744,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("serializes direct UI patches behind a full config write", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		let releaseConfigWrite!: () => void;
 		const configWriteStarted = new Promise<void>((resolve) => {
 			releaseConfigWrite = resolve;
@@ -713,7 +781,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("writes the current flat memory contract to config.json and strips secrets", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaConfig({
 			provider: "openai",
 			model: "gpt-4o",
@@ -746,7 +814,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("drops stale derived env aliases and regenerates only current values", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) =>
 			command === "read_naia_ui_config" ? "" : undefined,
 		);
@@ -771,7 +839,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("preserves the member slots gate when the public config omits the secure Naia key", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		secureState.naiaKey = "secure-member-key";
 		mockInvoke.mockImplementation(async (command: string) =>
 			command === "read_naia_ui_config" ? "" : undefined,
@@ -793,7 +861,7 @@ describe("writeNaiaConfig", () => {
 	});
 
 	it("llmRoles는 opaque credentialRef만 보존하고 중첩 token/apiKey를 제거한다", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) =>
 			command === "read_naia_ui_config" ? "" : undefined,
 		);
@@ -832,7 +900,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	});
 
 	it("persists modelSortMode only in ui-config", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaConfig({
 			provider: "openai",
 			model: "gpt-4o",
@@ -856,7 +924,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	// FR-CONFIG-SOT.4 — ui-config.json 은 UI_ONLY 전체를 저장한다(세션/휘발 상태만 제외).
 	//   이전 계약은 UI_IDENTITY 9개만 저장 → theme·vllmTtsHost 등이 어느 파일에도 SoT 가 없어 부팅 리셋.
 	it("writes ALL UI settings (not just identity), dropping provider/secret keys", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaUiConfig({
 			provider: "openai", // agent 키(config.json) → 제외
 			naiaKey: "secret", // 시크릿 → 제외
@@ -886,7 +954,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	});
 
 	it("does NOT persist volatile session state (discord/bgmPlaying)", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaUiConfig({
 			theme: "ocean",
 			discordSessionMigrated: true, // 세션 상태 → 제외
@@ -904,7 +972,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	});
 
 	it("restores durable YouTube track metadata and volume without resuming playback", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaUiConfig({
 			bgmSource: "youtube",
 			bgmYoutubeVideoId: "video-123",
@@ -943,7 +1011,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	});
 
 	it("preserves unowned persisted choices when a boot-time UI patch is partial", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") {
 				return JSON.stringify({
@@ -970,7 +1038,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 	});
 
 	it("removes a choice only when the caller explicitly provides undefined", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config")
 				return JSON.stringify({ vrmModel: "selected.vrm", theme: "ocean" });
@@ -989,7 +1057,7 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 
 	// 회귀 방지 — 로컬 보이스 호스트가 write→read 왕복에서 살아남는가 (루크 발견 버그).
 	it("round-trips vllmTtsHost through ui-config (regression: local voice host reset)", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaUiConfig({
 			vllmTtsHost: "http://tts.example.invalid:22600",
 		});
@@ -1011,13 +1079,13 @@ describe("readNaiaUiConfig", () => {
 	});
 
 	it("parses ui-config JSON", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue(JSON.stringify({ vrmModel: "b.vrm" }));
 		expect((await readNaiaUiConfig())?.vrmModel).toBe("b.vrm");
 	});
 
 	it("throws on I/O, malformed, and non-object responses", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockRejectedValueOnce(new Error("permission denied"));
 		await expect(readNaiaUiConfig()).rejects.toThrow("permission denied");
 		mockInvoke.mockResolvedValueOnce("not-json");
@@ -1029,7 +1097,7 @@ describe("readNaiaUiConfig", () => {
 
 describe("writeNaiaConfig also persists ui-config (FR-WS.2)", () => {
 	it("calls both write_naia_config (stripped) and write_naia_ui_config (ALL UI settings)", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		await writeNaiaConfig({
 			provider: "openai",
 			model: "gpt-4o",
@@ -1068,7 +1136,7 @@ describe("writeNaiaConfig also persists ui-config (FR-WS.2)", () => {
 
 describe("applyWorkspaceConfigToLocal (전환 복원 FR-WS.1/.3)", () => {
 	it("merges config.json + ui-config.json into localStorage naia-config", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockImplementation(async (cmd: string) => {
 			if (cmd === "read_naia_config")
 				return JSON.stringify({
@@ -1100,7 +1168,7 @@ describe("applyWorkspaceConfigToLocal (전환 복원 FR-WS.1/.3)", () => {
 	});
 
 	it("survives missing files — identity keys absent (bundle fallback)", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue(""); // both reads empty
 		await applyWorkspaceConfigToLocal();
 		const stored = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
@@ -1198,7 +1266,7 @@ describe("syncMainRoleOpenAiBaseUrl (#515)", () => {
 	});
 
 	it("writeNaiaConfig persists the synced main baseUrl to the agent config", async () => {
-		setAdkPath(WIN_ADK);
+		await setAdkPath(WIN_ADK);
 		mockInvoke.mockClear();
 		mockInvoke.mockImplementation(async (command: string) => {
 			if (command === "read_naia_ui_config") return "{}";

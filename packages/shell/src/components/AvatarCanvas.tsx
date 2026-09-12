@@ -277,13 +277,54 @@ export function AvatarCanvas() {
 		let mouthCtrl: ReturnType<typeof createMouthController> | null = null;
 		let blinkExprName = "blink";
 
-		// Renderer
-		const renderer = new WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setPixelRatio(window.devicePixelRatio);
-		renderer.setSize(container.clientWidth, container.clientHeight);
-		container.appendChild(renderer.domElement);
-		// Prevent WebView2 context menu so right-click drag (pan) reaches OrbitControls
-		renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
+		// Renderer — WebGL context creation can fail on a host without a usable
+		// graphics context. Keep that failure in the component state so the shell
+		// shows the same localized load notice used for model failures.
+		let initializedRenderer: WebGLRenderer | null = null;
+		try {
+			initializedRenderer = new WebGLRenderer({ antialias: true, alpha: true });
+			initializedRenderer.setPixelRatio(window.devicePixelRatio);
+			initializedRenderer.setSize(
+				container.clientWidth,
+				container.clientHeight,
+			);
+			container.appendChild(initializedRenderer.domElement);
+			// Prevent WebView2 context menu so right-click drag (pan) reaches OrbitControls
+			initializedRenderer.domElement.addEventListener(
+				"contextmenu",
+				(e) => e.preventDefault(),
+			);
+		} catch (err) {
+			if (initializedRenderer) {
+				if (container.contains(initializedRenderer.domElement)) {
+					container.removeChild(initializedRenderer.domElement);
+				}
+				try {
+					initializedRenderer.dispose();
+				} catch (disposeErr) {
+					Logger.warn(
+						"AvatarCanvas",
+						"Failed to dispose WebGL renderer after setup error",
+						{
+							error: String(disposeErr),
+						},
+					);
+				}
+			}
+			const error = String(err);
+			setLoadError(`webgl: ${error}`);
+			setLoadStage("error:webgl");
+			setLoaded(false);
+			Logger.error("AvatarCanvas", "WebGL renderer initialization failed", {
+				error,
+				modelPath,
+			});
+			return () => {
+				Logger.debug("AvatarCanvas", "Disposed");
+			};
+		}
+		if (!initializedRenderer) return;
+		const renderer = initializedRenderer;
 
 		// Scene — transparent background (background video/image is handled by the app layer)
 		const scene = new Scene();

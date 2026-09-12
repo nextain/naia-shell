@@ -8,8 +8,9 @@ import {
 	listNaiaAssets,
 	toAssetUrl,
 	toLocalBlobUrl,
-	writeAgentKeyStrict,
+	writeAgentKeyStrictAtPath,
 	writeNaiaConfig,
+	writeNaiaConfigAtPath,
 	writeSlotsManifest,
 } from "../lib/adk-store";
 import {
@@ -54,7 +55,7 @@ import {
 import {
 	deleteSecretKey,
 	getSecureStorePath,
-	saveSecretKey,
+	saveSecretKeyAtPath,
 } from "../lib/secure-store";
 import { NAIA_SLOT_DEFAULTS, applyNaiaSlotDefaults } from "../lib/slots/model";
 import { voiceHostProfile } from "../lib/voice/host-profile";
@@ -382,6 +383,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		"none" | "naia" | "vllm" | "ollama"
 	>("none");
 	const naiaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const loginAdkPathRef = useRef<string | null>(null);
 	const latestRef = useRef<OnboardingSnapshot | null>(null);
 	const onboardingGpuSummary =
 		detectedVramGb != null
@@ -616,7 +618,9 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				.setLocalFacadeUrl(localVoiceFacadeUrlFromReady(ready));
 			setLocalVoiceEnabled(true);
 		} catch (error) {
-			if (String(error).includes("voxcpm2_naia_member_login_required")) {
+			const errorCode =
+				error instanceof Error ? error.message.trim() : String(error).trim();
+			if (errorCode === "voxcpm2_naia_member_login_required") {
 				await deleteSecretKey("naiaKey");
 				localStorage.removeItem("naia-remote-key");
 				setNaiaLoginDone(false);
@@ -856,24 +860,68 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 			"naia_auth_complete",
 			async (event) => {
 				if (naiaTimerRef.current) clearTimeout(naiaTimerRef.current);
+				const currentAdkPath = getAdkPath();
+				const sourceAdkPath = loginAdkPathRef.current ?? currentAdkPath;
+				const capturedSecureStorePath = getSecureStorePath();
+				if (
+					sourceAdkPath !== currentAdkPath ||
+					!sourceAdkPath ||
+					!capturedSecureStorePath
+				) {
+					setNaiaLoginWaiting(false);
+					setCompletionError("The login callback belongs to a different ADK.");
+					return;
+				}
+				const assertCurrentAdk = () => {
+					if (getAdkPath() !== sourceAdkPath)
+						throw new Error("The login callback belongs to a different ADK.");
+				};
 				try {
 					// Local voice activation reads the native secure store. Persist the
 					// credential before exposing the voice step so an immediate click
 					// cannot race the keychain write.
-					await saveSecretKey("naiaKey", event.payload.naiaKey);
+					await saveSecretKeyAtPath(
+						"naiaKey",
+						event.payload.naiaKey,
+						capturedSecureStorePath,
+					);
+					assertCurrentAdk();
 					// The agent checkout may not exist yet during first-run onboarding.
 					// Native secure storage is the activation gate; the agent mirror is
 					// best-effort and will be reconciled once a checkout is selected.
-					await writeAgentKeyStrict(
+					await writeAgentKeyStrictAtPath(
 						"nextain",
 						"naiaKey",
 						event.payload.naiaKey,
+						sourceAdkPath,
 					).catch(() => {});
+					assertCurrentAdk();
+					await invoke("store_startup_message", {
+						adkPath: sourceAdkPath,
+						message: JSON.stringify({
+							type: "auth_update",
+							naiaKey: event.payload.naiaKey,
+						}),
+					}).catch(() => {});
+					assertCurrentAdk();
+					await sendAuthUpdate(
+						event.payload.naiaKey,
+						sourceAdkPath,
+					).catch(() => {});
+					assertCurrentAdk();
+					const onboarding = core();
+					if (onboarding) {
+						await onboarding
+							.onNaiaAuthCallback(event.payload.naiaKey, sourceAdkPath)
+							.catch(() => {});
+						assertCurrentAdk();
+					}
 				} catch (error) {
 					setNaiaLoginWaiting(false);
 					setCompletionError(String(error));
 					return;
 				}
+				loginAdkPathRef.current = null;
 				localStorage.setItem("naia-remote-key", event.payload.naiaKey);
 				if (event.payload.naiaUserId) {
 					localStorage.setItem("naia-remote-user-id", event.payload.naiaUserId);
@@ -881,20 +929,6 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				setNaiaLoginWaiting(false);
 				setNaiaLoginDone(true);
 				setNaiaAuthPayload(event.payload);
-				// Cache before sending so crash-restart can replay the key.
-				invoke("store_startup_message", {
-					message: JSON.stringify({
-						type: "auth_update",
-						naiaKey: event.payload.naiaKey,
-					}),
-				})
-					.catch(() => {})
-					.then(() => sendAuthUpdate(event.payload.naiaKey).catch(() => {}));
-				// core mirror(비파괴 추가): naiaLoginDone=게이트 해제 + NAIA_ANYLLM_API_KEY 키체인
-				// (idempotent, completeWith 와 동값). 기존 sendAuthUpdate(런타임 push)·store_startup_message 유지 = 보완.
-				await core()
-					?.onNaiaAuthCallback(event.payload.naiaKey)
-					.catch(() => {});
 				// Voice choice is part of onboarding. Login must not skip it.
 				setStep("voice");
 			},
@@ -980,6 +1014,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 	}
 
 	async function handleNaiaLogin() {
+		loginAdkPathRef.current = getAdkPath();
 		setNaiaLoginWaiting(true);
 		naiaTimerRef.current = setTimeout(
 			() => setNaiaLoginWaiting(false),
@@ -1127,28 +1162,41 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		setCompleting(true);
 		setCompletionError("");
 		try {
+			// Capture the workspace before the first await. Completion performs several
+			// persisted writes; a late ADK switch must never redirect them to the new
+			// workspace.
+			const sourceAdkPath = getAdkPath();
+			const assertCurrentAdk = () => {
+				if (sourceAdkPath && getAdkPath() !== sourceAdkPath)
+					throw new Error("Onboarding completion belongs to a different ADK.");
+			};
 			const completedFlat = await saveCompletedConfig(
 				naiaAuthPayload ?? undefined,
 			);
+			assertCurrentAdk();
 			// G-01: sync to naia-settings/config.json so the standalone agent picks
 			// up the onboarding result. This MUST be the freshly completed config —
 			// loadConfig() here returned the PRE-LOGIN snapshot (completedFlat is
 			// only persisted below), so reloadAgentSettings() re-read a config
 			// without naiaKey/provider and the FIRST session answered with empty
 			// 0-token replies until an app restart (#449 재발, 2026-08-18 실기).
-			await writeNaiaConfig({
+			await writeNaiaConfigAtPath({
 				...(completedFlat as Record<string, unknown>),
 				...buildNaiaConfigEnv(completedFlat as unknown as AppConfig),
-			});
+			}, sourceAdkPath);
+			assertCurrentAdk();
 			// Write naiaKey to OS keychain so standalone naia-agent can read it.
 			if (typeof completedFlat.naiaKey === "string")
-				await writeAgentKeyStrict(
+				await writeAgentKeyStrictAtPath(
 					String(completedFlat.provider || "nextain"),
 					"naiaKey",
 					completedFlat.naiaKey,
+					sourceAdkPath,
 				);
+			assertCurrentAdk();
 			if (typeof completedFlat.naiaKey === "string") {
-				await sendAuthUpdateStrict(completedFlat.naiaKey);
+				await sendAuthUpdateStrict(completedFlat.naiaKey, sourceAdkPath);
+				assertCurrentAdk();
 				await activateNaiaLlm(
 					completedFlat.naiaKey,
 					String(completedFlat.provider || "nextain"),
@@ -1161,25 +1209,30 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 					LAB_GATEWAY_URL,
 					completedFlat.naiaKey,
 				);
+				assertCurrentAdk();
 				const credits = parseLabCredits(balancePayload);
 				if (credits == null)
 					throw new Error("authenticated balance response is invalid");
 				primeLabCredits(credits);
 			} else {
 				await reloadAgentSettings();
+				assertCurrentAdk();
 			}
 			const committedFlat = { ...completedFlat, onboardingComplete: true };
 			if (newCore) {
 				await core()?.completeWith(committedFlat);
+				assertCurrentAdk();
 			} else {
 				await saveConfigSecure(committedFlat as unknown as AppConfig);
+				assertCurrentAdk();
 				const committed = loadConfig();
 				if (committed)
-					await writeNaiaConfig({
+					await writeNaiaConfigAtPath({
 						...(committed as unknown as Record<string, unknown>),
 						...buildNaiaConfigEnv(committed),
 						onboardingComplete: true,
-					});
+					}, sourceAdkPath);
+				assertCurrentAdk();
 			}
 			addMessage({
 				role: "assistant",

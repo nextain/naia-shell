@@ -1286,10 +1286,97 @@ impl Drop for VoxCpm2Process {
     }
 }
 
+/// Startup IPC is replayed only within the ADK workspace that produced it.
+/// A restart of the same agent keeps this cache, while switching workspaces
+/// clears it before the replacement agent is spawned.  Keeping the scope and
+/// messages under one mutex makes a late frontend callback fail closed instead
+/// of racing a workspace transition.
+#[derive(Debug, Default, Clone)]
+struct StartupMessageCache {
+    adk_path: Option<String>,
+    messages: Vec<String>,
+}
+
+fn normalize_startup_adk_path(path: &str) -> Option<String> {
+    let normalized = path.trim().trim_end_matches(['/', '\\']);
+    (!normalized.is_empty()).then(|| normalized.to_string())
+}
+
+impl StartupMessageCache {
+    fn set_scope(&mut self, adk_path: &str) -> Result<bool, String> {
+        let normalized = normalize_startup_adk_path(adk_path)
+            .ok_or_else(|| "startup message scope requires an ADK path".to_string())?;
+        if self.adk_path.as_deref() == Some(normalized.as_str()) {
+            return Ok(false);
+        }
+        self.adk_path = Some(normalized);
+        self.messages.clear();
+        Ok(true)
+    }
+
+    fn clear_scope(&mut self) {
+        self.adk_path = None;
+        self.messages.clear();
+    }
+
+    fn replay(&self) -> Vec<String> {
+        self.messages.clone()
+    }
+
+    fn validate_source(&self, source_adk_path: Option<&str>) -> Result<(), String> {
+        let source = source_adk_path
+            .and_then(normalize_startup_adk_path)
+            .ok_or_else(|| "startup message IPC requires an ADK path".to_string())?;
+        match self.adk_path.as_deref() {
+            Some(active) if active == source => Ok(()),
+            Some(_) => Err("stale ADK startup IPC rejected".to_string()),
+            None => Err("startup message scope is not bound to an ADK".to_string()),
+        }
+    }
+
+    fn store(
+        &mut self,
+        message: String,
+        msg_type: &str,
+        source_adk_path: Option<&str>,
+    ) -> Result<(), String> {
+        let source = source_adk_path
+            .and_then(normalize_startup_adk_path)
+            .ok_or_else(|| "store_startup_message: adk_path is required".to_string())?;
+        match self.adk_path.as_deref() {
+            Some(active) if active == source => {}
+            Some(_) => {
+                return Err(
+                    "store_startup_message: stale ADK startup message rejected".to_string(),
+                );
+            }
+            None => self.adk_path = Some(source),
+        }
+
+        // Deduplicate: replace any existing entry of the same type.
+        self.messages.retain(|existing| {
+            serde_json::from_str::<serde_json::Value>(existing)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("type")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value != msg_type)
+                })
+                .unwrap_or(true)
+        });
+        self.messages.push(message);
+        Ok(())
+    }
+}
+
 struct AppState {
     agent: Mutex<Option<AgentProcess>>,
     /// Serializes every agent spawn/publication with Discord repair and quarantine.
     discord_lifecycle: Mutex<()>,
+    /// Blocks agent sends and replacement spawns while the frontend hands
+    /// control to the native relaunch plugin.
+    agent_relaunch_pending: Arc<std::sync::atomic::AtomicBool>,
     /// Process-local fail-closed latch. Only verified explicit repair clears it.
     discord_quarantined: Arc<std::sync::atomic::AtomicBool>,
     /// Blocks every spawn while an unconfirmed child is owned by a background reaper.
@@ -1325,7 +1412,7 @@ struct AppState {
     /// Startup IPC messages (auth_update / notify_config / creds_update) ??replayed
     /// to agent-core after every restart so credentials are never permanently lost.
     /// Deduplicated by type: latest message of each type wins.
-    startup_messages: Mutex<Vec<String>>,
+    startup_messages: Mutex<StartupMessageCache>,
 }
 
 struct AuditState {
@@ -4159,6 +4246,92 @@ fn should_teardown_for_window(label: &str) -> bool {
     label == "main"
 }
 
+fn ensure_agent_relaunch_not_pending(state: &AppState) -> Result<(), String> {
+    if state
+        .agent_relaunch_pending
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        Err("agent_relaunch_pending".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn claim_agent_relaunch(
+    pending: &std::sync::atomic::AtomicBool,
+) -> Result<(), String> {
+    pending
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .map(|_| ())
+        .map_err(|_| "agent_relaunch_pending".to_string())
+}
+
+fn prepare_agent_relaunch_unlocked(state: &AppState) -> Result<(), String> {
+    let mut previous = {
+        let mut guard = lock_or_recover(&state.agent, "state.agent(prepare_app_relaunch)");
+        guard.take()
+    };
+    let result = (|| {
+        if let Some(process) = previous.as_mut() {
+            graceful_shutdown_and_reap_agent(process)?;
+            let outcome = process.finish_owned_cleanup(true);
+            require_owned_cleanup_complete(
+                &outcome,
+                true,
+                "agent_owned_cleanup_incomplete",
+            )?;
+        }
+
+        // If no in-memory process was published, reconcile the durable lease
+        // before the WebView clears its ADK binding. This also handles a
+        // previous hard shutdown that left only an orphan child behind.
+        let lease_lock = acquire_agent_child_lease_lock()?;
+        reconcile_agent_child_lease_locked(&lease_lock)
+    })();
+
+    if result.is_err() {
+        // A failed prepare cancels the relaunch. Keep the process available
+        // for an explicit retry, including a lease whose cleanup was partial.
+        let mut guard = lock_or_recover(&state.agent, "state.agent(prepare_app_relaunch)");
+        *guard = previous;
+    } else {
+        drop(previous);
+    }
+    result
+}
+
+/// Drain and disarm the owned Agent before the frontend invokes the native
+/// relaunch plugin. The guard remains set until `cancel_app_relaunch` or the
+/// process exits through the successful relaunch path.
+#[tauri::command]
+fn prepare_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    claim_agent_relaunch(&state.agent_relaunch_pending)?;
+    let result = with_discord_lifecycle(&state.discord_lifecycle, || {
+        prepare_agent_relaunch_unlocked(&state)
+    });
+    if result.is_err() {
+        state
+            .agent_relaunch_pending
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+    result
+}
+
+/// Release a failed relaunch attempt so the user can retry after the native
+/// update/reset operation reports its error.
+#[tauri::command]
+fn cancel_app_relaunch(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state
+        .agent_relaunch_pending
+        .store(false, std::sync::atomic::Ordering::Release);
+    Ok(())
+}
+
 /// Poll the selected BGM port health endpoint every 100 ms for up to `timeout`.
 /// Returns `true` as soon as a 2xx response arrives; `false` on timeout.
 /// Used by `spawn_youtube_bgm_server` to detect EADDRINUSE / startup failure.
@@ -4201,6 +4374,7 @@ fn send_to_agent(
     app_handle: Option<&AppHandle>,
     audit_db: Option<&audit::AuditDb>,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     if debug_e2e_enabled() {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(message) {
             let t = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -4271,6 +4445,10 @@ fn send_to_agent(
     }
 
     let mut guard = lock_or_recover(&state.agent, "state.agent(send_to_agent)");
+    // The relaunch command claims the guard before taking this slot. Recheck
+    // after locking so a send that was queued behind prepare cannot trigger a
+    // replacement Agent while the native relaunch owns the transition.
+    ensure_agent_relaunch_not_pending(state)?;
 
     if let Some(ref mut process) = *guard {
         // Check if process is still alive
@@ -4312,29 +4490,154 @@ fn send_to_agent(
     }
 }
 
+fn reserve_agent_restart(state: &AppState) -> Result<(), String> {
+    // Debounce: prevent restart storms when agent-core keeps crashing (#226).
+    // If we restarted less than 5 seconds ago, refuse to restart again.
+    let mut last_restart = lock_or_recover(&state.last_agent_restart, "last_agent_restart");
+    if let Some(last) = *last_restart {
+        let elapsed = last.elapsed();
+        if elapsed < std::time::Duration::from_secs(5) {
+            let wait_ms = 5000 - elapsed.as_millis() as u64;
+            log_both(&format!(
+                "[Naia] agent-core restart debounced ({}ms cooldown remaining)",
+                wait_ms
+            ));
+            return Err("agent-core restart debounced ??too many restarts".to_string());
+        }
+    }
+    *last_restart = Some(std::time::Instant::now());
+    Ok(())
+}
+
+/// Replace the agent while the caller holds `discord_lifecycle`.
+///
+/// Keeping publication and startup replay in this critical section prevents a
+/// workspace transition from publishing a new process with an old cache.
+fn restart_agent_process_unlocked(
+    state: &AppState,
+    app_handle: &AppHandle,
+    db: &audit::AuditDb,
+) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
+    let mut previous = {
+        let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+        guard.take()
+    };
+    if let Some(process) = previous.as_mut() {
+        if let Err(error) = graceful_shutdown_and_reap_agent(process) {
+            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+            *guard = previous;
+            return Err(error);
+        }
+        let outcome = process.finish_owned_cleanup(true);
+        if let Err(error) =
+            require_owned_cleanup_complete(&outcome, true, "agent_owned_cleanup_incomplete")
+        {
+            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+            *guard = previous;
+            return Err(error);
+        }
+    }
+    drop(previous);
+    ensure_agent_relaunch_not_pending(state)?;
+    match spawn_agent_core(
+        app_handle,
+        db,
+        &state.discord_quarantined,
+        &state.discord_pending_reapers,
+        false,
+    ) {
+        Ok(process) => {
+            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
+            *guard = Some(process);
+            log_both("[Naia] agent-core restarted");
+        }
+        Err(e) => return Err(format!("Restart failed: {}", e)),
+    }
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    // Replay cached startup credentials while the lifecycle lock still binds
+    // this cache scope to the replacement process.
+    replay_startup_messages_to_agent(state);
+    Ok(())
+}
+
+/// Send a lifecycle marker after a replacement has been published. The caller
+/// holds `discord_lifecycle`; no nested restart is attempted here.
+fn send_to_agent_without_restart(state: &AppState, message: &str) -> Result<(), String> {
+    let mut guard = lock_or_recover(&state.agent, "state.agent(send_without_restart)");
+    ensure_agent_relaunch_not_pending(state)?;
+    let Some(process) = guard.as_mut() else {
+        return Err("agent-core not running after restart".to_string());
+    };
+    process
+        .tx
+        .send(message.to_string())
+        .map_err(|error| format!("Send failed after restart: {}", error))
+}
+
+/// Validate and deliver cacheable startup IPC while the ADK lifecycle lock is
+/// held.  A source check followed by a separate send would let an A callback
+/// validate successfully, then reach B after `write_naia_path_cache` switched
+/// the workspace.  A missing/dead agent is repaired in this same critical
+/// section so the replacement replays only the active scope.
+fn send_startup_message_to_agent(
+    state: &AppState,
+    app_handle: &AppHandle,
+    audit_db: &audit::AuditDb,
+    message: &str,
+    source_adk_path: Option<&str>,
+) -> Result<(), String> {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        ensure_agent_relaunch_not_pending(state)?;
+        {
+            let guard = state.startup_messages.lock().unwrap();
+            guard.validate_source(source_adk_path)?;
+        }
+
+        let needs_restart = {
+            let mut guard = lock_or_recover(&state.agent, "state.agent(startup_ipc)");
+            match guard.as_mut() {
+                None => true,
+                Some(process) => match process.child.try_wait() {
+                    Ok(Some(status)) => {
+                        log_both(&format!("[Naia] agent-core exited before startup IPC: {:?}", status));
+                        *guard = None;
+                        true
+                    }
+                    Ok(None) => false,
+                    Err(error) => {
+                        log_verbose(&format!(
+                            "[Naia] Failed to check agent status before startup IPC: {}",
+                            error
+                        ));
+                        false
+                    }
+                },
+            }
+        };
+
+        if needs_restart {
+            reserve_agent_restart(state)?;
+            log_both("[Naia] Restarting agent-core for startup IPC...");
+            restart_agent_process_unlocked(state, app_handle, audit_db)?;
+            // The replacement replay and the direct callback must observe the
+            // same scope; re-check after the restart before writing stdin.
+            let guard = state.startup_messages.lock().unwrap();
+            guard.validate_source(source_adk_path)?;
+        }
+
+        send_to_agent_without_restart(state, message)
+    })
+}
+
 fn restart_agent(
     state: &AppState,
     app_handle: &AppHandle,
     message: &str,
     audit_db: Option<&audit::AuditDb>,
 ) -> Result<(), String> {
-    // Debounce: prevent restart storms when agent-core keeps crashing (#226).
-    // If we restarted less than 5 seconds ago, refuse to restart again.
-    {
-        let mut last_restart = lock_or_recover(&state.last_agent_restart, "last_agent_restart");
-        if let Some(last) = *last_restart {
-            let elapsed = last.elapsed();
-            if elapsed < std::time::Duration::from_secs(5) {
-                let wait_ms = 5000 - elapsed.as_millis() as u64;
-                log_both(&format!(
-                    "[Naia] agent-core restart debounced ({}ms cooldown remaining)",
-                    wait_ms
-                ));
-                return Err("agent-core restart debounced ??too many restarts".to_string());
-            }
-        }
-        *last_restart = Some(std::time::Instant::now());
-    }
+    ensure_agent_relaunch_not_pending(state)?;
+    reserve_agent_restart(state)?;
 
     log_both("[Naia] Restarting agent-core...");
     // Use a temporary empty db if none provided (shouldn't happen in practice)
@@ -4349,45 +4652,9 @@ fn restart_agent(
         }
     };
     let restarted = with_discord_lifecycle(&state.discord_lifecycle, || {
-        let mut previous = {
-            let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
-            guard.take()
-        };
-        if let Some(process) = previous.as_mut() {
-            if let Err(error) = graceful_shutdown_and_reap_agent(process) {
-                let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
-                *guard = previous;
-                return Err(error);
-            }
-            let outcome = process.finish_owned_cleanup(true);
-            if let Err(error) =
-                require_owned_cleanup_complete(&outcome, true, "agent_owned_cleanup_incomplete")
-            {
-                drop(previous);
-                return Err(error);
-            }
-        }
-        drop(previous);
-        match spawn_agent_core(
-            app_handle,
-            db,
-            &state.discord_quarantined,
-            &state.discord_pending_reapers,
-            false,
-        ) {
-            Ok(process) => {
-                let mut guard = lock_or_recover(&state.agent, "state.agent(restart_agent)");
-                *guard = Some(process);
-                log_both("[Naia] agent-core restarted");
-                Ok(())
-            }
-            Err(e) => Err(format!("Restart failed: {}", e)),
-        }
+        restart_agent_process_unlocked(state, app_handle, db)
     });
     restarted?;
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    // Replay cached startup credentials so agent recovers auth state after crash.
-    replay_startup_messages_to_agent(state);
     send_to_agent(state, message, None, audit_db)
 }
 
@@ -4398,6 +4665,7 @@ fn restart_agent_for_discord_config(
     expected_generation: Option<u64>,
     revoke_mode: DiscordAuthorityRevokeMode,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     with_discord_lifecycle(&state.discord_lifecycle, || {
         run_discord_repair_activation(
             &state.discord_quarantined,
@@ -4423,6 +4691,7 @@ fn restart_agent_for_discord_config_unmarked(
     expected_generation: Option<u64>,
     revoke_mode: DiscordAuthorityRevokeMode,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(state)?;
     log_both("[Naia] Restarting agent-core for Discord configuration...");
     // Security-tightening changes revoke before shutdown. Additive changes
     // quiesce and drain the old generation before revocation so
@@ -4462,6 +4731,7 @@ fn restart_agent_for_discord_config_unmarked(
     // Revoke only after ordinary graceful drain, and reassert after an
     // emergency revoke because the old process may have raced the tombstone.
     revoke_discord_runtime_authority()?;
+    ensure_agent_relaunch_not_pending(state)?;
     match spawn_agent_core(
         app_handle,
         audit_db,
@@ -5135,16 +5405,16 @@ async fn delete_stt_model(app: AppHandle, model_id: String) -> Result<(), String
 /// Replay all cached startup messages to agent-core stdin.
 /// Call after spawn + startup delay so Node.js readline is ready.
 fn replay_startup_messages_to_agent(state: &AppState) {
-    let messages = {
-        let guard = state.startup_messages.lock().unwrap();
-        if guard.is_empty() {
-            return;
-        }
-        guard.clone()
-    };
+    // Keep the cache guard while taking the agent guard and writing stdin. A
+    // workspace switch cannot clear the scope between cloning A's messages
+    // and publishing them to B's replacement process.
+    let startup_guard = state.startup_messages.lock().unwrap();
+    if startup_guard.messages.is_empty() {
+        return;
+    }
     let agent_guard = lock_or_recover(&state.agent, "state.agent(replay_startup)");
     if let Some(ref process) = *agent_guard {
-        for msg in &messages {
+        for msg in &startup_guard.messages {
             if let Err(e) = process.tx.send(msg.clone()) {
                 log_both(&format!("[Naia] startup message replay failed: {}", e));
                 break;
@@ -5152,7 +5422,7 @@ fn replay_startup_messages_to_agent(state: &AppState) {
         }
         log_verbose(&format!(
             "[Naia] replayed {} startup message(s) to agent-core",
-            messages.len()
+            startup_guard.messages.len()
         ));
     }
 }
@@ -5163,8 +5433,10 @@ fn replay_startup_messages_to_agent(state: &AppState) {
 #[tauri::command]
 async fn store_startup_message(
     message: String,
+    adk_path: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    ensure_agent_relaunch_not_pending(&state)?;
     const CACHEABLE: &[&str] = &["auth_update", "notify_config", "creds_update"];
     let parsed: serde_json::Value = serde_json::from_str(&message)
         .map_err(|_| "store_startup_message: invalid JSON".to_string())?;
@@ -5180,26 +5452,14 @@ async fn store_startup_message(
     }
     let msg_type = msg_type.to_string();
     let mut guard = state.startup_messages.lock().unwrap();
-    // Deduplicate: replace any existing entry of the same type
-    guard.retain(|existing| {
-        serde_json::from_str::<serde_json::Value>(existing)
-            .ok()
-            .and_then(|v| {
-                v.get("type")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t.to_string())
-            })
-            .map(|t| t != msg_type)
-            .unwrap_or(true)
-    });
-    guard.push(message);
-    Ok(())
+    guard.store(message, &msg_type, adk_path.as_deref())
 }
 
 #[tauri::command]
 async fn send_to_agent_command(
     app: AppHandle,
     message: String,
+    adk_path: Option<String>,
     state: tauri::State<'_, AppState>,
     audit_state: tauri::State<'_, AuditState>,
 ) -> Result<(), String> {
@@ -5216,6 +5476,24 @@ async fn send_to_agent_command(
     // Require a "type" field
     if parsed.get("type").and_then(|v| v.as_str()).is_none() {
         return Err("Message must have a string 'type' field".to_string());
+    }
+    // Cacheable startup messages must carry the workspace that produced them.
+    // This protects the direct IPC path as well as store_startup_message;
+    // otherwise a late A callback could reach a replacement B agent even when
+    // its replay cache was correctly cleared.
+    const CACHEABLE: &[&str] = &["auth_update", "notify_config", "creds_update"];
+    let is_cacheable = parsed
+        .get("type")
+        .and_then(|value| value.as_str())
+        .is_some_and(|message_type| CACHEABLE.contains(&message_type));
+    if is_cacheable {
+        return send_startup_message_to_agent(
+            &state,
+            &app,
+            &audit_state.db,
+            &message,
+            adk_path.as_deref(),
+        );
     }
     send_to_agent(&state, &message, Some(&app), Some(&audit_state.db))
 }
@@ -7105,7 +7383,7 @@ fn parse_voxcpm2_startup_line(line: &str) -> Option<VoxCpm2StartupEvent> {
 
 fn map_voxcpm2_startup_error(code: &str) -> String {
     match code {
-        "entitlement_rejected" => "voxcpm2_naia_member_login_required",
+        "entitlement_rejected" => "voxcpm2_entitlement_rejected",
         "entitlement_inactive" => "voxcpm2_naia_membership_required",
         "entitlement_unavailable" => "voxcpm2_entitlement_unavailable",
         "activation_bootstrap_invalid" => "voxcpm2_activation_bootstrap_invalid",
@@ -12169,7 +12447,8 @@ async fn write_naia_path_cache(
     app_handle: tauri::AppHandle,
     audit_state: tauri::State<'_, AuditState>,
 ) -> Result<(), String> {
-    let changed = with_discord_lifecycle(&state.discord_lifecycle, || {
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        ensure_agent_relaunch_not_pending(&state)?;
         if adk_path.is_empty() {
             return Err("adk_path is empty".to_string());
         }
@@ -12178,28 +12457,65 @@ async fn write_naia_path_cache(
         // Native E2E owns its workspace through NAIA_E2E_ADK_PATH. Never let
         // a disposable test run overwrite the real user's next-start cache.
         let Some(cache_path) = naia_path_cache_target(home, debug_e2e_enabled()) else {
-            return Ok(false);
+            return Ok(());
         };
         let changed = naia_path_cache_changed(&cache_path, &adk_path);
+        if changed {
+            // Reserve before mutating either native or in-memory scope. A
+            // debounce rejection must leave the old path/process/cache
+            // coherent rather than exposing B while A is still running.
+            reserve_agent_restart(&state)?;
+        }
+        let previous_native_path = std::fs::read_to_string(&cache_path).ok();
+        let previous_startup_cache = state.startup_messages.lock().unwrap().clone();
         let naia_dir = cache_path
             .parent()
             .ok_or_else(|| "Cannot determine Naia cache directory".to_string())?;
         std::fs::create_dir_all(naia_dir).map_err(|e| e.to_string())?;
-        std::fs::write(cache_path, &adk_path).map_err(|e| e.to_string())?;
-        Ok(changed)
-    })?;
+        std::fs::write(&cache_path, &adk_path).map_err(|e| e.to_string())?;
 
-    // Do this after releasing discord_lifecycle: restart_agent acquires the
-    // same lifecycle lock while shutting down and respawning agent-core.
-    if changed {
-        restart_agent(
-            &state,
-            &app_handle,
-            r#"{"type":"set_workspace"}"#,
-            Some(&audit_state.db),
-        )?;
-    }
-    Ok(())
+        // Bind the in-memory replay cache before any replacement agent can be
+        // published. The same lifecycle lock covers the native cache write,
+        // scope transition, and the restart below.
+        {
+            let mut startup_guard = state.startup_messages.lock().unwrap();
+            startup_guard.set_scope(&adk_path)?;
+        }
+
+        // `changed` is based on the native path file. The in-memory cache
+        // starts unbound during the first setAdkPath call, so scope
+        // initialization alone must not cause an unnecessary restart on every
+        // app boot. When the native path changes, keep scope transition,
+        // process publication, replay, and the workspace marker in this same
+        // lifecycle critical section.
+        if changed {
+            log_both("[Naia] Restarting agent-core for ADK workspace...");
+            if let Err(error) = restart_agent_process_unlocked(&state, &app_handle, &audit_state.db)
+            {
+                *state.startup_messages.lock().unwrap() = previous_startup_cache;
+                let restore_result = match previous_native_path {
+                    Some(previous) => {
+                        std::fs::write(&cache_path, previous)
+                    }
+                    None => {
+                        match std::fs::remove_file(&cache_path) {
+                            Ok(()) => Ok(()),
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                            Err(error) => Err(error),
+                        }
+                    }
+                };
+                if let Err(restore_error) = restore_result {
+                    return Err(format!(
+                        "{error}; failed to restore previous ADK path cache: {restore_error}"
+                    ));
+                }
+                return Err(error);
+            }
+            send_to_agent_without_restart(&state, r#"{"type":"set_workspace"}"#)?;
+        }
+        Ok(())
+    })
 }
 
 fn clear_naia_path_cache_file(cache_path: Option<std::path::PathBuf>) -> Result<(), String> {
@@ -12216,10 +12532,16 @@ fn clear_naia_path_cache_file(cache_path: Option<std::path::PathBuf>) -> Result<
 /// Forget the selected workspace without deleting the workspace itself.
 /// The UI relaunches immediately afterward and returns to ADK setup.
 #[tauri::command]
-async fn clear_naia_path_cache() -> Result<(), String> {
+async fn clear_naia_path_cache(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let home =
         data_home::user_home_path().ok_or_else(|| "Cannot determine home directory".to_string())?;
-    clear_naia_path_cache_file(naia_path_cache_target(home, debug_e2e_enabled()))
+    with_discord_lifecycle(&state.discord_lifecycle, || {
+        let result = clear_naia_path_cache_file(naia_path_cache_target(home, debug_e2e_enabled()));
+        if result.is_ok() {
+            state.startup_messages.lock().unwrap().clear_scope();
+        }
+        result
+    })
 }
 
 fn naia_ref_audio_path(adk_path: &str) -> Result<std::path::PathBuf, String> {
@@ -12681,6 +13003,7 @@ pub fn run() {
     builder.manage(AppState {
             agent: Mutex::new(None),
             discord_lifecycle: Mutex::new(()),
+            agent_relaunch_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             discord_quarantined: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             discord_pending_reapers: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             discord_config_operation: tokio::sync::Mutex::new(()),
@@ -12697,7 +13020,7 @@ pub fn run() {
             oauth_state: Arc::new(Mutex::new(None)),
             gemini_live: gemini_live::new_shared_handle(),
             last_agent_restart: Mutex::new(None),
-            startup_messages: Mutex::new(Vec::new()),
+            startup_messages: Mutex::new(StartupMessageCache::default()),
         })
         .manage(workspace::new_shared_watcher())
         .manage(pty::new_registry())
@@ -12707,6 +13030,8 @@ pub fn run() {
             list_stt_models,
             download_stt_model,
             delete_stt_model,
+            prepare_app_relaunch,
+            cancel_app_relaunch,
             store_startup_message,
             send_to_agent_command,
             cancel_stream,
@@ -13158,6 +13483,7 @@ pub fn run() {
 
             // Then spawn Agent (naia-agent replaces OpenClaw gateway ??handles all tools directly)
             let agent_spawn = with_discord_lifecycle(&state.discord_lifecycle, || {
+                ensure_agent_relaunch_not_pending(&state)?;
                 let process = spawn_agent_core(
                     &app_handle,
                     &audit_db,
@@ -13322,6 +13648,55 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relaunch_guard_rejects_overlap_and_can_be_released() {
+        let pending = std::sync::atomic::AtomicBool::new(false);
+
+        assert!(claim_agent_relaunch(&pending).is_ok());
+        assert!(claim_agent_relaunch(&pending).is_err());
+
+        pending.store(false, std::sync::atomic::Ordering::Release);
+        assert!(claim_agent_relaunch(&pending).is_ok());
+    }
+
+    #[test]
+    fn startup_message_cache_clears_and_rejects_stale_adk_sources() {
+        let adk_a = "/tmp/naia-adk-a";
+        let adk_b = "/tmp/naia-adk-b";
+        let auth_a = r#"{"type":"auth_update","naiaKey":"a"}"#;
+        let auth_b = r#"{"type":"auth_update","naiaKey":"b"}"#;
+        let mut cache = StartupMessageCache::default();
+
+        assert!(cache.set_scope(adk_a).unwrap());
+        cache
+            .store(auth_a.to_string(), "auth_update", Some(adk_a))
+            .unwrap();
+        assert_eq!(cache.replay(), vec![auth_a.to_string()]);
+
+        assert!(cache.set_scope(adk_b).unwrap());
+        assert!(cache.replay().is_empty());
+        assert!(cache
+            .store(auth_a.to_string(), "auth_update", Some(adk_a))
+            .is_err());
+        cache
+            .store(auth_b.to_string(), "auth_update", Some(adk_b))
+            .unwrap();
+        assert_eq!(cache.replay(), vec![auth_b.to_string()]);
+
+        assert!(cache.set_scope(adk_a).unwrap());
+        assert!(cache.replay().is_empty());
+    }
+
+    #[test]
+    fn startup_message_cache_requires_a_bound_source() {
+        let mut cache = StartupMessageCache::default();
+        let auth = r#"{"type":"auth_update","naiaKey":"a"}"#;
+
+        assert!(cache.store(auth.to_string(), "auth_update", None).is_err());
+        assert!(cache.validate_source(None).is_err());
+        assert!(cache.set_scope("  ").is_err());
+    }
 
     #[test]
     fn app_store_origin_accepts_azure_and_canonical_naia_hosts() {
@@ -16140,7 +16515,7 @@ mod tests {
         );
         assert_eq!(
             map_voxcpm2_startup_error("entitlement_rejected"),
-            "voxcpm2_naia_member_login_required"
+            "voxcpm2_entitlement_rejected"
         );
         assert_eq!(
             map_voxcpm2_startup_error("entitlement_unavailable"),

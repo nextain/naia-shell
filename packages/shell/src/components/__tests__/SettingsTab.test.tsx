@@ -761,6 +761,49 @@ describe("SettingsTab", () => {
 		expect(sttSelect.querySelector('option[value="vosk"]')).toBeDefined();
 	});
 
+	it("does not require a local model for Web Speech STT", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				sttProvider: "web-speech",
+				sttModel: "",
+				ttsEnabled: true,
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+
+		expect(await screen.findByTestId("voice-status-summary")).toBeInTheDocument();
+		expect(
+			screen.queryByText("STT model download and selection required."),
+		).toBeNull();
+		fireEvent.click(document.getElementById("tts-toggle") as HTMLInputElement);
+		expect(screen.getByText("Voice chat ready!")).toBeInTheDocument();
+	});
+
+	it("still requires a local model for offline STT providers", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "ollama",
+				model: "qwen3:8b",
+				sttProvider: "vosk",
+				sttModel: "",
+				ttsEnabled: true,
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("voice");
+
+		expect(
+			await screen.findByText("STT model download and selection required."),
+		).toBeInTheDocument();
+	});
+
 	it("hides API key input for Claude Code CLI provider", () => {
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
@@ -1426,6 +1469,46 @@ describe("SettingsTab — memory tab (#298)", () => {
 		// 10 tabs: profile|brain|voice|avatar|persona|memory|knowledge|skills|connections|general
 		const tabBtns = document.querySelectorAll(".settings-tab-btn");
 		expect(tabBtns.length).toBe(10);
+	});
+
+	it("keeps memory backup controls disabled until native support exists", () => {
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("memory");
+
+		expect(
+			screen.getByText("Backup feature is coming in a future version."),
+		).toBeInTheDocument();
+		const password = screen.getByPlaceholderText(
+			"Backup password",
+		) as HTMLInputElement;
+		const exportButton = screen.getByRole("button", { name: "Export" });
+		const importButton = screen.getByRole("button", { name: "Import" });
+		const createElement = vi.spyOn(document, "createElement");
+
+		expect(password).toBeDisabled();
+		expect(exportButton).toBeDisabled();
+		expect(importButton).toBeDisabled();
+
+		fireEvent.click(exportButton);
+		fireEvent.keyDown(exportButton, { key: "Enter", code: "Enter" });
+		fireEvent.keyDown(exportButton, { key: " ", code: "Space" });
+		fireEvent.click(importButton);
+		fireEvent.keyDown(importButton, { key: "Enter", code: "Enter" });
+		fireEvent.keyDown(importButton, { key: " ", code: "Space" });
+
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"memory_export_backup",
+			expect.anything(),
+		);
+		expect(mockInvoke).not.toHaveBeenCalledWith(
+			"memory_import_backup",
+			expect.anything(),
+		);
+		expect(createElement).not.toHaveBeenCalledWith("input");
+		expect(createElement).not.toHaveBeenCalledWith("a");
+		expect(screen.queryByText("✓")).not.toBeInTheDocument();
+		createElement.mockRestore();
 	});
 
 	it("keeps radio DJ parameters under skills and exhibition parameters under General", async () => {
@@ -2113,6 +2196,77 @@ describe("SettingsTab — memory tab (#298)", () => {
 			expect(saved.localVoiceEnabled).toBe(false);
 			expect(saved.ttsEnabled).toBe(false);
 			expect(screen.getAllByText(/Naia account/i).length).toBeGreaterThan(0);
+		});
+	});
+
+	it("preserves the gateway credential when VoxCPM2 entitlement is rejected", async () => {
+		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-3.5-flash",
+				naiaKey: "gw-stale",
+				naiaUserId: "member-1",
+				ttsProvider: "edge",
+				ttsEnabled: true,
+				localVoiceEnabled: false,
+			}),
+		);
+		secureStoreMock.get.mockImplementation((key: string) =>
+			Promise.resolve(key === "naiaKey" ? "gw-stale" : null),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "detect_gpu_vram") return Promise.resolve(8);
+			if (command === "voxcpm2_status") return Promise.resolve(false);
+			if (command === "read_naia_config")
+				return Promise.resolve(localStorage.getItem("naia-config") ?? "{}");
+			if (command === "read_naia_ui_config") return Promise.resolve("{}");
+			if (command === "voxcpm2_installation_status")
+				return Promise.resolve({
+					phase: "ready-to-start",
+					ready: false,
+					canStart: true,
+					summary: "VoxCPM2 TensorRT ready",
+					steps: [],
+				});
+			if (command === "start_voxcpm2")
+				return Promise.reject(new Error("voxcpm2_entitlement_rejected"));
+			return Promise.resolve([]);
+		});
+
+		render(<SettingsTab />);
+		gotoSettingsTab("profile");
+		const selector = screen.getByTestId("profile-tts-provider");
+		await vi.waitFor(() =>
+			expect(
+				(selector as HTMLSelectElement).querySelector(
+					'option[value="naia-local-voice"]',
+				),
+			).not.toBeDisabled(),
+		);
+		fireEvent.change(selector, { target: { value: "naia-local-voice" } });
+
+		await vi.waitFor(() => {
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"start_voxcpm2",
+				expect.objectContaining({
+					expectedLoaderProfile: "windows_trt_6g",
+					gpuIndex: null,
+				}),
+			);
+		});
+		await vi.waitFor(() => {
+			expect(screen.getByTestId("profile-voice-status")).toHaveTextContent(
+				/Host voice engine error/i,
+			);
+			expect(secureStoreMock.delete).not.toHaveBeenCalledWith("naiaKey");
+			const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+			expect(saved.naiaKey).toBe("gw-stale");
+			expect(saved.naiaUserId).toBe("member-1");
+			expect(saved.localVoiceEnabled).toBe(false);
+			expect(saved.ttsEnabled).toBe(true);
+			expect(saved.ttsProvider).toBe("edge");
 		});
 	});
 

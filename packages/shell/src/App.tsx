@@ -117,6 +117,10 @@ export const E2E_FORCE_ONBOARDING_KEY = "naia-e2e-force-onboarding";
 
 export function App() {
 	const configHydrationStartedRef = useRef(false);
+	const e2eAdkBindingRef = useRef<{
+		path: string;
+		promise: Promise<void>;
+	} | null>(null);
 	if (!configHydrationStartedRef.current) {
 		beginNaiaConfigHydration();
 		configHydrationStartedRef.current = true;
@@ -131,15 +135,9 @@ export function App() {
 	const e2eProvider =
 		import.meta.env.VITE_NAIA_E2E_PROVIDER?.trim() || "ollama";
 	const e2eModel = import.meta.env.VITE_NAIA_E2E_MODEL?.trim() || "e2e";
-	// A native E2E run owns its ADK root.  WebView2 can retain a prior profile
-	// while Windows tears it down, so merely filling an absent cache lets an
-	// earlier run's workspace silently override this run's seeded config.
-	if (e2eAdkPath && getAdkPath() !== e2eAdkPath)
-		void setAdkPath(e2eAdkPath).catch((error) => {
-			Logger.error("App", "E2E workspace binding failed", {
-				error: String(error),
-			});
-		});
+	const e2eAdkNeedsBinding = Boolean(
+		e2eAdkPath && getAdkPath() !== e2eAdkPath,
+	);
 	// 온보딩을 재는 스펙은 이 자리를 한 번 꺼야 한다.
 	//
 	// 위 대목은 자동 실행이 매 부팅마다 마법사를 건너뛰게 하려고 `naia-config` 를
@@ -155,7 +153,12 @@ export function App() {
 	const e2eForceOnboarding =
 		typeof localStorage !== "undefined" &&
 		localStorage.getItem(E2E_FORCE_ONBOARDING_KEY) === "1";
-	if (e2eAdkPath && !e2eForceOnboarding && !isOnboardingComplete()) {
+	if (
+		e2eAdkPath &&
+		!e2eAdkNeedsBinding &&
+		!e2eForceOnboarding &&
+		!isOnboardingComplete()
+	) {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -177,7 +180,9 @@ export function App() {
 	);
 	// #484 CLI + #543 드래그앤드롭 — 열 파일 경로 큐 (앞에서부터 하나씩 연다).
 	const [pendingOpenFiles, setPendingOpenFiles] = useState<string[]>([]);
-	const [showAdkSetup, setShowAdkSetup] = useState(!isAdkInitialized());
+	const [showAdkSetup, setShowAdkSetup] = useState(
+		() => e2eAdkNeedsBinding || !isAdkInitialized(),
+	);
 	const [showAppInstall, setShowAppInstall] = useState(false);
 	const [appInstallRequest, setAppInstallRequest] =
 		useState<AppInstallRequest | null>(null);
@@ -185,6 +190,42 @@ export function App() {
 	const [showOnboarding, setShowOnboarding] = useState(false);
 	const [configHydrated, setConfigHydrated] = useState(false);
 	const [configSaveError, setConfigSaveError] = useState<string | null>(null);
+	// Start the E2E native bind after commit. Starting it during render lets
+	// React StrictMode invoke the native command twice before the ref from the
+	// first render is retained.
+	useEffect(() => {
+		if (
+			!e2eAdkPath ||
+			!e2eAdkNeedsBinding ||
+			e2eAdkBindingRef.current
+		)
+			return;
+		const promise = setAdkPath(e2eAdkPath).catch((error) => {
+			Logger.error("App", "E2E workspace binding failed", {
+				error: String(error),
+			});
+			throw error;
+		});
+		e2eAdkBindingRef.current = { path: e2eAdkPath, promise };
+	}, [e2eAdkNeedsBinding, e2eAdkPath]);
+
+	useEffect(() => {
+		const binding = e2eAdkBindingRef.current;
+		if (!e2eAdkPath || !binding) return;
+		let active = true;
+		void binding.promise.then(
+			() => {
+				if (active && getAdkPath() === e2eAdkPath) setShowAdkSetup(false);
+			},
+			() => {
+				// Keep setup visible after a failed native bind; the failed promise is
+				// retained so a render cannot retry against a still-restarting agent.
+			},
+		);
+		return () => {
+			active = false;
+		};
+	}, [e2eAdkPath]);
 	useAgentAuthSync(showAdkSetup, showOnboarding, configHydrated);
 	const [naiaVisible, setNaiaVisible] = useState(true);
 	const [naiaWidth, setNaiaWidth] = useState(NAIA_WIDTH_DEFAULT);
@@ -272,13 +313,20 @@ export function App() {
 		let revision = 0;
 		async function syncAvatarConfig() {
 			const currentRevision = ++revision;
-			const cfg = await loadConfigWithSecrets();
-			if (!active || currentRevision !== revision) return;
-			setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
-			setNvaModel(cfg?.nvaModel ?? "");
-			const nextAvatarModelPath = cfg?.vrmModel ?? "";
-			if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
-				setAvatarModelPath(nextAvatarModelPath);
+			try {
+				const cfg = await loadConfigWithSecrets();
+				if (!active || currentRevision !== revision) return;
+				setAvatarProvider(effectiveAvatarProviderFromConfig(cfg, detectedVramGb));
+				setNvaModel(cfg?.nvaModel ?? "");
+				const nextAvatarModelPath = cfg?.vrmModel ?? "";
+				if (useAvatarStore.getState().modelPath !== nextAvatarModelPath) {
+					setAvatarModelPath(nextAvatarModelPath);
+				}
+			} catch (error) {
+				if (!active || currentRevision !== revision) return;
+				Logger.warn("App", "Failed to sync avatar config", {
+					error: String(error),
+				});
 			}
 		}
 		void syncAvatarConfig();
@@ -636,14 +684,20 @@ export function App() {
 		// differs from adkPath (localStorage) — it never touches the agent's file.
 		// Force-resync the agent's path file to the shell's ADK on every boot so the
 		// save-path and the load-path can never silently diverge.
-		const bindAdk = adkPath
-			? setAdkPath(adkPath).catch((error) => {
-				Logger.error("App", "workspace binding failed", {
-					error: String(error),
-				});
-				throw error;
-			})
-			: Promise.resolve();
+		const e2eBinding = e2eAdkBindingRef.current;
+		const bindAdk =
+			e2eBinding &&
+			e2eAdkPath &&
+			(e2eAdkNeedsBinding || e2eBinding.path === adkPath)
+				? e2eBinding.promise
+				: adkPath
+					? setAdkPath(adkPath).catch((error) => {
+							Logger.error("App", "workspace binding failed", {
+								error: String(error),
+							});
+							throw error;
+						})
+					: Promise.resolve();
 		// Secure-store migration must observe the same native ADK binding as the
 		// subsequent config reads. If binding fails, keep the legacy/local values
 		// intact so a later startup can retry instead of clearing them.

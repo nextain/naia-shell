@@ -2,7 +2,9 @@
 
 use super::{PlatformHandle, PlatformWindowManager, WindowRect};
 use std::path::PathBuf;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::process::{Child, Command};
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 /// Check if a process with the given PID is still running (Unix: kill(pid, 0)).
@@ -106,8 +108,209 @@ pub(crate) fn agent_process_marker(pid: u32, marker: &str) -> Result<Option<bool
     })
 }
 
-pub(crate) fn reap_orphaned_agent_process(_pid: u32, _marker: &str) -> Result<bool, String> {
-    Ok(false)
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentProcessSnapshot {
+    identity: String,
+    parent_pid: u32,
+}
+
+fn process_parent_pid(pid: u32) -> Result<Option<u32>, String> {
+    let stat = match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("agent_lease_identity_query_failed".to_string()),
+    };
+    let (_, fields) = stat
+        .rsplit_once(')')
+        .ok_or_else(|| "agent_lease_identity_query_failed".to_string())?;
+    fields
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| "agent_lease_identity_query_failed".to_string())?
+        .parse::<u32>()
+        .map(Some)
+        .map_err(|_| "agent_lease_identity_query_failed".to_string())
+}
+
+fn agent_process_snapshot(pid: u32, marker: &str) -> Result<Option<AgentProcessSnapshot>, String> {
+    if pid == 0 {
+        return Ok(None);
+    }
+    match agent_process_marker(pid, marker)? {
+        Some(true) => {
+            let Some(parent_pid) = process_parent_pid(pid)? else {
+                return Ok(None);
+            };
+            let Some(identity) = process_identity(pid) else {
+                // The parent stat read above proves the PID still existed. A
+                // missing identity now means the boot-id or start-time read
+                // failed, so fail closed instead of treating it as exited.
+                return Err("agent_lease_identity_query_failed".to_string());
+            };
+            Ok(Some(AgentProcessSnapshot {
+                identity,
+                parent_pid,
+            }))
+        }
+        Some(false) | None => Ok(None),
+    }
+}
+
+fn is_systemd_user_command_line(bytes: &[u8]) -> bool {
+    let mut args = bytes
+        .split(|byte| *byte == 0)
+        .filter(|arg| !arg.is_empty())
+        .map(|arg| String::from_utf8_lossy(arg));
+    let Some(argv0) = args.next() else {
+        return false;
+    };
+    let argv0_basename = argv0.rsplit('/').next().unwrap_or_default();
+    argv0_basename == "systemd" && args.any(|arg| arg == "--user")
+}
+
+fn parent_is_supervising_with<R, A>(
+    parent_pid: u32,
+    read_cmdline: R,
+    is_alive: A,
+) -> Result<bool, String>
+where
+    R: FnOnce(u32) -> std::io::Result<Vec<u8>>,
+    A: FnOnce(u32) -> bool,
+{
+    if parent_pid <= 1 || !is_alive(parent_pid) {
+        return Ok(false);
+    }
+    let bytes = match read_cmdline(parent_pid) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err("agent_lease_identity_query_failed".to_string()),
+    };
+    // A user systemd manager is a common reparenting target after the Shell
+    // dies. Its own liveness says nothing about whether the Shell survived.
+    // An unknown, live parent is kept as supervised so a sibling or a PID
+    // reuse can never be terminated on weak evidence.
+    Ok(!is_systemd_user_command_line(&bytes))
+}
+
+fn parent_is_supervising(parent_pid: u32) -> Result<bool, String> {
+    parent_is_supervising_with(
+        parent_pid,
+        |pid| std::fs::read(format!("/proc/{pid}/cmdline")),
+        is_pid_alive,
+    )
+}
+
+fn snapshot_is_same(left: &AgentProcessSnapshot, right: &AgentProcessSnapshot) -> bool {
+    left == right
+}
+
+fn wait_for_agent_exit(
+    pid: u32,
+    identity: &str,
+    marker: &str,
+    timeout: Duration,
+) -> Result<bool, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match agent_process_snapshot(pid, marker)? {
+            None => return Ok(true),
+            Some(snapshot) if snapshot.identity != identity => return Ok(false),
+            Some(_) if Instant::now() >= deadline => return Ok(false),
+            Some(_) => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
+fn open_agent_pidfd(pid: u32) -> Result<Option<OwnedFd>, String> {
+    if pid == 0 {
+        return Ok(None);
+    }
+    let result = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0u32) };
+    if result < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::NotFound
+            || error.raw_os_error() == Some(libc::ESRCH)
+        {
+            return Ok(None);
+        }
+        return Err("agent_lease_identity_query_failed".to_string());
+    }
+    // SAFETY: pidfd_open returns a new owned file descriptor on success.
+    Ok(Some(unsafe { OwnedFd::from_raw_fd(result as std::os::fd::RawFd) }))
+}
+
+fn send_agent_pidfd_signal(pidfd: &OwnedFd, signal: libc::c_int) -> Result<bool, String> {
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pidfd.as_raw_fd(),
+            signal,
+            std::ptr::null::<libc::siginfo_t>(),
+            0u32,
+        )
+    };
+    if result == 0 {
+        return Ok(true);
+    }
+    let error = std::io::Error::last_os_error();
+    if error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH) {
+        Ok(false)
+    } else {
+        Err("agent_lease_orphan_reap_failed".to_string())
+    }
+}
+
+pub(crate) fn reap_orphaned_agent_process(pid: u32, marker: &str) -> Result<bool, String> {
+    // Keep a kernel process handle for the entire observation/termination
+    // sequence. A raw PID can be reused between /proc reads and kill(2), while
+    // pidfd_send_signal always targets the process represented by this fd.
+    let Some(pidfd) = open_agent_pidfd(pid)? else {
+        return Ok(false);
+    };
+    let Some(initial) = agent_process_snapshot(pid, marker)? else {
+        return Ok(false);
+    };
+    if parent_is_supervising(initial.parent_pid)? {
+        return Ok(false);
+    }
+
+    // Re-read the marker, PID start identity, and parent immediately before
+    // the first signal. The pidfd closes the PID reuse window, while these
+    // checks ensure that the fd still refers to the exact leased Agent.
+    let Some(confirmed) = agent_process_snapshot(pid, marker)? else {
+        return Ok(false);
+    };
+    if !snapshot_is_same(&initial, &confirmed)
+        || parent_is_supervising(confirmed.parent_pid)?
+    {
+        return Ok(false);
+    }
+
+    if !send_agent_pidfd_signal(&pidfd, libc::SIGTERM)? {
+        return Ok(true);
+    }
+    if wait_for_agent_exit(pid, &initial.identity, marker, Duration::from_millis(500))? {
+        return Ok(true);
+    }
+
+    // Escalate only after another exact marker/start-time/parent check. A
+    // changed identity is always left untouched.
+    let Some(before_kill) = agent_process_snapshot(pid, marker)? else {
+        return Ok(true);
+    };
+    if !snapshot_is_same(&initial, &before_kill)
+        || parent_is_supervising(before_kill.parent_pid)?
+    {
+        return Ok(false);
+    }
+    if !send_agent_pidfd_signal(&pidfd, libc::SIGKILL)? {
+        return Ok(true);
+    }
+    if wait_for_agent_exit(pid, &initial.identity, marker, Duration::from_millis(500))? {
+        Ok(true)
+    } else {
+        Err("agent_lease_orphan_reap_failed".to_string())
+    }
 }
 
 fn find_agent_process_by_marker_with<I, R>(
@@ -203,6 +406,53 @@ mod agent_process_marker_tests {
                 "broken",
             ))
         });
+        assert_eq!(result, Err("agent_lease_identity_query_failed".to_string()));
+    }
+
+    #[test]
+    fn systemd_user_parent_is_not_treated_as_a_live_shell() {
+        assert!(!parent_is_supervising_with(
+            42,
+            |_| Ok(b"/usr/lib/systemd/systemd\0--user\0".to_vec()),
+            |_| true,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn systemd_argument_in_a_shell_command_is_not_supervisor_evidence() {
+        assert!(!is_systemd_user_command_line(
+            b"/usr/bin/naia-shell\0systemd\0--user\0"
+        ));
+    }
+
+    #[test]
+    fn live_unknown_parent_is_kept_as_supervised() {
+        assert!(parent_is_supervising_with(
+            42,
+            |_| Ok(b"/usr/bin/naia-shell\0".to_vec()),
+            |_| true,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn dead_parent_allows_orphan_recovery_candidate() {
+        assert!(!parent_is_supervising_with(
+            42,
+            |_| Ok(b"/usr/bin/naia-shell\0".to_vec()),
+            |_| false,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn inaccessible_parent_fails_closed() {
+        let result = parent_is_supervising_with(
+            42,
+            |_| Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "hidden")),
+            |_| true,
+        );
         assert_eq!(result, Err("agent_lease_identity_query_failed".to_string()));
     }
 }

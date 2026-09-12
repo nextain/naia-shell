@@ -108,6 +108,13 @@ git clone https://github.com/nextain/naia-shell.git
 git clone https://github.com/nextain/naia-agent.git
 git clone https://github.com/nextain/naia-kb-compiler.git
 git clone https://github.com/nextain/naia-memory.git
+# agent-pairing.json pins the exact source revisions used by the shell.
+git -C naia-agent fetch --depth 1 origin 1c2561db486c24c31d10ddbef5ca5f0ff766c7ad
+git -C naia-agent checkout --detach 1c2561db486c24c31d10ddbef5ca5f0ff766c7ad
+git -C naia-kb-compiler fetch --depth 1 origin f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
+git -C naia-kb-compiler checkout --detach f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
+git -C naia-memory fetch --depth 1 origin 630a0d2f19b559e3f0101bb141048485167fb959
+git -C naia-memory checkout --detach 630a0d2f19b559e3f0101bb141048485167fb959
 #  워크스페이스/
 #  ├── projects/
 #  │   ├── naia-shell/  ← 아래 명령은 여기서 실행
@@ -115,8 +122,14 @@ git clone https://github.com/nextain/naia-memory.git
 #  │   ├── naia-kb-compiler/
 #  │   └── naia-memory/
 
-cd projects/naia-shell
-pnpm install                       # 의존성 설치 (루트)
+cd naia-shell
+pnpm install --frozen-lockfile    # 의존성 설치 (루트)
+# naia-agent는 shell workspace 밖의 sibling이며 루트 install에 포함되지 않는다.
+pnpm -C ../naia-kb-compiler install --frozen-lockfile
+pnpm -C ../naia-kb-compiler run build
+pnpm -C ../naia-memory install --frozen-lockfile
+pnpm -C ../naia-memory run build
+pnpm -C ../naia-agent install --frozen-lockfile
 
 # 2) 코어 단위·계약 테스트 (루트)
 pnpm test                          # vitest run (src/test — 순수 로직·UC 계약)
@@ -141,6 +154,13 @@ pnpm test                          # vitest (셸 단위)
 pnpm test:e2e                      # Playwright e2e (실 UI, Tauri IPC mock)
 xvfb-run pnpm test:e2e:tauri       # 실 Tauri 바이너리 풀스택 (wdio+tauri-driver, Linux)
 ```
+
+`tauri:dev`가 paired Agent를 자동 빌드·spawn하더라도 sibling 의존성을 설치하거나
+KB·memory의 `dist/`를 대신 만들어 주지는 않는다. 새 clone에서는 위의 exact commit
+checkout과 sibling install/build를 먼저 수행해야 하며, 하나라도 빠지거나 clean checkout이
+아니면 `agent-pairing.json` 검증이 실행을 fail-closed 한다. Agent의 proto 핀은
+`4b078d9ebd11335ae5963a842b0dbbb2250bd03a48e880559b82ce7a110e52fd`, memory package
+version은 `0.1.4`다.
 
 설치자 CI는 [build-installers.yml](.github/workflows/build-installers.yml)이 Windows·Ubuntu·macOS에서
 같은 매트릭스 진입점을 실행한다. Ubuntu는 deb 설치 후 agent 핸드셰이크와 번들 Node 실제 사용을

@@ -58,10 +58,15 @@ function gitOutput(directory, args) {
 const TEMPORARY_PATH = /^(?:\/tmp\/|\/var\/tmp\/|\/private\/var\/folders\/)|[\\/]Temp[\\/]/i;
 
 export function resolvePairedAgent(options = {}) {
-	const explicit = options.explicit ?? process.env.NAIA_E2E_AGENT_ROOT;
+	// Callers that already scrubbed their launch environment must pass it here.
+	// Reading process.env directly would let a native E2E checkout override an
+	// interactive launch after launch-env.mjs removed that variable.
+	const sourceEnv = options.env ?? process.env;
+	const explicit = options.explicit ?? sourceEnv.NAIA_E2E_AGENT_ROOT;
 	const worktreeRoots = options.worktreeRoots ?? [
-		process.env.NAIA_AGENT_WORKTREES_DIR,
+		sourceEnv.NAIA_AGENT_WORKTREES_DIR,
 		resolve(shellDir, "..", "..", "naia-agent-worktrees"),
+		resolve(shellDir, "..", "..", "..", "naia-agent-worktrees"),
 		resolve(shellDir, "..", "..", "..", "..", "naia-agent-worktrees"),
 	].filter(Boolean);
 	const primaryRoots = options.primaryRoots ?? [
@@ -72,6 +77,11 @@ export function resolvePairedAgent(options = {}) {
 	const candidates = [];
 	if (explicit) {
 		candidates.push(resolve(explicit));
+	} else if (options.candidates !== undefined) {
+		// Tests can supply several registered checkout paths while still running
+		// the complete resolver validation below. Production callers use the
+		// filesystem and git discovery branches that follow.
+		candidates.push(...options.candidates.map((candidate) => resolve(candidate)));
 	} else {
 		for (const root of worktreeRoots) {
 			if (!existsSync(root)) continue;
@@ -88,6 +98,13 @@ export function resolvePairedAgent(options = {}) {
 			);
 		}
 	}
+	const readGitOutput = options.gitOutput ?? gitOutput;
+	const hashProto =
+		options.hashProto ??
+		((path) =>
+			createHash("sha256")
+				.update(readFileSync(path, "utf8").replace(/\r\n/g, "\n"))
+				.digest("hex"));
 
 	// 임시 디렉터리에 만든 워크트리는 짝이 아니다.
 	//
@@ -129,10 +146,13 @@ export function resolvePairedAgent(options = {}) {
 		const agentProtoDir = resolve(pairedAgent, "src/main/adapters/grpc");
 		const proto = resolve(agentProtoDir, "naia_agent.proto");
 		if (!existsSync(agentScript) || !existsSync(proto)) continue;
-		if (gitOutput(pairedAgent, ["rev-parse", "HEAD"]) !== REQUIRED_AGENT_COMMIT)
+		if (
+			readGitOutput(pairedAgent, ["rev-parse", "HEAD"]) !==
+			REQUIRED_AGENT_COMMIT
+		)
 			continue;
 		// 크래시 복구 lease 는 순수 런타임 산출물이라 더러움으로 세지 않는다.
-		const porcelain = gitOutput(pairedAgent, ["status", "--porcelain"]);
+		const porcelain = readGitOutput(pairedAgent, ["status", "--porcelain"]);
 		const dirty =
 			porcelain == null ||
 			porcelain
@@ -143,10 +163,7 @@ export function resolvePairedAgent(options = {}) {
 						!/\.agents[\\/]session-contracts[\\/]\.recovery[\\/]/.test(line),
 				);
 		if (dirty) continue;
-		const protoHash = createHash("sha256")
-			.update(readFileSync(proto, "utf8").replace(/\r\n/g, "\n"))
-			.digest("hex");
-		if (protoHash !== REQUIRED_PROTO_SHA256) continue;
+		if (hashProto(proto) !== REQUIRED_PROTO_SHA256) continue;
 		return { pairedAgent, agentScript, agentProtoDir };
 	}
 	throw new Error(

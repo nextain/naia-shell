@@ -171,6 +171,43 @@ describe("ADK-backed credential persistence", () => {
 		});
 	});
 
+	it("preserves direct-provider credentials across a Nextain switch and return", async () => {
+		await saveConfigSecure({
+			...baseConfig(),
+			provider: "openai",
+			apiKey: "direct-a",
+		});
+
+		await saveConfigSecure({
+			...baseConfig(),
+			provider: "nextain",
+			model: "deepseek-v4-flash",
+			apiKey: "",
+			naiaKey: "naia-a",
+		} as Parameters<typeof saveConfigSecure>[0]);
+
+		const a = mockState.stateFor(adkStorePath("/adk-a"));
+		expect(a.get("apiKey")).toBe("direct-a");
+		expect(a.get("naiaKey")).toBe("naia-a");
+		await expect(loadConfigWithSecrets()).resolves.toMatchObject({
+			provider: "nextain",
+			apiKey: "direct-a",
+			naiaKey: "naia-a",
+		});
+
+		// A direct provider can be selected again without supplying a new key;
+		// the selected ADK remains the source of truth for the prior credential.
+		saveConfig({ ...baseConfig(), provider: "openai" });
+		await expect(loadConfigWithSecrets()).resolves.toMatchObject({
+			provider: "openai",
+			apiKey: "direct-a",
+		});
+
+		const publicCache = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
+		expect(publicCache.apiKey ?? "").toBe("");
+		expect(publicCache.naiaKey ?? "").toBe("");
+	});
+
 	it("migrates the legacy store once, preserves it, and carries app namespaces", async () => {
 		const legacy = mockState.stateFor(LEGACY_STORE_PATH);
 		legacy.set("apiKey", "legacy-api");
