@@ -215,12 +215,10 @@ const packagedApps = new Set(
 /**
  * 지금 꺼 둔 채로 두는 조작. 왜 스펙이 남아 있는지 적어야 한다.
  */
-const KNOWN_DISABLED = new Map([
-	[
-		"connections",
-		"설정의 연결 탭. 라벨이 \"곧 제공\" 이고 disabled 가 조건 없이 박혀 있다. 92-discord-secure-cancel 이 이 탭을 눌러 패널을 기다리므로 매번 30초를 쓰고 실패한다. 기능을 낼지 스펙을 접을지는 오너 결정이다",
-	],
-]);
+// "connections" 는 2026-09-12 에 뺐다. 오너 결정으로 브라우저 미리보기에서도
+// 연결 탭을 연다(ef3dc42c) — disabled 가 없어졌으므로 이 면제가 더는 걸리지
+// 않고, 남겨 두면 "낡았다" 로 붉어진다.
+const KNOWN_DISABLED = new Map([]);
 
 /**
  * 렌더되지 않는 파일에만 있는 표지.
@@ -483,10 +481,11 @@ const KNOWN_UNRENDERED = new Map([
 	],
 	// NaiaMetaArea.tsx 는 2026-09-06 에 지웠다 — 자기 테스트만 import 하던 고아
 	// 컴포넌트였고, 그 표지를 기다리던 14-skills-tab 은 설정 안의 스킬 화면으로 재조준했다.
-	[
-		"packages/shell/src/components/ConnectionsSettingsTab.tsx",
-		"Discord 연결 패널 전체. 설정의 연결 탭이 영구 disabled 이고 이 파일도 값으로 import 되는 곳이 없다 — 기능이 아직 안 나온 상태다. 스펙 여섯이 이 패널을 기다리므로 매번 실패한다. 루크가 디스코드 연결은 이후 개선 예정으로 유예한다고 했으므로 그 판단을 여기 적어 둔다",
-	],
+	//
+	// ConnectionsSettingsTab.tsx 는 2026-09-12 에 뺐다. ef3dc42c 가 SettingsTab
+	// 에서 이 컴포넌트를 값으로 import 해 연결 탭에 렌더한다 — 다시 화면에
+	// 오르므로 이 목록에 남기면 "낡았다" 로 붉어지고, 무엇보다 이 패널을
+	// 기다리던 스펙들이 이제 통과할 수 있다.
 ]);
 
 const specs = [
