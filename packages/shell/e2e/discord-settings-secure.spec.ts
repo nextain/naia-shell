@@ -72,9 +72,9 @@ test("unavailable Connections keeps credentials out of the WebView", async ({
 	await guide.getByRole("button").click();
 
 	const connectionsTab = page.locator('[data-settings-tab="connections"]');
-	await expect(connectionsTab).toBeDisabled();
-	await expect(connectionsTab).toContainText(/준비중|Coming Soon/i);
-	await expect(page.getByTestId("discord-connections")).toHaveCount(0);
+	await expect(connectionsTab).toBeEnabled();
+	await connectionsTab.click();
+	await expect(page.getByTestId("discord-connections")).toBeVisible();
 	await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
 	const capture = await page.evaluate(() =>

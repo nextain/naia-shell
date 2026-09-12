@@ -126,8 +126,8 @@ test("UC-JEONJU-COURSE-READINESS: student checks Codex before selecting the cour
 	// Connections is intentionally not shipped yet. Course readiness keeps that
 	// unfinished surface disabled and never exposes a raw token field.
 	const connectionsTab = page.locator('[data-settings-tab="connections"]');
-	await expect(connectionsTab).toBeDisabled();
-	await expect(connectionsTab).toContainText(/Coming Soon|준비중/);
-	await expect(page.getByTestId("discord-connections")).toHaveCount(0);
+	await expect(connectionsTab).toBeEnabled();
+	await connectionsTab.click();
+	await expect(page.getByTestId("discord-connections")).toBeVisible();
 	await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
