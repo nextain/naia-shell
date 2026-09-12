@@ -18,6 +18,8 @@ import { describe, expect, it } from "vitest";
 describe("LLM registry — gateway model exclusion (#248)", () => {
 	// 2026-05-29: nextain provider trimmed to the user-confirmed 4-model lineup.
 	// 2026-06-03: naia-0.9-omni-24g not yet live → comingSoon flag, moved LAST.
+	// 2026-09-12: #585 added azure-realtime (Azure 실시간 음성) — omni, listed
+	// right after gemini-2.5-flash-live and before the comingSoon entry.
 	it("Naia (gateway) provider exposes the confirmed model lineup in order", async () => {
 		const { getLlmProvider } = await import("../registry.js");
 		const naia = getLlmProvider("nextain");
@@ -37,6 +39,7 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 			"claude-opus-5",
 			"gemini-3.5-flash",
 			"gemini-2.5-flash-live",
+			"azure-realtime",
 			"naia-0.9-omni-24g",
 		]);
 		expect(naia!.models.map((m) => m.label)).toEqual([
@@ -53,6 +56,7 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 			"Claude Opus 5",
 			"Gemini 3.5 Flash",
 			"Gemini 2.5 Flash Live",
+			"Azure Realtime (SunHi)",
 			"Naia 0.9 Omni 24G",
 		]);
 	});
@@ -63,6 +67,7 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		const omni = naia!.models.filter((m) => m.capabilities.includes("omni"));
 		expect(omni.map((m) => m.id)).toEqual([
 			"gemini-2.5-flash-live",
+			"azure-realtime",
 			"naia-0.9-omni-24g",
 		]);
 	});
