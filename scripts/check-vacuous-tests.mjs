@@ -105,9 +105,16 @@ function codeOnly(text) {
  * 단정으로 보는 것: `expect` 계열, `assert`, 그리고 실패할 수 있는 대기
  * (`waitUntil`, `waitForDisplayed` 등). 대기는 시간이 지나면 던지므로 그
  * 자체가 단정이다.
+ *
+ * `assert` 는 멤버 호출까지 본다. 예전 형태(`\bassert\w*\s*\(`)는 `assert(` 와
+ * `assertEqual(` 만 잡고 `assert.equal(` 은 놓쳤다 — `node:assert/strict` 를
+ * 쓰는 `scripts/qa-*.test.mjs` 스물일곱 자리가 통째로 "단정 없음" 으로
+ * 잡혔는데, 그 본문들은 한 케이스에 예닐곱 개씩 단정하고 있었다. 검사기가
+ * 형태 하나만 알아 진짜 단정을 못 본 것이므로 기준선이 아니라 이 규칙을
+ * 고친다.
  */
 const ASSERTS =
-	/\bexpect\b|\bassert\w*\s*\(|waitUntil\s*\(|waitFor(?:Displayed|Exist|Enabled|Clickable|Function|URL|Selector)\s*\(|\.toThrow|rejects\./;
+	/\bexpect\b|\bassert\w*(?:\s*\.\s*\w+)*\s*\(|waitUntil\s*\(|waitFor(?:Displayed|Exist|Enabled|Clickable|Function|URL|Selector)\s*\(|\.toThrow|rejects\./;
 
 /**
  * 예전에는 이름이 `verify*` 이기만 하면 단정으로 셌다. 그래서 아무것도 재지
