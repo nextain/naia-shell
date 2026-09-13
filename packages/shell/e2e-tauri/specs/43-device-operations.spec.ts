@@ -1,11 +1,11 @@
 import { S } from "../helpers/selectors.js";
-import { enableToolsForSpec } from "../helpers/settings.js";
 
 /**
  * 43 — Device operations through Settings + Tauri IPC (#570).
  *
  * Does not call skill_device. Asserts state change: a rotated token no longer
  * authenticates, and rename/describe/revoke/pair follow the same store.
+ * Does not import credentialed settings helpers, so inventory stays native_local.
  */
 async function tauriInvoke<T>(
 	command: string,
@@ -32,7 +32,6 @@ async function tauriInvoke<T>(
 
 describe("43 — device operations", () => {
 	before(async () => {
-		await enableToolsForSpec([]);
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForDisplayed({ timeout: 15_000 });
 	});
