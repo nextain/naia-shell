@@ -18,6 +18,7 @@ mod pty;
 mod voice_runtime;
 mod stt_models;
 mod workspace;
+mod device_registry;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -13155,6 +13156,17 @@ pub fn run() {
             list_conversations,
             read_conversation,
             delete_conversation,
+            device_registry::device_node_list,
+            device_registry::device_node_describe,
+            device_registry::device_node_rename,
+            device_registry::device_token_rotate,
+            device_registry::device_token_revoke,
+            device_registry::device_token_verify,
+            device_registry::device_pair_list,
+            device_registry::device_pair_request,
+            device_registry::device_pair_verify,
+            device_registry::device_pair_approve,
+            device_registry::device_pair_reject,
             // Login Chrome (standalone auth window, not embedded)
             browser::browser_open_login,
             browser::browser_chrome_testing_ready,

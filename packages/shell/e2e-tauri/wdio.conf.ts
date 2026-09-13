@@ -7,6 +7,7 @@ import {
 	readFileSync,
 	readdirSync,
 	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -820,6 +821,24 @@ export const config = {
 			console.log(
 				`[e2e] credentialed live provider seeded: ${seeded.provider}/${seeded.model}` +
 					` (key from $${seeded.credentialRefEnv}) → ${seeded.configPath}`,
+			);
+		} else if (!EXPLICIT_ADK_PATH) {
+			const settingsDir = resolve(SEEDED_ADK_PATH, "naia-settings");
+			mkdirSync(settingsDir, { recursive: true });
+			const provider =
+				process.env.VITE_NAIA_E2E_PROVIDER?.trim() || "ollama";
+			const model = process.env.VITE_NAIA_E2E_MODEL?.trim() || "e2e";
+			const configPath = resolve(settingsDir, "config.json");
+			writeFileSync(
+				configPath,
+				`${JSON.stringify(
+					{ llmRoles: { main: { provider, model } } },
+					null,
+					2,
+				)}\n`,
+			);
+			console.log(
+				`[e2e] smoke ADK config seeded (no gateway key): ${provider}/${model} → ${configPath}`,
 			);
 		}
 		if (CREDENTIALED_SEED_ACTIVE) {

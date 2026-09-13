@@ -56,6 +56,7 @@
 | 저장물 | 결정 지점 | 향하는 곳 |
 |---|---|---|
 | 기억 | `memory.rs:98` | ADK `naia-settings/memory/store.json` |
+| 디바이스 페어링 | `device_registry.rs` | ADK `naia-settings/devices/registry.json` (토큰 해시만) |
 | 자격증명 목록 | `lib.rs:11118` | 설정 디렉터리의 `credentials` |
 | 스킬 | `workspace.rs:808` | 워크스페이스 루트의 `skills/` |
 | 설치된 앱 | `app.rs:115` | `<데이터 홈>/apps` |

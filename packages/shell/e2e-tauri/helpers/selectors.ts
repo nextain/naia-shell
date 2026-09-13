@@ -163,11 +163,15 @@ export const S = {
 	sessionDeleteBtn: ".session-action-btn.delete",
 
 	// Device pairing (SettingsTab)
+	deviceSection: '[data-testid="device-section"]',
 	deviceNodeCard: ".device-node-card",
 	deviceNodesList: ".device-nodes-list",
 	devicePairRequests: ".device-pair-requests",
 	devicePairApprove: ".device-pair-approve",
 	devicePairReject: ".device-pair-reject",
+	devicePairRequest: '[data-testid="device-pair-request"]',
+	deviceOneTimeToken: '[data-testid="device-one-time-token"]',
+	deviceOneTimeCode: '[data-testid="device-one-time-code"]',
 
 	// Queue badge
 	queueBadge: ".queue-badge",

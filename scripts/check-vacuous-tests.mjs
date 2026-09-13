@@ -316,7 +316,7 @@ for (const file of files) {
 //
 // `expect(true).toBe(true)` 같은 자기 확인은 0 이다. 이 숫자는 전부 "본문에
 // 단정이 하나도 없는" 쪽이다.
-const BASELINE_VACUOUS = 25;
+const BASELINE_VACUOUS = 23;
 const BASELINE_DEAD_SKIPS = 0;
 // 16 에서 19 로 올렸다. 늘어난 셋은 새로 꺼 둔 것이 아니라, 원래 **통과하는
 // 테스트를 만들어 내던** 자리다 — 공급자 키가 없으면 `it("[SKIP] ...")` 로

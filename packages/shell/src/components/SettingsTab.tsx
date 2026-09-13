@@ -175,6 +175,7 @@ import {
 	ProactiveSpeechSettingsSection,
 	RadioDjSettingsCard,
 } from "./ProactiveSpeechSettingsSection";
+import { DevicePairingSection } from "./DevicePairingSection";
 import { RefAudioSection } from "./RefAudioSection";
 
 const SkillsTab = lazy(() =>
@@ -5099,6 +5100,7 @@ export function SettingsTab() {
 							}}
 						/>
 					</div>
+					{enableTools && <DevicePairingSection />}
 					<div className="settings-field settings-toggle-row">
 						{/* expert role editor */}
 						<label htmlFor="thinking-toggle">

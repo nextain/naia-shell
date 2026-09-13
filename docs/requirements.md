@@ -33,6 +33,15 @@
 | **FR-CONV.4** | HistoryTab 소스 = 죽은 directToolCall → Rust IPC. 재시작 후 과거 대화 목록·복원 | S05b | 통합(대화→재시작→복원 golden) |
 | **FR-CONV.5** | transcript 메시지 스키마 = **modality-확장 가능**(`{role,content,timestamp, modality?, audioRef?…}`) — Phase1 text만, 음향 필드 예약(naia-memory 잠재기억 forward-compat; 음성 경로 비밀봉) | S05c | 스키마 계약 |
 
+## 기능 요구사항 (FR) — 디바이스 페어링 (S11, #570)
+
+게이트웨이 `skill_device` 는 없다. 노드 목록·상세·이름 변경·토큰 교체/폐기·페어링 요청/확인/승인은 설정 화면과 Tauri 명령이 맡고, 저장소는 `{adkPath}/naia-settings/devices/registry.json` 에 해시만 남긴다.
+
+| ID | 요구사항 | 출처 | 검증(P02) |
+|---|---|---|---|
+| **FR-DEVICE.1** | 셸이 ADK 로컬 저장소로 노드를 페어링한다. `device_pair_request` → `device_pair_verify` → `device_pair_approve` 순서로만 토큰이 발급되고, 평문 토큰·코드는 응답 한 번에만 보이며 파일에는 해시만 남는다 | S11 | `device_registry.rs` 단위 + Settings `DevicePairingSection` + e2e-tauri `43-device-management` |
+| **FR-DEVICE.2** | 토큰 교체는 이전 토큰을 즉시 무효로 만든다. 폐기는 확인 뒤에만 돌고, 폐기된 토큰은 더 이상 통하지 않는다. 이름 변경은 목록에 반영된다 | S11 | rotate/revoke/rename 단정 — 이전 토큰 `device_token_verify` = false |
+
 ## 기능 요구사항 (FR) — 워크스페이스 전환 설정 복원 (S72, 셸 feature — 2026-06-24)
 
 | FR | 요구사항 | UC/시나리오 | 검증 |

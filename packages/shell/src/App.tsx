@@ -165,6 +165,9 @@ export function App() {
 			JSON.stringify({
 				provider: e2eProvider,
 				model: e2eModel,
+				llmRoles: {
+					main: { provider: e2eProvider, model: e2eModel },
+				},
 				apiKey: "",
 				locale: "ko",
 				ttsEnabled: false,

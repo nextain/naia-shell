@@ -397,23 +397,24 @@ workspace-area 41개 = Herdr 브리지로 재조준).
 | 29-cron-gateway | `skill_cron gateway_*` | 게이트웨이 표면 소멸 | `disabled-by-design` | 하 |
 | 45-cron-gateway-full | `skill_cron gateway_*` | 게이트웨이 표면 소멸 | `disabled-by-design` | 하 |
 | 41-agents-crud | `skill_agents` | 게이트웨이 표면 소멸 — 능력은 AgentsTab | `disabled-by-design` | 중 |
-| 43-device-management | `skill_device` | 게이트웨이 표면 소멸 — **덮는 스펙 없음**(34 는 얕은 화면 스모크) | `disabled-by-design` | **상 — 의도된 커버리지 상실** |
+| 43-device-management | `skill_device` | **#570 재확보** — 게이트웨이 도구는 쓰지 않고 Settings + `device_*` Tauri 명령으로 조작 후 상태 변화를 잰다 | `restored` | 상 |
 | 47-tts-full | `skill_tts` | 게이트웨이 표면 소멸 — `24`·`73`·`76`·`80`·`81` 이 화면 경로를 덮는다 | `disabled-by-design` | 하 |
 | 49-approvals-full | `skill_approvals` | 게이트웨이 표면 소멸 — 승인은 ApprovalPort + 권한 모달 | `disabled-by-design` | 중 |
 | 30-exec-approvals | `skill_approvals get_rules` · `skill_time` | 같은 가족(49 를 덮는다던 스펙 자신이 같은 도구를 부른다) | `disabled-by-design` | 중 |
 | 51-skills-advanced | `skill_skill_manager` | 게이트웨이 표면 소멸 — 능력은 SkillsTab, `14`·`28`·`59` 가 덮는다 | `disabled-by-design` | 하 |
 | 39-web-tools 의 `web_search` 단정 | `web_search` | 게이트웨이 표면 소멸(S55 = gateway-tier) | `disabled-by-design` | 하 |
 
-> **43 = 의도된 커버리지 상실.** 디바이스 조작(`node_describe` · token rotate/revoke ·
-> rename · pair request/verify/approve) 여덟 단정을 지우면서 대체를 두지 않았다.
-> `34-device-pairing` 은 설정 탭으로 가서 섹션과 빈 상태를 보는 얕은 스모크라 같은
-> 깊이가 아니다. 재확보는 별도 이슈로 연다.
+> **43 = #570 으로 재확보.** 게이트웨이 `skill_device` 는 쓰지 않는다. 설정 디바이스
+> 섹션과 Tauri `device_*` 명령이 목록·상세·이름 변경·토큰 교체/폐기·페어링
+> 요청/확인/승인을 맡고, 교체한 토큰으로 이전 토큰이 거절되는 것을 잰다.
+> `34-device-pairing` 은 그 섹션이 실제로 보이는지만 확인한다.
 
 **재조준한 것**(스펙은 남는다):
 
 | 스펙 | 예전 도구 | 지금 겨누는 경로 |
 |---|---|---|
 | 42-sessions-crud | `skill_sessions`(셸이 "new-core 미지원 — chat 도구루프로만" 이라 막음) | `ConversationLogPort` → `<ADK>/conversations/<sessionId>.jsonl` append-only 기록 |
+| 43-device-management | `skill_device` | Settings `DevicePairingSection` + `{adkPath}/naia-settings/devices/registry.json` + `device_*` Tauri 명령 |
 | 39-web-tools | `browser` | 셸 앱 스킬 `skill_browser_navigate` |
 
 **전제를 세워 다시 겨눈 것 둘** (#567 후속):

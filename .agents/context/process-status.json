@@ -21,6 +21,16 @@
   },
 
   "current_work": {
+    "issue_570_device_operations": {
+      "issue": 570,
+      "title": "디바이스 조작(node describe·token rotate/revoke·rename·pair) 커버리지 재확보",
+      "contract": "docs/progress/issue-570-device-operations.md",
+      "branch": "issue/570-device-operation-coverage",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done", "P05": "pending" },
+      "status": "ready_to_commit",
+      "p04_note": "Rust 8/8, vitest 8/8, e2e-tauri 34 1/1, 43 5/5 (rotate 이전 토큰 거절, revoke 교체 토큰 거절). 커밋 전.",
+      "last_updated": "2026-09-13T16:02:00+09:00"
+    },
     "slides_narration_streaming_tts": {
       "issue": null,
       "title": "슬라이드 낭독 스트리밍 TTS — 문장 분할 + audio/pcm 청크 재생 (이슈 번호 없음)",

@@ -7523,6 +7523,24 @@ body.resizing-row {
 	margin-bottom: 8px;
 }
 
+.device-section {
+	margin-top: 8px;
+}
+
+.device-node-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+}
+
+.device-one-time {
+	display: block;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 12px;
+	word-break: break-all;
+}
+
 .device-pair-card {
 	display: flex;
 	align-items: center;

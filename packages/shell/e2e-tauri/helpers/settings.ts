@@ -336,6 +336,8 @@ export async function ensureAppReady(): Promise<void> {
 					try {
 						const config = JSON.parse(raw) as {
 							onboardingComplete?: unknown;
+							provider?: unknown;
+							model?: unknown;
 							llmRoles?: {
 								main?: {
 									provider?: unknown;
@@ -344,14 +346,18 @@ export async function ensureAppReady(): Promise<void> {
 							};
 						};
 						const main = config.llmRoles?.main;
+						const provider =
+							(typeof main?.provider === "string" && main.provider) ||
+							(typeof config.provider === "string" ? config.provider : "");
+						const model =
+							(typeof main?.model === "string" && main.model) ||
+							(typeof config.model === "string" ? config.model : "");
 						return {
 							selectedPath,
 							ready:
 								config.onboardingComplete === true &&
-								typeof main?.provider === "string" &&
-								main.provider.length > 0 &&
-								typeof main.model === "string" &&
-								main.model.length > 0,
+								provider.length > 0 &&
+								model.length > 0,
 						};
 					} catch {
 						return { selectedPath, ready: false };
@@ -543,6 +549,13 @@ const FORCE_ONBOARDING_KEY = "naia-e2e-force-onboarding";
  * `invoke()` 도 결국 이것을 감싼다 — eval 되는 코드에서 import 를 피하려고 직접
  * 쓴다(24-adk-setup-flow 가 같은 방식이다).
  */
+export async function invokeTauriCommand<T>(
+	command: string,
+	args: Record<string, unknown> = {},
+): Promise<T> {
+	return tauriInvokeInPage<T>(command, args);
+}
+
 async function tauriInvokeInPage<T>(
 	command: string,
 	args: Record<string, unknown> = {},
