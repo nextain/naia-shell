@@ -397,7 +397,7 @@ workspace-area 41개 = Herdr 브리지로 재조준).
 | 29-cron-gateway | `skill_cron gateway_*` | 게이트웨이 표면 소멸 | `disabled-by-design` | 하 |
 | 45-cron-gateway-full | `skill_cron gateway_*` | 게이트웨이 표면 소멸 | `disabled-by-design` | 하 |
 | 41-agents-crud | `skill_agents` | 게이트웨이 표면 소멸 — 능력은 AgentsTab | `disabled-by-design` | 중 |
-| 43-device-management | `skill_device` | 게이트웨이 표면 소멸 — **덮는 스펙 없음**(34 는 얕은 화면 스모크) | `disabled-by-design` | **상 — 의도된 커버리지 상실** |
+| 43-device-management | `skill_device` | 게이트웨이 표면 소멸 — 조작 커버리지는 설정 화면 + Tauri IPC (`43-device-operations`) 로 재확보 (#570) | `disabled-by-design` | **상 — 화면·IPC 로 재확보** |
 | 47-tts-full | `skill_tts` | 게이트웨이 표면 소멸 — `24`·`73`·`76`·`80`·`81` 이 화면 경로를 덮는다 | `disabled-by-design` | 하 |
 | 49-approvals-full | `skill_approvals` | 게이트웨이 표면 소멸 — 승인은 ApprovalPort + 권한 모달 | `disabled-by-design` | 중 |
 | 30-exec-approvals | `skill_approvals get_rules` · `skill_time` | 같은 가족(49 를 덮는다던 스펙 자신이 같은 도구를 부른다) | `disabled-by-design` | 중 |
@@ -1837,3 +1837,13 @@ Test Coverage Map (P02)
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/tts/__tests__/local-voice-scheduler.test.ts`: 첫 PCM 청크가 워밍업 홀드를 푸는지(1초 이내면 엔진 웜으로 인정), 느린 첫 청크는 홀드를 유지하는지, 지난 턴의 청크가 새 턴을 풀지 않는지 | — | 첫 청크가 곧 enqueue 신호다 — 이것이 없으면 스트리밍을 해도 홀드가 문장 완성까지 안 풀려 지연이 그대로 남는다 |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/prebaked-renderer.test.ts`: 실사용 아바타 렌더러가 클립마다 `<video>` 를 하나씩 두어 왕복에서 `src` 재대입이 없는지, 활성 요소만 재생하고 떠난 요소는 멈추는지, 만든 형제 요소를 정지 때 거두는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | VideoAvatarCanvas 가 등록하는 렌더러가 이쪽이다 — layered 플레이어만 고치면 실제 경로는 그대로 멈춘다(2026-09-11 3/3) |
 | S-SLIDES-NARRATION-LATENCY | `packages/shell/src/lib/avatar/__tests__/nva-layered-player.test.ts`: idle↔talk 왕복에서 같은 클립을 다시 로드하지 않고(버퍼당 `src` 대입 1회) 매번 교체는 일어나는지, 재사용 클립을 되감는지, 로드가 취소된 클립은 다시 로드하는지 | 실기: 낭독 중 웹뷰 정지 재발 여부 | 낭독이 아바타를 idle↔talk 로 계속 왕복시켜 WebKitGTK 미디어 파이프라인 해체 교착을 밟았다(gdb 2/2). 재생 계약과 같은 슬라이스에 둔다 |
+
+
+## UC-DEVICE-PAIR — 로컬 디바이스 페어링 (#570)
+
+사용자는 설정에서 이 기기에 페어링된 디바이스를 보고, 이름을 바꾸고, 토큰을 돌리거나 폐기하고, 페어링 요청을 만들고 코드로 확인한 뒤 승인하거나 거절한다. 게이트웨이 `skill_device` 대화 경로는 쓰지 않는다.
+
+| 시나리오 | 기대 | 검증 |
+|---|---|---|
+| UC-DEVICE-PAIR-LIST | 설정 디바이스 섹션이 노드 목록 또는 빈 상태를 보여 준다 | 34-device-pairing, 43-device-operations, Rust device_pairing |
+| UC-DEVICE-PAIR-OPS | pair request → verify → approve 후 describe·rename·rotate·revoke 가 상태 변화를 만든다. 회전한 토큰으로 이전 토큰은 통하지 않는다 | 43-device-operations, src-tauri device_pairing tests |

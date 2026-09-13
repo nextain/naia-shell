@@ -56,17 +56,14 @@ describe("34 — device pairing", () => {
 				return !!(
 					document.querySelector(nodesSel) ||
 					document.querySelector(pairSel) ||
-					document.querySelector(".settings-hint") ||
-					// device-section 은 어느 화면에도 없다. 폴백 체인에 죽은
-					// 셀렉터를 남겨 두면 무엇을 기다리는지 흐려진다.
-					document.querySelector(".settings-tab")
+					document.querySelector("[data-testid=\"device-section\"]") ||
+					document.querySelector(".device-nodes-list")
 				);
 			},
 			S.deviceNodesList,
 			S.devicePairRequests,
 		);
-		// Settings tab or device section should exist
-		expect(typeof hasDeviceSection).toBe("boolean");
+		expect(hasDeviceSection).toBe(true);
 	});
 
 	it("should show node cards or empty state", async () => {
