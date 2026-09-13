@@ -57,7 +57,16 @@ import {
 	getSecureStorePath,
 	saveSecretKeyAtPath,
 } from "../lib/secure-store";
-import { NAIA_SLOT_DEFAULTS, applyNaiaSlotDefaults } from "../lib/slots/model";
+import {
+	keepsProviderWhenLoggedOut,
+	resolveLoggedOutLlm,
+} from "../lib/llm/logged-out-default";
+import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import {
+	NAIA_SLOT_DEFAULTS,
+	applyNaiaSlotDefaults,
+	effectiveMainRole,
+} from "../lib/slots/model";
 import { voiceHostProfile } from "../lib/voice/host-profile";
 import {
 	clearLocalVoiceAccessToken,
@@ -1074,14 +1083,22 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		},
 	) {
 		// Own-key setup is no longer collected in onboarding (#447-5) — the full
-		// Settings screen owns provider + model + key. A fresh install defaults to
-		// the Naia account provider; returning users keep their saved config.
-		// Typed as a partial so optional carry-over fields (workspaceRoot,
-		// ttsProvider) read as `string | undefined` off the fresh-install fallback.
+		// Settings screen owns provider + model + key. Returning users keep their
+		// saved config. Typed as a partial so optional carry-over fields
+		// (workspaceRoot, ttsProvider) read as `string | undefined` off the
+		// fresh-install fallback.
 		const base: Partial<AppConfig> = loadConfig() ?? {
-			provider: "nextain",
-			model: NAIA_SLOT_DEFAULTS.main.model,
+			provider: "",
+			model: "",
 		};
+		// FR-LLM-LOGOUT.1: 로그인을 건너뛰면 키 없는 나이아 계정도 gemini 도 저장하지
+		// 않는다. 이미 고른 CLI·로컬 제공자는 두고, 아니면 로컬 Ollama 또는 "LLM 없음".
+		const baseMainProvider =
+			effectiveMainRole(base as AppConfig).provider ?? base.provider;
+		const loggedOutLlm =
+			auth || keepsProviderWhenLoggedOut(baseMainProvider)
+				? null
+				: await resolveLoggedOutLlm(base.ollamaHost);
 		const vrmPath =
 			snapshot.avatarProvider === "vrm"
 				? snapshot.selectedVrm || naiaVrms[0] || undefined
@@ -1110,8 +1127,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		// BYO 시에만 사용자 선택값을 유지한다.
 		const completedFlat: Record<string, unknown> = {
 			...base,
-			provider: auth ? "nextain" : base.provider,
-			model: auth ? base.model || NAIA_SLOT_DEFAULTS.main.model : base.model,
+			provider: auth ? "nextain" : (loggedOutLlm?.provider ?? base.provider),
+			model: auth
+				? base.model || NAIA_SLOT_DEFAULTS.main.model
+				: (loggedOutLlm?.model ?? base.model),
 			agentName: snapshot.agentName.trim() || "Naia",
 			userName: snapshot.userName.trim() || undefined,
 			speechStyle: snapshot.speechStyle,
@@ -1147,10 +1166,17 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 				? { memoryLlmProvider: snapshot.memoryLlmProvider }
 				: {}),
 		};
-		// FR-SLOT.3 / R2-1: naia 게이트 통과 시 미설정 슬롯에 Gemini 기본값 자동 적용(비파괴).
+		// FR-SLOT.3 / R2-1: naia 게이트 통과 시 미설정 슬롯에 기본값 자동 적용(비파괴).
+		// 로그인하지 않았으면 구조화된 main 역할도 로그인하지 않은 상태의 LLM 으로 맞춘다.
 		const finalConfig: AppConfig = auth
 			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig)
-			: (completedFlat as unknown as AppConfig);
+			: loggedOutLlm
+				? writeConfiguredLlmRole(
+						{ ...(completedFlat as unknown as AppConfig), ...loggedOutLlm },
+						"main",
+						loggedOutLlm,
+					)
+				: (completedFlat as unknown as AppConfig);
 		await saveConfigSecure(finalConfig);
 
 		if (vrmPath) setAvatarModelPath(vrmPath);

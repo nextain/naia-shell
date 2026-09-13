@@ -768,6 +768,17 @@ Verified this session with a real Chromium + dev server: `e2e/onboarding-fresh.s
 | **FR-LLM-DEFAULT.3** | `deepseek-v4-flash` is tiered in `NAIA_GENERAL_CHAT_RECOMMENDATION` (product model-sort priority) at the same tier as `deepseek-v4-pro`, sourced from its official Azure Foundry model card and Artificial Analysis Intelligence Index (52, #3/101 open-weight models) rather than a fabricated score — see the citation comment above the table in `registry.ts`. | `registry.test.ts` sort-order test |
 | **FR-LLM-DEFAULT.4** | Every selectable Naia chat model supports Shell skill/tool calling. The offline registry and live gateway metadata must not downgrade a verified tool-capable model, and a model that cannot call tools is unavailable rather than selectable. | full selectable-model capability invariant + DeepSeek live-metadata/offline-fallback tests + Agent request-body contract |
 
+## 2026-09-13 로그인하지 않은 상태의 LLM (#591, 에픽 #589)
+
+셸이 지원하는 LLM 경로는 나이아 계정·CLI·로컬 셋뿐이다. 로그인하지 않은 상태의 기본 LLM 은 로컬 LLM 이다.
+
+| ID | Normative requirement | Verification |
+|---|---|---|
+| **FR-LLM-LOGOUT.1** | 나이아 연결 해제, 온보딩에서 로그인 건너뛰기, 설정이 빈 첫 실행은 LLM 제공자로 `gemini` 도 키 없는 `nextain` 도 저장하지 않는다. Ollama(`DEFAULT_OLLAMA_HOST` 또는 설정된 `ollamaHost`)가 응답하면 `ollama` 와 그 첫 모델을, 응답하지 않으면 제공자와 모델이 빈 "LLM 없음" 상태를 저장한다. 사용자가 이미 고른 CLI·로컬 제공자는 그대로 둔다. | `src/lib/llm/__tests__/logged-out-default.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`(연결 해제), `src/components/__tests__/OnboardingWizard.test.tsx`(로그인 건너뛰기) |
+| **FR-LLM-LOGOUT.2** | 채팅 저장소의 초기 제공자는 빈 값이다. 설정의 제공자가 비어 있으면 채팅은 메시지를 보내지 않고 "LLM 없음" 안내를 답변 자리에 보인다. 안내는 나이아 계정 로그인, 로컬 LLM 연결, CLI 연결 세 갈래를 알린다. | `src/components/__tests__/ChatArea.test.tsx`(빈 제공자 전송 차단과 안내), `src/stores/__tests__/chat.test.ts` |
+| **FR-LLM-LOGOUT.3** | 위 세 경로에서 로그인하지 않은 상태의 대화 요청은 `localhost:11434`(또는 설정된 로컬 주소)로 가거나 "LLM 없음" 안내로 끝난다. 나이아 게이트웨이나 타사 호스트로 나가는 요청은 없다. | e2e-tauri 로그아웃 목적지 스펙(연결 해제·로그인 건너뛰기·빈 설정 첫 실행), 윈도우 설치본 확인은 #590 |
+
+
 Verification: Shell `tsc --noEmit` clean; full Shell Vitest suite green (1463 tests, 0 failed). any-llm gateway: `pytest tests/gateway/test_naia_azure_models.py tests/unit/test_naia_pricing.py` — 78 passed (3 unrelated tests in `test_models.py` need a local Docker daemon for a Postgres testcontainer, not available this session — not specific to this model). No `e2e`/`e2e-tauri` coverage for this change (model selection has no dedicated Playwright spec); not run this session.
 
 ## v0.1.7 launch QA (#447, 2026-08-14)

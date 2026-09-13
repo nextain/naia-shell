@@ -1700,6 +1700,14 @@ export function ChatArea({
 		const mainRole = config ? effectiveMainRole(config) : {};
 		const configuredProvider = mainRole.provider ?? config?.provider;
 		const configuredModel = mainRole.model ?? config?.model;
+		// FR-LLM-LOGOUT.2: 제공자가 없으면 보내지 않고 세 갈래 안내를 답변 자리에 보인다.
+		// 채팅 저장소의 기본 제공자로 대신 보내면 지원하지 않는 곳으로 나갈 수 있다.
+		if (config && !configuredProvider) {
+			useChatStore.getState().appendStreamChunk(t("chat.noLlm"));
+			useChatStore.getState().finishStreaming();
+			completeCurrentRequest(requestId);
+			return;
+		}
 		// 새 core 는 에이전트가 GLM 키를 쥐므로 nextain 로그인 게이트 우회(naiaKey 없어도 전송).
 		if (!isNewCore() && configuredProvider === "nextain" && !config?.naiaKey) {
 			useChatStore

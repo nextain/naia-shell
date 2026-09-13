@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "বাতিল করুন",
 	"chat.placeholder": "একটি বার্তা টাইপ করুন...",
 	"chat.noApiKey": "কোন API কী কনফিগার করা নেই। সেটিংসে আপনার API কী লিখুন।",
+	"chat.noLlm": "কোনো LLM সংযুক্ত নেই। সেটিংসে এর যেকোনো একটি সংযুক্ত করুন: Naia অ্যাকাউন্টে সাইন ইন, লোকাল LLM (Ollama) সংযোগ, অথবা CLI (Claude, Codex, Grok) সংযোগ।",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g একটি রিয়েল-টাইম ভয়েস মডেল। মাইক দিয়ে ভয়েস কথোপকথন শুরু করুন — কথোপকথনের মাঝে টেক্সটও টাইপ করতে পারেন, যা রিয়েল-টাইমে পাঠানো হয়।",
 	"chat.thinking": "ভাবছি...",
 	"chat.codeCopy": "Copy",

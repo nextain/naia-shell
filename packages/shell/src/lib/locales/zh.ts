@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "取消",
 	"chat.placeholder": "输入消息...",
 	"chat.noApiKey": "未配置 API 密钥。请在设置中输入您的 API 密钥。",
+	"chat.noLlm": "没有可用于对话的 LLM。请在设置中连接以下之一：登录 Naia 账号、连接本地 LLM（Ollama）、连接 CLI（Claude、Codex、Grok）。",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g 是实时语音模型。用麦克风开始语音对话后，对话中也可以输入文字并实时发送。",
 	"chat.thinking": "思考中...",
 	"chat.codeCopy": "Copy",

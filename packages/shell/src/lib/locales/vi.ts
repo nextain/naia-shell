@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "Hủy bỏ",
 	"chat.placeholder": "Nhập tin nhắn...",
 	"chat.noApiKey": "Không có khóa API nào được định cấu hình. Vui lòng nhập khóa API của bạn trong cài đặt.",
+	"chat.noLlm": "Chưa có LLM nào được kết nối. Trong Cài đặt, hãy kết nối một trong ba: đăng nhập tài khoản Naia, kết nối LLM cục bộ (Ollama) hoặc kết nối CLI (Claude, Codex, Grok).",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g là mô hình giọng nói thời gian thực. Bắt đầu trò chuyện bằng giọng nói với micro — bạn cũng có thể nhập văn bản giữa cuộc trò chuyện và được gửi theo thời gian thực.",
 	"chat.thinking": "Đang suy nghĩ...",
 	"chat.codeCopy": "Copy",

@@ -125,6 +125,10 @@ import {
 } from "../lib/llm";
 import { providerSupportsRole } from "../lib/llm/registry";
 import {
+	keepsProviderWhenLoggedOut,
+	resolveLoggedOutLlm,
+} from "../lib/llm/logged-out-default";
+import {
 	readConfiguredLlmRoles,
 	writeConfiguredLlmRole,
 } from "../lib/llm/roles";
@@ -650,7 +654,7 @@ export function SettingsTab() {
 		normalizeLocalPath(existing?.vrmModel ?? DEFAULT_AVATAR_MODEL),
 	);
 	const initialMainRole = existing ? effectiveMainRole(existing) : {};
-	const initProvider = (initialMainRole.provider ?? "gemini") as ProviderId;
+	const initProvider = (initialMainRole.provider ?? "") as ProviderId;
 	const savedModel = initialMainRole.model;
 	const [provider, setProvider] = useState<ProviderId>(initProvider);
 	const modelValid =
@@ -4233,8 +4237,23 @@ export function SettingsTab() {
 														setSecureNaiaCredentialReady(false);
 														setNaiaUserIdState("");
 														setLabBalance(null);
-														setProvider("gemini");
-														setModel(getDefaultLlmModel("gemini"));
+														// FR-LLM-LOGOUT.1: 로그인하지 않은 상태의 LLM 은 로컬이거나
+														// "LLM 없음"이다. 이미 고른 CLI·로컬 제공자는 그대로 둔다.
+														const priorConfig = loadConfig();
+														const priorMain = priorConfig
+															? effectiveMainRole(priorConfig)
+															: {};
+														const loggedOutLlm = keepsProviderWhenLoggedOut(
+															priorMain.provider,
+														)
+															? {
+																	provider: priorMain.provider ?? "",
+																	model: priorMain.model ?? "",
+																}
+															: await resolveLoggedOutLlm(priorConfig?.ollamaHost);
+														if (getAdkPath() !== sourceAdkPath) return;
+														setProvider(loggedOutLlm.provider);
+														setModel(loggedOutLlm.model);
 														setDiscordDefaultUserId("");
 														setDiscordDmChannelId("");
 														setDiscordDefaultTarget("");
@@ -4249,14 +4268,8 @@ export function SettingsTab() {
 														if (current) {
 															const loggedOutBase = {
 																...current,
-																provider:
-																	current.provider === "nextain"
-																		? "gemini"
-																		: current.provider,
-																model:
-																	current.provider === "nextain"
-																		? getDefaultLlmModel("gemini")
-																		: current.model,
+																provider: loggedOutLlm.provider,
+																model: loggedOutLlm.model,
 																ttsProvider:
 																	current.ttsProvider === "nextain"
 																		? "edge"

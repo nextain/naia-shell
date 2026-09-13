@@ -345,6 +345,31 @@ describe("ChatArea", () => {
 		localStorage.removeItem("naia-config");
 	});
 
+	it("does not send and shows the three-way guide when no LLM is configured (FR-LLM-LOGOUT.2)", async () => {
+		vi.mocked(isNewCore).mockReturnValue(true);
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "", model: "", enableTools: false }),
+		);
+		const before = capturedRequests.length;
+
+		render(<ChatArea />);
+		const input = screen.getByPlaceholderText(/message/i);
+		fireEvent.change(input, { target: { value: "hello without llm" } });
+		fireEvent.keyDown(input, { key: "Enter" });
+
+		await waitFor(() => {
+			const last = useChatStore.getState().messages.at(-1);
+			expect(last?.role).toBe("assistant");
+		});
+		const guide = useChatStore.getState().messages.at(-1)?.content ?? "";
+		expect(guide).toMatch(/Naia/);
+		expect(guide).toMatch(/Ollama/);
+		expect(guide).toMatch(/CLI/);
+		expect(capturedRequests.length).toBe(before);
+		localStorage.removeItem("naia-config");
+	});
+
 	it("preserves a dynamically catalogued structured main model", async () => {
 		vi.mocked(isNewCore).mockReturnValue(true);
 		localStorage.setItem(

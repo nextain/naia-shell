@@ -938,6 +938,13 @@ Those older sections are historical evidence only.
 |---|---|---|
 | **UC-LLM-DEFAULT-DEEPSEEK-FLASH** | Naia 계정으로 로그인하거나 온보딩을 완료하면 메인 LLM이 `DeepSeek V4 Flash`로 자동 선택된다. 설정 탭 모델 선택기에도 `DeepSeek V4 Flash`가 `DeepSeek V4 Pro` 옆에 나타나고, "Naia 기본값 적용"을 눌러도 같은 값이 채워진다. | `lib/llm/__tests__/registry*.test.ts`, `lib/slots/__tests__/settings-slots.contract.test.ts`, `components/__tests__/SettingsTab.test.tsx`, `e2e-tauri/specs/70c-nextain-default-chat.spec.ts`(라이브, NAIA_E2E_NAIA_KEY 필요) |
 
+### 2026-09-13 로그인하지 않고 쓰기 (#591, 에픽 #589)
+
+| Scenario | User-observable outcome | Coverage |
+|---|---|---|
+| **UC-LLM-LOGOUT-LOCAL** | 나이아 연결을 해제하거나, 온보딩에서 로그인을 건너뛰거나, 처음 실행해 아무것도 설정하지 않은 사용자가 말을 걸면, 이 기계의 Ollama 가 떠 있으면 로컬 LLM 이 답한다. Ollama 가 없으면 답변 자리에 "대화할 LLM 이 없다"는 안내와 세 갈래(나이아 계정 로그인, 로컬 LLM 연결, CLI 연결)가 보인다. 어느 경우에도 대화가 Gemini 나 나이아 게이트웨이로 나가지 않는다. | `src/lib/llm/__tests__/logged-out-default.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`, `src/components/__tests__/OnboardingWizard.test.tsx`, `src/components/__tests__/ChatArea.test.tsx`, e2e-tauri 로그아웃 목적지 스펙, 윈도우 설치본 확인 #590 |
+
+
 any-llm 게이트웨이 쪽(라우팅·가격)은 이미 구현·테스트돼 있어 이번 변경 대상이 아니었다(`pytest tests/gateway/test_naia_azure_models.py tests/unit/test_naia_pricing.py` 78 passed로 확인). 이 시나리오에 대한 전용 Playwright는 없음(모델 선택 자체는 기존 SettingsTab e2e 커버리지 범위 밖) — 이번 세션에서 새로 만들지 않음.
 
 ### 2026-08-15 v0.1.7 Windows release rebuild (#448)

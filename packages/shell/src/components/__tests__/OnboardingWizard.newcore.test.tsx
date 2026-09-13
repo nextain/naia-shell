@@ -45,6 +45,12 @@ const activateNaiaLlm = vi.hoisted(() =>
 	}),
 );
 
+// FR-LLM-LOGOUT.1: 로그인 없이 끝내는 경로는 Ollama 를 확인한다. 테스트에서는 즉시 "LLM 없음"을 돌려준다.
+vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/llm/logged-out-default")>()),
+	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn((command: string) =>
 		command === "fetch_naia_balance"

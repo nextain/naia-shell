@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "취소",
 	"chat.placeholder": "메시지를 입력하세요...",
 	"chat.noApiKey": "API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.",
+	"chat.noLlm": "대화할 LLM 이 없습니다. 설정에서 세 가지 중 하나를 연결해 주세요: 나이아 계정 로그인, 로컬 LLM(Ollama) 연결, CLI(Claude·Codex·Grok) 연결.",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g는 실시간 음성 모델이에요. 마이크로 음성 대화를 시작하면 대화 중에 텍스트 입력도 실시간으로 전송됩니다.",
 	"chat.thinking": "생각 중...",
 	"chat.codeCopy": "복사",

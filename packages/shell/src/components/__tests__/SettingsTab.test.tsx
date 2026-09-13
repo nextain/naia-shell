@@ -34,6 +34,14 @@ let hostMachine: typeof ONE_CARD_WINDOWS = ONE_CARD_WINDOWS;
 function setHostMachine(next: typeof ONE_CARD_WINDOWS) {
 	hostMachine = next;
 }
+const loggedOutMocks = vi.hoisted(() => ({
+	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
+}));
+vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/llm/logged-out-default")>()),
+	resolveLoggedOutLlm: loggedOutMocks.resolveLoggedOutLlm,
+}));
+
 vi.mock("../../lib/voice/host-profile", () => ({
 	voiceHostProfile: () => Promise.resolve(hostMachine),
 	resetVoiceHostProfileCache: () => {},
@@ -137,6 +145,77 @@ describe("SettingsTab", () => {
 		vi.unstubAllGlobals();
 		Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
 		await setLocale("en");
+	});
+
+	describe("logout LLM (FR-LLM-LOGOUT.1, #591)", () => {
+		const seedLoggedIn = (provider: string, model: string) => {
+			localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
+			localStorage.setItem(
+				"naia-config",
+				JSON.stringify({
+					provider,
+					model,
+					apiKey: "",
+					naiaKey: "gw-logout-key",
+					llmRoles: { main: { provider, model } },
+				}),
+			);
+			// 설정 파일 읽기는 문자열을 돌려준다(빈 문자열 = 아직 없음).
+			mockInvoke.mockImplementation((command: string) => {
+				if (command === "read_naia_config" || command === "read_naia_ui_config")
+					return Promise.resolve("");
+				return Promise.resolve([]);
+			});
+		};
+		const logout = async () => {
+			render(<SettingsTab />);
+			const openers = await screen.findAllByRole("button", { name: "Logout" });
+			fireEvent.click(openers[0]);
+			const confirm = document.querySelector(
+				".reset-confirm-app .settings-reset-btn",
+			) as HTMLButtonElement;
+			await act(async () => {
+				fireEvent.click(confirm);
+			});
+		};
+		const saved = () => JSON.parse(localStorage.getItem("naia-config") || "{}");
+
+		it("stores the local Ollama LLM instead of Gemini", async () => {
+			seedLoggedIn("nextain", "deepseek-v4-flash");
+			loggedOutMocks.resolveLoggedOutLlm.mockResolvedValueOnce({
+				provider: "ollama",
+				model: "qwen3:8b",
+			});
+			await logout();
+			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
+			expect(saved().provider).toBe("ollama");
+			expect(saved().model).toBe("qwen3:8b");
+			expect(saved().llmRoles.main).toMatchObject({
+				provider: "ollama",
+				model: "qwen3:8b",
+			});
+		});
+
+		it("stores no LLM when no local LLM answers", async () => {
+			seedLoggedIn("nextain", "deepseek-v4-flash");
+			loggedOutMocks.resolveLoggedOutLlm.mockResolvedValueOnce({
+				provider: "",
+				model: "",
+			});
+			await logout();
+			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
+			expect(saved().provider).toBe("");
+			expect(JSON.stringify(saved())).not.toContain('"gemini');
+		});
+
+		it("keeps a CLI provider the user already chose", async () => {
+			seedLoggedIn("codex", "gpt-5.4");
+			loggedOutMocks.resolveLoggedOutLlm.mockClear();
+			await logout();
+			await waitFor(() => expect(saved().naiaKey).toBeUndefined());
+			expect(saved().provider).toBe("codex");
+			expect(loggedOutMocks.resolveLoggedOutLlm).not.toHaveBeenCalled();
+		});
 	});
 
 	it("keeps a Naia login entry point visible in Profile after logout", () => {
@@ -296,6 +375,11 @@ describe("SettingsTab", () => {
 		);
 
 	it("renders gateway catalog models with pricing (/v1/pricing 셸-직결)", async () => {
+		// 설정이 빈 첫 실행은 이제 제공자가 없다(FR-LLM-LOGOUT.2). 이 테스트는 gemini 카탈로그를 보므로 명시한다.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash", apiKey: "" }),
+		);
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{
@@ -314,6 +398,10 @@ describe("SettingsTab", () => {
 	});
 
 	it("parses gateway model_key provider prefix (<provider>:<id>)", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash", apiKey: "" }),
+		);
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{

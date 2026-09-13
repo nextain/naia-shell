@@ -12,7 +12,7 @@ describe("useChatStore", () => {
 		expect(state.messages).toEqual([]);
 		expect(state.isStreaming).toBe(false);
 		expect(state.streamingContent).toBe("");
-		expect(state.provider).toBe("gemini");
+		expect(state.provider).toBe(""); // FR-LLM-LOGOUT.2
 		expect(state.totalSessionCost).toBe(0);
 	});
 

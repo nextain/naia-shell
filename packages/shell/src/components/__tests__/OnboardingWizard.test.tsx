@@ -19,6 +19,14 @@ const secureStore = vi.hoisted(() => ({
 }));
 
 // Mock Tauri invoke
+const loggedOutMocks = vi.hoisted(() => ({
+	resolveLoggedOutLlm: vi.fn(async () => ({ provider: "", model: "" })),
+}));
+vi.mock("../../lib/llm/logged-out-default", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/llm/logged-out-default")>()),
+	resolveLoggedOutLlm: loggedOutMocks.resolveLoggedOutLlm,
+}));
+
 vi.mock("../../lib/voice/host-profile", () => ({
 	// 이 테스트들이 흉내 내는 기계는 카드 한 장짜리 Windows 다 (#537).
 	// 프로파일 이름은 하드웨어 사실이라 화면이 아니라 여기서 정한다.
@@ -454,7 +462,8 @@ describe("OnboardingWizard", () => {
 		});
 
 		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(config.provider).toBe("nextain"); // Naia-account default, not a BYO provider
+		// FR-LLM-LOGOUT.1: 로그인 없이 끝내면 키 없는 나이아 계정도 BYO 도 아닌 "LLM 없음"이다.
+		expect(config.provider).toBe("");
 		expect(config.apiKey).toBeUndefined();
 		expect(config.naiaKey).toBeUndefined();
 		expect(config.onboardingComplete).toBe(true);
@@ -464,6 +473,46 @@ describe("OnboardingWizard", () => {
 		);
 		// Settings screen is focused for the user to configure a provider.
 		expect(useAppStore.getState().activeApp).toBe("settings");
+	});
+
+	it("stores the local Ollama LLM when onboarding finishes without login (FR-LLM-LOGOUT.1)", async () => {
+		const { invoke } = await import("@tauri-apps/api/core");
+		(invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd: string) => {
+			if (cmd === "detect_gpu_vram") return Promise.resolve(16);
+			return defaultInvoke(cmd);
+		});
+		useAppStore.getState().setActiveApp(null);
+
+		loggedOutMocks.resolveLoggedOutLlm.mockResolvedValueOnce({
+			provider: "ollama",
+			model: "qwen3:8b",
+		});
+		renderAtAgentName();
+		await act(async () => {
+			await Promise.resolve();
+		});
+		advanceFromAgentNameToProvider();
+
+		// The provider-less inline BYO key entry is gone.
+		expect(screen.queryByPlaceholderText("sk-... / gw-...")).toBeNull();
+
+		fireEvent.click(screen.getByRole("button", { name: /Direct setup/ }));
+		await act(async () => {
+			await Promise.resolve();
+		});
+		act(() => {
+			vi.advanceTimersByTime(1300);
+		});
+
+		const config = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(config.provider).toBe("ollama");
+		expect(config.model).toBe("qwen3:8b");
+		expect(config.llmRoles?.main).toMatchObject({
+			provider: "ollama",
+			model: "qwen3:8b",
+		});
+		expect(config.naiaKey).toBeUndefined();
+		expect(JSON.stringify(config)).not.toContain('"gemini');
 	});
 
 	it("actually starts VoxCPM2 from the voice step instead of only saving a preference", async () => {

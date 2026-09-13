@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "إلغاء",
 	"chat.placeholder": "اكتب رسالة...",
 	"chat.noApiKey": "لم يتم تكوين مفتاح API. الرجاء إدخال مفتاح API الخاص بك في الإعدادات.",
+	"chat.noLlm": "لا يوجد نموذج LLM متصل. من الإعدادات، اربط أحد الخيارات: تسجيل الدخول إلى حساب Naia، أو ربط LLM محلي (Ollama)، أو ربط CLI (Claude أو Codex أو Grok).",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g نموذج صوتي فوري. ابدأ محادثة صوتية بالميكروفون — ويمكنك أيضًا الكتابة أثناء المحادثة وتُرسل فوريًا.",
 	"chat.thinking": "جاري التفكير...",
 	"chat.codeCopy": "Copy",

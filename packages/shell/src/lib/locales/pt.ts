@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "Cancelar",
 	"chat.placeholder": "Digite uma mensagem...",
 	"chat.noApiKey": "Nenhuma chave de API configurada. Por favor, insira sua chave API nas configurações.",
+	"chat.noLlm": "Nenhum LLM está conectado. Em Configurações, conecte uma das opções: entrar na conta Naia, conectar um LLM local (Ollama) ou conectar uma CLI (Claude, Codex, Grok).",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g é um modelo de voz em tempo real. Inicie uma conversa por voz com o microfone — você também pode digitar durante a conversa e é enviado em tempo real.",
 	"chat.thinking": "Pensando...",
 	"chat.codeCopy": "Copy",

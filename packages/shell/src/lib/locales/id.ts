@@ -213,6 +213,7 @@ export default {
 	"settings.cancel": "Batalkan",
 	"chat.placeholder": "Ketik pesan...",
 	"chat.noApiKey": "Tidak ada kunci API yang dikonfigurasi. Silakan masukkan kunci API Anda di pengaturan.",
+	"chat.noLlm": "Belum ada LLM yang terhubung. Di Pengaturan, hubungkan salah satu: masuk ke akun Naia, hubungkan LLM lokal (Ollama), atau hubungkan CLI (Claude, Codex, Grok).",
 	"chat.omniVoiceOnly": "naia-0.9-omni-24g adalah model suara real-time. Mulai percakapan suara dengan mikrofon — Anda juga bisa mengetik di tengah percakapan dan dikirim secara real-time.",
 	"chat.thinking": "Berpikir...",
 	"chat.codeCopy": "Copy",

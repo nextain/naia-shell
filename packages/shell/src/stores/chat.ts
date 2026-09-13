@@ -85,7 +85,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 	streamingContent: "",
 	streamingThinking: "",
 	streamingToolCalls: [],
-	provider: "gemini",
+	// FR-LLM-LOGOUT.2: 초기 제공자는 비어 있다. 설정이 제공자를 정한다.
+	provider: "",
 	totalSessionCost: 0,
 	sessionCostEntries: [],
 	pendingApproval: null,
