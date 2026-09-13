@@ -8304,7 +8304,7 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
-pub(crate) pub(crate) pub(crate) pub(crate) fn current_adk_path() -> Result<String, String> {
+pub(crate) fn current_adk_path() -> Result<String, String> {
     if debug_e2e_enabled() {
         if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
             let path = path.trim().to_string();
