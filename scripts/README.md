@@ -15,6 +15,7 @@
 | `check-assembly-coverage.mjs` | 조립 매트릭스 전수 검사(미분류 0: user-scenarios의 모든 UC/S가 매트릭스에 분류됐나 + fit 게이트: 상태≥코드 행에 미평가 없나). AI 단축 사고 방지 결정론 강제. |
 | `check-file-anchors.mjs` | 파일단위 계약 앵커 검출기 — `src/main/*` 가 `module-manifest.json` 에 {layer,uc,contract} 등록됐나(드리프트 자동차단 1단계). |
 | `check-compile-integrity.mjs` | 컴파일 무결성 게이트 — core+shell tsc 무결 검증. |
+| `check-excluded-traces.mjs` (+ `excluded-traces.config.json`) | 제외한 제공자·기능(Discord·cron, 보조·기억 역할, 타사 LLM·음성 API)의 흔적 검사(#589). 적중을 남김·흔적으로 분류하고, 지원 경로 모듈에서 import 를 따라가 닿은 의존성은 이름에 제외 제공자가 들어가도 남긴다. 기본은 보고 모드, `--strict <묶음>` 은 흔적이나 사라진 남김 파일이 있으면 exit 1. |
 | `check-build-contract.mjs` | 빌드/dev 툴링 드리프트 검출기(`build-tooling-manifest.json` 대조). |
 | `check-traceability.mjs` | V모델 추적성 검사기 (REQ→UC→TEST-S, UC→SPEC→TEST-F). |
 | `oss-readiness.mjs` | OSS 공개 품질 게이트(결정론) — 시크릿/개인경로/PII/내부유출 하드게이트 0 + 온보딩 체크리스트. 추적 파일만 스캔. |

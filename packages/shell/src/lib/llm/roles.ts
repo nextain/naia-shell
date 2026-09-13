@@ -1,6 +1,7 @@
 // Shell 역할 설정 모델 — 저장/migration/UI에서 공통 사용.
 // provider 목록은 registry capability가 권위이며 이 파일에 역할별 배열을 두지 않는다.
 import type { AppConfig, LlmRoleConfig, LlmRoleId } from "../config";
+import { readMainRole, writeMainRole } from "./main-role";
 import { providerSupportsRole } from "./registry";
 
 export type RoleProvenance = "explicit" | "inherit" | "legacy-inherit";
@@ -19,7 +20,7 @@ const clean = (value: string | undefined): string | undefined => value?.trim() |
 /** 신규 필드 우선 + legacy 무손실 읽기. */
 export function readConfiguredLlmRoles(config: AppConfig): Partial<Record<LlmRoleId, LlmRoleConfig>> {
 	const structured = config.llmRoles ?? {};
-	const main = structured.main ?? { provider: config.provider, model: config.model };
+	const main = readMainRole(config);
 	const expert = structured.expert ?? { inherit: "main" as const };
 	const memory = structured.memory ?? (
 		config.memoryLlmProvider && config.memoryLlmProvider !== "none"
@@ -61,14 +62,12 @@ export function writeConfiguredLlmRole(
 	role: LlmRoleId,
 	value: LlmRoleConfig,
 ): AppConfig {
+	if (role === "main") return writeMainRole(config, value);
 	const next: AppConfig = {
 		...config,
 		llmRoles: { ...(config.llmRoles ?? {}), [role]: { ...value } },
 	};
-	if (role === "main" && !value.inherit) {
-		if (value.provider) next.provider = value.provider;
-		if (value.model) next.model = value.model;
-	} else if (role === "sub") {
+	if (role === "sub") {
 		next.subLlmProvider = value.inherit ? undefined : value.provider;
 		next.subLlmModel = value.inherit ? undefined : value.model;
 		next.subLlmBaseUrl = value.inherit ? undefined : value.baseUrl;

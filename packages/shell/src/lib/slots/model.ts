@@ -9,6 +9,7 @@ import {
 	resolveEffectiveLlmRoles,
 	writeConfiguredLlmRole,
 } from "../llm/roles";
+import { readMainRole, writeMainRole } from "../llm/main-role";
 import type { ProviderId } from "../types";
 
 // ── FR-SLOT.2: 6 슬롯 (순서 권위) ──
@@ -129,14 +130,10 @@ export function effectiveMainRole(config: AppConfig): {
 	provider?: string;
 	model?: string;
 } {
-	const resolved = resolveEffectiveLlmRoles(config);
-	const main = resolved.ok
-		? resolved.roles.find((role) => role.role === "main")
-		: undefined;
-	const configured = readConfiguredLlmRoles(config).main;
+	const main = readMainRole(config);
 	return {
-		provider: main?.provider ?? configured?.provider ?? config.provider,
-		model: main?.model ?? configured?.model ?? config.model,
+		provider: main.provider?.trim() || config.provider,
+		model: main.model?.trim() || config.model,
 	};
 }
 
@@ -206,11 +203,8 @@ export function writeSlot<K extends SlotId>(
 	switch (slot) {
 		case "main": {
 			const v = value as Partial<SlotSnapshot["main"]>;
-			const previous = config.llmRoles?.main ?? {
-				provider: config.provider,
-				model: config.model,
-			};
-			return writeConfiguredLlmRole(config, "main", {
+			const previous = readMainRole(config);
+			return writeMainRole(config, {
 				...previous,
 				// Selecting a concrete main model must clear a stale inheritance
 				// marker. Otherwise the standalone Agent rejects an otherwise valid

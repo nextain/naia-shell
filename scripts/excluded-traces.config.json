@@ -1,0 +1,85 @@
+{
+  "_doc": "nextain/naia-shell#589 흔적 검사 설정. 검색어(terms)는 묶음 번호를 갖는다. 묶음 1 Discord·cron, 2 보조·전문가·기억 역할, 3 타사 LLM API, 4 타사 음성 API. allow 는 남김 규칙이고, keepRoots 는 지원 경로 모듈(여기서 import 를 따라가 닿은 패키지는 남김), mustExist 는 남기기로 한 파일이다. 묶음을 지울 때마다 inventory 에 없던 적중을 분류해 이 파일에 더한다.",
+  "terms": [
+    { "term": "discord", "bundle": 1 },
+    { "term": "cron", "bundle": 1, "variants": false },
+    { "term": "scheduled-task", "bundle": 1 },
+    { "term": "jeonju", "bundle": 1 },
+    { "term": "subLlm", "bundle": 2 },
+    { "term": "memoryLlm", "bundle": 2 },
+    { "term": "expertLlm", "bundle": 2 },
+    { "term": "delegate_agent", "bundle": 2, "variants": false },
+    { "term": "sub_llm", "bundle": 2, "variants": false },
+    { "term": "SUB_LLM", "bundle": 2, "variants": false, "caseSensitive": true },
+    { "term": "openrouter", "bundle": 2, "variants": false },
+    { "term": "anyllm-claude", "bundle": 2, "variants": false },
+    { "term": "gemini", "bundle": 3, "variants": false },
+    { "term": "openai", "bundle": 3, "variants": false },
+    { "term": "anthropic", "bundle": 3, "variants": false },
+    { "term": "xai", "bundle": 3, "variants": false, "caseSensitive": true },
+    { "term": "XAI_API_KEY", "bundle": 3, "variants": false, "caseSensitive": true },
+    { "term": "zai", "bundle": 3, "variants": false, "caseSensitive": true },
+    { "term": "glm", "bundle": 3, "variants": false },
+    { "term": "ZHIPUAI_API_KEY", "bundle": 3, "variants": false, "caseSensitive": true },
+    { "term": "vertex", "bundle": 3, "variants": false },
+    { "term": "GOOGLE_APPLICATION_CREDENTIALS", "bundle": 3, "variants": false, "caseSensitive": true },
+    { "term": "googleApiKey", "bundle": 4 },
+    { "term": "elevenlabs", "bundle": 4, "variants": false },
+    { "term": "gemini-live", "bundle": 4, "variants": false },
+    { "term": "openai-realtime", "bundle": 4, "variants": false },
+    { "term": "openaiTtsApiKey", "bundle": 4 }
+  ],
+  "allow": [
+    { "terms": ["discord"], "lineContains": ["about.linkDiscord", "onboard.welcome.discordBtn", "discord.gg"], "reason": "커뮤니티 Discord 안내 링크(판단 4)" },
+    { "terms": ["discord"], "paths": ["**/csp-no-discord.test.ts"], "reason": "discord.com 접근 금지 가드(판단 4)" },
+    { "terms": ["memoryLlm"], "lineContains": ["memory_llm", "MEMORY_LLM"], "reason": "compaction workload 이름(묶음 2 남김)" },
+    { "terms": ["gemini"], "paths": ["packages/shell/e2e-tauri/helpers/semantic.ts"], "reason": "e2e 의미 판정기, L4(#601)까지 예외(판단 7)" },
+    { "terms": ["gemini"], "lineContains": ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.1-pro-preview"], "reason": "나이아 계정 게이트웨이 모델 id" },
+    { "terms": ["gemini"], "paths": ["src/main/adapters/subagent-gemini.ts", "src/test/*subagent-gemini*"], "reason": "Gemini CLI 서브에이전트(D6 대기)" },
+    { "terms": ["xai", "XAI_API_KEY"], "lineContains": ["delete env.XAI_API_KEY"], "reason": "grok CLI 키 누출 방어" },
+    { "terms": ["openai"], "lineContains": ["OPENAI_API_KEY", "openai-compat", "normalizeOpenAIBaseUrl", "OpenAI-compatible", "OpenAI 호환"], "reason": "OpenAI 호환 규약 이름" }
+  ],
+  "repos": {
+    "shell": {
+      "include": ["packages/shell/src/**", "packages/shell/src-tauri/src/**", "packages/shell/src-tauri/*.json", "packages/shell/e2e/**", "packages/shell/e2e-tauri/**", "src/**", "docs/**", ".agents/context/**"],
+      "exclude": ["**/node_modules/**", "**/*.lock", "docs/progress/**", ".agents/context/process-status.json"],
+      "keepRoots": [
+        "packages/shell/src/lib/llm/main-role.ts",
+        "packages/shell/src/lib/llm/logged-out-default.ts",
+        "packages/shell/src/lib/tts/edge-tts.ts",
+        "packages/shell/src/lib/stt/web-speech-stt.ts",
+        "packages/shell/src/lib/voice/azure-voice-live.ts",
+        "packages/shell/src/lib/voice/naia-omni.ts",
+        "packages/shell/src/lib/voice/vllm-omni.ts"
+      ],
+      "mustExist": [
+        "packages/shell/src/lib/llm/main-role.ts",
+        "packages/shell/src/lib/llm/openai-base-url.ts",
+        "packages/shell/src/lib/voice/azure-voice-live.ts",
+        "packages/shell/src/lib/voice/naia-omni.ts",
+        "packages/shell/src/lib/tts/edge-tts.ts",
+        "packages/shell/src/lib/stt/web-speech-stt.ts"
+      ]
+    },
+    "agent": {
+      "include": ["src/**", "scripts/**", "docs/**", ".agents/context/**", "package.json"],
+      "exclude": ["**/node_modules/**", "docs/progress/**", ".agents/context/process-status.json"],
+      "keepRoots": [
+        "src/main/adapters/claude-code-provider.ts",
+        "src/main/adapters/codex-app-server-provider.ts",
+        "src/main/adapters/grok-cli-provider.ts",
+        "src/main/adapters/openai-compat-provider.ts",
+        "src/main/adapters/ollama-provider.ts",
+        "src/main/domain/llm-role-selection.ts"
+      ],
+      "mustExist": [
+        "src/main/adapters/claude-code-provider.ts",
+        "src/main/adapters/codex-app-server-provider.ts",
+        "src/main/adapters/grok-cli-provider.ts",
+        "src/main/adapters/openai-compat-provider.ts",
+        "src/main/adapters/ollama-provider.ts",
+        "src/main/domain/llm-role-selection.ts"
+      ]
+    }
+  }
+}

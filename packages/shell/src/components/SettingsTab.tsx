@@ -132,6 +132,7 @@ import {
 	readConfiguredLlmRoles,
 	writeConfiguredLlmRole,
 } from "../lib/llm/roles";
+import { selectMainRole, writeMainRole } from "../lib/llm/main-role";
 import { Logger } from "../lib/logger";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import { DEFAULT_PERSONA, FORMALITY_LOCALES } from "../lib/persona";
@@ -273,7 +274,7 @@ function buildNaiaLoginConfig(
 	// A Settings-tab Naia login is an explicit main-brain selection. Keep the
 	// structured role mirror in lockstep with the top-level provider/model;
 	// otherwise a previous Gemini main role remains authoritative to the Agent.
-	const withNaiaMain = writeConfiguredLlmRole(withNaiaKey, "main", {
+	const withNaiaMain = writeMainRole(withNaiaKey, {
 		provider: "nextain",
 		model: nextModel,
 	});
@@ -2635,11 +2636,10 @@ export function SettingsTab() {
 			id,
 			selectedModel,
 		);
-		const provSel = writeConfiguredLlmRole(
-			legacySelection as unknown as AppConfig,
-			"main",
-			{ provider: id, model: selectedModel },
-		);
+		const provSel = writeMainRole(legacySelection as unknown as AppConfig, {
+			provider: id,
+			model: selectedModel,
+		});
 		saveConfig(provSel as unknown as Parameters<typeof saveConfig>[0]);
 		void writeNaiaConfig(provSel as unknown as Record<string, unknown>);
 	}
@@ -3076,21 +3076,10 @@ export function SettingsTab() {
 				memoryAdapter === "qdrant" ? qdrantApiKey || undefined : undefined,
 		};
 		const persistedConfig = loadConfig() ?? existing;
-		const persistedMainRole = persistedConfig
-			? readConfiguredLlmRoles(persistedConfig).main
-			: undefined;
-		const mainProviderUnchanged = persistedMainRole?.provider === provider;
-		const mainRole: LlmRoleConfig = {
-			provider,
-			model,
-			...(mainProviderUnchanged && persistedMainRole?.credentialRef !== undefined
-				? { credentialRef: persistedMainRole.credentialRef }
-				: {}),
-			...(mainProviderUnchanged && persistedMainRole?.baseUrl !== undefined
-				? { baseUrl: persistedMainRole.baseUrl }
-				: {}),
-		};
-		newConfig = writeConfiguredLlmRole(newConfig, "main", mainRole);
+		newConfig = writeMainRole(
+			newConfig,
+			selectMainRole(persistedConfig, provider, model),
+		);
 		newConfig = writeConfiguredLlmRole(newConfig, "sub", subLlmRole);
 		newConfig = writeConfiguredLlmRole(newConfig, "expert", expertLlmRole);
 		newConfig = writeConfiguredLlmRole(newConfig, "memory", memoryLlmRole);
@@ -3328,9 +3317,8 @@ export function SettingsTab() {
 					provider,
 					replacement.id,
 				);
-				const nextSelection = writeConfiguredLlmRole(
+				const nextSelection = writeMainRole(
 					legacySelection as unknown as AppConfig,
-					"main",
 					{ provider, model: replacement.id },
 				);
 				saveConfig(
@@ -4284,9 +4272,8 @@ export function SettingsTab() {
 																discordDmChannelId: undefined,
 																discordDefaultTarget: undefined,
 															};
-															const loggedOutConfig = writeConfiguredLlmRole(
+															const loggedOutConfig = writeMainRole(
 																loggedOutBase,
-																"main",
 																{
 																	provider: loggedOutBase.provider,
 																	model: loggedOutBase.model,
@@ -4890,25 +4877,13 @@ export function SettingsTab() {
 											provider,
 											e.target.value,
 										);
-										const persistedMainRole = persistedConfig
-											? readConfiguredLlmRoles(persistedConfig).main
-											: undefined;
-										const mainRole: LlmRoleConfig = {
-											provider,
-											model: e.target.value,
-											...(persistedMainRole?.provider === provider &&
-											persistedMainRole.credentialRef !== undefined
-												? { credentialRef: persistedMainRole.credentialRef }
-												: {}),
-											...(persistedMainRole?.provider === provider &&
-											persistedMainRole.baseUrl !== undefined
-												? { baseUrl: persistedMainRole.baseUrl }
-												: {}),
-										};
-										const nextSel = writeConfiguredLlmRole(
+										const nextSel = writeMainRole(
 											legacySelection as unknown as AppConfig,
-											"main",
-											mainRole,
+											selectMainRole(
+												persistedConfig as AppConfig | null,
+												provider,
+												e.target.value,
+											),
 										);
 										saveConfig(
 											nextSel as unknown as Parameters<typeof saveConfig>[0],

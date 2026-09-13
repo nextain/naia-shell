@@ -778,6 +778,15 @@ Verified this session with a real Chromium + dev server: `e2e/onboarding-fresh.s
 | **FR-LLM-LOGOUT.2** | 채팅 저장소의 초기 제공자는 빈 값이다. 설정의 제공자가 비어 있으면 채팅은 메시지를 보내지 않고 "LLM 없음" 안내를 답변 자리에 보인다. 안내는 나이아 계정 로그인, 로컬 LLM 연결, CLI 연결 세 갈래를 알린다. | `src/components/__tests__/ChatArea.test.tsx`(빈 제공자 전송 차단과 안내), `src/stores/__tests__/chat.test.ts` |
 | **FR-LLM-LOGOUT.3** | 위 세 경로에서 로그인하지 않은 상태의 대화 요청은 `localhost:11434`(또는 설정된 로컬 주소)로 가거나 "LLM 없음" 안내로 끝난다. 나이아 게이트웨이나 타사 호스트로 나가는 요청은 없다. | e2e-tauri 로그아웃 목적지 스펙(연결 해제·로그인 건너뛰기·빈 설정 첫 실행), 윈도우 설치본 확인은 #590 |
 
+## 2026-09-13 제외 기능 삭제 준비 (에픽 #589)
+
+Discord·cron, 보조·전문가·기억 역할, 타사 LLM·음성 API 를 지우기 전에, 남길 main 역할을 떼어 두고 흔적 검사를 세운다. 삭제 범위는 에픽 #589 의 확정 댓글을 따른다.
+
+| ID | Normative requirement | Verification |
+|---|---|---|
+| **FR-EXCLUDE-PREP.1** | main 역할(대화 두뇌 선택)의 읽기·쓰기는 `lib/llm/main-role.ts` 하나로 한다. 읽기는 `llmRoles.main` 을 모양 그대로(`provider`, `model`, `baseUrl`, `credentialRef`, `inherit`) 돌려주고, 없으면 최상위 `provider`/`model` 거울에서 만든다. 저장과 모델 선택은 공급자가 그대로면 저장돼 있던 `baseUrl`·`credentialRef` 를 잇고, 공급자가 바뀌면 버린다. 보조·전문가·기억 역할 코드(`roles.ts`)를 지워도 이 동작은 바뀌지 않는다. 에이전트는 main 선택의 모양(`LlmRoleSelection`)을 `domain/llm-role-selection.ts` 에 두어 역할 해석(`llm-roles.ts`)과 분리한다. | `src/lib/llm/__tests__/main-role.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`, 에이전트 `uc-naia-settings-store.contract.test.ts` |
+| **FR-EXCLUDE-PREP.2** | `scripts/check-excluded-traces.mjs` 는 셸·에이전트 저장소에서 제외 대상 이름(묶음 1~4)을 찾아 적중마다 남김·흔적으로 분류한다. 지원 경로 모듈에서 import(동적 import 포함)를 따라가 닿은 패키지 이름 안의 적중은 남김이다. `--strict <묶음>` 은 그 묶음의 흔적이나 남기기로 한 파일의 부재가 있으면 exit 1 이다. 지운 이름을 되살리면 엄격 모드가 실패해야 한다. | `scripts/check-excluded-traces.test.mjs` |
+
 
 Verification: Shell `tsc --noEmit` clean; full Shell Vitest suite green (1463 tests, 0 failed). any-llm gateway: `pytest tests/gateway/test_naia_azure_models.py tests/unit/test_naia_pricing.py` — 78 passed (3 unrelated tests in `test_models.py` need a local Docker daemon for a Postgres testcontainer, not available this session — not specific to this model). No `e2e`/`e2e-tauri` coverage for this change (model selection has no dedicated Playwright spec); not run this session.
 

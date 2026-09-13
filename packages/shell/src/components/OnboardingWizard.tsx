@@ -61,7 +61,7 @@ import {
 	keepsProviderWhenLoggedOut,
 	resolveLoggedOutLlm,
 } from "../lib/llm/logged-out-default";
-import { writeConfiguredLlmRole } from "../lib/llm/roles";
+import { writeMainRole } from "../lib/llm/main-role";
 import {
 	NAIA_SLOT_DEFAULTS,
 	applyNaiaSlotDefaults,
@@ -1171,9 +1171,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 		const finalConfig: AppConfig = auth
 			? applyNaiaSlotDefaults(completedFlat as unknown as AppConfig)
 			: loggedOutLlm
-				? writeConfiguredLlmRole(
+				? writeMainRole(
 						{ ...(completedFlat as unknown as AppConfig), ...loggedOutLlm },
-						"main",
 						loggedOutLlm,
 					)
 				: (completedFlat as unknown as AppConfig);
