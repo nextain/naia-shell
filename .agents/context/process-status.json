@@ -21,6 +21,15 @@
   },
 
   "current_work": {
+    "issue_570_device_ops": {
+      "issue": 570,
+      "title": "Restore device-operation coverage via Settings and Tauri IPC",
+      "branch": "issue/570-device-ops",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
+      "status": "in_progress",
+      "p04_note": "vitest device-pairing 5/5 and cargo device_pairing 5/5 on win250. Native e2e-tauri 43-device-operations pending WebDriver.",
+      "last_updated": "2026-09-13T12:00:00+09:00"
+    },
     "slides_narration_streaming_tts": {
       "issue": null,
       "title": "슬라이드 낭독 스트리밍 TTS — 문장 분할 + audio/pcm 청크 재생 (이슈 번호 없음)",

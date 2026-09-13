@@ -1239,3 +1239,15 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-ACTIVE-RECALL.1** | 기념일·시간 앵커에 연결된 능동 회상 이벤트를 관찰할 수 있어야 한다. 미배선이나 이벤트 부재를 성공으로 간주하지 않는다. | UC4, S42; docs/user-scenarios.md | 통제된 시간 앵커의 이벤트·중복 확인 |
 | **FR-CRON-JOB.1** | 일회 예약 작업의 생성과 트리거 실행을 연결해 확인할 수 있어야 한다. 생성만 되고 실행되지 않거나 미배선인 경우를 구분한다. | S43; docs/user-scenarios.md | 소유 시험 작업의 ID·예약 시각·실행 이벤트 |
 | **FR-MEMORY-BACKUP-UI.1** | 현행 메모리 Backup UI는 비활성/ComingSoon 상태를 명확히 보여 주고 실제 백업·복원이 완료된 것처럼 표시하지 않는다. 기능이 활성화되었다면 별도 암호화 round-trip 검증 없이 백업 가능으로 판정하지 않는다. | UC3, S52b; docs/user-scenarios.md | disabled·안내·클릭 무효·파일 미생성 |
+
+
+## 기능 요구사항 (FR) — 로컬 디바이스 페어링 (#570)
+
+게이트웨이 `skill_device` 는 복구하지 않는다. 조작은 설정 화면과 Tauri 명령이 맡는다. 저장소는 `{adkPath}/device-pairings.json` 이며 토큰·페어링 코드의 평문은 쓰지 않는다.
+
+| ID | 요구사항 | 출처 | 검증 |
+|---|---|---|---|
+| **FR-DEVICE.1** | 설정에 디바이스 페어링 섹션이 있고 노드 목록 또는 빈 상태를 보여 준다 | UC-DEVICE-PAIR-LIST | 34-device-pairing, DevicePairingSection |
+| **FR-DEVICE.2** | pair request → verify(코드) → approve 가 노드와 일회 토큰을 만든다. 잘못된 코드는 승인되지 않는다 | UC-DEVICE-PAIR-OPS | device_pairing.rs tests, 43-device-operations |
+| **FR-DEVICE.3** | token rotate 는 새 토큰을 한 번 돌려 주고, 이전 토큰으로 authenticate 하면 false 다 | UC-DEVICE-PAIR-OPS | rotated_token_invalidates_the_previous_token |
+| **FR-DEVICE.4** | token revoke 는 현재 토큰을 무효화하고 노드 행은 남긴다. rename·describe 는 표시 이름을 바꾼다 | UC-DEVICE-PAIR-OPS | revoke_stops_the_current_token, rename_and_describe_change_the_visible_name |

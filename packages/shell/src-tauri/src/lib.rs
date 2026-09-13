@@ -8,6 +8,7 @@ mod browser;
 mod browser_webview;
 mod capture;
 pub mod data_home;
+mod device_pairing;
 mod ego_host;
 mod ego_host_bridge;
 mod gemini_live;
@@ -8493,7 +8494,7 @@ async fn reset_window_state(app: AppHandle) -> Result<(), String> {
 
 const DISCORD_TOKEN_KEY: &str = "NAIA_DISCORD_BOT_TOKEN";
 
-fn current_adk_path() -> Result<String, String> {
+pub(crate) fn current_adk_path() -> Result<String, String> {
     if debug_e2e_enabled() {
         if let Ok(path) = std::env::var("NAIA_E2E_ADK_PATH") {
             let path = path.trim().to_string();
@@ -13232,6 +13233,17 @@ pub fn run() {
             pty::pty_kill,
             pty::pty_execute_sync,
             enable_webview2_ime,
+            device_pairing::device_list,
+            device_pairing::device_list_requests,
+            device_pairing::device_describe,
+            device_pairing::device_rename,
+            device_pairing::device_token_rotate,
+            device_pairing::device_token_revoke,
+            device_pairing::device_authenticate,
+            device_pairing::device_pair_request,
+            device_pairing::device_pair_verify,
+            device_pairing::device_pair_approve,
+            device_pairing::device_pair_reject,
             #[cfg(feature = "webdriver-e2e")]
             e2e_emit_bgm_event,
             #[cfg(feature = "webdriver-e2e")]

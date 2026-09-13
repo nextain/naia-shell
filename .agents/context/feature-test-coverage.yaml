@@ -234,6 +234,17 @@ entries:
       - { tier: browser_mock, path: packages/shell/e2e/startup-update-prompt.spec.ts }
     gap: "Atomic OS image update belongs to the image/release pipeline, outside Shell-only CI."
 
+  - id: naia-shell:feature:req-022
+    requirement: REQ-022
+    feature: Local device pairing through Settings and Tauri IPC
+    status: partial
+    tests:
+      - { tier: deterministic_ci, path: packages/shell/src/lib/__tests__/device-pairing.test.ts }
+      - { tier: deterministic_ci, path: packages/shell/src-tauri/src/device_pairing.rs }
+      - { tier: native_local, path: packages/shell/e2e-tauri/specs/43-device-operations.spec.ts }
+      - { tier: native_local, path: packages/shell/e2e-tauri/specs/34-device-pairing.spec.ts }
+    gap: "Native e2e-tauri 43-device-operations still needs a WebDriver desktop session on win250."
+
 critical_regressions:
   - id: naia-shell:regression:host-voice-download-manifest
     protects: [REQ-003, REQ-011, REQ-015]

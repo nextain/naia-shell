@@ -1,9 +1,9 @@
 {
 	"generatedFrom": "packages/shell/e2e-tauri/specs",
-	"total": 108,
+	"total": 109,
 	"summary": {
 		"credentialed_live": 78,
-		"deterministic_ci": 22,
+		"deterministic_ci": 23,
 		"native_local": 8
 	},
 	"specs": [
@@ -426,6 +426,12 @@
 				"NAIA_E2E_ARTIFACTS_DIR"
 			],
 			"tier": "credentialed_live"
+		},
+		{
+			"spec": "43-device-operations.spec.ts",
+			"conf": [],
+			"env": [],
+			"tier": "deterministic_ci"
 		},
 		{
 			"spec": "44-diagnostics-full.spec.ts",
