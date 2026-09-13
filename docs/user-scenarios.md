@@ -404,7 +404,7 @@ workspace-area 41개 = Herdr 브리지로 재조준).
 | 51-skills-advanced | `skill_skill_manager` | 게이트웨이 표면 소멸 — 능력은 SkillsTab, `14`·`28`·`59` 가 덮는다 | `disabled-by-design` | 하 |
 | 39-web-tools 의 `web_search` 단정 | `web_search` | 게이트웨이 표면 소멸(S55 = gateway-tier) | `disabled-by-design` | 하 |
 
-> **43 = 의도된 커버리지 상실.** 디바이스 조작(`node_describe` · token rotate/revoke ·
+> **43 = 재확보 (#570). 게이트웨이 skill_device 는 복구하지 않는다. 조작은 설정·Tauri IPC·{adkPath}/device-pairings.json 이 맡고, 회전한 토큰으로 이전 토큰은 통하지 않는다.** 디바이스 조작(`node_describe` · token rotate/revoke ·
 > rename · pair request/verify/approve) 여덟 단정을 지우면서 대체를 두지 않았다.
 > `34-device-pairing` 은 설정 탭으로 가서 섹션과 빈 상태를 보는 얕은 스모크라 같은
 > 깊이가 아니다. 재확보는 별도 이슈로 연다.
