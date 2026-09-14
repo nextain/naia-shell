@@ -21,6 +21,21 @@
   },
 
   "current_work": {
+    "issue_592_v1_tool_call_measurement": {
+      "issue": 592,
+      "epic": 589,
+      "title": "DeepSeek V4 Flash·gpt-5.6-luna 도구 호출 헤드리스 측정",
+      "branch": "issue/592-v1-tool-measurement",
+      "device": "naia3090",
+      "baseline": "naia-shell@2941e3b4ac644cffb5be93d72991bb8e9e81f0d0 (packages/shell 0.2.3)",
+      "paired_agent": "naia-agent@1c2561db486c24c31d10ddbef5ca5f0ff766c7ad",
+      "scenario": "docs/user-scenarios.md UC-LLM-TOOL-CALL-MEASUREMENT",
+      "requirements": "docs/requirements.md FR-LLM-TOOL-CALL-MEASUREMENT.1~3",
+      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
+      "status": "in_progress",
+      "live_boundary": "NAIA_API_KEY is read only from the owner-provided process environment; no key, header, or agent stderr is written to evidence.",
+      "last_updated": "2026-09-14T08:50:10+09:00"
+    },
     "slides_narration_streaming_tts": {
       "issue": null,
       "title": "슬라이드 낭독 스트리밍 TTS — 문장 분할 + audio/pcm 청크 재생 (이슈 번호 없음)",
@@ -433,35 +448,40 @@
 		},
         "installer_crossplatform_377": { "status": "done", "deliverable": "docs/user-scenarios.md — 셸 feature 시나리오 표의 S-INSTALL 행 (#377, 2026-07-17)", "ref": "DONE 2026-07-17 — 적대 리뷰 R1~R8 (8라운드, 실측 근거 결함 전부 반영). P0 종료 조건이 '리뷰 2연속 클린' 에서 **'구현이 검증'** 으로 조정됨(루크 승인 2026-07-17, AI 임의 변경 아님): R5~R8 이 각각 직전 라운드의 개정에서 MAJOR 를 찾는 진자운동에 들어갔고 잔여 결함 계열(로그 정규식·줄 개수·glob 형태)은 P1 구현 + vitest golden + 실제 CI 가 더 싸고 확실하게 잡는다는 판단. 상세 = current_work.installer_crossplatform_377" },
         "v020_signed_updater_recovery": { "status": "done", "deliverable": "docs/user-scenarios.md UC-V020-*", "ref": "Signed update, legacy feed, and failure-honesty journeys" },
-        "slide_presenter_467": { "status": "done", "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-*", "ref": "PDF open, deterministic control, Shell-owned speech, Q&A context, and accessible states" }
+        "slide_presenter_467": { "status": "done", "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-*", "ref": "PDF open, deterministic control, Shell-owned speech, Q&A context, and accessible states" },
+        "issue_592_v1_tool_call_measurement": { "status": "done", "deliverable": "docs/user-scenarios.md UC-LLM-TOOL-CALL-MEASUREMENT", "ref": "#592 V1 scenario and five request families recorded" }
       }
     },
     "P02": { "status": "done", "name": "test_scenarios", "deliverable": "docs/user-scenarios.md Test Coverage Map + src/test/*.contract.test.ts (계약 67/67)", "ref": "13R",
       "tracks": {
         "installer_crossplatform_377": { "status": "done", "deliverable": "docs/user-scenarios.md — S-INSTALL 행의 검증 열 (scripts/__tests__/platform-matrix.test.ts 단위 + check-build-contract 계약 + Windows 설치 실측(2조건: 핸드셰이크 AND node 줄 최소 2줄 AND 전부 $INSTDIR 하위) + ubuntu deb 설치·xvfb 기동 스모크(마커 AND node 줄 최소 2줄 AND 전부 resource_dir 하위 + mutation probe) — 양쪽 모두 판정 범위 = 마지막 '=== Session started ===' 포함 줄 이후(naia.log 누적), 술어 = 앵커 아닌 포함 매칭(파일 줄 = '[unix_secs] [Naia] ...') + 산출물 검증 스크립트/부정 케이스)", "ref": "DONE 2026-07-17 — P01 과 동일(게이트 기준 조정, 루크 승인)" },
         "v020_signed_updater_recovery": { "status": "done", "deliverable": "docs/user-scenarios.md UC-V020-* P02 matrix", "ref": "No-update/update/error/signature/feed/hash states mapped" },
-        "slide_presenter_467": { "status": "done", "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-* coverage matrix", "ref": "Vitest state/parser, component/tool contract, Playwright desktop/narrow and TTS fixture mapped" }
+        "slide_presenter_467": { "status": "done", "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-* coverage matrix", "ref": "Vitest state/parser, component/tool contract, Playwright desktop/narrow and TTS fixture mapped" },
+        "issue_592_v1_tool_call_measurement": { "status": "done", "deliverable": "docs/user-scenarios.md Test Coverage Map UC-LLM-TOOL-CALL-MEASUREMENT", "ref": "Deterministic measurement parser, redaction, aggregation, and live receipt mapping" }
       }
     },
     "P03": { "status": "done", "name": "requirements", "deliverable": "docs/requirements.md (FR-F0~F3, NFR)", "ref": "8R",
       "tracks": {
         "installer_crossplatform_377": { "status": "done", "deliverable": "docs/requirements.md — FR-INSTALL.1~6 + NFR-noWSL(불변)·NFR-honesty", "ref": "DONE 2026-07-17 — P01 과 동일(게이트 기준 조정, 루크 승인). R4 개정 반영: agent 리소스 4종 = 매트릭스 3 OS 공통 그룹→생성 conf 소유(base 금지 — tauri-build copy_resources 가 dev/cargo check 포함 무조건 실행)" },
         "v020_signed_updater_recovery": { "status": "done", "deliverable": "docs/requirements.md FR-UPDATE.1~6", "ref": "Version, signing, manifest target, dual feed, honest errors, release completion" },
-        "slide_presenter_467": { "status": "done", "deliverable": "docs/requirements.md FR-SLIDE.1~5, NFR-SLIDE.1", "ref": "PDF-first renderer, shared state machine, TTS ownership, Q&A context, and accessibility" }
+        "slide_presenter_467": { "status": "done", "deliverable": "docs/requirements.md FR-SLIDE.1~5, NFR-SLIDE.1", "ref": "PDF-first renderer, shared state machine, TTS ownership, Q&A context, and accessibility" },
+        "issue_592_v1_tool_call_measurement": { "status": "done", "deliverable": "docs/requirements.md FR-LLM-TOOL-CALL-MEASUREMENT.1~3", "ref": "Pinned provenance, two-model repetition gate, redacted evidence" }
       }
     },
     "P04": { "status": "in_progress", "name": "integration_test", "deliverable": "src/test/integration-reafference.test.ts (인지흐름 관통+negative+contamination) + scripts/builds/f0-graft-smoke.sh (Old-Baseline drift-gate harness)", "ref": "통합 67/67 통과; 라이브 trace(루크 머신 graft) 대기",
       "tracks": {
         "installer_crossplatform_377": { "status": "done", "deliverable": "platform-matrix.test.ts + verify-artifacts.mjs + verify-installed-smoke.mjs + build-installers.yml 3 OS", "ref": "DONE 2026-07-19 — PR #379 merge 7ba15dc9. Exact 검증 head de0e9e25, installer CI 29658918546 Windows/Linux/macOS GREEN, Windows NSIS 실제 설치·실행·제거 후 Steam depot 독립 기동, Linux deb 설치·mutation/tamper probe, 적대 리뷰 2회 연속 CLEAN" },
         "v020_signed_updater_recovery": { "status": "in_progress", "deliverable": "updater/manifest tests + signed GitHub Actions build + dual-feed public probes", "ref": "Windows Actions job 96132439817 SUCCESS; canonical v0.2.0 and legacy compatibility releases public; feeds byte-identical and public EXE probe 200/508667534 bytes. Installed v0.1.9 field install/relaunch remains the final acceptance" },
-        "slide_presenter_467": { "status": "done", "deliverable": "Slides app + state/parser/tool tests + Playwright", "ref": "Vitest 1628 passed; production build passed; Playwright 2 passed including current 21-page IR acceptance" }
+        "slide_presenter_467": { "status": "done", "deliverable": "Slides app + state/parser/tool tests + Playwright", "ref": "Vitest 1628 passed; production build passed; Playwright 2 passed including current 21-page IR acceptance" },
+        "issue_592_v1_tool_call_measurement": { "status": "in_progress", "deliverable": "scripts/measure-agent-tool-calling.test.mjs + live Agent gRPC receipt", "ref": "Deterministic tests pass; live owner-keyed measurement not run in this session" }
       }
     },
     "P05": { "status": "pending", "name": "requirements_complete", "deliverable": null, "ref": "라이브 trace 등가 확인 + 후속 슬라이스 후",
       "tracks": {
         "installer_crossplatform_377": { "status": "done", "deliverable": "README + platform matrix/manifest + artifact SHA report + GitHub #377 final report", "ref": "DONE 2026-07-19 — FR-INSTALL.1~6, FR-STEAM.1~3, NFR-noWSL 충족. #377 closed; Steamworks 운영 단계는 #314에 이관" },
         "v020_signed_updater_recovery": { "status": "pending", "deliverable": "Public v0.2.0 release and installed v0.1.9 updater acceptance", "ref": "Do not mark done before field install/relaunch" },
-        "slide_presenter_467": { "status": "done", "deliverable": "Built-in Slides app with PDF renderer, Markdown notes, Shell TTS bridge, Q&A context, responsive controls, and real IR acceptance", "ref": "UI, speech bridge, and current IR PDF acceptance passed 2026-08-20" }
+         "slide_presenter_467": { "status": "done", "deliverable": "Built-in Slides app with PDF renderer, Markdown notes, Shell TTS bridge, Q&A context, responsive controls, and real IR acceptance", "ref": "UI, speech bridge, and current IR PDF acceptance passed 2026-08-20" },
+         "issue_592_v1_tool_call_measurement": { "status": "pending", "deliverable": "requirements.md status Done + live measurement receipt", "ref": "Keep pending until the owner-keyed live run and independent review are recorded" }
       }
     }
   },

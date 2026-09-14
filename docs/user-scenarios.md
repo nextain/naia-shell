@@ -358,6 +358,7 @@ Gateway의 가격은 이미 10%가 반영된 고객가이므로 Shell은 다시 
 | UC-CODEX-WORKER-LIFECYCLE 시각 수용 | 재는 자리가 없다 — provider 표현·빈 목록·상태 배지를 보여 주던 화면이 2026-09-05 에 없어졌다(#554). 다시 만들면 그때 상태 매트릭스를 다시 적는다 | `e2e/coding-workers.spec.ts`: Shell 분할 폭(1,100px 이하)에서 입력·수업 경계·주요 행동의 순서와 접근 가능한 상태 표현을 검증. |
 | UC-CODEX-ROLES | `src/lib/llm/__tests__/roles.test.ts`, `src/components/__tests__/SettingsTab.test.tsx`: main 상속, 역할별 provider/model 저장, main 전용 provider 차단 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 실제 Shell 설정 화면에서 역할 설정 저장과 재시작 복원 |
 | UC-NAIA-AZURE-MODELS | `packages/shell/src/components/__tests__/SettingsTab.test.tsx`: Naia 모델 목록이 가격 가중 순서로 서고, 쓸 수 없는 모델은 숨으며, Azure provenance 와 도구 지원 여부가 gateway 응답대로 반영되는지 / `packages/shell/src/lib/__tests__/config.test.ts`: 선택이 재시작 뒤 복원되는지 | 실제 대화가 그 모델로 가는지는 사람이 받는다 — 자동으로 재는 자리는 아직 없다 |
+| UC-LLM-TOOL-CALL-MEASUREMENT | `scripts/measure-agent-tool-calling.test.mjs`: 도구 인자·최종 답·민감값 제거·9/10 기준 집계 / `scripts/measure-agent-tool-calling.mjs`: 실제 gRPC Agent 경로 측정 | `docs/regression-runs/naia3090-*-tool-calling.json`에 DeepSeek V4 Flash와 gpt-5.6-luna의 다섯 요청군을 각각 10회 기록한다. 운영 게이트웨이 실행은 `NAIA_API_KEY`를 실행 환경에서만 받는다. |
 
 각 시나리오의 **검증 3단(verification stack)** — 어느 하나로 "됐다" 판정 금지(R1 codex·gemini 보강):
 1. **Old-Baseline 측정**(이식 *전*, old): 입력/출력 trace + **상태 전이**(세션·캐시·fs·프로세스·권한 = hidden state, trace만으론 부족) + 설정/버전/키 상태 + **오류 분류축**(아래). **환경 정규화**(외부 의존 stub/mock → 루크 env 부작용을 코드 로직으로 오인 방지). **flaky**=1회 측정 금지, 반복+안정도 표기. **record-replay 한계**(외부시간·랜덤·네트워크·ws/streaming 재현 불안정) 명시.
@@ -946,6 +947,14 @@ Those older sections are historical evidence only.
 
 
 any-llm 게이트웨이 쪽(라우팅·가격)은 이미 구현·테스트돼 있어 이번 변경 대상이 아니었다(`pytest tests/gateway/test_naia_azure_models.py tests/unit/test_naia_pricing.py` 78 passed로 확인). 이 시나리오에 대한 전용 Playwright는 없음(모델 선택 자체는 기존 SettingsTab e2e 커버리지 범위 밖) — 이번 세션에서 새로 만들지 않음.
+
+### 2026-09-14 DeepSeek 도구 호출 측정 (#592, 에픽 #589)
+
+| Scenario | User-observable outcome | Coverage |
+|---|---|---|
+| **UC-LLM-TOOL-CALL-MEASUREMENT** | 로그인한 사용자가 YouTube 재생, 라디오 DJ 재생, 메모 저장, 날씨 조회, 브라우저 이동을 요청하면, 고정된 Shell·Agent 짝의 헤드리스 gRPC 경로에서 모델이 등록된 도구를 호출하고 유효한 JSON 인자를 보내며 도구 결과 뒤 최종 답을 반환한다. DeepSeek V4 Flash와 gpt-5.6-luna를 각각 같은 다섯 요청군으로 측정하고 10회 중 9회 이상 성공 기준을 적용한다. | `scripts/measure-agent-tool-calling.test.mjs` 결정론 판정·집계 테스트 + `scripts/measure-agent-tool-calling.mjs` 실제 Agent gRPC 측정 + `docs/regression-runs/naia3090-*-tool-calling.json` 원자료 |
+
+운영 게이트웨이 키는 `NAIA_API_KEY` 환경변수에서만 읽으며, 원자료에는 키 값·인증 헤더·에이전트 stderr를 기록하지 않는다. 앱 도구는 현재 Shell 계약인 `skill_youtube_bgm`과 `env_browser_navigate`를 등록하고, Agent가 자체 등록하는 `memo_save`와 `get_weather`는 별도 등록하지 않는다. 앱 도구 호출은 실제 실행 대신 구조화된 성공 결과를 주입하므로, 이 시나리오는 모델의 도구 선택·인자·후속 답을 측정하고 실제 재생·브라우저 이동은 W0·W2가 측정한다.
 
 ### 2026-08-15 v0.1.7 Windows release rebuild (#448)
 

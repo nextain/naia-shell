@@ -768,6 +768,14 @@ Verified this session with a real Chromium + dev server: `e2e/onboarding-fresh.s
 | **FR-LLM-DEFAULT.3** | `deepseek-v4-flash` is tiered in `NAIA_GENERAL_CHAT_RECOMMENDATION` (product model-sort priority) at the same tier as `deepseek-v4-pro`, sourced from its official Azure Foundry model card and Artificial Analysis Intelligence Index (52, #3/101 open-weight models) rather than a fabricated score — see the citation comment above the table in `registry.ts`. | `registry.test.ts` sort-order test |
 | **FR-LLM-DEFAULT.4** | Every selectable Naia chat model supports Shell skill/tool calling. The offline registry and live gateway metadata must not downgrade a verified tool-capable model, and a model that cannot call tools is unavailable rather than selectable. | full selectable-model capability invariant + DeepSeek live-metadata/offline-fallback tests + Agent request-body contract |
 
+## 2026-09-14 DeepSeek 도구 호출 측정 (#592, 에픽 #589)
+
+| ID | Normative requirement | Verification |
+|---|---|---|
+| **FR-LLM-TOOL-CALL-MEASUREMENT.1** | The #592 measurement is based on Shell commit `2941e3b4ac644cffb5be93d72991bb8e9e81f0d0`, Shell package version `0.2.3`, and the paired Agent commit `1c2561db486c24c31d10ddbef5ca5f0ff766c7ad`. The measurement branch may contain only its declared harness/docs changes; a dirty or mismatched checkout is rejected before a live request. | `scripts/measure-agent-tool-calling.mjs` provenance and clean-pair preflight |
+| **FR-LLM-TOOL-CALL-MEASUREMENT.2** | The measurement sends the five #592 request families to `deepseek-v4-flash` and `gpt-5.6-luna`, ten repetitions per model and family. Each attempt records the expected tool call, schema-valid arguments, a final response after tool execution, latency, and a failure classification. | `scripts/measure-agent-tool-calling.test.mjs` fixture cases and aggregation; `docs/regression-runs/naia3090-*-tool-calling.json` live receipt |
+| **FR-LLM-TOOL-CALL-MEASUREMENT.3** | A result meets the per-model/per-family gate only when at least 9 of 10 attempts satisfy all tool-call, argument, follow-up, and completion conditions. Raw event evidence is redacted for credential-shaped fields and the `NAIA_API_KEY` value is never written to a tracked path. | measurement threshold/redaction tests and output schema |
+
 ## 2026-09-13 로그인하지 않은 상태의 LLM (#591, 에픽 #589)
 
 셸이 지원하는 LLM 경로는 나이아 계정·CLI·로컬 셋뿐이다. 로그인하지 않은 상태의 기본 LLM 은 로컬 LLM 이다.

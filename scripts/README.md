@@ -75,3 +75,8 @@
 | `qa-qc-numbers.mjs` | 선택된 ADK sidecar에 QA Case Number(`QC-001`...)를 append-only로 부여하고 catalog/round 표시용 매핑을 제공한다. |
 | `qa-batch.mjs` | native batch 계획을 만들고 JSONL 결과를 고정된 회차/기기 매핑으로 가져온다. |
 | `qa-round-transfer.mjs` | 중앙 회차 snapshot과 기기별 결과 receipt를 파일로 export/import한다. |
+
+## H. 운영 모델 측정 (live measurement)
+| 스크립트 | 용도 |
+|---|---|
+| `measure-agent-tool-calling.mjs` | #592 V1 헤드리스 Agent gRPC 도구 호출 측정. 고정 Shell·Agent 짝, 모델별 5개 요청군×10회, 도구 인자·후속 답·지연·실패 분류를 기록하며 `NAIA_API_KEY` 값과 민감한 원문은 증거에서 제거한다. |
