@@ -5,7 +5,7 @@
 - 정확한 기준선은 Shell `2941e3b4ac644cffb5be93d72991bb8e9e81f0d0`(packages/shell 0.2.3), 짝 Agent는 `1c2561db486c24c31d10ddbef5ca5f0ff766c7ad`다. 라이브 전 짝 Agent를 빌드하고 compiled dist·proto·Shell 앱 카탈로그 source digest를 기록한다.
 - `UC-LLM-TOOL-CALL-MEASUREMENT` / `FR-LLM-TOOL-CALL-MEASUREMENT.1~3`를 먼저 기록하고, 헤드리스 gRPC Agent 경로에서 Shell 전체 상시 앱 카탈로그를 등록·`listSkills` 확인한 뒤 DeepSeek V4 Flash와 gpt-5.6-luna를 다섯 요청군 각각 10회 측정한다.
 - 운영 키는 `NAIA_API_KEY` 실행 환경에서만 읽고 자식 Agent 환경은 allowlist로 제한한다. 원자료에는 키 값·인증 헤더·Agent stderr를 기록하지 않으며, 보고서는 `docs/regression-runs/`에 원자적으로 쓴다.
-- 상태: P01~P03 완료, P04는 승인된 `NAIA_API_KEY` 실행 환경 변수가 없어 차단, P05 대기. 2026-09-14T06:32:36Z 재확인에서 assembly coverage 69/20, 측정 하네스 12/12, syntax/dry-run, workspace tsc, `git diff --check`가 통과했다. 전체 테스트는 1656 통과·9 실패·3 제외였고, 실패는 기존/환경 계약(짝 Agent checkout 부재 포함)이다. 구조 검사는 기존 `tmp/`·`.local/`·`tsconfig.build.json`을 보고했다. 라이브 러너는 키 부재로 Agent 시작과 게이트웨이 요청 전에 fail-closed 했다. 인접 Agent checkout도 pinned·clean 상태가 아니다. 차단 영수증: `docs/regression-runs/naia3090-2026-09-14T06-32-36Z-592-tool-calling-blocked.json`.
+- 상태: P01~P03 완료, P04는 승인된 `NAIA_API_KEY` 실행 환경 변수가 없어 차단, P05 대기. 2026-09-14T06:46:53Z 재확인에서 `NAIA_AGENT_WORKTREE`가 정확한 Agent 핀 `1c2561db486c24c31d10ddbef5ca5f0ff766c7ad`의 clean checkout임을 확인했다. assembly coverage 69/20, 측정 하네스 12/12, syntax/dry-run이 통과했다. 구조 검사는 기존 `tmp/`·`tsconfig.build.json`을 보고했고 workspace typecheck/test는 로컬 node/vitest 의존성 부재로 막혔다. 라이브 러너는 키 부재로 Agent 시작과 게이트웨이 요청 전에 fail-closed 했다. 차단 영수증: `docs/regression-runs/naia3090-2026-09-14T06-46-53Z-592-tool-calling-blocked.json`.
 
 ## Slides #581 — 2026-09-10 메인 통합
 
