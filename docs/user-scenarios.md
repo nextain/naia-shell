@@ -952,9 +952,9 @@ any-llm 게이트웨이 쪽(라우팅·가격)은 이미 구현·테스트돼 �
 
 | Scenario | User-observable outcome | Coverage |
 |---|---|---|
-| **UC-LLM-TOOL-CALL-MEASUREMENT** | 로그인한 사용자가 YouTube 재생, 라디오 DJ 재생, 메모 저장, 날씨 조회, 브라우저 이동을 요청하면, 고정된 Shell·Agent 짝의 헤드리스 gRPC 경로에서 모델이 등록된 도구를 호출하고 유효한 JSON 인자를 보내며 도구 결과 뒤 최종 답을 반환한다. DeepSeek V4 Flash와 gpt-5.6-luna를 각각 같은 다섯 요청군으로 측정하고 10회 중 9회 이상 성공 기준을 적용한다. | `scripts/measure-agent-tool-calling.test.mjs` 결정론 판정·집계 테스트 + `scripts/measure-agent-tool-calling.mjs` 실제 Agent gRPC 측정 + `docs/regression-runs/naia3090-*-tool-calling.json` 원자료 |
+| **UC-LLM-TOOL-CALL-MEASUREMENT** | 로그인한 사용자가 YouTube 재생, 라디오 DJ 재생, 메모 저장, 날씨 조회, 브라우저 이동을 요청하면, 고정된 Shell·Agent 짝의 헤드리스 gRPC 경로에서 모델이 등록된 도구를 호출하고 유효한 JSON 인자를 보내며 같은 호출의 성공 결과 뒤 최종 답을 반환한다. DeepSeek V4 Flash와 gpt-5.6-luna를 각각 같은 다섯 요청군으로 측정하고 10회 중 9회 이상 성공 기준을 적용한다. 브라우저 이동은 실제 Shell 카탈로그의 `env_browser_navigate` 또는 새 작업 공간을 여는 `env_browser_open`을 허용한다. | `scripts/measure-agent-tool-calling.test.mjs` 결정론 판정·집계·보안 테스트 + `scripts/measure-agent-tool-calling.mjs` 실제 Agent gRPC 측정 + `docs/regression-runs/naia3090-*-tool-calling.json` 원자료 |
 
-운영 게이트웨이 키는 `NAIA_API_KEY` 환경변수에서만 읽으며, 원자료에는 키 값·인증 헤더·에이전트 stderr를 기록하지 않는다. 앱 도구는 현재 Shell 계약인 `skill_youtube_bgm`과 `env_browser_navigate`를 등록하고, Agent가 자체 등록하는 `memo_save`와 `get_weather`는 별도 등록하지 않는다. 앱 도구 호출은 실제 실행 대신 구조화된 성공 결과를 주입하므로, 이 시나리오는 모델의 도구 선택·인자·후속 답을 측정하고 실제 재생·브라우저 이동은 W0·W2가 측정한다.
+운영 게이트웨이 키는 `NAIA_API_KEY` 환경변수에서만 읽으며, 자식 Agent에는 실행에 필요한 기본 환경과 명시된 측정 변수만 전달한다. 원자료에는 키 값·인증 헤더·에이전트 stderr를 기록하지 않는다. 앱 도구는 Shell의 `skill_youtube_bgm`, `skill_environment`, `env_browser_*` 전체 상시 카탈로그를 등록하고 Agent `listSkills`로 확인하며, Agent가 자체 등록하는 `memo_save`와 `get_weather`는 별도 등록하지 않는다. 앱 도구 호출은 실제 실행 대신 구조화된 결과를 주입하므로, 이 시나리오는 모델의 도구 선택·인자·결과 결속·후속 답을 측정하고 실제 재생·브라우저 이동은 W0·W2가 측정한다.
 
 ### 2026-08-15 v0.1.7 Windows release rebuild (#448)
 

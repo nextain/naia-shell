@@ -8,8 +8,9 @@
 - Paired Agent: `1c2561db486c24c31d10ddbef5ca5f0ff766c7ad`
 - P01/P02/P03: recorded in `docs/user-scenarios.md` and `docs/requirements.md`
 - Implementation: `scripts/measure-agent-tool-calling.mjs` and its Node test
-- Deterministic validation: 8 tests passed; dry-run plan passed; no live gateway request was made
+- Deterministic validation: 12 tests passed; `node --check` passed; dry-run plan passed; no live gateway request was made
+- Harness hardening: strict child environment allowlist; exact paired Agent build plus compiled/source digests; full Shell app catalog with `listSkills` verification; correlated successful tool-result gate; setup/gateway/tool-execution/follow-up classification; complete redaction; atomic `docs/regression-runs/` output
 - Known baseline validation limits: root structure reports pre-existing `tmp/` and `tsconfig.build.json`; Shell baseline has existing full-test failures and a pre-existing WebGPU type error in the production build
 - Live boundary: `NAIA_API_KEY` is accepted only from the owner-provided process environment and is never written to evidence
 
-The live receipt and independent review remain pending.
+The live receipt and independent review remain pending. P05 remains pending until the owner-keyed live run is performed and the receipt is independently reviewed.

@@ -1,11 +1,11 @@
-<!-- src-sha: 63f78353c50a3cfd -->
+<!-- src-sha: 0cc18f88257d337d -->
 
 ## DeepSeek 도구 호출 측정 — 2026-09-14 (#592, RTX 3090)
 
-- 정확한 기준선은 Shell `2941e3b4ac644cffb5be93d72991bb8e9e81f0d0`(packages/shell 0.2.3), 짝 Agent는 `1c2561db486c24c31d10ddbef5ca5f0ff766c7ad`다.
-- `UC-LLM-TOOL-CALL-MEASUREMENT` / `FR-LLM-TOOL-CALL-MEASUREMENT.1~3`를 먼저 기록하고, 헤드리스 gRPC Agent 경로에서 DeepSeek V4 Flash와 gpt-5.6-luna를 다섯 요청군 각각 10회 측정한다.
-- 운영 키는 `NAIA_API_KEY` 실행 환경에서만 읽는다. 원자료에는 키 값·인증 헤더·Agent stderr를 기록하지 않는다.
-- 상태: P01~P03 완료, P04 진행 중, P05 대기.
+- 정확한 기준선은 Shell `2941e3b4ac644cffb5be93d72991bb8e9e81f0d0`(packages/shell 0.2.3), 짝 Agent는 `1c2561db486c24c31d10ddbef5ca5f0ff766c7ad`다. 라이브 전 짝 Agent를 빌드하고 compiled dist·proto·Shell 앱 카탈로그 source digest를 기록한다.
+- `UC-LLM-TOOL-CALL-MEASUREMENT` / `FR-LLM-TOOL-CALL-MEASUREMENT.1~3`를 먼저 기록하고, 헤드리스 gRPC Agent 경로에서 Shell 전체 상시 앱 카탈로그를 등록·`listSkills` 확인한 뒤 DeepSeek V4 Flash와 gpt-5.6-luna를 다섯 요청군 각각 10회 측정한다.
+- 운영 키는 `NAIA_API_KEY` 실행 환경에서만 읽고 자식 Agent 환경은 allowlist로 제한한다. 원자료에는 키 값·인증 헤더·Agent stderr를 기록하지 않으며, 보고서는 `docs/regression-runs/`에 원자적으로 쓴다.
+- 상태: P01~P03 완료, P04 진행 중, P05 대기. 결정론 테스트 12건·syntax check·dry-run 통과. 라이브 게이트웨이 요청은 하지 않았다.
 
 ## Slides #581 — 2026-09-10 메인 통합
 

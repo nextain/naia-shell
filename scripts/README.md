@@ -79,4 +79,4 @@
 ## H. 운영 모델 측정 (live measurement)
 | 스크립트 | 용도 |
 |---|---|
-| `measure-agent-tool-calling.mjs` | #592 V1 헤드리스 Agent gRPC 도구 호출 측정. 고정 Shell·Agent 짝, 모델별 5개 요청군×10회, 도구 인자·후속 답·지연·실패 분류를 기록하며 `NAIA_API_KEY` 값과 민감한 원문은 증거에서 제거한다. |
+| `measure-agent-tool-calling.mjs` | #592 V1 헤드리스 Agent gRPC 도구 호출 측정. 고정 Shell·Agent 짝을 빌드·digest로 고정하고, Shell의 전체 상시 앱 도구 카탈로그를 `listSkills`로 확인한 뒤 모델별 5개 요청군×10회, 인자·성공 결과 결속·후속 답·지연·실패 분류를 기록한다. 자식 환경은 allowlist로 제한하고 전체 보고서는 redaction 후 `docs/regression-runs/`에 원자적으로 쓴다. `NAIA_API_KEY` 값과 민감한 원문은 증거에서 제거한다. |
