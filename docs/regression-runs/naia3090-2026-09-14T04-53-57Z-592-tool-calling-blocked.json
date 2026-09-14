@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "kind": "naia-shell-592-tool-call-measurement-blocker",
+  "issue": "nextain/naia-shell#592",
+  "machine": "naia3090",
+  "status": "blocked",
+  "startedAt": "2026-09-14T04:53:57Z",
+  "finishedAt": "2026-09-14T04:53:57Z",
+  "credentialSource": "owner-provided process environment only",
+  "credentialVariable": "NAIA_API_KEY",
+  "credentialObserved": "absent",
+  "liveMeasurement": "not_started",
+  "blocker": "The approved owner-provided NAIA_API_KEY process environment variable was unavailable. No alternate credential source was inspected or used.",
+  "deterministicChecks": {
+    "rootStructure": "blocked_by_pre_existing_entries: tmp directory and tsconfig.build.json",
+    "assemblyCoverage": "not_started: node executable unavailable",
+    "measurementHarnessTests": "not_started: node executable unavailable",
+    "nodeSyntaxCheck": "not_started: node executable unavailable",
+    "workspaceTypecheck": "not_started: pnpm executable unavailable",
+    "shellTests": "not_started: pnpm executable unavailable",
+    "gitDiffCheck": "passed"
+  },
+  "evidencePolicy": {
+    "secretValueRecorded": false,
+    "authorizationHeaderRecorded": false,
+    "agentStderrRecorded": false
+  },
+  "gates": {
+    "P01": "done",
+    "P02": "done",
+    "P03": "done",
+    "P04": "blocked_pending_owner_process_environment_credential",
+    "P05": "pending"
+  }
+}

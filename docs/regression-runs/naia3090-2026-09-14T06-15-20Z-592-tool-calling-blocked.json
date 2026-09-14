@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "naia-shell-592-tool-call-measurement-blocker",
+  "issue": "nextain/naia-shell#592",
+  "machine": "naia3090",
+  "status": "blocked",
+  "startedAt": "2026-09-14T06:15:20Z",
+  "finishedAt": "2026-09-14T06:15:20Z",
+  "credentialSource": "owner-provided process environment only",
+  "credentialVariable": "NAIA_API_KEY",
+  "credentialObserved": "absent",
+  "liveMeasurement": "not_started",
+  "blocker": "The approved owner-provided NAIA_API_KEY process environment variable was unavailable. No alternate credential source was inspected or used; the live runner fail-closed before starting the Agent or sending a gateway request.",
+  "deterministicChecks": {
+    "rootStructure": "blocked_by_pre_existing_entries: tmp directory, .local directory, and tsconfig.build.json",
+    "assemblyCoverage": "passed: S 69 / UC 20; all classifications and active slice declarations valid",
+    "measurementHarnessTests": "passed: 12 tests",
+    "nodeSyntaxCheckAndDryRun": "passed: node --check and measurement plan dry-run",
+    "workspaceTypecheck": "passed: pnpm exec tsc -p tsconfig.json --noEmit",
+    "shellTests": "failed_with_pre_existing_or_unrelated_failures: 2067 passed, 46 failed, 21 skipped, 19 unhandled errors across 206 test files",
+    "gitDiffCheck": "passed"
+  },
+  "pairedAgentPreflight": {
+    "observedHead": "94a7b1d627cce58a98d65afac32f10dfe1e88d31",
+    "expectedHead": "1c2561db486c24c31d10ddbef5ca5f0ff766c7ad",
+    "status": "not_started_due_to_missing_credential"
+  },
+  "evidencePolicy": {
+    "secretValueRecorded": false,
+    "authorizationHeaderRecorded": false,
+    "agentStderrRecorded": false
+  },
+  "gates": {
+    "P01": "done",
+    "P02": "done",
+    "P03": "done",
+    "P04": "blocked_pending_owner_process_environment_credential_and_paired_agent_checkout",
+    "P05": "pending"
+  }
+}
