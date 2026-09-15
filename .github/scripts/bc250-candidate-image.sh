@@ -30,7 +30,7 @@ require_command() {
 
 readonly EXPECTED_IMAGE_REF="ghcr.io/nextain/naia-os-amd"
 readonly EXPECTED_BASE_IMAGE="ghcr.io/nextain/naia-os-amd@sha256:5bf36115118aa8099aed8760b0b6bfd4dd9e1122a7a5f2e8e8b772a97a13c474"
-readonly EXPECTED_IMAGE_TAG="candidate-bc250-0.2.3-13980895-support4"
+readonly EXPECTED_IMAGE_TAG="candidate-bc250-0.2.3-13980895-support6"
 readonly EXPECTED_RPM_URL="https://github.com/nextain/naia-shell/releases/download/bc250-20260908-13980895/Naia-0.2.3-1.x86_64.rpm"
 readonly EXPECTED_RPM_SHA256="1e912b1c87e84e1ae1094a1943e88c71e6688b010c19f3ded9b69a3c72f189ad"
 readonly EXPECTED_SOURCE_COMMIT="1398089595ee1a7330f8ec1cfe387439f0807227"
@@ -124,6 +124,12 @@ jq -n \
   > "$metadata_dir/source-build-manifest.json"
 
 cp -a "$IMAGE_LAYER_DIR/installer/bc250" "$context_dir/bc250"
+# The candidate starts from an already built base, so Naia defaults added to
+# config/files after that base are carried in explicitly (naia-os#3).
+install -Dm0644 "$IMAGE_LAYER_DIR/config/files/usr/libexec/naia-default-hostname" \
+  "$context_dir/defaults/naia-default-hostname"
+install -Dm0644 "$IMAGE_LAYER_DIR/config/files/usr/lib/systemd/system/naia-default-hostname.service" \
+  "$context_dir/defaults/naia-default-hostname.service"
 
 cat > "$context_dir/Containerfile" <<'CONTAINERFILE'
 ARG BASE_IMAGE
@@ -189,9 +195,17 @@ LABEL org.opencontainers.image.version="${NAIA_VERSION}" \
       io.nextain.source-build="${SOURCE_BUILD}" \
       io.nextain.candidate="true"
 
+COPY defaults/ /tmp/naia-defaults/
 RUN bash /tmp/naia-bc250-support/install-bc250.sh && \
     test -x /usr/libexec/naia-bc250-dp-audio && \
-    rm -rf /tmp/naia-bc250-support
+    test -x /usr/libexec/naia-bc250-nosleep && \
+    test -L /usr/lib/systemd/system/sysinit.target.wants/naia-bc250-nosleep.service && \
+    install -Dm0755 /tmp/naia-defaults/naia-default-hostname /usr/libexec/naia-default-hostname && \
+    install -Dm0644 /tmp/naia-defaults/naia-default-hostname.service \
+      /usr/lib/systemd/system/naia-default-hostname.service && \
+    ln -sfn ../naia-default-hostname.service \
+      /usr/lib/systemd/system/sysinit.target.wants/naia-default-hostname.service && \
+    rm -rf /tmp/naia-bc250-support /tmp/naia-defaults
 RUN /usr/libexec/naia-verify-image
 CONTAINERFILE
 
@@ -253,6 +267,10 @@ jq -e --arg tag "$EXPECTED_IMAGE_TAG" \
   '.["image-tag"] == $tag and .["image-branch"] == $tag' \
   /usr/share/ublue-os/image-info.json >/dev/null
 /usr/libexec/naia-verify-image
+test -x /usr/libexec/naia-bc250-nosleep
+test -L /usr/lib/systemd/system/sysinit.target.wants/naia-bc250-nosleep.service
+test -x /usr/libexec/naia-default-hostname
+test -L /usr/lib/systemd/system/sysinit.target.wants/naia-default-hostname.service
 VERIFY
 
 podman run --rm -i --entrypoint /bin/bash \
