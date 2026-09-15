@@ -45,6 +45,16 @@ export function isWireErrorCode(value: unknown): value is WireErrorCode {
 	return typeof value === "string" && (WIRE_ERROR_CODES as readonly string[]).includes(value);
 }
 
+/**
+ * True for the two provider codes the agent backend sends when a stored
+ * Naia key is rejected outright (a 401 on the chat completion call), as
+ * opposed to `PROVIDER_NETWORK`/`PROVIDER_NOT_INSTALLED`, which are
+ * retryable/unrelated to the key itself (#402).
+ */
+export function isNaiaAuthWireError(code: unknown): boolean {
+	return code === "PROVIDER_AUTH_EXPIRED" || code === "PROVIDER_LOGIN_REQUIRED";
+}
+
 /** 안정 code는 현지화하고, 알 수 없는 legacy error만 안전한 기존 message로 표시한다. */
 export function wireErrorMessage(code: unknown, legacyMessage: string): string {
 	return isWireErrorCode(code) ? t(KEYS[code]) : legacyMessage;

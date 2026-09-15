@@ -53,6 +53,39 @@ export function parseLabCredits(payload: unknown): number | null {
 	);
 }
 
+/**
+ * True when `err` represents an HTTP 401 from the balance endpoint. A 401
+ * means the stored key itself is invalid/expired, not a transient network
+ * failure, so callers must flip to a re-login state instead of a retryable
+ * error (#402). Browser `fetch` throws `Error("HTTP 401")`; the Tauri
+ * `fetch_naia_balance` command rejects with the string
+ * `"Naia balance HTTP 401"` — both carry the status code in the message, so
+ * match on that rather than requiring a specific Error subclass.
+ */
+export function isLabBalanceUnauthorized(err: unknown): boolean {
+	const message = err instanceof Error ? err.message : String(err);
+	return /\b401\b/.test(message);
+}
+
+const NAIA_KEY_UNAUTHORIZED_EVENT = "naia_key_unauthorized";
+
+/**
+ * Broadcasts that the stored Naia key was rejected by the backend — whether
+ * from the balance endpoint or a chat completion 401 — so every mounted
+ * "connected" surface (Settings, cost dashboard) flips to the same re-login
+ * state together, even though each tracks its own local unauthorized flag
+ * (#402).
+ */
+export function markNaiaKeyUnauthorized(): void {
+	window.dispatchEvent(new CustomEvent(NAIA_KEY_UNAUTHORIZED_EVENT));
+}
+
+export function onNaiaKeyUnauthorized(handler: () => void): () => void {
+	window.addEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
+	return () =>
+		window.removeEventListener(NAIA_KEY_UNAUTHORIZED_EVENT, handler);
+}
+
 /** Use native HTTP inside Tauri to avoid WebView CORS/PNA balance failures. */
 export async function fetchLabBalancePayload(
 	gatewayUrl: string,

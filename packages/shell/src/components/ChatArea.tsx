@@ -84,6 +84,7 @@ import {
 	resetGatewaySession,
 } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
+import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
 import {
 	getDefaultLlmModel,
 	getLlmModel,
@@ -161,7 +162,7 @@ import {
 import { getLocalRefAudioB64 } from "../lib/voice/ref-audio-api";
 import { SentenceChunker } from "../lib/voice/sentence-chunker";
 import { extractExpression, mapServerEmotion } from "../lib/vrm/expression";
-import { wireErrorMessage } from "../lib/wire-errors";
+import { isNaiaAuthWireError, wireErrorMessage } from "../lib/wire-errors";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
@@ -2549,6 +2550,17 @@ export function ChatArea({
 				Logger.warn("ChatArea", "Agent error chunk", {
 					message: chunk.message,
 				});
+				// #402: a stale/revoked Naia key surfaces here as a 401 on the chat
+				// completion call, reported by the agent backend as one of these two
+				// wire codes. Flip the account to a re-login state the same way a
+				// balance-endpoint 401 does, instead of leaving it "connected" with
+				// just a failed message bubble.
+				if (isNaiaAuthWireError(chunk.code)) {
+					const cfg = loadConfig();
+					if (cfg?.provider === "nextain" && cfg.naiaKey) {
+						markNaiaKeyUnauthorized();
+					}
+				}
 				flushThinkingStream();
 				// Flush any partial sentence before finishing. Chat TTS needs the same
 				// terminal behavior as pipeline voice or its mask can remain pending.
