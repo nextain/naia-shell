@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../lib/types";
@@ -18,11 +18,16 @@ vi.mock("../../lib/config", () => ({
 }));
 
 import { getNaiaKeySecure, hasNaiaKeySecure } from "../../lib/config";
+import { clearCachedLabCredits } from "../../lib/lab-balance";
 import { CostDashboard, groupCosts } from "../CostDashboard";
 
 describe("CostDashboard", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// The balance cache is module-level state shared across every test in
+		// this file; a test that primes it (a successful fetch) would otherwise
+		// leak a fresh value into the next test and skip its own fetch (#402).
+		clearCachedLabCredits();
 		vi.mocked(getNaiaKeySecure).mockResolvedValue(undefined);
 		vi.mocked(hasNaiaKeySecure).mockResolvedValue(false);
 		vi.stubGlobal(
@@ -112,6 +117,52 @@ describe("CostDashboard", () => {
 		];
 		const groups = groupCosts(noCost);
 		expect(groups).toHaveLength(0);
+	});
+
+	it("shows a re-login state instead of a balance error when the key returns 401 (#402)", async () => {
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-stale-key");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: false,
+				status: 401,
+				json: () => Promise.resolve({}),
+			}),
+		);
+
+		render(<CostDashboard messages={[]} />);
+		// The mount-time `hasNaiaKeySecure()` check and this event both call
+		// `setShowLabBalance`; without waiting for the former to settle first,
+		// it can resolve after the event and clobber `true` back to `false`.
+		await waitFor(() => {
+			expect(hasNaiaKeySecure).toHaveBeenCalled();
+		});
+		window.dispatchEvent(new CustomEvent("naia_auth_ready"));
+
+		await waitFor(() => {
+			expect(screen.getByTestId("lab-balance-expired")).toBeDefined();
+		});
+		expect(screen.queryByText(/잔액 조회 실패|Failed to load balance/)).toBeNull();
+	});
+
+	it("flips to a re-login state when a chat completion reports the key as unauthorized (#402)", async () => {
+		// A 401 on a chat completion never reaches this component's own balance
+		// fetch — ChatArea detects it from the agent's error chunk and
+		// broadcasts `markNaiaKeyUnauthorized()` (lib/lab-balance.ts) instead.
+		vi.mocked(getNaiaKeySecure).mockResolvedValue("gw-good-key");
+		vi.mocked(hasNaiaKeySecure).mockResolvedValue(true);
+
+		render(<CostDashboard messages={[]} />);
+		await screen.findByText(/12\.50/);
+
+		const { markNaiaKeyUnauthorized } = await import("../../lib/lab-balance");
+		act(() => {
+			markNaiaKeyUnauthorized();
+		});
+
+		await waitFor(() => {
+			expect(screen.getByTestId("lab-balance-expired")).toBeDefined();
+		});
 	});
 
 	it("fetches Lab balance when startup auth restore is announced", async () => {
