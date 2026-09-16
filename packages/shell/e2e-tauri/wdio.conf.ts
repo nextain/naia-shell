@@ -12,7 +12,7 @@ import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { execPath } from "node:process";
-import { e2eBinaryPath, resolvePairedAgent } from "../scripts/agent-pairing.mjs";
+import { resolvePairedAgent } from "../scripts/agent-pairing.mjs";
 import { reclaimLeakedAgentChild as reclaimAgentChild } from "./agent-child-lease.js";
 import { reclaimSidecarForRuntimeDir } from "./bgm-sidecar-lease.mjs";
 import {
@@ -28,15 +28,15 @@ import { isCoverFailure, reportCover } from "./helpers/cover-probe.mjs";
 import { stopHarnessHerdrSession } from "./herdr-session.mjs";
 import { startNotifyWebhookStub } from "./notify-webhook-stub.mjs";
 
-// Enable debug logging for Tauri app — Rust logs all agent events to stderr + naia.log
-process.env.CAFE_DEBUG_E2E = "1";
-process.env.NAIA_E2E_MODE = "1";
-// The real child WebView invalidates the single WebDriver session by design.
-// The rendering spec therefore keeps the shell address bar available until
-// its first submit, then uses desktop capture for the native surface.
-if (process.env.NAIA_E2E_ALLOW_CHILD_WEBVIEW === "1") {
-	process.env.VITE_NAIA_E2E_ALLOW_CHILD_WEBVIEW = "1";
+// Enable debug logging for Tauri app — Rust logs all agent events to stderr + naia.log.
+// The real child-WebView acceptance run must opt out because this flag is also
+// the Rust guard that intentionally disables a second WebView for normal E2E.
+if (process.env.NAIA_E2E_ALLOW_CHILD_WEBVIEW !== "1") {
+	process.env.CAFE_DEBUG_E2E = "1";
+} else {
+	delete process.env.CAFE_DEBUG_E2E;
 }
+process.env.NAIA_E2E_MODE = "1";
 // E2E mock: bypass GitHub clone + agent-kill-before-delete so ADK setup
 // scenarios run in milliseconds without network/process flakiness (#328).
 process.env.NAIA_E2E_MOCK_CLONE = "1";
@@ -112,7 +112,10 @@ const NATIVE_DRIVER_PORT = parsePort(
 	47_000 + (RUN_HASH % 1_000),
 	"NAIA_E2E_NATIVE_DRIVER_PORT",
 );
-const DEFAULT_VITE_PORT = 46_000 + ((RUN_HASH + 503) % 1_000);
+// The E2E binary embeds tauri.e2e.conf.json's devUrl at build time. Keep the
+// harness on that same fixed origin; the normal Vite/Playwright defaults stay
+// unchanged because this value is only used by the native E2E runner.
+const E2E_BINARY_VITE_PORT = 1422;
 // The native app and its sidecars otherwise fall back to the product ports
 // (18791/18792). Derive one pair per runner and pass the same values to Rust,
 // Vite, and any inherited worker. Explicit values remain available for a
@@ -292,7 +295,7 @@ const E2E_TARGET_DIR = resolve(
 );
 const TAURI_BINARY = process.env.TAURI_BINARY
 	? resolve(process.env.TAURI_BINARY)
-	: e2eBinaryPath(SHELL_DIR);
+	: resolve(E2E_TARGET_DIR, `debug/naia-shell${EXE}`);
 
 // Vosk 의 공유 라이브러리는 빌드 산출물 안에 놓인다. 기본 타깃에서는 바이너리
 // 옆으로 복사되지만 e2e 타깃에서는 그렇지 않아, 앱이 libvosk.so 를 못 찾고
@@ -345,13 +348,14 @@ if (!["127.0.0.1", "localhost", "[::1]"].includes(requestedHost)) {
 	throw new Error(`E2E devUrl must be loopback, got ${requestedDevUrl.href}`);
 }
 const explicitVitePort = process.env.NAIA_E2E_VITE_PORT?.trim();
+if (explicitVitePort && Number(explicitVitePort) !== E2E_BINARY_VITE_PORT) {
+	throw new Error(
+		`NAIA_E2E_VITE_PORT must match the native E2E devUrl port ${E2E_BINARY_VITE_PORT}`,
+	);
+}
 const vitePort = parsePort(
 	explicitVitePort,
-	explicitVitePort
-		? Number(explicitVitePort)
-		: configuredDevUrl
-			? Number(requestedDevUrl.port || "1420")
-			: DEFAULT_VITE_PORT,
+	E2E_BINARY_VITE_PORT,
 	"NAIA_E2E_VITE_PORT",
 );
 const E2E_DEV_URL = new URL(`http://${requestedHost}:${vitePort}`);
@@ -974,9 +978,9 @@ export const config = {
 			},
 			{
 				timeout: 30_000,
-				timeoutMsg:
-					"webview never reached an http origin with writable localStorage",
-			},
+					timeoutMsg:
+						"webview never reached an http origin with writable localStorage",
+				},
 		);
 
 		// Ensure base config is set so the app bypasses onboarding.

@@ -449,4 +449,79 @@ describe("92 — Browser App: Click Blocking Regression", () => {
 
 		await browser.saveScreenshot(`${SHOT}/08-browser-ready-no-error.png`);
 	});
+
+	async function readNativePageInfo(): Promise<{ url: string; title: string }> {
+		return browser.execute(async () => {
+			const internals = (
+				window as Window & {
+					__TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> };
+				}
+			).__TAURI_INTERNALS__;
+			if (!internals) {
+				return { url: "", title: "" };
+			}
+			try {
+				const value = await internals.invoke("browser_wv_page_info");
+				const [urlValue, titleValue] = Array.isArray(value) ? value : ["", ""];
+				return { url: String(urlValue ?? ""), title: String(titleValue ?? "") };
+			} catch {
+				return { url: "", title: "" };
+			}
+		});
+	}
+
+	async function navigateFromAddressBar(
+		url: string,
+		screenshotName: string,
+		expectedTitle: string,
+	) {
+		await activateBrowserApp();
+		const addressBar = await $(
+			"input.browser-app__url-input",
+		);
+		await addressBar.waitForDisplayed({ timeout: 10_000 });
+		await addressBar.click();
+		await addressBar.setValue(url);
+		await browser.keys("Enter");
+
+		await browser.waitUntil(
+			async () =>
+				(await (await $("input.browser-app__url-input")).getValue()) === url,
+			{
+				timeout: 30_000,
+				timeoutMsg: `주소 표시줄이 ${url} 로 갱신되지 않았다`,
+			},
+		);
+		await browser.waitUntil(
+			async () => {
+				const info = await readNativePageInfo();
+				return info.url.startsWith(url) && info.title.includes(expectedTitle);
+			},
+			{
+				timeout: 30_000,
+				timeoutMsg: `native child WebView did not load ${url} with title ${expectedTitle}`,
+			},
+		);
+		const info = await readNativePageInfo();
+		console.log(`[item8] loaded url=${info.url} title=${info.title}`);
+		// The page itself is a native child WebView, so the screenshot is the
+		// rendered-surface evidence rather than a DOM query in the shell page.
+		await browser.saveScreenshot(`${SHOT}/${screenshotName}`);
+	}
+
+	it("09 — address bar navigates to example.com and renders the page", async () => {
+		await navigateFromAddressBar(
+			"https://example.com",
+			"09-example-com-rendered.png",
+			"Example Domain",
+		);
+	});
+
+	it("10 — address bar navigates to Wikipedia and renders the page", async () => {
+		await navigateFromAddressBar(
+			"https://www.wikipedia.org",
+			"10-wikipedia-rendered.png",
+			"Wikipedia",
+		);
+	});
 });
