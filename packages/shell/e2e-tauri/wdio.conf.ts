@@ -23,6 +23,7 @@ import {
 	credentialedSeedOptionsFromEnv,
 	seedCredentialedAdk,
 } from "./credentialed-adk-seed.js";
+import { buildCredsUpdateInvokeArgs } from "./credentialed-gateway-key.mjs";
 import { applyHarnessXdg } from "./e2e-xdg.mjs";
 import { isCoverFailure, reportCover } from "./helpers/cover-probe.mjs";
 import { stopHarnessHerdrSession } from "./herdr-session.mjs";
@@ -652,12 +653,48 @@ export async function deliverCredentialedGatewayKey(): Promise<void> {
 	// 키는 이 프로세스의 환경에서 곧장 실려 파일에 남지 않는다. 스펙이 스스로
 	// 다른 provider 로 갈아타면 그쪽 슬롯을 쓰므로 충돌하지 않는다.
 	if (CREDENTIALED_SEED_ACTIVE) {
+		// 스코프가 묶인 워크스페이스를 실어 보내야 한다 (#590). 네이티브는 캐시
+		// 대상 startup 메시지(creds_update)가 자기를 낳은 ADK 를 실어 오기를
+		// 요구하고(lib.rs validate_source), 없으면 `startup message IPC requires
+		// an ADK path` 로 거절한다. 그 정본은 프런트가 스코프를 묶은 값과 같은
+		// localStorage `naia-adk-path` 다 — 여기서 바로 그 값을 읽어 넘긴다.
+		// 환경의 NAIA_E2E_ADK_PATH(윈도우에서는 역슬래시 형태)를 그냥 넘기면
+		// 스코프와 어긋나 `stale ADK startup IPC rejected` 로 갈릴 수 있다.
+		//
+		// 값이 실릴 때까지 기다린다. App.tsx 의 e2e 바인딩(setAdkPath)은
+		// write_naia_path_cache 를 await 한 **뒤에야** localStorage 에 쓰므로,
+		// ensureAppReady() 를 건너뛰는 설정(wdio.conf.chat.ts)에서는 이 대목이
+		// 바인딩보다 앞설 수 있다. 그때 빈 값을 읽으면 스코프도 아직 안 묶여
+		// 있으니 어차피 보내도 거절이다 — 묶일 때까지 기다렸다 읽는다.
+		let boundAdkPath = "";
+		await browser.waitUntil(
+			async () => {
+				boundAdkPath = await browser.execute(
+					() => localStorage.getItem("naia-adk-path") ?? "",
+				);
+				return boundAdkPath.trim().length > 0;
+			},
+			{
+				timeout: 15_000,
+				timeoutMsg:
+					"격리 ADK 가 하이드레이트되지 않았다 — localStorage 'naia-adk-path' 가 비어 있어 creds_update 를 실어 보낼 워크스페이스가 없다",
+			},
+		);
+		// 인자를 여기(맨 노드)에서 만든다. adkPath 가 비면 던진다 — 격리 ADK 가
+		// 하이드레이트되지 않았다는 뜻이고, 네이티브가 조용히 거절하기 전에 무엇이
+		// 없는지 분명히 말한다. 실앱 없이 이 결정을 `node --test` 로 못 박는다.
+		const credsInvokeArgs = buildCredsUpdateInvokeArgs({
+			provider:
+				credentialedSeedOptionsFromEnv().provider ?? CREDENTIALED_MAIN_PROVIDER,
+			naiaKey: process.env[CREDENTIALED_KEY_ENV] ?? "",
+			adkPath: boundAdkPath,
+		});
 		// `browser.execute` 는 동기 실행이라 async 콜백의 promise 를 기다리지
 		// 않는다. 결과를 창에 남기고 그것이 나타날 때까지 기다린다 — 안 그러면
 		// 키가 닿았는지 모르는 채로 스펙이 시작하고, 실패는 401 이라는 엉뚱한
 		// 모습으로 나타난다.
 		await browser.execute(
-			(message: string) => {
+			(args: { message: string; adkPath: string }) => {
 				const shell = window as unknown as {
 					__TAURI_INTERNALS__?: {
 						invoke: (command: string, value: unknown) => Promise<unknown>;
@@ -670,7 +707,7 @@ export async function deliverCredentialedGatewayKey(): Promise<void> {
 					shell.__naiaE2eCredsSeed = "error: Tauri invoke unavailable";
 					return;
 				}
-				invoke("send_to_agent_command", { message }).then(
+				invoke("send_to_agent_command", args).then(
 					() => {
 						shell.__naiaE2eCredsSeed = "ok";
 					},
@@ -679,15 +716,7 @@ export async function deliverCredentialedGatewayKey(): Promise<void> {
 					},
 				);
 			},
-			JSON.stringify({
-				type: "creds_update",
-				// 심을 때 고른 provider 와 같아야 한다. 환경으로 바꿔 끼웠는데
-				// 키를 기본 provider 슬롯에 넣으면 그 키가 영영 안 쓰인다.
-				provider:
-					credentialedSeedOptionsFromEnv().provider ??
-					CREDENTIALED_MAIN_PROVIDER,
-				naiaKey: process.env[CREDENTIALED_KEY_ENV] ?? "",
-			}),
+			credsInvokeArgs,
 		);
 		let credsSeedState = "pending";
 		await browser.waitUntil(
