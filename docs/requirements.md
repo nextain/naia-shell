@@ -70,9 +70,9 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
 | **FR-TTS.1** | 파이프라인·프리뷰 TTS 를 셸이 직접 합성(`lib/tts/synthesize.ts`) — agent 우회. browser(isClientSide)는 기존 speechSynthesis 유지 | S-TTS·UC2 | `synthesize.test.ts`(provider 분기) · 셸 vitest |
-| **FR-TTS.2** | provider 분기: nextain(gateway `POST /v1/audio/speech`, `X-AnyLLM-Key: Bearer`)·google·openai·elevenlabs(bytes)·vllm(OpenAI-compat)·edge(MS WS). **nextain creds(naiaKey/gatewayUrl)를 pipelineVoiceConfig 두 구성 지점에 탑재** = 무음 직접원인 해소 | S-TTS | `synthesize.test.ts` |
+| **FR-TTS.2** | provider 분기: nextain(gateway `POST /v1/audio/speech`, `X-AnyLLM-Key: Bearer`)·vllm(OpenAI-compat)·edge(MS WS)·browser(speechSynthesis). **nextain creds(naiaKey/gatewayUrl)를 pipelineVoiceConfig 두 구성 지점에 탑재** = 무음 직접원인 해소. 사용자 키를 받는 Google/OpenAI/ElevenLabs TTS는 존재하지 않는다 | S-TTS | `synthesize.test.ts` · `third-party-cloud-voice-absent.test.ts` |
 | **FR-TTS.3** | edge WS 실패 시 browser speechSynthesis 폴백(`onstart/onend/onerror`로 avatar speaking 상태 누수 방지) → 기본값 무음 금지. 합성 실패 = `audioQueue.skipOrdered(seq)` 로 ordered 슬롯 해제(후속 오디오 stall 방지) | S-TTS | `edge-tts.test.ts` · audio-queue |
-| **FR-TTS.4** ([#585](https://github.com/nextain/naia-shell/issues/585)) | Naia Cloud TTS(`nextain`) 기본 목소리는 Azure Neural HD `ko-KR-SunHi:DragonHDLatestNeural` / `Hyunsu`. 게이트웨이 `cost_usd`는 API×1.1이며 셸은 서버 금액을 다시 곱하지 않는다. 피커 순서: edge → naia-local-voice → nextain → BYO API | S-TTS · UC-VOICE-TTS-HD | `registry.test.ts` · `sentence-pipeline.test.ts` |
+| **FR-TTS.4** ([#585](https://github.com/nextain/naia-shell/issues/585)) | Naia Cloud TTS(`nextain`) 기본 목소리는 Azure Neural HD `ko-KR-SunHi:DragonHDLatestNeural` / `Hyunsu`. 게이트웨이 `cost_usd`는 API×1.1이며 셸은 서버 금액을 다시 곱하지 않는다. 피커 순서: edge → naia-local-voice → nextain. BYO API TTS는 제거한다 | S-TTS · UC-VOICE-TTS-HD | `registry.test.ts` · `sentence-pipeline.test.ts` |
 
 ### Azure omni live (#585, 2026-09-10)
 
@@ -80,6 +80,14 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 |----|---------|-----------|------|
 | **FR-VOICE-AZURE.1** | `azure-realtime`은 nextain omni. 선택 시 외부 STT/TTS 슬롯 잠금(FR-CAP.2). 목소리는 sunhi/hyunsu | UC-VOICE-LIVE-AZURE | `registry.test.ts` · `slots.test.ts` |
 | **FR-VOICE-AZURE.2** | 음성 연결은 게이트웨이 `/v1/voice-live`로만 간다. Gemini `/v1/live`로 보내지 않는다. `gpt-4o-mini` live는 제품에 없다 | UC-VOICE-LIVE-AZURE | `resolve-live-provider.test.ts` |
+
+### Third-party cloud voice removal (#603, epic #589)
+
+| FR | 요구사항 | UC/시나리오 | 검증(P02) |
+|----|---------|-----------|------|
+| **FR-VOICE-CLOUD-OFF.1** | Shell voice 설정과 런타임에는 Google/OpenAI/ElevenLabs TTS·STT, Gemini Live, OpenAI Realtime, 또는 Naia의 Google-backed Live 경로가 없다. 남는 음성 경로는 Azure Neural HD/Voice Live, Naia local GPU/VoxCPM2, vLLM, browser Web Speech, Edge TTS, Vosk/Whisper다 | S-VOICE-CLOUD-OFF · UC2 | `third-party-cloud-voice-absent.test.ts` · focused TTS/STT/live unit tests |
+| **FR-VOICE-CLOUD-OFF.2** | 기존 설정의 제거된 provider/backend/voice 값은 부팅 시 Edge 또는 Azure retained route로 정규화되고, 제거된 voice API credentials는 local cache와 selected ADK secure store에서 다시 읽거나 agent로 전송하지 않는다 | S-VOICE-CLOUD-OFF · UC2 | `config.test.ts` · `config-secrets.test.ts` · `secure-store.test.ts` · `useAgentAuthSync.test.ts` |
+| **FR-VOICE-CLOUD-OFF.3** | direct cloud voice endpoints, direct Gemini Live Rust commands, direct voice API key inputs, and obsolete voice E2E cases are deleted rather than hidden behind a runtime flag | S-VOICE-CLOUD-OFF | `src-tauri` cargo check · Settings/ChatArea tests · provider absence proof |
 
 > NFR: NFR-isolation(합성 실패가 턴 안 깸·슬롯 누수 0) · NFR-efferent-async(audioQueue 순서·interrupt 정합). ⚠️ 라이브 네트워크/edge-WS 왕복 = 실 앱(naiaKey) 검증 천장.
 

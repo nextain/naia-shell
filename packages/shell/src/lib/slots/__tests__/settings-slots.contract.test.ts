@@ -445,7 +445,7 @@ describe("#575 · 카드와 탭은 한 출처에서 읽는다", () => {
 	});
 
 	it("옛 ttsEngine 도 같은 규칙으로 푼다", () => {
-		expect(effectiveTtsProvider({ ttsEngine: "google" } as AppConfig)).toBe(
+		expect(effectiveTtsProvider({ ttsEngine: "google" } as unknown as AppConfig)).toBe(
 			"google",
 		);
 		expect(effectiveTtsProvider({ ttsEngine: "gateway" } as AppConfig)).toBe(
@@ -469,7 +469,7 @@ describe("#575 · 카드와 탭은 한 출처에서 읽는다", () => {
 	});
 
 	it("저장된 값이 있으면 그것이 이긴다", () => {
-		const cfg = { ttsProvider: "nextain", ttsEngine: "google" } as AppConfig;
+		const cfg = { ttsProvider: "nextain", ttsEngine: "google" } as unknown as AppConfig;
 		expect(effectiveTtsProvider(cfg)).toBe("nextain");
 		expect(readSlots(cfg).tts.provider).toBe("nextain");
 	});

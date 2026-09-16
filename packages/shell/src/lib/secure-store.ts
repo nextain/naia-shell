@@ -115,6 +115,13 @@ export async function getLegacySecretEntries(): Promise<
 	return store.entries<unknown>();
 }
 
+/** Remove a credential from the pre-ADK store after a feature is retired. */
+export async function deleteLegacySecretKey(name: string): Promise<void> {
+	const store = await getLegacyStore();
+	await store.delete(name);
+	await store.save();
+}
+
 /**
  * The receipt is persisted in the old device store so a cache-free restart
  * cannot make a later ADK inherit credentials from that store. The legacy
@@ -180,16 +187,20 @@ export async function deleteSecretKeyAtPath(
 /** Keys that should be stored securely (not in localStorage). */
 export const SECRET_KEYS = [
 	"apiKey",
-	"googleApiKey",
-	"openaiTtsApiKey",
-	"elevenlabsApiKey",
 	"naiaKey",
 	"gatewayToken",
-	"openaiRealtimeApiKey",
 	"subLlmApiKey",
 	"memoryLlmApiKey",
 	"memoryEmbeddingApiKey",
 	"qdrantApiKey",
+] as const;
+
+/** Voice credentials retired by #603; kept only as migration tombstones. */
+export const RETIRED_VOICE_SECRET_KEYS = [
+	"googleApiKey",
+	"openaiTtsApiKey",
+	"elevenlabsApiKey",
+	"openaiRealtimeApiKey",
 ] as const;
 
 export type SecretKeyName = (typeof SECRET_KEYS)[number];

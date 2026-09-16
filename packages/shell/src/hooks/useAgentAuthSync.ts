@@ -128,16 +128,12 @@ export function useAgentAuthSync(
 				await sendNotifyConfig(notifyPayload, sourceAdkPath).catch(() => {});
 			if (!active) return;
 
-			const ttsKeys: Record<string, string> = {};
-			if (cfg.googleApiKey) ttsKeys.google = cfg.googleApiKey;
-			if (cfg.openaiTtsApiKey) ttsKeys.openai = cfg.openaiTtsApiKey;
-			if (cfg.elevenlabsApiKey) ttsKeys.elevenlabs = cfg.elevenlabsApiKey;
 			const credsPayload = {
 				keys:
 					cfg.apiKey && cfg.provider && cfg.provider !== "nextain"
 						? { [cfg.provider]: cfg.apiKey }
 						: {},
-				...(Object.keys(ttsKeys).length > 0 && { ttsKeys }),
+				ttsKeys: {},
 				...(cfg.gatewayToken !== undefined && {
 					gatewayToken: cfg.gatewayToken,
 				}),

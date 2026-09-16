@@ -73,9 +73,8 @@ UC15 제품 수용 확장(#84):
 | S12 | approvals(승인 게이트) | UC13 | ApprovalPort | 측정 |
 | S13 | 텍스트 대화(ChatApp) | UC1 | ChatPort·llm·ExpressionPort | 측정 |
 | S14 | omni 음성(naia-omni realtime) | UC2 | voice provider·ws | 측정(키/서버) |
-| S15 | gemini-live 음성 | UC2 | voice provider·ws | 측정 |
-| S16 | openai-realtime 음성 | UC2 | voice provider·ws | 측정 |
 | S17 | tts | UC2 | ExpressionPort(speech) | 측정 |
+| S17a | **타사 클라우드 음성 제거·설정 복구** — 기존 Google/OpenAI/ElevenLabs/Gemini Live/OpenAI Realtime 선택이 Edge 또는 Azure retained route로 복구되고, 음성 API 키가 다시 노출·전송되지 않음 | UC2 | voice provider·config migration·secure store | `third-party-cloud-voice-absent.test.ts` · `config.test.ts` · `config-secrets.test.ts` · `useAgentAuthSync.test.ts` |
 | S18 | **voicewake(이름 불러 활성화)** | UC2 | SensoryPort·wake | ✓루크확인: OpenClaw 잔재·미검증(개발검증 X) |
 | S19 | avatar 표현(VRM, AvatarCanvas) | UC2 | ExpressionPort | 측정 |
 | S19a | VRM/WebGL 초기화 실패·아바타 변경 재초기화 | UC2 | ExpressionPort·fault surface | 측정 — blank canvas/crash 없이 기존 현지화 오류 안내를 표시하고 ready 상태를 거짓으로 표시하지 않으며, 부분 초기화 자원을 정리한다. 다른 아바타 선택으로 `modelPath`가 바뀌면 다시 초기화하고 chat/settings는 계속 사용 가능 |
@@ -165,7 +164,8 @@ foundation UC 카탈로그와 직교하는 셸 feature(S72 선례). 각 시나�
 
 | 시나리오 | 사용자 경험 | 인지/레이어 | 검증(P02) |
 |---|---|---|---|
-| **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(edge/google/nextain/openai/elevenlabs). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **S-TTS** (#363) | omni 아닌 모델로 음성 대화 시 **소리가 난다**(browser/edge/nextain/local). 기본 edge 가 무음이면 browser 폴백 | 표현(speech) — 셸이 합성(agent 우회) | `synthesize.test.ts`·`edge-tts.test.ts`·셸 vitest. ⚠️ 라이브 합성=실 앱(naiaKey) |
+| **S-VOICE-CLOUD-OFF** (#603, epic #589) | 사용자는 음성 설정에서 타사 Google/OpenAI/ElevenLabs TTS·STT와 Gemini Live/OpenAI Realtime을 볼 수 없고, Azure Neural HD·Azure Voice Live·로컬 GPU/vLLM·browser/Edge/Vosk/Whisper만 쓴다. 이전 설정은 안전한 retained route로 이동하며 제거된 키는 저장·agent wire에 남지 않는다 | 설정 제어면 + 표현/감각 | `third-party-cloud-voice-absent.test.ts` · `config.test.ts` · `config-secrets.test.ts` · Settings/ChatArea focused tests · `cargo check` |
 | **S-CAP** (#365) | 모델을 고르면 그 모델 **능력에 맞춰 설정이 전개**(omni→STT/TTS 슬롯 숨김, 텍스트→노출). gateway 가 능력 선언 | 제어면(설정) — capability manifest 도출 | `test_models.py`·`capability-fetch.test.ts`·`slots.test.ts`. ⚠️ 라이브 /v1/models=게이트웨이 배포 |
 | **S-VRAM** (#2) | 내 GPU VRAM 을 감지해 **로컬에서 돌릴 수 있는 tier**(아바타·음성)를 보여주고 선택. opt-in 시 외부 슬롯 대신 로컬 | 제어면(설정) — VRAM→capability 브리지 | `vram-tiers.test.ts`. ⚠️ 실 VRAM 감지=실 GPU, 로컬 serving=windows-manager 로더(DEFER) |
 | **S-SLOT** (#gate-slots, 신규 — 2026-06-28) | 설정이 **naia 계정 게이트 → 6 클라우드 슬롯(LLM main·LLM sub·embedding·STT·TTS·video avatar) 각각 독립 설정** 순서로 전개. naia 계정 시 Gemini 기본값 자동 적용. 구 engine/ai/models/memory 분산을 통합해 "설정 헷갈림" 해소. **Naia는 provider가 아닌 접근 유형(게이트)**. local 런타임(cascade)은 별도 "naia-omni local setting" 영역(wm 연동, **DEFER**). legacy 고정 VRAM tier는 R2-3으로 폐기 → capability 토글+VRAM 예산(설계 P1.4) | 제어면(설정) — 게이트+슬롯 모델 | `settings-slots.contract.test.ts`(신규)·`settings-tab.test.ts`·`onboarding-fresh.spec.ts` + Playwright E2E(게이트→클라우드 슬롯 흐름). ⚠️ 로컬 설정 영역(1.2b)·통합 VRAM(1.4)=wm 언블록 후 |

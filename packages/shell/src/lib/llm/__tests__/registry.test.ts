@@ -88,13 +88,14 @@ describe("registry — Naia (nextain) provider models", () => {
 		expect(model?.pricing).toBeUndefined();
 	});
 
-	it("Gemini 2.5 Flash Live is registered", () => {
-		const model = getLlmModel("nextain", "gemini-2.5-flash-live");
-		expect(model).toBeDefined();
+	it("gemini-2.5-flash-live is absent (#603)", () => {
+		expect(getLlmModel("nextain", "gemini-2.5-flash-live")).toBeUndefined();
 	});
 
-	it("Gemini 2.5 Flash Live has omni capability", () => {
-		expect(isOmniModel("nextain", "gemini-2.5-flash-live")).toBe(true);
+	it("azure-realtime remains the Naia live omni route", () => {
+		const model = getLlmModel("nextain", "azure-realtime");
+		expect(model).toBeDefined();
+		expect(isOmniModel("nextain", "azure-realtime")).toBe(true);
 	});
 
 	it("azure-realtime is omni and hides pipeline STT/TTS", () => {
@@ -111,8 +112,8 @@ describe("registry — Naia (nextain) provider models", () => {
 		).toBe(false);
 	});
 
-	it("Gemini 2.5 Flash Live is omni capable", () => {
-		expect(isOmniModel("nextain", "gemini-2.5-flash-live")).toBe(true);
+	it("removed gemini live model is not omni", () => {
+		expect(isOmniModel("nextain", "gemini-2.5-flash-live")).toBe(false);
 	});
 
 	it("nextain provider does not require API key", () => {

@@ -530,7 +530,6 @@ const NAIA_GENERAL_CHAT_RECOMMENDATION: Readonly<Record<string, number>> = {
 	"HCX-DASH-002": 3,
 	"gemini-3.5-flash-lite": 3,
 	"gemini-3.1-flash-lite": 3,
-	"gemini-2.5-flash-live": 4,
 	"azure-realtime": 4,
 	"naia-0.9-omni-24g": 5,
 	"claude-opus-5": 5,
@@ -579,29 +578,6 @@ export const AZURE_REALTIME_VOICES: LlmVoiceMeta[] = [
 	{ id: "hyunsu", label: "Hyunsu (남성)" },
 ];
 
-export const GEMINI_LIVE_VOICES: LlmVoiceMeta[] = [
-	{ id: "Kore", label: "Kore (여성, 부드러움)" },
-	{ id: "Puck", label: "Puck (남성, 익살)" },
-	{ id: "Charon", label: "Charon (남성)" },
-	{ id: "Aoede", label: "Aoede (여성)" },
-	{ id: "Fenrir", label: "Fenrir (남성)" },
-	{ id: "Leda", label: "Leda (여성)" },
-	{ id: "Orus", label: "Orus (남성)" },
-	{ id: "Zephyr", label: "Zephyr (중성)" },
-];
-
-export const OPENAI_REALTIME_VOICES: LlmVoiceMeta[] = [
-	{ id: "alloy", label: "Alloy (중성)" },
-	{ id: "ash", label: "Ash (남성)" },
-	{ id: "ballad", label: "Ballad (남성)" },
-	{ id: "coral", label: "Coral (여성)" },
-	{ id: "echo", label: "Echo (남성)" },
-	{ id: "sage", label: "Sage (여성)" },
-	{ id: "shimmer", label: "Shimmer (여성)" },
-	{ id: "verse", label: "Verse (남성)" },
-	{ id: "marin", label: "Marin (여성)" },
-	{ id: "cedar", label: "Cedar (남성)" },
-];
 
 // ─── Provider registrations ─────────────────────────────────────────────────
 
@@ -717,15 +693,6 @@ registerLlmProvider({
 			label: "Gemini 3.5 Flash",
 			capabilities: ["llm"],
 			supportsTools: true,
-		},
-		{
-			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live",
-			capabilities: ["llm", "omni"],
-			supportsTools: true,
-			voiceSelectable: true,
-			voices: [...GEMINI_LIVE_VOICES],
-			transcriptProvided: true,
 		},
 		{
 			id: "azure-realtime",
@@ -871,14 +838,6 @@ registerLlmProvider({
 			capabilities: ["llm"],
 			pricing: [0.3, 2.5],
 		},
-		{
-			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live (Realtime)",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [...GEMINI_LIVE_VOICES],
-			transcriptProvided: true,
-		},
 	],
 });
 
@@ -939,14 +898,6 @@ registerLlmProvider({
 			label: "GPT-4o",
 			capabilities: ["llm"],
 			pricing: [2.5, 10.0],
-		},
-		{
-			id: "gpt-4o-mini-realtime-preview",
-			label: "GPT-4o Mini Realtime",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [...OPENAI_REALTIME_VOICES],
-			transcriptProvided: true,
 		},
 	],
 });

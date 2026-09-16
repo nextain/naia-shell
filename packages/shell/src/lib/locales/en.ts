@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (Coming soon)",
 	"settings.sttElevenlabs": "ElevenLabs (Coming soon)",
 	"settings.sttLanguageUnsupported": "STT model not available for current language",
-	"settings.googleApiKey": "Google API Key (for TTS)",
-	"settings.googleApiKeyGeminiFallback": "Leave empty to use chat key",
 	"settings.personaSection": "Persona",
 	"settings.personaDisabled": "Do not use a persona",
 	"settings.personaDisabledHint": "Turn this on when the character is already in the model weights. The name, title, speech style, and persona text are not sent as a prompt. Two competing definitions break the answers.",

@@ -11,48 +11,36 @@
 // ?? Provider ID ??
 
 export type LiveProviderId =
-	| "naia"
-	| "gemini-live"
-	| "openai-realtime"
 	| "naia-omni"
 	| "vllm-omni"
 	| "azure-voice-live"
-	| "edge-tts";
+	| "edge-tts"
+	;
 
 export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
-	naia: "Naia OS",
-	"gemini-live": "Gemini",
-	"openai-realtime": "OpenAI",
 	"naia-omni": "Naia Omni",
 	"vllm-omni": "vLLM Omni (Local)",
 	"azure-voice-live": "Azure Voice Live",
 	"edge-tts": "Edge (TTS Only)",
 };
 
-// ?? Provider Cost Hints (approximate per-minute voice conversation cost) ??
-
 export const LIVE_PROVIDER_COST_HINTS: Record<
 	LiveProviderId,
 	{ cost: string; note: string }
 > = {
-	naia: { cost: "~$0.03/min", note: "Naia credits" },
-	"gemini-live": { cost: "~$0.03/min", note: "Google API Key" },
-	"openai-realtime": { cost: "~$0.10/min", note: "OpenAI API Key" },
 	"azure-voice-live": {
 		cost: "~$0.019/min",
 		note: "Naia credits — Voice Live Std LLM Audio × 1.1",
 	},
 	"naia-omni": {
 		cost: "~$0.33/hr",
-		note: "Naia credits ??hourly session (local: free)",
+		note: "Naia credits — hourly session (local: free)",
 	},
 	"vllm-omni": { cost: "Free*", note: "Local GPU / RunPod ~$0.22/hr" },
 	"edge-tts": { cost: "Free", note: "TTS only" },
 };
 
 // ?? Provider Voice Options ??
-// Voice options are now defined in config.ts (OPENAI_REALTIME_VOICES, GEMINI_LIVE_VOICES)
-// and re-exported from voice/index.ts for backward compatibility.
 
 // ?? Tool Declaration (shared across providers) ??
 
@@ -82,21 +70,6 @@ interface LiveProviderConfigBase {
 	tools?: ToolDeclaration[];
 	/** BCP-47 locale for speech recognition language hint (e.g. "ko-KR"). */
 	locale?: string;
-}
-
-export interface GeminiLiveConfig extends LiveProviderConfigBase {
-	provider: "gemini-live";
-	/** Gateway mode: relay via any-llm gateway */
-	gatewayUrl?: string;
-	naiaKey?: string;
-	/** Direct mode: connect to Gemini API directly with user's own key */
-	googleApiKey?: string;
-}
-
-export interface OpenAIRealtimeConfig extends LiveProviderConfigBase {
-	provider: "openai-realtime";
-	apiKey: string;
-	serverUrl?: string;
 }
 
 export interface AzureVoiceLiveConfig extends LiveProviderConfigBase {
@@ -165,8 +138,6 @@ export interface VllmOmniConfig extends LiveProviderConfigBase {
 }
 
 export type LiveProviderConfig =
-	| GeminiLiveConfig
-	| OpenAIRealtimeConfig
 	| NaiaOmniConfig
 	| VllmOmniConfig
 	| AzureVoiceLiveConfig;
@@ -182,8 +153,7 @@ export type LiveProviderConfig =
 export interface AudioInputConfig {
 	/**
 	 * PCM capture rate sent on the wire. naia-omni: 24000 (server INPUT_SR).
-	 * All others (openai-realtime / gemini-live / gemini-live-proxy /
-	 * vllm-omni): 16000 (wire format `audio/pcm;rate=16000` / WAV header /
+	 * Others (azure-voice-live / vllm-omni): 16000 (wire format `audio/pcm;rate=16000` / WAV header /
 	 * prior hardcoded default). Mismatching this rate makes the server
 	 * reinterpret the audio at the wrong speed/pitch.
 	 */

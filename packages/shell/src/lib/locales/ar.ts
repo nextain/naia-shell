@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (قريباً)",
 	"settings.sttElevenlabs": "ElevenLabs (قريباً)",
 	"settings.sttLanguageUnsupported": "نموذج STT غير متاح للغة الحالية",
-	"settings.googleApiKey": "مفتاح Google API (لـ TTS)",
-	"settings.googleApiKeyGeminiFallback": "اتركه فارغًا لاستخدام مفتاح الدردشة",
 	"settings.personaSection": "شخصية",
 	"settings.personaDisabled": "عدم استخدام شخصية",
 	"settings.personaDisabledHint": "فعّل هذا إذا كانت الشخصية مضمّنة في أوزان النموذج. لن يُرسل الاسم واللقب وأسلوب الكلام ونص الشخصية.",

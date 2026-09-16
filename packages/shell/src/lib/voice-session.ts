@@ -7,4 +7,4 @@ export type {
 	LiveProviderConfig as VoiceSessionConfig,
 } from "./voice/types";
 export type { ToolDeclaration } from "./voice/types";
-export { createGeminiLiveSession as createVoiceSession } from "./voice/gemini-live";
+export { createVoiceSession } from "./voice/index";

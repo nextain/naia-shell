@@ -737,9 +737,6 @@ export function SettingsTab() {
 	const [ttsVoice, setTtsVoice] = useState(
 		existing?.ttsVoice ?? defaultVoiceForProvider,
 	);
-	const [googleApiKey, setGoogleApiKey] = useState(
-		existing?.googleApiKey ?? "",
-	);
 	// 기본값은 `effectiveTtsProvider` 한 곳에서 정한다 — 프로파일 카드도 같은 함수를
 	// 읽는다. 여기에만 두면 카드가 "미설정" 이라 적는 동안 이 드롭다운은 Edge 를
 	// 보여 준다(#575).
@@ -823,9 +820,6 @@ export function SettingsTab() {
 	const workspaceRoot = existing?.workspaceRoot || getAdkPath() || "";
 	const [voice, setVoice] = useState(
 		existing?.voice ?? getDefaultVoiceForAvatar(existing?.vrmModel),
-	);
-	const [openaiRealtimeApiKey, setOpenaiRealtimeApiKey] = useState(
-		existing?.openaiRealtimeApiKey ?? "",
 	);
 	const [dynamicModels, setDynamicModels] = useState<
 		Record<string, LlmModelMeta[]>
@@ -2153,19 +2147,9 @@ export function SettingsTab() {
 				)
 					return;
 				setApiKey(cfg.apiKey ?? "");
-				setGoogleApiKey(cfg.googleApiKey ?? "");
-				setOpenaiRealtimeApiKey(cfg.openaiRealtimeApiKey ?? "");
-				setMemoryEmbeddingApiKey(cfg.memoryEmbeddingApiKey ?? "");
+						setMemoryEmbeddingApiKey(cfg.memoryEmbeddingApiKey ?? "");
 				setQdrantApiKey(cfg.qdrantApiKey ?? "");
-				const restoredTtsKey =
-					cfg.ttsProvider === "openai"
-						? cfg.openaiTtsApiKey
-						: cfg.ttsProvider === "elevenlabs"
-							? cfg.elevenlabsApiKey
-							: cfg.ttsProvider === "google"
-								? cfg.googleApiKey
-								: undefined;
-				setGatewayTtsApiKey(restoredTtsKey ?? "");
+				setGatewayTtsApiKey("");
 				if (!cfg.naiaKey) return;
 				setNaiaKeyState(cfg.naiaKey);
 				setSecureNaiaCredentialReady(true);
@@ -2246,15 +2230,7 @@ export function SettingsTab() {
 		}
 	};
 
-	// Gateway TTS state
-	// gatewayTtsApiKey: shared state for TTS API key input (used by multiple providers)
-	const [gatewayTtsApiKey, setGatewayTtsApiKey] = useState(() => {
-		const p = existing?.ttsProvider ?? "edge";
-		if (p === "openai") return existing?.openaiTtsApiKey ?? "";
-		if (p === "elevenlabs") return existing?.elevenlabsApiKey ?? "";
-		if (p === "google") return existing?.googleApiKey ?? "";
-		return "";
-	});
+	const [, setGatewayTtsApiKey] = useState("");
 
 	// Voice wake state removed (UI + handlers deleted)
 	// Discord integration — unverified, hidden until stabilized
@@ -2802,28 +2778,17 @@ export function SettingsTab() {
 			// synthesizer, so preview routes through the same path as live voice.
 			let synthProvider: TtsProviderId;
 			let synthVoice: string | undefined;
-			let synthApiKey: string | undefined;
 
-			if (isOmni && (provider === "nextain" || provider === "gemini")) {
-				// Omni avatar voice → Naia Cloud (gateway Chirp 3 HD).
+			if (isOmni && provider === "nextain") {
 				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
 				synthProvider = "nextain";
-				synthVoice = `ko-KR-Chirp3-HD-${voiceName}`;
-			} else if (isOmni && provider === "openai") {
-				synthProvider = "openai";
-				synthVoice = voice || "alloy";
-				synthApiKey =
-					openaiRealtimeApiKey.trim() || existing?.openaiTtsApiKey || undefined;
+				synthVoice =
+					voiceName === "hyunsu"
+						? "ko-KR-Hyunsu:DragonHDLatestNeural"
+						: "ko-KR-SunHi:DragonHDLatestNeural";
 			} else {
 				synthProvider = (ttsProvider || "edge") as TtsProviderId;
 				synthVoice = ttsVoice;
-				if (
-					synthProvider === "google" ||
-					synthProvider === "openai" ||
-					synthProvider === "elevenlabs"
-				) {
-					synthApiKey = gatewayTtsApiKey || undefined;
-				}
 			}
 
 			if (synthProvider === "nextain" && !naiaKey) {
@@ -2835,7 +2800,6 @@ export function SettingsTab() {
 				text: getPreviewText(synthVoice),
 				voice: synthVoice,
 				provider: synthProvider,
-				apiKey: synthApiKey,
 				naiaKey: naiaKey || undefined,
 				gatewayUrl: LAB_GATEWAY_URL,
 				vllmHost: existing?.vllmHost,
@@ -2991,9 +2955,6 @@ export function SettingsTab() {
 			return;
 		}
 		const defaultVrm = DEFAULT_AVATAR_MODEL;
-		// Derive ttsEngine from ttsProvider for agent compatibility
-		// Only "google" uses direct Google TTS; all others (including nextain) use Gateway
-		const derivedTtsEngine = ttsProvider === "google" ? "google" : "gateway";
 		const savedAvatarProvider: AppConfig["avatarProvider"] = avatarProvider;
 		let newConfig: AppConfig = {
 			...existing,
@@ -3021,19 +2982,6 @@ export function SettingsTab() {
 			ttsEnabled,
 			ttsVoice,
 			ttsProvider,
-			ttsEngine: derivedTtsEngine as "google" | "gateway",
-			googleApiKey:
-				ttsProvider === "google" && gatewayTtsApiKey.trim()
-					? gatewayTtsApiKey.trim()
-					: googleApiKey.trim() || existing?.googleApiKey || undefined,
-			openaiTtsApiKey:
-				ttsProvider === "openai" && gatewayTtsApiKey.trim()
-					? gatewayTtsApiKey.trim()
-					: existing?.openaiTtsApiKey || undefined,
-			elevenlabsApiKey:
-				ttsProvider === "elevenlabs" && gatewayTtsApiKey.trim()
-					? gatewayTtsApiKey.trim()
-					: existing?.elevenlabsApiKey || undefined,
 			persona:
 				persona.trim() !== DEFAULT_PERSONA.trim() ? persona.trim() : undefined,
 			userName: userName.trim() || undefined,
@@ -3064,7 +3012,6 @@ export function SettingsTab() {
 					: existing?.openaiBaseUrl,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
 			voice: isOmniModel(provider, model) ? voice : existing?.voice,
-			openaiRealtimeApiKey: openaiRealtimeApiKey.trim() || undefined,
 			sttInputDeviceId: sttInputDeviceId || undefined,
 			ttsOutputDeviceId: ttsOutputDeviceId || undefined,
 			// Memory settings
@@ -3196,15 +3143,11 @@ export function SettingsTab() {
 		// Push all per-session credentials (#260 follow-up). Empty strings
 		// clear the corresponding cached entry on the agent — keeps the cache
 		// in sync with what the user just saved.
-		const ttsKeys: Record<string, string> = {};
-		ttsKeys.google = newConfig.googleApiKey ?? "";
-		ttsKeys.openai = newConfig.openaiTtsApiKey ?? "";
-		ttsKeys.elevenlabs = newConfig.elevenlabsApiKey ?? "";
 		void sendCredsUpdate({
 			keys: newConfig.provider
 				? { [newConfig.provider]: newConfig.apiKey ?? "" }
 				: {},
-			ttsKeys,
+			ttsKeys: {},
 			gatewayToken: newConfig.gatewayToken ?? "",
 		}, applyAdkPath);
 		await setLocale(locale);
@@ -5037,44 +4980,6 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{/* Omni model: Gemini Direct mode needs Google API Key */}
-					{isSelectedOmni && provider === "gemini" && (
-						<div className="settings-field">
-							<label htmlFor="google-apikey-input">Google API Key</label>
-							<input
-								id="google-apikey-input"
-								type="password"
-								value={googleApiKey}
-								onChange={(e) => {
-									setGoogleApiKey(e.target.value);
-									if (existing)
-										saveConfig({ ...existing, googleApiKey: e.target.value });
-								}}
-								placeholder="AIza..."
-							/>
-						</div>
-					)}
-
-					{/* Omni model: OpenAI Realtime needs API Key */}
-					{isSelectedOmni && provider === "openai" && (
-						<div className="settings-field">
-							<label>OpenAI API Key</label>
-							<input
-								type="password"
-								value={openaiRealtimeApiKey}
-								onChange={(e) => {
-									setOpenaiRealtimeApiKey(e.target.value);
-									if (existing)
-										saveConfig({
-											...existing,
-											openaiRealtimeApiKey: e.target.value,
-										});
-								}}
-								placeholder="sk-..."
-							/>
-						</div>
-					)}
-
 					{/* Naia Local: address of the user's own omni-24g container.
 			    Reuses the logged-in key (no key input); voice starts on the voice
 			    button (lazy connect). Loopback may be ws://; remote must be wss://. */}
@@ -5361,67 +5266,6 @@ export function SettingsTab() {
 									))}
 								</select>
 							</div>
-							{/* Naia Cloud STT — backend engine selector */}
-							{sttProvider === "nextain" && naiaKey && (
-								<div className="settings-field">
-									<label>{t("settings.naiaCloudBackend")}</label>
-									<select
-										value={existing?.naiaCloudSttBackend ?? "google-cloud-stt"}
-										onChange={(e) => {
-											if (existing)
-												saveConfig({
-													...existing,
-													naiaCloudSttBackend: e.target.value,
-												});
-										}}
-									>
-										<option value="google-cloud-stt">Google Cloud STT</option>
-									</select>
-								</div>
-							)}
-							{/* STT API key — shown for API-based providers */}
-							{(() => {
-								const sttMeta = listSttProviders().find(
-									(p) => p.id === sttProvider,
-								);
-								if (sttMeta?.requiresNaiaKey && !naiaKey) {
-									return (
-										<div className="settings-field">
-											<span className="settings-hint">
-												{t("settings.ttsNaiaRequired")}
-											</span>
-										</div>
-									);
-								}
-								if (sttMeta?.requiresApiKey) {
-									const currentKey =
-										sttMeta.apiKeyConfigField === "googleApiKey"
-											? (existing?.googleApiKey ?? "")
-											: sttMeta.apiKeyConfigField === "elevenlabsApiKey"
-												? (existing?.elevenlabsApiKey ?? "")
-												: "";
-									return (
-										<div className="settings-field">
-											<label htmlFor="stt-api-key">
-												{t("settings.sttApiKey")}
-											</label>
-											<input
-												id="stt-api-key"
-												type="password"
-												defaultValue={currentKey}
-												onChange={(e) => {
-													if (sttMeta.apiKeyConfigField === "googleApiKey") {
-														setGatewayTtsApiKey(e.target.value);
-													}
-												}}
-												placeholder={`${sttMeta.name} API Key`}
-											/>
-										</div>
-									);
-								}
-								return null;
-							})()}
-
 							{/* STT Model — current selection + manage button (offline engines only) */}
 							{/* vLLM ASR: endpoint URL + ASR model picker */}
 							{sttProvider === "vllm" && (
@@ -5525,14 +5369,7 @@ export function SettingsTab() {
 								setTtsProvider(next);
 								setDynamicTtsVoices([]);
 								persistConfig({ ttsProvider: next });
-								// Load API key for the selected provider
-								if (next === "openai")
-									setGatewayTtsApiKey(existing?.openaiTtsApiKey ?? "");
-								else if (next === "elevenlabs")
-									setGatewayTtsApiKey(existing?.elevenlabsApiKey ?? "");
-								else if (next === "google")
-									setGatewayTtsApiKey(existing?.googleApiKey ?? "");
-								else setGatewayTtsApiKey("");
+								setGatewayTtsApiKey("");
 								// naia-local-voice: 로컬 cascade façade(:8910, OpenAI 표면)로 기본값
 								// 채움 → host 비어있으면 합성이 자동으로 로컬 façade 를 가리킴.
 								// Reset voice to provider default
@@ -5546,25 +5383,6 @@ export function SettingsTab() {
 									// 로컬 음성: 고정 voice 목록 없음(클로닝). stale 클라우드 voice id 방지로
 									// "default" 고정 — 음색은 RefAudioSection(ref audio)이 담당.
 									persistTtsVoice("default");
-								}
-								// Fetch dynamic voices — use saved key or current input
-								const savedKey =
-									next === "openai"
-										? (existing?.openaiTtsApiKey ?? "")
-										: next === "elevenlabs"
-											? (existing?.elevenlabsApiKey ?? "")
-											: next === "google"
-												? (existing?.googleApiKey ?? "")
-												: "";
-								const effectiveKey = savedKey || gatewayTtsApiKey;
-								if (meta?.fetchVoices && effectiveKey) {
-									meta.fetchVoices(effectiveKey).then((voices) => {
-										if (voices && voices.length > 0) {
-											setDynamicTtsVoices(voices);
-											if (voices[0] && !meta.voices?.length)
-												persistTtsVoice(voices[0].id);
-										}
-									});
 								}
 							}}
 						>
@@ -5596,81 +5414,6 @@ export function SettingsTab() {
 							</div>
 						)}
 					</div>
-					{/* Naia Cloud TTS — backend engine selector */}
-					{ttsProvider === "nextain" && naiaKey && (
-						<div className="settings-field">
-							<label>{t("settings.naiaCloudBackend")}</label>
-							<select
-								value={existing?.naiaCloudTtsBackend ?? "google-chirp3-hd"}
-								onChange={(e) => {
-									if (existing)
-										saveConfig({
-											...existing,
-											naiaCloudTtsBackend: e.target.value,
-										});
-								}}
-							>
-								<option value="google-chirp3-hd">Google Chirp 3 HD</option>
-							</select>
-						</div>
-					)}
-					{/* TTS API key input — shown when provider requires it */}
-					{(() => {
-						const providerMeta = listTtsProviderMetas().find(
-							(p) => p.id === ttsProvider,
-						);
-						if (providerMeta?.requiresApiKey) {
-							return (
-								<div className="settings-field">
-									<label htmlFor="tts-api-key">{t("settings.ttsApiKey")}</label>
-									<input
-										id="tts-api-key"
-										type="password"
-										value={gatewayTtsApiKey}
-										onChange={(e) => {
-											const val = e.target.value;
-											setGatewayTtsApiKey(val);
-											const meta = listTtsProviderMetas().find(
-												(p) => p.id === ttsProvider,
-											);
-											if (meta?.fetchVoices && val.length > 10) {
-												meta.fetchVoices(val).then((voices) => {
-													if (voices && voices.length > 0)
-														setDynamicTtsVoices(voices);
-												});
-											}
-										}}
-										onPaste={(e) => {
-											// Handle paste — onChange may not fire in WebKitGTK
-											setTimeout(() => {
-												const val = (e.target as HTMLInputElement).value;
-												if (val.length > 10) {
-													const meta = listTtsProviderMetas().find(
-														(p) => p.id === ttsProvider,
-													);
-													meta?.fetchVoices?.(val).then((voices) => {
-														if (voices && voices.length > 0)
-															setDynamicTtsVoices(voices);
-													});
-												}
-											}, 100);
-										}}
-										placeholder={`${providerMeta.name} API Key`}
-									/>
-								</div>
-							);
-						}
-						if (providerMeta?.requiresNaiaKey && !naiaKey) {
-							return (
-								<div className="settings-field">
-									<span className="settings-hint">
-										{t("settings.ttsNaiaRequired")}
-									</span>
-								</div>
-							);
-						}
-						return null;
-					})()}
 					{voxcpm2InstallError && (
 						<div
 							className="settings-field voxcpm2-install-error"

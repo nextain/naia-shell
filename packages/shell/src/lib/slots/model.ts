@@ -78,7 +78,6 @@ export const SLOT_FIELD_MAP: Record<SlotId, readonly string[]> = {
 	avatar: [
 		"avatarProvider",
 		"nvaModel",
-		"liveProvider",
 		"liveModel",
 		"voiceRefUrl",
 	],
@@ -114,7 +113,7 @@ export interface SlotSnapshot {
  */
 export function effectiveTtsProvider(config: AppConfig): TtsProviderId {
 	if (config.ttsProvider) return config.ttsProvider;
-	return config.ttsEngine === "google" ? "google" : "edge";
+	return "edge";
 }
 
 /**
@@ -184,8 +183,8 @@ export function readSlots(config: AppConfig): SlotSnapshot {
 			voice: config.ttsVoice,
 		},
 		avatar: {
-			provider: isNvaAvatar ? config.avatarProvider : config.liveProvider,
-			model: isNvaAvatar ? config.nvaModel : config.liveModel,
+			provider: isNvaAvatar ? config.avatarProvider : config.provider,
+			model: isNvaAvatar ? config.nvaModel : config.model,
 			voiceRefUrl: config.voiceRefUrl,
 		},
 	};
@@ -265,7 +264,7 @@ export function writeSlot<K extends SlotId>(
 		}
 		case "avatar": {
 			const v = value as Partial<SlotSnapshot["avatar"]>;
-			if (v.provider !== undefined) next.liveProvider = v.provider;
+			if (v.provider !== undefined) next.provider = v.provider;
 			if (v.model !== undefined) next.liveModel = v.model;
 			if (v.voiceRefUrl !== undefined) next.voiceRefUrl = v.voiceRefUrl;
 			break;

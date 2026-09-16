@@ -4,12 +4,11 @@
  *
  * Uses AudioContext (not MediaRecorder) for WebKitGTK compatibility.
  */
-import { LAB_GATEWAY_URL } from "../config";
 import { Logger } from "../logger";
 import type { SttResult, SttSession } from "./types";
 
 interface ApiSttOptions {
-	provider: "google" | "elevenlabs" | "nextain" | "vllm";
+	provider: string;
 	apiKey: string;
 	language: string;
 	/** Endpoint URL for local vLLM providers (e.g. "http://localhost:8000"). */
@@ -29,7 +28,7 @@ const SEND_INTERVAL_MS = 3000;
  * Captures mic via AudioContext (WebKitGTK compatible), sends PCM chunks to API.
  */
 export function createApiSttSession(options: ApiSttOptions): SttSession {
-	const { provider, apiKey, language, endpointUrl, model, inputDeviceId } =
+	const { provider, apiKey: _retiredApiKey, language, endpointUrl, model, inputDeviceId } =
 		options;
 	let resultCallbacks: ((result: SttResult) => void)[] = [];
 	let errorCallbacks: ((error: { code: string; message: string }) => void)[] =
@@ -109,13 +108,7 @@ export function createApiSttSession(options: ApiSttOptions): SttSession {
 
 		try {
 			let result: string | null = null;
-			if (provider === "google") {
-				result = await transcribeGoogle(base64, apiKey, language);
-			} else if (provider === "nextain") {
-				result = await transcribeNextain(base64, apiKey, language);
-			} else if (provider === "elevenlabs") {
-				result = await transcribeElevenLabs(base64, apiKey, language);
-			} else if (provider === "vllm") {
+			if (provider === "vllm") {
 				result = await transcribeLocalVllm(
 					base64,
 					endpointUrl ?? "http://localhost:8000",
@@ -264,111 +257,6 @@ export function createApiSttSession(options: ApiSttOptions): SttSession {
 			};
 		},
 	};
-}
-
-// ── Google Cloud Speech-to-Text (PCM LINEAR16) ──
-
-async function transcribeGoogle(
-	pcmBase64: string,
-	apiKey: string,
-	language: string,
-): Promise<string | null> {
-	const response = await fetch(
-		`https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`,
-		{
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				config: {
-					encoding: "LINEAR16",
-					sampleRateHertz: TARGET_SAMPLE_RATE,
-					languageCode: language,
-					model: "latest_long",
-					enableAutomaticPunctuation: true,
-				},
-				audio: { content: pcmBase64 },
-			}),
-		},
-	);
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`Google STT HTTP ${response.status}: ${text}`);
-	}
-
-	const data = await response.json();
-	const results = data.results ?? [];
-	return (
-		results
-			.map(
-				(r: { alternatives?: { transcript?: string }[] }) =>
-					r.alternatives?.[0]?.transcript ?? "",
-			)
-			.join(" ")
-			.trim() || null
-	);
-}
-
-// ── Naia Cloud STT (via any-llm gateway → Google Cloud STT) ──
-
-async function transcribeNextain(
-	pcmBase64: string,
-	naiaKey: string,
-	language: string,
-): Promise<string | null> {
-	// Convert PCM base64 to WAV blob for gateway upload
-	const pcmBytes = Uint8Array.from(atob(pcmBase64), (c) => c.charCodeAt(0));
-	const wavBlob = pcmToWavBlob(pcmBytes, TARGET_SAMPLE_RATE);
-
-	const formData = new FormData();
-	formData.append("file", wavBlob, "audio.wav");
-	formData.append("language", language);
-
-	const gatewayUrl = LAB_GATEWAY_URL;
-	const response = await fetch(`${gatewayUrl}/v1/audio/transcriptions`, {
-		method: "POST",
-		headers: { "X-AnyLLM-Key": `Bearer ${naiaKey}` },
-		body: formData,
-	});
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`Naia Cloud STT HTTP ${response.status}: ${text}`);
-	}
-
-	const data = await response.json();
-	return data.text?.trim() || null;
-}
-
-// ── ElevenLabs Speech-to-Text ──
-
-async function transcribeElevenLabs(
-	pcmBase64: string,
-	apiKey: string,
-	language: string,
-): Promise<string | null> {
-	// Convert PCM base64 to WAV blob for ElevenLabs upload
-	const pcmBytes = Uint8Array.from(atob(pcmBase64), (c) => c.charCodeAt(0));
-	const wavBlob = pcmToWavBlob(pcmBytes, TARGET_SAMPLE_RATE);
-
-	const formData = new FormData();
-	formData.append("file", wavBlob, "audio.wav");
-	formData.append("model_id", "scribe_v1");
-	formData.append("language_code", language.split("-")[0]);
-
-	const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
-		method: "POST",
-		headers: { "xi-api-key": apiKey },
-		body: formData,
-	});
-
-	if (!response.ok) {
-		const text = await response.text();
-		throw new Error(`ElevenLabs STT HTTP ${response.status}: ${text}`);
-	}
-
-	const data = await response.json();
-	return data.text?.trim() || null;
 }
 
 // ── Local vLLM STT (OpenAI-compatible /v1/audio/transcriptions) ──

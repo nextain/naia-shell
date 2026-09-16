@@ -272,8 +272,6 @@ export default {
 	"settings.sttGoogle": "Google STT (जल्द)",
 	"settings.sttElevenlabs": "ElevenLabs (जल्द)",
 	"settings.sttLanguageUnsupported": "वर्तमान भाषा के लिए STT मॉडल उपलब्ध नहीं है",
-	"settings.googleApiKey": "Google API कुंजी (टीटीएस के लिए)",
-	"settings.googleApiKeyGeminiFallback": "चैट कुंजी का उपयोग करने के लिए इसे खाली छोड़ दें",
 	"settings.personaSection": "व्यक्तित्व",
 	"settings.personaDisabled": "पर्सोना का उपयोग न करें",
 	"settings.personaDisabledHint": "यदि व्यक्तित्व पहले से मॉडल में है तो चालू करें। नाम, संबोधन, शैली और पर्सोना टेक्स्ट नहीं भेजे जाएंगे।",

@@ -199,11 +199,7 @@ export async function copyBundledAssets(adkPath: string): Promise<void> {
 const SECRET_CONFIG_KEYS = new Set([
 	"apiKey",
 	"naiaKey",
-	"googleApiKey",
-	"openaiTtsApiKey",
-	"elevenlabsApiKey",
 	"gatewayToken",
-	"openaiRealtimeApiKey",
 	"memoryEmbeddingApiKey",
 	"memoryLlmApiKey",
 	"subLlmApiKey",
@@ -230,12 +226,9 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	// STT/TTS UI features
 	"sttProvider",
 	"sttModel",
-	"naiaCloudSttBackend",
 	"ttsEnabled",
 	"ttsVoice",
 	"ttsProvider",
-	"naiaCloudTtsBackend",
-	"ttsEngine",
 	"ttsOutputDeviceId",
 	"sttInputDeviceId",
 	"vllmSttHost",
@@ -245,7 +238,6 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"liveProvider",
 	"liveVoice",
 	"liveModel",
-	"openaiRealtimeVoice",
 	"voice",
 	"voiceConversation",
 	// App layout
