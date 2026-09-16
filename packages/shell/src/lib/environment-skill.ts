@@ -1,15 +1,10 @@
 /**
- * #502 실배선 — skill_environment 앱(환경) 도구 (FR-ENV-LIVE.3~5).
+ * #502 environment observation helpers (FR-ENV-LIVE / FR-ENV-ATTENTION).
  *
- * 배선 = BGM 과 같은 앱 도구 경로(E1 — naia-agent 무변경):
- *   부팅 시 App.tsx 가 sendAppSkills(ENVIRONMENT_APP_ID, [SKILL_ENVIRONMENT]) 등록
- *   → agent 가 LLM 에 노출 → app_tool_call
- *   → ChatArea dispatchAppToolCall 의 환경 분기가 executeEnvironmentSkill 실행
- *   → EnvironmentSession 이 판정 → herdr_* Tauri 명령 → Rust → Herdr 소켓.
- *
- * 뇌가 보는 것은 불투명 손잡이와 네 가지 활동 상태뿐이다. pane_id 는 여기서 멈춘다.
- * 손잡이는 세션이 사는 동안 표면에 고정된다 — 목록을 본 뒤 명령을 넣기까지 사이에
- * 터미널이 닫혀도 손잡이가 다른 표면으로 옮겨 가지 않는다 (FR-ENV-STICKY.1~3).
+ * #611 removed skill_environment from the model-facing registry. This module
+ * still owns EnvironmentSession observation used by `always` awareness
+ * segments and settings, but App/ChatArea clear the app-skill registration
+ * instead of advertising SKILL_ENVIRONMENT to the model.
  */
 
 import { invoke } from "@tauri-apps/api/core";

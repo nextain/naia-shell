@@ -313,7 +313,6 @@ export default {
 	"settings.liveVoice": "Giọng nói trực tiếp",
 	"tool.execute_command": "Thực thi lệnh",
 	"tool.read_file": "Đọc tệp",
-	"tool.write_file": "Viết tập tin",
 	"tool.search_files": "Tìm kiếm tập tin",
 	"tool.web_search": "Tìm kiếm trên web",
 	"tool.apply_diff": "Áp dụng khác biệt",

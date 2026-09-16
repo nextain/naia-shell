@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "slides_581": {
     "status": "implemented",
-    "last_updated": "2026-09-09T15:54:59.276Z",
+    "last_updated": "2026-09-16T23:28:46+09:00",
     "P01": "docs/user-scenarios.md UC-SLIDES-HOST/PPTX/IMPORT-LIFETIME/EDIT",
     "P02": "docs/user-scenarios.md Slides follow-up test mapping",
     "P03": "docs/requirements.md FR-SLIDES-HOST/PPTX/EDIT",
@@ -12,34 +12,27 @@
     "evidence": "docs/user-scenarios.md#slides-quality-checks-581"
   },
   "description": "프로세스 현황 SoT. 세션 시작/종료 시 반드시 업데이트. 구조명세·이슈·리소스를 유기적으로 링크.",
-
   "refs": {
     "project_structure": "docs/project-structure.md",
     "agents_rules": ".agents/context/agents-rules.json",
     "issue_docs_dir": "docs/progress/",
     "scripts_registry": "scripts/README.md"
   },
-
   "current_work": {
-    "slides_narration_streaming_tts": {
-      "issue": null,
-      "title": "슬라이드 낭독 스트리밍 TTS — 문장 분할 + audio/pcm 청크 재생 (이슈 번호 없음)",
-      "scope": "페이지 전체 텍스트를 한 요청으로 합성하고 WAV 한 벌을 다 받은 뒤에 재생하던 계약을, 문장 단위 분할 + `response_format:\"pcm16\", stream:true` 스트리밍 + 첫 청크 재생으로 바꾼다. 스트리밍을 모르는 호스트는 WAV 한 벌로 폴백.",
-      "scenario": "docs/user-scenarios.md S-SLIDES-NARRATION-LATENCY (UC9 앱)",
-      "requirements": "docs/requirements.md FR-VOICE.20",
-      "coverage": ".agents/context/feature-test-coverage.yaml naia-shell:feature:req-003-slides-narration-streaming",
-      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
-      "status": "in_progress",
-      "p03_note": "구현(packages/shell src 5파일)이 UC·FR 보다 먼저 쓰였다 — P03 위반이며 문서로 뒤늦게 닫았다. 사실대로 남긴다.",
-      "scope_2026_09_11_later": "실기 중 소스 3곳이 더 붙었다 — local-voice-scheduler.onFirstChunk(첫 PCM 청크로 워밍업 홀드 해제), sentence-pipeline 의 첫 청크 통지, 그리고 WebKitGTK 미디어 파이프라인 교착 회피(실사용 경로 prebaked-renderer 는 클립당 <video> 풀, layered player 는 back 재사용). 전부 테스트와 FR-VOICE.20 ⑤ 로 덮었다.",
-      "p04_note": "결정론 단위 완료. 신규 테스트 27건(synthesize 4 · audio-queue 8 · sentence-pipeline 6 · local-voice-scheduler 4 · prebaked-renderer 3 · nva-layered-player 4(파일 신설) · ChatArea 1) 중 23건이 pristine HEAD 트리에서 RED, 변경본에서 GREEN 이다(나머지 4건은 폴백·가드 계약이라 HEAD 에서도 성립). 소스 변이 3건(back-to-back 스케줄 제거 · 홀수 바이트 carry 제거 · streamPcm 고정 false)으로 해당 테스트가 각각 붉어지는 것도 확인했다. 회귀 1건 수정(런타임 소스 1줄): 스트리밍 도입이 `resp.headers.get` 을 무조건 읽어 기존 synthesize 테스트 12건을 깨뜨렸다 → streamPcm 요청일 때만 헤더를 읽는다. 계약 테스트 1건 갱신: media-runtime-routing.contract.test.ts 가 ChatArea 소스에서 `sendSentenceToTts(detail.text.trim())` 문자열을 요구해 문장 분할로 깨졌다 → `splitSlideNarration(detail.text.trim())` + `sendSentenceToTts(piece)` 로 계약을 갱신했다. Playwright e2e/467-slide-presenter.spec.ts = 3 passed/1 skipped(exit 0) — 단 이미 떠 있는 개발 서버를 재사용했다(PLAYWRIGHT_REUSE_EXISTING_SERVER=1). 미실행: e2e-tauri, 실기 청감(첫 소리 ≤1s · 문장 간 끊김 · 정지 즉시 멈춤 · 낭독 중 웹뷰 정지 재발 여부)은 QA 회차(QC-206~210) 몫.",
-      "known_pre_existing_red": "ChatArea.test.tsx 29건은 이 슬라이스 이전부터 RED 다(HEAD 트리 재현). loadConfigWithSecrets 가 선택 ADK 가 없으면 apiKey 를 비워 handleSend 가 'No API key configured' 로 끝난다.",
-      "qa": {
-        "fragment": ".agents/progress/slides-narration-streaming-20260911/qa-slides-narration-streaming-cases-20260911.json (4건 — 첫 소리 ≤1s · 문장 간 이어짐 · 정지 즉시 · WAV 전용 호스트 폴백, 전부 NOT_RUN)",
-        "catalog": ".agents/progress/slides-narration-streaming-20260911/catalog (기존 11개 조각 + 이 조각 = 209건 컴파일, 내 4건 진단 0). QC-206~209 부여는 이 디렉터리의 **로컬 사본**에서만 일어났고 선택 ADK 사이드카(/var/home/luke/alpha-adk/qa/qc-numbers.json, sha 71c4caba…)는 손대지 않았다 — #582 의 'QC-206+ 는 Linux 2회차 종료 후' 보류와 충돌하지 않게.",
-        "not_ready": "catalogStatus=INCOMPLETE — 남은 error 1건은 이 슬라이스 밖(APP-ENV-005 → 존재하지 않는 FR-ENV-TOOL.2). scope-review 는 205건 카탈로그에 해시로 묶여 있어 새로 받지 않았다(그래서 v1 manifest 미생성 = 회차 초기화 불가). 실기 실행은 별도 세션."
+    "issue_611_remove_direct_work_tools": {
+      "issue": 611,
+      "title": "Remove direct work tools from the model-facing registry",
+      "requirements": "docs/requirements.md FR-TOOLS-SURFACE.1~3",
+      "scenario": "docs/user-scenarios.md UC-TOOLS-SURFACE-611",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
       },
-      "last_updated": "2026-09-11T23:20:00+09:00"
+      "status": "completed",
+      "last_updated": "2026-09-16T23:55:00+09:00"
     },
     "slides_narration_streaming_tts": {
       "issue": null,
@@ -48,7 +41,13 @@
       "scenario": "docs/user-scenarios.md S-SLIDES-NARRATION-LATENCY (UC9 앱)",
       "requirements": "docs/requirements.md FR-VOICE.20",
       "coverage": ".agents/context/feature-test-coverage.yaml naia-shell:feature:req-003-slides-narration-streaming",
-      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
       "status": "in_progress",
       "p03_note": "구현(packages/shell src 5파일)이 UC·FR 보다 먼저 쓰였다 — P03 위반이며 문서로 뒤늦게 닫았다. 사실대로 남긴다.",
       "scope_2026_09_11_later": "실기 중 소스 3곳이 더 붙었다 — local-voice-scheduler.onFirstChunk(첫 PCM 청크로 워밍업 홀드 해제), sentence-pipeline 의 첫 청크 통지, 그리고 WebKitGTK 미디어 파이프라인 교착 회피(실사용 경로 prebaked-renderer 는 클립당 <video> 풀, layered player 는 back 재사용). 전부 테스트와 FR-VOICE.20 ⑤ 로 덮었다.",
@@ -67,7 +66,13 @@
       "contract": "docs/progress/issue-585-azure-voice.md",
       "branch": "issue/585-azure-voice",
       "gateway_issue": "naia-anyllm#74",
-      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" },
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
       "status": "in_progress",
       "last_updated": "2026-09-10T15:00:00+09:00"
     },
@@ -77,7 +82,13 @@
       "title": "에이전트 브라우저 호스트 — ego-lite 공개 런타임 벤더링 + 세 OS 감독자 + #499 실제 어댑터",
       "contract": "docs/progress/issue-582-ego-browser-host.md",
       "branch": "feat/582-ego-browser-host",
-      "gates": { "P01": "done", "P02": "done", "P03": "done", "P04": "done (linux 실기; win32·darwin 게이트 열림)", "P05": "done" },
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done (linux 실기; win32·darwin 게이트 열림)",
+        "P05": "done"
+      },
       "status": "ready_to_merge",
       "open_followups": [
         "FR-ENV-TOOL.14b 승인 UI·script 경계",
@@ -175,7 +186,7 @@
       "status": "in_progress",
       "last_updated": "2026-08-26T00:00:00+09:00"
     },
-		"v022_thinking_separation_479": {
+    "v022_thinking_separation_479": {
       "issue": "https://github.com/nextain/naia-shell/issues/479",
       "scope": "thinking을 최종 응답과 분리하고 모든 청크 경계에서 TTS 유입을 차단",
       "requirements": "docs/requirements.md FR-CHAT-THINKING.1~2",
@@ -187,15 +198,15 @@
       "p04_integration_test": "pending",
       "p05_complete": "pending",
       "last_updated": "2026-08-23T00:00:00+09:00"
-		},
-		"v022_tts_text_normalization_480": {
-			"issue": 480,
-			"P01_user_scenario": "done",
-			"P02_test_coverage_map": "done",
-			"P03_requirements": "done",
-			"P04_implementation_tests": "pending",
-			"P05_done_handoff": "pending"
-		},
+    },
+    "v022_tts_text_normalization_480": {
+      "issue": 480,
+      "P01_user_scenario": "done",
+      "P02_test_coverage_map": "done",
+      "P03_requirements": "done",
+      "P04_implementation_tests": "pending",
+      "P05_done_handoff": "pending"
+    },
     "voice_warmup_underrun_gate_519": {
       "issue": "https://github.com/nextain/naia-shell/issues/519",
       "milestone": "v0.2.3",
@@ -421,51 +432,135 @@
     },
     "note": "2026-07-15 S-VOICE-AVATAR(FR-VOICE.5, 부스 토폴로지 립싱크 배선): 두뇌=로컬 ollama DNA + 음성=원격 omni(vllmTtsHost→/v1/audio/speech, 음색 서버해석 voice=naia-default) + 아바타=로컬 Ditto TRT(8g avatar-only) 에서 셸 합성 WAV 를 cascade /stream 립싱크로 직결. streamsAvatarPcm() 순수함수(synthesize.ts) — nextain·naia-local-voice=true. 구 'naia-local-voice 추가금지' 주석(ChatArea:1466)은 raw /tts 전제라 개정(표면 전환으로 사유 소멸, avatar-only 파사드는 /stream_text 무음). synthesize.test.ts 구 /tts 계약 4건→신 표면 계약 5건+게이트 3건 갱신. FR-VOICE.4(Rust CORS 프록시)=stale 표기(omni ACAO:* 실측, 프록시 코드 제거됨). 검증 tsc0·셸 vitest 1150 GREEN(107파일). ⚠️ 블로커(외부): omni :8892 /v1/audio/speech 가 HTTP 500(핸들러 크래시, 전 파라미터 변형 재현) — 런타임 레인에 채널 보고(alpha-adk .agents/progress/xsession-demo-2026-07-16-channel.md). realtime WS 경로는 정상(ref_audio_url e2e 225KB). | 2026-07-10 검증·경화(8G 아바타 근본수정 확인): opencode GLM 5.2 이식분 리뷰+실측. 근본진단 확인 = 아바타 스폰은 gpu.tier(EXCLUSIVE_8G_TIERS)+localFocus 구동(wm manifest.py: avatar=provider 무형, 슬롯 아님) → 요지=buildSlotsManifest 가 localGpuTier auto 를 **해석된 tier id**(resolveActiveTier→normalizeTierId)로 기록해야 wm 이 avatar_ditto_trt 를 띄움(미해소 시 캐릭터 미표시). adk-store.writeSlotsManifest = vram 미전달 시 detectGpuVramGb 자동감지. dev-setup+Rust(lib.rs/linux/macos/windows) = cascade 8910 고아(uvicorn 손자) 정리 kill_stale_cascade(EADDRINUSE 방지, R2.2b). GLM 잔여 TSC break(계약테스트 레거시 tier id 캐스트) 수정. vite.config test.exclude 에 src-tauri/** 추가(스테이징 agent 620 테스트 스코프 오염 제거). 검증 tsc0·셸 vitest 101파일/1096 GREEN·cargo check0·Playwright 전 스펙 격리(--workers=1) GREEN(workspace-panel 17/17·capability+slots 17/17; full 병렬 40실패=8G 부하 flakiness, 회귀 아님). | 2026-06-30 Round2(로컬 cascade 임베딩, 멀티레포): FR-CASCADE.1~4. R2.1=windows-manager loader launch 슈퍼바이저+plan --json(wm 1756f4b, pytest 31). R2.2=naia-os: slots-manifest write(Rust write_slots_manifest+adk-store writeSlotsManifest)+Rust start/stop/cascade_status+spawn_cascade(CASCADE_READY 핸드셰이크)+CascadeProcess(Drop/WindowEvent/PID)+설정 토글 UI+i18n6. cargo0·tsc0·SettingsTab+slots66. 원격금지 로컬 사이드카. 8GB 음성단독 6.9G 적합(RTF=R2.3 DEFER). 트랙=alpha-adk .agents/progress/naia-os-local-cascade-embedding-round2-2026-06-30.md. | 2026-06-30 Round1: 프로파일 UX 일관화 + VRAM 슬롯 추천 폐루프 + 로컬 음성 정직화. FR-VRAM.4(tier→슬롯 로컬 추천 배지, 숨김 아님)·FR-PROF.1(프로파일 탭 토큰 일관화)·FR-VOICE.1~3(naia-local-voice→vllmTtsHost 라우팅·silent free 폴백 제거→명확 미가용 알림·voice picker 채움). 신규 lib/capabilities/tier-slots.ts(+test 6/6). 적대리뷰 2벤더 PASS(blocker 0)+수정(채팅모드 알림 재무장·engine-capability-summary 토큰화·공개레포 내부명칭 중립화). 검증 tsc0·셸 vitest 1008 GREEN·영향테스트 72/73. 트랙=alpha-adk .agents/progress/naia-os-profile-design-gpu-voice-flow-2026-06-30.md. Round2(로컬 cascade lifecycle 임베딩+wm #1 M5)=DEFER. | F0~F3 계약+스캐폴드(async, src/main). 계약+통합 테스트 67/67. | 2026-06-29 세션2+3: S-SLOT FR-SLOT.4 설정 탭 9개 재구성 완료 (#1~#13 전체 구현). profile/brain/voice/avatar/persona/memory/knowledge/skills/general. tsc 클린, test 35/35, cargo check 통과. 커밋 미수행(8개 파일). 트랙=alpha-adk .agents/progress/naia-os-settings-tab-restructure-2026-06-29.md §7. | 2026-06-30: K2 지식 근거→원문 칩(kb-compiler 통합 셸측). ToolActivity 지식 도구(skill_knowledge_ask/search) 분기 → KnowledgeToolResult(답변+sourceUris 칩); 칩클릭 근거→원문(URL=브라우저 navigate / 파일=워크스페이스 openFile, 기존 패널 api 재사용). 게이트 FR-KB-OS.1~3 + 셸 feature 시나리오. 검증: knowledge-result.test.ts(파싱)·knowledge-tool-result.test.tsx(RTL 렌더+dispatch)·e2e/chat-tools.spec.ts 지식도구 K2(Playwright 실 UI 답변+칩+칩클릭→브라우저 패널). 셸 vitest 977 GREEN·tsc0·구조게이트(enforce-root·file-anchors·assembly) PASS. 백엔드=naia-agent UC-KNOWLEDGE(live). 트랙=alpha-adk .agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md(K2). | 2026-06-30: K3 지식 그래프 2D/3D 뷰어. ToolActivity skill_knowledge_graph 분기 → KnowledgeGraphView(캔버스 force, 군집색·degree 크기, 2D↔3D 토글·원근+자동회전, 의존성0 엔진 examples/cms 포팅). 데이터=kb-compiler toGraphData(2ecb342)+naia-agent skill_knowledge_graph(b7e3b8c). 게이트 FR-KB-OS.4. 검증: knowledge-result.test.ts parseKnowledgeGraph + e2e/chat-tools.spec.ts 지식그래프 K3(Playwright 실 UI: 캔버스 렌더+노드3+2D/3D 토글 통과). tsc0."
   },
-
   "sdlc_gates": {
     "_note": "각 게이트의 최상위 status/deliverable/ref = 기본 트랙(current_work.issue = naia-shell-transplant, F0~F3) 소유. 병행 트랙은 같은 게이트의 tracks 에만 기재한다(한 사실 두 곳 금지 — 기본 트랙 상태를 tracks 에 복사하지 않는다).",
-    "P01": { "status": "done", "name": "user_scenarios", "deliverable": "docs/user-scenarios.md (UC1-14, S01~S71)", "ref": "완전성 13R 3연속 NONE",
-	"tracks": {
-		"v022_chat_rich_markdown_483": {
-			"issue": 483,
-			"status": "implementation_validating",
-			"phases": { "P01": "done", "P02": "done", "P03": "done", "P04": "in_progress", "P05": "pending" }
-		},
-        "installer_crossplatform_377": { "status": "done", "deliverable": "docs/user-scenarios.md — 셸 feature 시나리오 표의 S-INSTALL 행 (#377, 2026-07-17)", "ref": "DONE 2026-07-17 — 적대 리뷰 R1~R8 (8라운드, 실측 근거 결함 전부 반영). P0 종료 조건이 '리뷰 2연속 클린' 에서 **'구현이 검증'** 으로 조정됨(루크 승인 2026-07-17, AI 임의 변경 아님): R5~R8 이 각각 직전 라운드의 개정에서 MAJOR 를 찾는 진자운동에 들어갔고 잔여 결함 계열(로그 정규식·줄 개수·glob 형태)은 P1 구현 + vitest golden + 실제 CI 가 더 싸고 확실하게 잡는다는 판단. 상세 = current_work.installer_crossplatform_377" },
-        "v020_signed_updater_recovery": { "status": "done", "deliverable": "docs/user-scenarios.md UC-V020-*", "ref": "Signed update, legacy feed, and failure-honesty journeys" },
-        "slide_presenter_467": { "status": "done", "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-*", "ref": "PDF open, deterministic control, Shell-owned speech, Q&A context, and accessible states" }
+    "P01": {
+      "status": "done",
+      "name": "user_scenarios",
+      "deliverable": "docs/user-scenarios.md (UC1-14, S01~S71)",
+      "ref": "완전성 13R 3연속 NONE",
+      "tracks": {
+        "v022_chat_rich_markdown_483": {
+          "issue": 483,
+          "status": "implementation_validating",
+          "phases": {
+            "P01": "done",
+            "P02": "done",
+            "P03": "done",
+            "P04": "in_progress",
+            "P05": "pending"
+          }
+        },
+        "installer_crossplatform_377": {
+          "status": "done",
+          "deliverable": "docs/user-scenarios.md — 셸 feature 시나리오 표의 S-INSTALL 행 (#377, 2026-07-17)",
+          "ref": "DONE 2026-07-17 — 적대 리뷰 R1~R8 (8라운드, 실측 근거 결함 전부 반영). P0 종료 조건이 '리뷰 2연속 클린' 에서 **'구현이 검증'** 으로 조정됨(루크 승인 2026-07-17, AI 임의 변경 아님): R5~R8 이 각각 직전 라운드의 개정에서 MAJOR 를 찾는 진자운동에 들어갔고 잔여 결함 계열(로그 정규식·줄 개수·glob 형태)은 P1 구현 + vitest golden + 실제 CI 가 더 싸고 확실하게 잡는다는 판단. 상세 = current_work.installer_crossplatform_377"
+        },
+        "v020_signed_updater_recovery": {
+          "status": "done",
+          "deliverable": "docs/user-scenarios.md UC-V020-*",
+          "ref": "Signed update, legacy feed, and failure-honesty journeys"
+        },
+        "slide_presenter_467": {
+          "status": "done",
+          "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-*",
+          "ref": "PDF open, deterministic control, Shell-owned speech, Q&A context, and accessible states"
+        }
       }
     },
-    "P02": { "status": "done", "name": "test_scenarios", "deliverable": "docs/user-scenarios.md Test Coverage Map + src/test/*.contract.test.ts (계약 67/67)", "ref": "13R",
+    "P02": {
+      "status": "done",
+      "name": "test_scenarios",
+      "deliverable": "docs/user-scenarios.md Test Coverage Map + src/test/*.contract.test.ts (계약 67/67)",
+      "ref": "13R",
       "tracks": {
-        "installer_crossplatform_377": { "status": "done", "deliverable": "docs/user-scenarios.md — S-INSTALL 행의 검증 열 (scripts/__tests__/platform-matrix.test.ts 단위 + check-build-contract 계약 + Windows 설치 실측(2조건: 핸드셰이크 AND node 줄 최소 2줄 AND 전부 $INSTDIR 하위) + ubuntu deb 설치·xvfb 기동 스모크(마커 AND node 줄 최소 2줄 AND 전부 resource_dir 하위 + mutation probe) — 양쪽 모두 판정 범위 = 마지막 '=== Session started ===' 포함 줄 이후(naia.log 누적), 술어 = 앵커 아닌 포함 매칭(파일 줄 = '[unix_secs] [Naia] ...') + 산출물 검증 스크립트/부정 케이스)", "ref": "DONE 2026-07-17 — P01 과 동일(게이트 기준 조정, 루크 승인)" },
-        "v020_signed_updater_recovery": { "status": "done", "deliverable": "docs/user-scenarios.md UC-V020-* P02 matrix", "ref": "No-update/update/error/signature/feed/hash states mapped" },
-        "slide_presenter_467": { "status": "done", "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-* coverage matrix", "ref": "Vitest state/parser, component/tool contract, Playwright desktop/narrow and TTS fixture mapped" }
+        "installer_crossplatform_377": {
+          "status": "done",
+          "deliverable": "docs/user-scenarios.md — S-INSTALL 행의 검증 열 (scripts/__tests__/platform-matrix.test.ts 단위 + check-build-contract 계약 + Windows 설치 실측(2조건: 핸드셰이크 AND node 줄 최소 2줄 AND 전부 $INSTDIR 하위) + ubuntu deb 설치·xvfb 기동 스모크(마커 AND node 줄 최소 2줄 AND 전부 resource_dir 하위 + mutation probe) — 양쪽 모두 판정 범위 = 마지막 '=== Session started ===' 포함 줄 이후(naia.log 누적), 술어 = 앵커 아닌 포함 매칭(파일 줄 = '[unix_secs] [Naia] ...') + 산출물 검증 스크립트/부정 케이스)",
+          "ref": "DONE 2026-07-17 — P01 과 동일(게이트 기준 조정, 루크 승인)"
+        },
+        "v020_signed_updater_recovery": {
+          "status": "done",
+          "deliverable": "docs/user-scenarios.md UC-V020-* P02 matrix",
+          "ref": "No-update/update/error/signature/feed/hash states mapped"
+        },
+        "slide_presenter_467": {
+          "status": "done",
+          "deliverable": "docs/user-scenarios.md UC-SLIDE-PRESENTER-* coverage matrix",
+          "ref": "Vitest state/parser, component/tool contract, Playwright desktop/narrow and TTS fixture mapped"
+        }
       }
     },
-    "P03": { "status": "done", "name": "requirements", "deliverable": "docs/requirements.md (FR-F0~F3, NFR)", "ref": "8R",
+    "P03": {
+      "status": "done",
+      "name": "requirements",
+      "deliverable": "docs/requirements.md (FR-F0~F3, NFR)",
+      "ref": "8R",
       "tracks": {
-        "installer_crossplatform_377": { "status": "done", "deliverable": "docs/requirements.md — FR-INSTALL.1~6 + NFR-noWSL(불변)·NFR-honesty", "ref": "DONE 2026-07-17 — P01 과 동일(게이트 기준 조정, 루크 승인). R4 개정 반영: agent 리소스 4종 = 매트릭스 3 OS 공통 그룹→생성 conf 소유(base 금지 — tauri-build copy_resources 가 dev/cargo check 포함 무조건 실행)" },
-        "v020_signed_updater_recovery": { "status": "done", "deliverable": "docs/requirements.md FR-UPDATE.1~6", "ref": "Version, signing, manifest target, dual feed, honest errors, release completion" },
-        "slide_presenter_467": { "status": "done", "deliverable": "docs/requirements.md FR-SLIDE.1~5, NFR-SLIDE.1", "ref": "PDF-first renderer, shared state machine, TTS ownership, Q&A context, and accessibility" }
+        "installer_crossplatform_377": {
+          "status": "done",
+          "deliverable": "docs/requirements.md — FR-INSTALL.1~6 + NFR-noWSL(불변)·NFR-honesty",
+          "ref": "DONE 2026-07-17 — P01 과 동일(게이트 기준 조정, 루크 승인). R4 개정 반영: agent 리소스 4종 = 매트릭스 3 OS 공통 그룹→생성 conf 소유(base 금지 — tauri-build copy_resources 가 dev/cargo check 포함 무조건 실행)"
+        },
+        "v020_signed_updater_recovery": {
+          "status": "done",
+          "deliverable": "docs/requirements.md FR-UPDATE.1~6",
+          "ref": "Version, signing, manifest target, dual feed, honest errors, release completion"
+        },
+        "slide_presenter_467": {
+          "status": "done",
+          "deliverable": "docs/requirements.md FR-SLIDE.1~5, NFR-SLIDE.1",
+          "ref": "PDF-first renderer, shared state machine, TTS ownership, Q&A context, and accessibility"
+        }
       }
     },
-    "P04": { "status": "in_progress", "name": "integration_test", "deliverable": "src/test/integration-reafference.test.ts (인지흐름 관통+negative+contamination) + scripts/builds/f0-graft-smoke.sh (Old-Baseline drift-gate harness)", "ref": "통합 67/67 통과; 라이브 trace(루크 머신 graft) 대기",
+    "P04": {
+      "status": "in_progress",
+      "name": "integration_test",
+      "deliverable": "src/test/integration-reafference.test.ts (인지흐름 관통+negative+contamination) + scripts/builds/f0-graft-smoke.sh (Old-Baseline drift-gate harness)",
+      "ref": "통합 67/67 통과; 라이브 trace(루크 머신 graft) 대기",
       "tracks": {
-        "installer_crossplatform_377": { "status": "done", "deliverable": "platform-matrix.test.ts + verify-artifacts.mjs + verify-installed-smoke.mjs + build-installers.yml 3 OS", "ref": "DONE 2026-07-19 — PR #379 merge 7ba15dc9. Exact 검증 head de0e9e25, installer CI 29658918546 Windows/Linux/macOS GREEN, Windows NSIS 실제 설치·실행·제거 후 Steam depot 독립 기동, Linux deb 설치·mutation/tamper probe, 적대 리뷰 2회 연속 CLEAN" },
-        "v020_signed_updater_recovery": { "status": "in_progress", "deliverable": "updater/manifest tests + signed GitHub Actions build + dual-feed public probes", "ref": "Windows Actions job 96132439817 SUCCESS; canonical v0.2.0 and legacy compatibility releases public; feeds byte-identical and public EXE probe 200/508667534 bytes. Installed v0.1.9 field install/relaunch remains the final acceptance" },
-        "slide_presenter_467": { "status": "done", "deliverable": "Slides app + state/parser/tool tests + Playwright", "ref": "Vitest 1628 passed; production build passed; Playwright 2 passed including current 21-page IR acceptance" }
+        "installer_crossplatform_377": {
+          "status": "done",
+          "deliverable": "platform-matrix.test.ts + verify-artifacts.mjs + verify-installed-smoke.mjs + build-installers.yml 3 OS",
+          "ref": "DONE 2026-07-19 — PR #379 merge 7ba15dc9. Exact 검증 head de0e9e25, installer CI 29658918546 Windows/Linux/macOS GREEN, Windows NSIS 실제 설치·실행·제거 후 Steam depot 독립 기동, Linux deb 설치·mutation/tamper probe, 적대 리뷰 2회 연속 CLEAN"
+        },
+        "v020_signed_updater_recovery": {
+          "status": "in_progress",
+          "deliverable": "updater/manifest tests + signed GitHub Actions build + dual-feed public probes",
+          "ref": "Windows Actions job 96132439817 SUCCESS; canonical v0.2.0 and legacy compatibility releases public; feeds byte-identical and public EXE probe 200/508667534 bytes. Installed v0.1.9 field install/relaunch remains the final acceptance"
+        },
+        "slide_presenter_467": {
+          "status": "done",
+          "deliverable": "Slides app + state/parser/tool tests + Playwright",
+          "ref": "Vitest 1628 passed; production build passed; Playwright 2 passed including current 21-page IR acceptance"
+        }
       }
     },
-    "P05": { "status": "pending", "name": "requirements_complete", "deliverable": null, "ref": "라이브 trace 등가 확인 + 후속 슬라이스 후",
+    "P05": {
+      "status": "pending",
+      "name": "requirements_complete",
+      "deliverable": null,
+      "ref": "라이브 trace 등가 확인 + 후속 슬라이스 후",
       "tracks": {
-        "installer_crossplatform_377": { "status": "done", "deliverable": "README + platform matrix/manifest + artifact SHA report + GitHub #377 final report", "ref": "DONE 2026-07-19 — FR-INSTALL.1~6, FR-STEAM.1~3, NFR-noWSL 충족. #377 closed; Steamworks 운영 단계는 #314에 이관" },
-        "v020_signed_updater_recovery": { "status": "pending", "deliverable": "Public v0.2.0 release and installed v0.1.9 updater acceptance", "ref": "Do not mark done before field install/relaunch" },
-        "slide_presenter_467": { "status": "done", "deliverable": "Built-in Slides app with PDF renderer, Markdown notes, Shell TTS bridge, Q&A context, responsive controls, and real IR acceptance", "ref": "UI, speech bridge, and current IR PDF acceptance passed 2026-08-20" }
+        "installer_crossplatform_377": {
+          "status": "done",
+          "deliverable": "README + platform matrix/manifest + artifact SHA report + GitHub #377 final report",
+          "ref": "DONE 2026-07-19 — FR-INSTALL.1~6, FR-STEAM.1~3, NFR-noWSL 충족. #377 closed; Steamworks 운영 단계는 #314에 이관"
+        },
+        "v020_signed_updater_recovery": {
+          "status": "pending",
+          "deliverable": "Public v0.2.0 release and installed v0.1.9 updater acceptance",
+          "ref": "Do not mark done before field install/relaunch"
+        },
+        "slide_presenter_467": {
+          "status": "done",
+          "deliverable": "Built-in Slides app with PDF renderer, Markdown notes, Shell TTS bridge, Q&A context, responsive controls, and real IR acceptance",
+          "ref": "UI, speech bridge, and current IR PDF acceptance passed 2026-08-20"
+        }
       }
     }
   },
-
   "active_issue_tracks": {
     "linux_voxcpm2_sidecar_537": {
       "work_id": "LINUX-VOXCPM2-SIDECAR-537",
@@ -514,7 +609,10 @@
     },
     "ci_gates_recovery_2026_08_13": {
       "work_id": "CI-GATES-RECOVERY-2026-08-13",
-      "issues": ["https://github.com/nextain/naia-shell/issues/421", "https://github.com/nextain/naia-shell/issues/410"],
+      "issues": [
+        "https://github.com/nextain/naia-shell/issues/421",
+        "https://github.com/nextain/naia-shell/issues/410"
+      ],
       "status": "done",
       "summary": "2026-08-10부터 전 커밋 레드였던 필수 CI 3종 복구 + 음성 증거 게이트(M5) 원격 배선. 원인·수리: ① hook self-tests = skills-list 드리프트 — 근본은 gen-lists frontmatter 정규식(/^---\\n/)이 Windows(autocrlf) CRLF를 빗나가 플랫폼별 다른 설명을 뽑던 것 → 읽기 시 개행 정규화(fe34a91b). ② file-anchors = discord-setup.ts 미등록 → UC-DISCORD 앵커 등록(6c91b815). ③ oss-readiness = 7/21 리뷰 기록 개인경로 5건 redact(<adk-root>) + Rust 픽스처 C:/Users/tester → C:/naia-test-home(6c91b815). ④ build-installers = 워크플로 naia-agent 핀(9b5f0d72)이 pairing SoT(agent-pairing.json=3eeb11c7)에 뒤처진 드리프트 → 핀 갱신(4f34424e). ⑤ M5 = self-trust-gates에 ci-verify-voice-evidence 배선(e3648e85 Luke + 공백 수정 4f34424e). 4f34424e 런: oss-readiness/build-installers 그린, self-trust는 워크플로 변경 자가보호(charter)로 의도된 1회성 레드.",
       "follow_up": "이중 기록 제거 — build-installers가 agent-pairing.json을 직접 읽어 핀 드리프트 재발 차단(워크플로 수정=charter, Luke 결정)",
@@ -593,16 +691,17 @@
       "p03_requirements": "done",
       "p04_integration_test": "vitest_only",
       "verification": "셸 전체 vitest 1463 GREEN, tsc 0. any-llm pytest tests/gateway/test_naia_azure_models.py tests/unit/test_naia_pricing.py 78 passed(Docker 없어 test_models.py 3건만 미실행, 무관). 이 변경에 대한 전용 Playwright 없음 — 미작성.",
-      "docs": ["docs/requirements.md FR-LLM-DEFAULT.1~3", "docs/user-scenarios.md UC-LLM-DEFAULT-DEEPSEEK-FLASH"],
+      "docs": [
+        "docs/requirements.md FR-LLM-DEFAULT.1~3",
+        "docs/user-scenarios.md UC-LLM-DEFAULT-DEEPSEEK-FLASH"
+      ],
       "last_updated": "2026-08-08T03:00:00+09:00"
     }
   },
-
   "resource_registry": {
     "last_enforce_run": "2026-06-10T00:06:00Z",
     "violations": []
   },
-
   "_usage": {
     "session_start": [
       "1. 이 파일 읽기",

@@ -271,40 +271,40 @@ describe("allowedTools", () => {
 	});
 
 	it("isToolAllowed returns false when no config", () => {
-		expect(isToolAllowed("execute_command")).toBe(false);
+		expect(isToolAllowed("memo_save")).toBe(false);
 	});
 
 	it("isToolAllowed returns false when tool not in list", () => {
 		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
-		expect(isToolAllowed("execute_command")).toBe(false);
+		expect(isToolAllowed("memo_save")).toBe(false);
 	});
 
 	it("addAllowedTool adds and isToolAllowed returns true", () => {
 		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
-		addAllowedTool("execute_command");
-		expect(isToolAllowed("execute_command")).toBe(true);
+		addAllowedTool("memo_save");
+		expect(isToolAllowed("memo_save")).toBe(true);
 	});
 
 	it("addAllowedTool does not duplicate", () => {
 		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
-		addAllowedTool("write_file");
-		addAllowedTool("write_file");
+		addAllowedTool("memo_save");
+		addAllowedTool("memo_save");
 		const config = loadConfig()!;
-		expect(config.allowedTools).toEqual(["write_file"]);
+		expect(config.allowedTools).toEqual(["memo_save"]);
 	});
 
 	it("clearAllowedTools removes all", () => {
 		saveConfig({ provider: "gemini", model: "m", apiKey: "k" });
-		addAllowedTool("write_file");
-		addAllowedTool("execute_command");
+		addAllowedTool("memo_save");
+		addAllowedTool("memo_list");
 		clearAllowedTools();
-		expect(isToolAllowed("write_file")).toBe(false);
-		expect(isToolAllowed("execute_command")).toBe(false);
+		expect(isToolAllowed("memo_save")).toBe(false);
+		expect(isToolAllowed("memo_list")).toBe(false);
 	});
 
 	it("clearAllowedTools works when no config", () => {
 		clearAllowedTools(); // no throw
-		expect(isToolAllowed("write_file")).toBe(false);
+		expect(isToolAllowed("memo_save")).toBe(false);
 	});
 });
 

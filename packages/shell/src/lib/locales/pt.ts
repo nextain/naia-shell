@@ -313,7 +313,6 @@ export default {
 	"settings.liveVoice": "Voz ao vivo",
 	"tool.execute_command": "Executar comando",
 	"tool.read_file": "Ler arquivo",
-	"tool.write_file": "Gravar arquivo",
 	"tool.search_files": "Pesquisar arquivos",
 	"tool.web_search": "Pesquisa na Web",
 	"tool.apply_diff": "Aplicar diferença",

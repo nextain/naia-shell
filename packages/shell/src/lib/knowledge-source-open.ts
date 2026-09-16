@@ -1,5 +1,5 @@
 // knowledge-source-open — 지식 출처 1건 열기(근거→원문). URL=브라우저 navigate / 파일=워크스페이스 openFile.
-// KnowledgeToolResult(칩)·KnowledgeGraphOverlay(노드 출처) 공용(중복 제거). 파일 분기에 **민감경로 가드**
+// KnowledgeGraphOverlay(노드 출처) 공용. 파일 분기에 **민감경로 가드**
 // (탬퍼된/오염 kb.json 의 sourceUris 로 키·인증서·시크릿을 열어버리는 것 차단 — 방어, 일반 .md/.txt 는 통과).
 import { useAppStore } from "../stores/app";
 import { classifySourceUri, toFilePath } from "./knowledge-result";

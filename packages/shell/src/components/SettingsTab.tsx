@@ -54,7 +54,6 @@ import {
 	activateNaiaLlm,
 	configureSpeechProfile,
 	reloadAgentSettings,
-	sendAppSkills,
 	sendAppSkillsClear,
 	sendAuthUpdateStrict,
 	sendCredsUpdate,
@@ -89,10 +88,8 @@ import {
 } from "../lib/db";
 import {
 	ENVIRONMENT_APP_ID,
-	SKILL_ENVIRONMENT,
 	environmentSession,
 	noteEnvironmentClear,
-	noteEnvironmentToolAck,
 } from "../lib/environment-skill";
 import { resetGatewaySession } from "../lib/gateway-sessions";
 import {
@@ -5173,19 +5170,19 @@ export function SettingsTab() {
 										})
 										.catch(() => noteEnvironmentClear(false));
 								} else {
-									sendAppSkills(ENVIRONMENT_APP_ID, [SKILL_ENVIRONMENT], {
-										awaitAck: true,
-									})
+									// #611: keep observation for always/auto, but never advertise
+									// skill_environment to the model.
+									sendAppSkillsClear(ENVIRONMENT_APP_ID, { awaitAck: true })
 										.then((ok) => {
-											noteEnvironmentToolAck(ok);
+											noteEnvironmentClear(ok);
 											if (!ok)
 												Logger.warn(
 													"SettingsTab",
-													"environment skill register not delivered",
+													"environment skill clear not delivered",
 													{},
 												);
 										})
-										.catch(() => noteEnvironmentToolAck(false));
+										.catch(() => noteEnvironmentClear(false));
 								}
 							}}
 						>

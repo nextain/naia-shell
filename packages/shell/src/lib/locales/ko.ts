@@ -313,7 +313,6 @@ export default {
 	"settings.liveVoice": "Live 음성",
 	"tool.execute_command": "명령 실행",
 	"tool.read_file": "파일 읽기",
-	"tool.write_file": "파일 쓰기",
 	"tool.search_files": "파일 검색",
 	"tool.web_search": "웹 검색",
 	"tool.apply_diff": "파일 편집",

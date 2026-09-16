@@ -336,26 +336,13 @@ localStorage `naia-config` 는 파일에서 하이드레이트되는 **순수 �
 
 > NFR: **NFR-voiceprint(불변)** — Naia가 VoxCPM2를 쓸 때 **음성지문(ref voiceprint)은 필수**이며 무지문 합성을 허용하지 않는다. 이 원칙은 Windows 8GB 로컬 VoxCPM2 W8A16 + TensorRT LocDiT에도 적용된다. · NFR-honesty(백엔드·VRAM 강등 위장 금지) · F1(measurement-gated, 측정 없이 실시간·개선 단정 금지) · NFR-no-conversation-cache(대화형 Shell/cascade의 완성 A/V 응답 캐시 금지; 반복 콘텐츠 TalkingKiosk와 분리). ⚠️ in-shell WSL cascade 부트스트랩은 구 gateway-in-WSL 아키텍처의 레거시다.
 
-## 기능 요구사항 (FR) — 지식 근거→원문 칩 + 그래프 뷰어 (kb-compiler 통합 K2·K3, 셸 feature — 2026-06-30)
-
-> 범위: naia-agent 지식 풀 도구(`skill_knowledge_ask`/`search`) tool-result(JSON)를 셸이 **답변 + 출처 칩**으로 렌더하고, 칩 클릭 시 **근거→원문**(URL=브라우저 앱 navigate / 파일=워크스페이스 openFile)으로 연다. 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K2). 백엔드(에이전트↔kb-compiler 배선·계약) = naia-agent UC-KNOWLEDGE(별 레포, live).
->
-> **상태: Done (P04, 2026-06-30)** — 검증: `knowledge-result.test.ts`(파싱·출처분류·**그래프 파싱** 단위)·`knowledge-tool-result.test.tsx`(RTL 렌더+칩 dispatch)·`e2e/chat-tools.spec.ts` "지식 도구(K2)"·"**지식 그래프(K3)**"(Playwright 실 UI — 답변+칩+칩클릭→브라우저 앱 / 그래프 캔버스 렌더+2D/3D 토글). tsc0·셸 컴포넌트(src/main 밖→file-anchor 무대상).
-
-| FR | 요구사항 | UC/시나리오 | 검증(P02) |
-|----|---------|-----------|------|
-| **FR-KB-OS.1** | 지식 도구 tool-result(JSON) 파싱 — `ask`={abstained,answer,sources[{title,sourceUris}]}·`search`={hits[...]}. 형태불일치/비지식도구 = 기본 ToolActivity 렌더 폴백(무회귀) | UC-KNOWLEDGE(agent) | `knowledge-result.test.ts` |
-| **FR-KB-OS.2** | 답변 + 출처 칩 렌더 — `ToolActivity` 가 지식 도구 분기 → `KnowledgeToolResult`(answer + sourceUris 칩). 기권 시 답변만(칩 0). 출처 sourceUris 보존(근거→원문 키) | UC-KNOWLEDGE | `knowledge-tool-result.test.tsx` |
-| **FR-KB-OS.3** | 근거→원문 — 칩 클릭: URL=브라우저 앱 `navigate`+activate / 파일=워크스페이스 `openFile`(file:// 제거)+앱 전환. 기존 app api 재사용(신규 앱 불요) | UC-KNOWLEDGE | `knowledge-tool-result.test.tsx`·`e2e/chat-tools.spec.ts`(지식 도구 K2) |
-| **FR-KB-OS.4** (K3) | 지식 그래프 2D/3D 시각화 — `ToolActivity` 가 `skill_knowledge_graph` tool-result(nodes/edges+deg+군집) 분기 → `KnowledgeGraphView`(캔버스 force, 군집색·degree 크기, **2D↔3D 토글**, 원근+자동회전). 의존성 0(엔진 examples/cms 포팅). 파싱 실패=폴백 | UC-KNOWLEDGE(graph) | `knowledge-result.test.ts`(parseKnowledgeGraph)·`e2e/chat-tools.spec.ts`(지식 그래프 K3 — 캔버스 렌더+2D/3D 토글 실 UI) |
-
-> NFR: NFR-isolation(지식 렌더 분기가 기존 도구 렌더 무회귀 — 파싱 실패 시 폴백)·NFR-reuse(브라우저/워크스페이스 앱 api 재사용·그래프 의존성 0 캔버스). 전용 그래프 앱(on-demand fetch) = post-MVP. 설정 지식 탭(관리 compile/소스) = 아래 K4.
-
 ## 기능 요구사항 (FR) — 지식 소스 관리 설정 탭 (kb-compiler 통합 K4, 셸 — 2026-06-30)
 
-> 범위: 설정>지식 탭이 **"준비 중" placeholder 를 대체**해, 사용자가 **지식 소스(다중 폴더)·스코프**를 관리하고 **컴파일**을 트리거하는 관리면. 설정 정본 = `naia-settings/knowledge.json`(**셸만 쓰기, AI 에이전트 읽기전용** — config-write 도구 없음 = 신뢰경계 자가확장 차단). 컴파일 실행(폴더→kb.json)·답변(읽기)은 **naia-agent**(별 레포 — `CompileKnowledge` RPC·`openWorkspaceKnowledge`). 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K4).
+> 모델-facing 지식 질의·그래프 도구는 #611에서 제거한다. 아래 요구사항은 사람이 설정에서 자료 소스와 스코프를 관리하고, 컴파일된 결과를 설정 화면에서 확인하는 K4 관리 표면만 다룬다.
+
+> 범위: 설정>지식 탭이 **"준비 중" placeholder 를 대체**해, 사용자가 **지식 소스(다중 폴더)·스코프**를 관리하고 **컴파일**을 트리거하는 관리면. 설정 정본 = `naia-settings/knowledge.json`(**셸만 쓰기, AI 에이전트 읽기전용** — config-write 도구 없음 = 신뢰경계 자가확장 차단). 컴파일 결과는 설정 화면의 상태·그래프에서만 소비한다. 통합 설계 SoT = alpha-adk `.agents/progress/naia-kb-compiler-agent-os-integration-2026-06-29.md`(K4).
 >
-> **상태: 진행 중 (P03→P04, 2026-06-30)** — 검증: `knowledge-config.test.ts`(config CRUD·kb 통계 파싱 단위)·`KnowledgeSettingsTab.test.tsx`(RTL 폴더 add/remove·상태 렌더)·`e2e/settings-knowledge.spec.ts`(Playwright 실 UI: 설정 지식 탭 폴더 추가/제거/상태). 컴파일 트리거(FR-KB-OS.8)는 에이전트 `CompileKnowledge` 배선에 의존.
+> **상태: 진행 중 (P03→P04, 2026-06-30)** — 검증: `knowledge-config.test.ts`(config CRUD·kb 통계 파싱 단위)·`KnowledgeSettingsTab.test.tsx`(RTL 폴더 add/remove·상태 렌더)·`e2e/settings-knowledge.spec.ts`(Playwright 실 UI: 설정 지식 탭 폴더 추가/제거/상태).
 
 | FR | 요구사항 | UC/시나리오 | 검증(P02) |
 |----|---------|-----------|------|
@@ -1239,3 +1226,11 @@ Design: general PPTX follows the issue's local PDF conversion path first. The me
 | **FR-ACTIVE-RECALL.1** | 기념일·시간 앵커에 연결된 능동 회상 이벤트를 관찰할 수 있어야 한다. 미배선이나 이벤트 부재를 성공으로 간주하지 않는다. | UC4, S42; docs/user-scenarios.md | 통제된 시간 앵커의 이벤트·중복 확인 |
 | **FR-CRON-JOB.1** | 일회 예약 작업의 생성과 트리거 실행을 연결해 확인할 수 있어야 한다. 생성만 되고 실행되지 않거나 미배선인 경우를 구분한다. | S43; docs/user-scenarios.md | 소유 시험 작업의 ID·예약 시각·실행 이벤트 |
 | **FR-MEMORY-BACKUP-UI.1** | 현행 메모리 Backup UI는 비활성/ComingSoon 상태를 명확히 보여 주고 실제 백업·복원이 완료된 것처럼 표시하지 않는다. 기능이 활성화되었다면 별도 암호화 round-trip 검증 없이 백업 가능으로 판정하지 않는다. | UC3, S52b; docs/user-scenarios.md | disabled·안내·클릭 무효·파일 미생성 |
+
+## 기능 요구사항 (FR) — model-facing 도구 경계 (#611)
+
+| ID | 요구사항 | 출처 시나리오 | 검증(P02) | 상태 |
+|---|---|---|---|---|
+| **FR-TOOLS-SURFACE.1** | Agent와 Shell이 모델에 넘기는 도구 목록은 시간·날씨·메모·워크스페이스 파일 읽기·YouTube BGM·인앱 브라우저의 명시된 keep list와 정확히 일치한다. 기억은 자동 recall/save 경로로 유지하고 별도 모델 도구를 추가하지 않는다. | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts` exact set | Done |
+| **FR-TOOLS-SURFACE.2** | 셸 명령, 파일 쓰기, GitHub, Obsidian, 지식 도구, ADK `SKILL.md` 동적 로더, 알림 및 기타 미허용 작업 도구는 텍스트·음성 모델 목록과 app-skill 등록 경계에 노출되지 않는다. | UC-TOOLS-SURFACE-611 | same contract test; `direct-work-tools-absent.test.ts`; SkillsTab via filtered `fetchAgentSkills` | Done |
+| **FR-TOOLS-SURFACE.3** | 도구 목록 로딩 실패는 빈 성공 목록으로 가장하지 않으며, 목록을 사용하는 UI는 로딩·빈 목록·성공·오류·좁은 폭에서 기존 접근 가능한 상태 표현과 재시도 경계를 유지한다. | UC-TOOLS-SURFACE-611 | `SkillsTab.test.tsx`; `packages/shell/e2e/naia-omni-voice-tools.spec.ts` | Done |

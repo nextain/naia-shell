@@ -134,6 +134,7 @@ vi.mock("../../lib/chat-service", () => ({
 	directToolCall: vi.fn().mockResolvedValue({ success: false }),
 	fetchAgentSkills: vi.fn().mockResolvedValue([]),
 	sendAppSkills: mockSendAppSkills,
+	sendAppSkillsClear: vi.fn().mockResolvedValue(true),
 	sendApprovalResponse: vi.fn().mockResolvedValue(undefined),
 	sendAppToolResult: vi.fn().mockResolvedValue(undefined),
 	configureSpeechProfile: vi.fn().mockResolvedValue(undefined),

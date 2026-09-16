@@ -106,13 +106,7 @@ vi.mock("@tauri-apps/plugin-store", () => ({
 // boundary focused on startup state rather than constructing its live session.
 vi.mock("../lib/environment-skill", () => ({
 	ENVIRONMENT_APP_ID: "environment",
-	SKILL_ENVIRONMENT: {
-		name: "skill_environment",
-		description: "test environment skill",
-		parameters: { type: "object", properties: {} },
-		tier: 1,
-	},
-	noteEnvironmentToolAck: vi.fn(),
+	noteEnvironmentClear: vi.fn(),
 	refreshEnvironment: vi.fn().mockResolvedValue(null),
 }));
 
@@ -253,7 +247,7 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 }));
 import { App } from "../App";
 import { readNaiaConfig, writeNaiaConfig } from "../lib/adk-store";
-import { sendAppSkills } from "../lib/chat-service";
+import { sendAppSkills, sendAppSkillsClear } from "../lib/chat-service";
 import { refreshEnvironment } from "../lib/environment-skill";
 import { useAppStore } from "../stores/app";
 import { useAvatarStore } from "../stores/avatar";
@@ -319,13 +313,14 @@ describe("App discord deep-link persistence", () => {
 		avatarConfigState.calls = 0;
 		vi.mocked(refreshEnvironment).mockClear();
 		vi.mocked(sendAppSkills).mockClear();
+		vi.mocked(sendAppSkillsClear).mockClear();
 		vi.mocked(readNaiaConfig).mockClear();
 		vi.mocked(writeNaiaConfig).mockClear();
 		vi.unstubAllEnvs();
 		useAppStore.setState(useAppStore.getInitialState());
 	});
 
-	it("does not register environment before a disabled cold ADK finishes hydrating", async () => {
+	it("does not refresh environment before a disabled cold ADK finishes hydrating", async () => {
 		localStorage.setItem("naia-adk-path", "/adk/environment-off");
 		backgroundState.configReadDeferred = true;
 		adkState.config = {
@@ -339,11 +334,6 @@ describe("App discord deep-link persistence", () => {
 
 		expect(backgroundState.releaseConfigRead).toEqual(expect.any(Function));
 		expect(refreshEnvironment).not.toHaveBeenCalled();
-		expect(sendAppSkills).not.toHaveBeenCalledWith(
-			"environment",
-			expect.anything(),
-			expect.anything(),
-		);
 
 		backgroundState.releaseConfigRead?.();
 		await waitFor(() => {
@@ -359,7 +349,7 @@ describe("App discord deep-link persistence", () => {
 		);
 	});
 
-	it("registers environment after a cold ADK enables awareness", async () => {
+	it("clears model-facing environment skill and refreshes after cold ADK enables awareness", async () => {
 		localStorage.setItem("naia-adk-path", "/adk/environment-on");
 		backgroundState.configReadDeferred = true;
 		adkState.config = {
@@ -377,10 +367,14 @@ describe("App discord deep-link persistence", () => {
 
 		await waitFor(() => {
 			expect(refreshEnvironment).toHaveBeenCalledTimes(1);
-			expect(sendAppSkills).toHaveBeenCalledWith(
+			expect(sendAppSkillsClear).toHaveBeenCalledWith(
 				"environment",
-				expect.any(Array),
 				expect.objectContaining({ awaitAck: true }),
+			);
+			expect(sendAppSkills).not.toHaveBeenCalledWith(
+				"environment",
+				expect.anything(),
+				expect.anything(),
 			);
 		});
 	});
