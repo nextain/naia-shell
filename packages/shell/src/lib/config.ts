@@ -210,9 +210,6 @@ export interface AppConfig {
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	chatRouting?: "gateway" | "direct" | "auto";
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
 	allowedTools?: string[];
 	userName?: string;
 	agentName?: string;
@@ -228,7 +225,6 @@ export interface AppConfig {
 	naiaLocalUrl?: string;
 	disabledSkills?: string[];
 	slackWebhookUrl?: string;
-	discordWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
 	openaiTtsApiKey?: string;
 	elevenlabsApiKey?: string;
@@ -237,7 +233,6 @@ export interface AppConfig {
 	appPosition?: AppPosition;
 	appVisible?: boolean;
 	appSize?: number;
-	discordSessionMigrated?: boolean;
 	discordRelayUrl?: string;
 	lastProcessedDiscordMessageId?: string;
 	ollamaHost?: string;

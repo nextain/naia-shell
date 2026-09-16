@@ -124,8 +124,6 @@ export interface MemoryContext {
 	honorific?: string;
 	speechStyle?: string;
 	locale?: string;
-	discordDefaultUserId?: string;
-	discordDmChannelId?: string;
 	/**
 	 * App contexts pushed via NaiaContextBridge — the active (switchable)
 	 * app plus any persistent contexts (e.g. bgm favorites). One block is
@@ -152,11 +150,6 @@ function buildNonPersonaPrompt(context?: MemoryContext): string {
 		lines.push(`IMPORTANT: Respond in ${lang}. The user's preferred language is ${lang}.`);
 	}
 
-	if (context.discordDefaultUserId || context.discordDmChannelId) {
-		lines.push("Discord DM config (use with skill_naia_discord):");
-		if (context.discordDefaultUserId) lines.push(`- User ID: ${context.discordDefaultUserId}`);
-		if (context.discordDmChannelId) lines.push(`- DM Channel ID: ${context.discordDmChannelId}`);
-	}
 
 	if (context.appContexts?.length) {
 		for (const pc of context.appContexts) {
@@ -223,15 +216,6 @@ export function buildSystemPrompt(
 			);
 		}
 
-		if (context.discordDefaultUserId || context.discordDmChannelId) {
-			contextLines.push("Discord DM config (use with skill_naia_discord):");
-			if (context.discordDefaultUserId) {
-				contextLines.push(`- User ID: ${context.discordDefaultUserId}`);
-			}
-			if (context.discordDmChannelId) {
-				contextLines.push(`- DM Channel ID: ${context.discordDmChannelId}`);
-			}
-		}
 
 		if (context.appContexts?.length) {
 			for (const pc of context.appContexts) {

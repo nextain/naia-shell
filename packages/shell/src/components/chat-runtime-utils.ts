@@ -16,8 +16,6 @@ export async function buildMemoryContext(): Promise<MemoryContext> {
 		ctx.locale = cfg?.locale || getLocale();
 		ctx.honorific = cfg?.honorific;
 		ctx.speechStyle = cfg?.speechStyle;
-		ctx.discordDefaultUserId = cfg?.discordDefaultUserId;
-		ctx.discordDmChannelId = cfg?.discordDmChannelId;
 		const appContexts = selectPromptAppContexts(useAppStore.getState());
 		if (appContexts.length > 0) ctx.appContexts = appContexts;
 	} catch (error) {
@@ -30,8 +28,8 @@ export async function buildMemoryContext(): Promise<MemoryContext> {
 
 /**
  * Build only shell-owned environment context for agent text turns. Persona and
- * locale remain core-owned; the live voice and Discord paths consume the full
- * memory context separately when they assemble their own system instruction.
+ * locale remain core-owned; live voice paths consume the full memory context
+ * separately when they assemble their own system instruction.
  */
 export function buildEnvironmentSegments(
 	memoryContext: MemoryContext,

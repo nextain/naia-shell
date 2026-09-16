@@ -1554,15 +1554,6 @@ export function SettingsTab() {
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
 	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken] = useState(existing?.gatewayToken ?? "");
-	const [discordDefaultUserId, setDiscordDefaultUserId] = useState(
-		existing?.discordDefaultUserId ?? "",
-	);
-	const [discordDefaultTarget, setDiscordDefaultTarget] = useState(
-		existing?.discordDefaultTarget ?? "",
-	);
-	const [discordDmChannelId, setDiscordDmChannelId] = useState(
-		existing?.discordDmChannelId ?? "",
-	);
 	const [error, setError] = useState("");
 	const [saved, setSaved] = useState(false);
 	const [isPreviewing, setIsPreviewing] = useState(false);
@@ -2458,25 +2449,6 @@ export function SettingsTab() {
 		};
 	}, []);
 
-	// Listen for Discord auth deep-link callback — UI state only (App.tsx handles persist)
-	useEffect(() => {
-		const unlisten = listen<{
-			discordUserId?: string | null;
-			discordChannelId?: string | null;
-			discordTarget?: string | null;
-		}>("discord_auth_complete", (event) => {
-			const { discordUserId, discordChannelId, discordTarget } = event.payload;
-			if (discordUserId) setDiscordDefaultUserId(discordUserId);
-			if (discordTarget) setDiscordDefaultTarget(discordTarget);
-			else if (discordUserId) setDiscordDefaultTarget(`user:${discordUserId}`);
-			if (discordChannelId) setDiscordDmChannelId(discordChannelId);
-			// setDiscordBotConnected(true); // Discord unverified
-		});
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
-
 	// Live-preview: apply VRM instantly on selection
 	function handleVrmSelect(path: string) {
 		const normalized = normalizeLocalPath(path);
@@ -3044,9 +3016,6 @@ export function SettingsTab() {
 					? gatewayUrl.trim()
 					: undefined,
 			gatewayToken: gatewayToken.trim() || undefined,
-			discordDefaultUserId: discordDefaultUserId.trim() || undefined,
-			discordDefaultTarget: discordDefaultTarget.trim() || undefined,
-			discordDmChannelId: discordDmChannelId.trim() || undefined,
 			ollamaHost:
 				provider === "ollama"
 					? ollamaHost.trim() || undefined
@@ -3182,11 +3151,7 @@ export function SettingsTab() {
 		// update so credentials don't appear in every stdio frame.
 		void sendNotifyConfig({
 			slackWebhookUrl: newConfig.slackWebhookUrl,
-			discordWebhookUrl: newConfig.discordWebhookUrl,
 			googleChatWebhookUrl: newConfig.googleChatWebhookUrl,
-			discordDefaultUserId: newConfig.discordDefaultUserId,
-			discordDefaultTarget: newConfig.discordDefaultTarget,
-			discordDmChannelId: newConfig.discordDmChannelId,
 		}, applyAdkPath);
 		// Push all per-session credentials (#260 follow-up). Empty strings
 		// clear the corresponding cached entry on the agent — keeps the cache
@@ -4265,9 +4230,6 @@ export function SettingsTab() {
 														if (getAdkPath() !== sourceAdkPath) return;
 														setProvider(loggedOutLlm.provider);
 														setModel(loggedOutLlm.model);
-														setDiscordDefaultUserId("");
-														setDiscordDmChannelId("");
-														setDiscordDefaultTarget("");
 														setShowLabDisconnect(false);
 														if (sourceSecureStorePath)
 															await deleteSecretKeyAtPath(
@@ -4291,10 +4253,7 @@ export function SettingsTab() {
 																		: current.sttProvider,
 																naiaKey: undefined,
 																naiaUserId: undefined,
-																discordDefaultUserId: undefined,
-																discordDmChannelId: undefined,
-																discordDefaultTarget: undefined,
-															};
+																																																						};
 															const loggedOutConfig = writeConfiguredLlmRole(
 																loggedOutBase,
 																"main",

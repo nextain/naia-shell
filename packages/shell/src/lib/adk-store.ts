@@ -278,7 +278,6 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"gatewayTtsAuto",
 	"gatewayTtsMode",
 	// Per-session Discord state
-	"discordSessionMigrated",
 	"lastProcessedDiscordMessageId",
 	// Locale (agent receives per-request via IPC systemPrompt)
 	"locale",
@@ -666,7 +665,6 @@ export function applyModelSelectionToConfig(
 // 따라서 ui-config.json 에는 `UI_ONLY_CONFIG_KEYS` 전체를 저장하되, **영속 부적절한 세션/휘발 상태만 제외**한다.
 const UI_SESSION_ONLY_KEYS = new Set<string>([
 	// Per-session Discord state — 워크스페이스 정체성 아님, 세션마다 갱신.
-	"discordSessionMigrated",
 	"lastProcessedDiscordMessageId",
 	// 미디어 재생 중 여부 — 휘발 UI 상태(다음 실행에 이어서 재생하지 않는다).
 	"bgmPlaying",

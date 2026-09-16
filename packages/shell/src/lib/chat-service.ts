@@ -115,11 +115,7 @@ interface SendChatOptions {
 
 export interface NotifyConfig {
 	slackWebhookUrl?: string;
-	discordWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
 }
 
 /**
@@ -137,20 +133,8 @@ export async function sendNotifyConfig(
 		...(cfg.slackWebhookUrl !== undefined && {
 			slackWebhookUrl: cfg.slackWebhookUrl,
 		}),
-		...(cfg.discordWebhookUrl !== undefined && {
-			discordWebhookUrl: cfg.discordWebhookUrl,
-		}),
 		...(cfg.googleChatWebhookUrl !== undefined && {
 			googleChatWebhookUrl: cfg.googleChatWebhookUrl,
-		}),
-		...(cfg.discordDefaultUserId !== undefined && {
-			discordDefaultUserId: cfg.discordDefaultUserId,
-		}),
-		...(cfg.discordDefaultTarget !== undefined && {
-			discordDefaultTarget: cfg.discordDefaultTarget,
-		}),
-		...(cfg.discordDmChannelId !== undefined && {
-			discordDmChannelId: cfg.discordDmChannelId,
 		}),
 	};
 	await safeSendToAgent(request, "sendNotifyConfig", adkPath);

@@ -79,10 +79,7 @@ import {
 	noteEnvironmentToolAck,
 	refreshEnvironment,
 } from "../lib/environment-skill";
-import {
-	discoverAndPersistDiscordDmChannel,
-	resetGatewaySession,
-} from "../lib/gateway-sessions";
+import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
 import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
 import {
@@ -661,31 +658,9 @@ export function ChatArea({
 		const loadSession = async () => {
 			const store = useChatStore.getState();
 			store.setSessionId("agent:main:main");
-
-			const config = loadConfig();
-			if (!config?.discordSessionMigrated) {
-				// One-time migration: reset the contaminated main session (Discord DMs mixed in).
-				// (restartGateway 제거됨 2026-06-12 — gateway 없음(#201). resetGatewaySession=agent skill_sessions 유지.)
-				await resetGatewaySession("agent:main:main");
-				// Config hydration can complete while the async reset is in flight.
-				// Re-read the cache after the await so a pre-hydration snapshot can
-				// never erase freshly restored avatar/voice/profile settings.
-				const currentConfig = loadConfig();
-				if (currentConfig) {
-					saveConfig({
-						...currentConfig,
-						discordSessionMigrated: true,
-					});
-				}
-				Logger.info(
-					"ChatArea",
-					"One-time reset: cleared Discord-contaminated main session",
-				);
-			} else {
-				Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
-					reason: "agent-local-transcript-is-authoritative",
-				});
-			}
+			Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
+				reason: "agent-local-transcript-is-authoritative",
+			});
 		};
 
 		loadSession().catch((err) => {
@@ -693,12 +668,6 @@ export function ChatArea({
 				error: String(err),
 			});
 		});
-
-		// Auto-discover Discord DM channel ID from Gateway sessions
-		// (skip on migration run — no new sessions exist yet)
-		if (loadConfig()?.discordSessionMigrated) {
-			discoverAndPersistDiscordDmChannel().catch(() => {});
-		}
 
 		// (startup gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config=naia-settings.)
 	}, []);
@@ -2532,10 +2501,6 @@ export function ChatArea({
 			case "provider_session":
 			case "processing_disclosure":
 				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
-				break;
-			case "discord_message":
-				// Discord DM messages are shown in the dedicated Channels tab.
-				// Ignore them here to keep the main chat clean.
 				break;
 			case "error":
 				Logger.warn("ChatArea", "Agent error chunk", {

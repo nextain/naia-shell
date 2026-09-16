@@ -151,9 +151,6 @@ export interface AgentRequest {
 	gatewayToken?: string;
 	disabledSkills?: string[];
 	routeViaGateway?: boolean;
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
 }
 
 export type AgentResponseChunk =
