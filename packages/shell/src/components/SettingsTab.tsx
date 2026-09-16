@@ -49,7 +49,6 @@ import {
 	resolveLocalCapabilities,
 	tierProvidedCapabilities,
 } from "../lib/capabilities/vram-tiers";
-import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	activateNaiaLlm,
 	configureSpeechProfile,
@@ -175,7 +174,6 @@ import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
-import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -625,7 +623,6 @@ export function SettingsTab() {
 		| "memory"
 		| "knowledge"
 		| "skills"
-		| "connections"
 		| "general"
 	>("profile");
 	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
@@ -2428,8 +2425,6 @@ export function SettingsTab() {
 
 					// (gateway sync 제거됨 2026-06-12 — gateway.json 은 아무도 안 읽는 죽은 경로. config 영속=naia-settings, naiaKey=키체인.)
 
-					void syncLinkedChannels();
-
 					if (nextNaiaUserId) {
 						const onlineConfig = await fetchLabConfig(
 							nextNaiaKey,
@@ -3654,14 +3649,6 @@ export function SettingsTab() {
 					onClick={() => setActiveSettingsTab("skills")}
 				>
 					{t("settings.tabSkills")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="connections"
-					className={`settings-tab-btn${activeSettingsTab === "connections" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("connections")}
-				>
-					{t("settings.tabConnections")}
 				</button>
 				<button
 					type="button"
@@ -6221,8 +6208,7 @@ export function SettingsTab() {
 				</>
 			)}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
-			{activeSettingsTab === "connections" && <ConnectionsSettingsTab />}
-			{activeSettingsTab === "skills" && (
+						{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
 					<SkillsTab>
 						<RadioDjSettingsCard

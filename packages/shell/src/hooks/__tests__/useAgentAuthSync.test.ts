@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
 		Promise.resolve(null),
 	),
 	saveConfig: vi.fn(),
-	syncLinkedChannels: vi.fn(() => Promise.resolve()),
 	sendAuthUpdate: vi.fn(() => Promise.resolve()),
 	sendCredsUpdate: vi.fn(() => Promise.resolve()),
 	sendNotifyConfig: vi.fn(() => Promise.resolve()),
@@ -27,10 +26,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
-vi.mock("../../lib/channel-sync", () => ({
-	syncLinkedChannels: mocks.syncLinkedChannels,
-}));
 vi.mock("../../lib/chat-service", () => ({
 	sendAuthUpdate: mocks.sendAuthUpdate,
 	sendCredsUpdate: mocks.sendCredsUpdate,

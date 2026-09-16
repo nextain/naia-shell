@@ -55,7 +55,6 @@ import {
 	reconcileExplicitLocalProfile,
 	saveConfig,
 } from "./lib/config";
-import { persistDiscordDefaults } from "./lib/discord-auth";
 import {
 	ENVIRONMENT_APP_ID,
 	SKILL_ENVIRONMENT,
@@ -942,19 +941,6 @@ export function App() {
 				setAppInstallRequest(event.payload);
 			},
 		);
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
-
-	useEffect(() => {
-		const unlisten = listen<{
-			discordUserId?: string | null;
-			discordChannelId?: string | null;
-			discordTarget?: string | null;
-		}>("discord_auth_complete", (event) => {
-			persistDiscordDefaults(event.payload);
-		});
 		return () => {
 			unlisten.then((fn) => fn());
 		};

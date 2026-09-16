@@ -194,9 +194,6 @@ const AtMentionPopover = lazy(() =>
 		default: AtMentionPopover,
 	})),
 );
-const ChannelsTab = lazy(() =>
-	import("./ChannelsTab").then(({ ChannelsTab }) => ({ default: ChannelsTab })),
-);
 const CostDashboard = lazy(() =>
 	import("./CostDashboard").then(({ CostDashboard }) => ({
 		default: CostDashboard,
@@ -254,7 +251,6 @@ type TabId =
 	| "chat"
 	| "progress"
 	| "skills"
-	| "channels"
 	| "agents"
 	| "diagnostics"
 	| "settings"
@@ -263,7 +259,6 @@ type TabId =
 const TAB_ICONS: Record<TabId, string> = {
 	chat: "💬",
 	history: "🕘",
-	channels: "🌐",
 	progress: "📊",
 	skills: "🧩",
 	agents: "🤖",
@@ -286,16 +281,12 @@ const BUILTIN_SKILLS = new Set([
 	"skill_memo",
 	"skill_weather",
 	"skill_notify_slack",
-	"skill_notify_discord",
 	"skill_notify_google_chat",
-	"skill_naia_discord",
 	"skill_skill_manager",
 	"skill_agents",
 	"skill_approvals",
 	"skill_botmadang",
-	"skill_channels",
 	"skill_config",
-	"skill_cron",
 	"skill_device",
 	"skill_diagnostics",
 	"skill_sessions",
@@ -3824,13 +3815,6 @@ export function ChatArea({
 		}
 	}
 
-	useEffect(() => {
-		const openDiscordInbox = () => setActiveTab("channels");
-		window.addEventListener("naia-open-discord-inbox", openDiscordInbox);
-		return () =>
-			window.removeEventListener("naia-open-discord-inbox", openDiscordInbox);
-	}, []);
-
 	// ── @ mention: track input changes ──────────────────────────────────
 	const handleInputChange = useCallback(
 		(e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -4009,19 +3993,6 @@ export function ChatArea({
 								{TAB_ICONS.history}
 							</span>
 						</button>
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-							data-chat-tab="channels"
-							onClick={() => handleTabChange("channels")}
-							title={t("channels.tabChannels")}
-							aria-label={t("channels.tabChannels")}
-							data-tooltip={t("channels.tabChannels")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.channels}
-							</span>
-						</button>
 					</div>
 					<div className="chat-header-right">
 						{totalSessionCost > 0 &&
@@ -4073,9 +4044,6 @@ export function ChatArea({
 					{activeTab === "diagnostics" && <DiagnosticsTab />}
 
 					{/* Settings tab */}
-
-					{/* Channels tab */}
-					{activeTab === "channels" && <ChannelsTab />}
 
 					{/* History tab */}
 					{activeTab === "history" && (
