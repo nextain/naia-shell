@@ -39,8 +39,11 @@ describe("#603 third-party cloud voice absent", () => {
 		expect(ids).not.toContain("nextain");
 	});
 
-	it("retained live routes still exist", () => {
+	it("live provider labels have no Gemini/OpenAI/Naia-Google live", () => {
 		const ids = Object.keys(LIVE_PROVIDER_LABELS);
+		expect(ids).not.toContain("gemini-live");
+		expect(ids).not.toContain("openai-realtime");
+		expect(ids).not.toContain("naia");
 		expect(ids).toEqual(
 			expect.arrayContaining(["azure-voice-live", "naia-omni", "vllm-omni"]),
 		);

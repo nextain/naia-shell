@@ -14,8 +14,7 @@ export type LiveProviderId =
 	| "naia-omni"
 	| "vllm-omni"
 	| "azure-voice-live"
-	| "edge-tts"
-	;
+	| "edge-tts";
 
 export const LIVE_PROVIDER_LABELS: Record<LiveProviderId, string> = {
 	"naia-omni": "Naia Omni",
