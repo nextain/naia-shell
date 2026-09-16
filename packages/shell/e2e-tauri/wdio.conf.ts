@@ -31,6 +31,12 @@ import { startNotifyWebhookStub } from "./notify-webhook-stub.mjs";
 // Enable debug logging for Tauri app — Rust logs all agent events to stderr + naia.log
 process.env.CAFE_DEBUG_E2E = "1";
 process.env.NAIA_E2E_MODE = "1";
+// The real child WebView invalidates the single WebDriver session by design.
+// The rendering spec therefore keeps the shell address bar available until
+// its first submit, then uses desktop capture for the native surface.
+if (process.env.NAIA_E2E_ALLOW_CHILD_WEBVIEW === "1") {
+	process.env.VITE_NAIA_E2E_ALLOW_CHILD_WEBVIEW = "1";
+}
 // E2E mock: bypass GitHub clone + agent-kill-before-delete so ADK setup
 // scenarios run in milliseconds without network/process flakiness (#328).
 process.env.NAIA_E2E_MOCK_CLONE = "1";

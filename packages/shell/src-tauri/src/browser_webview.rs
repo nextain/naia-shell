@@ -160,12 +160,17 @@ pub fn handle_bridge_request(
             }
         } else if path == "/__naia_nav" || path == "/__naia_nav/" {
             if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&body) {
+                let reported_url = val["url"].as_str().unwrap_or("");
+                let reported_title = val["title"].as_str().unwrap_or("");
                 if let Some(url) = val["url"].as_str() {
                     *CURRENT_URL.lock().unwrap() = url.to_string();
                 }
                 if let Some(title) = val["title"].as_str() {
                     *CURRENT_TITLE.lock().unwrap() = title.to_string();
                 }
+                crate::log_verbose(&format!(
+                    "[browser_wv] page info url={reported_url} title={reported_title}"
+                ));
             }
         }
     }
@@ -288,11 +293,13 @@ pub async fn browser_wv_create(
     width: f64,
     height: f64,
 ) -> Result<bool, String> {
-    // Skip in E2E test mode — a second WebView2 in the same window disrupts the
-    // WebDriver CDP session (tauri-driver attaches to exactly one WebView per
-    // session; a child WebView causes "session deleted as the browser has closed
-    // the connection" within seconds of startup).
-    if crate::debug_e2e_enabled() {
+    // Skip in E2E test mode by default — a second WebView2 in the same window
+    // disrupts the WebDriver CDP session. The opt-in is compiled into the
+    // webdriver-only acceptance binary, never into production builds, so a
+    // native rendering spec can deliberately exercise the real child surface.
+    let allow_e2e_child = cfg!(feature = "webdriver-e2e")
+        && std::env::var("NAIA_E2E_ALLOW_CHILD_WEBVIEW").ok().as_deref() == Some("1");
+    if crate::debug_e2e_enabled() && !allow_e2e_child {
         crate::log_verbose("[browser_wv] E2E mode — skipping child webview creation");
         return Ok(false);
     }

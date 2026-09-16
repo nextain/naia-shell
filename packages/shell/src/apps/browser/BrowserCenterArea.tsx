@@ -75,6 +75,9 @@ const DEFAULT_PERMS: BrowserToolPerms = {
 	eval: false, // JS eval off by default (high risk)
 };
 
+const DEFER_REAL_CHILD_E2E =
+	import.meta.env.VITE_NAIA_E2E_ALLOW_CHILD_WEBVIEW === "1";
+
 type PermKey = keyof BrowserToolPerms;
 
 const PERM_LABELS: Record<PermKey, string> = {
@@ -405,6 +408,7 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 	// ── Mount: create webview; unmount: hide it ───────────────────────────────
 
 	useEffect(() => {
+		if (DEFER_REAL_CHILD_E2E) return;
 		const t = setTimeout(() => initWebview(), 80);
 		return () => {
 			clearTimeout(t);
@@ -737,10 +741,13 @@ export function BrowserCenterArea({ naia }: AppCenterProps) {
 
 	// ── Render ────────────────────────────────────────────────────────────────
 
-	function handleNavigate(raw: string) {
+	async function handleNavigate(raw: string) {
 		let url = raw.trim();
 		if (!url) return;
 		if (!url.includes("://")) url = `https://${url}`;
+		if (DEFER_REAL_CHILD_E2E && !_browserWvCreated) {
+			await initWebview();
+		}
 		invoke("browser_wv_navigate", { url })
 			.then(() => setSurfaceNotice(""))
 			.catch((error) => {
