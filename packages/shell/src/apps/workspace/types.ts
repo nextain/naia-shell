@@ -43,7 +43,8 @@ export interface WorkspaceAppApi {
 	activateApp: () => void;
 }
 
-export type AgentType = "claude" | "opencode" | "codex" | "gemini" | "zai";
+/** D6: Gemini CLI / OpenCode removed from PTY agent detection. */
+export type AgentType = "claude" | "codex" | "grok" | "zai";
 
 export interface TerminalTab {
 	pty_id: string;

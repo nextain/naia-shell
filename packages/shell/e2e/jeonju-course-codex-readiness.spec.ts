@@ -54,7 +54,7 @@ const COURSE_CODEX_TAURI_MOCK = `
 				}],
 			}],
 		};
-		if (cmd === "codex_preflight") return {
+		if (cmd === "cli_detect_one") return {
 			status: "ready",
 			output: "Logged in as codex-user@example.com",
 		};
@@ -101,7 +101,7 @@ test("UC-JEONJU-COURSE-READINESS: student checks Codex before selecting the cour
 						__COURSE_CODEX_INVOKES__: Array<{ cmd: string }>;
 					}
 				).__COURSE_CODEX_INVOKES__.filter(
-					(call) => call.cmd === "codex_preflight",
+					(call) => call.cmd === "cli_detect_one",
 				).length,
 			),
 		)

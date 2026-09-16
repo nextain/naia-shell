@@ -4,9 +4,12 @@ import {
 	safeRefresh,
 } from "../helpers/settings.js";
 
+/**
+ * 19 — skills bulk (#605 checkbox model)
+ * Confirms Skills tab shows CLI/gesture groups rather than bulk agent tools.
+ */
 describe("19 — skills bulk migration", () => {
 	before(async () => {
-		// Ensure enableTools is set
 		await browser.execute(() => {
 			const raw = localStorage.getItem("naia-config");
 			const config = raw ? JSON.parse(raw) : {};
@@ -16,95 +19,30 @@ describe("19 — skills bulk migration", () => {
 		await safeRefresh();
 		const chatInput = await $(S.chatInput);
 		await chatInput.waitForEnabled({ timeout: 15_000 });
-		// 스킬 화면은 설정 안에 있다 — 설정을 먼저 열어야 그 탭 버튼이 존재한다
-		// (옛 메타 탭 표지를 그리던 NaiaMetaArea 는 지웠다 — 2026-09-06).
 		await navigateToSettings();
 	});
 
-	it("should show built-in skills in skills tab", async () => {
-		// Navigate to Skills tab
+	it("should show CLI section in skills tab", async () => {
 		await browser.execute((sel: string) => {
 			const el = document.querySelector(sel) as HTMLButtonElement | null;
 			el?.click();
 		}, S.skillsTab);
 		await browser.pause(1000);
 
-		// Count skill cards (not .skill-item)
-		const count = await browser.execute(
-			(sel: string) => document.querySelectorAll(sel).length,
-			S.skillsCard,
+		const hasCli = await browser.execute(
+			() => !!document.querySelector('[data-testid="skills-cli-section"]'),
 		);
-
-		// At least 7 built-in skills should be visible
-		expect(count).toBeGreaterThanOrEqual(7);
+		expect(hasCli).toBe(true);
 	});
 
-	it("should find time skill via search", async () => {
-		// Search for a skill using the search input
-		const hasSearch = await browser.execute(
-			(sel: string) => !!document.querySelector(sel),
-			S.skillsSearch,
+	it("should show gesture section with youtube toggle", async () => {
+		const hasGesture = await browser.execute(
+			() => !!document.querySelector('[data-testid="skills-gesture-section"]'),
 		);
-
-		if (hasSearch) {
-			await browser.execute((sel: string) => {
-				const input = document.querySelector(
-					`${sel} input`,
-				) as HTMLInputElement | null;
-				if (input) {
-					const setter = Object.getOwnPropertyDescriptor(
-						HTMLInputElement.prototype,
-						"value",
-					)?.set;
-					if (setter) setter.call(input, "time");
-					else input.value = "time";
-					input.dispatchEvent(new Event("input", { bubbles: true }));
-				}
-			}, S.skillsSearch);
-			await browser.pause(500);
-
-			const results = await browser.execute(
-				(sel: string) => document.querySelectorAll(sel).length,
-				S.skillsCard,
-			);
-			expect(results).toBeGreaterThan(0);
-		}
-	});
-
-	it("should find weather skill via search", async () => {
-		const hasSearch = await browser.execute(
-			(sel: string) => !!document.querySelector(sel),
-			S.skillsSearch,
+		expect(hasGesture).toBe(true);
+		const hasYoutube = await browser.execute(
+			() => !!document.querySelector('[data-testid="gesture-enable-youtube"]'),
 		);
-
-		if (hasSearch) {
-			await browser.execute((sel: string) => {
-				const input = document.querySelector(
-					`${sel} input`,
-				) as HTMLInputElement | null;
-				if (input) {
-					const setter = Object.getOwnPropertyDescriptor(
-						HTMLInputElement.prototype,
-						"value",
-					)?.set;
-					if (setter) setter.call(input, "weather");
-					else input.value = "weather";
-					input.dispatchEvent(new Event("input", { bubbles: true }));
-				}
-			}, S.skillsSearch);
-			await browser.pause(500);
-
-			const results = await browser.execute(
-				(sel: string) => document.querySelectorAll(sel).length,
-				S.skillsCard,
-			);
-			expect(results).toBeGreaterThan(0);
-		}
-
-		// Go back to chat tab
-		await browser.execute((sel: string) => {
-			const el = document.querySelector(sel) as HTMLButtonElement | null;
-			el?.click();
-		}, S.chatTab);
+		expect(hasYoutube).toBe(true);
 	});
 });

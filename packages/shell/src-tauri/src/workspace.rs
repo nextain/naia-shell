@@ -723,7 +723,8 @@ pub fn workspace_discover_adk_server() -> Option<String> {
 pub fn workspace_get_pty_agents(pids: Vec<u32>) -> std::collections::HashMap<u32, String> {
     use sysinfo::{ProcessesToUpdate, System};
 
-    const AGENTS: &[&str] = &["claude", "opencode", "codex", "gemini"];
+    // D6: Gemini CLI / OpenCode removed from PTY agent detection.
+    const AGENTS: &[&str] = &["claude", "codex", "grok"];
 
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, false);

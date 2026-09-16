@@ -289,7 +289,6 @@ const BUILTIN_SKILLS = new Set([
 	"skill_notify_discord",
 	"skill_notify_google_chat",
 	"skill_naia_discord",
-	"skill_skill_manager",
 	"skill_agents",
 	"skill_approvals",
 	"skill_botmadang",
@@ -1934,8 +1933,15 @@ export function ChatArea({
 				enableThinking: config.enableThinking,
 				gatewayUrl,
 				disabledSkills: config.enableTools
-					? [...(sanitizeDisabledSkills(config.disabledSkills) ?? [])]
+					? [
+							...(sanitizeDisabledSkills(config.disabledSkills) ?? []),
+							// #605 gesture toggle — youtube off hides the BGM skill from the agent.
+							...((config.disabledGestures ?? []).includes("youtube")
+								? ["skill_youtube_bgm"]
+								: []),
+						]
 					: undefined,
+				enabledClis: [...(config.enabledClis ?? [])],
 				routeViaGateway:
 					!!gatewayUrl &&
 					config.enableTools &&

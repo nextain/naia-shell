@@ -23,6 +23,7 @@ export interface ChatSubmitInput {
   readonly enableTools?: boolean;
   readonly enableThinking?: boolean;
   readonly disabledSkills?: readonly string[];
+  readonly enabledClis?: readonly string[];
   readonly channel?: ChatRequest["channel"];
   readonly grounding?: ChatRequest["grounding"];
   readonly providerSession?: ChatRequest["providerSession"];
@@ -46,6 +47,7 @@ export class ChatBridge {
       ...(input.enableTools !== undefined ? { enableTools: input.enableTools } : {}),
       ...(input.enableThinking !== undefined ? { enableThinking: input.enableThinking } : {}),
       ...(input.disabledSkills !== undefined ? { disabledSkills: input.disabledSkills } : {}),
+      ...(input.enabledClis !== undefined ? { enabledClis: input.enabledClis } : {}),
       ...(input.channel !== undefined ? { channel: input.channel } : {}),
       ...(input.grounding !== undefined ? { grounding: input.grounding } : {}),
       ...(input.providerSession !== undefined ? { providerSession: input.providerSession } : {}),

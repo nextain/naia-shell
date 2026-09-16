@@ -1,4 +1,9 @@
 import { clickElement } from "../helpers/click.js";
+
+/**
+ * 96 — Codex readiness through descriptor-driven cli_detect (#605).
+ * Broadened from the old codex_preflight path to the shared CLI descriptor module.
+ */
 describe("Codex readiness through the real Tauri Shell", () => {
 	it("reports the signed-in Codex CLI as ready from the Brain settings screen", async () => {
 		const settings = await $(".app-bar-settings");
@@ -10,10 +15,6 @@ describe("Codex readiness through the real Tauri Shell", () => {
 
 		const provider = await $("#provider-select");
 		await provider.waitForDisplayed({ timeout: 30_000 });
-		// E2E starts from a deliberately blank WebView profile. The app first
-		// creates the normal onboarding cache and then hydrates it from the
-		// workspace-owned config.json; assert the user-visible settled value,
-		// rather than sampling that short pre-hydration render.
 		await browser.waitUntil(async () => (await provider.getValue()) === "codex", {
 			timeout: 30_000,
 			timeoutMsg: "workspace Codex configuration did not hydrate into Brain settings",
@@ -22,7 +23,6 @@ describe("Codex readiness through the real Tauri Shell", () => {
 
 		const readiness = await $("[data-testid='codex-readiness']");
 		await readiness.waitForDisplayed({ timeout: 30_000 });
-		const check = await $("[data-testid='codex-readiness-check']");
 		await clickElement("[data-testid='codex-readiness-check']", 30_000);
 
 		const status = await $("[data-testid='codex-readiness-status']");
@@ -34,5 +34,14 @@ describe("Codex readiness through the real Tauri Shell", () => {
 			},
 		);
 		expect(await status.getText()).toMatch(/준비됨|Ready/);
+	});
+
+	it("exposes installed CLIs on the Skills tab via descriptors", async () => {
+		await clickElement("[data-settings-tab='skills']", 30_000);
+		const section = await $('[data-testid="skills-cli-section"]');
+		await section.waitForDisplayed({ timeout: 30_000 });
+		const card = await $('[data-testid="cli-skill-card"][data-cli-id="codex"]');
+		await card.waitForExist({ timeout: 30_000 });
+		expect(await card.isExisting()).toBe(true);
 	});
 });

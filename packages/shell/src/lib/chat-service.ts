@@ -100,6 +100,8 @@ interface SendChatOptions {
 	enableThinking?: boolean;
 	gatewayUrl?: string;
 	disabledSkills?: string[];
+	/** Enabled coding CLI names from the Skills tab (#605). */
+	enabledClis?: string[];
 	channel?: ShellSendOptions["channel"];
 	grounding?: ShellSendOptions["grounding"];
 	providerSession?: ShellSendOptions["providerSession"];
@@ -276,6 +278,9 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 			...(opts.disabledSkills !== undefined
 				? { disabledSkills: opts.disabledSkills }
 				: {}),
+			...(opts.enabledClis !== undefined
+				? { enabledClis: opts.enabledClis }
+				: {}),
 			...(opts.channel !== undefined ? { channel: opts.channel } : {}),
 			...(opts.grounding !== undefined ? { grounding: opts.grounding } : {}),
 			...(opts.providerSession !== undefined
@@ -304,6 +309,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		enableThinking,
 		gatewayUrl,
 		disabledSkills,
+		enabledClis,
 		channel,
 		grounding,
 		providerSession,
@@ -338,6 +344,7 @@ export async function sendChatMessage(opts: SendChatOptions): Promise<void> {
 		...(enableThinking != null && { enableThinking }),
 		...(gatewayUrl && { gatewayUrl }),
 		...(disabledSkills && disabledSkills.length > 0 && { disabledSkills }),
+		...(enabledClis && enabledClis.length > 0 && { enabledClis }),
 		...(channel !== undefined && { channel }),
 		...(grounding !== undefined && { grounding }),
 		...(providerSession !== undefined && { providerSession }),

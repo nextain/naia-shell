@@ -13,7 +13,6 @@ const BUILTIN_SKILLS = [
 	"skill_weather",
 	"skill_notify_slack",
 	"skill_notify_discord",
-	"skill_skill_manager",
 ];
 
 async function countSuccessfulSkillTimeActivities(): Promise<number> {
@@ -133,7 +132,6 @@ describe("04 — skill_time", () => {
 					"skill_weather",
 					"skill_notify_slack",
 					"skill_notify_discord",
-					"skill_skill_manager",
 				]);
 				const config = {
 					...prev,

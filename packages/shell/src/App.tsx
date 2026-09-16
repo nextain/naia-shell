@@ -666,6 +666,13 @@ export function App() {
 		addAllowedTool("skill_youtube_bgm");
 	}, []);
 
+	// #605 — refresh CLI detection into config on app start (Skills tab also refreshes on enter).
+	useEffect(() => {
+		void import("./lib/cli-detection").then(({ refreshCliDetectionOnBoot }) =>
+			refreshCliDetectionOnBoot(),
+		);
+	}, []);
+
 	useEffect(() => {
 		migrateLegacyDna3OllamaModel();
 		migrateSpeechStyleValues();

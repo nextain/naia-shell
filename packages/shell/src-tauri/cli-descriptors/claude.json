@@ -1,0 +1,30 @@
+{
+  "id": "claude",
+  "displayName": "Claude Code",
+  "executables": {
+    "linux": ["claude"],
+    "macos": ["claude"],
+    "windows": ["claude.exe", "claude.cmd", "claude"]
+  },
+  "version": {
+    "args": ["--version"],
+    "timeoutMs": 5000,
+    "parse": { "kind": "stdoutFirstLine" }
+  },
+  "readiness": {
+    "args": ["auth", "status", "--json"],
+    "timeoutMs": 5000,
+    "classify": [
+      { "when": { "spawnError": "notFound" }, "status": "not-installed" },
+      { "when": { "timedOut": true }, "status": "waiting-input" },
+      { "when": { "jsonBoolPath": "loggedIn", "equals": true }, "status": "ready" },
+      { "when": { "jsonBoolPath": "loggedIn", "equals": false }, "status": "login-required" },
+      { "when": { "exitCode": 0 }, "status": "ready" },
+      { "when": { "exitCodeNonZero": true }, "status": "login-required" }
+    ]
+  },
+  "login": {
+    "args": ["auth", "login"],
+    "openInTerminal": true
+  }
+}
