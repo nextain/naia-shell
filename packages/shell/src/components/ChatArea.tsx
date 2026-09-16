@@ -92,6 +92,7 @@ import { Logger } from "../lib/logger";
 import { type MicStream, createMicStream } from "../lib/mic-stream";
 import {
 	MODEL_FACING_TOOL_KEEP_LIST,
+	filterModelFacingTools,
 	isModelFacingToolAllowed,
 } from "../lib/model-facing-tools";
 import { buildSystemPrompt } from "../lib/persona";
@@ -289,6 +290,28 @@ function sanitizeDisabledSkills(disabled?: string[]): string[] | undefined {
 
 function generateRequestId(): string {
 	return `req-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+let removedModelToolsCache: string[] = [];
+let removedModelToolsRefresh: Promise<void> | null = null;
+
+/** Refresh the deny list without delaying the user's chat request. */
+function refreshRemovedModelTools(): void {
+	if (removedModelToolsRefresh) return;
+	removedModelToolsRefresh = fetchAgentSkills({ includeDisallowed: true })
+		.then((tools) => {
+			removedModelToolsCache = tools
+				.filter((tool) => !isModelFacingToolAllowed(tool.name))
+				.map((tool) => tool.name);
+		})
+		.catch((error) => {
+			Logger.warn("ChatArea", "Model tool boundary refresh failed", {
+				error: String(error),
+			});
+		})
+		.finally(() => {
+			removedModelToolsRefresh = null;
+		});
 }
 
 function formatCost(cost: number): string {
@@ -1844,20 +1867,8 @@ export function ChatArea({
 			// 지켜보기 예산을 한 턴 쓴다 (FR-ENV-ATTENTION.7). 음성 경로와 같은 헬퍼를 쓴다 —
 			// 여기만 따로 쓰다가 always 규칙이 이 경로에만 빠졌다(13차 적대리뷰 지적).
 			noteEnvironmentTurn();
-			let removedModelTools: string[] = [];
 			if (config.enableTools === true) {
-				try {
-					const registeredTools = await fetchAgentSkills({
-						includeDisallowed: true,
-					});
-					removedModelTools = registeredTools
-						.filter((tool) => !isModelFacingToolAllowed(tool.name))
-						.map((tool) => tool.name);
-				} catch (error) {
-					Logger.warn("ChatArea", "Model tool boundary refresh failed", {
-						error: String(error),
-					});
-				}
+				refreshRemovedModelTools();
 			}
 			await sendChatMessage({
 				message: text,
@@ -1911,7 +1922,7 @@ export function ChatArea({
 						? [
 								...new Set([
 									...(sanitizeDisabledSkills(config.disabledSkills) ?? []),
-									...removedModelTools,
+									...removedModelToolsCache,
 								]),
 							]
 						: undefined,
@@ -2109,6 +2120,19 @@ export function ChatArea({
 			readonly watchOwner?: string;
 		} = {},
 	) {
+		if (!isModelFacingToolAllowed(req.toolName)) {
+			Logger.warn("ChatArea", "blocked non-model-facing app tool", {
+				tool: req.toolName,
+			});
+			void sendAppToolResult(
+				req.requestId,
+				req.toolCallId,
+				`Tool is not available: ${req.toolName}`,
+				false,
+				req.activityId,
+			);
+			return;
+		}
 		// UC8 BGM (FR-BGM.1): BgmPlayer 는 위젯(앱 아님)이라 appRegistry 소유자
 		// 탐색으로 못 찾는다 — 전용 분기. executeBgmSkill 이 위젯이 이미 듣는
 		// bgm_youtube_* 이벤트를 발사(위젯 무변경). 음성 경로도 이 dispatch 공유.
@@ -3229,7 +3253,7 @@ export function ChatArea({
 			// Collect active app tools to pass to the voice session
 			const activeAppId = useAppStore.getState().activeApp;
 			const appTools = activeAppId
-				? (appRegistry.get(activeAppId)?.tools ?? [])
+				? filterModelFacingTools(appRegistry.get(activeAppId)?.tools ?? [])
 				: [];
 			const appToolDefs = appTools.map((tool) => ({
 				name: tool.name,
@@ -3412,6 +3436,16 @@ export function ChatArea({
 				noteEnvironmentTurn();
 			};
 			session.onToolCall = async (callId, toolName, args) => {
+				if (!isModelFacingToolAllowed(toolName)) {
+					Logger.warn("ChatArea", "blocked non-model-facing voice tool", {
+						tool: toolName,
+					});
+					session.sendToolResponse(
+						callId,
+						`Tool is not available: ${toolName}`,
+					);
+					return;
+				}
 				try {
 					const result = await directToolCall({
 						toolName,

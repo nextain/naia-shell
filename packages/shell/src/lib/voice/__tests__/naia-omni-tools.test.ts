@@ -76,12 +76,12 @@ describe("naia-omni tool calls", () => {
 		recv({
 			type: "response.function_call_arguments.done",
 			call_id: "tc_1",
-			name: "skill_agent_browser",
-			arguments: JSON.stringify({ query: "news" }),
+			name: "get_weather",
+			arguments: JSON.stringify({ location: "Seoul" }),
 		});
 
 		expect(calls).toEqual([
-			{ id: "tc_1", name: "skill_agent_browser", args: { query: "news" } },
+			{ id: "tc_1", name: "get_weather", args: { location: "Seoul" } },
 		]);
 	});
 
@@ -136,11 +136,11 @@ describe("naia-omni tool calls", () => {
 			...DIRECT,
 			tools: [
 				{
-					name: "skill_agent_browser",
-					description: "search the web",
+					name: "get_weather",
+					description: "get the weather",
 					parameters: {
 						type: "object",
-						properties: { query: { type: "string" } },
+						properties: { location: { type: "string" } },
 					},
 				},
 			],
@@ -151,9 +151,9 @@ describe("naia-omni tool calls", () => {
 		expect(update.session.tools).toEqual([
 			{
 				type: "function",
-				name: "skill_agent_browser",
-				description: "search the web",
-				parameters: { type: "object", properties: { query: { type: "string" } } },
+				name: "get_weather",
+				description: "get the weather",
+				parameters: { type: "object", properties: { location: { type: "string" } } },
 			},
 		]);
 	});

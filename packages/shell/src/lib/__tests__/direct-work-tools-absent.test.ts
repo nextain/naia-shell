@@ -52,12 +52,17 @@ describe("#611 direct-work model tools absent", () => {
 	it("App and ChatArea clear skill_environment instead of registering it", () => {
 		const app = readFileSync(join(root, "App.tsx"), "utf8");
 		const chatArea = readFileSync(join(root, "components/ChatArea.tsx"), "utf8");
+		const environment = readFileSync(join(root, "lib/environment-skill.ts"), "utf8");
 		expect(app.includes("SKILL_ENVIRONMENT")).toBe(false);
 		expect(chatArea.includes("SKILL_ENVIRONMENT")).toBe(false);
+		expect(environment.includes("SKILL_ENVIRONMENT")).toBe(false);
+		expect(environment.includes("executeEnvironmentSkill")).toBe(false);
 		expect(app.includes('sendAppSkillsClear(ENVIRONMENT_APP_ID')).toBe(true);
 		expect(chatArea.includes("sendAppSkillsClear(ENVIRONMENT_APP_ID")).toBe(
 			true,
 		);
+		expect(chatArea.includes("blocked non-model-facing app tool")).toBe(true);
+		expect(chatArea.includes("blocked non-model-facing voice tool")).toBe(true);
 	});
 
 	it("keep list rejects the removed direct-work names", () => {

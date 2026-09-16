@@ -140,6 +140,31 @@ const TAURI_MOCK_SCRIPT = `
 		// Agent communication
 		if (cmd === "send_to_agent_command") {
 			var request = JSON.parse(args.message);
+			if (request.type === "app_skills" || request.type === "app_skills_clear") {
+				if (request.requestId) {
+					setTimeout(function() {
+						emitEvent("agent_response", JSON.stringify({
+							type: "app_skills_result",
+							requestId: request.requestId,
+							ok: true,
+						}));
+					}, 10);
+				}
+				return;
+			}
+			if (request.type === "skill_list") {
+				setTimeout(function() {
+					emitEvent("agent_response", JSON.stringify({
+						type: "skill_list_response",
+						requestId: request.requestId,
+						tools: [
+							{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: {} } },
+							{ name: "shell_exec", description: "Run a shell command", parameters: { type: "object", properties: {} } },
+						],
+					}));
+				}, 10);
+				return;
+			}
 			var requestId = request.requestId;
 			var lastMsg = request.messages[request.messages.length - 1];
 			var scenario = matchScenario(lastMsg.content);

@@ -1581,15 +1581,12 @@ Test Coverage Map (P02):
 | UC | 검증 수단 | 대상 |
 |---|---|---|
 | UC-ENV-LIVE-OBSERVE | vitest `src/test/environment-live-wiring.contract.test.ts` | 스냅샷→세그먼트 조립, Herdr 부재 시 미전송, 손잡이만 상승 |
-| UC-ENV-LIVE-OBSERVE | vitest `packages/shell/src/lib/__tests__/environment-skill.test.ts` | 도구 호출이 실제 스냅샷 경로를 탄다, 빈 결과 공허 통과 차단 |
-| UC-ENV-LIVE-ACT | vitest `packages/shell/src/lib/__tests__/environment-skill.test.ts` | focus/run/interrupt 전달, 권한 없을 때 거절, 환경 오류 그대로 상승 |
+| UC-ENV-LIVE-OBSERVE | vitest `src/test/environment-live-wiring.contract.test.ts` | 셸의 모델-facing 제어 도구 없이 스냅샷→세그먼트 조립, Herdr 부재 시 미전송 |
 | UC-ENV-LIVE-ACT | e2e-tauri `packages/shell/e2e-tauri/specs/environment-dispatch.spec.ts` | 실 Rust 명령 경계 |
 | UC-ENV-STICKY | vitest `src/test/environment-live-wiring.contract.test.ts` | 표면 사라져도 재배정 없음, 순서 바뀌어도 손잡이 불변, 죽은 손잡이는 거절 |
 | UC-ENV-ATTENTION | vitest `src/test/environment-live-wiring.contract.test.ts` | 기본 미관찰, 미관찰 중 이름·손잡이 미전송, 개수는 상한 포함, off/always 우선 |
-| UC-ENV-ATTENTION | vitest `packages/shell/src/lib/__tests__/environment-skill.test.ts` | watch/unwatch 실행, watch 가 목록 동반, off 전면 거절, always 에서 나이아 무력 |
-| UC-ENV-ATTENTION | Playwright `packages/shell/e2e/environment-skill.spec.ts` | 실 UI 에서 기본 개수만 전송, watch 후 목록 전송, unwatch 복귀, off 시 도구 미등록, 매 턴 관측 갱신 |
+| UC-ENV-ATTENTION | vitest `src/test/environment-live-wiring.contract.test.ts` | 모델-facing 환경 제어 도구 제거 후에도 기본/off/always 정책과 세그먼트 경계 유지 |
 | UC-ENV-ATTENTION | vitest `src/test/environment-live-herdr.contract.test.ts` | 살아 있는 Herdr 의 실제 터미널 이름·손잡이가 미관찰 중 전송되지 않음 |
-| UC-ENV-ATTENTION | Playwright `packages/shell/e2e/env-attention-voice.spec.ts` | 실시간 음성 턴도 예산을 소비, 음성 중 off 전환 시 거절 |
 | UC-ENV-ATTENTION | e2e-tauri `packages/shell/e2e-tauri/specs/environment-dispatch.spec.ts` | 실 Rust — 뇌가 없을 때 등록이 "확인됨"으로 새지 않음(fail-closed 방향만) |
 
 > 받는 쪽(naia-agent) 검증은 그 저장소의 `src/test/uc-environment-segments.contract.test.ts`
