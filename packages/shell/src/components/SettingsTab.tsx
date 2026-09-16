@@ -117,7 +117,6 @@ import {
 	fetchNaiaModelMetadata,
 	fetchNaiaPricing,
 	fetchOllamaModels,
-	fetchOpenAIModels,
 	fetchVllmModels,
 	formatModelLabel,
 	getDefaultLlmModel,
@@ -840,10 +839,6 @@ export function SettingsTab() {
 	const [vllmHost, setVllmHost] = useState(
 		existing?.vllmHost ?? DEFAULT_VLLM_HOST,
 	);
-	const [openaiBaseUrl, setOpenaiBaseUrl] = useState(
-		existing?.openaiBaseUrl ?? "",
-	);
-	const [openaiConnected, setOpenaiConnected] = useState(false);
 	// Naia Local: ws:// address of the user's own omni-24g container (shown when
 	// the `naia-local` model is selected). Reuses the logged-in key — no key input.
 	const [naiaLocalUrl, setNaiaLocalUrl] = useState(
@@ -1718,21 +1713,15 @@ export function SettingsTab() {
 	}, []);
 
 	useEffect(() => {
+		// #602: 타사 직결 클라우드 LLM 공급자(gemini/openai/anthropic/xai/zai)는 제거했다.
+		// 게이트웨이는 자기 경로를 azure/vertexai/upstage/clova prefix 로 내주며 이는 아래
+		// NAIA_ROUTE_PREFIXES 에서 nextain 으로 묶인다. 남는 alias 는 나이아 계정·CLI·로컬뿐.
 		const modelPrefixPattern =
-			/^(nextain|claude-code-cli|claude-code|gemini|google|openai|anthropic|claude|xai|grok|zai|glm|ollama)[:/](.+)$/i;
+			/^(nextain|claude-code-cli|claude-code|ollama)[:/](.+)$/i;
 		const providerAlias: Record<string, ProviderId> = {
 			nextain: "nextain",
 			"claude-code-cli": "claude-code-cli",
 			"claude-code": "claude-code-cli",
-			gemini: "gemini",
-			google: "gemini",
-			openai: "openai",
-			anthropic: "anthropic",
-			claude: "anthropic",
-			xai: "xai",
-			grok: "xai",
-			zai: "zai",
-			glm: "zai",
 			ollama: "ollama",
 		};
 
@@ -1775,7 +1764,9 @@ export function SettingsTab() {
 						const label = `${m.name || modelId}${priceStr}`;
 
 						const pushModel = (key: string) => {
-							if (!grouped[key]?.some((x) => x.id === modelId)) {
+							// #602: 제거된 공급자로 매핑되면 grouped[key] 가 없으므로 건너뛴다.
+							if (!grouped[key]) return;
+							if (!grouped[key].some((x) => x.id === modelId)) {
 								grouped[key].push({
 									id: modelId,
 									label,
@@ -1801,27 +1792,6 @@ export function SettingsTab() {
 							? "nextain"
 							: resolveProvider(m.provider) || resolveProviderFromId(m.id);
 						if (mappedProvider) pushModel(mappedProvider);
-						// Claude Code CLI uses subscription — add models without pricing
-						if (mappedProvider === "anthropic") {
-							const nameOnly = m.name || modelId;
-							if (!grouped["claude-code-cli"]?.some((x) => x.id === modelId)) {
-								grouped["claude-code-cli"].push({
-									id: modelId,
-									label: nameOnly,
-									capabilities: ["llm"] as const,
-								});
-							}
-						}
-						// Naia only supports curated Gemini models (from registry)
-						if (mappedProvider === "gemini") {
-							const nextainModelIds =
-								getLlmProvider("nextain")
-									?.models.filter((nm) => !nm.capabilities.includes("omni"))
-									.map((nm) => nm.id) ?? [];
-							if (nextainModelIds.includes(modelId)) {
-								pushModel("nextain");
-							}
-						}
 					}
 
 					setDynamicModels(grouped);
@@ -1863,25 +1833,6 @@ export function SettingsTab() {
 			}
 		});
 	}, [provider, vllmHost]);
-
-	useEffect(() => {
-		if (provider !== "openai") return;
-		let cancelled = false;
-		fetchOpenAIModels(openaiBaseUrl, apiKey).then(({ models, connected }) => {
-			if (cancelled) return;
-			setOpenaiConnected(connected);
-			if (models.length === 0) return;
-			setDynamicModels((previous) => ({ ...previous, openai: models }));
-			setModel((current) =>
-				models.some((candidate) => candidate.id === current)
-					? current
-					: models[0].id,
-			);
-		});
-		return () => {
-			cancelled = true;
-		};
-	}, [provider, openaiBaseUrl, apiKey]);
 
 	// Fetch live Naia pricing from gateway (DB = SoT).
 	// Runs when provider switches to "nextain" so the displayed price always
@@ -2745,16 +2696,11 @@ export function SettingsTab() {
 			let synthVoice: string | undefined;
 			let synthApiKey: string | undefined;
 
-			if (isOmni && (provider === "nextain" || provider === "gemini")) {
+			if (isOmni && provider === "nextain") {
 				// Omni avatar voice → Naia Cloud (gateway Chirp 3 HD).
 				const voiceName = voice || getDefaultVoiceForAvatar(existing?.vrmModel);
 				synthProvider = "nextain";
 				synthVoice = `ko-KR-Chirp3-HD-${voiceName}`;
-			} else if (isOmni && provider === "openai") {
-				synthProvider = "openai";
-				synthVoice = voice || "alloy";
-				synthApiKey =
-					openaiRealtimeApiKey.trim() || existing?.openaiTtsApiKey || undefined;
 			} else {
 				synthProvider = (ttsProvider || "edge") as TtsProviderId;
 				synthVoice = ttsVoice;
@@ -2999,10 +2945,6 @@ export function SettingsTab() {
 					: existing?.ollamaHost,
 			vllmHost:
 				provider === "vllm" ? vllmHost.trim() || undefined : existing?.vllmHost,
-			openaiBaseUrl:
-				provider === "openai"
-					? openaiBaseUrl.trim() || undefined
-					: existing?.openaiBaseUrl,
 			naiaLocalUrl: naiaLocalUrl.trim() || undefined,
 			voice: isOmniModel(provider, model) ? voice : existing?.voice,
 			openaiRealtimeApiKey: openaiRealtimeApiKey.trim() || undefined,
@@ -4610,8 +4552,7 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{provider !== "nextain" &&
-						(!isApiKeyOptional(provider) || provider === "ollama") && (
+					{provider === "ollama" && (
 							<div className="settings-field">
 								<label htmlFor="apikey-input">{t("settings.apiKey")}</label>
 								<input
@@ -4628,12 +4569,6 @@ export function SettingsTab() {
 											: "sk-..."
 									}
 								/>
-								{provider === "zai" && (
-									<div className="settings-hint">
-										Z.AI <strong>Coding Plan</strong> 구독 후 발급된 API Key를
-										입력하세요.
-									</div>
-								)}
 							</div>
 						)}
 
@@ -4671,29 +4606,6 @@ export function SettingsTab() {
 							</div>
 						</div>
 					)}
-					{provider === "openai" && (
-						<div className="settings-field">
-							<label htmlFor="openai-base-url">OpenAI Host / Base URL</label>
-							<input
-								id="openai-base-url"
-								type="url"
-								value={openaiBaseUrl}
-								onChange={(event) => setOpenaiBaseUrl(event.target.value)}
-								onBlur={(event) =>
-									persistConfig({
-										openaiBaseUrl: event.target.value.trim() || undefined,
-									})
-								}
-								placeholder="https://api.openai.com/v1"
-							/>
-							<div className="settings-hint">
-								{openaiConnected ? "연결됨" : "연결을 확인하세요"} — 비워 두면
-								OpenAI 공식 endpoint를 사용합니다. OpenAI 호환 서버는
-								http://host:port/v1 형식으로 입력하세요.
-							</div>
-						</div>
-					)}
-
 					<div className="settings-field">
 						<label htmlFor="model-select">{t("settings.model")}</label>
 						{provider === "nextain" && !hideModelPicker ? (
@@ -4897,44 +4809,6 @@ export function SettingsTab() {
 										: t("settings.voicePreview")}
 								</button>
 							</div>
-						</div>
-					)}
-
-					{/* Omni model: Gemini Direct mode needs Google API Key */}
-					{isSelectedOmni && provider === "gemini" && (
-						<div className="settings-field">
-							<label htmlFor="google-apikey-input">Google API Key</label>
-							<input
-								id="google-apikey-input"
-								type="password"
-								value={googleApiKey}
-								onChange={(e) => {
-									setGoogleApiKey(e.target.value);
-									if (existing)
-										saveConfig({ ...existing, googleApiKey: e.target.value });
-								}}
-								placeholder="AIza..."
-							/>
-						</div>
-					)}
-
-					{/* Omni model: OpenAI Realtime needs API Key */}
-					{isSelectedOmni && provider === "openai" && (
-						<div className="settings-field">
-							<label>OpenAI API Key</label>
-							<input
-								type="password"
-								value={openaiRealtimeApiKey}
-								onChange={(e) => {
-									setOpenaiRealtimeApiKey(e.target.value);
-									if (existing)
-										saveConfig({
-											...existing,
-											openaiRealtimeApiKey: e.target.value,
-										});
-								}}
-								placeholder="sk-..."
-							/>
 						</div>
 					)}
 

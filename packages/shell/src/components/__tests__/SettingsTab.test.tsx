@@ -477,15 +477,25 @@ describe("SettingsTab", () => {
 		);
 
 	it("renders gateway catalog models with pricing (/v1/pricing 셸-직결)", async () => {
-		// 설정이 빈 첫 실행은 이제 제공자가 없다(FR-LLM-LOGOUT.2). 이 테스트는 gemini 카탈로그를 보므로 명시한다.
+		// #602: 이 테스트는 게이트웨이 전체 카탈로그(fetchGatewayModelCatalog)가
+		// <provider>:<id> 를 파싱해 해당 그룹에 가격표와 함께 모델을 추가하는 경로를
+		// 본다. 타사 직결 클라우드 공급자(gemini 등)는 제거됐고, 나이아 계정(nextain)
+		// 그룹은 라이브 가격 effect 가 정적 목록으로 다시 채워 카탈로그 추가분을 덮어쓴다.
+		// 그래서 카탈로그가 채우고 이후 덮어쓰이지 않는 잔존 공급자(claude-code-cli, 스킬
+		// 탭 CLI)로 파싱·가격 렌더를 관찰한다. (나이아 경로 vertexai/azure/upstage/clova →
+		// nextain 그룹핑·가격은 별도 nextain 테스트가 이미 검증한다.)
 		localStorage.setItem(
 			"naia-config",
-			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash", apiKey: "" }),
+			JSON.stringify({
+				provider: "claude-code-cli",
+				model: "claude-sonnet-5",
+				apiKey: "",
+			}),
 		);
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{
-				model_key: "gemini:test-model-1",
+				model_key: "claude-code-cli:test-model-1",
 				input_price_per_million: 1.5,
 				output_price_per_million: 2.5,
 				cached_price_per_million: null,
@@ -500,14 +510,19 @@ describe("SettingsTab", () => {
 	});
 
 	it("parses gateway model_key provider prefix (<provider>:<id>)", async () => {
+		// #602: 제거된 타사 공급자 대신 잔존 공급자(claude-code-cli)로 prefix 파싱을 본다.
 		localStorage.setItem(
 			"naia-config",
-			JSON.stringify({ provider: "gemini", model: "gemini-2.5-flash", apiKey: "" }),
+			JSON.stringify({
+				provider: "claude-code-cli",
+				model: "claude-sonnet-5",
+				apiKey: "",
+			}),
 		);
 		mockInvoke.mockResolvedValue([]);
 		stubPricingFetch([
 			{
-				model_key: "gemini:gemini-ultra-test",
+				model_key: "claude-code-cli:gemini-ultra-test",
 				input_price_per_million: 0,
 				output_price_per_million: 0,
 				cached_price_per_million: null,
@@ -522,6 +537,11 @@ describe("SettingsTab", () => {
 	});
 
 	it("renders provider select and API key input", () => {
+		// #602: BYO API 키 입력란은 이제 원격 ollama(OpenAI 호환)에만 남는다.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({ provider: "ollama", model: "", apiKey: "" }),
+		);
 		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
@@ -530,13 +550,15 @@ describe("SettingsTab", () => {
 		expect(screen.getByLabelText(/^API/i)).toBeDefined();
 	});
 
-	it("applies the Google API key to the Agent credential store before reload", async () => {
+	it("applies the remote Ollama API key to the Agent credential store before reload", async () => {
+		// #602: 직결 gemini 는 제거됐다. 남은 BYO 키 경로(원격 ollama → OPENAI_API_KEY)로
+		// 브레인 탭 키 입력 → agent 키체인 저장 → reload 흐름을 검증한다.
 		localStorage.setItem("naia-adk-path", "/home/user/naia-adk");
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
-				provider: "gemini",
-				model: "gemini-2.5-flash",
+				provider: "ollama",
+				model: "",
 				apiKey: "",
 			}),
 		);
@@ -555,7 +577,7 @@ describe("SettingsTab", () => {
 		await waitFor(() =>
 			expect(mockInvoke).toHaveBeenCalledWith("write_agent_key", {
 				adkPath: "/home/user/naia-adk",
-				envKey: "GEMINI_API_KEY",
+				envKey: "OPENAI_API_KEY",
 				value: "store-review-key",
 			}),
 		);
@@ -1127,7 +1149,8 @@ describe("SettingsTab", () => {
 	it.each([
 		{
 			name: "stale legacy mirror",
-			legacy: { provider: "gemini", model: "gemini-2.5-flash" },
+			// #602: 직결 gemini 는 제거됐다 — 무시돼야 할 낡은 레거시 값도 남는 공급자로 둔다.
+			legacy: { provider: "nextain", model: "deepseek-v4-flash" },
 		},
 		{
 			name: "role-only config",
@@ -1146,9 +1169,9 @@ describe("SettingsTab", () => {
 					apiKey: "stored-api-key",
 					llmRoles: {
 						main: {
-							provider: "openai",
+							provider: "codex",
 							model: "gpt-5.4",
-							credentialRef: "OPENAI_API_KEY",
+							credentialRef: "codex-cred",
 							baseUrl: "https://proxy.example/v1",
 						},
 					},
@@ -1162,7 +1185,7 @@ describe("SettingsTab", () => {
 				expect(
 					(document.getElementById("provider-select") as HTMLSelectElement)
 						.value,
-				).toBe("openai");
+				).toBe("codex");
 				expect(
 					(document.getElementById("model-select") as HTMLSelectElement).value,
 				).toBe("gpt-5.4");
@@ -1173,9 +1196,9 @@ describe("SettingsTab", () => {
 				const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 				expect(saved.llmRoles?.main).toEqual(
 					expect.objectContaining({
-						provider: "openai",
+						provider: "codex",
 						model: "gpt-5.4",
-						credentialRef: "OPENAI_API_KEY",
+						credentialRef: "codex-cred",
 						baseUrl: "https://proxy.example/v1",
 					}),
 				);
@@ -1186,14 +1209,15 @@ describe("SettingsTab", () => {
 	it.each([
 		{
 			name: "same-provider model change",
-			nextProvider: "openai",
-			nextModel: "gpt-4.1",
+			nextProvider: "codex",
+			nextModel: "gpt-5.5",
 			preservesMetadata: true,
 		},
 		{
+			// #602: 직결 gemini/openai 는 제거됐다 — 공급자 전환은 남는 CLI 공급자끼리 검증한다.
 			name: "provider change",
-			nextProvider: "gemini",
-			nextModel: "gemini-2.5-flash",
+			nextProvider: "grok",
+			nextModel: "grok-4.6",
 			preservesMetadata: false,
 		},
 	])(
@@ -1203,14 +1227,14 @@ describe("SettingsTab", () => {
 				"naia-config",
 				JSON.stringify({
 					onboardingComplete: true,
-					provider: "openai",
+					provider: "codex",
 					model: "gpt-5.4",
 					apiKey: "stored-api-key",
 					llmRoles: {
 						main: {
-							provider: "openai",
+							provider: "codex",
 							model: "gpt-5.4",
-							credentialRef: "OPENAI_API_KEY",
+							credentialRef: "codex-cred",
 							baseUrl: "https://proxy.example/v1",
 						},
 					},
@@ -1224,9 +1248,9 @@ describe("SettingsTab", () => {
 				document.getElementById("provider-select") as HTMLSelectElement;
 			const modelSelect = () =>
 				document.getElementById("model-select") as HTMLSelectElement;
-			await vi.waitFor(() => expect(providerSelect().value).toBe("openai"));
+			await vi.waitFor(() => expect(providerSelect().value).toBe("codex"));
 
-			if (nextProvider !== "openai") {
+			if (nextProvider !== "codex") {
 				fireEvent.change(providerSelect(), {
 					target: { value: nextProvider },
 				});
@@ -1255,7 +1279,7 @@ describe("SettingsTab", () => {
 				if (preservesMetadata) {
 					expect(saved.llmRoles.main).toEqual(
 						expect.objectContaining({
-							credentialRef: "OPENAI_API_KEY",
+							credentialRef: "codex-cred",
 							baseUrl: "https://proxy.example/v1",
 						}),
 					);

@@ -7,8 +7,8 @@
  * access, these models must NOT appear in the Naia provider's model list
  * (the user-visible dropdown). gemini-2.5-* family is verified working.
  *
- * Direct-API "gemini" provider (GEMINI_API_KEY → Google AI Studio) keeps
- * gemini-3.x since that route bypasses the gateway and works end-to-end.
+ * #602: 타사 직결 "gemini" 공급자(GEMINI_API_KEY → Google AI Studio)는 제거됐다 —
+ * Naia 계정(nextain) 게이트웨이 경로만 남는다.
  *
  * Run:
  *   pnpm exec vitest run src/lib/llm/__tests__/registry-gateway-models.test.ts
@@ -99,13 +99,9 @@ describe("LLM registry — gateway model exclusion (#248)", () => {
 		expect(tagged.length).toBeGreaterThan(base.length);
 	});
 
-	it("Direct Google Gemini provider lists gemini-2.5-* family", async () => {
+	it("#602: the direct Google Gemini provider is gone", async () => {
 		const { getLlmProvider } = await import("../registry.js");
-		const direct = getLlmProvider("gemini");
-		expect(direct).toBeTruthy();
-		const ids = direct!.models.map((m) => m.id);
-		expect(ids).toContain("gemini-2.5-pro");
-		expect(ids).toContain("gemini-2.5-flash");
+		expect(getLlmProvider("gemini")).toBeUndefined();
 	});
 
 	it("Naia default model is deepseek-v4-flash", async () => {
@@ -135,12 +131,9 @@ describe("shouldMigrateNextainModel (#248 follow-up migration)", () => {
 		}
 	});
 
-	it("does NOT migrate other providers (gemini-3.x still valid on direct gemini)", async () => {
+	it("does NOT migrate non-nextain providers (scoped to nextain only)", async () => {
 		const { shouldMigrateNextainModel } = await import("../registry.js");
-		expect(
-			shouldMigrateNextainModel("gemini", "gemini-3-flash-preview").migrate,
-		).toBe(false);
-		expect(shouldMigrateNextainModel("gemini", "any-model").migrate).toBe(
+		expect(shouldMigrateNextainModel("codex", "gpt-5.6-sol").migrate).toBe(
 			false,
 		);
 		expect(shouldMigrateNextainModel("ollama", "qwen3:14b").migrate).toBe(

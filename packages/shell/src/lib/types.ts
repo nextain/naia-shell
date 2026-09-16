@@ -60,7 +60,6 @@ export interface ProviderConfig {
 	ollamaHost?: string;
 	ollamaNumGpu?: number;
 	vllmHost?: string;
-	openaiBaseUrl?: string;
 	/** Override URL for lab-proxy (Naia gateway). Used to route to dev vs prod gateway. */
 	labGatewayUrl?: string;
 	/** Enable thinking/reasoning output from models that support it. */

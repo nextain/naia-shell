@@ -1,5 +1,4 @@
 import { MODEL_CAPABILITY_VALUES, type ModelCapability } from "../types.js";
-import { effectiveOpenAIBaseUrl } from "./openai-base-url.js";
 import type {
 	LlmModelMeta,
 	LlmProviderMeta,
@@ -22,6 +21,8 @@ export function getLlmProvider(id: string): LlmProviderMeta | undefined {
 
 // UI display order (user-defined 2026-06-18): local/own-stack first, then by usage.
 // Providers not listed here fall to the end (stable, in registration order).
+// #602: 타사 클라우드 LLM API 공급자(openai/gemini/anthropic/xai/zai)는 제거했다 —
+// 로그인=나이아 계정, 로그아웃=무료→로컬. 남는 건 나이아 계정·CLI(스킬)·로컬뿐이다.
 const PROVIDER_DISPLAY_ORDER = [
 	"nextain",
 	"ollama",
@@ -29,10 +30,6 @@ const PROVIDER_DISPLAY_ORDER = [
 	"codex",
 	"claude-code-cli",
 	"grok",
-	"zai",
-	"openai",
-	"gemini",
-	"xai",
 ];
 
 /** List all registered LLM providers in the user-defined display order. */
@@ -145,57 +142,6 @@ export async function fetchVllmModels(
 	if (!provider?.fetchModels) return { models: [], connected: false };
 	const models = await provider.fetchModels(host);
 	return { models: models ?? [], connected: models !== null };
-}
-
-/** OpenAI /v1/models 는 챗 모델 외에 embedding·TTS·STT·이미지·moderation 등
- *  이 화면에서 쓸 수 없는 모델도 전부 반환한다 — LLM 셀렉터에서는 제외한다. */
-const OPENAI_NON_CHAT_MODEL_PATTERN =
-	/(embed|tts|whisper|transcribe|audio|realtime|image|dall-e|moderation|sora|search|davinci|babbage|instruct)/i;
-
-/** Fetch an OpenAI-compatible model catalogue from the same base URL used by chat. */
-export async function fetchOpenAIModels(
-	baseUrl?: string,
-	apiKey?: string,
-): Promise<{ models: LlmModelMeta[]; connected: boolean }> {
-	try {
-		const headers: Record<string, string> = {};
-		if (apiKey?.trim() && apiKey !== "*****") {
-			headers.Authorization = `Bearer ${apiKey.trim()}`;
-		}
-		const effectiveBaseUrl = effectiveOpenAIBaseUrl(baseUrl);
-		const response = await fetch(`${effectiveBaseUrl}/models`, {
-			headers,
-			signal: AbortSignal.timeout(5000),
-		});
-		if (!response.ok) return { models: [], connected: false };
-		const payload = (await response.json()) as {
-			data?: Array<{ id?: unknown }>;
-		};
-		const models = (payload.data ?? [])
-			.filter((entry): entry is { id: string } => typeof entry.id === "string")
-			.filter((entry) => !OPENAI_NON_CHAT_MODEL_PATTERN.test(entry.id))
-			.map(
-				(entry): LlmModelMeta => ({
-					id: entry.id,
-					label: entry.id,
-					capabilities: ["llm"],
-				}),
-			);
-		// 동적 목록이 정적 registry 목록을 대체하므로, 필터에 걸리는 음성(omni) 모델은
-		// 정적 정의에서 되살려 유지한다(realtime 계열이 LLM 필터로 소실되는 회귀 방지).
-		// 공식 OpenAI 엔드포인트일 때만 — 커스텀 호환 서버에는 OpenAI 전용 모델이 없다.
-		const staticOmni =
-			effectiveBaseUrl === "https://api.openai.com/v1"
-				? (providers.get("openai")?.models ?? []).filter(
-						(m) =>
-							m.capabilities.includes("omni") &&
-							!models.some((fetched) => fetched.id === m.id),
-					)
-				: [];
-		return { models: [...models, ...staticOmni], connected: true };
-	} catch {
-		return { models: [], connected: false };
-	}
 }
 
 /** Pricing entry shape returned by GET /v1/pricing on the Naia gateway. */
@@ -612,19 +558,6 @@ export const GEMINI_LIVE_VOICES: LlmVoiceMeta[] = [
 	{ id: "Zephyr", label: "Zephyr (중성)" },
 ];
 
-export const OPENAI_REALTIME_VOICES: LlmVoiceMeta[] = [
-	{ id: "alloy", label: "Alloy (중성)" },
-	{ id: "ash", label: "Ash (남성)" },
-	{ id: "ballad", label: "Ballad (남성)" },
-	{ id: "coral", label: "Coral (여성)" },
-	{ id: "echo", label: "Echo (남성)" },
-	{ id: "sage", label: "Sage (여성)" },
-	{ id: "shimmer", label: "Shimmer (여성)" },
-	{ id: "verse", label: "Verse (남성)" },
-	{ id: "marin", label: "Marin (여성)" },
-	{ id: "cedar", label: "Cedar (남성)" },
-];
-
 // ─── Provider registrations ─────────────────────────────────────────────────
 
 registerLlmProvider({
@@ -834,264 +767,6 @@ registerLlmProvider({
 	models: [
 		{ id: "grok-4.6", label: "Grok 4.6", capabilities: ["llm"] },
 		{ id: "grok-4.5", label: "Grok 4.5", capabilities: ["llm"] },
-	],
-});
-
-registerLlmProvider({
-	id: "gemini",
-	name: "Google Gemini",
-	description: "Google Gemini API — requires Google API key.",
-	descKey: "provider.apiKeyRequired",
-	requiresApiKey: true,
-	defaultModel: "gemini-3.7-flash",
-	models: [
-		{
-			id: "gemini-3.7-flash",
-			label: "Gemini 3.7 Flash",
-			capabilities: ["llm"],
-			pricing: [0.75, 3.75],
-		},
-		{
-			id: "gemini-3.6-flash",
-			label: "Gemini 3.6 Flash",
-			capabilities: ["llm"],
-			pricing: [0.75, 3.75],
-		},
-		{
-			id: "gemini-3.5-flash",
-			label: "Gemini 3.5 Flash",
-			capabilities: ["llm"],
-			pricing: [1.5, 9.0],
-		},
-		{
-			id: "gemini-3.5-flash-lite",
-			label: "Gemini 3.5 Flash Lite",
-			capabilities: ["llm"],
-			pricing: [0.3, 2.5],
-		},
-		{
-			id: "gemini-3.1-flash-lite",
-			label: "Gemini 3.1 Flash Lite",
-			capabilities: ["llm"],
-			pricing: [0.25, 1.5],
-		},
-		{
-			id: "gemini-3.1-pro-preview",
-			label: "Gemini 3.1 Pro Preview",
-			capabilities: ["llm"],
-			pricing: [2.0, 12.0],
-		},
-		{
-			id: "gemini-2.5-pro",
-			label: "Gemini 2.5 Pro",
-			capabilities: ["llm"],
-			pricing: [1.25, 10.0],
-		},
-		{
-			id: "gemini-2.5-flash",
-			label: "Gemini 2.5 Flash",
-			capabilities: ["llm"],
-			pricing: [0.3, 2.5],
-		},
-		{
-			id: "gemini-2.5-flash-live",
-			label: "Gemini 2.5 Flash Live (Realtime)",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [...GEMINI_LIVE_VOICES],
-			transcriptProvided: true,
-		},
-	],
-});
-
-registerLlmProvider({
-	id: "openai",
-	name: "OpenAI",
-	description: "OpenAI GPT models — requires OpenAI API key.",
-	descKey: "provider.apiKeyRequired",
-	requiresApiKey: true,
-	// 2026-08 라인업: gpt-5.6 sol/terra/luna 가 현행 플래그십. o4-mini 등 o-계열은
-	// 2026-10-23 shutdown 예고로 제거.
-	defaultModel: "gpt-5.6-terra",
-	models: [
-		{
-			id: "gpt-5.6-sol",
-			label: "GPT-5.6 Sol",
-			capabilities: ["llm"],
-			pricing: [4.0, 20.0],
-		},
-		{
-			id: "gpt-5.6-terra",
-			label: "GPT-5.6 Terra",
-			capabilities: ["llm"],
-			pricing: [2.0, 12.0],
-		},
-		{
-			id: "gpt-5.6-luna",
-			label: "GPT-5.6 Luna",
-			capabilities: ["llm"],
-			pricing: [0.2, 1.2],
-		},
-		{
-			id: "gpt-5.5",
-			label: "GPT-5.5",
-			capabilities: ["llm"],
-			pricing: [5.0, 30.0],
-		},
-		{
-			id: "gpt-5.4",
-			label: "GPT-5.4",
-			capabilities: ["llm"],
-			pricing: [2.5, 15.0],
-		},
-		{
-			id: "gpt-4.1",
-			label: "GPT-4.1",
-			capabilities: ["llm"],
-			pricing: [2.0, 8.0],
-		},
-		{
-			id: "gpt-4.1-mini",
-			label: "GPT-4.1 Mini",
-			capabilities: ["llm"],
-			pricing: [0.4, 1.6],
-		},
-		{
-			id: "gpt-4o",
-			label: "GPT-4o",
-			capabilities: ["llm"],
-			pricing: [2.5, 10.0],
-		},
-		{
-			id: "gpt-4o-mini-realtime-preview",
-			label: "GPT-4o Mini Realtime",
-			capabilities: ["llm", "omni"],
-			voiceSelectable: true,
-			voices: [...OPENAI_REALTIME_VOICES],
-			transcriptProvided: true,
-		},
-	],
-});
-
-registerLlmProvider({
-	id: "anthropic",
-	name: "Anthropic",
-	description: "Claude models — requires Anthropic API key.",
-	descKey: "provider.apiKeyRequired",
-	requiresApiKey: true,
-	supportedRoles: ["expert", "main", "sub"],
-	// 2026-08 공식가: fable-5 10/50, opus-4.8 5/25, sonnet-5·4.6 3/15, haiku-4.5 1/5.
-	defaultModel: "claude-sonnet-5",
-	models: [
-		{
-			id: "claude-fable-5",
-			label: "Claude Fable 5",
-			capabilities: ["llm"],
-			pricing: [10.0, 50.0],
-		},
-		{
-			id: "claude-opus-4-8",
-			label: "Claude Opus 4.8",
-			capabilities: ["llm"],
-			pricing: [5.0, 25.0],
-		},
-		{
-			id: "claude-sonnet-5",
-			label: "Claude Sonnet 5",
-			capabilities: ["llm"],
-			pricing: [3.0, 15.0],
-		},
-		{
-			id: "claude-sonnet-4-6",
-			label: "Claude Sonnet 4.6",
-			capabilities: ["llm"],
-			pricing: [3.0, 15.0],
-		},
-		{
-			id: "claude-haiku-4-5-20251001",
-			label: "Claude Haiku 4.5",
-			capabilities: ["llm"],
-			pricing: [1.0, 5.0],
-		},
-	],
-});
-
-registerLlmProvider({
-	id: "xai",
-	name: "xAI",
-	description: "Grok models — requires xAI API key.",
-	descKey: "provider.apiKeyRequired",
-	requiresApiKey: true,
-	// 2026-08 라인업: grok-4.6 플래그십. grok-4/4.1-fast/3.x/code-fast-1 은 2026-05-15
-	// retire(슬러그는 grok-4.3 으로 리다이렉트) — 목록에서 제거.
-	defaultModel: "grok-4.3",
-	models: [
-		{
-			id: "grok-4.6",
-			label: "Grok 4.6",
-			capabilities: ["llm"],
-			pricing: [2.0, 6.0],
-		},
-		{
-			id: "grok-4.5",
-			label: "Grok 4.5",
-			capabilities: ["llm"],
-			pricing: [2.0, 6.0],
-		},
-		{
-			id: "grok-4.3",
-			label: "Grok 4.3",
-			capabilities: ["llm"],
-			pricing: [1.25, 2.5],
-		},
-		{
-			id: "grok-build-0.1",
-			label: "Grok Build 0.1",
-			capabilities: ["llm"],
-			pricing: [1.0, 2.0],
-		},
-	],
-});
-
-registerLlmProvider({
-	id: "zai",
-	name: "Z.AI",
-	description: "GLM models via Z.AI Coding Plan — requires Z.AI API key.",
-	descKey: "provider.apiKeyRequired",
-	requiresApiKey: true,
-	// 2026-08 라인업: glm-5.3 최신. glm-4.7/4.5-air 는 구모델 정리로 제거(사용자 지시).
-	defaultModel: "glm-5.3",
-	models: [
-		{
-			id: "glm-5.3",
-			label: "GLM 5.3",
-			capabilities: ["llm"],
-			pricing: [1.4, 4.4],
-		},
-		{
-			id: "glm-5.3-flash",
-			label: "GLM 5.3 Flash",
-			capabilities: ["llm"],
-			pricing: [0.075, 0.25],
-		},
-		{
-			id: "glm-5.2",
-			label: "GLM 5.2",
-			capabilities: ["llm"],
-			pricing: [1.4, 4.4],
-		},
-		{
-			id: "glm-5.1",
-			label: "GLM 5.1",
-			capabilities: ["llm"],
-			pricing: [1.4, 4.4],
-		},
-		{
-			id: "glm-5-turbo",
-			label: "GLM 5 Turbo",
-			capabilities: ["llm"],
-			pricing: [1.2, 4.0],
-		},
 	],
 });
 

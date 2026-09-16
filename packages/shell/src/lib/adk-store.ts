@@ -286,49 +286,6 @@ const UI_ONLY_CONFIG_KEYS = new Set([
 	"naiaUserId",
 ]);
 
-// #515 — agent 는 chat_request 의 provider 를 받지 않는다(grpc-codec "provider 제거=정본").
-// 활성 provider 는 오로지 이 config.json 의 llmRoles.main 으로 재구성되는데, openai 커스텀
-// 호스트는 최상위 openaiBaseUrl 에만 저장돼 main.baseUrl 이 비면 채팅이 기본 api.openai.com
-// 으로 샌다(모델 목록만 새 호스트를 보는 실측 결함). 기록 직전에 main role 로 동기화한다.
-// URL 정규화는 이 파일의 OPENAI_BASE_URL env 규칙(중복 /v1 방지)과 동일해야 한다.
-export function syncMainRoleOpenAiBaseUrl(
-	agentConfig: Record<string, unknown>,
-): void {
-	const roles =
-		agentConfig.llmRoles && typeof agentConfig.llmRoles === "object"
-			? (agentConfig.llmRoles as Record<string, unknown>)
-			: {};
-	const main =
-		roles.main && typeof roles.main === "object"
-			? (roles.main as Record<string, string>)
-			: {};
-	if (main.inherit) return; // 상속 마커는 건드리지 않는다(agent 가 별도 해석)
-	const provider =
-		main.provider ??
-		(typeof agentConfig.provider === "string" ? agentConfig.provider : undefined);
-	if (provider !== "openai") return;
-	const raw =
-		typeof agentConfig.openaiBaseUrl === "string"
-			? agentConfig.openaiBaseUrl.trim()
-			: "";
-	if (raw) {
-		main.baseUrl = `${raw.replace(/\/+$/, "").replace(/\/v1$/i, "")}/v1`;
-	} else {
-		// 커스텀 호스트를 지웠으면 main role 의 화석 baseUrl 도 지워 공식 endpoint 로 복귀시킨다.
-		delete main.baseUrl;
-		if (Object.keys(main).length === 0) return;
-	}
-	if (!main.provider) main.provider = provider;
-	if (
-		!main.model &&
-		typeof agentConfig.model === "string" &&
-		agentConfig.model
-	)
-		main.model = agentConfig.model;
-	roles.main = main;
-	agentConfig.llmRoles = roles;
-}
-
 function stripForAgent(
 	config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -381,7 +338,6 @@ export function buildNaiaConfigEnv(cfg: {
 	model?: string;
 	ollamaHost?: string;
 	vllmHost?: string;
-	openaiBaseUrl?: string;
 	naiaGatewayUrl?: string;
 	memoryEmbeddingProvider?: string;
 	memoryEmbeddingModel?: string;
@@ -411,9 +367,8 @@ export function buildNaiaConfigEnv(cfg: {
 	}
 
 	// OPENAI_BASE_URL is scoped to the active provider so a saved host can never leak.
-	if (cfg.provider === "openai" && cfg.openaiBaseUrl?.trim()) {
-		out.OPENAI_BASE_URL = `${cfg.openaiBaseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "")}/v1`;
-	} else if (cfg.provider === "ollama" && cfg.ollamaHost) {
+	// #602: 타사 직결 openai 공급자는 제거됐다 — 로컬 ollama/vllm(OpenAI 호환)만 남는다.
+	if (cfg.provider === "ollama" && cfg.ollamaHost) {
 		out.OPENAI_BASE_URL = `${cfg.ollamaHost.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1`;
 	} else if (cfg.provider === "vllm" && cfg.vllmHost) {
 		out.OPENAI_BASE_URL = cfg.vllmHost.replace(/\/?$/, "/v1");
@@ -460,30 +415,17 @@ function resolveAgentEnvKey(
 	if (keyField === "naiaKey") return "NAIA_ANYLLM_API_KEY";
 	// #329 fix: `apiKey` and `naiaKey` MUST NOT map to the same env var.
 	// Pre-fix, `provider === "nextain"` mapped both fields to
-	// `NAIA_ANYLLM_API_KEY`, so a stale Gemini `apiKey` from an earlier
-	// session would overwrite the valid `naiaKey` via the secret IPC race
-	// — observed as `[오류] Unauthorized` in 2026-05-26 e2e 04 debugging.
-	// nextain provider uses `naiaKey` only; the `apiKey` field is for
-	// direct providers (anthropic / openai / glm) and has no meaning here.
+	// `NAIA_ANYLLM_API_KEY`, so a stale `apiKey` from an earlier session would
+	// overwrite the valid `naiaKey` via the secret IPC race — observed as
+	// `[오류] Unauthorized` in 2026-05-26 e2e 04 debugging. nextain provider uses
+	// `naiaKey` only; the `apiKey` field has no meaning here.
 	if (provider === "nextain") return null;
-	switch (provider) {
-		case "anthropic":
-			return "ANTHROPIC_API_KEY";
-		case "openai":
-			return "OPENAI_API_KEY";
-		case "glm":
-			return "GLM_API_KEY";
-		case "zai":
-			return "GLM_API_KEY"; // zai = z.ai/Zhipu GLM (config provider id) — agent 도 동일 매핑
-		case "gemini":
-			return "GEMINI_API_KEY"; // direct Google AI Studio key (≠ nextain/Vertex). agent keychain-secret-store 거울
-		case "xai":
-			return "XAI_API_KEY"; // grok. agent keychain-secret-store 거울 — 이게 빠져 키가 안 써져 401 났음
-		case "ollama":
-			return "OPENAI_API_KEY"; // remote/authenticated Ollama uses the OpenAI-compatible client
-		default:
-			return null; // vllm, claude-code-cli, codex, grok — no persisted key (local / CLI 로그인)
-	}
+	// #602: 타사 직결 클라우드 LLM 공급자(openai/anthropic/gemini/xai/zai=glm)는
+	// 흔적 없이 제거됐다 — 그들의 direct API 키 매핑도 함께 지운다. 남는 원격 ollama 만
+	// OpenAI 호환 클라이언트라 키를 쓰고, 나머지(vllm/claude-code-cli/codex/grok)는
+	// 로컬·CLI 로그인이라 저장 키가 없다.
+	if (provider === "ollama") return "OPENAI_API_KEY";
+	return null;
 }
 
 /**
@@ -857,7 +799,6 @@ async function writeNaiaConfigNow(
 ): Promise<void> {
 	if (!adkPath) return;
 	const publicAgentConfig = stripForAgent(config);
-	syncMainRoleOpenAiBaseUrl(publicAgentConfig); // #515
 	const normalizedAgentConfig = {
 		...publicAgentConfig,
 		...buildNaiaConfigEnv(
