@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ARTIFACTS = resolve(
@@ -32,12 +32,61 @@ public static class WindowCapture {
     finally { graphics.Dispose(); bitmap.Dispose(); }
   }
 }
+
 '@
 [WindowCapture]::Save('${escaped}')
 `;
 	execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
 		stdio: "pipe",
 	});
+}
+
+function nativePageInfoSeen(url: string, titleFragment: string): boolean {
+	const runtimeDir = process.env.NAIA_E2E_RUNTIME_DIR;
+	if (!runtimeDir) return false;
+	const pending = [runtimeDir];
+	while (pending.length > 0) {
+		const directory = pending.pop();
+		if (!directory) continue;
+		for (const entry of readdirSync(directory, { withFileTypes: true })) {
+			const path = resolve(directory, entry.name);
+			if (entry.isDirectory()) {
+				pending.push(path);
+				continue;
+			}
+			if (!/\.log$|\.jsonl$/i.test(entry.name)) continue;
+			let text = "";
+			try {
+				text = readFileSync(path, "utf8");
+			} catch {
+				continue;
+			}
+			if (text.includes(`[browser_wv] page info url=${url}`) && text.includes(`title=${titleFragment}`)) return true;
+		}
+	}
+	return false;
+}
+
+async function waitForNativePageInfo(url: string, titleFragment: string): Promise<void> {
+	const deadline = Date.now() + 30_000;
+	while (Date.now() < deadline) {
+		try {
+			const [reportedUrl, reportedTitle] = await browser.execute(async () => {
+				const invoke = (window as unknown as {
+					__TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> };
+				}).__TAURI_INTERNALS__?.invoke;
+				if (!invoke) return ["", ""];
+				return (await invoke("browser_wv_page_info")) as [string, string];
+			});
+			if (reportedUrl === url && reportedTitle.includes(titleFragment)) return;
+		} catch {
+			// The child WebView may invalidate the main WebDriver session; use the
+			// native log after that point.
+		}
+		if (nativePageInfoSeen(url, titleFragment)) return;
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	}
+	throw new Error(`child WebView did not report url=${url} title containing ${titleFragment}`);
 }
 
 async function activateBrowser(): Promise<void> {
@@ -86,11 +135,11 @@ describe("#590 item 8 — native child WebView rendering", () => {
 	it("renders both pages in the real child WebView", async () => {
 		await activateBrowser();
 		await submitAddressBar("https://example.com");
-		await new Promise((resolve) => setTimeout(resolve, 5_000));
+		await waitForNativePageInfo("https://example.com/", "Example Domain");
 		captureDesktopWindow(resolve(ARTIFACTS, "example-com.png"));
 		console.log(`[590] example.com desktop screenshot: ${resolve(ARTIFACTS, "example-com.png")}`);
 		submitSecondUrlWithDesktopInput("https://www.wikipedia.org");
-		await new Promise((resolve) => setTimeout(resolve, 7_000));
+		await waitForNativePageInfo("https://www.wikipedia.org/", "Wikipedia");
 		captureDesktopWindow(resolve(ARTIFACTS, "wikipedia-org.png"));
 		console.log(`[590] wikipedia.org desktop screenshot: ${resolve(ARTIFACTS, "wikipedia-org.png")}`);
 	});

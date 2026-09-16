@@ -12,7 +12,7 @@ import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { execPath } from "node:process";
-import { resolvePairedAgent } from "../scripts/agent-pairing.mjs";
+import { e2eBinaryPath, resolvePairedAgent } from "../scripts/agent-pairing.mjs";
 import { reclaimLeakedAgentChild as reclaimAgentChild } from "./agent-child-lease.js";
 import { reclaimSidecarForRuntimeDir } from "./bgm-sidecar-lease.mjs";
 import {
@@ -292,7 +292,7 @@ const E2E_TARGET_DIR = resolve(
 );
 const TAURI_BINARY = process.env.TAURI_BINARY
 	? resolve(process.env.TAURI_BINARY)
-	: resolve(E2E_TARGET_DIR, `debug/naia-shell${EXE}`);
+	: e2eBinaryPath(SHELL_DIR);
 
 // Vosk 의 공유 라이브러리는 빌드 산출물 안에 놓인다. 기본 타깃에서는 바이너리
 // 옆으로 복사되지만 e2e 타깃에서는 그렇지 않아, 앱이 libvosk.so 를 못 찾고
