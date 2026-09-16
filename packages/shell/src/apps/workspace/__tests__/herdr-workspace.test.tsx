@@ -10,7 +10,6 @@ import {
 import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	ActiveAppBridge,
 	type NaiaContextBridge,
 	type ToolHandler,
 } from "../../../lib/app-registry";
