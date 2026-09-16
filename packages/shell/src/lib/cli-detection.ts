@@ -20,7 +20,7 @@ export interface CliDetectionResult {
 	installed: boolean;
 	path?: string;
 	version?: string;
-	status: CliReadinessStatus | string;
+	status: CliReadinessStatus;
 }
 
 export interface CliDetectionSnapshot {
@@ -40,8 +40,53 @@ export const SHELL_GESTURES = [
 
 export type ShellGestureId = (typeof SHELL_GESTURES)[number]["id"];
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function normalizeDetectionResult(value: unknown): CliDetectionResult {
+	if (
+		!isRecord(value) ||
+		typeof value.id !== "string" ||
+		typeof value.displayName !== "string" ||
+		typeof value.installed !== "boolean"
+	) {
+		throw new Error("cli_detect_invalid_result");
+	}
+	return {
+		id: value.id,
+		displayName: value.displayName,
+		installed: value.installed,
+		...(typeof value.path === "string" ? { path: value.path } : {}),
+		...(typeof value.version === "string" ? { version: value.version } : {}),
+		status: normalizeStatus(
+			typeof value.status === "string" ? value.status : "error",
+		),
+	};
+}
+
+function normalizeSnapshot(value: unknown): CliDetectionSnapshot {
+	if (!isRecord(value) || !Array.isArray(value.results)) {
+		throw new Error("cli_detect_invalid_snapshot");
+	}
+	return {
+		refreshedAt:
+			typeof value.refreshedAt === "string"
+				? value.refreshedAt
+				: String(Date.now()),
+		results: value.results.map(normalizeDetectionResult),
+	};
+}
+
+function cachedResults(): CliDetectionResult[] {
+	const results = loadConfig()?.cliDetection?.results;
+	return Array.isArray(results) ? results.map(normalizeDetectionResult) : [];
+}
+
 export async function refreshCliDetection(): Promise<CliDetectionSnapshot> {
-	const snapshot = await invoke<CliDetectionSnapshot>("cli_detect_refresh");
+	const snapshot = normalizeSnapshot(
+		await invoke<unknown>("cli_detect_refresh"),
+	);
 	const config = loadConfig();
 	if (config) {
 		const installedIds = new Set(
@@ -54,14 +99,7 @@ export async function refreshCliDetection(): Promise<CliDetectionSnapshot> {
 			...config,
 			cliDetection: {
 				refreshedAt: snapshot.refreshedAt,
-				results: snapshot.results.map((r) => ({
-					id: r.id,
-					displayName: r.displayName,
-					installed: r.installed,
-					...(r.path ? { path: r.path } : {}),
-					...(r.version ? { version: r.version } : {}),
-					status: normalizeStatus(r.status),
-				})),
+				results: snapshot.results,
 			},
 			enabledClis,
 		});
@@ -72,22 +110,16 @@ export async function refreshCliDetection(): Promise<CliDetectionSnapshot> {
 export async function refreshCliDetectionOne(
 	id: string,
 ): Promise<CliDetectionResult> {
-	const result = await invoke<CliDetectionResult>("cli_detect_one", { id });
+	const result = normalizeDetectionResult(
+		await invoke<unknown>("cli_detect_one", { id }),
+	);
 	const config = loadConfig();
 	if (config) {
-		const prev = config.cliDetection?.results ?? [];
-		const next = [
-			...prev.filter((r) => r.id !== result.id),
-			{
-				id: result.id,
-				displayName: result.displayName,
-				installed: result.installed,
-				...(result.path ? { path: result.path } : {}),
-				...(result.version ? { version: result.version } : {}),
-				status: normalizeStatus(result.status),
-			},
-		];
-		const installedIds = new Set(next.filter((r) => r.installed).map((r) => r.id));
+		const prev = getCachedCliDetectionResults();
+		const next = [...prev.filter((r) => r.id !== result.id), result];
+		const installedIds = new Set(
+			next.filter((r) => r.installed).map((r) => r.id),
+		);
 		saveConfig({
 			...config,
 			cliDetection: {
@@ -107,12 +139,31 @@ export async function openCliLogin(id: string): Promise<void> {
 }
 
 export function getEnabledClis(): string[] {
-	return loadConfig()?.enabledClis ?? [];
+	const config = loadConfig();
+	const enabled = Array.isArray(config?.enabledClis)
+		? config.enabledClis.filter((id): id is string => typeof id === "string")
+		: [];
+	const results = config?.cliDetection?.results;
+	if (!Array.isArray(results)) return enabled;
+	const installed = new Set(
+		results
+			.filter((result) => result?.installed === true)
+			.map((result) => result.id),
+	);
+	return enabled.filter((id) => installed.has(id));
 }
 
 export function setCliEnabled(id: string, enabled: boolean): void {
 	const config = loadConfig();
 	if (!config) return;
+	const results = config.cliDetection?.results;
+	if (
+		enabled &&
+		Array.isArray(results) &&
+		!results.some((result) => result.id === id && result.installed)
+	) {
+		return;
+	}
 	const set = new Set(config.enabledClis ?? []);
 	if (enabled) set.add(id);
 	else set.delete(id);
@@ -142,6 +193,14 @@ export function normalizeStatus(status: string): CliReadinessStatus {
 			return status;
 		default:
 			return "error";
+	}
+}
+
+export function getCachedCliDetectionResults(): CliDetectionResult[] {
+	try {
+		return cachedResults();
+	} catch {
+		return [];
 	}
 }
 

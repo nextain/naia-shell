@@ -6,9 +6,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
 use std::time::{Duration, Instant};
 
 const DESCRIPTOR_SOURCES: &[(&str, &str)] = &[
@@ -113,6 +115,8 @@ struct CommandOutcome {
     stdout: String,
     stderr: String,
 }
+
+const MAX_CAPTURED_OUTPUT: usize = 64 * 1024;
 
 fn current_os_key() -> &'static str {
     if cfg!(windows) {
@@ -248,11 +252,42 @@ fn json_bool_at(stdout: &str, stderr: &str, path: &str) -> Option<bool> {
     None
 }
 
-fn run_command_with_timeout(
-    program: &Path,
-    args: &[String],
-    timeout: Duration,
-) -> CommandOutcome {
+fn read_capped_output(mut reader: impl Read) -> String {
+    let mut captured = Vec::new();
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                let remaining = MAX_CAPTURED_OUTPUT.saturating_sub(captured.len());
+                if remaining > 0 {
+                    captured.extend_from_slice(&buffer[..read.min(remaining)]);
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    String::from_utf8_lossy(&captured).into_owned()
+}
+
+fn spawn_output_reader(reader: impl Read + Send + 'static) -> Receiver<String> {
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(read_capped_output(reader));
+    });
+    receiver
+}
+
+fn collect_output(stdout: Receiver<String>, stderr: Receiver<String>) -> (String, String) {
+    // A child that leaves a descendant holding an inherited pipe must not make
+    // readiness detection wait forever after the direct child has exited.
+    let drain_timeout = Duration::from_millis(100);
+    let stdout = stdout.recv_timeout(drain_timeout).unwrap_or_default();
+    let stderr = stderr.recv_timeout(drain_timeout).unwrap_or_default();
+    (stdout, stderr)
+}
+
+fn run_command_with_timeout(program: &Path, args: &[String], timeout: Duration) -> CommandOutcome {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -261,7 +296,7 @@ fn run_command_with_timeout(
         .stderr(Stdio::piped());
     crate::platform::hide_console(&mut command);
 
-    let child = match command.spawn() {
+    let mut child = match command.spawn() {
         Ok(child) => child,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             return CommandOutcome {
@@ -283,19 +318,21 @@ fn run_command_with_timeout(
         }
     };
 
+    let stdout = child
+        .stdout
+        .take()
+        .map(spawn_output_reader)
+        .expect("CLI readiness stdout must be piped");
+    let stderr = child
+        .stderr
+        .take()
+        .map(spawn_output_reader)
+        .expect("CLI readiness stderr must be piped");
     let start = Instant::now();
-    let mut child = child;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                if let Some(mut out) = child.stdout.take() {
-                    let _ = io::Read::read_to_string(&mut out, &mut stdout);
-                }
-                if let Some(mut err) = child.stderr.take() {
-                    let _ = io::Read::read_to_string(&mut err, &mut stderr);
-                }
+                let (stdout, stderr) = collect_output(stdout, stderr);
                 return CommandOutcome {
                     spawn_error: None,
                     timed_out: false,
@@ -308,23 +345,27 @@ fn run_command_with_timeout(
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let (stdout, stderr) = collect_output(stdout, stderr);
                     return CommandOutcome {
                         spawn_error: None,
                         timed_out: true,
                         exit_code: None,
-                        stdout: String::new(),
-                        stderr: String::new(),
+                        stdout,
+                        stderr,
                     };
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                thread::sleep(Duration::from_millis(50));
             }
             Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let (stdout, stderr) = collect_output(stdout, stderr);
                 return CommandOutcome {
                     spawn_error: Some("error"),
                     timed_out: false,
                     exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
+                    stdout,
+                    stderr,
                 };
             }
         }
@@ -332,7 +373,7 @@ fn run_command_with_timeout(
 }
 
 /// Pure classifier used by unit tests and runtime detection.
-pub fn classify_outcome(rules: &[ClassifyRule], outcome: &CommandOutcome) -> &'static str {
+fn classify_outcome(rules: &[ClassifyRule], outcome: &CommandOutcome) -> &'static str {
     for rule in rules {
         let when = &rule.when;
         if let Some(spawn) = when.spawn_error.as_deref() {
@@ -483,6 +524,99 @@ fn chrono_like_now() -> String {
     format!("{secs}")
 }
 
+fn spawn_login_in_terminal(program: &Path, args: &[String]) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = [
+            "x-terminal-emulator",
+            "gnome-terminal",
+            "kgx",
+            "konsole",
+            "kitty",
+            "alacritty",
+            "foot",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+        let terminal = resolve_executable(&candidates).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "no supported terminal emulator found",
+            )
+        })?;
+        let name = terminal
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        let mut command = Command::new(terminal);
+        match name.as_str() {
+            "gnome-terminal" | "kgx" => {
+                command.arg("--").arg(program).args(args);
+            }
+            "konsole" | "x-terminal-emulator" | "alacritty" => {
+                command.arg("-e").arg(program).args(args);
+            }
+            _ => {
+                command.arg(program).args(args);
+            }
+        }
+        return command.spawn().map(|_| ());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        fn escape_applescript(value: &str) -> String {
+            value.replace('\\', "\\\\").replace('"', "\\\"")
+        }
+
+        let mut command_line = vec![program.to_string_lossy().into_owned()];
+        command_line.extend(args.iter().cloned());
+        let script = format!(
+            "tell application \"Terminal\" to do script \"{}\"",
+            escape_applescript(&command_line.join(" "))
+        );
+        return Command::new("osascript")
+            .args(["-e", script.as_str()])
+            .spawn()
+            .map(|_| ());
+    }
+
+    #[cfg(windows)]
+    {
+        let terminal_candidates = ["wt.exe", "wt"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
+        if let Some(terminal) = resolve_executable(&terminal_candidates) {
+            return Command::new(terminal)
+                .args(["-w", "new", "--"])
+                .arg(program)
+                .args(args)
+                .spawn()
+                .map(|_| ());
+        }
+
+        let comspec = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+        return Command::new(comspec)
+            .args(["/c", "start", ""])
+            .arg(program)
+            .args(args)
+            .spawn()
+            .map(|_| ());
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        let _ = (program, args);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "interactive CLI login is unsupported on this platform",
+        ))
+    }
+}
+
 pub fn open_login(id: &str) -> Result<(), String> {
     let descriptors = load_descriptors()?;
     let desc = descriptors
@@ -495,14 +629,17 @@ pub fn open_login(id: &str) -> Result<(), String> {
         .get(os)
         .cloned()
         .unwrap_or_else(|| desc.executables.values().flatten().cloned().collect());
-    let program = resolve_executable(&candidates)
-        .ok_or_else(|| format!("{id} is not installed"))?;
+    let program =
+        resolve_executable(&candidates).ok_or_else(|| format!("{id} is not installed"))?;
+
+    if desc.login.open_in_terminal {
+        return spawn_login_in_terminal(&program, &desc.login.args)
+            .map_err(|e| format!("failed to open {id} login: {e}"));
+    }
 
     let mut command = Command::new(&program);
     command.args(&desc.login.args).stdin(Stdio::null());
-    if !desc.login.open_in_terminal {
-        crate::platform::hide_console(&mut command);
-    }
+    crate::platform::hide_console(&mut command);
     command
         .spawn()
         .map(|_| ())
@@ -633,6 +770,42 @@ mod tests {
                     timed_out: false,
                     exit_code: Some(0),
                     stdout: r#"{"loggedIn":false}"#.into(),
+                    stderr: String::new(),
+                },
+            ),
+            "login-required"
+        );
+    }
+
+    #[test]
+    fn classify_claude_without_structured_json_as_error() {
+        let rules = rules_from(include_str!("../cli-descriptors/claude.json"));
+        assert_eq!(
+            classify_outcome(
+                &rules,
+                &CommandOutcome {
+                    spawn_error: None,
+                    timed_out: false,
+                    exit_code: Some(0),
+                    stdout: "logged in".into(),
+                    stderr: String::new(),
+                },
+            ),
+            "error"
+        );
+    }
+
+    #[test]
+    fn classify_grok_nonzero_exit_does_not_use_auth_file_rule() {
+        let rules = rules_from(include_str!("../cli-descriptors/grok.json"));
+        assert_eq!(
+            classify_outcome(
+                &rules,
+                &CommandOutcome {
+                    spawn_error: None,
+                    timed_out: false,
+                    exit_code: Some(1),
+                    stdout: String::new(),
                     stderr: String::new(),
                 },
             ),

@@ -600,9 +600,11 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 
 ## Skills tab CLI detection (#605 / epic #589 L6)
 
+> **상태: In progress (P04, 2026-09-17)** — CLI descriptor detection, installed-only checkbox UI, shell gesture toggle, old gateway/preflight call removal, and enabled CLI wire coverage are implemented. Focused Vitest/core contract checks, Rust `cli_detect` 8/8, and Playwright `e2e/skills-cli.spec.ts` pass. Native Tauri Skills UI was attempted but the shared runner stopped in `ensureAppReady` because its isolated ADK had no hydrated `llmRoles.main` fixture.
+
 | ID | Requirement | Verification |
 |----|-------------|--------------|
-| **FR-SKILLS-CLI.1** | Skills tab shows only two groups: detected coding CLI checkboxes (installed only) and shell gesture toggles (YouTube / Radio DJ). Agent tool lists and `skill_skill_manager` gateway install UI are removed. | SkillsTab vitest + e2e-tauri 14/19/28/59 |
+| **FR-SKILLS-CLI.1** | Skills tab shows only two groups: detected coding CLI checkboxes (installed only) and shell gesture toggles (YouTube / Radio DJ). Agent tool lists and `skill_skill_manager` gateway install UI are removed. | SkillsTab vitest + `cli-detection.test.ts` + Playwright `e2e/skills-cli.spec.ts` + e2e-tauri 14/19/28/59 |
 | **FR-SKILLS-CLI.2** | Shell Rust `cli_detect` reads durable CLI descriptors (Claude·Codex·Grok; Gemini CLI/OpenCode excluded per D6). Detection uses OS-specific executable candidates, exit codes/structured output, per-check timeouts, and Claude JSON readiness — not English install-string matching. Results persist in config and refresh on app start and Skills tab enter. | `cli_detect` cargo unit tests + Settings/Skills readiness checks |
 | **FR-SKILLS-CLI.3** | Enabled CLI names are passed to the agent on chat turns (`enabledClis`). Agent workspace-context one-liner consumption is paired naia-agent follow-up. | chat-service / shell-compat field wiring |
 

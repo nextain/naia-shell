@@ -1,13 +1,9 @@
-import {
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
 	type CliDetectionResult,
 	type CliReadinessStatus,
 	SHELL_GESTURES,
+	getCachedCliDetectionResults,
 	getEnabledClis,
 	isGestureDisabled,
 	openCliLogin,
@@ -16,7 +12,6 @@ import {
 	setCliEnabled,
 	setGestureEnabled,
 } from "../lib/cli-detection";
-import { loadConfig } from "../lib/config";
 import { t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import { useSkillsStore } from "../stores/skills";
@@ -41,9 +36,9 @@ export function SkillsTab({
 	children?: ReactNode;
 }) {
 	useSkillsStore((s) => s.configVersion);
-	const [results, setResults] = useState<CliDetectionResult[]>(() => {
-		return loadConfig()?.cliDetection?.results ?? [];
-	});
+	const [results, setResults] = useState<CliDetectionResult[]>(
+		getCachedCliDetectionResults,
+	);
 	const [loading, setLoading] = useState(true);
 	const [checkingId, setCheckingId] = useState<string | null>(null);
 	const [loadError, setLoadError] = useState(false);
@@ -56,6 +51,7 @@ export function SkillsTab({
 			setResults(snapshot.results);
 			useSkillsStore.getState().bumpConfigVersion();
 		} catch (err) {
+			setResults([]);
 			setLoadError(true);
 			Logger.warn("SkillsTab", "CLI detection refresh failed", {
 				error: String(err),
@@ -82,6 +78,13 @@ export function SkillsTab({
 			});
 			useSkillsStore.getState().bumpConfigVersion();
 		} catch (err) {
+			setResults((prev) =>
+				prev.map((result) =>
+					result.id === id
+						? { ...result, installed: false, status: "error" }
+						: result,
+				),
+			);
 			Logger.warn("SkillsTab", "CLI recheck failed", {
 				id,
 				error: String(err),
@@ -107,7 +110,10 @@ export function SkillsTab({
 		useSkillsStore.getState().bumpConfigVersion();
 	}
 
-	function handleToggleGesture(id: (typeof SHELL_GESTURES)[number]["id"], checked: boolean) {
+	function handleToggleGesture(
+		id: (typeof SHELL_GESTURES)[number]["id"],
+		checked: boolean,
+	) {
 		setGestureEnabled(id, checked);
 		useSkillsStore.getState().bumpConfigVersion();
 	}
@@ -167,12 +173,10 @@ export function SkillsTab({
 									</div>
 								</div>
 								<div className="skill-card-actions">
-									<label
-										className="skill-toggle"
-										onClick={(e) => e.stopPropagation()}
-									>
+									<label className="skill-toggle">
 										<input
 											type="checkbox"
+											aria-label={cli.displayName}
 											data-testid={`cli-enable-${cli.id}`}
 											checked={enabled.has(cli.id)}
 											onChange={(e) =>
@@ -184,10 +188,7 @@ export function SkillsTab({
 							</div>
 							<div className="skill-card-detail" style={{ display: "block" }}>
 								<div className="skills-header-actions">
-									<span
-										aria-live="polite"
-										data-testid={`cli-status-${cli.id}`}
-									>
+									<span aria-live="polite" data-testid={`cli-status-${cli.id}`}>
 										{t(statusLabelKey(cli.status) as Parameters<typeof t>[0])}
 									</span>
 									<button
@@ -235,20 +236,16 @@ export function SkillsTab({
 						>
 							<div className="skill-card-header">
 								<div className="skill-card-info">
-									<div className="skill-card-name">
-										{t(gesture.labelKey)}
-									</div>
+									<div className="skill-card-name">{t(gesture.labelKey)}</div>
 									<div className="skill-card-desc-short">
 										{t(gesture.hintKey)}
 									</div>
 								</div>
 								<div className="skill-card-actions">
-									<label
-										className="skill-toggle"
-										onClick={(e) => e.stopPropagation()}
-									>
+									<label className="skill-toggle">
 										<input
 											type="checkbox"
+											aria-label={t(gesture.labelKey)}
 											data-testid={`gesture-enable-${gesture.id}`}
 											checked={!disabled}
 											onChange={(e) =>

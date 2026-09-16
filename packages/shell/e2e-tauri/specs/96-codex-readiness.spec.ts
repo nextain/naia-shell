@@ -2,7 +2,7 @@ import { clickElement } from "../helpers/click.js";
 
 /**
  * 96 — Codex readiness through descriptor-driven cli_detect (#605).
- * Broadened from the old codex_preflight path to the shared CLI descriptor module.
+ * Uses the shared descriptor-driven CLI detection module.
  */
 describe("Codex readiness through the real Tauri Shell", () => {
 	it("reports the signed-in Codex CLI as ready from the Brain settings screen", async () => {

@@ -8,7 +8,7 @@ import {
 /**
  * 28 — Skills install surface removed (#605)
  *
- * Gateway skill install via skill_skill_manager is dead code and deleted.
+ * The legacy gateway skill-install surface is dead code and deleted.
  * This spec now asserts the install UI is gone and CLI checkboxes remain.
  */
 describe("28 — skills install", () => {

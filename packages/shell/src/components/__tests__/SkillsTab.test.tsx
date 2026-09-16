@@ -18,9 +18,9 @@ const mockGetEnabledClis = vi.fn(() => ["claude"] as string[]);
 const mockIsGestureDisabled = vi.fn(() => false);
 
 vi.mock("../../lib/cli-detection", async () => {
-	const actual = await vi.importActual<typeof import("../../lib/cli-detection")>(
-		"../../lib/cli-detection",
-	);
+	const actual = await vi.importActual<
+		typeof import("../../lib/cli-detection")
+	>("../../lib/cli-detection");
 	return {
 		...actual,
 		refreshCliDetection: (...args: unknown[]) => mockRefresh(...args),
@@ -29,7 +29,7 @@ vi.mock("../../lib/cli-detection", async () => {
 		setCliEnabled: (...args: unknown[]) => mockSetCliEnabled(...args),
 		setGestureEnabled: (...args: unknown[]) => mockSetGestureEnabled(...args),
 		getEnabledClis: () => mockGetEnabledClis(),
-		isGestureDisabled: (...args: unknown[]) => mockIsGestureDisabled(...args),
+		isGestureDisabled: () => mockIsGestureDisabled(),
 	};
 });
 
@@ -89,6 +89,7 @@ describe("SkillsTab checkbox model", () => {
 		expect(screen.queryByText("Grok")).toBeNull();
 		expect(screen.getByTestId("skills-cli-section")).toBeDefined();
 		expect(screen.getByTestId("skills-gesture-section")).toBeDefined();
+		expect(screen.getByRole("checkbox", { name: "Claude Code" })).toBeDefined();
 	});
 
 	it("does not render agent tool lists or gateway install UI", async () => {
@@ -97,8 +98,12 @@ describe("SkillsTab checkbox model", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Claude Code")).toBeDefined();
 		});
-		expect(container.querySelector('[data-testid="gateway-skill-card"]')).toBeNull();
-		expect(container.querySelector('[data-testid="skills-install-btn"]')).toBeNull();
+		expect(
+			container.querySelector('[data-testid="gateway-skill-card"]'),
+		).toBeNull();
+		expect(
+			container.querySelector('[data-testid="skills-install-btn"]'),
+		).toBeNull();
 		expect(screen.queryByText(/Agent 도구|Agent Tools/)).toBeNull();
 	});
 
@@ -116,6 +121,27 @@ describe("SkillsTab checkbox model", () => {
 		await waitFor(() => screen.getByTestId("cli-login-codex"));
 		fireEvent.click(screen.getByTestId("cli-login-codex"));
 		expect(mockOpenLogin).toHaveBeenCalledWith("codex");
+	});
+
+	it("does not keep cached CLI checkboxes after a failed refresh", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				cliDetection: {
+					refreshedAt: "old",
+					results: [SNAPSHOT.results[0]],
+				},
+				enabledClis: ["claude"],
+			}),
+		);
+		mockRefresh.mockRejectedValue(new Error("detection unavailable"));
+		render(<SkillsTab />);
+
+		await waitFor(() =>
+			expect(screen.getByTestId("skills-load-error")).toBeDefined(),
+		);
+		expect(screen.queryByTestId("cli-skill-card")).toBeNull();
+		expect(screen.getByTestId("skills-gesture-section")).toBeDefined();
 	});
 
 	it("renders youtube gesture toggle and injected Radio DJ child", async () => {

@@ -7,7 +7,9 @@
 > 추적: 1단계 `STRUCTURE.md` v5 → 2단계 P01. **상태: 완전성 수렴(13R, 3연속 NONE). foundation tranche 순서 = 아이디어 수준 잠정안(F0→…→V2, 실행 시 재검토). G1 게이트 아님.**
 > 완전성 추이: 초안 46 → 누락 발견·추가 R1~R10(ADK부트스트랩·비용·업데이트·공지·비전캡처·@멘션·Issues·AppBar·botmadang·ref오디오·Lab동기화·deeplink·**default-skills 60+ 컬렉션**·메모리백업) → R11~R13 3연속 NONE. 앱 표면 ≈ S01~S71(+S52b) + 브라우저/워크스페이스/default-skills 그룹. 분포/OS(S68/69)=범위 밖.
 
-| **S-SKILLS-CLI** (#605) | 사용자가 설정 → 스킬 탭을 열면 설치된 코딩 CLI만 체크박스로 보이고, 유튜브 등 셸 몸짓 토글이 둘째 묶음으로 보인다. 로그인·다시 확인 버튼으로 준비 상태를 고친다. 켠 CLI 이름은 채팅 턴에 에이전트로 전달된다. | FR-SKILLS-CLI.1–3 | SkillsTab vitest · e2e-tauri 14/19/28/59 · 96-readiness |
+| **S-SKILLS-CLI** (#605) | 사용자가 설정 → 스킬 탭을 열면 설치된 코딩 CLI만 체크박스로 보이고, 유튜브 등 셸 몸짓 토글이 둘째 묶음으로 보인다. 로그인·다시 확인 버튼으로 준비 상태를 고친다. 켠 CLI 이름은 채팅 턴에 에이전트로 전달된다. | FR-SKILLS-CLI.1–3 | `SkillsTab.test.tsx` · `cli-detection.test.ts` · `e2e/skills-cli.spec.ts` · e2e-tauri 14/19/28/59 · 96-readiness |
+
+**S-SKILLS-CLI 상태 매트릭스 (P02):** 기본/성공은 `SkillsTab.test.tsx`와 `e2e/skills-cli.spec.ts`의 설치된 CLI 카드·준비 상태·접근 가능한 체크박스로, 빈 목록은 `skills-cli-empty`, 진행은 새로 고침 비활성화/감지 중, 오류는 `role=alert`와 stale 카드 제거·새로 고침 복구, 좁은 폭은 480px viewport overflow 검증으로 매핑한다. Native Tauri `e2e-tauri/specs/14-skills-tab.spec.ts`, `19-skills-bulk.spec.ts`, `28-skills-install.spec.ts`, `59-skills-interactions.spec.ts`는 동일 DOM 계약과 실제 Rust IPC 경계를 확인한다.
 > 원칙: 시나리오는 *발명*이 아니라 old-naia-os **실제 기능**에서 도출(built-in skills 25·앱 6개·멀티채널). 각 UC = 인지흐름 경로 + 관통 슬라이스/포트.
 > 용어 = `glossary.md`.
 
