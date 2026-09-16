@@ -2245,9 +2245,6 @@ export function SettingsTab() {
 	});
 
 	// Voice wake state removed (UI + handlers deleted)
-	// Discord integration — unverified, hidden until stabilized
-	// const [discordBotConnected, setDiscordBotConnected] = useState(false);
-	// const [discordBotLoading, setDiscordBotLoading] = useState(false);
 
 	// In-app confirmation state (replaces window.confirm to avoid WebKitGTK double-dialog)
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -2255,8 +2252,6 @@ export function SettingsTab() {
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
-	// Discord integration — unverified, hidden until stabilized
-	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -3484,8 +3479,6 @@ export function SettingsTab() {
 		ttsProvider === "naia-local-voice";
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
-	// Discord integration — unverified, hidden until stabilized
-	// async function handleDiscordBotConnect() { ... }
 	const proactiveSpeechSettings: ProactiveSpeechSettings = {
 		profile: existing?.proactiveSpeechProfile ?? "disabled",
 		timezone:
