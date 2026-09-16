@@ -10,6 +10,9 @@ import { getLocale, t } from "../lib/i18n";
 import {
 	clearCachedLabCredits,
 	fetchLabBalancePayload,
+	isLabBalanceUnauthorized,
+	markNaiaKeyUnauthorized,
+	onNaiaKeyUnauthorized,
 	parseLabCredits,
 	primeLabCredits,
 	readCachedLabCredits,
@@ -90,6 +93,10 @@ function LabBalanceSection() {
 	);
 	const [loading, setLoading] = useState(balance === null);
 	const [error, setError] = useState(false);
+	const [unauthorized, setUnauthorized] = useState(false);
+	// #402: a chat completion 401 (surfaced via ChatArea's error handling)
+	// must flip this same account state, not just a balance-fetch 401.
+	useEffect(() => onNaiaKeyUnauthorized(() => setUnauthorized(true)), []);
 	const activeRequest = useRef<AbortController | null>(null);
 	const requestGeneration = useRef(0);
 
@@ -127,12 +134,20 @@ function LabBalanceSection() {
 			primeLabCredits(val);
 			setBalance(val);
 			setError(false);
+			setUnauthorized(false);
 		} catch (err) {
 			if (generation !== requestGeneration.current) return;
 			Logger.warn("CostDashboard", "Lab balance fetch failed", {
 				error: String(err),
 			});
-			setError(true);
+			if (isLabBalanceUnauthorized(err)) {
+				setUnauthorized(true);
+				setError(false);
+				markNaiaKeyUnauthorized();
+			} else {
+				setError(true);
+				setUnauthorized(false);
+			}
 		} finally {
 			window.clearTimeout(timeout);
 			if (activeRequest.current === controller) {
@@ -179,6 +194,16 @@ function LabBalanceSection() {
 
 	if (loading) {
 		return <div className="lab-balance-row">{t("cost.labLoading")}</div>;
+	}
+	if (unauthorized) {
+		return (
+			<div
+				className="lab-balance-row lab-balance-expired"
+				data-testid="lab-balance-expired"
+			>
+				{t("cost.labExpired")}
+			</div>
+		);
 	}
 	if (error) {
 		return (

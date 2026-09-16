@@ -102,7 +102,13 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
-import { fetchLabBalancePayload, parseLabCredits } from "../lib/lab-balance";
+import {
+	fetchLabBalancePayload,
+	isLabBalanceUnauthorized,
+	markNaiaKeyUnauthorized,
+	onNaiaKeyUnauthorized,
+	parseLabCredits,
+} from "../lib/lab-balance";
 import { diffConfigs, fetchLabConfig, pushConfigToLab } from "../lib/lab-sync";
 import {
 	type LlmModelMeta,
@@ -2181,6 +2187,13 @@ export function SettingsTab() {
 	const [labBalance, setLabBalance] = useState<number | null>(null);
 	const [labBalanceLoading, setLabBalanceLoading] = useState(false);
 	const [labBalanceError, setLabBalanceError] = useState(false);
+	// #402: a 401 means the stored key itself is invalid, not a transient
+	// fetch failure — the account must flip to a re-login state instead of
+	// staying "connected" with a retryable balance error.
+	const [naiaKeyUnauthorized, setNaiaKeyUnauthorized] = useState(false);
+	// #402: a chat completion 401 (surfaced via ChatArea's error handling)
+	// must flip this same account state, not just a balance-fetch 401.
+	useEffect(() => onNaiaKeyUnauthorized(() => setNaiaKeyUnauthorized(true)), []);
 	const mountedRef = useRef(true);
 	const loginAdkPathRef = useRef<string | null>(null);
 	useEffect(() => {
@@ -2281,6 +2294,7 @@ export function SettingsTab() {
 		});
 		setLabBalanceLoading(true);
 		setLabBalanceError(false);
+		setNaiaKeyUnauthorized(false);
 		const controller = new AbortController();
 		const timeout = window.setTimeout(
 			() => controller.abort(),
@@ -2298,13 +2312,20 @@ export function SettingsTab() {
 			if (!mountedRef.current) return null;
 			setLabBalance(credits);
 			setLabBalanceError(false);
+			setNaiaKeyUnauthorized(false);
 			return credits;
 		} catch (err) {
 			if (mountedRef.current) {
 				Logger.warn("SettingsTab", "Lab balance fetch failed", {
 					error: String(err),
 				});
-				setLabBalanceError(true);
+				if (isLabBalanceUnauthorized(err)) {
+					setNaiaKeyUnauthorized(true);
+					setLabBalanceError(false);
+					markNaiaKeyUnauthorized();
+				} else {
+					setLabBalanceError(true);
+				}
 			}
 			if (requireValid) throw err;
 			return null;
@@ -4134,11 +4155,13 @@ export function SettingsTab() {
 
 					{/* #1 통합: NAIA 계정 관리(잔액/대시보드/연결끊기) = 게이트 바로 아래.
 					    게이트가 로그인(byo 분기)을 담당; 여기는 connected 상태 UI. */}
-					{!naiaKey && (
+					{(!naiaKey || naiaKeyUnauthorized) && (
 						<div className="settings-field" data-testid="profile-naia-login">
 							<label>{t("settings.labSection")}</label>
 							<div className="settings-hint">
-								{t("settings.labDisconnected")}
+								{naiaKeyUnauthorized
+									? t("settings.labKeyExpired")
+									: t("settings.labDisconnected")}
 							</div>
 							<button
 								type="button"
@@ -4151,7 +4174,7 @@ export function SettingsTab() {
 						</div>
 					)}
 
-					{naiaKey && (
+					{naiaKey && !naiaKeyUnauthorized && (
 						<div className="settings-field" data-testid="profile-naia-account">
 							<label>{t("settings.labConnected")}</label>
 							<div className="lab-info-block">
@@ -4237,6 +4260,7 @@ export function SettingsTab() {
 														setSecureNaiaCredentialReady(false);
 														setNaiaUserIdState("");
 														setLabBalance(null);
+														setNaiaKeyUnauthorized(false);
 														// FR-LLM-LOGOUT.1: 로그인하지 않은 상태의 LLM 은 로컬이거나
 														// "LLM 없음"이다. 이미 고른 CLI·로컬 제공자는 그대로 둔다.
 														const priorConfig = loadConfig();

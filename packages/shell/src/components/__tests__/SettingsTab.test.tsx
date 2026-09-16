@@ -297,6 +297,108 @@ describe("SettingsTab", () => {
 		expect(await screen.findByText(/10\.00/)).toBeDefined();
 	});
 
+	it("flips to a re-login state instead of staying connected when the key returns 401 (#402)", async () => {
+		// #590 item 1 on win-rtx2070: a stale stored key returns 401 from the
+		// balance endpoint but the UI kept showing "Connected" with just a
+		// balance error. A 401 means the key itself is invalid, so the account
+		// must move to a re-login state instead.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				naiaKey: "stale-key",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "fetch_naia_balance")
+				return Promise.reject("Naia balance HTTP 401");
+			return Promise.resolve([]);
+		});
+		Object.defineProperty(window, "__TAURI_INTERNALS__", {
+			configurable: true,
+			value: {},
+		});
+
+		render(<SettingsTab />);
+
+		await screen.findByTestId("profile-naia-login");
+		expect(screen.queryByTestId("profile-naia-account")).toBeNull();
+		expect(
+			screen.getByText("Naia login expired. Please log in again."),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("profile-login-naia")).toBeEnabled();
+	});
+
+	it("keeps the connected account state for a non-401 balance failure (#402)", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				naiaKey: "flaky-network-key",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "fetch_naia_balance")
+				return Promise.reject(new Error("gateway unreachable"));
+			return Promise.resolve([]);
+		});
+		Object.defineProperty(window, "__TAURI_INTERNALS__", {
+			configurable: true,
+			value: {},
+		});
+
+		render(<SettingsTab />);
+
+		await screen.findByTestId("profile-naia-account");
+		expect(screen.queryByTestId("profile-naia-login")).toBeNull();
+		expect(screen.getByTestId("lab-balance-retry")).toBeInTheDocument();
+	});
+
+	it("flips to a re-login state when a chat completion reports the key as unauthorized (#402)", async () => {
+		// A 401 on a chat completion never reaches this component's own balance
+		// fetch — ChatArea detects it from the agent's error chunk and broadcasts
+		// `markNaiaKeyUnauthorized()` (lib/lab-balance.ts) instead. The account
+		// must flip to a re-login state from that broadcast alone, the same as
+		// a balance-endpoint 401.
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "nextain",
+				model: "gemini-2.5-flash",
+				apiKey: "",
+				naiaKey: "good-key",
+			}),
+		);
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "fetch_naia_balance")
+				return Promise.resolve({ balance: 1_000_000 });
+			return Promise.resolve([]);
+		});
+		Object.defineProperty(window, "__TAURI_INTERNALS__", {
+			configurable: true,
+			value: {},
+		});
+
+		render(<SettingsTab />);
+
+		await screen.findByTestId("profile-naia-account");
+
+		const { markNaiaKeyUnauthorized } = await import("../../lib/lab-balance");
+		act(() => {
+			markNaiaKeyUnauthorized();
+		});
+
+		await screen.findByTestId("profile-naia-login");
+		expect(screen.queryByTestId("profile-naia-account")).toBeNull();
+		expect(
+			screen.getByText("Naia login expired. Please log in again."),
+		).toBeInTheDocument();
+	});
+
 	// ef3dc42c 이후 Connections 는 브라우저 미리보기에서도 열린다. 자리는 그대로
 	// Skills 와 General 사이이고, 봇 토큰이 없는 기계에서도 탭이 열려 안내 화면을
 	// 보여 준다. 토큰 입력란을 WebView 로 내리지 않는다는 제약은 그대로다.
