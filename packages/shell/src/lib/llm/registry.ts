@@ -572,6 +572,28 @@ export function sortModels(
 		.map(({ model }) => model);
 }
 
+/**
+ * 대화 모델로 고를 수 있는 후보만 남긴다. ASR(전용 STT) 모델은 대화 선택지가
+ * 아니므로 제외한다 — 두뇌 모델 선택기 `<select>` 가 렌더하는 집합과 같다.
+ */
+export function selectableConversationModels(
+	models: readonly LlmModelMeta[],
+): LlmModelMeta[] {
+	return models.filter((model) => !model.capabilities.includes("asr"));
+}
+
+/**
+ * 선택기 숨김 규칙 (에픽 #589 할 일 2): 제공자가 고를 수 있는 대화 모델이
+ * 하나뿐이면 모델 선택기를 그리지 않는다. 판정은 등록부(모델 목록)로 한다 —
+ * 나이아 계정이 게이트웨이에서 단일 모델로 줄면 이 규칙이 자동으로 선택기를 숨긴다.
+ * 호출부는 이미 comingSoon 을 거른 표시용 목록을 넘긴다.
+ */
+export function shouldHideModelPicker(
+	models: readonly LlmModelMeta[],
+): boolean {
+	return selectableConversationModels(models).length <= 1;
+}
+
 // ─── Shared voice lists ──────────────────────────────────────────────────────
 
 export const AZURE_REALTIME_VOICES: LlmVoiceMeta[] = [

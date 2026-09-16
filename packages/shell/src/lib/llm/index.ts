@@ -20,6 +20,8 @@ export {
 	formatModelLabel,
 	getModelPriceScore,
 	sortModels,
+	selectableConversationModels,
+	shouldHideModelPicker,
 } from "./registry";
 export type {
 	LlmProviderMeta,
