@@ -231,4 +231,90 @@ describe("LocalVoiceScheduler (FR-VOICE.16 Phase 2a — FR-VOICE.11/12/19 semant
 		scheduler.onFirstChunk(stale, 0.1);
 		expect(resumePlayback).not.toHaveBeenCalled();
 	});
+
+	/**
+	 * #621: on RTF>1 streaming-host hardware the first chunk arrives before the
+	 * per-sentence RTF verdict. A slow first chunk must open the warming hold
+	 * (not resume a starved cold queue) so complete-then-play remains reachable.
+	 */
+	it("#621: slow first chunk before RTF verdict opens the hold instead of starving-resume", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		// Streaming host order: first chunk lands before onSentenceResult.
+		scheduler.onFirstChunk(scheduler.generation, 3.5);
+		expect(setWarmingVisible).toHaveBeenCalledWith(true);
+		expect(resumePlayback).not.toHaveBeenCalled();
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 3.5,
+			durationSeconds: 3.5 / 1.69,
+		});
+		expect(resumePlayback).not.toHaveBeenCalled();
+	});
+
+	it("#621: issue RTF series (1.69..1.76) releases once via complete-then-play", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		const rtfs = [1.69, 1.73, 1.74, 1.82, 1.76];
+		const durations = [2.06, 2.38, 2.7, 5.58, 2.7];
+		for (let i = 0; i < rtfs.length; i++) scheduler.noteSentence(i);
+		// Stream can end after the first sentence while the rest are still synthesizing.
+		for (let i = 0; i < rtfs.length; i++) {
+			const durationSeconds = durations[i];
+			const elapsedSeconds = rtfs[i] * durationSeconds;
+			// Real streaming order: first chunk, then full-sentence RTF, then enqueue.
+			scheduler.onFirstChunk(scheduler.generation, elapsedSeconds);
+			scheduler.onSentenceResult(scheduler.generation, {
+				elapsedSeconds,
+				durationSeconds,
+			});
+			if (i === 0) scheduler.finishStream();
+			scheduler.onEnqueued(scheduler.generation, i);
+			if (i < rtfs.length - 1) {
+				expect(resumePlayback).not.toHaveBeenCalled();
+			}
+		}
+		expect(setWarmingVisible).toHaveBeenCalledWith(true);
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+		expect(setWarmingVisible).toHaveBeenLastCalledWith(false);
+	});
+
+	it("#621: interleaved finishStream after all enqueues still releases once", () => {
+		const { scheduler, resumePlayback } = make();
+		const rtfs = [1.69, 1.73, 1.74, 1.82, 1.76];
+		const durations = [2.06, 2.38, 2.7, 5.58, 2.7];
+		for (let i = 0; i < rtfs.length; i++) scheduler.noteSentence(i);
+		for (let i = 0; i < rtfs.length; i++) {
+			const durationSeconds = durations[i];
+			const elapsedSeconds = rtfs[i] * durationSeconds;
+			scheduler.onFirstChunk(scheduler.generation, elapsedSeconds);
+			scheduler.onSentenceResult(scheduler.generation, {
+				elapsedSeconds,
+				durationSeconds,
+			});
+			scheduler.onEnqueued(scheduler.generation, i);
+		}
+		expect(resumePlayback).not.toHaveBeenCalled();
+		scheduler.finishStream();
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+	});
+
+	it("#621: a later RTF<1 still releases via condition (a) after a slow first chunk", () => {
+		const { scheduler, resumePlayback, setWarmingVisible } = make();
+		scheduler.noteSentence(0);
+		scheduler.noteSentence(1);
+		scheduler.onFirstChunk(scheduler.generation, 3.4);
+		expect(resumePlayback).not.toHaveBeenCalled();
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 3.4,
+			durationSeconds: 2,
+		});
+		scheduler.onEnqueued(scheduler.generation, 0);
+		scheduler.onFirstChunk(scheduler.generation, 0.4);
+		scheduler.onSentenceResult(scheduler.generation, {
+			elapsedSeconds: 0.8,
+			durationSeconds: 2,
+		});
+		expect(resumePlayback).toHaveBeenCalledTimes(1);
+		expect(setWarmingVisible).toHaveBeenLastCalledWith(false);
+	});
 });

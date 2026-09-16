@@ -154,12 +154,27 @@ export class LocalVoiceScheduler {
 	 * enqueue signal — audio exists, so playback may start now instead of after
 	 * the whole WAV. A first chunk that lands within a second proves the engine
 	 * realtime (release condition a) without waiting for the sentence's RTF.
+	 *
+	 * A slow first chunk (elapsed>1) on a still-cold engine must OPEN the
+	 * warming hold when more speech is coming — never resume a starved queue.
+	 * onFirstChunk can fire before onSentenceResult's RTF verdict (#621); the
+	 * previous `!holdActive → release` path made complete-then-play unreachable
+	 * on RTF>1 hardware (e.g. windows_trt_6g on RTX 4060 8GB).
 	 */
 	onFirstChunk(generation: number, elapsedSeconds: number): void {
 		if (generation !== this.state.generation) return;
 		if (elapsedSeconds <= 1) {
 			this.state.warmed = true;
 			this.state.firstResultSeen = true;
+		} else if (
+			!this.state.warmed &&
+			(!this.state.streamFinished || this.state.sentenceCount > 1)
+		) {
+			// Cold engine, more speech coming: arm the hold (mirrors the RTF>1
+			// branch of onSentenceResult). Do not fall through to resume.
+			this.state.holdActive = true;
+			this.state.firstResultSeen = true;
+			this.deps.setWarmingVisible?.(true);
 		}
 		if (!this.state.holdActive || this.state.warmed) this.release(generation);
 	}
