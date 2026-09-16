@@ -850,8 +850,6 @@ export function ChatArea({
 		});
 	}, []);
 
-	// Discord messages are now shown in the dedicated Channels tab (ChannelsTab)
-	// via direct Discord REST API, so no polling into main chat.
 
 	// Auto-send queued messages when streaming ends
 	useEffect(() => {
