@@ -312,14 +312,6 @@ function formatCost(cost: number): string {
  *  전달한다. (2026-07-15 루크 실증: 하드코딩 "default" 가 프리셋 선택을 façade 에 전달하지
  *  않아 음색이 팔레트 기본으로 고정되던 버그 — 남성 음색을 골라도 여성으로 나옴.)
  *  비팔레트 형식(녹음/업로드 data·로컬경로)은 façade 가 400 fail-closed 라 기본 음색 폴백. */
-export function isDiscordConnectionIntent(text: string): boolean {
-	const normalized = text.trim().toLocaleLowerCase();
-	if (!/(discord|디스코드)/i.test(normalized)) return false;
-	return /(connect|connection|setup|configure|configuration|bot\s*token|연결|연동|설정|구성|봇\s*토큰|토큰\s*(입력|등록|설정))/i.test(
-		normalized,
-	);
-}
-
 /**
  * 답을 만들지 못한 턴 (#572).
  *
@@ -434,8 +426,6 @@ export function ChatArea({
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
-	const [showDiscordConnectionGuide, setShowDiscordConnectionGuide] =
-		useState(false);
 	// Single source of truth for voice UI state (naia-omni RunPod on-demand +
 	// every other provider). Drives the status banner (cold-start / sold-out /
 	// credit failures) and the voice button — `voiceMode` is derived, not stored,
@@ -1565,15 +1555,6 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
-		if (isDiscordConnectionIntent(text)) {
-			setInput("");
-			useChatStore.getState().addMessage({
-				role: "assistant",
-				content: t("chat.discordConnectionSecretGuide"),
-			});
-			setShowDiscordConnectionGuide(true);
-			return;
-		}
 		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
@@ -4329,48 +4310,7 @@ export function ChatArea({
 					</div>
 				</div>
 			)}
-			{showDiscordConnectionGuide && (
-				<div className="sync-dialog-overlay">
-					<div
-						className="sync-dialog-card"
-						role="dialog"
-						aria-modal="true"
-						style={{ maxWidth: 420 }}
-					>
-						<p style={{ marginBottom: 8, lineHeight: 1.6 }}>
-							{t("chat.discordConnectionSecretGuide")}
-						</p>
-						<p style={{ marginBottom: 16, lineHeight: 1.6 }}>
-							{t("settings.connectionsSetupHelp")}
-						</p>
-						<div className="sync-dialog-actions">
-							<button
-								type="button"
-								className="onboarding-next-btn"
-								onClick={() => {
-									setShowDiscordConnectionGuide(false);
-									useAppStore.getState().setActiveApp("settings");
-									window.dispatchEvent(
-										new CustomEvent("naia-open-settings", {
-											detail: { tab: "connections" },
-										}),
-									);
-									window.setTimeout(() => {
-										document
-											.querySelector<HTMLButtonElement>(
-												'[data-settings-tab="connections"]',
-											)
-											?.click();
-									}, 0);
-								}}
-							>
-								{t("settings.tabConnections")} ·{" "}
-								{t("settings.connectionsDiscord")}
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+			
 		</>
 	);
 }
