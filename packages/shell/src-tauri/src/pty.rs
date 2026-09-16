@@ -27,6 +27,40 @@ pub fn new_registry() -> PtyRegistry {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
+/// Cap on the retained pre-attach backlog. Bounds memory for a PTY whose
+/// frontend never attaches; a screen's worth of output (including ANSI
+/// escapes) comfortably fits well under this.
+const OUTPUT_BACKLOG_CAP: usize = 64 * 1024;
+
+/// Decide what to do with a chunk of PTY output, given whether the frontend
+/// listener is attached yet. Returns `Some(data)` to emit immediately, or
+/// `None` after appending it to the retained (capped) backlog. Pure so the
+/// attach/replay behavior is unit-testable without a real PTY or AppHandle.
+fn buffer_or_pass_through(attached: bool, backlog: &mut String, data: String) -> Option<String> {
+    if attached {
+        return Some(data);
+    }
+    // Retain (do not drain) so a later re-attach — e.g. React StrictMode's
+    // double-mount, which installs a fresh event listener after the first
+    // one was torn down — can still replay the first frame.
+    if backlog.len() < OUTPUT_BACKLOG_CAP {
+        backlog.push_str(&data);
+    }
+    None
+}
+
+/// Mark attached and return the retained backlog to replay, if any. Does not
+/// drain the backlog, so a subsequent call (a second attach) replays the same
+/// retained data again for whatever new listener installed it.
+fn attach_replay(attached: &mut bool, backlog: &str) -> Option<String> {
+    *attached = true;
+    if backlog.is_empty() {
+        None
+    } else {
+        Some(backlog.to_string())
+    }
+}
+
 /// Preserve PTY output until the frontend confirms that its asynchronous
 /// Tauri event listener is installed.
 pub(crate) fn emit_or_buffer_pty_output(
@@ -39,10 +73,11 @@ pub(crate) fn emit_or_buffer_pty_output(
     let Some(handle) = handles.get_mut(pty_id) else {
         return;
     };
-    if !handle.output_attached {
-        handle.output_backlog.push_str(&data);
+    let Some(data) =
+        buffer_or_pass_through(handle.output_attached, &mut handle.output_backlog, data)
+    else {
         return;
-    }
+    };
     drop(handles);
     let _ = app.emit(&format!("pty:output:{pty_id}"), data);
 }
@@ -197,7 +232,10 @@ pub async fn pty_create(
     .map_err(|e| format!("spawn_blocking join: {e}"))?
 }
 
-/// Mark the frontend listener ready and replay output produced before attach.
+/// Mark the frontend listener ready and replay the retained first-frame
+/// backlog. Replays on every call (not just the first) because a second
+/// attach — e.g. React StrictMode's double-mount — installs a brand new
+/// event listener that never saw the first replay.
 #[tauri::command]
 pub fn pty_attach(
     registry: tauri::State<'_, PtyRegistry>,
@@ -208,15 +246,12 @@ pub fn pty_attach(
     let handle = handles
         .get_mut(&pty_id)
         .ok_or_else(|| format!("pty not found: {pty_id}"))?;
-    if handle.output_attached {
-        return Ok(());
-    }
-    if !handle.output_backlog.is_empty() {
-        let backlog = std::mem::take(&mut handle.output_backlog);
+    let backlog = attach_replay(&mut handle.output_attached, &handle.output_backlog);
+    drop(handles);
+    if let Some(backlog) = backlog {
         app.emit(&format!("pty:output:{pty_id}"), backlog)
             .map_err(|error| format!("PTY attach replay failed: {error}"))?;
     }
-    handle.output_attached = true;
     Ok(())
 }
 
@@ -397,4 +432,56 @@ fn pty_execute_sync_blocking(
         output: cleaned,
         exit_code,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{attach_replay, buffer_or_pass_through};
+
+    /// Regression for #555: React StrictMode double-mounts the Terminal
+    /// component, so pty_attach is called twice — once per mounted listener.
+    /// The second attach must still receive the PTY's opening frame, not a
+    /// silently-drained backlog from the first attach.
+    #[test]
+    fn second_attach_still_replays_retained_first_output() {
+        let mut attached = false;
+        let mut backlog = String::new();
+
+        // The reader thread delivers the opening frame before anyone attaches.
+        let emitted = buffer_or_pass_through(attached, &mut backlog, "herdr ready\r\n".into());
+        assert_eq!(emitted, None, "pre-attach output must be buffered, not emitted");
+        assert_eq!(backlog, "herdr ready\r\n");
+
+        // First attach (StrictMode's first mount): replays the opening frame.
+        let first = attach_replay(&mut attached, &backlog);
+        assert_eq!(first.as_deref(), Some("herdr ready\r\n"));
+        assert!(attached);
+
+        // Second attach (StrictMode tears down the first listener and mounts a
+        // fresh one): must replay the same retained output again, since the
+        // new listener never saw the first replay.
+        let second = attach_replay(&mut attached, &backlog);
+        assert_eq!(
+            second.as_deref(),
+            Some("herdr ready\r\n"),
+            "second attach must still receive the retained first output"
+        );
+    }
+
+    #[test]
+    fn output_after_attach_passes_through_without_buffering() {
+        let attached = true;
+        let mut backlog = String::new();
+
+        let emitted = buffer_or_pass_through(attached, &mut backlog, "live output".into());
+        assert_eq!(emitted, Some("live output".to_string()));
+        assert!(backlog.is_empty(), "attached output must not be buffered");
+    }
+
+    #[test]
+    fn attach_with_no_output_yet_replays_nothing() {
+        let mut attached = false;
+        assert_eq!(attach_replay(&mut attached, ""), None);
+        assert!(attached);
+    }
 }
