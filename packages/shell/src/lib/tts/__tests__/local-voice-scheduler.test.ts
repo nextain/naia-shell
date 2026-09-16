@@ -233,7 +233,8 @@ describe("LocalVoiceScheduler (FR-VOICE.16 Phase 2a — FR-VOICE.11/12/19 semant
 	});
 
 	/**
-	 * #621: on RTF>1 streaming-host hardware the first chunk arrives before the
+	 * Device e2e follows merge on win-rtx4060.
+ * #621: on RTF>1 streaming-host hardware the first chunk arrives before the
 	 * per-sentence RTF verdict. A slow first chunk must open the warming hold
 	 * (not resume a starved cold queue) so complete-then-play remains reachable.
 	 */
