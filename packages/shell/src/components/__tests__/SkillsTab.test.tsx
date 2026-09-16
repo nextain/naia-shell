@@ -140,6 +140,10 @@ describe("SkillsTab checkbox model", () => {
 		await waitFor(() =>
 			expect(screen.getByTestId("skills-load-error")).toBeDefined(),
 		);
+		expect(screen.getByTestId("skills-load-error")).toHaveAttribute(
+			"role",
+			"alert",
+		);
 		expect(screen.queryByTestId("cli-skill-card")).toBeNull();
 		expect(screen.getByTestId("skills-gesture-section")).toBeDefined();
 	});

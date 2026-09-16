@@ -79,6 +79,7 @@ import {
 	noteEnvironmentToolAck,
 	refreshEnvironment,
 } from "../lib/environment-skill";
+import { getEnabledClis } from "../lib/cli-detection";
 import {
 	discoverAndPersistDiscordDmChannel,
 	resetGatewaySession,
@@ -1941,7 +1942,7 @@ export function ChatArea({
 								: []),
 						]
 					: undefined,
-				enabledClis: [...(config.enabledClis ?? [])],
+				enabledClis: getEnabledClis(),
 				routeViaGateway:
 					!!gatewayUrl &&
 					config.enableTools &&

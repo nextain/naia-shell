@@ -127,7 +127,7 @@ export function SkillsTab({
 	}
 
 	return (
-		<div className="skills-tab" data-testid="skills-tab">
+		<div className="skills-tab" data-testid="skills-tab" aria-busy={loading}>
 			<div className="skills-header">
 				<div className="skills-header-actions">
 					<button
@@ -137,14 +137,18 @@ export function SkillsTab({
 						onClick={() => void refresh()}
 						disabled={loading || checkingId !== null}
 					>
-						{t("skills.refresh")}
+						{loading ? t("skills.cliChecking") : t("skills.refresh")}
 					</button>
 				</div>
 			</div>
 
 			<div className="skills-list">
 				{loadError && (
-					<div className="skills-error" data-testid="skills-load-error">
+					<div
+						className="skills-error"
+						data-testid="skills-load-error"
+						role="alert"
+					>
 						{t("skills.cliDetectError")}
 					</div>
 				)}
@@ -188,9 +192,12 @@ export function SkillsTab({
 							</div>
 							<div className="skill-card-detail" style={{ display: "block" }}>
 								<div className="skills-header-actions">
-									<span aria-live="polite" data-testid={`cli-status-${cli.id}`}>
+									<output
+										aria-live="polite"
+										data-testid={`cli-status-${cli.id}`}
+									>
 										{t(statusLabelKey(cli.status) as Parameters<typeof t>[0])}
-									</span>
+									</output>
 									<button
 										type="button"
 										className="skills-action-btn"
