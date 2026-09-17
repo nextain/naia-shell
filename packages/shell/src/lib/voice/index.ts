@@ -52,8 +52,10 @@ export type {
 	VoiceCloseReason,
 	VoiceCloseInfo,
 } from "./types";
-// Re-export voice options from LLM registry
-export { OPENAI_REALTIME_VOICES, GEMINI_LIVE_VOICES } from "../llm/registry";
+// Re-export voice options from LLM registry.
+// #602: OPENAI_REALTIME_VOICES 는 타사 직결 클라우드 LLM 정리와 함께 registry 에서
+// 제거됐다(OpenAI 직결 omni 선택지 삭제, 소비처 없음). GEMINI_LIVE_VOICES 만 남는다.
+export { GEMINI_LIVE_VOICES } from "../llm/registry";
 
 interface CreateOptions {
 	/** Use Rust WebSocket proxy for Gemini Direct (bypasses WebKitGTK limitation). */

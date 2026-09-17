@@ -43,9 +43,9 @@ export interface LlmModelMeta {
 
 /** LLM provider metadata for settings UI auto-discovery. */
 export interface LlmProviderMeta {
-	/** Unique identifier (e.g. "gemini", "openai"). */
+	/** Unique identifier (e.g. "nextain", "codex"). */
 	id: string;
-	/** Human-readable name (e.g. "Google Gemini"). */
+	/** Human-readable name (e.g. "Naia"). */
 	name: string;
 	/** Brief description for settings UI. */
 	description: string;
@@ -67,6 +67,6 @@ export interface LlmProviderMeta {
 	disabled?: boolean;
 	/** 지원 역할. 생략하면 main/sub/memory 모두 지원하는 일반 LLM provider로 본다. */
 	supportedRoles?: readonly LlmRoleId[];
-	/** i18n description key for onboarding UI (e.g. "provider.apiKeyRequired"). */
+	/** i18n description key for onboarding UI (e.g. "provider.localRequired"). */
 	descKey?: string;
 }

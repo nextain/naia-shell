@@ -245,8 +245,6 @@ export interface AppConfig {
 	 * laptop 4060 profile reserves VRAM for Ditto and VoxCPM2. */
 	ollamaNumGpu?: number;
 	vllmHost?: string;
-	/** Optional OpenAI-compatible API root. Empty uses api.openai.com/v1. */
-	openaiBaseUrl?: string;
 	/** vLLM endpoint for STT/ASR (e.g. Qwen3-ASR). */
 	vllmSttHost?: string;
 	/**
@@ -909,8 +907,8 @@ export function migrateSpeechStyleValues(): void {
  * Call once on app startup after other migrations. Idempotent.
  *
  * liveProvider: "naia" → provider: "nextain", model: "gemini-2.5-flash-live"
- * liveProvider: "gemini-live" → provider: "gemini", model: "gemini-2.5-flash-live"
- * liveProvider: "openai-realtime" → provider: "openai", model: "gpt-4o-realtime"
+ * liveProvider: "gemini-live" → provider: "nextain", model: "gemini-2.5-flash-live" (#602: 직결 gemini 제거)
+ * liveProvider: "openai-realtime" → provider: "nextain", model: "gemini-2.5-flash-live" (#602: 직결 openai 제거)
  * liveProvider: "edge-tts" → ttsProvider: "edge" (pipeline TTS)
  * liveProvider: "naia-omni" → preserved in config (backlog #33), UI hidden
  */
@@ -932,15 +930,18 @@ export function migrateLiveProviderToUnifiedModel(): void {
 			changed = true;
 			break;
 		case "gemini-live":
+			// #602: 타사 직결 gemini 공급자는 제거됐다 — 레거시 실시간 음성 설정은
+			// 나이아 계정 omni(gemini-2.5-flash-live)로 이관한다.
 			raw.voice = raw.liveVoice;
-			raw.provider = "gemini";
+			raw.provider = "nextain";
 			raw.model = "gemini-2.5-flash-live";
 			changed = true;
 			break;
 		case "openai-realtime":
+			// #602: 타사 직결 openai 공급자는 제거됐다 — 나이아 계정 omni 로 이관한다.
 			raw.voice = raw.openaiRealtimeVoice;
-			raw.provider = "openai";
-			raw.model = "gpt-4o-realtime";
+			raw.provider = "nextain";
+			raw.model = "gemini-2.5-flash-live";
 			changed = true;
 			break;
 		case "edge-tts":

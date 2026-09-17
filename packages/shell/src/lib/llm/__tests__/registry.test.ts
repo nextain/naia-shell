@@ -10,25 +10,36 @@ import {
 	isApiKeyOptional,
 	isOmniModel,
 	listLlmProviders,
-	modelHasCapability,
 	providerSupportsRole,
 	sortModels,
 } from "../registry";
 
 describe("registry — provider registration", () => {
-	it("lists all expected providers", () => {
+	it("lists only the Naia account, CLI (skills), and local providers", () => {
 		const ids = listLlmProviders().map((p) => p.id);
+		// 남는 공급자: 나이아 계정 + CLI(스킬 탭) + 로컬.
 		expect(ids).toContain("nextain");
-		expect(ids).toContain("gemini");
-		expect(ids).toContain("openai");
-		expect(ids).toContain("anthropic");
-		expect(ids).toContain("xai");
-		expect(ids).toContain("zai");
 		expect(ids).toContain("claude-code-cli");
 		expect(ids).toContain("codex");
 		expect(ids).toContain("grok");
 		expect(ids).toContain("ollama");
 		expect(ids).toContain("vllm");
+	});
+
+	// #602: 타사 직결 클라우드 LLM API 공급자는 흔적 없이 제거됐다.
+	it("no longer registers the third-party cloud LLM API providers", () => {
+		const ids = listLlmProviders().map((p) => p.id);
+		for (const removed of ["openai", "gemini", "anthropic", "xai", "zai"]) {
+			expect(ids).not.toContain(removed);
+			expect(getLlmProvider(removed)).toBeUndefined();
+		}
+	});
+
+	it("no remaining provider requires a bring-your-own API key", () => {
+		// 로그인=나이아 계정, 로그아웃=무료→로컬. BYO 키를 요구하는 공급자는 없다.
+		for (const p of listLlmProviders()) {
+			expect(p.requiresApiKey).toBe(false);
+		}
 	});
 
 	it("getLlmProvider returns undefined for unknown id", () => {
@@ -74,10 +85,12 @@ describe("registry — Codex app-server provider", () => {
 		expect(providerSupportsRole("ollama", "memory")).toBe(true);
 	});
 
-	it("Anthropic Messages API는 expert/main/sub를 지원하고 memory에서 제외", () => {
-		expect(providerSupportsRole("anthropic", "main")).toBe(true);
-		expect(providerSupportsRole("anthropic", "sub")).toBe(true);
-		expect(providerSupportsRole("anthropic", "memory")).toBe(false);
+	it("제거된 공급자는 어떤 역할도 지원하지 않는다 (미등록)", () => {
+		for (const removed of ["anthropic", "openai", "gemini", "xai", "zai"]) {
+			expect(providerSupportsRole(removed, "main")).toBe(false);
+			expect(providerSupportsRole(removed, "sub")).toBe(false);
+			expect(providerSupportsRole(removed, "memory")).toBe(false);
+		}
 	});
 });
 
@@ -127,34 +140,6 @@ describe("registry — Naia (nextain) provider models", () => {
 	});
 });
 
-describe("registry — Z.AI (zai) provider", () => {
-	it("zai provider exists and requires API key", () => {
-		const p = getLlmProvider("zai");
-		expect(p).toBeDefined();
-		expect(p?.requiresApiKey).toBe(true);
-		expect(p?.name).toBe("Z.AI");
-	});
-
-	it("zai default model is glm-5.3", () => {
-		expect(getDefaultLlmModel("zai")).toBe("glm-5.3");
-	});
-
-	it("zai has GLM models registered (구 4.x 계열 제거)", () => {
-		const models = getLlmProvider("zai")?.models ?? [];
-		const ids = models.map((m) => m.id);
-		expect(ids).toContain("glm-5.3");
-		expect(ids).toContain("glm-5.3-flash");
-		expect(ids).toContain("glm-5.1");
-		expect(ids).toContain("glm-5-turbo");
-		expect(ids).not.toContain("glm-4.7");
-		expect(ids).not.toContain("glm-4.5-air");
-	});
-
-	it("zai models have llm capability", () => {
-		expect(modelHasCapability("zai", "glm-5.1", "llm")).toBe(true);
-	});
-});
-
 describe("registry — Claude Code CLI provider", () => {
 	it("claude-code-cli does not require API key", () => {
 		const p = getLlmProvider("claude-code-cli");
@@ -196,103 +181,26 @@ describe("registry — 모델 카탈로그 정합 + 최신화 (2026-06-18)", () 
 		}
 	});
 
-	it("최신 모델 등록(fable-5 / sonnet-5 / gpt-5.6 / gemini-3.7 / grok-4.6 / glm-5.3)", () => {
-		expect(getLlmModel("anthropic", "claude-fable-5")).toMatchObject({
-			pricing: [10.0, 50.0],
-		});
-		expect(getLlmModel("anthropic", "claude-sonnet-5")).toMatchObject({
-			pricing: [3.0, 15.0],
-		});
-		expect(getLlmModel("anthropic", "claude-opus-4-8")).toMatchObject({
-			pricing: [5.0, 25.0],
-		});
+	it("최신 CLI 모델 등록(claude-code-cli / codex)", () => {
 		expect(getLlmModel("claude-code-cli", "claude-opus-4-8")).toBeDefined();
-		expect(getLlmModel("openai", "gpt-5.6-sol")).toMatchObject({
-			pricing: [4.0, 20.0],
-		});
-		expect(getLlmModel("openai", "gpt-5.5")).toBeDefined();
+		expect(getLlmModel("claude-code-cli", "claude-sonnet-5")).toBeDefined();
 		expect(getLlmModel("codex", "gpt-5.6-sol")).toBeDefined();
-		expect(getLlmModel("xai", "grok-4.6")).toMatchObject({
-			pricing: [2.0, 6.0],
-		});
-		expect(getLlmModel("zai", "glm-5.3")).toMatchObject({
-			pricing: [1.4, 4.4],
-		});
-		expect(getLlmModel("gemini", "gemini-3.7-flash")).toMatchObject({
-			pricing: [0.75, 3.75],
-		});
-		expect(getLlmModel("gemini", "gemini-3.6-flash")).toMatchObject({
-			pricing: [0.75, 3.75],
-		});
-		expect(getLlmModel("gemini", "gemini-3.5-flash-lite")).toMatchObject({
-			pricing: [0.3, 2.5],
-		});
-		expect(getLlmModel("gemini", "gemini-3.1-flash-lite")).toMatchObject({
-			pricing: [0.25, 1.5],
-		});
-		expect(getLlmModel("gemini", "gemini-3.1-pro-preview")).toMatchObject({
-			pricing: [2.0, 12.0],
-		});
-		expect(getLlmModel("xai", "grok-4.3")).toBeDefined();
-		expect(getLlmModel("zai", "glm-5.2")).toBeDefined();
 	});
 
-	it("default 최신 승격(openai/gemini/anthropic/codex/xai)", () => {
-		expect(getDefaultLlmModel("openai")).toBe("gpt-5.6-terra");
-		expect(getDefaultLlmModel("gemini")).toBe("gemini-3.7-flash");
-		expect(getDefaultLlmModel("anthropic")).toBe("claude-sonnet-5");
+	it("default 최신 승격(codex)", () => {
 		expect(getDefaultLlmModel("codex")).toBe("gpt-5.6-sol");
-		expect(getDefaultLlmModel("xai")).toBe("grok-4.3");
 	});
 
-	it("구 모델 ID 제거(anthropic/claude-code-cli 의 claude-opus-4-6)", () => {
-		expect(getLlmModel("anthropic", "claude-opus-4-6")).toBeUndefined();
+	it("구 모델 ID 제거(claude-code-cli 의 claude-opus-4-6)", () => {
 		expect(getLlmModel("claude-code-cli", "claude-opus-4-6")).toBeUndefined();
 	});
 
-	// cross-repo 정합 SoT: 이 스냅샷이 곧 agent cost.ts MODEL_PRICING / uc-provider-provenance
-	// REGISTRY_PRICED_MODELS 의 동기화 기준. registry 에서 native(per-token) 모델 추가·삭제·오타 시
-	// 이 테스트가 실패 → agent cost.ts 와 그쪽 배열도 같이 갱신해야 한다(과금 0 회귀 차단).
-	// (자동 단일 SoT(빌드 생성)는 후속 과제 — 지금은 '변경 감지'로 정합 보장. codex HIGH3 대응.)
-	it("native(per-token) provider 모델 ID 스냅샷 — agent cost.ts 와 수동 동기화", () => {
-		const nativeProviders = ["anthropic", "openai", "gemini", "xai", "zai"];
-		const snapshot: Record<string, string[]> = {};
-		for (const id of nativeProviders) {
-			snapshot[id] = (getLlmProvider(id)?.models ?? [])
-				.filter((m) => !m.capabilities.includes("omni")) // realtime/omni = 시간 과금(per-token 제외)
-				.map((m) => m.id);
+	// #602: 타사 직결(native per-token) 공급자는 제거됐다 — 어떤 모델도 조회되지 않는다.
+	it("제거된 native provider 는 모델을 하나도 노출하지 않는다", () => {
+		for (const id of ["anthropic", "openai", "gemini", "xai", "zai"]) {
+			expect(getLlmProvider(id)).toBeUndefined();
+			expect(getLlmProvider(id)?.models ?? []).toEqual([]);
 		}
-		expect(snapshot).toEqual({
-			anthropic: [
-				"claude-fable-5",
-				"claude-opus-4-8",
-				"claude-sonnet-5",
-				"claude-sonnet-4-6",
-				"claude-haiku-4-5-20251001",
-			],
-			openai: [
-				"gpt-5.6-sol",
-				"gpt-5.6-terra",
-				"gpt-5.6-luna",
-				"gpt-5.5",
-				"gpt-5.4",
-				"gpt-4.1",
-				"gpt-4.1-mini",
-				"gpt-4o",
-			],
-			gemini: [
-				"gemini-3.7-flash",
-				"gemini-3.6-flash",
-				"gemini-3.5-flash",
-				"gemini-3.5-flash-lite",
-				"gemini-3.1-flash-lite",
-				"gemini-3.1-pro-preview",
-				"gemini-2.5-pro",
-				"gemini-2.5-flash",
-			],
-			xai: ["grok-4.6", "grok-4.5", "grok-4.3", "grok-build-0.1"],
-			zai: ["glm-5.3", "glm-5.3-flash", "glm-5.2", "glm-5.1", "glm-5-turbo"],
-		});
 	});
 });
 
@@ -305,8 +213,10 @@ describe("registry — isApiKeyOptional", () => {
 		expect(isApiKeyOptional("vllm")).toBe(true);
 	});
 
-	it("gemini is not key-optional", () => {
-		expect(isApiKeyOptional("gemini")).toBe(false);
+	it("removed cloud providers are not key-optional (unregistered)", () => {
+		for (const removed of ["gemini", "openai", "anthropic", "xai", "zai"]) {
+			expect(isApiKeyOptional(removed)).toBe(false);
+		}
 	});
 
 	it("unknown provider is not key-optional", () => {

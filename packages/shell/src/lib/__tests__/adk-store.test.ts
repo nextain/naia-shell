@@ -45,7 +45,6 @@ import {
 	readNaiaUiConfig,
 	resetNaiaPersistedSettings,
 	setAdkPath,
-	syncMainRoleOpenAiBaseUrl,
 	toAssetUrl,
 	writeAgentKeyStrict,
 	writeNaiaConfig,
@@ -307,16 +306,31 @@ describe("resetNaiaPersistedSettings", () => {
 });
 
 describe("writeAgentKeyStrict", () => {
-	it("persists a Google Gemini credential under GEMINI_API_KEY", async () => {
+	// #602: 타사 직결 클라우드 LLM 공급자(gemini/openai/…)는 제거됐다. 남는 공급자 중
+	// 키를 저장하는 건 OpenAI 호환 클라이언트를 쓰는 원격 ollama 뿐이다.
+	it("persists a remote Ollama credential under OPENAI_API_KEY", async () => {
 		await setAdkPath(WIN_ADK);
 
-		await writeAgentKeyStrict("gemini", "apiKey", "google-test-key");
+		await writeAgentKeyStrict("ollama", "apiKey", "remote-ollama-key");
 
 		expect(mockInvoke).toHaveBeenCalledWith("write_agent_key", {
 			adkPath: WIN_ADK,
-			envKey: "GEMINI_API_KEY",
-			value: "google-test-key",
+			envKey: "OPENAI_API_KEY",
+			value: "remote-ollama-key",
 		});
+	});
+
+	// 제거된 직결 공급자에는 저장 키 매핑이 남지 않았다(흔적 제거 가드).
+	it("does not persist a credential for a removed third-party provider", async () => {
+		await setAdkPath(WIN_ADK);
+
+		for (const removed of ["gemini", "openai", "anthropic", "xai", "zai"]) {
+			await writeAgentKeyStrict(removed, "apiKey", "dead-key");
+		}
+
+		expect(
+			mockInvoke.mock.calls.filter((c) => c[0] === "write_agent_key"),
+		).toHaveLength(0);
 	});
 });
 
@@ -427,30 +441,28 @@ describe("readNaiaConfig", () => {
 	it("parses and returns config JSON", async () => {
 		await setAdkPath(WIN_ADK);
 		mockInvoke.mockResolvedValue(
-			JSON.stringify({ provider: "gemini", apiKey: "key123" }),
+			JSON.stringify({ provider: "nextain", apiKey: "key123" }),
 		);
 
 		const config = await readNaiaConfig();
 		expect(config).not.toBeNull();
-		expect(config?.provider).toBe("gemini");
+		expect(config?.provider).toBe("nextain");
 		expect(config?.apiKey).toBe("key123");
 	});
 });
 
 describe("writeNaiaConfig", () => {
-	it("scopes and normalizes an OpenAI-compatible base URL", () => {
+	it("#602: no longer scopes OPENAI_BASE_URL to a direct openai provider", () => {
+		// 타사 직결 openai 공급자는 제거됐다 — 로컬 ollama/vllm 만 OPENAI_BASE_URL 을 낸다.
 		expect(
 			buildNaiaConfigEnv({
-				provider: "openai",
-				openaiBaseUrl: "http://gpu:11435/v1/",
+				provider: "ollama",
+				ollamaHost: "http://gpu:11435/v1/",
 			}),
 		).toMatchObject({ OPENAI_BASE_URL: "http://gpu:11435/v1" });
-		expect(
-			buildNaiaConfigEnv({
-				provider: "gemini",
-				openaiBaseUrl: "http://stale/v1",
-			}),
-		).not.toHaveProperty("OPENAI_BASE_URL");
+		expect(buildNaiaConfigEnv({ provider: "nextain" })).not.toHaveProperty(
+			"OPENAI_BASE_URL",
+		);
 	});
 	it("does nothing when adk path not set", async () => {
 		await writeNaiaConfig({ provider: "gemini" });
@@ -1197,99 +1209,5 @@ describe("copyBundledAssets", () => {
 		);
 	});
 });
-// ── #515 — openai 커스텀 호스트의 llmRoles.main.baseUrl 동기화 ─────────────────
-// agent 는 chat_request 의 provider 를 받지 않고(grpc-codec "provider 제거=정본")
-// config.json 의 llmRoles.main 만 읽는다. 최상위 openaiBaseUrl 이 main.baseUrl 로
-// 동기화되지 않으면 채팅이 기본 api.openai.com 으로 새는 실측 결함의 회귀 가드.
-describe("syncMainRoleOpenAiBaseUrl (#515)", () => {
-	it("injects the normalized custom host into llmRoles.main for openai", () => {
-		const cfg: Record<string, unknown> = {
-			provider: "openai",
-			model: "unlocked",
-			openaiBaseUrl: "http://100.91.187.24:11435/v1/",
-			llmRoles: { main: { provider: "openai", model: "unlocked" } },
-		};
-		syncMainRoleOpenAiBaseUrl(cfg);
-		expect(cfg.llmRoles).toMatchObject({
-			main: {
-				provider: "openai",
-				model: "unlocked",
-				baseUrl: "http://100.91.187.24:11435/v1",
-			},
-		});
-	});
-
-	it("creates llmRoles.main from top-level fields when roles are absent", () => {
-		const cfg: Record<string, unknown> = {
-			provider: "openai",
-			model: "gpt-4o",
-			openaiBaseUrl: "http://gpu:8000",
-		};
-		syncMainRoleOpenAiBaseUrl(cfg);
-		expect(cfg.llmRoles).toMatchObject({
-			main: { provider: "openai", model: "gpt-4o", baseUrl: "http://gpu:8000/v1" },
-		});
-	});
-
-	it("removes a fossil baseUrl when the custom host is cleared", () => {
-		const cfg: Record<string, unknown> = {
-			provider: "openai",
-			model: "gpt-4o",
-			llmRoles: {
-				main: { provider: "openai", model: "gpt-4o", baseUrl: "http://old/v1" },
-			},
-		};
-		syncMainRoleOpenAiBaseUrl(cfg);
-		expect(
-			(cfg.llmRoles as { main: Record<string, unknown> }).main,
-		).not.toHaveProperty("baseUrl");
-	});
-
-	it("leaves non-openai mains and inherit markers untouched", () => {
-		const nextain: Record<string, unknown> = {
-			provider: "nextain",
-			openaiBaseUrl: "http://gpu:8000/v1",
-			llmRoles: { main: { provider: "nextain", model: "deepseek-v4-flash" } },
-		};
-		syncMainRoleOpenAiBaseUrl(nextain);
-		expect(
-			(nextain.llmRoles as { main: Record<string, unknown> }).main,
-		).not.toHaveProperty("baseUrl");
-
-		const inherited: Record<string, unknown> = {
-			provider: "openai",
-			openaiBaseUrl: "http://gpu:8000/v1",
-			llmRoles: { main: { inherit: "expert" } },
-		};
-		syncMainRoleOpenAiBaseUrl(inherited);
-		expect(inherited.llmRoles).toEqual({ main: { inherit: "expert" } });
-	});
-
-	it("writeNaiaConfig persists the synced main baseUrl to the agent config", async () => {
-		await setAdkPath(WIN_ADK);
-		mockInvoke.mockClear();
-		mockInvoke.mockImplementation(async (command: string) => {
-			if (command === "read_naia_ui_config") return "{}";
-			if (command === "detect_gpu_vram") return null;
-			return undefined;
-		});
-
-		await writeNaiaConfig({
-			provider: "openai",
-			model: "unlocked",
-			openaiBaseUrl: "http://100.91.187.24:11435",
-			llmRoles: { main: { provider: "openai", model: "unlocked" } },
-		});
-
-		const writeCall = mockInvoke.mock.calls.find(
-			([command]) => command === "write_naia_config",
-		);
-		expect(writeCall).toBeDefined();
-		const persisted = JSON.parse(
-			(writeCall?.[1] as { json: string }).json,
-		) as { llmRoles?: { main?: { baseUrl?: string } } };
-		expect(persisted.llmRoles?.main?.baseUrl).toBe(
-			"http://100.91.187.24:11435/v1",
-		);
-	});
-});
+// #602: openai 커스텀 호스트(syncMainRoleOpenAiBaseUrl, #515)는 타사 직결 openai
+// 공급자와 함께 제거됐다 — 관련 회귀 가드도 삭제한다.

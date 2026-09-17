@@ -5649,48 +5649,6 @@ async fn memory_import_backup(
     }
 }
 
-/// Validate an API key by making a test request to the provider
-#[tauri::command]
-async fn validate_api_key(provider: String, api_key: String) -> Result<bool, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let result = match provider.as_str() {
-        "gemini" => {
-            // Use header instead of query parameter to avoid leaking API key
-            // in logs, proxy caches, and Referer headers (CWE-598).
-            client
-                .get("https://generativelanguage.googleapis.com/v1beta/models")
-                .header("x-goog-api-key", &api_key)
-                .send()
-                .await
-        }
-        "xai" => {
-            client
-                .get("https://api.x.ai/v1/models")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .send()
-                .await
-        }
-        "anthropic" => {
-            client
-                .get("https://api.anthropic.com/v1/models")
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", "2023-06-01")
-                .send()
-                .await
-        }
-        _ => return Err(format!("Unknown provider: {}", provider)),
-    };
-
-    match result {
-        Ok(res) => Ok(res.status().is_success()),
-        Err(_) => Ok(false),
-    }
-}
-
 /// Trusted Naia gateway host over HTTPS. The official gateway domain is the
 /// company domain `nextain.io`; balance and other account calls require it.
 /// Loopback (dev gateway) is handled separately by the caller.
@@ -13070,7 +13028,6 @@ pub fn run() {
             memory_delete_fact,
             memory_export_backup,
             memory_import_backup,
-            validate_api_key,
             fetch_naia_balance,
             list_audio_output_devices,
             detect_gpu_vram,

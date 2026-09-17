@@ -1899,8 +1899,6 @@ export function ChatArea({
 					ollamaNumGpu:
 						activeProvider === "ollama" ? config.ollamaNumGpu : undefined,
 					vllmHost: activeProvider === "vllm" ? config.vllmHost : undefined,
-					openaiBaseUrl:
-						activeProvider === "openai" ? config.openaiBaseUrl : undefined,
 				},
 				history: history.slice(0, -1),
 				onChunk: (chunk) => handleChunk(chunk, activeProvider),

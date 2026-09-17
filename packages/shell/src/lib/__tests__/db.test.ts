@@ -53,17 +53,4 @@ describe("db (agent memory)", () => {
 		});
 		expect(result).toBe(true);
 	});
-
-	it("validateApiKey calls Tauri with correct args", async () => {
-		mockInvoke.mockResolvedValueOnce(true);
-
-		const { validateApiKey } = await import("../db");
-		const result = await validateApiKey("gemini", "test-key");
-
-		expect(mockInvoke).toHaveBeenCalledWith("validate_api_key", {
-			provider: "gemini",
-			apiKey: "test-key",
-		});
-		expect(result).toBe(true);
-	});
 });
