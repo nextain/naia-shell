@@ -18,7 +18,6 @@ import {
 	buildNaiaConfigEnv,
 	getAdkPath,
 	listNaiaAssets,
-	readNaiaConfig,
 	resetAdkPathBinding,
 	resetNaiaPersistedSettings,
 	toLocalBlobUrl,
@@ -127,9 +126,9 @@ import {
 	isApiKeyOptional,
 	isOmniModel,
 	listLlmProviders,
+	shouldHideModelPicker,
 	sortModels,
 } from "../lib/llm";
-import { providerSupportsRole } from "../lib/llm/registry";
 import {
 	keepsProviderWhenLoggedOut,
 	resolveLoggedOutLlm,
@@ -1605,55 +1604,10 @@ export function SettingsTab() {
 	const [memoryEmbeddingModel, setMemoryEmbeddingModel] = useState(
 		existing?.memoryEmbeddingModel ?? "",
 	);
-	const initialLlmRoles = readConfiguredLlmRoles(
-		existing ?? {
-			provider: "gemini",
-			model: getDefaultLlmModel("gemini"),
-			apiKey: "",
-		},
-	);
-	const [expertLlmRole, setExpertLlmRole] = useState<LlmRoleConfig>(
-		initialLlmRoles.expert ?? { inherit: "main" },
-	);
-	const [subLlmRole, setSubLlmRole] = useState<LlmRoleConfig>(
-		initialLlmRoles.sub ?? { inherit: "main" },
-	);
-	const [memoryLlmRole, setMemoryLlmRole] = useState<LlmRoleConfig>(
-		initialLlmRoles.memory ?? { inherit: "sub" },
-	);
-	// The roles have their own staged controls. Rehydrate them alongside the
-	// main brain after a workspace switch or WebView restart; otherwise the
-	// persisted explicit sub-brain is rendered as the initial inherit default.
-	useEffect(() => {
-		const syncLlmRolesFromConfig = () => {
-			const cfg = loadConfig();
-			if (!cfg) return;
-			const roles = readConfiguredLlmRoles(cfg);
-			setSubLlmRole(roles.sub ?? { inherit: "main" });
-			setExpertLlmRole(roles.expert ?? { inherit: "main" });
-			setMemoryLlmRole(roles.memory ?? { inherit: "sub" });
-		};
-		syncLlmRolesFromConfig();
-		// The workspace files are the config SoT.  Settings can be mounted after
-		// the boot hydration event (or while WebView restart effects race), so an
-		// event-only subscription leaves its staged role controls at defaults.
-		// Read the file once on mount as the deterministic fallback.
-		void readNaiaConfig().then((fileConfig) => {
-			if (!fileConfig) return;
-			const roles = readConfiguredLlmRoles({
-				provider: existing?.provider ?? "gemini",
-				model: existing?.model ?? getDefaultLlmModel("gemini"),
-				apiKey: existing?.apiKey ?? "",
-				...fileConfig,
-			});
-			setSubLlmRole(roles.sub ?? { inherit: "main" });
-			setExpertLlmRole(roles.expert ?? { inherit: "main" });
-			setMemoryLlmRole(roles.memory ?? { inherit: "sub" });
-		});
-		window.addEventListener("naia-config-changed", syncLlmRolesFromConfig);
-		return () =>
-			window.removeEventListener("naia-config-changed", syncLlmRolesFromConfig);
-	}, []);
+	// 보조·전문가·기억 LLM 역할 편집기 제거 (에픽 #589 할 일 2·3, #598): 나이아 로그인은
+	// 모델 하나만 알고, 두뇌 화면에는 역할 편집기를 그리지 않는다. main 역할만 정본으로 남는다.
+	// 옛 config 의 sub/expert/memory 역할 필드는 roles.ts 가 무손실로 읽어 두므로(에이전트
+	// 호환) 여기서 다시 쓰지 않는다 — 저장 시 main 만 갱신한다.
 	const [backupPassword, setBackupPassword] = useState("");
 	const [backupStatus, setBackupStatus] = useState<
 		"idle" | "exporting" | "importing" | "done" | "error"
@@ -2607,19 +2561,6 @@ export function SettingsTab() {
 		} as unknown as Record<string, unknown>);
 	}
 
-	function persistLlmRole(
-		role: "expert" | "sub" | "memory",
-		value: LlmRoleConfig,
-	) {
-		const cfg = loadConfig();
-		if (!cfg) return;
-		const next = writeConfiguredLlmRole(cfg, role, value);
-		saveConfig(next);
-		void writeNaiaConfig({
-			...next,
-			...(naiaKey ? { naiaKey } : {}),
-		} as unknown as Record<string, unknown>);
-	}
 
 	function persistVideoAvatarSelection(nextNva?: string) {
 		const selectedNva = nextNva || nvaModel || DEFAULT_NVA_MODEL;
@@ -3111,10 +3052,9 @@ export function SettingsTab() {
 				? { baseUrl: persistedMainRole.baseUrl }
 				: {}),
 		};
+		// 저장은 main 역할만 정본으로 갱신한다. 보조·전문가·기억 역할 편집기는
+		// 제거됐고(에픽 #589), 옛 config 의 해당 역할 필드는 roles.ts 가 무손실로 보존한다.
 		newConfig = writeConfiguredLlmRole(newConfig, "main", mainRole);
-		newConfig = writeConfiguredLlmRole(newConfig, "sub", subLlmRole);
-		newConfig = writeConfiguredLlmRole(newConfig, "expert", expertLlmRole);
-		newConfig = writeConfiguredLlmRole(newConfig, "memory", memoryLlmRole);
 		try {
 			await saveConfigSecure(newConfig);
 			// Agent reload resolves credentials from its OS-backed store. Commit all
@@ -3237,98 +3177,16 @@ export function SettingsTab() {
 				: availableProviderModels,
 		[provider, availableProviderModels, modelSortMode],
 	);
-	const renderLlmRoleEditor = (
-		role: "expert" | "sub" | "memory",
-		labelKey: TranslationKey,
-		roleConfig: LlmRoleConfig,
-		setRoleConfig: (value: LlmRoleConfig) => void,
-		inheritTargets: readonly ("expert" | "main" | "sub")[],
-	) => {
-		const compatibleProviders = LLM_PROVIDERS.filter((candidate) =>
-			providerSupportsRole(candidate.id, role),
-		);
-		const mode = roleConfig.inherit
-			? `inherit:${roleConfig.inherit}`
-			: "explicit";
-		const updateRole = (next: LlmRoleConfig) => {
-			setRoleConfig(next);
-			persistLlmRole(role, next);
-		};
-		return (
-			<div className="settings-field" data-testid={`${role}-llm-role`}>
-				<label htmlFor={`${role}-llm-mode`}>{t(labelKey)}</label>
-				<select
-					id={`${role}-llm-mode`}
-					data-testid={`${role}-llm-mode`}
-					value={mode}
-					onChange={(event) => {
-						if (event.target.value.startsWith("inherit:")) {
-							updateRole({
-								inherit: event.target.value.slice("inherit:".length) as
-									| "expert"
-									| "main"
-									| "sub",
-							});
-							return;
-						}
-						const selectedProvider =
-							compatibleProviders.find(
-								(candidate) => candidate.id === provider,
-							) ?? compatibleProviders[0];
-						if (!selectedProvider) return;
-						updateRole({
-							provider: selectedProvider.id,
-							model: getDefaultLlmModel(selectedProvider.id),
-						});
-					}}
-				>
-					{inheritTargets.map((target) => (
-						<option key={target} value={`inherit:${target}`}>
-							{target === "main"
-								? t("settings.roleInheritMain")
-								: t("settings.roleInheritSub")}
-						</option>
-					))}
-					<option value="explicit">{t("settings.roleExplicit")}</option>
-				</select>
-				{!roleConfig.inherit && (
-					<div className="settings-field" style={{ marginTop: "8px" }}>
-						<label htmlFor={`${role}-llm-provider`}>
-							{t("settings.provider")}
-						</label>
-						<select
-							id={`${role}-llm-provider`}
-							data-testid={`${role}-llm-provider`}
-							value={roleConfig.provider ?? ""}
-							onChange={(event) =>
-								updateRole({
-									provider: event.target.value as ProviderId,
-									model: getDefaultLlmModel(event.target.value),
-								})
-							}
-						>
-							{compatibleProviders.map((candidate) => (
-								<option key={candidate.id} value={candidate.id}>
-									{candidate.name}
-								</option>
-							))}
-						</select>
-						<label htmlFor={`${role}-llm-model`}>{t("settings.model")}</label>
-						<input
-							id={`${role}-llm-model`}
-							data-testid={`${role}-llm-model`}
-							type="text"
-							value={roleConfig.model ?? ""}
-							onChange={(event) =>
-								updateRole({ ...roleConfig, model: event.target.value })
-							}
-							placeholder={getDefaultLlmModel(roleConfig.provider ?? "")}
-						/>
-					</div>
-				)}
-			</div>
-		);
-	};
+	// 선택기 숨김 규칙 (에픽 #589 할 일 2): 고를 수 있는 대화 모델이 하나뿐이면 모델
+	// 선택기를 그리지 않는다. 판정은 등록부(표시용 모델 목록)로 한다. ollama 는 동적
+	// datalist 라 별도 처리하므로 제외한다. 나이아가 게이트웨이에서 단일 모델로 줄면
+	// 이 규칙이 자동으로 선택기를 숨기고 그 하나만 정적 텍스트로 보여 준다.
+	const selectableProviderModels = displayedProviderModels.filter(
+		(candidate) => !candidate.capabilities.includes("asr"),
+	);
+	const hideModelPicker =
+		provider !== "ollama" && shouldHideModelPicker(displayedProviderModels);
+	const singleProviderModel = selectableProviderModels[0];
 	const selectedModelMeta = availableProviderModels.find((m) => m.id === model);
 	const hasSelectedModel = Boolean(selectedModelMeta);
 	const shouldReplaceUnavailableSelectedModel =
@@ -3496,9 +3354,7 @@ export function SettingsTab() {
 		void writeNaiaConfig(next as unknown as Record<string, unknown>);
 		setProvider(next.provider);
 		setModel(next.model);
-		const nextRoles = readConfiguredLlmRoles(next);
-		setSubLlmRole(nextRoles.sub ?? { inherit: "main" });
-		setMemoryLlmRole(nextRoles.memory ?? { inherit: "sub" });
+		// 보조·기억 역할 편집기는 제거됨(에픽 #589) — main 슬롯만 스테이징에 반영한다.
 		if (next.memoryEmbeddingProvider)
 			setMemoryEmbeddingProvider(next.memoryEmbeddingProvider);
 	}
@@ -4840,7 +4696,7 @@ export function SettingsTab() {
 
 					<div className="settings-field">
 						<label htmlFor="model-select">{t("settings.model")}</label>
-						{provider === "nextain" ? (
+						{provider === "nextain" && !hideModelPicker ? (
 							<>
 								<label htmlFor="model-sort-mode">
 									{t("settings.modelSort")}
@@ -4895,6 +4751,13 @@ export function SettingsTab() {
 										))}
 								</datalist>
 							</>
+						) : hideModelPicker ? (
+							// 모델이 하나뿐 → 선택기 대신 그 모델을 정적 텍스트로만 보여 준다.
+							<div id="model-select" data-testid="model-single">
+								{singleProviderModel
+									? formatModelLabel(singleProviderModel)
+									: (selectedModelMeta?.label ?? model)}
+							</div>
 						) : (
 							<select
 								key={`model-select-${modelSortMode}-${displayedProviderModels.map((candidate) => candidate.id).join(":")}`}
@@ -5218,34 +5081,6 @@ export function SettingsTab() {
 							}}
 						/>
 					</div>
-
-					<div className="settings-section-divider">
-						<span>{t("settings.brainExpertSection")}</span>
-					</div>
-					{renderLlmRoleEditor(
-						"expert",
-						"settings.brainExpertSection",
-						expertLlmRole,
-						setExpertLlmRole,
-						["main"],
-					)}
-					<div className="settings-section-divider">
-						<span>{t("settings.brainSubSection")}</span>
-					</div>
-					{renderLlmRoleEditor(
-						"sub",
-						"settings.brainSubSection",
-						subLlmRole,
-						setSubLlmRole,
-						["main"],
-					)}
-					{renderLlmRoleEditor(
-						"memory",
-						"settings.memoryLlm",
-						memoryLlmRole,
-						setMemoryLlmRole,
-						["main", "sub"],
-					)}
 
 					<div className="settings-actions">
 						<button

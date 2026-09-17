@@ -763,7 +763,9 @@ describe("SettingsTab", () => {
 		});
 	});
 
-	it("allows Codex for sub while keeping memory orthogonal", () => {
+	it("does not render the assistant/expert/memory role editors (single Naia model)", () => {
+		// 에픽 #589 / #598: 나이아 로그인은 모델 하나만 알고, 두뇌 화면에는
+		// 보조·전문가·기억 LLM 역할 편집기를 그리지 않는다.
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({ provider: "codex", model: "gpt-5.4", apiKey: "" }),
@@ -772,74 +774,48 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 
-		const subMode = screen.getByTestId("sub-llm-mode") as HTMLSelectElement;
-		const memoryMode = screen.getByTestId(
-			"memory-llm-mode",
-		) as HTMLSelectElement;
-		expect(subMode.value).toBe("inherit:main");
-		expect(memoryMode.value).toBe("inherit:sub");
-
-		fireEvent.change(subMode, { target: { value: "explicit" } });
-		const subProvider = screen.getByTestId(
-			"sub-llm-provider",
-		) as HTMLSelectElement;
-		expect([...subProvider.options].map((option) => option.value)).toContain(
-			"codex",
-		);
-		fireEvent.change(subProvider, { target: { value: "gemini" } });
-		const subModel = screen.getByTestId("sub-llm-model") as HTMLInputElement;
-		fireEvent.change(subModel, { target: { value: "gemini-3.1-flash-lite" } });
-		fireEvent.blur(subModel);
-		fireEvent.change(memoryMode, { target: { value: "inherit:main" } });
-
-		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
-		expect(saved.llmRoles).toMatchObject({
-			sub: { provider: "gemini", model: "gemini-3.1-flash-lite" },
-			memory: { inherit: "main" },
-		});
-		expect(saved.subLlmProvider).toBe("gemini");
-		expect(saved.subLlmModel).toBe("gemini-3.1-flash-lite");
-		expect(saved.memoryLlmProvider).toBeUndefined();
+		for (const role of ["expert", "sub", "memory"]) {
+			expect(screen.queryByTestId(`${role}-llm-role`)).toBeNull();
+			expect(screen.queryByTestId(`${role}-llm-mode`)).toBeNull();
+			expect(screen.queryByTestId(`${role}-llm-provider`)).toBeNull();
+			expect(screen.queryByTestId(`${role}-llm-model`)).toBeNull();
+		}
 	});
 
-	it("hydrates the expert role from the workspace file fallback", async () => {
-		localStorage.setItem("naia-adk-path", "D:\\alpha-adk");
+	it("keeps the old sub/expert role fields untouched when saving the main brain", () => {
+		// 역할 편집기는 사라졌지만 옛 config 의 역할 필드는 무손실로 보존한다(에이전트 호환).
+		// 저장은 main 역할만 갱신하고 sub/expert 필드는 건드리지 않는다.
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
-				provider: "gemini",
-				model: "gemini-3.5-flash",
+				onboardingComplete: true,
+				provider: "codex",
+				model: "gpt-5.4",
 				apiKey: "",
+				llmRoles: {
+					sub: { provider: "gemini", model: "gemini-3.1-flash-lite" },
+					expert: { provider: "openai", model: "gpt-5.4" },
+				},
 			}),
 		);
-		mockInvoke.mockImplementation((command: string) => {
-			if (command === "read_naia_config") {
-				return Promise.resolve(
-					JSON.stringify({
-						provider: "gemini",
-						model: "gemini-3.5-flash",
-						llmRoles: {
-							expert: { provider: "openai", model: "gpt-5.4" },
-						},
-					}),
-				);
-			}
-			return Promise.resolve([]);
-		});
-
+		mockInvoke.mockResolvedValue([]);
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 
-		await vi.waitFor(() => {
-			expect(
-				(screen.getByTestId("expert-llm-mode") as HTMLSelectElement).value,
-			).toBe("explicit");
-			expect(
-				(screen.getByTestId("expert-llm-provider") as HTMLSelectElement).value,
-			).toBe("openai");
-			expect(
-				(screen.getByTestId("expert-llm-model") as HTMLInputElement).value,
-			).toBe("gpt-5.4");
+		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
+		expect(saved.llmRoles.main).toMatchObject({
+			provider: "codex",
+			model: "gpt-5.4",
+		});
+		// 옛 sub/expert 역할 필드는 그대로 남는다.
+		expect(saved.llmRoles.sub).toMatchObject({
+			provider: "gemini",
+			model: "gemini-3.1-flash-lite",
+		});
+		expect(saved.llmRoles.expert).toMatchObject({
+			provider: "openai",
+			model: "gpt-5.4",
 		});
 	});
 
@@ -1291,7 +1267,7 @@ describe("SettingsTab", () => {
 		},
 	);
 
-	it("saves main, sub, and memory brains as role settings", () => {
+	it("saves the main brain as a role setting", () => {
 		localStorage.setItem(
 			"naia-config",
 			JSON.stringify({
@@ -1305,32 +1281,11 @@ describe("SettingsTab", () => {
 		render(<SettingsTab />);
 		gotoSettingsTab("brain");
 
-		const subMode = screen.getByTestId("sub-llm-mode");
-		fireEvent.change(subMode, { target: { value: "explicit" } });
-		const subProvider = screen.getByTestId(
-			"sub-llm-provider",
-		) as HTMLSelectElement;
-		fireEvent.change(subProvider, { target: { value: "nextain" } });
-		fireEvent.change(screen.getByTestId("memory-llm-mode"), {
-			target: { value: "explicit" },
-		});
-		fireEvent.change(screen.getByTestId("memory-llm-provider"), {
-			target: { value: "nextain" },
-		});
-
 		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 		const saved = JSON.parse(localStorage.getItem("naia-config") || "{}");
 		expect(saved.llmRoles).toEqual(
 			expect.objectContaining({
 				main: expect.objectContaining({ provider: "codex", model: "gpt-5.4" }),
-				sub: expect.objectContaining({
-					provider: "nextain",
-					model: "deepseek-v4-flash",
-				}),
-				memory: expect.objectContaining({
-					provider: "nextain",
-					model: "deepseek-v4-flash",
-				}),
 			}),
 		);
 	});
@@ -1363,51 +1318,6 @@ describe("SettingsTab", () => {
 			).toMatchObject({ provider: "nextain", model: modelId });
 		},
 	);
-
-	it("allows an explicit Codex sub brain but excludes Codex from memory", () => {
-		localStorage.setItem(
-			"naia-config",
-			JSON.stringify({
-				onboardingComplete: true,
-				provider: "codex",
-				model: "gpt-5.4",
-				apiKey: "",
-			}),
-		);
-		mockInvoke.mockResolvedValue([]);
-		render(<SettingsTab />);
-		gotoSettingsTab("brain");
-
-		fireEvent.change(screen.getByTestId("sub-llm-mode"), {
-			target: { value: "explicit" },
-		});
-		fireEvent.change(screen.getByTestId("memory-llm-mode"), {
-			target: { value: "explicit" },
-		});
-		expect(
-			[
-				...(screen.getByTestId("sub-llm-provider") as HTMLSelectElement)
-					.options,
-			].map((option) => option.value),
-		).toContain("codex");
-		expect(
-			[
-				...(screen.getByTestId("memory-llm-provider") as HTMLSelectElement)
-					.options,
-			].map((option) => option.value),
-		).not.toContain("codex");
-		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-		const roles = JSON.parse(
-			localStorage.getItem("naia-config") || "{}",
-		).llmRoles;
-		// Switching to explicit resolves the provider default (gpt-5.6-sol),
-		// even though the stored main config still names retiring gpt-5.4.
-		expect(roles.sub).toMatchObject({
-			provider: "codex",
-			model: "gpt-5.6-sol",
-		});
-		expect(roles.memory.provider).not.toBe("codex");
-	});
 
 	it("shows a safe Codex login-required state and clears it on provider switch", async () => {
 		localStorage.setItem(
