@@ -19,6 +19,14 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_664_dual_memory_clone": {
+      "issue": 664,
+      "title": "Agent spawn NAIA_ADK_PATH follows adk-path, never leftover ~/naia-adk clone",
+      "requirements": "docs/requirements.md FR-ADK-PATH.1",
+      "scenario": "docs/user-scenarios.md S-ADK-PATH-ONE-ROOT",
+      "status": "in_progress",
+      "last_updated": "2026-09-18T00:00:00+09:00"
+    },
     "issue_4060_settings_canonicals": {
       "issue": [645, 646, 647, 642, 640],
       "title": "win-rtx4060 settings/canonical FAIL items",
