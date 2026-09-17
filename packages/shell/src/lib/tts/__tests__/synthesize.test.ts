@@ -3,6 +3,7 @@ import {
 	clearLocalVoiceAccessToken,
 	localVoiceFacadeUrlFromReady,
 } from "../../voice/local-runtime";
+import { resetBgmSidecarBaseUrl } from "../../bgm-sidecar-url";
 import {
 	arrayBufferToBase64,
 	deriveLanguageCode,
@@ -25,7 +26,15 @@ vi.mock("../../voice/host-profile", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
 
-beforeEach(() => mockInvoke.mockResolvedValue(undefined));
+beforeEach(() => {
+	resetBgmSidecarBaseUrl();
+	mockInvoke.mockImplementation((cmd: string) => {
+		if (cmd === "ensure_bgm_server") {
+			return Promise.resolve({ ready: true, port: 18791 });
+		}
+		return Promise.resolve(undefined);
+	});
+});
 
 /** Build a minimal fetch Response-like object for a JSON body. */
 function jsonResponse(body: unknown, ok = true, status = 200) {
@@ -620,7 +629,7 @@ describe("synthesizeTts — edge (bgm sidecar)", () => {
 		});
 		expect(atob(res.audioBase64)).toBe(String.fromCharCode(1, 2, 3));
 		const url = String(fetchMock.mock.calls[0][0]);
-		expect(url).toContain("http://localhost:18791/edge-tts");
+		expect(url).toContain("http://127.0.0.1:18791/edge-tts");
 		expect(url).toContain("voice=ko-KR-SunHiNeural"); // Neural2-A → edge default
 	});
 

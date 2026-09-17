@@ -696,6 +696,8 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-BGM.13** | Spawn 직전 셸은 대상 BGM 포트의 점유자를 확인한다. 점유자 command line에 `bgm-server-bin.js`가 있으면 종료 후 포트 해제를 확인하고 spawn한다. 없으면 종료하지 않고 점유 사실을 로그에 남긴다. 판정은 포트 소유자 기준(전역 cmdline 매칭 금지 — dev 격리 인스턴스 오살 방지). | Done | Rust reclaim 단위(주입 프로브 3분기) + Windows 실프로세스 통합 테스트 |
 | **FR-BGM.14** | sidecar는 `EADDRINUSE`에서 재시도 없이 즉시 exit(1)한다. 실패한 채 살아남아 낡은 nonce로 포트를 승계하는 좀비를 만들지 않는다. | Done | vitest: 점유 포트에서 `startYoutubeServer()` → exit(1) 호출·재시도 타이머 부재 |
 | **FR-BGM.15** | 셸 teardown은 `state.bgm_server`가 비어 있어도 PID 파일에 살아 있는 sidecar가 있으면 component 검증 후 종료하고 나서 파일을 제거한다. 기록만 삭제해 고아를 추적 불가로 만들지 않는다. | Done | Rust teardown 헬퍼 단위 + FR-BGM.13 백스톱이 최종 방어선 |
+| **FR-BGM.16** | 선호 포트(운영 18791 / dev 18891)가 남의 프로세스에 점유되면 빈 포트를 골라 sidecar를 띄우고 실제 포트를 UI에 알린다. 기동에 실패하면 조용히 BGM 없이 진행하지 않고 사용자에게 실패를 보여 준다. | In review | Rust allocate 단위 + bgm-sidecar-url + ChatArea 배너 |
+| **FR-BGM.17** | play 도구는 iframe이 관측될 때까지 기다렸다가 `requested`를 떠나 playing/error/timeout을 돌려준다. 도구 JSON은 사용자 채팅 본문에 보이지 않는다. | In review | bgm-skill waitForAck 단위 + visible-chat-text 단위 |
 
 ## Onboarding appearance and voice ownership (2026-08-06)
 

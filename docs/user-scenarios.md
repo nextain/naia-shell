@@ -813,6 +813,13 @@ successful until the player reports an observed `playing` transition.
 | sidecar exits or auxiliary window closes | Rust lifecycle tests | native Tauri sidecar restart/health check |
 | one settings owner and durable consent | Settings component rerender test | `settings-slots.spec.ts` Skills ownership, General absence, Save/reload |
 
+## UC-BGM-FOREIGN-PORT-FALLBACK — 남의 프로세스가 BGM 포트를 점유하면 빈 포트를 쓰거나 실패를 보여 준다 (#637)
+
+개발 인스턴스(:18891)에서 다른 node 프로세스가 포트를 훔치면 health check가 실패하고
+앱이 BGM 없이 조용히 떠서는 안 된다. 셸은 빈 포트를 골라 sidecar를 띄우거나, 그것도
+실패하면 채팅에 실패를 보여 준다. play 결과는 `requested`에 머물지 않고 관측된
+playing/error/timeout을 돌려주며, 그 JSON은 사용자 채팅 본문에 보이지 않는다.
+
 ## UC-BGM-ORPHAN-PORT-RECOVERY — 고아 sidecar가 BGM 포트를 선점해도 다음 실행이 회복한다 (#517)
 
 설치본 사용자가 유튜브 뮤직플레이어를 켰는데 "BGM server failed its owned

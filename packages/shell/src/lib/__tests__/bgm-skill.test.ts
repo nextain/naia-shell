@@ -348,6 +348,27 @@ describe("executeBgmSkill", () => {
 		expect(deps.playback.queue()).toEqual([]);
 	});
 
+	it("play acknowledgement can leave requested once the player observes playing", async () => {
+		const { deps } = mkDeps();
+		deps.waitForAck = async (playbackId) => {
+			deps.playback.observe({
+				playbackId,
+				sequence: 2,
+				status: "playing",
+			});
+			return deps.playback.current();
+		};
+		const out = JSON.parse(
+			await executeBgmSkill(
+				{ action: "play", videoId: "ack", title: "Ack", replace: true },
+				deps,
+			),
+		);
+		expect(out.playback.status).toBe("playing");
+		expect(out.announceTrack).toBe(true);
+		expect(out.currentTrack).toEqual({ videoId: "ack", title: "Ack" });
+	});
+
 	it("skips the current first search result for an activity-owned replacement", async () => {
 		const { deps, emitted } = mkDeps([
 			{ id: "first", title: "Repeated result" },

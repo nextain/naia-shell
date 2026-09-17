@@ -3925,6 +3925,27 @@ fn bgm_server_port() -> u16 {
     18791
 }
 
+/// Prefer the instance port. If a foreign process still holds it after reclaim,
+/// bind an ephemeral port instead of running without a BGM server (#637).
+fn allocate_bgm_port(preferred: u16) -> Result<u16, String> {
+    reclaim_bgm_port(preferred);
+    if !bgm_port_accepts_connection(preferred) {
+        return Ok(preferred);
+    }
+    log_both(&format!(
+        "[Naia] BGM preferred port {} is occupied; selecting a free port",
+        preferred
+    ));
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to allocate a free BGM port: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to read allocated BGM port: {e}"))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
 // A cold Windows install can spend more than ten seconds loading the bundled
 // Node tree while Defender scans it. Keep the owned nonce health check, but
 // allow enough time for that first launch instead of killing a healthy child.
@@ -4170,8 +4191,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
             .map_err(|e| format!("Failed to create BGM health nonce: {e}"))?
             .as_nanos()
     );
-    let bgm_port = bgm_server_port();
-    reclaim_bgm_port(bgm_port);
+    let bgm_port = allocate_bgm_port(bgm_server_port())?;
     cmd.env("NAIA_BGM_HEALTH_NONCE", &health_nonce);
     cmd.env("NAIA_BGM_PORT", bgm_port.to_string());
 
@@ -4236,7 +4256,7 @@ fn spawn_youtube_bgm_server(app_handle: &AppHandle) -> Result<BgmServerProcess, 
 async fn ensure_bgm_server(
     app_handle: AppHandle,
     state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
+) -> Result<serde_json::Value, String> {
     let _start_guard = state.bgm_start.lock().await;
     let existing = {
         let mut guard = lock_or_recover(&state.bgm_server, "state.bgm_server(ensure_take)");
@@ -4271,9 +4291,10 @@ async fn ensure_bgm_server(
             }
         };
         if healthy {
+            let port = process.port;
             let mut guard = lock_or_recover(&state.bgm_server, "state.bgm_server(ensure_put)");
             *guard = Some(process);
-            return Ok(true);
+            return Ok(serde_json::json!({ "ready": true, "port": port }));
         }
         // Drop owns kill + wait + PID cleanup, including status/probe failures.
         drop(process);
@@ -4286,9 +4307,10 @@ async fn ensure_bgm_server(
         tauri::async_runtime::spawn_blocking(move || spawn_youtube_bgm_server(&app_handle))
             .await
             .map_err(|error| format!("BGM server start task failed: {error}"))??;
+    let port = process.port;
     let mut guard = lock_or_recover(&state.bgm_server, "state.bgm_server(ensure_store)");
     *guard = Some(process);
-    Ok(true)
+    Ok(serde_json::json!({ "ready": true, "port": port }))
 }
 
 fn should_teardown_for_window(label: &str) -> bool {
@@ -13376,16 +13398,24 @@ pub fn run() {
             // Standalone sidecar because the preferred standalone naia-agent
             // submodule (lib.rs:912-928) lacks startYoutubeServer(), so the
             // shell BGM player would otherwise get connection-refused on 18791.
-            // Non-fatal: BGM is an optional feature; failure only logs.
+            // Prefer a free port over silently running without BGM (#637).
             match spawn_youtube_bgm_server(&app_handle) {
                 Ok(process) => {
+                    let port = process.port;
                     let mut guard =
                         lock_or_recover(&state.bgm_server, "state.bgm_server(setup)");
                     *guard = Some(process);
+                    let _ = app_handle.emit(
+                        "bgm_server_status",
+                        serde_json::json!({ "ready": true, "port": port }),
+                    );
                 }
                 Err(e) => {
                     log_both(&format!("[Naia] BGM server not available: {}", e));
-                    log_both("[Naia] Running without BGM server (port 18791 will be empty)");
+                    let _ = app_handle.emit(
+                        "bgm_server_status",
+                        serde_json::json!({ "ready": false, "error": e }),
+                    );
                 }
             }
 
@@ -14993,6 +15023,24 @@ mod tests {
         ));
         assert!(!bgm_sidecar_cmdline("node some-other-server.js"));
         assert!(!bgm_sidecar_cmdline(""));
+    }
+
+    #[test]
+    fn allocate_bgm_port_keeps_a_free_preferred_port() {
+        let preferred = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        assert_eq!(allocate_bgm_port(preferred).unwrap(), preferred);
+    }
+
+    #[test]
+    fn allocate_bgm_port_picks_another_port_when_preferred_is_occupied() {
+        let holder = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let occupied = holder.local_addr().unwrap().port();
+        let got = allocate_bgm_port(occupied).unwrap();
+        assert_ne!(got, occupied);
+        assert!(!bgm_port_accepts_connection(got));
     }
 
     #[test]
