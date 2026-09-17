@@ -152,6 +152,40 @@ describe("KnowledgeSettingsTab (FR-KB-OS.5~8 — 설정 지식 탭 관리)", () 
 		await waitFor(() =>
 			expect(screen.getByTestId("knowledge-status").textContent).toContain("1"),
 		);
+		expect(screen.getByTestId("knowledge-status").getAttribute("data-serve-ready")).toBe("1");
+		expect(screen.getByTestId("knowledge-status").getAttribute("data-accepted")).toBe("1");
+	});
+
+	it("draft-only 컴파일 산출 → 검색 가능 수와 검증 수를 구분한다", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "read_naia_knowledge_config")
+				return JSON.stringify({
+					version: 1,
+					scope: "default",
+					sources: [{ path: "/docs/gov" }],
+				});
+			if (cmd === "read_naia_knowledge_kb")
+				return JSON.stringify({
+					version: 1,
+					kb: {
+						cards: [
+							{ id: "c1", status: "draft" },
+							{ id: "c2", status: "draft" },
+						],
+						entities: [{ id: "e1" }],
+						relations: [],
+					},
+				});
+			return undefined;
+		});
+		render(<KnowledgeSettingsTab />);
+		await waitFor(() =>
+			expect(screen.getByTestId("knowledge-status").getAttribute("data-serve-ready")).toBe("2"),
+		);
+		const status = screen.getByTestId("knowledge-status");
+		expect(status.getAttribute("data-cards")).toBe("2");
+		expect(status.getAttribute("data-accepted")).toBe("0");
+		expect(status.textContent).not.toBe("");
 	});
 
 	it("컴파일 미배선(커맨드 없음) → 정직한 unavailable 표기(UI 무붕괴)", async () => {

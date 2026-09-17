@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "Удалить",
 	"settings.knowledgeStatusLabel": "Состояние базы знаний",
 	"settings.knowledgeStatusEmpty": "Ещё не скомпилировано",
-	"settings.knowledgeStatsFormat": "%c карточек · %e сущностей · %r связей · %a принято",
+	"settings.knowledgeStatsFormat": "для поиска %s · %c карточек · %e сущностей · %r связей · %a проверено",
 	"settings.knowledgeCompile": "Скомпилировать сейчас",
 	"settings.knowledgeCompiling": "Компиляция…",
 	"settings.knowledgeCompileFailed": "Ошибка компиляции",

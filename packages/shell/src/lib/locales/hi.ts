@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "हटाएँ",
 	"settings.knowledgeStatusLabel": "ज्ञान आधार स्थिति",
 	"settings.knowledgeStatusEmpty": "अभी संकलित नहीं",
-	"settings.knowledgeStatsFormat": "%c कार्ड · %e एंटिटी · %r संबंध · %a स्वीकृत",
+	"settings.knowledgeStatsFormat": "खोज योग्य %s · %c कार्ड · %e एंटिटी · %r संबंध · %a सत्यापित",
 	"settings.knowledgeCompile": "अभी संकलित करें",
 	"settings.knowledgeCompiling": "संकलन हो रहा है…",
 	"settings.knowledgeCompileFailed": "संकलन विफल",

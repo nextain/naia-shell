@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "移除",
 	"settings.knowledgeStatusLabel": "知识库状态",
 	"settings.knowledgeStatusEmpty": "尚未编译",
-	"settings.knowledgeStatsFormat": "卡片 %c · 实体 %e · 关系 %r · 已接受 %a",
+	"settings.knowledgeStatsFormat": "可检索 %s · 卡片 %c · 实体 %e · 关系 %r · 已验证 %a",
 	"settings.knowledgeCompile": "立即编译",
 	"settings.knowledgeCompiling": "正在编译…",
 	"settings.knowledgeCompileFailed": "编译失败",

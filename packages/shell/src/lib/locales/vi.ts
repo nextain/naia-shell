@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "Xóa",
 	"settings.knowledgeStatusLabel": "Trạng thái cơ sở kiến thức",
 	"settings.knowledgeStatusEmpty": "Chưa biên dịch",
-	"settings.knowledgeStatsFormat": "%c thẻ · %e thực thể · %r quan hệ · %a được chấp nhận",
+	"settings.knowledgeStatsFormat": "tìm được %s · %c thẻ · %e thực thể · %r quan hệ · %a đã kiểm",
 	"settings.knowledgeCompile": "Biên dịch ngay",
 	"settings.knowledgeCompiling": "Đang biên dịch…",
 	"settings.knowledgeCompileFailed": "Biên dịch thất bại",

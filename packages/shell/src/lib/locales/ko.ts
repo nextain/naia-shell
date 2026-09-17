@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "제거",
 	"settings.knowledgeStatusLabel": "지식 베이스 상태",
 	"settings.knowledgeStatusEmpty": "아직 컴파일되지 않음",
-	"settings.knowledgeStatsFormat": "카드 %c · 엔티티 %e · 관계 %r · 수락 %a",
+	"settings.knowledgeStatsFormat": "검색 %s · 카드 %c · 엔티티 %e · 관계 %r · 검증 %a",
 	"settings.knowledgeCompile": "지금 컴파일",
 	"settings.knowledgeCompiling": "컴파일 중…",
 	"settings.knowledgeCompileFailed": "컴파일 실패",

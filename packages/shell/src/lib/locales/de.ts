@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "Entfernen",
 	"settings.knowledgeStatusLabel": "Wissensbasis-Status",
 	"settings.knowledgeStatusEmpty": "Noch nicht kompiliert",
-	"settings.knowledgeStatsFormat": "%c Karten · %e Entitäten · %r Beziehungen · %a akzeptiert",
+	"settings.knowledgeStatsFormat": "durchsuchbar %s · %c Karten · %e Entitäten · %r Beziehungen · %a geprüft",
 	"settings.knowledgeCompile": "Jetzt kompilieren",
 	"settings.knowledgeCompiling": "Kompilieren…",
 	"settings.knowledgeCompileFailed": "Kompilierung fehlgeschlagen",
