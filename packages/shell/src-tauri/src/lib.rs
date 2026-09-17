@@ -2820,6 +2820,52 @@ fn spawn_adk_path_snapshot() -> Option<String> {
     })
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct AgentAdkSpawnEnv {
+    naia_adk_path: Option<String>,
+    naia_settings_dir: Option<std::path::PathBuf>,
+    remove_inherited_adk_env: bool,
+}
+
+/// Bind the agent child to the Shell adk-path snapshot. When the snapshot is
+/// missing, strip inherited leftover `NAIA_ADK_PATH` so a second clone such as
+/// `~/naia-adk` cannot become the product memory root.
+fn agent_adk_spawn_env(adk_path: Option<&str>) -> AgentAdkSpawnEnv {
+    match adk_path.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(path) => {
+            let path = path.to_string();
+            AgentAdkSpawnEnv {
+                naia_settings_dir: Some(std::path::PathBuf::from(&path).join("naia-settings")),
+                naia_adk_path: Some(path),
+                remove_inherited_adk_env: false,
+            }
+        }
+        None => AgentAdkSpawnEnv {
+            naia_adk_path: None,
+            naia_settings_dir: None,
+            remove_inherited_adk_env: true,
+        },
+    }
+}
+
+fn apply_agent_adk_spawn_env(cmd: &mut std::process::Command, adk_path: Option<&str>) {
+    let env = agent_adk_spawn_env(adk_path);
+    if let Some(path) = env.naia_adk_path.as_deref() {
+        cmd.env("NAIA_ADK_PATH", path);
+        cmd.env("NAIA_WORKSPACE_ROOT", path);
+        if let Some(settings) = env.naia_settings_dir.as_ref() {
+            cmd.env("NAIA_SETTINGS_DIR", settings.as_os_str());
+        }
+        if std::path::Path::new(path).is_dir() {
+            let _ = cmd.current_dir(path);
+        }
+    } else if env.remove_inherited_adk_env {
+        cmd.env_remove("NAIA_ADK_PATH");
+        cmd.env_remove("NAIA_SETTINGS_DIR");
+        cmd.env_remove("NAIA_WORKSPACE_ROOT");
+    }
+}
+
 fn ensure_no_pending_discord_reaper(
     pending_reapers: &std::sync::atomic::AtomicUsize,
     _discord_repair_bypass: bool,
@@ -2927,6 +2973,7 @@ fn spawn_agent_core(
     let mut discord_token_frame: Option<zeroize::Zeroizing<Vec<u8>>> = None;
     let mut discord_runtime_cleanup: Option<std::path::PathBuf> = None;
     let spawn_adk_path = spawn_adk_path_snapshot();
+    apply_agent_adk_spawn_env(&mut cmd, spawn_adk_path.as_deref());
 
     // Pass naia-settings directory to the agent via env var so it can resolve
     // all user-data paths (sessions, memory, identity) without reading files
@@ -2934,12 +2981,6 @@ fn spawn_agent_core(
     // update cannot mix settings, Discord runtime, and dispatcher workspaces.
     if let Some(adk_path_str) = spawn_adk_path.as_deref() {
         let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
-        cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
-        cmd.env("NAIA_ADK_PATH", adk_path_str);
-        cmd.env("NAIA_WORKSPACE_ROOT", adk_path_str);
-        if std::path::Path::new(adk_path_str).is_dir() {
-            cmd.current_dir(adk_path_str);
-        }
         let bindings_path = settings_dir.join("discord-bindings.json");
         let runtime_dir = settings_dir.join("discord-runtime");
         if discord_runtime_activation_allowed(
@@ -3084,6 +3125,8 @@ fn spawn_agent_core(
             adk_path_str,
             settings_dir.display()
         ));
+    } else {
+        log_verbose("[Naia] agent NAIA_ADK_PATH unset; stripped inherited leftover clone env");
     }
 
     #[cfg(windows)]
@@ -16230,6 +16273,34 @@ mod tests {
         );
         assert_eq!(dispatcher_path, "/workspace/a");
         assert_eq!(cache.borrow().as_deref(), Some("/workspace/b"));
+    }
+
+    #[test]
+    fn agent_spawn_env_uses_adk_path_not_leftover_home_clone() {
+        let leftover = r"C:\Users\LukeYang\naia-adk";
+        let selected = r"D:\alpha-adk";
+        let env = agent_adk_spawn_env(Some(selected));
+        assert_eq!(env.naia_adk_path.as_deref(), Some(selected));
+        assert_ne!(env.naia_adk_path.as_deref(), Some(leftover));
+        assert_eq!(
+            env.naia_settings_dir,
+            Some(std::path::PathBuf::from(selected).join("naia-settings"))
+        );
+        assert!(!env.remove_inherited_adk_env);
+        let selected_path = env.naia_adk_path.expect("selected adk-path");
+        assert!(
+            !selected_path.contains(r"Users\LukeYang\naia-adk"),
+            "second clone path must not be used when adk-path is set: {selected_path}"
+        );
+    }
+
+    #[test]
+    fn agent_spawn_env_strips_inherited_leftover_when_adk_path_missing() {
+        let env = agent_adk_spawn_env(Some("   "));
+        assert_eq!(env.naia_adk_path, None);
+        assert_eq!(env.naia_settings_dir, None);
+        assert!(env.remove_inherited_adk_env);
+        assert_eq!(agent_adk_spawn_env(None).remove_inherited_adk_env, true);
     }
 
     #[test]
