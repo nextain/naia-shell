@@ -45,6 +45,18 @@ describe("canonical Naia instance URLs", () => {
 		expect(env.VITE_NAIA_DEV_GATEWAY_URL).toBe("https://api-dev.naia.land");
 	});
 
+	it("does not leak parent-shell prod NAIA_ANYLLM_BASE_URL into tauri:dev", () => {
+		const env = applyNaiaInstanceEnv(
+			{
+				NAIA_ANYLLM_BASE_URL: "https://api.nextain.io",
+				NAIA_GATEWAY_URL: "https://api.nextain.io",
+			},
+			"dev",
+		);
+		expect(env.NAIA_ANYLLM_BASE_URL).toBe("https://api-dev.naia.land");
+		expect(env.NAIA_GATEWAY_URL).toBe("https://api-dev.naia.land");
+	});
+
 	it("joins web paths against the instance base", () => {
 		expect(naiaWebUrl("/ko/billing", NAIA_INSTANCE_URLS.dev.web)).toBe(
 			"https://dev.naia.land/ko/billing",

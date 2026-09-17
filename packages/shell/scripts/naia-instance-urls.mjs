@@ -21,6 +21,8 @@ export function applyNaiaInstanceEnv(env, mode) {
 	const urls = resolveNaiaInstance(mode);
 	const next = { ...env };
 	next.VITE_NAIA_WEB_BASE_URL = env.VITE_NAIA_WEB_BASE_URL ?? urls.web;
+	next.NAIA_ANYLLM_BASE_URL = urls.api;
+	next.NAIA_GATEWAY_URL = urls.api;
 	if (mode === "prod") {
 		delete next.VITE_NAIA_USE_DEV_GATEWAY;
 		delete next.VITE_NAIA_DEV_GATEWAY_URL;
