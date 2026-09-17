@@ -260,6 +260,23 @@ describe("stageVoxCpm2Runtime", () => {
 		);
 		expect(devManifest.profile).toBe("windows_trt_6g");
 		expect(devManifest.archive.url).toContain("/releases/0.2.2/");
+		expect(devManifest.archive.bytes).toBe(2496064260);
+		expect(devManifest.archive.bytes).not.toBe(2494187310);
+		const rustResolver = readFileSync(
+			resolve(process.cwd(), "src-tauri/src/lib.rs"),
+			"utf8",
+		);
+		const fnStart = rustResolver.indexOf(
+			"fn voxcpm2_download_manifest_path",
+		);
+		expect(fnStart).toBeGreaterThan(-1);
+		const fnBody = rustResolver.slice(fnStart, fnStart + 1200);
+		expect(fnBody.indexOf("voxcpm2_scripts_download_manifest_path")).toBeGreaterThan(
+			fnBody.indexOf("cfg!(debug_assertions)"),
+		);
+		expect(fnBody.indexOf("voxcpm2_scripts_download_manifest_path")).toBeLessThan(
+			fnBody.indexOf("resource_dir"),
+		);
 	});
 
 	it("stages the dev/e2e installer resources into the cargo debug resource_dir (#508)", () => {

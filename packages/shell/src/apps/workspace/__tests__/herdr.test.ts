@@ -5,6 +5,7 @@ import {
 	activeHerdrRoot,
 	assertHerdrSnapshot,
 	focusedHerdrAgent,
+	herdrProtocolSupported,
 	waitForHerdrReady,
 } from "../herdr";
 
@@ -59,6 +60,20 @@ describe("Herdr workspace boundary", () => {
 		expect(() => assertHerdrSnapshot({ ...snapshot, protocol: 18 })).toThrow(
 			"Unsupported Herdr snapshot protocol",
 		);
+		expect(assertHerdrSnapshot({ ...snapshot, protocol: 22 }).protocol).toBe(
+			22,
+		);
+		expect(() => assertHerdrSnapshot({ ...snapshot, protocol: 23 })).toThrow(
+			"Unsupported Herdr snapshot protocol",
+		);
+	});
+
+	it("accepts Herdr snapshot protocol 19 through 22 (#645)", () => {
+		expect(herdrProtocolSupported(19)).toBe(true);
+		expect(herdrProtocolSupported(22)).toBe(true);
+		expect(herdrProtocolSupported(18)).toBe(false);
+		expect(herdrProtocolSupported(23)).toBe(false);
+		expect(herdrProtocolSupported("22")).toBe(false);
 	});
 
 	it("rejects malformed workspace and agent entries", () => {

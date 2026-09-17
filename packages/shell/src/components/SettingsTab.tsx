@@ -12,6 +12,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { resetAdkPathWithRelaunch } from "../lib/adk-path-reset";
 import {
 	agentKeyExists,
 	applyModelSelectionToConfig,
@@ -74,6 +75,7 @@ import {
 	clearAllowedTools,
 	loadConfig,
 	loadConfigWithSecrets,
+	removeAllowedTool,
 	saveConfig,
 	saveConfigSecure,
 } from "../lib/config";
@@ -1598,9 +1600,10 @@ export function SettingsTab() {
 	>("idle");
 	const [backupError, setBackupError] = useState("");
 
-	const [allowedToolsCount, setAllowedToolsCount] = useState(
-		existing?.allowedTools?.length ?? 0,
+	const [allowedTools, setAllowedTools] = useState<string[]>(
+		existing?.allowedTools ?? [],
 	);
+	const [adkRestartRequired, setAdkRestartRequired] = useState(false);
 	const [naiaKey, setNaiaKeyState] = useState(existing?.naiaKey ?? "");
 	const [secureNaiaCredentialReady, setSecureNaiaCredentialReady] =
 		useState(false);
@@ -3473,43 +3476,55 @@ export function SettingsTab() {
 							<code style={{ flex: 1, overflowWrap: "anywhere" }}>
 								{workspaceRoot}
 							</code>
-							<button
-								type="button"
-								className="voice-preview-btn"
-								onClick={async () => {
-									setError("");
-									let prepared = false;
-									try {
-										await invoke("prepare_app_relaunch");
-										prepared = true;
-										await resetAdkPathBinding();
-										const { relaunch } = await import(
-											"@tauri-apps/plugin-process"
-										);
-										await relaunch();
-									} catch (error) {
-										if (prepared) {
-											await invoke("cancel_app_relaunch").catch(
-												(cancelError) => {
-													Logger.warn(
-														"Settings",
-														"Failed to release relaunch guard",
-														{ error: String(cancelError) },
+							{adkRestartRequired ? (
+								<div
+									className="settings-error"
+									role="alertdialog"
+									data-testid="adk-restart-required"
+								>
+									<strong>{t("settings.adkRestartRequired")}</strong>
+									<div className="settings-hint">
+										{t("settings.adkRestartRequiredHint")}
+									</div>
+								</div>
+							) : (
+								<button
+									type="button"
+									className="voice-preview-btn"
+									data-testid="adk-reset-btn"
+									onClick={async () => {
+										setError("");
+										try {
+											const result = await resetAdkPathWithRelaunch({
+												dev: import.meta.env.DEV,
+												prepareAppRelaunch: () =>
+													invoke("prepare_app_relaunch"),
+												cancelAppRelaunch: () =>
+													invoke("cancel_app_relaunch"),
+												resetAdkPathBinding,
+												relaunch: async () => {
+													const { relaunch } = await import(
+														"@tauri-apps/plugin-process"
 													);
+													await relaunch();
 												},
+											});
+											if (result.outcome === "restart-required") {
+												setAdkRestartRequired(true);
+											}
+										} catch (error) {
+											Logger.error("Settings", "Workspace reset failed", {
+												error: String(error),
+											});
+											setError(
+												`${t("settings.saveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
 											);
 										}
-										Logger.error("Settings", "Workspace reset failed", {
-											error: String(error),
-										});
-										setError(
-											`${t("settings.saveFailed")}: ${error instanceof Error ? error.message : String(error)}`,
-										);
-									}
-								}}
-							>
-								{t("settings.adkResetBtn")}
-							</button>
+									}}
+								>
+									{t("settings.adkResetBtn")}
+								</button>
+							)}
 						</div>
 						<div className="settings-hint">{t("settings.adkResetHint")}</div>
 					</div>
@@ -5985,17 +6000,60 @@ export function SettingsTab() {
 						</div>
 					</div>
 
-					{allowedToolsCount > 0 && (
-						<div className="settings-field">
+					{allowedTools.length > 0 && (
+						<div
+							className="settings-field"
+							data-testid="allowed-tools-section"
+						>
 							<label>
-								{t("settings.allowedTools")} ({allowedToolsCount})
+								{t("settings.allowedTools")} ({allowedTools.length})
 							</label>
+							<ul
+								data-testid="allowed-tools-list"
+								style={{
+									listStyle: "none",
+									margin: "6px 0",
+									padding: 0,
+									display: "flex",
+									flexDirection: "column",
+									gap: 6,
+								}}
+							>
+								{allowedTools.map((name) => (
+									<li
+										key={name}
+										data-testid={`allowed-tool-${name}`}
+										style={{
+											display: "flex",
+											gap: 8,
+											alignItems: "center",
+											justifyContent: "space-between",
+										}}
+									>
+										<code style={{ overflowWrap: "anywhere" }}>{name}</code>
+										<button
+											type="button"
+											className="voice-preview-btn"
+											data-testid={`revoke-allowed-tool-${name}`}
+											onClick={() => {
+												removeAllowedTool(name);
+												setAllowedTools((prev) =>
+													prev.filter((tool) => tool !== name),
+												);
+											}}
+										>
+											{t("settings.revokeAllowedTool")}
+										</button>
+									</li>
+								))}
+							</ul>
 							<button
 								type="button"
 								className="voice-preview-btn"
+								data-testid="clear-allowed-tools-btn"
 								onClick={() => {
 									clearAllowedTools();
-									setAllowedToolsCount(0);
+									setAllowedTools([]);
 								}}
 							>
 								{t("settings.clearAllowedTools")}
@@ -6046,6 +6104,7 @@ export function SettingsTab() {
 										Logger.warn("SettingsTab", "[log-viewer] open failed", {
 											error: String(e),
 										});
+										setError(t("settings.logViewerOpenFailed"));
 									}
 								}}
 							>

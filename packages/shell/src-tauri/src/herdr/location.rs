@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use tauri::AppHandle;
 
-use super::api::{herdr_api_output, HERDR_PROTOCOL};
+use super::api::{herdr_api_output, herdr_protocol_supported, unsupported_herdr_protocol};
 use super::config::write_embedded_herdr_config;
 
 /// Resolve a terminal-reported path against its pane CWD, then enforce the
@@ -26,10 +26,8 @@ pub async fn workspace_resolve_file_location(
             .get("protocol")
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| "Herdr snapshot protocol missing".to_string())?;
-        if protocol != HERDR_PROTOCOL {
-            return Err(format!(
-                "Unsupported Herdr protocol {protocol}; expected {HERDR_PROTOCOL}"
-            ));
+        if !herdr_protocol_supported(protocol) {
+            return Err(unsupported_herdr_protocol(protocol));
         }
         let (workspace_id, pane_id, cwd, root) = focused_location_context(snapshot)?;
         ensure_expected_focus(

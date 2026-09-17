@@ -862,11 +862,25 @@ localStorage 는 캐시이므로, 부팅 병합에서 파일 값이 캐시를 �
 - 열려 있던 터미널 세션은 다시 켠 뒤에도 복원되고, 복원에 실패한 항목이 있어도
   앱이 죽지 않는다.
 
+허용된 도구(#647): 채팅에서 「항상 허용」한 이름은 설정에 목록으로 보이고,
+하나만 해제하거나 목록을 통째로 지울 수 있다. 개수만 보이면 안 된다.
+
+로그 열기(#646): 운영 `~/.naia/logs` 와 개발 `~/.naia-dev/logs` 모두 탐색기에서
+연다. 폴더 자체와 그 안 파일이 opener 범위에 들어 있다. 실패하면 화면에 오류가
+남는다.
+
+naia-adk 경로 재설정(#642): 패키지 빌드에서는 앱이 다시 뜬다. `tauri:dev` 처럼
+cargo/vite 가 부모인 실행에서는 창을 죽이지 않고 「다시 시작해야 합니다」를
+막아서 보여 준다.
+
 Test Coverage Map
 
 | UC | 단위·계약 | 실기 | 비고 |
 |---|---|---|---|
 | UC-SETTINGS-ROUNDTRIP | `src/lib/__tests__/config-boot-merge.test.ts`: 부팅 병합에서 파일이 캐시를 이긴다 / `src/lib/__tests__/adk-store.test.ts`: 작업 공간 포인터 | `e2e-tauri/specs/95-llm-role-settings.spec.ts`: 설정 저장이 파일에 남고 다시 읽힌다 | 실기 스펙은 아직 CI 에서 돌지 않는다(#550) |
+| UC-SETTINGS-ALLOWED-TOOLS | `src/lib/__tests__/config.test.ts` removeAllowedTool + `SettingsTab.test.tsx` 이름 목록·개별 해제 | — | #647 |
+| UC-SETTINGS-OPEN-LOG | `scripts/__tests__/instance-home.test.mjs` opener 범위 + `SettingsTab.test.tsx` 실패 오류 | — | #646 `~/.naia` 와 `~/.naia-dev` 로그 폴더 |
+| UC-SETTINGS-ADK-RESET | `src/lib/__tests__/adk-path-reset.test.ts` 패키지 재시작 vs 개발 창 유지 + `SettingsTab.test.tsx` 재시작 필요 안내 | — | #642 `tauri:dev` 는 relaunch 로 창만 죽이지 않는다 |
 
 
 ## UC-ONBOARDING-APPEARANCE-VOICE: 외모와 음성을 독립적으로 시작하기
@@ -1191,6 +1205,7 @@ Test Coverage Map (P02):
 | UC-HERDR-CONTROL-RECONNECT | vitest `src/test/herdr-control-outcome-taxonomy.contract.test.ts` | 끊김·타임아웃·종료·취소·부분완료 구별 |
 | UC-HERDR-CONTROL-RECONNECT | vitest `src/test/herdr-control-reconnect-bounds.contract.test.ts` | 재접속 상한, 상한 도달 시 정직 실패 |
 | 전체 | vitest `src/test/herdr-protocol-conformance.contract.test.ts` | 설치된 herdr 의 `api schema` 와 우리 계약을 대조하고 요구사항별 실현 가능성을 사실에서 계산 |
+| UC-HERDR-CONTROL-OBSERVE | vitest `packages/shell/src/apps/workspace/__tests__/herdr.test.ts` + Rust `herdr::api` | 스냅샷 protocol 19..=22 수락, 18·23 거절. 오류는 범위만 말하고 낡은 단일 핀을 유일한 기대로 두지 않는다 (#645) |
 | 전체 | e2e-tauri `packages/shell/e2e-tauri/specs/herdr-control.spec.ts` | 실제 Herdr 상대 관측·변경·충돌·재시작 복구 왕복 |
 
 상태 매트릭스: 기본(Herdr 정상), 빈 목록(space 0개), 진행(작업자 실행 중), 성공(변경 반영),

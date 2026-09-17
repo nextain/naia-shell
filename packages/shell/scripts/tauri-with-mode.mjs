@@ -23,7 +23,7 @@ import {
 	readFileSync,
 	statSync,
 } from "node:fs";
-import { homedir, platform } from "node:os";
+import { platform } from "node:os";
 import { dirname, resolve } from "node:path";
 import {
 	REQUIRED_AGENT_COMMIT,
@@ -31,10 +31,11 @@ import {
 	resolvePairedAgent,
 } from "./agent-pairing.mjs";
 import { developmentInstanceEnv } from "./dev-instance.mjs";
-import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
+import { developmentInstanceHome } from "./instance-home.mjs";
 import { interactiveLaunchEnv } from "./launch-env.mjs";
-import { runProjectPnpm } from "./package-manager.mjs";
 import { applyNaiaInstanceEnv } from "./naia-instance-urls.mjs";
+import { runProjectPnpm } from "./package-manager.mjs";
+import { voxCpm2Profile } from "./stage-voxcpm2-runtime.mjs";
 
 // `build` produces the release installer (`tauri build`, production config).
 // It shares prod env resolution but does not launch a dev window.
@@ -204,7 +205,7 @@ env.NAIA_REPOS_ADK = env.NAIA_REPOS_ADK ?? WORKSPACE_ROOT;
 // and a separate data home (~/.naia-dev via NAIA_HOME) so concurrent dev and
 // production runs can never clobber each other's config. The single-GPU
 // cascade runtime stays SHARED by design (adopt-if-healthy in Rust).
-env.NAIA_HOME = env.NAIA_HOME ?? resolve(homedir(), ".naia-dev");
+env.NAIA_HOME = env.NAIA_HOME ?? developmentInstanceHome();
 // 8/6 dual-instance 설계 수확: BGM(:18891)/OAuth(:18892) dev 전용 포트 +
 // Rust dev 게이트 플래그(NAIA_DEV_INSTANCE — debug 빌드에서만 인정).
 Object.assign(env, developmentInstanceEnv(env));
