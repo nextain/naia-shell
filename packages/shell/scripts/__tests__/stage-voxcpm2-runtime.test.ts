@@ -242,9 +242,16 @@ describe("stageVoxCpm2Runtime", () => {
 			'resolve(devVoxCpm2Bundle, "voxcpm2-activation-contract.json")',
 		);
 		expect(devLauncher).toContain(
-			"env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? devVoxCpm2DownloadManifest",
+			"env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? canonicalVoxCpm2DownloadManifest",
 		);
 		expect(devLauncher).toContain("NAIA_VOXCPM2_DOWNLOAD_MANIFEST");
+		expect(devLauncher).toContain("canonicalVoxCpm2DownloadManifest");
+		const orderBlock = devLauncher.slice(
+			devLauncher.indexOf("const devVoxCpm2DownloadManifest"),
+		);
+		expect(orderBlock.indexOf("canonicalVoxCpm2DownloadManifest")).toBeLessThan(
+			orderBlock.indexOf("src-tauri\", \"voxcpm2-runtime\", \"download-manifest.json"),
+		);
 		const devManifest = JSON.parse(
 			readFileSync(
 				resolve(process.cwd(), "scripts/voxcpm2-download-manifest.json"),

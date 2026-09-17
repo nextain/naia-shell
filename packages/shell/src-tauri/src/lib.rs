@@ -6030,20 +6030,26 @@ fn is_sha256(value: &str) -> bool {
 }
 
 fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let development = if cfg!(debug_assertions) {
-        std::env::var_os("NAIA_VOXCPM2_DOWNLOAD_MANIFEST")
-            .filter(|value| !value.is_empty())
-            .map(std::path::PathBuf::from)
-    } else {
-        None
-    };
-    development.or_else(|| {
-        app.path()
-            .resource_dir()
-            .ok()
-            .map(|root| root.join("voxcpm2-runtime").join("download-manifest.json"))
-            .filter(|path| path.is_file())
-    })
+    let from_env = std::env::var_os("NAIA_VOXCPM2_DOWNLOAD_MANIFEST")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_file());
+    if from_env.is_some() {
+        return from_env;
+    }
+    // tauri:dev without the wrapper still must not prefer a stale staged copy.
+    if cfg!(debug_assertions) {
+        let scripts_pin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../scripts/voxcpm2-download-manifest.json");
+        if scripts_pin.is_file() {
+            return Some(scripts_pin);
+        }
+    }
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|root| root.join("voxcpm2-runtime").join("download-manifest.json"))
+        .filter(|path| path.is_file())
 }
 
 fn read_voxcpm2_download_manifest(
