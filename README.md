@@ -109,8 +109,8 @@ git clone https://github.com/nextain/naia-agent.git
 git clone https://github.com/nextain/naia-kb-compiler.git
 git clone https://github.com/nextain/naia-memory.git
 # agent-pairing.json pins the exact source revisions used by the shell.
-git -C naia-agent fetch --depth 1 origin 1c2561db486c24c31d10ddbef5ca5f0ff766c7ad
-git -C naia-agent checkout --detach 1c2561db486c24c31d10ddbef5ca5f0ff766c7ad
+git -C naia-agent fetch --depth 1 origin cb4c8d71ae24bb7ff042e275026fae3905a91a00
+git -C naia-agent checkout --detach cb4c8d71ae24bb7ff042e275026fae3905a91a00
 git -C naia-kb-compiler fetch --depth 1 origin f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
 git -C naia-kb-compiler checkout --detach f1ceb075ed5e170d9c2eacb7e06674945d1ad53c
 git -C naia-memory fetch --depth 1 origin 630a0d2f19b559e3f0101bb141048485167fb959
