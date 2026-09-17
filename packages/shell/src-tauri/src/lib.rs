@@ -2936,6 +2936,10 @@ fn spawn_agent_core(
         let settings_dir = std::path::PathBuf::from(adk_path_str).join("naia-settings");
         cmd.env("NAIA_SETTINGS_DIR", settings_dir.to_string_lossy().as_ref());
         cmd.env("NAIA_ADK_PATH", adk_path_str);
+        cmd.env("NAIA_WORKSPACE_ROOT", adk_path_str);
+        if std::path::Path::new(adk_path_str).is_dir() {
+            cmd.current_dir(adk_path_str);
+        }
         let bindings_path = settings_dir.join("discord-bindings.json");
         let runtime_dir = settings_dir.join("discord-runtime");
         if discord_runtime_activation_allowed(

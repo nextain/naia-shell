@@ -18,6 +18,11 @@ import {
 } from "./secure-store";
 import { NAIA_SLOT_DEFAULTS } from "./slots/model";
 import type { ProviderId } from "./types";
+import {
+	NAIA_INSTANCE_URLS,
+	naiaLaunchMode,
+	resolveNaiaInstance,
+} from "./naia-instance-urls";
 
 const STORAGE_KEY = "naia-config";
 
@@ -1142,47 +1147,39 @@ export function getUserName(): string | undefined {
 	return loadConfig()?.userName;
 }
 
-// Release runtime gateway (the gateway a DISTRIBUTED build talks to — distinct
-// from the auto-updater endpoint, which is GitHub Releases). This is the public
-// prod API gateway (api.nextain.io — TLS in front of the prod gateway VM); the
-// raw VM IP stays out of this public repo. Override per-environment with
-// VITE_NAIA_GATEWAY_URL. The earlier Cloud Run → VM migration is now complete —
-// see memory: naia-anyllm-vm-migration.
-const _PROD_GATEWAY =
-	(import.meta.env.VITE_NAIA_GATEWAY_URL as string) || "https://api.nextain.io";
-
-const _DEV_GATEWAY =
-	(import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || "";
-
 /**
  * any-llm Gateway URL.
  *
- * Mode resolution (#333 follow-up):
+ * Mode resolution:
  *   - `pnpm run tauri:dev`  → wrapper sets VITE_NAIA_USE_DEV_GATEWAY=1
- *                             + VITE_NAIA_DEV_GATEWAY_URL=https://api-dev.naia.land
- *   - `pnpm run tauri:prod` → wrapper unsets both → api.nextain.io
+ *                             + VITE_NAIA_DEV_GATEWAY_URL → api-dev.naia.land
+ *   - `pnpm run tauri:prod` → wrapper unsets both → prod gateway
  *   - `wdio` e2e            → loads .env.e2e which sets the same flag
  *
- * The previous rule "any Vite dev mode + dev URL present → dev gateway"
- * was too greedy — a stale .env.local with VITE_NAIA_DEV_GATEWAY_URL would
- * silently route a prod-login user to the dev gateway and 401. The explicit
- * VITE_NAIA_USE_DEV_GATEWAY flag forces an opt-in.
+ * Hosts come from `naia-instance-urls.ts`. A flagged-dev instance never falls
+ * back to prod just because the dev URL env is empty.
  */
-const _USE_DEV_GATEWAY = import.meta.env.VITE_NAIA_USE_DEV_GATEWAY === "1";
+const _INSTANCE_MODE = naiaLaunchMode({
+	useDevGateway: import.meta.env.VITE_NAIA_USE_DEV_GATEWAY as string | undefined,
+	webBaseUrl: import.meta.env.VITE_NAIA_WEB_BASE_URL as string | undefined,
+	viteDev: import.meta.env.DEV,
+});
+const _INSTANCE = resolveNaiaInstance(_INSTANCE_MODE);
+
 export const LAB_GATEWAY_URL =
-	_USE_DEV_GATEWAY && _DEV_GATEWAY ? _DEV_GATEWAY : _PROD_GATEWAY;
+	_INSTANCE_MODE === "dev"
+		? (import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) || _INSTANCE.api
+		: (import.meta.env.VITE_NAIA_GATEWAY_URL as string) || _INSTANCE.api;
 
-/** Dev-only gateway URL (always available regardless of mode). */
-export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
+/** Dev-only gateway URL (always the canonical dev API, regardless of mode). */
+export const DEV_GATEWAY_URL =
+	(import.meta.env.VITE_NAIA_DEV_GATEWAY_URL as string) ||
+	NAIA_INSTANCE_URLS.dev.api;
 
-// Naia web app base (login portal / dashboard / manual). Wrapper injects
-// VITE_NAIA_WEB_BASE_URL: `tauri:dev` → https://dev.naia.land,
-// `tauri:prod` → https://www.naia.land.
-// (도메인 이전 2026-07: naia.nextain.io → www.naia.land. 컴포넌트는 이
-// 상수를 쓸 것 — 직접 하드코딩 금지.)
+// Naia web app base (login portal / dashboard / manual).
+// `tauri:dev` → https://dev.naia.land, `tauri:prod` → https://www.naia.land.
 export const NAIA_WEB_BASE_URL =
-	(import.meta.env.VITE_NAIA_WEB_BASE_URL as string) ||
-	(import.meta.env.DEV ? "https://dev.naia.land" : "https://www.naia.land");
+	(import.meta.env.VITE_NAIA_WEB_BASE_URL as string) || _INSTANCE.web;
 
 export const DEFAULT_OLLAMA_HOST = "http://localhost:11434";
 // 로컬 GPU 프로파일(llm capability) 선택 시 두뇌 자동 기본값 — wm `llm_main_compact` 와 동형

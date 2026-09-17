@@ -19,6 +19,21 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_651_653_workspace_dev_urls": {
+      "issue": [651, 653],
+      "title": "Bind Codex/fs-tools to shell workspace root; tauri:dev uses dev.naia.land + api-dev.naia.land",
+      "requirements": "docs/requirements.md FR-INSTANCE-URL.1~2 FR-WORKSPACE-BIND.1",
+      "scenario": "docs/user-scenarios.md UC-INSTANCE-URLS-653 UC-WORKSPACE-BIND-651",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "in_progress",
+        "P05": "pending"
+      },
+      "status": "in_progress",
+      "last_updated": "2026-09-18T12:00:00+09:00"
+    },
     "issue_611_remove_direct_work_tools": {
       "issue": 611,
       "title": "Remove direct work tools from the model-facing registry",

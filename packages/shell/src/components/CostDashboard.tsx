@@ -7,6 +7,7 @@ import {
 	getNaiaKeySecure,
 	hasNaiaKeySecure,
 } from "../lib/config";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { getLocale, t } from "../lib/i18n";
 import {
 	clearCachedLabCredits,
@@ -227,7 +228,7 @@ function LabBalanceSection() {
 				type="button"
 				className="lab-charge-btn"
 				onClick={() =>
-					openUrl(`${NAIA_WEB_BASE_URL}/${getLocale()}/billing`).catch(
+					openUrl(naiaWebUrl(`${getLocale()}/billing`, NAIA_WEB_BASE_URL)).catch(
 						() => {},
 					)
 				}
