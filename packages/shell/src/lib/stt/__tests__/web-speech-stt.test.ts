@@ -27,6 +27,10 @@ class FakeSpeechRecognition {
 		FakeSpeechRecognition.instances.push(this);
 	}
 
+	emitError(error: string, message = "") {
+		this.onerror?.({ error, message });
+	}
+
 	emitResult(
 		results: { transcript: string; confidence: number; isFinal: boolean }[],
 	) {
@@ -125,5 +129,81 @@ describe("createWebSpeechSttSession — empty transcript detection (#615)", () =
 		expect(results).toEqual([
 			{ transcript: "날씨 어때요", isFinal: true, confidence: 0.8 },
 		]);
+	});
+});
+
+describe("createWebSpeechSttSession — network error retry loop (#623)", () => {
+	beforeEach(() => {
+		FakeSpeechRecognition.instances = [];
+		(window as unknown as { SpeechRecognition: unknown }).SpeechRecognition =
+			FakeSpeechRecognition;
+	});
+
+	it("aborts the native recognizer on a fatal error instead of leaving it running", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		const errors: { code: string }[] = [];
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		recognition.emitError("network");
+
+		expect(errors).toEqual([{ code: "network", message: "" }]);
+		expect(recognition.abort).toHaveBeenCalledTimes(1);
+	});
+
+	it("ignores further onerror events fired on the same instance after a fatal error", async () => {
+		// Repro for #623: some WebView2/Chromium builds without a working
+		// speech backend keep restarting capture internally on "network"
+		// errors, re-firing onerror on the same recognizer many times in a
+		// row even after we tell it to stop. Each one must not re-log or
+		// re-surface an error — otherwise the app spams an infinite retry.
+		const session = createWebSpeechSttSession("ko-KR");
+		const errors: { code: string }[] = [];
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		recognition.emitError("network");
+		recognition.emitError("network");
+		recognition.emitError("network");
+
+		expect(errors).toHaveLength(1);
+		expect(recognition.abort).toHaveBeenCalledTimes(1);
+	});
+
+	it("detaches the recognizer's handlers so a stale instance cannot forward events", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		session.onError?.(() => {});
+
+		await session.start();
+		const recognition = FakeSpeechRecognition.instances[0];
+		recognition.emitError("network");
+
+		expect(recognition.onresult).toBeNull();
+		expect(recognition.onerror).toBeNull();
+	});
+
+	it("starts a fresh session normally after a prior fatal error was cleaned up", async () => {
+		const session = createWebSpeechSttSession("ko-KR");
+		const results: { transcript: string; isFinal: boolean }[] = [];
+		const errors: { code: string }[] = [];
+		session.onResult((r) => results.push(r));
+		session.onError?.((e) => errors.push(e));
+
+		await session.start();
+		FakeSpeechRecognition.instances[0].emitError("network");
+		expect(errors).toHaveLength(1);
+
+		await session.start();
+		const second = FakeSpeechRecognition.instances[1];
+		second.emitResult([
+			{ transcript: "다시 시작", confidence: 0.9, isFinal: true },
+		]);
+
+		expect(results).toEqual([
+			{ transcript: "다시 시작", isFinal: true, confidence: 0.9 },
+		]);
+		expect(errors).toHaveLength(1);
 	});
 });
