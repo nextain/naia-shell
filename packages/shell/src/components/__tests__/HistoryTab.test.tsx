@@ -25,7 +25,6 @@ import { HistoryTab } from "../HistoryTab";
 
 describe("HistoryTab", () => {
 	const onLoadSession = vi.fn();
-	const onLoadDiscordSession = vi.fn();
 
 	afterEach(() => {
 		cleanup();
@@ -33,7 +32,6 @@ describe("HistoryTab", () => {
 		mockGetConversationHistory.mockReset();
 		mockDeleteConversation.mockReset();
 		onLoadSession.mockReset();
-		onLoadDiscordSession.mockReset();
 		useChatStore.setState(useChatStore.getInitialState());
 	});
 
@@ -96,6 +94,39 @@ describe("HistoryTab", () => {
 		});
 	});
 
+	it("hides legacy channel sessions from the list", async () => {
+		mockListConversations.mockResolvedValue([
+			{
+				key: "agent:main:main",
+				label: "Keep Me",
+				messageCount: 1,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+			{
+				key: "discord:dm:456",
+				label: "Legacy Channel",
+				messageCount: 3,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+			{
+				key: "agent:main:discord:direct:865850174651498506",
+				label: "Legacy Peer",
+				messageCount: 2,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
+		]);
+
+		render(<HistoryTab onLoadSession={onLoadSession} />);
+		await waitFor(() => {
+			expect(screen.getByText("Keep Me")).toBeDefined();
+		});
+		expect(screen.queryByText("Legacy Channel")).toBeNull();
+		expect(screen.queryByText("Legacy Peer")).toBeNull();
+	});
+
 	it("marks current session", async () => {
 		useChatStore.setState({ sessionId: "agent:main:main" });
 		mockListConversations.mockResolvedValue([
@@ -134,12 +165,7 @@ describe("HistoryTab", () => {
 			},
 		]);
 
-		render(
-			<HistoryTab
-				onLoadSession={onLoadSession}
-				onLoadDiscordSession={onLoadDiscordSession}
-			/>,
-		);
+		render(<HistoryTab onLoadSession={onLoadSession} />);
 		await waitFor(() => {
 			expect(screen.getByText("Regular Chat")).toBeDefined();
 		});
@@ -148,118 +174,9 @@ describe("HistoryTab", () => {
 
 		await waitFor(() => {
 			expect(onLoadSession).toHaveBeenCalled();
-			expect(onLoadDiscordSession).not.toHaveBeenCalled();
 			const state = useChatStore.getState();
 			expect(state.sessionId).toBe("agent:main:abc");
 			expect(state.messages).toHaveLength(1);
-		});
-	});
-
-	it("routes discord session click to onLoadDiscordSession", async () => {
-		mockListConversations.mockResolvedValue([
-			{
-				key: "discord:channel:123",
-				label: "Discord Chat",
-				messageCount: 2,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-		]);
-
-		render(
-			<HistoryTab
-				onLoadSession={onLoadSession}
-				onLoadDiscordSession={onLoadDiscordSession}
-			/>,
-		);
-		await waitFor(() => {
-			expect(screen.getByText("Discord Chat")).toBeDefined();
-		});
-
-		fireEvent.click(screen.getByText("Discord Chat"));
-
-		await waitFor(() => {
-			expect(onLoadDiscordSession).toHaveBeenCalled();
-			expect(onLoadSession).not.toHaveBeenCalled();
-		});
-	});
-
-	it("shows discord badge on discord sessions (legacy key)", async () => {
-		mockListConversations.mockResolvedValue([
-			{
-				key: "discord:dm:456",
-				label: "Discord DM",
-				messageCount: 3,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-		]);
-
-		const { container } = render(
-			<HistoryTab
-				onLoadSession={onLoadSession}
-				onLoadDiscordSession={onLoadDiscordSession}
-			/>,
-		);
-		await waitFor(() => {
-			const badge = container.querySelector(".history-discord-badge");
-			expect(badge).not.toBeNull();
-			const discordItem = container.querySelector(".history-item.discord");
-			expect(discordItem).not.toBeNull();
-		});
-	});
-
-	it("shows discord badge on per-channel-peer sessions", async () => {
-		mockListConversations.mockResolvedValue([
-			{
-				key: "agent:main:discord:direct:865850174651498506",
-				label: "Discord DM (per-channel-peer)",
-				messageCount: 5,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-		]);
-
-		const { container } = render(
-			<HistoryTab
-				onLoadSession={onLoadSession}
-				onLoadDiscordSession={onLoadDiscordSession}
-			/>,
-		);
-		await waitFor(() => {
-			const badge = container.querySelector(".history-discord-badge");
-			expect(badge).not.toBeNull();
-			const discordItem = container.querySelector(".history-item.discord");
-			expect(discordItem).not.toBeNull();
-		});
-	});
-
-	it("routes per-channel-peer discord session click to onLoadDiscordSession", async () => {
-		mockListConversations.mockResolvedValue([
-			{
-				key: "agent:main:discord:direct:865850174651498506",
-				label: "Discord DM",
-				messageCount: 2,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-		]);
-
-		render(
-			<HistoryTab
-				onLoadSession={onLoadSession}
-				onLoadDiscordSession={onLoadDiscordSession}
-			/>,
-		);
-		await waitFor(() => {
-			expect(screen.getByText("Discord DM")).toBeDefined();
-		});
-
-		fireEvent.click(screen.getByText("Discord DM"));
-
-		await waitFor(() => {
-			expect(onLoadDiscordSession).toHaveBeenCalled();
-			expect(onLoadSession).not.toHaveBeenCalled();
 		});
 	});
 

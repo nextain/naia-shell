@@ -5235,10 +5235,6 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
             "Send a notification message to Slack via webhook",
         ),
         (
-            "skill_notify_discord",
-            "Send a notification message to Discord via webhook",
-        ),
-        (
             "skill_notify_google_chat",
             "Send a notification message to Google Chat via webhook",
         ),
@@ -5254,10 +5250,8 @@ async fn list_skills() -> Result<Vec<SkillManifestInfo>, String> {
         ),
         ("skill_channels", "Manage messaging channels"),
         ("skill_config", "Manage Gateway configuration"),
-        ("skill_cron", "Manage scheduled tasks"),
         ("skill_device", "Manage Gateway nodes and device pairings"),
         ("skill_diagnostics", "Gateway diagnostics and health checks"),
-        ("skill_naia_discord", "Send and receive Discord messages"),
         ("skill_sessions", "Manage Gateway sub-agent sessions"),
         ("skill_tts", "Manage Gateway TTS (Text-to-Speech)"),
         ("skill_voicewake", "Manage voice wake triggers"),

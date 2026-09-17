@@ -79,10 +79,7 @@ import {
 	noteEnvironmentToolAck,
 	refreshEnvironment,
 } from "../lib/environment-skill";
-import {
-	discoverAndPersistDiscordDmChannel,
-	resetGatewaySession,
-} from "../lib/gateway-sessions";
+import { resetGatewaySession } from "../lib/gateway-sessions";
 import { getLocale, t } from "../lib/i18n";
 import { markNaiaKeyUnauthorized } from "../lib/lab-balance";
 import {
@@ -194,9 +191,6 @@ const AtMentionPopover = lazy(() =>
 		default: AtMentionPopover,
 	})),
 );
-const ChannelsTab = lazy(() =>
-	import("./ChannelsTab").then(({ ChannelsTab }) => ({ default: ChannelsTab })),
-);
 const CostDashboard = lazy(() =>
 	import("./CostDashboard").then(({ CostDashboard }) => ({
 		default: CostDashboard,
@@ -254,7 +248,6 @@ type TabId =
 	| "chat"
 	| "progress"
 	| "skills"
-	| "channels"
 	| "agents"
 	| "diagnostics"
 	| "settings"
@@ -263,7 +256,6 @@ type TabId =
 const TAB_ICONS: Record<TabId, string> = {
 	chat: "💬",
 	history: "🕘",
-	channels: "🌐",
 	progress: "📊",
 	skills: "🧩",
 	agents: "🤖",
@@ -286,16 +278,12 @@ const BUILTIN_SKILLS = new Set([
 	"skill_memo",
 	"skill_weather",
 	"skill_notify_slack",
-	"skill_notify_discord",
 	"skill_notify_google_chat",
-	"skill_naia_discord",
 	"skill_skill_manager",
 	"skill_agents",
 	"skill_approvals",
 	"skill_botmadang",
-	"skill_channels",
 	"skill_config",
-	"skill_cron",
 	"skill_device",
 	"skill_diagnostics",
 	"skill_sessions",
@@ -324,14 +312,6 @@ function formatCost(cost: number): string {
  *  전달한다. (2026-07-15 루크 실증: 하드코딩 "default" 가 프리셋 선택을 façade 에 전달하지
  *  않아 음색이 팔레트 기본으로 고정되던 버그 — 남성 음색을 골라도 여성으로 나옴.)
  *  비팔레트 형식(녹음/업로드 data·로컬경로)은 façade 가 400 fail-closed 라 기본 음색 폴백. */
-export function isDiscordConnectionIntent(text: string): boolean {
-	const normalized = text.trim().toLocaleLowerCase();
-	if (!/(discord|디스코드)/i.test(normalized)) return false;
-	return /(connect|connection|setup|configure|configuration|bot\s*token|연결|연동|설정|구성|봇\s*토큰|토큰\s*(입력|등록|설정))/i.test(
-		normalized,
-	);
-}
-
 /**
  * 답을 만들지 못한 턴 (#572).
  *
@@ -446,8 +426,6 @@ export function ChatArea({
 	// Discord configured = at least one Discord webhook / bot token is set
 	const [showCostDashboard, setShowCostDashboard] = useState(false);
 	const [showNoAuthModal, setShowNoAuthModal] = useState(false);
-	const [showDiscordConnectionGuide, setShowDiscordConnectionGuide] =
-		useState(false);
 	// Single source of truth for voice UI state (naia-omni RunPod on-demand +
 	// every other provider). Drives the status banner (cold-start / sold-out /
 	// credit failures) and the voice button — `voiceMode` is derived, not stored,
@@ -670,31 +648,9 @@ export function ChatArea({
 		const loadSession = async () => {
 			const store = useChatStore.getState();
 			store.setSessionId("agent:main:main");
-
-			const config = loadConfig();
-			if (!config?.discordSessionMigrated) {
-				// One-time migration: reset the contaminated main session (Discord DMs mixed in).
-				// (restartGateway 제거됨 2026-06-12 — gateway 없음(#201). resetGatewaySession=agent skill_sessions 유지.)
-				await resetGatewaySession("agent:main:main");
-				// Config hydration can complete while the async reset is in flight.
-				// Re-read the cache after the await so a pre-hydration snapshot can
-				// never erase freshly restored avatar/voice/profile settings.
-				const currentConfig = loadConfig();
-				if (currentConfig) {
-					saveConfig({
-						...currentConfig,
-						discordSessionMigrated: true,
-					});
-				}
-				Logger.info(
-					"ChatArea",
-					"One-time reset: cleared Discord-contaminated main session",
-				);
-			} else {
-				Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
-					reason: "agent-local-transcript-is-authoritative",
-				});
-			}
+			Logger.info("ChatArea", "Skipped legacy Gateway history hydration", {
+				reason: "agent-local-transcript-is-authoritative",
+			});
 		};
 
 		loadSession().catch((err) => {
@@ -702,12 +658,6 @@ export function ChatArea({
 				error: String(err),
 			});
 		});
-
-		// Auto-discover Discord DM channel ID from Gateway sessions
-		// (skip on migration run — no new sessions exist yet)
-		if (loadConfig()?.discordSessionMigrated) {
-			discoverAndPersistDiscordDmChannel().catch(() => {});
-		}
 
 		// (startup gateway sync 제거됨 2026-06-12 — gateway.json 미사용 죽은 경로. config=naia-settings.)
 	}, []);
@@ -900,8 +850,6 @@ export function ChatArea({
 		});
 	}, []);
 
-	// Discord messages are now shown in the dedicated Channels tab (ChannelsTab)
-	// via direct Discord REST API, so no polling into main chat.
 
 	// Auto-send queued messages when streaming ends
 	useEffect(() => {
@@ -1598,15 +1546,6 @@ export function ChatArea({
 	async function handleSend(overrideText?: string) {
 		const text = (overrideText ?? input).trim();
 		if (!text) return;
-		if (isDiscordConnectionIntent(text)) {
-			setInput("");
-			useChatStore.getState().addMessage({
-				role: "assistant",
-				content: t("chat.discordConnectionSecretGuide"),
-			});
-			setShowDiscordConnectionGuide(true);
-			return;
-		}
 		if (await handleSpeechProfilePhrase(text)) return;
 
 		// Record in input history (deduplicate consecutive duplicates, FIFO max 50)
@@ -2532,10 +2471,6 @@ export function ChatArea({
 			case "provider_session":
 			case "processing_disclosure":
 				store.appendStreamChunk(formatStructuredAgentChunk(chunk));
-				break;
-			case "discord_message":
-				// Discord DM messages are shown in the dedicated Channels tab.
-				// Ignore them here to keep the main chat clean.
 				break;
 			case "error":
 				Logger.warn("ChatArea", "Agent error chunk", {
@@ -3715,13 +3650,6 @@ export function ChatArea({
 		}
 	}
 
-	useEffect(() => {
-		const openDiscordInbox = () => setActiveTab("channels");
-		window.addEventListener("naia-open-discord-inbox", openDiscordInbox);
-		return () =>
-			window.removeEventListener("naia-open-discord-inbox", openDiscordInbox);
-	}, []);
-
 	// ── @ mention: track input changes ──────────────────────────────────
 	const handleInputChange = useCallback(
 		(e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -3900,19 +3828,6 @@ export function ChatArea({
 								{TAB_ICONS.history}
 							</span>
 						</button>
-						<button
-							type="button"
-							className={`chat-tab${activeTab === "channels" ? " active" : ""}`}
-							data-chat-tab="channels"
-							onClick={() => handleTabChange("channels")}
-							title={t("channels.tabChannels")}
-							aria-label={t("channels.tabChannels")}
-							data-tooltip={t("channels.tabChannels")}
-						>
-							<span className="chat-tab-icon" aria-hidden="true">
-								{TAB_ICONS.channels}
-							</span>
-						</button>
 					</div>
 					<div className="chat-header-right">
 						{totalSessionCost > 0 &&
@@ -3964,9 +3879,6 @@ export function ChatArea({
 					{activeTab === "diagnostics" && <DiagnosticsTab />}
 
 					{/* Settings tab */}
-
-					{/* Channels tab */}
-					{activeTab === "channels" && <ChannelsTab />}
 
 					{/* History tab */}
 					{activeTab === "history" && (
@@ -4287,48 +4199,7 @@ export function ChatArea({
 					</div>
 				</div>
 			)}
-			{showDiscordConnectionGuide && (
-				<div className="sync-dialog-overlay">
-					<div
-						className="sync-dialog-card"
-						role="dialog"
-						aria-modal="true"
-						style={{ maxWidth: 420 }}
-					>
-						<p style={{ marginBottom: 8, lineHeight: 1.6 }}>
-							{t("chat.discordConnectionSecretGuide")}
-						</p>
-						<p style={{ marginBottom: 16, lineHeight: 1.6 }}>
-							{t("settings.connectionsSetupHelp")}
-						</p>
-						<div className="sync-dialog-actions">
-							<button
-								type="button"
-								className="onboarding-next-btn"
-								onClick={() => {
-									setShowDiscordConnectionGuide(false);
-									useAppStore.getState().setActiveApp("settings");
-									window.dispatchEvent(
-										new CustomEvent("naia-open-settings", {
-											detail: { tab: "connections" },
-										}),
-									);
-									window.setTimeout(() => {
-										document
-											.querySelector<HTMLButtonElement>(
-												'[data-settings-tab="connections"]',
-											)
-											?.click();
-									}, 0);
-								}}
-							>
-								{t("settings.tabConnections")} ·{" "}
-								{t("settings.connectionsDiscord")}
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+			
 		</>
 	);
 }

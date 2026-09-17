@@ -48,7 +48,6 @@ import {
 	resolveLocalCapabilities,
 	tierProvidedCapabilities,
 } from "../lib/capabilities/vram-tiers";
-import { syncLinkedChannels } from "../lib/channel-sync";
 import {
 	activateNaiaLlm,
 	configureSpeechProfile,
@@ -173,7 +172,6 @@ import { useAvatarStore } from "../stores/avatar";
 import { useCascadeAvatarStore } from "../stores/cascade-avatar";
 import { useChatStore } from "../stores/chat";
 import { clearSavedCamera } from "./AvatarCanvas";
-import { ConnectionsSettingsTab } from "./ConnectionsSettingsTab";
 import { KnowledgeSettingsTab } from "./KnowledgeSettingsTab";
 import {
 	ProactiveSpeechSettingsSection,
@@ -623,7 +621,6 @@ export function SettingsTab() {
 		| "memory"
 		| "knowledge"
 		| "skills"
-		| "connections"
 		| "general"
 	>("profile");
 	// 통합 "AI 모델" 탭의 backend 축(main/small/embedding 공통): naia 계정 / 외부 API / 로컬(embedding=임베드).
@@ -1545,15 +1542,6 @@ export function SettingsTab() {
 	const micTestCleanupRef = useRef<(() => void) | null>(null);
 	const [gatewayUrl] = useState(existing?.gatewayUrl ?? "");
 	const [gatewayToken] = useState(existing?.gatewayToken ?? "");
-	const [discordDefaultUserId, setDiscordDefaultUserId] = useState(
-		existing?.discordDefaultUserId ?? "",
-	);
-	const [discordDefaultTarget, setDiscordDefaultTarget] = useState(
-		existing?.discordDefaultTarget ?? "",
-	);
-	const [discordDmChannelId, setDiscordDmChannelId] = useState(
-		existing?.discordDmChannelId ?? "",
-	);
 	const [error, setError] = useState("");
 	const [saved, setSaved] = useState(false);
 	const [isPreviewing, setIsPreviewing] = useState(false);
@@ -2138,9 +2126,6 @@ export function SettingsTab() {
 	const [, setGatewayTtsApiKey] = useState("");
 
 	// Voice wake state removed (UI + handlers deleted)
-	// Discord integration — unverified, hidden until stabilized
-	// const [discordBotConnected, setDiscordBotConnected] = useState(false);
-	// const [discordBotLoading, setDiscordBotLoading] = useState(false);
 
 	// In-app confirmation state (replaces window.confirm to avoid WebKitGTK double-dialog)
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -2148,8 +2133,6 @@ export function SettingsTab() {
 	const [showLabDisconnect, setShowLabDisconnect] = useState(false);
 	const [_showReOnboarding, _setShowReOnboarding] = useState(false);
 
-	// Discord integration — unverified, hidden until stabilized
-	// const fetchDiscordBotStatus = useCallback(async () => { ... }, [gatewayUrl, gatewayToken]);
 
 	useEffect(() => {
 		getAllAgentFacts()
@@ -2309,8 +2292,6 @@ export function SettingsTab() {
 
 					// (gateway sync 제거됨 2026-06-12 — gateway.json 은 아무도 안 읽는 죽은 경로. config 영속=naia-settings, naiaKey=키체인.)
 
-					void syncLinkedChannels();
-
 					if (nextNaiaUserId) {
 						const onlineConfig = await fetchLabConfig(
 							nextNaiaKey,
@@ -2339,25 +2320,6 @@ export function SettingsTab() {
 				}
 			},
 		);
-		return () => {
-			unlisten.then((fn) => fn());
-		};
-	}, []);
-
-	// Listen for Discord auth deep-link callback — UI state only (App.tsx handles persist)
-	useEffect(() => {
-		const unlisten = listen<{
-			discordUserId?: string | null;
-			discordChannelId?: string | null;
-			discordTarget?: string | null;
-		}>("discord_auth_complete", (event) => {
-			const { discordUserId, discordChannelId, discordTarget } = event.payload;
-			if (discordUserId) setDiscordDefaultUserId(discordUserId);
-			if (discordTarget) setDiscordDefaultTarget(discordTarget);
-			else if (discordUserId) setDiscordDefaultTarget(`user:${discordUserId}`);
-			if (discordChannelId) setDiscordDmChannelId(discordChannelId);
-			// setDiscordBotConnected(true); // Discord unverified
-		});
 		return () => {
 			unlisten.then((fn) => fn());
 		};
@@ -2889,9 +2851,6 @@ export function SettingsTab() {
 					? gatewayUrl.trim()
 					: undefined,
 			gatewayToken: gatewayToken.trim() || undefined,
-			discordDefaultUserId: discordDefaultUserId.trim() || undefined,
-			discordDefaultTarget: discordDefaultTarget.trim() || undefined,
-			discordDmChannelId: discordDmChannelId.trim() || undefined,
 			ollamaHost:
 				provider === "ollama"
 					? ollamaHost.trim() || undefined
@@ -3021,11 +2980,7 @@ export function SettingsTab() {
 		// update so credentials don't appear in every stdio frame.
 		void sendNotifyConfig({
 			slackWebhookUrl: newConfig.slackWebhookUrl,
-			discordWebhookUrl: newConfig.discordWebhookUrl,
 			googleChatWebhookUrl: newConfig.googleChatWebhookUrl,
-			discordDefaultUserId: newConfig.discordDefaultUserId,
-			discordDefaultTarget: newConfig.discordDefaultTarget,
-			discordDmChannelId: newConfig.discordDmChannelId,
 		}, applyAdkPath);
 		// Push all per-session credentials (#260 follow-up). Empty strings
 		// clear the corresponding cached entry on the agent — keeps the cache
@@ -3270,8 +3225,6 @@ export function SettingsTab() {
 		ttsProvider === "naia-local-voice";
 	const manualUrl = `${getNaiaWebBaseUrl()}/${locale}/manual`;
 
-	// Discord integration — unverified, hidden until stabilized
-	// async function handleDiscordBotConnect() { ... }
 	const proactiveSpeechSettings: ProactiveSpeechSettings = {
 		profile: existing?.proactiveSpeechProfile ?? "disabled",
 		timezone:
@@ -3400,14 +3353,6 @@ export function SettingsTab() {
 					onClick={() => setActiveSettingsTab("skills")}
 				>
 					{t("settings.tabSkills")}
-				</button>
-				<button
-					type="button"
-					data-settings-tab="connections"
-					className={`settings-tab-btn${activeSettingsTab === "connections" ? " settings-tab-btn--active" : ""}`}
-					onClick={() => setActiveSettingsTab("connections")}
-				>
-					{t("settings.tabConnections")}
 				</button>
 				<button
 					type="button"
@@ -4024,9 +3969,6 @@ export function SettingsTab() {
 														if (getAdkPath() !== sourceAdkPath) return;
 														setProvider(loggedOutLlm.provider);
 														setModel(loggedOutLlm.model);
-														setDiscordDefaultUserId("");
-														setDiscordDmChannelId("");
-														setDiscordDefaultTarget("");
 														setShowLabDisconnect(false);
 														if (sourceSecureStorePath)
 															await deleteSecretKeyAtPath(
@@ -4050,10 +3992,7 @@ export function SettingsTab() {
 																		: current.sttProvider,
 																naiaKey: undefined,
 																naiaUserId: undefined,
-																discordDefaultUserId: undefined,
-																discordDmChannelId: undefined,
-																discordDefaultTarget: undefined,
-															};
+																																																						};
 															const loggedOutConfig = writeConfiguredLlmRole(
 																loggedOutBase,
 																"main",
@@ -5716,8 +5655,7 @@ export function SettingsTab() {
 				</>
 			)}
 			{activeSettingsTab === "knowledge" && <KnowledgeSettingsTab />}
-			{activeSettingsTab === "connections" && <ConnectionsSettingsTab />}
-			{activeSettingsTab === "skills" && (
+						{activeSettingsTab === "skills" && (
 				<Suspense fallback={null}>
 					<SkillsTab>
 						<RadioDjSettingsCard

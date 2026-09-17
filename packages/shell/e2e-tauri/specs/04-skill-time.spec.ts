@@ -12,7 +12,6 @@ const BUILTIN_SKILLS = [
 	"skill_memo",
 	"skill_weather",
 	"skill_notify_slack",
-	"skill_notify_discord",
 	"skill_skill_manager",
 ];
 
@@ -132,8 +131,7 @@ describe("04 — skill_time", () => {
 					"skill_memo",
 					"skill_weather",
 					"skill_notify_slack",
-					"skill_notify_discord",
-					"skill_skill_manager",
+									"skill_skill_manager",
 				]);
 				const config = {
 					...prev,

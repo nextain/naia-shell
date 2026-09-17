@@ -965,12 +965,10 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		expect(written).not.toHaveProperty("naiaKey");
 	});
 
-	it("does NOT persist volatile session state (discord/bgmPlaying)", async () => {
+	it("does NOT persist volatile session state (bgmPlaying)", async () => {
 		await setAdkPath(WIN_ADK);
 		await writeNaiaUiConfig({
 			theme: "ocean",
-			discordSessionMigrated: true, // 세션 상태 → 제외
-			lastProcessedDiscordMessageId: "123", // 세션 상태 → 제외
 			bgmPlaying: true, // 휘발 재생상태 → 제외
 		});
 		const [, arg] = mockInvoke.mock.calls.find(
@@ -978,8 +976,6 @@ describe("writeNaiaUiConfig (UI 정체성만 ui-config.json 으로 분리)", () 
 		)!;
 		const written = JSON.parse((arg as { json: string }).json);
 		expect(written.theme).toBe("ocean");
-		expect(written).not.toHaveProperty("discordSessionMigrated");
-		expect(written).not.toHaveProperty("lastProcessedDiscordMessageId");
 		expect(written).not.toHaveProperty("bgmPlaying");
 	});
 

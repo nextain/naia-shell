@@ -321,9 +321,6 @@ export interface AppConfig {
 	gatewayUrl?: string;
 	gatewayToken?: string;
 	chatRouting?: "gateway" | "direct" | "auto";
-	discordDefaultUserId?: string;
-	discordDefaultTarget?: string;
-	discordDmChannelId?: string;
 	allowedTools?: string[];
 	userName?: string;
 	agentName?: string;
@@ -357,16 +354,12 @@ export interface AppConfig {
 	naiaLocalUrl?: string;
 	disabledSkills?: string[];
 	slackWebhookUrl?: string;
-	discordWebhookUrl?: string;
 	googleChatWebhookUrl?: string;
 	gatewayTtsAuto?: string;
 	gatewayTtsMode?: string;
 	appPosition?: AppPosition;
 	appVisible?: boolean;
 	appSize?: number;
-	discordSessionMigrated?: boolean;
-	discordRelayUrl?: string;
-	lastProcessedDiscordMessageId?: string;
 	ollamaHost?: string;
 	/** Per-request Ollama GPU layers. `0` keeps the model on CPU/NPU so the
 	 * laptop 4060 profile reserves VRAM for Ditto and VoxCPM2. */

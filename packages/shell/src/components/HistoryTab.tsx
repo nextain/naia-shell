@@ -19,22 +19,14 @@ function formatDate(timestamp: number): string {
 	});
 }
 
-function isDiscordSession(key: string): boolean {
-	// Legacy: "discord:dm:<channelId>" / "discord:channel:<channelId>"
-	// per-channel-peer dmScope: "agent:main:discord:direct:<peerId>"
+function isLegacyChannelSession(key: string): boolean {
 	return (
 		/^discord:(?:dm|channel):\d+$/.test(key) ||
 		/^agent:[^:]+:discord:direct:/.test(key)
 	);
 }
 
-export function HistoryTab({
-	onLoadSession,
-	onLoadDiscordSession,
-}: {
-	onLoadSession: () => void;
-	onLoadDiscordSession?: () => void;
-}) {
+export function HistoryTab({ onLoadSession }: { onLoadSession: () => void }) {
 	const [sessions, setSessions] = useState<ConversationSession[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [loadError, setLoadError] = useState<string | null>(null);
@@ -49,7 +41,8 @@ export function HistoryTab({
 		setLoadError(null);
 		try {
 			const result = await listConversations();
-			setSessions(result);
+			// #610: drop legacy Discord channel sessions from the product history list.
+			setSessions(result.filter((s) => !isLegacyChannelSession(s.key)));
 		} catch (err) {
 			Logger.warn("HistoryTab", "Failed to load sessions", {
 				error: String(err),
@@ -61,11 +54,6 @@ export function HistoryTab({
 	}
 
 	async function handleLoadSession(key: string) {
-		if (isDiscordSession(key)) {
-			onLoadDiscordSession?.();
-			return;
-		}
-
 		if (key === currentSessionId) return;
 		try {
 			const messages = await getConversationHistory(key);
@@ -119,11 +107,10 @@ export function HistoryTab({
 		<div className="history-tab">
 			<div className="history-list">
 				{sessions.map((s) => {
-					const isDiscord = isDiscordSession(s.key);
 					return (
 						<div
 							key={s.key}
-							className={`history-item${s.key === currentSessionId ? " current" : ""}${isDiscord ? " discord" : ""}`}
+							className={`history-item${s.key === currentSessionId ? " current" : ""}`}
 						>
 							<button
 								type="button"
@@ -131,11 +118,7 @@ export function HistoryTab({
 								onClick={() => handleLoadSession(s.key)}
 							>
 								<span className="history-item-title">
-									{isDiscord && (
-										<span className="history-discord-badge">Discord</span>
-									)}
-									{s.label ||
-										(isDiscord ? "Discord DM" : t("history.untitled"))}
+									{s.label || t("history.untitled")}
 									{s.key === currentSessionId && (
 										<span className="history-current-badge">
 											{t("history.current")}
