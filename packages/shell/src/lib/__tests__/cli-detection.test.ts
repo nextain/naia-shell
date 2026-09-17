@@ -16,7 +16,7 @@ const CONFIG = {
 	provider: "ollama",
 	model: "e2e",
 	apiKey: "",
-	enabledClis: ["claude", "missing"],
+	enabledClis: ["claude", "agy", "missing"],
 };
 
 describe("descriptor-driven CLI persistence", () => {
@@ -45,17 +45,23 @@ describe("descriptor-driven CLI persistence", () => {
 					installed: false,
 					status: "unknown-status",
 				},
+				{
+					id: "agy",
+					displayName: "Antigravity CLI",
+					installed: true,
+					status: "ready",
+				},
 			],
 		});
 
 		const snapshot = await refreshCliDetection();
-		expect(snapshot.results).toHaveLength(2);
+		expect(snapshot.results).toHaveLength(3);
 		expect(snapshot.results[0]).toMatchObject({
 			id: "claude",
 			status: "ready",
 		});
 		const saved = JSON.parse(localStorage.getItem("naia-config") ?? "{}");
-		expect(saved.enabledClis).toEqual(["claude"]);
+		expect(saved.enabledClis).toEqual(["claude", "agy"]);
 		expect(saved.cliDetection.results[1].status).toBe("error");
 	});
 
@@ -79,16 +85,22 @@ describe("descriptor-driven CLI persistence", () => {
 							installed: false,
 							status: "not-installed",
 						},
+						{
+							id: "agy",
+							displayName: "Antigravity CLI",
+							installed: true,
+							status: "ready",
+						},
 					],
 				},
 			}),
 		);
 
-		expect(getEnabledClis()).toEqual(["claude"]);
+		expect(getEnabledClis()).toEqual(["claude", "agy"]);
 		setCliEnabled("codex", true);
-		expect(getEnabledClis()).toEqual(["claude"]);
+		expect(getEnabledClis()).toEqual(["claude", "agy"]);
 		setCliEnabled("claude", false);
-		expect(getEnabledClis()).toEqual([]);
+		expect(getEnabledClis()).toEqual(["agy"]);
 	});
 
 	it("rejects an invalid native response without writing a partial snapshot", async () => {

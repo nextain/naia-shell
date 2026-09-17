@@ -598,14 +598,14 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-COURSE-CODEX.2** | Codex 준비 확인은 인증 토큰·계정 식별자·CLI 출력 원문을 UI·설정·agent 요청·로그에 저장하거나 표시하지 않으며, provider·모델·워크스페이스 설정을 변경하지 않는다. | 실패 상태 단위 테스트와 IPC 결과 직렬화 검사에서 안전한 상태 코드만 노출되는지 확인한다. |
 | **FR-COURSE-CODEX.3** | Codex가 아닌 provider를 선택하면 Codex 준비 확인 UI를 노출하지 않는다. Codex 선택으로 돌아오면 사용자가 명시적으로 다시 확인할 수 있다. | Settings FE 테스트에서 provider 전환과 재시도 동작을 확인한다. |
 
-## Skills tab CLI detection (#605 / epic #589 L6)
+## Skills tab CLI detection (#605/#606 / epic #589 L6, L12)
 
 > **상태: In progress (P04, 2026-09-17)** — CLI descriptor detection, installed-only checkbox UI, shell gesture toggle, old gateway/preflight call removal, and enabled CLI wire coverage are implemented. Focused Vitest/core contract checks, Rust `cli_detect` 8/8, and Playwright `e2e/skills-cli.spec.ts` pass. Native Tauri Skills UI was attempted but the shared runner stopped in `ensureAppReady` because its isolated ADK had no hydrated `llmRoles.main` fixture.
 
 | ID | Requirement | Verification |
 |----|-------------|--------------|
 | **FR-SKILLS-CLI.1** | Skills tab shows only two groups: detected coding CLI checkboxes (installed only) and shell gesture toggles (YouTube / Radio DJ). Agent tool lists and `skill_skill_manager` gateway install UI are removed. | SkillsTab vitest + `cli-detection.test.ts` + Playwright `e2e/skills-cli.spec.ts` + e2e-tauri 14/19/28/59 |
-| **FR-SKILLS-CLI.2** | Shell Rust `cli_detect` reads durable CLI descriptors (Claude·Codex·Grok; Gemini CLI/OpenCode excluded per D6). Detection uses OS-specific executable candidates, exit codes/structured output, per-check timeouts, and Claude JSON readiness — not English install-string matching. Results persist in config and refresh on app start and Skills tab enter. | `cli_detect` cargo unit tests + Settings/Skills readiness checks |
+| **FR-SKILLS-CLI.2** | Shell Rust `cli_detect` reads durable CLI descriptors (Claude·Codex·Grok·Antigravity CLI `agy`; Gemini CLI/OpenCode excluded per D6). Detection uses OS-specific executable candidates, exit codes/structured output, per-check timeouts, and descriptor-specific readiness probes — not English install-string matching. Results persist in config and refresh on app start and Skills tab enter. | `cli_detect` cargo unit tests + `cli-detection.test.ts` + Settings/Skills readiness checks |
 | **FR-SKILLS-CLI.3** | Enabled CLI names are passed to the agent on chat turns (`enabledClis`). Agent workspace-context one-liner consumption is paired naia-agent follow-up. | chat-service / shell-compat field wiring |
 
 ## Grok 구독 CLI provider (2026-09-02, #529)

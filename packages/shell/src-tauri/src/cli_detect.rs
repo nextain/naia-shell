@@ -17,6 +17,7 @@ const DESCRIPTOR_SOURCES: &[(&str, &str)] = &[
     ("claude", include_str!("../cli-descriptors/claude.json")),
     ("codex", include_str!("../cli-descriptors/codex.json")),
     ("grok", include_str!("../cli-descriptors/grok.json")),
+    ("agy", include_str!("../cli-descriptors/agy.json")),
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -678,7 +679,49 @@ mod tests {
 
     #[test]
     fn descriptors_parse() {
-        assert_eq!(load_descriptors().expect("load").len(), 3);
+        let descriptors = load_descriptors().expect("load");
+        assert_eq!(descriptors.len(), 4);
+        assert!(descriptors.iter().any(|descriptor| descriptor.id == "agy"));
+    }
+
+    #[test]
+    fn classify_agy_models_readiness_without_output_matching() {
+        let rules = rules_from(include_str!("../cli-descriptors/agy.json"));
+        assert_eq!(
+            classify_outcome(
+                &rules,
+                &CommandOutcome {
+                    spawn_error: None,
+                    timed_out: false,
+                    exit_code: Some(0),
+                    stdout: "some available models".into(),
+                    stderr: String::new(),
+                },
+            ),
+            "ready"
+        );
+        assert_eq!(
+            classify_outcome(
+                &rules,
+                &CommandOutcome {
+                    spawn_error: None,
+                    timed_out: false,
+                    exit_code: Some(1),
+                    stdout: String::new(),
+                    stderr: "authentication required".into(),
+                },
+            ),
+            "login-required"
+        );
+    }
+
+    #[test]
+    fn agy_uses_interactive_login_fallback() {
+        let descriptor: CliDescriptor =
+            serde_json::from_str(include_str!("../cli-descriptors/agy.json")).unwrap();
+        assert_eq!(descriptor.readiness.args, vec![String::from("models")]);
+        assert!(descriptor.login.args.is_empty());
+        assert!(descriptor.login.open_in_terminal);
     }
 
     #[test]

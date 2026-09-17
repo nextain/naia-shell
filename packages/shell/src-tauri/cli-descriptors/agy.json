@@ -1,0 +1,28 @@
+{
+  "id": "agy",
+  "displayName": "Antigravity CLI",
+  "executables": {
+    "linux": ["agy"],
+    "macos": ["agy"],
+    "windows": ["agy.exe", "agy.cmd", "agy"]
+  },
+  "version": {
+    "args": ["--version"],
+    "timeoutMs": 5000,
+    "parse": { "kind": "stdoutFirstLine" }
+  },
+  "readiness": {
+    "args": ["models"],
+    "timeoutMs": 10000,
+    "classify": [
+      { "when": { "spawnError": "notFound" }, "status": "not-installed" },
+      { "when": { "timedOut": true }, "status": "waiting-input" },
+      { "when": { "exitCode": 0 }, "status": "ready" },
+      { "when": { "exitCodeNonZero": true }, "status": "login-required" }
+    ]
+  },
+  "login": {
+    "args": [],
+    "openInTerminal": true
+  }
+}
