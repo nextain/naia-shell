@@ -75,6 +75,27 @@ export function createWebSpeechSttSession(language: string): SttSession {
 	let recognition: SpeechRecognition | null = null;
 	let consecutiveEmptyFinals = 0;
 	let emptyTranscriptErrorReported = false;
+	let stopped = true;
+
+	/**
+	 * Detach handlers and kill the native recognition object outright.
+	 *
+	 * `continuous: true` combined with a WebView2/Chromium build that has no
+	 * working speech backend (#623) makes some implementations restart
+	 * capture internally on every "network" error — `recognition.stop()`
+	 * alone does not stop that loop, so onerror keeps firing forever on the
+	 * same instance. `abort()` plus detaching the handlers ensures no more
+	 * events from this instance ever reach our callbacks.
+	 */
+	function killRecognition(r: SpeechRecognition): void {
+		r.onresult = null;
+		r.onerror = null;
+		try {
+			r.abort();
+		} catch {
+			/* already stopped/aborted — nothing to clean up */
+		}
+	}
 
 	function buildRecognition(): SpeechRecognition {
 		const w = window as Window & {
@@ -104,6 +125,7 @@ export function createWebSpeechSttSession(language: string): SttSession {
 			recognition = buildRecognition();
 			consecutiveEmptyFinals = 0;
 			emptyTranscriptErrorReported = false;
+			stopped = false;
 
 			recognition.onresult = (event: SpeechRecognitionEvent) => {
 				for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -147,7 +169,16 @@ export function createWebSpeechSttSession(language: string): SttSession {
 			recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
 				// "no-speech" is normal — not an error worth surfacing
 				if (event.error === "no-speech") return;
+				// Already torn down for a prior error on this instance — some
+				// WebView2/Chromium builds keep restarting capture internally
+				// (#623) and re-fire onerror even after abort(); ignore repeats
+				// instead of logging/forwarding an infinite stream of them.
+				if (stopped) return;
+				stopped = true;
 				Logger.warn("web-speech-stt", "error", { error: event.error });
+				const current = recognition;
+				recognition = null;
+				if (current) killRecognition(current);
 				for (const cb of errorCallbacks)
 					cb({ code: event.error, message: event.message ?? event.error });
 			};
@@ -157,6 +188,7 @@ export function createWebSpeechSttSession(language: string): SttSession {
 		},
 
 		async stop() {
+			stopped = true;
 			if (recognition) {
 				recognition.stop();
 				recognition = null;
