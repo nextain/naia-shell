@@ -1,6 +1,7 @@
 # Windows 0.2.3 candidate — 4060 QA pack
 
-Branch: `release/0.2.3-windows-candidate`
+Branch: `release/0.2.3-windows-candidate`  
+Current tip (pull before QA): **`92531b60`**
 
 ## What this branch is
 
@@ -16,6 +17,8 @@ Integration of current `origin/main` plus shrink PRs for the character-core Wind
 | Remove Discord shell UI | #610 / #627 |
 | Remove direct work tools | #611 / #628 |
 | Skills tab → CLI checkboxes | #605 / #629 |
+| Web Speech empty-final surfaced | #615 / #632 |
+| BGM resume latch clear | #614 (cherry-pick of PR #631) |
 
 Agent-side Discord/cron tool removal is in **naia-agent** PR [#130](https://github.com/nextain/naia-agent/pull/130) (`refactor/610-agent-remove-discord-cron`). Pair that commit when building the Windows agent bundle.
 
@@ -52,7 +55,8 @@ Signing keys stay outside the repo (`D:/alpha-adk/data-private/key/...`). Do not
 5. **Skills (#605)** — CLI checkboxes, not a skill store list; Claude/Codex/Grok detection.
 6. **No Discord channels tab (#610)** — Channels/Connections Discord UI gone.
 7. **Model tools (#611)** — model cannot shell/write/github; time/weather/memo/youtube/browser still work.
-8. **BGM / browser** — smoke only; known #614 desync is separate.
+8. **BGM / browser (#614)** — play → stop/pause → resume; button and audio must stay in sync (fix is on this tip; 2070 could not live-verify because WDAC blocks cargo).
+9. **Web Speech STT (#615)** — empty finals must show a voice error instead of silent listening; full transcription may still fail if WebView2 has no speech backend.
 
 ## Not claimed by this candidate
 
@@ -62,4 +66,6 @@ Signing keys stay outside the repo (`D:/alpha-adk/data-private/key/...`). Do not
 
 ## Device queue note
 
-While Luke QAs on 4060, prefer not to enqueue attended 4060 jobs. 2070/3090 can keep headless/judge work.
+While Luke QAs on 4060, prefer not to enqueue attended 4060 jobs. 2070/3090 can keep headless/judge work that does not need a fresh Tauri binary.
+
+**2070 build limit:** Smart App Control / WDAC on win-rtx2070 blocks rustup `cargo.exe` (os error 4551). Do not expect installer or live Tauri builds from that device until the toolchain is allowlisted. Installer offload goes to win250 or local 4060.
