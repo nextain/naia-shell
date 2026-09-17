@@ -1391,7 +1391,7 @@ fn validated_store_gateway(raw: &str) -> Result<url::Url, String> {
         .host_str()
         .ok_or_else(|| "Invalid App Store Gateway URL".to_string())?;
     let production = url.scheme() == "https"
-        && host == "api.nextain.io"
+        && crate::is_trusted_naia_https_host(url.scheme(), host)
         && url.port_or_known_default() == Some(443);
     let loopback = cfg!(debug_assertions)
         && url.scheme() == "http"

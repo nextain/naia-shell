@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	LAB_GATEWAY_URL,
+	NAIA_WEB_BASE_URL,
 	getNaiaKeySecure,
 	hasNaiaKeySecure,
 } from "../lib/config";
@@ -226,7 +227,7 @@ function LabBalanceSection() {
 				type="button"
 				className="lab-charge-btn"
 				onClick={() =>
-					openUrl(`https://www.naia.land/${getLocale()}/billing`).catch(
+					openUrl(`${NAIA_WEB_BASE_URL}/${getLocale()}/billing`).catch(
 						() => {},
 					)
 				}

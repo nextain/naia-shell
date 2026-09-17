@@ -1,11 +1,12 @@
 import { Logger } from "./logger";
+import { NAIA_WEB_BASE_URL } from "./config";
 import {
 	UI_PREFERENCE_KEYS,
 	getUiPreference,
 	patchUiPreferences,
 } from "./ui-preferences";
 
-const ANNOUNCEMENTS_URL = "https://www.naia.land/api/announcements";
+const ANNOUNCEMENTS_URL = `${NAIA_WEB_BASE_URL}/api/announcements`;
 const FETCH_TIMEOUT_MS = 8000;
 
 export type AnnouncementType = "release" | "maintenance" | "info" | "warning";

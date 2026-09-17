@@ -1036,14 +1036,12 @@ describe("SettingsTab", () => {
 		const modelSelect = document.getElementById(
 			"model-select",
 		) as HTMLSelectElement;
-		// 2026-08 lineup: gpt-5.6 sol/terra/luna + previous-gen 5.5, retiring 5.4.
 		expect(modelSelect.value).toBe("gpt-5.6-sol");
 		expect([...modelSelect.options].map((option) => option.value)).toEqual([
 			"gpt-5.6-sol",
 			"gpt-5.6-terra",
 			"gpt-5.6-luna",
 			"gpt-5.5",
-			"gpt-5.4",
 		]);
 	});
 

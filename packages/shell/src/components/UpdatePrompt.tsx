@@ -5,6 +5,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { NAIA_WEB_BASE_URL } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import type { UpdateInfo } from "../lib/updater";
@@ -68,7 +69,7 @@ export function UpdatePrompt({ info, onLater }: UpdatePromptProps) {
 	};
 
 	const handleViewDetails = () => {
-		openUrl(`https://www.naia.land/${getLocale()}/download`).catch(() => {});
+		openUrl(`${NAIA_WEB_BASE_URL}/${getLocale()}/download`).catch(() => {});
 	};
 
 	return (

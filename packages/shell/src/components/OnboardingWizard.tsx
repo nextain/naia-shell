@@ -1364,7 +1364,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								className="onboarding-welcome__github-btn"
 								onClick={() =>
 									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-										openUrl("https://www.naia.land/donation"),
+										openUrl(`${NAIA_WEB_BASE_URL}/donation`),
 									)
 								}
 							>

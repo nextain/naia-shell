@@ -475,8 +475,6 @@ function LocalePicker({
 }
 
 function getNaiaWebBaseUrl() {
-	// dev (tauri:dev) → localhost:3001, prod (tauri:prod) → www.naia.land.
-	// Same VITE_NAIA_USE_DEV_GATEWAY flag as the gateway (see config.ts).
 	return NAIA_WEB_BASE_URL;
 }
 

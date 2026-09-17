@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
+import { NAIA_WEB_BASE_URL } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
 import type { UpdateInfo } from "../lib/updater";
@@ -24,7 +25,7 @@ export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
 
 	const handleViewDetails = () => {
 		const locale = getLocale();
-		openUrl(`https://www.naia.land/${locale}/download`).catch(() => {});
+		openUrl(`${NAIA_WEB_BASE_URL}/${locale}/download`).catch(() => {});
 	};
 
 	if (installing) {

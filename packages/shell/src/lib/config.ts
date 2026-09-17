@@ -1159,8 +1159,8 @@ const _DEV_GATEWAY =
  *
  * Mode resolution (#333 follow-up):
  *   - `pnpm run tauri:dev`  → wrapper sets VITE_NAIA_USE_DEV_GATEWAY=1
- *                             + VITE_NAIA_DEV_GATEWAY_URL → dev Cloud Run
- *   - `pnpm run tauri:prod` → wrapper unsets both → prod Cloud Run
+ *                             + VITE_NAIA_DEV_GATEWAY_URL=https://api-dev.naia.land
+ *   - `pnpm run tauri:prod` → wrapper unsets both → api.nextain.io
  *   - `wdio` e2e            → loads .env.e2e which sets the same flag
  *
  * The previous rule "any Vite dev mode + dev URL present → dev gateway"
@@ -1175,11 +1175,11 @@ export const LAB_GATEWAY_URL =
 /** Dev-only gateway URL (always available regardless of mode). */
 export const DEV_GATEWAY_URL = _DEV_GATEWAY || _PROD_GATEWAY;
 
-// Naia web app base (login portal / dashboard / manual). Set per environment in
-// .env.{dev,prod} via VITE_NAIA_WEB_BASE_URL (loaded by scripts/tauri-with-mode.mjs):
-// `tauri:dev` → https://dev.naia.land, `tauri:prod` → https://www.naia.land.
-// (도메인 이전 2026-07: naia.nextain.io → www.naia.land. 둘 다 307/200 라이브이나
-//  www.naia.land 가 정본. 컴포넌트는 이 상수를 쓸 것 — 직접 하드코딩 금지.)
+// Naia web app base (login portal / dashboard / manual). Wrapper injects
+// VITE_NAIA_WEB_BASE_URL: `tauri:dev` → https://dev.naia.land,
+// `tauri:prod` → https://www.naia.land.
+// (도메인 이전 2026-07: naia.nextain.io → www.naia.land. 컴포넌트는 이
+// 상수를 쓸 것 — 직접 하드코딩 금지.)
 export const NAIA_WEB_BASE_URL =
 	(import.meta.env.VITE_NAIA_WEB_BASE_URL as string) ||
 	(import.meta.env.DEV ? "https://dev.naia.land" : "https://www.naia.land");

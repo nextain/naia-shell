@@ -5639,15 +5639,19 @@ async fn memory_import_backup(
     }
 }
 
-/// Trusted Naia gateway host over HTTPS. The official gateway domain is the
-/// company domain `nextain.io`; balance and other account calls require it.
-/// Loopback (dev gateway) is handled separately by the caller.
-fn is_trusted_naia_https_host(scheme: &str, host: &str) -> bool {
+/// Trusted Naia gateway host over HTTPS. Prod is `*.nextain.io`;
+/// staging is `api-dev.naia.land` (and `api.naia.land`). Loopback is
+/// handled separately by the caller. Suffix spoofing (`naia.land.evil`)
+/// must stay rejected.
+pub(crate) fn is_trusted_naia_https_host(scheme: &str, host: &str) -> bool {
     if scheme != "https" {
         return false;
     }
     let host = host.to_ascii_lowercase();
-    host == "nextain.io" || host.ends_with(".nextain.io")
+    if host == "nextain.io" || host.ends_with(".nextain.io") {
+        return true;
+    }
+    host == "api.naia.land" || host == "api-dev.naia.land"
 }
 
 fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
@@ -5660,7 +5664,7 @@ fn naia_balance_endpoint(gateway_url: &str) -> Result<url::Url, String> {
         host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1" || host == "::1";
     let is_trusted_https = is_trusted_naia_https_host(base.scheme(), host);
     if !is_trusted_https && !(is_loopback && matches!(base.scheme(), "http" | "https")) {
-        return Err("Naia balance requests require HTTPS on nextain.io".to_string());
+        return Err("Naia balance requests require HTTPS on nextain.io or api-dev.naia.land".to_string());
     }
     base.join("/v1/profile/balance")
         .map_err(|_| "Invalid Naia balance endpoint".to_string())
@@ -14827,9 +14831,18 @@ mod tests {
                 .as_str(),
             "https://api.nextain.io/v1/profile/balance"
         );
-        // Unified on the company domain nextain.io — naia.land is no longer a
-        // trusted gateway host for account calls.
-        assert!(naia_balance_endpoint("https://api.naia.land").is_err());
+        assert_eq!(
+            naia_balance_endpoint("https://api-dev.naia.land")
+                .unwrap()
+                .as_str(),
+            "https://api-dev.naia.land/v1/profile/balance"
+        );
+        assert_eq!(
+            naia_balance_endpoint("https://api.naia.land")
+                .unwrap()
+                .as_str(),
+            "https://api.naia.land/v1/profile/balance"
+        );
         assert_eq!(
             naia_balance_endpoint("http://127.0.0.1:8080/base")
                 .unwrap()
@@ -14839,8 +14852,10 @@ mod tests {
         assert!(naia_balance_endpoint("http://api.nextain.io").is_err());
         assert!(naia_balance_endpoint("http://api.naia.land").is_err());
         assert!(naia_balance_endpoint("https://example.test").is_err());
+        assert!(naia_balance_endpoint("https://www.naia.land").is_err());
         // Suffix-match must not be spoofable by a look-alike parent domain.
         assert!(naia_balance_endpoint("https://naia.land.evil.test").is_err());
+        assert!(naia_balance_endpoint("https://api-dev.naia.land.evil.test").is_err());
     }
 
     #[test]
