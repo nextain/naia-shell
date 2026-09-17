@@ -56,6 +56,9 @@ describe("PA-DJ-04 proactive settings UI", () => {
 			/>,
 		);
 		expect(screen.getByLabelText("Automatically play BGM")).toBeDefined();
+		expect(screen.getByLabelText("Idle timeout (ms)")).toBeDefined();
+		expect(screen.getByLabelText("DJ remark interval (ms)")).toBeDefined();
+		expect(screen.getByLabelText("Use weather location")).toBeDefined();
 		expect(screen.queryByLabelText("Exhibition knowledge scope")).toBeNull();
 		dj.unmount();
 
@@ -66,7 +69,14 @@ describe("PA-DJ-04 proactive settings UI", () => {
 				onSave={() => true}
 			/>,
 		);
+		// #643: idle/interval/BGM/weather are Radio DJ-only — General (exhibition)
+		// must not show them again, even though they live on the same shared config.
 		expect(screen.queryByLabelText("Automatically play BGM")).toBeNull();
+		expect(screen.queryByLabelText("Idle timeout (ms)")).toBeNull();
+		expect(screen.queryByLabelText("DJ remark interval (ms)")).toBeNull();
+		expect(screen.queryByLabelText("Use weather location")).toBeNull();
+		expect(screen.queryByLabelText("Weather latitude")).toBeNull();
+		expect(screen.queryByLabelText("Weather longitude")).toBeNull();
 		expect(screen.getByLabelText("Exhibition knowledge scope")).toBeDefined();
 	});
 
