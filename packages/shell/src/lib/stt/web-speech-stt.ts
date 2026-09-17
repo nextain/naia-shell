@@ -57,12 +57,24 @@ export function isWebSpeechAvailable(): boolean {
 	);
 }
 
+/**
+ * Some WebView2/Chromium builds (notably WebView2 without Google's private
+ * speech-service key, e.g. #615) never surface a proper "no speech backend"
+ * error. Instead every final result comes back as an empty transcript with
+ * confidence 1 — indistinguishable from "successful recognition of silence"
+ * unless we watch for the pattern ourselves. This many consecutive empty
+ * finals in a row means the backend isn't actually transcribing.
+ */
+const EMPTY_FINAL_ERROR_THRESHOLD = 2;
+
 /** Create a Web Speech API STT session. */
 export function createWebSpeechSttSession(language: string): SttSession {
 	let resultCallbacks: ((result: SttResult) => void)[] = [];
 	let errorCallbacks: ((error: { code: string; message: string }) => void)[] =
 		[];
 	let recognition: SpeechRecognition | null = null;
+	let consecutiveEmptyFinals = 0;
+	let emptyTranscriptErrorReported = false;
 
 	function buildRecognition(): SpeechRecognition {
 		const w = window as Window & {
@@ -90,6 +102,8 @@ export function createWebSpeechSttSession(language: string): SttSession {
 			}
 
 			recognition = buildRecognition();
+			consecutiveEmptyFinals = 0;
+			emptyTranscriptErrorReported = false;
 
 			recognition.onresult = (event: SpeechRecognitionEvent) => {
 				for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -102,6 +116,29 @@ export function createWebSpeechSttSession(language: string): SttSession {
 						isFinal,
 						confidence,
 					});
+
+					if (isFinal && transcript.trim() === "") {
+						consecutiveEmptyFinals++;
+						if (
+							consecutiveEmptyFinals >= EMPTY_FINAL_ERROR_THRESHOLD &&
+							!emptyTranscriptErrorReported
+						) {
+							emptyTranscriptErrorReported = true;
+							const msg =
+								"Web Speech API returned only empty transcripts — the " +
+								"speech recognition backend in this browser/WebView2 build " +
+								"is not actually transcribing audio";
+							Logger.warn("web-speech-stt", msg, {
+								consecutiveEmptyFinals,
+							});
+							for (const cb of errorCallbacks)
+								cb({ code: "empty-transcript", message: msg });
+						}
+						// Not real data — do not forward as a successful result.
+						continue;
+					}
+
+					consecutiveEmptyFinals = 0;
 					for (const cb of resultCallbacks)
 						cb({ transcript, isFinal, confidence });
 				}
