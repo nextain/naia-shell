@@ -97,6 +97,7 @@ import {
 	setLocale,
 	t,
 } from "../lib/i18n";
+import { DevicePairingSection } from "./DevicePairingSection";
 import {
 	fetchLabBalancePayload,
 	isLabBalanceUnauthorized,
@@ -4781,6 +4782,7 @@ export function SettingsTab() {
 							}}
 						/>
 					</div>
+					{enableTools && <DevicePairingSection />}
 					<div className="settings-field settings-toggle-row">
 						{/* expert role editor */}
 						<label htmlFor="thinking-toggle">
