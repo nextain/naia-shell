@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "إزالة",
 	"settings.knowledgeStatusLabel": "حالة قاعدة المعرفة",
 	"settings.knowledgeStatusEmpty": "لم يُجمَّع بعد",
-	"settings.knowledgeStatsFormat": "%c بطاقات · %e كيانات · %r علاقات · %a مقبولة",
+	"settings.knowledgeStatsFormat": "قابل للبحث %s · %c بطاقات · %e كيانات · %r علاقات · %a متحقق",
 	"settings.knowledgeCompile": "ترجمة الآن",
 	"settings.knowledgeCompiling": "جارٍ الترجمة…",
 	"settings.knowledgeCompileFailed": "فشل الترجمة",

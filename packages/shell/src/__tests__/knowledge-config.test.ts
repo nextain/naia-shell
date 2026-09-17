@@ -108,7 +108,7 @@ describe("knowledge-config (FR-KB-OS.5~7 — 소스 관리 순수 로직)", () =
 			expect(parseKbStats(JSON.stringify({ kb: { cards: 1 } }))).toBeNull();
 		});
 
-		it("유효 envelope → 카드/엔티티/관계/accepted 수", () => {
+		it("유효 envelope → 카드/엔티티/관계/accepted/serveReady 수", () => {
 			const json = JSON.stringify({
 				version: 1,
 				kb: {
@@ -116,16 +116,39 @@ describe("knowledge-config (FR-KB-OS.5~7 — 소스 관리 순수 로직)", () =
 						{ id: "c1", status: "accepted" },
 						{ id: "c2", status: "draft" },
 						{ id: "c3", status: "accepted" },
+						{ id: "c4", status: "gap" },
 					],
 					entities: [{ id: "e1" }, { id: "e2" }],
 					relations: [{ from: "e1", type: "x", to: "e2" }],
 				},
 			});
 			expect(parseKbStats(json)).toEqual({
-				cards: 3,
+				cards: 4,
 				entities: 2,
 				relations: 1,
 				accepted: 2,
+				serveReady: 3,
+			});
+		});
+
+		it("제품 컴파일 산출(draft only) → serveReady=cards, accepted=0", () => {
+			const json = JSON.stringify({
+				version: 1,
+				kb: {
+					cards: [
+						{ id: "c1", status: "draft" },
+						{ id: "c2", status: "draft" },
+					],
+					entities: [],
+					relations: [],
+				},
+			});
+			expect(parseKbStats(json)).toEqual({
+				cards: 2,
+				entities: 0,
+				relations: 0,
+				accepted: 0,
+				serveReady: 2,
 			});
 		});
 	});

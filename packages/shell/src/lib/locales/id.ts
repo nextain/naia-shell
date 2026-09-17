@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "Hapus",
 	"settings.knowledgeStatusLabel": "Status basis pengetahuan",
 	"settings.knowledgeStatusEmpty": "Belum dikompilasi",
-	"settings.knowledgeStatsFormat": "%c kartu · %e entitas · %r relasi · %a diterima",
+	"settings.knowledgeStatsFormat": "dapat dicari %s · %c kartu · %e entitas · %r relasi · %a terverifikasi",
 	"settings.knowledgeCompile": "Kompilasi sekarang",
 	"settings.knowledgeCompiling": "Mengompilasi…",
 	"settings.knowledgeCompileFailed": "Kompilasi gagal",

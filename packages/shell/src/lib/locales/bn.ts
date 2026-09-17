@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "সরান",
 	"settings.knowledgeStatusLabel": "জ্ঞান ভিত্তির অবস্থা",
 	"settings.knowledgeStatusEmpty": "এখনো কম্পাইল হয়নি",
-	"settings.knowledgeStatsFormat": "%c কার্ড · %e সত্তা · %r সম্পর্ক · %a গৃহীত",
+	"settings.knowledgeStatsFormat": "অনুসন্ধানযোগ্য %s · %c কার্ড · %e সত্তা · %r সম্পর্ক · %a যাচাই",
 	"settings.knowledgeCompile": "এখন কম্পাইল করুন",
 	"settings.knowledgeCompiling": "কম্পাইল হচ্ছে…",
 	"settings.knowledgeCompileFailed": "কম্পাইল ব্যর্থ",

@@ -123,8 +123,10 @@ export interface KnowledgeKbStats {
 	cards: number;
 	entities: number;
 	relations: number;
-	/** status==="accepted" 카드 수(서빙 권장 단위). */
+	/** gold-QA verified card count. Not the serve gate. */
 	accepted: number;
+	/** Compiled cards that are searchable (`status !== "gap"`). */
+	serveReady: number;
 }
 
 /** kb.json envelope(`{version,kb:{cards,entities,relations}}`) → 통계.
@@ -150,16 +152,18 @@ export function parseKbStats(
 	) {
 		return null;
 	}
-	const accepted = (kb.cards as unknown[]).filter(
-		(c) =>
-			typeof c === "object" &&
-			c !== null &&
-			(c as { status?: string }).status === "accepted",
-	).length;
+	const cards = kb.cards as unknown[];
+	const statusOf = (c: unknown): string | undefined =>
+		typeof c === "object" && c !== null
+			? (c as { status?: string }).status
+			: undefined;
+	const accepted = cards.filter((c) => statusOf(c) === "accepted").length;
+	const serveReady = cards.filter((c) => statusOf(c) !== "gap").length;
 	return {
 		cards: kb.cards.length,
 		entities: kb.entities.length,
 		relations: kb.relations.length,
 		accepted,
+		serveReady,
 	};
 }

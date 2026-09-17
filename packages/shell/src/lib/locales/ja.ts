@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "削除",
 	"settings.knowledgeStatusLabel": "ナレッジベースの状態",
 	"settings.knowledgeStatusEmpty": "まだコンパイルされていません",
-	"settings.knowledgeStatsFormat": "カード %c · エンティティ %e · 関係 %r · 承認 %a",
+	"settings.knowledgeStatsFormat": "検索 %s · カード %c · エンティティ %e · 関係 %r · 検証 %a",
 	"settings.knowledgeCompile": "今すぐコンパイル",
 	"settings.knowledgeCompiling": "コンパイル中…",
 	"settings.knowledgeCompileFailed": "コンパイル失敗",

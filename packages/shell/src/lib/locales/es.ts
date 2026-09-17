@@ -673,7 +673,7 @@ export default {
 	"settings.knowledgeRemove": "Quitar",
 	"settings.knowledgeStatusLabel": "Estado de la base de conocimiento",
 	"settings.knowledgeStatusEmpty": "Aún no compilado",
-	"settings.knowledgeStatsFormat": "%c tarjetas · %e entidades · %r relaciones · %a aceptadas",
+	"settings.knowledgeStatsFormat": "consultable %s · %c tarjetas · %e entidades · %r relaciones · %a verificadas",
 	"settings.knowledgeCompile": "Compilar ahora",
 	"settings.knowledgeCompiling": "Compilando…",
 	"settings.knowledgeCompileFailed": "Error de compilación",
