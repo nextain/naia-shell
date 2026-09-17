@@ -103,15 +103,15 @@ const env = interactiveLaunchEnv(process.env);
 // in release builds.
 const devVoxCpm2Bundle = resolve(SHELL, "src-tauri", "voxcpm2-runtime");
 const hostVoxCpm2Profile = voxCpm2Profile();
-// 내려받기 매니페스트도 운영체제 사실을 담는다 — 어느 아카이브를 받을지가 거기
-// 적혀 있다. 스테이징이 만든 것이 이 빌드의 진짜 매니페스트이고, 저장소에 든
-// 것은 아직 스테이징하지 않은 트리를 위한 Windows 폴백이다(build-e2e-tauri 와
-// 같은 규칙). 폴백을 리눅스에 그대로 놓으면 셸이 Windows 아카이브를 받으러
-// 가므로, 프로파일이 이 기계와 맞을 때만 쓴다.
-const devVoxCpm2DownloadManifest = [
-	resolve(SHELL, "src-tauri", "voxcpm2-runtime", "download-manifest.json"),
-	resolve(SHELL, "scripts", "voxcpm2-download-manifest.json"),
-].find((candidate) => {
+// Canonical pin is scripts/voxcpm2-download-manifest.json (git). The copy under
+// src-tauri/voxcpm2-runtime is a staging artifact and was preferred first, so
+// tauri:dev rejected the live zip (#640 luke-victus: 2494187310 vs 2496064260).
+const canonicalVoxCpm2DownloadManifest = resolve(
+	SHELL,
+	"scripts",
+	"voxcpm2-download-manifest.json",
+);
+function voxCpm2ManifestMatchesHost(candidate) {
 	if (!existsSync(candidate)) return false;
 	try {
 		return (
@@ -121,7 +121,11 @@ const devVoxCpm2DownloadManifest = [
 	} catch {
 		return false;
 	}
-});
+}
+const devVoxCpm2DownloadManifest = [
+	canonicalVoxCpm2DownloadManifest,
+	resolve(SHELL, "src-tauri", "voxcpm2-runtime", "download-manifest.json"),
+].find(voxCpm2ManifestMatchesHost);
 if (mode === "dev") {
 	// Thin-runtime dev builds reuse the staged download manifest, but its ignored
 	// control files can predate the checkout. Refresh the small trusted installer
@@ -139,9 +143,15 @@ if (mode === "dev") {
 		resolve(SHELL, "src-tauri/voxcpm2-activation-contract.json"),
 		resolve(devVoxCpm2Bundle, "voxcpm2-activation-contract.json"),
 	);
+	if (voxCpm2ManifestMatchesHost(canonicalVoxCpm2DownloadManifest)) {
+		copyFileSync(
+			canonicalVoxCpm2DownloadManifest,
+			resolve(devVoxCpm2Bundle, "download-manifest.json"),
+		);
+	}
 	if (devVoxCpm2DownloadManifest) {
 		env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST =
-			env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? devVoxCpm2DownloadManifest;
+			env.NAIA_VOXCPM2_DOWNLOAD_MANIFEST ?? canonicalVoxCpm2DownloadManifest;
 	}
 	// #508: Rust resolves the installer resources from resource_dir, which for
 	// a `tauri dev` debug binary is the cargo debug directory — NOT the
