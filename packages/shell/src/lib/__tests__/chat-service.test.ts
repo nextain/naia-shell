@@ -504,22 +504,14 @@ describe("chat-service", () => {
 
 		await sendNotifyConfig({
 			slackWebhookUrl: "https://hooks.slack.com/services/test",
-			discordWebhookUrl: "https://discord.com/api/webhooks/123/abc",
 			googleChatWebhookUrl: "",
-			discordDefaultUserId: "user-1",
-			discordDefaultTarget: "dm",
-			discordDmChannelId: "channel-1",
 		});
 
 		const sentMessage = mockInvoke.mock.calls[0][1].message;
 		const parsed = JSON.parse(sentMessage);
 		expect(parsed.type).toBe("notify_config");
 		expect(parsed.slackWebhookUrl).toContain("hooks.slack.com");
-		expect(parsed.discordWebhookUrl).toContain("discord.com/api/webhooks");
 		expect(parsed.googleChatWebhookUrl).toBe("");
-		expect(parsed.discordDefaultUserId).toBe("user-1");
-		expect(parsed.discordDefaultTarget).toBe("dm");
-		expect(parsed.discordDmChannelId).toBe("channel-1");
 	});
 
 	it("sendCredsUpdate emits creds_update with LLM + TTS keys + gatewayToken (#260 follow-up)", async () => {
