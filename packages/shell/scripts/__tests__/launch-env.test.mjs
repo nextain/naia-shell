@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { loadEnv } from "vite";
 
 import { interactiveLaunchEnv } from "../launch-env.mjs";
+import { applyNaiaInstanceEnv } from "../naia-instance-urls.mjs";
 
 function withViteProcessEnv(next, callback) {
 	const previous = Object.fromEntries(
@@ -127,4 +128,24 @@ test("prod finalization wins Vite file values while dev keeps its gateway", () =
 	} finally {
 		rmSync(envDir, { recursive: true, force: true });
 	}
+});
+
+test("tauri:dev instance defaults to dev.naia.land and api-dev.naia.land", () => {
+	const env = applyNaiaInstanceEnv({}, "dev");
+	expect(env.VITE_NAIA_WEB_BASE_URL).toBe("https://dev.naia.land");
+	expect(env.VITE_NAIA_USE_DEV_GATEWAY).toBe("1");
+	expect(env.VITE_NAIA_DEV_GATEWAY_URL).toBe("https://api-dev.naia.land");
+});
+
+test("tauri:prod instance does not keep a dev gateway flag", () => {
+	const env = applyNaiaInstanceEnv(
+		{
+			VITE_NAIA_USE_DEV_GATEWAY: "1",
+			VITE_NAIA_DEV_GATEWAY_URL: "https://api-dev.naia.land",
+		},
+		"prod",
+	);
+	expect(env.VITE_NAIA_WEB_BASE_URL).toBe("https://www.naia.land");
+	expect(env.VITE_NAIA_USE_DEV_GATEWAY).toBeUndefined();
+	expect(env.VITE_NAIA_DEV_GATEWAY_URL).toBeUndefined();
 });

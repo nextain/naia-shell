@@ -1,8 +1,9 @@
 import type { AppConfig } from "./config";
 import { NAIA_WEB_BASE_URL, normalizeSpeechStyle } from "./config";
 import { Logger } from "./logger";
+import { naiaWebUrl } from "./naia-instance-urls";
 
-const LAB_API_BASE = `${NAIA_WEB_BASE_URL}/api/gateway/config`;
+const LAB_API_BASE = naiaWebUrl("api/gateway/config", NAIA_WEB_BASE_URL);
 
 /** Fields synced to/from Lab — excludes secrets (apiKey, gatewayToken, etc.) and local paths */
 export const LAB_SYNC_FIELDS = [

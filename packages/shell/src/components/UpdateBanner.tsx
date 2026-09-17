@@ -3,6 +3,7 @@ import { useState } from "react";
 import { NAIA_WEB_BASE_URL } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import type { UpdateInfo } from "../lib/updater";
 
 interface UpdateBannerProps {
@@ -25,7 +26,7 @@ export function UpdateBanner({ info, onDismiss }: UpdateBannerProps) {
 
 	const handleViewDetails = () => {
 		const locale = getLocale();
-		openUrl(`${NAIA_WEB_BASE_URL}/${locale}/download`).catch(() => {});
+		openUrl(naiaWebUrl(`${locale}/download`, NAIA_WEB_BASE_URL)).catch(() => {});
 	};
 
 	if (installing) {

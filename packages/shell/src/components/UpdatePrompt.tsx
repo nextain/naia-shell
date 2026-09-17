@@ -8,6 +8,7 @@ import {
 import { NAIA_WEB_BASE_URL } from "../lib/config";
 import { getLocale, t } from "../lib/i18n";
 import { Logger } from "../lib/logger";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import type { UpdateInfo } from "../lib/updater";
 import { useAppStore } from "../stores/app";
 
@@ -69,7 +70,7 @@ export function UpdatePrompt({ info, onLater }: UpdatePromptProps) {
 	};
 
 	const handleViewDetails = () => {
-		openUrl(`${NAIA_WEB_BASE_URL}/${getLocale()}/download`).catch(() => {});
+		openUrl(naiaWebUrl(`${getLocale()}/download`, NAIA_WEB_BASE_URL)).catch(() => {});
 	};
 
 	return (

@@ -1856,3 +1856,41 @@ Test Coverage Map (P02)
 | UC-TOOLS-SURFACE-611 | `packages/shell/src/lib/__tests__/model-facing-tools.contract.test.ts`: keep list exactness, removed-name filtering, app/voice list parity | `packages/shell/src/components/__tests__/SkillsTab.test.tsx`: loading, empty, error, filtered success and disabled-state rendering; `packages/shell/e2e/naia-omni-voice-tools.spec.ts`: voice skill-list wiring |
 
 P04 must preserve the existing browser and YouTube UI paths while proving that removed work tools are absent from the model-facing list. The contract test is the authoritative exact-list check; UI evidence covers loading, empty, success, error, keyboard-visible cards and the narrow layout already owned by SkillsTab.
+
+## UC-INSTANCE-URLS-653 — debug desktop uses the dev land and API hosts
+
+`pnpm run tauri:dev` logs into `https://dev.naia.land` and talks to `https://api-dev.naia.land`. `pnpm run tauri:prod` keeps production hosts. Login, announcements, lab sync, billing, and download links use one instance helper instead of hardcoded `www.naia.land`.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | tauri:dev 로그인·콜백이 dev.naia.land 이고 API 는 api-dev.naia.land 이다. |
+| 빈 목록 | 개발 게이트웨이 env가 비어도 prod API로 떨어지지 않는다. |
+| 진행 | 로그인 대기 중에도 호스트가 바뀌지 않는다. |
+| 성공 | 로그인·잔액·공지가 같은 인스턴스 호스트를 쓴다. |
+| 오류 | prod 콜백 불일치가 개발 실행에서 나지 않는다. |
+| 좁은 폭 | 로그인 화면 링크가 잘리지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-INSTANCE-URLS-653 | `packages/shell/src/lib/__tests__/naia-instance-urls.test.ts`; `packages/shell/scripts/__tests__/launch-env.test.mjs` | existing onboarding login specs keep redirect_uri/source=desktop |
+
+## UC-WORKSPACE-BIND-651 — Codex and fs-tools use the shell workspace root
+
+The workspace UI `set_root` canonical path is the Codex app-server cwd and the fs-tools allow-root. OS temp is not a second sandbox. Turning on 「터미널에 직접 입력 허용」 raises Codex sandbox to workspace-write on that same root. Naia write/github tools stay removed.
+
+| 상태 | 사용자 기대 |
+|---|---|
+| 기본 | 워크스페이스가 D:\\alpha-adk 이면 Codex가 그 트리를 읽는다. |
+| 빈 목록 | 워크스페이스가 없으면 Codex는 temp+read-only로 남는다. |
+| 진행 | 터미널 허용을 켜면 다음 턴부터 그 루트에서 쓸 수 있다. |
+| 성공 | 파일 읽기·터미널이 셸이 정한 루트에서 동작한다. |
+| 오류 | temp 제한이나 허용 뒤에도 막힌 터미널이 사용자에게 거짓으로 성공하지 않는다. |
+| 좁은 폭 | 워크스페이스 설정과 터미널 허용 토글이 잘리지 않는다. |
+
+Test Coverage Map (P02)
+
+| UC | 단위·계약 | 실 UI |
+|---|---|---|
+| UC-WORKSPACE-BIND-651 | naia-agent `workspace-bind.contract.test.ts` + `codex-app-server-provider.contract.test.ts` | shell spawn cwd follows ADK path (Rust `current_dir`) |

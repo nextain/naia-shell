@@ -46,6 +46,7 @@ import {
 	parseNvaManifest,
 	resolveNvaAssetPath,
 } from "../lib/nva";
+import { naiaWebUrl } from "../lib/naia-instance-urls";
 import { OAUTH_CALLBACK_URL } from "../lib/oauth-callback-url";
 import {
 	type OnboardingSession,
@@ -1364,7 +1365,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 								className="onboarding-welcome__github-btn"
 								onClick={() =>
 									import("@tauri-apps/plugin-opener").then(({ openUrl }) =>
-										openUrl(`${NAIA_WEB_BASE_URL}/donation`),
+										openUrl(naiaWebUrl("donation", NAIA_WEB_BASE_URL)),
 									)
 								}
 							>
