@@ -108,4 +108,18 @@ describe("ToolActivity", () => {
 		expect(screen.queryByTestId("knowledge-graph")).toBeNull();
 		expect(screen.getByText(/도구 실행|Tool Execution|skill_knowledge_graph/)).toBeDefined();
 	});
+
+	it("does not dump empty knowledge JSON into the transcript body", () => {
+		const tool: ToolCall = {
+			...baseTool,
+			toolName: "skill_knowledge_graph",
+			status: "success",
+			args: {},
+			output: "{}",
+		};
+		render(<ToolActivity tool={tool} />);
+		fireEvent.click(screen.getByRole("button"));
+		expect(screen.queryByText("{}")).toBeNull();
+		expect(screen.getByText("No results")).toBeDefined();
+	});
 });

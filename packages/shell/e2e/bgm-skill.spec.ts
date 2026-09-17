@@ -103,7 +103,7 @@ const MOCK_SCRIPT = `
       return null;
     }
     if (cmd === "cancel_stream" || cmd === "send_approval_response") return null;
-	if (cmd === "ensure_bgm_server") return true;
+	if (cmd === "ensure_bgm_server") return { ready: true, port: 18791 };
     return undefined; // → TAURI_BASE_MOCK_FALLBACK 가 부트 기본값 처리
   };
 })();

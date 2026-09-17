@@ -29,7 +29,8 @@ vi.mock("../../lib/adk-store", () => ({
 	toLocalBlobUrl: vi.fn().mockResolvedValue("blob:mock"),
 }));
 vi.mock("../../lib/bgm-sidecar-url", () => ({
-	ensureBgmSidecar: vi.fn().mockResolvedValue(undefined),
+	ensureBgmSidecar: vi.fn().mockResolvedValue("http://localhost:18791"),
+	bgmSidecarBaseUrl: () => "http://localhost:18791",
 	BGM_SIDECAR_BASE_URL: "http://localhost:18791",
 }));
 

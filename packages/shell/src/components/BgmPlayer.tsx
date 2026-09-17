@@ -50,11 +50,7 @@ import { type BackgroundMediaType, useAvatarStore } from "../stores/avatar";
 
 // ── YouTube server ────────────────────────────────────────────────────────────
 
-import { ensureBgmSidecar } from "../lib/bgm-sidecar-url";
-
-const YT_BASE =
-	import.meta.env.VITE_NAIA_BGM_BASE?.replace(/\/$/, "") ??
-	"http://localhost:18791";
+import { bgmSidecarBaseUrl, ensureBgmSidecar } from "../lib/bgm-sidecar-url";
 
 interface YtVideo {
 	id: string;
@@ -65,9 +61,9 @@ interface YtVideo {
 }
 
 async function ytSearch(query: string): Promise<YtVideo[]> {
-	await ensureBgmSidecar();
+	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
-		`${YT_BASE}/yt/search?q=${encodeURIComponent(query)}&max=12`,
+		`${base}/yt/search?q=${encodeURIComponent(query)}&max=12`,
 	);
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };

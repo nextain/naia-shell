@@ -25,18 +25,20 @@ import {
 import { bgmLibraryCache, persistBgmLibrary } from "./bgm-library-store";
 import {
 	type BgmPlaybackPort,
+	type BgmPlaybackSnapshot,
 	bgmPlayback,
 	toBgmObservedContext,
 	toBgmPlayToolResult,
 	toBgmQueuedToolResult,
 } from "./bgm-playback";
-import { BGM_SIDECAR_BASE_URL, ensureBgmSidecar } from "./bgm-sidecar-url";
+import { bgmSidecarBaseUrl, ensureBgmSidecar } from "./bgm-sidecar-url";
 import { loadConfig } from "./config";
 
 /** appExec 등록용 앱 id — 위젯 전용(앱 아님), app_skills_clear 대상 아님(항상 유지). */
 export const BGM_APP_ID = "bgm-widget";
 
-const YT_BASE = BGM_SIDECAR_BASE_URL;
+const PLAY_ACK_TIMEOUT_MS = 8_000;
+const PLAY_ACK_POLL_MS = 200;
 
 export const BGM_ACTIONS = [
 	"play",
@@ -272,6 +274,8 @@ export interface BgmSkillDeps {
 	/** 위젯(BgmPlayer)이 Shell 전용 bgm_command 이벤트로 받는 payload를 발사. */
 	emitBgm: (payload: Record<string, unknown>) => Promise<void>;
 	playback: BgmPlaybackPort;
+	/** Wait until play leaves `requested`, or timeout. Tests omit this. */
+	waitForAck?: (playbackId: string) => Promise<BgmPlaybackSnapshot | null>;
 	/** Number of YouTube favorites available to next/prev navigation. */
 	favoriteCount?: () => number;
 	favoriteTracks?: () => BgmSearchResult[];
@@ -326,10 +330,39 @@ function persistedMusicLibrary(): BgmLibraryState {
 }
 
 /** 사이드카 검색 — BgmPlayer.ytSearch 동형 표면(GET /yt/search?q=&max=). */
+function shouldWaitForPlayAck(): boolean {
+	return typeof window === "undefined" || !("__E2E_OUTBOUND__" in window);
+}
+
+async function waitForBgmPlayAck(
+	playbackId: string,
+	playback: BgmPlaybackPort,
+): Promise<BgmPlaybackSnapshot | null> {
+	const deadline = Date.now() + PLAY_ACK_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		const current = playback.current();
+		if (current?.playbackId === playbackId) {
+			if (current.status !== "requested") return current;
+		}
+		await new Promise((resolve) => setTimeout(resolve, PLAY_ACK_POLL_MS));
+	}
+	const last = playback.current();
+	if (last?.playbackId !== playbackId) return last;
+	if (last.status !== "requested") return last;
+	return (
+		playback.observe({
+			playbackId,
+			sequence: last.sequence + 1,
+			status: "timeout",
+			reason: "playback_not_confirmed",
+		}) ?? last
+	);
+}
+
 async function sidecarSearch(query: string): Promise<BgmSearchResult[]> {
-	await ensureBgmSidecar();
+	const base = (await ensureBgmSidecar()) || bgmSidecarBaseUrl();
 	const res = await fetch(
-		`${YT_BASE}/yt/search?q=${encodeURIComponent(query)}&max=5`,
+		`${base}/yt/search?q=${encodeURIComponent(query)}&max=5`,
 	);
 	if (!res.ok) {
 		const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -347,6 +380,10 @@ const defaultDeps: BgmSkillDeps = {
 	// queue operation as an unknown Agent variant.
 	emitBgm: (payload) => emit("bgm_command", JSON.stringify(payload)),
 	playback: bgmPlayback,
+	waitForAck: (playbackId) =>
+		shouldWaitForPlayAck()
+			? waitForBgmPlayAck(playbackId, bgmPlayback)
+			: Promise.resolve(bgmPlayback.current()),
 	favoriteCount: persistedFavoriteCount,
 	favoriteTracks: persistedFavoriteTracks,
 	library: persistedMusicLibrary,
@@ -574,7 +611,9 @@ export async function executeBgmSkill(
 				title: track.title,
 				...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 			});
-			return JSON.stringify(toBgmPlayToolResult(playback));
+			const observed =
+				(await deps.waitForAck?.(playback.playbackId)) ?? playback;
+			return JSON.stringify(toBgmPlayToolResult(observed));
 		}
 		const result = deps.playback.enqueue({
 			videoId: track.id,
@@ -588,7 +627,10 @@ export async function executeBgmSkill(
 				title: track.title,
 				...(track.thumbnail ? { thumbnail: track.thumbnail } : {}),
 			});
-			return JSON.stringify(toBgmPlayToolResult(result.playback));
+			const observed =
+				(await deps.waitForAck?.(result.playback.playbackId)) ??
+				result.playback;
+			return JSON.stringify(toBgmPlayToolResult(observed));
 		}
 		await deps.emitBgm({
 			type: "bgm_youtube_enqueue",
