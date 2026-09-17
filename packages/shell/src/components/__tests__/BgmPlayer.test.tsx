@@ -326,6 +326,41 @@ describe("BgmPlayer YouTube playback state machine", () => {
 		);
 	});
 
+	it("accepts a genuine resume after manual stop instead of re-stopping it forever (#614)", async () => {
+		const { container } = render(<BgmPlayer />);
+		await startTrack("v1", "Resume Race Song");
+		const iframe = attachIframeForCurrentPlayback();
+		const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		// User stops playback via the button.
+		fireEvent.click(screen.getByRole("button", { name: /^(Stop|정지)$/ }));
+		expect(
+			screen.getByRole("button", { name: /^(Play|재생)$/ }),
+		).toHaveTextContent("▶");
+
+		// User presses Play again — a deliberate, fresh resume.
+		fireEvent.click(screen.getByRole("button", { name: /^(Play|재생)$/ }));
+		postMessage.mockClear();
+		// The iframe genuinely starts playing in response to that resume.
+		postYtMessage({ event: "onStateChange", info: 1 });
+
+		// The resume must be accepted: no further stopVideo sent, and the
+		// button must reflect the real playing state instead of snapping
+		// back to "stopped" forever.
+		expect(postMessage).not.toHaveBeenCalledWith(
+			JSON.stringify({ event: "command", func: "stopVideo", args: [] }),
+			"*",
+		);
+		expect(
+			screen.getByRole("button", { name: /^(Stop|정지)$/ }),
+		).toHaveTextContent("■");
+		expect(container.querySelector(".bgm-player")).toHaveAttribute(
+			"data-bgm-playback-status",
+			"playing",
+		);
+	});
+
 	it("shows the requested iframe immediately when background video is checked", async () => {
 		render(<BgmPlayer />);
 		await startTrack("v1", "Unconfirmed Song");

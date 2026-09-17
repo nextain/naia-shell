@@ -1082,6 +1082,8 @@ export function BgmPlayer({ naia }: Props) {
 					if (!iframe && currentYtRef.current) {
 						handleYtSelect(currentYtRef.current);
 					} else {
+						// Same deliberate-resume latch clear as the button path (#614).
+						manuallyStoppedPlaybackRef.current = null;
 						iframe?.contentWindow?.postMessage(
 							JSON.stringify({ event: "command", func: "playVideo", args: [] }),
 							"*",
@@ -1418,6 +1420,13 @@ export function BgmPlayer({ naia }: Props) {
 					// No iframe yet (e.g. restored from config) — reload the video
 					handleYtSelect(currentYt);
 				} else {
+					// A prior manual stop leaves this latch set so a stale PLAYING
+					// event left over from that stopVideo doesn't resurrect playback.
+					// This new resume is deliberate, so the latch must not keep
+					// treating the state=1 event it is about to cause as stale —
+					// otherwise the handler immediately re-sends stopVideo and the
+					// button can never leave "stopped" again (#614).
+					manuallyStoppedPlaybackRef.current = null;
 					if (sendYtCmd("playVideo")) {
 						setPlaying(true);
 						setVideoLive(true);
