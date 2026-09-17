@@ -19,6 +19,21 @@
     "scripts_registry": "scripts/README.md"
   },
   "current_work": {
+    "issue_4060_settings_canonicals": {
+      "issue": [645, 646, 647, 642, 640],
+      "title": "win-rtx4060 settings/canonical FAIL items",
+      "requirements": "docs/requirements.md FR-HERDR-CONTROL.11 FR-SETTINGS.16~18 FR-VOICE-DEV-STAGING.1",
+      "scenario": "docs/user-scenarios.md UC-SETTINGS-ROUNDTRIP + UC-HERDR-CONTROL-OBSERVE",
+      "gates": {
+        "P01": "done",
+        "P02": "done",
+        "P03": "done",
+        "P04": "done",
+        "P05": "done"
+      },
+      "status": "in_progress",
+      "last_updated": "2026-09-18T12:00:00+09:00"
+    },
     "issue_651_653_workspace_dev_urls": {
       "issue": [651, 653],
       "title": "Bind Codex/fs-tools to shell workspace root; tauri:dev uses dev.naia.land + api-dev.naia.land",

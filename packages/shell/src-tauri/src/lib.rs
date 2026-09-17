@@ -6037,6 +6037,11 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+fn voxcpm2_scripts_download_manifest_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../scripts/voxcpm2-download-manifest.json")
+}
+
 fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     let from_env = std::env::var_os("NAIA_VOXCPM2_DOWNLOAD_MANIFEST")
         .filter(|value| !value.is_empty())
@@ -6047,8 +6052,7 @@ fn voxcpm2_download_manifest_path(app: &tauri::AppHandle) -> Option<std::path::P
     }
     // tauri:dev without the wrapper still must not prefer a stale staged copy.
     if cfg!(debug_assertions) {
-        let scripts_pin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../scripts/voxcpm2-download-manifest.json");
+        let scripts_pin = voxcpm2_scripts_download_manifest_path();
         if scripts_pin.is_file() {
             return Some(scripts_pin);
         }
@@ -13475,6 +13479,20 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_scripts_pin_is_the_live_voxcpm2_archive_size() {
+        let path = voxcpm2_scripts_download_manifest_path();
+        assert!(
+            path.is_file(),
+            "canonical download-manifest missing: {}",
+            path.display()
+        );
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(manifest["archive"]["bytes"].as_u64(), Some(2496064260));
+        assert_ne!(manifest["archive"]["bytes"].as_u64(), Some(2494187310));
+    }
 
     #[test]
     fn relaunch_guard_rejects_overlap_and_can_be_released() {

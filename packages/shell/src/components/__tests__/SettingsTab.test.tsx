@@ -3355,6 +3355,115 @@ describe("SettingsTab — log viewer (#297)", () => {
 			expect(mockOpenPath).toHaveBeenCalledWith(logDir);
 		});
 	});
+
+	it("shows an error when Open Log fails (#646)", async () => {
+		mockInvoke.mockImplementation(async (cmd: string) => {
+			if (cmd === "get_log_dir") return "/home/user/.naia-dev/logs";
+			return [];
+		});
+		mockOpenPath.mockRejectedValue(new Error("path not allowed"));
+
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(
+			document.querySelector(
+				"[data-testid='log-viewer-btn']",
+			) as HTMLButtonElement,
+		);
+
+		await vi.waitFor(() => {
+			expect(document.querySelector(".settings-error")?.textContent).toMatch(
+				/Could not open the log folder|로그 폴더를 열 수 없습니다/,
+			);
+		});
+	});
+});
+
+describe("SettingsTab — allowed tools list (#647)", () => {
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("lists allowed tool names and revokes one", async () => {
+		localStorage.setItem(
+			"naia-config",
+			JSON.stringify({
+				provider: "gemini",
+				model: "m",
+				apiKey: "k",
+				allowedTools: ["skill_tab_screenshot", "memo_save"],
+			}),
+		);
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+
+		expect(
+			document.querySelector("[data-testid='allowed-tools-section']"),
+		).toBeTruthy();
+		expect(
+			document.querySelector(
+				"[data-testid='allowed-tool-skill_tab_screenshot']",
+			)?.textContent,
+		).toContain("skill_tab_screenshot");
+		expect(
+			document.querySelector("[data-testid='allowed-tool-memo_save']")
+				?.textContent,
+		).toContain("memo_save");
+
+		fireEvent.click(
+			document.querySelector(
+				"[data-testid='revoke-allowed-tool-skill_tab_screenshot']",
+			) as HTMLButtonElement,
+		);
+
+		await vi.waitFor(() => {
+			expect(
+				document.querySelector(
+					"[data-testid='allowed-tool-skill_tab_screenshot']",
+				),
+			).toBeNull();
+		});
+		expect(
+			document.querySelector("[data-testid='allowed-tool-memo_save']"),
+		).toBeTruthy();
+		expect(
+			JSON.parse(localStorage.getItem("naia-config") ?? "{}").allowedTools,
+		).toEqual(["memo_save"]);
+	});
+});
+
+describe("SettingsTab — ADK path reset (#642)", () => {
+	afterEach(() => {
+		cleanup();
+		localStorage.clear();
+		vi.clearAllMocks();
+	});
+
+	it("does not relaunch in the Vite/dev window; shows restart required", async () => {
+		localStorage.setItem("naia-adk-path", "/work/naia-adk");
+		mockInvoke.mockResolvedValue([]);
+		render(<SettingsTab />);
+		gotoSettingsTab("general");
+		fireEvent.click(
+			document.querySelector(
+				"[data-testid='adk-reset-btn']",
+			) as HTMLButtonElement,
+		);
+
+		await vi.waitFor(() => {
+			expect(
+				document.querySelector("[data-testid='adk-restart-required']"),
+			).toBeTruthy();
+		});
+		const commands = (
+			mockInvoke as unknown as { mock: { calls: [string][] } }
+		).mock.calls.map(([cmd]) => cmd);
+		expect(commands).not.toContain("prepare_app_relaunch");
+		expect(document.querySelector("[data-testid='adk-reset-btn']")).toBeNull();
+	});
 });
 
 /**

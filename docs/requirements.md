@@ -723,6 +723,9 @@ Steamworks 포털 설정·SteamPipe 자격증명·스토어 심사 제출은 #31
 | **FR-LLM-ROLE.7** | `subLlm*` belongs only to the sub role and `memoryLlm*` only to the memory role. Structured `llmRoles` is authoritative; legacy mirrors are deterministic and cannot assign one provider to two roles. | Implemented | role/slot/manifest contract tests |
 | **FR-SETTINGS.14** | Every credential removed from workspace JSON is stored in the OS-backed secure store, restored after restart, and omitted from config, UI config, logs, and agent messages except the dedicated credential channel. | Implemented | secure-store unit and native restart test |
 | **FR-SETTINGS.15** | A visible successful save means config, UI config, derived manifest, and synchronous Agent reload acknowledgement have completed in order. With no running Agent, the next `SetWorkspace` applies the persisted files; a running Agent's memory reload failure is returned to the settings UI instead of being swallowed. | Implemented | ordered write unit, Rust RPC compile, Agent #106 reload integration |
+| **FR-SETTINGS.16** | Settings lists each `config.allowedTools` name and can revoke one item or clear the list. The count-only label is not sufficient. | Done | `config.test.ts` + `SettingsTab.test.tsx` (#647) |
+| **FR-SETTINGS.17** | Open Log may open the instance log directory for both `~/.naia` and `~/.naia-dev` (same instance-home helper as `tauri:dev` NAIA_HOME). The opener scope includes the directory itself and its files. Failure is shown in the settings UI. | Done | `instance-home.test.mjs` + `SettingsTab.test.tsx` (#646) |
+| **FR-SETTINGS.18** | Resetting the naia-adk path relaunches only when native relaunch can restart the app (packaged). `tauri:dev` keeps the window and shows a blocking restart-required notice instead of quitting. | Done | `adk-path-reset.test.ts` + `SettingsTab.test.tsx` (#642) |
 | **FR-MEMORY.5** | Changing memory role, embedding, adapter, or workspace rebuilds the effective runtime for the next turn without restarting the Shell. Failed rebuild preserves the last healthy runtime and reports the failure. | Implemented (Agent #106) | Agent reload integration, paired Shell compile, real restart log |
 
 ## 2026-08-06 active Windows NVA/Voice/Media contract
@@ -953,6 +956,7 @@ fenced code는 언어·복사·접기·워크스페이스 전환을 제공하고
 | **FR-HERDR-CONTROL.8** | 연결 끊김, 타임아웃, 프로세스 종료, 취소, 부분 완료를 서로 구별되는 결과 종류로 표현한다. 하나의 실패로 뭉뚱그리지 않으며, 결과 불명은 불명으로 보고한다. | UC-HERDR-CONTROL-RECONNECT | `src/test/herdr-control-outcome-taxonomy.contract.test.ts` 5종 구별 | Done |
 | **FR-HERDR-CONTROL.9** | 재접속과 서버 재시작 복구에 상한을 둔다. 재접속 후에는 상태를 재확인한 뒤에만 판단하며, 상한에 닿으면 실패를 정직하게 보고한다. 재접속 자체가 완료·중단 판정의 근거가 되지 않는다. | UC-HERDR-CONTROL-RECONNECT | `src/test/herdr-control-reconnect-bounds.contract.test.ts` 상한·정직 실패 | Done |
 | **FR-HERDR-CONTROL.10** | Herdr가 space, tab, pane, 터미널, 작업자 생명주기의 유일한 실행 정본으로 남는다. Shell은 경쟁하는 생명주기 소유자를 유지하지 않으며, 컨텍스트 전달에서 비밀값과 범위 밖 데이터를 제외한다. | UC-HERDR-CONTROL-OBSERVE·MUTATE (#434 승계) | 중복 surface/tool 정적 검사 + `packages/shell/e2e-tauri/specs/herdr-control.spec.ts` | Done |
+| **FR-HERDR-CONTROL.11** | Workspace snapshot protocol 19 through 22 is accepted (Herdr 0.8.x=19, PATH 0.9.1=22). 18 and 23 are rejected. The error names the range; a stale single-protocol constant is not the only pin. | UC-HERDR-CONTROL-OBSERVE (#645) | `herdr.test.ts` + Rust `herdr::api` protocol range | Done |
 
 > **프로토콜 19 실측 대조 (2026-08-26).** 위 요구사항은 우리가 원하는 것이고 Herdr 가 내주는 것은 별개다.
 > 설치된 `herdr 0.8.0` 의 `api schema --json` 축약본이 `src/test/fixtures/herdr-protocol-19.json` 이고,
