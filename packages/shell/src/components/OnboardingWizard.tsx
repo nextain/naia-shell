@@ -950,11 +950,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 
 	function goNext() {
 		if (transitioning.current) return;
-		if (
-			step === "character" &&
-			((avatarProvider === "vrm" && !selectedVrm) ||
-				(avatarProvider === "nva" && !selectedNva))
-		) {
+		if (step === "character" && avatarProvider === "vrm" && !selectedVrm) {
 			return;
 		}
 		const next = STEPS[stepIndex + 1];
@@ -1814,8 +1810,8 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
 						disabled={
 							(isCompleteStep && completing) ||
 							(step === "character" &&
-								((avatarProvider === "vrm" && !selectedVrm) ||
-									(avatarProvider === "nva" && !selectedNva)))
+								avatarProvider === "vrm" &&
+								!selectedVrm)
 						}
 					>
 						{isCompleteStep && completing
